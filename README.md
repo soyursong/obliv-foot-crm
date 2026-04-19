@@ -4,7 +4,20 @@
 
 ## Stack
 
-- React + TypeScript + Vite
+- React 18 + TypeScript + Vite 5
 - Supabase (Auth, DB, Realtime, Storage)
 - shadcn/ui + Tailwind CSS
-- Lovable (초기 UI 구현)
+- @dnd-kit (칸반 DnD)
+
+## 개발
+
+```bash
+npm install
+npm run dev    # localhost:8082
+```
+
+## 설계문서
+
+- 풋센터_CRM설계.md — 인터뷰 기반 요구사항
+- 풋센터_기능명세_DB아키텍처.md — 기능명세 + DB 스키마
+- 풋센터_lovable_prompt_v1.md — UI 기능 상세
