@@ -78,7 +78,7 @@
     --sidebar-ring: oklch(0.556 0 0)
   }
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
   body {
     @apply bg-background text-foreground;
@@ -86,4 +86,15 @@
   html {
     @apply font-sans;
   }
+}
+
+@layer base {
+  *:focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+}
+
+@media print {
+  nav, aside, [data-sidebar], button { display: none !important; }
+  body { background: white !important; }
 }
