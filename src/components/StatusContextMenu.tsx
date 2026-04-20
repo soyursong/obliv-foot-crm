@@ -1,0 +1,84 @@
+import { useRef, useEffect } from 'react';
+import { STATUS_KO, stagesFor } from '@/lib/status';
+import { cn } from '@/lib/utils';
+import type { CheckIn, CheckInStatus } from '@/lib/types';
+
+interface Props {
+  checkIn: CheckIn;
+  position: { x: number; y: number } | null;
+  onClose: () => void;
+  onStatusChange: (checkIn: CheckIn, newStatus: CheckInStatus) => void;
+}
+
+export function StatusContextMenu({ checkIn, position, onClose, onStatusChange }: Props) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    if (position) {
+      document.addEventListener('mousedown', handleClick);
+      return () => document.removeEventListener('mousedown', handleClick);
+    }
+  }, [position, onClose]);
+
+  if (!position) return null;
+
+  const stages = stagesFor(checkIn.visit_type);
+  const currentIdx = stages.indexOf(checkIn.status);
+
+  return (
+    <div
+      ref={ref}
+      className="fixed z-50 min-w-[160px] rounded-lg border bg-white shadow-lg py-1"
+      style={{ top: position.y, left: position.x }}
+    >
+      <div className="px-3 py-1.5 text-xs text-muted-foreground border-b">
+        {checkIn.customer_name} — {STATUS_KO[checkIn.status]}
+      </div>
+      {stages.map((status, i) => {
+        const isCurrent = status === checkIn.status;
+        const isPast = i < currentIdx;
+        return (
+          <button
+            key={status}
+            className={cn(
+              'flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted/60 transition',
+              isCurrent && 'bg-teal-50 text-teal-700 font-semibold',
+              isPast && 'text-muted-foreground',
+            )}
+            onClick={() => {
+              if (!isCurrent) onStatusChange(checkIn, status);
+              onClose();
+            }}
+            disabled={isCurrent}
+          >
+            <span
+              className={cn(
+                'h-2 w-2 rounded-full shrink-0',
+                isCurrent ? 'bg-teal-500' : isPast ? 'bg-gray-300' : 'bg-gray-400',
+              )}
+            />
+            {STATUS_KO[status]}
+          </button>
+        );
+      })}
+      <div className="border-t mt-1 pt-1">
+        <button
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition"
+          onClick={() => {
+            if (!window.confirm(`${checkIn.customer_name} 체크인을 취소하시겠습니까?`)) { onClose(); return; }
+            onStatusChange(checkIn, 'cancelled');
+            onClose();
+          }}
+        >
+          <span className="h-2 w-2 rounded-full bg-red-500 shrink-0" />
+          취소
+        </button>
+      </div>
+    </div>
+  );
+}
