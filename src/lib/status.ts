@@ -31,11 +31,6 @@ export const NEW_PATIENT_STAGES: CheckInStatus[] = [
 
 export const RETURNING_PATIENT_STAGES: CheckInStatus[] = [
   'registered',
-  'exam_waiting',
-  'examination',
-  'consult_waiting',
-  'consultation',
-  'payment_waiting',
   'treatment_waiting',
   'preconditioning',
   'laser',

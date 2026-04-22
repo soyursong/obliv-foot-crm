@@ -1256,11 +1256,15 @@ export default function Dashboard() {
 
   const handleReservationCheckIn = async (res: Reservation) => {
     if (!clinic) return;
-    const { data: queueData } = await supabase.rpc('next_queue_number', {
+    const { data: queueData, error: qErr } = await supabase.rpc('next_queue_number', {
       p_clinic_id: clinic.id,
       p_date: format(new Date(), 'yyyy-MM-dd'),
     });
-    const qn = (queueData as number) ?? (rows.reduce((m, r) => Math.max(m, r.queue_number ?? 0), 0) + 1);
+    if (qErr || queueData == null) {
+      toast.error(`대기번호 생성 실패: ${qErr?.message ?? '알 수 없는 오류'}`);
+      return;
+    }
+    const qn = queueData as number;
     const now = new Date().toISOString();
     const needsExam = res.visit_type === 'returning';
 

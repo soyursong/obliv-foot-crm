@@ -969,6 +969,7 @@ function RefundDialog({
 
   const process = async () => {
     if (!quote) return;
+    if (!window.confirm(`환불 금액 ${formatAmount(quote.refund_amount)}을 환불하시겠습니까?`)) return;
     setSubmitting(true);
     const { data, error } = await supabase.rpc('refund_package_atomic', {
       p_package_id: packageId,
@@ -1100,6 +1101,7 @@ function TransferDialog({
 
   const process = async () => {
     if (!target) return;
+    if (!window.confirm(`${target.name}님에게 패키지를 양도하시겠습니까?`)) return;
     setSubmitting(true);
     const { error } = await supabase
       .from('packages')

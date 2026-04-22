@@ -5,10 +5,9 @@ import { test, expect } from '@playwright/test';
 import { loginAndWaitForDashboard } from './helpers';
 
 test.describe('Returning patient flow', () => {
+  // 재진 5단계: 접수 → 시술대기 → 사전처치 → 레이저 → 완료
   const RETURNING_STAGES_KO = [
-    '접수', '진료대기', '진료',
-    '상담대기', '상담', '결제',
-    '시술대기', '사전처치', '레이저', '완료',
+    '접수', '시술대기', '사전처치', '레이저', '완료',
   ];
 
   test('Returning patient tab shows correct stages', async ({ page }) => {
