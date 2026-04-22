@@ -265,7 +265,7 @@ function DraggableCard({
       )}
       <div className="mt-1.5 flex items-center justify-between text-xs">
         <span className={cn('text-muted-foreground tabular-nums font-mono', (mins >= 30 || isLaserOvertime) && 'font-semibold text-red-600')}>
-          {mmss} 경과
+          {mmss} {stageStart ? STATUS_KO[checkIn.status] ?? '경과' : '대기'}
         </span>
         {checkIn.priority_flag && <Badge variant="destructive">우선</Badge>}
       </div>
@@ -775,13 +775,14 @@ export default function Dashboard() {
     const end = `${dateStr}T23:59:59+09:00`;
     const { data } = await supabase
       .from('status_transitions')
-      .select('check_in_id, transitioned_at')
+      .select('check_in_id, to_status, transitioned_at')
       .eq('clinic_id', clinic.id)
       .gte('transitioned_at', start)
       .lte('transitioned_at', end)
       .order('transitioned_at', { ascending: false });
+    // check_in_id별 가장 최근 전이 = 현재 섹션 진입 시각
     const map = new Map<string, string>();
-    for (const t of (data ?? []) as { check_in_id: string; transitioned_at: string }[]) {
+    for (const t of (data ?? []) as { check_in_id: string; to_status: string; transitioned_at: string }[]) {
       if (!map.has(t.check_in_id)) map.set(t.check_in_id, t.transitioned_at);
     }
     setStageStartMap(map);
