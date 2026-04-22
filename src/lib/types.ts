@@ -83,6 +83,7 @@ export interface Room {
   room_type: 'treatment' | 'laser' | 'consultation' | 'examination';
   active: boolean;
   sort_order: number;
+  max_occupancy: number;
 }
 
 export interface CheckIn {
@@ -103,7 +104,7 @@ export interface CheckIn {
   laser_room: string | null;
   package_id: string | null;
   notes: Record<string, unknown> | null;
-  treatment_memo: Record<string, unknown> | null;
+  treatment_memo: { details?: string; [key: string]: unknown } | null;
   treatment_photos: string[] | null;
   doctor_note: string | null;
   examination_room: string | null;

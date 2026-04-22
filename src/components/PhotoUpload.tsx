@@ -15,12 +15,15 @@ export function PhotoUpload({ checkInId, photos, onUpdated }: Props) {
   const [urls, setUrls] = useState<string[]>([]);
 
   useEffect(() => {
-    const publicUrls = (photos ?? []).map((path) => {
-      if (path.startsWith('http')) return path;
-      const { data } = supabase.storage.from('photos').getPublicUrl(path);
-      return data.publicUrl;
-    });
-    setUrls(publicUrls);
+    (async () => {
+      const resolved: string[] = [];
+      for (const path of photos ?? []) {
+        if (path.startsWith('http')) { resolved.push(path); continue; }
+        const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
+        resolved.push(data?.signedUrl ?? '');
+      }
+      setUrls(resolved);
+    })();
   }, [photos]);
 
   const handleUpload = useCallback(

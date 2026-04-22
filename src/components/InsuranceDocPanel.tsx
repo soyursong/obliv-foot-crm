@@ -360,8 +360,8 @@ function ReceiptDialog({
         setSaving(false);
         return;
       }
-      const { data } = supabase.storage.from('documents').getPublicUrl(path);
-      pdfUrl = data.publicUrl;
+      const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
+      pdfUrl = data?.signedUrl ?? path;
     }
 
     const { error } = await supabase.from('insurance_receipts').insert({

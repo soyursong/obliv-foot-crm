@@ -39,8 +39,8 @@ interface VisitHistory {
   status: string;
   visit_type: string;
   doctor_note: string | null;
-  treatment_memo: Record<string, string> | null;
-  notes: Record<string, string> | null;
+  treatment_memo: { details?: string; [key: string]: unknown } | null;
+  notes: { text?: string; [key: string]: unknown } | null;
 }
 
 interface Props {
@@ -105,9 +105,9 @@ function VisitHistoryAccordion({ history }: { history: VisitHistory[] }) {
                         <span className="font-semibold">소견:</span> {h.doctor_note}
                       </div>
                     )}
-                    {(h.treatment_memo as any)?.details && (
+                    {h.treatment_memo?.details && (
                       <div className="text-muted-foreground">
-                        <span className="font-semibold">시술:</span> {(h.treatment_memo as any).details}
+                        <span className="font-semibold">시술:</span> {h.treatment_memo.details}
                       </div>
                     )}
                     {(h.notes as any)?.text && (
@@ -235,8 +235,7 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
 
     const noteObj = checkIn.notes as Record<string, string> | null;
     setNotes(noteObj?.text ?? '');
-    const memoObj = checkIn.treatment_memo as Record<string, string> | null;
-    setTreatmentMemo(memoObj?.details ?? '');
+    setTreatmentMemo(checkIn.treatment_memo?.details ?? '');
     setDoctorNote(checkIn.doctor_note ?? '');
   }, [checkIn]);
 
@@ -248,7 +247,7 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     if (!checkIn) return;
     setSaving(true);
     const notesObj = { ...(checkIn.notes as Record<string, unknown> ?? {}), text: notes };
-    const memoObj = { ...(checkIn.treatment_memo as Record<string, unknown> ?? {}), details: treatmentMemo };
+    const memoObj = { ...(checkIn.treatment_memo ?? {}), details: treatmentMemo };
     const { error } = await supabase
       .from('check_ins')
       .update({ notes: notesObj, treatment_memo: memoObj, doctor_note: doctorNote || null })

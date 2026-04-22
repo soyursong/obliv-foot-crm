@@ -3,7 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { AuthProvider } from '@/lib/auth';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { ProtectedRoute, RoleGuard } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 
 const Login = lazy(() => import('@/pages/Login'));
@@ -14,6 +14,9 @@ const Customers = lazy(() => import('@/pages/Customers'));
 const Packages = lazy(() => import('@/pages/Packages'));
 const Staff = lazy(() => import('@/pages/Staff'));
 const Closing = lazy(() => import('@/pages/Closing'));
+const Stats = lazy(() => import('@/pages/Stats'));
+const Accounts = lazy(() => import('@/pages/Accounts'));
+const SelfCheckIn = lazy(() => import('@/pages/SelfCheckIn'));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
@@ -37,6 +40,7 @@ function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/checkin/:clinicSlug" element={<SelfCheckIn />} />
 
               <Route
                 path="/admin"
@@ -49,9 +53,11 @@ function App() {
                 <Route index element={<Dashboard />} />
                 <Route path="reservations" element={<Reservations />} />
                 <Route path="customers" element={<Customers />} />
-                <Route path="packages" element={<Packages />} />
-                <Route path="staff" element={<Staff />} />
-                <Route path="closing" element={<Closing />} />
+                <Route path="packages" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator']}><Packages /></RoleGuard>} />
+                <Route path="staff" element={<RoleGuard roles={['admin', 'manager']}><Staff /></RoleGuard>} />
+                <Route path="closing" element={<RoleGuard roles={['admin', 'manager']}><Closing /></RoleGuard>} />
+                <Route path="stats" element={<RoleGuard roles={['admin', 'manager']}><Stats /></RoleGuard>} />
+                <Route path="accounts" element={<RoleGuard roles={['admin']}><Accounts /></RoleGuard>} />
               </Route>
 
               <Route path="/" element={<Navigate to="/admin" replace />} />

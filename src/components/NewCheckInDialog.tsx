@@ -81,45 +81,11 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
 
   const autoAssignConsultant = async (clinicId: string): Promise<string | null> => {
     const today = format(new Date(), 'yyyy-MM-dd');
-    const { data: assignments } = await supabase
-      .from('room_assignments')
-      .select('staff_id, staff_name, room_name')
-      .eq('clinic_id', clinicId)
-      .eq('date', today)
-      .eq('room_type', 'consultation');
-
-    if (!assignments || assignments.length === 0) return null;
-
-    const start = `${today}T00:00:00+09:00`;
-    const end = `${today}T23:59:59+09:00`;
-    const { data: activeCheckIns } = await supabase
-      .from('check_ins')
-      .select('consultant_id')
-      .eq('clinic_id', clinicId)
-      .gte('checked_in_at', start)
-      .lte('checked_in_at', end)
-      .in('status', ['consult_waiting', 'consultation']);
-
-    const loadByStaff = new Map<string, number>();
-    for (const a of assignments) {
-      if (a.staff_id) loadByStaff.set(a.staff_id, 0);
-    }
-    for (const ci of activeCheckIns ?? []) {
-      const sid = ci.consultant_id as string | null;
-      if (sid && loadByStaff.has(sid)) {
-        loadByStaff.set(sid, (loadByStaff.get(sid) ?? 0) + 1);
-      }
-    }
-
-    let minLoad = Infinity;
-    let bestId: string | null = null;
-    for (const [id, load] of loadByStaff) {
-      if (load < minLoad) {
-        minLoad = load;
-        bestId = id;
-      }
-    }
-    return bestId;
+    const { data } = await supabase.rpc('assign_consultant_atomic', {
+      p_clinic_id: clinicId,
+      p_date: today,
+    });
+    return (data as string | null) ?? null;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

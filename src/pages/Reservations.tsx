@@ -27,7 +27,7 @@ import {
 import { VISIT_TYPE_KO } from '@/lib/status';
 import { maskPhoneTail } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { Clinic, Reservation, VisitType } from '@/lib/types';
+import type { Clinic, Customer, Reservation, Service, VisitType } from '@/lib/types';
 
 const STATUS_STYLE: Record<Reservation['status'], string> = {
   confirmed: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -57,19 +57,27 @@ interface ReservationDraft {
   visit_type: VisitType;
   memo: string;
   existingId?: string;
+  service_id?: string | null;
+  customer_id?: string | null;
 }
+
+type ViewMode = 'week' | 'day';
 
 export default function Reservations() {
   const [clinic, setClinic] = useState<Clinic | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [weekStart, setWeekStart] = useState<Date>(() =>
     startOfWeek(new Date(), { weekStartsOn: 1 }),
   );
+  const [selectedDay, setSelectedDay] = useState<Date>(() => new Date());
   const [rows, setRows] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [editor, setEditor] = useState<ReservationDraft | null>(null);
   const [detail, setDetail] = useState<Reservation | null>(null);
   const [noshowByCustomer, setNoshowByCustomer] = useState<Record<string, number>>({});
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   useEffect(() => {
     getClinic().then(setClinic).catch(() => setClinic(null));
@@ -83,8 +91,12 @@ export default function Reservations() {
   const fetchWeek = useCallback(async () => {
     if (!clinic) return;
     setLoading(true);
-    const startStr = format(weekDays[0], 'yyyy-MM-dd');
-    const endStr = format(weekDays[weekDays.length - 1], 'yyyy-MM-dd');
+    const startStr = viewMode === 'week'
+      ? format(weekDays[0], 'yyyy-MM-dd')
+      : format(selectedDay, 'yyyy-MM-dd');
+    const endStr = viewMode === 'week'
+      ? format(weekDays[weekDays.length - 1], 'yyyy-MM-dd')
+      : startStr;
     const { data, error } = await supabase
       .from('reservations')
       .select('*')
@@ -98,6 +110,20 @@ export default function Reservations() {
       return;
     }
     const list = (data ?? []) as Reservation[];
+
+    // Auto noshow: past confirmed reservations
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const pastConfirmed = list.filter(
+      (r) => r.status === 'confirmed' && r.reservation_date < today,
+    );
+    if (pastConfirmed.length > 0) {
+      await supabase
+        .from('reservations')
+        .update({ status: 'noshow' })
+        .in('id', pastConfirmed.map((r) => r.id));
+      for (const r of pastConfirmed) r.status = 'noshow';
+    }
+
     setRows(list);
     setLoading(false);
 
@@ -120,7 +146,7 @@ export default function Reservations() {
     } else {
       setNoshowByCustomer({});
     }
-  }, [clinic, weekDays]);
+  }, [clinic, weekDays, viewMode, selectedDay]);
 
   useEffect(() => {
     fetchWeek();
@@ -159,6 +185,22 @@ export default function Reservations() {
     return map;
   }, [rows]);
 
+  const slotActiveCount = useCallback(
+    (dateStr: string, time: string) => {
+      const list = resvByKey[`${dateStr}_${time}`] ?? [];
+      return list.filter((r) => r.status !== 'cancelled').length;
+    },
+    [resvByKey],
+  );
+
+  const isSlotFull = useCallback(
+    (dateStr: string, time: string) => {
+      if (!clinic) return false;
+      return slotActiveCount(dateStr, time) >= clinic.max_per_slot;
+    },
+    [clinic, slotActiveCount],
+  );
+
   const openNewSlot = (d: Date, time: string) => {
     setEditor({
       date: format(d, 'yyyy-MM-dd'),
@@ -186,40 +228,75 @@ export default function Reservations() {
   const batchCheckIn = async (confirmed: Reservation[]) => {
     if (!clinic || confirmed.length === 0) return;
     if (!window.confirm(`${confirmed.length}건의 예약을 일괄 체크인하시겠습니까?`)) return;
-    let success = 0;
-    let skipped = 0;
-    for (const res of confirmed) {
-      const { data: existing } = await supabase
-        .from('check_ins')
-        .select('id')
-        .eq('reservation_id', res.id)
-        .limit(1);
-      if (existing && existing.length > 0) {
-        skipped++;
-        continue;
-      }
-      const { data: queueData } = await supabase.rpc('next_queue_number', {
-        p_clinic_id: clinic.id,
-        p_date: res.reservation_date,
-      });
-      const { error } = await supabase.from('check_ins').insert({
-        clinic_id: clinic.id,
-        customer_id: res.customer_id,
-        reservation_id: res.id,
-        customer_name: res.customer_name ?? '',
-        customer_phone: res.customer_phone,
-        visit_type: res.visit_type,
-        status: 'registered',
-        queue_number: queueData as number,
-      });
-      if (!error) {
-        await supabase.from('reservations').update({ status: 'checked_in' }).eq('id', res.id);
-        success++;
-      }
+    const payload = confirmed.map((r) => ({
+      id: r.id,
+      customer_id: r.customer_id,
+      customer_name: r.customer_name ?? '',
+      customer_phone: r.customer_phone,
+      visit_type: r.visit_type,
+      reservation_date: r.reservation_date,
+    }));
+    const { data, error } = await supabase.rpc('batch_checkin', {
+      p_clinic_id: clinic.id,
+      p_reservations: payload,
+    });
+    if (error) {
+      toast.error(`일괄 체크인 실패: ${error.message}`);
+      return;
     }
-    const msg = skipped > 0 ? `${success}건 체크인, ${skipped}건 중복 스킵` : `${success}건 일괄 체크인 완료`;
+    const result = data as { success: number; skipped: number };
+    const msg = result.skipped > 0
+      ? `${result.success}건 체크인, ${result.skipped}건 중복 스킵`
+      : `${result.success}건 일괄 체크인 완료`;
     toast.success(msg);
     fetchWeek();
+  };
+
+  const reschedule = async (reservationId: string, newDate: string, newTime: string) => {
+    if (!clinic) return;
+    const r = rows.find((x) => x.id === reservationId);
+    if (!r || r.status !== 'confirmed') return;
+    if (r.reservation_date === newDate && r.reservation_time.slice(0, 5) === newTime) return;
+
+    const activeCount = slotActiveCount(newDate, newTime);
+    if (activeCount >= clinic.max_per_slot) {
+      toast.error(`이 시간대는 마감입니다 (${activeCount}/${clinic.max_per_slot})`);
+      return;
+    }
+
+    const oldData = { date: r.reservation_date, time: r.reservation_time.slice(0, 5) };
+    const newData = { date: newDate, time: newTime };
+
+    const { error } = await supabase
+      .from('reservations')
+      .update({ reservation_date: newDate, reservation_time: newTime })
+      .eq('id', reservationId);
+    if (error) { toast.error(`이동 실패: ${error.message}`); return; }
+
+    await supabase.from('reservation_logs').insert({
+      reservation_id: reservationId,
+      clinic_id: clinic.id,
+      action: 'reschedule',
+      old_data: oldData,
+      new_data: newData,
+    });
+
+    toast.success(`${r.customer_name} 예약 이동: ${oldData.date} ${oldData.time} → ${newData.date} ${newData.time}`);
+    fetchWeek();
+  };
+
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    setDraggedId(id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id);
+  };
+
+  const handleDrop = (e: React.DragEvent, dateStr: string, time: string) => {
+    e.preventDefault();
+    setDropTarget(null);
+    const id = e.dataTransfer.getData('text/plain') || draggedId;
+    if (id) reschedule(id, dateStr, time);
+    setDraggedId(null);
   };
 
   return (
@@ -229,28 +306,55 @@ export default function Reservations() {
           <Button
             variant="outline"
             size="icon-sm"
-            onClick={() => setWeekStart((w) => addDays(w, -7))}
+            onClick={() => {
+              if (viewMode === 'week') setWeekStart((w) => addDays(w, -7));
+              else setSelectedDay((d) => addDays(d, -1));
+            }}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div className="min-w-[200px] text-center text-sm font-medium">
-            {format(weekDays[0], 'yyyy년 M월 d일', { locale: ko })} ~{' '}
-            {format(weekDays[5], 'M월 d일')}
+            {viewMode === 'week'
+              ? `${format(weekDays[0], 'yyyy년 M월 d일', { locale: ko })} ~ ${format(weekDays[5], 'M월 d일')}`
+              : format(selectedDay, 'yyyy년 M월 d일 (EEE)', { locale: ko })
+            }
           </div>
           <Button
             variant="outline"
             size="icon-sm"
-            onClick={() => setWeekStart((w) => addDays(w, 7))}
+            onClick={() => {
+              if (viewMode === 'week') setWeekStart((w) => addDays(w, 7));
+              else setSelectedDay((d) => addDays(d, 1));
+            }}
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))}
+            onClick={() => {
+              if (viewMode === 'week') setWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }));
+              else setSelectedDay(new Date());
+            }}
           >
-            이번 주
+            {viewMode === 'week' ? '이번 주' : '오늘'}
           </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-md border">
+            <button
+              onClick={() => setViewMode('day')}
+              className={cn('px-3 py-1 text-xs font-medium transition', viewMode === 'day' ? 'bg-teal-50 text-teal-700' : 'text-muted-foreground hover:bg-muted')}
+            >
+              일간
+            </button>
+            <button
+              onClick={() => setViewMode('week')}
+              className={cn('px-3 py-1 text-xs font-medium transition', viewMode === 'week' ? 'bg-teal-50 text-teal-700' : 'text-muted-foreground hover:bg-muted')}
+            >
+              주간
+            </button>
+          </div>
         </div>
       </div>
 
@@ -266,7 +370,7 @@ export default function Reservations() {
                 <th className="w-20 border-b border-r py-2 text-xs font-medium text-muted-foreground">
                   시간
                 </th>
-                {weekDays.map((d, i) => (
+                {(viewMode === 'week' ? weekDays : [selectedDay]).map((d, i) => (
                   <th
                     key={d.toISOString()}
                     className={cn(
@@ -288,36 +392,46 @@ export default function Reservations() {
                       <td className="w-20 border-b border-r py-1.5 text-center text-xs font-medium text-muted-foreground">
                         {time}
                       </td>
-                      {weekDays.map((d) => {
+                      {(viewMode === 'week' ? weekDays : [selectedDay]).map((d) => {
                         const allowed = slotsFor(d).includes(time);
-                        const key = `${format(d, 'yyyy-MM-dd')}_${time}`;
+                        const dateStr = format(d, 'yyyy-MM-dd');
+                        const key = `${dateStr}_${time}`;
                         const list = resvByKey[key] ?? [];
+                        const full = isSlotFull(dateStr, time);
+                        const activeCount = slotActiveCount(dateStr, time);
+                        const cellKey = `${dateStr}_${time}`;
+                        const isDragOver = dropTarget === cellKey;
                         return (
                           <td
                             key={d.toISOString() + time}
                             className={cn(
-                              'h-12 border-b border-r p-1 align-top',
+                              'h-12 border-b border-r p-1 align-top transition-colors',
                               !allowed && 'bg-gray-50',
+                              full && !isDragOver && 'bg-red-50',
+                              isDragOver && allowed && !full && 'bg-teal-50 ring-2 ring-inset ring-teal-400',
+                              isDragOver && full && 'bg-red-100 ring-2 ring-inset ring-red-400',
                             )}
+                            onDragOver={(e) => { if (allowed) { e.preventDefault(); setDropTarget(cellKey); } }}
+                            onDragLeave={() => setDropTarget(null)}
+                            onDrop={(e) => { if (allowed) handleDrop(e, dateStr, time); }}
                           >
                             {allowed && (
-                              <button
-                                className="flex h-full w-full flex-col gap-0.5 rounded text-left hover:bg-muted/50"
-                                onClick={() =>
-                                  list.length === 0
-                                    ? openNewSlot(d, time)
-                                    : setDetail(list[0])
-                                }
-                              >
+                              <div className="flex h-full w-full flex-col gap-0.5 rounded text-left">
+
                                 {list.map((r) => (
                                   <div
                                     key={r.id}
+                                    draggable={r.status === 'confirmed'}
+                                    onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, r.id); }}
+                                    onDragEnd={() => { setDraggedId(null); setDropTarget(null); }}
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setDetail(r);
                                     }}
                                     className={cn(
                                       'rounded border px-1.5 py-0.5 text-xs leading-tight',
+                                      r.status === 'confirmed' && 'cursor-grab active:cursor-grabbing',
+                                      draggedId === r.id && 'opacity-40',
                                       STATUS_STYLE[r.status],
                                       VISIT_TYPE_STYLE[r.visit_type],
                                     )}
@@ -353,12 +467,28 @@ export default function Reservations() {
                                     </button>
                                   ) : null;
                                 })()}
-                                {list.length === 0 && (
-                                  <span className="m-auto text-xs text-muted-foreground/40">
-                                    +
+                                {!full ? (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); openNewSlot(d, time); }}
+                                    className={cn(
+                                      'flex items-center justify-center rounded border border-dashed border-muted-foreground/30 text-muted-foreground/50 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-600 transition',
+                                      list.length === 0 ? 'flex-1 min-h-[24px]' : 'h-5 w-full mt-0.5',
+                                    )}
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                  </button>
+                                ) : list.length === 0 ? (
+                                  <span className="m-auto text-xs font-medium text-red-500">마감</span>
+                                ) : null}
+                                {clinic && activeCount > 0 && (
+                                  <span className={cn(
+                                    'mt-auto self-end text-[10px] tabular-nums',
+                                    full ? 'text-red-500 font-medium' : 'text-muted-foreground',
+                                  )}>
+                                    {activeCount}/{clinic.max_per_slot}
                                   </span>
                                 )}
-                              </button>
+                              </div>
                             )}
                           </td>
                         );
@@ -374,6 +504,7 @@ export default function Reservations() {
       <ReservationEditor
         draft={editor}
         clinicId={clinic?.id}
+        maxPerSlot={clinic?.max_per_slot ?? 5}
         onClose={() => setEditor(null)}
         onSaved={() => {
           setEditor(null);
@@ -400,25 +531,65 @@ export default function Reservations() {
 function ReservationEditor({
   draft,
   clinicId,
+  maxPerSlot,
   onClose,
   onSaved,
 }: {
   draft: ReservationDraft | null;
   clinicId: string | undefined;
+  maxPerSlot: number;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [state, setState] = useState<ReservationDraft | null>(draft);
   const [submitting, setSubmitting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Customer[]>([]);
+  const [showSearch, setShowSearch] = useState(false);
+  const [services, setServices] = useState<Service[]>([]);
 
   useEffect(() => {
     setState(draft);
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowSearch(false);
   }, [draft]);
+
+  useEffect(() => {
+    if (!clinicId) return;
+    supabase
+      .from('services')
+      .select('*')
+      .eq('clinic_id', clinicId)
+      .eq('active', true)
+      .order('sort_order')
+      .then(({ data }) => setServices((data ?? []) as Service[]));
+  }, [clinicId]);
 
   if (!state) return null;
 
   const update = <K extends keyof ReservationDraft>(k: K, v: ReservationDraft[K]) =>
     setState((s) => (s ? { ...s, [k]: v } : s));
+
+  const searchCustomer = async (q: string) => {
+    setSearchQuery(q);
+    if (!q.trim() || !clinicId) { setSearchResults([]); return; }
+    const { data } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('clinic_id', clinicId)
+      .or(`name.ilike.%${q}%,phone.ilike.%${q}%`)
+      .limit(8);
+    setSearchResults((data ?? []) as Customer[]);
+    setShowSearch(true);
+  };
+
+  const selectCustomer = (c: Customer) => {
+    setState((s) => s ? { ...s, name: c.name, phone: c.phone, customer_id: c.id, visit_type: 'returning' } : s);
+    setShowSearch(false);
+    setSearchQuery('');
+    toast.info(`${c.name}님 선택`);
+  };
 
   const handlePhoneBlur = async () => {
     if (!state.phone.trim() || !clinicId) return;
@@ -434,6 +605,7 @@ function ReservationEditor({
           ? {
               ...s,
               name: s.name || (data.name as string),
+              customer_id: data.id as string,
               visit_type: s.visit_type === 'new' ? 'returning' : s.visit_type,
             }
           : s,
@@ -445,8 +617,41 @@ function ReservationEditor({
   const save = async () => {
     if (!clinicId || !state) return;
     setSubmitting(true);
-    let customerId: string | null = null;
-    if (state.phone.trim()) {
+
+    if (!state.existingId) {
+      const { count } = await supabase
+        .from('reservations')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', clinicId)
+        .eq('reservation_date', state.date)
+        .eq('reservation_time', state.time)
+        .neq('status', 'cancelled');
+      if ((count ?? 0) >= maxPerSlot) {
+        toast.error(`이 시간대는 마감입니다 (${count}/${maxPerSlot})`);
+        setSubmitting(false);
+        return;
+      }
+    }
+
+    let customerId: string | null = state.customer_id ?? null;
+
+    if (!state.existingId && customerId) {
+      const { count } = await supabase
+        .from('reservations')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', clinicId)
+        .eq('customer_id', customerId)
+        .eq('reservation_date', state.date)
+        .neq('status', 'cancelled');
+      if ((count ?? 0) > 0) {
+        if (!window.confirm(`${state.name}님은 이미 ${state.date}에 예약이 있습니다. 계속하시겠습니까?`)) {
+          setSubmitting(false);
+          return;
+        }
+      }
+    }
+
+    if (!customerId && state.phone.trim()) {
       const { data: existing } = await supabase
         .from('customers')
         .select('id')
@@ -482,6 +687,7 @@ function ReservationEditor({
       reservation_date: state.date,
       reservation_time: state.time,
       visit_type: state.visit_type,
+      service_id: state.service_id || null,
       memo: state.memo.trim() || null,
     };
 
@@ -508,6 +714,34 @@ function ReservationEditor({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
+          {!state.existingId && (
+            <div className="space-y-1.5 relative">
+              <Label>고객 검색</Label>
+              <Input
+                value={searchQuery}
+                onChange={(e) => searchCustomer(e.target.value)}
+                onFocus={() => searchResults.length > 0 && setShowSearch(true)}
+                placeholder="이름 또는 전화번호 검색"
+              />
+              {showSearch && searchResults.length > 0 && (
+                <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-md shadow-md max-h-40 overflow-auto">
+                  {searchResults.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => selectCustomer(c)}
+                      className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-muted/50 transition text-left"
+                    >
+                      <span className="font-medium">{c.name}</span>
+                      <span className="text-xs text-muted-foreground">{c.phone}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {state.customer_id && (
+                <div className="text-xs text-teal-700">기존 고객 연결됨</div>
+              )}
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label>전화번호</Label>
             <Input
@@ -542,6 +776,23 @@ function ReservationEditor({
               ))}
             </div>
           </div>
+          {services.length > 0 && (
+            <div className="space-y-1.5">
+              <Label>서비스</Label>
+              <select
+                value={state.service_id ?? ''}
+                onChange={(e) => update('service_id', e.target.value || null)}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+              >
+                <option value="">선택 안 함</option>
+                {services.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.duration_min}분)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label>메모</Label>
             <Textarea value={state.memo} onChange={(e) => update('memo', e.target.value)} rows={3} />
@@ -560,6 +811,14 @@ function ReservationEditor({
   );
 }
 
+interface ReservationLog {
+  id: string;
+  action: string;
+  old_data: Record<string, string> | null;
+  new_data: Record<string, string> | null;
+  created_at: string;
+}
+
 function ReservationDetail({
   reservation,
   noshowCount,
@@ -574,6 +833,19 @@ function ReservationDetail({
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [logs, setLogs] = useState<ReservationLog[]>([]);
+
+  useEffect(() => {
+    if (!reservation) { setLogs([]); return; }
+    supabase
+      .from('reservation_logs')
+      .select('id, action, old_data, new_data, created_at')
+      .eq('reservation_id', reservation.id)
+      .order('created_at', { ascending: false })
+      .limit(20)
+      .then(({ data }) => setLogs((data ?? []) as ReservationLog[]));
+  }, [reservation]);
+
   if (!reservation) return null;
 
   const setStatus = async (status: Reservation['status']) => {
@@ -582,11 +854,19 @@ function ReservationDetail({
       .from('reservations')
       .update({ status })
       .eq('id', reservation.id);
-    setBusy(false);
     if (error) {
       toast.error(`업데이트 실패: ${error.message}`);
+      setBusy(false);
       return;
     }
+    await supabase.from('reservation_logs').insert({
+      reservation_id: reservation.id,
+      clinic_id: reservation.clinic_id,
+      action: 'status_change',
+      old_data: { status: reservation.status },
+      new_data: { status },
+    });
+    setBusy(false);
     toast.success(`상태 변경: ${STATUS_LABEL[status]}`);
     onChanged();
   };
@@ -651,6 +931,23 @@ function ReservationDetail({
               {reservation.memo}
             </div>
           )}
+          {logs.length > 0 && (
+            <div className="space-y-1 border-t pt-2">
+              <div className="text-xs font-medium text-muted-foreground">변경 이력</div>
+              {logs.map((l) => (
+                <div key={l.id} className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <span className="shrink-0 tabular-nums">{format(new Date(l.created_at), 'MM/dd HH:mm')}</span>
+                  <span>
+                    {l.action === 'reschedule'
+                      ? `일정 변경: ${l.old_data?.date} ${l.old_data?.time} → ${l.new_data?.date} ${l.new_data?.time}`
+                      : l.action === 'status_change'
+                        ? `상태: ${STATUS_LABEL[(l.old_data?.status as Reservation['status']) ?? 'confirmed']} → ${STATUS_LABEL[(l.new_data?.status as Reservation['status']) ?? 'confirmed']}`
+                        : l.action}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <DialogFooter className="flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => onEdit(reservation)}>
@@ -684,5 +981,3 @@ function ReservationDetail({
   );
 }
 
-// Placeholder to silence lint — unused Plus icon ref retained for future toolbar usage
-void Plus;
