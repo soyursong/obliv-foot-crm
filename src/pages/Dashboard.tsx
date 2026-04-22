@@ -9,6 +9,8 @@ import {
   useDroppable,
   useDraggable,
   closestCenter,
+  pointerWithin,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
@@ -72,6 +74,18 @@ function elapsedMMSS(iso: string): string {
 function elapsedMinutes(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
 }
+
+// pointerWithin 우선, 없으면 closestCenter 폴백 — 방(room) 드롭 정확도 향상
+const customCollision: CollisionDetection = (args) => {
+  const pw = pointerWithin(args);
+  if (pw.length > 0) {
+    // room: 접두사가 있으면 최우선
+    const roomHit = pw.find((c) => String(c.id).startsWith('room:'));
+    if (roomHit) return [roomHit];
+    return pw;
+  }
+  return closestCenter(args);
+};
 
 const DROP_STATUS_FOR_ROOM: Record<string, CheckInStatus> = {
   examination: 'examination',
@@ -1472,7 +1486,7 @@ export default function Dashboard() {
         ) : (
           <DndContext
             sensors={sensors}
-            collisionDetection={closestCenter}
+            collisionDetection={customCollision}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
           >
