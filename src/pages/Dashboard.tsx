@@ -1044,6 +1044,11 @@ export default function Dashboard() {
     const row = e.active.data.current?.checkIn as CheckIn | undefined;
     if (!target || !row) return;
 
+    if (row.id.startsWith('temp-')) {
+      toast.info('체크인 처리 중입니다. 잠시 후 다시 시도해주세요.');
+      return;
+    }
+
     if (isPast) {
       toast.info('과거 날짜는 수정할 수 없습니다');
       return;
@@ -1234,6 +1239,10 @@ export default function Dashboard() {
   };
 
   const handleContextStatusChange = async (ci: CheckIn, newStatus: CheckInStatus) => {
+    if (ci.id.startsWith('temp-')) {
+      toast.info('체크인 처리 중입니다. 잠시 후 다시 시도해주세요.');
+      return;
+    }
     const prev = rows;
     markRecentlyUpdated(ci.id);
     setRows((curr) =>
@@ -1280,43 +1289,9 @@ export default function Dashboard() {
       return;
     }
     const qn = queueData as number;
-    const now = new Date().toISOString();
     const needsExam = res.visit_type === 'returning';
 
-    const tempId = `temp-${Date.now()}`;
-    const tempCheckIn: CheckIn = {
-      id: tempId,
-      clinic_id: clinic.id,
-      customer_id: res.customer_id,
-      reservation_id: res.id,
-      queue_number: qn,
-      customer_name: res.customer_name ?? '',
-      customer_phone: res.customer_phone,
-      visit_type: res.visit_type,
-      status: 'registered',
-      consultant_id: null,
-      therapist_id: null,
-      technician_id: null,
-      consultation_room: null,
-      treatment_room: null,
-      laser_room: null,
-      examination_room: null,
-      package_id: null,
-      notes: res.visit_type === 'returning' ? { needs_exam: needsExam } : {},
-      treatment_memo: null,
-      treatment_photos: null,
-      checked_in_at: now,
-      called_at: null,
-      completed_at: null,
-      priority_flag: null,
-      sort_order: qn,
-      skip_reason: null,
-      doctor_note: null,
-      created_at: now,
-    };
-    setRows((prev) => [...prev, tempCheckIn]);
-    setPendingReservations((prev) => prev.filter((r) => r.id !== res.id));
-
+    // INSERT 먼저 완료 후 rows에 추가 (tempId 사용 금지 — UUID 불일치 방지)
     const { data: inserted, error } = await supabase
       .from('check_ins')
       .insert({
@@ -1330,35 +1305,37 @@ export default function Dashboard() {
         status: 'registered',
         notes: res.visit_type === 'returning' ? { needs_exam: needsExam } : {},
       })
-      .select('id')
+      .select()
       .single();
 
-    if (error) {
-      toast.error(`체크인 실패: ${error.message}`);
-      setRows((prev) => prev.filter((r) => r.id !== tempId));
-      setPendingReservations((prev) => [...prev, res]);
+    if (error || !inserted) {
+      toast.error(`체크인 실패: ${error?.message ?? '알 수 없는 오류'}`);
       return;
     }
 
+    const realId = inserted.id;
     await supabase.from('reservations').update({ status: 'checked_in' }).eq('id', res.id);
-    const realId = inserted?.id ?? tempId;
-    if (inserted) {
-      setRows((prev) => prev.map((r) => (r.id === tempId ? { ...r, id: realId } : r)));
-    }
+    setPendingReservations((prev) => prev.filter((r) => r.id !== res.id));
 
     const nextStatus: CheckInStatus = res.visit_type === 'new' ? 'consult_waiting' : 'registered';
     if (nextStatus !== 'registered') {
-      setRows((prev) => prev.map((r) => (r.id === realId ? { ...r, status: nextStatus } : r)));
       await supabase.from('check_ins').update({ status: nextStatus }).eq('id', realId);
-      const now = new Date().toISOString();
+      const transNow = new Date().toISOString();
       await supabase.from('status_transitions').insert({
         check_in_id: realId,
         clinic_id: clinic.id,
         from_status: 'registered',
         to_status: nextStatus,
       });
-      setStageStartMap((prev) => new Map(prev).set(realId, now));
+      setStageStartMap((prev) => new Map(prev).set(realId, transNow));
     }
+
+    // DB 완료 후 rows에 추가 (실제 UUID)
+    const newCheckIn: CheckIn = {
+      ...(inserted as CheckIn),
+      status: nextStatus,
+    };
+    setRows((prev) => [...prev, newCheckIn]);
     toast.success(`${res.customer_name} 체크인 완료 (#${qn})`);
   };
 
