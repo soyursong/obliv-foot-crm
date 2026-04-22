@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -7,13 +8,15 @@ import { AlertTriangle, Download, Lock, Printer, Save, Unlock } from 'lucide-rea
 import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
 import { formatAmount } from '@/lib/format';
-import type { Clinic } from '@/lib/types';
+import { STATUS_KO } from '@/lib/status';
+import type { CheckInStatus, Clinic } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 
 type Method = 'card' | 'cash' | 'transfer' | 'membership';
 type PaymentType = 'payment' | 'refund';
@@ -24,6 +27,9 @@ interface PaymentRow {
   payment_type: PaymentType;
   created_at: string;
   customer_id: string | null;
+  installment: number | null;
+  memo: string | null;
+  check_in_id: string | null;
 }
 
 interface PackagePaymentRow {
@@ -32,6 +38,8 @@ interface PackagePaymentRow {
   payment_type: PaymentType;
   created_at: string;
   customer_id: string;
+  installment: number | null;
+  memo: string | null;
 }
 
 interface UnpaidCheckIn {
@@ -69,6 +77,7 @@ function dayBoundsISO(date: string): { start: string; end: string } {
 }
 
 export default function Closing() {
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const [date, setDate] = useState(todayStr());
   const [actualCard, setActualCard] = useState(0);
@@ -89,10 +98,11 @@ export default function Closing() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('payments')
-        .select('amount, method, payment_type, created_at, customer_id')
+        .select('amount, method, payment_type, created_at, customer_id, installment, memo, check_in_id')
         .eq('clinic_id', clinic!.id)
         .gte('created_at', start)
-        .lte('created_at', end);
+        .lte('created_at', end)
+        .order('created_at', { ascending: true });
       if (error) throw error;
       return (data ?? []) as PaymentRow[];
     },
@@ -105,10 +115,11 @@ export default function Closing() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('package_payments')
-        .select('amount, method, payment_type, created_at, customer_id')
+        .select('amount, method, payment_type, created_at, customer_id, installment, memo')
         .eq('clinic_id', clinic!.id)
         .gte('created_at', start)
-        .lte('created_at', end);
+        .lte('created_at', end)
+        .order('created_at', { ascending: true });
       if (error) throw error;
       return (data ?? []) as PackagePaymentRow[];
     },
@@ -124,6 +135,75 @@ export default function Closing() {
         .select('id, customer_name, customer_phone, status, checked_in_at')
         .eq('clinic_id', clinic!.id)
         .eq('status', 'payment_waiting')
+        .gte('checked_in_at', start)
+        .lte('checked_in_at', end)
+        .order('checked_in_at', { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as UnpaidCheckIn[];
+    },
+  });
+
+  // 시술별 통계
+  const { data: procedureStats = [] } = useQuery<{ service_name: string; count: number; revenue: number }[]>({
+    queryKey: ['closing-procedures', clinic?.id, date],
+    enabled: !!clinic,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('check_in_services')
+        .select('service_name, price, check_in_id')
+        .in('check_in_id', (await supabase
+          .from('check_ins')
+          .select('id')
+          .eq('clinic_id', clinic!.id)
+          .gte('checked_in_at', start)
+          .lte('checked_in_at', end)
+          .then(r => (r.data ?? []).map((d: any) => d.id))
+        ));
+      if (error) throw error;
+      const byName: Record<string, { count: number; revenue: number }> = {};
+      for (const row of (data ?? []) as { service_name: string; price: number }[]) {
+        const entry = byName[row.service_name] ??= { count: 0, revenue: 0 };
+        entry.count++;
+        entry.revenue += row.price;
+      }
+      return Object.entries(byName)
+        .map(([service_name, { count, revenue }]) => ({ service_name, count, revenue }))
+        .sort((a, b) => b.count - a.count);
+    },
+  });
+
+  // 체크인 고객명 매핑
+  const { data: checkInNames = [] } = useQuery<{ id: string; customer_name: string }[]>({
+    queryKey: ['closing-checkin-names', clinic?.id, date],
+    enabled: !!clinic,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('check_ins')
+        .select('id, customer_name')
+        .eq('clinic_id', clinic!.id)
+        .gte('checked_in_at', start)
+        .lte('checked_in_at', end);
+      if (error) throw error;
+      return (data ?? []) as { id: string; customer_name: string }[];
+    },
+  });
+
+  const checkInNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of checkInNames) map.set(row.id, row.customer_name);
+    return map;
+  }, [checkInNames]);
+
+  // 진행 중 — 완료/취소 아닌 체크인
+  const { data: inProgress = [] } = useQuery<UnpaidCheckIn[]>({
+    queryKey: ['closing-in-progress', clinic?.id, date],
+    enabled: !!clinic,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('check_ins')
+        .select('id, customer_name, customer_phone, status, checked_in_at')
+        .eq('clinic_id', clinic!.id)
+        .not('status', 'in', '("done","cancelled","payment_waiting")')
         .gte('checked_in_at', start)
         .lte('checked_in_at', end)
         .order('checked_in_at', { ascending: true });
@@ -346,6 +426,36 @@ export default function Closing() {
         </div>
       </div>
 
+      {inProgress.length > 0 && (
+        <Card className="border-orange-300 bg-orange-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm text-orange-900">
+              <AlertTriangle className="h-4 w-4" />
+              진행 중 {inProgress.length}건 — 마감 전 확인 필요
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1 text-sm text-orange-900">
+            {inProgress.map((c) => (
+              <button
+                key={c.id}
+                className="flex w-full justify-between rounded px-1 py-0.5 hover:bg-orange-100 transition text-left"
+                onClick={() => navigate('/')}
+              >
+                <span className="flex items-center gap-2">
+                  <span>{c.customer_name}</span>
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-orange-400 text-orange-800">
+                    {STATUS_KO[c.status as CheckInStatus] ?? c.status}
+                  </Badge>
+                </span>
+                <span className="text-xs text-orange-700">
+                  {format(new Date(c.checked_in_at), 'HH:mm')}
+                </span>
+              </button>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       {unpaid.length > 0 && (
         <Card className="border-amber-300 bg-amber-50">
           <CardHeader className="pb-2">
@@ -356,7 +466,11 @@ export default function Closing() {
           </CardHeader>
           <CardContent className="space-y-1 text-sm text-amber-900">
             {unpaid.map((c) => (
-              <div key={c.id} className="flex justify-between">
+              <button
+                key={c.id}
+                className="flex w-full justify-between rounded px-1 py-0.5 hover:bg-amber-100 transition text-left"
+                onClick={() => navigate('/')}
+              >
                 <span>
                   {c.customer_name}{' '}
                   <span className="text-amber-700">{c.customer_phone ?? ''}</span>
@@ -364,7 +478,7 @@ export default function Closing() {
                 <span className="text-xs text-amber-700">
                   {format(new Date(c.checked_in_at), 'HH:mm')}
                 </span>
-              </div>
+              </button>
             ))}
           </CardContent>
         </Card>
@@ -404,6 +518,108 @@ export default function Closing() {
           highlight
         />
       </div>
+
+      {procedureStats.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">시술별 통계 ({procedureStats.reduce((s, p) => s + p.count, 0)}건)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-xs text-muted-foreground">
+                  <th className="py-1.5 text-left font-medium">시술명</th>
+                  <th className="py-1.5 text-right font-medium">건수</th>
+                  <th className="py-1.5 text-right font-medium">매출</th>
+                </tr>
+              </thead>
+              <tbody>
+                {procedureStats.map((p) => (
+                  <tr key={p.service_name} className="border-b">
+                    <td className="py-1.5">{p.service_name}</td>
+                    <td className="py-1.5 text-right tabular-nums">{p.count}</td>
+                    <td className="py-1.5 text-right tabular-nums">{formatAmount(p.revenue)}</td>
+                  </tr>
+                ))}
+                <tr className="font-medium">
+                  <td className="py-1.5">합계</td>
+                  <td className="py-1.5 text-right tabular-nums">{procedureStats.reduce((s, p) => s + p.count, 0)}</td>
+                  <td className="py-1.5 text-right tabular-nums">{formatAmount(procedureStats.reduce((s, p) => s + p.revenue, 0))}</td>
+                </tr>
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+
+      {(payments.length > 0 || pkgPayments.length > 0) && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">결제 상세 ({payments.length + pkgPayments.length}건)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="max-h-64 overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-background">
+                  <tr className="border-b text-xs text-muted-foreground">
+                    <th className="py-1.5 text-left font-medium">고객</th>
+                    <th className="py-1.5 text-left font-medium">구분</th>
+                    <th className="py-1.5 text-left font-medium">수단</th>
+                    <th className="py-1.5 text-left font-medium">할부</th>
+                    <th className="py-1.5 text-right font-medium">금액</th>
+                    <th className="py-1.5 text-left font-medium">메모</th>
+                    <th className="py-1.5 text-left font-medium">시간</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payments.map((p, i) => (
+                    <tr key={`p-${i}`} className={cn('border-b', p.payment_type === 'refund' && 'bg-red-50 text-red-700')}>
+                      <td className="py-1.5">{p.check_in_id ? checkInNameMap.get(p.check_in_id) ?? '-' : '-'}</td>
+                      <td className="py-1.5">
+                        <Badge variant={p.payment_type === 'refund' ? 'destructive' : 'secondary'} className="text-xs">
+                          {p.payment_type === 'refund' ? '환불' : '단건'}
+                        </Badge>
+                      </td>
+                      <td className="py-1.5">
+                        <Badge variant="outline" className="text-xs">
+                          {p.method === 'card' ? '카드' : p.method === 'cash' ? '현금' : p.method === 'transfer' ? '이체' : '멤버십'}
+                        </Badge>
+                      </td>
+                      <td className="py-1.5 text-xs">{p.installment ? `${p.installment}개월` : '-'}</td>
+                      <td className="py-1.5 text-right tabular-nums font-medium">
+                        {p.payment_type === 'refund' ? '-' : ''}{formatAmount(p.amount)}
+                      </td>
+                      <td className="py-1.5 text-xs text-muted-foreground max-w-[120px] truncate">{p.memo ?? ''}</td>
+                      <td className="py-1.5 text-xs text-muted-foreground">{format(new Date(p.created_at), 'HH:mm')}</td>
+                    </tr>
+                  ))}
+                  {pkgPayments.map((p, i) => (
+                    <tr key={`pkg-${i}`} className={cn('border-b', p.payment_type === 'refund' && 'bg-red-50 text-red-700')}>
+                      <td className="py-1.5">-</td>
+                      <td className="py-1.5">
+                        <Badge variant={p.payment_type === 'refund' ? 'destructive' : 'default'} className="text-xs">
+                          {p.payment_type === 'refund' ? '환불' : '패키지'}
+                        </Badge>
+                      </td>
+                      <td className="py-1.5">
+                        <Badge variant="outline" className="text-xs">
+                          {p.method === 'card' ? '카드' : p.method === 'cash' ? '현금' : '이체'}
+                        </Badge>
+                      </td>
+                      <td className="py-1.5 text-xs">{p.installment ? `${p.installment}개월` : '-'}</td>
+                      <td className="py-1.5 text-right tabular-nums font-medium">
+                        {p.payment_type === 'refund' ? '-' : ''}{formatAmount(p.amount)}
+                      </td>
+                      <td className="py-1.5 text-xs text-muted-foreground max-w-[120px] truncate">{p.memo ?? ''}</td>
+                      <td className="py-1.5 text-xs text-muted-foreground">{format(new Date(p.created_at), 'HH:mm')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="pb-2">

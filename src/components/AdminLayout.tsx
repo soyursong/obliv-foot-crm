@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -7,23 +7,35 @@ import {
   Package,
   UserCog,
   Receipt,
+  BarChart3,
+  ShieldCheck,
   LogOut,
   Menu,
+  Search,
   X,
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { getClinic } from '@/lib/clinic';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { Clinic } from '@/lib/types';
+import type { Clinic, UserRole } from '@/lib/types';
 
-const NAV_ITEMS = [
+const NAV_ITEMS: {
+  to: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  end?: boolean;
+  roles?: UserRole[];
+}[] = [
   { to: '/admin', label: '대시보드', icon: LayoutDashboard, end: true },
   { to: '/admin/reservations', label: '예약관리', icon: CalendarDays },
   { to: '/admin/customers', label: '고객관리', icon: Users },
-  { to: '/admin/packages', label: '패키지', icon: Package },
-  { to: '/admin/staff', label: '직원·공간', icon: UserCog },
-  { to: '/admin/closing', label: '일마감', icon: Receipt },
+  { to: '/admin/packages', label: '패키지', icon: Package, roles: ['admin', 'manager', 'consultant', 'coordinator'] },
+  { to: '/admin/staff', label: '직원·공간', icon: UserCog, roles: ['admin', 'manager'] },
+  { to: '/admin/closing', label: '일마감', icon: Receipt, roles: ['admin', 'manager'] },
+  { to: '/admin/stats', label: '통계', icon: BarChart3, roles: ['admin', 'manager'] },
+  { to: '/admin/accounts', label: '계정관리', icon: ShieldCheck, roles: ['admin'] },
 ];
 
 export default function AdminLayout() {
@@ -31,6 +43,36 @@ export default function AdminLayout() {
   const { profile, signOut } = useAuth();
   const [clinic, setClinic] = useState<Clinic | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<{ id: string; name: string; phone: string }[]>([]);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const doSearch = useCallback(async (q: string) => {
+    if (!q.trim() || !clinic) { setSearchResults([]); return; }
+    const safe = q.trim().replace(/[%_]/g, '');
+    const { data } = await supabase
+      .from('customers')
+      .select('id, name, phone')
+      .eq('clinic_id', clinic.id)
+      .or(`name.ilike.%${safe}%,phone.ilike.%${safe}%`)
+      .limit(8);
+    setSearchResults((data ?? []) as { id: string; name: string; phone: string }[]);
+  }, [clinic]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+        setTimeout(() => searchRef.current?.focus(), 50);
+      }
+      if (e.key === 'Escape') setSearchOpen(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   useEffect(() => {
     getClinic().then(setClinic).catch(() => setClinic(null));
@@ -60,7 +102,7 @@ export default function AdminLayout() {
         </button>
       </div>
       <nav className="flex-1 px-2 py-3">
-        {NAV_ITEMS.map((item) => (
+        {NAV_ITEMS.filter((item) => !item.roles || (profile?.role && item.roles.includes(profile.role))).map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -121,6 +163,60 @@ export default function AdminLayout() {
             </button>
             <span className="text-sm font-semibold">{clinic?.name ?? '풋센터 종로'}</span>
             <span className="text-xs text-muted-foreground hidden sm:inline">{today}</span>
+          </div>
+          <div className="relative">
+            <button
+              onClick={() => { setSearchOpen(true); setTimeout(() => searchRef.current?.focus(), 50); }}
+              className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition"
+            >
+              <Search className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">고객 검색</span>
+              <kbd className="hidden sm:inline rounded border bg-background px-1.5 text-[10px]">⌘K</kbd>
+            </button>
+            {searchOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 w-80 rounded-lg border bg-background shadow-lg">
+                <div className="flex items-center gap-2 border-b px-3 py-2">
+                  <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <input
+                    ref={searchRef}
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      if (searchTimer.current) clearTimeout(searchTimer.current);
+                      searchTimer.current = setTimeout(() => doSearch(e.target.value), 300);
+                    }}
+                    placeholder="이름 또는 전화번호"
+                    className="flex-1 bg-transparent text-sm outline-none"
+                    onKeyDown={(e) => { if (e.key === 'Escape') setSearchOpen(false); }}
+                  />
+                  <button onClick={() => { setSearchOpen(false); setSearchQuery(''); setSearchResults([]); }}>
+                    <X className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                </div>
+                {searchResults.length > 0 && (
+                  <div className="max-h-64 overflow-auto p-1">
+                    {searchResults.map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => {
+                          setSearchOpen(false);
+                          setSearchQuery('');
+                          setSearchResults([]);
+                          navigate(`/admin/customers?id=${c.id}`);
+                        }}
+                        className="w-full flex items-center justify-between rounded px-3 py-2 text-sm hover:bg-muted transition text-left"
+                      >
+                        <span className="font-medium">{c.name}</span>
+                        <span className="text-xs text-muted-foreground">{c.phone}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {searchQuery.trim() && searchResults.length === 0 && (
+                  <div className="px-3 py-4 text-center text-xs text-muted-foreground">검색 결과 없음</div>
+                )}
+              </div>
+            )}
           </div>
         </header>
         <div className="flex-1 overflow-auto">

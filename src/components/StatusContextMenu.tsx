@@ -42,19 +42,23 @@ export function StatusContextMenu({ checkIn, position, onClose, onStatusChange }
       {stages.map((status, i) => {
         const isCurrent = status === checkIn.status;
         const isPast = i < currentIdx;
+        const isBackward = isPast && !isCurrent;
         return (
           <button
             key={status}
             className={cn(
-              'flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted/60 transition',
+              'flex w-full items-center gap-2 px-3 py-1.5 text-xs transition',
               isCurrent && 'bg-teal-50 text-teal-700 font-semibold',
-              isPast && 'text-muted-foreground',
+              isPast && 'text-muted-foreground opacity-50',
+              !isCurrent && !isPast && 'hover:bg-muted/60',
             )}
             onClick={() => {
-              if (!isCurrent) onStatusChange(checkIn, status);
+              if (isCurrent) { onClose(); return; }
+              if (isBackward) return;
+              onStatusChange(checkIn, status);
               onClose();
             }}
-            disabled={isCurrent}
+            disabled={isCurrent || isBackward}
           >
             <span
               className={cn(

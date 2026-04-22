@@ -15,6 +15,8 @@ import {
 import { addDays, format, isSameDay, subDays } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -31,7 +33,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
-import { STATUS_KO, VISIT_TYPE_KO } from '@/lib/status';
+import { STATUS_KO, VISIT_TYPE_KO, stagesFor } from '@/lib/status';
 import { formatAmount, maskPhoneTail } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { NewCheckInDialog } from '@/components/NewCheckInDialog';
@@ -40,7 +42,7 @@ import { PaymentDialog } from '@/components/PaymentDialog';
 import { StatusContextMenu } from '@/components/StatusContextMenu';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
-import type { CheckIn, CheckInStatus, Clinic, Package, Reservation, Room, Staff } from '@/lib/types';
+import type { CheckIn, CheckInStatus, Clinic, Reservation, Room, Staff } from '@/lib/types';
 
 type TabKey = 'all' | 'new' | 'returning';
 
@@ -265,6 +267,7 @@ function DroppableColumn({
   className,
   highlight,
   subtitle,
+  invalidDrop,
 }: {
   id: string;
   label: string;
@@ -273,6 +276,7 @@ function DroppableColumn({
   className?: string;
   highlight?: string;
   subtitle?: React.ReactNode;
+  invalidDrop?: boolean;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id });
   return (
@@ -280,7 +284,8 @@ function DroppableColumn({
       ref={setNodeRef}
       className={cn(
         'flex flex-col rounded-lg border bg-muted/20 transition-colors',
-        isOver && 'border-teal-400 bg-teal-50/40',
+        isOver && !invalidDrop && 'border-teal-400 bg-teal-50/40',
+        isOver && invalidDrop && 'border-red-300 bg-red-50/30 opacity-60',
         className,
       )}
     >
@@ -453,6 +458,7 @@ function RoomSlot({
   roomType,
   staffName,
   occupants,
+  maxOccupancy,
   onCardClick,
   onCardContext,
   getStageStart,
@@ -465,6 +471,7 @@ function RoomSlot({
   roomType: string;
   staffName?: string | null;
   occupants: CheckIn[];
+  maxOccupancy: number;
   onCardClick: (ci: CheckIn) => void;
   onCardContext?: (ci: CheckIn, e: React.MouseEvent) => void;
   getStageStart?: (ci: CheckIn) => string;
@@ -474,24 +481,27 @@ function RoomSlot({
   onTherapistChange?: (roomName: string, staffId: string | null, staffName: string | null) => void;
 }) {
   const dropId = `room:${roomName}`;
-  const { isOver, setNodeRef } = useDroppable({ id: dropId, data: { roomName, roomType } });
+  const isFull = occupants.length >= maxOccupancy;
+  const { isOver, setNodeRef } = useDroppable({ id: dropId, data: { roomName, roomType, isFull } });
   const isEmpty = occupants.length === 0;
-  const showTherapistDropdown = roomType === 'treatment' && therapists && onTherapistChange;
-  const showStaffLabel = roomType !== 'laser' && roomType !== 'treatment' && staffName;
+  const showStaffDropdown = (roomType === 'treatment' || roomType === 'examination') && therapists && onTherapistChange;
+  const showStaffLabel = roomType !== 'laser' && roomType !== 'treatment' && roomType !== 'examination' && staffName;
 
   return (
     <div
       ref={setNodeRef}
       className={cn(
         'rounded-lg border bg-white/60 p-1.5 min-h-[70px] transition-colors',
-        isOver && 'border-teal-400 bg-teal-50/50',
+        isOver && !isFull && 'border-teal-400 bg-teal-50/50',
+        isOver && isFull && 'border-red-400 bg-red-50/30 opacity-60',
         isEmpty && !isOver && 'border-dashed border-gray-200',
-        !isEmpty && 'border-gray-300',
+        !isEmpty && !isOver && !isFull && 'border-gray-300',
+        isFull && !isOver && 'border-red-200',
       )}
     >
       <div className="flex items-center justify-between px-1 mb-1 gap-1">
         <span className="text-xs font-semibold text-gray-600 shrink-0">{roomName}</span>
-        {showTherapistDropdown && (
+        {showStaffDropdown && (
           <select
             value={currentStaffId ?? ''}
             onChange={(e) => {
@@ -511,6 +521,14 @@ function RoomSlot({
           <span className="text-xs text-muted-foreground flex items-center gap-0.5">
             <User className="h-2.5 w-2.5" />
             {staffName}
+          </span>
+        )}
+        {occupants.length > 0 && (
+          <span className={cn(
+            'text-[10px] tabular-nums',
+            isFull ? 'text-red-600 font-medium' : 'text-muted-foreground',
+          )}>
+            {occupants.length}/{maxOccupancy}
           </span>
         )}
       </div>
@@ -610,6 +628,7 @@ function RoomSection({
             roomType={roomType}
             staffName={getStaff(room.name)}
             occupants={getRoomOccupants(room.name)}
+            maxOccupancy={room.max_occupancy}
             onCardClick={onCardClick}
             onCardContext={onCardContext}
             getStageStart={getStageStart}
@@ -692,7 +711,15 @@ export default function Dashboard() {
       setLoading(false);
       return;
     }
-    setRows((data ?? []) as CheckIn[]);
+    // 24시간 이상 경과한 registered 건 필터링 (테스트 데이터 정리)
+    const now = Date.now();
+    const STALE_MS = 24 * 60 * 60 * 1000;
+    const filtered = ((data ?? []) as CheckIn[]).filter((ci) => {
+      if (ci.status !== 'registered') return true;
+      const age = now - new Date(ci.checked_in_at).getTime();
+      return age < STALE_MS;
+    });
+    setRows(filtered);
     setLoading(false);
   }, [clinic, dateStr]);
 
@@ -703,6 +730,7 @@ export default function Dashboard() {
     const { data } = await supabase
       .from('payments')
       .select('check_in_id, amount, payment_type')
+      .eq('clinic_id', clinic.id)
       .gte('created_at', start)
       .lte('created_at', end);
     const map = new Map<string, number>();
@@ -729,28 +757,47 @@ export default function Dashboard() {
 
   const fetchStageStarts = useCallback(async () => {
     if (!clinic) return;
+    const start = `${dateStr}T00:00:00+09:00`;
+    const end = `${dateStr}T23:59:59+09:00`;
     const { data } = await supabase
       .from('status_transitions')
       .select('check_in_id, transitioned_at')
       .eq('clinic_id', clinic.id)
+      .gte('transitioned_at', start)
+      .lte('transitioned_at', end)
       .order('transitioned_at', { ascending: false });
     const map = new Map<string, string>();
     for (const t of (data ?? []) as { check_in_id: string; transitioned_at: string }[]) {
       if (!map.has(t.check_in_id)) map.set(t.check_in_id, t.transitioned_at);
     }
     setStageStartMap(map);
-  }, [clinic]);
+  }, [clinic, dateStr]);
 
   const fetchPackageLabels = useCallback(async () => {
     if (!clinic) return;
-    const { data } = await supabase
+    const { data: pkgs } = await supabase
       .from('packages')
-      .select('customer_id, package_name, total_sessions, heated_sessions, unheated_sessions, iv_sessions, preconditioning_sessions')
+      .select('id, customer_id, package_name, total_sessions')
       .eq('clinic_id', clinic.id)
       .eq('status', 'active');
+    if (!pkgs || pkgs.length === 0) { setPkgMap(new Map()); return; }
+
+    const pkgIds = pkgs.map((p: any) => p.id);
+    const { data: sessions } = await supabase
+      .from('package_sessions')
+      .select('package_id')
+      .in('package_id', pkgIds)
+      .eq('status', 'used');
+
+    const usedMap = new Map<string, number>();
+    for (const s of (sessions ?? []) as { package_id: string }[]) {
+      usedMap.set(s.package_id, (usedMap.get(s.package_id) ?? 0) + 1);
+    }
+
     const map = new Map<string, PackageLabel>();
-    for (const p of (data ?? []) as Package[]) {
-      const remaining = p.heated_sessions + p.unheated_sessions + p.iv_sessions + p.preconditioning_sessions;
+    for (const p of pkgs as { id: string; customer_id: string; package_name: string; total_sessions: number }[]) {
+      const used = usedMap.get(p.id) ?? 0;
+      const remaining = Math.max(0, p.total_sessions - used);
       map.set(p.customer_id, { name: p.package_name, remaining, total: p.total_sessions });
     }
     setPkgMap(map);
@@ -768,9 +815,22 @@ export default function Dashboard() {
     setTherapists((data ?? []) as Staff[]);
   }, [clinic]);
 
-  const handleTherapistChange = useCallback(async (roomName: string, staffId: string | null, staffName: string | null) => {
+  const [doctors, setDoctors] = useState<Staff[]>([]);
+  const fetchDoctors = useCallback(async () => {
     if (!clinic) return;
-    const existing = assignments.find((a) => a.room_name === roomName && a.room_type === 'treatment');
+    const { data } = await supabase
+      .from('staff')
+      .select('*')
+      .eq('clinic_id', clinic.id)
+      .eq('active', true)
+      .eq('role', 'director')
+      .order('name');
+    setDoctors((data ?? []) as Staff[]);
+  }, [clinic]);
+
+  const handleStaffAssign = useCallback(async (roomName: string, roomType: string, staffId: string | null, staffName: string | null) => {
+    if (!clinic) return;
+    const existing = assignments.find((a) => a.room_name === roomName && a.room_type === roomType);
     if (!staffId) {
       if (existing) {
         await supabase.from('room_assignments').delete().eq('id', existing.id);
@@ -782,13 +842,21 @@ export default function Dashboard() {
         clinic_id: clinic.id,
         date: dateStr,
         room_name: roomName,
-        room_type: 'treatment',
+        room_type: roomType,
         staff_id: staffId,
         staff_name: staffName,
       });
     }
     fetchAssignments();
   }, [clinic, assignments, dateStr, fetchAssignments]);
+
+  const handleTherapistChange = useCallback((roomName: string, staffId: string | null, staffName: string | null) => {
+    handleStaffAssign(roomName, 'treatment', staffId, staffName);
+  }, [handleStaffAssign]);
+
+  const handleDoctorChange = useCallback((roomName: string, staffId: string | null, staffName: string | null) => {
+    handleStaffAssign(roomName, 'examination', staffId, staffName);
+  }, [handleStaffAssign]);
 
   useEffect(() => {
     fetchCheckIns();
@@ -799,10 +867,28 @@ export default function Dashboard() {
     fetchStageStarts();
     fetchPackageLabels();
     fetchTherapists();
-  }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchPayments, fetchReservations, fetchStageStarts, fetchPackageLabels, fetchTherapists]);
+    fetchDoctors();
+  }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchPayments, fetchReservations, fetchStageStarts, fetchPackageLabels, fetchTherapists, fetchDoctors]);
 
   useEffect(() => {
     if (!clinic) return;
+    let checkInTimer: ReturnType<typeof setTimeout> | null = null;
+    let assignTimer: ReturnType<typeof setTimeout> | null = null;
+    let resvTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const debouncedCheckInRefetch = () => {
+      if (checkInTimer) clearTimeout(checkInTimer);
+      checkInTimer = setTimeout(() => { fetchCheckIns(); fetchStageStarts(); }, 800);
+    };
+    const debouncedAssignRefetch = () => {
+      if (assignTimer) clearTimeout(assignTimer);
+      assignTimer = setTimeout(() => fetchAssignments(), 800);
+    };
+    const debouncedResvRefetch = () => {
+      if (resvTimer) clearTimeout(resvTimer);
+      resvTimer = setTimeout(() => fetchReservations(), 800);
+    };
+
     const channel = supabase
       .channel(`dashboard_rt_${clinic.id}_${dateStr}`)
       .on(
@@ -813,25 +899,38 @@ export default function Dashboard() {
           if (id && recentlyUpdated.current.has(id)) return;
           const checkedAt = (payload.new as any)?.checked_in_at;
           if (checkedAt && !checkedAt.startsWith(dateStr)) return;
-          fetchCheckIns();
-          fetchStageStarts();
+          debouncedCheckInRefetch();
         },
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'room_assignments', filter: `clinic_id=eq.${clinic.id}` },
-        () => fetchAssignments(),
+        () => debouncedAssignRefetch(),
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'reservations', filter: `clinic_id=eq.${clinic.id}` },
-        () => fetchReservations(),
+        () => debouncedResvRefetch(),
       )
       .subscribe();
     return () => {
+      if (checkInTimer) clearTimeout(checkInTimer);
+      if (assignTimer) clearTimeout(assignTimer);
+      if (resvTimer) clearTimeout(resvTimer);
       supabase.removeChannel(channel);
     };
   }, [clinic, dateStr, fetchCheckIns, fetchAssignments, fetchReservations, fetchStageStarts]);
+
+  const STAGE_ALERT_MINS: Partial<Record<CheckInStatus, number>> = {
+    laser: 20,
+    examination: 15,
+    consultation: 25,
+    preconditioning: 30,
+    consult_waiting: 20,
+    treatment_waiting: 20,
+    exam_waiting: 20,
+    payment_waiting: 15,
+  };
 
   const [, setTick] = useState(0);
   const alertedIds = useRef<Set<string>>(new Set());
@@ -840,16 +939,19 @@ export default function Dashboard() {
       setTick((v) => v + 1);
       const active = rows.filter((r) => r.status !== 'done' && r.status !== 'cancelled');
       for (const ci of active) {
-        const mins = elapsedMinutes(ci.checked_in_at);
-        if (mins >= 30 && !alertedIds.current.has(ci.id)) {
-          alertedIds.current.add(ci.id);
+        const stageRef = stageStartMap.get(ci.id) ?? ci.checked_in_at;
+        const mins = elapsedMinutes(stageRef);
+        const threshold = STAGE_ALERT_MINS[ci.status] ?? 30;
+        const alertKey = `${ci.id}_${ci.status}`;
+        if (mins >= threshold && !alertedIds.current.has(alertKey)) {
+          alertedIds.current.add(alertKey);
           playOvertimeAlert();
           break;
         }
       }
     }, 10000);
     return () => clearInterval(t);
-  }, [rows]);
+  }, [rows, stageStartMap]);
 
   const filtered = useMemo(() => {
     if (tab === 'all') return rows.filter((r) => r.status !== 'cancelled');
@@ -861,6 +963,9 @@ export default function Dashboard() {
     const map: Record<string, CheckIn[]> = {};
     for (const r of filtered) {
       (map[r.status] ??= []).push(r);
+    }
+    for (const key of Object.keys(map)) {
+      map[key].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     }
     return map;
   }, [filtered]);
@@ -924,13 +1029,41 @@ export default function Dashboard() {
     const row = e.active.data.current?.checkIn as CheckIn | undefined;
     if (!target || !row) return;
 
+    if (isPast) {
+      toast.info('과거 날짜는 수정할 수 없습니다');
+      return;
+    }
+
+    if (row.visit_type === 'new' && row.status === 'registered' && target !== 'checklist') {
+      toast.info('신규 환자는 체크리스트를 먼저 완료해야 합니다');
+      return;
+    }
+
     const isRoomDrop = target.startsWith('room:');
+    const isSpecialZone = target === 'returning_exam' || target === 'returning_treatment' || target === 'laser_waiting';
+
+    if (!isRoomDrop && !isSpecialZone) {
+      const targetStatus = target as CheckInStatus;
+      const stages = stagesFor(row.visit_type);
+      const curIdx = stages.indexOf(row.status);
+      const tgtIdx = stages.indexOf(targetStatus);
+      if (curIdx >= 0 && tgtIdx >= 0 && tgtIdx < curIdx && targetStatus !== 'cancelled') {
+        toast.info('이전 단계로는 이동할 수 없습니다');
+        return;
+      }
+    }
 
     if (isRoomDrop) {
       const roomName = target.replace('room:', '');
-      const roomData = e.over?.data?.current as { roomType: string } | undefined;
+      const roomData = e.over?.data?.current as { roomType: string; isFull?: boolean } | undefined;
       const roomType = roomData?.roomType ?? rooms.find((r) => r.name === roomName)?.room_type;
       if (!roomType) return;
+
+      if (roomData?.isFull) {
+        const room = rooms.find((r) => r.name === roomName);
+        toast.info(`${roomName} 정원 초과 (${room?.max_occupancy ?? '?'}명)`);
+        return;
+      }
 
       const newStatus = DROP_STATUS_FOR_ROOM[roomType];
       const roomField = ROOM_FIELD_MAP[roomType];
@@ -1219,7 +1352,41 @@ export default function Dashboard() {
     return pkgMap.get(ci.customer_id) ?? null;
   }, [pkgMap]);
 
+  const isInvalidDrop = useCallback((columnStatus: CheckInStatus): boolean => {
+    if (!dragging) return false;
+    const stages = stagesFor(dragging.visit_type);
+    const curIdx = stages.indexOf(dragging.status);
+    const tgtIdx = stages.indexOf(columnStatus);
+    if (curIdx < 0 || tgtIdx < 0) return false;
+    if (tgtIdx < curIdx) return true;
+    if (dragging.visit_type === 'new' && dragging.status === 'registered' && columnStatus !== 'checklist') return true;
+    return false;
+  }, [dragging]);
+
+  const swapSortOrder = useCallback(async (items: CheckIn[], idx: number, direction: 'up' | 'down') => {
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= items.length) return;
+    const a = items[idx];
+    const b = items[swapIdx];
+    const aOrder = a.sort_order;
+    const bOrder = b.sort_order;
+
+    setRows((curr) =>
+      curr.map((r) => {
+        if (r.id === a.id) return { ...r, sort_order: bOrder };
+        if (r.id === b.id) return { ...r, sort_order: aOrder };
+        return r;
+      }),
+    );
+
+    await Promise.all([
+      supabase.from('check_ins').update({ sort_order: bOrder }).eq('id', a.id),
+      supabase.from('check_ins').update({ sort_order: aOrder }).eq('id', b.id),
+    ]);
+  }, []);
+
   const isToday = isSameDay(date, new Date());
+  const isPast = date < new Date(new Date().setHours(0, 0, 0, 0));
 
   const doneCount = (byStatus['done'] ?? []).length;
   const totalActive = filtered.filter((r) => r.status !== 'done').length;
@@ -1285,6 +1452,13 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {isPast && (
+        <div className="mx-4 mt-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800 flex items-center gap-2">
+          <Clock className="h-4 w-4 shrink-0" />
+          과거 날짜 조회 중 — 읽기 전용
+        </div>
+      )}
+
       {/* Kanban */}
       <div className="flex-1 overflow-x-auto overflow-y-hidden p-3">
         {loading && rows.length === 0 ? (
@@ -1307,6 +1481,7 @@ export default function Dashboard() {
                   count={newRegistered.length + newPendingReservations.length}
                   className="h-full"
                   highlight="text-blue-700"
+                  invalidDrop={isInvalidDrop('registered')}
                 >
                   <TimeSlotAccordion reservations={newPendingReservations} onCheckIn={handleReservationCheckIn} />
                   {newRegistered.map((ci) => (
@@ -1330,17 +1505,24 @@ export default function Dashboard() {
                   count={(byStatus['consult_waiting'] ?? []).length}
                   className="h-full"
                   highlight="text-blue-700"
+                  invalidDrop={isInvalidDrop('consult_waiting')}
                 >
-                  {(byStatus['consult_waiting'] ?? []).map((ci) => (
-                    <DraggableCard
-                      key={ci.id}
-                      checkIn={ci}
-                      compact
-                      stageStart={getStageStart(ci)}
-                      packageLabel={getPkgLabel(ci)}
-                      onClick={() => handleCardClick(ci)}
-                      onContextMenu={(e) => handleCardContext(ci, e)}
-                    />
+                  {(byStatus['consult_waiting'] ?? []).map((ci, idx, arr) => (
+                    <div key={ci.id} className="relative group">
+                      <DraggableCard
+                        checkIn={ci}
+                        compact
+                        stageStart={getStageStart(ci)}
+                        packageLabel={getPkgLabel(ci)}
+                        onClick={() => handleCardClick(ci)}
+                        onContextMenu={(e) => handleCardContext(ci, e)}
+                      />
+                      <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
+                        {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
+                        {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
+                      </div>
+                      {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
+                    </div>
                   ))}
                 </DroppableColumn>
               </div>
@@ -1365,6 +1547,7 @@ export default function Dashboard() {
                     id="payment_waiting"
                     label="결제"
                     count={(byStatus['payment_waiting'] ?? []).length}
+                    invalidDrop={isInvalidDrop('payment_waiting')}
                     highlight="text-purple-700"
                     subtitle={
                       paymentTotal > 0 ? (
@@ -1410,23 +1593,32 @@ export default function Dashboard() {
                         onCardContext={handleCardContext}
                         getStageStart={getStageStart}
                         getPkgLabel={getPkgLabel}
+                        therapists={doctors}
+                        onTherapistChange={handleDoctorChange}
                       />
                       <DroppableColumn
                         id="exam_waiting"
                         label="진료대기"
+                        invalidDrop={isInvalidDrop('exam_waiting')}
                         count={(byStatus['exam_waiting'] ?? []).length}
                         highlight="text-violet-700"
                       >
-                        {(byStatus['exam_waiting'] ?? []).map((ci) => (
-                          <DraggableCard
-                            key={ci.id}
-                            checkIn={ci}
-                            compact
-                            stageStart={getStageStart(ci)}
-                            packageLabel={getPkgLabel(ci)}
-                            onClick={() => handleCardClick(ci)}
-                            onContextMenu={(e) => handleCardContext(ci, e)}
-                          />
+                        {(byStatus['exam_waiting'] ?? []).map((ci, idx, arr) => (
+                          <div key={ci.id} className="relative group">
+                            <DraggableCard
+                              checkIn={ci}
+                              compact
+                              stageStart={getStageStart(ci)}
+                              packageLabel={getPkgLabel(ci)}
+                              onClick={() => handleCardClick(ci)}
+                              onContextMenu={(e) => handleCardContext(ci, e)}
+                            />
+                            <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
+                              {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
+                              {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
+                            </div>
+                            {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
+                          </div>
                         ))}
                       </DroppableColumn>
                     </div>
@@ -1454,17 +1646,24 @@ export default function Dashboard() {
                         label="치료대기"
                         count={(byStatus['treatment_waiting'] ?? []).length}
                         highlight="text-amber-700"
+                        invalidDrop={isInvalidDrop('treatment_waiting')}
                       >
-                        {(byStatus['treatment_waiting'] ?? []).map((ci) => (
-                          <DraggableCard
-                            key={ci.id}
-                            checkIn={ci}
-                            compact
-                            stageStart={getStageStart(ci)}
-                            packageLabel={getPkgLabel(ci)}
-                            onClick={() => handleCardClick(ci)}
-                            onContextMenu={(e) => handleCardContext(ci, e)}
-                          />
+                        {(byStatus['treatment_waiting'] ?? []).map((ci, idx, arr) => (
+                          <div key={ci.id} className="relative group">
+                            <DraggableCard
+                              checkIn={ci}
+                              compact
+                              stageStart={getStageStart(ci)}
+                              packageLabel={getPkgLabel(ci)}
+                              onClick={() => handleCardClick(ci)}
+                              onContextMenu={(e) => handleCardContext(ci, e)}
+                            />
+                            <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
+                              {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
+                              {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
+                            </div>
+                            {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
+                          </div>
                         ))}
                       </DroppableColumn>
                     </div>
@@ -1533,6 +1732,7 @@ export default function Dashboard() {
                     label="레이저대기"
                     count={laserWaiting.length}
                     highlight="text-rose-700"
+                    invalidDrop={isInvalidDrop('laser')}
                   >
                     {laserWaiting.map((ci) => (
                       <DraggableCard
@@ -1557,6 +1757,7 @@ export default function Dashboard() {
                   count={doneCount}
                   className="h-full"
                   highlight="text-emerald-700"
+                  invalidDrop={isInvalidDrop('done')}
                   subtitle={
                     doneTotal > 0 ? (
                       <div className="text-xs font-semibold text-emerald-700 tabular-nums">

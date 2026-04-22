@@ -64,7 +64,8 @@ export default function Packages() {
     const { data, error } = await req;
     setLoading(false);
     if (error) {
-      toast.error('패키지 로딩 실패');
+      console.warn('패키지 로딩 실패:', error.message);
+      setRows([]);
       return;
     }
     setRows((data ?? []) as unknown as PackageListItem[]);
@@ -146,10 +147,12 @@ export default function Packages() {
                         ? 'teal'
                         : p.status === 'refunded'
                           ? 'destructive'
-                          : 'secondary'
+                          : p.status === 'transferred'
+                            ? 'outline'
+                            : 'secondary'
                     }
                   >
-                    {p.status}
+                    {{ active: '활성', completed: '완료', cancelled: '취소', refunded: '환불', transferred: '양도' }[p.status] ?? p.status}
                   </Badge>
                 </td>
               </tr>
@@ -940,7 +943,7 @@ function RefundDialog({
   packageId,
   customerId,
   clinicId,
-  pkgStatus,
+  pkgStatus: _pkgStatus,
   onOpenChange,
   onDone,
 }: {
@@ -966,25 +969,24 @@ function RefundDialog({
 
   const process = async () => {
     if (!quote) return;
-    if (pkgStatus === 'refunded') {
-      toast.error('이미 환불된 패키지입니다');
-      return;
-    }
     setSubmitting(true);
-    const { error: payErr } = await supabase.from('package_payments').insert({
-      clinic_id: clinicId,
-      package_id: packageId,
-      customer_id: customerId,
-      amount: quote.refund_amount,
-      method,
-      payment_type: 'refund',
+    const { data, error } = await supabase.rpc('refund_package_atomic', {
+      p_package_id: packageId,
+      p_clinic_id: clinicId,
+      p_customer_id: customerId,
+      p_method: method,
     });
-    if (payErr) {
-      toast.error(`환불 기록 실패: ${payErr.message}`);
+    if (error) {
+      toast.error(`환불 실패: ${error.message}`);
       setSubmitting(false);
       return;
     }
-    await supabase.from('packages').update({ status: 'refunded' }).eq('id', packageId);
+    const result = data as { ok?: boolean; error?: string };
+    if (result.error) {
+      toast.error(result.error);
+      setSubmitting(false);
+      return;
+    }
     setSubmitting(false);
     toast.success('환불 처리 완료');
     onDone();
@@ -1102,14 +1104,40 @@ function TransferDialog({
     const { error } = await supabase
       .from('packages')
       .update({
-        customer_id: target.id,
+        status: 'transferred',
         transferred_from: pkg.customer_id,
         transferred_to: target.id,
+        memo: `${pkg.customer?.name ?? '?'} → ${target.name} 양도 (${new Date().toISOString().slice(0, 10)})`,
       })
       .eq('id', pkg.id);
-    setSubmitting(false);
     if (error) {
       toast.error(`양도 실패: ${error.message}`);
+      setSubmitting(false);
+      return;
+    }
+    const { error: createErr } = await supabase.from('packages').insert({
+      clinic_id: pkg.clinic_id,
+      customer_id: target.id,
+      package_name: pkg.package_name,
+      package_type: pkg.package_type,
+      total_sessions: pkg.total_sessions,
+      heated_sessions: pkg.heated_sessions ?? 0,
+      unheated_sessions: pkg.unheated_sessions ?? 0,
+      iv_sessions: pkg.iv_sessions ?? 0,
+      preconditioning_sessions: pkg.preconditioning_sessions ?? 0,
+      shot_upgrade: pkg.shot_upgrade ?? false,
+      af_upgrade: pkg.af_upgrade ?? false,
+      upgrade_surcharge: pkg.upgrade_surcharge ?? 0,
+      total_amount: pkg.total_amount,
+      paid_amount: pkg.paid_amount,
+      status: 'active',
+      transferred_from: pkg.customer_id,
+      contract_date: new Date().toISOString().slice(0, 10),
+      memo: `${pkg.customer?.name ?? '?'}로부터 양도받음`,
+    });
+    setSubmitting(false);
+    if (createErr) {
+      toast.error(`수령 패키지 생성 실패: ${createErr.message}`);
       return;
     }
     toast.success(`${target.name}님에게 양도 완료`);

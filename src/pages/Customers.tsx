@@ -53,6 +53,13 @@ interface PackagePayment {
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
+interface CustomerStats {
+  visit_count: number;
+  last_visit: string | null;
+  total_revenue: number;
+  has_package: boolean;
+}
+
 export default function Customers() {
   const [clinic, setClinic] = useState<Clinic | null>(null);
   const [query, setQuery] = useState('');
@@ -60,6 +67,7 @@ export default function Customers() {
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Customer | null>(null);
   const [openCreate, setOpenCreate] = useState(false);
+  const [statsMap, setStatsMap] = useState<Map<string, CustomerStats>>(new Map());
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -87,7 +95,58 @@ export default function Customers() {
         toast.error('검색 실패');
         return;
       }
-      setResults((data ?? []) as Customer[]);
+      const customers = (data ?? []) as Customer[];
+      setResults(customers);
+
+      if (customers.length > 0) {
+        const ids = customers.map((c) => c.id);
+        const [checkInsRes, paymentsRes, pkgPaymentsRes, pkgsRes] = await Promise.all([
+          supabase
+            .from('check_ins')
+            .select('customer_id, checked_in_at')
+            .in('customer_id', ids)
+            .neq('status', 'cancelled'),
+          supabase
+            .from('payments')
+            .select('customer_id, amount, payment_type')
+            .in('customer_id', ids),
+          supabase
+            .from('package_payments')
+            .select('customer_id, amount, payment_type')
+            .in('customer_id', ids),
+          supabase
+            .from('packages')
+            .select('customer_id')
+            .in('customer_id', ids)
+            .eq('status', 'active'),
+        ]);
+
+        const map = new Map<string, CustomerStats>();
+        for (const id of ids) map.set(id, { visit_count: 0, last_visit: null, total_revenue: 0, has_package: false });
+
+        for (const row of (checkInsRes.data ?? []) as { customer_id: string; checked_in_at: string }[]) {
+          const s = map.get(row.customer_id);
+          if (!s) continue;
+          s.visit_count++;
+          if (!s.last_visit || row.checked_in_at > s.last_visit) s.last_visit = row.checked_in_at;
+        }
+        for (const row of (paymentsRes.data ?? []) as { customer_id: string | null; amount: number; payment_type: string }[]) {
+          if (!row.customer_id) continue;
+          const s = map.get(row.customer_id);
+          if (s) s.total_revenue += row.payment_type === 'refund' ? -row.amount : row.amount;
+        }
+        for (const row of (pkgPaymentsRes.data ?? []) as { customer_id: string; amount: number; payment_type: string }[]) {
+          const s = map.get(row.customer_id);
+          if (s) s.total_revenue += row.payment_type === 'refund' ? -row.amount : row.amount;
+        }
+        for (const row of (pkgsRes.data ?? []) as { customer_id: string }[]) {
+          const s = map.get(row.customer_id);
+          if (s) s.has_package = true;
+        }
+        setStatsMap(map);
+      } else {
+        setStatsMap(new Map());
+      }
     },
     [clinic],
   );
@@ -124,30 +183,44 @@ export default function Customers() {
             <tr>
               <th className="px-4 py-2 text-left font-medium">이름</th>
               <th className="px-4 py-2 text-left font-medium">전화번호</th>
-              <th className="px-4 py-2 text-left font-medium">최초 방문</th>
+              <th className="px-4 py-2 text-right font-medium">방문</th>
+              <th className="px-4 py-2 text-left font-medium">최종 방문</th>
+              <th className="px-4 py-2 text-right font-medium">결제액</th>
               <th className="px-4 py-2 text-left font-medium">메모</th>
             </tr>
           </thead>
           <tbody>
-            {results.map((c) => (
-              <tr
-                key={c.id}
-                onClick={() => setSelected(c)}
-                className="cursor-pointer border-t hover:bg-muted/40"
-              >
-                <td className="px-4 py-2 font-medium">{c.name}</td>
-                <td className="px-4 py-2 text-muted-foreground">{c.phone}</td>
-                <td className="px-4 py-2 text-muted-foreground">
-                  {format(new Date(c.created_at), 'yyyy-MM-dd')}
-                </td>
-                <td className="max-w-md truncate px-4 py-2 text-muted-foreground">
-                  {c.memo ?? ''}
-                </td>
-              </tr>
-            ))}
+            {results.map((c) => {
+              const stats = statsMap.get(c.id);
+              return (
+                <tr
+                  key={c.id}
+                  onClick={() => setSelected(c)}
+                  className="cursor-pointer border-t hover:bg-muted/40"
+                >
+                  <td className="px-4 py-2 font-medium">
+                    <span className="flex items-center gap-1.5">
+                      {c.name}
+                      {stats?.has_package && <Badge variant="teal" className="text-[10px] px-1 py-0">PKG</Badge>}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-muted-foreground">{c.phone}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{stats?.visit_count ?? 0}</td>
+                  <td className="px-4 py-2 text-muted-foreground">
+                    {stats?.last_visit ? format(new Date(stats.last_visit), 'yyyy-MM-dd') : '-'}
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
+                    {stats?.total_revenue ? formatAmount(stats.total_revenue) : '-'}
+                  </td>
+                  <td className="max-w-[200px] truncate px-4 py-2 text-muted-foreground">
+                    {c.memo ?? ''}
+                  </td>
+                </tr>
+              );
+            })}
             {!loading && results.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   {query ? '검색 결과 없음' : '고객이 없습니다'}
                 </td>
               </tr>
@@ -270,6 +343,9 @@ function CustomerDetailSheet({
   const [payments, setPayments] = useState<Payment[]>([]);
   const [pkgPayments, setPkgPayments] = useState<PackagePayment[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [hasMoreVisits, setHasMoreVisits] = useState(false);
+  const [hasMorePayments, setHasMorePayments] = useState(false);
+  const PAGE_SIZE = 50;
 
   useEffect(() => {
     if (!customer) return;
@@ -317,8 +393,12 @@ function CustomerDetailSheet({
         }),
       );
       setPackages(pkgs.map((p, i) => ({ ...p, remaining: remaining[i] })));
-      setVisits((visitRes.data ?? []) as CheckIn[]);
-      setPayments((payRes.data ?? []) as Payment[]);
+      const visitData = (visitRes.data ?? []) as CheckIn[];
+      const payData = (payRes.data ?? []) as Payment[];
+      setVisits(visitData);
+      setHasMoreVisits(visitData.length >= 50);
+      setPayments(payData);
+      setHasMorePayments(payData.length >= 50);
       setPkgPayments((pkgPayRes.data ?? []) as PackagePayment[]);
       setReservations((resvRes.data ?? []) as Reservation[]);
     })();
@@ -335,6 +415,32 @@ function CustomerDetailSheet({
       pkgPayments.filter((p) => p.payment_type === 'refund').reduce((x, p) => x + p.amount, 0);
     return s - r;
   }, [payments, pkgPayments]);
+
+  const loadMoreVisits = async () => {
+    if (!customer) return;
+    const { data } = await supabase
+      .from('check_ins')
+      .select('*')
+      .eq('customer_id', customer.id)
+      .order('checked_in_at', { ascending: false })
+      .range(visits.length, visits.length + PAGE_SIZE - 1);
+    const more = (data ?? []) as CheckIn[];
+    setVisits((prev) => [...prev, ...more]);
+    setHasMoreVisits(more.length >= PAGE_SIZE);
+  };
+
+  const loadMorePayments = async () => {
+    if (!customer) return;
+    const { data } = await supabase
+      .from('payments')
+      .select('*')
+      .eq('customer_id', customer.id)
+      .order('created_at', { ascending: false })
+      .range(payments.length, payments.length + PAGE_SIZE - 1);
+    const more = (data ?? []) as Payment[];
+    setPayments((prev) => [...prev, ...more]);
+    setHasMorePayments(more.length >= PAGE_SIZE);
+  };
 
   if (!customer) return null;
 
@@ -472,6 +578,11 @@ function CustomerDetailSheet({
                 </span>
               </div>
             ))}
+            {hasMoreVisits && (
+              <Button variant="ghost" size="sm" className="w-full text-xs" onClick={loadMoreVisits}>
+                더보기
+              </Button>
+            )}
           </TabsContent>
 
           <TabsContent value="payments" className="space-y-1.5">
@@ -496,6 +607,11 @@ function CustomerDetailSheet({
                   </span>
                 </div>
               ))}
+            {hasMorePayments && (
+              <Button variant="ghost" size="sm" className="w-full text-xs" onClick={loadMorePayments}>
+                더보기
+              </Button>
+            )}
           </TabsContent>
 
           <TabsContent value="reservations" className="space-y-1.5">

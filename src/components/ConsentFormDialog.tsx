@@ -102,7 +102,7 @@ export function ConsentFormDialog({ checkIn, formType, open, onOpenChange, onSig
       return;
     }
 
-    const { data: urlData } = supabase.storage.from('signatures').getPublicUrl(fileName);
+    const { data: urlData } = await supabase.storage.from('signatures').createSignedUrl(fileName, 3600);
 
     const { error } = await supabase.from('consent_forms').insert({
       clinic_id: checkIn.clinic_id,
@@ -114,7 +114,7 @@ export function ConsentFormDialog({ checkIn, formType, open, onOpenChange, onSig
         customer_name: checkIn.customer_name,
         signed_date: new Date().toISOString(),
       },
-      signature_url: urlData.publicUrl,
+      signature_url: urlData?.signedUrl ?? fileName,
       signed_at: new Date().toISOString(),
     });
 

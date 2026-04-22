@@ -131,7 +131,8 @@ export function PaymentDialog({ checkIn, onClose, onPaid }: Props) {
       }
     }
 
-    if (checkIn.status === 'payment_waiting') {
+    const autoTransitionStatuses = ['payment_waiting', 'consultation', 'consult_waiting'];
+    if (autoTransitionStatuses.includes(checkIn.status)) {
       await supabase
         .from('check_ins')
         .update({ status: 'treatment_waiting' })
@@ -139,7 +140,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid }: Props) {
       await supabase.from('status_transitions').insert({
         check_in_id: checkIn.id,
         clinic_id: checkIn.clinic_id,
-        from_status: 'payment_waiting',
+        from_status: checkIn.status,
         to_status: 'treatment_waiting',
       });
     }

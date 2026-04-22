@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
+import type { UserRole } from '@/lib/types';
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { loading, session, profile } = useAuth();
@@ -24,6 +25,14 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     );
+  }
+  return <>{children}</>;
+}
+
+export function RoleGuard({ roles, children }: { roles: UserRole[]; children: React.ReactNode }) {
+  const { profile } = useAuth();
+  if (!profile || !roles.includes(profile.role)) {
+    return <Navigate to="/admin" replace />;
   }
   return <>{children}</>;
 }
