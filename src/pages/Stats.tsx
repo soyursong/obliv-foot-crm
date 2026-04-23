@@ -35,6 +35,12 @@ interface DailyRevenue {
   total: number;
 }
 
+interface DailyMetric {
+  date: string;
+  label: string;
+  value: number;
+}
+
 interface StaffPerf {
   id: string;
   name: string;
@@ -43,10 +49,15 @@ interface StaffPerf {
   revenue: number;
 }
 
+type RangePreset = 7 | 14 | 30;
+
 export default function Stats() {
   const [clinic, setClinic] = useState<Clinic | null>(null);
+  const [range, setRange] = useState<RangePreset>(14);
   const [visits, setVisits] = useState<DailyVisit[]>([]);
   const [revenue, setRevenue] = useState<DailyRevenue[]>([]);
+  const [stayDuration, setStayDuration] = useState<DailyMetric[]>([]);
+  const [avgSpend, setAvgSpend] = useState<DailyMetric[]>([]);
   const [staffPerf, setStaffPerf] = useState<StaffPerf[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -59,13 +70,14 @@ export default function Stats() {
     const load = async () => {
       setLoading(true);
       const today = new Date();
-      const from = format(subDays(today, 13), 'yyyy-MM-dd');
+      const rangeDays = range;
+      const from = format(subDays(today, rangeDays - 1), 'yyyy-MM-dd');
       const to = format(today, 'yyyy-MM-dd');
 
       const [checkInsRes, paymentsRes, pkgPaymentsRes, staffRes] = await Promise.all([
         supabase
           .from('check_ins')
-          .select('checked_in_at, visit_type')
+          .select('checked_in_at, visit_type, completed_at, status')
           .eq('clinic_id', clinic.id)
           .gte('checked_in_at', `${from}T00:00:00+09:00`)
           .lte('checked_in_at', `${to}T23:59:59+09:00`),
@@ -88,18 +100,20 @@ export default function Stats() {
           .eq('active', true),
       ]);
 
-      const checkIns = (checkInsRes.data ?? []) as { checked_in_at: string; visit_type: string }[];
+      const checkIns = (checkInsRes.data ?? []) as { checked_in_at: string; visit_type: string; completed_at: string | null; status: string }[];
       const payments = (paymentsRes.data ?? []) as { amount: number; payment_type: string; created_at: string }[];
       const pkgPayments = (pkgPaymentsRes.data ?? []) as { amount: number; payment_type: string; created_at: string }[];
       const staffList = (staffRes.data ?? []) as { id: string; name: string; role: string }[];
 
       const visitMap: Record<string, { total: number; new_patient: number; returning: number }> = {};
       const revenueMap: Record<string, { single: number; package: number }> = {};
+      const stayMap: Record<string, { sum: number; count: number }> = {};
 
-      for (let i = 0; i <= 13; i++) {
-        const d = format(subDays(today, 13 - i), 'yyyy-MM-dd');
+      for (let i = 0; i < rangeDays; i++) {
+        const d = format(subDays(today, rangeDays - 1 - i), 'yyyy-MM-dd');
         visitMap[d] = { total: 0, new_patient: 0, returning: 0 };
         revenueMap[d] = { single: 0, package: 0 };
+        stayMap[d] = { sum: 0, count: 0 };
       }
 
       for (const ci of checkIns) {
@@ -108,6 +122,13 @@ export default function Stats() {
           visitMap[d].total++;
           if (ci.visit_type === 'new') visitMap[d].new_patient++;
           else visitMap[d].returning++;
+        }
+        if (ci.status === 'done' && ci.completed_at && stayMap[d]) {
+          const stay = (new Date(ci.completed_at).getTime() - new Date(ci.checked_in_at).getTime()) / 60000;
+          if (stay > 0 && stay < 8 * 60) {
+            stayMap[d].sum += stay;
+            stayMap[d].count++;
+          }
         }
       }
 
@@ -134,14 +155,32 @@ export default function Stats() {
         })),
       );
 
-      setRevenue(
-        Object.entries(revenueMap).map(([date, r]) => ({
+      const revenueList = Object.entries(revenueMap).map(([date, r]) => ({
+        date,
+        label: format(new Date(date), 'M/d(EEE)', { locale: ko }),
+        single: r.single,
+        package: r.package,
+        total: r.single + r.package,
+      }));
+      setRevenue(revenueList);
+
+      setStayDuration(
+        Object.entries(stayMap).map(([date, s]) => ({
           date,
           label: format(new Date(date), 'M/d(EEE)', { locale: ko }),
-          single: r.single,
-          package: r.package,
-          total: r.single + r.package,
+          value: s.count > 0 ? Math.round(s.sum / s.count) : 0,
         })),
+      );
+
+      setAvgSpend(
+        revenueList.map((r) => {
+          const v = visitMap[r.date]?.total ?? 0;
+          return {
+            date: r.date,
+            label: r.label,
+            value: v > 0 ? Math.round(r.total / v) : 0,
+          };
+        }),
       );
 
       const monthStart = format(today, 'yyyy-MM-01');
@@ -207,7 +246,7 @@ export default function Stats() {
       setLoading(false);
     };
     load();
-  }, [clinic]);
+  }, [clinic, range]);
 
   const totals = useMemo(() => {
     const v = visits.reduce((a, b) => a + b.total, 0);
@@ -235,13 +274,30 @@ export default function Stats() {
     <div className="flex flex-col gap-6 p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold">통계 대시보드</h1>
-        <span className="text-xs text-muted-foreground">최근 14일 기준</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">최근 {range}일 기준</span>
+          <div className="flex rounded-md border">
+            {([7, 14, 30] as RangePreset[]).map((d) => (
+              <button
+                key={d}
+                onClick={() => setRange(d)}
+                className={
+                  range === d
+                    ? 'bg-teal-50 text-teal-700 px-3 py-1 text-xs font-medium'
+                    : 'text-muted-foreground hover:bg-muted px-3 py-1 text-xs font-medium transition'
+                }
+              >
+                {d}일
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">14일 총 방문</CardTitle>
+            <CardTitle className="text-xs font-medium text-muted-foreground">{range}일 총 방문</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totals.visits}건</div>
@@ -249,7 +305,7 @@ export default function Stats() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">14일 총 매출</CardTitle>
+            <CardTitle className="text-xs font-medium text-muted-foreground">{range}일 총 매출</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatAmount(totals.revenue)}</div>
@@ -260,7 +316,7 @@ export default function Stats() {
             <CardTitle className="text-xs font-medium text-muted-foreground">일평균 방문</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{Math.round(totals.visits / 14)}건</div>
+            <div className="text-2xl font-bold">{Math.round(totals.visits / range)}건</div>
           </CardContent>
         </Card>
         <Card>
@@ -268,7 +324,7 @@ export default function Stats() {
             <CardTitle className="text-xs font-medium text-muted-foreground">일평균 매출</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatAmount(Math.round(totals.revenue / 14))}</div>
+            <div className="text-2xl font-bold">{formatAmount(Math.round(totals.revenue / range))}</div>
           </CardContent>
         </Card>
       </div>
@@ -309,6 +365,40 @@ export default function Stats() {
                 <Bar dataKey="single" name="단건 결제" fill="#3b82f6" stackId="a" />
                 <Bar dataKey="package" name="패키지 결제" fill="#10b981" stackId="a" />
               </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">평균 체류시간 (분)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={stayDuration}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                <Tooltip formatter={(v) => `${v}분`} />
+                <Line type="monotone" dataKey="value" name="체류(분)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">일별 객단가</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={avgSpend}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${Math.round(v / 10000)}만`} />
+                <Tooltip formatter={(v) => formatAmount(Number(v))} />
+                <Line type="monotone" dataKey="value" name="객단가" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
