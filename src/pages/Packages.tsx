@@ -64,7 +64,7 @@ export default function Packages() {
     const { data, error } = await req;
     setLoading(false);
     if (error) {
-      console.warn('패키지 로딩 실패:', error.message);
+      toast.error(`패키지 로딩 실패: ${error.message}`);
       setRows([]);
       return;
     }

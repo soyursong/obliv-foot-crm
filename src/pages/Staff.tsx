@@ -485,6 +485,7 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
       staff_name: a.staff_name,
     }));
     if (assignments.length > 0) {
+      if (!window.confirm(`${date}에 이미 ${assignments.length}건 배정이 있습니다. 덮어쓰시겠습니까?`)) return;
       await supabase.from('room_assignments').delete().eq('clinic_id', clinic.id).eq('date', date);
     }
     const { error: insErr } = await supabase.from('room_assignments').insert(inserts);
