@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { toast } from 'sonner';
-import { Check, Shield, UserX } from 'lucide-react';
+import { Check, KeyRound, Shield, UserPlus, UserX } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
@@ -17,6 +18,13 @@ import {
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import type { Clinic, UserProfile, UserRole } from '@/lib/types';
+
+// admin 세션 유지를 위해 persistSession:false 로 별도 client 사용 (signUp 이 현재 세션을 덮어쓰지 않도록)
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const signupClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
 
 const ROLE_LABEL: Record<UserRole, string> = {
   admin: '관리자',
@@ -39,6 +47,13 @@ export default function Accounts() {
   const [editRole, setEditRole] = useState<UserRole>('staff');
   const [editName, setEditName] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [invitePw, setInvitePw] = useState('');
+  const [inviteName, setInviteName] = useState('');
+  const [inviteRole, setInviteRole] = useState<UserRole>('staff');
+  const [inviteBusy, setInviteBusy] = useState(false);
 
   useEffect(() => {
     getClinic().then(setClinic).catch(() => setClinic(null));
@@ -96,6 +111,59 @@ export default function Accounts() {
     setEditName(u.name ?? '');
   };
 
+  const sendPasswordReset = async (u: UserProfile) => {
+    if (!u.email) { toast.error('이메일이 없습니다'); return; }
+    if (!window.confirm(`${u.email} 으로 비밀번호 재설정 메일을 보냅니다.`)) return;
+    const { error } = await supabase.auth.resetPasswordForEmail(u.email, {
+      redirectTo: `${window.location.origin}/login`,
+    });
+    if (error) { toast.error(`메일 전송 실패: ${error.message}`); return; }
+    toast.success('재설정 메일 전송됨');
+  };
+
+  const inviteStaff = async () => {
+    if (!clinic) { toast.error('clinic 정보 없음'); return; }
+    const email = inviteEmail.trim().toLowerCase();
+    const pw = invitePw.trim();
+    const name = inviteName.trim();
+    if (!email || !pw) { toast.error('이메일과 비밀번호를 입력하세요'); return; }
+    if (pw.length < 8) { toast.error('비밀번호는 8자 이상'); return; }
+
+    setInviteBusy(true);
+    // admin 세션 유지를 위해 별도 client 로 signUp
+    const { data, error } = await signupClient.auth.signUp({
+      email,
+      password: pw,
+      options: { data: { name } },
+    });
+    if (error || !data.user) {
+      setInviteBusy(false);
+      toast.error(`계정 생성 실패: ${error?.message ?? 'unknown'}`);
+      return;
+    }
+    // profile 업데이트 (trigger 가 profile row 생성. 즉시 승인/역할/clinic 지정)
+    const { error: upErr } = await supabase
+      .from('user_profiles')
+      .upsert({
+        id: data.user.id,
+        email,
+        name: name || null,
+        role: inviteRole,
+        clinic_id: clinic.id,
+        approved: true,
+        active: true,
+      }, { onConflict: 'id' });
+    setInviteBusy(false);
+    if (upErr) { toast.error(`프로필 설정 실패: ${upErr.message}`); return; }
+    toast.success(`${email} 등록 완료 (즉시 승인)`);
+    setInviteOpen(false);
+    setInviteEmail('');
+    setInvitePw('');
+    setInviteName('');
+    setInviteRole('staff');
+    fetchUsers();
+  };
+
   const saveEdit = async () => {
     if (!editUser) return;
     setSaving(true);
@@ -118,7 +186,12 @@ export default function Accounts() {
     <div className="flex flex-col gap-6 p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold">계정 관리</h1>
-        <span className="text-xs text-muted-foreground">{users.length}명</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground">{users.length}명</span>
+          <Button size="sm" onClick={() => setInviteOpen(true)} className="gap-1">
+            <UserPlus className="h-3.5 w-3.5" /> 직원 등록
+          </Button>
+        </div>
       </div>
 
       {pending.length > 0 && (
@@ -182,6 +255,14 @@ export default function Accounts() {
                           <Button size="sm" variant="ghost" onClick={() => openEdit(u)}>
                             수정
                           </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="비밀번호 재설정 메일 전송"
+                            onClick={() => sendPasswordReset(u)}
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                          </Button>
                           <Button size="sm" variant="ghost" className="text-red-600 hover:text-red-700" onClick={() => toggleActive(u)}>
                             <UserX className="h-3.5 w-3.5" />
                           </Button>
@@ -217,6 +298,71 @@ export default function Accounts() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {inviteOpen && (
+        <Dialog open onOpenChange={(o) => !o && !inviteBusy && setInviteOpen(false)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>직원 계정 등록</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label>이메일</Label>
+                <Input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="staff@example.com"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>임시 비밀번호 (8자 이상)</Label>
+                <Input
+                  type="text"
+                  value={invitePw}
+                  onChange={(e) => setInvitePw(e.target.value)}
+                  placeholder="직원이 로그인 후 변경"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>이름 (선택)</Label>
+                <Input value={inviteName} onChange={(e) => setInviteName(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>역할</Label>
+                <div className="grid grid-cols-4 gap-2">
+                  {ROLES.map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => setInviteRole(r)}
+                      className={`h-9 rounded-md border text-xs font-medium transition ${
+                        inviteRole === r
+                          ? 'border-teal-600 bg-teal-50 text-teal-700'
+                          : 'border-input hover:bg-muted'
+                      }`}
+                    >
+                      {ROLE_LABEL[r]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                관리자가 직접 생성한 계정은 즉시 승인 처리됩니다. 직원은 설정된 비밀번호로 로그인 후 변경하세요.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" disabled={inviteBusy} onClick={() => setInviteOpen(false)}>
+                취소
+              </Button>
+              <Button disabled={inviteBusy} onClick={inviteStaff}>
+                {inviteBusy ? '등록 중…' : '등록'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
 
       {editUser && (
