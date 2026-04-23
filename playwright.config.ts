@@ -1,8 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
 
 export default defineConfig({
   testDir: './tests',
-  testIgnore: ['**/auth.setup.ts', '**/helpers.ts'],
+  testIgnore: ['**/helpers.ts'],
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,
@@ -21,11 +26,17 @@ export default defineConfig({
 
   projects: [
     {
+      name: 'setup',
+      testMatch: /auth\.setup\.ts/,
+    },
+    {
       name: 'desktop-chrome',
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1280, height: 800 },
+        storageState: AUTH_FILE,
       },
+      dependencies: ['setup'],
     },
     {
       name: 'tablet',
@@ -33,7 +44,7 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         viewport: { width: 768, height: 1024 },
       },
-      // Tablet은 공개 페이지만 (로그인 rate limit 회피)
+      // Tablet은 공개 페이지만 (로그인 rate limit 회피, storageState 미사용)
       testMatch: ['**/page-screenshots.spec.ts', '**/self-checkin.spec.ts'],
       grep: /Public|Self check-in route/,
     },
