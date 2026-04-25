@@ -70,12 +70,17 @@ function main() {
     idx[h] = i;
   }
 
-  const rows: Row[] = [];
+  // dedup: 동일 INSERT 내 같은 claim_code 가 두 번 등장하면 ON CONFLICT DO UPDATE
+  // 가 동일 row 두 번 영향 → SQLSTATE 21000. xlsx 원본에 중복 행이 있으면 마지막 값 유지.
+  // (T-20260423-foot-RX-CODE-SEED MSG-20260426-0210_RX_SEED_DUP_FIX)
+  const byCode = new Map<string, Row>();
+  let dupCount = 0;
   for (let i = 1; i < raw.length; i++) {
     const r = raw[i] as unknown as unknown[];
     if (!r || !r[idx['청구코드']]) continue;
-    rows.push({
-      claim_code: String(r[idx['청구코드']]).trim(),
+    const claim_code = String(r[idx['청구코드']]).trim();
+    const row: Row = {
+      claim_code,
       name_ko: String(r[idx['한글명칭']] ?? '').trim(),
       code_type: String(r[idx['코드구분']] ?? '국산보험등재약').trim(),
       classification: String(r[idx['처방코드분류']] ?? '내복약').trim(),
@@ -84,7 +89,13 @@ function main() {
       relative_value: String(r[idx['상대가치점수']] ?? '0').trim(),
       ingredient_code: r[idx['주성분단축코드']] ? String(r[idx['주성분단축코드']]).trim() : null,
       low_dose: ynToBool(r[idx['저함량코드여부']]),
-    });
+    };
+    if (byCode.has(claim_code)) dupCount++;
+    byCode.set(claim_code, row); // 마지막 값 유지
+  }
+  const rows: Row[] = [...byCode.values()];
+  if (dupCount > 0) {
+    console.warn(`⚠ xlsx 원본에 중복 claim_code ${dupCount}건 — 마지막 값으로 dedup.`);
   }
 
   const header = [
