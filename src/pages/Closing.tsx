@@ -9,13 +9,14 @@ import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
 import { formatAmount } from '@/lib/format';
 import { STATUS_KO } from '@/lib/status';
-import type { CheckInStatus, Clinic } from '@/lib/types';
+import type { CheckIn, CheckInStatus, Clinic } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { PaymentDialog } from '@/components/PaymentDialog';
 import { cn } from '@/lib/utils';
 
 type Method = 'card' | 'cash' | 'transfer' | 'membership';
@@ -83,6 +84,7 @@ export default function Closing() {
   const [actualCard, setActualCard] = useState(0);
   const [actualCash, setActualCash] = useState(0);
   const [memo, setMemo] = useState('');
+  const [payTarget, setPayTarget] = useState<CheckIn | null>(null);
 
   const { data: clinic } = useQuery<Clinic | null>({
     queryKey: ['clinic'],
@@ -487,8 +489,16 @@ export default function Closing() {
               <button
                 key={c.id}
                 className="flex w-full justify-between rounded px-1 py-0.5 hover:bg-amber-100 transition text-left"
-                title="대시보드에서 결제 처리"
-                onClick={() => navigate('/admin', { state: { openPaymentForCheckInId: c.id } })}
+                onClick={async () => {
+                  const { data } = await supabase
+                    .from('check_ins')
+                    .select('*')
+                    .eq('id', c.id)
+                    .maybeSingle();
+                  if (data) setPayTarget(data as CheckIn);
+                  else toast.error('체크인을 불러올 수 없습니다');
+                }}
+                title="클릭하면 결제 처리"
               >
                 <span>
                   {c.customer_name}{' '}
@@ -695,6 +705,16 @@ export default function Closing() {
           />
         </CardContent>
       </Card>
+
+      <PaymentDialog
+        checkIn={payTarget}
+        onClose={() => setPayTarget(null)}
+        onPaid={() => {
+          setPayTarget(null);
+          qc.invalidateQueries({ queryKey: ['closing-unpaid'] });
+          qc.invalidateQueries({ queryKey: ['closing-payments'] });
+        }}
+      />
     </div>
   );
 }

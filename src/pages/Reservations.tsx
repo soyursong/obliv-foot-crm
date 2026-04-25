@@ -997,6 +997,16 @@ function ReservationDetail({
 
   const convertToCheckIn = async () => {
     setBusy(true);
+    const { data: existing } = await supabase
+      .from('check_ins')
+      .select('id')
+      .eq('reservation_id', reservation.id)
+      .maybeSingle();
+    if (existing) {
+      toast.info('이미 이 예약으로 체크인이 생성되어 있습니다');
+      setBusy(false);
+      return;
+    }
     const { data: queueData, error: qErr } = await supabase.rpc('next_queue_number', {
       p_clinic_id: reservation.clinic_id,
       p_date: reservation.reservation_date,
@@ -1117,14 +1127,13 @@ function ReservationDetail({
               </Button>
             </>
           )}
-          {reservation.status === 'cancelled' && (
+          {(reservation.status === 'cancelled' || reservation.status === 'noshow') && (
             <Button
               size="sm"
+              variant="outline"
               disabled={busy}
               onClick={() => {
-                if (window.confirm(`${reservation.customer_name}님 취소 예약을 복원하시겠습니까?`)) {
-                  setStatus('confirmed', 'restore');
-                }
+                if (window.confirm(`${reservation.customer_name}님 예약을 복원하시겠습니까?`)) setStatus('confirmed');
               }}
             >
               복원
