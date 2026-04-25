@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+import { normalizeToE164 } from '@/lib/phone';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -143,7 +144,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
       customer_id: customerId,
       reservation_id: linkedReservation?.id ?? null,
       customer_name: name.trim(),
-      customer_phone: phone.trim() || null,
+      customer_phone: phone.trim() ? (normalizeToE164(phone) ?? phone.trim()) : null,
       visit_type: visitType,
       status: 'registered',
       queue_number: queueData as number,

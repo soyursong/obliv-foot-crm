@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 import type { VisitType } from '@/lib/types';
+import { normalizeToE164 } from '@/lib/phone';
 
 // 셀프체크인 전용 Supabase 클라이언트 (anon, 세션 없음)
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -88,15 +89,26 @@ export default function SelfCheckIn() {
     setErrorMsg('');
 
     try {
-      // 기존 고객 조회
+      // 기존 고객 조회 — PHONE_E164: E.164 우선 매칭, 미매칭 시 legacy digits 폴백
       let customerId: string | null = null;
       const phoneDigits = phone.replace(/\D/g, '');
-      const { data: existing } = await anonClient
+      const phoneE164 = normalizeToE164(phone);
+      const phoneStored = phoneE164 ?? phoneDigits;
+      let { data: existing } = await anonClient
         .from('customers')
         .select('id')
         .eq('clinic_id', clinicId)
-        .eq('phone', phoneDigits)
+        .eq('phone', phoneStored)
         .maybeSingle();
+      if (!existing && phoneE164 && phoneDigits !== phoneE164) {
+        const { data: legacy } = await anonClient
+          .from('customers')
+          .select('id')
+          .eq('clinic_id', clinicId)
+          .eq('phone', phoneDigits)
+          .maybeSingle();
+        existing = legacy;
+      }
 
       if (existing) {
         customerId = existing.id as string;
@@ -107,7 +119,7 @@ export default function SelfCheckIn() {
           .insert({
             clinic_id: clinicId,
             name: name.trim(),
-            phone: phoneDigits,
+            phone: phoneStored,
             visit_type: visitType === 'new' ? 'new' : 'returning',
           })
           .select('id')
@@ -138,7 +150,7 @@ export default function SelfCheckIn() {
         clinic_id: clinicId,
         customer_id: customerId,
         customer_name: name.trim(),
-        customer_phone: phoneDigits,
+        customer_phone: phoneStored,
         visit_type: visitType,
         status: 'registered',
         queue_number: queue,
