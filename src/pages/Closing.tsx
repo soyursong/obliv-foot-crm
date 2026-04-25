@@ -710,10 +710,11 @@ function SummaryCard({
   total: number;
   highlight?: boolean;
 }) {
+  // UX-7: 합계 하이라이트 — highlight 카드의 합계를 더 크고 진하게
   return (
-    <Card className={highlight ? 'border-primary/40' : ''}>
+    <Card className={highlight ? 'border-primary/40 bg-primary/5' : ''}>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">{title}</CardTitle>
+        <CardTitle className={cn('text-sm', highlight && 'text-primary')}>{title}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-1.5 text-sm">
@@ -724,7 +725,10 @@ function SummaryCard({
             </div>
           ))}
         </div>
-        <div className="mt-3 flex justify-between border-t pt-2 text-sm font-semibold">
+        <div className={cn(
+          'mt-3 flex justify-between border-t pt-2 font-semibold',
+          highlight ? 'text-base text-primary' : 'text-sm',
+        )}>
           <span>합계</span>
           <span className="tabular-nums">{formatAmount(total)}</span>
         </div>
