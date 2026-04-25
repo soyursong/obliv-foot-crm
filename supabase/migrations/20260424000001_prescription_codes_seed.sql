@@ -1,6 +1,6 @@
 -- T-20260423-foot-RX-CODE-SEED (3) prescription_codes 시드
 -- 자동 생성: scripts/import_prescription_codes.ts
--- 원본: src/assets/forms/foot-service/표준처방코드.xlsx (500 rows)
+-- 원본: src/assets/forms/foot-service/표준처방코드.xlsx (499 rows)
 -- 재실행 안전: ON CONFLICT (claim_code) DO UPDATE
 
 INSERT INTO prescription_codes
@@ -500,7 +500,6 @@ VALUES
   ('050800404', '리브감마에스앤주10%(글리신첨가사람면역글로불린(pH4.9))_(15g/150mL)', '국산보험등재약', '정맥내점적주사(100~500ML)', '에스케이플라즈마(주)', FALSE, 0.00000, '169942BIJ', FALSE),
   ('052401201', '제라미콤주_(250mL)', '국산보험등재약', '정맥내점적주사(100~500ML)', '(주)인트로바이오파마', FALSE, 0.00000, '107159BIJ', FALSE),
   ('052401202', '제라미콤주_(500mL)', '국산보험등재약', '정맥내점적주사(100~500ML)', '(주)인트로바이오파마', FALSE, 0.00000, '107160BIJ', FALSE),
-  ('C5091004', 'MINI STRAIGHT PLATE', '일반재료대', '처치료', NULL, FALSE, 0.00000, NULL, FALSE),
   ('C5091004', 'MINI STRAIGHT PLATE', '일반재료대', '처치료', NULL, FALSE, 0.00000, NULL, FALSE),
   ('J3207001', 'WATCHMAN ACCESS SYSTEM', '일반재료대', '처치료', '보스톤사이언티픽코리아', FALSE, 0.00000, NULL, FALSE),
   ('J3207009', 'AMPLATZER TORQVUE 45X45 DELIVERY SHEATH', '일반재료대', '처치료', '세인트쥬드메디칼코리아유한회사', FALSE, 0.00000, NULL, FALSE),
