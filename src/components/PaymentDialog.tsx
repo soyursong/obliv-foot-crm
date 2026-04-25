@@ -210,10 +210,33 @@ export function PaymentDialog({ checkIn, onClose, onPaid }: Props) {
                   className="text-right tabular-nums"
                 />
               </div>
+              {/* UX-8: 분할결제 합계 + 비율 시각화 */}
               {splitCard + splitCash > 0 && (
-                <div className="flex justify-between text-sm font-medium rounded bg-muted px-3 py-2">
-                  <span>합계</span>
-                  <span className="tabular-nums">{formatAmount(splitCard + splitCash)}</span>
+                <div className="space-y-1 rounded bg-muted px-3 py-2">
+                  <div className="flex justify-between text-sm font-medium">
+                    <span>합계</span>
+                    <span className="tabular-nums">{formatAmount(splitCard + splitCash)}</span>
+                  </div>
+                  <div className="flex h-1.5 overflow-hidden rounded-full bg-background">
+                    {splitCard > 0 && (
+                      <div
+                        className="bg-blue-500"
+                        style={{ width: `${(splitCard / (splitCard + splitCash)) * 100}%` }}
+                        title={`카드 ${formatAmount(splitCard)}`}
+                      />
+                    )}
+                    {splitCash > 0 && (
+                      <div
+                        className="bg-emerald-500"
+                        style={{ width: `${(splitCash / (splitCard + splitCash)) * 100}%` }}
+                        title={`현금 ${formatAmount(splitCash)}`}
+                      />
+                    )}
+                  </div>
+                  <div className="flex justify-between text-[11px] text-muted-foreground">
+                    <span>💳 카드 {formatAmount(splitCard)}</span>
+                    <span>💵 현금 {formatAmount(splitCash)}</span>
+                  </div>
                 </div>
               )}
             </>

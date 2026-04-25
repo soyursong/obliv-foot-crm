@@ -48,6 +48,34 @@ export default function AdminLayout() {
   const [searchResults, setSearchResults] = useState<{ id: string; name: string; phone: string }[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // UX-9: 사이드바 알림 뱃지 — 오늘 결제대기 건수
+  const [paymentWaitingCount, setPaymentWaitingCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (!clinic) return;
+    let cancelled = false;
+    const fetchCount = async () => {
+      const today = new Date();
+      const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      const start = `${dateStr}T00:00:00+09:00`;
+      const end = `${dateStr}T23:59:59+09:00`;
+      const { count } = await supabase
+        .from('check_ins')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', clinic.id)
+        .eq('status', 'payment_waiting')
+        .gte('checked_in_at', start)
+        .lte('checked_in_at', end);
+      if (!cancelled) setPaymentWaitingCount(count ?? 0);
+    };
+    fetchCount();
+    // 1분마다 갱신
+    const t = setInterval(fetchCount, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [clinic]);
 
   const doSearch = useCallback(async (q: string) => {
     if (!q.trim() || !clinic) { setSearchResults([]); return; }
@@ -102,25 +130,37 @@ export default function AdminLayout() {
         </button>
       </div>
       <nav className="flex-1 px-2 py-3">
-        {NAV_ITEMS.filter((item) => !item.roles || (profile?.role && item.roles.includes(profile.role))).map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            onClick={() => setSidebarOpen(false)}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-teal-50 text-teal-700'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-              )
-            }
-          >
-            <item.icon className="h-4 w-4" />
-            {item.label}
-          </NavLink>
-        ))}
+        {NAV_ITEMS.filter((item) => !item.roles || (profile?.role && item.roles.includes(profile.role))).map((item) => {
+          // UX-9: 결제대기 건수를 일마감(closing)/대시보드(/admin)에 뱃지 표시
+          const showBadge = (item.to === '/admin' || item.to === '/admin/closing') && paymentWaitingCount > 0;
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              onClick={() => setSidebarOpen(false)}
+              className={({ isActive }) =>
+                cn(
+                  'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  isActive
+                    ? 'bg-teal-50 text-teal-700'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                )
+              }
+            >
+              <item.icon className="h-4 w-4" />
+              <span className="flex-1">{item.label}</span>
+              {showBadge && (
+                <span
+                  className="inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 py-0 text-[10px] font-semibold text-white min-w-[18px]"
+                  title={`결제대기 ${paymentWaitingCount}건`}
+                >
+                  {paymentWaitingCount}
+                </span>
+              )}
+            </NavLink>
+          );
+        })}
       </nav>
       <div className="border-t px-4 py-3 text-xs">
         <div className="truncate font-medium">{profile?.name ?? profile?.email ?? '사용자'}</div>
