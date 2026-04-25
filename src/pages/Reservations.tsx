@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
 import { getClinic } from '@/lib/clinic';
 import {
   closeTimeFor,
@@ -64,6 +65,8 @@ interface ReservationDraft {
 type ViewMode = 'week' | 'day';
 
 export default function Reservations() {
+  const { profile } = useAuth();
+  const changedBy = profile?.id ?? null;
   const [clinic, setClinic] = useState<Clinic | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [weekStart, setWeekStart] = useState<Date>(() =>
@@ -267,11 +270,31 @@ export default function Reservations() {
     const oldData = { date: r.reservation_date, time: r.reservation_time.slice(0, 5) };
     const newData = { date: newDate, time: newTime };
 
+    // 낙관적 업데이트: UI 먼저 반영
+    setRows((prev) =>
+      prev.map((x) =>
+        x.id === reservationId
+          ? { ...x, reservation_date: newDate, reservation_time: newTime }
+          : x,
+      ),
+    );
+
     const { error } = await supabase
       .from('reservations')
       .update({ reservation_date: newDate, reservation_time: newTime })
       .eq('id', reservationId);
-    if (error) { toast.error(`이동 실패: ${error.message}`); return; }
+    if (error) {
+      // 실패 시 롤백
+      setRows((prev) =>
+        prev.map((x) =>
+          x.id === reservationId
+            ? { ...x, reservation_date: r.reservation_date, reservation_time: r.reservation_time }
+            : x,
+        ),
+      );
+      toast.error(`이동 실패: ${error.message}`);
+      return;
+    }
 
     await supabase.from('reservation_logs').insert({
       reservation_id: reservationId,
@@ -279,6 +302,7 @@ export default function Reservations() {
       action: 'reschedule',
       old_data: oldData,
       new_data: newData,
+      changed_by: changedBy,
     });
 
     toast.success(`${r.customer_name} 예약 이동: ${oldData.date} ${oldData.time} → ${newData.date} ${newData.time}`);
@@ -505,6 +529,7 @@ export default function Reservations() {
         draft={editor}
         clinicId={clinic?.id}
         maxPerSlot={clinic?.max_per_slot ?? 5}
+        changedBy={changedBy}
         onClose={() => setEditor(null)}
         onSaved={() => {
           setEditor(null);
@@ -517,6 +542,7 @@ export default function Reservations() {
         noshowCount={
           detail?.customer_id ? noshowByCustomer[detail.customer_id] ?? 0 : 0
         }
+        changedBy={changedBy}
         onClose={() => setDetail(null)}
         onEdit={openEdit}
         onChanged={() => {
@@ -532,12 +558,14 @@ function ReservationEditor({
   draft,
   clinicId,
   maxPerSlot,
+  changedBy,
   onClose,
   onSaved,
 }: {
   draft: ReservationDraft | null;
   clinicId: string | undefined;
   maxPerSlot: number;
+  changedBy: string | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -691,15 +719,79 @@ function ReservationEditor({
       memo: state.memo.trim() || null,
     };
 
-    const { error } = state.existingId
-      ? await supabase.from('reservations').update(payload).eq('id', state.existingId)
-      : await supabase.from('reservations').insert({ ...payload, status: 'confirmed' });
+    // 수정 전 원본 캡처 (감사 로그용)
+    let prevRow: Record<string, unknown> | null = null;
+    if (state.existingId) {
+      const { data: prev } = await supabase
+        .from('reservations')
+        .select('reservation_date, reservation_time, visit_type, customer_name, customer_phone, service_id, memo')
+        .eq('id', state.existingId)
+        .maybeSingle();
+      prevRow = (prev as Record<string, unknown>) ?? null;
+    }
 
-    if (error) {
-      toast.error(`저장 실패: ${error.message}`);
+    const result = state.existingId
+      ? await supabase.from('reservations').update(payload).eq('id', state.existingId).select('id').maybeSingle()
+      : await supabase.from('reservations').insert({ ...payload, status: 'confirmed' }).select('id').maybeSingle();
+
+    if (result.error) {
+      toast.error(`저장 실패: ${result.error.message}`);
       setSubmitting(false);
       return;
     }
+
+    // 감사 로그 — create / update / reschedule
+    const savedId = (result.data as { id: string } | null)?.id ?? state.existingId;
+    if (savedId) {
+      if (state.existingId && prevRow) {
+        const oldTime = String(prevRow.reservation_time ?? '').slice(0, 5);
+        const newTime = state.time.slice(0, 5);
+        const isReschedule =
+          prevRow.reservation_date !== state.date || oldTime !== newTime;
+        await supabase.from('reservation_logs').insert({
+          reservation_id: savedId,
+          clinic_id: clinicId,
+          action: isReschedule ? 'reschedule' : 'update',
+          old_data: {
+            date: prevRow.reservation_date,
+            time: oldTime,
+            visit_type: prevRow.visit_type,
+            customer_name: prevRow.customer_name,
+            customer_phone: prevRow.customer_phone,
+            service_id: prevRow.service_id,
+            memo: prevRow.memo,
+          },
+          new_data: {
+            date: state.date,
+            time: newTime,
+            visit_type: state.visit_type,
+            customer_name: payload.customer_name,
+            customer_phone: payload.customer_phone,
+            service_id: payload.service_id,
+            memo: payload.memo,
+          },
+          changed_by: changedBy,
+        });
+      } else if (!state.existingId) {
+        await supabase.from('reservation_logs').insert({
+          reservation_id: savedId,
+          clinic_id: clinicId,
+          action: 'create',
+          old_data: null,
+          new_data: {
+            date: state.date,
+            time: state.time.slice(0, 5),
+            visit_type: state.visit_type,
+            customer_name: payload.customer_name,
+            customer_phone: payload.customer_phone,
+            service_id: payload.service_id,
+            memo: payload.memo,
+          },
+          changed_by: changedBy,
+        });
+      }
+    }
+
     toast.success(state.existingId ? '수정됨' : '예약 등록');
     setSubmitting(false);
     onSaved();
@@ -822,12 +914,14 @@ interface ReservationLog {
 function ReservationDetail({
   reservation,
   noshowCount,
+  changedBy,
   onClose,
   onEdit,
   onChanged,
 }: {
   reservation: Reservation | null;
   noshowCount: number;
+  changedBy: string | null;
   onClose: () => void;
   onEdit: (r: Reservation) => void;
   onChanged: () => void;
@@ -848,8 +942,29 @@ function ReservationDetail({
 
   if (!reservation) return null;
 
-  const setStatus = async (status: Reservation['status']) => {
+  const setStatus = async (status: Reservation['status'], action?: string) => {
     setBusy(true);
+    // 복원 시 슬롯 마감 여부 재확인
+    if (action === 'restore' || (status === 'confirmed' && reservation.status === 'cancelled')) {
+      const { count } = await supabase
+        .from('reservations')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', reservation.clinic_id)
+        .eq('reservation_date', reservation.reservation_date)
+        .eq('reservation_time', reservation.reservation_time)
+        .neq('status', 'cancelled');
+      const { data: c } = await supabase
+        .from('clinics')
+        .select('max_per_slot')
+        .eq('id', reservation.clinic_id)
+        .maybeSingle();
+      const maxSlot = (c as { max_per_slot?: number } | null)?.max_per_slot ?? 5;
+      if ((count ?? 0) >= maxSlot) {
+        toast.error(`이 시간대는 마감입니다 (${count}/${maxSlot}). 다른 시간으로 옮긴 뒤 복원하세요.`);
+        setBusy(false);
+        return;
+      }
+    }
     const { error } = await supabase
       .from('reservations')
       .update({ status })
@@ -859,15 +974,24 @@ function ReservationDetail({
       setBusy(false);
       return;
     }
+    const resolvedAction = action
+      ?? (status === 'cancelled' ? 'cancel'
+        : status === 'confirmed' && reservation.status === 'cancelled' ? 'restore'
+        : 'status_change');
     await supabase.from('reservation_logs').insert({
       reservation_id: reservation.id,
       clinic_id: reservation.clinic_id,
-      action: 'status_change',
+      action: resolvedAction,
       old_data: { status: reservation.status },
       new_data: { status },
+      changed_by: changedBy,
     });
     setBusy(false);
-    toast.success(`상태 변경: ${STATUS_LABEL[status]}`);
+    toast.success(
+      resolvedAction === 'restore'
+        ? '예약 복원됨'
+        : `상태 변경: ${STATUS_LABEL[status]}`,
+    );
     onChanged();
   };
 
@@ -901,6 +1025,14 @@ function ReservationDetail({
       .from('reservations')
       .update({ status: 'checked_in' })
       .eq('id', reservation.id);
+    await supabase.from('reservation_logs').insert({
+      reservation_id: reservation.id,
+      clinic_id: reservation.clinic_id,
+      action: 'checkin_convert',
+      old_data: { status: reservation.status },
+      new_data: { status: 'checked_in', queue_number: queueData },
+      changed_by: changedBy,
+    });
     toast.success('체크인 완료');
     setBusy(false);
     onChanged();
@@ -938,11 +1070,21 @@ function ReservationDetail({
                 <div key={l.id} className="flex items-start gap-2 text-xs text-muted-foreground">
                   <span className="shrink-0 tabular-nums">{format(new Date(l.created_at), 'MM/dd HH:mm')}</span>
                   <span>
-                    {l.action === 'reschedule'
-                      ? `일정 변경: ${l.old_data?.date} ${l.old_data?.time} → ${l.new_data?.date} ${l.new_data?.time}`
-                      : l.action === 'status_change'
-                        ? `상태: ${STATUS_LABEL[(l.old_data?.status as Reservation['status']) ?? 'confirmed']} → ${STATUS_LABEL[(l.new_data?.status as Reservation['status']) ?? 'confirmed']}`
-                        : l.action}
+                    {l.action === 'create'
+                      ? `예약 생성: ${l.new_data?.date} ${l.new_data?.time}`
+                      : l.action === 'reschedule'
+                        ? `일정 변경: ${l.old_data?.date} ${l.old_data?.time} → ${l.new_data?.date} ${l.new_data?.time}`
+                        : l.action === 'cancel'
+                          ? '예약 취소'
+                          : l.action === 'restore'
+                            ? '예약 복원'
+                            : l.action === 'checkin_convert'
+                              ? '체크인 전환'
+                              : l.action === 'update'
+                                ? '예약 수정'
+                                : l.action === 'status_change'
+                                  ? `상태: ${STATUS_LABEL[(l.old_data?.status as Reservation['status']) ?? 'confirmed']} → ${STATUS_LABEL[(l.new_data?.status as Reservation['status']) ?? 'confirmed']}`
+                                  : l.action}
                   </span>
                 </div>
               ))}
@@ -974,6 +1116,19 @@ function ReservationDetail({
                 취소
               </Button>
             </>
+          )}
+          {reservation.status === 'cancelled' && (
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm(`${reservation.customer_name}님 취소 예약을 복원하시겠습니까?`)) {
+                  setStatus('confirmed', 'restore');
+                }
+              }}
+            >
+              복원
+            </Button>
           )}
         </DialogFooter>
       </DialogContent>
