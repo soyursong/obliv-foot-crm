@@ -415,16 +415,32 @@ export default function Closing() {
             </Button>
           ) : (
             <>
-              <Button variant="outline" onClick={() => saveDraft(false)}>
-                <Save className="mr-1 h-4 w-4" /> 임시저장 (수정 가능)
+              {/* T-5: 임시저장 vs 마감 차이 명확히 — title 툴팁 + 라벨 보강 */}
+              <Button
+                variant="outline"
+                onClick={() => saveDraft(false)}
+                title="임시저장: 수치를 저장하지만 수정 가능. 정산 중간에 사용."
+              >
+                <Save className="mr-1 h-4 w-4" /> 임시저장
               </Button>
-              <Button onClick={() => saveDraft(true)}>
+              <Button
+                onClick={() => saveDraft(true)}
+                title="마감 확정: 잠금 처리. 재오픈 전까지 수정 불가."
+              >
                 <Lock className="mr-1 h-4 w-4" /> 마감 확정
               </Button>
             </>
           )}
         </div>
       </div>
+
+      {/* T-5: 마감 동작 가이드 */}
+      {!isClosed && (
+        <div className="text-xs text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
+          <span className="font-medium text-foreground">임시저장</span>은 수정 가능한 중간 저장이고,
+          <span className="font-medium text-foreground"> 마감 확정</span>은 잠금 처리되어 재오픈 전까지 수정할 수 없습니다.
+        </div>
+      )}
 
       {inProgress.length > 0 && (
         <Card className="border-orange-300 bg-orange-50">
@@ -439,7 +455,8 @@ export default function Closing() {
               <button
                 key={c.id}
                 className="flex w-full justify-between rounded px-1 py-0.5 hover:bg-orange-100 transition text-left"
-                onClick={() => navigate('/')}
+                title="대시보드에서 상세 확인"
+                onClick={() => navigate('/admin', { state: { openCheckInId: c.id } })}
               >
                 <span className="flex items-center gap-2">
                   <span>{c.customer_name}</span>
@@ -462,6 +479,7 @@ export default function Closing() {
             <CardTitle className="flex items-center gap-2 text-sm text-amber-900">
               <AlertTriangle className="h-4 w-4" />
               미수 경고 — 결제대기 {unpaid.length}건
+              <span className="ml-1 text-xs font-normal text-amber-700">(클릭 → 결제 처리)</span>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 text-sm text-amber-900">
@@ -469,7 +487,8 @@ export default function Closing() {
               <button
                 key={c.id}
                 className="flex w-full justify-between rounded px-1 py-0.5 hover:bg-amber-100 transition text-left"
-                onClick={() => navigate('/')}
+                title="대시보드에서 결제 처리"
+                onClick={() => navigate('/admin', { state: { openPaymentForCheckInId: c.id } })}
               >
                 <span>
                   {c.customer_name}{' '}
