@@ -9,12 +9,16 @@ export function parseAmount(value: string): number {
   return Number(value.replace(/[^\d-]/g, '')) || 0;
 }
 
+// PHONE_E164: 입력 E.164(+8210...) / 010 / 01012345678 모두 한국식(010-1234-5678)로 표시.
 export function formatPhone(phone: string | null | undefined): string {
   if (!phone) return '';
-  const digits = phone.replace(/\D/g, '');
-  if (digits.startsWith('010') && digits.length === 11) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  let digits = phone.replace(/\D/g, '');
+  // +82 prefix 제거 → 0 시작 변환
+  if (digits.startsWith('821') && (digits.length === 12 || digits.length === 11)) {
+    digits = '0' + digits.slice(2);
   }
+  if (digits.length === 11) return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  if (digits.length === 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
   return phone;
 }
 
