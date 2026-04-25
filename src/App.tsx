@@ -17,6 +17,7 @@ const Closing = lazy(() => import('@/pages/Closing'));
 const Stats = lazy(() => import('@/pages/Stats'));
 const Accounts = lazy(() => import('@/pages/Accounts'));
 const SelfCheckIn = lazy(() => import('@/pages/SelfCheckIn'));
+const Waiting = lazy(() => import('@/pages/Waiting'));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
@@ -41,6 +42,7 @@ function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/checkin/:clinicSlug" element={<SelfCheckIn />} />
+              <Route path="/waiting/:clinicSlug" element={<Waiting />} />
 
               <Route
                 path="/admin"

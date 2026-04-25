@@ -1073,12 +1073,7 @@ export default function Dashboard() {
     setDragging(null);
     const target = e.over?.id as string | undefined;
     const row = e.active.data.current?.checkIn as CheckIn | undefined;
-    // DEBUG: 드롭 타겟 확인 (배포 후 삭제)
-    console.log('[DnD] target:', target, 'row:', row?.status, '→', target);
-    if (!target || !row) {
-      if (!target) console.warn('[DnD] No drop target detected');
-      return;
-    }
+    if (!target || !row) return;
 
     if (row.id.startsWith('temp-')) {
       toast.info('체크인 처리 중입니다. 잠시 후 다시 시도해주세요.');

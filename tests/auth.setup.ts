@@ -12,7 +12,8 @@ import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const AUTH_FILE = path.join(__dirname, '..', 'test-results', '.auth', 'user.json');
+// test-results 는 run 마다 cleanable → 프로젝트 루트 `.auth/` 로 분리
+const AUTH_FILE = path.join(__dirname, '..', '.auth', 'user.json');
 
 // .env에서 읽은 Supabase 값 (Playwright는 dotenv 자동 로드 안 함)
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? '';
