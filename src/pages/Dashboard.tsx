@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   DndContext,
   DragOverlay,
@@ -154,6 +155,7 @@ function DraggableCard({
           e.stopPropagation();
           onContextMenu?.(e);
         }}
+        title="드래그=이동 · 우클릭/⋮=상태변경 · 클릭=상세"
         className={cn(
           'cursor-grab touch-none rounded border bg-white px-2 py-1.5 text-xs shadow-sm transition hover:shadow active:cursor-grabbing',
           urgency,
@@ -223,6 +225,7 @@ function DraggableCard({
         e.stopPropagation();
         onContextMenu?.(e);
       }}
+      title="드래그=이동 · 우클릭/⋮=상태변경 · 클릭=상세"
       className={cn(
         'cursor-grab touch-none rounded-lg border bg-white p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing',
         urgency,
@@ -634,7 +637,8 @@ function RoomSection({
           ))}
         </DroppableColumn>
       )}
-      <div className={cn('grid gap-1.5 p-1.5 bg-muted/10 rounded-b-lg border border-t-0', gridCols)}>
+      {/* L-3: 그리드 갭 균일 — RoomSlot 내부(space-y-1)와 동일하게 1.5 유지, 가로/세로 동일 */}
+      <div className={cn('grid gap-x-1.5 gap-y-1.5 p-1.5 bg-muted/10 rounded-b-lg border border-t-0', gridCols)}>
         {rooms.map((room) => (
           <RoomSlot
             key={room.id}
@@ -658,6 +662,7 @@ function RoomSection({
 }
 
 export default function Dashboard() {
+  const location = useLocation();
   const [clinic, setClinic] = useState<Clinic | null>(null);
   const [date, setDate] = useState<Date>(() => new Date());
   const [tab, setTab] = useState<TabKey>('all');
@@ -675,6 +680,32 @@ export default function Dashboard() {
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
   const [therapists, setTherapists] = useState<Staff[]>([]);
   const recentlyUpdated = useRef<Set<string>>(new Set());
+  const navStateConsumed = useRef(false);
+
+  // F-5: Closing 미수 클릭 → Dashboard 이동 시 결제 다이얼로그 또는 상세 시트 자동 오픈
+  useEffect(() => {
+    if (navStateConsumed.current) return;
+    if (loading) return;
+    const state = location.state as
+      | { openPaymentForCheckInId?: string; openCheckInId?: string }
+      | null;
+    if (!state) return;
+    if (state.openPaymentForCheckInId) {
+      const ci = rows.find((r) => r.id === state.openPaymentForCheckInId);
+      if (ci) {
+        setPaymentTarget(ci);
+        navStateConsumed.current = true;
+        window.history.replaceState({}, '');
+      }
+    } else if (state.openCheckInId) {
+      const ci = rows.find((r) => r.id === state.openCheckInId);
+      if (ci) {
+        setSelectedCheckIn(ci);
+        navStateConsumed.current = true;
+        window.history.replaceState({}, '');
+      }
+    }
+  }, [loading, location.state, rows]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -1072,6 +1103,11 @@ export default function Dashboard() {
       const stages = stagesFor(row.visit_type);
       const curIdx = stages.indexOf(row.status);
       const tgtIdx = stages.indexOf(targetStatus);
+      // #19 강화: 재진/체험 환자는 신규 전용 단계(체크리스트/진료/상담)로 이동 불가
+      if (targetStatus !== 'cancelled' && tgtIdx < 0) {
+        toast.info(`${VISIT_TYPE_KO[row.visit_type]} 환자는 ${STATUS_KO[targetStatus] ?? targetStatus} 단계로 이동할 수 없습니다`);
+        return;
+      }
       if (curIdx >= 0 && tgtIdx >= 0 && tgtIdx < curIdx && targetStatus !== 'cancelled') {
         toast.info('이전 단계로는 이동할 수 없습니다');
         return;
@@ -1096,13 +1132,15 @@ export default function Dashboard() {
 
       if (row.status === newStatus && (row as any)[roomField] === roomName) return;
 
-      const prev = rows;
       markRecentlyUpdated(row.id);
-      setRows((curr) =>
-        curr.map((r) =>
+      // #25 경합 방지: 함수형 업데이트 + 직전 row 스냅샷
+      let prevRow: CheckIn | undefined;
+      setRows((curr) => {
+        prevRow = curr.find((r) => r.id === row.id);
+        return curr.map((r) =>
           r.id === row.id ? { ...r, status: newStatus, [roomField]: roomName } : r,
-        ),
-      );
+        );
+      });
 
       const patch: Record<string, unknown> = {
         status: newStatus,
@@ -1120,7 +1158,7 @@ export default function Dashboard() {
 
       const { error } = await supabase.from('check_ins').update(patch).eq('id', row.id);
       if (error) {
-        setRows(prev);
+        setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
         toast.error(`이동 실패: ${error.message}`);
         return;
       }
@@ -1137,17 +1175,18 @@ export default function Dashboard() {
       toastWithUndo(`${roomName}(으)로 이동`, row);
     } else if (target === 'laser_waiting') {
       if (row.status === 'laser' && !row.laser_room) return;
-      const prev = rows;
       markRecentlyUpdated(row.id);
-      setRows((curr) =>
-        curr.map((r) => (r.id === row.id ? { ...r, status: 'laser' as CheckInStatus, laser_room: null } : r)),
-      );
+      let prevRow: CheckIn | undefined;
+      setRows((curr) => {
+        prevRow = curr.find((r) => r.id === row.id);
+        return curr.map((r) => (r.id === row.id ? { ...r, status: 'laser' as CheckInStatus, laser_room: null } : r));
+      });
       const { error } = await supabase
         .from('check_ins')
         .update({ status: 'laser', laser_room: null })
         .eq('id', row.id);
       if (error) {
-        setRows(prev);
+        setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
         toast.error(`이동 실패: ${error.message}`);
         return;
       }
@@ -1164,18 +1203,19 @@ export default function Dashboard() {
       toastWithUndo('레이저대기로 이동', row);
     } else if (target === 'returning_exam' || target === 'returning_treatment') {
       const needsExam = target === 'returning_exam';
-      const prev = rows;
       markRecentlyUpdated(row.id);
       const updatedNotes = { ...(row.notes ?? {}), needs_exam: needsExam };
-      setRows((curr) =>
-        curr.map((r) => (r.id === row.id ? { ...r, notes: updatedNotes } : r)),
-      );
+      let prevRow: CheckIn | undefined;
+      setRows((curr) => {
+        prevRow = curr.find((r) => r.id === row.id);
+        return curr.map((r) => (r.id === row.id ? { ...r, notes: updatedNotes } : r));
+      });
       const { error } = await supabase
         .from('check_ins')
         .update({ notes: updatedNotes })
         .eq('id', row.id);
       if (error) {
-        setRows(prev);
+        setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
         toast.error(`이동 실패: ${error.message}`);
         return;
       }
@@ -1184,11 +1224,12 @@ export default function Dashboard() {
       const newStatus = target as CheckInStatus;
       if (row.status === newStatus) return;
 
-      const prev = rows;
       markRecentlyUpdated(row.id);
-      setRows((curr) =>
-        curr.map((r) => (r.id === row.id ? { ...r, status: newStatus } : r)),
-      );
+      let prevRow: CheckIn | undefined;
+      setRows((curr) => {
+        prevRow = curr.find((r) => r.id === row.id);
+        return curr.map((r) => (r.id === row.id ? { ...r, status: newStatus } : r));
+      });
 
       const patch: Record<string, unknown> = { status: newStatus };
       if (newStatus === 'done') patch.completed_at = new Date().toISOString();
@@ -1198,7 +1239,7 @@ export default function Dashboard() {
 
       const { error } = await supabase.from('check_ins').update(patch).eq('id', row.id);
       if (error) {
-        setRows(prev);
+        setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
         toast.error(`이동 실패: ${error.message}`);
         return;
       }
@@ -1248,11 +1289,27 @@ export default function Dashboard() {
       toast.info('체크인 처리 중입니다. 잠시 후 다시 시도해주세요.');
       return;
     }
-    const prev = rows;
+    // #19 가드: 유효한 단계 전이만 허용 (cancelled는 항상 OK)
+    if (newStatus !== 'cancelled') {
+      const stages = stagesFor(ci.visit_type);
+      const curIdx = stages.indexOf(ci.status);
+      const tgtIdx = stages.indexOf(newStatus);
+      if (tgtIdx < 0) {
+        toast.info(`${VISIT_TYPE_KO[ci.visit_type]} 환자는 ${STATUS_KO[newStatus] ?? newStatus} 단계로 이동할 수 없습니다`);
+        return;
+      }
+      if (curIdx >= 0 && tgtIdx < curIdx) {
+        toast.info('이전 단계로는 이동할 수 없습니다');
+        return;
+      }
+    }
     markRecentlyUpdated(ci.id);
-    setRows((curr) =>
-      curr.map((r) => (r.id === ci.id ? { ...r, status: newStatus } : r)),
-    );
+    // #25 경합 방지: 함수형 업데이트 + 직전 row 캡처
+    let prevRow: CheckIn | undefined;
+    setRows((curr) => {
+      prevRow = curr.find((r) => r.id === ci.id);
+      return curr.map((r) => (r.id === ci.id ? { ...r, status: newStatus } : r));
+    });
     const patch: Record<string, unknown> = { status: newStatus };
     if (newStatus === 'done') patch.completed_at = new Date().toISOString();
     if (!ci.called_at && ci.status === 'registered') {
@@ -1260,7 +1317,8 @@ export default function Dashboard() {
     }
     const { error } = await supabase.from('check_ins').update(patch).eq('id', ci.id);
     if (error) {
-      setRows(prev);
+      // #25 경합 방지: 해당 row만 롤백 (전체 rows 롤백 시 다른 동시 업데이트 손실)
+      setRows((curr) => curr.map((r) => (r.id === ci.id && prevRow ? prevRow : r)));
       toast.error(`상태 변경 실패: ${error.message}`);
       return;
     }
@@ -1285,6 +1343,13 @@ export default function Dashboard() {
 
   const handleReservationCheckIn = async (res: Reservation) => {
     if (!clinic) return;
+    // B-3: 프론트 중복 방지 — 이미 체크인된 예약이면 차단 (DB UNIQUE 외 사용자 피드백)
+    const already = rows.find((r) => r.reservation_id === res.id && r.status !== 'cancelled');
+    if (already) {
+      toast.info(`${res.customer_name}님은 이미 체크인되어 있습니다`);
+      setSelectedCheckIn(already);
+      return;
+    }
     const { data: queueData, error: qErr } = await supabase.rpc('next_queue_number', {
       p_clinic_id: clinic.id,
       p_date: format(new Date(), 'yyyy-MM-dd'),
@@ -1358,7 +1423,9 @@ export default function Dashboard() {
     const stages = stagesFor(dragging.visit_type);
     const curIdx = stages.indexOf(dragging.status);
     const tgtIdx = stages.indexOf(columnStatus);
-    if (curIdx < 0 || tgtIdx < 0) return false;
+    // C-4: 재진/체험 환자가 신규 전용 단계(체크리스트/진료/상담)로 이동 시 invalid
+    if (tgtIdx < 0) return true;
+    if (curIdx < 0) return false;
     if (tgtIdx < curIdx) return true;
     if (dragging.visit_type === 'new' && dragging.status === 'registered' && columnStatus !== 'checklist') return true;
     return false;
