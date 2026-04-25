@@ -1,8 +1,14 @@
 import { defineConfig, devices } from '@playwright/test';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// .env (Supabase URL/key) + .env.test (테스트 전용 플래그) 를 모두 로드
+dotenv.config({ path: path.join(__dirname, '.env') });
+dotenv.config({ path: path.join(__dirname, '.env.test') });
+
 const AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
 
 export default defineConfig({
@@ -55,5 +61,9 @@ export default defineConfig({
     url: 'http://localhost:8082',
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
+    env: {
+      // Vite dev 서버에 테스트 모드 플래그 전달 → src/lib/supabase.ts 에서 lock 우회
+      VITE_DISABLE_AUTH_LOCK: '1',
+    },
   },
 });

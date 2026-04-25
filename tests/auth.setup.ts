@@ -2,9 +2,15 @@
  * Auth setup — Supabase JS SDK로 직접 signInWithPassword 후
  * localStorage 세션을 storageState로 저장.
  *
- * UI 로그인보다 빠르고 rate-limit에 강함.
+ * 전제: src/lib/supabase.ts 가 VITE_DISABLE_AUTH_LOCK=1 일 때
+ *       navigator.locks 우회(lockNoop) 모드로 동작.
+ *       이 플래그가 없으면 새 BrowserContext 에서 getSession() 이 hang.
+ *
+ * UI 로그인 대비:
+ *   - SDK 로그인: ~1.5s, rate-limit 거의 없음
+ *   - UI 로그인: ~5~10s, signInWithPassword 폼 매번 트리거
  */
-import { test as setup } from '@playwright/test';
+import { test as setup, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -12,49 +18,39 @@ import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// test-results 는 run 마다 cleanable → 프로젝트 루트 `.auth/` 로 분리
 const AUTH_FILE = path.join(__dirname, '..', '.auth', 'user.json');
 
-// .env에서 읽은 Supabase 값 (Playwright는 dotenv 자동 로드 안 함)
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? '';
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? '';
+const TEST_EMAIL = process.env.TEST_EMAIL ?? 'test@medibuilder.com';
+const TEST_PASSWORD = process.env.TEST_PASSWORD ?? 'TestPass2026!';
 
 setup('authenticate', async ({ page }) => {
-  const email = process.env.TEST_EMAIL;
-  const password = process.env.TEST_PASSWORD;
-
-  if (!email || !password) {
-    console.log('[auth.setup] TEST_EMAIL not set — unauthenticated mode');
-    await page.goto('/login');
-    await page.context().storageState({ path: AUTH_FILE });
-    return;
-  }
-
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    console.log('[auth.setup] Supabase env not set — falling back to UI login');
-    await uiLogin(page, email, password);
-    return;
+    throw new Error('VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY 가 .env에 없습니다.');
   }
 
-  // Supabase SDK로 직접 로그인
+  // 1) Supabase SDK로 직접 로그인 → access_token + refresh_token 획득
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: TEST_EMAIL,
+    password: TEST_PASSWORD,
+  });
 
   if (error || !data.session) {
-    console.log('[auth.setup] SDK login failed:', error?.message ?? 'no session');
-    console.log('[auth.setup] Falling back to UI login');
-    await uiLogin(page, email, password);
-    return;
+    throw new Error(`[auth.setup] SDK login failed: ${error?.message ?? 'no session'}`);
   }
 
   const session = data.session;
-  console.log('[auth.setup] SDK login successful, injecting session into localStorage');
+  console.log('[auth.setup] SDK login OK — user:', session.user.email);
 
-  // Supabase가 localStorage에 저장하는 키 형식
-  const storageKey = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}-auth-token`;
+  // 2) Vite dev origin 으로 진입 후 localStorage 주입
+  //    Supabase JS 가 사용하는 키 형식: sb-{ref}-auth-token
+  const ref = new URL(SUPABASE_URL).hostname.split('.')[0];
+  const storageKey = `sb-${ref}-auth-token`;
   const sessionPayload = JSON.stringify({
     access_token: session.access_token,
     refresh_token: session.refresh_token,
@@ -64,7 +60,6 @@ setup('authenticate', async ({ page }) => {
     user: session.user,
   });
 
-  // 앱 페이지로 이동 후 localStorage 주입
   await page.goto('/login');
   await page.evaluate(
     ({ key, value }) => {
@@ -73,36 +68,23 @@ setup('authenticate', async ({ page }) => {
     { key: storageKey, value: sessionPayload },
   );
 
-  // 세션이 적용되었는지 확인 (admin으로 이동)
+  // 3) /admin 으로 이동 → AuthProvider 가 lockNoop 으로 즉시 세션 인식 → Dashboard 렌더
   await page.goto('/admin');
   try {
-    await page.getByText('대시보드', { exact: true }).first().waitFor({ timeout: 15_000 });
+    await expect(page.getByText('대시보드', { exact: true }).first()).toBeVisible({
+      timeout: 15_000,
+    });
     console.log('[auth.setup] Session injection confirmed — Dashboard loaded');
-  } catch {
-    console.log('[auth.setup] Dashboard did not load after session injection, but continuing');
+  } catch (e) {
+    // hang 이면 lockNoop 분기가 적용 안 된 것 — 즉시 실패
+    throw new Error(
+      `[auth.setup] Dashboard 로딩 실패. VITE_DISABLE_AUTH_LOCK=1 이 dev 서버에 전달되었는지 확인. (${(e as Error).message})`,
+    );
   }
 
-  // storageState 저장 (auth dir 보장)
+  // 4) storageState 저장
   const authDir = path.dirname(AUTH_FILE);
   if (!fs.existsSync(authDir)) fs.mkdirSync(authDir, { recursive: true });
   await page.context().storageState({ path: AUTH_FILE });
+  console.log('[auth.setup] storageState saved →', AUTH_FILE);
 });
-
-/** UI를 통한 폴백 로그인 */
-async function uiLogin(page: import('@playwright/test').Page, email: string, password: string) {
-  await page.goto('/login');
-  await page.getByLabel('이메일').fill(email);
-  await page.getByLabel('비밀번호').fill(password);
-  await page.getByRole('button', { name: '로그인' }).click();
-
-  try {
-    await page.getByText('대시보드', { exact: true }).first().waitFor({ timeout: 20_000 });
-    console.log('[auth.setup] UI login successful');
-  } catch {
-    console.log('[auth.setup] UI login — Dashboard not reached');
-  }
-
-  const authDir = path.dirname(AUTH_FILE);
-  if (!fs.existsSync(authDir)) fs.mkdirSync(authDir, { recursive: true });
-  await page.context().storageState({ path: AUTH_FILE });
-}

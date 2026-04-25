@@ -1,30 +1,39 @@
 /**
  * 테스트 공용 헬퍼
+ *
+ * 변경 (T-foot-PW04 unblock, 2026-04-25):
+ * - storageState 가 정상 주입되면 /admin 직접 진입으로 충분 → UI 로그인 불필요
+ * - storageState 없거나 만료 시 UI 로그인 폴백 (rate-limit 위험)
  */
 import type { Page } from '@playwright/test';
-import { createClient } from '@supabase/supabase-js';
 
-const TEST_EMAIL = process.env.TEST_EMAIL ?? '';
-const TEST_PASSWORD = process.env.TEST_PASSWORD ?? '';
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? '';
-const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? '';
+const TEST_EMAIL = process.env.TEST_EMAIL ?? 'test@medibuilder.com';
+const TEST_PASSWORD = process.env.TEST_PASSWORD ?? 'TestPass2026!';
 
 /**
- * Supabase SDK로 세션을 가져와 localStorage에 주입 후 Dashboard 로딩 대기.
- * SDK 실패 시 UI 로그인으로 폴백.
- * 반환값: true = 성공, false = 실패(skip 필요)
+ * /admin 진입 시 이미 storageState 로 인증된 상태가 정상.
+ * Dashboard 텍스트가 보이면 true. /login 으로 튕기면 UI 로그인 폴백.
  */
 export async function loginAndWaitForDashboard(page: Page): Promise<boolean> {
-  if (!TEST_EMAIL || !TEST_PASSWORD) return false;
+  await page.goto('/admin');
 
-  // UI 로그인 (SDK 주입은 getSession 지연 이슈로 비활성)
+  // storageState 로 인증된 케이스 — /admin 그대로 유지
+  if (!page.url().includes('/login')) {
+    try {
+      await page.getByText('대시보드', { exact: true }).first().waitFor({ timeout: 15_000 });
+      await page.waitForTimeout(500);
+      return true;
+    } catch {
+      // 인증은 됐는데 화면 못 그림 — 폴백 시도
+    }
+  }
+
   return uiLogin(page);
 }
 
 async function uiLogin(page: Page): Promise<boolean> {
   await page.goto('/login');
 
-  // 이미 인증된 경우
   if (!page.url().includes('/login')) {
     try {
       await page.getByText('대시보드', { exact: true }).first().waitFor({ timeout: 15_000 });
@@ -40,7 +49,7 @@ async function uiLogin(page: Page): Promise<boolean> {
 
   try {
     await page.getByText('대시보드', { exact: true }).first().waitFor({ timeout: 30_000 });
-    await page.waitForTimeout(1_500);
+    await page.waitForTimeout(1_000);
     return true;
   } catch {
     return false;
@@ -59,7 +68,7 @@ export async function navigateToDashboard(page: Page): Promise<boolean> {
 
   try {
     await page.getByText('대시보드', { exact: true }).first().waitFor({ timeout: 15_000 });
-    await page.waitForTimeout(1_500);
+    await page.waitForTimeout(500);
     return true;
   } catch {
     return false;
