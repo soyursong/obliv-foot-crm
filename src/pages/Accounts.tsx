@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { toast } from 'sonner';
-import { Check, KeyRound, Shield, UserPlus, UserX } from 'lucide-react';
+import { Check, Copy, KeyRound, Shield, UserPlus, UserX } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import type { Clinic, UserProfile, UserRole } from '@/lib/types';
+import type { Clinic, Staff, UserProfile, UserRole } from '@/lib/types';
 
 // admin 세션 유지를 위해 persistSession:false 로 별도 client 사용 (signUp 이 현재 세션을 덮어쓰지 않도록)
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -39,9 +39,30 @@ const ROLE_LABEL: Record<UserRole, string> = {
 
 const ROLES: UserRole[] = ['admin', 'manager', 'consultant', 'coordinator', 'therapist', 'technician', 'tm', 'staff'];
 
+// 임상직(staff 테이블 매핑 대상)
+const CLINICAL_ROLES: UserRole[] = ['consultant', 'coordinator', 'therapist', 'technician'];
+
+// 임시 비번 자동 생성 (영문대소+숫자+특수, 10자)
+function generateTempPassword(): string {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghijkmnopqrstuvwxyz';
+  const digit = '23456789';
+  const sym = '!@#$%';
+  const all = upper + lower + digit + sym;
+  let pw = '';
+  pw += upper[Math.floor(Math.random() * upper.length)];
+  pw += lower[Math.floor(Math.random() * lower.length)];
+  pw += digit[Math.floor(Math.random() * digit.length)];
+  pw += sym[Math.floor(Math.random() * sym.length)];
+  for (let i = 0; i < 6; i++) pw += all[Math.floor(Math.random() * all.length)];
+  // shuffle
+  return pw.split('').sort(() => Math.random() - 0.5).join('');
+}
+
 export default function Accounts() {
   const [clinic, setClinic] = useState<Clinic | null>(null);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [staffList, setStaffList] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
   const [editUser, setEditUser] = useState<UserProfile | null>(null);
   const [editRole, setEditRole] = useState<UserRole>('staff');
@@ -53,7 +74,14 @@ export default function Accounts() {
   const [invitePw, setInvitePw] = useState('');
   const [inviteName, setInviteName] = useState('');
   const [inviteRole, setInviteRole] = useState<UserRole>('staff');
+  const [inviteStaffId, setInviteStaffId] = useState<string>(''); // '' = auto/none
   const [inviteBusy, setInviteBusy] = useState(false);
+
+  // 비번 리셋 모달
+  const [resetUser, setResetUser] = useState<UserProfile | null>(null);
+  const [resetPw, setResetPw] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetResult, setResetResult] = useState<string | null>(null); // 성공 시 1회 노출
 
   useEffect(() => {
     getClinic().then(setClinic).catch(() => setClinic(null));
@@ -62,17 +90,26 @@ export default function Accounts() {
   const fetchUsers = useCallback(async () => {
     if (!clinic) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('clinic_id', clinic.id)
-      .order('created_at', { ascending: true });
-    if (error) {
+    const [usersResp, staffResp] = await Promise.all([
+      supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('clinic_id', clinic.id)
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('staff')
+        .select('*')
+        .eq('clinic_id', clinic.id)
+        .order('name', { ascending: true }),
+    ]);
+    if (usersResp.error) {
       toast.error('계정 목록 로딩 실패');
-      setLoading(false);
-      return;
+    } else {
+      setUsers((usersResp.data ?? []) as UserProfile[]);
     }
-    setUsers((data ?? []) as UserProfile[]);
+    if (!staffResp.error) {
+      setStaffList((staffResp.data ?? []) as Staff[]);
+    }
     setLoading(false);
   }, [clinic]);
 
@@ -95,12 +132,12 @@ export default function Accounts() {
   const toggleActive = async (u: UserProfile) => {
     const next = !u.active;
     const action = next ? '활성화' : '비활성화';
-    if (!next && !window.confirm(`${u.name ?? u.email}을(를) ${action}하시겠습니까?`)) return;
-    const { error } = await supabase
-      .from('user_profiles')
-      .update({ active: next })
-      .eq('id', u.id);
-    if (error) { toast.error(error.message); return; }
+    if (!next && !window.confirm(`${u.name ?? u.email}을(를) ${action}하시겠습니까? (staff 활성도 동기화됩니다)`)) return;
+    const { error } = await supabase.rpc('admin_toggle_user_active', {
+      target_user_id: u.id,
+      set_active: next,
+    });
+    if (error) { toast.error(`${action} 실패: ${error.message}`); return; }
     toast.success(`${action}됨`);
     fetchUsers();
   };
@@ -111,14 +148,41 @@ export default function Accounts() {
     setEditName(u.name ?? '');
   };
 
-  const sendPasswordReset = async (u: UserProfile) => {
-    if (!u.email) { toast.error('이메일이 없습니다'); return; }
-    if (!window.confirm(`${u.email} 으로 비밀번호 재설정 메일을 보냅니다.`)) return;
-    const { error } = await supabase.auth.resetPasswordForEmail(u.email, {
-      redirectTo: `${window.location.origin}/login`,
+  const openReset = (u: UserProfile) => {
+    setResetUser(u);
+    setResetPw('');
+    setResetResult(null);
+  };
+
+  const submitReset = async () => {
+    if (!resetUser) return;
+    const pw = resetPw.trim();
+    if (pw.length < 6) { toast.error('비밀번호 6자 이상'); return; }
+    setResetBusy(true);
+    const { error } = await supabase.rpc('admin_reset_user_password', {
+      target_user_id: resetUser.id,
+      new_password: pw,
     });
-    if (error) { toast.error(`메일 전송 실패: ${error.message}`); return; }
-    toast.success('재설정 메일 전송됨');
+    setResetBusy(false);
+    if (error) { toast.error(`초기화 실패: ${error.message}`); return; }
+    setResetResult(pw);
+    toast.success('비밀번호 초기화 완료');
+  };
+
+  const closeReset = () => {
+    setResetUser(null);
+    setResetPw('');
+    setResetResult(null);
+  };
+
+  const copyResetPw = async () => {
+    if (!resetResult) return;
+    try {
+      await navigator.clipboard.writeText(resetResult);
+      toast.success('복사됨');
+    } catch {
+      toast.error('복사 실패 — 직접 선택해 복사하세요');
+    }
   };
 
   const inviteStaff = async () => {
@@ -128,9 +192,10 @@ export default function Accounts() {
     const name = inviteName.trim();
     if (!email || !pw) { toast.error('이메일과 비밀번호를 입력하세요'); return; }
     if (pw.length < 8) { toast.error('비밀번호는 8자 이상'); return; }
+    if (!name) { toast.error('이름을 입력하세요'); return; }
 
     setInviteBusy(true);
-    // admin 세션 유지를 위해 별도 client 로 signUp
+    // 1) auth.users 생성 (admin 세션 유지를 위해 별도 client 로 signUp)
     const { data, error } = await signupClient.auth.signUp({
       email,
       password: pw,
@@ -141,26 +206,25 @@ export default function Accounts() {
       toast.error(`계정 생성 실패: ${error?.message ?? 'unknown'}`);
       return;
     }
-    // profile 업데이트 (trigger 가 profile row 생성. 즉시 승인/역할/clinic 지정)
-    const { error: upErr } = await supabase
-      .from('user_profiles')
-      .upsert({
-        id: data.user.id,
-        email,
-        name: name || null,
-        role: inviteRole,
-        clinic_id: clinic.id,
-        approved: true,
-        active: true,
-      }, { onConflict: 'id' });
+
+    // 2) user_profiles 등록 + staff 매핑/생성 (RPC 트랜잭션)
+    const { error: rpcErr } = await supabase.rpc('admin_register_user', {
+      target_user_id: data.user.id,
+      email,
+      name,
+      role: inviteRole,
+      approved: true,
+      staff_id: inviteStaffId || null,
+    });
     setInviteBusy(false);
-    if (upErr) { toast.error(`프로필 설정 실패: ${upErr.message}`); return; }
+    if (rpcErr) { toast.error(`프로필/staff 매핑 실패: ${rpcErr.message}`); return; }
     toast.success(`${email} 등록 완료 (즉시 승인)`);
     setInviteOpen(false);
     setInviteEmail('');
     setInvitePw('');
     setInviteName('');
     setInviteRole('staff');
+    setInviteStaffId('');
     fetchUsers();
   };
 
@@ -181,6 +245,12 @@ export default function Accounts() {
   const pending = users.filter((u) => !u.approved);
   const active = users.filter((u) => u.approved && u.active);
   const inactive = users.filter((u) => u.approved && !u.active);
+
+  // 등록 모달: 임상직일 때 매핑 가능한 staff (user_id NULL + active)
+  const availableStaff = useMemo(() => {
+    if (!CLINICAL_ROLES.includes(inviteRole)) return [];
+    return staffList.filter((s) => !s.user_id && s.active && s.role === inviteRole);
+  }, [staffList, inviteRole]);
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -258,8 +328,8 @@ export default function Accounts() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            title="비밀번호 재설정 메일 전송"
-                            onClick={() => sendPasswordReset(u)}
+                            title="비밀번호 초기화"
+                            onClick={() => openReset(u)}
                           >
                             <KeyRound className="h-3.5 w-3.5" />
                           </Button>
@@ -318,7 +388,16 @@ export default function Accounts() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>임시 비밀번호 (8자 이상)</Label>
+                <div className="flex items-center justify-between">
+                  <Label>임시 비밀번호 (8자 이상)</Label>
+                  <button
+                    type="button"
+                    className="text-xs text-teal-700 hover:underline"
+                    onClick={() => setInvitePw(generateTempPassword())}
+                  >
+                    자동 생성
+                  </button>
+                </div>
                 <Input
                   type="text"
                   value={invitePw}
@@ -328,7 +407,7 @@ export default function Accounts() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>이름 (선택)</Label>
+                <Label>이름</Label>
                 <Input value={inviteName} onChange={(e) => setInviteName(e.target.value)} />
               </div>
               <div className="space-y-1.5">
@@ -337,7 +416,7 @@ export default function Accounts() {
                   {ROLES.map((r) => (
                     <button
                       key={r}
-                      onClick={() => setInviteRole(r)}
+                      onClick={() => { setInviteRole(r); setInviteStaffId(''); }}
                       className={`h-9 rounded-md border text-xs font-medium transition ${
                         inviteRole === r
                           ? 'border-teal-600 bg-teal-50 text-teal-700'
@@ -349,8 +428,28 @@ export default function Accounts() {
                   ))}
                 </div>
               </div>
+              {CLINICAL_ROLES.includes(inviteRole) && (
+                <div className="space-y-1.5">
+                  <Label>staff 매핑 (선택)</Label>
+                  <select
+                    value={inviteStaffId}
+                    onChange={(e) => setInviteStaffId(e.target.value)}
+                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  >
+                    <option value="">자동 매칭 (없으면 신규 staff 생성)</option>
+                    {availableStaff.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} · {s.role}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-muted-foreground">
+                    임상직(상담/코디/치료/관리)은 staff 테이블과 연결됩니다. 미선택 시 동명·동역할 staff에 자동 매칭, 없으면 새 staff row를 생성합니다.
+                  </p>
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">
-                관리자가 직접 생성한 계정은 즉시 승인 처리됩니다. 직원은 설정된 비밀번호로 로그인 후 변경하세요.
+                관리자가 직접 생성한 계정은 즉시 승인됩니다. 직원은 설정된 비밀번호로 로그인 후 변경하세요.
               </p>
             </div>
             <DialogFooter>
@@ -420,6 +519,69 @@ export default function Accounts() {
                 {saving ? '저장 중…' : '저장'}
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {resetUser && (
+        <Dialog open onOpenChange={(o) => !o && !resetBusy && closeReset()}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>비밀번호 초기화 · {resetUser.name ?? resetUser.email}</DialogTitle>
+            </DialogHeader>
+            {!resetResult ? (
+              <>
+                <div className="space-y-3">
+                  <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3 text-xs text-amber-800">
+                    설정한 비밀번호로 즉시 변경됩니다. 직원에게 안전한 채널로 전달 후 즉시 로그인 → 변경을 안내하세요.
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label>새 비밀번호 (6자 이상)</Label>
+                      <button
+                        type="button"
+                        className="text-xs text-teal-700 hover:underline"
+                        onClick={() => setResetPw(generateTempPassword())}
+                      >
+                        자동 생성
+                      </button>
+                    </div>
+                    <Input
+                      type="text"
+                      value={resetPw}
+                      onChange={(e) => setResetPw(e.target.value)}
+                      placeholder="임시 비밀번호"
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" disabled={resetBusy} onClick={closeReset}>
+                    취소
+                  </Button>
+                  <Button disabled={resetBusy || resetPw.length < 6} onClick={submitReset}>
+                    {resetBusy ? '초기화 중…' : '초기화'}
+                  </Button>
+                </DialogFooter>
+              </>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+                    초기화 완료. 아래 비밀번호를 직원에게 안전하게 전달하세요. <b>이 화면을 닫으면 다시 볼 수 없습니다.</b>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
+                    <code className="flex-1 select-all font-mono text-sm">{resetResult}</code>
+                    <Button size="sm" variant="ghost" onClick={copyResetPw}>
+                      <Copy className="mr-1 h-3.5 w-3.5" /> 복사
+                    </Button>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button onClick={closeReset}>확인</Button>
+                </DialogFooter>
+              </>
+            )}
           </DialogContent>
         </Dialog>
       )}
