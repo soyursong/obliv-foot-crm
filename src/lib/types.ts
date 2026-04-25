@@ -74,6 +74,7 @@ export interface Staff {
   role: StaffRole;
   active: boolean;
   created_at: string;
+  user_id?: string | null;
 }
 
 export interface Room {
@@ -162,6 +163,7 @@ export interface UserProfile {
   active: boolean;
   approved: boolean;
   created_at: string;
+  access_tier?: string | null;
 }
 
 export interface Reservation {
