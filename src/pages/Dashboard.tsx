@@ -307,6 +307,7 @@ function DroppableColumn({
   return (
     <div
       ref={setNodeRef}
+      data-droppable-id={id}
       className={cn(
         'flex flex-col rounded-lg border bg-muted/20 transition-colors',
         isOver && !invalidDrop && 'border-teal-400 bg-teal-50/40',
@@ -515,6 +516,9 @@ function RoomSlot({
   return (
     <div
       ref={setNodeRef}
+      data-droppable-id={dropId}
+      data-room-name={roomName}
+      data-room-type={roomType}
       className={cn(
         'rounded-lg border bg-white/60 p-1.5 min-h-[70px] transition-colors',
         isOver && !isFull && 'border-teal-400 bg-teal-50/50',

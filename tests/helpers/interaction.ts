@@ -18,59 +18,46 @@ export async function dragCard(page: Page, checkInId: string, droppableId: strin
   const card = page.locator(`[data-testid="checkin-card"][data-checkin-id="${checkInId}"]`).first();
   await card.waitFor({ state: 'visible', timeout: 5000 });
 
-  // droppable target 찾기 — DroppableColumn / RoomSlot은 dnd-kit이 자체 등록.
-  // data-testid 없으므로 컴포넌트가 props로 받은 id를 prop으로 가지지만 DOM엔 직접 노출 안 됨.
-  // 우회: droppableId 텍스트 기반 추정 매핑.
+  // droppable target 찾기 — data-droppable-id로 정확 매칭
   const targetLocator = await resolveDroppableLocator(page, droppableId);
   await targetLocator.waitFor({ state: 'visible', timeout: 5000 });
 
+  // 핵심: viewport 밖이면 가로 스크롤 필요 (칸반은 가로 스크롤 영역)
+  await targetLocator.scrollIntoViewIfNeeded({ timeout: 3000 });
+  await page.waitForTimeout(300);
+
+  // scroll 후 카드 위치도 변할 수 있음 — 다시 측정
+  await card.scrollIntoViewIfNeeded({ timeout: 1500 }).catch(() => {});
+  await page.waitForTimeout(150);
+
   const cardBox = await card.boundingBox();
   const targetBox = await targetLocator.boundingBox();
-  if (!cardBox || !targetBox) throw new Error('dragCard: bounding box null');
+  if (!cardBox || !targetBox) throw new Error('dragCard: bounding box null after scroll');
 
-  const startX = cardBox.x + cardBox.width / 2;
+  // 카드: 좌상단 drag handle 근처 (GripVertical 아이콘)
+  const startX = cardBox.x + 20;
   const startY = cardBox.y + cardBox.height / 2;
-  const endX = targetBox.x + targetBox.width / 2;
-  const endY = targetBox.y + targetBox.height / 2;
+  // target: 안쪽 30% (인접 droppable 영역 회피)
+  const endX = targetBox.x + Math.min(targetBox.width * 0.3, targetBox.width - 20);
+  const endY = targetBox.y + Math.min(targetBox.height * 0.5, targetBox.height - 20);
 
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   // dnd-kit PointerSensor activation: 4px 이동 후 drag 인식
-  await page.mouse.move(startX + 8, startY + 8, { steps: 5 });
-  await page.mouse.move(endX, endY, { steps: 15 });
+  await page.mouse.move(startX + 10, startY + 10, { steps: 5 });
+  // 중간 좌표 경유 — over event를 명확히 트리거
+  await page.mouse.move(endX, endY, { steps: 25 });
+  await page.waitForTimeout(200);
+  // target 위에서 한 번 더 머무름 (collision detection 안정화)
+  await page.mouse.move(endX + 1, endY + 1, { steps: 3 });
   await page.waitForTimeout(150);
   await page.mouse.up();
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(1000);
 }
 
-/** droppable id → Locator 휴리스틱 */
+/** droppable id → Locator (data-droppable-id 정확 매칭) */
 async function resolveDroppableLocator(page: Page, droppableId: string): Promise<Locator> {
-  // room:레이저실N → "레이저실N" 텍스트 포함 div (RoomSlot)
-  if (droppableId.startsWith('room:')) {
-    const roomName = droppableId.slice(5);
-    return page.locator(`div:has(> div:has-text("${roomName}"))`).first();
-  }
-  // laser_waiting / consult_waiting / treatment_waiting / done / registered 등 → 컬럼 헤더 텍스트
-  const labelMap: Record<string, string> = {
-    registered: '대기',
-    consult_waiting: '상담대기',
-    consultation: '상담',
-    exam_waiting: '진료대기',
-    examination: '원장 진료',
-    treatment_waiting: '관리대기',
-    treatment: '관리',
-    laser_waiting: '레이저대기',
-    laser: '레이저',
-    payment_waiting: '수납대기',
-    done: '완료',
-    cancelled: '취소',
-  };
-  const label = labelMap[droppableId];
-  if (label) {
-    return page.locator(`div:has(> div:has-text("${label}"))`).first();
-  }
-  // fallback
-  return page.getByText(droppableId).first();
+  return page.locator(`[data-droppable-id="${droppableId}"]`).first();
 }
 
 /** 칸반 카드 클릭 → CheckInDetailSheet 열림 대기 */
