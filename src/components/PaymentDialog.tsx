@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { CreditCard } from 'lucide-react';
+import { CreditCard, Package as PackageIcon } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -15,9 +15,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
 import { formatAmount, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { PACKAGE_PRESETS } from '@/lib/packagePresets';
 import type { CheckIn } from '@/lib/types';
 
 type PayMethod = 'card' | 'cash' | 'transfer';
+type PaymentMode = 'single' | 'package';
 
 interface Props {
   checkIn: CheckIn | null;
@@ -41,6 +43,8 @@ const INSTALLMENT_OPTIONS = [
 ];
 
 export function PaymentDialog({ checkIn, onClose, onPaid }: Props) {
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>('single');
+  const [selectedPackageKey, setSelectedPackageKey] = useState<string | null>(null);
   const [method, setMethod] = useState<PayMethod>('card');
   const [amountStr, setAmountStr] = useState('');
   const [installment, setInstallment] = useState(0);
@@ -52,6 +56,8 @@ export function PaymentDialog({ checkIn, onClose, onPaid }: Props) {
 
   useEffect(() => {
     if (checkIn) {
+      setPaymentMode('single');
+      setSelectedPackageKey(null);
       setMethod('card');
       setAmountStr('');
       setInstallment(0);
@@ -62,72 +68,174 @@ export function PaymentDialog({ checkIn, onClose, onPaid }: Props) {
     }
   }, [checkIn?.id]);
 
+  const canShowPackageMode = useMemo(() => {
+    if (!checkIn) return false;
+    return checkIn.visit_type !== 'returning' && !checkIn.package_id;
+  }, [checkIn]);
+
   if (!checkIn) return null;
 
   const amount = parseAmount(amountStr);
   const splitCard = parseAmount(splitCardStr);
   const splitCash = parseAmount(splitCashStr);
+  const selectedPreset = selectedPackageKey ? PACKAGE_PRESETS[selectedPackageKey] : null;
+
+  const handleSelectPackage = (key: string) => {
+    setSelectedPackageKey(key);
+    const p = PACKAGE_PRESETS[key];
+    if (p) setAmountStr(String(p.suggestedPrice));
+  };
+
+  const insertPayments = async (
+    rows: Array<{
+      amount: number;
+      method: PayMethod;
+      installment: number | null;
+      memo: string | null;
+      payment_type: string;
+      package_id?: string | null;
+    }>,
+  ) => {
+    const payload = rows.map((r) => ({
+      clinic_id: checkIn.clinic_id,
+      check_in_id: checkIn.id,
+      customer_id: checkIn.customer_id,
+      amount: r.amount,
+      method: r.method,
+      installment: r.installment,
+      memo: r.memo,
+      payment_type: r.payment_type,
+    }));
+    return supabase.from('payments').insert(payload);
+  };
 
   const handleSubmit = async () => {
     setSubmitting(true);
 
-    if (isSplit) {
-      if (splitCard <= 0 && splitCash <= 0) {
+    if (paymentMode === 'package') {
+      if (!selectedPreset) {
+        toast.error('패키지를 선택하세요');
+        setSubmitting(false);
+        return;
+      }
+      const totalAmount = isSplit ? splitCard + splitCash : amount;
+      if (totalAmount <= 0) {
         toast.error('금액을 입력하세요');
         setSubmitting(false);
         return;
       }
-      const payments: { clinic_id: string; check_in_id: string; customer_id: string | null; amount: number; method: PayMethod; installment: number | null; memo: string | null; payment_type: string }[] = [];
-      if (splitCard > 0) {
-        payments.push({
+
+      const { data: pkgRow, error: pkgErr } = await supabase
+        .from('packages')
+        .insert({
           clinic_id: checkIn.clinic_id,
-          check_in_id: checkIn.id,
           customer_id: checkIn.customer_id,
-          amount: splitCard,
-          method: 'card',
-          installment: installment || null,
-          memo: `분할: 카드 ${formatAmount(splitCard)} + 현금 ${formatAmount(splitCash)}`,
-          payment_type: 'payment',
-        });
-      }
-      if (splitCash > 0) {
-        payments.push({
-          clinic_id: checkIn.clinic_id,
-          check_in_id: checkIn.id,
-          customer_id: checkIn.customer_id,
-          amount: splitCash,
-          method: 'cash',
-          installment: null,
-          memo: `분할: 카드 ${formatAmount(splitCard)} + 현금 ${formatAmount(splitCash)}`,
-          payment_type: 'payment',
-        });
-      }
-      const { error } = await supabase.from('payments').insert(payments);
-      if (error) {
-        toast.error(`결제 실패: ${error.message}`);
+          package_name: selectedPreset.label,
+          total_sessions: selectedPreset.total,
+          paid_amount: totalAmount,
+          status: 'active',
+        })
+        .select('id')
+        .single();
+
+      if (pkgErr || !pkgRow) {
+        toast.error(`패키지 생성 실패: ${pkgErr?.message ?? 'unknown'}`);
         setSubmitting(false);
         return;
       }
+      const newPackageId = pkgRow.id as string;
+
+      const ppRows: Array<{
+        amount: number;
+        method: PayMethod;
+        installment: number | null;
+      }> = isSplit
+        ? [
+            ...(splitCard > 0 ? [{ amount: splitCard, method: 'card' as PayMethod, installment: installment || null }] : []),
+            ...(splitCash > 0 ? [{ amount: splitCash, method: 'cash' as PayMethod, installment: null }] : []),
+          ]
+        : [{ amount, method, installment: method === 'card' && installment > 0 ? installment : null }];
+
+      const { error: ppErr } = await supabase.from('package_payments').insert(
+        ppRows.map((r) => ({
+          clinic_id: checkIn.clinic_id,
+          package_id: newPackageId,
+          customer_id: checkIn.customer_id,
+          amount: r.amount,
+          method: r.method,
+          installment: r.installment,
+          memo: memo || null,
+        })),
+      );
+      if (ppErr) {
+        toast.error(`결제 기록 실패: ${ppErr.message}`);
+        setSubmitting(false);
+        return;
+      }
+
+      await supabase
+        .from('check_ins')
+        .update({ package_id: newPackageId })
+        .eq('id', checkIn.id);
     } else {
-      if (amount <= 0) {
-        toast.error('금액을 입력하세요');
-        setSubmitting(false);
-        return;
-      }
-      const { error } = await supabase.from('payments').insert({
-        clinic_id: checkIn.clinic_id,
-        check_in_id: checkIn.id,
-        customer_id: checkIn.customer_id,
-        amount,
-        method,
-        installment: method === 'card' && installment > 0 ? installment : null,
-        memo: memo || null,
-        payment_type: 'payment',
-      });
-      if (error) {
-        toast.error(`결제 실패: ${error.message}`);
-        setSubmitting(false);
-        return;
+      // 단건 결제 (기존 로직)
+      if (isSplit) {
+        if (splitCard <= 0 && splitCash <= 0) {
+          toast.error('금액을 입력하세요');
+          setSubmitting(false);
+          return;
+        }
+        const rows: Array<{
+          amount: number;
+          method: PayMethod;
+          installment: number | null;
+          memo: string | null;
+          payment_type: string;
+        }> = [];
+        if (splitCard > 0) {
+          rows.push({
+            amount: splitCard,
+            method: 'card',
+            installment: installment || null,
+            memo: `분할: 카드 ${formatAmount(splitCard)} + 현금 ${formatAmount(splitCash)}`,
+            payment_type: 'payment',
+          });
+        }
+        if (splitCash > 0) {
+          rows.push({
+            amount: splitCash,
+            method: 'cash',
+            installment: null,
+            memo: `분할: 카드 ${formatAmount(splitCard)} + 현금 ${formatAmount(splitCash)}`,
+            payment_type: 'payment',
+          });
+        }
+        const { error } = await insertPayments(rows);
+        if (error) {
+          toast.error(`결제 실패: ${error.message}`);
+          setSubmitting(false);
+          return;
+        }
+      } else {
+        if (amount <= 0) {
+          toast.error('금액을 입력하세요');
+          setSubmitting(false);
+          return;
+        }
+        const { error } = await insertPayments([
+          {
+            amount,
+            method,
+            installment: method === 'card' && installment > 0 ? installment : null,
+            memo: memo || null,
+            payment_type: 'payment',
+          },
+        ]);
+        if (error) {
+          toast.error(`결제 실패: ${error.message}`);
+          setSubmitting(false);
+          return;
+        }
       }
     }
 
@@ -145,14 +253,14 @@ export function PaymentDialog({ checkIn, onClose, onPaid }: Props) {
       });
     }
 
-    toast.success('결제 완료');
+    toast.success(paymentMode === 'package' ? '패키지 결제 완료' : '결제 완료');
     setSubmitting(false);
     onPaid();
   };
 
   return (
     <Dialog open={!!checkIn} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CreditCard className="h-5 w-5" />
@@ -164,6 +272,84 @@ export function PaymentDialog({ checkIn, onClose, onPaid }: Props) {
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* 단건 / 패키지 토글 */}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPaymentMode('single')}
+              className={cn(
+                'flex-1 rounded-md border py-2 text-sm font-medium transition',
+                paymentMode === 'single'
+                  ? 'border-teal-600 bg-teal-50 text-teal-700'
+                  : 'border-input hover:bg-muted',
+              )}
+            >
+              단건 결제
+            </button>
+            <button
+              type="button"
+              onClick={() => canShowPackageMode && setPaymentMode('package')}
+              disabled={!canShowPackageMode}
+              title={
+                !canShowPackageMode
+                  ? '재진 환자 또는 이미 패키지 연결된 체크인입니다. 회차 소진은 패키지 페이지에서.'
+                  : ''
+              }
+              className={cn(
+                'flex-1 rounded-md border py-2 text-sm font-medium transition flex items-center justify-center gap-1',
+                paymentMode === 'package' && canShowPackageMode
+                  ? 'border-violet-600 bg-violet-50 text-violet-700'
+                  : 'border-input hover:bg-muted',
+                !canShowPackageMode && 'opacity-50 cursor-not-allowed',
+              )}
+            >
+              <PackageIcon className="h-4 w-4" /> 패키지 결제
+            </button>
+          </div>
+
+          {paymentMode === 'package' && !canShowPackageMode && (
+            <div className="rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              재진 환자 또는 이미 패키지 연결된 체크인입니다. 패키지 페이지에서 회차 소진하세요.
+            </div>
+          )}
+
+          {/* 패키지 선택 (패키지 모드일 때만) */}
+          {paymentMode === 'package' && canShowPackageMode && (
+            <div className="space-y-2">
+              <Label>패키지 선택</Label>
+              <div className="grid grid-cols-1 gap-2">
+                {Object.entries(PACKAGE_PRESETS).map(([key, p]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => handleSelectPackage(key)}
+                    className={cn(
+                      'rounded-md border px-3 py-2 text-left transition',
+                      selectedPackageKey === key
+                        ? 'border-violet-600 bg-violet-50'
+                        : 'border-input hover:bg-muted',
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-sm">{p.label}</span>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {formatAmount(p.suggestedPrice)}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      총 {p.total}회 · 가열 {p.heated} · 비가열 {p.unheated} · 수액 {p.iv} · 프리컨 {p.preconditioning}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              {selectedPreset && (
+                <div className="text-xs text-muted-foreground">
+                  선택: {selectedPreset.label} (권장가 {formatAmount(selectedPreset.suggestedPrice)} — 할인 가능)
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 단일 / 분할 토글 */}
           <div className="flex gap-2">
             <button
@@ -174,7 +360,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid }: Props) {
                 !isSplit ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted',
               )}
             >
-              단일 결제
+              일시 결제
             </button>
             <button
               type="button"
@@ -320,7 +506,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid }: Props) {
             취소
           </Button>
           <Button onClick={handleSubmit} disabled={submitting}>
-            {submitting ? '처리 중…' : '결제 완료'}
+            {submitting ? '처리 중…' : paymentMode === 'package' ? '패키지 결제 완료' : '결제 완료'}
           </Button>
         </DialogFooter>
       </DialogContent>
