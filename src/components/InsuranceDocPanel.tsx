@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
 import { formatAmount } from '@/lib/format';
-import type { CheckIn } from '@/lib/types';
+import type { CheckIn, PrescriptionRow } from '@/lib/types';
 
 interface InsuranceReceipt {
   id: string;
@@ -74,7 +74,7 @@ export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
     ]);
     setReceipts((recRes.data ?? []) as InsuranceReceipt[]);
     setPrescriptions(
-      ((rxRes.data ?? []) as any[]).map((rx) => ({
+      ((rxRes.data ?? []) as PrescriptionRow[]).map((rx) => ({
         ...rx,
         items: rx.prescription_items ?? [],
       })),

@@ -45,7 +45,7 @@ import { PaymentDialog } from '@/components/PaymentDialog';
 import { StatusContextMenu } from '@/components/StatusContextMenu';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
-import type { CheckIn, CheckInStatus, Clinic, Reservation, Room, Staff } from '@/lib/types';
+import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Clinic, Reservation, Room, RoomFieldKey, Staff } from '@/lib/types';
 
 type TabKey = 'all' | 'new' | 'returning';
 
@@ -95,7 +95,7 @@ const DROP_STATUS_FOR_ROOM: Record<string, CheckInStatus> = {
   laser: 'laser',
 };
 
-const ROOM_FIELD_MAP: Record<string, keyof CheckIn> = {
+const ROOM_FIELD_MAP: Record<string, RoomFieldKey> = {
   examination: 'examination_room',
   consultation: 'consultation_room',
   treatment: 'treatment_room',
@@ -608,7 +608,7 @@ function RoomSection({
   const getRoomOccupants = (roomName: string): CheckIn[] => {
     const field = ROOM_FIELD_MAP[roomType];
     const expectedStatus = DROP_STATUS_FOR_ROOM[roomType];
-    return checkIns.filter((ci) => (ci as any)[field] === roomName && ci.status === expectedStatus);
+    return checkIns.filter((ci) => ci[field] === roomName && ci.status === expectedStatus);
   };
 
   const getStaff = (roomName: string): string | null => {
@@ -953,9 +953,11 @@ export default function Dashboard() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'check_ins', filter: `clinic_id=eq.${clinic.id}` },
         (payload) => {
-          const id = (payload.new as any)?.id || (payload.old as any)?.id;
+          const newRow = payload.new as CheckInRealtimeRow;
+          const oldRow = payload.old as CheckInRealtimeRow;
+          const id = newRow?.id ?? oldRow?.id;
           if (id && recentlyUpdated.current.has(id)) return;
-          const checkedAt = (payload.new as any)?.checked_in_at;
+          const checkedAt = newRow?.checked_in_at;
           if (checkedAt && !checkedAt.startsWith(dateStr)) return;
           debouncedCheckInRefetch();
         },
@@ -1137,7 +1139,7 @@ export default function Dashboard() {
       const roomField = ROOM_FIELD_MAP[roomType];
       if (!newStatus || !roomField) return;
 
-      if (row.status === newStatus && (row as any)[roomField] === roomName) return;
+      if (row.status === newStatus && row[roomField] === roomName) return;
 
       markRecentlyUpdated(row.id);
       // #25 경합 방지: 함수형 업데이트 + 직전 row 스냅샷
@@ -1472,8 +1474,8 @@ export default function Dashboard() {
   const registered = [...(byStatus['registered'] ?? []), ...(byStatus['checklist'] ?? [])];
   const newRegistered = registered.filter((ci) => ci.visit_type === 'new');
   const returningRegistered = registered.filter((ci) => ci.visit_type !== 'new');
-  const returningForExam = returningRegistered.filter((ci) => (ci.notes as any)?.needs_exam);
-  const returningForTreatment = returningRegistered.filter((ci) => !(ci.notes as any)?.needs_exam);
+  const returningForExam = returningRegistered.filter((ci) => ci.notes?.needs_exam);
+  const returningForTreatment = returningRegistered.filter((ci) => !ci.notes?.needs_exam);
   const laserWaiting = filtered.filter((ci) => ci.status === 'laser' && !ci.laser_room);
 
   const paymentTotal = Array.from(dayPayments.values()).reduce((s, v) => s + v, 0);

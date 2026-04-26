@@ -6,16 +6,21 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  CreditCard,
   User,
+  UserX,
   Filter,
   ArrowUpDown,
   ChevronDown,
   ChevronRight as ChevronRightIcon,
+  AlertCircle,
+  Banknote,
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
-import type { CheckIn, CheckInStatus, Clinic } from '@/lib/types';
+import { formatAmount } from '@/lib/format';
+import type { CheckIn, CheckInStatus, Clinic, Reservation } from '@/lib/types';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR } from '@/lib/status';
 import { elapsedLabel } from '@/lib/elapsed';
 import { Button } from '@/components/ui/button';
@@ -33,10 +38,39 @@ interface StatusTransition {
   transitioned_at: string;
 }
 
-type FilterTab = 'all' | 'in_progress' | 'done' | 'cancelled';
+interface PaymentRow {
+  id: string;
+  check_in_id: string | null;
+  customer_id: string | null;
+  amount: number;
+  method: string;
+  payment_type: 'payment' | 'refund';
+  memo: string | null;
+  created_at: string;
+}
+
+interface PackagePaymentRow {
+  id: string;
+  package_id: string;
+  customer_id: string;
+  amount: number;
+  method: string;
+  payment_type: 'payment' | 'refund';
+  memo: string | null;
+  created_at: string;
+}
+
+type FilterTab = 'all' | 'in_progress' | 'done' | 'cancelled' | 'noshow';
 type SortMode = 'queue' | 'time';
 
 /* STATUS_COLOR, VISIT_TYPE_COLOR → @/lib/status 공유 상수 사용 */
+
+const METHOD_KO: Record<string, string> = {
+  card: '카드',
+  cash: '현금',
+  transfer: '이체',
+  membership: '멤버십',
+};
 
 /* ---------- helpers ---------- */
 
@@ -66,6 +100,14 @@ function isInProgress(status: CheckInStatus): boolean {
   return status !== 'done' && status !== 'cancelled';
 }
 
+/** 결제대기 이후 단계인지 판정 */
+const PAID_EXPECTED_STATUSES: CheckInStatus[] = [
+  'treatment_waiting',
+  'preconditioning',
+  'laser',
+  'done',
+];
+
 /* ---------- component ---------- */
 
 export default function DailyHistory() {
@@ -73,10 +115,14 @@ export default function DailyHistory() {
   const [date, setDate] = useState(todayStr());
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
   const [transitions, setTransitions] = useState<StatusTransition[]>([]);
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [pkgPayments, setPkgPayments] = useState<PackagePaymentRow[]>([]);
+  const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<FilterTab>('all');
   const [sort, setSort] = useState<SortMode>('queue');
+  const [showNoshow, setShowNoshow] = useState(false);
 
   // Load clinic
   useEffect(() => {
@@ -89,7 +135,7 @@ export default function DailyHistory() {
     setLoading(true);
     const { start, end } = dayBounds(date);
 
-    const [ciRes, trRes] = await Promise.all([
+    const [ciRes, trRes, payRes, pkgPayRes, resvRes] = await Promise.all([
       supabase
         .from('check_ins')
         .select('*')
@@ -104,10 +150,30 @@ export default function DailyHistory() {
         .gte('transitioned_at', start)
         .lte('transitioned_at', end)
         .order('transitioned_at', { ascending: true }),
+      supabase
+        .from('payments')
+        .select('id, check_in_id, customer_id, amount, method, payment_type, memo, created_at')
+        .eq('clinic_id', clinic.id)
+        .gte('created_at', start)
+        .lte('created_at', end),
+      supabase
+        .from('package_payments')
+        .select('id, package_id, customer_id, amount, method, payment_type, memo, created_at')
+        .eq('clinic_id', clinic.id)
+        .gte('created_at', start)
+        .lte('created_at', end),
+      supabase
+        .from('reservations')
+        .select('*')
+        .eq('clinic_id', clinic.id)
+        .eq('reservation_date', date),
     ]);
 
     setCheckIns((ciRes.data ?? []) as CheckIn[]);
     setTransitions((trRes.data ?? []) as StatusTransition[]);
+    setPayments((payRes.data ?? []) as PaymentRow[]);
+    setPkgPayments((pkgPayRes.data ?? []) as PackagePaymentRow[]);
+    setReservations((resvRes.data ?? []) as Reservation[]);
     setExpandedIds(new Set());
     setLoading(false);
   }, [clinic, date]);
@@ -127,6 +193,58 @@ export default function DailyHistory() {
     return map;
   }, [transitions]);
 
+  // Payments grouped by check_in_id
+  const paymentMap = useMemo(() => {
+    const map = new Map<string, PaymentRow[]>();
+    for (const p of payments) {
+      if (!p.check_in_id) continue;
+      const list = map.get(p.check_in_id) ?? [];
+      list.push(p);
+      map.set(p.check_in_id, list);
+    }
+    return map;
+  }, [payments]);
+
+  // 미체크인 예약 (추정 노쇼) — 당일 예약 중 check_in 매칭되지 않은 건
+  const unmatchedReservations = useMemo(() => {
+    const checkedInResvIds = new Set(
+      checkIns.map((ci) => ci.reservation_id).filter(Boolean),
+    );
+    const checkedInPhones = new Set(
+      checkIns.map((ci) => ci.customer_phone).filter(Boolean),
+    );
+    return reservations.filter((r) => {
+      if (r.status === 'cancelled') return false;
+      if (checkedInResvIds.has(r.id)) return false;
+      // 예약 전화번호로도 체크인 매칭 시도
+      if (r.customer_phone && checkedInPhones.has(r.customer_phone)) return false;
+      return true;
+    });
+  }, [reservations, checkIns]);
+
+  // Revenue summary
+  const revenueSummary = useMemo(() => {
+    let singleTotal = 0;
+    let singleRefund = 0;
+    for (const p of payments) {
+      if (p.payment_type === 'refund') singleRefund += p.amount;
+      else singleTotal += p.amount;
+    }
+    let pkgTotal = 0;
+    let pkgRefund = 0;
+    for (const p of pkgPayments) {
+      if (p.payment_type === 'refund') pkgRefund += p.amount;
+      else pkgTotal += p.amount;
+    }
+    return {
+      singleTotal,
+      singleRefund,
+      pkgTotal,
+      pkgRefund,
+      netTotal: singleTotal - singleRefund + pkgTotal - pkgRefund,
+    };
+  }, [payments, pkgPayments]);
+
   // Summary calculations
   const summary = useMemo(() => {
     const total = checkIns.length;
@@ -135,6 +253,9 @@ export default function DailyHistory() {
     let cancelledCount = 0;
     let totalElapsed = 0;
     let elapsedCount = 0;
+
+    // 미결제 건수: 결제대기 이후 단계이면서 결제 내역이 없는 건
+    let unpaidCount = 0;
 
     for (const ci of checkIns) {
       if (ci.visit_type in byVisit) {
@@ -149,12 +270,25 @@ export default function DailyHistory() {
         }
       }
       if (ci.status === 'cancelled') cancelledCount++;
+
+      // 결제대기 이후 단계인데 결제 기록이 없으면 미결제
+      if (PAID_EXPECTED_STATUSES.includes(ci.status) && !paymentMap.has(ci.id) && !ci.package_id) {
+        unpaidCount++;
+      }
     }
 
     const avgMinutes = elapsedCount > 0 ? Math.round(totalElapsed / elapsedCount) : null;
 
-    return { total, byVisit, doneCount, cancelledCount, avgMinutes };
-  }, [checkIns]);
+    return {
+      total,
+      byVisit,
+      doneCount,
+      cancelledCount,
+      avgMinutes,
+      unpaidCount,
+      noshowCount: unmatchedReservations.length,
+    };
+  }, [checkIns, paymentMap, unmatchedReservations]);
 
   // Filtered & sorted list
   const filteredCheckIns = useMemo(() => {
@@ -239,7 +373,7 @@ export default function DailyHistory() {
         </div>
       </div>
 
-      {/* ---- Summary Cards ---- */}
+      {/* ---- Summary Cards (Row 1: 방문 통계) ---- */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
@@ -296,6 +430,131 @@ export default function DailyHistory() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ---- Summary Cards (Row 2: 매출 + 운영 알림) ---- */}
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+              <Banknote className="size-3" />
+              일 매출
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold tabular-nums">
+              {formatAmount(revenueSummary.netTotal)}
+              <span className="text-sm font-normal text-muted-foreground ml-1">원</span>
+            </div>
+            {(revenueSummary.singleRefund > 0 || revenueSummary.pkgRefund > 0) && (
+              <p className="text-xs text-red-500 mt-1">
+                환불 -{formatAmount(revenueSummary.singleRefund + revenueSummary.pkgRefund)}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+              <CreditCard className="size-3" />
+              단건 / 패키지
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-baseline gap-2 text-lg font-bold tabular-nums">
+              <span className="text-teal-600">{formatAmount(revenueSummary.singleTotal)}</span>
+              <span className="text-muted-foreground text-sm">/</span>
+              <span className="text-emerald-600">{formatAmount(revenueSummary.pkgTotal)}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className={summary.unpaidCount > 0 ? 'border-amber-300 bg-amber-50/50' : ''}>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+              <AlertCircle className="size-3" />
+              미결제
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${summary.unpaidCount > 0 ? 'text-amber-600' : ''}`}>
+              {summary.unpaidCount}
+              <span className="text-sm font-normal text-muted-foreground ml-1">건</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className={summary.noshowCount > 0 ? 'border-red-300 bg-red-50/50' : ''}>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+              <UserX className="size-3" />
+              추정 노쇼
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${summary.noshowCount > 0 ? 'text-red-500' : ''}`}>
+              {summary.noshowCount}
+              <span className="text-sm font-normal text-muted-foreground ml-1">건</span>
+            </div>
+            {summary.noshowCount > 0 && (
+              <button
+                onClick={() => setShowNoshow((v) => !v)}
+                className="text-xs text-red-500 underline mt-1 hover:text-red-700"
+              >
+                {showNoshow ? '닫기' : '상세 보기'}
+              </button>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ---- 추정 노쇼 목록 (토글) ---- */}
+      {showNoshow && unmatchedReservations.length > 0 && (
+        <Card className="border-red-200 bg-red-50/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-1.5 text-sm font-semibold text-red-600">
+              <UserX className="size-4" />
+              미체크인 예약 (추정 노쇼) — {unmatchedReservations.length}건
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="pb-2 font-medium">예약 시간</th>
+                    <th className="pb-2 font-medium">고객명</th>
+                    <th className="pb-2 font-medium">연락처</th>
+                    <th className="pb-2 font-medium">방문 유형</th>
+                    <th className="pb-2 font-medium">상태</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unmatchedReservations
+                    .sort((a, b) => a.reservation_time.localeCompare(b.reservation_time))
+                    .map((r) => (
+                      <tr key={r.id} className="border-b last:border-0">
+                        <td className="py-2 tabular-nums">{r.reservation_time?.slice(0, 5)}</td>
+                        <td className="py-2 font-medium">{r.customer_name ?? '—'}</td>
+                        <td className="py-2 text-muted-foreground">{r.customer_phone ?? '—'}</td>
+                        <td className="py-2">
+                          <Badge className={VISIT_TYPE_COLOR[r.visit_type]}>
+                            {VISIT_TYPE_KO[r.visit_type]}
+                          </Badge>
+                        </td>
+                        <td className="py-2">
+                          <Badge className={r.status === 'noshow' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}>
+                            {r.status === 'noshow' ? '노쇼' : r.status === 'confirmed' ? '미내원' : r.status}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ---- Filters & Sort ---- */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -410,9 +669,10 @@ export default function DailyHistory() {
                   )}
                 </div>
 
-                {/* Expanded: Status transitions */}
+                {/* Expanded: Status transitions + Payment details */}
                 {expanded && (
                   <div className="border-t bg-muted/30 px-4 py-3">
+                    {/* Status transitions */}
                     {ciTransitions.length === 0 ? (
                       <p className="text-xs text-muted-foreground">상태 전환 기록이 없습니다.</p>
                     ) : (
@@ -495,6 +755,86 @@ export default function DailyHistory() {
                         </div>
                       </div>
                     )}
+
+                    {/* Payment details for this check-in */}
+                    {(() => {
+                      const ciPayments = paymentMap.get(ci.id) ?? [];
+                      if (ciPayments.length === 0) {
+                        if (PAID_EXPECTED_STATUSES.includes(ci.status) && !ci.package_id) {
+                          return (
+                            <div className="mt-3 flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                              <AlertCircle className="size-3.5" />
+                              <span>결제 기록 없음 (미결제)</span>
+                            </div>
+                          );
+                        }
+                        if (ci.package_id) {
+                          return (
+                            <div className="mt-3 flex items-center gap-1.5 rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-700">
+                              <CreditCard className="size-3.5" />
+                              <span>패키지 결제 (회차 소진)</span>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }
+                      const payTotal = ciPayments.reduce(
+                        (acc, p) => acc + (p.payment_type === 'refund' ? -p.amount : p.amount),
+                        0,
+                      );
+                      return (
+                        <div className="mt-3">
+                          <p className="mb-2 text-xs font-medium text-muted-foreground flex items-center gap-1">
+                            <CreditCard className="size-3" />
+                            결제 내역
+                            <span className="ml-auto font-bold tabular-nums">
+                              합계 {formatAmount(payTotal)}원
+                            </span>
+                          </p>
+                          <div className="overflow-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b text-left text-[10px] text-muted-foreground">
+                                  <th className="pb-1.5 font-medium">시각</th>
+                                  <th className="pb-1.5 font-medium">방식</th>
+                                  <th className="pb-1.5 font-medium">유형</th>
+                                  <th className="pb-1.5 font-medium text-right">금액</th>
+                                  <th className="pb-1.5 font-medium">메모</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {ciPayments.map((p) => (
+                                  <tr key={p.id} className="border-b last:border-0">
+                                    <td className="py-1.5 tabular-nums text-muted-foreground">
+                                      {formatTime(p.created_at)}
+                                    </td>
+                                    <td className="py-1.5">{METHOD_KO[p.method] ?? p.method}</td>
+                                    <td className="py-1.5">
+                                      <Badge
+                                        className={
+                                          p.payment_type === 'refund'
+                                            ? 'bg-red-100 text-red-600 text-[10px] px-1.5 py-0'
+                                            : 'bg-emerald-100 text-emerald-700 text-[10px] px-1.5 py-0'
+                                        }
+                                      >
+                                        {p.payment_type === 'refund' ? '환불' : '결제'}
+                                      </Badge>
+                                    </td>
+                                    <td className="py-1.5 text-right tabular-nums font-medium">
+                                      {p.payment_type === 'refund' ? '-' : ''}
+                                      {formatAmount(p.amount)}
+                                    </td>
+                                    <td className="py-1.5 text-muted-foreground truncate max-w-[120px]">
+                                      {p.memo || '—'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </Card>
