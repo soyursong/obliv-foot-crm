@@ -131,6 +131,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid }: Props) {
           clinic_id: checkIn.clinic_id,
           customer_id: checkIn.customer_id,
           package_name: selectedPreset.label,
+          package_type: `preset_${selectedPreset.total}`,
           total_sessions: selectedPreset.total,
           paid_amount: totalAmount,
           status: 'active',
