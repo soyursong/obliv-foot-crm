@@ -505,3 +505,53 @@ QA_REPORT.md 참조
 > 작성: Gold QA UI/UX 2차 심층 리뷰 (2026-04-20)
 > 검수: 5인 전문가 관점 (시니어 UI/UX, 프론트 QA, 접근성, 신입 코디, 상담실장)
 > 총 발견: 6개 카테고리, 35건 (LAYOUT 7, COLOR 5, TEXT 6, FLOW 7, BUG 5, A11Y 5) + 수정검증 4건 + 신규 P1 1건
+
+---
+
+## 2026-04-26 [foot-051] 대기실 화면 + 셀프 키오스크 + 일일 이력 — deploy-ready
+
+> 작성: dev-foot (2026-04-26)
+> 상태: **deploy-ready**
+
+### 변경 파일
+1. `src/pages/Waiting.tsx` — 대기실 TV 화면 강화
+2. `src/pages/SelfCheckIn.tsx` — 셀프 키오스크 모드 강화
+3. `src/pages/DailyHistory.tsx` — 신규 생성 (일일 이력 페이지)
+4. `src/App.tsx` — DailyHistory 라우트 추가 (`/admin/history`)
+5. `src/components/AdminLayout.tsx` — 네비게이션 "일일 이력" 항목 추가
+6. `src/index.css` — pulse-subtle 키프레임 애니메이션 추가
+
+### 구현 내역
+
+**Waiting.tsx (대기실 화면)**
+- 호출 사운드: 새 환자가 진행 중 상태로 전환 시 beep 알림
+- 대기 시간 표시: 각 환자 카드에 경과시간 (20분↑ 주황, 40분↑ 빨강)
+- 풀스크린 토글: 헤더에 풀스크린 버튼 (Fullscreen API)
+- 자동 스크롤: 오버플로우 시 부드럽게 위/아래 자동 스크롤
+- 오늘 통계: 총 접수 / 진행 중 / 완료 카운트 헤더 표시
+- 호출 카드 펄스 애니메이션: 진행 중 환자 카드에 emerald 그림자 펄스
+
+**SelfCheckIn.tsx (셀프 키오스크)**
+- 자동 리셋: 접수 완료 15초 후 자동 초기화 (카운트다운 표시)
+- 비활동 타임아웃: 입력 화면 60초 무입력 시 폼 리셋
+- 예약 매칭: 전화번호 10자리 입력 시 당일 예약 자동 조회 + 배너 표시 + 방문유형 자동 채움
+- 온스크린 숫자패드: 3×4 그리드 (h-14 터치 타겟), 소프트키보드 비활성화
+- 접수 완료 강화: 대기번호 text-8xl, 클리닉명 표시, 체크마크 펄스 애니메이션
+
+**DailyHistory.tsx (일일 이력) — 신규**
+- 날짜 네비게이션: 이전/다음 날, 오늘 버튼
+- 요약 카드: 총 접수 / 신규·재진·체험 / 완료·취소 / 평균 소요시간
+- 필터: 전체 / 진행중 / 완료 / 취소 (건수 표시)
+- 정렬: 대기번호순 ↔ 접수시간순 토글
+- 타임라인: 체크인 목록 (대기번호, 이름, 유형, 상태, 시간)
+- 상태 전이 상세: 클릭 시 확장 (접수→체크리스트→진료→... 플로우 + 시간 테이블)
+
+### 빌드 결과
+- `npm run build` ✅ 성공 (tsc + vite, 1.89s)
+- 신규 npm 패키지 없음
+
+### 후속 리팩터링 (2026-04-26)
+- STATUS_COLOR / VISIT_TYPE_COLOR / CALLED_STATUSES 상수를 `src/lib/status.ts`로 통합
+- Waiting.tsx, DailyHistory.tsx에서 중복 정의 제거 → import로 대체
+- `_pending/`, `_pending_patches/` stale 파일 정리 (모두 소스에 이미 반영)
+- 빌드 ✅ (1.89s)
