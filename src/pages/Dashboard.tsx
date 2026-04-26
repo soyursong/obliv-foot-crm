@@ -1546,6 +1546,11 @@ export default function Dashboard() {
             collisionDetection={customCollision}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
+            autoScroll={{
+              threshold: { x: 0.15, y: 0.15 },
+              acceleration: 12,
+              interval: 5,
+            }}
           >
             <div className="flex gap-2 h-full min-w-max">
               {/* 1. 초진예약 */}
