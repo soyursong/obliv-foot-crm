@@ -36,13 +36,7 @@ type ConsRow = {
 const WON_TO_MAN = (v: number) => Math.round(v / 10000);
 const COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
 
-const ROLE_LABEL: Record<string, string> = {
-  director: '원장',
-  consultant: '상담실장',
-  coordinator: '코디네이터',
-  therapist: '치료사',
-  technician: '관리사',
-};
+import { roleLabel } from '@/lib/status';
 
 export default function MonthlyPerfTab({ clinicId }: Props) {
   const [month, setMonth] = useState<Date>(startOfMonth(new Date()));
@@ -120,7 +114,7 @@ export default function MonthlyPerfTab({ clinicId }: Props) {
         columns={['이름', '직책', '시술 건수', '매출 합계', '평균 체류시간']}
         renderRow={(r: TechRow) => [
           r.technician_name || '미지정',
-          ROLE_LABEL[r.technician_role] ?? r.technician_role,
+          roleLabel(r.technician_role),
           `${r.procedure_count.toLocaleString()}건`,
           r.net_revenue.toLocaleString(),
           `${Math.round(r.avg_stay_min || 0)}분`,

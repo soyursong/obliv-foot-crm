@@ -8,7 +8,7 @@ import { AlertTriangle, Download, Lock, Printer, Save, Unlock } from 'lucide-rea
 import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
 import { formatAmount } from '@/lib/format';
-import { STATUS_KO } from '@/lib/status';
+import { STATUS_KO, METHOD_KO } from '@/lib/status';
 import type { CheckIn, CheckInStatus, Clinic } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -611,7 +611,7 @@ export default function Closing() {
                       </td>
                       <td className="py-1.5">
                         <Badge variant="outline" className="text-xs">
-                          {p.method === 'card' ? '카드' : p.method === 'cash' ? '현금' : p.method === 'transfer' ? '이체' : '멤버십'}
+                          {METHOD_KO[p.method] ?? p.method}
                         </Badge>
                       </td>
                       <td className="py-1.5 text-xs">{p.installment ? `${p.installment}개월` : '-'}</td>
@@ -632,7 +632,7 @@ export default function Closing() {
                       </td>
                       <td className="py-1.5">
                         <Badge variant="outline" className="text-xs">
-                          {p.method === 'card' ? '카드' : p.method === 'cash' ? '현금' : '이체'}
+                          {METHOD_KO[p.method] ?? p.method}
                         </Badge>
                       </td>
                       <td className="py-1.5 text-xs">{p.installment ? `${p.installment}개월` : '-'}</td>

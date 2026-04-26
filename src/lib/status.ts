@@ -1,4 +1,4 @@
-import type { CheckInStatus, VisitType } from './types';
+import type { CheckInStatus, StaffRole, UserRole, VisitType } from './types';
 
 export const STATUS_KO: Record<CheckInStatus, string> = {
   registered: '접수',
@@ -77,3 +77,46 @@ export const CALLED_STATUSES: CheckInStatus[] = [
   'laser',
   'preconditioning',
 ];
+
+/** 직원 직책 한글 라벨 (staff 테이블 role) */
+export const STAFF_ROLE_LABEL: Record<StaffRole, string> = {
+  director: '원장',
+  consultant: '상담실장',
+  coordinator: '코디네이터',
+  therapist: '치료사',
+  technician: '관리사',
+};
+
+/** 직원 직책 표시 순서 */
+export const STAFF_ROLE_ORDER: StaffRole[] = [
+  'director',
+  'consultant',
+  'coordinator',
+  'therapist',
+  'technician',
+];
+
+/** 계정 역할 한글 라벨 (user_profiles role — StaffRole 상위집합) */
+export const USER_ROLE_LABEL: Record<UserRole, string> = {
+  admin: '관리자',
+  manager: '매니저',
+  consultant: '상담실장',
+  coordinator: '코디네이터',
+  therapist: '치료사',
+  technician: '관리사',
+  tm: 'TM',
+  staff: '스태프',
+};
+
+/** 역할 라벨 조회 (DB string → 한글, 미매칭 시 원문 반환) */
+export function roleLabel(role: string): string {
+  return (USER_ROLE_LABEL as Record<string, string>)[role] ?? role;
+}
+
+/** 결제 수단 한글 라벨 */
+export const METHOD_KO: Record<string, string> = {
+  card: '카드',
+  cash: '현금',
+  transfer: '이체',
+  membership: '멤버십',
+};
