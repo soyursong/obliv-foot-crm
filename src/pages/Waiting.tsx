@@ -262,8 +262,8 @@ export default function Waiting() {
             <p className="py-12 text-center text-lg text-gray-400">현재 대기 인원 없음</p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {waiting.map((r) => (
-                <WaitingCard key={r.id} row={r} now={now} />
+              {waiting.map((r, idx) => (
+                <WaitingCard key={r.id} row={r} now={now} position={idx} />
               ))}
             </div>
           )}
@@ -311,8 +311,8 @@ function CalledCard({ row: r, now: _now }: { row: WaitingRow; now: Date }) {
   );
 }
 
-/** 대기 중 카드 — 경과 시간 표시 */
-function WaitingCard({ row: r, now: _now }: { row: WaitingRow; now: Date }) {
+/** 대기 중 카드 — 경과 시간 + 앞 대기인원 표시 */
+function WaitingCard({ row: r, now: _now, position }: { row: WaitingRow; now: Date; position: number }) {
   const mins = elapsedMinutes(r.checked_in_at);
   return (
     <div className="rounded-xl border bg-white p-4 shadow-sm">
@@ -335,6 +335,13 @@ function WaitingCard({ row: r, now: _now }: { row: WaitingRow; now: Date }) {
         <span className={`text-xs tabular-nums ${mins >= 40 ? 'font-bold text-red-500' : mins >= 20 ? 'font-medium text-orange-500' : 'text-gray-400'}`}>
           {elapsedLabel(mins)}
         </span>
+      </div>
+      <div className="mt-1 text-xs text-gray-400">
+        {position === 0 ? (
+          <span className="font-medium text-teal-600">다음 순서</span>
+        ) : (
+          <span>앞에 <strong className="text-gray-600">{position}명</strong> 대기</span>
+        )}
       </div>
     </div>
   );

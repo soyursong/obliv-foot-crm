@@ -16,6 +16,42 @@ export type CheckInStatus =
   | 'done'
   | 'cancelled';
 
+/** Room-type field keys on CheckIn (used for room assignment logic) */
+export type RoomFieldKey = 'examination_room' | 'consultation_room' | 'treatment_room' | 'laser_room';
+
+/** Structured notes stored in check_ins.notes JSONB */
+export interface CheckInNotes {
+  needs_exam?: boolean;
+  text?: string;
+  checklist?: Record<string, boolean>;
+  [key: string]: unknown;
+}
+
+/** Supabase Realtime row snapshot (check_ins) */
+export interface CheckInRealtimeRow {
+  id?: string;
+  checked_in_at?: string;
+  [key: string]: unknown;
+}
+
+/** Prescription row from prescriptions + prescription_items join */
+export interface PrescriptionRow {
+  id: string;
+  prescribed_by_name: string | null;
+  diagnosis: string | null;
+  memo: string | null;
+  prescribed_at: string;
+  prescription_items?: PrescriptionItemRow[];
+}
+
+export interface PrescriptionItemRow {
+  id: string;
+  medication_name: string;
+  dosage: string | null;
+  duration_days: number | null;
+  quantity: number | null;
+}
+
 export type StaffRole = 'director' | 'consultant' | 'coordinator' | 'therapist' | 'technician';
 export type UserRole = 'admin' | 'manager' | 'consultant' | 'coordinator' | 'therapist' | 'technician' | 'tm' | 'staff';
 
@@ -104,7 +140,7 @@ export interface CheckIn {
   treatment_room: string | null;
   laser_room: string | null;
   package_id: string | null;
-  notes: Record<string, unknown> | null;
+  notes: CheckInNotes | null;
   treatment_memo: { details?: string; [key: string]: unknown } | null;
   treatment_photos: string[] | null;
   doctor_note: string | null;

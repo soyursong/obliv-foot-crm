@@ -110,9 +110,9 @@ function VisitHistoryAccordion({ history }: { history: VisitHistory[] }) {
                         <span className="font-semibold">시술:</span> {h.treatment_memo.details}
                       </div>
                     )}
-                    {(h.notes as any)?.text && (
+                    {h.notes?.text && (
                       <div className="text-muted-foreground">
-                        <span className="font-semibold">메모:</span> {(h.notes as any).text}
+                        <span className="font-semibold">메모:</span> {h.notes.text}
                       </div>
                     )}
                   </div>
@@ -335,14 +335,14 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             <div className="flex flex-wrap gap-1.5">
               {checkIn.visit_type === 'new' && (
                 <Button
-                  variant={(checkIn.notes as any)?.checklist ? 'default' : 'outline'}
+                  variant={checkIn.notes?.checklist ? 'default' : 'outline'}
                   size="sm"
-                  className={cn('text-xs gap-1', (checkIn.notes as any)?.checklist && 'bg-emerald-600 hover:bg-emerald-700')}
+                  className={cn('text-xs gap-1', checkIn.notes?.checklist && 'bg-emerald-600 hover:bg-emerald-700')}
                   onClick={() => {
-                    if (!(checkIn.notes as any)?.checklist) setChecklistOpen(true);
+                    if (!checkIn.notes?.checklist) setChecklistOpen(true);
                   }}
                 >
-                  {(checkIn.notes as any)?.checklist ? '✓ 체크리스트' : '📋 체크리스트'}
+                  {checkIn.notes?.checklist ? '✓ 체크리스트' : '📋 체크리스트'}
                 </Button>
               )}
             </div>
