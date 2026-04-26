@@ -14,10 +14,9 @@ import {
   Legend,
 } from 'recharts';
 import { supabase } from '@/lib/supabase';
-import { getClinic } from '@/lib/clinic';
+import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { Clinic } from '@/lib/types';
 
 interface DailyVisit {
   date: string;
@@ -52,7 +51,7 @@ interface StaffPerf {
 type RangePreset = 7 | 14 | 30;
 
 export default function Stats() {
-  const [clinic, setClinic] = useState<Clinic | null>(null);
+  const clinic = useClinic();
   const [range, setRange] = useState<RangePreset>(14);
   const [visits, setVisits] = useState<DailyVisit[]>([]);
   const [revenue, setRevenue] = useState<DailyRevenue[]>([]);
@@ -60,10 +59,6 @@ export default function Stats() {
   const [avgSpend, setAvgSpend] = useState<DailyMetric[]>([]);
   const [staffPerf, setStaffPerf] = useState<StaffPerf[]>([]);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    getClinic().then(setClinic).catch(() => setClinic(null));
-  }, []);
 
   useEffect(() => {
     if (!clinic) return;

@@ -35,7 +35,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
-import { getClinic } from '@/lib/clinic';
+import { useClinic } from '@/hooks/useClinic';
 import { STATUS_KO, VISIT_TYPE_KO, stagesFor } from '@/lib/status';
 import { formatAmount, maskPhoneTail } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -45,7 +45,7 @@ import { PaymentDialog } from '@/components/PaymentDialog';
 import { StatusContextMenu } from '@/components/StatusContextMenu';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
-import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Clinic, Reservation, Room, RoomFieldKey, Staff } from '@/lib/types';
+import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Reservation, Room, RoomFieldKey, Staff } from '@/lib/types';
 
 type TabKey = 'all' | 'new' | 'returning';
 
@@ -675,7 +675,7 @@ function RoomSection({
 
 export default function Dashboard() {
   const location = useLocation();
-  const [clinic, setClinic] = useState<Clinic | null>(null);
+  const clinic = useClinic();
   const [date, setDate] = useState<Date>(() => new Date());
   const [tab, setTab] = useState<TabKey>('all');
   const [rows, setRows] = useState<CheckIn[]>([]);
@@ -723,10 +723,6 @@ export default function Dashboard() {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
   );
-
-  useEffect(() => {
-    getClinic().then(setClinic).catch(() => setClinic(null));
-  }, []);
 
   const dateStr = useMemo(() => format(date, 'yyyy-MM-dd'), [date]);
 
@@ -840,7 +836,7 @@ export default function Dashboard() {
       .eq('status', 'active');
     if (!pkgs || pkgs.length === 0) { setPkgMap(new Map()); return; }
 
-    const pkgIds = pkgs.map((p: any) => p.id);
+    const pkgIds = pkgs.map((p: { id: string }) => p.id);
     const { data: sessions } = await supabase
       .from('package_sessions')
       .select('package_id')

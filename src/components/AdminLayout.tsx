@@ -17,10 +17,10 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { getClinic } from '@/lib/clinic';
+import { useClinic } from '@/hooks/useClinic';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { Clinic, UserRole } from '@/lib/types';
+import type { UserRole } from '@/lib/types';
 
 const NAV_ITEMS: {
   to: string;
@@ -43,7 +43,7 @@ const NAV_ITEMS: {
 export default function AdminLayout() {
   const navigate = useNavigate();
   const { profile, signOut } = useAuth();
-  const [clinic, setClinic] = useState<Clinic | null>(null);
+  const clinic = useClinic();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -102,10 +102,6 @@ export default function AdminLayout() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
-
-  useEffect(() => {
-    getClinic().then(setClinic).catch(() => setClinic(null));
   }, []);
 
   const handleLogout = async () => {

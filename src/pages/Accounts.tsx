@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Check, Copy, KeyRound, Shield, UserPlus, UserX } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
-import { getClinic } from '@/lib/clinic';
+import { useClinic } from '@/hooks/useClinic';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import type { Clinic, Staff, UserProfile, UserRole } from '@/lib/types';
+import type { Staff, UserProfile, UserRole } from '@/lib/types';
 
 // admin 세션 유지를 위해 persistSession:false 로 별도 client 사용 (signUp 이 현재 세션을 덮어쓰지 않도록)
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -60,7 +60,7 @@ function generateTempPassword(): string {
 }
 
 export default function Accounts() {
-  const [clinic, setClinic] = useState<Clinic | null>(null);
+  const clinic = useClinic();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,10 +82,6 @@ export default function Accounts() {
   const [resetPw, setResetPw] = useState('');
   const [resetBusy, setResetBusy] = useState(false);
   const [resetResult, setResetResult] = useState<string | null>(null); // 성공 시 1회 노출
-
-  useEffect(() => {
-    getClinic().then(setClinic).catch(() => setClinic(null));
-  }, []);
 
   const fetchUsers = useCallback(async () => {
     if (!clinic) return;

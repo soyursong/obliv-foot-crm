@@ -353,8 +353,7 @@ export default function SelfCheckIn() {
           .select('id')
           .single();
         if (cErr) {
-          // RLS 정책 미비 시 고객 생성 없이 진행
-          console.warn('Customer insert failed (RLS?):', cErr.message);
+          // RLS 정책 미비 시 고객 생성 없이 진행 (에러 무시)
         } else {
           customerId = (created as { id: string }).id;
         }
@@ -368,7 +367,7 @@ export default function SelfCheckIn() {
 
       let queue: number | null = null;
       if (queueErr) {
-        console.warn('Queue number RPC failed:', queueErr.message);
+        // RPC 실패 시 대기번호 없이 진행
       } else {
         queue = queueData as number;
       }

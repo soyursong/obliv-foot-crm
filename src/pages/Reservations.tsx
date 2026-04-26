@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { getClinic } from '@/lib/clinic';
+import { useClinic } from '@/hooks/useClinic';
 import {
   closeTimeFor,
   generateSlots,
@@ -28,7 +28,7 @@ import {
 import { VISIT_TYPE_KO } from '@/lib/status';
 import { maskPhoneTail } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { Clinic, Customer, Reservation, Service, VisitType } from '@/lib/types';
+import type { Customer, Reservation, Service, VisitType } from '@/lib/types';
 
 const STATUS_STYLE: Record<Reservation['status'], string> = {
   confirmed: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -67,7 +67,7 @@ type ViewMode = 'week' | 'day';
 export default function Reservations() {
   const { profile } = useAuth();
   const changedBy = profile?.id ?? null;
-  const [clinic, setClinic] = useState<Clinic | null>(null);
+  const clinic = useClinic();
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [weekStart, setWeekStart] = useState<Date>(() =>
     startOfWeek(new Date(), { weekStartsOn: 1 }),
@@ -81,10 +81,6 @@ export default function Reservations() {
   const [noshowByCustomer, setNoshowByCustomer] = useState<Record<string, number>>({});
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
-
-  useEffect(() => {
-    getClinic().then(setClinic).catch(() => setClinic(null));
-  }, []);
 
   const weekDays = useMemo(
     () => Array.from({ length: 6 }).map((_, i) => addDays(weekStart, i)), // 월~토만
