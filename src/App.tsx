@@ -18,6 +18,7 @@ const Stats = lazy(() => import('@/pages/Stats'));
 const Accounts = lazy(() => import('@/pages/Accounts'));
 const SelfCheckIn = lazy(() => import('@/pages/SelfCheckIn'));
 const Waiting = lazy(() => import('@/pages/Waiting'));
+const DailyHistory = lazy(() => import('@/pages/DailyHistory'));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
@@ -59,6 +60,7 @@ function App() {
                 <Route path="staff" element={<RoleGuard roles={['admin', 'manager']}><Staff /></RoleGuard>} />
                 <Route path="closing" element={<RoleGuard roles={['admin', 'manager']}><Closing /></RoleGuard>} />
                 <Route path="stats" element={<RoleGuard roles={['admin', 'manager']}><Stats /></RoleGuard>} />
+                <Route path="history" element={<DailyHistory />} />
                 <Route path="accounts" element={<RoleGuard roles={['admin']}><Accounts /></RoleGuard>} />
               </Route>
 
