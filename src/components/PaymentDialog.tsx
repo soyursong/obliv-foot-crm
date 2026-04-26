@@ -133,6 +133,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid }: Props) {
           package_name: selectedPreset.label,
           package_type: `preset_${selectedPreset.total}`,
           total_sessions: selectedPreset.total,
+          total_amount: selectedPreset.suggestedPrice,
           paid_amount: totalAmount,
           status: 'active',
         })

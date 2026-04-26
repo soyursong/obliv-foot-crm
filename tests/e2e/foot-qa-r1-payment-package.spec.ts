@@ -86,7 +86,9 @@ test.describe('QA-R1 PaymentDialog (foot-058)', () => {
         clinic_id: CLINIC_ID,
         customer_id: customer!.id,
         package_name: preset.label,
+        package_type: `preset_${preset.total}`,
         total_sessions: preset.total,
+        total_amount: preset.suggestedPrice,
         paid_amount: preset.suggestedPrice,
         status: 'active',
       })
