@@ -15,8 +15,8 @@ import {
 
 import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
-import type { CheckIn, CheckInStatus, VisitType, Clinic } from '@/lib/types';
-import { STATUS_KO, VISIT_TYPE_KO } from '@/lib/status';
+import type { CheckIn, CheckInStatus, Clinic } from '@/lib/types';
+import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR } from '@/lib/status';
 import { elapsedLabel } from '@/lib/elapsed';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -36,28 +36,7 @@ interface StatusTransition {
 type FilterTab = 'all' | 'in_progress' | 'done' | 'cancelled';
 type SortMode = 'queue' | 'time';
 
-/* ---------- status badge colors ---------- */
-
-const STATUS_COLOR: Record<CheckInStatus, string> = {
-  registered: 'bg-gray-100 text-gray-700',
-  checklist: 'bg-yellow-100 text-yellow-800',
-  exam_waiting: 'bg-blue-100 text-blue-800',
-  examination: 'bg-blue-500 text-white',
-  consult_waiting: 'bg-indigo-100 text-indigo-800',
-  consultation: 'bg-indigo-500 text-white',
-  payment_waiting: 'bg-amber-100 text-amber-800',
-  treatment_waiting: 'bg-teal-100 text-teal-800',
-  preconditioning: 'bg-teal-400 text-white',
-  laser: 'bg-emerald-500 text-white',
-  done: 'bg-gray-200 text-gray-500',
-  cancelled: 'bg-red-100 text-red-600',
-};
-
-const VISIT_TYPE_COLOR: Record<VisitType, string> = {
-  new: 'bg-teal-100 text-teal-700',
-  returning: 'bg-emerald-100 text-emerald-700',
-  experience: 'bg-amber-100 text-amber-700',
-};
+/* STATUS_COLOR, VISIT_TYPE_COLOR → @/lib/status 공유 상수 사용 */
 
 /* ---------- helpers ---------- */
 

@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
-import { STATUS_KO } from '@/lib/status';
+import { STATUS_KO, STATUS_COLOR, CALLED_STATUSES } from '@/lib/status';
 import { playCheckInBeep } from '@/lib/audio';
 import { elapsedMinutes, elapsedLabel } from '@/lib/elapsed';
 import type { CheckInStatus } from '@/lib/types';
@@ -39,23 +39,7 @@ function maskName(name: string | null): string {
   return `${trimmed[0]}○${trimmed.slice(-1)}`;
 }
 
-// 레이저/시술 중 상태는 "호출됨" 강조
-const CALLED_STATUSES: CheckInStatus[] = ['examination', 'consultation', 'laser', 'preconditioning'];
-
-const STATUS_COLOR: Partial<Record<CheckInStatus, string>> = {
-  registered: 'bg-gray-100 text-gray-700',
-  checklist: 'bg-yellow-100 text-yellow-800',
-  exam_waiting: 'bg-blue-100 text-blue-800',
-  examination: 'bg-blue-500 text-white',
-  consult_waiting: 'bg-indigo-100 text-indigo-800',
-  consultation: 'bg-indigo-500 text-white',
-  payment_waiting: 'bg-amber-100 text-amber-800',
-  treatment_waiting: 'bg-teal-100 text-teal-800',
-  preconditioning: 'bg-teal-400 text-white',
-  laser: 'bg-emerald-500 text-white',
-  done: 'bg-gray-200 text-gray-500',
-  cancelled: 'bg-red-100 text-red-600',
-};
+/* STATUS_COLOR, CALLED_STATUSES → @/lib/status 공유 상수 사용 */
 
 export default function Waiting() {
   const { clinicSlug } = useParams<{ clinicSlug: string }>();
