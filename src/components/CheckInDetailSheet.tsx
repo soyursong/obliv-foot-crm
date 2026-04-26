@@ -547,20 +547,32 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             />
           </div>
 
-          {/* 진료 소견 (의사) */}
-          <div className="space-y-2">
-            <Label className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
-              <Stethoscope className="h-3 w-3" /> 진료 소견
-              <span className="ml-auto text-xs font-normal text-muted-foreground">진료 단계</span>
-            </Label>
-            <Textarea
-              value={doctorNote}
-              onChange={(e) => setDoctorNote(e.target.value)}
-              placeholder="의사 진료 소견을 입력하세요"
-              rows={3}
-              className="text-sm border-violet-200 focus-visible:ring-violet-400"
-            />
-          </div>
+          {/* 원장 소견 */}
+          {(() => {
+            const isExaminationStage = checkIn.status === 'examination' || checkIn.status === 'exam_waiting';
+            return (
+              <div className={cn(
+                'space-y-2 rounded-md p-3 transition',
+                isExaminationStage
+                  ? 'bg-violet-50 ring-2 ring-violet-300'
+                  : 'bg-violet-50/40 ring-1 ring-violet-100',
+              )}>
+                <Label className="text-sm font-semibold text-violet-900 flex items-center gap-1">
+                  <Stethoscope className="h-3 w-3" /> 원장 소견
+                  <span className="ml-auto text-xs font-normal text-violet-700/80">
+                    {isExaminationStage ? '진료 중' : '선택 입력 (원장 미진료 시도 메모 가능)'}
+                  </span>
+                </Label>
+                <Textarea
+                  value={doctorNote}
+                  onChange={(e) => setDoctorNote(e.target.value)}
+                  placeholder="원장 소견을 자유롭게 입력하세요 (원장 미참여 시 상담실장이 대리 메모 가능)"
+                  rows={3}
+                  className="text-sm bg-white border-violet-200 focus-visible:ring-violet-400"
+                />
+              </div>
+            );
+          })()}
 
           {/* 시술 기록 */}
           <div className="space-y-2">

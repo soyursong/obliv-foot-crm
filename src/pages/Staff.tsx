@@ -437,12 +437,18 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
     }
 
     if (existing) {
-      const { error } = await supabase
+      const { data: updated, error } = await supabase
         .from('room_assignments')
         .update({ staff_id: staffId, staff_name: staff?.name ?? null })
-        .eq('id', existing.id);
+        .eq('id', existing.id)
+        .select('id');
       if (error) {
         toast.error(`배정 실패: ${error.message}`);
+        return;
+      }
+      // RLS denial 등으로 0행 영향 → silent 실패 가시화
+      if (!updated || updated.length === 0) {
+        toast.error('배정 변경 권한이 없습니다 (admin/manager만 가능)');
         return;
       }
     } else {
