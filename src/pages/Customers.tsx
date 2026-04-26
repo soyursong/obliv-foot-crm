@@ -17,12 +17,11 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
-import { getClinic } from '@/lib/clinic';
+import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
 import { STATUS_KO, VISIT_TYPE_KO } from '@/lib/status';
 import type {
   CheckIn,
-  Clinic,
   Customer,
   Package,
   PackageRemaining,
@@ -61,7 +60,7 @@ interface CustomerStats {
 }
 
 export default function Customers() {
-  const [clinic, setClinic] = useState<Clinic | null>(null);
+  const clinic = useClinic();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
@@ -69,10 +68,6 @@ export default function Customers() {
   const [openCreate, setOpenCreate] = useState(false);
   const [statsMap, setStatsMap] = useState<Map<string, CustomerStats>>(new Map());
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    getClinic().then(setClinic).catch(() => setClinic(null));
-  }, []);
 
   const runSearch = useCallback(
     async (q: string) => {

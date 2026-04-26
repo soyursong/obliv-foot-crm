@@ -159,7 +159,7 @@ export default function Closing() {
           .eq('clinic_id', clinic!.id)
           .gte('checked_in_at', start)
           .lte('checked_in_at', end)
-          .then(r => (r.data ?? []).map((d: any) => d.id))
+          .then(r => (r.data ?? []).map((d: { id: string }) => d.id))
         ));
       if (error) throw error;
       const byName: Record<string, { count: number; revenue: number }> = {};

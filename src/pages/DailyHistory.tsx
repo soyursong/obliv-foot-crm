@@ -18,9 +18,9 @@ import {
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
-import { getClinic } from '@/lib/clinic';
+import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
-import type { CheckIn, CheckInStatus, Clinic, Reservation } from '@/lib/types';
+import type { CheckIn, CheckInStatus, Reservation } from '@/lib/types';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR } from '@/lib/status';
 import { elapsedLabel } from '@/lib/elapsed';
 import { Button } from '@/components/ui/button';
@@ -111,7 +111,7 @@ const PAID_EXPECTED_STATUSES: CheckInStatus[] = [
 /* ---------- component ---------- */
 
 export default function DailyHistory() {
-  const [clinic, setClinic] = useState<Clinic | null>(null);
+  const clinic = useClinic();
   const [date, setDate] = useState(todayStr());
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
   const [transitions, setTransitions] = useState<StatusTransition[]>([]);
@@ -123,11 +123,6 @@ export default function DailyHistory() {
   const [filter, setFilter] = useState<FilterTab>('all');
   const [sort, setSort] = useState<SortMode>('queue');
   const [showNoshow, setShowNoshow] = useState(false);
-
-  // Load clinic
-  useEffect(() => {
-    getClinic().then(setClinic).catch(() => setClinic(null));
-  }, []);
 
   // Fetch data when clinic or date changes
   const fetchData = useCallback(async () => {

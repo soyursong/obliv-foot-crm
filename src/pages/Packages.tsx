@@ -17,11 +17,11 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
-import { getClinic } from '@/lib/clinic';
+import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { PACKAGE_PRESETS } from '@/lib/packagePresets';
-import type { Clinic, Customer, Package, PackageRemaining } from '@/lib/types';
+import type { Customer, Package, PackageRemaining } from '@/lib/types';
 
 type PackageListItem = Package & { customer: { name: string; phone: string } | null };
 
@@ -39,17 +39,13 @@ const PRESETS = PACKAGE_PRESETS;
 type FilterStatus = 'active' | 'completed' | 'refunded' | 'all';
 
 export default function Packages() {
-  const [clinic, setClinic] = useState<Clinic | null>(null);
+  const clinic = useClinic();
   const [filter, setFilter] = useState<FilterStatus>('active');
   const [rows, setRows] = useState<PackageListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [openCreate, setOpenCreate] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-
-  useEffect(() => {
-    getClinic().then(setClinic).catch(() => setClinic(null));
-  }, []);
 
   const fetchPackages = useCallback(async () => {
     if (!clinic) return;
