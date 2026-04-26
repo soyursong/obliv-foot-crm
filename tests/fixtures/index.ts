@@ -134,9 +134,9 @@ export async function seedReservation(opts: {
       customer_name: opts.customerName ?? `qa-res-${ts}`,
       reservation_date: date,
       reservation_time: opts.time ?? '14:00',
-      reservation_type: opts.visit_type ?? 'new',
+      visit_type: opts.visit_type ?? 'new',
       status: 'confirmed',
-      notes: MARKER,
+      memo: MARKER,
     })
     .select('id')
     .single();
@@ -181,7 +181,7 @@ export async function cleanupAll(): Promise<void> {
     await sb.from('customers').delete().in('id', customerIds);
   }
   // reservations
-  const { data: resRows } = await sb.from('reservations').select('id').eq('notes', MARKER);
+  const { data: resRows } = await sb.from('reservations').select('id').eq('memo', MARKER);
   const resIds = (resRows ?? []).map((r) => r.id as string);
   if (resIds.length) {
     await sb.from('reservation_logs').delete().in('reservation_id', resIds);
