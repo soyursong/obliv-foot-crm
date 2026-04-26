@@ -25,12 +25,123 @@ const anonClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 type Step = 'input' | 'confirm' | 'done' | 'error';
+type Lang = 'ko' | 'en';
 
-const VISIT_CHOICES: { value: VisitType; label: string; desc: string }[] = [
-  { value: 'new', label: '신규', desc: '처음 방문하셨습니다' },
-  { value: 'returning', label: '재진', desc: '재방문입니다' },
-  { value: 'experience', label: '체험', desc: '체험을 원합니다' },
-];
+const T: Record<Lang, {
+  selfCheckIn: string;
+  name: string;
+  namePlaceholder: string;
+  phone: string;
+  phonePlaceholder: string;
+  visitType: string;
+  checkIn: string;
+  confirm: string;
+  edit: string;
+  processing: string;
+  confirmTitle: string;
+  contact: string;
+  done: string;
+  doneMsg: (name: string) => string;
+  waitMsg: string;
+  queueNumber: string;
+  autoReset: (s: number) => string;
+  newCheckIn: string;
+  errorTitle: string;
+  retry: string;
+  clinicNotFound: string;
+  clinicNotFoundDesc: string;
+  loading: string;
+  clearAll: string;
+  reservationBanner: (time: string, type: string) => string;
+  visitNew: string;
+  visitNewDesc: string;
+  visitReturning: string;
+  visitReturningDesc: string;
+  visitExperience: string;
+  visitExperienceDesc: string;
+  failPrefix: string;
+  errorPrefix: string;
+}> = {
+  ko: {
+    selfCheckIn: '셀프 접수',
+    name: '이름',
+    namePlaceholder: '홍길동',
+    phone: '연락처',
+    phonePlaceholder: '010-1234-5678',
+    visitType: '방문 유형',
+    checkIn: '접수',
+    confirm: '접수하기',
+    edit: '수정',
+    processing: '처리 중...',
+    confirmTitle: '접수 정보 확인',
+    contact: '연락처',
+    done: '접수 완료',
+    doneMsg: (name) => `${name}님, 접수가 완료되었습니다.`,
+    waitMsg: '잠시만 기다려 주세요.',
+    queueNumber: '대기번호',
+    autoReset: (s) => `${s}초 후 자동으로 초기화됩니다`,
+    newCheckIn: '새 접수',
+    errorTitle: '접수 실패',
+    retry: '다시 시도',
+    clinicNotFound: '지점을 찾을 수 없습니다',
+    clinicNotFoundDesc: '올바른 체크인 링크인지 확인해 주세요.',
+    loading: '불러오는 중...',
+    clearAll: '전체삭제',
+    reservationBanner: (time, type) => `오늘 예약이 있습니다: ${time} ${type}`,
+    visitNew: '신규',
+    visitNewDesc: '처음 방문하셨습니다',
+    visitReturning: '재진',
+    visitReturningDesc: '재방문입니다',
+    visitExperience: '체험',
+    visitExperienceDesc: '체험을 원합니다',
+    failPrefix: '접수 실패: ',
+    errorPrefix: '오류가 발생했습니다: ',
+  },
+  en: {
+    selfCheckIn: 'Self Check-In',
+    name: 'Name',
+    namePlaceholder: 'Hong Gil-dong',
+    phone: 'Phone',
+    phonePlaceholder: '010-1234-5678',
+    visitType: 'Visit Type',
+    checkIn: 'Check In',
+    confirm: 'Confirm',
+    edit: 'Edit',
+    processing: 'Processing...',
+    confirmTitle: 'Confirm Your Information',
+    contact: 'Phone',
+    done: 'Check-In Complete',
+    doneMsg: (name) => `${name}, your check-in is complete.`,
+    waitMsg: 'Please wait to be called.',
+    queueNumber: 'Queue Number',
+    autoReset: (s) => `Auto-reset in ${s} seconds`,
+    newCheckIn: 'New Check-In',
+    errorTitle: 'Check-In Failed',
+    retry: 'Try Again',
+    clinicNotFound: 'Clinic not found',
+    clinicNotFoundDesc: 'Please verify your check-in link.',
+    loading: 'Loading...',
+    clearAll: 'Clear',
+    reservationBanner: (time, type) => `Reservation found: ${time} ${type}`,
+    visitNew: 'New',
+    visitNewDesc: 'First visit',
+    visitReturning: 'Follow-up',
+    visitReturningDesc: 'Returning visit',
+    visitExperience: 'Trial',
+    visitExperienceDesc: 'Trial session',
+    failPrefix: 'Failed: ',
+    errorPrefix: 'Error: ',
+  },
+};
+
+function visitChoices(lang: Lang): { value: VisitType; label: string; desc: string }[] {
+  const t = T[lang];
+  return [
+    { value: 'new', label: t.visitNew, desc: t.visitNewDesc },
+    { value: 'returning', label: t.visitReturning, desc: t.visitReturningDesc },
+    { value: 'experience', label: t.visitExperience, desc: t.visitExperienceDesc },
+  ];
+}
 
 /** 완료 화면 자동 리셋 (초) */
 const DONE_RESET_SECONDS = 15;
@@ -42,10 +153,12 @@ function NumPad({
   onDigit,
   onDelete,
   onClear,
+  clearLabel = '전체삭제',
 }: {
   onDigit: (d: string) => void;
   onDelete: () => void;
   onClear: () => void;
+  clearLabel?: string;
 }) {
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'del'];
   return (
@@ -59,7 +172,7 @@ function NumPad({
               onClick={onClear}
               className="flex h-14 items-center justify-center rounded-xl bg-gray-200 text-base font-semibold text-gray-600 transition active:bg-gray-300 active:scale-95"
             >
-              전체삭제
+              {clearLabel}
             </button>
           );
         }
@@ -99,6 +212,7 @@ export default function SelfCheckIn() {
   const [clinicName, setClinicName] = useState<string>('');
   const [clinicNotFound, setClinicNotFound] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [lang, setLang] = useState<Lang>('ko');
 
   const [step, setStep] = useState<Step>('input');
   const [name, setName] = useState('');
@@ -107,6 +221,9 @@ export default function SelfCheckIn() {
   const [submitting, setSubmitting] = useState(false);
   const [queueNumber, setQueueNumber] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+
+  const t = T[lang];
+  const VISIT_CHOICES = visitChoices(lang);
 
   // 예약 정보
   const [reservationBanner, setReservationBanner] = useState<{
@@ -384,7 +501,7 @@ export default function SelfCheckIn() {
       });
 
       if (ciErr) {
-        setErrorMsg(`접수 실패: ${ciErr.message}`);
+        setErrorMsg(`${t.failPrefix}${ciErr.message}`);
         setStep('error');
         setSubmitting(false);
         return;
@@ -393,18 +510,30 @@ export default function SelfCheckIn() {
       setQueueNumber(queue);
       setStep('done');
     } catch (err) {
-      setErrorMsg(`오류가 발생했습니다: ${(err as Error).message}`);
+      setErrorMsg(`${t.errorPrefix}${(err as Error).message}`);
       setStep('error');
     } finally {
       setSubmitting(false);
     }
   };
 
+  // ── 언어 전환 버튼 ──
+  const LangToggle = () => (
+    <button
+      type="button"
+      onClick={() => setLang((l) => (l === 'ko' ? 'en' : 'ko'))}
+      className="fixed right-4 top-4 z-50 flex items-center gap-1.5 rounded-full border-2 border-gray-200 bg-white px-4 py-2 text-sm font-bold shadow-md transition active:scale-95 hover:bg-gray-50"
+    >
+      <span className="text-base">{lang === 'ko' ? '🇺🇸' : '🇰🇷'}</span>
+      <span className="text-gray-700">{lang === 'ko' ? 'EN' : '한국어'}</span>
+    </button>
+  );
+
   // ── 로딩 ──
   if (loading) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-gradient-to-b from-teal-50 to-white">
-        <p className="text-lg text-muted-foreground">불러오는 중...</p>
+        <p className="text-lg text-muted-foreground">{t.loading}</p>
       </div>
     );
   }
@@ -413,10 +542,11 @@ export default function SelfCheckIn() {
   if (clinicNotFound) {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-red-50 to-white px-6">
+        <LangToggle />
         <div className="text-center">
-          <h1 className="mb-2 text-2xl font-bold text-red-600">지점을 찾을 수 없습니다</h1>
+          <h1 className="mb-2 text-2xl font-bold text-red-600">{t.clinicNotFound}</h1>
           <p className="text-muted-foreground">
-            올바른 체크인 링크인지 확인해 주세요.
+            {t.clinicNotFoundDesc}
           </p>
         </div>
       </div>
@@ -427,6 +557,7 @@ export default function SelfCheckIn() {
   if (step === 'done') {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-teal-50 to-white px-6">
+        <LangToggle />
         <div className="w-full max-w-md space-y-8 text-center">
           {/* 클리닉명 */}
           <p className="text-lg font-medium text-teal-600">{clinicName}</p>
@@ -445,32 +576,32 @@ export default function SelfCheckIn() {
           </div>
 
           <div>
-            <h1 className="text-3xl font-bold text-teal-700">접수 완료</h1>
+            <h1 className="text-3xl font-bold text-teal-700">{t.done}</h1>
             {queueNumber != null && (
               <div className="mt-6">
-                <p className="text-sm text-gray-500">대기번호</p>
+                <p className="text-sm text-gray-500">{t.queueNumber}</p>
                 <p className="mt-1 text-8xl font-black text-teal-600 tabular-nums">
                   #{queueNumber}
                 </p>
               </div>
             )}
             <p className="mt-6 text-lg text-gray-600">
-              <strong>{name.trim()}</strong>님, 접수가 완료되었습니다.
+              {t.doneMsg(name.trim())}
               <br />
-              잠시만 기다려 주세요.
+              {t.waitMsg}
             </p>
           </div>
 
           {/* 카운트다운 */}
           <p className="text-sm text-gray-400">
-            {countdown}초 후 자동으로 초기화됩니다
+            {t.autoReset(countdown)}
           </p>
 
           <button
             onClick={resetForm}
             className="mx-auto block rounded-xl bg-gray-100 px-8 py-4 text-lg font-medium text-gray-700 transition hover:bg-gray-200 active:bg-gray-300"
           >
-            새 접수
+            {t.newCheckIn}
           </button>
         </div>
       </div>
@@ -481,14 +612,15 @@ export default function SelfCheckIn() {
   if (step === 'error') {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-red-50 to-white px-6">
+        <LangToggle />
         <div className="w-full max-w-md space-y-6 text-center">
-          <h1 className="text-2xl font-bold text-red-600">접수 실패</h1>
+          <h1 className="text-2xl font-bold text-red-600">{t.errorTitle}</h1>
           <p className="text-gray-600">{errorMsg}</p>
           <button
             onClick={() => setStep('input')}
             className="mx-auto block rounded-xl bg-gray-100 px-8 py-4 text-lg font-medium text-gray-700 transition hover:bg-gray-200"
           >
-            다시 시도
+            {t.retry}
           </button>
         </div>
       </div>
@@ -500,19 +632,20 @@ export default function SelfCheckIn() {
     const visitLabel = VISIT_CHOICES.find((c) => c.value === visitType)?.label ?? visitType;
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-teal-50 to-white px-6">
+        <LangToggle />
         <div className="w-full max-w-md space-y-8">
-          <h1 className="text-center text-2xl font-bold text-gray-800">접수 정보 확인</h1>
+          <h1 className="text-center text-2xl font-bold text-gray-800">{t.confirmTitle}</h1>
           <div className="space-y-4 rounded-2xl border bg-white p-6 shadow-sm">
             <div className="flex justify-between border-b pb-3">
-              <span className="text-gray-500">이름</span>
+              <span className="text-gray-500">{t.name}</span>
               <span className="font-semibold">{name.trim()}</span>
             </div>
             <div className="flex justify-between border-b pb-3">
-              <span className="text-gray-500">연락처</span>
+              <span className="text-gray-500">{t.contact}</span>
               <span className="font-semibold">{phone}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">방문 유형</span>
+              <span className="text-gray-500">{t.visitType}</span>
               <span className="font-semibold">{visitLabel}</span>
             </div>
           </div>
@@ -521,14 +654,14 @@ export default function SelfCheckIn() {
               onClick={() => setStep('input')}
               className="flex-1 rounded-xl border-2 border-gray-300 py-4 text-lg font-medium text-gray-700 transition hover:bg-gray-50 active:bg-gray-100"
             >
-              수정
+              {t.edit}
             </button>
             <button
               onClick={handleSubmit}
               disabled={submitting}
               className="flex-1 rounded-xl bg-teal-600 py-4 text-lg font-bold text-white transition hover:bg-teal-700 active:bg-teal-800 disabled:opacity-50"
             >
-              {submitting ? '처리 중...' : '접수하기'}
+              {submitting ? t.processing : t.confirm}
             </button>
           </div>
         </div>
@@ -539,10 +672,11 @@ export default function SelfCheckIn() {
   // ── 입력 폼 ──
   return (
     <div className="flex min-h-dvh flex-col bg-gradient-to-b from-teal-50 to-white">
+      <LangToggle />
       {/* 헤더 */}
       <header className="px-6 pb-2 pt-8 text-center">
         <h1 className="text-2xl font-bold text-teal-700">{clinicName}</h1>
-        <p className="mt-1 text-gray-500">셀프 접수</p>
+        <p className="mt-1 text-gray-500">{t.selfCheckIn}</p>
       </header>
 
       {/* 폼 */}
@@ -551,14 +685,14 @@ export default function SelfCheckIn() {
           {/* 이름 */}
           <div className="space-y-2">
             <label htmlFor="sc-name" className="block text-sm font-medium text-gray-700">
-              이름
+              {t.name}
             </label>
             <input
               id="sc-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="홍길동"
+              placeholder={t.namePlaceholder}
               autoComplete="name"
               className="h-14 w-full rounded-xl border-2 border-gray-200 bg-white px-4 text-lg outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
             />
@@ -567,7 +701,7 @@ export default function SelfCheckIn() {
           {/* 연락처 */}
           <div className="space-y-2">
             <label htmlFor="sc-phone" className="block text-sm font-medium text-gray-700">
-              연락처
+              {t.phone}
             </label>
             <input
               id="sc-phone"
@@ -575,7 +709,7 @@ export default function SelfCheckIn() {
               inputMode="none"
               value={phone}
               onChange={(e) => handlePhoneChange(e.target.value)}
-              placeholder="010-1234-5678"
+              placeholder={t.phonePlaceholder}
               autoComplete="tel"
               readOnly
               className="h-14 w-full rounded-xl border-2 border-gray-200 bg-white px-4 text-lg outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
@@ -588,7 +722,7 @@ export default function SelfCheckIn() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
                 <span className="text-sm font-medium text-teal-700">
-                  오늘 예약이 있습니다: {reservationBanner.time} {reservationBanner.visitType}
+                  {t.reservationBanner(reservationBanner.time, reservationBanner.visitType)}
                 </span>
               </div>
             )}
@@ -598,12 +732,13 @@ export default function SelfCheckIn() {
               onDigit={handleNumPadDigit}
               onDelete={handleNumPadDelete}
               onClear={handleNumPadClear}
+              clearLabel={t.clearAll}
             />
           </div>
 
           {/* 방문 유형 */}
           <div className="space-y-2">
-            <span className="block text-sm font-medium text-gray-700">방문 유형</span>
+            <span className="block text-sm font-medium text-gray-700">{t.visitType}</span>
             <div className="grid grid-cols-3 gap-3">
               {VISIT_CHOICES.map((c) => (
                 <button
@@ -629,7 +764,7 @@ export default function SelfCheckIn() {
             disabled={!canSubmit}
             className="mt-4 h-16 w-full rounded-xl bg-teal-600 text-xl font-bold text-white transition hover:bg-teal-700 active:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            접수
+            {t.checkIn}
           </button>
         </div>
       </main>

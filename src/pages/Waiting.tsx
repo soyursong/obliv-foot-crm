@@ -26,6 +26,28 @@ interface WaitingRow {
   customer_name: string | null;
   status: CheckInStatus;
   checked_in_at: string;
+  examination_room: string | null;
+  consultation_room: string | null;
+  treatment_room: string | null;
+  laser_room: string | null;
+}
+
+/** 현재 상태에 맞는 룸 안내 문구 반환 */
+function roomGuidance(row: WaitingRow): string | null {
+  const { status } = row;
+  if (status === 'examination' || status === 'exam_waiting') {
+    return row.examination_room ? `진료실 ${row.examination_room}` : null;
+  }
+  if (status === 'consultation' || status === 'consult_waiting') {
+    return row.consultation_room ? `상담실 ${row.consultation_room}` : null;
+  }
+  if (status === 'preconditioning' || status === 'treatment_waiting') {
+    return row.treatment_room ? `치료실 ${row.treatment_room}` : null;
+  }
+  if (status === 'laser') {
+    return row.laser_room ? `레이저실 ${row.laser_room}` : null;
+  }
+  return null;
 }
 
 const DONE_STATUSES: CheckInStatus[] = ['done', 'cancelled'];
@@ -92,7 +114,7 @@ export default function Waiting() {
     const end = `${today}T23:59:59+09:00`;
     const { data } = await anonClient
       .from('check_ins')
-      .select('id, queue_number, customer_name, status, checked_in_at')
+      .select('id, queue_number, customer_name, status, checked_in_at, examination_room, consultation_room, treatment_room, laser_room')
       .eq('clinic_id', clinicId)
       .gte('checked_in_at', start)
       .lte('checked_in_at', end)
@@ -277,9 +299,10 @@ export default function Waiting() {
   );
 }
 
-/** 진행 중 카드 — 호출 강조 pulse 애니메이션 포함 */
+/** 진행 중 카드 — 호출 강조 pulse 애니메이션 + 룸 안내 포함 */
 function CalledCard({ row: r, now: _now }: { row: WaitingRow; now: Date }) {
   const mins = elapsedMinutes(r.checked_in_at);
+  const room = roomGuidance(r);
   return (
     <div
       className="animate-pulse-subtle rounded-2xl border-2 border-emerald-400 bg-white p-4 shadow-sm"
@@ -307,6 +330,13 @@ function CalledCard({ row: r, now: _now }: { row: WaitingRow; now: Date }) {
           {elapsedLabel(mins)}
         </span>
       </div>
+      {room && (
+        <div className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-center">
+          <span className="text-sm font-bold text-emerald-700">
+            {room}으로 와주세요
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -343,6 +373,11 @@ function WaitingCard({ row: r, now: _now, position }: { row: WaitingRow; now: Da
           <span>앞에 <strong className="text-gray-600">{position}명</strong> 대기</span>
         )}
       </div>
+      {roomGuidance(r) && (
+        <div className="mt-1.5 rounded bg-teal-50 px-2 py-1 text-center text-xs font-medium text-teal-700">
+          {roomGuidance(r)}으로 와주세요
+        </div>
+      )}
     </div>
   );
 }
