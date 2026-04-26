@@ -45,6 +45,7 @@ import { PaymentDialog } from '@/components/PaymentDialog';
 import { StatusContextMenu } from '@/components/StatusContextMenu';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
+import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
 import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Reservation, Room, RoomFieldKey, Staff } from '@/lib/types';
 
 type TabKey = 'all' | 'new' | 'returning';
@@ -63,17 +64,6 @@ interface PackageLabel {
   name: string;
   remaining: number;
   total: number;
-}
-
-function elapsedMMSS(iso: string): string {
-  const diff = Math.max(0, Date.now() - new Date(iso).getTime());
-  const mm = Math.floor(diff / 60000);
-  const ss = Math.floor((diff % 60000) / 1000);
-  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
-}
-
-function elapsedMinutes(iso: string): number {
-  return Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
 }
 
 // pointerWithin 우선, 없으면 closestCenter 폴백 — 방(room) 드롭 정확도 향상

@@ -21,7 +21,7 @@ import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
 import type { CheckIn, CheckInStatus, Reservation } from '@/lib/types';
-import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR } from '@/lib/status';
+import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, METHOD_KO } from '@/lib/status';
 import { elapsedLabel } from '@/lib/elapsed';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -63,14 +63,7 @@ interface PackagePaymentRow {
 type FilterTab = 'all' | 'in_progress' | 'done' | 'cancelled' | 'noshow';
 type SortMode = 'queue' | 'time';
 
-/* STATUS_COLOR, VISIT_TYPE_COLOR → @/lib/status 공유 상수 사용 */
-
-const METHOD_KO: Record<string, string> = {
-  card: '카드',
-  cash: '현금',
-  transfer: '이체',
-  membership: '멤버십',
-};
+/* STATUS_COLOR, VISIT_TYPE_COLOR, METHOD_KO → @/lib/status 공유 상수 사용 */
 
 /* ---------- helpers ---------- */
 

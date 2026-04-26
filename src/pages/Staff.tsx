@@ -23,17 +23,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
+import { STAFF_ROLE_LABEL as ROLE_LABEL, STAFF_ROLE_ORDER as ROLE_ORDER } from '@/lib/status';
+
 type Role = StaffRole;
-
-const ROLE_LABEL: Record<Role, string> = {
-  director: '원장',
-  consultant: '상담실장',
-  coordinator: '코디네이터',
-  therapist: '치료사',
-  technician: '관리사',
-};
-
-const ROLE_ORDER: Role[] = ['director', 'consultant', 'coordinator', 'therapist', 'technician'];
 
 const ROOM_TYPE_LABEL: Record<Room['room_type'], string> = {
   treatment: '치료실',

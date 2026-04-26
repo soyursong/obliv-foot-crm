@@ -16,6 +16,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
+import { roleLabel } from '@/lib/status';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface DailyVisit {
@@ -249,13 +250,6 @@ export default function Stats() {
     return { visits: v, revenue: r };
   }, [visits, revenue]);
 
-  const ROLE_LABEL: Record<string, string> = {
-    director: '원장',
-    consultant: '상담실장',
-    coordinator: '코디네이터',
-    therapist: '치료사',
-    technician: '관리사',
-  };
 
   if (loading) {
     return (
@@ -421,7 +415,7 @@ export default function Stats() {
                   {staffPerf.map((s) => (
                     <tr key={s.id} className="border-b last:border-0">
                       <td className="py-2 font-medium">{s.name}</td>
-                      <td className="py-2 text-muted-foreground">{ROLE_LABEL[s.role] ?? s.role}</td>
+                      <td className="py-2 text-muted-foreground">{roleLabel(s.role)}</td>
                       <td className="py-2 text-right tabular-nums">{s.check_in_count}</td>
                       <td className="py-2 text-right tabular-nums font-medium">{formatAmount(s.revenue)}</td>
                     </tr>

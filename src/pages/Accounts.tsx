@@ -26,16 +26,7 @@ const signupClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-const ROLE_LABEL: Record<UserRole, string> = {
-  admin: '관리자',
-  manager: '매니저',
-  consultant: '상담실장',
-  coordinator: '코디네이터',
-  therapist: '치료사',
-  technician: '관리사',
-  tm: 'TM',
-  staff: '스태프',
-};
+import { USER_ROLE_LABEL as ROLE_LABEL } from '@/lib/status';
 
 const ROLES: UserRole[] = ['admin', 'manager', 'consultant', 'coordinator', 'therapist', 'technician', 'tm', 'staff'];
 
