@@ -21,6 +21,7 @@ import { ConsentFormButtons } from '@/components/ConsentFormDialog';
 import { PreChecklist } from '@/components/PreChecklist';
 import { PhotoUpload } from '@/components/PhotoUpload';
 import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
+import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 import { PACKAGE_PRESETS } from '@/lib/packagePresets';
 import type { CheckIn, CheckInStatus, Package as PackageType, PackageRemaining, Service } from '@/lib/types';
 
@@ -604,6 +605,10 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
           {/* 보험 영수증 / 처방전 */}
           <Separator />
           <InsuranceDocPanel checkIn={checkIn} onUpdated={onUpdated} />
+
+          {/* 서류 발행 (소견서, 진단서, 진료비내역서, 진료확인서, 통원확인서) */}
+          <Separator />
+          <DocumentPrintPanel checkIn={checkIn} onUpdated={onUpdated} />
 
           {/* 방문 이력 (날짜별 아코디언) */}
           {history.length > 0 && (
