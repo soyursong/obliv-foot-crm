@@ -23,12 +23,19 @@ test.describe('QA-R1 Kanban drag (foot-056 회귀 검증)', () => {
     await expect(page.getByText('레이저').first()).toBeVisible();
   });
 
-  test('카드 한 장이라도 칸반에 보이는가', async ({ page }) => {
-    // 데모 시드 12건 가정 — 어느 컬럼이든 카드 1개 이상
-    const cards = page.locator('[data-card-id], [data-checkin-id], [draggable="true"]');
+  test('카드 한 장이라도 칸반에 보이는가 (data-testid)', async ({ page }) => {
+    await page.waitForTimeout(2000);
+    const cards = page.locator('[data-testid="checkin-card"]');
     const count = await cards.count();
     console.log('보이는 카드 수:', count);
     expect(count).toBeGreaterThan(0);
+    // 각 카드에 status/visit_type 데이터 부착 확인
+    const first = cards.first();
+    const status = await first.getAttribute('data-checkin-status');
+    const visitType = await first.getAttribute('data-checkin-visit-type');
+    console.log('첫 카드 status / visit_type:', status, visitType);
+    expect(status).toBeTruthy();
+    expect(visitType).toBeTruthy();
   });
 
   test('레이저 슬롯 droppable이 DOM에 등록됨', async ({ page }) => {
