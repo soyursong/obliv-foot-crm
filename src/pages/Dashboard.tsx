@@ -146,6 +146,10 @@ function DraggableCard({
         style={style}
         {...attributes}
         {...listeners}
+        data-testid="checkin-card"
+        data-checkin-id={checkIn.id}
+        data-checkin-status={checkIn.status}
+        data-checkin-visit-type={checkIn.visit_type}
         onClick={(e) => {
           e.stopPropagation();
           onClick?.();
@@ -216,6 +220,10 @@ function DraggableCard({
       style={style}
       {...attributes}
       {...listeners}
+      data-testid="checkin-card"
+      data-checkin-id={checkIn.id}
+      data-checkin-status={checkIn.status}
+      data-checkin-visit-type={checkIn.visit_type}
       onClick={(e) => {
         e.stopPropagation();
         onClick?.();

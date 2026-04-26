@@ -17,31 +17,25 @@ test.describe('QA-R1 셀프체크인 (anon)', () => {
     expect(resp?.status()).toBeLessThan(400);
   });
 
-  test('이름 + 전화 + visit_type 입력 → 접수 완료 → DB 검증', async ({ page }) => {
+  test('이름 + 전화 + visit_type 입력 → 접수 → 접수하기 → DB 검증', async ({ page }) => {
     await page.context().clearCookies();
     await page.goto('/checkin/jongno-foot');
     await page.waitForLoadState('networkidle');
 
-    // 이름 입력 (label "이름" 또는 placeholder)
-    const nameInput = page.getByLabel(/이름/).first();
-    await nameInput.waitFor({ state: 'visible', timeout: 10_000 });
-    await nameInput.fill(TEST_NAME);
-
-    const phoneInput = page.getByLabel(/연락처|전화/).first();
-    await phoneInput.fill(TEST_PHONE);
-
-    // visit_type — 신규/재진/체험 중 신규 선택 (text 또는 button)
-    const newBtn = page.getByRole('button', { name: /신규/ }).first();
-    if (await newBtn.isVisible().catch(() => false)) {
-      await newBtn.click();
-    }
-
-    // 제출 버튼 (접수, 완료, 등록 등)
-    const submitBtn = page.getByRole('button', { name: /접수|완료|등록|체크인|확인/ }).last();
-    await submitBtn.click();
+    // 이름 (id="sc-name")
+    await page.locator('#sc-name').fill(TEST_NAME);
+    // 전화 (id="sc-phone")
+    await page.locator('#sc-phone').fill(TEST_PHONE);
+    // visit_type — "신규" 버튼 (label)
+    await page.getByRole('button', { name: '신규' }).click();
+    // 1단계: "접수" 버튼 → step='confirm' 화면
+    await page.getByRole('button', { name: '접수', exact: true }).click();
+    // confirm 화면에서 "접수하기" 버튼 대기 후 클릭
+    await page.getByRole('button', { name: '접수하기' }).waitFor({ timeout: 5000 });
+    await page.getByRole('button', { name: '접수하기' }).click();
 
     // 완료 화면 또는 DB INSERT 검증
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(2500);
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const { data, error } = await sb
       .from('check_ins')

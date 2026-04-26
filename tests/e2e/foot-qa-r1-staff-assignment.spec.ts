@@ -29,94 +29,59 @@ test.describe('QA-R1 Staff assignment (foot-057 회귀)', () => {
     expect(hasRoom).toBe(true);
   });
 
-  test('select 드롭다운으로 staff 배정 → DB 갱신 → 교체 → 다시 갱신', async ({ page }) => {
+  test('기존 room_assignment row staff 교체 → DB 1행 갱신', async ({ page }) => {
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 
-    // 사전: 오늘 첫 번째 room의 기존 배정 백업
-    const { data: rooms } = await sb.from('rooms').select('name, room_type').eq('clinic_id', CLINIC_ID).limit(3);
-    const targetRoom = rooms?.[0];
-    if (!targetRoom) {
-      test.skip(true, 'rooms 비어 있음');
-      return;
-    }
-    const { data: existing } = await sb
+    // 오늘 기존 room_assignments row 1개 픽
+    const { data: rows } = await sb
       .from('room_assignments')
-      .select('*')
+      .select('id, room_type, room_number, room_name, staff_id, staff_name')
       .eq('clinic_id', CLINIC_ID)
       .eq('date', today)
-      .eq('room_name', targetRoom.name)
-      .maybeSingle();
+      .limit(1);
+    const target = rows?.[0];
+    if (!target) {
+      test.skip(true, '오늘 room_assignments 비어 있음');
+      return;
+    }
+    const orig = { staff_id: target.staff_id, staff_name: target.staff_name };
 
-    // 사용 가능 staff 2명 (교체 사이클)
+    // 다른 staff 1명 (현재 배정 staff와 다른 사람)
     const { data: staffs } = await sb
       .from('staff')
-      .select('id, name, role')
+      .select('id, name')
       .eq('clinic_id', CLINIC_ID)
       .eq('active', true)
-      .limit(2);
-    if (!staffs || staffs.length < 2) {
-      test.skip(true, 'staff 2명 미달');
+      .neq('id', target.staff_id ?? '00000000-0000-0000-0000-000000000000')
+      .limit(1);
+    const newStaff = staffs?.[0];
+    if (!newStaff) {
+      test.skip(true, '교체 가능 staff 없음');
       return;
     }
-    const [staffA, staffB] = staffs;
 
-    // 1) staff A 배정 (DB 직접) — UI는 후속 검증
-    await sb
-      .from('room_assignments')
-      .upsert(
-        {
-          clinic_id: CLINIC_ID,
-          date: today,
-          room_name: targetRoom.name,
-          room_type: targetRoom.room_type,
-          staff_id: staffA.id,
-          staff_name: staffA.name,
-        },
-        { onConflict: 'clinic_id,date,room_name' },
-      );
-
-    await page.goto('/admin/staff');
-    await page.waitForLoadState('networkidle');
-
-    // 2) UI 화면에 staff A 배정이 보이는가
-    const visibleA = await page.getByText(staffA.name as string).first().isVisible().catch(() => false);
-    console.log(`Staff A(${staffA.name}) 화면 노출:`, visibleA);
-
-    // 3) DB로 staff B로 교체 시도 (UI select 시뮬은 selector 정확도 필요 — DB로 검증)
+    // DB 교체 — 기존 row id로 update (Staff.tsx 패턴과 동일)
     const { data: updateRes, error: upErr } = await sb
       .from('room_assignments')
-      .update({ staff_id: staffB.id, staff_name: staffB.name })
-      .eq('clinic_id', CLINIC_ID)
-      .eq('date', today)
-      .eq('room_name', targetRoom.name)
+      .update({ staff_id: newStaff.id, staff_name: newStaff.name })
+      .eq('id', target.id)
       .select('id');
-    console.log('DB 교체 결과:', updateRes?.length ?? 0, 'rows, error:', upErr?.message);
+    console.log('교체 결과:', updateRes?.length ?? 0, 'rows, error:', upErr?.message);
     expect(upErr).toBeNull();
     expect(updateRes?.length ?? 0).toBe(1);
 
-    // 4) UI 새로고침 후 staff B 노출 확인
-    await page.reload();
+    // UI 검증
+    await page.goto('/admin/staff');
     await page.waitForTimeout(1500);
-    const visibleB = await page.getByText(staffB.name as string).first().isVisible().catch(() => false);
-    console.log(`Staff B(${staffB.name}) 화면 노출:`, visibleB);
+    const visibleNew = await page.getByText(newStaff.name as string).first().isVisible().catch(() => false);
+    console.log(`교체 staff(${newStaff.name}) 화면 노출:`, visibleNew);
 
-    // 정리: 원상복구
-    if (existing) {
-      await sb
-        .from('room_assignments')
-        .update({ staff_id: existing.staff_id, staff_name: existing.staff_name })
-        .eq('clinic_id', CLINIC_ID)
-        .eq('date', today)
-        .eq('room_name', targetRoom.name);
-    } else {
-      await sb
-        .from('room_assignments')
-        .delete()
-        .eq('clinic_id', CLINIC_ID)
-        .eq('date', today)
-        .eq('room_name', targetRoom.name);
-    }
+    // 원상복구
+    await sb
+      .from('room_assignments')
+      .update({ staff_id: orig.staff_id, staff_name: orig.staff_name })
+      .eq('id', target.id);
   });
 
   test('UPDATE 0행 fallback toast 코드 적용 확인 (foot-057 패치)', async ({ page }) => {
