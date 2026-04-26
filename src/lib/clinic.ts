@@ -13,6 +13,3 @@ export async function getClinic(): Promise<Clinic> {
   return cached;
 }
 
-export function getClinicSlug() {
-  return SLUG;
-}
