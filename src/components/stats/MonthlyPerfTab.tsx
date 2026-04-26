@@ -11,6 +11,7 @@ import {
   Cell,
 } from 'recharts';
 import { supabase } from '@/lib/supabase';
+import { roleLabel } from '@/lib/status';
 
 interface Props {
   clinicId: string;
@@ -35,8 +36,6 @@ type ConsRow = {
 
 const WON_TO_MAN = (v: number) => Math.round(v / 10000);
 const COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
-
-import { roleLabel } from '@/lib/status';
 
 export default function MonthlyPerfTab({ clinicId }: Props) {
   const [month, setMonth] = useState<Date>(startOfMonth(new Date()));

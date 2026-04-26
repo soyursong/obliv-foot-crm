@@ -10,15 +10,23 @@ export default defineConfig({
     },
   },
   build: {
+    // pdf-lib (동적 import, 서류 인쇄 시에만 로드) 단독 청크 ~530 kB
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-supabase': ['@supabase/supabase-js'],
-          'vendor-dnd': ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
-          'vendor-recharts': ['recharts'],
-          'vendor-query': ['@tanstack/react-query'],
-          'vendor-dates': ['date-fns', 'date-fns/locale'],
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (/react-dom|react-router-dom/.test(id)) return 'vendor-react';
+            if (id.includes('@supabase/')) return 'vendor-supabase';
+            if (id.includes('@dnd-kit/')) return 'vendor-dnd';
+            if (id.includes('@tanstack/react-query')) return 'vendor-query';
+            if (id.includes('date-fns')) return 'vendor-dates';
+            if (id.includes('lucide-react')) return 'vendor-icons';
+            if (id.includes('pdf-lib')) return 'vendor-pdf';
+            // recharts + 공유 의존성 (clsx, d3-* 등)을 하나로 묶어 순환 방지
+            if (id.includes('recharts') || id.includes('d3-')) return 'vendor-charts';
+            if (id.includes('@base-ui/') || id.includes('sonner') || id.includes('class-variance-authority')) return 'vendor-ui';
+          }
         },
       },
     },

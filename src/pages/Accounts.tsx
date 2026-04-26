@@ -18,6 +18,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import type { Staff, UserProfile, UserRole } from '@/lib/types';
+import { USER_ROLE_LABEL as ROLE_LABEL } from '@/lib/status';
 
 // admin 세션 유지를 위해 persistSession:false 로 별도 client 사용 (signUp 이 현재 세션을 덮어쓰지 않도록)
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -25,8 +26,6 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const signupClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
-
-import { USER_ROLE_LABEL as ROLE_LABEL } from '@/lib/status';
 
 const ROLES: UserRole[] = ['admin', 'manager', 'consultant', 'coordinator', 'therapist', 'technician', 'tm', 'staff'];
 

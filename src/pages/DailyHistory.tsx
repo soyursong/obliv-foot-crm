@@ -61,6 +61,7 @@ interface PackagePaymentRow {
 }
 
 type FilterTab = 'all' | 'in_progress' | 'done' | 'cancelled' | 'noshow';
+type VisitFilter = 'all' | 'new' | 'returning' | 'experience';
 type SortMode = 'queue' | 'time';
 
 /* STATUS_COLOR, VISIT_TYPE_COLOR, METHOD_KO → @/lib/status 공유 상수 사용 */
@@ -114,6 +115,7 @@ export default function DailyHistory() {
   const [loading, setLoading] = useState(true);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<FilterTab>('all');
+  const [visitFilter, setVisitFilter] = useState<VisitFilter>('all');
   const [sort, setSort] = useState<SortMode>('queue');
   const [showNoshow, setShowNoshow] = useState(false);
 
@@ -290,6 +292,11 @@ export default function DailyHistory() {
       list = list.filter((ci) => ci.status === 'cancelled');
     }
 
+    // 방문유형 필터
+    if (visitFilter !== 'all') {
+      list = list.filter((ci) => ci.visit_type === visitFilter);
+    }
+
     if (sort === 'time') {
       return [...list].sort(
         (a, b) => new Date(a.checked_in_at).getTime() - new Date(b.checked_in_at).getTime(),
@@ -297,7 +304,7 @@ export default function DailyHistory() {
     }
     // queue sort (default) - already sorted from DB, but ensure
     return [...list].sort((a, b) => (a.queue_number ?? 0) - (b.queue_number ?? 0));
-  }, [checkIns, filter, sort]);
+  }, [checkIns, filter, visitFilter, sort]);
 
   // Date navigation
   const goToday = () => setDate(todayStr());
@@ -545,29 +552,63 @@ export default function DailyHistory() {
       )}
 
       {/* ---- Filters & Sort ---- */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterTab)}>
-          <TabsList>
-            <TabsTrigger value="all">
-              <Filter className="mr-1 size-3" />
-              전체 ({summary.total})
-            </TabsTrigger>
-            <TabsTrigger value="in_progress">
-              진행중 ({summary.total - summary.doneCount - summary.cancelledCount})
-            </TabsTrigger>
-            <TabsTrigger value="done">
-              완료 ({summary.doneCount})
-            </TabsTrigger>
-            <TabsTrigger value="cancelled">
-              취소 ({summary.cancelledCount})
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterTab)}>
+            <TabsList>
+              <TabsTrigger value="all">
+                <Filter className="mr-1 size-3" />
+                전체 ({summary.total})
+              </TabsTrigger>
+              <TabsTrigger value="in_progress">
+                진행중 ({summary.total - summary.doneCount - summary.cancelledCount})
+              </TabsTrigger>
+              <TabsTrigger value="done">
+                완료 ({summary.doneCount})
+              </TabsTrigger>
+              <TabsTrigger value="cancelled">
+                취소 ({summary.cancelledCount})
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
 
-        <Button variant="outline" size="sm" onClick={toggleSort}>
-          <ArrowUpDown className="mr-1 size-3" />
-          {sort === 'queue' ? '대기번호순' : '접수시간순'}
-        </Button>
+          <Button variant="outline" size="sm" onClick={toggleSort}>
+            <ArrowUpDown className="mr-1 size-3" />
+            {sort === 'queue' ? '대기번호순' : '접수시간순'}
+          </Button>
+        </div>
+
+        {/* 방문유형 필터 */}
+        <div className="flex items-center gap-2">
+          <User className="size-3.5 text-muted-foreground" />
+          <span className="text-xs font-medium text-muted-foreground">방문유형:</span>
+          <div className="flex gap-1.5">
+            {([
+              { value: 'all' as VisitFilter, label: '전체' },
+              { value: 'new' as VisitFilter, label: `신규 (${summary.byVisit.new})` },
+              { value: 'returning' as VisitFilter, label: `재진 (${summary.byVisit.returning})` },
+              { value: 'experience' as VisitFilter, label: `체험 (${summary.byVisit.experience})` },
+            ]).map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setVisitFilter(opt.value)}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                  visitFilter === opt.value
+                    ? opt.value === 'new'
+                      ? 'bg-teal-100 text-teal-700'
+                      : opt.value === 'returning'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : opt.value === 'experience'
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-gray-200 text-gray-800'
+                    : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* ---- Timeline List ---- */}

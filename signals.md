@@ -1,5 +1,34 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-04-26 [foot-051] deploy-ready — 대기실 화면 + 셀프 키오스크 + 일일 이력 enhancement
+
+> **ticket**: T-20260420-foot-051 | **priority**: P3 | **status**: deploy-ready
+
+### 변경 내역
+
+#### 1. Waiting.tsx — 룸 안내 표시
+- check_ins에서 `examination_room`, `consultation_room`, `treatment_room`, `laser_room` 필드 추가 조회
+- CalledCard(진행중)에 "치료실 3번으로 와주세요" 스타일 룸 안내 배너 표시
+- WaitingCard(대기중)에도 룸 배정 시 안내 표시
+- 상태→룸 매핑: exam→진료실, consult→상담실, preconditioning→치료실, laser→레이저실
+
+#### 2. SelfCheckIn.tsx — 한국어/영어 다국어 지원
+- `Lang` 타입 ('ko' | 'en') + 전체 UI 문자열 번역 맵 `T`
+- 우상단 고정 언어 전환 버튼 (🇺🇸 EN ↔ 🇰🇷 한국어)
+- 전 화면(입력/확인/완료/에러/클리닉미발견) 번역 적용
+- NumPad clearLabel prop 추가
+
+#### 3. DailyHistory.tsx — 방문유형 필터 추가
+- `VisitFilter` 타입 ('all' | 'new' | 'returning' | 'experience')
+- 기존 상태 필터 아래에 방문유형 필터 버튼 행 추가 (건수 표시)
+- 선택 시 색상 매칭 (신규=teal, 재진=emerald, 체험=amber)
+
+### 빌드 확인
+- `tsc -b && vite build` 성공 (0 error, 2.32s)
+- 기존 기능 영향 없음 (추가만, 삭제 없음)
+
+---
+
 ## 2026-04-20 QA 결과 → dev-foot 수정 요청
 
 ### P0 즉시 수정 (5건)
