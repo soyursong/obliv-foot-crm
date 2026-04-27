@@ -6,7 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit",
+    "test:critical": "npx playwright test tests/e2e/critical-flow/ --project=desktop-chrome",
+    "test:e2e": "npx playwright test tests/e2e/ --project=desktop-chrome",
+    "test:visual": "npx playwright test tests/visual/ --project=desktop-chrome",
+    "test:functional": "npx playwright test tests/functional/ --project=desktop-chrome",
+    "test:regression": "npx playwright test tests/e2e/regressions/ tests/e2e/foot-qa-r1-*.spec.ts tests/e2e/foot-qa-r2-*.spec.ts --project=desktop-chrome",
+    "test:all": "npx playwright test --project=desktop-chrome",
+    "ci:push": "npm run typecheck && npm run build && npm run test:critical"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",
