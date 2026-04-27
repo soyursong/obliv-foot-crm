@@ -36,7 +36,7 @@ const NAV_ITEMS: {
   { to: '/admin/staff', label: '직원·공간', icon: UserCog, roles: ['admin', 'manager'] },
   { to: '/admin/closing', label: '일마감', icon: Receipt, roles: ['admin', 'manager'] },
   { to: '/admin/history', label: '일일 이력', icon: ClipboardList },
-  { to: '/admin/stats', label: '통계', icon: BarChart3, roles: ['admin', 'manager'] },
+  { to: '/admin/stats', label: '통계', icon: BarChart3, roles: ['admin', 'manager', 'part_lead'] },
   { to: '/admin/accounts', label: '계정관리', icon: ShieldCheck, roles: ['admin'] },
 ];
 
