@@ -1,25 +1,58 @@
 /**
- * Playwright 인터랙션 헬퍼 (T-foot-qa-001)
+ * Playwright 인터랙션 헬퍼 (T-foot-qa-001, T-20260427-foot-qa-007)
  *
  * 사용:
  *   await dragCard(page, checkInId, 'room:레이저실1');
  *   await openSheet(page, customerName);
  *   await openPaymentDialog(page, customerName);
+ *   const ids = await listDroppableIds(page);   // 디버깅용
  */
 import type { Page, Locator } from '@playwright/test';
+
+/**
+ * 현재 DOM에 존재하는 모든 droppable ID 목록 반환 (디버깅용)
+ */
+export async function listDroppableIds(page: Page): Promise<string[]> {
+  return page.locator('[data-droppable-id]').evaluateAll((els) =>
+    els.map((e) => (e as HTMLElement).getAttribute('data-droppable-id') ?? ''),
+  );
+}
+
+/**
+ * 특정 droppable ID가 현재 DOM에 visible 상태로 존재하는지 확인
+ */
+export async function droppableExists(page: Page, droppableId: string): Promise<boolean> {
+  const loc = page.locator(`[data-droppable-id="${droppableId}"]`).first();
+  return loc.isVisible().catch(() => false);
+}
 
 /**
  * @dnd-kit 호환 드래그 — checkInId의 카드를 droppable id로 드롭
  *
  * dnd-kit은 PointerSensor로 mouse down → 일정 거리 이동 → drag 시작 인식.
  * 그래서 단순 dragTo는 안 통하고 mouse.move/down/intermediate moves/up 시퀀스로.
+ *
+ * 주의: 'checklist' 등 Dashboard에 droppable이 없는 상태는 drag 대상이 아님.
+ *       해당 전환은 DB 직접 또는 해당 다이얼로그 UI를 사용할 것.
  */
 export async function dragCard(page: Page, checkInId: string, droppableId: string): Promise<void> {
   const card = page.locator(`[data-testid="checkin-card"][data-checkin-id="${checkInId}"]`).first();
   await card.waitFor({ state: 'visible', timeout: 5000 });
 
   // droppable target 찾기 — data-droppable-id로 정확 매칭
-  const targetLocator = await resolveDroppableLocator(page, droppableId);
+  const targetLocator = resolveDroppableLocator(page, droppableId);
+
+  // 존재 확인 + 명확한 에러 메시지
+  const exists = await targetLocator.isVisible().catch(() => false);
+  if (!exists) {
+    const available = await listDroppableIds(page);
+    throw new Error(
+      `dragCard: droppable "${droppableId}" not found.\n` +
+      `Available droppables: [${available.join(', ')}]\n` +
+      `Hint: checklist 전환은 PreChecklist 다이얼로그 (DB) 사용.`,
+    );
+  }
+
   await targetLocator.waitFor({ state: 'visible', timeout: 5000 });
 
   // 핵심: viewport 밖이면 가로 스크롤 필요 (칸반은 가로 스크롤 영역)
@@ -56,7 +89,7 @@ export async function dragCard(page: Page, checkInId: string, droppableId: strin
 }
 
 /** droppable id → Locator (data-droppable-id 정확 매칭) */
-async function resolveDroppableLocator(page: Page, droppableId: string): Promise<Locator> {
+function resolveDroppableLocator(page: Page, droppableId: string): Locator {
   return page.locator(`[data-droppable-id="${droppableId}"]`).first();
 }
 
