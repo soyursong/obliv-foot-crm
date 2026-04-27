@@ -1,0 +1,88 @@
+# ──────────────────────────────────────────────
+# Tier 1 — Push (< 3 min 목표)
+# TypeCheck + Vite Build + Critical-Flow E2E
+# ──────────────────────────────────────────────
+name: "CI · Push"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-push-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── 1) TypeScript 타입 체크 ──────────────────
+  typecheck:
+    name: "🔍 TypeCheck"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsc -b --noEmit
+
+  # ── 2) Vite 빌드 검증 ─────────────────────
+  build:
+    name: "🏗️ Build"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+  # ── 3) Critical Flow E2E (CF-1 ~ CF-5) ────
+  critical-flow:
+    name: "🧪 Critical Flow"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build]
+
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      VITE_DISABLE_AUTH_LOCK: "1"
+      TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+      TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      CI: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Run Critical Flow specs
+        run: npx playwright test tests/e2e/critical-flow/ --project=desktop-chrome
+
+      - name: Upload report (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: critical-flow-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Upload traces (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: critical-flow-traces
+          path: test-results/
+          retention-days: 7

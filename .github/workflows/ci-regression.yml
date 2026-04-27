@@ -1,0 +1,153 @@
+# ──────────────────────────────────────────────
+# Tier 3 — Regression Lint (카탈로그 기반)
+# 회귀 카탈로그 spec만 선별 실행
+# ──────────────────────────────────────────────
+name: "CI · Regression Lint"
+
+on:
+  schedule:
+    # KST 03:00 = UTC 18:00 (nightly 1시간 후)
+    - cron: "0 18 * * *"
+  workflow_dispatch: {}
+  # 회귀 폴더 변경 시 자동 실행
+  push:
+    branches: [main]
+    paths:
+      - "tests/e2e/regressions/**"
+      - "tests/e2e/foot-qa-r1-*.spec.ts"
+      - "tests/e2e/foot-qa-r2-*.spec.ts"
+
+concurrency:
+  group: ci-regression-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+  VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+  VITE_DISABLE_AUTH_LOCK: "1"
+  TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+  TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+  SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+  CI: "true"
+
+jobs:
+  # ── 카탈로그 스캔: 실행 대상 결정 ──────────
+  catalog-scan:
+    name: "📋 Catalog Scan"
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      has_specs: ${{ steps.scan.outputs.has_specs }}
+      spec_count: ${{ steps.scan.outputs.spec_count }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan regression catalog
+        id: scan
+        run: |
+          # 회귀 spec 수집: regressions/ + foot-qa-r{N}-*.spec.ts
+          SPECS=$(find tests/e2e/regressions -name "*.spec.ts" 2>/dev/null; \
+                  find tests/e2e -maxdepth 1 -name "foot-qa-r*-*.spec.ts" 2>/dev/null)
+          COUNT=$(echo "$SPECS" | grep -c "\.spec\.ts$" || echo 0)
+
+          echo "spec_count=$COUNT" >> "$GITHUB_OUTPUT"
+          if [ "$COUNT" -gt 0 ]; then
+            echo "has_specs=true" >> "$GITHUB_OUTPUT"
+            echo "📋 회귀 spec $COUNT 개 발견:"
+            echo "$SPECS"
+          else
+            echo "has_specs=false" >> "$GITHUB_OUTPUT"
+            echo "⚠️ 회귀 spec 없음 — 테스트 건너뜀"
+          fi
+
+  # ── 회귀 테스트 실행 ──────────────────────
+  regression-test:
+    name: "🛡️ Regression (${{ needs.catalog-scan.outputs.spec_count }} specs)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [catalog-scan]
+    if: needs.catalog-scan.outputs.has_specs == 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Run regression catalog specs
+        run: |
+          # regressions/ 폴더 spec
+          REGRESSION_DIR="tests/e2e/regressions"
+          # 레거시 위치 qa-r{N} spec
+          LEGACY_PATTERN="tests/e2e/foot-qa-r*-*.spec.ts"
+
+          SPEC_ARGS=""
+          if [ -d "$REGRESSION_DIR" ] && ls "$REGRESSION_DIR"/*.spec.ts 1>/dev/null 2>&1; then
+            SPEC_ARGS="$REGRESSION_DIR/"
+          fi
+          for f in $LEGACY_PATTERN; do
+            [ -f "$f" ] && SPEC_ARGS="$SPEC_ARGS $f"
+          done
+
+          if [ -z "$SPEC_ARGS" ]; then
+            echo "No regression specs found — skip"
+            exit 0
+          fi
+
+          echo "🛡️ 실행 대상: $SPEC_ARGS"
+          npx playwright test $SPEC_ARGS --project=desktop-chrome
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-report
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Upload traces (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-traces
+          path: test-results/
+          retention-days: 7
+
+  # ── 카탈로그 정합성 체크 ──────────────────
+  catalog-integrity:
+    name: "🔎 Catalog Integrity"
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    needs: [catalog-scan]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify catalog ↔ spec parity
+        run: |
+          echo "=== Regression Spec 인벤토리 ==="
+
+          CATALOG_SPECS=0
+          ORPHAN_SPECS=0
+
+          # regressions/ 내 spec
+          for f in tests/e2e/regressions/R-*.spec.ts; do
+            [ -f "$f" ] && CATALOG_SPECS=$((CATALOG_SPECS + 1)) && echo "  ✅ $f"
+          done
+
+          # 레거시 위치 (이관 대상)
+          for f in tests/e2e/foot-qa-r*-*.spec.ts; do
+            if [ -f "$f" ]; then
+              ORPHAN_SPECS=$((ORPHAN_SPECS + 1))
+              echo "  ⚠️  레거시 위치: $f → regressions/ 이관 필요"
+            fi
+          done
+
+          echo ""
+          echo "카탈로그 spec: $CATALOG_SPECS"
+          echo "레거시 위치:   $ORPHAN_SPECS (이관 대상)"
+          echo "합계:         $((CATALOG_SPECS + ORPHAN_SPECS))"
+
+          if [ $ORPHAN_SPECS -gt 0 ]; then
+            echo "::warning::$ORPHAN_SPECS 개 회귀 spec이 레거시 위치에 있습니다. tests/e2e/regressions/로 이관해주세요."
+          fi
