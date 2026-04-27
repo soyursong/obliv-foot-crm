@@ -27,7 +27,7 @@ const signupClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-const ROLES: UserRole[] = ['admin', 'manager', 'consultant', 'coordinator', 'therapist', 'technician', 'tm', 'staff'];
+const ROLES: UserRole[] = ['admin', 'manager', 'part_lead', 'consultant', 'coordinator', 'therapist', 'technician', 'tm', 'staff'];
 
 // 임상직(staff 테이블 매핑 대상)
 const CLINICAL_ROLES: UserRole[] = ['consultant', 'coordinator', 'therapist', 'technician'];

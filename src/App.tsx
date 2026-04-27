@@ -59,7 +59,7 @@ function App() {
                 <Route path="packages" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator']}><Packages /></RoleGuard>} />
                 <Route path="staff" element={<RoleGuard roles={['admin', 'manager']}><Staff /></RoleGuard>} />
                 <Route path="closing" element={<RoleGuard roles={['admin', 'manager']}><Closing /></RoleGuard>} />
-                <Route path="stats" element={<RoleGuard roles={['admin', 'manager']}><Stats /></RoleGuard>} />
+                <Route path="stats" element={<RoleGuard roles={['admin', 'manager', 'part_lead']}><Stats /></RoleGuard>} />
                 <Route path="history" element={<DailyHistory />} />
                 <Route path="accounts" element={<RoleGuard roles={['admin']}><Accounts /></RoleGuard>} />
               </Route>
