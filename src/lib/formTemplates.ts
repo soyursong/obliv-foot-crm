@@ -186,12 +186,71 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
   },
 ];
 
+// ─── 원내 도장 ───
+
+let _stampUrl: string | null | undefined = undefined; // undefined = 아직 확인 안 함
+
+/**
+ * 원내 도장 이미지 URL 반환.
+ * Vite 빌드 시 파일이 없으면 null 반환 → 출력 시 도장 생략.
+ */
+export function getStampUrl(): string | null {
+  if (_stampUrl !== undefined) return _stampUrl;
+  try {
+    // @vite-ignore — 도장 파일은 현장 수급 후 추가 예정 (없으면 graceful degrade)
+    _stampUrl = new URL(/* @vite-ignore */ '../assets/forms/stamps/jongno-foot-stamp.png', import.meta.url).href;
+  } catch {
+    _stampUrl = null;
+  }
+  return _stampUrl;
+}
+
+// ─── 양식 분류 ───
+
+/**
+ * print_preset:
+ *  - 'default'  — "기본 서류 출력" 프리셋에 자동 포함 (진료비내역서 등)
+ *  - 'optional' — 별도 요청 시 개별 선택
+ */
+export type PrintPreset = 'default' | 'optional';
+
+/** 기본 프리셋에 포함되는 form_key 목록 */
+export const DEFAULT_PRESET_KEYS: ReadonlyArray<string> = ['bill_detail'];
+
 // ─── 양식 아이콘/색상 ───
 
-export const FORM_META: Record<string, { icon: string; color: string; description: string }> = {
-  diag_opinion: { icon: '📋', color: 'bg-blue-50 border-blue-200', description: '진료 소견 및 의견' },
-  diagnosis: { icon: '🩺', color: 'bg-indigo-50 border-indigo-200', description: '질병 진단 내용' },
-  bill_detail: { icon: '🧾', color: 'bg-amber-50 border-amber-200', description: '진료비 세부 내역 (PDF)' },
-  treat_confirm: { icon: '✅', color: 'bg-teal-50 border-teal-200', description: '진료 사실 확인' },
-  visit_confirm: { icon: '🏥', color: 'bg-emerald-50 border-emerald-200', description: '통원 사실 확인' },
+export const FORM_META: Record<
+  string,
+  { icon: string; color: string; description: string; print_preset: PrintPreset }
+> = {
+  diag_opinion: {
+    icon: '📋',
+    color: 'bg-blue-50 border-blue-200',
+    description: '진료 소견 및 의견',
+    print_preset: 'optional',
+  },
+  diagnosis: {
+    icon: '🩺',
+    color: 'bg-indigo-50 border-indigo-200',
+    description: '질병 진단 내용',
+    print_preset: 'optional',
+  },
+  bill_detail: {
+    icon: '🧾',
+    color: 'bg-amber-50 border-amber-200',
+    description: '진료비 세부 내역 (PDF)',
+    print_preset: 'default',
+  },
+  treat_confirm: {
+    icon: '✅',
+    color: 'bg-teal-50 border-teal-200',
+    description: '진료 사실 확인',
+    print_preset: 'optional',
+  },
+  visit_confirm: {
+    icon: '🏥',
+    color: 'bg-emerald-50 border-emerald-200',
+    description: '통원 사실 확인',
+    print_preset: 'optional',
+  },
 };
