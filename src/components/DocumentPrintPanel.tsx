@@ -262,6 +262,20 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
   const [batchPrinting, setBatchPrinting] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<FormTemplate | null>(null);
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
+  // staff.id (issued_by FK — profile.id ≠ staff.id, user_id 경유 조회)
+  const [staffId, setStaffId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    supabase
+      .from('staff')
+      .select('id')
+      .eq('user_id', profile.id)
+      .eq('clinic_id', checkIn.clinic_id)
+      .eq('active', true)
+      .maybeSingle()
+      .then(({ data }) => setStaffId(data?.id ?? null));
+  }, [profile?.id, checkIn.clinic_id]);
 
   const load = useCallback(async () => {
     const { data: tplData } = await supabase
@@ -402,12 +416,14 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
       }
 
       // form_submissions 기록 (DB 시드 적용된 경우만)
-      if (!isFallback && profile?.id) {
+      // staffId: issued_by = staff.id (≠ profile.id). 미조회 시 로그 생략하고 출력은 계속.
+      if (!isFallback && staffId) {
         const rows = selectedTemplates.map((t) => ({
+          clinic_id: checkIn.clinic_id,
           template_id: t.id,
           check_in_id: checkIn.id,
           customer_id: checkIn.customer_id,
-          issued_by: profile.id,
+          issued_by: staffId,
           field_data: autoValues,
           diagnosis_codes: null,
           status: 'printed' as const,
@@ -540,6 +556,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
           template={selectedTemplate}
           checkIn={checkIn}
           open={issueDialogOpen}
+          staffId={staffId}
           onOpenChange={(o) => {
             setIssueDialogOpen(o);
             if (!o) setSelectedTemplate(null);
@@ -651,14 +668,16 @@ function IssueDialog({
   open,
   onOpenChange,
   onIssued,
+  staffId,
 }: {
   template: FormTemplate;
   checkIn: CheckIn;
   open: boolean;
   onOpenChange: (o: boolean) => void;
   onIssued: () => void;
+  /** issued_by FK — staff.id (DocumentPrintPanel에서 주입) */
+  staffId: string | null;
 }) {
-  const { profile } = useAuth();
   const [saving, setSaving] = useState(false);
   const [autoValues, setAutoValues] = useState<Record<string, string>>({});
   const [manualValues, setManualValues] = useState<Record<string, string>>({
@@ -769,12 +788,14 @@ function IssueDialog({
     setSaving(true);
     const isFallback = template.id.startsWith('fallback-');
 
-    if (!isFallback && profile?.id) {
+    // staffId: issued_by = staff.id (≠ user_profiles.id). 미조회 시 로그 생략하고 출력은 계속.
+    if (!isFallback && staffId) {
       const { error } = await supabase.from('form_submissions').insert({
+        clinic_id: checkIn.clinic_id,
         template_id: template.id,
         check_in_id: checkIn.id,
         customer_id: checkIn.customer_id,
-        issued_by: profile.id,
+        issued_by: staffId,
         field_data: allValues,
         diagnosis_codes: manualValues.diagnosis_ko ? [manualValues.diagnosis_ko] : null,
         status: 'printed',
