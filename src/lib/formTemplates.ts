@@ -47,6 +47,7 @@ export interface FormTemplate {
 
 export interface FormSubmission {
   id: string;
+  clinic_id: string;
   template_id: string;
   check_in_id: string;
   customer_id: string | null;
