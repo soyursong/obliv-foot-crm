@@ -36,7 +36,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
-import { STATUS_KO, VISIT_TYPE_KO, stagesFor } from '@/lib/status';
+import { STATUS_KO, VISIT_TYPE_KO } from '@/lib/status';
 import { formatAmount, maskPhoneTail } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { NewCheckInDialog } from '@/components/NewCheckInDialog';
@@ -157,11 +157,11 @@ function DraggableCard({
       >
         <div className="flex items-center justify-between gap-1">
           <div className="flex items-center gap-1 truncate">
-            <GripVertical className="h-4 w-4 text-gray-400 shrink-0" />
+            <GripVertical className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+            <span className="font-bold text-sm truncate">{checkIn.customer_name}</span>
             {checkIn.queue_number != null && (
-              <span className="font-bold text-teal-700">#{checkIn.queue_number}</span>
+              <span className="text-[10px] text-teal-600 shrink-0">#{checkIn.queue_number}</span>
             )}
-            <span className="font-semibold truncate">{checkIn.customer_name}</span>
           </div>
           <div className="flex items-center gap-0.5 shrink-0">
             <Badge
@@ -232,10 +232,10 @@ function DraggableCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <GripVertical className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+          <span className="text-base font-bold">{checkIn.customer_name}</span>
           {checkIn.queue_number != null && (
-            <span className="text-xs font-bold text-teal-700">#{checkIn.queue_number}</span>
+            <span className="text-xs text-teal-600">#{checkIn.queue_number}</span>
           )}
-          <span className="text-sm font-semibold">{checkIn.customer_name}</span>
           {checkIn.customer_phone && (
             <span className="text-xs text-muted-foreground">
               ···{maskPhoneTail(checkIn.customer_phone)}
@@ -326,51 +326,6 @@ function DroppableColumn({
   );
 }
 
-function ReturningSubZone({
-  id,
-  label,
-  color,
-  items,
-  onCardClick,
-  onCardContext,
-  getStageStart,
-  getPkgLabel,
-}: {
-  id: string;
-  label: string;
-  color: string;
-  items: CheckIn[];
-  onCardClick: (ci: CheckIn) => void;
-  onCardContext: (ci: CheckIn, e: React.MouseEvent) => void;
-  getStageStart?: (ci: CheckIn) => string;
-  getPkgLabel?: (ci: CheckIn) => PackageLabel | null;
-}) {
-  const { isOver, setNodeRef } = useDroppable({ id });
-  return (
-    <div
-      ref={setNodeRef}
-      className={cn('flex-1 p-1.5 transition-colors', isOver && 'bg-teal-50/40')}
-    >
-      <div className="flex items-center justify-between mb-1 px-1">
-        <span className={cn('text-xs font-semibold', color)}>{label}</span>
-        <span className="text-xs text-muted-foreground">{items.length}</span>
-      </div>
-      <div className="space-y-1.5 min-h-[40px]">
-        {items.map((ci) => (
-          <DraggableCard
-            key={ci.id}
-            checkIn={ci}
-            compact
-            stageStart={getStageStart?.(ci)}
-            packageLabel={getPkgLabel?.(ci)}
-            onClick={() => onCardClick(ci)}
-            onContextMenu={(e) => onCardContext(ci, e)}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function TimeSlotAccordion({
   reservations,
@@ -1085,29 +1040,7 @@ export default function Dashboard() {
       return;
     }
 
-    if (row.visit_type === 'new' && row.status === 'registered' && target !== 'checklist') {
-      toast.info('신규 환자는 체크리스트를 먼저 완료해야 합니다');
-      return;
-    }
-
     const isRoomDrop = target.startsWith('room:');
-    const isSpecialZone = target === 'returning_exam' || target === 'returning_treatment' || target === 'laser_waiting';
-
-    if (!isRoomDrop && !isSpecialZone) {
-      const targetStatus = target as CheckInStatus;
-      const stages = stagesFor(row.visit_type);
-      const curIdx = stages.indexOf(row.status);
-      const tgtIdx = stages.indexOf(targetStatus);
-      // #19 강화: 재진/체험 환자는 신규 전용 단계(체크리스트/진료/상담)로 이동 불가
-      if (targetStatus !== 'cancelled' && tgtIdx < 0) {
-        toast.info(`${VISIT_TYPE_KO[row.visit_type]} 환자는 ${STATUS_KO[targetStatus] ?? targetStatus} 단계로 이동할 수 없습니다`);
-        return;
-      }
-      if (curIdx >= 0 && tgtIdx >= 0 && tgtIdx < curIdx && targetStatus !== 'cancelled') {
-        toast.info('이전 단계로는 이동할 수 없습니다');
-        return;
-      }
-    }
 
     if (isRoomDrop) {
       const roomName = target.replace('room:', '');
@@ -1168,6 +1101,30 @@ export default function Dashboard() {
         setStageStartMap((prev) => new Map(prev).set(row.id, now));
       }
       toastWithUndo(`${roomName}(으)로 이동`, row);
+    } else if (target === 'returning_zone' || target === 'experience_zone') {
+      // 재진/선체험 대기열로 복귀 → status = registered
+      if (row.status === 'registered') return;
+      markRecentlyUpdated(row.id);
+      let prevRow: CheckIn | undefined;
+      setRows((curr) => {
+        prevRow = curr.find((r) => r.id === row.id);
+        return curr.map((r) => (r.id === row.id ? { ...r, status: 'registered' as CheckInStatus } : r));
+      });
+      const { error } = await supabase.from('check_ins').update({ status: 'registered' }).eq('id', row.id);
+      if (error) {
+        setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
+        toast.error(`이동 실패: ${error.message}`);
+        return;
+      }
+      const now = new Date().toISOString();
+      await supabase.from('status_transitions').insert({
+        check_in_id: row.id,
+        clinic_id: row.clinic_id,
+        from_status: row.status,
+        to_status: 'registered',
+      });
+      setStageStartMap((prev) => new Map(prev).set(row.id, now));
+      toastWithUndo('대기 중으로 이동', row);
     } else if (target === 'laser_waiting') {
       if (row.status === 'laser' && !row.laser_room) return;
       markRecentlyUpdated(row.id);
@@ -1284,20 +1241,6 @@ export default function Dashboard() {
       toast.info('체크인 처리 중입니다. 잠시 후 다시 시도해주세요.');
       return;
     }
-    // #19 가드: 유효한 단계 전이만 허용 (cancelled는 항상 OK)
-    if (newStatus !== 'cancelled') {
-      const stages = stagesFor(ci.visit_type);
-      const curIdx = stages.indexOf(ci.status);
-      const tgtIdx = stages.indexOf(newStatus);
-      if (tgtIdx < 0) {
-        toast.info(`${VISIT_TYPE_KO[ci.visit_type]} 환자는 ${STATUS_KO[newStatus] ?? newStatus} 단계로 이동할 수 없습니다`);
-        return;
-      }
-      if (curIdx >= 0 && tgtIdx < curIdx) {
-        toast.info('이전 단계로는 이동할 수 없습니다');
-        return;
-      }
-    }
     markRecentlyUpdated(ci.id);
     // #25 경합 방지: 함수형 업데이트 + 직전 row 캡처
     let prevRow: CheckIn | undefined;
@@ -1413,18 +1356,6 @@ export default function Dashboard() {
     return pkgMap.get(ci.customer_id) ?? null;
   }, [pkgMap]);
 
-  const isInvalidDrop = useCallback((columnStatus: CheckInStatus): boolean => {
-    if (!dragging) return false;
-    const stages = stagesFor(dragging.visit_type);
-    const curIdx = stages.indexOf(dragging.status);
-    const tgtIdx = stages.indexOf(columnStatus);
-    // C-4: 재진/체험 환자가 신규 전용 단계(체크리스트/진료/상담)로 이동 시 invalid
-    if (tgtIdx < 0) return true;
-    if (curIdx < 0) return false;
-    if (tgtIdx < curIdx) return true;
-    if (dragging.visit_type === 'new' && dragging.status === 'registered' && columnStatus !== 'checklist') return true;
-    return false;
-  }, [dragging]);
 
   const swapSortOrder = useCallback(async (items: CheckIn[], idx: number, direction: 'up' | 'down') => {
     const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
@@ -1455,13 +1386,13 @@ export default function Dashboard() {
   const totalActive = filtered.filter((r) => r.status !== 'done').length;
 
   const newPendingReservations = pendingReservations.filter((r) => r.visit_type === 'new');
-  const returningPendingReservations = pendingReservations.filter((r) => r.visit_type !== 'new');
+  const returningPendingReservations = pendingReservations.filter((r) => r.visit_type === 'returning');
 
-  const registered = [...(byStatus['registered'] ?? []), ...(byStatus['checklist'] ?? [])];
-  const newRegistered = registered.filter((ci) => ci.visit_type === 'new');
-  const returningRegistered = registered.filter((ci) => ci.visit_type !== 'new');
-  const returningForExam = returningRegistered.filter((ci) => ci.notes?.needs_exam);
-  const returningForTreatment = returningRegistered.filter((ci) => !ci.notes?.needs_exam);
+  const allRegistered = [...(byStatus['registered'] ?? []), ...(byStatus['checklist'] ?? [])];
+  // 슬롯별 분류
+  const newRegistered = allRegistered.filter((ci) => ci.visit_type === 'new');
+  const returningWaiting = (byStatus['registered'] ?? []).filter((ci) => ci.visit_type === 'returning');
+  const experienceWaiting = (byStatus['registered'] ?? []).filter((ci) => ci.visit_type === 'experience');
   const laserWaiting = filtered.filter((ci) => ci.status === 'laser' && !ci.laser_room);
 
   const paymentTotal = Array.from(dayPayments.values()).reduce((s, v) => s + v, 0);
@@ -1541,15 +1472,14 @@ export default function Dashboard() {
             }}
           >
             <div className="flex gap-2 h-full min-w-max">
-              {/* 1. 초진예약 */}
+              {/* 1. 초진 */}
               <div className="w-52 shrink-0">
                 <DroppableColumn
                   id="registered"
-                  label="초진예약"
+                  label="초진"
                   count={newRegistered.length + newPendingReservations.length}
                   className="h-full"
                   highlight="text-blue-700"
-                  invalidDrop={isInvalidDrop('registered')}
                 >
                   <TimeSlotAccordion reservations={newPendingReservations} onCheckIn={handleReservationCheckIn} />
                   {newRegistered.map((ci) => (
@@ -1565,7 +1495,102 @@ export default function Dashboard() {
                 </DroppableColumn>
               </div>
 
-              {/* 2. 상담대기 */}
+              {/* 2. 재진 */}
+              <div className="w-48 shrink-0">
+                <DroppableColumn
+                  id="returning_zone"
+                  label="재진"
+                  count={returningWaiting.length + returningPendingReservations.length}
+                  className="h-full"
+                  highlight="text-orange-700"
+                >
+                  <TimeSlotAccordion reservations={returningPendingReservations} onCheckIn={handleReservationCheckIn} />
+                  {returningWaiting.map((ci) => (
+                    <DraggableCard
+                      key={ci.id}
+                      checkIn={ci}
+                      compact
+                      stageStart={getStageStart(ci)}
+                      packageLabel={getPkgLabel(ci)}
+                      onClick={() => handleCardClick(ci)}
+                      onContextMenu={(e) => handleCardContext(ci, e)}
+                    />
+                  ))}
+                </DroppableColumn>
+              </div>
+
+              {/* 3. 진료 (원장실 + 진료대기) */}
+              <div className="w-52 shrink-0 flex flex-col gap-2">
+                {examRooms.length > 0 ? (
+                  <RoomSection
+                    title="진료"
+                    color="bg-violet-100 text-violet-800"
+                    rooms={examRooms}
+                    roomType="examination"
+                    checkIns={filtered}
+                    assignments={assignments}
+                    gridCols="grid-cols-1"
+                    onCardClick={handleCardClick}
+                    onCardContext={handleCardContext}
+                    getStageStart={getStageStart}
+                    getPkgLabel={getPkgLabel}
+                    therapists={doctors}
+                    onTherapistChange={handleDoctorChange}
+                  />
+                ) : (
+                  <div className="text-xs font-bold px-2 py-1 rounded-t-lg bg-violet-100 text-violet-800">진료</div>
+                )}
+                <DroppableColumn
+                  id="exam_waiting"
+                  label="진료대기"
+                  count={(byStatus['exam_waiting'] ?? []).length}
+                  className="flex-1"
+                  highlight="text-violet-700"
+                >
+                  {(byStatus['exam_waiting'] ?? []).map((ci, idx, arr) => (
+                    <div key={ci.id} className="relative group">
+                      <DraggableCard
+                        checkIn={ci}
+                        compact
+                        stageStart={getStageStart(ci)}
+                        packageLabel={getPkgLabel(ci)}
+                        onClick={() => handleCardClick(ci)}
+                        onContextMenu={(e) => handleCardContext(ci, e)}
+                      />
+                      <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
+                        {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
+                        {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
+                      </div>
+                      {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
+                    </div>
+                  ))}
+                </DroppableColumn>
+              </div>
+
+              {/* 4. 선체험 */}
+              <div className="w-44 shrink-0">
+                <DroppableColumn
+                  id="experience_zone"
+                  label="선체험"
+                  count={experienceWaiting.length}
+                  className="h-full"
+                  highlight="text-amber-700"
+                >
+                  {experienceWaiting.map((ci) => (
+                    <DraggableCard
+                      key={ci.id}
+                      checkIn={ci}
+                      compact
+                      stageStart={getStageStart(ci)}
+                      packageLabel={getPkgLabel(ci)}
+                      onClick={() => handleCardClick(ci)}
+                      onContextMenu={(e) => handleCardContext(ci, e)}
+                    />
+                  ))}
+                </DroppableColumn>
+              </div>
+
+              {/* 5. 상담대기 */}
               <div className="w-44 shrink-0">
                 <DroppableColumn
                   id="consult_waiting"
@@ -1573,7 +1598,6 @@ export default function Dashboard() {
                   count={(byStatus['consult_waiting'] ?? []).length}
                   className="h-full"
                   highlight="text-blue-700"
-                  invalidDrop={isInvalidDrop('consult_waiting')}
                 >
                   {(byStatus['consult_waiting'] ?? []).map((ci, idx, arr) => (
                     <div key={ci.id} className="relative group">
@@ -1595,14 +1619,62 @@ export default function Dashboard() {
                 </DroppableColumn>
               </div>
 
-              {/* 3. 상담실 + 결제 */}
+              {/* 6. 상담 (5개 상담실) */}
               {consultRooms.length > 0 && (
-                <div className="w-[360px] shrink-0 flex flex-col gap-2">
+                <div className="w-[580px] shrink-0">
                   <RoomSection
-                    title="상담실"
+                    title="상담"
                     color="bg-blue-100 text-blue-800"
                     rooms={consultRooms}
                     roomType="consultation"
+                    checkIns={filtered}
+                    assignments={assignments}
+                    gridCols="grid-cols-5"
+                    onCardClick={handleCardClick}
+                    onCardContext={handleCardContext}
+                    getStageStart={getStageStart}
+                    getPkgLabel={getPkgLabel}
+                  />
+                </div>
+              )}
+
+              {/* 7. 치료대기 */}
+              <div className="w-44 shrink-0">
+                <DroppableColumn
+                  id="treatment_waiting"
+                  label="치료대기"
+                  count={(byStatus['treatment_waiting'] ?? []).length}
+                  className="h-full"
+                  highlight="text-amber-700"
+                >
+                  {(byStatus['treatment_waiting'] ?? []).map((ci, idx, arr) => (
+                    <div key={ci.id} className="relative group">
+                      <DraggableCard
+                        checkIn={ci}
+                        compact
+                        stageStart={getStageStart(ci)}
+                        packageLabel={getPkgLabel(ci)}
+                        onClick={() => handleCardClick(ci)}
+                        onContextMenu={(e) => handleCardContext(ci, e)}
+                      />
+                      <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
+                        {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
+                        {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
+                      </div>
+                      {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
+                    </div>
+                  ))}
+                </DroppableColumn>
+              </div>
+
+              {/* 8. 치료실 (9개) */}
+              {treatmentRooms.length > 0 && (
+                <div className="w-[480px] shrink-0">
+                  <RoomSection
+                    title="치료실"
+                    color="bg-amber-100 text-amber-800"
+                    rooms={treatmentRooms}
+                    roomType="treatment"
                     checkIns={filtered}
                     assignments={assignments}
                     gridCols="grid-cols-3"
@@ -1610,178 +1682,15 @@ export default function Dashboard() {
                     onCardContext={handleCardContext}
                     getStageStart={getStageStart}
                     getPkgLabel={getPkgLabel}
+                    therapists={therapists}
+                    onTherapistChange={handleTherapistChange}
                   />
-                  <DroppableColumn
-                    id="payment_waiting"
-                    label="결제"
-                    count={(byStatus['payment_waiting'] ?? []).length}
-                    invalidDrop={isInvalidDrop('payment_waiting')}
-                    highlight="text-purple-700"
-                    subtitle={
-                      paymentTotal > 0 ? (
-                        <div className="text-xs font-semibold text-purple-700 tabular-nums">
-                          결제 대기 매출 {formatAmount(paymentTotal)}
-                        </div>
-                      ) : undefined
-                    }
-                  >
-                    {(byStatus['payment_waiting'] ?? []).map((ci) => (
-                      <div key={ci.id}>
-                        <DraggableCard checkIn={ci} compact stageStart={getStageStart(ci)} packageLabel={getPkgLabel(ci)} onClick={() => handleCardClick(ci)} onContextMenu={(e) => handleCardContext(ci, e)} />
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPaymentTarget(ci);
-                          }}
-                          className="mt-0.5 w-full rounded bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-100 transition flex items-center justify-center gap-0.5"
-                        >
-                          <CreditCard className="h-2.5 w-2.5" /> 결제하기
-                        </button>
-                      </div>
-                    ))}
-                  </DroppableColumn>
                 </div>
               )}
 
-              {/* 4+5. 원장실/치료실 + 진료대기/치료대기 + 재진 (하단 통합) */}
-              <div className="shrink-0 flex flex-col gap-2">
-                <div className="flex gap-2">
-                  {/* 4. 원장실 + 진료대기 */}
-                  {examRooms.length > 0 && (
-                    <div className="w-52 flex flex-col gap-2">
-                      <RoomSection
-                        title="원장실"
-                        color="bg-violet-100 text-violet-800"
-                        rooms={examRooms}
-                        roomType="examination"
-                        checkIns={filtered}
-                        assignments={assignments}
-                        gridCols="grid-cols-1"
-                        onCardClick={handleCardClick}
-                        onCardContext={handleCardContext}
-                        getStageStart={getStageStart}
-                        getPkgLabel={getPkgLabel}
-                        therapists={doctors}
-                        onTherapistChange={handleDoctorChange}
-                      />
-                      <DroppableColumn
-                        id="exam_waiting"
-                        label="진료대기"
-                        invalidDrop={isInvalidDrop('exam_waiting')}
-                        count={(byStatus['exam_waiting'] ?? []).length}
-                        highlight="text-violet-700"
-                      >
-                        {(byStatus['exam_waiting'] ?? []).map((ci, idx, arr) => (
-                          <div key={ci.id} className="relative group">
-                            <DraggableCard
-                              checkIn={ci}
-                              compact
-                              stageStart={getStageStart(ci)}
-                              packageLabel={getPkgLabel(ci)}
-                              onClick={() => handleCardClick(ci)}
-                              onContextMenu={(e) => handleCardContext(ci, e)}
-                            />
-                            <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
-                              {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
-                              {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
-                            </div>
-                            {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
-                          </div>
-                        ))}
-                      </DroppableColumn>
-                    </div>
-                  )}
-                  {/* 5. 치료실 + 치료대기 */}
-                  {treatmentRooms.length > 0 && (
-                    <div className="w-[420px] flex flex-col gap-2">
-                      <RoomSection
-                        title="치료실"
-                        color="bg-amber-100 text-amber-800"
-                        rooms={treatmentRooms}
-                        roomType="treatment"
-                        checkIns={filtered}
-                        assignments={assignments}
-                        gridCols="grid-cols-3"
-                        onCardClick={handleCardClick}
-                        onCardContext={handleCardContext}
-                        getStageStart={getStageStart}
-                        getPkgLabel={getPkgLabel}
-                        therapists={therapists}
-                        onTherapistChange={handleTherapistChange}
-                      />
-                      <DroppableColumn
-                        id="treatment_waiting"
-                        label="치료대기"
-                        count={(byStatus['treatment_waiting'] ?? []).length}
-                        highlight="text-amber-700"
-                        invalidDrop={isInvalidDrop('treatment_waiting')}
-                      >
-                        {(byStatus['treatment_waiting'] ?? []).map((ci, idx, arr) => (
-                          <div key={ci.id} className="relative group">
-                            <DraggableCard
-                              checkIn={ci}
-                              compact
-                              stageStart={getStageStart(ci)}
-                              packageLabel={getPkgLabel(ci)}
-                              onClick={() => handleCardClick(ci)}
-                              onContextMenu={(e) => handleCardContext(ci, e)}
-                            />
-                            <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
-                              {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
-                              {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
-                            </div>
-                            {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
-                          </div>
-                        ))}
-                      </DroppableColumn>
-                    </div>
-                  )}
-                </div>
-                {/* 재진 — 진료대기/치료대기 아래 통합 */}
-                <div className="flex flex-col rounded-lg border border-orange-200 bg-orange-50/30 overflow-hidden">
-                  <div className="px-2.5 py-1.5 border-b border-orange-200 bg-orange-100/50">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-orange-800">재진</span>
-                      <span className="text-xs text-orange-600">
-                        {returningPendingReservations.length + returningForExam.length + returningForTreatment.length}
-                      </span>
-                    </div>
-                  </div>
-                  {returningPendingReservations.length > 0 && (
-                    <div className="p-1.5 border-b border-orange-200">
-                      <div className="text-xs font-semibold text-orange-600 mb-1 px-1">예약</div>
-                      <TimeSlotAccordion reservations={returningPendingReservations} onCheckIn={handleReservationCheckIn} />
-                    </div>
-                  )}
-                  <div className="flex">
-                    <ReturningSubZone
-                      id="returning_exam"
-                      label="원장 진료"
-                      color="text-violet-600"
-                      items={returningForExam}
-                      onCardClick={handleCardClick}
-                      onCardContext={handleCardContext}
-                      getStageStart={getStageStart}
-                      getPkgLabel={getPkgLabel}
-                    />
-                    <div className="border-l border-dashed border-gray-300 my-2" />
-                    <ReturningSubZone
-                      id="returning_treatment"
-                      label="치료 직행"
-                      color="text-green-600"
-                      items={returningForTreatment}
-                      onCardClick={handleCardClick}
-                      onCardContext={handleCardContext}
-                      getStageStart={getStageStart}
-                      getPkgLabel={getPkgLabel}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 6. 레이저실 + 레이저대기 */}
+              {/* 9. 레이저실 (12개) + 레이저대기 */}
               {laserRooms.length > 0 && (
-                <div className="w-[560px] shrink-0 flex flex-col gap-2">
+                <div className="w-[640px] shrink-0 flex flex-col gap-2">
                   <RoomSection
                     title="레이저실"
                     color="bg-rose-100 text-rose-800"
@@ -1800,7 +1709,6 @@ export default function Dashboard() {
                     label="레이저대기"
                     count={laserWaiting.length}
                     highlight="text-rose-700"
-                    invalidDrop={isInvalidDrop('laser')}
                   >
                     {laserWaiting.map((ci) => (
                       <DraggableCard
@@ -1817,19 +1725,43 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* 7. 완료 */}
-              <div className="w-48 shrink-0">
+              {/* 10. 데스크 (결제 + 완료) */}
+              <div className="w-52 shrink-0 flex flex-col gap-2 h-full">
+                <DroppableColumn
+                  id="payment_waiting"
+                  label="결제"
+                  count={(byStatus['payment_waiting'] ?? []).length}
+                  highlight="text-purple-700"
+                  subtitle={
+                    paymentTotal > 0 ? (
+                      <div className="text-xs font-semibold text-purple-700 tabular-nums">
+                        대기 {formatAmount(paymentTotal)}
+                      </div>
+                    ) : undefined
+                  }
+                >
+                  {(byStatus['payment_waiting'] ?? []).map((ci) => (
+                    <div key={ci.id}>
+                      <DraggableCard checkIn={ci} compact stageStart={getStageStart(ci)} packageLabel={getPkgLabel(ci)} onClick={() => handleCardClick(ci)} onContextMenu={(e) => handleCardContext(ci, e)} />
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setPaymentTarget(ci); }}
+                        className="mt-0.5 w-full rounded bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-100 transition flex items-center justify-center gap-0.5"
+                      >
+                        <CreditCard className="h-2.5 w-2.5" /> 결제하기
+                      </button>
+                    </div>
+                  ))}
+                </DroppableColumn>
                 <DroppableColumn
                   id="done"
                   label="완료"
                   count={doneCount}
-                  className="h-full"
+                  className="flex-1"
                   highlight="text-emerald-700"
-                  invalidDrop={isInvalidDrop('done')}
                   subtitle={
                     doneTotal > 0 ? (
                       <div className="text-xs font-semibold text-emerald-700 tabular-nums">
-                        시술 완료 매출 {formatAmount(doneTotal)}
+                        {formatAmount(doneTotal)}
                       </div>
                     ) : undefined
                   }
