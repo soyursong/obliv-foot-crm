@@ -23,12 +23,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
       return;
     }
-    const { data } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', s.user.id)
-      .maybeSingle();
-    setProfile((data as UserProfile) ?? null);
+    try {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', s.user.id)
+        .maybeSingle();
+      setProfile((data as UserProfile) ?? null);
+    } catch {
+      // 네트워크 오류 등으로 프로필 조회 실패 시 null 처리 — 로딩 블록 방지
+      setProfile(null);
+    }
   }, []);
 
   const refresh = React.useCallback(async () => {
@@ -40,16 +45,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     let mounted = true;
     (async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!mounted) return;
-      setSession(data.session);
-      await loadProfile(data.session);
-      setLoading(false);
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (!mounted) return;
+        setSession(data.session);
+        await loadProfile(data.session);
+      } finally {
+        // try/finally 보장: loadProfile 예외 발생해도 loading 해제
+        if (mounted) setLoading(false);
+      }
     })();
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_e, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
-      await loadProfile(s);
+      void loadProfile(s);
     });
     return () => {
       mounted = false;
