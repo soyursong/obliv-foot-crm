@@ -1,5 +1,40 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-04-30 [T-20260430-foot-TREATMENT-LABEL] deploy-ready — 진료종류 라벨 변경 + 5개 필드 추가
+
+> **ticket**: T-20260430-foot-TREATMENT-LABEL | **priority**: P1 | **status**: deploy-ready | **assignee**: dev-foot
+
+### 변경 요약
+- UI: "시술종류" → "진료종류" 라벨 전체 변경 (CheckInDetailSheet, Packages)
+- DB: check_ins 테이블 컬럼 5개 추가 (consultation_done, treatment_kind, preconditioning_done, pododulle_done, laser_minutes) — 적용 완료
+- CheckInDetailSheet: 진료종류 섹션 신설 (상담유무 토글, 치료종류 선택, 프컨/포돌 토글, 레이저시간 입력)
+- 빌드: tsc + vite build ✅ 에러 0
+
+### QA 체크
+- ✅ 빌드 PASS (에러 0)
+- ✅ 기존 컬럼 미변경 — ADD COLUMN IF NOT EXISTS, default/nullable 안전
+- ✅ 라벨 2곳 일괄 변경
+- ✅ 롤백 SQL 포함
+
+---
+
+## 2026-04-30 [T-20260430-foot-REFERRER] deployed — 추천인 필드 추가
+
+> **ticket**: T-20260430-foot-REFERRER | **priority**: P1 | **status**: deployed
+> **qa_grade**: Yellow | **qa_result**: pass | **deploy-approval-requested**: 2026-04-30T05:20:00+09:00
+
+### QA 5항목 결과
+- ✅ 빌드 — tsc + vite build 성공, 에러 0
+- ✅ 기존 기능 미파괴 — nullable 컬럼 추가만, 기존 INSERT/UPDATE/SELECT 미변경
+- ✅ DB 호환성 — ADD COLUMN IF NOT EXISTS, ON DELETE SET NULL 자기참조 FK 안전
+- ✅ 권한/RLS — 기존 RLS 그대로, anon INSERT clinic_id 조건 만족
+- ✅ 롤백 SQL — migration 파일 내 rollback 포함
+
+### 권장 후속 (차기 티켓 감)
+- referrer_id 설정 시 상세뷰 "(고객 연결됨)" 표시 — 실제 추천인 이름 JOIN 표시로 개선 권장
+
+---
+
 ## 2026-04-29 [T-20260429-foot-PAYMENT-PACKAGE-INTEGRATED] deploy-ready — CheckInDetailSheet 통합 결제+회차차감
 
 > **ticket**: T-20260429-foot-PAYMENT-PACKAGE-INTEGRATED | **priority**: P0 | **status**: deploy-ready  

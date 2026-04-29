@@ -162,6 +162,12 @@ export interface CheckIn {
   sort_order: number;
   skip_reason: string | null;
   created_at: string;
+  /** 진료정보 — T-20260430-foot-TREATMENT-LABEL */
+  consultation_done: boolean;
+  treatment_kind: string | null;
+  preconditioning_done: boolean;
+  pododulle_done: boolean;
+  laser_minutes: number | null;
 }
 
 export interface Package {
