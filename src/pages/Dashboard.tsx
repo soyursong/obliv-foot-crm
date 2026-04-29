@@ -194,11 +194,16 @@ function DraggableCard({
             <Clock className="inline h-2.5 w-2.5 mr-0.5" />
             {mmss}
           </span>
-          {checkIn.priority_flag && (
-            <Badge variant="destructive" className="h-4 px-1 text-xs">
-              {checkIn.priority_flag}
-            </Badge>
-          )}
+          <div className="flex items-center gap-0.5">
+            {checkIn.notes?.id_check_required && (
+              <Badge variant="destructive" className="h-4 px-1 text-[10px]">신분증</Badge>
+            )}
+            {checkIn.priority_flag && (
+              <Badge variant="destructive" className="h-4 px-1 text-xs">
+                {checkIn.priority_flag}
+              </Badge>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -268,7 +273,12 @@ function DraggableCard({
         <span className={cn('text-muted-foreground tabular-nums font-mono', (mins >= 30 || isLaserOvertime) && 'font-semibold text-red-600')}>
           {mmss} {stageStart ? STATUS_KO[checkIn.status] ?? '경과' : '대기'}
         </span>
-        {checkIn.priority_flag && <Badge variant="destructive">우선</Badge>}
+        <div className="flex items-center gap-1">
+          {checkIn.notes?.id_check_required && (
+            <Badge variant="destructive" className="text-xs">신분증 확인</Badge>
+          )}
+          {checkIn.priority_flag && <Badge variant="destructive">우선</Badge>}
+        </div>
       </div>
     </div>
   );

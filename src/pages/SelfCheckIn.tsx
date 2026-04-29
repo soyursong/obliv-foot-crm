@@ -2,7 +2,7 @@
  * 셀프체크인 페이지 — /checkin/:clinicSlug
  *
  * 인증 불필요 (anon). 태블릿/모바일 전체화면 최적화 (키오스크 모드).
- * 흐름: 이름+전화번호 입력 → 유형 선택 → 접수 확인 → 접수 완료
+ * 흐름: 성함+전화번호 입력 → 방문유형 선택 → 접수 확인 → 접수 완료
  *
  * 키오스크 기능:
  * - 완료 화면 15초 자동 리셋 (카운트다운 표시)
@@ -10,6 +10,9 @@
  * - 전화번호 입력 시 오늘 예약 조회 + 자동 방문유형 채움
  * - 터치 최적화 숫자패드 (온스크린)
  * - 접수 완료 화면 강화 (체크마크 펄스 애니메이션, 클리닉명 표시)
+ * - 초진/예약없이 방문 시 신분증 확인 필요 플래그 자동 설정
+ *
+ * 디자인: 브라운/베이지 고급 웰니스 클리닉 테마 (T-20260428-foot-CHECKIN-UX)
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
@@ -23,6 +26,23 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const anonClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
+
+// 브라운/베이지 컬러 토큰 (고급 웰니스 테마)
+const C = {
+  bgFrom: '#F5EFE7',
+  bgTo: '#FAF7F2',
+  dark: '#3D2B1A',
+  primary: '#5C3D1E',
+  medium: '#7B5130',
+  muted: '#8B7355',
+  border: '#D4C5B2',
+  borderActive: '#7B5130',
+  beige: '#F5EFE7',
+  cream: '#FDF8F2',
+  gold: '#C9A97A',
+  bannerBg: '#FDF5E4',
+  bannerBorder: '#C9A97A',
+} as const;
 
 type Step = 'input' | 'confirm' | 'done' | 'error';
 type Lang = 'ko' | 'en';
@@ -64,12 +84,12 @@ const T: Record<Lang, {
 }> = {
   ko: {
     selfCheckIn: '셀프 접수',
-    name: '이름',
+    name: '성함',
     namePlaceholder: '홍길동',
     phone: '연락처',
-    phonePlaceholder: '010-1234-5678',
+    phonePlaceholder: '예약하신 번호로 입력해주세요',
     visitType: '방문 유형',
-    checkIn: '접수',
+    checkIn: '접수하기',
     confirm: '접수하기',
     edit: '수정',
     processing: '처리 중...',
@@ -88,12 +108,12 @@ const T: Record<Lang, {
     loading: '불러오는 중...',
     clearAll: '전체삭제',
     reservationBanner: (time, type) => `오늘 예약이 있습니다: ${time} ${type}`,
-    visitNew: '신규',
-    visitNewDesc: '처음 방문하셨습니다',
+    visitNew: '초진',
+    visitNewDesc: '처음 방문 입니다',
     visitReturning: '재진',
-    visitReturningDesc: '재방문입니다',
-    visitExperience: '체험',
-    visitExperienceDesc: '체험을 원합니다',
+    visitReturningDesc: '재방문 입니다',
+    visitExperience: '예약없이 방문',
+    visitExperienceDesc: '',
     failPrefix: '접수 실패: ',
     errorPrefix: '오류가 발생했습니다: ',
   },
@@ -102,7 +122,7 @@ const T: Record<Lang, {
     name: 'Name',
     namePlaceholder: 'Hong Gil-dong',
     phone: 'Phone',
-    phonePlaceholder: '010-1234-5678',
+    phonePlaceholder: 'Your reservation phone number',
     visitType: 'Visit Type',
     checkIn: 'Check In',
     confirm: 'Confirm',
@@ -123,12 +143,12 @@ const T: Record<Lang, {
     loading: 'Loading...',
     clearAll: 'Clear',
     reservationBanner: (time, type) => `Reservation found: ${time} ${type}`,
-    visitNew: 'New',
+    visitNew: 'New Patient',
     visitNewDesc: 'First visit',
     visitReturning: 'Follow-up',
     visitReturningDesc: 'Returning visit',
-    visitExperience: 'Trial',
-    visitExperienceDesc: 'Trial session',
+    visitExperience: 'Walk-in',
+    visitExperienceDesc: 'No reservation',
     failPrefix: 'Failed: ',
     errorPrefix: 'Error: ',
   },
@@ -147,6 +167,14 @@ function visitChoices(lang: Lang): { value: VisitType; label: string; desc: stri
 const DONE_RESET_SECONDS = 15;
 /** 입력 화면 비활동 타임아웃 (초) */
 const IDLE_TIMEOUT_SECONDS = 60;
+
+/** 신분증 확인 필요 여부 — 초진, 예약없이 방문 */
+const needsIdCheck = (vt: VisitType) => vt === 'new' || vt === 'experience';
+
+// ── 공통 폰트 스타일 (Noto Serif KR 고급 웰니스 테마) ──
+const FONT_STYLE: React.CSSProperties = {
+  fontFamily: "'Noto Serif KR', 'Apple SD Gothic Neo', 'Malgun Gothic', Georgia, serif",
+};
 
 // ── 숫자패드 컴포넌트 ──
 function NumPad({
@@ -170,7 +198,8 @@ function NumPad({
               key={k}
               type="button"
               onClick={onClear}
-              className="flex h-14 items-center justify-center rounded-xl bg-gray-200 text-base font-semibold text-gray-600 transition active:bg-gray-300 active:scale-95"
+              className="flex h-14 items-center justify-center rounded-xl text-sm font-semibold transition active:scale-95"
+              style={{ backgroundColor: C.beige, color: C.primary, border: `1.5px solid ${C.border}` }}
             >
               {clearLabel}
             </button>
@@ -182,9 +211,10 @@ function NumPad({
               key={k}
               type="button"
               onClick={onDelete}
-              className="flex h-14 items-center justify-center rounded-xl bg-gray-200 text-lg font-semibold text-gray-600 transition active:bg-gray-300 active:scale-95"
+              className="flex h-14 items-center justify-center rounded-xl text-lg font-semibold transition active:scale-95"
+              style={{ backgroundColor: C.beige, color: C.primary, border: `1.5px solid ${C.border}` }}
             >
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l7-7h11a1 1 0 011 1v12a1 1 0 01-1 1H10l-7-7z" />
               </svg>
             </button>
@@ -195,7 +225,24 @@ function NumPad({
             key={k}
             type="button"
             onClick={() => onDigit(k)}
-            className="flex h-14 items-center justify-center rounded-xl bg-white border-2 border-gray-200 text-xl font-bold text-gray-800 transition active:bg-teal-50 active:border-teal-400 active:scale-95"
+            className="flex h-14 items-center justify-center rounded-xl text-xl font-bold transition active:scale-95"
+            style={{
+              backgroundColor: 'white',
+              border: `1.5px solid ${C.border}`,
+              color: C.dark,
+            }}
+            onPointerDown={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = C.beige;
+              (e.currentTarget as HTMLButtonElement).style.borderColor = C.borderActive;
+            }}
+            onPointerUp={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'white';
+              (e.currentTarget as HTMLButtonElement).style.borderColor = C.border;
+            }}
+            onPointerLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'white';
+              (e.currentTarget as HTMLButtonElement).style.borderColor = C.border;
+            }}
           >
             {k}
           </button>
@@ -293,20 +340,16 @@ export default function SelfCheckIn() {
   const resetIdleTimer = useCallback(() => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     idleTimerRef.current = setTimeout(() => {
-      // step === 'input' 상태에서만 리셋
       resetForm();
     }, IDLE_TIMEOUT_SECONDS * 1000);
   }, [resetForm]);
 
   useEffect(() => {
     if (step !== 'input') {
-      // input이 아닌 화면에서는 idle timer 해제
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       return;
     }
-    // input 화면 진입 시 타이머 시작
     resetIdleTimer();
-
     const events = ['pointerdown', 'keydown', 'touchstart'] as const;
     const handler = () => resetIdleTimer();
     events.forEach((e) => window.addEventListener(e, handler, { passive: true }));
@@ -324,14 +367,6 @@ export default function SelfCheckIn() {
     return `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`;
   }, []);
 
-  const handlePhoneChange = useCallback(
-    (raw: string) => {
-      setPhone(formatPhone(raw));
-    },
-    [formatPhone],
-  );
-
-  // 숫자패드 핸들러
   const handleNumPadDigit = useCallback(
     (digit: string) => {
       const currentDigits = phone.replace(/\D/g, '');
@@ -352,19 +387,17 @@ export default function SelfCheckIn() {
     setReservationBanner(null);
   }, []);
 
-  // ── 전화번호 완성 시 오늘 예약 조회 (10-11자리 도달 시 자동 트리거) ──
+  // ── 전화번호 완성 시 오늘 예약 조회 ──
   const reservationCheckedRef = useRef<string>('');
 
   useEffect(() => {
     if (!clinicId) return;
     const digits = phone.replace(/\D/g, '');
     if (digits.length < 10) {
-      // 번호가 지워지면 배너 해제 + 이전 체크 기록 초기화
       if (reservationBanner) setReservationBanner(null);
       reservationCheckedRef.current = '';
       return;
     }
-    // 동일 번호로 이미 조회했으면 스킵
     if (reservationCheckedRef.current === digits) return;
     reservationCheckedRef.current = digits;
 
@@ -373,7 +406,6 @@ export default function SelfCheckIn() {
 
     (async () => {
       try {
-        // E.164 우선 조회
         let reservation = null;
         if (phoneE164) {
           const { data } = await anonClient
@@ -388,8 +420,6 @@ export default function SelfCheckIn() {
             .maybeSingle();
           reservation = data;
         }
-
-        // E.164 미매칭 시 digits 폴백
         if (!reservation && phoneE164 && digits !== phoneE164) {
           const { data } = await anonClient
             .from('reservations')
@@ -405,7 +435,7 @@ export default function SelfCheckIn() {
         }
 
         if (reservation) {
-          const timeStr = (reservation.reservation_time as string).slice(0, 5); // HH:MM
+          const timeStr = (reservation.reservation_time as string).slice(0, 5);
           const vt = reservation.visit_type as VisitType;
           const vtLabel = VISIT_CHOICES.find((c) => c.value === vt)?.label ?? vt;
           setReservationBanner({ time: timeStr, visitType: vtLabel });
@@ -414,7 +444,6 @@ export default function SelfCheckIn() {
           setReservationBanner(null);
         }
       } catch {
-        // 예약 조회 실패는 무시 (체크인 자체는 진행 가능)
         setReservationBanner(null);
       }
     })();
@@ -434,7 +463,6 @@ export default function SelfCheckIn() {
     setErrorMsg('');
 
     try {
-      // 기존 고객 조회 — PHONE_E164: E.164 우선 매칭, 미매칭 시 legacy digits 폴백
       let customerId: string | null = null;
       const phoneDigits = phone.replace(/\D/g, '');
       const phoneE164 = normalizeToE164(phone);
@@ -458,7 +486,6 @@ export default function SelfCheckIn() {
       if (existing) {
         customerId = existing.id as string;
       } else {
-        // 신규 고객 생성
         const { data: created, error: cErr } = await anonClient
           .from('customers')
           .insert({
@@ -469,27 +496,22 @@ export default function SelfCheckIn() {
           })
           .select('id')
           .single();
-        if (cErr) {
-          // RLS 정책 미비 시 고객 생성 없이 진행 (에러 무시)
-        } else {
+        if (!cErr && created) {
           customerId = (created as { id: string }).id;
         }
       }
 
-      // 대기번호 발급
       const { data: queueData, error: queueErr } = await anonClient.rpc('next_queue_number', {
         p_clinic_id: clinicId,
         p_date: new Date().toISOString().slice(0, 10),
       });
 
       let queue: number | null = null;
-      if (queueErr) {
-        // RPC 실패 시 대기번호 없이 진행
-      } else {
-        queue = queueData as number;
-      }
+      if (!queueErr) queue = queueData as number;
 
-      // 체크인 INSERT
+      // 신분증 확인 필요 플래그: 초진 + 예약없이 방문은 자동 ON
+      const notesPayload = needsIdCheck(visitType) ? { id_check_required: true } : null;
+
       const { error: ciErr } = await anonClient.from('check_ins').insert({
         clinic_id: clinicId,
         customer_id: customerId,
@@ -498,6 +520,7 @@ export default function SelfCheckIn() {
         visit_type: visitType,
         status: 'registered',
         queue_number: queue,
+        notes: notesPayload,
       });
 
       if (ciErr) {
@@ -522,18 +545,27 @@ export default function SelfCheckIn() {
     <button
       type="button"
       onClick={() => setLang((l) => (l === 'ko' ? 'en' : 'ko'))}
-      className="fixed right-4 top-4 z-50 flex items-center gap-1.5 rounded-full border-2 border-gray-200 bg-white px-4 py-2 text-sm font-bold shadow-md transition active:scale-95 hover:bg-gray-50"
+      className="fixed right-4 top-4 z-50 flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold shadow-md transition active:scale-95"
+      style={{
+        backgroundColor: C.cream,
+        border: `1.5px solid ${C.border}`,
+        color: C.muted,
+        fontFamily: FONT_STYLE.fontFamily,
+      }}
     >
       <span className="text-base">{lang === 'ko' ? '🇺🇸' : '🇰🇷'}</span>
-      <span className="text-gray-700">{lang === 'ko' ? 'EN' : '한국어'}</span>
+      <span>{lang === 'ko' ? 'EN' : '한국어'}</span>
     </button>
   );
 
   // ── 로딩 ──
   if (loading) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-gradient-to-b from-teal-50 to-white">
-        <p className="text-lg text-muted-foreground">{t.loading}</p>
+      <div
+        className="flex min-h-dvh items-center justify-center"
+        style={{ background: `linear-gradient(to bottom, ${C.bgFrom}, ${C.bgTo})`, ...FONT_STYLE }}
+      >
+        <p className="text-lg" style={{ color: C.muted }}>{t.loading}</p>
       </div>
     );
   }
@@ -541,13 +573,14 @@ export default function SelfCheckIn() {
   // ── 클리닉 없음 ──
   if (clinicNotFound) {
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-red-50 to-white px-6">
+      <div
+        className="flex min-h-dvh flex-col items-center justify-center px-6"
+        style={{ background: `linear-gradient(to bottom, #FEF2F2, white)`, ...FONT_STYLE }}
+      >
         <LangToggle />
         <div className="text-center">
           <h1 className="mb-2 text-2xl font-bold text-red-600">{t.clinicNotFound}</h1>
-          <p className="text-muted-foreground">
-            {t.clinicNotFoundDesc}
-          </p>
+          <p className="text-gray-500">{t.clinicNotFoundDesc}</p>
         </div>
       </div>
     );
@@ -556,50 +589,59 @@ export default function SelfCheckIn() {
   // ── 완료 ──
   if (step === 'done') {
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-teal-50 to-white px-6">
+      <div
+        className="flex min-h-dvh flex-col items-center justify-center px-6"
+        style={{ background: `linear-gradient(to bottom, ${C.bgFrom}, ${C.bgTo})`, ...FONT_STYLE }}
+      >
         <LangToggle />
         <div className="w-full max-w-md space-y-8 text-center">
           {/* 클리닉명 */}
-          <p className="text-lg font-medium text-teal-600">{clinicName}</p>
+          <p className="text-base font-medium tracking-wide" style={{ color: C.medium }}>
+            {clinicName}
+          </p>
 
-          {/* 체크마크 펄스 애니메이션 */}
-          <div className="mx-auto flex h-28 w-28 items-center justify-center rounded-full bg-teal-100 animate-pulse">
+          {/* 체크마크 펄스 */}
+          <div
+            className="mx-auto flex h-28 w-28 items-center justify-center rounded-full animate-pulse"
+            style={{ backgroundColor: C.beige, border: `2px solid ${C.gold}` }}
+          >
             <svg
-              className="h-14 w-14 text-teal-600"
+              className="h-14 w-14"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
               strokeWidth={2.5}
+              style={{ color: C.primary }}
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
 
           <div>
-            <h1 className="text-3xl font-bold text-teal-700">{t.done}</h1>
+            <h1 className="text-3xl font-bold tracking-tight" style={{ color: C.dark }}>{t.done}</h1>
             {queueNumber != null && (
               <div className="mt-6">
-                <p className="text-sm text-gray-500">{t.queueNumber}</p>
-                <p className="mt-1 text-8xl font-black text-teal-600 tabular-nums">
+                <p className="text-sm" style={{ color: C.muted }}>{t.queueNumber}</p>
+                <p className="mt-1 text-8xl font-black tabular-nums" style={{ color: C.primary }}>
                   #{queueNumber}
                 </p>
               </div>
             )}
-            <p className="mt-6 text-lg text-gray-600">
+            <p className="mt-6 text-lg" style={{ color: C.muted }}>
               {t.doneMsg(name.trim())}
               <br />
               {t.waitMsg}
             </p>
           </div>
 
-          {/* 카운트다운 */}
-          <p className="text-sm text-gray-400">
+          <p className="text-sm" style={{ color: C.gold }}>
             {t.autoReset(countdown)}
           </p>
 
           <button
             onClick={resetForm}
-            className="mx-auto block rounded-xl bg-gray-100 px-8 py-4 text-lg font-medium text-gray-700 transition hover:bg-gray-200 active:bg-gray-300"
+            className="mx-auto block rounded-xl px-8 py-4 text-lg font-medium transition active:scale-95"
+            style={{ backgroundColor: C.beige, color: C.medium, border: `1.5px solid ${C.border}` }}
           >
             {t.newCheckIn}
           </button>
@@ -611,14 +653,18 @@ export default function SelfCheckIn() {
   // ── 에러 ──
   if (step === 'error') {
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-red-50 to-white px-6">
+      <div
+        className="flex min-h-dvh flex-col items-center justify-center px-6"
+        style={{ background: `linear-gradient(to bottom, #FEF2F2, white)`, ...FONT_STYLE }}
+      >
         <LangToggle />
         <div className="w-full max-w-md space-y-6 text-center">
           <h1 className="text-2xl font-bold text-red-600">{t.errorTitle}</h1>
           <p className="text-gray-600">{errorMsg}</p>
           <button
             onClick={() => setStep('input')}
-            className="mx-auto block rounded-xl bg-gray-100 px-8 py-4 text-lg font-medium text-gray-700 transition hover:bg-gray-200"
+            className="mx-auto block rounded-xl px-8 py-4 text-lg font-medium transition active:scale-95"
+            style={{ backgroundColor: C.beige, color: C.medium, border: `1.5px solid ${C.border}` }}
           >
             {t.retry}
           </button>
@@ -631,35 +677,46 @@ export default function SelfCheckIn() {
   if (step === 'confirm') {
     const visitLabel = VISIT_CHOICES.find((c) => c.value === visitType)?.label ?? visitType;
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-teal-50 to-white px-6">
+      <div
+        className="flex min-h-dvh flex-col items-center justify-center px-6"
+        style={{ background: `linear-gradient(to bottom, ${C.bgFrom}, ${C.bgTo})`, ...FONT_STYLE }}
+      >
         <LangToggle />
         <div className="w-full max-w-md space-y-8">
-          <h1 className="text-center text-2xl font-bold text-gray-800">{t.confirmTitle}</h1>
-          <div className="space-y-4 rounded-2xl border bg-white p-6 shadow-sm">
-            <div className="flex justify-between border-b pb-3">
-              <span className="text-gray-500">{t.name}</span>
-              <span className="font-semibold">{name.trim()}</span>
+          <div className="text-center">
+            <p className="text-sm tracking-widest uppercase mb-2" style={{ color: C.gold }}>{clinicName}</p>
+            <h1 className="text-2xl font-bold" style={{ color: C.dark }}>{t.confirmTitle}</h1>
+          </div>
+          <div
+            className="space-y-4 rounded-2xl p-6 shadow-sm"
+            style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}
+          >
+            <div className="flex justify-between border-b pb-3" style={{ borderColor: C.border }}>
+              <span style={{ color: C.muted }}>{t.name}</span>
+              <span className="font-semibold" style={{ color: C.dark }}>{name.trim()}</span>
             </div>
-            <div className="flex justify-between border-b pb-3">
-              <span className="text-gray-500">{t.contact}</span>
-              <span className="font-semibold">{phone}</span>
+            <div className="flex justify-between border-b pb-3" style={{ borderColor: C.border }}>
+              <span style={{ color: C.muted }}>{t.contact}</span>
+              <span className="font-semibold" style={{ color: C.dark }}>{phone}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">{t.visitType}</span>
-              <span className="font-semibold">{visitLabel}</span>
+              <span style={{ color: C.muted }}>{t.visitType}</span>
+              <span className="font-semibold" style={{ color: C.dark }}>{visitLabel}</span>
             </div>
           </div>
           <div className="flex gap-3">
             <button
               onClick={() => setStep('input')}
-              className="flex-1 rounded-xl border-2 border-gray-300 py-4 text-lg font-medium text-gray-700 transition hover:bg-gray-50 active:bg-gray-100"
+              className="flex-1 rounded-xl py-4 text-lg font-medium transition active:scale-95"
+              style={{ border: `1.5px solid ${C.border}`, color: C.muted, backgroundColor: 'white' }}
             >
               {t.edit}
             </button>
             <button
               onClick={handleSubmit}
               disabled={submitting}
-              className="flex-1 rounded-xl bg-teal-600 py-4 text-lg font-bold text-white transition hover:bg-teal-700 active:bg-teal-800 disabled:opacity-50"
+              className="flex-1 rounded-xl py-4 text-lg font-bold text-white transition active:scale-95 disabled:opacity-50"
+              style={{ backgroundColor: submitting ? C.medium : C.primary }}
             >
               {submitting ? t.processing : t.confirm}
             </button>
@@ -671,20 +728,35 @@ export default function SelfCheckIn() {
 
   // ── 입력 폼 ──
   return (
-    <div className="flex min-h-dvh flex-col bg-gradient-to-b from-teal-50 to-white">
+    <div
+      className="flex min-h-dvh flex-col"
+      style={{ background: `linear-gradient(to bottom, ${C.bgFrom}, ${C.bgTo})`, ...FONT_STYLE }}
+    >
       <LangToggle />
+
       {/* 헤더 */}
-      <header className="px-6 pb-2 pt-8 text-center">
-        <h1 className="text-2xl font-bold text-teal-700">{clinicName}</h1>
-        <p className="mt-1 text-gray-500">{t.selfCheckIn}</p>
+      <header className="px-6 pb-2 pt-10 text-center">
+        <p className="text-xs tracking-[0.2em] uppercase mb-1" style={{ color: C.gold }}>
+          OBLIV FOOT CENTER
+        </p>
+        <h1 className="text-2xl font-bold tracking-tight" style={{ color: C.dark }}>
+          {clinicName}
+        </h1>
+        <p className="mt-1 text-sm tracking-wide" style={{ color: C.muted }}>{t.selfCheckIn}</p>
+        <div className="mx-auto mt-3 h-px w-16" style={{ backgroundColor: C.gold }} />
       </header>
 
       {/* 폼 */}
-      <main className="flex flex-1 flex-col items-center px-6 pb-8 pt-4">
-        <div className="w-full max-w-md space-y-6">
-          {/* 이름 */}
-          <div className="space-y-2">
-            <label htmlFor="sc-name" className="block text-sm font-medium text-gray-700">
+      <main className="flex flex-1 flex-col items-center px-6 pb-8 pt-5">
+        <div className="w-full max-w-md space-y-5">
+
+          {/* 성함 */}
+          <div className="space-y-1.5">
+            <label
+              htmlFor="sc-name"
+              className="block text-sm font-medium tracking-wide"
+              style={{ color: C.medium }}
+            >
               {t.name}
             </label>
             <input
@@ -694,34 +766,69 @@ export default function SelfCheckIn() {
               onChange={(e) => setName(e.target.value)}
               placeholder={t.namePlaceholder}
               autoComplete="name"
-              className="h-14 w-full rounded-xl border-2 border-gray-200 bg-white px-4 text-lg outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
+              className="h-14 w-full rounded-xl px-4 text-lg outline-none transition"
+              style={{
+                border: `1.5px solid ${C.border}`,
+                backgroundColor: 'white',
+                color: C.dark,
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = C.borderActive;
+                e.currentTarget.style.boxShadow = `0 0 0 3px ${C.borderActive}18`;
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = C.border;
+                e.currentTarget.style.boxShadow = 'none';
+              }}
             />
           </div>
 
           {/* 연락처 */}
           <div className="space-y-2">
-            <label htmlFor="sc-phone" className="block text-sm font-medium text-gray-700">
+            <label
+              htmlFor="sc-phone"
+              className="block text-sm font-medium tracking-wide"
+              style={{ color: C.medium }}
+            >
               {t.phone}
             </label>
-            <input
-              id="sc-phone"
-              type="tel"
-              inputMode="none"
-              value={phone}
-              onChange={(e) => handlePhoneChange(e.target.value)}
-              placeholder={t.phonePlaceholder}
-              autoComplete="tel"
-              readOnly
-              className="h-14 w-full rounded-xl border-2 border-gray-200 bg-white px-4 text-lg outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
-            />
+            <div
+              className="flex h-14 w-full items-center rounded-xl px-4 text-lg"
+              style={{
+                border: `1.5px solid ${phone ? C.borderActive : C.border}`,
+                backgroundColor: 'white',
+                color: phone ? C.dark : C.muted,
+              }}
+            >
+              {phone ? (
+                <span style={{ color: C.dark }}>{phone}</span>
+              ) : (
+                <span className="text-base" style={{ color: C.border }}>
+                  {t.phonePlaceholder}
+                </span>
+              )}
+            </div>
 
             {/* 예약 배너 */}
             {reservationBanner && (
-              <div className="flex items-center gap-2 rounded-xl border-2 border-teal-200 bg-teal-50 px-4 py-3">
-                <svg className="h-5 w-5 flex-shrink-0 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <div
+                className="flex items-center gap-2 rounded-xl px-4 py-3"
+                style={{
+                  backgroundColor: C.bannerBg,
+                  border: `1.5px solid ${C.bannerBorder}`,
+                }}
+              >
+                <svg
+                  className="h-4 w-4 flex-shrink-0"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  style={{ color: C.medium }}
+                >
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                <span className="text-sm font-medium text-teal-700">
+                <span className="text-sm font-medium" style={{ color: C.medium }}>
                   {t.reservationBanner(reservationBanner.time, reservationBanner.visitType)}
                 </span>
               </div>
@@ -736,25 +843,54 @@ export default function SelfCheckIn() {
             />
           </div>
 
-          {/* 방문 유형 */}
+          {/* 방문 유형 — 세로 스택 (태블릿 터치 최적화) */}
           <div className="space-y-2">
-            <span className="block text-sm font-medium text-gray-700">{t.visitType}</span>
-            <div className="grid grid-cols-3 gap-3">
-              {VISIT_CHOICES.map((c) => (
-                <button
-                  key={c.value}
-                  type="button"
-                  onClick={() => setVisitType(c.value)}
-                  className={`flex flex-col items-center gap-1 rounded-xl border-2 py-5 text-center transition active:scale-[0.97] ${
-                    visitType === c.value
-                      ? 'border-teal-600 bg-teal-50 text-teal-700 shadow-sm'
-                      : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  <span className="text-lg font-bold">{c.label}</span>
-                  <span className="text-xs text-gray-400">{c.desc}</span>
-                </button>
-              ))}
+            <span className="block text-sm font-medium tracking-wide" style={{ color: C.medium }}>
+              {t.visitType}
+            </span>
+            <div className="space-y-2">
+              {VISIT_CHOICES.map((c) => {
+                const isActive = visitType === c.value;
+                return (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => setVisitType(c.value)}
+                    className="flex w-full items-center justify-between rounded-xl px-5 py-4 text-left transition active:scale-[0.99]"
+                    style={{
+                      border: `1.5px solid ${isActive ? C.primary : C.border}`,
+                      backgroundColor: isActive ? C.beige : 'white',
+                      boxShadow: isActive ? `0 0 0 2px ${C.primary}22` : 'none',
+                    }}
+                  >
+                    <div>
+                      <span
+                        className="text-lg font-bold"
+                        style={{ color: isActive ? C.dark : C.muted }}
+                      >
+                        {c.label}
+                      </span>
+                      {c.desc && (
+                        <p className="text-sm mt-0.5" style={{ color: isActive ? C.medium : C.border }}>
+                          {c.desc}
+                        </p>
+                      )}
+                    </div>
+                    {/* 라디오 인디케이터 */}
+                    <div
+                      className="h-5 w-5 rounded-full flex items-center justify-center flex-shrink-0 ml-3"
+                      style={{
+                        border: `2px solid ${isActive ? C.primary : C.border}`,
+                        backgroundColor: isActive ? C.primary : 'white',
+                      }}
+                    >
+                      {isActive && (
+                        <div className="h-2 w-2 rounded-full" style={{ backgroundColor: 'white' }} />
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -762,7 +898,8 @@ export default function SelfCheckIn() {
           <button
             onClick={handleConfirm}
             disabled={!canSubmit}
-            className="mt-4 h-16 w-full rounded-xl bg-teal-600 text-xl font-bold text-white transition hover:bg-teal-700 active:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-2 h-16 w-full rounded-xl text-xl font-bold text-white transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
+            style={{ backgroundColor: canSubmit ? C.primary : C.muted }}
           >
             {t.checkIn}
           </button>

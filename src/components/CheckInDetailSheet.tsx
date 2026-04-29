@@ -292,6 +292,36 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             {checkIn.priority_flag && (
               <Badge variant="destructive">{checkIn.priority_flag}</Badge>
             )}
+            {checkIn.notes?.id_check_required && (
+              <button
+                title="클릭하면 신분증 확인 완료 처리"
+                onClick={async () => {
+                  const newNotes = {
+                    ...(checkIn.notes as Record<string, unknown> ?? {}),
+                    id_check_required: false,
+                  };
+                  const { error } = await supabase
+                    .from('check_ins')
+                    .update({ notes: newNotes })
+                    .eq('id', checkIn.id);
+                  if (!error) {
+                    toast.success('신분증 확인 완료');
+                    onUpdated();
+                  } else {
+                    toast.error('업데이트 실패');
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition hover:opacity-80 active:scale-95 cursor-pointer"
+                style={{
+                  backgroundColor: '#FEE2E2',
+                  color: '#B91C1C',
+                  border: '1.5px solid #FECACA',
+                }}
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-red-500 inline-block animate-pulse" />
+                신분증 확인 필요 · 탭하여 해제
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-sm">
