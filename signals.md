@@ -1,5 +1,19 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-04-30 [T-20260430-foot-SEARCH-DOB-CHART] deployed — 고객검색 생년월일(YYMMDD) + 차트번호 추가
+
+> **ticket**: T-20260430-foot-SEARCH-DOB-CHART | **priority**: P1 | **status**: deployed
+> **commit**: 3ed4246 | **qa_grade**: Yellow | **qa_result**: pass
+
+### 변경 요약
+- DB: customers.birth_date (text), customers.chart_number (text) 컬럼 추가 + 인덱스
+- AdminLayout: 글로벌 검색에 birth_date/chart_number ilike 조건 추가, 드롭다운 힌트 표시
+- AdminCustomers: 목록 검색 확장, 테이블에 생년월일·차트번호 컬럼 표시
+- CreateCustomerDialog / CustomerDetailSheet: 입력·편집·표시 지원
+- 빌드: tsc + vite build ✅ 에러 0
+
+---
+
 ## 2026-04-30 [T-20260430-foot-TREATMENT-LABEL] deploy-ready — 진료종류 라벨 변경 + 5개 필드 추가
 
 > **ticket**: T-20260430-foot-TREATMENT-LABEL | **priority**: P1 | **status**: deploy-ready | **assignee**: dev-foot
