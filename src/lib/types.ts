@@ -89,6 +89,8 @@ export interface Customer {
   tm_memo: string | null;                   // 상담 메모 (보험/상담내용/성향)
   referrer_id: string | null;               // 추천인 고객 ID (optional FK)
   referrer_name: string | null;             // 추천인 이름 텍스트 (fallback)
+  birth_date: string | null;                // 생년월일 (YYMMDD 텍스트, 예: 900515)
+  chart_number: string | null;              // 차트번호
   is_foreign: boolean;
   is_simulation: boolean;
   created_by: string | null;
