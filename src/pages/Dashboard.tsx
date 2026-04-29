@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   DndContext,
@@ -49,6 +49,14 @@ import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
 import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Reservation, Room, RoomFieldKey, Staff } from '@/lib/types';
 
 type TabKey = 'all' | 'new' | 'returning';
+
+// ── 동의서 상태 컨텍스트 (카드 배지용) ────────────────────────────────────────
+interface ConsentEntry {
+  refundAt?: string;
+  nonCoveredAt?: string;
+}
+/** 체크인 ID → 동의서 날짜 맵. DraggableCard에서 useContext로 읽어 배지 표시 */
+const ConsentMapCtx = createContext<Map<string, ConsentEntry>>(new Map());
 
 interface RoomAssignment {
   id: string;
@@ -107,6 +115,8 @@ function DraggableCard({
   onClick?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
+  const consentMap = useContext(ConsentMapCtx);
+  const consentEntry = consentMap.get(checkIn.id);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: checkIn.id,
     data: { checkIn },
@@ -189,6 +199,15 @@ function DraggableCard({
             {packageLabel.name} {packageLabel.remaining}/{packageLabel.total}
           </div>
         )}
+        {/* 동의서 서명 배지 (compact) */}
+        {consentEntry?.refundAt && (
+          <div
+            data-testid="consent-badge-refund"
+            className="mt-0.5 text-[10px] text-emerald-600 truncate"
+          >
+            ✓ 환불동의서 ({format(new Date(consentEntry.refundAt), 'M/d')})
+          </div>
+        )}
         <div className="mt-0.5 flex items-center justify-between text-xs text-muted-foreground">
           <span className={cn('tabular-nums font-mono', (mins >= 30 || isLaserOvertime) && 'font-semibold text-red-600')}>
             <Clock className="inline h-2.5 w-2.5 mr-0.5" />
@@ -267,6 +286,18 @@ function DraggableCard({
       {packageLabel && (
         <div className="mt-1 text-xs text-violet-600 font-medium">
           {packageLabel.name} {packageLabel.remaining}/{packageLabel.total}
+        </div>
+      )}
+      {/* 동의서 서명 배지 (non-compact) */}
+      {consentEntry?.refundAt && (
+        <div
+          data-testid="consent-badge-refund"
+          className="mt-1 text-xs text-emerald-600"
+        >
+          ✓ 환불동의서 ({format(new Date(consentEntry.refundAt), 'M/d')})
+          {consentEntry.nonCoveredAt && (
+            <span className="ml-1">· 비급여확인 ({format(new Date(consentEntry.nonCoveredAt), 'M/d')})</span>
+          )}
         </div>
       )}
       <div className="mt-1.5 flex items-center justify-between text-xs">
@@ -646,6 +677,7 @@ export default function Dashboard() {
   const [contextMenu, setContextMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
   const [stageStartMap, setStageStartMap] = useState<Map<string, string>>(new Map());
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
+  const [consentMap, setConsentMap] = useState<Map<string, ConsentEntry>>(new Map());
   const [therapists, setTherapists] = useState<Staff[]>([]);
   const recentlyUpdated = useRef<Set<string>>(new Set());
   const navStateConsumed = useRef(false);
@@ -730,6 +762,26 @@ export default function Dashboard() {
     });
     setRows(filtered);
     setLoading(false);
+
+    // ── 동의서 상태 일괄 조회 (카드 배지용) ──
+    const ids = filtered.map((ci) => ci.id);
+    if (ids.length > 0) {
+      const { data: cData } = await supabase
+        .from('consent_forms')
+        .select('check_in_id, form_type, signed_at')
+        .in('check_in_id', ids)
+        .in('form_type', ['refund', 'non_covered']);
+      const cMap = new Map<string, ConsentEntry>();
+      for (const c of (cData ?? []) as { check_in_id: string; form_type: string; signed_at: string }[]) {
+        const entry = cMap.get(c.check_in_id) ?? {};
+        if (c.form_type === 'refund') entry.refundAt = c.signed_at;
+        if (c.form_type === 'non_covered') entry.nonCoveredAt = c.signed_at;
+        cMap.set(c.check_in_id, entry);
+      }
+      setConsentMap(cMap);
+    } else {
+      setConsentMap(new Map());
+    }
   }, [clinic, dateStr]);
 
   const fetchPayments = useCallback(async () => {
@@ -1471,6 +1523,7 @@ export default function Dashboard() {
             불러오는 중…
           </div>
         ) : (
+          <ConsentMapCtx.Provider value={consentMap}>
           <DndContext
             sensors={sensors}
             collisionDetection={customCollision}
@@ -1804,6 +1857,7 @@ export default function Dashboard() {
               {dragging && <DraggableCard checkIn={dragging} compact />}
             </DragOverlay>
           </DndContext>
+          </ConsentMapCtx.Provider>
         )}
       </div>
 

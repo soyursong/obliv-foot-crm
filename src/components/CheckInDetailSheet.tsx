@@ -741,6 +741,22 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
           <Separator />
           <div className="space-y-2">
             <span className="text-sm font-semibold text-muted-foreground">체크리스트 / 동의서</span>
+
+            {/* 상담 단계: 필수 동의서 안내 배너 */}
+            {isConsultStage && (
+              <div
+                data-testid="consult-consent-banner"
+                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 space-y-0.5"
+              >
+                <p className="text-xs font-semibold text-amber-900 flex items-center gap-1">
+                  <FileText className="h-3 w-3" /> 결제 전 필수 동의서
+                </p>
+                <p className="text-xs text-amber-600">
+                  아래 버튼에서 환불동의서·비급여동의서를 서명받아 주세요
+                </p>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-1.5">
               {checkIn.visit_type === 'new' && (
                 <Button
