@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { format } from 'date-fns';
-import { ArrowLeft, ArrowRight, ChevronDown, Clock, CreditCard, Phone, FileText, Camera, Package, Stethoscope, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronDown, Clock, CreditCard, Phone, FileText, Camera, Package, Plus, Stethoscope, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Sheet,
@@ -8,15 +8,23 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { STATUS_KO, VISIT_TYPE_KO, stagesFor } from '@/lib/status';
-import { formatAmount } from '@/lib/format';
+import { formatAmount, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { ConsentFormButtons } from '@/components/ConsentFormDialog';
 import { PreChecklist } from '@/components/PreChecklist';
@@ -25,6 +33,46 @@ import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 import { PACKAGE_PRESETS } from '@/lib/packagePresets';
 import type { CheckIn, CheckInStatus, Package as PackageType, PackageRemaining, Service } from '@/lib/types';
+
+// ─── 시술 항목 / 회차 차감 타입 ──────────────────────────────────────────────
+
+type SessionType = 'heated_laser' | 'unheated_laser' | 'iv' | 'preconditioning';
+
+interface TreatmentItem {
+  /** 로컬 식별자 */
+  _id: string;
+  service: Service;
+  /** 서비스→패키지 세션 타입 추론 결과 (null이면 단건 결제만 가능) */
+  sessionType: SessionType | null;
+  /** 패키지 회차 사용 완료 여부 */
+  settled: boolean;
+}
+
+const SESSION_TYPE_LABELS: Record<SessionType, string> = {
+  heated_laser: '가열',
+  unheated_laser: '비가열',
+  iv: '수액',
+  preconditioning: '사전처치',
+};
+
+const SESSION_TYPE_FULL: Record<SessionType, string> = {
+  heated_laser: '가열레이저',
+  unheated_laser: '비가열레이저',
+  iv: '수액',
+  preconditioning: '사전처치',
+};
+
+/** 서비스 category·name 텍스트에서 패키지 세션 타입 추론 */
+function sessionTypeFromService(svc: Service): SessionType | null {
+  const hay = ((svc.category ?? '') + ' ' + (svc.name ?? '')).toLowerCase();
+  if (hay.includes('비가열')) return 'unheated_laser';
+  if (hay.includes('가열')) return 'heated_laser';
+  if (hay.includes('수액') || hay.includes(' iv')) return 'iv';
+  if (hay.includes('사전처치') || hay.includes('preconditioning')) return 'preconditioning';
+  return null;
+}
+
+// ─── 기존 인터페이스 ──────────────────────────────────────────────────────────
 
 interface PaymentRow {
   id: string;
@@ -58,6 +106,8 @@ const METHOD_LABEL: Record<string, string> = {
   transfer: '이체',
   membership: '멤버십',
 };
+
+// ─── 서브 컴포넌트: 방문 이력 아코디언 ──────────────────────────────────────
 
 function VisitHistoryAccordion({ history }: { history: VisitHistory[] }) {
   const grouped = history.reduce<Record<string, VisitHistory[]>>((acc, h) => {
@@ -128,6 +178,8 @@ function VisitHistoryAccordion({ history }: { history: VisitHistory[] }) {
   );
 }
 
+// ─── 서브 컴포넌트: 단계 이동 버튼 ──────────────────────────────────────────
+
 function StageNavButtons({ checkIn, onUpdated }: { checkIn: CheckIn; onUpdated: () => void }) {
   const stages = stagesFor(checkIn.visit_type);
   const idx = stages.indexOf(checkIn.status);
@@ -175,10 +227,83 @@ function StageNavButtons({ checkIn, onUpdated }: { checkIn: CheckIn; onUpdated: 
   );
 }
 
+// ─── 서브 컴포넌트: 활성 패키지 잔여회차 요약 카드 ──────────────────────────
+
+function ActivePackageSummary({
+  packages,
+  pkgRemaining,
+}: {
+  packages: PackageType[];
+  pkgRemaining: Map<string, PackageRemaining>;
+}) {
+  if (packages.length === 0) return null;
+
+  return (
+    <div className="space-y-1.5">
+      <span className="text-sm font-semibold text-teal-700 flex items-center gap-1">
+        <Package className="h-3.5 w-3.5" /> 패키지 잔여회차
+      </span>
+      {packages.map((pkg) => {
+        const rem = pkgRemaining.get(pkg.id);
+        const hasAny = rem && rem.total_remaining > 0;
+        return (
+          <div
+            key={pkg.id}
+            className={cn(
+              'rounded-lg border px-2.5 py-2 space-y-1.5',
+              hasAny ? 'border-teal-300 bg-teal-50/60' : 'border-gray-200 bg-gray-50/60',
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-teal-900">{pkg.package_name}</span>
+              {rem && (
+                <span className="text-xs text-muted-foreground">
+                  잔여 {rem.total_remaining}/{pkg.total_sessions}회
+                </span>
+              )}
+            </div>
+            {rem ? (
+              <div className="flex gap-1.5 flex-wrap">
+                {rem.heated > 0 && (
+                  <span className="inline-flex items-center text-xs bg-orange-100 text-orange-700 rounded-full px-2 py-0.5 font-medium">
+                    가열 {rem.heated}
+                  </span>
+                )}
+                {rem.unheated > 0 && (
+                  <span className="inline-flex items-center text-xs bg-blue-100 text-blue-700 rounded-full px-2 py-0.5 font-medium">
+                    비가열 {rem.unheated}
+                  </span>
+                )}
+                {rem.iv > 0 && (
+                  <span className="inline-flex items-center text-xs bg-purple-100 text-purple-700 rounded-full px-2 py-0.5 font-medium">
+                    수액 {rem.iv}
+                  </span>
+                )}
+                {rem.preconditioning > 0 && (
+                  <span className="inline-flex items-center text-xs bg-emerald-100 text-emerald-700 rounded-full px-2 py-0.5 font-medium">
+                    사전처치 {rem.preconditioning}
+                  </span>
+                )}
+                {rem.total_remaining === 0 && (
+                  <span className="text-xs text-muted-foreground">잔여 없음</span>
+                )}
+              </div>
+            ) : (
+              <span className="text-xs text-muted-foreground">로딩 중…</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── 메인 컴포넌트 ────────────────────────────────────────────────────────────
+
 export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: Props) {
   const { profile } = useAuth();
   const isAdmin = profile?.role === 'admin';
-  const [, setServices] = useState<Service[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [history, setHistory] = useState<VisitHistory[]>([]);
   const [packages, setPackages] = useState<PackageType[]>([]);
@@ -188,6 +313,20 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   const [doctorNote, setDoctorNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(false);
+
+  // ── 시술 항목 상태 ──
+  const [treatmentItems, setTreatmentItems] = useState<TreatmentItem[]>([]);
+  const [svcModalOpen, setSvcModalOpen] = useState(false);
+  const [sessionUseOpen, setSessionUseOpen] = useState(false);
+  const [sessionUsePkg, setSessionUsePkg] = useState<PackageType | null>(null);
+  const [sessionUseRemaining, setSessionUseRemaining] = useState<PackageRemaining | null>(null);
+  const [sessionUseType, setSessionUseType] = useState<SessionType>('unheated_laser');
+  const [sessionUseTreatmentIdx, setSessionUseTreatmentIdx] = useState<number>(-1);
+
+  // 체크인 변경 시 시술 항목 초기화
+  useEffect(() => {
+    setTreatmentItems([]);
+  }, [checkIn?.id]);
 
   const load = useCallback(async () => {
     if (!checkIn) return;
@@ -283,6 +422,23 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     onUpdated();
   };
 
+  const moveToPaymentWaiting = async () => {
+    if (!checkIn) return;
+    const { error } = await supabase
+      .from('check_ins')
+      .update({ status: 'payment_waiting' })
+      .eq('id', checkIn.id);
+    if (error) { toast.error(`이동 실패: ${error.message}`); return; }
+    await supabase.from('status_transitions').insert({
+      check_in_id: checkIn.id,
+      clinic_id: checkIn.clinic_id,
+      from_status: checkIn.status,
+      to_status: 'payment_waiting',
+    });
+    toast.success('수납대기로 이동');
+    onUpdated();
+  };
+
   const totalPaid = payments
     .filter((p) => p.payment_type === 'payment')
     .reduce((s, p) => s + p.amount, 0);
@@ -290,6 +446,49 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   if (!checkIn) return null;
 
   const mins = Math.floor((Date.now() - new Date(checkIn.checked_in_at).getTime()) / 60000);
+
+  // ── 시술 항목 헬퍼 ──
+  const addTreatmentItem = (svc: Service) => {
+    const item: TreatmentItem = {
+      _id: `${svc.id}-${Date.now()}`,
+      service: svc,
+      sessionType: sessionTypeFromService(svc),
+      settled: false,
+    };
+    setTreatmentItems((prev) => [...prev, item]);
+  };
+
+  const removeTreatmentItem = (idx: number) => {
+    setTreatmentItems((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const markSettled = (idx: number) => {
+    setTreatmentItems((prev) =>
+      prev.map((item, i) => (i === idx ? { ...item, settled: true } : item)),
+    );
+  };
+
+  /** idx 번째 시술 항목에 연결되는 첫 번째 유효 패키지 반환 */
+  const findPkgForItem = (item: TreatmentItem): PackageType | null => {
+    if (!item.sessionType) return null;
+    return (
+      packages.find((pkg) => {
+        const rem = pkgRemaining.get(pkg.id);
+        if (!rem) return false;
+        const field = item.sessionType as keyof PackageRemaining;
+        const val = rem[field];
+        return typeof val === 'number' && val > 0;
+      }) ?? null
+    );
+  };
+
+  const hasSettledItem = treatmentItems.some((i) => i.settled);
+  const canMoveToPaymentWaiting =
+    hasSettledItem &&
+    checkIn.status !== 'payment_waiting' &&
+    checkIn.status !== 'treatment_waiting' &&
+    checkIn.status !== 'done' &&
+    checkIn.status !== 'cancelled';
 
   return (
     <Sheet open={!!checkIn} onOpenChange={(o) => !o && onClose()}>
@@ -374,6 +573,14 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
 
           {/* 단계 이동 */}
           <StageNavButtons checkIn={checkIn} onUpdated={onUpdated} />
+
+          {/* ── [NEW] 활성 패키지 잔여회차 요약 (재진/초진 모두, 패키지 있을 때만) ── */}
+          {packages.length > 0 && (
+            <>
+              <Separator />
+              <ActivePackageSummary packages={packages} pkgRemaining={pkgRemaining} />
+            </>
+          )}
 
           {/* 공간 배정 */}
           {(checkIn.examination_room || checkIn.consultation_room || checkIn.treatment_room || checkIn.laser_room) && (
@@ -471,6 +678,102 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             </>
           )}
 
+          {/* ── [NEW] 시술 항목 선택 + 회차 차감 분기 ── */}
+          <Separator />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                <Stethoscope className="h-3.5 w-3.5" /> 시술 항목
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1 px-2"
+                onClick={() => setSvcModalOpen(true)}
+              >
+                <Plus className="h-3 w-3" /> 추가
+              </Button>
+            </div>
+
+            {treatmentItems.length === 0 ? (
+              <p className="text-xs text-muted-foreground">선택된 시술 없음 — 위 [추가] 버튼으로 시술을 선택하세요</p>
+            ) : (
+              <div className="space-y-1.5">
+                {treatmentItems.map((item, idx) => {
+                  const targetPkg = findPkgForItem(item);
+                  const canUsePackage = !!targetPkg;
+
+                  return (
+                    <div
+                      key={item._id}
+                      data-testid="treatment-item-row"
+                      className="flex items-center gap-2 rounded-lg border px-2.5 py-2"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-medium truncate">{item.service.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {formatAmount(item.service.price)}
+                          {item.sessionType && (
+                            <span className="ml-1 text-teal-600">· {SESSION_TYPE_LABELS[item.sessionType]}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {item.settled ? (
+                        <Badge variant="success" className="text-xs shrink-0">✓ 완료</Badge>
+                      ) : canUsePackage ? (
+                        <Button
+                          size="sm"
+                          data-testid="btn-use-package-session"
+                          className="text-xs h-8 bg-teal-600 hover:bg-teal-700 shrink-0"
+                          onClick={() => {
+                            setSessionUsePkg(targetPkg);
+                            setSessionUseRemaining(pkgRemaining.get(targetPkg.id) ?? null);
+                            setSessionUseType(item.sessionType!);
+                            setSessionUseTreatmentIdx(idx);
+                            setSessionUseOpen(true);
+                          }}
+                        >
+                          패키지 회차 사용
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          data-testid="btn-single-payment"
+                          className="text-xs h-8 shrink-0"
+                          onClick={() => onPayment(checkIn)}
+                        >
+                          단건 결제
+                        </Button>
+                      )}
+
+                      <button
+                        onClick={() => removeTreatmentItem(idx)}
+                        className="rounded p-1 hover:bg-muted shrink-0"
+                        title="시술 항목 삭제"
+                      >
+                        <Trash2 className="h-3 w-3 text-muted-foreground" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* 수납대기 전환 버튼 — 회차 소진 완료 항목 있고, 아직 수납대기 전 단계일 때 */}
+            {canMoveToPaymentWaiting && (
+              <Button
+                size="sm"
+                data-testid="btn-move-payment-waiting"
+                className="w-full gap-1 bg-amber-500 hover:bg-amber-600 text-white"
+                onClick={moveToPaymentWaiting}
+              >
+                수납대기로 이동
+              </Button>
+            )}
+          </div>
+
           {/* 결제 */}
           <Separator />
           <div className="space-y-2">
@@ -511,7 +814,7 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             )}
           </div>
 
-          {/* 패키지 */}
+          {/* 패키지 상세 목록 (연결 + 잔여 세부 표시) */}
           {checkIn.customer_id && (
             <>
               <Separator />
@@ -668,11 +971,11 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
           <Separator />
           <InsuranceDocPanel checkIn={checkIn} onUpdated={onUpdated} />
 
-          {/* 서류 발행 (소견서, 진단서, 진료비내역서, 진료확인서, 통원확인서) */}
+          {/* 서류 발행 */}
           <Separator />
           <DocumentPrintPanel checkIn={checkIn} onUpdated={onUpdated} />
 
-          {/* 방문 이력 (날짜별 아코디언) */}
+          {/* 방문 이력 */}
           {history.length > 0 && (
             <>
               <Separator />
@@ -690,7 +993,258 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             onUpdated();
           }}
         />
+
+        {/* 시술 선택 모달 */}
+        <ServiceSelectModal
+          open={svcModalOpen}
+          services={services}
+          onClose={() => setSvcModalOpen(false)}
+          onSelect={addTreatmentItem}
+        />
+
+        {/* 패키지 회차 사용 다이얼로그 */}
+        <SessionUseInSheetDialog
+          open={sessionUseOpen}
+          pkg={sessionUsePkg}
+          remaining={sessionUseRemaining}
+          defaultSessionType={sessionUseType}
+          onOpenChange={setSessionUseOpen}
+          onDone={() => {
+            setSessionUseOpen(false);
+            if (sessionUseTreatmentIdx >= 0) {
+              markSettled(sessionUseTreatmentIdx);
+            }
+            load(); // 잔여회차 갱신
+          }}
+        />
       </SheetContent>
     </Sheet>
+  );
+}
+
+// ─── 서브 컴포넌트: 시술 선택 모달 ──────────────────────────────────────────
+
+function ServiceSelectModal({
+  open,
+  services,
+  onClose,
+  onSelect,
+}: {
+  open: boolean;
+  services: Service[];
+  onClose: () => void;
+  onSelect: (svc: Service) => void;
+}) {
+  // 카테고리별 그루핑
+  const grouped = services.reduce<Record<string, Service[]>>((acc, s) => {
+    const cat = s.category || '기타';
+    (acc[cat] ??= []).push(s);
+    return acc;
+  }, {});
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Stethoscope className="h-4 w-4" /> 시술 선택
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+          {Object.keys(grouped).length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              등록된 시술 없음 — 관리자에게 문의
+            </p>
+          ) : (
+            Object.entries(grouped).map(([cat, svcs]) => (
+              <div key={cat}>
+                <div className="text-xs font-semibold text-muted-foreground mb-1.5 sticky top-0 bg-background py-0.5">
+                  {cat}
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {svcs.map((s) => {
+                    const sType = sessionTypeFromService(s);
+                    return (
+                      <button
+                        key={s.id}
+                        data-testid={`svc-option-${s.id}`}
+                        onClick={() => {
+                          onSelect(s);
+                          onClose();
+                        }}
+                        className="rounded-lg border border-input px-2.5 py-2.5 text-left text-xs hover:border-teal-400 hover:bg-teal-50/50 active:scale-[0.98] transition space-y-0.5"
+                      >
+                        <div className="font-medium">{s.name}</div>
+                        <div className="text-muted-foreground">{formatAmount(s.price)}</div>
+                        {sType && (
+                          <div className="text-teal-600 font-medium">
+                            {SESSION_TYPE_FULL[sType]}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── 서브 컴포넌트: 시트 내 패키지 회차 사용 다이얼로그 ──────────────────────
+
+function SessionUseInSheetDialog({
+  open,
+  pkg,
+  remaining,
+  defaultSessionType,
+  onOpenChange,
+  onDone,
+}: {
+  open: boolean;
+  pkg: PackageType | null;
+  remaining: PackageRemaining | null;
+  defaultSessionType: SessionType;
+  onOpenChange: (o: boolean) => void;
+  onDone: () => void;
+}) {
+  const [sessionType, setSessionType] = useState<SessionType>(defaultSessionType);
+  const [surcharge, setSurcharge] = useState(0);
+  const [surchargeMemo, setSurchargeMemo] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  // defaultSessionType 변경 시 반영
+  useEffect(() => {
+    setSessionType(defaultSessionType);
+    setSurcharge(0);
+    setSurchargeMemo('');
+  }, [defaultSessionType, open]);
+
+  const available: Record<SessionType, number> = {
+    heated_laser: remaining?.heated ?? 0,
+    unheated_laser: remaining?.unheated ?? 0,
+    iv: remaining?.iv ?? 0,
+    preconditioning: remaining?.preconditioning ?? 0,
+  };
+
+  const save = async () => {
+    if (!pkg) return;
+    if ((available[sessionType] ?? 0) <= 0) {
+      toast.error('남은 회차가 없습니다');
+      return;
+    }
+    setSubmitting(true);
+
+    const { count } = await supabase
+      .from('package_sessions')
+      .select('*', { count: 'exact', head: true })
+      .eq('package_id', pkg.id);
+    const nextNumber = (count ?? 0) + 1;
+
+    const { error } = await supabase.from('package_sessions').insert({
+      package_id: pkg.id,
+      session_number: nextNumber,
+      session_type: sessionType,
+      surcharge: surcharge || 0,
+      surcharge_memo: surchargeMemo.trim() || null,
+      status: 'used',
+    });
+
+    setSubmitting(false);
+    if (error) {
+      toast.error(`저장 실패: ${error.message}`);
+      return;
+    }
+    toast.success('패키지 회차 소진 완료');
+    onDone();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Package className="h-4 w-4 text-teal-600" />
+            패키지 회차 사용
+          </DialogTitle>
+        </DialogHeader>
+
+        {pkg && (
+          <div className="rounded-lg bg-teal-50 border border-teal-200 px-3 py-2 text-xs space-y-0.5">
+            <div className="font-semibold text-teal-900">{pkg.package_name}</div>
+            <div className="flex gap-2 text-teal-700">
+              <span>가열 {remaining?.heated ?? 0}</span>
+              <span>비가열 {remaining?.unheated ?? 0}</span>
+              <span>수액 {remaining?.iv ?? 0}</span>
+              <span>사전처치 {remaining?.preconditioning ?? 0}</span>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>시술 종류</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {(['unheated_laser', 'heated_laser', 'iv', 'preconditioning'] as const).map((t) => (
+                <button
+                  key={t}
+                  data-testid={`session-type-btn-${t}`}
+                  onClick={() => setSessionType(t)}
+                  disabled={available[t] <= 0}
+                  className={cn(
+                    'h-11 rounded-md border text-sm font-medium transition',
+                    available[t] <= 0 && 'opacity-40 cursor-not-allowed',
+                    sessionType === t
+                      ? 'border-teal-600 bg-teal-50 text-teal-700'
+                      : 'border-input hover:bg-muted',
+                  )}
+                >
+                  {SESSION_TYPE_FULL[t]}
+                  <span className="ml-1 text-xs text-muted-foreground">({available[t]})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>당일 추가금 (옵션)</Label>
+            <Input
+              value={formatAmount(surcharge)}
+              onChange={(e) => setSurcharge(parseAmount(e.target.value))}
+              inputMode="numeric"
+              placeholder="0"
+            />
+          </div>
+
+          {surcharge > 0 && (
+            <div className="space-y-1.5">
+              <Label>추가금 메모</Label>
+              <Input
+                value={surchargeMemo}
+                onChange={(e) => setSurchargeMemo(e.target.value)}
+                placeholder="추가금 사유"
+              />
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            취소
+          </Button>
+          <Button
+            data-testid="btn-confirm-session-use"
+            disabled={submitting || !pkg || available[sessionType] <= 0}
+            onClick={save}
+            className="bg-teal-600 hover:bg-teal-700"
+          >
+            {submitting ? '처리 중…' : '회차 소진 기록'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
