@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { format } from 'date-fns';
 import { toast } from 'sonner';
 import SignatureCanvas from 'react-signature-canvas';
 import { FileText, RotateCcw } from 'lucide-react';
@@ -15,7 +16,7 @@ import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import type { CheckIn } from '@/lib/types';
 
-type FormType = 'refund' | 'non_covered' | 'treatment' | 'privacy';
+export type FormType = 'refund' | 'non_covered' | 'treatment' | 'privacy';
 
 interface Props {
   checkIn: CheckIn | null;
@@ -61,6 +62,42 @@ const FORM_CONTENT: Record<FormType, string[]> = {
     '5. 본인은 위 환불 조건을 이해하고 동의합니다.',
   ],
 };
+
+// ── useConsentForms hook (exported for external use) ─────────────────────────
+/** 특정 체크인의 동의서 서명 상태를 조회하는 훅 */
+export function useConsentForms(checkInId: string | null) {
+  const [signed, setSigned] = useState<Set<FormType>>(new Set());
+  const [signedDates, setSignedDates] = useState<Partial<Record<FormType, string>>>({});
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    if (!checkInId) {
+      setSigned(new Set());
+      setSignedDates({});
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const { data } = await supabase
+      .from('consent_forms')
+      .select('form_type, signed_at')
+      .eq('check_in_id', checkInId);
+    const forms = (data ?? []) as { form_type: string; signed_at: string }[];
+    setSigned(new Set(forms.map((d) => d.form_type as FormType)));
+    const dates: Partial<Record<FormType, string>> = {};
+    forms.forEach((f) => { dates[f.form_type as FormType] = f.signed_at; });
+    setSignedDates(dates);
+    setLoading(false);
+  }, [checkInId]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { signed, signedDates, loading, refresh };
+}
+
+// ── ConsentFormDialog ─────────────────────────────────────────────────────────
 
 export function ConsentFormDialog({ checkIn, formType, open, onOpenChange, onSigned }: Props) {
   const sigRef = useRef<SignatureCanvas>(null);
@@ -198,6 +235,8 @@ export function ConsentFormDialog({ checkIn, formType, open, onOpenChange, onSig
   );
 }
 
+// ── ConsentFormButtons ────────────────────────────────────────────────────────
+/** 체크인에 대한 전체 동의서 버튼 목록 (환불·비급여·시술·개인정보) */
 export function ConsentFormButtons({
   checkIn,
   onSigned,
@@ -206,21 +245,12 @@ export function ConsentFormButtons({
   onSigned: () => void;
 }) {
   const [formType, setFormType] = useState<FormType | null>(null);
-  const [signed, setSigned] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from('consent_forms')
-        .select('form_type')
-        .eq('check_in_id', checkIn.id);
-      setSigned(new Set((data ?? []).map((d: { form_type: string }) => d.form_type)));
-    })();
-  }, [checkIn.id]);
+  const { signed, signedDates, refresh } = useConsentForms(checkIn.id);
 
   const types: { type: FormType; label: string }[] = [
-    { type: 'treatment', label: '시술 동의' },
-    { type: 'non_covered', label: '비급여 확인' },
+    { type: 'refund', label: '환불동의서' },
+    { type: 'non_covered', label: '비급여확인' },
+    { type: 'treatment', label: '시술동의' },
     { type: 'privacy', label: '개인정보' },
   ];
 
@@ -232,25 +262,34 @@ export function ConsentFormButtons({
             key={t.type}
             variant={signed.has(t.type) ? 'default' : 'outline'}
             size="sm"
-            className={cn('text-xs gap-1', signed.has(t.type) && 'bg-emerald-600 hover:bg-emerald-700')}
+            data-testid={`consent-btn-${t.type}`}
+            className={cn(
+              'text-xs gap-1',
+              signed.has(t.type) && 'bg-emerald-600 hover:bg-emerald-700',
+            )}
             onClick={() => {
               if (!signed.has(t.type)) setFormType(t.type);
             }}
           >
             {signed.has(t.type) ? '✓' : <FileText className="h-3 w-3" />}
             {t.label}
+            {signed.has(t.type) && signedDates[t.type] && (
+              <span className="text-[10px] font-normal opacity-80">
+                ({format(new Date(signedDates[t.type]!), 'M/d')})
+              </span>
+            )}
           </Button>
         ))}
       </div>
 
       <ConsentFormDialog
         checkIn={checkIn}
-        formType={formType ?? 'treatment'}
+        formType={formType ?? 'refund'}
         open={!!formType}
         onOpenChange={(o) => { if (!o) setFormType(null); }}
         onSigned={() => {
-          if (formType) setSigned((s) => new Set([...s, formType]));
           setFormType(null);
+          refresh();
           onSigned();
         }}
       />
