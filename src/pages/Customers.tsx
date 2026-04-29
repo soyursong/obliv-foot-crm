@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { Plus, Search } from 'lucide-react';
+import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,6 +17,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
 import { STATUS_KO, VISIT_TYPE_KO } from '@/lib/status';
@@ -61,6 +62,8 @@ interface CustomerStats {
 
 export default function Customers() {
   const clinic = useClinic();
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === 'admin';
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
@@ -155,6 +158,22 @@ export default function Customers() {
     };
   }, [query, clinic, runSearch]);
 
+  const deleteCustomer = async (c: Customer) => {
+    if (!window.confirm(`${c.name}님을 삭제하시겠습니까?\n체크인·패키지 이력이 없을 때만 삭제됩니다.`)) return;
+    const [{ count: ciCount }, { count: pkgCount }] = await Promise.all([
+      supabase.from('check_ins').select('id', { count: 'exact', head: true }).eq('customer_id', c.id),
+      supabase.from('packages').select('id', { count: 'exact', head: true }).eq('customer_id', c.id),
+    ]);
+    if ((ciCount ?? 0) > 0 || (pkgCount ?? 0) > 0) {
+      toast.error(`삭제 불가: 체크인 ${ciCount ?? 0}건·패키지 ${pkgCount ?? 0}건이 연결되어 있습니다`);
+      return;
+    }
+    const { error } = await supabase.from('customers').delete().eq('id', c.id);
+    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+    toast.success(`${c.name}님 삭제됨`);
+    runSearch(query);
+  };
+
   return (
     <div className="flex h-full flex-col p-6">
       <div className="mb-4 flex items-center justify-between gap-4">
@@ -182,6 +201,7 @@ export default function Customers() {
               <th className="px-4 py-2 text-left font-medium">최종 방문</th>
               <th className="px-4 py-2 text-right font-medium">결제액</th>
               <th className="px-4 py-2 text-left font-medium">메모</th>
+              {isAdmin && <th className="px-4 py-2 text-center font-medium">관리</th>}
             </tr>
           </thead>
           <tbody>
@@ -210,12 +230,32 @@ export default function Customers() {
                   <td className="max-w-[200px] truncate px-4 py-2 text-muted-foreground">
                     {c.memo ?? ''}
                   </td>
+                  {isAdmin && (
+                    <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setSelected(c); }}
+                          className="rounded p-1.5 hover:bg-muted transition"
+                          title="수정"
+                        >
+                          <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); deleteCustomer(c); }}
+                          className="rounded p-1.5 hover:bg-red-50 transition"
+                          title="삭제"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               );
             })}
             {!loading && results.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={isAdmin ? 7 : 6} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   {query ? '검색 결과 없음' : '고객이 없습니다'}
                 </td>
               </tr>

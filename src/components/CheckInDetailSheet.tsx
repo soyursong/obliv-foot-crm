@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { format } from 'date-fns';
-import { ArrowLeft, ArrowRight, ChevronDown, Clock, CreditCard, Phone, FileText, Camera, Package, Stethoscope } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronDown, Clock, CreditCard, Phone, FileText, Camera, Package, Stethoscope, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Sheet,
@@ -14,6 +14,7 @@ import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
 import { STATUS_KO, VISIT_TYPE_KO, stagesFor } from '@/lib/status';
 import { formatAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -175,6 +176,8 @@ function StageNavButtons({ checkIn, onUpdated }: { checkIn: CheckIn; onUpdated: 
 }
 
 export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: Props) {
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === 'admin';
   const [, setServices] = useState<Service[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [history, setHistory] = useState<VisitHistory[]>([]);
@@ -244,6 +247,24 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     load();
   }, [load]);
 
+  const deleteCheckIn = async () => {
+    if (!checkIn) return;
+    if (!window.confirm('체크인을 삭제하시겠습니까?\n결제 데이터가 없을 때만 삭제됩니다.')) return;
+    const { count } = await supabase
+      .from('payments')
+      .select('id', { count: 'exact', head: true })
+      .eq('check_in_id', checkIn.id);
+    if ((count ?? 0) > 0) {
+      toast.error(`결제 데이터가 있어 삭제할 수 없습니다 (${count}건). 결제를 먼저 취소하세요.`);
+      return;
+    }
+    const { error } = await supabase.from('check_ins').delete().eq('id', checkIn.id);
+    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+    toast.success('체크인 삭제됨');
+    onClose();
+    onUpdated();
+  };
+
   const saveNotes = async () => {
     if (!checkIn) return;
     setSaving(true);
@@ -274,12 +295,23 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     <Sheet open={!!checkIn} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-[400px] sm:w-[440px] max-h-screen overflow-y-auto">
         <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
-            {checkIn.queue_number != null && (
-              <span className="text-teal-700">#{checkIn.queue_number}</span>
+          <div className="flex items-center justify-between gap-2">
+            <SheetTitle className="flex items-center gap-2 flex-1">
+              {checkIn.queue_number != null && (
+                <span className="text-teal-700">#{checkIn.queue_number}</span>
+              )}
+              {checkIn.customer_name}
+            </SheetTitle>
+            {isAdmin && (
+              <button
+                onClick={deleteCheckIn}
+                className="rounded p-1.5 hover:bg-red-50 transition shrink-0"
+                title="체크인 삭제 (관리자)"
+              >
+                <Trash2 className="h-4 w-4 text-red-400" />
+              </button>
             )}
-            {checkIn.customer_name}
-          </SheetTitle>
+          </div>
         </SheetHeader>
 
         <div className="mt-4 space-y-4">

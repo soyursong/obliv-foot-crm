@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { Plus, Search } from 'lucide-react';
+import { Pencil, Plus, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,6 +17,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -40,6 +41,8 @@ type FilterStatus = 'active' | 'completed' | 'refunded' | 'all';
 
 export default function Packages() {
   const clinic = useClinic();
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === 'admin';
   const [filter, setFilter] = useState<FilterStatus>('active');
   const [rows, setRows] = useState<PackageListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,6 +122,7 @@ export default function Packages() {
               <th className="px-3 py-2 text-right font-medium">금액</th>
               <th className="px-3 py-2 text-left font-medium">계약일</th>
               <th className="px-3 py-2 text-left font-medium">상태</th>
+              {isAdmin && <th className="px-3 py-2 text-center font-medium">관리</th>}
             </tr>
           </thead>
           <tbody>
@@ -151,11 +155,24 @@ export default function Packages() {
                     {{ active: '활성', completed: '완료', cancelled: '취소', refunded: '환불', transferred: '양도' }[p.status] ?? p.status}
                   </Badge>
                 </td>
+                {isAdmin && (
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-center">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setSelectedId(p.id); }}
+                        className="rounded p-1.5 hover:bg-muted transition"
+                        title="상세/편집"
+                      >
+                        <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                      </button>
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
             {!loading && visible.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={isAdmin ? 7 : 6} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   {query ? '검색 결과 없음' : '패키지 없음'}
                 </td>
               </tr>
@@ -176,6 +193,7 @@ export default function Packages() {
 
       <PackageDetailSheet
         packageId={selectedId}
+        isAdmin={isAdmin}
         onClose={() => setSelectedId(null)}
         onChanged={() => {
           setSelectedId(null);
@@ -475,10 +493,12 @@ function Toggle({
 
 function PackageDetailSheet({
   packageId,
+  isAdmin,
   onClose,
   onChanged,
 }: {
   packageId: string | null;
+  isAdmin?: boolean;
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -493,6 +513,7 @@ function PackageDetailSheet({
   const [refundOpen, setRefundOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const [useSessionOpen, setUseSessionOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const reload = useCallback(async () => {
     if (!packageId) return;
@@ -539,7 +560,18 @@ function PackageDetailSheet({
     <Sheet open onOpenChange={(o) => (!o ? onClose() : undefined)}>
       <SheetContent className="max-w-xl">
         <SheetHeader>
-          <SheetTitle>{pkg.package_name}</SheetTitle>
+          <div className="flex items-center justify-between gap-2">
+            <SheetTitle className="flex-1">{pkg.package_name}</SheetTitle>
+            {isAdmin && (
+              <button
+                onClick={() => setEditOpen(true)}
+                className="rounded p-1.5 hover:bg-muted transition"
+                title="패키지 편집"
+              >
+                <Pencil className="h-4 w-4 text-muted-foreground" />
+              </button>
+            )}
+          </div>
         </SheetHeader>
         <div className="space-y-4 text-sm">
           <div>
@@ -631,6 +663,18 @@ function PackageDetailSheet({
           </div>
         </div>
 
+        {isAdmin && pkg && (
+          <EditPackageDialog
+            open={editOpen}
+            pkg={pkg}
+            onOpenChange={setEditOpen}
+            onDone={() => {
+              setEditOpen(false);
+              reload();
+              onChanged();
+            }}
+          />
+        )}
         <UseSessionDialog
           open={useSessionOpen}
           pkg={pkg}
@@ -1192,6 +1236,100 @@ function TransferDialog({
           </Button>
           <Button disabled={submitting || !target} onClick={process}>
             양도
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ============================================================
+// 관리자 전용: 패키지 편집 다이얼로그
+// ============================================================
+function EditPackageDialog({
+  open,
+  pkg,
+  onOpenChange,
+  onDone,
+}: {
+  open: boolean;
+  pkg: PackageListItem;
+  onOpenChange: (o: boolean) => void;
+  onDone: () => void;
+}) {
+  const [name, setName] = useState(pkg.package_name);
+  const [amount, setAmount] = useState(pkg.total_amount);
+  const [memo, setMemo] = useState(pkg.memo ?? '');
+  const [status, setStatus] = useState(pkg.status);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setName(pkg.package_name);
+      setAmount(pkg.total_amount);
+      setMemo(pkg.memo ?? '');
+      setStatus(pkg.status);
+    }
+  }, [open, pkg]);
+
+  const save = async () => {
+    setSubmitting(true);
+    const { error } = await supabase
+      .from('packages')
+      .update({
+        package_name: name.trim(),
+        total_amount: amount,
+        memo: memo.trim() || null,
+        status,
+      })
+      .eq('id', pkg.id);
+    setSubmitting(false);
+    if (error) { toast.error(`수정 실패: ${error.message}`); return; }
+    toast.success('패키지 수정됨');
+    onDone();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>패키지 편집 (관리자)</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>패키지명</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>총 계약금</Label>
+            <Input
+              value={formatAmount(amount)}
+              onChange={(e) => setAmount(parseAmount(e.target.value))}
+              inputMode="numeric"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>상태</Label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as Package['status'])}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="active">활성</option>
+              <option value="completed">완료</option>
+              <option value="cancelled">취소</option>
+              <option value="refunded">환불</option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>메모</Label>
+            <Input value={memo} onChange={(e) => setMemo(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
+          <Button disabled={submitting || !name.trim()} onClick={save}>
+            {submitting ? '저장 중…' : '저장'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -539,6 +539,7 @@ export default function Reservations() {
           detail?.customer_id ? noshowByCustomer[detail.customer_id] ?? 0 : 0
         }
         changedBy={changedBy}
+        isAdmin={profile?.role === 'admin'}
         onClose={() => setDetail(null)}
         onEdit={openEdit}
         onChanged={() => {
@@ -911,6 +912,7 @@ function ReservationDetail({
   reservation,
   noshowCount,
   changedBy,
+  isAdmin,
   onClose,
   onEdit,
   onChanged,
@@ -918,6 +920,7 @@ function ReservationDetail({
   reservation: Reservation | null;
   noshowCount: number;
   changedBy: string | null;
+  isAdmin?: boolean;
   onClose: () => void;
   onEdit: (r: Reservation) => void;
   onChanged: () => void;
@@ -937,6 +940,26 @@ function ReservationDetail({
   }, [reservation]);
 
   if (!reservation) return null;
+
+  const deleteReservation = async () => {
+    if (!reservation) return;
+    if (!window.confirm(`${reservation.customer_name}님 예약을 완전 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
+    setBusy(true);
+    const { count } = await supabase
+      .from('check_ins')
+      .select('id', { count: 'exact', head: true })
+      .eq('reservation_id', reservation.id);
+    if ((count ?? 0) > 0) {
+      toast.error('체크인이 연결된 예약은 삭제할 수 없습니다');
+      setBusy(false);
+      return;
+    }
+    const { error } = await supabase.from('reservations').delete().eq('id', reservation.id);
+    setBusy(false);
+    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+    toast.success('예약 삭제됨');
+    onChanged();
+  };
 
   const setStatus = async (status: Reservation['status'], action?: string) => {
     setBusy(true);
@@ -1101,6 +1124,11 @@ function ReservationDetail({
           <Button variant="outline" size="sm" onClick={() => onEdit(reservation)}>
             수정
           </Button>
+          {isAdmin && (
+            <Button variant="destructive" size="sm" disabled={busy} onClick={deleteReservation}>
+              완전 삭제
+            </Button>
+          )}
           {reservation.status === 'confirmed' && (
             <>
               <Button size="sm" disabled={busy} onClick={convertToCheckIn}>
