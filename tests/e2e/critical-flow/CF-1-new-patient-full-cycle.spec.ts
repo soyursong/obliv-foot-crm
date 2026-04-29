@@ -67,8 +67,8 @@ test.describe('CF-1 신규 환자 풀 사이클', () => {
     await page.waitForLoadState('networkidle');
     await page.locator('#sc-name').fill(TEST_NAME);
     await page.locator('#sc-phone').fill(TEST_PHONE);
-    await page.getByRole('button', { name: '신규' }).click();
-    await page.getByRole('button', { name: '접수', exact: true }).click();
+    await page.getByRole('button', { name: '초진' }).click(); // a2bc54e: visitNew='초진'
+    await page.getByRole('button', { name: '접수하기', exact: true }).click(); // a2bc54e: checkIn='접수하기'
     await page.getByRole('button', { name: '접수하기' }).waitFor({ timeout: 5000 });
     await page.getByRole('button', { name: '접수하기' }).click();
     await page.waitForTimeout(2000);

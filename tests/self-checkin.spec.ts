@@ -19,10 +19,10 @@ test.describe('Self check-in', () => {
     const phoneInput = page.locator('#sc-phone');
     await expect(phoneInput).toBeVisible();
 
-    // 방문 유형 버튼들
-    await expect(page.getByText('신규', { exact: true })).toBeVisible();
+    // 방문 유형 버튼들 (a2bc54e 리뉴얼 후 레이블: 초진/재진/예약없이 방문)
+    await expect(page.getByText('초진', { exact: true })).toBeVisible();
     await expect(page.getByText('재진', { exact: true })).toBeVisible();
-    await expect(page.getByText('체험', { exact: true })).toBeVisible();
+    await expect(page.getByText('예약없이 방문', { exact: true })).toBeVisible();
 
     // 접수 버튼 (비활성)
     const submitBtn = page.getByRole('button', { name: '접수' });

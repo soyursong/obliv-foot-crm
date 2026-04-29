@@ -10,7 +10,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
-import { loginAndWaitForDashboard } from '../helpers';
+import { loginAndWaitForDashboard } from '../../helpers';
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL ?? '';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';

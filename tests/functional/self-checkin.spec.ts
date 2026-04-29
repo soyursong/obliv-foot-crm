@@ -131,8 +131,8 @@ test.describe('Self check-in flow', () => {
     await page.goto('/checkin/jongno-foot');
     await expect(page.getByText('셀프 접수')).toBeVisible({ timeout: 10_000 });
 
-    // 각 방문유형 버튼이 클릭 가능한지 확인
-    const types = ['신규', '재진', '체험'];
+    // 각 방문유형 버튼이 클릭 가능한지 확인 (a2bc54e 리뉴얼 후 레이블: 초진/재진/예약없이 방문)
+    const types = ['초진', '재진', '예약없이 방문'];
     for (const typeName of types) {
       const btn = page.getByText(typeName, { exact: true });
       await expect(btn).toBeVisible();

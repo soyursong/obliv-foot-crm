@@ -26,10 +26,10 @@ test.describe('QA-R1 셀프체크인 (anon)', () => {
     await page.locator('#sc-name').fill(TEST_NAME);
     // 전화 (id="sc-phone")
     await page.locator('#sc-phone').fill(TEST_PHONE);
-    // visit_type — "신규" 버튼 (label)
-    await page.getByRole('button', { name: '신규' }).click();
-    // 1단계: "접수" 버튼 → step='confirm' 화면
-    await page.getByRole('button', { name: '접수', exact: true }).click();
+    // visit_type — "초진" 버튼 (a2bc54e 리뉴얼 후 레이블: 초진/재진/예약없이 방문)
+    await page.getByRole('button', { name: '초진' }).click();
+    // 1단계: "접수하기" 버튼 → step='confirm' 화면 (a2bc54e: T.ko.checkIn = '접수하기')
+    await page.getByRole('button', { name: '접수하기', exact: true }).click();
     // confirm 화면에서 "접수하기" 버튼 대기 후 클릭
     await page.getByRole('button', { name: '접수하기' }).waitFor({ timeout: 5000 });
     await page.getByRole('button', { name: '접수하기' }).click();
