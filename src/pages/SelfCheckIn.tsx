@@ -81,6 +81,8 @@ const T: Record<Lang, {
   visitExperienceDesc: string;
   failPrefix: string;
   errorPrefix: string;
+  referrer: string;
+  referrerPlaceholder: string;
 }> = {
   ko: {
     selfCheckIn: '셀프 접수',
@@ -116,6 +118,8 @@ const T: Record<Lang, {
     visitExperienceDesc: '',
     failPrefix: '접수 실패: ',
     errorPrefix: '오류가 발생했습니다: ',
+    referrer: '추천인',
+    referrerPlaceholder: '추천해 주신 분 성함 (선택)',
   },
   en: {
     selfCheckIn: 'Self Check-In',
@@ -151,6 +155,8 @@ const T: Record<Lang, {
     visitExperienceDesc: 'No reservation',
     failPrefix: 'Failed: ',
     errorPrefix: 'Error: ',
+    referrer: 'Referred by',
+    referrerPlaceholder: 'Name of person who referred you (optional)',
   },
 };
 
@@ -265,6 +271,7 @@ export default function SelfCheckIn() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [visitType, setVisitType] = useState<VisitType>('new');
+  const [referrerName, setReferrerName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [queueNumber, setQueueNumber] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
@@ -313,6 +320,7 @@ export default function SelfCheckIn() {
     setName('');
     setPhone('');
     setVisitType('new');
+    setReferrerName('');
     setQueueNumber(null);
     setErrorMsg('');
     setReservationBanner(null);
@@ -493,6 +501,7 @@ export default function SelfCheckIn() {
             name: name.trim(),
             phone: phoneStored,
             visit_type: visitType === 'new' ? 'new' : 'returning',
+            referrer_name: referrerName.trim() || null,
           })
           .select('id')
           .single();
@@ -699,10 +708,16 @@ export default function SelfCheckIn() {
               <span style={{ color: C.muted }}>{t.contact}</span>
               <span className="font-semibold" style={{ color: C.dark }}>{phone}</span>
             </div>
-            <div className="flex justify-between">
+            <div className={`flex justify-between${referrerName.trim() ? ' border-b pb-3' : ''}`} style={{ borderColor: C.border }}>
               <span style={{ color: C.muted }}>{t.visitType}</span>
               <span className="font-semibold" style={{ color: C.dark }}>{visitLabel}</span>
             </div>
+            {referrerName.trim() && (
+              <div className="flex justify-between">
+                <span style={{ color: C.muted }}>{t.referrer}</span>
+                <span className="font-semibold" style={{ color: C.dark }}>{referrerName.trim()}</span>
+              </div>
+            )}
           </div>
           <div className="flex gap-3">
             <button
@@ -893,6 +908,41 @@ export default function SelfCheckIn() {
               })}
             </div>
           </div>
+
+          {/* 추천인 — 신규 방문 시만 표시 */}
+          {visitType === 'new' && (
+            <div className="space-y-1.5">
+              <label
+                htmlFor="sc-referrer"
+                className="block text-sm font-medium tracking-wide"
+                style={{ color: C.medium }}
+              >
+                {t.referrer} <span className="text-xs font-normal" style={{ color: C.muted }}>(선택)</span>
+              </label>
+              <input
+                id="sc-referrer"
+                type="text"
+                value={referrerName}
+                onChange={(e) => setReferrerName(e.target.value)}
+                placeholder={t.referrerPlaceholder}
+                autoComplete="off"
+                className="h-14 w-full rounded-xl px-4 text-lg outline-none transition"
+                style={{
+                  border: `1.5px solid ${C.border}`,
+                  backgroundColor: 'white',
+                  color: C.dark,
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = C.borderActive;
+                  e.currentTarget.style.boxShadow = `0 0 0 3px ${C.borderActive}18`;
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = C.border;
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+              />
+            </div>
+          )}
 
           {/* 접수 버튼 */}
           <button
