@@ -3,9 +3,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { Plus, UserCog, DoorOpen, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, UserCog, DoorOpen, TrendingUp, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
 import { getClinic } from '@/lib/clinic';
 import type { Clinic, Room, Staff, StaffRole } from '@/lib/types';
 import { formatAmount } from '@/lib/format';
@@ -85,8 +86,14 @@ export default function StaffPage() {
 // ============================================================
 function StaffTab({ clinic }: { clinic: Clinic }) {
   const qc = useQueryClient();
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === 'admin';
+
   const [openCreate, setOpenCreate] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
+  const [editTarget, setEditTarget] = useState<Staff | null>(null);
+  const [deactivateTarget, setDeactivateTarget] = useState<Staff | null>(null);
+  const [deactivateBusy, setDeactivateBusy] = useState(false);
 
   const { data: staffList = [] } = useQuery<Staff[]>({
     queryKey: ['staff', clinic.id],
@@ -118,16 +125,28 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['staff', clinic.id] });
 
-  const toggleActive = async (s: Staff) => {
-    const { error } = await supabase
-      .from('staff')
-      .update({ active: !s.active })
-      .eq('id', s.id);
-    if (error) {
-      toast.error(`상태 변경 실패: ${error.message}`);
-      return;
+  /** 활성화는 즉시 실행, 비활성화는 확인 다이얼로그 */
+  const handleToggleActive = async (s: Staff) => {
+    if (!s.active) {
+      // 활성화 — 즉시 실행
+      const { error } = await supabase.from('staff').update({ active: true }).eq('id', s.id);
+      if (error) { toast.error(`활성화 실패: ${error.message}`); return; }
+      toast.success(`${s.name} 활성화됨`);
+      refresh();
+    } else {
+      // 비활성화 — 확인 다이얼로그 표시
+      setDeactivateTarget(s);
     }
-    toast.success(s.active ? '비활성화' : '활성화');
+  };
+
+  const confirmDeactivate = async () => {
+    if (!deactivateTarget) return;
+    setDeactivateBusy(true);
+    const { error } = await supabase.from('staff').update({ active: false }).eq('id', deactivateTarget.id);
+    setDeactivateBusy(false);
+    if (error) { toast.error(`비활성화 실패: ${error.message}`); return; }
+    toast.success(`${deactivateTarget.name} 비활성화됨`);
+    setDeactivateTarget(null);
     refresh();
   };
 
@@ -168,23 +187,39 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
               {grouped[role].map((s) => (
                 <div
                   key={s.id}
-                  className="flex items-center justify-between rounded-md border bg-card px-3 py-2 text-sm"
+                  className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm ${
+                    !s.active ? 'bg-muted/30 opacity-70' : 'bg-card'
+                  }`}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="font-medium">{s.name}</span>
+                    <span className={`font-medium ${!s.active ? 'text-muted-foreground' : ''}`}>{s.name}</span>
                     {!s.active && (
                       <Badge variant="destructive" className="text-xs">
                         비활성
                       </Badge>
                     )}
                   </div>
-                  <Button
-                    size="xs"
-                    variant={s.active ? 'outline' : 'default'}
-                    onClick={() => toggleActive(s)}
-                  >
-                    {s.active ? '비활성화' : '활성화'}
-                  </Button>
+                  {isAdmin ? (
+                    <div className="flex items-center gap-1">
+                      {s.active && (
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          title="정보 수정"
+                          onClick={() => setEditTarget(s)}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                      )}
+                      <Button
+                        size="xs"
+                        variant={s.active ? 'outline' : 'default'}
+                        onClick={() => handleToggleActive(s)}
+                      >
+                        {s.active ? '비활성화' : '활성화'}
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </CardContent>
@@ -192,11 +227,51 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
         ))}
       </div>
 
+      {/* 비활성화 확인 다이얼로그 */}
+      <Dialog
+        open={!!deactivateTarget}
+        onOpenChange={(o) => !o && !deactivateBusy && setDeactivateTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>직원 비활성화 확인</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <p>
+              <span className="font-semibold">{deactivateTarget?.name}</span>{' '}
+              직원을 비활성화하시겠습니까?
+            </p>
+            <p className="text-muted-foreground">
+              비활성화된 직원은 공간 배정 목록에서 제외됩니다. 계정이 연동된 경우 로그인도 차단됩니다.
+              나중에 다시 활성화할 수 있습니다.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={deactivateBusy}
+              onClick={() => setDeactivateTarget(null)}
+            >
+              취소
+            </Button>
+            <Button variant="destructive" disabled={deactivateBusy} onClick={confirmDeactivate}>
+              {deactivateBusy ? '처리 중…' : '비활성화'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <CreateStaffDialog
         open={openCreate}
         onOpenChange={setOpenCreate}
         clinicId={clinic.id}
         onCreated={refresh}
+      />
+
+      <EditStaffDialog
+        target={editTarget}
+        onClose={() => setEditTarget(null)}
+        onSaved={refresh}
       />
     </div>
   );
@@ -278,6 +353,93 @@ function CreateStaffDialog({
           </Button>
           <Button onClick={save} disabled={submitting}>
             {submitting ? '저장중…' : '등록'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ============================================================
+// 직원 정보 수정 다이얼로그 (admin 전용)
+// ============================================================
+function EditStaffDialog({
+  target,
+  onClose,
+  onSaved,
+}: {
+  target: Staff | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<Role>('therapist');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (target) {
+      setName(target.name);
+      setRole(target.role);
+    }
+  }, [target]);
+
+  const save = async () => {
+    if (!target) return;
+    if (!name.trim()) {
+      toast.error('이름을 입력하세요');
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase
+      .from('staff')
+      .update({ name: name.trim(), role })
+      .eq('id', target.id);
+    setSaving(false);
+    if (error) {
+      toast.error(`수정 실패: ${error.message}`);
+      return;
+    }
+    toast.success('수정됨');
+    onClose();
+    onSaved();
+  };
+
+  return (
+    <Dialog open={!!target} onOpenChange={(o) => !o && !saving && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>직원 정보 수정 · {target?.name}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label>이름</Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="홍길동"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>역할</Label>
+            <select
+              className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+              value={role}
+              onChange={(e) => setRole(e.target.value as Role)}
+            >
+              {ROLE_ORDER.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_LABEL[r]}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" disabled={saving} onClick={onClose}>
+            취소
+          </Button>
+          <Button disabled={saving} onClick={save}>
+            {saving ? '저장 중…' : '저장'}
           </Button>
         </DialogFooter>
       </DialogContent>
