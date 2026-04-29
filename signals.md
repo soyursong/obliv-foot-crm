@@ -1,5 +1,42 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-04-29 [T-20260429-foot-PAYMENT-PACKAGE-INTEGRATED] deploy-ready — CheckInDetailSheet 통합 결제+회차차감
+
+> **ticket**: T-20260429-foot-PAYMENT-PACKAGE-INTEGRATED | **priority**: P0 | **status**: deploy-ready  
+> **commit**: a6e92c9 | **build**: PASS (tsc + vite 2.33s) | **assignee**: dev-foot
+
+### 운영 차단 해소 내역
+
+#### 1. 활성 패키지 잔여회차 요약 카드 (상단 표시)
+- `ActivePackageSummary` 컴포넌트 추가 — StageNavButtons 바로 아래 노출
+- 가열/비가열/수액/사전처치 잔여회차 뱃지 (컬러 구분)
+- 패키지가 있는 모든 방문 타입(신규/재진)에 표시
+
+#### 2. 시술 항목 선택 + 회차 차감 분기
+- `+ 추가` 버튼 → `ServiceSelectModal` (카테고리별 시술 카탈로그)
+- `sessionTypeFromService()` 헬퍼: category/name 텍스트로 세션타입 자동 추론
+- 항목별 분기:
+  - 패키지 잔여 있음 → **[패키지 회차 사용]** 버튼 (teal)
+  - 잔여 없음 → **[단건 결제]** 버튼 → PaymentDialog
+
+#### 3. SessionUseInSheetDialog (시트 내 인라인 회차 소진)
+- Packages.tsx `UseSessionDialog` 패턴 재사용
+- 세션 타입 전환, 추가금 입력 지원
+- `package_sessions` INSERT → `get_package_remaining` RPC로 잔여회차 즉시 갱신
+
+#### 4. 수납대기 전환 버튼
+- 회차 소진 완료 항목 존재 + 수납대기 이전 상태일 때 자동 표시
+- `status_transitions` 기록 포함
+
+#### 5. 회귀 보호 스펙
+- `tests/e2e/regressions/R-2026-04-29-payment-package-integrated.spec.ts`
+- T1(패키지 카드 표시), T2(인터랙션), T3(패키지없음→단건결제), T4(DB검증), T5(수납대기버튼)
+
+### supervisor 검토 요청
+- 프로덕션 배포 승인 필요
+
+---
+
 ## 2026-04-26 [foot-051] deploy-ready — 대기실 화면 + 셀프 키오스크 + 일일 이력 enhancement
 
 > **ticket**: T-20260420-foot-051 | **priority**: P3 | **status**: deploy-ready
