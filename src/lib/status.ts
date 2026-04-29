@@ -42,9 +42,9 @@ export function stagesFor(visitType: VisitType): CheckInStatus[] {
 }
 
 export const VISIT_TYPE_KO: Record<VisitType, string> = {
-  new: '신규',
+  new: '초진',
   returning: '재진',
-  experience: '체험',
+  experience: '예약없이 방문',
 };
 
 /** 상태별 배지 색상 (Tailwind classes) — 대기실·일일이력 등 공통 사용 */

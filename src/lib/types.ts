@@ -24,6 +24,8 @@ export interface CheckInNotes {
   needs_exam?: boolean;
   text?: string;
   checklist?: Record<string, boolean>;
+  /** 셀프체크인 시 초진/예약없이방문 고객에게 자동 설정 — 데스크에서 신분증 확인 후 false로 해제 */
+  id_check_required?: boolean;
   [key: string]: unknown;
 }
 
