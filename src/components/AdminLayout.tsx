@@ -49,7 +49,7 @@ export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<{ id: string; name: string; phone: string }[]>([]);
+  const [searchResults, setSearchResults] = useState<{ id: string; name: string; phone: string; birth_date: string | null; chart_number: string | null }[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // UX-9: 사이드바 알림 뱃지 — 오늘 결제대기 건수
@@ -86,11 +86,11 @@ export default function AdminLayout() {
     const safe = q.trim().replace(/[%_]/g, '');
     const { data } = await supabase
       .from('customers')
-      .select('id, name, phone')
+      .select('id, name, phone, birth_date, chart_number')
       .eq('clinic_id', clinic.id)
-      .or(`name.ilike.%${safe}%,phone.ilike.%${safe}%`)
+      .or(`name.ilike.%${safe}%,phone.ilike.%${safe}%,birth_date.ilike.%${safe}%,chart_number.ilike.%${safe}%`)
       .limit(8);
-    setSearchResults((data ?? []) as { id: string; name: string; phone: string }[]);
+    setSearchResults((data ?? []) as { id: string; name: string; phone: string; birth_date: string | null; chart_number: string | null }[]);
   }, [clinic]);
 
   useEffect(() => {
@@ -225,7 +225,7 @@ export default function AdminLayout() {
                       if (searchTimer.current) clearTimeout(searchTimer.current);
                       searchTimer.current = setTimeout(() => doSearch(e.target.value), 300);
                     }}
-                    placeholder="이름 또는 전화번호"
+                    placeholder="이름 · 전화번호 · 생년월일(YYMMDD) · 차트번호"
                     className="flex-1 bg-transparent text-sm outline-none"
                     onKeyDown={(e) => { if (e.key === 'Escape') setSearchOpen(false); }}
                   />
@@ -247,7 +247,11 @@ export default function AdminLayout() {
                         className="w-full flex items-center justify-between rounded px-3 py-2 text-sm hover:bg-muted transition text-left"
                       >
                         <span className="font-medium">{c.name}</span>
-                        <span className="text-xs text-muted-foreground">{c.phone}</span>
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          {c.chart_number && <span className="rounded bg-teal-50 px-1.5 py-0 text-teal-700">{c.chart_number}</span>}
+                          {c.birth_date && <span>{c.birth_date}</span>}
+                          <span>{c.phone}</span>
+                        </span>
                       </button>
                     ))}
                   </div>

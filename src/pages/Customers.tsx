@@ -86,7 +86,7 @@ export default function Customers() {
         .limit(30);
       if (trimmed) {
         const safe = trimmed.replace(/[%_(),.]/g, '');
-        if (safe) req = req.or(`name.ilike.%${safe}%,phone.ilike.%${safe}%`);
+        if (safe) req = req.or(`name.ilike.%${safe}%,phone.ilike.%${safe}%,birth_date.ilike.%${safe}%,chart_number.ilike.%${safe}%`);
       }
       const { data, error } = await req;
       setLoading(false);
@@ -183,7 +183,7 @@ export default function Customers() {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="이름 또는 전화번호 검색"
+            placeholder="이름 · 전화번호 · 생년월일(YYMMDD) · 차트번호"
             className="pl-9"
           />
         </div>
@@ -198,6 +198,8 @@ export default function Customers() {
             <tr>
               <th className="px-4 py-2 text-left font-medium">이름</th>
               <th className="px-4 py-2 text-left font-medium">전화번호</th>
+              <th className="px-4 py-2 text-left font-medium">생년월일</th>
+              <th className="px-4 py-2 text-left font-medium">차트번호</th>
               <th className="px-4 py-2 text-right font-medium">방문</th>
               <th className="px-4 py-2 text-left font-medium">최종 방문</th>
               <th className="px-4 py-2 text-right font-medium">결제액</th>
@@ -225,6 +227,8 @@ export default function Customers() {
                     </span>
                   </td>
                   <td className="px-4 py-2 text-muted-foreground">{c.phone}</td>
+                  <td className="px-4 py-2 text-muted-foreground tabular-nums">{c.birth_date ?? '-'}</td>
+                  <td className="px-4 py-2 text-muted-foreground">{c.chart_number ?? '-'}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{stats?.visit_count ?? 0}</td>
                   <td className="px-4 py-2 text-muted-foreground">
                     {stats?.last_visit ? format(new Date(stats.last_visit), 'yyyy-MM-dd') : '-'}
@@ -260,7 +264,7 @@ export default function Customers() {
             })}
             {!loading && results.length === 0 && (
               <tr>
-                <td colSpan={isAdmin ? 7 : 6} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={isAdmin ? 9 : 8} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   {query ? '검색 결과 없음' : '고객이 없습니다'}
                 </td>
               </tr>
@@ -303,6 +307,8 @@ function CreateCustomerDialog({
 }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [birthDate, setBirthDate] = useState('');
+  const [chartNumber, setChartNumber] = useState('');
   const [memo, setMemo] = useState('');
   const [referrerName, setReferrerName] = useState('');
   // 추천인 자동완성 — 기존 고객 검색
@@ -315,6 +321,8 @@ function CreateCustomerDialog({
     if (open) {
       setName('');
       setPhone('');
+      setBirthDate('');
+      setChartNumber('');
       setMemo('');
       setReferrerName('');
       setReferrerQuery('');
@@ -348,6 +356,8 @@ function CreateCustomerDialog({
       clinic_id: clinicId,
       name: name.trim(),
       phone: phone.trim(),
+      birth_date: birthDate.trim() || null,
+      chart_number: chartNumber.trim() || null,
       memo: memo.trim() || null,
       referrer_id: referrerId || null,
       referrer_name: !referrerId && referrerName.trim() ? referrerName.trim() : null,
@@ -375,6 +385,22 @@ function CreateCustomerDialog({
           <div className="space-y-1.5">
             <Label>전화번호</Label>
             <Input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1.5">
+              <Label>생년월일 <span className="text-xs text-muted-foreground font-normal">(YYMMDD)</span></Label>
+              <Input
+                value={birthDate}
+                onChange={(e) => setBirthDate(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                inputMode="numeric"
+                placeholder="예: 900515"
+                maxLength={6}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>차트번호 <span className="text-xs text-muted-foreground font-normal">(선택)</span></Label>
+              <Input value={chartNumber} onChange={(e) => setChartNumber(e.target.value)} placeholder="예: F-0001" />
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label>메모</Label>
@@ -455,6 +481,8 @@ function CustomerDetailSheet({
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [birthDate, setBirthDate] = useState('');
+  const [chartNumber, setChartNumber] = useState('');
   const [memo, setMemo] = useState('');
   const [leadSource, setLeadSource] = useState<string>('');
   const [tmMemo, setTmMemo] = useState('');
@@ -472,6 +500,8 @@ function CustomerDetailSheet({
     if (!customer) return;
     setName(customer.name);
     setPhone(customer.phone);
+    setBirthDate(customer.birth_date ?? '');
+    setChartNumber(customer.chart_number ?? '');
     setMemo(customer.memo ?? '');
     setLeadSource(customer.lead_source ?? '');
     setTmMemo(customer.tm_memo ?? '');
@@ -574,6 +604,8 @@ function CustomerDetailSheet({
       .update({
         name: name.trim(),
         phone: phone.trim(),
+        birth_date: birthDate.trim() || null,
+        chart_number: chartNumber.trim() || null,
         memo: memo.trim() || null,
         lead_source: leadSource.trim() || null,
         tm_memo: tmMemo.trim() || null,
@@ -607,6 +639,22 @@ function CustomerDetailSheet({
             <div className="space-y-1.5">
               <Label>전화번호</Label>
               <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label>생년월일 <span className="text-xs text-muted-foreground font-normal">(YYMMDD)</span></Label>
+                <Input
+                  value={birthDate}
+                  onChange={(e) => setBirthDate(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  inputMode="numeric"
+                  placeholder="예: 900515"
+                  maxLength={6}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>차트번호</Label>
+                <Input value={chartNumber} onChange={(e) => setChartNumber(e.target.value)} placeholder="예: F-0001" />
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label>유입 경로</Label>
@@ -656,7 +704,13 @@ function CustomerDetailSheet({
           <div className="mt-4 flex items-start justify-between">
             <div className="flex-1 min-w-0">
               <div className="text-lg font-semibold">{customer.name}</div>
-              <div className="text-sm text-muted-foreground">{customer.phone}</div>
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <span>{customer.phone}</span>
+                {customer.birth_date && <span className="tabular-nums">{customer.birth_date}</span>}
+                {customer.chart_number && (
+                  <span className="rounded bg-teal-50 px-1.5 py-0.5 text-xs font-medium text-teal-700">{customer.chart_number}</span>
+                )}
+              </div>
               {customer.lead_source && (
                 <div className="mt-1">
                   <span className="inline-block rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-medium text-teal-800">
