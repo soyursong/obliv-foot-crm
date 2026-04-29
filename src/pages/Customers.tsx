@@ -304,6 +304,11 @@ function CreateCustomerDialog({
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [memo, setMemo] = useState('');
+  const [referrerName, setReferrerName] = useState('');
+  // 추천인 자동완성 — 기존 고객 검색
+  const [referrerQuery, setReferrerQuery] = useState('');
+  const [referrerSuggestions, setReferrerSuggestions] = useState<{ id: string; name: string; phone: string }[]>([]);
+  const [referrerId, setReferrerId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -311,8 +316,30 @@ function CreateCustomerDialog({
       setName('');
       setPhone('');
       setMemo('');
+      setReferrerName('');
+      setReferrerQuery('');
+      setReferrerSuggestions([]);
+      setReferrerId(null);
     }
   }, [open]);
+
+  // 추천인 검색 — 300ms 디바운스
+  useEffect(() => {
+    if (!clinicId || referrerQuery.trim().length < 1) {
+      setReferrerSuggestions([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const { data } = await supabase
+        .from('customers')
+        .select('id, name, phone')
+        .eq('clinic_id', clinicId)
+        .ilike('name', `%${referrerQuery.trim()}%`)
+        .limit(5);
+      setReferrerSuggestions((data ?? []) as { id: string; name: string; phone: string }[]);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [referrerQuery, clinicId]);
 
   const save = async () => {
     if (!clinicId) return;
@@ -322,6 +349,8 @@ function CreateCustomerDialog({
       name: name.trim(),
       phone: phone.trim(),
       memo: memo.trim() || null,
+      referrer_id: referrerId || null,
+      referrer_name: !referrerId && referrerName.trim() ? referrerName.trim() : null,
     });
     setSubmitting(false);
     if (error) {
@@ -350,6 +379,55 @@ function CreateCustomerDialog({
           <div className="space-y-1.5">
             <Label>메모</Label>
             <Textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={3} />
+          </div>
+          {/* 추천인 */}
+          <div className="space-y-1.5">
+            <Label>추천인 <span className="text-xs text-muted-foreground font-normal">(선택)</span></Label>
+            {referrerId ? (
+              <div className="flex items-center gap-2 rounded-md border bg-teal-50 px-3 py-2 text-sm">
+                <span className="flex-1 font-medium text-teal-800">
+                  {referrerSuggestions.find((s) => s.id === referrerId)?.name ?? referrerName}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { setReferrerId(null); setReferrerName(''); setReferrerQuery(''); }}
+                  className="text-xs text-muted-foreground hover:text-destructive"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <Input
+                  placeholder="추천인 이름 검색 또는 직접 입력"
+                  value={referrerQuery || referrerName}
+                  onChange={(e) => {
+                    setReferrerQuery(e.target.value);
+                    setReferrerName(e.target.value);
+                    setReferrerId(null);
+                  }}
+                />
+                {referrerSuggestions.length > 0 && (
+                  <ul className="absolute z-50 mt-1 w-full rounded-md border bg-white shadow-md text-sm">
+                    {referrerSuggestions.map((s) => (
+                      <li
+                        key={s.id}
+                        className="cursor-pointer px-3 py-2 hover:bg-teal-50"
+                        onMouseDown={() => {
+                          setReferrerId(s.id);
+                          setReferrerName(s.name);
+                          setReferrerQuery('');
+                          setReferrerSuggestions([]);
+                        }}
+                      >
+                        <span className="font-medium">{s.name}</span>
+                        <span className="ml-2 text-muted-foreground">{s.phone}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <DialogFooter>
@@ -380,6 +458,7 @@ function CustomerDetailSheet({
   const [memo, setMemo] = useState('');
   const [leadSource, setLeadSource] = useState<string>('');
   const [tmMemo, setTmMemo] = useState('');
+  const [referrerName, setReferrerName] = useState('');
   const [packages, setPackages] = useState<PackageWithRemaining[]>([]);
   const [visits, setVisits] = useState<CheckIn[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -396,6 +475,7 @@ function CustomerDetailSheet({
     setMemo(customer.memo ?? '');
     setLeadSource(customer.lead_source ?? '');
     setTmMemo(customer.tm_memo ?? '');
+    setReferrerName(customer.referrer_name ?? '');
     setEditing(false);
     (async () => {
       const [pkgRes, visitRes, payRes, pkgPayRes, resvRes] = await Promise.all([
@@ -497,6 +577,7 @@ function CustomerDetailSheet({
         memo: memo.trim() || null,
         lead_source: leadSource.trim() || null,
         tm_memo: tmMemo.trim() || null,
+        referrer_name: referrerName.trim() || null,
       })
       .eq('id', customer.id);
     if (error) {
@@ -554,6 +635,14 @@ function CustomerDetailSheet({
               <Label>상담 메모 (보험·성향·상담내용)</Label>
               <Textarea value={tmMemo} onChange={(e) => setTmMemo(e.target.value)} rows={3} placeholder="실비 보험사, 상한액, 고객 성향 등..." />
             </div>
+            <div className="space-y-1.5">
+              <Label>추천인 <span className="text-xs text-muted-foreground font-normal">(선택)</span></Label>
+              <Input
+                value={referrerName}
+                onChange={(e) => setReferrerName(e.target.value)}
+                placeholder="추천인 이름"
+              />
+            </div>
             <div className="flex gap-2">
               <Button variant="outline" className="flex-1" onClick={() => setEditing(false)}>
                 취소
@@ -585,6 +674,12 @@ function CustomerDetailSheet({
                 <div className="mt-1.5 rounded-md bg-amber-50 px-2.5 py-1.5 text-sm text-amber-900 border border-amber-100">
                   <span className="text-xs font-medium text-amber-700 mr-1">상담</span>
                   {customer.tm_memo}
+                </div>
+              )}
+              {(customer.referrer_name || customer.referrer_id) && (
+                <div className="mt-1.5 rounded-md bg-teal-50 px-2.5 py-1.5 text-sm text-teal-900 border border-teal-100">
+                  <span className="text-xs font-medium text-teal-700 mr-1">추천인</span>
+                  {customer.referrer_name ?? '(고객 연결됨)'}
                 </div>
               )}
             </div>
