@@ -107,7 +107,8 @@ interface Props {
   checkIn: CheckIn | null;
   onClose: () => void;
   onUpdated: () => void;
-  onPayment: (ci: CheckIn) => void;
+  /** initialMode: 상담 단계 진입 시 'package' 전달 → PaymentDialog 패키지 모드 default */
+  onPayment: (ci: CheckIn, initialMode?: 'package') => void;
 }
 
 const METHOD_LABEL: Record<string, string> = {
@@ -242,16 +243,28 @@ function StageNavButtons({ checkIn, onUpdated }: { checkIn: CheckIn; onUpdated: 
 function ActivePackageSummary({
   packages,
   pkgRemaining,
+  emphasize,
 }: {
   packages: PackageType[];
   pkgRemaining: Map<string, PackageRemaining>;
+  /** payment_waiting 단계: 카드 강조 스타일 */
+  emphasize?: boolean;
 }) {
   if (packages.length === 0) return null;
 
   return (
-    <div className="space-y-1.5">
-      <span className="text-sm font-semibold text-teal-700 flex items-center gap-1">
-        <Package className="h-3.5 w-3.5" /> 패키지 잔여회차
+    <div className={cn('space-y-1.5', emphasize && 'rounded-xl bg-teal-50 border-2 border-teal-400 p-3')}>
+      <span className={cn(
+        'text-sm font-semibold flex items-center gap-1',
+        emphasize ? 'text-teal-800' : 'text-teal-700',
+      )}>
+        <Package className={cn('h-3.5 w-3.5', emphasize && 'h-4 w-4')} />
+        패키지 잔여회차
+        {emphasize && (
+          <span className="ml-1 text-xs font-normal text-teal-600 bg-teal-100 rounded px-1.5 py-0.5">
+            회차 차감 단계
+          </span>
+        )}
       </span>
       {packages.map((pkg) => {
         const rem = pkgRemaining.get(pkg.id);
@@ -261,13 +274,29 @@ function ActivePackageSummary({
             key={pkg.id}
             className={cn(
               'rounded-lg border px-2.5 py-2 space-y-1.5',
-              hasAny ? 'border-teal-300 bg-teal-50/60' : 'border-gray-200 bg-gray-50/60',
+              emphasize
+                ? hasAny
+                  ? 'border-teal-400 bg-white shadow-sm'
+                  : 'border-gray-300 bg-gray-50'
+                : hasAny
+                  ? 'border-teal-300 bg-teal-50/60'
+                  : 'border-gray-200 bg-gray-50/60',
             )}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-teal-900">{pkg.package_name}</span>
+              <span className={cn(
+                'font-semibold',
+                emphasize ? 'text-sm text-teal-900' : 'text-xs text-teal-900',
+              )}>{pkg.package_name}</span>
               {rem && (
-                <span className="text-xs text-muted-foreground">
+                <span className={cn(
+                  'text-muted-foreground',
+                  emphasize
+                    ? hasAny
+                      ? 'text-sm font-bold text-teal-700'
+                      : 'text-xs'
+                    : 'text-xs',
+                )}>
                   잔여 {rem.total_remaining}/{pkg.total_sessions}회
                 </span>
               )}
@@ -275,22 +304,34 @@ function ActivePackageSummary({
             {rem ? (
               <div className="flex gap-1.5 flex-wrap">
                 {rem.heated > 0 && (
-                  <span className="inline-flex items-center text-xs bg-orange-100 text-orange-700 rounded-full px-2 py-0.5 font-medium">
+                  <span className={cn(
+                    'inline-flex items-center bg-orange-100 text-orange-700 rounded-full font-medium',
+                    emphasize ? 'text-sm px-2.5 py-1' : 'text-xs px-2 py-0.5',
+                  )}>
                     가열 {rem.heated}
                   </span>
                 )}
                 {rem.unheated > 0 && (
-                  <span className="inline-flex items-center text-xs bg-blue-100 text-blue-700 rounded-full px-2 py-0.5 font-medium">
+                  <span className={cn(
+                    'inline-flex items-center bg-blue-100 text-blue-700 rounded-full font-medium',
+                    emphasize ? 'text-sm px-2.5 py-1' : 'text-xs px-2 py-0.5',
+                  )}>
                     비가열 {rem.unheated}
                   </span>
                 )}
                 {rem.iv > 0 && (
-                  <span className="inline-flex items-center text-xs bg-purple-100 text-purple-700 rounded-full px-2 py-0.5 font-medium">
+                  <span className={cn(
+                    'inline-flex items-center bg-purple-100 text-purple-700 rounded-full font-medium',
+                    emphasize ? 'text-sm px-2.5 py-1' : 'text-xs px-2 py-0.5',
+                  )}>
                     수액 {rem.iv}
                   </span>
                 )}
                 {rem.preconditioning > 0 && (
-                  <span className="inline-flex items-center text-xs bg-emerald-100 text-emerald-700 rounded-full px-2 py-0.5 font-medium">
+                  <span className={cn(
+                    'inline-flex items-center bg-emerald-100 text-emerald-700 rounded-full font-medium',
+                    emphasize ? 'text-sm px-2.5 py-1' : 'text-xs px-2 py-0.5',
+                  )}>
                     사전처치 {rem.preconditioning}
                   </span>
                 )}
@@ -494,6 +535,11 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     );
   };
 
+  // ── Stage 감지 ──
+  const isConsultStage =
+    checkIn.status === 'consultation' || checkIn.status === 'consult_waiting';
+  const isDeskStage = checkIn.status === 'payment_waiting';
+
   const hasSettledItem = treatmentItems.some((i) => i.settled);
   const canMoveToPaymentWaiting =
     hasSettledItem &&
@@ -501,6 +547,26 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     checkIn.status !== 'treatment_waiting' &&
     checkIn.status !== 'done' &&
     checkIn.status !== 'cancelled';
+
+  // 데스크(payment_waiting) 단계에서 회차 차감 완료 후 → 시술 완료(done) 직행 버튼
+  const canMoveToDone = isDeskStage && hasSettledItem;
+
+  const moveToDone = async () => {
+    if (!checkIn) return;
+    const { error } = await supabase
+      .from('check_ins')
+      .update({ status: 'done' })
+      .eq('id', checkIn.id);
+    if (error) { toast.error(`이동 실패: ${error.message}`); return; }
+    await supabase.from('status_transitions').insert({
+      check_in_id: checkIn.id,
+      clinic_id: checkIn.clinic_id,
+      from_status: checkIn.status,
+      to_status: 'done',
+    });
+    toast.success('시술 완료 처리됨');
+    onUpdated();
+  };
 
   return (
     <Sheet open={!!checkIn} onOpenChange={(o) => !o && onClose()}>
@@ -590,7 +656,11 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
           {packages.length > 0 && (
             <>
               <Separator />
-              <ActivePackageSummary packages={packages} pkgRemaining={pkgRemaining} />
+              <ActivePackageSummary
+                packages={packages}
+                pkgRemaining={pkgRemaining}
+                emphasize={isDeskStage}
+              />
             </>
           )}
 
@@ -733,6 +803,17 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
 
                       {item.settled ? (
                         <Badge variant="success" className="text-xs shrink-0">✓ 완료</Badge>
+                      ) : isConsultStage ? (
+                        /* 상담 단계: 회차 차감 비활성 (시술 전) */
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          data-testid="btn-single-payment"
+                          className="text-xs h-8 shrink-0"
+                          onClick={() => onPayment(checkIn)}
+                        >
+                          단건 결제
+                        </Button>
                       ) : canUsePackage ? (
                         <Button
                           size="sm"
@@ -782,6 +863,18 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
                 onClick={moveToPaymentWaiting}
               >
                 수납대기로 이동
+              </Button>
+            )}
+
+            {/* 데스크 단계: 회차 차감 완료 후 → 수납 완료 & 시술 완료(done) */}
+            {canMoveToDone && (
+              <Button
+                size="sm"
+                data-testid="btn-move-done"
+                className="w-full gap-1 bg-teal-600 hover:bg-teal-700 text-white"
+                onClick={moveToDone}
+              >
+                ✓ 수납 완료 — 시술 완료
               </Button>
             )}
           </div>
@@ -1012,6 +1105,11 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
           services={services}
           onClose={() => setSvcModalOpen(false)}
           onSelect={addTreatmentItem}
+          isConsultStage={isConsultStage}
+          onPackageCTA={() => {
+            setSvcModalOpen(false);
+            onPayment(checkIn, 'package');
+          }}
         />
 
         {/* 패키지 회차 사용 다이얼로그 */}
@@ -1041,11 +1139,17 @@ function ServiceSelectModal({
   services,
   onClose,
   onSelect,
+  isConsultStage,
+  onPackageCTA,
 }: {
   open: boolean;
   services: Service[];
   onClose: () => void;
   onSelect: (svc: Service) => void;
+  /** 상담 단계: true이면 "패키지 신규 구매" CTA 상단 표시 */
+  isConsultStage?: boolean;
+  /** 상담 단계 CTA 클릭 → PaymentDialog 패키지 모드로 진입 */
+  onPackageCTA?: () => void;
 }) {
   // 카테고리별 그루핑
   const grouped = services.reduce<Record<string, Service[]>>((acc, s) => {
@@ -1062,6 +1166,24 @@ function ServiceSelectModal({
             <Stethoscope className="h-4 w-4" /> 시술 선택
           </DialogTitle>
         </DialogHeader>
+
+        {/* 상담 단계: 패키지 신규 구매 강조 CTA */}
+        {isConsultStage && onPackageCTA && (
+          <button
+            onClick={onPackageCTA}
+            className="w-full flex items-center justify-between rounded-xl border-2 border-teal-400 bg-teal-50 px-4 py-3 hover:bg-teal-100 transition"
+          >
+            <div className="flex items-center gap-2">
+              <Package className="h-5 w-5 text-teal-600" />
+              <div className="text-left">
+                <div className="text-sm font-semibold text-teal-800">패키지 신규 구매</div>
+                <div className="text-xs text-teal-600">상담 완료 후 패키지 결제 등록</div>
+              </div>
+            </div>
+            <span className="text-teal-500 text-xs font-medium">→</span>
+          </button>
+        )}
+
         <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
           {Object.keys(grouped).length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">

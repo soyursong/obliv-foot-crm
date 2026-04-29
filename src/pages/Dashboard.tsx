@@ -641,6 +641,7 @@ export default function Dashboard() {
   const [openNew, setOpenNew] = useState(false);
   const [selectedCheckIn, setSelectedCheckIn] = useState<CheckIn | null>(null);
   const [paymentTarget, setPaymentTarget] = useState<CheckIn | null>(null);
+  const [paymentInitialMode, setPaymentInitialMode] = useState<'single' | 'package'>('single');
   const [dayPayments, setDayPayments] = useState<Map<string, number>>(new Map());
   const [contextMenu, setContextMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
   const [stageStartMap, setStageStartMap] = useState<Map<string, string>>(new Map());
@@ -1823,14 +1824,16 @@ export default function Dashboard() {
             if (fresh) setSelectedCheckIn(fresh);
           }
         }}
-        onPayment={(ci) => {
+        onPayment={(ci, initialMode) => {
           setSelectedCheckIn(null);
+          setPaymentInitialMode(initialMode ?? 'single');
           setPaymentTarget(ci);
         }}
       />
 
       <PaymentDialog
         checkIn={paymentTarget}
+        initialMode={paymentInitialMode}
         onClose={() => setPaymentTarget(null)}
         onPaid={() => {
           setPaymentTarget(null);
