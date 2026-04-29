@@ -24,6 +24,7 @@ import { STATUS_KO, VISIT_TYPE_KO } from '@/lib/status';
 import type {
   CheckIn,
   Customer,
+  LeadSource,
   Package,
   PackageRemaining,
   Reservation,
@@ -214,7 +215,11 @@ export default function Customers() {
                   className="cursor-pointer border-t hover:bg-muted/40"
                 >
                   <td className="px-4 py-2 font-medium">
-                    <span className="flex items-center gap-1.5">
+                    <span
+                      className="flex items-center gap-1.5 cursor-pointer hover:underline decoration-dotted underline-offset-2"
+                      title="더블클릭으로 차트 열기"
+                      onDoubleClick={(e) => { e.stopPropagation(); setSelected(c); }}
+                    >
                       {c.name}
                       {stats?.has_package && <Badge variant="teal" className="text-[10px] px-1 py-0">PKG</Badge>}
                     </span>
@@ -373,6 +378,8 @@ function CustomerDetailSheet({
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [memo, setMemo] = useState('');
+  const [leadSource, setLeadSource] = useState<string>('');
+  const [tmMemo, setTmMemo] = useState('');
   const [packages, setPackages] = useState<PackageWithRemaining[]>([]);
   const [visits, setVisits] = useState<CheckIn[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -387,6 +394,8 @@ function CustomerDetailSheet({
     setName(customer.name);
     setPhone(customer.phone);
     setMemo(customer.memo ?? '');
+    setLeadSource(customer.lead_source ?? '');
+    setTmMemo(customer.tm_memo ?? '');
     setEditing(false);
     (async () => {
       const [pkgRes, visitRes, payRes, pkgPayRes, resvRes] = await Promise.all([
@@ -482,7 +491,13 @@ function CustomerDetailSheet({
   const saveEdit = async () => {
     const { error } = await supabase
       .from('customers')
-      .update({ name: name.trim(), phone: phone.trim(), memo: memo.trim() || null })
+      .update({
+        name: name.trim(),
+        phone: phone.trim(),
+        memo: memo.trim() || null,
+        lead_source: leadSource.trim() || null,
+        tm_memo: tmMemo.trim() || null,
+      })
       .eq('id', customer.id);
     if (error) {
       toast.error(`수정 실패: ${error.message}`);
@@ -493,6 +508,8 @@ function CustomerDetailSheet({
     onUpdated();
   };
 
+  const LEAD_SOURCE_OPTIONS: LeadSource[] = ['TM', '인바운드', '워크인', '지인소개', '온라인', '기타'];
+
   return (
     <Sheet open={!!customer} onOpenChange={(o) => (!o ? onClose() : undefined)}>
       <SheetContent className="max-w-xl">
@@ -501,7 +518,7 @@ function CustomerDetailSheet({
         </SheetHeader>
 
         {editing ? (
-          <div className="space-y-3">
+          <div className="mt-4 space-y-3">
             <div className="space-y-1.5">
               <Label>이름</Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -511,8 +528,31 @@ function CustomerDetailSheet({
               <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>메모</Label>
-              <Textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={3} />
+              <Label>유입 경로</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {LEAD_SOURCE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setLeadSource(leadSource === opt ? '' : opt)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                      leadSource === opt
+                        ? 'bg-teal-600 text-white'
+                        : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>고객 메모 (특이사항)</Label>
+              <Textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={2} placeholder="진단서 발급 필요, 보험 청구 등..." />
+            </div>
+            <div className="space-y-1.5">
+              <Label>상담 메모 (보험·성향·상담내용)</Label>
+              <Textarea value={tmMemo} onChange={(e) => setTmMemo(e.target.value)} rows={3} placeholder="실비 보험사, 상한액, 고객 성향 등..." />
             </div>
             <div className="flex gap-2">
               <Button variant="outline" className="flex-1" onClick={() => setEditing(false)}>
@@ -524,15 +564,31 @@ function CustomerDetailSheet({
             </div>
           </div>
         ) : (
-          <div className="flex items-start justify-between">
-            <div>
+          <div className="mt-4 flex items-start justify-between">
+            <div className="flex-1 min-w-0">
               <div className="text-lg font-semibold">{customer.name}</div>
               <div className="text-sm text-muted-foreground">{customer.phone}</div>
+              {customer.lead_source && (
+                <div className="mt-1">
+                  <span className="inline-block rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-medium text-teal-800">
+                    {customer.lead_source}
+                  </span>
+                </div>
+              )}
               {customer.memo && (
-                <div className="mt-1 text-sm text-muted-foreground">{customer.memo}</div>
+                <div className="mt-1.5 rounded-md bg-muted/40 px-2.5 py-1.5 text-sm text-muted-foreground">
+                  <span className="text-xs font-medium text-muted-foreground/70 mr-1">메모</span>
+                  {customer.memo}
+                </div>
+              )}
+              {customer.tm_memo && (
+                <div className="mt-1.5 rounded-md bg-amber-50 px-2.5 py-1.5 text-sm text-amber-900 border border-amber-100">
+                  <span className="text-xs font-medium text-amber-700 mr-1">상담</span>
+                  {customer.tm_memo}
+                </div>
               )}
             </div>
-            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+            <Button variant="outline" size="sm" className="ml-3 shrink-0" onClick={() => setEditing(true)}>
               수정
             </Button>
           </div>
