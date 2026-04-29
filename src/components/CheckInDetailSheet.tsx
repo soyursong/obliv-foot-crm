@@ -721,37 +721,37 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
           )}
 
           {/* ── 패키지 생성 진입점 (MSG-20260430-021723_PACKAGE_CREATE_IN_SHEET) ── */}
-          {(checkIn.visit_type === 'new' || checkIn.visit_type === 'experience' || packages.length > 0 || !!checkIn.package_id) && (
-            <>
-              <Separator />
-              {packages.length > 0 || checkIn.package_id ? (
-                <div
-                  data-testid="pkg-create-disabled"
-                  className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5"
-                >
-                  <Package className="h-4 w-4 text-gray-400 shrink-0" />
-                  <span className="text-xs text-muted-foreground">이미 패키지 보유 — 아래에서 잔여회차를 확인하세요</span>
-                </div>
-              ) : (
-                <button
-                  data-testid="btn-package-create-in-sheet"
-                  onClick={() => onPayment(checkIn, 'package')}
-                  className="w-full flex items-center justify-between rounded-xl border-2 border-teal-400 bg-teal-50 px-4 py-3 hover:bg-teal-100 active:scale-[0.99] transition"
-                >
-                  <div className="flex items-center gap-2">
-                    <Package className="h-5 w-5 text-teal-600" />
-                    <div className="text-left">
-                      <div className="text-sm font-semibold text-teal-800">📦 패키지 생성</div>
-                      <div className="text-xs text-teal-600">
-                        {checkIn.visit_type === 'new' ? '초진' : '체험'} · 결제와 함께 패키지 등록
-                      </div>
+          {/* AC1: 모든 방문 유형(신규/재진/체험)에서 표시 — 재진도 패키지 신규 생성 가능 (T-20260430-foot-PACKAGE-CREATE-IN-SHEET) */}
+          <>
+            <Separator />
+            {packages.length > 0 || !!checkIn.package_id ? (
+              <div
+                data-testid="pkg-create-disabled"
+                className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5"
+              >
+                <Package className="h-4 w-4 text-gray-400 shrink-0" />
+                <span className="text-xs text-muted-foreground">이미 패키지 보유 — 아래에서 잔여회차를 확인하세요</span>
+              </div>
+            ) : (
+              /* AC2: 클릭 → PaymentDialog 패키지 모드 진입 (onPayment initialMode='package') */
+              <button
+                data-testid="btn-package-create-in-sheet"
+                onClick={() => onPayment(checkIn, 'package')}
+                className="w-full flex items-center justify-between rounded-xl border-2 border-teal-400 bg-teal-50 px-4 py-3 hover:bg-teal-100 active:scale-[0.99] transition"
+              >
+                <div className="flex items-center gap-2">
+                  <Package className="h-5 w-5 text-teal-600" />
+                  <div className="text-left">
+                    <div className="text-sm font-semibold text-teal-800">📦 패키지 생성</div>
+                    <div className="text-xs text-teal-600">
+                      {({ new: '초진', experience: '체험', returning: '재진' } as Record<string, string>)[checkIn.visit_type] ?? checkIn.visit_type} · 결제와 함께 패키지 등록
                     </div>
                   </div>
-                  <span className="text-teal-500 font-medium">→</span>
-                </button>
-              )}
-            </>
-          )}
+                </div>
+                <span className="text-teal-500 font-medium">→</span>
+              </button>
+            )}
+          </>
 
           {/* ── [NEW] 활성 패키지 잔여회차 요약 (재진/초진 모두, 패키지 있을 때만) ── */}
           {packages.length > 0 && (
