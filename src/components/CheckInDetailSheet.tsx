@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import { ArrowLeft, ArrowRight, ChevronDown, Clock, CreditCard, Phone, FileText, Camera, Package, Plus, Stethoscope, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -381,6 +381,9 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   const [sessionUseType, setSessionUseType] = useState<SessionType>('unheated_laser');
   const [sessionUseTreatmentIdx, setSessionUseTreatmentIdx] = useState<number>(-1);
 
+  /** 서류 발행 섹션 스크롤 타깃 (데스크 메뉴 → 보험청구 서류 발급 버튼) */
+  const docPrintRef = useRef<HTMLDivElement>(null);
+
   // 체크인 변경 시 시술 항목 + 진료종류 초기화
   useEffect(() => {
     setTreatmentItems([]);
@@ -575,6 +578,30 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   // 데스크(payment_waiting) 단계에서 회차 차감 완료 후 → 시술 완료(done) 직행 버튼
   const canMoveToDone = isDeskStage && hasSettledItem;
 
+  /**
+   * 데스크 통합 메뉴에서 "패키지 회차 차감" 클릭 시:
+   * 잔여 회차가 있는 첫 번째 패키지를 자동 선택해 SessionUseInSheetDialog 오픈.
+   */
+  const openBestFitSessionUse = () => {
+    const pkg = packages.find((p) => {
+      const rem = pkgRemaining.get(p.id);
+      return rem && rem.total_remaining > 0;
+    });
+    if (!pkg) {
+      toast.error('잔여 회차가 없습니다');
+      return;
+    }
+    const rem = pkgRemaining.get(pkg.id)!;
+    const firstType = (
+      ['unheated_laser', 'heated_laser', 'iv', 'preconditioning'] as const
+    ).find((t) => (rem[SESSION_TYPE_TO_REM_KEY[t]] as number) > 0) ?? ('unheated_laser' as SessionType);
+    setSessionUsePkg(pkg);
+    setSessionUseRemaining(rem);
+    setSessionUseType(firstType);
+    setSessionUseTreatmentIdx(-1); // 데스크 메뉴 진입: 특정 시술 항목과 연결하지 않음
+    setSessionUseOpen(true);
+  };
+
   const moveToDone = async () => {
     if (!checkIn) return;
     const { error } = await supabase
@@ -675,6 +702,23 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
 
           {/* 단계 이동 */}
           <StageNavButtons checkIn={checkIn} onUpdated={onUpdated} />
+
+          {/* ── [NEW] 데스크 통합 수납 메뉴 (payment_waiting 전용) ─ T-20260430-foot-DESK-PAYMENT-MENU ── */}
+          {isDeskStage && (
+            <>
+              <Separator />
+              <DeskPaymentMenu
+                packages={packages}
+                pkgRemaining={pkgRemaining}
+                onNewPackage={() => onPayment(checkIn, 'package')}
+                onSinglePayment={() => onPayment(checkIn)}
+                onSessionUse={openBestFitSessionUse}
+                onScrollToDoc={() =>
+                  docPrintRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }
+              />
+            </>
+          )}
 
           {/* ── 패키지 생성 진입점 (MSG-20260430-021723_PACKAGE_CREATE_IN_SHEET) ── */}
           {(checkIn.visit_type === 'new' || checkIn.visit_type === 'experience' || packages.length > 0 || !!checkIn.package_id) && (
@@ -1239,7 +1283,9 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
 
           {/* 서류 발행 */}
           <Separator />
-          <DocumentPrintPanel checkIn={checkIn} onUpdated={onUpdated} />
+          <div ref={docPrintRef}>
+            <DocumentPrintPanel checkIn={checkIn} onUpdated={onUpdated} />
+          </div>
 
           {/* 방문 이력 */}
           {history.length > 0 && (
@@ -1290,6 +1336,128 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
         />
       </SheetContent>
     </Sheet>
+  );
+}
+
+// ─── 서브 컴포넌트: 데스크 통합 수납 메뉴 (payment_waiting 전용) ─────────────
+//   4가지 수납 작업을 한 화면에 통합
+//   1) 패키지 회차 차감  2) 패키지 신규 결제  3) 단건 시술 결제  4) 보험청구 서류 발급
+
+interface DeskPaymentMenuProps {
+  packages: PackageType[];
+  pkgRemaining: Map<string, PackageRemaining>;
+  onNewPackage: () => void;
+  onSinglePayment: () => void;
+  onSessionUse: () => void;
+  onScrollToDoc: () => void;
+}
+
+function DeskPaymentMenu({
+  packages,
+  pkgRemaining,
+  onNewPackage,
+  onSinglePayment,
+  onSessionUse,
+  onScrollToDoc,
+}: DeskPaymentMenuProps) {
+  const hasActiveSessions = packages.some((pkg) => {
+    const rem = pkgRemaining.get(pkg.id);
+    return rem && rem.total_remaining > 0;
+  });
+
+  const menuItems = [
+    {
+      testid: 'desk-menu-session-deduct',
+      icon: <Package className="h-4 w-4 text-teal-600 shrink-0" />,
+      label: '패키지 회차 차감',
+      sub: hasActiveSessions ? '잔여 회차 소진 처리' : '잔여 없음',
+      borderColor: 'border-teal-300',
+      hoverBg: 'hover:bg-teal-50/80',
+      labelColor: 'text-teal-900',
+      subColor: 'text-teal-600',
+      disabled: !hasActiveSessions,
+      onClick: hasActiveSessions ? onSessionUse : undefined,
+    },
+    {
+      testid: 'desk-menu-new-package',
+      icon: <Package className="h-4 w-4 text-violet-600 shrink-0" />,
+      label: '패키지 신규 결제',
+      sub: '패키지 결제 등록',
+      borderColor: 'border-violet-300',
+      hoverBg: 'hover:bg-violet-50/80',
+      labelColor: 'text-violet-900',
+      subColor: 'text-violet-600',
+      disabled: false,
+      onClick: onNewPackage,
+    },
+    {
+      testid: 'desk-menu-single-payment',
+      icon: <CreditCard className="h-4 w-4 text-blue-600 shrink-0" />,
+      label: '단건 시술 결제',
+      sub: '현장 단건 결제',
+      borderColor: 'border-blue-300',
+      hoverBg: 'hover:bg-blue-50/80',
+      labelColor: 'text-blue-900',
+      subColor: 'text-blue-600',
+      disabled: false,
+      onClick: onSinglePayment,
+    },
+    {
+      testid: 'desk-menu-insurance-doc',
+      icon: <FileText className="h-4 w-4 text-amber-600 shrink-0" />,
+      label: '보험청구 서류',
+      sub: '소견서·진단서 발급',
+      borderColor: 'border-amber-300',
+      hoverBg: 'hover:bg-amber-50/80',
+      labelColor: 'text-amber-900',
+      subColor: 'text-amber-600',
+      disabled: false,
+      onClick: onScrollToDoc,
+    },
+  ] as const;
+
+  return (
+    <div
+      data-testid="desk-payment-menu"
+      className="rounded-xl border-2 border-teal-500 bg-gradient-to-br from-teal-50 to-emerald-50 p-3 space-y-2.5 shadow-sm"
+    >
+      {/* 헤더 */}
+      <div className="flex items-center gap-2">
+        <CreditCard className="h-4 w-4 text-teal-700" />
+        <span className="text-sm font-bold text-teal-800">수납 처리</span>
+        <span className="ml-auto text-[11px] bg-teal-600 text-white rounded-full px-2 py-0.5 font-medium">
+          수납대기
+        </span>
+      </div>
+
+      {/* 2×2 그리드 */}
+      <div className="grid grid-cols-2 gap-2">
+        {menuItems.map((item) => (
+          <button
+            key={item.testid}
+            data-testid={item.testid}
+            disabled={item.disabled}
+            onClick={item.onClick}
+            className={cn(
+              'rounded-xl border-2 bg-white p-3 text-left flex flex-col gap-1 transition min-h-[72px] shadow-sm',
+              item.disabled
+                ? 'border-gray-200 bg-gray-50/80 opacity-50 cursor-not-allowed'
+                : cn(item.borderColor, item.hoverBg, 'active:scale-[0.98] cursor-pointer'),
+            )}
+          >
+            <div className="flex items-center gap-1.5">
+              {item.icon}
+              <span className={cn('text-[11px] font-bold leading-tight', item.labelColor)}>
+                {item.label}
+              </span>
+            </div>
+            <span className={cn('text-[10px] leading-tight', item.subColor)}>
+              {item.sub}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
