@@ -62,6 +62,16 @@ const SESSION_TYPE_FULL: Record<SessionType, string> = {
   preconditioning: '사전처치',
 };
 
+/** SessionType → PackageRemaining 키 매핑
+ *  heated_laser → heated, unheated_laser → unheated (나머지는 동일)
+ */
+const SESSION_TYPE_TO_REM_KEY: Record<SessionType, keyof PackageRemaining> = {
+  heated_laser: 'heated',
+  unheated_laser: 'unheated',
+  iv: 'iv',
+  preconditioning: 'preconditioning',
+};
+
 /** 서비스 category·name 텍스트에서 패키지 세션 타입 추론 */
 function sessionTypeFromService(svc: Service): SessionType | null {
   const hay = ((svc.category ?? '') + ' ' + (svc.name ?? '')).toLowerCase();
@@ -475,7 +485,9 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
       packages.find((pkg) => {
         const rem = pkgRemaining.get(pkg.id);
         if (!rem) return false;
-        const field = item.sessionType as keyof PackageRemaining;
+        // SESSION_TYPE_TO_REM_KEY로 올바르게 변환:
+        // 'heated_laser' → 'heated', 'unheated_laser' → 'unheated'
+        const field = SESSION_TYPE_TO_REM_KEY[item.sessionType!];
         const val = rem[field];
         return typeof val === 'number' && val > 0;
       }) ?? null
