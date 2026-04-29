@@ -25,6 +25,8 @@ interface Props {
   checkIn: CheckIn | null;
   onClose: () => void;
   onPaid: () => void;
+  /** 다이얼로그 오픈 시 기본 결제 모드 (기본값: 'single') */
+  initialMode?: PaymentMode;
 }
 
 const METHOD_OPTIONS: { value: PayMethod; label: string; icon: string }[] = [
@@ -42,8 +44,8 @@ const INSTALLMENT_OPTIONS = [
   { value: 12, label: '12개월' },
 ];
 
-export function PaymentDialog({ checkIn, onClose, onPaid }: Props) {
-  const [paymentMode, setPaymentMode] = useState<PaymentMode>('single');
+export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) {
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>(initialMode ?? 'single');
   const [selectedPackageKey, setSelectedPackageKey] = useState<string | null>(null);
   const [method, setMethod] = useState<PayMethod>('card');
   const [amountStr, setAmountStr] = useState('');
@@ -56,7 +58,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid }: Props) {
 
   useEffect(() => {
     if (checkIn) {
-      setPaymentMode('single');
+      setPaymentMode(initialMode ?? 'single');
       setSelectedPackageKey(null);
       setMethod('card');
       setAmountStr('');
