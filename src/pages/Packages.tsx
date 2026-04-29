@@ -931,7 +931,7 @@ function UseSessionDialog({
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label>시술 종류</Label>
+            <Label>진료 종류</Label>
             <div className="grid grid-cols-2 gap-2">
               {(['unheated_laser', 'heated_laser', 'iv', 'preconditioning'] as const).map((t) => (
                 <button

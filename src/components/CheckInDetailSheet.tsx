@@ -365,6 +365,13 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   const [saving, setSaving] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(false);
 
+  // ── 진료종류 상태 (T-20260430-foot-TREATMENT-LABEL) ──
+  const [consultationDone, setConsultationDone] = useState(false);
+  const [treatmentKind, setTreatmentKind] = useState<string>('');
+  const [preconditioningDone, setPreconditioningDone] = useState(false);
+  const [pododulleDone, setPododulleDone] = useState(false);
+  const [laserMinutes, setLaserMinutes] = useState<number | null>(null);
+
   // ── 시술 항목 상태 ──
   const [treatmentItems, setTreatmentItems] = useState<TreatmentItem[]>([]);
   const [svcModalOpen, setSvcModalOpen] = useState(false);
@@ -374,10 +381,17 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   const [sessionUseType, setSessionUseType] = useState<SessionType>('unheated_laser');
   const [sessionUseTreatmentIdx, setSessionUseTreatmentIdx] = useState<number>(-1);
 
-  // 체크인 변경 시 시술 항목 초기화
+  // 체크인 변경 시 시술 항목 + 진료종류 초기화
   useEffect(() => {
     setTreatmentItems([]);
-  }, [checkIn?.id]);
+    if (checkIn) {
+      setConsultationDone(checkIn.consultation_done ?? false);
+      setTreatmentKind(checkIn.treatment_kind ?? '');
+      setPreconditioningDone(checkIn.preconditioning_done ?? false);
+      setPododulleDone(checkIn.pododulle_done ?? false);
+      setLaserMinutes(checkIn.laser_minutes ?? null);
+    }
+  }, [checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async () => {
     if (!checkIn) return;
@@ -462,7 +476,17 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     const memoObj = { ...(checkIn.treatment_memo ?? {}), details: treatmentMemo };
     const { error } = await supabase
       .from('check_ins')
-      .update({ notes: notesObj, treatment_memo: memoObj, doctor_note: doctorNote || null })
+      .update({
+        notes: notesObj,
+        treatment_memo: memoObj,
+        doctor_note: doctorNote || null,
+        // 진료종류 필드 저장 (T-20260430-foot-TREATMENT-LABEL)
+        consultation_done: consultationDone,
+        treatment_kind: treatmentKind || null,
+        preconditioning_done: preconditioningDone,
+        pododulle_done: pododulleDone,
+        laser_minutes: laserMinutes,
+      })
       .eq('id', checkIn.id);
     setSaving(false);
     if (error) {
@@ -1045,6 +1069,94 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             );
           })()}
 
+          {/* 진료종류 (T-20260430-foot-TREATMENT-LABEL) */}
+          <div className="space-y-3 rounded-md p-3 bg-emerald-50/40 ring-1 ring-emerald-100">
+            <span className="text-sm font-semibold text-emerald-900 flex items-center gap-1">
+              <Stethoscope className="h-3.5 w-3.5" /> 진료종류
+            </span>
+
+            {/* 상담유무 */}
+            <div className="flex items-center justify-between">
+              <Label className="text-sm text-emerald-900">상담유무</Label>
+              <button
+                onClick={() => setConsultationDone((v) => !v)}
+                className={cn(
+                  'h-8 px-3 rounded-md text-xs font-medium border transition',
+                  consultationDone
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'border-input hover:bg-muted text-muted-foreground',
+                )}
+              >
+                {consultationDone ? '✓ 상담함' : '상담 안함'}
+              </button>
+            </div>
+
+            {/* 치료종류 */}
+            <div className="space-y-1.5">
+              <Label className="text-sm text-emerald-900">치료종류</Label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {['가열레이저', '비가열레이저', '프컨+레이저', '수액', '상담', '기타'].map((kind) => (
+                  <button
+                    key={kind}
+                    onClick={() => setTreatmentKind((v) => (v === kind ? '' : kind))}
+                    className={cn(
+                      'h-9 rounded-md border text-xs font-medium transition',
+                      treatmentKind === kind
+                        ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+                        : 'border-input hover:bg-muted text-muted-foreground',
+                    )}
+                  >
+                    {kind}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 프컨 / 포돌 토글 */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPreconditioningDone((v) => !v)}
+                className={cn(
+                  'flex-1 h-9 rounded-md border text-xs font-medium transition',
+                  preconditioningDone
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'border-input hover:bg-muted text-muted-foreground',
+                )}
+              >
+                {preconditioningDone ? '✓ 프컨' : '프컨'}
+              </button>
+              <button
+                onClick={() => setPododulleDone((v) => !v)}
+                className={cn(
+                  'flex-1 h-9 rounded-md border text-xs font-medium transition',
+                  pododulleDone
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'border-input hover:bg-muted text-muted-foreground',
+                )}
+              >
+                {pododulleDone ? '✓ 포돌' : '포돌'}
+              </button>
+            </div>
+
+            {/* 레이저 시간 */}
+            <div className="flex items-center gap-3">
+              <Label className="text-sm text-emerald-900 shrink-0">레이저 시간</Label>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={120}
+                  value={laserMinutes ?? ''}
+                  onChange={(e) => setLaserMinutes(e.target.value ? parseInt(e.target.value, 10) : null)}
+                  placeholder="0"
+                  className="w-20 text-sm h-8"
+                />
+                <span className="text-xs text-muted-foreground">분</span>
+              </div>
+            </div>
+          </div>
+
           {/* 시술 기록 */}
           <div className="space-y-2">
             <Label className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
@@ -1320,7 +1432,7 @@ function SessionUseInSheetDialog({
 
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label>시술 종류</Label>
+            <Label>진료 종류</Label>
             <div className="grid grid-cols-2 gap-2">
               {(['unheated_laser', 'heated_laser', 'iv', 'preconditioning'] as const).map((t) => (
                 <button
