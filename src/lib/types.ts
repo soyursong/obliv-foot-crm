@@ -76,6 +76,8 @@ export interface Clinic {
   created_at: string;
 }
 
+export type LeadSource = 'TM' | '인바운드' | '워크인' | '지인소개' | '온라인' | '기타';
+
 export interface Customer {
   id: string;
   clinic_id: string;
@@ -83,6 +85,8 @@ export interface Customer {
   phone: string;
   visit_type: 'new' | 'returning';
   memo: string | null;
+  lead_source: LeadSource | string | null;  // 유입 경로
+  tm_memo: string | null;                   // 상담 메모 (보험/상담내용/성향)
   is_foreign: boolean;
   is_simulation: boolean;
   created_by: string | null;
