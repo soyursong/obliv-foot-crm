@@ -746,3 +746,12 @@ QA_REPORT.md 참조
 - T-20260430-foot-STABILIZATION: qa-pass → deployed (Yellow 자율 배포)
 - QA 5항목 PASS: 빌드/기존기능/DB호환/RLS/롤백SQL 전부 통과
 - 슬랙 배포 알림 발송 완료 (C0ATE5P6JTH)
+
+## 2026-04-30 21:35 — dev-foot | deployed | STATS-FOLLOWUP 3항목 완료 확인
+- T-20260430-foot-STATS-FOLLOWUP: backlog → deployed
+- #1 foot_stats_consultant 이중카운트 수정 (commit 4dfc292) — pkg_once CTE로 패키지당 1회만 귀속
+- #2 dead code 삭제 (commit dca4b0e) — DailyTrendsTab.tsx, MonthlyPerfTab.tsx 제거
+- #3 VIS-10 visual baseline 갱신 (commit da74981) — stats-overview.png 4섹션 구조 반영
+- MQ PUSH-20260430-210000-FOOT-STABILIZATION ack — 이미 11:45 deployed, 오탐 확인
+- MQ PUSH-20260430-220000-FOOT-P1-STALL — 기존 acked 확인
+- 현재 open 티켓 없음 (foot 전 건 deployed/done)
