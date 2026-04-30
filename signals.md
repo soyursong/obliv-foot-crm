@@ -1,5 +1,21 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-01 [MQ-20260430-FOOT-STAGE-FLOW-CORRECTION] deploy-ready
+
+> **ticket**: T-20260430-foot-STAGE-FLOW-CORRECTION | **status**: deploy-ready
+> **commit**: 109d6f6 | **branch**: main | **build**: PASS (vite 2.42s)
+> **DB**: check_ins constraint 12 status 정정 완료, no_show→cancelled, treatment→preconditioning 매핑
+> **code**: Dashboard payment_waiting 라벨 → "수납대기", 셀프체크인 슬롯 매핑 ✅
+> **supersedes**: CHECKIN-SLOT-VERIFY, CHECKIN-MEMO-ANOMALY (흡수)
+
+## 2026-05-01 [MQ-20260430-FOOT-CUSTOMERS-STANDARDIZE] deploy-ready
+
+> **ticket**: T-20260430-foot-CUSTOMERS-STANDARDIZE | **status**: deploy-ready
+> **commit**: 109d6f6 | **branch**: main | **build**: PASS
+> **DB**: customers 14컬럼 추가 + 3 인덱스 + RPC get_or_create_unified_customer_id
+> **backfill**: unified_customer_id = id (기존 전체 행) | **rollback**: .down.sql 포함
+> **types**: src/lib/types.ts Customer 인터페이스 14 optional 필드 추가
+
 ## 2026-04-30 [T-20260430-foot-CONSULT-SLOT-ROLE] supervisor deployed
 
 > **ticket**: T-20260430-foot-CONSULT-SLOT-ROLE | **status**: deployed
