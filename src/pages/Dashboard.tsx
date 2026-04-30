@@ -1215,7 +1215,15 @@ export default function Dashboard() {
           (DEFAULT_GROUP_ORDER as readonly string[]).includes(id),
         );
         const missing = DEFAULT_GROUP_ORDER.filter((id) => !valid.includes(id));
-        return [...valid, ...missing];
+        const merged = [...valid, ...missing];
+        // T-20260430-foot-LASER-ROOM-REORDER: 치료실은 항상 레이저실보다 앞에 위치
+        const treatIdx = merged.indexOf('treatment_rooms');
+        const laserIdx = merged.indexOf('laser_rooms');
+        if (treatIdx !== -1 && laserIdx !== -1 && laserIdx < treatIdx) {
+          merged.splice(laserIdx, 1);
+          merged.splice(treatIdx, 0, 'laser_rooms');
+        }
+        return merged;
       }
     } catch {}
     return [...DEFAULT_GROUP_ORDER];
