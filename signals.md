@@ -1,5 +1,25 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-04-30 [T-20260430-foot-CONSULT-SLOT-ROLE] supervisor deployed
+
+> **ticket**: T-20260430-foot-CONSULT-SLOT-ROLE | **status**: deployed
+> **qa_result**: pass | **deployed_at**: 2026-04-30 23:59
+> **등급**: Green | **git push**: origin/main (up-to-date)
+> **슬랙**: C0ATE5P6JTH 배포 완료 알림 발송
+
+### QA 5항목 결과
+1. **빌드** ✅ — tsc + vite build 2.36s, 에러 0
+2. **기존 기능** ✅ — 치료실 `therapists={therapists}`, 레이저실 prop 없음 (기존 동작 유지), 상담실만 `therapists={consultants}` 변경
+3. **DB 호환** ✅ — DB 스키마 변경 없음. `consultant` role은 staff 테이블 CHECK constraint에 이미 존재
+4. **권한/RLS** ✅ — RLS 변경 없음. staff SELECT 쿼리 추가뿐
+5. **롤백 SQL** ✅ — DB 스키마 변경 없음, 불필요
+
+### 교차 검증
+- handleConsultantChange → handleStaffAssign('consultation') → patch.consultant_id 정합 ✅
+- 수용 기준 전수 반영 ✅
+
+---
+
 ## 2026-04-30 [T-20260430-foot-CHART-UX-IMPROVE] dev-foot deploy-ready
 
 > **ticket**: T-20260430-foot-CHART-UX-IMPROVE | **status**: deploy-ready
