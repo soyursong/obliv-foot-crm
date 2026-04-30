@@ -1246,6 +1246,13 @@ export default function Dashboard() {
       const newIdx = prev.indexOf(over.id as KanbanGroupId);
       if (oldIdx === -1 || newIdx === -1) return prev;
       const next = arrayMove(prev, oldIdx, newIdx);
+      // T-20260430-foot-LASER-ROOM-REORDER: 레이저실은 치료실 뒤에만 배치 가능
+      const treatIdx = next.indexOf('treatment_rooms');
+      const laserIdx = next.indexOf('laser_rooms');
+      if (treatIdx !== -1 && laserIdx !== -1 && laserIdx < treatIdx) {
+        toast.warning('레이저실은 치료실 뒤에만 배치할 수 있어요');
+        return prev;
+      }
       localStorage.setItem('foot-dash-group-order', JSON.stringify(next));
       return next;
     });
