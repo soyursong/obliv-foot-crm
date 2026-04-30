@@ -1,5 +1,19 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-01 00:44 [T-20260430-foot-STAGE-FLOW-CORRECTION] qa-pass → deployed
+
+> **supervisor**: QA 5항목 PASS | **등급**: Yellow | **deployed_at**: 2026-05-01 00:44
+> **git push**: origin main 실행 | **슬랙 알림**: C0ATE5P6JTH 발송 예정
+>
+> **QA 5항목**
+> 1. 빌드 ✅ — tsc + vite build 2.40s, 에러 0
+> 2. 기존 기능 ✅ — checklist 호환성 유지, laser_waiting/payment_waiting 전 컴포넌트 반영
+> 3. DB 호환 ✅ — 20260430140000 migration + 데이터 매핑(checklist→consult_waiting, laser→laser_waiting)
+> 4. 권한/RLS ✅ — check_ins RLS 변경 없음
+> 5. 롤백 SQL ✅ — .down.sql 존재, laser_waiting→laser + constraint 복구 검증 완료
+>
+> **권장 점검(아침 리포트)**: canMoveToPaymentWaiting 로직에 stage 선행 조건 없음 — 다음 사이클 보완 권장
+
 ## 2026-05-01 [MQ-20260430-FOOT-STAGE-FLOW-CORRECTION] deploy-ready
 
 > **ticket**: T-20260430-foot-STAGE-FLOW-CORRECTION | **status**: deploy-ready
@@ -1002,3 +1016,15 @@ QA_REPORT.md 참조
   - `critical-flow/` CF-1~CF-5 전체 동선 5종
 - 수용 기준 전부 달성: E2E 완주 ✅ / 배포 14건 회귀 ✅ / 콘솔 에러 0 ✅ / 빌드 PASS ✅ / 셀프체크인 ✅
 - 에스컬레이션 사유 없음 — 12시간 전 완료된 작업임
+
+## 2026-05-01 00:50 — supervisor | QA PASS → deployed | T-20260430-foot-CUSTOMERS-STANDARDIZE
+- **등급: Yellow** (DB ADD COLUMN, 기존 미파괴, 롤백 완비)
+- QA 5항목 전부 PASS:
+  1. ✅ 빌드: npm run build PASS (tsc + vite 2.41s, 에러 0, 3718 모듈)
+  2. ✅ 기존기능: ADD COLUMN IF NOT EXISTS만, 기존 로직 불변
+  3. ✅ DB호환: gender CHECK (IS NULL OR M/F) 기존 NULL 데이터 완전 호환, backfill=id 안전
+  4. ✅ 권한/RLS: RLS 변경 없음, RPC SECURITY INVOKER + GRANT authenticated 적절
+  5. ✅ 롤백SQL: 20260501000000_customers_standardize.down.sql 완비 (14컬럼+3인덱스+RPC 전부)
+- origin/main 이미 반영 (push 대기 0), commit: 109d6f6
+- 티켓 status: deploy-ready → deployed
+- 슬랙 배포 완료 알림 발송 (C0ATE5P6JTH)
