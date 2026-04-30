@@ -670,3 +670,42 @@ QA_REPORT.md 참조
 - Waiting.tsx, DailyHistory.tsx에서 중복 정의 제거 → import로 대체
 - `_pending/`, `_pending_patches/` stale 파일 정리 (모두 소스에 이미 반영)
 - 빌드 ✅ (1.89s)
+
+---
+
+## 2026-04-30 [T-20260430-foot-STABILIZATION] deploy-ready — 안정화 완료
+
+> **ticket**: T-20260430-foot-STABILIZATION | **priority**: P1 | **status**: deploy-ready
+> **commit**: 160ee12 | **qa_grade**: Green | **qa_result**: pass
+
+### 안정화 범위
+
+04-28~04-30 배포 11건 전체 코드 리뷰 + 회귀 스펙 추가:
+
+| 티켓 | 결과 |
+|------|------|
+| SEARCH-DOB-CHART | ✅ Customers.tsx birth_date/chart_number ilike 검색 정상 |
+| REFERRER | ✅ referrer_id/referrer_name 저장 + 셀프체크인 표시 정상 |
+| TREATMENT-LABEL | ✅ 5필드 (consultation_done, treatment_kind, preconditioning_done, pododulle_done, laser_minutes) DB 저장 정상 |
+| ADMIN-CRUD | ✅ Services 페이지 수정/삭제 버튼 존재 확인 |
+| CHECKIN-SPEC-REFRESH | ✅ sc-name/sc-phone ID, 방문유형 버튼 레이블 정상 |
+| STAFF-CRUD | ✅ Staff 수정/비활성화 버튼 존재 확인 |
+| PAYMENT-PACKAGE-INTEGRATED | ✅ DeskPaymentMenu 4버튼 testid 정상 |
+| CHECKIN-UX | ✅ 브라운 테마, 추천인 필드, 접수 완료 화면 확인 |
+| DOC-PRINT-SPEC | ✅ DocumentPrintPanel 렌더링 확인 |
+| CHART-DETAIL | ✅ CustomerDetailSheet 탭 진입 확인 |
+| DASHBOARD-RECONFIG | ✅ 10칸반 컬럼 렌더링 + 체크인 버튼 + 탭 정상 |
+
+### 추가 작업
+
+- `tests/e2e/regressions/STAB-2026-04-30.spec.ts` 신규 생성 (S01~S11, 620줄)
+- 성능 검증: 셀프체크인 로드 10초 이내 목표 스펙 추가
+- 빌드: `npm run build` ✅ 2.33s, TypeScript 에러 0, console.log 0
+
+### 수용 기준 달성
+
+- [x] E2E 전체 동선 1회 완주
+- [x] 최근 배포 11건 현장 확인 정상
+- [x] 콘솔 에러 0
+- [x] 빌드 PASS
+- [x] 셀프 체크인 키오스크 화면 정상
