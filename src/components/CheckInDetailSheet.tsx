@@ -724,6 +724,15 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
           {/* AC1: 모든 방문 유형(신규/재진/체험)에서 표시 — 재진도 패키지 신규 생성 가능 (T-20260430-foot-PACKAGE-CREATE-IN-SHEET) */}
           <>
             <Separator />
+            {/* ── [PROCESS-FLOW] 상담 단계: 현장 룰 안내 — 패키지는 반드시 상담실에서 */}
+            {isConsultStage && !(packages.length > 0 || !!checkIn.package_id) && (
+              <div className="rounded-md border border-teal-300 bg-teal-50 px-3 py-2 flex items-center gap-1.5">
+                <span className="text-sm">📍</span>
+                <p className="text-xs font-semibold text-teal-900">
+                  상담실 결제 단계 — 아래 버튼으로 패키지를 등록하세요
+                </p>
+              </div>
+            )}
             {packages.length > 0 || !!checkIn.package_id ? (
               <div
                 data-testid="pkg-create-disabled"
@@ -1382,11 +1391,11 @@ function DeskPaymentMenu({
       testid: 'desk-menu-new-package',
       icon: <Package className="h-4 w-4 text-violet-600 shrink-0" />,
       label: '패키지 신규 결제',
-      sub: '패키지 결제 등록',
+      sub: '⚠️ 패키지는 상담실에서 결제 (상담실 미처리 시 예외)',
       borderColor: 'border-violet-300',
       hoverBg: 'hover:bg-violet-50/80',
       labelColor: 'text-violet-900',
-      subColor: 'text-violet-600',
+      subColor: 'text-amber-600',
       disabled: false,
       onClick: onNewPackage,
     },
