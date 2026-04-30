@@ -1,5 +1,13 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-01 — dev-foot | deploy-ready | MQ-PACKAGES-CUSTOMERS-EMBED-AMBIGUOUS P0 핫픽스
+- **이슈**: `/admin/packages` 진입 시 PostgREST ambiguous FK 에러 (packages→customers FK 2개)
+- **수정**: `Packages.tsx` 2곳 — `customers` → `customers!customer_id` FK 명시
+- **빌드**: tsc 0 / vite 2.37s / 3718 modules
+- **commit**: `870b0fa` / pushed origin/main
+- **MQ ACK**: KICK-20260430-171500-FOOT-STAFF-EDIT-TRIGGER ack_note 추가 완료
+- supervisor QA 요청
+
 ## 2026-05-01T10:00 [PUSH-20260501-FOOT-OPEN-TICKETS] 재검증 완료 ✅
 
 > **from**: planner | **acked_at**: 2026-05-01 01:39 KST | **re_verified**: 2026-05-01 KST
