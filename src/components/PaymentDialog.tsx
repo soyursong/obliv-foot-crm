@@ -173,11 +173,16 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
           clinic_id: checkIn.clinic_id,
           customer_id: checkIn.customer_id,
           package_name: selectedPreset.label,
-          package_type: `preset_${selectedPreset.total}`,
+          package_type: selectedPackageKey ?? `preset_${selectedPreset.total}`,
           total_sessions: selectedPreset.total,
+          heated_sessions: selectedPreset.heated,
+          unheated_sessions: selectedPreset.unheated,
+          iv_sessions: selectedPreset.iv,
+          preconditioning_sessions: selectedPreset.preconditioning,
           total_amount: selectedPreset.suggestedPrice,
           paid_amount: totalAmount,
           status: 'active',
+          contract_date: new Date().toISOString().slice(0, 10),
         })
         .select('id')
         .single();

@@ -1650,13 +1650,14 @@ export default function Dashboard() {
   }, [clinic, dateStr, fetchCheckIns, fetchAssignments, fetchReservations, fetchTimelineReservations, fetchStageStarts]);
 
   const STAGE_ALERT_MINS: Partial<Record<CheckInStatus, number>> = {
-    laser: 20,
-    examination: 15,
-    consultation: 25,
-    preconditioning: 30,
     consult_waiting: 20,
-    treatment_waiting: 20,
+    consultation: 25,
     exam_waiting: 20,
+    examination: 15,
+    treatment_waiting: 20,
+    preconditioning: 30,
+    laser_waiting: 15,
+    laser: 20,
     payment_waiting: 15,
   };
 
@@ -1862,32 +1863,32 @@ export default function Dashboard() {
       const zoneLabel = targetVisitType === 'returning' ? '재진' : '선체험';
       toastWithUndo(`${zoneLabel} 대기로 이동`, row);
     } else if (target === 'laser_waiting') {
-      if (row.status === 'laser' && !row.laser_room) return;
+      if (row.status === 'laser_waiting') return;
       markRecentlyUpdated(row.id);
       let prevRow: CheckIn | undefined;
       setRows((curr) => {
         prevRow = curr.find((r) => r.id === row.id);
-        return curr.map((r) => (r.id === row.id ? { ...r, status: 'laser' as CheckInStatus, laser_room: null } : r));
+        return curr.map((r) =>
+          r.id === row.id ? { ...r, status: 'laser_waiting' as CheckInStatus, laser_room: null } : r,
+        );
       });
       const { error } = await supabase
         .from('check_ins')
-        .update({ status: 'laser', laser_room: null })
+        .update({ status: 'laser_waiting', laser_room: null })
         .eq('id', row.id);
       if (error) {
         setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
         toast.error(`이동 실패: ${error.message}`);
         return;
       }
-      if (row.status !== 'laser') {
-        const now = new Date().toISOString();
-        await supabase.from('status_transitions').insert({
-          check_in_id: row.id,
-          clinic_id: row.clinic_id,
-          from_status: row.status,
-          to_status: 'laser',
-        });
-        setStageStartMap((prev) => new Map(prev).set(row.id, now));
-      }
+      const now = new Date().toISOString();
+      await supabase.from('status_transitions').insert({
+        check_in_id: row.id,
+        clinic_id: row.clinic_id,
+        from_status: row.status,
+        to_status: 'laser_waiting',
+      });
+      setStageStartMap((prev) => new Map(prev).set(row.id, now));
       toastWithUndo('레이저대기로 이동', row);
     } else if (target === 'returning_exam' || target === 'returning_treatment') {
       const needsExam = target === 'returning_exam';
@@ -2221,12 +2222,14 @@ export default function Dashboard() {
   const newPendingReservations = pendingReservations.filter((r) => r.visit_type === 'new');
   const returningPendingReservations = pendingReservations.filter((r) => r.visit_type === 'returning');
 
+  // checklist는 DB 마이그 후 consult_waiting으로 이관됨 — 호환성 유지 포함
   const allRegistered = [...(byStatus['registered'] ?? []), ...(byStatus['checklist'] ?? [])];
   // 슬롯별 분류
   const newRegistered = allRegistered.filter((ci) => ci.visit_type === 'new');
   const returningWaiting = (byStatus['registered'] ?? []).filter((ci) => ci.visit_type === 'returning');
   const experienceWaiting = (byStatus['registered'] ?? []).filter((ci) => ci.visit_type === 'experience');
-  const laserWaiting = filtered.filter((ci) => ci.status === 'laser' && !ci.laser_room);
+  // 레이저대기: laser_waiting 상태 (4/30 표준 v2 — 이전 'laser' + no room 방식에서 전환)
+  const laserWaiting = filtered.filter((ci) => ci.status === 'laser_waiting');
 
   const paymentTotal = Array.from(dayPayments.values()).reduce((s, v) => s + v, 0);
   const doneTotal = (byStatus['done'] ?? []).reduce((s, ci) => s + (dayPayments.get(ci.id) ?? 0), 0);
@@ -2821,11 +2824,16 @@ export default function Dashboard() {
       />
 
       <PaymentDialog
+        key={`${paymentTarget?.id ?? 'none'}-${paymentInitialMode}`}
         checkIn={paymentTarget}
         initialMode={paymentInitialMode}
-        onClose={() => setPaymentTarget(null)}
+        onClose={() => {
+          setPaymentTarget(null);
+          setPaymentInitialMode('single');
+        }}
         onPaid={() => {
           setPaymentTarget(null);
+          setPaymentInitialMode('single');
           fetchCheckIns();
           fetchPayments();
         }}
