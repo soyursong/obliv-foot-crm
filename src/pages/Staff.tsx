@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { Plus, UserCog, DoorOpen, TrendingUp, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
+import { Plus, UserCog, DoorOpen, TrendingUp, ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -87,7 +87,8 @@ export default function StaffPage() {
 function StaffTab({ clinic }: { clinic: Clinic }) {
   const qc = useQueryClient();
   const { profile } = useAuth();
-  const isAdmin = profile?.role === 'admin';
+  // admin 또는 manager 권한 모두 직원 관리 가능
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager';
 
   const [openCreate, setOpenCreate] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
@@ -213,10 +214,17 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
                       )}
                       <Button
                         size="xs"
-                        variant={s.active ? 'outline' : 'default'}
+                        variant={s.active ? 'destructive' : 'default'}
+                        title={s.active ? '직원 비활성화(삭제)' : '직원 활성화'}
                         onClick={() => handleToggleActive(s)}
+                        className={s.active ? 'gap-1' : ''}
                       >
-                        {s.active ? '비활성화' : '활성화'}
+                        {s.active ? (
+                          <>
+                            <Trash2 className="h-3 w-3" />
+                            삭제
+                          </>
+                        ) : '활성화'}
                       </Button>
                     </div>
                   ) : null}
@@ -234,7 +242,7 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>직원 비활성화 확인</DialogTitle>
+            <DialogTitle>직원 삭제(비활성화) 확인</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 text-sm">
             <p>
@@ -254,8 +262,9 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
             >
               취소
             </Button>
-            <Button variant="destructive" disabled={deactivateBusy} onClick={confirmDeactivate}>
-              {deactivateBusy ? '처리 중…' : '비활성화'}
+            <Button variant="destructive" disabled={deactivateBusy} onClick={confirmDeactivate} className="gap-1">
+              <Trash2 className="h-4 w-4" />
+              {deactivateBusy ? '처리 중…' : '삭제'}
             </Button>
           </DialogFooter>
         </DialogContent>
