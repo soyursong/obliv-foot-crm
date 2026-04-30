@@ -2492,7 +2492,7 @@ export default function Dashboard() {
           <div key="desk_section" className="w-52 shrink-0 flex flex-col gap-2 h-full">
             <DroppableColumn
               id="payment_waiting"
-              label="결제"
+              label="수납대기"
               count={(byStatus['payment_waiting'] ?? []).length}
               highlight="text-purple-700"
               subtitle={

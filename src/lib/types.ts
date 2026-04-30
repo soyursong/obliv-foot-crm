@@ -97,6 +97,22 @@ export interface Customer {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  // 풀퍼널 표준화 (큐카드 정책 v1.0)
+  unified_customer_id?: string | null;
+  campaign_id?: string | null;
+  adset_id?: string | null;
+  ad_id?: string | null;
+  campaign_ref?: string | null;
+  hospital?: string | null;
+  clinic?: string | null;
+  medium?: string | null;
+  product?: string | null;
+  campaign_name?: string | null;
+  adset_name?: string | null;
+  adsubject_name?: string | null;
+  gender?: 'M' | 'F' | null;
+  inflow_channel?: string | null;
+  inflow_source?: string | null;
 }
 
 export interface Service {
