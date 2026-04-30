@@ -519,14 +519,24 @@ export default function SelfCheckIn() {
       if (!queueErr) queue = queueData as number;
 
       // 신분증 확인 필요 플래그: 초진 + 예약없이 방문은 자동 ON
-      const notesPayload = needsIdCheck(visitType) ? { id_check_required: true } : null;
+      // 예약없이 방문(walk_in) 플래그: 슬롯 라우팅 추적용
+      const notesParts: Record<string, unknown> = {};
+      if (needsIdCheck(visitType)) notesParts.id_check_required = true;
+      if (visitType === 'experience') notesParts.walk_in = true;
+      const notesPayload = Object.keys(notesParts).length > 0 ? notesParts : null;
+
+      // T-20260430-foot-CHECKIN-SLOT-ROUTE
+      // 예약없이 방문 → 초진 슬롯 자동 배치
+      // 'experience' visit_type을 'new'로 저장해 대시보드 초진 슬롯으로 라우팅
+      // (walk_in 플래그는 notes.walk_in으로 보존)
+      const checkinVisitType: import('@/lib/types').VisitType = visitType === 'experience' ? 'new' : visitType;
 
       const { error: ciErr } = await anonClient.from('check_ins').insert({
         clinic_id: clinicId,
         customer_id: customerId,
         customer_name: name.trim(),
         customer_phone: phoneStored,
-        visit_type: visitType,
+        visit_type: checkinVisitType,
         status: 'registered',
         queue_number: queue,
         notes: notesPayload,
