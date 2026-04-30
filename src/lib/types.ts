@@ -120,6 +120,7 @@ export interface Staff {
   role: StaffRole;
   active: boolean;
   created_at: string;
+  updated_at?: string;
   user_id?: string | null;
 }
 
@@ -215,6 +216,7 @@ export interface UserProfile {
   active: boolean;
   approved: boolean;
   created_at: string;
+  updated_at?: string;
   access_tier?: string | null;
 }
 
