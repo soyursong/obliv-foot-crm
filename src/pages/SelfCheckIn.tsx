@@ -537,7 +537,8 @@ export default function SelfCheckIn() {
         customer_name: name.trim(),
         customer_phone: phoneStored,
         visit_type: checkinVisitType,
-        status: 'registered',
+        // T-20260430-foot-STAGE-FLOW-CORRECTION: 재진→관리대기(treatment_waiting) 직행, 신규/체험→접수(registered)
+        status: checkinVisitType === 'returning' ? 'treatment_waiting' : 'registered',
         queue_number: queue,
         notes: notesPayload,
       });
