@@ -1,5 +1,37 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-04-30 21:10 [STABILIZATION 최종 확인] dev-foot — MQ push 수신 → 이미 완료 상태 재확인 + 스펙 확장
+
+> **ticket**: T-20260430-foot-STABILIZATION | **status**: deployed (11:45) → **스펙 확장 완료**
+
+### 확인 결과
+
+- MQ push(21:00) 수신 당시 **티켓은 이미 deployed 상태** (2026-04-30 11:45 supervisor QA pass)
+- planner board.md stale 기준으로 "미착수" 오탐 — 실제 완료 확인
+- 빌드 재검증: `npm run build` ✅ **2.36s**, tsc 에러 0, console.log/warn/error 0
+
+### 스펙 확장 (S12~S14)
+
+| 스펙 | 티켓 | 방식 |
+|------|------|------|
+| S12 | DESK-PAYMENT-MENU | R-2026-04-30-desk-payment-menu.spec.ts (T1~T8) 참조 + smoke |
+| S13 | PACKAGE-CREATE-IN-SHEET | R-2026-04-30-package-create-in-sheet.spec.ts (T1~T5) 참조 + smoke |
+| S14 | CONSENT-FLOW-INTEGRATION | R-2026-04-30-consent-flow-integration.spec.ts (T1~T5) 참조 + smoke |
+
+### 총 커버리지
+
+- **14건 전체 배포 건 커버** (S01~S11 인라인 + S12~S14 R-spec + smoke)
+- STAB-2026-04-30.spec.ts: 698줄 (기존 620 → 확장)
+- 전체 회귀 스펙: 2,135줄+ → 2,213줄+
+
+### 수용 기준 (재확인)
+- [x] 빌드 PASS (2.36s, tsc 0)
+- [x] console.error/warn/log 0건
+- [x] 14건 E2E 회귀 스펙 존재 확인
+- [x] 성능: 셀프체크인 10초 이내 목표 스펙 유지 (S14s 추가)
+
+---
+
 ## 2026-04-30 [T-20260430-foot-SEARCH-DOB-CHART] deployed — 고객검색 생년월일(YYMMDD) + 차트번호 추가
 
 > **ticket**: T-20260430-foot-SEARCH-DOB-CHART | **priority**: P1 | **status**: deployed
@@ -709,3 +741,8 @@ QA_REPORT.md 참조
 - [x] 콘솔 에러 0
 - [x] 빌드 PASS
 - [x] 셀프 체크인 키오스크 화면 정상
+
+## 2026-04-30 11:45 — supervisor
+- T-20260430-foot-STABILIZATION: qa-pass → deployed (Yellow 자율 배포)
+- QA 5항목 PASS: 빌드/기존기능/DB호환/RLS/롤백SQL 전부 통과
+- 슬랙 배포 알림 발송 완료 (C0ATE5P6JTH)
