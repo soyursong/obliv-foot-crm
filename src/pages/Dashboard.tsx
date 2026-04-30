@@ -15,6 +15,13 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { addDays, format, isSameDay, subDays } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import {
@@ -27,9 +34,13 @@ import {
   Clock,
   CreditCard,
   GripVertical,
+  LayoutGrid,
+  Minus,
   MoreVertical,
   Plus,
+  RotateCcw,
   User,
+  ZoomIn,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -105,6 +116,72 @@ const customCollision: CollisionDetection = (args) => {
   }
   return closestCenter(args);
 };
+
+// ── 칸반 그룹 순서 정의 ────────────────────────────────────────────────────────
+const DEFAULT_GROUP_ORDER = [
+  'new_queue',
+  'returning_queue',
+  'exam_section',
+  'experience_queue',
+  'consult_waiting_col',
+  'consult_rooms',
+  'waiting_columns',
+  'treatment_rooms',
+  'desk_section',
+  'laser_rooms',
+] as const;
+
+type KanbanGroupId = (typeof DEFAULT_GROUP_ORDER)[number];
+
+const KANBAN_GROUP_LABELS: Record<KanbanGroupId, string> = {
+  new_queue: '초진',
+  returning_queue: '재진',
+  exam_section: '진료',
+  experience_queue: '선체험',
+  consult_waiting_col: '상담대기',
+  consult_rooms: '상담실',
+  waiting_columns: '치료/레이저대기',
+  treatment_rooms: '치료실',
+  desk_section: '데스크',
+  laser_rooms: '레이저실',
+};
+
+// ── 그룹 정렬 핸들용 SortableGroupItem ────────────────────────────────────────
+function SortableGroupItem({
+  id,
+  label,
+  children,
+}: {
+  id: string;
+  label: string;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        position: 'relative',
+        zIndex: isDragging ? 50 : undefined,
+      }}
+    >
+      {/* 드래그 핸들 (편집 모드 상단 배너) */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="mb-1 cursor-grab active:cursor-grabbing flex items-center justify-center gap-1 rounded-lg border border-dashed border-teal-400 bg-teal-50/60 px-2 py-1 text-xs font-semibold text-teal-700 select-none hover:bg-teal-100/60 transition"
+        title={`${label} — 드래그하여 순서 변경`}
+      >
+        <GripVertical className="h-3.5 w-3.5 shrink-0" />
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
 
 const DROP_STATUS_FOR_ROOM: Record<string, CheckInStatus> = {
   examination: 'examination',
@@ -1122,6 +1199,57 @@ export default function Dashboard() {
   const recentlyUpdated = useRef<Set<string>>(new Set());
   const navStateConsumed = useRef(false);
 
+  // ── 줌 + 레이아웃 편집 상태 ──────────────────────────────────────────────────
+  const [zoomLevel, setZoomLevel] = useState<number>(() => {
+    const saved = localStorage.getItem('foot-dash-zoom');
+    const n = saved ? Number(saved) : 100;
+    return Number.isFinite(n) && n >= 50 && n <= 150 ? n : 100;
+  });
+  const [groupOrder, setGroupOrder] = useState<KanbanGroupId[]>(() => {
+    try {
+      const saved = localStorage.getItem('foot-dash-group-order');
+      if (saved) {
+        const parsed = JSON.parse(saved) as string[];
+        // 저장된 순서가 유효한지 검증 (알 수 없는 ID 제거, 누락된 ID 뒤에 추가)
+        const valid = parsed.filter((id): id is KanbanGroupId =>
+          (DEFAULT_GROUP_ORDER as readonly string[]).includes(id),
+        );
+        const missing = DEFAULT_GROUP_ORDER.filter((id) => !valid.includes(id));
+        return [...valid, ...missing];
+      }
+    } catch {}
+    return [...DEFAULT_GROUP_ORDER];
+  });
+  const [isLayoutEdit, setIsLayoutEdit] = useState(false);
+
+  const handleZoom = useCallback((delta: number) => {
+    setZoomLevel((prev) => {
+      const next = Math.min(150, Math.max(50, prev + delta));
+      localStorage.setItem('foot-dash-zoom', String(next));
+      return next;
+    });
+  }, []);
+
+  const handleGroupSortEnd = useCallback((e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    setGroupOrder((prev) => {
+      const oldIdx = prev.indexOf(active.id as KanbanGroupId);
+      const newIdx = prev.indexOf(over.id as KanbanGroupId);
+      if (oldIdx === -1 || newIdx === -1) return prev;
+      const next = arrayMove(prev, oldIdx, newIdx);
+      localStorage.setItem('foot-dash-group-order', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const resetGroupOrder = useCallback(() => {
+    const defaults = [...DEFAULT_GROUP_ORDER];
+    setGroupOrder(defaults);
+    localStorage.removeItem('foot-dash-group-order');
+    toast.success('기본 배치로 초기화했어요');
+  }, []);
+
   // F-5: Closing 미수 클릭 → Dashboard 이동 시 결제 다이얼로그 또는 상세 시트 자동 오픈
   useEffect(() => {
     if (navStateConsumed.current) return;
@@ -2030,6 +2158,350 @@ export default function Dashboard() {
   const treatmentRooms = roomsByType['treatment'] ?? [];
   const laserRooms = roomsByType['laser'] ?? [];
 
+  // ── 칸반 그룹별 JSX 렌더러 ──────────────────────────────────────────────────
+  const renderKanbanGroup = useCallback((gid: KanbanGroupId): React.ReactNode => {
+    switch (gid) {
+      case 'new_queue':
+        return (
+          <div key="new_queue" className="w-52 shrink-0">
+            <DroppableColumn
+              id="registered"
+              label="초진"
+              count={newRegistered.length + newPendingReservations.length}
+              className="h-full"
+              highlight="text-blue-700"
+            >
+              <TimeSlotAccordion reservations={newPendingReservations} onCheckIn={handleReservationCheckIn} />
+              {newRegistered.map((ci) => (
+                <DraggableCard
+                  key={ci.id}
+                  checkIn={ci}
+                  stageStart={getStageStart(ci)}
+                  packageLabel={getPkgLabel(ci)}
+                  onClick={() => handleCardClick(ci)}
+                  onContextMenu={(e) => handleCardContext(ci, e)}
+                />
+              ))}
+            </DroppableColumn>
+          </div>
+        );
+      case 'returning_queue':
+        return (
+          <div key="returning_queue" className="w-48 shrink-0">
+            <DroppableColumn
+              id="returning_zone"
+              label="재진"
+              count={returningWaiting.length + returningPendingReservations.length}
+              className="h-full"
+              highlight="text-orange-700"
+            >
+              <TimeSlotAccordion reservations={returningPendingReservations} onCheckIn={handleReservationCheckIn} />
+              {returningWaiting.map((ci) => (
+                <DraggableCard
+                  key={ci.id}
+                  checkIn={ci}
+                  compact
+                  stageStart={getStageStart(ci)}
+                  packageLabel={getPkgLabel(ci)}
+                  onClick={() => handleCardClick(ci)}
+                  onContextMenu={(e) => handleCardContext(ci, e)}
+                />
+              ))}
+            </DroppableColumn>
+          </div>
+        );
+      case 'exam_section':
+        return (
+          <div key="exam_section" className="w-52 shrink-0 flex flex-col gap-2">
+            {examRooms.length > 0 ? (
+              <RoomSection
+                title="진료"
+                color="bg-violet-100 text-violet-800"
+                rooms={examRooms}
+                roomType="examination"
+                checkIns={filtered}
+                assignments={assignments}
+                gridCols="grid-cols-1"
+                onCardClick={handleCardClick}
+                onCardContext={handleCardContext}
+                getStageStart={getStageStart}
+                getPkgLabel={getPkgLabel}
+                therapists={doctors}
+                onTherapistChange={handleDoctorChange}
+              />
+            ) : (
+              <div className="text-xs font-bold px-2 py-1 rounded-t-lg bg-violet-100 text-violet-800">진료</div>
+            )}
+            <DroppableColumn
+              id="exam_waiting"
+              label="진료대기"
+              count={(byStatus['exam_waiting'] ?? []).length}
+              className="flex-1"
+              highlight="text-violet-700"
+            >
+              {(byStatus['exam_waiting'] ?? []).map((ci, idx, arr) => (
+                <div key={ci.id} className="relative group">
+                  <DraggableCard
+                    checkIn={ci}
+                    compact
+                    stageStart={getStageStart(ci)}
+                    packageLabel={getPkgLabel(ci)}
+                    onClick={() => handleCardClick(ci)}
+                    onContextMenu={(e) => handleCardContext(ci, e)}
+                  />
+                  <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
+                    {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
+                    {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
+                  </div>
+                  {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
+                </div>
+              ))}
+            </DroppableColumn>
+          </div>
+        );
+      case 'experience_queue':
+        return (
+          <div key="experience_queue" className="w-44 shrink-0">
+            <DroppableColumn
+              id="experience_zone"
+              label="선체험"
+              count={experienceWaiting.length}
+              className="h-full"
+              highlight="text-amber-700"
+            >
+              {experienceWaiting.map((ci) => (
+                <DraggableCard
+                  key={ci.id}
+                  checkIn={ci}
+                  compact
+                  stageStart={getStageStart(ci)}
+                  packageLabel={getPkgLabel(ci)}
+                  onClick={() => handleCardClick(ci)}
+                  onContextMenu={(e) => handleCardContext(ci, e)}
+                />
+              ))}
+            </DroppableColumn>
+          </div>
+        );
+      case 'consult_waiting_col':
+        return (
+          <div key="consult_waiting_col" className="w-44 shrink-0">
+            <DroppableColumn
+              id="consult_waiting"
+              label="상담대기"
+              count={(byStatus['consult_waiting'] ?? []).length}
+              className="h-full"
+              highlight="text-blue-700"
+            >
+              {(byStatus['consult_waiting'] ?? []).map((ci, idx, arr) => (
+                <div key={ci.id} className="relative group">
+                  <DraggableCard
+                    checkIn={ci}
+                    compact
+                    stageStart={getStageStart(ci)}
+                    packageLabel={getPkgLabel(ci)}
+                    onClick={() => handleCardClick(ci)}
+                    onContextMenu={(e) => handleCardContext(ci, e)}
+                  />
+                  <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
+                    {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
+                    {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
+                  </div>
+                  {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
+                </div>
+              ))}
+            </DroppableColumn>
+          </div>
+        );
+      case 'consult_rooms':
+        return consultRooms.length > 0 ? (
+          <div key="consult_rooms" className="w-44 shrink-0">
+            <RoomSection
+              title="상담"
+              color="bg-blue-100 text-blue-800"
+              rooms={consultRooms}
+              roomType="consultation"
+              checkIns={filtered}
+              assignments={assignments}
+              gridCols="grid-cols-1"
+              onCardClick={handleCardClick}
+              onCardContext={handleCardContext}
+              getStageStart={getStageStart}
+              getPkgLabel={getPkgLabel}
+              therapists={therapists}
+              onTherapistChange={handleConsultantChange}
+            />
+          </div>
+        ) : null;
+      case 'waiting_columns':
+        return (
+          <div key="waiting_columns" className="flex gap-2 shrink-0">
+            <div className="w-40">
+              <DroppableColumn
+                id="treatment_waiting"
+                label="치료대기"
+                count={(byStatus['treatment_waiting'] ?? []).length}
+                className="h-full"
+                highlight="text-amber-700"
+              >
+                {(byStatus['treatment_waiting'] ?? []).map((ci, idx, arr) => (
+                  <div key={ci.id} className="relative group">
+                    <DraggableCard
+                      checkIn={ci}
+                      compact
+                      stageStart={getStageStart(ci)}
+                      packageLabel={getPkgLabel(ci)}
+                      onClick={() => handleCardClick(ci)}
+                      onContextMenu={(e) => handleCardContext(ci, e)}
+                    />
+                    <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
+                      {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
+                      {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
+                    </div>
+                    {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
+                  </div>
+                ))}
+              </DroppableColumn>
+            </div>
+            <div className="w-40">
+              <DroppableColumn
+                id="laser_waiting"
+                label="레이저대기"
+                count={laserWaiting.length}
+                className="h-full"
+                highlight="text-rose-700"
+              >
+                {laserWaiting.map((ci) => (
+                  <DraggableCard
+                    key={ci.id}
+                    checkIn={ci}
+                    compact
+                    stageStart={getStageStart(ci)}
+                    packageLabel={getPkgLabel(ci)}
+                    onClick={() => handleCardClick(ci)}
+                    onContextMenu={(e) => handleCardContext(ci, e)}
+                  />
+                ))}
+              </DroppableColumn>
+            </div>
+          </div>
+        );
+      case 'treatment_rooms':
+        return treatmentRooms.length > 0 ? (
+          <div key="treatment_rooms" className="w-[480px] shrink-0">
+            <RoomSection
+              title="치료실"
+              color="bg-amber-100 text-amber-800"
+              rooms={treatmentRooms}
+              roomType="treatment"
+              checkIns={filtered}
+              assignments={assignments}
+              gridCols="grid-cols-3"
+              onCardClick={handleCardClick}
+              onCardContext={handleCardContext}
+              getStageStart={getStageStart}
+              getPkgLabel={getPkgLabel}
+              therapists={therapists}
+              onTherapistChange={handleTherapistChange}
+            />
+          </div>
+        ) : null;
+      case 'desk_section':
+        return (
+          <div key="desk_section" className="w-52 shrink-0 flex flex-col gap-2 h-full">
+            <DroppableColumn
+              id="payment_waiting"
+              label="결제"
+              count={(byStatus['payment_waiting'] ?? []).length}
+              highlight="text-purple-700"
+              subtitle={
+                paymentTotal > 0 ? (
+                  <div className="text-xs font-semibold text-purple-700 tabular-nums">
+                    대기 {formatAmount(paymentTotal)}
+                  </div>
+                ) : undefined
+              }
+            >
+              {(byStatus['payment_waiting'] ?? []).map((ci) => (
+                <div key={ci.id}>
+                  <DraggableCard checkIn={ci} compact stageStart={getStageStart(ci)} packageLabel={getPkgLabel(ci)} onClick={() => handleCardClick(ci)} onContextMenu={(e) => handleCardContext(ci, e)} />
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setPaymentTarget(ci); }}
+                    className="mt-0.5 w-full rounded bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-100 transition flex items-center justify-center gap-0.5"
+                  >
+                    <CreditCard className="h-2.5 w-2.5" /> 결제하기
+                  </button>
+                </div>
+              ))}
+            </DroppableColumn>
+            <DroppableColumn
+              id="done"
+              label="완료"
+              count={doneCount}
+              className="flex-1"
+              highlight="text-emerald-700"
+              subtitle={
+                doneTotal > 0 ? (
+                  <div className="text-xs font-semibold text-emerald-700 tabular-nums">
+                    {formatAmount(doneTotal)}
+                  </div>
+                ) : undefined
+              }
+            >
+              {(byStatus['done'] ?? []).map((ci) => {
+                const paid = dayPayments.get(ci.id);
+                return (
+                  <div key={ci.id}>
+                    <DraggableCard
+                      checkIn={ci}
+                      compact
+                      stageStart={getStageStart(ci)}
+                      packageLabel={getPkgLabel(ci)}
+                      onClick={() => handleCardClick(ci)}
+                    />
+                    {paid != null && paid > 0 && (
+                      <div className="mt-0.5 px-1 text-xs text-emerald-700 font-medium text-right tabular-nums">
+                        {Math.round(paid / 10000)}만
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </DroppableColumn>
+          </div>
+        );
+      case 'laser_rooms':
+        return laserRooms.length > 0 ? (
+          <div key="laser_rooms" className="w-[480px] shrink-0">
+            <RoomSection
+              title="레이저실"
+              color="bg-rose-100 text-rose-800"
+              rooms={laserRooms}
+              roomType="laser"
+              checkIns={filtered}
+              assignments={assignments}
+              gridCols="grid-cols-3"
+              onCardClick={handleCardClick}
+              onCardContext={handleCardContext}
+              getStageStart={getStageStart}
+              getPkgLabel={getPkgLabel}
+            />
+          </div>
+        ) : null;
+      default:
+        return null;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    newRegistered, newPendingReservations, returningWaiting, returningPendingReservations,
+    examRooms, consultRooms, treatmentRooms, laserRooms,
+    byStatus, filtered, assignments, doctors, therapists,
+    experienceWaiting, laserWaiting, paymentTotal, doneTotal, dayPayments, doneCount,
+    getStageStart, getPkgLabel, swapSortOrder,
+    handleReservationCheckIn, handleCardClick, handleCardContext,
+    handleDoctorChange, handleConsultantChange, handleTherapistChange,
+  ]);
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -2086,6 +2558,64 @@ export default function Dashboard() {
             </TabsList>
           </Tabs>
 
+          {/* 줌 컨트롤 */}
+          <div className="flex items-center gap-0.5 border rounded-md bg-white/80 px-1 py-0.5">
+            <button
+              onClick={() => handleZoom(-10)}
+              disabled={zoomLevel <= 50}
+              className="p-0.5 rounded hover:bg-gray-100 disabled:opacity-40 transition"
+              title="축소 (-10%)"
+            >
+              <Minus className="h-3.5 w-3.5 text-gray-600" />
+            </button>
+            <button
+              onClick={() => setZoomLevel((_prev) => {
+                localStorage.setItem('foot-dash-zoom', '100');
+                return 100;
+              })}
+              className="px-1.5 text-xs tabular-nums font-mono text-gray-700 hover:bg-gray-100 rounded transition min-w-[36px] text-center"
+              title="클릭하여 100%로 초기화"
+            >
+              {zoomLevel}%
+            </button>
+            <button
+              onClick={() => handleZoom(+10)}
+              disabled={zoomLevel >= 150}
+              className="p-0.5 rounded hover:bg-gray-100 disabled:opacity-40 transition"
+              title="확대 (+10%)"
+            >
+              <ZoomIn className="h-3.5 w-3.5 text-gray-600" />
+            </button>
+          </div>
+
+          {/* 레이아웃 편집 (관리자 전용) */}
+          {profile?.role === 'admin' && (
+            <div className="flex items-center gap-1">
+              {isLayoutEdit && (
+                <button
+                  onClick={resetGroupOrder}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-gray-600 hover:bg-gray-100 border transition"
+                  title="기본 배치로 초기화"
+                >
+                  <RotateCcw className="h-3 w-3" /> 초기화
+                </button>
+              )}
+              <button
+                onClick={() => setIsLayoutEdit((v) => !v)}
+                className={cn(
+                  'flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border transition',
+                  isLayoutEdit
+                    ? 'bg-teal-600 text-white border-teal-600 hover:bg-teal-700'
+                    : 'text-gray-600 hover:bg-gray-100 border-gray-200',
+                )}
+                title={isLayoutEdit ? '편집 완료' : '슬롯 배치 편집 (관리자)'}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                {isLayoutEdit ? '편집 완료' : '배치 편집'}
+              </button>
+            </div>
+          )}
+
           <Button size="sm" onClick={() => setOpenNew(true)} className="gap-1 h-8">
             <Plus className="h-3.5 w-3.5" /> 체크인
           </Button>
@@ -2108,358 +2638,73 @@ export default function Dashboard() {
           onSlotClick={handleQuickSlotClick}
         />
 
-        {/* 우측: 칸반 */}
-      <div className="flex-1 overflow-x-auto overflow-y-hidden p-3">
+        {/* 우측: 칸반 (줌 + 레이아웃 편집 지원) */}
+      <div className="flex-1 overflow-auto p-3">
         {loading && rows.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             불러오는 중…
           </div>
-        ) : (
-          <CardHandlersCtx.Provider value={cardHandlersValue}>
-          <ConsentMapCtx.Provider value={consentMap}>
-          <DndContext
-            sensors={sensors}
-            collisionDetection={customCollision}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-            autoScroll={{
-              threshold: { x: 0.15, y: 0.15 },
-              acceleration: 12,
-              interval: 5,
+        ) : isLayoutEdit ? (
+          /* ── 레이아웃 편집 모드: 그룹 드래그 정렬 ─────────────────────── */
+          <div className="mb-2 text-xs text-teal-700 font-medium px-1 py-0.5 bg-teal-50 rounded border border-teal-200 inline-flex items-center gap-1">
+            <LayoutGrid className="h-3.5 w-3.5" />
+            슬롯 그룹을 드래그하여 순서를 바꾸세요. 변경 사항은 자동 저장됩니다.
+          </div>
+        ) : null}
+        {!loading || rows.length > 0 ? (
+          <div
+            style={{
+              transform: `scale(${zoomLevel / 100})`,
+              transformOrigin: 'top left',
+              display: 'inline-block',
+              // 줌 아웃 시 물리 공간 보정 (스크롤바가 올바르게 표시되도록)
+              minWidth: zoomLevel < 100 ? `${(100 / zoomLevel) * 100}%` : undefined,
             }}
           >
-            <div className="flex gap-2 h-full min-w-max">
-              {/* 1. 초진 */}
-              <div className="w-52 shrink-0">
-                <DroppableColumn
-                  id="registered"
-                  label="초진"
-                  count={newRegistered.length + newPendingReservations.length}
-                  className="h-full"
-                  highlight="text-blue-700"
-                >
-                  <TimeSlotAccordion reservations={newPendingReservations} onCheckIn={handleReservationCheckIn} />
-                  {newRegistered.map((ci) => (
-                    <DraggableCard
-                      key={ci.id}
-                      checkIn={ci}
-                      stageStart={getStageStart(ci)}
-                      packageLabel={getPkgLabel(ci)}
-                      onClick={() => handleCardClick(ci)}
-                      onContextMenu={(e) => handleCardContext(ci, e)}
-                    />
-                  ))}
-                </DroppableColumn>
-              </div>
-
-              {/* 2. 재진 */}
-              <div className="w-48 shrink-0">
-                <DroppableColumn
-                  id="returning_zone"
-                  label="재진"
-                  count={returningWaiting.length + returningPendingReservations.length}
-                  className="h-full"
-                  highlight="text-orange-700"
-                >
-                  <TimeSlotAccordion reservations={returningPendingReservations} onCheckIn={handleReservationCheckIn} />
-                  {returningWaiting.map((ci) => (
-                    <DraggableCard
-                      key={ci.id}
-                      checkIn={ci}
-                      compact
-                      stageStart={getStageStart(ci)}
-                      packageLabel={getPkgLabel(ci)}
-                      onClick={() => handleCardClick(ci)}
-                      onContextMenu={(e) => handleCardContext(ci, e)}
-                    />
-                  ))}
-                </DroppableColumn>
-              </div>
-
-              {/* 3. 진료 (원장실 + 진료대기) */}
-              <div className="w-52 shrink-0 flex flex-col gap-2">
-                {examRooms.length > 0 ? (
-                  <RoomSection
-                    title="진료"
-                    color="bg-violet-100 text-violet-800"
-                    rooms={examRooms}
-                    roomType="examination"
-                    checkIns={filtered}
-                    assignments={assignments}
-                    gridCols="grid-cols-1"
-                    onCardClick={handleCardClick}
-                    onCardContext={handleCardContext}
-                    getStageStart={getStageStart}
-                    getPkgLabel={getPkgLabel}
-                    therapists={doctors}
-                    onTherapistChange={handleDoctorChange}
-                  />
-                ) : (
-                  <div className="text-xs font-bold px-2 py-1 rounded-t-lg bg-violet-100 text-violet-800">진료</div>
-                )}
-                <DroppableColumn
-                  id="exam_waiting"
-                  label="진료대기"
-                  count={(byStatus['exam_waiting'] ?? []).length}
-                  className="flex-1"
-                  highlight="text-violet-700"
-                >
-                  {(byStatus['exam_waiting'] ?? []).map((ci, idx, arr) => (
-                    <div key={ci.id} className="relative group">
-                      <DraggableCard
-                        checkIn={ci}
-                        compact
-                        stageStart={getStageStart(ci)}
-                        packageLabel={getPkgLabel(ci)}
-                        onClick={() => handleCardClick(ci)}
-                        onContextMenu={(e) => handleCardContext(ci, e)}
-                      />
-                      <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
-                        {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
-                        {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
-                      </div>
-                      {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
-                    </div>
-                  ))}
-                </DroppableColumn>
-              </div>
-
-              {/* 4. 선체험 */}
-              <div className="w-44 shrink-0">
-                <DroppableColumn
-                  id="experience_zone"
-                  label="선체험"
-                  count={experienceWaiting.length}
-                  className="h-full"
-                  highlight="text-amber-700"
-                >
-                  {experienceWaiting.map((ci) => (
-                    <DraggableCard
-                      key={ci.id}
-                      checkIn={ci}
-                      compact
-                      stageStart={getStageStart(ci)}
-                      packageLabel={getPkgLabel(ci)}
-                      onClick={() => handleCardClick(ci)}
-                      onContextMenu={(e) => handleCardContext(ci, e)}
-                    />
-                  ))}
-                </DroppableColumn>
-              </div>
-
-              {/* 5. 상담대기 */}
-              <div className="w-44 shrink-0">
-                <DroppableColumn
-                  id="consult_waiting"
-                  label="상담대기"
-                  count={(byStatus['consult_waiting'] ?? []).length}
-                  className="h-full"
-                  highlight="text-blue-700"
-                >
-                  {(byStatus['consult_waiting'] ?? []).map((ci, idx, arr) => (
-                    <div key={ci.id} className="relative group">
-                      <DraggableCard
-                        checkIn={ci}
-                        compact
-                        stageStart={getStageStart(ci)}
-                        packageLabel={getPkgLabel(ci)}
-                        onClick={() => handleCardClick(ci)}
-                        onContextMenu={(e) => handleCardContext(ci, e)}
-                      />
-                      <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
-                        {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
-                        {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
-                      </div>
-                      {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
-                    </div>
-                  ))}
-                </DroppableColumn>
-              </div>
-
-              {/* 6. 상담 (5개 상담실) — 세로 1열 + 직원명 dropdown */}
-              {consultRooms.length > 0 && (
-                <div className="w-44 shrink-0">
-                  <RoomSection
-                    title="상담"
-                    color="bg-blue-100 text-blue-800"
-                    rooms={consultRooms}
-                    roomType="consultation"
-                    checkIns={filtered}
-                    assignments={assignments}
-                    gridCols="grid-cols-1"
-                    onCardClick={handleCardClick}
-                    onCardContext={handleCardContext}
-                    getStageStart={getStageStart}
-                    getPkgLabel={getPkgLabel}
-                    therapists={therapists}
-                    onTherapistChange={handleConsultantChange}
-                  />
-                </div>
-              )}
-
-              {/* 7. 치료대기 + 레이저대기 나란히 (세로형) */}
-              <div className="flex gap-2 shrink-0">
-                <div className="w-40">
-                  <DroppableColumn
-                    id="treatment_waiting"
-                    label="치료대기"
-                    count={(byStatus['treatment_waiting'] ?? []).length}
-                    className="h-full"
-                    highlight="text-amber-700"
-                  >
-                    {(byStatus['treatment_waiting'] ?? []).map((ci, idx, arr) => (
-                      <div key={ci.id} className="relative group">
-                        <DraggableCard
-                          checkIn={ci}
-                          compact
-                          stageStart={getStageStart(ci)}
-                          packageLabel={getPkgLabel(ci)}
-                          onClick={() => handleCardClick(ci)}
-                          onContextMenu={(e) => handleCardContext(ci, e)}
-                        />
-                        <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
-                          {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
-                          {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
-                        </div>
-                        {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
-                      </div>
+            {isLayoutEdit ? (
+              /* ── 편집 모드: SortableContext로 그룹 드래그 순서 변경 ── */
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleGroupSortEnd}
+              >
+                <SortableContext items={groupOrder} strategy={horizontalListSortingStrategy}>
+                  <div className="flex gap-2 min-w-max" style={{ minHeight: 'calc(100vh - 200px)' }}>
+                    {groupOrder.map((gid) => (
+                      <SortableGroupItem key={gid} id={gid} label={KANBAN_GROUP_LABELS[gid]}>
+                        {renderKanbanGroup(gid)}
+                      </SortableGroupItem>
                     ))}
-                  </DroppableColumn>
+                  </div>
+                </SortableContext>
+              </DndContext>
+            ) : (
+              /* ── 일반 모드: 카드 드래그 DndContext ── */
+              <CardHandlersCtx.Provider value={cardHandlersValue}>
+              <ConsentMapCtx.Provider value={consentMap}>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={customCollision}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                autoScroll={{
+                  threshold: { x: 0.15, y: 0.15 },
+                  acceleration: 12,
+                  interval: 5,
+                }}
+              >
+                <div className="flex gap-2 h-full min-w-max">
+                  {groupOrder.map((gid) => renderKanbanGroup(gid))}
                 </div>
-                <div className="w-40">
-                  <DroppableColumn
-                    id="laser_waiting"
-                    label="레이저대기"
-                    count={laserWaiting.length}
-                    className="h-full"
-                    highlight="text-rose-700"
-                  >
-                    {laserWaiting.map((ci) => (
-                      <DraggableCard
-                        key={ci.id}
-                        checkIn={ci}
-                        compact
-                        stageStart={getStageStart(ci)}
-                        packageLabel={getPkgLabel(ci)}
-                        onClick={() => handleCardClick(ci)}
-                        onContextMenu={(e) => handleCardContext(ci, e)}
-                      />
-                    ))}
-                  </DroppableColumn>
-                </div>
-              </div>
-
-              {/* 8. 치료실 (9개) */}
-              {treatmentRooms.length > 0 && (
-                <div className="w-[480px] shrink-0">
-                  <RoomSection
-                    title="치료실"
-                    color="bg-amber-100 text-amber-800"
-                    rooms={treatmentRooms}
-                    roomType="treatment"
-                    checkIns={filtered}
-                    assignments={assignments}
-                    gridCols="grid-cols-3"
-                    onCardClick={handleCardClick}
-                    onCardContext={handleCardContext}
-                    getStageStart={getStageStart}
-                    getPkgLabel={getPkgLabel}
-                    therapists={therapists}
-                    onTherapistChange={handleTherapistChange}
-                  />
-                </div>
-              )}
-
-              {/* 9. 데스크 (결제 + 완료) — 치료실과 레이저실 사이 */}
-              <div className="w-52 shrink-0 flex flex-col gap-2 h-full">
-                <DroppableColumn
-                  id="payment_waiting"
-                  label="결제"
-                  count={(byStatus['payment_waiting'] ?? []).length}
-                  highlight="text-purple-700"
-                  subtitle={
-                    paymentTotal > 0 ? (
-                      <div className="text-xs font-semibold text-purple-700 tabular-nums">
-                        대기 {formatAmount(paymentTotal)}
-                      </div>
-                    ) : undefined
-                  }
-                >
-                  {(byStatus['payment_waiting'] ?? []).map((ci) => (
-                    <div key={ci.id}>
-                      <DraggableCard checkIn={ci} compact stageStart={getStageStart(ci)} packageLabel={getPkgLabel(ci)} onClick={() => handleCardClick(ci)} onContextMenu={(e) => handleCardContext(ci, e)} />
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setPaymentTarget(ci); }}
-                        className="mt-0.5 w-full rounded bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-100 transition flex items-center justify-center gap-0.5"
-                      >
-                        <CreditCard className="h-2.5 w-2.5" /> 결제하기
-                      </button>
-                    </div>
-                  ))}
-                </DroppableColumn>
-                <DroppableColumn
-                  id="done"
-                  label="완료"
-                  count={doneCount}
-                  className="flex-1"
-                  highlight="text-emerald-700"
-                  subtitle={
-                    doneTotal > 0 ? (
-                      <div className="text-xs font-semibold text-emerald-700 tabular-nums">
-                        {formatAmount(doneTotal)}
-                      </div>
-                    ) : undefined
-                  }
-                >
-                  {(byStatus['done'] ?? []).map((ci) => {
-                    const paid = dayPayments.get(ci.id);
-                    return (
-                      <div key={ci.id}>
-                        <DraggableCard
-                          checkIn={ci}
-                          compact
-                          stageStart={getStageStart(ci)}
-                          packageLabel={getPkgLabel(ci)}
-                          onClick={() => handleCardClick(ci)}
-                        />
-                        {paid != null && paid > 0 && (
-                          <div className="mt-0.5 px-1 text-xs text-emerald-700 font-medium text-right tabular-nums">
-                            {Math.round(paid / 10000)}만
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </DroppableColumn>
-              </div>
-
-              {/* 10. 레이저실 (12개) — 3열×4행 */}
-              {laserRooms.length > 0 && (
-                <div className="w-[480px] shrink-0">
-                  <RoomSection
-                    title="레이저실"
-                    color="bg-rose-100 text-rose-800"
-                    rooms={laserRooms}
-                    roomType="laser"
-                    checkIns={filtered}
-                    assignments={assignments}
-                    gridCols="grid-cols-3"
-                    onCardClick={handleCardClick}
-                    onCardContext={handleCardContext}
-                    getStageStart={getStageStart}
-                    getPkgLabel={getPkgLabel}
-                  />
-                </div>
-              )}
-            </div>
-
-            <DragOverlay>
-              {dragging && <DraggableCard checkIn={dragging} compact />}
-            </DragOverlay>
-          </DndContext>
-          </ConsentMapCtx.Provider>
-          </CardHandlersCtx.Provider>
-        )}
+                <DragOverlay>
+                  {dragging && <DraggableCard checkIn={dragging} compact />}
+                </DragOverlay>
+              </DndContext>
+              </ConsentMapCtx.Provider>
+              </CardHandlersCtx.Provider>
+            )}
+          </div>
+        ) : null}
       </div>
       {/* flex flex-1 overflow-hidden wrapper 닫기 */}
       </div>
