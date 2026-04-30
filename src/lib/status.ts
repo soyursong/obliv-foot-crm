@@ -2,43 +2,51 @@ import type { CheckInStatus, StaffRole, UserRole, VisitType } from './types';
 
 export const STATUS_KO: Record<CheckInStatus, string> = {
   registered: '접수',
-  checklist: '체크리스트',
-  exam_waiting: '진료대기',
-  examination: '진료',
   consult_waiting: '상담대기',
   consultation: '상담',
-  payment_waiting: '결제',
-  treatment_waiting: '시술대기',
-  preconditioning: '사전처치',
+  exam_waiting: '진료대기',
+  examination: '원장실',
+  treatment_waiting: '관리대기',
+  preconditioning: '관리',
+  laser_waiting: '레이저대기',
   laser: '레이저',
+  payment_waiting: '수납대기',
   done: '완료',
   cancelled: '취소',
+  checklist: '체크리스트', // deprecated
 };
 
+// ── 신규 환자 11단계 (4/30 대표 확정: 선상담 → 선진료 → 관리 → 레이저 → 수납)
 export const NEW_PATIENT_STAGES: CheckInStatus[] = [
-  'registered',
-  'checklist',
-  'exam_waiting',
-  'examination',
-  'consult_waiting',
-  'consultation',
-  'payment_waiting',
-  'treatment_waiting',
-  'preconditioning',
-  'laser',
-  'done',
+  'registered',          // 예약/접수
+  'consult_waiting',     // 상담대기
+  'consultation',        // 상담
+  'exam_waiting',        // 진료대기
+  'examination',         // 원장실
+  'treatment_waiting',   // 관리대기
+  'preconditioning',     // 관리
+  'laser_waiting',       // 레이저대기
+  'laser',               // 레이저
+  'payment_waiting',     // 수납대기
+  'done',                // 완료
 ];
 
+// ── 재진 환자 6단계 (관리부터 시작)
 export const RETURNING_PATIENT_STAGES: CheckInStatus[] = [
-  'registered',
-  'treatment_waiting',
-  'preconditioning',
-  'laser',
-  'done',
+  'treatment_waiting',   // 관리대기
+  'preconditioning',     // 관리
+  'laser_waiting',       // 레이저대기
+  'laser',               // 레이저
+  'payment_waiting',     // 수납대기
+  'done',                // 완료
 ];
+
+// ── 체험 환자 (초진 동선과 동일)
+export const EXPERIENCE_PATIENT_STAGES: CheckInStatus[] = NEW_PATIENT_STAGES;
 
 export function stagesFor(visitType: VisitType): CheckInStatus[] {
-  return visitType === 'new' ? NEW_PATIENT_STAGES : RETURNING_PATIENT_STAGES;
+  if (visitType === 'returning') return RETURNING_PATIENT_STAGES;
+  return NEW_PATIENT_STAGES; // 'new' | 'experience'
 }
 
 export const VISIT_TYPE_KO: Record<VisitType, string> = {
@@ -50,17 +58,18 @@ export const VISIT_TYPE_KO: Record<VisitType, string> = {
 /** 상태별 배지 색상 (Tailwind classes) — 대기실·일일이력 등 공통 사용 */
 export const STATUS_COLOR: Record<CheckInStatus, string> = {
   registered: 'bg-gray-100 text-gray-700',
-  checklist: 'bg-yellow-100 text-yellow-800',
-  exam_waiting: 'bg-blue-100 text-blue-800',
-  examination: 'bg-blue-500 text-white',
   consult_waiting: 'bg-indigo-100 text-indigo-800',
   consultation: 'bg-indigo-500 text-white',
-  payment_waiting: 'bg-amber-100 text-amber-800',
+  exam_waiting: 'bg-blue-100 text-blue-800',
+  examination: 'bg-blue-500 text-white',
   treatment_waiting: 'bg-teal-100 text-teal-800',
   preconditioning: 'bg-teal-400 text-white',
+  laser_waiting: 'bg-rose-100 text-rose-700',
   laser: 'bg-emerald-500 text-white',
+  payment_waiting: 'bg-amber-100 text-amber-800',
   done: 'bg-gray-200 text-gray-500',
   cancelled: 'bg-red-100 text-red-600',
+  checklist: 'bg-yellow-100 text-yellow-800', // deprecated
 };
 
 /** 방문유형별 배지 색상 */
@@ -74,8 +83,8 @@ export const VISIT_TYPE_COLOR: Record<VisitType, string> = {
 export const CALLED_STATUSES: CheckInStatus[] = [
   'examination',
   'consultation',
-  'laser',
   'preconditioning',
+  'laser',
 ];
 
 /** 직원 직책 한글 라벨 (staff 테이블 role) */

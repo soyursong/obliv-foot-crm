@@ -562,10 +562,18 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     );
   };
 
-  // ── Stage 감지 ──
+  // ── Stage 감지 (4/30 표준 v2 기준) ──
   const isConsultStage =
     checkIn.status === 'consultation' || checkIn.status === 'consult_waiting';
   const isDeskStage = checkIn.status === 'payment_waiting';
+  // 시술 메모 노출 조건: 관리(preconditioning) 이후 단계만 (이전 단계에서는 미노출)
+  const isTreatmentMemoVisible = (
+    checkIn.status === 'preconditioning' ||
+    checkIn.status === 'laser_waiting' ||
+    checkIn.status === 'laser' ||
+    checkIn.status === 'payment_waiting' ||
+    checkIn.status === 'done'
+  );
 
   const hasSettledItem = treatmentItems.some((i) => i.settled);
   const canMoveToPaymentWaiting =
@@ -1259,20 +1267,25 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             </div>
           </div>
 
-          {/* 시술 기록 */}
-          <div className="space-y-2">
-            <Label className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
-              <Camera className="h-3 w-3" /> 시술 기록
-              <span className="ml-auto text-xs font-normal text-muted-foreground">시술 완료 후</span>
-            </Label>
-            <Textarea
-              value={treatmentMemo}
-              onChange={(e) => setTreatmentMemo(e.target.value)}
-              placeholder="시술 기록, 사용 장비, 특이사항"
-              rows={3}
-              className="text-sm"
-            />
-          </div>
+          {/* 시술 기록 — 관리(preconditioning) 이후 단계만 노출 */}
+          {isTreatmentMemoVisible && (
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                <Camera className="h-3 w-3" /> 시술 기록
+                {checkIn.treatment_memo?.details && (
+                  <span className="ml-1 text-xs font-normal text-teal-600 bg-teal-50 rounded px-1.5 py-0.5">저장됨</span>
+                )}
+                <span className="ml-auto text-xs font-normal text-muted-foreground">관리 이후 단계</span>
+              </Label>
+              <Textarea
+                value={treatmentMemo}
+                onChange={(e) => setTreatmentMemo(e.target.value)}
+                placeholder="시술 기록, 사용 장비, 특이사항"
+                rows={3}
+                className="text-sm"
+              />
+            </div>
+          )}
 
           <Button size="sm" onClick={saveNotes} disabled={saving} className="w-full">
             {saving ? '저장 중…' : '메모 저장'}

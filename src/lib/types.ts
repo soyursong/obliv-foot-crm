@@ -4,17 +4,18 @@ export type VisitType = 'new' | 'returning' | 'experience';
 
 export type CheckInStatus =
   | 'registered'
-  | 'checklist'
-  | 'exam_waiting'
-  | 'examination'
   | 'consult_waiting'
   | 'consultation'
-  | 'payment_waiting'
+  | 'exam_waiting'
+  | 'examination'
   | 'treatment_waiting'
   | 'preconditioning'
+  | 'laser_waiting'     // 레이저실 입실 전 대기 (4/30 표준 v2 신규)
   | 'laser'
+  | 'payment_waiting'   // 시술 후 수납대기 (의미 변경: 상담 후 결제 → 레이저 후 수납)
   | 'done'
-  | 'cancelled';
+  | 'cancelled'
+  | 'checklist';        // deprecated — DB 이관 완료 후 제거 예정, 호환성 유지
 
 /** Room-type field keys on CheckIn (used for room assignment logic) */
 export type RoomFieldKey = 'examination_room' | 'consultation_room' | 'treatment_room' | 'laser_room';
