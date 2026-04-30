@@ -20,6 +20,7 @@ import { ko } from 'date-fns/locale';
 import {
   ArrowDown,
   ArrowUp,
+  Calendar,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -34,8 +35,20 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
+import { generateSlots } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO } from '@/lib/status';
 import { formatAmount, maskPhoneTail } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -47,7 +60,7 @@ import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
-import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Reservation, Room, RoomFieldKey, Staff, VisitType } from '@/lib/types';
+import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Customer, Reservation, Room, RoomFieldKey, Staff, VisitType } from '@/lib/types';
 
 type TabKey = 'all' | 'new' | 'returning';
 
@@ -687,9 +700,400 @@ function RoomSection({
   );
 }
 
+// ── QuickResvDraft 타입 ────────────────────────────────────────────────────────
+interface QuickResvDraft {
+  date: string;
+  time: string;
+  name: string;
+  phone: string;
+  visit_type: VisitType;
+  memo: string;
+}
+
+// ── MiniCalendar ───────────────────────────────────────────────────────────────
+function MiniCalendar({
+  selected,
+  onSelect,
+  month,
+  onMonthChange,
+}: {
+  selected: Date;
+  onSelect: (d: Date) => void;
+  month: Date;
+  onMonthChange: (d: Date) => void;
+}) {
+  const today = new Date();
+  const year = month.getFullYear();
+  const m = month.getMonth();
+  const firstDow = new Date(year, m, 1).getDay(); // 0=Sun
+  const startOffset = firstDow === 0 ? 6 : firstDow - 1; // Mon-first
+  const daysInMonth = new Date(year, m + 1, 0).getDate();
+
+  const cells: (Date | null)[] = [];
+  for (let i = 0; i < startOffset; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, m, d));
+
+  const DOW_KO = ['월', '화', '수', '목', '금', '토', '일'];
+
+  return (
+    <div className="bg-white border rounded-xl shadow-lg p-3 w-56">
+      <div className="flex items-center justify-between mb-2">
+        <button
+          onClick={() => onMonthChange(new Date(year, m - 1, 1))}
+          className="p-0.5 rounded hover:bg-gray-100 transition"
+        >
+          <ChevronLeft className="h-4 w-4 text-gray-500" />
+        </button>
+        <span className="text-xs font-semibold text-gray-800">
+          {format(month, 'yyyy년 M월')}
+        </span>
+        <button
+          onClick={() => onMonthChange(new Date(year, m + 1, 1))}
+          className="p-0.5 rounded hover:bg-gray-100 transition"
+        >
+          <ChevronRight className="h-4 w-4 text-gray-500" />
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-0.5 mb-1">
+        {DOW_KO.map((d) => (
+          <div key={d} className="text-center text-[10px] font-medium text-gray-400">{d}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-0.5">
+        {cells.map((d, i) => {
+          if (!d) return <div key={`e-${i}`} className="h-6 w-6" />;
+          const isToday = isSameDay(d, today);
+          const isSelected = isSameDay(d, selected);
+          const isSun = d.getDay() === 0;
+          return (
+            <button
+              key={d.toISOString()}
+              onClick={() => onSelect(d)}
+              className={cn(
+                'rounded text-[11px] h-6 w-6 mx-auto flex items-center justify-center transition font-medium',
+                isSelected && 'bg-teal-600 text-white',
+                !isSelected && isToday && 'bg-teal-100 text-teal-700 font-semibold',
+                !isSelected && !isToday && 'hover:bg-gray-100 text-gray-700',
+                isSun && !isSelected && 'text-red-400',
+              )}
+            >
+              {d.getDate()}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex justify-center">
+        <button
+          onClick={() => { onSelect(today); onMonthChange(today); }}
+          className="text-[11px] text-teal-600 hover:text-teal-800 font-medium"
+        >
+          오늘로
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── DashboardTimeline ──────────────────────────────────────────────────────────
+function DashboardTimeline({
+  date,
+  reservations,
+  onSlotClick,
+}: {
+  date: Date;
+  reservations: Reservation[];
+  onSlotClick: (slot: { date: string; time: string }) => void;
+}) {
+  const now = new Date();
+  const isToday = isSameDay(date, now);
+  const dateStr = format(date, 'yyyy-MM-dd');
+  const currentH = now.getHours();
+  const currentM = now.getMinutes();
+  const currentSlot = `${String(currentH).padStart(2, '0')}:${currentM < 30 ? '00' : '30'}`;
+
+  const slots = generateSlots('10:00', '20:00', 30);
+
+  // 예약을 30분 슬롯으로 분류
+  const slotMap: Record<string, Reservation[]> = {};
+  for (const r of reservations) {
+    const t = r.reservation_time?.slice(0, 5) ?? '00:00';
+    const [h, mm] = t.split(':').map(Number);
+    const slot = `${String(h).padStart(2, '0')}:${mm < 30 ? '00' : '30'}`;
+    (slotMap[slot] ??= []).push(r);
+  }
+
+  return (
+    <div className="w-44 shrink-0 flex flex-col border-r bg-white overflow-hidden">
+      <div className="text-xs font-semibold px-2 py-1.5 border-b bg-muted/20 text-gray-600 sticky top-0 flex items-center gap-1">
+        <Clock className="h-3 w-3" /> 시간표
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {slots.map((slot) => {
+          const items = slotMap[slot] ?? [];
+          const isCurrentSlot = isToday && slot === currentSlot;
+          const isPastSlot = isToday &&
+            (parseInt(slot.split(':')[0]) * 60 + parseInt(slot.split(':')[1])) <
+            (currentH * 60 + currentM - 30);
+
+          return (
+            <div
+              key={slot}
+              className={cn(
+                'border-b border-gray-100 min-h-[44px]',
+                isCurrentSlot && 'bg-teal-50/60',
+                isPastSlot && 'opacity-55',
+              )}
+            >
+              {/* 시간 레이블 */}
+              <div className="flex items-center gap-1 px-1.5 pt-1">
+                <span className={cn(
+                  'text-[10px] font-mono tabular-nums shrink-0 w-9',
+                  isCurrentSlot ? 'text-teal-700 font-bold' : 'text-gray-400',
+                )}>
+                  {slot}
+                </span>
+                {isCurrentSlot && (
+                  <div className="h-1.5 w-1.5 rounded-full bg-teal-500 animate-pulse shrink-0" />
+                )}
+              </div>
+
+              {/* 예약 목록 */}
+              <div className="px-1 pb-1 space-y-0.5">
+                {items.map((r) => (
+                  <div
+                    key={r.id}
+                    className={cn(
+                      'rounded text-[10px] px-1.5 py-0.5 truncate font-medium',
+                      r.visit_type === 'new'
+                        ? 'bg-blue-100 text-blue-800'
+                        : r.visit_type === 'returning'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-amber-100 text-amber-800',
+                      r.status === 'checked_in' && 'opacity-50',
+                      r.status === 'cancelled' && 'opacity-30 line-through',
+                    )}
+                    title={`${r.customer_name} · ${VISIT_TYPE_KO[r.visit_type]}`}
+                  >
+                    {r.customer_name}
+                  </div>
+                ))}
+
+                {/* 빈 슬롯 클릭 → 예약 생성 */}
+                <button
+                  onClick={() => onSlotClick({ date: dateStr, time: slot })}
+                  className="w-full rounded text-[10px] text-gray-300 hover:bg-teal-50 hover:text-teal-600 transition py-0.5 text-left px-1"
+                  title="클릭하여 예약 추가"
+                >
+                  + 예약
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── QuickReservationDialog ─────────────────────────────────────────────────────
+function QuickReservationDialog({
+  draft,
+  clinicId,
+  createdBy,
+  onClose,
+  onCreated,
+}: {
+  draft: QuickResvDraft | null;
+  clinicId: string | undefined;
+  createdBy: string | null;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [form, setForm] = useState<QuickResvDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [customerSuggestions, setCustomerSuggestions] = useState<Customer[]>([]);
+  const [customerId, setCustomerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (draft) {
+      setForm({ ...draft });
+      setCustomerId(null);
+      setCustomerSuggestions([]);
+    }
+  }, [draft]);
+
+  const handlePhoneChange = async (phone: string) => {
+    if (!form) return;
+    setForm((f) => f ? { ...f, phone } : f);
+    setCustomerId(null);
+    if (phone.replace(/\D/g, '').length >= 4 && clinicId) {
+      const { data } = await supabase
+        .from('customers')
+        .select('id, name, phone')
+        .eq('clinic_id', clinicId)
+        .ilike('phone', `%${phone.replace(/\D/g, '')}%`)
+        .limit(5);
+      setCustomerSuggestions((data ?? []) as Customer[]);
+    } else {
+      setCustomerSuggestions([]);
+    }
+  };
+
+  const handleSelectCustomer = (c: Customer) => {
+    setForm((f) => f ? { ...f, name: c.name, phone: c.phone } : f);
+    setCustomerId(c.id);
+    setCustomerSuggestions([]);
+  };
+
+  const handleSave = async () => {
+    if (!form || !clinicId) return;
+    if (!form.name.trim()) { toast.error('이름을 입력해주세요'); return; }
+    setSaving(true);
+    const { error } = await supabase.from('reservations').insert({
+      clinic_id: clinicId,
+      customer_id: customerId ?? null,
+      customer_name: form.name.trim(),
+      customer_phone: form.phone.trim() || null,
+      reservation_date: form.date,
+      reservation_time: form.time + ':00',
+      visit_type: form.visit_type,
+      memo: form.memo.trim() || null,
+      status: 'confirmed',
+      created_by: createdBy,
+    });
+    setSaving(false);
+    if (error) { toast.error('예약 생성 실패: ' + error.message); return; }
+    toast.success(`${form.name} ${form.time} 예약이 생성되었어요`);
+    onCreated();
+    onClose();
+  };
+
+  const timeSlots = generateSlots('10:00', '20:00', 30);
+
+  return (
+    <Dialog open={!!draft} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="text-base">빠른 예약 추가</DialogTitle>
+        </DialogHeader>
+        {form && (
+          <div className="space-y-3 pt-1">
+            {/* 날짜 + 시간 */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">날짜</Label>
+                <Input
+                  type="date"
+                  value={form.date}
+                  onChange={(e) => setForm((f) => f ? { ...f, date: e.target.value } : f)}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">시간</Label>
+                <select
+                  value={form.time}
+                  onChange={(e) => setForm((f) => f ? { ...f, time: e.target.value } : f)}
+                  className="w-full h-8 border rounded-md text-sm px-2 bg-white"
+                >
+                  {timeSlots.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* 방문유형 */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">방문유형</Label>
+              <div className="flex gap-1.5">
+                {(['new', 'returning', 'experience'] as VisitType[]).map((vt) => (
+                  <button
+                    key={vt}
+                    type="button"
+                    onClick={() => setForm((f) => f ? { ...f, visit_type: vt } : f)}
+                    className={cn(
+                      'flex-1 rounded-md border py-1.5 text-xs font-medium transition',
+                      form.visit_type === vt
+                        ? 'bg-teal-600 text-white border-teal-600'
+                        : 'border-gray-200 hover:border-teal-400 text-gray-700 bg-white',
+                    )}
+                  >
+                    {VISIT_TYPE_KO[vt]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 이름 */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">이름</Label>
+              <Input
+                value={form.name}
+                onChange={(e) => setForm((f) => f ? { ...f, name: e.target.value } : f)}
+                placeholder="홍길동"
+                className="h-8 text-sm"
+              />
+            </div>
+
+            {/* 전화번호 + 자동완성 */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">전화번호</Label>
+              <Input
+                value={form.phone}
+                onChange={(e) => handlePhoneChange(e.target.value)}
+                placeholder="010-1234-5678"
+                className="h-8 text-sm"
+              />
+              {customerSuggestions.length > 0 && (
+                <div className="border rounded-md bg-white shadow-sm overflow-hidden">
+                  {customerSuggestions.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-teal-50 border-b last:border-b-0 transition"
+                      onClick={() => handleSelectCustomer(c)}
+                    >
+                      <span className="font-medium">{c.name}</span>
+                      <span className="ml-1.5 text-muted-foreground">{c.phone}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 메모 */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">메모 (선택)</Label>
+              <Textarea
+                value={form.memo}
+                onChange={(e) => setForm((f) => f ? { ...f, memo: e.target.value } : f)}
+                placeholder="특이사항, 문의내용..."
+                className="min-h-[56px] text-sm resize-none"
+              />
+            </div>
+          </div>
+        )}
+        <DialogFooter className="gap-2">
+          <Button variant="outline" size="sm" onClick={onClose}>취소</Button>
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-teal-600 hover:bg-teal-700 text-white"
+          >
+            {saving ? '저장 중…' : '예약 생성'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Dashboard() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const clinic = useClinic();
   const [date, setDate] = useState<Date>(() => new Date());
   const [tab, setTab] = useState<TabKey>('all');
@@ -709,6 +1113,12 @@ export default function Dashboard() {
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
   const [consentMap, setConsentMap] = useState<Map<string, ConsentEntry>>(new Map());
   const [therapists, setTherapists] = useState<Staff[]>([]);
+  // ── 달력 + 타임라인 상태 ──────────────────────────────────────────────────────
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState<Date>(() => new Date());
+  const [quickResvDraft, setQuickResvDraft] = useState<QuickResvDraft | null>(null);
+  const [timelineReservations, setTimelineReservations] = useState<Reservation[]>([]);
+  const calendarRef = useRef<HTMLDivElement>(null);
   const recentlyUpdated = useRef<Set<string>>(new Set());
   const navStateConsumed = useRef(false);
 
@@ -831,6 +1241,19 @@ export default function Dashboard() {
       map.set(p.check_in_id, prev + (p.payment_type === 'refund' ? -p.amount : p.amount));
     }
     setDayPayments(map);
+  }, [clinic, dateStr]);
+
+  // 타임라인용 — 취소 제외 전체 예약 (confirmed + checked_in + noshow)
+  const fetchTimelineReservations = useCallback(async () => {
+    if (!clinic) return;
+    const { data } = await supabase
+      .from('reservations')
+      .select('*')
+      .eq('clinic_id', clinic.id)
+      .eq('reservation_date', dateStr)
+      .neq('status', 'cancelled')
+      .order('reservation_time', { ascending: true });
+    setTimelineReservations((data ?? []) as Reservation[]);
   }, [clinic, dateStr]);
 
   const [pendingReservations, setPendingReservations] = useState<Reservation[]>([]);
@@ -960,11 +1383,12 @@ export default function Dashboard() {
     fetchAssignments();
     fetchPayments();
     fetchReservations();
+    fetchTimelineReservations();
     fetchStageStarts();
     fetchPackageLabels();
     fetchTherapists();
     fetchDoctors();
-  }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchPayments, fetchReservations, fetchStageStarts, fetchPackageLabels, fetchTherapists, fetchDoctors]);
+  }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchPayments, fetchReservations, fetchTimelineReservations, fetchStageStarts, fetchPackageLabels, fetchTherapists, fetchDoctors]);
 
   useEffect(() => {
     if (!clinic) return;
@@ -982,7 +1406,7 @@ export default function Dashboard() {
     };
     const debouncedResvRefetch = () => {
       if (resvTimer) clearTimeout(resvTimer);
-      resvTimer = setTimeout(() => fetchReservations(), 800);
+      resvTimer = setTimeout(() => { fetchReservations(); fetchTimelineReservations(); }, 800);
     };
 
     const channel = supabase
@@ -1017,7 +1441,7 @@ export default function Dashboard() {
       if (resvTimer) clearTimeout(resvTimer);
       supabase.removeChannel(channel);
     };
-  }, [clinic, dateStr, fetchCheckIns, fetchAssignments, fetchReservations, fetchStageStarts]);
+  }, [clinic, dateStr, fetchCheckIns, fetchAssignments, fetchReservations, fetchTimelineReservations, fetchStageStarts]);
 
   const STAGE_ALERT_MINS: Partial<Record<CheckInStatus, number>> = {
     laser: 20,
@@ -1522,6 +1946,34 @@ export default function Dashboard() {
     toast.success(`${res.customer_name} 체크인 완료 (#${qn})`);
   };
 
+  // 미니 캘린더 클릭-외부 닫기
+  useEffect(() => {
+    if (!showCalendar) return;
+    const handler = (e: MouseEvent) => {
+      if (calendarRef.current && !calendarRef.current.contains(e.target as Node)) {
+        setShowCalendar(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showCalendar]);
+
+  const handleToggleCalendar = () => {
+    setCalendarMonth(date); // 현재 선택 날짜 기준으로 월 동기화
+    setShowCalendar((v) => !v);
+  };
+
+  const handleQuickSlotClick = (slot: { date: string; time: string }) => {
+    setQuickResvDraft({
+      date: slot.date,
+      time: slot.time,
+      name: '',
+      phone: '',
+      visit_type: 'new',
+      memo: '',
+    });
+  };
+
   const getStageStart = useCallback((ci: CheckIn): string => {
     return stageStartMap.get(ci.id) ?? ci.checked_in_at;
   }, [stageStartMap]);
@@ -1586,9 +2038,28 @@ export default function Dashboard() {
           <Button variant="outline" size="icon-sm" onClick={() => setDate((d) => subDays(d, 1))}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div className="min-w-[140px] text-center text-sm font-medium">
-            {format(date, 'M월 d일 (EEE)', { locale: ko })}
-            {isToday && <span className="ml-1 text-xs text-teal-700">오늘</span>}
+          {/* 날짜 클릭 → 미니 캘린더 팝업 */}
+          <div ref={calendarRef} className="relative">
+            <button
+              onClick={handleToggleCalendar}
+              className="min-w-[160px] text-center text-sm font-medium flex items-center gap-1 justify-center px-2 py-1 rounded-md hover:bg-gray-100 transition select-none"
+              title="클릭하여 날짜 선택"
+            >
+              <Calendar className="h-3.5 w-3.5 text-teal-600 shrink-0" />
+              {format(date, 'M월 d일 (EEE)', { locale: ko })}
+              {isToday && <span className="ml-0.5 text-xs text-teal-700">오늘</span>}
+              <ChevronDown className={cn('h-3 w-3 text-gray-400 transition-transform', showCalendar && 'rotate-180')} />
+            </button>
+            {showCalendar && (
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50">
+                <MiniCalendar
+                  selected={date}
+                  onSelect={(d) => { setDate(d); setShowCalendar(false); }}
+                  month={calendarMonth}
+                  onMonthChange={setCalendarMonth}
+                />
+              </div>
+            )}
           </div>
           <Button variant="outline" size="icon-sm" onClick={() => setDate((d) => addDays(d, 1))}>
             <ChevronRight className="h-4 w-4" />
@@ -1628,7 +2099,16 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Kanban */}
+      {/* Content: 타임라인 사이드바 + 칸반 */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* 좌측: 10시~20시 타임라인 */}
+        <DashboardTimeline
+          date={date}
+          reservations={timelineReservations}
+          onSlotClick={handleQuickSlotClick}
+        />
+
+        {/* 우측: 칸반 */}
       <div className="flex-1 overflow-x-auto overflow-y-hidden p-3">
         {loading && rows.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -1981,6 +2461,17 @@ export default function Dashboard() {
           </CardHandlersCtx.Provider>
         )}
       </div>
+      {/* flex flex-1 overflow-hidden wrapper 닫기 */}
+      </div>
+
+      {/* 빠른 예약 다이얼로그 */}
+      <QuickReservationDialog
+        draft={quickResvDraft}
+        clinicId={clinic?.id}
+        createdBy={profile?.id ?? null}
+        onClose={() => setQuickResvDraft(null)}
+        onCreated={() => { fetchReservations(); fetchTimelineReservations(); }}
+      />
 
       <NewCheckInDialog
         open={openNew}
