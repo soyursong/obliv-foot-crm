@@ -113,7 +113,8 @@ export function PreChecklist({ checkIn, open, onOpenChange, onCompleted }: Props
       .from('check_ins')
       .update({
         notes,
-        status: checkIn.status === 'registered' ? 'checklist' : checkIn.status,
+        // 4/30 표준 v2: checklist 폐지 → 체크리스트 완료 후 상담대기로 직행
+        status: checkIn.status === 'registered' ? 'consult_waiting' : checkIn.status,
       })
       .eq('id', checkIn.id);
 
@@ -128,7 +129,7 @@ export function PreChecklist({ checkIn, open, onOpenChange, onCompleted }: Props
         check_in_id: checkIn.id,
         clinic_id: checkIn.clinic_id,
         from_status: 'registered',
-        to_status: 'checklist',
+        to_status: 'consult_waiting',
       });
     }
 
