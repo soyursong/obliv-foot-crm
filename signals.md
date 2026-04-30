@@ -1,5 +1,27 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-01 [MQ-20260430-FOOT-CUSTOMERS-STANDARDIZE] deployed ✅
+
+> **ticket**: T-20260430-foot-CUSTOMERS-STANDARDIZE | **status**: deployed
+> **commit**: b3ca939 | **branch**: main | **build**: PASS (vite 2.37s)
+> **DB 적용**: migration 20260501000000_customers_standardize.sql → 원격 DB 적용 완료
+> **컬럼 14건**: unified_customer_id(UUID) + campaign_id/adset_id/ad_id/campaign_ref + hospital/clinic/medium/product + campaign_name/adset_name/adsubject_name + gender(M/F CHECK) + inflow_channel/inflow_source
+> **인덱스 3건**: idx_customers_unified_id / idx_customers_campaign_ref / idx_customers_inflow_channel
+> **RPC**: get_or_create_unified_customer_id(phone) → authenticated 권한
+> **backfill**: UPDATE customers SET unified_customer_id = id WHERE unified_customer_id IS NULL → 완료
+> **타입**: src/lib/types.ts Customer 14 필드 optional 이미 반영 확인
+> **롤백**: .down.sql 포함
+
+## 2026-05-01 [MQ-20260430-FOOT-LOVABLE-HARDFORK] Step 2~5 완료 ✅
+
+> **status**: completed | **commit**: b3ca939 | **branch**: main
+> **Step 2**: Vercel main 직접 webhook 확인, Lovable deploy hook 없음
+> **Step 3**: .env.example 신규 작성, README.md 운영 방식 갱신 (배포 흐름/DB 마이그레이션 명령어)
+> **Step 4**: .github/workflows/*.yml (ci-push/nightly/regression) Lovable 스텝 없음 → 수정 불필요
+> **Step 5 E2E**: (1)GitHub→Vercel webhook 정상 (2)Lovable 차단(Step1 사용자 컨펌) (3)Supabase rxlomoozakkjesdqjtvd 연결+마이그레이션 정상 (4)CI/CD 3개 워크플로우 정상
+> **신규 문서**: 2_Areas/204_오블리브_종로점오픈/풋센터_lovable_분리.md
+> **갱신 문서**: 3_Resources/810_루틴/lovable_guide.md §8 풋센터 분리 항목 추가
+
 ## 2026-05-01 00:44 [T-20260430-foot-STAGE-FLOW-CORRECTION] qa-pass → deployed
 
 > **supervisor**: QA 5항목 PASS | **등급**: Yellow | **deployed_at**: 2026-05-01 00:44
