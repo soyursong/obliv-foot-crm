@@ -1522,6 +1522,19 @@ export default function Dashboard() {
     setTherapists((data ?? []) as Staff[]);
   }, [clinic]);
 
+  const [consultants, setConsultants] = useState<Staff[]>([]);
+  const fetchConsultants = useCallback(async () => {
+    if (!clinic) return;
+    const { data } = await supabase
+      .from('staff')
+      .select('*')
+      .eq('clinic_id', clinic.id)
+      .eq('active', true)
+      .eq('role', 'consultant')
+      .order('name');
+    setConsultants((data ?? []) as Staff[]);
+  }, [clinic]);
+
   const [doctors, setDoctors] = useState<Staff[]>([]);
   const fetchDoctors = useCallback(async () => {
     if (!clinic) return;
@@ -1580,7 +1593,8 @@ export default function Dashboard() {
     fetchPackageLabels();
     fetchTherapists();
     fetchDoctors();
-  }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchPayments, fetchReservations, fetchTimelineReservations, fetchStageStarts, fetchPackageLabels, fetchTherapists, fetchDoctors]);
+    fetchConsultants();
+  }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchPayments, fetchReservations, fetchTimelineReservations, fetchStageStarts, fetchPackageLabels, fetchTherapists, fetchDoctors, fetchConsultants]);
 
   useEffect(() => {
     if (!clinic) return;
@@ -2392,7 +2406,7 @@ export default function Dashboard() {
               onCardContext={handleCardContext}
               getStageStart={getStageStart}
               getPkgLabel={getPkgLabel}
-              therapists={therapists}
+              therapists={consultants}
               onTherapistChange={handleConsultantChange}
             />
           </div>
@@ -2559,7 +2573,7 @@ export default function Dashboard() {
   }, [
     newRegistered, newPendingReservations, returningWaiting, returningPendingReservations,
     examRooms, consultRooms, treatmentRooms, laserRooms,
-    byStatus, filtered, assignments, doctors, therapists,
+    byStatus, filtered, assignments, doctors, therapists, consultants,
     experienceWaiting, laserWaiting, paymentTotal, doneTotal, dayPayments, doneCount,
     getStageStart, getPkgLabel, swapSortOrder,
     handleReservationCheckIn, handleCardClick, handleCardContext,
