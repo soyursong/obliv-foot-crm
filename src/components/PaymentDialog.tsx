@@ -106,7 +106,9 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
 
   const canShowPackageMode = useMemo(() => {
     if (!checkIn) return false;
-    return checkIn.visit_type !== 'returning' && !checkIn.package_id;
+    // 패키지 미연결 시 모든 방문유형 허용 (재진 포함 — PACKAGE-CREATE-IN-SHEET AC1 정합)
+    // 재진도 패키지 소진 시 신규 생성 가능 (대표 지시 T-20260430-foot-PACKAGE-CREATE-IN-SHEET)
+    return !checkIn.package_id;
   }, [checkIn]);
 
   if (!checkIn) return null;
@@ -400,7 +402,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                 disabled={!canShowPackageMode}
                 title={
                   !canShowPackageMode
-                    ? '재진 환자 또는 이미 패키지 연결된 체크인입니다. 회차 소진은 패키지 페이지에서.'
+                    ? '이미 패키지가 연결된 체크인입니다. 회차 소진은 패키지 페이지에서.'
                     : ''
                 }
                 className={cn(
@@ -417,7 +419,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
 
             {paymentMode === 'package' && !canShowPackageMode && (
               <div className="rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                재진 환자 또는 이미 패키지 연결된 체크인입니다. 패키지 페이지에서 회차 소진하세요.
+                이미 패키지가 연결된 체크인입니다. 패키지 페이지에서 회차 소진하세요.
               </div>
             )}
 
