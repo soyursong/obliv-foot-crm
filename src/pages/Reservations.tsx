@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { addDays, format, startOfWeek, isSameDay } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
@@ -65,9 +66,11 @@ interface ReservationDraft {
 type ViewMode = 'week' | 'day';
 
 export default function Reservations() {
+  const location = useLocation();
   const { profile } = useAuth();
   const changedBy = profile?.id ?? null;
   const clinic = useClinic();
+  const navStateConsumed = useRef(false);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [weekStart, setWeekStart] = useState<Date>(() =>
     startOfWeek(new Date(), { weekStartsOn: 1 }),
@@ -86,6 +89,34 @@ export default function Reservations() {
     () => Array.from({ length: 6 }).map((_, i) => addDays(weekStart, i)), // 월~토만
     [weekStart],
   );
+
+  // 대시보드 예약하기 바로가기 → location.state.openReservationFor 처리
+  useEffect(() => {
+    if (navStateConsumed.current) return;
+    if (!clinic) return;
+    const state = location.state as {
+      openReservationFor?: {
+        customer_id: string | null;
+        name: string;
+        phone: string;
+        visit_type: VisitType;
+      };
+    } | null;
+    if (!state?.openReservationFor) return;
+    navStateConsumed.current = true;
+    window.history.replaceState({}, '');
+    const { name, phone, visit_type, customer_id } = state.openReservationFor;
+    const today = format(new Date(), 'yyyy-MM-dd');
+    setEditor({
+      date: today,
+      time: '10:00',
+      name: name ?? '',
+      phone: phone ?? '',
+      visit_type,
+      memo: '',
+      customer_id: customer_id ?? null,
+    });
+  }, [clinic, location.state]);
 
   const fetchWeek = useCallback(async () => {
     if (!clinic) return;

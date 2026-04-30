@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   DndContext,
   DragOverlay,
@@ -43,6 +43,7 @@ import { NewCheckInDialog } from '@/components/NewCheckInDialog';
 import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
 import { PaymentDialog } from '@/components/PaymentDialog';
 import { StatusContextMenu } from '@/components/StatusContextMenu';
+import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
@@ -57,6 +58,12 @@ interface ConsentEntry {
 }
 /** 체크인 ID → 동의서 날짜 맵. DraggableCard에서 useContext로 읽어 배지 표시 */
 const ConsentMapCtx = createContext<Map<string, ConsentEntry>>(new Map());
+
+// ── 카드 고객 이름 우클릭/롱프레스 핸들러 컨텍스트 ────────────────────────────
+interface CardHandlers {
+  onNameContext: (ci: CheckIn, e: React.MouseEvent) => void;
+}
+const CardHandlersCtx = createContext<CardHandlers | null>(null);
 
 interface RoomAssignment {
   id: string;
@@ -117,6 +124,7 @@ function DraggableCard({
 }) {
   const consentMap = useContext(ConsentMapCtx);
   const consentEntry = consentMap.get(checkIn.id);
+  const cardHandlers = useContext(CardHandlersCtx);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: checkIn.id,
     data: { checkIn },
@@ -168,7 +176,15 @@ function DraggableCard({
         <div className="flex items-center justify-between gap-1">
           <div className="flex items-center gap-1 truncate">
             <GripVertical className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-            <span className="font-bold text-sm truncate">
+            <span
+              className="font-bold text-sm truncate cursor-context-menu"
+              title="우클릭/롱프레스 → 고객차트·예약"
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                cardHandlers?.onNameContext(checkIn, e);
+              }}
+            >
               {checkIn.customer_name?.trim() || '이름없음'}
             </span>
             {checkIn.queue_number != null && (
@@ -258,7 +274,15 @@ function DraggableCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <GripVertical className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-          <span className="text-base font-bold">
+          <span
+            className="text-base font-bold cursor-context-menu"
+            title="우클릭/롱프레스 → 고객차트·예약"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              cardHandlers?.onNameContext(checkIn, e);
+            }}
+          >
             {checkIn.customer_name?.trim() || '이름없음'}
           </span>
           {checkIn.queue_number != null && (
@@ -665,6 +689,7 @@ function RoomSection({
 
 export default function Dashboard() {
   const location = useLocation();
+  const navigate = useNavigate();
   const clinic = useClinic();
   const [date, setDate] = useState<Date>(() => new Date());
   const [tab, setTab] = useState<TabKey>('all');
@@ -679,6 +704,7 @@ export default function Dashboard() {
   const [paymentInitialMode, setPaymentInitialMode] = useState<'single' | 'package'>('single');
   const [dayPayments, setDayPayments] = useState<Map<string, number>>(new Map());
   const [contextMenu, setContextMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
+  const [customerMenu, setCustomerMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
   const [stageStartMap, setStageStartMap] = useState<Map<string, string>>(new Map());
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
   const [consentMap, setConsentMap] = useState<Map<string, ConsentEntry>>(new Map());
@@ -1348,6 +1374,31 @@ export default function Dashboard() {
     setContextMenu({ checkIn: ci, pos: { x: e.clientX, y: e.clientY } });
   };
 
+  const handleOpenChart = useCallback((ci: CheckIn) => {
+    if (!ci.customer_id) {
+      toast.info('고객 정보가 연결되어 있지 않습니다');
+      return;
+    }
+    navigate('/admin/customers', { state: { openCustomerId: ci.customer_id } });
+  }, [navigate]);
+
+  const handleNewReservation = useCallback((ci: CheckIn) => {
+    navigate('/admin/reservations', {
+      state: {
+        openReservationFor: {
+          customer_id: ci.customer_id,
+          name: ci.customer_name,
+          phone: ci.customer_phone ?? '',
+          visit_type: ci.visit_type,
+        },
+      },
+    });
+  }, [navigate]);
+
+  const cardHandlersValue = useMemo<CardHandlers>(() => ({
+    onNameContext: (ci, e) => setCustomerMenu({ checkIn: ci, pos: { x: e.clientX, y: e.clientY } }),
+  }), []);
+
   const handleContextStatusChange = async (ci: CheckIn, newStatus: CheckInStatus) => {
     if (ci.id.startsWith('temp-')) {
       toast.info('체크인 처리 중입니다. 잠시 후 다시 시도해주세요.');
@@ -1572,6 +1623,7 @@ export default function Dashboard() {
             불러오는 중…
           </div>
         ) : (
+          <CardHandlersCtx.Provider value={cardHandlersValue}>
           <ConsentMapCtx.Provider value={consentMap}>
           <DndContext
             sensors={sensors}
@@ -1914,6 +1966,7 @@ export default function Dashboard() {
             </DragOverlay>
           </DndContext>
           </ConsentMapCtx.Provider>
+          </CardHandlersCtx.Provider>
         )}
       </div>
 
@@ -1957,6 +2010,14 @@ export default function Dashboard() {
         position={contextMenu?.pos ?? null}
         onClose={() => setContextMenu(null)}
         onStatusChange={handleContextStatusChange}
+      />
+
+      <CustomerQuickMenu
+        checkIn={customerMenu?.checkIn ?? null}
+        position={customerMenu?.pos ?? null}
+        onClose={() => setCustomerMenu(null)}
+        onOpenChart={handleOpenChart}
+        onNewReservation={handleNewReservation}
       />
     </div>
   );
