@@ -500,8 +500,8 @@ function RoomSlot({
   const isFull = occupants.length >= maxOccupancy;
   const { isOver, setNodeRef } = useDroppable({ id: dropId, data: { roomName, roomType, isFull } });
   const isEmpty = occupants.length === 0;
-  const showStaffDropdown = (roomType === 'treatment' || roomType === 'examination') && therapists && onTherapistChange;
-  const showStaffLabel = roomType !== 'laser' && roomType !== 'treatment' && roomType !== 'examination' && staffName;
+  const showStaffDropdown = (roomType === 'treatment' || roomType === 'examination' || roomType === 'consultation') && therapists && onTherapistChange;
+  const showStaffLabel = roomType !== 'laser' && roomType !== 'treatment' && roomType !== 'examination' && roomType !== 'consultation' && staffName;
 
   return (
     <div
@@ -922,6 +922,10 @@ export default function Dashboard() {
 
   const handleDoctorChange = useCallback((roomName: string, staffId: string | null, staffName: string | null) => {
     handleStaffAssign(roomName, 'examination', staffId, staffName);
+  }, [handleStaffAssign]);
+
+  const handleConsultantChange = useCallback((roomName: string, staffId: string | null, staffName: string | null) => {
+    handleStaffAssign(roomName, 'consultation', staffId, staffName);
   }, [handleStaffAssign]);
 
   useEffect(() => {
@@ -1728,9 +1732,9 @@ export default function Dashboard() {
                 </DroppableColumn>
               </div>
 
-              {/* 6. 상담 (5개 상담실) */}
+              {/* 6. 상담 (5개 상담실) — 세로 1열 + 직원명 dropdown */}
               {consultRooms.length > 0 && (
-                <div className="w-[580px] shrink-0">
+                <div className="w-44 shrink-0">
                   <RoomSection
                     title="상담"
                     color="bg-blue-100 text-blue-800"
@@ -1738,27 +1742,57 @@ export default function Dashboard() {
                     roomType="consultation"
                     checkIns={filtered}
                     assignments={assignments}
-                    gridCols="grid-cols-5"
+                    gridCols="grid-cols-1"
                     onCardClick={handleCardClick}
                     onCardContext={handleCardContext}
                     getStageStart={getStageStart}
                     getPkgLabel={getPkgLabel}
+                    therapists={therapists}
+                    onTherapistChange={handleConsultantChange}
                   />
                 </div>
               )}
 
-              {/* 7. 치료대기 */}
-              <div className="w-44 shrink-0">
-                <DroppableColumn
-                  id="treatment_waiting"
-                  label="치료대기"
-                  count={(byStatus['treatment_waiting'] ?? []).length}
-                  className="h-full"
-                  highlight="text-amber-700"
-                >
-                  {(byStatus['treatment_waiting'] ?? []).map((ci, idx, arr) => (
-                    <div key={ci.id} className="relative group">
+              {/* 7. 치료대기 + 레이저대기 나란히 (세로형) */}
+              <div className="flex gap-2 shrink-0">
+                <div className="w-40">
+                  <DroppableColumn
+                    id="treatment_waiting"
+                    label="치료대기"
+                    count={(byStatus['treatment_waiting'] ?? []).length}
+                    className="h-full"
+                    highlight="text-amber-700"
+                  >
+                    {(byStatus['treatment_waiting'] ?? []).map((ci, idx, arr) => (
+                      <div key={ci.id} className="relative group">
+                        <DraggableCard
+                          checkIn={ci}
+                          compact
+                          stageStart={getStageStart(ci)}
+                          packageLabel={getPkgLabel(ci)}
+                          onClick={() => handleCardClick(ci)}
+                          onContextMenu={(e) => handleCardContext(ci, e)}
+                        />
+                        <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
+                          {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
+                          {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
+                        </div>
+                        {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
+                      </div>
+                    ))}
+                  </DroppableColumn>
+                </div>
+                <div className="w-40">
+                  <DroppableColumn
+                    id="laser_waiting"
+                    label="레이저대기"
+                    count={laserWaiting.length}
+                    className="h-full"
+                    highlight="text-rose-700"
+                  >
+                    {laserWaiting.map((ci) => (
                       <DraggableCard
+                        key={ci.id}
                         checkIn={ci}
                         compact
                         stageStart={getStageStart(ci)}
@@ -1766,14 +1800,9 @@ export default function Dashboard() {
                         onClick={() => handleCardClick(ci)}
                         onContextMenu={(e) => handleCardContext(ci, e)}
                       />
-                      <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
-                        {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
-                        {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
-                      </div>
-                      {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
-                    </div>
-                  ))}
-                </DroppableColumn>
+                    ))}
+                  </DroppableColumn>
+                </div>
               </div>
 
               {/* 8. 치료실 (9개) */}
@@ -1797,44 +1826,7 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* 9. 레이저실 (12개) + 레이저대기 */}
-              {laserRooms.length > 0 && (
-                <div className="w-[640px] shrink-0 flex flex-col gap-2">
-                  <RoomSection
-                    title="레이저실"
-                    color="bg-rose-100 text-rose-800"
-                    rooms={laserRooms}
-                    roomType="laser"
-                    checkIns={filtered}
-                    assignments={assignments}
-                    gridCols="grid-cols-4"
-                    onCardClick={handleCardClick}
-                    onCardContext={handleCardContext}
-                    getStageStart={getStageStart}
-                    getPkgLabel={getPkgLabel}
-                  />
-                  <DroppableColumn
-                    id="laser_waiting"
-                    label="레이저대기"
-                    count={laserWaiting.length}
-                    highlight="text-rose-700"
-                  >
-                    {laserWaiting.map((ci) => (
-                      <DraggableCard
-                        key={ci.id}
-                        checkIn={ci}
-                        compact
-                        stageStart={getStageStart(ci)}
-                        packageLabel={getPkgLabel(ci)}
-                        onClick={() => handleCardClick(ci)}
-                        onContextMenu={(e) => handleCardContext(ci, e)}
-                      />
-                    ))}
-                  </DroppableColumn>
-                </div>
-              )}
-
-              {/* 10. 데스크 (결제 + 완료) */}
+              {/* 9. 데스크 (결제 + 완료) — 치료실과 레이저실 사이 */}
               <div className="w-52 shrink-0 flex flex-col gap-2 h-full">
                 <DroppableColumn
                   id="payment_waiting"
@@ -1896,6 +1888,25 @@ export default function Dashboard() {
                   })}
                 </DroppableColumn>
               </div>
+
+              {/* 10. 레이저실 (12개) — 3열×4행 */}
+              {laserRooms.length > 0 && (
+                <div className="w-[480px] shrink-0">
+                  <RoomSection
+                    title="레이저실"
+                    color="bg-rose-100 text-rose-800"
+                    rooms={laserRooms}
+                    roomType="laser"
+                    checkIns={filtered}
+                    assignments={assignments}
+                    gridCols="grid-cols-3"
+                    onCardClick={handleCardClick}
+                    onCardContext={handleCardContext}
+                    getStageStart={getStageStart}
+                    getPkgLabel={getPkgLabel}
+                  />
+                </div>
+              )}
             </div>
 
             <DragOverlay>
