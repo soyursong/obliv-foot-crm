@@ -872,6 +872,8 @@ function MiniCalendar({
 }
 
 // ── DashboardTimeline ──────────────────────────────────────────────────────────
+const SLOT_MAX = 4; // 초진/재진 슬롯 상한 (표시 전용, 차단 없음)
+
 function DashboardTimeline({
   date,
   reservations,
@@ -890,23 +892,45 @@ function DashboardTimeline({
 
   const slots = generateSlots('10:00', '20:00', 30);
 
-  // 예약을 30분 슬롯으로 분류
+  // 예약을 30분 슬롯으로 분류 + 초진/재진 카운트 집계
   const slotMap: Record<string, Reservation[]> = {};
+  const slotNewCount: Record<string, number> = {};
+  const slotRetCount: Record<string, number> = {};
+
   for (const r of reservations) {
     const t = r.reservation_time?.slice(0, 5) ?? '00:00';
     const [h, mm] = t.split(':').map(Number);
     const slot = `${String(h).padStart(2, '0')}:${mm < 30 ? '00' : '30'}`;
     (slotMap[slot] ??= []).push(r);
+
+    // 초진 vs 재진(체험 포함) 카운트
+    if (r.visit_type === 'new') {
+      slotNewCount[slot] = (slotNewCount[slot] ?? 0) + 1;
+    } else {
+      slotRetCount[slot] = (slotRetCount[slot] ?? 0) + 1;
+    }
   }
 
   return (
-    <div className="w-44 shrink-0 flex flex-col border-r bg-white overflow-hidden">
+    <div className="w-48 shrink-0 flex flex-col border-r bg-white overflow-hidden">
+      {/* 헤더 */}
       <div className="text-xs font-semibold px-2 py-1.5 border-b bg-muted/20 text-gray-600 sticky top-0 flex items-center gap-1">
         <Clock className="h-3 w-3" /> 시간표
+      </div>
+      {/* 범례 */}
+      <div className="flex items-center gap-1.5 px-2 py-1 border-b bg-gray-50/70 text-[9px] text-gray-500">
+        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-blue-50 text-blue-600 font-medium">초진</span>
+        <span className="text-gray-300">/</span>
+        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 font-medium">재진</span>
+        <span className="ml-auto text-gray-400">상한 {SLOT_MAX}명</span>
       </div>
       <div className="flex-1 overflow-y-auto">
         {slots.map((slot) => {
           const items = slotMap[slot] ?? [];
+          const newCnt = slotNewCount[slot] ?? 0;
+          const retCnt = slotRetCount[slot] ?? 0;
+          const newFull = newCnt >= SLOT_MAX;
+          const retFull = retCnt >= SLOT_MAX;
           const isCurrentSlot = isToday && slot === currentSlot;
           const isPastSlot = isToday &&
             (parseInt(slot.split(':')[0]) * 60 + parseInt(slot.split(':')[1])) <
@@ -916,12 +940,12 @@ function DashboardTimeline({
             <div
               key={slot}
               className={cn(
-                'border-b border-gray-100 min-h-[44px]',
+                'border-b border-gray-100 min-h-[52px]',
                 isCurrentSlot && 'bg-teal-50/60',
                 isPastSlot && 'opacity-55',
               )}
             >
-              {/* 시간 레이블 */}
+              {/* 시간 레이블 + 슬롯 카운터 */}
               <div className="flex items-center gap-1 px-1.5 pt-1">
                 <span className={cn(
                   'text-[10px] font-mono tabular-nums shrink-0 w-9',
@@ -932,6 +956,31 @@ function DashboardTimeline({
                 {isCurrentSlot && (
                   <div className="h-1.5 w-1.5 rounded-full bg-teal-500 animate-pulse shrink-0" />
                 )}
+                {/* 초진/재진 슬롯 상한 표시 */}
+                <div className="ml-auto flex items-center gap-0.5">
+                  <span
+                    className={cn(
+                      'text-[9px] font-mono px-1 py-0.5 rounded font-medium leading-none',
+                      newFull
+                        ? 'bg-red-100 text-red-700 ring-1 ring-red-300'
+                        : 'bg-blue-50 text-blue-600',
+                    )}
+                    title={`초진 ${newCnt}/${SLOT_MAX}${newFull ? ' — 상한 도달' : ''}`}
+                  >
+                    초{newCnt}/{SLOT_MAX}
+                  </span>
+                  <span
+                    className={cn(
+                      'text-[9px] font-mono px-1 py-0.5 rounded font-medium leading-none',
+                      retFull
+                        ? 'bg-red-100 text-red-700 ring-1 ring-red-300'
+                        : 'bg-emerald-50 text-emerald-600',
+                    )}
+                    title={`재진 ${retCnt}/${SLOT_MAX}${retFull ? ' — 상한 도달' : ''}`}
+                  >
+                    재{retCnt}/{SLOT_MAX}
+                  </span>
+                </div>
               </div>
 
               {/* 예약 목록 */}
