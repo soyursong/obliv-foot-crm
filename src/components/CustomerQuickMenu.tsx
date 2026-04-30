@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { BookOpen, CalendarPlus } from 'lucide-react';
+import { BookOpen, CalendarPlus, ExternalLink } from 'lucide-react';
 import type { CheckIn } from '@/lib/types';
 
 interface Props {
@@ -8,6 +8,7 @@ interface Props {
   onClose: () => void;
   onOpenChart: (checkIn: CheckIn) => void;
   onNewReservation: (checkIn: CheckIn) => void;
+  onOpenChartWindow?: (checkIn: CheckIn) => void;
 }
 
 export function CustomerQuickMenu({
@@ -16,6 +17,7 @@ export function CustomerQuickMenu({
   onClose,
   onOpenChart,
   onNewReservation,
+  onOpenChartWindow,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -61,6 +63,18 @@ export function CustomerQuickMenu({
         <BookOpen className="h-4 w-4 text-teal-600 shrink-0" />
         고객차트
       </button>
+      {onOpenChartWindow && (
+        <button
+          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-teal-50 transition text-left"
+          onClick={() => {
+            onOpenChartWindow(checkIn);
+            onClose();
+          }}
+        >
+          <ExternalLink className="h-4 w-4 text-teal-600 shrink-0" />
+          새 창으로 열기
+        </button>
+      )}
       <button
         className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-teal-50 transition text-left"
         onClick={() => {

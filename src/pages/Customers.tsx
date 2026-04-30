@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { ChevronDown, ExternalLink, Pencil, Plus, Printer, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -16,18 +16,20 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
+
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
-import { STATUS_KO, VISIT_TYPE_KO } from '@/lib/status';
+import { VISIT_TYPE_KO } from '@/lib/status';
+import { cn } from '@/lib/utils';
 import type {
   CheckIn,
   Customer,
   LeadSource,
   Package,
   PackageRemaining,
+  PrescriptionRow,
   Reservation,
 } from '@/lib/types';
 
@@ -54,6 +56,49 @@ interface PackagePayment {
 }
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
+
+const PKG_STATUS_KO: Record<string, string> = {
+  active: '진행중',
+  completed: '완료',
+  cancelled: '취소',
+  refunded: '환불',
+  transferred: '양도',
+};
+
+const FORM_TITLES: Record<string, string> = {
+  treatment: '시술 동의서',
+  non_covered: '비급여 동의서',
+  privacy: '개인정보 동의서',
+  refund: '환불 동의서',
+};
+
+function ChartSection({
+  title,
+  icon,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-lg border bg-background overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium hover:bg-muted/30 transition"
+      >
+        {icon && <span className="text-teal-600">{icon}</span>}
+        <span className="flex-1 text-left">{title}</span>
+        <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && <div className="border-t px-3 py-2 text-sm">{children}</div>}
+    </div>
+  );
+}
 
 interface CustomerStats {
   visit_count: number;
@@ -513,9 +558,11 @@ function CustomerDetailSheet({
   const [payments, setPayments] = useState<Payment[]>([]);
   const [pkgPayments, setPkgPayments] = useState<PackagePayment[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [hasMoreVisits, setHasMoreVisits] = useState(false);
-  const [hasMorePayments, setHasMorePayments] = useState(false);
-  const PAGE_SIZE = 50;
+  const [checkInHistory, setCheckInHistory] = useState<CheckIn[]>([]);
+  const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
+  const [prescriptions, setPrescriptions] = useState<PrescriptionRow[]>([]);
+  const [consentEntries, setConsentEntries] = useState<{form_type: string; signed_at: string}[]>([]);
+  const [submissionEntries, setSubmissionEntries] = useState<{template_key?: string; printed_at: string}[]>([]);
 
   useEffect(() => {
     if (!customer) return;
@@ -528,8 +575,13 @@ function CustomerDetailSheet({
     setTmMemo(customer.tm_memo ?? '');
     setReferrerName(customer.referrer_name ?? '');
     setEditing(false);
+    setCheckInHistory([]);
+    setLatestCheckIn(null);
+    setPrescriptions([]);
+    setConsentEntries([]);
+    setSubmissionEntries([]);
     (async () => {
-      const [pkgRes, visitRes, payRes, pkgPayRes, resvRes] = await Promise.all([
+      const [pkgRes, visitRes, payRes, pkgPayRes, resvRes, ciHistRes] = await Promise.all([
         supabase.from('packages').select('*').eq('customer_id', customer.id).order('contract_date', {
           ascending: false,
         }),
@@ -557,6 +609,13 @@ function CustomerDetailSheet({
           .eq('customer_id', customer.id)
           .order('reservation_date', { ascending: false })
           .limit(30),
+        supabase
+          .from('check_ins')
+          .select('*')
+          .eq('customer_id', customer.id)
+          .neq('status', 'cancelled')
+          .order('checked_in_at', { ascending: false })
+          .limit(100),
       ]);
 
       const pkgs = (pkgRes.data ?? []) as Package[];
@@ -568,14 +627,40 @@ function CustomerDetailSheet({
         }),
       );
       setPackages(pkgs.map((p, i) => ({ ...p, remaining: remaining[i] })));
-      const visitData = (visitRes.data ?? []) as CheckIn[];
-      const payData = (payRes.data ?? []) as Payment[];
-      setVisits(visitData);
-      setHasMoreVisits(visitData.length >= 50);
-      setPayments(payData);
-      setHasMorePayments(payData.length >= 50);
+      setVisits((visitRes.data ?? []) as CheckIn[]);
+      setPayments((payRes.data ?? []) as Payment[]);
       setPkgPayments((pkgPayRes.data ?? []) as PackagePayment[]);
       setReservations((resvRes.data ?? []) as Reservation[]);
+
+      const ciHistory = (ciHistRes.data ?? []) as CheckIn[];
+      setCheckInHistory(ciHistory);
+      setLatestCheckIn(ciHistory[0] ?? null);
+
+      const checkInIds = ciHistory.map((ci: CheckIn) => ci.id);
+      if (checkInIds.length > 0) {
+        const [rxRes, consentRes, subRes] = await Promise.all([
+          supabase
+            .from('prescriptions')
+            .select('id, prescribed_by_name, diagnosis, prescribed_at, prescription_items(medication_name, dosage, duration_days)')
+            .in('check_in_id', checkInIds)
+            .order('prescribed_at', { ascending: false })
+            .limit(20),
+          supabase
+            .from('consent_forms')
+            .select('form_type, signed_at')
+            .in('check_in_id', checkInIds)
+            .order('signed_at', { ascending: false }),
+          supabase
+            .from('form_submissions')
+            .select('template_key, printed_at')
+            .in('check_in_id', checkInIds)
+            .order('printed_at', { ascending: false })
+            .limit(30),
+        ]);
+        setPrescriptions((rxRes.data ?? []) as PrescriptionRow[]);
+        setConsentEntries((consentRes.data ?? []) as {form_type: string; signed_at: string}[]);
+        setSubmissionEntries((subRes.data ?? []) as {template_key?: string; printed_at: string}[]);
+      }
     })();
   }, [customer]);
 
@@ -590,32 +675,6 @@ function CustomerDetailSheet({
       pkgPayments.filter((p) => p.payment_type === 'refund').reduce((x, p) => x + p.amount, 0);
     return s - r;
   }, [payments, pkgPayments]);
-
-  const loadMoreVisits = async () => {
-    if (!customer) return;
-    const { data } = await supabase
-      .from('check_ins')
-      .select('*')
-      .eq('customer_id', customer.id)
-      .order('checked_in_at', { ascending: false })
-      .range(visits.length, visits.length + PAGE_SIZE - 1);
-    const more = (data ?? []) as CheckIn[];
-    setVisits((prev) => [...prev, ...more]);
-    setHasMoreVisits(more.length >= PAGE_SIZE);
-  };
-
-  const loadMorePayments = async () => {
-    if (!customer) return;
-    const { data } = await supabase
-      .from('payments')
-      .select('*')
-      .eq('customer_id', customer.id)
-      .order('created_at', { ascending: false })
-      .range(payments.length, payments.length + PAGE_SIZE - 1);
-    const more = (data ?? []) as Payment[];
-    setPayments((prev) => [...prev, ...more]);
-    setHasMorePayments(more.length >= PAGE_SIZE);
-  };
 
   if (!customer) return null;
 
@@ -646,125 +705,28 @@ function CustomerDetailSheet({
 
   return (
     <Sheet open={!!customer} onOpenChange={(o) => (!o ? onClose() : undefined)}>
-      <SheetContent className="max-w-xl">
+      <SheetContent className="w-[720px] max-w-2xl overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>고객 상세</SheetTitle>
+          <div className="flex items-center gap-2">
+            <SheetTitle className="flex-1">고객 차트</SheetTitle>
+            {!editing && (
+              <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                수정
+              </Button>
+            )}
+            <button
+              type="button"
+              onClick={() => window.open(`/chart/${customer.id}`, `chart-${customer.id}`, 'width=820,height=960,scrollbars=yes,resizable=yes')}
+              className="rounded p-1.5 hover:bg-muted transition"
+              title="새 창으로 열기"
+            >
+              <ExternalLink className="h-4 w-4 text-muted-foreground" />
+            </button>
+          </div>
         </SheetHeader>
 
-        {editing ? (
-          <div className="mt-4 space-y-3">
-            <div className="space-y-1.5">
-              <Label>이름</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>전화번호</Label>
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1.5">
-                <Label>생년월일 <span className="text-xs text-muted-foreground font-normal">(YYMMDD)</span></Label>
-                <Input
-                  value={birthDate}
-                  onChange={(e) => setBirthDate(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  inputMode="numeric"
-                  placeholder="예: 900515"
-                  maxLength={6}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>차트번호</Label>
-                <Input value={chartNumber} onChange={(e) => setChartNumber(e.target.value)} placeholder="예: F-0001" />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>유입 경로</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {LEAD_SOURCE_OPTIONS.map((opt) => (
-                  <button
-                    key={opt}
-                    type="button"
-                    onClick={() => setLeadSource(leadSource === opt ? '' : opt)}
-                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                      leadSource === opt
-                        ? 'bg-teal-600 text-white'
-                        : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                    }`}
-                  >
-                    {opt}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>고객 메모 (특이사항)</Label>
-              <Textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={2} placeholder="진단서 발급 필요, 보험 청구 등..." />
-            </div>
-            <div className="space-y-1.5">
-              <Label>상담 메모 (보험·성향·상담내용)</Label>
-              <Textarea value={tmMemo} onChange={(e) => setTmMemo(e.target.value)} rows={3} placeholder="실비 보험사, 상한액, 고객 성향 등..." />
-            </div>
-            <div className="space-y-1.5">
-              <Label>추천인 <span className="text-xs text-muted-foreground font-normal">(선택)</span></Label>
-              <Input
-                value={referrerName}
-                onChange={(e) => setReferrerName(e.target.value)}
-                placeholder="추천인 이름"
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setEditing(false)}>
-                취소
-              </Button>
-              <Button className="flex-1" onClick={saveEdit}>
-                저장
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-4 flex items-start justify-between">
-            <div className="flex-1 min-w-0">
-              <div className="text-lg font-semibold">{customer.name}</div>
-              <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                <span>{customer.phone}</span>
-                {customer.birth_date && <span className="tabular-nums">{customer.birth_date}</span>}
-                {customer.chart_number && (
-                  <span className="rounded bg-teal-50 px-1.5 py-0.5 text-xs font-medium text-teal-700">{customer.chart_number}</span>
-                )}
-              </div>
-              {customer.lead_source && (
-                <div className="mt-1">
-                  <span className="inline-block rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-medium text-teal-800">
-                    {customer.lead_source}
-                  </span>
-                </div>
-              )}
-              {customer.memo && (
-                <div className="mt-1.5 rounded-md bg-muted/40 px-2.5 py-1.5 text-sm text-muted-foreground">
-                  <span className="text-xs font-medium text-muted-foreground/70 mr-1">메모</span>
-                  {customer.memo}
-                </div>
-              )}
-              {customer.tm_memo && (
-                <div className="mt-1.5 rounded-md bg-amber-50 px-2.5 py-1.5 text-sm text-amber-900 border border-amber-100">
-                  <span className="text-xs font-medium text-amber-700 mr-1">상담</span>
-                  {customer.tm_memo}
-                </div>
-              )}
-              {(customer.referrer_name || customer.referrer_id) && (
-                <div className="mt-1.5 rounded-md bg-teal-50 px-2.5 py-1.5 text-sm text-teal-900 border border-teal-100">
-                  <span className="text-xs font-medium text-teal-700 mr-1">추천인</span>
-                  {customer.referrer_name ?? '(고객 연결됨)'}
-                </div>
-              )}
-            </div>
-            <Button variant="outline" size="sm" className="ml-3 shrink-0" onClick={() => setEditing(true)}>
-              수정
-            </Button>
-          </div>
-        )}
-
-        <div className="mt-4 grid grid-cols-2 gap-2">
+        {/* 통계 row */}
+        <div className="mt-3 grid grid-cols-2 gap-2">
           <div className="rounded-lg bg-muted/40 px-3 py-2">
             <div className="text-xs text-muted-foreground">총 방문</div>
             <div className="text-base font-bold">{visits.length}회</div>
@@ -775,146 +737,440 @@ function CustomerDetailSheet({
           </div>
         </div>
 
-        <Tabs defaultValue="packages" className="mt-4">
-          <TabsList>
-            <TabsTrigger value="packages">패키지</TabsTrigger>
-            <TabsTrigger value="visits">방문</TabsTrigger>
-            <TabsTrigger value="payments">결제</TabsTrigger>
-            <TabsTrigger value="reservations">예약</TabsTrigger>
-          </TabsList>
+        {/* 15개 섹션 */}
+        <div className="mt-3 space-y-2">
 
-          <TabsContent value="packages" className="space-y-2">
-            {packages.length === 0 && (
-              <div className="py-6 text-center text-sm text-muted-foreground">패키지 없음</div>
+          {/* 섹션 1 — 성함/접수시간 */}
+          <ChartSection title="성함 / 접수시간" defaultOpen>
+            {editing ? (
+              <div className="space-y-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">이름</Label>
+                  <Input value={name} onChange={(e) => setName(e.target.value)} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">생년월일 (YYMMDD)</Label>
+                    <Input
+                      value={birthDate}
+                      onChange={(e) => setBirthDate(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      inputMode="numeric"
+                      placeholder="예: 900515"
+                      maxLength={6}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">차트번호</Label>
+                    <Input value={chartNumber} onChange={(e) => setChartNumber(e.target.value)} placeholder="예: F-0001" />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl font-bold">{customer.name}</span>
+                    {customer.chart_number && (
+                      <span className="rounded bg-teal-50 px-1.5 py-0.5 text-xs font-medium text-teal-700">{customer.chart_number}</span>
+                    )}
+                    <Badge variant={customer.visit_type === 'new' ? 'teal' : 'secondary'} className="text-[10px]">
+                      {VISIT_TYPE_KO[customer.visit_type as keyof typeof VISIT_TYPE_KO] ?? customer.visit_type}
+                    </Badge>
+                  </div>
+                  {customer.birth_date && (
+                    <div className="mt-0.5 text-xs text-muted-foreground tabular-nums">{customer.birth_date}</div>
+                  )}
+                  {latestCheckIn && (
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      최근 방문: {format(new Date(latestCheckIn.checked_in_at), 'MM-dd HH:mm')}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
-            {packages.map((p) => (
-              <div key={p.id} className="rounded-lg border p-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <div className="font-medium">{p.package_name}</div>
-                  <Badge
-                    variant={
-                      p.status === 'active'
-                        ? 'teal'
-                        : p.status === 'refunded'
-                          ? 'destructive'
-                          : 'secondary'
-                    }
-                  >
-                    {p.status}
-                  </Badge>
+          </ChartSection>
+
+          {/* 섹션 2 — 내원경로 */}
+          <ChartSection title="내원경로" defaultOpen>
+            {editing ? (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {LEAD_SOURCE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => setLeadSource(leadSource === opt ? '' : opt)}
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                        leadSource === opt
+                          ? 'bg-teal-600 text-white'
+                          : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                      }`}
+                    >
+                      {opt}
+                    </button>
+                  ))}
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  계약 {p.contract_date} · 금액 {formatAmount(p.total_amount)}
+                <div className="space-y-1">
+                  <Label className="text-xs">추천인</Label>
+                  <Input value={referrerName} onChange={(e) => setReferrerName(e.target.value)} placeholder="추천인 이름" />
                 </div>
-                {p.remaining && (
-                  <div className="mt-2 grid grid-cols-4 gap-1 text-xs">
-                    <Stat label="가열" used={p.heated_sessions - p.remaining.heated} total={p.heated_sessions} />
-                    <Stat
-                      label="비가열"
-                      used={p.unheated_sessions - p.remaining.unheated}
-                      total={p.unheated_sessions}
-                    />
-                    <Stat label="수액" used={p.iv_sessions - p.remaining.iv} total={p.iv_sessions} />
-                    <Stat
-                      label="사전처치"
-                      used={p.preconditioning_sessions - p.remaining.preconditioning}
-                      total={p.preconditioning_sessions}
-                    />
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {customer.lead_source ? (
+                  <span className="inline-block rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-medium text-teal-800">
+                    {customer.lead_source}
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">경로 미입력</span>
+                )}
+                {(customer.referrer_name || customer.referrer_id) && (
+                  <div className="text-xs text-muted-foreground">
+                    추천인: {customer.referrer_name ?? '(고객 연결됨)'}
                   </div>
                 )}
               </div>
-            ))}
-          </TabsContent>
+            )}
+          </ChartSection>
 
-          <TabsContent value="visits" className="space-y-1.5">
-            {visits.length === 0 && (
-              <div className="py-6 text-center text-sm text-muted-foreground">방문 이력 없음</div>
-            )}
-            {visits.map((v) => (
-              <div key={v.id} className="flex items-center justify-between rounded bg-muted/30 px-3 py-1.5 text-sm">
-                <span>{format(new Date(v.checked_in_at), 'yyyy-MM-dd HH:mm')}</span>
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Badge variant="secondary">{VISIT_TYPE_KO[v.visit_type]}</Badge>
-                  {STATUS_KO[v.status]}
-                </span>
-              </div>
-            ))}
-            {hasMoreVisits && (
-              <Button variant="ghost" size="sm" className="w-full text-xs" onClick={loadMoreVisits}>
-                더보기
-              </Button>
-            )}
-          </TabsContent>
-
-          <TabsContent value="payments" className="space-y-1.5">
-            {payments.length === 0 && pkgPayments.length === 0 && (
-              <div className="py-6 text-center text-sm text-muted-foreground">결제 내역 없음</div>
-            )}
-            {[...pkgPayments.map((p) => ({ ...p, kind: '패키지' as const })), ...payments.map((p) => ({ ...p, kind: '단건' as const }))]
-              .sort((a, b) => (a.created_at > b.created_at ? -1 : 1))
-              .map((p) => (
-                <div
-                  key={`${p.kind}-${p.id}`}
-                  className="flex items-center justify-between rounded bg-muted/30 px-3 py-1.5 text-sm"
-                >
-                  <span className="flex items-center gap-2">
-                    <Badge variant={p.kind === '패키지' ? 'teal' : 'secondary'}>{p.kind}</Badge>
-                    <span>{format(new Date(p.created_at), 'yyyy-MM-dd')}</span>
-                  </span>
-                  <span className={p.payment_type === 'refund' ? 'text-red-600' : ''}>
-                    {p.payment_type === 'refund' ? '-' : ''}
-                    {formatAmount(p.amount)} · {methodLabel(p.method)}
-                    {p.installment > 0 ? ` · ${p.installment}개월` : ''}
-                  </span>
+          {/* 섹션 3 — 연락처 */}
+          <ChartSection title="연락처" defaultOpen>
+            {editing ? (
+              <div className="space-y-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">전화번호</Label>
+                  <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
                 </div>
-              ))}
-            {hasMorePayments && (
-              <Button variant="ghost" size="sm" className="w-full text-xs" onClick={loadMorePayments}>
-                더보기
-              </Button>
-            )}
-          </TabsContent>
-
-          <TabsContent value="reservations" className="space-y-1.5">
-            {reservations.length === 0 && (
-              <div className="py-6 text-center text-sm text-muted-foreground">예약 없음</div>
-            )}
-            {reservations.map((r) => (
-              <div key={r.id} className="flex items-center justify-between rounded bg-muted/30 px-3 py-1.5 text-sm">
-                <span>
-                  {r.reservation_date} {r.reservation_time.slice(0, 5)}
-                </span>
-                <Badge variant="secondary">{r.status}</Badge>
               </div>
-            ))}
-          </TabsContent>
-        </Tabs>
+            ) : (
+              <div className="space-y-0.5 text-xs">
+                <div className="flex gap-2">
+                  <span className="text-muted-foreground w-16">전화번호</span>
+                  <span className="font-medium">{customer.phone}</span>
+                </div>
+                {customer.birth_date && (
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground w-16">생년월일</span>
+                    <span className="tabular-nums">{customer.birth_date}</span>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <span className="text-muted-foreground w-16">외국인</span>
+                  <span>{customer.is_foreign ? '예' : '아니오'}</span>
+                </div>
+              </div>
+            )}
+          </ChartSection>
+
+          {/* 섹션 4 — 치료플랜 (패키지) */}
+          <ChartSection title="치료플랜 (패키지)" defaultOpen>
+            {packages.length === 0 ? (
+              <div className="py-2 text-xs text-muted-foreground">패키지 없음</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-muted/40 text-muted-foreground">
+                      <th className="text-left px-2 py-1.5 font-medium border-b">패키지명</th>
+                      <th className="text-center px-2 py-1.5 font-medium border-b">총</th>
+                      <th className="text-center px-2 py-1.5 font-medium border-b">사용</th>
+                      <th className="text-center px-2 py-1.5 font-medium border-b text-teal-700">잔여</th>
+                      <th className="text-right px-2 py-1.5 font-medium border-b">금액</th>
+                      <th className="text-left px-2 py-1.5 font-medium border-b">시작일</th>
+                      <th className="text-center px-2 py-1.5 font-medium border-b">상태</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {packages.map((p) => {
+                      const used = p.remaining ? p.total_sessions - p.remaining.total_remaining : null;
+                      return (
+                        <tr key={p.id} className="border-b border-muted/20 hover:bg-muted/10">
+                          <td className="px-2 py-1.5 font-medium max-w-[120px] truncate">{p.package_name}</td>
+                          <td className="px-2 py-1.5 text-center">{p.total_sessions}</td>
+                          <td className="px-2 py-1.5 text-center">{used ?? '-'}</td>
+                          <td className="px-2 py-1.5 text-center font-semibold text-teal-700">
+                            {p.remaining?.total_remaining ?? '-'}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{formatAmount(p.total_amount)}</td>
+                          <td className="px-2 py-1.5 text-muted-foreground">{p.contract_date}</td>
+                          <td className="px-2 py-1.5 text-center">
+                            <Badge
+                              variant={p.status === 'active' ? 'teal' : p.status === 'refunded' ? 'destructive' : 'secondary'}
+                              className="text-[10px] px-1.5"
+                            >
+                              {PKG_STATUS_KO[p.status] ?? p.status}
+                            </Badge>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </ChartSection>
+
+          {/* 섹션 5 — 공간배정 */}
+          <ChartSection title="공간배정">
+            {latestCheckIn ? (
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                <div className="flex gap-2">
+                  <span className="text-muted-foreground w-14">진료실</span>
+                  <span>{latestCheckIn.examination_room ?? '-'}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-muted-foreground w-14">상담실</span>
+                  <span>{latestCheckIn.consultation_room ?? '-'}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-muted-foreground w-14">치료실</span>
+                  <span>{latestCheckIn.treatment_room ?? '-'}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-muted-foreground w-14">레이저</span>
+                  <span>{latestCheckIn.laser_room ?? '-'}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-muted-foreground">방문 이력 없음</div>
+            )}
+          </ChartSection>
+
+          {/* 섹션 6 — 예약내역 */}
+          <ChartSection title="예약내역">
+            {reservations.length === 0 ? (
+              <div className="text-xs text-muted-foreground py-1">예약 없음</div>
+            ) : (
+              <div className="space-y-1">
+                {reservations.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1 text-xs">
+                    <span>{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
+                    <Badge variant="secondary" className="text-[10px]">{r.status}</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ChartSection>
+
+          {/* 섹션 7 — 예약메모 */}
+          <ChartSection title="예약메모">
+            {reservations.filter((r) => r.memo).length === 0 ? (
+              <div className="text-xs text-muted-foreground py-1">메모 없음</div>
+            ) : (
+              <div className="space-y-1.5">
+                {reservations.filter((r) => r.memo).map((r) => (
+                  <div key={r.id} className="rounded bg-muted/30 px-2 py-1.5 text-xs">
+                    <div className="text-muted-foreground mb-0.5">{r.reservation_date} {r.reservation_time.slice(0, 5)}</div>
+                    <div>{r.memo}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ChartSection>
+
+          {/* 섹션 8 — 고객메모 */}
+          <ChartSection title="고객메모" defaultOpen>
+            {editing ? (
+              <div className="space-y-1">
+                <Textarea
+                  value={memo}
+                  onChange={(e) => setMemo(e.target.value)}
+                  rows={2}
+                  placeholder="진단서 발급 필요, 보험 청구 등..."
+                  className="text-xs"
+                />
+              </div>
+            ) : (
+              <div className="text-xs">
+                {customer.memo ? (
+                  <div className="whitespace-pre-wrap text-muted-foreground">{customer.memo}</div>
+                ) : (
+                  <span className="text-muted-foreground">메모 없음</span>
+                )}
+              </div>
+            )}
+          </ChartSection>
+
+          {/* 섹션 9 — 상담메모 / 담당실장 */}
+          <ChartSection title="상담메모 / 담당실장" defaultOpen>
+            {editing ? (
+              <div className="space-y-1">
+                <Textarea
+                  value={tmMemo}
+                  onChange={(e) => setTmMemo(e.target.value)}
+                  rows={3}
+                  placeholder="실비 보험사, 상한액, 고객 성향 등..."
+                  className="text-xs"
+                />
+              </div>
+            ) : (
+              <div className="space-y-1.5 text-xs">
+                {customer.tm_memo ? (
+                  <div className="whitespace-pre-wrap text-muted-foreground">{customer.tm_memo}</div>
+                ) : (
+                  <span className="text-muted-foreground">상담메모 없음</span>
+                )}
+                <div className="flex gap-2 text-muted-foreground">
+                  <span className="w-16">담당실장</span>
+                  <span>{latestCheckIn?.consultant_id ?? '-'}</span>
+                </div>
+              </div>
+            )}
+          </ChartSection>
+
+          {/* 섹션 9 저장/취소 버튼 (editing 모드) */}
+          {editing && (
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setEditing(false)}>
+                취소
+              </Button>
+              <Button className="flex-1" onClick={saveEdit}>
+                저장
+              </Button>
+            </div>
+          )}
+
+          {/* 섹션 10 — 원장소견 */}
+          <ChartSection title="원장소견">
+            {checkInHistory.filter((ci) => ci.doctor_note).length === 0 ? (
+              <div className="text-xs text-muted-foreground py-1">소견 없음</div>
+            ) : (
+              <div className="space-y-2">
+                {checkInHistory.filter((ci) => ci.doctor_note).map((ci) => (
+                  <div key={ci.id} className="rounded bg-muted/30 px-2 py-1.5 text-xs">
+                    <div className="text-muted-foreground mb-0.5">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
+                    <div className="whitespace-pre-wrap">{ci.doctor_note}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ChartSection>
+
+          {/* 섹션 11 — 시술메모 */}
+          <ChartSection title="시술메모">
+            {checkInHistory.filter((ci) => ci.treatment_memo).length === 0 ? (
+              <div className="text-xs text-muted-foreground py-1">시술메모 없음</div>
+            ) : (
+              <div className="space-y-2">
+                {checkInHistory.filter((ci) => ci.treatment_memo).map((ci) => (
+                  <div key={ci.id} className="rounded bg-muted/30 px-2 py-1.5 text-xs">
+                    <div className="text-muted-foreground mb-0.5">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
+                    <div className="whitespace-pre-wrap">
+                      {ci.treatment_memo?.details ?? JSON.stringify(ci.treatment_memo)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ChartSection>
+
+          {/* 섹션 12 — 비포/에프터 */}
+          <ChartSection title="비포/에프터">
+            {checkInHistory.filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0).length === 0 ? (
+              <div className="text-xs text-muted-foreground py-1">사진 없음</div>
+            ) : (
+              <div className="space-y-3">
+                {checkInHistory.filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0).map((ci) => (
+                  <div key={ci.id}>
+                    <div className="text-xs text-muted-foreground mb-1">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
+                    <div className="grid grid-cols-2 gap-1">
+                      {(ci.treatment_photos ?? []).map((url, idx) => (
+                        <img
+                          key={idx}
+                          src={url}
+                          alt={`사진 ${idx + 1}`}
+                          className="rounded w-full object-cover aspect-square bg-muted"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ChartSection>
+
+          {/* 섹션 13 — 체크리스트 / 동의서 */}
+          <ChartSection title="체크리스트 / 동의서">
+            <div className="space-y-2 text-xs">
+              {latestCheckIn?.notes?.checklist && Object.keys(latestCheckIn.notes.checklist).length > 0 && (
+                <div>
+                  <div className="font-medium text-muted-foreground mb-1">체크리스트</div>
+                  <Badge variant="secondary" className="text-[10px]">작성완료</Badge>
+                </div>
+              )}
+              {consentEntries.length === 0 ? (
+                <div className="text-muted-foreground">동의서 없음</div>
+              ) : (
+                <div>
+                  <div className="font-medium text-muted-foreground mb-1">동의서</div>
+                  <div className="space-y-1">
+                    {consentEntries.map((c, i) => (
+                      <div key={i} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
+                        <span>{FORM_TITLES[c.form_type] ?? c.form_type}</span>
+                        <span className="flex items-center gap-1.5">
+                          <Badge variant="teal" className="text-[10px]">서명완료</Badge>
+                          <span className="text-muted-foreground">{format(new Date(c.signed_at), 'MM-dd')}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </ChartSection>
+
+          {/* 섹션 14 — 처방전 */}
+          <ChartSection title="처방전">
+            {prescriptions.length === 0 ? (
+              <div className="text-xs text-muted-foreground py-1">처방전 없음</div>
+            ) : (
+              <div className="space-y-2 text-xs">
+                {prescriptions.map((rx) => (
+                  <div key={rx.id} className="rounded bg-muted/30 px-2 py-1.5">
+                    <div className="flex items-center justify-between text-muted-foreground mb-0.5">
+                      <span>{format(new Date(rx.prescribed_at), 'yyyy-MM-dd')}</span>
+                      {rx.prescribed_by_name && <span>{rx.prescribed_by_name}</span>}
+                    </div>
+                    {rx.diagnosis && <div className="font-medium mb-0.5">진단: {rx.diagnosis}</div>}
+                    {rx.prescription_items && rx.prescription_items.length > 0 && (
+                      <div className="space-y-0.5 mt-1">
+                        {rx.prescription_items.map((item, idx) => (
+                          <div key={idx} className="text-muted-foreground">
+                            {item.medication_name}
+                            {item.dosage && ` · ${item.dosage}`}
+                            {item.duration_days && ` · ${item.duration_days}일`}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </ChartSection>
+
+          {/* 섹션 15 — 서류발행 */}
+          <ChartSection title="서류발행">
+            {submissionEntries.length === 0 ? (
+              <div className="text-xs text-muted-foreground py-1">발행 이력 없음</div>
+            ) : (
+              <div className="space-y-1 text-xs">
+                {submissionEntries.map((s, i) => (
+                  <div key={i} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
+                    <span>{s.template_key ?? '-'}</span>
+                    <span className="text-muted-foreground flex items-center gap-1">
+                      <Printer className="h-3 w-3" />
+                      {format(new Date(s.printed_at), 'MM-dd HH:mm')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ChartSection>
+
+        </div>
       </SheetContent>
     </Sheet>
   );
 }
 
-function Stat({ label, used, total }: { label: string; used: number; total: number }) {
-  const remaining = Math.max(0, total - used);
-  return (
-    <div className="rounded bg-muted/40 px-1.5 py-1 text-center">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-xs font-medium">
-        {remaining}/{total}
-      </div>
-    </div>
-  );
-}
-
-function methodLabel(m: string) {
-  switch (m) {
-    case 'card':
-      return '카드';
-    case 'cash':
-      return '현금';
-    case 'transfer':
-      return '계좌이체';
-    default:
-      return m;
-  }
-}

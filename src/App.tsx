@@ -18,6 +18,7 @@ const Stats = lazy(() => import('@/pages/Stats'));
 const Accounts = lazy(() => import('@/pages/Accounts'));
 const SelfCheckIn = lazy(() => import('@/pages/SelfCheckIn'));
 const Waiting = lazy(() => import('@/pages/Waiting'));
+const CustomerChartPage = lazy(() => import('@/pages/CustomerChartPage'));
 const DailyHistory = lazy(() => import('@/pages/DailyHistory'));
 const Services = lazy(() => import('@/pages/Services'));
 
@@ -45,6 +46,11 @@ function App() {
               <Route path="/register" element={<Register />} />
               <Route path="/checkin/:clinicSlug" element={<SelfCheckIn />} />
               <Route path="/waiting/:clinicSlug" element={<Waiting />} />
+              <Route path="/chart/:customerId" element={
+                <ProtectedRoute>
+                  <CustomerChartPage />
+                </ProtectedRoute>
+              } />
 
               <Route
                 path="/admin"
