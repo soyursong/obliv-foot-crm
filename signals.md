@@ -1,5 +1,135 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-04-30 [T-20260430-foot-CHART-REDESIGN] dev-foot deploy-ready
+
+> **ticket**: T-20260430-foot-CHART-REDESIGN | **status**: deploy-ready
+> **commit**: d89df19 | **변경파일**: Customers.tsx, CustomerChartPage.tsx (신규), CustomerQuickMenu.tsx, Dashboard.tsx, App.tsx
+> **build**: ✅ tsc + vite build 2.41s, 에러 0
+
+### 구현 내용
+- `CustomerDetailSheet` 완전 재구성: 기존 탭 레이아웃 → 15개 ChartSection 아코디언 스택
+- Sheet 폭 `max-w-xl` → `w-[720px] max-w-2xl` 확장, `overflow-y-auto` 추가
+- 섹션4 패키지 table 형식: 패키지명|총|사용|잔여|금액|시작일|상태 (overflow-x-auto)
+- 추가 데이터 로드: check_ins 히스토리(100건), prescriptions, consent_forms, form_submissions
+- SheetHeader에 "새 창으로 열기" ExternalLink 버튼 (window.open popup)
+- `CustomerChartPage.tsx` 신규: popup window용 독립 차트 페이지 (AdminLayout 없음), 동일 15섹션
+- `CustomerQuickMenu`: `onOpenChartWindow` prop 추가, "새 창으로 열기" 메뉴 항목 추가
+- `Dashboard`: `handleOpenChartWindow` 핸들러 추가, CustomerQuickMenu에 prop 전달
+- `App.tsx`: `/chart/:customerId` ProtectedRoute 라우트 추가 (lazy CustomerChartPage)
+
+
+
+## 2026-04-30 [T-20260430-foot-CARD-CONTEXT-MENU] dev-foot deploy-ready
+
+> **ticket**: T-20260430-foot-CARD-CONTEXT-MENU | **status**: deploy-ready
+> **commit**: 49dd467 | **변경파일**: CustomerQuickMenu.tsx (신규), Dashboard.tsx, Customers.tsx, Reservations.tsx
+> **build**: ✅ tsc + vite build 2.38s, 에러 0
+
+### 구현 내용
+- `CustomerQuickMenu` 컴포넌트 신규 생성: [고객차트] [예약하기] 팝업 메뉴 (z-60, 화면 경계 자동 보정)
+- `Dashboard`: `CardHandlersCtx` 컨텍스트 추가, 고객 이름 span에 `onContextMenu` 핸들링 (우클릭 + 브라우저 롱프레스)
+- `Customers`: `location.state.openCustomerId` 처리 → 해당 고객 차트 시트 자동 오픈
+- `Reservations`: `location.state.openReservationFor` 처리 → 예약 폼 고객정보(이름·연락처·방문유형) 자동 채움
+- DB 변경 없음. 새 패키지 없음. 기존 상태컨텍스트 메뉴 그대로 유지 (충돌 없음)
+
+## 2026-04-30 [T-20260430-foot-CARD-CONTEXT-MENU] supervisor QA FAIL
+
+> **ticket**: T-20260430-foot-CARD-CONTEXT-MENU | **status**: qa-fail
+> **판정**: NO_GO — 수용 기준 #4 미충족 (터치 롱프레스 미구현)
+
+### QA 5항목 결과
+| # | 항목 | 결과 |
+|---|------|------|
+| 1 | 빌드 | ✅ PASS — tsc + vite build 2.38s, 에러 0 |
+| 2 | 기존 기능 미파괴 | ✅ PASS — CheckInDetailSheet/DnD 기존 흐름 미변경. CardHandlersCtx 추가만, 기존 StatusContextMenu 충돌 없음 |
+| 3 | DB 호환성 | ✅ N/A — DB 변경 없음 |
+| 4 | 권한/RLS | ✅ N/A — RLS 미변경. Customers 기존 policy 그대로 read |
+| 5 | 롤백 SQL | ✅ N/A — DB 변경 없으므로 불필요 |
+
+### 수용 기준 평가
+- [x] 카드 우클릭 시 [고객차트] [예약하기] 메뉴 표시 ✅ 데스크톱 구현 확인
+- [x] 고객차트 클릭 → 해당 고객 차트 페이지 열림 ✅ `handleOpenChart` + `openCustomerId` state 처리 정상
+- [x] 예약하기 클릭 → 예약 폼 열림 (고객 정보 자동 채움) ✅ `handleNewReservation` + `openReservationFor` state 처리 정상
+- [ ] **터치 디바이스에서 롱프레스로 동일 동작** ❌ **미구현**
+- [ ] 김주연 현장 확인 완료 → 배포 후 확인 (배포 조건)
+
+### FAIL 상세 — 터치 롱프레스 미구현
+
+**근거 3가지**:
+1. `DraggableCard` 이름 span에 `onTouchStart`/`onTouchEnd` + 500ms timer 없음 — `onContextMenu`만 있음
+2. 카드 전체에 `touch-none` (CSS `touch-action: none`) 적용 → 브라우저 네이티브 contextmenu 롱프레스 이벤트 차단
+3. dnd-kit `TouchSensor` `delay: 200ms` → 200ms 이상 터치 시 DnD가 이벤트 선점 → `contextmenu` 발화 불가
+
+**결과**: 터치 디바이스에서 고객 이름 롱프레스 → 메뉴 미출력
+
+### 교차 검증
+| # | 검증 쌍 | 결과 |
+|---|--------|------|
+| 1 | RPC↔Schema | ✅ 신규 RPC 없음 |
+| 2 | RLS↔라우트 | ✅ `/admin/customers`, `/admin/reservations` 기존 RLS 그대로 |
+| 3 | ServiceLayer↔라우트 | ✅ CustomerQuickMenu는 navigate만, DB 직접 호출 없음 |
+| 4 | 스펙↔구현 | ❌ 수용 기준 #4 (터치 롱프레스) 미반영 |
+| 5 | 데이터흐름 | ✅ 신규 컬럼 없음 |
+
+### dev-foot 수정 지시
+
+`DraggableCard`의 이름 span 2곳(compact/expanded 모드)에 커스텀 롱프레스 추가:
+
+```tsx
+// DraggableCard 컴포넌트 내
+const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+// 이름 span에 추가:
+onTouchStart={(e) => {
+  e.stopPropagation();
+  longPressRef.current = setTimeout(() => {
+    const t = e.changedTouches[0];
+    cardHandlers?.onNameContext(checkIn, { clientX: t.clientX, clientY: t.clientY });
+  }, 500);
+}}
+onTouchEnd={() => { if (longPressRef.current) clearTimeout(longPressRef.current); }}
+onTouchMove={() => { if (longPressRef.current) clearTimeout(longPressRef.current); }}
+```
+
+`CardHandlers.onNameContext` 시그니처도 수정 필요:
+```ts
+onNameContext: (ci: CheckIn, pos: { clientX: number; clientY: number }) => void;
+```
+
+수정 완료 후 `deploy-ready` 재갱신 요청.
+
+
+
+## 2026-04-30 17:40 [T-20260430-foot-DASH-LAYOUT-V2] supervisor QA PASS — 배포 승인 요청 발송
+
+> **ticket**: T-20260430-foot-DASH-LAYOUT-V2 | **status**: qa-pass | **grade**: Green
+> **commit**: 1e9cf5d | **변경파일**: Dashboard.tsx 단독
+
+### QA 5항목 결과
+| # | 항목 | 결과 |
+|---|------|------|
+| 1 | 빌드 | ✅ PASS — tsc + vite build 2.35s, 에러 0 |
+| 2 | 기존 기능 미파괴 | ✅ PASS — 핵심 경로(체크인→이동→결제) 로직 미변경. 순수 레이아웃 재배치 |
+| 3 | DB 호환성 | ✅ N/A — DB 변경 없음. consultant_id 컬럼 기존 스키마(initial_schema.sql:142)에 이미 존재. 미그레이션 파일 무추가 |
+| 4 | 권한/RLS | ✅ N/A — RLS 정책 미변경. room_assignments 기존 패턴 그대로 사용 |
+| 5 | 롤백 SQL | ✅ N/A — DB 변경 없으므로 불필요 |
+
+### 수용기준 확인
+- [x] 상담1~5 grid-cols-5→grid-cols-1, w-[580px]→w-44 ✅ 코드 확인
+- [x] 직원명 dropdown: showStaffDropdown에 'consultation' 추가, handleConsultantChange 신규 ✅
+- [x] 레이저실 grid-cols-4→grid-cols-3, w-[640px]→w-[480px] ✅
+- [x] 레이저대기 치료대기 옆 (flex-row 나란히, 레이저실 section에서 분리) ✅
+- [x] 데스크 치료실↔레이저실 사이 (section 9→10 순서 변경) ✅
+- [x] 수평 스크롤 min-w-max + overflow-x-auto 유지 ✅
+- [ ] 김주연 현장 확인 — 배포 후 확인 예정
+
+### 자율 승인 등급
+- **Green** — UI 레이아웃만 변경, DB 불변, 기존 로직 불변, 새 패키지 없음
+- git push origin/main 이미 완료 (dev commit 1e9cf5d)
+- Lovable 배포 승인 요청 발송 → @대표 (U05LTA8TSM6) 슬랙 C0ATE5P6JTH
+
+---
+
 ## 2026-04-30 21:10 [STABILIZATION 최종 확인] dev-foot — MQ push 수신 → 이미 완료 상태 재확인 + 스펙 확장
 
 > **ticket**: T-20260430-foot-STABILIZATION | **status**: deployed (11:45) → **스펙 확장 완료**
