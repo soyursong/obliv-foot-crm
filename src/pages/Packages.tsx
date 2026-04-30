@@ -55,7 +55,7 @@ export default function Packages() {
     setLoading(true);
     let req = supabase
       .from('packages')
-      .select('*, customer:customers(name, phone)')
+      .select('*, customer:customers!customer_id(name, phone)')
       .eq('clinic_id', clinic.id)
       .order('contract_date', { ascending: false })
       .limit(200);
@@ -518,7 +518,7 @@ function PackageDetailSheet({
   const reload = useCallback(async () => {
     if (!packageId) return;
     const [pkgRes, remainRes, sessRes, payRes] = await Promise.all([
-      supabase.from('packages').select('*, customer:customers(name, phone)').eq('id', packageId).single(),
+      supabase.from('packages').select('*, customer:customers!customer_id(name, phone)').eq('id', packageId).single(),
       supabase.rpc('get_package_remaining', { p_package_id: packageId }),
       supabase
         .from('package_sessions')
