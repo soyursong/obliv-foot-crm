@@ -439,6 +439,53 @@ export default function CustomerChartPage() {
           )}
         </ChartSection>
 
+        {/* 섹션 10.5 — 진료종류 (간단차트) */}
+        <ChartSection title="진료종류">
+          {checkInHistory.filter((ci) =>
+            ci.consultation_done || ci.treatment_kind || ci.preconditioning_done || ci.pododulle_done || ci.laser_minutes != null
+          ).length === 0 ? (
+            <div className="text-xs text-muted-foreground py-1">기록 없음</div>
+          ) : (
+            <div className="space-y-2">
+              {checkInHistory
+                .filter((ci) =>
+                  ci.consultation_done || ci.treatment_kind || ci.preconditioning_done || ci.pododulle_done || ci.laser_minutes != null
+                )
+                .map((ci) => (
+                  <div key={ci.id} className="rounded bg-muted/30 px-2 py-1.5 text-xs">
+                    <div className="text-muted-foreground mb-1">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+                      <div className="flex gap-1.5">
+                        <span className="text-muted-foreground w-12 shrink-0">상담유무</span>
+                        <span className={ci.consultation_done ? 'text-emerald-600 font-medium' : ''}>{ci.consultation_done ? '○ 상담함' : '—'}</span>
+                      </div>
+                      {ci.treatment_kind && (
+                        <div className="flex gap-1.5">
+                          <span className="text-muted-foreground w-12 shrink-0">치료종류</span>
+                          <span className="font-medium">{ci.treatment_kind}</span>
+                        </div>
+                      )}
+                      <div className="flex gap-1.5">
+                        <span className="text-muted-foreground w-12 shrink-0">프컨</span>
+                        <span className={ci.preconditioning_done ? 'text-emerald-600 font-medium' : ''}>{ci.preconditioning_done ? '○' : '—'}</span>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <span className="text-muted-foreground w-12 shrink-0">포돌</span>
+                        <span className={ci.pododulle_done ? 'text-emerald-600 font-medium' : ''}>{ci.pododulle_done ? '○' : '—'}</span>
+                      </div>
+                      {ci.laser_minutes != null && (
+                        <div className="flex gap-1.5">
+                          <span className="text-muted-foreground w-12 shrink-0">레이저</span>
+                          <span>{ci.laser_minutes}분</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+        </ChartSection>
+
         {/* 섹션 11 — 시술메모 */}
         <ChartSection title="시술메모">
           {checkInHistory.filter((ci) => ci.treatment_memo).length === 0 ? (

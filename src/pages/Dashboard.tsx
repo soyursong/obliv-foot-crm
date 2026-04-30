@@ -255,9 +255,9 @@ function DraggableCard({
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          onContextMenu?.(e);
+          cardHandlers?.onNameContext(checkIn, e);
         }}
-        title="드래그=이동 · 우클릭/⋮=상태변경 · 클릭=상세"
+        title="드래그=이동 · 우클릭=고객차트·예약 · ⋮=상태변경 · 클릭=상세"
         className={cn(
           'cursor-grab touch-none rounded border bg-white px-2 py-1.5 text-xs shadow-sm transition hover:shadow active:cursor-grabbing',
           urgency,
@@ -353,9 +353,9 @@ function DraggableCard({
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        onContextMenu?.(e);
+        cardHandlers?.onNameContext(checkIn, e);
       }}
-      title="드래그=이동 · 우클릭/⋮=상태변경 · 클릭=상세"
+      title="드래그=이동 · 우클릭=고객차트·예약 · ⋮=상태변경 · 클릭=상세"
       className={cn(
         'cursor-grab touch-none rounded-lg border bg-white p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing',
         urgency,
