@@ -1,5 +1,28 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-01 [PUSH-20260501-FOOT-OPEN-TICKETS] acked ✅
+
+> **from**: planner | **acked_at**: 2026-05-01 KST
+> **오픈 티켓 현황** (dev-foot 관할):
+> - deploy-ready 대기: T-20260430-foot-CARD-CONTEXT-MENU (P2, commit e82f861 포함)
+> - qa-pass 대기: CHECKIN-SLOT-ROUTE(P1), DASH-LAYOUT-V2(P1), DASH-MOVE-REGRESS(P0) → supervisor QA 후 배포 예정
+> - deploy-approval-requested: T-20260430-foot-CHART-REDESIGN (P2) → supervisor 승인 대기
+> - spec_pending_input: PRESCREEN-CHECKLIST(P1), CONSENT-FORMS(P1) → 플래너 스펙 입력 대기
+> - pending_input: DOC-PRINT-FOLLOWUP(P2) → 대표 입력 대기
+> **결론**: dev-foot 착수 가능 approved/in_progress 티켓 없음. supervisor 및 플래너 입력 대기.
+
+## 2026-05-01 [MQ-20260430-FOOT-LOVABLE-HARDFORK] acked (이미 완료) ✅
+
+> **from**: supervisor | **re_queued**: 2026-04-30T16:25 | **acked_at**: 2026-05-01 KST
+> **이전 세션(b3ca939, 05-01 01:07)에서 이미 처리 완료** — 재검증 결과 동일
+> - 선행 조건 3건 모두 deployed (PACKAGE-PAYMENT-BROKEN / STAGE-FLOW-CORRECTION / CUSTOMERS-STANDARDIZE)
+> - Step 2: Vercel main 직접 webhook ✅ / Lovable deploy hook 없음 ✅
+> - Step 3: .env.example 존재 ✅ / README.md 운영 방식 기재 ✅
+> - Step 4: .github/workflows/ 3개 (push/nightly/regression) Lovable 스텝 없음 ✅
+> - Step 5 E2E: (1)GitHub→Vercel ✅ (2)Lovable 차단 ✅ (3)Supabase 연결 ✅ (4)CI/CD 정상 ✅
+> - 산출물: 풋센터_lovable_분리.md(claude-sync) ✅ / lovable_guide.md §8 ✅
+> - 빌드: PASS (tsc 0 errors, vite 2.38s)
+
 ## 2026-05-01 [MQ-20260430-FOOT-CUSTOMERS-STANDARDIZE] deployed ✅
 
 > **ticket**: T-20260430-foot-CUSTOMERS-STANDARDIZE | **status**: deployed
