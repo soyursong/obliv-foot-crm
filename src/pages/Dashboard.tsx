@@ -46,7 +46,7 @@ import { StatusContextMenu } from '@/components/StatusContextMenu';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
-import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Reservation, Room, RoomFieldKey, Staff } from '@/lib/types';
+import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Reservation, Room, RoomFieldKey, Staff, VisitType } from '@/lib/types';
 
 type TabKey = 'all' | 'new' | 'returning';
 
@@ -1165,29 +1165,38 @@ export default function Dashboard() {
       }
       toastWithUndo(`${roomName}(으)로 이동`, row);
     } else if (target === 'returning_zone' || target === 'experience_zone') {
-      // 재진/선체험 대기열로 복귀 → status = registered
-      if (row.status === 'registered') return;
+      // 재진/선체험 대기열로 이동 → status = registered + visit_type 변경 (양방향 자유 이동)
+      const targetVisitType: VisitType = target === 'returning_zone' ? 'returning' : 'experience';
+      if (row.status === 'registered' && row.visit_type === targetVisitType) return;
       markRecentlyUpdated(row.id);
       let prevRow: CheckIn | undefined;
       setRows((curr) => {
         prevRow = curr.find((r) => r.id === row.id);
-        return curr.map((r) => (r.id === row.id ? { ...r, status: 'registered' as CheckInStatus } : r));
+        return curr.map((r) =>
+          r.id === row.id ? { ...r, status: 'registered' as CheckInStatus, visit_type: targetVisitType } : r,
+        );
       });
-      const { error } = await supabase.from('check_ins').update({ status: 'registered' }).eq('id', row.id);
+      const { error } = await supabase
+        .from('check_ins')
+        .update({ status: 'registered', visit_type: targetVisitType })
+        .eq('id', row.id);
       if (error) {
         setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
         toast.error(`이동 실패: ${error.message}`);
         return;
       }
-      const now = new Date().toISOString();
-      await supabase.from('status_transitions').insert({
-        check_in_id: row.id,
-        clinic_id: row.clinic_id,
-        from_status: row.status,
-        to_status: 'registered',
-      });
-      setStageStartMap((prev) => new Map(prev).set(row.id, now));
-      toastWithUndo('대기 중으로 이동', row);
+      if (row.status !== 'registered') {
+        const now = new Date().toISOString();
+        await supabase.from('status_transitions').insert({
+          check_in_id: row.id,
+          clinic_id: row.clinic_id,
+          from_status: row.status,
+          to_status: 'registered',
+        });
+        setStageStartMap((prev) => new Map(prev).set(row.id, now));
+      }
+      const zoneLabel = targetVisitType === 'returning' ? '재진' : '선체험';
+      toastWithUndo(`${zoneLabel} 대기로 이동`, row);
     } else if (target === 'laser_waiting') {
       if (row.status === 'laser' && !row.laser_room) return;
       markRecentlyUpdated(row.id);
@@ -1235,6 +1244,38 @@ export default function Dashboard() {
         return;
       }
       toastWithUndo(needsExam ? '재진(진료)로 이동' : '재진(직행)으로 이동', row);
+    } else if (target === 'registered') {
+      // 초진 대기열로 이동 → status = registered + visit_type = new (양방향 자유 이동)
+      if (row.status === 'registered' && row.visit_type === 'new') return;
+      markRecentlyUpdated(row.id);
+      let prevRow: CheckIn | undefined;
+      setRows((curr) => {
+        prevRow = curr.find((r) => r.id === row.id);
+        return curr.map((r) =>
+          r.id === row.id ? { ...r, status: 'registered' as CheckInStatus, visit_type: 'new' as VisitType } : r,
+        );
+      });
+      const patch: Record<string, unknown> = { status: 'registered', visit_type: 'new' };
+      if (!row.called_at && row.status !== 'registered') {
+        patch.called_at = new Date().toISOString();
+      }
+      const { error } = await supabase.from('check_ins').update(patch).eq('id', row.id);
+      if (error) {
+        setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
+        toast.error(`이동 실패: ${error.message}`);
+        return;
+      }
+      if (row.status !== 'registered') {
+        const now = new Date().toISOString();
+        await supabase.from('status_transitions').insert({
+          check_in_id: row.id,
+          clinic_id: row.clinic_id,
+          from_status: row.status,
+          to_status: 'registered',
+        });
+        setStageStartMap((prev) => new Map(prev).set(row.id, now));
+      }
+      toastWithUndo('초진 대기로 이동', row);
     } else {
       const newStatus = target as CheckInStatus;
       if (row.status === newStatus) return;
