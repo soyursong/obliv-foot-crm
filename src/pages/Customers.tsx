@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -62,6 +63,7 @@ interface CustomerStats {
 }
 
 export default function Customers() {
+  const location = useLocation();
   const clinic = useClinic();
   const { profile } = useAuth();
   const isAdmin = profile?.role === 'admin';
@@ -72,6 +74,7 @@ export default function Customers() {
   const [openCreate, setOpenCreate] = useState(false);
   const [statsMap, setStatsMap] = useState<Map<string, CustomerStats>>(new Map());
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navStateConsumed = useRef(false);
 
   const runSearch = useCallback(
     async (q: string) => {
@@ -158,6 +161,24 @@ export default function Customers() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [query, clinic, runSearch]);
+
+  // 대시보드 고객차트 바로가기 → location.state.openCustomerId 처리
+  useEffect(() => {
+    if (navStateConsumed.current) return;
+    if (!clinic) return;
+    const state = location.state as { openCustomerId?: string } | null;
+    if (!state?.openCustomerId) return;
+    navStateConsumed.current = true;
+    window.history.replaceState({}, '');
+    supabase
+      .from('customers')
+      .select('*')
+      .eq('id', state.openCustomerId)
+      .single()
+      .then(({ data }) => {
+        if (data) setSelected(data as Customer);
+      });
+  }, [clinic, location.state]);
 
   const deleteCustomer = async (c: Customer) => {
     if (!window.confirm(`${c.name}님을 삭제하시겠습니까?\n체크인·패키지 이력이 없을 때만 삭제됩니다.`)) return;
