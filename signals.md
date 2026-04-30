@@ -1,5 +1,52 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-04-30 [T-20260430-foot-CHART-UX-IMPROVE] dev-foot deploy-ready
+
+> **ticket**: T-20260430-foot-CHART-UX-IMPROVE | **status**: deploy-ready
+> **commit**: e82f861 | **변경파일**: CustomerChartPage.tsx, Dashboard.tsx
+> **build**: ✅ tsc + vite build 2.38s, 에러 0
+
+### 구현 내용
+**3-a — 별도 창 간단차트 명칭 가져오기**
+- `CustomerChartPage.tsx`: "진료종류" ChartSection 신설 (섹션 11 앞)
+- 방문별로 consultation_done(상담유무)·treatment_kind(치료종류)·preconditioning_done(프컨)·pododulle_done(포돌)·laser_minutes(레이저시간) 라벨+값 표시
+- T-20260430-foot-TREATMENT-LABEL에서 추가된 5개 컬럼 활용 (select('*') 기존 쿼리 재사용)
+- 기록이 없는 방문은 필터링, 하나라도 있으면 날짜/시간 헤더와 함께 grid 표시
+
+**3-b — 카드 전체 영역 컨텍스트 메뉴**
+- `DraggableCard` compact/non-compact 두 모드의 외곽 div `onContextMenu`:
+  - 변경 전: `onContextMenu?.(e)` → StatusContextMenu
+  - 변경 후: `cardHandlers?.onNameContext(checkIn, e)` → CustomerQuickMenu (고객차트·예약하기)
+- 이름 span `onContextMenu` 유지 (CustomerQuickMenu, stopPropagation — 회귀 없음)
+- ⋮ 버튼 onClick은 StatusContextMenu 유지 (회귀 없음)
+- tooltip 텍스트: "우클릭/⋮=상태변경" → "우클릭=고객차트·예약 · ⋮=상태변경"
+
+---
+
+## 2026-04-30 [T-20260430-foot-TIMETABLE-DASHBOARD] dev-foot deploy-ready
+
+> **ticket**: T-20260430-foot-TIMETABLE-DASHBOARD | **status**: deploy-ready
+> **commit**: 14adb4e | **변경파일**: Dashboard.tsx (DashboardTimeline 컴포넌트)
+> **build**: ✅ tsc + vite build 2.37s, 에러 0
+
+### 구현 내용
+- `DashboardTimeline` 컴포넌트에 초진/재진 슬롯 카운터 추가 (53 lines 순증가)
+- 슬롯별 `초n/4 | 재n/4` 배지 표시 (우측 정렬, 시간 레이블 옆)
+- 상한(4명) 도달 시 빨간 배지 + ring 경고 표시 — 차단 없음
+- 체험(experience) visit_type → 재진 카운트로 통합
+- 범례 헤더(초진/재진 색상 안내 + "상한 4명" 표기) 추가
+- 사이드바 폭 w-44 → w-48 (배지 공간 확보)
+- DB 변경 없음 / 새 패키지 없음 / 기존 기능 미파괴
+
+---
+
+## 2026-04-30 23:59 — supervisor | qa_done + deploy-approval-requested | T-20260430-foot-PROCESS-FLOW
+
+**QA 결과**: PASS (Green) — CheckInDetailSheet.tsx UI-only 변경. 빌드 2.39s 성공. DB/RLS 무변경.
+**변경 내용**: 상담 단계 '📍상담실 결제 단계' 안내 배너 + DeskPaymentMenu 경고 문구 추가.
+**git push**: 완료 (origin/main f023346)
+**deploy-approval-requested**: 2026-04-30T23:59:00+09:00 (@대표 슬랙 발송 완료)
+
 ## 2026-04-30 23:00 — dev-foot | hotfix | MQ-20260430-FOOT-PACKAGE-PAYMENT-BROKEN 해소
 
 **근본 원인**: `PaymentDialog.canShowPackageMode`가 `visit_type !== 'returning'` 조건으로 재진 환자 패키지 결제를 차단.
