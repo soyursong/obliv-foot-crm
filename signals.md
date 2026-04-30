@@ -1,5 +1,19 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-04-30 23:00 — dev-foot | hotfix | MQ-20260430-FOOT-PACKAGE-PAYMENT-BROKEN 해소
+
+**근본 원인**: `PaymentDialog.canShowPackageMode`가 `visit_type !== 'returning'` 조건으로 재진 환자 패키지 결제를 차단.
+- PACKAGE-CREATE-IN-SHEET (b6650e3) 이 CheckInDetailSheet CTA는 재진 포함 전방문유형 노출로 수정했으나 PaymentDialog는 누락.
+- 결과: 재진 환자가 "📦 패키지 생성" 클릭 → PaymentDialog 열림 → amber 경고만 표시, 실제 결제 불가.
+
+**수정**: `!checkIn.visit_type !== 'returning' && !checkIn.package_id` → `!checkIn.package_id` (visit_type 조건 제거)
+- tooltip/error 메시지도 "재진 환자 또는 …" → "이미 패키지가 연결된 …" 으로 갱신
+- 빌드 PASS 2.38s, TypeScript 에러 0
+
+MQ PUSH-20260430-210000-FOOT-STABILIZATION: 기존 done 확인 (11:45 deployed)
+MQ PUSH-20260430-220000-FOOT-P1-STALL: 기존 acked 확인
+MQ PACKAGE-PAYMENT-BROKEN: **done** (본 커밋으로 해소)
+
 ## 2026-04-30 [T-20260430-foot-CHART-REDESIGN] dev-foot deploy-ready
 
 > **ticket**: T-20260430-foot-CHART-REDESIGN | **status**: deploy-ready
