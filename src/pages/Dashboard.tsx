@@ -1382,6 +1382,18 @@ export default function Dashboard() {
     navigate('/admin/customers', { state: { openCustomerId: ci.customer_id } });
   }, [navigate]);
 
+  const handleOpenChartWindow = useCallback((ci: CheckIn) => {
+    if (!ci.customer_id) {
+      toast.info('고객 정보가 연결되어 있지 않습니다');
+      return;
+    }
+    window.open(
+      `/chart/${ci.customer_id}`,
+      `chart-${ci.customer_id}`,
+      'width=820,height=960,scrollbars=yes,resizable=yes'
+    );
+  }, []);
+
   const handleNewReservation = useCallback((ci: CheckIn) => {
     navigate('/admin/reservations', {
       state: {
@@ -2018,6 +2030,7 @@ export default function Dashboard() {
         onClose={() => setCustomerMenu(null)}
         onOpenChart={handleOpenChart}
         onNewReservation={handleNewReservation}
+        onOpenChartWindow={handleOpenChartWindow}
       />
     </div>
   );
