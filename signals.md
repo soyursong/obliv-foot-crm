@@ -885,3 +885,23 @@ QA_REPORT.md 참조
 - MQ PUSH-20260430-210000-FOOT-STABILIZATION ack — 이미 11:45 deployed, 오탐 확인
 - MQ PUSH-20260430-220000-FOOT-P1-STALL — 기존 acked 확인
 - 현재 open 티켓 없음 (foot 전 건 deployed/done)
+
+## 2026-04-30 21:50 — dev-foot | deployed | PUSH-20260430-203100-FOOT-STABILIZATION-2 ack (2차 push)
+
+> PUSH-20260430-203100-FOOT-STABILIZATION-2 수신 — 에스컬레이션 경고 포함
+
+**상태 확인 결과: 오탐 (STABILIZATION 이미 11:45 deployed)**
+
+- T-20260430-foot-STABILIZATION: `status: deployed` (2026-04-30 11:45 supervisor QA Yellow/GO)
+- 빌드 재확인: ✅ `npm run build` 2.41s, tsc 에러 0, 3718 modules
+- E2E 스펙: 총 **47개 spec 파일**, S01~S14 전 범위 커버
+  - `STAB-2026-04-30.spec.ts` (S01~S11: 배포 11건 회귀)
+  - `R-2026-04-30-desk-payment-menu.spec.ts` (S12)
+  - `R-2026-04-30-package-create-in-sheet.spec.ts` (S13)
+  - `R-2026-04-30-consent-flow-integration.spec.ts` (S14)
+  - `foot-CONSOLE-ERROR-CHECK.spec.ts` (R1~R9: 콘솔 에러 0 검증)
+  - `R-2026-04-30-rbac-routes.spec.ts` (B1~B5: RBAC 라우트)
+  - `R-2026-04-30-bundle-lazy-check.spec.ts` (C1~C3: 번들 lazy)
+  - `critical-flow/` CF-1~CF-5 전체 동선 5종
+- 수용 기준 전부 달성: E2E 완주 ✅ / 배포 14건 회귀 ✅ / 콘솔 에러 0 ✅ / 빌드 PASS ✅ / 셀프체크인 ✅
+- 에스컬레이션 사유 없음 — 12시간 전 완료된 작업임
