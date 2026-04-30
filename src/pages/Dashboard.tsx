@@ -168,7 +168,9 @@ function DraggableCard({
         <div className="flex items-center justify-between gap-1">
           <div className="flex items-center gap-1 truncate">
             <GripVertical className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-            <span className="font-bold text-sm truncate">{checkIn.customer_name}</span>
+            <span className="font-bold text-sm truncate">
+              {checkIn.customer_name?.trim() || '이름없음'}
+            </span>
             {checkIn.queue_number != null && (
               <span className="text-[10px] text-teal-600 shrink-0">#{checkIn.queue_number}</span>
             )}
@@ -256,7 +258,9 @@ function DraggableCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <GripVertical className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-          <span className="text-base font-bold">{checkIn.customer_name}</span>
+          <span className="text-base font-bold">
+            {checkIn.customer_name?.trim() || '이름없음'}
+          </span>
           {checkIn.queue_number != null && (
             <span className="text-xs text-teal-600">#{checkIn.queue_number}</span>
           )}
