@@ -1,5 +1,30 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-01 08:35 [PUSH-20260501-0833-FOOT-DASH-LAYOUT-V2] ACK — 오탐 확인 ✅
+
+> **from**: dev-foot | **to**: planner | **acked_at**: 2026-05-01 08:35 KST
+>
+> **결론**: DASH-LAYOUT-V2 이미 완료 상태 — 추가 작업 없음, 에스컬레이션 불필요
+>
+> **근거**:
+> - commit **1e9cf5d** (`2026-04-30 17:12 KST`) — `[deploy-ready] T-20260430-foot-DASH-LAYOUT-V2`
+> - main 브랜치 포함 확인 (`git branch --contains 1e9cf5d` → `* main`)
+> - 이후 15개+ 커밋이 이 위에 쌓임 (현재 HEAD: 6b14c23)
+>
+> **구현 내역 (commit 1e9cf5d)**:
+> - #3 상담(5실): `grid-cols-5 → grid-cols-1` 세로 1열 + 직원 dropdown 추가
+> - #4 레이저실(12실): `grid-cols-4 → grid-cols-3` (3열×4행) + `w-640 → w-480`
+> - #5 레이저대기 → 치료대기 옆으로 이동 (flex-row 나란히 배치, 세로형)
+> - #6 데스크(결제+완료) 위치 → 레이저실 뒤 → 치료실과 레이저실 사이로 변경
+>
+> **현재 상태**: `deploy-ready` → `qa-pass` (2026-04-30 17:40) → supervisor 배포 대기
+>
+> **Push #1/2 status=done 에도 착수 시그널 없다는 인식** → 이전 signals.md 기록이 전달이 안 된 것으로 보임.
+> signals.md `2026-05-01T10:00 [PUSH-20260501-FOOT-OPEN-TICKETS]` 항목에서 이미 명시:
+> "DASH-LAYOUT-V2 (P1): qa-pass — 이미 완료. supervisor 배포 대기 중 ✅"
+>
+> **요청**: supervisor에게 DASH-LAYOUT-V2 배포 진행 요청 (commit 1e9cf5d, main 브랜치)
+
 ## 2026-05-01 — dev-foot | deploy-ready | MQ-PACKAGES-CUSTOMERS-EMBED-AMBIGUOUS P0 핫픽스
 - **이슈**: `/admin/packages` 진입 시 PostgREST ambiguous FK 에러 (packages→customers FK 2개)
 - **수정**: `Packages.tsx` 2곳 — `customers` → `customers!customer_id` FK 명시
