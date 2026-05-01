@@ -6,7 +6,6 @@ import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -29,7 +28,8 @@ import {
 import { VISIT_TYPE_KO } from '@/lib/status';
 import { maskPhoneTail } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { Customer, Reservation, Service, VisitType } from '@/lib/types';
+import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
+import type { Reservation, Service, VisitType } from '@/lib/types';
 
 const STATUS_STYLE: Record<Reservation['status'], string> = {
   confirmed: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -599,16 +599,10 @@ function ReservationEditor({
 }) {
   const [state, setState] = useState<ReservationDraft | null>(draft);
   const [submitting, setSubmitting] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Customer[]>([]);
-  const [showSearch, setShowSearch] = useState(false);
   const [services, setServices] = useState<Service[]>([]);
 
   useEffect(() => {
     setState(draft);
-    setSearchQuery('');
-    setSearchResults([]);
-    setShowSearch(false);
   }, [draft]);
 
   useEffect(() => {
@@ -627,47 +621,12 @@ function ReservationEditor({
   const update = <K extends keyof ReservationDraft>(k: K, v: ReservationDraft[K]) =>
     setState((s) => (s ? { ...s, [k]: v } : s));
 
-  const searchCustomer = async (q: string) => {
-    setSearchQuery(q);
-    if (!q.trim() || !clinicId) { setSearchResults([]); return; }
-    const { data } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('clinic_id', clinicId)
-      .or(`name.ilike.%${q}%,phone.ilike.%${q}%`)
-      .limit(8);
-    setSearchResults((data ?? []) as Customer[]);
-    setShowSearch(true);
-  };
-
-  const selectCustomer = (c: Customer) => {
-    setState((s) => s ? { ...s, name: c.name, phone: c.phone, customer_id: c.id, visit_type: 'returning' } : s);
-    setShowSearch(false);
-    setSearchQuery('');
-    toast.info(`${c.name}님 선택`);
-  };
-
-  const handlePhoneBlur = async () => {
-    if (!state.phone.trim() || !clinicId) return;
-    const { data } = await supabase
-      .from('customers')
-      .select('id, name, visit_type')
-      .eq('clinic_id', clinicId)
-      .eq('phone', state.phone.trim())
-      .maybeSingle();
-    if (data) {
-      setState((s) =>
-        s
-          ? {
-              ...s,
-              name: s.name || (data.name as string),
-              customer_id: data.id as string,
-              visit_type: s.visit_type === 'new' ? 'returning' : s.visit_type,
-            }
-          : s,
-      );
-      toast.info(`${data.name}님 - 기존 고객`);
-    }
+  /** 인라인 검색 드롭다운에서 기존 환자 선택 */
+  const handlePatientSelect = (p: PatientMatch) => {
+    setState((s) =>
+      s ? { ...s, name: p.name, phone: p.phone, customer_id: p.id, visit_type: 'returning' } : s,
+    );
+    toast.info(`${p.name}님 선택`);
   };
 
   const save = async () => {
@@ -834,47 +793,41 @@ function ReservationEditor({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
-          {!state.existingId && (
-            <div className="space-y-1.5 relative">
-              <Label>고객 검색</Label>
-              <Input
-                value={searchQuery}
-                onChange={(e) => searchCustomer(e.target.value)}
-                onFocus={() => searchResults.length > 0 && setShowSearch(true)}
-                placeholder="이름 또는 전화번호 검색"
-              />
-              {showSearch && searchResults.length > 0 && (
-                <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-md shadow-md max-h-40 overflow-auto">
-                  {searchResults.map((c) => (
-                    <button
-                      key={c.id}
-                      onClick={() => selectCustomer(c)}
-                      className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-muted/50 transition text-left"
-                    >
-                      <span className="font-medium">{c.name}</span>
-                      <span className="text-xs text-muted-foreground">{c.phone}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {state.customer_id && (
-                <div className="text-xs text-teal-700">기존 고객 연결됨</div>
-              )}
-            </div>
-          )}
+          {/* 이름 — 인라인 자동검색 (신규·수정 모두 표시) */}
+          <div className="space-y-1.5">
+            <Label>이름</Label>
+            <InlinePatientSearch
+              value={state.name}
+              onChange={(v) => {
+                update('name', v);
+                if (state.customer_id) update('customer_id', null);
+              }}
+              onSelect={handlePatientSelect}
+              onClearSelection={() => update('customer_id', null)}
+              searchField="name"
+              clinicId={clinicId}
+              selectedCustomerId={state.customer_id}
+              placeholder="홍길동"
+              required
+            />
+          </div>
+          {/* 전화번호 — 인라인 자동검색 */}
           <div className="space-y-1.5">
             <Label>전화번호</Label>
-            <Input
+            <InlinePatientSearch
               value={state.phone}
-              onChange={(e) => update('phone', e.target.value)}
-              onBlur={handlePhoneBlur}
+              onChange={(v) => {
+                update('phone', v);
+                if (state.customer_id) update('customer_id', null);
+              }}
+              onSelect={handlePatientSelect}
+              onClearSelection={() => update('customer_id', null)}
+              searchField="phone"
+              clinicId={clinicId}
+              selectedCustomerId={state.customer_id}
               placeholder="010-1234-5678"
               inputMode="tel"
             />
-          </div>
-          <div className="space-y-1.5">
-            <Label>이름</Label>
-            <Input value={state.name} onChange={(e) => update('name', e.target.value)} required />
           </div>
           <div className="space-y-1.5">
             <Label>유형</Label>
