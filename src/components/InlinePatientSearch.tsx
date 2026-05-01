@@ -52,6 +52,7 @@ export function InlinePatientSearch({
 }: InlinePatientSearchProps) {
   const [results, setResults] = useState<PatientMatch[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -84,6 +85,7 @@ export function InlinePatientSearch({
       const matches = (data ?? []) as PatientMatch[];
       setResults(matches);
       setShowDropdown(matches.length > 0);
+      setActiveIndex(-1);
     },
     [clinicId, searchField],
   );
@@ -117,6 +119,7 @@ export function InlinePatientSearch({
     onSelect(p);
     setShowDropdown(false);
     setResults([]);
+    setActiveIndex(-1);
   };
 
   const phoneTail = (phone: string) => {
@@ -142,7 +145,26 @@ export function InlinePatientSearch({
         autoFocus={autoFocus}
         inputMode={inputMode}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') setShowDropdown(false);
+          if (!showDropdown || results.length === 0) {
+            if (e.key === 'Escape') setShowDropdown(false);
+            return;
+          }
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setActiveIndex((i) => (i + 1) % results.length);
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setActiveIndex((i) => (i <= 0 ? results.length - 1 : i - 1));
+          } else if (e.key === 'Enter') {
+            if (activeIndex >= 0 && activeIndex < results.length) {
+              e.preventDefault();
+              handleSelect(results[activeIndex]);
+            }
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            setShowDropdown(false);
+            setActiveIndex(-1);
+          }
         }}
         className={cn(selectedCustomerId && 'border-teal-500 bg-teal-50/40')}
       />
@@ -187,7 +209,7 @@ export function InlinePatientSearch({
               닫기
             </button>
           </div>
-          {results.map((p) => (
+          {results.map((p, idx) => (
             <button
               key={p.id}
               type="button"
@@ -196,7 +218,13 @@ export function InlinePatientSearch({
                 e.preventDefault();
                 handleSelect(p);
               }}
-              className="flex w-full items-center justify-between border-b border-muted/30 px-3 py-2.5 text-left text-sm transition last:border-0 hover:bg-teal-50 hover:text-teal-800"
+              onMouseEnter={() => setActiveIndex(idx)}
+              className={cn(
+                'flex w-full items-center justify-between border-b border-muted/30 px-3 py-2.5 text-left text-sm transition last:border-0',
+                idx === activeIndex
+                  ? 'bg-teal-50 text-teal-800'
+                  : 'hover:bg-teal-50 hover:text-teal-800',
+              )}
             >
               <span className="font-semibold">{p.name}</span>
               <span className="text-xs text-muted-foreground">

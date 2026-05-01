@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import { supabase } from '@/lib/supabase';
 
 import { useAuth } from '@/lib/auth';
@@ -382,6 +383,8 @@ function CreateCustomerDialog({
   const [referrerSuggestions, setReferrerSuggestions] = useState<{ id: string; name: string; phone: string }[]>([]);
   const [referrerId, setReferrerId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // 인라인 자동검색으로 선택된 기존 고객 (중복 등록 방지)
+  const [selectedExistingId, setSelectedExistingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -394,8 +397,21 @@ function CreateCustomerDialog({
       setReferrerQuery('');
       setReferrerSuggestions([]);
       setReferrerId(null);
+      setSelectedExistingId(null);
     }
   }, [open]);
+
+  // 기존 고객 선택 시 폼 자동 채움
+  const handleExistingSelect = useCallback((p: PatientMatch) => {
+    setName(p.name);
+    setPhone(p.phone);
+    if (p.birth_date) setBirthDate(p.birth_date);
+    setSelectedExistingId(p.id);
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedExistingId(null);
+  }, []);
 
   // 추천인 검색 — 300ms 디바운스
   useEffect(() => {
@@ -417,6 +433,12 @@ function CreateCustomerDialog({
 
   const save = async () => {
     if (!clinicId) return;
+    // 기존 고객 선택 상태에서는 신규 등록 차단 (중복 등록 방지)
+    if (selectedExistingId) {
+      toast.info('이미 등록된 고객입니다. 목록에서 해당 고객을 선택해 주세요.');
+      onCreated();
+      return;
+    }
     setSubmitting(true);
     const { error } = await supabase.from('customers').insert({
       clinic_id: clinicId,
@@ -446,11 +468,37 @@ function CreateCustomerDialog({
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label>이름</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+            <InlinePatientSearch
+              value={name}
+              onChange={(v) => {
+                setName(v);
+                if (selectedExistingId) setSelectedExistingId(null);
+              }}
+              onSelect={handleExistingSelect}
+              onClearSelection={clearSelection}
+              searchField="name"
+              clinicId={clinicId}
+              selectedCustomerId={selectedExistingId}
+              autoFocus
+              placeholder="이름 (2글자 이상 입력 시 기존 고객 자동 검색)"
+            />
           </div>
           <div className="space-y-1.5">
             <Label>전화번호</Label>
-            <Input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" />
+            <InlinePatientSearch
+              value={phone}
+              onChange={(v) => {
+                setPhone(v);
+                if (selectedExistingId) setSelectedExistingId(null);
+              }}
+              onSelect={handleExistingSelect}
+              onClearSelection={clearSelection}
+              searchField="phone"
+              clinicId={clinicId}
+              selectedCustomerId={selectedExistingId}
+              inputMode="tel"
+              placeholder="전화번호 (4자리 이상 입력 시 자동 검색)"
+            />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1.5">
