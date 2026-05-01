@@ -20,6 +20,14 @@ import { createClient } from '@supabase/supabase-js';
 import type { VisitType } from '@/lib/types';
 import { normalizeToE164 } from '@/lib/phone';
 
+/** 인라인 검색 결과 타입 (kiosk 전용) */
+interface KioskPatientMatch {
+  id: string;
+  name: string;
+  phone: string;
+  birth_date: string | null;
+}
+
 // 셀프체크인 전용 Supabase 클라이언트 (anon, 세션 없음)
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -288,6 +296,13 @@ export default function SelfCheckIn() {
   // 완료 화면 카운트다운
   const [countdown, setCountdown] = useState(DONE_RESET_SECONDS);
 
+  // ── 인라인 환자 검색 (kiosk) ──
+  const [nameMatches, setNameMatches] = useState<KioskPatientMatch[]>([]);
+  const [phoneMatches, setPhoneMatches] = useState<KioskPatientMatch[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const nameSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const phoneSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // 비활동 타임아웃 ref
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -325,6 +340,9 @@ export default function SelfCheckIn() {
     setErrorMsg('');
     setReservationBanner(null);
     setCountdown(DONE_RESET_SECONDS);
+    setNameMatches([]);
+    setPhoneMatches([]);
+    setSelectedPatientId(null);
   }, []);
 
   // ── 완료 화면 자동 리셋 (15초 카운트다운) ──
@@ -458,6 +476,62 @@ export default function SelfCheckIn() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clinicId, phone]);
 
+  // ── 이름 인라인 검색 (debounce 300ms, 2글자↑) ──
+  useEffect(() => {
+    if (!clinicId || selectedPatientId) return;
+    if (nameSearchTimer.current) clearTimeout(nameSearchTimer.current);
+    const trimmed = name.trim();
+    if (trimmed.length < 2) { setNameMatches([]); return; }
+    nameSearchTimer.current = setTimeout(async () => {
+      try {
+        const { data } = await anonClient
+          .from('customers')
+          .select('id, name, phone, birth_date')
+          .eq('clinic_id', clinicId)
+          .ilike('name', `%${trimmed}%`)
+          .limit(5);
+        setNameMatches((data ?? []) as KioskPatientMatch[]);
+      } catch { setNameMatches([]); }
+    }, 300);
+    return () => { if (nameSearchTimer.current) clearTimeout(nameSearchTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clinicId, name, selectedPatientId]);
+
+  // ── 전화번호 인라인 검색 (debounce 300ms, 4자리↑) ──
+  useEffect(() => {
+    if (!clinicId || selectedPatientId) return;
+    if (phoneSearchTimer.current) clearTimeout(phoneSearchTimer.current);
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 4) { setPhoneMatches([]); return; }
+    phoneSearchTimer.current = setTimeout(async () => {
+      try {
+        const { data } = await anonClient
+          .from('customers')
+          .select('id, name, phone, birth_date')
+          .eq('clinic_id', clinicId)
+          .ilike('phone', `%${digits}%`)
+          .limit(5);
+        setPhoneMatches((data ?? []) as KioskPatientMatch[]);
+      } catch { setPhoneMatches([]); }
+    }, 300);
+    return () => { if (phoneSearchTimer.current) clearTimeout(phoneSearchTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clinicId, phone, selectedPatientId]);
+
+  /** 키오스크에서 기존 환자 선택 */
+  const handleKioskPatientSelect = useCallback(
+    (p: KioskPatientMatch) => {
+      setName(p.name);
+      setPhone(formatPhone(p.phone.replace(/\D/g, '')));
+      setSelectedPatientId(p.id);
+      setNameMatches([]);
+      setPhoneMatches([]);
+      // 재진 고객이므로 방문유형 재진으로
+      setVisitType('returning');
+    },
+    [formatPhone],
+  );
+
   const canSubmit = name.trim().length >= 1 && phone.replace(/\D/g, '').length >= 10;
 
   const handleConfirm = () => {
@@ -471,16 +545,23 @@ export default function SelfCheckIn() {
     setErrorMsg('');
 
     try {
-      let customerId: string | null = null;
+      // 인라인 검색으로 선택된 환자 ID 우선 사용
+      let customerId: string | null = selectedPatientId ?? null;
       const phoneDigits = phone.replace(/\D/g, '');
       const phoneE164 = normalizeToE164(phone);
       const phoneStored = phoneE164 ?? phoneDigits;
-      let { data: existing } = await anonClient
-        .from('customers')
-        .select('id')
-        .eq('clinic_id', clinicId)
-        .eq('phone', phoneStored)
-        .maybeSingle();
+
+      // customerId 없을 경우 전화번호로 조회
+      let existing: { id: string } | null = customerId ? { id: customerId } : null;
+      if (!existing) {
+        const res = await anonClient
+          .from('customers')
+          .select('id')
+          .eq('clinic_id', clinicId)
+          .eq('phone', phoneStored)
+          .maybeSingle();
+        existing = res.data as { id: string } | null;
+      }
       if (!existing && phoneE164 && phoneDigits !== phoneE164) {
         const { data: legacy } = await anonClient
           .from('customers')
@@ -785,28 +866,93 @@ export default function SelfCheckIn() {
             >
               {t.name}
             </label>
-            <input
-              id="sc-name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t.namePlaceholder}
-              autoComplete="name"
-              className="h-14 w-full rounded-xl px-4 text-lg outline-none transition"
-              style={{
-                border: `1.5px solid ${C.border}`,
-                backgroundColor: 'white',
-                color: C.dark,
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = C.borderActive;
-                e.currentTarget.style.boxShadow = `0 0 0 3px ${C.borderActive}18`;
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = C.border;
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            />
+            <div className="relative">
+              <input
+                id="sc-name"
+                type="text"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (selectedPatientId) setSelectedPatientId(null);
+                }}
+                placeholder={t.namePlaceholder}
+                autoComplete="off"
+                className="h-14 w-full rounded-xl px-4 text-lg outline-none transition"
+                style={{
+                  border: `1.5px solid ${selectedPatientId ? C.medium : C.border}`,
+                  backgroundColor: selectedPatientId ? C.bannerBg : 'white',
+                  color: C.dark,
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = C.borderActive;
+                  e.currentTarget.style.boxShadow = `0 0 0 3px ${C.borderActive}18`;
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = selectedPatientId ? C.medium : C.border;
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+              />
+              {/* 이름 검색 드롭다운 */}
+              {nameMatches.length > 0 && !selectedPatientId && (
+                <div
+                  className="absolute left-0 right-0 z-30 mt-1 overflow-hidden rounded-xl shadow-lg"
+                  style={{ border: `1.5px solid ${C.border}`, backgroundColor: 'white' }}
+                >
+                  <div
+                    className="px-3 py-2 text-xs font-medium"
+                    style={{ backgroundColor: C.bannerBg, color: C.muted, borderBottom: `1px solid ${C.border}` }}
+                  >
+                    기존 고객 {nameMatches.length}건
+                  </div>
+                  {nameMatches.map((p) => {
+                    const tail = p.phone.replace(/\D/g, '').slice(-4);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onMouseDown={(e) => { e.preventDefault(); handleKioskPatientSelect(p); }}
+                        className="flex w-full items-center justify-between px-4 py-3 text-left transition"
+                        style={{ borderBottom: `1px solid ${C.border}`, color: C.dark }}
+                        onPointerEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = C.beige; }}
+                        onPointerLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'white'; }}
+                      >
+                        <span className="text-base font-semibold">{p.name}</span>
+                        <span className="text-sm" style={{ color: C.muted }}>
+                          ···{tail}{p.birth_date && ` · ${p.birth_date.slice(0, 2)}/${p.birth_date.slice(2, 4)}/${p.birth_date.slice(4, 6)}`}
+                        </span>
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); setNameMatches([]); }}
+                    className="w-full px-4 py-2 text-sm text-left transition"
+                    style={{ color: C.muted, backgroundColor: C.beige }}
+                  >
+                    + 새로 등록
+                  </button>
+                </div>
+              )}
+            </div>
+            {/* 기존 고객 선택됨 표시 */}
+            {selectedPatientId && (
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: C.bannerBg, color: C.medium, border: `1px solid ${C.bannerBorder}` }}>
+                  <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                  기존 고객 선택됨
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPatientId(null)}
+                  className="text-xs"
+                  style={{ color: C.muted }}
+                >
+                  해제
+                </button>
+              </div>
+            )}
           </div>
 
           {/* 연락처 */}
@@ -834,6 +980,48 @@ export default function SelfCheckIn() {
                 </span>
               )}
             </div>
+
+            {/* 전화번호 인라인 환자 매칭 */}
+            {phoneMatches.length > 0 && !selectedPatientId && (
+              <div
+                className="overflow-hidden rounded-xl shadow"
+                style={{ border: `1.5px solid ${C.border}`, backgroundColor: 'white' }}
+              >
+                <div
+                  className="px-3 py-1.5 text-xs font-medium"
+                  style={{ backgroundColor: C.bannerBg, color: C.muted, borderBottom: `1px solid ${C.border}` }}
+                >
+                  기존 고객 {phoneMatches.length}건 — 선택 시 자동 채움
+                </div>
+                {phoneMatches.map((p) => {
+                  const tail = p.phone.replace(/\D/g, '').slice(-4);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => handleKioskPatientSelect(p)}
+                      className="flex w-full items-center justify-between px-4 py-3 text-left transition"
+                      style={{ borderBottom: `1px solid ${C.border}`, color: C.dark }}
+                      onPointerEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = C.beige; }}
+                      onPointerLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'white'; }}
+                    >
+                      <span className="text-base font-semibold">{p.name}</span>
+                      <span className="text-sm" style={{ color: C.muted }}>
+                        ···{tail}{p.birth_date && ` · ${p.birth_date.slice(0, 2)}/${p.birth_date.slice(2, 4)}/${p.birth_date.slice(4, 6)}`}
+                      </span>
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => setPhoneMatches([])}
+                  className="w-full px-4 py-2 text-sm text-left"
+                  style={{ color: C.muted, backgroundColor: C.beige }}
+                >
+                  + 새로 등록
+                </button>
+              </div>
+            )}
 
             {/* 예약 배너 */}
             {reservationBanner && (

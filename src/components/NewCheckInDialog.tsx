@@ -4,7 +4,6 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { normalizeToE164 } from '@/lib/phone';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -15,6 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import type { Reservation, VisitType } from '@/lib/types';
 
 interface Props {
@@ -37,6 +37,8 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
   const [submitting, setSubmitting] = useState(false);
   const [todayReservations, setTodayReservations] = useState<Reservation[]>([]);
   const [linkedReservation, setLinkedReservation] = useState<Reservation | null>(null);
+  /** 인라인 검색으로 선택된 기존 고객 */
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !clinicId) return;
@@ -44,6 +46,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     setPhone('');
     setVisitType('new');
     setLinkedReservation(null);
+    setSelectedCustomerId(null);
 
     (async () => {
       const today = format(new Date(), 'yyyy-MM-dd');
@@ -63,27 +66,27 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     setName(r.customer_name ?? '');
     setPhone(r.customer_phone ?? '');
     setVisitType(r.visit_type);
+    // 예약 연결 시 고객 ID도 설정
+    if (r.customer_id) setSelectedCustomerId(r.customer_id);
   };
 
-  const handlePhoneBlur = async () => {
-    if (!phone.trim() || !clinicId) return;
-    const { data } = await supabase
-      .from('customers')
-      .select('id, name, visit_type')
-      .eq('clinic_id', clinicId)
-      .eq('phone', phone.trim())
-      .maybeSingle();
-    if (data) {
-      if (!name.trim()) setName(data.name as string);
-      if (visitType === 'new') setVisitType('returning');
-      toast.info(`${data.name}님 — 기존 고객`);
-    }
+  /** 인라인 검색 드롭다운에서 기존 고객 선택 */
+  const handlePatientSelect = (p: PatientMatch) => {
+    setName(p.name);
+    setPhone(p.phone);
+    setSelectedCustomerId(p.id);
+    setVisitType('returning');
+    toast.info(`${p.name}님 — 기존 고객 선택`);
   };
 
-  const autoAssignConsultant = async (clinicId: string): Promise<string | null> => {
+  const handleClearSelection = () => {
+    setSelectedCustomerId(null);
+  };
+
+  const autoAssignConsultant = async (cid: string): Promise<string | null> => {
     const today = format(new Date(), 'yyyy-MM-dd');
     const { data } = await supabase.rpc('assign_consultant_atomic', {
-      p_clinic_id: clinicId,
+      p_clinic_id: cid,
       p_date: today,
     });
     return (data as string | null) ?? null;
@@ -94,7 +97,10 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     if (!clinicId) return;
     setSubmitting(true);
 
-    let customerId: string | null = linkedReservation?.customer_id ?? null;
+    // selectedCustomerId가 있으면 우선 사용 (인라인 검색으로 선택된 고객)
+    let customerId: string | null =
+      selectedCustomerId ?? linkedReservation?.customer_id ?? null;
+
     if (!customerId && phone.trim()) {
       const { data: existing } = await supabase
         .from('customers')
@@ -209,39 +215,64 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
               예약 연결: <strong>{linkedReservation.customer_name}</strong>{' '}
               {linkedReservation.reservation_time?.slice(0, 5)}
             </span>
-            <Button variant="ghost" size="sm" onClick={() => {
-              setLinkedReservation(null);
-              setName('');
-              setPhone('');
-            }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setLinkedReservation(null);
+                setSelectedCustomerId(null);
+                setName('');
+                setPhone('');
+              }}
+            >
               해제
             </Button>
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* 이름 — 인라인 자동검색 */}
           <div className="space-y-1.5">
             <Label htmlFor="ci-name">이름</Label>
-            <Input
+            <InlinePatientSearch
               id="ci-name"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(v) => {
+                setName(v);
+                // 수동 입력 시 선택 해제
+                if (selectedCustomerId) setSelectedCustomerId(null);
+              }}
+              onSelect={handlePatientSelect}
+              onClearSelection={handleClearSelection}
+              searchField="name"
+              clinicId={clinicId}
+              selectedCustomerId={selectedCustomerId}
+              placeholder="홍길동"
               required
               autoFocus={!linkedReservation}
-              placeholder="홍길동"
             />
           </div>
+
+          {/* 전화번호 — 인라인 자동검색 */}
           <div className="space-y-1.5">
             <Label htmlFor="ci-phone">전화번호</Label>
-            <Input
+            <InlinePatientSearch
               id="ci-phone"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              onBlur={handlePhoneBlur}
+              onChange={(v) => {
+                setPhone(v);
+                if (selectedCustomerId) setSelectedCustomerId(null);
+              }}
+              onSelect={handlePatientSelect}
+              onClearSelection={handleClearSelection}
+              searchField="phone"
+              clinicId={clinicId}
+              selectedCustomerId={selectedCustomerId}
               placeholder="010-1234-5678"
               inputMode="tel"
             />
           </div>
+
           <div className="space-y-1.5">
             <Label>유형</Label>
             <div className="grid grid-cols-3 gap-2">
