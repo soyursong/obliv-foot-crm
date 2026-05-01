@@ -281,13 +281,7 @@ function DraggableCard({
               <span className="text-[10px] text-teal-600 shrink-0">#{checkIn.queue_number}</span>
             )}
           </div>
-          <div className="flex items-center gap-0.5 shrink-0">
-            <Badge
-              variant={checkIn.visit_type === 'new' ? 'teal' : 'secondary'}
-              className="h-4 px-1 text-xs"
-            >
-              {VISIT_TYPE_KO[checkIn.visit_type]}
-            </Badge>
+          <div className="flex items-center shrink-0">
             <button
               className="p-1 rounded hover:bg-gray-100 transition"
               onClick={(e) => {
@@ -332,6 +326,12 @@ function DraggableCard({
             )}
           </div>
         </div>
+        {/* AC1·AC2: 초진/체험 → "초진" 딱지, 재진 → 없음 (접수시간 아래) */}
+        {(checkIn.visit_type === 'new' || checkIn.visit_type === 'experience') && (
+          <div className="mt-0.5">
+            <span className="bg-blue-100 text-blue-800 text-xs px-1.5 py-0.5 rounded">초진</span>
+          </div>
+        )}
       </div>
     );
   }
@@ -384,10 +384,7 @@ function DraggableCard({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <Badge variant={checkIn.visit_type === 'new' ? 'teal' : 'secondary'}>
-            {VISIT_TYPE_KO[checkIn.visit_type]}
-          </Badge>
+        <div className="flex items-center shrink-0">
           <button
             className="p-0.5 rounded hover:bg-gray-100 transition"
             onClick={(e) => {
@@ -429,6 +426,12 @@ function DraggableCard({
           {checkIn.priority_flag && <Badge variant="destructive">우선</Badge>}
         </div>
       </div>
+      {/* AC1·AC2: 초진/체험 → "초진" 딱지, 재진 → 없음 (접수시간 아래) */}
+      {(checkIn.visit_type === 'new' || checkIn.visit_type === 'experience') && (
+        <div className="mt-1">
+          <span className="bg-blue-100 text-blue-800 text-xs px-1.5 py-0.5 rounded">초진</span>
+        </div>
+      )}
     </div>
   );
 }
