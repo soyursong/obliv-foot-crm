@@ -28,3 +28,10 @@ yarn-error.log*
 test-results/
 playwright-report/
 .auth/
+# 백업/임시 파일
+*.bak
+*.bak.*
+bus.jsonl
+.claudeignore
+supabase/.temp/
+*.tsbuildinfo
