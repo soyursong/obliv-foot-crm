@@ -488,19 +488,42 @@ export default function Reservations() {
                                     )}
                                   >
                                     <div className="flex items-center gap-1">
-                                      <span className="font-semibold">{r.customer_name}</span>
+                                      {/* RESV-CHART-CLICK: 성함 클릭 → 차트 새창 */}
+                                      <span
+                                        className={cn(
+                                          'font-semibold',
+                                          r.customer_id && 'cursor-pointer hover:underline hover:text-teal-700 transition-colors',
+                                        )}
+                                        onClick={(e) => {
+                                          if (!r.customer_id) return;
+                                          e.stopPropagation();
+                                          window.open(
+                                            `/chart/${r.customer_id}`,
+                                            `chart-${r.customer_id}`,
+                                            'width=820,height=960,scrollbars=yes,resizable=yes',
+                                          );
+                                        }}
+                                      >
+                                        {r.customer_name}
+                                      </span>
                                       {r.customer_id && noshowByCustomer[r.customer_id] ? (
                                         <Badge variant="destructive" className="h-4 px-1 text-xs">
                                           노쇼 {noshowByCustomer[r.customer_id]}
                                         </Badge>
                                       ) : null}
                                     </div>
+                                    {/* RESV-SLOT-INFO: 방문유형·상태 + 전화번호 뒷4자리 */}
                                     <div className="text-xs opacity-80 flex items-center gap-1">
                                       <span className={cn(
                                         'inline-block h-1.5 w-1.5 rounded-full',
                                         r.visit_type === 'new' ? 'bg-blue-500' : 'bg-emerald-500',
                                       )} />
                                       {VISIT_TYPE_KO[r.visit_type]} · {STATUS_LABEL[r.status]}
+                                      {r.customer_phone && (
+                                        <span className="text-muted-foreground">
+                                          · ···{maskPhoneTail(r.customer_phone)}
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
                                 ))}
