@@ -40,14 +40,23 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
   /** 인라인 검색으로 선택된 기존 고객 */
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open || !clinicId) return;
+  /** 폼 전체 초기화 — 제출 완료 후 또는 다이얼로그 닫힐 때 호출 */
+  const resetDialog = () => {
     setName('');
     setPhone('');
     setVisitType('new');
     setLinkedReservation(null);
     setSelectedCustomerId(null);
+    setTodayReservations([]);
+  };
 
+  useEffect(() => {
+    // open 변경 시 항상 초기화 (닫힐 때도 포함)
+    resetDialog();
+
+    if (!open || !clinicId) return;
+
+    // 열릴 때만 오늘 예약 목록 패치
     (async () => {
       const today = format(new Date(), 'yyyy-MM-dd');
       const { data } = await supabase
@@ -59,6 +68,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
         .order('reservation_time', { ascending: true });
       setTodayReservations((data ?? []) as Reservation[]);
     })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, clinicId]);
 
   const selectReservation = (r: Reservation) => {
@@ -172,6 +182,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
 
     toast.success(`${name.trim()} 체크인 완료 (#${queueData})`);
     setSubmitting(false);
+    resetDialog();   // 제출 성공 직후 폼 초기화 (다이얼로그 닫히기 전)
     onOpenChange(false);
     onCreated?.();
   };
