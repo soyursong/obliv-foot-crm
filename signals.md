@@ -1111,3 +1111,16 @@ QA_REPORT.md 참조
 - origin/main 이미 반영 (push 대기 0), commit: 109d6f6
 - 티켓 status: deploy-ready → deployed
 - 슬랙 배포 완료 알림 발송 (C0ATE5P6JTH)
+
+## 2026-05-03 17:30 — supervisor | QA PASS → deploy-approval-requested | T-20260503-foot-RESV-SLOT-INFO
+- **등급: Green** (FE only, DB 불변, 기존 로직 불변)
+- QA 5항목 전부 PASS:
+  1. ✅ 빌드: npm run build PASS (tsc + vite 2.51s, 에러 0)
+  2. ✅ 기존기능: Reservations.tsx만 변경, Dashboard.tsx 미변경, CRUD 로직 불변
+  3. ✅ DB호환: DB 변경 없음, select('*') 기존 필드 활용
+  4. ✅ 권한/RLS: RLS 변경 없음
+  5. ✅ 롤백: 코드 revert로 충분 (DB 변경 없음)
+- commit: 9285944 (이미 origin/main 반영)
+- GO_WARN: RESV-CHART-CLICK 스코프 외 추가 (성함 클릭→차트 새창), /chart/:customerId 라우트 존재 확인, guard 처리됨 → 허용
+- 배포 승인 요청: @대표 C0ATE5P6JTH 발송
+- 티켓 status: deploy-ready → qa-pass (→ deployed 대표 Lovable 배포 후)
