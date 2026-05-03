@@ -107,9 +107,36 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     if (!clinicId) return;
     setSubmitting(true);
 
+    // AC1: 수동 선택 없으면 todayReservations에서 자동 매칭
+    // 동일 날짜(이미 필터됨) + 전화번호 OR 성함 일치 → 1건만 자동 연결
+    let effectiveLinkedReservation: Reservation | null = linkedReservation;
+    if (!effectiveLinkedReservation && todayReservations.length > 0) {
+      const normalizedInputPhone = phone.trim()
+        ? (normalizeToE164(phone) ?? phone.trim())
+        : null;
+      const trimmedName = name.trim();
+
+      const matches = todayReservations.filter((r) => {
+        if (normalizedInputPhone && r.customer_phone) {
+          const rPhone = normalizeToE164(r.customer_phone) ?? r.customer_phone;
+          if (rPhone === normalizedInputPhone) return true;
+        }
+        if (trimmedName && r.customer_name && r.customer_name === trimmedName) return true;
+        return false;
+      });
+
+      if (matches.length === 1) {
+        effectiveLinkedReservation = matches[0];
+        toast.info(
+          `예약 자동 연결: ${matches[0].customer_name} ${matches[0].reservation_time?.slice(0, 5)}`,
+        );
+      }
+      // 0건 → null 유지 (walk-in), 2건 이상 → null 유지 (모호)
+    }
+
     // selectedCustomerId가 있으면 우선 사용 (인라인 검색으로 선택된 고객)
     let customerId: string | null =
-      selectedCustomerId ?? linkedReservation?.customer_id ?? null;
+      selectedCustomerId ?? effectiveLinkedReservation?.customer_id ?? null;
 
     if (!customerId && phone.trim()) {
       const { data: existing } = await supabase
@@ -158,7 +185,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     const { error } = await supabase.from('check_ins').insert({
       clinic_id: clinicId,
       customer_id: customerId,
-      reservation_id: linkedReservation?.id ?? null,
+      reservation_id: effectiveLinkedReservation?.id ?? null,
       customer_name: name.trim(),
       customer_phone: phone.trim() ? (normalizeToE164(phone) ?? phone.trim()) : null,
       visit_type: visitType,
@@ -173,11 +200,11 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
       return;
     }
 
-    if (linkedReservation) {
+    if (effectiveLinkedReservation) {
       await supabase
         .from('reservations')
         .update({ status: 'checked_in' })
-        .eq('id', linkedReservation.id);
+        .eq('id', effectiveLinkedReservation.id);
     }
 
     toast.success(`${name.trim()} 체크인 완료 (#${queueData})`);
