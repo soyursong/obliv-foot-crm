@@ -4,6 +4,18 @@ import type { InsuranceGrade, InsuranceGradeSource, HiraCategory } from './insur
 
 export type VisitType = 'new' | 'returning' | 'experience';
 
+/** 고객 상태 플래그 (카드 배경색 변경) — T-20260502-foot-STATUS-COLOR-FLAG */
+export type StatusFlag =
+  | 'white'     // 정상 (기본)
+  | 'red'       // 취소/부도
+  | 'orange'    // CP(데스크) — 컴플레인/성향이슈
+  | 'yellow'    // HL — 금일 힐러 치료
+  | 'green'     // 선체험 — 상담대기 중 체험 전환
+  | 'blue'      // CP(치료실) — 치료 중 이슈
+  | 'purple'    // 진료필요 — 원장님 진료콜
+  | 'pink'      // 진료완료 — 원장님 진료+약처방 완료
+  | 'dark_gray';// 수납완료 — 수납 후 귀가
+
 export type CheckInStatus =
   | 'registered'
   | 'consult_waiting'
@@ -234,6 +246,9 @@ export interface CheckIn {
   doctor_confirm_document: boolean;
   doctor_confirmed_at: string | null;
   healer_laser_confirm: boolean;
+  /** 상태 플래그 — T-20260502-foot-STATUS-COLOR-FLAG */
+  status_flag: StatusFlag | null;
+  status_flag_history: Array<{ flag: StatusFlag | null; changed_at: string; changed_by: string | null }> | null;
 }
 
 export interface Package {

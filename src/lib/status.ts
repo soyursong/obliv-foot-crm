@@ -1,4 +1,4 @@
-import type { CheckInStatus, StaffRole, UserRole, VisitType } from './types';
+import type { CheckInStatus, StaffRole, StatusFlag, UserRole, VisitType } from './types';
 
 export const STATUS_KO: Record<CheckInStatus, string> = {
   registered: '접수',
@@ -126,6 +126,52 @@ export const USER_ROLE_LABEL: Record<UserRole, string> = {
 export function roleLabel(role: string): string {
   return (USER_ROLE_LABEL as Record<string, string>)[role] ?? role;
 }
+
+// ── 상태 플래그 (T-20260502-foot-STATUS-COLOR-FLAG) ───────────────────────────
+
+/** 9가지 상태 플래그 목록 (메뉴 표시 순서) */
+export const STATUS_FLAGS: StatusFlag[] = [
+  'white', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'dark_gray',
+];
+
+/** 플래그 한글 메뉴명 */
+export const STATUS_FLAG_LABEL: Record<StatusFlag, string> = {
+  white:     '정상',
+  red:       '취소/부도',
+  orange:    'CP(데스크)',
+  yellow:    'HL',
+  green:     '선체험',
+  blue:      'CP(치료실)',
+  purple:    '진료필요',
+  pink:      '진료완료',
+  dark_gray: '수납완료',
+};
+
+/** 플래그 동그라미 아이콘 색상 (Tailwind) */
+export const STATUS_FLAG_DOT: Record<StatusFlag, string> = {
+  white:     'bg-white border border-gray-300',
+  red:       'bg-red-500',
+  orange:    'bg-orange-400',
+  yellow:    'bg-yellow-400',
+  green:     'bg-green-500',
+  blue:      'bg-blue-500',
+  purple:    'bg-purple-500',
+  pink:      'bg-pink-400',
+  dark_gray: 'bg-gray-600',
+};
+
+/** 플래그별 카드 배경+테두리 색상 (Tailwind). white/null → 기본 흰색 */
+export const STATUS_FLAG_CARD_BG: Record<StatusFlag, string> = {
+  white:     '',
+  red:       'bg-red-50 border-red-300',
+  orange:    'bg-orange-50 border-orange-300',
+  yellow:    'bg-yellow-50 border-yellow-300',
+  green:     'bg-green-50 border-green-300',
+  blue:      'bg-blue-50 border-blue-300',
+  purple:    'bg-purple-50 border-purple-300',
+  pink:      'bg-pink-50 border-pink-300',
+  dark_gray: 'bg-gray-200 border-gray-400',
+};
 
 /** 결제 수단 한글 라벨 */
 export const METHOD_KO: Record<string, string> = {
