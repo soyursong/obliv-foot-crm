@@ -1,5 +1,18 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-04 deploy-ready — T-20260502-foot-HEALER-WAIT-SLOT
+
+> **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 KST
+>
+> **힐러대기 슬롯 추가 — deploy-ready**
+> - 커밋: 8375de3 (main) / 빌드 ✓ (tsc + vite)
+> - 변경: types.ts + status.ts + Dashboard.tsx + migration
+> - DB 마이그레이션: check_ins CHECK constraint에 healer_waiting 추가 → Supabase rxlomoozakkjesdqjtvd 적용 완료
+> - 대시보드 waiting_columns: [치료대기] [레이저대기] [힐러대기] 세로 나란히 배치
+> - 최대 인원 제한 없음. supervisor QA 요청.
+
+
+
 ## 2026-05-04 MQ 전건 재검증 완료 — dev-foot
 
 > **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 KST
