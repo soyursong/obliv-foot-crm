@@ -1,5 +1,19 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-04 deploy-ready — T-20260502-foot-HEATED-LASER-SLOT (QA FAIL 보완 재완료)
+
+> **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 20:30 KST
+>
+> **가열성레이저 슬롯 — CHECK constraint 마이그레이션 적용 완료 / deploy-ready 재기록**
+> - QA FAIL 원인: `room_assignments.room_type` CHECK constraint에 `'heated_laser'` 미포함 → 23514 check_violation
+> - 조치: `supabase/migrations/20260504000006_room_assignments_heated_laser.sql` Supabase DB 직접 실행 완료
+> - 검증: constraint 정의 확인 (`ARRAY['treatment','laser','consultation','examination','heated_laser']`) + INSERT+DELETE 테스트 PASS (에러코드 없음)
+> - 마이그레이션 커밋: `2a10eb6` (supervisor 작성, origin/main 동기화 완료)
+> - 기존 QA PASS 항목 유지: 빌드(2.57s 에러0) / 기존 kanban 완전 유지 / RLS auth_all / UI(연파랑#BFDBFE) 모두 PASS
+> - supervisor QA 재요청
+
+---
+
 ## 2026-05-04 deploy-ready — T-20260502-foot-LASER-TIME-UNIT
 
 > **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 KST
