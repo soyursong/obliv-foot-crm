@@ -1,5 +1,25 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-04 deploy-ready — T-20260502-foot-DUTY-ROSTER
+
+> **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 KST
+>
+> **근무캘린더(듀티 로스터) — deploy-ready**
+> - 커밋: 804f367 (main) / 빌드 ✓ (tsc + vite, 0 errors)
+> - 신규 파일:
+>   - `supabase/migrations/20260504000003_duty_roster.sql` — duty_roster 테이블 + RLS 4정책
+>   - `src/hooks/useDutyRoster.ts` — useDutyDoctors 훅 + fetchDutyDoctors/fetchDutyDoctorName 유틸
+>   - `src/components/DutyRosterTab.tsx` — 주간 캘린더 UI (3단 토글, 전주 복사, 오늘 배너)
+> - 수정 파일:
+>   - `src/pages/Staff.tsx` — 근무캘린더 탭 추가 (기본 탭으로 설정)
+>   - `src/components/DocumentPrintPanel.tsx` — 서류 발행 시 duty_roster 기반 원장님 자동 세팅
+>     - 1명 근무 → 자동 세팅 (클릭 0회)
+>     - 2명 이상 → 드롭다운 선택 1탭
+>     - 0명 → 기존 fallback(첫 번째 활성 director)
+> - DB 마이그레이션: Supabase rxlomoozakkjesdqjtvd 수동 적용 필요
+> - supervisor QA 요청
+
+
 ## 2026-05-04 deploy-ready — T-20260502-foot-HEALER-WAIT-SLOT
 
 > **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 KST
