@@ -323,6 +323,10 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   const [notes, setNotes] = useState('');
   const [treatmentMemo, setTreatmentMemo] = useState('');
   const [doctorNote, setDoctorNote] = useState('');
+  // T-20260504-foot-MEMO-RESTRUCTURE: 예약메모 / 고객메모 분리
+  const [bookingMemo, setBookingMemo] = useState('');
+  const [customerMemo, setCustomerMemo] = useState('');
+  const [savingCustomerMemo, setSavingCustomerMemo] = useState(false);
   const [saving, setSaving] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(false);
   /** 고객 차트번호 (T-20260504-foot-CHART-UI-BADGE) */
@@ -363,7 +367,7 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   const load = useCallback(async () => {
     if (!checkIn) return;
 
-    const [svcRes, payRes, histRes, pkgRes, custRes] = await Promise.all([
+    const [svcRes, payRes, histRes, pkgRes, custRes, resvRes] = await Promise.all([
       supabase
         .from('services')
         .select('*')
@@ -391,12 +395,20 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             .eq('status', 'active')
             .order('contract_date', { ascending: false })
         : Promise.resolve({ data: [] }),
-      // 고객 차트번호 조회 (T-20260504-foot-CHART-UI-BADGE)
+      // 고객 차트번호 + 고객메모 조회 (T-20260504-foot-CHART-UI-BADGE, T-20260504-foot-MEMO-RESTRUCTURE)
       checkIn.customer_id
         ? supabase
             .from('customers')
-            .select('chart_number')
+            .select('chart_number, customer_memo')
             .eq('id', checkIn.customer_id)
+            .single()
+        : Promise.resolve({ data: null }),
+      // 예약메모 조회 (T-20260504-foot-MEMO-RESTRUCTURE)
+      checkIn.reservation_id
+        ? supabase
+            .from('reservations')
+            .select('booking_memo')
+            .eq('id', checkIn.reservation_id)
             .single()
         : Promise.resolve({ data: null }),
     ]);
@@ -404,7 +416,11 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     setServices((svcRes.data ?? []) as Service[]);
     setPayments((payRes.data ?? []) as PaymentRow[]);
     setHistory((histRes.data ?? []) as VisitHistory[]);
-    setChartNumber((custRes.data as { chart_number: string | null } | null)?.chart_number ?? null);
+    const custData = custRes.data as { chart_number: string | null; customer_memo: string | null } | null;
+    setChartNumber(custData?.chart_number ?? null);
+    setCustomerMemo(custData?.customer_memo ?? '');
+    const resvData = resvRes.data as { booking_memo: string | null } | null;
+    setBookingMemo(resvData?.booking_memo ?? '');
     const pkgs = (pkgRes.data ?? []) as PackageType[];
     setPackages(pkgs);
 
@@ -471,6 +487,19 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     }
     toast.success('메모 저장됨');
     onUpdated();
+  };
+
+  // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 저장
+  const saveCustomerMemo = async () => {
+    if (!checkIn?.customer_id) return;
+    setSavingCustomerMemo(true);
+    const { error } = await supabase
+      .from('customers')
+      .update({ customer_memo: customerMemo.trim() || null })
+      .eq('id', checkIn.customer_id);
+    setSavingCustomerMemo(false);
+    if (error) { toast.error('고객메모 저장 실패'); return; }
+    toast.success('고객메모 저장됨');
   };
 
   const moveToPaymentWaiting = async () => {
@@ -712,6 +741,48 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
               <ExternalLink className="h-4 w-4" />
               고객차트보기
             </Button>
+          )}
+
+          {/* ── T-20260504-foot-MEMO-RESTRUCTURE: 예약메모 / 고객메모 ── */}
+          {(bookingMemo || checkIn.customer_id) && (
+            <>
+              <Separator />
+              <div className="space-y-3">
+                {/* 예약메모 — 읽기 전용 */}
+                {bookingMemo && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 space-y-1">
+                    <span className="text-xs font-semibold text-amber-800 flex items-center gap-1">
+                      <FileText className="h-3 w-3" /> 예약메모 (예약 경로)
+                    </span>
+                    <p className="text-xs text-amber-900 whitespace-pre-wrap">{bookingMemo}</p>
+                  </div>
+                )}
+                {/* 고객메모 — 편집 가능 */}
+                {checkIn.customer_id && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
+                      <FileText className="h-3 w-3" /> 고객메모 (성향·주차 등)
+                    </Label>
+                    <Textarea
+                      value={customerMemo}
+                      onChange={(e) => setCustomerMemo(e.target.value)}
+                      placeholder="고객 성향, 특이사항, 주차 정보 등"
+                      rows={2}
+                      className="text-xs"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs w-full border-teal-300 text-teal-700 hover:bg-teal-50"
+                      onClick={saveCustomerMemo}
+                      disabled={savingCustomerMemo}
+                    >
+                      {savingCustomerMemo ? '저장 중…' : '고객메모 저장'}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </>
           )}
 
           {/* ── [NEW] 데스크 통합 수납 메뉴 (payment_waiting 전용) ─ T-20260430-foot-DESK-PAYMENT-MENU ── */}

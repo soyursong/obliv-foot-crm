@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { ChevronDown, Printer, X } from 'lucide-react';
+import { ChevronDown, Pencil, Printer, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { formatAmount } from '@/lib/format';
 import { VISIT_TYPE_KO } from '@/lib/status';
 import { cn } from '@/lib/utils';
+import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import type { CheckIn, Customer, Package, PackageRemaining, PrescriptionRow, Reservation } from '@/lib/types';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
@@ -90,6 +93,11 @@ export default function CustomerChartPage() {
   const [consentEntries, setConsentEntries] = useState<{ form_type: string; signed_at: string }[]>([]);
   const [submissionEntries, setSubmissionEntries] = useState<{ template_key?: string; printed_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 인라인 편집
+  const [editingCustomerMemo, setEditingCustomerMemo] = useState(false);
+  const [customerMemoText, setCustomerMemoText] = useState('');
+  const [savingCustomerMemo, setSavingCustomerMemo] = useState(false);
+  const customerMemoRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!customerId || !profile) return;
@@ -102,6 +110,7 @@ export default function CustomerChartPage() {
         .single();
       if (!custData) { setLoading(false); return; }
       setCustomer(custData as Customer);
+      setCustomerMemoText((custData as Customer).customer_memo ?? '');
 
       const [pkgRes, visitRes, payRes, pkgPayRes, resvRes, ciHistRes] = await Promise.all([
         supabase.from('packages').select('*').eq('customer_id', customerId).order('contract_date', { ascending: false }),
@@ -158,6 +167,21 @@ export default function CustomerChartPage() {
       setLoading(false);
     })();
   }, [customerId, profile]);
+
+  // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 저장
+  const saveCustomerMemo = async () => {
+    if (!customer) return;
+    setSavingCustomerMemo(true);
+    const { error } = await supabase
+      .from('customers')
+      .update({ customer_memo: customerMemoText.trim() || null })
+      .eq('id', customer.id);
+    setSavingCustomerMemo(false);
+    if (error) { toast.error('저장 실패'); return; }
+    setCustomer((prev) => prev ? { ...prev, customer_memo: customerMemoText.trim() || null } : prev);
+    setEditingCustomerMemo(false);
+    toast.success('고객메모 저장됨');
+  };
 
   const totalPaid =
     payments.filter((p) => p.payment_type === 'payment').reduce((x, p) => x + p.amount, 0) +
@@ -381,29 +405,63 @@ export default function CustomerChartPage() {
           )}
         </ChartSection>
 
-        {/* 섹션 7 — 예약메모 */}
-        <ChartSection title="예약메모">
-          {reservations.filter((r) => r.memo).length === 0 ? (
+        {/* 섹션 7 — 예약메모 (T-20260504-foot-MEMO-RESTRUCTURE) */}
+        <ChartSection title="예약메모 (예약 경로 확인)">
+          {reservations.filter((r) => r.booking_memo || r.memo).length === 0 ? (
             <div className="text-xs text-muted-foreground py-1">메모 없음</div>
           ) : (
             <div className="space-y-1.5">
-              {reservations.filter((r) => r.memo).map((r) => (
-                <div key={r.id} className="rounded bg-muted/30 px-2 py-1.5 text-xs">
+              {reservations.filter((r) => r.booking_memo || r.memo).map((r) => (
+                <div key={r.id} className="rounded bg-amber-50 border border-amber-100 px-2 py-1.5 text-xs">
                   <div className="text-muted-foreground mb-0.5">{r.reservation_date} {r.reservation_time.slice(0, 5)}</div>
-                  <div>{r.memo}</div>
+                  <div>{r.booking_memo ?? r.memo}</div>
                 </div>
               ))}
             </div>
           )}
         </ChartSection>
 
-        {/* 섹션 8 — 고객메모 */}
-        <ChartSection title="고객메모" defaultOpen>
-          <div className="text-xs">
-            {customer.memo ? (
-              <div className="whitespace-pre-wrap text-muted-foreground">{customer.memo}</div>
+        {/* 섹션 8 — 고객메모 (T-20260504-foot-MEMO-RESTRUCTURE) */}
+        <ChartSection title="고객메모 (성향·주차)" defaultOpen>
+          <div className="text-xs space-y-2">
+            {editingCustomerMemo ? (
+              <div className="space-y-2">
+                <Textarea
+                  ref={customerMemoRef}
+                  value={customerMemoText}
+                  onChange={(e) => setCustomerMemoText(e.target.value)}
+                  placeholder="고객 성향, 특이사항, 주차 정보 등"
+                  rows={3}
+                  className="text-xs"
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <Button size="sm" className="h-7 text-xs flex-1" onClick={saveCustomerMemo} disabled={savingCustomerMemo}>
+                    {savingCustomerMemo ? '저장 중…' : '저장'}
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setEditingCustomerMemo(false); setCustomerMemoText(customer.customer_memo ?? ''); }}>
+                    취소
+                  </Button>
+                </div>
+              </div>
             ) : (
-              <span className="text-muted-foreground">메모 없음</span>
+              <div className="flex items-start gap-2">
+                <div className="flex-1">
+                  {(customer.customer_memo ?? customer.memo) ? (
+                    <div className="whitespace-pre-wrap text-muted-foreground">{customer.customer_memo ?? customer.memo}</div>
+                  ) : (
+                    <span className="text-muted-foreground">메모 없음</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setEditingCustomerMemo(true); setCustomerMemoText(customer.customer_memo ?? customer.memo ?? ''); }}
+                  className="shrink-0 rounded p-1 hover:bg-muted transition text-muted-foreground hover:text-teal-700"
+                  title="고객메모 편집"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              </div>
             )}
           </div>
         </ChartSection>

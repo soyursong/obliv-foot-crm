@@ -106,6 +106,7 @@ export interface Customer {
   phone: string;
   visit_type: 'new' | 'returning';
   memo: string | null;
+  customer_memo: string | null;             // 고객 메모 (성향·특이사항·주차 등) — T-20260504-foot-MEMO-RESTRUCTURE
   lead_source: LeadSource | string | null;  // 유입 경로
   tm_memo: string | null;                   // 상담 메모 (보험/상담내용/성향)
   referrer_id: string | null;               // 추천인 고객 ID (optional FK)
@@ -322,6 +323,7 @@ export interface Reservation {
   visit_type: VisitType;
   service_id: string | null;
   memo: string | null;
+  booking_memo: string | null;              // 예약메모 (예약 경로 확인용) — T-20260504-foot-MEMO-RESTRUCTURE
   status: 'confirmed' | 'checked_in' | 'cancelled' | 'noshow';
   referral_source: string | null;
   created_by: string | null;
