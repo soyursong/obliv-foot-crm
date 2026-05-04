@@ -728,7 +728,6 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
               <DeskPaymentMenu
                 packages={packages}
                 pkgRemaining={pkgRemaining}
-                onNewPackage={() => onPayment(checkIn, 'package')}
                 onSinglePayment={() => onPayment(checkIn)}
                 onSessionUse={openBestFitSessionUse}
                 onScrollToDoc={() =>
@@ -1421,13 +1420,12 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
 }
 
 // ─── 서브 컴포넌트: 데스크 통합 수납 메뉴 (payment_waiting 전용) ─────────────
-//   4가지 수납 작업을 한 화면에 통합
-//   1) 패키지 회차 차감  2) 패키지 신규 결제  3) 단건 시술 결제  4) 보험청구 서류 발급
+//   3가지 수납 작업을 한 화면에 통합
+//   1) 패키지 회차 차감  2) 진료비 결제  3) 보험청구 서류 발급
 
 interface DeskPaymentMenuProps {
   packages: PackageType[];
   pkgRemaining: Map<string, PackageRemaining>;
-  onNewPackage: () => void;
   onSinglePayment: () => void;
   onSessionUse: () => void;
   onScrollToDoc: () => void;
@@ -1436,7 +1434,6 @@ interface DeskPaymentMenuProps {
 function DeskPaymentMenu({
   packages,
   pkgRemaining,
-  onNewPackage,
   onSinglePayment,
   onSessionUse,
   onScrollToDoc,
@@ -1460,22 +1457,10 @@ function DeskPaymentMenu({
       onClick: hasActiveSessions ? onSessionUse : undefined,
     },
     {
-      testid: 'desk-menu-new-package',
-      icon: <Package className="h-4 w-4 text-violet-600 shrink-0" />,
-      label: '패키지 신규 결제',
-      sub: '⚠️ 패키지는 상담실에서 결제 (상담실 미처리 시 예외)',
-      borderColor: 'border-violet-300',
-      hoverBg: 'hover:bg-violet-50/80',
-      labelColor: 'text-violet-900',
-      subColor: 'text-amber-600',
-      disabled: false,
-      onClick: onNewPackage,
-    },
-    {
       testid: 'desk-menu-single-payment',
       icon: <CreditCard className="h-4 w-4 text-blue-600 shrink-0" />,
-      label: '단건 시술 결제',
-      sub: '현장 단건 결제',
+      label: '진료비 결제',
+      sub: '현장 진료비 결제',
       borderColor: 'border-blue-300',
       hoverBg: 'hover:bg-blue-50/80',
       labelColor: 'text-blue-900',
@@ -1511,8 +1496,8 @@ function DeskPaymentMenu({
         </span>
       </div>
 
-      {/* 2×2 그리드 */}
-      <div className="grid grid-cols-2 gap-2">
+      {/* 3버튼 세로 목록 */}
+      <div className="grid grid-cols-1 gap-2">
         {menuItems.map((item) => (
           <button
             key={item.testid}

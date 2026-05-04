@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { format } from 'date-fns';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { CreditCard, FileText, Package as PackageIcon } from 'lucide-react';
+import { CreditCard, Package as PackageIcon } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -17,7 +16,6 @@ import { supabase } from '@/lib/supabase';
 import { formatAmount, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { PACKAGE_PRESETS } from '@/lib/packagePresets';
-import { useConsentForms, ConsentFormDialog, type FormType } from '@/components/ConsentFormDialog';
 import { InsuranceCopaymentPanel } from '@/components/insurance/InsuranceCopaymentPanel';
 import type { CheckIn } from '@/lib/types';
 
@@ -31,13 +29,6 @@ interface Props {
   /** 다이얼로그 오픈 시 기본 결제 모드 (기본값: 'single') */
   initialMode?: PaymentMode;
 }
-
-// 결제 전 필수 동의서
-const REQUIRED_CONSENTS: FormType[] = ['refund', 'non_covered'];
-const REQUIRED_CONSENT_LABELS: Record<string, string> = {
-  refund: '환불 동의서',
-  non_covered: '비급여 확인 동의서',
-};
 
 const METHOD_OPTIONS: { value: PayMethod; label: string; icon: string }[] = [
   { value: 'card', label: '카드', icon: '💳' },
@@ -65,31 +56,6 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
   const [splitCashStr, setSplitCashStr] = useState('');
   const [memo, setMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
-
-  // ── 동의서 게이트 ──
-  const { signed, signedDates, loading: consentLoading, refresh: refreshConsents } = useConsentForms(
-    checkIn?.id ?? null,
-  );
-  const [consentFormType, setConsentFormType] = useState<FormType | null>(null);
-  const didAutoOpen = useRef(false);
-
-  // 체크인 변경 시 자동 열기 플래그 초기화
-  useEffect(() => {
-    didAutoOpen.current = false;
-  }, [checkIn?.id]);
-
-  // 동의서 로딩 완료 시 첫 번째 미작성 동의서 자동 열기
-  useEffect(() => {
-    if (!checkIn || consentLoading || didAutoOpen.current) return;
-    const missing = REQUIRED_CONSENTS.filter((ft) => !signed.has(ft));
-    if (missing.length > 0) {
-      setConsentFormType(missing[0]);
-      didAutoOpen.current = true;
-    }
-  }, [checkIn?.id, consentLoading]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const missingConsents = REQUIRED_CONSENTS.filter((ft) => !signed.has(ft));
-  const consentReady = missingConsents.length === 0;
 
   useEffect(() => {
     if (checkIn) {
@@ -149,10 +115,6 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
   };
 
   const handleSubmit = async () => {
-    if (!consentReady) {
-      toast.error('필수 동의서를 먼저 완료해 주세요');
-      return;
-    }
     setSubmitting(true);
 
     if (paymentMode === 'package') {
@@ -325,71 +287,6 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
           <div className="space-y-4">
             {/* ── 건보 본인부담 미리보기 (T-20260504-foot-INSURANCE-COPAYMENT) ── */}
             <InsuranceCopaymentPanel checkIn={checkIn} />
-
-            {/* ── 동의서 확인 섹션 ── */}
-            {!consentLoading && !consentReady && (
-              <div
-                data-testid="consent-gate"
-                className="rounded-lg border-2 border-amber-300 bg-amber-50 p-3 space-y-2.5"
-              >
-                <div className="flex items-center gap-1.5">
-                  <FileText className="h-4 w-4 text-amber-700" />
-                  <span className="text-sm font-semibold text-amber-900">필수 동의서 미작성</span>
-                </div>
-                <p className="text-xs text-amber-700">
-                  아래 동의서를 완료해야 결제가 진행됩니다. 동의서를 탭하면 서명 화면이 열립니다.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {REQUIRED_CONSENTS.map((ft) => (
-                    <Button
-                      key={ft}
-                      size="sm"
-                      data-testid={`payment-consent-btn-${ft}`}
-                      variant={signed.has(ft) ? 'default' : 'outline'}
-                      className={cn(
-                        'text-xs gap-1 h-9',
-                        signed.has(ft)
-                          ? 'bg-emerald-600 hover:bg-emerald-700 border-emerald-600'
-                          : 'border-amber-400 text-amber-900 hover:bg-amber-100',
-                      )}
-                      onClick={() => { if (!signed.has(ft)) setConsentFormType(ft); }}
-                    >
-                      {signed.has(ft) ? '✓' : <FileText className="h-3 w-3" />}
-                      {REQUIRED_CONSENT_LABELS[ft]}
-                    </Button>
-                  ))}
-                </div>
-                {missingConsents.length > 0 && (
-                  <p className="text-[11px] text-amber-600">
-                    미완료: {missingConsents.map((ft) => REQUIRED_CONSENT_LABELS[ft]).join(', ')}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* 동의서 완료 상태 표시 */}
-            {!consentLoading && consentReady && (
-              <div
-                data-testid="consent-complete"
-                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 space-y-1"
-              >
-                <span className="text-xs font-semibold text-emerald-800 flex items-center gap-1">
-                  ✓ 필수 동의서 완료
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {REQUIRED_CONSENTS.map((ft) => (
-                    <span key={ft} className="text-[11px] text-emerald-700">
-                      {REQUIRED_CONSENT_LABELS[ft]}
-                      {signedDates[ft] && (
-                        <span className="text-emerald-500 ml-0.5">
-                          ({format(new Date(signedDates[ft]!), 'M/d HH:mm')})
-                        </span>
-                      )}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* 단건 / 패키지 토글 */}
             <div className="flex gap-2">
@@ -627,40 +524,18 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
             <Button
               data-testid="btn-payment-submit"
               onClick={handleSubmit}
-              disabled={submitting || !consentReady}
-              title={!consentReady ? '필수 동의서를 먼저 완료해 주세요' : ''}
+              disabled={submitting}
             >
               {submitting
                 ? '처리 중…'
-                : !consentReady
-                  ? '동의서 먼저 완료'
-                  : paymentMode === 'package'
-                    ? '패키지 결제 완료'
-                    : '결제 완료'}
+                : paymentMode === 'package'
+                  ? '패키지 결제 완료'
+                  : '결제 완료'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* 동의서 서명 다이얼로그 (PaymentDialog 위에 overlay) */}
-      <ConsentFormDialog
-        checkIn={checkIn}
-        formType={consentFormType ?? 'refund'}
-        open={!!consentFormType}
-        onOpenChange={(o) => { if (!o) setConsentFormType(null); }}
-        onSigned={async () => {
-          const justSigned = consentFormType;
-          setConsentFormType(null);
-          await refreshConsents();
-          // 다음 미서명 동의서 자동 열기
-          const remaining = REQUIRED_CONSENTS.filter(
-            (ft) => !signed.has(ft) && ft !== justSigned,
-          );
-          if (remaining.length > 0) {
-            setTimeout(() => setConsentFormType(remaining[0]), 350);
-          }
-        }}
-      />
     </>
   );
 }
