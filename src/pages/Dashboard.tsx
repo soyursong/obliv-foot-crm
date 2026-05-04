@@ -74,6 +74,7 @@ import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
 import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Customer, Reservation, Room, RoomFieldKey, Staff, StatusFlag, VisitType } from '@/lib/types';
+import { ClinicMemoPanel } from '@/components/ClinicMemoPanel';
 
 type TabKey = 'all' | 'new' | 'returning';
 
@@ -933,7 +934,7 @@ function DashboardTimeline({
   }
 
   return (
-    <div className="w-48 shrink-0 flex flex-col border-r bg-white overflow-hidden">
+    <div className="flex flex-col bg-white overflow-hidden flex-1 min-h-0">
       {/* 헤더 */}
       <div className="text-xs font-semibold px-2 py-1.5 border-b bg-muted/20 text-gray-600 sticky top-0 flex items-center gap-1">
         <Clock className="h-3 w-3" /> 시간표
@@ -2841,12 +2842,19 @@ export default function Dashboard() {
 
       {/* Content: 타임라인 사이드바 + 칸반 */}
       <div className="flex flex-1 overflow-hidden">
-        {/* 좌측: 10시~20시 타임라인 */}
-        <DashboardTimeline
-          date={date}
-          reservations={timelineReservations}
-          onSlotClick={handleQuickSlotClick}
-        />
+        {/* 좌측: 타임라인 + 원내 메모 */}
+        <div className="w-48 shrink-0 flex flex-col border-r overflow-hidden">
+          <DashboardTimeline
+            date={date}
+            reservations={timelineReservations}
+            onSlotClick={handleQuickSlotClick}
+          />
+          <ClinicMemoPanel
+            date={date}
+            clinicId={clinic?.id}
+            userRole={profile?.role}
+          />
+        </div>
 
         {/* 우측: 칸반 (줌 + 레이아웃 편집 지원) */}
       <div className="flex-1 overflow-auto p-3">

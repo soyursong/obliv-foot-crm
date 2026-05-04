@@ -300,6 +300,17 @@ export interface UserProfile {
   access_tier?: string | null;
 }
 
+/** 날짜별 원내 공지 메모 — T-20260504-foot-CLINIC-MEMO */
+export interface ClinicMemo {
+  id: string;
+  clinic_id: string;
+  date: string; // 'yyyy-MM-dd'
+  content: string;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Reservation {
   id: string;
   clinic_id: string;
