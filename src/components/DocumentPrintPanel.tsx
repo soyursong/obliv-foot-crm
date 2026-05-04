@@ -69,7 +69,7 @@ interface Props {
 interface AutoBindContext {
   customer?: { name: string; phone: string; rrn?: string; address?: string } | null;
   checkIn: CheckIn;
-  payments?: { total: number; insurance_covered: number; non_covered: number };
+  payments?: { total: number; insurance_covered: number; copayment?: number; non_covered: number };
   clinic?: { name: string; address: string } | null;
   doctor?: string | null;
 }
@@ -88,7 +88,9 @@ function buildAutoBindValues(ctx: AutoBindContext): Record<string, string> {
     visit_date: visitDate,
     doctor_name: ctx.doctor ?? '',
     total_amount: ctx.payments ? formatAmount(ctx.payments.total) : '',
+    // 진료비계산서 field_map (T-20260504-foot-INSURANCE-COPAYMENT)
     insurance_covered: ctx.payments ? formatAmount(ctx.payments.insurance_covered) : '',
+    copayment: ctx.payments ? formatAmount(ctx.payments.copayment ?? 0) : '',
     non_covered: ctx.payments ? formatAmount(ctx.payments.non_covered) : '',
     clinic_name: ctx.clinic?.name ?? '오블리브 풋센터 종로',
     clinic_address: ctx.clinic?.address ?? '',
@@ -123,8 +125,27 @@ async function loadAutoBindContext(checkIn: CheckIn): Promise<Record<string, str
     .select('insurance_covered, non_covered')
     .eq('check_in_id', checkIn.id);
 
-  const insCovered = (insData ?? []).reduce((s, r) => s + (r.insurance_covered ?? 0), 0);
-  const nonCovered = (insData ?? []).reduce((s, r) => s + (r.non_covered ?? 0), 0);
+  const insCoveredFromReceipts = (insData ?? []).reduce((s, r) => s + (r.insurance_covered ?? 0), 0);
+  const nonCoveredFromReceipts = (insData ?? []).reduce((s, r) => s + (r.non_covered ?? 0), 0);
+
+  // service_charges 합산 (T-20260504-foot-INSURANCE-COPAYMENT)
+  // service_charges 가 있으면 우선 사용. 없으면 insurance_receipts 사용.
+  const { data: chargesData } = await supabase
+    .from('service_charges')
+    .select('insurance_covered_amount, copayment_amount, base_amount, is_insurance_covered')
+    .eq('check_in_id', checkIn.id);
+
+  const charges = chargesData ?? [];
+  const hasCharges = charges.length > 0;
+  const chargesCovered = charges.reduce((s, r) => s + (r.insurance_covered_amount ?? 0), 0);
+  const chargesCopay = charges.reduce((s, r) => s + (r.copayment_amount ?? 0), 0);
+  const chargesNonCovered = charges
+    .filter((r) => !r.is_insurance_covered)
+    .reduce((s, r) => s + (r.base_amount ?? 0), 0);
+
+  const insCovered = hasCharges ? chargesCovered : insCoveredFromReceipts;
+  const copayment = hasCharges ? chargesCopay : 0;
+  const nonCovered = hasCharges ? chargesNonCovered : nonCoveredFromReceipts;
 
   // 클리닉 정보
   const { data: clinicData } = await supabase
@@ -146,7 +167,12 @@ async function loadAutoBindContext(checkIn: CheckIn): Promise<Record<string, str
   return buildAutoBindValues({
     customer,
     checkIn,
-    payments: { total: payTotal, insurance_covered: insCovered, non_covered: nonCovered },
+    payments: {
+      total: payTotal,
+      insurance_covered: insCovered,
+      copayment,
+      non_covered: nonCovered,
+    },
     clinic: clinicData,
     doctor: staffData?.name ?? null,
   });

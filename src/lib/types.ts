@@ -1,5 +1,7 @@
 // Supabase table row types for 풋센터 CRM
 
+import type { InsuranceGrade, InsuranceGradeSource, HiraCategory } from './insurance';
+
 export type VisitType = 'new' | 'returning' | 'experience';
 
 export type CheckInStatus =
@@ -75,6 +77,9 @@ export interface Clinic {
   max_per_slot: number;
   overbooking_rate: number;
   created_at: string;
+  // 건보 본인부담 산출 (T-20260504-foot-INSURANCE-COPAYMENT)
+  hira_unit_value?: number | null;
+  hira_unit_value_year?: number | null;
 }
 
 export type LeadSource = 'TM' | '인바운드' | '워크인' | '지인소개' | '온라인' | '기타';
@@ -113,6 +118,12 @@ export interface Customer {
   gender?: 'M' | 'F' | null;
   inflow_channel?: string | null;
   inflow_source?: string | null;
+  // 건보 본인부담 산출 (T-20260504-foot-INSURANCE-COPAYMENT)
+  rrn_vault_id?: string | null;
+  insurance_grade?: InsuranceGrade | null;
+  insurance_grade_verified_at?: string | null;
+  insurance_grade_source?: InsuranceGradeSource | null;
+  insurance_grade_memo?: string | null;
 }
 
 export interface Service {
@@ -128,6 +139,32 @@ export interface Service {
   active: boolean;
   sort_order: number;
   created_at: string;
+  // 건보 본인부담 산출 (T-20260504-foot-INSURANCE-COPAYMENT)
+  is_insurance_covered?: boolean | null;
+  hira_code?: string | null;
+  hira_score?: number | null;
+  hira_category?: HiraCategory | null;
+  copayment_rate_override?: number | null;
+}
+
+/** service_charges — 결제별 수가 산출 이력 (T-20260504-foot-INSURANCE-COPAYMENT) */
+export interface ServiceCharge {
+  id: string;
+  clinic_id: string;
+  check_in_id: string;
+  customer_id: string;
+  service_id: string;
+  is_insurance_covered: boolean;
+  hira_score: number | null;
+  hira_unit_value: number | null;
+  base_amount: number;
+  insurance_covered_amount: number;
+  copayment_amount: number;
+  exempt_amount: number;
+  customer_grade_at_charge: InsuranceGrade;
+  copayment_rate_at_charge: number | null;
+  calculated_at: string;
+  calculation_engine_version: string;
 }
 
 export interface Staff {

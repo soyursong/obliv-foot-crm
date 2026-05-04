@@ -18,6 +18,7 @@ import { formatAmount, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { PACKAGE_PRESETS } from '@/lib/packagePresets';
 import { useConsentForms, ConsentFormDialog, type FormType } from '@/components/ConsentFormDialog';
+import { InsuranceCopaymentPanel } from '@/components/insurance/InsuranceCopaymentPanel';
 import type { CheckIn } from '@/lib/types';
 
 type PayMethod = 'card' | 'cash' | 'transfer';
@@ -322,6 +323,9 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
           </DialogHeader>
 
           <div className="space-y-4">
+            {/* ── 건보 본인부담 미리보기 (T-20260504-foot-INSURANCE-COPAYMENT) ── */}
+            <InsuranceCopaymentPanel checkIn={checkIn} />
+
             {/* ── 동의서 확인 섹션 ── */}
             {!consentLoading && !consentReady && (
               <div
