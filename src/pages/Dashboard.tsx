@@ -893,16 +893,59 @@ function MiniCalendar({
   );
 }
 
-// ── DashboardTimeline ──────────────────────────────────────────────────────────
+// ── DashboardTimeline (통합 시간표) ───────────────────────────────────────────
+// T-20260504-foot-SCHEDULE-UNIFIED-VIEW: 초진/재진 슬롯을 동일 타임라인 내 인라인 표시
 const SLOT_MAX = 4; // 초진/재진 슬롯 상한 (표시 전용, 차단 없음)
+
+/** 예약 1건 미니 카드 */
+function TimelineCard({
+  name,
+  visitType,
+  isSelf,
+  dimmed,
+  struck,
+}: {
+  name: string;
+  visitType: 'new' | 'returning' | 'experience';
+  isSelf?: boolean;
+  dimmed?: boolean;
+  struck?: boolean;
+}) {
+  const base =
+    visitType === 'new'
+      ? 'bg-blue-100 text-blue-800 border-blue-200'
+      : visitType === 'returning'
+        ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+        : 'bg-amber-100 text-amber-800 border-amber-200';
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-0.5 rounded border px-1 py-0.5 text-[10px] font-medium truncate max-w-full',
+        base,
+        dimmed && 'opacity-50',
+        struck && 'line-through opacity-30',
+      )}
+      title={`${name}${isSelf ? ' (셀프접수)' : ''}`}
+    >
+      <span className="truncate">{name}</span>
+      {isSelf && (
+        <span className="shrink-0 ml-0.5 rounded bg-white/60 px-0.5 text-[8px] font-bold leading-none opacity-80">
+          셀프
+        </span>
+      )}
+    </div>
+  );
+}
 
 function DashboardTimeline({
   date,
   reservations,
+  selfCheckIns,
   onSlotClick,
 }: {
   date: Date;
   reservations: Reservation[];
+  selfCheckIns: CheckIn[];
   onSlotClick: (slot: { date: string; time: string }) => void;
 }) {
   const now = new Date();
@@ -914,22 +957,36 @@ function DashboardTimeline({
 
   const slots = generateSlots('10:00', '20:00', 30);
 
-  // 예약을 30분 슬롯으로 분류 + 초진/재진 카운트 집계
-  const slotMap: Record<string, Reservation[]> = {};
-  const slotNewCount: Record<string, number> = {};
-  const slotRetCount: Record<string, number> = {};
+  // ── 예약을 30분 슬롯으로 분류 (초진 / 재진+체험 분리)
+  const newSlotMap: Record<string, Reservation[]> = {};
+  const retSlotMap: Record<string, Reservation[]> = {};
 
   for (const r of reservations) {
     const t = r.reservation_time?.slice(0, 5) ?? '00:00';
     const [h, mm] = t.split(':').map(Number);
     const slot = `${String(h).padStart(2, '0')}:${mm < 30 ? '00' : '30'}`;
-    (slotMap[slot] ??= []).push(r);
-
-    // 초진 vs 재진(체험 포함) 카운트
     if (r.visit_type === 'new') {
-      slotNewCount[slot] = (slotNewCount[slot] ?? 0) + 1;
+      (newSlotMap[slot] ??= []).push(r);
     } else {
-      slotRetCount[slot] = (slotRetCount[slot] ?? 0) + 1;
+      (retSlotMap[slot] ??= []).push(r);
+    }
+  }
+
+  // ── 셀프접수 walk-in 체크인을 슬롯으로 분류
+  const newSelfMap: Record<string, CheckIn[]> = {};
+  const retSelfMap: Record<string, CheckIn[]> = {};
+
+  for (const ci of selfCheckIns) {
+    if (!ci.checked_in_at) continue;
+    // checked_in_at은 ISO 타임스탬프 (Asia/Seoul offset 포함)
+    const d = new Date(ci.checked_in_at);
+    const h = d.getHours();
+    const mm = d.getMinutes();
+    const slot = `${String(h).padStart(2, '0')}:${mm < 30 ? '00' : '30'}`;
+    if (ci.visit_type === 'new') {
+      (newSelfMap[slot] ??= []).push(ci);
+    } else {
+      (retSelfMap[slot] ??= []).push(ci);
     }
   }
 
@@ -937,55 +994,65 @@ function DashboardTimeline({
     <div className="flex flex-col bg-white overflow-hidden flex-1 min-h-0">
       {/* 헤더 */}
       <div className="text-xs font-semibold px-2 py-1.5 border-b bg-muted/20 text-gray-600 sticky top-0 flex items-center gap-1">
-        <Clock className="h-3 w-3" /> 시간표
+        <Clock className="h-3 w-3" /> 통합 시간표
       </div>
       {/* 범례 */}
-      <div className="flex items-center gap-1.5 px-2 py-1 border-b bg-gray-50/70 text-[9px] text-gray-500">
-        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-blue-50 text-blue-600 font-medium">초진</span>
-        <span className="text-gray-300">/</span>
-        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 font-medium">재진</span>
-        <span className="ml-auto text-gray-400">상한 {SLOT_MAX}명</span>
+      <div className="flex items-center gap-2 px-2 py-1 border-b bg-gray-50/70 text-[9px]">
+        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold border border-blue-200">초진</span>
+        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">재진</span>
+        <span className="ml-auto text-gray-400">상한 {SLOT_MAX}</span>
       </div>
+      {/* 타임라인 행 */}
       <div className="flex-1 overflow-y-auto">
         {slots.map((slot) => {
-          const items = slotMap[slot] ?? [];
-          const newCnt = slotNewCount[slot] ?? 0;
-          const retCnt = slotRetCount[slot] ?? 0;
+          const newItems = newSlotMap[slot] ?? [];
+          const retItems = retSlotMap[slot] ?? [];
+          const newSelf = newSelfMap[slot] ?? [];
+          const retSelf = retSelfMap[slot] ?? [];
+          const newCnt = newItems.length + newSelf.length;
+          const retCnt = retItems.length + retSelf.length;
           const newFull = newCnt >= SLOT_MAX;
           const retFull = retCnt >= SLOT_MAX;
+          const hasAny = newCnt > 0 || retCnt > 0;
           const isCurrentSlot = isToday && slot === currentSlot;
-          const isPastSlot = isToday &&
-            (parseInt(slot.split(':')[0]) * 60 + parseInt(slot.split(':')[1])) <
-            (currentH * 60 + currentM - 30);
+          const isPastSlot =
+            isToday &&
+            parseInt(slot.split(':')[0]) * 60 + parseInt(slot.split(':')[1]) <
+              currentH * 60 + currentM - 30;
 
           return (
             <div
               key={slot}
               className={cn(
-                'border-b border-gray-100 min-h-[52px]',
+                'border-b border-gray-100',
                 isCurrentSlot && 'bg-teal-50/60',
                 isPastSlot && 'opacity-55',
+                hasAny ? 'min-h-[64px]' : 'min-h-[44px]',
               )}
             >
-              {/* 시간 레이블 + 슬롯 카운터 */}
-              <div className="flex items-center gap-1 px-1.5 pt-1">
-                <span className={cn(
-                  'text-[10px] font-mono tabular-nums shrink-0 w-9',
-                  isCurrentSlot ? 'text-teal-700 font-bold' : 'text-gray-400',
-                )}>
+              {/* 시간 레이블 행 */}
+              <div className="flex items-center gap-1 px-1.5 pt-1 pb-0.5">
+                <span
+                  className={cn(
+                    'text-[10px] font-mono tabular-nums shrink-0 w-9',
+                    isCurrentSlot ? 'text-teal-700 font-bold' : 'text-gray-400',
+                  )}
+                >
                   {slot}
                 </span>
                 {isCurrentSlot && (
                   <div className="h-1.5 w-1.5 rounded-full bg-teal-500 animate-pulse shrink-0" />
                 )}
-                {/* 초진/재진 슬롯 상한 표시 */}
+                {/* 초진/재진 카운터 배지 */}
                 <div className="ml-auto flex items-center gap-0.5">
                   <span
                     className={cn(
                       'text-[9px] font-mono px-1 py-0.5 rounded font-medium leading-none',
                       newFull
                         ? 'bg-red-100 text-red-700 ring-1 ring-red-300'
-                        : 'bg-blue-50 text-blue-600',
+                        : newCnt > 0
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-blue-50 text-blue-400',
                     )}
                     title={`초진 ${newCnt}/${SLOT_MAX}${newFull ? ' — 상한 도달' : ''}`}
                   >
@@ -996,7 +1063,9 @@ function DashboardTimeline({
                       'text-[9px] font-mono px-1 py-0.5 rounded font-medium leading-none',
                       retFull
                         ? 'bg-red-100 text-red-700 ring-1 ring-red-300'
-                        : 'bg-emerald-50 text-emerald-600',
+                        : retCnt > 0
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-emerald-50 text-emerald-400',
                     )}
                     title={`재진 ${retCnt}/${SLOT_MAX}${retFull ? ' — 상한 도달' : ''}`}
                   >
@@ -1005,36 +1074,63 @@ function DashboardTimeline({
                 </div>
               </div>
 
-              {/* 예약 목록 */}
-              <div className="px-1 pb-1 space-y-0.5">
-                {items.map((r) => (
-                  <div
-                    key={r.id}
-                    className={cn(
-                      'rounded text-[10px] px-1.5 py-0.5 truncate font-medium',
-                      r.visit_type === 'new'
-                        ? 'bg-blue-100 text-blue-800'
-                        : r.visit_type === 'returning'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-amber-100 text-amber-800',
-                      r.status === 'checked_in' && 'opacity-50',
-                      r.status === 'cancelled' && 'opacity-30 line-through',
-                    )}
-                    title={`${r.customer_name} · ${VISIT_TYPE_KO[r.visit_type]}`}
-                  >
-                    {r.customer_name}
+              {/* 통합 인라인 레인: 초진 | 재진 나란히 */}
+              {hasAny && (
+                <div className="grid grid-cols-2 gap-0.5 px-1 pb-1">
+                  {/* 초진 레인 */}
+                  <div className="flex flex-col gap-0.5">
+                    {newItems.map((r) => (
+                      <TimelineCard
+                        key={r.id}
+                        name={r.customer_name ?? ''}
+                        visitType={r.visit_type}
+                        dimmed={r.status === 'checked_in'}
+                        struck={r.status === 'cancelled'}
+                      />
+                    ))}
+                    {newSelf.map((ci) => (
+                      <TimelineCard
+                        key={ci.id}
+                        name={ci.customer_name}
+                        visitType={ci.visit_type}
+                        isSelf
+                      />
+                    ))}
                   </div>
-                ))}
+                  {/* 재진 레인 */}
+                  <div className="flex flex-col gap-0.5">
+                    {retItems.map((r) => (
+                      <TimelineCard
+                        key={r.id}
+                        name={r.customer_name ?? ''}
+                        visitType={r.visit_type}
+                        dimmed={r.status === 'checked_in'}
+                        struck={r.status === 'cancelled'}
+                      />
+                    ))}
+                    {retSelf.map((ci) => (
+                      <TimelineCard
+                        key={ci.id}
+                        name={ci.customer_name}
+                        visitType={ci.visit_type}
+                        isSelf
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
 
-                {/* 빈 슬롯 클릭 → 예약 생성 */}
-                <button
-                  onClick={() => onSlotClick({ date: dateStr, time: slot })}
-                  className="w-full rounded text-[10px] text-gray-300 hover:bg-teal-50 hover:text-teal-600 transition py-0.5 text-left px-1"
-                  title="클릭하여 예약 추가"
-                >
-                  + 예약
-                </button>
-              </div>
+              {/* 빈 슬롯 클릭 → 예약 생성 */}
+              <button
+                onClick={() => onSlotClick({ date: dateStr, time: slot })}
+                className={cn(
+                  'w-full rounded text-[10px] text-gray-300 hover:bg-teal-50 hover:text-teal-600 transition text-left px-1.5',
+                  hasAny ? 'py-0.5' : 'py-1',
+                )}
+                title="클릭하여 예약 추가"
+              >
+                + 예약
+              </button>
             </div>
           );
         })}
@@ -1266,6 +1362,8 @@ export default function Dashboard() {
   const [calendarMonth, setCalendarMonth] = useState<Date>(() => new Date());
   const [quickResvDraft, setQuickResvDraft] = useState<QuickResvDraft | null>(null);
   const [timelineReservations, setTimelineReservations] = useState<Reservation[]>([]);
+  /** 셀프접수 walk-in 체크인 (reservation_id 없는 당일 체크인) — 통합 시간표용 */
+  const [selfCheckIns, setSelfCheckIns] = useState<CheckIn[]>([]);
   /** reservation_id → reservation_time (HH:MM:SS) — CustomerHoverCard 예약시간 표시용 */
   const resvTimeMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -1478,6 +1576,22 @@ export default function Dashboard() {
     setTimelineReservations((data ?? []) as Reservation[]);
   }, [clinic, dateStr]);
 
+  // T-20260504-foot-SCHEDULE-UNIFIED-VIEW: 셀프접수 walk-in 체크인 (예약 없이 당일 방문)
+  const fetchSelfCheckIns = useCallback(async () => {
+    if (!clinic) return;
+    const start = `${dateStr}T00:00:00+09:00`;
+    const end = `${dateStr}T23:59:59+09:00`;
+    const { data } = await supabase
+      .from('check_ins')
+      .select('id, customer_name, visit_type, checked_in_at, reservation_id, status')
+      .eq('clinic_id', clinic.id)
+      .is('reservation_id', null)
+      .gte('checked_in_at', start)
+      .lte('checked_in_at', end)
+      .order('checked_in_at', { ascending: true });
+    setSelfCheckIns((data ?? []) as CheckIn[]);
+  }, [clinic, dateStr]);
+
   const [pendingReservations, setPendingReservations] = useState<Reservation[]>([]);
   const fetchReservations = useCallback(async () => {
     if (!clinic) return;
@@ -1624,12 +1738,13 @@ export default function Dashboard() {
     fetchPayments();
     fetchReservations();
     fetchTimelineReservations();
+    fetchSelfCheckIns();
     fetchStageStarts();
     fetchPackageLabels();
     fetchTherapists();
     fetchDoctors();
     fetchConsultants();
-  }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchPayments, fetchReservations, fetchTimelineReservations, fetchStageStarts, fetchPackageLabels, fetchTherapists, fetchDoctors, fetchConsultants]);
+  }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchPayments, fetchReservations, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts, fetchPackageLabels, fetchTherapists, fetchDoctors, fetchConsultants]);
 
   useEffect(() => {
     if (!clinic) return;
@@ -1639,7 +1754,8 @@ export default function Dashboard() {
 
     const debouncedCheckInRefetch = () => {
       if (checkInTimer) clearTimeout(checkInTimer);
-      checkInTimer = setTimeout(() => { fetchCheckIns(); fetchStageStarts(); }, 800);
+      // T-20260504-foot-SCHEDULE-UNIFIED-VIEW: 셀프접수 walk-in도 타임라인 자동 반영
+      checkInTimer = setTimeout(() => { fetchCheckIns(); fetchStageStarts(); fetchSelfCheckIns(); }, 800);
     };
     const debouncedAssignRefetch = () => {
       if (assignTimer) clearTimeout(assignTimer);
@@ -1682,7 +1798,7 @@ export default function Dashboard() {
       if (resvTimer) clearTimeout(resvTimer);
       supabase.removeChannel(channel);
     };
-  }, [clinic, dateStr, fetchCheckIns, fetchAssignments, fetchReservations, fetchTimelineReservations, fetchStageStarts]);
+  }, [clinic, dateStr, fetchCheckIns, fetchAssignments, fetchReservations, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts]);
 
   const STAGE_ALERT_MINS: Partial<Record<CheckInStatus, number>> = {
     consult_waiting: 20,
@@ -2842,11 +2958,12 @@ export default function Dashboard() {
 
       {/* Content: 타임라인 사이드바 + 칸반 */}
       <div className="flex flex-1 overflow-hidden">
-        {/* 좌측: 타임라인 + 원내 메모 */}
-        <div className="w-48 shrink-0 flex flex-col border-r overflow-hidden">
+        {/* 좌측: 통합 시간표 + 원내 메모 — T-20260504-foot-SCHEDULE-UNIFIED-VIEW */}
+        <div className="w-64 shrink-0 flex flex-col border-r overflow-hidden">
           <DashboardTimeline
             date={date}
             reservations={timelineReservations}
+            selfCheckIns={selfCheckIns}
             onSlotClick={handleQuickSlotClick}
           />
           <ClinicMemoPanel
