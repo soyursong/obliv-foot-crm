@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
-import { ArrowLeft, ArrowRight, ChevronDown, Clock, CreditCard, Phone, FileText, Camera, Package, Plus, Stethoscope, Trash2, Bell } from 'lucide-react';
+import { ChevronDown, Clock, CreditCard, ExternalLink, Phone, FileText, Camera, Package, Plus, Stethoscope, Trash2, Bell } from 'lucide-react';
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
 import { toast } from 'sonner';
 import {
@@ -25,7 +25,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { STATUS_KO, VISIT_TYPE_KO, stagesFor } from '@/lib/status';
+import { STATUS_KO, VISIT_TYPE_KO } from '@/lib/status';
 import { formatAmount, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { ConsentFormButtons } from '@/components/ConsentFormDialog';
@@ -34,7 +34,7 @@ import { PhotoUpload } from '@/components/PhotoUpload';
 import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 import { PACKAGE_PRESETS } from '@/lib/packagePresets';
-import type { CheckIn, CheckInStatus, Package as PackageType, PackageRemaining, Service } from '@/lib/types';
+import type { CheckIn, Package as PackageType, PackageRemaining, Service } from '@/lib/types';
 
 // ─── 시술 항목 / 회차 차감 타입 ──────────────────────────────────────────────
 
@@ -187,55 +187,6 @@ function VisitHistoryAccordion({ history }: { history: VisitHistory[] }) {
           </div>
         );
       })}
-    </div>
-  );
-}
-
-// ─── 서브 컴포넌트: 단계 이동 버튼 ──────────────────────────────────────────
-
-function StageNavButtons({ checkIn, onUpdated }: { checkIn: CheckIn; onUpdated: () => void }) {
-  const stages = stagesFor(checkIn.visit_type);
-  const idx = stages.indexOf(checkIn.status);
-  const prev = idx > 0 ? stages[idx - 1] : null;
-  const next = idx >= 0 && idx < stages.length - 1 ? stages[idx + 1] : null;
-
-  const move = async (toStatus: CheckInStatus) => {
-    const updates: Record<string, unknown> = { status: toStatus };
-    if (toStatus === 'done') updates.completed_at = new Date().toISOString();
-    const { error } = await supabase
-      .from('check_ins')
-      .update(updates)
-      .eq('id', checkIn.id);
-    if (error) {
-      toast.error(`이동 실패: ${error.message}`);
-      return;
-    }
-    await supabase.from('status_transitions').insert({
-      check_in_id: checkIn.id,
-      clinic_id: checkIn.clinic_id,
-      from_status: checkIn.status,
-      to_status: toStatus,
-    });
-    toast.success(`${STATUS_KO[toStatus]}(으)로 이동`);
-    onUpdated();
-  };
-
-  if (!prev && !next) return null;
-
-  return (
-    <div className="flex gap-2">
-      {prev && (
-        <Button variant="outline" size="sm" className="flex-1 gap-1 text-xs" onClick={() => move(prev)}>
-          <ArrowLeft className="h-3.5 w-3.5" />
-          {STATUS_KO[prev]}
-        </Button>
-      )}
-      {next && (
-        <Button variant="default" size="sm" className="flex-1 gap-1 text-xs" onClick={() => move(next)}>
-          {STATUS_KO[next]}
-          <ArrowRight className="h-3.5 w-3.5" />
-        </Button>
-      )}
     </div>
   );
 }
@@ -718,8 +669,24 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             </div>
           </div>
 
-          {/* 단계 이동 */}
-          <StageNavButtons checkIn={checkIn} onUpdated={onUpdated} />
+          {/* 고객차트보기 — T-20260505-foot-SIMPLE-CHART-BUTTON */}
+          {checkIn.customer_id && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full gap-2 border-teal-400 text-teal-700 hover:bg-teal-50 text-sm h-11"
+              onClick={() =>
+                window.open(
+                  `/chart/${checkIn.customer_id}`,
+                  `chart-${checkIn.customer_id}`,
+                  'width=820,height=960,scrollbars=yes,resizable=yes',
+                )
+              }
+            >
+              <ExternalLink className="h-4 w-4" />
+              고객차트보기
+            </Button>
+          )}
 
           {/* ── [NEW] 데스크 통합 수납 메뉴 (payment_waiting 전용) ─ T-20260430-foot-DESK-PAYMENT-MENU ── */}
           {isDeskStage && (
