@@ -325,6 +325,8 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   const [doctorNote, setDoctorNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(false);
+  /** 고객 차트번호 (T-20260504-foot-CHART-UI-BADGE) */
+  const [chartNumber, setChartNumber] = useState<string | null>(null);
 
   // ── 진료종류 상태 (T-20260430-foot-TREATMENT-LABEL) ──
   const [consultationDone, setConsultationDone] = useState(false);
@@ -348,6 +350,7 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   // 체크인 변경 시 시술 항목 + 진료종류 초기화
   useEffect(() => {
     setTreatmentItems([]);
+    setChartNumber(null);
     if (checkIn) {
       setConsultationDone(checkIn.consultation_done ?? false);
       setTreatmentKind(checkIn.treatment_kind ?? '');
@@ -360,7 +363,7 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   const load = useCallback(async () => {
     if (!checkIn) return;
 
-    const [svcRes, payRes, histRes, pkgRes] = await Promise.all([
+    const [svcRes, payRes, histRes, pkgRes, custRes] = await Promise.all([
       supabase
         .from('services')
         .select('*')
@@ -388,11 +391,20 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             .eq('status', 'active')
             .order('contract_date', { ascending: false })
         : Promise.resolve({ data: [] }),
+      // 고객 차트번호 조회 (T-20260504-foot-CHART-UI-BADGE)
+      checkIn.customer_id
+        ? supabase
+            .from('customers')
+            .select('chart_number')
+            .eq('id', checkIn.customer_id)
+            .single()
+        : Promise.resolve({ data: null }),
     ]);
 
     setServices((svcRes.data ?? []) as Service[]);
     setPayments((payRes.data ?? []) as PaymentRow[]);
     setHistory((histRes.data ?? []) as VisitHistory[]);
+    setChartNumber((custRes.data as { chart_number: string | null } | null)?.chart_number ?? null);
     const pkgs = (pkgRes.data ?? []) as PackageType[];
     setPackages(pkgs);
 
@@ -593,11 +605,21 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
       <SheetContent className="w-[400px] sm:w-[440px] max-h-screen overflow-y-auto">
         <SheetHeader>
           <div className="flex items-center justify-between gap-2">
-            <SheetTitle className="flex items-center gap-2 flex-1">
+            <SheetTitle className="flex items-center gap-2 flex-1 flex-wrap">
               {checkIn.queue_number != null && (
                 <span className="text-teal-700">#{checkIn.queue_number}</span>
               )}
               {checkIn.customer_name}
+              {/* 초진/재진 배지 (T-20260504-foot-CHART-UI-BADGE) */}
+              {checkIn.visit_type === 'new' ? (
+                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-blue-100 text-blue-700 shrink-0">
+                  첫방문
+                </span>
+              ) : (
+                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-emerald-100 text-emerald-700 shrink-0">
+                  재방문
+                </span>
+              )}
             </SheetTitle>
             {isAdmin && (
               <button
@@ -653,20 +675,24 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-2 text-sm">
+          {/* 차트번호 · 전화번호 · 접수시간 — text-sm 통일 (T-20260504-foot-CHART-UI-BADGE) */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            {chartNumber && (
+              <span className="font-medium text-teal-700">[{chartNumber}]</span>
+            )}
             {checkIn.customer_phone && (
-              <div className="flex items-center gap-1.5 text-muted-foreground">
+              <span className="flex items-center gap-1">
                 <Phone className="h-3.5 w-3.5" />
                 {checkIn.customer_phone}
-              </div>
+              </span>
             )}
-            <div className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="flex items-center gap-1">
               <Clock className="h-3.5 w-3.5" />
               {format(new Date(checkIn.checked_in_at), 'HH:mm')} 접수
               <span className={cn(mins >= 30 && 'text-red-600 font-semibold')}>
                 ({mins}분)
               </span>
-            </div>
+            </span>
           </div>
 
           {/* 고객차트보기 — T-20260505-foot-SIMPLE-CHART-BUTTON */}
