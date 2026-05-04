@@ -1,5 +1,37 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-04 MQ 전건 재검증 완료 — dev-foot
+
+> **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 KST
+>
+> **MQ 9건 전건 처리 확인**:
+> - MSG-20260504-DOCTOR-TREATMENT-FLOW-PORT (P2): deploy-ready ✅
+>   - 코드: e833699 (main) / DB 마이그레이션: phrase_templates, prescription_sets, document_templates + check_ins 7컬럼 → Supabase 적용 확인
+>   - supervisor QA Yellow PASS / 배포 승인 대기 중
+> - MSG-20260501-FOOT-INLINE-SEARCH (P2): deployed ✅ (20704a4, QA Green)
+> - PUSH-20260501-0833-FOOT-DASH-LAYOUT-V2: deployed ✅ (1e9cf5d, QA Green) — 오탐
+> - PUSH-20260501-FOOT-DASH-LAYOUT-V2: deployed ✅ — 오탐
+> - KICK-20260430-FOOT-STAFF-EDIT-TRIGGER: deployed ✅ (7fed500)
+> - PUSH-20260430-FOOT-STABILIZATION: deployed ✅ — 오탐
+> - PUSH-20260430-FOOT-P1-STALL: deployed ✅ — 오탐
+> - PUSH-20260429-FOOT-P0-REWORK: deployed ✅ (dd33ef4)
+>
+> **티켓 정합성 수정**:
+> - T-20260502-foot-THEME-BROWN-BEIGE: frontmatter status qa-pass → deploy-approval-requested (히스토리 기준 정합)
+>
+> **빌드**: npm run build PASS (2.49s, 에러 0)
+>
+> **배포 대기 중 (supervisor 영역)**:
+> - T-20260502-foot-DOCTOR-TREATMENT-FLOW (deploy-ready, QA Yellow)
+> - T-20260502-foot-THEME-BROWN-BEIGE (deploy-approval-requested, QA Green)
+> - T-20260504-foot-INSURANCE-COPAYMENT (deploy-approval-requested, QA Green)
+>
+> **외부 블로커**:
+> - T-20260430-foot-CONSENT-FORMS (spec_pending_input, deadline 5/07)
+> - T-20260430-foot-PRESCREEN-CHECKLIST (spec_pending_input, deadline 5/07)
+>
+> **상태**: IDLE — 신규 approved 티켓 없음
+
 ## 2026-05-04 D1 완료 [INSURANCE-COPAYMENT] ✅ — dev-foot
 
 > **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 18:45 KST
