@@ -586,7 +586,25 @@ export default function SelfCheckIn() {
           })
           .select('id')
           .single();
-        if (!cErr && created) {
+        if (cErr) {
+          // unique constraint 위반(23505): phone이 이미 존재 → 재조회
+          // (E164 변환 이전 포맷으로 저장된 고객 등 phone 불일치 시 발생)
+          if (cErr.code === '23505') {
+            const { data: retryData } = await anonClient
+              .from('customers')
+              .select('id')
+              .eq('clinic_id', clinicId)
+              .eq('phone', phoneStored)
+              .maybeSingle();
+            if (retryData) {
+              customerId = (retryData as { id: string }).id;
+            } else {
+              throw new Error(`고객 등록 실패 (중복 확인 불가): ${cErr.message}`);
+            }
+          } else {
+            throw new Error(`고객 등록 실패: ${cErr.message}`);
+          }
+        } else if (created) {
           customerId = (created as { id: string }).id;
         }
       }
