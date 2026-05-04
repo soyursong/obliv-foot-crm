@@ -129,7 +129,7 @@ export default function AdminLayout() {
           <div className="text-sm font-semibold text-teal-700">오블리브</div>
           <div className="mt-0.5 text-base font-bold">풋센터 종로</div>
         </div>
-        <button className="lg:hidden p-2 min-h-[36px] min-w-[36px] flex items-center justify-center" onClick={() => setSidebarOpen(false)}>
+        <button className="lg:hidden p-2 min-h-[44px] min-w-[44px] flex items-center justify-center" onClick={() => setSidebarOpen(false)}>
           <X className="h-5 w-5" />
         </button>
       </div>
@@ -202,7 +202,7 @@ export default function AdminLayout() {
       <main className="flex min-h-screen flex-1 flex-col">
         <header className="flex h-14 items-center justify-between border-b bg-background px-4 md:px-6">
           <div className="flex items-center gap-3">
-            <button className="lg:hidden p-2 min-h-[36px] min-w-[36px] flex items-center justify-center" onClick={() => setSidebarOpen(true)}>
+            <button className="lg:hidden p-2 min-h-[44px] min-w-[44px] flex items-center justify-center" onClick={() => setSidebarOpen(true)}>
               <Menu className="h-5 w-5" />
             </button>
             <span className="text-sm font-semibold">{clinic?.name ?? '풋센터 종로'}</span>

@@ -298,14 +298,16 @@ function DraggableCard({
             )}
           </div>
           <div className="flex items-center shrink-0">
+            {/* 태블릿 터치 영역 확보: min-w/h-[36px] — T-20260504-foot-TABLET-LASER-ROOM-SELECT */}
             <button
-              className="p-1 rounded hover:bg-gray-100 transition"
+              className="p-1.5 rounded hover:bg-gray-100 active:bg-gray-200 transition min-w-[36px] min-h-[36px] flex items-center justify-center"
               onClick={(e) => {
                 e.stopPropagation();
                 const rect = e.currentTarget.getBoundingClientRect();
                 const syntheticEvent = { preventDefault: () => {}, stopPropagation: () => {}, clientX: rect.right, clientY: rect.bottom } as React.MouseEvent;
                 onContextMenu?.(syntheticEvent);
               }}
+              onPointerDown={(e) => e.stopPropagation()}
               title="상태 변경"
             >
               <MoreVertical className="h-4 w-4 text-gray-500" />
@@ -406,14 +408,16 @@ function DraggableCard({
           )}
         </div>
         <div className="flex items-center shrink-0">
+          {/* 태블릿 터치 영역 확보 + onPointerDown 전파 차단 — T-20260504-foot-TABLET-LASER-ROOM-SELECT */}
           <button
-            className="p-0.5 rounded hover:bg-gray-100 transition"
+            className="p-1.5 rounded hover:bg-gray-100 active:bg-gray-200 transition min-w-[36px] min-h-[36px] flex items-center justify-center"
             onClick={(e) => {
               e.stopPropagation();
               const rect = e.currentTarget.getBoundingClientRect();
               const syntheticEvent = { preventDefault: () => {}, stopPropagation: () => {}, clientX: rect.right, clientY: rect.bottom } as React.MouseEvent;
               onContextMenu?.(syntheticEvent);
             }}
+            onPointerDown={(e) => e.stopPropagation()}
           >
             <MoreVertical className="h-4 w-4 text-gray-400" />
           </button>
@@ -2277,6 +2281,45 @@ export default function Dashboard() {
     toast.success(`${STATUS_KO[newStatus]}(으)로 변경`);
   };
 
+  /** 레이저실 번호 선택 후 status='laser' + laser_room 동시 업데이트
+   *  — T-20260504-foot-TABLET-LASER-ROOM-SELECT
+   */
+  const handleContextLaserStatusChange = async (ci: CheckIn, laserRoom: string) => {
+    if (ci.id.startsWith('temp-')) {
+      toast.info('체크인 처리 중입니다. 잠시 후 다시 시도해주세요.');
+      return;
+    }
+    markRecentlyUpdated(ci.id);
+    let prevRow: CheckIn | undefined;
+    setRows((curr) => {
+      prevRow = curr.find((r) => r.id === ci.id);
+      return curr.map((r) =>
+        r.id === ci.id ? { ...r, status: 'laser' as CheckInStatus, laser_room: laserRoom } : r,
+      );
+    });
+    const patch: Record<string, unknown> = { status: 'laser', laser_room: laserRoom };
+    if (!ci.called_at && ci.status === 'registered') {
+      patch.called_at = new Date().toISOString();
+    }
+    const { error } = await supabase.from('check_ins').update(patch).eq('id', ci.id);
+    if (error) {
+      setRows((curr) => curr.map((r) => (r.id === ci.id && prevRow ? prevRow : r)));
+      toast.error(`상태 변경 실패: ${error.message}`);
+      return;
+    }
+    {
+      const now = new Date().toISOString();
+      await supabase.from('status_transitions').insert({
+        check_in_id: ci.id,
+        clinic_id: ci.clinic_id,
+        from_status: ci.status,
+        to_status: 'laser',
+      });
+      setStageStartMap((prev) => new Map(prev).set(ci.id, now));
+    }
+    toast.success(`${laserRoom} 입실`);
+  };
+
   /** 상태 플래그 변경 — T-20260502-foot-STATUS-COLOR-FLAG */
   const handleFlagChange = async (ci: CheckIn, flag: StatusFlag | null) => {
     if (ci.id.startsWith('temp-')) return;
@@ -3325,12 +3368,15 @@ export default function Dashboard() {
         }}
       />
 
+      {/* T-20260504-foot-TABLET-LASER-ROOM-SELECT: laserRooms + 레이저실 번호 선택 */}
       <StatusContextMenu
         checkIn={contextMenu?.checkIn!}
         position={contextMenu?.pos ?? null}
         onClose={() => setContextMenu(null)}
         onStatusChange={handleContextStatusChange}
         onFlagChange={handleFlagChange}
+        laserRooms={laserRooms.map((r) => r.name)}
+        onLaserStatusChange={handleContextLaserStatusChange}
       />
 
       <CustomerQuickMenu
