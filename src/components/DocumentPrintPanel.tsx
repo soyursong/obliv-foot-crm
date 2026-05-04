@@ -27,6 +27,7 @@ import {
   CheckSquare,
   Square,
   Layers,
+  UserCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -46,6 +47,7 @@ import { useAuth } from '@/lib/auth';
 import { formatAmount } from '@/lib/format';
 import { formatPhone } from '@/lib/format';
 import type { CheckIn } from '@/lib/types';
+import { useDutyDoctors, fetchDutyDoctors, type DutyDoctor } from '@/hooks/useDutyRoster';
 import {
   DEFAULT_PRESET_KEYS,
   FALLBACK_TEMPLATES,
@@ -98,8 +100,17 @@ function buildAutoBindValues(ctx: AutoBindContext): Record<string, string> {
   };
 }
 
-/** DB에서 자동 바인딩 데이터를 일괄 로드 */
-async function loadAutoBindContext(checkIn: CheckIn): Promise<Record<string, string>> {
+/**
+ * DB에서 자동 바인딩 데이터를 일괄 로드
+ *
+ * @param doctorNameOverride — 듀티 로스터에서 미리 결정된 원장님 이름.
+ *   undefined이면 duty_roster 조회 후 fallback(최초 활성 director) 사용.
+ *   '' (빈 문자열)이면 복수 근무로 아직 미선택 — doctor_name 빈 채로 반환.
+ */
+async function loadAutoBindContext(
+  checkIn: CheckIn,
+  doctorNameOverride?: string,
+): Promise<Record<string, string>> {
   // 고객 정보
   let customer = null;
   if (checkIn.customer_id) {
@@ -129,7 +140,6 @@ async function loadAutoBindContext(checkIn: CheckIn): Promise<Record<string, str
   const nonCoveredFromReceipts = (insData ?? []).reduce((s, r) => s + (r.non_covered ?? 0), 0);
 
   // service_charges 합산 (T-20260504-foot-INSURANCE-COPAYMENT)
-  // service_charges 가 있으면 우선 사용. 없으면 insurance_receipts 사용.
   const { data: chargesData } = await supabase
     .from('service_charges')
     .select('insurance_covered_amount, copayment_amount, base_amount, is_insurance_covered')
@@ -154,15 +164,39 @@ async function loadAutoBindContext(checkIn: CheckIn): Promise<Record<string, str
     .eq('id', checkIn.clinic_id)
     .maybeSingle();
 
-  // 진료 의사 (director 역할 staff)
-  const { data: staffData } = await supabase
-    .from('staff')
-    .select('name')
-    .eq('clinic_id', checkIn.clinic_id)
-    .eq('role', 'director')
-    .eq('active', true)
-    .limit(1)
-    .maybeSingle();
+  // ── 진료 의사 결정 (T-20260502-foot-DUTY-ROSTER) ──
+  // 1순위: 외부에서 전달된 이름 (이미 결정됨)
+  // 2순위: 당일 duty_roster 1명이면 자동
+  // 3순위: 첫 번째 활성 director (fallback)
+  let doctorName: string | null = null;
+
+  if (doctorNameOverride !== undefined) {
+    // 빈 문자열('')이면 미선택 상태 유지, 비어있지 않으면 사용
+    doctorName = doctorNameOverride || null;
+  } else {
+    // duty_roster 조회
+    const visitDate = checkIn.checked_in_at
+      ? format(new Date(checkIn.checked_in_at), 'yyyy-MM-dd')
+      : format(new Date(), 'yyyy-MM-dd');
+
+    const dutyDocs = await fetchDutyDoctors(checkIn.clinic_id, visitDate);
+
+    if (dutyDocs.length === 1) {
+      doctorName = dutyDocs[0].name;
+    } else if (dutyDocs.length === 0) {
+      // Fallback: 첫 번째 활성 director
+      const { data: fallbackStaff } = await supabase
+        .from('staff')
+        .select('name')
+        .eq('clinic_id', checkIn.clinic_id)
+        .eq('role', 'director')
+        .eq('active', true)
+        .limit(1)
+        .maybeSingle();
+      doctorName = fallbackStaff?.name ?? null;
+    }
+    // dutyDocs.length > 1: doctorName = null → UI에서 선택
+  }
 
   return buildAutoBindValues({
     customer,
@@ -174,7 +208,7 @@ async function loadAutoBindContext(checkIn: CheckIn): Promise<Record<string, str
       non_covered: nonCovered,
     },
     clinic: clinicData,
-    doctor: staffData?.name ?? null,
+    doctor: doctorName,
   });
 }
 
@@ -290,6 +324,15 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
   // staff.id (issued_by FK — profile.id ≠ staff.id, user_id 경유 조회)
   const [staffId, setStaffId] = useState<string | null>(null);
+  // 배치 출력 시 복수 원장님 선택 상태
+  const [batchDoctorPickOpen, setBatchDoctorPickOpen] = useState(false);
+  const [batchSelectedDoctorName, setBatchSelectedDoctorName] = useState<string>('');
+
+  // 방문일 기준 근무원장님 목록 (T-20260502-foot-DUTY-ROSTER)
+  const visitDate = checkIn.checked_in_at
+    ? format(new Date(checkIn.checked_in_at), 'yyyy-MM-dd')
+    : format(new Date(), 'yyyy-MM-dd');
+  const { data: dutyDoctors = [] } = useDutyDoctors(checkIn.clinic_id, visitDate);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -380,13 +423,25 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
   };
 
   // ── 일괄 출력 ──
-  const handleBatchPrint = async () => {
+  const handleBatchPrint = async (doctorNameForBatch?: string) => {
     const selectedTemplates = templates.filter((t) => selectedKeys.has(t.form_key));
     if (selectedTemplates.length === 0) return;
 
+    // 복수 근무원장님: 아직 선택 안 했으면 선택 다이얼로그 표시
+    if (dutyDoctors.length > 1 && !doctorNameForBatch) {
+      setBatchSelectedDoctorName(dutyDoctors[0].name);
+      setBatchDoctorPickOpen(true);
+      return;
+    }
+
     setBatchPrinting(true);
     try {
-      const autoValues = await loadAutoBindContext(checkIn);
+      // 원장님 이름 결정 (복수일 땐 선택값, 단수면 자동, 0이면 undefined → 내부 fallback)
+      const resolvedDoctorName =
+        doctorNameForBatch ??
+        (dutyDoctors.length === 1 ? dutyDoctors[0].name : undefined);
+
+      const autoValues = await loadAutoBindContext(checkIn, resolvedDoctorName);
       const isFallback = templates[0]?.id.startsWith('fallback-');
 
       const jpgTemplates = selectedTemplates.filter((t) => t.template_format !== 'pdf');
@@ -490,6 +545,30 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
         </div>
       </div>
 
+      {/* 근무원장님 배너 (T-20260502-foot-DUTY-ROSTER) */}
+      {dutyDoctors.length > 0 ? (
+        <div className="flex items-center gap-2 rounded-md bg-teal-50 border border-teal-200 px-2.5 py-1.5">
+          <UserCheck className="h-3.5 w-3.5 shrink-0 text-teal-600" />
+          <span className="text-xs text-teal-700">
+            {visitDate} 근무:{' '}
+            <span className="font-semibold">
+              {dutyDoctors.map((d) => d.name).join(' · ')}
+            </span>
+            {dutyDoctors.length === 1 && (
+              <span className="ml-1 text-teal-500">자동 세팅</span>
+            )}
+          </span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-1.5">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+          <span className="text-xs text-amber-700">
+            근무캘린더 미설정 — 원장님 이름을 직접 입력하거나{' '}
+            <span className="font-medium">직원·공간 → 근무캘린더</span>에서 설정하세요.
+          </span>
+        </div>
+      )}
+
       {/* 일괄 출력 액션 바 */}
       <div className="flex items-center gap-2">
         <Button
@@ -505,7 +584,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
           <Button
             size="sm"
             className="text-xs gap-1 bg-teal-600 hover:bg-teal-700"
-            onClick={handleBatchPrint}
+            onClick={() => handleBatchPrint()}
             disabled={batchPrinting}
           >
             <Printer className="h-3.5 w-3.5" />
@@ -576,6 +655,58 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
         </div>
       )}
 
+      {/* 배치 출력: 복수 원장님 선택 다이얼로그 */}
+      <Dialog open={batchDoctorPickOpen} onOpenChange={setBatchDoctorPickOpen}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-sm">
+              <UserCheck className="h-4 w-4 text-teal-600" />
+              서류 발행 원장님 선택
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-1">
+            <p className="text-xs text-muted-foreground">
+              오늘 근무 원장님이 {dutyDoctors.length}명입니다. 서류에 기재할 원장님을 선택하세요.
+            </p>
+            <div className="flex flex-col gap-2">
+              {dutyDoctors.map((d) => (
+                <button
+                  key={d.id}
+                  className={`rounded-lg border px-4 py-3 text-sm font-medium text-left transition-all ${
+                    batchSelectedDoctorName === d.name
+                      ? 'border-teal-400 bg-teal-50 text-teal-800 ring-1 ring-teal-300'
+                      : 'border-gray-200 hover:border-teal-300 hover:bg-teal-50/50'
+                  }`}
+                  onClick={() => setBatchSelectedDoctorName(d.name)}
+                >
+                  {d.name}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {d.roster_type === 'regular' ? '근무' : '파트근무'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setBatchDoctorPickOpen(false)}>
+              취소
+            </Button>
+            <Button
+              size="sm"
+              className="bg-teal-600 hover:bg-teal-700"
+              disabled={!batchSelectedDoctorName}
+              onClick={() => {
+                setBatchDoctorPickOpen(false);
+                handleBatchPrint(batchSelectedDoctorName);
+              }}
+            >
+              <Printer className="mr-1.5 h-3.5 w-3.5" />
+              이 원장님으로 출력
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* 단건 발행 다이얼로그 */}
       {selectedTemplate && (
         <IssueDialog
@@ -583,6 +714,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
           checkIn={checkIn}
           open={issueDialogOpen}
           staffId={staffId}
+          dutyDoctors={dutyDoctors}
           onOpenChange={(o) => {
             setIssueDialogOpen(o);
             if (!o) setSelectedTemplate(null);
@@ -695,6 +827,7 @@ function IssueDialog({
   onOpenChange,
   onIssued,
   staffId,
+  dutyDoctors,
 }: {
   template: FormTemplate;
   checkIn: CheckIn;
@@ -703,6 +836,8 @@ function IssueDialog({
   onIssued: () => void;
   /** issued_by FK — staff.id (DocumentPrintPanel에서 주입) */
   staffId: string | null;
+  /** 당일 근무원장님 목록 (T-20260502-foot-DUTY-ROSTER) */
+  dutyDoctors: DutyDoctor[];
 }) {
   const [saving, setSaving] = useState(false);
   const [autoValues, setAutoValues] = useState<Record<string, string>>({});
@@ -711,24 +846,45 @@ function IssueDialog({
     memo: '',
   });
   const [previewOpen, setPreviewOpen] = useState(false);
+  // 복수 원장님일 때 선택 상태 (단일이면 자동 설정됨)
+  const [selectedDoctorName, setSelectedDoctorName] = useState<string>('');
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
 
-    loadAutoBindContext(checkIn).then((vals) => {
+    // 원장님 이름 결정
+    // - 1명: 자동 세팅 (이미 loadAutoBindContext에서 처리됨)
+    // - 2명 이상: 빈 채로 — 아래 selectedDoctorName으로 별도 처리
+    // - 0명: loadAutoBindContext fallback 처리
+    const resolvedDoctorName =
+      dutyDoctors.length === 1
+        ? dutyDoctors[0].name
+        : dutyDoctors.length > 1
+          ? ''  // 복수: UI에서 선택
+          : undefined; // 없음: loadAutoBindContext 내부 fallback
+
+    if (dutyDoctors.length > 1) {
+      setSelectedDoctorName(dutyDoctors[0].name); // 첫 번째 기본 선택
+    }
+
+    loadAutoBindContext(checkIn, resolvedDoctorName).then((vals) => {
       if (!cancelled) setAutoValues(vals);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [open, checkIn]);
+  }, [open, checkIn, dutyDoctors]);
 
-  const allValues = useMemo(
-    () => ({ ...autoValues, ...manualValues }),
-    [autoValues, manualValues],
-  );
+  // 복수 원장님일 때 selectedDoctorName을 doctor_name 필드에 주입
+  const allValues = useMemo(() => {
+    const base = { ...autoValues, ...manualValues };
+    if (dutyDoctors.length > 1 && selectedDoctorName) {
+      base.doctor_name = selectedDoctorName;
+    }
+    return base;
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName]);
 
   const editableFields = useMemo(() => {
     if (template.field_map.length > 0) return template.field_map;
@@ -873,10 +1029,39 @@ function IssueDialog({
               </div>
             )}
 
+            {/* 복수 근무원장님 선택 배너 */}
+            {dutyDoctors.length > 1 && (
+              <div className="rounded-lg bg-teal-50 border border-teal-200 p-3 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-teal-800">
+                  <UserCheck className="h-3.5 w-3.5" />
+                  서류 발행 원장님 선택
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {dutyDoctors.map((d) => (
+                    <button
+                      key={d.id}
+                      className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                        selectedDoctorName === d.name
+                          ? 'border-teal-500 bg-teal-600 text-white'
+                          : 'border-teal-300 text-teal-700 hover:bg-teal-100'
+                      }`}
+                      onClick={() => setSelectedDoctorName(d.name)}
+                    >
+                      {d.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-3">
               {editableFields.map((f) => {
                 const val = allValues[f.key] ?? '';
-                const isAuto = f.key in autoValues && autoValues[f.key] !== '';
+                // doctor_name: 단일 자동 세팅이면 자동 뱃지, 복수면 위 배너에서 처리
+                const isAuto =
+                  f.key === 'doctor_name'
+                    ? dutyDoctors.length === 1
+                    : f.key in autoValues && autoValues[f.key] !== '';
                 return (
                   <div key={f.key}>
                     <Label className="text-xs flex items-center gap-1">
@@ -886,7 +1071,7 @@ function IssueDialog({
                           variant="outline"
                           className="text-[9px] px-1 py-0 text-teal-600 border-teal-300"
                         >
-                          자동
+                          {f.key === 'doctor_name' ? '근무캘린더' : '자동'}
                         </Badge>
                       )}
                     </Label>
@@ -902,7 +1087,13 @@ function IssueDialog({
                       <Input
                         type={f.type === 'date' ? 'date' : 'text'}
                         value={val}
-                        onChange={(e) => updateField(f.key, e.target.value)}
+                        onChange={(e) => {
+                          if (f.key === 'doctor_name' && dutyDoctors.length > 1) {
+                            setSelectedDoctorName(e.target.value);
+                          } else {
+                            updateField(f.key, e.target.value);
+                          }
+                        }}
                         placeholder={f.label}
                         className="text-sm mt-1"
                       />

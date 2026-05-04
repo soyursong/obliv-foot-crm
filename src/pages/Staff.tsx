@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { Plus, UserCog, DoorOpen, TrendingUp, ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react';
+import { Plus, UserCog, DoorOpen, TrendingUp, ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays } from 'lucide-react';
+import { DutyRosterTab } from '@/components/DutyRosterTab';
 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -52,7 +53,7 @@ function todayStr(): string {
 }
 
 export default function StaffPage() {
-  const [tab, setTab] = useState('staff');
+  const [tab, setTab] = useState('duty');
 
   const { data: clinic } = useQuery<Clinic | null>({
     queryKey: ['clinic'],
@@ -63,6 +64,9 @@ export default function StaffPage() {
     <div className="space-y-4">
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
+          <TabsTrigger value="duty">
+            <CalendarDays className="mr-1 h-4 w-4" /> 근무캘린더
+          </TabsTrigger>
           <TabsTrigger value="staff">
             <UserCog className="mr-1 h-4 w-4" /> 직원
           </TabsTrigger>
@@ -73,6 +77,7 @@ export default function StaffPage() {
             <TrendingUp className="mr-1 h-4 w-4" /> 월간 실적
           </TabsTrigger>
         </TabsList>
+        <TabsContent value="duty">{clinic && <DutyRosterTab clinic={clinic} />}</TabsContent>
         <TabsContent value="staff">{clinic && <StaffTab clinic={clinic} />}</TabsContent>
         <TabsContent value="rooms">{clinic && <RoomTab clinic={clinic} />}</TabsContent>
         <TabsContent value="performance">{clinic && <PerformanceTab clinic={clinic} />}</TabsContent>
