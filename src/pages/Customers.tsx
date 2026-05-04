@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
+import { InsuranceGradeSelect } from '@/components/insurance/InsuranceGradeSelect';
 import { supabase } from '@/lib/supabase';
 
 import { useAuth } from '@/lib/auth';
@@ -908,6 +909,20 @@ function CustomerDetailSheet({
                 </div>
               </div>
             )}
+          </ChartSection>
+
+          {/* 섹션 3.5 — 건강보험 자격 (T-20260504-foot-INSURANCE-COPAYMENT) */}
+          <ChartSection title="건강보험 자격" defaultOpen>
+            <div className="space-y-2">
+              <InsuranceGradeSelect customerId={customer.id} onChanged={onUpdated} />
+              {/*
+                TODO(rrn-vault): 주민번호 입력 → Supabase Vault Edge Function 경유 저장.
+                현재는 입력 UI만 표시 + rrn_vault_id 컬럼 준비. 평문 저장 절대 금지.
+              */}
+              <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/40 p-2 text-[11px] text-amber-800">
+                ※ 주민번호는 Supabase Vault 연동(Edge Function) 후 활성화 — 현재는 등급만 수동 입력
+              </div>
+            </div>
           </ChartSection>
 
           {/* 섹션 4 — 치료플랜 (패키지) */}
