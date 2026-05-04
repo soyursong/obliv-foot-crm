@@ -1,5 +1,31 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-04 D1 완료 [INSURANCE-COPAYMENT] ✅ — dev-foot
+
+> **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 18:45 KST
+> **ref**: T-20260504-foot-INSURANCE-COPAYMENT | 마감 D-4 (5/8)
+>
+> **D1 완료 항목**:
+> - DB 마이그레이션 apply (`supabase db query -f`):
+>   - customers: insurance_grade(9등급), rrn_vault_id, insurance_grade_verified_at, insurance_grade_source, insurance_grade_memo ✅
+>   - services: is_insurance_covered, hira_code, hira_score, hira_category, copayment_rate_override ✅
+>   - clinics: hira_unit_value(89.4 default), hira_unit_value_year ✅
+>   - service_charges 신규 테이블 ✅
+>   - calc_copayment RPC ✅
+> - 시드 적용: 진찰료 초진(AA154/153.36), 진찰료 재진(AA254/109.50), KOH 균검사(D6591/28.50), 일반 처방료(AA700/10.00), 진단서 발급(비급여) ✅
+> - xlsx 분석: 약제 코드 전용 (AA/D 행위코드 없음) → 기본 5건 시드로 대체 확정
+> - 단위 테스트 16/16 PASS (9등급 × 시나리오 + 정액제 + override) ✅
+> - 빌드: `npm run build` 2.50s 에러 0 ✅
+> - browser 진단: page_errors[], console_errors[], network_errors[] — 전항목 PASS ✅
+>
+> **기구현 확인** (commit 84e9a6a):
+> - `src/lib/insurance.ts` (타입+계산) / `src/hooks/useInsurance.ts` / `InsuranceGradeSelect.tsx` / `InsuranceCopaymentPanel.tsx`
+> - `Customers.tsx` InsuranceGradeSelect 통합 / `PaymentDialog.tsx` InsuranceCopaymentPanel 통합
+> - `DocumentPrintPanel.tsx` field_map (insurance_covered, copayment, non_covered)
+>
+> **D2~D4 상태**: 코드 구현 이미 완료 (84e9a6a) — D2 김주연 UI 검증 / D4 supervisor QA 남음
+> **블로커**: 없음
+
 ## 2026-05-01 08:35 [PUSH-20260501-0833-FOOT-DASH-LAYOUT-V2] ACK — 오탐 확인 ✅
 
 > **from**: dev-foot | **to**: planner | **acked_at**: 2026-05-01 08:35 KST
