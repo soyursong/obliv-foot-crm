@@ -1396,3 +1396,16 @@ QA_REPORT.md 참조
 > - 빌드 재검증: ✅ PASS (2.52s, 에러 0)
 > - 커밋: 7643cbf (main)
 > - supervisor QA 재요청
+
+## 2026-05-05 01:40 — supervisor | QA PASS | T-20260505-foot-CHART-NUMBER-AUTO
+- 빌드: ✅ PASS (2.56s, TypeScript 에러 0)
+- 기존기능: ✅ PASS — INSERT payload chart_number 제외 확인, SelfCheckIn/NewCheckInDialog 미영향
+- DB호환: ✅ PASS — 백필→UNIQUE→NOT NULL→트리거 순서 정상, CRM 동일 패턴 이식
+- 권한/RLS: ✅ PASS — 신규 RLS 변경 없음, 기존 anon_insert_customer_self_checkin 유지
+- 롤백SQL: ✅ PASS — 20260505000000_chart_number_auto.down.sql 완비
+- 교차검증: 5종 전부 PASS (RPC↔Schema / RLS↔라우트 / ServiceLayer / 스펙↔구현 / 데이터흐름)
+- GO_WARN: MAX+1 race condition(UNIQUE방어), types.ts null불일치(런타임무관)
+- 판정: **GO — Yellow 자율 배포**
+- git: origin/main 반영 완료 (commit: 0ba17b4)
+- 배포 승인 요청: @대표 C0ATE5P6JTH 발송 (Supabase SQL Editor 적용 후 Lovable 배포 요청)
+- 다음 단계: 대표가 Supabase에 마이그레이션 적용 후 Lovable 배포 → 검증 SQL로 확인
