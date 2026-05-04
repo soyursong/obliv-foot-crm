@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { ArrowLeft, ArrowRight, ChevronDown, Clock, CreditCard, Phone, FileText, Camera, Package, Plus, Stethoscope, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronDown, Clock, CreditCard, Phone, FileText, Camera, Package, Plus, Stethoscope, Trash2, Bell } from 'lucide-react';
+import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
 import { toast } from 'sonner';
 import {
   Sheet,
@@ -1152,26 +1153,49 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             />
           </div>
 
-          {/* 원장 소견 */}
+          {/* 원장 소견 / 진료 패널 */}
           {(() => {
             const isExaminationStage = checkIn.status === 'examination' || checkIn.status === 'exam_waiting';
+            if (isExaminationStage) {
+              return (
+                <div className="space-y-3 rounded-md p-3 bg-violet-50 ring-2 ring-violet-300 transition">
+                  {/* 진료콜 알람 배너 (exam_waiting 단계) */}
+                  {checkIn.status === 'exam_waiting' && (
+                    <div className="flex items-center gap-2 rounded-lg border border-violet-300 bg-violet-100 px-3 py-2">
+                      <Bell className="h-4 w-4 text-violet-600 animate-pulse shrink-0" />
+                      <span className="text-xs font-semibold text-violet-800">진료 대기 중 — 원장님을 호출하세요</span>
+                    </div>
+                  )}
+                  <Label className="text-sm font-semibold text-violet-900 flex items-center gap-1">
+                    <Stethoscope className="h-3 w-3" /> 의사 진료 패널
+                    <span className="ml-auto text-xs font-normal text-violet-700/80">진료 중</span>
+                  </Label>
+                  {/* T-20260502-foot-DOCTOR-TREATMENT-FLOW: DoctorTreatmentPanel */}
+                  <DoctorTreatmentPanel
+                    checkInId={checkIn.id}
+                    visitType={checkIn.visit_type}
+                    hasHealerLaser={
+                      // 힐러레이저 포함 여부: 시술 항목명에 '힐러레이저' 포함 시 true
+                      !!(checkIn.treatment_memo as { details?: string } | null)?.details?.includes('힐러레이저')
+                    }
+                    onUpdated={onUpdated}
+                  />
+                </div>
+              );
+            }
+            // 비진료 단계: 간단한 원장 소견 텍스트
             return (
-              <div className={cn(
-                'space-y-2 rounded-md p-3 transition',
-                isExaminationStage
-                  ? 'bg-violet-50 ring-2 ring-violet-300'
-                  : 'bg-violet-50/40 ring-1 ring-violet-100',
-              )}>
+              <div className="space-y-2 rounded-md p-3 bg-violet-50/40 ring-1 ring-violet-100 transition">
                 <Label className="text-sm font-semibold text-violet-900 flex items-center gap-1">
                   <Stethoscope className="h-3 w-3" /> 원장 소견
                   <span className="ml-auto text-xs font-normal text-violet-700/80">
-                    {isExaminationStage ? '진료 중' : '선택 입력 (원장 미진료 시도 메모 가능)'}
+                    선택 입력 (원장 미진료 시 대리 메모 가능)
                   </span>
                 </Label>
                 <Textarea
                   value={doctorNote}
                   onChange={(e) => setDoctorNote(e.target.value)}
-                  placeholder="원장 소견을 자유롭게 입력하세요 (원장 미참여 시 상담실장이 대리 메모 가능)"
+                  placeholder="원장 소견을 자유롭게 입력하세요"
                   rows={3}
                   className="text-sm bg-white border-violet-200 focus-visible:ring-violet-400"
                 />
