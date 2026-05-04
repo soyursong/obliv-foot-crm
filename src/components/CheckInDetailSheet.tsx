@@ -304,8 +304,8 @@ function ActivePackageSummary({
 
 // ─── 메인 컴포넌트 ────────────────────────────────────────────────────────────
 
-// 기본 레이저 시간 단위 (어드민 설정 미존재 시 fallback)
-const DEFAULT_LASER_TIME_UNITS = [12, 15, 20, 30];
+// 기본 레이저 시간 단위 (어드민 설정 미존재 시 fallback) — 10분 추가 (T-20260504-foot-TREATMENT-SIMPLIFY)
+const DEFAULT_LASER_TIME_UNITS = [10, 15, 20, 30];
 
 export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: Props) {
   const { profile } = useAuth();
@@ -332,12 +332,19 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   /** 고객 차트번호 (T-20260504-foot-CHART-UI-BADGE) */
   const [chartNumber, setChartNumber] = useState<string | null>(null);
 
-  // ── 진료종류 상태 (T-20260430-foot-TREATMENT-LABEL) ──
+  // ── 진료종류 상태 (T-20260430-foot-TREATMENT-LABEL) — DB 호환성 유지 ──
   const [consultationDone, setConsultationDone] = useState(false);
   const [treatmentKind, setTreatmentKind] = useState<string>('');
   const [preconditioningDone, setPreconditioningDone] = useState(false);
   const [pododulleDone, setPododulleDone] = useState(false);
   const [laserMinutes, setLaserMinutes] = useState<number | null>(null);
+
+  // ── 진료 기록 간소화 상태 (T-20260504-foot-TREATMENT-SIMPLIFY) ──
+  const [assignedCounselorId, setAssignedCounselorId] = useState<string | null>(null);
+  const [treatmentCategory, setTreatmentCategory] = useState<string | null>(null);
+  const [treatmentContents, setTreatmentContents] = useState<string[]>([]);
+  /** 담당실장 드롭다운용 스태프 목록 */
+  const [staffList, setStaffList] = useState<Array<{ id: string; name: string; role: string }>>([]);
 
   // ── 시술 항목 상태 ──
   const [treatmentItems, setTreatmentItems] = useState<TreatmentItem[]>([]);
@@ -361,13 +368,17 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
       setPreconditioningDone(checkIn.preconditioning_done ?? false);
       setPododulleDone(checkIn.pododulle_done ?? false);
       setLaserMinutes(checkIn.laser_minutes ?? null);
+      // T-20260504-foot-TREATMENT-SIMPLIFY
+      setAssignedCounselorId(checkIn.assigned_counselor_id ?? null);
+      setTreatmentCategory(checkIn.treatment_category ?? null);
+      setTreatmentContents(checkIn.treatment_contents ?? []);
     }
   }, [checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async () => {
     if (!checkIn) return;
 
-    const [svcRes, payRes, histRes, pkgRes, custRes, resvRes] = await Promise.all([
+    const [svcRes, payRes, histRes, pkgRes, custRes, resvRes, staffRes] = await Promise.all([
       supabase
         .from('services')
         .select('*')
@@ -411,6 +422,13 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             .eq('id', checkIn.reservation_id)
             .single()
         : Promise.resolve({ data: null }),
+      // 담당실장 드롭다운용 스태프 목록 (T-20260504-foot-TREATMENT-SIMPLIFY)
+      supabase
+        .from('staff')
+        .select('id, name, role')
+        .eq('clinic_id', checkIn.clinic_id)
+        .eq('active', true)
+        .order('name'),
     ]);
 
     setServices((svcRes.data ?? []) as Service[]);
@@ -421,6 +439,7 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     setCustomerMemo(custData?.customer_memo ?? '');
     const resvData = resvRes.data as { booking_memo: string | null } | null;
     setBookingMemo(resvData?.booking_memo ?? '');
+    setStaffList((staffRes.data ?? []) as Array<{ id: string; name: string; role: string }>);
     const pkgs = (pkgRes.data ?? []) as PackageType[];
     setPackages(pkgs);
 
@@ -472,12 +491,16 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
         notes: notesObj,
         treatment_memo: memoObj,
         doctor_note: doctorNote || null,
-        // 진료종류 필드 저장 (T-20260430-foot-TREATMENT-LABEL)
+        // 진료종류 필드 저장 (T-20260430-foot-TREATMENT-LABEL) — DB 호환성 유지
         consultation_done: consultationDone,
         treatment_kind: treatmentKind || null,
         preconditioning_done: preconditioningDone,
         pododulle_done: pododulleDone,
         laser_minutes: laserMinutes,
+        // 진료 기록 간소화 필드 (T-20260504-foot-TREATMENT-SIMPLIFY)
+        assigned_counselor_id: assignedCounselorId || null,
+        treatment_category: treatmentCategory || null,
+        treatment_contents: treatmentContents.length > 0 ? treatmentContents : null,
       })
       .eq('id', checkIn.id);
     setSaving(false);
@@ -568,14 +591,6 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   const isConsultStage =
     checkIn.status === 'consultation' || checkIn.status === 'consult_waiting';
   const isDeskStage = checkIn.status === 'payment_waiting';
-  // 시술 메모 노출 조건: 관리(preconditioning) 이후 단계만 (이전 단계에서는 미노출)
-  const isTreatmentMemoVisible = (
-    checkIn.status === 'preconditioning' ||
-    checkIn.status === 'laser_waiting' ||
-    checkIn.status === 'laser' ||
-    checkIn.status === 'payment_waiting' ||
-    checkIn.status === 'done'
-  );
 
   const hasSettledItem = treatmentItems.some((i) => i.settled);
   const canMoveToPaymentWaiting =
@@ -1275,76 +1290,82 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             );
           })()}
 
-          {/* 진료종류 (T-20260430-foot-TREATMENT-LABEL) */}
+          {/* 진료 기록 — T-20260504-foot-TREATMENT-SIMPLIFY (간소화) */}
           <div className="space-y-3 rounded-md p-3 bg-emerald-50/40 ring-1 ring-emerald-100">
             <span className="text-sm font-semibold text-emerald-900 flex items-center gap-1">
-              <Stethoscope className="h-3.5 w-3.5" /> 진료종류
+              <Stethoscope className="h-3.5 w-3.5" /> 진료 기록
             </span>
 
-            {/* 상담유무 */}
-            <div className="flex items-center justify-between">
-              <Label className="text-sm text-emerald-900">상담유무</Label>
-              <button
-                onClick={() => setConsultationDone((v) => !v)}
-                className={cn(
-                  'h-8 px-3 rounded-md text-xs font-medium border transition',
-                  consultationDone
-                    ? 'bg-emerald-600 text-white border-emerald-600'
-                    : 'border-input hover:bg-muted text-muted-foreground',
-                )}
+            {/* 담당실장 */}
+            <div className="space-y-1.5">
+              <Label className="text-sm text-emerald-900">담당실장</Label>
+              <select
+                value={assignedCounselorId ?? ''}
+                onChange={(e) => setAssignedCounselorId(e.target.value || null)}
+                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 text-foreground"
               >
-                {consultationDone ? '✓ 상담함' : '상담 안함'}
-              </button>
+                <option value="">선택하세요</option>
+                {staffList.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
             </div>
 
-            {/* 치료종류 */}
+            {/* 치료구분 (단일선택) */}
             <div className="space-y-1.5">
-              <Label className="text-sm text-emerald-900">치료종류</Label>
-              <div className="grid grid-cols-3 gap-1.5">
-                {['가열레이저', '비가열레이저', '프컨+레이저', '수액', '상담', '기타'].map((kind) => (
+              <Label className="text-sm text-emerald-900">치료구분</Label>
+              <div className="flex gap-1.5">
+                {['발톱무좀', '내성발톱'].map((cat) => (
                   <button
-                    key={kind}
-                    onClick={() => setTreatmentKind((v) => (v === kind ? '' : kind))}
+                    key={cat}
+                    type="button"
+                    onClick={() => setTreatmentCategory((v) => (v === cat ? null : cat))}
                     className={cn(
-                      'h-9 rounded-md border text-xs font-medium transition',
-                      treatmentKind === kind
+                      'flex-1 h-9 rounded-md border text-sm font-medium transition',
+                      treatmentCategory === cat
                         ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
                         : 'border-input hover:bg-muted text-muted-foreground',
                     )}
                   >
-                    {kind}
+                    {treatmentCategory === cat ? '✓ ' : ''}{cat}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* 프컨 / 포돌 토글 */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPreconditioningDone((v) => !v)}
-                className={cn(
-                  'flex-1 h-9 rounded-md border text-xs font-medium transition',
-                  preconditioningDone
-                    ? 'bg-emerald-600 text-white border-emerald-600'
-                    : 'border-input hover:bg-muted text-muted-foreground',
-                )}
-              >
-                {preconditioningDone ? '✓ 프컨' : '프컨'}
-              </button>
-              <button
-                onClick={() => setPododulleDone((v) => !v)}
-                className={cn(
-                  'flex-1 h-9 rounded-md border text-xs font-medium transition',
-                  pododulleDone
-                    ? 'bg-emerald-600 text-white border-emerald-600'
-                    : 'border-input hover:bg-muted text-muted-foreground',
-                )}
-              >
-                {pododulleDone ? '✓ 포돌' : '포돌'}
-              </button>
+            {/* 치료내용 (중복선택) */}
+            <div className="space-y-1.5">
+              <Label className="text-sm text-emerald-900">
+                치료내용
+                <span className="ml-1.5 text-xs font-normal text-muted-foreground">중복선택</span>
+              </Label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {['가열', '비가열', '포돌로게', '수액'].map((content) => {
+                  const isChecked = treatmentContents.includes(content);
+                  return (
+                    <button
+                      key={content}
+                      type="button"
+                      onClick={() =>
+                        setTreatmentContents((prev) =>
+                          isChecked ? prev.filter((c) => c !== content) : [...prev, content],
+                        )
+                      }
+                      className={cn(
+                        'h-9 rounded-md border text-sm font-medium transition',
+                        isChecked
+                          ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+                          : 'border-input hover:bg-muted text-muted-foreground',
+                      )}
+                    >
+                      {isChecked ? '✓ ' : ''}{content}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* 레이저 시간 — T-20260502-foot-LASER-TIME-UNIT: 버튼식 선택 */}
+            {/* 레이저 시간 — T-20260502-foot-LASER-TIME-UNIT + 10분 추가 */}
             <div className="space-y-1.5">
               <Label className="text-sm text-emerald-900">레이저 시간</Label>
               <div className="flex flex-wrap gap-1.5">
@@ -1387,17 +1408,14 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
                 )}
               </div>
             </div>
-          </div>
 
-          {/* 시술 기록 — 관리(preconditioning) 이후 단계만 노출 */}
-          {isTreatmentMemoVisible && (
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
-                <Camera className="h-3 w-3" /> 시술 기록
+            {/* 메모 */}
+            <div className="space-y-1.5">
+              <Label className="text-sm text-emerald-900 flex items-center gap-1">
+                <Camera className="h-3 w-3" /> 메모
                 {checkIn.treatment_memo?.details && (
                   <span className="ml-1 text-xs font-normal text-teal-600 bg-teal-50 rounded px-1.5 py-0.5">저장됨</span>
                 )}
-                <span className="ml-auto text-xs font-normal text-muted-foreground">관리 이후 단계</span>
               </Label>
               <Textarea
                 value={treatmentMemo}
@@ -1407,7 +1425,7 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
                 className="text-sm"
               />
             </div>
-          )}
+          </div>
 
           <Button size="sm" onClick={saveNotes} disabled={saving} className="w-full">
             {saving ? '저장 중…' : '메모 저장'}
