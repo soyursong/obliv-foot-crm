@@ -376,7 +376,7 @@ function CreateCustomerDialog({
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [birthDate, setBirthDate] = useState('');
-  const [chartNumber, setChartNumber] = useState('');
+  // chart_number: DB 트리거 자동생성 (T-20260505-foot-CHART-NUMBER-AUTO)
   const [memo, setMemo] = useState('');
   const [referrerName, setReferrerName] = useState('');
   // 추천인 자동완성 — 기존 고객 검색
@@ -392,7 +392,6 @@ function CreateCustomerDialog({
       setName('');
       setPhone('');
       setBirthDate('');
-      setChartNumber('');
       setMemo('');
       setReferrerName('');
       setReferrerQuery('');
@@ -446,7 +445,7 @@ function CreateCustomerDialog({
       name: name.trim(),
       phone: phone.trim(),
       birth_date: birthDate.trim() || null,
-      chart_number: chartNumber.trim() || null,
+      // chart_number: DB BEFORE INSERT 트리거가 자동 채번 (F-XXXX 형식)
       memo: memo.trim() || null,
       referrer_id: referrerId || null,
       referrer_name: !referrerId && referrerName.trim() ? referrerName.trim() : null,
@@ -512,10 +511,7 @@ function CreateCustomerDialog({
                 maxLength={6}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>차트번호 <span className="text-xs text-muted-foreground font-normal">(선택)</span></Label>
-              <Input value={chartNumber} onChange={(e) => setChartNumber(e.target.value)} placeholder="예: F-0001" />
-            </div>
+            {/* 차트번호: DB 트리거 자동생성 — 등록 후 F-XXXX 자동 부여 */}
           </div>
           <div className="space-y-1.5">
             <Label>메모</Label>
@@ -734,7 +730,7 @@ function CustomerDetailSheet({
         name: name.trim(),
         phone: phone.trim(),
         birth_date: birthDate.trim() || null,
-        chart_number: chartNumber.trim() || null,
+        // chart_number: 자동 부여 후 변경 불가 (T-20260505-foot-CHART-NUMBER-AUTO)
         memo: memo.trim() || null,
         lead_source: leadSource.trim() || null,
         tm_memo: tmMemo.trim() || null,
@@ -810,7 +806,10 @@ function CustomerDetailSheet({
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">차트번호</Label>
-                    <Input value={chartNumber} onChange={(e) => setChartNumber(e.target.value)} placeholder="예: F-0001" />
+                    <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground select-all">
+                      {chartNumber || '—'}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">자동 부여됨 (변경 불가)</p>
                   </div>
                 </div>
               </div>
