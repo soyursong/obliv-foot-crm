@@ -13,3 +13,8 @@ export async function getClinic(): Promise<Clinic> {
   return cached;
 }
 
+/** 모듈 레벨 캐시를 초기화한다 (설정 변경 후 재조회 시 사용) */
+export function clearClinicCache(): void {
+  cached = null;
+}
+

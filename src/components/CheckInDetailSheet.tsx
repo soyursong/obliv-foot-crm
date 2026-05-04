@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
 import { ArrowLeft, ArrowRight, ChevronDown, Clock, CreditCard, Phone, FileText, Camera, Package, Plus, Stethoscope, Trash2, Bell } from 'lucide-react';
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
@@ -352,9 +353,17 @@ function ActivePackageSummary({
 
 // ─── 메인 컴포넌트 ────────────────────────────────────────────────────────────
 
+// 기본 레이저 시간 단위 (어드민 설정 미존재 시 fallback)
+const DEFAULT_LASER_TIME_UNITS = [12, 15, 20, 30];
+
 export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: Props) {
   const { profile } = useAuth();
+  const clinic = useClinic();
   const isAdmin = profile?.role === 'admin';
+  /** 클리닉 설정 기반 레이저 시간 단위 목록 */
+  const laserTimeUnits: number[] = clinic?.laser_time_units?.length
+    ? clinic.laser_time_units
+    : DEFAULT_LASER_TIME_UNITS;
   const [services, setServices] = useState<Service[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [history, setHistory] = useState<VisitHistory[]>([]);
@@ -1272,21 +1281,47 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
               </button>
             </div>
 
-            {/* 레이저 시간 */}
-            <div className="flex items-center gap-3">
-              <Label className="text-sm text-emerald-900 shrink-0">레이저 시간</Label>
-              <div className="flex items-center gap-1.5">
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  max={120}
-                  value={laserMinutes ?? ''}
-                  onChange={(e) => setLaserMinutes(e.target.value ? parseInt(e.target.value, 10) : null)}
-                  placeholder="0"
-                  className="w-20 text-sm h-8"
-                />
-                <span className="text-xs text-muted-foreground">분</span>
+            {/* 레이저 시간 — T-20260502-foot-LASER-TIME-UNIT: 버튼식 선택 */}
+            <div className="space-y-1.5">
+              <Label className="text-sm text-emerald-900">레이저 시간</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {laserTimeUnits.map((min) => (
+                  <button
+                    key={min}
+                    type="button"
+                    onClick={() => setLaserMinutes(laserMinutes === min ? null : min)}
+                    className={cn(
+                      'min-w-[52px] h-9 rounded-md border text-sm font-medium transition px-2',
+                      laserMinutes === min
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'border-input hover:bg-muted text-muted-foreground',
+                    )}
+                  >
+                    {min}분
+                  </button>
+                ))}
+                {/* 직접 입력 — 목록에 없는 값 처리 */}
+                {laserMinutes != null && !laserTimeUnits.includes(laserMinutes) && (
+                  <span className="inline-flex items-center h-9 rounded-md border border-blue-400 bg-blue-50 px-2.5 text-sm font-medium text-blue-700">
+                    {laserMinutes}분 (직접)
+                    <button
+                      type="button"
+                      onClick={() => setLaserMinutes(null)}
+                      className="ml-1.5 text-blue-400 hover:text-blue-700"
+                      title="취소"
+                    >✕</button>
+                  </span>
+                )}
+                {laserMinutes != null && (
+                  <button
+                    type="button"
+                    onClick={() => setLaserMinutes(null)}
+                    className="h-9 px-2 rounded-md border border-dashed border-gray-300 text-xs text-muted-foreground hover:bg-muted transition"
+                    title="레이저 시간 초기화"
+                  >
+                    초기화
+                  </button>
+                )}
               </div>
             </div>
           </div>
