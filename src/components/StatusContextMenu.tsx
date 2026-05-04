@@ -1,16 +1,17 @@
 import { useRef, useEffect } from 'react';
-import { STATUS_KO, stagesFor } from '@/lib/status';
+import { STATUS_KO, STATUS_FLAGS, STATUS_FLAG_LABEL, STATUS_FLAG_DOT, stagesFor } from '@/lib/status';
 import { cn } from '@/lib/utils';
-import type { CheckIn, CheckInStatus } from '@/lib/types';
+import type { CheckIn, CheckInStatus, StatusFlag } from '@/lib/types';
 
 interface Props {
   checkIn: CheckIn;
   position: { x: number; y: number } | null;
   onClose: () => void;
   onStatusChange: (checkIn: CheckIn, newStatus: CheckInStatus) => void;
+  onFlagChange?: (checkIn: CheckIn, flag: StatusFlag | null) => void;
 }
 
-export function StatusContextMenu({ checkIn, position, onClose, onStatusChange }: Props) {
+export function StatusContextMenu({ checkIn, position, onClose, onStatusChange, onFlagChange }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -30,13 +31,50 @@ export function StatusContextMenu({ checkIn, position, onClose, onStatusChange }
   const stages = stagesFor(checkIn.visit_type);
   const currentIdx = stages.indexOf(checkIn.status);
 
+  // 화면 경계 보정 — 메뉴가 아래/오른쪽으로 잘리지 않도록
+  const x = Math.min(position.x, window.innerWidth - 210);
+  const y = Math.min(position.y, window.innerHeight - 520);
+
   return (
     <div
       ref={ref}
-      className="fixed z-50 min-w-[160px] rounded-lg border bg-white shadow-lg py-1"
-      style={{ top: position.y, left: position.x }}
+      className="fixed z-50 min-w-[190px] rounded-lg border bg-white shadow-lg py-1"
+      style={{ top: y, left: x }}
     >
-      <div className="px-3 py-1.5 text-xs text-muted-foreground border-b">
+      {/* ── 상태 플래그 섹션 (상단 고정) ─────────────────────────────────────── */}
+      <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide border-b">
+        상태 플래그
+      </div>
+      {STATUS_FLAGS.map((flag) => {
+        const isActive = (checkIn.status_flag ?? 'white') === flag;
+        return (
+          <button
+            key={flag}
+            className={cn(
+              'flex w-full items-center gap-2 px-3 py-1.5 text-xs transition',
+              isActive
+                ? 'bg-teal-50 text-teal-700 font-semibold'
+                : 'hover:bg-muted/60 text-gray-700',
+            )}
+            onClick={() => {
+              if (!onFlagChange) { onClose(); return; }
+              // 이미 선택된 플래그 클릭 → null로 초기화 (정상)
+              onFlagChange(checkIn, isActive && flag !== 'white' ? null : flag);
+              onClose();
+            }}
+          >
+            <span className={cn('h-3 w-3 rounded-full shrink-0', STATUS_FLAG_DOT[flag])} />
+            {STATUS_FLAG_LABEL[flag]}
+            {isActive && <span className="ml-auto text-teal-500 text-[10px]">✓</span>}
+          </button>
+        );
+      })}
+
+      {/* ── 현 진행단계 변경 섹션 ─────────────────────────────────────────────── */}
+      <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide border-t border-b mt-1">
+        현 진행단계
+      </div>
+      <div className="px-3 py-1 text-xs text-muted-foreground">
         {checkIn.customer_name} — {STATUS_KO[checkIn.status]}
       </div>
       {stages.map((status, i) => {

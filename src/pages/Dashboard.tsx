@@ -61,7 +61,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { generateSlots } from '@/lib/schedule';
-import { STATUS_KO, VISIT_TYPE_KO } from '@/lib/status';
+import { STATUS_KO, VISIT_TYPE_KO, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
 import { formatAmount, maskPhoneTail } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { NewCheckInDialog } from '@/components/NewCheckInDialog';
@@ -73,7 +73,7 @@ import { CustomerHoverCard } from '@/components/CustomerHoverCard';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
-import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Customer, Reservation, Room, RoomFieldKey, Staff, VisitType } from '@/lib/types';
+import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Customer, Reservation, Room, RoomFieldKey, Staff, StatusFlag, VisitType } from '@/lib/types';
 
 type TabKey = 'all' | 'new' | 'returning';
 
@@ -245,6 +245,11 @@ function DraggableCard({
         ? 'border-orange-300 ring-1 ring-orange-100 bg-orange-50/60'
         : '';
 
+  // 상태 플래그 카드 배경색 — urgency가 없을 때만 적용
+  const flagBg = !urgency && checkIn.status_flag && checkIn.status_flag !== 'white'
+    ? STATUS_FLAG_CARD_BG[checkIn.status_flag]
+    : '';
+
   if (compact) {
     return (
       <div
@@ -267,7 +272,8 @@ function DraggableCard({
         }}
         title="드래그=이동 · 우클릭=고객차트·예약 · ⋮=상태변경 · 클릭=상세"
         className={cn(
-          'cursor-grab touch-none rounded border bg-white px-2 py-1.5 text-xs shadow-sm transition hover:shadow active:cursor-grabbing',
+          'cursor-grab touch-none rounded border px-2 py-1.5 text-xs shadow-sm transition hover:shadow active:cursor-grabbing',
+          flagBg || 'bg-white',
           urgency,
         )}
       >
@@ -370,7 +376,8 @@ function DraggableCard({
       }}
       title="드래그=이동 · 우클릭=고객차트·예약 · ⋮=상태변경 · 클릭=상세"
       className={cn(
-        'cursor-grab touch-none rounded-lg border bg-white p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing',
+        'cursor-grab touch-none rounded-lg border p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing',
+        flagBg || 'bg-white',
         urgency,
       )}
     >
@@ -2142,6 +2149,37 @@ export default function Dashboard() {
     toast.success(`${STATUS_KO[newStatus]}(으)로 변경`);
   };
 
+  /** 상태 플래그 변경 — T-20260502-foot-STATUS-COLOR-FLAG */
+  const handleFlagChange = async (ci: CheckIn, flag: StatusFlag | null) => {
+    if (ci.id.startsWith('temp-')) return;
+    // 낙관적 업데이트
+    setRows((curr) => curr.map((r) => r.id === ci.id ? { ...r, status_flag: flag } : r));
+    const now = new Date().toISOString();
+    // audit entry (JSONB append)
+    const historyEntry = { flag, changed_at: now, changed_by: profile?.id ?? null };
+    // 1) status_flag 업데이트
+    const { error } = await supabase
+      .from('check_ins')
+      .update({ status_flag: flag })
+      .eq('id', ci.id);
+    if (error) {
+      // 롤백
+      setRows((curr) => curr.map((r) => r.id === ci.id ? { ...r, status_flag: ci.status_flag } : r));
+      toast.error(`플래그 변경 실패: ${error.message}`);
+      return;
+    }
+    // 2) audit: status_flag_history JSONB array append (|| 연산자)
+    await supabase
+      .from('check_ins')
+      .update({
+        status_flag_history: (ci.status_flag_history ?? []).concat([historyEntry]),
+      })
+      .eq('id', ci.id)
+      .then(() => {/* 이력 저장 실패해도 플래그 변경은 유지 */});
+    const label = flag ? STATUS_FLAG_LABEL[flag] : '정상';
+    toast.success(`플래그: ${label}`);
+  };
+
   const handleReservationCheckIn = async (res: Reservation) => {
     if (!clinic) return;
     // B-3: 프론트 중복 방지 — 이미 체크인된 예약이면 차단 (DB UNIQUE 외 사용자 피드백)
@@ -2997,6 +3035,7 @@ export default function Dashboard() {
         position={contextMenu?.pos ?? null}
         onClose={() => setContextMenu(null)}
         onStatusChange={handleContextStatusChange}
+        onFlagChange={handleFlagChange}
       />
 
       <CustomerQuickMenu
