@@ -1,5 +1,19 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-04 deploy-ready — T-20260502-foot-CARD-HOVER-INFO
+
+> **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 KST
+>
+> **고객 성함 호버 간단정보 팝업 — deploy-ready**
+> - 커밋: 32fb44a (main) / 빌드 ✓ (tsc + vite, 0 errors)
+> - 신규 파일: `src/components/CustomerHoverCard.tsx`
+> - 수정 파일: `src/pages/Dashboard.tsx`
+> - DB 변경: 없음
+> - 기능: 대시보드 카드 성함 hover 280ms → 팝업 (차트번호/성별/나이/초진재진/예약시간/전화/고객메모/치료메모)
+> - supervisor QA 요청
+
+---
+
 ## 2026-05-04 deploy-ready — T-20260502-foot-DUTY-ROSTER
 
 > **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 KST
@@ -1245,3 +1259,10 @@ QA_REPORT.md 참조
 - DB 마이그레이션: 20260504_doctor_treatment_flow_up.sql + down.sql 완비 → ops 적용 대기
 - 외부 블로커: PRESCREEN-CHECKLIST / CONSENT-FORMS (spec_pending_input, deadline 5/07)
 - 상태: IDLE — 신규 approved 티켓 없음
+
+## 2026-05-04 — dev-foot | deploy-ready | T-20260502-foot-DUTY-ROSTER (QA 재통과)
+- supervisor QA FAIL → 수정 1건: 20260504000003_duty_roster.down.sql 생성
+- `DROP TABLE IF EXISTS duty_roster CASCADE` — RLS 정책·인덱스 자동 제거
+- commit: d2adde2, branch: main, push: ✅
+- QA 전체 항목 PASS (빌드·기존기능·DB호환·RLS·복수원장님 드롭다운·visitDate 이중검증)
+- status: deploy-ready
