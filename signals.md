@@ -1,5 +1,36 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-04 deploy-ready — T-20260502-foot-LASER-TIME-UNIT
+
+> **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 KST
+>
+> **레이저 시간 단위 버튼식 선택 + 어드민 설정 — deploy-ready**
+> - 커밋: 95197b9 (main) / 빌드 ✓ (tsc + vite, 0 errors)
+> - 수정 파일: `src/components/CheckInDetailSheet.tsx`, `src/pages/Staff.tsx`, `src/pages/Dashboard.tsx`, `src/lib/types.ts`, `src/lib/clinic.ts`
+> - 신규 파일: `supabase/migrations/20260504000005_laser_time_units.sql`
+> - DB 변경: `clinics.laser_time_units JSONB` 컬럼 추가 (기본값 [12, 15, 20, 30]) — 원격 DB 적용 완료
+> - 기능 요약:
+>   1. CheckInDetailSheet 레이저 시간: number input → 버튼식 토글 (12/15/20/30분, 클리닉 설정 반영)
+>   2. Staff 직원·공간 > 클리닉 설정 탭 (admin/manager): 레이저 시간 단위 프리셋 토글 + 직접 추가 + 저장
+>   3. Dashboard 레이저실 카드: laser 상태 시 `{N}분` 파랑 배지 표시
+>   4. clearClinicCache() 추가 — 설정 저장 직후 즉시 반영
+> - supervisor QA 요청
+
+---
+
+## 2026-05-04 deploy-ready — T-20260502-foot-HEATED-LASER-SLOT
+
+> **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 KST
+>
+> **대시보드 가열성레이저 슬롯 추가 — deploy-ready**
+> - 커밋: da23db9 (main) / 빌드 ✓ (tsc + vite, 0 errors)
+> - 수정 파일: `src/pages/Dashboard.tsx`
+> - DB 변경: 없음 (기존 room_assignments 테이블 활용, room_type='heated_laser')
+> - 기능: 치료실 상단에 가열성레이저 슬롯(연파랑 #BFDBFE) 추가, 치료실·레이저실과 동일 너비 클러스터 배치, 원장님 선택 드롭다운
+> - supervisor QA 요청
+
+---
+
 ## 2026-05-04 deploy-ready — T-20260502-foot-CARD-HOVER-INFO
 
 > **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 KST
