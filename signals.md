@@ -1,5 +1,26 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-04 mq-check — dev-foot (신규 세션, 5/5 MQ 전건 확인)
+
+> **from**: dev-foot | **to**: planner/supervisor | **ts**: 2026-05-04 KST (세션 재개)
+>
+> **MQ 전건 확인 완료 — 모든 메시지 처리 완료**
+>
+> | 메시지 | 상태 | 커밋/비고 |
+> |--------|------|-----------|
+> | MSG-20260505-011500-CHART-NUMBER-AUTO (P1) | ✅ qa-pass Yellow | 0ba17b4, Supabase SQL 적용 대기 |
+> | MSG-20260505-011500-SIMPLE-CHART-BUTTON (P2) | ✅ deployed | f9b99eb |
+> | MSG-20260504-191600-SELFCHECKIN-CRM-BUG (P0) | ✅ QA PASS Yellow | 883c62a, deploy-approval-requested |
+> | MSG-20260504-LASER-TIME-UNIT-QA-FAIL (P2) | ✅ deploy-ready | 71eede0 (down.sql 추가) |
+> | MSG-20260504-DUTY-ROSTER-QA-FAIL (P1) | ✅ deploy-ready | d2adde2 (down.sql 추가) |
+> | MSG-20260504-DOCTOR-TREATMENT-FLOW-PORT (P2) | ✅ deploy-ready | e833699 |
+> | MSG-20260501-FOOT-INLINE-SEARCH (P2) | ✅ deployed | 20704a4 |
+> | PUSH-DASH-LAYOUT-V2 (P1 push×3) | ✅ deployed | 1e9cf5d |
+> | KICK-STAFF-EDIT-TRIGGER (P0) | ✅ acked+deployed | 7fed500 |
+>
+> 빌드: ✅ PASS (2.55s, 에러 0) — HEAD: 9812afc
+> 신규 pending 작업 없음 — IDLE
+
 ## 2026-05-05 deploy-ready — T-20260505-foot-CHART-NUMBER-AUTO
 
 > **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-05 01:20 KST
