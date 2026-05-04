@@ -69,6 +69,7 @@ import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
 import { PaymentDialog } from '@/components/PaymentDialog';
 import { StatusContextMenu } from '@/components/StatusContextMenu';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
+import { CustomerHoverCard } from '@/components/CustomerHoverCard';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
@@ -89,6 +90,10 @@ interface CardHandlers {
   onNameContext: (ci: CheckIn, e: React.MouseEvent) => void;
 }
 const CardHandlersCtx = createContext<CardHandlers | null>(null);
+
+// ── 예약시간 맵 컨텍스트 (reservation_id → reservation_time) ──────────────────
+/** DraggableCard에서 useContext로 읽어 CustomerHoverCard에 예약시간 전달 */
+const ResvTimeMapCtx = createContext<Map<string, string>>(new Map());
 
 interface RoomAssignment {
   id: string;
@@ -216,6 +221,8 @@ function DraggableCard({
   const consentMap = useContext(ConsentMapCtx);
   const consentEntry = consentMap.get(checkIn.id);
   const cardHandlers = useContext(CardHandlersCtx);
+  const resvTimeMap = useContext(ResvTimeMapCtx);
+  const reservationTime = checkIn.reservation_id ? (resvTimeMap.get(checkIn.reservation_id) ?? null) : null;
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: checkIn.id,
     data: { checkIn },
@@ -267,17 +274,16 @@ function DraggableCard({
         <div className="flex items-center justify-between gap-1">
           <div className="flex items-center gap-1 truncate">
             <GripVertical className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-            <span
-              className="font-bold text-sm truncate cursor-context-menu"
-              title="우클릭/롱프레스 → 고객차트·예약"
+            <CustomerHoverCard
+              checkIn={checkIn}
+              reservationTime={reservationTime}
+              compact
               onContextMenu={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 cardHandlers?.onNameContext(checkIn, e);
               }}
-            >
-              {checkIn.customer_name?.trim() || '이름없음'}
-            </span>
+            />
             {checkIn.queue_number != null && (
               <span className="text-[10px] text-teal-600 shrink-0">#{checkIn.queue_number}</span>
             )}
@@ -365,17 +371,15 @@ function DraggableCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <GripVertical className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-          <span
-            className="text-base font-bold cursor-context-menu"
-            title="우클릭/롱프레스 → 고객차트·예약"
+          <CustomerHoverCard
+            checkIn={checkIn}
+            reservationTime={reservationTime}
             onContextMenu={(e) => {
               e.preventDefault();
               e.stopPropagation();
               cardHandlers?.onNameContext(checkIn, e);
             }}
-          >
-            {checkIn.customer_name?.trim() || '이름없음'}
-          </span>
+          />
           {checkIn.queue_number != null && (
             <span className="text-xs text-teal-600">#{checkIn.queue_number}</span>
           )}
@@ -1248,6 +1252,14 @@ export default function Dashboard() {
   const [calendarMonth, setCalendarMonth] = useState<Date>(() => new Date());
   const [quickResvDraft, setQuickResvDraft] = useState<QuickResvDraft | null>(null);
   const [timelineReservations, setTimelineReservations] = useState<Reservation[]>([]);
+  /** reservation_id → reservation_time (HH:MM:SS) — CustomerHoverCard 예약시간 표시용 */
+  const resvTimeMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of timelineReservations) {
+      if (r.id && r.reservation_time) m.set(r.id, r.reservation_time);
+    }
+    return m;
+  }, [timelineReservations]);
   const calendarRef = useRef<HTMLDivElement>(null);
   const recentlyUpdated = useRef<Set<string>>(new Set());
   const navStateConsumed = useRef(false);
@@ -2831,6 +2843,7 @@ export default function Dashboard() {
               /* ── 일반 모드: 카드 드래그 DndContext ── */
               <CardHandlersCtx.Provider value={cardHandlersValue}>
               <ConsentMapCtx.Provider value={consentMap}>
+              <ResvTimeMapCtx.Provider value={resvTimeMap}>
               <DndContext
                 sensors={sensors}
                 collisionDetection={customCollision}
@@ -2849,6 +2862,7 @@ export default function Dashboard() {
                   {dragging && <DraggableCard checkIn={dragging} compact />}
                 </DragOverlay>
               </DndContext>
+              </ResvTimeMapCtx.Provider>
               </ConsentMapCtx.Provider>
               </CardHandlersCtx.Provider>
             )}
