@@ -58,6 +58,7 @@ interface ReservationDraft {
   phone: string;
   visit_type: VisitType;
   memo: string;
+  booking_memo: string;  // T-20260504-foot-MEMO-RESTRUCTURE: 예약 경로 확인용
   existingId?: string;
   service_id?: string | null;
   customer_id?: string | null;
@@ -114,6 +115,7 @@ export default function Reservations() {
       phone: phone ?? '',
       visit_type,
       memo: '',
+      booking_memo: '',
       customer_id: customer_id ?? null,
     });
   }, [clinic, location.state]);
@@ -239,6 +241,7 @@ export default function Reservations() {
       phone: '',
       visit_type: 'returning',
       memo: '',
+      booking_memo: '',
     });
   };
 
@@ -251,6 +254,7 @@ export default function Reservations() {
       phone: r.customer_phone ?? '',
       visit_type: r.visit_type,
       memo: r.memo ?? '',
+      booking_memo: r.booking_memo ?? '',
     });
     setDetail(null);
   };
@@ -727,6 +731,8 @@ function ReservationEditor({
       visit_type: state.visit_type,
       service_id: state.service_id || null,
       memo: state.memo.trim() || null,
+      // T-20260504-foot-MEMO-RESTRUCTURE: 예약 경로 확인용 메모
+      booking_memo: state.booking_memo?.trim() || null,
     };
 
     // 수정 전 원본 캡처 (감사 로그용)
@@ -889,9 +895,10 @@ function ReservationEditor({
               </select>
             </div>
           )}
+          {/* T-20260504-foot-MEMO-RESTRUCTURE: 예약메모 / 고객메모 분리 */}
           <div className="space-y-1.5">
-            <Label>메모</Label>
-            <Textarea value={state.memo} onChange={(e) => update('memo', e.target.value)} rows={3} />
+            <Label>예약메모 <span className="text-muted-foreground font-normal text-xs">(예약 경로 확인용)</span></Label>
+            <Textarea value={state.booking_memo ?? ''} onChange={(e) => update('booking_memo', e.target.value)} rows={2} placeholder="예: 인스타그램 광고, 지인 소개, 인바운드 전화 등" className="text-sm" />
           </div>
         </div>
         <DialogFooter>
@@ -1094,9 +1101,20 @@ function ReservationDetail({
               {reservation.customer_phone} (뒤 4자리 ···{maskPhoneTail(reservation.customer_phone)})
             </div>
           )}
-          {reservation.memo && (
-            <div className="rounded border bg-muted/30 p-2 whitespace-pre-wrap">
-              {reservation.memo}
+          {/* T-20260504-foot-MEMO-RESTRUCTURE: booking_memo 우선, 없으면 memo */}
+          {(reservation.booking_memo || reservation.memo) && (
+            <div className="space-y-1">
+              {reservation.booking_memo && (
+                <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs">
+                  <span className="text-amber-700 font-medium">예약경로: </span>
+                  <span className="whitespace-pre-wrap">{reservation.booking_memo}</span>
+                </div>
+              )}
+              {reservation.memo && !reservation.booking_memo && (
+                <div className="rounded border bg-muted/30 p-2 whitespace-pre-wrap text-xs">
+                  {reservation.memo}
+                </div>
+              )}
             </div>
           )}
           {logs.length > 0 && (

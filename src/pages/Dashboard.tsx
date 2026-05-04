@@ -598,8 +598,9 @@ function ReservationCard({
           {VISIT_TYPE_KO[reservation.visit_type]}
         </Badge>
       </div>
-      {reservation.memo && (
-        <p className="text-xs text-muted-foreground truncate">{reservation.memo}</p>
+      {/* T-20260504-foot-MEMO-RESTRUCTURE: booking_memo 우선, 없으면 memo */}
+      {(reservation.booking_memo || reservation.memo) && (
+        <p className="text-xs text-muted-foreground truncate">{reservation.booking_memo ?? reservation.memo}</p>
       )}
       <button
         onClick={() => onCheckIn(reservation)}

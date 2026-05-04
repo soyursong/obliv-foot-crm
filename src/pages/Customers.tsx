@@ -595,6 +595,7 @@ function CustomerDetailSheet({
   const [birthDate, setBirthDate] = useState('');
   const [chartNumber, setChartNumber] = useState('');
   const [memo, setMemo] = useState('');
+  const [customerMemo, setCustomerMemo] = useState(''); // T-20260504-foot-MEMO-RESTRUCTURE
   const [leadSource, setLeadSource] = useState<string>('');
   const [tmMemo, setTmMemo] = useState('');
   const [referrerName, setReferrerName] = useState('');
@@ -616,6 +617,7 @@ function CustomerDetailSheet({
     setBirthDate(customer.birth_date ?? '');
     setChartNumber(customer.chart_number ?? '');
     setMemo(customer.memo ?? '');
+    setCustomerMemo(customer.customer_memo ?? ''); // T-20260504-foot-MEMO-RESTRUCTURE
     setLeadSource(customer.lead_source ?? '');
     setTmMemo(customer.tm_memo ?? '');
     setReferrerName(customer.referrer_name ?? '');
@@ -732,6 +734,7 @@ function CustomerDetailSheet({
         birth_date: birthDate.trim() || null,
         // chart_number: 자동 부여 후 변경 불가 (T-20260505-foot-CHART-NUMBER-AUTO)
         memo: memo.trim() || null,
+        customer_memo: customerMemo.trim() || null, // T-20260504-foot-MEMO-RESTRUCTURE
         lead_source: leadSource.trim() || null,
         tm_memo: tmMemo.trim() || null,
         referrer_name: referrerName.trim() || null,
@@ -1014,38 +1017,38 @@ function CustomerDetailSheet({
             )}
           </ChartSection>
 
-          {/* 섹션 7 — 예약메모 */}
-          <ChartSection title="예약메모">
-            {reservations.filter((r) => r.memo).length === 0 ? (
+          {/* 섹션 7 — 예약메모 (T-20260504-foot-MEMO-RESTRUCTURE) */}
+          <ChartSection title="예약메모 (예약 경로 확인)">
+            {reservations.filter((r) => r.booking_memo || r.memo).length === 0 ? (
               <div className="text-xs text-muted-foreground py-1">메모 없음</div>
             ) : (
               <div className="space-y-1.5">
-                {reservations.filter((r) => r.memo).map((r) => (
-                  <div key={r.id} className="rounded bg-muted/30 px-2 py-1.5 text-xs">
+                {reservations.filter((r) => r.booking_memo || r.memo).map((r) => (
+                  <div key={r.id} className="rounded bg-amber-50 border border-amber-100 px-2 py-1.5 text-xs">
                     <div className="text-muted-foreground mb-0.5">{r.reservation_date} {r.reservation_time.slice(0, 5)}</div>
-                    <div>{r.memo}</div>
+                    <div>{r.booking_memo ?? r.memo}</div>
                   </div>
                 ))}
               </div>
             )}
           </ChartSection>
 
-          {/* 섹션 8 — 고객메모 */}
-          <ChartSection title="고객메모" defaultOpen>
+          {/* 섹션 8 — 고객메모 (T-20260504-foot-MEMO-RESTRUCTURE) */}
+          <ChartSection title="고객메모 (성향·주차)" defaultOpen>
             {editing ? (
               <div className="space-y-1">
                 <Textarea
-                  value={memo}
-                  onChange={(e) => setMemo(e.target.value)}
+                  value={customerMemo}
+                  onChange={(e) => setCustomerMemo(e.target.value)}
                   rows={2}
-                  placeholder="진단서 발급 필요, 보험 청구 등..."
+                  placeholder="고객 성향, 특이사항, 주차 정보 등"
                   className="text-xs"
                 />
               </div>
             ) : (
               <div className="text-xs">
-                {customer.memo ? (
-                  <div className="whitespace-pre-wrap text-muted-foreground">{customer.memo}</div>
+                {(customer.customer_memo ?? customer.memo) ? (
+                  <div className="whitespace-pre-wrap text-muted-foreground">{customer.customer_memo ?? customer.memo}</div>
                 ) : (
                   <span className="text-muted-foreground">메모 없음</span>
                 )}
