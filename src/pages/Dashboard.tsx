@@ -1598,6 +1598,11 @@ export default function Dashboard() {
     handleStaffAssign(roomName, 'consultation', staffId, staffName);
   }, [handleStaffAssign]);
 
+  // T-20260502-foot-HEATED-LASER-SLOT: 가열성레이저 슬롯 원장님 배정 핸들러
+  const handleHeatedLaserDoctorChange = useCallback((staffId: string | null, staffName: string | null) => {
+    handleStaffAssign('가열성레이저', 'heated_laser', staffId, staffName);
+  }, [handleStaffAssign]);
+
   useEffect(() => {
     fetchCheckIns();
     fetchRooms();
@@ -2650,7 +2655,7 @@ export default function Dashboard() {
     experienceWaiting, laserWaiting, paymentTotal, doneTotal, dayPayments, doneCount,
     getStageStart, getPkgLabel, swapSortOrder,
     handleReservationCheckIn, handleCardClick, handleCardContext,
-    handleDoctorChange, handleConsultantChange, handleTherapistChange,
+    handleDoctorChange, handleConsultantChange, handleTherapistChange, handleHeatedLaserDoctorChange,
   ]);
 
   return (
@@ -2856,7 +2861,67 @@ export default function Dashboard() {
                 }}
               >
                 <div className="flex gap-2 h-full min-w-max">
-                  {groupOrder.map((gid) => renderKanbanGroup(gid))}
+                  {/* T-20260502-foot-HEATED-LASER-SLOT: 치료실 상단에 가열성레이저 슬롯 클러스터 */}
+                  {groupOrder.map((gid) => {
+                    // 레이저실은 치료실 클러스터 내부에서 렌더링 — 별도 표시 생략
+                    if (gid === 'laser_rooms') return null;
+
+                    if (gid === 'treatment_rooms') {
+                      const hasTreatment = treatmentRooms.length > 0;
+                      const hasLaser = laserRooms.length > 0 && groupOrder.includes('laser_rooms');
+                      if (!hasTreatment && !hasLaser) return null;
+
+                      const heatedAssignment = assignments.find(
+                        (a) => a.room_name === '가열성레이저' && a.room_type === 'heated_laser',
+                      );
+                      const currentDoctorId = heatedAssignment?.staff_id ?? null;
+                      const currentDoctorName = heatedAssignment?.staff_name ?? null;
+
+                      return (
+                        <div key="treatment_laser_cluster" className="flex flex-col gap-1.5 shrink-0">
+                          {/* 가열성레이저 슬롯 — 연파랑, 원장님 선택, 치료실+레이저실 폭에 맞춤 */}
+                          <div className="rounded-lg border border-blue-200 overflow-hidden shadow-sm">
+                            <div className="flex items-center justify-between px-3 py-2 bg-[#BFDBFE]">
+                              <div className="flex items-center gap-2">
+                                <div className="h-2.5 w-2.5 rounded-full bg-blue-400 shrink-0" />
+                                <span className="text-xs font-bold text-blue-900 tracking-wide">가열성레이저</span>
+                                {currentDoctorName && (
+                                  <span className="text-xs text-blue-700 font-medium">
+                                    — {currentDoctorName} 원장님
+                                  </span>
+                                )}
+                              </div>
+                              <select
+                                value={currentDoctorId ?? ''}
+                                onChange={(e) => {
+                                  const id = e.target.value || null;
+                                  const name = id
+                                    ? doctors.find((d) => d.id === id)?.name ?? null
+                                    : null;
+                                  handleHeatedLaserDoctorChange(id, name);
+                                }}
+                                className="text-xs h-6 border border-blue-300 rounded bg-white/90 px-1 text-blue-900 min-w-[90px] cursor-pointer hover:border-blue-400 transition"
+                              >
+                                <option value="">원장님 선택</option>
+                                {doctors.map((d) => (
+                                  <option key={d.id} value={d.id}>
+                                    {d.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          {/* 치료실 + 레이저실 가로 배치 */}
+                          <div className="flex gap-2">
+                            {hasTreatment && renderKanbanGroup('treatment_rooms')}
+                            {hasLaser && renderKanbanGroup('laser_rooms')}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return renderKanbanGroup(gid);
+                  })}
                 </div>
                 <DragOverlay>
                   {dragging && <DraggableCard checkIn={dragging} compact />}
