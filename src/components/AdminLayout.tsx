@@ -15,6 +15,7 @@ import {
   X,
   ClipboardList,
   Stethoscope,
+  BookOpen,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -39,6 +40,7 @@ const NAV_ITEMS: {
   { to: '/admin/history', label: '일일 이력', icon: ClipboardList },
   { to: '/admin/stats', label: '통계', icon: BarChart3, roles: ['admin', 'manager', 'part_lead'] },
   { to: '/admin/services', label: '서비스관리', icon: Stethoscope, roles: ['admin', 'manager'] },
+  { to: '/admin/doctor-tools', label: '진료 도구', icon: BookOpen, roles: ['admin', 'manager'] },
   { to: '/admin/accounts', label: '계정관리', icon: ShieldCheck, roles: ['admin'] },
 ];
 

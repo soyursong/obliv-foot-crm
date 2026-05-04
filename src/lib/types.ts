@@ -186,6 +186,14 @@ export interface CheckIn {
   preconditioning_done: boolean;
   pododulle_done: boolean;
   laser_minutes: number | null;
+  /** 의사 진료 워크플로우 — T-20260502-foot-DOCTOR-TREATMENT-FLOW */
+  prescription_items: unknown | null;
+  document_content: string | null;
+  doctor_confirm_charting: boolean;
+  doctor_confirm_prescription: boolean;
+  doctor_confirm_document: boolean;
+  doctor_confirmed_at: string | null;
+  healer_laser_confirm: boolean;
 }
 
 export interface Package {
