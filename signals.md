@@ -1,5 +1,32 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-04 deploy-ready — T-20260504-foot-TABLET-LASER-ROOM-SELECT
+
+> **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 21:10 KST
+>
+> **태블릿 호환성 확인 + 레이저실 번호 선택 기능 수정 — deploy-ready**
+>
+> ### 구현 내용
+> **레이저실 번호 선택 (핵심 기능)**
+> - `StatusContextMenu`: 레이저 상태 버튼 클릭 시 DB 레이저실 목록 서브메뉴 인라인 표시 (ChevronRight 토글)
+> - 서브메뉴에서 레이저실 선택 → `handleContextLaserStatusChange` 호출 → `status='laser'` + `laser_room` 동시 DB 업데이트
+> - 레이저실이 없는 경우엔 기존 방식(즉시 변경) 유지, 레이저실 있으면 "실 미배정" 옵션도 제공
+> - `Dashboard.tsx`: `laserRooms.map(r=>r.name)` → StatusContextMenu에 전달 (현장 레이저실 실시간 반영)
+>
+> **태블릿 호환성**
+> - `StatusContextMenu`: `touchstart` 이벤트 리스너 추가 → 메뉴 외부 탭 시 정상 닫힘
+> - 메뉴 버튼 높이 `py-1.5 text-xs` → `py-2.5 text-sm` (터치 타겟 ~40px)
+> - `DraggableCard` MoreVertical(⋮) 버튼: `min-w/h-[36px]` + `onPointerDown` 전파 차단 (드래그 오인식 방지)
+> - `AdminLayout` 햄버거/닫기 버튼: `min-h/w-[36px]` → `[44px]` (Apple HIG 44px 준수)
+>
+> ### 검증
+> - `npm run build` PASS (tsc + vite, 에러 0, 2.56s)
+> - commit `64241a6`, push origin/main 완료
+> - DB 스키마 변경 없음 (기존 `laser_room` 컬럼 활용)
+> - supervisor QA 요청
+
+---
+
 ## 2026-05-04 deploy-ready — T-20260502-foot-HEATED-LASER-SLOT (QA FAIL 보완 재완료)
 
 > **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 20:30 KST
