@@ -141,7 +141,7 @@ const KANBAN_GROUP_LABELS: Record<KanbanGroupId, string> = {
   experience_queue: '선체험',
   consult_waiting_col: '상담대기',
   consult_rooms: '상담실',
-  waiting_columns: '치료/레이저대기',
+  waiting_columns: '치료/레이저/힐러대기',
   treatment_rooms: '치료실',
   desk_section: '데스크',
   laser_rooms: '레이저실',
@@ -1661,6 +1661,7 @@ export default function Dashboard() {
     treatment_waiting: 20,
     preconditioning: 30,
     laser_waiting: 15,
+    healer_waiting: 15,
     laser: 20,
     payment_waiting: 15,
   };
@@ -1894,6 +1895,35 @@ export default function Dashboard() {
       });
       setStageStartMap((prev) => new Map(prev).set(row.id, now));
       toastWithUndo('레이저대기로 이동', row);
+    } else if (target === 'healer_waiting') {
+      // T-20260502-foot-HEALER-WAIT-SLOT
+      if (row.status === 'healer_waiting') return;
+      markRecentlyUpdated(row.id);
+      let prevRow: CheckIn | undefined;
+      setRows((curr) => {
+        prevRow = curr.find((r) => r.id === row.id);
+        return curr.map((r) =>
+          r.id === row.id ? { ...r, status: 'healer_waiting' as CheckInStatus } : r,
+        );
+      });
+      const { error } = await supabase
+        .from('check_ins')
+        .update({ status: 'healer_waiting' })
+        .eq('id', row.id);
+      if (error) {
+        setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
+        toast.error(`이동 실패: ${error.message}`);
+        return;
+      }
+      const now = new Date().toISOString();
+      await supabase.from('status_transitions').insert({
+        check_in_id: row.id,
+        clinic_id: row.clinic_id,
+        from_status: row.status,
+        to_status: 'healer_waiting',
+      });
+      setStageStartMap((prev) => new Map(prev).set(row.id, now));
+      toastWithUndo('힐러대기로 이동', row);
     } else if (target === 'returning_exam' || target === 'returning_treatment') {
       const needsExam = target === 'returning_exam';
       markRecentlyUpdated(row.id);
@@ -2234,6 +2264,8 @@ export default function Dashboard() {
   const experienceWaiting = (byStatus['registered'] ?? []).filter((ci) => ci.visit_type === 'experience');
   // 레이저대기: laser_waiting 상태 (4/30 표준 v2 — 이전 'laser' + no room 방식에서 전환)
   const laserWaiting = filtered.filter((ci) => ci.status === 'laser_waiting');
+  // 힐러대기: healer_waiting 상태 (T-20260502-foot-HEALER-WAIT-SLOT)
+  const healerWaiting = filtered.filter((ci) => ci.status === 'healer_waiting');
 
   const paymentTotal = Array.from(dayPayments.values()).reduce((s, v) => s + v, 0);
   const doneTotal = (byStatus['done'] ?? []).reduce((s, ci) => s + (dayPayments.get(ci.id) ?? 0), 0);
@@ -2457,6 +2489,28 @@ export default function Dashboard() {
                 highlight="text-rose-700"
               >
                 {laserWaiting.map((ci) => (
+                  <DraggableCard
+                    key={ci.id}
+                    checkIn={ci}
+                    compact
+                    stageStart={getStageStart(ci)}
+                    packageLabel={getPkgLabel(ci)}
+                    onClick={() => handleCardClick(ci)}
+                    onContextMenu={(e) => handleCardContext(ci, e)}
+                  />
+                ))}
+              </DroppableColumn>
+            </div>
+            {/* T-20260502-foot-HEALER-WAIT-SLOT: 힐러대기 슬롯 — 레이저대기 옆 세로 배치 */}
+            <div className="w-40">
+              <DroppableColumn
+                id="healer_waiting"
+                label="힐러대기"
+                count={healerWaiting.length}
+                className="h-full"
+                highlight="text-violet-700"
+              >
+                {healerWaiting.map((ci) => (
                   <DraggableCard
                     key={ci.id}
                     checkIn={ci}

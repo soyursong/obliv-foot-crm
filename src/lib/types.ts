@@ -13,6 +13,7 @@ export type CheckInStatus =
   | 'treatment_waiting'
   | 'preconditioning'
   | 'laser_waiting'     // 레이저실 입실 전 대기 (4/30 표준 v2 신규)
+  | 'healer_waiting'   // 힐러대기 — 힐러 시술 전 대기 (T-20260502-foot-HEALER-WAIT-SLOT)
   | 'laser'
   | 'payment_waiting'   // 시술 후 수납대기 (의미 변경: 상담 후 결제 → 레이저 후 수납)
   | 'done'

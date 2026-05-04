@@ -9,6 +9,7 @@ export const STATUS_KO: Record<CheckInStatus, string> = {
   treatment_waiting: '관리대기',
   preconditioning: '관리',
   laser_waiting: '레이저대기',
+  healer_waiting: '힐러대기',
   laser: '레이저',
   payment_waiting: '수납대기',
   done: '완료',
@@ -26,6 +27,7 @@ export const NEW_PATIENT_STAGES: CheckInStatus[] = [
   'treatment_waiting',   // 관리대기
   'preconditioning',     // 관리
   'laser_waiting',       // 레이저대기
+  'healer_waiting',      // 힐러대기
   'laser',               // 레이저
   'payment_waiting',     // 수납대기
   'done',                // 완료
@@ -36,6 +38,7 @@ export const RETURNING_PATIENT_STAGES: CheckInStatus[] = [
   'treatment_waiting',   // 관리대기
   'preconditioning',     // 관리
   'laser_waiting',       // 레이저대기
+  'healer_waiting',      // 힐러대기
   'laser',               // 레이저
   'payment_waiting',     // 수납대기
   'done',                // 완료
@@ -65,6 +68,7 @@ export const STATUS_COLOR: Record<CheckInStatus, string> = {
   treatment_waiting: 'bg-teal-100 text-teal-800',
   preconditioning: 'bg-teal-400 text-white',
   laser_waiting: 'bg-rose-100 text-rose-700',
+  healer_waiting: 'bg-violet-100 text-violet-700',
   laser: 'bg-emerald-500 text-white',
   payment_waiting: 'bg-amber-100 text-amber-800',
   done: 'bg-gray-200 text-gray-500',
