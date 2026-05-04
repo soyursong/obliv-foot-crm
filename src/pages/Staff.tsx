@@ -939,7 +939,8 @@ function PerformanceTab({ clinic }: { clinic: Clinic }) {
 // 클리닉 설정 탭 — T-20260502-foot-LASER-TIME-UNIT
 // ============================================================
 
-const DEFAULT_LASER_TIME_UNITS = [12, 15, 20, 30];
+// T-20260504-foot-TREATMENT-SIMPLIFY: 10분 추가, 12분 제거 (현장 요청)
+const DEFAULT_LASER_TIME_UNITS = [10, 15, 20, 30];
 const LASER_TIME_PRESETS = [10, 12, 15, 18, 20, 25, 30, 40, 45, 60];
 
 function ClinicSettingsTab({ clinic, onSaved }: { clinic: Clinic; onSaved: () => void }) {

@@ -250,6 +250,10 @@ export interface CheckIn {
   /** 상태 플래그 — T-20260502-foot-STATUS-COLOR-FLAG */
   status_flag: StatusFlag | null;
   status_flag_history: Array<{ flag: StatusFlag | null; changed_at: string; changed_by: string | null }> | null;
+  /** 진료 기록 간소화 — T-20260504-foot-TREATMENT-SIMPLIFY */
+  assigned_counselor_id: string | null;
+  treatment_category: string | null;
+  treatment_contents: string[] | null;
 }
 
 export interface Package {
