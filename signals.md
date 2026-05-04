@@ -1124,3 +1124,33 @@ QA_REPORT.md 참조
 - GO_WARN: RESV-CHART-CLICK 스코프 외 추가 (성함 클릭→차트 새창), /chart/:customerId 라우트 존재 확인, guard 처리됨 → 허용
 - 배포 승인 요청: @대표 C0ATE5P6JTH 발송
 - 티켓 status: deploy-ready → qa-pass (→ deployed 대표 Lovable 배포 후)
+
+## 2026-05-04 — supervisor | QA PASS → deploy-approval-requested | T-20260502-foot-DOCTOR-TREATMENT-FLOW
+- **등급: Yellow** (DB 신규 테이블 3개 + check_ins 컬럼 7개 추가, 기존 데이터 미영향, 롤백SQL 완비)
+- QA 5항목 + 교차검증 전부 PASS:
+  1. ✅ 빌드: npm run build PASS (vite 2.48s, 에러 0, 에셋 40개)
+  2. ✅ 기존기능: 신규 컴포넌트 추가 + 조건부 렌더(exam_waiting/examination 단계만). 기존 경로(체크인→대기→상담→시술→결제) 미파괴. Dashboard 배너 조건부 렌더링 정상.
+  3. ✅ DB호환: ADD COLUMN IF NOT EXISTS + DEFAULT 완비 (BOOLEAN DEFAULT false, JSONB DEFAULT '[]', TEXT NULL). 기존 데이터 SELECT 정상. CHECK constraint 변경 없음.
+  4. ✅ 권한/RLS: 신규 테이블 3개 RLS 활성화 완비(staff read / admin+manager write). check_ins 업데이트 = director role → is_admin_or_manager() → check_ins_admin_all 커버.
+  5. ✅ 롤백SQL: 20260504_doctor_treatment_flow_down.sql 완비 (테이블 3개 DROP + 컬럼 7개 DROP)
+- 교차검증 5종:
+  1. ✅ RPC↔Schema: 신규 컬럼 참조 일치
+  2. ✅ RLS↔라우트: DoctorTools RoleGuard(admin/manager) = RLS write 정책 일치
+  3. ⚠️ ServiceLayer: 레포 패턴상 컴포넌트 직접 DB 호출 — 기존 패턴 일치, GO_WARN 허용
+  4. ✅ 스펙↔구현: Sub 1~7 전부 구현 (Sub 8 P3 MVP모드 생략 허용)
+  5. ✅ 데이터흐름: phrase/prescription/document templates → DoctorTreatmentPanel 읽기 + Admin CRUD 경로 완비
+- GO_WARN: UP.sql 주석 'doctor' role 오기재(실제 enum 없음, director 사용). DoctorTools RoleGuard director 미포함(P3, 현장 확인 후).
+- commit: e833699, branch: main
+- 배포 승인 요청: @대표 C0ATE5P6JTH 발송
+
+## 2026-05-04 — dev-foot | mq-check | MQ 8건 전건 확인 완료 (status=done)
+- DOCTOR-TREATMENT-FLOW: deploy-ready (e833699, supervisor QA Yellow PASS, 배포 승인 대기)
+- INLINE-SEARCH: deployed (20704a4, supervisor QA Green PASS)
+- DASH-LAYOUT-V2: deployed (1e9cf5d, supervisor QA Green PASS)
+- STAFF-EDIT-TRIGGER: deployed (7fed500)
+- STABILIZATION / CHECKIN-SPEC-REFRESH / CHART-DETAIL / P0-REWORK: 전부 완료 확인
+- 빌드 PASS (2.47s), tsc 0, console.log 0, TODO/FIXME 0
+- git: clean — origin/main 동기화 완료 (HEAD: e833699)
+- DB 마이그레이션: 20260504_doctor_treatment_flow_up.sql + down.sql 완비 → ops 적용 대기
+- 외부 블로커: PRESCREEN-CHECKLIST / CONSENT-FORMS (spec_pending_input, deadline 5/07)
+- 상태: IDLE — 신규 approved 티켓 없음
