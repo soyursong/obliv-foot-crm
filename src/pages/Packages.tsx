@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { Pencil, Plus, Search } from 'lucide-react';
+import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -157,13 +157,29 @@ export default function Packages() {
                 </td>
                 {isAdmin && (
                   <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-center">
+                    <div className="flex items-center justify-center gap-1">
                       <button
                         onClick={(e) => { e.stopPropagation(); setSelectedId(p.id); }}
                         className="rounded p-1.5 hover:bg-muted transition"
                         title="상세/편집"
                       >
                         <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                      </button>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!window.confirm(`「${p.package_name}」 패키지를 삭제하시겠습니까?\n사용/결제 이력이 있으면 삭제되지 않습니다.`)) return;
+                          const { data, error } = await supabase.rpc('delete_package_safe', { p_package_id: p.id });
+                          if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+                          const result = data as { ok?: boolean; error?: string };
+                          if (!result?.ok) { toast.error(result?.error ?? '삭제 실패'); return; }
+                          toast.success('패키지 삭제됨');
+                          fetchPackages();
+                        }}
+                        className="rounded p-1.5 hover:bg-red-50 transition"
+                        title="삭제 (이력 없는 경우만)"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-red-500" />
                       </button>
                     </div>
                   </td>
@@ -618,6 +634,25 @@ function PackageDetailSheet({
               <Button variant="outline" size="sm" onClick={() => setTransferOpen(true)}>
                 양도
               </Button>
+              {isAdmin && sessions.length === 0 && pkgPayments.length === 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="gap-1"
+                  onClick={async () => {
+                    if (!window.confirm(`「${pkg.package_name}」 패키지를 삭제하시겠습니까?\n사용/결제 이력이 없는 경우에만 삭제됩니다.`)) return;
+                    const { data, error } = await supabase.rpc('delete_package_safe', { p_package_id: pkg.id });
+                    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+                    const result = data as { ok?: boolean; error?: string };
+                    if (!result?.ok) { toast.error(result?.error ?? '삭제 실패'); return; }
+                    toast.success('패키지 삭제됨');
+                    onChanged();
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  삭제
+                </Button>
+              )}
             </div>
           )}
 
@@ -1289,6 +1324,18 @@ function EditPackageDialog({
     onDone();
   };
 
+  const remove = async () => {
+    if (!window.confirm(`「${pkg.package_name}」 패키지를 삭제하시겠습니까?\n\n사용/결제/양도 이력이 있으면 삭제되지 않습니다.\n환불이 필요한 경우 [환불]을 사용하세요.`)) return;
+    setSubmitting(true);
+    const { data, error } = await supabase.rpc('delete_package_safe', { p_package_id: pkg.id });
+    setSubmitting(false);
+    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+    const result = data as { ok?: boolean; error?: string };
+    if (!result?.ok) { toast.error(result?.error ?? '삭제 실패'); return; }
+    toast.success('패키지 삭제됨');
+    onDone();
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -1324,6 +1371,25 @@ function EditPackageDialog({
           <div className="space-y-1.5">
             <Label>메모</Label>
             <Input value={memo} onChange={(e) => setMemo(e.target.value)} />
+          </div>
+
+          <div className="rounded-md border border-red-200 bg-red-50/40 px-3 py-2.5">
+            <div className="text-xs font-medium text-red-700 mb-1.5">위험 영역</div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-xs text-muted-foreground">
+                사용/결제/양도 이력이 없는 패키지를 영구 삭제합니다.
+              </div>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={submitting}
+                onClick={remove}
+                className="gap-1 shrink-0"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                삭제
+              </Button>
+            </div>
           </div>
         </div>
         <DialogFooter>
