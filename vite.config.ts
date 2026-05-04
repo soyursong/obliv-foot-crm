@@ -25,7 +25,6 @@ export default defineConfig({
             if (id.includes('pdf-lib')) return 'vendor-pdf';
             // recharts + 공유 의존성 (clsx, d3-* 등)을 하나로 묶어 순환 방지
             if (id.includes('recharts') || id.includes('d3-')) return 'vendor-charts';
-            if (id.includes('@base-ui/') || id.includes('sonner') || id.includes('class-variance-authority')) return 'vendor-ui';
           }
         },
       },
