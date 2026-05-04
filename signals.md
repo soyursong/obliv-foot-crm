@@ -1,5 +1,39 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-05 deploy-ready — T-20260505-foot-CHART-NUMBER-AUTO
+
+> **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-05 01:20 KST
+>
+> **풋센터 차트번호 자동생성 F-XXXX — deploy-ready**
+>
+> ### 구현 내용
+> **DB (마이그레이션 20260505000000_chart_number_auto.sql)**
+> - `BEFORE INSERT` 트리거 함수 `assign_foot_customer_chart_number()` 생성
+>   - `chart_number IS NULL OR ''` 일 때만 동작, `MAX(F-숫자부분)+1` → `F-XXXX` 4자리 자동 채번
+> - 기존 고객 전원 백필: `ROW_NUMBER() OVER (ORDER BY created_at ASC)` → F-0001~ 순차 부여
+> - `UNIQUE INDEX (WHERE NOT NULL)` + `NOT NULL` 제약 추가
+> - 롤백 SQL: `20260505000000_chart_number_auto.down.sql`
+>
+> **UI (Customers.tsx)**
+> - `NewCustomerDialog`: 차트번호 입력 필드 제거 — 자동생성으로 UX 개선
+> - `CustomerDetailSheet` 편집 모드: 차트번호 읽기전용 배지 표시 (변경 불가 안내)
+> - `UPDATE` payload에서 `chart_number` 제외 — 기존 채번 보존
+>
+> ### 커버 플로우
+> - 셀프체크인(워크인) 신규 고객 → 자동 (SelfCheckIn.tsx chart_number 미전달)
+> - 예약 등록 신규 고객 → 자동
+> - 관리자 수동 고객 등록 → 자동 (입력 필드 제거)
+>
+> ### 검증
+> - `npm run build` PASS (2.51s, TypeScript 에러 0)
+> - commit: `0ba17b4` | origin/main push 완료
+>
+> ### Supervisor 요청
+> - DB 마이그레이션 Supabase SQL Editor 적용 필요
+> - 배포 후 검증: `SELECT COUNT(*) FROM customers WHERE chart_number IS NULL;` → 0 확인
+
+---
+
 ## 2026-05-04 deploy-ready — T-20260504-foot-TABLET-LASER-ROOM-SELECT
 
 > **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 21:10 KST
