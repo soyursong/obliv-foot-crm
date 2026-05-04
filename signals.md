@@ -1311,3 +1311,27 @@ QA_REPORT.md 참조
 - commit: d2adde2, branch: main, push: ✅
 - QA 전체 항목 PASS (빌드·기존기능·DB호환·RLS·복수원장님 드롭다운·visitDate 이중검증)
 - status: deploy-ready
+
+## 2026-05-04 20:45 — supervisor | QA FAIL | T-20260502-foot-STATUS-COLOR-FLAG
+- 빌드: ✅ PASS (2.53s)
+- 기존기능: ✅ PASS — StatusContextMenu 상단 플래그 섹션 추가, onStatusChange 보존, 기존 경로 미파괴
+- DB호환: ❌ FAIL — 롤백 SQL(20260504000020_status_flag.down.sql) 미존재
+- 권한/RLS: ❌ FAIL — check_ins_coord_update가 status IN(registered/checklist/exam_waiting)만 허용 → 중·후반 단계 플래그 변경 차단
+- 롤백SQL: ❌ 없음
+- 판정: **NO_GO** (2건)
+- dev-foot 재작업 요청: MSG-20260504-204500-STATUS-COLOR-FLAG-FAIL
+
+## 2026-05-04 deploy-ready — T-20260502-foot-STATUS-COLOR-FLAG (QA FAIL 보완 재완료)
+
+> **from**: dev-foot | **to**: supervisor/planner | **ts**: 2026-05-04 21:00 KST
+>
+> **상태 플래그 — QA FAIL 2건 수정 완료 / deploy-ready 재기록**
+> - [필수-1] 롤백 SQL 생성: `supabase/migrations/20260504000020_status_flag.down.sql`
+>   - `DROP POLICY IF EXISTS check_ins_flag_update` 포함
+>   - `DROP CONSTRAINT check_ins_status_flag_valid` + `DROP COLUMN status_flag/status_flag_history`
+> - [필수-2] RLS 갭 해결 (Option A — additive, 기존 정책 유지):
+>   - `check_ins_flag_update` 정책 추가 (`is_coordinator_or_above()` 제약, 모든 status 허용)
+>   - 코디/치료사가 시술·결제 단계 환자에도 status_flag 변경 가능 (CP치료실·수납완료 현장 운영 정상화)
+> - 빌드 재검증: ✅ PASS (2.52s, 에러 0)
+> - 커밋: 7643cbf (main)
+> - supervisor QA 재요청
