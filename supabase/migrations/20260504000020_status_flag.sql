@@ -19,3 +19,17 @@ COMMENT ON COLUMN check_ins.status_flag IS
 
 COMMENT ON COLUMN check_ins.status_flag_history IS
   '상태 플래그 변경 이력 (audit): [{flag, changed_at, changed_by}]';
+
+-- ---------------------------------------------------------------
+-- RLS: 코디/치료사도 모든 단계에서 status_flag 변경 허용
+-- 배경: check_ins_coord_update 는 status IN (registered/checklist/exam_waiting)만
+--       허용하므로, 시술·결제 단계 환자에 대해 코디가 status_flag(CP치료실/수납완료 등)
+--       변경 시 RLS 차단 → 현장 운영 불가.
+-- 해결: 별도 UPDATE 정책 추가 (Option A — 기존 정책 유지, 신규 정책 추가)
+-- 주의: PostgreSQL RLS는 컬럼 레벨 제약 미지원 → 정책 단순화 (status_flag만 변경하도록 앱에서 제한)
+-- ---------------------------------------------------------------
+DROP POLICY IF EXISTS check_ins_flag_update ON check_ins;
+CREATE POLICY check_ins_flag_update ON check_ins
+  FOR UPDATE TO authenticated
+  USING (is_coordinator_or_above())
+  WITH CHECK (is_coordinator_or_above());
