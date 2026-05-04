@@ -40,7 +40,9 @@ import {
   MoreVertical,
   Plus,
   RotateCcw,
+  Search,
   User,
+  X,
   ZoomIn,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -1376,6 +1378,15 @@ export default function Dashboard() {
   const recentlyUpdated = useRef<Set<string>>(new Set());
   const navStateConsumed = useRef(false);
 
+  // ── 당일 예약 전용 검색 상태 (T-20260504-foot-SEARCH-SPLIT) ──────────────────
+  const [todaySearchQ, setTodaySearchQ] = useState('');
+  const [todaySearchOpen, setTodaySearchOpen] = useState(false);
+  const [todaySearchResults, setTodaySearchResults] = useState<Reservation[]>([]);
+  const [todayCustomerChartMap, setTodayCustomerChartMap] = useState<Map<string, string>>(new Map());
+  const todaySearchRef = useRef<HTMLInputElement>(null);
+  const todaySearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const todaySearchWrapRef = useRef<HTMLDivElement>(null);
+
   // ── 줌 + 레이아웃 편집 상태 ──────────────────────────────────────────────────
   const [zoomLevel, setZoomLevel] = useState<number>(() => {
     const saved = localStorage.getItem('foot-dash-zoom');
@@ -2382,6 +2393,72 @@ export default function Dashboard() {
     setShowCalendar((v) => !v);
   };
 
+  // ── 당일 예약 전용 검색 (T-20260504-foot-SEARCH-SPLIT) ─────────────────────
+  // 당일 예약 고객의 차트번호 사전 로드
+  useEffect(() => {
+    const ids = [...new Set(
+      timelineReservations
+        .map((r) => r.customer_id)
+        .filter((id): id is string => !!id),
+    )];
+    if (ids.length === 0) { setTodayCustomerChartMap(new Map()); return; }
+    supabase
+      .from('customers')
+      .select('id, chart_number')
+      .in('id', ids)
+      .then(({ data }) => {
+        const m = new Map<string, string>();
+        for (const c of (data ?? []) as { id: string; chart_number: string | null }[]) {
+          if (c.chart_number) m.set(c.id, c.chart_number);
+        }
+        setTodayCustomerChartMap(m);
+      });
+  }, [timelineReservations]);
+
+  // 당일 예약 검색 함수 (이름 · 전화 뒷번호 4자리↑ · 차트번호)
+  const doTodaySearch = useCallback((q: string) => {
+    if (!q.trim()) { setTodaySearchResults([]); return; }
+    const qLow = q.toLowerCase().trim();
+    const digits = q.replace(/\D/g, '');
+    const results = timelineReservations.filter((r) => {
+      const name = r.customer_name?.toLowerCase() ?? '';
+      const phone = r.customer_phone?.replace(/\D/g, '') ?? '';
+      const chart = r.customer_id ? (todayCustomerChartMap.get(r.customer_id) ?? '') : '';
+      if (name.includes(qLow)) return true;
+      if (digits.length >= 4 && phone.includes(digits)) return true;
+      if (chart.toLowerCase().includes(qLow)) return true;
+      return false;
+    });
+    setTodaySearchResults(results.slice(0, 8));
+  }, [timelineReservations, todayCustomerChartMap]);
+
+  // 당일 검색 외부 클릭 시 닫기
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (todaySearchWrapRef.current && !todaySearchWrapRef.current.contains(e.target as Node)) {
+        setTodaySearchOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // 당일 검색 결과 클릭 핸들러
+  const handleTodaySearchSelect = useCallback((r: Reservation) => {
+    setTodaySearchOpen(false);
+    setTodaySearchQ('');
+    setTodaySearchResults([]);
+    // 체크인된 경우 → 상세 시트 오픈
+    const checkIn = rows.find((ci) => ci.reservation_id === r.id);
+    if (checkIn) {
+      setSelectedCheckIn(checkIn);
+    } else {
+      // 아직 체크인 전 → 예약 시간 안내
+      const timeStr = r.reservation_time ? r.reservation_time.slice(0, 5) : '';
+      toast.info(`${r.customer_name ?? ''} — ${timeStr} 예약, 아직 체크인 전입니다`);
+    }
+  }, [rows]);
+
   const handleQuickSlotClick = (slot: { date: string; time: string }) => {
     setQuickResvDraft({
       date: slot.date,
@@ -2932,6 +3009,99 @@ export default function Dashboard() {
               </button>
             </div>
           )}
+
+          {/* 당일 예약 전용 검색 (T-20260504-foot-SEARCH-SPLIT) */}
+          <div ref={todaySearchWrapRef} className="relative">
+            <button
+              onClick={() => { setTodaySearchOpen((v) => !v); setTimeout(() => todaySearchRef.current?.focus(), 50); }}
+              className="flex items-center gap-1.5 rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs text-teal-700 hover:bg-teal-100 transition"
+              title="당일 예약 환자 검색 (이름·전화·차트번호)"
+            >
+              <Search className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">당일 검색</span>
+            </button>
+            {todaySearchOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 w-72 rounded-lg border bg-background shadow-lg">
+                {/* 입력창 */}
+                <div className="flex items-center gap-2 border-b px-3 py-2">
+                  <Search className="h-4 w-4 text-teal-600 shrink-0" />
+                  <input
+                    ref={todaySearchRef}
+                    value={todaySearchQ}
+                    onChange={(e) => {
+                      setTodaySearchQ(e.target.value);
+                      if (todaySearchTimer.current) clearTimeout(todaySearchTimer.current);
+                      todaySearchTimer.current = setTimeout(() => doTodaySearch(e.target.value), 200);
+                    }}
+                    placeholder="이름 · 전화 뒷번호 · 차트번호"
+                    className="flex-1 bg-transparent text-sm outline-none"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        setTodaySearchOpen(false);
+                        setTodaySearchQ('');
+                        setTodaySearchResults([]);
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <button
+                    onClick={() => { setTodaySearchOpen(false); setTodaySearchQ(''); setTodaySearchResults([]); }}
+                    className="text-muted-foreground hover:text-foreground transition"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                {/* 범위 표시 */}
+                <div className="px-3 py-1.5 bg-teal-50/60 border-b">
+                  <span className="text-[10px] font-medium text-teal-700">
+                    {format(date, 'M월 d일 (EEE)', { locale: ko })} 예약 한정
+                  </span>
+                </div>
+                {/* 결과 목록 */}
+                {todaySearchResults.length > 0 ? (
+                  <div className="max-h-56 overflow-auto p-1">
+                    {todaySearchResults.map((r) => {
+                      const isCheckedIn = rows.some((ci) => ci.reservation_id === r.id);
+                      const chart = r.customer_id ? (todayCustomerChartMap.get(r.customer_id) ?? null) : null;
+                      return (
+                        <button
+                          key={r.id}
+                          onClick={() => handleTodaySearchSelect(r)}
+                          className="w-full flex items-center justify-between rounded px-3 py-2 text-sm hover:bg-teal-50 transition text-left"
+                        >
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-medium">{r.customer_name ?? '—'}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {r.reservation_time?.slice(0, 5)}
+                              {' · '}
+                              {r.visit_type === 'new' ? '신규' : r.visit_type === 'experience' ? '체험' : '재진'}
+                              {chart && ` · #${chart}`}
+                            </span>
+                          </div>
+                          <span className={cn(
+                            'text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0',
+                            isCheckedIn
+                              ? 'bg-teal-100 text-teal-700'
+                              : 'bg-gray-100 text-gray-500',
+                          )}>
+                            {isCheckedIn ? '체크인' : '예약중'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : todaySearchQ.trim() ? (
+                  <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+                    당일 예약 중 일치하는 환자 없음
+                  </div>
+                ) : (
+                  <div className="px-3 py-3 text-center text-xs text-muted-foreground">
+                    이름 · 전화 뒷번호 · 차트번호로 검색
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           <Button size="sm" onClick={() => setOpenNew(true)} className="gap-1 h-8">
             <Plus className="h-3.5 w-3.5" /> 체크인
