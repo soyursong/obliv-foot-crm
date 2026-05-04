@@ -22,6 +22,7 @@ const CustomerChartPage = lazy(() => import('@/pages/CustomerChartPage'));
 const DailyHistory = lazy(() => import('@/pages/DailyHistory'));
 const Services = lazy(() => import('@/pages/Services'));
 const DoctorTools = lazy(() => import('@/pages/DoctorTools'));
+const TreatmentTable = lazy(() => import('@/pages/TreatmentTable'));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
@@ -72,6 +73,7 @@ function App() {
                 <Route path="accounts" element={<RoleGuard roles={['admin']}><Accounts /></RoleGuard>} />
                 <Route path="services" element={<RoleGuard roles={['admin', 'manager']}><Services /></RoleGuard>} />
                 <Route path="doctor-tools" element={<RoleGuard roles={['admin', 'manager']}><DoctorTools /></RoleGuard>} />
+                <Route path="treatment-table" element={<TreatmentTable />} />
               </Route>
 
               <Route path="/" element={<Navigate to="/admin" replace />} />
