@@ -3,12 +3,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { Plus, UserCog, DoorOpen, TrendingUp, ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays } from 'lucide-react';
+import { Plus, UserCog, DoorOpen, TrendingUp, ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, Settings, X } from 'lucide-react';
 import { DutyRosterTab } from '@/components/DutyRosterTab';
 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { getClinic } from '@/lib/clinic';
+import { getClinic, clearClinicCache } from '@/lib/clinic';
 import type { Clinic, Room, Staff, StaffRole } from '@/lib/types';
 import { formatAmount } from '@/lib/format';
 import { Button } from '@/components/ui/button';
@@ -54,8 +54,10 @@ function todayStr(): string {
 
 export default function StaffPage() {
   const [tab, setTab] = useState('duty');
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager';
 
-  const { data: clinic } = useQuery<Clinic | null>({
+  const { data: clinic, refetch: refetchClinic } = useQuery<Clinic | null>({
     queryKey: ['clinic'],
     queryFn: getClinic,
   });
@@ -76,11 +78,21 @@ export default function StaffPage() {
           <TabsTrigger value="performance">
             <TrendingUp className="mr-1 h-4 w-4" /> 월간 실적
           </TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger value="settings">
+              <Settings className="mr-1 h-4 w-4" /> 클리닉 설정
+            </TabsTrigger>
+          )}
         </TabsList>
         <TabsContent value="duty">{clinic && <DutyRosterTab clinic={clinic} />}</TabsContent>
         <TabsContent value="staff">{clinic && <StaffTab clinic={clinic} />}</TabsContent>
         <TabsContent value="rooms">{clinic && <RoomTab clinic={clinic} />}</TabsContent>
         <TabsContent value="performance">{clinic && <PerformanceTab clinic={clinic} />}</TabsContent>
+        {isAdmin && (
+          <TabsContent value="settings">
+            {clinic && <ClinicSettingsTab clinic={clinic} onSaved={refetchClinic} />}
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
@@ -917,6 +929,173 @@ function PerformanceTab({ clinic }: { clinic: Clinic }) {
               </table>
             </div>
           )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// 클리닉 설정 탭 — T-20260502-foot-LASER-TIME-UNIT
+// ============================================================
+
+const DEFAULT_LASER_TIME_UNITS = [12, 15, 20, 30];
+const LASER_TIME_PRESETS = [10, 12, 15, 18, 20, 25, 30, 40, 45, 60];
+
+function ClinicSettingsTab({ clinic, onSaved }: { clinic: Clinic; onSaved: () => void }) {
+  const qc = useQueryClient();
+
+  // 현재 설정된 레이저 시간 단위 목록
+  const [units, setUnits] = useState<number[]>(
+    clinic.laser_time_units?.length ? [...clinic.laser_time_units] : [...DEFAULT_LASER_TIME_UNITS],
+  );
+  const [customInput, setCustomInput] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // clinic prop 변경 시 동기화
+  useEffect(() => {
+    if (clinic.laser_time_units?.length) {
+      setUnits([...clinic.laser_time_units]);
+    }
+  }, [clinic.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleUnit = (min: number) => {
+    setUnits((prev) =>
+      prev.includes(min) ? prev.filter((u) => u !== min) : [...prev, min].sort((a, b) => a - b),
+    );
+  };
+
+  const addCustom = () => {
+    const val = parseInt(customInput, 10);
+    if (!val || val < 1 || val > 180) {
+      toast.error('1~180 사이 숫자를 입력하세요');
+      return;
+    }
+    if (!units.includes(val)) {
+      setUnits((prev) => [...prev, val].sort((a, b) => a - b));
+    }
+    setCustomInput('');
+  };
+
+  const save = async () => {
+    if (units.length === 0) {
+      toast.error('최소 1개 이상의 시간 단위를 선택하세요');
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase
+      .from('clinics')
+      .update({ laser_time_units: units })
+      .eq('id', clinic.id);
+    setSaving(false);
+    if (error) {
+      toast.error(`저장 실패: ${error.message}`);
+      return;
+    }
+    // clinic 캐시 초기화 (React Query + 모듈 레벨)
+    clearClinicCache();
+    qc.invalidateQueries({ queryKey: ['clinic'] });
+    toast.success('레이저 시간 단위 저장됨');
+    onSaved();
+  };
+
+  const reset = () => {
+    setUnits([...DEFAULT_LASER_TIME_UNITS]);
+  };
+
+  return (
+    <div className="space-y-6 max-w-lg">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Settings className="h-4 w-4 text-teal-600" />
+            레이저 시간 단위 설정
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            체크인 상세 화면에서 레이저 시간 선택 시 표시되는 버튼 목록을 설정합니다.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* 프리셋 토글 */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">시간 단위 선택</Label>
+            <div className="flex flex-wrap gap-2">
+              {LASER_TIME_PRESETS.map((min) => {
+                const active = units.includes(min);
+                return (
+                  <button
+                    key={min}
+                    type="button"
+                    onClick={() => toggleUnit(min)}
+                    className={`min-w-[56px] h-10 rounded-lg border text-sm font-medium transition ${
+                      active
+                        ? 'bg-teal-600 text-white border-teal-600'
+                        : 'border-input hover:bg-muted text-muted-foreground'
+                    }`}
+                  >
+                    {min}분
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 직접 입력 */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">직접 추가</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={180}
+                value={customInput}
+                onChange={(e) => setCustomInput(e.target.value)}
+                placeholder="분 입력"
+                className="w-28 h-9"
+                onKeyDown={(e) => e.key === 'Enter' && addCustom()}
+              />
+              <span className="text-xs text-muted-foreground">분</span>
+              <Button size="sm" variant="outline" onClick={addCustom}>추가</Button>
+            </div>
+          </div>
+
+          {/* 현재 선택된 단위 */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">현재 설정된 단위</Label>
+            {units.length === 0 ? (
+              <div className="text-xs text-muted-foreground">선택된 단위가 없습니다</div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {units.map((min) => (
+                  <span
+                    key={min}
+                    className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2.5 py-1 text-xs font-medium text-teal-800"
+                  >
+                    {min}분
+                    <button
+                      type="button"
+                      onClick={() => setUnits((prev) => prev.filter((u) => u !== min))}
+                      className="text-teal-500 hover:text-teal-800 transition"
+                      title="제거"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 액션 버튼 */}
+          <div className="flex items-center gap-2 pt-2">
+            <Button onClick={save} disabled={saving} className="bg-teal-600 hover:bg-teal-700 text-white">
+              {saving ? '저장 중…' : '저장'}
+            </Button>
+            <Button variant="outline" size="sm" onClick={reset}>
+              기본값으로
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

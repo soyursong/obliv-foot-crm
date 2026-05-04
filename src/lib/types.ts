@@ -81,6 +81,8 @@ export interface Clinic {
   // 건보 본인부담 산출 (T-20260504-foot-INSURANCE-COPAYMENT)
   hira_unit_value?: number | null;
   hira_unit_value_year?: number | null;
+  // 레이저 시간 단위 설정 (T-20260502-foot-LASER-TIME-UNIT)
+  laser_time_units?: number[] | null;
 }
 
 export type LeadSource = 'TM' | '인바운드' | '워크인' | '지인소개' | '온라인' | '기타';

@@ -323,6 +323,12 @@ function DraggableCard({
             {mmss}
           </span>
           <div className="flex items-center gap-0.5">
+            {/* T-20260502-foot-LASER-TIME-UNIT: 레이저실 카드에 시간 단위 배지 */}
+            {checkIn.status === 'laser' && checkIn.laser_minutes != null && (
+              <Badge className="h-4 px-1 text-[10px] bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-100">
+                {checkIn.laser_minutes}분
+              </Badge>
+            )}
             {checkIn.notes?.id_check_required && (
               <Badge variant="destructive" className="h-4 px-1 text-[10px]">신분증</Badge>
             )}
