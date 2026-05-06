@@ -1,7 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+/**
+ * 고객관리 페이지
+ *
+ * T-20260506-foot-CHART-CONSOLIDATE:
+ *   고객관리 메뉴의 차트(CustomerDetailSheet)를 폐지하고
+ *   행 클릭 → 2번차트(미니홈피, /chart/:id) 새 창으로 통합.
+ *   CRM 차트는 1번(간편차트=대시보드 우측 패널) / 2번(미니홈피) 두 가지만 존재.
+ *   수정 기능은 EditCustomerDialog(수정 전용 다이얼로그)로 분리.
+ */
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { format } from 'date-fns';
-import { ChevronDown, ExternalLink, Pencil, Plus, Printer, Search, Trash2 } from 'lucide-react';
+import { ExternalLink, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,98 +24,29 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
-import { InsuranceGradeSelect } from '@/components/insurance/InsuranceGradeSelect';
 import { supabase } from '@/lib/supabase';
-
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
-import { VISIT_TYPE_KO } from '@/lib/status';
-import { cn } from '@/lib/utils';
-import type {
-  CheckIn,
-  Customer,
-  LeadSource,
-  Package,
-  PackageRemaining,
-  PrescriptionRow,
-  Reservation,
-} from '@/lib/types';
-
-interface Payment {
-  id: string;
-  check_in_id: string | null;
-  amount: number;
-  method: string;
-  installment: number;
-  payment_type: 'payment' | 'refund';
-  memo: string | null;
-  created_at: string;
-}
-
-interface PackagePayment {
-  id: string;
-  package_id: string;
-  amount: number;
-  method: string;
-  installment: number;
-  payment_type: 'payment' | 'refund';
-  memo: string | null;
-  created_at: string;
-}
-
-type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
-
-const PKG_STATUS_KO: Record<string, string> = {
-  active: '진행중',
-  completed: '완료',
-  cancelled: '취소',
-  refunded: '환불',
-  transferred: '양도',
-};
-
-const FORM_TITLES: Record<string, string> = {
-  treatment: '시술 동의서',
-  non_covered: '비급여 동의서',
-  privacy: '개인정보 동의서',
-  refund: '환불 동의서',
-};
-
-function ChartSection({
-  title,
-  icon,
-  defaultOpen = false,
-  children,
-}: {
-  title: string;
-  icon?: React.ReactNode;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="rounded-lg border bg-background overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium hover:bg-muted/30 transition"
-      >
-        {icon && <span className="text-teal-600">{icon}</span>}
-        <span className="flex-1 text-left">{title}</span>
-        <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform', open && 'rotate-180')} />
-      </button>
-      {open && <div className="border-t px-3 py-2 text-sm">{children}</div>}
-    </div>
-  );
-}
+import type { Customer, LeadSource } from '@/lib/types';
 
 interface CustomerStats {
   visit_count: number;
   last_visit: string | null;
   total_revenue: number;
   has_package: boolean;
+}
+
+const LEAD_SOURCE_OPTIONS: LeadSource[] = ['TM', '인바운드', '워크인', '지인소개', '온라인', '기타'];
+
+/** 2번차트(미니홈피)를 새 창으로 열기 */
+function openChart(customerId: string) {
+  window.open(
+    `/chart/${customerId}`,
+    `chart-${customerId}`,
+    'width=820,height=960,scrollbars=yes,resizable=yes',
+  );
 }
 
 export default function Customers() {
@@ -117,7 +57,8 @@ export default function Customers() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selected, setSelected] = useState<Customer | null>(null);
+  // T-20260506-foot-CHART-CONSOLIDATE: selected → editingCustomer (수정 전용)
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [openCreate, setOpenCreate] = useState(false);
   const [statsMap, setStatsMap] = useState<Map<string, CustomerStats>>(new Map());
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -209,7 +150,8 @@ export default function Customers() {
     };
   }, [query, clinic, runSearch]);
 
-  // 대시보드 고객차트 바로가기 → location.state.openCustomerId 처리
+  // 대시보드 고객차트 바로가기 → location.state.openCustomerId → 2번차트(미니홈피) 새 창
+  // T-20260506-foot-CHART-CONSOLIDATE: CustomerDetailSheet 열기 → openChart로 교체
   useEffect(() => {
     if (navStateConsumed.current) return;
     if (!clinic) return;
@@ -217,14 +159,7 @@ export default function Customers() {
     if (!state?.openCustomerId) return;
     navStateConsumed.current = true;
     window.history.replaceState({}, '');
-    supabase
-      .from('customers')
-      .select('*')
-      .eq('id', state.openCustomerId)
-      .single()
-      .then(({ data }) => {
-        if (data) setSelected(data as Customer);
-      });
+    openChart(state.openCustomerId);
   }, [clinic, location.state]);
 
   const deleteCustomer = async (c: Customer) => {
@@ -255,6 +190,10 @@ export default function Customers() {
             className="pl-9"
           />
         </div>
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <ExternalLink className="h-3.5 w-3.5 text-teal-500" />
+          행 클릭 → 고객차트(2번) 새 창
+        </span>
         <Button onClick={() => setOpenCreate(true)} className="gap-1">
           <Plus className="h-4 w-4" /> 신규 고객
         </Button>
@@ -272,7 +211,7 @@ export default function Customers() {
               <th className="px-4 py-2 text-left font-medium">최종 방문</th>
               <th className="px-4 py-2 text-right font-medium">결제액</th>
               <th className="px-4 py-2 text-left font-medium">메모</th>
-              {isAdmin && <th className="px-4 py-2 text-center font-medium">관리</th>}
+              <th className="px-4 py-2 text-center font-medium">관리</th>
             </tr>
           </thead>
           <tbody>
@@ -281,15 +220,11 @@ export default function Customers() {
               return (
                 <tr
                   key={c.id}
-                  onClick={() => setSelected(c)}
-                  className="cursor-pointer border-t hover:bg-muted/40"
+                  onClick={() => openChart(c.id)}
+                  className="cursor-pointer border-t hover:bg-teal-50/40"
                 >
                   <td className="px-4 py-2 font-medium">
-                    <span
-                      className="flex items-center gap-1.5 cursor-pointer hover:underline decoration-dotted underline-offset-2"
-                      title="더블클릭으로 차트 열기"
-                      onDoubleClick={(e) => { e.stopPropagation(); setSelected(c); }}
-                    >
+                    <span className="flex items-center gap-1.5">
                       {c.name}
                       {stats?.has_package && <Badge variant="teal" className="text-[10px] px-1 py-0">PKG</Badge>}
                     </span>
@@ -307,32 +242,42 @@ export default function Customers() {
                   <td className="max-w-[200px] truncate px-4 py-2 text-muted-foreground">
                     {c.memo ?? ''}
                   </td>
-                  {isAdmin && (
-                    <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setSelected(c); }}
-                          className="rounded p-1.5 hover:bg-muted transition"
-                          title="수정"
-                        >
-                          <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); deleteCustomer(c); }}
-                          className="rounded p-1.5 hover:bg-red-50 transition"
-                          title="삭제"
-                        >
-                          <Trash2 className="h-3.5 w-3.5 text-red-400" />
-                        </button>
-                      </div>
-                    </td>
-                  )}
+                  {/* 관리 열: 차트보기(모든 역할) + 수정·삭제(admin만) */}
+                  <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openChart(c.id); }}
+                        className="rounded p-1.5 hover:bg-teal-50 transition"
+                        title="2번차트(미니홈피) 열기"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5 text-teal-600" />
+                      </button>
+                      {isAdmin && (
+                        <>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setEditingCustomer(c); }}
+                            className="rounded p-1.5 hover:bg-muted transition"
+                            title="고객 정보 수정"
+                          >
+                            <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); deleteCustomer(c); }}
+                            className="rounded p-1.5 hover:bg-red-50 transition"
+                            title="삭제"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               );
             })}
             {!loading && results.length === 0 && (
               <tr>
-                <td colSpan={isAdmin ? 9 : 8} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={9} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   {query ? '검색 결과 없음' : '고객이 없습니다'}
                 </td>
               </tr>
@@ -341,10 +286,12 @@ export default function Customers() {
         </table>
       </div>
 
-      <CustomerDetailSheet
-        customer={selected}
-        onClose={() => setSelected(null)}
+      {/* T-20260506-foot-CHART-CONSOLIDATE: CustomerDetailSheet 폐지 → 수정 전용 다이얼로그 */}
+      <EditCustomerDialog
+        customer={editingCustomer}
+        onOpenChange={(o) => { if (!o) setEditingCustomer(null); }}
         onUpdated={() => {
+          setEditingCustomer(null);
           runSearch(query);
         }}
       />
@@ -362,6 +309,174 @@ export default function Customers() {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// EditCustomerDialog — 고객 정보 수정 전용 다이얼로그 (차트 섹션 없음)
+// T-20260506-foot-CHART-CONSOLIDATE: CustomerDetailSheet 차트 UI 완전 폐지
+// ─────────────────────────────────────────────────────────────────────────────
+function EditCustomerDialog({
+  customer,
+  onOpenChange,
+  onUpdated,
+}: {
+  customer: Customer | null;
+  onOpenChange: (o: boolean) => void;
+  onUpdated: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [birthDate, setBirthDate] = useState('');
+  const [chartNumber, setChartNumber] = useState('');
+  const [memo, setMemo] = useState('');
+  const [customerMemo, setCustomerMemo] = useState('');
+  const [leadSource, setLeadSource] = useState('');
+  const [tmMemo, setTmMemo] = useState('');
+  const [referrerName, setReferrerName] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (customer) {
+      setName(customer.name);
+      setPhone(customer.phone);
+      setBirthDate(customer.birth_date ?? '');
+      setChartNumber(customer.chart_number ?? '');
+      setMemo(customer.memo ?? '');
+      setCustomerMemo(customer.customer_memo ?? '');
+      setLeadSource(customer.lead_source ?? '');
+      setTmMemo(customer.tm_memo ?? '');
+      setReferrerName(customer.referrer_name ?? '');
+    }
+  }, [customer]);
+
+  const save = async () => {
+    if (!customer) return;
+    setSubmitting(true);
+    const { error } = await supabase
+      .from('customers')
+      .update({
+        name: name.trim(),
+        phone: phone.trim(),
+        birth_date: birthDate.trim() || null,
+        // chart_number: 자동 부여 후 변경 불가 (T-20260505-foot-CHART-NUMBER-AUTO)
+        memo: memo.trim() || null,
+        customer_memo: customerMemo.trim() || null, // T-20260504-foot-MEMO-RESTRUCTURE
+        lead_source: leadSource.trim() || null,
+        tm_memo: tmMemo.trim() || null,
+        referrer_name: referrerName.trim() || null,
+      })
+      .eq('id', customer.id);
+    setSubmitting(false);
+    if (error) {
+      toast.error(`수정 실패: ${error.message}`);
+      return;
+    }
+    toast.success('수정 완료');
+    onUpdated();
+  };
+
+  return (
+    <Dialog open={!!customer} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>고객 정보 수정 — {customer?.name}</DialogTitle>
+        </DialogHeader>
+        <div className="max-h-[60vh] overflow-y-auto space-y-3 pr-1">
+          {/* 이름 */}
+          <div className="space-y-1.5">
+            <Label>이름</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          {/* 전화번호 */}
+          <div className="space-y-1.5">
+            <Label>전화번호</Label>
+            <Input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" />
+          </div>
+          {/* 생년월일 / 차트번호 */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1.5">
+              <Label>생년월일 <span className="text-xs text-muted-foreground font-normal">(YYMMDD)</span></Label>
+              <Input
+                value={birthDate}
+                onChange={(e) => setBirthDate(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                inputMode="numeric"
+                placeholder="예: 900515"
+                maxLength={6}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>차트번호</Label>
+              <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground select-all">
+                {chartNumber || '—'}
+              </div>
+              <p className="text-[10px] text-muted-foreground">자동 부여됨 (변경 불가)</p>
+            </div>
+          </div>
+          {/* 내원경로 */}
+          <div className="space-y-1.5">
+            <Label>내원경로</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {LEAD_SOURCE_OPTIONS.map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => setLeadSource(leadSource === opt ? '' : opt)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                    leadSource === opt
+                      ? 'bg-teal-600 text-white'
+                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  }`}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* 추천인 */}
+          <div className="space-y-1.5">
+            <Label>추천인</Label>
+            <Input value={referrerName} onChange={(e) => setReferrerName(e.target.value)} placeholder="추천인 이름" />
+          </div>
+          {/* 고객메모 */}
+          <div className="space-y-1.5">
+            <Label>고객메모 <span className="text-xs text-muted-foreground font-normal">(성향·주차)</span></Label>
+            <Textarea
+              value={customerMemo}
+              onChange={(e) => setCustomerMemo(e.target.value)}
+              rows={2}
+              placeholder="고객 성향, 특이사항, 주차 정보 등"
+            />
+          </div>
+          {/* 상담메모 */}
+          <div className="space-y-1.5">
+            <Label>상담메모</Label>
+            <Textarea
+              value={tmMemo}
+              onChange={(e) => setTmMemo(e.target.value)}
+              rows={2}
+              placeholder="실비 보험사, 상한액, 고객 성향 등..."
+            />
+          </div>
+          {/* 내부메모 */}
+          <div className="space-y-1.5">
+            <Label>내부메모</Label>
+            <Textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={2} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            취소
+          </Button>
+          <Button disabled={submitting || !name.trim() || !phone.trim()} onClick={save}>
+            {submitting ? '저장 중…' : '저장'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CreateCustomerDialog — 신규 고객 등록
+// ─────────────────────────────────────────────────────────────────────────────
 function CreateCustomerDialog({
   open,
   clinicId,
@@ -579,663 +694,3 @@ function CreateCustomerDialog({
     </Dialog>
   );
 }
-
-function CustomerDetailSheet({
-  customer,
-  onClose,
-  onUpdated,
-}: {
-  customer: Customer | null;
-  onClose: () => void;
-  onUpdated: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [birthDate, setBirthDate] = useState('');
-  const [chartNumber, setChartNumber] = useState('');
-  const [memo, setMemo] = useState('');
-  const [customerMemo, setCustomerMemo] = useState(''); // T-20260504-foot-MEMO-RESTRUCTURE
-  const [leadSource, setLeadSource] = useState<string>('');
-  const [tmMemo, setTmMemo] = useState('');
-  const [referrerName, setReferrerName] = useState('');
-  const [packages, setPackages] = useState<PackageWithRemaining[]>([]);
-  const [visits, setVisits] = useState<CheckIn[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [pkgPayments, setPkgPayments] = useState<PackagePayment[]>([]);
-  const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [checkInHistory, setCheckInHistory] = useState<CheckIn[]>([]);
-  const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
-  const [prescriptions, setPrescriptions] = useState<PrescriptionRow[]>([]);
-  const [consentEntries, setConsentEntries] = useState<{form_type: string; signed_at: string}[]>([]);
-  const [submissionEntries, setSubmissionEntries] = useState<{template_key?: string; printed_at: string}[]>([]);
-
-  useEffect(() => {
-    if (!customer) return;
-    setName(customer.name);
-    setPhone(customer.phone);
-    setBirthDate(customer.birth_date ?? '');
-    setChartNumber(customer.chart_number ?? '');
-    setMemo(customer.memo ?? '');
-    setCustomerMemo(customer.customer_memo ?? ''); // T-20260504-foot-MEMO-RESTRUCTURE
-    setLeadSource(customer.lead_source ?? '');
-    setTmMemo(customer.tm_memo ?? '');
-    setReferrerName(customer.referrer_name ?? '');
-    setEditing(false);
-    setCheckInHistory([]);
-    setLatestCheckIn(null);
-    setPrescriptions([]);
-    setConsentEntries([]);
-    setSubmissionEntries([]);
-    (async () => {
-      const [pkgRes, visitRes, payRes, pkgPayRes, resvRes, ciHistRes] = await Promise.all([
-        supabase.from('packages').select('*').eq('customer_id', customer.id).order('contract_date', {
-          ascending: false,
-        }),
-        supabase
-          .from('check_ins')
-          .select('*')
-          .eq('customer_id', customer.id)
-          .order('checked_in_at', { ascending: false })
-          .limit(50),
-        supabase
-          .from('payments')
-          .select('*')
-          .eq('customer_id', customer.id)
-          .order('created_at', { ascending: false })
-          .limit(50),
-        supabase
-          .from('package_payments')
-          .select('*')
-          .eq('customer_id', customer.id)
-          .order('created_at', { ascending: false })
-          .limit(50),
-        supabase
-          .from('reservations')
-          .select('*')
-          .eq('customer_id', customer.id)
-          .order('reservation_date', { ascending: false })
-          .limit(30),
-        supabase
-          .from('check_ins')
-          .select('*')
-          .eq('customer_id', customer.id)
-          .neq('status', 'cancelled')
-          .order('checked_in_at', { ascending: false })
-          .limit(100),
-      ]);
-
-      const pkgs = (pkgRes.data ?? []) as Package[];
-      // 각 패키지 잔여회차 조회
-      const remaining = await Promise.all(
-        pkgs.map(async (p) => {
-          const { data } = await supabase.rpc('get_package_remaining', { p_package_id: p.id });
-          return data as PackageRemaining | null;
-        }),
-      );
-      setPackages(pkgs.map((p, i) => ({ ...p, remaining: remaining[i] })));
-      setVisits((visitRes.data ?? []) as CheckIn[]);
-      setPayments((payRes.data ?? []) as Payment[]);
-      setPkgPayments((pkgPayRes.data ?? []) as PackagePayment[]);
-      setReservations((resvRes.data ?? []) as Reservation[]);
-
-      const ciHistory = (ciHistRes.data ?? []) as CheckIn[];
-      setCheckInHistory(ciHistory);
-      setLatestCheckIn(ciHistory[0] ?? null);
-
-      const checkInIds = ciHistory.map((ci: CheckIn) => ci.id);
-      if (checkInIds.length > 0) {
-        const [rxRes, consentRes, subRes] = await Promise.all([
-          supabase
-            .from('prescriptions')
-            .select('id, prescribed_by_name, diagnosis, prescribed_at, prescription_items(medication_name, dosage, duration_days)')
-            .in('check_in_id', checkInIds)
-            .order('prescribed_at', { ascending: false })
-            .limit(20),
-          supabase
-            .from('consent_forms')
-            .select('form_type, signed_at')
-            .in('check_in_id', checkInIds)
-            .order('signed_at', { ascending: false }),
-          supabase
-            .from('form_submissions')
-            .select('template_key, printed_at')
-            .in('check_in_id', checkInIds)
-            .order('printed_at', { ascending: false })
-            .limit(30),
-        ]);
-        setPrescriptions((rxRes.data ?? []) as PrescriptionRow[]);
-        setConsentEntries((consentRes.data ?? []) as {form_type: string; signed_at: string}[]);
-        setSubmissionEntries((subRes.data ?? []) as {template_key?: string; printed_at: string}[]);
-      }
-    })();
-  }, [customer]);
-
-  const totalPaid = useMemo(() => {
-    const s =
-      payments
-        .filter((p) => p.payment_type === 'payment')
-        .reduce((x, p) => x + p.amount, 0) +
-      pkgPayments.filter((p) => p.payment_type === 'payment').reduce((x, p) => x + p.amount, 0);
-    const r =
-      payments.filter((p) => p.payment_type === 'refund').reduce((x, p) => x + p.amount, 0) +
-      pkgPayments.filter((p) => p.payment_type === 'refund').reduce((x, p) => x + p.amount, 0);
-    return s - r;
-  }, [payments, pkgPayments]);
-
-  if (!customer) return null;
-
-  const saveEdit = async () => {
-    const { error } = await supabase
-      .from('customers')
-      .update({
-        name: name.trim(),
-        phone: phone.trim(),
-        birth_date: birthDate.trim() || null,
-        // chart_number: 자동 부여 후 변경 불가 (T-20260505-foot-CHART-NUMBER-AUTO)
-        memo: memo.trim() || null,
-        customer_memo: customerMemo.trim() || null, // T-20260504-foot-MEMO-RESTRUCTURE
-        lead_source: leadSource.trim() || null,
-        tm_memo: tmMemo.trim() || null,
-        referrer_name: referrerName.trim() || null,
-      })
-      .eq('id', customer.id);
-    if (error) {
-      toast.error(`수정 실패: ${error.message}`);
-      return;
-    }
-    toast.success('수정 완료');
-    setEditing(false);
-    onUpdated();
-  };
-
-  const LEAD_SOURCE_OPTIONS: LeadSource[] = ['TM', '인바운드', '워크인', '지인소개', '온라인', '기타'];
-
-  return (
-    <Sheet open={!!customer} onOpenChange={(o) => (!o ? onClose() : undefined)}>
-      <SheetContent className="w-[720px] max-w-2xl overflow-y-auto">
-        <SheetHeader>
-          <div className="flex items-center gap-2">
-            <SheetTitle className="flex-1">고객 차트</SheetTitle>
-            {!editing && (
-              <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                수정
-              </Button>
-            )}
-            <button
-              type="button"
-              onClick={() => window.open(`/chart/${customer.id}`, `chart-${customer.id}`, 'width=820,height=960,scrollbars=yes,resizable=yes')}
-              className="rounded p-1.5 hover:bg-muted transition"
-              title="새 창으로 열기"
-            >
-              <ExternalLink className="h-4 w-4 text-muted-foreground" />
-            </button>
-          </div>
-        </SheetHeader>
-
-        {/* 통계 row */}
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <div className="rounded-lg bg-muted/40 px-3 py-2">
-            <div className="text-xs text-muted-foreground">총 방문</div>
-            <div className="text-base font-bold">{visits.length}회</div>
-          </div>
-          <div className="rounded-lg bg-muted/40 px-3 py-2">
-            <div className="text-xs text-muted-foreground">총 결제</div>
-            <div className="text-base font-bold">{formatAmount(totalPaid)}</div>
-          </div>
-        </div>
-
-        {/* 15개 섹션 */}
-        <div className="mt-3 space-y-2">
-
-          {/* 섹션 1 — 성함/접수시간 */}
-          <ChartSection title="성함 / 접수시간" defaultOpen>
-            {editing ? (
-              <div className="space-y-2">
-                <div className="space-y-1">
-                  <Label className="text-xs">이름</Label>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <Label className="text-xs">생년월일 (YYMMDD)</Label>
-                    <Input
-                      value={birthDate}
-                      onChange={(e) => setBirthDate(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      inputMode="numeric"
-                      placeholder="예: 900515"
-                      maxLength={6}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">차트번호</Label>
-                    <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground select-all">
-                      {chartNumber || '—'}
-                    </div>
-                    <p className="text-[10px] text-muted-foreground">자동 부여됨 (변경 불가)</p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-start gap-3">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl font-bold">{customer.name}</span>
-                    {customer.chart_number && (
-                      <span className="rounded bg-teal-50 px-1.5 py-0.5 text-xs font-medium text-teal-700">{customer.chart_number}</span>
-                    )}
-                    <Badge variant={customer.visit_type === 'new' ? 'teal' : 'secondary'} className="text-[10px]">
-                      {VISIT_TYPE_KO[customer.visit_type as keyof typeof VISIT_TYPE_KO] ?? customer.visit_type}
-                    </Badge>
-                  </div>
-                  {customer.birth_date && (
-                    <div className="mt-0.5 text-xs text-muted-foreground tabular-nums">{customer.birth_date}</div>
-                  )}
-                  {latestCheckIn && (
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      최근 방문: {format(new Date(latestCheckIn.checked_in_at), 'MM-dd HH:mm')}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </ChartSection>
-
-          {/* 섹션 2 — 내원경로 */}
-          <ChartSection title="내원경로" defaultOpen>
-            {editing ? (
-              <div className="space-y-2">
-                <div className="flex flex-wrap gap-1.5">
-                  {LEAD_SOURCE_OPTIONS.map((opt) => (
-                    <button
-                      key={opt}
-                      type="button"
-                      onClick={() => setLeadSource(leadSource === opt ? '' : opt)}
-                      className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                        leadSource === opt
-                          ? 'bg-teal-600 text-white'
-                          : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                      }`}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">추천인</Label>
-                  <Input value={referrerName} onChange={(e) => setReferrerName(e.target.value)} placeholder="추천인 이름" />
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                {customer.lead_source ? (
-                  <span className="inline-block rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-medium text-teal-800">
-                    {customer.lead_source}
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted-foreground">경로 미입력</span>
-                )}
-                {(customer.referrer_name || customer.referrer_id) && (
-                  <div className="text-xs text-muted-foreground">
-                    추천인: {customer.referrer_name ?? '(고객 연결됨)'}
-                  </div>
-                )}
-              </div>
-            )}
-          </ChartSection>
-
-          {/* 섹션 3 — 연락처 */}
-          <ChartSection title="연락처" defaultOpen>
-            {editing ? (
-              <div className="space-y-2">
-                <div className="space-y-1">
-                  <Label className="text-xs">전화번호</Label>
-                  <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-0.5 text-xs">
-                <div className="flex gap-2">
-                  <span className="text-muted-foreground w-16">전화번호</span>
-                  <span className="font-medium">{customer.phone}</span>
-                </div>
-                {customer.birth_date && (
-                  <div className="flex gap-2">
-                    <span className="text-muted-foreground w-16">생년월일</span>
-                    <span className="tabular-nums">{customer.birth_date}</span>
-                  </div>
-                )}
-                <div className="flex gap-2">
-                  <span className="text-muted-foreground w-16">외국인</span>
-                  <span>{customer.is_foreign ? '예' : '아니오'}</span>
-                </div>
-              </div>
-            )}
-          </ChartSection>
-
-          {/* 섹션 3.5 — 건강보험 자격 (T-20260504-foot-INSURANCE-COPAYMENT) */}
-          <ChartSection title="건강보험 자격" defaultOpen>
-            <div className="space-y-2">
-              <InsuranceGradeSelect customerId={customer.id} onChanged={onUpdated} />
-              {/*
-                TODO(rrn-vault): 주민번호 입력 → Supabase Vault Edge Function 경유 저장.
-                현재는 입력 UI만 표시 + rrn_vault_id 컬럼 준비. 평문 저장 절대 금지.
-              */}
-              <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/40 p-2 text-[11px] text-amber-800">
-                ※ 주민번호는 Supabase Vault 연동(Edge Function) 후 활성화 — 현재는 등급만 수동 입력
-              </div>
-            </div>
-          </ChartSection>
-
-          {/* 섹션 4 — 치료플랜 (패키지) */}
-          <ChartSection title="치료플랜 (패키지)" defaultOpen>
-            {packages.length === 0 ? (
-              <div className="py-2 text-xs text-muted-foreground">패키지 없음</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-muted/40 text-muted-foreground">
-                      <th className="text-left px-2 py-1.5 font-medium border-b">패키지명</th>
-                      <th className="text-center px-2 py-1.5 font-medium border-b">총</th>
-                      <th className="text-center px-2 py-1.5 font-medium border-b">사용</th>
-                      <th className="text-center px-2 py-1.5 font-medium border-b text-teal-700">잔여</th>
-                      <th className="text-right px-2 py-1.5 font-medium border-b">금액</th>
-                      <th className="text-left px-2 py-1.5 font-medium border-b">시작일</th>
-                      <th className="text-center px-2 py-1.5 font-medium border-b">상태</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {packages.map((p) => {
-                      const used = p.remaining ? p.total_sessions - p.remaining.total_remaining : null;
-                      return (
-                        <tr key={p.id} className="border-b border-muted/20 hover:bg-muted/10">
-                          <td className="px-2 py-1.5 font-medium max-w-[120px] truncate">{p.package_name}</td>
-                          <td className="px-2 py-1.5 text-center">{p.total_sessions}</td>
-                          <td className="px-2 py-1.5 text-center">{used ?? '-'}</td>
-                          <td className="px-2 py-1.5 text-center font-semibold text-teal-700">
-                            {p.remaining?.total_remaining ?? '-'}
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{formatAmount(p.total_amount)}</td>
-                          <td className="px-2 py-1.5 text-muted-foreground">{p.contract_date}</td>
-                          <td className="px-2 py-1.5 text-center">
-                            <Badge
-                              variant={p.status === 'active' ? 'teal' : p.status === 'refunded' ? 'destructive' : 'secondary'}
-                              className="text-[10px] px-1.5"
-                            >
-                              {PKG_STATUS_KO[p.status] ?? p.status}
-                            </Badge>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </ChartSection>
-
-          {/* 섹션 5 — 공간배정 */}
-          <ChartSection title="공간배정">
-            {latestCheckIn ? (
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                <div className="flex gap-2">
-                  <span className="text-muted-foreground w-14">진료실</span>
-                  <span>{latestCheckIn.examination_room ?? '-'}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="text-muted-foreground w-14">상담실</span>
-                  <span>{latestCheckIn.consultation_room ?? '-'}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="text-muted-foreground w-14">치료실</span>
-                  <span>{latestCheckIn.treatment_room ?? '-'}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="text-muted-foreground w-14">레이저</span>
-                  <span>{latestCheckIn.laser_room ?? '-'}</span>
-                </div>
-              </div>
-            ) : (
-              <div className="text-xs text-muted-foreground">방문 이력 없음</div>
-            )}
-          </ChartSection>
-
-          {/* 섹션 6 — 예약내역 */}
-          <ChartSection title="예약내역">
-            {reservations.length === 0 ? (
-              <div className="text-xs text-muted-foreground py-1">예약 없음</div>
-            ) : (
-              <div className="space-y-1">
-                {reservations.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1 text-xs">
-                    <span>{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
-                    <Badge variant="secondary" className="text-[10px]">{r.status}</Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ChartSection>
-
-          {/* 섹션 7 — 예약메모 (T-20260504-foot-MEMO-RESTRUCTURE) */}
-          <ChartSection title="예약메모 (예약 경로 확인)">
-            {reservations.filter((r) => r.booking_memo || r.memo).length === 0 ? (
-              <div className="text-xs text-muted-foreground py-1">메모 없음</div>
-            ) : (
-              <div className="space-y-1.5">
-                {reservations.filter((r) => r.booking_memo || r.memo).map((r) => (
-                  <div key={r.id} className="rounded bg-amber-50 border border-amber-100 px-2 py-1.5 text-xs">
-                    <div className="text-muted-foreground mb-0.5">{r.reservation_date} {r.reservation_time.slice(0, 5)}</div>
-                    <div>{r.booking_memo ?? r.memo}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ChartSection>
-
-          {/* 섹션 8 — 고객메모 (T-20260504-foot-MEMO-RESTRUCTURE) */}
-          <ChartSection title="고객메모 (성향·주차)" defaultOpen>
-            {editing ? (
-              <div className="space-y-1">
-                <Textarea
-                  value={customerMemo}
-                  onChange={(e) => setCustomerMemo(e.target.value)}
-                  rows={2}
-                  placeholder="고객 성향, 특이사항, 주차 정보 등"
-                  className="text-xs"
-                />
-              </div>
-            ) : (
-              <div className="text-xs">
-                {(customer.customer_memo ?? customer.memo) ? (
-                  <div className="whitespace-pre-wrap text-muted-foreground">{customer.customer_memo ?? customer.memo}</div>
-                ) : (
-                  <span className="text-muted-foreground">메모 없음</span>
-                )}
-              </div>
-            )}
-          </ChartSection>
-
-          {/* 섹션 9 — 상담메모 / 담당실장 */}
-          <ChartSection title="상담메모 / 담당실장" defaultOpen>
-            {editing ? (
-              <div className="space-y-1">
-                <Textarea
-                  value={tmMemo}
-                  onChange={(e) => setTmMemo(e.target.value)}
-                  rows={3}
-                  placeholder="실비 보험사, 상한액, 고객 성향 등..."
-                  className="text-xs"
-                />
-              </div>
-            ) : (
-              <div className="space-y-1.5 text-xs">
-                {customer.tm_memo ? (
-                  <div className="whitespace-pre-wrap text-muted-foreground">{customer.tm_memo}</div>
-                ) : (
-                  <span className="text-muted-foreground">상담메모 없음</span>
-                )}
-                <div className="flex gap-2 text-muted-foreground">
-                  <span className="w-16">담당실장</span>
-                  <span>{latestCheckIn?.consultant_id ?? '-'}</span>
-                </div>
-              </div>
-            )}
-          </ChartSection>
-
-          {/* 섹션 9 저장/취소 버튼 (editing 모드) */}
-          {editing && (
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setEditing(false)}>
-                취소
-              </Button>
-              <Button className="flex-1" onClick={saveEdit}>
-                저장
-              </Button>
-            </div>
-          )}
-
-          {/* 섹션 10 — 원장소견 */}
-          <ChartSection title="원장소견">
-            {checkInHistory.filter((ci) => ci.doctor_note).length === 0 ? (
-              <div className="text-xs text-muted-foreground py-1">소견 없음</div>
-            ) : (
-              <div className="space-y-2">
-                {checkInHistory.filter((ci) => ci.doctor_note).map((ci) => (
-                  <div key={ci.id} className="rounded bg-muted/30 px-2 py-1.5 text-xs">
-                    <div className="text-muted-foreground mb-0.5">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
-                    <div className="whitespace-pre-wrap">{ci.doctor_note}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ChartSection>
-
-          {/* 섹션 11 — 시술메모 */}
-          <ChartSection title="시술메모">
-            {checkInHistory.filter((ci) => ci.treatment_memo).length === 0 ? (
-              <div className="text-xs text-muted-foreground py-1">시술메모 없음</div>
-            ) : (
-              <div className="space-y-2">
-                {checkInHistory.filter((ci) => ci.treatment_memo).map((ci) => (
-                  <div key={ci.id} className="rounded bg-muted/30 px-2 py-1.5 text-xs">
-                    <div className="text-muted-foreground mb-0.5">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
-                    <div className="whitespace-pre-wrap">
-                      {ci.treatment_memo?.details ?? JSON.stringify(ci.treatment_memo)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ChartSection>
-
-          {/* 섹션 12 — 비포/에프터 */}
-          <ChartSection title="비포/에프터">
-            {checkInHistory.filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0).length === 0 ? (
-              <div className="text-xs text-muted-foreground py-1">사진 없음</div>
-            ) : (
-              <div className="space-y-3">
-                {checkInHistory.filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0).map((ci) => (
-                  <div key={ci.id}>
-                    <div className="text-xs text-muted-foreground mb-1">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
-                    <div className="grid grid-cols-2 gap-1">
-                      {(ci.treatment_photos ?? []).map((url, idx) => (
-                        <img
-                          key={idx}
-                          src={url}
-                          alt={`사진 ${idx + 1}`}
-                          className="rounded w-full object-cover aspect-square bg-muted"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ChartSection>
-
-          {/* 섹션 13 — 체크리스트 / 동의서 */}
-          <ChartSection title="체크리스트 / 동의서">
-            <div className="space-y-2 text-xs">
-              {latestCheckIn?.notes?.checklist && Object.keys(latestCheckIn.notes.checklist).length > 0 && (
-                <div>
-                  <div className="font-medium text-muted-foreground mb-1">체크리스트</div>
-                  <Badge variant="secondary" className="text-[10px]">작성완료</Badge>
-                </div>
-              )}
-              {consentEntries.length === 0 ? (
-                <div className="text-muted-foreground">동의서 없음</div>
-              ) : (
-                <div>
-                  <div className="font-medium text-muted-foreground mb-1">동의서</div>
-                  <div className="space-y-1">
-                    {consentEntries.map((c, i) => (
-                      <div key={i} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
-                        <span>{FORM_TITLES[c.form_type] ?? c.form_type}</span>
-                        <span className="flex items-center gap-1.5">
-                          <Badge variant="teal" className="text-[10px]">서명완료</Badge>
-                          <span className="text-muted-foreground">{format(new Date(c.signed_at), 'MM-dd')}</span>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </ChartSection>
-
-          {/* 섹션 14 — 처방전 */}
-          <ChartSection title="처방전">
-            {prescriptions.length === 0 ? (
-              <div className="text-xs text-muted-foreground py-1">처방전 없음</div>
-            ) : (
-              <div className="space-y-2 text-xs">
-                {prescriptions.map((rx) => (
-                  <div key={rx.id} className="rounded bg-muted/30 px-2 py-1.5">
-                    <div className="flex items-center justify-between text-muted-foreground mb-0.5">
-                      <span>{format(new Date(rx.prescribed_at), 'yyyy-MM-dd')}</span>
-                      {rx.prescribed_by_name && <span>{rx.prescribed_by_name}</span>}
-                    </div>
-                    {rx.diagnosis && <div className="font-medium mb-0.5">진단: {rx.diagnosis}</div>}
-                    {rx.prescription_items && rx.prescription_items.length > 0 && (
-                      <div className="space-y-0.5 mt-1">
-                        {rx.prescription_items.map((item, idx) => (
-                          <div key={idx} className="text-muted-foreground">
-                            {item.medication_name}
-                            {item.dosage && ` · ${item.dosage}`}
-                            {item.duration_days && ` · ${item.duration_days}일`}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </ChartSection>
-
-          {/* 섹션 15 — 서류발행 */}
-          <ChartSection title="서류발행">
-            {submissionEntries.length === 0 ? (
-              <div className="text-xs text-muted-foreground py-1">발행 이력 없음</div>
-            ) : (
-              <div className="space-y-1 text-xs">
-                {submissionEntries.map((s, i) => (
-                  <div key={i} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
-                    <span>{s.template_key ?? '-'}</span>
-                    <span className="text-muted-foreground flex items-center gap-1">
-                      <Printer className="h-3 w-3" />
-                      {format(new Date(s.printed_at), 'MM-dd HH:mm')}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ChartSection>
-
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
