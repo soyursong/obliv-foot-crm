@@ -2534,8 +2534,35 @@ export default function Dashboard() {
   const doneCount = (byStatus['done'] ?? []).length;
   const totalActive = filtered.filter((r) => r.status !== 'done').length;
 
-  const newPendingReservations = pendingReservations.filter((r) => r.visit_type === 'new');
-  const returningPendingReservations = pendingReservations.filter((r) => r.visit_type === 'returning');
+  // T-20260506-foot-SELFCHECKIN-MERGE: 1박스 원칙
+  // 이미 체크인 레코드가 연결된 예약(reservation_id 매칭)은 칸반 슬롯·타임라인에서 숨김
+  const checkedInResvIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const ci of rows) {
+      if (ci.reservation_id) s.add(ci.reservation_id);
+    }
+    return s;
+  }, [rows]);
+
+  // 체크인 완료된 예약 제외한 대기 예약 목록
+  const activePendingReservations = useMemo(
+    () => pendingReservations.filter((r) => !checkedInResvIds.has(r.id)),
+    [pendingReservations, checkedInResvIds],
+  );
+
+  // 타임라인용: 체크인 레코드가 연결된 예약은 status를 'checked_in'으로 로컬 오버라이드 (dimmed 표시)
+  const enrichedTimelineReservations = useMemo(
+    () =>
+      timelineReservations.map((r) =>
+        checkedInResvIds.has(r.id) && r.status === 'confirmed'
+          ? { ...r, status: 'checked_in' as const }
+          : r,
+      ),
+    [timelineReservations, checkedInResvIds],
+  );
+
+  const newPendingReservations = activePendingReservations.filter((r) => r.visit_type === 'new');
+  const returningPendingReservations = activePendingReservations.filter((r) => r.visit_type === 'returning');
 
   // checklist는 DB 마이그 후 consult_waiting으로 이관됨 — 호환성 유지 포함
   const allRegistered = [...(byStatus['registered'] ?? []), ...(byStatus['checklist'] ?? [])];
@@ -3159,7 +3186,7 @@ export default function Dashboard() {
         <div className="w-64 shrink-0 flex flex-col border-r overflow-hidden">
           <DashboardTimeline
             date={date}
-            reservations={timelineReservations}
+            reservations={enrichedTimelineReservations}
             selfCheckIns={selfCheckIns}
             onSlotClick={handleQuickSlotClick}
           />
