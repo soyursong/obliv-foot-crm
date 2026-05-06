@@ -31,6 +31,10 @@ import { cn } from '@/lib/utils';
 import { ConsentFormButtons } from '@/components/ConsentFormDialog';
 import { PreChecklist } from '@/components/PreChecklist';
 import { PhotoUpload } from '@/components/PhotoUpload';
+// T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 작성 양식 + 자동 업로드
+import { ChecklistForm } from '@/components/forms/ChecklistForm';
+import { ConsentForm } from '@/components/forms/ConsentForm';
+import { DocumentViewer } from '@/components/forms/DocumentViewer';
 import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 import type { CheckIn, Package as PackageType, PackageRemaining, Service } from '@/lib/types';
@@ -321,6 +325,10 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   const [savingCustomerMemo, setSavingCustomerMemo] = useState(false);
   const [saving, setSaving] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(false);
+  // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 양식 다이얼로그
+  const [tabletChecklistOpen, setTabletChecklistOpen] = useState(false);
+  const [tabletConsentOpen, setTabletConsentOpen] = useState(false);
+  const [docRefreshKey, setDocRefreshKey] = useState(0);
   /** 고객 차트번호 (T-20260504-foot-CHART-UI-BADGE) */
   const [chartNumber, setChartNumber] = useState<string | null>(null);
   /** T-20260506-foot-CHART-LINK-SYNC: customer_id null 시 phone으로 조회된 고객 ID (2순위 식별) */
@@ -877,6 +885,37 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
               )}
             </div>
             <ConsentFormButtons checkIn={checkIn} onSigned={onUpdated} />
+
+            {/* T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 양식 → Storage 자동 업로드 */}
+            {checkIn.customer_id && (
+              <div className="space-y-1.5 pt-1">
+                <div className="flex flex-wrap gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 text-xs gap-1 border-teal-300 text-teal-700 hover:bg-teal-50"
+                    onClick={() => setTabletChecklistOpen(true)}
+                    data-testid="tablet-checklist-btn"
+                  >
+                    📝 사전 체크리스트 & 개인정보
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 text-xs gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    onClick={() => setTabletConsentOpen(true)}
+                    data-testid="tablet-consent-btn"
+                  >
+                    📝 환불 & 비급여 동의서
+                  </Button>
+                </div>
+                <DocumentViewer
+                  key={docRefreshKey}
+                  customerId={checkIn.customer_id}
+                  compact
+                />
+              </div>
+            )}
           </div>
 
           {/* 결제 */}
@@ -1245,6 +1284,33 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             onUpdated();
           }}
         />
+
+        {/* T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 작성 양식 모달 */}
+        {checkIn.customer_id && (
+          <>
+            <ChecklistForm
+              open={tabletChecklistOpen}
+              onOpenChange={setTabletChecklistOpen}
+              customerId={checkIn.customer_id}
+              defaultName={checkIn.customer_name ?? undefined}
+              defaultPhone={checkIn.customer_phone ?? undefined}
+              onSaved={() => {
+                setDocRefreshKey((k) => k + 1);
+                onUpdated();
+              }}
+            />
+            <ConsentForm
+              open={tabletConsentOpen}
+              onOpenChange={setTabletConsentOpen}
+              customerId={checkIn.customer_id}
+              defaultName={checkIn.customer_name ?? undefined}
+              onSaved={() => {
+                setDocRefreshKey((k) => k + 1);
+                onUpdated();
+              }}
+            />
+          </>
+        )}
 
         {/* 시술 선택 모달 */}
         <ServiceSelectModal
