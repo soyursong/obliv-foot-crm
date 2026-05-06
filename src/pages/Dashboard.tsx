@@ -350,16 +350,17 @@ function DraggableCard({
             )}
           </div>
         </div>
-        {/* AC1·AC2: 초진/체험 → "초진" 딱지, 재진 → 없음 (접수시간 아래) */}
+        {/* T-20260506-foot-SLOT-LAYOUT-REBUILD: 초진 딱지 → 연한노랑, 재진 → 없음 */}
         {(checkIn.visit_type === 'new' || checkIn.visit_type === 'experience') && (
           <div className="mt-0.5">
-            <span className="bg-blue-100 text-blue-800 text-xs px-1.5 py-0.5 rounded">초진</span>
+            <span className="bg-yellow-100 text-yellow-800 text-[10px] px-1 py-0.5 rounded font-medium">초진</span>
           </div>
         )}
       </div>
     );
   }
 
+  // T-20260506-foot-CUSTOMER-BOX-COMPACT: 비-compact 카드 크기 30~40% 축소
   return (
     <div
       ref={setNodeRef}
@@ -381,17 +382,19 @@ function DraggableCard({
       }}
       title="드래그=이동 · 우클릭=고객차트·예약 · ⋮=상태변경 · 클릭=상세"
       className={cn(
-        'cursor-grab touch-none rounded-lg border p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing',
+        'cursor-grab touch-none rounded border p-1.5 shadow-sm transition hover:shadow active:cursor-grabbing',
         flagBg || 'bg-white',
         urgency,
       )}
     >
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
-          <GripVertical className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+      <div className="flex items-center justify-between gap-1.5">
+        <div className="flex items-center gap-1 truncate">
+          <GripVertical className="h-3 w-3 text-gray-400 shrink-0" />
+          {/* compact=true で名前フォントを text-sm に縮小 */}
           <CustomerHoverCard
             checkIn={checkIn}
             reservationTime={reservationTime}
+            compact
             onContextMenu={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -399,18 +402,18 @@ function DraggableCard({
             }}
           />
           {checkIn.queue_number != null && (
-            <span className="text-xs text-teal-600">#{checkIn.queue_number}</span>
+            <span className="text-[10px] text-teal-600 shrink-0">#{checkIn.queue_number}</span>
           )}
           {checkIn.customer_phone && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-[10px] text-muted-foreground truncate">
               ···{maskPhoneTail(checkIn.customer_phone)}
             </span>
           )}
         </div>
         <div className="flex items-center shrink-0">
-          {/* 태블릿 터치 영역 확보 + onPointerDown 전파 차단 — T-20260504-foot-TABLET-LASER-ROOM-SELECT */}
+          {/* 태블릿 터치 영역 유지 (min-w/h 36px) — T-20260504-foot-TABLET-LASER-ROOM-SELECT */}
           <button
-            className="p-1.5 rounded hover:bg-gray-100 active:bg-gray-200 transition min-w-[36px] min-h-[36px] flex items-center justify-center"
+            className="rounded hover:bg-gray-100 active:bg-gray-200 transition min-w-[36px] min-h-[36px] flex items-center justify-center"
             onClick={(e) => {
               e.stopPropagation();
               const rect = e.currentTarget.getBoundingClientRect();
@@ -419,42 +422,43 @@ function DraggableCard({
             }}
             onPointerDown={(e) => e.stopPropagation()}
           >
-            <MoreVertical className="h-4 w-4 text-gray-400" />
+            <MoreVertical className="h-3.5 w-3.5 text-gray-400" />
           </button>
         </div>
       </div>
       {packageLabel && (
-        <div className="mt-1 text-xs text-violet-600 font-medium">
+        <div className="mt-0.5 text-[10px] text-violet-600 font-medium truncate">
           {packageLabel.name} {packageLabel.remaining}/{packageLabel.total}
         </div>
       )}
-      {/* 동의서 서명 배지 (non-compact) */}
+      {/* 동의서 서명 배지 */}
       {consentEntry?.refundAt && (
         <div
           data-testid="consent-badge-refund"
-          className="mt-1 text-xs text-emerald-600"
+          className="mt-0.5 text-[10px] text-emerald-600 truncate"
         >
           ✓ 환불동의서 ({format(new Date(consentEntry.refundAt), 'M/d')})
           {consentEntry.nonCoveredAt && (
-            <span className="ml-1">· 비급여확인 ({format(new Date(consentEntry.nonCoveredAt), 'M/d')})</span>
+            <span className="ml-1">· 비급여확인</span>
           )}
         </div>
       )}
-      <div className="mt-1.5 flex items-center justify-between text-xs">
+      {/* 경과 시간 + 현진행단계 — 폰트 text-[10px] 축소 */}
+      <div className="mt-0.5 flex items-center justify-between text-[10px]">
         <span className={cn('text-muted-foreground tabular-nums font-mono', (mins >= 30 || isLaserOvertime) && 'font-semibold text-red-600')}>
           {mmss} {stageStart ? STATUS_KO[checkIn.status] ?? '경과' : '대기'}
         </span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           {checkIn.notes?.id_check_required && (
-            <Badge variant="destructive" className="text-xs">신분증 확인</Badge>
+            <Badge variant="destructive" className="h-4 px-1 text-[10px]">신분증</Badge>
           )}
-          {checkIn.priority_flag && <Badge variant="destructive">우선</Badge>}
+          {checkIn.priority_flag && <Badge variant="destructive" className="h-4 px-1 text-[10px]">우선</Badge>}
         </div>
       </div>
-      {/* AC1·AC2: 초진/체험 → "초진" 딱지, 재진 → 없음 (접수시간 아래) */}
+      {/* T-20260506-foot-SLOT-LAYOUT-REBUILD: 초진 딱지 → 연한노랑으로 통일, 재진 → 없음 */}
       {(checkIn.visit_type === 'new' || checkIn.visit_type === 'experience') && (
-        <div className="mt-1">
-          <span className="bg-blue-100 text-blue-800 text-xs px-1.5 py-0.5 rounded">초진</span>
+        <div className="mt-0.5">
+          <span className="bg-yellow-100 text-yellow-800 text-[10px] px-1 py-0.5 rounded font-medium">초진</span>
         </div>
       )}
     </div>
@@ -902,9 +906,15 @@ function MiniCalendar({
 
 // ── DashboardTimeline (통합 시간표) ───────────────────────────────────────────
 // T-20260504-foot-SCHEDULE-UNIFIED-VIEW: 초진/재진 슬롯을 동일 타임라인 내 인라인 표시
-const SLOT_MAX = 4; // 초진/재진 슬롯 상한 (표시 전용, 차단 없음)
+// T-20260506-foot-SLOT-LAYOUT-REBUILD: SLOT_MAX 6명으로 확장 (30분당 4~6명 수용)
+const SLOT_MAX = 6; // 초진/재진 슬롯 상한 (표시 전용, 차단 없음)
 
-/** 예약 1건 미니 카드 */
+/**
+ * 예약/셀프접수 1건 미니 카드
+ * T-20260506-foot-SLOT-LAYOUT-REBUILD:
+ *   - 초진/체험 = 연한노랑 (bg-yellow-100) + "초" 딱지
+ *   - 재진 = 연두색 (bg-green-100) + 딱지 없음
+ */
 function TimelineCard({
   name,
   visitType,
@@ -916,12 +926,14 @@ function TimelineCard({
   dimmed?: boolean;
   struck?: boolean;
 }) {
+  // 초진/체험: 연한노랑 / 재진: 연두색
   const base =
-    visitType === 'new'
-      ? 'bg-blue-100 text-blue-800 border-blue-200'
-      : visitType === 'returning'
-        ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-        : 'bg-amber-100 text-amber-800 border-amber-200';
+    visitType === 'returning'
+      ? 'bg-green-100 text-green-900 border-green-200'
+      : 'bg-yellow-100 text-yellow-900 border-yellow-300';
+
+  const showBadge = visitType === 'new' || visitType === 'experience';
+
   return (
     <div
       className={cn(
@@ -930,8 +942,11 @@ function TimelineCard({
         dimmed && 'opacity-50',
         struck && 'line-through opacity-30',
       )}
-      title={name}
+      title={`${name}${visitType === 'experience' ? ' (체험)' : ''}`}
     >
+      {showBadge && (
+        <span className="shrink-0 bg-yellow-200 text-yellow-900 text-[9px] px-0.5 rounded leading-tight font-bold">초</span>
+      )}
       <span className="truncate">{name}</span>
     </div>
   );
@@ -996,11 +1011,13 @@ function DashboardTimeline({
       <div className="text-xs font-semibold px-2 py-1.5 border-b bg-muted/20 text-gray-600 sticky top-0 flex items-center gap-1">
         <Clock className="h-3 w-3" /> 통합 시간표
       </div>
-      {/* 범례 */}
+      {/* 범례 — T-20260506-foot-SLOT-LAYOUT-REBUILD */}
       <div className="flex items-center gap-2 px-2 py-1 border-b bg-gray-50/70 text-[9px]">
-        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold border border-blue-200">초진</span>
-        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">재진</span>
-        <span className="ml-auto text-gray-400">상한 {SLOT_MAX}</span>
+        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-yellow-100 text-yellow-900 font-semibold border border-yellow-300">
+          <span className="bg-yellow-200 text-yellow-900 text-[8px] px-0.5 rounded font-bold">초</span>초진
+        </span>
+        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-green-100 text-green-900 font-semibold border border-green-200">재진</span>
+        <span className="ml-auto text-gray-400">상한 {SLOT_MAX}/슬롯</span>
       </div>
       {/* 타임라인 행 */}
       <div className="flex-1 overflow-y-auto">
@@ -1011,8 +1028,6 @@ function DashboardTimeline({
           const retSelf = retSelfMap[slot] ?? [];
           const newCnt = newItems.length + newSelf.length;
           const retCnt = retItems.length + retSelf.length;
-          const newFull = newCnt >= SLOT_MAX;
-          const retFull = retCnt >= SLOT_MAX;
           const hasAny = newCnt > 0 || retCnt > 0;
           const isCurrentSlot = isToday && slot === currentSlot;
           const isPastSlot =
@@ -1020,14 +1035,34 @@ function DashboardTimeline({
             parseInt(slot.split(':')[0]) * 60 + parseInt(slot.split(':')[1]) <
               currentH * 60 + currentM - 30;
 
+          // T-20260506-foot-SLOT-LAYOUT-REBUILD: 초진(연한노랑) + 재진(연두) 통합 슬롯
+          // 모든 카드를 하나의 flex-wrap 컨테이너에 배치 (예약시간 순 — 초진 먼저)
+          const allItems: Array<{ key: string; name: string; visitType: 'new' | 'returning' | 'experience'; dimmed?: boolean; struck?: boolean }> = [
+            ...newItems.map((r) => ({ key: `r-${r.id}`, name: r.customer_name ?? '', visitType: r.visit_type, dimmed: r.status === 'checked_in', struck: r.status === 'cancelled' })),
+            ...newSelf.map((ci) => ({ key: `s-${ci.id}`, name: ci.customer_name, visitType: ci.visit_type as 'new' | 'returning' | 'experience' })),
+            ...retItems.map((r) => ({ key: `r-${r.id}`, name: r.customer_name ?? '', visitType: r.visit_type, dimmed: r.status === 'checked_in', struck: r.status === 'cancelled' })),
+            ...retSelf.map((ci) => ({ key: `s-${ci.id}`, name: ci.customer_name, visitType: ci.visit_type as 'new' | 'returning' | 'experience' })),
+          ];
+          const totalCnt = allItems.length;
+          const isFull = totalCnt >= SLOT_MAX;
+
+          // 슬롯 헤더 배경: 초진 있으면 연한노랑 tint, 재진만 있으면 연두 tint, 현재 슬롯은 teal 우선
+          const slotBg = isCurrentSlot
+            ? 'bg-teal-50/60'
+            : newCnt > 0
+              ? 'bg-yellow-50/40'
+              : retCnt > 0
+                ? 'bg-green-50/40'
+                : '';
+
           return (
             <div
               key={slot}
               className={cn(
                 'border-b border-gray-100',
-                isCurrentSlot && 'bg-teal-50/60',
+                slotBg,
                 isPastSlot && 'opacity-55',
-                hasAny ? 'min-h-[64px]' : 'min-h-[44px]',
+                hasAny ? 'min-h-[56px]' : 'min-h-[40px]',
               )}
             >
               {/* 시간 레이블 행 */}
@@ -1043,82 +1078,41 @@ function DashboardTimeline({
                 {isCurrentSlot && (
                   <div className="h-1.5 w-1.5 rounded-full bg-teal-500 animate-pulse shrink-0" />
                 )}
-                {/* 초진/재진 카운터 배지 */}
-                <div className="ml-auto flex items-center gap-0.5">
-                  <span
-                    className={cn(
-                      'text-[9px] font-mono px-1 py-0.5 rounded font-medium leading-none',
-                      newFull
-                        ? 'bg-red-100 text-red-700 ring-1 ring-red-300'
-                        : newCnt > 0
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'bg-blue-50 text-blue-400',
+                {/* 통합 카운터: 초N/재M/상한S */}
+                {hasAny && (
+                  <div className="ml-auto flex items-center gap-0.5">
+                    {newCnt > 0 && (
+                      <span className="text-[9px] font-mono px-1 py-0.5 rounded font-medium leading-none bg-yellow-100 text-yellow-800 border border-yellow-200"
+                        title={`초진 ${newCnt}명`}>초{newCnt}</span>
                     )}
-                    title={`초진 ${newCnt}/${SLOT_MAX}${newFull ? ' — 상한 도달' : ''}`}
-                  >
-                    초{newCnt}/{SLOT_MAX}
-                  </span>
-                  <span
-                    className={cn(
-                      'text-[9px] font-mono px-1 py-0.5 rounded font-medium leading-none',
-                      retFull
-                        ? 'bg-red-100 text-red-700 ring-1 ring-red-300'
-                        : retCnt > 0
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-emerald-50 text-emerald-400',
+                    {retCnt > 0 && (
+                      <span className="text-[9px] font-mono px-1 py-0.5 rounded font-medium leading-none bg-green-100 text-green-800 border border-green-200"
+                        title={`재진 ${retCnt}명`}>재{retCnt}</span>
                     )}
-                    title={`재진 ${retCnt}/${SLOT_MAX}${retFull ? ' — 상한 도달' : ''}`}
-                  >
-                    재{retCnt}/{SLOT_MAX}
-                  </span>
-                </div>
+                    {isFull && (
+                      <span className="text-[9px] px-1 py-0.5 rounded font-bold leading-none bg-red-100 text-red-700 ring-1 ring-red-300"
+                        title={`상한 ${SLOT_MAX}명 도달`}>FULL</span>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {/* 통합 인라인 레인: 초진 | 재진 나란히 */}
+              {/* T-20260506-foot-SLOT-LAYOUT-REBUILD: 초진+재진 통합 flex-wrap 레인 (자동확장) */}
               {hasAny && (
-                <div className="grid grid-cols-2 gap-0.5 px-1 pb-1">
-                  {/* 초진 레인 */}
-                  <div className="flex flex-col gap-0.5">
-                    {newItems.map((r) => (
-                      <TimelineCard
-                        key={r.id}
-                        name={r.customer_name ?? ''}
-                        visitType={r.visit_type}
-                        dimmed={r.status === 'checked_in'}
-                        struck={r.status === 'cancelled'}
-                      />
-                    ))}
-                    {newSelf.map((ci) => (
-                      <TimelineCard
-                        key={ci.id}
-                        name={ci.customer_name}
-                        visitType={ci.visit_type}
-                      />
-                    ))}
-                  </div>
-                  {/* 재진 레인 */}
-                  <div className="flex flex-col gap-0.5">
-                    {retItems.map((r) => (
-                      <TimelineCard
-                        key={r.id}
-                        name={r.customer_name ?? ''}
-                        visitType={r.visit_type}
-                        dimmed={r.status === 'checked_in'}
-                        struck={r.status === 'cancelled'}
-                      />
-                    ))}
-                    {retSelf.map((ci) => (
-                      <TimelineCard
-                        key={ci.id}
-                        name={ci.customer_name}
-                        visitType={ci.visit_type}
-                      />
-                    ))}
-                  </div>
+                <div className="flex flex-wrap gap-0.5 px-1 pb-1">
+                  {allItems.map((item) => (
+                    <TimelineCard
+                      key={item.key}
+                      name={item.name}
+                      visitType={item.visitType}
+                      dimmed={item.dimmed}
+                      struck={item.struck}
+                    />
+                  ))}
                 </div>
               )}
 
-              {/* 빈 슬롯 클릭 → 예약 생성 */}
+              {/* 슬롯 클릭 → 예약 생성 (초진으로 기본) */}
               <button
                 onClick={() => onSlotClick({ date: dateStr, time: slot })}
                 className={cn(
