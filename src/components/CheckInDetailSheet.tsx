@@ -28,7 +28,6 @@ import { useAuth } from '@/lib/auth';
 import { STATUS_KO } from '@/lib/status';
 import { formatAmount, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { ConsentFormButtons } from '@/components/ConsentFormDialog';
 import { PreChecklist } from '@/components/PreChecklist';
 import { PhotoUpload } from '@/components/PhotoUpload';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 작성 양식 + 자동 업로드
@@ -855,37 +854,6 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
           <div className="space-y-2">
             <span className="text-sm font-semibold text-muted-foreground">체크리스트 / 동의서</span>
 
-            {/* 상담 단계: 필수 동의서 안내 배너 */}
-            {isConsultStage && (
-              <div
-                data-testid="consult-consent-banner"
-                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 space-y-0.5"
-              >
-                <p className="text-xs font-semibold text-amber-900 flex items-center gap-1">
-                  <FileText className="h-3 w-3" /> 결제 전 필수 동의서
-                </p>
-                <p className="text-xs text-amber-600">
-                  아래 버튼에서 환불동의서·비급여동의서를 서명받아 주세요
-                </p>
-              </div>
-            )}
-
-            <div className="flex flex-wrap gap-1.5">
-              {checkIn.visit_type === 'new' && (
-                <Button
-                  variant={checkIn.notes?.checklist ? 'default' : 'outline'}
-                  size="sm"
-                  className={cn('text-xs gap-1', checkIn.notes?.checklist && 'bg-emerald-600 hover:bg-emerald-700')}
-                  onClick={() => {
-                    if (!checkIn.notes?.checklist) setChecklistOpen(true);
-                  }}
-                >
-                  {checkIn.notes?.checklist ? '✓ 체크리스트' : '📋 체크리스트'}
-                </Button>
-              )}
-            </div>
-            <ConsentFormButtons checkIn={checkIn} onSigned={onUpdated} />
-
             {/* T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 양식 → Storage 자동 업로드 */}
             {checkIn.customer_id && (
               <div className="space-y-1.5 pt-1">
@@ -1040,22 +1008,6 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
               </div>
             </>
           )}
-
-          {/* 상담 메모 */}
-          <Separator />
-          <div className="space-y-2">
-            <Label className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
-              <FileText className="h-3 w-3" /> 상담 메모
-              <span className="ml-auto text-xs font-normal text-muted-foreground">상담 단계</span>
-            </Label>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="상담 내용을 기록하세요"
-              rows={3}
-              className="text-sm"
-            />
-          </div>
 
           {/* 원장 소견 / 진료 패널 */}
           {(() => {
