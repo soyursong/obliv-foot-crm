@@ -37,6 +37,19 @@ interface PackagePayment {
   created_at: string;
 }
 
+// T-20260506-foot-CHART-MINI-HOMEPAGE: 구매 패키지(티켓) 섹션
+interface PackageSession {
+  id: string;
+  package_id: string;
+  session_number: number;
+  session_type: string;
+  session_date: string;
+  performed_by: string | null;
+  staff_name: string | null;
+  status: string;
+  memo: string | null;
+}
+
 const PKG_STATUS_KO: Record<string, string> = {
   active: '진행중',
   completed: '완료',
@@ -92,6 +105,7 @@ export default function CustomerChartPage() {
   const [prescriptions, setPrescriptions] = useState<PrescriptionRow[]>([]);
   const [consentEntries, setConsentEntries] = useState<{ form_type: string; signed_at: string }[]>([]);
   const [submissionEntries, setSubmissionEntries] = useState<{ template_key?: string; printed_at: string }[]>([]);
+  const [packageSessions, setPackageSessions] = useState<PackageSession[]>([]);
   const [loading, setLoading] = useState(true);
   // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 인라인 편집
   const [editingCustomerMemo, setEditingCustomerMemo] = useState(false);
@@ -129,6 +143,30 @@ export default function CustomerChartPage() {
         }),
       );
       setPackages(pkgs.map((p, i) => ({ ...p, remaining: remaining[i] })));
+
+      // T-20260506-foot-CHART-MINI-HOMEPAGE: 구매 패키지(티켓) — 회차별 치료사명 조회
+      if (pkgs.length > 0) {
+        const pkgIds = pkgs.map((p) => p.id);
+        const { data: sessData } = await supabase
+          .from('package_sessions')
+          .select('id, package_id, session_number, session_type, session_date, performed_by, status, memo, staff:performed_by(name)')
+          .in('package_id', pkgIds)
+          .order('session_number', { ascending: true });
+        setPackageSessions(
+          (sessData ?? []).map((s: Record<string, unknown>) => ({
+            id: s.id as string,
+            package_id: s.package_id as string,
+            session_number: s.session_number as number,
+            session_type: s.session_type as string,
+            session_date: s.session_date as string,
+            performed_by: s.performed_by as string | null,
+            staff_name: (s.staff as { name: string } | null)?.name ?? null,
+            status: s.status as string,
+            memo: s.memo as string | null,
+          })),
+        );
+      }
+
       setVisits((visitRes.data ?? []) as CheckIn[]);
       setPayments((payRes.data ?? []) as Payment[]);
       setPkgPayments((pkgPayRes.data ?? []) as PackagePayment[]);
@@ -359,6 +397,91 @@ export default function CustomerChartPage() {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+        </ChartSection>
+
+        {/* 섹션 4.5 — 구매 패키지(티켓) — T-20260506-foot-CHART-MINI-HOMEPAGE */}
+        <ChartSection title="구매 패키지(티켓)" defaultOpen>
+          {packages.length === 0 ? (
+            <div className="py-2 text-xs text-muted-foreground">패키지 없음</div>
+          ) : (
+            <div className="space-y-3">
+              {packages.map((p) => {
+                const usedSessions = packageSessions.filter(
+                  (s) => s.package_id === p.id && s.status === 'used',
+                );
+                // 치료사명 목록 (중복 제거)
+                const therapistNames = [...new Set(
+                  usedSessions.map((s) => s.staff_name).filter(Boolean),
+                )];
+                const usedCount = p.remaining
+                  ? p.total_sessions - p.remaining.total_remaining
+                  : usedSessions.length;
+
+                return (
+                  <div key={p.id} className="rounded-lg border border-muted/40 overflow-hidden">
+                    {/* 패키지 헤더 */}
+                    <div className="flex items-center justify-between bg-muted/20 px-3 py-1.5">
+                      <span className="text-xs font-semibold text-teal-800">{p.package_name}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                        p.status === 'active' ? 'bg-teal-100 text-teal-700' :
+                        p.status === 'refunded' ? 'bg-red-100 text-red-700' :
+                        'bg-muted text-muted-foreground'
+                      }`}>
+                        {PKG_STATUS_KO[p.status] ?? p.status}
+                      </span>
+                    </div>
+                    {/* 3×4 표: 상품명 | 수가 | 구매횟수 | 사용횟수(치료사명) */}
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-muted/10 text-muted-foreground border-b border-muted/20">
+                          <th className="text-left px-3 py-1.5 font-medium w-1/4">수가</th>
+                          <th className="text-center px-2 py-1.5 font-medium w-1/4">구매횟수</th>
+                          <th className="text-center px-2 py-1.5 font-medium w-1/4 text-teal-700">사용횟수</th>
+                          <th className="text-left px-2 py-1.5 font-medium w-1/4">치료사</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="px-3 py-2 tabular-nums font-medium">{formatAmount(p.total_amount)}</td>
+                          <td className="px-2 py-2 text-center">{p.total_sessions}회</td>
+                          <td className="px-2 py-2 text-center font-semibold text-teal-700">{usedCount}회</td>
+                          <td className="px-2 py-2 text-muted-foreground">
+                            {therapistNames.length > 0
+                              ? therapistNames.join(', ')
+                              : usedCount > 0 ? '기록 없음' : '-'}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    {/* 회차별 상세 (세션 있을 때만) */}
+                    {usedSessions.length > 0 && (
+                      <div className="border-t border-muted/20 px-3 pb-2 pt-1.5">
+                        <div className="text-[10px] text-muted-foreground mb-1 font-medium">회차 상세</div>
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                          {usedSessions.map((s) => {
+                            const typeLabel: Record<string, string> = {
+                              heated_laser: '가열',
+                              unheated_laser: '비가열',
+                              iv: '수액',
+                              preconditioning: '프컨',
+                            };
+                            return (
+                              <div key={s.id} className="flex items-center gap-1.5 text-[10px]">
+                                <span className="text-muted-foreground w-5 tabular-nums">{s.session_number}회</span>
+                                <span className="rounded bg-muted/40 px-1">{typeLabel[s.session_type] ?? s.session_type}</span>
+                                <span className="text-muted-foreground">{s.session_date}</span>
+                                {s.staff_name && <span className="text-teal-600 truncate">{s.staff_name}</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </ChartSection>
