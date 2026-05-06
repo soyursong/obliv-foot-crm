@@ -609,9 +609,82 @@ export default function SelfCheckIn() {
         }
       }
 
+      // ── T-20260506-foot-SELFCHECKIN-MERGE: 예약 merge 로직 ────────────────
+      // 한 박스 원칙: 이름+전화번호 일치 시 무조건 단일 박스 유지
+      const todayDate = new Date().toISOString().slice(0, 10);
+      const todayStart = `${todayDate}T00:00:00+09:00`;
+      const todayEnd = `${todayDate}T23:59:59+09:00`;
+
+      // (1) 당일 기존 체크인 중복 방지: 동일 고객 check_in 존재 시 새 INSERT 금지
+      if (customerId) {
+        const { data: existingCi } = await anonClient
+          .from('check_ins')
+          .select('id, queue_number')
+          .eq('clinic_id', clinicId)
+          .eq('customer_id', customerId)
+          .gte('checked_in_at', todayStart)
+          .lte('checked_in_at', todayEnd)
+          .order('checked_in_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (existingCi) {
+          // 이미 접수된 고객 → 중복 생성 금지, 완료 화면으로 이동
+          const ci = existingCi as { id: string; queue_number?: number | null };
+          setQueueNumber(ci.queue_number ?? null);
+          setStep('done');
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      // (2) 당일 예약 매칭: customer_id 기준 → fallback: customer_phone 기준
+      let matchedReservationId: string | null = null;
+      try {
+        if (customerId) {
+          const { data: resvById } = await anonClient
+            .from('reservations')
+            .select('id')
+            .eq('clinic_id', clinicId)
+            .eq('customer_id', customerId)
+            .eq('reservation_date', todayDate)
+            .eq('status', 'confirmed')
+            .order('reservation_time', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          if (resvById) matchedReservationId = (resvById as { id: string }).id;
+        }
+
+        if (!matchedReservationId) {
+          // Fallback: phone 기준 (중복 제거 후 순서대로 시도)
+          const phonesToTry = [...new Set(
+            [phoneStored, phoneE164, phoneDigits].filter(Boolean) as string[]
+          )];
+          for (const ph of phonesToTry) {
+            const { data: resvByPhone } = await anonClient
+              .from('reservations')
+              .select('id')
+              .eq('clinic_id', clinicId)
+              .eq('customer_phone', ph)
+              .eq('reservation_date', todayDate)
+              .eq('status', 'confirmed')
+              .order('reservation_time', { ascending: true })
+              .limit(1)
+              .maybeSingle();
+            if (resvByPhone) {
+              matchedReservationId = (resvByPhone as { id: string }).id;
+              break;
+            }
+          }
+        }
+      } catch {
+        // 예약 조회 실패 → 무시 (신규 접수로 처리)
+      }
+      // ── merge 로직 끝 ──────────────────────────────────────────────────────
+
       const { data: queueData, error: queueErr } = await anonClient.rpc('next_queue_number', {
         p_clinic_id: clinicId,
-        p_date: new Date().toISOString().slice(0, 10),
+        p_date: todayDate,
       });
 
       let queue: number | null = null;
@@ -640,6 +713,8 @@ export default function SelfCheckIn() {
         status: checkinVisitType === 'returning' ? 'treatment_waiting' : 'registered',
         queue_number: queue,
         notes: notesPayload,
+        // T-20260506-foot-SELFCHECKIN-MERGE: 예약 있으면 reservation_id 링크 (중복 박스 방지)
+        reservation_id: matchedReservationId,
       });
 
       if (ciErr) {
@@ -647,6 +722,19 @@ export default function SelfCheckIn() {
         setStep('error');
         setSubmitting(false);
         return;
+      }
+
+      // (3) 매칭된 예약 → checked_in 상태 업데이트 (최선 노력, RLS 차단 시 무시)
+      if (matchedReservationId) {
+        try {
+          await anonClient
+            .from('reservations')
+            .update({ status: 'checked_in' })
+            .eq('id', matchedReservationId)
+            .eq('status', 'confirmed'); // safety: confirmed 상태만 업데이트
+        } catch {
+          // RLS/권한 오류 → 체크인 자체는 성공이므로 무시
+        }
       }
 
       setQueueNumber(queue);
