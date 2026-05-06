@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
-import { ChevronDown, Clock, CreditCard, ExternalLink, Phone, FileText, Camera, Package, Plus, Stethoscope, Trash2, Bell } from 'lucide-react';
+import { ChevronDown, Clock, CreditCard, ExternalLink, Phone, FileText, Camera, Package, Stethoscope, Trash2, Bell } from 'lucide-react';
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
 import { toast } from 'sonner';
 import {
@@ -25,7 +25,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { STATUS_KO, VISIT_TYPE_KO } from '@/lib/status';
+import { STATUS_KO } from '@/lib/status';
 import { formatAmount, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { ConsentFormButtons } from '@/components/ConsentFormDialog';
@@ -48,13 +48,6 @@ interface TreatmentItem {
   /** 패키지 회차 사용 완료 여부 */
   settled: boolean;
 }
-
-const SESSION_TYPE_LABELS: Record<SessionType, string> = {
-  heated_laser: '가열',
-  unheated_laser: '비가열',
-  iv: '수액',
-  preconditioning: '사전처치',
-};
 
 const SESSION_TYPE_FULL: Record<SessionType, string> = {
   heated_laser: '가열레이저',
@@ -347,8 +340,8 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   /** 담당실장 드롭다운용 스태프 목록 */
   const [staffList, setStaffList] = useState<Array<{ id: string; name: string; role: string }>>([]);
 
-  // ── 시술 항목 상태 ──
-  const [treatmentItems, setTreatmentItems] = useState<TreatmentItem[]>([]);
+  // ── 시술 항목 상태 (ServiceSelectModal/SessionUseInSheetDialog 유지용) ──
+  const [, setTreatmentItems] = useState<TreatmentItem[]>([]);
   const [svcModalOpen, setSvcModalOpen] = useState(false);
   const [sessionUseOpen, setSessionUseOpen] = useState(false);
   const [sessionUsePkg, setSessionUsePkg] = useState<PackageType | null>(null);
@@ -434,12 +427,13 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             .eq('id', checkIn.reservation_id)
             .single()
         : Promise.resolve({ data: null }),
-      // 담당실장 드롭다운용 스태프 목록 (T-20260504-foot-TREATMENT-SIMPLIFY)
+      // 담당실장 드롭다운용 스태프 목록 — 실장(상담실장) 역할만 (T-20260506 항목8)
       supabase
         .from('staff')
         .select('id, name, role')
         .eq('clinic_id', checkIn.clinic_id)
         .eq('active', true)
+        .in('role', ['consultant'])
         .order('name'),
     ]);
 
@@ -572,23 +566,6 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     toast.success('고객메모 저장됨');
   };
 
-  const moveToPaymentWaiting = async () => {
-    if (!checkIn) return;
-    const { error } = await supabase
-      .from('check_ins')
-      .update({ status: 'payment_waiting' })
-      .eq('id', checkIn.id);
-    if (error) { toast.error(`이동 실패: ${error.message}`); return; }
-    await supabase.from('status_transitions').insert({
-      check_in_id: checkIn.id,
-      clinic_id: checkIn.clinic_id,
-      from_status: checkIn.status,
-      to_status: 'payment_waiting',
-    });
-    toast.success('수납대기로 이동');
-    onUpdated();
-  };
-
   const totalPaid = payments
     .filter((p) => p.payment_type === 'payment')
     .reduce((s, p) => s + p.amount, 0);
@@ -608,29 +585,9 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     setTreatmentItems((prev) => [...prev, item]);
   };
 
-  const removeTreatmentItem = (idx: number) => {
-    setTreatmentItems((prev) => prev.filter((_, i) => i !== idx));
-  };
-
   const markSettled = (idx: number) => {
     setTreatmentItems((prev) =>
       prev.map((item, i) => (i === idx ? { ...item, settled: true } : item)),
-    );
-  };
-
-  /** idx 번째 시술 항목에 연결되는 첫 번째 유효 패키지 반환 */
-  const findPkgForItem = (item: TreatmentItem): PackageType | null => {
-    if (!item.sessionType) return null;
-    return (
-      packages.find((pkg) => {
-        const rem = pkgRemaining.get(pkg.id);
-        if (!rem) return false;
-        // SESSION_TYPE_TO_REM_KEY로 올바르게 변환:
-        // 'heated_laser' → 'heated', 'unheated_laser' → 'unheated'
-        const field = SESSION_TYPE_TO_REM_KEY[item.sessionType!];
-        const val = rem[field];
-        return typeof val === 'number' && val > 0;
-      }) ?? null
     );
   };
 
@@ -638,17 +595,6 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   const isConsultStage =
     checkIn.status === 'consultation' || checkIn.status === 'consult_waiting';
   const isDeskStage = checkIn.status === 'payment_waiting';
-
-  const hasSettledItem = treatmentItems.some((i) => i.settled);
-  const canMoveToPaymentWaiting =
-    hasSettledItem &&
-    checkIn.status !== 'payment_waiting' &&
-    checkIn.status !== 'treatment_waiting' &&
-    checkIn.status !== 'done' &&
-    checkIn.status !== 'cancelled';
-
-  // 데스크(payment_waiting) 단계에서 회차 차감 완료 후 → 시술 완료(done) 직행 버튼
-  const canMoveToDone = isDeskStage && hasSettledItem;
 
   /**
    * 데스크 통합 메뉴에서 "패키지 회차 차감" 클릭 시:
@@ -674,23 +620,6 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     setSessionUseOpen(true);
   };
 
-  const moveToDone = async () => {
-    if (!checkIn) return;
-    const { error } = await supabase
-      .from('check_ins')
-      .update({ status: 'done' })
-      .eq('id', checkIn.id);
-    if (error) { toast.error(`이동 실패: ${error.message}`); return; }
-    await supabase.from('status_transitions').insert({
-      check_in_id: checkIn.id,
-      clinic_id: checkIn.clinic_id,
-      from_status: checkIn.status,
-      to_status: 'done',
-    });
-    toast.success('시술 완료 처리됨');
-    onUpdated();
-  };
-
   return (
     <Sheet open={!!checkIn} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-[400px] sm:w-[440px] max-h-screen overflow-y-auto">
@@ -701,10 +630,10 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
                 <span className="text-teal-700">#{checkIn.queue_number}</span>
               )}
               {checkIn.customer_name}
-              {/* 초진/재진/체험 배지 (T-20260504-foot-CHART-UI-BADGE, T-20260506-foot-CHART-SIMPLE-REVAMP) */}
+              {/* 초진/재진/체험 배지 — 성함 옆 상단 배치 (T-20260506 항목1) */}
               {checkIn.visit_type === 'new' ? (
                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-blue-100 text-blue-700 shrink-0">
-                  첫방문
+                  초진
                 </span>
               ) : checkIn.visit_type === 'experience' ? (
                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-purple-100 text-purple-700 shrink-0">
@@ -712,7 +641,7 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
                 </span>
               ) : (
                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-emerald-100 text-emerald-700 shrink-0">
-                  재방문
+                  재진
                 </span>
               )}
             </SheetTitle>
@@ -729,57 +658,59 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
         </SheetHeader>
 
         <div className="mt-4 space-y-4">
-          {/* 기본 정보 */}
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge variant={checkIn.visit_type === 'new' ? 'teal' : 'secondary'}>
-              {VISIT_TYPE_KO[checkIn.visit_type]}
-            </Badge>
-            <Badge variant="outline">{STATUS_KO[checkIn.status]}</Badge>
-            {checkIn.priority_flag && (
-              <Badge variant="destructive">{checkIn.priority_flag}</Badge>
-            )}
-            {checkIn.notes?.id_check_required && (
-              <button
-                title="클릭하면 신분증 확인 완료 처리"
-                onClick={async () => {
-                  const newNotes = {
-                    ...(checkIn.notes as Record<string, unknown> ?? {}),
-                    id_check_required: false,
-                  };
-                  const { error } = await supabase
-                    .from('check_ins')
-                    .update({ notes: newNotes })
-                    .eq('id', checkIn.id);
-                  if (!error) {
-                    toast.success('신분증 확인 완료');
-                    onUpdated();
-                  } else {
-                    toast.error('업데이트 실패');
-                  }
-                }}
-                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition hover:opacity-80 active:scale-95 cursor-pointer"
-                style={{
-                  backgroundColor: '#FEE2E2',
-                  color: '#B91C1C',
-                  border: '1.5px solid #FECACA',
-                }}
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-red-500 inline-block animate-pulse" />
-                신분증 확인 필요 · 탭하여 해제
-              </button>
-            )}
-          </div>
+          {/* 기본 정보 — 방문유형·상태 배지는 성함 옆으로 이동 (T-20260506 항목1) / 우선순위·신분증만 표시 */}
+          {(checkIn.priority_flag || checkIn.notes?.id_check_required) && (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              {checkIn.priority_flag && (
+                <Badge variant="destructive">{checkIn.priority_flag}</Badge>
+              )}
+              {checkIn.notes?.id_check_required && (
+                <button
+                  title="클릭하면 신분증 확인 완료 처리"
+                  onClick={async () => {
+                    const newNotes = {
+                      ...(checkIn.notes as Record<string, unknown> ?? {}),
+                      id_check_required: false,
+                    };
+                    const { error } = await supabase
+                      .from('check_ins')
+                      .update({ notes: newNotes })
+                      .eq('id', checkIn.id);
+                    if (!error) {
+                      toast.success('신분증 확인 완료');
+                      onUpdated();
+                    } else {
+                      toast.error('업데이트 실패');
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition hover:opacity-80 active:scale-95 cursor-pointer"
+                  style={{
+                    backgroundColor: '#FEE2E2',
+                    color: '#B91C1C',
+                    border: '1.5px solid #FECACA',
+                  }}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-500 inline-block animate-pulse" />
+                  신분증 확인 필요 · 탭하여 해제
+                </button>
+              )}
+            </div>
+          )}
 
-          {/* 차트번호 · 전화번호 · 접수시간 — text-sm 통일 (T-20260504-foot-CHART-UI-BADGE) */}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-            {chartNumber && (
-              <span className="font-medium text-teal-700">[{chartNumber}]</span>
-            )}
+          {/* 차트번호 — 단독 배치, 괄호 없음 (T-20260506 항목2) */}
+          {chartNumber && (
+            <div className="text-sm font-semibold text-teal-700">{chartNumber}</div>
+          )}
+          {/* 연락처 / 접수시간 — 한 줄 배치 (T-20260506 항목3) */}
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
             {checkIn.customer_phone && (
-              <span className="flex items-center gap-1">
-                <Phone className="h-3.5 w-3.5" />
-                {checkIn.customer_phone}
-              </span>
+              <>
+                <span className="flex items-center gap-1">
+                  <Phone className="h-3.5 w-3.5" />
+                  {checkIn.customer_phone}
+                </span>
+                <span className="text-muted-foreground/60">/</span>
+              </>
             )}
             <span className="flex items-center gap-1">
               <Clock className="h-3.5 w-3.5" />
@@ -841,7 +772,7 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
                 {checkIn.customer_id && (
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
-                      <FileText className="h-3 w-3" /> 고객메모 (성향·주차 등)
+                      <FileText className="h-3 w-3" /> 고객메모
                     </Label>
                     <Textarea
                       value={customerMemo}
@@ -946,125 +877,6 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
               )}
             </div>
             <ConsentFormButtons checkIn={checkIn} onSigned={onUpdated} />
-          </div>
-
-          {/* ── 시술 항목 선택 + 회차 차감 분기 ── */}
-          <Separator />
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
-                <Stethoscope className="h-3.5 w-3.5" /> 시술 항목
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs gap-1 px-2"
-                onClick={() => setSvcModalOpen(true)}
-              >
-                <Plus className="h-3 w-3" /> 추가
-              </Button>
-            </div>
-
-            {treatmentItems.length === 0 ? (
-              <p className="text-xs text-muted-foreground">선택된 시술 없음 — 위 [추가] 버튼으로 시술을 선택하세요</p>
-            ) : (
-              <div className="space-y-1.5">
-                {treatmentItems.map((item, idx) => {
-                  const targetPkg = findPkgForItem(item);
-                  const canUsePackage = !!targetPkg;
-
-                  return (
-                    <div
-                      key={item._id}
-                      data-testid="treatment-item-row"
-                      className="flex items-center gap-2 rounded-lg border px-2.5 py-2"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium truncate">{item.service.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {formatAmount(item.service.price)}
-                          {item.sessionType && (
-                            <span className="ml-1 text-teal-600">· {SESSION_TYPE_LABELS[item.sessionType]}</span>
-                          )}
-                        </div>
-                      </div>
-
-                      {item.settled ? (
-                        <Badge variant="success" className="text-xs shrink-0">✓ 완료</Badge>
-                      ) : isConsultStage ? (
-                        /* 상담 단계: 회차 차감 비활성 (시술 전) */
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          data-testid="btn-single-payment"
-                          className="text-xs h-8 shrink-0"
-                          onClick={() => onPayment(checkIn)}
-                        >
-                          단건 결제
-                        </Button>
-                      ) : canUsePackage ? (
-                        <Button
-                          size="sm"
-                          data-testid="btn-use-package-session"
-                          className="text-xs h-8 bg-teal-600 hover:bg-teal-700 shrink-0"
-                          onClick={() => {
-                            setSessionUsePkg(targetPkg);
-                            setSessionUseRemaining(pkgRemaining.get(targetPkg.id) ?? null);
-                            setSessionUseType(item.sessionType!);
-                            setSessionUseTreatmentIdx(idx);
-                            setSessionUseOpen(true);
-                          }}
-                        >
-                          패키지 회차 사용
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          data-testid="btn-single-payment"
-                          className="text-xs h-8 shrink-0"
-                          onClick={() => onPayment(checkIn)}
-                        >
-                          단건 결제
-                        </Button>
-                      )}
-
-                      <button
-                        onClick={() => removeTreatmentItem(idx)}
-                        className="rounded p-1 hover:bg-muted shrink-0"
-                        title="시술 항목 삭제"
-                      >
-                        <Trash2 className="h-3 w-3 text-muted-foreground" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* 수납대기 전환 버튼 — 회차 소진 완료 항목 있고, 아직 수납대기 전 단계일 때 */}
-            {canMoveToPaymentWaiting && (
-              <Button
-                size="sm"
-                data-testid="btn-move-payment-waiting"
-                className="w-full gap-1 bg-amber-500 hover:bg-amber-600 text-white"
-                onClick={moveToPaymentWaiting}
-              >
-                수납대기로 이동
-              </Button>
-            )}
-
-            {/* 데스크 단계: 회차 차감 완료 후 → 수납 완료 & 시술 완료(done) */}
-            {canMoveToDone && (
-              <Button
-                size="sm"
-                data-testid="btn-move-done"
-                className="w-full gap-1 bg-teal-600 hover:bg-teal-700 text-white"
-                onClick={moveToDone}
-              >
-                ✓ 수납 완료 — 시술 완료
-              </Button>
-            )}
           </div>
 
           {/* 결제 */}

@@ -4,7 +4,7 @@
  * T-20260506-foot-CHART-SIMPLE-REVAMP: 5/4 22:04 요청 반영
  *
  * 섹션 구성:
- * 1) 경과분析지   — 원장님 공유 시 데스크 업로드 (receipt_type='receipt')
+ * 1) 경과분석지   — 원장님 공유 시 데스크 업로드 (receipt_type='receipt')
  * 2) KOH 균검사   — 원장님 공유 시 데스크 업로드 (prescriptions 테이블 재용)
  * 3) 진료비 영수증 — 데스크에서 금액 등록 + 파일 업로드 (receipt_type='detail')
  */
@@ -135,7 +135,7 @@ export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
 
   // ── 삭제 ──
   const deleteProgress = async (id: string) => {
-    if (!window.confirm('경과분析지를 삭제하시겠습니까?')) return;
+    if (!window.confirm('경과분석지를 삭제하시겠습니까?')) return;
     const { error } = await supabase.from('insurance_receipts').delete().eq('id', id);
     if (error) { toast.error('삭제 실패'); return; }
     toast.success('삭제됨'); load();
@@ -189,12 +189,66 @@ export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
   return (
     <div className="space-y-4">
 
-      {/* ── 1. 경과분析지 ── */}
+      {/* ── 기본서류 — 진료비 영수증 (T-20260506 항목10) ── */}
+      <div className="rounded-xl border border-amber-200 bg-amber-50/30 p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="text-sm font-semibold text-amber-900 flex items-center gap-1">
+              <Receipt className="h-3.5 w-3.5" /> 기본서류 — 진료비 영수증
+            </span>
+            <p className="text-[11px] text-muted-foreground mt-0.5">데스크에서 진료비 등록</p>
+          </div>
+          <Button variant="outline" className="gap-1 text-xs h-8" onClick={() => setInvoiceOpen(true)}>
+            <Plus className="h-3 w-3" /> 등록
+          </Button>
+        </div>
+        {invoiceDocs.length > 0 ? (
+          <div className="space-y-1.5">
+            {invoiceDocs.map((doc) => (
+              <div key={doc.id} className="flex items-center justify-between rounded-lg border bg-white px-3 py-2 text-xs group">
+                <div className="space-y-0.5 flex-1">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">진료비 영수증</Badge>
+                    {doc.receipt_no && <span className="text-muted-foreground">#{doc.receipt_no}</span>}
+                    <span className="text-muted-foreground">{format(new Date(doc.issue_date), 'MM/dd')}</span>
+                  </div>
+                  <div className="flex gap-3 text-muted-foreground">
+                    <span>급여 {formatAmount(doc.insurance_covered)}</span>
+                    <span>비급여 {formatAmount(doc.non_covered)}</span>
+                    <span className="font-semibold text-foreground">납부 {formatAmount(doc.paid_amount)}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => printInvoice(doc)}
+                    className="h-8 w-8 hidden group-hover:flex items-center justify-center rounded text-teal-600 hover:bg-teal-50"
+                    title="영수증 출력"
+                  >
+                    <Printer className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => deleteInvoice(doc.id)}
+                    className="h-8 w-8 hidden group-hover:flex items-center justify-center rounded text-red-500 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed py-3 text-center text-xs text-muted-foreground bg-white">
+            등록된 진료비 영수증 없음
+          </div>
+        )}
+      </div>
+
+      {/* ── 1. 경과분석지 ── */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div>
             <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
-              <FileText className="h-3 w-3" /> 경과분析지
+              <FileText className="h-3 w-3" /> 경과분석지
             </span>
             <p className="text-[11px] text-muted-foreground mt-0.5">원장님 공유 시 데스크에서 업로드</p>
           </div>
@@ -209,7 +263,7 @@ export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
                 <div className="flex items-center gap-2">
                   <FileText className="h-3.5 w-3.5 text-teal-600 shrink-0" />
                   <div>
-                    <div className="font-medium text-foreground">경과분析지</div>
+                    <div className="font-medium text-foreground">경과분석지</div>
                     <div className="text-muted-foreground">
                       {format(new Date(doc.issue_date), 'yyyy-MM-dd')}
                       {doc.pdf_url && (
@@ -230,7 +284,7 @@ export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
           </div>
         ) : (
           <div className="rounded-lg border border-dashed py-3 text-center text-xs text-muted-foreground">
-            등록된 경과분析지 없음
+            등록된 경과분석지 없음
           </div>
         )}
       </div>
@@ -282,60 +336,6 @@ export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
         )}
       </div>
 
-      {/* ── 3. 진료비 영수증 ── */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
-              <Receipt className="h-3 w-3" /> 진료비 영수증
-            </span>
-            <p className="text-[11px] text-muted-foreground mt-0.5">데스크에서 진료비 등록</p>
-          </div>
-          <Button variant="outline" className="gap-1 text-xs" onClick={() => setInvoiceOpen(true)}>
-            <Plus className="h-3 w-3" /> 등록
-          </Button>
-        </div>
-        {invoiceDocs.length > 0 ? (
-          <div className="space-y-1.5">
-            {invoiceDocs.map((doc) => (
-              <div key={doc.id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-xs group">
-                <div className="space-y-0.5 flex-1">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs">진료비 영수증</Badge>
-                    {doc.receipt_no && <span className="text-muted-foreground">#{doc.receipt_no}</span>}
-                    <span className="text-muted-foreground">{format(new Date(doc.issue_date), 'MM/dd')}</span>
-                  </div>
-                  <div className="flex gap-3 text-muted-foreground">
-                    <span>급여 {formatAmount(doc.insurance_covered)}</span>
-                    <span>비급여 {formatAmount(doc.non_covered)}</span>
-                    <span className="font-semibold text-foreground">납부 {formatAmount(doc.paid_amount)}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    onClick={() => printInvoice(doc)}
-                    className="h-8 w-8 hidden group-hover:flex items-center justify-center rounded text-teal-600 hover:bg-teal-50"
-                    title="영수증 출력"
-                  >
-                    <Printer className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => deleteInvoice(doc.id)}
-                    className="h-8 w-8 hidden group-hover:flex items-center justify-center rounded text-red-500 hover:bg-red-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-lg border border-dashed py-3 text-center text-xs text-muted-foreground">
-            등록된 진료비 영수증 없음
-          </div>
-        )}
-      </div>
-
       {/* ── 다이얼로그 ── */}
       <ProgressUploadDialog
         checkIn={checkIn}
@@ -359,7 +359,7 @@ export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
   );
 }
 
-// ─── 경과분析지 업로드 다이얼로그 ───
+// ─── 경과분석지 업로드 다이얼로그 ───
 
 function ProgressUploadDialog({
   checkIn,
@@ -417,7 +417,7 @@ function ProgressUploadDialog({
 
     setSaving(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
-    toast.success('경과분析지 등록 완료');
+    toast.success('경과분석지 등록 완료');
     onSaved();
   };
 
@@ -426,7 +426,7 @@ function ProgressUploadDialog({
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <FileText className="h-4 w-4 text-teal-600" /> 경과분析지 업로드
+            <FileText className="h-4 w-4 text-teal-600" /> 경과분석지 업로드
           </DialogTitle>
         </DialogHeader>
         <p className="text-xs text-muted-foreground -mt-2">
