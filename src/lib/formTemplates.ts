@@ -128,7 +128,14 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     name_ko: '진료비내역서',
     template_path: '/assets/forms/foot-service/진료비내역서.pdf',
     template_format: 'pdf',
-    field_map: [],
+    // PDF: pdf-lib 좌표계 (좌하단 원점, 포인트 단위, A4 595×842pt)
+    // Phase 2 초기 추정치 — 문지은 원장 시각 검증 후 확정
+    field_map: [
+      { key: 'patient_name', label: '환자성명', type: 'text',   x: 140, y: 788, font: 11 },
+      { key: 'issue_date',   label: '발행일',   type: 'date',   x: 420, y: 788, font: 11 },
+      { key: 'total_amount', label: '합계금액', type: 'amount', x: 440, y: 145, font: 12 },
+      { key: 'clinic_name',  label: '기관명',   type: 'text',   x: 140, y: 58,  font: 10 },
+    ],
     requires_signature: false,
     required_role: 'admin|manager|coordinator',
     active: true,
@@ -158,7 +165,15 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     name_ko: '소견서',
     template_path: '/assets/forms/foot-service/소견서.jpg',
     template_format: 'jpg',
-    field_map: [],
+    // 636×884 px — Phase 2 초기 추정치
+    field_map: [
+      { key: 'patient_name', label: '환자성명', type: 'text',      x: 108, y: 103, font: 14 },
+      { key: 'patient_rrn',  label: '주민번호', type: 'text',      x: 272, y: 62,  font: 12 },
+      { key: 'diagnosis_ko', label: '상병명',   type: 'multiline', x: 108, y: 163, w: 400, h: 55, font: 13 },
+      { key: 'issue_date',   label: '발행일',   type: 'date',      x: 115, y: 672, font: 13 },
+      { key: 'clinic_name',  label: '의료기관', type: 'text',      x: 115, y: 692, font: 12 },
+      { key: 'doctor_name',  label: '의사성명', type: 'text',      x: 490, y: 840, font: 13 },
+    ],
     requires_signature: false,
     required_role: 'admin|manager',
     active: true,
@@ -172,7 +187,15 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     name_ko: '진단서',
     template_path: '/assets/forms/foot-service/진단서.jpg',
     template_format: 'jpg',
-    field_map: [],
+    // 612×820 px — Phase 2 초기 추정치
+    field_map: [
+      { key: 'patient_name', label: '환자성명',    type: 'text',      x: 118, y: 95,  font: 14 },
+      { key: 'patient_rrn',  label: '주민등록번호', type: 'text',      x: 390, y: 95,  font: 12 },
+      { key: 'diagnosis_ko', label: '병명',        type: 'multiline', x: 110, y: 143, w: 395, h: 50, font: 13 },
+      { key: 'issue_date',   label: '발행일',      type: 'date',      x: 110, y: 558, font: 13 },
+      { key: 'clinic_name',  label: '의료기관',    type: 'text',      x: 110, y: 578, font: 12 },
+      { key: 'doctor_name',  label: '의사성명',    type: 'text',      x: 548, y: 770, font: 13 },
+    ],
     requires_signature: false,
     required_role: 'admin|manager',
     active: true,
@@ -186,7 +209,15 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     name_ko: '통원확인서',
     template_path: '/assets/forms/foot-service/통원확인서.jpg',
     template_format: 'jpg',
-    field_map: [],
+    // 637×800 px — Phase 2 초기 추정치
+    field_map: [
+      { key: 'patient_name', label: '환자성명', type: 'text',      x: 108, y: 133, font: 14 },
+      { key: 'patient_rrn',  label: '주민번호', type: 'text',      x: 108, y: 156, font: 12 },
+      { key: 'diagnosis_ko', label: '병명',     type: 'multiline', x: 108, y: 177, w: 400, h: 50, font: 13 },
+      { key: 'issue_date',   label: '발행일',   type: 'date',      x: 105, y: 640, font: 13 },
+      { key: 'clinic_name',  label: '의료기관', type: 'text',      x: 105, y: 660, font: 12 },
+      { key: 'doctor_name',  label: '의사성명', type: 'text',      x: 555, y: 750, font: 13 },
+    ],
     requires_signature: false,
     required_role: 'admin|manager|coordinator',
     active: true,
