@@ -571,6 +571,22 @@ export default function SelfCheckIn() {
           .maybeSingle();
         existing = legacy;
       }
+      // 세 번째 시도: 하이픈 포맷 (010-XXXX-XXXX) — 레거시 DB 엔트리 대응
+      if (!existing) {
+        const d = phoneDigits;
+        const phoneFormatted =
+          d.length === 11 ? `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}` :
+          d.length === 10 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}` : null;
+        if (phoneFormatted && phoneFormatted !== phoneStored && phoneFormatted !== phoneDigits) {
+          const { data: formattedMatch } = await anonClient
+            .from('customers')
+            .select('id')
+            .eq('clinic_id', clinicId)
+            .eq('phone', phoneFormatted)
+            .maybeSingle();
+          existing = formattedMatch as { id: string } | null;
+        }
+      }
 
       if (existing) {
         customerId = existing.id as string;
@@ -656,9 +672,14 @@ export default function SelfCheckIn() {
         }
 
         if (!matchedReservationId) {
-          // Fallback: phone 기준 (중복 제거 후 순서대로 시도)
+          // Fallback 1: phone 기준 (중복 제거 후 순서대로 시도)
+          // 하이픈 포맷 포함 — 레거시 DB 엔트리 대응
+          const d = phoneDigits;
+          const phoneFormatted =
+            d.length === 11 ? `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}` :
+            d.length === 10 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}` : null;
           const phonesToTry = [...new Set(
-            [phoneStored, phoneE164, phoneDigits].filter(Boolean) as string[]
+            [phoneStored, phoneE164, phoneDigits, phoneFormatted].filter(Boolean) as string[]
           )];
           for (const ph of phonesToTry) {
             const { data: resvByPhone } = await anonClient
@@ -675,6 +696,23 @@ export default function SelfCheckIn() {
               matchedReservationId = (resvByPhone as { id: string }).id;
               break;
             }
+          }
+        }
+
+        // Fallback 2: digits-only 비교 (E164/하이픈/공백 무관)
+        // DB에 어떤 포맷으로 저장되어 있어도 숫자만 비교해 매칭
+        if (!matchedReservationId && phoneDigits.length >= 10) {
+          const { data: allResv } = await anonClient
+            .from('reservations')
+            .select('id, customer_phone')
+            .eq('clinic_id', clinicId)
+            .eq('reservation_date', todayDate)
+            .eq('status', 'confirmed');
+          if (allResv) {
+            const digitsMatch = (allResv as { id: string; customer_phone: string | null }[]).find(
+              (r) => (r.customer_phone ?? '').replace(/\D/g, '') === phoneDigits,
+            );
+            if (digitsMatch) matchedReservationId = digitsMatch.id;
           }
         }
       } catch {
