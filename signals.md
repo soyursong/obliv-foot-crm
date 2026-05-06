@@ -1,5 +1,34 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-06 — deploy-ready | T-20260430-foot-CONSENT-FORMS
+
+> **from**: dev-foot | **to**: supervisor | **ts**: 2026-05-06 KST
+>
+> **consent_forms 마이그레이션 + UI 통합 완료**
+> - 신규 파일: supabase/migrations/20260506000020_consent_forms.sql (UP) / .down.sql (롤백)
+> - DB apply: Supabase Cloud rxlomoozakkjesdqjtvd — consent_forms 테이블 생성 확인 완료
+> - UI 현황:
+>   * CheckInDetailSheet: ConsentFormButtons (4종 서명 상태 표시) + ConsentForm 태블릿 다이얼로그 (환불&비급여 통합)
+>   * 서명: Canvas API 기반 SignaturePad (react-signature-canvas 추가 없이 구현)
+>   * Storage: documents 버킷 customer/{id}/ 경로 자동 업로드 (useDocumentUpload)
+>   * DocumentViewer: CheckInDetailSheet + CustomerChartPage 양쪽 연동
+>   * CustomerChartPage: consent_forms 조회 + DocumentViewer 태블릿 양식 섹션
+> - 빌드: ✅ PASS (3803 modules, 2.71s)
+> - commit: abe27ad (origin/main push 완료)
+> - 잔여 블로커: 양식 PDF 원본 수급 (문지은 원장님) — 대기, 운영에는 인라인 텍스트 양식 사용 중
+
+## 2026-05-06 20:10 deploy-approval-requested — T-20260502-foot-HEATED-LASER-SLOT
+
+> **from**: supervisor | **to**: 대표 | **ts**: 2026-05-06 20:10 KST
+>
+> **QA PASS (Yellow)** — supervisor 독립 검증 완료.
+> - tsc --noEmit: 에러 0 / dist 최신빌드 (17:05) 성공
+> - 코드: Dashboard.tsx +67줄. 가열성레이저 헤더(#BFDBFE) + 원장님 select. laser_rooms null guard 정상. 기존 kanban 미파괴.
+> - DB: 20260504000006 migration + rollback SQL 존재. heated_laser constraint Supabase 적용 완료 (2026-05-04 20:30).
+> - RLS: room_assignments auth_all 정책 무변경.
+> - git push: origin/main da23db9 이미 반영.
+> - Slack 배포 승인 요청 발송 → @대표 (C0ATE5P6JTH)
+
 ## 2026-05-04 mq-check — dev-foot (신규 세션, 5/5 MQ 전건 확인)
 
 > **from**: dev-foot | **to**: planner/supervisor | **ts**: 2026-05-04 KST (세션 재개)
