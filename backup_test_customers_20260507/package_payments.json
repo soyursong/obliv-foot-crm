@@ -1,0 +1,28 @@
+[
+  {
+    "amount": 4800000,
+    "clinic_id": null,
+    "created_at": "2026-04-23T05:00:00+00:00",
+    "customer_id": "0f102d98-0208-458f-bf3f-156f7f3289e5",
+    "id": "e0725aa9-3e61-409d-8048-b012f557df8a",
+    "installment": 12,
+    "memo": "[DEMO-20260426] 프리셋 24회 결제",
+    "method": "card",
+    "package_id": "ba591f09-ebc7-4c56-b4d6-062042856f73",
+    "payment_type": "payment",
+    "vat_amount": 0
+  },
+  {
+    "amount": 3600000,
+    "clinic_id": null,
+    "created_at": "2026-04-25T07:00:00+00:00",
+    "customer_id": "49cf404f-b22c-43d5-96f8-7d022375a381",
+    "id": "4730ba62-1ee9-4473-bb83-2a113d834c7e",
+    "installment": 6,
+    "memo": "[DEMO-20260426] 프리셋 18회 결제",
+    "method": "card",
+    "package_id": "728629f7-dff6-4226-969c-db908e1e060a",
+    "payment_type": "payment",
+    "vat_amount": 0
+  }
+]

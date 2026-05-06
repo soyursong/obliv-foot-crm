@@ -1,0 +1,342 @@
+[
+  {
+    "check_in_id": "34946ffa-dc5f-48b8-8542-0258615d0546",
+    "created_at": "2026-04-24T00:02:18.079168+00:00",
+    "id": "7b058899-6a3c-4fc1-8b7d-6d283d98afc1",
+    "message": "대기 → 상담 1번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "f2fe7558-a572-4986-9314-d61cb26456a8",
+    "created_at": "2026-04-24T00:11:05.494234+00:00",
+    "id": "713f4357-d642-4492-a662-eec8d528d810",
+    "message": "대기 → 상담 1번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "561eae69-a826-41d7-a0a7-9ed6c0f09c17",
+    "created_at": "2026-04-25T23:22:30.732448+00:00",
+    "id": "84d977ac-2ac6-4387-a556-b4a1a57e8f8f",
+    "message": "대기 → 상담 1번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "561eae69-a826-41d7-a0a7-9ed6c0f09c17",
+    "created_at": "2026-04-25T23:22:34.999855+00:00",
+    "id": "e575de7e-aefa-4fd6-ae77-eee5521999e5",
+    "message": "상담 → 원장진료대기",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "561eae69-a826-41d7-a0a7-9ed6c0f09c17",
+    "created_at": "2026-04-25T23:22:49.367616+00:00",
+    "id": "f3045753-f65f-4171-b2d8-7eeec2337b8a",
+    "message": "원장진료대기 → 원장상담 1번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "561eae69-a826-41d7-a0a7-9ed6c0f09c17",
+    "created_at": "2026-04-25T23:29:07.500584+00:00",
+    "id": "db351c97-666c-4359-80e9-1f59a65d2102",
+    "message": "원장상담 → 시술대기",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "561eae69-a826-41d7-a0a7-9ed6c0f09c17",
+    "created_at": "2026-04-25T23:30:50.107757+00:00",
+    "id": "f030ddec-8e9e-4cfa-8752-313ebbb8df52",
+    "message": "시술대기 → 레이저대기",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "561eae69-a826-41d7-a0a7-9ed6c0f09c17",
+    "created_at": "2026-04-25T23:31:22.041373+00:00",
+    "id": "46338d73-6a7b-46dc-848c-25e268af34ff",
+    "message": "레이저대기 → 수납대기",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "561eae69-a826-41d7-a0a7-9ed6c0f09c17",
+    "created_at": "2026-04-26T03:38:35.080003+00:00",
+    "id": "77447232-33b5-4841-9817-11d84b017ef8",
+    "message": "수납대기 → 완료",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "eeeccc55-6b9e-42ce-acfc-950285ce8d2f",
+    "created_at": "2026-04-28T01:28:45.402108+00:00",
+    "id": "9b0a3d6d-8b24-4f02-97fd-2792591b163b",
+    "message": "대기 → 상담 1번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "eeeccc55-6b9e-42ce-acfc-950285ce8d2f",
+    "created_at": "2026-04-28T01:28:46.402054+00:00",
+    "id": "c7ed2d18-fa24-47e9-8a90-ba2032d9e218",
+    "message": "상담 → 원장진료대기",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "eeeccc55-6b9e-42ce-acfc-950285ce8d2f",
+    "created_at": "2026-04-28T01:28:48.383916+00:00",
+    "id": "ab95e73b-d77e-4cb0-8cea-e0d0c124c5ea",
+    "message": "원장진료대기 → 원장상담 1번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "c7550575-b303-4e0c-9a6c-4d1a588c4f44",
+    "created_at": "2026-04-29T01:09:07.6434+00:00",
+    "id": "7d866cc1-82d6-4bf9-afc3-fe91b889ee74",
+    "message": "대기 → 상담 1번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "c7550575-b303-4e0c-9a6c-4d1a588c4f44",
+    "created_at": "2026-04-29T01:09:17.99293+00:00",
+    "id": "3dde05d3-924c-475d-b72c-11fc1cd3f86a",
+    "message": "상담 → 원장진료대기",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "c7550575-b303-4e0c-9a6c-4d1a588c4f44",
+    "created_at": "2026-04-29T01:09:19.443304+00:00",
+    "id": "f2358b41-519a-4efd-8885-6d889577b284",
+    "message": "원장진료대기 → 원장상담 1번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "c7550575-b303-4e0c-9a6c-4d1a588c4f44",
+    "created_at": "2026-04-29T01:09:25.979837+00:00",
+    "id": "50e8ea20-4e8f-43eb-8f35-6bbadeddb2b3",
+    "message": "원장상담 → 시술 1번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "6520b962-8af1-4c25-9f91-9c45fb54a90a",
+    "created_at": "2026-04-29T09:16:12.852938+00:00",
+    "id": "92b7958e-3dcc-4e11-b021-cec21ba9bbc8",
+    "message": "대기 → 상담 1번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "289ac924-dd9c-45f4-9d1b-9a8d2bac3f24",
+    "created_at": "2026-04-29T12:08:23.518035+00:00",
+    "id": "2190351d-51a9-4324-b012-5c4e22071636",
+    "message": "대기 → 상담 2번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "4d48b360-f01f-4153-b02b-628b4d23b2d8",
+    "created_at": "2026-04-29T17:16:48.635336+00:00",
+    "id": "ba5529c2-2d93-45d0-8a0b-526ff8f68a9d",
+    "message": "대기 → 상담 1번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "4d48b360-f01f-4153-b02b-628b4d23b2d8",
+    "created_at": "2026-04-29T17:16:51.57854+00:00",
+    "id": "71c56189-f0fe-4ef3-9cea-3366fad31f47",
+    "message": "상담 → 원장진료대기",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "4d48b360-f01f-4153-b02b-628b4d23b2d8",
+    "created_at": "2026-04-29T17:16:57.703713+00:00",
+    "id": "9cc15e76-91ba-41ea-892a-125c5d503d8e",
+    "message": "원장진료대기 → 원장상담 1번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "4d48b360-f01f-4153-b02b-628b4d23b2d8",
+    "created_at": "2026-04-29T17:16:59.17398+00:00",
+    "id": "5326d73f-6511-41af-953a-db96a439cfd5",
+    "message": "원장상담 → 시술대기",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "4d48b360-f01f-4153-b02b-628b4d23b2d8",
+    "created_at": "2026-04-29T17:17:01.120279+00:00",
+    "id": "31cbe7b9-5811-4c8a-a0b8-1e5c76bda0ac",
+    "message": "시술대기 → 레이저대기",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "4d48b360-f01f-4153-b02b-628b4d23b2d8",
+    "created_at": "2026-04-29T17:17:05.51393+00:00",
+    "id": "8ede6b9c-e063-4b3a-b435-51ac5272586f",
+    "message": "레이저대기 → 수납대기",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "4d48b360-f01f-4153-b02b-628b4d23b2d8",
+    "created_at": "2026-04-29T17:17:26.02829+00:00",
+    "id": "0c86f6d8-29ad-407c-9dbd-826756193d6e",
+    "message": "수납대기 → 완료",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "89e2a6a1-6765-48ac-8b54-71e0a6058db2",
+    "created_at": "2026-04-30T08:38:06.590359+00:00",
+    "id": "e7405911-051d-421f-9b00-5476ff990626",
+    "message": "대기 → 상담 1번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "28c59c88-b354-4a42-8cab-af34b781d787",
+    "created_at": "2026-04-30T11:31:46.968117+00:00",
+    "id": "7057bc09-9009-44ec-a36d-2ede8d284b80",
+    "message": "대기 → 원장진료대기",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "28c59c88-b354-4a42-8cab-af34b781d787",
+    "created_at": "2026-04-30T11:31:50.576903+00:00",
+    "id": "545d8ff0-441c-4f8d-b8c4-7c2d9946f336",
+    "message": "원장진료대기 → 상담 1번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "28c59c88-b354-4a42-8cab-af34b781d787",
+    "created_at": "2026-04-30T11:32:10.219831+00:00",
+    "id": "a1a15b10-e85c-44b4-a067-51f98e10019f",
+    "message": "상담 → 원장상담",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "28c59c88-b354-4a42-8cab-af34b781d787",
+    "created_at": "2026-04-30T11:32:21.499936+00:00",
+    "id": "518e3c59-a759-4bc0-a0c0-787600ce51fb",
+    "message": "원장상담 → 상담 1번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "28c59c88-b354-4a42-8cab-af34b781d787",
+    "created_at": "2026-04-30T11:32:24.571306+00:00",
+    "id": "88e6c755-26be-4614-b2ab-6b082f9835ac",
+    "message": "상담 → 원장진료대기",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "28c59c88-b354-4a42-8cab-af34b781d787",
+    "created_at": "2026-04-30T11:32:28.362981+00:00",
+    "id": "09861b9b-f5ca-47c4-93c5-84ce79a01111",
+    "message": "원장진료대기 → 원장상담 1번",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "28c59c88-b354-4a42-8cab-af34b781d787",
+    "created_at": "2026-04-30T11:32:38.702614+00:00",
+    "id": "78355e23-3ee4-43be-ab16-eb7260e1497e",
+    "message": "원장상담 → 시술대기",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  },
+  {
+    "check_in_id": "28c59c88-b354-4a42-8cab-af34b781d787",
+    "created_at": "2026-04-30T11:32:47.020906+00:00",
+    "id": "6fbe7f28-5197-41b0-a863-c34e4f2dc13f",
+    "message": "시술대기 → 원장진료대기",
+    "sent_at": null,
+    "status": "pending",
+    "template": null,
+    "type": "status_change"
+  }
+]

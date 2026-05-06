@@ -1,0 +1,13 @@
+[
+  {
+    "check_in_id": "561eae69-a826-41d7-a0a7-9ed6c0f09c17",
+    "created_at": "2026-04-25T23:31:30.379712+00:00",
+    "id": "ff9c7b6d-0a00-4da7-bcab-6409e2995c9d",
+    "is_package_session": false,
+    "original_price": 280000,
+    "package_session_id": null,
+    "price": 280000,
+    "service_id": "347a8012-8024-4659-a6e6-2d997bad5802",
+    "service_name": "아톰"
+  }
+]
