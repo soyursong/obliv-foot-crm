@@ -114,7 +114,42 @@ const FOOT_CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
  * DB에 form_templates가 비어있을 때 사용하는 fallback.
  * field_map은 빈 배열 — Phase 2(원장 좌표 측정) 후 채워진다.
  */
+/**
+ * T-20260506-foot-CHART-SIMPLE-REVAMP: 5/4 22:04 요청 반영
+ * 별도 요청 서류 목록 전면 개정
+ */
 export const FALLBACK_TEMPLATES: FormTemplate[] = [
+  // ── 기본 서류 ──
+  {
+    id: 'fallback-bill-detail',
+    clinic_id: FOOT_CLINIC_ID,
+    category: 'foot-service',
+    form_key: 'bill_detail',
+    name_ko: '진료비내역서',
+    template_path: '/assets/forms/foot-service/진료비내역서.pdf',
+    template_format: 'pdf',
+    field_map: [],
+    requires_signature: false,
+    required_role: 'admin|manager|coordinator',
+    active: true,
+    sort_order: 5,
+  },
+
+  // ── 별도 요청 서류 (현장 22:04 요청 기준) ──
+  {
+    id: 'fallback-prescription',
+    clinic_id: FOOT_CLINIC_ID,
+    category: 'foot-service',
+    form_key: 'prescription',
+    name_ko: '처방전',
+    template_path: '/assets/forms/foot-service/처방전.jpg',
+    template_format: 'jpg',
+    field_map: [],
+    requires_signature: false,
+    required_role: 'admin|manager',
+    active: true,
+    sort_order: 10,
+  },
   {
     id: 'fallback-diag-opinion',
     clinic_id: FOOT_CLINIC_ID,
@@ -127,7 +162,7 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     requires_signature: false,
     required_role: 'admin|manager',
     active: true,
-    sort_order: 10,
+    sort_order: 20,
   },
   {
     id: 'fallback-diagnosis',
@@ -141,35 +176,7 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     requires_signature: false,
     required_role: 'admin|manager',
     active: true,
-    sort_order: 20,
-  },
-  {
-    id: 'fallback-bill-detail',
-    clinic_id: FOOT_CLINIC_ID,
-    category: 'foot-service',
-    form_key: 'bill_detail',
-    name_ko: '진료비내역서',
-    template_path: '/assets/forms/foot-service/진료비내역서.pdf',
-    template_format: 'pdf',
-    field_map: [],
-    requires_signature: false,
-    required_role: 'admin|manager|coordinator',
-    active: true,
     sort_order: 30,
-  },
-  {
-    id: 'fallback-treat-confirm',
-    clinic_id: FOOT_CLINIC_ID,
-    category: 'foot-service',
-    form_key: 'treat_confirm',
-    name_ko: '진료확인서',
-    template_path: '/assets/forms/foot-service/진료확인서.jpg',
-    template_format: 'jpg',
-    field_map: [],
-    requires_signature: false,
-    required_role: 'admin|manager|coordinator',
-    active: true,
-    sort_order: 40,
   },
   {
     id: 'fallback-visit-confirm',
@@ -183,7 +190,63 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     requires_signature: false,
     required_role: 'admin|manager|coordinator',
     active: true,
+    sort_order: 40,
+  },
+  {
+    id: 'fallback-med-record-short',
+    clinic_id: FOOT_CLINIC_ID,
+    category: 'foot-service',
+    form_key: 'med_record_short',
+    name_ko: '진료기록사본(1-5매)',
+    template_path: '/assets/forms/foot-service/진료기록사본_단.jpg',
+    template_format: 'jpg',
+    field_map: [],
+    requires_signature: false,
+    required_role: 'admin|manager|coordinator',
+    active: true,
     sort_order: 50,
+  },
+  {
+    id: 'fallback-med-record-long',
+    clinic_id: FOOT_CLINIC_ID,
+    category: 'foot-service',
+    form_key: 'med_record_long',
+    name_ko: '진료기록사본(6매 이상)',
+    template_path: '/assets/forms/foot-service/진료기록사본_장.jpg',
+    template_format: 'jpg',
+    field_map: [],
+    requires_signature: false,
+    required_role: 'admin|manager|coordinator',
+    active: true,
+    sort_order: 60,
+  },
+  {
+    id: 'fallback-treat-confirm-code',
+    clinic_id: FOOT_CLINIC_ID,
+    category: 'foot-service',
+    form_key: 'treat_confirm_code',
+    name_ko: '진료확인서(코드·진단명 포함)',
+    template_path: '/assets/forms/foot-service/진료확인서_코드포함.jpg',
+    template_format: 'jpg',
+    field_map: [],
+    requires_signature: false,
+    required_role: 'admin|manager|coordinator',
+    active: true,
+    sort_order: 70,
+  },
+  {
+    id: 'fallback-treat-confirm-nocode',
+    clinic_id: FOOT_CLINIC_ID,
+    category: 'foot-service',
+    form_key: 'treat_confirm_nocode',
+    name_ko: '진료확인서(코드·진단명 불포함)',
+    template_path: '/assets/forms/foot-service/진료확인서_코드불포함.jpg',
+    template_format: 'jpg',
+    field_map: [],
+    requires_signature: false,
+    required_role: 'admin|manager|coordinator',
+    active: true,
+    sort_order: 80,
   },
 ];
 
@@ -224,6 +287,20 @@ export const FORM_META: Record<
   string,
   { icon: string; color: string; description: string; print_preset: PrintPreset }
 > = {
+  // 기본 서류
+  bill_detail: {
+    icon: '🧾',
+    color: 'bg-amber-50 border-amber-200',
+    description: '진료비 세부 내역 (PDF)',
+    print_preset: 'default',
+  },
+  // 별도 요청 서류 (T-20260506-foot-CHART-SIMPLE-REVAMP)
+  prescription: {
+    icon: '💊',
+    color: 'bg-pink-50 border-pink-200',
+    description: '처방전',
+    print_preset: 'optional',
+  },
   diag_opinion: {
     icon: '📋',
     color: 'bg-blue-50 border-blue-200',
@@ -236,22 +313,41 @@ export const FORM_META: Record<
     description: '질병 진단 내용',
     print_preset: 'optional',
   },
-  bill_detail: {
-    icon: '🧾',
-    color: 'bg-amber-50 border-amber-200',
-    description: '진료비 세부 내역 (PDF)',
-    print_preset: 'default',
-  },
-  treat_confirm: {
-    icon: '✅',
-    color: 'bg-teal-50 border-teal-200',
-    description: '진료 사실 확인',
-    print_preset: 'optional',
-  },
   visit_confirm: {
     icon: '🏥',
     color: 'bg-emerald-50 border-emerald-200',
     description: '통원 사실 확인',
+    print_preset: 'optional',
+  },
+  med_record_short: {
+    icon: '📄',
+    color: 'bg-gray-50 border-gray-200',
+    description: '진료기록사본 1-5매',
+    print_preset: 'optional',
+  },
+  med_record_long: {
+    icon: '📄',
+    color: 'bg-gray-50 border-gray-200',
+    description: '진료기록사본 6매 이상',
+    print_preset: 'optional',
+  },
+  treat_confirm_code: {
+    icon: '✅',
+    color: 'bg-teal-50 border-teal-200',
+    description: '코드·진단명 포함',
+    print_preset: 'optional',
+  },
+  treat_confirm_nocode: {
+    icon: '☑️',
+    color: 'bg-cyan-50 border-cyan-200',
+    description: '코드·진단명 불포함',
+    print_preset: 'optional',
+  },
+  // 하위 호환 — 기존 treat_confirm 유지
+  treat_confirm: {
+    icon: '✅',
+    color: 'bg-teal-50 border-teal-200',
+    description: '진료 사실 확인',
     print_preset: 'optional',
   },
 };
