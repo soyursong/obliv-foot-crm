@@ -1534,12 +1534,100 @@ export default function Dashboard() {
     });
   }, []);
 
-  const resetGroupOrder = useCallback(() => {
+  const resetGroupOrder = useCallback(async () => {
     const defaults = [...DEFAULT_GROUP_ORDER];
     setGroupOrder(defaults);
     localStorage.removeItem('foot-dash-group-order');
+    // DB 레이아웃도 삭제 (admin 권한: RLS가 보호)
+    if (clinic) {
+      await supabase
+        .from('clinic_dashboard_layouts')
+        .delete()
+        .eq('clinic_id', clinic.id);
+    }
     toast.success('기본 배치로 초기화했어요');
-  }, []);
+  }, [clinic]);
+
+  // T-20260506-foot-LAYOUT-DEFAULT-SAVE: DB에서 클리닉 공유 레이아웃 로드
+  // clinic 로딩 후 1회 실행 — DB 조회 실패 시 localStorage 폴백 유지
+  useEffect(() => {
+    if (!clinic) return;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('clinic_dashboard_layouts')
+          .select('layout_data')
+          .eq('clinic_id', clinic.id)
+          .maybeSingle();
+
+        if (!data?.layout_data) return;
+
+        const stored = data.layout_data as { groupOrder?: string[]; zoomLevel?: number };
+
+        if (Array.isArray(stored.groupOrder)) {
+          const valid = stored.groupOrder.filter((id): id is KanbanGroupId =>
+            (DEFAULT_GROUP_ORDER as readonly string[]).includes(id),
+          );
+          const missing = DEFAULT_GROUP_ORDER.filter((id) => !valid.includes(id));
+          const merged = [...valid, ...missing];
+          // T-20260430-foot-LASER-ROOM-REORDER: 치료실 항상 레이저실보다 앞
+          const treatIdx = merged.indexOf('treatment_rooms');
+          const laserIdx = merged.indexOf('laser_rooms');
+          if (treatIdx !== -1 && laserIdx !== -1 && laserIdx < treatIdx) {
+            merged.splice(laserIdx, 1);
+            merged.splice(treatIdx, 0, 'laser_rooms');
+          }
+          setGroupOrder(merged);
+          localStorage.setItem('foot-dash-group-order', JSON.stringify(merged));
+        }
+
+        if (
+          typeof stored.zoomLevel === 'number' &&
+          Number.isFinite(stored.zoomLevel) &&
+          stored.zoomLevel >= 50 &&
+          stored.zoomLevel <= 150
+        ) {
+          setZoomLevel(stored.zoomLevel);
+          localStorage.setItem('foot-dash-zoom', String(stored.zoomLevel));
+        }
+      } catch {
+        // DB 조회 실패 — localStorage 폴백 유지 (useState lazy init에서 이미 로드됨)
+      }
+    })();
+  }, [clinic]);
+
+  // T-20260506-foot-LAYOUT-DEFAULT-SAVE: DB에 공유 레이아웃 저장 (admin/manager)
+  const saveLayoutToDb = useCallback(
+    async (order: KanbanGroupId[], zoom: number) => {
+      if (!clinic || !profile) return;
+      const { error } = await supabase
+        .from('clinic_dashboard_layouts')
+        .upsert(
+          {
+            clinic_id: clinic.id,
+            layout_data: { groupOrder: order, zoomLevel: zoom },
+            saved_by: profile.id,
+            saved_at: new Date().toISOString(),
+          },
+          { onConflict: 'clinic_id' },
+        );
+      if (error) {
+        toast.error('배치 DB 저장 실패 (로컬엔 저장됨)');
+      } else {
+        toast.success('배치가 저장됐어요. 모든 직원에게 적용돼요.');
+      }
+    },
+    [clinic, profile],
+  );
+
+  // T-20260506-foot-LAYOUT-DEFAULT-SAVE: 편집 완료 시 DB 저장
+  const handleLayoutEditToggle = useCallback(async () => {
+    if (isLayoutEdit && profile?.role === 'admin') {
+      // 편집 완료 → DB에 현재 레이아웃 저장
+      await saveLayoutToDb(groupOrder, zoomLevel);
+    }
+    setIsLayoutEdit((v) => !v);
+  }, [isLayoutEdit, profile, saveLayoutToDb, groupOrder, zoomLevel]);
 
   // F-5: Closing 미수 클릭 → Dashboard 이동 시 결제 다이얼로그 또는 상세 시트 자동 오픈
   useEffect(() => {
@@ -3181,14 +3269,14 @@ export default function Dashboard() {
                 </button>
               )}
               <button
-                onClick={() => setIsLayoutEdit((v) => !v)}
+                onClick={handleLayoutEditToggle}
                 className={cn(
                   'flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border transition',
                   isLayoutEdit
                     ? 'bg-teal-600 text-white border-teal-600 hover:bg-teal-700'
                     : 'text-gray-600 hover:bg-gray-100 border-gray-200',
                 )}
-                title={isLayoutEdit ? '편집 완료' : '슬롯 배치 편집 (관리자)'}
+                title={isLayoutEdit ? '편집 완료 (DB 저장)' : '슬롯 배치 편집 (관리자)'}
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
                 {isLayoutEdit ? '편집 완료' : '배치 편집'}
