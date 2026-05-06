@@ -1,0 +1,492 @@
+[
+  {
+    "changed_by": null,
+    "check_in_id": "f760a6f6-180d-4a14-a5c9-b5fddf674604",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "registered",
+    "id": "7d6d9ce3-ef43-4b87-84f4-e861d5e19f4f",
+    "room_id": null,
+    "to_status": "consultation",
+    "transitioned_at": "2026-04-28T08:24:23.994685+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "f760a6f6-180d-4a14-a5c9-b5fddf674604",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "consultation",
+    "id": "ff85943e-aaa2-44b9-b637-db71aca4ba10",
+    "room_id": null,
+    "to_status": "registered",
+    "transitioned_at": "2026-04-28T08:24:43.357375+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "f760a6f6-180d-4a14-a5c9-b5fddf674604",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "registered",
+    "id": "282a53d4-b8a0-405a-8724-ce4d99c25a60",
+    "room_id": null,
+    "to_status": "preconditioning",
+    "transitioned_at": "2026-04-28T08:24:47.468137+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "f760a6f6-180d-4a14-a5c9-b5fddf674604",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "preconditioning",
+    "id": "eff24b1b-a64c-4488-a0cd-ed42a73981ee",
+    "room_id": null,
+    "to_status": "consultation",
+    "transitioned_at": "2026-04-28T08:25:01.807156+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "f760a6f6-180d-4a14-a5c9-b5fddf674604",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "consultation",
+    "id": "f97375b1-9dd7-4124-8bb5-ebde197471f0",
+    "room_id": null,
+    "to_status": "preconditioning",
+    "transitioned_at": "2026-04-28T08:25:05.856028+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "4d48b360-f01f-4153-b02b-628b4d23b2d8",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "done",
+    "id": "be3c72f2-eb3b-45b9-bb45-080b19a2c087",
+    "room_id": null,
+    "to_status": "preconditioning",
+    "transitioned_at": "2026-04-30T11:22:00.15895+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "4d48b360-f01f-4153-b02b-628b4d23b2d8",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "preconditioning",
+    "id": "9ce562ff-e6a5-4a58-8096-0500cbf6a11d",
+    "room_id": null,
+    "to_status": "laser",
+    "transitioned_at": "2026-04-30T12:58:13.908077+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "4a28cad8-a4d4-4303-ab7f-536052f1b888",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "registered",
+    "id": "f087a640-ac16-447c-bfc6-b57828373f0c",
+    "room_id": null,
+    "to_status": "treatment_waiting",
+    "transitioned_at": "2026-05-01T06:25:04.363862+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "4a28cad8-a4d4-4303-ab7f-536052f1b888",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "treatment_waiting",
+    "id": "bacfad1a-608d-430d-8f35-b2803d8e714c",
+    "room_id": null,
+    "to_status": "preconditioning",
+    "transitioned_at": "2026-05-01T06:25:10.894539+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "f43f4c0a-b4fe-4c7b-91da-21e4fd0550f5",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "registered",
+    "id": "a6c95243-652f-4600-a3ca-b1b48bd281a0",
+    "room_id": null,
+    "to_status": "exam_waiting",
+    "transitioned_at": "2026-05-01T07:13:34.246343+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "f43f4c0a-b4fe-4c7b-91da-21e4fd0550f5",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "exam_waiting",
+    "id": "dcb4f3a8-8c04-4eb0-bb10-ef1d2609f235",
+    "room_id": null,
+    "to_status": "registered",
+    "transitioned_at": "2026-05-01T07:13:35.785496+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "f43f4c0a-b4fe-4c7b-91da-21e4fd0550f5",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "registered",
+    "id": "357c942b-28fa-4c4f-a56d-9bc8fe605317",
+    "room_id": null,
+    "to_status": "exam_waiting",
+    "transitioned_at": "2026-05-01T07:13:37.15304+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "f43f4c0a-b4fe-4c7b-91da-21e4fd0550f5",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "registered",
+    "id": "c8336cae-3298-4852-970d-b17aa2abf911",
+    "room_id": null,
+    "to_status": "exam_waiting",
+    "transitioned_at": "2026-05-01T07:13:39.514875+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "f43f4c0a-b4fe-4c7b-91da-21e4fd0550f5",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "exam_waiting",
+    "id": "d610ba92-ec29-47a2-bd25-c87f90f396bf",
+    "room_id": null,
+    "to_status": "registered",
+    "transitioned_at": "2026-05-01T07:13:40.6989+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "f43f4c0a-b4fe-4c7b-91da-21e4fd0550f5",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "registered",
+    "id": "76e03169-05fd-4b7f-82ed-645843f0fa17",
+    "room_id": null,
+    "to_status": "exam_waiting",
+    "transitioned_at": "2026-05-01T07:13:47.670519+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "f43f4c0a-b4fe-4c7b-91da-21e4fd0550f5",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "exam_waiting",
+    "id": "f9767b57-9c1a-4706-a988-0b6864d2699b",
+    "room_id": null,
+    "to_status": "registered",
+    "transitioned_at": "2026-05-01T07:13:48.841749+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "f43f4c0a-b4fe-4c7b-91da-21e4fd0550f5",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "registered",
+    "id": "80277c99-9dfa-48c2-9649-299fd6c18a84",
+    "room_id": null,
+    "to_status": "consult_waiting",
+    "transitioned_at": "2026-05-01T07:13:49.972833+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "f43f4c0a-b4fe-4c7b-91da-21e4fd0550f5",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "consult_waiting",
+    "id": "55d97ae7-f163-495a-ae90-6b4cc18374fe",
+    "room_id": null,
+    "to_status": "treatment_waiting",
+    "transitioned_at": "2026-05-01T07:13:59.176138+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "036130c4-e86a-4980-9118-5a03743695ac",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "registered",
+    "id": "d4917475-922d-42df-b62c-0da6b2e76189",
+    "room_id": null,
+    "to_status": "consult_waiting",
+    "transitioned_at": "2026-05-02T05:57:16.746442+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "036130c4-e86a-4980-9118-5a03743695ac",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "consult_waiting",
+    "id": "cfc7cb43-2199-4a86-ba3d-ddbe58aa6cc4",
+    "room_id": null,
+    "to_status": "cancelled",
+    "transitioned_at": "2026-05-02T08:58:04.26269+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "treatment_waiting",
+    "id": "df825c88-88d5-4286-8e19-2294768f7b3b",
+    "room_id": null,
+    "to_status": "payment_waiting",
+    "transitioned_at": "2026-05-06T01:25:18.811125+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "treatment_waiting",
+    "id": "0ca77d1b-14ec-4b68-a72c-427101f55d81",
+    "room_id": null,
+    "to_status": "preconditioning",
+    "transitioned_at": "2026-05-06T01:25:28.297283+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "preconditioning",
+    "id": "25cc1846-ac2e-4eea-9c10-45fa970a2a1a",
+    "room_id": null,
+    "to_status": "registered",
+    "transitioned_at": "2026-05-06T01:25:30.732284+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "registered",
+    "id": "b2922d43-e832-4b3f-84a9-938944546b06",
+    "room_id": null,
+    "to_status": "preconditioning",
+    "transitioned_at": "2026-05-06T01:25:37.179393+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "preconditioning",
+    "id": "19a295b1-95ce-4b53-a9ba-6b3300a6dc05",
+    "room_id": null,
+    "to_status": "laser",
+    "transitioned_at": "2026-05-06T01:25:38.762919+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "laser",
+    "id": "47dd7c38-764e-4058-b70b-345a65a8d3c1",
+    "room_id": null,
+    "to_status": "preconditioning",
+    "transitioned_at": "2026-05-06T01:25:39.945438+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "preconditioning",
+    "id": "52a0aec1-c41e-42b0-a1cb-914c4d050d22",
+    "room_id": null,
+    "to_status": "treatment_waiting",
+    "transitioned_at": "2026-05-06T01:25:43.11209+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "treatment_waiting",
+    "id": "25b284e6-c1ac-4e82-9eed-8fb00020dcb3",
+    "room_id": null,
+    "to_status": "laser_waiting",
+    "transitioned_at": "2026-05-06T01:25:49.045498+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "laser_waiting",
+    "id": "d3f4140e-33e4-4e24-a34b-0e846f0eee1c",
+    "room_id": null,
+    "to_status": "healer_waiting",
+    "transitioned_at": "2026-05-06T01:25:50.23418+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "healer_waiting",
+    "id": "72d710f0-80b9-49f1-9ed3-5186a1eb2b47",
+    "room_id": null,
+    "to_status": "laser_waiting",
+    "transitioned_at": "2026-05-06T01:25:51.328719+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "laser_waiting",
+    "id": "3c13aa61-c268-4460-922a-c52f9b19d86a",
+    "room_id": null,
+    "to_status": "preconditioning",
+    "transitioned_at": "2026-05-06T01:25:52.33957+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "preconditioning",
+    "id": "b760cb9d-a750-4fdf-86fb-8db1c7096778",
+    "room_id": null,
+    "to_status": "healer_waiting",
+    "transitioned_at": "2026-05-06T01:25:53.474598+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "healer_waiting",
+    "id": "84f7a99e-9b77-4477-b49c-b5fc2faa84a1",
+    "room_id": null,
+    "to_status": "laser_waiting",
+    "transitioned_at": "2026-05-06T01:25:55.098477+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "laser_waiting",
+    "id": "752c6f6e-ff5b-4a60-babc-57661506bbb3",
+    "room_id": null,
+    "to_status": "treatment_waiting",
+    "transitioned_at": "2026-05-06T01:25:56.057224+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "treatment_waiting",
+    "id": "a11584d1-65c9-4fbf-989c-048760e95a9e",
+    "room_id": null,
+    "to_status": "exam_waiting",
+    "transitioned_at": "2026-05-06T01:25:57.937846+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "exam_waiting",
+    "id": "e97b79a9-5192-4916-83c6-874918facf1c",
+    "room_id": null,
+    "to_status": "treatment_waiting",
+    "transitioned_at": "2026-05-06T01:26:00.514853+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "treatment_waiting",
+    "id": "eef1099e-fe8f-4b7f-9dd0-fc876572cd43",
+    "room_id": null,
+    "to_status": "laser_waiting",
+    "transitioned_at": "2026-05-06T01:48:19.900914+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "laser_waiting",
+    "id": "4c7e0849-17f1-4c09-ac1f-57119abed428",
+    "room_id": null,
+    "to_status": "healer_waiting",
+    "transitioned_at": "2026-05-06T01:48:23.357957+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "healer_waiting",
+    "id": "ef5dfa51-9069-4d75-a008-d287104471e5",
+    "room_id": null,
+    "to_status": "exam_waiting",
+    "transitioned_at": "2026-05-06T02:34:44.790443+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "exam_waiting",
+    "id": "3373b34f-0272-4e30-877e-94eda6a534d4",
+    "room_id": null,
+    "to_status": "treatment_waiting",
+    "transitioned_at": "2026-05-06T02:34:47.898346+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "treatment_waiting",
+    "id": "b9f321e3-7c77-4c7c-b841-b3b4ea2447e7",
+    "room_id": null,
+    "to_status": "laser_waiting",
+    "transitioned_at": "2026-05-06T02:34:49.004476+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "laser_waiting",
+    "id": "84be0472-60e1-4ed5-ab6a-cfca235e2be1",
+    "room_id": null,
+    "to_status": "healer_waiting",
+    "transitioned_at": "2026-05-06T02:34:50.037433+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "healer_waiting",
+    "id": "61bb00b0-e825-4f85-b1df-5880c2c7e4be",
+    "room_id": null,
+    "to_status": "exam_waiting",
+    "transitioned_at": "2026-05-06T02:34:51.92345+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "exam_waiting",
+    "id": "2d05c41f-520a-4f6a-8e32-099b11cfbf91",
+    "room_id": null,
+    "to_status": "registered",
+    "transitioned_at": "2026-05-06T02:43:21.257293+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "registered",
+    "id": "4c866cf2-1ccb-455a-944e-4865a39037ec",
+    "room_id": null,
+    "to_status": "consult_waiting",
+    "transitioned_at": "2026-05-06T06:54:31.164273+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "consult_waiting",
+    "id": "e70359df-835e-49dc-a4e4-164b359db632",
+    "room_id": null,
+    "to_status": "registered",
+    "transitioned_at": "2026-05-06T06:54:32.600811+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "registered",
+    "id": "a56119b3-b375-41f0-b695-1edb68499d1c",
+    "room_id": null,
+    "to_status": "laser",
+    "transitioned_at": "2026-05-06T10:28:48.6747+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "laser",
+    "id": "194af198-0ab7-4f53-84b9-564781d87f05",
+    "room_id": null,
+    "to_status": "healer_waiting",
+    "transitioned_at": "2026-05-06T10:28:56.591859+00:00"
+  },
+  {
+    "changed_by": null,
+    "check_in_id": "b4f03da7-6812-468e-9194-03cb5cb78e79",
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "from_status": "healer_waiting",
+    "id": "30bd8ba9-a962-46fb-989a-9005a61281c0",
+    "room_id": null,
+    "to_status": "laser",
+    "transitioned_at": "2026-05-06T10:28:59.095987+00:00"
+  }
+]

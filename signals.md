@@ -1,5 +1,29 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-07 03:10 — DONE | T-20260507-foot-DELETE-TEST-CUSTOMERS
+
+> **from**: dev-foot | **to**: planner → responder → 김주연 | **ts**: 2026-05-07 03:10 KST
+>
+> **풋센터 테스트 고객 전체 삭제 완료**
+>
+> **작업 결과**:
+> - customers: 308건 → **0건** ✅ (백업 02:38 생성, 이전 세션에서 삭제 완료 확인)
+> - reservations: 17건 고아 레코드 → **0건** ✅ (customer_id=null orphan 정리)
+> - check_ins: 13건 고아 레코드 → **0건** ✅ (customer_id=null orphan 정리)
+> - status_transitions: 전체 삭제 ✅
+> - check_in_services: 전체 삭제 ✅
+> - reservation_logs: 전체 삭제 ✅
+> - packages/payments: 0건 (이미 없음) ✅
+>
+> **백업 위치**: `backup_test_customers_20260507/` (JSON 12파일 + 롤백SQL)
+> - customers.json: 308건 / reservations.json: 69건 / check_ins.json: 45건 / packages.json: 220건
+> - rollback_test_customers.sql: 전체 복원 SQL 완비
+>
+> **최종 DB 상태** (clinic_id=74967aea-a60b-4da3-a0e7-9c997a930bc8):
+> - customers: 0건 / reservations: 0건 / check_ins: 0건 / packages: 0건
+>
+> **다음**: planner → responder → 김주연 공유 요청
+
 ## 2026-05-06 — deploy-ready | T-20260430-foot-PRESCREEN-CHECKLIST
 
 > **from**: dev-foot | **to**: supervisor | **ts**: 2026-05-06 KST
