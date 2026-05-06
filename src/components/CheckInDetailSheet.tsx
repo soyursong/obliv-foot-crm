@@ -33,7 +33,6 @@ import { PreChecklist } from '@/components/PreChecklist';
 import { PhotoUpload } from '@/components/PhotoUpload';
 import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
-import { PACKAGE_PRESETS } from '@/lib/packagePresets';
 import type { CheckIn, Package as PackageType, PackageRemaining, Service } from '@/lib/types';
 
 // ─── 시술 항목 / 회차 차감 타입 ──────────────────────────────────────────────
@@ -882,49 +881,9 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             </>
           )}
 
-          {/* ── 패키지 생성 진입점 (MSG-20260430-021723_PACKAGE_CREATE_IN_SHEET) ── */}
-          {/* AC1: 모든 방문 유형(신규/재진/체험)에서 표시 — 재진도 패키지 신규 생성 가능 (T-20260430-foot-PACKAGE-CREATE-IN-SHEET) */}
-          <>
-            <Separator />
-            {/* ── [PROCESS-FLOW] 상담 단계: 현장 룰 안내 — 패키지는 반드시 상담실에서 */}
-            {isConsultStage && !(packages.length > 0 || !!checkIn.package_id) && (
-              <div className="rounded-md border border-teal-300 bg-teal-50 px-3 py-2 flex items-center gap-1.5">
-                <span className="text-sm">📍</span>
-                <p className="text-xs font-semibold text-teal-900">
-                  상담실 결제 단계 — 아래 버튼으로 패키지를 등록하세요
-                </p>
-              </div>
-            )}
-            {packages.length > 0 || !!checkIn.package_id ? (
-              <div
-                data-testid="pkg-create-disabled"
-                className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5"
-              >
-                <Package className="h-4 w-4 text-gray-400 shrink-0" />
-                <span className="text-xs text-muted-foreground">이미 패키지 보유 — 아래에서 잔여회차를 확인하세요</span>
-              </div>
-            ) : (
-              /* AC2: 클릭 → PaymentDialog 패키지 모드 진입 (onPayment initialMode='package') */
-              <button
-                data-testid="btn-package-create-in-sheet"
-                onClick={() => onPayment(checkIn, 'package')}
-                className="w-full flex items-center justify-between rounded-xl border-2 border-teal-400 bg-teal-50 px-4 py-3 hover:bg-teal-100 active:scale-[0.99] transition"
-              >
-                <div className="flex items-center gap-2">
-                  <Package className="h-5 w-5 text-teal-600" />
-                  <div className="text-left">
-                    <div className="text-sm font-semibold text-teal-800">📦 패키지 생성</div>
-                    <div className="text-xs text-teal-600">
-                      {({ new: '초진', experience: '체험', returning: '재진' } as Record<string, string>)[checkIn.visit_type] ?? checkIn.visit_type} · 결제와 함께 패키지 등록
-                    </div>
-                  </div>
-                </div>
-                <span className="text-teal-500 font-medium">→</span>
-              </button>
-            )}
-          </>
+          {/* ── 패키지 생성은 고객차트(미니홈피창)에서 진행 (T-20260506-foot-CHART-SIMPLE-REVAMP) ── */}
 
-          {/* ── [NEW] 활성 패키지 잔여회차 요약 (재진/초진 모두, 패키지 있을 때만) ── */}
+          {/* ── 활성 패키지 잔여회차 요약 (패키지 있을 때만) ── */}
           {packages.length > 0 && (
             <>
               <Separator />
@@ -989,66 +948,7 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             <ConsentFormButtons checkIn={checkIn} onSigned={onUpdated} />
           </div>
 
-          {/* 패키지 구성 (초진 + 미결제 + 패키지 없음) */}
-          {checkIn.visit_type === 'new' && !checkIn.package_id && packages.length === 0 && (
-            <>
-              <Separator />
-              <div className="space-y-2">
-                <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
-                  <Package className="h-3.5 w-3.5" /> 패키지 선택
-                </span>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {Object.entries(PACKAGE_PRESETS).map(([key, preset]) => (
-                    <button
-                      key={key}
-                      className="rounded-lg border border-input px-2.5 py-2 text-left text-xs hover:border-teal-400 hover:bg-teal-50/50 transition space-y-0.5"
-                      onClick={async () => {
-                        if (!checkIn.customer_id) {
-                          toast.error('고객 정보가 없어 패키지를 생성할 수 없습니다');
-                          return;
-                        }
-                        if (!window.confirm(`${preset.label} 패키지를 생성하시겠습니까?`)) return;
-                        const { data: pkg, error } = await supabase
-                          .from('packages')
-                          .insert({
-                            clinic_id: checkIn.clinic_id,
-                            customer_id: checkIn.customer_id,
-                            package_name: preset.label,
-                            package_type: key,
-                            total_sessions: preset.total,
-                            heated_sessions: preset.heated,
-                            unheated_sessions: preset.unheated,
-                            iv_sessions: preset.iv,
-                            preconditioning_sessions: preset.preconditioning,
-                            total_amount: preset.suggestedPrice,
-                            paid_amount: 0,
-                            status: 'active',
-                            contract_date: new Date().toISOString().slice(0, 10),
-                          })
-                          .select('id')
-                          .single();
-                        if (error) {
-                          toast.error(`패키지 생성 실패: ${error.message}`);
-                          return;
-                        }
-                        await supabase
-                          .from('check_ins')
-                          .update({ package_id: pkg.id })
-                          .eq('id', checkIn.id);
-                        toast.success(`${preset.label} 패키지 생성 + 연결 완료`);
-                        onUpdated();
-                      }}
-                    >
-                      <div className="font-semibold">{preset.label}</div>
-                      <div className="text-muted-foreground">{formatAmount(preset.suggestedPrice)}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* ── [NEW] 시술 항목 선택 + 회차 차감 분기 ── */}
+          {/* ── 시술 항목 선택 + 회차 차감 분기 ── */}
           <Separator />
           <div className="space-y-2">
             <div className="flex items-center justify-between">
