@@ -1474,9 +1474,12 @@ export default function Dashboard() {
     }
   }, [loading, location.state, rows]);
 
+  // T-20260506-foot-CHART-UNIFIED-ACCESS: TouchSensor distance-only 방식으로 변경
+  // 이유: delay:200ms 방식은 200ms 후 dnd-kit이 터치를 선점해 브라우저 contextmenu(롱프레스) 이벤트 억제
+  // distance:8 방식은 8px 이상 이동해야 드래그 시작 → 롱프레스 시 contextmenu 자연 발생 보장
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { distance: 8 } }),
   );
 
   const dateStr = useMemo(() => format(date, 'yyyy-MM-dd'), [date]);
@@ -2198,20 +2201,14 @@ export default function Dashboard() {
       toast.info('고객 정보가 연결되어 있지 않습니다');
       return;
     }
-    navigate('/admin/customers', { state: { openCustomerId: ci.customer_id } });
-  }, [navigate]);
-
-  const handleOpenChartWindow = useCallback((ci: CheckIn) => {
-    if (!ci.customer_id) {
-      toast.info('고객 정보가 연결되어 있지 않습니다');
-      return;
-    }
+    // T-20260506-foot-CHART-UNIFIED-ACCESS: 고객차트 = 2번차트(미니홈피) 새 창 오픈
     window.open(
       `/chart/${ci.customer_id}`,
       `chart-${ci.customer_id}`,
       'width=820,height=960,scrollbars=yes,resizable=yes'
     );
   }, []);
+
 
   const handleNewReservation = useCallback((ci: CheckIn) => {
     navigate('/admin/reservations', {
@@ -2887,6 +2884,7 @@ export default function Dashboard() {
                       stageStart={getStageStart(ci)}
                       packageLabel={getPkgLabel(ci)}
                       onClick={() => handleCardClick(ci)}
+                      onContextMenu={(e) => handleCardContext(ci, e)}
                     />
                     {paid != null && paid > 0 && (
                       <div className="mt-0.5 px-1 text-xs text-emerald-700 font-medium text-right tabular-nums">
@@ -3377,7 +3375,6 @@ export default function Dashboard() {
         onClose={() => setCustomerMenu(null)}
         onOpenChart={handleOpenChart}
         onNewReservation={handleNewReservation}
-        onOpenChartWindow={handleOpenChartWindow}
       />
     </div>
   );
