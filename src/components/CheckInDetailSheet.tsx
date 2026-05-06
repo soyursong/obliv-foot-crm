@@ -331,6 +331,8 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   const [checklistOpen, setChecklistOpen] = useState(false);
   /** 고객 차트번호 (T-20260504-foot-CHART-UI-BADGE) */
   const [chartNumber, setChartNumber] = useState<string | null>(null);
+  /** T-20260506-foot-CHART-LINK-SYNC: customer_id null 시 phone으로 조회된 고객 ID (2순위 식별) */
+  const [resolvedCustomerId, setResolvedCustomerId] = useState<string | null>(null);
 
   // ── 진료종류 상태 (T-20260430-foot-TREATMENT-LABEL) — DB 호환성 유지 ──
   const [consultationDone, setConsultationDone] = useState(false);
@@ -362,6 +364,7 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   useEffect(() => {
     setTreatmentItems([]);
     setChartNumber(null);
+    setResolvedCustomerId(null);
     if (checkIn) {
       setConsultationDone(checkIn.consultation_done ?? false);
       setTreatmentKind(checkIn.treatment_kind ?? '');
@@ -406,14 +409,24 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             .eq('status', 'active')
             .order('contract_date', { ascending: false })
         : Promise.resolve({ data: [] }),
-      // 고객 차트번호 + 고객메모 조회 (T-20260504-foot-CHART-UI-BADGE, T-20260504-foot-MEMO-RESTRUCTURE)
+      // T-20260504-foot-CHART-UI-BADGE, T-20260504-foot-MEMO-RESTRUCTURE, T-20260506-foot-CHART-LINK-SYNC
+      // 고객 차트번호·메모 조회: 1순위 customer_id, 2순위 phone 기반 (환자명 불일치 허용)
       checkIn.customer_id
         ? supabase
             .from('customers')
-            .select('chart_number, customer_memo')
+            .select('id, chart_number, customer_memo')
             .eq('id', checkIn.customer_id)
             .single()
-        : Promise.resolve({ data: null }),
+        : checkIn.customer_phone
+          ? supabase
+              .from('customers')
+              .select('id, chart_number, customer_memo')
+              .eq('clinic_id', checkIn.clinic_id)
+              .ilike('phone', `%${checkIn.customer_phone.replace(/\D/g, '')}%`)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
       // 예약메모 조회 (T-20260504-foot-MEMO-RESTRUCTURE)
       checkIn.reservation_id
         ? supabase
@@ -434,9 +447,13 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     setServices((svcRes.data ?? []) as Service[]);
     setPayments((payRes.data ?? []) as PaymentRow[]);
     setHistory((histRes.data ?? []) as VisitHistory[]);
-    const custData = custRes.data as { chart_number: string | null; customer_memo: string | null } | null;
+    const custData = custRes.data as { id?: string; chart_number: string | null; customer_memo: string | null } | null;
     setChartNumber(custData?.chart_number ?? null);
     setCustomerMemo(custData?.customer_memo ?? '');
+    // T-20260506-foot-CHART-LINK-SYNC: customer_id null 케이스 — phone으로 찾은 고객 ID 2순위 저장
+    if (!checkIn.customer_id && custData?.id) {
+      setResolvedCustomerId(custData.id);
+    }
     const resvData = resvRes.data as { booking_memo: string | null } | null;
     setBookingMemo(resvData?.booking_memo ?? '');
     setStaffList((staffRes.data ?? []) as Array<{ id: string; name: string; role: string }>);
@@ -510,6 +527,37 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     }
     toast.success('메모 저장됨');
     onUpdated();
+  };
+
+  // T-20260506-foot-CHART-LINK-SYNC: 3순위 fallback — 실시간 phone 조회 (로드 타임 조회 실패 재시도)
+  // phone 정규화(digits-only) + ilike 매칭으로 포맷 차이(010-XXXX vs +8210XXXX) 허용
+  const openChartFallback = async () => {
+    if (!checkIn?.customer_phone) {
+      toast.error('고객 연락처 정보가 없습니다');
+      return;
+    }
+    const phoneDigits = checkIn.customer_phone.replace(/\D/g, '');
+    if (phoneDigits.length < 4) {
+      toast.error('연락처가 너무 짧습니다');
+      return;
+    }
+    const { data } = await supabase
+      .from('customers')
+      .select('id, name, chart_number')
+      .eq('clinic_id', checkIn.clinic_id)
+      .ilike('phone', `%${phoneDigits}%`)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!data) {
+      toast.error('고객 정보를 찾을 수 없습니다 — 데스크에 문의하세요');
+      return;
+    }
+    window.open(
+      `/chart/${data.id}`,
+      `chart-${data.id}`,
+      'width=820,height=960,scrollbars=yes,resizable=yes',
+    );
   };
 
   // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 저장
@@ -654,10 +702,14 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
                 <span className="text-teal-700">#{checkIn.queue_number}</span>
               )}
               {checkIn.customer_name}
-              {/* 초진/재진 배지 (T-20260504-foot-CHART-UI-BADGE) */}
+              {/* 초진/재진/체험 배지 (T-20260504-foot-CHART-UI-BADGE, T-20260506-foot-CHART-SIMPLE-REVAMP) */}
               {checkIn.visit_type === 'new' ? (
                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-blue-100 text-blue-700 shrink-0">
                   첫방문
+                </span>
+              ) : checkIn.visit_type === 'experience' ? (
+                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-purple-100 text-purple-700 shrink-0">
+                  체험
                 </span>
               ) : (
                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-emerald-100 text-emerald-700 shrink-0">
@@ -739,19 +791,33 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             </span>
           </div>
 
-          {/* 고객차트보기 — T-20260505-foot-SIMPLE-CHART-BUTTON */}
-          {checkIn.customer_id && (
+          {/* 고객차트보기 — T-20260505-foot-SIMPLE-CHART-BUTTON + T-20260506-foot-CHART-LINK-SYNC */}
+          {/* 식별 우선순위: 1순위 customer_id → 2순위 resolvedCustomerId(phone 기반) → 3순위 실시간 조회 */}
+          {(checkIn.customer_id || resolvedCustomerId || checkIn.customer_phone) && (
             <Button
               variant="outline"
               size="sm"
               className="w-full gap-2 border-teal-400 text-teal-700 hover:bg-teal-50 text-sm h-11"
-              onClick={() =>
-                window.open(
-                  `/chart/${checkIn.customer_id}`,
-                  `chart-${checkIn.customer_id}`,
-                  'width=820,height=960,scrollbars=yes,resizable=yes',
-                )
-              }
+              onClick={() => {
+                if (checkIn.customer_id) {
+                  // 1순위: customer_id FK 직접 참조 (가장 확실)
+                  window.open(
+                    `/chart/${checkIn.customer_id}`,
+                    `chart-${checkIn.customer_id}`,
+                    'width=820,height=960,scrollbars=yes,resizable=yes',
+                  );
+                } else if (resolvedCustomerId) {
+                  // 2순위: chart_number + phone 일치로 조회된 고객 ID (환자명 불일치 허용)
+                  window.open(
+                    `/chart/${resolvedCustomerId}`,
+                    `chart-${resolvedCustomerId}`,
+                    'width=820,height=960,scrollbars=yes,resizable=yes',
+                  );
+                } else {
+                  // 3순위: phone 기반 실시간 조회 (로드 타임 조회 실패 시 재시도)
+                  openChartFallback();
+                }
+              }}
             >
               <ExternalLink className="h-4 w-4" />
               고객차트보기
