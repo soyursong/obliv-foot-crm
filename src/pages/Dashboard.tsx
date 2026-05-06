@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   DndContext,
   DragOverlay,
+  MeasuringStrategy,
   PointerSensor,
   TouchSensor,
   useSensor,
@@ -240,6 +241,8 @@ function DraggableCard({
   const style: React.CSSProperties = {
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
     opacity: isDragging ? 0.3 : 1,
+    // T-20260506-foot-SLOT-VERTICAL-MOVE: 세로 터치 드래그 시 브라우저 스크롤 인터셉트 방지
+    touchAction: 'none',
   };
 
   const urgency = isLaserOvertime
@@ -2044,15 +2047,28 @@ export default function Dashboard() {
       let prevRow: CheckIn | undefined;
       setRows((curr) => {
         prevRow = curr.find((r) => r.id === row.id);
-        return curr.map((r) =>
-          r.id === row.id ? { ...r, status: newStatus, [roomField]: roomName } : r,
-        );
+        return curr.map((r) => {
+          if (r.id !== row.id) return r;
+          // T-20260506-foot-SLOT-VERTICAL-MOVE: cross-area 이동 시 로컬 상태도 이전 방 초기화
+          const updated: CheckIn = { ...r, status: newStatus, [roomField]: roomName };
+          if (roomType !== 'treatment') updated.treatment_room = null;
+          if (roomType !== 'laser' && roomType !== 'heated_laser') updated.laser_room = null;
+          if (roomType !== 'consultation') updated.consultation_room = null;
+          if (roomType !== 'examination') updated.examination_room = null;
+          return updated;
+        });
       });
 
       const patch: Record<string, unknown> = {
         status: newStatus,
         [roomField]: roomName,
       };
+      // T-20260506-foot-SLOT-VERTICAL-MOVE: cross-area 이동 시 이전 방 필드 초기화
+      // 치료실→레이저실, 레이저실→치료실 등 영역 간 이동 시 데이터 일관성 보장
+      if (roomType !== 'treatment') patch.treatment_room = null;
+      if (roomType !== 'laser' && roomType !== 'heated_laser') patch.laser_room = null;
+      if (roomType !== 'consultation') patch.consultation_room = null;
+      if (roomType !== 'examination') patch.examination_room = null;
       if (!row.called_at && row.status === 'registered') {
         patch.called_at = new Date().toISOString();
       }
@@ -3364,9 +3380,14 @@ export default function Dashboard() {
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 autoScroll={{
-                  threshold: { x: 0.15, y: 0.15 },
-                  acceleration: 12,
+                  threshold: { x: 0.15, y: 0.05 },
+                  acceleration: 6,
                   interval: 5,
+                }}
+                // T-20260506-foot-SLOT-VERTICAL-MOVE: 세로 이동 지원
+                // droppable rect 항상 갱신 → 스크롤/레이아웃 변경 후에도 정확한 감지
+                measuring={{
+                  droppable: { strategy: MeasuringStrategy.Always },
                 }}
               >
                 <div className="flex gap-2 h-full min-w-max">
