@@ -720,6 +720,30 @@ export default function SelfCheckIn() {
       }
       // ── merge 로직 끝 ──────────────────────────────────────────────────────
 
+      // (2.5) 예약에 연결된 기존 체크인 확인 (staff 선체크인 중복 INSERT 방지)
+      // staff가 대시보드에서 예약 슬롯을 클릭해 이미 체크인 생성한 경우 → 고객 셀프접수 시 재생성 금지
+      // customer_id 기반 step (1)이 customer_id=null 케이스를 놓칠 수 있으므로 reservation_id로 재확인
+      if (matchedReservationId) {
+        try {
+          const { data: linkedCi } = await anonClient
+            .from('check_ins')
+            .select('id, queue_number')
+            .eq('clinic_id', clinicId)
+            .eq('reservation_id', matchedReservationId)
+            .neq('status', 'cancelled')
+            .maybeSingle();
+          if (linkedCi) {
+            const lci = linkedCi as { id: string; queue_number?: number | null };
+            setQueueNumber(lci.queue_number ?? null);
+            setStep('done');
+            setSubmitting(false);
+            return;
+          }
+        } catch {
+          // RLS 차단 등 조회 실패 → 무시, 새 INSERT 진행
+        }
+      }
+
       const { data: queueData, error: queueErr } = await anonClient.rpc('next_queue_number', {
         p_clinic_id: clinicId,
         p_date: todayDate,
