@@ -236,6 +236,13 @@ export default function CustomerChartPage() {
   const [prescriptions, setPrescriptions] = useState<PrescriptionRow[]>([]);
   const [consentEntries, setConsentEntries] = useState<{ form_type: string; signed_at: string }[]>([]);
   const [submissionEntries, setSubmissionEntries] = useState<{ template_key?: string; printed_at: string }[]>([]);
+  // T-20260430-foot-PRESCREEN-CHECKLIST: 사전 체크리스트 응답
+  const [checklistEntries, setChecklistEntries] = useState<{
+    id: string;
+    completed_at: string | null;
+    started_at: string;
+    checklist_data: Record<string, unknown>;
+  }[]>([]);
   const [packageSessions, setPackageSessions] = useState<PackageSession[]>([]);
   const [loading, setLoading] = useState(true);
   // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 인라인 편집
@@ -309,7 +316,7 @@ export default function CustomerChartPage() {
 
       const checkInIds = ciHistory.map((ci: CheckIn) => ci.id);
       if (checkInIds.length > 0) {
-        const [rxRes, consentRes, subRes] = await Promise.all([
+        const [rxRes, consentRes, subRes, clRes] = await Promise.all([
           supabase
             .from('prescriptions')
             .select('id, prescribed_by_name, diagnosis, prescribed_at, prescription_items(medication_name, dosage, duration_days)')
@@ -327,10 +334,19 @@ export default function CustomerChartPage() {
             .in('check_in_id', checkInIds)
             .order('printed_at', { ascending: false })
             .limit(30),
+          // T-20260430-foot-PRESCREEN-CHECKLIST: checklists 테이블에서 사전 체크리스트 응답 조회
+          supabase
+            .from('checklists')
+            .select('id, completed_at, started_at, checklist_data')
+            .eq('customer_id', customerId)
+            .not('completed_at', 'is', null)
+            .order('completed_at', { ascending: false })
+            .limit(10),
         ]);
         setPrescriptions((rxRes.data ?? []) as PrescriptionRow[]);
         setConsentEntries((consentRes.data ?? []) as { form_type: string; signed_at: string }[]);
         setSubmissionEntries((subRes.data ?? []) as { template_key?: string; printed_at: string }[]);
+        setChecklistEntries((clRes.data ?? []) as { id: string; completed_at: string | null; started_at: string; checklist_data: Record<string, unknown> }[]);
       }
 
       setLoading(false);
@@ -885,8 +901,80 @@ export default function CustomerChartPage() {
         </ChartSection>
 
         {/* 섹션 13 — 체크리스트 / 동의서 */}
-        <ChartSection title="체크리스트 / 동의서" defaultOpen>
+        <ChartSection title={`체크리스트 / 동의서${checklistEntries.length > 0 ? ` (사전체크 ${checklistEntries.length}건)` : ''}`} defaultOpen>
           <div className="space-y-3 text-xs">
+            {/* T-20260430-foot-PRESCREEN-CHECKLIST: 사전 체크리스트 응답 (checklists 테이블) */}
+            {checklistEntries.length > 0 && (
+              <div className="space-y-2">
+                <div className="font-medium text-muted-foreground">사전 체크리스트 응답</div>
+                {checklistEntries.map((cl) => {
+                  const d = cl.checklist_data as {
+                    symptoms?: string[];
+                    nail_locations?: string[];
+                    pain_duration?: string;
+                    pain_severity?: string;
+                    medical_history?: string[];
+                    medications?: string[];
+                    medications_none?: boolean;
+                    has_allergy?: boolean;
+                    allergy_types?: string[];
+                    prior_conditions?: string;
+                    family_history?: string;
+                    agree_privacy?: boolean;
+                    agree_marketing?: boolean;
+                    referral_source?: string;
+                  };
+                  const severityLabel: Record<string, string> = { '1': '경미', '2': '불편', '3': '심함', '4': '매우 심함' };
+                  return (
+                    <div key={cl.id} className="rounded border border-teal-100 bg-teal-50/30 px-3 py-2 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Badge variant="teal" className="text-[10px]">✓ 체크리스트 완료</Badge>
+                        <span className="text-muted-foreground tabular-nums">
+                          {cl.completed_at ? format(new Date(cl.completed_at), 'yyyy-MM-dd HH:mm') : '-'}
+                        </span>
+                      </div>
+                      {(d.symptoms ?? []).length > 0 && (
+                        <div><span className="text-muted-foreground">증상: </span>{(d.symptoms ?? []).join(', ')}</div>
+                      )}
+                      {(d.nail_locations ?? []).length > 0 && (
+                        <div><span className="text-muted-foreground">통증부위: </span>{(d.nail_locations ?? []).join(', ')}</div>
+                      )}
+                      {d.pain_duration && (
+                        <div><span className="text-muted-foreground">유병기간: </span>{d.pain_duration}</div>
+                      )}
+                      {d.pain_severity && (
+                        <div><span className="text-muted-foreground">통증강도: </span>{severityLabel[d.pain_severity] ?? d.pain_severity}</div>
+                      )}
+                      {(d.medical_history ?? []).length > 0 && (
+                        <div><span className="text-muted-foreground">병력: </span>{(d.medical_history ?? []).join(', ')}</div>
+                      )}
+                      {d.medications_none && (
+                        <div><span className="text-muted-foreground">복용약: </span>없음</div>
+                      )}
+                      {!d.medications_none && (d.medications ?? []).length > 0 && (
+                        <div><span className="text-muted-foreground">복용약: </span>{(d.medications ?? []).join(', ')}</div>
+                      )}
+                      {d.has_allergy && (d.allergy_types ?? []).length > 0 && (
+                        <div className="text-rose-600"><span className="text-muted-foreground">알레르기: </span>{(d.allergy_types ?? []).join(', ')}</div>
+                      )}
+                      {d.prior_conditions && (
+                        <div><span className="text-muted-foreground">기왕증: </span>{d.prior_conditions}</div>
+                      )}
+                      {d.family_history && (
+                        <div><span className="text-muted-foreground">가족력: </span>{d.family_history}</div>
+                      )}
+                      {d.referral_source && (
+                        <div><span className="text-muted-foreground">방문경로: </span>{d.referral_source}</div>
+                      )}
+                      <div className="flex gap-2 pt-0.5">
+                        {d.agree_privacy && <Badge variant="outline" className="text-[9px] text-teal-600 border-teal-300">개인정보동의</Badge>}
+                        {d.agree_marketing && <Badge variant="outline" className="text-[9px] text-emerald-600 border-emerald-300">마케팅동의</Badge>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             {latestCheckIn?.notes?.checklist && Object.keys(latestCheckIn.notes.checklist).length > 0 && (
               <div>
                 <div className="font-medium text-muted-foreground mb-1">체크리스트 (구버전)</div>
