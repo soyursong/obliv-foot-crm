@@ -12,6 +12,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import type { CheckIn, Customer, Package, PackageRemaining, PrescriptionRow, Reservation } from '@/lib/types';
+// T-20260506-foot-CHECKLIST-AUTOUPLOAD: 업로드된 양식 조회
+import { DocumentViewer } from '@/components/forms/DocumentViewer';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
@@ -883,19 +885,17 @@ export default function CustomerChartPage() {
         </ChartSection>
 
         {/* 섹션 13 — 체크리스트 / 동의서 */}
-        <ChartSection title="체크리스트 / 동의서">
-          <div className="space-y-2 text-xs">
+        <ChartSection title="체크리스트 / 동의서" defaultOpen>
+          <div className="space-y-3 text-xs">
             {latestCheckIn?.notes?.checklist && Object.keys(latestCheckIn.notes.checklist).length > 0 && (
               <div>
-                <div className="font-medium text-muted-foreground mb-1">체크리스트</div>
+                <div className="font-medium text-muted-foreground mb-1">체크리스트 (구버전)</div>
                 <Badge variant="secondary" className="text-[10px]">작성완료</Badge>
               </div>
             )}
-            {consentEntries.length === 0 ? (
-              <div className="text-muted-foreground">동의서 없음</div>
-            ) : (
+            {consentEntries.length > 0 && (
               <div>
-                <div className="font-medium text-muted-foreground mb-1">동의서</div>
+                <div className="font-medium text-muted-foreground mb-1">전자서명 동의서</div>
                 <div className="space-y-1">
                   {consentEntries.map((c, i) => (
                     <div key={i} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
@@ -909,6 +909,11 @@ export default function CustomerChartPage() {
                 </div>
               </div>
             )}
+            {/* T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 작성 양식 + 자동 업로드 */}
+            <div className="pt-1 border-t">
+              <div className="font-medium text-muted-foreground mb-1.5">태블릿 작성 양식 (자동 업로드)</div>
+              <DocumentViewer customerId={customer.id} />
+            </div>
           </div>
         </ChartSection>
 
