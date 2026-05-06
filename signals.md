@@ -1,5 +1,30 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-06 — deploy-ready | T-20260430-foot-PRESCREEN-CHECKLIST
+
+> **from**: dev-foot | **to**: supervisor | **ts**: 2026-05-06 KST
+>
+> **F10 사전 체크리스트 태블릿 구현 완료**
+> - 신규 파일: `src/pages/TabletChecklistPage.tsx` — /checklist/:checkInId 태블릿 전용 라우트
+>   * F10 5종 항목: 발톱 통증(부위/기간/정도), 병력(당뇨/혈관/면역), 약 복용(항응고제 등), 알러지(마취/약/소독제), 기왕증/가족력
+>   * 서명 패드 → 개인정보 동의 (필수) + 마케팅 동의 (선택)
+>   * Storage 자동 업로드: checklist_{ts}.json + signature_checklist_{ts}.png
+>   * `fn_prescreen_start` RPC: `registered → checklist` 상태 전이
+>   * `fn_complete_prescreen_checklist` RPC: `checklist → exam_waiting` 전이 + checklists INSERT
+>   * Supabase Realtime으로 칸반 자동 반영
+> - `src/App.tsx`: `/checklist/:checkInId` 라우트 등록
+> - `src/pages/Dashboard.tsx`: `ChecklistDoneCtx.Provider` 닫는 태그 누락 버그 수정 (빌드 오류 해소)
+>   * 칸반 카드 "📋 체크리스트 완료" 뱃지 + checklists 테이블 일괄 조회 포함
+> - `src/pages/CustomerChartPage.tsx`: checklists 테이블 직접 조회
+>   * 고객 차트에 사전 체크리스트 응답 상세(증상/병력/약/알러지/기왕증/동의 여부) 표시
+> - Migration `20260506000030_checklists_table.sql` 기 커밋
+>   * checklists 신규 테이블 + check_ins.status enum 'checklist' 추가
+>   * fn_prescreen_start / fn_complete_prescreen_checklist SECURITY DEFINER RPC (anon 실행)
+>   * anon Storage 정책 (documents 버킷 checklist 경로)
+> - 빌드: ✅ PASS (2.72s, 에러 0)
+> - commit: dc7f274 (origin/main push 완료)
+> - 잔여 블로커: 설문 항목 최종 확인(문지은 원장님), 태블릿 디바이스 확정(이승준 부BO) — 운영 전 현장 확인 필요
+
 ## 2026-05-06 — deploy-ready | T-20260430-foot-CONSENT-FORMS
 
 > **from**: dev-foot | **to**: supervisor | **ts**: 2026-05-06 KST
