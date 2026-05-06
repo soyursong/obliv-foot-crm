@@ -908,13 +908,11 @@ const SLOT_MAX = 4; // 초진/재진 슬롯 상한 (표시 전용, 차단 없음
 function TimelineCard({
   name,
   visitType,
-  isSelf,
   dimmed,
   struck,
 }: {
   name: string;
   visitType: 'new' | 'returning' | 'experience';
-  isSelf?: boolean;
   dimmed?: boolean;
   struck?: boolean;
 }) {
@@ -932,14 +930,9 @@ function TimelineCard({
         dimmed && 'opacity-50',
         struck && 'line-through opacity-30',
       )}
-      title={`${name}${isSelf ? ' (셀프접수)' : ''}`}
+      title={name}
     >
       <span className="truncate">{name}</span>
-      {isSelf && (
-        <span className="shrink-0 ml-0.5 rounded bg-white/60 px-0.5 text-[8px] font-bold leading-none opacity-80">
-          셀프
-        </span>
-      )}
     </div>
   );
 }
@@ -1100,7 +1093,6 @@ function DashboardTimeline({
                         key={ci.id}
                         name={ci.customer_name}
                         visitType={ci.visit_type}
-                        isSelf
                       />
                     ))}
                   </div>
@@ -1120,7 +1112,6 @@ function DashboardTimeline({
                         key={ci.id}
                         name={ci.customer_name}
                         visitType={ci.visit_type}
-                        isSelf
                       />
                     ))}
                   </div>
