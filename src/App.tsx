@@ -23,6 +23,7 @@ const DailyHistory = lazy(() => import('@/pages/DailyHistory'));
 const Services = lazy(() => import('@/pages/Services'));
 const DoctorTools = lazy(() => import('@/pages/DoctorTools'));
 const TreatmentTable = lazy(() => import('@/pages/TreatmentTable'));
+const TabletChecklistPage = lazy(() => import('@/pages/TabletChecklistPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
@@ -47,6 +48,7 @@ function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/checkin/:clinicSlug" element={<SelfCheckIn />} />
+              <Route path="/checklist/:checkInId" element={<TabletChecklistPage />} />
               <Route path="/waiting/:clinicSlug" element={<Waiting />} />
               <Route path="/chart/:customerId" element={
                 <ProtectedRoute>

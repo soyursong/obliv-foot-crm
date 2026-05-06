@@ -89,6 +89,9 @@ interface ConsentEntry {
 /** 체크인 ID → 동의서 날짜 맵. DraggableCard에서 useContext로 읽어 배지 표시 */
 const ConsentMapCtx = createContext<Map<string, ConsentEntry>>(new Map());
 
+/** 체크인 ID → 체크리스트 완료 여부 맵 (T-20260430-foot-PRESCREEN-CHECKLIST) */
+const ChecklistDoneCtx = createContext<Set<string>>(new Set());
+
 // ── 카드 고객 이름 우클릭/롱프레스 핸들러 컨텍스트 ────────────────────────────
 interface CardHandlers {
   onNameContext: (ci: CheckIn, e: React.MouseEvent) => void;
@@ -226,6 +229,8 @@ function DraggableCard({
 }) {
   const consentMap = useContext(ConsentMapCtx);
   const consentEntry = consentMap.get(checkIn.id);
+  const checklistDoneSet = useContext(ChecklistDoneCtx);
+  const isChecklistDone = checklistDoneSet.has(checkIn.id);
   const cardHandlers = useContext(CardHandlersCtx);
   const resvTimeMap = useContext(ResvTimeMapCtx);
   const reservationTime = checkIn.reservation_id ? (resvTimeMap.get(checkIn.reservation_id) ?? null) : null;
@@ -322,6 +327,15 @@ function DraggableCard({
         {packageLabel && (
           <div className="mt-0.5 text-xs text-violet-600 font-medium truncate">
             {packageLabel.name} {packageLabel.remaining}/{packageLabel.total}
+          </div>
+        )}
+        {/* 체크리스트 완료 배지 (T-20260430-foot-PRESCREEN-CHECKLIST) */}
+        {isChecklistDone && (
+          <div
+            data-testid="checklist-done-badge"
+            className="mt-0.5 text-[10px] text-teal-600 truncate"
+          >
+            📋 체크리스트 완료
           </div>
         )}
         {/* 동의서 서명 배지 (compact) */}
@@ -1446,6 +1460,7 @@ export default function Dashboard() {
   const [stageStartMap, setStageStartMap] = useState<Map<string, string>>(new Map());
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
   const [consentMap, setConsentMap] = useState<Map<string, ConsentEntry>>(new Map());
+  const [checklistDone, setChecklistDone] = useState<Set<string>>(new Set());
   const [therapists, setTherapists] = useState<Staff[]>([]);
   // ── 달력 + 타임라인 상태 ──────────────────────────────────────────────────────
   const [showCalendar, setShowCalendar] = useState(false);
@@ -1731,6 +1746,21 @@ export default function Dashboard() {
       setConsentMap(cMap);
     } else {
       setConsentMap(new Map());
+    }
+
+    // ── 체크리스트 완료 일괄 조회 (T-20260430-foot-PRESCREEN-CHECKLIST) ──
+    if (ids.length > 0) {
+      const { data: clData } = await supabase
+        .from('checklists')
+        .select('check_in_id')
+        .in('check_in_id', ids)
+        .not('completed_at', 'is', null);
+      const clSet = new Set<string>(
+        (clData ?? []).map((c: { check_in_id: string }) => c.check_in_id),
+      );
+      setChecklistDone(clSet);
+    } else {
+      setChecklistDone(new Set());
     }
   }, [clinic, dateStr]);
 
@@ -3460,6 +3490,7 @@ export default function Dashboard() {
             ) : (
               /* ── 일반 모드: 카드 드래그 DndContext ── */
               <CardHandlersCtx.Provider value={cardHandlersValue}>
+              <ChecklistDoneCtx.Provider value={checklistDone}>
               <ConsentMapCtx.Provider value={consentMap}>
               <ResvTimeMapCtx.Provider value={resvTimeMap}>
               <DndContext
@@ -3510,6 +3541,7 @@ export default function Dashboard() {
               </DndContext>
               </ResvTimeMapCtx.Provider>
               </ConsentMapCtx.Provider>
+              </ChecklistDoneCtx.Provider>
               </CardHandlersCtx.Provider>
             )}
           </div>
