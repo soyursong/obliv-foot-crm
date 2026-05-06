@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { ChevronDown, Pencil, Printer, X } from 'lucide-react';
+import { ChevronDown, Pencil, Printer, Trash2, Upload, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -50,6 +50,13 @@ interface PackageSession {
   memo: string | null;
 }
 
+// T-20260506-foot-CHART-MINI-HOMEPAGE: 이미지 관리 역할별 분리
+interface StorageImageItem {
+  path: string;
+  signedUrl: string;
+  name: string;
+}
+
 const PKG_STATUS_KO: Record<string, string> = {
   active: '진행중',
   completed: '완료',
@@ -86,6 +93,128 @@ function ChartSection({
         <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
       {open && <div className="border-t px-3 py-2 text-sm">{children}</div>}
+    </div>
+  );
+}
+
+// T-20260506-foot-CHART-MINI-HOMEPAGE: 고객 스토리지 이미지 업로드 컴포넌트 (역할별)
+// - 상담실장 영역: 동의서(consent), 결제영수증(receipt)
+// - 치료사 영역: 비포에프터(before-after)
+// Supabase Storage 'photos' 버킷의 customer/{id}/{prefix}/ 경로 사용 — DB 마이그레이션 불필요
+function CustomerStorageImageSection({
+  customerId,
+  prefix,
+  label,
+  accent,
+  accept = 'image/*',
+}: {
+  customerId: string;
+  prefix: string;
+  label: string;
+  accent: 'blue' | 'green' | 'orange';
+  accept?: string;
+}) {
+  const [images, setImages] = useState<StorageImageItem[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const storagePath = `customer/${customerId}/${prefix}`;
+
+  const load = useCallback(async () => {
+    const { data: files } = await supabase.storage.from('photos').list(storagePath, {
+      limit: 50,
+      sortBy: { column: 'name', order: 'desc' },
+    });
+    if (!files || files.length === 0) { setImages([]); return; }
+    const withUrls = await Promise.all(
+      files
+        .filter((f) => f.name && !f.id?.endsWith('/'))
+        .map(async (file) => {
+          const path = `${storagePath}/${file.name}`;
+          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
+          return { path, signedUrl: data?.signedUrl ?? '', name: file.name };
+        }),
+    );
+    setImages(withUrls.filter((i) => i.signedUrl));
+  }, [storagePath]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    for (const file of Array.from(files)) {
+      const ext = file.name.split('.').pop() ?? 'jpg';
+      const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
+      if (error) toast.error(`업로드 실패: ${error.message}`);
+    }
+    setUploading(false);
+    e.target.value = '';
+    await load();
+    toast.success('업로드 완료');
+  };
+
+  const remove = async (img: StorageImageItem) => {
+    if (!window.confirm('이미지를 삭제하시겠습니까?')) return;
+    await supabase.storage.from('photos').remove([img.path]);
+    await load();
+    toast.success('삭제됨');
+  };
+
+  const accentMap = {
+    blue:   { header: 'bg-blue-50 border-blue-200 text-blue-800', dot: 'bg-blue-500', btn: 'text-blue-700 border-blue-200 hover:bg-blue-50' },
+    green:  { header: 'bg-green-50 border-green-200 text-green-800', dot: 'bg-green-500', btn: 'text-green-700 border-green-200 hover:bg-green-50' },
+    orange: { header: 'bg-amber-50 border-amber-200 text-amber-800', dot: 'bg-amber-500', btn: 'text-amber-700 border-amber-200 hover:bg-amber-50' },
+  };
+  const ac = accentMap[accent];
+
+  return (
+    <div className="space-y-1.5">
+      <div className={`flex items-center justify-between rounded border px-2.5 py-1.5 ${ac.header}`}>
+        <span className="text-xs font-semibold flex items-center gap-1.5">
+          <span className={`h-2 w-2 rounded-full shrink-0 ${ac.dot}`} />
+          {label}
+        </span>
+        <label className="cursor-pointer">
+          <input
+            type="file"
+            accept={accept}
+            multiple
+            className="hidden"
+            onChange={handleUpload}
+            disabled={uploading}
+          />
+          <span className={`inline-flex items-center gap-1 text-xs border rounded px-2 py-0.5 bg-white transition cursor-pointer ${ac.btn}`}>
+            <Upload className="h-3 w-3" />
+            {uploading ? '중…' : '추가'}
+          </span>
+        </label>
+      </div>
+      {images.length === 0 ? (
+        <div className="rounded border border-dashed py-2.5 text-center text-xs text-muted-foreground">
+          이미지 없음
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-1.5">
+          {images.map((img) => (
+            <div key={img.path} className="relative group aspect-square">
+              <img
+                src={img.signedUrl}
+                alt={img.name}
+                className="w-full h-full object-cover rounded border cursor-pointer"
+                onClick={() => window.open(img.signedUrl, '_blank')}
+              />
+              <button
+                onClick={() => remove(img)}
+                className="absolute top-1 right-1 hidden group-hover:flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow"
+                title="삭제"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -685,31 +814,72 @@ export default function CustomerChartPage() {
           )}
         </ChartSection>
 
-        {/* 섹션 12 — 비포/에프터 */}
-        <ChartSection title="비포/에프터">
-          {checkInHistory.filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0).length === 0 ? (
-            <div className="text-xs text-muted-foreground py-1">사진 없음</div>
-          ) : (
-            <div className="space-y-3">
-              {checkInHistory
-                .filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0)
-                .map((ci) => (
-                  <div key={ci.id}>
-                    <div className="text-xs text-muted-foreground mb-1">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
-                    <div className="grid grid-cols-2 gap-1">
-                      {(ci.treatment_photos ?? []).map((url, idx) => (
-                        <img
-                          key={idx}
-                          src={url}
-                          alt={`사진 ${idx + 1}`}
-                          className="rounded w-full object-cover aspect-square bg-muted"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
+        {/* 섹션 12 — 이미지 관리 (역할별) — T-20260506-foot-CHART-MINI-HOMEPAGE
+            5/4 14:49 요청: 상담실장 영역(동의서+결제영수증) / 치료사 영역(비포에프터) 구분 */}
+        <ChartSection title="이미지 관리" defaultOpen>
+          <div className="space-y-4">
+
+            {/* ── 상담실장 영역 ───────────────────────────────────────────────── */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-blue-800">
+                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                상담실장 영역
+              </div>
+              <div className="space-y-2 pl-1">
+                <CustomerStorageImageSection
+                  customerId={customer.id}
+                  prefix="consent"
+                  label="동의서 사진 (환불 + 비급여동의서)"
+                  accent="blue"
+                />
+                <CustomerStorageImageSection
+                  customerId={customer.id}
+                  prefix="receipt"
+                  label="결제영수증"
+                  accent="green"
+                />
+              </div>
             </div>
-          )}
+
+            {/* ── 치료사 영역 ─────────────────────────────────────────────────── */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800">
+                <span className="h-2 w-2 rounded-full bg-amber-500" />
+                치료사 영역 — 일자별 비포/에프터
+              </div>
+              <div className="pl-1">
+                {checkInHistory.filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0).length === 0 ? (
+                  <div className="rounded border border-dashed py-2.5 text-center text-xs text-muted-foreground">
+                    사진 없음 (간편차트에서 업로드)
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {checkInHistory
+                      .filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0)
+                      .map((ci) => (
+                        <div key={ci.id}>
+                          <div className="text-[10px] text-muted-foreground mb-1 font-medium">
+                            {format(new Date(ci.checked_in_at), 'yyyy-MM-dd')}
+                          </div>
+                          <div className="grid grid-cols-3 gap-1">
+                            {(ci.treatment_photos ?? []).map((url, idx) => (
+                              <img
+                                key={idx}
+                                src={url}
+                                alt={`사진 ${idx + 1}`}
+                                className="rounded w-full object-cover aspect-square bg-muted cursor-pointer"
+                                onClick={() => window.open(url, '_blank')}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
         </ChartSection>
 
         {/* 섹션 13 — 체크리스트 / 동의서 */}
