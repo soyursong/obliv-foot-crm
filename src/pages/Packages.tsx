@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { Layers, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,8 +21,7 @@ import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { PACKAGE_PRESETS } from '@/lib/packagePresets';
-import type { Customer, Package, PackageRemaining } from '@/lib/types';
+import type { Customer, Package, PackageRemaining, PackageTemplate } from '@/lib/types';
 
 type PackageListItem = Package & { customer: { name: string; phone: string } | null };
 
@@ -35,8 +34,6 @@ interface RefundQuote {
   refund_amount: number;
 }
 
-const PRESETS = PACKAGE_PRESETS;
-
 type FilterStatus = 'active' | 'completed' | 'refunded' | 'all';
 
 export default function Packages() {
@@ -47,6 +44,7 @@ export default function Packages() {
   const [rows, setRows] = useState<PackageListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [openCreate, setOpenCreate] = useState(false);
+  const [openTemplates, setOpenTemplates] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
 
@@ -106,6 +104,11 @@ export default function Packages() {
               className="pl-9"
             />
           </div>
+          {isAdmin && (
+            <Button variant="outline" onClick={() => setOpenTemplates(true)} className="gap-1">
+              <Layers className="h-4 w-4" /> 템플릿 관리
+            </Button>
+          )}
           <Button onClick={() => setOpenCreate(true)} className="gap-1">
             <Plus className="h-4 w-4" /> 패키지 생성
           </Button>
@@ -207,6 +210,12 @@ export default function Packages() {
         }}
       />
 
+      <TemplateManageSheet
+        open={openTemplates}
+        clinicId={clinic?.id}
+        onOpenChange={setOpenTemplates}
+      />
+
       <PackageDetailSheet
         packageId={selectedId}
         isAdmin={isAdmin}
@@ -220,6 +229,445 @@ export default function Packages() {
   );
 }
 
+// ============================================================
+// 템플릿 관리 Sheet
+// ============================================================
+function TemplateManageSheet({
+  open,
+  clinicId,
+  onOpenChange,
+}: {
+  open: boolean;
+  clinicId: string | undefined;
+  onOpenChange: (o: boolean) => void;
+}) {
+  const [templates, setTemplates] = useState<PackageTemplate[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [editTarget, setEditTarget] = useState<PackageTemplate | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!clinicId) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('package_templates')
+      .select('*')
+      .eq('clinic_id', clinicId)
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    setLoading(false);
+    if (error) { toast.error(`템플릿 로딩 실패: ${error.message}`); return; }
+    setTemplates((data ?? []) as PackageTemplate[]);
+  }, [clinicId]);
+
+  useEffect(() => {
+    if (open) load();
+  }, [open, load]);
+
+  const remove = async (t: PackageTemplate) => {
+    if (!window.confirm(`「${t.name}」 템플릿을 삭제하시겠습니까?`)) return;
+    const { error } = await supabase
+      .from('package_templates')
+      .update({ is_active: false })
+      .eq('id', t.id);
+    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+    toast.success('템플릿 삭제됨');
+    load();
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="max-w-xl overflow-y-auto">
+        <SheetHeader>
+          <div className="flex items-center justify-between">
+            <SheetTitle>패키지 템플릿 관리</SheetTitle>
+            <Button size="sm" className="gap-1" onClick={() => setCreateOpen(true)}>
+              <Plus className="h-3.5 w-3.5" /> 새 템플릿
+            </Button>
+          </div>
+        </SheetHeader>
+
+        <div className="mt-4 space-y-2">
+          {loading && (
+            <div className="py-6 text-center text-sm text-muted-foreground">불러오는 중…</div>
+          )}
+          {!loading && templates.length === 0 && (
+            <div className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
+              템플릿 없음 — [새 템플릿]을 눌러 추가하세요
+            </div>
+          )}
+          {templates.map((t) => (
+            <div key={t.id} className="rounded-lg border bg-white p-3 text-xs">
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <span className="font-semibold text-sm text-teal-800">{t.name}</span>
+                <div className="flex gap-1 shrink-0">
+                  <button
+                    onClick={() => setEditTarget(t)}
+                    className="rounded p-1 hover:bg-muted transition"
+                    title="편집"
+                  >
+                    <Pencil className="h-3 w-3 text-muted-foreground" />
+                  </button>
+                  <button
+                    onClick={() => remove(t)}
+                    className="rounded p-1 hover:bg-red-50 transition"
+                    title="삭제"
+                  >
+                    <Trash2 className="h-3 w-3 text-red-500" />
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-muted-foreground">
+                {t.heated_sessions > 0 && (
+                  <div>가열 {t.heated_sessions}회 · {formatAmount(t.heated_unit_price)}{t.heated_upgrade_available && ' (+샷업)' }</div>
+                )}
+                {t.unheated_sessions > 0 && (
+                  <div>비가열 {t.unheated_sessions}회 · {formatAmount(t.unheated_unit_price)}{t.unheated_upgrade_available && ' (+AF업)' }</div>
+                )}
+                {t.podologe_sessions > 0 && (
+                  <div>포돌로게 {t.podologe_sessions}회 · {formatAmount(t.podologe_unit_price)}</div>
+                )}
+                {t.iv_sessions > 0 && (
+                  <div>수액 {t.iv_sessions}회 · {formatAmount(t.iv_unit_price)}{t.iv_company ? ` (${t.iv_company})` : ''}</div>
+                )}
+              </div>
+              <div className="mt-1.5 font-medium text-teal-700">
+                총 {formatAmount(t.total_price)}
+                {t.price_override && <span className="ml-1 text-[10px] text-muted-foreground">(수기)</span>}
+              </div>
+              {t.memo && (
+                <div className="mt-1 text-muted-foreground/80 italic">{t.memo}</div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <PackageTemplateDialog
+          open={createOpen || !!editTarget}
+          clinicId={clinicId}
+          template={editTarget}
+          onOpenChange={(o) => {
+            if (!o) { setCreateOpen(false); setEditTarget(null); }
+          }}
+          onSaved={() => {
+            setCreateOpen(false);
+            setEditTarget(null);
+            load();
+          }}
+        />
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// ============================================================
+// 패키지 템플릿 생성/편집 다이얼로그
+// ============================================================
+function PackageTemplateDialog({
+  open,
+  clinicId,
+  template,
+  onOpenChange,
+  onSaved,
+}: {
+  open: boolean;
+  clinicId: string | undefined;
+  template: PackageTemplate | null;
+  onOpenChange: (o: boolean) => void;
+  onSaved: () => void;
+}) {
+  const isEdit = !!template;
+
+  const [name, setName] = useState('');
+  // 가열
+  const [heatedSessions, setHeatedSessions] = useState(0);
+  const [heatedUnitPrice, setHeatedUnitPrice] = useState(0);
+  const [heatedUpgrade, setHeatedUpgrade] = useState(false);
+  // 비가열
+  const [unheatedSessions, setUnheatedSessions] = useState(0);
+  const [unheatedUnitPrice, setUnheatedUnitPrice] = useState(0);
+  const [unheatedUpgrade, setUnheatedUpgrade] = useState(false);
+  // 포돌로게
+  const [podologeSessions, setPodologeSessions] = useState(0);
+  const [podologeUnitPrice, setPodologeUnitPrice] = useState(0);
+  // 수액
+  const [ivCompany, setIvCompany] = useState('');
+  const [ivSessions, setIvSessions] = useState(0);
+  const [ivUnitPrice, setIvUnitPrice] = useState(0);
+  // 총금액
+  const [priceOverride, setPriceOverride] = useState(false);
+  const [manualPrice, setManualPrice] = useState(0);
+  // 메모
+  const [memo, setMemo] = useState('');
+  const [sortOrder, setSortOrder] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+
+  const computedTotal = useMemo(
+    () =>
+      heatedSessions * heatedUnitPrice +
+      unheatedSessions * unheatedUnitPrice +
+      podologeSessions * podologeUnitPrice +
+      ivSessions * ivUnitPrice,
+    [heatedSessions, heatedUnitPrice, unheatedSessions, unheatedUnitPrice, podologeSessions, podologeUnitPrice, ivSessions, ivUnitPrice],
+  );
+
+  const finalPrice = priceOverride ? manualPrice : computedTotal;
+
+  useEffect(() => {
+    if (!open) return;
+    if (template) {
+      setName(template.name);
+      setHeatedSessions(template.heated_sessions);
+      setHeatedUnitPrice(template.heated_unit_price);
+      setHeatedUpgrade(template.heated_upgrade_available);
+      setUnheatedSessions(template.unheated_sessions);
+      setUnheatedUnitPrice(template.unheated_unit_price);
+      setUnheatedUpgrade(template.unheated_upgrade_available);
+      setPodologeSessions(template.podologe_sessions);
+      setPodologeUnitPrice(template.podologe_unit_price);
+      setIvCompany(template.iv_company ?? '');
+      setIvSessions(template.iv_sessions);
+      setIvUnitPrice(template.iv_unit_price);
+      setPriceOverride(template.price_override);
+      setManualPrice(template.total_price);
+      setMemo(template.memo ?? '');
+      setSortOrder(template.sort_order);
+    } else {
+      setName('');
+      setHeatedSessions(0); setHeatedUnitPrice(0); setHeatedUpgrade(false);
+      setUnheatedSessions(0); setUnheatedUnitPrice(0); setUnheatedUpgrade(false);
+      setPodologeSessions(0); setPodologeUnitPrice(0);
+      setIvCompany(''); setIvSessions(0); setIvUnitPrice(0);
+      setPriceOverride(false); setManualPrice(0);
+      setMemo(''); setSortOrder(0);
+    }
+  }, [open, template]);
+
+  // 자동합산 시 manualPrice 동기화
+  useEffect(() => {
+    if (!priceOverride) setManualPrice(computedTotal);
+  }, [computedTotal, priceOverride]);
+
+  const save = async () => {
+    if (!clinicId || !name.trim()) { toast.error('패키지명을 입력하세요'); return; }
+    setSubmitting(true);
+    const payload = {
+      clinic_id: clinicId,
+      name: name.trim(),
+      heated_sessions: heatedSessions,
+      heated_unit_price: heatedUnitPrice,
+      heated_upgrade_available: heatedUpgrade,
+      unheated_sessions: unheatedSessions,
+      unheated_unit_price: unheatedUnitPrice,
+      unheated_upgrade_available: unheatedUpgrade,
+      podologe_sessions: podologeSessions,
+      podologe_unit_price: podologeUnitPrice,
+      iv_company: ivCompany.trim() || null,
+      iv_sessions: ivSessions,
+      iv_unit_price: ivUnitPrice,
+      total_price: finalPrice,
+      price_override: priceOverride,
+      memo: memo.trim() || null,
+      sort_order: sortOrder,
+      updated_at: new Date().toISOString(),
+    };
+    let error;
+    if (isEdit && template) {
+      ({ error } = await supabase.from('package_templates').update(payload).eq('id', template.id));
+    } else {
+      ({ error } = await supabase.from('package_templates').insert(payload));
+    }
+    setSubmitting(false);
+    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+    toast.success(isEdit ? '템플릿 수정됨' : '템플릿 생성됨');
+    onSaved();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? '템플릿 편집' : '새 패키지 템플릿'}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>패키지명 *</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 블레라벨 패키지" />
+          </div>
+
+          {/* 가열 */}
+          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+            <div className="text-xs font-semibold text-muted-foreground">가열 레이저</div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">회수</Label>
+                <Input type="number" min={0} value={heatedSessions}
+                  onChange={(e) => setHeatedSessions(Math.max(0, Number(e.target.value) || 0))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">수가 (회당)</Label>
+                <Input value={formatAmount(heatedUnitPrice)}
+                  onChange={(e) => setHeatedUnitPrice(parseAmount(e.target.value))}
+                  inputMode="numeric" />
+              </div>
+              <div className="flex items-end pb-0.5">
+                <button
+                  onClick={() => setHeatedUpgrade(!heatedUpgrade)}
+                  className={cn('h-9 w-full rounded-md border text-xs font-medium px-2',
+                    heatedUpgrade ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}
+                >
+                  {heatedUpgrade ? '✓ ' : ''}6000샷 업그레이드
+                </button>
+              </div>
+            </div>
+            {heatedSessions > 0 && (
+              <div className="text-xs text-muted-foreground text-right">
+                소계: {formatAmount(heatedSessions * heatedUnitPrice)}
+              </div>
+            )}
+          </div>
+
+          {/* 비가열 */}
+          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+            <div className="text-xs font-semibold text-muted-foreground">비가열 레이저</div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">회수</Label>
+                <Input type="number" min={0} value={unheatedSessions}
+                  onChange={(e) => setUnheatedSessions(Math.max(0, Number(e.target.value) || 0))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">수가 (회당)</Label>
+                <Input value={formatAmount(unheatedUnitPrice)}
+                  onChange={(e) => setUnheatedUnitPrice(parseAmount(e.target.value))}
+                  inputMode="numeric" />
+              </div>
+              <div className="flex items-end pb-0.5">
+                <button
+                  onClick={() => setUnheatedUpgrade(!unheatedUpgrade)}
+                  className={cn('h-9 w-full rounded-md border text-xs font-medium px-2',
+                    unheatedUpgrade ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}
+                >
+                  {unheatedUpgrade ? '✓ ' : ''}AF 업그레이드
+                </button>
+              </div>
+            </div>
+            {unheatedSessions > 0 && (
+              <div className="text-xs text-muted-foreground text-right">
+                소계: {formatAmount(unheatedSessions * unheatedUnitPrice)}
+              </div>
+            )}
+          </div>
+
+          {/* 포돌로게 */}
+          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+            <div className="text-xs font-semibold text-muted-foreground">포돌로게</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">회수</Label>
+                <Input type="number" min={0} value={podologeSessions}
+                  onChange={(e) => setPodologeSessions(Math.max(0, Number(e.target.value) || 0))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">수가 (회당)</Label>
+                <Input value={formatAmount(podologeUnitPrice)}
+                  onChange={(e) => setPodologeUnitPrice(parseAmount(e.target.value))}
+                  inputMode="numeric" />
+              </div>
+            </div>
+            {podologeSessions > 0 && (
+              <div className="text-xs text-muted-foreground text-right">
+                소계: {formatAmount(podologeSessions * podologeUnitPrice)}
+              </div>
+            )}
+          </div>
+
+          {/* 수액 */}
+          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+            <div className="text-xs font-semibold text-muted-foreground">수액</div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">회사</Label>
+                <Input value={ivCompany} onChange={(e) => setIvCompany(e.target.value)}
+                  placeholder="예: HK이노엔" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">회수</Label>
+                <Input type="number" min={0} value={ivSessions}
+                  onChange={(e) => setIvSessions(Math.max(0, Number(e.target.value) || 0))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">수가 (회당)</Label>
+                <Input value={formatAmount(ivUnitPrice)}
+                  onChange={(e) => setIvUnitPrice(parseAmount(e.target.value))}
+                  inputMode="numeric" />
+              </div>
+            </div>
+            {ivSessions > 0 && (
+              <div className="text-xs text-muted-foreground text-right">
+                소계: {formatAmount(ivSessions * ivUnitPrice)}
+              </div>
+            )}
+          </div>
+
+          {/* 총금액 */}
+          <div className="rounded-lg border border-teal-200 bg-teal-50/40 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-semibold text-teal-800">패키지 총 금액</div>
+              <button
+                onClick={() => { setPriceOverride(!priceOverride); if (!priceOverride) setManualPrice(computedTotal); }}
+                className={cn('text-xs rounded border px-2 py-0.5',
+                  priceOverride ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-input hover:bg-muted')}
+              >
+                {priceOverride ? '✓ 수기수정' : '수기수정'}
+              </button>
+            </div>
+            {priceOverride ? (
+              <Input
+                value={formatAmount(manualPrice)}
+                onChange={(e) => setManualPrice(parseAmount(e.target.value))}
+                inputMode="numeric"
+                className="text-lg font-bold"
+              />
+            ) : (
+              <div className="text-xl font-bold text-teal-700">
+                {formatAmount(computedTotal)}
+                <span className="ml-2 text-xs text-muted-foreground font-normal">(항목 자동합산)</span>
+              </div>
+            )}
+          </div>
+
+          {/* 메모 */}
+          <div className="space-y-1.5">
+            <Label>메모 (수액종류, 업그레이드 추가사항 등)</Label>
+            <Textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={2}
+              placeholder="예: HK이노엔 글루타치온 + 6000샷 기본 포함" />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">정렬 순서 (낮을수록 앞)</Label>
+            <Input type="number" value={sortOrder}
+              onChange={(e) => setSortOrder(Number(e.target.value) || 0)}
+              className="w-24" />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
+          <Button disabled={submitting || !name.trim()} onClick={save}>
+            {submitting ? '저장 중…' : isEdit ? '수정' : '생성'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ============================================================
+// 패키지 생성 다이얼로그 (템플릿 기반 + 커스텀)
+// ============================================================
 function PackageCreateDialog({
   open,
   clinicId,
@@ -235,44 +683,90 @@ function PackageCreateDialog({
   const [customerMatches, setCustomerMatches] = useState<Customer[]>([]);
   const [customer, setCustomer] = useState<Customer | null>(null);
 
-  const [presetKey, setPresetKey] = useState<string>('package1');
-  const [heated, setHeated] = useState(1);
-  const [unheated, setUnheated] = useState(8);
+  const [templates, setTemplates] = useState<PackageTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | 'custom'>('custom');
+
+  // 항목별 필드
+  const [packageName, setPackageName] = useState('');
+  const [heated, setHeated] = useState(0);
+  const [unheated, setUnheated] = useState(0);
+  const [podologe, setPodologe] = useState(0);
   const [iv, setIv] = useState(0);
-  const [precon, setPrecon] = useState(12);
+  const [precon, setPrecon] = useState(0);
+  const [ivCompany, setIvCompany] = useState('');
   const [shotUpgrade, setShotUpgrade] = useState(false);
   const [afUpgrade, setAfUpgrade] = useState(false);
-  const [price, setPrice] = useState(1200000);
+
+  // 총금액
+  const [priceOverride, setPriceOverride] = useState(false);
+  const [basePrice, setBasePrice] = useState(0);
+  const [manualTotal, setManualTotal] = useState(0);
+
   const [memo, setMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // 업그레이드 할증
+  const upgradeSurcharge = (shotUpgrade ? 50000 : 0) + (afUpgrade ? 40000 : 0);
+  // 총금액 계산
+  const grandTotal = priceOverride ? manualTotal : basePrice + upgradeSurcharge;
+  // 총회차 (preconditioning 포함, podologe 별도)
+  const totalSessions = heated + unheated + iv + precon;
+
+  // 템플릿 로드
+  useEffect(() => {
+    if (!open || !clinicId) return;
+    supabase
+      .from('package_templates')
+      .select('*')
+      .eq('clinic_id', clinicId)
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+      .then(({ data }) => setTemplates((data ?? []) as PackageTemplate[]));
+  }, [open, clinicId]);
+
+  // 초기화
   useEffect(() => {
     if (!open) return;
-    setCustomerQuery('');
-    setCustomer(null);
-    applyPreset('package1');
-    setShotUpgrade(false);
-    setAfUpgrade(false);
-    setMemo('');
+    setCustomerQuery(''); setCustomer(null);
+    setSelectedTemplateId('custom');
+    setPackageName(''); setHeated(0); setUnheated(0); setPodologe(0);
+    setIv(0); setPrecon(0); setIvCompany('');
+    setShotUpgrade(false); setAfUpgrade(false);
+    setPriceOverride(false); setBasePrice(0); setManualTotal(0); setMemo('');
   }, [open]);
 
-  const applyPreset = (key: string) => {
-    setPresetKey(key);
-    if (key === 'custom') return;
-    const p = PRESETS[key];
-    if (!p) return;
-    setHeated(p.heated);
-    setUnheated(p.unheated);
-    setIv(p.iv);
-    setPrecon(p.preconditioning);
-    setPrice(p.suggestedPrice);
+  // 업그레이드 할증 변경 시 basePrice 기반 재계산
+  useEffect(() => {
+    if (!priceOverride) setManualTotal(basePrice + upgradeSurcharge);
+  }, [upgradeSurcharge, basePrice, priceOverride]);
+
+  const applyTemplate = (tmpl: PackageTemplate) => {
+    setSelectedTemplateId(tmpl.id);
+    setPackageName(tmpl.name);
+    setHeated(tmpl.heated_sessions);
+    setUnheated(tmpl.unheated_sessions);
+    setPodologe(tmpl.podologe_sessions);
+    setIv(tmpl.iv_sessions);
+    setPrecon(0); // 사전처치는 별도 — 템플릿에 없음
+    setIvCompany(tmpl.iv_company ?? '');
+    setShotUpgrade(false); setAfUpgrade(false);
+    setPriceOverride(false);
+    setBasePrice(tmpl.total_price);
+    setManualTotal(tmpl.total_price);
+    setMemo(tmpl.memo ?? '');
   };
 
+  const applyCustom = () => {
+    setSelectedTemplateId('custom');
+    setPackageName(''); setHeated(0); setUnheated(0); setPodologe(0);
+    setIv(0); setPrecon(0); setIvCompany('');
+    setShotUpgrade(false); setAfUpgrade(false);
+    setPriceOverride(false); setBasePrice(0); setManualTotal(0); setMemo('');
+  };
+
+  // 고객 검색
   useEffect(() => {
-    if (!clinicId || customerQuery.trim().length < 2) {
-      setCustomerMatches([]);
-      return;
-    }
+    if (!clinicId || customerQuery.trim().length < 2) { setCustomerMatches([]); return; }
     const safe = customerQuery.trim().replace(/[%_(),.]/g, '');
     if (!safe) return;
     const t = setTimeout(async () => {
@@ -287,35 +781,27 @@ function PackageCreateDialog({
     return () => clearTimeout(t);
   }, [customerQuery, clinicId]);
 
-  const totalSessions = useMemo(() => heated + unheated + iv + precon, [heated, unheated, iv, precon]);
-  const upgradeSurcharge = (shotUpgrade ? 50000 : 0) + (afUpgrade ? 40000 : 0);
-  const grandTotal = price + upgradeSurcharge;
-
   const submit = async () => {
-    if (!clinicId || !customer) {
-      toast.error('고객을 선택하세요');
-      return;
-    }
-    if (totalSessions === 0) {
-      toast.error('최소 1회 이상 구성하세요');
-      return;
-    }
+    if (!clinicId || !customer) { toast.error('고객을 선택하세요'); return; }
+    if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
+    if (totalSessions === 0 && podologe === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
     setSubmitting(true);
-    const packageName =
-      presetKey === 'custom'
-        ? `커스텀 ${totalSessions}회`
-        : PRESETS[presetKey].label;
+
+    const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
 
     const { error } = await supabase.from('packages').insert({
       clinic_id: clinicId,
       customer_id: customer.id,
-      package_name: packageName,
-      package_type: presetKey,
+      package_name: packageName.trim(),
+      package_type: selectedTemplateId === 'custom' ? 'custom' : (selectedTemplate?.name ?? 'template'),
+      template_id: selectedTemplateId !== 'custom' ? selectedTemplateId : null,
       total_sessions: totalSessions,
       heated_sessions: heated,
       unheated_sessions: unheated,
       iv_sessions: iv,
       preconditioning_sessions: precon,
+      podologe_sessions: podologe,
+      iv_company: ivCompany.trim() || null,
       shot_upgrade: shotUpgrade,
       af_upgrade: afUpgrade,
       upgrade_surcharge: upgradeSurcharge,
@@ -324,24 +810,21 @@ function PackageCreateDialog({
       status: 'active',
       memo: memo.trim() || null,
     });
-
     setSubmitting(false);
-    if (error) {
-      toast.error(`생성 실패: ${error.message}`);
-      return;
-    }
+    if (error) { toast.error(`생성 실패: ${error.message}`); return; }
     toast.success('패키지 생성 완료');
     onCreated();
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>패키지 생성</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* 고객 선택 */}
           <div className="space-y-1.5">
             <Label>고객 선택</Label>
             {customer ? (
@@ -350,9 +833,7 @@ function PackageCreateDialog({
                   <span className="font-medium">{customer.name}</span>
                   <span className="ml-2 text-muted-foreground">{customer.phone}</span>
                 </span>
-                <Button variant="ghost" size="sm" onClick={() => setCustomer(null)}>
-                  변경
-                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setCustomer(null)}>변경</Button>
               </div>
             ) : (
               <div className="relative">
@@ -367,10 +848,7 @@ function PackageCreateDialog({
                       <button
                         key={c.id}
                         className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
-                        onClick={() => {
-                          setCustomer(c);
-                          setCustomerMatches([]);
-                        }}
+                        onClick={() => { setCustomer(c); setCustomerMatches([]); }}
                       >
                         <span className="font-medium">{c.name}</span>
                         <span className="text-muted-foreground">{c.phone}</span>
@@ -382,28 +860,29 @@ function PackageCreateDialog({
             )}
           </div>
 
+          {/* 템플릿 선택 */}
           <div className="space-y-1.5">
-            <Label>프리셋</Label>
+            <Label>패키지 템플릿</Label>
             <div className="flex flex-wrap gap-2">
-              {Object.entries(PRESETS).map(([k, p]) => (
+              {templates.map((t) => (
                 <button
-                  key={k}
-                  onClick={() => applyPreset(k)}
+                  key={t.id}
+                  onClick={() => applyTemplate(t)}
                   className={cn(
                     'h-9 rounded-md border px-3 text-sm font-medium',
-                    presetKey === k
+                    selectedTemplateId === t.id
                       ? 'border-teal-600 bg-teal-50 text-teal-700'
                       : 'border-input hover:bg-muted',
                   )}
                 >
-                  {p.label}
+                  {t.name}
                 </button>
               ))}
               <button
-                onClick={() => setPresetKey('custom')}
+                onClick={applyCustom}
                 className={cn(
                   'h-9 rounded-md border px-3 text-sm font-medium',
-                  presetKey === 'custom'
+                  selectedTemplateId === 'custom'
                     ? 'border-teal-600 bg-teal-50 text-teal-700'
                     : 'border-input hover:bg-muted',
                 )}
@@ -411,49 +890,87 @@ function PackageCreateDialog({
                 커스텀
               </button>
             </div>
+            {templates.length === 0 && (
+              <div className="text-xs text-muted-foreground">
+                템플릿 없음 — [템플릿 관리]에서 추가하거나 커스텀으로 직접 입력하세요
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-4 gap-2">
+          {/* 패키지명 */}
+          <div className="space-y-1.5">
+            <Label>패키지명</Label>
+            <Input value={packageName} onChange={(e) => setPackageName(e.target.value)}
+              placeholder="패키지명 직접 입력" />
+          </div>
+
+          {/* 회수 그리드 */}
+          <div className="grid grid-cols-3 gap-2">
             <NumberField label="가열" value={heated} onChange={setHeated} />
             <NumberField label="비가열" value={unheated} onChange={setUnheated} />
+            <NumberField label="포돌로게" value={podologe} onChange={setPodologe} />
             <NumberField label="수액" value={iv} onChange={setIv} />
             <NumberField label="사전처치" value={precon} onChange={setPrecon} />
+            <div className="space-y-1.5">
+              <Label className="text-xs">수액 회사</Label>
+              <Input value={ivCompany} onChange={(e) => setIvCompany(e.target.value)}
+                placeholder="예: HK이노엔" className="h-9" />
+            </div>
           </div>
 
+          {/* 업그레이드 */}
           <div className="flex flex-wrap gap-2">
             <Toggle label="6000샷 업그레이드 (+50,000)" value={shotUpgrade} onChange={setShotUpgrade} />
             <Toggle label="AF 업그레이드 (+40,000)" value={afUpgrade} onChange={setAfUpgrade} />
           </div>
 
+          {/* 금액 */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>패키지 금액</Label>
+              <div className="flex items-center justify-between">
+                <Label>패키지 금액</Label>
+                <button
+                  onClick={() => { setPriceOverride(!priceOverride); if (!priceOverride) setManualTotal(grandTotal); }}
+                  className={cn('text-xs rounded border px-2 py-0.5',
+                    priceOverride ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-input hover:bg-muted')}
+                >
+                  {priceOverride ? '✓ 수기' : '수기수정'}
+                </button>
+              </div>
               <Input
-                value={formatAmount(price)}
-                onChange={(e) => setPrice(parseAmount(e.target.value))}
+                value={formatAmount(priceOverride ? manualTotal : basePrice)}
+                onChange={(e) => {
+                  if (priceOverride) setManualTotal(parseAmount(e.target.value));
+                  else setBasePrice(parseAmount(e.target.value));
+                }}
                 inputMode="numeric"
+                readOnly={!priceOverride && selectedTemplateId !== 'custom'}
               />
             </div>
             <div className="space-y-1.5">
               <Label>총 계약금</Label>
               <div className="flex h-10 items-center rounded-md border bg-muted/30 px-3 text-sm font-semibold">
                 {formatAmount(grandTotal)}
-                <span className="ml-2 text-xs text-muted-foreground">({totalSessions}회)</span>
+                <span className="ml-2 text-xs text-muted-foreground">
+                  ({totalSessions}회{podologe > 0 ? `+포돌${podologe}` : ''})
+                </span>
               </div>
             </div>
           </div>
 
           <div className="space-y-1.5">
             <Label>메모</Label>
-            <Textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={2} />
+            <Textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={2}
+              placeholder="수액종류, 업그레이드 추가사항 등" />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            취소
-          </Button>
-          <Button disabled={submitting || !customer || totalSessions === 0} onClick={submit}>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
+          <Button
+            disabled={submitting || !customer || (!packageName.trim()) || (totalSessions === 0 && podologe === 0)}
+            onClick={submit}
+          >
             {submitting ? '저장 중…' : '생성'}
           </Button>
         </DialogFooter>
@@ -463,21 +980,13 @@ function PackageCreateDialog({
 }
 
 function NumberField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (n: number) => void;
-}) {
+  label, value, onChange,
+}: { label: string; value: number; onChange: (n: number) => void; }) {
   return (
     <div className="space-y-1.5">
       <Label className="text-xs">{label}</Label>
       <Input
-        type="number"
-        min={0}
-        value={value}
+        type="number" min={0} value={value}
         onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
       />
     </div>
@@ -485,14 +994,8 @@ function NumberField({
 }
 
 function Toggle({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: boolean;
-  onChange: (v: boolean) => void;
-}) {
+  label, value, onChange,
+}: { label: string; value: boolean; onChange: (v: boolean) => void; }) {
   return (
     <button
       onClick={() => onChange(!value)}
@@ -501,17 +1004,13 @@ function Toggle({
         value ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted',
       )}
     >
-      {value ? '✓ ' : ''}
-      {label}
+      {value ? '✓ ' : ''}{label}
     </button>
   );
 }
 
 function PackageDetailSheet({
-  packageId,
-  isAdmin,
-  onClose,
-  onChanged,
+  packageId, isAdmin, onClose, onChanged,
 }: {
   packageId: string | null;
   isAdmin?: boolean;
@@ -536,16 +1035,10 @@ function PackageDetailSheet({
     const [pkgRes, remainRes, sessRes, payRes] = await Promise.all([
       supabase.from('packages').select('*, customer:customers!customer_id(name, phone)').eq('id', packageId).single(),
       supabase.rpc('get_package_remaining', { p_package_id: packageId }),
-      supabase
-        .from('package_sessions')
-        .select('id, session_number, session_type, session_date, status')
-        .eq('package_id', packageId)
-        .order('session_number', { ascending: true }),
-      supabase
-        .from('package_payments')
-        .select('id, amount, method, payment_type, created_at')
-        .eq('package_id', packageId)
-        .order('created_at', { ascending: false }),
+      supabase.from('package_sessions').select('id, session_number, session_type, session_date, status')
+        .eq('package_id', packageId).order('session_number', { ascending: true }),
+      supabase.from('package_payments').select('id, amount, method, payment_type, created_at')
+        .eq('package_id', packageId).order('created_at', { ascending: false }),
     ]);
     setPkg(pkgRes.data as unknown as PackageListItem);
     setRemaining(remainRes.data as PackageRemaining | null);
@@ -555,22 +1048,13 @@ function PackageDetailSheet({
 
   useEffect(() => {
     if (packageId) reload();
-    else {
-      setPkg(null);
-      setRemaining(null);
-      setSessions([]);
-      setPkgPayments([]);
-    }
+    else { setPkg(null); setRemaining(null); setSessions([]); setPkgPayments([]); }
   }, [packageId, reload]);
 
   if (!packageId || !pkg) return null;
 
-  const totalPaid = pkgPayments
-    .filter((p) => p.payment_type === 'payment')
-    .reduce((s, p) => s + p.amount, 0);
-  const totalRefunded = pkgPayments
-    .filter((p) => p.payment_type === 'refund')
-    .reduce((s, p) => s + p.amount, 0);
+  const totalPaid = pkgPayments.filter((p) => p.payment_type === 'payment').reduce((s, p) => s + p.amount, 0);
+  const totalRefunded = pkgPayments.filter((p) => p.payment_type === 'refund').reduce((s, p) => s + p.amount, 0);
 
   return (
     <Sheet open onOpenChange={(o) => (!o ? onClose() : undefined)}>
@@ -579,11 +1063,7 @@ function PackageDetailSheet({
           <div className="flex items-center justify-between gap-2">
             <SheetTitle className="flex-1">{pkg.package_name}</SheetTitle>
             {isAdmin && (
-              <button
-                onClick={() => setEditOpen(true)}
-                className="rounded p-1.5 hover:bg-muted transition"
-                title="패키지 편집"
-              >
+              <button onClick={() => setEditOpen(true)} className="rounded p-1.5 hover:bg-muted transition" title="패키지 편집">
                 <Pencil className="h-4 w-4 text-muted-foreground" />
               </button>
             )}
@@ -599,12 +1079,14 @@ function PackageDetailSheet({
             <Stat label="가열" used={pkg.heated_sessions - (remaining?.heated ?? pkg.heated_sessions)} total={pkg.heated_sessions} />
             <Stat label="비가열" used={pkg.unheated_sessions - (remaining?.unheated ?? pkg.unheated_sessions)} total={pkg.unheated_sessions} />
             <Stat label="수액" used={pkg.iv_sessions - (remaining?.iv ?? pkg.iv_sessions)} total={pkg.iv_sessions} />
-            <Stat
-              label="사전처치"
-              used={pkg.preconditioning_sessions - (remaining?.preconditioning ?? pkg.preconditioning_sessions)}
-              total={pkg.preconditioning_sessions}
-            />
+            <Stat label="사전처치" used={pkg.preconditioning_sessions - (remaining?.preconditioning ?? pkg.preconditioning_sessions)} total={pkg.preconditioning_sessions} />
           </div>
+          {(pkg.podologe_sessions ?? 0) > 0 && (
+            <div className="rounded bg-muted/40 px-2.5 py-1.5 text-xs">
+              포돌로게 {pkg.podologe_sessions}회 (별도 관리)
+              {pkg.iv_company && <span className="ml-2 text-muted-foreground">· 수액: {pkg.iv_company}</span>}
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-lg bg-muted/40 px-3 py-2">
@@ -615,32 +1097,21 @@ function PackageDetailSheet({
               <div className="text-xs text-muted-foreground">납부 / 환불</div>
               <div className="text-sm font-bold">
                 {formatAmount(totalPaid)}{' '}
-                {totalRefunded > 0 && (
-                  <span className="text-red-600">-{formatAmount(totalRefunded)}</span>
-                )}
+                {totalRefunded > 0 && <span className="text-red-600">-{formatAmount(totalRefunded)}</span>}
               </div>
             </div>
           </div>
 
           {pkg.status === 'active' && (
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => setUseSessionOpen(true)}>
-                회차 소진
-              </Button>
+              <Button size="sm" onClick={() => setUseSessionOpen(true)}>회차 소진</Button>
               <PackagePaymentAdd packageId={pkg.id} customerId={pkg.customer_id} clinicId={pkg.clinic_id} onAdded={reload} />
-              <Button variant="outline" size="sm" onClick={() => setRefundOpen(true)} disabled={(pkg.status as string) === 'refunded'}>
-                환불
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setTransferOpen(true)}>
-                양도
-              </Button>
+              <Button variant="outline" size="sm" onClick={() => setRefundOpen(true)} disabled={(pkg.status as string) === 'refunded'}>환불</Button>
+              <Button variant="outline" size="sm" onClick={() => setTransferOpen(true)}>양도</Button>
               {isAdmin && sessions.length === 0 && pkgPayments.length === 0 && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="gap-1"
+                <Button variant="destructive" size="sm" className="gap-1"
                   onClick={async () => {
-                    if (!window.confirm(`「${pkg.package_name}」 패키지를 삭제하시겠습니까?\n사용/결제 이력이 없는 경우에만 삭제됩니다.`)) return;
+                    if (!window.confirm(`「${pkg.package_name}」 패키지를 삭제하시겠습니까?`)) return;
                     const { data, error } = await supabase.rpc('delete_package_safe', { p_package_id: pkg.id });
                     if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
                     const result = data as { ok?: boolean; error?: string };
@@ -649,8 +1120,7 @@ function PackageDetailSheet({
                     onChanged();
                   }}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  삭제
+                  <Trash2 className="h-3.5 w-3.5" />삭제
                 </Button>
               )}
             </div>
@@ -659,18 +1129,11 @@ function PackageDetailSheet({
           <div>
             <div className="mb-1.5 text-xs font-semibold text-muted-foreground">소진 이력 ({sessions.length})</div>
             <div className="space-y-1">
-              {sessions.length === 0 && (
-                <div className="py-3 text-center text-xs text-muted-foreground">이력 없음</div>
-              )}
+              {sessions.length === 0 && <div className="py-3 text-center text-xs text-muted-foreground">이력 없음</div>}
               {sessions.map((s) => (
-                <div
-                  key={s.id}
-                  className="flex items-center justify-between rounded bg-muted/30 px-2.5 py-1.5 text-xs"
-                >
+                <div key={s.id} className="flex items-center justify-between rounded bg-muted/30 px-2.5 py-1.5 text-xs">
                   <span>#{s.session_number} · {sessionTypeLabel(s.session_type)}</span>
-                  <span className="text-muted-foreground">
-                    {s.session_date} · {s.status === 'used' ? '사용' : s.status}
-                  </span>
+                  <span className="text-muted-foreground">{s.session_date} · {s.status === 'used' ? '사용' : s.status}</span>
                 </div>
               ))}
             </div>
@@ -679,18 +1142,12 @@ function PackageDetailSheet({
           <div>
             <div className="mb-1.5 text-xs font-semibold text-muted-foreground">결제 이력</div>
             <div className="space-y-1">
-              {pkgPayments.length === 0 && (
-                <div className="py-3 text-center text-xs text-muted-foreground">결제 없음</div>
-              )}
+              {pkgPayments.length === 0 && <div className="py-3 text-center text-xs text-muted-foreground">결제 없음</div>}
               {pkgPayments.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex items-center justify-between rounded bg-muted/30 px-2.5 py-1.5 text-xs"
-                >
+                <div key={p.id} className="flex items-center justify-between rounded bg-muted/30 px-2.5 py-1.5 text-xs">
                   <span>{format(new Date(p.created_at), 'yyyy-MM-dd HH:mm')}</span>
                   <span className={p.payment_type === 'refund' ? 'text-red-600' : ''}>
-                    {p.payment_type === 'refund' ? '-' : ''}
-                    {formatAmount(p.amount)} · {methodLabel(p.method)}
+                    {p.payment_type === 'refund' ? '-' : ''}{formatAmount(p.amount)} · {methodLabel(p.method)}
                   </span>
                 </div>
               ))}
@@ -699,50 +1156,16 @@ function PackageDetailSheet({
         </div>
 
         {isAdmin && pkg && (
-          <EditPackageDialog
-            open={editOpen}
-            pkg={pkg}
-            onOpenChange={setEditOpen}
-            onDone={() => {
-              setEditOpen(false);
-              reload();
-              onChanged();
-            }}
-          />
+          <EditPackageDialog open={editOpen} pkg={pkg} onOpenChange={setEditOpen}
+            onDone={() => { setEditOpen(false); reload(); onChanged(); }} />
         )}
-        <UseSessionDialog
-          open={useSessionOpen}
-          pkg={pkg}
-          remaining={remaining}
-          onOpenChange={setUseSessionOpen}
-          onDone={() => {
-            setUseSessionOpen(false);
-            reload();
-            onChanged();
-          }}
-        />
-        <RefundDialog
-          open={refundOpen}
-          packageId={pkg.id}
-          customerId={pkg.customer_id}
-          clinicId={pkg.clinic_id}
-          pkgStatus={pkg.status}
-          onOpenChange={setRefundOpen}
-          onDone={() => {
-            setRefundOpen(false);
-            reload();
-            onChanged();
-          }}
-        />
-        <TransferDialog
-          open={transferOpen}
-          pkg={pkg}
-          onOpenChange={setTransferOpen}
-          onDone={() => {
-            setTransferOpen(false);
-            onChanged();
-          }}
-        />
+        <UseSessionDialog open={useSessionOpen} pkg={pkg} remaining={remaining} onOpenChange={setUseSessionOpen}
+          onDone={() => { setUseSessionOpen(false); reload(); onChanged(); }} />
+        <RefundDialog open={refundOpen} packageId={pkg.id} customerId={pkg.customer_id} clinicId={pkg.clinic_id}
+          pkgStatus={pkg.status} onOpenChange={setRefundOpen}
+          onDone={() => { setRefundOpen(false); reload(); onChanged(); }} />
+        <TransferDialog open={transferOpen} pkg={pkg} onOpenChange={setTransferOpen}
+          onDone={() => { setTransferOpen(false); onChanged(); }} />
       </SheetContent>
     </Sheet>
   );
@@ -753,25 +1176,18 @@ function Stat({ label, used, total }: { label: string; used: number; total: numb
   return (
     <div className="rounded bg-muted/40 px-1.5 py-1 text-center">
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-xs font-medium">
-        {remaining}/{total}
-      </div>
+      <div className="text-xs font-medium">{remaining}/{total}</div>
     </div>
   );
 }
 
 function sessionTypeLabel(t: string) {
   switch (t) {
-    case 'heated_laser':
-      return '가열레이저';
-    case 'unheated_laser':
-      return '비가열레이저';
-    case 'iv':
-      return '수액';
-    case 'preconditioning':
-      return '사전처치';
-    default:
-      return t;
+    case 'heated_laser': return '가열레이저';
+    case 'unheated_laser': return '비가열레이저';
+    case 'iv': return '수액';
+    case 'preconditioning': return '사전처치';
+    default: return t;
   }
 }
 
@@ -779,16 +1195,8 @@ function methodLabel(m: string) {
   return m === 'card' ? '카드' : m === 'cash' ? '현금' : m === 'transfer' ? '계좌이체' : m;
 }
 
-function PackagePaymentAdd({
-  packageId,
-  customerId,
-  clinicId,
-  onAdded,
-}: {
-  packageId: string;
-  customerId: string;
-  clinicId: string;
-  onAdded: () => void;
+function PackagePaymentAdd({ packageId, customerId, clinicId, onAdded }: {
+  packageId: string; customerId: string; clinicId: string; onAdded: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState(0);
@@ -800,68 +1208,35 @@ function PackagePaymentAdd({
     if (amount <= 0) return;
     setSubmitting(true);
     const { error } = await supabase.from('package_payments').insert({
-      clinic_id: clinicId,
-      package_id: packageId,
-      customer_id: customerId,
-      amount,
-      method,
-      installment: method === 'card' ? installment : 0,
-      payment_type: 'payment',
+      clinic_id: clinicId, package_id: packageId, customer_id: customerId,
+      amount, method, installment: method === 'card' ? installment : 0, payment_type: 'payment',
     });
     setSubmitting(false);
-    if (error) {
-      toast.error(`결제 기록 실패: ${error.message}`);
-      return;
-    }
-    // 누적 납부액 갱신
-    const { data: sum } = await supabase
-      .from('package_payments')
-      .select('amount, payment_type')
-      .eq('package_id', packageId);
-    const total = (sum ?? []).reduce(
-      (s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount),
-      0,
-    );
+    if (error) { toast.error(`결제 기록 실패: ${error.message}`); return; }
+    const { data: sum } = await supabase.from('package_payments').select('amount, payment_type').eq('package_id', packageId);
+    const total = (sum ?? []).reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0);
     await supabase.from('packages').update({ paid_amount: total }).eq('id', packageId);
     toast.success('결제 기록');
-    setOpen(false);
-    setAmount(0);
-    onAdded();
+    setOpen(false); setAmount(0); onAdded();
   };
 
   return (
     <>
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-        결제 추가
-      </Button>
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>결제 추가</Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>패키지 결제 추가</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>패키지 결제 추가</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label>금액</Label>
-              <Input
-                value={formatAmount(amount)}
-                onChange={(e) => setAmount(parseAmount(e.target.value))}
-                inputMode="numeric"
-              />
+              <Input value={formatAmount(amount)} onChange={(e) => setAmount(parseAmount(e.target.value))} inputMode="numeric" />
             </div>
             <div className="space-y-1.5">
               <Label>결제 수단</Label>
               <div className="grid grid-cols-3 gap-2">
                 {(['card', 'cash', 'transfer'] as const).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setMethod(m)}
-                    className={cn(
-                      'h-9 rounded-md border text-sm',
-                      method === m
-                        ? 'border-teal-600 bg-teal-50 text-teal-700'
-                        : 'border-input hover:bg-muted',
-                    )}
-                  >
+                  <button key={m} onClick={() => setMethod(m)}
+                    className={cn('h-9 rounded-md border text-sm', method === m ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}>
                     {methodLabel(m)}
                   </button>
                 ))}
@@ -872,16 +1247,8 @@ function PackagePaymentAdd({
                 <Label>할부</Label>
                 <div className="flex flex-wrap gap-1.5">
                   {[0, 2, 3, 6, 12].map((n) => (
-                    <button
-                      key={n}
-                      onClick={() => setInstallment(n)}
-                      className={cn(
-                        'h-8 rounded-md border px-2.5 text-xs',
-                        installment === n
-                          ? 'border-teal-600 bg-teal-50 text-teal-700'
-                          : 'border-input hover:bg-muted',
-                      )}
-                    >
+                    <button key={n} onClick={() => setInstallment(n)}
+                      className={cn('h-8 rounded-md border px-2.5 text-xs', installment === n ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}>
                       {n === 0 ? '일시불' : `${n}개월`}
                     </button>
                   ))}
@@ -890,12 +1257,8 @@ function PackagePaymentAdd({
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              취소
-            </Button>
-            <Button disabled={submitting || amount <= 0} onClick={save}>
-              저장
-            </Button>
+            <Button variant="outline" onClick={() => setOpen(false)}>취소</Button>
+            <Button disabled={submitting || amount <= 0} onClick={save}>저장</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -903,22 +1266,11 @@ function PackagePaymentAdd({
   );
 }
 
-function UseSessionDialog({
-  open,
-  pkg,
-  remaining,
-  onOpenChange,
-  onDone,
-}: {
-  open: boolean;
-  pkg: PackageListItem;
-  remaining: PackageRemaining | null;
-  onOpenChange: (o: boolean) => void;
-  onDone: () => void;
+function UseSessionDialog({ open, pkg, remaining, onOpenChange, onDone }: {
+  open: boolean; pkg: PackageListItem; remaining: PackageRemaining | null;
+  onOpenChange: (o: boolean) => void; onDone: () => void;
 }) {
-  const [sessionType, setSessionType] = useState<'heated_laser' | 'unheated_laser' | 'iv' | 'preconditioning'>(
-    'unheated_laser',
-  );
+  const [sessionType, setSessionType] = useState<'heated_laser' | 'unheated_laser' | 'iv' | 'preconditioning'>('unheated_laser');
   const [surcharge, setSurcharge] = useState(0);
   const [surchargeMemo, setSurchargeMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -931,29 +1283,16 @@ function UseSessionDialog({
   };
 
   const save = async () => {
-    if ((available[sessionType] ?? 0) <= 0) {
-      toast.error('남은 회차가 없습니다');
-      return;
-    }
+    if ((available[sessionType] ?? 0) <= 0) { toast.error('남은 회차가 없습니다'); return; }
     setSubmitting(true);
-    const { count } = await supabase
-      .from('package_sessions')
-      .select('*', { count: 'exact', head: true })
-      .eq('package_id', pkg.id);
+    const { count } = await supabase.from('package_sessions').select('*', { count: 'exact', head: true }).eq('package_id', pkg.id);
     const nextNumber = (count ?? 0) + 1;
     const { error } = await supabase.from('package_sessions').insert({
-      package_id: pkg.id,
-      session_number: nextNumber,
-      session_type: sessionType,
-      surcharge,
-      surcharge_memo: surchargeMemo.trim() || null,
-      status: 'used',
+      package_id: pkg.id, session_number: nextNumber, session_type: sessionType,
+      surcharge, surcharge_memo: surchargeMemo.trim() || null, status: 'used',
     });
     setSubmitting(false);
-    if (error) {
-      toast.error(`저장 실패: ${error.message}`);
-      return;
-    }
+    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
     toast.success('회차 소진 완료');
     onDone();
   };
@@ -961,39 +1300,23 @@ function UseSessionDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader>
-          <DialogTitle>회차 소진</DialogTitle>
-        </DialogHeader>
+        <DialogHeader><DialogTitle>회차 소진</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label>진료 종류</Label>
             <div className="grid grid-cols-2 gap-2">
               {(['unheated_laser', 'heated_laser', 'iv', 'preconditioning'] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setSessionType(t)}
-                  disabled={available[t] <= 0}
-                  className={cn(
-                    'h-10 rounded-md border text-sm',
-                    available[t] <= 0 && 'opacity-40',
-                    sessionType === t
-                      ? 'border-teal-600 bg-teal-50 text-teal-700'
-                      : 'border-input hover:bg-muted',
-                  )}
-                >
-                  {sessionTypeLabel(t)}
-                  <span className="ml-1 text-xs text-muted-foreground">({available[t]})</span>
+                <button key={t} onClick={() => setSessionType(t)} disabled={available[t] <= 0}
+                  className={cn('h-10 rounded-md border text-sm', available[t] <= 0 && 'opacity-40',
+                    sessionType === t ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}>
+                  {sessionTypeLabel(t)}<span className="ml-1 text-xs text-muted-foreground">({available[t]})</span>
                 </button>
               ))}
             </div>
           </div>
           <div className="space-y-1.5">
             <Label>당일 추가금 (옵션)</Label>
-            <Input
-              value={formatAmount(surcharge)}
-              onChange={(e) => setSurcharge(parseAmount(e.target.value))}
-              inputMode="numeric"
-            />
+            <Input value={formatAmount(surcharge)} onChange={(e) => setSurcharge(parseAmount(e.target.value))} inputMode="numeric" />
           </div>
           <div className="space-y-1.5">
             <Label>추가금 메모</Label>
@@ -1001,34 +1324,17 @@ function UseSessionDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            취소
-          </Button>
-          <Button disabled={submitting} onClick={save}>
-            소진 기록
-          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
+          <Button disabled={submitting} onClick={save}>소진 기록</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function RefundDialog({
-  open,
-  packageId,
-  customerId,
-  clinicId,
-  pkgStatus: _pkgStatus,
-  onOpenChange,
-  onDone,
-}: {
-  open: boolean;
-  packageId: string;
-  customerId: string;
-  clinicId: string;
-  pkgStatus: string;
-  onOpenChange: (o: boolean) => void;
-  onDone: () => void;
+function RefundDialog({ open, packageId, customerId, clinicId, pkgStatus: _pkgStatus, onOpenChange, onDone }: {
+  open: boolean; packageId: string; customerId: string; clinicId: string; pkgStatus: string;
+  onOpenChange: (o: boolean) => void; onDone: () => void;
 }) {
   const [quote, setQuote] = useState<RefundQuote | null>(null);
   const [method, setMethod] = useState<'card' | 'cash' | 'transfer'>('card');
@@ -1047,22 +1353,11 @@ function RefundDialog({
     if (!window.confirm(`환불 금액 ${formatAmount(quote.refund_amount)}을 환불하시겠습니까?`)) return;
     setSubmitting(true);
     const { data, error } = await supabase.rpc('refund_package_atomic', {
-      p_package_id: packageId,
-      p_clinic_id: clinicId,
-      p_customer_id: customerId,
-      p_method: method,
+      p_package_id: packageId, p_clinic_id: clinicId, p_customer_id: customerId, p_method: method,
     });
-    if (error) {
-      toast.error(`환불 실패: ${error.message}`);
-      setSubmitting(false);
-      return;
-    }
+    if (error) { toast.error(`환불 실패: ${error.message}`); setSubmitting(false); return; }
     const result = data as { ok?: boolean; error?: string };
-    if (result.error) {
-      toast.error(result.error);
-      setSubmitting(false);
-      return;
-    }
+    if (result.error) { toast.error(result.error); setSubmitting(false); return; }
     setSubmitting(false);
     toast.success('환불 처리 완료');
     onDone();
@@ -1071,9 +1366,7 @@ function RefundDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader>
-          <DialogTitle>환불</DialogTitle>
-        </DialogHeader>
+        <DialogHeader><DialogTitle>환불</DialogTitle></DialogHeader>
         {quote ? (
           <div className="space-y-3 text-sm">
             <div className="grid grid-cols-2 gap-2">
@@ -1090,32 +1383,18 @@ function RefundDialog({
               <Label>환불 수단</Label>
               <div className="grid grid-cols-3 gap-2">
                 {(['card', 'cash', 'transfer'] as const).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setMethod(m)}
-                    className={cn(
-                      'h-9 rounded-md border text-sm',
-                      method === m
-                        ? 'border-teal-600 bg-teal-50 text-teal-700'
-                        : 'border-input hover:bg-muted',
-                    )}
-                  >
+                  <button key={m} onClick={() => setMethod(m)}
+                    className={cn('h-9 rounded-md border text-sm', method === m ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}>
                     {methodLabel(m)}
                   </button>
                 ))}
               </div>
             </div>
           </div>
-        ) : (
-          <div className="py-6 text-center text-sm text-muted-foreground">계산 중…</div>
-        )}
+        ) : <div className="py-6 text-center text-sm text-muted-foreground">계산 중…</div>}
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            취소
-          </Button>
-          <Button variant="destructive" disabled={submitting || !quote} onClick={process}>
-            환불 실행
-          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
+          <Button variant="destructive" disabled={submitting || !quote} onClick={process}>환불 실행</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1131,44 +1410,23 @@ function Meta({ label, value }: { label: string; value: string }) {
   );
 }
 
-function TransferDialog({
-  open,
-  pkg,
-  onOpenChange,
-  onDone,
-}: {
-  open: boolean;
-  pkg: PackageListItem;
-  onOpenChange: (o: boolean) => void;
-  onDone: () => void;
+function TransferDialog({ open, pkg, onOpenChange, onDone }: {
+  open: boolean; pkg: PackageListItem; onOpenChange: (o: boolean) => void; onDone: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [matches, setMatches] = useState<Customer[]>([]);
   const [target, setTarget] = useState<Customer | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (!open) {
-      setQuery('');
-      setMatches([]);
-      setTarget(null);
-    }
-  }, [open]);
+  useEffect(() => { if (!open) { setQuery(''); setMatches([]); setTarget(null); } }, [open]);
 
   useEffect(() => {
-    if (query.trim().length < 2) {
-      setMatches([]);
-      return;
-    }
+    if (query.trim().length < 2) { setMatches([]); return; }
     const safe = query.trim().replace(/[%_(),.]/g, '');
     if (!safe) return;
     const t = setTimeout(async () => {
-      const { data } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('clinic_id', pkg.clinic_id)
-        .or(`name.ilike.%${safe}%,phone.ilike.%${safe}%`)
-        .limit(8);
+      const { data } = await supabase.from('customers').select('*').eq('clinic_id', pkg.clinic_id)
+        .or(`name.ilike.%${safe}%,phone.ilike.%${safe}%`).limit(8);
       setMatches(((data ?? []) as Customer[]).filter((c) => c.id !== pkg.customer_id));
     }, 200);
     return () => clearTimeout(t);
@@ -1178,45 +1436,27 @@ function TransferDialog({
     if (!target) return;
     if (!window.confirm(`${target.name}님에게 패키지를 양도하시겠습니까?`)) return;
     setSubmitting(true);
-    const { error } = await supabase
-      .from('packages')
-      .update({
-        status: 'transferred',
-        transferred_from: pkg.customer_id,
-        transferred_to: target.id,
-        memo: `${pkg.customer?.name ?? '?'} → ${target.name} 양도 (${new Date().toISOString().slice(0, 10)})`,
-      })
-      .eq('id', pkg.id);
-    if (error) {
-      toast.error(`양도 실패: ${error.message}`);
-      setSubmitting(false);
-      return;
-    }
+    const { error } = await supabase.from('packages').update({
+      status: 'transferred', transferred_from: pkg.customer_id, transferred_to: target.id,
+      memo: `${pkg.customer?.name ?? '?'} → ${target.name} 양도 (${new Date().toISOString().slice(0, 10)})`,
+    }).eq('id', pkg.id);
+    if (error) { toast.error(`양도 실패: ${error.message}`); setSubmitting(false); return; }
     const { error: createErr } = await supabase.from('packages').insert({
-      clinic_id: pkg.clinic_id,
-      customer_id: target.id,
-      package_name: pkg.package_name,
-      package_type: pkg.package_type,
-      total_sessions: pkg.total_sessions,
-      heated_sessions: pkg.heated_sessions ?? 0,
-      unheated_sessions: pkg.unheated_sessions ?? 0,
-      iv_sessions: pkg.iv_sessions ?? 0,
+      clinic_id: pkg.clinic_id, customer_id: target.id,
+      package_name: pkg.package_name, package_type: pkg.package_type,
+      total_sessions: pkg.total_sessions, heated_sessions: pkg.heated_sessions ?? 0,
+      unheated_sessions: pkg.unheated_sessions ?? 0, iv_sessions: pkg.iv_sessions ?? 0,
       preconditioning_sessions: pkg.preconditioning_sessions ?? 0,
-      shot_upgrade: pkg.shot_upgrade ?? false,
-      af_upgrade: pkg.af_upgrade ?? false,
-      upgrade_surcharge: pkg.upgrade_surcharge ?? 0,
-      total_amount: pkg.total_amount,
-      paid_amount: pkg.paid_amount,
-      status: 'active',
-      transferred_from: pkg.customer_id,
+      podologe_sessions: pkg.podologe_sessions ?? 0,
+      iv_company: pkg.iv_company ?? null,
+      shot_upgrade: pkg.shot_upgrade ?? false, af_upgrade: pkg.af_upgrade ?? false,
+      upgrade_surcharge: pkg.upgrade_surcharge ?? 0, total_amount: pkg.total_amount,
+      paid_amount: pkg.paid_amount, status: 'active', transferred_from: pkg.customer_id,
       contract_date: new Date().toISOString().slice(0, 10),
       memo: `${pkg.customer?.name ?? '?'}로부터 양도받음`,
     });
     setSubmitting(false);
-    if (createErr) {
-      toast.error(`수령 패키지 생성 실패: ${createErr.message}`);
-      return;
-    }
+    if (createErr) { toast.error(`수령 패키지 생성 실패: ${createErr.message}`); return; }
     toast.success(`${target.name}님에게 양도 완료`);
     onDone();
   };
@@ -1224,38 +1464,21 @@ function TransferDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader>
-          <DialogTitle>패키지 양도</DialogTitle>
-        </DialogHeader>
+        <DialogHeader><DialogTitle>패키지 양도</DialogTitle></DialogHeader>
         <div className="space-y-3 text-sm">
-          <div className="rounded bg-muted/30 px-3 py-2 text-xs">
-            {pkg.customer?.name} → 새로운 고객 검색
-          </div>
+          <div className="rounded bg-muted/30 px-3 py-2 text-xs">{pkg.customer?.name} → 새로운 고객 검색</div>
           {target ? (
             <div className="flex items-center justify-between rounded border px-3 py-2">
-              <span>
-                <span className="font-medium">{target.name}</span>
-                <span className="ml-2 text-muted-foreground">{target.phone}</span>
-              </span>
-              <Button variant="ghost" size="sm" onClick={() => setTarget(null)}>
-                변경
-              </Button>
+              <span><span className="font-medium">{target.name}</span><span className="ml-2 text-muted-foreground">{target.phone}</span></span>
+              <Button variant="ghost" size="sm" onClick={() => setTarget(null)}>변경</Button>
             </div>
           ) : (
             <div className="relative">
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="이름 또는 전화번호"
-              />
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름 또는 전화번호" />
               {matches.length > 0 && (
                 <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-md border bg-background shadow-md">
                   {matches.map((c) => (
-                    <button
-                      key={c.id}
-                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
-                      onClick={() => setTarget(c)}
-                    >
+                    <button key={c.id} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted" onClick={() => setTarget(c)}>
                       <span className="font-medium">{c.name}</span>
                       <span className="text-muted-foreground">{c.phone}</span>
                     </button>
@@ -1266,31 +1489,16 @@ function TransferDialog({
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            취소
-          </Button>
-          <Button disabled={submitting || !target} onClick={process}>
-            양도
-          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
+          <Button disabled={submitting || !target} onClick={process}>양도</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-// ============================================================
-// 관리자 전용: 패키지 편집 다이얼로그
-// ============================================================
-function EditPackageDialog({
-  open,
-  pkg,
-  onOpenChange,
-  onDone,
-}: {
-  open: boolean;
-  pkg: PackageListItem;
-  onOpenChange: (o: boolean) => void;
-  onDone: () => void;
+function EditPackageDialog({ open, pkg, onOpenChange, onDone }: {
+  open: boolean; pkg: PackageListItem; onOpenChange: (o: boolean) => void; onDone: () => void;
 }) {
   const [name, setName] = useState(pkg.package_name);
   const [amount, setAmount] = useState(pkg.total_amount);
@@ -1299,25 +1507,14 @@ function EditPackageDialog({
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      setName(pkg.package_name);
-      setAmount(pkg.total_amount);
-      setMemo(pkg.memo ?? '');
-      setStatus(pkg.status);
-    }
+    if (open) { setName(pkg.package_name); setAmount(pkg.total_amount); setMemo(pkg.memo ?? ''); setStatus(pkg.status); }
   }, [open, pkg]);
 
   const save = async () => {
     setSubmitting(true);
-    const { error } = await supabase
-      .from('packages')
-      .update({
-        package_name: name.trim(),
-        total_amount: amount,
-        memo: memo.trim() || null,
-        status,
-      })
-      .eq('id', pkg.id);
+    const { error } = await supabase.from('packages').update({
+      package_name: name.trim(), total_amount: amount, memo: memo.trim() || null, status,
+    }).eq('id', pkg.id);
     setSubmitting(false);
     if (error) { toast.error(`수정 실패: ${error.message}`); return; }
     toast.success('패키지 수정됨');
@@ -1325,7 +1522,7 @@ function EditPackageDialog({
   };
 
   const remove = async () => {
-    if (!window.confirm(`「${pkg.package_name}」 패키지를 삭제하시겠습니까?\n\n사용/결제/양도 이력이 있으면 삭제되지 않습니다.\n환불이 필요한 경우 [환불]을 사용하세요.`)) return;
+    if (!window.confirm(`「${pkg.package_name}」 패키지를 삭제하시겠습니까?\n\n사용/결제/양도 이력이 있으면 삭제되지 않습니다.`)) return;
     setSubmitting(true);
     const { data, error } = await supabase.rpc('delete_package_safe', { p_package_id: pkg.id });
     setSubmitting(false);
@@ -1339,9 +1536,7 @@ function EditPackageDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader>
-          <DialogTitle>패키지 편집 (관리자)</DialogTitle>
-        </DialogHeader>
+        <DialogHeader><DialogTitle>패키지 편집 (관리자)</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label>패키지명</Label>
@@ -1349,19 +1544,12 @@ function EditPackageDialog({
           </div>
           <div className="space-y-1.5">
             <Label>총 계약금</Label>
-            <Input
-              value={formatAmount(amount)}
-              onChange={(e) => setAmount(parseAmount(e.target.value))}
-              inputMode="numeric"
-            />
+            <Input value={formatAmount(amount)} onChange={(e) => setAmount(parseAmount(e.target.value))} inputMode="numeric" />
           </div>
           <div className="space-y-1.5">
             <Label>상태</Label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as Package['status'])}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
+            <select value={status} onChange={(e) => setStatus(e.target.value as Package['status'])}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
               <option value="active">활성</option>
               <option value="completed">완료</option>
               <option value="cancelled">취소</option>
@@ -1372,31 +1560,19 @@ function EditPackageDialog({
             <Label>메모</Label>
             <Input value={memo} onChange={(e) => setMemo(e.target.value)} />
           </div>
-
           <div className="rounded-md border border-red-200 bg-red-50/40 px-3 py-2.5">
             <div className="text-xs font-medium text-red-700 mb-1.5">위험 영역</div>
             <div className="flex items-center justify-between gap-3">
-              <div className="text-xs text-muted-foreground">
-                사용/결제/양도 이력이 없는 패키지를 영구 삭제합니다.
-              </div>
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={submitting}
-                onClick={remove}
-                className="gap-1 shrink-0"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                삭제
+              <div className="text-xs text-muted-foreground">사용/결제/양도 이력이 없는 패키지를 영구 삭제합니다.</div>
+              <Button variant="destructive" size="sm" disabled={submitting} onClick={remove} className="gap-1 shrink-0">
+                <Trash2 className="h-3.5 w-3.5" />삭제
               </Button>
             </div>
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
-          <Button disabled={submitting || !name.trim()} onClick={save}>
-            {submitting ? '저장 중…' : '저장'}
-          </Button>
+          <Button disabled={submitting || !name.trim()} onClick={save}>{submitting ? '저장 중…' : '저장'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

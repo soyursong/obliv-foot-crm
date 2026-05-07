@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { ChevronDown, Pencil, Printer, Trash2, Upload, X } from 'lucide-react';
+import { ChevronDown, ExternalLink, Pencil, Plus, Printer, Trash2, Upload, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -10,10 +10,13 @@ import { VISIT_TYPE_KO } from '@/lib/status';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import type { CheckIn, Customer, Package, PackageRemaining, PrescriptionRow, Reservation } from '@/lib/types';
+import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation } from '@/lib/types';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 업로드된 양식 조회
 import { DocumentViewer } from '@/components/forms/DocumentViewer';
+// T-20260507-foot-CHART2-INSURANCE-FIELDS: 건보 자격등급 패널
+import { InsuranceGradeSelect } from '@/components/insurance/InsuranceGradeSelect';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
@@ -244,12 +247,17 @@ export default function CustomerChartPage() {
     checklist_data: Record<string, unknown>;
   }[]>([]);
   const [packageSessions, setPackageSessions] = useState<PackageSession[]>([]);
+  const [openPackagePurchase, setOpenPackagePurchase] = useState(false);
   const [loading, setLoading] = useState(true);
   // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 인라인 편집
   const [editingCustomerMemo, setEditingCustomerMemo] = useState(false);
   const [customerMemoText, setCustomerMemoText] = useState('');
   const [savingCustomerMemo, setSavingCustomerMemo] = useState(false);
   const customerMemoRef = useRef<HTMLTextAreaElement>(null);
+  // T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 인라인 편집
+  const [editingAddress, setEditingAddress] = useState(false);
+  const [addressText, setAddressText] = useState('');
+  const [savingAddress, setSavingAddress] = useState(false);
 
   useEffect(() => {
     if (!customerId || !profile) return;
@@ -263,6 +271,7 @@ export default function CustomerChartPage() {
       if (!custData) { setLoading(false); return; }
       setCustomer(custData as Customer);
       setCustomerMemoText((custData as Customer).customer_memo ?? '');
+      setAddressText((custData as Customer).address ?? '');
 
       const [pkgRes, visitRes, payRes, pkgPayRes, resvRes, ciHistRes] = await Promise.all([
         supabase.from('packages').select('*').eq('customer_id', customerId).order('contract_date', { ascending: false }),
@@ -366,6 +375,21 @@ export default function CustomerChartPage() {
     setCustomer((prev) => prev ? { ...prev, customer_memo: customerMemoText.trim() || null } : prev);
     setEditingCustomerMemo(false);
     toast.success('고객메모 저장됨');
+  };
+
+  // T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 저장
+  const saveAddress = async () => {
+    if (!customer) return;
+    setSavingAddress(true);
+    const { error } = await supabase
+      .from('customers')
+      .update({ address: addressText.trim() || null })
+      .eq('id', customer.id);
+    setSavingAddress(false);
+    if (error) { toast.error('저장 실패'); return; }
+    setCustomer((prev) => prev ? { ...prev, address: addressText.trim() || null } : prev);
+    setEditingAddress(false);
+    toast.success('주소지 저장됨');
   };
 
   const totalPaid =
@@ -497,6 +521,96 @@ export default function CustomerChartPage() {
               <span className="text-muted-foreground w-16">외국인</span>
               <span>{customer.is_foreign ? '예' : '아니오'}</span>
             </div>
+            {/* T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 */}
+            <div className="flex items-start gap-2 pt-0.5">
+              <span className="text-muted-foreground w-16 shrink-0 pt-0.5">주소지</span>
+              {editingAddress ? (
+                <div className="flex-1 space-y-1.5">
+                  <Input
+                    value={addressText}
+                    onChange={(e) => setAddressText(e.target.value)}
+                    placeholder="예: 서울시 종로구 ..."
+                    className="h-7 text-xs"
+                    autoFocus
+                    onKeyDown={(e) => { if (e.key === 'Enter') saveAddress(); if (e.key === 'Escape') setEditingAddress(false); }}
+                  />
+                  <div className="flex gap-1.5">
+                    <Button size="sm" className="h-6 text-xs flex-1 bg-teal-600 hover:bg-teal-700" onClick={saveAddress} disabled={savingAddress}>
+                      {savingAddress ? '저장 중…' : '저장'}
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => { setEditingAddress(false); setAddressText(customer.address ?? ''); }}>
+                      취소
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-1 items-center gap-1.5 min-w-0">
+                  <span className={cn('flex-1 truncate', !customer.address && 'text-muted-foreground/60')}>
+                    {customer.address ?? '미입력'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setEditingAddress(true); setAddressText(customer.address ?? ''); }}
+                    className="shrink-0 rounded p-1 hover:bg-muted transition text-muted-foreground hover:text-teal-700"
+                    title="주소지 편집"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </ChartSection>
+
+        {/* 섹션 3.5 — 건강보험 (T-20260507-foot-CHART2-INSURANCE-FIELDS) */}
+        <ChartSection title="건강보험 / 주민번호" defaultOpen>
+          <div className="space-y-3 text-xs">
+            {/* 주민번호 기입칸 (마스킹 표시 — Vault 후속) */}
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-muted-foreground w-20 shrink-0">주민번호</span>
+                <span className="font-mono tracking-widest text-muted-foreground/70 bg-muted/40 rounded px-2 py-0.5 text-[11px]">
+                  {customer.birth_date
+                    ? `${customer.birth_date.slice(0, 6)}-*******`
+                    : '미등록'}
+                </span>
+                <span className="text-[10px] text-muted-foreground/60">(Vault 연동 예정)</span>
+              </div>
+            </div>
+
+            {/* 건보 조회 버튼 */}
+            <div className="flex items-center gap-2">
+              <a
+                href="https://www.nhis.or.kr/nhis/minwon/wbhame03400m01.do"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md border border-teal-300 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-100 transition"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                건보 조회 (전능CRM)
+              </a>
+              <span className="text-[10px] text-muted-foreground">조회 후 아래 등급 선택</span>
+            </div>
+
+            {/* 건보 자격등급 선택 */}
+            <div>
+              <div className="text-[11px] text-muted-foreground font-medium mb-1.5">자격등급 · 검증일 · 확인방법</div>
+              <InsuranceGradeSelect
+                customerId={customer.id}
+                editable
+                onChanged={() => {
+                  // 변경 후 customer 정보 갱신
+                  supabase
+                    .from('customers')
+                    .select('insurance_grade, insurance_grade_source, insurance_grade_verified_at, insurance_grade_memo')
+                    .eq('id', customer.id)
+                    .maybeSingle()
+                    .then(({ data }) => {
+                      if (data) setCustomer((prev) => prev ? { ...prev, ...data } : prev);
+                    });
+                }}
+              />
+            </div>
           </div>
         </ChartSection>
 
@@ -550,6 +664,17 @@ export default function CustomerChartPage() {
 
         {/* 섹션 4.5 — 구매 패키지(티켓) — T-20260506-foot-CHART-MINI-HOMEPAGE */}
         <ChartSection title="구매 패키지(티켓)" defaultOpen>
+          {/* T-20260507-foot-PKG-TEMPLATE-REDESIGN: 구입 티켓 추가 버튼 */}
+          {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant') && (
+            <div className="mb-2">
+              <button
+                onClick={() => setOpenPackagePurchase(true)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-teal-300 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-100 transition"
+              >
+                <Plus className="h-3.5 w-3.5" /> 구입 티켓 추가
+              </button>
+            </div>
+          )}
           {packages.length === 0 ? (
             <div className="py-2 text-xs text-muted-foreground">패키지 없음</div>
           ) : (
@@ -1053,6 +1178,306 @@ export default function CustomerChartPage() {
             </div>
           )}
         </ChartSection>
+      </div>
+
+      {/* T-20260507-foot-PKG-TEMPLATE-REDESIGN: 구입 티켓 추가 다이얼로그 */}
+      {openPackagePurchase && customer && (
+        <PackagePurchaseFromTemplateDialog
+          open={openPackagePurchase}
+          customerId={customer.id}
+          clinicId={customer.clinic_id}
+          onOpenChange={setOpenPackagePurchase}
+          onCreated={async () => {
+            setOpenPackagePurchase(false);
+            // 패키지 목록 새로고침
+            const pkgRes = await supabase.from('packages').select('*').eq('customer_id', customer.id).order('contract_date', { ascending: false });
+            const pkgs = (pkgRes.data ?? []) as Package[];
+            const remaining = await Promise.all(
+              pkgs.map(async (p) => {
+                const { data } = await supabase.rpc('get_package_remaining', { p_package_id: p.id });
+                return data as PackageRemaining | null;
+              }),
+            );
+            setPackages(pkgs.map((p, i) => ({ ...p, remaining: remaining[i] })));
+            toast.success('구입 티켓 추가됨');
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// T-20260507-foot-PKG-TEMPLATE-REDESIGN: 고객차트에서 구입 티켓 추가
+// ============================================================
+function PackagePurchaseFromTemplateDialog({
+  open,
+  customerId,
+  clinicId,
+  onOpenChange,
+  onCreated,
+}: {
+  open: boolean;
+  customerId: string;
+  clinicId: string;
+  onOpenChange: (o: boolean) => void;
+  onCreated: () => void;
+}) {
+  const [templates, setTemplates] = useState<PackageTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | 'custom'>('custom');
+  const [packageName, setPackageName] = useState('');
+  const [heated, setHeated] = useState(0);
+  const [unheated, setUnheated] = useState(0);
+  const [podologe, setPodologe] = useState(0);
+  const [iv, setIv] = useState(0);
+  const [precon, setPrecon] = useState(0);
+  const [ivCompany, setIvCompany] = useState('');
+  const [shotUpgrade, setShotUpgrade] = useState(false);
+  const [afUpgrade, setAfUpgrade] = useState(false);
+  const [priceOverride, setPriceOverride] = useState(false);
+  const [basePrice, setBasePrice] = useState(0);
+  const [manualTotal, setManualTotal] = useState(0);
+  const [memo, setMemo] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const upgradeSurcharge = (shotUpgrade ? 50000 : 0) + (afUpgrade ? 40000 : 0);
+  const grandTotal = priceOverride ? manualTotal : basePrice + upgradeSurcharge;
+  const totalSessions = heated + unheated + iv + precon;
+
+  useEffect(() => {
+    if (!open || !clinicId) return;
+    supabase
+      .from('package_templates')
+      .select('*')
+      .eq('clinic_id', clinicId)
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+      .then(({ data }) => setTemplates((data ?? []) as PackageTemplate[]));
+  }, [open, clinicId]);
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedTemplateId('custom');
+    setPackageName(''); setHeated(0); setUnheated(0); setPodologe(0);
+    setIv(0); setPrecon(0); setIvCompany('');
+    setShotUpgrade(false); setAfUpgrade(false);
+    setPriceOverride(false); setBasePrice(0); setManualTotal(0); setMemo('');
+  }, [open]);
+
+  useEffect(() => {
+    if (!priceOverride) setManualTotal(basePrice + upgradeSurcharge);
+  }, [upgradeSurcharge, basePrice, priceOverride]);
+
+  const applyTemplate = (tmpl: PackageTemplate) => {
+    setSelectedTemplateId(tmpl.id);
+    setPackageName(tmpl.name);
+    setHeated(tmpl.heated_sessions);
+    setUnheated(tmpl.unheated_sessions);
+    setPodologe(tmpl.podologe_sessions);
+    setIv(tmpl.iv_sessions);
+    setPrecon(0);
+    setIvCompany(tmpl.iv_company ?? '');
+    setShotUpgrade(false); setAfUpgrade(false);
+    setPriceOverride(false);
+    setBasePrice(tmpl.total_price);
+    setManualTotal(tmpl.total_price);
+    setMemo(tmpl.memo ?? '');
+  };
+
+  const submit = async () => {
+    if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
+    if (totalSessions === 0 && podologe === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
+    setSubmitting(true);
+    const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
+    const { error } = await supabase.from('packages').insert({
+      clinic_id: clinicId,
+      customer_id: customerId,
+      package_name: packageName.trim(),
+      package_type: selectedTemplateId === 'custom' ? 'custom' : (selectedTemplate?.name ?? 'template'),
+      template_id: selectedTemplateId !== 'custom' ? selectedTemplateId : null,
+      total_sessions: totalSessions,
+      heated_sessions: heated,
+      unheated_sessions: unheated,
+      iv_sessions: iv,
+      preconditioning_sessions: precon,
+      podologe_sessions: podologe,
+      iv_company: ivCompany.trim() || null,
+      shot_upgrade: shotUpgrade,
+      af_upgrade: afUpgrade,
+      upgrade_surcharge: upgradeSurcharge,
+      total_amount: grandTotal,
+      paid_amount: 0,
+      status: 'active',
+      memo: memo.trim() || null,
+    });
+    setSubmitting(false);
+    if (error) { toast.error(`생성 실패: ${error.message}`); return; }
+    onCreated();
+  };
+
+  const fmtAmt = (n: number) => n.toLocaleString('ko-KR') + '원';
+  const parseAmt = (s: string) => Math.max(0, Number(s.replace(/[^0-9]/g, '')) || 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-bold">구입 티켓 추가</h2>
+          <button onClick={() => onOpenChange(false)} className="rounded p-1 hover:bg-muted transition">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4 text-sm">
+          {/* 템플릿 선택 */}
+          <div className="space-y-1.5">
+            <div className="text-xs font-medium text-muted-foreground">패키지 템플릿 선택</div>
+            <div className="flex flex-wrap gap-2">
+              {templates.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => applyTemplate(t)}
+                  className={`h-9 rounded-md border px-3 text-sm font-medium transition ${
+                    selectedTemplateId === t.id
+                      ? 'border-teal-600 bg-teal-50 text-teal-700'
+                      : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  {t.name}
+                </button>
+              ))}
+              <button
+                onClick={() => { setSelectedTemplateId('custom'); setPackageName(''); setHeated(0); setUnheated(0); setPodologe(0); setIv(0); setPrecon(0); setIvCompany(''); setShotUpgrade(false); setAfUpgrade(false); setPriceOverride(false); setBasePrice(0); setManualTotal(0); setMemo(''); }}
+                className={`h-9 rounded-md border px-3 text-sm font-medium transition ${
+                  selectedTemplateId === 'custom'
+                    ? 'border-teal-600 bg-teal-50 text-teal-700'
+                    : 'border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                커스텀
+              </button>
+            </div>
+            {templates.length === 0 && (
+              <div className="text-xs text-muted-foreground">템플릿 없음 — 커스텀으로 직접 입력하세요</div>
+            )}
+          </div>
+
+          {/* 패키지명 */}
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">패키지명</label>
+            <input
+              value={packageName}
+              onChange={(e) => setPackageName(e.target.value)}
+              placeholder="패키지명"
+              className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+            />
+          </div>
+
+          {/* 회수 그리드 */}
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: '가열', value: heated, onChange: setHeated },
+              { label: '비가열', value: unheated, onChange: setUnheated },
+              { label: '포돌로게', value: podologe, onChange: setPodologe },
+              { label: '수액', value: iv, onChange: setIv },
+              { label: '사전처치', value: precon, onChange: setPrecon },
+            ].map(({ label, value, onChange }) => (
+              <div key={label} className="space-y-1">
+                <label className="text-xs text-muted-foreground">{label}</label>
+                <input
+                  type="number" min={0} value={value}
+                  onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+            ))}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">수액 회사</label>
+              <input
+                value={ivCompany}
+                onChange={(e) => setIvCompany(e.target.value)}
+                placeholder="예: HK이노엔"
+                className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+              />
+            </div>
+          </div>
+
+          {/* 업그레이드 */}
+          <div className="flex flex-wrap gap-2">
+            {[
+              { label: '6000샷 업그레이드 (+50,000)', value: shotUpgrade, onChange: setShotUpgrade },
+              { label: 'AF 업그레이드 (+40,000)', value: afUpgrade, onChange: setAfUpgrade },
+            ].map(({ label, value, onChange }) => (
+              <button
+                key={label}
+                onClick={() => onChange(!value)}
+                className={`h-9 rounded-md border px-3 text-sm font-medium transition ${
+                  value ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {value ? '✓ ' : ''}{label}
+              </button>
+            ))}
+          </div>
+
+          {/* 총금액 */}
+          <div className="rounded-lg border border-teal-200 bg-teal-50/40 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-teal-800">총 계약금</span>
+              <button
+                onClick={() => { setPriceOverride(!priceOverride); if (!priceOverride) setManualTotal(grandTotal); }}
+                className={`text-xs rounded border px-2 py-0.5 transition ${
+                  priceOverride ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {priceOverride ? '✓ 수기수정' : '수기수정'}
+              </button>
+            </div>
+            {priceOverride ? (
+              <input
+                value={fmtAmt(manualTotal)}
+                onChange={(e) => setManualTotal(parseAmt(e.target.value))}
+                inputMode="numeric"
+                className="w-full h-10 rounded-md border border-teal-300 px-3 text-lg font-bold text-teal-700 focus:outline-none"
+              />
+            ) : (
+              <div className="text-xl font-bold text-teal-700">
+                {fmtAmt(grandTotal)}
+                <span className="ml-2 text-xs text-muted-foreground font-normal">
+                  ({totalSessions}회{podologe > 0 ? `+포돌${podologe}` : ''})
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* 메모 */}
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">메모</label>
+            <textarea
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+              rows={2}
+              placeholder="수액종류, 업그레이드 추가사항 등"
+              className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 resize-none"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            onClick={() => onOpenChange(false)}
+            className="h-9 rounded-md border border-gray-200 px-4 text-sm hover:bg-gray-50 transition"
+          >
+            취소
+          </button>
+          <button
+            disabled={submitting || !packageName.trim() || (totalSessions === 0 && podologe === 0)}
+            onClick={submit}
+            className="h-9 rounded-md bg-teal-600 px-4 text-sm font-medium text-white hover:bg-teal-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitting ? '저장 중…' : '구입 티켓 추가'}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -140,6 +140,8 @@ export interface Customer {
   insurance_grade_verified_at?: string | null;
   insurance_grade_source?: InsuranceGradeSource | null;
   insurance_grade_memo?: string | null;
+  // 주소지 (T-20260507-foot-CHART2-INSURANCE-FIELDS)
+  address?: string | null;
 }
 
 export interface Service {
@@ -278,6 +280,11 @@ export interface Package {
   expires_at: string | null;
   contract_date: string;
   memo: string | null;
+  // T-20260507-foot-PKG-TEMPLATE-REDESIGN
+  podologe_sessions?: number;
+  podologe_unit_price?: number;
+  iv_company?: string | null;
+  template_id?: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -290,6 +297,31 @@ export interface PackageRemaining {
   preconditioning: number;
   total_used: number;
   total_remaining: number;
+}
+
+/** T-20260507-foot-PKG-TEMPLATE-REDESIGN: 패키지 템플릿 (종류/구성 정의) */
+export interface PackageTemplate {
+  id: string;
+  clinic_id: string;
+  name: string;
+  heated_sessions: number;
+  heated_unit_price: number;
+  heated_upgrade_available: boolean;
+  unheated_sessions: number;
+  unheated_unit_price: number;
+  unheated_upgrade_available: boolean;
+  podologe_sessions: number;
+  podologe_unit_price: number;
+  iv_company: string | null;
+  iv_sessions: number;
+  iv_unit_price: number;
+  total_price: number;
+  price_override: boolean;
+  memo: string | null;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface UserProfile {
