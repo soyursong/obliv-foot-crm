@@ -210,7 +210,7 @@ export default function Customers() {
               <th className="px-4 py-2 text-right font-medium">방문</th>
               <th className="px-4 py-2 text-left font-medium">최종 방문</th>
               <th className="px-4 py-2 text-right font-medium">결제액</th>
-              <th className="px-4 py-2 text-left font-medium">메모</th>
+              <th className="px-4 py-2 text-left font-medium">고객메모</th>
               <th className="px-4 py-2 text-center font-medium">관리</th>
             </tr>
           </thead>
@@ -240,7 +240,8 @@ export default function Customers() {
                     {stats?.total_revenue ? formatAmount(stats.total_revenue) : '-'}
                   </td>
                   <td className="max-w-[200px] truncate px-4 py-2 text-muted-foreground">
-                    {c.memo ?? ''}
+                    {/* T-20260504-foot-MEMO-RESTRUCTURE: customer_memo 표시 */}
+                    {c.customer_memo ?? ''}
                   </td>
                   {/* 관리 열: 차트보기(모든 역할) + 수정·삭제(admin만) */}
                   <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>

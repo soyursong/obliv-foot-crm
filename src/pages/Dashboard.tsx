@@ -929,7 +929,7 @@ interface QuickResvDraft {
   name: string;
   phone: string;
   visit_type: VisitType;
-  memo: string;
+  booking_memo: string; // T-20260504-foot-MEMO-RESTRUCTURE: 예약 경로 확인용
 }
 
 // ── MiniCalendar ───────────────────────────────────────────────────────────────
@@ -1305,7 +1305,7 @@ function QuickReservationDialog({
       reservation_date: form.date,
       reservation_time: form.time + ':00',
       visit_type: form.visit_type,
-      memo: form.memo.trim() || null,
+      booking_memo: form.booking_memo.trim() || null, // T-20260504-foot-MEMO-RESTRUCTURE
       status: 'confirmed',
       created_by: createdBy,
     });
@@ -1410,13 +1410,13 @@ function QuickReservationDialog({
               )}
             </div>
 
-            {/* 메모 */}
+            {/* 예약메모 — T-20260504-foot-MEMO-RESTRUCTURE */}
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">메모 (선택)</Label>
+              <Label className="text-xs text-muted-foreground">예약메모 (예약경로 등)</Label>
               <Textarea
-                value={form.memo}
-                onChange={(e) => setForm((f) => f ? { ...f, memo: e.target.value } : f)}
-                placeholder="특이사항, 문의내용..."
+                value={form.booking_memo}
+                onChange={(e) => setForm((f) => f ? { ...f, booking_memo: e.target.value } : f)}
+                placeholder="예: 인스타그램 광고, 지인 소개, 인바운드 전화 등"
                 className="min-h-[56px] text-sm resize-none"
               />
             </div>
@@ -2721,7 +2721,7 @@ export default function Dashboard() {
       name: '',
       phone: '',
       visit_type: 'new',
-      memo: '',
+      booking_memo: '', // T-20260504-foot-MEMO-RESTRUCTURE
     });
   };
 

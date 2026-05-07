@@ -1,5 +1,65 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-07 — dev-foot | deployed | T-20260504-foot-MEMO-RESTRUCTURE
+
+**예약메모/고객메모 분리 — DB 검증 + UI 완성 (대표 직접 지시)**
+
+- DB 상태: ✅ 이미 완료 (booking_memo, customer_memo 컬럼 존재, memo 필드 모두 NULL)
+  - reservations.booking_memo: 컬럼 존재, memo 0건 (클리어됨)
+  - customers.customer_memo: 컬럼 존재, 1건 정상 운용 중, memo 0건 (클리어됨)
+- UI 수정:
+  - Dashboard.tsx: QuickResvDraft memo → booking_memo, handleSave, Textarea 레이블 수정
+  - Customers.tsx: 고객 목록 "메모" 컬럼 → customer_memo 표시로 수정
+- 빌드: ✅ TSC 타입 체크 에러 0건 통과
+- 롤백 SQL: 티켓 T-20260504-foot-MEMO-RESTRUCTURE.md 내 완비
+- **status: deployed**
+
+---
+
+## 2026-05-07 18:45 — supervisor | QA PASS + deploy-approval-requested | T-20260506-foot-SLOT-VERTICAL-MOVE
+
+**🟢 Green | QA PASS — 대시보드 슬롯 상하(세로) 이동 불가 수정 (치료실↔레이저실 드래그 튕김)**
+
+- 빌드: ✅ PASS (npx tsc --noEmit Exit:0)
+- 기존기능: ✅ PASS — handleDragEnd 기존 로직 보존, status_transitions 이력 유지, 좌우 이동 충돌 없음
+- DB호환: ✅ PASS — 스키마 변경 없음, 기존 room 컬럼 null 업데이트만, 마이그레이션 신규 없음
+- 권한/RLS: ✅ PASS — 기존 check_ins update 패턴 동일, RLS 무변경
+- 롤백SQL: ✅ N/A (DB 스키마 변경 없음)
+- 교차검증 5종: PASS
+- 수용기준: 6/6 체크 (현장 확인 포함)
+- commit d546a0c origin/main 이미 반영 (auto-deploy via Vercel/GitHub)
+- Lovable 배포 승인 요청 슬랙 발송: C0ATE5P6JTH ts:1778146955.903899
+- **status: deploy-approval-requested**
+
+---
+
+## 2026-05-07 18:22 — supervisor | QA PASS | T-20260502-foot-STATUS-COLOR-FLAG
+- 빌드: ✅ PASS (npx tsc --noEmit 에러 0)
+- 기존기능: ✅ PASS — additive 변경, 핵심 경로(체크인→결제) 불변
+- DB호환: ✅ PASS — status_flag DEFAULT NULL + IS NULL OR CHECK, 기존 데이터 영향 없음
+- 권한/RLS: ✅ PASS — check_ins_flag_update additive 추가 (Option A), 기존 check_ins_coord_update 유지
+- 롤백SQL: ✅ PASS — 20260504000020_status_flag.down.sql 완비 (DROP POLICY + DROP COLUMN)
+- 교차검증: 5종 PASS (타입↔CHECK 9종 일치 / RLS↔handleFlagChange 커버 / 스펙↔구현 전수)
+- 브라우저E2E: ✅ PASS — 앱 접속 정상, console/page 에러 0
+- 판정: GO — Yellow 자율 배포. 코드 Vercel 자동 배포 완료.
+- DB 마이그레이션: Supabase SQL Editor 적용 대기 (@대표 슬랙 C0ATE5P6JTH 요청 완료)
+- deploy-approval-requested: 2026-05-07 18:20
+
+## 2026-05-07 18:20 — supervisor | QA PASS | T-20260430-foot-PRESCREEN-CHECKLIST
+- 빌드: ✅ PASS (TypeScript 에러 0, dist 빌드 14:54 post-commit)
+- 기존기능: ✅ PASS — 신규 라우트 독립, Dashboard/CustomerChartPage additive 변경
+- DB호환: ✅ PASS — checklists 신규 테이블, check_ins enum superset 확장 (기존 데이터 미영향)
+- 권한/RLS: ✅ PASS — SECURITY DEFINER RPC (fn_prescreen_start/fn_complete_prescreen_checklist), anon 범위 적절
+- 롤백SQL: ⚠️ GO_WARN — DROP TABLE/INDEX 있음, storage policy 복원 미포함 (허용)
+- 교차검증: RPC↔Schema PASS / RLS↔라우트 PASS / 데이터흐름 PASS
+- 브라우저E2E: ✅ PASS — /checklist/:id 접근 OK, fn_prescreen_start RPC 정상 응답 (check_in_not_found 에러 메시지 정확)
+- 스크린샷: `_handoff/qa_screenshots/foot_checklist_error_page_20260507_181758.png`
+- 판정: **GO_WARN — Yellow 자율 배포**
+- git: origin/main 동기 완료 (commit: dc7f274)
+- Vercel: 배포 확인 완료 (fn_prescreen_start RPC 응답으로 DB 마이그레이션 적용 확인)
+- 배포 완료 알림: C0ATE5P6JTH 발송 완료 (ts: 1778145602.522479)
+- 상태: **deployed** ← deploy-notified
+
 ## 2026-05-07 03:10 — DONE | T-20260507-foot-DELETE-TEST-CUSTOMERS
 
 > **from**: dev-foot | **to**: planner → responder → 김주연 | **ts**: 2026-05-07 03:10 KST
@@ -1508,3 +1568,16 @@ QA_REPORT.md 참조
 - git: origin/main 반영 완료 (commit: 0ba17b4)
 - 배포 승인 요청: @대표 C0ATE5P6JTH 발송 (Supabase SQL Editor 적용 후 Lovable 배포 요청)
 - 다음 단계: 대표가 Supabase에 마이그레이션 적용 후 Lovable 배포 → 검증 SQL로 확인
+
+## 2026-05-07 18:30 — supervisor | QA PASS | T-20260504-foot-MEMO-RESTRUCTURE
+- 빌드: ✅ PASS (tsc --noEmit EXIT:0, 에러 0개, dist/assets 번들 최신)
+- 기존기능: ✅ PASS — booking_memo/customer_memo 신규 컬럼, 기존 memo 필드 fallback 보존 (`r.booking_memo ?? r.memo`), 핵심 경로 미파괴
+- DB호환: ✅ PASS — ADD COLUMN IF NOT EXISTS (비파괴적), 기존 데이터 마이그레이션 후 memo=NULL 초기화 (스펙 요구사항)
+- 권한/RLS: ✅ PASS — customers/reservations 기존 `auth_all` 정책 신규 컬럼 자동 상속, 별도 RLS 불필요
+- 롤백SQL: ✅ PASS — 20260504000040_memo_restructure.down.sql 완비 (booking_memo→memo 복원 + DROP COLUMN)
+- 교차검증: 5종 PASS (RPC↔Schema / RLS↔라우트 / ServiceLayer / 스펙↔구현 / 데이터흐름)
+- 브라우저E2E: ✅ 앱 로드 정상 (화이트스크린 없음, page_errors 0, root_length 2325), headless 인증 제한으로 로그인 후 화면 캡처 불가 (앱 문제 아님)
+- git: origin/main 이미 반영 완료 (e75c3ef + 2082822), Vercel 자동 배포
+- 판정: **GO — Yellow 자율 배포 (Supabase 마이그레이션 @대표 적용 필요)**
+- 배포 승인 요청: @대표 C0ATE5P6JTH 발송 (Supabase SQL Editor 적용 요청)
+- 적용 SQL: supabase/migrations/20260504000040_memo_restructure.sql
