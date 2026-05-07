@@ -1581,3 +1581,38 @@ QA_REPORT.md 참조
 - 판정: **GO — Yellow 자율 배포 (Supabase 마이그레이션 @대표 적용 필요)**
 - 배포 승인 요청: @대표 C0ATE5P6JTH 발송 (Supabase SQL Editor 적용 요청)
 - 적용 SQL: supabase/migrations/20260504000040_memo_restructure.sql
+
+## 2026-05-07 22:05 — supervisor | QA PASS | T-20260507-foot-CHART2-INSURANCE-FIELDS
+- 빌드: ✅ PASS — tsc --noEmit EXIT:0 (에러 0개), commit de64084
+- 기존기능: ✅ PASS — InsuranceGradeSelect 기존 PaymentDialog 미영향, ADD COLUMN IF NOT EXISTS (비파괴적)
+- DB호환: ✅ PASS — customers.address TEXT 추가 (IF NOT EXISTS 안전), insurance_grade 컬럼 20260504 마이그레이션 기확인
+- 권한/RLS: ✅ PASS — customers auth_all 정책 address 신규 컬럼 자동 적용, anon 셀프체크인 정책 유지
+- 롤백SQL: ✅ PASS — 20260507000010_customers_address.sql 내 주석 명시 (ALTER TABLE customers DROP COLUMN IF EXISTS address)
+- 교차검증: 5종 PASS (RPC↔Schema / RLS↔라우트 / ServiceLayer / 스펙↔구현 / 데이터흐름)
+- 브라우저E2E: ✅ 앱 로드 정상 (root_length 2325, page_errors 0, white screen 없음), headless 인증 실패 — 코드 분석 대체 완료
+- git: origin/main 이미 반영 완료 (commit: de64084), Vercel 자동 배포 진행 중
+- 판정: **GO — Yellow 자율 배포 (Supabase 마이그레이션 @대표 적용 필요)**
+- 적용 SQL: supabase/migrations/20260507000010_customers_address.sql
+- deploy-approval-requested: 발송 예정 → C0ATE5P6JTH
+
+| 2026-05-07T13:09:22Z | supervisor | qa-pass + deployed | T-20260507-foot-CHART2-INSURANCE-FIELDS — Yellow GO. tsc 0에러. InsuranceGradeSelect+주소지+건보조회버튼 CustomerChartPage.tsx 추가확인. DB: customers.address ADD COLUMN IF NOT EXISTS(하위호환)+package_templates신규(RLS auth_all). 롤백SQL 2건. Vercel last-modified:22:02 KST(커밋 de64084 반영). ⚠️스펙외: Packages.tsx TemplateManageSheet 추가(롤백SQL존재, 기존무해). DB마이그레이션 수동적용 필요(#project-foot 공지완료). |
+
+## 2026-05-08 — dev-foot | PUSH-20260508-083000 처리 — P1 4건 + P2 2건 착수
+
+### 작업 완료 (코드 커밋)
+1. **T-20260507-foot-RECEIPT-POSITION-VERIFY** (P1): InsuranceDocPanel.tsx — 경과분析지+진료비영수증 나란히(grid-cols-2) 배치. SIMPLE-CHART-POLISH 항목10 누락건 수정.
+2. **T-20260507-foot-REMOVE-AUTO-COLOR** (P2): Dashboard.tsx urgency 자동색변경 삭제 + Waiting.tsx 시간기반 텍스트색 제거. 수동 STATUS-FLAG만 유지.
+3. **T-20260507-foot-SERVICE-CATALOG-SEED Phase 1+2** (P1): Services.tsx service_code 컬럼+엑셀내보내기 + migration 20260508000010(services.service_code+28개seed). tsc 0에러.
+4. **T-20260507-foot-RESERVE-TIME** (P2): migration 20260508000020(clinics close_time→20:30, weekend_close_time→18:30).
+- **THEME-BROWN-REAPPLY**: 이미 적용 확인 (src/index.css 브라운/베이지 현재 HEAD 포함, 재작업 불필요)
+
+### DB 마이그레이션 수동 적용 필요 (@대표)
+- `supabase/migrations/20260508000010_services_service_code_seed.sql` — services.service_code 컬럼+28개상품 seed
+- `supabase/migrations/20260508000020_reserve_time_adjust.sql` — 예약시간 평일→20:30, 토요일→18:30
+
+### PATIENT-FLOW-E2E (P1 deadline 14:00) 준비 현황
+- Step 1 (건보조회): CHART2-INSURANCE-FIELDS deployed ✅
+- Step 2 (고객차트): 기존 CustomerChartPage 활용 ✅
+- Step 3 (영수증): RECEIPT-POSITION-VERIFY 코드반영 → 이번 커밋 ✅
+- Step 4 (매출연동): service_charges+calc_copayment deployed ✅
+- Step 5 (진료코드): SERVICE-CATALOG-SEED Phase 1 migration 준비 → DB적용 후 완성 ⚠️

@@ -250,16 +250,9 @@ function DraggableCard({
     touchAction: 'none',
   };
 
-  const urgency = isLaserOvertime
-    ? 'border-red-500 ring-2 ring-red-300 bg-red-50 animate-pulse'
-    : mins >= 40
-      ? 'border-red-400 ring-2 ring-red-200 bg-red-50/60'
-      : mins >= 20
-        ? 'border-orange-300 ring-1 ring-orange-100 bg-orange-50/60'
-        : '';
-
-  // 상태 플래그 카드 배경색 — urgency가 없을 때만 적용
-  const flagBg = !urgency && checkIn.status_flag && checkIn.status_flag !== 'white'
+  // T-20260507-REMOVE-AUTO-COLOR: 시간 기반 자동 색 변경 삭제. 수동 STATUS-COLOR-FLAG만 사용.
+  // urgency 제거 — isLaserOvertime은 알림 전용으로 유지
+  const flagBg = checkIn.status_flag && checkIn.status_flag !== 'white'
     ? STATUS_FLAG_CARD_BG[checkIn.status_flag]
     : '';
 
@@ -287,7 +280,6 @@ function DraggableCard({
         className={cn(
           'cursor-grab touch-none rounded border px-2 py-1.5 text-xs shadow-sm transition hover:shadow active:cursor-grabbing',
           flagBg || 'bg-white',
-          urgency,
         )}
       >
         <div className="flex items-center justify-between gap-1">
@@ -403,7 +395,6 @@ function DraggableCard({
       className={cn(
         'cursor-grab touch-none rounded border p-1.5 shadow-sm transition hover:shadow active:cursor-grabbing',
         flagBg || 'bg-white',
-        urgency,
       )}
     >
       <div className="flex items-center justify-between gap-1.5">
