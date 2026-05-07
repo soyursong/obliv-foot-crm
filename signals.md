@@ -1,5 +1,30 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-08 — dev-foot | deploy-approval-requested | MQ-20260508-THEME-SPLIT-CRM-WHITE + MQ-20260508-PKG-TEMPLATE-UX
+
+**CRM 관리화면 화이트 복구 + 패키지 생성 폼 UI 보완 (현장 피드백 4건)**
+
+- **commit**: b9a5895
+- **파일**: src/index.css, src/App.tsx, src/pages/Packages.tsx, src/pages/CustomerChartPage.tsx
+- **TypeScript**: ✅ `tsc --noEmit` EXIT=0 (에러 0건)
+
+### [P1] THEME-SPLIT-CRM-WHITE — 테마 분리 (deadline: 오늘)
+- `:root` → 화이트 기본값 복구 (oklch chroma=0, A-4 대비 유지)
+- `.theme-brown` 클래스 신규 정의 — 브라운/베이지 CSS 변수 스코프 분리
+- `ThemeBrown` 래퍼 — `/checkin`, `/checklist`, `/waiting` 라우트 적용
+- CRM 관리화면(`/admin`) → 자동 화이트 상속
+
+### [P2] PKG-TEMPLATE-UX — 패키지 생성 폼 보완 (deadline: 5/12)
+- `PackageCreateDialog`: 고객 선택 UI 완전 제거 → `package_templates` 생성으로 전환
+- `PackageCreateDialog` + `PackageTemplateDialog`: `'회사'` → `'수액명'` 라벨 수정
+- 빨간박스 예시 문구(`예: HK이노엔` 등) 전부 제거, 간결한 placeholder로 교체
+- `CustomerChartPage PackagePurchaseFromTemplateDialog`: 동일 라벨 수정
+- 템플릿 로딩 방식 확인 → 정상 (기존 구현 완전)
+
+**supervisor QA 요청** — FE only, DB 변경 없음, 리스크 0/5
+
+---
+
 ## 2026-05-08 — dev-foot | deploy-ready | T-20260507-foot-SERVICE-CATALOG-SEED
 
 **풋센터 판매상품 공식 등록 + 엑셀 내보내기 + 수가 코드 진료비·보험서류 연동 구현 완료**
