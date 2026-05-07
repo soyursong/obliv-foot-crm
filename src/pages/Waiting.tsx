@@ -362,7 +362,7 @@ function WaitingCard({ row: r, now: _now, position }: { row: WaitingRow; now: Da
         <span className="text-base font-semibold text-gray-700">
           {maskName(r.customer_name)}
         </span>
-        <span className={`text-xs tabular-nums ${mins >= 40 ? 'font-bold text-red-500' : mins >= 20 ? 'font-medium text-orange-500' : 'text-gray-400'}`}>
+        <span className="text-xs tabular-nums text-gray-400">
           {elapsedLabel(mins)}
         </span>
       </div>

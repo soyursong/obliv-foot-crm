@@ -189,104 +189,106 @@ export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
   return (
     <div className="space-y-4">
 
-      {/* ── 기본서류 — 진료비 영수증 (T-20260506 항목10) ── */}
-      <div className="rounded-xl border border-amber-200 bg-amber-50/30 p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="text-sm font-semibold text-amber-900 flex items-center gap-1">
-              <Receipt className="h-3.5 w-3.5" /> 기본서류 — 진료비 영수증
-            </span>
-            <p className="text-[11px] text-muted-foreground mt-0.5">데스크에서 진료비 등록</p>
-          </div>
-          <Button variant="outline" className="gap-1 text-xs h-8" onClick={() => setInvoiceOpen(true)}>
-            <Plus className="h-3 w-3" /> 등록
-          </Button>
-        </div>
-        {invoiceDocs.length > 0 ? (
-          <div className="space-y-1.5">
-            {invoiceDocs.map((doc) => (
-              <div key={doc.id} className="flex items-center justify-between rounded-lg border bg-white px-3 py-2 text-xs group">
-                <div className="space-y-0.5 flex-1">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs">진료비 영수증</Badge>
-                    {doc.receipt_no && <span className="text-muted-foreground">#{doc.receipt_no}</span>}
-                    <span className="text-muted-foreground">{format(new Date(doc.issue_date), 'MM/dd')}</span>
-                  </div>
-                  <div className="flex gap-3 text-muted-foreground">
-                    <span>급여 {formatAmount(doc.insurance_covered)}</span>
-                    <span>비급여 {formatAmount(doc.non_covered)}</span>
-                    <span className="font-semibold text-foreground">납부 {formatAmount(doc.paid_amount)}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    onClick={() => printInvoice(doc)}
-                    className="h-8 w-8 hidden group-hover:flex items-center justify-center rounded text-teal-600 hover:bg-teal-50"
-                    title="영수증 출력"
-                  >
-                    <Printer className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => deleteInvoice(doc.id)}
-                    className="h-8 w-8 hidden group-hover:flex items-center justify-center rounded text-red-500 hover:bg-red-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-lg border border-dashed py-3 text-center text-xs text-muted-foreground bg-white">
-            등록된 진료비 영수증 없음
-          </div>
-        )}
-      </div>
+      {/* ── 기본서류: 경과분석지 + 진료비 영수증 나란히 (T-20260507-RECEIPT-POSITION-VERIFY) ── */}
+      <div className="grid grid-cols-2 gap-3">
 
-      {/* ── 1. 경과분석지 ── */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
-              <FileText className="h-3 w-3" /> 경과분석지
-            </span>
-            <p className="text-[11px] text-muted-foreground mt-0.5">원장님 공유 시 데스크에서 업로드</p>
+        {/* 경과분석지 박스 */}
+        <div className="rounded-xl border p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                <FileText className="h-3 w-3" /> 경과분析지
+              </span>
+              <p className="text-[11px] text-muted-foreground mt-0.5">원장님 공유 시 업로드</p>
+            </div>
+            <Button variant="outline" size="sm" className="gap-1 text-xs h-7 px-2" onClick={() => setProgressOpen(true)}>
+              <Plus className="h-3 w-3" /> 업로드
+            </Button>
           </div>
-          <Button variant="outline" className="gap-1 text-xs" onClick={() => setProgressOpen(true)}>
-            <Plus className="h-3 w-3" /> 업로드
-          </Button>
-        </div>
-        {progressDocs.length > 0 ? (
-          <div className="space-y-1.5">
-            {progressDocs.map((doc) => (
-              <div key={doc.id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-xs group">
-                <div className="flex items-center gap-2">
-                  <FileText className="h-3.5 w-3.5 text-teal-600 shrink-0" />
-                  <div>
-                    <div className="font-medium text-foreground">경과분석지</div>
-                    <div className="text-muted-foreground">
-                      {format(new Date(doc.issue_date), 'yyyy-MM-dd')}
-                      {doc.pdf_url && (
-                        <a href={doc.pdf_url} target="_blank" rel="noreferrer"
-                          className="ml-2 text-teal-600 underline">파일 보기</a>
-                      )}
+          {progressDocs.length > 0 ? (
+            <div className="space-y-1">
+              {progressDocs.map((doc) => (
+                <div key={doc.id} className="flex items-center justify-between rounded-lg border px-2 py-1.5 text-xs group">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <FileText className="h-3 w-3 text-teal-600 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">경과분析지</div>
+                      <div className="text-muted-foreground text-[10px]">
+                        {format(new Date(doc.issue_date), 'MM/dd')}
+                        {doc.pdf_url && (
+                          <a href={doc.pdf_url} target="_blank" rel="noreferrer"
+                            className="ml-1 text-teal-600 underline">보기</a>
+                        )}
+                      </div>
                     </div>
                   </div>
+                  <button
+                    onClick={() => deleteProgress(doc.id)}
+                    className="hidden group-hover:flex h-7 w-7 items-center justify-center rounded text-red-500 hover:bg-red-50 shrink-0"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => deleteProgress(doc.id)}
-                  className="hidden group-hover:flex h-8 w-8 items-center justify-center rounded text-red-500 hover:bg-red-50"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed py-2 text-center text-[11px] text-muted-foreground">
+              없음
+            </div>
+          )}
+        </div>
+
+        {/* 진료비 영수증 박스 — 경과분석지 옆 배치 (RECEIPT-POSITION-VERIFY) */}
+        <div className="rounded-xl border border-amber-200 bg-amber-50/30 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-sm font-semibold text-amber-900 flex items-center gap-1">
+                <Receipt className="h-3.5 w-3.5" /> 진료비 영수증
+              </span>
+              <p className="text-[11px] text-muted-foreground mt-0.5">데스크 금액 등록</p>
+            </div>
+            <Button variant="outline" size="sm" className="gap-1 text-xs h-7 px-2" onClick={() => setInvoiceOpen(true)}>
+              <Plus className="h-3 w-3" /> 등록
+            </Button>
           </div>
-        ) : (
-          <div className="rounded-lg border border-dashed py-3 text-center text-xs text-muted-foreground">
-            등록된 경과분석지 없음
-          </div>
-        )}
+          {invoiceDocs.length > 0 ? (
+            <div className="space-y-1">
+              {invoiceDocs.map((doc) => (
+                <div key={doc.id} className="flex items-center justify-between rounded-lg border bg-white px-2 py-1.5 text-xs group">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <Badge variant="outline" className="text-[10px] px-1 h-4">영수증</Badge>
+                      {doc.receipt_no && <span className="text-muted-foreground text-[10px]">#{doc.receipt_no}</span>}
+                      <span className="text-muted-foreground text-[10px]">{format(new Date(doc.issue_date), 'MM/dd')}</span>
+                    </div>
+                    <div className="flex gap-2 text-[10px] mt-0.5">
+                      <span className="text-muted-foreground">납부 <span className="font-semibold text-foreground">{formatAmount(doc.paid_amount)}</span></span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button
+                      onClick={() => printInvoice(doc)}
+                      className="h-7 w-7 hidden group-hover:flex items-center justify-center rounded text-teal-600 hover:bg-teal-50"
+                      title="영수증 출력"
+                    >
+                      <Printer className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => deleteInvoice(doc.id)}
+                      className="h-7 w-7 hidden group-hover:flex items-center justify-center rounded text-red-500 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed py-2 text-center text-[11px] text-muted-foreground bg-white">
+              없음
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── 2. KOH 균검사 ── */}
