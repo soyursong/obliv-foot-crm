@@ -282,9 +282,12 @@ export interface Package {
   expires_at: string | null;
   contract_date: string;
   memo: string | null;
-  // T-20260507-foot-PKG-TEMPLATE-REDESIGN
+  // T-20260507-foot-PKG-TEMPLATE-REDESIGN: 항목별 수가 + 연동 필드
   podologe_sessions?: number;
   podologe_unit_price?: number;
+  heated_unit_price?: number;
+  unheated_unit_price?: number;
+  iv_unit_price?: number;
   iv_company?: string | null;
   template_id?: string | null;
   created_by: string | null;

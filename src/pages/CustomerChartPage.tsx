@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { ChevronDown, ExternalLink, Pencil, Plus, Printer, Trash2, Upload, X } from 'lucide-react';
+import { ExternalLink, Pencil, Plus, Printer, Trash2, Upload, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { formatAmount } from '@/lib/format';
+import { formatAmount, parseAmount } from '@/lib/format';
 import { VISIT_TYPE_KO } from '@/lib/status';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
@@ -77,30 +77,6 @@ const FORM_TITLES: Record<string, string> = {
   refund: '환불 동의서',
 };
 
-function ChartSection({
-  title,
-  defaultOpen = false,
-  children,
-}: {
-  title: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="rounded-lg border bg-white overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium hover:bg-muted/30 transition"
-      >
-        <span className="flex-1 text-left">{title}</span>
-        <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform', open && 'rotate-180')} />
-      </button>
-      {open && <div className="border-t px-3 py-2 text-sm">{children}</div>}
-    </div>
-  );
-}
 
 // T-20260506-foot-CHART-MINI-HOMEPAGE: 고객 스토리지 이미지 업로드 컴포넌트 (역할별)
 // - 상담실장 영역: 동의서(consent), 결제영수증(receipt)
@@ -249,6 +225,8 @@ export default function CustomerChartPage() {
   const [packageSessions, setPackageSessions] = useState<PackageSession[]>([]);
   const [openPackagePurchase, setOpenPackagePurchase] = useState(false);
   const [loading, setLoading] = useState(true);
+  // T-20260507-foot-CHART2-FULL-LAYOUT: 탭 네비게이션
+  const [chartTab, setChartTab] = useState<'checklist' | 'reservations' | 'payments' | 'treatments' | 'packages' | 'images'>('checklist');
   // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 인라인 편집
   const [editingCustomerMemo, setEditingCustomerMemo] = useState(false);
   const [customerMemoText, setCustomerMemoText] = useState('');
@@ -430,8 +408,19 @@ export default function CustomerChartPage() {
     );
   }
 
+  // T-20260507-foot-CHART2-FULL-LAYOUT: 탭 정의
+  const TAB_LABELS: { key: typeof chartTab; label: string }[] = [
+    { key: 'checklist', label: '문진·동의서' },
+    { key: 'reservations', label: '예약내역' },
+    { key: 'payments', label: '수납내역' },
+    { key: 'treatments', label: '시술내역' },
+    { key: 'packages', label: '패키지' },
+    { key: 'images', label: '이미지·서류' },
+  ];
+
   return (
     <div className="min-h-screen bg-background">
+      {/* ── 헤더 (sticky) ─────────────────────────────────────────────── */}
       <header className="sticky top-0 z-10 flex items-center gap-3 border-b bg-white px-4 py-2.5 shadow-sm">
         <div className="flex-1">
           <h1 className="text-base font-bold text-teal-700">{customer.name}</h1>
@@ -448,158 +437,141 @@ export default function CustomerChartPage() {
         </button>
       </header>
 
-      <div className="p-4 space-y-2 max-w-3xl mx-auto">
-        {/* 통계 */}
-        <div className="grid grid-cols-2 gap-2 mb-2">
-          <div className="rounded-lg bg-muted/40 px-3 py-2">
-            <div className="text-xs text-muted-foreground">총 방문</div>
-            <div className="text-base font-bold">{visits.length}회</div>
-          </div>
-          <div className="rounded-lg bg-muted/40 px-3 py-2">
-            <div className="text-xs text-muted-foreground">총 결제</div>
-            <div className="text-base font-bold">{formatAmount(totalPaid)}</div>
-          </div>
-        </div>
+      <div className="p-3 space-y-3 max-w-3xl mx-auto">
 
-        {/* 섹션 1 — 성함/접수시간 */}
-        <ChartSection title="성함 / 접수시간" defaultOpen>
-          <div className="flex items-start gap-3">
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-xl font-bold">{customer.name}</span>
+        {/* ── 고객정보 패널 (2-column compact form) ───────────────────── */}
+        <div className="rounded-lg border bg-white shadow-sm overflow-hidden">
+          <div className="grid lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-muted/30">
+
+            {/* 왼쪽 컬럼 */}
+            <div className="px-3 py-2.5 space-y-1.5 text-xs">
+              {/* 성명 + 차트번호 + 방문유형 */}
+              <div className="flex items-center gap-2 pb-1 border-b border-muted/20">
+                <span className="text-base font-bold text-teal-800">{customer.name}</span>
                 {customer.chart_number && (
-                  <span className="rounded bg-teal-50 px-1.5 py-0.5 text-xs font-medium text-teal-700">{customer.chart_number}</span>
+                  <span className="rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-700">{customer.chart_number}</span>
                 )}
                 <Badge variant={customer.visit_type === 'new' ? 'teal' : 'secondary'} className="text-[10px]">
                   {VISIT_TYPE_KO[customer.visit_type as keyof typeof VISIT_TYPE_KO] ?? customer.visit_type}
                 </Badge>
               </div>
-              {customer.birth_date && (
-                <div className="mt-0.5 text-xs text-muted-foreground tabular-nums">{customer.birth_date}</div>
-              )}
-              {latestCheckIn && (
-                <div className="mt-1 text-xs text-muted-foreground">
-                  최근 방문: {format(new Date(latestCheckIn.checked_in_at), 'MM-dd HH:mm')}
-                </div>
-              )}
-            </div>
-          </div>
-        </ChartSection>
 
-        {/* 섹션 2 — 내원경로 */}
-        <ChartSection title="내원경로" defaultOpen>
-          <div className="space-y-1">
-            {customer.lead_source ? (
-              <span className="inline-block rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-medium text-teal-800">
-                {customer.lead_source}
-              </span>
-            ) : (
-              <span className="text-xs text-muted-foreground">경로 미입력</span>
-            )}
-            {(customer.referrer_name || customer.referrer_id) && (
-              <div className="text-xs text-muted-foreground">
-                추천인: {customer.referrer_name ?? '(고객 연결됨)'}
-              </div>
-            )}
-          </div>
-        </ChartSection>
-
-        {/* 섹션 3 — 연락처 */}
-        <ChartSection title="연락처" defaultOpen>
-          <div className="space-y-0.5 text-xs">
-            <div className="flex gap-2">
-              <span className="text-muted-foreground w-16">전화번호</span>
-              <span className="font-medium">{customer.phone}</span>
-            </div>
-            {customer.birth_date && (
+              {/* 주민번호 */}
               <div className="flex gap-2">
-                <span className="text-muted-foreground w-16">생년월일</span>
-                <span className="tabular-nums">{customer.birth_date}</span>
-              </div>
-            )}
-            <div className="flex gap-2">
-              <span className="text-muted-foreground w-16">외국인</span>
-              <span>{customer.is_foreign ? '예' : '아니오'}</span>
-            </div>
-            {/* T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 */}
-            <div className="flex items-start gap-2 pt-0.5">
-              <span className="text-muted-foreground w-16 shrink-0 pt-0.5">주소지</span>
-              {editingAddress ? (
-                <div className="flex-1 space-y-1.5">
-                  <Input
-                    value={addressText}
-                    onChange={(e) => setAddressText(e.target.value)}
-                    placeholder="예: 서울시 종로구 ..."
-                    className="h-7 text-xs"
-                    autoFocus
-                    onKeyDown={(e) => { if (e.key === 'Enter') saveAddress(); if (e.key === 'Escape') setEditingAddress(false); }}
-                  />
-                  <div className="flex gap-1.5">
-                    <Button size="sm" className="h-6 text-xs flex-1 bg-teal-600 hover:bg-teal-700" onClick={saveAddress} disabled={savingAddress}>
-                      {savingAddress ? '저장 중…' : '저장'}
-                    </Button>
-                    <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => { setEditingAddress(false); setAddressText(customer.address ?? ''); }}>
-                      취소
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-1 items-center gap-1.5 min-w-0">
-                  <span className={cn('flex-1 truncate', !customer.address && 'text-muted-foreground/60')}>
-                    {customer.address ?? '미입력'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => { setEditingAddress(true); setAddressText(customer.address ?? ''); }}
-                    className="shrink-0 rounded p-1 hover:bg-muted transition text-muted-foreground hover:text-teal-700"
-                    title="주소지 편집"
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </ChartSection>
-
-        {/* 섹션 3.5 — 건강보험 (T-20260507-foot-CHART2-INSURANCE-FIELDS) */}
-        <ChartSection title="건강보험 / 주민번호" defaultOpen>
-          <div className="space-y-3 text-xs">
-            {/* 주민번호 기입칸 (마스킹 표시 — Vault 후속) */}
-            <div>
-              <div className="flex items-center gap-2 mb-1">
                 <span className="text-muted-foreground w-20 shrink-0">주민번호</span>
-                <span className="font-mono tracking-widest text-muted-foreground/70 bg-muted/40 rounded px-2 py-0.5 text-[11px]">
-                  {customer.birth_date
-                    ? `${customer.birth_date.slice(0, 6)}-*******`
-                    : '미등록'}
+                <span className="font-mono text-muted-foreground/70">
+                  {customer.birth_date ? `${customer.birth_date.slice(0, 6)}-*******` : '미등록'}
                 </span>
-                <span className="text-[10px] text-muted-foreground/60">(Vault 연동 예정)</span>
+              </div>
+
+              {/* 성별 */}
+              <div className="flex gap-2 items-center">
+                <span className="text-muted-foreground w-20 shrink-0">성별</span>
+                <div className="flex gap-1">
+                  {customer.is_foreign ? (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">외국인</span>
+                  ) : customer.gender === 'M' ? (
+                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">남(M)</span>
+                  ) : customer.gender === 'F' ? (
+                    <span className="rounded-full bg-pink-100 px-2 py-0.5 text-[10px] font-medium text-pink-700">여(F)</span>
+                  ) : (
+                    <span className="text-muted-foreground">미입력</span>
+                  )}
+                </div>
+              </div>
+
+              {/* 연락처 */}
+              <div className="flex gap-2 items-center">
+                <span className="text-muted-foreground w-20 shrink-0">연락처</span>
+                <a href={`tel:${customer.phone}`} className="font-medium text-teal-700 hover:underline">
+                  {customer.phone}
+                </a>
+              </div>
+
+              {/* 주소지 — 인라인 편집 */}
+              <div className="flex items-start gap-2">
+                <span className="text-muted-foreground w-20 shrink-0 pt-0.5">주소지</span>
+                {editingAddress ? (
+                  <div className="flex-1 space-y-1.5">
+                    <Input
+                      value={addressText}
+                      onChange={(e) => setAddressText(e.target.value)}
+                      placeholder="예: 서울시 종로구 ..."
+                      className="h-7 text-xs"
+                      autoFocus
+                      onKeyDown={(e) => { if (e.key === 'Enter') saveAddress(); if (e.key === 'Escape') setEditingAddress(false); }}
+                    />
+                    <div className="flex gap-1.5">
+                      <Button size="sm" className="h-6 text-xs flex-1 bg-teal-600 hover:bg-teal-700" onClick={saveAddress} disabled={savingAddress}>
+                        {savingAddress ? '저장 중…' : '저장'}
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => { setEditingAddress(false); setAddressText(customer.address ?? ''); }}>
+                        취소
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-1 items-center gap-1.5 min-w-0">
+                    <span className={cn('flex-1 truncate font-medium', !customer.address && 'text-muted-foreground/60 font-normal')}>
+                      {customer.address ?? '미입력'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => { setEditingAddress(true); setAddressText(customer.address ?? ''); }}
+                      className="shrink-0 rounded p-1 hover:bg-muted transition text-muted-foreground hover:text-teal-700"
+                      title="주소지 편집"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* 방문경로 */}
+              <div className="flex gap-2 items-center">
+                <span className="text-muted-foreground w-20 shrink-0">방문경로</span>
+                {customer.lead_source ? (
+                  <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-medium text-teal-800">{customer.lead_source}</span>
+                ) : (
+                  <span className="text-muted-foreground/60">미입력</span>
+                )}
+              </div>
+
+              {/* 담당실장 */}
+              <div className="flex gap-2">
+                <span className="text-muted-foreground w-20 shrink-0">담당실장</span>
+                <span className="font-medium">{latestCheckIn?.consultant_id ?? '미배정'}</span>
+              </div>
+
+              {/* 특이사항 (customer_memo 요약) */}
+              <div className="flex gap-2">
+                <span className="text-muted-foreground w-20 shrink-0">특이사항</span>
+                <span className={cn('truncate', !(customer.customer_memo ?? customer.memo) && 'text-muted-foreground/60')}>
+                  {(customer.customer_memo ?? customer.memo)
+                    ? (customer.customer_memo ?? customer.memo ?? '').slice(0, 30) + ((customer.customer_memo ?? customer.memo ?? '').length > 30 ? '…' : '')
+                    : '없음'}
+                </span>
               </div>
             </div>
 
-            {/* 건보 조회 버튼 */}
-            <div className="flex items-center gap-2">
+            {/* 오른쪽 컬럼 */}
+            <div className="px-3 py-2.5 space-y-2 text-xs">
+              {/* 건보 조회 버튼 */}
               <a
                 href="https://www.nhis.or.kr/nhis/minwon/wbhame03400m01.do"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-md border border-teal-300 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-100 transition"
+                className="inline-flex items-center gap-1.5 rounded-md border border-teal-300 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 hover:bg-teal-100 transition"
               >
-                <ExternalLink className="h-3.5 w-3.5" />
-                건보 조회 (전능CRM)
+                <ExternalLink className="h-3 w-3" />
+                건보 조회
               </a>
-              <span className="text-[10px] text-muted-foreground">조회 후 아래 등급 선택</span>
-            </div>
 
-            {/* 건보 자격등급 선택 */}
-            <div>
-              <div className="text-[11px] text-muted-foreground font-medium mb-1.5">자격등급 · 검증일 · 확인방법</div>
+              {/* 건보 자격등급 */}
               <InsuranceGradeSelect
                 customerId={customer.id}
                 editable
                 onChanged={() => {
-                  // 변경 후 customer 정보 갱신
                   supabase
                     .from('customers')
                     .select('insurance_grade, insurance_grade_source, insurance_grade_verified_at, insurance_grade_memo')
@@ -610,400 +582,582 @@ export default function CustomerChartPage() {
                     });
                 }}
               />
+
+              {/* 최근 방문 */}
+              <div className="flex gap-2 pt-1 border-t border-muted/20">
+                <span className="text-muted-foreground w-20 shrink-0">최근 방문</span>
+                <span className="font-medium">
+                  {latestCheckIn
+                    ? format(new Date(latestCheckIn.checked_in_at), 'yyyy-MM-dd HH:mm')
+                    : '방문이력없음'}
+                </span>
+              </div>
+
+              {/* 상담메모 (tm_memo 요약 2줄) */}
+              <div className="flex gap-2">
+                <span className="text-muted-foreground w-20 shrink-0">상담메모</span>
+                <span className={cn('line-clamp-2', !customer.tm_memo && 'text-muted-foreground/60')}>
+                  {customer.tm_memo ?? '없음'}
+                </span>
+              </div>
+
+              {/* 고객메모 인라인 편집 */}
+              <div className="pt-1 border-t border-muted/20">
+                {editingCustomerMemo ? (
+                  <div className="space-y-1.5">
+                    <Textarea
+                      ref={customerMemoRef}
+                      value={customerMemoText}
+                      onChange={(e) => setCustomerMemoText(e.target.value)}
+                      placeholder="고객 성향, 특이사항, 주차 정보 등"
+                      rows={3}
+                      className="text-xs"
+                      autoFocus
+                    />
+                    <div className="flex gap-1.5">
+                      <Button size="sm" className="h-6 text-xs flex-1 bg-teal-600 hover:bg-teal-700" onClick={saveCustomerMemo} disabled={savingCustomerMemo}>
+                        {savingCustomerMemo ? '저장 중…' : '저장'}
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => { setEditingCustomerMemo(false); setCustomerMemoText(customer.customer_memo ?? ''); }}>
+                        취소
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-1.5">
+                    <div className="flex-1">
+                      <div className="text-muted-foreground mb-0.5">고객메모</div>
+                      {(customer.customer_memo ?? customer.memo) ? (
+                        <div className="whitespace-pre-wrap text-muted-foreground line-clamp-3">{customer.customer_memo ?? customer.memo}</div>
+                      ) : (
+                        <span className="text-muted-foreground/60">메모 없음</span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setEditingCustomerMemo(true); setCustomerMemoText(customer.customer_memo ?? customer.memo ?? ''); }}
+                      className="shrink-0 rounded p-1 hover:bg-muted transition text-muted-foreground hover:text-teal-700"
+                      title="고객메모 편집"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </ChartSection>
+        </div>
 
-        {/* 섹션 4 — 치료플랜 (패키지) */}
-        <ChartSection title="치료플랜 (패키지)" defaultOpen>
-          {packages.length === 0 ? (
-            <div className="py-2 text-xs text-muted-foreground">패키지 없음</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="bg-muted/40 text-muted-foreground">
-                    <th className="text-left px-2 py-1.5 font-medium border-b">패키지명</th>
-                    <th className="text-center px-2 py-1.5 font-medium border-b">총</th>
-                    <th className="text-center px-2 py-1.5 font-medium border-b">사용</th>
-                    <th className="text-center px-2 py-1.5 font-medium border-b text-teal-700">잔여</th>
-                    <th className="text-right px-2 py-1.5 font-medium border-b">금액</th>
-                    <th className="text-left px-2 py-1.5 font-medium border-b">시작일</th>
-                    <th className="text-center px-2 py-1.5 font-medium border-b">상태</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {packages.map((p) => {
-                    const used = p.remaining ? p.total_sessions - p.remaining.total_remaining : null;
+        {/* ── 통계 바 (inline) ─────────────────────────────────────────── */}
+        <div className="flex items-center gap-4 rounded-lg bg-muted/30 px-3 py-2 text-xs font-medium">
+          <span>총 방문 <strong className="text-teal-700">{visits.length}회</strong></span>
+          <span className="text-muted-foreground/40">|</span>
+          <span>총 결제 <strong className="text-teal-700">{formatAmount(totalPaid)}</strong></span>
+          <span className="text-muted-foreground/40">|</span>
+          <span>패키지 <strong className="text-teal-700">{packages.length}건</strong></span>
+        </div>
+
+        {/* ── 탭 네비게이션 ────────────────────────────────────────────── */}
+        <div className="flex overflow-x-auto gap-0.5 border-b border-muted/40 pb-0 -mb-0.5">
+          {TAB_LABELS.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setChartTab(key)}
+              className={cn(
+                'shrink-0 px-3 py-2 text-xs font-medium border-b-2 transition whitespace-nowrap',
+                chartTab === key
+                  ? 'border-teal-600 text-teal-700 bg-teal-50/60'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── 탭 콘텐츠 ───────────────────────────────────────────────── */}
+        <div className="space-y-3">
+
+          {/* 탭: 문진·동의서 */}
+          {chartTab === 'checklist' && (
+            <div className="space-y-3">
+              {/* 사전 체크리스트 응답 */}
+              {checklistEntries.length > 0 && (
+                <div className="rounded-lg border bg-white p-3 space-y-2 text-xs">
+                  <div className="font-semibold text-muted-foreground">사전 체크리스트 응답</div>
+                  {checklistEntries.map((cl) => {
+                    const d = cl.checklist_data as {
+                      symptoms?: string[];
+                      nail_locations?: string[];
+                      pain_duration?: string;
+                      pain_severity?: string;
+                      medical_history?: string[];
+                      medications?: string[];
+                      medications_none?: boolean;
+                      has_allergy?: boolean;
+                      allergy_types?: string[];
+                      prior_conditions?: string;
+                      family_history?: string;
+                      agree_privacy?: boolean;
+                      agree_marketing?: boolean;
+                      referral_source?: string;
+                    };
+                    const severityLabel: Record<string, string> = { '1': '경미', '2': '불편', '3': '심함', '4': '매우 심함' };
                     return (
-                      <tr key={p.id} className="border-b border-muted/20 hover:bg-muted/10">
-                        <td className="px-2 py-1.5 font-medium max-w-[120px] truncate">{p.package_name}</td>
-                        <td className="px-2 py-1.5 text-center">{p.total_sessions}</td>
-                        <td className="px-2 py-1.5 text-center">{used ?? '-'}</td>
-                        <td className="px-2 py-1.5 text-center font-semibold text-teal-700">
-                          {p.remaining?.total_remaining ?? '-'}
-                        </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">{formatAmount(p.total_amount)}</td>
-                        <td className="px-2 py-1.5 text-muted-foreground">{p.contract_date}</td>
-                        <td className="px-2 py-1.5 text-center">
-                          <Badge
-                            variant={p.status === 'active' ? 'teal' : p.status === 'refunded' ? 'destructive' : 'secondary'}
-                            className="text-[10px] px-1.5"
-                          >
-                            {PKG_STATUS_KO[p.status] ?? p.status}
-                          </Badge>
-                        </td>
-                      </tr>
+                      <div key={cl.id} className="rounded border border-teal-100 bg-teal-50/30 px-3 py-2 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <Badge variant="teal" className="text-[10px]">✓ 체크리스트 완료</Badge>
+                          <span className="text-muted-foreground tabular-nums">
+                            {cl.completed_at ? format(new Date(cl.completed_at), 'yyyy-MM-dd HH:mm') : '-'}
+                          </span>
+                        </div>
+                        {(d.symptoms ?? []).length > 0 && <div><span className="text-muted-foreground">증상: </span>{(d.symptoms ?? []).join(', ')}</div>}
+                        {(d.nail_locations ?? []).length > 0 && <div><span className="text-muted-foreground">통증부위: </span>{(d.nail_locations ?? []).join(', ')}</div>}
+                        {d.pain_duration && <div><span className="text-muted-foreground">유병기간: </span>{d.pain_duration}</div>}
+                        {d.pain_severity && <div><span className="text-muted-foreground">통증강도: </span>{severityLabel[d.pain_severity] ?? d.pain_severity}</div>}
+                        {(d.medical_history ?? []).length > 0 && <div><span className="text-muted-foreground">병력: </span>{(d.medical_history ?? []).join(', ')}</div>}
+                        {d.medications_none && <div><span className="text-muted-foreground">복용약: </span>없음</div>}
+                        {!d.medications_none && (d.medications ?? []).length > 0 && <div><span className="text-muted-foreground">복용약: </span>{(d.medications ?? []).join(', ')}</div>}
+                        {d.has_allergy && (d.allergy_types ?? []).length > 0 && <div className="text-rose-600"><span className="text-muted-foreground">알레르기: </span>{(d.allergy_types ?? []).join(', ')}</div>}
+                        {d.prior_conditions && <div><span className="text-muted-foreground">기왕증: </span>{d.prior_conditions}</div>}
+                        {d.family_history && <div><span className="text-muted-foreground">가족력: </span>{d.family_history}</div>}
+                        {d.referral_source && <div><span className="text-muted-foreground">방문경로: </span>{d.referral_source}</div>}
+                        <div className="flex gap-2 pt-0.5">
+                          {d.agree_privacy && <Badge variant="outline" className="text-[9px] text-teal-600 border-teal-300">개인정보동의</Badge>}
+                          {d.agree_marketing && <Badge variant="outline" className="text-[9px] text-emerald-600 border-emerald-300">마케팅동의</Badge>}
+                        </div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </ChartSection>
+                </div>
+              )}
 
-        {/* 섹션 4.5 — 구매 패키지(티켓) — T-20260506-foot-CHART-MINI-HOMEPAGE */}
-        <ChartSection title="구매 패키지(티켓)" defaultOpen>
-          {/* T-20260507-foot-PKG-TEMPLATE-REDESIGN: 구입 티켓 추가 버튼 */}
-          {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant') && (
-            <div className="mb-2">
-              <button
-                onClick={() => setOpenPackagePurchase(true)}
-                className="inline-flex items-center gap-1.5 rounded-md border border-teal-300 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-100 transition"
-              >
-                <Plus className="h-3.5 w-3.5" /> 구입 티켓 추가
-              </button>
-            </div>
-          )}
-          {packages.length === 0 ? (
-            <div className="py-2 text-xs text-muted-foreground">패키지 없음</div>
-          ) : (
-            <div className="space-y-3">
-              {packages.map((p) => {
-                const usedSessions = packageSessions.filter(
-                  (s) => s.package_id === p.id && s.status === 'used',
-                );
-                // 치료사명 목록 (중복 제거)
-                const therapistNames = [...new Set(
-                  usedSessions.map((s) => s.staff_name).filter(Boolean),
-                )];
-                const usedCount = p.remaining
-                  ? p.total_sessions - p.remaining.total_remaining
-                  : usedSessions.length;
-
-                return (
-                  <div key={p.id} className="rounded-lg border border-muted/40 overflow-hidden">
-                    {/* 패키지 헤더 */}
-                    <div className="flex items-center justify-between bg-muted/20 px-3 py-1.5">
-                      <span className="text-xs font-semibold text-teal-800">{p.package_name}</span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                        p.status === 'active' ? 'bg-teal-100 text-teal-700' :
-                        p.status === 'refunded' ? 'bg-red-100 text-red-700' :
-                        'bg-muted text-muted-foreground'
-                      }`}>
-                        {PKG_STATUS_KO[p.status] ?? p.status}
+              {/* 전자서명 동의서 */}
+              {consentEntries.length > 0 && (
+                <div className="rounded-lg border bg-white p-3 text-xs space-y-1.5">
+                  <div className="font-semibold text-muted-foreground mb-1">전자서명 동의서</div>
+                  {consentEntries.map((c, i) => (
+                    <div key={i} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
+                      <span>{FORM_TITLES[c.form_type] ?? c.form_type}</span>
+                      <span className="flex items-center gap-1.5">
+                        <Badge variant="teal" className="text-[10px]">서명완료</Badge>
+                        <span className="text-muted-foreground">{format(new Date(c.signed_at), 'MM-dd')}</span>
                       </span>
                     </div>
-                    {/* 3×4 표: 상품명 | 수가 | 구매횟수 | 사용횟수(치료사명) */}
-                    <table className="w-full text-xs border-collapse">
+                  ))}
+                </div>
+              )}
+
+              {/* 태블릿 작성 양식 (DocumentViewer) */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="font-semibold text-muted-foreground mb-2">태블릿 작성 양식 (자동 업로드)</div>
+                <DocumentViewer customerId={customer.id} />
+              </div>
+
+              {/* 처방전 */}
+              {prescriptions.length > 0 && (
+                <div className="rounded-lg border bg-white p-3 text-xs space-y-2">
+                  <div className="font-semibold text-muted-foreground">처방전</div>
+                  {prescriptions.map((rx) => (
+                    <div key={rx.id} className="rounded bg-muted/30 px-2 py-1.5">
+                      <div className="flex items-center justify-between text-muted-foreground mb-0.5">
+                        <span>{format(new Date(rx.prescribed_at), 'yyyy-MM-dd')}</span>
+                        {rx.prescribed_by_name && <span>{rx.prescribed_by_name}</span>}
+                      </div>
+                      {rx.diagnosis && <div className="font-medium mb-0.5">진단: {rx.diagnosis}</div>}
+                      {rx.prescription_items && rx.prescription_items.length > 0 && (
+                        <div className="space-y-0.5 mt-1">
+                          {rx.prescription_items.map((item, idx) => (
+                            <div key={idx} className="text-muted-foreground">
+                              {item.medication_name}
+                              {item.dosage && ` · ${item.dosage}`}
+                              {item.duration_days && ` · ${item.duration_days}일`}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 서류발행 */}
+              {submissionEntries.length > 0 && (
+                <div className="rounded-lg border bg-white p-3 text-xs space-y-1">
+                  <div className="font-semibold text-muted-foreground mb-1">서류발행</div>
+                  {submissionEntries.map((s, i) => (
+                    <div key={i} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
+                      <span>{s.template_key ?? '-'}</span>
+                      <span className="text-muted-foreground flex items-center gap-1">
+                        <Printer className="h-3 w-3" />
+                        {format(new Date(s.printed_at), 'MM-dd HH:mm')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {checklistEntries.length === 0 && consentEntries.length === 0 && prescriptions.length === 0 && submissionEntries.length === 0 && (
+                <div className="text-xs text-muted-foreground py-4 text-center">기록 없음</div>
+              )}
+            </div>
+          )}
+
+          {/* 탭: 예약내역 */}
+          {chartTab === 'reservations' && (
+            <div className="space-y-3">
+              {/* 예약 목록 */}
+              <div className="rounded-lg border bg-white p-3 text-xs space-y-1.5">
+                <div className="font-semibold text-muted-foreground mb-1">예약내역</div>
+                {reservations.length === 0 ? (
+                  <div className="text-muted-foreground py-2">예약 없음</div>
+                ) : (
+                  reservations.map((r) => (
+                    <div key={r.id} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
+                      <span>{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
+                      <Badge variant="secondary" className="text-[10px]">{r.status}</Badge>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* 예약메모 */}
+              {reservations.filter((r) => r.booking_memo || r.memo).length > 0 && (
+                <div className="rounded-lg border bg-white p-3 text-xs space-y-1.5">
+                  <div className="font-semibold text-muted-foreground mb-1">예약메모</div>
+                  {reservations.filter((r) => r.booking_memo || r.memo).map((r) => (
+                    <div key={r.id} className="rounded bg-amber-50 border border-amber-100 px-2 py-1.5">
+                      <div className="text-muted-foreground mb-0.5">{r.reservation_date} {r.reservation_time.slice(0, 5)}</div>
+                      <div>{r.booking_memo ?? r.memo}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 탭: 수납내역 */}
+          {chartTab === 'payments' && (
+            <div className="space-y-3">
+              {/* 일반 결제 */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="font-semibold text-muted-foreground mb-2">수납내역</div>
+                {payments.length === 0 ? (
+                  <div className="text-muted-foreground py-2">결제 없음</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
                       <thead>
-                        <tr className="bg-muted/10 text-muted-foreground border-b border-muted/20">
-                          <th className="text-left px-3 py-1.5 font-medium w-1/4">수가</th>
-                          <th className="text-center px-2 py-1.5 font-medium w-1/4">구매횟수</th>
-                          <th className="text-center px-2 py-1.5 font-medium w-1/4 text-teal-700">사용횟수</th>
-                          <th className="text-left px-2 py-1.5 font-medium w-1/4">치료사</th>
+                        <tr className="bg-muted/30 text-muted-foreground">
+                          <th className="text-left px-2 py-1.5 font-medium border-b">일시</th>
+                          <th className="text-right px-2 py-1.5 font-medium border-b">금액</th>
+                          <th className="text-left px-2 py-1.5 font-medium border-b">방법</th>
+                          <th className="text-left px-2 py-1.5 font-medium border-b">구분</th>
+                          <th className="text-left px-2 py-1.5 font-medium border-b">메모</th>
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td className="px-3 py-2 tabular-nums font-medium">{formatAmount(p.total_amount)}</td>
-                          <td className="px-2 py-2 text-center">{p.total_sessions}회</td>
-                          <td className="px-2 py-2 text-center font-semibold text-teal-700">{usedCount}회</td>
-                          <td className="px-2 py-2 text-muted-foreground">
-                            {therapistNames.length > 0
-                              ? therapistNames.join(', ')
-                              : usedCount > 0 ? '기록 없음' : '-'}
-                          </td>
-                        </tr>
+                        {payments.map((p) => (
+                          <tr key={p.id} className="border-b border-muted/20 hover:bg-muted/10">
+                            <td className="px-2 py-1.5 tabular-nums text-muted-foreground">{format(new Date(p.created_at), 'MM-dd HH:mm')}</td>
+                            <td className={cn('px-2 py-1.5 text-right tabular-nums font-medium', p.payment_type === 'refund' && 'text-red-600')}>
+                              {p.payment_type === 'refund' ? '-' : ''}{formatAmount(p.amount)}
+                            </td>
+                            <td className="px-2 py-1.5">{p.method}{p.installment > 1 ? ` ${p.installment}개월` : ''}</td>
+                            <td className="px-2 py-1.5">
+                              <Badge variant={p.payment_type === 'refund' ? 'destructive' : 'secondary'} className="text-[10px]">
+                                {p.payment_type === 'refund' ? '환불' : '결제'}
+                              </Badge>
+                            </td>
+                            <td className="px-2 py-1.5 text-muted-foreground max-w-[100px] truncate">{p.memo ?? '-'}</td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
-                    {/* 회차별 상세 (세션 있을 때만) */}
-                    {usedSessions.length > 0 && (
-                      <div className="border-t border-muted/20 px-3 pb-2 pt-1.5">
-                        <div className="text-[10px] text-muted-foreground mb-1 font-medium">회차 상세</div>
-                        <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-                          {usedSessions.map((s) => {
-                            const typeLabel: Record<string, string> = {
-                              heated_laser: '가열',
-                              unheated_laser: '비가열',
-                              iv: '수액',
-                              preconditioning: '프컨',
-                            };
-                            return (
-                              <div key={s.id} className="flex items-center gap-1.5 text-[10px]">
-                                <span className="text-muted-foreground w-5 tabular-nums">{s.session_number}회</span>
-                                <span className="rounded bg-muted/40 px-1">{typeLabel[s.session_type] ?? s.session_type}</span>
-                                <span className="text-muted-foreground">{s.session_date}</span>
-                                {s.staff_name && <span className="text-teal-600 truncate">{s.staff_name}</span>}
-                              </div>
-                            );
-                          })}
+                  </div>
+                )}
+              </div>
+
+              {/* 패키지 결제 */}
+              {pkgPayments.length > 0 && (
+                <div className="rounded-lg border bg-white p-3 text-xs">
+                  <div className="font-semibold text-muted-foreground mb-2">패키지 결제</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-muted/30 text-muted-foreground">
+                          <th className="text-left px-2 py-1.5 font-medium border-b">일시</th>
+                          <th className="text-right px-2 py-1.5 font-medium border-b">금액</th>
+                          <th className="text-left px-2 py-1.5 font-medium border-b">방법</th>
+                          <th className="text-left px-2 py-1.5 font-medium border-b">구분</th>
+                          <th className="text-left px-2 py-1.5 font-medium border-b">메모</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pkgPayments.map((p) => (
+                          <tr key={p.id} className="border-b border-muted/20 hover:bg-muted/10">
+                            <td className="px-2 py-1.5 tabular-nums text-muted-foreground">{format(new Date(p.created_at), 'MM-dd HH:mm')}</td>
+                            <td className={cn('px-2 py-1.5 text-right tabular-nums font-medium', p.payment_type === 'refund' && 'text-red-600')}>
+                              {p.payment_type === 'refund' ? '-' : ''}{formatAmount(p.amount)}
+                            </td>
+                            <td className="px-2 py-1.5">{p.method}{p.installment > 1 ? ` ${p.installment}개월` : ''}</td>
+                            <td className="px-2 py-1.5">
+                              <Badge variant={p.payment_type === 'refund' ? 'destructive' : 'secondary'} className="text-[10px]">
+                                {p.payment_type === 'refund' ? '환불' : '결제'}
+                              </Badge>
+                            </td>
+                            <td className="px-2 py-1.5 text-muted-foreground max-w-[100px] truncate">{p.memo ?? '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 탭: 시술내역 */}
+          {chartTab === 'treatments' && (
+            <div className="space-y-3">
+              {/* 원장소견 */}
+              {checkInHistory.filter((ci) => ci.doctor_note).length > 0 && (
+                <div className="rounded-lg border bg-white p-3 text-xs space-y-2">
+                  <div className="font-semibold text-muted-foreground">원장소견</div>
+                  {checkInHistory.filter((ci) => ci.doctor_note).map((ci) => (
+                    <div key={ci.id} className="rounded bg-muted/30 px-2 py-1.5">
+                      <div className="text-muted-foreground mb-0.5">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
+                      <div className="whitespace-pre-wrap">{ci.doctor_note}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 진료종류 */}
+              {checkInHistory.filter((ci) =>
+                ci.consultation_done || ci.treatment_kind || ci.preconditioning_done || ci.pododulle_done || ci.laser_minutes != null
+              ).length > 0 && (
+                <div className="rounded-lg border bg-white p-3 text-xs space-y-2">
+                  <div className="font-semibold text-muted-foreground">진료종류</div>
+                  {checkInHistory
+                    .filter((ci) =>
+                      ci.consultation_done || ci.treatment_kind || ci.preconditioning_done || ci.pododulle_done || ci.laser_minutes != null
+                    )
+                    .map((ci) => (
+                      <div key={ci.id} className="rounded bg-muted/30 px-2 py-1.5">
+                        <div className="text-muted-foreground mb-1">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+                          <div className="flex gap-1.5">
+                            <span className="text-muted-foreground w-12 shrink-0">상담유무</span>
+                            <span className={ci.consultation_done ? 'text-emerald-600 font-medium' : ''}>{ci.consultation_done ? '○ 상담함' : '—'}</span>
+                          </div>
+                          {ci.treatment_kind && (
+                            <div className="flex gap-1.5">
+                              <span className="text-muted-foreground w-12 shrink-0">치료종류</span>
+                              <span className="font-medium">{ci.treatment_kind}</span>
+                            </div>
+                          )}
+                          <div className="flex gap-1.5">
+                            <span className="text-muted-foreground w-12 shrink-0">프컨</span>
+                            <span className={ci.preconditioning_done ? 'text-emerald-600 font-medium' : ''}>{ci.preconditioning_done ? '○' : '—'}</span>
+                          </div>
+                          <div className="flex gap-1.5">
+                            <span className="text-muted-foreground w-12 shrink-0">포돌</span>
+                            <span className={ci.pododulle_done ? 'text-emerald-600 font-medium' : ''}>{ci.pododulle_done ? '○' : '—'}</span>
+                          </div>
+                          {ci.laser_minutes != null && (
+                            <div className="flex gap-1.5">
+                              <span className="text-muted-foreground w-12 shrink-0">레이저</span>
+                              <span>{ci.laser_minutes}분</span>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    )}
+                    ))}
+                </div>
+              )}
+
+              {/* 시술메모 */}
+              {checkInHistory.filter((ci) => ci.treatment_memo).length > 0 && (
+                <div className="rounded-lg border bg-white p-3 text-xs space-y-2">
+                  <div className="font-semibold text-muted-foreground">시술메모</div>
+                  {checkInHistory.filter((ci) => ci.treatment_memo).map((ci) => (
+                    <div key={ci.id} className="rounded bg-muted/30 px-2 py-1.5">
+                      <div className="text-muted-foreground mb-0.5">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
+                      <div className="whitespace-pre-wrap">
+                        {ci.treatment_memo?.details ?? JSON.stringify(ci.treatment_memo)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {checkInHistory.filter((ci) => ci.doctor_note || ci.consultation_done || ci.treatment_kind || ci.preconditioning_done || ci.pododulle_done || ci.laser_minutes != null || ci.treatment_memo).length === 0 && (
+                <div className="text-xs text-muted-foreground py-4 text-center">시술 기록 없음</div>
+              )}
+            </div>
+          )}
+
+          {/* 탭: 패키지 */}
+          {chartTab === 'packages' && (
+            <div className="space-y-3">
+              {/* 치료플랜 요약 테이블 */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="font-semibold text-muted-foreground mb-2">치료플랜 (패키지)</div>
+                {packages.length === 0 ? (
+                  <div className="text-muted-foreground py-2">패키지 없음</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-muted/40 text-muted-foreground">
+                          <th className="text-left px-2 py-1.5 font-medium border-b">패키지명</th>
+                          <th className="text-center px-2 py-1.5 font-medium border-b">총</th>
+                          <th className="text-center px-2 py-1.5 font-medium border-b">사용</th>
+                          <th className="text-center px-2 py-1.5 font-medium border-b text-teal-700">잔여</th>
+                          <th className="text-right px-2 py-1.5 font-medium border-b">금액</th>
+                          <th className="text-left px-2 py-1.5 font-medium border-b">시작일</th>
+                          <th className="text-center px-2 py-1.5 font-medium border-b">상태</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {packages.map((p) => {
+                          const used = p.remaining ? p.total_sessions - p.remaining.total_remaining : null;
+                          return (
+                            <tr key={p.id} className="border-b border-muted/20 hover:bg-muted/10">
+                              <td className="px-2 py-1.5 font-medium max-w-[120px] truncate">{p.package_name}</td>
+                              <td className="px-2 py-1.5 text-center">{p.total_sessions}</td>
+                              <td className="px-2 py-1.5 text-center">{used ?? '-'}</td>
+                              <td className="px-2 py-1.5 text-center font-semibold text-teal-700">{p.remaining?.total_remaining ?? '-'}</td>
+                              <td className="px-2 py-1.5 text-right tabular-nums">{formatAmount(p.total_amount)}</td>
+                              <td className="px-2 py-1.5 text-muted-foreground">{p.contract_date}</td>
+                              <td className="px-2 py-1.5 text-center">
+                                <Badge variant={p.status === 'active' ? 'teal' : p.status === 'refunded' ? 'destructive' : 'secondary'} className="text-[10px] px-1.5">
+                                  {PKG_STATUS_KO[p.status] ?? p.status}
+                                </Badge>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </ChartSection>
+                )}
+              </div>
 
-        {/* 섹션 5 — 공간배정 */}
-        <ChartSection title="공간배정">
-          {latestCheckIn ? (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-              <div className="flex gap-2">
-                <span className="text-muted-foreground w-14">진료실</span>
-                <span>{latestCheckIn.examination_room ?? '-'}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="text-muted-foreground w-14">상담실</span>
-                <span>{latestCheckIn.consultation_room ?? '-'}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="text-muted-foreground w-14">치료실</span>
-                <span>{latestCheckIn.treatment_room ?? '-'}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="text-muted-foreground w-14">레이저</span>
-                <span>{latestCheckIn.laser_room ?? '-'}</span>
-              </div>
-            </div>
-          ) : (
-            <div className="text-xs text-muted-foreground">방문 이력 없음</div>
-          )}
-        </ChartSection>
-
-        {/* 섹션 6 — 예약내역 */}
-        <ChartSection title="예약내역">
-          {reservations.length === 0 ? (
-            <div className="text-xs text-muted-foreground py-1">예약 없음</div>
-          ) : (
-            <div className="space-y-1">
-              {reservations.map((r) => (
-                <div key={r.id} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1 text-xs">
-                  <span>{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
-                  <Badge variant="secondary" className="text-[10px]">{r.status}</Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </ChartSection>
-
-        {/* 섹션 7 — 예약메모 (T-20260504-foot-MEMO-RESTRUCTURE) */}
-        <ChartSection title="예약메모 (예약 경로 확인)">
-          {reservations.filter((r) => r.booking_memo || r.memo).length === 0 ? (
-            <div className="text-xs text-muted-foreground py-1">메모 없음</div>
-          ) : (
-            <div className="space-y-1.5">
-              {reservations.filter((r) => r.booking_memo || r.memo).map((r) => (
-                <div key={r.id} className="rounded bg-amber-50 border border-amber-100 px-2 py-1.5 text-xs">
-                  <div className="text-muted-foreground mb-0.5">{r.reservation_date} {r.reservation_time.slice(0, 5)}</div>
-                  <div>{r.booking_memo ?? r.memo}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </ChartSection>
-
-        {/* 섹션 8 — 고객메모 (T-20260504-foot-MEMO-RESTRUCTURE) */}
-        <ChartSection title="고객메모 (성향·주차)" defaultOpen>
-          <div className="text-xs space-y-2">
-            {editingCustomerMemo ? (
-              <div className="space-y-2">
-                <Textarea
-                  ref={customerMemoRef}
-                  value={customerMemoText}
-                  onChange={(e) => setCustomerMemoText(e.target.value)}
-                  placeholder="고객 성향, 특이사항, 주차 정보 등"
-                  rows={3}
-                  className="text-xs"
-                  autoFocus
-                />
-                <div className="flex gap-2">
-                  <Button size="sm" className="h-7 text-xs flex-1" onClick={saveCustomerMemo} disabled={savingCustomerMemo}>
-                    {savingCustomerMemo ? '저장 중…' : '저장'}
-                  </Button>
-                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setEditingCustomerMemo(false); setCustomerMemoText(customer.customer_memo ?? ''); }}>
-                    취소
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-start gap-2">
-                <div className="flex-1">
-                  {(customer.customer_memo ?? customer.memo) ? (
-                    <div className="whitespace-pre-wrap text-muted-foreground">{customer.customer_memo ?? customer.memo}</div>
-                  ) : (
-                    <span className="text-muted-foreground">메모 없음</span>
+              {/* 구매 패키지(티켓) 상세 */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="font-semibold text-muted-foreground">구매 패키지(티켓)</div>
+                  {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant') && (
+                    <button
+                      onClick={() => setOpenPackagePurchase(true)}
+                      className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-2 py-1 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
+                    >
+                      <Plus className="h-3 w-3" /> 구입 티켓 추가
+                    </button>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => { setEditingCustomerMemo(true); setCustomerMemoText(customer.customer_memo ?? customer.memo ?? ''); }}
-                  className="shrink-0 rounded p-1 hover:bg-muted transition text-muted-foreground hover:text-teal-700"
-                  title="고객메모 편집"
-                >
-                  <Pencil className="h-3 w-3" />
-                </button>
-              </div>
-            )}
-          </div>
-        </ChartSection>
-
-        {/* 섹션 9 — 상담메모 / 담당실장 */}
-        <ChartSection title="상담메모 / 담당실장" defaultOpen>
-          <div className="space-y-1.5 text-xs">
-            {customer.tm_memo ? (
-              <div className="whitespace-pre-wrap text-muted-foreground">{customer.tm_memo}</div>
-            ) : (
-              <span className="text-muted-foreground">상담메모 없음</span>
-            )}
-            <div className="flex gap-2 text-muted-foreground">
-              <span className="w-16">담당실장</span>
-              <span>{latestCheckIn?.consultant_id ?? '-'}</span>
-            </div>
-          </div>
-        </ChartSection>
-
-        {/* 섹션 10 — 원장소견 */}
-        <ChartSection title="원장소견">
-          {checkInHistory.filter((ci) => ci.doctor_note).length === 0 ? (
-            <div className="text-xs text-muted-foreground py-1">소견 없음</div>
-          ) : (
-            <div className="space-y-2">
-              {checkInHistory.filter((ci) => ci.doctor_note).map((ci) => (
-                <div key={ci.id} className="rounded bg-muted/30 px-2 py-1.5 text-xs">
-                  <div className="text-muted-foreground mb-0.5">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
-                  <div className="whitespace-pre-wrap">{ci.doctor_note}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </ChartSection>
-
-        {/* 섹션 10.5 — 진료종류 (간단차트) */}
-        <ChartSection title="진료종류">
-          {checkInHistory.filter((ci) =>
-            ci.consultation_done || ci.treatment_kind || ci.preconditioning_done || ci.pododulle_done || ci.laser_minutes != null
-          ).length === 0 ? (
-            <div className="text-xs text-muted-foreground py-1">기록 없음</div>
-          ) : (
-            <div className="space-y-2">
-              {checkInHistory
-                .filter((ci) =>
-                  ci.consultation_done || ci.treatment_kind || ci.preconditioning_done || ci.pododulle_done || ci.laser_minutes != null
-                )
-                .map((ci) => (
-                  <div key={ci.id} className="rounded bg-muted/30 px-2 py-1.5 text-xs">
-                    <div className="text-muted-foreground mb-1">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
-                      <div className="flex gap-1.5">
-                        <span className="text-muted-foreground w-12 shrink-0">상담유무</span>
-                        <span className={ci.consultation_done ? 'text-emerald-600 font-medium' : ''}>{ci.consultation_done ? '○ 상담함' : '—'}</span>
-                      </div>
-                      {ci.treatment_kind && (
-                        <div className="flex gap-1.5">
-                          <span className="text-muted-foreground w-12 shrink-0">치료종류</span>
-                          <span className="font-medium">{ci.treatment_kind}</span>
+                {packages.length === 0 ? (
+                  <div className="text-muted-foreground py-2">패키지 없음</div>
+                ) : (
+                  <div className="space-y-3">
+                    {packages.map((p) => {
+                      const usedSessions = packageSessions.filter((s) => s.package_id === p.id && s.status === 'used');
+                      const therapistNames = [...new Set(usedSessions.map((s) => s.staff_name).filter(Boolean))];
+                      const usedCount = p.remaining ? p.total_sessions - p.remaining.total_remaining : usedSessions.length;
+                      return (
+                        <div key={p.id} className="rounded-lg border border-muted/40 overflow-hidden">
+                          <div className="flex items-center justify-between bg-muted/20 px-3 py-1.5">
+                            <span className="text-xs font-semibold text-teal-800">{p.package_name}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                              p.status === 'active' ? 'bg-teal-100 text-teal-700' :
+                              p.status === 'refunded' ? 'bg-red-100 text-red-700' :
+                              'bg-muted text-muted-foreground'
+                            }`}>
+                              {PKG_STATUS_KO[p.status] ?? p.status}
+                            </span>
+                          </div>
+                          <table className="w-full border-collapse">
+                            <thead>
+                              <tr className="bg-muted/10 text-muted-foreground border-b border-muted/20">
+                                <th className="text-left px-3 py-1.5 font-medium w-1/4">수가</th>
+                                <th className="text-center px-2 py-1.5 font-medium w-1/4">구매횟수</th>
+                                <th className="text-center px-2 py-1.5 font-medium w-1/4 text-teal-700">사용횟수</th>
+                                <th className="text-left px-2 py-1.5 font-medium w-1/4">치료사</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr>
+                                <td className="px-3 py-2 tabular-nums font-medium">{formatAmount(p.total_amount)}</td>
+                                <td className="px-2 py-2 text-center">{p.total_sessions}회</td>
+                                <td className="px-2 py-2 text-center font-semibold text-teal-700">{usedCount}회</td>
+                                <td className="px-2 py-2 text-muted-foreground">
+                                  {therapistNames.length > 0 ? therapistNames.join(', ') : usedCount > 0 ? '기록 없음' : '-'}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                          {usedSessions.length > 0 && (
+                            <div className="border-t border-muted/20 px-3 pb-2 pt-1.5">
+                              <div className="text-[10px] text-muted-foreground mb-1 font-medium">회차 상세</div>
+                              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                                {usedSessions.map((s) => {
+                                  const typeLabel: Record<string, string> = {
+                                    heated_laser: '가열', unheated_laser: '비가열', iv: '수액', preconditioning: '프컨',
+                                  };
+                                  return (
+                                    <div key={s.id} className="flex items-center gap-1.5 text-[10px]">
+                                      <span className="text-muted-foreground w-5 tabular-nums">{s.session_number}회</span>
+                                      <span className="rounded bg-muted/40 px-1">{typeLabel[s.session_type] ?? s.session_type}</span>
+                                      <span className="text-muted-foreground">{s.session_date}</span>
+                                      {s.staff_name && <span className="text-teal-600 truncate">{s.staff_name}</span>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
-                      <div className="flex gap-1.5">
-                        <span className="text-muted-foreground w-12 shrink-0">프컨</span>
-                        <span className={ci.preconditioning_done ? 'text-emerald-600 font-medium' : ''}>{ci.preconditioning_done ? '○' : '—'}</span>
-                      </div>
-                      <div className="flex gap-1.5">
-                        <span className="text-muted-foreground w-12 shrink-0">포돌</span>
-                        <span className={ci.pododulle_done ? 'text-emerald-600 font-medium' : ''}>{ci.pododulle_done ? '○' : '—'}</span>
-                      </div>
-                      {ci.laser_minutes != null && (
-                        <div className="flex gap-1.5">
-                          <span className="text-muted-foreground w-12 shrink-0">레이저</span>
-                          <span>{ci.laser_minutes}분</span>
-                        </div>
-                      )}
-                    </div>
+                      );
+                    })}
                   </div>
-                ))}
+                )}
+              </div>
             </div>
           )}
-        </ChartSection>
 
-        {/* 섹션 11 — 시술메모 */}
-        <ChartSection title="시술메모">
-          {checkInHistory.filter((ci) => ci.treatment_memo).length === 0 ? (
-            <div className="text-xs text-muted-foreground py-1">시술메모 없음</div>
-          ) : (
-            <div className="space-y-2">
-              {checkInHistory.filter((ci) => ci.treatment_memo).map((ci) => (
-                <div key={ci.id} className="rounded bg-muted/30 px-2 py-1.5 text-xs">
-                  <div className="text-muted-foreground mb-0.5">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
-                  <div className="whitespace-pre-wrap">
-                    {ci.treatment_memo?.details ?? JSON.stringify(ci.treatment_memo)}
-                  </div>
+          {/* 탭: 이미지·서류 */}
+          {chartTab === 'images' && (
+            <div className="space-y-3">
+              {/* 상담실장 영역 */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-blue-800 mb-2">
+                  <span className="h-2 w-2 rounded-full bg-blue-500" />
+                  상담실장 영역
                 </div>
-              ))}
-            </div>
-          )}
-        </ChartSection>
-
-        {/* 섹션 12 — 이미지 관리 (역할별) — T-20260506-foot-CHART-MINI-HOMEPAGE
-            5/4 14:49 요청: 상담실장 영역(동의서+결제영수증) / 치료사 영역(비포에프터) 구분 */}
-        <ChartSection title="이미지 관리" defaultOpen>
-          <div className="space-y-4">
-
-            {/* ── 상담실장 영역 ───────────────────────────────────────────────── */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-blue-800">
-                <span className="h-2 w-2 rounded-full bg-blue-500" />
-                상담실장 영역
+                <div className="space-y-2">
+                  <CustomerStorageImageSection customerId={customer.id} prefix="consent" label="동의서 사진 (환불 + 비급여동의서)" accent="blue" />
+                  <CustomerStorageImageSection customerId={customer.id} prefix="receipt" label="결제영수증" accent="green" />
+                </div>
               </div>
-              <div className="space-y-2 pl-1">
-                <CustomerStorageImageSection
-                  customerId={customer.id}
-                  prefix="consent"
-                  label="동의서 사진 (환불 + 비급여동의서)"
-                  accent="blue"
-                />
-                <CustomerStorageImageSection
-                  customerId={customer.id}
-                  prefix="receipt"
-                  label="결제영수증"
-                  accent="green"
-                />
-              </div>
-            </div>
 
-            {/* ── 치료사 영역 ─────────────────────────────────────────────────── */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800">
-                <span className="h-2 w-2 rounded-full bg-amber-500" />
-                치료사 영역 — 일자별 비포/에프터
-              </div>
-              <div className="pl-1">
+              {/* 치료사 영역 */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-amber-800 mb-2">
+                  <span className="h-2 w-2 rounded-full bg-amber-500" />
+                  치료사 영역 — 일자별 비포/에프터
+                </div>
                 {checkInHistory.filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0).length === 0 ? (
-                  <div className="rounded border border-dashed py-2.5 text-center text-xs text-muted-foreground">
-                    사진 없음 (간편차트에서 업로드)
-                  </div>
+                  <div className="rounded border border-dashed py-2.5 text-center text-muted-foreground">사진 없음 (간편차트에서 업로드)</div>
                 ) : (
                   <div className="space-y-3">
                     {checkInHistory
                       .filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0)
                       .map((ci) => (
                         <div key={ci.id}>
-                          <div className="text-[10px] text-muted-foreground mb-1 font-medium">
-                            {format(new Date(ci.checked_in_at), 'yyyy-MM-dd')}
-                          </div>
+                          <div className="text-[10px] text-muted-foreground mb-1 font-medium">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd')}</div>
                           <div className="grid grid-cols-3 gap-1">
                             {(ci.treatment_photos ?? []).map((url, idx) => (
                               <img
@@ -1021,163 +1175,9 @@ export default function CustomerChartPage() {
                 )}
               </div>
             </div>
-
-          </div>
-        </ChartSection>
-
-        {/* 섹션 13 — 체크리스트 / 동의서 */}
-        <ChartSection title={`체크리스트 / 동의서${checklistEntries.length > 0 ? ` (사전체크 ${checklistEntries.length}건)` : ''}`} defaultOpen>
-          <div className="space-y-3 text-xs">
-            {/* T-20260430-foot-PRESCREEN-CHECKLIST: 사전 체크리스트 응답 (checklists 테이블) */}
-            {checklistEntries.length > 0 && (
-              <div className="space-y-2">
-                <div className="font-medium text-muted-foreground">사전 체크리스트 응답</div>
-                {checklistEntries.map((cl) => {
-                  const d = cl.checklist_data as {
-                    symptoms?: string[];
-                    nail_locations?: string[];
-                    pain_duration?: string;
-                    pain_severity?: string;
-                    medical_history?: string[];
-                    medications?: string[];
-                    medications_none?: boolean;
-                    has_allergy?: boolean;
-                    allergy_types?: string[];
-                    prior_conditions?: string;
-                    family_history?: string;
-                    agree_privacy?: boolean;
-                    agree_marketing?: boolean;
-                    referral_source?: string;
-                  };
-                  const severityLabel: Record<string, string> = { '1': '경미', '2': '불편', '3': '심함', '4': '매우 심함' };
-                  return (
-                    <div key={cl.id} className="rounded border border-teal-100 bg-teal-50/30 px-3 py-2 space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <Badge variant="teal" className="text-[10px]">✓ 체크리스트 완료</Badge>
-                        <span className="text-muted-foreground tabular-nums">
-                          {cl.completed_at ? format(new Date(cl.completed_at), 'yyyy-MM-dd HH:mm') : '-'}
-                        </span>
-                      </div>
-                      {(d.symptoms ?? []).length > 0 && (
-                        <div><span className="text-muted-foreground">증상: </span>{(d.symptoms ?? []).join(', ')}</div>
-                      )}
-                      {(d.nail_locations ?? []).length > 0 && (
-                        <div><span className="text-muted-foreground">통증부위: </span>{(d.nail_locations ?? []).join(', ')}</div>
-                      )}
-                      {d.pain_duration && (
-                        <div><span className="text-muted-foreground">유병기간: </span>{d.pain_duration}</div>
-                      )}
-                      {d.pain_severity && (
-                        <div><span className="text-muted-foreground">통증강도: </span>{severityLabel[d.pain_severity] ?? d.pain_severity}</div>
-                      )}
-                      {(d.medical_history ?? []).length > 0 && (
-                        <div><span className="text-muted-foreground">병력: </span>{(d.medical_history ?? []).join(', ')}</div>
-                      )}
-                      {d.medications_none && (
-                        <div><span className="text-muted-foreground">복용약: </span>없음</div>
-                      )}
-                      {!d.medications_none && (d.medications ?? []).length > 0 && (
-                        <div><span className="text-muted-foreground">복용약: </span>{(d.medications ?? []).join(', ')}</div>
-                      )}
-                      {d.has_allergy && (d.allergy_types ?? []).length > 0 && (
-                        <div className="text-rose-600"><span className="text-muted-foreground">알레르기: </span>{(d.allergy_types ?? []).join(', ')}</div>
-                      )}
-                      {d.prior_conditions && (
-                        <div><span className="text-muted-foreground">기왕증: </span>{d.prior_conditions}</div>
-                      )}
-                      {d.family_history && (
-                        <div><span className="text-muted-foreground">가족력: </span>{d.family_history}</div>
-                      )}
-                      {d.referral_source && (
-                        <div><span className="text-muted-foreground">방문경로: </span>{d.referral_source}</div>
-                      )}
-                      <div className="flex gap-2 pt-0.5">
-                        {d.agree_privacy && <Badge variant="outline" className="text-[9px] text-teal-600 border-teal-300">개인정보동의</Badge>}
-                        {d.agree_marketing && <Badge variant="outline" className="text-[9px] text-emerald-600 border-emerald-300">마케팅동의</Badge>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {latestCheckIn?.notes?.checklist && Object.keys(latestCheckIn.notes.checklist).length > 0 && (
-              <div>
-                <div className="font-medium text-muted-foreground mb-1">체크리스트 (구버전)</div>
-                <Badge variant="secondary" className="text-[10px]">작성완료</Badge>
-              </div>
-            )}
-            {consentEntries.length > 0 && (
-              <div>
-                <div className="font-medium text-muted-foreground mb-1">전자서명 동의서</div>
-                <div className="space-y-1">
-                  {consentEntries.map((c, i) => (
-                    <div key={i} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
-                      <span>{FORM_TITLES[c.form_type] ?? c.form_type}</span>
-                      <span className="flex items-center gap-1.5">
-                        <Badge variant="teal" className="text-[10px]">서명완료</Badge>
-                        <span className="text-muted-foreground">{format(new Date(c.signed_at), 'MM-dd')}</span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 작성 양식 + 자동 업로드 */}
-            <div className="pt-1 border-t">
-              <div className="font-medium text-muted-foreground mb-1.5">태블릿 작성 양식 (자동 업로드)</div>
-              <DocumentViewer customerId={customer.id} />
-            </div>
-          </div>
-        </ChartSection>
-
-        {/* 섹션 14 — 처방전 */}
-        <ChartSection title="처방전">
-          {prescriptions.length === 0 ? (
-            <div className="text-xs text-muted-foreground py-1">처방전 없음</div>
-          ) : (
-            <div className="space-y-2 text-xs">
-              {prescriptions.map((rx) => (
-                <div key={rx.id} className="rounded bg-muted/30 px-2 py-1.5">
-                  <div className="flex items-center justify-between text-muted-foreground mb-0.5">
-                    <span>{format(new Date(rx.prescribed_at), 'yyyy-MM-dd')}</span>
-                    {rx.prescribed_by_name && <span>{rx.prescribed_by_name}</span>}
-                  </div>
-                  {rx.diagnosis && <div className="font-medium mb-0.5">진단: {rx.diagnosis}</div>}
-                  {rx.prescription_items && rx.prescription_items.length > 0 && (
-                    <div className="space-y-0.5 mt-1">
-                      {rx.prescription_items.map((item, idx) => (
-                        <div key={idx} className="text-muted-foreground">
-                          {item.medication_name}
-                          {item.dosage && ` · ${item.dosage}`}
-                          {item.duration_days && ` · ${item.duration_days}일`}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
           )}
-        </ChartSection>
 
-        {/* 섹션 15 — 서류발행 */}
-        <ChartSection title="서류발행">
-          {submissionEntries.length === 0 ? (
-            <div className="text-xs text-muted-foreground py-1">발행 이력 없음</div>
-          ) : (
-            <div className="space-y-1 text-xs">
-              {submissionEntries.map((s, i) => (
-                <div key={i} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
-                  <span>{s.template_key ?? '-'}</span>
-                  <span className="text-muted-foreground flex items-center gap-1">
-                    <Printer className="h-3 w-3" />
-                    {format(new Date(s.printed_at), 'MM-dd HH:mm')}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </ChartSection>
+        </div>
       </div>
 
       {/* T-20260507-foot-PKG-TEMPLATE-REDESIGN: 구입 티켓 추가 다이얼로그 */}
@@ -1209,6 +1209,7 @@ export default function CustomerChartPage() {
 
 // ============================================================
 // T-20260507-foot-PKG-TEMPLATE-REDESIGN: 고객차트에서 구입 티켓 추가
+// 항목별 [회수/수가] 자동합산 폼 — 상담 실장 고객차트 연동
 // ============================================================
 function PackagePurchaseFromTemplateDialog({
   open,
@@ -1226,22 +1227,40 @@ function PackagePurchaseFromTemplateDialog({
   const [templates, setTemplates] = useState<PackageTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | 'custom'>('custom');
   const [packageName, setPackageName] = useState('');
+  // 가열
   const [heated, setHeated] = useState(0);
+  const [heatedUnitPrice, setHeatedUnitPrice] = useState(0);
+  const [heatedUpgrade, setHeatedUpgrade] = useState(false);
+  // 비가열
   const [unheated, setUnheated] = useState(0);
+  const [unheatedUnitPrice, setUnheatedUnitPrice] = useState(0);
+  const [unheatedUpgrade, setUnheatedUpgrade] = useState(false);
+  // 포돌로게
   const [podologe, setPodologe] = useState(0);
+  const [podologeUnitPrice, setPodologeUnitPrice] = useState(0);
+  // 수액
   const [iv, setIv] = useState(0);
-  const [precon, setPrecon] = useState(0);
+  const [ivUnitPrice, setIvUnitPrice] = useState(0);
   const [ivCompany, setIvCompany] = useState('');
-  const [shotUpgrade, setShotUpgrade] = useState(false);
-  const [afUpgrade, setAfUpgrade] = useState(false);
+  // 사전처치
+  const [precon, setPrecon] = useState(0);
+  // 총금액
   const [priceOverride, setPriceOverride] = useState(false);
-  const [basePrice, setBasePrice] = useState(0);
   const [manualTotal, setManualTotal] = useState(0);
   const [memo, setMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const upgradeSurcharge = (shotUpgrade ? 50000 : 0) + (afUpgrade ? 40000 : 0);
-  const grandTotal = priceOverride ? manualTotal : basePrice + upgradeSurcharge;
+  // 항목별 자동합산
+  const computedTotal = useMemo(
+    () =>
+      heated * heatedUnitPrice +
+      unheated * unheatedUnitPrice +
+      podologe * podologeUnitPrice +
+      iv * ivUnitPrice,
+    [heated, heatedUnitPrice, unheated, unheatedUnitPrice, podologe, podologeUnitPrice, iv, ivUnitPrice],
+  );
+  const upgradeSurcharge = (heatedUpgrade ? 50000 : 0) + (unheatedUpgrade ? 40000 : 0);
+  const grandTotal = priceOverride ? manualTotal : computedTotal + upgradeSurcharge;
   const totalSessions = heated + unheated + iv + precon;
 
   useEffect(() => {
@@ -1258,30 +1277,49 @@ function PackagePurchaseFromTemplateDialog({
   useEffect(() => {
     if (!open) return;
     setSelectedTemplateId('custom');
-    setPackageName(''); setHeated(0); setUnheated(0); setPodologe(0);
-    setIv(0); setPrecon(0); setIvCompany('');
-    setShotUpgrade(false); setAfUpgrade(false);
-    setPriceOverride(false); setBasePrice(0); setManualTotal(0); setMemo('');
+    setPackageName('');
+    setHeated(0); setHeatedUnitPrice(0); setHeatedUpgrade(false);
+    setUnheated(0); setUnheatedUnitPrice(0); setUnheatedUpgrade(false);
+    setPodologe(0); setPodologeUnitPrice(0);
+    setIv(0); setIvUnitPrice(0); setIvCompany('');
+    setPrecon(0);
+    setPriceOverride(false); setManualTotal(0); setMemo('');
   }, [open]);
 
+  // 자동합산 변경 시 manualTotal 동기화
   useEffect(() => {
-    if (!priceOverride) setManualTotal(basePrice + upgradeSurcharge);
-  }, [upgradeSurcharge, basePrice, priceOverride]);
+    if (!priceOverride) setManualTotal(computedTotal + upgradeSurcharge);
+  }, [computedTotal, upgradeSurcharge, priceOverride]);
 
+  // 템플릿 → 구입 티켓 자동 채움
   const applyTemplate = (tmpl: PackageTemplate) => {
     setSelectedTemplateId(tmpl.id);
     setPackageName(tmpl.name);
     setHeated(tmpl.heated_sessions);
+    setHeatedUnitPrice(tmpl.heated_unit_price);
+    setHeatedUpgrade(false);
     setUnheated(tmpl.unheated_sessions);
+    setUnheatedUnitPrice(tmpl.unheated_unit_price);
+    setUnheatedUpgrade(false);
     setPodologe(tmpl.podologe_sessions);
+    setPodologeUnitPrice(tmpl.podologe_unit_price);
     setIv(tmpl.iv_sessions);
-    setPrecon(0);
+    setIvUnitPrice(tmpl.iv_unit_price);
     setIvCompany(tmpl.iv_company ?? '');
-    setShotUpgrade(false); setAfUpgrade(false);
+    setPrecon(0);
     setPriceOverride(false);
-    setBasePrice(tmpl.total_price);
-    setManualTotal(tmpl.total_price);
     setMemo(tmpl.memo ?? '');
+  };
+
+  const applyCustom = () => {
+    setSelectedTemplateId('custom');
+    setPackageName('');
+    setHeated(0); setHeatedUnitPrice(0); setHeatedUpgrade(false);
+    setUnheated(0); setUnheatedUnitPrice(0); setUnheatedUpgrade(false);
+    setPodologe(0); setPodologeUnitPrice(0);
+    setIv(0); setIvUnitPrice(0); setIvCompany('');
+    setPrecon(0);
+    setPriceOverride(false); setManualTotal(0); setMemo('');
   };
 
   const submit = async () => {
@@ -1297,13 +1335,17 @@ function PackagePurchaseFromTemplateDialog({
       template_id: selectedTemplateId !== 'custom' ? selectedTemplateId : null,
       total_sessions: totalSessions,
       heated_sessions: heated,
+      heated_unit_price: heatedUnitPrice,
       unheated_sessions: unheated,
+      unheated_unit_price: unheatedUnitPrice,
       iv_sessions: iv,
+      iv_unit_price: ivUnitPrice,
       preconditioning_sessions: precon,
       podologe_sessions: podologe,
+      podologe_unit_price: podologeUnitPrice,
       iv_company: ivCompany.trim() || null,
-      shot_upgrade: shotUpgrade,
-      af_upgrade: afUpgrade,
+      shot_upgrade: heatedUpgrade,
+      af_upgrade: unheatedUpgrade,
       upgrade_surcharge: upgradeSurcharge,
       total_amount: grandTotal,
       paid_amount: 0,
@@ -1315,8 +1357,7 @@ function PackagePurchaseFromTemplateDialog({
     onCreated();
   };
 
-  const fmtAmt = (n: number) => n.toLocaleString('ko-KR') + '원';
-  const parseAmt = (s: string) => Math.max(0, Number(s.replace(/[^0-9]/g, '')) || 0);
+  const cn2 = (...classes: string[]) => classes.filter(Boolean).join(' ');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -1329,30 +1370,32 @@ function PackagePurchaseFromTemplateDialog({
         </div>
 
         <div className="space-y-4 text-sm">
-          {/* 템플릿 선택 */}
+          {/* 템플릿 선택 → 자동 채움 */}
           <div className="space-y-1.5">
-            <div className="text-xs font-medium text-muted-foreground">패키지 템플릿 선택</div>
+            <div className="text-xs font-medium text-muted-foreground">패키지 템플릿 선택 → 자동 채움</div>
             <div className="flex flex-wrap gap-2">
               {templates.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => applyTemplate(t)}
-                  className={`h-9 rounded-md border px-3 text-sm font-medium transition ${
+                  className={cn2(
+                    'h-9 rounded-md border px-3 text-sm font-medium transition',
                     selectedTemplateId === t.id
                       ? 'border-teal-600 bg-teal-50 text-teal-700'
-                      : 'border-gray-200 hover:bg-gray-50'
-                  }`}
+                      : 'border-gray-200 hover:bg-gray-50',
+                  )}
                 >
                   {t.name}
                 </button>
               ))}
               <button
-                onClick={() => { setSelectedTemplateId('custom'); setPackageName(''); setHeated(0); setUnheated(0); setPodologe(0); setIv(0); setPrecon(0); setIvCompany(''); setShotUpgrade(false); setAfUpgrade(false); setPriceOverride(false); setBasePrice(0); setManualTotal(0); setMemo(''); }}
-                className={`h-9 rounded-md border px-3 text-sm font-medium transition ${
+                onClick={applyCustom}
+                className={cn2(
+                  'h-9 rounded-md border px-3 text-sm font-medium transition',
                   selectedTemplateId === 'custom'
                     ? 'border-teal-600 bg-teal-50 text-teal-700'
-                    : 'border-gray-200 hover:bg-gray-50'
-                }`}
+                    : 'border-gray-200 hover:bg-gray-50',
+                )}
               >
                 커스텀
               </button>
@@ -1364,7 +1407,7 @@ function PackagePurchaseFromTemplateDialog({
 
           {/* 패키지명 */}
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">패키지명</label>
+            <label className="text-xs font-medium text-muted-foreground">패키지명 *</label>
             <input
               value={packageName}
               onChange={(e) => setPackageName(e.target.value)}
@@ -1373,57 +1416,165 @@ function PackagePurchaseFromTemplateDialog({
             />
           </div>
 
-          {/* 회수 그리드 */}
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { label: '가열', value: heated, onChange: setHeated },
-              { label: '비가열', value: unheated, onChange: setUnheated },
-              { label: '포돌로게', value: podologe, onChange: setPodologe },
-              { label: '수액', value: iv, onChange: setIv },
-              { label: '사전처치', value: precon, onChange: setPrecon },
-            ].map(({ label, value, onChange }) => (
-              <div key={label} className="space-y-1">
-                <label className="text-xs text-muted-foreground">{label}</label>
+          {/* 가열 레이저 */}
+          <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
+            <div className="text-xs font-semibold text-gray-500">가열 레이저</div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">회수</label>
                 <input
-                  type="number" min={0} value={value}
-                  onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
+                  type="number" min={0} value={heated}
+                  onChange={(e) => setHeated(Math.max(0, Number(e.target.value) || 0))}
                   className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
               </div>
-            ))}
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">수액 회사</label>
-              <input
-                value={ivCompany}
-                onChange={(e) => setIvCompany(e.target.value)}
-                placeholder="예: HK이노엔"
-                className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
-              />
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">수가 (회당)</label>
+                <input
+                  value={formatAmount(heatedUnitPrice)}
+                  onChange={(e) => setHeatedUnitPrice(parseAmount(e.target.value))}
+                  inputMode="numeric"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  onClick={() => setHeatedUpgrade(!heatedUpgrade)}
+                  className={cn2(
+                    'h-9 w-full rounded-md border text-xs font-medium px-1.5 transition',
+                    heatedUpgrade ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-gray-200 hover:bg-gray-50',
+                  )}
+                >
+                  {heatedUpgrade ? '✓ ' : ''}6000샷 +5만
+                </button>
+              </div>
             </div>
+            {heated > 0 && heatedUnitPrice > 0 && (
+              <div className="text-xs text-gray-400 text-right">
+                소계: {formatAmount(heated * heatedUnitPrice)}
+                {heatedUpgrade && <span className="ml-1 text-teal-600">+50,000</span>}
+              </div>
+            )}
           </div>
 
-          {/* 업그레이드 */}
-          <div className="flex flex-wrap gap-2">
-            {[
-              { label: '6000샷 업그레이드 (+50,000)', value: shotUpgrade, onChange: setShotUpgrade },
-              { label: 'AF 업그레이드 (+40,000)', value: afUpgrade, onChange: setAfUpgrade },
-            ].map(({ label, value, onChange }) => (
-              <button
-                key={label}
-                onClick={() => onChange(!value)}
-                className={`h-9 rounded-md border px-3 text-sm font-medium transition ${
-                  value ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-gray-200 hover:bg-gray-50'
-                }`}
-              >
-                {value ? '✓ ' : ''}{label}
-              </button>
-            ))}
+          {/* 비가열 레이저 */}
+          <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
+            <div className="text-xs font-semibold text-gray-500">비가열 레이저</div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">회수</label>
+                <input
+                  type="number" min={0} value={unheated}
+                  onChange={(e) => setUnheated(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">수가 (회당)</label>
+                <input
+                  value={formatAmount(unheatedUnitPrice)}
+                  onChange={(e) => setUnheatedUnitPrice(parseAmount(e.target.value))}
+                  inputMode="numeric"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  onClick={() => setUnheatedUpgrade(!unheatedUpgrade)}
+                  className={cn2(
+                    'h-9 w-full rounded-md border text-xs font-medium px-1.5 transition',
+                    unheatedUpgrade ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-gray-200 hover:bg-gray-50',
+                  )}
+                >
+                  {unheatedUpgrade ? '✓ ' : ''}AF +4만
+                </button>
+              </div>
+            </div>
+            {unheated > 0 && unheatedUnitPrice > 0 && (
+              <div className="text-xs text-gray-400 text-right">
+                소계: {formatAmount(unheated * unheatedUnitPrice)}
+                {unheatedUpgrade && <span className="ml-1 text-teal-600">+40,000</span>}
+              </div>
+            )}
           </div>
 
-          {/* 총금액 */}
+          {/* 포돌로게 */}
+          <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
+            <div className="text-xs font-semibold text-gray-500">포돌로게</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">회수</label>
+                <input
+                  type="number" min={0} value={podologe}
+                  onChange={(e) => setPodologe(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">수가 (회당)</label>
+                <input
+                  value={formatAmount(podologeUnitPrice)}
+                  onChange={(e) => setPodologeUnitPrice(parseAmount(e.target.value))}
+                  inputMode="numeric"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+            </div>
+            {podologe > 0 && podologeUnitPrice > 0 && (
+              <div className="text-xs text-gray-400 text-right">소계: {formatAmount(podologe * podologeUnitPrice)}</div>
+            )}
+          </div>
+
+          {/* 수액 */}
+          <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
+            <div className="text-xs font-semibold text-gray-500">수액</div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">회사</label>
+                <input
+                  value={ivCompany}
+                  onChange={(e) => setIvCompany(e.target.value)}
+                  placeholder="HK이노엔"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">회수</label>
+                <input
+                  type="number" min={0} value={iv}
+                  onChange={(e) => setIv(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">수가 (회당)</label>
+                <input
+                  value={formatAmount(ivUnitPrice)}
+                  onChange={(e) => setIvUnitPrice(parseAmount(e.target.value))}
+                  inputMode="numeric"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+            </div>
+            {iv > 0 && ivUnitPrice > 0 && (
+              <div className="text-xs text-gray-400 text-right">소계: {formatAmount(iv * ivUnitPrice)}</div>
+            )}
+          </div>
+
+          {/* 사전처치 */}
+          <div className="space-y-1">
+            <label className="text-xs text-gray-500">사전처치 회수 (프리컨디셔닝 — 수가 미포함)</label>
+            <input
+              type="number" min={0} value={precon}
+              onChange={(e) => setPrecon(Math.max(0, Number(e.target.value) || 0))}
+              className="w-28 h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+            />
+          </div>
+
+          {/* 패키지 총 금액 (항목별 자동합산 + 수기수정) */}
           <div className="rounded-lg border border-teal-200 bg-teal-50/40 p-3 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-teal-800">총 계약금</span>
+              <span className="text-xs font-semibold text-teal-800">패키지 총 금액</span>
               <button
                 onClick={() => { setPriceOverride(!priceOverride); if (!priceOverride) setManualTotal(grandTotal); }}
                 className={`text-xs rounded border px-2 py-0.5 transition ${
@@ -1435,29 +1586,32 @@ function PackagePurchaseFromTemplateDialog({
             </div>
             {priceOverride ? (
               <input
-                value={fmtAmt(manualTotal)}
-                onChange={(e) => setManualTotal(parseAmt(e.target.value))}
+                value={formatAmount(manualTotal)}
+                onChange={(e) => setManualTotal(parseAmount(e.target.value))}
                 inputMode="numeric"
                 className="w-full h-10 rounded-md border border-teal-300 px-3 text-lg font-bold text-teal-700 focus:outline-none"
               />
             ) : (
               <div className="text-xl font-bold text-teal-700">
-                {fmtAmt(grandTotal)}
-                <span className="ml-2 text-xs text-muted-foreground font-normal">
-                  ({totalSessions}회{podologe > 0 ? `+포돌${podologe}` : ''})
+                {formatAmount(grandTotal)}
+                <span className="ml-2 text-xs text-gray-400 font-normal">
+                  (항목 자동합산{upgradeSurcharge > 0 ? ` + 업그레이드 ${formatAmount(upgradeSurcharge)}` : ''})
                 </span>
               </div>
             )}
+            <div className="text-xs text-gray-400">
+              총 {totalSessions}회{podologe > 0 ? ` + 포돌로게 ${podologe}회` : ''}
+            </div>
           </div>
 
           {/* 메모 */}
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">메모</label>
+            <label className="text-xs font-medium text-gray-500">메모 (수액종류, 업그레이드 추가사항 등)</label>
             <textarea
               value={memo}
               onChange={(e) => setMemo(e.target.value)}
               rows={2}
-              placeholder="수액종류, 업그레이드 추가사항 등"
+              placeholder="예: HK이노엔 글루타치온 + 6000샷 기본 포함"
               className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 resize-none"
             />
           </div>

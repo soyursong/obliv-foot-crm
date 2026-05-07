@@ -667,6 +667,7 @@ function PackageTemplateDialog({
 
 // ============================================================
 // 패키지 생성 다이얼로그 (템플릿 기반 + 커스텀)
+// T-20260507-foot-PKG-TEMPLATE-REDESIGN: 항목별 [회수/수가] 자동합산 폼
 // ============================================================
 function PackageCreateDialog({
   open,
@@ -686,30 +687,44 @@ function PackageCreateDialog({
   const [templates, setTemplates] = useState<PackageTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | 'custom'>('custom');
 
-  // 항목별 필드
   const [packageName, setPackageName] = useState('');
+  // 가열
   const [heated, setHeated] = useState(0);
+  const [heatedUnitPrice, setHeatedUnitPrice] = useState(0);
+  const [heatedUpgrade, setHeatedUpgrade] = useState(false);
+  // 비가열
   const [unheated, setUnheated] = useState(0);
+  const [unheatedUnitPrice, setUnheatedUnitPrice] = useState(0);
+  const [unheatedUpgrade, setUnheatedUpgrade] = useState(false);
+  // 포돌로게
   const [podologe, setPodologe] = useState(0);
+  const [podologeUnitPrice, setPodologeUnitPrice] = useState(0);
+  // 수액
   const [iv, setIv] = useState(0);
-  const [precon, setPrecon] = useState(0);
+  const [ivUnitPrice, setIvUnitPrice] = useState(0);
   const [ivCompany, setIvCompany] = useState('');
-  const [shotUpgrade, setShotUpgrade] = useState(false);
-  const [afUpgrade, setAfUpgrade] = useState(false);
+  // 사전처치 (수가 없음 — 패키지 금액에 포함)
+  const [precon, setPrecon] = useState(0);
 
   // 총금액
   const [priceOverride, setPriceOverride] = useState(false);
-  const [basePrice, setBasePrice] = useState(0);
   const [manualTotal, setManualTotal] = useState(0);
-
   const [memo, setMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // 업그레이드 할증
-  const upgradeSurcharge = (shotUpgrade ? 50000 : 0) + (afUpgrade ? 40000 : 0);
-  // 총금액 계산
-  const grandTotal = priceOverride ? manualTotal : basePrice + upgradeSurcharge;
-  // 총회차 (preconditioning 포함, podologe 별도)
+  // 항목별 자동합산
+  const computedTotal = useMemo(
+    () =>
+      heated * heatedUnitPrice +
+      unheated * unheatedUnitPrice +
+      podologe * podologeUnitPrice +
+      iv * ivUnitPrice,
+    [heated, heatedUnitPrice, unheated, unheatedUnitPrice, podologe, podologeUnitPrice, iv, ivUnitPrice],
+  );
+  // 업그레이드 할증 (가열=6000샷+50,000 / 비가열=AF+40,000)
+  const upgradeSurcharge = (heatedUpgrade ? 50000 : 0) + (unheatedUpgrade ? 40000 : 0);
+  const grandTotal = priceOverride ? manualTotal : computedTotal + upgradeSurcharge;
+  // 총회차 (podologe 별도)
   const totalSessions = heated + unheated + iv + precon;
 
   // 템플릿 로드
@@ -729,39 +744,48 @@ function PackageCreateDialog({
     if (!open) return;
     setCustomerQuery(''); setCustomer(null);
     setSelectedTemplateId('custom');
-    setPackageName(''); setHeated(0); setUnheated(0); setPodologe(0);
-    setIv(0); setPrecon(0); setIvCompany('');
-    setShotUpgrade(false); setAfUpgrade(false);
-    setPriceOverride(false); setBasePrice(0); setManualTotal(0); setMemo('');
+    setPackageName('');
+    setHeated(0); setHeatedUnitPrice(0); setHeatedUpgrade(false);
+    setUnheated(0); setUnheatedUnitPrice(0); setUnheatedUpgrade(false);
+    setPodologe(0); setPodologeUnitPrice(0);
+    setIv(0); setIvUnitPrice(0); setIvCompany('');
+    setPrecon(0);
+    setPriceOverride(false); setManualTotal(0); setMemo('');
   }, [open]);
 
-  // 업그레이드 할증 변경 시 basePrice 기반 재계산
+  // 자동합산 변경 시 manualTotal 동기화
   useEffect(() => {
-    if (!priceOverride) setManualTotal(basePrice + upgradeSurcharge);
-  }, [upgradeSurcharge, basePrice, priceOverride]);
+    if (!priceOverride) setManualTotal(computedTotal + upgradeSurcharge);
+  }, [computedTotal, upgradeSurcharge, priceOverride]);
 
   const applyTemplate = (tmpl: PackageTemplate) => {
     setSelectedTemplateId(tmpl.id);
     setPackageName(tmpl.name);
     setHeated(tmpl.heated_sessions);
+    setHeatedUnitPrice(tmpl.heated_unit_price);
+    setHeatedUpgrade(false);
     setUnheated(tmpl.unheated_sessions);
+    setUnheatedUnitPrice(tmpl.unheated_unit_price);
+    setUnheatedUpgrade(false);
     setPodologe(tmpl.podologe_sessions);
+    setPodologeUnitPrice(tmpl.podologe_unit_price);
     setIv(tmpl.iv_sessions);
-    setPrecon(0); // 사전처치는 별도 — 템플릿에 없음
+    setIvUnitPrice(tmpl.iv_unit_price);
     setIvCompany(tmpl.iv_company ?? '');
-    setShotUpgrade(false); setAfUpgrade(false);
+    setPrecon(0);
     setPriceOverride(false);
-    setBasePrice(tmpl.total_price);
-    setManualTotal(tmpl.total_price);
     setMemo(tmpl.memo ?? '');
   };
 
   const applyCustom = () => {
     setSelectedTemplateId('custom');
-    setPackageName(''); setHeated(0); setUnheated(0); setPodologe(0);
-    setIv(0); setPrecon(0); setIvCompany('');
-    setShotUpgrade(false); setAfUpgrade(false);
-    setPriceOverride(false); setBasePrice(0); setManualTotal(0); setMemo('');
+    setPackageName('');
+    setHeated(0); setHeatedUnitPrice(0); setHeatedUpgrade(false);
+    setUnheated(0); setUnheatedUnitPrice(0); setUnheatedUpgrade(false);
+    setPodologe(0); setPodologeUnitPrice(0);
+    setIv(0); setIvUnitPrice(0); setIvCompany('');
+    setPrecon(0);
+    setPriceOverride(false); setManualTotal(0); setMemo('');
   };
 
   // 고객 검색
@@ -797,13 +821,17 @@ function PackageCreateDialog({
       template_id: selectedTemplateId !== 'custom' ? selectedTemplateId : null,
       total_sessions: totalSessions,
       heated_sessions: heated,
+      heated_unit_price: heatedUnitPrice,
       unheated_sessions: unheated,
+      unheated_unit_price: unheatedUnitPrice,
       iv_sessions: iv,
+      iv_unit_price: ivUnitPrice,
       preconditioning_sessions: precon,
       podologe_sessions: podologe,
+      podologe_unit_price: podologeUnitPrice,
       iv_company: ivCompany.trim() || null,
-      shot_upgrade: shotUpgrade,
-      af_upgrade: afUpgrade,
+      shot_upgrade: heatedUpgrade,
+      af_upgrade: unheatedUpgrade,
       upgrade_surcharge: upgradeSurcharge,
       total_amount: grandTotal,
       paid_amount: 0,
@@ -826,7 +854,7 @@ function PackageCreateDialog({
         <div className="space-y-4">
           {/* 고객 선택 */}
           <div className="space-y-1.5">
-            <Label>고객 선택</Label>
+            <Label>고객 선택 *</Label>
             {customer ? (
               <div className="flex items-center justify-between rounded border bg-muted/30 px-3 py-2 text-sm">
                 <span>
@@ -869,7 +897,7 @@ function PackageCreateDialog({
                   key={t.id}
                   onClick={() => applyTemplate(t)}
                   className={cn(
-                    'h-9 rounded-md border px-3 text-sm font-medium',
+                    'h-9 rounded-md border px-3 text-sm font-medium transition',
                     selectedTemplateId === t.id
                       ? 'border-teal-600 bg-teal-50 text-teal-700'
                       : 'border-input hover:bg-muted',
@@ -881,7 +909,7 @@ function PackageCreateDialog({
               <button
                 onClick={applyCustom}
                 className={cn(
-                  'h-9 rounded-md border px-3 text-sm font-medium',
+                  'h-9 rounded-md border px-3 text-sm font-medium transition',
                   selectedTemplateId === 'custom'
                     ? 'border-teal-600 bg-teal-50 text-teal-700'
                     : 'border-input hover:bg-muted',
@@ -899,69 +927,173 @@ function PackageCreateDialog({
 
           {/* 패키지명 */}
           <div className="space-y-1.5">
-            <Label>패키지명</Label>
+            <Label>패키지명 *</Label>
             <Input value={packageName} onChange={(e) => setPackageName(e.target.value)}
               placeholder="패키지명 직접 입력" />
           </div>
 
-          {/* 회수 그리드 */}
-          <div className="grid grid-cols-3 gap-2">
-            <NumberField label="가열" value={heated} onChange={setHeated} />
-            <NumberField label="비가열" value={unheated} onChange={setUnheated} />
-            <NumberField label="포돌로게" value={podologe} onChange={setPodologe} />
-            <NumberField label="수액" value={iv} onChange={setIv} />
-            <NumberField label="사전처치" value={precon} onChange={setPrecon} />
-            <div className="space-y-1.5">
-              <Label className="text-xs">수액 회사</Label>
-              <Input value={ivCompany} onChange={(e) => setIvCompany(e.target.value)}
-                placeholder="예: HK이노엔" className="h-9" />
-            </div>
-          </div>
-
-          {/* 업그레이드 */}
-          <div className="flex flex-wrap gap-2">
-            <Toggle label="6000샷 업그레이드 (+50,000)" value={shotUpgrade} onChange={setShotUpgrade} />
-            <Toggle label="AF 업그레이드 (+40,000)" value={afUpgrade} onChange={setAfUpgrade} />
-          </div>
-
-          {/* 금액 */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label>패키지 금액</Label>
+          {/* 가열 레이저 */}
+          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+            <div className="text-xs font-semibold text-muted-foreground">가열 레이저</div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">회수</Label>
+                <Input type="number" min={0} value={heated}
+                  onChange={(e) => setHeated(Math.max(0, Number(e.target.value) || 0))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">수가 (회당)</Label>
+                <Input value={formatAmount(heatedUnitPrice)}
+                  onChange={(e) => setHeatedUnitPrice(parseAmount(e.target.value))}
+                  inputMode="numeric" />
+              </div>
+              <div className="flex items-end pb-0.5">
                 <button
-                  onClick={() => { setPriceOverride(!priceOverride); if (!priceOverride) setManualTotal(grandTotal); }}
-                  className={cn('text-xs rounded border px-2 py-0.5',
-                    priceOverride ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-input hover:bg-muted')}
+                  onClick={() => setHeatedUpgrade(!heatedUpgrade)}
+                  className={cn('h-9 w-full rounded-md border text-xs font-medium px-2',
+                    heatedUpgrade ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}
                 >
-                  {priceOverride ? '✓ 수기' : '수기수정'}
+                  {heatedUpgrade ? '✓ ' : ''}6000샷 +50,000
                 </button>
               </div>
-              <Input
-                value={formatAmount(priceOverride ? manualTotal : basePrice)}
-                onChange={(e) => {
-                  if (priceOverride) setManualTotal(parseAmount(e.target.value));
-                  else setBasePrice(parseAmount(e.target.value));
-                }}
-                inputMode="numeric"
-                readOnly={!priceOverride && selectedTemplateId !== 'custom'}
-              />
             </div>
-            <div className="space-y-1.5">
-              <Label>총 계약금</Label>
-              <div className="flex h-10 items-center rounded-md border bg-muted/30 px-3 text-sm font-semibold">
+            {heated > 0 && heatedUnitPrice > 0 && (
+              <div className="text-xs text-muted-foreground text-right">
+                소계: {formatAmount(heated * heatedUnitPrice)}
+                {heatedUpgrade && <span className="ml-1 text-teal-600">+50,000</span>}
+              </div>
+            )}
+          </div>
+
+          {/* 비가열 레이저 */}
+          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+            <div className="text-xs font-semibold text-muted-foreground">비가열 레이저</div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">회수</Label>
+                <Input type="number" min={0} value={unheated}
+                  onChange={(e) => setUnheated(Math.max(0, Number(e.target.value) || 0))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">수가 (회당)</Label>
+                <Input value={formatAmount(unheatedUnitPrice)}
+                  onChange={(e) => setUnheatedUnitPrice(parseAmount(e.target.value))}
+                  inputMode="numeric" />
+              </div>
+              <div className="flex items-end pb-0.5">
+                <button
+                  onClick={() => setUnheatedUpgrade(!unheatedUpgrade)}
+                  className={cn('h-9 w-full rounded-md border text-xs font-medium px-2',
+                    unheatedUpgrade ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}
+                >
+                  {unheatedUpgrade ? '✓ ' : ''}AF +40,000
+                </button>
+              </div>
+            </div>
+            {unheated > 0 && unheatedUnitPrice > 0 && (
+              <div className="text-xs text-muted-foreground text-right">
+                소계: {formatAmount(unheated * unheatedUnitPrice)}
+                {unheatedUpgrade && <span className="ml-1 text-teal-600">+40,000</span>}
+              </div>
+            )}
+          </div>
+
+          {/* 포돌로게 */}
+          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+            <div className="text-xs font-semibold text-muted-foreground">포돌로게</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">회수</Label>
+                <Input type="number" min={0} value={podologe}
+                  onChange={(e) => setPodologe(Math.max(0, Number(e.target.value) || 0))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">수가 (회당)</Label>
+                <Input value={formatAmount(podologeUnitPrice)}
+                  onChange={(e) => setPodologeUnitPrice(parseAmount(e.target.value))}
+                  inputMode="numeric" />
+              </div>
+            </div>
+            {podologe > 0 && podologeUnitPrice > 0 && (
+              <div className="text-xs text-muted-foreground text-right">
+                소계: {formatAmount(podologe * podologeUnitPrice)}
+              </div>
+            )}
+          </div>
+
+          {/* 수액 */}
+          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+            <div className="text-xs font-semibold text-muted-foreground">수액</div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">회사</Label>
+                <Input value={ivCompany} onChange={(e) => setIvCompany(e.target.value)}
+                  placeholder="예: HK이노엔" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">회수</Label>
+                <Input type="number" min={0} value={iv}
+                  onChange={(e) => setIv(Math.max(0, Number(e.target.value) || 0))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">수가 (회당)</Label>
+                <Input value={formatAmount(ivUnitPrice)}
+                  onChange={(e) => setIvUnitPrice(parseAmount(e.target.value))}
+                  inputMode="numeric" />
+              </div>
+            </div>
+            {iv > 0 && ivUnitPrice > 0 && (
+              <div className="text-xs text-muted-foreground text-right">
+                소계: {formatAmount(iv * ivUnitPrice)}
+              </div>
+            )}
+          </div>
+
+          {/* 사전처치 (수가 별도 없음) */}
+          <div className="space-y-1.5">
+            <Label className="text-xs">사전처치 회수 (프리컨디셔닝 — 수가 미포함)</Label>
+            <Input type="number" min={0} value={precon}
+              onChange={(e) => setPrecon(Math.max(0, Number(e.target.value) || 0))}
+              className="w-28" />
+          </div>
+
+          {/* 패키지 총 금액 (자동합산 + 수기수정) */}
+          <div className="rounded-lg border border-teal-200 bg-teal-50/40 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-semibold text-teal-800">패키지 총 금액</div>
+              <button
+                onClick={() => { setPriceOverride(!priceOverride); if (!priceOverride) setManualTotal(grandTotal); }}
+                className={cn('text-xs rounded border px-2 py-0.5',
+                  priceOverride ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-input hover:bg-muted')}
+              >
+                {priceOverride ? '✓ 수기수정' : '수기수정'}
+              </button>
+            </div>
+            {priceOverride ? (
+              <Input
+                value={formatAmount(manualTotal)}
+                onChange={(e) => setManualTotal(parseAmount(e.target.value))}
+                inputMode="numeric"
+                className="text-lg font-bold"
+              />
+            ) : (
+              <div className="text-xl font-bold text-teal-700">
                 {formatAmount(grandTotal)}
-                <span className="ml-2 text-xs text-muted-foreground">
-                  ({totalSessions}회{podologe > 0 ? `+포돌${podologe}` : ''})
+                <span className="ml-2 text-xs text-muted-foreground font-normal">
+                  (항목 자동합산{upgradeSurcharge > 0 ? ` + 업그레이드 ${formatAmount(upgradeSurcharge)}` : ''})
                 </span>
               </div>
+            )}
+            <div className="text-xs text-muted-foreground">
+              총 {totalSessions}회{podologe > 0 ? ` + 포돌로게 ${podologe}회` : ''}
             </div>
           </div>
 
+          {/* 메모 */}
           <div className="space-y-1.5">
-            <Label>메모</Label>
+            <Label>메모 (수액종류, 업그레이드 추가사항 등)</Label>
             <Textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={2}
-              placeholder="수액종류, 업그레이드 추가사항 등" />
+              placeholder="예: HK이노엔 글루타치온 + 6000샷 기본 포함" />
           </div>
         </div>
 
@@ -976,36 +1108,6 @@ function PackageCreateDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function NumberField({
-  label, value, onChange,
-}: { label: string; value: number; onChange: (n: number) => void; }) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-xs">{label}</Label>
-      <Input
-        type="number" min={0} value={value}
-        onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
-      />
-    </div>
-  );
-}
-
-function Toggle({
-  label, value, onChange,
-}: { label: string; value: boolean; onChange: (v: boolean) => void; }) {
-  return (
-    <button
-      onClick={() => onChange(!value)}
-      className={cn(
-        'h-9 rounded-md border px-3 text-sm font-medium',
-        value ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted',
-      )}
-    >
-      {value ? '✓ ' : ''}{label}
-    </button>
   );
 }
 
