@@ -494,7 +494,7 @@ function PackageTemplateDialog({
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label>패키지명 *</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 블레라벨 패키지" />
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="패키지명" />
           </div>
 
           {/* 가열 */}
@@ -589,9 +589,9 @@ function PackageTemplateDialog({
             <div className="text-xs font-semibold text-muted-foreground">수액</div>
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1">
-                <Label className="text-xs">회사</Label>
+                <Label className="text-xs">수액명</Label>
                 <Input value={ivCompany} onChange={(e) => setIvCompany(e.target.value)}
-                  placeholder="예: HK이노엔" />
+                  placeholder="수액명" />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">회수</Label>
@@ -641,9 +641,9 @@ function PackageTemplateDialog({
 
           {/* 메모 */}
           <div className="space-y-1.5">
-            <Label>메모 (수액종류, 업그레이드 추가사항 등)</Label>
+            <Label>메모</Label>
             <Textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={2}
-              placeholder="예: HK이노엔 글루타치온 + 6000샷 기본 포함" />
+              placeholder="메모" />
           </div>
 
           <div className="space-y-1.5">
@@ -666,8 +666,9 @@ function PackageTemplateDialog({
 }
 
 // ============================================================
-// 패키지 생성 다이얼로그 (템플릿 기반 + 커스텀)
-// T-20260507-foot-PKG-TEMPLATE-REDESIGN: 항목별 [회수/수가] 자동합산 폼
+// 패키지 생성 다이얼로그 (순수 템플릿 정의)
+// T-20260508-foot-PKG-TEMPLATE-UX: 고객 선택 제거, package_templates 생성
+// 고객별 적용은 CustomerChartPage PackagePurchaseFromTemplateDialog에서 수행
 // ============================================================
 function PackageCreateDialog({
   open,
@@ -680,10 +681,6 @@ function PackageCreateDialog({
   onOpenChange: (o: boolean) => void;
   onCreated: () => void;
 }) {
-  const [customerQuery, setCustomerQuery] = useState('');
-  const [customerMatches, setCustomerMatches] = useState<Customer[]>([]);
-  const [customer, setCustomer] = useState<Customer | null>(null);
-
   const [templates, setTemplates] = useState<PackageTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | 'custom'>('custom');
 
@@ -703,8 +700,6 @@ function PackageCreateDialog({
   const [iv, setIv] = useState(0);
   const [ivUnitPrice, setIvUnitPrice] = useState(0);
   const [ivCompany, setIvCompany] = useState('');
-  // 사전처치 (수가 없음 — 패키지 금액에 포함)
-  const [precon, setPrecon] = useState(0);
 
   // 총금액
   const [priceOverride, setPriceOverride] = useState(false);
@@ -712,7 +707,7 @@ function PackageCreateDialog({
   const [memo, setMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // 항목별 자동합산
+  // 항목별 자동합산 (upgrade 포함 없이 순수 수가 합산)
   const computedTotal = useMemo(
     () =>
       heated * heatedUnitPrice +
@@ -721,13 +716,9 @@ function PackageCreateDialog({
       iv * ivUnitPrice,
     [heated, heatedUnitPrice, unheated, unheatedUnitPrice, podologe, podologeUnitPrice, iv, ivUnitPrice],
   );
-  // 업그레이드 할증 (가열=6000샷+50,000 / 비가열=AF+40,000)
-  const upgradeSurcharge = (heatedUpgrade ? 50000 : 0) + (unheatedUpgrade ? 40000 : 0);
-  const grandTotal = priceOverride ? manualTotal : computedTotal + upgradeSurcharge;
-  // 총회차 (podologe 별도)
-  const totalSessions = heated + unheated + iv + precon;
+  const finalTotal = priceOverride ? manualTotal : computedTotal;
 
-  // 템플릿 로드
+  // 템플릿 로드 (기존 템플릿 기반 작성용)
   useEffect(() => {
     if (!open || !clinicId) return;
     supabase
@@ -742,37 +733,34 @@ function PackageCreateDialog({
   // 초기화
   useEffect(() => {
     if (!open) return;
-    setCustomerQuery(''); setCustomer(null);
     setSelectedTemplateId('custom');
     setPackageName('');
     setHeated(0); setHeatedUnitPrice(0); setHeatedUpgrade(false);
     setUnheated(0); setUnheatedUnitPrice(0); setUnheatedUpgrade(false);
     setPodologe(0); setPodologeUnitPrice(0);
     setIv(0); setIvUnitPrice(0); setIvCompany('');
-    setPrecon(0);
     setPriceOverride(false); setManualTotal(0); setMemo('');
   }, [open]);
 
   // 자동합산 변경 시 manualTotal 동기화
   useEffect(() => {
-    if (!priceOverride) setManualTotal(computedTotal + upgradeSurcharge);
-  }, [computedTotal, upgradeSurcharge, priceOverride]);
+    if (!priceOverride) setManualTotal(computedTotal);
+  }, [computedTotal, priceOverride]);
 
   const applyTemplate = (tmpl: PackageTemplate) => {
     setSelectedTemplateId(tmpl.id);
     setPackageName(tmpl.name);
     setHeated(tmpl.heated_sessions);
     setHeatedUnitPrice(tmpl.heated_unit_price);
-    setHeatedUpgrade(false);
+    setHeatedUpgrade(tmpl.heated_upgrade_available);
     setUnheated(tmpl.unheated_sessions);
     setUnheatedUnitPrice(tmpl.unheated_unit_price);
-    setUnheatedUpgrade(false);
+    setUnheatedUpgrade(tmpl.unheated_upgrade_available);
     setPodologe(tmpl.podologe_sessions);
     setPodologeUnitPrice(tmpl.podologe_unit_price);
     setIv(tmpl.iv_sessions);
     setIvUnitPrice(tmpl.iv_unit_price);
     setIvCompany(tmpl.iv_company ?? '');
-    setPrecon(0);
     setPriceOverride(false);
     setMemo(tmpl.memo ?? '');
   };
@@ -784,63 +772,38 @@ function PackageCreateDialog({
     setUnheated(0); setUnheatedUnitPrice(0); setUnheatedUpgrade(false);
     setPodologe(0); setPodologeUnitPrice(0);
     setIv(0); setIvUnitPrice(0); setIvCompany('');
-    setPrecon(0);
     setPriceOverride(false); setManualTotal(0); setMemo('');
   };
 
-  // 고객 검색
-  useEffect(() => {
-    if (!clinicId || customerQuery.trim().length < 2) { setCustomerMatches([]); return; }
-    const safe = customerQuery.trim().replace(/[%_(),.]/g, '');
-    if (!safe) return;
-    const t = setTimeout(async () => {
-      const { data } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('clinic_id', clinicId)
-        .or(`name.ilike.%${safe}%,phone.ilike.%${safe}%`)
-        .limit(8);
-      setCustomerMatches((data ?? []) as Customer[]);
-    }, 200);
-    return () => clearTimeout(t);
-  }, [customerQuery, clinicId]);
-
   const submit = async () => {
-    if (!clinicId || !customer) { toast.error('고객을 선택하세요'); return; }
+    if (!clinicId) return;
     if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
-    if (totalSessions === 0 && podologe === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
+    if (heated + unheated + podologe + iv === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
     setSubmitting(true);
-
-    const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
-
-    const { error } = await supabase.from('packages').insert({
+    const { error } = await supabase.from('package_templates').insert({
       clinic_id: clinicId,
-      customer_id: customer.id,
-      package_name: packageName.trim(),
-      package_type: selectedTemplateId === 'custom' ? 'custom' : (selectedTemplate?.name ?? 'template'),
-      template_id: selectedTemplateId !== 'custom' ? selectedTemplateId : null,
-      total_sessions: totalSessions,
+      name: packageName.trim(),
       heated_sessions: heated,
       heated_unit_price: heatedUnitPrice,
+      heated_upgrade_available: heatedUpgrade,
       unheated_sessions: unheated,
       unheated_unit_price: unheatedUnitPrice,
-      iv_sessions: iv,
-      iv_unit_price: ivUnitPrice,
-      preconditioning_sessions: precon,
+      unheated_upgrade_available: unheatedUpgrade,
       podologe_sessions: podologe,
       podologe_unit_price: podologeUnitPrice,
       iv_company: ivCompany.trim() || null,
-      shot_upgrade: heatedUpgrade,
-      af_upgrade: unheatedUpgrade,
-      upgrade_surcharge: upgradeSurcharge,
-      total_amount: grandTotal,
-      paid_amount: 0,
-      status: 'active',
+      iv_sessions: iv,
+      iv_unit_price: ivUnitPrice,
+      total_price: finalTotal,
+      price_override: priceOverride,
       memo: memo.trim() || null,
+      sort_order: 0,
+      is_active: true,
+      updated_at: new Date().toISOString(),
     });
     setSubmitting(false);
-    if (error) { toast.error(`생성 실패: ${error.message}`); return; }
-    toast.success('패키지 생성 완료');
+    if (error) { toast.error(`템플릿 생성 실패: ${error.message}`); return; }
+    toast.success('패키지 템플릿 생성 완료 — 고객 차트에서 불러올 수 있습니다');
     onCreated();
   };
 
@@ -848,49 +811,13 @@ function PackageCreateDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>패키지 생성</DialogTitle>
+          <DialogTitle>새 패키지 템플릿</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* 고객 선택 */}
+          {/* 기존 템플릿 기반 자동채움 */}
           <div className="space-y-1.5">
-            <Label>고객 선택 *</Label>
-            {customer ? (
-              <div className="flex items-center justify-between rounded border bg-muted/30 px-3 py-2 text-sm">
-                <span>
-                  <span className="font-medium">{customer.name}</span>
-                  <span className="ml-2 text-muted-foreground">{customer.phone}</span>
-                </span>
-                <Button variant="ghost" size="sm" onClick={() => setCustomer(null)}>변경</Button>
-              </div>
-            ) : (
-              <div className="relative">
-                <Input
-                  value={customerQuery}
-                  onChange={(e) => setCustomerQuery(e.target.value)}
-                  placeholder="이름 또는 전화번호"
-                />
-                {customerMatches.length > 0 && (
-                  <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-md border bg-background shadow-md">
-                    {customerMatches.map((c) => (
-                      <button
-                        key={c.id}
-                        className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
-                        onClick={() => { setCustomer(c); setCustomerMatches([]); }}
-                      >
-                        <span className="font-medium">{c.name}</span>
-                        <span className="text-muted-foreground">{c.phone}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* 템플릿 선택 */}
-          <div className="space-y-1.5">
-            <Label>패키지 템플릿</Label>
+            <Label>기존 템플릿 불러오기 (선택)</Label>
             <div className="flex flex-wrap gap-2">
               {templates.map((t) => (
                 <button
@@ -915,12 +842,12 @@ function PackageCreateDialog({
                     : 'border-input hover:bg-muted',
                 )}
               >
-                커스텀
+                직접 입력
               </button>
             </div>
             {templates.length === 0 && (
               <div className="text-xs text-muted-foreground">
-                템플릿 없음 — [템플릿 관리]에서 추가하거나 커스텀으로 직접 입력하세요
+                등록된 템플릿 없음 — 직접 입력으로 첫 템플릿을 만들어보세요
               </div>
             )}
           </div>
@@ -929,7 +856,7 @@ function PackageCreateDialog({
           <div className="space-y-1.5">
             <Label>패키지명 *</Label>
             <Input value={packageName} onChange={(e) => setPackageName(e.target.value)}
-              placeholder="패키지명 직접 입력" />
+              placeholder="패키지명" />
           </div>
 
           {/* 가열 레이저 */}
@@ -953,14 +880,13 @@ function PackageCreateDialog({
                   className={cn('h-9 w-full rounded-md border text-xs font-medium px-2',
                     heatedUpgrade ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}
                 >
-                  {heatedUpgrade ? '✓ ' : ''}6000샷 +50,000
+                  {heatedUpgrade ? '✓ ' : ''}6000샷 업그레이드
                 </button>
               </div>
             </div>
             {heated > 0 && heatedUnitPrice > 0 && (
               <div className="text-xs text-muted-foreground text-right">
                 소계: {formatAmount(heated * heatedUnitPrice)}
-                {heatedUpgrade && <span className="ml-1 text-teal-600">+50,000</span>}
               </div>
             )}
           </div>
@@ -986,14 +912,13 @@ function PackageCreateDialog({
                   className={cn('h-9 w-full rounded-md border text-xs font-medium px-2',
                     unheatedUpgrade ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}
                 >
-                  {unheatedUpgrade ? '✓ ' : ''}AF +40,000
+                  {unheatedUpgrade ? '✓ ' : ''}AF 업그레이드
                 </button>
               </div>
             </div>
             {unheated > 0 && unheatedUnitPrice > 0 && (
               <div className="text-xs text-muted-foreground text-right">
                 소계: {formatAmount(unheated * unheatedUnitPrice)}
-                {unheatedUpgrade && <span className="ml-1 text-teal-600">+40,000</span>}
               </div>
             )}
           </div>
@@ -1026,9 +951,9 @@ function PackageCreateDialog({
             <div className="text-xs font-semibold text-muted-foreground">수액</div>
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1">
-                <Label className="text-xs">회사</Label>
+                <Label className="text-xs">수액명</Label>
                 <Input value={ivCompany} onChange={(e) => setIvCompany(e.target.value)}
-                  placeholder="예: HK이노엔" />
+                  placeholder="수액명" />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">회수</Label>
@@ -1049,20 +974,12 @@ function PackageCreateDialog({
             )}
           </div>
 
-          {/* 사전처치 (수가 별도 없음) */}
-          <div className="space-y-1.5">
-            <Label className="text-xs">사전처치 회수 (프리컨디셔닝 — 수가 미포함)</Label>
-            <Input type="number" min={0} value={precon}
-              onChange={(e) => setPrecon(Math.max(0, Number(e.target.value) || 0))}
-              className="w-28" />
-          </div>
-
           {/* 패키지 총 금액 (자동합산 + 수기수정) */}
           <div className="rounded-lg border border-teal-200 bg-teal-50/40 p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="text-xs font-semibold text-teal-800">패키지 총 금액</div>
               <button
-                onClick={() => { setPriceOverride(!priceOverride); if (!priceOverride) setManualTotal(grandTotal); }}
+                onClick={() => { setPriceOverride(!priceOverride); if (!priceOverride) setManualTotal(computedTotal); }}
                 className={cn('text-xs rounded border px-2 py-0.5',
                   priceOverride ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-input hover:bg-muted')}
               >
@@ -1078,32 +995,27 @@ function PackageCreateDialog({
               />
             ) : (
               <div className="text-xl font-bold text-teal-700">
-                {formatAmount(grandTotal)}
-                <span className="ml-2 text-xs text-muted-foreground font-normal">
-                  (항목 자동합산{upgradeSurcharge > 0 ? ` + 업그레이드 ${formatAmount(upgradeSurcharge)}` : ''})
-                </span>
+                {formatAmount(computedTotal)}
+                <span className="ml-2 text-xs text-muted-foreground font-normal">(항목 자동합산)</span>
               </div>
             )}
-            <div className="text-xs text-muted-foreground">
-              총 {totalSessions}회{podologe > 0 ? ` + 포돌로게 ${podologe}회` : ''}
-            </div>
           </div>
 
           {/* 메모 */}
           <div className="space-y-1.5">
-            <Label>메모 (수액종류, 업그레이드 추가사항 등)</Label>
+            <Label>메모</Label>
             <Textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={2}
-              placeholder="예: HK이노엔 글루타치온 + 6000샷 기본 포함" />
+              placeholder="메모" />
           </div>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
           <Button
-            disabled={submitting || !customer || (!packageName.trim()) || (totalSessions === 0 && podologe === 0)}
+            disabled={submitting || !packageName.trim() || (heated + unheated + podologe + iv === 0)}
             onClick={submit}
           >
-            {submitting ? '저장 중…' : '생성'}
+            {submitting ? '저장 중…' : '템플릿 생성'}
           </Button>
         </DialogFooter>
       </DialogContent>

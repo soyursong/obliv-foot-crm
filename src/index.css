@@ -11,31 +11,32 @@
     --font-sans: 'Geist Variable', sans-serif
   }
   :root {
-    /* Background / Surface — 브라운/베이지 (4/28 김주연 원안) */
-    --background: oklch(0.96 0.018 65);
-    --foreground: oklch(0.20 0.04 40);
-    --card: oklch(0.99 0.008 65);
-    --card-foreground: oklch(0.20 0.04 40);
-    --popover: oklch(0.99 0.008 65);
-    --popover-foreground: oklch(0.20 0.04 40);
+    /* Background / Surface — 화이트 (CRM 관리화면, 2026-05-08 김주연 B안) */
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
 
     /* Primary / Secondary */
-    --primary: oklch(0.32 0.06 40);
-    --primary-foreground: oklch(0.97 0.012 65);
-    --secondary: oklch(0.92 0.025 70);
-    --secondary-foreground: oklch(0.25 0.05 40);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
 
     /* Muted / Accent */
-    --muted: oklch(0.93 0.015 65);
-    --muted-foreground: oklch(0.42 0.025 50);
-    --accent: oklch(0.58 0.11 55);
-    --accent-foreground: oklch(0.97 0.012 65);
+    --muted: oklch(0.97 0 0);
+    /* A-4: 색상 대비 강화 — muted-foreground를 진하게 (WCAG AA 4.5:1 충족) */
+    --muted-foreground: oklch(0.38 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
 
     /* Functional */
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.86 0.020 65);
-    --input: oklch(0.88 0.020 65);
-    --ring: oklch(0.58 0.11 55);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
 
     /* Charts */
     --chart-1: oklch(0.55 0.10 45);
@@ -47,14 +48,14 @@
     --radius: 0.625rem;
 
     /* Sidebar */
-    --sidebar: oklch(0.97 0.012 65);
-    --sidebar-foreground: oklch(0.25 0.04 40);
-    --sidebar-primary: oklch(0.32 0.06 40);
-    --sidebar-primary-foreground: oklch(0.97 0.012 65);
-    --sidebar-accent: oklch(0.92 0.025 70);
-    --sidebar-accent-foreground: oklch(0.25 0.04 40);
-    --sidebar-border: oklch(0.86 0.020 65);
-    --sidebar-ring: oklch(0.58 0.11 55);
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
 
     /* Status (11단계 흐름 매핑) */
     --status-waiting: oklch(0.65 0.04 60);
@@ -69,6 +70,37 @@
     --status-payment-waiting: oklch(0.65 0.13 35);
     --status-done: oklch(0.78 0.025 65);
     --status-noshow: oklch(0.55 0.20 25)
+  }
+
+  /* 셀프체크인 고객화면용 브라운/베이지 테마 (김주연 4/28 원안)
+     적용 라우트: /checkin/:slug, /checklist/:id, /waiting/:slug */
+  .theme-brown {
+    --background: oklch(0.96 0.018 65);
+    --foreground: oklch(0.20 0.04 40);
+    --card: oklch(0.99 0.008 65);
+    --card-foreground: oklch(0.20 0.04 40);
+    --popover: oklch(0.99 0.008 65);
+    --popover-foreground: oklch(0.20 0.04 40);
+    --primary: oklch(0.32 0.06 40);
+    --primary-foreground: oklch(0.97 0.012 65);
+    --secondary: oklch(0.92 0.025 70);
+    --secondary-foreground: oklch(0.25 0.05 40);
+    --muted: oklch(0.93 0.015 65);
+    --muted-foreground: oklch(0.42 0.025 50);
+    --accent: oklch(0.58 0.11 55);
+    --accent-foreground: oklch(0.97 0.012 65);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.86 0.020 65);
+    --input: oklch(0.88 0.020 65);
+    --ring: oklch(0.58 0.11 55);
+    --sidebar: oklch(0.97 0.012 65);
+    --sidebar-foreground: oklch(0.25 0.04 40);
+    --sidebar-primary: oklch(0.32 0.06 40);
+    --sidebar-primary-foreground: oklch(0.97 0.012 65);
+    --sidebar-accent: oklch(0.92 0.025 70);
+    --sidebar-accent-foreground: oklch(0.25 0.04 40);
+    --sidebar-border: oklch(0.86 0.020 65);
+    --sidebar-ring: oklch(0.58 0.11 55);
   }
   .dark {
     /* Background / Surface — 다크 브라운 */
