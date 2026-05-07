@@ -1,11 +1,19 @@
 -- T-20260507-foot-SERVICE-CATALOG-SEED
 -- 목적: services.service_code 컬럼 추가 + 풋센터 판매상품 28개 공식 시드
--- 롤백: ALTER TABLE services DROP COLUMN IF EXISTS service_code;
+-- 롤백: ALTER TABLE services DROP CONSTRAINT IF EXISTS uq_services_clinic_name;
+--        ALTER TABLE services DROP COLUMN IF EXISTS service_code;
 --        DELETE FROM services WHERE service_code IS NOT NULL AND clinic_id = (SELECT id FROM clinics WHERE slug = 'jongno-foot');
 
 -- ── 1. service_code 컬럼 추가 ──
 ALTER TABLE services ADD COLUMN IF NOT EXISTS service_code TEXT;
 CREATE INDEX IF NOT EXISTS idx_services_service_code ON services(service_code);
+
+-- ↓ UNIQUE constraint 추가 전 중복 행 제거
+DELETE FROM services WHERE id IN (
+  SELECT s1.id FROM services s1
+  INNER JOIN services s2 ON s1.clinic_id = s2.clinic_id AND s1.name = s2.name AND s1.id > s2.id
+);
+ALTER TABLE services ADD CONSTRAINT uq_services_clinic_name UNIQUE(clinic_id, name);
 
 -- ── 2. 풋센터 판매상품 28개 시드 (jongno-foot) ──
 -- On conflict: 같은 clinic_id + name이면 service_code + price 업데이트
