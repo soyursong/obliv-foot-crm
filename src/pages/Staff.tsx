@@ -1,16 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { Plus, UserCog, DoorOpen, TrendingUp, ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, Settings, X } from 'lucide-react';
+import { Plus, UserCog, DoorOpen, ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, Settings, X } from 'lucide-react';
 import { DutyRosterTab } from '@/components/DutyRosterTab';
 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { getClinic, clearClinicCache } from '@/lib/clinic';
 import type { Clinic, Room, Staff, StaffRole } from '@/lib/types';
-import { formatAmount } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -75,9 +74,6 @@ export default function StaffPage() {
           <TabsTrigger value="rooms">
             <DoorOpen className="mr-1 h-4 w-4" /> 공간 배정
           </TabsTrigger>
-          <TabsTrigger value="performance">
-            <TrendingUp className="mr-1 h-4 w-4" /> 월간 실적
-          </TabsTrigger>
           {isAdmin && (
             <TabsTrigger value="settings">
               <Settings className="mr-1 h-4 w-4" /> 클리닉 설정
@@ -87,7 +83,6 @@ export default function StaffPage() {
         <TabsContent value="duty">{clinic && <DutyRosterTab clinic={clinic} />}</TabsContent>
         <TabsContent value="staff">{clinic && <StaffTab clinic={clinic} />}</TabsContent>
         <TabsContent value="rooms">{clinic && <RoomTab clinic={clinic} />}</TabsContent>
-        <TabsContent value="performance">{clinic && <PerformanceTab clinic={clinic} />}</TabsContent>
         {isAdmin && (
           <TabsContent value="settings">
             {clinic && <ClinicSettingsTab clinic={clinic} onSaved={refetchClinic} />}
@@ -810,127 +805,6 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
           </table>
         </div>
       )}
-    </div>
-  );
-}
-
-// ============================================================
-// 월간 실적 탭
-// ============================================================
-function PerformanceTab({ clinic }: { clinic: Clinic }) {
-  const [month, setMonth] = useState(() => format(new Date(), 'yyyy-MM'));
-  const [staffPerf, setStaffPerf] = useState<{ id: string; name: string; role: string; checkIns: number; revenue: number; roomDays: number }[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const from = `${month}-01`;
-    const lastDay = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0);
-    const to = format(lastDay, 'yyyy-MM-dd');
-
-    const [staffRes, ciRes, payRes, raRes] = await Promise.all([
-      supabase.from('staff').select('id, name, role').eq('clinic_id', clinic.id).eq('active', true),
-      supabase.from('check_ins').select('id, consultant_id, therapist_id, technician_id').eq('clinic_id', clinic.id)
-        .gte('checked_in_at', `${from}T00:00:00+09:00`).lte('checked_in_at', `${to}T23:59:59+09:00`),
-      supabase.from('payments').select('amount, payment_type, check_in_id').eq('clinic_id', clinic.id)
-        .gte('created_at', `${from}T00:00:00+09:00`).lte('created_at', `${to}T23:59:59+09:00`),
-      supabase.from('room_assignments').select('staff_id').eq('clinic_id', clinic.id)
-        .gte('date', from).lte('date', to),
-    ]);
-
-    const staffList = (staffRes.data ?? []) as { id: string; name: string; role: string }[];
-    const checkIns = (ciRes.data ?? []) as { id: string; consultant_id: string | null; therapist_id: string | null; technician_id: string | null }[];
-    const payments = (payRes.data ?? []) as { amount: number; payment_type: string; check_in_id: string | null }[];
-    const roomAssigns = (raRes.data ?? []) as { staff_id: string | null }[];
-
-    const ciToConsultant: Record<string, string> = {};
-    for (const ci of checkIns) { if (ci.consultant_id) ciToConsultant[ci.id] = ci.consultant_id; }
-
-    const counts: Record<string, number> = {};
-    const revenues: Record<string, number> = {};
-    const roomDays: Record<string, number> = {};
-
-    for (const ci of checkIns) {
-      for (const id of [ci.consultant_id, ci.therapist_id, ci.technician_id]) {
-        if (id) counts[id] = (counts[id] ?? 0) + 1;
-      }
-    }
-    for (const p of payments) {
-      if (!p.check_in_id) continue;
-      const cid = ciToConsultant[p.check_in_id];
-      if (cid) {
-        const amt = p.payment_type === 'refund' ? -p.amount : p.amount;
-        revenues[cid] = (revenues[cid] ?? 0) + amt;
-      }
-    }
-    for (const ra of roomAssigns) {
-      if (ra.staff_id) roomDays[ra.staff_id] = (roomDays[ra.staff_id] ?? 0) + 1;
-    }
-
-    setStaffPerf(staffList.map((s) => ({
-      id: s.id, name: s.name, role: s.role,
-      checkIns: counts[s.id] ?? 0,
-      revenue: revenues[s.id] ?? 0,
-      roomDays: roomDays[s.id] ?? 0,
-    })).sort((a, b) => b.revenue - a.revenue || b.checkIns - a.checkIns));
-    setLoading(false);
-  }, [clinic.id, month]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const totalRevenue = staffPerf.reduce((s, p) => s + p.revenue, 0);
-  const totalCheckIns = staffPerf.reduce((s, p) => s + p.checkIns, 0);
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-end justify-between">
-        <div className="space-y-1">
-          <Label>월</Label>
-          <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-44" />
-        </div>
-        <div className="flex gap-4 text-sm">
-          <span>총 매출: <span className="font-bold">{formatAmount(totalRevenue)}</span></span>
-          <span>총 건수: <span className="font-bold">{totalCheckIns}</span></span>
-        </div>
-      </div>
-      <Card>
-        <CardContent className="pt-4">
-          {loading ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">로딩 중…</div>
-          ) : staffPerf.length === 0 ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">데이터 없음</div>
-          ) : (
-            <div className="overflow-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-xs text-muted-foreground">
-                    <th className="pb-2 font-medium">이름</th>
-                    <th className="pb-2 font-medium">직책</th>
-                    <th className="pb-2 font-medium text-right">담당 건수</th>
-                    <th className="pb-2 font-medium text-right">배정 일수</th>
-                    <th className="pb-2 font-medium text-right">매출 기여</th>
-                    <th className="pb-2 font-medium text-right">비율</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {staffPerf.map((s) => (
-                    <tr key={s.id} className="border-b last:border-0">
-                      <td className="py-2 font-medium">{s.name}</td>
-                      <td className="py-2 text-muted-foreground">{ROLE_LABEL[s.role as Role] ?? s.role}</td>
-                      <td className="py-2 text-right tabular-nums">{s.checkIns}</td>
-                      <td className="py-2 text-right tabular-nums">{s.roomDays}일</td>
-                      <td className="py-2 text-right tabular-nums font-medium">{formatAmount(s.revenue)}</td>
-                      <td className="py-2 text-right tabular-nums text-muted-foreground">
-                        {totalRevenue > 0 ? `${Math.round((s.revenue / totalRevenue) * 100)}%` : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
