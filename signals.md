@@ -1,5 +1,25 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-08 03:10 — dev-foot | deploy-ready | T-20260507-foot-PATIENT-FLOW-E2E
+
+**오후 환자 동선 통합 테스트 E2E — 5단계 플로우 전 구현 완료**
+
+- **Step 1 건보조회**: ✅ CustomerChartPage 건보등급 드롭다운 + [건보 조회] 버튼 (CHART2-INSURANCE-FIELDS deployed de64084)
+- **Step 2 고객차트**: ✅ 2번차트 고객정보 확인 가능 (주민번호마스킹/성별/연락처/주소지/방문경로/건보등급)
+- **Step 3 영수증 출력**: ✅ DocumentPrintPanel 서류 6종 출력 (DOC-PRINT-SPEC deployed)
+- **Step 4 매출 연동**: ✅ service_charges 테이블 + calc_copayment RPC 본인부담/건보부담 분리 (INSURANCE-COPAYMENT deployed)
+- **Step 5 진료코드→세부내역서**: ✅ 
+  - services 28개 상품 시드 (service_code: LZ-HOT-01 등) — SERVICE-CATALOG-SEED Phase1+2 (c17f3cc)
+  - DocumentPrintPanel Phase3 service_code 기반 조회 (d1f5a5f)
+  - **IssueDialog '진료 항목 직접 추가'** UI 신규 — [+] 버튼 → 서비스 드롭다운 → INSERT → 세부내역서 즉시 반영 (f4113df)
+- **TypeScript**: typecheck EXIT=0 (tsc -b --noEmit)
+- **git push**: f1dfc0e..f4113df → origin/main → Vercel 자동배포 트리거 완료
+- **자동배포**: git push → Vercel (수동 단계 없음, Lovable 퇴출 5/1)
+- **DB 마이그레이션 확인 필요**: 20260508000010_services_service_code_seed.sql (services.service_code + 28개 seed) — Supabase SQL Editor 직접 적용 필요 (미적용 시 service_code 컬럼 없음)
+- status: **deploy-ready**
+
+---
+
 ## 2026-05-07 — dev-foot | deployed | T-20260504-foot-MEMO-RESTRUCTURE
 
 **예약메모/고객메모 분리 — DB 검증 + UI 완성 (대표 직접 지시)**
