@@ -225,8 +225,9 @@ export default function CustomerChartPage() {
   const [packageSessions, setPackageSessions] = useState<PackageSession[]>([]);
   const [openPackagePurchase, setOpenPackagePurchase] = useState(false);
   const [loading, setLoading] = useState(true);
-  // T-20260507-foot-CHART2-FULL-LAYOUT: 탭 네비게이션
-  const [chartTab, setChartTab] = useState<'checklist' | 'reservations' | 'payments' | 'treatments' | 'packages' | 'images'>('checklist');
+  // T-20260507-foot-CHART2-FULL-LAYOUT: 탭 네비게이션 (전능CRM 이중 탭)
+  const [chartTab, setChartTab] = useState<string>('checklist');
+  const [chartTabGroup, setChartTabGroup] = useState<'clinical' | 'history'>('clinical');
   // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 인라인 편집
   const [editingCustomerMemo, setEditingCustomerMemo] = useState(false);
   const [customerMemoText, setCustomerMemoText] = useState('');
@@ -408,279 +409,392 @@ export default function CustomerChartPage() {
     );
   }
 
-  // T-20260507-foot-CHART2-FULL-LAYOUT: 탭 정의
-  const TAB_LABELS: { key: typeof chartTab; label: string }[] = [
-    { key: 'checklist', label: '문진·동의서' },
-    { key: 'reservations', label: '예약내역' },
-    { key: 'payments', label: '수납내역' },
-    { key: 'treatments', label: '시술내역' },
-    { key: 'packages', label: '패키지' },
-    { key: 'images', label: '이미지·서류' },
+  // T-20260507-foot-CHART2-FULL-LAYOUT: 전능CRM SMARTDOCTOR 레이아웃 탭 정의
+  const CLINICAL_TABS = [
+    { key: 'checklist', label: '문진' },
+    { key: 'marks',     label: '마크류' },
+    { key: 'survey',    label: '스마트서베이' },
+    { key: 'pen_chart', label: '펜차트' },
+    { key: 'images',    label: '진료이미지' },
+    { key: 'interview', label: '면담기록지' },
+    { key: 'test_result', label: '검사결과' },
   ];
+  const HISTORY_TABS = [
+    { key: 'reservations',   label: '예약내역' },
+    { key: 'consultations',  label: '상담내역' },
+    { key: 'payments',       label: '수납내역' },
+    { key: 'treatments',     label: '시술내역' },
+    { key: 'packages',       label: '패키지' },
+    { key: 'calls',          label: '통화내역' },
+    { key: 'messages',       label: '메시지' },
+    { key: 'progress',       label: '경과내역' },
+    { key: 'referral',       label: '소개자·가족정보' },
+  ];
+  const IMPLEMENTED_CLINICAL = ['checklist', 'images'];
+  const IMPLEMENTED_HISTORY  = ['reservations', 'payments', 'treatments', 'packages'];
+
+  const handleClinicalTab = (key: string) => { setChartTab(key); setChartTabGroup('clinical'); };
+  const handleHistoryTab  = (key: string) => { setChartTab(key); setChartTabGroup('history'); };
+
+  /* ── 공통 셀 스타일 (tailwind concat 대체) ── */
+  const LC = 'bg-[#eef3f7] border-r border-b border-gray-200 px-2 py-1.5 font-medium text-[#334e65] whitespace-nowrap text-[11px] w-[90px] shrink-0';
+  const VC = 'border-b border-gray-200 px-2 py-1.5 text-xs';
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* ── 헤더 (sticky) ─────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-10 flex items-center gap-3 border-b bg-white px-4 py-2.5 shadow-sm">
-        <div className="flex-1">
-          <h1 className="text-base font-bold text-teal-700">{customer.name}</h1>
-          <div className="text-xs text-muted-foreground">{customer.chart_number ?? ''} · {customer.phone}</div>
+    <div className="min-h-screen bg-[#c8d5de] flex flex-col">
+
+      {/* ── 헤더 (전능CRM 스타일) ─────────────────────────────────────── */}
+      <header className="sticky top-0 z-20 flex items-center gap-2 border-b bg-[#1e4e6e] px-3 py-1.5 text-white shadow shrink-0">
+        <span className="text-sm font-bold tracking-tight">SMART DOCTOR — 고객정보</span>
+        <div className="flex items-center gap-2 ml-2 text-xs">
+          <span className="bg-white/20 rounded px-2 py-0.5 font-semibold">{customer.name}</span>
+          {customer.chart_number && <span className="text-white/60"># {customer.chart_number}</span>}
+          <Badge variant={customer.visit_type === 'new' ? 'teal' : 'secondary'} className="text-[10px]">
+            {VISIT_TYPE_KO[customer.visit_type as keyof typeof VISIT_TYPE_KO] ?? customer.visit_type}
+          </Badge>
         </div>
-        <button
-          onClick={() => window.print()}
-          className="rounded p-2 hover:bg-muted transition text-xs flex items-center gap-1"
-        >
-          <Printer className="h-4 w-4" /> 인쇄
-        </button>
-        <button onClick={() => window.close()} className="rounded p-2 hover:bg-muted transition">
-          <X className="h-4 w-4" />
-        </button>
+        <div className="ml-auto flex items-center gap-1.5">
+          <button onClick={() => window.print()} className="rounded px-2 py-1 text-xs bg-white/10 hover:bg-white/20 transition flex items-center gap-1">
+            <Printer className="h-3.5 w-3.5" /> 인쇄
+          </button>
+          <button onClick={() => window.close()} className="rounded px-2 py-1 text-xs bg-white/10 hover:bg-white/20 transition">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </header>
 
-      <div className="p-3 space-y-3 max-w-3xl mx-auto">
+      {/* ── 본문 (좌우 분할 패널) ─────────────────────────────────────── */}
+      <div className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 42px)' }}>
 
-        {/* ── 고객정보 패널 (2-column compact form) ───────────────────── */}
-        <div className="rounded-lg border bg-white shadow-sm overflow-hidden">
-          <div className="grid lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-muted/30">
+        {/* ════════════════════════════════════════════════════════════════ */}
+        {/* 좌측 패널 — 고객정보 (60%)                                      */}
+        {/* ════════════════════════════════════════════════════════════════ */}
+        <div className="flex flex-col overflow-hidden border-r border-gray-400 bg-white" style={{ width: '60%', minWidth: 0 }}>
 
-            {/* 왼쪽 컬럼 */}
-            <div className="px-3 py-2.5 space-y-1.5 text-xs">
-              {/* 성명 + 차트번호 + 방문유형 */}
-              <div className="flex items-center gap-2 pb-1 border-b border-muted/20">
-                <span className="text-base font-bold text-teal-800">{customer.name}</span>
-                {customer.chart_number && (
-                  <span className="rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-700">{customer.chart_number}</span>
-                )}
-                <Badge variant={customer.visit_type === 'new' ? 'teal' : 'secondary'} className="text-[10px]">
-                  {VISIT_TYPE_KO[customer.visit_type as keyof typeof VISIT_TYPE_KO] ?? customer.visit_type}
-                </Badge>
-              </div>
+          {/* 패널 서브헤더 */}
+          <div className="flex items-center gap-3 bg-[#d8e8f0] border-b border-gray-300 px-3 py-1 shrink-0">
+            <span className="text-[11px] font-semibold text-[#1e4e6e]">고객정보</span>
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              방문 <strong className="text-teal-700">{visits.length}회</strong>
+              {' · '}결제 <strong className="text-teal-700">{formatAmount(totalPaid)}</strong>
+              {' · '}패키지 <strong className="text-teal-700">{packages.length}건</strong>
+            </span>
+          </div>
 
-              {/* 주민번호 */}
-              <div className="flex gap-2">
-                <span className="text-muted-foreground w-20 shrink-0">주민번호</span>
-                <span className="font-mono text-muted-foreground/70">
-                  {customer.birth_date ? `${customer.birth_date.slice(0, 6)}-*******` : '미등록'}
-                </span>
-              </div>
+          {/* 스크롤 영역 */}
+          <div className="flex-1 overflow-y-auto">
 
-              {/* 성별 */}
-              <div className="flex gap-2 items-center">
-                <span className="text-muted-foreground w-20 shrink-0">성별</span>
-                <div className="flex gap-1">
-                  {customer.is_foreign ? (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">외국인</span>
-                  ) : customer.gender === 'M' ? (
-                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">남(M)</span>
-                  ) : customer.gender === 'F' ? (
-                    <span className="rounded-full bg-pink-100 px-2 py-0.5 text-[10px] font-medium text-pink-700">여(F)</span>
-                  ) : (
-                    <span className="text-muted-foreground">미입력</span>
-                  )}
-                </div>
-              </div>
+            {/* ── 고객정보 폼 테이블 (전능CRM 스타일) ── */}
+            <table className="w-full border-collapse text-xs">
+              <tbody>
 
-              {/* 연락처 */}
-              <div className="flex gap-2 items-center">
-                <span className="text-muted-foreground w-20 shrink-0">연락처</span>
-                <a href={`tel:${customer.phone}`} className="font-medium text-teal-700 hover:underline">
-                  {customer.phone}
-                </a>
-              </div>
-
-              {/* 주소지 — 인라인 편집 */}
-              <div className="flex items-start gap-2">
-                <span className="text-muted-foreground w-20 shrink-0 pt-0.5">주소지</span>
-                {editingAddress ? (
-                  <div className="flex-1 space-y-1.5">
-                    <Input
-                      value={addressText}
-                      onChange={(e) => setAddressText(e.target.value)}
-                      placeholder="예: 서울시 종로구 ..."
-                      className="h-7 text-xs"
-                      autoFocus
-                      onKeyDown={(e) => { if (e.key === 'Enter') saveAddress(); if (e.key === 'Escape') setEditingAddress(false); }}
-                    />
-                    <div className="flex gap-1.5">
-                      <Button size="sm" className="h-6 text-xs flex-1 bg-teal-600 hover:bg-teal-700" onClick={saveAddress} disabled={savingAddress}>
-                        {savingAddress ? '저장 중…' : '저장'}
-                      </Button>
-                      <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => { setEditingAddress(false); setAddressText(customer.address ?? ''); }}>
-                        취소
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-1 items-center gap-1.5 min-w-0">
-                    <span className={cn('flex-1 truncate font-medium', !customer.address && 'text-muted-foreground/60 font-normal')}>
-                      {customer.address ?? '미입력'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => { setEditingAddress(true); setAddressText(customer.address ?? ''); }}
-                      className="shrink-0 rounded p-1 hover:bg-muted transition text-muted-foreground hover:text-teal-700"
-                      title="주소지 편집"
-                    >
-                      <Pencil className="h-3 w-3" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* 방문경로 */}
-              <div className="flex gap-2 items-center">
-                <span className="text-muted-foreground w-20 shrink-0">방문경로</span>
-                {customer.lead_source ? (
-                  <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-medium text-teal-800">{customer.lead_source}</span>
-                ) : (
-                  <span className="text-muted-foreground/60">미입력</span>
-                )}
-              </div>
-
-              {/* 담당실장 */}
-              <div className="flex gap-2">
-                <span className="text-muted-foreground w-20 shrink-0">담당실장</span>
-                <span className="font-medium">{latestCheckIn?.consultant_id ?? '미배정'}</span>
-              </div>
-
-              {/* 특이사항 (customer_memo 요약) */}
-              <div className="flex gap-2">
-                <span className="text-muted-foreground w-20 shrink-0">특이사항</span>
-                <span className={cn('truncate', !(customer.customer_memo ?? customer.memo) && 'text-muted-foreground/60')}>
-                  {(customer.customer_memo ?? customer.memo)
-                    ? (customer.customer_memo ?? customer.memo ?? '').slice(0, 30) + ((customer.customer_memo ?? customer.memo ?? '').length > 30 ? '…' : '')
-                    : '없음'}
-                </span>
-              </div>
-            </div>
-
-            {/* 오른쪽 컬럼 */}
-            <div className="px-3 py-2.5 space-y-2 text-xs">
-              {/* 건보 조회 버튼 */}
-              <a
-                href="https://www.nhis.or.kr/nhis/minwon/wbhame03400m01.do"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-md border border-teal-300 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 hover:bg-teal-100 transition"
-              >
-                <ExternalLink className="h-3 w-3" />
-                건보 조회
-              </a>
-
-              {/* 건보 자격등급 */}
-              <InsuranceGradeSelect
-                customerId={customer.id}
-                editable
-                onChanged={() => {
-                  supabase
-                    .from('customers')
-                    .select('insurance_grade, insurance_grade_source, insurance_grade_verified_at, insurance_grade_memo')
-                    .eq('id', customer.id)
-                    .maybeSingle()
-                    .then(({ data }) => {
-                      if (data) setCustomer((prev) => prev ? { ...prev, ...data } : prev);
-                    });
-                }}
-              />
-
-              {/* 최근 방문 */}
-              <div className="flex gap-2 pt-1 border-t border-muted/20">
-                <span className="text-muted-foreground w-20 shrink-0">최근 방문</span>
-                <span className="font-medium">
-                  {latestCheckIn
-                    ? format(new Date(latestCheckIn.checked_in_at), 'yyyy-MM-dd HH:mm')
-                    : '방문이력없음'}
-                </span>
-              </div>
-
-              {/* 상담메모 (tm_memo 요약 2줄) */}
-              <div className="flex gap-2">
-                <span className="text-muted-foreground w-20 shrink-0">상담메모</span>
-                <span className={cn('line-clamp-2', !customer.tm_memo && 'text-muted-foreground/60')}>
-                  {customer.tm_memo ?? '없음'}
-                </span>
-              </div>
-
-              {/* 고객메모 인라인 편집 */}
-              <div className="pt-1 border-t border-muted/20">
-                {editingCustomerMemo ? (
-                  <div className="space-y-1.5">
-                    <Textarea
-                      ref={customerMemoRef}
-                      value={customerMemoText}
-                      onChange={(e) => setCustomerMemoText(e.target.value)}
-                      placeholder="고객 성향, 특이사항, 주차 정보 등"
-                      rows={3}
-                      className="text-xs"
-                      autoFocus
-                    />
-                    <div className="flex gap-1.5">
-                      <Button size="sm" className="h-6 text-xs flex-1 bg-teal-600 hover:bg-teal-700" onClick={saveCustomerMemo} disabled={savingCustomerMemo}>
-                        {savingCustomerMemo ? '저장 중…' : '저장'}
-                      </Button>
-                      <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => { setEditingCustomerMemo(false); setCustomerMemoText(customer.customer_memo ?? ''); }}>
-                        취소
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-start gap-1.5">
-                    <div className="flex-1">
-                      <div className="text-muted-foreground mb-0.5">고객메모</div>
-                      {(customer.customer_memo ?? customer.memo) ? (
-                        <div className="whitespace-pre-wrap text-muted-foreground line-clamp-3">{customer.customer_memo ?? customer.memo}</div>
-                      ) : (
-                        <span className="text-muted-foreground/60">메모 없음</span>
+                {/* ① 고객명 + 검증 + 고객번호 */}
+                <tr>
+                  <td className={LC}>고객명</td>
+                  <td className={VC} colSpan={3}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-sm text-gray-900">{customer.name}</span>
+                      <span className="rounded border border-blue-300 bg-blue-50 text-blue-700 px-1.5 py-0.5 text-[10px] cursor-default select-none">검증</span>
+                      {customer.chart_number && (
+                        <span className="text-[11px] text-muted-foreground">
+                          고객번호: <strong className="text-gray-700">{customer.chart_number}</strong>
+                        </span>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => { setEditingCustomerMemo(true); setCustomerMemoText(customer.customer_memo ?? customer.memo ?? ''); }}
-                      className="shrink-0 rounded p-1 hover:bg-muted transition text-muted-foreground hover:text-teal-700"
-                      title="고객메모 편집"
-                    >
-                      <Pencil className="h-3 w-3" />
-                    </button>
-                  </div>
-                )}
+                  </td>
+                </tr>
+
+                {/* ② 주민번호 */}
+                <tr>
+                  <td className={LC}>주민번호</td>
+                  <td className={VC} colSpan={3}>
+                    <span className="font-mono text-gray-600">
+                      {customer.birth_date ? customer.birth_date.slice(0, 6) : '______'}&nbsp;-&nbsp;*******
+                    </span>
+                  </td>
+                </tr>
+
+                {/* ③ 성별 (라디오 스타일) */}
+                <tr>
+                  <td className={LC}>성별</td>
+                  <td className={VC} colSpan={3}>
+                    <div className="flex items-center gap-4">
+                      {[
+                        { val: 'M',       label: '남성' },
+                        { val: 'F',       label: '여성' },
+                        { val: 'foreign', label: '외국인' },
+                      ].map(({ val, label }) => {
+                        const sel = val === 'foreign'
+                          ? customer.is_foreign
+                          : (!customer.is_foreign && customer.gender === val);
+                        return (
+                          <span key={val} className="flex items-center gap-1 cursor-default">
+                            <span className={cn(
+                              'h-3.5 w-3.5 rounded-full border-2 flex items-center justify-center',
+                              sel ? 'border-blue-600' : 'border-gray-400',
+                            )}>
+                              {sel && <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />}
+                            </span>
+                            <span className={sel ? 'font-medium text-blue-700' : 'text-gray-600'}>{label}</span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </td>
+                </tr>
+
+                {/* ④ 휴대폰 + 개인정보동의/문자수신거부 */}
+                <tr>
+                  <td className={LC}>휴대폰</td>
+                  <td className={cn(VC, 'border-r border-gray-200 w-[130px]')}>
+                    <a href={`tel:${customer.phone}`} className="font-medium text-teal-700 hover:underline">{customer.phone}</a>
+                  </td>
+                  <td className={cn(LC, 'w-auto')}>개인정보동의</td>
+                  <td className={VC}>
+                    <div className="flex items-center gap-3">
+                      {[
+                        { label: '동의', checked: checklistEntries.some(cl => !!(cl.checklist_data as Record<string, unknown>)?.agree_privacy) },
+                        { label: '문자수신거부', checked: false },
+                      ].map(({ label, checked }) => (
+                        <span key={label} className="flex items-center gap-1">
+                          <span className={cn(
+                            'h-3 w-3 border rounded-sm flex items-center justify-center text-[8px]',
+                            checked ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-400',
+                          )}>
+                            {checked && '✓'}
+                          </span>
+                          <span className="text-[11px]">{label}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+
+                {/* ⑤ 전화번호 + 광고성 문자 수신 미동의 */}
+                <tr>
+                  <td className={LC}>전화번호</td>
+                  <td className={cn(VC, 'border-r border-gray-200')}>
+                    <span className="text-muted-foreground/50 text-[11px]">미등록</span>
+                  </td>
+                  <td className={VC} colSpan={2}>
+                    <span className="flex items-center gap-1">
+                      <span className="h-3 w-3 border border-gray-400 rounded-sm shrink-0" />
+                      <span className="text-[11px]">광고성 문자 수신 미동의</span>
+                    </span>
+                  </td>
+                </tr>
+
+                {/* ⑥ 이메일/여권 */}
+                <tr>
+                  <td className={LC}>이메일/여권</td>
+                  <td className={VC} colSpan={3}>
+                    <span className="text-muted-foreground/50 text-[11px]">미등록</span>
+                  </td>
+                </tr>
+
+                {/* ⑦ 고객등급 */}
+                <tr>
+                  <td className={LC}>고객등급</td>
+                  <td className={VC} colSpan={3}>
+                    <span className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-700 cursor-default">
+                      {customer.lead_source ?? '일반'}
+                      <span className="text-gray-400 text-[9px]">▾</span>
+                    </span>
+                  </td>
+                </tr>
+
+                {/* ⑧ 우편번호 + 담당자 */}
+                <tr>
+                  <td className={LC}>우편번호</td>
+                  <td className={cn(VC, 'border-r border-gray-200')}>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        placeholder="우편번호"
+                        readOnly
+                        className="w-20 h-5 text-[11px] rounded border border-gray-300 px-1.5 bg-gray-50 cursor-default focus:outline-none"
+                      />
+                      <span className="rounded border border-gray-300 bg-white text-[10px] text-gray-500 px-1.5 py-0.5 cursor-not-allowed select-none">검색</span>
+                    </div>
+                  </td>
+                  <td className={cn(LC, 'w-auto')}>담당자</td>
+                  <td className={VC}>
+                    <span className="text-[11px]">{latestCheckIn?.consultant_id ?? '미배정'}</span>
+                  </td>
+                </tr>
+
+                {/* ⑨ 주소 (인라인 편집) */}
+                <tr>
+                  <td className={LC}>주소</td>
+                  <td className={VC} colSpan={3}>
+                    {editingAddress ? (
+                      <div className="flex items-center gap-1">
+                        <Input
+                          value={addressText}
+                          onChange={(e) => setAddressText(e.target.value)}
+                          placeholder="주소를 입력하세요"
+                          className="h-6 text-xs flex-1"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') saveAddress();
+                            if (e.key === 'Escape') { setEditingAddress(false); setAddressText(customer.address ?? ''); }
+                          }}
+                        />
+                        <Button size="sm" className="h-6 text-[10px] px-2 bg-teal-600 hover:bg-teal-700 shrink-0" onClick={saveAddress} disabled={savingAddress}>저장</Button>
+                        <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 shrink-0" onClick={() => { setEditingAddress(false); setAddressText(customer.address ?? ''); }}>취소</Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 min-w-0">
+                        <span className={cn('flex-1 truncate', !customer.address && 'text-muted-foreground/50 text-[11px]')}>
+                          {customer.address ?? '미입력'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => { setEditingAddress(true); setAddressText(customer.address ?? ''); }}
+                          className="shrink-0 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-teal-700"
+                          title="주소 편집"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+
+                {/* ⑩ 특이 (1/2/3단계) + 담당자 */}
+                <tr>
+                  <td className={LC}>특이</td>
+                  <td className={cn(VC, 'border-r border-gray-200')}>
+                    <div className="flex items-center gap-3">
+                      {['1단계', '2단계', '3단계'].map((level) => (
+                        <span key={level} className="flex items-center gap-1 cursor-default">
+                          <span className="h-3.5 w-3.5 rounded-full border-2 border-gray-400" />
+                          <span className="text-[11px] text-gray-600">{level}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className={cn(LC, 'w-auto')}>담당자</td>
+                  <td className={VC}>
+                    <span className="text-muted-foreground/50 text-[11px]">미배정</span>
+                  </td>
+                </tr>
+
+                {/* ⑪ 방문경로 */}
+                <tr>
+                  <td className={LC}>방문경로</td>
+                  <td className={VC} colSpan={3}>
+                    <span className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-700 cursor-default">
+                      {customer.lead_source ?? '선택'}
+                      <span className="text-gray-400 text-[9px]">▾</span>
+                    </span>
+                  </td>
+                </tr>
+
+                {/* ⑫ 고객메모 (인라인 편집) */}
+                <tr>
+                  <td className={cn(LC, 'align-top pt-2 border-b-0')}>고객메모</td>
+                  <td className={cn(VC, 'border-b-0')} colSpan={3}>
+                    {editingCustomerMemo ? (
+                      <div className="space-y-1">
+                        <Textarea
+                          ref={customerMemoRef}
+                          value={customerMemoText}
+                          onChange={(e) => setCustomerMemoText(e.target.value)}
+                          placeholder="고객 성향, 특이사항, 주차 정보 등"
+                          rows={3}
+                          className="text-xs"
+                          autoFocus
+                        />
+                        <div className="flex gap-1">
+                          <Button size="sm" className="h-6 text-xs bg-teal-600 hover:bg-teal-700" onClick={saveCustomerMemo} disabled={savingCustomerMemo}>
+                            {savingCustomerMemo ? '저장 중…' : '저장'}
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => { setEditingCustomerMemo(false); setCustomerMemoText(customer.customer_memo ?? ''); }}>
+                            취소
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-1 min-h-[40px]">
+                        <div className="flex-1">
+                          {(customer.customer_memo ?? customer.memo) ? (
+                            <div className="text-xs whitespace-pre-wrap text-gray-700 line-clamp-4">{customer.customer_memo ?? customer.memo}</div>
+                          ) : (
+                            <span className="text-muted-foreground/50 text-[11px]">메모 없음</span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { setEditingCustomerMemo(true); setCustomerMemoText(customer.customer_memo ?? customer.memo ?? ''); }}
+                          className="shrink-0 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-teal-700"
+                          title="고객메모 편집"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+
+              </tbody>
+            </table>
+
+            {/* ─ 탭 열 1 (문진 / 진료 탭) ─────────────────────────────── */}
+            <div className="border-t-2 border-gray-300 shrink-0">
+              <div className="flex overflow-x-auto bg-[#d8e8f0]">
+                {CLINICAL_TABS.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => handleClinicalTab(key)}
+                    className={cn(
+                      'shrink-0 px-3 py-1.5 text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition',
+                      chartTabGroup === 'clinical' && chartTab === key
+                        ? 'bg-white text-teal-700 font-semibold shadow-sm'
+                        : 'text-[#334e65] hover:bg-white/60',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* ── 통계 바 (inline) ─────────────────────────────────────────── */}
-        <div className="flex items-center gap-4 rounded-lg bg-muted/30 px-3 py-2 text-xs font-medium">
-          <span>총 방문 <strong className="text-teal-700">{visits.length}회</strong></span>
-          <span className="text-muted-foreground/40">|</span>
-          <span>총 결제 <strong className="text-teal-700">{formatAmount(totalPaid)}</strong></span>
-          <span className="text-muted-foreground/40">|</span>
-          <span>패키지 <strong className="text-teal-700">{packages.length}건</strong></span>
-        </div>
+            {/* ─ 탭 열 2 (이력 탭) ─────────────────────────────────────── */}
+            <div className="border-b border-gray-300 shrink-0">
+              <div className="flex overflow-x-auto bg-[#e4eef4]">
+                {HISTORY_TABS.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => handleHistoryTab(key)}
+                    className={cn(
+                      'shrink-0 px-3 py-1.5 text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition',
+                      chartTabGroup === 'history' && chartTab === key
+                        ? 'bg-white text-teal-700 font-semibold shadow-sm'
+                        : 'text-[#334e65] hover:bg-white/60',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        {/* ── 탭 네비게이션 ────────────────────────────────────────────── */}
-        <div className="flex overflow-x-auto gap-0.5 border-b border-muted/40 pb-0 -mb-0.5">
-          {TAB_LABELS.map(({ key, label }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setChartTab(key)}
-              className={cn(
-                'shrink-0 px-3 py-2 text-xs font-medium border-b-2 transition whitespace-nowrap',
-                chartTab === key
-                  ? 'border-teal-600 text-teal-700 bg-teal-50/60'
-                  : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30',
+            {/* ─ 탭 콘텐츠 ─────────────────────────────────────────────── */}
+            <div className="p-3 space-y-3">
+
+              {/* 준비 중 탭 공통 */}
+              {((chartTabGroup === 'clinical' && !IMPLEMENTED_CLINICAL.includes(chartTab)) ||
+                (chartTabGroup === 'history'  && !IMPLEMENTED_HISTORY.includes(chartTab))) && (
+                <div className="flex items-center justify-center py-10 text-sm text-muted-foreground border border-dashed rounded-lg">
+                  준비 중 — 추후 구현 예정
+                </div>
               )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
 
-        {/* ── 탭 콘텐츠 ───────────────────────────────────────────────── */}
-        <div className="space-y-3">
-
-          {/* 탭: 문진·동의서 */}
-          {chartTab === 'checklist' && (
+              {/* Clinical: 문진·동의서 */}
+              {chartTabGroup === 'clinical' && chartTab === 'checklist' && (
             <div className="space-y-3">
               {/* 사전 체크리스트 응답 */}
               {checklistEntries.length > 0 && (
@@ -804,8 +918,8 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-          {/* 탭: 예약내역 */}
-          {chartTab === 'reservations' && (
+              {/* History: 예약내역 */}
+              {chartTabGroup === 'history' && chartTab === 'reservations' && (
             <div className="space-y-3">
               {/* 예약 목록 */}
               <div className="rounded-lg border bg-white p-3 text-xs space-y-1.5">
@@ -837,8 +951,8 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-          {/* 탭: 수납내역 */}
-          {chartTab === 'payments' && (
+              {/* History: 수납내역 */}
+              {chartTabGroup === 'history' && chartTab === 'payments' && (
             <div className="space-y-3">
               {/* 일반 결제 */}
               <div className="rounded-lg border bg-white p-3 text-xs">
@@ -918,8 +1032,8 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-          {/* 탭: 시술내역 */}
-          {chartTab === 'treatments' && (
+              {/* History: 시술내역 */}
+              {chartTabGroup === 'history' && chartTab === 'treatments' && (
             <div className="space-y-3">
               {/* 원장소견 */}
               {checkInHistory.filter((ci) => ci.doctor_note).length > 0 && (
@@ -999,8 +1113,8 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-          {/* 탭: 패키지 */}
-          {chartTab === 'packages' && (
+              {/* History: 패키지 */}
+              {chartTabGroup === 'history' && chartTab === 'packages' && (
             <div className="space-y-3">
               {/* 치료플랜 요약 테이블 */}
               <div className="rounded-lg border bg-white p-3 text-xs">
@@ -1128,8 +1242,8 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-          {/* 탭: 이미지·서류 */}
-          {chartTab === 'images' && (
+              {/* Clinical: 진료이미지·서류 */}
+              {chartTabGroup === 'clinical' && chartTab === 'images' && (
             <div className="space-y-3">
               {/* 상담실장 영역 */}
               <div className="rounded-lg border bg-white p-3 text-xs">
@@ -1177,8 +1291,106 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-        </div>
-      </div>
+            </div>{/* /tab-content */}
+          </div>{/* /scrollable-area */}
+        </div>{/* /left-panel */}
+
+        {/* ════════════════════════════════════════════════════════════════ */}
+        {/* 우측 패널 — 건보 + 예약 + 통계 (40%)                            */}
+        {/* ════════════════════════════════════════════════════════════════ */}
+        <div className="flex flex-col overflow-y-auto bg-white" style={{ width: '40%' }}>
+
+          {/* 패널 서브헤더 */}
+          <div className="bg-[#d8e8f0] border-b border-gray-300 px-3 py-1 shrink-0">
+            <span className="text-[11px] font-semibold text-[#1e4e6e]">건강보험 · 예약 정보</span>
+          </div>
+
+          {/* 건보 조회 + 자격등급 */}
+          <div className="border-b border-gray-200 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-[#1e4e6e]">건강보험 자격등급</span>
+              <a
+                href="https://www.nhis.or.kr/nhis/minwon/wbhame03400m01.do"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-2 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100 transition"
+              >
+                <ExternalLink className="h-3 w-3" /> 건보 조회
+              </a>
+            </div>
+            <InsuranceGradeSelect
+              customerId={customer.id}
+              editable
+              onChanged={() => {
+                supabase
+                  .from('customers')
+                  .select('insurance_grade, insurance_grade_source, insurance_grade_verified_at, insurance_grade_memo')
+                  .eq('id', customer.id)
+                  .maybeSingle()
+                  .then(({ data }) => {
+                    if (data) setCustomer((prev) => prev ? { ...prev, ...data } : prev);
+                  });
+              }}
+            />
+          </div>
+
+          {/* 최근 방문 */}
+          <div className="border-b border-gray-200 px-3 py-2">
+            <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1">최근 방문</div>
+            <div className="text-xs text-gray-700">
+              {latestCheckIn
+                ? format(new Date(latestCheckIn.checked_in_at), 'yyyy-MM-dd HH:mm')
+                : '방문 이력 없음'}
+            </div>
+          </div>
+
+          {/* 상담메모 */}
+          {customer.tm_memo && (
+            <div className="border-b border-gray-200 px-3 py-2">
+              <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1">상담메모</div>
+              <div className="text-xs text-gray-700 whitespace-pre-wrap line-clamp-6">{customer.tm_memo}</div>
+            </div>
+          )}
+
+          {/* 예약 목록 */}
+          <div className="border-b border-gray-200 px-3 py-2">
+            <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1.5">예약내역</div>
+            {reservations.length === 0 ? (
+              <div className="text-[11px] text-muted-foreground">예약 없음</div>
+            ) : (
+              <div className="space-y-1">
+                {reservations.slice(0, 6).map((r) => (
+                  <div key={r.id} className="flex items-center justify-between text-[11px]">
+                    <span className="text-gray-700">{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
+                    <Badge variant="secondary" className="text-[10px] px-1.5">{r.status}</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 수납 통계 */}
+          <div className="px-3 py-2">
+            <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1.5">수납 통계</div>
+            <div className="space-y-1 text-[11px]">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">총 방문</span>
+                <strong className="text-teal-700">{visits.length}회</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">총 결제</span>
+                <strong className="text-teal-700">{formatAmount(totalPaid)}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">패키지</span>
+                <strong className="text-teal-700">{packages.length}건</strong>
+              </div>
+            </div>
+          </div>
+
+        </div>{/* /right-panel */}
+
+      </div>{/* /main-flex */}
 
       {/* T-20260507-foot-PKG-TEMPLATE-REDESIGN: 구입 티켓 추가 다이얼로그 */}
       {openPackagePurchase && customer && (
