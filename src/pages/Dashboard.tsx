@@ -239,10 +239,7 @@ function DraggableCard({
     data: { checkIn },
   });
   const timeRef = stageStart ?? checkIn.checked_in_at;
-  const mins = elapsedMinutes(timeRef);
   const mmss = elapsedMMSS(timeRef);
-  const isLaserOvertime = checkIn.status === 'laser' && mins >= 20;
-
   const style: React.CSSProperties = {
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
     opacity: isDragging ? 0.3 : 1,
@@ -250,8 +247,7 @@ function DraggableCard({
     touchAction: 'none',
   };
 
-  // T-20260507-REMOVE-AUTO-COLOR: 시간 기반 자동 색 변경 삭제. 수동 STATUS-COLOR-FLAG만 사용.
-  // urgency 제거 — isLaserOvertime은 알림 전용으로 유지
+  // T-20260507-REMOVE-AUTO-COLOR: 시간 기반 자동 색 변경 완전 삭제. 수동 STATUS-COLOR-FLAG만 사용.
   const flagBg = checkIn.status_flag && checkIn.status_flag !== 'white'
     ? STATUS_FLAG_CARD_BG[checkIn.status_flag]
     : '';
@@ -340,7 +336,7 @@ function DraggableCard({
           </div>
         )}
         <div className="mt-0.5 flex items-center justify-between text-xs text-muted-foreground">
-          <span className={cn('tabular-nums font-mono', (mins >= 30 || isLaserOvertime) && 'font-semibold text-red-600')}>
+          <span className="tabular-nums font-mono text-muted-foreground">
             <Clock className="inline h-2.5 w-2.5 mr-0.5" />
             {mmss}
           </span>
@@ -455,7 +451,7 @@ function DraggableCard({
       )}
       {/* 경과 시간 + 현진행단계 — 폰트 text-[10px] 축소 */}
       <div className="mt-0.5 flex items-center justify-between text-[10px]">
-        <span className={cn('text-muted-foreground tabular-nums font-mono', (mins >= 30 || isLaserOvertime) && 'font-semibold text-red-600')}>
+        <span className="text-muted-foreground tabular-nums font-mono">
           {mmss} {stageStart ? STATUS_KO[checkIn.status] ?? '경과' : '대기'}
         </span>
         <div className="flex items-center gap-0.5">
