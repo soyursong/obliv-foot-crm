@@ -40,6 +40,16 @@ interface CustomerStats {
 
 const LEAD_SOURCE_OPTIONS: LeadSource[] = ['TM', '인바운드', '워크인', '지인소개', '온라인', '기타'];
 
+const PAGE_SIZE = 30;
+
+/** 페이지네이션 버튼 번호 목록 생성 (숫자 | '…') */
+function getPageNumbers(current: number, total: number): (number | '…')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  if (current <= 4) return [1, 2, 3, 4, 5, '…', total];
+  if (current >= total - 3) return [1, '…', total - 4, total - 3, total - 2, total - 1, total];
+  return [1, '…', current - 1, current, current + 1, '…', total];
+}
+
 /** 2번차트(미니홈피)를 새 창으로 열기 */
 function openChart(customerId: string) {
   window.open(
@@ -61,30 +71,35 @@ export default function Customers() {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [openCreate, setOpenCreate] = useState(false);
   const [statsMap, setStatsMap] = useState<Map<string, CustomerStats>>(new Map());
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navStateConsumed = useRef(false);
 
   const runSearch = useCallback(
-    async (q: string) => {
+    async (q: string, pageNum = 1) => {
       if (!clinic) return;
       const trimmed = q.trim();
       setLoading(true);
+      const from = (pageNum - 1) * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
       let req = supabase
         .from('customers')
-        .select('*')
+        .select('*', { count: 'exact' })
         .eq('clinic_id', clinic.id)
         .order('updated_at', { ascending: false })
-        .limit(30);
+        .range(from, to);
       if (trimmed) {
         const safe = trimmed.replace(/[%_(),.]/g, '');
         if (safe) req = req.or(`name.ilike.%${safe}%,phone.ilike.%${safe}%,birth_date.ilike.%${safe}%,chart_number.ilike.%${safe}%`);
       }
-      const { data, error } = await req;
+      const { data, error, count } = await req;
       setLoading(false);
       if (error) {
         toast.error('검색 실패');
         return;
       }
+      setTotalCount(count ?? 0);
       const customers = (data ?? []) as Customer[];
       setResults(customers);
 
@@ -143,12 +158,18 @@ export default function Customers() {
 
   useEffect(() => {
     if (!clinic) return;
+    setPage(1);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => runSearch(query), 250);
+    debounceRef.current = setTimeout(() => runSearch(query, 1), 250);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [query, clinic, runSearch]);
+
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+    runSearch(query, newPage);
+  };
 
   // 대시보드 고객차트 바로가기 → location.state.openCustomerId → 2번차트(미니홈피) 새 창
   // T-20260506-foot-CHART-CONSOLIDATE: CustomerDetailSheet 열기 → openChart로 교체
@@ -175,8 +196,12 @@ export default function Customers() {
     const { error } = await supabase.from('customers').delete().eq('id', c.id);
     if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
     toast.success(`${c.name}님 삭제됨`);
-    runSearch(query);
+    runSearch(query, page);
   };
+
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  const rangeFrom = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeTo = Math.min(page * PAGE_SIZE, totalCount);
 
   return (
     <div className="flex h-full flex-col p-6">
@@ -190,10 +215,18 @@ export default function Customers() {
             className="pl-9"
           />
         </div>
-        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <ExternalLink className="h-3.5 w-3.5 text-teal-500" />
-          행 클릭 → 고객차트(2번) 새 창
-        </span>
+        <div className="flex items-center gap-3">
+          {totalCount > 0 && (
+            <span className="text-xs text-muted-foreground tabular-nums">
+              전체 <span className="font-medium text-foreground">{totalCount}</span>명 중{' '}
+              {rangeFrom}–{rangeTo}
+            </span>
+          )}
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <ExternalLink className="h-3.5 w-3.5 text-teal-500" />
+            행 클릭 → 고객차트(2번) 새 창
+          </span>
+        </div>
         <Button onClick={() => setOpenCreate(true)} className="gap-1">
           <Plus className="h-4 w-4" /> 신규 고객
         </Button>
@@ -287,13 +320,57 @@ export default function Customers() {
         </table>
       </div>
 
+      {/* 페이지네이션 */}
+      {totalPages > 1 && (
+        <div className="mt-3 flex items-center justify-center gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handlePageChange(page - 1)}
+            disabled={page === 1 || loading}
+            className="h-8 px-3 text-xs"
+          >
+            이전
+          </Button>
+          {getPageNumbers(page, totalPages).map((p, idx) =>
+            p === '…' ? (
+              <span key={`ellipsis-${idx}`} className="px-1 text-xs text-muted-foreground select-none">
+                …
+              </span>
+            ) : (
+              <Button
+                key={p}
+                variant={p === page ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => handlePageChange(p as number)}
+                disabled={loading}
+                className={`h-8 min-w-[32px] px-2 text-xs ${
+                  p === page ? 'bg-teal-600 hover:bg-teal-700 border-teal-600' : ''
+                }`}
+              >
+                {p}
+              </Button>
+            ),
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handlePageChange(page + 1)}
+            disabled={page === totalPages || loading}
+            className="h-8 px-3 text-xs"
+          >
+            다음
+          </Button>
+        </div>
+      )}
+
       {/* T-20260506-foot-CHART-CONSOLIDATE: CustomerDetailSheet 폐지 → 수정 전용 다이얼로그 */}
       <EditCustomerDialog
         customer={editingCustomer}
         onOpenChange={(o) => { if (!o) setEditingCustomer(null); }}
         onUpdated={() => {
           setEditingCustomer(null);
-          runSearch(query);
+          runSearch(query, page);
         }}
       />
 
@@ -303,7 +380,8 @@ export default function Customers() {
         onOpenChange={setOpenCreate}
         onCreated={() => {
           setOpenCreate(false);
-          runSearch(query);
+          setPage(1);
+          runSearch(query, 1);
         }}
       />
     </div>
