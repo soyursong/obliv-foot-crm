@@ -1,5 +1,20 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-08 — dev-foot | deploy-ready | T-20260507-foot-RECEIPT-POSITION-VERIFY
+
+**진료비영수증 위치 변경 현장 미반영 확인 + 코드 재검증 완료**
+
+- **코드 확인**: InsuranceDocPanel.tsx `grid grid-cols-2 gap-3` — 경과분析지(좌) + 진료비영수증(우) 나란히 배치 ✅
+- **커밋**: 863a2b0 (2026-05-07 22:57 KST) — "fix(foot): RECEIPT-POSITION-VERIFY 영수증위치 + REMOVE-AUTO-COLOR 자동색 삭제"
+- **타입체크**: ✅ tsc --noEmit EXIT:0 (에러 0건)
+- **git 상태**: origin/main 이미 동기화 완료 (branch is up to date)
+- **Vercel**: origin/main 반영 → 자동 배포 완료
+- **조치 사항**: SIMPLE-CHART-POLISH 항목10 코드 이미 정상 반영. 현장 브라우저 캐시 초기화(Ctrl+Shift+R) 안내 필요.
+- **responder 전달 필요**: 김주연 C0ATE5P6JTH 스레드 1778154954.145889 — "진료비영수증이 경과분析지 옆에 박스로 배치 완료. 브라우저 강제 새로고침(Ctrl+Shift+R) 후 확인 부탁드립니다 🙏"
+- **status**: deploy-ready
+
+---
+
 ## 2026-05-08 03:20 — supervisor | QA PASS + deployed | T-20260507-foot-PATIENT-FLOW-E2E
 
 - **빌드**: ✅ tsc --noEmit EXIT:0 (에러 0개), Vercel last-modified 03:08 KST (f4113df 반영 확인)
