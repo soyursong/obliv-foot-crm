@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Pencil, Check, X } from 'lucide-react';
+import { Plus, Pencil, Check, X, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -31,7 +32,7 @@ const SERVICE_TYPE_LABEL: Record<Service['service_type'], string> = {
   addon: '추가',
 };
 
-const CATEGORY_OPTIONS = ['레이저', '수액', '사전처치', '상담', '기타'];
+const CATEGORY_OPTIONS = ['레이저', '수액', '사전처치', '풋케어', '상담', '검사', '풋화장품', '기타'];
 
 export default function Services() {
   const clinic = useClinic();
@@ -42,6 +43,27 @@ export default function Services() {
   const [loading, setLoading] = useState(true);
   const [openCreate, setOpenCreate] = useState(false);
   const [editTarget, setEditTarget] = useState<Service | null>(null);
+
+  // 엑셀 내보내기 (T-20260507-foot-SERVICE-CATALOG-SEED Phase 2)
+  const exportExcel = () => {
+    const data = rows.map((s) => ({
+      상품코드: s.service_code ?? '',
+      상품명: s.name,
+      대분류: s.category,
+      단가: s.price,
+      할인가: s.discount_price ?? '',
+      수가코드: s.hira_code ?? '',
+      실비여부: s.is_insurance_covered ? 'Y' : 'N',
+      유형: SERVICE_TYPE_LABEL[s.service_type],
+      VAT: VAT_LABEL[s.vat_type],
+      상태: s.active ? '활성' : '비활성',
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '판매상품');
+    XLSX.writeFile(wb, `풋센터_판매상품_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success('엑셀 내보내기 완료');
+  };
 
   const fetchServices = useCallback(async () => {
     if (!clinic) return;
@@ -73,11 +95,16 @@ export default function Services() {
     <div className="flex h-full flex-col p-6">
       <div className="mb-4 flex items-center justify-between gap-4">
         <h1 className="text-lg font-bold">서비스 관리</h1>
-        {isAdmin && (
-          <Button onClick={() => setOpenCreate(true)} className="gap-1">
-            <Plus className="h-4 w-4" /> 서비스 추가
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={exportExcel} className="gap-1 text-sm">
+            <Download className="h-4 w-4" /> 엑셀 내보내기
           </Button>
-        )}
+          {isAdmin && (
+            <Button onClick={() => setOpenCreate(true)} className="gap-1">
+              <Plus className="h-4 w-4" /> 서비스 추가
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto rounded-lg border bg-background">
@@ -87,6 +114,7 @@ export default function Services() {
           <table className="w-full text-sm">
             <thead className="bg-muted/60 text-xs text-muted-foreground">
               <tr>
+                <th className="px-3 py-2 text-left font-medium">상품코드</th>
                 <th className="px-4 py-2 text-left font-medium">서비스명</th>
                 <th className="px-4 py-2 text-left font-medium">카테고리</th>
                 <th className="px-4 py-2 text-right font-medium">가격</th>
@@ -101,6 +129,7 @@ export default function Services() {
             <tbody>
               {rows.map((svc) => (
                 <tr key={svc.id} className={cn('border-t', !svc.active && 'opacity-50')}>
+                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{svc.service_code ?? '—'}</td>
                   <td className="px-4 py-2 font-medium">{svc.name}</td>
                   <td className="px-4 py-2 text-muted-foreground">{svc.category}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{formatAmount(svc.price)}</td>
@@ -143,7 +172,7 @@ export default function Services() {
               ))}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={isAdmin ? 9 : 8} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                  <td colSpan={isAdmin ? 10 : 9} className="px-4 py-10 text-center text-sm text-muted-foreground">
                     등록된 서비스가 없습니다
                   </td>
                 </tr>

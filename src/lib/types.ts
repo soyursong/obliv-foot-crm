@@ -157,6 +157,8 @@ export interface Service {
   active: boolean;
   sort_order: number;
   created_at: string;
+  // 판매상품 코드 (T-20260507-foot-SERVICE-CATALOG-SEED)
+  service_code?: string | null;
   // 건보 본인부담 산출 (T-20260504-foot-INSURANCE-COPAYMENT)
   is_insurance_covered?: boolean | null;
   hira_code?: string | null;
