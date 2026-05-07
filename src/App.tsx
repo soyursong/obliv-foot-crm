@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
@@ -37,6 +37,11 @@ function PageLoader() {
   );
 }
 
+/** 셀프체크인 고객화면: 브라운/베이지 테마 래퍼 (CRM 관리화면과 테마 분리) */
+function ThemeBrown({ children }: { children: ReactNode }) {
+  return <div className="theme-brown">{children}</div>;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -47,9 +52,9 @@ function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
-              <Route path="/checkin/:clinicSlug" element={<SelfCheckIn />} />
-              <Route path="/checklist/:checkInId" element={<TabletChecklistPage />} />
-              <Route path="/waiting/:clinicSlug" element={<Waiting />} />
+              <Route path="/checkin/:clinicSlug" element={<ThemeBrown><SelfCheckIn /></ThemeBrown>} />
+              <Route path="/checklist/:checkInId" element={<ThemeBrown><TabletChecklistPage /></ThemeBrown>} />
+              <Route path="/waiting/:clinicSlug" element={<ThemeBrown><Waiting /></ThemeBrown>} />
               <Route path="/chart/:customerId" element={
                 <ProtectedRoute>
                   <CustomerChartPage />

@@ -1742,11 +1742,11 @@ function PackagePurchaseFromTemplateDialog({
             <div className="text-xs font-semibold text-gray-500">수액</div>
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1">
-                <label className="text-xs text-gray-500">회사</label>
+                <label className="text-xs text-gray-500">수액명</label>
                 <input
                   value={ivCompany}
                   onChange={(e) => setIvCompany(e.target.value)}
-                  placeholder="HK이노엔"
+                  placeholder="수액명"
                   className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
               </div>
@@ -1818,12 +1818,12 @@ function PackagePurchaseFromTemplateDialog({
 
           {/* 메모 */}
           <div className="space-y-1">
-            <label className="text-xs font-medium text-gray-500">메모 (수액종류, 업그레이드 추가사항 등)</label>
+            <label className="text-xs font-medium text-gray-500">메모</label>
             <textarea
               value={memo}
               onChange={(e) => setMemo(e.target.value)}
               rows={2}
-              placeholder="예: HK이노엔 글루타치온 + 6000샷 기본 포함"
+              placeholder="메모"
               className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 resize-none"
             />
           </div>
