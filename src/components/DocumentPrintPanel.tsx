@@ -820,6 +820,15 @@ function TemplateSection({
 
 // ─── 단건 발행 다이얼로그 ───
 
+/** 서비스 항목 (T-20260507-foot-SERVICE-CATALOG-SEED Phase 3) */
+interface ServiceChargeItem {
+  service_code: string | null;
+  name: string;
+  amount: number;
+  hira_code: string | null;
+  is_insurance_covered: boolean;
+}
+
 function IssueDialog({
   template,
   checkIn,
@@ -848,10 +857,33 @@ function IssueDialog({
   const [previewOpen, setPreviewOpen] = useState(false);
   // 복수 원장님일 때 선택 상태 (단일이면 자동 설정됨)
   const [selectedDoctorName, setSelectedDoctorName] = useState<string>('');
+  // Phase 3: 서비스 항목 (진료 코드 참조)
+  const [serviceItems, setServiceItems] = useState<ServiceChargeItem[]>([]);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+
+    // 서비스 항목 조회 (service_charges JOIN services — T-20260507-SERVICE-CATALOG-SEED Phase 3)
+    supabase
+      .from('service_charges')
+      .select('base_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code)')
+      .eq('check_in_id', checkIn.id)
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        const items: ServiceChargeItem[] = data.map((c) => {
+          const svc = Array.isArray(c.service) ? c.service[0] : c.service;
+          return {
+            service_code: svc?.service_code ?? null,
+            name: svc?.name ?? '(알 수 없음)',
+            amount: c.base_amount ?? 0,
+            hira_code: svc?.hira_code ?? null,
+            is_insurance_covered: c.is_insurance_covered ?? false,
+          };
+        });
+        setServiceItems(items);
+      });
+
 
     // 원장님 이름 결정
     // - 1명: 자동 세팅 (이미 loadAutoBindContext에서 처리됨)
@@ -874,6 +906,7 @@ function IssueDialog({
 
     return () => {
       cancelled = true;
+      setServiceItems([]);
     };
   }, [open, checkIn, dutyDoctors]);
 
@@ -1025,6 +1058,37 @@ function IssueDialog({
                     양식 오버레이 좌표가 아직 설정되지 않았습니다. 원장님 검토 후 설정됩니다.
                     지금은 원본 양식 위에 데이터가 표시되지 않지만, 데이터는 정상 기록됩니다.
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* 진료 항목 참조 (T-20260507-SERVICE-CATALOG-SEED Phase 3) */}
+            {serviceItems.length > 0 && (
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-1.5">
+                <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <FileText className="h-3 w-3" /> 진료 항목 (진료비 코드 참조)
+                </div>
+                <div className="space-y-1">
+                  {serviceItems.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs py-0.5">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {item.service_code && (
+                          <span className="font-mono text-[10px] bg-teal-50 border border-teal-200 text-teal-700 px-1.5 py-0.5 rounded shrink-0">
+                            {item.service_code}
+                          </span>
+                        )}
+                        {item.hira_code && (
+                          <span className="font-mono text-[10px] bg-blue-50 border border-blue-200 text-blue-700 px-1.5 py-0.5 rounded shrink-0">
+                            {item.hira_code}
+                          </span>
+                        )}
+                        <span className="truncate text-foreground">{item.name}</span>
+                      </div>
+                      <span className="tabular-nums text-muted-foreground shrink-0 ml-2">
+                        {formatAmount(item.amount)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
