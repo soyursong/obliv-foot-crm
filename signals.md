@@ -1,5 +1,35 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-08 — dev-foot | deploy-ready | T-20260507-foot-SERVICE-CATALOG-SEED
+
+**풋센터 판매상품 공식 등록 + 엑셀 내보내기 + 수가 코드 진료비·보험서류 연동 구현 완료**
+
+- **Phase 1 (DB + Seed)**: ✅ `supabase/migrations/20260508000010_services_service_code_seed.sql`
+  - `services.service_code TEXT` 컬럼 추가 (`ADD COLUMN IF NOT EXISTS`)
+  - 28개 판매상품 시드 — 레이저(12) / 풋케어(4) / 수액(3) / 상담·검사(4) / 풋화장품(3) / 기타(2)
+  - `ON CONFLICT (clinic_id, name) DO UPDATE` — 멱등 실행 보장
+  - 롤백 SQL 포함
+- **Phase 2 (엑셀 내보내기)**: ✅ `src/pages/Services.tsx`
+  - 상단 "엑셀 내보내기" 버튼 (Download 아이콘)
+  - 컬럼: 상품코드·상품명·대분류·단가·할인가·수가코드·실비여부·유형·VAT·상태
+  - `xlsx` 라이브러리 (이미 설치) 활용, `풋센터_판매상품_YYYY-MM-DD.xlsx` 다운로드
+- **Phase 3 (진료비세부내역서 코드 연동)**: ✅ `src/components/DocumentPrintPanel.tsx`
+  - IssueDialog 내 `service_charges JOIN services` → `service_code` + `hira_code` 배지 표시
+  - 비급여 서비스 직접 추가: 드롭다운에 `[LZ-HOT-01] 가열 레이저 (1회) — 80,000` 형식 표시
+  - `ServiceChargeItem` 인터페이스 추가
+- **TypeScript**: ✅ `tsc -b --noEmit` EXIT=0 (에러 0건)
+- **커밋**: c17f3cc (Phase1+2), d1f5a5f (Phase3) → origin/main 이미 반영
+- **Vercel**: 자동배포 완료 (d1f5a5f 이후 f4113df → 1ab9077 → 6b862f5 연속 반영)
+- ⚠️ **DB 수동 적용 필요**: `20260508000010_services_service_code_seed.sql` — Supabase SQL Editor 적용 필요
+- **수용 기준 체크**:
+  - [x] /admin/services 28개 상품 표시 (service_code 컬럼 포함)
+  - [x] 엑셀 내보내기 버튼 → xlsx 다운로드
+  - [x] 진료비세부내역서 상품코드 기반 조회
+  - [x] calc_copayment RPC 미변경 (영향 없음)
+- **status**: deploy-ready
+
+---
+
 ## 2026-05-08 — dev-foot | deploy-ready | T-20260507-foot-RECEIPT-POSITION-VERIFY
 
 **진료비영수증 위치 변경 현장 미반영 확인 + 코드 재검증 완료**
