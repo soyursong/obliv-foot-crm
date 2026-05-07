@@ -1,5 +1,19 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-08 03:20 — supervisor | QA PASS + deployed | T-20260507-foot-PATIENT-FLOW-E2E
+
+- **빌드**: ✅ tsc --noEmit EXIT:0 (에러 0개), Vercel last-modified 03:08 KST (f4113df 반영 확인)
+- **기존기능**: ✅ DocumentPrintPanel.tsx 추가만 129줄 (삭제 없음), IssueDialog 기존 로직 미파괴, cleanup setAllServices([]) 안전 처리
+- **DB호환**: ✅ 이 커밋 DB 스키마 변경 없음. service_charges INSERT payload 스키마 전 필드 일치 확인 (clinic_id/check_in_id/customer_id/service_id/is_insurance_covered/base_amount/copayment_amount/customer_grade_at_charge 전부 NOT NULL 충족). service_code null graceful 처리 ✅
+- **권한/RLS**: ✅ service_charges auth_all (FOR ALL TO authenticated, 기존), services RLS 미변경. clinic_id 필터 정상
+- **롤백SQL**: ✅ 불필요 (FE only 커밋 — DB 변경 없음)
+- **브라우저 E2E**: ✅ root_length 2325, page_errors 0, console_errors 0, white screen 없음 (diag-browser.mjs 검증)
+- **교차검증 5종**: 4/5 PASS, GO_WARN 1건 (services 직접 접근 — IssueDialog 전용 패턴, 허용)
+- **자율배포 등급**: GREEN (FE only, DB 불변, 새 패키지 없음, RLS 불변)
+- **git**: origin/main 이미 동기화 (dd9a206), Vercel 자동배포 완료 (03:08 KST)
+- ⚠️ **DB 수동 적용 필요**: 20260508000010_services_service_code_seed.sql — 미적용 시 "진료 항목 직접 추가" 버튼 미표시 (graceful degrade, 기존 기능 미파괴). 14:00 E2E 테스트 전 필수.
+- **판정**: **GO — Green 자율배포 완료 (Vercel 이미 반영)**
+
 ## 2026-05-08 03:10 — dev-foot | deploy-ready | T-20260507-foot-PATIENT-FLOW-E2E
 
 **오후 환자 동선 통합 테스트 E2E — 5단계 플로우 전 구현 완료**
