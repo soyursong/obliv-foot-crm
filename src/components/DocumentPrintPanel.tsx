@@ -859,6 +859,12 @@ function IssueDialog({
   const [selectedDoctorName, setSelectedDoctorName] = useState<string>('');
   // Phase 3: 서비스 항목 (진료 코드 참조)
   const [serviceItems, setServiceItems] = useState<ServiceChargeItem[]>([]);
+  // E2E 통합 — 비급여 서비스 직접 추가 (T-20260507-foot-PATIENT-FLOW-E2E)
+  const [addServiceOpen, setAddServiceOpen] = useState(false);
+  const [allServices, setAllServices] = useState<{ id: string; name: string; service_code: string | null; price: number; category: string }[]>([]);
+  const [addServiceId, setAddServiceId] = useState('');
+  const [addServiceAmountStr, setAddServiceAmountStr] = useState('');
+  const [addingService, setAddingService] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -884,6 +890,18 @@ function IssueDialog({
         setServiceItems(items);
       });
 
+    // 서비스 목록 로드 (비급여 직접 추가용 — T-20260507-foot-PATIENT-FLOW-E2E)
+    supabase
+      .from('services')
+      .select('id, name, service_code, price, category')
+      .eq('clinic_id', checkIn.clinic_id)
+      .eq('active', true)
+      .order('sort_order')
+      .then(({ data }) => {
+        if (!cancelled && data) {
+          setAllServices(data as { id: string; name: string; service_code: string | null; price: number; category: string }[]);
+        }
+      });
 
     // 원장님 이름 결정
     // - 1명: 자동 세팅 (이미 loadAutoBindContext에서 처리됨)
@@ -907,6 +925,8 @@ function IssueDialog({
     return () => {
       cancelled = true;
       setServiceItems([]);
+      setAllServices([]);
+      setAddServiceOpen(false);
     };
   }, [open, checkIn, dutyDoctors]);
 
@@ -939,6 +959,55 @@ function IssueDialog({
     } else {
       setManualValues((prev) => ({ ...prev, [key]: value }));
     }
+  };
+
+  // 비급여 서비스 직접 추가 핸들러 (T-20260507-foot-PATIENT-FLOW-E2E)
+  const handleAddService = async () => {
+    if (!addServiceId) return;
+    const svc = allServices.find((s) => s.id === addServiceId);
+    if (!svc) return;
+    const amount = parseInt(addServiceAmountStr.replace(/,/g, ''), 10) || svc.price;
+    setAddingService(true);
+    const { error } = await supabase.from('service_charges').insert({
+      clinic_id: checkIn.clinic_id,
+      check_in_id: checkIn.id,
+      customer_id: checkIn.customer_id,
+      service_id: addServiceId,
+      is_insurance_covered: false,
+      base_amount: amount,
+      insurance_covered_amount: 0,
+      copayment_amount: amount,
+      exempt_amount: 0,
+      customer_grade_at_charge: 'manual',
+      copayment_rate_at_charge: 1.0,
+    });
+    if (error) {
+      toast.error(`서비스 추가 실패: ${error.message}`);
+      setAddingService(false);
+      return;
+    }
+    // serviceItems 새로고침
+    const { data } = await supabase
+      .from('service_charges')
+      .select('base_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code)')
+      .eq('check_in_id', checkIn.id);
+    if (data) {
+      setServiceItems(data.map((c) => {
+        const sv = Array.isArray(c.service) ? c.service[0] : c.service;
+        return {
+          service_code: sv?.service_code ?? null,
+          name: sv?.name ?? '(알 수 없음)',
+          amount: c.base_amount ?? 0,
+          hira_code: sv?.hira_code ?? null,
+          is_insurance_covered: c.is_insurance_covered ?? false,
+        };
+      }));
+    }
+    setAddServiceId('');
+    setAddServiceAmountStr('');
+    setAddServiceOpen(false);
+    setAddingService(false);
+    toast.success('진료 항목이 추가되었습니다');
   };
 
   const renderPreview = useCallback(() => {
@@ -1090,6 +1159,66 @@ function IssueDialog({
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* 비급여 서비스 직접 추가 — E2E 통합 (T-20260507-foot-PATIENT-FLOW-E2E) */}
+            {allServices.length > 0 && (
+              <div className="rounded-lg border border-dashed border-teal-200 p-3 space-y-2">
+                {!addServiceOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => setAddServiceOpen(true)}
+                    className="text-[11px] text-teal-700 hover:text-teal-800 flex items-center gap-1 transition"
+                  >
+                    <span className="text-base font-bold leading-none">+</span>
+                    진료 항목 직접 추가 (비급여·레이저·풋케어 등)
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold text-muted-foreground">진료 항목 추가</div>
+                    <select
+                      value={addServiceId}
+                      onChange={(e) => {
+                        setAddServiceId(e.target.value);
+                        const s = allServices.find((x) => x.id === e.target.value);
+                        if (s) setAddServiceAmountStr(String(s.price));
+                      }}
+                      className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-teal-500"
+                    >
+                      <option value="">서비스 선택…</option>
+                      {allServices.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.service_code ? `[${s.service_code}] ` : ''}{s.name} — {formatAmount(s.price)}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="금액 (원)"
+                        value={addServiceAmountStr}
+                        onChange={(e) => setAddServiceAmountStr(e.target.value)}
+                        className="h-7 text-xs flex-1"
+                      />
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs bg-teal-600 hover:bg-teal-700 whitespace-nowrap"
+                        onClick={handleAddService}
+                        disabled={!addServiceId || addingService}
+                      >
+                        {addingService ? '추가 중…' : '추가'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => { setAddServiceOpen(false); setAddServiceId(''); setAddServiceAmountStr(''); }}
+                      >
+                        취소
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
