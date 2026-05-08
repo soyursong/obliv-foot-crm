@@ -131,9 +131,9 @@ const customCollision: CollisionDetection = (args) => {
 };
 
 // ── 칸반 그룹 순서 정의 ────────────────────────────────────────────────────────
+// T-20260508-foot-DASH-SLOT-REMOVE: new_queue, returning_queue 완전 삭제
+// → 초진/재진 고객은 통합시간표에서 관리
 const DEFAULT_GROUP_ORDER = [
-  'new_queue',
-  'returning_queue',
   'exam_section',
   'experience_queue',
   'consult_waiting_col',
@@ -147,8 +147,6 @@ const DEFAULT_GROUP_ORDER = [
 type KanbanGroupId = (typeof DEFAULT_GROUP_ORDER)[number];
 
 const KANBAN_GROUP_LABELS: Record<KanbanGroupId, string> = {
-  new_queue: '초진',
-  returning_queue: '재진',
   exam_section: '진료',
   experience_queue: '선체험',
   consult_waiting_col: '상담대기',
@@ -524,103 +522,11 @@ function DroppableColumn({
 }
 
 
-function TimeSlotAccordion({
-  reservations,
-  onCheckIn,
-}: {
-  reservations: Reservation[];
-  onCheckIn: (res: Reservation) => void;
-}) {
-  const now = new Date();
-  const currentSlot = `${String(now.getHours()).padStart(2, '0')}:${now.getMinutes() < 30 ? '00' : '30'}`;
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set([currentSlot]));
+// T-20260508-foot-DASH-SLOT-REMOVE: TimeSlotAccordion 삭제
+// (new_queue / returning_queue 칸반 열 제거로 더 이상 사용되지 않음)
 
-  const slotMap: Record<string, Reservation[]> = {};
-  for (const r of reservations) {
-    const t = r.reservation_time?.slice(0, 5) ?? '00:00';
-    const [h, m] = t.split(':').map(Number);
-    const slot = `${String(h).padStart(2, '0')}:${m < 30 ? '00' : '30'}`;
-    (slotMap[slot] ??= []).push(r);
-  }
-  const slots = Object.keys(slotMap).sort();
-  if (slots.length === 0) return null;
-
-  const toggle = (s: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(s)) next.delete(s);
-      else next.add(s);
-      return next;
-    });
-
-  return (
-    <div className="space-y-0.5">
-      {slots.map((slot) => {
-        const items = slotMap[slot];
-        const isOpen = expanded.has(slot);
-        const isPast = slot < currentSlot;
-        return (
-          <div key={slot}>
-            <button
-              onClick={() => toggle(slot)}
-              className={cn(
-                'w-full flex items-center justify-between px-2 py-1 text-xs rounded hover:bg-muted/50 transition',
-                slot === currentSlot && 'bg-blue-50 font-bold',
-                isPast && !isOpen && 'opacity-50',
-              )}
-            >
-              <span>{slot}</span>
-              <div className="flex items-center gap-1">
-                <span className="bg-blue-100 text-blue-700 px-1.5 rounded-full text-xs">{items.length}</span>
-                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', !isOpen && '-rotate-90')} />
-              </div>
-            </button>
-            {isOpen && (
-              <div className="px-0.5 pb-1 space-y-1">
-                {items.map((res) => (
-                  <ReservationCard key={res.id} reservation={res} onCheckIn={onCheckIn} />
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function ReservationCard({
-  reservation,
-  onCheckIn,
-}: {
-  reservation: Reservation;
-  onCheckIn: (res: Reservation) => void;
-}) {
-  const time = reservation.reservation_time?.slice(0, 5) ?? '';
-  return (
-    <div className="rounded-lg border border-dashed border-blue-200 bg-blue-50/40 p-2.5 space-y-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-bold text-blue-700">{time}</span>
-          <span className="text-sm font-semibold">{reservation.customer_name}</span>
-        </div>
-        <Badge variant={reservation.visit_type === 'new' ? 'teal' : 'secondary'} className="h-4 px-1 text-xs">
-          {VISIT_TYPE_KO[reservation.visit_type]}
-        </Badge>
-      </div>
-      {/* T-20260504-foot-MEMO-RESTRUCTURE: booking_memo 우선, 없으면 memo */}
-      {(reservation.booking_memo || reservation.memo) && (
-        <p className="text-xs text-muted-foreground truncate">{reservation.booking_memo ?? reservation.memo}</p>
-      )}
-      <button
-        onClick={() => onCheckIn(reservation)}
-        className="w-full rounded bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-200 transition"
-      >
-        체크인
-      </button>
-    </div>
-  );
-}
+// T-20260508-foot-DASH-SLOT-REMOVE: ReservationCard 삭제
+// (new_queue / returning_queue 칸반 열 제거로 더 이상 사용되지 않음)
 
 function RoomSlot({
   roomName,
@@ -1051,16 +957,88 @@ function TimelineCard({
   );
 }
 
+/**
+ * T-20260508-foot-DASH-SLOT-REMOVE: 통합시간표 내 체크인 고객 인터랙티브 카드
+ * - useDraggable → 칸반 열로 드래그 이동 가능 (DnD 컨텍스트를 타임라인까지 확장)
+ * - onClick → CheckInDetailSheet 열기
+ * - 초진/체험: 연한노랑 + "초" 딱지 / 재진: 연두색 + 딱지 없음 (김주연 확정)
+ */
+function TimelineCheckInCard({
+  checkIn,
+  onClick,
+  onContextMenu,
+}: {
+  checkIn: CheckIn;
+  onClick?: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: checkIn.id,
+    data: { checkIn },
+  });
+
+  const visitType = checkIn.visit_type as 'new' | 'returning' | 'experience';
+  const base =
+    visitType === 'returning'
+      ? 'bg-green-100 text-green-900 border-green-200'
+      : 'bg-yellow-100 text-yellow-900 border-yellow-300';
+  const showBadge = visitType === 'new' || visitType === 'experience';
+
+  const style: React.CSSProperties = {
+    transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+    opacity: isDragging ? 0.3 : 1,
+    touchAction: 'none',
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={cn(
+        'flex items-center gap-0.5 rounded border px-1 py-0.5 text-[10px] font-medium truncate max-w-full cursor-grab active:cursor-grabbing ring-1 ring-transparent hover:ring-teal-300 transition',
+        base,
+      )}
+      title={`${checkIn.customer_name} — 드래그=다음단계 이동 · 클릭=상세`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.();
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onContextMenu?.(e);
+      }}
+    >
+      {showBadge && (
+        <span className="shrink-0 bg-yellow-200 text-yellow-900 text-[9px] px-0.5 rounded leading-tight font-bold">
+          초
+        </span>
+      )}
+      <span className="truncate">{checkIn.customer_name}</span>
+      {/* 드래그 힌트 화살표 */}
+      <span className="text-[8px] opacity-50 shrink-0 ml-0.5">↗</span>
+    </div>
+  );
+}
+
 function DashboardTimeline({
   date,
   reservations,
   selfCheckIns,
   onSlotClick,
+  onCardClick,
+  onCardContext,
 }: {
   date: Date;
   reservations: Reservation[];
   selfCheckIns: CheckIn[];
   onSlotClick: (slot: { date: string; time: string }) => void;
+  /** T-20260508-foot-DASH-SLOT-REMOVE: 고객박스 클릭 → 상세 패널 열기 */
+  onCardClick?: (ci: CheckIn) => void;
+  /** T-20260508-foot-DASH-SLOT-REMOVE: 고객박스 우클릭 → 컨텍스트 메뉴 */
+  onCardContext?: (ci: CheckIn, e: React.MouseEvent) => void;
 }) {
   const now = new Date();
   const isToday = isSameDay(date, now);
@@ -1134,15 +1112,9 @@ function DashboardTimeline({
             parseInt(slot.split(':')[0]) * 60 + parseInt(slot.split(':')[1]) <
               currentH * 60 + currentM - 30;
 
-          // T-20260506-foot-SLOT-LAYOUT-REBUILD: 초진(연한노랑) + 재진(연두) 통합 슬롯
-          // 모든 카드를 하나의 flex-wrap 컨테이너에 배치 (예약시간 순 — 초진 먼저)
-          const allItems: Array<{ key: string; name: string; visitType: 'new' | 'returning' | 'experience'; dimmed?: boolean; struck?: boolean }> = [
-            ...newItems.map((r) => ({ key: `r-${r.id}`, name: r.customer_name ?? '', visitType: r.visit_type, dimmed: r.status === 'checked_in', struck: r.status === 'cancelled' })),
-            ...newSelf.map((ci) => ({ key: `s-${ci.id}`, name: ci.customer_name, visitType: ci.visit_type as 'new' | 'returning' | 'experience' })),
-            ...retItems.map((r) => ({ key: `r-${r.id}`, name: r.customer_name ?? '', visitType: r.visit_type, dimmed: r.status === 'checked_in', struck: r.status === 'cancelled' })),
-            ...retSelf.map((ci) => ({ key: `s-${ci.id}`, name: ci.customer_name, visitType: ci.visit_type as 'new' | 'returning' | 'experience' })),
-          ];
-          const totalCnt = allItems.length;
+          // T-20260508-foot-DASH-SLOT-REMOVE: 초진/재진 섹션 분리 렌더링
+          // 초진 = 예약카드(정적) + 체크인카드(드래그 가능), 재진 동일
+          const totalCnt = newCnt + retCnt;
           const isFull = totalCnt >= SLOT_MAX;
 
           // 슬롯 헤더 배경: 초진 있으면 연한노랑 tint, 재진만 있으면 연두 tint, 현재 슬롯은 teal 우선
@@ -1196,18 +1168,69 @@ function DashboardTimeline({
                 )}
               </div>
 
-              {/* T-20260506-foot-SLOT-LAYOUT-REBUILD: 초진+재진 통합 flex-wrap 레인 (자동확장) */}
+              {/* T-20260508-foot-DASH-SLOT-REMOVE: 초진/재진 섹션 분리 + 고객박스 활성화 */}
               {hasAny && (
-                <div className="flex flex-wrap gap-0.5 px-1 pb-1">
-                  {allItems.map((item) => (
-                    <TimelineCard
-                      key={item.key}
-                      name={item.name}
-                      visitType={item.visitType}
-                      dimmed={item.dimmed}
-                      struck={item.struck}
-                    />
-                  ))}
+                <div className="px-1 pb-1 space-y-0.5">
+                  {/* 초진 섹션 */}
+                  {newCnt > 0 && (
+                    <div>
+                      {newCnt > 0 && retCnt > 0 && (
+                        <div className="flex items-center gap-1 mb-0.5">
+                          <span className="text-[9px] font-bold text-yellow-800 shrink-0">초진</span>
+                          <div className="flex-1 h-px bg-yellow-300" />
+                        </div>
+                      )}
+                      <div className="flex flex-wrap gap-0.5">
+                        {newItems.map((r) => (
+                          <TimelineCard
+                            key={`r-${r.id}`}
+                            name={r.customer_name ?? ''}
+                            visitType={r.visit_type}
+                            dimmed={r.status === 'checked_in'}
+                            struck={r.status === 'cancelled'}
+                          />
+                        ))}
+                        {newSelf.map((ci) => (
+                          <TimelineCheckInCard
+                            key={`s-${ci.id}`}
+                            checkIn={ci}
+                            onClick={onCardClick ? () => onCardClick(ci) : undefined}
+                            onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* 재진 섹션 — 딱지 없음 (김주연 확정) */}
+                  {retCnt > 0 && (
+                    <div>
+                      {newCnt > 0 && retCnt > 0 && (
+                        <div className="flex items-center gap-1 mb-0.5">
+                          <span className="text-[9px] font-bold text-green-800 shrink-0">재진</span>
+                          <div className="flex-1 h-px bg-green-300" />
+                        </div>
+                      )}
+                      <div className="flex flex-wrap gap-0.5">
+                        {retItems.map((r) => (
+                          <TimelineCard
+                            key={`r-${r.id}`}
+                            name={r.customer_name ?? ''}
+                            visitType={r.visit_type}
+                            dimmed={r.status === 'checked_in'}
+                            struck={r.status === 'cancelled'}
+                          />
+                        ))}
+                        {retSelf.map((ci) => (
+                          <TimelineCheckInCard
+                            key={`s-${ci.id}`}
+                            checkIn={ci}
+                            onClick={onCardClick ? () => onCardClick(ci) : undefined}
+                            onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1783,16 +1806,18 @@ export default function Dashboard() {
     setTimelineReservations((data ?? []) as Reservation[]);
   }, [clinic, dateStr]);
 
-  // T-20260504-foot-SCHEDULE-UNIFIED-VIEW: 셀프접수 walk-in 체크인 (예약 없이 당일 방문)
+  // T-20260508-foot-DASH-SLOT-REMOVE: 통합시간표용 체크인 — 모든 registered 상태 포함
+  // (기존: reservation_id IS NULL 워크인만 → 변경: 초진/재진 전체 registered 고객)
   const fetchSelfCheckIns = useCallback(async () => {
     if (!clinic) return;
     const start = `${dateStr}T00:00:00+09:00`;
     const end = `${dateStr}T23:59:59+09:00`;
     const { data } = await supabase
       .from('check_ins')
-      .select('id, customer_name, visit_type, checked_in_at, reservation_id, status')
+      .select('*')
       .eq('clinic_id', clinic.id)
-      .is('reservation_id', null)
+      .eq('status', 'registered')
+      .in('visit_type', ['new', 'returning'])
       .gte('checked_in_at', start)
       .lte('checked_in_at', end)
       .order('checked_in_at', { ascending: true });
@@ -2800,57 +2825,10 @@ export default function Dashboard() {
   const laserRooms = roomsByType['laser'] ?? [];
 
   // ── 칸반 그룹별 JSX 렌더러 ──────────────────────────────────────────────────
+  // T-20260508-foot-DASH-SLOT-REMOVE: new_queue, returning_queue case 완전 삭제
+  // → 초진/재진 고객은 통합시간표(DashboardTimeline)에서 관리
   const renderKanbanGroup = useCallback((gid: KanbanGroupId): React.ReactNode => {
     switch (gid) {
-      case 'new_queue':
-        return (
-          <div key="new_queue" className="w-52 shrink-0">
-            <DroppableColumn
-              id="registered"
-              label="초진"
-              count={newRegistered.length + newPendingReservations.length}
-              className="h-full"
-              highlight="text-blue-700"
-            >
-              <TimeSlotAccordion reservations={newPendingReservations} onCheckIn={handleReservationCheckIn} />
-              {newRegistered.map((ci) => (
-                <DraggableCard
-                  key={ci.id}
-                  checkIn={ci}
-                  stageStart={getStageStart(ci)}
-                  packageLabel={getPkgLabel(ci)}
-                  onClick={() => handleCardClick(ci)}
-                  onContextMenu={(e) => handleCardContext(ci, e)}
-                />
-              ))}
-            </DroppableColumn>
-          </div>
-        );
-      case 'returning_queue':
-        return (
-          <div key="returning_queue" className="w-48 shrink-0">
-            <DroppableColumn
-              id="returning_zone"
-              label="재진"
-              count={returningWaiting.length + returningPendingReservations.length}
-              className="h-full"
-              highlight="text-orange-700"
-            >
-              <TimeSlotAccordion reservations={returningPendingReservations} onCheckIn={handleReservationCheckIn} />
-              {returningWaiting.map((ci) => (
-                <DraggableCard
-                  key={ci.id}
-                  checkIn={ci}
-                  compact
-                  stageStart={getStageStart(ci)}
-                  packageLabel={getPkgLabel(ci)}
-                  onClick={() => handleCardClick(ci)}
-                  onContextMenu={(e) => handleCardContext(ci, e)}
-                />
-              ))}
-            </DroppableColumn>
-          </div>
-        );
       case 'exam_section':
         return (
           <div key="exam_section" className="w-52 shrink-0 flex flex-col gap-2">
@@ -3418,6 +3396,26 @@ export default function Dashboard() {
       )}
 
       {/* Content: 타임라인 사이드바 + 칸반 */}
+      {/* T-20260508-foot-DASH-SLOT-REMOVE: 카드 DnD 컨텍스트를 타임라인까지 확장
+          → 타임라인 고객박스에서 칸반 열로 직접 드래그 이동 가능 */}
+      <CardHandlersCtx.Provider value={cardHandlersValue}>
+      <ChecklistDoneCtx.Provider value={checklistDone}>
+      <ConsentMapCtx.Provider value={consentMap}>
+      <ResvTimeMapCtx.Provider value={resvTimeMap}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={customCollision}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        autoScroll={{
+          threshold: { x: 0.15, y: 0.05 },
+          acceleration: 6,
+          interval: 5,
+        }}
+        measuring={{
+          droppable: { strategy: MeasuringStrategy.Always },
+        }}
+      >
       <div className="flex flex-1 overflow-hidden">
         {/* 좌측: 통합 시간표 + 원내 메모 — T-20260504-foot-SCHEDULE-UNIFIED-VIEW */}
         <div className="w-64 shrink-0 flex flex-col border-r overflow-hidden">
@@ -3426,6 +3424,8 @@ export default function Dashboard() {
             reservations={enrichedTimelineReservations}
             selfCheckIns={selfCheckIns}
             onSlotClick={handleQuickSlotClick}
+            onCardClick={!isPast ? handleCardClick : undefined}
+            onCardContext={!isPast ? handleCardContext : undefined}
           />
           <ClinicMemoPanel
             date={date}
@@ -3475,67 +3475,47 @@ export default function Dashboard() {
                 </SortableContext>
               </DndContext>
             ) : (
-              /* ── 일반 모드: 카드 드래그 DndContext ── */
-              <CardHandlersCtx.Provider value={cardHandlersValue}>
-              <ChecklistDoneCtx.Provider value={checklistDone}>
-              <ConsentMapCtx.Provider value={consentMap}>
-              <ResvTimeMapCtx.Provider value={resvTimeMap}>
-              <DndContext
-                sensors={sensors}
-                collisionDetection={customCollision}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-                autoScroll={{
-                  threshold: { x: 0.15, y: 0.05 },
-                  acceleration: 6,
-                  interval: 5,
-                }}
-                // T-20260506-foot-SLOT-VERTICAL-MOVE: 세로 이동 지원
-                // droppable rect 항상 갱신 → 스크롤/레이아웃 변경 후에도 정확한 감지
-                measuring={{
-                  droppable: { strategy: MeasuringStrategy.Always },
-                }}
-              >
-                <div className="flex gap-2 h-full min-w-max">
-                  {/* T-MQ-20260506-HEATED-LASER-SUPPLEMENT:
-                      가열성레이저 슬롯은 renderKanbanGroup('treatment_rooms') 내부에 포함됨.
-                      치료실+레이저실 클러스터: 치료실(heated_laser 포함) | 레이저실 나란히 배치 */}
-                  {groupOrder.map((gid) => {
-                    // 레이저실은 치료실 클러스터 내부에서 렌더링 — 별도 표시 생략
-                    if (gid === 'laser_rooms') return null;
+              /* ── 일반 모드: 카드 드래그 (DnD 컨텍스트는 상위로 이동됨) ── */
+              <div className="flex gap-2 h-full min-w-max">
+                {/* T-MQ-20260506-HEATED-LASER-SUPPLEMENT:
+                    가열성레이저 슬롯은 renderKanbanGroup('treatment_rooms') 내부에 포함됨.
+                    치료실+레이저실 클러스터: 치료실(heated_laser 포함) | 레이저실 나란히 배치 */}
+                {groupOrder.map((gid) => {
+                  // 레이저실은 치료실 클러스터 내부에서 렌더링 — 별도 표시 생략
+                  if (gid === 'laser_rooms') return null;
 
-                    if (gid === 'treatment_rooms') {
-                      const hasTreatment = treatmentRooms.length > 0;
-                      const hasLaser = laserRooms.length > 0 && groupOrder.includes('laser_rooms');
-                      if (!hasTreatment && !hasLaser) return null;
+                  if (gid === 'treatment_rooms') {
+                    const hasTreatment = treatmentRooms.length > 0;
+                    const hasLaser = laserRooms.length > 0 && groupOrder.includes('laser_rooms');
+                    if (!hasTreatment && !hasLaser) return null;
 
-                      return (
-                        <div key="treatment_laser_cluster" className="flex gap-2 shrink-0 items-start">
-                          {/* 치료실 (가열성레이저 슬롯 포함, 480px) */}
-                          {hasTreatment && renderKanbanGroup('treatment_rooms')}
-                          {/* 레이저실 (480px) */}
-                          {hasLaser && renderKanbanGroup('laser_rooms')}
-                        </div>
-                      );
-                    }
+                    return (
+                      <div key="treatment_laser_cluster" className="flex gap-2 shrink-0 items-start">
+                        {/* 치료실 (가열성레이저 슬롯 포함, 480px) */}
+                        {hasTreatment && renderKanbanGroup('treatment_rooms')}
+                        {/* 레이저실 (480px) */}
+                        {hasLaser && renderKanbanGroup('laser_rooms')}
+                      </div>
+                    );
+                  }
 
-                    return renderKanbanGroup(gid);
-                  })}
-                </div>
-                <DragOverlay>
-                  {dragging && <DraggableCard checkIn={dragging} compact />}
-                </DragOverlay>
-              </DndContext>
-              </ResvTimeMapCtx.Provider>
-              </ConsentMapCtx.Provider>
-              </ChecklistDoneCtx.Provider>
-              </CardHandlersCtx.Provider>
+                  return renderKanbanGroup(gid);
+                })}
+              </div>
             )}
           </div>
         ) : null}
       </div>
       {/* flex flex-1 overflow-hidden wrapper 닫기 */}
       </div>
+      <DragOverlay>
+        {dragging && <DraggableCard checkIn={dragging} compact />}
+      </DragOverlay>
+      </DndContext>
+      </ResvTimeMapCtx.Provider>
+      </ConsentMapCtx.Provider>
+      </ChecklistDoneCtx.Provider>
+      </CardHandlersCtx.Provider>
 
       {/* 빠른 예약 다이얼로그 */}
       <QuickReservationDialog
