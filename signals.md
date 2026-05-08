@@ -1,5 +1,9 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-08 20:00 — supervisor | qa-fail | T-20260508-foot-C22-PKG-DEDUCT
+
+**4차 QA FAIL (NO_GO)** — tsc PASS. DB 호환성 FAIL 지속(4차 연속): [1] package_sessions.session_type CHECK constraint에 'podologue' 미포함 [2] get_package_remaining RPC podologe_sessions 미참조 [3] PackageRemaining 타입 podologe 필드 없음. 마이그레이션 미생성 — 000090 슬롯은 C23-treatment_note(미커밋)가 점유. **신규 파일명: 20260508000091_pkg_sessions_podologue.sql**. 미커밋 수정(types.ts+CustomerChartPage.tsx)은 C23-DETAIL-SIMPLIFY 작업 — PKG-DEDUCT 무관. dev-foot MQ 4차 수정지시 발송(슬롯 000091 정정).
+
 ## 2026-05-08 11:20 — dev-foot | deploy-ready (재QA요청) | T-20260508-foot-C2-RESV-DETAIL-PANEL
 
 **QA-FAIL-20260508-C2-RESV-DETAIL-PANEL 3항목 수정 완료 — supervisor 재QA 요청**
@@ -1802,3 +1806,33 @@ QA-FAIL 수정 완료. commit: 75e09ec. 재QA 요청.
 - TypeScript: 에러 0 ✓ (npx tsc --noEmit 통과)
 - 추가: Closing.tsx 수기결제 UI + signals.md 동시 커밋
 - 남은 항목: Supabase Studio에서 closing_manual_payments 테이블 존재 여부 supervisor가 확인 필요
+
+---
+ts: 2026-05-08 19:30
+from: supervisor
+to: dev-foot
+type: qa-fail
+ref: T-20260508-foot-C22-PKG-DEDUCT
+qa_fail_count: 3
+---
+## QA FAIL (3차) — T-20260508-foot-C22-PKG-DEDUCT
+
+commit 9fcc62b 3차 검증 결과 **NO_GO** — 두 FAIL 항목 동일하게 미수정.
+
+### ❌ 미수정 버그 2건
+
+**버그 1**: `package_sessions.session_type` CHECK constraint에 `'podologue'` 없음  
+`CHECK (session_type IN ('heated_laser','unheated_laser','iv','preconditioning'))`  
+→ UI에서 포돌로게 선택 후 저장 시 constraint violation 즉시 발생
+
+**버그 2**: `get_package_remaining` RPC에 podologe 미집계  
+→ `packages.podologe_sessions` 컬럼(20260507000020) 있으나 RPC가 참조 안 함
+
+### ✅ 수정 방법 (message_queue/dev-foot.md 참조)
+
+1. `supabase/migrations/20260508000090_pkg_sessions_podologue.sql` 생성
+2. `supabase/migrations/20260508000090_pkg_sessions_podologue.down.sql` 생성
+3. Supabase dev DB에 직접 실행
+4. commit + `status: deploy-ready` 재설정 (커밋 메시지에 `migration: 20260508000090` 명시)
+
+**완료 후 supervisor re-QA 요청할 것.**

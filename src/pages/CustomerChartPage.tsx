@@ -317,6 +317,15 @@ export default function CustomerChartPage() {
       setEmailText((custData as Customer).customer_email ?? '');
       setPassportText((custData as Customer).passport_number ?? '');
       setPostalCodeText((custData as Customer).postal_code ?? '');
+      // C23-DETAIL-SIMPLIFY: 2-3 상세 패널 폼 데이터 초기화
+      setResvDetailForm({
+        date: '', startTime: '',
+        memo: (custData as Customer).customer_memo ?? '',
+        etcMemo: (custData as Customer).memo ?? '',
+      });
+      setConsultationMemo((custData as Customer).tm_memo ?? '');
+      // treatment_note 컬럼 적용 전 memo 폴백 (migration 20260508000090)
+      setTreatmentMemoText((custData as Customer).treatment_note ?? (custData as Customer).memo ?? '');
 
       // C2-STAFF-DROPDOWN: 담당자 직원 목록 로드 (coordinator + consultant + director)
       const { data: staffData } = await supabase
@@ -636,44 +645,63 @@ export default function CustomerChartPage() {
     toast.success('예약 등록 완료 (재진)');
   };
 
-  // C23-DETAIL-SIMPLIFY: 예약 상세 저장 (간소화 — 고객메모/기타메모 저장)
+  // C23-DETAIL-SIMPLIFY: 예약 탭 저장 (고객메모 + 기타메모)
   const saveResvDetail = async () => {
     if (!customer) return;
     setSavingResvDetail(true);
     const { error } = await supabase.from('customers').update({
       customer_memo: resvDetailForm.memo || null,
+      memo: resvDetailForm.etcMemo || null,
     }).eq('id', customer.id);
     setSavingResvDetail(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
-    toast.success('고객메모 저장 완료');
+    setCustomer((prev) => prev ? {
+      ...prev,
+      customer_memo: resvDetailForm.memo || null,
+      memo: resvDetailForm.etcMemo || null,
+    } : prev);
+    toast.success('메모 저장 완료');
   };
 
-  // C23-DETAIL-SIMPLIFY: 상담 메모 저장
+  // C23-DETAIL-SIMPLIFY: 상담 탭 저장
   const saveConsultation = async () => {
     if (!customer) return;
     setSavingConsultation(true);
     const staffName = staffList.find(s => s.id === consultationStaffId)?.name ?? '';
+    const newTmMemo = staffName
+      ? `[담당: ${staffName}] ${consultationMemo}`.trim()
+      : consultationMemo.trim();
     const { error } = await supabase.from('customers').update({
-      tm_memo: `[담당: ${staffName}] ${consultationMemo}`,
+      tm_memo: newTmMemo || null,
     }).eq('id', customer.id);
     setSavingConsultation(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+    setCustomer((prev) => prev ? { ...prev, tm_memo: newTmMemo || null } : prev);
     toast.success('상담메모 저장 완료');
   };
 
-  // C23-DETAIL-SIMPLIFY: 치료메모 저장
+  // C23-DETAIL-SIMPLIFY: 치료메모 탭 저장
+  // 우선 treatment_note 컬럼 시도, 미존재(42703) 시 기존 memo 컬럼 폴백
   const saveTreatmentMemo = async () => {
     if (!customer) return;
     setSavingTreatmentMemo(true);
     const { error } = await supabase.from('customers').update({
-      treatment_memo: treatmentMemoText || null,
+      treatment_note: treatmentMemoText || null,
     }).eq('id', customer.id);
-    setSavingTreatmentMemo(false);
-    if (error) {
-      // treatment_memo 컬럼 미존재 시 무시(graceful)
-      toast.success('치료메모 저장됨 (로컬)');
+    if (error?.code === '42703') {
+      // treatment_note 컬럼 미생성 — memo 폴백 (migration 20260508000090 대기 중)
+      const { error: e2 } = await supabase.from('customers').update({
+        memo: treatmentMemoText || null,
+      }).eq('id', customer.id);
+      setSavingTreatmentMemo(false);
+      if (e2) { toast.error(`저장 실패: ${e2.message}`); return; }
+      setCustomer((prev) => prev ? { ...prev, memo: treatmentMemoText || null } : prev);
+      toast.success('치료메모 저장 완료');
       return;
     }
+    setSavingTreatmentMemo(false);
+    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+    setCustomer((prev) => prev ? { ...prev, treatment_note: treatmentMemoText || null } : prev);
     toast.success('치료메모 저장 완료');
   };
 
