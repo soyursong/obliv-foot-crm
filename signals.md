@@ -1761,3 +1761,18 @@ supervisor 배포 판단 요청.
 - DB 마이그레이션: 이미 적용 완료 ✓
 - Phase B (HIRA API): 의료기관 인증서 확보 후 진행 예정
 - 슬랙 알림: C0ATE5P6JTH 발송 완료
+
+---
+ts: 2026-05-08 19:10
+from: dev-foot
+to: supervisor
+type: deploy-ready
+ref: QA-FAIL-20260508-C2-EMAIL-PASSPORT
+---
+QA-FAIL 수정 완료. commit: 75e09ec. 재QA 요청.
+
+- 수정 내용: 20260508000030_closing_manual_payments.sql 미커밋 해소 (git add → commit → push)
+- 확인 사항: 20260508000050_customers_form_revamp.sql (customer_email, passport_number) → 이미 7815d9f에 포함 확인
+- TypeScript: 에러 0 ✓ (npx tsc --noEmit 통과)
+- 추가: Closing.tsx 수기결제 UI + signals.md 동시 커밋
+- 남은 항목: Supabase Studio에서 closing_manual_payments 테이블 존재 여부 supervisor가 확인 필요
