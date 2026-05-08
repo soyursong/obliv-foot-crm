@@ -7,8 +7,10 @@ import * as XLSX from 'xlsx';
 import {
   AlertTriangle,
   Download,
+  FileDown,
   FileSpreadsheet,
   Lock,
+  Pencil,
   Plus,
   Printer,
   Save,
@@ -126,6 +128,7 @@ interface ManualPaymentRow {
 /** 결제내역 탭에서 표시되는 통합 행 */
 interface EnrichedRow {
   sort_key: string;
+  pay_date: string;          // YYYY-MM-DD (날짜 컬럼용)
   pay_time: string;
   chart_number: string | null;
   customer_name: string;
@@ -137,6 +140,8 @@ interface EnrichedRow {
   payment_type: PaymentType;
   source: 'payment' | 'package' | 'manual';
   manual_id?: string;
+  /** 수기 수정용 raw entry */
+  manual_raw?: ManualPaymentRow;
 }
 
 const LEAD_SOURCE_OPTIONS = ['TM', '인바운드', '워크인', '지인소개', '온라인', '기타'];
@@ -178,6 +183,8 @@ export default function Closing() {
   const [memo, setMemo] = useState('');
   const [payTarget, setPayTarget] = useState<CheckIn | null>(null);
   const [showManualDialog, setShowManualDialog] = useState(false);
+  /** 수기 수정 대상 (null이면 신규 추가 모드) */
+  const [manualEditTarget, setManualEditTarget] = useState<ManualPaymentRow | null>(null);
 
   const { data: clinic } = useQuery<Clinic | null>({
     queryKey: ['clinic'],
@@ -385,6 +392,21 @@ export default function Closing() {
     }
   }, [existing, date]);
 
+  // ── Realtime: 결제·패키지결제·수기 변경 시 즉시 새로고침 ────
+  // 데스크/상담실에서 결제가 들어오면 일마감 화면이 실시간 갱신됨
+  useEffect(() => {
+    if (!clinic) return;
+    const channel = supabase.channel(`closing-${clinic.id}-${date}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments', filter: `clinic_id=eq.${clinic.id}` },
+        () => qc.invalidateQueries({ queryKey: ['closing-payments', clinic.id, date] }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'package_payments', filter: `clinic_id=eq.${clinic.id}` },
+        () => qc.invalidateQueries({ queryKey: ['closing-pkg-payments', clinic.id, date] }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'closing_manual_payments', filter: `clinic_id=eq.${clinic.id}` },
+        () => qc.invalidateQueries({ queryKey: ['closing-manual', clinic.id, date] }))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [clinic, date, qc]);
+
   // ── 합계 계산 ───────────────────────────────────────────────
   const totals = useMemo(() => {
     const sum = (rows: { amount: number; method: string; payment_type: PaymentType }[], method: string) =>
@@ -453,10 +475,12 @@ export default function Closing() {
       const cust = customerId ? customerMap.get(customerId) : null;
       const consultantName = ci?.consultant_id ? (staffMap.get(ci.consultant_id) ?? null) : null;
       const customerName = ci?.customer_name ?? cust?.name ?? '-';
+      const dt = new Date(p.created_at);
 
       rows.push({
         sort_key: p.created_at,
-        pay_time: format(new Date(p.created_at), 'HH:mm'),
+        pay_date: format(dt, 'yyyy-MM-dd'),
+        pay_time: format(dt, 'HH:mm'),
         chart_number: cust?.chart_number ?? null,
         customer_name: customerName,
         lead_source: cust?.lead_source ?? null,
@@ -472,9 +496,11 @@ export default function Closing() {
     // 패키지 결제
     for (const p of pkgPayments) {
       const cust = p.customer_id ? customerMap.get(p.customer_id) : null;
+      const dt = new Date(p.created_at);
       rows.push({
         sort_key: p.created_at,
-        pay_time: format(new Date(p.created_at), 'HH:mm'),
+        pay_date: format(dt, 'yyyy-MM-dd'),
+        pay_time: format(dt, 'HH:mm'),
         chart_number: cust?.chart_number ?? null,
         customer_name: cust?.name ?? '-',
         lead_source: cust?.lead_source ?? null,
@@ -491,6 +517,7 @@ export default function Closing() {
     for (const m of manualEntries) {
       rows.push({
         sort_key: m.close_date + 'T' + (m.pay_time ?? '00:00') + ':00+09:00',
+        pay_date: m.close_date,
         pay_time: m.pay_time ?? '-',
         chart_number: m.chart_number,
         customer_name: m.customer_name,
@@ -502,6 +529,7 @@ export default function Closing() {
         payment_type: 'payment',
         source: 'manual',
         manual_id: m.id,
+        manual_raw: m,
       });
     }
 
@@ -597,8 +625,9 @@ export default function Closing() {
 
   // ── Excel 내보내기 (결제내역 탭) ──────────────────────────
   const exportExcel = () => {
-    const header = ['시간', '차트번호', '성함', '내원경로', '초진/재진', '결제담당', '결제금액', '결제수단', '구분'];
+    const header = ['날짜', '시간', '차트번호', '성함', '내원경로', '초진/재진', '결제담당', '결제금액', '결제수단', '구분'];
     const dataRows = enrichedRows.map(r => [
+      r.pay_date,
       r.pay_time,
       r.chart_number ?? '',
       r.customer_name,
@@ -609,19 +638,174 @@ export default function Closing() {
       METHOD_KO[r.method] ?? r.method,
       r.source === 'manual' ? '수기' : r.source === 'package' ? '패키지' : '단건',
     ]);
-    const totalRow = ['합계', '', '', '', '', '', enrichedRows.reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0), '', ''];
+    const totalRow = ['합계', '', '', '', '', '', '', enrichedRows.reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0), '', ''];
 
     const wsData = [header, ...dataRows, [], totalRow];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
-    // 컬럼 너비 조정
+    // 컬럼 너비 조정 (10개 컬럼)
     ws['!cols'] = [
-      { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+      { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
       { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 8 }, { wch: 6 },
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '결제내역');
     XLSX.writeFile(wb, `결제내역_${date}.xlsx`);
     toast.success('Excel 다운로드 완료');
+  };
+
+  // ── PDF 내보내기 (결제내역 탭) ──────────────────────────
+  // 새 창에 인쇄 친화 HTML을 띄우고 자동 인쇄 다이얼로그 호출
+  // 사용자가 "PDF로 저장" 옵션 선택 → 한글 안전 PDF 생성 (별도 패키지 불필요)
+  const exportPaymentsPDF = () => {
+    const fmt = (n: number) => n.toLocaleString('ko-KR');
+    const total = enrichedRows.reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0);
+    const sumByMethod = (m: string) =>
+      enrichedRows.filter(r => r.method === m).reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0);
+    const methodSubtotals = (['card', 'cash', 'transfer', 'membership'] as const)
+      .map(m => ({ method: m, label: METHOD_KO[m], amount: sumByMethod(m) }))
+      .filter(x => x.amount !== 0);
+
+    const rowsHtml = enrichedRows.map(r => `
+      <tr class="${r.payment_type === 'refund' ? 'refund' : ''}${r.source === 'manual' ? ' manual' : ''}">
+        <td>${r.pay_date}</td>
+        <td>${r.pay_time}</td>
+        <td>${r.chart_number ?? '-'}</td>
+        <td>${r.customer_name}</td>
+        <td>${r.lead_source ?? '-'}</td>
+        <td>${r.visit_type_label}</td>
+        <td>${r.staff_name ?? '-'}</td>
+        <td class="num">${r.payment_type === 'refund' ? '-' : ''}${fmt(r.amount)}</td>
+        <td>${METHOD_KO[r.method] ?? r.method}</td>
+        <td>${r.payment_type === 'refund' ? '환불' : r.source === 'manual' ? '수기' : r.source === 'package' ? '패키지' : '단건'}</td>
+      </tr>
+    `).join('');
+
+    const subtotalsHtml = methodSubtotals.map(x => `
+      <div class="subtotal"><span>${x.label}</span><span class="num">${fmt(x.amount)}</span></div>
+    `).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>결제내역 — ${date}</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;padding:14mm;color:#111;font-size:11px;margin:0}
+  h1{font-size:18px;text-align:center;margin:0 0 4px}
+  .meta{text-align:center;color:#666;font-size:11px;margin-bottom:14px}
+  .summary{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:8px 12px;background:#f0fdfa;border:1px solid #99f6e4;border-radius:6px}
+  .summary .total-label{font-weight:600;color:#0f766e}
+  .summary .total-amount{font-size:16px;font-weight:700;color:#0f766e}
+  .subtotals{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+  .subtotal{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;min-width:120px;font-size:11px}
+  .subtotal span:first-child{color:#64748b}
+  .subtotal .num{font-weight:600}
+  table{width:100%;border-collapse:collapse;font-size:10.5px}
+  th{background:#f1f5f9;padding:6px 4px;text-align:left;border:1px solid #cbd5e1;font-weight:600;color:#334155}
+  td{padding:5px 4px;border:1px solid #e2e8f0;vertical-align:middle}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:500}
+  tr.refund{color:#b91c1c;background:#fef2f2}
+  tr.manual{background:#f0f9ff}
+  tfoot tr{background:#f1f5f9;font-weight:700}
+  tfoot td{border-top:2px solid #475569}
+  @media print{body{padding:8mm}.no-print{display:none}}
+</style></head><body>
+<h1>결제내역 — 일마감</h1>
+<div class="meta">${date} · ${enrichedRows.length}건</div>
+<div class="summary">
+  <span class="total-label">총 결제 합계</span>
+  <span class="total-amount">${fmt(total)}원</span>
+</div>
+${methodSubtotals.length ? `<div class="subtotals">${subtotalsHtml}</div>` : ''}
+<table>
+<thead>
+<tr>
+  <th>날짜</th><th>시간</th><th>차트번호</th><th>성함</th><th>내원경로</th>
+  <th>초진/재진</th><th>결제담당</th><th>결제금액</th><th>결제수단</th><th>구분</th>
+</tr>
+</thead>
+<tbody>${rowsHtml || '<tr><td colspan="10" style="text-align:center;padding:20px;color:#94a3b8">결제내역이 없습니다</td></tr>'}</tbody>
+${enrichedRows.length ? `<tfoot><tr><td colspan="7">합계</td><td class="num">${fmt(total)}</td><td colspan="2"></td></tr></tfoot>` : ''}
+</table>
+</body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('팝업이 차단되었습니다. 브라우저 팝업 허용 후 다시 시도해주세요.'); return; }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 400);
+    toast.success('PDF 인쇄 다이얼로그를 열었어요. "PDF로 저장"을 선택하세요.');
+  };
+
+  // ── PDF 내보내기 (총 합계 탭) ──────────────────────────
+  const exportSummaryPDF = () => {
+    const fmt = (n: number) => n.toLocaleString('ko-KR');
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>일마감 — ${date}</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;padding:14mm;color:#111;font-size:12px;margin:0}
+  h1{font-size:20px;text-align:center;margin:0 0 4px}
+  .meta{text-align:center;color:#666;font-size:11px;margin-bottom:18px}
+  .grand{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding:12px 16px;background:#f0fdfa;border:2px solid #14b8a6;border-radius:8px}
+  .grand .label{font-size:13px;font-weight:600;color:#0f766e}
+  .grand .amount{font-size:22px;font-weight:800;color:#0f766e}
+  table{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:11.5px}
+  th{background:#f1f5f9;padding:7px 8px;text-align:left;border:1px solid #cbd5e1;font-weight:600;color:#334155}
+  td{padding:6px 8px;border:1px solid #e2e8f0}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr.total td{font-weight:700;background:#f8fafc}
+  h3{margin:18px 0 6px;font-size:13px;color:#334155;border-bottom:2px solid #14b8a6;padding-bottom:4px}
+  .recon{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .recon .row{padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc}
+  .recon .row .lbl{font-size:11px;color:#64748b}
+  .recon .row .vals{display:flex;justify-content:space-between;margin-top:4px}
+  .recon .diff{font-weight:700}
+  .recon .diff.zero{color:#0f766e}
+  .recon .diff.pos{color:#0f766e}
+  .recon .diff.neg{color:#b91c1c}
+  .memo{padding:10px 12px;background:#fefce8;border:1px solid #fde047;border-radius:6px;white-space:pre-wrap}
+  @media print{body{padding:8mm}}
+</style></head><body>
+<h1>일마감 — ${date}</h1>
+<div class="meta">${clinic?.name ?? '오블리브 풋센터'}${isClosed ? ' · 마감 확정' : ' · 임시저장'}</div>
+
+<div class="grand">
+  <span class="label">당일 총 결제 합계</span>
+  <span class="amount">${fmt(totals.grossTotal)}원</span>
+</div>
+
+<h3>결제수단별 내역</h3>
+<table>
+<thead><tr><th>구분</th><th>카드</th><th>현금</th><th>이체</th><th>멤버십</th><th>합계</th></tr></thead>
+<tbody>
+<tr><td>패키지</td><td class="num">${fmt(totals.pkgCard)}</td><td class="num">${fmt(totals.pkgCash)}</td><td class="num">${fmt(totals.pkgTransfer)}</td><td class="num">0</td><td class="num">${fmt(totals.pkgCard + totals.pkgCash + totals.pkgTransfer)}</td></tr>
+<tr><td>단건</td><td class="num">${fmt(totals.singleCard)}</td><td class="num">${fmt(totals.singleCash)}</td><td class="num">${fmt(totals.singleTransfer)}</td><td class="num">${fmt(totals.singleMembership)}</td><td class="num">${fmt(totals.singleCard + totals.singleCash + totals.singleTransfer + totals.singleMembership)}</td></tr>
+<tr class="total"><td>합계</td><td class="num">${fmt(totals.totalCard)}</td><td class="num">${fmt(totals.totalCash)}</td><td class="num">${fmt(totals.totalTransfer)}</td><td class="num">${fmt(totals.singleMembership)}</td><td class="num">${fmt(totals.grossTotal)}</td></tr>
+</tbody>
+</table>
+
+<h3>실제 정산</h3>
+<div class="recon">
+  <div class="row">
+    <div class="lbl">카드</div>
+    <div class="vals"><span>시스템 ${fmt(totals.totalCard)}</span><span>실제 ${fmt(actualCard)}</span></div>
+    <div class="vals"><span></span><span class="diff ${cardDiff === 0 ? 'zero' : cardDiff > 0 ? 'pos' : 'neg'}">차이 ${cardDiff > 0 ? '+' : ''}${fmt(cardDiff)}</span></div>
+  </div>
+  <div class="row">
+    <div class="lbl">현금</div>
+    <div class="vals"><span>시스템 ${fmt(totals.totalCash)}</span><span>실제 ${fmt(actualCash)}</span></div>
+    <div class="vals"><span></span><span class="diff ${cashDiff === 0 ? 'zero' : cashDiff > 0 ? 'pos' : 'neg'}">차이 ${cashDiff > 0 ? '+' : ''}${fmt(cashDiff)}</span></div>
+  </div>
+</div>
+
+${totals.refundAmount > 0 ? `<h3>환불</h3><table><tbody><tr><td>환불 차감액</td><td class="num">${fmt(totals.refundAmount)}</td></tr></tbody></table>` : ''}
+${unpaid.length > 0 ? `<h3>미수</h3><div>결제대기 ${unpaid.length}건</div>` : ''}
+${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` : ''}
+</body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('팝업이 차단되었습니다. 브라우저 팝업 허용 후 다시 시도해주세요.'); return; }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 400);
+    toast.success('PDF 인쇄 다이얼로그를 열었어요. "PDF로 저장"을 선택하세요.');
   };
 
   const handlePrint = () => window.print();
@@ -674,8 +858,11 @@ export default function Closing() {
         <TabsContent value="summary" className="space-y-4">
           {/* 액션 버튼 */}
           <div className="flex flex-wrap gap-2 justify-end">
-            <Button variant="ghost" size="icon" onClick={exportCSV} title="CSV 다운로드">
-              <Download className="h-4 w-4" />
+            <Button variant="outline" size="sm" onClick={exportCSV} title="CSV 다운로드">
+              <Download className="mr-1 h-4 w-4" /> CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportSummaryPDF} title="PDF로 저장 — 인쇄 다이얼로그에서 'PDF로 저장' 선택">
+              <FileDown className="mr-1 h-4 w-4" /> PDF
             </Button>
             <Button variant="ghost" size="icon" onClick={handlePrint} title="인쇄">
               <Printer className="h-4 w-4" />
@@ -877,13 +1064,16 @@ export default function Closing() {
               합계 <span className="font-semibold text-emerald-700">{formatAmount(enrichedRows.reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0))}</span>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowManualDialog(true)}>
+              <Button variant="outline" size="sm" onClick={() => { setManualEditTarget(null); setShowManualDialog(true); }}>
                 <Plus className="mr-1 h-4 w-4" /> 수기 추가
               </Button>
               <Button variant="outline" size="sm" onClick={exportExcel} title="Excel 다운로드">
                 <FileSpreadsheet className="mr-1 h-4 w-4" /> Excel
               </Button>
-              <Button variant="ghost" size="icon" onClick={handlePrint} title="인쇄/PDF">
+              <Button variant="outline" size="sm" onClick={exportPaymentsPDF} title="PDF로 저장 — 인쇄 다이얼로그에서 'PDF로 저장' 선택">
+                <FileDown className="mr-1 h-4 w-4" /> PDF
+              </Button>
+              <Button variant="ghost" size="icon" onClick={handlePrint} title="인쇄">
                 <Printer className="h-4 w-4" />
               </Button>
             </div>
@@ -896,7 +1086,8 @@ export default function Closing() {
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
                     <tr className="border-b text-xs text-muted-foreground">
-                      <th className="py-2 px-3 text-left font-medium w-14">시간</th>
+                      <th className="py-2 px-3 text-left font-medium w-24">날짜</th>
+                      <th className="py-2 px-2 text-left font-medium w-14">시간</th>
                       <th className="py-2 px-2 text-left font-medium w-20">차트번호</th>
                       <th className="py-2 px-2 text-left font-medium w-20">성함</th>
                       <th className="py-2 px-2 text-left font-medium w-20">내원경로</th>
@@ -905,13 +1096,13 @@ export default function Closing() {
                       <th className="py-2 px-2 text-right font-medium w-24">결제금액</th>
                       <th className="py-2 px-2 text-left font-medium w-16">결제수단</th>
                       <th className="py-2 px-2 text-center font-medium w-16">구분</th>
-                      <th className="py-2 px-2 w-8"></th>
+                      <th className="py-2 px-2 w-16 text-center">관리</th>
                     </tr>
                   </thead>
                   <tbody>
                     {enrichedRows.length === 0 && (
                       <tr>
-                        <td colSpan={10} className="py-8 text-center text-sm text-muted-foreground">
+                        <td colSpan={11} className="py-8 text-center text-sm text-muted-foreground">
                           결제내역이 없습니다
                         </td>
                       </tr>
@@ -925,7 +1116,8 @@ export default function Closing() {
                           r.source === 'manual' && 'bg-sky-50',
                         )}
                       >
-                        <td className="py-2 px-3 tabular-nums text-xs">{r.pay_time}</td>
+                        <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{r.pay_date}</td>
+                        <td className="py-2 px-2 tabular-nums text-xs">{r.pay_time}</td>
                         <td className="py-2 px-2 text-xs text-muted-foreground">{r.chart_number ?? '-'}</td>
                         <td className="py-2 px-2 font-medium">{r.customer_name}</td>
                         <td className="py-2 px-2 text-xs">{r.lead_source ?? '-'}</td>
@@ -948,14 +1140,23 @@ export default function Closing() {
                           </Badge>
                         </td>
                         <td className="py-2 px-1 text-center">
-                          {r.source === 'manual' && r.manual_id && (
-                            <button
-                              onClick={() => deleteManual(r.manual_id!)}
-                              className="text-muted-foreground hover:text-destructive transition-colors"
-                              title="삭제"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                          {r.source === 'manual' && r.manual_id && r.manual_raw && (
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => { setManualEditTarget(r.manual_raw!); setShowManualDialog(true); }}
+                                className="text-muted-foreground hover:text-primary transition-colors p-1"
+                                title="수정"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => deleteManual(r.manual_id!)}
+                                className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                                title="삭제"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -964,7 +1165,7 @@ export default function Closing() {
                   {enrichedRows.length > 0 && (
                     <tfoot>
                       <tr className="border-t-2 bg-muted/50 font-semibold">
-                        <td colSpan={6} className="py-2 px-3 text-sm">합계</td>
+                        <td colSpan={7} className="py-2 px-3 text-sm">합계</td>
                         <td className="py-2 px-2 text-right tabular-nums text-sm text-emerald-700">
                           {formatAmount(enrichedRows.reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0))}
                         </td>
@@ -997,15 +1198,17 @@ export default function Closing() {
         </TabsContent>
       </Tabs>
 
-      {/* 수기 추가 다이얼로그 */}
+      {/* 수기 추가/수정 다이얼로그 */}
       {showManualDialog && clinic && (
         <ManualEntryDialog
           clinicId={clinic.id}
           closeDate={date}
           staffList={staffList}
-          onClose={() => setShowManualDialog(false)}
+          editTarget={manualEditTarget}
+          onClose={() => { setShowManualDialog(false); setManualEditTarget(null); }}
           onSaved={() => {
             setShowManualDialog(false);
+            setManualEditTarget(null);
             qc.invalidateQueries({ queryKey: ['closing-manual', clinic.id, date] });
           }}
         />
@@ -1032,20 +1235,25 @@ interface ManualEntryDialogProps {
   clinicId: string;
   closeDate: string;
   staffList: Staff[];
+  /** 수정 모드용 — null이면 신규 추가 모드 */
+  editTarget: ManualPaymentRow | null;
   onClose: () => void;
   onSaved: () => void;
 }
 
-function ManualEntryDialog({ clinicId, closeDate, staffList, onClose, onSaved }: ManualEntryDialogProps) {
-  const [payTime, setPayTime] = useState(format(new Date(), 'HH:mm'));
-  const [chartNumber, setChartNumber] = useState('');
-  const [customerName, setCustomerName] = useState('');
-  const [leadSource, setLeadSource] = useState('');
-  const [visitType, setVisitType] = useState('');
-  const [staffName, setStaffName] = useState('');
-  const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState<'card' | 'cash' | 'transfer'>('card');
-  const [memo, setMemo] = useState('');
+function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose, onSaved }: ManualEntryDialogProps) {
+  const isEdit = editTarget !== null;
+  const [payTime, setPayTime] = useState(editTarget?.pay_time ?? format(new Date(), 'HH:mm'));
+  const [chartNumber, setChartNumber] = useState(editTarget?.chart_number ?? '');
+  const [customerName, setCustomerName] = useState(editTarget?.customer_name ?? '');
+  const [leadSource, setLeadSource] = useState(editTarget?.lead_source ?? '');
+  const [visitType, setVisitType] = useState(editTarget?.visit_type ?? '');
+  const [staffName, setStaffName] = useState(editTarget?.staff_name ?? '');
+  const [amount, setAmount] = useState(editTarget ? String(editTarget.amount) : '');
+  const [method, setMethod] = useState<'card' | 'cash' | 'transfer'>(
+    (editTarget?.method as 'card' | 'cash' | 'transfer' | undefined) ?? 'card',
+  );
+  const [memo, setMemo] = useState(editTarget?.memo ?? '');
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -1054,7 +1262,7 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, onClose, onSaved }:
     if (!amt || amt <= 0) { toast.error('결제금액을 입력하세요'); return; }
 
     setSaving(true);
-    const { error } = await supabase.from('closing_manual_payments').insert({
+    const payload = {
       clinic_id: clinicId,
       close_date: closeDate,
       pay_time: payTime || null,
@@ -1066,10 +1274,20 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, onClose, onSaved }:
       amount: amt,
       method,
       memo: memo || null,
-    });
+    };
+
+    let error;
+    if (isEdit && editTarget) {
+      ({ error } = await supabase
+        .from('closing_manual_payments')
+        .update({ ...payload, updated_at: new Date().toISOString() })
+        .eq('id', editTarget.id));
+    } else {
+      ({ error } = await supabase.from('closing_manual_payments').insert(payload));
+    }
     setSaving(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
-    toast.success('수기 결제내역 추가됨');
+    toast.success(isEdit ? '수기 결제내역 수정됨' : '수기 결제내역 추가됨');
     onSaved();
   };
 
@@ -1077,7 +1295,7 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, onClose, onSaved }:
     <Dialog open onOpenChange={o => !o && !saving && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>수기 결제내역 추가</DialogTitle>
+          <DialogTitle>{isEdit ? '수기 결제내역 수정' : '수기 결제내역 추가'}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -1161,7 +1379,7 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, onClose, onSaved }:
         <DialogFooter>
           <Button variant="outline" disabled={saving} onClick={onClose}>취소</Button>
           <Button disabled={saving} onClick={save}>
-            {saving ? '저장 중…' : '추가'}
+            {saving ? '저장 중…' : isEdit ? '수정' : '추가'}
           </Button>
         </DialogFooter>
       </DialogContent>
