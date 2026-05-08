@@ -247,6 +247,21 @@ export default function CustomerChartPage() {
   const [savingField, setSavingField] = useState(false);
   // C2-STAFF-DROPDOWN: 실제 직원 목록 (coordinator + consultant + director)
   const [staffList, setStaffList] = useState<{id: string; name: string; role: string}[]>([]);
+  // C2-PKG-TICKET-TABLE: 치료사 목록 (role = 'therapist')
+  const [therapistList, setTherapistList] = useState<{id: string; name: string}[]>([]);
+  // C2-PKG-TICKET-TABLE: 회차 차감 + 치료사 드롭다운 다이얼로그
+  const [useSessionDlg, setUseSessionDlg] = useState<{
+    open: boolean;
+    packageId: string;
+    packageName: string;
+    nextSession: number;
+  } | null>(null);
+  const [sessionDlgForm, setSessionDlgForm] = useState({
+    therapistId: '',
+    sessionDate: format(new Date(), 'yyyy-MM-dd'),
+    sessionType: 'heated_laser',
+  });
+  const [savingSession, setSavingSession] = useState(false);
   // C2-HIRA-CONSENT: 건보 조회 동의 상태
   const [savingHira, setSavingHira] = useState(false);
   // C2-RESV-MINI-POPUP: 예약하기 미니창
@@ -290,6 +305,16 @@ export default function CustomerChartPage() {
         .in('role', ['consultant', 'coordinator', 'director'])
         .order('name', { ascending: true });
       setStaffList((staffData ?? []) as {id: string; name: string; role: string}[]);
+
+      // C2-PKG-TICKET-TABLE: 치료사 목록 로드 (role = 'therapist')
+      const { data: therapistData } = await supabase
+        .from('staff')
+        .select('id, name')
+        .eq('clinic_id', (custData as Customer).clinic_id)
+        .eq('active', true)
+        .eq('role', 'therapist')
+        .order('name', { ascending: true });
+      setTherapistList((therapistData ?? []) as {id: string; name: string}[]);
 
       const [pkgRes, visitRes, payRes, pkgPayRes, resvRes, ciHistRes] = await Promise.all([
         supabase.from('packages').select('*').eq('customer_id', customerId).order('contract_date', { ascending: false }),
@@ -440,6 +465,58 @@ export default function CustomerChartPage() {
     await saveCustomerField({ postal_code: postalCodeText.trim() || null });
     setEditingPostalCode(false);
     toast.success('우편번호 저장됨');
+  };
+
+  // C2-PKG-TICKET-TABLE: 회차 차감 저장 (치료사 드롭다운)
+  const saveUseSession = async () => {
+    if (!useSessionDlg || !sessionDlgForm.therapistId) {
+      toast.error('치료사를 선택해주세요.');
+      return;
+    }
+    setSavingSession(true);
+    const { error } = await supabase.from('package_sessions').insert({
+      package_id: useSessionDlg.packageId,
+      session_number: useSessionDlg.nextSession,
+      session_type: sessionDlgForm.sessionType,
+      session_date: sessionDlgForm.sessionDate,
+      performed_by: sessionDlgForm.therapistId,
+      status: 'used',
+    });
+    setSavingSession(false);
+    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+
+    // 패키지 세션 + 잔여횟수 새로고침
+    if (packages.length > 0) {
+      const pkgIds = packages.map((p) => p.id);
+      const { data: sessData } = await supabase
+        .from('package_sessions')
+        .select('id, package_id, session_number, session_type, session_date, performed_by, status, memo, staff:performed_by(name)')
+        .in('package_id', pkgIds)
+        .order('session_number', { ascending: true });
+      setPackageSessions(
+        (sessData ?? []).map((s: Record<string, unknown>) => ({
+          id: s.id as string,
+          package_id: s.package_id as string,
+          session_number: s.session_number as number,
+          session_type: s.session_type as string,
+          session_date: s.session_date as string,
+          performed_by: s.performed_by as string | null,
+          staff_name: (s.staff as { name: string } | null)?.name ?? null,
+          status: s.status as string,
+          memo: s.memo as string | null,
+        })),
+      );
+      const remaining = await Promise.all(
+        packages.map(async (p) => {
+          const { data } = await supabase.rpc('get_package_remaining', { p_package_id: p.id });
+          return data as PackageRemaining | null;
+        }),
+      );
+      setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remaining[i] })));
+    }
+
+    setUseSessionDlg(null);
+    toast.success('회차 차감 완료');
   };
 
   // 우편번호 카카오 주소검색 팝업 (Kakao Postcode API)
@@ -1779,10 +1856,35 @@ export default function CustomerChartPage() {
                           <td className="border border-gray-100 px-1.5 py-1.5 text-right tabular-nums">{formatAmount(p.total_amount)}</td>
                           <td className="border border-gray-100 px-1.5 py-1.5 text-center">{p.total_sessions}회</td>
                           <td className="border border-gray-100 px-1.5 py-1.5 text-center">
-                            <span className="font-semibold text-teal-700">{usedCount}회</span>
-                            {therapistNames.length > 0 && (
-                              <span className="ml-1 text-[10px] text-gray-500">({therapistNames.join(', ')})</span>
-                            )}
+                            <div className="flex flex-col items-center gap-0.5">
+                              <div>
+                                <span className="font-semibold text-teal-700">{usedCount}회</span>
+                                {therapistNames.length > 0 && (
+                                  <span className="ml-1 text-[10px] text-gray-500">({therapistNames.join(', ')})</span>
+                                )}
+                              </div>
+                              {p.status === 'active' && (profile?.role === 'therapist' || profile?.role === 'admin' || profile?.role === 'manager') && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setUseSessionDlg({
+                                      open: true,
+                                      packageId: p.id,
+                                      packageName: p.package_name,
+                                      nextSession: usedCount + 1,
+                                    });
+                                    setSessionDlgForm({
+                                      therapistId: '',
+                                      sessionDate: format(new Date(), 'yyyy-MM-dd'),
+                                      sessionType: 'heated_laser',
+                                    });
+                                  }}
+                                  className="text-[9px] rounded bg-teal-50 border border-teal-300 px-1.5 py-0.5 text-teal-600 hover:bg-teal-100 transition"
+                                >
+                                  차감
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -2129,6 +2231,77 @@ export default function CustomerChartPage() {
                 {savingResvMini ? '저장 중…' : '예약 등록'}
               </Button>
               <Button variant="outline" className="h-8 text-xs px-3" onClick={() => setOpenResvMiniPopup(false)}>
+                취소
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* C2-PKG-TICKET-TABLE: 회차 차감 + 치료사 드롭다운 다이얼로그 (UseSessionDialog) */}
+      {useSessionDlg?.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-80 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="font-semibold text-teal-800 text-sm">회차 차감</div>
+              <button type="button" onClick={() => setUseSessionDlg(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              패키지: <span className="font-medium text-gray-800">{useSessionDlg.packageName}</span>
+              &nbsp;· <span className="text-teal-700 font-semibold">{useSessionDlg.nextSession}회차</span>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-gray-700 mb-1 block">
+                  치료사 <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={sessionDlgForm.therapistId}
+                  onChange={(e) => setSessionDlgForm((f) => ({ ...f, therapistId: e.target.value }))}
+                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                >
+                  <option value="">— 치료사 선택 —</option>
+                  {therapistList.length > 0 ? therapistList.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  )) : (
+                    <option disabled>등록된 치료사 없음</option>
+                  )}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-700 mb-1 block">시술 날짜</label>
+                <input
+                  type="date"
+                  value={sessionDlgForm.sessionDate}
+                  onChange={(e) => setSessionDlgForm((f) => ({ ...f, sessionDate: e.target.value }))}
+                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-700 mb-1 block">시술 유형</label>
+                <select
+                  value={sessionDlgForm.sessionType}
+                  onChange={(e) => setSessionDlgForm((f) => ({ ...f, sessionType: e.target.value }))}
+                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                >
+                  <option value="heated_laser">가열 레이저</option>
+                  <option value="unheated_laser">비가열 레이저</option>
+                  <option value="preconditioning">사전처치(프컨)</option>
+                  <option value="iv">수액</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button
+                className="flex-1 bg-teal-600 hover:bg-teal-700 h-9 text-xs"
+                onClick={saveUseSession}
+                disabled={savingSession || !sessionDlgForm.therapistId}
+              >
+                {savingSession ? '저장 중…' : '차감 확정'}
+              </Button>
+              <Button variant="outline" className="h-9 text-xs px-3" onClick={() => setUseSessionDlg(null)}>
                 취소
               </Button>
             </div>
