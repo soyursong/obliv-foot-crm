@@ -375,6 +375,7 @@ export interface Reservation {
   customer_phone: string | null;
   reservation_date: string;
   reservation_time: string;
+  end_time: string | null;                  // 예약 종료시간 (HH:MM) — C2-RESV-DETAIL-PANEL
   visit_type: VisitType;
   service_id: string | null;
   memo: string | null;
