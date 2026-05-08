@@ -316,6 +316,7 @@ export interface PackageRemaining {
   unheated: number;
   iv: number;
   preconditioning: number;
+  podologe?: number;  // packages.podologe_sessions 참조 (컬럼명 오타 유지)
   total_used: number;
   total_remaining: number;
 }
