@@ -509,6 +509,35 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
     },
   });
 
+  // T-20260508-foot-ROOM-STAFF-LINK: 공간 유형별 허용 역할 매핑
+  const { data: roomRoleMappings = [] } = useQuery<{ room_type: string; allowed_role: string }[]>({
+    queryKey: ['room_role_mapping', clinic.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('room_role_mapping')
+        .select('room_type, allowed_role')
+        .eq('clinic_id', clinic.id);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  /** room_type → 허용 StaffRole[] 맵. 미설정 시 빈 배열 (전체 직원 노출) */
+  const roomTypeAllowedRoles = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const row of roomRoleMappings) {
+      (map[row.room_type] ??= []).push(row.allowed_role);
+    }
+    return map;
+  }, [roomRoleMappings]);
+
+  /** 공간 유형에 따라 배정 가능한 직원 반환 (하위호환: 미설정 → 전체) */
+  const getFilteredStaff = (roomType: string): Staff[] => {
+    const allowed = roomTypeAllowedRoles[roomType];
+    if (!allowed || allowed.length === 0) return staffList;
+    return staffList.filter(s => allowed.includes(s.role));
+  };
+
   const { data: assignments = [] } = useQuery<RoomAssignmentRow[]>({
     queryKey: ['room_assignments', clinic.id, date],
     queryFn: async () => {
@@ -744,9 +773,12 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
                             className="h-8 flex-1 rounded-md border bg-background px-2 text-sm"
                             value={assigned?.staff_id ?? ''}
                             onChange={(e) => handleAssign(room, e.target.value)}
+                            title={roomTypeAllowedRoles[room.room_type]?.length
+                              ? `배정 가능: ${roomTypeAllowedRoles[room.room_type].map(r => ROLE_LABEL[r as Staff['role']] ?? r).join(', ')}`
+                              : '전체 직원 배정 가능'}
                           >
                             <option value="">— 미배정 —</option>
-                            {staffList.map((s) => (
+                            {getFilteredStaff(room.room_type).map((s) => (
                               <option key={s.id} value={s.id}>{s.name} · {ROLE_LABEL[s.role]}</option>
                             ))}
                           </select>
@@ -789,9 +821,12 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
                             className="h-7 w-full rounded border bg-background px-1 text-xs"
                             value={a?.staff_id ?? ''}
                             onChange={(e) => handleWeekAssign(room, dayStr, e.target.value)}
+                            title={roomTypeAllowedRoles[room.room_type]?.length
+                              ? `배정 가능: ${roomTypeAllowedRoles[room.room_type].map(r => ROLE_LABEL[r as Staff['role']] ?? r).join(', ')}`
+                              : undefined}
                           >
                             <option value="">—</option>
-                            {staffList.map((s) => (
+                            {getFilteredStaff(room.room_type).map((s) => (
                               <option key={s.id} value={s.id}>{s.name}</option>
                             ))}
                           </select>
