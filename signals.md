@@ -1,5 +1,19 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-08 — dev-foot | deploy-ready | T-20260508-foot-ROOM-STAFF-LINK
+
+**공간배정 파트별 직원 연동 구현 완료**
+
+- DB: `room_role_mapping` 테이블 신규 (B안) + RLS + Seed 적용 완료
+- Seed: 치료실/레이저실→therapist, 상담실→consultant, 원장실→director
+- FE: RoomTab 일간/주간 드롭다운 role 필터링 (`getFilteredStaff`)
+- 하위호환: role_filter 미설정 공간 → 전체 직원 노출
+- TypeScript 에러 0건, 빌드 PASS
+- git: c42ed70 | push: origin/main 완료
+- AC 전건 충족 (AC1~AC5)
+
+---
+
 ## 2026-05-08 — dev-foot | deploy-approval-requested | MQ-20260508-THEME-SPLIT-CRM-WHITE + MQ-20260508-PKG-TEMPLATE-UX
 
 **CRM 관리화면 화이트 복구 + 패키지 생성 폼 UI 보완 (현장 피드백 4건)**
