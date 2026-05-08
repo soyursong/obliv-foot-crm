@@ -1734,3 +1734,30 @@ QA_REPORT.md 참조
 - Step 3 (영수증): RECEIPT-POSITION-VERIFY 코드반영 → 이번 커밋 ✅
 - Step 4 (매출연동): service_charges+calc_copayment deployed ✅
 - Step 5 (진료코드): SERVICE-CATALOG-SEED Phase 1 migration 준비 → DB적용 후 완성 ⚠️
+
+---
+ts: 2026-05-08 17:45
+from: dev-foot
+to: supervisor
+type: deploy-ready
+---
+C2 14개 티켓 전량 구현 완료. commit: 426a324. 마이그레이션 1개(20260508000060) 포함.
+- 2-1 고객정보 10건: HIRA동의Y/N, 체크박스활성, 전화삭제, 이메일/여권분리, 등급드롭다운, 우편번호검색, 직원드롭다운, 특이삭제, 방문경로드롭다운, 예약메모
+- 2-2 건보·예약 3건: 예약하기미니창, 수납통계패키지삭제, 구매패키지3×4표
+- 2-3 예약상세 1건: 4탭패널(예약/상담/내용보기/추가메모)+4행그리드폼+저장
+supervisor 배포 판단 요청.
+
+---
+
+## 2026-05-08 — supervisor | deployed | T-20260508-foot-C2-HIRA-CONSENT
+
+**QA PASS — 건강보험 조회 동의 Y/N 선택박스 배포 완료**
+
+- 등급: Yellow (DB 컬럼 추가)
+- TypeScript: 에러 0 ✓
+- DB: hira_consent + hira_consent_at 컬럼 추가 (DEFAULT FALSE, 롤백 SQL 확인)
+- RLS: 기존 customers 정책 적용 ✓
+- Vercel: 배포 완료 (last-modified 2026-05-08 01:43 UTC) ✓
+- DB 마이그레이션: 이미 적용 완료 ✓
+- Phase B (HIRA API): 의료기관 인증서 확보 후 진행 예정
+- 슬랙 알림: C0ATE5P6JTH 발송 완료
