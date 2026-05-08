@@ -1,5 +1,23 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-08 20:40 — dev-foot | migration-blocked | T-20260508-foot-C23-DETAIL-SIMPLIFY (운영DB 수동 적용 필요)
+
+**migration 000090 운영DB 자동 적용 불가 — 대표 수동 실행 요청**
+
+- 현상: psql 직접 연결 DNS 불응답 / Supabase pooler ENOTFOUND / CLI 토큰 없음
+- REST API 확인: 컬럼 미존재 (42703) — 적용 필요 확정
+- FE 폴백(`customers.memo`)으로 치료메모 탭 동작은 유지되나, 운영 안정성 위해 적용 필요
+
+**→ Supabase Dashboard에서 수동 실행 필요:**
+```
+URL: https://supabase.com/dashboard/project/rxlomoozakkjesdqjtvd/editor
+SQL:
+  ALTER TABLE customers ADD COLUMN IF NOT EXISTS treatment_note TEXT;
+  COMMENT ON COLUMN customers.treatment_note IS '치료메모: 치료사끼리 공유하는 고객 특이사항 메모 (C23-DETAIL-SIMPLIFY)';
+```
+
+---
+
 ## 2026-05-08 20:15 — dev-foot | deploy-ready | T-20260508-foot-C23-DETAIL-SIMPLIFY
 
 **2-3 상세 패널 스펙 전면 재설계 구현 완료 — supervisor QA 요청**
