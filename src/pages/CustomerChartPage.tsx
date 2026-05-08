@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { ExternalLink, Pencil, Plus, Printer, Trash2, Upload, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
@@ -17,6 +17,9 @@ import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, Pre
 import { DocumentViewer } from '@/components/forms/DocumentViewer';
 // T-20260507-foot-CHART2-INSURANCE-FIELDS: 건보 자격등급 패널
 import { InsuranceGradeSelect } from '@/components/insurance/InsuranceGradeSelect';
+// T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
+import { useClinic } from '@/hooks/useClinic';
+import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
@@ -203,6 +206,8 @@ function CustomerStorageImageSection({
 export default function CustomerChartPage() {
   const { customerId } = useParams<{ customerId: string }>();
   const { profile, loading: authLoading } = useAuth();
+  // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
+  const clinic = useClinic();
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [packages, setPackages] = useState<PackageWithRemaining[]>([]);
@@ -266,7 +271,8 @@ export default function CustomerChartPage() {
   const [savingHira, setSavingHira] = useState(false);
   // C2-RESV-MINI-POPUP: 예약하기 미니창
   const [openResvMiniPopup, setOpenResvMiniPopup] = useState(false);
-  const [resvMiniForm, setResvMiniForm] = useState({ date: '', startTime: '', endTime: '', memo: '' });
+  // T-20260508-foot-C22-RESV-EDIT: endTime 삭제 (불필요)
+  const [resvMiniForm, setResvMiniForm] = useState({ date: '', startTime: '', memo: '' });
   const [savingResvMini, setSavingResvMini] = useState(false);
   // C2-RESV-DETAIL-PANEL: 예약상세 탭
   const [resvDetailTab, setResvDetailTab] = useState<'예약' | '상담' | '치료메모'>('예약');
@@ -596,6 +602,7 @@ export default function CustomerChartPage() {
   };
 
   // C2-RESV-MINI-POPUP: 미니 예약 저장
+  // T-20260508-foot-C22-RESV-EDIT: end_time 제거 + visit_type: 'returning' 자동 설정
   const saveResvMini = async () => {
     if (!customer || !resvMiniForm.date || !resvMiniForm.startTime) {
       toast.error('예약일자와 시작시간을 입력하세요');
@@ -605,9 +612,11 @@ export default function CustomerChartPage() {
     const { error } = await supabase.from('reservations').insert({
       customer_id: customer.id,
       clinic_id: customer.clinic_id,
+      customer_name: customer.name,
+      customer_phone: customer.phone ?? null,
       reservation_date: resvMiniForm.date,
       reservation_time: resvMiniForm.startTime,
-      end_time: resvMiniForm.endTime || null,
+      visit_type: 'returning',  // 재진으로 자동 생성
       booking_memo: resvMiniForm.memo || null,
       status: 'confirmed',
       created_by: profile?.id ?? null,
@@ -623,8 +632,8 @@ export default function CustomerChartPage() {
       .limit(30);
     setReservations((resvData ?? []) as Reservation[]);
     setOpenResvMiniPopup(false);
-    setResvMiniForm({ date: '', startTime: '', endTime: '', memo: '' });
-    toast.success('예약 등록 완료');
+    setResvMiniForm({ date: '', startTime: '', memo: '' });
+    toast.success('예약 등록 완료 (재진)');
   };
 
   // C23-DETAIL-SIMPLIFY: 예약 상세 저장 (간소화 — 고객메모/기타메모 저장)
@@ -754,6 +763,19 @@ export default function CustomerChartPage() {
     setEditResvId(null);
     toast.success('예약 수정 완료');
   };
+
+  // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동 — 미니예약창/수정모달 슬롯
+  const miniPopupSlots = useMemo(() => {
+    if (!clinic || !resvMiniForm.date) return [];
+    const d = parseISO(resvMiniForm.date);
+    return generateSlots(openTimeFor(clinic), closeTimeFor(d, clinic), clinic.slot_interval);
+  }, [clinic, resvMiniForm.date]);
+
+  const editResvSlots = useMemo(() => {
+    if (!clinic || !editResvForm.date) return [];
+    const d = parseISO(editResvForm.date);
+    return generateSlots(openTimeFor(clinic), closeTimeFor(d, clinic), clinic.slot_interval);
+  }, [clinic, editResvForm.date]);
 
   const totalPaid =
     payments.filter((p) => p.payment_type === 'payment').reduce((x, p) => x + p.amount, 0) +
@@ -1489,7 +1511,7 @@ export default function CustomerChartPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      setResvMiniForm({ date: format(new Date(), 'yyyy-MM-dd'), startTime: '', endTime: '', memo: '' });
+                      setResvMiniForm({ date: format(new Date(), 'yyyy-MM-dd'), startTime: '', memo: '' });
                       setOpenResvMiniPopup(true);
                     }}
                     className="inline-flex items-center gap-1 rounded border border-teal-400 bg-teal-50 px-2 py-0.5 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
@@ -1500,11 +1522,24 @@ export default function CustomerChartPage() {
                 {reservations.length === 0 ? (
                   <div className="text-muted-foreground py-2">예약 없음</div>
                 ) : (
+                  /* T-20260508-foot-C22-RESV-EDIT: 예약 항목 클릭 → 수정모달 */
                   reservations.map((r) => (
-                    <div key={r.id} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => {
+                        setEditResvId(r.id);
+                        setEditResvForm({
+                          date: r.reservation_date,
+                          startTime: r.reservation_time.slice(0, 5),
+                          memo: r.booking_memo ?? '',
+                        });
+                      }}
+                      className="w-full flex items-center justify-between rounded bg-muted/30 px-2 py-1 hover:bg-muted/60 transition text-left"
+                    >
                       <span>{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
                       <Badge variant="secondary" className="text-[10px]">{r.status}</Badge>
-                    </div>
+                    </button>
                   ))
                 )}
               </div>
@@ -2124,7 +2159,7 @@ export default function CustomerChartPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setResvMiniForm({ date: format(new Date(), 'yyyy-MM-dd'), startTime: '', endTime: '', memo: '' });
+                  setResvMiniForm({ date: format(new Date(), 'yyyy-MM-dd'), startTime: '', memo: '' });
                   setOpenResvMiniPopup(true);
                 }}
                 className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
@@ -2331,6 +2366,7 @@ export default function CustomerChartPage() {
                   onChange={(e) => setResvMiniForm((f) => ({ ...f, date: e.target.value }))}
                   className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500" />
               </div>
+              {/* T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동 (30분 단위, 평일 20시/토 18시까지) */}
               <div>
                 <label className="block text-muted-foreground mb-0.5">시작시간 <span className="text-red-500">*</span></label>
                 <select
@@ -2339,12 +2375,17 @@ export default function CustomerChartPage() {
                   className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500 bg-white"
                 >
                   <option value="">시간 선택</option>
-                  {Array.from({ length: 23 }, (_, i) => {
-                    const h = Math.floor(i / 2) + 9;
-                    const m = i % 2 === 0 ? '00' : '30';
-                    const timeStr = `${String(h).padStart(2, '0')}:${m}`;
-                    return <option key={timeStr} value={timeStr}>{timeStr}</option>;
-                  })}
+                  {miniPopupSlots.length > 0
+                    ? miniPopupSlots.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))
+                    : Array.from({ length: 23 }, (_, i) => {
+                        const h = Math.floor(i / 2) + 9;
+                        const m = i % 2 === 0 ? '00' : '30';
+                        const timeStr = `${String(h).padStart(2, '0')}:${m}`;
+                        return <option key={timeStr} value={timeStr}>{timeStr}</option>;
+                      })
+                  }
                 </select>
               </div>
               <div>
@@ -2391,6 +2432,7 @@ export default function CustomerChartPage() {
                   onChange={(e) => setEditResvForm(f => ({ ...f, date: e.target.value }))}
                   className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500" />
               </div>
+              {/* T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동 (30분 단위, 평일 20시/토 18시까지) */}
               <div>
                 <label className="block text-muted-foreground mb-0.5">시작시간 *</label>
                 <select
@@ -2399,12 +2441,17 @@ export default function CustomerChartPage() {
                   className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500 bg-white"
                 >
                   <option value="">시간 선택</option>
-                  {Array.from({ length: 23 }, (_, i) => {
-                    const h = Math.floor(i / 2) + 9;
-                    const m = i % 2 === 0 ? '00' : '30';
-                    const timeStr = `${String(h).padStart(2, '0')}:${m}`;
-                    return <option key={timeStr} value={timeStr}>{timeStr}</option>;
-                  })}
+                  {editResvSlots.length > 0
+                    ? editResvSlots.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))
+                    : Array.from({ length: 23 }, (_, i) => {
+                        const h = Math.floor(i / 2) + 9;
+                        const m = i % 2 === 0 ? '00' : '30';
+                        const timeStr = `${String(h).padStart(2, '0')}:${m}`;
+                        return <option key={timeStr} value={timeStr}>{timeStr}</option>;
+                      })
+                  }
                 </select>
               </div>
               <div>
