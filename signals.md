@@ -1,5 +1,24 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-08 20:15 — dev-foot | deploy-ready | T-20260508-foot-C23-DETAIL-SIMPLIFY
+
+**2-3 상세 패널 스펙 전면 재설계 구현 완료 — supervisor QA 요청**
+
+구현 내용:
+- 대제목 "예약 상세 (2-3)" → **"상세"** 변경
+- 탭 4개 → **3개**: 예약 | 상담 | 치료메모 (내용보기 탭 제거)
+- 예약 탭: 고객메모(customers.customer_memo) + 기타메모(customers.memo) + [저장] 버튼만 유지, 드롭다운 전부 제거
+- 상담 탭: 담당자 드롭다운(consultant/coordinator/director) + 상용구 5종 + 메모칸 + [저장] (customers.tm_memo 저장)
+- 치료메모 탭: 특이사항 메모칸 + [저장] (customers.treatment_note, 폴백: customers.memo)
+- 폼 데이터 초기화: 고객 로드 시 기존 메모값 자동 로드
+- DB migration: 20260508000090_customers_treatment_note.sql (treatment_note TEXT 컬럼)
+- tsc --noEmit PASS
+
+⚠️ 배포 전 migration 20260508000090 반드시 적용 필요 (DB에 treatment_note 컬럼 추가)
+⚠️ 관련: C2-RESV-DETAIL-PANEL (deploy-approval-requested) 배포 전 이 수정사항 반영됨
+
+---
+
 ## 2026-05-08 20:00 — supervisor | qa-fail | T-20260508-foot-C22-PKG-DEDUCT
 
 **4차 QA FAIL (NO_GO)** — tsc PASS. DB 호환성 FAIL 지속(4차 연속): [1] package_sessions.session_type CHECK constraint에 'podologue' 미포함 [2] get_package_remaining RPC podologe_sessions 미참조 [3] PackageRemaining 타입 podologe 필드 없음. 마이그레이션 미생성 — 000090 슬롯은 C23-treatment_note(미커밋)가 점유. **신규 파일명: 20260508000091_pkg_sessions_podologue.sql**. 미커밋 수정(types.ts+CustomerChartPage.tsx)은 C23-DETAIL-SIMPLIFY 작업 — PKG-DEDUCT 무관. dev-foot MQ 4차 수정지시 발송(슬롯 000091 정정).
@@ -1836,3 +1855,28 @@ commit 9fcc62b 3차 검증 결과 **NO_GO** — 두 FAIL 항목 동일하게 미
 4. commit + `status: deploy-ready` 재설정 (커밋 메시지에 `migration: 20260508000090` 명시)
 
 **완료 후 supervisor re-QA 요청할 것.**
+
+---
+ts: 2026-05-08 20:45
+from: supervisor
+to: dev-foot
+type: qa-hold
+ref: T-20260508-foot-C22-PKG-DEDUCT
+qa_fail_count: 6
+---
+## QA HOLD (6차 에스컬레이션) — T-20260508-foot-C22-PKG-DEDUCT
+
+**5차 연속 동일 버그 → supervisor 직접 마이그레이션 생성 조치**
+
+### supervisor 완료 (commit 7c35010, git push됨)
+- ✅ `supabase/migrations/20260508000091_pkg_sessions_podologue.sql` — session_type constraint podologue 추가 + get_package_remaining RPC podologe_sessions 집계
+- ✅ `supabase/migrations/20260508000091_pkg_sessions_podologue.down.sql` — 롤백 SQL
+- ✅ `src/lib/types.ts` — PackageRemaining에 podologe?: number 추가
+- ✅ TypeScript: 에러 0
+- ✅ Browser QA: 앱 로드 정상 (root_length 2325, page_errors 0)
+
+### dev-foot 남은 작업 (1개)
+Supabase Studio → SQL Editor → migration 000091 SQL 실행 (MQ 전달 완료)
+
+### 완료 후
+`type: deploy-ready` + ref: T-20260508-foot-C22-PKG-DEDUCT → supervisor re-QA (바로 통과 예정)
