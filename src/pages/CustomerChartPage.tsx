@@ -535,6 +535,8 @@ export default function CustomerChartPage() {
   };
 
   // C2-RESV-DETAIL-PANEL: 예약 상세 저장
+  // [B안 확정] subject/visitType/consultant/room/colorTag/assist/doctor/extra 8개 필드는 Phase 2에서 저장 예정.
+  // 현재는 예약일시(date, startTime, endTime)와 메모(memo, etcMemo)만 저장함 — 데이터 유실 아님, 의도된 범위.
   const saveResvDetail = async () => {
     if (!customer || !resvDetailForm.date || !resvDetailForm.startTime) {
       toast.error('예약일자와 시작시간을 입력하세요');
@@ -551,6 +553,7 @@ export default function CustomerChartPage() {
       memo: resvDetailForm.etcMemo || null,
       status: 'confirmed',
       created_by: profile?.id ?? null,
+      // Phase 2: subject, visitType, consultant, room, colorTag, assist, doctor, extra
     });
     setSavingResvDetail(false);
     if (error) { toast.error(`예약 저장 실패: ${error.message}`); return; }
@@ -1997,7 +2000,7 @@ export default function CustomerChartPage() {
                   />
                 </div>
 
-                {/* 하단 버튼 6개 */}
+                {/* 하단 버튼 5개 (수용기준 B안: 콜프린터/반복저장/추가/저장후닫기/닫기 — 6번째 불필요) */}
                 <div className="flex gap-1 flex-wrap">
                   <button type="button" onClick={() => window.print()}
                     className="flex-1 min-w-0 rounded border border-gray-300 px-1.5 py-1 text-[10px] hover:bg-gray-50 transition whitespace-nowrap">
