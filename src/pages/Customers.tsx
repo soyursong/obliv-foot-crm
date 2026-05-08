@@ -392,6 +392,9 @@ export default function Customers() {
 // EditCustomerDialog — 고객 정보 수정 전용 다이얼로그 (차트 섹션 없음)
 // T-20260506-foot-CHART-CONSOLIDATE: CustomerDetailSheet 차트 UI 완전 폐지
 // ─────────────────────────────────────────────────────────────────────────────
+// T-20260508-foot-CUST-FORM-REVAMP: 고객등급 옵션
+const CUSTOMER_GRADE_OPTIONS = ['일반', '1단계', '2단계', '3단계'] as const;
+
 function EditCustomerDialog({
   customer,
   onOpenChange,
@@ -402,6 +405,7 @@ function EditCustomerDialog({
   onUpdated: () => void;
 }) {
   const [name, setName] = useState('');
+  // phone: 읽기전용 표시 (T-20260508-foot-CUST-FORM-REVAMP: 전화번호 기입칸 삭제)
   const [phone, setPhone] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [chartNumber, setChartNumber] = useState('');
@@ -410,6 +414,11 @@ function EditCustomerDialog({
   const [leadSource, setLeadSource] = useState('');
   const [tmMemo, setTmMemo] = useState('');
   const [referrerName, setReferrerName] = useState('');
+  // T-20260508-foot-CUST-FORM-REVAMP: 신규 필드
+  const [customerGrade, setCustomerGrade] = useState<string>('일반');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [passportNumber, setPassportNumber] = useState('');
+  const [postalCode, setPostalCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -423,6 +432,10 @@ function EditCustomerDialog({
       setLeadSource(customer.lead_source ?? '');
       setTmMemo(customer.tm_memo ?? '');
       setReferrerName(customer.referrer_name ?? '');
+      setCustomerGrade(customer.customer_grade ?? '일반');
+      setCustomerEmail(customer.customer_email ?? '');
+      setPassportNumber(customer.passport_number ?? '');
+      setPostalCode(customer.postal_code ?? '');
     }
   }, [customer]);
 
@@ -433,7 +446,7 @@ function EditCustomerDialog({
       .from('customers')
       .update({
         name: name.trim(),
-        phone: phone.trim(),
+        // phone 유지 (읽기전용 표시이지만 기존값 보존)
         birth_date: birthDate.trim() || null,
         // chart_number: 자동 부여 후 변경 불가 (T-20260505-foot-CHART-NUMBER-AUTO)
         memo: memo.trim() || null,
@@ -441,6 +454,11 @@ function EditCustomerDialog({
         lead_source: leadSource.trim() || null,
         tm_memo: tmMemo.trim() || null,
         referrer_name: referrerName.trim() || null,
+        // T-20260508-foot-CUST-FORM-REVAMP
+        customer_grade: customerGrade || '일반',
+        customer_email: customerEmail.trim() || null,
+        passport_number: passportNumber.trim() || null,
+        postal_code: postalCode.trim() || null,
       })
       .eq('id', customer.id);
     setSubmitting(false);
@@ -458,16 +476,18 @@ function EditCustomerDialog({
         <DialogHeader>
           <DialogTitle>고객 정보 수정 — {customer?.name}</DialogTitle>
         </DialogHeader>
-        <div className="max-h-[60vh] overflow-y-auto space-y-3 pr-1">
+        <div className="max-h-[65vh] overflow-y-auto space-y-3 pr-1">
           {/* 이름 */}
           <div className="space-y-1.5">
             <Label>이름</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </div>
-          {/* 전화번호 */}
+          {/* 전화번호 — 읽기전용 표시 (T-20260508-foot-CUST-FORM-REVAMP: 기입칸 삭제) */}
           <div className="space-y-1.5">
-            <Label>전화번호</Label>
-            <Input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" />
+            <Label>전화번호 <span className="text-xs text-muted-foreground font-normal">(변경 불가)</span></Label>
+            <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground select-all">
+              {phone || '—'}
+            </div>
           </div>
           {/* 생년월일 / 차트번호 */}
           <div className="grid grid-cols-2 gap-2">
@@ -488,6 +508,64 @@ function EditCustomerDialog({
               </div>
               <p className="text-[10px] text-muted-foreground">자동 부여됨 (변경 불가)</p>
             </div>
+          </div>
+          {/* 고객등급 — T-20260508-foot-CUST-FORM-REVAMP */}
+          <div className="space-y-1.5">
+            <Label>고객등급 <span className="text-xs text-muted-foreground font-normal">(진상 등급)</span></Label>
+            <div className="flex gap-1.5 flex-wrap">
+              {CUSTOMER_GRADE_OPTIONS.map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setCustomerGrade(g)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition border ${
+                    customerGrade === g
+                      ? g === '일반'
+                        ? 'bg-teal-600 text-white border-teal-600'
+                        : g === '1단계'
+                        ? 'bg-yellow-500 text-white border-yellow-500'
+                        : g === '2단계'
+                        ? 'bg-orange-500 text-white border-orange-500'
+                        : 'bg-red-600 text-white border-red-600'
+                      : 'bg-muted text-muted-foreground border-transparent hover:bg-muted/80'
+                  }`}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* 이메일 — T-20260508-foot-CUST-FORM-REVAMP */}
+          <div className="space-y-1.5">
+            <Label>이메일</Label>
+            <Input
+              type="email"
+              value={customerEmail}
+              onChange={(e) => setCustomerEmail(e.target.value)}
+              placeholder="example@email.com"
+            />
+          </div>
+          {/* 여권번호 — T-20260508-foot-CUST-FORM-REVAMP */}
+          <div className="space-y-1.5">
+            <Label>여권번호 <span className="text-xs text-muted-foreground font-normal">(외국인)</span></Label>
+            <Input
+              value={passportNumber}
+              onChange={(e) => setPassportNumber(e.target.value.toUpperCase())}
+              placeholder="예: M12345678"
+              className="font-mono"
+            />
+          </div>
+          {/* 우편번호 — T-20260508-foot-CUST-FORM-REVAMP */}
+          <div className="space-y-1.5">
+            <Label>우편번호</Label>
+            <Input
+              value={postalCode}
+              onChange={(e) => setPostalCode(e.target.value.replace(/\D/g, '').slice(0, 5))}
+              inputMode="numeric"
+              placeholder="12345"
+              maxLength={5}
+              className="font-mono"
+            />
           </div>
           {/* 내원경로 */}
           <div className="space-y-1.5">
@@ -544,7 +622,7 @@ function EditCustomerDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             취소
           </Button>
-          <Button disabled={submitting || !name.trim() || !phone.trim()} onClick={save}>
+          <Button disabled={submitting || !name.trim()} onClick={save}>
             {submitting ? '저장 중…' : '저장'}
           </Button>
         </DialogFooter>
