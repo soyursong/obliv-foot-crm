@@ -1,5 +1,31 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-08 11:20 — dev-foot | deploy-ready (재QA요청) | T-20260508-foot-C2-RESV-DETAIL-PANEL
+
+**QA-FAIL-20260508-C2-RESV-DETAIL-PANEL 3항목 수정 완료 — supervisor 재QA 요청**
+
+- **커밋**: 36506bb | push: origin/main 완료
+- **TypeScript**: ✅ `tsc --noEmit` 에러 0건
+
+### 수정 내역
+
+**[CRITICAL-1] ✅ end_time 마이그레이션 파일 추가**
+- `supabase/migrations/20260508000070_reservations_end_time.sql`
+  - `ALTER TABLE reservations ADD COLUMN IF NOT EXISTS end_time TIME`
+- `supabase/migrations/20260508000070_reservations_end_time.down.sql`
+- ⚠️ DB 수동 적용 필요: Supabase SQL Editor에서 위 파일 실행
+
+**[HIGH-2] ✅ B안 선택 — Phase 2 필드 주석 명시**
+- `subject/visitType/consultant/room/colorTag/assist/doctor/extra` 8개 → Phase 2 예정
+- `saveResvDetail()` 함수 상단 주석으로 B안 확정 기록
+- 현재 저장 범위: 예약일시(date, startTime, endTime) + 메모(memo, etcMemo) — 의도된 범위
+
+**[MINOR-3] ✅ B안 — 버튼 수용기준 6→5 정정**
+- 주석 수정: "하단 버튼 6개" → "하단 버튼 5개 (콜프린터/반복저장/추가/저장후닫기/닫기)"
+- 6번째 버튼 없음 확정
+
+---
+
 ## 2026-05-08 — dev-foot | deploy-ready | T-20260508-foot-ROOM-STAFF-LINK
 
 **공간배정 파트별 직원 연동 구현 완료**
