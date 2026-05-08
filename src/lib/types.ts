@@ -142,6 +142,20 @@ export interface Customer {
   insurance_grade_memo?: string | null;
   // 주소지 (T-20260507-foot-CHART2-INSURANCE-FIELDS)
   address?: string | null;
+  // 고객정보 입력폼 전면 수정 (T-20260508-foot-CUST-FORM-REVAMP)
+  customer_grade?: '일반' | '1단계' | '2단계' | '3단계' | null;
+  customer_email?: string | null;       // 고객 이메일
+  passport_number?: string | null;      // 여권번호 (외국인)
+  postal_code?: string | null;          // 우편번호 (5자리)
+  assigned_staff_role?: '데스크' | '상담실장' | null; // 담당자 구분 (레거시)
+  assigned_staff_id?: string | null;    // 담당 직원 FK (C2-STAFF-DROPDOWN)
+  privacy_consent?: boolean | null;     // 개인정보 수집·이용 동의
+  sms_reject?: boolean | null;          // 문자수신거부
+  marketing_reject?: boolean | null;    // 광고성 문자 수신 미동의
+  // C2 tickets
+  hira_consent?: boolean | null;        // 건강보험 조회 동의 Y/N (C2-HIRA-CONSENT)
+  hira_consent_at?: string | null;      // 건강보험 조회 동의 일시
+  visit_route?: 'TM' | '워크인' | '인바운드' | '지인소개' | null; // 방문경로 (C2-VISIT-ROUTE)
 }
 
 export interface Service {

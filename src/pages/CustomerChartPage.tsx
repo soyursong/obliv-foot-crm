@@ -237,6 +237,32 @@ export default function CustomerChartPage() {
   const [editingAddress, setEditingAddress] = useState(false);
   const [addressText, setAddressText] = useState('');
   const [savingAddress, setSavingAddress] = useState(false);
+  // T-20260508-foot-CUST-FORM-REVAMP: 신규 폼 필드
+  const [editingEmail, setEditingEmail] = useState(false);
+  const [emailText, setEmailText] = useState('');
+  const [editingPassport, setEditingPassport] = useState(false);
+  const [passportText, setPassportText] = useState('');
+  const [editingPostalCode, setEditingPostalCode] = useState(false);
+  const [postalCodeText, setPostalCodeText] = useState('');
+  const [savingField, setSavingField] = useState(false);
+  // C2-STAFF-DROPDOWN: 실제 직원 목록 (coordinator + consultant + director)
+  const [staffList, setStaffList] = useState<{id: string; name: string; role: string}[]>([]);
+  // C2-HIRA-CONSENT: 건보 조회 동의 상태
+  const [savingHira, setSavingHira] = useState(false);
+  // C2-RESV-MINI-POPUP: 예약하기 미니창
+  const [openResvMiniPopup, setOpenResvMiniPopup] = useState(false);
+  const [resvMiniForm, setResvMiniForm] = useState({ date: '', startTime: '', endTime: '', memo: '' });
+  const [savingResvMini, setSavingResvMini] = useState(false);
+  // C2-RESV-DETAIL-PANEL: 예약상세 탭
+  const [resvDetailTab, setResvDetailTab] = useState<'예약' | '상담' | '내용보기' | '추가메모'>('예약');
+  const [resvDetailForm, setResvDetailForm] = useState({
+    date: '', startTime: '', endTime: '',
+    subject: '', visitType: '', consultant: '',
+    room: '', colorTag: '', assist: '',
+    doctor: '', extra: '',
+    memo: '', etcMemo: '',
+  });
+  const [savingResvDetail, setSavingResvDetail] = useState(false);
 
   useEffect(() => {
     if (!customerId || !profile) return;
@@ -251,6 +277,19 @@ export default function CustomerChartPage() {
       setCustomer(custData as Customer);
       setCustomerMemoText((custData as Customer).customer_memo ?? '');
       setAddressText((custData as Customer).address ?? '');
+      setEmailText((custData as Customer).customer_email ?? '');
+      setPassportText((custData as Customer).passport_number ?? '');
+      setPostalCodeText((custData as Customer).postal_code ?? '');
+
+      // C2-STAFF-DROPDOWN: 담당자 직원 목록 로드 (coordinator + consultant + director)
+      const { data: staffData } = await supabase
+        .from('staff')
+        .select('id, name, role')
+        .eq('clinic_id', (custData as Customer).clinic_id)
+        .eq('active', true)
+        .in('role', ['consultant', 'coordinator', 'director'])
+        .order('name', { ascending: true });
+      setStaffList((staffData ?? []) as {id: string; name: string; role: string}[]);
 
       const [pkgRes, visitRes, payRes, pkgPayRes, resvRes, ciHistRes] = await Promise.all([
         supabase.from('packages').select('*').eq('customer_id', customerId).order('contract_date', { ascending: false }),
@@ -369,6 +408,160 @@ export default function CustomerChartPage() {
     setCustomer((prev) => prev ? { ...prev, address: addressText.trim() || null } : prev);
     setEditingAddress(false);
     toast.success('주소지 저장됨');
+  };
+
+  // T-20260508-foot-CUST-FORM-REVAMP: 단일 필드 즉시 저장 헬퍼
+  const saveCustomerField = async (patch: Partial<Customer>, successMsg?: string) => {
+    if (!customer) return;
+    setSavingField(true);
+    const { error } = await supabase.from('customers').update(patch).eq('id', customer.id);
+    setSavingField(false);
+    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+    setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
+    if (successMsg) toast.success(successMsg);
+  };
+
+  // 이메일 저장
+  const saveEmail = async () => {
+    await saveCustomerField({ customer_email: emailText.trim() || null });
+    setEditingEmail(false);
+    toast.success('이메일 저장됨');
+  };
+
+  // 여권번호 저장
+  const savePassport = async () => {
+    await saveCustomerField({ passport_number: passportText.trim() || null });
+    setEditingPassport(false);
+    toast.success('여권번호 저장됨');
+  };
+
+  // 우편번호 저장
+  const savePostalCode = async () => {
+    await saveCustomerField({ postal_code: postalCodeText.trim() || null });
+    setEditingPostalCode(false);
+    toast.success('우편번호 저장됨');
+  };
+
+  // 우편번호 카카오 주소검색 팝업 (Kakao Postcode API)
+  const openKakaoPostcode = () => {
+    const loadAndOpen = () => {
+      // @ts-expect-error Kakao Postcode global
+      if (!window.daum?.Postcode) {
+        const script = document.createElement('script');
+        script.src = '//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js';
+        script.onload = () => runPostcode();
+        document.head.appendChild(script);
+      } else {
+        runPostcode();
+      }
+    };
+    const runPostcode = () => {
+      // @ts-expect-error Kakao Postcode global
+      new window.daum.Postcode({
+        oncomplete: (data: { zonecode: string; address: string }) => {
+          const zoneCode = data.zonecode;
+          const fullAddr = data.address;
+          setPostalCodeText(zoneCode);
+          setAddressText(fullAddr);
+          setEditingPostalCode(false);
+          // 우편번호 + 주소 동시 저장
+          supabase.from('customers').update({
+            postal_code: zoneCode || null,
+            address: fullAddr || null,
+          }).eq('id', customer!.id).then(({ error }) => {
+            if (error) { toast.error('주소 저장 실패'); return; }
+            setCustomer((prev) => prev ? { ...prev, postal_code: zoneCode, address: fullAddr } : prev);
+            toast.success('주소 저장됨');
+          });
+        },
+      }).open();
+    };
+    loadAndOpen();
+  };
+
+  // 체크박스 토글 (즉시 저장)
+  const toggleBoolField = async (field: 'privacy_consent' | 'sms_reject' | 'marketing_reject') => {
+    if (!customer) return;
+    const newVal = !(customer[field] ?? false);
+    await saveCustomerField({ [field]: newVal });
+  };
+
+  // C2-HIRA-CONSENT: 건보 조회 동의 토글
+  const toggleHiraConsent = async () => {
+    if (!customer) return;
+    setSavingHira(true);
+    const newVal = !(customer.hira_consent ?? false);
+    const patch: Partial<Customer> = {
+      hira_consent: newVal,
+      hira_consent_at: newVal ? new Date().toISOString() : null,
+    };
+    const { error } = await supabase.from('customers').update(patch).eq('id', customer.id);
+    setSavingHira(false);
+    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+    setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
+    toast.success(newVal ? '건보 조회 동의 완료' : '건보 조회 동의 해제');
+  };
+
+  // C2-RESV-MINI-POPUP: 미니 예약 저장
+  const saveResvMini = async () => {
+    if (!customer || !resvMiniForm.date || !resvMiniForm.startTime) {
+      toast.error('예약일자와 시작시간을 입력하세요');
+      return;
+    }
+    setSavingResvMini(true);
+    const { error } = await supabase.from('reservations').insert({
+      customer_id: customer.id,
+      clinic_id: customer.clinic_id,
+      reservation_date: resvMiniForm.date,
+      reservation_time: resvMiniForm.startTime,
+      end_time: resvMiniForm.endTime || null,
+      booking_memo: resvMiniForm.memo || null,
+      status: 'confirmed',
+      created_by: profile?.id ?? null,
+    });
+    setSavingResvMini(false);
+    if (error) { toast.error(`예약 저장 실패: ${error.message}`); return; }
+    // 예약 목록 새로고침
+    const { data: resvData } = await supabase
+      .from('reservations')
+      .select('*')
+      .eq('customer_id', customer.id)
+      .order('reservation_date', { ascending: false })
+      .limit(30);
+    setReservations((resvData ?? []) as Reservation[]);
+    setOpenResvMiniPopup(false);
+    setResvMiniForm({ date: '', startTime: '', endTime: '', memo: '' });
+    toast.success('예약 등록 완료');
+  };
+
+  // C2-RESV-DETAIL-PANEL: 예약 상세 저장
+  const saveResvDetail = async () => {
+    if (!customer || !resvDetailForm.date || !resvDetailForm.startTime) {
+      toast.error('예약일자와 시작시간을 입력하세요');
+      return;
+    }
+    setSavingResvDetail(true);
+    const { error } = await supabase.from('reservations').insert({
+      customer_id: customer.id,
+      clinic_id: customer.clinic_id,
+      reservation_date: resvDetailForm.date,
+      reservation_time: resvDetailForm.startTime,
+      end_time: resvDetailForm.endTime || null,
+      booking_memo: resvDetailForm.memo || null,
+      memo: resvDetailForm.etcMemo || null,
+      status: 'confirmed',
+      created_by: profile?.id ?? null,
+    });
+    setSavingResvDetail(false);
+    if (error) { toast.error(`예약 저장 실패: ${error.message}`); return; }
+    const { data: resvData } = await supabase
+      .from('reservations')
+      .select('*')
+      .eq('customer_id', customer.id)
+      .order('reservation_date', { ascending: false })
+      .limit(30);
+    setReservations((resvData ?? []) as Reservation[]);
+    toast.success('예약 저장 완료');
   };
 
   const totalPaid =
@@ -514,6 +707,61 @@ export default function CustomerChartPage() {
                   </td>
                 </tr>
 
+                {/* ②-b 건강보험 조회 동의 — C2-HIRA-CONSENT */}
+                <tr>
+                  <td className={LC}>건보 조회동의</td>
+                  <td className={VC} colSpan={3}>
+                    <div className="flex items-center gap-3">
+                      {/* Y/N 선택 버튼 */}
+                      {(['Y', 'N'] as const).map((opt) => {
+                        const isY = opt === 'Y';
+                        const selected = isY ? (customer.hira_consent ?? false) : !(customer.hira_consent ?? false);
+                        return (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => { if (isY !== (customer.hira_consent ?? false)) toggleHiraConsent(); }}
+                            disabled={savingHira}
+                            className={cn(
+                              'inline-flex items-center gap-1 rounded border px-3 py-0.5 text-[11px] font-semibold transition',
+                              selected
+                                ? isY ? 'border-teal-500 bg-teal-100 text-teal-800' : 'border-gray-400 bg-gray-100 text-gray-600'
+                                : 'border-gray-300 bg-white text-gray-400 hover:border-gray-400',
+                            )}
+                          >
+                            <span className={cn(
+                              'h-2.5 w-2.5 rounded-full border-2 flex items-center justify-center',
+                              selected ? (isY ? 'border-teal-600' : 'border-gray-500') : 'border-gray-300',
+                            )}>
+                              {selected && <span className={cn('h-1.5 w-1.5 rounded-full', isY ? 'bg-teal-600' : 'bg-gray-500')} />}
+                            </span>
+                            {opt}
+                          </button>
+                        );
+                      })}
+                      {/* 조회 버튼 — Y일 때만 활성 */}
+                      <button
+                        type="button"
+                        onClick={() => window.open('https://www.nhis.or.kr/nhis/minwon/wbhame03400m01.do', '_blank')}
+                        disabled={!(customer.hira_consent ?? false)}
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] transition',
+                          customer.hira_consent
+                            ? 'border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer'
+                            : 'border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed',
+                        )}
+                      >
+                        조회
+                      </button>
+                      {customer.hira_consent && customer.hira_consent_at && (
+                        <span className="text-[10px] text-teal-600">
+                          동의 {format(new Date(customer.hira_consent_at), 'MM-dd HH:mm')}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+
                 {/* ③ 성별 (라디오 스타일) */}
                 <tr>
                   <td className={LC}>성별</td>
@@ -543,7 +791,7 @@ export default function CustomerChartPage() {
                   </td>
                 </tr>
 
-                {/* ④ 휴대폰 + 개인정보동의/문자수신거부 */}
+                {/* ④ 휴대폰 + 개인정보동의/문자수신거부 — T-20260508-foot-CUST-FORM-REVAMP: 체크박스 활성화 */}
                 <tr>
                   <td className={LC}>휴대폰</td>
                   <td className={cn(VC, 'border-r border-gray-200 w-[130px]')}>
@@ -551,75 +799,184 @@ export default function CustomerChartPage() {
                   </td>
                   <td className={cn(LC, 'w-auto')}>개인정보동의</td>
                   <td className={VC}>
-                    <div className="flex items-center gap-3">
-                      {[
-                        { label: '동의', checked: checklistEntries.some(cl => !!(cl.checklist_data as Record<string, unknown>)?.agree_privacy) },
-                        { label: '문자수신거부', checked: false },
-                      ].map(({ label, checked }) => (
-                        <span key={label} className="flex items-center gap-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {([
+                        { label: '동의', field: 'privacy_consent' as const, checked: customer.privacy_consent ?? false },
+                        { label: '문자수신거부', field: 'sms_reject' as const, checked: customer.sms_reject ?? false },
+                        { label: '광고미동의', field: 'marketing_reject' as const, checked: customer.marketing_reject ?? false },
+                      ]).map(({ label, field, checked }) => (
+                        <button
+                          key={field}
+                          type="button"
+                          onClick={() => toggleBoolField(field)}
+                          disabled={savingField}
+                          className="flex items-center gap-1 hover:opacity-80 active:scale-95 transition"
+                          title={checked ? '해제' : '체크'}
+                        >
                           <span className={cn(
-                            'h-3 w-3 border rounded-sm flex items-center justify-center text-[8px]',
-                            checked ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-400',
+                            'h-3 w-3 border rounded-sm flex items-center justify-center text-[8px] transition-colors',
+                            checked ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-400 bg-white',
                           )}>
                             {checked && '✓'}
                           </span>
-                          <span className="text-[11px]">{label}</span>
-                        </span>
+                          <span className={cn('text-[11px]', checked ? 'font-medium text-blue-700' : 'text-gray-600')}>{label}</span>
+                        </button>
                       ))}
                     </div>
                   </td>
                 </tr>
 
-                {/* ⑤ 전화번호 + 광고성 문자 수신 미동의 */}
-                <tr>
-                  <td className={LC}>전화번호</td>
-                  <td className={cn(VC, 'border-r border-gray-200')}>
-                    <span className="text-muted-foreground/50 text-[11px]">미등록</span>
-                  </td>
-                  <td className={VC} colSpan={2}>
-                    <span className="flex items-center gap-1">
-                      <span className="h-3 w-3 border border-gray-400 rounded-sm shrink-0" />
-                      <span className="text-[11px]">광고성 문자 수신 미동의</span>
-                    </span>
-                  </td>
-                </tr>
+                {/* ⑤ 전화번호 행 삭제 — T-20260508-foot-CUST-FORM-REVAMP */}
 
-                {/* ⑥ 이메일/여권 */}
+                {/* ⑥ 이메일 — 분리·활성화 */}
                 <tr>
-                  <td className={LC}>이메일/여권</td>
+                  <td className={LC}>이메일</td>
                   <td className={VC} colSpan={3}>
-                    <span className="text-muted-foreground/50 text-[11px]">미등록</span>
+                    {editingEmail ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="email"
+                          value={emailText}
+                          onChange={(e) => setEmailText(e.target.value)}
+                          autoFocus
+                          placeholder="example@email.com"
+                          className="h-5 flex-1 text-[11px] rounded border border-teal-400 px-1.5 focus:outline-none focus:border-teal-600"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') saveEmail();
+                            if (e.key === 'Escape') { setEditingEmail(false); setEmailText(customer.customer_email ?? ''); }
+                          }}
+                        />
+                        <button onClick={saveEmail} disabled={savingField} className="rounded border border-teal-600 bg-teal-600 text-white text-[10px] px-1.5 py-0.5 hover:bg-teal-700 transition shrink-0">저장</button>
+                        <button onClick={() => { setEditingEmail(false); setEmailText(customer.customer_email ?? ''); }} className="rounded border border-gray-300 text-[10px] px-1.5 py-0.5 hover:bg-gray-100 transition shrink-0">취소</button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setEditingEmail(true)}
+                        className="text-left w-full hover:bg-blue-50/50 rounded px-0.5 transition"
+                        title="클릭하여 편집"
+                      >
+                        <span className={cn('text-[11px]', customer.customer_email ? 'text-gray-800' : 'text-muted-foreground/50')}>
+                          {customer.customer_email ?? '클릭하여 입력'}
+                        </span>
+                      </button>
+                    )}
                   </td>
                 </tr>
 
-                {/* ⑦ 고객등급 */}
+                {/* ⑥-b 여권번호 — 분리·활성화 */}
+                <tr>
+                  <td className={LC}>여권번호</td>
+                  <td className={VC} colSpan={3}>
+                    {editingPassport ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={passportText}
+                          onChange={(e) => setPassportText(e.target.value.toUpperCase())}
+                          autoFocus
+                          placeholder="예: M12345678"
+                          className="h-5 flex-1 text-[11px] font-mono rounded border border-teal-400 px-1.5 focus:outline-none focus:border-teal-600 uppercase"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') savePassport();
+                            if (e.key === 'Escape') { setEditingPassport(false); setPassportText(customer.passport_number ?? ''); }
+                          }}
+                        />
+                        <button onClick={savePassport} disabled={savingField} className="rounded border border-teal-600 bg-teal-600 text-white text-[10px] px-1.5 py-0.5 hover:bg-teal-700 transition shrink-0">저장</button>
+                        <button onClick={() => { setEditingPassport(false); setPassportText(customer.passport_number ?? ''); }} className="rounded border border-gray-300 text-[10px] px-1.5 py-0.5 hover:bg-gray-100 transition shrink-0">취소</button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setEditingPassport(true)}
+                        className="text-left w-full hover:bg-blue-50/50 rounded px-0.5 transition"
+                        title="클릭하여 편집"
+                      >
+                        <span className={cn('text-[11px] font-mono', customer.passport_number ? 'text-gray-800' : 'text-muted-foreground/50')}>
+                          {customer.passport_number ?? (customer.is_foreign ? '클릭하여 입력' : '해당없음')}
+                        </span>
+                      </button>
+                    )}
+                  </td>
+                </tr>
+
+                {/* ⑦ 고객등급 드롭다운 — T-20260508-foot-CUST-FORM-REVAMP */}
                 <tr>
                   <td className={LC}>고객등급</td>
                   <td className={VC} colSpan={3}>
-                    <span className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-700 cursor-default">
-                      {customer.lead_source ?? '일반'}
-                      <span className="text-gray-400 text-[9px]">▾</span>
-                    </span>
+                    <select
+                      value={customer.customer_grade ?? '일반'}
+                      onChange={(e) => {
+                        const val = e.target.value as Customer['customer_grade'];
+                        saveCustomerField({ customer_grade: val }, '고객등급 저장됨');
+                      }}
+                      disabled={savingField}
+                      className={cn(
+                        'rounded border px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-teal-500 bg-white transition',
+                        customer.customer_grade === '일반' || !customer.customer_grade
+                          ? 'border-gray-300 text-gray-700'
+                          : customer.customer_grade === '1단계'
+                          ? 'border-yellow-400 text-yellow-700 bg-yellow-50'
+                          : customer.customer_grade === '2단계'
+                          ? 'border-orange-400 text-orange-700 bg-orange-50'
+                          : 'border-red-400 text-red-700 bg-red-50',
+                      )}
+                    >
+                      <option value="일반">일반</option>
+                      <option value="1단계">1단계</option>
+                      <option value="2단계">2단계</option>
+                      <option value="3단계">3단계 ⚠️</option>
+                    </select>
+                    {customer.customer_grade && customer.customer_grade !== '일반' && (
+                      <span className="ml-2 text-[10px] text-orange-600">진상 등급</span>
+                    )}
                   </td>
                 </tr>
 
-                {/* ⑧ 우편번호 + 담당자 */}
+                {/* ⑧ 우편번호 — 클릭 즉시 편집, 카카오 주소검색, 펜아이콘 제거 */}
                 <tr>
                   <td className={LC}>우편번호</td>
-                  <td className={cn(VC, 'border-r border-gray-200')}>
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="text"
-                        placeholder="우편번호"
-                        readOnly
-                        className="w-20 h-5 text-[11px] rounded border border-gray-300 px-1.5 bg-gray-50 cursor-default focus:outline-none"
-                      />
-                      <span className="rounded border border-gray-300 bg-white text-[10px] text-gray-500 px-1.5 py-0.5 cursor-not-allowed select-none">검색</span>
-                    </div>
-                  </td>
-                  <td className={cn(LC, 'w-auto')}>담당자</td>
-                  <td className={VC}>
-                    <span className="text-[11px]">{latestCheckIn?.consultant_id ?? '미배정'}</span>
+                  <td className={VC} colSpan={3}>
+                    {editingPostalCode ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={postalCodeText}
+                          onChange={(e) => setPostalCodeText(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                          autoFocus
+                          placeholder="12345"
+                          maxLength={5}
+                          inputMode="numeric"
+                          className="w-20 h-5 text-[11px] font-mono rounded border border-teal-400 px-1.5 focus:outline-none focus:border-teal-600"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') savePostalCode();
+                            if (e.key === 'Escape') { setEditingPostalCode(false); setPostalCodeText(customer.postal_code ?? ''); }
+                          }}
+                        />
+                        <button
+                          onClick={openKakaoPostcode}
+                          className="rounded border border-blue-400 bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 hover:bg-blue-100 transition shrink-0"
+                        >
+                          주소검색
+                        </button>
+                        <button onClick={savePostalCode} disabled={savingField} className="rounded border border-teal-600 bg-teal-600 text-white text-[10px] px-1.5 py-0.5 hover:bg-teal-700 transition shrink-0">저장</button>
+                        <button onClick={() => { setEditingPostalCode(false); setPostalCodeText(customer.postal_code ?? ''); }} className="rounded border border-gray-300 text-[10px] px-1.5 py-0.5 hover:bg-gray-100 transition shrink-0">취소</button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setEditingPostalCode(true)}
+                        className="flex items-center gap-1.5 hover:bg-blue-50/50 rounded px-0.5 transition"
+                        title="클릭하여 우편번호 편집 또는 주소검색"
+                      >
+                        <span className={cn('text-[11px] font-mono', customer.postal_code ? 'text-gray-800' : 'text-muted-foreground/50')}>
+                          {customer.postal_code ?? '클릭하여 입력'}
+                        </span>
+                        {!customer.postal_code && (
+                          <span className="rounded border border-blue-300 bg-blue-50 text-blue-600 text-[9px] px-1 py-0.5">주소검색</span>
+                        )}
+                      </button>
+                    )}
                   </td>
                 </tr>
 
@@ -644,56 +1001,69 @@ export default function CustomerChartPage() {
                         <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 shrink-0" onClick={() => { setEditingAddress(false); setAddressText(customer.address ?? ''); }}>취소</Button>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-1 min-w-0">
-                        <span className={cn('flex-1 truncate', !customer.address && 'text-muted-foreground/50 text-[11px]')}>
-                          {customer.address ?? '미입력'}
+                      <button
+                        type="button"
+                        onClick={() => { setEditingAddress(true); setAddressText(customer.address ?? ''); }}
+                        className="text-left w-full hover:bg-blue-50/50 rounded px-0.5 transition"
+                        title="클릭하여 주소 편집"
+                      >
+                        <span className={cn('text-[11px]', customer.address ? 'text-gray-800' : 'text-muted-foreground/50')}>
+                          {customer.address ?? '미입력 (우편번호 검색 시 자동입력)'}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => { setEditingAddress(true); setAddressText(customer.address ?? ''); }}
-                          className="shrink-0 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-teal-700"
-                          title="주소 편집"
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </button>
-                      </div>
+                      </button>
                     )}
                   </td>
                 </tr>
 
-                {/* ⑩ 특이 (1/2/3단계) + 담당자 */}
+                {/* ⑨-b 담당자 — 주소 하단, 실제 직원 드롭다운 — C2-STAFF-DROPDOWN */}
                 <tr>
-                  <td className={LC}>특이</td>
-                  <td className={cn(VC, 'border-r border-gray-200')}>
-                    <div className="flex items-center gap-3">
-                      {['1단계', '2단계', '3단계'].map((level) => (
-                        <span key={level} className="flex items-center gap-1 cursor-default">
-                          <span className="h-3.5 w-3.5 rounded-full border-2 border-gray-400" />
-                          <span className="text-[11px] text-gray-600">{level}</span>
-                        </span>
+                  <td className={LC}>담당자</td>
+                  <td className={VC} colSpan={3}>
+                    <select
+                      value={customer.assigned_staff_id ?? ''}
+                      onChange={(e) => {
+                        saveCustomerField({ assigned_staff_id: e.target.value || null }, '담당자 저장됨');
+                      }}
+                      disabled={savingField}
+                      className="rounded border border-gray-300 px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
+                    >
+                      <option value="">— 선택 —</option>
+                      {staffList.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.role === 'consultant' ? '상담실장' : s.role === 'coordinator' ? '데스크' : '원장'})
+                        </option>
                       ))}
-                    </div>
-                  </td>
-                  <td className={cn(LC, 'w-auto')}>담당자</td>
-                  <td className={VC}>
-                    <span className="text-muted-foreground/50 text-[11px]">미배정</span>
+                    </select>
                   </td>
                 </tr>
 
-                {/* ⑪ 방문경로 */}
+                {/* ⑩ 특이 항목 삭제 — C2-REMOVE-EXTRA-FIELDS */}
+
+                {/* ⑪ 방문경로 드롭다운 — C2-VISIT-ROUTE */}
                 <tr>
                   <td className={LC}>방문경로</td>
                   <td className={VC} colSpan={3}>
-                    <span className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-700 cursor-default">
-                      {customer.lead_source ?? '선택'}
-                      <span className="text-gray-400 text-[9px]">▾</span>
-                    </span>
+                    <select
+                      value={customer.visit_route ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value as Customer['visit_route'];
+                        saveCustomerField({ visit_route: val || null }, '방문경로 저장됨');
+                      }}
+                      disabled={savingField}
+                      className="rounded border border-gray-300 px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
+                    >
+                      <option value="">— 선택 —</option>
+                      <option value="TM">TM</option>
+                      <option value="워크인">워크인</option>
+                      <option value="인바운드">인바운드</option>
+                      <option value="지인소개">지인소개</option>
+                    </select>
                   </td>
                 </tr>
 
-                {/* ⑫ 고객메모 (인라인 편집) */}
+                {/* ⑫ 예약메모 (인라인 편집) — C2-MEMO-RENAME: 고객메모→예약메모 */}
                 <tr>
-                  <td className={cn(LC, 'align-top pt-2 border-b-0')}>고객메모</td>
+                  <td className={cn(LC, 'align-top pt-2 border-b-0')}>예약메모</td>
                   <td className={cn(VC, 'border-b-0')} colSpan={3}>
                     {editingCustomerMemo ? (
                       <div className="space-y-1">
@@ -918,12 +1288,24 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-              {/* History: 예약내역 */}
+              {/* History: 예약내역 — C2-RESV-MINI-POPUP 예약하기 버튼 추가 */}
               {chartTabGroup === 'history' && chartTab === 'reservations' && (
             <div className="space-y-3">
-              {/* 예약 목록 */}
+              {/* 예약 목록 + 예약하기 버튼 */}
               <div className="rounded-lg border bg-white p-3 text-xs space-y-1.5">
-                <div className="font-semibold text-muted-foreground mb-1">예약내역</div>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="font-semibold text-muted-foreground">예약내역</div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResvMiniForm({ date: format(new Date(), 'yyyy-MM-dd'), startTime: '', endTime: '', memo: '' });
+                      setOpenResvMiniPopup(true);
+                    }}
+                    className="inline-flex items-center gap-1 rounded border border-teal-400 bg-teal-50 px-2 py-0.5 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
+                  >
+                    <Plus className="h-3 w-3" /> 예약하기
+                  </button>
+                </div>
                 {reservations.length === 0 ? (
                   <div className="text-muted-foreground py-2">예약 없음</div>
                 ) : (
@@ -1352,14 +1734,85 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-          {/* 예약 목록 */}
+          {/* C2-PKG-TICKET-TABLE: 구매 패키지(티켓) 3×4 표 */}
           <div className="border-b border-gray-200 px-3 py-2">
-            <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1.5">예약내역</div>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="text-[11px] font-semibold text-[#1e4e6e]">구매 패키지(티켓)</div>
+              {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant') && (
+                <button
+                  onClick={() => setOpenPackagePurchase(true)}
+                  className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
+                >
+                  <Plus className="h-3 w-3" /> 추가
+                </button>
+              )}
+            </div>
+            {packages.length === 0 ? (
+              <div className="text-[11px] text-muted-foreground">패키지 없음</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-[11px]">
+                  <thead>
+                    <tr className="bg-[#eef3f7] text-[#334e65]">
+                      <th className="border border-gray-200 px-1.5 py-1 font-medium text-left">상품명</th>
+                      <th className="border border-gray-200 px-1.5 py-1 font-medium text-right">수가</th>
+                      <th className="border border-gray-200 px-1.5 py-1 font-medium text-center">구매횟수</th>
+                      <th className="border border-gray-200 px-1.5 py-1 font-medium text-center">사용횟수 (치료사)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {packages.slice(0, 3).map((p) => {
+                      const usedSessions = packageSessions.filter((s) => s.package_id === p.id && s.status === 'used');
+                      const usedCount = p.remaining ? p.total_sessions - p.remaining.total_remaining : usedSessions.length;
+                      const therapistNames = [...new Set(usedSessions.map((s) => s.staff_name).filter(Boolean))];
+                      return (
+                        <tr key={p.id} className={cn('border-b border-gray-100', p.status === 'active' ? '' : 'opacity-60')}>
+                          <td className="border border-gray-100 px-1.5 py-1.5 font-medium truncate max-w-[80px]">
+                            {p.package_name}
+                            {p.status !== 'active' && (
+                              <span className="ml-1 text-[9px] text-gray-400">({PKG_STATUS_KO[p.status]})</span>
+                            )}
+                          </td>
+                          <td className="border border-gray-100 px-1.5 py-1.5 text-right tabular-nums">{formatAmount(p.total_amount)}</td>
+                          <td className="border border-gray-100 px-1.5 py-1.5 text-center">{p.total_sessions}회</td>
+                          <td className="border border-gray-100 px-1.5 py-1.5 text-center">
+                            <span className="font-semibold text-teal-700">{usedCount}회</span>
+                            {therapistNames.length > 0 && (
+                              <span className="ml-1 text-[10px] text-gray-500">({therapistNames.join(', ')})</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {packages.length > 3 && (
+                  <div className="text-[10px] text-muted-foreground mt-1 text-right">외 {packages.length - 3}건 — 패키지 탭에서 확인</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 예약내역 (우측 패널 간략) */}
+          <div className="border-b border-gray-200 px-3 py-2">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="text-[11px] font-semibold text-[#1e4e6e]">예약내역</div>
+              <button
+                type="button"
+                onClick={() => {
+                  setResvMiniForm({ date: format(new Date(), 'yyyy-MM-dd'), startTime: '', endTime: '', memo: '' });
+                  setOpenResvMiniPopup(true);
+                }}
+                className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
+              >
+                <Plus className="h-3 w-3" /> 예약하기
+              </button>
+            </div>
             {reservations.length === 0 ? (
               <div className="text-[11px] text-muted-foreground">예약 없음</div>
             ) : (
               <div className="space-y-1">
-                {reservations.slice(0, 6).map((r) => (
+                {reservations.slice(0, 5).map((r) => (
                   <div key={r.id} className="flex items-center justify-between text-[11px]">
                     <span className="text-gray-700">{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
                     <Badge variant="secondary" className="text-[10px] px-1.5">{r.status}</Badge>
@@ -1369,7 +1822,240 @@ export default function CustomerChartPage() {
             )}
           </div>
 
-          {/* 수납 통계 */}
+          {/* C2-RESV-DETAIL-PANEL: 예약상세 패널 (2-3) */}
+          <div className="border-b border-gray-200">
+            <div className="bg-[#d8e8f0] border-b border-gray-300 px-3 py-1 shrink-0">
+              <span className="text-[11px] font-semibold text-[#1e4e6e]">예약 상세 (2-3)</span>
+            </div>
+            {/* 탭 */}
+            <div className="flex border-b border-gray-200">
+              {(['예약', '상담', '내용보기', '추가메모'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setResvDetailTab(tab)}
+                  className={cn(
+                    'flex-1 px-2 py-1.5 text-[11px] font-medium border-r border-gray-200 last:border-r-0 transition',
+                    resvDetailTab === tab
+                      ? 'bg-white text-teal-700 font-semibold'
+                      : 'bg-[#eef3f7] text-[#334e65] hover:bg-white/70',
+                  )}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            {/* 예약 탭 콘텐츠 */}
+            {resvDetailTab === '예약' && (
+              <div className="p-2 space-y-2">
+                {/* 4행 그리드 */}
+                <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                  {/* 행1: 예약일자 / 시작 / 종료 */}
+                  <div>
+                    <label className="block text-muted-foreground mb-0.5">예약일자</label>
+                    <input type="date" value={resvDetailForm.date}
+                      onChange={(e) => setResvDetailForm((f) => ({ ...f, date: e.target.value }))}
+                      className="w-full h-6 rounded border border-gray-300 px-1.5 text-[11px] focus:outline-none focus:border-teal-500" />
+                  </div>
+                  <div>
+                    <label className="block text-muted-foreground mb-0.5">예약 시작</label>
+                    <input type="time" value={resvDetailForm.startTime}
+                      onChange={(e) => setResvDetailForm((f) => ({ ...f, startTime: e.target.value }))}
+                      className="w-full h-6 rounded border border-gray-300 px-1.5 text-[11px] focus:outline-none focus:border-teal-500" />
+                  </div>
+                  <div>
+                    <label className="block text-muted-foreground mb-0.5">예약 종료</label>
+                    <input type="time" value={resvDetailForm.endTime}
+                      onChange={(e) => setResvDetailForm((f) => ({ ...f, endTime: e.target.value }))}
+                      className="w-full h-6 rounded border border-gray-300 px-1.5 text-[11px] focus:outline-none focus:border-teal-500" />
+                  </div>
+                  {/* 행2: 진료과목 / 초재진 / 상담사 */}
+                  <div>
+                    <label className="block text-muted-foreground mb-0.5">진료과목</label>
+                    <select value={resvDetailForm.subject}
+                      onChange={(e) => setResvDetailForm((f) => ({ ...f, subject: e.target.value }))}
+                      className="w-full h-6 rounded border border-gray-300 px-1 text-[11px] focus:outline-none focus:border-teal-500 bg-white">
+                      <option value="">선택</option>
+                      <option value="풋케어">풋케어</option>
+                      <option value="레이저">레이저</option>
+                      <option value="상담">상담</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-muted-foreground mb-0.5">초재진 구분</label>
+                    <select value={resvDetailForm.visitType}
+                      onChange={(e) => setResvDetailForm((f) => ({ ...f, visitType: e.target.value }))}
+                      className="w-full h-6 rounded border border-gray-300 px-1 text-[11px] focus:outline-none focus:border-teal-500 bg-white">
+                      <option value="">선택</option>
+                      <option value="신규">신규</option>
+                      <option value="재진">재진</option>
+                      <option value="체험">체험</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-muted-foreground mb-0.5">상담사</label>
+                    <select value={resvDetailForm.consultant}
+                      onChange={(e) => setResvDetailForm((f) => ({ ...f, consultant: e.target.value }))}
+                      className="w-full h-6 rounded border border-gray-300 px-1 text-[11px] focus:outline-none focus:border-teal-500 bg-white">
+                      <option value="">선택</option>
+                      {staffList.filter((s) => s.role === 'consultant').map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {/* 행3: 진료실 / 색상 / 어시스트 */}
+                  <div>
+                    <label className="block text-muted-foreground mb-0.5">진료실</label>
+                    <select value={resvDetailForm.room}
+                      onChange={(e) => setResvDetailForm((f) => ({ ...f, room: e.target.value }))}
+                      className="w-full h-6 rounded border border-gray-300 px-1 text-[11px] focus:outline-none focus:border-teal-500 bg-white">
+                      <option value="">선택</option>
+                      <option value="1진료실">1진료실</option>
+                      <option value="2진료실">2진료실</option>
+                      <option value="레이저실">레이저실</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-muted-foreground mb-0.5">색상 설정</label>
+                    <select value={resvDetailForm.colorTag}
+                      onChange={(e) => setResvDetailForm((f) => ({ ...f, colorTag: e.target.value }))}
+                      className="w-full h-6 rounded border border-gray-300 px-1 text-[11px] focus:outline-none focus:border-teal-500 bg-white">
+                      <option value="">기본</option>
+                      <option value="teal">청록</option>
+                      <option value="blue">파랑</option>
+                      <option value="orange">주황</option>
+                      <option value="red">빨강</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-muted-foreground mb-0.5">어시스트</label>
+                    <select value={resvDetailForm.assist}
+                      onChange={(e) => setResvDetailForm((f) => ({ ...f, assist: e.target.value }))}
+                      className="w-full h-6 rounded border border-gray-300 px-1 text-[11px] focus:outline-none focus:border-teal-500 bg-white">
+                      <option value="">선택</option>
+                      {staffList.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {/* 행4: 담당의사 / 추가정보 */}
+                  <div>
+                    <label className="block text-muted-foreground mb-0.5">담당의사</label>
+                    <select value={resvDetailForm.doctor}
+                      onChange={(e) => setResvDetailForm((f) => ({ ...f, doctor: e.target.value }))}
+                      className="w-full h-6 rounded border border-gray-300 px-1 text-[11px] focus:outline-none focus:border-teal-500 bg-white">
+                      <option value="">선택</option>
+                      {staffList.filter((s) => s.role === 'director').map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-muted-foreground mb-0.5">추가 정보</label>
+                    <select value={resvDetailForm.extra}
+                      onChange={(e) => setResvDetailForm((f) => ({ ...f, extra: e.target.value }))}
+                      className="w-full h-6 rounded border border-gray-300 px-1 text-[11px] focus:outline-none focus:border-teal-500 bg-white">
+                      <option value="">선택</option>
+                      <option value="VIP">VIP</option>
+                      <option value="체험권">체험권</option>
+                      <option value="단체예약">단체예약</option>
+                    </select>
+                  </div>
+                  {/* POD 버튼 */}
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={() => setResvDetailForm({ date: '', startTime: '', endTime: '', subject: '', visitType: '', consultant: '', room: '', colorTag: '', assist: '', doctor: '', extra: '', memo: '', etcMemo: '' })}
+                      className="w-full h-6 rounded border border-gray-300 bg-amber-50 text-amber-700 text-[10px] hover:bg-amber-100 transition"
+                    >
+                      초기화
+                    </button>
+                  </div>
+                </div>
+
+                {/* 예약메모 */}
+                <div>
+                  <label className="block text-[11px] text-muted-foreground mb-0.5">예약메모</label>
+                  <Textarea
+                    value={resvDetailForm.memo}
+                    onChange={(e) => setResvDetailForm((f) => ({ ...f, memo: e.target.value }))}
+                    placeholder="예약 관련 메모"
+                    rows={2}
+                    className="text-[11px] resize-none"
+                  />
+                </div>
+                {/* 기타메모 */}
+                <div>
+                  <label className="block text-[11px] text-muted-foreground mb-0.5">기타메모</label>
+                  <Textarea
+                    value={resvDetailForm.etcMemo}
+                    onChange={(e) => setResvDetailForm((f) => ({ ...f, etcMemo: e.target.value }))}
+                    placeholder="기타 참고사항"
+                    rows={2}
+                    className="text-[11px] resize-none"
+                  />
+                </div>
+
+                {/* 하단 버튼 6개 */}
+                <div className="flex gap-1 flex-wrap">
+                  <button type="button" onClick={() => window.print()}
+                    className="flex-1 min-w-0 rounded border border-gray-300 px-1.5 py-1 text-[10px] hover:bg-gray-50 transition whitespace-nowrap">
+                    콜프린터
+                  </button>
+                  <button type="button" onClick={saveResvDetail} disabled={savingResvDetail}
+                    className="flex-1 min-w-0 rounded border border-blue-400 bg-blue-50 text-blue-700 px-1.5 py-1 text-[10px] hover:bg-blue-100 transition whitespace-nowrap">
+                    반복저장
+                  </button>
+                  <button type="button" onClick={saveResvDetail} disabled={savingResvDetail}
+                    className="flex-1 min-w-0 rounded border border-teal-400 bg-teal-50 text-teal-700 px-1.5 py-1 text-[10px] hover:bg-teal-100 transition whitespace-nowrap">
+                    {savingResvDetail ? '저장중…' : '추가'}
+                  </button>
+                  <button type="button" onClick={async () => { await saveResvDetail(); }}
+                    className="flex-1 min-w-0 rounded border border-teal-500 bg-teal-600 text-white px-1.5 py-1 text-[10px] hover:bg-teal-700 transition whitespace-nowrap">
+                    저장후닫기
+                  </button>
+                  <button type="button" onClick={() => setResvDetailForm((f) => ({ ...f, date: '', startTime: '', endTime: '' }))}
+                    className="flex-1 min-w-0 rounded border border-gray-300 px-1.5 py-1 text-[10px] hover:bg-gray-50 transition whitespace-nowrap">
+                    닫기
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 상담 탭 */}
+            {resvDetailTab === '상담' && (
+              <div className="p-3 text-xs text-muted-foreground text-center py-6">
+                상담 기록 — 추후 구현
+              </div>
+            )}
+
+            {/* 내용보기 탭 */}
+            {resvDetailTab === '내용보기' && (
+              <div className="p-3 space-y-1 text-[11px]">
+                {reservations.slice(0, 5).map((r) => (
+                  <div key={r.id} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1.5 border border-gray-100">
+                    <span className="text-gray-700">{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
+                    <Badge variant="secondary" className="text-[10px]">{r.status}</Badge>
+                  </div>
+                ))}
+                {reservations.length === 0 && <div className="text-center py-4 text-muted-foreground">예약 없음</div>}
+              </div>
+            )}
+
+            {/* 추가메모 탭 */}
+            {resvDetailTab === '추가메모' && (
+              <div className="p-2">
+                <Textarea
+                  placeholder="추가 메모를 입력하세요"
+                  rows={5}
+                  className="text-[11px] resize-none"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* 수납 통계 — C2-REMOVE-PKG-STATS: 패키지 항목 삭제 */}
           <div className="px-3 py-2">
             <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1.5">수납 통계</div>
             <div className="space-y-1 text-[11px]">
@@ -1381,16 +2067,71 @@ export default function CustomerChartPage() {
                 <span className="text-muted-foreground">총 결제</span>
                 <strong className="text-teal-700">{formatAmount(totalPaid)}</strong>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">패키지</span>
-                <strong className="text-teal-700">{packages.length}건</strong>
-              </div>
+              {/* 패키지 항목 삭제 — C2-REMOVE-PKG-STATS */}
             </div>
           </div>
 
         </div>{/* /right-panel */}
 
       </div>{/* /main-flex */}
+
+      {/* C2-RESV-MINI-POPUP: 예약하기 미니창 */}
+      {openResvMiniPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-lg shadow-xl border border-gray-200 w-[360px] p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-[#1e4e6e]">예약 등록 — {customer.name}</h3>
+              <button onClick={() => setOpenResvMiniPopup(false)} className="p-1 rounded hover:bg-muted text-muted-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-2 text-xs">
+              <div>
+                <label className="block text-muted-foreground mb-0.5">예약일자 <span className="text-red-500">*</span></label>
+                <input type="date" value={resvMiniForm.date}
+                  onChange={(e) => setResvMiniForm((f) => ({ ...f, date: e.target.value }))}
+                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-muted-foreground mb-0.5">시작시간 <span className="text-red-500">*</span></label>
+                  <input type="time" value={resvMiniForm.startTime}
+                    onChange={(e) => setResvMiniForm((f) => ({ ...f, startTime: e.target.value }))}
+                    className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500" />
+                </div>
+                <div>
+                  <label className="block text-muted-foreground mb-0.5">종료시간</label>
+                  <input type="time" value={resvMiniForm.endTime}
+                    onChange={(e) => setResvMiniForm((f) => ({ ...f, endTime: e.target.value }))}
+                    className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-muted-foreground mb-0.5">예약메모</label>
+                <Textarea
+                  value={resvMiniForm.memo}
+                  onChange={(e) => setResvMiniForm((f) => ({ ...f, memo: e.target.value }))}
+                  placeholder="예약 관련 메모"
+                  rows={2}
+                  className="text-xs resize-none"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button
+                className="flex-1 bg-teal-600 hover:bg-teal-700 h-8 text-xs"
+                onClick={saveResvMini}
+                disabled={savingResvMini}
+              >
+                {savingResvMini ? '저장 중…' : '예약 등록'}
+              </Button>
+              <Button variant="outline" className="h-8 text-xs px-3" onClick={() => setOpenResvMiniPopup(false)}>
+                취소
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* T-20260507-foot-PKG-TEMPLATE-REDESIGN: 구입 티켓 추가 다이얼로그 */}
       {openPackagePurchase && customer && (
