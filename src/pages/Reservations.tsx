@@ -441,7 +441,13 @@ export default function Reservations() {
             </thead>
             <tbody>
               {clinic &&
-                generateSlots(clinic.open_time, clinic.close_time, clinic.slot_interval).map(
+                generateSlots(
+                  clinic.open_time,
+                  // day view: 선택된 날짜의 close_time 사용 (토요일=18:30, 평일=20:30)
+                  // week view: clinic.close_time(평일 최대) 기준으로 그리드 행 생성, 토요일 열은 allowed=false로 그레이아웃
+                  viewMode === 'day' ? closeTimeFor(selectedDay, clinic) : clinic.close_time,
+                  clinic.slot_interval,
+                ).map(
                   (time) => (
                     <tr key={time}>
                       <td className="w-20 border-b border-r py-1.5 text-center text-xs font-medium text-muted-foreground">
