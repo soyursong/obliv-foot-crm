@@ -718,7 +718,7 @@ function PackageCreateDialog({
   );
   const finalTotal = priceOverride ? manualTotal : computedTotal;
 
-  // 템플릿 로드 (기존 템플릿 기반 작성용)
+  // 템플릿 로드 — T-20260509-foot-PKG-LIST-DEFAULT: 로드 후 첫 번째 템플릿 자동 선택
   useEffect(() => {
     if (!open || !clinicId) return;
     supabase
@@ -727,10 +727,28 @@ function PackageCreateDialog({
       .eq('clinic_id', clinicId)
       .eq('is_active', true)
       .order('sort_order', { ascending: true })
-      .then(({ data }) => setTemplates((data ?? []) as PackageTemplate[]));
+      .then(({ data }) => {
+        const tmplList = (data ?? []) as PackageTemplate[];
+        setTemplates(tmplList);
+        // 템플릿이 있으면 첫 번째 자동 선택 (현장: "기본 목록 먼저 보이게")
+        if (tmplList.length > 0) {
+          const first = tmplList[0];
+          setSelectedTemplateId(first.id);
+          setPackageName(first.name);
+          setHeated(first.heated_sessions); setHeatedUnitPrice(first.heated_unit_price);
+          setHeatedUpgrade(first.heated_upgrade_available);
+          setUnheated(first.unheated_sessions); setUnheatedUnitPrice(first.unheated_unit_price);
+          setUnheatedUpgrade(first.unheated_upgrade_available);
+          setPodologe(first.podologe_sessions); setPodologeUnitPrice(first.podologe_unit_price);
+          setIv(first.iv_sessions); setIvUnitPrice(first.iv_unit_price);
+          setIvCompany(first.iv_company ?? '');
+          setPriceOverride(false);
+          setMemo(first.memo ?? '');
+        }
+      });
   }, [open, clinicId]);
 
-  // 초기화
+  // 초기화 (다이얼로그 닫힐 때 리셋)
   useEffect(() => {
     if (!open) return;
     setSelectedTemplateId('custom');
