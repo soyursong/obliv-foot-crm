@@ -1096,8 +1096,8 @@ function DashboardTimeline({
         <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-green-100 text-green-900 font-semibold border border-green-200">재진</span>
         <span className="ml-auto text-gray-400">상한 {SLOT_MAX}/슬롯</span>
       </div>
-      {/* 타임라인 행 */}
-      <div className="flex-1 overflow-y-auto">
+      {/* 타임라인 행 — min-h-0: flex 할당 영역 초과 성장 방지 */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {slots.map((slot) => {
           const newItems = newSlotMap[slot] ?? [];
           const retItems = retSlotMap[slot] ?? [];
@@ -3166,9 +3166,9 @@ export default function Dashboard() {
   ]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4 px-4 py-2 border-b bg-white/80">
+      <div className="flex shrink-0 items-center justify-between gap-4 px-4 py-2 border-b bg-white/80">
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon-sm" onClick={() => setDate((d) => subDays(d, 1))}>
             <ChevronLeft className="h-4 w-4" />
@@ -3416,9 +3416,11 @@ export default function Dashboard() {
           droppable: { strategy: MeasuringStrategy.Always },
         }}
       >
-      <div className="flex flex-1 overflow-hidden">
+      {/* T-20260509-foot-DASH-SCROLL-FIX: min-h-0 추가 — flex 자식이 할당 영역 밖으로 팽창하지 않도록 */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* 좌측: 통합 시간표 + 원내 메모 — T-20260504-foot-SCHEDULE-UNIFIED-VIEW */}
-        <div className="w-64 shrink-0 flex flex-col border-r overflow-hidden">
+        {/* T-20260509-foot-DASH-SLOT-STICKY: min-h-0으로 세로 팽창 억제 → 타임라인 자체 스크롤 유지 */}
+        <div className="w-64 shrink-0 flex flex-col min-h-0 border-r overflow-hidden">
           <DashboardTimeline
             date={date}
             reservations={enrichedTimelineReservations}

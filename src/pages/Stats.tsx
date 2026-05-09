@@ -78,7 +78,7 @@ export default function Stats() {
     : { from: '', to: '' };
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-6 p-6 overflow-y-auto">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold">통계 대시보드</h1>
