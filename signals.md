@@ -1,5 +1,19 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-09 23:55 — dev-foot | deploy-ready | 5/9 현장 피드백 6건 처리 완료
+
+**커밋 0db4797, 26d7132 → origin/main push 완료 → Vercel 자동배포 진행 중**
+
+처리 티켓:
+- T-20260509-foot-DASH-SCROLL-FIX (P1): 통합시간표 세로 확장 시 칸반 밀림 수정 — AdminLayout h-screen + min-h-0 체인
+- T-20260509-foot-DASH-SLOT-STICKY (P2): 통합시간표 sticky 고정 — 타임라인 자체 스크롤 분리
+- T-20260509-foot-SLOT-CARD-STYLE (P1): 고객카드 흰색 큰박스 + 슬롯헤더 초진=노랑/재진=연두
+- T-20260509-foot-PKG-LIST-DEFAULT (P2): 패키지 생성 진입시 첫 템플릿 자동 선택
+- T-20260509-foot-CHART1-LAYOUT-REAPPLY (P1): 코드 이미 반영(863a2b0) — 브라우저 캐시 이슈, 이번 push로 재배포 해결
+- T-20260509-foot-C2-PKG-CREATE-BUG (P1): DB 마이그레이션 이미 적용 확인 (REST API 검증), 코드 정상
+
+Stats.tsx에 overflow-y-auto 추가 (AdminLayout overflow-hidden 대응)
+
 ## 2026-05-08 20:40 — dev-foot | migration-blocked | T-20260508-foot-C23-DETAIL-SIMPLIFY (운영DB 수동 적용 필요)
 
 **migration 000090 운영DB 자동 적용 불가 — 대표 수동 실행 요청**
