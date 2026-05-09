@@ -931,19 +931,14 @@ function TimelineCard({
   dimmed?: boolean;
   struck?: boolean;
 }) {
-  // 초진/체험: 연한노랑 / 재진: 연두색
-  const base =
-    visitType === 'returning'
-      ? 'bg-green-100 text-green-900 border-green-200'
-      : 'bg-yellow-100 text-yellow-900 border-yellow-300';
-
+  // T-20260509-foot-SLOT-CARD-STYLE: 흰색 큰박스 (다른 슬롯 고객카드와 동일)
+  // 컬러는 슬롯메뉴명(시간 헤더)에만 적용 → 카드 자체는 색상 중립
   const showBadge = visitType === 'new' || visitType === 'experience';
 
   return (
     <div
       className={cn(
-        'flex items-center gap-0.5 rounded border px-1 py-0.5 text-[10px] font-medium truncate max-w-full',
-        base,
+        'flex items-center gap-1 rounded border bg-white px-2 py-1 text-xs font-medium w-full shadow-sm',
         dimmed && 'opacity-50',
         struck && 'line-through opacity-30',
       )}
@@ -952,7 +947,7 @@ function TimelineCard({
       {showBadge && (
         <span className="shrink-0 bg-yellow-200 text-yellow-900 text-[9px] px-0.5 rounded leading-tight font-bold">초</span>
       )}
-      <span className="truncate">{name}</span>
+      <span className="truncate text-gray-800">{name}</span>
     </div>
   );
 }
@@ -978,10 +973,7 @@ function TimelineCheckInCard({
   });
 
   const visitType = checkIn.visit_type as 'new' | 'returning' | 'experience';
-  const base =
-    visitType === 'returning'
-      ? 'bg-green-100 text-green-900 border-green-200'
-      : 'bg-yellow-100 text-yellow-900 border-yellow-300';
+  // T-20260509-foot-SLOT-CARD-STYLE: 흰색 큰박스 — 레이저실·치료실 카드와 동일 스타일
   const showBadge = visitType === 'new' || visitType === 'experience';
 
   const style: React.CSSProperties = {
@@ -997,8 +989,7 @@ function TimelineCheckInCard({
       {...attributes}
       {...listeners}
       className={cn(
-        'flex items-center gap-0.5 rounded border px-1 py-0.5 text-[10px] font-medium truncate max-w-full cursor-grab active:cursor-grabbing ring-1 ring-transparent hover:ring-teal-300 transition',
-        base,
+        'flex items-center gap-1 rounded border bg-white px-2 py-1 text-xs font-medium w-full shadow-sm cursor-grab active:cursor-grabbing ring-1 ring-transparent hover:ring-teal-300 transition',
       )}
       title={`${checkIn.customer_name} — 드래그=다음단계 이동 · 클릭=상세`}
       onClick={(e) => {
@@ -1016,9 +1007,9 @@ function TimelineCheckInCard({
           초
         </span>
       )}
-      <span className="truncate">{checkIn.customer_name}</span>
+      <span className="truncate text-gray-800">{checkIn.customer_name}</span>
       {/* 드래그 힌트 화살표 */}
-      <span className="text-[8px] opacity-50 shrink-0 ml-0.5">↗</span>
+      <span className="text-[8px] opacity-40 shrink-0 ml-0.5">↗</span>
     </div>
   );
 }
@@ -1117,27 +1108,27 @@ function DashboardTimeline({
           const totalCnt = newCnt + retCnt;
           const isFull = totalCnt >= SLOT_MAX;
 
-          // 슬롯 헤더 배경: 초진 있으면 연한노랑 tint, 재진만 있으면 연두 tint, 현재 슬롯은 teal 우선
-          const slotBg = isCurrentSlot
-            ? 'bg-teal-50/60'
+          // T-20260509-foot-SLOT-CARD-STYLE: 컬러를 슬롯메뉴명(시간 헤더)에만 적용
+          // 레이저실·치료실 헤더처럼 슬롯 타이틀 박스에 초진=노랑/재진=연두
+          const slotHeaderBg = isCurrentSlot
+            ? 'bg-teal-100'
             : newCnt > 0
-              ? 'bg-yellow-50/40'
+              ? 'bg-yellow-100'
               : retCnt > 0
-                ? 'bg-green-50/40'
-                : '';
+                ? 'bg-green-100'
+                : 'bg-gray-50';
 
           return (
             <div
               key={slot}
               className={cn(
                 'border-b border-gray-100',
-                slotBg,
                 isPastSlot && 'opacity-55',
                 hasAny ? 'min-h-[56px]' : 'min-h-[40px]',
               )}
             >
-              {/* 시간 레이블 행 */}
-              <div className="flex items-center gap-1 px-1.5 pt-1 pb-0.5">
+              {/* 시간 레이블 행 — 슬롯메뉴명 박스: 초진=노랑/재진=연두 배경 */}
+              <div className={cn('flex items-center gap-1 px-1.5 pt-1 pb-0.5', slotHeaderBg)}>
                 <span
                   className={cn(
                     'text-[10px] font-mono tabular-nums shrink-0 w-9',
@@ -1168,67 +1159,63 @@ function DashboardTimeline({
                 )}
               </div>
 
-              {/* T-20260508-foot-DASH-SLOT-REMOVE: 초진/재진 섹션 분리 + 고객박스 활성화 */}
+              {/* T-20260509-foot-SLOT-CARD-STYLE: 고객박스 흰색 큰박스 (세로 배치) */}
               {hasAny && (
-                <div className="px-1 pb-1 space-y-0.5">
+                <div className="px-1.5 pb-1.5 space-y-1">
                   {/* 초진 섹션 */}
                   {newCnt > 0 && (
-                    <div>
+                    <div className="space-y-0.5">
                       {newCnt > 0 && retCnt > 0 && (
-                        <div className="flex items-center gap-1 mb-0.5">
+                        <div className="flex items-center gap-1">
                           <span className="text-[9px] font-bold text-yellow-800 shrink-0">초진</span>
                           <div className="flex-1 h-px bg-yellow-300" />
                         </div>
                       )}
-                      <div className="flex flex-wrap gap-0.5">
-                        {newItems.map((r) => (
-                          <TimelineCard
-                            key={`r-${r.id}`}
-                            name={r.customer_name ?? ''}
-                            visitType={r.visit_type}
-                            dimmed={r.status === 'checked_in'}
-                            struck={r.status === 'cancelled'}
-                          />
-                        ))}
-                        {newSelf.map((ci) => (
-                          <TimelineCheckInCard
-                            key={`s-${ci.id}`}
-                            checkIn={ci}
-                            onClick={onCardClick ? () => onCardClick(ci) : undefined}
-                            onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
-                          />
-                        ))}
-                      </div>
+                      {newItems.map((r) => (
+                        <TimelineCard
+                          key={`r-${r.id}`}
+                          name={r.customer_name ?? ''}
+                          visitType={r.visit_type}
+                          dimmed={r.status === 'checked_in'}
+                          struck={r.status === 'cancelled'}
+                        />
+                      ))}
+                      {newSelf.map((ci) => (
+                        <TimelineCheckInCard
+                          key={`s-${ci.id}`}
+                          checkIn={ci}
+                          onClick={onCardClick ? () => onCardClick(ci) : undefined}
+                          onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
+                        />
+                      ))}
                     </div>
                   )}
                   {/* 재진 섹션 — 딱지 없음 (김주연 확정) */}
                   {retCnt > 0 && (
-                    <div>
+                    <div className="space-y-0.5">
                       {newCnt > 0 && retCnt > 0 && (
-                        <div className="flex items-center gap-1 mb-0.5">
+                        <div className="flex items-center gap-1">
                           <span className="text-[9px] font-bold text-green-800 shrink-0">재진</span>
                           <div className="flex-1 h-px bg-green-300" />
                         </div>
                       )}
-                      <div className="flex flex-wrap gap-0.5">
-                        {retItems.map((r) => (
-                          <TimelineCard
-                            key={`r-${r.id}`}
-                            name={r.customer_name ?? ''}
-                            visitType={r.visit_type}
-                            dimmed={r.status === 'checked_in'}
-                            struck={r.status === 'cancelled'}
-                          />
-                        ))}
-                        {retSelf.map((ci) => (
-                          <TimelineCheckInCard
-                            key={`s-${ci.id}`}
-                            checkIn={ci}
-                            onClick={onCardClick ? () => onCardClick(ci) : undefined}
-                            onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
-                          />
-                        ))}
-                      </div>
+                      {retItems.map((r) => (
+                        <TimelineCard
+                          key={`r-${r.id}`}
+                          name={r.customer_name ?? ''}
+                          visitType={r.visit_type}
+                          dimmed={r.status === 'checked_in'}
+                          struck={r.status === 'cancelled'}
+                        />
+                      ))}
+                      {retSelf.map((ci) => (
+                        <TimelineCheckInCard
+                          key={`s-${ci.id}`}
+                          checkIn={ci}
+                          onClick={onCardClick ? () => onCardClick(ci) : undefined}
+                          onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
+                        />
+                      ))}
                     </div>
                   )}
                 </div>
