@@ -183,7 +183,7 @@ export default function AdminLayout() {
   );
 
   return (
-    <div className="flex min-h-screen bg-muted/30">
+    <div className="flex h-screen bg-muted/30">
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex w-56 shrink-0 flex-col border-r bg-background">
         {sidebarContent}
@@ -199,8 +199,8 @@ export default function AdminLayout() {
         </div>
       )}
 
-      <main className="flex min-h-screen flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between border-b bg-background px-4 md:px-6">
+      <main className="flex h-full flex-1 flex-col">
+        <header className="flex h-14 shrink-0 items-center justify-between border-b bg-background px-4 md:px-6">
           <div className="flex items-center gap-3">
             <button className="lg:hidden p-2 min-h-[44px] min-w-[44px] flex items-center justify-center" onClick={() => setSidebarOpen(true)}>
               <Menu className="h-5 w-5" />
@@ -267,7 +267,9 @@ export default function AdminLayout() {
             )}
           </div>
         </header>
-        <div className="flex-1 overflow-auto">
+        {/* T-20260509-foot-DASH-SCROLL-FIX: overflow-hidden으로 변경 — 뷰포트 고정 레이아웃.
+            각 페이지가 자체 스크롤(overflow-y-auto)을 담당. */}
+        <div className="flex-1 min-h-0 overflow-hidden">
           <Outlet />
         </div>
       </main>
