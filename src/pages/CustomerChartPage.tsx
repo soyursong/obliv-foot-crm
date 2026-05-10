@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { ExternalLink, Pencil, Plus, Printer, Trash2, Upload, X } from 'lucide-react';
+import { ExternalLink, Package as PackageIcon, Pencil, Plus, Printer, Trash2, Upload, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { formatAmount, parseAmount } from '@/lib/format';
+import { formatAmount, formatPhone, parseAmount } from '@/lib/format';
 import { VISIT_TYPE_KO } from '@/lib/status';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
@@ -15,6 +15,8 @@ import { toast } from 'sonner';
 import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation } from '@/lib/types';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 업로드된 양식 조회
 import { DocumentViewer } from '@/components/forms/DocumentViewer';
+// T-20260510-foot-C2-DOC-ISSUANCE: 서류발행 패널
+import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // T-20260507-foot-CHART2-INSURANCE-FIELDS: 건보 자격등급 패널
 import { InsuranceGradeSelect } from '@/components/insurance/InsuranceGradeSelect';
 // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
@@ -1141,9 +1143,10 @@ export default function CustomerChartPage() {
     { key: 'packages',      label: '패키지' },
     { key: 'messages',      label: '메시지' },
     { key: 'progress',      label: '경과내역' },
+    { key: 'documents',     label: '서류발행' },
   ];
   const IMPLEMENTED_CLINICAL = ['checklist', 'images'];
-  const IMPLEMENTED_HISTORY  = ['consultations', 'payments', 'treatments', 'packages', 'progress'];
+  const IMPLEMENTED_HISTORY  = ['consultations', 'payments', 'treatments', 'packages', 'progress', 'documents'];
 
   const handleClinicalTab = (key: string) => { setChartTab(key); setChartTabGroup('clinical'); };
   const handleHistoryTab  = (key: string) => { setChartTab(key); setChartTabGroup('history'); };
@@ -1374,7 +1377,7 @@ export default function CustomerChartPage() {
                 <tr>
                   <td className={LC}>휴대폰</td>
                   <td className={cn(VC, 'border-r border-gray-200 w-[130px]')}>
-                    <a href={`tel:${customer.phone}`} className="font-medium text-teal-700 hover:underline">{customer.phone}</a>
+                    <a href={`tel:${customer.phone}`} className="font-medium text-teal-700 hover:underline">{formatPhone(customer.phone)}</a>
                   </td>
                   <td className={cn(LC, 'w-auto')}>개인정보동의</td>
                   <td className={VC}>
@@ -1697,6 +1700,43 @@ export default function CustomerChartPage() {
 
               </tbody>
             </table>
+
+            {/* ─ 패키지 구매항목 요약 — T-20260510-foot-C21-PKG-ITEM-DETAIL ─ */}
+            {packages.filter((p) => p.status === 'active').length > 0 && (
+              <div className="border-t border-gray-200 bg-teal-50/40 px-3 py-2 space-y-1.5 text-[11px]">
+                <div className="font-semibold text-teal-800 flex items-center gap-1">
+                  <PackageIcon className="h-3.5 w-3.5" /> 활성 패키지
+                </div>
+                {packages.filter((p) => p.status === 'active').map((p) => {
+                  const rem = p.remaining;
+                  return (
+                    <div key={p.id} className="rounded border border-teal-200 bg-white px-2 py-1.5 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-teal-900 truncate">{p.package_name}</span>
+                        <span className="text-[10px] text-muted-foreground shrink-0 ml-1">{p.contract_date}</span>
+                      </div>
+                      {rem && (
+                        <div className="flex gap-3 text-[10px]">
+                          {(p.unheated_sessions ?? 0) > 0 && (
+                            <span>비가열 <span className="font-semibold text-teal-700">{(p.unheated_sessions ?? 0) - rem.unheated}/{p.unheated_sessions}</span></span>
+                          )}
+                          {(p.heated_sessions ?? 0) > 0 && (
+                            <span>가열 <span className="font-semibold text-teal-700">{(p.heated_sessions ?? 0) - rem.heated}/{p.heated_sessions}</span></span>
+                          )}
+                          {(p.podologe_sessions ?? 0) > 0 && (
+                            <span>포돌로게 <span className="font-semibold text-teal-700">{(p.podologe_sessions ?? 0) - (rem.podologe ?? 0)}/{p.podologe_sessions}</span></span>
+                          )}
+                          {(p.iv_sessions ?? 0) > 0 && (
+                            <span>수액 <span className="font-semibold text-teal-700">{(p.iv_sessions ?? 0) - rem.iv}/{p.iv_sessions}</span></span>
+                          )}
+                          <span className="ml-auto text-teal-700 font-bold">잔여 {rem.total_remaining}회</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {/* ─ 탭 열 1 (문진 / 진료 탭) ─────────────────────────────── */}
             <div className="border-t-2 border-gray-300 shrink-0">
@@ -2038,53 +2078,9 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-              {/* History: 패키지 */}
+              {/* History: 패키지 — T-20260510-foot-C22-SECTION-MERGE: 치료플랜 요약 제거, 티켓 상세만 표시 */}
               {chartTabGroup === 'history' && chartTab === 'packages' && (
             <div className="space-y-3">
-              {/* 치료플랜 요약 테이블 */}
-              <div className="rounded-lg border bg-white p-3 text-xs">
-                <div className="font-semibold text-muted-foreground mb-2">치료플랜 (패키지)</div>
-                {packages.length === 0 ? (
-                  <div className="text-muted-foreground py-2">패키지 없음</div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="bg-muted/40 text-muted-foreground">
-                          <th className="text-left px-2 py-1.5 font-medium border-b">패키지명</th>
-                          <th className="text-center px-2 py-1.5 font-medium border-b">총</th>
-                          <th className="text-center px-2 py-1.5 font-medium border-b">사용</th>
-                          <th className="text-center px-2 py-1.5 font-medium border-b text-teal-700">잔여</th>
-                          <th className="text-right px-2 py-1.5 font-medium border-b">금액</th>
-                          <th className="text-left px-2 py-1.5 font-medium border-b">시작일</th>
-                          <th className="text-center px-2 py-1.5 font-medium border-b">상태</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {packages.map((p) => {
-                          const used = p.remaining ? p.total_sessions - p.remaining.total_remaining : null;
-                          return (
-                            <tr key={p.id} className="border-b border-muted/20 hover:bg-muted/10">
-                              <td className="px-2 py-1.5 font-medium max-w-[120px] truncate">{p.package_name}</td>
-                              <td className="px-2 py-1.5 text-center">{p.total_sessions}</td>
-                              <td className="px-2 py-1.5 text-center">{used ?? '-'}</td>
-                              <td className="px-2 py-1.5 text-center font-semibold text-teal-700">{p.remaining?.total_remaining ?? '-'}</td>
-                              <td className="px-2 py-1.5 text-right tabular-nums">{formatAmount(p.total_amount)}</td>
-                              <td className="px-2 py-1.5 text-muted-foreground">{p.contract_date}</td>
-                              <td className="px-2 py-1.5 text-center">
-                                <Badge variant={p.status === 'active' ? 'teal' : p.status === 'refunded' ? 'destructive' : 'secondary'} className="text-[10px] px-1.5">
-                                  {PKG_STATUS_KO[p.status] ?? p.status}
-                                </Badge>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
               {/* 구매 패키지(티켓) 상세 — T-20260510-foot-C21-PKG-ITEM-DETAIL: 시술별 상세표시 */}
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center justify-between mb-2">
@@ -2288,6 +2284,22 @@ export default function CustomerChartPage() {
                         </div>
                       ))}
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+
+              {/* History: 서류발행 — T-20260510-foot-C2-DOC-ISSUANCE */}
+              {chartTabGroup === 'history' && chartTab === 'documents' && (
+            <div className="space-y-3">
+              {latestCheckIn ? (
+                <DocumentPrintPanel
+                  checkIn={latestCheckIn}
+                  onUpdated={refreshPayments}
+                />
+              ) : (
+                <div className="flex items-center justify-center py-10 text-sm text-muted-foreground border border-dashed rounded-lg">
+                  접수 기록이 없어 서류 발행을 사용할 수 없습니다
                 </div>
               )}
             </div>
