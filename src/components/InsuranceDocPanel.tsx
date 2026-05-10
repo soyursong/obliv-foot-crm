@@ -197,7 +197,7 @@ export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
           <div className="flex items-center justify-between">
             <div>
               <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
-                <FileText className="h-3 w-3" /> 경과분析지
+                <FileText className="h-3 w-3" /> 경과분석지
               </span>
               <p className="text-[11px] text-muted-foreground mt-0.5">원장님 공유 시 업로드</p>
             </div>
@@ -212,7 +212,7 @@ export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
                   <div className="flex items-center gap-1.5 min-w-0">
                     <FileText className="h-3 w-3 text-teal-600 shrink-0" />
                     <div className="min-w-0">
-                      <div className="font-medium truncate">경과분析지</div>
+                      <div className="font-medium truncate">경과분석지</div>
                       <div className="text-muted-foreground text-[10px]">
                         {format(new Date(doc.issue_date), 'MM/dd')}
                         {doc.pdf_url && (
