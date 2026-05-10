@@ -419,14 +419,12 @@ export default function CustomerChartPage() {
   // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 인라인 편집
   const [editingCustomerMemo, setEditingCustomerMemo] = useState(false);
   const [customerMemoText, setCustomerMemoText] = useState('');
-  const [savingCustomerMemo, setSavingCustomerMemo] = useState(false);
   const customerMemoRef = useRef<HTMLTextAreaElement>(null);
   // T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 인라인 편집
   const [editingAddress, setEditingAddress] = useState(false);
   const [addressText, setAddressText] = useState('');
   // T-20260510-foot-ADDRESS-DETAIL-FIX: 상세주소 입력란
   const [addressDetailText, setAddressDetailText] = useState('');
-  const [savingAddress, setSavingAddress] = useState(false);
   // T-20260508-foot-CUST-FORM-REVAMP: 신규 폼 필드
   const [editingEmail, setEditingEmail] = useState(false);
   const [emailText, setEmailText] = useState('');
@@ -476,7 +474,6 @@ export default function CustomerChartPage() {
   const [editingRrn, setEditingRrn] = useState(false);
   const [rrnText, setRrnText] = useState('');
   const [rrnMasked, setRrnMasked] = useState<string | null | undefined>(undefined); // undefined=로드전, null=없음
-  const [savingRrn, setSavingRrn] = useState(false);
   // C22-PKG-DEDUCT: 인라인 차감 폼
   const [c22DeductForm, setC22DeductForm] = useState({
     sessionDate: format(new Date(), 'yyyy-MM-dd'),
@@ -489,6 +486,8 @@ export default function CustomerChartPage() {
   const [editResvId, setEditResvId] = useState<string | null>(null);
   const [editResvForm, setEditResvForm] = useState({ date: '', startTime: '', memo: '' });
   const [savingEditResv, setSavingEditResv] = useState(false);
+  // T-20260510-foot-C21-SAVE-UNIFY: 고객정보 패널 통합 저장 로딩 상태
+  const [savingInfoPanel, setSavingInfoPanel] = useState(false);
 
   useEffect(() => {
     if (!customerId || !profile) return;
@@ -655,27 +654,11 @@ export default function CustomerChartPage() {
     })();
   }, [customer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 저장
-  const saveCustomerMemo = async () => {
-    if (!customer) return;
-    setSavingCustomerMemo(true);
-    const { error } = await supabase
-      .from('customers')
-      .update({ customer_memo: customerMemoText.trim() || null })
-      .eq('id', customer.id);
-    setSavingCustomerMemo(false);
-    if (error) { toast.error('저장 실패'); return; }
-    setCustomer((prev) => prev ? { ...prev, customer_memo: customerMemoText.trim() || null } : prev);
-    setEditingCustomerMemo(false);
-    toast.success('고객메모 저장됨');
-  };
-
   // T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 저장
   // T-20260510-foot-C21-SAVE-UNIFY: 우편번호+주소 동시 저장 (저장버튼 단일화)
   // T-20260510-foot-ADDRESS-DETAIL-FIX: address_detail 동시 저장
   const saveAddress = async () => {
     if (!customer) return;
-    setSavingAddress(true);
     const { error } = await supabase
       .from('customers')
       .update({
@@ -684,7 +667,6 @@ export default function CustomerChartPage() {
         postal_code: postalCodeText.trim() || null,
       })
       .eq('id', customer.id);
-    setSavingAddress(false);
     if (error) { toast.error('저장 실패'); return; }
     setCustomer((prev) => prev ? {
       ...prev,
@@ -732,14 +714,53 @@ export default function CustomerChartPage() {
     if (!customer) return;
     const digits = rrnText.replace(/\D/g, '');
     if (digits.length !== 13) { toast.error('주민번호 13자리를 입력해주세요'); return; }
-    setSavingRrn(true);
     const { error } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });
-    setSavingRrn(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
     setRrnMasked(digits.slice(0, 6) + '-*******');
     setEditingRrn(false);
     setRrnText('');
     toast.success('주민번호 저장됨');
+  };
+
+  // T-20260510-foot-C21-SAVE-UNIFY: 고객정보 패널 통합 저장
+  const handleInfoPanelSave = async () => {
+    if (!customer) return;
+    setSavingInfoPanel(true);
+    try {
+      // 1) 주민번호 — 암호화 RPC 별도 처리
+      if (editingRrn) {
+        const digits = rrnText.replace(/\D/g, '');
+        if (digits.length !== 13) { toast.error('주민번호 13자리를 입력해주세요'); return; }
+        const { error } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });
+        if (error) { toast.error(`주민번호 저장 실패: ${error.message}`); return; }
+        setRrnMasked(digits.slice(0, 6) + '-*******');
+        setEditingRrn(false);
+        setRrnText('');
+      }
+      // 2) 나머지 필드 일괄 patch
+      const patch: Partial<Customer> = {};
+      if (editingEmail) patch.customer_email = emailText.trim() || null;
+      if (editingPassport) patch.passport_number = passportText.trim() || null;
+      if (editingAddress) {
+        patch.address = addressText.trim() || null;
+        patch.address_detail = addressDetailText.trim() || null;
+        patch.postal_code = postalCodeText.trim() || null;
+      }
+      if (editingCustomerMemo) patch.customer_memo = customerMemoText.trim() || null;
+      if (Object.keys(patch).length > 0) {
+        const { error } = await supabase.from('customers').update(patch).eq('id', customer.id);
+        if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+        setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
+      }
+      // 3) 모든 편집 상태 닫기
+      setEditingEmail(false);
+      setEditingPassport(false);
+      setEditingAddress(false);
+      setEditingCustomerMemo(false);
+      toast.success('고객정보 저장 완료');
+    } finally {
+      setSavingInfoPanel(false);
+    }
   };
 
   // C2-PKG-TICKET-TABLE: 회차 차감 저장 (치료사 드롭다운)
@@ -1149,14 +1170,22 @@ export default function CustomerChartPage() {
         {/* ════════════════════════════════════════════════════════════════ */}
         <div className="flex flex-col overflow-hidden border-r border-gray-400 bg-white" style={{ width: '60%', minWidth: 0 }}>
 
-          {/* 패널 서브헤더 */}
+          {/* 패널 서브헤더 — T-20260510-foot-C21-SAVE-UNIFY: 통합 저장 버튼 */}
           <div className="flex items-center gap-3 bg-[#d8e8f0] border-b border-gray-300 px-3 py-1 shrink-0">
             <span className="text-[11px] font-semibold text-[#1e4e6e]">고객정보</span>
-            <span className="ml-auto text-[11px] text-muted-foreground">
+            <span className="text-[11px] text-muted-foreground">
               방문 <strong className="text-teal-700">{visits.length}회</strong>
               {' · '}결제 <strong className="text-teal-700">{formatAmount(totalPaid)}</strong>
               {' · '}패키지 <strong className="text-teal-700">{packages.length}건</strong>
             </span>
+            <Button
+              size="sm"
+              className="ml-auto h-6 text-[11px] px-3 bg-teal-600 hover:bg-teal-700"
+              onClick={handleInfoPanelSave}
+              disabled={savingInfoPanel || !(editingRrn || editingEmail || editingPassport || editingAddress || editingCustomerMemo)}
+            >
+              {savingInfoPanel ? '저장 중…' : '저장'}
+            </Button>
           </div>
 
           {/* 스크롤 영역 */}
@@ -1201,14 +1230,6 @@ export default function CustomerChartPage() {
                             if (e.key === 'Escape') { setEditingRrn(false); setRrnText(''); }
                           }}
                         />
-                        <button
-                          type="button"
-                          onClick={saveRrn}
-                          disabled={savingRrn}
-                          className="text-[11px] px-2 py-0.5 rounded border border-teal-500 bg-teal-50 text-teal-700 hover:bg-teal-100 disabled:opacity-50"
-                        >
-                          {savingRrn ? '...' : '저장'}
-                        </button>
                         <button
                           type="button"
                           onClick={() => { setEditingRrn(false); setRrnText(''); }}
@@ -1391,7 +1412,6 @@ export default function CustomerChartPage() {
                             if (e.key === 'Escape') { setEditingEmail(false); setEmailText(customer.customer_email ?? ''); }
                           }}
                         />
-                        <button onClick={saveEmail} disabled={savingField} className="rounded border border-teal-600 bg-teal-600 text-white text-[10px] px-1.5 py-0.5 hover:bg-teal-700 transition shrink-0">저장</button>
                         <button onClick={() => { setEditingEmail(false); setEmailText(customer.customer_email ?? ''); }} className="rounded border border-gray-300 text-[10px] px-1.5 py-0.5 hover:bg-gray-100 transition shrink-0">취소</button>
                       </div>
                     ) : (
@@ -1427,7 +1447,6 @@ export default function CustomerChartPage() {
                             if (e.key === 'Escape') { setEditingPassport(false); setPassportText(customer.passport_number ?? ''); }
                           }}
                         />
-                        <button onClick={savePassport} disabled={savingField} className="rounded border border-teal-600 bg-teal-600 text-white text-[10px] px-1.5 py-0.5 hover:bg-teal-700 transition shrink-0">저장</button>
                         <button onClick={() => { setEditingPassport(false); setPassportText(customer.passport_number ?? ''); }} className="rounded border border-gray-300 text-[10px] px-1.5 py-0.5 hover:bg-gray-100 transition shrink-0">취소</button>
                       </div>
                     ) : (
@@ -1552,7 +1571,6 @@ export default function CustomerChartPage() {
                               if (e.key === 'Escape') { setEditingAddress(false); setAddressText(customer.address ?? ''); setAddressDetailText(customer.address_detail ?? ''); setPostalCodeText(customer.postal_code ?? ''); }
                             }}
                           />
-                          <Button size="sm" className="h-6 text-[10px] px-2 bg-teal-600 hover:bg-teal-700 shrink-0" onClick={saveAddress} disabled={savingAddress}>저장</Button>
                           <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 shrink-0" onClick={() => { setEditingAddress(false); setAddressText(customer.address ?? ''); setAddressDetailText(customer.address_detail ?? ''); setPostalCodeText(customer.postal_code ?? ''); }}>취소</Button>
                         </div>
                       </div>
@@ -1637,9 +1655,6 @@ export default function CustomerChartPage() {
                           autoFocus
                         />
                         <div className="flex gap-1">
-                          <Button size="sm" className="h-6 text-xs bg-teal-600 hover:bg-teal-700" onClick={saveCustomerMemo} disabled={savingCustomerMemo}>
-                            {savingCustomerMemo ? '저장 중…' : '저장'}
-                          </Button>
                           <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => { setEditingCustomerMemo(false); setCustomerMemoText(customer.customer_memo ?? ''); }}>
                             취소
                           </Button>
