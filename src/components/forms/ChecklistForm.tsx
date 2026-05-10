@@ -353,7 +353,7 @@ export function ChecklistForm({
         )}
       </section>
 
-      {/* 개인정보 동의 */}
+      {/* 개인정보 동의 — T-20260510-foot-CONSENT-SINGLE-SELECT: 단일선택 라디오 */}
       <section className="space-y-2 rounded-lg border bg-muted/20 p-3">
         <h3 className="text-sm font-semibold text-teal-800">개인정보 수집·이용 동의 (필수)</h3>
         <div className="space-y-1 text-xs leading-relaxed text-muted-foreground">
@@ -361,15 +361,33 @@ export function ChecklistForm({
             <p key={i}>{line}</p>
           ))}
         </div>
-        <label className="flex items-center gap-2 text-sm cursor-pointer pt-1">
-          <input
-            type="checkbox"
-            checked={data.agree_privacy}
-            onChange={(e) => setData((d) => ({ ...d, agree_privacy: e.target.checked }))}
-            className="h-5 w-5 rounded border-gray-300"
-          />
-          <span className="font-medium">위 내용을 모두 확인하였으며 개인정보 수집·이용에 동의합니다.</span>
-        </label>
+        <div className="flex gap-3 pt-1">
+          {([
+            { value: true,  label: '동의합니다',        color: 'teal' },
+            { value: false, label: '동의하지 않습니다',  color: 'rose' },
+          ] as const).map(({ value, label, color }) => (
+            <button
+              key={String(value)}
+              type="button"
+              onClick={() => setData((d) => ({ ...d, agree_privacy: value }))}
+              className={cn(
+                'min-h-12 flex-1 rounded-md border-2 px-4 py-2 text-sm font-semibold transition',
+                data.agree_privacy === value
+                  ? color === 'teal'
+                    ? 'border-teal-600 bg-teal-600 text-white'
+                    : 'border-rose-500 bg-rose-500 text-white'
+                  : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {!data.agree_privacy && (
+          <p className="text-[11px] text-rose-600 font-medium">
+            ※ 개인정보 수집·이용에 동의하지 않으면 시술이 제한될 수 있습니다.
+          </p>
+        )}
       </section>
 
       {/* 마케팅 동의 (선택) */}
