@@ -288,6 +288,11 @@ export default function CustomerChartPage() {
   // C23-DETAIL-SIMPLIFY: 치료메모 탭 상태
   const [treatmentMemoText, setTreatmentMemoText] = useState('');
   const [savingTreatmentMemo, setSavingTreatmentMemo] = useState(false);
+  // C21-RESIDENT-ID: 주민번호 입력/표시
+  const [editingRrn, setEditingRrn] = useState(false);
+  const [rrnText, setRrnText] = useState('');
+  const [rrnMasked, setRrnMasked] = useState<string | null | undefined>(undefined); // undefined=로드전, null=없음
+  const [savingRrn, setSavingRrn] = useState(false);
   // C22-PKG-DEDUCT: 인라인 차감 폼
   const [c22DeductForm, setC22DeductForm] = useState({
     sessionDate: format(new Date(), 'yyyy-MM-dd'),
@@ -438,6 +443,21 @@ export default function CustomerChartPage() {
     })();
   }, [customerId, profile]);
 
+  // C21-RESIDENT-ID: 고객 로드 시 주민번호 존재 여부 확인
+  useEffect(() => {
+    if (!customer) return;
+    setRrnMasked(undefined);
+    (async () => {
+      const { data } = await supabase.rpc('rrn_decrypt', { customer_uuid: customer.id });
+      if (data) {
+        const s = String(data).replace(/\D/g, '');
+        setRrnMasked(s.slice(0, 6) + '-*******');
+      } else {
+        setRrnMasked(null);
+      }
+    })();
+  }, [customer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 저장
   const saveCustomerMemo = async () => {
     if (!customer) return;
@@ -498,6 +518,27 @@ export default function CustomerChartPage() {
     await saveCustomerField({ postal_code: postalCodeText.trim() || null });
     setEditingPostalCode(false);
     toast.success('우편번호 저장됨');
+  };
+
+  // C21-RESIDENT-ID: 주민번호 자동 하이픈 처리
+  const handleRrnInput = (val: string) => {
+    const digits = val.replace(/\D/g, '').slice(0, 13);
+    setRrnText(digits.length > 6 ? digits.slice(0, 6) + '-' + digits.slice(6) : digits);
+  };
+
+  // C21-RESIDENT-ID: 주민번호 암호화 저장
+  const saveRrn = async () => {
+    if (!customer) return;
+    const digits = rrnText.replace(/\D/g, '');
+    if (digits.length !== 13) { toast.error('주민번호 13자리를 입력해주세요'); return; }
+    setSavingRrn(true);
+    const { error } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });
+    setSavingRrn(false);
+    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+    setRrnMasked(digits.slice(0, 6) + '-*******');
+    setEditingRrn(false);
+    setRrnText('');
+    toast.success('주민번호 저장됨');
   };
 
   // C2-PKG-TICKET-TABLE: 회차 차감 저장 (치료사 드롭다운)
@@ -940,13 +981,55 @@ export default function CustomerChartPage() {
                   </td>
                 </tr>
 
-                {/* ② 주민번호 */}
+                {/* ② 주민번호 — C21-RESIDENT-ID: 실입력+암호화 저장 */}
                 <tr>
                   <td className={LC}>주민번호</td>
                   <td className={VC} colSpan={3}>
-                    <span className="font-mono text-gray-600">
-                      {customer.birth_date ? customer.birth_date.slice(0, 6) : '______'}&nbsp;-&nbsp;*******
-                    </span>
+                    {editingRrn ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="password"
+                          className="font-mono text-sm h-7 w-40 border-teal-300 tracking-widest"
+                          value={rrnText}
+                          onChange={(e) => handleRrnInput(e.target.value)}
+                          placeholder="000000-0000000"
+                          maxLength={14}
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); saveRrn(); }
+                            if (e.key === 'Escape') { setEditingRrn(false); setRrnText(''); }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={saveRrn}
+                          disabled={savingRrn}
+                          className="text-[11px] px-2 py-0.5 rounded border border-teal-500 bg-teal-50 text-teal-700 hover:bg-teal-100 disabled:opacity-50"
+                        >
+                          {savingRrn ? '...' : '저장'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setEditingRrn(false); setRrnText(''); }}
+                          className="text-[11px] px-2 py-0.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-50"
+                        >
+                          취소
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-gray-600">
+                          {rrnMasked === undefined ? '...' : (rrnMasked ?? '미입력')}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setEditingRrn(true)}
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-50"
+                        >
+                          {rrnMasked ? '수정' : '입력'}
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
 
