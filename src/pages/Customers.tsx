@@ -6,17 +6,22 @@
  *   행 클릭 → 2번차트(미니홈피, /chart/:id) 새 창으로 통합.
  *   CRM 차트는 1번(간편차트=대시보드 우측 패널) / 2번(미니홈피) 두 가지만 존재.
  *   수정 기능은 EditCustomerDialog(수정 전용 다이얼로그)로 분리.
+ *
+ * T-20260510-foot-CUSTMGMT-CHART-PATTERN:
+ *   대시보드와 접근 패턴 통일.
+ *   클릭 → 1번차트(간편요약, 우측 패널), 우클릭 → 2번차트(미니홈피) 새 창
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { format } from 'date-fns';
-import { ExternalLink, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { BookOpen, ExternalLink, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
 import {
   Dialog,
   DialogContent,
@@ -24,6 +29,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -70,6 +81,11 @@ export default function Customers() {
   // T-20260506-foot-CHART-CONSOLIDATE: selected → editingCustomer (수정 전용)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [openCreate, setOpenCreate] = useState(false);
+  // T-20260510-foot-CUSTMGMT-CHART-PATTERN: 1번차트 우측 패널
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomerStats, setSelectedCustomerStats] = useState<CustomerStats | null>(null);
+  // 우클릭 컨텍스트 메뉴
+  const [ctxMenu, setCtxMenu] = useState<{ customer: Customer; x: number; y: number } | null>(null);
   const [statsMap, setStatsMap] = useState<Map<string, CustomerStats>>(new Map());
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
@@ -183,6 +199,18 @@ export default function Customers() {
     openChart(state.openCustomerId);
   }, [clinic, location.state]);
 
+  // T-20260510-foot-CUSTMGMT-CHART-PATTERN: 1번차트 패널 열기
+  const handleRowClick = useCallback((c: Customer) => {
+    setSelectedCustomer(c);
+    setSelectedCustomerStats(statsMap.get(c.id) ?? null);
+  }, [statsMap]);
+
+  // 우클릭 → 컨텍스트 메뉴
+  const handleRowContextMenu = useCallback((e: React.MouseEvent, c: Customer) => {
+    e.preventDefault();
+    setCtxMenu({ customer: c, x: e.clientX, y: e.clientY });
+  }, []);
+
   const deleteCustomer = async (c: Customer) => {
     if (!window.confirm(`${c.name}님을 삭제하시겠습니까?\n체크인·패키지 이력이 없을 때만 삭제됩니다.`)) return;
     const [{ count: ciCount }, { count: pkgCount }] = await Promise.all([
@@ -223,8 +251,7 @@ export default function Customers() {
             </span>
           )}
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <ExternalLink className="h-3.5 w-3.5 text-teal-500" />
-            행 클릭 → 고객차트(2번) 새 창
+            클릭=간편차트(1번) / 우클릭=고객차트(2번)
           </span>
         </div>
         <Button onClick={() => setOpenCreate(true)} className="gap-1">
@@ -253,7 +280,8 @@ export default function Customers() {
               return (
                 <tr
                   key={c.id}
-                  onClick={() => openChart(c.id)}
+                  onClick={() => handleRowClick(c)}
+                  onContextMenu={(e) => handleRowContextMenu(e, c)}
                   className="cursor-pointer border-t hover:bg-teal-50/40"
                 >
                   <td className="px-4 py-2 font-medium">
@@ -384,6 +412,152 @@ export default function Customers() {
           runSearch(query, 1);
         }}
       />
+
+      {/* T-20260510-foot-CUSTMGMT-CHART-PATTERN: 1번차트 우측 패널 */}
+      <Sheet open={!!selectedCustomer} onOpenChange={(o) => { if (!o) setSelectedCustomer(null); }}>
+        <SheetContent side="right" className="w-[380px] overflow-y-auto p-0">
+          {selectedCustomer && (
+            <>
+              <SheetHeader className="sticky top-0 z-10 bg-white border-b px-5 py-4">
+                <div className="flex items-center justify-between">
+                  <SheetTitle className="text-base font-bold">
+                    {selectedCustomer.name}
+                    {selectedCustomer.gender && (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        {selectedCustomer.gender === 'M' ? '남' : '여'}
+                      </span>
+                    )}
+                  </SheetTitle>
+                  <Button
+                    size="sm"
+                    className="gap-1 h-8 text-xs bg-teal-600 hover:bg-teal-700"
+                    onClick={() => openChart(selectedCustomer.id)}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    고객차트(2번)
+                  </Button>
+                </div>
+              </SheetHeader>
+
+              <div className="px-5 py-4 space-y-4">
+                {/* 기본 정보 */}
+                <section>
+                  <p className="text-xs font-semibold text-teal-700 mb-2">기본 정보</p>
+                  <div className="space-y-1.5 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">전화번호</span>
+                      <span className="font-medium">{selectedCustomer.phone}</span>
+                    </div>
+                    {selectedCustomer.birth_date && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">생년월일</span>
+                        <span>{selectedCustomer.birth_date}</span>
+                      </div>
+                    )}
+                    {selectedCustomer.chart_number && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">차트번호</span>
+                        <span>{selectedCustomer.chart_number}</span>
+                      </div>
+                    )}
+                    {selectedCustomer.customer_grade && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">고객등급</span>
+                        <Badge variant="outline" className="text-[10px] px-1.5">
+                          {selectedCustomer.customer_grade}
+                        </Badge>
+                      </div>
+                    )}
+                    {selectedCustomer.lead_source && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">내원경로</span>
+                        <span>{selectedCustomer.lead_source}</span>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <Separator />
+
+                {/* 방문 통계 */}
+                <section>
+                  <p className="text-xs font-semibold text-teal-700 mb-2">방문 통계</p>
+                  {selectedCustomerStats ? (
+                    <div className="space-y-1.5 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">총 방문</span>
+                        <span className="font-semibold">{selectedCustomerStats.visit_count}회</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">최종 방문</span>
+                        <span>
+                          {selectedCustomerStats.last_visit
+                            ? format(new Date(selectedCustomerStats.last_visit), 'yyyy-MM-dd')
+                            : '-'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">총 결제액</span>
+                        <span className="font-semibold text-teal-700">
+                          {formatAmount(selectedCustomerStats.total_revenue)}원
+                        </span>
+                      </div>
+                      {selectedCustomerStats.has_package && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">패키지</span>
+                          <Badge variant="teal" className="text-[10px] px-1.5">보유</Badge>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">통계 없음</p>
+                  )}
+                </section>
+
+                {/* 메모 */}
+                {selectedCustomer.customer_memo && (
+                  <>
+                    <Separator />
+                    <section>
+                      <p className="text-xs font-semibold text-teal-700 mb-2">고객 메모</p>
+                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                        {selectedCustomer.customer_memo}
+                      </p>
+                    </section>
+                  </>
+                )}
+
+                {/* 주소 */}
+                {(selectedCustomer.postal_code || selectedCustomer.address) && (
+                  <>
+                    <Separator />
+                    <section>
+                      <p className="text-xs font-semibold text-teal-700 mb-2">주소</p>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedCustomer.postal_code && `[${selectedCustomer.postal_code}] `}
+                        {selectedCustomer.address}
+                      </p>
+                    </section>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* T-20260510-foot-CUSTMGMT-CHART-PATTERN: 우클릭 컨텍스트 메뉴 */}
+      {ctxMenu && (
+        <CustomerContextMenu
+          customer={ctxMenu.customer}
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          onClose={() => setCtxMenu(null)}
+          onOpenChart={(c) => { openChart(c.id); setCtxMenu(null); }}
+          onEdit={(c) => { setEditingCustomer(c); setCtxMenu(null); }}
+          isAdmin={isAdmin}
+        />
+      )}
     </div>
   );
 }
@@ -511,7 +685,7 @@ function EditCustomerDialog({
           </div>
           {/* 고객등급 — T-20260508-foot-CUST-FORM-REVAMP */}
           <div className="space-y-1.5">
-            <Label>고객등급 <span className="text-xs text-muted-foreground font-normal">(진상 등급)</span></Label>
+            <Label>고객등급</Label>
             <div className="flex gap-1.5 flex-wrap">
               {CUSTOMER_GRADE_OPTIONS.map((g) => (
                 <button
@@ -849,5 +1023,66 @@ function CreateCustomerDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── T-20260510-foot-CUSTMGMT-CHART-PATTERN: 우클릭 컨텍스트 메뉴 ─────────────
+
+interface CustomerContextMenuProps {
+  customer: Customer;
+  x: number;
+  y: number;
+  onClose: () => void;
+  onOpenChart: (c: Customer) => void;
+  onEdit: (c: Customer) => void;
+  isAdmin: boolean;
+}
+
+function CustomerContextMenu({ customer, x, y, onClose, onOpenChart, onEdit, isAdmin }: CustomerContextMenuProps) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [onClose]);
+
+  const safeX = Math.min(x, window.innerWidth - 190);
+  const safeY = Math.min(y, window.innerHeight - 120);
+
+  return (
+    <div
+      ref={ref}
+      className="fixed z-[60] min-w-[170px] rounded-lg border bg-white shadow-xl py-1 select-none"
+      style={{ top: safeY, left: safeX }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <div className="px-3 py-1.5 text-xs font-semibold text-teal-700 border-b truncate">
+        {customer.name}
+      </div>
+      <button
+        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-teal-50 transition text-left"
+        onClick={() => onOpenChart(customer)}
+      >
+        <BookOpen className="h-4 w-4 text-teal-600 shrink-0" />
+        고객차트 (2번)
+      </button>
+      {isAdmin && (
+        <button
+          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-muted/50 transition text-left"
+          onClick={() => onEdit(customer)}
+        >
+          <Pencil className="h-4 w-4 text-muted-foreground shrink-0" />
+          정보 수정
+        </button>
+      )}
+    </div>
   );
 }

@@ -886,45 +886,7 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             )}
           </div>
 
-          {/* 결제 */}
-          <Separator />
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-muted-foreground">결제</span>
-              {totalPaid > 0 ? (
-                <Badge variant="success" className="text-xs">
-                  결제완료 {formatAmount(totalPaid)}
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="text-xs text-orange-600">미결제</Badge>
-              )}
-            </div>
-            {payments.length > 0 ? (
-              <div className="space-y-1">
-                {payments.map((p) => (
-                  <div key={p.id} className="flex justify-between text-xs">
-                    <span>
-                      {METHOD_LABEL[p.method] ?? p.method}
-                      {p.installment && p.installment > 0 ? ` ${p.installment}개월` : ''}
-                    </span>
-                    <span className={cn('tabular-nums', p.payment_type === 'refund' && 'text-red-600')}>
-                      {p.payment_type === 'refund' ? '-' : ''}
-                      {formatAmount(p.amount)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full gap-1"
-                onClick={() => onPayment(checkIn)}
-              >
-                <CreditCard className="h-3.5 w-3.5" /> 결제 등록
-              </Button>
-            )}
-          </div>
+          {/* T-20260510-foot-CHART1-PAYMENT-ORDER: 결제 섹션은 서류발행 위로 이동됨 */}
 
           {/* 패키지 상세 목록 (연결 + 잔여 세부 표시) */}
           {checkIn.customer_id && (
@@ -1211,6 +1173,46 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
           {/* 보험 영수증 / 처방전 */}
           <Separator />
           <InsuranceDocPanel checkIn={checkIn} onUpdated={onUpdated} />
+
+          {/* 결제 — T-20260510-foot-CHART1-PAYMENT-ORDER: 서류발행 바로 위로 이동 */}
+          <Separator />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-muted-foreground">결제</span>
+              {totalPaid > 0 ? (
+                <Badge variant="success" className="text-xs">
+                  결제완료 {formatAmount(totalPaid)}
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-xs text-orange-600">미결제</Badge>
+              )}
+            </div>
+            {payments.length > 0 ? (
+              <div className="space-y-1">
+                {payments.map((p) => (
+                  <div key={p.id} className="flex justify-between text-xs">
+                    <span>
+                      {METHOD_LABEL[p.method] ?? p.method}
+                      {p.installment && p.installment > 0 ? ` ${p.installment}개월` : ''}
+                    </span>
+                    <span className={cn('tabular-nums', p.payment_type === 'refund' && 'text-red-600')}>
+                      {p.payment_type === 'refund' ? '-' : ''}
+                      {formatAmount(p.amount)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-1"
+                onClick={() => onPayment(checkIn)}
+              >
+                <CreditCard className="h-3.5 w-3.5" /> 결제 등록
+              </Button>
+            )}
+          </div>
 
           {/* 서류 발행 */}
           <Separator />

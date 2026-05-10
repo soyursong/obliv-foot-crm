@@ -328,6 +328,8 @@ export default function CustomerChartPage() {
       setTreatmentMemoText((custData as Customer).treatment_note ?? (custData as Customer).memo ?? '');
 
       // C2-STAFF-DROPDOWN: 담당자 직원 목록 로드 (coordinator + consultant + director)
+      // T-20260510-foot-C21-STAFF-REVENUE: 삭제 대상 4명 제외 (김다희/김민경/문원장/박민석)
+      const EXCLUDED_STAFF = ['김다희', '김민경', '문원장', '박민석'];
       const { data: staffData } = await supabase
         .from('staff')
         .select('id, name, role')
@@ -335,7 +337,7 @@ export default function CustomerChartPage() {
         .eq('active', true)
         .in('role', ['consultant', 'coordinator', 'director'])
         .order('name', { ascending: true });
-      setStaffList((staffData ?? []) as {id: string; name: string; role: string}[]);
+      setStaffList(((staffData ?? []) as {id: string; name: string; role: string}[]).filter(s => !EXCLUDED_STAFF.includes(s.name)));
 
       // C2-PKG-TICKET-TABLE: 치료사 목록 로드 (role = 'therapist')
       const { data: therapistData } = await supabase
@@ -1003,7 +1005,7 @@ export default function CustomerChartPage() {
                   </td>
                 </tr>
 
-                {/* ③ 성별 (라디오 스타일) */}
+                {/* ③ 성별 (라디오 스타일) — T-20260510-foot-C21-DEPLOYED-VERIFY: 클릭 활성화 */}
                 <tr>
                   <td className={LC}>성별</td>
                   <td className={VC} colSpan={3}>
@@ -1016,8 +1018,26 @@ export default function CustomerChartPage() {
                         const sel = val === 'foreign'
                           ? customer.is_foreign
                           : (!customer.is_foreign && customer.gender === val);
+                        const onClick = () => {
+                          if (savingField) return;
+                          if (val === 'foreign') {
+                            saveCustomerField({ is_foreign: true }, '성별: 외국인');
+                          } else {
+                            saveCustomerField(
+                              { gender: val as 'M' | 'F', is_foreign: false },
+                              `성별: ${label}`,
+                            );
+                          }
+                        };
                         return (
-                          <span key={val} className="flex items-center gap-1 cursor-default">
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={onClick}
+                            disabled={savingField}
+                            className="flex items-center gap-1 hover:opacity-80 active:scale-95 transition cursor-pointer"
+                            title={`${label} 선택`}
+                          >
                             <span className={cn(
                               'h-3.5 w-3.5 rounded-full border-2 flex items-center justify-center',
                               sel ? 'border-blue-600' : 'border-gray-400',
@@ -1025,7 +1045,7 @@ export default function CustomerChartPage() {
                               {sel && <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />}
                             </span>
                             <span className={sel ? 'font-medium text-blue-700' : 'text-gray-600'}>{label}</span>
-                          </span>
+                          </button>
                         );
                       })}
                     </div>
@@ -1169,7 +1189,7 @@ export default function CustomerChartPage() {
                       <option value="3단계">3단계 ⚠️</option>
                     </select>
                     {customer.customer_grade && customer.customer_grade !== '일반' && (
-                      <span className="ml-2 text-[10px] text-orange-600">진상 등급</span>
+                      <span className="ml-2 text-[10px] text-orange-600">주의 등급</span>
                     )}
                   </td>
                 </tr>
@@ -1312,7 +1332,6 @@ export default function CustomerChartPage() {
                           ref={customerMemoRef}
                           value={customerMemoText}
                           onChange={(e) => setCustomerMemoText(e.target.value)}
-                          placeholder="고객 성향, 특이사항, 주차 정보 등"
                           rows={3}
                           className="text-xs"
                           autoFocus
@@ -1796,7 +1815,7 @@ export default function CustomerChartPage() {
                 )}
               </div>
 
-              {/* 구매 패키지(티켓) 상세 */}
+              {/* 구매 패키지(티켓) 상세 — T-20260510-foot-C21-PKG-ITEM-DETAIL: 시술별 상세표시 */}
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center justify-between mb-2">
                   <div className="font-semibold text-muted-foreground">구매 패키지(티켓)</div>
@@ -1815,10 +1834,21 @@ export default function CustomerChartPage() {
                   <div className="space-y-3">
                     {packages.map((p) => {
                       const usedSessions = packageSessions.filter((s) => s.package_id === p.id && s.status === 'used');
-                      const therapistNames = [...new Set(usedSessions.map((s) => s.staff_name).filter(Boolean))];
-                      const usedCount = p.remaining ? p.total_sessions - p.remaining.total_remaining : usedSessions.length;
+                      // 시술 타입별 사용횟수 집계
+                      const usedByType: Record<string, number> = {};
+                      usedSessions.forEach((s) => { usedByType[s.session_type] = (usedByType[s.session_type] || 0) + 1; });
+                      // 기입된 시술만 행으로 생성
+                      const treatRows = [
+                        (p.unheated_sessions ?? 0) > 0 && { label: '비가열', qty: p.unheated_sessions ?? 0, unitPrice: p.unheated_unit_price ?? 0, used: usedByType['unheated_laser'] ?? 0 },
+                        (p.heated_sessions ?? 0) > 0 && { label: '가열', qty: p.heated_sessions ?? 0, unitPrice: p.heated_unit_price ?? 0, used: usedByType['heated_laser'] ?? 0 },
+                        (p.podologe_sessions ?? 0) > 0 && { label: '포돌로게', qty: p.podologe_sessions ?? 0, unitPrice: p.podologe_unit_price ?? 0, used: usedByType['podologue'] ?? 0 },
+                        (p.iv_sessions ?? 0) > 0 && { label: `수액${p.iv_company ? ` (${p.iv_company})` : ''}`, qty: p.iv_sessions ?? 0, unitPrice: p.iv_unit_price ?? 0, used: usedByType['iv'] ?? 0 },
+                      ].filter(Boolean) as { label: string; qty: number; unitPrice: number; used: number }[];
+                      // 시술내역 리스트 (회차 차감 기록)
+                      const TREAT_KO: Record<string, string> = { heated_laser: '가열', unheated_laser: '비가열', podologue: '포돌로게', iv: '수액', preconditioning: '프컨' };
                       return (
                         <div key={p.id} className="rounded-lg border border-muted/40 overflow-hidden">
+                          {/* 패키지 헤더 */}
                           <div className="flex items-center justify-between bg-muted/20 px-3 py-1.5">
                             <span className="text-xs font-semibold text-teal-800">{p.package_name}</span>
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
@@ -1829,43 +1859,46 @@ export default function CustomerChartPage() {
                               {PKG_STATUS_KO[p.status] ?? p.status}
                             </span>
                           </div>
-                          <table className="w-full border-collapse">
-                            <thead>
-                              <tr className="bg-muted/10 text-muted-foreground border-b border-muted/20">
-                                <th className="text-left px-3 py-1.5 font-medium w-1/4">수가</th>
-                                <th className="text-center px-2 py-1.5 font-medium w-1/4">구매횟수</th>
-                                <th className="text-center px-2 py-1.5 font-medium w-1/4 text-teal-700">사용횟수</th>
-                                <th className="text-left px-2 py-1.5 font-medium w-1/4">치료사</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              <tr>
-                                <td className="px-3 py-2 tabular-nums font-medium">{formatAmount(p.total_amount)}</td>
-                                <td className="px-2 py-2 text-center">{p.total_sessions}회</td>
-                                <td className="px-2 py-2 text-center font-semibold text-teal-700">{usedCount}회</td>
-                                <td className="px-2 py-2 text-muted-foreground">
-                                  {therapistNames.length > 0 ? therapistNames.join(', ') : usedCount > 0 ? '기록 없음' : '-'}
-                                </td>
-                              </tr>
-                            </tbody>
-                          </table>
+                          {/* 총금액 */}
+                          <div className="px-3 py-1 text-[10px] text-muted-foreground border-b border-muted/10">
+                            총 금액: <span className="font-semibold text-teal-700 tabular-nums">{formatAmount(p.total_amount)}</span>
+                          </div>
+                          {/* 시술별 상세표 */}
+                          {treatRows.length > 0 && (
+                            <table className="w-full border-collapse">
+                              <thead>
+                                <tr className="bg-muted/10 text-muted-foreground border-b border-muted/20">
+                                  <th className="text-left px-3 py-1 font-medium text-[10px]">시술명</th>
+                                  <th className="text-right px-2 py-1 font-medium text-[10px]">수가(회당)</th>
+                                  <th className="text-center px-2 py-1 font-medium text-[10px]">구매횟수</th>
+                                  <th className="text-center px-2 py-1 font-medium text-[10px] text-teal-700">사용횟수</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {treatRows.map((row) => (
+                                  <tr key={row.label} className="border-b border-muted/10 last:border-b-0">
+                                    <td className="px-3 py-1.5 font-medium text-[11px]">{row.label}</td>
+                                    <td className="px-2 py-1.5 text-right tabular-nums text-[11px]">{row.unitPrice > 0 ? formatAmount(row.unitPrice) : '-'}</td>
+                                    <td className="px-2 py-1.5 text-center text-[11px]">{row.qty}회</td>
+                                    <td className="px-2 py-1.5 text-center font-semibold text-teal-700 text-[11px]">{row.used}회</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                          {/* 시술내역 (회차 차감 기록) */}
                           {usedSessions.length > 0 && (
                             <div className="border-t border-muted/20 px-3 pb-2 pt-1.5">
-                              <div className="text-[10px] text-muted-foreground mb-1 font-medium">회차 상세</div>
+                              <div className="text-[10px] text-muted-foreground mb-1 font-medium">시술내역</div>
                               <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-                                {usedSessions.map((s) => {
-                                  const typeLabel: Record<string, string> = {
-                                    heated_laser: '가열', unheated_laser: '비가열', podologue: '포돌로게', iv: '수액', preconditioning: '프컨',
-                                  };
-                                  return (
-                                    <div key={s.id} className="flex items-center gap-1.5 text-[10px]">
-                                      <span className="text-muted-foreground w-5 tabular-nums">{s.session_number}회</span>
-                                      <span className="rounded bg-muted/40 px-1">{typeLabel[s.session_type] ?? s.session_type}</span>
-                                      <span className="text-muted-foreground">{s.session_date}</span>
-                                      {s.staff_name && <span className="text-teal-600 truncate">{s.staff_name}</span>}
-                                    </div>
-                                  );
-                                })}
+                                {usedSessions.map((s) => (
+                                  <div key={s.id} className="flex items-center gap-1.5 text-[10px]">
+                                    <span className="text-muted-foreground w-5 tabular-nums">{s.session_number}회</span>
+                                    <span className="rounded bg-muted/40 px-1">{TREAT_KO[s.session_type] ?? s.session_type}</span>
+                                    <span className="text-muted-foreground">{s.session_date}</span>
+                                    {s.staff_name && <span className="text-teal-600 truncate">{s.staff_name}</span>}
+                                  </div>
+                                ))}
                               </div>
                             </div>
                           )}
@@ -1988,121 +2021,8 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-          {/* C2-PKG-TICKET-TABLE: 구매 패키지(티켓) 3×4 표 */}
-          <div className="border-b border-gray-200 px-3 py-2">
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="text-[11px] font-semibold text-[#1e4e6e]">구매 패키지(티켓)</div>
-              {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant') && (
-                <button
-                  onClick={() => setOpenPackagePurchase(true)}
-                  className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
-                >
-                  <Plus className="h-3 w-3" /> 추가
-                </button>
-              )}
-            </div>
-            {packages.length === 0 ? (
-              <div className="text-[11px] text-muted-foreground">패키지 없음</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-[11px]">
-                  <thead>
-                    <tr className="bg-[#eef3f7] text-[#334e65]">
-                      <th className="border border-gray-200 px-1.5 py-1 font-medium text-left">상품명</th>
-                      <th className="border border-gray-200 px-1.5 py-1 font-medium text-right">수가</th>
-                      <th className="border border-gray-200 px-1.5 py-1 font-medium text-center">구매횟수</th>
-                      <th className="border border-gray-200 px-1.5 py-1 font-medium text-center">사용횟수 (치료사)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {packages.slice(0, 3).map((p) => {
-                      const usedSessions = packageSessions.filter((s) => s.package_id === p.id && s.status === 'used');
-                      const usedCount = p.remaining ? p.total_sessions - p.remaining.total_remaining : usedSessions.length;
-                      const therapistNames = [...new Set(usedSessions.map((s) => s.staff_name).filter(Boolean))];
-                      return (
-                        <tr key={p.id} className={cn('border-b border-gray-100', p.status === 'active' ? '' : 'opacity-60')}>
-                          <td className="border border-gray-100 px-1.5 py-1.5 font-medium truncate max-w-[80px]">
-                            {p.package_name}
-                            {p.status !== 'active' && (
-                              <span className="ml-1 text-[9px] text-gray-400">({PKG_STATUS_KO[p.status]})</span>
-                            )}
-                          </td>
-                          <td className="border border-gray-100 px-1.5 py-1.5 text-right tabular-nums">{formatAmount(p.total_amount)}</td>
-                          <td className="border border-gray-100 px-1.5 py-1.5 text-center">{p.total_sessions}회</td>
-                          <td className="border border-gray-100 px-1.5 py-1.5 text-center">
-                            <div className="flex flex-col items-center gap-0.5">
-                              <div>
-                                <span className="font-semibold text-teal-700">{usedCount}회</span>
-                                {therapistNames.length > 0 && (
-                                  <span className="ml-1 text-[10px] text-gray-500">({therapistNames.join(', ')})</span>
-                                )}
-                              </div>
-                              {p.status === 'active' && (profile?.role === 'therapist' || profile?.role === 'admin' || profile?.role === 'manager') && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setUseSessionDlg({
-                                      open: true,
-                                      packageId: p.id,
-                                      packageName: p.package_name,
-                                      nextSession: usedCount + 1,
-                                    });
-                                    setSessionDlgForm({
-                                      therapistId: '',
-                                      sessionDate: format(new Date(), 'yyyy-MM-dd'),
-                                      sessionType: 'heated_laser',
-                                    });
-                                  }}
-                                  className="text-[9px] rounded bg-teal-50 border border-teal-300 px-1.5 py-0.5 text-teal-600 hover:bg-teal-100 transition"
-                                >
-                                  차감
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                {/* C22-PKG-DEDUCT: 시술내역 리스트업 (2-1 연동) */}
-                {(() => {
-                  const visiblePkgIds = new Set(packages.slice(0, 3).map(p => p.id));
-                  const deductSessions = packageSessions
-                    .filter(s => visiblePkgIds.has(s.package_id) && s.status === 'used')
-                    .slice()
-                    .sort((a, b) => b.session_number - a.session_number);
-                  if (deductSessions.length === 0) return null;
-                  const TREAT_KO: Record<string, string> = {
-                    heated_laser: '가열', unheated_laser: '비가열', podologue: '포돌로게',
-                    iv: '수액', preconditioning: '프컨',
-                  };
-                  return (
-                    <div className="mt-2 border-t border-gray-100 pt-1.5">
-                      <div className="text-[10px] font-semibold text-[#1e4e6e] mb-1">시술내역</div>
-                      <div className="space-y-0.5">
-                        {deductSessions.map(s => (
-                          <div key={s.id} className="flex items-center gap-1.5 text-[10px]">
-                            <span className="tabular-nums text-muted-foreground w-5 shrink-0">{s.session_number}회</span>
-                            <span className="text-muted-foreground shrink-0">{s.session_date}</span>
-                            <span className="rounded bg-teal-50 border border-teal-200 px-1 py-0.5 text-teal-700 shrink-0">
-                              {TREAT_KO[s.session_type] ?? s.session_type}
-                            </span>
-                            {s.staff_name && <span className="text-gray-600 truncate">{s.staff_name}</span>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-                {packages.length > 3 && (
-                  <div className="text-[10px] text-muted-foreground mt-1 text-right">외 {packages.length - 3}건 — 패키지 탭에서 확인</div>
-                )}
-              </div>
-            )}
-          </div>
-
           {/* C22-PKG-DEDUCT: 구매패키지(티켓) — 치료사 차감 인라인 폼 (2-2 구역) */}
+          {/* T-20260510-foot-C22-SECTION-MERGE: 2-2 구매패키지 요약 테이블 + 시술내역 삭제 (2-1 중복) */}
           <div className="border-b border-gray-200 px-3 py-2">
             {(() => {
               const activePackages = packages.filter(p => p.status === 'active');
@@ -2316,7 +2236,6 @@ export default function CustomerChartPage() {
                   <Textarea
                     value={consultationMemo}
                     onChange={(e) => setConsultationMemo(e.target.value)}
-                    placeholder="보험여부, 이슈사항, 스토리 등 기입"
                     rows={4}
                     className="text-[11px] resize-none"
                   />
@@ -2340,7 +2259,6 @@ export default function CustomerChartPage() {
                   <Textarea
                     value={treatmentMemoText}
                     onChange={(e) => setTreatmentMemoText(e.target.value)}
-                    placeholder="치료사끼리 공유할 특이사항 기입"
                     rows={5}
                     className="text-[11px] resize-none"
                   />
@@ -2652,8 +2570,10 @@ function PackagePurchaseFromTemplateDialog({
   );
   const upgradeSurcharge = (heatedUpgrade ? 50000 : 0) + (unheatedUpgrade ? 40000 : 0);
   const grandTotal = priceOverride ? manualTotal : computedTotal + upgradeSurcharge;
-  const totalSessions = heated + unheated + iv + precon;
+  // T-20260510-foot-PKG-CREATE-FIX3: 포돌로게 포함 (total_sessions에 반영)
+  const totalSessions = heated + unheated + iv + precon + podologe;
 
+  // T-20260510-foot-PKG-CREATE-FIX3: 템플릿 로드 후 첫 번째 자동 선택 (button 활성화 보장)
   useEffect(() => {
     if (!open || !clinicId) return;
     supabase
@@ -2662,7 +2582,20 @@ function PackagePurchaseFromTemplateDialog({
       .eq('clinic_id', clinicId)
       .eq('is_active', true)
       .order('sort_order', { ascending: true })
-      .then(({ data }) => setTemplates((data ?? []) as PackageTemplate[]));
+      .then(({ data }) => {
+        const tmplList = (data ?? []) as PackageTemplate[];
+        setTemplates(tmplList);
+        if (tmplList.length > 0) {
+          const first = tmplList[0];
+          setSelectedTemplateId(first.id);
+          setPackageName(first.name);
+          setHeated(first.heated_sessions); setHeatedUnitPrice(first.heated_unit_price); setHeatedUpgrade(false);
+          setUnheated(first.unheated_sessions); setUnheatedUnitPrice(first.unheated_unit_price); setUnheatedUpgrade(false);
+          setPodologe(first.podologe_sessions); setPodologeUnitPrice(first.podologe_unit_price);
+          setIv(first.iv_sessions); setIvUnitPrice(first.iv_unit_price); setIvCompany(first.iv_company ?? '');
+          setPrecon(0); setPriceOverride(false); setMemo(first.memo ?? '');
+        }
+      });
   }, [open, clinicId]);
 
   useEffect(() => {
@@ -2715,7 +2648,7 @@ function PackagePurchaseFromTemplateDialog({
 
   const submit = async () => {
     if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
-    if (totalSessions === 0 && podologe === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
+    if (totalSessions === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
     setSubmitting(true);
     const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
     const { error } = await supabase.from('packages').insert({
@@ -2745,6 +2678,42 @@ function PackagePurchaseFromTemplateDialog({
     });
     setSubmitting(false);
     if (error) { toast.error(`생성 실패: ${error.message}`); return; }
+    onCreated();
+  };
+
+  // T-20260510-foot-PKG-ROUTE-UNIFY: 템플릿 추가 후 생성 (템플릿 저장 + 패키지 생성)
+  const submitWithTemplate = async () => {
+    if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
+    if (totalSessions === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
+    setSubmitting(true);
+    // 1) 템플릿 저장
+    const { error: tmplErr } = await supabase.from('package_templates').insert({
+      clinic_id: clinicId,
+      name: packageName.trim(),
+      heated_sessions: heated, heated_unit_price: heatedUnitPrice, heated_upgrade_available: heatedUpgrade,
+      unheated_sessions: unheated, unheated_unit_price: unheatedUnitPrice, unheated_upgrade_available: unheatedUpgrade,
+      podologe_sessions: podologe, podologe_unit_price: podologeUnitPrice,
+      iv_company: ivCompany.trim() || null, iv_sessions: iv, iv_unit_price: ivUnitPrice,
+      total_price: grandTotal, price_override: priceOverride,
+      memo: memo.trim() || null, sort_order: 0, is_active: true,
+      updated_at: new Date().toISOString(),
+    });
+    if (tmplErr) { toast.error(`템플릿 저장 실패: ${tmplErr.message}`); setSubmitting(false); return; }
+    // 2) 패키지 생성
+    const { error: pkgErr } = await supabase.from('packages').insert({
+      clinic_id: clinicId, customer_id: customerId,
+      package_name: packageName.trim(), package_type: 'template', template_id: null,
+      total_sessions: totalSessions, heated_sessions: heated, heated_unit_price: heatedUnitPrice,
+      unheated_sessions: unheated, unheated_unit_price: unheatedUnitPrice,
+      iv_sessions: iv, iv_unit_price: ivUnitPrice, preconditioning_sessions: precon,
+      podologe_sessions: podologe, podologe_unit_price: podologeUnitPrice,
+      iv_company: ivCompany.trim() || null, shot_upgrade: heatedUpgrade, af_upgrade: unheatedUpgrade,
+      upgrade_surcharge: upgradeSurcharge, total_amount: grandTotal, paid_amount: 0,
+      status: 'active', memo: memo.trim() || null,
+    });
+    setSubmitting(false);
+    if (pkgErr) { toast.error(`패키지 생성 실패: ${pkgErr.message}`); return; }
+    toast.success('템플릿 저장 + 구입 티켓 생성 완료');
     onCreated();
   };
 
@@ -2916,18 +2885,27 @@ function PackagePurchaseFromTemplateDialog({
             )}
           </div>
 
-          {/* 수액 */}
+          {/* 수액 — T-20260510-foot-PKG-CREATE-FIX3: 수액명 드롭다운 8종 */}
           <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
             <div className="text-xs font-semibold text-gray-500">수액</div>
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1">
                 <label className="text-xs text-gray-500">수액명</label>
-                <input
+                <select
                   value={ivCompany}
                   onChange={(e) => setIvCompany(e.target.value)}
-                  placeholder="수액명"
-                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
-                />
+                  className="w-full h-9 rounded-md border border-gray-200 px-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white"
+                >
+                  <option value="">— 선택 —</option>
+                  <option value="재생">재생</option>
+                  <option value="항염">항염</option>
+                  <option value="글로우">글로우</option>
+                  <option value="성장">성장</option>
+                  <option value="태반">태반</option>
+                  <option value="알파">알파</option>
+                  <option value="비타민D">비타민D</option>
+                  <option value="비타민C">비타민C</option>
+                </select>
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-gray-500">회수</label>
@@ -3008,19 +2986,27 @@ function PackagePurchaseFromTemplateDialog({
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 mt-4">
+        {/* T-20260510-foot-PKG-ROUTE-UNIFY: 통일 버튼 [취소 / 템플릿추가후생성 / 구입티켓생성] */}
+        <div className="flex justify-end gap-1.5 mt-4">
           <button
             onClick={() => onOpenChange(false)}
-            className="h-9 rounded-md border border-gray-200 px-4 text-sm hover:bg-gray-50 transition"
+            className="h-8 rounded border border-gray-200 px-3 text-xs hover:bg-gray-50 transition"
           >
             취소
           </button>
           <button
-            disabled={submitting || !packageName.trim() || (totalSessions === 0 && podologe === 0)}
-            onClick={submit}
-            className="h-9 rounded-md bg-teal-600 px-4 text-sm font-medium text-white hover:bg-teal-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={submitting || !packageName.trim() || totalSessions === 0}
+            onClick={submitWithTemplate}
+            className="h-8 rounded border border-teal-300 bg-teal-50 px-3 text-xs font-medium text-teal-700 hover:bg-teal-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {submitting ? '저장 중…' : '구입 티켓 추가'}
+            {submitting ? '저장 중…' : '템플릿 추가 후 생성'}
+          </button>
+          <button
+            disabled={submitting || !packageName.trim() || totalSessions === 0}
+            onClick={submit}
+            className="h-8 rounded bg-teal-600 px-3 text-xs font-medium text-white hover:bg-teal-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitting ? '저장 중…' : '구입 티켓 생성'}
           </button>
         </div>
       </div>
