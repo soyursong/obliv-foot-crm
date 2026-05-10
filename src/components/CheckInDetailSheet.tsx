@@ -26,7 +26,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { STATUS_KO } from '@/lib/status';
-import { formatAmount, parseAmount } from '@/lib/format';
+import { formatAmount, formatPhone, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { PreChecklist } from '@/components/PreChecklist';
 import { PhotoUpload } from '@/components/PhotoUpload';
@@ -346,6 +346,8 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   const [treatmentContents, setTreatmentContents] = useState<string[]>([]);
   /** 담당실장 드롭다운용 스태프 목록 */
   const [staffList, setStaffList] = useState<Array<{ id: string; name: string; role: string }>>([]);
+  /** T-20260510-foot-C1-VISIT-ROUTE-MEMO: 방문경로 */
+  const [visitRoute, setVisitRoute] = useState<string>('');
 
   // ── 시술 항목 상태 (ServiceSelectModal/SessionUseInSheetDialog 유지용) ──
   const [, setTreatmentItems] = useState<TreatmentItem[]>([]);
@@ -413,13 +415,13 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
       checkIn.customer_id
         ? supabase
             .from('customers')
-            .select('id, chart_number, customer_memo')
+            .select('id, chart_number, customer_memo, visit_route')
             .eq('id', checkIn.customer_id)
             .single()
         : checkIn.customer_phone
           ? supabase
               .from('customers')
-              .select('id, chart_number, customer_memo')
+              .select('id, chart_number, customer_memo, visit_route')
               .eq('clinic_id', checkIn.clinic_id)
               .ilike('phone', `%${checkIn.customer_phone.replace(/\D/g, '')}%`)
               .order('created_at', { ascending: false })
@@ -447,9 +449,10 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     setServices((svcRes.data ?? []) as Service[]);
     setPayments((payRes.data ?? []) as PaymentRow[]);
     setHistory((histRes.data ?? []) as VisitHistory[]);
-    const custData = custRes.data as { id?: string; chart_number: string | null; customer_memo: string | null } | null;
+    const custData = custRes.data as { id?: string; chart_number: string | null; customer_memo: string | null; visit_route?: string | null } | null;
     setChartNumber(custData?.chart_number ?? null);
     setCustomerMemo(custData?.customer_memo ?? '');
+    setVisitRoute(custData?.visit_route ?? '');
     // T-20260506-foot-CHART-LINK-SYNC: customer_id null 케이스 — phone으로 찾은 고객 ID 2순위 저장
     if (!checkIn.customer_id && custData?.id) {
       setResolvedCustomerId(custData.id);
@@ -558,6 +561,13 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
       `chart-${data.id}`,
       'width=820,height=960,scrollbars=yes,resizable=yes',
     );
+  };
+
+  // T-20260510-foot-C1-VISIT-ROUTE-MEMO: 방문경로 저장
+  const saveVisitRoute = async (val: string) => {
+    const customerId = checkIn?.customer_id ?? resolvedCustomerId;
+    if (!customerId) return;
+    await supabase.from('customers').update({ visit_route: val || null }).eq('id', customerId);
   };
 
   // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 저장
@@ -714,7 +724,7 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
               <>
                 <span className="flex items-center gap-1">
                   <Phone className="h-3.5 w-3.5" />
-                  {checkIn.customer_phone}
+                  {formatPhone(checkIn.customer_phone)}
                 </span>
                 <span className="text-muted-foreground/60">/</span>
               </>
@@ -773,6 +783,26 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
                       <FileText className="h-3 w-3" /> 예약메모 (예약 경로)
                     </span>
                     <p className="text-xs text-amber-900 whitespace-pre-wrap">{bookingMemo}</p>
+                  </div>
+                )}
+                {/* 방문경로 — T-20260510-foot-C1-VISIT-ROUTE-MEMO */}
+                {(checkIn.customer_id || resolvedCustomerId) && (
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs font-semibold text-teal-700 shrink-0">방문경로</Label>
+                    <select
+                      value={visitRoute}
+                      onChange={(e) => {
+                        setVisitRoute(e.target.value);
+                        saveVisitRoute(e.target.value);
+                      }}
+                      className="rounded border border-gray-300 px-2 py-0.5 text-xs cursor-pointer focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
+                    >
+                      <option value="">— 선택 —</option>
+                      <option value="TM">TM</option>
+                      <option value="워크인">워크인</option>
+                      <option value="인바운드">인바운드</option>
+                      <option value="지인소개">지인소개</option>
+                    </select>
                   </div>
                 )}
                 {/* 고객메모 — 편집 가능 */}
