@@ -584,14 +584,24 @@ function PackageTemplateDialog({
             )}
           </div>
 
-          {/* 수액 */}
+          {/* 수액 — T-20260510-foot-PKG-CREATE-FIX3: 수액명 드롭다운 8종 */}
           <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
             <div className="text-xs font-semibold text-muted-foreground">수액</div>
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1">
                 <Label className="text-xs">수액명</Label>
-                <Input value={ivCompany} onChange={(e) => setIvCompany(e.target.value)}
-                  placeholder="수액명" />
+                <select value={ivCompany} onChange={(e) => setIvCompany(e.target.value)}
+                  className="w-full h-9 rounded-md border border-input px-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-teal-500">
+                  <option value="">— 선택 —</option>
+                  <option value="재생">재생</option>
+                  <option value="항염">항염</option>
+                  <option value="글로우">글로우</option>
+                  <option value="성장">성장</option>
+                  <option value="태반">태반</option>
+                  <option value="알파">알파</option>
+                  <option value="비타민D">비타민D</option>
+                  <option value="비타민C">비타민C</option>
+                </select>
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">회수</Label>
@@ -654,10 +664,11 @@ function PackageTemplateDialog({
           </div>
         </div>
 
+        {/* T-20260510-foot-PKG-ROUTE-UNIFY: 통일 버튼 */}
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
-          <Button disabled={submitting || !name.trim()} onClick={save}>
-            {submitting ? '저장 중…' : isEdit ? '수정' : '생성'}
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>취소</Button>
+          <Button size="sm" disabled={submitting || !name.trim()} onClick={save}>
+            {submitting ? '저장 중…' : isEdit ? '템플릿 수정' : '템플릿 추가 후 생성'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -964,14 +975,24 @@ function PackageCreateDialog({
             )}
           </div>
 
-          {/* 수액 */}
+          {/* 수액 — T-20260510-foot-PKG-CREATE-FIX3: 수액명 드롭다운 8종 */}
           <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
             <div className="text-xs font-semibold text-muted-foreground">수액</div>
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1">
                 <Label className="text-xs">수액명</Label>
-                <Input value={ivCompany} onChange={(e) => setIvCompany(e.target.value)}
-                  placeholder="수액명" />
+                <select value={ivCompany} onChange={(e) => setIvCompany(e.target.value)}
+                  className="w-full h-9 rounded-md border border-input px-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-teal-500">
+                  <option value="">— 선택 —</option>
+                  <option value="재생">재생</option>
+                  <option value="항염">항염</option>
+                  <option value="글로우">글로우</option>
+                  <option value="성장">성장</option>
+                  <option value="태반">태반</option>
+                  <option value="알파">알파</option>
+                  <option value="비타민D">비타민D</option>
+                  <option value="비타민C">비타민C</option>
+                </select>
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">회수</Label>
@@ -1027,13 +1048,15 @@ function PackageCreateDialog({
           </div>
         </div>
 
+        {/* T-20260510-foot-PKG-ROUTE-UNIFY: 통일 버튼 */}
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>취소</Button>
           <Button
+            size="sm"
             disabled={submitting || !packageName.trim() || (heated + unheated + podologe + iv === 0)}
             onClick={submit}
           >
-            {submitting ? '저장 중…' : '템플릿 생성'}
+            {submitting ? '저장 중…' : '템플릿 추가 후 생성'}
           </Button>
         </DialogFooter>
       </DialogContent>

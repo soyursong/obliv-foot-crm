@@ -107,6 +107,8 @@ interface CustomerBasic {
   name: string;
   chart_number: string | null;
   lead_source: string | null;
+  // T-20260510-foot-C21-STAFF-REVENUE: 담당자 매출 자동연동
+  assigned_staff_id: string | null;
 }
 
 interface ManualPaymentRow {
@@ -306,7 +308,7 @@ export default function Closing() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('customers')
-        .select('id, name, chart_number, lead_source')
+        .select('id, name, chart_number, lead_source, assigned_staff_id')
         .in('id', customerIds);
       if (error) throw error;
       return (data ?? []) as CustomerBasic[];
@@ -493,10 +495,11 @@ export default function Closing() {
       });
     }
 
-    // 패키지 결제
+    // 패키지 결제 — T-20260510-foot-C21-STAFF-REVENUE: 담당자 자동연동
     for (const p of pkgPayments) {
       const cust = p.customer_id ? customerMap.get(p.customer_id) : null;
       const dt = new Date(p.created_at);
+      const assignedStaffName = cust?.assigned_staff_id ? (staffMap.get(cust.assigned_staff_id) ?? null) : null;
       rows.push({
         sort_key: p.created_at,
         pay_date: format(dt, 'yyyy-MM-dd'),
@@ -505,7 +508,7 @@ export default function Closing() {
         customer_name: cust?.name ?? '-',
         lead_source: cust?.lead_source ?? null,
         visit_type_label: '-',
-        staff_name: null,
+        staff_name: assignedStaffName,
         amount: p.amount,
         method: p.method,
         payment_type: p.payment_type,
