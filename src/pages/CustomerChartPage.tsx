@@ -2657,6 +2657,7 @@ function PackagePurchaseFromTemplateDialog({
       .eq('clinic_id', clinicId)
       .eq('is_active', true)
       .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true })
       .then(({ data }) => {
         const tmplList = (data ?? []) as PackageTemplate[];
         setTemplates(tmplList);

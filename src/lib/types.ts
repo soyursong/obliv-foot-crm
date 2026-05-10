@@ -158,6 +158,8 @@ export interface Customer {
   visit_route?: 'TM' | '워크인' | '인바운드' | '지인소개' | null; // 방문경로 (C2-VISIT-ROUTE)
   // C23-DETAIL-SIMPLIFY
   treatment_note?: string | null;       // 치료메모: 치료사끼리 공유하는 고객 특이사항 메모
+  // T-20260510-foot-ADDRESS-DETAIL-FIX
+  address_detail?: string | null;       // 상세주소 (동·호수·건물명 등)
 }
 
 export interface Service {
@@ -175,6 +177,8 @@ export interface Service {
   created_at: string;
   // 판매상품 코드 (T-20260507-foot-SERVICE-CATALOG-SEED)
   service_code?: string | null;
+  // 항목분류 (T-20260510-foot-SVCMENU-REVAMP)
+  category_label?: string | null;       // 기본/검사/상병/풋케어/수액/풋화장품
   // 건보 본인부담 산출 (T-20260504-foot-INSURANCE-COPAYMENT)
   is_insurance_covered?: boolean | null;
   hira_code?: string | null;

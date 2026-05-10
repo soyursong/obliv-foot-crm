@@ -1,5 +1,29 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-10 — dev-foot | deploy-ready | T-20260510-foot-DASH-SLOT-REWORK-P0 — 통합시간표 1번/2번 박스 이원화 + 셀프접수 자동매칭
+
+**커밋: 46c6573(구현) + c66c0fc(RLS fix) → origin/main push 완료 → Vercel 자동배포**
+
+### 구현 완료 AC
+
+- ✅ AC1: 3컬럼(시간|초진연노랑|재진연두) 레이아웃 — DashboardTimeline grid-cols-[2.5rem_1fr_1fr]
+- ✅ AC2: 1번 박스 — Box1Card "(초) 이름 1234" (border-dashed, opacity-75, 비활성)
+- ✅ AC3: 2번 박스 — TimelineCheckInCard (초진=yellow-50, 재진=green-50, shadow-sm, draggable)
+- ✅ AC4: 초진 셀프접수 자동매칭 → consult_waiting + 차트 자동열림
+- ✅ AC5: 재진 셀프접수 자동매칭 → treatment_waiting
+- ✅ AC6: 재진 Box2ReservationCard 클릭 → 체크인 생성 + setSelectedCheckIn(차트 오픈)
+- ✅ AC7: 워크인 신규 → 초진 등록 + consult_waiting
+- ✅ AC8: SelfCheckIn address step — 초진 주소 입력 플로우 통합 (id_check_required 플래그 포함)
+- ✅ AC9: matchedCiIds 집합으로 중복 박스 방지
+- ✅ AC10: DASH-SLOT-STICKY 호환 — 타임라인 w-80 fixed-width, 자체 스크롤
+- ✅ AC11: DnD — useDraggable (TimelineCheckInCard), DnD 컨텍스트 타임라인 확장 유지
+- ✅ tsc --noEmit PASS
+
+### 흡수된 티켓
+- T-2026MMDD-foot-SLOT-CARD-STYLE (deploy-ready → 폐기, 본 티켓에 흡수)
+
+---
+
 ## 2026-05-10 23:30 — dev-foot | deploy-ready | MQ-20260510-C21-MISSING-BATCH 처리 완료 (5티켓 + 3건 조사)
 
 **커밋 참조: 038db85(배치4건), a2e952d(SSN-INPUT), + 본 커밋(migration fix) → origin/main push**
@@ -1937,3 +1961,4 @@ Supabase Studio → SQL Editor → migration 000091 SQL 실행 (MQ 전달 완료
 `type: deploy-ready` + ref: T-20260508-foot-C22-PKG-DEDUCT → supervisor re-QA (바로 통과 예정)
 | 2026-05-10T21:19:00+09:00 | supervisor | qa-pass (재QA) | T-20260430-foot-CONSENT-FORMS — tsc exit0, bundle 9nbv3ClS, diag-browser PASS, 전 항목 확인 완료 |
 | 2026-05-10T21:30:00+09:00 | supervisor | qa-pass (재QA) | T-20260430-foot-CONSENT-FORMS — tsc exit0, env 2변수 확인, bundle 9nbv3ClS supabase.co 매치, diag-browser PASS(root=2325 errs=0), 로컬 uncommitted별개 무관, 전 항목 PASS, 재배포 불필요 |
+| 2026-05-10T13:23:00Z(22:23 KST) | supervisor | qa-confirmed | T-20260430-foot-CONSENT-FORMS — tsc exit0, env VITE_SUPABASE_URL+ANON_KEY only, bundle C7IElQa3(a44837a) supabase.co 매치✅, diag-browser PASS(root=2325 page_errors=0 console_errors=0 warns=0 network_errors=0), ConsentFormDialog dead code 확인, forms/ConsentForm→CheckInDetailSheet L35,L1256 정상, 롤백SQL down.sql 존재, RLS ENABLED+auth_users_all, Vercel last-modified 2026-05-10T13:05:24Z. 전 항목 최종 PASS. 배포 완료 유지. |
