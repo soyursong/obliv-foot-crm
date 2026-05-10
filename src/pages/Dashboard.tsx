@@ -985,6 +985,12 @@ function TimelineCheckInCard({
     touchAction: 'none',
   };
 
+  // 2번 박스 활성화 스타일: 방문유형별 컬러 (초진=노랑, 재진=초록)
+  // 스크린샷 pixel-level 매칭 — 셀프접수 완료 또는 스탭 체크인 후 활성 표시
+  const box2Cls = visitType === 'returning'
+    ? 'border-green-300 bg-green-50 hover:bg-green-100'
+    : 'border-yellow-300 bg-yellow-50 hover:bg-yellow-100';
+
   return (
     <div
       ref={setNodeRef}
@@ -992,7 +998,8 @@ function TimelineCheckInCard({
       {...attributes}
       {...listeners}
       className={cn(
-        'flex items-center gap-1 rounded border bg-white px-2 py-1 text-xs font-medium w-full shadow-sm cursor-grab active:cursor-grabbing ring-1 ring-transparent hover:ring-teal-300 transition',
+        'flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-semibold w-full shadow-sm cursor-grab active:cursor-grabbing transition',
+        box2Cls,
       )}
       title={`${checkIn.customer_name} — 드래그=다음단계 이동 · 클릭=상세`}
       onClick={(e) => {
@@ -1006,37 +1013,37 @@ function TimelineCheckInCard({
       }}
     >
       {showBadge && (
-        <span className="shrink-0 bg-yellow-200 text-yellow-900 text-[9px] px-0.5 rounded leading-tight font-bold">
+        <span className="shrink-0 bg-yellow-300 text-yellow-900 text-[9px] px-0.5 rounded leading-tight font-bold">
           초
         </span>
       )}
-      <span className="truncate text-gray-800">{checkIn.customer_name}</span>
+      <span className={cn('truncate', visitType === 'returning' ? 'text-green-900' : 'text-yellow-900')}>{checkIn.customer_name}</span>
       {/* 드래그 힌트 화살표 */}
-      <span className="text-[8px] opacity-40 shrink-0 ml-0.5">↗</span>
+      <span className="text-[8px] opacity-50 shrink-0 ml-0.5">↗</span>
     </div>
   );
 }
 
 // T-20260510-foot-DASH-SLOT-REWORK-P0: 1번 박스 — 초진 예약 비활성 (셀프접수 매칭 전)
-// "(초) 이름 1234" 형태로 표시, 클릭/드래그 불가
-// 스크린샷 pixel-level: white bg + gray border + 초 뱃지 + 이름 + 전화 뒷4자리
+// 스크린샷: 작은 박스, 흐릿, "(초) 이름 1234" — 셀프접수 전이므로 passive 스타일
 function Box1Card({ name, phone }: { name: string; phone: string }) {
   const tail = (phone ?? '').replace(/\D/g, '').slice(-4) || '????';
   return (
     <div
-      className="flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-[11px] w-full select-none cursor-default shadow-sm"
+      className="flex items-center gap-1 rounded border border-dashed border-yellow-300 bg-yellow-50/60 px-2 py-0.5 text-[10px] w-full select-none cursor-default opacity-75"
       onClick={(e) => e.stopPropagation()}
       title="예약 등록됨 — 셀프접수 대기 중"
     >
-      <span className="shrink-0 bg-yellow-200 text-yellow-900 text-[9px] px-0.5 rounded font-bold leading-tight">초</span>
-      <span className="truncate text-gray-800 font-medium">{name}</span>
-      <span className="shrink-0 text-gray-400 font-mono ml-auto text-[9px]">{tail}</span>
+      <span className="shrink-0 bg-yellow-200 text-yellow-800 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
+      <span className="truncate text-yellow-900 font-normal">{name}</span>
+      <span className="shrink-0 text-yellow-700/60 font-mono ml-auto text-[9px]">{tail}</span>
     </div>
   );
 }
 
 // T-20260510-foot-DASH-SLOT-REWORK-P0: 재진 예약 2번 박스 (셀프접수 전, 차트 사전 접근)
-// 방문 이력 있으므로 예약 단계부터 활성 상태 — 클릭 → 체크인 생성 + 차트 열기
+// 스크린샷: 활성화 상태 — 방문 이력 있으므로 예약부터 active 스타일 (연두색 계열)
+// 클릭 → 체크인 생성 + 차트 열기 (AC6)
 function Box2ReservationCard({
   reservation,
   onClick,
@@ -1047,14 +1054,14 @@ function Box2ReservationCard({
   return (
     <div
       className={cn(
-        'flex items-center gap-1 rounded border bg-white px-1.5 py-1 text-[11px] font-medium w-full shadow-sm',
-        onClick ? 'cursor-pointer hover:ring-1 hover:ring-teal-300 transition' : 'cursor-default',
+        'flex items-center gap-1 rounded border border-green-300 bg-green-50 px-2 py-1 text-[11px] font-semibold w-full shadow-sm',
+        onClick ? 'cursor-pointer hover:bg-green-100 hover:border-green-400 transition' : 'cursor-default',
       )}
       onClick={(e) => { e.stopPropagation(); onClick?.(); }}
       title={`${reservation.customer_name} — 클릭하여 체크인 및 차트 열기`}
     >
-      <span className="truncate text-gray-800">{reservation.customer_name}</span>
-      {onClick && <span className="text-[8px] opacity-40 shrink-0 ml-auto">↗</span>}
+      <span className="truncate text-green-900">{reservation.customer_name}</span>
+      {onClick && <span className="text-[9px] text-green-600 shrink-0 ml-auto font-bold">↗</span>}
     </div>
   );
 }
@@ -1545,6 +1552,9 @@ export default function Dashboard() {
   const calendarRef = useRef<HTMLDivElement>(null);
   const recentlyUpdated = useRef<Set<string>>(new Set());
   const navStateConsumed = useRef(false);
+  // T-20260510-foot-DASH-SLOT-REWORK-P0 AC4: 셀프접수 시 차트 자동 열림
+  // 키오스크에서 새 고객이 접수 완료하면 Realtime INSERT 감지 → CRM 대시보드에서 자동으로 차트 열기
+  const pendingAutoOpenId = useRef<string | null>(null);
 
   // ── 당일 예약 전용 검색 상태 (T-20260504-foot-SEARCH-SPLIT) ──────────────────
   const [todaySearchQ, setTodaySearchQ] = useState('');
@@ -1708,6 +1718,19 @@ export default function Dashboard() {
     }
     setIsLayoutEdit((v) => !v);
   }, [isLayoutEdit, profile, saveLayoutToDb, groupOrder, zoomLevel]);
+
+  // T-20260510-foot-DASH-SLOT-REWORK-P0 AC4: rows 업데이트 후 pending auto-open 처리
+  // 키오스크에서 셀프접수 완료 → Realtime INSERT → 리페치 후 이 useEffect가 차트 자동 열기
+  // 단, 다른 차트가 이미 열려있으면 방해 금지 (직원 업무 흐름 보호)
+  useEffect(() => {
+    if (!pendingAutoOpenId.current) return;
+    if (selectedCheckIn) return; // 이미 차트 열림 → 방해 금지
+    const ci = rows.find((r) => r.id === pendingAutoOpenId.current);
+    if (ci) {
+      pendingAutoOpenId.current = null;
+      setSelectedCheckIn(ci);
+    }
+  }, [rows, selectedCheckIn]);
 
   // F-5: Closing 미수 클릭 → Dashboard 이동 시 결제 다이얼로그 또는 상세 시트 자동 오픈
   useEffect(() => {
@@ -2065,6 +2088,16 @@ export default function Dashboard() {
           if (id && recentlyUpdated.current.has(id)) return;
           const checkedAt = newRow?.checked_in_at;
           if (checkedAt && !checkedAt.startsWith(dateStr)) return;
+          // T-20260510-foot-DASH-SLOT-REWORK-P0 AC4: 초진 셀프접수 감지 → 차트 자동 열림
+          // 키오스크(anon)가 consult_waiting으로 직행 INSERT 시 CRM 대시보드 자동 오픈
+          if (
+            payload.eventType === 'INSERT' &&
+            newRow?.status === 'consult_waiting' &&
+            (newRow?.visit_type === 'new' || newRow?.visit_type === 'experience') &&
+            newRow?.id
+          ) {
+            pendingAutoOpenId.current = newRow.id;
+          }
           debouncedCheckInRefetch();
         },
       )
