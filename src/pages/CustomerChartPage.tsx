@@ -241,6 +241,8 @@ export default function CustomerChartPage() {
   // T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 인라인 편집
   const [editingAddress, setEditingAddress] = useState(false);
   const [addressText, setAddressText] = useState('');
+  // T-20260510-foot-ADDRESS-DETAIL-FIX: 상세주소 입력란
+  const [addressDetailText, setAddressDetailText] = useState('');
   const [savingAddress, setSavingAddress] = useState(false);
   // T-20260508-foot-CUST-FORM-REVAMP: 신규 폼 필드
   const [editingEmail, setEditingEmail] = useState(false);
@@ -318,6 +320,7 @@ export default function CustomerChartPage() {
       setCustomer(custData as Customer);
       setCustomerMemoText((custData as Customer).customer_memo ?? '');
       setAddressText((custData as Customer).address ?? '');
+      setAddressDetailText((custData as Customer).address_detail ?? '');
       setEmailText((custData as Customer).customer_email ?? '');
       setPassportText((custData as Customer).passport_number ?? '');
       setPostalCodeText((custData as Customer).postal_code ?? '');
@@ -474,6 +477,7 @@ export default function CustomerChartPage() {
 
   // T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 저장
   // T-20260510-foot-C21-SAVE-UNIFY: 우편번호+주소 동시 저장 (저장버튼 단일화)
+  // T-20260510-foot-ADDRESS-DETAIL-FIX: address_detail 동시 저장
   const saveAddress = async () => {
     if (!customer) return;
     setSavingAddress(true);
@@ -481,6 +485,7 @@ export default function CustomerChartPage() {
       .from('customers')
       .update({
         address: addressText.trim() || null,
+        address_detail: addressDetailText.trim() || null,
         postal_code: postalCodeText.trim() || null,
       })
       .eq('id', customer.id);
@@ -489,6 +494,7 @@ export default function CustomerChartPage() {
     setCustomer((prev) => prev ? {
       ...prev,
       address: addressText.trim() || null,
+      address_detail: addressDetailText.trim() || null,
       postal_code: postalCodeText.trim() || null,
     } : prev);
     setEditingAddress(false);
@@ -614,15 +620,16 @@ export default function CustomerChartPage() {
           const fullAddr = data.address;
           setPostalCodeText(zoneCode);
           setAddressText(fullAddr);
-          setEditingAddress(false);
-          // 우편번호 + 주소 동시 저장
+          // T-20260510-foot-ADDRESS-DETAIL-FIX: 우편번호 검색 직후 상세주소 입력 가능하도록 편집 모드 유지
+          setEditingAddress(true);
+          // 우편번호 + 주소 즉시 저장 (상세주소는 사용자 입력 후 별도 저장)
           supabase.from('customers').update({
             postal_code: zoneCode || null,
             address: fullAddr || null,
           }).eq('id', customer!.id).then(({ error }) => {
             if (error) { toast.error('주소 저장 실패'); return; }
             setCustomer((prev) => prev ? { ...prev, postal_code: zoneCode, address: fullAddr } : prev);
-            toast.success('주소 저장됨');
+            toast.success('우편번호·기본주소 저장됨. 상세주소 입력 후 [저장] 클릭.');
           });
         },
       }).open();
@@ -1316,34 +1323,54 @@ export default function CustomerChartPage() {
                 </tr>
 
                 {/* ⑨ 주소 — 우편번호와 동일 편집 모드, 저장버튼 1개 */}
+                {/* T-20260510-foot-ADDRESS-DETAIL-FIX: 상세주소 입력란 추가 */}
                 <tr>
                   <td className={LC}>주소</td>
                   <td className={VC} colSpan={3}>
                     {editingAddress ? (
-                      <div className="flex items-center gap-1">
-                        <Input
-                          value={addressText}
-                          onChange={(e) => setAddressText(e.target.value)}
-                          placeholder="주소를 입력하세요"
-                          className="h-6 text-xs flex-1"
-                          autoFocus
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') saveAddress();
-                            if (e.key === 'Escape') { setEditingAddress(false); setAddressText(customer.address ?? ''); setPostalCodeText(customer.postal_code ?? ''); }
-                          }}
-                        />
-                        <Button size="sm" className="h-6 text-[10px] px-2 bg-teal-600 hover:bg-teal-700 shrink-0" onClick={saveAddress} disabled={savingAddress}>저장</Button>
-                        <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 shrink-0" onClick={() => { setEditingAddress(false); setAddressText(customer.address ?? ''); setPostalCodeText(customer.postal_code ?? ''); }}>취소</Button>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1">
+                          <Input
+                            value={addressText}
+                            onChange={(e) => setAddressText(e.target.value)}
+                            placeholder="기본주소 (우편번호 검색 시 자동입력)"
+                            className="h-6 text-xs flex-1"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') saveAddress();
+                              if (e.key === 'Escape') { setEditingAddress(false); setAddressText(customer.address ?? ''); setAddressDetailText(customer.address_detail ?? ''); setPostalCodeText(customer.postal_code ?? ''); }
+                            }}
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            value={addressDetailText}
+                            onChange={(e) => setAddressDetailText(e.target.value)}
+                            placeholder="상세주소 (동·호수·건물명 등)"
+                            className="h-6 text-xs flex-1"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') saveAddress();
+                              if (e.key === 'Escape') { setEditingAddress(false); setAddressText(customer.address ?? ''); setAddressDetailText(customer.address_detail ?? ''); setPostalCodeText(customer.postal_code ?? ''); }
+                            }}
+                          />
+                          <Button size="sm" className="h-6 text-[10px] px-2 bg-teal-600 hover:bg-teal-700 shrink-0" onClick={saveAddress} disabled={savingAddress}>저장</Button>
+                          <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 shrink-0" onClick={() => { setEditingAddress(false); setAddressText(customer.address ?? ''); setAddressDetailText(customer.address_detail ?? ''); setPostalCodeText(customer.postal_code ?? ''); }}>취소</Button>
+                        </div>
                       </div>
                     ) : (
                       <button
                         type="button"
-                        onClick={() => { setEditingAddress(true); setAddressText(customer.address ?? ''); setPostalCodeText(customer.postal_code ?? ''); }}
+                        onClick={() => { setEditingAddress(true); setAddressText(customer.address ?? ''); setAddressDetailText(customer.address_detail ?? ''); setPostalCodeText(customer.postal_code ?? ''); }}
                         className="text-left w-full hover:bg-blue-50/50 rounded px-0.5 transition"
                         title="클릭하여 주소 편집"
                       >
                         <span className={cn('text-[11px]', customer.address ? 'text-gray-800' : 'text-muted-foreground/50')}>
-                          {customer.address ?? '미입력 (우편번호 검색 시 자동입력)'}
+                          {customer.address ? (
+                            <>
+                              {customer.address}
+                              {customer.address_detail && <span className="text-gray-600"> {customer.address_detail}</span>}
+                            </>
+                          ) : '미입력 (우편번호 검색 시 자동입력)'}
                         </span>
                       </button>
                     )}

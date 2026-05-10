@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Pencil, Check, X, Download } from 'lucide-react';
+import { Plus, Pencil, Trash2, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -33,6 +32,9 @@ const SERVICE_TYPE_LABEL: Record<Service['service_type'], string> = {
 };
 
 const CATEGORY_OPTIONS = ['레이저', '수액', '사전처치', '풋케어', '상담', '검사', '풋화장품', '기타'];
+
+// T-20260510-foot-SVCMENU-REVAMP: 항목분류 옵션
+const CATEGORY_LABEL_OPTIONS = ['기본', '검사', '상병', '풋케어', '수액', '풋화장품'];
 
 export default function Services() {
   const clinic = useClinic();
@@ -80,14 +82,17 @@ export default function Services() {
 
   useEffect(() => { fetchServices(); }, [fetchServices]);
 
-  const toggleActive = async (svc: Service) => {
+  // T-20260510-foot-SVCMENU-REVAMP: 삭제 (soft delete = active=false)
+  // toggleActive 제거됨 — 신구조에서는 [관리]에 수정/삭제만 노출
+  const softDelete = async (svc: Service) => {
     if (!isAdmin) return;
+    if (!confirm(`"${svc.name}" 항목을 삭제하시겠습니까? (비활성 처리되며 과거 기록은 보존됩니다)`)) return;
     const { error } = await supabase
       .from('services')
-      .update({ active: !svc.active })
+      .update({ active: false })
       .eq('id', svc.id);
-    if (error) { toast.error(`상태 변경 실패: ${error.message}`); return; }
-    toast.success(svc.active ? '비활성화됨' : '활성화됨');
+    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+    toast.success('삭제됨 (비활성 처리)');
     fetchServices();
   };
 
@@ -107,6 +112,7 @@ export default function Services() {
         </div>
       </div>
 
+      {/* T-20260510-foot-SVCMENU-REVAMP: 항목분류/상품코드/시술명/단가/VAT/관리 6컬럼 구조 */}
       <div className="flex-1 overflow-auto rounded-lg border bg-background">
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">불러오는 중…</div>
@@ -114,40 +120,22 @@ export default function Services() {
           <table className="w-full text-sm">
             <thead className="bg-muted/60 text-xs text-muted-foreground">
               <tr>
+                <th className="px-4 py-2 text-left font-medium">항목분류</th>
                 <th className="px-3 py-2 text-left font-medium">상품코드</th>
-                <th className="px-4 py-2 text-left font-medium">서비스명</th>
-                <th className="px-4 py-2 text-left font-medium">카테고리</th>
-                <th className="px-4 py-2 text-right font-medium">가격</th>
-                <th className="px-4 py-2 text-right font-medium">할인가</th>
-                <th className="px-4 py-2 text-right font-medium">시간(분)</th>
+                <th className="px-4 py-2 text-left font-medium">시술명</th>
+                <th className="px-4 py-2 text-right font-medium">단가</th>
                 <th className="px-4 py-2 text-left font-medium">VAT</th>
-                <th className="px-4 py-2 text-left font-medium">유형</th>
-                <th className="px-4 py-2 text-center font-medium">상태</th>
                 {isAdmin && <th className="px-4 py-2 text-center font-medium">관리</th>}
               </tr>
             </thead>
             <tbody>
               {rows.map((svc) => (
                 <tr key={svc.id} className={cn('border-t', !svc.active && 'opacity-50')}>
+                  <td className="px-4 py-2 text-xs text-muted-foreground">{svc.category_label ?? svc.category ?? '—'}</td>
                   <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{svc.service_code ?? '—'}</td>
                   <td className="px-4 py-2 font-medium">{svc.name}</td>
-                  <td className="px-4 py-2 text-muted-foreground">{svc.category}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{formatAmount(svc.price)}</td>
-                  <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
-                    {svc.discount_price != null ? formatAmount(svc.discount_price) : '—'}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums">{svc.duration_min}</td>
                   <td className="px-4 py-2 text-xs text-muted-foreground">{VAT_LABEL[svc.vat_type]}</td>
-                  <td className="px-4 py-2">
-                    <Badge variant="secondary">{SERVICE_TYPE_LABEL[svc.service_type]}</Badge>
-                  </td>
-                  <td className="px-4 py-2 text-center">
-                    {svc.active ? (
-                      <Check className="mx-auto h-4 w-4 text-teal-600" />
-                    ) : (
-                      <X className="mx-auto h-4 w-4 text-muted-foreground" />
-                    )}
-                  </td>
                   {isAdmin && (
                     <td className="px-4 py-2">
                       <div className="flex items-center justify-center gap-1">
@@ -158,13 +146,14 @@ export default function Services() {
                         >
                           <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
                         </button>
-                        <Button
-                          size="xs"
-                          variant={svc.active ? 'outline' : 'default'}
-                          onClick={() => toggleActive(svc)}
+                        <button
+                          onClick={() => softDelete(svc)}
+                          className="rounded p-1.5 hover:bg-red-50 transition"
+                          title="삭제 (비활성 처리)"
+                          disabled={!svc.active}
                         >
-                          {svc.active ? '비활성' : '활성화'}
-                        </Button>
+                          <Trash2 className={cn('h-3.5 w-3.5', svc.active ? 'text-red-500' : 'text-muted-foreground/40')} />
+                        </button>
                       </div>
                     </td>
                   )}
@@ -172,7 +161,7 @@ export default function Services() {
               ))}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={isAdmin ? 10 : 9} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                  <td colSpan={isAdmin ? 6 : 5} className="px-4 py-10 text-center text-sm text-muted-foreground">
                     등록된 서비스가 없습니다
                   </td>
                 </tr>
@@ -219,6 +208,9 @@ function ServiceDialog({
 }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('기타');
+  // T-20260510-foot-SVCMENU-REVAMP: 항목분류
+  const [categoryLabel, setCategoryLabel] = useState('풋케어');
+  const [serviceCode, setServiceCode] = useState('');
   const [price, setPrice] = useState(0);
   const [discountPrice, setDiscountPrice] = useState<number | null>(null);
   const [durationMin, setDurationMin] = useState(30);
@@ -231,6 +223,8 @@ function ServiceDialog({
     if (open) {
       setName(service?.name ?? '');
       setCategory(service?.category ?? '기타');
+      setCategoryLabel(service?.category_label ?? '풋케어');
+      setServiceCode(service?.service_code ?? '');
       setPrice(service?.price ?? 0);
       setDiscountPrice(service?.discount_price ?? null);
       setDurationMin(service?.duration_min ?? 30);
@@ -248,6 +242,8 @@ function ServiceDialog({
       clinic_id: clinicId,
       name: name.trim(),
       category,
+      category_label: categoryLabel,
+      service_code: serviceCode.trim() || null,
       price,
       discount_price: discountPrice,
       duration_min: durationMin,
@@ -274,11 +270,36 @@ function ServiceDialog({
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label>서비스명</Label>
+            <Label>시술명</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
           </div>
+          {/* T-20260510-foot-SVCMENU-REVAMP: 항목분류 + 상품코드 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>항목분류</Label>
+              <div className="flex flex-wrap gap-1">
+                {CATEGORY_LABEL_OPTIONS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setCategoryLabel(c)}
+                    className={cn(
+                      'h-7 rounded-md border px-2 text-xs font-medium',
+                      categoryLabel === c ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted',
+                    )}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>상품코드</Label>
+              <Input value={serviceCode} onChange={(e) => setServiceCode(e.target.value)} placeholder="예: FC001" />
+            </div>
+          </div>
           <div className="space-y-1.5">
-            <Label>카테고리</Label>
+            <Label>카테고리 (레거시)</Label>
             <div className="flex flex-wrap gap-2">
               {CATEGORY_OPTIONS.map((c) => (
                 <button

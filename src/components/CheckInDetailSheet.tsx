@@ -855,35 +855,36 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
             <span className="text-sm font-semibold text-muted-foreground">체크리스트 / 동의서</span>
 
             {/* T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 양식 → Storage 자동 업로드 */}
-            {checkIn.customer_id && (
-              <div className="space-y-1.5 pt-1">
-                <div className="flex flex-wrap gap-1.5">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 text-xs gap-1 border-teal-300 text-teal-700 hover:bg-teal-50"
-                    onClick={() => setTabletChecklistOpen(true)}
-                    data-testid="tablet-checklist-btn"
-                  >
-                    📝 사전 체크리스트 & 개인정보
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 text-xs gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                    onClick={() => setTabletConsentOpen(true)}
-                    data-testid="tablet-consent-btn"
-                  >
-                    📝 환불 & 비급여 동의서
-                  </Button>
-                </div>
+            {/* T-20260510-foot-CHECKLIST-ALWAYS-VISIBLE: customer_id 없어도 버튼 항상 표시 */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex flex-wrap gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 text-xs gap-1 border-teal-300 text-teal-700 hover:bg-teal-50"
+                  onClick={() => setTabletChecklistOpen(true)}
+                  data-testid="tablet-checklist-btn"
+                >
+                  📝 사전 체크리스트 & 개인정보
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 text-xs gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                  onClick={() => setTabletConsentOpen(true)}
+                  data-testid="tablet-consent-btn"
+                >
+                  📝 환불 & 비급여 동의서
+                </Button>
+              </div>
+              {checkIn.customer_id && (
                 <DocumentViewer
                   key={docRefreshKey}
                   customerId={checkIn.customer_id}
                   compact
                 />
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           {/* T-20260510-foot-CHART1-PAYMENT-ORDER: 결제 섹션은 서류발행 위로 이동됨 */}

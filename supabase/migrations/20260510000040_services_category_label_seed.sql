@@ -37,8 +37,8 @@ BEGIN
     (v_clinic_id, 'C5900006','상해진단서',                   '기본', 60000, 'none', 'single', true, 120, '기본'),
     (v_clinic_id, 'C5900007','사망진단서',                   '기본', 60000, 'none', 'single', true, 130, '기본'),
     (v_clinic_id, 'C5900008','후유장해진단서',               '기본', 60000, 'none', 'single', true, 140, '기본')
-  ON CONFLICT (clinic_id, service_code) DO UPDATE SET
-    name         = EXCLUDED.name,
+  ON CONFLICT (clinic_id, name) DO UPDATE SET
+    service_code = EXCLUDED.service_code,
     category_label = EXCLUDED.category_label,
     price        = EXCLUDED.price,
     vat_type     = EXCLUDED.vat_type,
@@ -50,8 +50,8 @@ BEGIN
   VALUES
     (v_clinic_id, 'D2501001','피검사',                       '검사', 20000, 'none', 'single', true, 210, '검사'),
     (v_clinic_id, 'D2502001','KOH도말검사',                  '검사', 14390, 'none', 'single', true, 220, '검사')
-  ON CONFLICT (clinic_id, service_code) DO UPDATE SET
-    name         = EXCLUDED.name,
+  ON CONFLICT (clinic_id, name) DO UPDATE SET
+    service_code = EXCLUDED.service_code,
     category_label = EXCLUDED.category_label,
     price        = EXCLUDED.price,
     sort_order   = EXCLUDED.sort_order,
@@ -65,8 +65,8 @@ BEGIN
     (v_clinic_id, 'L600',    '내성발톱(감입발톱)',           '상병',     0, 'none', 'single', true, 330, '상병'),
     (v_clinic_id, 'L840',    '굳은살',                       '상병',     0, 'none', 'single', true, 340, '상병'),
     (v_clinic_id, 'L720',    '표피낭종(티눈)',               '상병',     0, 'none', 'single', true, 350, '상병')
-  ON CONFLICT (clinic_id, service_code) DO UPDATE SET
-    name         = EXCLUDED.name,
+  ON CONFLICT (clinic_id, name) DO UPDATE SET
+    service_code = EXCLUDED.service_code,
     category_label = EXCLUDED.category_label,
     price        = EXCLUDED.price,
     sort_order   = EXCLUDED.sort_order,
@@ -89,8 +89,8 @@ BEGIN
     (v_clinic_id, 'FC012',   '발냄새케어',                   '풋케어',  50000, 'inclusive', 'single', true, 520, '풋케어'),
     (v_clinic_id, 'FC013',   '당뇨발케어',                   '풋케어', 120000, 'inclusive', 'single', true, 530, '풋케어'),
     (v_clinic_id, 'FC014',   '발건강종합케어',               '풋케어', 200000, 'inclusive', 'single', true, 540, '풋케어')
-  ON CONFLICT (clinic_id, service_code) DO UPDATE SET
-    name         = EXCLUDED.name,
+  ON CONFLICT (clinic_id, name) DO UPDATE SET
+    service_code = EXCLUDED.service_code,
     category_label = EXCLUDED.category_label,
     price        = EXCLUDED.price,
     sort_order   = EXCLUDED.sort_order,
@@ -107,8 +107,8 @@ BEGIN
     (v_clinic_id, 'IV006',   '신데렐라주사(알파리포산)',     '수액',  60000, 'inclusive', 'single', true, 660, '수액'),
     (v_clinic_id, 'IV007',   '태반주사(라이넥)',             '수액',  80000, 'inclusive', 'single', true, 670, '수액'),
     (v_clinic_id, 'IV008',   '면역수액(마이어스칵테일)',     '수액', 100000, 'inclusive', 'single', true, 680, '수액')
-  ON CONFLICT (clinic_id, service_code) DO UPDATE SET
-    name         = EXCLUDED.name,
+  ON CONFLICT (clinic_id, name) DO UPDATE SET
+    service_code = EXCLUDED.service_code,
     category_label = EXCLUDED.category_label,
     price        = EXCLUDED.price,
     sort_order   = EXCLUDED.sort_order,
@@ -122,8 +122,8 @@ BEGIN
     (v_clinic_id, 'CS003',   '발냄새스프레이(100ml)',        '풋화장품', 18000, 'inclusive', 'single', true, 730, '풋화장품'),
     (v_clinic_id, 'CS004',   '발각질크림(100g)',             '풋화장품', 22000, 'inclusive', 'single', true, 740, '풋화장품'),
     (v_clinic_id, 'CS005',   '발보습세트(샴푸+크림)',        '풋화장품', 45000, 'inclusive', 'single', true, 750, '풋화장품')
-  ON CONFLICT (clinic_id, service_code) DO UPDATE SET
-    name         = EXCLUDED.name,
+  ON CONFLICT (clinic_id, name) DO UPDATE SET
+    service_code = EXCLUDED.service_code,
     category_label = EXCLUDED.category_label,
     price        = EXCLUDED.price,
     sort_order   = EXCLUDED.sort_order,
