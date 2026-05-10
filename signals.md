@@ -1,5 +1,28 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-10 23:30 — dev-foot | deploy-ready | MQ-20260510-C21-MISSING-BATCH 처리 완료 (5티켓 + 3건 조사)
+
+**커밋 참조: 038db85(배치4건), a2e952d(SSN-INPUT), + 본 커밋(migration fix) → origin/main push**
+
+### 5개 티켓 완료
+- ✅ T-20260510-foot-C21-SSN-INPUT (P1): 주민번호 실입력+암호화 저장 (a2e952d)
+- ✅ T-20260510-foot-CONSENT-SINGLE-SELECT (P1): ChecklistForm 개인정보동의 → 라디오 단일선택 (038db85)
+- ✅ T-20260510-foot-C21-SAVE-UNIFY (P2): 우편번호+주소 통합 저장버튼 (038db85)
+- ✅ T-20260510-foot-C21-TAB-CLEANUP (P2): 불필요 탭 6개 삭제 (038db85)
+- ✅ T-20260510-foot-C21-IMG-PROGRESS (P2): 진료이미지 탭 재구성 + 경과내역 사진업로드 (038db85)
+
+### 기존 배포건 3개 조사 결과
+- ✅ C2-CHECKBOX-ENABLE: 코드 정상 — 성별 라디오 onClick 활성, disabled=savingField만
+- ✅ C2-CUSTOMER-GRADE: '진상등급' 문구 없음, '고객등급' 정상 표시
+- ⚠️ C2-ZIPCODE-SEARCH: 코드 정상 — Kakao Postcode SDK 로드 확인 필요
+
+### SSN 신규 블로커 (migration-blocked)
+**rrn_encrypt RPC 실패**: `pgp_sym_encrypt(text, text) does not exist`
+- 원인: pgcrypto가 extensions 스키마에 있으나 기존 rrn 함수 search_path에 누락
+- 수정: `supabase/migrations/20260510000020_rrn_functions_fix.sql` 생성
+- **운영DB 수동 적용 요청**: Supabase Studio → SQL Editor → 20260510000020 실행
+- migration 내용: `CREATE EXTENSION IF NOT EXISTS pgcrypto` + rrn_encrypt/rrn_decrypt 재정의 (search_path = public, extensions)
+
 ## 2026-05-09 23:55 — dev-foot | deploy-ready | 5/9 현장 피드백 6건 처리 완료
 
 **커밋 0db4797, 26d7132 → origin/main push 완료 → Vercel 자동배포 진행 중**
@@ -1912,3 +1935,5 @@ Supabase Studio → SQL Editor → migration 000091 SQL 실행 (MQ 전달 완료
 
 ### 완료 후
 `type: deploy-ready` + ref: T-20260508-foot-C22-PKG-DEDUCT → supervisor re-QA (바로 통과 예정)
+| 2026-05-10T21:19:00+09:00 | supervisor | qa-pass (재QA) | T-20260430-foot-CONSENT-FORMS — tsc exit0, bundle 9nbv3ClS, diag-browser PASS, 전 항목 확인 완료 |
+| 2026-05-10T21:30:00+09:00 | supervisor | qa-pass (재QA) | T-20260430-foot-CONSENT-FORMS — tsc exit0, env 2변수 확인, bundle 9nbv3ClS supabase.co 매치, diag-browser PASS(root=2325 errs=0), 로컬 uncommitted별개 무관, 전 항목 PASS, 재배포 불필요 |
