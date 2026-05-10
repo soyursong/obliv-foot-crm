@@ -467,6 +467,8 @@ export default function CustomerChartPage() {
   const [consultationStaffId, setConsultationStaffId] = useState('');
   const [consultationMemo, setConsultationMemo] = useState('');
   const [savingConsultation, setSavingConsultation] = useState(false);
+  // C23-PHRASE-LINK: 상담 탭 상용구 — phrase_templates WHERE category='general' DB 연동
+  const [generalPhrases, setGeneralPhrases] = useState<{ id: number; name: string; content: string }[]>([]);
   // C23-DETAIL-SIMPLIFY: 치료메모 탭 상태
   const [treatmentMemoText, setTreatmentMemoText] = useState('');
   const [savingTreatmentMemo, setSavingTreatmentMemo] = useState(false);
@@ -488,6 +490,17 @@ export default function CustomerChartPage() {
   const [savingEditResv, setSavingEditResv] = useState(false);
   // T-20260510-foot-C21-SAVE-UNIFY: 고객정보 패널 통합 저장 로딩 상태
   const [savingInfoPanel, setSavingInfoPanel] = useState(false);
+
+  // C23-PHRASE-LINK: 마운트 시 [일반] 카테고리 상용구 한 번 조회
+  useEffect(() => {
+    supabase
+      .from('phrase_templates')
+      .select('id, name, content')
+      .eq('category', 'general')
+      .eq('is_active', true)
+      .order('sort_order')
+      .then(({ data }) => { if (data) setGeneralPhrases(data); });
+  }, []);
 
   useEffect(() => {
     if (!customerId || !profile) return;
@@ -2535,22 +2548,24 @@ export default function CustomerChartPage() {
                     ))}
                   </select>
                 </div>
-                {/* 상용구 */}
-                <div>
-                  <label className="block text-[11px] text-muted-foreground mb-0.5">상용구</label>
-                  <div className="flex flex-wrap gap-1">
-                    {['보험 적용 가능', '비급여 항목', '재진 예약 권유', '패키지 안내', '특이사항 없음'].map(phrase => (
-                      <button
-                        key={phrase}
-                        type="button"
-                        onClick={() => setConsultationMemo(prev => prev ? `${prev} ${phrase}` : phrase)}
-                        className="rounded border border-teal-200 bg-teal-50 px-1.5 py-0.5 text-[10px] text-teal-700 hover:bg-teal-100 transition"
-                      >
-                        {phrase}
-                      </button>
-                    ))}
+                {/* 상용구 — C23-PHRASE-LINK: phrase_templates WHERE category='general' DB 연동 */}
+                {generalPhrases.length > 0 && (
+                  <div>
+                    <label className="block text-[11px] text-muted-foreground mb-0.5">상용구</label>
+                    <div className="flex flex-wrap gap-1">
+                      {generalPhrases.map(phrase => (
+                        <button
+                          key={phrase.id}
+                          type="button"
+                          onClick={() => setConsultationMemo(prev => prev ? `${prev} ${phrase.content}` : phrase.content)}
+                          className="rounded border border-teal-200 bg-teal-50 px-1.5 py-0.5 text-[10px] text-teal-700 hover:bg-teal-100 transition"
+                        >
+                          {phrase.name}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
                 <div>
                   <label className="block text-[11px] text-muted-foreground mb-0.5">상담메모</label>
                   <Textarea
