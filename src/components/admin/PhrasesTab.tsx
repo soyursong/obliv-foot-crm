@@ -264,19 +264,16 @@ export default function PhrasesTab() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">카테고리</Label>
-                <Select
+                {/* Dialog 내부 portal 충돌 방지 — native select 사용 */}
+                <select
                   value={form.category}
-                  onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}
+                  onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                  className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                 >
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
-                      <SelectItem key={k} value={k}>{v}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <Label className="text-xs">정렬 순서</Label>
