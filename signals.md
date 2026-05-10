@@ -1,5 +1,33 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-11 — dev-foot | deploy-ready | T-20260510-foot-C21-SAVE-UNIFY — 고객정보 패널 저장 버튼 통일
+
+**커밋: e936f24 → origin/main push 완료 → Vercel 자동배포 예정**
+
+### 구현 내용
+- ✅ 이메일/여권번호/주민번호/주소/예약메모 섹션 개별 저장 버튼 제거
+- ✅ 고객정보 패널 헤더 우측에 단일 [저장] 버튼 배치 (편집 없을 때 비활성)
+- ✅ `handleInfoPanelSave`: 편집 중 필드 일괄 supabase.update() 호출
+- ✅ 주민번호(암호화 RPC)는 별도 처리 후 나머지 필드 단일 batch update
+- ✅ 저장 성공/실패 토스트 피드백 / 저장 중… 로딩 표시
+- ✅ 미사용 state/함수 정리 (savingRrn, savingAddress, savingCustomerMemo, saveCustomerMemo)
+- ✅ Enter키 저장 기존 동작 유지
+
+---
+
+## 2026-05-11 — dev-foot | deploy-ready | T-20260510-foot-C21-IMG-PROGRESS — 진료이미지 재구성 + 경과내역 사진 업로드 + 1번차트 연동
+
+**커밋: 33a261c → origin/main push 완료 → Vercel 자동배포 예정**
+
+### 구현 내용
+- ✅ 진료이미지 탭: 비포/에프터만 표시 (기존 코드 이미 분리됨)
+- ✅ 동의서·영수증 → 상담내역 탭 이동 (기존 코드 이미 분리됨)
+- ✅ 경과내역 탭 사진 업로드: `CustomerStorageImageSection` prefix="progress"
+- ✅ 1번차트 경과분석지: `InsuranceDocPanel`에 `loadProgressPhotos()` 추가 — Storage `customer/{id}/progress/` 연동
+- ✅ 영수증 업로드 → 매출 연동: `ReceiptUploadSection` 신규 컴포넌트 — 업로드 후 금액·결제수단 입력 → `payments` insert
+
+---
+
 ## 2026-05-10 — dev-foot | deploy-ready | T-20260510-foot-DASH-SLOT-REWORK-P0 — 통합시간표 1번/2번 박스 이원화 + 셀프접수 자동매칭
 
 **커밋: 46c6573(구현) + c66c0fc(RLS fix) → origin/main push 완료 → Vercel 자동배포**
@@ -1962,3 +1990,4 @@ Supabase Studio → SQL Editor → migration 000091 SQL 실행 (MQ 전달 완료
 | 2026-05-10T21:19:00+09:00 | supervisor | qa-pass (재QA) | T-20260430-foot-CONSENT-FORMS — tsc exit0, bundle 9nbv3ClS, diag-browser PASS, 전 항목 확인 완료 |
 | 2026-05-10T21:30:00+09:00 | supervisor | qa-pass (재QA) | T-20260430-foot-CONSENT-FORMS — tsc exit0, env 2변수 확인, bundle 9nbv3ClS supabase.co 매치, diag-browser PASS(root=2325 errs=0), 로컬 uncommitted별개 무관, 전 항목 PASS, 재배포 불필요 |
 | 2026-05-10T13:23:00Z(22:23 KST) | supervisor | qa-confirmed | T-20260430-foot-CONSENT-FORMS — tsc exit0, env VITE_SUPABASE_URL+ANON_KEY only, bundle C7IElQa3(a44837a) supabase.co 매치✅, diag-browser PASS(root=2325 page_errors=0 console_errors=0 warns=0 network_errors=0), ConsentFormDialog dead code 확인, forms/ConsentForm→CheckInDetailSheet L35,L1256 정상, 롤백SQL down.sql 존재, RLS ENABLED+auth_users_all, Vercel last-modified 2026-05-10T13:05:24Z. 전 항목 최종 PASS. 배포 완료 유지. |
+| 2026-05-11T00:56:00+09:00 | supervisor | qa-pass (정례QA) | T-20260430-foot-CONSENT-FORMS — tsc EXIT0(1a20add), rollback SQL 완전(3DROP INDEX+1DROP TABLE), env VITE_SUPABASE_URL+ANON_KEY only, bundle neuULF5R supabase.co 매치✅, Dashboard-CxiMAsIn+CustomerChartPage-BdMl16Zg consent_forms=1✅, SignaturePad(1893B)+DocumentViewer(5207B)✅, Vercel 00:42 KST, diag-browser PASS(root=2325 errs=0 warns=0). 전 6항목 PASS. status=deployed 유지. |
