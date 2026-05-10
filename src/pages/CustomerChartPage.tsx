@@ -1716,21 +1716,55 @@ export default function CustomerChartPage() {
                         <span className="text-[10px] text-muted-foreground shrink-0 ml-1">{p.contract_date}</span>
                       </div>
                       {rem && (
-                        <div className="flex gap-3 text-[10px]">
-                          {(p.unheated_sessions ?? 0) > 0 && (
-                            <span>비가열 <span className="font-semibold text-teal-700">{(p.unheated_sessions ?? 0) - rem.unheated}/{p.unheated_sessions}</span></span>
-                          )}
-                          {(p.heated_sessions ?? 0) > 0 && (
-                            <span>가열 <span className="font-semibold text-teal-700">{(p.heated_sessions ?? 0) - rem.heated}/{p.heated_sessions}</span></span>
-                          )}
-                          {(p.podologe_sessions ?? 0) > 0 && (
-                            <span>포돌로게 <span className="font-semibold text-teal-700">{(p.podologe_sessions ?? 0) - (rem.podologe ?? 0)}/{p.podologe_sessions}</span></span>
-                          )}
-                          {(p.iv_sessions ?? 0) > 0 && (
-                            <span>수액 <span className="font-semibold text-teal-700">{(p.iv_sessions ?? 0) - rem.iv}/{p.iv_sessions}</span></span>
-                          )}
-                          <span className="ml-auto text-teal-700 font-bold">잔여 {rem.total_remaining}회</span>
-                        </div>
+                        /* T-20260510-foot-C21-PKG-ITEM-DETAIL: 시술명/총/사용/잔여 테이블 */
+                        <table className="w-full border-collapse text-[10px]">
+                          <thead>
+                            <tr className="text-muted-foreground border-b border-teal-100">
+                              <th className="text-left pb-0.5 font-medium">시술</th>
+                              <th className="text-center pb-0.5 font-medium">총</th>
+                              <th className="text-center pb-0.5 font-medium">사용</th>
+                              <th className="text-center pb-0.5 font-medium text-teal-700">잔여</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(p.unheated_sessions ?? 0) > 0 && (
+                              <tr>
+                                <td className="py-0.5">비가열</td>
+                                <td className="text-center py-0.5">{p.unheated_sessions}회</td>
+                                <td className="text-center py-0.5">{(p.unheated_sessions ?? 0) - rem.unheated}회</td>
+                                <td className="text-center py-0.5 font-semibold text-teal-700">{rem.unheated}회</td>
+                              </tr>
+                            )}
+                            {(p.heated_sessions ?? 0) > 0 && (
+                              <tr>
+                                <td className="py-0.5">가열</td>
+                                <td className="text-center py-0.5">{p.heated_sessions}회</td>
+                                <td className="text-center py-0.5">{(p.heated_sessions ?? 0) - rem.heated}회</td>
+                                <td className="text-center py-0.5 font-semibold text-teal-700">{rem.heated}회</td>
+                              </tr>
+                            )}
+                            {(p.podologe_sessions ?? 0) > 0 && (
+                              <tr>
+                                <td className="py-0.5">포돌로게</td>
+                                <td className="text-center py-0.5">{p.podologe_sessions}회</td>
+                                <td className="text-center py-0.5">{(p.podologe_sessions ?? 0) - (rem.podologe ?? 0)}회</td>
+                                <td className="text-center py-0.5 font-semibold text-teal-700">{rem.podologe ?? 0}회</td>
+                              </tr>
+                            )}
+                            {(p.iv_sessions ?? 0) > 0 && (
+                              <tr>
+                                <td className="py-0.5">수액</td>
+                                <td className="text-center py-0.5">{p.iv_sessions}회</td>
+                                <td className="text-center py-0.5">{(p.iv_sessions ?? 0) - rem.iv}회</td>
+                                <td className="text-center py-0.5 font-semibold text-teal-700">{rem.iv}회</td>
+                              </tr>
+                            )}
+                            <tr className="border-t border-teal-100">
+                              <td colSpan={3} className="pt-1 text-muted-foreground">전체 잔여</td>
+                              <td className="text-center pt-1 font-bold text-teal-700">{rem.total_remaining}회</td>
+                            </tr>
+                          </tbody>
+                        </table>
                       )}
                     </div>
                   );
@@ -2131,13 +2165,15 @@ export default function CustomerChartPage() {
                           </div>
                           {/* 시술별 상세표 */}
                           {treatRows.length > 0 && (
+                            /* T-20260510-foot-C21-PKG-ITEM-DETAIL: 잔여횟수 컬럼 추가 */
                             <table className="w-full border-collapse">
                               <thead>
                                 <tr className="bg-muted/10 text-muted-foreground border-b border-muted/20">
                                   <th className="text-left px-3 py-1 font-medium text-[10px]">시술명</th>
                                   <th className="text-right px-2 py-1 font-medium text-[10px]">수가(회당)</th>
-                                  <th className="text-center px-2 py-1 font-medium text-[10px]">구매횟수</th>
-                                  <th className="text-center px-2 py-1 font-medium text-[10px] text-teal-700">사용횟수</th>
+                                  <th className="text-center px-2 py-1 font-medium text-[10px]">총 횟수</th>
+                                  <th className="text-center px-2 py-1 font-medium text-[10px] text-teal-700">사용</th>
+                                  <th className="text-center px-2 py-1 font-medium text-[10px] text-orange-600">잔여</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -2147,6 +2183,7 @@ export default function CustomerChartPage() {
                                     <td className="px-2 py-1.5 text-right tabular-nums text-[11px]">{row.unitPrice > 0 ? formatAmount(row.unitPrice) : '-'}</td>
                                     <td className="px-2 py-1.5 text-center text-[11px]">{row.qty}회</td>
                                     <td className="px-2 py-1.5 text-center font-semibold text-teal-700 text-[11px]">{row.used}회</td>
+                                    <td className="px-2 py-1.5 text-center font-semibold text-orange-600 text-[11px]">{row.qty - row.used}회</td>
                                   </tr>
                                 ))}
                               </tbody>
