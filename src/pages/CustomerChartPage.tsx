@@ -247,8 +247,7 @@ export default function CustomerChartPage() {
   const [emailText, setEmailText] = useState('');
   const [editingPassport, setEditingPassport] = useState(false);
   const [passportText, setPassportText] = useState('');
-  const [editingPostalCode, setEditingPostalCode] = useState(false);
-  const [postalCodeText, setPostalCodeText] = useState('');
+  const [postalCodeText, setPostalCodeText] = useState(''); // editingPostalCode 제거 — SAVE-UNIFY
   const [savingField, setSavingField] = useState(false);
   // C2-STAFF-DROPDOWN: 실제 직원 목록 (coordinator + consultant + director)
   const [staffList, setStaffList] = useState<{id: string; name: string; role: string}[]>([]);
@@ -474,18 +473,26 @@ export default function CustomerChartPage() {
   };
 
   // T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 저장
+  // T-20260510-foot-C21-SAVE-UNIFY: 우편번호+주소 동시 저장 (저장버튼 단일화)
   const saveAddress = async () => {
     if (!customer) return;
     setSavingAddress(true);
     const { error } = await supabase
       .from('customers')
-      .update({ address: addressText.trim() || null })
+      .update({
+        address: addressText.trim() || null,
+        postal_code: postalCodeText.trim() || null,
+      })
       .eq('id', customer.id);
     setSavingAddress(false);
     if (error) { toast.error('저장 실패'); return; }
-    setCustomer((prev) => prev ? { ...prev, address: addressText.trim() || null } : prev);
+    setCustomer((prev) => prev ? {
+      ...prev,
+      address: addressText.trim() || null,
+      postal_code: postalCodeText.trim() || null,
+    } : prev);
     setEditingAddress(false);
-    toast.success('주소지 저장됨');
+    toast.success('주소 저장됨');
   };
 
   // T-20260508-foot-CUST-FORM-REVAMP: 단일 필드 즉시 저장 헬퍼
@@ -511,13 +518,6 @@ export default function CustomerChartPage() {
     await saveCustomerField({ passport_number: passportText.trim() || null });
     setEditingPassport(false);
     toast.success('여권번호 저장됨');
-  };
-
-  // 우편번호 저장
-  const savePostalCode = async () => {
-    await saveCustomerField({ postal_code: postalCodeText.trim() || null });
-    setEditingPostalCode(false);
-    toast.success('우편번호 저장됨');
   };
 
   // C21-RESIDENT-ID: 주민번호 자동 하이픈 처리
@@ -614,7 +614,7 @@ export default function CustomerChartPage() {
           const fullAddr = data.address;
           setPostalCodeText(zoneCode);
           setAddressText(fullAddr);
-          setEditingPostalCode(false);
+          setEditingAddress(false);
           // 우편번호 + 주소 동시 저장
           supabase.from('customers').update({
             postal_code: zoneCode || null,
@@ -887,28 +887,23 @@ export default function CustomerChartPage() {
   }
 
   // T-20260507-foot-CHART2-FULL-LAYOUT: 전능CRM SMARTDOCTOR 레이아웃 탭 정의
+  // T-20260510-foot-C21-TAB-CLEANUP: 마크류/스마트서베이/면담기록지/예약내역/통화내역/소개자가족 삭제
   const CLINICAL_TABS = [
-    { key: 'checklist', label: '문진' },
-    { key: 'marks',     label: '마크류' },
-    { key: 'survey',    label: '스마트서베이' },
-    { key: 'pen_chart', label: '펜차트' },
-    { key: 'images',    label: '진료이미지' },
-    { key: 'interview', label: '면담기록지' },
+    { key: 'checklist',   label: '문진' },
+    { key: 'pen_chart',   label: '펜차트' },
+    { key: 'images',      label: '진료이미지' },
     { key: 'test_result', label: '검사결과' },
   ];
   const HISTORY_TABS = [
-    { key: 'reservations',   label: '예약내역' },
-    { key: 'consultations',  label: '상담내역' },
-    { key: 'payments',       label: '수납내역' },
-    { key: 'treatments',     label: '시술내역' },
-    { key: 'packages',       label: '패키지' },
-    { key: 'calls',          label: '통화내역' },
-    { key: 'messages',       label: '메시지' },
-    { key: 'progress',       label: '경과내역' },
-    { key: 'referral',       label: '소개자·가족정보' },
+    { key: 'consultations', label: '상담내역' },
+    { key: 'payments',      label: '수납내역' },
+    { key: 'treatments',    label: '시술내역' },
+    { key: 'packages',      label: '패키지' },
+    { key: 'messages',      label: '메시지' },
+    { key: 'progress',      label: '경과내역' },
   ];
   const IMPLEMENTED_CLINICAL = ['checklist', 'images'];
-  const IMPLEMENTED_HISTORY  = ['reservations', 'payments', 'treatments', 'packages'];
+  const IMPLEMENTED_HISTORY  = ['consultations', 'payments', 'treatments', 'packages', 'progress'];
 
   const handleClinicalTab = (key: string) => { setChartTab(key); setChartTabGroup('clinical'); };
   const handleHistoryTab  = (key: string) => { setChartTab(key); setChartTabGroup('history'); };
@@ -1277,24 +1272,22 @@ export default function CustomerChartPage() {
                   </td>
                 </tr>
 
-                {/* ⑧ 우편번호 — 클릭 즉시 편집, 카카오 주소검색, 펜아이콘 제거 */}
+                {/* ⑧⑨ 우편번호+주소 — T-20260510-foot-C21-SAVE-UNIFY: 통합 편집, 저장버튼 하나 */}
                 <tr>
                   <td className={LC}>우편번호</td>
                   <td className={VC} colSpan={3}>
-                    {editingPostalCode ? (
+                    {editingAddress ? (
                       <div className="flex items-center gap-1">
                         <input
                           type="text"
                           value={postalCodeText}
                           onChange={(e) => setPostalCodeText(e.target.value.replace(/\D/g, '').slice(0, 5))}
-                          autoFocus
                           placeholder="12345"
                           maxLength={5}
                           inputMode="numeric"
                           className="w-20 h-5 text-[11px] font-mono rounded border border-teal-400 px-1.5 focus:outline-none focus:border-teal-600"
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') savePostalCode();
-                            if (e.key === 'Escape') { setEditingPostalCode(false); setPostalCodeText(customer.postal_code ?? ''); }
+                            if (e.key === 'Escape') { setEditingAddress(false); setPostalCodeText(customer.postal_code ?? ''); setAddressText(customer.address ?? ''); }
                           }}
                         />
                         <button
@@ -1303,15 +1296,13 @@ export default function CustomerChartPage() {
                         >
                           주소검색
                         </button>
-                        <button onClick={savePostalCode} disabled={savingField} className="rounded border border-teal-600 bg-teal-600 text-white text-[10px] px-1.5 py-0.5 hover:bg-teal-700 transition shrink-0">저장</button>
-                        <button onClick={() => { setEditingPostalCode(false); setPostalCodeText(customer.postal_code ?? ''); }} className="rounded border border-gray-300 text-[10px] px-1.5 py-0.5 hover:bg-gray-100 transition shrink-0">취소</button>
                       </div>
                     ) : (
                       <button
                         type="button"
-                        onClick={() => setEditingPostalCode(true)}
+                        onClick={() => { setEditingAddress(true); setPostalCodeText(customer.postal_code ?? ''); setAddressText(customer.address ?? ''); }}
                         className="flex items-center gap-1.5 hover:bg-blue-50/50 rounded px-0.5 transition"
-                        title="클릭하여 우편번호 편집 또는 주소검색"
+                        title="클릭하여 우편번호·주소 편집"
                       >
                         <span className={cn('text-[11px] font-mono', customer.postal_code ? 'text-gray-800' : 'text-muted-foreground/50')}>
                           {customer.postal_code ?? '클릭하여 입력'}
@@ -1324,7 +1315,7 @@ export default function CustomerChartPage() {
                   </td>
                 </tr>
 
-                {/* ⑨ 주소 (인라인 편집) */}
+                {/* ⑨ 주소 — 우편번호와 동일 편집 모드, 저장버튼 1개 */}
                 <tr>
                   <td className={LC}>주소</td>
                   <td className={VC} colSpan={3}>
@@ -1338,16 +1329,16 @@ export default function CustomerChartPage() {
                           autoFocus
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') saveAddress();
-                            if (e.key === 'Escape') { setEditingAddress(false); setAddressText(customer.address ?? ''); }
+                            if (e.key === 'Escape') { setEditingAddress(false); setAddressText(customer.address ?? ''); setPostalCodeText(customer.postal_code ?? ''); }
                           }}
                         />
                         <Button size="sm" className="h-6 text-[10px] px-2 bg-teal-600 hover:bg-teal-700 shrink-0" onClick={saveAddress} disabled={savingAddress}>저장</Button>
-                        <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 shrink-0" onClick={() => { setEditingAddress(false); setAddressText(customer.address ?? ''); }}>취소</Button>
+                        <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 shrink-0" onClick={() => { setEditingAddress(false); setAddressText(customer.address ?? ''); setPostalCodeText(customer.postal_code ?? ''); }}>취소</Button>
                       </div>
                     ) : (
                       <button
                         type="button"
-                        onClick={() => { setEditingAddress(true); setAddressText(customer.address ?? ''); }}
+                        onClick={() => { setEditingAddress(true); setAddressText(customer.address ?? ''); setPostalCodeText(customer.postal_code ?? ''); }}
                         className="text-left w-full hover:bg-blue-50/50 rounded px-0.5 transition"
                         title="클릭하여 주소 편집"
                       >
@@ -1627,64 +1618,6 @@ export default function CustomerChartPage() {
 
               {checklistEntries.length === 0 && consentEntries.length === 0 && prescriptions.length === 0 && submissionEntries.length === 0 && (
                 <div className="text-xs text-muted-foreground py-4 text-center">기록 없음</div>
-              )}
-            </div>
-          )}
-
-              {/* History: 예약내역 — C2-RESV-MINI-POPUP 예약하기 버튼 추가 */}
-              {chartTabGroup === 'history' && chartTab === 'reservations' && (
-            <div className="space-y-3">
-              {/* 예약 목록 + 예약하기 버튼 */}
-              <div className="rounded-lg border bg-white p-3 text-xs space-y-1.5">
-                <div className="flex items-center justify-between mb-1">
-                  <div className="font-semibold text-muted-foreground">예약내역</div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setResvMiniForm({ date: format(new Date(), 'yyyy-MM-dd'), startTime: '', memo: '' });
-                      setOpenResvMiniPopup(true);
-                    }}
-                    className="inline-flex items-center gap-1 rounded border border-teal-400 bg-teal-50 px-2 py-0.5 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
-                  >
-                    <Plus className="h-3 w-3" /> 예약하기
-                  </button>
-                </div>
-                {reservations.length === 0 ? (
-                  <div className="text-muted-foreground py-2">예약 없음</div>
-                ) : (
-                  /* T-20260508-foot-C22-RESV-EDIT: 예약 항목 클릭 → 수정모달 */
-                  reservations.map((r) => (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => {
-                        setEditResvId(r.id);
-                        setEditResvForm({
-                          date: r.reservation_date,
-                          startTime: r.reservation_time.slice(0, 5),
-                          memo: r.booking_memo ?? '',
-                        });
-                      }}
-                      className="w-full flex items-center justify-between rounded bg-muted/30 px-2 py-1 hover:bg-muted/60 transition text-left"
-                    >
-                      <span>{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
-                      <Badge variant="secondary" className="text-[10px]">{r.status}</Badge>
-                    </button>
-                  ))
-                )}
-              </div>
-
-              {/* 예약메모 */}
-              {reservations.filter((r) => r.booking_memo || r.memo).length > 0 && (
-                <div className="rounded-lg border bg-white p-3 text-xs space-y-1.5">
-                  <div className="font-semibold text-muted-foreground mb-1">예약메모</div>
-                  {reservations.filter((r) => r.booking_memo || r.memo).map((r) => (
-                    <div key={r.id} className="rounded bg-amber-50 border border-amber-100 px-2 py-1.5">
-                      <div className="text-muted-foreground mb-0.5">{r.reservation_date} {r.reservation_time.slice(0, 5)}</div>
-                      <div>{r.booking_memo ?? r.memo}</div>
-                    </div>
-                  ))}
-                </div>
               )}
             </div>
           )}
@@ -1994,26 +1927,14 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-              {/* Clinical: 진료이미지·서류 */}
+              {/* Clinical: 진료이미지 — T-20260510-foot-C21-IMG-PROGRESS: 동의서/영수증→상담내역 이동, 비포에프터만 표시 */}
               {chartTabGroup === 'clinical' && chartTab === 'images' && (
             <div className="space-y-3">
-              {/* 상담실장 영역 */}
-              <div className="rounded-lg border bg-white p-3 text-xs">
-                <div className="flex items-center gap-1.5 font-bold text-blue-800 mb-2">
-                  <span className="h-2 w-2 rounded-full bg-blue-500" />
-                  상담실장 영역
-                </div>
-                <div className="space-y-2">
-                  <CustomerStorageImageSection customerId={customer.id} prefix="consent" label="동의서 사진 (환불 + 비급여동의서)" accent="blue" />
-                  <CustomerStorageImageSection customerId={customer.id} prefix="receipt" label="결제영수증" accent="green" />
-                </div>
-              </div>
-
-              {/* 치료사 영역 */}
+              {/* 치료사 영역 — 비포/에프터 (1번차트 체크인 연동) */}
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center gap-1.5 font-bold text-amber-800 mb-2">
                   <span className="h-2 w-2 rounded-full bg-amber-500" />
-                  치료사 영역 — 일자별 비포/에프터
+                  일자별 비포/에프터
                 </div>
                 {checkInHistory.filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0).length === 0 ? (
                   <div className="rounded border border-dashed py-2.5 text-center text-muted-foreground">사진 없음 (간편차트에서 업로드)</div>
@@ -2040,6 +1961,77 @@ export default function CustomerChartPage() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+              {/* History: 상담내역 — T-20260510-foot-C21-IMG-PROGRESS: 동의서+영수증 통합 */}
+              {chartTabGroup === 'history' && chartTab === 'consultations' && (
+            <div className="space-y-3">
+              {/* 동의서 사진 + 결제영수증 */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-blue-800 mb-2">
+                  <span className="h-2 w-2 rounded-full bg-blue-500" />
+                  상담실장 서류
+                </div>
+                <div className="space-y-2">
+                  <CustomerStorageImageSection customerId={customer.id} prefix="consent" label="동의서 사진 (환불 + 비급여동의서)" accent="blue" />
+                  <CustomerStorageImageSection customerId={customer.id} prefix="receipt" label="결제영수증" accent="green" />
+                </div>
+              </div>
+              {/* 전자서명 동의서 목록 */}
+              {consentEntries.length > 0 && (
+                <div className="rounded-lg border bg-white p-3 text-xs">
+                  <div className="font-semibold text-muted-foreground mb-2">전자서명 동의서</div>
+                  <div className="space-y-1">
+                    {consentEntries.map((c, i) => (
+                      <div key={i} className="flex items-center gap-2 rounded bg-blue-50 px-2 py-1">
+                        <span className="text-muted-foreground">{format(new Date(c.signed_at), 'MM-dd HH:mm')}</span>
+                        <span>{FORM_TITLES[c.form_type] ?? c.form_type}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+              {/* History: 경과내역 — T-20260510-foot-C21-IMG-PROGRESS: 경과 사진 업로드 */}
+              {chartTabGroup === 'history' && chartTab === 'progress' && (
+            <div className="space-y-3">
+              {/* 경과내역 사진 업로드 */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-teal-800 mb-2">
+                  <span className="h-2 w-2 rounded-full bg-teal-500" />
+                  경과내역 사진
+                </div>
+                <CustomerStorageImageSection customerId={customer.id} prefix="progress" label="경과 사진 업로드" accent="orange" />
+              </div>
+              {/* 1번차트 연동 — 체크인별 시술 사진 */}
+              {checkInHistory.filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0).length > 0 && (
+                <div className="rounded-lg border bg-white p-3 text-xs">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-800 mb-2">
+                    <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    간편차트 시술사진 (1번차트 연동)
+                  </div>
+                  <div className="space-y-3">
+                    {checkInHistory
+                      .filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0)
+                      .map((ci) => (
+                        <div key={ci.id}>
+                          <div className="text-[10px] text-muted-foreground mb-1 font-medium">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd')}</div>
+                          <div className="grid grid-cols-3 gap-1">
+                            {(ci.treatment_photos ?? []).map((url, idx) => (
+                              <img key={idx} src={url} alt={`사진 ${idx + 1}`}
+                                className="rounded w-full object-cover aspect-square bg-muted cursor-pointer"
+                                onClick={() => window.open(url, '_blank')}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
