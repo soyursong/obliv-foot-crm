@@ -203,6 +203,189 @@ function CustomerStorageImageSection({
   );
 }
 
+// T-20260510-foot-C21-IMG-PROGRESS: 영수증 업로드 → 일일 매출 연동 컴포넌트
+// CustomerStorageImageSection 패턴 확장: 업로드 후 결제 금액 입력 → payments 테이블 insert
+function ReceiptUploadSection({
+  customerId,
+  clinicId,
+  onPaymentCreated,
+}: {
+  customerId: string;
+  clinicId: string;
+  onPaymentCreated: () => void;
+}) {
+  const [images, setImages] = useState<StorageImageItem[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [amountDlg, setAmountDlg] = useState<{
+    open: boolean; amount: string; method: 'card' | 'cash' | 'transfer';
+  }>({ open: false, amount: '', method: 'cash' });
+
+  const storagePath = `customer/${customerId}/receipt`;
+
+  const load = useCallback(async () => {
+    const { data: files } = await supabase.storage.from('photos').list(storagePath, {
+      limit: 50,
+      sortBy: { column: 'name', order: 'desc' },
+    });
+    if (!files || files.length === 0) { setImages([]); return; }
+    const withUrls = await Promise.all(
+      files
+        .filter((f) => f.name && !f.id?.endsWith('/'))
+        .map(async (file) => {
+          const path = `${storagePath}/${file.name}`;
+          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
+          return { path, signedUrl: data?.signedUrl ?? '', name: file.name };
+        }),
+    );
+    setImages(withUrls.filter((i) => i.signedUrl));
+  }, [storagePath]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    for (const file of Array.from(files)) {
+      const ext = file.name.split('.').pop() ?? 'jpg';
+      const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
+      if (error) toast.error(`업로드 실패: ${error.message}`);
+    }
+    setUploading(false);
+    e.target.value = '';
+    await load();
+    toast.success('영수증 업로드 완료');
+    // 매출 연동 다이얼로그 열기
+    setAmountDlg({ open: true, amount: '', method: 'cash' });
+  };
+
+  const remove = async (img: StorageImageItem) => {
+    if (!window.confirm('이미지를 삭제하시겠습니까?')) return;
+    await supabase.storage.from('photos').remove([img.path]);
+    await load();
+    toast.success('삭제됨');
+  };
+
+  const handlePaymentConfirm = async () => {
+    const amt = parseAmount(amountDlg.amount);
+    if (amt <= 0) { toast.error('금액을 입력하세요'); return; }
+    const { error } = await supabase.from('payments').insert({
+      customer_id: customerId,
+      clinic_id: clinicId,
+      check_in_id: null,
+      amount: amt,
+      method: amountDlg.method,
+      installment: 0,
+      payment_type: 'payment',
+      memo: '영수증 업로드',
+    });
+    if (error) { toast.error(`결제 기록 실패: ${error.message}`); return; }
+    toast.success('매출 연동 완료');
+    setAmountDlg((d) => ({ ...d, open: false }));
+    onPaymentCreated();
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between rounded border px-2.5 py-1.5 bg-green-50 border-green-200 text-green-800">
+        <span className="text-xs font-semibold flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full shrink-0 bg-green-500" />
+          결제영수증
+        </span>
+        <label className="cursor-pointer">
+          <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
+          <span className="inline-flex items-center gap-1 text-xs border rounded px-2 py-0.5 bg-white transition cursor-pointer text-green-700 border-green-200 hover:bg-green-50">
+            <Upload className="h-3 w-3" />
+            {uploading ? '중…' : '추가'}
+          </span>
+        </label>
+      </div>
+      {images.length === 0 ? (
+        <div className="rounded border border-dashed py-2.5 text-center text-xs text-muted-foreground">이미지 없음</div>
+      ) : (
+        <div className="grid grid-cols-3 gap-1.5">
+          {images.map((img) => (
+            <div key={img.path} className="relative group aspect-square">
+              <img
+                src={img.signedUrl}
+                alt={img.name}
+                className="w-full h-full object-cover rounded border cursor-pointer"
+                onClick={() => window.open(img.signedUrl, '_blank')}
+              />
+              <button
+                onClick={() => remove(img)}
+                className="absolute top-1 right-1 hidden group-hover:flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow"
+                title="삭제"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {/* 매출 연동 다이얼로그 */}
+      {amountDlg.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-lg shadow-xl p-4 w-72 space-y-3">
+            <div className="font-semibold text-sm">영수증 매출 연동</div>
+            <p className="text-xs text-muted-foreground">결제 금액을 입력하면 일일 매출에 자동 반영됩니다.</p>
+            <div className="space-y-2">
+              <div>
+                <label className="text-xs text-muted-foreground block mb-0.5">금액 (원)</label>
+                <Input
+                  value={amountDlg.amount}
+                  onChange={(e) => setAmountDlg((d) => ({ ...d, amount: e.target.value }))}
+                  placeholder="0"
+                  className="text-sm"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-0.5">결제수단</label>
+                <div className="flex gap-1">
+                  {(['card', 'cash', 'transfer'] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setAmountDlg((d) => ({ ...d, method: m }))}
+                      className={cn(
+                        'flex-1 py-1 text-xs rounded border transition',
+                        amountDlg.method === m
+                          ? 'bg-teal-600 text-white border-teal-600'
+                          : 'bg-white border-gray-200 hover:bg-gray-50',
+                      )}
+                    >
+                      {m === 'card' ? '카드' : m === 'cash' ? '현금' : '이체'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => setAmountDlg((d) => ({ ...d, open: false }))}
+              >
+                건너뛰기
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1 bg-teal-600 hover:bg-teal-700"
+                onClick={handlePaymentConfirm}
+              >
+                등록
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CustomerChartPage() {
   const { customerId } = useParams<{ customerId: string }>();
   const { profile, loading: authLoading } = useAuth();
@@ -444,6 +627,18 @@ export default function CustomerChartPage() {
       setLoading(false);
     })();
   }, [customerId, profile]);
+
+  // T-20260510-foot-C21-IMG-PROGRESS: 영수증 결제 생성 후 결제목록 새로고침
+  const refreshPayments = useCallback(async () => {
+    if (!customerId) return;
+    const { data } = await supabase
+      .from('payments')
+      .select('*')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    setPayments((data ?? []) as Payment[]);
+  }, [customerId]);
 
   // C21-RESIDENT-ID: 고객 로드 시 주민번호 존재 여부 확인
   useEffect(() => {
@@ -2006,7 +2201,11 @@ export default function CustomerChartPage() {
                 </div>
                 <div className="space-y-2">
                   <CustomerStorageImageSection customerId={customer.id} prefix="consent" label="동의서 사진 (환불 + 비급여동의서)" accent="blue" />
-                  <CustomerStorageImageSection customerId={customer.id} prefix="receipt" label="결제영수증" accent="green" />
+                  <ReceiptUploadSection
+                    customerId={customer.id}
+                    clinicId={customer.clinic_id}
+                    onPaymentCreated={refreshPayments}
+                  />
                 </div>
               </div>
               {/* 전자서명 동의서 목록 */}

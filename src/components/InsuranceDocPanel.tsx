@@ -2,16 +2,18 @@
  * InsuranceDocPanel — 풋센터 서류 업로드 패널
  *
  * T-20260506-foot-CHART-SIMPLE-REVAMP: 5/4 22:04 요청 반영
+ * T-20260510-foot-C21-IMG-PROGRESS: 경과내역 사진 (2번차트 연동) 섹션 추가
  *
  * 섹션 구성:
  * 1) 경과분석지   — 원장님 공유 시 데스크 업로드 (receipt_type='receipt')
  * 2) KOH 균검사   — 원장님 공유 시 데스크 업로드 (prescriptions 테이블 재용)
  * 3) 진료비 영수증 — 데스크에서 금액 등록 + 파일 업로드 (receipt_type='detail')
+ * 4) 경과내역 사진 — 2번차트 경과내역 탭에서 업로드된 사진 조회 (Storage 연동)
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { format } from 'date-fns';
-import { FileText, Plus, Upload, Trash2, Printer, FlaskConical, Receipt } from 'lucide-react';
+import { FileText, Plus, Upload, Trash2, Printer, FlaskConical, Receipt, ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -66,10 +68,19 @@ interface Props {
 
 // ─── 메인 컴포넌트 ───
 
+// T-20260510-foot-C21-IMG-PROGRESS: 경과내역 사진 스토리지 아이템
+interface ProgressPhotoItem {
+  path: string;
+  signedUrl: string;
+  name: string;
+}
+
 export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
   const [progressDocs, setProgressDocs] = useState<ProgressDoc[]>([]);
   const [kohDocs, setKohDocs] = useState<KohDoc[]>([]);
   const [invoiceDocs, setInvoiceDocs] = useState<InvoiceDoc[]>([]);
+  // T-20260510-foot-C21-IMG-PROGRESS: 2번차트 경과내역 사진 (customer Storage 연동)
+  const [progressPhotos, setProgressPhotos] = useState<ProgressPhotoItem[]>([]);
 
   // 다이얼로그 상태
   const [progressOpen, setProgressOpen] = useState(false);
@@ -132,6 +143,29 @@ export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
   }, [checkIn.id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // T-20260510-foot-C21-IMG-PROGRESS: 경과내역 사진 로드 (2번차트 Storage 연동)
+  const loadProgressPhotos = useCallback(async () => {
+    if (!checkIn.customer_id) return;
+    const storagePath = `customer/${checkIn.customer_id}/progress`;
+    const { data: files } = await supabase.storage.from('photos').list(storagePath, {
+      limit: 50,
+      sortBy: { column: 'name', order: 'desc' },
+    });
+    if (!files || files.length === 0) { setProgressPhotos([]); return; }
+    const withUrls = await Promise.all(
+      files
+        .filter((f) => f.name && !f.id?.endsWith('/'))
+        .map(async (file) => {
+          const path = `${storagePath}/${file.name}`;
+          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
+          return { path, signedUrl: data?.signedUrl ?? '', name: file.name };
+        }),
+    );
+    setProgressPhotos(withUrls.filter((i) => i.signedUrl));
+  }, [checkIn.customer_id]);
+
+  useEffect(() => { loadProgressPhotos(); }, [loadProgressPhotos]);
 
   // ── 삭제 ──
   const deleteProgress = async (id: string) => {
@@ -337,6 +371,35 @@ export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
           </div>
         )}
       </div>
+
+      {/* ── T-20260510-foot-C21-IMG-PROGRESS: 경과내역 사진 (2번차트 연동) ── */}
+      {checkIn.customer_id && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5">
+            <ImageIcon className="h-3.5 w-3.5 text-teal-600" />
+            <span className="text-sm font-semibold text-muted-foreground">경과내역 사진</span>
+            <span className="text-[10px] text-muted-foreground bg-teal-50 border border-teal-200 rounded px-1">2번차트 연동</span>
+          </div>
+          {progressPhotos.length > 0 ? (
+            <div className="grid grid-cols-3 gap-1.5">
+              {progressPhotos.map((img) => (
+                <div key={img.path} className="relative aspect-square">
+                  <img
+                    src={img.signedUrl}
+                    alt={img.name}
+                    className="w-full h-full object-cover rounded-lg border cursor-pointer"
+                    onClick={() => window.open(img.signedUrl, '_blank')}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed py-2.5 text-center text-[11px] text-muted-foreground">
+              경과 사진 없음 (2번차트 경과내역 탭에서 업로드)
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── 다이얼로그 ── */}
       <ProgressUploadDialog
