@@ -637,11 +637,15 @@ export default function CustomerChartPage() {
     loadAndOpen();
   };
 
-  // 체크박스 토글 (즉시 저장)
-  const toggleBoolField = async (field: 'privacy_consent' | 'sms_reject' | 'marketing_reject') => {
+  // T-20260510-foot-CONSENT-SINGLE-SELECT: 개인정보동의 단일선택 — 선택 시 나머지 두 개 false
+  const selectConsentField = async (selected: 'privacy_consent' | 'sms_reject' | 'marketing_reject') => {
     if (!customer) return;
-    const newVal = !(customer[field] ?? false);
-    await saveCustomerField({ [field]: newVal });
+    const patch = {
+      privacy_consent: selected === 'privacy_consent',
+      sms_reject: selected === 'sms_reject',
+      marketing_reject: selected === 'marketing_reject',
+    };
+    await saveCustomerField(patch);
   };
 
   // C2-HIRA-CONSENT: 건보 조회 동의 토글
@@ -1154,16 +1158,16 @@ export default function CustomerChartPage() {
                         <button
                           key={field}
                           type="button"
-                          onClick={() => toggleBoolField(field)}
+                          onClick={() => selectConsentField(field)}
                           disabled={savingField}
                           className="flex items-center gap-1 hover:opacity-80 active:scale-95 transition"
-                          title={checked ? '해제' : '체크'}
+                          title="선택 (셋 중 하나만 선택됩니다)"
                         >
                           <span className={cn(
-                            'h-3 w-3 border rounded-sm flex items-center justify-center text-[8px] transition-colors',
-                            checked ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-400 bg-white',
+                            'h-3 w-3 border rounded-full flex items-center justify-center transition-colors',
+                            checked ? 'bg-blue-600 border-blue-600' : 'border-gray-400 bg-white',
                           )}>
-                            {checked && '✓'}
+                            {checked && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
                           </span>
                           <span className={cn('text-[11px]', checked ? 'font-medium text-blue-700' : 'text-gray-600')}>{label}</span>
                         </button>
