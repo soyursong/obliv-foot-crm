@@ -912,14 +912,17 @@ function MiniCalendar({
 // ── DashboardTimeline (통합 시간표) ───────────────────────────────────────────
 // T-20260504-foot-SCHEDULE-UNIFIED-VIEW: 초진/재진 슬롯을 동일 타임라인 내 인라인 표시
 // T-20260506-foot-SLOT-LAYOUT-REBUILD: SLOT_MAX 6명으로 확장 (30분당 4~6명 수용)
-const SLOT_MAX = 6; // 초진/재진 슬롯 상한 (표시 전용, 차단 없음)
+const SLOT_MAX = 6; // 초진/재진 슬롯 상한 (표시 전용, 차단 없음) — REWORK 이후 미사용, 삭제 금지
+void SLOT_MAX; // suppress noUnusedLocals
 
 /**
  * 예약/셀프접수 1건 미니 카드
  * T-20260506-foot-SLOT-LAYOUT-REBUILD:
  *   - 초진/체험 = 연한노랑 (bg-yellow-100) + "초" 딱지
  *   - 재진 = 연두색 (bg-green-100) + 딱지 없음
+ * @deprecated REWORK 이후 미사용 — 삭제 금지 (하위 호환 보존)
  */
+// @ts-ignore -- 하위 호환 보존, 삭제 금지
 function TimelineCard({
   name,
   visitType,
@@ -1014,6 +1017,50 @@ function TimelineCheckInCard({
   );
 }
 
+// T-20260510-foot-DASH-SLOT-REWORK-P0: 1번 박스 — 초진 예약 비활성 (셀프접수 매칭 전)
+// "(초) 이름 1234" 형태로 표시, 클릭/드래그 불가
+// 스크린샷 pixel-level: white bg + gray border + 초 뱃지 + 이름 + 전화 뒷4자리
+function Box1Card({ name, phone }: { name: string; phone: string }) {
+  const tail = (phone ?? '').replace(/\D/g, '').slice(-4) || '????';
+  return (
+    <div
+      className="flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-[11px] w-full select-none cursor-default shadow-sm"
+      onClick={(e) => e.stopPropagation()}
+      title="예약 등록됨 — 셀프접수 대기 중"
+    >
+      <span className="shrink-0 bg-yellow-200 text-yellow-900 text-[9px] px-0.5 rounded font-bold leading-tight">초</span>
+      <span className="truncate text-gray-800 font-medium">{name}</span>
+      <span className="shrink-0 text-gray-400 font-mono ml-auto text-[9px]">{tail}</span>
+    </div>
+  );
+}
+
+// T-20260510-foot-DASH-SLOT-REWORK-P0: 재진 예약 2번 박스 (셀프접수 전, 차트 사전 접근)
+// 방문 이력 있으므로 예약 단계부터 활성 상태 — 클릭 → 체크인 생성 + 차트 열기
+function Box2ReservationCard({
+  reservation,
+  onClick,
+}: {
+  reservation: Reservation;
+  onClick?: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-1 rounded border bg-white px-1.5 py-1 text-[11px] font-medium w-full shadow-sm',
+        onClick ? 'cursor-pointer hover:ring-1 hover:ring-teal-300 transition' : 'cursor-default',
+      )}
+      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+      title={`${reservation.customer_name} — 클릭하여 체크인 및 차트 열기`}
+    >
+      <span className="truncate text-gray-800">{reservation.customer_name}</span>
+      {onClick && <span className="text-[8px] opacity-40 shrink-0 ml-auto">↗</span>}
+    </div>
+  );
+}
+
+// T-20260510-foot-DASH-SLOT-REWORK-P0: 통합 시간표 전면 리워크
+// 3컬럼(시간 | 초진 | 재진) — 1번/2번 고객박스 이원화 + 셀프접수 자동매칭
 function DashboardTimeline({
   date,
   reservations,
@@ -1021,15 +1068,16 @@ function DashboardTimeline({
   onSlotClick,
   onCardClick,
   onCardContext,
+  onReservationClick,
 }: {
   date: Date;
   reservations: Reservation[];
   selfCheckIns: CheckIn[];
   onSlotClick: (slot: { date: string; time: string }) => void;
-  /** T-20260508-foot-DASH-SLOT-REMOVE: 고객박스 클릭 → 상세 패널 열기 */
   onCardClick?: (ci: CheckIn) => void;
-  /** T-20260508-foot-DASH-SLOT-REMOVE: 고객박스 우클릭 → 컨텍스트 메뉴 */
   onCardContext?: (ci: CheckIn, e: React.MouseEvent) => void;
+  /** 재진 예약 2번 박스 클릭 → 체크인 생성 + 차트 열기 (T-20260510-foot-DASH-SLOT-REWORK-P0) */
+  onReservationClick?: (r: Reservation) => void;
 }) {
   const now = new Date();
   const isToday = isSameDay(date, now);
@@ -1040,198 +1088,218 @@ function DashboardTimeline({
 
   const slots = generateSlots('10:00', '20:00', 30);
 
-  // ── 예약을 30분 슬롯으로 분류 (초진 / 재진+체험 분리)
-  const newSlotMap: Record<string, Reservation[]> = {};
-  const retSlotMap: Record<string, Reservation[]> = {};
-
-  for (const r of reservations) {
-    const t = r.reservation_time?.slice(0, 5) ?? '00:00';
-    const [h, mm] = t.split(':').map(Number);
-    const slot = `${String(h).padStart(2, '0')}:${mm < 30 ? '00' : '30'}`;
-    if (r.visit_type === 'new') {
-      (newSlotMap[slot] ??= []).push(r);
-    } else {
-      (retSlotMap[slot] ??= []).push(r);
+  // ── 체크인 조회 맵 구성 ──────────────────────────────────────────────────────
+  // reservation_id 우선, 없으면 customer_id 기반 (워크인 폴백)
+  const checkInByResvId = new Map<string, CheckIn>();
+  const checkInByCustomerId = new Map<string, CheckIn>();
+  for (const ci of selfCheckIns) {
+    if (ci.reservation_id) {
+      checkInByResvId.set(ci.reservation_id, ci);
+    } else if (ci.customer_id) {
+      if (!checkInByCustomerId.has(ci.customer_id)) {
+        checkInByCustomerId.set(ci.customer_id, ci);
+      }
     }
   }
 
-  // ── 셀프접수 walk-in 체크인을 슬롯으로 분류
-  const newSelfMap: Record<string, CheckIn[]> = {};
-  const retSelfMap: Record<string, CheckIn[]> = {};
+  // ── 슬롯별 데이터 분류 ───────────────────────────────────────────────────────
+  interface SlotData {
+    newBox1: Reservation[];     // 초진 예약 비활성 1번 박스 (셀프접수 대기)
+    newBox2Ci: CheckIn[];       // 초진 체크인 활성 2번 박스
+    retBox2Resv: Reservation[]; // 재진 예약 pre-checkin 활성 2번 박스
+    retBox2Ci: CheckIn[];       // 재진 체크인 활성 2번 박스
+  }
+  const slotMap: Record<string, SlotData> = {};
+  const ensure = (s: string): SlotData => {
+    if (!slotMap[s]) slotMap[s] = { newBox1: [], newBox2Ci: [], retBox2Resv: [], retBox2Ci: [] };
+    return slotMap[s];
+  };
+  const resvToSlot = (time: string | null | undefined): string => {
+    if (!time) return '00:00';
+    const t = time.slice(0, 5);
+    const [h, mm] = t.split(':').map(Number);
+    return `${String(h).padStart(2, '0')}:${mm < 30 ? '00' : '30'}`;
+  };
 
+  const matchedCiIds = new Set<string>();
+
+  // 예약 처리 (cancelled/noshow 제외)
+  for (const r of reservations) {
+    if (r.status === 'cancelled' || r.status === 'noshow') continue;
+    const slot = resvToSlot(r.reservation_time);
+    const sd = ensure(slot);
+
+    // 매칭 체크인 탐색: reservation_id 우선 → customer_id 폴백
+    const ci =
+      checkInByResvId.get(r.id) ??
+      (r.customer_id ? checkInByCustomerId.get(r.customer_id) : undefined);
+
+    if (r.visit_type === 'new' || r.visit_type === 'experience') {
+      // 초진 / 체험
+      if (!ci) {
+        // 셀프접수 전 → 1번 박스 (비활성)
+        if (r.status === 'confirmed') sd.newBox1.push(r);
+        // status='checked_in' + selfCheckIns에 없음 = 칸반으로 이동 완료 → 미표시
+      } else {
+        // 셀프접수 완료 → 2번 박스 (활성, 드래그/클릭)
+        matchedCiIds.add(ci.id);
+        sd.newBox2Ci.push(ci);
+      }
+    } else {
+      // 재진
+      if (!ci) {
+        // 셀프접수 전 → 2번 박스 (재진은 예약부터 활성, 차트 접근)
+        if (r.status === 'confirmed') sd.retBox2Resv.push(r);
+        // status='checked_in' + 없음 = treatment_waiting 이상 이동 → 미표시
+      } else {
+        // 체크인 매칭 → 2번 박스 (활성)
+        matchedCiIds.add(ci.id);
+        sd.retBox2Ci.push(ci);
+      }
+    }
+  }
+
+  // 워크인 체크인 (예약 미매칭 — 예약없이 당일 접수)
   for (const ci of selfCheckIns) {
-    if (!ci.checked_in_at) continue;
-    // checked_in_at은 ISO 타임스탬프 (Asia/Seoul offset 포함)
+    if (matchedCiIds.has(ci.id)) continue;
     const d = new Date(ci.checked_in_at);
     const h = d.getHours();
     const mm = d.getMinutes();
     const slot = `${String(h).padStart(2, '0')}:${mm < 30 ? '00' : '30'}`;
-    if (ci.visit_type === 'new') {
-      (newSelfMap[slot] ??= []).push(ci);
+    const sd = ensure(slot);
+    if (ci.visit_type === 'new' || ci.visit_type === 'experience') {
+      sd.newBox2Ci.push(ci);
     } else {
-      (retSelfMap[slot] ??= []).push(ci);
+      sd.retBox2Ci.push(ci);
     }
   }
 
   return (
     <div className="flex flex-col bg-white overflow-hidden flex-1 min-h-0">
       {/* 헤더 */}
-      <div className="text-xs font-semibold px-2 py-1.5 border-b bg-muted/20 text-gray-600 sticky top-0 flex items-center gap-1">
+      <div className="text-xs font-semibold px-2 py-1.5 border-b bg-muted/20 text-gray-600 sticky top-0 z-20 flex items-center gap-1">
         <Clock className="h-3 w-3" /> 통합 시간표
       </div>
-      {/* 범례 — T-20260506-foot-SLOT-LAYOUT-REBUILD */}
-      <div className="flex items-center gap-2 px-2 py-1 border-b bg-gray-50/70 text-[9px]">
-        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-yellow-100 text-yellow-900 font-semibold border border-yellow-300">
-          <span className="bg-yellow-200 text-yellow-900 text-[8px] px-0.5 rounded font-bold">초</span>초진
-        </span>
-        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-green-100 text-green-900 font-semibold border border-green-200">재진</span>
-        <span className="ml-auto text-gray-400">상한 {SLOT_MAX}/슬롯</span>
+      {/* 컬럼 헤더 — 초진(연노랑)/재진(연두) */}
+      <div className="grid grid-cols-[2.5rem_1fr_1fr] border-b">
+        <div className="py-1 border-r bg-gray-50" />
+        <div className="py-1 text-[9px] font-bold text-yellow-800 text-center border-r bg-yellow-50 flex items-center justify-center gap-0.5">
+          <span className="bg-yellow-200 text-yellow-900 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
+          초진
+        </div>
+        <div className="py-1 text-[9px] font-bold text-green-800 text-center bg-green-50">
+          재진
+        </div>
       </div>
-      {/* 타임라인 행 — min-h-0: flex 할당 영역 초과 성장 방지 */}
+      {/* 타임라인 슬롯 목록 */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         {slots.map((slot) => {
-          const newItems = newSlotMap[slot] ?? [];
-          const retItems = retSlotMap[slot] ?? [];
-          const newSelf = newSelfMap[slot] ?? [];
-          const retSelf = retSelfMap[slot] ?? [];
-          const newCnt = newItems.length + newSelf.length;
-          const retCnt = retItems.length + retSelf.length;
+          const sd = slotMap[slot];
+          const newBox1 = sd?.newBox1 ?? [];
+          const newBox2Ci = sd?.newBox2Ci ?? [];
+          const retBox2Resv = sd?.retBox2Resv ?? [];
+          const retBox2Ci = sd?.retBox2Ci ?? [];
+          const newCnt = newBox1.length + newBox2Ci.length;
+          const retCnt = retBox2Resv.length + retBox2Ci.length;
           const hasAny = newCnt > 0 || retCnt > 0;
+          const maxRows = Math.max(newCnt, retCnt, 1);
+
           const isCurrentSlot = isToday && slot === currentSlot;
           const isPastSlot =
             isToday &&
             parseInt(slot.split(':')[0]) * 60 + parseInt(slot.split(':')[1]) <
               currentH * 60 + currentM - 30;
 
-          // T-20260508-foot-DASH-SLOT-REMOVE: 초진/재진 섹션 분리 렌더링
-          // 초진 = 예약카드(정적) + 체크인카드(드래그 가능), 재진 동일
-          const totalCnt = newCnt + retCnt;
-          const isFull = totalCnt >= SLOT_MAX;
-
-          // T-20260509-foot-SLOT-CARD-STYLE: 컬러를 슬롯메뉴명(시간 헤더)에만 적용
-          // 레이저실·치료실 헤더처럼 슬롯 타이틀 박스에 초진=노랑/재진=연두
-          const slotHeaderBg = isCurrentSlot
-            ? 'bg-teal-100'
-            : newCnt > 0
-              ? 'bg-yellow-100'
-              : retCnt > 0
-                ? 'bg-green-100'
-                : 'bg-gray-50';
-
           return (
             <div
               key={slot}
               className={cn(
-                'border-b border-gray-100',
+                'grid grid-cols-[2.5rem_1fr_1fr] border-b border-gray-100',
                 isPastSlot && 'opacity-55',
-                hasAny ? 'min-h-[56px]' : 'min-h-[40px]',
               )}
+              style={{ minHeight: hasAny ? `${maxRows * 28 + 8}px` : '36px' }}
             >
-              {/* 시간 레이블 행 — 슬롯메뉴명 박스: 초진=노랑/재진=연두 배경 */}
-              <div className={cn('flex items-center gap-1 px-1.5 pt-1 pb-0.5', slotHeaderBg)}>
+              {/* 시간 레이블 */}
+              <div
+                className={cn(
+                  'flex flex-col items-center justify-start pt-1.5 pb-1 border-r shrink-0',
+                  isCurrentSlot ? 'bg-teal-50' : 'bg-gray-50/60',
+                )}
+              >
                 <span
                   className={cn(
-                    'text-[10px] font-mono tabular-nums shrink-0 w-9',
+                    'text-[9px] font-mono tabular-nums leading-none',
                     isCurrentSlot ? 'text-teal-700 font-bold' : 'text-gray-400',
                   )}
                 >
-                  {slot}
+                  {slot.slice(0, 2)}
+                </span>
+                <span
+                  className={cn(
+                    'text-[9px] font-mono tabular-nums leading-none mt-0.5',
+                    isCurrentSlot ? 'text-teal-600' : 'text-gray-300',
+                  )}
+                >
+                  {slot.slice(3)}
                 </span>
                 {isCurrentSlot && (
-                  <div className="h-1.5 w-1.5 rounded-full bg-teal-500 animate-pulse shrink-0" />
-                )}
-                {/* 통합 카운터: 초N/재M/상한S */}
-                {hasAny && (
-                  <div className="ml-auto flex items-center gap-0.5">
-                    {newCnt > 0 && (
-                      <span className="text-[9px] font-mono px-1 py-0.5 rounded font-medium leading-none bg-yellow-100 text-yellow-800 border border-yellow-200"
-                        title={`초진 ${newCnt}명`}>초{newCnt}</span>
-                    )}
-                    {retCnt > 0 && (
-                      <span className="text-[9px] font-mono px-1 py-0.5 rounded font-medium leading-none bg-green-100 text-green-800 border border-green-200"
-                        title={`재진 ${retCnt}명`}>재{retCnt}</span>
-                    )}
-                    {isFull && (
-                      <span className="text-[9px] px-1 py-0.5 rounded font-bold leading-none bg-red-100 text-red-700 ring-1 ring-red-300"
-                        title={`상한 ${SLOT_MAX}명 도달`}>FULL</span>
-                    )}
-                  </div>
+                  <div className="h-1 w-1 rounded-full bg-teal-500 animate-pulse mt-1" />
                 )}
               </div>
 
-              {/* T-20260509-foot-SLOT-CARD-STYLE: 고객박스 흰색 큰박스 (세로 배치) */}
-              {hasAny && (
-                <div className="px-1.5 pb-1.5 space-y-1">
-                  {/* 초진 섹션 */}
-                  {newCnt > 0 && (
-                    <div className="space-y-0.5">
-                      {newCnt > 0 && retCnt > 0 && (
-                        <div className="flex items-center gap-1">
-                          <span className="text-[9px] font-bold text-yellow-800 shrink-0">초진</span>
-                          <div className="flex-1 h-px bg-yellow-300" />
-                        </div>
-                      )}
-                      {newItems.map((r) => (
-                        <TimelineCard
-                          key={`r-${r.id}`}
-                          name={r.customer_name ?? ''}
-                          visitType={r.visit_type}
-                          dimmed={r.status === 'checked_in'}
-                          struck={r.status === 'cancelled'}
-                        />
-                      ))}
-                      {newSelf.map((ci) => (
-                        <TimelineCheckInCard
-                          key={`s-${ci.id}`}
-                          checkIn={ci}
-                          onClick={onCardClick ? () => onCardClick(ci) : undefined}
-                          onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
-                        />
-                      ))}
-                    </div>
-                  )}
-                  {/* 재진 섹션 — 딱지 없음 (김주연 확정) */}
-                  {retCnt > 0 && (
-                    <div className="space-y-0.5">
-                      {newCnt > 0 && retCnt > 0 && (
-                        <div className="flex items-center gap-1">
-                          <span className="text-[9px] font-bold text-green-800 shrink-0">재진</span>
-                          <div className="flex-1 h-px bg-green-300" />
-                        </div>
-                      )}
-                      {retItems.map((r) => (
-                        <TimelineCard
-                          key={`r-${r.id}`}
-                          name={r.customer_name ?? ''}
-                          visitType={r.visit_type}
-                          dimmed={r.status === 'checked_in'}
-                          struck={r.status === 'cancelled'}
-                        />
-                      ))}
-                      {retSelf.map((ci) => (
-                        <TimelineCheckInCard
-                          key={`s-${ci.id}`}
-                          checkIn={ci}
-                          onClick={onCardClick ? () => onCardClick(ci) : undefined}
-                          onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* 슬롯 클릭 → 예약 생성 (초진으로 기본) */}
-              <button
-                onClick={() => onSlotClick({ date: dateStr, time: slot })}
+              {/* 초진 컬럼 — 빈 영역 클릭 시 예약 추가 */}
+              <div
                 className={cn(
-                  'w-full rounded text-[10px] text-gray-300 hover:bg-teal-50 hover:text-teal-600 transition text-left px-1.5',
-                  hasAny ? 'py-0.5' : 'py-1',
+                  'px-1 pt-1 pb-0.5 border-r space-y-0.5 min-w-0',
+                  isCurrentSlot ? 'bg-teal-50/20' : newCnt > 0 ? 'bg-yellow-50/40' : '',
                 )}
-                title="클릭하여 예약 추가"
+                onClick={() => onSlotClick({ date: dateStr, time: slot })}
+                style={{ cursor: 'default' }}
+                title="빈 영역 클릭 → 초진 예약 추가"
               >
-                + 예약
-              </button>
+                {newBox1.map((r) => (
+                  <Box1Card
+                    key={`b1-${r.id}`}
+                    name={r.customer_name ?? ''}
+                    phone={r.customer_phone ?? ''}
+                  />
+                ))}
+                {newBox2Ci.map((ci) => (
+                  <TimelineCheckInCard
+                    key={`b2n-${ci.id}`}
+                    checkIn={ci}
+                    onClick={onCardClick ? () => onCardClick(ci) : undefined}
+                    onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
+                  />
+                ))}
+                {newCnt === 0 && (
+                  <div className="text-[9px] text-gray-200 text-center leading-none py-1 select-none">+</div>
+                )}
+              </div>
+
+              {/* 재진 컬럼 */}
+              <div
+                className={cn(
+                  'px-1 pt-1 pb-0.5 space-y-0.5 min-w-0',
+                  isCurrentSlot ? 'bg-teal-50/20' : retCnt > 0 ? 'bg-green-50/40' : '',
+                )}
+              >
+                {retBox2Resv.map((r) => (
+                  <Box2ReservationCard
+                    key={`b2r-${r.id}`}
+                    reservation={r}
+                    onClick={onReservationClick ? () => onReservationClick(r) : undefined}
+                  />
+                ))}
+                {retBox2Ci.map((ci) => (
+                  <TimelineCheckInCard
+                    key={`b2c-${ci.id}`}
+                    checkIn={ci}
+                    onClick={onCardClick ? () => onCardClick(ci) : undefined}
+                    onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
+                  />
+                ))}
+              </div>
             </div>
           );
         })}
@@ -2628,6 +2696,11 @@ export default function Dashboard() {
     };
     setRows((prev) => [...prev, newCheckIn]);
     toast.success(`${res.customer_name} 체크인 완료 (#${qn})`);
+    // T-20260510-foot-DASH-SLOT-REWORK-P0 AC6: 재진 Box2 클릭 시 차트 자동 열림
+    // 스탭이 통합시간표 재진 예약카드 클릭 → 체크인 즉시 차트 열어 사전 접근 제공
+    if (res.visit_type === 'returning') {
+      setSelectedCheckIn(newCheckIn);
+    }
   };
 
   // 미니 캘린더 클릭-외부 닫기
@@ -3407,7 +3480,7 @@ export default function Dashboard() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* 좌측: 통합 시간표 + 원내 메모 — T-20260504-foot-SCHEDULE-UNIFIED-VIEW */}
         {/* T-20260509-foot-DASH-SLOT-STICKY: min-h-0으로 세로 팽창 억제 → 타임라인 자체 스크롤 유지 */}
-        <div className="w-64 shrink-0 flex flex-col min-h-0 border-r overflow-hidden">
+        <div className="w-80 shrink-0 flex flex-col min-h-0 border-r overflow-hidden">
           <DashboardTimeline
             date={date}
             reservations={enrichedTimelineReservations}
@@ -3415,6 +3488,7 @@ export default function Dashboard() {
             onSlotClick={handleQuickSlotClick}
             onCardClick={!isPast ? handleCardClick : undefined}
             onCardContext={!isPast ? handleCardContext : undefined}
+            onReservationClick={!isPast ? handleReservationCheckIn : undefined}
           />
           <ClinicMemoPanel
             date={date}

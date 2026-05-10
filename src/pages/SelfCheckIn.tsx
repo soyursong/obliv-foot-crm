@@ -52,7 +52,7 @@ const C = {
   bannerBorder: '#C9A97A',
 } as const;
 
-type Step = 'input' | 'confirm' | 'done' | 'error';
+type Step = 'input' | 'address' | 'confirm' | 'done' | 'error';
 type Lang = 'ko' | 'en';
 
 const T: Record<Lang, {
@@ -280,6 +280,7 @@ export default function SelfCheckIn() {
   const [phone, setPhone] = useState('');
   const [visitType, setVisitType] = useState<VisitType>('new');
   const [referrerName, setReferrerName] = useState('');
+  const [address, setAddress] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [queueNumber, setQueueNumber] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
@@ -336,6 +337,7 @@ export default function SelfCheckIn() {
     setPhone('');
     setVisitType('new');
     setReferrerName('');
+    setAddress('');
     setQueueNumber(null);
     setErrorMsg('');
     setReservationBanner(null);
@@ -536,7 +538,11 @@ export default function SelfCheckIn() {
 
   const handleConfirm = () => {
     if (!canSubmit) return;
-    setStep('confirm');
+    if (visitType === 'new') {
+      setStep('address');
+    } else {
+      setStep('confirm');
+    }
   };
 
   const handleSubmit = async () => {
@@ -590,6 +596,10 @@ export default function SelfCheckIn() {
 
       if (existing) {
         customerId = existing.id as string;
+        // 기존 고객 주소 업데이트 (최선 노력, 실패해도 무시)
+        if (address.trim() && customerId) {
+          anonClient.from('customers').update({ address: address.trim() }).eq('id', customerId).then(() => {/* 무시 */});
+        }
       } else {
         const { data: created, error: cErr } = await anonClient
           .from('customers')
@@ -599,6 +609,7 @@ export default function SelfCheckIn() {
             phone: phoneStored,
             visit_type: visitType === 'new' ? 'new' : 'returning',
             referrer_name: referrerName.trim() || null,
+            address: address.trim() || null,
           })
           .select('id')
           .single();
@@ -771,8 +782,10 @@ export default function SelfCheckIn() {
         customer_name: name.trim(),
         customer_phone: phoneStored,
         visit_type: checkinVisitType,
-        // T-20260430-foot-STAGE-FLOW-CORRECTION: 재진→관리대기(treatment_waiting) 직행, 신규/체험→접수(registered)
-        status: checkinVisitType === 'returning' ? 'treatment_waiting' : 'registered',
+        // T-20260430-foot-STAGE-FLOW-CORRECTION: 재진→치료대기(treatment_waiting) 직행
+      // T-20260510-foot-DASH-SLOT-REWORK-P0: 신규/체험→상담대기(consult_waiting) 직행 (AC4/AC7)
+      // 셀프접수 완료 시 신규고객은 timeline 2번박스 경유 없이 [상담대기] 칸반으로 즉시 이동
+        status: checkinVisitType === 'returning' ? 'treatment_waiting' : 'consult_waiting',
         queue_number: queue,
         notes: notesPayload,
         // T-20260506-foot-SELFCHECKIN-MERGE: 예약 있으면 reservation_id 링크 (중복 박스 방지)
@@ -937,6 +950,68 @@ export default function SelfCheckIn() {
           >
             {t.retry}
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 주소 입력 (초진 전용, AC #8) ──
+  if (step === 'address') {
+    return (
+      <div
+        className="flex min-h-dvh flex-col items-center justify-center px-6"
+        style={{ background: `linear-gradient(to bottom, ${C.bgFrom}, ${C.bgTo})`, ...FONT_STYLE }}
+      >
+        <LangToggle />
+        <div className="w-full max-w-md space-y-8">
+          <div className="text-center">
+            <p className="text-sm tracking-widest uppercase mb-2" style={{ color: C.gold }}>{clinicName}</p>
+            <h1 className="text-2xl font-bold" style={{ color: C.dark }}>주소 입력</h1>
+            <p className="mt-2 text-sm" style={{ color: C.muted }}>초진 고객은 주소를 입력해 주세요.</p>
+          </div>
+          <div>
+            <textarea
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="도로명 주소 또는 지번 주소"
+              rows={3}
+              className="w-full rounded-xl px-4 py-3 text-base outline-none transition resize-none"
+              style={{
+                border: `1.5px solid ${C.border}`,
+                backgroundColor: 'white',
+                color: C.dark,
+                fontFamily: FONT_STYLE.fontFamily,
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = C.borderActive;
+                e.currentTarget.style.boxShadow = `0 0 0 3px ${C.borderActive}18`;
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = C.border;
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+            />
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                setAddress('');
+                setStep('confirm');
+              }}
+              className="flex-1 rounded-xl py-4 text-lg font-medium transition active:scale-95"
+              style={{ border: `1.5px solid ${C.border}`, color: C.muted, backgroundColor: 'white' }}
+            >
+              건너뛰기
+            </button>
+            <button
+              onClick={() => setStep('confirm')}
+              disabled={!address.trim()}
+              className="flex-1 rounded-xl py-4 text-lg font-bold text-white transition active:scale-95 disabled:opacity-50"
+              style={{ backgroundColor: C.primary }}
+            >
+              다음
+            </button>
+          </div>
         </div>
       </div>
     );
