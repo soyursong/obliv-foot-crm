@@ -24,6 +24,8 @@ const Services = lazy(() => import('@/pages/Services'));
 const DoctorTools = lazy(() => import('@/pages/DoctorTools'));
 const TreatmentTable = lazy(() => import('@/pages/TreatmentTable'));
 const TabletChecklistPage = lazy(() => import('@/pages/TabletChecklistPage'));
+const Notices = lazy(() => import('@/pages/Notices'));
+const ClinicCalendar = lazy(() => import('@/pages/ClinicCalendar'));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
@@ -81,6 +83,8 @@ function App() {
                 <Route path="services" element={<RoleGuard roles={['admin', 'manager']}><Services /></RoleGuard>} />
                 <Route path="doctor-tools" element={<RoleGuard roles={['admin', 'manager']}><DoctorTools /></RoleGuard>} />
                 <Route path="treatment-table" element={<TreatmentTable />} />
+                <Route path="notices" element={<Notices />} />
+                <Route path="calendar" element={<ClinicCalendar />} />
               </Route>
 
               <Route path="/" element={<Navigate to="/admin" replace />} />

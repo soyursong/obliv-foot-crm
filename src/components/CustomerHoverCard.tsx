@@ -9,6 +9,7 @@ import { useCallback, useRef, useState } from 'react';
 import { Clock, FileText, Phone, Stethoscope } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/lib/supabase';
+import { formatPhone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { CheckIn } from '@/lib/types';
 
@@ -187,7 +188,7 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, onContext
           {checkIn.customer_phone ? (
             <div className="flex items-center gap-1.5 text-gray-600">
               <Phone className="h-3.5 w-3.5 shrink-0 text-teal-500" />
-              <span className="tabular-nums">{checkIn.customer_phone}</span>
+              <span className="tabular-nums">{formatPhone(checkIn.customer_phone)}</span>
             </div>
           ) : (
             <div className="flex items-center gap-1.5 text-gray-400">

@@ -1,5 +1,37 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-11 17:35 — dev-foot | simulation-pass | T-20260511-foot-SELFCHECKIN-CRM-SYNC — [P0] 3경로 CRM 자동연동 시뮬레이션 완료
+
+### 시뮬레이션 결과 (3경로 전부 PASS)
+- ✅ **경로1: 초진 셀프접수** → anon INSERT consult_waiting 성공 → 대시보드 오늘 날짜 쿼리로 정상 조회 확인
+- ✅ **경로2: 재진 셀프접수** → anon INSERT treatment_waiting 성공 → 대시보드 정상 조회 확인
+- ✅ **경로3: 예약없이 방문(walk-in)** → anon INSERT consult_waiting(notes.walk_in=true) 성공 → 대시보드 정상 조회 확인
+- ✅ **DB 마이그레이션**: 20260510000010_anon_rls_consult_waiting + 20260506000010_selfcheckin_merge_trigger 둘 다 이미 적용
+- ✅ **코드 배포**: c9ee9ee origin/main 완료, Vercel 자동배포
+- ✅ **대시보드**: fetchSelfCheckIns 쿼리 consult_waiting/treatment_waiting 포함 (취소/완료 제외 모든 활성 상태)
+
+---
+
+## 2026-05-11 17:20 — dev-foot | deploy-ready | T-20260511-foot-SELFCHECKIN-CRM-SYNC — [P0] 셀프접수 CRM 미표시 수정
+
+**커밋: c9ee9ee → origin/main push 완료 → Vercel 자동배포 예정**
+
+### 진단 결과
+- ✅ 마이그레이션 20260510000010_anon_rls_consult_waiting: 이미 적용 (anon INSERT consult_waiting 테스트 통과)
+- ✅ 마이그레이션 20260506000010_selfcheckin_merge_trigger: 이미 적용 (SECURITY DEFINER 트리거 동작 확인)
+
+### 실제 버그 (Root Cause)
+fetchSelfCheckIns가 `status='registered'`만 필터링 → DASH-SLOT-REWORK-P0 이후 셀프접수가 consult_waiting/treatment_waiting으로 직행하므로 타임라인 슬롯 매칭 실패
+
+### 수정 내용
+- ✅ `fetchSelfCheckIns`: `.eq('status', 'registered')` → `.not('status', 'in', '("cancelled","done")')`
+- ✅ 초진 셀프접수(consult_waiting) → 타임라인 슬롯 2번 박스 정상 매칭
+- ✅ 재진 셀프접수(treatment_waiting) → 타임라인 슬롯 2번 박스 정상 매칭
+- ✅ 예약없이 방문(walk-in, reservation_id=null) → checked_in_at 기준 슬롯 워크인 박스 표시
+- ✅ tsc --noEmit PASS
+
+---
+
 ## 2026-05-11 — dev-foot | deploy-ready | T-20260510-foot-C21-SAVE-UNIFY — 고객정보 패널 저장 버튼 통일
 
 **커밋: e936f24 → origin/main push 완료 → Vercel 자동배포 예정**
