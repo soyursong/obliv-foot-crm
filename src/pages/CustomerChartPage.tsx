@@ -492,6 +492,9 @@ export default function CustomerChartPage() {
   const [savingEditResv, setSavingEditResv] = useState(false);
   // T-20260510-foot-C21-SAVE-UNIFY: 고객정보 패널 통합 저장 로딩 상태
   const [savingInfoPanel, setSavingInfoPanel] = useState(false);
+  // T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: isDirty 패턴 + 자동저장 인디케이터
+  const [isDirty, setIsDirty] = useState(false);
+  const [showAutoSaved, setShowAutoSaved] = useState(false);
 
   // C23-PHRASE-LINK: 마운트 시 [일반] 카테고리 상용구 한 번 조회
   useEffect(() => {
@@ -722,6 +725,7 @@ export default function CustomerChartPage() {
   const handleRrnInput = (val: string) => {
     const digits = val.replace(/\D/g, '').slice(0, 13);
     setRrnText(digits.length > 6 ? digits.slice(0, 6) + '-' + digits.slice(6) : digits);
+    setIsDirty(true);
   };
 
   // C21-RESIDENT-ID: 주민번호 암호화 저장
@@ -738,7 +742,8 @@ export default function CustomerChartPage() {
   };
 
   // T-20260510-foot-C21-SAVE-UNIFY: 고객정보 패널 통합 저장
-  const handleInfoPanelSave = async () => {
+  // T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: isAutoSave=true 시 토스트 생략 (인디케이터만)
+  const handleInfoPanelSave = async (isAutoSave = false) => {
     if (!customer) return;
     setSavingInfoPanel(true);
     try {
@@ -767,16 +772,32 @@ export default function CustomerChartPage() {
         if (error) { toast.error(`저장 실패: ${error.message}`); return; }
         setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
       }
-      // 3) 모든 편집 상태 닫기
+      // 3) 모든 편집 상태 닫기 + isDirty 리셋
       setEditingEmail(false);
       setEditingPassport(false);
       setEditingAddress(false);
       setEditingCustomerMemo(false);
-      toast.success('고객정보 저장 완료');
+      setIsDirty(false);
+      if (!isAutoSave) toast.success('고객정보 저장 완료');
     } finally {
       setSavingInfoPanel(false);
     }
   };
+
+  // T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: stale closure 방지용 ref (항상 최신 함수 참조)
+  const handleInfoPanelSaveRef = useRef(handleInfoPanelSave);
+  handleInfoPanelSaveRef.current = handleInfoPanelSave;
+
+  // T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: isDirty=true 시 60초 자동저장 (현장 확정: 30→60초, 김주연 5/11 16:14)
+  useEffect(() => {
+    if (!isDirty) return;
+    const id = setInterval(async () => {
+      await handleInfoPanelSaveRef.current(true);
+      setShowAutoSaved(true);
+      setTimeout(() => setShowAutoSaved(false), 2500);
+    }, 60000);
+    return () => clearInterval(id);
+  }, [isDirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // C2-PKG-TICKET-TABLE: 회차 차감 저장 (치료사 드롭다운)
   const saveUseSession = async () => {
@@ -871,6 +892,7 @@ export default function CustomerChartPage() {
   // T-20260510-foot-CONSENT-SINGLE-SELECT: 개인정보동의 단일선택 — 선택 시 나머지 두 개 false
   const selectConsentField = async (selected: 'privacy_consent' | 'sms_reject' | 'marketing_reject') => {
     if (!customer) return;
+    setIsDirty(true);
     const patch = {
       privacy_consent: selected === 'privacy_consent',
       sms_reject: selected === 'sms_reject',
@@ -1197,11 +1219,15 @@ export default function CustomerChartPage() {
             <Button
               size="sm"
               className="ml-auto h-6 text-[11px] px-3 bg-teal-600 hover:bg-teal-700"
-              onClick={handleInfoPanelSave}
-              disabled={savingInfoPanel || !(editingRrn || editingEmail || editingPassport || editingAddress || editingCustomerMemo)}
+              onClick={() => handleInfoPanelSave(false)}
+              disabled={savingInfoPanel || !isDirty}
             >
               {savingInfoPanel ? '저장 중…' : '저장'}
             </Button>
+            {/* T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: 자동저장 인디케이터 */}
+            {showAutoSaved && (
+              <span className="text-[10px] text-teal-600 ml-1 shrink-0 animate-pulse">자동저장됨 ✓</span>
+            )}
           </div>
 
           {/* 스크롤 영역 */}
@@ -1261,7 +1287,7 @@ export default function CustomerChartPage() {
                         </span>
                         <button
                           type="button"
-                          onClick={() => setEditingRrn(true)}
+                          onClick={() => { setEditingRrn(true); setIsDirty(true); }}
                           className="text-[10px] px-1.5 py-0.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-50"
                         >
                           {rrnMasked ? '수정' : '입력'}
@@ -1341,6 +1367,7 @@ export default function CustomerChartPage() {
                           : (!customer.is_foreign && customer.gender === val);
                         const onClick = () => {
                           if (savingField) return;
+                          setIsDirty(true);
                           if (val === 'foreign') {
                             saveCustomerField({ is_foreign: true }, '성별: 외국인');
                           } else {
@@ -1419,7 +1446,7 @@ export default function CustomerChartPage() {
                         <input
                           type="email"
                           value={emailText}
-                          onChange={(e) => setEmailText(e.target.value)}
+                          onChange={(e) => { setEmailText(e.target.value); setIsDirty(true); }}
                           autoFocus
                           placeholder="example@email.com"
                           className="h-5 flex-1 text-[11px] rounded border border-teal-400 px-1.5 focus:outline-none focus:border-teal-600"
@@ -1433,7 +1460,7 @@ export default function CustomerChartPage() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => setEditingEmail(true)}
+                        onClick={() => { setEditingEmail(true); setIsDirty(true); }}
                         className="text-left w-full hover:bg-blue-50/50 rounded px-0.5 transition"
                         title="클릭하여 편집"
                       >
@@ -1454,7 +1481,7 @@ export default function CustomerChartPage() {
                         <input
                           type="text"
                           value={passportText}
-                          onChange={(e) => setPassportText(e.target.value.toUpperCase())}
+                          onChange={(e) => { setPassportText(e.target.value.toUpperCase()); setIsDirty(true); }}
                           autoFocus
                           placeholder="예: M12345678"
                           className="h-5 flex-1 text-[11px] font-mono rounded border border-teal-400 px-1.5 focus:outline-none focus:border-teal-600 uppercase"
@@ -1468,7 +1495,7 @@ export default function CustomerChartPage() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => setEditingPassport(true)}
+                        onClick={() => { setEditingPassport(true); setIsDirty(true); }}
                         className="text-left w-full hover:bg-blue-50/50 rounded px-0.5 transition"
                         title="클릭하여 편집"
                       >
@@ -1488,6 +1515,7 @@ export default function CustomerChartPage() {
                       value={customer.customer_grade ?? '일반'}
                       onChange={(e) => {
                         const val = e.target.value as Customer['customer_grade'];
+                        setIsDirty(true);
                         saveCustomerField({ customer_grade: val }, '고객등급 저장됨');
                       }}
                       disabled={savingField}
@@ -1522,7 +1550,7 @@ export default function CustomerChartPage() {
                         <input
                           type="text"
                           value={postalCodeText}
-                          onChange={(e) => setPostalCodeText(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                          onChange={(e) => { setPostalCodeText(e.target.value.replace(/\D/g, '').slice(0, 5)); setIsDirty(true); }}
                           placeholder="12345"
                           maxLength={5}
                           inputMode="numeric"
@@ -1541,7 +1569,7 @@ export default function CustomerChartPage() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => { setEditingAddress(true); setPostalCodeText(customer.postal_code ?? ''); setAddressText(customer.address ?? ''); }}
+                        onClick={() => { setEditingAddress(true); setPostalCodeText(customer.postal_code ?? ''); setAddressText(customer.address ?? ''); setIsDirty(true); }}
                         className="flex items-center gap-1.5 hover:bg-blue-50/50 rounded px-0.5 transition"
                         title="클릭하여 우편번호·주소 편집"
                       >
@@ -1566,7 +1594,7 @@ export default function CustomerChartPage() {
                         <div className="flex items-center gap-1">
                           <Input
                             value={addressText}
-                            onChange={(e) => setAddressText(e.target.value)}
+                            onChange={(e) => { setAddressText(e.target.value); setIsDirty(true); }}
                             placeholder="기본주소 (우편번호 검색 시 자동입력)"
                             className="h-6 text-xs flex-1"
                             autoFocus
@@ -1579,7 +1607,7 @@ export default function CustomerChartPage() {
                         <div className="flex items-center gap-1">
                           <Input
                             value={addressDetailText}
-                            onChange={(e) => setAddressDetailText(e.target.value)}
+                            onChange={(e) => { setAddressDetailText(e.target.value); setIsDirty(true); }}
                             placeholder="상세주소 (동·호수·건물명 등)"
                             className="h-6 text-xs flex-1"
                             onKeyDown={(e) => {
@@ -1593,7 +1621,7 @@ export default function CustomerChartPage() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => { setEditingAddress(true); setAddressText(customer.address ?? ''); setAddressDetailText(customer.address_detail ?? ''); setPostalCodeText(customer.postal_code ?? ''); }}
+                        onClick={() => { setEditingAddress(true); setAddressText(customer.address ?? ''); setAddressDetailText(customer.address_detail ?? ''); setPostalCodeText(customer.postal_code ?? ''); setIsDirty(true); }}
                         className="text-left w-full hover:bg-blue-50/50 rounded px-0.5 transition"
                         title="클릭하여 주소 편집"
                       >
@@ -1617,6 +1645,7 @@ export default function CustomerChartPage() {
                     <select
                       value={customer.assigned_staff_id ?? ''}
                       onChange={(e) => {
+                        setIsDirty(true);
                         saveCustomerField({ assigned_staff_id: e.target.value || null }, '담당자 저장됨');
                       }}
                       disabled={savingField}
@@ -1642,6 +1671,7 @@ export default function CustomerChartPage() {
                       value={customer.visit_route ?? ''}
                       onChange={(e) => {
                         const val = e.target.value as Customer['visit_route'];
+                        setIsDirty(true);
                         saveCustomerField({ visit_route: val || null }, '방문경로 저장됨');
                       }}
                       disabled={savingField}
@@ -1665,7 +1695,7 @@ export default function CustomerChartPage() {
                         <Textarea
                           ref={customerMemoRef}
                           value={customerMemoText}
-                          onChange={(e) => setCustomerMemoText(e.target.value)}
+                          onChange={(e) => { setCustomerMemoText(e.target.value); setIsDirty(true); }}
                           rows={3}
                           className="text-xs"
                           autoFocus
@@ -1687,7 +1717,7 @@ export default function CustomerChartPage() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => { setEditingCustomerMemo(true); setCustomerMemoText(customer.customer_memo ?? customer.memo ?? ''); }}
+                          onClick={() => { setEditingCustomerMemo(true); setCustomerMemoText(customer.customer_memo ?? customer.memo ?? ''); setIsDirty(true); }}
                           className="shrink-0 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-teal-700"
                           title="고객메모 편집"
                         >
