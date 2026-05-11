@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Download } from 'lucide-react';
+import { Plus, Pencil, Trash2, Download, Eye, EyeOff } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -45,6 +45,8 @@ export default function Services() {
   const [loading, setLoading] = useState(true);
   const [openCreate, setOpenCreate] = useState(false);
   const [editTarget, setEditTarget] = useState<Service | null>(null);
+  // T-20260511-foot-SVCMENU-HARDDELETE: 비활성 항목 표시 토글 (기본 숨김)
+  const [showInactive, setShowInactive] = useState(false);
 
   // 엑셀 내보내기 (T-20260507-foot-SERVICE-CATALOG-SEED Phase 2)
   const exportExcel = () => {
@@ -96,11 +98,58 @@ export default function Services() {
     fetchServices();
   };
 
+  // T-20260511-foot-SVCMENU-HARDDELETE: 비활성 항목 완전 삭제
+  // 참조 체크 → 참조 없으면 hard delete, 있으면 안내
+  const hardDelete = async (svc: Service) => {
+    if (!isAdmin || svc.active) return;
+
+    // 3테이블 참조 체크 (service_charges, check_in_services, reservations)
+    const [chargesRes, cisRes, resvRes] = await Promise.all([
+      supabase.from('service_charges').select('id', { count: 'exact', head: true }).eq('service_id', svc.id),
+      supabase.from('check_in_services').select('id', { count: 'exact', head: true }).eq('service_id', svc.id),
+      supabase.from('reservations').select('id', { count: 'exact', head: true }).eq('service_id', svc.id),
+    ]);
+
+    const refCount = (chargesRes.count ?? 0) + (cisRes.count ?? 0) + (resvRes.count ?? 0);
+
+    if (refCount > 0) {
+      toast.error(
+        `"${svc.name}"은 과거 기록에서 참조 중입니다 (${refCount}건). 완전 삭제 불가 — 비활성 상태로 유지됩니다.`,
+        { duration: 5000 },
+      );
+      return;
+    }
+
+    if (!confirm(`"${svc.name}" 항목을 완전 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
+
+    const { error } = await supabase
+      .from('services')
+      .delete()
+      .eq('id', svc.id)
+      .eq('active', false);   // 안전 가드: 활성 항목은 절대 삭제 안 됨
+
+    if (error) { toast.error(`완전 삭제 실패: ${error.message}`); return; }
+    toast.success(`"${svc.name}" 완전 삭제됨`);
+    fetchServices();
+  };
+
   return (
     <div className="flex h-full flex-col p-6">
       <div className="mb-4 flex items-center justify-between gap-4">
         <h1 className="text-lg font-bold">서비스 관리</h1>
         <div className="flex items-center gap-2">
+          {/* T-20260511-foot-SVCMENU-HARDDELETE: 비활성 항목 토글 */}
+          {isAdmin && (
+            <Button
+              variant="outline"
+              onClick={() => setShowInactive((v) => !v)}
+              className={cn('gap-1 text-sm', showInactive && 'border-amber-400 bg-amber-50 text-amber-700')}
+              title={showInactive ? '비활성 항목 숨기기' : '비활성 항목 보기'}
+            >
+              {showInactive ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showInactive ? '비활성 숨기기' : '비활성 보기'}
+            </Button>
+          )}
           <Button variant="outline" onClick={exportExcel} className="gap-1 text-sm">
             <Download className="h-4 w-4" /> 엑셀 내보내기
           </Button>
@@ -129,11 +178,17 @@ export default function Services() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((svc) => (
-                <tr key={svc.id} className={cn('border-t', !svc.active && 'opacity-50')}>
+              {/* T-20260511-foot-SVCMENU-HARDDELETE: showInactive 토글에 따라 비활성 항목 필터 */}
+              {rows.filter((svc) => svc.active || showInactive).map((svc) => (
+                <tr key={svc.id} className={cn('border-t', !svc.active && 'opacity-50 bg-muted/30')}>
                   <td className="px-4 py-2 text-xs text-muted-foreground">{svc.category_label ?? svc.category ?? '—'}</td>
                   <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{svc.service_code ?? '—'}</td>
-                  <td className="px-4 py-2 font-medium">{svc.name}</td>
+                  <td className="px-4 py-2 font-medium">
+                    {svc.name}
+                    {!svc.active && (
+                      <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">[비활성]</span>
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-right tabular-nums">{formatAmount(svc.price)}</td>
                   <td className="px-4 py-2 text-xs text-muted-foreground">{VAT_LABEL[svc.vat_type]}</td>
                   {isAdmin && (
@@ -146,20 +201,31 @@ export default function Services() {
                         >
                           <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
                         </button>
-                        <button
-                          onClick={() => softDelete(svc)}
-                          className="rounded p-1.5 hover:bg-red-50 transition"
-                          title="삭제 (비활성 처리)"
-                          disabled={!svc.active}
-                        >
-                          <Trash2 className={cn('h-3.5 w-3.5', svc.active ? 'text-red-500' : 'text-muted-foreground/40')} />
-                        </button>
+                        {svc.active ? (
+                          /* 활성 항목: 기존 soft delete */
+                          <button
+                            onClick={() => softDelete(svc)}
+                            className="rounded p-1.5 hover:bg-red-50 transition"
+                            title="비활성 처리"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                          </button>
+                        ) : (
+                          /* 비활성 항목: hard delete (참조 체크 후) */
+                          <button
+                            onClick={() => hardDelete(svc)}
+                            className="rounded p-1.5 hover:bg-red-100 transition"
+                            title="완전 삭제 (참조 없는 경우만 가능)"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-red-700" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   )}
                 </tr>
               ))}
-              {!loading && rows.length === 0 && (
+              {!loading && rows.filter((svc) => svc.active || showInactive).length === 0 && (
                 <tr>
                   <td colSpan={isAdmin ? 6 : 5} className="px-4 py-10 text-center text-sm text-muted-foreground">
                     등록된 서비스가 없습니다
