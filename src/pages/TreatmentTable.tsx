@@ -367,7 +367,7 @@ export default function TreatmentTable() {
 
   /* ── 렌더 ────────────────────────────────────────────────────── */
   return (
-    <div className="flex flex-col gap-5 p-6">
+    <div className="h-full overflow-auto flex flex-col gap-5 p-6">
       {/* 헤더 */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-lg font-bold flex items-center gap-2">

@@ -337,7 +337,7 @@ export default function DailyHistory() {
   }
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="h-full overflow-auto flex flex-col gap-6 p-6">
       {/* ---- Header: Date picker ---- */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-lg font-bold">일일 이력</h1>

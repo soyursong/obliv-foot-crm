@@ -10,7 +10,7 @@ import { BookOpen, Pill, FileText } from 'lucide-react';
 
 export default function DoctorTools() {
   return (
-    <div className="p-4 md:p-6 space-y-4 max-w-5xl">
+    <div className="h-full overflow-auto p-4 md:p-6 space-y-4 max-w-5xl">
       <div>
         <h1 className="text-lg font-bold">진료 도구 관리</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
