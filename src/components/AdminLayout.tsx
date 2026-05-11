@@ -271,12 +271,12 @@ export default function AdminLayout() {
         </header>
         {/* T-20260509-foot-DASH-SCROLL-FIX: overflow-hidden으로 변경 — 뷰포트 고정 레이아웃.
             각 페이지가 자체 스크롤(overflow-y-auto)을 담당.
-            T-20260510-foot-CALENDAR-NOTICE AC v3: 우측 CalendarNoticePanel 고정 추가. */}
+            T-20260510-foot-CALENDAR-NOTICE AC v4: 좌측 CalendarNoticePanel 고정 (우측→좌측 이동). */}
         <div className="flex flex-1 min-h-0 overflow-hidden">
+          <CalendarNoticePanel />
           <div className="flex-1 min-h-0 overflow-hidden">
             <Outlet />
           </div>
-          <CalendarNoticePanel />
         </div>
       </main>
     </div>

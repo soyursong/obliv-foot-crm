@@ -25,7 +25,8 @@ const DoctorTools = lazy(() => import('@/pages/DoctorTools'));
 const TreatmentTable = lazy(() => import('@/pages/TreatmentTable'));
 const TabletChecklistPage = lazy(() => import('@/pages/TabletChecklistPage'));
 const Notices = lazy(() => import('@/pages/Notices'));
-const ClinicCalendar = lazy(() => import('@/pages/ClinicCalendar'));
+// ClinicCalendar 풀페이지는 T-20260510-foot-CALENDAR-NOTICE AC v3에 따라 우측 사이드바로 대체됨.
+// 직접 URL 접근 시 대시보드로 리다이렉트.
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
@@ -84,7 +85,8 @@ function App() {
                 <Route path="doctor-tools" element={<RoleGuard roles={['admin', 'manager']}><DoctorTools /></RoleGuard>} />
                 <Route path="treatment-table" element={<TreatmentTable />} />
                 <Route path="notices" element={<Notices />} />
-                <Route path="calendar" element={<ClinicCalendar />} />
+                {/* calendar 풀페이지 → 대시보드로 리다이렉트 (사이드바 패널로 대체) */}
+                <Route path="calendar" element={<Navigate to="/admin" replace />} />
               </Route>
 
               <Route path="/" element={<Navigate to="/admin" replace />} />
