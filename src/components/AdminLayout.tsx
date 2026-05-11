@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   CalendarDays,
+  Calendar,
   Users,
   Package,
   UserCog,
@@ -17,9 +18,11 @@ import {
   Stethoscope,
   BookOpen,
   Table2,
+  Bell,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
+import { formatPhone } from '@/lib/format';
 import { useClinic } from '@/hooks/useClinic';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -43,6 +46,8 @@ const NAV_ITEMS: {
   { to: '/admin/services', label: '서비스관리', icon: Stethoscope, roles: ['admin', 'manager'] },
   { to: '/admin/doctor-tools', label: '진료 도구', icon: BookOpen, roles: ['admin', 'manager'] },
   { to: '/admin/treatment-table', label: '치료 테이블', icon: Table2 },
+  { to: '/admin/calendar', label: '캘린더', icon: Calendar },
+  { to: '/admin/notices', label: '공지사항', icon: Bell },
   { to: '/admin/accounts', label: '계정관리', icon: ShieldCheck, roles: ['admin'] },
 ];
 
@@ -254,7 +259,7 @@ export default function AdminLayout() {
                         <span className="flex items-center gap-2 text-xs text-muted-foreground">
                           {c.chart_number && <span className="rounded bg-teal-50 px-1.5 py-0 text-teal-700">{c.chart_number}</span>}
                           {c.birth_date && <span>{c.birth_date}</span>}
-                          <span>{c.phone}</span>
+                          <span>{formatPhone(c.phone)}</span>
                         </span>
                       </button>
                     ))}
