@@ -2615,6 +2615,45 @@ export default function Dashboard() {
     toast.success(`${STATUS_KO[newStatus]}(으)로 변경`);
   };
 
+  /** 치료실 번호 선택 후 status='preconditioning' + treatment_room 동시 업데이트
+   *  — T-20260511-foot-DASH-STAGE-ALL-SLOTS
+   */
+  const handleContextTreatmentStatusChange = async (ci: CheckIn, treatmentRoom: string) => {
+    if (ci.id.startsWith('temp-')) {
+      toast.info('체크인 처리 중입니다. 잠시 후 다시 시도해주세요.');
+      return;
+    }
+    markRecentlyUpdated(ci.id);
+    let prevRow: CheckIn | undefined;
+    setRows((curr) => {
+      prevRow = curr.find((r) => r.id === ci.id);
+      return curr.map((r) =>
+        r.id === ci.id ? { ...r, status: 'preconditioning' as CheckInStatus, treatment_room: treatmentRoom } : r,
+      );
+    });
+    const patch: Record<string, unknown> = { status: 'preconditioning', treatment_room: treatmentRoom };
+    if (!ci.called_at && ci.status === 'registered') {
+      patch.called_at = new Date().toISOString();
+    }
+    const { error } = await supabase.from('check_ins').update(patch).eq('id', ci.id);
+    if (error) {
+      setRows((curr) => curr.map((r) => (r.id === ci.id && prevRow ? prevRow : r)));
+      toast.error(`상태 변경 실패: ${error.message}`);
+      return;
+    }
+    {
+      const now = new Date().toISOString();
+      await supabase.from('status_transitions').insert({
+        check_in_id: ci.id,
+        clinic_id: ci.clinic_id,
+        from_status: ci.status,
+        to_status: 'preconditioning',
+      });
+      setStageStartMap((prev) => new Map(prev).set(ci.id, now));
+    }
+    toast.success(`${treatmentRoom} 입실`);
+  };
+
   /** 레이저실 번호 선택 후 status='laser' + laser_room 동시 업데이트
    *  — T-20260504-foot-TABLET-LASER-ROOM-SELECT
    */
@@ -3690,6 +3729,7 @@ export default function Dashboard() {
       />
 
       {/* T-20260504-foot-TABLET-LASER-ROOM-SELECT: laserRooms + 레이저실 번호 선택 */}
+      {/* T-20260511-foot-DASH-STAGE-ALL-SLOTS: 전체 슬롯 표기 + 치료실 세부 선택 */}
       <StatusContextMenu
         checkIn={contextMenu?.checkIn!}
         position={contextMenu?.pos ?? null}
@@ -3698,6 +3738,8 @@ export default function Dashboard() {
         onFlagChange={handleFlagChange}
         laserRooms={laserRooms.map((r) => r.name)}
         onLaserStatusChange={handleContextLaserStatusChange}
+        treatmentRooms={treatmentRooms.map((r) => r.name)}
+        onTreatmentStatusChange={handleContextTreatmentStatusChange}
       />
 
       <CustomerQuickMenu
