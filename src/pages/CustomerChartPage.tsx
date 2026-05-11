@@ -411,6 +411,8 @@ export default function CustomerChartPage() {
   }[]>([]);
   const [packageSessions, setPackageSessions] = useState<PackageSession[]>([]);
   const [openPackagePurchase, setOpenPackagePurchase] = useState(false);
+  // T-20260511-foot-C2-PKG-MERGE-ADDON: 기존 패키지에 항목 추가
+  const [openPackageAddon, setOpenPackageAddon] = useState(false);
   const [loading, setLoading] = useState(true);
   // T-20260507-foot-CHART2-FULL-LAYOUT: 탭 네비게이션 (전능CRM 이중 탭)
   const [chartTab, setChartTab] = useState<string>('checklist');
@@ -2184,12 +2186,23 @@ export default function CustomerChartPage() {
                 <div className="flex items-center justify-between mb-2">
                   <div className="font-semibold text-muted-foreground">구매 패키지(티켓)</div>
                   {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant') && (
-                    <button
-                      onClick={() => setOpenPackagePurchase(true)}
-                      className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-2 py-1 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
-                    >
-                      <Plus className="h-3 w-3" /> 구입 티켓 추가
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      {/* T-20260511-foot-C2-PKG-MERGE-ADDON: 기존 active 패키지에 항목 합산 */}
+                      {packages.some((p) => p.status === 'active') && (
+                        <button
+                          onClick={() => setOpenPackageAddon(true)}
+                          className="inline-flex items-center gap-1 rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-medium text-emerald-700 hover:bg-emerald-100 transition"
+                        >
+                          <Plus className="h-3 w-3" /> 항목 추가
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setOpenPackagePurchase(true)}
+                        className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-2 py-1 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
+                      >
+                        <Plus className="h-3 w-3" /> 구입 티켓 추가
+                      </button>
+                    </div>
                   )}
                 </div>
                 {packages.length === 0 ? (
@@ -2961,6 +2974,27 @@ export default function CustomerChartPage() {
           }}
         />
       )}
+
+      {/* T-20260511-foot-C2-PKG-MERGE-ADDON: 기존 패키지에 항목 합산 다이얼로그 */}
+      {openPackageAddon && customer && (
+        <PackageAddonDialog
+          open={openPackageAddon}
+          activePackages={packages.filter((p) => p.status === 'active')}
+          onOpenChange={setOpenPackageAddon}
+          onDone={async () => {
+            setOpenPackageAddon(false);
+            const pkgRes = await supabase.from('packages').select('*').eq('customer_id', customer.id).order('contract_date', { ascending: false });
+            const pkgs = (pkgRes.data ?? []) as Package[];
+            const remaining = await Promise.all(
+              pkgs.map(async (p) => {
+                const { data } = await supabase.rpc('get_package_remaining', { p_package_id: p.id });
+                return data as PackageRemaining | null;
+              }),
+            );
+            setPackages(pkgs.map((p, i) => ({ ...p, remaining: remaining[i] })));
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -3504,6 +3538,372 @@ function PackagePurchaseFromTemplateDialog({
             className="h-8 rounded bg-teal-600 px-3 text-xs font-medium text-white hover:bg-teal-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? '저장 중…' : '구입 티켓 생성'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// T-20260511-foot-C2-PKG-MERGE-ADDON: 기존 진행중 패키지에 항목 합산 추가
+// packages row UPDATE (INSERT 아님) + total_sessions/total_amount 합산
+// ============================================================
+function PackageAddonDialog({
+  open,
+  activePackages,
+  onOpenChange,
+  onDone,
+}: {
+  open: boolean;
+  activePackages: PackageWithRemaining[];
+  onOpenChange: (o: boolean) => void;
+  onDone: () => void;
+}) {
+  const [selectedPkgId, setSelectedPkgId] = useState<string | null>(null);
+  // 추가 항목
+  const [heated, setHeated] = useState(0);
+  const [heatedUnitPrice, setHeatedUnitPrice] = useState(0);
+  const [unheated, setUnheated] = useState(0);
+  const [unheatedUnitPrice, setUnheatedUnitPrice] = useState(0);
+  const [podologe, setPodologe] = useState(0);
+  const [podologeUnitPrice, setPodologeUnitPrice] = useState(0);
+  const [iv, setIv] = useState(0);
+  const [ivUnitPrice, setIvUnitPrice] = useState(0);
+  const [ivCompany, setIvCompany] = useState('');
+  const [priceOverride, setPriceOverride] = useState(false);
+  const [manualAddAmount, setManualAddAmount] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+
+  const selectedPkg = activePackages.find((p) => p.id === selectedPkgId) ?? null;
+
+  // 패키지 선택 시 기존 수가 pre-fill
+  const selectPackage = (pkg: PackageWithRemaining) => {
+    setSelectedPkgId(pkg.id);
+    setHeated(0);
+    setHeatedUnitPrice(pkg.heated_unit_price ?? 0);
+    setUnheated(0);
+    setUnheatedUnitPrice(pkg.unheated_unit_price ?? 0);
+    setPodologe(0);
+    setPodologeUnitPrice(pkg.podologe_unit_price ?? 0);
+    setIv(0);
+    setIvUnitPrice(pkg.iv_unit_price ?? 0);
+    setIvCompany(pkg.iv_company ?? '');
+    setPriceOverride(false);
+    setManualAddAmount(0);
+  };
+
+  // 열릴 때 패키지 1개면 자동 선택
+  useEffect(() => {
+    if (open && activePackages.length === 1) {
+      selectPackage(activePackages[0]);
+    }
+    if (!open) {
+      setSelectedPkgId(null);
+      setHeated(0); setHeatedUnitPrice(0);
+      setUnheated(0); setUnheatedUnitPrice(0);
+      setPodologe(0); setPodologeUnitPrice(0);
+      setIv(0); setIvUnitPrice(0); setIvCompany('');
+      setPriceOverride(false); setManualAddAmount(0);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const computedAddAmount =
+    heated * heatedUnitPrice +
+    unheated * unheatedUnitPrice +
+    podologe * podologeUnitPrice +
+    iv * ivUnitPrice;
+  const finalAddAmount = priceOverride ? manualAddAmount : computedAddAmount;
+  const totalAdded = heated + unheated + podologe + iv;
+
+  // 자동합산 변경 시 동기화
+  useEffect(() => {
+    if (!priceOverride) setManualAddAmount(computedAddAmount);
+  }, [computedAddAmount, priceOverride]);
+
+  const submit = async () => {
+    if (!selectedPkg) { toast.error('패키지를 선택하세요'); return; }
+    if (totalAdded === 0) { toast.error('추가할 항목을 1회 이상 입력하세요'); return; }
+    setSubmitting(true);
+
+    // packages row UPDATE: 기존 값에 합산
+    const updates: Record<string, number | string | null> = {
+      total_sessions: selectedPkg.total_sessions + totalAdded,
+      total_amount: selectedPkg.total_amount + finalAddAmount,
+    };
+    if (heated > 0) {
+      updates.heated_sessions = (selectedPkg.heated_sessions ?? 0) + heated;
+      if (heatedUnitPrice > 0) updates.heated_unit_price = heatedUnitPrice;
+    }
+    if (unheated > 0) {
+      updates.unheated_sessions = (selectedPkg.unheated_sessions ?? 0) + unheated;
+      if (unheatedUnitPrice > 0) updates.unheated_unit_price = unheatedUnitPrice;
+    }
+    if (podologe > 0) {
+      updates.podologe_sessions = (selectedPkg.podologe_sessions ?? 0) + podologe;
+      if (podologeUnitPrice > 0) updates.podologe_unit_price = podologeUnitPrice;
+    }
+    if (iv > 0) {
+      updates.iv_sessions = (selectedPkg.iv_sessions ?? 0) + iv;
+      if (ivUnitPrice > 0) updates.iv_unit_price = ivUnitPrice;
+      if (ivCompany.trim()) updates.iv_company = ivCompany.trim();
+    }
+
+    const { error } = await supabase.from('packages').update(updates).eq('id', selectedPkg.id);
+    setSubmitting(false);
+    if (error) { toast.error(`합산 실패: ${error.message}`); return; }
+    toast.success(`「${selectedPkg.package_name}」에 항목 추가 완료 (+${totalAdded}회 / +${formatAmount(finalAddAmount)})`);
+    onDone();
+  };
+
+  const cn2 = (...classes: string[]) => classes.filter(Boolean).join(' ');
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-base font-bold">기존 패키지에 항목 추가</h2>
+          <button onClick={() => onOpenChange(false)} className="rounded p-1 hover:bg-muted transition">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground mb-4">
+          신규 패키지 생성이 아닌, 기존 진행중 패키지에 회차를 합산합니다.
+        </p>
+
+        <div className="space-y-4 text-sm">
+          {/* 패키지 선택 */}
+          <div className="space-y-1.5">
+            <div className="text-xs font-medium text-muted-foreground">합산할 패키지 선택 *</div>
+            <div className="space-y-1.5">
+              {activePackages.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => selectPackage(p)}
+                  className={cn2(
+                    'w-full text-left rounded-lg border px-3 py-2 text-xs transition',
+                    selectedPkgId === p.id
+                      ? 'border-emerald-500 bg-emerald-50'
+                      : 'border-gray-200 hover:bg-gray-50',
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-teal-800">{p.package_name}</span>
+                    <span className="text-muted-foreground">{formatAmount(p.total_amount)}</span>
+                  </div>
+                  <div className="text-muted-foreground mt-0.5">
+                    총 {p.total_sessions}회
+                    {(p.heated_sessions ?? 0) > 0 && ` · 가열 ${p.heated_sessions}회`}
+                    {(p.unheated_sessions ?? 0) > 0 && ` · 비가열 ${p.unheated_sessions}회`}
+                    {(p.iv_sessions ?? 0) > 0 && ` · 수액${p.iv_company ? `(${p.iv_company})` : ''} ${p.iv_sessions}회`}
+                    {(p.podologe_sessions ?? 0) > 0 && ` · 포돌로게 ${p.podologe_sessions}회`}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 추가 항목 입력 (패키지 선택 후 표시) */}
+          {selectedPkg && (
+            <>
+              <div className="border-t pt-4">
+                <div className="text-xs font-semibold text-muted-foreground mb-3">
+                  추가할 항목 입력 (0이면 생략)
+                </div>
+
+                {/* 가열 레이저 */}
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-2 mb-2">
+                  <div className="text-xs font-semibold text-muted-foreground">가열 레이저</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <div className="text-[10px] text-muted-foreground">추가 회수</div>
+                      <Input type="number" min={0} value={heated}
+                        onChange={(e) => setHeated(Math.max(0, Number(e.target.value) || 0))} />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-[10px] text-muted-foreground">
+                        수가 (회당)
+                        {(selectedPkg.heated_sessions ?? 0) > 0 && <span className="ml-1 text-teal-600">기존: {formatAmount(selectedPkg.heated_unit_price ?? 0)}</span>}
+                      </div>
+                      <Input value={formatAmount(heatedUnitPrice)}
+                        onChange={(e) => setHeatedUnitPrice(parseAmount(e.target.value))}
+                        inputMode="numeric" />
+                    </div>
+                  </div>
+                  {heated > 0 && (
+                    <div className="text-xs text-muted-foreground text-right">
+                      소계: {formatAmount(heated * heatedUnitPrice)}
+                      <span className="ml-2 text-teal-600">
+                        기존 {selectedPkg.heated_sessions ?? 0}회 → {(selectedPkg.heated_sessions ?? 0) + heated}회
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 비가열 레이저 */}
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-2 mb-2">
+                  <div className="text-xs font-semibold text-muted-foreground">비가열 레이저</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <div className="text-[10px] text-muted-foreground">추가 회수</div>
+                      <Input type="number" min={0} value={unheated}
+                        onChange={(e) => setUnheated(Math.max(0, Number(e.target.value) || 0))} />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-[10px] text-muted-foreground">
+                        수가 (회당)
+                        {(selectedPkg.unheated_sessions ?? 0) > 0 && <span className="ml-1 text-teal-600">기존: {formatAmount(selectedPkg.unheated_unit_price ?? 0)}</span>}
+                      </div>
+                      <Input value={formatAmount(unheatedUnitPrice)}
+                        onChange={(e) => setUnheatedUnitPrice(parseAmount(e.target.value))}
+                        inputMode="numeric" />
+                    </div>
+                  </div>
+                  {unheated > 0 && (
+                    <div className="text-xs text-muted-foreground text-right">
+                      소계: {formatAmount(unheated * unheatedUnitPrice)}
+                      <span className="ml-2 text-teal-600">
+                        기존 {selectedPkg.unheated_sessions ?? 0}회 → {(selectedPkg.unheated_sessions ?? 0) + unheated}회
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 수액 */}
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-2 mb-2">
+                  <div className="text-xs font-semibold text-muted-foreground">수액</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="space-y-1">
+                      <div className="text-[10px] text-muted-foreground">수액명</div>
+                      <select value={ivCompany} onChange={(e) => setIvCompany(e.target.value)}
+                        className="w-full h-9 rounded-md border border-input px-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-teal-500">
+                        <option value="">— 선택 —</option>
+                        <option value="재생">재생</option>
+                        <option value="항염">항염</option>
+                        <option value="글로우">글로우</option>
+                        <option value="성장">성장</option>
+                        <option value="태반">태반</option>
+                        <option value="알파">알파</option>
+                        <option value="비타민D">비타민D</option>
+                        <option value="비타민C">비타민C</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-[10px] text-muted-foreground">추가 회수</div>
+                      <Input type="number" min={0} value={iv}
+                        onChange={(e) => setIv(Math.max(0, Number(e.target.value) || 0))} />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-[10px] text-muted-foreground">
+                        수가 (회당)
+                        {(selectedPkg.iv_sessions ?? 0) > 0 && <span className="ml-1 text-teal-600">기존: {formatAmount(selectedPkg.iv_unit_price ?? 0)}</span>}
+                      </div>
+                      <Input value={formatAmount(ivUnitPrice)}
+                        onChange={(e) => setIvUnitPrice(parseAmount(e.target.value))}
+                        inputMode="numeric" />
+                    </div>
+                  </div>
+                  {iv > 0 && (
+                    <div className="text-xs text-muted-foreground text-right">
+                      소계: {formatAmount(iv * ivUnitPrice)}
+                      <span className="ml-2 text-teal-600">
+                        기존 {selectedPkg.iv_sessions ?? 0}회 → {(selectedPkg.iv_sessions ?? 0) + iv}회
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 포돌로게 */}
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-2 mb-4">
+                  <div className="text-xs font-semibold text-muted-foreground">포돌로게</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <div className="text-[10px] text-muted-foreground">추가 회수</div>
+                      <Input type="number" min={0} value={podologe}
+                        onChange={(e) => setPodologe(Math.max(0, Number(e.target.value) || 0))} />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-[10px] text-muted-foreground">
+                        수가 (회당)
+                        {(selectedPkg.podologe_sessions ?? 0) > 0 && <span className="ml-1 text-teal-600">기존: {formatAmount(selectedPkg.podologe_unit_price ?? 0)}</span>}
+                      </div>
+                      <Input value={formatAmount(podologeUnitPrice)}
+                        onChange={(e) => setPodologeUnitPrice(parseAmount(e.target.value))}
+                        inputMode="numeric" />
+                    </div>
+                  </div>
+                  {podologe > 0 && (
+                    <div className="text-xs text-muted-foreground text-right">
+                      소계: {formatAmount(podologe * podologeUnitPrice)}
+                      <span className="ml-2 text-teal-600">
+                        기존 {selectedPkg.podologe_sessions ?? 0}회 → {(selectedPkg.podologe_sessions ?? 0) + podologe}회
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 합산 금액 요약 */}
+                {totalAdded > 0 && (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-semibold text-emerald-800">추가 금액</div>
+                      <button
+                        onClick={() => { setPriceOverride(!priceOverride); if (!priceOverride) setManualAddAmount(computedAddAmount); }}
+                        className={cn2('text-xs rounded border px-2 py-0.5',
+                          priceOverride ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-input hover:bg-muted')}
+                      >
+                        {priceOverride ? '✓ 수기수정' : '수기수정'}
+                      </button>
+                    </div>
+                    {priceOverride ? (
+                      <Input
+                        value={formatAmount(manualAddAmount)}
+                        onChange={(e) => setManualAddAmount(parseAmount(e.target.value))}
+                        inputMode="numeric"
+                        className="text-lg font-bold"
+                      />
+                    ) : (
+                      <div className="text-xl font-bold text-emerald-700">
+                        +{formatAmount(computedAddAmount)}
+                      </div>
+                    )}
+                    <div className="text-xs text-muted-foreground border-t border-emerald-100 pt-2">
+                      <span>기존 총금액: {formatAmount(selectedPkg.total_amount)}</span>
+                      <span className="mx-2">→</span>
+                      <span className="font-semibold text-emerald-700">
+                        합산 후: {formatAmount(selectedPkg.total_amount + finalAddAmount)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      <span>기존 총회차: {selectedPkg.total_sessions}회</span>
+                      <span className="mx-2">→</span>
+                      <span className="font-semibold text-emerald-700">
+                        합산 후: {selectedPkg.total_sessions + totalAdded}회
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 mt-6">
+          <button
+            onClick={() => onOpenChange(false)}
+            className="h-8 rounded border border-gray-200 px-3 text-xs font-medium text-gray-600 hover:bg-gray-50 transition"
+          >
+            취소
+          </button>
+          <button
+            disabled={submitting || !selectedPkg || totalAdded === 0}
+            onClick={submit}
+            className="h-8 rounded bg-emerald-600 px-4 text-xs font-medium text-white hover:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitting ? '저장 중…' : `항목 합산 (+${totalAdded}회)`}
           </button>
         </div>
       </div>
