@@ -21,7 +21,6 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Separator } from '@/components/ui/separator';
 import {
   Dialog,
   DialogContent,
@@ -29,17 +28,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
+import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
-import { formatAmount } from '@/lib/format';
+import { formatAmount, formatPhone } from '@/lib/format';
 import type { Customer, LeadSource } from '@/lib/types';
 
 interface CustomerStats {
@@ -82,8 +76,8 @@ export default function Customers() {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [openCreate, setOpenCreate] = useState(false);
   // T-20260510-foot-CUSTMGMT-CHART-PATTERN: 1번차트 우측 패널
+  // T-20260511-foot-CUSTMGMT-DETAIL-SHEET: CheckInDetailSheet customerMode로 교체
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [selectedCustomerStats, setSelectedCustomerStats] = useState<CustomerStats | null>(null);
   // 우클릭 컨텍스트 메뉴
   const [ctxMenu, setCtxMenu] = useState<{ customer: Customer; x: number; y: number } | null>(null);
   const [statsMap, setStatsMap] = useState<Map<string, CustomerStats>>(new Map());
@@ -200,10 +194,10 @@ export default function Customers() {
   }, [clinic, location.state]);
 
   // T-20260510-foot-CUSTMGMT-CHART-PATTERN: 1번차트 패널 열기
+  // T-20260511-foot-CUSTMGMT-DETAIL-SHEET: CheckInDetailSheet customerMode 사용 (stats 불필요)
   const handleRowClick = useCallback((c: Customer) => {
     setSelectedCustomer(c);
-    setSelectedCustomerStats(statsMap.get(c.id) ?? null);
-  }, [statsMap]);
+  }, []);
 
   // 우클릭 → 컨텍스트 메뉴
   const handleRowContextMenu = useCallback((e: React.MouseEvent, c: Customer) => {
@@ -290,7 +284,7 @@ export default function Customers() {
                       {stats?.has_package && <Badge variant="teal" className="text-[10px] px-1 py-0">PKG</Badge>}
                     </span>
                   </td>
-                  <td className="px-4 py-2 text-muted-foreground">{c.phone}</td>
+                  <td className="px-4 py-2 text-muted-foreground">{formatPhone(c.phone)}</td>
                   <td className="px-4 py-2 text-muted-foreground tabular-nums">{c.birth_date ?? '-'}</td>
                   <td className="px-4 py-2 text-muted-foreground">{c.chart_number ?? '-'}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{stats?.visit_count ?? 0}</td>
@@ -413,138 +407,24 @@ export default function Customers() {
         }}
       />
 
-      {/* T-20260510-foot-CUSTMGMT-CHART-PATTERN: 1번차트 우측 패널 */}
-      <Sheet open={!!selectedCustomer} onOpenChange={(o) => { if (!o) setSelectedCustomer(null); }}>
-        <SheetContent side="right" className="w-[380px] overflow-y-auto p-0">
-          {selectedCustomer && (
-            <>
-              <SheetHeader className="sticky top-0 z-10 bg-white border-b px-5 py-4">
-                <div className="flex items-center justify-between">
-                  <SheetTitle className="text-base font-bold">
-                    {selectedCustomer.name}
-                    {selectedCustomer.gender && (
-                      <span className="ml-2 text-xs font-normal text-muted-foreground">
-                        {selectedCustomer.gender === 'M' ? '남' : '여'}
-                      </span>
-                    )}
-                  </SheetTitle>
-                  <Button
-                    size="sm"
-                    className="gap-1 h-8 text-xs bg-teal-600 hover:bg-teal-700"
-                    onClick={() => openChart(selectedCustomer.id)}
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    고객차트(2번)
-                  </Button>
-                </div>
-              </SheetHeader>
-
-              <div className="px-5 py-4 space-y-4">
-                {/* 기본 정보 */}
-                <section>
-                  <p className="text-xs font-semibold text-teal-700 mb-2">기본 정보</p>
-                  <div className="space-y-1.5 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">전화번호</span>
-                      <span className="font-medium">{selectedCustomer.phone}</span>
-                    </div>
-                    {selectedCustomer.birth_date && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">생년월일</span>
-                        <span>{selectedCustomer.birth_date}</span>
-                      </div>
-                    )}
-                    {selectedCustomer.chart_number && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">차트번호</span>
-                        <span>{selectedCustomer.chart_number}</span>
-                      </div>
-                    )}
-                    {selectedCustomer.customer_grade && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">고객등급</span>
-                        <Badge variant="outline" className="text-[10px] px-1.5">
-                          {selectedCustomer.customer_grade}
-                        </Badge>
-                      </div>
-                    )}
-                    {selectedCustomer.lead_source && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">내원경로</span>
-                        <span>{selectedCustomer.lead_source}</span>
-                      </div>
-                    )}
-                  </div>
-                </section>
-
-                <Separator />
-
-                {/* 방문 통계 */}
-                <section>
-                  <p className="text-xs font-semibold text-teal-700 mb-2">방문 통계</p>
-                  {selectedCustomerStats ? (
-                    <div className="space-y-1.5 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">총 방문</span>
-                        <span className="font-semibold">{selectedCustomerStats.visit_count}회</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">최종 방문</span>
-                        <span>
-                          {selectedCustomerStats.last_visit
-                            ? format(new Date(selectedCustomerStats.last_visit), 'yyyy-MM-dd')
-                            : '-'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">총 결제액</span>
-                        <span className="font-semibold text-teal-700">
-                          {formatAmount(selectedCustomerStats.total_revenue)}원
-                        </span>
-                      </div>
-                      {selectedCustomerStats.has_package && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">패키지</span>
-                          <Badge variant="teal" className="text-[10px] px-1.5">보유</Badge>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">통계 없음</p>
-                  )}
-                </section>
-
-                {/* 메모 */}
-                {selectedCustomer.customer_memo && (
-                  <>
-                    <Separator />
-                    <section>
-                      <p className="text-xs font-semibold text-teal-700 mb-2">고객 메모</p>
-                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                        {selectedCustomer.customer_memo}
-                      </p>
-                    </section>
-                  </>
-                )}
-
-                {/* 주소 */}
-                {(selectedCustomer.postal_code || selectedCustomer.address) && (
-                  <>
-                    <Separator />
-                    <section>
-                      <p className="text-xs font-semibold text-teal-700 mb-2">주소</p>
-                      <p className="text-sm text-muted-foreground">
-                        {selectedCustomer.postal_code && `[${selectedCustomer.postal_code}] `}
-                        {selectedCustomer.address}
-                      </p>
-                    </section>
-                  </>
-                )}
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+      {/* T-20260511-foot-CUSTMGMT-DETAIL-SHEET: 간편요약 → CheckInDetailSheet 전체 양식 교체 */}
+      <CheckInDetailSheet
+        checkIn={null}
+        customerMode={
+          selectedCustomer && clinic
+            ? {
+                customerId: selectedCustomer.id,
+                customerName: selectedCustomer.name,
+                customerPhone: selectedCustomer.phone,
+                clinicId: clinic.id,
+                chartNumber: selectedCustomer.chart_number,
+              }
+            : undefined
+        }
+        onClose={() => setSelectedCustomer(null)}
+        onUpdated={() => runSearch(query, page)}
+        onPayment={() => {}} // 고객관리에서는 결제 진입 불필요
+      />
 
       {/* T-20260510-foot-CUSTMGMT-CHART-PATTERN: 우클릭 컨텍스트 메뉴 */}
       {ctxMenu && (
@@ -1004,7 +884,7 @@ function CreateCustomerDialog({
                         }}
                       >
                         <span className="font-medium">{s.name}</span>
-                        <span className="ml-2 text-muted-foreground">{s.phone}</span>
+                        <span className="ml-2 text-muted-foreground">{formatPhone(s.phone)}</span>
                       </li>
                     ))}
                   </ul>
