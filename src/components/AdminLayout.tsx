@@ -3,7 +3,6 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   CalendarDays,
-  Calendar,
   Users,
   Package,
   UserCog,
@@ -18,8 +17,8 @@ import {
   Stethoscope,
   BookOpen,
   Table2,
-  Bell,
 } from 'lucide-react';
+import CalendarNoticePanel from '@/components/CalendarNoticePanel';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { formatPhone } from '@/lib/format';
@@ -46,8 +45,6 @@ const NAV_ITEMS: {
   { to: '/admin/services', label: '서비스관리', icon: Stethoscope, roles: ['admin', 'manager'] },
   { to: '/admin/doctor-tools', label: '진료 도구', icon: BookOpen, roles: ['admin', 'manager'] },
   { to: '/admin/treatment-table', label: '치료 테이블', icon: Table2 },
-  { to: '/admin/calendar', label: '캘린더', icon: Calendar },
-  { to: '/admin/notices', label: '공지사항', icon: Bell },
   { to: '/admin/accounts', label: '계정관리', icon: ShieldCheck, roles: ['admin'] },
 ];
 
@@ -273,9 +270,13 @@ export default function AdminLayout() {
           </div>
         </header>
         {/* T-20260509-foot-DASH-SCROLL-FIX: overflow-hidden으로 변경 — 뷰포트 고정 레이아웃.
-            각 페이지가 자체 스크롤(overflow-y-auto)을 담당. */}
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <Outlet />
+            각 페이지가 자체 스크롤(overflow-y-auto)을 담당.
+            T-20260510-foot-CALENDAR-NOTICE AC v3: 우측 CalendarNoticePanel 고정 추가. */}
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <Outlet />
+          </div>
+          <CalendarNoticePanel />
         </div>
       </main>
     </div>
