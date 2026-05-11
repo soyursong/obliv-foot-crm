@@ -1013,6 +1013,50 @@ function PackageCreateDialog({
             )}
           </div>
 
+          {/* T-20260511-foot-PKG-DYNAMIC-TABLE: 기입된 항목만 표시하는 동적 요약 표 */}
+          {(() => {
+            const previewRows = [
+              heated > 0 || heatedUnitPrice > 0
+                ? { label: '가열 레이저', count: heated, unitPrice: heatedUnitPrice, subtotal: heated * heatedUnitPrice }
+                : null,
+              unheated > 0 || unheatedUnitPrice > 0
+                ? { label: '비가열 레이저', count: unheated, unitPrice: unheatedUnitPrice, subtotal: unheated * unheatedUnitPrice }
+                : null,
+              podologe > 0 || podologeUnitPrice > 0
+                ? { label: '포돌로게', count: podologe, unitPrice: podologeUnitPrice, subtotal: podologe * podologeUnitPrice }
+                : null,
+              iv > 0 || ivUnitPrice > 0
+                ? { label: `수액${ivCompany ? ` (${ivCompany})` : ''}`, count: iv, unitPrice: ivUnitPrice, subtotal: iv * ivUnitPrice }
+                : null,
+            ].filter(Boolean) as { label: string; count: number; unitPrice: number; subtotal: number }[];
+            if (previewRows.length === 0) return null;
+            return (
+              <div className="rounded-lg border border-teal-100 bg-teal-50/30 overflow-hidden">
+                <div className="px-3 py-1.5 bg-teal-50 border-b border-teal-100 text-xs font-semibold text-teal-800">구성 항목 요약</div>
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="text-muted-foreground border-b border-teal-100 bg-white/60">
+                      <th className="text-left px-3 py-1 font-medium">시술명</th>
+                      <th className="text-center px-2 py-1 font-medium">회수</th>
+                      <th className="text-right px-2 py-1 font-medium">수가(회당)</th>
+                      <th className="text-right px-3 py-1 font-medium">소계</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((row) => (
+                      <tr key={row.label} className="border-b border-teal-50 last:border-b-0">
+                        <td className="px-3 py-1 font-medium text-teal-900">{row.label}</td>
+                        <td className="px-2 py-1 text-center">{row.count}회</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{row.unitPrice > 0 ? formatAmount(row.unitPrice) : '-'}</td>
+                        <td className="px-3 py-1 text-right tabular-nums font-semibold text-teal-700">{row.subtotal > 0 ? formatAmount(row.subtotal) : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+
           {/* 패키지 총 금액 (자동합산 + 수기수정) */}
           <div className="rounded-lg border border-teal-200 bg-teal-50/40 p-3 space-y-2">
             <div className="flex items-center justify-between">

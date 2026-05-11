@@ -2217,12 +2217,12 @@ export default function CustomerChartPage() {
                       // 시술 타입별 사용횟수 집계
                       const usedByType: Record<string, number> = {};
                       usedSessions.forEach((s) => { usedByType[s.session_type] = (usedByType[s.session_type] || 0) + 1; });
-                      // 기입된 시술만 행으로 생성
+                      // T-20260511-foot-PKG-DYNAMIC-TABLE: 기입된 시술만 행으로 생성 (count > 0 || unit_price > 0)
                       const treatRows = [
-                        (p.unheated_sessions ?? 0) > 0 && { label: '비가열', qty: p.unheated_sessions ?? 0, unitPrice: p.unheated_unit_price ?? 0, used: usedByType['unheated_laser'] ?? 0 },
-                        (p.heated_sessions ?? 0) > 0 && { label: '가열', qty: p.heated_sessions ?? 0, unitPrice: p.heated_unit_price ?? 0, used: usedByType['heated_laser'] ?? 0 },
-                        (p.podologe_sessions ?? 0) > 0 && { label: '포돌로게', qty: p.podologe_sessions ?? 0, unitPrice: p.podologe_unit_price ?? 0, used: usedByType['podologue'] ?? 0 },
-                        (p.iv_sessions ?? 0) > 0 && { label: `수액${p.iv_company ? ` (${p.iv_company})` : ''}`, qty: p.iv_sessions ?? 0, unitPrice: p.iv_unit_price ?? 0, used: usedByType['iv'] ?? 0 },
+                        ((p.unheated_sessions ?? 0) > 0 || (p.unheated_unit_price ?? 0) > 0) && { label: '비가열', qty: p.unheated_sessions ?? 0, unitPrice: p.unheated_unit_price ?? 0, used: usedByType['unheated_laser'] ?? 0 },
+                        ((p.heated_sessions ?? 0) > 0 || (p.heated_unit_price ?? 0) > 0) && { label: '가열', qty: p.heated_sessions ?? 0, unitPrice: p.heated_unit_price ?? 0, used: usedByType['heated_laser'] ?? 0 },
+                        ((p.podologe_sessions ?? 0) > 0 || (p.podologe_unit_price ?? 0) > 0) && { label: '포돌로게', qty: p.podologe_sessions ?? 0, unitPrice: p.podologe_unit_price ?? 0, used: usedByType['podologue'] ?? 0 },
+                        ((p.iv_sessions ?? 0) > 0 || (p.iv_unit_price ?? 0) > 0) && { label: `수액${p.iv_company ? ` (${p.iv_company})` : ''}`, qty: p.iv_sessions ?? 0, unitPrice: p.iv_unit_price ?? 0, used: usedByType['iv'] ?? 0 },
                       ].filter(Boolean) as { label: string; qty: number; unitPrice: number; used: number }[];
                       // 시술내역 리스트 (회차 차감 기록)
                       const TREAT_KO: Record<string, string> = { heated_laser: '가열', unheated_laser: '비가열', podologue: '포돌로게', iv: '수액', preconditioning: '프컨' };
@@ -3406,6 +3406,53 @@ function PackagePurchaseFromTemplateDialog({
               className="w-28 h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
             />
           </div>
+
+          {/* T-20260511-foot-PKG-DYNAMIC-TABLE: 기입된 항목만 표시하는 동적 요약 표 */}
+          {(() => {
+            const previewRows = [
+              heated > 0 || heatedUnitPrice > 0
+                ? { label: `가열 레이저${heatedUpgrade ? ' (+6000샷)' : ''}`, count: heated, unitPrice: heatedUnitPrice, subtotal: heated * heatedUnitPrice + (heatedUpgrade ? 50000 : 0) }
+                : null,
+              unheated > 0 || unheatedUnitPrice > 0
+                ? { label: `비가열 레이저${unheatedUpgrade ? ' (+AF)' : ''}`, count: unheated, unitPrice: unheatedUnitPrice, subtotal: unheated * unheatedUnitPrice + (unheatedUpgrade ? 40000 : 0) }
+                : null,
+              podologe > 0 || podologeUnitPrice > 0
+                ? { label: '포돌로게', count: podologe, unitPrice: podologeUnitPrice, subtotal: podologe * podologeUnitPrice }
+                : null,
+              iv > 0 || ivUnitPrice > 0
+                ? { label: `수액${ivCompany ? ` (${ivCompany})` : ''}`, count: iv, unitPrice: ivUnitPrice, subtotal: iv * ivUnitPrice }
+                : null,
+              precon > 0
+                ? { label: '사전처치 (프리컨)', count: precon, unitPrice: 0, subtotal: 0 }
+                : null,
+            ].filter(Boolean) as { label: string; count: number; unitPrice: number; subtotal: number }[];
+            if (previewRows.length === 0) return null;
+            return (
+              <div className="rounded-lg border border-teal-100 bg-teal-50/30 overflow-hidden">
+                <div className="px-3 py-1.5 bg-teal-50 border-b border-teal-100 text-xs font-semibold text-teal-800">구성 항목 요약</div>
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="text-gray-500 border-b border-teal-100 bg-white/60">
+                      <th className="text-left px-3 py-1 font-medium">시술명</th>
+                      <th className="text-center px-2 py-1 font-medium">회수</th>
+                      <th className="text-right px-2 py-1 font-medium">수가(회당)</th>
+                      <th className="text-right px-3 py-1 font-medium">소계</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((row) => (
+                      <tr key={row.label} className="border-b border-teal-50 last:border-b-0">
+                        <td className="px-3 py-1 font-medium text-teal-900">{row.label}</td>
+                        <td className="px-2 py-1 text-center">{row.count}회</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{row.unitPrice > 0 ? formatAmount(row.unitPrice) : '-'}</td>
+                        <td className="px-3 py-1 text-right tabular-nums font-semibold text-teal-700">{row.subtotal > 0 ? formatAmount(row.subtotal) : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
 
           {/* 패키지 총 금액 (항목별 자동합산 + 수기수정) */}
           <div className="rounded-lg border border-teal-200 bg-teal-50/40 p-3 space-y-2">
