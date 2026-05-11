@@ -139,14 +139,12 @@ function CustomerStorageImageSection({
     setUploading(false);
     e.target.value = '';
     await load();
-    toast.success('업로드 완료');
   };
 
   const remove = async (img: StorageImageItem) => {
     if (!window.confirm('이미지를 삭제하시겠습니까?')) return;
     await supabase.storage.from('photos').remove([img.path]);
     await load();
-    toast.success('삭제됨');
   };
 
   const accentMap = {
@@ -259,7 +257,6 @@ function ReceiptUploadSection({
     setUploading(false);
     e.target.value = '';
     await load();
-    toast.success('영수증 업로드 완료');
     // 매출 연동 다이얼로그 열기
     setAmountDlg({ open: true, amount: '', method: 'cash' });
   };
@@ -268,7 +265,6 @@ function ReceiptUploadSection({
     if (!window.confirm('이미지를 삭제하시겠습니까?')) return;
     await supabase.storage.from('photos').remove([img.path]);
     await load();
-    toast.success('삭제됨');
   };
 
   const handlePaymentConfirm = async () => {
@@ -285,7 +281,6 @@ function ReceiptUploadSection({
       memo: '영수증 업로드',
     });
     if (error) { toast.error(`결제 기록 실패: ${error.message}`); return; }
-    toast.success('매출 연동 완료');
     setAmountDlg((d) => ({ ...d, open: false }));
     onPaymentCreated();
   };
@@ -710,32 +705,28 @@ export default function CustomerChartPage() {
       postal_code: postalCodeText.trim() || null,
     } : prev);
     setEditingAddress(false);
-    toast.success('주소 저장됨');
   };
 
   // T-20260508-foot-CUST-FORM-REVAMP: 단일 필드 즉시 저장 헬퍼
-  const saveCustomerField = async (patch: Partial<Customer>, successMsg?: string) => {
+  const saveCustomerField = async (patch: Partial<Customer>) => {
     if (!customer) return;
     setSavingField(true);
     const { error } = await supabase.from('customers').update(patch).eq('id', customer.id);
     setSavingField(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
     setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
-    if (successMsg) toast.success(successMsg);
   };
 
   // 이메일 저장
   const saveEmail = async () => {
     await saveCustomerField({ customer_email: emailText.trim() || null });
     setEditingEmail(false);
-    toast.success('이메일 저장됨');
   };
 
   // 여권번호 저장
   const savePassport = async () => {
     await saveCustomerField({ passport_number: passportText.trim() || null });
     setEditingPassport(false);
-    toast.success('여권번호 저장됨');
   };
 
   // C21-RESIDENT-ID (T-20260511-foot-SSN-SAVE-BUG): 주민번호 2-split 입력
@@ -768,12 +759,11 @@ export default function CustomerChartPage() {
     setRrnFront('');
     setRrnBack('');
     setRrnText('');
-    toast.success('주민번호 저장됨');
   };
 
   // T-20260510-foot-C21-SAVE-UNIFY: 고객정보 패널 통합 저장
   // T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: isAutoSave=true 시 토스트 생략 (인디케이터만)
-  const handleInfoPanelSave = async (isAutoSave = false) => {
+  const handleInfoPanelSave = async () => {
     if (!customer) return;
     setSavingInfoPanel(true);
     try {
@@ -810,7 +800,6 @@ export default function CustomerChartPage() {
       setEditingAddress(false);
       setEditingCustomerMemo(false);
       setIsDirty(false);
-      if (!isAutoSave) toast.success('고객정보 저장 완료');
     } finally {
       setSavingInfoPanel(false);
     }
@@ -824,7 +813,7 @@ export default function CustomerChartPage() {
   useEffect(() => {
     if (!isDirty) return;
     const id = setInterval(async () => {
-      await handleInfoPanelSaveRef.current(true);
+      await handleInfoPanelSaveRef.current();
       setShowAutoSaved(true);
       setTimeout(() => setShowAutoSaved(false), 2500);
     }, 60000);
@@ -880,7 +869,6 @@ export default function CustomerChartPage() {
     }
 
     setUseSessionDlg(null);
-    toast.success('회차 차감 완료');
   };
 
   // 우편번호 카카오 주소검색 팝업 (Kakao Postcode API)
@@ -913,7 +901,6 @@ export default function CustomerChartPage() {
           }).eq('id', customer!.id).then(({ error }) => {
             if (error) { toast.error('주소 저장 실패'); return; }
             setCustomer((prev) => prev ? { ...prev, postal_code: zoneCode, address: fullAddr } : prev);
-            toast.success('우편번호·기본주소 저장됨. 상세주소 입력 후 [저장] 클릭.');
           });
         },
       }).open();
@@ -946,7 +933,6 @@ export default function CustomerChartPage() {
     setSavingHira(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
     setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
-    toast.success(newVal ? '건보 조회 동의 완료' : '건보 조회 동의 해제');
   };
 
   // C2-RESV-MINI-POPUP: 미니 예약 저장
@@ -981,7 +967,6 @@ export default function CustomerChartPage() {
     setReservations((resvData ?? []) as Reservation[]);
     setOpenResvMiniPopup(false);
     setResvMiniForm({ date: '', startTime: '', memo: '' });
-    toast.success('예약 등록 완료 (재진)');
   };
 
   // C23-DETAIL-SIMPLIFY: 예약 탭 저장 (고객메모 + 기타메모)
@@ -999,7 +984,6 @@ export default function CustomerChartPage() {
       customer_memo: resvDetailForm.memo || null,
       memo: resvDetailForm.etcMemo || null,
     } : prev);
-    toast.success('메모 저장 완료');
   };
 
   // C23-DETAIL-SIMPLIFY: 상담 탭 저장
@@ -1016,7 +1000,6 @@ export default function CustomerChartPage() {
     setSavingConsultation(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
     setCustomer((prev) => prev ? { ...prev, tm_memo: newTmMemo || null } : prev);
-    toast.success('상담메모 저장 완료');
   };
 
   // C23-DETAIL-SIMPLIFY: 치료메모 탭 저장
@@ -1035,13 +1018,11 @@ export default function CustomerChartPage() {
       setSavingTreatmentMemo(false);
       if (e2) { toast.error(`저장 실패: ${e2.message}`); return; }
       setCustomer((prev) => prev ? { ...prev, memo: treatmentMemoText || null } : prev);
-      toast.success('치료메모 저장 완료');
       return;
     }
     setSavingTreatmentMemo(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
     setCustomer((prev) => prev ? { ...prev, treatment_note: treatmentMemoText || null } : prev);
-    toast.success('치료메모 저장 완료');
   };
 
   // C22-PKG-DEDUCT: 치료사 차감 인라인 폼 저장 (복구 — regression fix)
@@ -1099,7 +1080,6 @@ export default function CustomerChartPage() {
     );
     setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remaining[i] })));
     setC22DeductForm(f => ({ ...f, therapistId: '', treatmentType: 'heated_laser' }));
-    toast.success(`${usedCount + 1}회차 차감 완료 — ${targetPkg.package_name}`);
   };
 
   // C22-RESV-EDIT: 예약 수정 저장
@@ -1124,7 +1104,6 @@ export default function CustomerChartPage() {
       .limit(30);
     setReservations((resvData ?? []) as Reservation[]);
     setEditResvId(null);
-    toast.success('예약 수정 완료');
   };
 
   // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동 — 미니예약창/수정모달 슬롯
@@ -1247,7 +1226,7 @@ export default function CustomerChartPage() {
             <Button
               size="sm"
               className="ml-auto h-6 text-[11px] px-3 bg-teal-600 hover:bg-teal-700"
-              onClick={() => handleInfoPanelSave(false)}
+              onClick={() => handleInfoPanelSave()}
               disabled={savingInfoPanel || !isDirty}
             >
               {savingInfoPanel ? '저장 중…' : '저장'}
@@ -1425,11 +1404,10 @@ export default function CustomerChartPage() {
                           if (savingField) return;
                           setIsDirty(true);
                           if (val === 'foreign') {
-                            saveCustomerField({ is_foreign: true }, '성별: 외국인');
+                            saveCustomerField({ is_foreign: true });
                           } else {
                             saveCustomerField(
                               { gender: val as 'M' | 'F', is_foreign: false },
-                              `성별: ${label}`,
                             );
                           }
                         };
@@ -1572,7 +1550,7 @@ export default function CustomerChartPage() {
                       onChange={(e) => {
                         const val = e.target.value as Customer['customer_grade'];
                         setIsDirty(true);
-                        saveCustomerField({ customer_grade: val }, '고객등급 저장됨');
+                        saveCustomerField({ customer_grade: val });
                       }}
                       disabled={savingField}
                       className={cn(
@@ -1702,7 +1680,7 @@ export default function CustomerChartPage() {
                       value={customer.assigned_staff_id ?? ''}
                       onChange={(e) => {
                         setIsDirty(true);
-                        saveCustomerField({ assigned_staff_id: e.target.value || null }, '담당자 저장됨');
+                        saveCustomerField({ assigned_staff_id: e.target.value || null });
                       }}
                       disabled={savingField}
                       className="rounded border border-gray-300 px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
@@ -1728,7 +1706,7 @@ export default function CustomerChartPage() {
                       onChange={(e) => {
                         const val = e.target.value as Customer['visit_route'];
                         setIsDirty(true);
-                        saveCustomerField({ visit_route: val || null }, '방문경로 저장됨');
+                        saveCustomerField({ visit_route: val || null });
                       }}
                       disabled={savingField}
                       className="rounded border border-gray-300 px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
@@ -2980,7 +2958,6 @@ export default function CustomerChartPage() {
               }),
             );
             setPackages(pkgs.map((p, i) => ({ ...p, remaining: remaining[i] })));
-            toast.success('구입 티켓 추가됨');
           }}
         />
       )}
@@ -3186,7 +3163,6 @@ function PackagePurchaseFromTemplateDialog({
     });
     setSubmitting(false);
     if (pkgErr) { toast.error(`패키지 생성 실패: ${pkgErr.message}`); return; }
-    toast.success('템플릿 저장 + 구입 티켓 생성 완료');
     onCreated();
   };
 
