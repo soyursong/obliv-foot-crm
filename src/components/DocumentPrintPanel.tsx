@@ -28,6 +28,10 @@ import {
   Square,
   Layers,
   UserCheck,
+  Receipt,
+  Plus,
+  Trash2,
+  Upload,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -44,7 +48,7 @@ import {
 } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { formatAmount } from '@/lib/format';
+import { formatAmount, parseAmount } from '@/lib/format';
 import { formatPhone } from '@/lib/format';
 import type { CheckIn } from '@/lib/types';
 import { useDutyDoctors, fetchDutyDoctors, type DutyDoctor } from '@/hooks/useDutyRoster';
@@ -58,6 +62,20 @@ import {
   type FormSubmission,
   type FormTemplate,
 } from '@/lib/formTemplates';
+
+// ─── 타입 ───
+
+interface InvoiceDoc {
+  id: string;
+  receipt_no: string | null;
+  issue_date: string;
+  total_amount: number;
+  paid_amount: number;
+  insurance_covered: number;
+  non_covered: number;
+  pdf_url: string | null;
+  created_at: string;
+}
 
 // ─── Props ───
 
@@ -328,6 +346,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
   const [batchDoctorPickOpen, setBatchDoctorPickOpen] = useState(false);
   const [batchSelectedDoctorName, setBatchSelectedDoctorName] = useState<string>('');
 
+  // ── 진료비 영수증 (T-20260509-foot-CHART1-LAYOUT-REAPPLY) ──
+  const [invoiceDocs, setInvoiceDocs] = useState<InvoiceDoc[]>([]);
+  const [invoiceOpen, setInvoiceOpen] = useState(false);
+
   // 방문일 기준 근무원장님 목록 (T-20260502-foot-DUTY-ROSTER)
   const visitDate = checkIn.checked_in_at
     ? format(new Date(checkIn.checked_in_at), 'yyyy-MM-dd')
@@ -347,25 +369,32 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
   }, [profile?.id, checkIn.clinic_id]);
 
   const load = useCallback(async () => {
-    const { data: tplData } = await supabase
-      .from('form_templates')
-      .select('*')
-      .eq('clinic_id', checkIn.clinic_id)
-      .eq('category', 'foot-service')
-      .eq('active', true)
-      .order('sort_order');
+    const [tplRes, subRes, invRes] = await Promise.all([
+      supabase
+        .from('form_templates')
+        .select('*')
+        .eq('clinic_id', checkIn.clinic_id)
+        .eq('category', 'foot-service')
+        .eq('active', true)
+        .order('sort_order'),
+      supabase
+        .from('form_submissions')
+        .select('*')
+        .eq('check_in_id', checkIn.id)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('insurance_receipts')
+        .select('id, receipt_no, issue_date, total_amount, paid_amount, insurance_covered, non_covered, pdf_url, created_at')
+        .eq('check_in_id', checkIn.id)
+        .eq('receipt_type', 'detail')
+        .order('created_at', { ascending: false }),
+    ]);
 
     const tpls =
-      tplData && tplData.length > 0 ? (tplData as FormTemplate[]) : FALLBACK_TEMPLATES;
+      tplRes.data && tplRes.data.length > 0 ? (tplRes.data as FormTemplate[]) : FALLBACK_TEMPLATES;
     setTemplates(tpls);
-
-    const { data: subData } = await supabase
-      .from('form_submissions')
-      .select('*')
-      .eq('check_in_id', checkIn.id)
-      .order('created_at', { ascending: false });
-
-    setSubmissions((subData ?? []) as FormSubmission[]);
+    setSubmissions((subRes.data ?? []) as FormSubmission[]);
+    setInvoiceDocs((invRes.data ?? []) as InvoiceDoc[]);
   }, [checkIn.id, checkIn.clinic_id]);
 
   useEffect(() => {
@@ -395,6 +424,45 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
       else next.add(formKey);
       return next;
     });
+  };
+
+  // ── 진료비 영수증 삭제 ──
+  const deleteInvoice = async (id: string) => {
+    if (!window.confirm('진료비 영수증을 삭제하시겠습니까?')) return;
+    const { error } = await supabase.from('insurance_receipts').delete().eq('id', id);
+    if (error) { toast.error('삭제 실패'); return; }
+    toast.success('삭제됨'); load();
+  };
+
+  // ── 진료비 영수증 인쇄 ──
+  const printInvoice = (doc: InvoiceDoc) => {
+    const fmtAmt = (n: number) => n.toLocaleString('ko-KR') + '원';
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>진료비 영수증 — ${checkIn.customer_name}</title>
+<style>
+  body{font-family:'Malgun Gothic',sans-serif;padding:20mm;color:#222;font-size:13px}
+  h2{text-align:center;margin-bottom:24px;font-size:18px}
+  h3{border-bottom:2px solid #333;padding-bottom:6px;margin-bottom:12px;font-size:15px}
+  table{width:100%;border-collapse:collapse;margin-bottom:16px}
+  td,th{border:1px solid #ccc;padding:6px 10px;text-align:left}
+  tr.total td{font-weight:bold;background:#f8f8f8}
+  @media print{body{padding:10mm}}
+</style></head><body>
+<h2>오블리브 풋센터 — 진료비 영수증</h2>
+<h3>진료비 영수증${doc.receipt_no ? ` #${doc.receipt_no}` : ''}</h3>
+<table>
+  <tr><td>발행일</td><td>${format(new Date(doc.issue_date), 'yyyy-MM-dd')}</td></tr>
+  <tr><td>환자명</td><td>${checkIn.customer_name}</td></tr>
+  <tr><td>급여 (공단+본인)</td><td>${fmtAmt(doc.insurance_covered)}</td></tr>
+  <tr><td>비급여</td><td>${fmtAmt(doc.non_covered)}</td></tr>
+  <tr class="total"><td>실제 납부액</td><td>${fmtAmt(doc.paid_amount)}</td></tr>
+</table>
+</body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('팝업이 차단되었습니다'); return; }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 400);
   };
 
   // ── 기본 프리셋 선택 ──
@@ -593,17 +661,126 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
         )}
       </div>
 
-      {/* 기본 서류 섹션 */}
+      {/* 기본 서류 섹션 — 진료비 영수증 카드 포함 (T-20260509-foot-CHART1-LAYOUT-REAPPLY) */}
       {defaultTemplates.length > 0 && (
-        <TemplateSection
-          title="기본 서류"
-          templates={defaultTemplates}
-          submissions={submissions}
-          selectedKeys={selectedKeys}
-          canAccess={canAccess}
-          onToggle={toggleSelect}
-          onCardClick={handleSelectTemplate}
-        />
+        <div className="space-y-1.5">
+          <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+            기본 서류
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {defaultTemplates.map((tpl) => {
+              const meta = FORM_META[tpl.form_key];
+              const hasCoords = tpl.field_map.length > 0;
+              const accessible = canAccess(tpl);
+              const isSelected = selectedKeys.has(tpl.form_key);
+              const submissionCount = submissions.filter(
+                (s) => s.template_id === tpl.id && s.status !== 'voided',
+              ).length;
+              return (
+                <div
+                  key={tpl.id}
+                  className={`
+                    relative rounded-lg border p-2.5 text-xs transition-all select-none
+                    ${accessible ? 'cursor-pointer hover:shadow-md hover:border-teal-300' : 'opacity-50 cursor-not-allowed'}
+                    ${isSelected ? 'ring-2 ring-teal-400 border-teal-400' : ''}
+                    ${meta?.color ?? 'bg-gray-50 border-gray-200'}
+                  `}
+                  onClick={() => {
+                    if (!accessible) return;
+                    toggleSelect(tpl.form_key);
+                  }}
+                >
+                  <div className="absolute top-1.5 right-1.5 text-teal-500">
+                    {accessible && (isSelected ? (
+                      <CheckSquare className="h-3.5 w-3.5" />
+                    ) : (
+                      <Square className="h-3.5 w-3.5 text-muted-foreground/50" />
+                    ))}
+                  </div>
+                  <div className="flex items-start justify-between pr-5">
+                    <span className="text-base">{meta?.icon ?? '📄'}</span>
+                    {submissionCount > 0 && (
+                      <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                        {submissionCount}건
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="mt-1 font-semibold text-foreground">{tpl.name_ko}</div>
+                  <div className="text-muted-foreground text-[11px] mt-0.5 line-clamp-1">
+                    {meta?.description ?? tpl.template_format.toUpperCase()}
+                  </div>
+                  {!hasCoords && (
+                    <div className="text-[10px] text-amber-500 mt-1">좌표 미설정</div>
+                  )}
+                  <button
+                    className="mt-2 w-full text-[10px] text-teal-600 hover:underline text-left"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (accessible) handleSelectTemplate(tpl);
+                    }}
+                  >
+                    상세 발행 →
+                  </button>
+                </div>
+              );
+            })}
+
+            {/* 진료비 영수증 카드 — 기본 서류 그리드 내 배치 */}
+            <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-2.5 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-semibold text-amber-900 flex items-center gap-1">
+                    <Receipt className="h-3.5 w-3.5" /> 진료비 영수증
+                  </span>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">데스크 금액 등록</p>
+                </div>
+                <button
+                  className="flex items-center gap-0.5 rounded border border-amber-300 bg-white px-1.5 py-1 text-[10px] text-amber-700 hover:bg-amber-50"
+                  onClick={() => setInvoiceOpen(true)}
+                >
+                  <Plus className="h-3 w-3" /> 등록
+                </button>
+              </div>
+              {invoiceDocs.length > 0 ? (
+                <div className="space-y-1">
+                  {invoiceDocs.map((doc) => (
+                    <div key={doc.id} className="flex items-center justify-between rounded border bg-white px-2 py-1.5 group">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <Badge variant="outline" className="text-[10px] px-1 h-4 border-amber-300 text-amber-700">영수증</Badge>
+                          {doc.receipt_no && <span className="text-muted-foreground text-[10px]">#{doc.receipt_no}</span>}
+                          <span className="text-muted-foreground text-[10px]">{format(new Date(doc.issue_date), 'MM/dd')}</span>
+                        </div>
+                        <div className="text-[10px] mt-0.5 text-muted-foreground">
+                          납부 <span className="font-semibold text-foreground">{formatAmount(doc.paid_amount)}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <button
+                          onClick={() => printInvoice(doc)}
+                          className="h-6 w-6 hidden group-hover:flex items-center justify-center rounded text-teal-600 hover:bg-teal-50"
+                          title="영수증 출력"
+                        >
+                          <Printer className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => deleteInvoice(doc.id)}
+                          className="h-6 w-6 hidden group-hover:flex items-center justify-center rounded text-red-500 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded border border-dashed py-2 text-center text-[10px] text-muted-foreground bg-white">
+                  없음
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 별도 요청 서류 섹션 */}
@@ -722,6 +899,14 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
           onIssued={handleIssued}
         />
       )}
+
+      {/* 진료비 영수증 등록 다이얼로그 (T-20260509-foot-CHART1-LAYOUT-REAPPLY) */}
+      <InvoiceDialog
+        checkIn={checkIn}
+        open={invoiceOpen}
+        onOpenChange={setInvoiceOpen}
+        onSaved={() => { setInvoiceOpen(false); load(); onUpdated(); }}
+      />
     </div>
   );
 }
@@ -1406,6 +1591,169 @@ function PreviewDialog({
             </div>
           )}
         </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── 진료비 영수증 등록 다이얼로그 (T-20260509-foot-CHART1-LAYOUT-REAPPLY) ───
+
+function InvoiceDialog({
+  checkIn,
+  open,
+  onOpenChange,
+  onSaved,
+}: {
+  checkIn: CheckIn;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [receiptNo, setReceiptNo] = useState('');
+  const [insuranceCovered, setInsuranceCovered] = useState(0);
+  const [nonCovered, setNonCovered] = useState(0);
+  const [paidAmount, setPaidAmount] = useState(0);
+  const [file, setFile] = useState<File | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setReceiptNo('');
+      setInsuranceCovered(0);
+      setNonCovered(0);
+      setPaidAmount(0);
+      setFile(null);
+    }
+  }, [open]);
+
+  const handleSave = async () => {
+    if (paidAmount <= 0) {
+      toast.error('납부액을 입력해주세요');
+      return;
+    }
+    setSaving(true);
+
+    let pdfUrl: string | null = null;
+    if (file) {
+      const path = `receipts/${checkIn.id}/invoice_${Date.now()}_${file.name}`;
+      const { error: upErr } = await supabase.storage
+        .from('documents')
+        .upload(path, file, { contentType: file.type });
+      if (upErr) {
+        toast.error(`파일 업로드 실패: ${upErr.message}`);
+        setSaving(false);
+        return;
+      }
+      const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600 * 24 * 365);
+      pdfUrl = data?.signedUrl ?? path;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const { error } = await supabase.from('insurance_receipts').insert({
+      clinic_id: checkIn.clinic_id,
+      check_in_id: checkIn.id,
+      customer_id: checkIn.customer_id,
+      receipt_type: 'detail',
+      receipt_no: receiptNo || null,
+      consult_amount: 0,
+      treatment_amount: paidAmount,
+      insurance_covered: insuranceCovered,
+      non_covered: nonCovered,
+      total_amount: insuranceCovered + nonCovered,
+      paid_amount: paidAmount,
+      pdf_url: pdfUrl,
+      issue_date: today,
+    });
+
+    setSaving(false);
+    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+    toast.success('진료비 영수증 등록 완료');
+    onSaved();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Receipt className="h-4 w-4 text-amber-600" /> 진료비 영수증 등록
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs">영수증 번호 (선택)</Label>
+            <Input
+              value={receiptNo}
+              onChange={(e) => setReceiptNo(e.target.value)}
+              placeholder="선택사항"
+              className="text-sm mt-1"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-xs">급여 (공단+본인)</Label>
+              <Input
+                value={formatAmount(insuranceCovered)}
+                onChange={(e) => setInsuranceCovered(parseAmount(e.target.value))}
+                inputMode="numeric"
+                placeholder="0"
+                className="text-sm mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">비급여</Label>
+              <Input
+                value={formatAmount(nonCovered)}
+                onChange={(e) => setNonCovered(parseAmount(e.target.value))}
+                inputMode="numeric"
+                placeholder="0"
+                className="text-sm mt-1"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs">실제 납부액 <span className="text-red-500">*</span></Label>
+            <Input
+              value={formatAmount(paidAmount)}
+              onChange={(e) => setPaidAmount(parseAmount(e.target.value))}
+              inputMode="numeric"
+              placeholder="0"
+              className="text-sm mt-1 font-semibold"
+            />
+          </div>
+
+          {(insuranceCovered + nonCovered) > 0 && (
+            <div className="text-xs text-muted-foreground text-right">
+              총액: {formatAmount(insuranceCovered + nonCovered)}
+            </div>
+          )}
+
+          <div>
+            <Label className="text-xs">영수증 파일 (선택)</Label>
+            <label className="cursor-pointer block mt-1">
+              <input
+                type="file"
+                accept=".pdf,image/*"
+                className="hidden"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+              <Button variant="outline" size="sm" className="w-full gap-1 text-xs pointer-events-none">
+                <Upload className="h-3 w-3" />
+                {file ? file.name : '파일 선택 (선택)'}
+              </Button>
+            </label>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? '저장 중…' : '등록'}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
