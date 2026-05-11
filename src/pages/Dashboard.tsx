@@ -1091,7 +1091,7 @@ function DashboardTimeline({
   date: Date;
   reservations: Reservation[];
   selfCheckIns: CheckIn[];
-  onSlotClick: (slot: { date: string; time: string }) => void;
+  onSlotClick: (slot: { date: string; time: string; visit_type?: VisitType }) => void;
   onCardClick?: (ci: CheckIn) => void;
   onCardContext?: (ci: CheckIn, e: React.MouseEvent) => void;
   /** 재진 예약 2번 박스 클릭 → 체크인 생성 + 차트 열기 (T-20260510-foot-DASH-SLOT-REWORK-P0) */
@@ -1295,12 +1295,15 @@ function DashboardTimeline({
                 )}
               </div>
 
-              {/* 재진 컬럼 */}
+              {/* 재진 컬럼 — T-20260511-foot-DASH-REVISIT-RESERVE-BUG: 빈 영역 클릭 시 재진 예약 추가 */}
               <div
                 className={cn(
                   'px-1 pt-1 pb-0.5 space-y-0.5 min-w-0',
                   isCurrentSlot ? 'bg-teal-50/20' : retCnt > 0 ? 'bg-green-50/40' : '',
                 )}
+                onClick={() => onSlotClick({ date: dateStr, time: slot, visit_type: 'returning' })}
+                style={{ cursor: 'default' }}
+                title="빈 영역 클릭 → 재진 예약 추가"
               >
                 {retBox2Resv.map((r) => (
                   <Box2ReservationCard
@@ -2910,13 +2913,14 @@ export default function Dashboard() {
     }
   }, [rows]);
 
-  const handleQuickSlotClick = (slot: { date: string; time: string }) => {
+  // T-20260511-foot-DASH-REVISIT-RESERVE-BUG: visit_type 파라미터 추가 — 재진 슬롯에서 호출 시 'returning' pre-select
+  const handleQuickSlotClick = (slot: { date: string; time: string; visit_type?: VisitType }) => {
     setQuickResvDraft({
       date: slot.date,
       time: slot.time,
       name: '',
       phone: '',
-      visit_type: 'new',
+      visit_type: slot.visit_type ?? 'new',
       booking_memo: '', // T-20260504-foot-MEMO-RESTRUCTURE
     });
   };
