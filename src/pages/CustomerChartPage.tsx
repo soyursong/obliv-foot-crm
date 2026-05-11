@@ -485,6 +485,7 @@ export default function CustomerChartPage() {
   const [_rrnText, setRrnText] = useState(''); // legacy setter — reset after save
   const [rrnFront, setRrnFront] = useState(''); // 앞 6자리 (생년월일)
   const [rrnBack, setRrnBack] = useState('');  // 뒷 7자리 (비밀번호 마스킹)
+  const rrnFrontRef = useRef<HTMLInputElement>(null); // T-20260511-foot-SSN-FRONT-INPUT-BUG: autoFocus 대신 ref 사용
   const rrnBackRef = useRef<HTMLInputElement>(null);
   const [rrnMasked, setRrnMasked] = useState<string | null | undefined>(undefined); // undefined=로드전, null=없음
   // C22-PKG-DEDUCT: 인라인 차감 폼
@@ -679,6 +680,14 @@ export default function CustomerChartPage() {
       }
     })();
   }, [customer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // T-20260511-foot-SSN-FRONT-INPUT-BUG: autoFocus 대신 programmatic focus
+  // 태블릿 가상키보드 완성 후 포커스 — 150ms 딜레이로 키보드 애니메이션 race condition 방지
+  useEffect(() => {
+    if (!editingRrn) return;
+    const t = setTimeout(() => rrnFrontRef.current?.focus(), 150);
+    return () => clearTimeout(t);
+  }, [editingRrn]);
 
   // T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 저장
   // T-20260510-foot-C21-SAVE-UNIFY: 우편번호+주소 동시 저장 (저장버튼 단일화)
@@ -1284,14 +1293,15 @@ export default function CustomerChartPage() {
                       <div className="flex items-center gap-1">
                         {/* 앞 6자리 — 생년월일 (plain text) */}
                         <input
+                          ref={rrnFrontRef}
                           type="text"
                           inputMode="numeric"
+                          autoComplete="off"
                           className="font-mono text-sm h-7 w-20 border border-teal-300 rounded px-2 bg-white tracking-widest focus:outline-none focus:ring-1 focus:ring-teal-400"
                           value={rrnFront}
                           onChange={(e) => handleRrnFrontInput(e.target.value)}
                           placeholder="000000"
                           maxLength={6}
-                          autoFocus
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') { e.preventDefault(); saveRrn(); }
                             if (e.key === 'Escape') { setEditingRrn(false); setRrnFront(''); setRrnBack(''); }
@@ -1303,6 +1313,7 @@ export default function CustomerChartPage() {
                           ref={rrnBackRef}
                           type="password"
                           inputMode="numeric"
+                          autoComplete="new-password"
                           className="font-mono text-sm h-7 w-24 border border-teal-300 rounded px-2 bg-white tracking-widest focus:outline-none focus:ring-1 focus:ring-teal-400"
                           value={rrnBack}
                           onChange={(e) => handleRrnBackInput(e.target.value)}
@@ -1336,7 +1347,7 @@ export default function CustomerChartPage() {
                         </span>
                         <button
                           type="button"
-                          onClick={() => { setEditingRrn(true); setIsDirty(true); }}
+                          onClick={() => { setRrnFront(''); setRrnBack(''); setEditingRrn(true); setIsDirty(true); }}
                           className="text-[10px] px-1.5 py-0.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-50"
                         >
                           {rrnMasked ? '수정' : '입력'}
