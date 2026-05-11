@@ -38,6 +38,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { PaymentDialog } from '@/components/PaymentDialog';
+import { ReceiptUpload } from '@/components/ReceiptUpload';
 import { cn } from '@/lib/utils';
 
 // ──────────────────────────────────────────────────────────────
@@ -1350,6 +1351,12 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
   );
   const [memo, setMemo] = useState(editTarget?.memo ?? '');
   const [saving, setSaving] = useState(false);
+  /** T-20260512-foot-OCR-RECEIPT: OCR 추출 결과 자동기입 콜백 */
+  const handleReceiptExtracted = (data: { amount?: number; method?: 'card' | 'cash' | 'transfer'; storagePath?: string }) => {
+    if (data.amount) setAmount(String(data.amount));
+    if (data.method) setMethod(data.method);
+    if (data.storagePath && !memo) setMemo(`영수증: ${data.storagePath}`);
+  };
 
   const save = async () => {
     if (!customerName.trim()) { toast.error('성함을 입력하세요'); return; }
@@ -1388,11 +1395,15 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
 
   return (
     <Dialog open onOpenChange={o => !o && !saving && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? '수기 결제내역 수정' : '수기 결제내역 추가'}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
+          {/* T-20260512-foot-OCR-RECEIPT: 영수증 업로드 + 자동기입 */}
+          {!isEdit && (
+            <ReceiptUpload onExtracted={handleReceiptExtracted} />
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>시간</Label>
