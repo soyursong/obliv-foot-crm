@@ -669,8 +669,8 @@ function HeatedLaserDropSlot({
         isOver && 'border-blue-400',
       )}
     >
-      {/* 헤더 */}
-      <div className={cn('flex items-center justify-between px-3 py-2 transition-colors', isOver ? 'bg-blue-200' : 'bg-[#BFDBFE]')}>
+      {/* 헤더 — 빈 슬롯(환자 미배치)은 흰색, 환자 있을 때만 연파랑 */}
+      <div className={cn('flex items-center justify-between px-3 py-2 transition-colors', isOver ? 'bg-blue-100' : occupants.length > 0 ? 'bg-[#BFDBFE]' : 'bg-white')}>
         <div className="flex items-center gap-2">
           <div className="h-2.5 w-2.5 rounded-full bg-blue-400 shrink-0" />
           <span className="text-xs font-bold text-blue-900 tracking-wide">가열성레이저</span>
@@ -689,7 +689,7 @@ function HeatedLaserDropSlot({
           }}
           className="text-xs h-6 border border-blue-300 rounded bg-white/90 px-1 text-blue-900 min-w-[90px] cursor-pointer hover:border-blue-400 transition"
         >
-          <option value="">원장님 선택</option>
+          <option value="">미배정</option>
           {doctors.map((d) => (
             <option key={d.id} value={d.id}>
               {d.name}
@@ -698,7 +698,7 @@ function HeatedLaserDropSlot({
         </select>
       </div>
       {/* 드롭 영역 — 환자 카드 */}
-      <div className={cn('px-2 pb-2 pt-1 min-h-[56px] space-y-1 transition-colors', isOver ? 'bg-blue-100/60' : 'bg-[#EFF6FF]')}>
+      <div className={cn('px-2 pb-2 pt-1 min-h-[56px] space-y-1 transition-colors', isOver ? 'bg-blue-100/60' : 'bg-white')}>
         {occupants.length === 0 && (
           <div className={cn(
             'rounded border-2 border-dashed h-10 flex items-center justify-center text-[10px] select-none transition-colors',
