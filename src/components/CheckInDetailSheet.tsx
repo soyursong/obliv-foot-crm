@@ -335,6 +335,9 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const [customerMemo, setCustomerMemo] = useState('');
   const [savingCustomerMemo, setSavingCustomerMemo] = useState(false);
   const [saving, setSaving] = useState(false);
+  // T-20260511-foot-C1-SAVE-DIRTY-AUTOSAVE: isDirty 패턴 + 자동저장 인디케이터
+  const [isDirty, setIsDirty] = useState(false);
+  const [showAutoSaved, setShowAutoSaved] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(false);
   // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 양식 다이얼로그
   const [tabletChecklistOpen, setTabletChecklistOpen] = useState(false);
@@ -592,8 +595,24 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       return;
     }
     toast.success('메모 저장됨');
+    setIsDirty(false);
     onUpdated();
   };
+
+  // T-20260511-foot-C1-SAVE-DIRTY-AUTOSAVE: stale closure 방지용 ref (항상 최신 함수 참조)
+  const saveNotesRef = useRef(saveNotes);
+  saveNotesRef.current = saveNotes;
+
+  // T-20260511-foot-C1-SAVE-DIRTY-AUTOSAVE: isDirty=true 시 30초 자동저장 (현장 확정: 1번차트 30초)
+  useEffect(() => {
+    if (!isDirty) return;
+    const id = setInterval(async () => {
+      await saveNotesRef.current();
+      setShowAutoSaved(true);
+      setTimeout(() => setShowAutoSaved(false), 2500);
+    }, 30000);
+    return () => clearInterval(id);
+  }, [isDirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // T-20260506-foot-CHART-LINK-SYNC: 3순위 fallback — 실시간 phone 조회 (로드 타임 조회 실패 재시도)
   // phone 정규화(digits-only) + ilike 매칭으로 포맷 차이(010-XXXX vs +8210XXXX) 허용
@@ -1315,7 +1334,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 </Label>
                 <Textarea
                   value={doctorNote}
-                  onChange={(e) => setDoctorNote(e.target.value)}
+                  onChange={(e) => { setDoctorNote(e.target.value); setIsDirty(true); }}
                   placeholder="원장 소견을 자유롭게 입력하세요"
                   rows={3}
                   className="text-sm bg-white border-violet-200 focus-visible:ring-violet-400"
@@ -1335,7 +1354,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               <Label className="text-sm text-emerald-900">담당실장</Label>
               <select
                 value={assignedCounselorId ?? ''}
-                onChange={(e) => setAssignedCounselorId(e.target.value || null)}
+                onChange={(e) => { setAssignedCounselorId(e.target.value || null); setIsDirty(true); }}
                 className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 text-foreground"
               >
                 <option value="">선택하세요</option>
@@ -1353,7 +1372,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   <button
                     key={cat}
                     type="button"
-                    onClick={() => setTreatmentCategory((v) => (v === cat ? null : cat))}
+                    onClick={() => { setTreatmentCategory((v) => (v === cat ? null : cat)); setIsDirty(true); }}
                     className={cn(
                       'flex-1 h-9 rounded-md border text-sm font-medium transition',
                       treatmentCategory === cat
@@ -1380,11 +1399,12 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                     <button
                       key={content}
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
                         setTreatmentContents((prev) =>
                           isChecked ? prev.filter((c) => c !== content) : [...prev, content],
-                        )
-                      }
+                        );
+                        setIsDirty(true);
+                      }}
                       className={cn(
                         'h-9 rounded-md border text-sm font-medium transition',
                         isChecked
@@ -1407,7 +1427,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   <button
                     key={min}
                     type="button"
-                    onClick={() => setLaserMinutes(laserMinutes === min ? null : min)}
+                    onClick={() => { setLaserMinutes(laserMinutes === min ? null : min); setIsDirty(true); }}
                     className={cn(
                       'min-w-[52px] h-9 rounded-md border text-sm font-medium transition px-2',
                       laserMinutes === min
@@ -1424,7 +1444,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                     {laserMinutes}분 (직접)
                     <button
                       type="button"
-                      onClick={() => setLaserMinutes(null)}
+                      onClick={() => { setLaserMinutes(null); setIsDirty(true); }}
                       className="ml-1.5 text-blue-400 hover:text-blue-700"
                       title="취소"
                     >✕</button>
@@ -1433,7 +1453,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 {laserMinutes != null && (
                   <button
                     type="button"
-                    onClick={() => setLaserMinutes(null)}
+                    onClick={() => { setLaserMinutes(null); setIsDirty(true); }}
                     className="h-9 px-2 rounded-md border border-dashed border-gray-300 text-xs text-muted-foreground hover:bg-muted transition"
                     title="레이저 시간 초기화"
                   >
@@ -1453,7 +1473,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               </Label>
               <Textarea
                 value={treatmentMemo}
-                onChange={(e) => setTreatmentMemo(e.target.value)}
+                onChange={(e) => { setTreatmentMemo(e.target.value); setIsDirty(true); }}
                 placeholder="시술 기록, 사용 장비, 특이사항"
                 rows={3}
                 className="text-sm"
@@ -1461,9 +1481,15 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             </div>
           </div>
 
-          <Button size="sm" onClick={saveNotes} disabled={saving} className="w-full">
-            {saving ? '저장 중…' : '메모 저장'}
-          </Button>
+          {/* T-20260511-foot-C1-SAVE-DIRTY-AUTOSAVE: isDirty 기반 저장 버튼 + 자동저장 인디케이터 */}
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={saveNotes} disabled={saving || !isDirty} className="flex-1">
+              {saving ? '저장 중…' : '메모 저장'}
+            </Button>
+            {showAutoSaved && (
+              <span className="text-[10px] text-teal-600 shrink-0 animate-pulse">자동저장됨 ✓</span>
+            )}
+          </div>
 
           {/* 비포/애프터 사진 */}
           <Separator />
