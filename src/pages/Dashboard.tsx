@@ -133,12 +133,16 @@ const customCollision: CollisionDetection = (args) => {
 // ── 칸반 그룹 순서 정의 ────────────────────────────────────────────────────────
 // T-20260508-foot-DASH-SLOT-REMOVE: new_queue, returning_queue 완전 삭제
 // → 초진/재진 고객은 통합시간표에서 관리
+// T-20260511-foot-DASH-BATCH-INDIVIDUAL: waiting_columns → 3개 독립 그룹 ID로 분리
+// (치료대기·레이저대기·힐러대기 각각 배치편집 모드에서 개별 이동 가능)
 const DEFAULT_GROUP_ORDER = [
   'exam_section',
   'experience_queue',
   'consult_waiting_col',
   'consult_rooms',
-  'waiting_columns',
+  'treatment_waiting_col',
+  'laser_waiting_col',
+  'healer_waiting_col',
   'treatment_rooms',
   'desk_section',
   'laser_rooms',
@@ -151,7 +155,9 @@ const KANBAN_GROUP_LABELS: Record<KanbanGroupId, string> = {
   experience_queue: '선체험',
   consult_waiting_col: '상담대기',
   consult_rooms: '상담실',
-  waiting_columns: '치료/레이저/힐러대기',
+  treatment_waiting_col: '치료대기',
+  laser_waiting_col: '레이저대기',
+  healer_waiting_col: '힐러대기',
   treatment_rooms: '치료실',
   desk_section: '데스크',
   laser_rooms: '레이저실',
@@ -1580,7 +1586,19 @@ export default function Dashboard() {
     try {
       const saved = localStorage.getItem('foot-dash-group-order');
       if (saved) {
-        const parsed = JSON.parse(saved) as string[];
+        let parsed = JSON.parse(saved) as string[];
+        // T-20260511-foot-DASH-BATCH-INDIVIDUAL: waiting_columns → 3개 분리 마이그레이션
+        // 기존 저장값에 waiting_columns가 있으면 그 자리에 3개를 in-place 삽입
+        if (parsed.includes('waiting_columns') && !parsed.includes('treatment_waiting_col')) {
+          const idx = parsed.indexOf('waiting_columns');
+          parsed = [
+            ...parsed.slice(0, idx),
+            'treatment_waiting_col',
+            'laser_waiting_col',
+            'healer_waiting_col',
+            ...parsed.slice(idx + 1),
+          ];
+        }
         // 저장된 순서가 유효한지 검증 (알 수 없는 ID 제거, 누락된 ID 뒤에 추가)
         const valid = parsed.filter((id): id is KanbanGroupId =>
           (DEFAULT_GROUP_ORDER as readonly string[]).includes(id),
@@ -1660,7 +1678,19 @@ export default function Dashboard() {
         const stored = data.layout_data as { groupOrder?: string[]; zoomLevel?: number };
 
         if (Array.isArray(stored.groupOrder)) {
-          const valid = stored.groupOrder.filter((id): id is KanbanGroupId =>
+          let rawOrder = stored.groupOrder;
+          // T-20260511-foot-DASH-BATCH-INDIVIDUAL: DB 저장값 waiting_columns → 3개 분리 마이그레이션
+          if (rawOrder.includes('waiting_columns') && !rawOrder.includes('treatment_waiting_col')) {
+            const idx = rawOrder.indexOf('waiting_columns');
+            rawOrder = [
+              ...rawOrder.slice(0, idx),
+              'treatment_waiting_col',
+              'laser_waiting_col',
+              'healer_waiting_col',
+              ...rawOrder.slice(idx + 1),
+            ];
+          }
+          const valid = rawOrder.filter((id): id is KanbanGroupId =>
             (DEFAULT_GROUP_ORDER as readonly string[]).includes(id),
           );
           const missing = DEFAULT_GROUP_ORDER.filter((id) => !valid.includes(id));
@@ -3106,79 +3136,85 @@ export default function Dashboard() {
             />
           </div>
         ) : null;
-      case 'waiting_columns':
+      // T-20260511-foot-DASH-BATCH-INDIVIDUAL: waiting_columns → 3개 독립 케이스
+      // 배치편집 모드에서 각 슬롯을 개별 드래그/이동할 수 있도록 분리
+      case 'treatment_waiting_col':
         return (
-          <div key="waiting_columns" className="flex gap-2 shrink-0">
-            <div className="w-40">
-              <DroppableColumn
-                id="treatment_waiting"
-                label="치료대기"
-                count={(byStatus['treatment_waiting'] ?? []).length}
-                className="h-full"
-                highlight="text-amber-700"
-              >
-                {(byStatus['treatment_waiting'] ?? []).map((ci, idx, arr) => (
-                  <div key={ci.id} className="relative group">
-                    <DraggableCard
-                      checkIn={ci}
-                      compact
-                      stageStart={getStageStart(ci)}
-                      packageLabel={getPkgLabel(ci)}
-                      onClick={() => handleCardClick(ci)}
-                      onContextMenu={(e) => handleCardContext(ci, e)}
-                    />
-                    <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
-                      {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
-                      {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
-                    </div>
-                    {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
+          <div key="treatment_waiting_col" className="w-40 shrink-0">
+            <DroppableColumn
+              id="treatment_waiting"
+              label="치료대기"
+              count={(byStatus['treatment_waiting'] ?? []).length}
+              className="h-full"
+              highlight="text-amber-700"
+            >
+              {(byStatus['treatment_waiting'] ?? []).map((ci, idx, arr) => (
+                <div key={ci.id} className="relative group">
+                  <DraggableCard
+                    checkIn={ci}
+                    compact
+                    stageStart={getStageStart(ci)}
+                    packageLabel={getPkgLabel(ci)}
+                    onClick={() => handleCardClick(ci)}
+                    onContextMenu={(e) => handleCardContext(ci, e)}
+                  />
+                  <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
+                    {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
+                    {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
                   </div>
-                ))}
-              </DroppableColumn>
-            </div>
-            <div className="w-40">
-              <DroppableColumn
-                id="laser_waiting"
-                label="레이저대기"
-                count={laserWaiting.length}
-                className="h-full"
-                highlight="text-rose-700"
-              >
-                {laserWaiting.map((ci) => (
-                  <DraggableCard
-                    key={ci.id}
-                    checkIn={ci}
-                    compact
-                    stageStart={getStageStart(ci)}
-                    packageLabel={getPkgLabel(ci)}
-                    onClick={() => handleCardClick(ci)}
-                    onContextMenu={(e) => handleCardContext(ci, e)}
-                  />
-                ))}
-              </DroppableColumn>
-            </div>
-            {/* T-20260502-foot-HEALER-WAIT-SLOT: 힐러대기 슬롯 — 레이저대기 옆 세로 배치 */}
-            <div className="w-40">
-              <DroppableColumn
-                id="healer_waiting"
-                label="힐러대기"
-                count={healerWaiting.length}
-                className="h-full"
-                highlight="text-violet-700"
-              >
-                {healerWaiting.map((ci) => (
-                  <DraggableCard
-                    key={ci.id}
-                    checkIn={ci}
-                    compact
-                    stageStart={getStageStart(ci)}
-                    packageLabel={getPkgLabel(ci)}
-                    onClick={() => handleCardClick(ci)}
-                    onContextMenu={(e) => handleCardContext(ci, e)}
-                  />
-                ))}
-              </DroppableColumn>
-            </div>
+                  {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
+                </div>
+              ))}
+            </DroppableColumn>
+          </div>
+        );
+      case 'laser_waiting_col':
+        return (
+          <div key="laser_waiting_col" className="w-40 shrink-0">
+            <DroppableColumn
+              id="laser_waiting"
+              label="레이저대기"
+              count={laserWaiting.length}
+              className="h-full"
+              highlight="text-rose-700"
+            >
+              {laserWaiting.map((ci) => (
+                <DraggableCard
+                  key={ci.id}
+                  checkIn={ci}
+                  compact
+                  stageStart={getStageStart(ci)}
+                  packageLabel={getPkgLabel(ci)}
+                  onClick={() => handleCardClick(ci)}
+                  onContextMenu={(e) => handleCardContext(ci, e)}
+                />
+              ))}
+            </DroppableColumn>
+          </div>
+        );
+      // T-20260502-foot-HEALER-WAIT-SLOT: 힐러대기 슬롯 (독립 그룹으로 분리)
+      case 'healer_waiting_col':
+        return (
+          <div key="healer_waiting_col" className="w-40 shrink-0">
+            <DroppableColumn
+              id="healer_waiting"
+              label="힐러대기"
+              count={healerWaiting.length}
+              className="h-full"
+              highlight="text-violet-700"
+            >
+              {healerWaiting.map((ci) => (
+                <DraggableCard
+                  key={ci.id}
+                  checkIn={ci}
+                  compact
+                  stageStart={getStageStart(ci)}
+                  packageLabel={getPkgLabel(ci)}
+                  onClick={() => handleCardClick(ci)}
+                  onContextMenu={(e) => handleCardContext(ci, e)}
+                />
+              ))}
+            </DroppableColumn>
           </div>
         );
       case 'treatment_rooms': {
