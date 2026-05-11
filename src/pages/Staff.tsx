@@ -62,7 +62,7 @@ export default function StaffPage() {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="h-full overflow-auto space-y-4 p-4 md:p-6">
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="duty">
