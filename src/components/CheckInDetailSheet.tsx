@@ -102,6 +102,18 @@ interface VisitHistory {
 
 interface Props {
   checkIn: CheckIn | null;
+  /**
+   * customer_id 기반 뷰 모드 (고객관리 1번차트)
+   * T-20260511-foot-CUSTMGMT-DETAIL-SHEET
+   * check_in 없이 고객 정보를 바로 조회할 때 사용.
+   */
+  customerMode?: {
+    customerId: string;
+    customerName: string;
+    customerPhone: string;
+    clinicId: string;
+    chartNumber?: string | null;
+  };
   onClose: () => void;
   onUpdated: () => void;
   /** initialMode: 상담 단계 진입 시 'package' 전달 → PaymentDialog 패키지 모드 default */
@@ -302,7 +314,7 @@ function ActivePackageSummary({
 // 기본 레이저 시간 단위 (어드민 설정 미존재 시 fallback) — 10분 추가 (T-20260504-foot-TREATMENT-SIMPLIFY)
 const DEFAULT_LASER_TIME_UNITS = [10, 15, 20, 30];
 
-export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: Props) {
+export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, onPayment }: Props) {
   const { profile } = useAuth();
   const clinic = useClinic();
   const isAdmin = profile?.role === 'admin';
@@ -377,9 +389,60 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
       setTreatmentCategory(checkIn.treatment_category ?? null);
       setTreatmentContents(checkIn.treatment_contents ?? []);
     }
-  }, [checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [checkIn?.id, customerMode?.customerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async () => {
+    if (!checkIn && !customerMode) return;
+
+    // ── customer_id 기반 조회 모드 (고객관리 1번차트 T-20260511-foot-CUSTMGMT-DETAIL-SHEET) ──
+    if (!checkIn && customerMode) {
+      const { customerId, clinicId } = customerMode;
+      const [pkgRes, histRes, custRes, staffRes] = await Promise.all([
+        supabase
+          .from('packages')
+          .select('*')
+          .eq('customer_id', customerId)
+          .eq('status', 'active')
+          .order('contract_date', { ascending: false }),
+        supabase
+          .from('check_ins')
+          .select('id, checked_in_at, status, visit_type, doctor_note, treatment_memo, notes')
+          .eq('customer_id', customerId)
+          .order('checked_in_at', { ascending: false })
+          .limit(10),
+        supabase
+          .from('customers')
+          .select('id, chart_number, customer_memo, visit_route')
+          .eq('id', customerId)
+          .single(),
+        supabase
+          .from('staff')
+          .select('id, name, role')
+          .eq('clinic_id', clinicId)
+          .eq('active', true)
+          .in('role', ['consultant'])
+          .order('name'),
+      ]);
+      const pkgs = (pkgRes.data ?? []) as PackageType[];
+      setPackages(pkgs);
+      setHistory((histRes.data ?? []) as VisitHistory[]);
+      const custData = custRes.data as { chart_number: string | null; customer_memo: string | null; visit_route?: string | null } | null;
+      setChartNumber(custData?.chart_number ?? customerMode.chartNumber ?? null);
+      setCustomerMemo(custData?.customer_memo ?? '');
+      setVisitRoute(custData?.visit_route ?? '');
+      setStaffList((staffRes.data ?? []) as Array<{ id: string; name: string; role: string }>);
+      const remMap = new Map<string, PackageRemaining>();
+      await Promise.all(
+        pkgs.map(async (p) => {
+          const { data } = await supabase.rpc('get_package_remaining', { p_package_id: p.id });
+          if (data) remMap.set(p.id, data as PackageRemaining);
+        }),
+      );
+      setPkgRemaining(remMap);
+      return;
+    }
+
+    // TypeScript narrowing: 이 아래부터 checkIn은 반드시 non-null
     if (!checkIn) return;
 
     const [svcRes, payRes, histRes, pkgRes, custRes, resvRes, staffRes] = await Promise.all([
@@ -476,7 +539,7 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
     setNotes(noteObj?.text ?? '');
     setTreatmentMemo(checkIn.treatment_memo?.details ?? '');
     setDoctorNote(checkIn.doctor_note ?? '');
-  }, [checkIn]);
+  }, [checkIn, customerMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     load();
@@ -564,20 +627,23 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   };
 
   // T-20260510-foot-C1-VISIT-ROUTE-MEMO: 방문경로 저장
+  // T-20260511-foot-CUSTMGMT-DETAIL-SHEET: customerMode fallback 추가
   const saveVisitRoute = async (val: string) => {
-    const customerId = checkIn?.customer_id ?? resolvedCustomerId;
+    const customerId = checkIn?.customer_id ?? resolvedCustomerId ?? customerMode?.customerId;
     if (!customerId) return;
     await supabase.from('customers').update({ visit_route: val || null }).eq('id', customerId);
   };
 
   // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 저장
+  // T-20260511-foot-CUSTMGMT-DETAIL-SHEET: customerMode fallback 추가
   const saveCustomerMemo = async () => {
-    if (!checkIn?.customer_id) return;
+    const customerId = checkIn?.customer_id ?? customerMode?.customerId;
+    if (!customerId) return;
     setSavingCustomerMemo(true);
     const { error } = await supabase
       .from('customers')
       .update({ customer_memo: customerMemo.trim() || null })
-      .eq('id', checkIn.customer_id);
+      .eq('id', customerId);
     setSavingCustomerMemo(false);
     if (error) { toast.error('고객메모 저장 실패'); return; }
     toast.success('고객메모 저장됨');
@@ -586,6 +652,212 @@ export function CheckInDetailSheet({ checkIn, onClose, onUpdated, onPayment }: P
   const totalPaid = payments
     .filter((p) => p.payment_type === 'payment')
     .reduce((s, p) => s + p.amount, 0);
+
+  // ── T-20260511-foot-CUSTMGMT-DETAIL-SHEET: customer_id 기반 뷰 (체크인 없는 고객관리 모드) ──
+  if (!checkIn && customerMode) {
+    const effectiveChartNumber = chartNumber ?? customerMode.chartNumber;
+    return (
+      <Sheet open={true} onOpenChange={(o) => !o && onClose()}>
+        <SheetContent className="w-[400px] sm:w-[440px] max-h-screen overflow-y-auto">
+          <SheetHeader>
+            <div className="flex items-center justify-between gap-2">
+              <SheetTitle className="flex items-center gap-2 flex-1 flex-wrap">
+                {customerMode.customerName}
+              </SheetTitle>
+              <Button
+                size="sm"
+                className="gap-1 h-8 text-xs bg-teal-600 hover:bg-teal-700 shrink-0"
+                onClick={() =>
+                  window.open(
+                    `/chart/${customerMode.customerId}`,
+                    `chart-${customerMode.customerId}`,
+                    'width=820,height=960,scrollbars=yes,resizable=yes',
+                  )
+                }
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                고객차트(2번)
+              </Button>
+            </div>
+          </SheetHeader>
+
+          <div className="mt-4 space-y-4">
+            {/* 차트번호 */}
+            {effectiveChartNumber && (
+              <div className="text-sm font-semibold text-teal-700">{effectiveChartNumber}</div>
+            )}
+            {/* 연락처 */}
+            <div className="flex items-center gap-1 text-sm text-muted-foreground">
+              <Phone className="h-3.5 w-3.5" />
+              {formatPhone(customerMode.customerPhone)}
+            </div>
+
+            {/* 고객메모 / 방문경로 */}
+            <Separator />
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Label className="text-xs font-semibold text-teal-700 shrink-0">방문경로</Label>
+                <select
+                  value={visitRoute}
+                  onChange={(e) => {
+                    setVisitRoute(e.target.value);
+                    saveVisitRoute(e.target.value);
+                  }}
+                  className="rounded border border-gray-300 px-2 py-0.5 text-xs cursor-pointer focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
+                >
+                  <option value="">— 선택 —</option>
+                  <option value="TM">TM</option>
+                  <option value="워크인">워크인</option>
+                  <option value="인바운드">인바운드</option>
+                  <option value="지인소개">지인소개</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
+                  <FileText className="h-3 w-3" /> 고객메모
+                </Label>
+                <Textarea
+                  value={customerMemo}
+                  onChange={(e) => setCustomerMemo(e.target.value)}
+                  placeholder="고객 성향, 특이사항, 주차 정보 등"
+                  rows={2}
+                  className="text-xs"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs w-full border-teal-300 text-teal-700 hover:bg-teal-50"
+                  onClick={saveCustomerMemo}
+                  disabled={savingCustomerMemo}
+                >
+                  {savingCustomerMemo ? '저장 중…' : '고객메모 저장'}
+                </Button>
+              </div>
+            </div>
+
+            {/* 체크리스트 / 동의서 */}
+            <Separator />
+            <div className="space-y-2">
+              <span className="text-sm font-semibold text-muted-foreground">체크리스트 / 동의서</span>
+              <div className="space-y-1.5 pt-1">
+                <div className="flex flex-wrap gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 text-xs gap-1 border-teal-300 text-teal-700 hover:bg-teal-50"
+                    onClick={() => setTabletChecklistOpen(true)}
+                  >
+                    📝 사전 체크리스트 & 개인정보
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 text-xs gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    onClick={() => setTabletConsentOpen(true)}
+                  >
+                    📝 환불 & 비급여 동의서
+                  </Button>
+                </div>
+                <DocumentViewer
+                  key={docRefreshKey}
+                  customerId={customerMode.customerId}
+                  compact
+                />
+              </div>
+            </div>
+
+            {/* 패키지 잔여회차 요약 */}
+            {packages.length > 0 && (
+              <>
+                <Separator />
+                <ActivePackageSummary packages={packages} pkgRemaining={pkgRemaining} />
+              </>
+            )}
+
+            {/* 패키지 상세 목록 */}
+            <Separator />
+            <div className="space-y-2">
+              <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                <Package className="h-3 w-3" /> 패키지
+              </span>
+              {packages.length > 0 ? (
+                <div className="space-y-1.5">
+                  {packages.map((pkg) => {
+                    const rem = pkgRemaining.get(pkg.id);
+                    const usedPct =
+                      rem && pkg.total_sessions > 0
+                        ? Math.round((rem.total_used / pkg.total_sessions) * 100)
+                        : 0;
+                    return (
+                      <div
+                        key={pkg.id}
+                        className="rounded-lg border p-2 text-xs space-y-1 border-input"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold">{pkg.package_name}</span>
+                          <Badge variant="outline" className="text-xs">
+                            {formatAmount(pkg.total_amount)}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>가열 {rem?.heated ?? pkg.heated_sessions}</span>
+                          <span>비가열 {rem?.unheated ?? pkg.unheated_sessions}</span>
+                          <span>수액 {rem?.iv ?? pkg.iv_sessions}</span>
+                          <span>사전처치 {rem?.preconditioning ?? pkg.preconditioning_sessions}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                            <div
+                              className="h-full bg-teal-500 rounded-full"
+                              style={{ width: `${Math.min(usedPct, 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground">{usedPct}%</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">활성 패키지 없음</p>
+              )}
+            </div>
+
+            {/* 방문 이력 */}
+            {history.length > 0 && (
+              <>
+                <Separator />
+                <VisitHistoryAccordion history={history} />
+              </>
+            )}
+          </div>
+
+          {/* 태블릿 양식 모달 */}
+          <ChecklistForm
+            open={tabletChecklistOpen}
+            onOpenChange={setTabletChecklistOpen}
+            customerId={customerMode.customerId}
+            defaultName={customerMode.customerName}
+            defaultPhone={customerMode.customerPhone}
+            onSaved={() => {
+              setDocRefreshKey((k) => k + 1);
+              onUpdated();
+            }}
+          />
+          <ConsentForm
+            open={tabletConsentOpen}
+            onOpenChange={setTabletConsentOpen}
+            customerId={customerMode.customerId}
+            defaultName={customerMode.customerName}
+            onSaved={() => {
+              setDocRefreshKey((k) => k + 1);
+              onUpdated();
+            }}
+          />
+        </SheetContent>
+      </Sheet>
+    );
+  }
 
   if (!checkIn) return null;
 
