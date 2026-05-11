@@ -488,14 +488,6 @@ export default function CustomerChartPage() {
   const rrnFrontRef = useRef<HTMLInputElement>(null); // T-20260511-foot-SSN-FRONT-INPUT-BUG: autoFocus 대신 ref 사용
   const rrnBackRef = useRef<HTMLInputElement>(null);
   const [rrnMasked, setRrnMasked] = useState<string | null | undefined>(undefined); // undefined=로드전, null=없음
-  // C22-PKG-DEDUCT: 인라인 차감 폼
-  const [c22DeductForm, setC22DeductForm] = useState({
-    sessionDate: format(new Date(), 'yyyy-MM-dd'),
-    therapistId: '',
-    treatmentType: 'heated_laser' as string,
-    packageId: '',  // 복수 활성 패키지 지원
-  });
-  const [savingC22Deduct, setSavingC22Deduct] = useState(false);
   // C22-RESV-EDIT: 예약 수정 모달
   const [editResvId, setEditResvId] = useState<string | null>(null);
   const [editResvForm, setEditResvForm] = useState({ date: '', startTime: '', memo: '' });
@@ -1042,68 +1034,6 @@ export default function CustomerChartPage() {
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
     setCustomer((prev) => prev ? { ...prev, treatment_note: treatmentMemoText || null } : prev);
     toast.success('치료메모 저장 완료');
-  };
-
-  // C22-PKG-DEDUCT: 치료사 차감 (인라인)
-  const saveC22Deduct = async () => {
-    if (!customer || !c22DeductForm.therapistId) {
-      toast.error('치료사를 선택해주세요');
-      return;
-    }
-    // 복수 활성 패키지 지원: packageId 선택 또는 첫 번째 활성 패키지
-    const activePackages = packages.filter(p => p.status === 'active');
-    const targetPkg = c22DeductForm.packageId
-      ? activePackages.find(p => p.id === c22DeductForm.packageId)
-      : activePackages[0];
-    if (!targetPkg) {
-      toast.error('활성 패키지가 없습니다');
-      return;
-    }
-    const usedCount = packageSessions.filter(s => s.package_id === targetPkg.id && s.status === 'used').length;
-    setSavingC22Deduct(true);
-    const { error } = await supabase.from('package_sessions').insert({
-      package_id: targetPkg.id,
-      session_number: usedCount + 1,
-      session_type: c22DeductForm.treatmentType,
-      session_date: c22DeductForm.sessionDate,
-      performed_by: c22DeductForm.therapistId,
-      status: 'used',
-    });
-    setSavingC22Deduct(false);
-    if (error) { toast.error(`차감 실패: ${error.message}`); return; }
-
-    // 세션 새로고침 — 2-1 시술내역 자동 리스트업
-    const pkgIds = packages.map(p => p.id);
-    const { data: sessData } = await supabase
-      .from('package_sessions')
-      .select('id, package_id, session_number, session_type, session_date, performed_by, status, memo, staff:performed_by(name)')
-      .in('package_id', pkgIds)
-      .order('session_number', { ascending: true });
-    setPackageSessions(
-      (sessData ?? []).map((s: Record<string, unknown>) => ({
-        id: s.id as string,
-        package_id: s.package_id as string,
-        session_number: s.session_number as number,
-        session_type: s.session_type as string,
-        session_date: s.session_date as string,
-        performed_by: s.performed_by as string | null,
-        staff_name: (s.staff as { name: string } | null)?.name ?? null,
-        status: s.status as string,
-        memo: s.memo as string | null,
-      }))
-    );
-
-    // 잔여회수 새로고침 — 2-1 사용횟수 즉시 반영
-    const remaining = await Promise.all(
-      packages.map(async (p) => {
-        const { data } = await supabase.rpc('get_package_remaining', { p_package_id: p.id });
-        return data as PackageRemaining | null;
-      }),
-    );
-    setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remaining[i] })));
-
-    setC22DeductForm(f => ({ ...f, therapistId: '', treatmentType: 'heated_laser' }));
-    toast.success(`${usedCount + 1}회차 차감 완료 — ${targetPkg.package_name}`);
   };
 
   // C22-RESV-EDIT: 예약 수정 저장
@@ -2500,79 +2430,6 @@ export default function CustomerChartPage() {
               <div className="text-xs text-gray-700 whitespace-pre-wrap line-clamp-6">{customer.tm_memo}</div>
             </div>
           )}
-
-          {/* C22-PKG-DEDUCT: 회차 차감 인라인 폼 (2-2 구역) — T-20260510-foot-C22-SECTION-MERGE: 단일 섹션 통합 완료 */}
-          <div className="border-b border-gray-200 px-3 py-2">
-            <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1.5 flex items-center gap-1">
-              회차 차감
-              <span className="text-[9px] font-normal bg-teal-100 text-teal-700 rounded px-1 py-0.5">치료사 기입</span>
-              {packages.filter(p => p.status === 'active').length === 0 && (
-                <span className="ml-1 text-[10px] font-normal text-amber-500">— 활성 패키지 없음</span>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              {/* 복수 활성 패키지가 있을 때 선택 드롭다운 */}
-              {packages.filter(p => p.status === 'active').length > 1 && (
-                <div>
-                  <label className="block text-[10px] text-muted-foreground mb-0.5">패키지 선택</label>
-                  <select
-                    value={c22DeductForm.packageId}
-                    onChange={(e) => setC22DeductForm(f => ({ ...f, packageId: e.target.value }))}
-                    className="w-full h-6 rounded border border-gray-300 px-1 text-[10px] focus:outline-none focus:border-teal-500 bg-white"
-                  >
-                    <option value="">— 첫 번째 활성 패키지</option>
-                    {packages.filter(p => p.status === 'active').map(p => (
-                      <option key={p.id} value={p.id}>{p.package_name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <div className="grid grid-cols-3 gap-1.5">
-                <div>
-                  <label className="block text-[10px] text-muted-foreground mb-0.5">일자</label>
-                  <input
-                    type="date"
-                    value={c22DeductForm.sessionDate}
-                    onChange={(e) => setC22DeductForm(f => ({ ...f, sessionDate: e.target.value }))}
-                    className="w-full h-6 rounded border border-gray-300 px-1 text-[10px] focus:outline-none focus:border-teal-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-muted-foreground mb-0.5">치료사</label>
-                  <select
-                    value={c22DeductForm.therapistId}
-                    onChange={(e) => setC22DeductForm(f => ({ ...f, therapistId: e.target.value }))}
-                    className="w-full h-6 rounded border border-gray-300 px-1 text-[10px] focus:outline-none focus:border-teal-500 bg-white"
-                  >
-                    <option value="">선택</option>
-                    {therapistList.map(t => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] text-muted-foreground mb-0.5">금일치료</label>
-                  <select
-                    value={c22DeductForm.treatmentType}
-                    onChange={(e) => setC22DeductForm(f => ({ ...f, treatmentType: e.target.value }))}
-                    className="w-full h-6 rounded border border-gray-300 px-1 text-[10px] focus:outline-none focus:border-teal-500 bg-white"
-                  >
-                    <option value="heated_laser">가열</option>
-                    <option value="unheated_laser">비가열</option>
-                    <option value="podologue">포돌로게</option>
-                  </select>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={saveC22Deduct}
-                disabled={savingC22Deduct || !c22DeductForm.therapistId || packages.filter(p => p.status === 'active').length === 0}
-                className="w-full rounded bg-teal-600 text-white py-1.5 text-[10px] font-medium hover:bg-teal-700 transition disabled:opacity-50"
-              >
-                {savingC22Deduct ? '저장 중…' : '저장'}
-              </button>
-            </div>
-          </div>
 
           {/* 예약내역 (우측 패널 간략) */}
           <div className="border-b border-gray-200 px-3 py-2">
