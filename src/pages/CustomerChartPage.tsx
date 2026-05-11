@@ -21,6 +21,8 @@ import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 import { InsuranceGradeSelect } from '@/components/insurance/InsuranceGradeSelect';
 // T-20260511-foot-C2-INSURANCE-AUTO-CALC: 2번차트 진료비 자동산정 패널
 import { Chart2InsuranceCalcPanel } from '@/components/insurance/Chart2InsuranceCalcPanel';
+// T-20260512-foot-TREATMENT-SET: 진료세트 불러오기 버튼
+import { TreatmentSetLoadButton, type TreatmentSetSelection } from '@/components/insurance/TreatmentSetLoadButton';
 // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
 import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
@@ -423,6 +425,8 @@ export default function CustomerChartPage() {
   const customerMemoRef = useRef<HTMLTextAreaElement>(null);
   // T-20260511-foot-C2-INSURANCE-AUTO-CALC: 건보 자격등급 변경 감지 트리거
   const [insuranceGradeRefreshKey, setInsuranceGradeRefreshKey] = useState(0);
+  // T-20260512-foot-TREATMENT-SET: 진료세트 선택 상태
+  const [selectedTreatmentSet, setSelectedTreatmentSet] = useState<TreatmentSetSelection | null>(null);
   // T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 인라인 편집
   const [editingAddress, setEditingAddress] = useState(false);
   const [addressText, setAddressText] = useState('');
@@ -2437,14 +2441,24 @@ export default function CustomerChartPage() {
           <div className="border-b border-gray-200 p-3 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-[#1e4e6e]">건강보험 자격등급</span>
-              <a
-                href="https://www.nhis.or.kr/nhis/minwon/wbhame03400m01.do"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-2 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100 transition"
-              >
-                <ExternalLink className="h-3 w-3" /> 건보 조회
-              </a>
+              <div className="flex items-center gap-1.5">
+                {/* T-20260512-foot-TREATMENT-SET: 진료세트 불러오기 */}
+                <TreatmentSetLoadButton
+                  clinicId={customer.clinic_id}
+                  onLoad={(sel) =>
+                    setSelectedTreatmentSet(sel.setId ? sel : null)
+                  }
+                  currentSetName={selectedTreatmentSet?.setName}
+                />
+                <a
+                  href="https://www.nhis.or.kr/nhis/minwon/wbhame03400m01.do"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-2 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100 transition"
+                >
+                  <ExternalLink className="h-3 w-3" /> 건보 조회
+                </a>
+              </div>
             </div>
             <InsuranceGradeSelect
               customerId={customer.id}
@@ -2463,10 +2477,14 @@ export default function CustomerChartPage() {
               }}
             />
             {/* T-20260511-foot-C2-INSURANCE-AUTO-CALC: 등급 변경 시 진료비 실시간 자동산정 */}
+            {/* T-20260512-foot-TREATMENT-SET: 진료세트 필터 + 상병코드 연동 */}
             <Chart2InsuranceCalcPanel
               customerId={customer.id}
               clinicId={customer.clinic_id}
               refreshTrigger={insuranceGradeRefreshKey}
+              serviceCodeFilter={selectedTreatmentSet?.insertionCodes}
+              diseaseCodes={selectedTreatmentSet?.diseaseCodes}
+              activeSetName={selectedTreatmentSet?.setName}
             />
           </div>
 
@@ -2547,6 +2565,7 @@ export default function CustomerChartPage() {
                     <option value="heated_laser">가열</option>
                     <option value="unheated_laser">비가열</option>
                     <option value="podologue">포돌로게</option>
+                    <option value="iv">수액</option>
                   </select>
                 </div>
               </div>
