@@ -2229,16 +2229,25 @@ export default function CustomerChartPage() {
                       const TREAT_KO: Record<string, string> = { heated_laser: '가열', unheated_laser: '비가열', podologue: '포돌로게', iv: '수액', preconditioning: '프컨' };
                       return (
                         <div key={p.id} className="rounded-lg border border-muted/40 overflow-hidden">
-                          {/* 패키지 헤더 */}
+                          {/* 패키지 헤더 — T-20260511-foot-C21-PKG-TICKET-DATE: 발행일자 추가 */}
                           <div className="flex items-center justify-between bg-muted/20 px-3 py-1.5">
                             <span className="text-xs font-semibold text-teal-800">{p.package_name}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                              p.status === 'active' ? 'bg-teal-100 text-teal-700' :
-                              p.status === 'refunded' ? 'bg-red-100 text-red-700' :
-                              'bg-muted text-muted-foreground'
-                            }`}>
-                              {PKG_STATUS_KO[p.status] ?? p.status}
-                            </span>
+                            <div className="flex items-center gap-1.5 shrink-0 ml-1">
+                              {(p.contract_date || p.created_at) && (
+                                <span className="text-[10px] text-muted-foreground tabular-nums">
+                                  {p.contract_date
+                                    ? p.contract_date.slice(0, 10)
+                                    : format(new Date(p.created_at), 'yyyy-MM-dd')}
+                                </span>
+                              )}
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                                p.status === 'active' ? 'bg-teal-100 text-teal-700' :
+                                p.status === 'refunded' ? 'bg-red-100 text-red-700' :
+                                'bg-muted text-muted-foreground'
+                              }`}>
+                                {PKG_STATUS_KO[p.status] ?? p.status}
+                              </span>
+                            </div>
                           </div>
                           {/* 총금액 */}
                           <div className="px-3 py-1 text-[10px] text-muted-foreground border-b border-muted/10">
