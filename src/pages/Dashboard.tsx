@@ -243,6 +243,8 @@ function DraggableCard({
     opacity: isDragging ? 0.3 : 1,
     // T-20260506-foot-SLOT-VERTICAL-MOVE: 세로 터치 드래그 시 브라우저 스크롤 인터셉트 방지
     touchAction: 'none',
+    // T-20260511-foot-DASH-DRAG-PERF: GPU 레이어 승격 힌트 → 드래그 중 합성 레이어 재사용
+    willChange: isDragging ? 'transform' : undefined,
   };
 
   // T-20260507-REMOVE-AUTO-COLOR: 시간 기반 자동 색 변경 완전 삭제. 수동 STATUS-COLOR-FLAG만 사용.
@@ -983,6 +985,8 @@ function TimelineCheckInCard({
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
     opacity: isDragging ? 0.3 : 1,
     touchAction: 'none',
+    // T-20260511-foot-DASH-DRAG-PERF: GPU 레이어 승격 힌트
+    willChange: isDragging ? 'transform' : undefined,
   };
 
   // 2번 박스 활성화 스타일: 방문유형별 컬러 (초진=노랑, 재진=초록)
@@ -1760,8 +1764,9 @@ export default function Dashboard() {
   // T-20260506-foot-CHART-UNIFIED-ACCESS: TouchSensor distance-only 방식으로 변경
   // 이유: delay:200ms 방식은 200ms 후 dnd-kit이 터치를 선점해 브라우저 contextmenu(롱프레스) 이벤트 억제
   // distance:8 방식은 8px 이상 이동해야 드래그 시작 → 롱프레스 시 contextmenu 자연 발생 보장
+  // T-20260511-foot-DASH-DRAG-PERF: PointerSensor distance 5→3 (더 빠른 드래그 시작 응답)
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
     useSensor(TouchSensor, { activationConstraint: { distance: 8 } }),
   );
 
@@ -2234,10 +2239,11 @@ export default function Dashboard() {
     });
   }, [undoDrag]);
 
-  const handleDragStart = (e: DragStartEvent) => {
+  // T-20260511-foot-DASH-DRAG-PERF: useCallback으로 안정화 — DndContext props 불필요한 재생성 방지
+  const handleDragStart = useCallback((e: DragStartEvent) => {
     const card = e.active.data.current?.checkIn as CheckIn | undefined;
     if (card) setDragging(card);
-  };
+  }, []);
 
   const handleDragEnd = async (e: DragEndEvent) => {
     setDragging(null);
@@ -3518,10 +3524,14 @@ export default function Dashboard() {
         autoScroll={{
           threshold: { x: 0.15, y: 0.05 },
           acceleration: 6,
-          interval: 5,
+          // T-20260511-foot-DASH-DRAG-PERF: interval 5→16 (5ms=200fps → 16ms=60fps, CPU 과부하 해소)
+          interval: 16,
         }}
         measuring={{
-          droppable: { strategy: MeasuringStrategy.Always },
+          // T-20260511-foot-DASH-DRAG-PERF: Always → BeforeDragging
+          // Always: 드래그 이동마다 모든 드롭존 DOM reflow → 버벅거림 주범
+          // BeforeDragging: 드래그 시작 시 1회만 측정 → 레이아웃 고정 중 재측정 불필요
+          droppable: { strategy: MeasuringStrategy.BeforeDragging },
         }}
       >
       {/* T-20260509-foot-DASH-SCROLL-FIX: min-h-0 추가 — flex 자식이 할당 영역 밖으로 팽창하지 않도록 */}
