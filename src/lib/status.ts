@@ -113,6 +113,7 @@ export const STAFF_ROLE_ORDER: StaffRole[] = [
 export const USER_ROLE_LABEL: Record<UserRole, string> = {
   admin: '관리자',
   manager: '매니저',
+  director: '원장',
   part_lead: '파트장',
   consultant: '상담실장',
   coordinator: '코디네이터',
