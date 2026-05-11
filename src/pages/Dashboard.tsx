@@ -65,7 +65,7 @@ import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { generateSlots } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
-import { formatAmount, maskPhoneTail } from '@/lib/format';
+import { formatAmount, formatPhone, maskPhoneTail } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { NewCheckInDialog } from '@/components/NewCheckInDialog';
 import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
@@ -1475,7 +1475,7 @@ function QuickReservationDialog({
                       onClick={() => handleSelectCustomer(c)}
                     >
                       <span className="font-medium">{c.name}</span>
-                      <span className="ml-1.5 text-muted-foreground">{c.phone}</span>
+                      <span className="ml-1.5 text-muted-foreground">{formatPhone(c.phone)}</span>
                     </button>
                   ))}
                 </div>
@@ -1890,11 +1890,14 @@ export default function Dashboard() {
     if (!clinic) return;
     const start = `${dateStr}T00:00:00+09:00`;
     const end = `${dateStr}T23:59:59+09:00`;
+    // T-20260511-foot-SELFCHECKIN-CRM-SYNC: consult_waiting/treatment_waiting 포함
+    // DASH-SLOT-REWORK-P0 이후 셀프접수는 registered가 아닌 consult_waiting/treatment_waiting으로 직행.
+    // 취소/완료 제외한 모든 활성 상태를 포함해야 타임라인 슬롯 매칭이 정상 동작.
     const { data } = await supabase
       .from('check_ins')
       .select('*')
       .eq('clinic_id', clinic.id)
-      .eq('status', 'registered')
+      .not('status', 'in', '("cancelled","done")')
       .in('visit_type', ['new', 'returning'])
       .gte('checked_in_at', start)
       .lte('checked_in_at', end)
@@ -3531,7 +3534,8 @@ export default function Dashboard() {
         </div>
 
         {/* 우측: 칸반 (줌 + 레이아웃 편집 지원) */}
-      <div className="flex-1 overflow-auto p-3">
+      {/* T-20260510-foot-DASH-DUAL-HSCROLL: min-w-0 추가 — flex 자식이 가로 팽창하지 않도록 */}
+      <div className="flex-1 min-w-0 overflow-auto p-3">
         {loading && rows.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             불러오는 중…
