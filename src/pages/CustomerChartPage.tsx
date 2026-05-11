@@ -3368,6 +3368,7 @@ function PackagePurchaseFromTemplateDialog({
         </div>
 
         {/* T-20260510-foot-PKG-ROUTE-UNIFY: 통일 버튼 [취소 / 템플릿추가후생성 / 구입티켓생성] */}
+        {/* T-20260511-foot-C2-PKG-BTN-DISABLED: packageName disabled 조건 제거 → submit() 토스트 검증으로 이동 */}
         <div className="flex justify-end gap-1.5 mt-4">
           <button
             onClick={() => onOpenChange(false)}
@@ -3376,14 +3377,14 @@ function PackagePurchaseFromTemplateDialog({
             취소
           </button>
           <button
-            disabled={submitting || !packageName.trim() || totalSessions === 0}
+            disabled={submitting || totalSessions === 0}
             onClick={submitWithTemplate}
             className="h-8 rounded border border-teal-300 bg-teal-50 px-3 text-xs font-medium text-teal-700 hover:bg-teal-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? '저장 중…' : '템플릿 추가 후 생성'}
           </button>
           <button
-            disabled={submitting || !packageName.trim() || totalSessions === 0}
+            disabled={submitting || totalSessions === 0}
             onClick={submit}
             className="h-8 rounded bg-teal-600 px-3 text-xs font-medium text-white hover:bg-teal-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >

@@ -1093,11 +1093,12 @@ function PackageCreateDialog({
         </div>
 
         {/* T-20260510-foot-PKG-ROUTE-UNIFY: 통일 버튼 */}
+        {/* T-20260511-foot-PKG-PODOLOGE-CREATE: packageName disabled 제거 → submit() 토스트 검증으로 이동 */}
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>취소</Button>
           <Button
             size="sm"
-            disabled={submitting || !packageName.trim() || (heated + unheated + podologe + iv === 0)}
+            disabled={submitting || (heated + unheated + podologe + iv === 0)}
             onClick={submit}
           >
             {submitting ? '저장 중…' : '템플릿 추가 후 생성'}
