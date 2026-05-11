@@ -544,8 +544,7 @@ export default function CustomerChartPage() {
       setTreatmentMemoText((custData as Customer).treatment_note ?? (custData as Customer).memo ?? '');
 
       // C2-STAFF-DROPDOWN: 담당자 직원 목록 로드 (coordinator + consultant + director)
-      // T-20260510-foot-C21-STAFF-REVENUE: 삭제 대상 4명 제외 (김다희/김민경/문원장/박민석)
-      const EXCLUDED_STAFF = ['김다희', '김민경', '문원장', '박민석'];
+      // C2-MANAGER-PAYMENT-MAP: active=true DB 필터만으로 비활성 직원 제외 (하드코드 제거)
       const { data: staffData } = await supabase
         .from('staff')
         .select('id, name, role')
@@ -553,7 +552,7 @@ export default function CustomerChartPage() {
         .eq('active', true)
         .in('role', ['consultant', 'coordinator', 'director'])
         .order('name', { ascending: true });
-      setStaffList(((staffData ?? []) as {id: string; name: string; role: string}[]).filter(s => !EXCLUDED_STAFF.includes(s.name)));
+      setStaffList((staffData ?? []) as {id: string; name: string; role: string}[]);
 
       // C2-PKG-TICKET-TABLE: 치료사 목록 로드 (role = 'therapist')
       const { data: therapistData } = await supabase

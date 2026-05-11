@@ -22,6 +22,11 @@ import type { CheckIn } from '@/lib/types';
 type PayMethod = 'card' | 'cash' | 'transfer';
 type PaymentMode = 'single' | 'package';
 
+interface StaffOption {
+  id: string;
+  name: string;
+}
+
 interface Props {
   checkIn: CheckIn | null;
   onClose: () => void;
@@ -56,6 +61,9 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
   const [splitCashStr, setSplitCashStr] = useState('');
   const [memo, setMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // C2-MANAGER-PAYMENT-MAP: 결제담당 선택
+  const [staffList, setStaffList] = useState<StaffOption[]>([]);
+  const [selectedStaffId, setSelectedStaffId] = useState<string>('');
 
   useEffect(() => {
     if (checkIn) {
@@ -68,6 +76,17 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
       setSplitCardStr('');
       setSplitCashStr('');
       setMemo('');
+      // 결제담당: 체크인의 기존 consultant_id로 초기화
+      setSelectedStaffId(checkIn.consultant_id ?? '');
+      // 활성 직원 목록 로드
+      supabase
+        .from('staff')
+        .select('id, name')
+        .eq('clinic_id', checkIn.clinic_id)
+        .eq('active', true)
+        .in('role', ['consultant', 'coordinator', 'director'])
+        .order('name')
+        .then(({ data }) => { setStaffList((data ?? []) as StaffOption[]); });
     }
   }, [checkIn?.id]);
 
@@ -249,6 +268,14 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
           return;
         }
       }
+    }
+
+    // C2-MANAGER-PAYMENT-MAP: 결제담당 선택 시 check_in.consultant_id 업데이트
+    if (selectedStaffId && selectedStaffId !== (checkIn.consultant_id ?? '')) {
+      await supabase
+        .from('check_ins')
+        .update({ consultant_id: selectedStaffId })
+        .eq('id', checkIn.id);
     }
 
     const autoTransitionStatuses = ['payment_waiting', 'consultation', 'consult_waiting'];
@@ -503,6 +530,23 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                   </div>
                 )}
               </>
+            )}
+
+            {/* C2-MANAGER-PAYMENT-MAP: 결제담당 선택 */}
+            {staffList.length > 0 && (
+              <div className="space-y-2">
+                <Label>결제담당 <span className="text-xs font-normal text-muted-foreground">(선택)</span></Label>
+                <select
+                  value={selectedStaffId}
+                  onChange={(e) => setSelectedStaffId(e.target.value)}
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">— 선택 안 함 —</option>
+                  {staffList.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
             )}
 
             <div className="space-y-2">

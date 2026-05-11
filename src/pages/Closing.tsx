@@ -187,6 +187,8 @@ export default function Closing() {
   const [showManualDialog, setShowManualDialog] = useState(false);
   /** 수기 수정 대상 (null이면 신규 추가 모드) */
   const [manualEditTarget, setManualEditTarget] = useState<ManualPaymentRow | null>(null);
+  /** C2-MANAGER-PAYMENT-MAP: 결제내역 담당자 필터 */
+  const [staffFilter, setStaffFilter] = useState('');
 
   const { data: clinic } = useQuery<Clinic | null>({
     queryKey: ['clinic'],
@@ -539,6 +541,24 @@ export default function Closing() {
     rows.sort((a, b) => a.sort_key.localeCompare(b.sort_key));
     return rows;
   }, [payments, pkgPayments, manualEntries, checkInDetailMap, customerMap, staffMap]);
+
+  // C2-MANAGER-PAYMENT-MAP: 담당자 필터 적용
+  const filteredEnrichedRows = useMemo<EnrichedRow[]>(() => {
+    if (!staffFilter) return enrichedRows;
+    return enrichedRows.filter(r => (r.staff_name ?? '미배정') === staffFilter);
+  }, [enrichedRows, staffFilter]);
+
+  // C2-MANAGER-PAYMENT-MAP: 담당자별 매출 집계 (enrichedRows 기준 — 필터 무관)
+  const staffTotals = useMemo<Array<{ name: string; total: number }>>(() => {
+    const map = new Map<string, number>();
+    for (const r of enrichedRows) {
+      const key = r.staff_name ?? '미배정';
+      map.set(key, (map.get(key) ?? 0) + (r.payment_type === 'refund' ? -r.amount : r.amount));
+    }
+    return [...map.entries()]
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total);
+  }, [enrichedRows]);
 
   // ── 핸들러 ────────────────────────────────────────────────
   const refresh = () => {
@@ -1060,11 +1080,35 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
 
         {/* ════════════════════════ 탭 2: 결제내역 ════════════════════════ */}
         <TabsContent value="payments" className="space-y-4">
-          {/* 액션 버튼 */}
+          {/* C2-MANAGER-PAYMENT-MAP: 담당자 필터 + 액션 버튼 */}
           <div className="flex flex-wrap items-center gap-2 justify-between">
-            <div className="text-sm text-muted-foreground">
-              총 <span className="font-semibold text-foreground">{enrichedRows.length}건</span> ·
-              합계 <span className="font-semibold text-emerald-700">{formatAmount(enrichedRows.reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0))}</span>
+            <div className="flex items-center gap-3">
+              <div className="text-sm text-muted-foreground">
+                총 <span className="font-semibold text-foreground">{filteredEnrichedRows.length}건</span> ·
+                합계 <span className="font-semibold text-emerald-700">{formatAmount(filteredEnrichedRows.reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0))}</span>
+              </div>
+              {/* 담당자 필터 드롭다운 */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground shrink-0">담당자</span>
+                <select
+                  value={staffFilter}
+                  onChange={e => setStaffFilter(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none"
+                >
+                  <option value="">전체</option>
+                  {staffList.map(s => (
+                    <option key={s.id} value={s.name}>{s.name}</option>
+                  ))}
+                  <option value="미배정">미배정</option>
+                </select>
+                {staffFilter && (
+                  <button
+                    onClick={() => setStaffFilter('')}
+                    className="text-xs text-muted-foreground hover:text-foreground px-1"
+                    title="필터 초기화"
+                  >✕</button>
+                )}
+              </div>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => { setManualEditTarget(null); setShowManualDialog(true); }}>
@@ -1103,14 +1147,14 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                     </tr>
                   </thead>
                   <tbody>
-                    {enrichedRows.length === 0 && (
+                    {filteredEnrichedRows.length === 0 && (
                       <tr>
                         <td colSpan={11} className="py-8 text-center text-sm text-muted-foreground">
                           결제내역이 없습니다
                         </td>
                       </tr>
                     )}
-                    {enrichedRows.map((r, i) => (
+                    {filteredEnrichedRows.map((r, i) => (
                       <tr
                         key={`row-${i}`}
                         className={cn(
@@ -1165,12 +1209,12 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                       </tr>
                     ))}
                   </tbody>
-                  {enrichedRows.length > 0 && (
+                  {filteredEnrichedRows.length > 0 && (
                     <tfoot>
                       <tr className="border-t-2 bg-muted/50 font-semibold">
-                        <td colSpan={7} className="py-2 px-3 text-sm">합계</td>
+                        <td colSpan={7} className="py-2 px-3 text-sm">합계{staffFilter && ` (${staffFilter})`}</td>
                         <td className="py-2 px-2 text-right tabular-nums text-sm text-emerald-700">
-                          {formatAmount(enrichedRows.reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0))}
+                          {formatAmount(filteredEnrichedRows.reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0))}
                         </td>
                         <td colSpan={3}></td>
                       </tr>
@@ -1182,10 +1226,10 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
           </Card>
 
           {/* 결제수단별 소계 (결제내역 탭 하단) */}
-          {enrichedRows.length > 0 && (
+          {filteredEnrichedRows.length > 0 && (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {(['card', 'cash', 'transfer', 'membership'] as const).map(method => {
-                const subtotal = enrichedRows
+                const subtotal = filteredEnrichedRows
                   .filter(r => r.method === method)
                   .reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0);
                 if (subtotal === 0) return null;
@@ -1197,6 +1241,54 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                 );
               })}
             </div>
+          )}
+
+          {/* C2-MANAGER-PAYMENT-MAP: 담당자별 매출 집계 (전체 기준 — 필터 무관) */}
+          {staffTotals.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">담당자별 매출</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-xs text-muted-foreground">
+                      <th className="py-1.5 px-3 text-left font-medium">담당자</th>
+                      <th className="py-1.5 px-3 text-right font-medium">매출</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {staffTotals.map(({ name, total }) => (
+                      <tr
+                        key={name}
+                        className={cn(
+                          'border-b cursor-pointer hover:bg-muted/40 transition-colors',
+                          staffFilter === name && 'bg-teal-50',
+                        )}
+                        onClick={() => setStaffFilter(staffFilter === name ? '' : name)}
+                        title={`클릭하면 ${name} 결제내역만 보기`}
+                      >
+                        <td className="py-1.5 px-3">
+                          {name}
+                          {staffFilter === name && (
+                            <span className="ml-1.5 text-[10px] bg-teal-100 text-teal-700 rounded px-1">필터 중</span>
+                          )}
+                        </td>
+                        <td className="py-1.5 px-3 text-right tabular-nums font-medium text-emerald-700">{formatAmount(total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 font-semibold bg-muted/50">
+                      <td className="py-1.5 px-3 text-sm">합계</td>
+                      <td className="py-1.5 px-3 text-right tabular-nums text-sm text-emerald-700">
+                        {formatAmount(staffTotals.reduce((s, x) => s + x.total, 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </CardContent>
+            </Card>
           )}
         </TabsContent>
       </Tabs>
