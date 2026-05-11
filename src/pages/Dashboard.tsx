@@ -274,7 +274,7 @@ function DraggableCard({
         }}
         title="드래그=이동 · 우클릭=고객차트·예약 · ⋮=상태변경 · 클릭=상세"
         className={cn(
-          'cursor-grab touch-none rounded border px-2 py-1.5 text-xs shadow-sm transition hover:shadow active:cursor-grabbing',
+          'cursor-grab touch-none rounded border px-1.5 py-1 text-xs shadow-sm transition hover:shadow active:cursor-grabbing',
           flagBg || 'bg-white',
         )}
       >
@@ -296,9 +296,9 @@ function DraggableCard({
             )}
           </div>
           <div className="flex items-center shrink-0">
-            {/* 태블릿 터치 영역 확보: min-w/h-[36px] — T-20260504-foot-TABLET-LASER-ROOM-SELECT */}
+            {/* 태블릿 터치 영역: min-w/h-[32px] V2 — T-20260512-foot-CUSTOMER-BOX-COMPACT-V2 */}
             <button
-              className="p-1.5 rounded hover:bg-gray-100 active:bg-gray-200 transition min-w-[36px] min-h-[36px] flex items-center justify-center"
+              className="p-1 rounded hover:bg-gray-100 active:bg-gray-200 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
               onClick={(e) => {
                 e.stopPropagation();
                 const rect = e.currentTarget.getBoundingClientRect();
@@ -308,7 +308,7 @@ function DraggableCard({
               onPointerDown={(e) => e.stopPropagation()}
               title="상태 변경"
             >
-              <MoreVertical className="h-4 w-4 text-gray-500" />
+              <MoreVertical className="h-3 w-3 text-gray-500" />
             </button>
           </div>
         </div>
@@ -335,23 +335,24 @@ function DraggableCard({
             ✓ 환불동의서 ({format(new Date(consentEntry.refundAt), 'M/d')})
           </div>
         )}
-        <div className="mt-0.5 flex items-center justify-between text-xs text-muted-foreground">
+        {/* T-20260512-foot-CUSTOMER-BOX-COMPACT-V2: 시간행 text-[10px] 축소, Clock h-2 */}
+        <div className="mt-0.5 flex items-center justify-between text-[10px] text-muted-foreground">
           <span className="tabular-nums font-mono text-muted-foreground">
-            <Clock className="inline h-2.5 w-2.5 mr-0.5" />
+            <Clock className="inline h-2 w-2 mr-0.5" />
             {mmss}
           </span>
           <div className="flex items-center gap-0.5">
             {/* T-20260502-foot-LASER-TIME-UNIT: 레이저실 카드에 시간 단위 배지 */}
             {checkIn.status === 'laser' && checkIn.laser_minutes != null && (
-              <Badge className="h-4 px-1 text-[10px] bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-100">
+              <Badge className="h-3.5 px-0.5 text-[9px] bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-100">
                 {checkIn.laser_minutes}분
               </Badge>
             )}
             {checkIn.notes?.id_check_required && (
-              <Badge variant="destructive" className="h-4 px-1 text-[10px]">신분증</Badge>
+              <Badge variant="destructive" className="h-3.5 px-0.5 text-[9px]">신분증</Badge>
             )}
             {checkIn.priority_flag && (
-              <Badge variant="destructive" className="h-4 px-1 text-xs">
+              <Badge variant="destructive" className="h-3.5 px-0.5 text-[9px]">
                 {checkIn.priority_flag}
               </Badge>
             )}
@@ -360,7 +361,7 @@ function DraggableCard({
         {/* T-20260506-foot-SLOT-LAYOUT-REBUILD: 초진 딱지 → 연한노랑, 재진 → 없음 */}
         {(checkIn.visit_type === 'new' || checkIn.visit_type === 'experience') && (
           <div className="mt-0.5">
-            <span className="bg-yellow-100 text-yellow-800 text-[10px] px-1 py-0.5 rounded font-medium">초진</span>
+            <span className="bg-yellow-100 text-yellow-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
           </div>
         )}
       </div>
@@ -389,7 +390,7 @@ function DraggableCard({
       }}
       title="드래그=이동 · 우클릭=고객차트·예약 · ⋮=상태변경 · 클릭=상세"
       className={cn(
-        'cursor-grab touch-none rounded border p-1.5 shadow-sm transition hover:shadow active:cursor-grabbing',
+        'cursor-grab touch-none rounded border p-1 shadow-sm transition hover:shadow active:cursor-grabbing',
         flagBg || 'bg-white',
       )}
     >
@@ -417,9 +418,9 @@ function DraggableCard({
           )}
         </div>
         <div className="flex items-center shrink-0">
-          {/* 태블릿 터치 영역 유지 (min-w/h 36px) — T-20260504-foot-TABLET-LASER-ROOM-SELECT */}
+          {/* 태블릿 터치 영역 유지 (min-w/h 32px V2) — T-20260512-foot-CUSTOMER-BOX-COMPACT-V2 */}
           <button
-            className="rounded hover:bg-gray-100 active:bg-gray-200 transition min-w-[36px] min-h-[36px] flex items-center justify-center"
+            className="rounded hover:bg-gray-100 active:bg-gray-200 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
             onClick={(e) => {
               e.stopPropagation();
               const rect = e.currentTarget.getBoundingClientRect();
@@ -428,7 +429,7 @@ function DraggableCard({
             }}
             onPointerDown={(e) => e.stopPropagation()}
           >
-            <MoreVertical className="h-3.5 w-3.5 text-gray-400" />
+            <MoreVertical className="h-3 w-3 text-gray-400" />
           </button>
         </div>
       </div>
@@ -449,22 +450,22 @@ function DraggableCard({
           )}
         </div>
       )}
-      {/* 경과 시간 + 현진행단계 — 폰트 text-[10px] 축소 */}
-      <div className="mt-0.5 flex items-center justify-between text-[10px]">
+      {/* 경과 시간 + 현진행단계 — T-20260512-foot-CUSTOMER-BOX-COMPACT-V2: text-[9px] 추가 축소 */}
+      <div className="mt-0.5 flex items-center justify-between text-[9px]">
         <span className="text-muted-foreground tabular-nums font-mono">
           {mmss} {stageStart ? STATUS_KO[checkIn.status] ?? '경과' : '대기'}
         </span>
         <div className="flex items-center gap-0.5">
           {checkIn.notes?.id_check_required && (
-            <Badge variant="destructive" className="h-4 px-1 text-[10px]">신분증</Badge>
+            <Badge variant="destructive" className="h-3.5 px-0.5 text-[9px]">신분증</Badge>
           )}
-          {checkIn.priority_flag && <Badge variant="destructive" className="h-4 px-1 text-[10px]">우선</Badge>}
+          {checkIn.priority_flag && <Badge variant="destructive" className="h-3.5 px-0.5 text-[9px]">우선</Badge>}
         </div>
       </div>
       {/* T-20260506-foot-SLOT-LAYOUT-REBUILD: 초진 딱지 → 연한노랑으로 통일, 재진 → 없음 */}
       {(checkIn.visit_type === 'new' || checkIn.visit_type === 'experience') && (
         <div className="mt-0.5">
-          <span className="bg-yellow-100 text-yellow-800 text-[10px] px-1 py-0.5 rounded font-medium">초진</span>
+          <span className="bg-yellow-100 text-yellow-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
         </div>
       )}
     </div>
