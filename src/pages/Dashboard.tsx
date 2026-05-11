@@ -2101,6 +2101,18 @@ export default function Dashboard() {
           ) {
             pendingAutoOpenId.current = newRow.id;
           }
+          // T-20260511-foot-SELFCHECKIN-CRM-SYNC: 재진 셀프접수 감지 → 치료대기 칸반 활성화
+          // 키오스크(anon)가 treatment_waiting으로 직행 INSERT → auto-open + toast (초진과 동일 패턴)
+          if (
+            payload.eventType === 'INSERT' &&
+            (newRow?.status as string) === 'treatment_waiting' &&
+            (newRow?.visit_type as string) === 'returning' &&
+            newRow?.id
+          ) {
+            pendingAutoOpenId.current = newRow.id;
+            const name = (newRow as Record<string, unknown>)?.customer_name as string | undefined;
+            toast.info(`재진 접수: ${name ?? '고객'}님 치료대기`, { duration: 6000 });
+          }
           debouncedCheckInRefetch();
         },
       )
