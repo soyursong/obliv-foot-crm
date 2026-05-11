@@ -71,7 +71,7 @@ export interface PrescriptionItemRow {
 }
 
 export type StaffRole = 'director' | 'consultant' | 'coordinator' | 'therapist' | 'technician';
-export type UserRole = 'admin' | 'manager' | 'part_lead' | 'consultant' | 'coordinator' | 'therapist' | 'technician' | 'tm' | 'staff';
+export type UserRole = 'admin' | 'manager' | 'director' | 'part_lead' | 'consultant' | 'coordinator' | 'therapist' | 'technician' | 'tm' | 'staff';
 
 export interface Clinic {
   id: string;

@@ -2358,8 +2358,9 @@ export default function CustomerChartPage() {
                                     <span className="rounded bg-muted/40 px-1 shrink-0">{TREAT_KO[s.session_type] ?? s.session_type}</span>
                                     <span className="text-muted-foreground shrink-0">{s.session_date}</span>
                                     {s.staff_name && <span className="text-teal-600 truncate">{s.staff_name}</span>}
-                                    {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant') && (
+                                    {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director' || profile?.role === 'consultant') && (
                                       <span className="ml-auto hidden group-hover:flex items-center gap-0.5 shrink-0">
+                                        {/* 수정 버튼 — consultant 포함 (package_sessions_consult_update RLS 허용) */}
                                         <button
                                           type="button"
                                           onClick={() => {
@@ -2375,14 +2376,17 @@ export default function CustomerChartPage() {
                                         >
                                           <Pencil className="h-3 w-3" />
                                         </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => deleteSession(s)}
-                                          className="h-5 w-5 flex items-center justify-center rounded hover:bg-red-100 text-red-500"
-                                          title="삭제"
-                                        >
-                                          <Trash2 className="h-3 w-3" />
-                                        </button>
+                                        {/* 삭제 버튼 — admin/manager/director만 (is_admin_or_manager() DELETE 정책, consultant 불허) */}
+                                        {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director') && (
+                                          <button
+                                            type="button"
+                                            onClick={() => deleteSession(s)}
+                                            className="h-5 w-5 flex items-center justify-center rounded hover:bg-red-100 text-red-500"
+                                            title="삭제"
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                          </button>
+                                        )}
                                       </span>
                                     )}
                                   </div>
