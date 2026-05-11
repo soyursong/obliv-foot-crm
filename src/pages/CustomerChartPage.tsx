@@ -501,6 +501,14 @@ export default function CustomerChartPage() {
   const [editResvId, setEditResvId] = useState<string | null>(null);
   const [editResvForm, setEditResvForm] = useState({ date: '', startTime: '', memo: '' });
   const [savingEditResv, setSavingEditResv] = useState(false);
+  // T-20260511-foot-C21-PKG-USAGE-EDIT: 시술내역 수정/삭제 다이얼로그
+  const [editSessionDlg, setEditSessionDlg] = useState<PackageSession | null>(null);
+  const [editSessionForm, setEditSessionForm] = useState({
+    sessionType: 'heated_laser',
+    sessionDate: format(new Date(), 'yyyy-MM-dd'),
+    therapistId: '',
+  });
+  const [savingEditSession, setSavingEditSession] = useState(false);
   // T-20260510-foot-C21-SAVE-UNIFY: 고객정보 패널 통합 저장 로딩 상태
   const [savingInfoPanel, setSavingInfoPanel] = useState(false);
   // T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: isDirty 패턴 + 자동저장 인디케이터
@@ -875,6 +883,66 @@ export default function CustomerChartPage() {
     }
 
     setUseSessionDlg(null);
+  };
+
+  // T-20260511-foot-C21-PKG-USAGE-EDIT: 패키지 세션 + 잔여횟수 공통 새로고침
+  const refreshPackageData = async (pkgList: PackageWithRemaining[]) => {
+    if (pkgList.length === 0) return;
+    const pkgIds = pkgList.map((p) => p.id);
+    const { data: sessData } = await supabase
+      .from('package_sessions')
+      .select('id, package_id, session_number, session_type, session_date, performed_by, status, memo, staff:performed_by(name)')
+      .in('package_id', pkgIds)
+      .order('session_number', { ascending: true });
+    setPackageSessions(
+      (sessData ?? []).map((s: Record<string, unknown>) => ({
+        id: s.id as string,
+        package_id: s.package_id as string,
+        session_number: s.session_number as number,
+        session_type: s.session_type as string,
+        session_date: s.session_date as string,
+        performed_by: s.performed_by as string | null,
+        staff_name: (s.staff as { name: string } | null)?.name ?? null,
+        status: s.status as string,
+        memo: s.memo as string | null,
+      })),
+    );
+    const remaining = await Promise.all(
+      pkgList.map(async (p) => {
+        const { data } = await supabase.rpc('get_package_remaining', { p_package_id: p.id });
+        return data as PackageRemaining | null;
+      }),
+    );
+    setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remaining[i] })));
+  };
+
+  // T-20260511-foot-C21-PKG-USAGE-EDIT: 시술내역 수정 저장
+  const saveEditSession = async () => {
+    if (!editSessionDlg) return;
+    if (!editSessionForm.therapistId) { toast.error('치료사를 선택해주세요.'); return; }
+    setSavingEditSession(true);
+    const { error } = await supabase
+      .from('package_sessions')
+      .update({
+        session_type: editSessionForm.sessionType,
+        session_date: editSessionForm.sessionDate,
+        performed_by: editSessionForm.therapistId,
+      })
+      .eq('id', editSessionDlg.id);
+    setSavingEditSession(false);
+    if (error) { toast.error(`수정 실패: ${error.message}`); return; }
+    toast.success('시술내역이 수정되었습니다.');
+    await refreshPackageData(packages);
+    setEditSessionDlg(null);
+  };
+
+  // T-20260511-foot-C21-PKG-USAGE-EDIT: 시술내역 삭제 (잔여횟수 자동 재계산)
+  const deleteSession = async (session: PackageSession) => {
+    if (!window.confirm(`${session.session_number}회 시술내역을 삭제하시겠습니까?\n삭제하면 잔여 횟수가 자동 증가합니다.`)) return;
+    const { error } = await supabase.from('package_sessions').delete().eq('id', session.id);
+    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+    toast.success('시술내역이 삭제되었습니다. (잔여횟수 +1)');
+    await refreshPackageData(packages);
   };
 
   // 우편번호 카카오 주소검색 팝업 (Kakao Postcode API)
@@ -2283,13 +2351,40 @@ export default function CustomerChartPage() {
                           {usedSessions.length > 0 && (
                             <div className="border-t border-muted/20 px-3 pb-2 pt-1.5">
                               <div className="text-[10px] text-muted-foreground mb-1 font-medium">시술내역</div>
-                              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                              <div className="space-y-0.5">
                                 {usedSessions.map((s) => (
-                                  <div key={s.id} className="flex items-center gap-1.5 text-[10px]">
-                                    <span className="text-muted-foreground w-5 tabular-nums">{s.session_number}회</span>
-                                    <span className="rounded bg-muted/40 px-1">{TREAT_KO[s.session_type] ?? s.session_type}</span>
-                                    <span className="text-muted-foreground">{s.session_date}</span>
+                                  <div key={s.id} className="group flex items-center gap-1.5 text-[10px] rounded px-0.5 hover:bg-muted/30 transition">
+                                    <span className="text-muted-foreground w-5 tabular-nums shrink-0">{s.session_number}회</span>
+                                    <span className="rounded bg-muted/40 px-1 shrink-0">{TREAT_KO[s.session_type] ?? s.session_type}</span>
+                                    <span className="text-muted-foreground shrink-0">{s.session_date}</span>
                                     {s.staff_name && <span className="text-teal-600 truncate">{s.staff_name}</span>}
+                                    {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant') && (
+                                      <span className="ml-auto hidden group-hover:flex items-center gap-0.5 shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setEditSessionDlg(s);
+                                            setEditSessionForm({
+                                              sessionType: s.session_type,
+                                              sessionDate: s.session_date,
+                                              therapistId: s.performed_by ?? '',
+                                            });
+                                          }}
+                                          className="h-5 w-5 flex items-center justify-center rounded hover:bg-teal-100 text-teal-600"
+                                          title="수정"
+                                        >
+                                          <Pencil className="h-3 w-3" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => deleteSession(s)}
+                                          className="h-5 w-5 flex items-center justify-center rounded hover:bg-red-100 text-red-500"
+                                          title="삭제"
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                        </button>
+                                      </span>
+                                    )}
                                   </div>
                                 ))}
                               </div>
@@ -2973,6 +3068,77 @@ export default function CustomerChartPage() {
                 {savingSession ? '저장 중…' : '차감 확정'}
               </Button>
               <Button variant="outline" className="h-9 text-xs px-3" onClick={() => setUseSessionDlg(null)}>
+                취소
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* T-20260511-foot-C21-PKG-USAGE-EDIT: 시술내역 수정 다이얼로그 */}
+      {editSessionDlg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-80 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="font-semibold text-teal-800 text-sm">시술내역 수정</div>
+              <button type="button" onClick={() => setEditSessionDlg(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              <span className="font-medium text-gray-800">{editSessionDlg.session_number}회차</span> 내역을 수정합니다.
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-gray-700 mb-1 block">시술 유형</label>
+                <select
+                  value={editSessionForm.sessionType}
+                  onChange={(e) => setEditSessionForm((f) => ({ ...f, sessionType: e.target.value }))}
+                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                >
+                  <option value="heated_laser">가열 레이저</option>
+                  <option value="unheated_laser">비가열 레이저</option>
+                  <option value="preconditioning">사전처치(프컨)</option>
+                  <option value="podologue">포돌로게</option>
+                  <option value="iv">수액</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-700 mb-1 block">시술 날짜</label>
+                <input
+                  type="date"
+                  value={editSessionForm.sessionDate}
+                  onChange={(e) => setEditSessionForm((f) => ({ ...f, sessionDate: e.target.value }))}
+                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-700 mb-1 block">
+                  치료사 <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={editSessionForm.therapistId}
+                  onChange={(e) => setEditSessionForm((f) => ({ ...f, therapistId: e.target.value }))}
+                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                >
+                  <option value="">— 치료사 선택 —</option>
+                  {therapistList.length > 0 ? therapistList.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  )) : (
+                    <option disabled>등록된 치료사 없음</option>
+                  )}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button
+                className="flex-1 bg-teal-600 hover:bg-teal-700 h-9 text-xs"
+                onClick={saveEditSession}
+                disabled={savingEditSession || !editSessionForm.therapistId}
+              >
+                {savingEditSession ? '저장 중…' : '수정 저장'}
+              </Button>
+              <Button variant="outline" className="h-9 text-xs px-3" onClick={() => setEditSessionDlg(null)}>
                 취소
               </Button>
             </div>
