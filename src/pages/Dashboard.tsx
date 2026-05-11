@@ -1195,22 +1195,27 @@ function DashboardTimeline({
   return (
     <div className="flex flex-col bg-white overflow-hidden flex-1 min-h-0">
       {/* 헤더 */}
-      <div className="text-xs font-semibold px-2 py-1.5 border-b bg-muted/20 text-gray-600 sticky top-0 z-20 flex items-center gap-1">
+      {/* T-20260510-foot-DASH-DUAL-HSCROLL: sticky 제거 → shrink-0으로 교체 (스크롤 컨테이너 밖이므로 sticky 불필요) */}
+      <div className="text-xs font-semibold px-2 py-1.5 border-b bg-muted/20 text-gray-600 shrink-0 flex items-center gap-1">
         <Clock className="h-3 w-3" /> 통합 시간표
       </div>
-      {/* 컬럼 헤더 — 초진(연노랑)/재진(연두) */}
-      <div className="grid grid-cols-[2.5rem_1fr_1fr] border-b">
-        <div className="py-1 border-r bg-gray-50" />
-        <div className="py-1 text-[9px] font-bold text-yellow-800 text-center border-r bg-yellow-50 flex items-center justify-center gap-0.5">
-          <span className="bg-yellow-200 text-yellow-900 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
-          초진
+      {/* T-20260510-foot-DASH-DUAL-HSCROLL: 컬럼헤더를 스크롤 컨테이너 내부로 이동
+          문제1 — 이중 X스크롤바: overflow-y-auto는 CSS 규격상 overflow-x도 auto로 강제 →
+            overflow-x-hidden 명시로 내부 가로스크롤바 완전 제거
+          문제2 — 컬럼 잘림/오정렬: 헤더가 overflow-y-auto 바깥에 있으면 Y스크롤바 폭(~15px)만큼
+            열 너비가 헤더와 본문 사이에 어긋남 → 헤더를 안으로 이동해 자동 동기화 */}
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+        {/* 컬럼 헤더 — 초진(연노랑)/재진(연두): sticky로 슬롯 스크롤 시 상단 고정 */}
+        <div className="grid grid-cols-[2.5rem_1fr_1fr] border-b sticky top-0 z-10 bg-white">
+          <div className="py-1 border-r bg-gray-50" />
+          <div className="py-1 text-[9px] font-bold text-yellow-800 text-center border-r bg-yellow-50 flex items-center justify-center gap-0.5">
+            <span className="bg-yellow-200 text-yellow-900 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
+            초진
+          </div>
+          <div className="py-1 text-[9px] font-bold text-green-800 text-center bg-green-50">
+            재진
+          </div>
         </div>
-        <div className="py-1 text-[9px] font-bold text-green-800 text-center bg-green-50">
-          재진
-        </div>
-      </div>
-      {/* 타임라인 슬롯 목록 */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
         {slots.map((slot) => {
           const sd = slotMap[slot];
           const newBox1 = sd?.newBox1 ?? [];
