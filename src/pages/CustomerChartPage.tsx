@@ -479,8 +479,13 @@ export default function CustomerChartPage() {
   const [treatmentMemoText, setTreatmentMemoText] = useState('');
   const [savingTreatmentMemo, setSavingTreatmentMemo] = useState(false);
   // C21-RESIDENT-ID: 주민번호 입력/표시
+  // T-20260511-foot-SSN-SAVE-BUG: 앞6자리 plain + 뒷7자리 masked (2-split input)
   const [editingRrn, setEditingRrn] = useState(false);
-  const [rrnText, setRrnText] = useState('');
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_rrnText, setRrnText] = useState(''); // legacy setter — reset after save
+  const [rrnFront, setRrnFront] = useState(''); // 앞 6자리 (생년월일)
+  const [rrnBack, setRrnBack] = useState('');  // 뒷 7자리 (비밀번호 마스킹)
+  const rrnBackRef = useRef<HTMLInputElement>(null);
   const [rrnMasked, setRrnMasked] = useState<string | null | undefined>(undefined); // undefined=로드전, null=없음
   // C22-PKG-DEDUCT: 인라인 차감 폼
   const [c22DeductForm, setC22DeductForm] = useState({
@@ -725,22 +730,35 @@ export default function CustomerChartPage() {
     toast.success('여권번호 저장됨');
   };
 
-  // C21-RESIDENT-ID: 주민번호 자동 하이픈 처리
-  const handleRrnInput = (val: string) => {
-    const digits = val.replace(/\D/g, '').slice(0, 13);
-    setRrnText(digits.length > 6 ? digits.slice(0, 6) + '-' + digits.slice(6) : digits);
+  // C21-RESIDENT-ID (T-20260511-foot-SSN-SAVE-BUG): 주민번호 2-split 입력
+  // 앞 6자리(생년월일) plain text + 뒷 7자리 password 마스킹
+  const handleRrnFrontInput = (val: string) => {
+    const digits = val.replace(/\D/g, '').slice(0, 6);
+    setRrnFront(digits);
+    setIsDirty(true);
+    // 앞자리 6자리 완성 시 뒷자리 포커스 자동 이동
+    if (digits.length === 6) {
+      setTimeout(() => rrnBackRef.current?.focus(), 0);
+    }
+  };
+
+  const handleRrnBackInput = (val: string) => {
+    const digits = val.replace(/\D/g, '').slice(0, 7);
+    setRrnBack(digits);
     setIsDirty(true);
   };
 
   // C21-RESIDENT-ID: 주민번호 암호화 저장
   const saveRrn = async () => {
     if (!customer) return;
-    const digits = rrnText.replace(/\D/g, '');
+    const digits = (rrnFront + rrnBack).replace(/\D/g, '');
     if (digits.length !== 13) { toast.error('주민번호 13자리를 입력해주세요'); return; }
     const { error } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
-    setRrnMasked(digits.slice(0, 6) + '-*******');
+    setRrnMasked(rrnFront + '-' + '*'.repeat(7));
     setEditingRrn(false);
+    setRrnFront('');
+    setRrnBack('');
     setRrnText('');
     toast.success('주민번호 저장됨');
   };
@@ -751,14 +769,16 @@ export default function CustomerChartPage() {
     if (!customer) return;
     setSavingInfoPanel(true);
     try {
-      // 1) 주민번호 — 암호화 RPC 별도 처리
+      // 1) 주민번호 — 암호화 RPC 별도 처리 (T-20260511-foot-SSN-SAVE-BUG: split input 사용)
       if (editingRrn) {
-        const digits = rrnText.replace(/\D/g, '');
+        const digits = (rrnFront + rrnBack).replace(/\D/g, '');
         if (digits.length !== 13) { toast.error('주민번호 13자리를 입력해주세요'); return; }
         const { error } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });
         if (error) { toast.error(`주민번호 저장 실패: ${error.message}`); return; }
-        setRrnMasked(digits.slice(0, 6) + '-*******');
+        setRrnMasked(rrnFront + '-' + '*'.repeat(7));
         setEditingRrn(false);
+        setRrnFront('');
+        setRrnBack('');
         setRrnText('');
       }
       // 2) 나머지 필드 일괄 patch
@@ -1257,28 +1277,54 @@ export default function CustomerChartPage() {
                   </td>
                 </tr>
 
-                {/* ② 주민번호 — C21-RESIDENT-ID: 실입력+암호화 저장 */}
+                {/* ② 주민번호 — C21-RESIDENT-ID / T-20260511-foot-SSN-SAVE-BUG: 앞6자리 plain + 뒷7자리 masked */}
                 <tr>
                   <td className={LC}>주민번호</td>
                   <td className={VC} colSpan={3}>
                     {editingRrn ? (
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="password"
-                          className="font-mono text-sm h-7 w-40 border-teal-300 tracking-widest"
-                          value={rrnText}
-                          onChange={(e) => handleRrnInput(e.target.value)}
-                          placeholder="000000-0000000"
-                          maxLength={14}
+                      <div className="flex items-center gap-1">
+                        {/* 앞 6자리 — 생년월일 (plain text) */}
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          className="font-mono text-sm h-7 w-20 border border-teal-300 rounded px-2 bg-white tracking-widest focus:outline-none focus:ring-1 focus:ring-teal-400"
+                          value={rrnFront}
+                          onChange={(e) => handleRrnFrontInput(e.target.value)}
+                          placeholder="000000"
+                          maxLength={6}
                           autoFocus
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') { e.preventDefault(); saveRrn(); }
-                            if (e.key === 'Escape') { setEditingRrn(false); setRrnText(''); }
+                            if (e.key === 'Escape') { setEditingRrn(false); setRrnFront(''); setRrnBack(''); }
+                          }}
+                        />
+                        <span className="text-gray-400 text-sm font-mono">-</span>
+                        {/* 뒷 7자리 — 비밀번호 마스킹 */}
+                        <input
+                          ref={rrnBackRef}
+                          type="password"
+                          inputMode="numeric"
+                          className="font-mono text-sm h-7 w-24 border border-teal-300 rounded px-2 bg-white tracking-widest focus:outline-none focus:ring-1 focus:ring-teal-400"
+                          value={rrnBack}
+                          onChange={(e) => handleRrnBackInput(e.target.value)}
+                          placeholder="0000000"
+                          maxLength={7}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); saveRrn(); }
+                            if (e.key === 'Escape') { setEditingRrn(false); setRrnFront(''); setRrnBack(''); }
                           }}
                         />
                         <button
                           type="button"
-                          onClick={() => { setEditingRrn(false); setRrnText(''); }}
+                          onClick={saveRrn}
+                          disabled={rrnFront.length + rrnBack.length < 13}
+                          className="text-[11px] px-2 py-0.5 rounded border border-teal-400 text-teal-600 hover:bg-teal-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          저장
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setEditingRrn(false); setRrnFront(''); setRrnBack(''); }}
                           className="text-[11px] px-2 py-0.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-50"
                         >
                           취소
