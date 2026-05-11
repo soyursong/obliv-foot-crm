@@ -26,7 +26,7 @@ import {
   WEEK_DAYS_KO,
 } from '@/lib/schedule';
 import { VISIT_TYPE_KO } from '@/lib/status';
-import { maskPhoneTail } from '@/lib/format';
+import { formatPhone, maskPhoneTail } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import type { Reservation, Service, VisitType } from '@/lib/types';
@@ -1104,7 +1104,7 @@ function ReservationDetail({
           </div>
           {reservation.customer_phone && (
             <div className="text-muted-foreground">
-              {reservation.customer_phone} (뒤 4자리 ···{maskPhoneTail(reservation.customer_phone)})
+              {formatPhone(reservation.customer_phone)} (뒤 4자리 ···{maskPhoneTail(reservation.customer_phone)})
             </div>
           )}
           {/* T-20260504-foot-MEMO-RESTRUCTURE: booking_memo 우선, 없으면 memo */}

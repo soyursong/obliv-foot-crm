@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { normalizeToE164 } from '@/lib/phone';
+import { formatPhone } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -74,7 +75,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
   const selectReservation = (r: Reservation) => {
     setLinkedReservation(r);
     setName(r.customer_name ?? '');
-    setPhone(r.customer_phone ?? '');
+    setPhone(formatPhone(r.customer_phone) || '');
     setVisitType(r.visit_type);
     // 예약 연결 시 고객 ID도 설정
     if (r.customer_id) setSelectedCustomerId(r.customer_id);
@@ -83,7 +84,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
   /** 인라인 검색 드롭다운에서 기존 고객 선택 */
   const handlePatientSelect = (p: PatientMatch) => {
     setName(p.name);
-    setPhone(p.phone);
+    setPhone(formatPhone(p.phone) || '');
     setSelectedCustomerId(p.id);
     setVisitType('returning');
     toast.info(`${p.name}님 — 기존 고객 선택`);

@@ -20,7 +20,7 @@ import {
 
 import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
-import { formatAmount } from '@/lib/format';
+import { formatAmount, formatPhone } from '@/lib/format';
 import { METHOD_KO, STATUS_KO, VISIT_TYPE_KO } from '@/lib/status';
 import type { CheckIn, CheckInStatus, Clinic, Staff, VisitType } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -967,7 +967,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                       else toast.error('체크인을 불러올 수 없습니다');
                     }}
                   >
-                    <span>{c.customer_name} <span className="text-amber-700">{c.customer_phone ?? ''}</span></span>
+                    <span>{c.customer_name} <span className="text-amber-700">{formatPhone(c.customer_phone)}</span></span>
                     <span className="text-xs text-amber-700">{format(new Date(c.checked_in_at), 'HH:mm')}</span>
                   </button>
                 ))}
