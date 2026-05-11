@@ -1,8 +1,8 @@
 /**
- * CalendarNoticePanel — 우측 고정 사이드 패널
- * T-20260510-foot-CALENDAR-NOTICE (AC v3)
+ * CalendarNoticePanel — 좌측 고정 사이드 패널
+ * T-20260510-foot-CALENDAR-NOTICE (AC v4)
  *
- * 모든 페이지에서 항상 표시.
+ * 모든 페이지에서 항상 표시. 좌측 네비게이션 바로 오른쪽 고정.
  * 상단: 스몰 캘린더 (월간 미니뷰)
  * 하단: 공지사항 (등록/조회/수정/삭제)
  */
@@ -25,12 +25,14 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
   Pencil,
   Pin,
   Plus,
   Trash2,
   X,
 } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
@@ -39,6 +41,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+
+type ViewMode = 'today' | 'day' | 'week' | 'month';
 
 interface Notice {
   id: string;
@@ -60,6 +64,7 @@ export default function CalendarNoticePanel() {
   // ── 캘린더 상태 ──────────────────────────────────────────────────────────
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(() => new Date());
+  const [viewMode, setViewMode] = useState<ViewMode>('month');
 
   // ── 공지사항 상태 ─────────────────────────────────────────────────────────
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -95,6 +100,16 @@ export default function CalendarNoticePanel() {
     end: endOfWeek(endOfMonth(currentDate), { weekStartsOn: 0 }),
   });
 
+  // 주간 뷰 모드: 선택 날짜가 속한 주 경계
+  const weekHighlightStart =
+    viewMode === 'week' && selectedDate
+      ? startOfWeek(selectedDate, { weekStartsOn: 0 })
+      : null;
+  const weekHighlightEnd =
+    viewMode === 'week' && selectedDate
+      ? endOfWeek(selectedDate, { weekStartsOn: 0 })
+      : null;
+
   // ── 공지 폼 핸들러 ────────────────────────────────────────────────────────
   const openNew = () => {
     setEditingId('new');
@@ -111,6 +126,16 @@ export default function CalendarNoticePanel() {
   };
 
   const closeForm = () => setEditingId(null);
+
+  // ── 뷰 모드 전환 ──────────────────────────────────────────────────────────
+  const handleViewMode = (mode: ViewMode) => {
+    setViewMode(mode);
+    if (mode === 'today') {
+      const today = new Date();
+      setSelectedDate(today);
+      setCurrentDate(today);
+    }
+  };
 
   const handleSave = async () => {
     if (!clinic || !formTitle.trim()) { toast.error('제목을 입력해주세요'); return; }
@@ -155,7 +180,7 @@ export default function CalendarNoticePanel() {
 
   // ── 렌더 ─────────────────────────────────────────────────────────────────
   return (
-    <aside className="w-72 shrink-0 border-l bg-white flex flex-col overflow-hidden">
+    <aside className="w-72 shrink-0 border-r bg-white flex flex-col overflow-hidden">
       {/* 패널 헤더 */}
       <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2.5 bg-white/80">
         <CalendarDays className="h-4 w-4 text-teal-600" />
@@ -205,6 +230,10 @@ export default function CalendarNoticePanel() {
             const isToday = isSameDay(day, new Date());
             const isCurrentMonth = isSameMonth(day, currentDate);
             const isSelected = selectedDate ? isSameDay(day, selectedDate) : false;
+            const isInWeek =
+              weekHighlightStart && weekHighlightEnd
+                ? day >= weekHighlightStart && day <= weekHighlightEnd
+                : false;
             const dow = day.getDay();
 
             return (
@@ -215,7 +244,8 @@ export default function CalendarNoticePanel() {
                   'w-full py-1 text-[11px] font-medium rounded-full transition-colors leading-none aspect-square flex items-center justify-center',
                   !isCurrentMonth && 'opacity-25',
                   isSelected && 'bg-teal-600 text-white',
-                  !isSelected && isToday && 'bg-teal-100 text-teal-800 font-bold',
+                  !isSelected && isInWeek && 'bg-teal-100',
+                  !isSelected && !isInWeek && isToday && 'bg-teal-100 text-teal-800 font-bold',
                   !isSelected && !isToday && dow === 0 && isCurrentMonth && 'text-red-500',
                   !isSelected && !isToday && dow === 6 && isCurrentMonth && 'text-blue-500',
                   !isSelected && !isToday && isCurrentMonth && dow > 0 && dow < 6 && 'text-foreground',
@@ -234,6 +264,27 @@ export default function CalendarNoticePanel() {
             {format(selectedDate, 'M월 d일 (E)', { locale: ko })}
           </div>
         )}
+
+        {/* 뷰 모드 전환 버튼: 당일 / 일 / 주 / 월 */}
+        <div className="flex items-center gap-1 mt-2.5 pb-0.5">
+          {([ 'today', 'day', 'week', 'month'] as ViewMode[]).map((mode) => {
+            const label = mode === 'today' ? '당일' : mode === 'day' ? '일' : mode === 'week' ? '주' : '월';
+            return (
+              <button
+                key={mode}
+                onClick={() => handleViewMode(mode)}
+                className={cn(
+                  'flex-1 rounded py-1 text-[10px] font-semibold transition-colors',
+                  viewMode === mode
+                    ? 'bg-teal-600 text-white'
+                    : 'bg-muted/60 text-muted-foreground hover:bg-teal-50 hover:text-teal-700',
+                )}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* ── 공지사항 영역 ───────────────────────────────────────────────────── */}
@@ -243,6 +294,13 @@ export default function CalendarNoticePanel() {
           <div className="flex items-center gap-1.5">
             <Bell className="h-3.5 w-3.5 text-teal-600" />
             <span className="text-xs font-semibold">공지사항</span>
+            <NavLink
+              to="/admin/notices"
+              className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-teal-700"
+              title="공지사항 전체 보기"
+            >
+              <ExternalLink className="h-3 w-3" />
+            </NavLink>
           </div>
           <Button
             size="sm"
