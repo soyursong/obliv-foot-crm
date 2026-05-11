@@ -19,6 +19,8 @@ import { DocumentViewer } from '@/components/forms/DocumentViewer';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // T-20260507-foot-CHART2-INSURANCE-FIELDS: 건보 자격등급 패널
 import { InsuranceGradeSelect } from '@/components/insurance/InsuranceGradeSelect';
+// T-20260511-foot-C2-INSURANCE-AUTO-CALC: 2번차트 진료비 자동산정 패널
+import { Chart2InsuranceCalcPanel } from '@/components/insurance/Chart2InsuranceCalcPanel';
 // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
 import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
@@ -422,6 +424,8 @@ export default function CustomerChartPage() {
   const [editingCustomerMemo, setEditingCustomerMemo] = useState(false);
   const [customerMemoText, setCustomerMemoText] = useState('');
   const customerMemoRef = useRef<HTMLTextAreaElement>(null);
+  // T-20260511-foot-C2-INSURANCE-AUTO-CALC: 건보 자격등급 변경 감지 트리거
+  const [insuranceGradeRefreshKey, setInsuranceGradeRefreshKey] = useState(0);
   // T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 인라인 편집
   const [editingAddress, setEditingAddress] = useState(false);
   const [addressText, setAddressText] = useState('');
@@ -2411,7 +2415,15 @@ export default function CustomerChartPage() {
                   .then(({ data }) => {
                     if (data) setCustomer((prev) => prev ? { ...prev, ...data } : prev);
                   });
+                // T-20260511-foot-C2-INSURANCE-AUTO-CALC: 자동산정 패널 재트리거
+                setInsuranceGradeRefreshKey((k) => k + 1);
               }}
+            />
+            {/* T-20260511-foot-C2-INSURANCE-AUTO-CALC: 등급 변경 시 진료비 실시간 자동산정 */}
+            <Chart2InsuranceCalcPanel
+              customerId={customer.id}
+              clinicId={customer.clinic_id}
+              refreshTrigger={insuranceGradeRefreshKey}
             />
           </div>
 
@@ -2433,21 +2445,15 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-          {/* C22-PKG-DEDUCT: 구매패키지(티켓) — 치료사 차감 인라인 폼 (2-2 구역) */}
-          {/* T-20260510-foot-C22-SECTION-MERGE: 2-2 구매패키지 요약 테이블 + 시술내역 삭제 (2-1 중복) */}
+          {/* C22-PKG-DEDUCT: 회차 차감 인라인 폼 (2-2 구역) — T-20260510-foot-C22-SECTION-MERGE: 단일 섹션 통합 완료 */}
           <div className="border-b border-gray-200 px-3 py-2">
-            {(() => {
-              const activePackages = packages.filter(p => p.status === 'active');
-              return (
-                <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1.5 flex items-center gap-1">
-                  구매패키지(티켓)
-                  <span className="text-[9px] font-normal bg-teal-100 text-teal-700 rounded px-1 py-0.5">치료사 기입</span>
-                  {activePackages.length === 0 && (
-                    <span className="ml-1 text-[10px] font-normal text-amber-500">— 활성 패키지 없음</span>
-                  )}
-                </div>
-              );
-            })()}
+            <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1.5 flex items-center gap-1">
+              회차 차감
+              <span className="text-[9px] font-normal bg-teal-100 text-teal-700 rounded px-1 py-0.5">치료사 기입</span>
+              {packages.filter(p => p.status === 'active').length === 0 && (
+                <span className="ml-1 text-[10px] font-normal text-amber-500">— 활성 패키지 없음</span>
+              )}
+            </div>
             <div className="space-y-1.5">
               {/* 복수 활성 패키지가 있을 때 선택 드롭다운 */}
               {packages.filter(p => p.status === 'active').length > 1 && (
