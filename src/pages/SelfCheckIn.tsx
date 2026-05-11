@@ -44,7 +44,7 @@ const C = {
   bannerBorder: '#C9A97A',
 } as const;
 
-type Step = 'input' | 'address' | 'confirm' | 'done' | 'error';
+type Step = 'input' | 'confirm' | 'done' | 'error';
 type Lang = 'ko' | 'en';
 
 const T: Record<Lang, {
@@ -272,7 +272,6 @@ export default function SelfCheckIn() {
   const [phone, setPhone] = useState('');
   const [visitType, setVisitType] = useState<VisitType>('new');
   const [referrerName, setReferrerName] = useState('');
-  const [address, setAddress] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [queueNumber, setQueueNumber] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
@@ -292,6 +291,10 @@ export default function SelfCheckIn() {
   // T-20260510-foot-SELFCHECKIN-NO-PREFILL: 인라인 환자 검색 상태 제거
   // (selectedPatientId는 submit 시 서버 매칭 결과 캐시로만 사용. 폼 자동 채움 X)
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+
+  // T-20260510-foot-SELFCHECKIN-NO-PREFILL: 폼 DOM 강제 재마운트 카운터
+  // 매 리셋마다 key가 바뀌어 브라우저 자동완성 캐시를 무효화한다
+  const [resetKey, setResetKey] = useState(0);
 
   // 비활동 타임아웃 ref
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -320,13 +323,16 @@ export default function SelfCheckIn() {
   }, [clinicSlug]);
 
   // ── 폼 리셋 ──
+  // T-20260510-foot-SELFCHECKIN-NO-PREFILL: resetKey 증가 → 입력 DOM 재마운트 → 브라우저 자동완성 캐시 무효화
   const resetForm = useCallback(() => {
+    // sessionStorage 전체 초기화 (셀프접수 페이지 전용 스토리지 보호)
+    try { sessionStorage.clear(); } catch { /* 무시 */ }
+    setResetKey((k) => k + 1);
     setStep('input');
     setName('');
     setPhone('');
     setVisitType('new');
     setReferrerName('');
-    setAddress('');
     setQueueNumber(null);
     setErrorMsg('');
     setReservationBanner(null);
@@ -476,11 +482,7 @@ export default function SelfCheckIn() {
 
   const handleConfirm = () => {
     if (!canSubmit) return;
-    if (visitType === 'new') {
-      setStep('address');
-    } else {
-      setStep('confirm');
-    }
+    setStep('confirm');
   };
 
   const handleSubmit = async () => {
@@ -534,10 +536,6 @@ export default function SelfCheckIn() {
 
       if (existing) {
         customerId = existing.id as string;
-        // 기존 고객 주소 업데이트 (최선 노력, 실패해도 무시)
-        if (address.trim() && customerId) {
-          anonClient.from('customers').update({ address: address.trim() }).eq('id', customerId).then(() => {/* 무시 */});
-        }
       } else {
         const { data: created, error: cErr } = await anonClient
           .from('customers')
@@ -547,7 +545,6 @@ export default function SelfCheckIn() {
             phone: phoneStored,
             visit_type: visitType === 'new' ? 'new' : 'returning',
             referrer_name: referrerName.trim() || null,
-            address: address.trim() || null,
           })
           .select('id')
           .single();
@@ -893,68 +890,6 @@ export default function SelfCheckIn() {
     );
   }
 
-  // ── 주소 입력 (초진 전용, AC #8) ──
-  if (step === 'address') {
-    return (
-      <div
-        className="flex min-h-dvh flex-col items-center justify-center px-6"
-        style={{ background: `linear-gradient(to bottom, ${C.bgFrom}, ${C.bgTo})`, ...FONT_STYLE }}
-      >
-        <LangToggle />
-        <div className="w-full max-w-md space-y-8">
-          <div className="text-center">
-            <p className="text-sm tracking-widest uppercase mb-2" style={{ color: C.gold }}>{clinicName}</p>
-            <h1 className="text-2xl font-bold" style={{ color: C.dark }}>주소 입력</h1>
-            <p className="mt-2 text-sm" style={{ color: C.muted }}>초진 고객은 주소를 입력해 주세요.</p>
-          </div>
-          <div>
-            <textarea
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="도로명 주소 또는 지번 주소"
-              rows={3}
-              className="w-full rounded-xl px-4 py-3 text-base outline-none transition resize-none"
-              style={{
-                border: `1.5px solid ${C.border}`,
-                backgroundColor: 'white',
-                color: C.dark,
-                fontFamily: FONT_STYLE.fontFamily,
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = C.borderActive;
-                e.currentTarget.style.boxShadow = `0 0 0 3px ${C.borderActive}18`;
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = C.border;
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            />
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => {
-                setAddress('');
-                setStep('confirm');
-              }}
-              className="flex-1 rounded-xl py-4 text-lg font-medium transition active:scale-95"
-              style={{ border: `1.5px solid ${C.border}`, color: C.muted, backgroundColor: 'white' }}
-            >
-              건너뛰기
-            </button>
-            <button
-              onClick={() => setStep('confirm')}
-              disabled={!address.trim()}
-              className="flex-1 rounded-xl py-4 text-lg font-bold text-white transition active:scale-95 disabled:opacity-50"
-              style={{ backgroundColor: C.primary }}
-            >
-              다음
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // ── 확인 ──
   if (step === 'confirm') {
     const visitLabel = VISIT_CHOICES.find((c) => c.value === visitType)?.label ?? visitType;
@@ -1049,6 +984,7 @@ export default function SelfCheckIn() {
             </label>
             <div className="relative">
               <input
+                key={`sc-name-${resetKey}`}
                 id="sc-name"
                 type="text"
                 value={name}
@@ -1057,7 +993,7 @@ export default function SelfCheckIn() {
                   if (selectedPatientId) setSelectedPatientId(null);
                 }}
                 placeholder={t.namePlaceholder}
-                autoComplete="off"
+                autoComplete="new-password"
                 className="h-14 w-full rounded-xl px-4 text-lg outline-none transition"
                 style={{
                   border: `1.5px solid ${selectedPatientId ? C.medium : C.border}`,
@@ -1201,12 +1137,13 @@ export default function SelfCheckIn() {
                 {t.referrer} <span className="text-xs font-normal" style={{ color: C.muted }}>(선택)</span>
               </label>
               <input
+                key={`sc-referrer-${resetKey}`}
                 id="sc-referrer"
                 type="text"
                 value={referrerName}
                 onChange={(e) => setReferrerName(e.target.value)}
                 placeholder={t.referrerPlaceholder}
-                autoComplete="off"
+                autoComplete="new-password"
                 className="h-14 w-full rounded-xl px-4 text-lg outline-none transition"
                 style={{
                   border: `1.5px solid ${C.border}`,
