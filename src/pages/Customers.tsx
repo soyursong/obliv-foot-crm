@@ -540,7 +540,7 @@ function EditCustomerDialog({
           <div className="space-y-1.5">
             <Label>전화번호 <span className="text-xs text-muted-foreground font-normal">(변경 불가)</span></Label>
             <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground select-all">
-              {phone || '—'}
+              {formatPhone(phone) || '—'}
             </div>
           </div>
           {/* 생년월일 / 차트번호 */}
