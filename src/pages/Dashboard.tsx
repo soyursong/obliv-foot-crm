@@ -63,7 +63,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
-import { generateSlots } from '@/lib/schedule';
+import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
 import { formatAmount, formatPhone, maskPhoneTail } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -76,7 +76,7 @@ import { CustomerHoverCard } from '@/components/CustomerHoverCard';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
-import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Customer, Reservation, Room, RoomFieldKey, Staff, StatusFlag, VisitType } from '@/lib/types';
+import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Clinic, Customer, Reservation, Room, RoomFieldKey, Staff, StatusFlag, VisitType } from '@/lib/types';
 import { ClinicMemoPanel } from '@/components/ClinicMemoPanel';
 
 type TabKey = 'all' | 'new' | 'returning';
@@ -135,6 +135,16 @@ const customCollision: CollisionDetection = (args) => {
 // → 초진/재진 고객은 통합시간표에서 관리
 // T-20260511-foot-DASH-BATCH-INDIVIDUAL: waiting_columns → 3개 독립 그룹 ID로 분리
 // (치료대기·레이저대기·힐러대기 각각 배치편집 모드에서 개별 이동 가능)
+// T-20260511-foot-DASH-BATCH-INDIVIDUAL v2: laser_rooms 는 항상 마지막 — 드래그로 뒤에 위치하면 자동 교정
+function ensureLaserRoomsLast(order: KanbanGroupId[]): KanbanGroupId[] {
+  const lrIdx = order.indexOf('laser_rooms');
+  if (lrIdx === -1 || lrIdx === order.length - 1) return order;
+  // laser_rooms 이후에 있는 항목들을 laser_rooms 앞으로 이동
+  const before = order.slice(0, lrIdx);
+  const after = order.slice(lrIdx + 1);
+  return [...before, ...after, 'laser_rooms'] as KanbanGroupId[];
+}
+
 const DEFAULT_GROUP_ORDER = [
   'exam_section',
   'consult_waiting_col',
@@ -1084,8 +1094,11 @@ function DashboardTimeline({
   onCardClick,
   onCardContext,
   onReservationClick,
+  clinic,
 }: {
   date: Date;
+  /** T-20260513-foot-TIMETABLE-20H: DB close_time 동적 참조 */
+  clinic: Clinic | null;
   reservations: Reservation[];
   selfCheckIns: CheckIn[];
   onSlotClick: (slot: { date: string; time: string; visit_type?: VisitType }) => void;
@@ -1101,7 +1114,12 @@ function DashboardTimeline({
   const currentM = now.getMinutes();
   const currentSlot = `${String(currentH).padStart(2, '0')}:${currentM < 30 ? '00' : '30'}`;
 
-  const slots = generateSlots('10:00', '20:00', 30);
+  // T-20260513-foot-TIMETABLE-20H: 하드코딩 '20:00' → DB clinic.close_time 동적 참조
+  // 기존: generateSlots('10:00', '20:00', 30) → 마지막 슬롯 19:30 (20:00 누락)
+  // 수정: closeTimeFor(date, clinic) = '20:30' → 마지막 슬롯 20:00 포함
+  const slots = clinic
+    ? generateSlots(openTimeFor(clinic), closeTimeFor(date, clinic), clinic.slot_interval)
+    : generateSlots('10:00', '20:00', 30);
 
   // ── 체크인 조회 맵 구성 ──────────────────────────────────────────────────────
   // reservation_id 우선, 없으면 customer_id 기반 (워크인 폴백)
@@ -1609,7 +1627,7 @@ export default function Dashboard() {
           (DEFAULT_GROUP_ORDER as readonly string[]).includes(id),
         );
         const missing = DEFAULT_GROUP_ORDER.filter((id) => !valid.includes(id));
-        const merged = [...valid, ...missing];
+        let merged = [...valid, ...missing] as KanbanGroupId[];
         // T-20260430-foot-LASER-ROOM-REORDER: 치료실은 항상 레이저실보다 앞에 위치
         const treatIdx = merged.indexOf('treatment_rooms');
         const laserIdx = merged.indexOf('laser_rooms');
@@ -1617,6 +1635,8 @@ export default function Dashboard() {
           merged.splice(laserIdx, 1);
           merged.splice(treatIdx, 0, 'laser_rooms');
         }
+        // T-20260511-foot-DASH-BATCH-INDIVIDUAL v2: laser_rooms 는 항상 마지막
+        merged = ensureLaserRoomsLast(merged);
         return merged;
       }
     } catch {}
@@ -1639,7 +1659,7 @@ export default function Dashboard() {
       const oldIdx = prev.indexOf(active.id as KanbanGroupId);
       const newIdx = prev.indexOf(over.id as KanbanGroupId);
       if (oldIdx === -1 || newIdx === -1) return prev;
-      const next = arrayMove(prev, oldIdx, newIdx);
+      let next = arrayMove(prev, oldIdx, newIdx);
       // T-20260430-foot-LASER-ROOM-REORDER: 레이저실은 치료실 뒤에만 배치 가능
       const treatIdx = next.indexOf('treatment_rooms');
       const laserIdx = next.indexOf('laser_rooms');
@@ -1647,6 +1667,9 @@ export default function Dashboard() {
         toast.warning('레이저실은 치료실 뒤에만 배치할 수 있어요');
         return prev;
       }
+      // T-20260511-foot-DASH-BATCH-INDIVIDUAL v2: laser_rooms 는 항상 마지막
+      // 드래그 결과로 laser_rooms 뒤에 항목이 생기면 laser_rooms 앞으로 자동 교정
+      next = ensureLaserRoomsLast(next);
       localStorage.setItem('foot-dash-group-order', JSON.stringify(next));
       return next;
     });
@@ -1699,7 +1722,7 @@ export default function Dashboard() {
             (DEFAULT_GROUP_ORDER as readonly string[]).includes(id),
           );
           const missing = DEFAULT_GROUP_ORDER.filter((id) => !valid.includes(id));
-          const merged = [...valid, ...missing];
+          let merged = [...valid, ...missing] as KanbanGroupId[];
           // T-20260430-foot-LASER-ROOM-REORDER: 치료실 항상 레이저실보다 앞
           const treatIdx = merged.indexOf('treatment_rooms');
           const laserIdx = merged.indexOf('laser_rooms');
@@ -1707,6 +1730,8 @@ export default function Dashboard() {
             merged.splice(laserIdx, 1);
             merged.splice(treatIdx, 0, 'laser_rooms');
           }
+          // T-20260511-foot-DASH-BATCH-INDIVIDUAL v2: laser_rooms 항상 마지막
+          merged = ensureLaserRoomsLast(merged);
           setGroupOrder(merged);
           localStorage.setItem('foot-dash-group-order', JSON.stringify(merged));
         }
@@ -3599,6 +3624,7 @@ export default function Dashboard() {
         <div className="w-80 shrink-0 flex flex-col min-h-0 border-r overflow-hidden">
           <DashboardTimeline
             date={date}
+            clinic={clinic}
             reservations={enrichedTimelineReservations}
             selfCheckIns={selfCheckIns}
             onSlotClick={handleQuickSlotClick}
