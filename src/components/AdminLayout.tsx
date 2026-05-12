@@ -201,7 +201,10 @@ export default function AdminLayout() {
         </div>
       )}
 
-      <main className="flex h-full flex-1 flex-col">
+      {/* T-20260510-foot-DASH-DUAL-HSCROLL v2: min-w-0 추가 — flex-1 아이템은 min-width:auto가 기본이라
+          칸반 컨텐츠(2000px+)가 main 폭을 뷰포트 밖으로 팽창시켜 페이지 레벨 가로스크롤 발생.
+          min-w-0으로 min-width:0 강제 → main이 할당 폭(viewport-sidebar) 내에 고정됨. */}
+      <main className="flex h-full flex-1 flex-col min-w-0">
         <header className="flex h-14 shrink-0 items-center justify-between border-b bg-background px-4 md:px-6">
           <div className="flex items-center gap-3">
             <button className="lg:hidden p-2 min-h-[44px] min-w-[44px] flex items-center justify-center" onClick={() => setSidebarOpen(true)}>
@@ -274,7 +277,10 @@ export default function AdminLayout() {
             T-20260510-foot-CALENDAR-NOTICE AC v4: 좌측 CalendarNoticePanel 고정 (우측→좌측 이동). */}
         <div className="flex flex-1 min-h-0 overflow-hidden">
           <CalendarNoticePanel />
-          <div className="flex-1 min-h-0 overflow-hidden">
+          {/* T-20260510-foot-DASH-DUAL-HSCROLL v2: min-w-0 추가 — row-flex 내 flex-1 아이템
+              min-width:auto로 Dashboard 칸반 폭만큼 팽창 → overflow-hidden이 무력화됨.
+              min-w-0 추가 시 overflow-hidden이 정상 동작 → Dashboard 내용이 이 div 안에 갇힘. */}
+          <div className="flex-1 min-w-0 min-h-0 overflow-hidden">
             <Outlet />
           </div>
         </div>

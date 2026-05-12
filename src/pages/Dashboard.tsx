@@ -3362,8 +3362,9 @@ export default function Dashboard() {
     handleDoctorChange, handleConsultantChange, handleTherapistChange, handleHeatedLaserDoctorChange,
   ]);
 
+  // T-20260510-foot-DASH-DUAL-HSCROLL v2: overflow-hidden — Dashboard 자체 가로 팽창 격리
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between gap-4 px-4 py-2 border-b bg-white/80">
         <div className="flex items-center gap-2">
