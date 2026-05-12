@@ -30,6 +30,20 @@ export interface FieldMapEntry {
   font?: number;
 }
 
+/** 복수 서명자 슬롯 (미성년자 동의서 등) */
+export interface SignatureSlot {
+  key: string;   // 'signer_patient' | 'signer_guardian'
+  label: string; // '환자 서명' | '법정대리인 서명'
+}
+
+/** 미성년자 동의서 법정대리인 정보 */
+export interface GuardianInfo {
+  guardian_name?: string;
+  guardian_rrn?: string;
+  guardian_relation?: string;
+  guardian_phone?: string;
+}
+
 export interface FormTemplate {
   id: string;
   clinic_id: string;
@@ -37,7 +51,7 @@ export interface FormTemplate {
   form_key: string;
   name_ko: string;
   template_path: string;
-  template_format: 'jpg' | 'pdf';
+  template_format: 'jpg' | 'png' | 'pdf';
   field_map: FieldMapEntry[];
   requires_signature: boolean;
   required_role: string;
@@ -58,6 +72,10 @@ export interface FormSubmission {
   status: 'draft' | 'printed' | 'voided';
   printed_at: string | null;
   created_at: string;
+  /** 마케팅 서류(모델계약서·체험단 초상권) 만료일. NULL이면 만료 없음. */
+  expires_at?: string | null;
+  /** 미성년자 동의서 법정대리인 정보 */
+  guardian_info?: GuardianInfo | null;
 }
 
 // ─── 자동 바인딩 필드 키 ───
@@ -92,6 +110,10 @@ function resolveAsset(filename: string): string {
   return new URL(`../assets/forms/foot-service/${filename}`, import.meta.url).href;
 }
 
+function resolveDosuAsset(filename: string): string {
+  return new URL(`../assets/forms/도수센터/${filename}`, import.meta.url).href;
+}
+
 try {
   IMAGE_MAP.diag_opinion = resolveAsset('소견서.jpg');
   IMAGE_MAP.diagnosis = resolveAsset('진단서.jpg');
@@ -100,6 +122,22 @@ try {
   IMAGE_MAP.visit_confirm = resolveAsset('통원확인서.jpg');
 } catch {
   // asset 미존재 시 graceful degrade — 미리보기만 불가
+}
+
+// 도수센터 에셋 — 도수센터 오픈 전까지는 미리보기 비활성 가능
+try {
+  IMAGE_MAP.dosu_consent          = resolveDosuAsset('[도수센터]도수치료 동의서.png');
+  IMAGE_MAP.general_consent       = resolveDosuAsset('[도수센터]동의서.png');
+  IMAGE_MAP.minor_consent         = resolveDosuAsset('[도수센터]미성년자 시술 동의서.png');
+  IMAGE_MAP.nonbenefit_explain    = resolveDosuAsset('[도수센터]비급여 설명확인서.png');
+  IMAGE_MAP.growth_hormone_survey = resolveDosuAsset('[도수센터]성장호르몬 설문지.png');
+  IMAGE_MAP.model_contract_1      = resolveDosuAsset('[도수센터]모델 계약서_1.png');
+  IMAGE_MAP.model_contract_2      = resolveDosuAsset('[도수센터]모델계약서_2.png');
+  IMAGE_MAP.experience_portrait   = resolveDosuAsset('[도수센터]체험단 초상권동의서.png');
+  IMAGE_MAP.initial_chart         = resolveDosuAsset('[도수센터]초진차트.png');
+  IMAGE_MAP.row_chart             = resolveDosuAsset('[도수센터]줄차트.png');
+} catch {
+  // 도수센터 에셋 미존재 시 graceful degrade
 }
 
 export function getTemplateImageUrl(formKey: string): string | null {
@@ -382,3 +420,96 @@ export const FORM_META: Record<
     print_preset: 'optional',
   },
 };
+
+// ─── 도수센터 서류 메타 ───
+
+/**
+ * 도수센터 서류 10종 메타데이터.
+ * T-20260423-foot-DOSU-FORMS-SPEC Phase 0
+ * 도수센터 오픈 후 렌더러 연동 시 FORM_META에 병합 예정.
+ */
+export const DOSU_FORM_META: Record<
+  string,
+  { icon: string; color: string; description: string; category: 'dosu-consent' | 'dosu-payment' | 'dosu-survey' | 'dosu-marketing' | 'dosu-chart' }
+> = {
+  // 치료 동의서
+  dosu_consent: {
+    icon: '📋',
+    color: 'bg-teal-50 border-teal-200',
+    description: '도수치료 동의 (서명 필요)',
+    category: 'dosu-consent',
+  },
+  general_consent: {
+    icon: '📋',
+    color: 'bg-teal-50 border-teal-200',
+    description: '일반 동의서 (서명 필요)',
+    category: 'dosu-consent',
+  },
+  minor_consent: {
+    icon: '👶',
+    color: 'bg-orange-50 border-orange-300',
+    description: '미성년자 — 환자+법정대리인 서명 2개 필요',
+    category: 'dosu-consent',
+  },
+  // 결제
+  nonbenefit_explain: {
+    icon: '💰',
+    color: 'bg-amber-50 border-amber-200',
+    description: '비급여 설명확인서 (서명 필요)',
+    category: 'dosu-payment',
+  },
+  // 문진
+  growth_hormone_survey: {
+    icon: '📊',
+    color: 'bg-purple-50 border-purple-200',
+    description: '성장호르몬 설문 (서명 불필요)',
+    category: 'dosu-survey',
+  },
+  // 마케팅 (admin|manager 한정)
+  model_contract_1: {
+    icon: '📸',
+    color: 'bg-pink-50 border-pink-200',
+    description: '모델 계약서 1 (만료일 관리)',
+    category: 'dosu-marketing',
+  },
+  model_contract_2: {
+    icon: '📸',
+    color: 'bg-pink-50 border-pink-200',
+    description: '모델 계약서 2 (만료일 관리)',
+    category: 'dosu-marketing',
+  },
+  experience_portrait: {
+    icon: '🎬',
+    color: 'bg-rose-50 border-rose-200',
+    description: '체험단 초상권동의서 (만료일 관리)',
+    category: 'dosu-marketing',
+  },
+  // 진료기록 (draft 편집 가능)
+  initial_chart: {
+    icon: '🗂️',
+    color: 'bg-blue-50 border-blue-200',
+    description: '초진차트 (세션 중 편집, 마감 시 잠금)',
+    category: 'dosu-chart',
+  },
+  row_chart: {
+    icon: '📈',
+    color: 'bg-indigo-50 border-indigo-200',
+    description: '줄차트 (세션 중 편집, 마감 시 잠금)',
+    category: 'dosu-chart',
+  },
+};
+
+/**
+ * 미성년자 서명 슬롯을 포함하는 form_key 목록.
+ * field_map에 signer_guardian 키가 있으면 guardian_info 입력 필수.
+ */
+export const MINOR_CONSENT_FORM_KEYS: ReadonlyArray<string> = ['minor_consent'];
+
+/**
+ * 마케팅 서류 form_key 목록 — expires_at 관리 대상.
+ */
+export const MARKETING_FORM_KEYS: ReadonlyArray<string> = [
+  'model_contract_1',
+  'model_contract_2',
+  'experience_portrait',
+];
