@@ -725,24 +725,23 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
               );
             })}
 
-            {/* 진료비 영수증 카드 — 기본 서류 그리드 내 배치 */}
-            <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-2.5 text-xs space-y-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="font-semibold text-amber-900 flex items-center gap-1">
-                    <Receipt className="h-3.5 w-3.5" /> 진료비 영수증
-                  </span>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">데스크 금액 등록</p>
-                </div>
-                <button
-                  className="flex items-center gap-0.5 rounded border border-amber-300 bg-white px-1.5 py-1 text-[10px] text-amber-700 hover:bg-amber-50"
-                  onClick={() => setInvoiceOpen(true)}
-                >
-                  <Plus className="h-3 w-3" /> 등록
-                </button>
+            {/* 진료비 영수증 카드 — 기본 서류 그리드 내 배치 (T-20260513-foot-RX-BOX-DESIGN: 진료내역서와 동일 스타일) */}
+            <div className="relative rounded-lg border p-2.5 text-xs space-y-1.5 bg-amber-50 border-amber-200">
+              {/* 헤더 — 진료내역서 카드와 동일 구조: 아이콘 상단, 타이틀·설명 수직 스택 */}
+              <div className="flex items-start justify-between">
+                <span className="text-base">🧾</span>
+                {invoiceDocs.length > 0 && (
+                  <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                    {invoiceDocs.length}건
+                  </Badge>
+                )}
               </div>
-              {invoiceDocs.length > 0 ? (
-                <div className="space-y-1">
+              <div className="font-semibold text-foreground">진료비 영수증</div>
+              <div className="text-muted-foreground text-[11px] mt-0.5 line-clamp-1">데스크 금액 등록</div>
+
+              {/* 발급 이력 */}
+              {invoiceDocs.length > 0 && (
+                <div className="space-y-1 mt-1">
                   {invoiceDocs.map((doc) => (
                     <div key={doc.id} className="flex items-center justify-between rounded border bg-white px-2 py-1.5 group">
                       <div className="min-w-0 flex-1">
@@ -773,11 +772,15 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
                     </div>
                   ))}
                 </div>
-              ) : (
-                <div className="rounded border border-dashed py-2 text-center text-[10px] text-muted-foreground bg-white">
-                  없음
-                </div>
               )}
+
+              {/* 등록 버튼 — 진료내역서 "상세 발행 →" 패턴과 동일 */}
+              <button
+                className="mt-2 w-full text-[10px] text-teal-600 hover:underline text-left flex items-center gap-0.5"
+                onClick={() => setInvoiceOpen(true)}
+              >
+                <Plus className="h-2.5 w-2.5" /> 등록 →
+              </button>
             </div>
           </div>
         </div>
