@@ -438,6 +438,9 @@ export default function CustomerChartPage() {
   const [emailText, setEmailText] = useState('');
   const [editingPassport, setEditingPassport] = useState(false);
   const [passportText, setPassportText] = useState('');
+  // T-20260513-foot-C21-PHONE-EDIT-BTN: 핸드폰번호 인라인 편집
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [phoneText, setPhoneText] = useState('');
   const [postalCodeText, setPostalCodeText] = useState(''); // editingPostalCode 제거 — SAVE-UNIFY
   const [savingField, setSavingField] = useState(false);
   // C2-STAFF-DROPDOWN: 실제 직원 목록 (coordinator + consultant + director)
@@ -699,6 +702,36 @@ export default function CustomerChartPage() {
     return () => clearTimeout(t);
   }, [editingRrn]);
 
+  // AC-8 쌍방연동 — 1번차트(CheckInDetailSheet)가 저장하면 2번차트도 즉시 반영
+  useEffect(() => {
+    if (!customer) return;
+    const customerId = customer.id;
+    const handler = (e: StorageEvent) => {
+      if (e.key !== 'foot_crm_customer_refresh' || !e.newValue) return;
+      try {
+        const { customerId: changedId } = JSON.parse(e.newValue) as { customerId: string };
+        if (changedId !== customerId) return;
+        // 고객 필드 새로고침
+        supabase.from('customers').select('*').eq('id', customerId).single().then(({ data }) => {
+          if (!data) return;
+          setCustomer(data as Customer);
+          setCustomerMemoText((data as Customer).customer_memo ?? '');
+          setResvDetailForm((f) => ({
+            ...f,
+            memo: (data as Customer).customer_memo ?? '',
+            etcMemo: (data as Customer).memo ?? '',
+          }));
+        });
+        // 예약 새로고침 (booking_memo 반영)
+        supabase.from('reservations').select('*').eq('customer_id', customerId).order('reservation_date', { ascending: false }).limit(30).then(({ data }) => {
+          if (data) setReservations(data as Reservation[]);
+        });
+      } catch { /* ignore */ }
+    };
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }, [customer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 저장
   // T-20260510-foot-C21-SAVE-UNIFY: 우편번호+주소 동시 저장 (저장버튼 단일화)
   // T-20260510-foot-ADDRESS-DETAIL-FIX: address_detail 동시 저장
@@ -730,6 +763,8 @@ export default function CustomerChartPage() {
     setSavingField(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
     setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
+    // AC-8 쌍방연동 — 1번차트에 변경 알림 (방문경로·고객메모·기타메모 등)
+    localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
   };
 
   // 이메일 저장
@@ -742,6 +777,19 @@ export default function CustomerChartPage() {
   const savePassport = async () => {
     await saveCustomerField({ passport_number: passportText.trim() || null });
     setEditingPassport(false);
+  };
+
+  // T-20260513-foot-C21-PHONE-EDIT-BTN: 핸드폰번호 저장 (010-XXXX-XXXX 유효성 검증)
+  const savePhone = async () => {
+    const digits = phoneText.replace(/\D/g, '');
+    if (digits.length === 0) { toast.error('번호를 입력해주세요'); return; }
+    if (digits.length !== 11 || !digits.startsWith('010')) {
+      toast.error('010으로 시작하는 11자리 번호를 입력해주세요 (예: 010-1234-5678)');
+      return;
+    }
+    const normalized = `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+    await saveCustomerField({ phone: normalized });
+    setEditingPhone(false);
   };
 
   // C21-RESIDENT-ID (T-20260511-foot-SSN-SAVE-BUG): 주민번호 2-split 입력
@@ -798,6 +846,15 @@ export default function CustomerChartPage() {
       const patch: Partial<Customer> = {};
       if (editingEmail) patch.customer_email = emailText.trim() || null;
       if (editingPassport) patch.passport_number = passportText.trim() || null;
+      if (editingPhone) {
+        const digits = phoneText.replace(/\D/g, '');
+        if (digits.length === 0) { toast.error('번호를 입력해주세요'); return; }
+        if (digits.length !== 11 || !digits.startsWith('010')) {
+          toast.error('010으로 시작하는 11자리 번호를 입력해주세요 (예: 010-1234-5678)');
+          return;
+        }
+        patch.phone = `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+      }
       if (editingAddress) {
         patch.address = addressText.trim() || null;
         patch.address_detail = addressDetailText.trim() || null;
@@ -812,6 +869,7 @@ export default function CustomerChartPage() {
       // 3) 모든 편집 상태 닫기 + isDirty 리셋
       setEditingEmail(false);
       setEditingPassport(false);
+      setEditingPhone(false);
       setEditingAddress(false);
       setEditingCustomerMemo(false);
       setIsDirty(false);
@@ -1059,6 +1117,8 @@ export default function CustomerChartPage() {
       customer_memo: resvDetailForm.memo || null,
       memo: resvDetailForm.etcMemo || null,
     } : prev);
+    // AC-8 쌍방연동 — 1번차트에 변경 알림
+    localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
   };
 
   // C23-DETAIL-SIMPLIFY: 상담 탭 저장
@@ -1179,6 +1239,8 @@ export default function CustomerChartPage() {
       .limit(30);
     setReservations((resvData ?? []) as Reservation[]);
     setEditResvId(null);
+    // AC-8 쌍방연동 — 예약메모 변경 시 1번차트에 알림
+    if (customer) localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
   };
 
   // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동 — 미니예약창/수정모달 슬롯
@@ -1510,10 +1572,44 @@ export default function CustomerChartPage() {
                 </tr>
 
                 {/* ④ 휴대폰 + 개인정보동의/문자수신거부 — T-20260508-foot-CUST-FORM-REVAMP: 체크박스 활성화 */}
+                {/* T-20260513-foot-C21-PHONE-EDIT-BTN: 인라인 편집 */}
                 <tr>
                   <td className={LC}>휴대폰</td>
-                  <td className={cn(VC, 'border-r border-gray-200 w-[130px]')}>
-                    <a href={`tel:${customer.phone}`} className="font-medium text-teal-700 hover:underline">{formatPhone(customer.phone)}</a>
+                  <td className={cn(VC, 'border-r border-gray-200 w-[160px]')}>
+                    {editingPhone ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="tel"
+                          value={phoneText}
+                          onChange={(e) => { setPhoneText(e.target.value); setIsDirty(true); }}
+                          autoFocus
+                          placeholder="010-1234-5678"
+                          className="h-5 w-[110px] text-[11px] rounded border border-teal-400 px-1.5 focus:outline-none focus:border-teal-600"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') savePhone();
+                            if (e.key === 'Escape') { setEditingPhone(false); setPhoneText(customer.phone ?? ''); }
+                          }}
+                        />
+                        <button
+                          onClick={savePhone}
+                          disabled={savingField}
+                          className="rounded border border-teal-500 bg-teal-50 text-teal-700 text-[10px] px-1.5 py-0.5 hover:bg-teal-100 transition shrink-0"
+                        >저장</button>
+                        <button
+                          onClick={() => { setEditingPhone(false); setPhoneText(customer.phone ?? ''); }}
+                          className="rounded border border-gray-300 text-[10px] px-1.5 py-0.5 hover:bg-gray-100 transition shrink-0"
+                        >취소</button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <a href={`tel:${customer.phone}`} className="font-medium text-teal-700 hover:underline text-[11px]">{formatPhone(customer.phone) || '미등록'}</a>
+                        <button
+                          type="button"
+                          onClick={() => { setPhoneText(customer.phone ?? ''); setEditingPhone(true); }}
+                          className="rounded border border-gray-300 text-[10px] px-1.5 py-0.5 hover:bg-gray-100 transition shrink-0 text-gray-600"
+                        >수정</button>
+                      </div>
+                    )}
                   </td>
                   <td className={cn(LC, 'w-auto')}>개인정보동의</td>
                   <td className={VC}>
