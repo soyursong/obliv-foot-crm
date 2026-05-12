@@ -429,15 +429,16 @@ export default function CustomerChartPage() {
   // T-20260512-foot-TREATMENT-SET: 진료세트 선택 상태
   const [selectedTreatmentSet, setSelectedTreatmentSet] = useState<TreatmentSetSelection | null>(null);
   // T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 인라인 편집
-  const [editingAddress, setEditingAddress] = useState(false);
+  // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: editingAddress 제거 — 항상 활성화
   const [addressText, setAddressText] = useState('');
   // T-20260510-foot-ADDRESS-DETAIL-FIX: 상세주소 입력란
   const [addressDetailText, setAddressDetailText] = useState('');
   // T-20260508-foot-CUST-FORM-REVAMP: 신규 폼 필드
-  const [editingEmail, setEditingEmail] = useState(false);
+  // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: editingEmail/editingPassport 제거 — 항상 활성화
   const [emailText, setEmailText] = useState('');
-  const [editingPassport, setEditingPassport] = useState(false);
   const [passportText, setPassportText] = useState('');
+  // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 예약메모 인라인 편집 상태
+  const [resvMemoInputs, setResvMemoInputs] = useState<Record<string, string>>({});
   // T-20260513-foot-C21-PHONE-EDIT-BTN: 핸드폰번호 인라인 편집
   const [editingPhone, setEditingPhone] = useState(false);
   const [phoneText, setPhoneText] = useState('');
@@ -752,7 +753,7 @@ export default function CustomerChartPage() {
       address_detail: addressDetailText.trim() || null,
       postal_code: postalCodeText.trim() || null,
     } : prev);
-    setEditingAddress(false);
+    // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: setEditingAddress(false) 제거 — 항상 활성화
   };
 
   // T-20260508-foot-CUST-FORM-REVAMP: 단일 필드 즉시 저장 헬퍼
@@ -767,16 +768,14 @@ export default function CustomerChartPage() {
     localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
   };
 
-  // 이메일 저장
+  // 이메일 저장 (T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: setEditingEmail 제거)
   const saveEmail = async () => {
     await saveCustomerField({ customer_email: emailText.trim() || null });
-    setEditingEmail(false);
   };
 
-  // 여권번호 저장
+  // 여권번호 저장 (T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: setEditingPassport 제거)
   const savePassport = async () => {
     await saveCustomerField({ passport_number: passportText.trim() || null });
-    setEditingPassport(false);
   };
 
   // T-20260513-foot-C21-PHONE-EDIT-BTN: 핸드폰번호 저장 (010-XXXX-XXXX 유효성 검증)
@@ -844,8 +843,9 @@ export default function CustomerChartPage() {
       }
       // 2) 나머지 필드 일괄 patch
       const patch: Partial<Customer> = {};
-      if (editingEmail) patch.customer_email = emailText.trim() || null;
-      if (editingPassport) patch.passport_number = passportText.trim() || null;
+      // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 항상 포함 (editingEmail/editingPassport 가드 제거)
+      patch.customer_email = emailText.trim() || null;
+      patch.passport_number = passportText.trim() || null;
       if (editingPhone) {
         const digits = phoneText.replace(/\D/g, '');
         if (digits.length === 0) { toast.error('번호를 입력해주세요'); return; }
@@ -855,11 +855,10 @@ export default function CustomerChartPage() {
         }
         patch.phone = `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
       }
-      if (editingAddress) {
-        patch.address = addressText.trim() || null;
-        patch.address_detail = addressDetailText.trim() || null;
-        patch.postal_code = postalCodeText.trim() || null;
-      }
+      // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 항상 포함 (editingAddress 가드 제거)
+      patch.address = addressText.trim() || null;
+      patch.address_detail = addressDetailText.trim() || null;
+      patch.postal_code = postalCodeText.trim() || null;
       if (editingCustomerMemo) patch.customer_memo = customerMemoText.trim() || null;
       if (Object.keys(patch).length > 0) {
         const { error } = await supabase.from('customers').update(patch).eq('id', customer.id);
@@ -867,10 +866,8 @@ export default function CustomerChartPage() {
         setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
       }
       // 3) 모든 편집 상태 닫기 + isDirty 리셋
-      setEditingEmail(false);
-      setEditingPassport(false);
+      // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: setEditingEmail/setEditingPassport/setEditingAddress 제거
       setEditingPhone(false);
-      setEditingAddress(false);
       setEditingCustomerMemo(false);
       setIsDirty(false);
     } finally {
@@ -1025,8 +1022,7 @@ export default function CustomerChartPage() {
           const fullAddr = data.address;
           setPostalCodeText(zoneCode);
           setAddressText(fullAddr);
-          // T-20260510-foot-ADDRESS-DETAIL-FIX: 우편번호 검색 직후 상세주소 입력 가능하도록 편집 모드 유지
-          setEditingAddress(true);
+          // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 항상 활성화이므로 setEditingAddress 불필요
           // 우편번호 + 주소 즉시 저장 (상세주소는 사용자 입력 후 별도 저장)
           supabase.from('customers').update({
             postal_code: zoneCode || null,
@@ -1642,73 +1638,37 @@ export default function CustomerChartPage() {
 
                 {/* ⑤ 전화번호 행 삭제 — T-20260508-foot-CUST-FORM-REVAMP */}
 
-                {/* ⑥ 이메일 — 분리·활성화 */}
+                {/* ⑥ 이메일 — T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 항상 활성화 */}
                 <tr>
                   <td className={LC}>이메일</td>
                   <td className={VC} colSpan={3}>
-                    {editingEmail ? (
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="email"
-                          value={emailText}
-                          onChange={(e) => { setEmailText(e.target.value); setIsDirty(true); }}
-                          autoFocus
-                          placeholder="example@email.com"
-                          className="h-5 flex-1 text-[11px] rounded border border-teal-400 px-1.5 focus:outline-none focus:border-teal-600"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') saveEmail();
-                            if (e.key === 'Escape') { setEditingEmail(false); setEmailText(customer.customer_email ?? ''); }
-                          }}
-                        />
-                        <button onClick={() => { setEditingEmail(false); setEmailText(customer.customer_email ?? ''); }} className="rounded border border-gray-300 text-[10px] px-1.5 py-0.5 hover:bg-gray-100 transition shrink-0">취소</button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => { setEditingEmail(true); setIsDirty(true); }}
-                        className="text-left w-full hover:bg-blue-50/50 rounded px-0.5 transition"
-                        title="클릭하여 편집"
-                      >
-                        <span className={cn('text-[11px]', customer.customer_email ? 'text-gray-800' : 'text-muted-foreground/50')}>
-                          {customer.customer_email ?? '클릭하여 입력'}
-                        </span>
-                      </button>
-                    )}
+                    <input
+                      type="email"
+                      value={emailText}
+                      onChange={(e) => { setEmailText(e.target.value); setIsDirty(true); }}
+                      placeholder="example@email.com"
+                      className="h-5 w-full text-[11px] rounded border border-gray-300 px-1.5 focus:outline-none focus:border-teal-500 bg-white"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') saveEmail();
+                      }}
+                    />
                   </td>
                 </tr>
 
-                {/* ⑥-b 여권번호 — 분리·활성화 */}
+                {/* ⑥-b 여권번호 — T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 항상 활성화 */}
                 <tr>
                   <td className={LC}>여권번호</td>
                   <td className={VC} colSpan={3}>
-                    {editingPassport ? (
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="text"
-                          value={passportText}
-                          onChange={(e) => { setPassportText(e.target.value.toUpperCase()); setIsDirty(true); }}
-                          autoFocus
-                          placeholder="예: M12345678"
-                          className="h-5 flex-1 text-[11px] font-mono rounded border border-teal-400 px-1.5 focus:outline-none focus:border-teal-600 uppercase"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') savePassport();
-                            if (e.key === 'Escape') { setEditingPassport(false); setPassportText(customer.passport_number ?? ''); }
-                          }}
-                        />
-                        <button onClick={() => { setEditingPassport(false); setPassportText(customer.passport_number ?? ''); }} className="rounded border border-gray-300 text-[10px] px-1.5 py-0.5 hover:bg-gray-100 transition shrink-0">취소</button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => { setEditingPassport(true); setIsDirty(true); }}
-                        className="text-left w-full hover:bg-blue-50/50 rounded px-0.5 transition"
-                        title="클릭하여 편집"
-                      >
-                        <span className={cn('text-[11px] font-mono', customer.passport_number ? 'text-gray-800' : 'text-muted-foreground/50')}>
-                          {customer.passport_number ?? (customer.is_foreign ? '클릭하여 입력' : '해당없음')}
-                        </span>
-                      </button>
-                    )}
+                    <input
+                      type="text"
+                      value={passportText}
+                      onChange={(e) => { setPassportText(e.target.value.toUpperCase()); setIsDirty(true); }}
+                      placeholder="예: M12345678"
+                      className="h-5 w-full text-[11px] font-mono rounded border border-gray-300 px-1.5 focus:outline-none focus:border-teal-500 bg-white uppercase"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') savePassport();
+                      }}
+                    />
                   </td>
                 </tr>
 
@@ -1746,100 +1706,58 @@ export default function CustomerChartPage() {
                   </td>
                 </tr>
 
-                {/* ⑧⑨ 우편번호+주소 — T-20260510-foot-C21-SAVE-UNIFY: 통합 편집, 저장버튼 하나 */}
+                {/* ⑧⑨ 우편번호+주소 — T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 항상 활성화 */}
                 <tr>
                   <td className={LC}>우편번호</td>
                   <td className={VC} colSpan={3}>
-                    {editingAddress ? (
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="text"
-                          value={postalCodeText}
-                          onChange={(e) => { setPostalCodeText(e.target.value.replace(/\D/g, '').slice(0, 5)); setIsDirty(true); }}
-                          placeholder="12345"
-                          maxLength={5}
-                          inputMode="numeric"
-                          className="w-20 h-5 text-[11px] font-mono rounded border border-teal-400 px-1.5 focus:outline-none focus:border-teal-600"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Escape') { setEditingAddress(false); setPostalCodeText(customer.postal_code ?? ''); setAddressText(customer.address ?? ''); }
-                          }}
-                        />
-                        <button
-                          onClick={openKakaoPostcode}
-                          className="rounded border border-blue-400 bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 hover:bg-blue-100 transition shrink-0"
-                        >
-                          주소검색
-                        </button>
-                      </div>
-                    ) : (
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        value={postalCodeText}
+                        onChange={(e) => { setPostalCodeText(e.target.value.replace(/\D/g, '').slice(0, 5)); setIsDirty(true); }}
+                        placeholder="12345"
+                        maxLength={5}
+                        inputMode="numeric"
+                        className="w-20 h-5 text-[11px] font-mono rounded border border-gray-300 px-1.5 focus:outline-none focus:border-teal-500"
+                      />
                       <button
-                        type="button"
-                        onClick={() => { setEditingAddress(true); setPostalCodeText(customer.postal_code ?? ''); setAddressText(customer.address ?? ''); setIsDirty(true); }}
-                        className="flex items-center gap-1.5 hover:bg-blue-50/50 rounded px-0.5 transition"
-                        title="클릭하여 우편번호·주소 편집"
+                        onClick={openKakaoPostcode}
+                        className="rounded border border-blue-400 bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 hover:bg-blue-100 transition shrink-0"
                       >
-                        <span className={cn('text-[11px] font-mono', customer.postal_code ? 'text-gray-800' : 'text-muted-foreground/50')}>
-                          {customer.postal_code ?? '클릭하여 입력'}
-                        </span>
-                        {!customer.postal_code && (
-                          <span className="rounded border border-blue-300 bg-blue-50 text-blue-600 text-[9px] px-1 py-0.5">주소검색</span>
-                        )}
+                        주소검색
                       </button>
-                    )}
+                    </div>
                   </td>
                 </tr>
 
-                {/* ⑨ 주소 — 우편번호와 동일 편집 모드, 저장버튼 1개 */}
-                {/* T-20260510-foot-ADDRESS-DETAIL-FIX: 상세주소 입력란 추가 */}
+                {/* ⑨ 주소 — T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 항상 활성화 */}
+                {/* T-20260510-foot-ADDRESS-DETAIL-FIX: 상세주소 입력란 */}
                 <tr>
                   <td className={LC}>주소</td>
                   <td className={VC} colSpan={3}>
-                    {editingAddress ? (
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-1">
-                          <Input
-                            value={addressText}
-                            onChange={(e) => { setAddressText(e.target.value); setIsDirty(true); }}
-                            placeholder="기본주소 (우편번호 검색 시 자동입력)"
-                            className="h-6 text-xs flex-1"
-                            autoFocus
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') saveAddress();
-                              if (e.key === 'Escape') { setEditingAddress(false); setAddressText(customer.address ?? ''); setAddressDetailText(customer.address_detail ?? ''); setPostalCodeText(customer.postal_code ?? ''); }
-                            }}
-                          />
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Input
-                            value={addressDetailText}
-                            onChange={(e) => { setAddressDetailText(e.target.value); setIsDirty(true); }}
-                            placeholder="상세주소 (동·호수·건물명 등)"
-                            className="h-6 text-xs flex-1"
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') saveAddress();
-                              if (e.key === 'Escape') { setEditingAddress(false); setAddressText(customer.address ?? ''); setAddressDetailText(customer.address_detail ?? ''); setPostalCodeText(customer.postal_code ?? ''); }
-                            }}
-                          />
-                          <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 shrink-0" onClick={() => { setEditingAddress(false); setAddressText(customer.address ?? ''); setAddressDetailText(customer.address_detail ?? ''); setPostalCodeText(customer.postal_code ?? ''); }}>취소</Button>
-                        </div>
+                    <div className="flex flex-col gap-1">
+                      <Input
+                        value={addressText}
+                        onChange={(e) => { setAddressText(e.target.value); setIsDirty(true); }}
+                        placeholder="기본주소 (우편번호 검색 시 자동입력)"
+                        className="h-6 text-xs"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') saveAddress();
+                        }}
+                      />
+                      <div className="flex items-center gap-1">
+                        <Input
+                          value={addressDetailText}
+                          onChange={(e) => { setAddressDetailText(e.target.value); setIsDirty(true); }}
+                          placeholder="상세주소 (동·호수·건물명 등)"
+                          className="h-6 text-xs flex-1"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') saveAddress();
+                          }}
+                        />
+                        <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 shrink-0" onClick={() => { setAddressText(customer.address ?? ''); setAddressDetailText(customer.address_detail ?? ''); setPostalCodeText(customer.postal_code ?? ''); }}>초기화</Button>
                       </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => { setEditingAddress(true); setAddressText(customer.address ?? ''); setAddressDetailText(customer.address_detail ?? ''); setPostalCodeText(customer.postal_code ?? ''); setIsDirty(true); }}
-                        className="text-left w-full hover:bg-blue-50/50 rounded px-0.5 transition"
-                        title="클릭하여 주소 편집"
-                      >
-                        <span className={cn('text-[11px]', customer.address ? 'text-gray-800' : 'text-muted-foreground/50')}>
-                          {customer.address ? (
-                            <>
-                              {customer.address}
-                              {customer.address_detail && <span className="text-gray-600"> {customer.address_detail}</span>}
-                            </>
-                          ) : '미입력 (우편번호 검색 시 자동입력)'}
-                        </span>
-                      </button>
-                    )}
+                    </div>
                   </td>
                 </tr>
 
@@ -2742,24 +2660,52 @@ export default function CustomerChartPage() {
             {reservations.length === 0 ? (
               <div className="text-[11px] text-muted-foreground">예약 없음</div>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 {reservations.slice(0, 5).map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => {
-                      setEditResvId(r.id);
-                      setEditResvForm({
-                        date: r.reservation_date,
-                        startTime: r.reservation_time.slice(0, 5),
-                        memo: r.booking_memo ?? '',
-                      });
-                    }}
-                    className="w-full flex items-center justify-between text-[11px] rounded hover:bg-muted/50 px-1 py-0.5 transition text-left"
-                  >
-                    <span className="text-gray-700">{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
-                    <Badge variant="secondary" className="text-[10px] px-1.5">{r.status}</Badge>
-                  </button>
+                  <div key={r.id} className="space-y-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditResvId(r.id);
+                        setEditResvForm({
+                          date: r.reservation_date,
+                          startTime: r.reservation_time.slice(0, 5),
+                          memo: resvMemoInputs[r.id] ?? r.booking_memo ?? '',
+                        });
+                      }}
+                      className="w-full flex items-center justify-between text-[11px] rounded hover:bg-muted/50 px-1 py-0.5 transition text-left"
+                    >
+                      <span className="text-gray-700">{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
+                      <Badge variant="secondary" className="text-[10px] px-1.5">{r.status}</Badge>
+                    </button>
+                    {/* T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 예약메모 인라인 항상 활성화 */}
+                    <input
+                      type="text"
+                      value={resvMemoInputs[r.id] ?? r.booking_memo ?? ''}
+                      onChange={(e) => setResvMemoInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
+                      onBlur={async () => {
+                        const currentMemo = resvMemoInputs[r.id];
+                        if (currentMemo === undefined) return;
+                        const savedMemo = r.booking_memo ?? '';
+                        if (currentMemo === savedMemo) return;
+                        const { error } = await supabase
+                          .from('reservations')
+                          .update({ booking_memo: currentMemo.trim() || null })
+                          .eq('id', r.id);
+                        if (!error) {
+                          setReservations(prev => prev.map(rv =>
+                            rv.id === r.id ? { ...rv, booking_memo: currentMemo.trim() || null } : rv
+                          ));
+                          // AC-8 쌍방연동 — 예약메모 변경 시 1번차트에 알림
+                          if (customer) localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+                        } else {
+                          toast.error('메모 저장 실패');
+                        }
+                      }}
+                      placeholder="예약메모"
+                      className="w-full h-5 text-[10px] rounded border border-gray-200 px-1.5 focus:outline-none focus:border-teal-400 bg-white text-gray-600 placeholder:text-gray-300"
+                    />
+                  </div>
                 ))}
               </div>
             )}
