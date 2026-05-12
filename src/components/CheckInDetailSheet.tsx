@@ -330,8 +330,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const [notes, setNotes] = useState('');
   const [treatmentMemo, setTreatmentMemo] = useState('');
   const [doctorNote, setDoctorNote] = useState('');
-  // T-20260504-foot-MEMO-RESTRUCTURE: 예약메모 / 고객메모 분리
-  const [bookingMemo, setBookingMemo] = useState('');
+  // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 (예약메모는 2번차트 1구역 전용 — T-20260512)
   const [customerMemo, setCustomerMemo] = useState('');
   const [savingCustomerMemo, setSavingCustomerMemo] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -448,7 +447,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     // TypeScript narrowing: 이 아래부터 checkIn은 반드시 non-null
     if (!checkIn) return;
 
-    const [svcRes, payRes, histRes, pkgRes, custRes, resvRes, staffRes] = await Promise.all([
+    const [svcRes, payRes, histRes, pkgRes, custRes, staffRes] = await Promise.all([
       supabase
         .from('services')
         .select('*')
@@ -494,14 +493,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               .limit(1)
               .maybeSingle()
           : Promise.resolve({ data: null }),
-      // 예약메모 조회 (T-20260504-foot-MEMO-RESTRUCTURE)
-      checkIn.reservation_id
-        ? supabase
-            .from('reservations')
-            .select('booking_memo')
-            .eq('id', checkIn.reservation_id)
-            .single()
-        : Promise.resolve({ data: null }),
+      // T-20260512: 예약메모 쿼리 제거 — 2번차트에서만 표시
       // 담당실장 드롭다운용 스태프 목록 — 실장(상담실장) 역할만 (T-20260506 항목8)
       supabase
         .from('staff')
@@ -523,8 +515,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     if (!checkIn.customer_id && custData?.id) {
       setResolvedCustomerId(custData.id);
     }
-    const resvData = resvRes.data as { booking_memo: string | null } | null;
-    setBookingMemo(resvData?.booking_memo ?? '');
+    // T-20260512: 예약메모(booking_memo)는 2번차트에서 표시. 1번차트 로드 불필요.
     setStaffList((staffRes.data ?? []) as Array<{ id: string; name: string; role: string }>);
     const pkgs = (pkgRes.data ?? []) as PackageType[];
     setPackages(pkgs);
@@ -1062,22 +1053,14 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             </Button>
           )}
 
-          {/* ── T-20260504-foot-MEMO-RESTRUCTURE: 예약메모 / 고객메모 ── */}
-          {(bookingMemo || checkIn.customer_id) && (
+          {/* ── T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 / 방문경로 ── */}
+          {/* T-20260512-foot-C1-VISIT-ROUTE-MEMO: 예약메모 1번차트 삭제 → 2번차트 1구역에서만 표시 */}
+          {(checkIn.customer_id || resolvedCustomerId) && (
             <>
               <Separator />
               <div className="space-y-3">
-                {/* 예약메모 — 읽기 전용 */}
-                {bookingMemo && (
-                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 space-y-1">
-                    <span className="text-xs font-semibold text-amber-800 flex items-center gap-1">
-                      <FileText className="h-3 w-3" /> 예약메모 (예약 경로)
-                    </span>
-                    <p className="text-xs text-amber-900 whitespace-pre-wrap">{bookingMemo}</p>
-                  </div>
-                )}
-                {/* 방문경로 — T-20260510-foot-C1-VISIT-ROUTE-MEMO */}
-                {(checkIn.customer_id || resolvedCustomerId) && (
+                {/* 방문경로 — 초진/체험(예약없이방문)만 노출. 재진 미노출. T-20260510-foot-C1-VISIT-ROUTE-MEMO */}
+                {(checkIn.customer_id || resolvedCustomerId) && checkIn.visit_type !== 'returning' && (
                   <div className="flex items-center gap-2">
                     <Label className="text-xs font-semibold text-teal-700 shrink-0">방문경로</Label>
                     <select
