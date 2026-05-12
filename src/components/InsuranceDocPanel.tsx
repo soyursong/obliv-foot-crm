@@ -3,10 +3,10 @@
  *
  * T-20260506-foot-CHART-SIMPLE-REVAMP: 5/4 22:04 요청 반영
  * T-20260510-foot-C21-IMG-PROGRESS: 경과내역 사진 (2번차트 연동) 섹션 추가
- * T-20260509-foot-CHART1-LAYOUT-REAPPLY: 경과분析지 전폭, 진료비 영수증 → DocumentPrintPanel 이동
+ * T-20260509-foot-CHART1-LAYOUT-REAPPLY: 경과분석지 전폭, 진료비 영수증 → DocumentPrintPanel 이동
  *
  * 섹션 구성:
- * 1) 경과분析지   — 원장님 공유 시 데스크 업로드 (receipt_type='receipt') [전폭]
+ * 1) 경과분석지   — 원장님 공유 시 데스크 업로드 (receipt_type='receipt') [전폭]
  * 2) KOH 균검사   — 원장님 공유 시 데스크 업로드 (prescriptions 테이블 재용)
  * 3) 경과내역 사진 — 2번차트 경과내역 탭에서 업로드된 사진 조회 (Storage 연동)
  */
@@ -159,12 +159,12 @@ export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
   return (
     <div className="space-y-4">
 
-      {/* ── 1. 경과분析지 (전폭) — T-20260509-foot-CHART1-LAYOUT-REAPPLY ── */}
+      {/* ── 1. 경과분석지 (전폭) — T-20260509-foot-CHART1-LAYOUT-REAPPLY ── */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div>
             <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
-              <FileText className="h-3 w-3" /> 경과분析지
+              <FileText className="h-3 w-3" /> 경과분석지
             </span>
             <p className="text-[11px] text-muted-foreground mt-0.5">원장님 공유 시 업로드</p>
           </div>
@@ -179,7 +179,7 @@ export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
                 <div className="flex items-center gap-2 min-w-0">
                   <FileText className="h-3.5 w-3.5 text-teal-600 shrink-0" />
                   <div className="min-w-0">
-                    <div className="font-medium">경과분析지</div>
+                    <div className="font-medium">경과분석지</div>
                     <div className="text-muted-foreground">
                       {format(new Date(doc.issue_date), 'yyyy-MM-dd')}
                       {doc.pdf_url && (
@@ -200,7 +200,7 @@ export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
           </div>
         ) : (
           <div className="rounded-lg border border-dashed py-3 text-center text-xs text-muted-foreground">
-            등록된 경과분析지 없음
+            등록된 경과분석지 없음
           </div>
         )}
       </div>
