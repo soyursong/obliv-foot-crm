@@ -91,16 +91,11 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, onContext
     setVisible(true);
   }, []);
 
-  // 표시 정보 계산
+  // 표시 정보 계산 — 초진(파란) / 재진(초록) 2종
   const visitType = checkIn.visit_type;
-  const visitLabel =
-    visitType === 'new' ? '초진' : visitType === 'experience' ? '체험' : '재진';
+  const visitLabel = visitType === 'new' ? '초진' : '재진';
   const visitColor =
-    visitType === 'new'
-      ? 'bg-blue-100 text-blue-800'
-      : visitType === 'experience'
-        ? 'bg-purple-100 text-purple-800'
-        : 'bg-orange-100 text-orange-700';
+    visitType === 'new' ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800';
 
   const age = calcAge(details?.birth_date ?? null);
   const genderLabel =

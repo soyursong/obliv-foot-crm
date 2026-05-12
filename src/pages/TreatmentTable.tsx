@@ -266,7 +266,7 @@ export default function TreatmentTable() {
     /* 뷰 프리셋별 기본 필터 */
     if (view === 'doctor') {
       // 원장뷰: 초진 환자 (진찰실을 거치는 환자) 우선 표시
-      list = list.filter((c) => c.visit_type === 'new' || c.visit_type === 'experience');
+      list = list.filter((c) => c.visit_type === 'new');
     }
 
     /* 담당 치료사 필터 */

@@ -151,7 +151,6 @@ const LEAD_SOURCE_OPTIONS = ['TM', '인바운드', '워크인', '지인소개', 
 const VISIT_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: 'new', label: '초진' },
   { value: 'returning', label: '재진' },
-  { value: 'experience', label: '체험' },
 ];
 
 // ──────────────────────────────────────────────────────────────

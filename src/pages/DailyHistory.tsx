@@ -61,7 +61,7 @@ interface PackagePaymentRow {
 }
 
 type FilterTab = 'all' | 'in_progress' | 'done' | 'cancelled' | 'noshow';
-type VisitFilter = 'all' | 'new' | 'returning' | 'experience';
+type VisitFilter = 'all' | 'new' | 'returning';
 type SortMode = 'queue' | 'time';
 
 /* STATUS_COLOR, VISIT_TYPE_COLOR, METHOD_KO → @/lib/status 공유 상수 사용 */
@@ -238,7 +238,7 @@ export default function DailyHistory() {
   // Summary calculations
   const summary = useMemo(() => {
     const total = checkIns.length;
-    const byVisit = { new: 0, returning: 0, experience: 0 };
+    const byVisit = { new: 0, returning: 0 };
     let doneCount = 0;
     let cancelledCount = 0;
     let totalElapsed = 0;
@@ -385,11 +385,9 @@ export default function DailyHistory() {
           </CardHeader>
           <CardContent>
             <div className="flex items-baseline gap-2 text-lg font-bold">
-              <span className="text-teal-600">{summary.byVisit.new}</span>
+              <span className="text-blue-600">{summary.byVisit.new}</span>
               <span className="text-muted-foreground text-sm">/</span>
               <span className="text-emerald-600">{summary.byVisit.returning}</span>
-              <span className="text-muted-foreground text-sm">/</span>
-              <span className="text-amber-600">{summary.byVisit.experience}</span>
             </div>
           </CardContent>
         </Card>
@@ -585,9 +583,8 @@ export default function DailyHistory() {
           <div className="flex gap-1.5">
             {([
               { value: 'all' as VisitFilter, label: '전체' },
-              { value: 'new' as VisitFilter, label: `신규 (${summary.byVisit.new})` },
+              { value: 'new' as VisitFilter, label: `초진 (${summary.byVisit.new})` },
               { value: 'returning' as VisitFilter, label: `재진 (${summary.byVisit.returning})` },
-              { value: 'experience' as VisitFilter, label: `체험 (${summary.byVisit.experience})` },
             ]).map((opt) => (
               <button
                 key={opt.value}
@@ -595,12 +592,10 @@ export default function DailyHistory() {
                 className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
                   visitFilter === opt.value
                     ? opt.value === 'new'
-                      ? 'bg-teal-100 text-teal-700'
+                      ? 'bg-blue-100 text-blue-700'
                       : opt.value === 'returning'
                         ? 'bg-emerald-100 text-emerald-700'
-                        : opt.value === 'experience'
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-gray-200 text-gray-800'
+                        : 'bg-gray-200 text-gray-800'
                     : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
                 }`}
               >
