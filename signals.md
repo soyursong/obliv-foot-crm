@@ -2076,3 +2076,7 @@ ref: T-20260512-foot-TREATMENT-SET
 - 진료도구 → 진료세트 탭: 목록/추가/수정/삭제/복제 동작
 - 2번차트 [세트 불러오기]: 세트 선택 → 삽입코드 필터 + 상병코드 배지 표시
 - 진료비 자동산정: 세트 필터 적용 시 해당 삽입코드 서비스만 합산
+
+| 2026-05-12T17:44:17+09:00 | supervisor | qa-pass + deployed | T-20260512-foot-TREATMENT-SET: 진료세트 관리 + 건보 산정 연동 — Yellow, commit c2c8dfe, bundle BwQiCsF2 |
+
+| 2026-05-12T19:52:36+09:00 | supervisor | qa-pass + deployed | T-20260511-foot-DASH-BATCH-INDIVIDUAL: 배치편집 대기슬롯 개별 이동 — Green, commit c2c8dfe, bundle Dashboard-DXOprHXY |
