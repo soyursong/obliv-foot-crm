@@ -74,13 +74,31 @@ export function InlinePatientSearch({
         return;
       }
 
-      const filterQ = isPhone ? digits : q.trim();
-      const { data } = await supabase
+      // T-20260512-foot-RESV-PHONE-SEARCH: DB phone 컬럼은 '010-1234-5678' 형식(하이픈 포함).
+      // 수정 전: toHyphenated가 8~10자리에서 잘못된 패턴 생성 (d.length-4 슬라이싱 버그),
+      //          단순 ilike 한 개라 후미 4자리 검색 등 불일치.
+      // 수정 후: (1) toHyphenated 슬라이싱 고정 (두 번째 세그먼트 항상 index 3~7),
+      //          (2) 원시 숫자 패턴 OR 하이픈 패턴 — 어느 입력 방식도 매칭.
+      const toHyphenated = (d: string): string => {
+        if (d.length <= 3) return d;                                         // 010 → 010
+        if (d.length <= 7) return `${d.slice(0, 3)}-${d.slice(3)}`;        // 01012 → 010-12
+        return `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`;          // 01012345678 → 010-1234-5678
+      };
+
+      let baseQuery = supabase
         .from('customers')
         .select('id, name, phone, birth_date')
-        .eq('clinic_id', clinicId)
-        .ilike(isPhone ? 'phone' : 'name', `%${filterQ}%`)
-        .limit(5);
+        .eq('clinic_id', clinicId);
+
+      if (isPhone) {
+        const hyphenated = toHyphenated(digits);
+        // 후미 숫자 검색(raw)과 앞자리 부분 검색(hyphenated) 둘 다 OR
+        baseQuery = baseQuery.or(`phone.ilike.%${digits}%,phone.ilike.%${hyphenated}%`);
+      } else {
+        baseQuery = baseQuery.ilike('name', `%${q.trim()}%`);
+      }
+
+      const { data } = await baseQuery.limit(5);
 
       const matches = (data ?? []) as PatientMatch[];
       setResults(matches);
