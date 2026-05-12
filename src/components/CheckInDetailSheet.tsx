@@ -1073,8 +1073,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                     >
                       <option value="">— 선택 —</option>
                       <option value="TM">TM</option>
-                      <option value="워크인">워크인</option>
                       <option value="인바운드">인바운드</option>
+                      <option value="워크인">워크인</option>
                       <option value="지인소개">지인소개</option>
                     </select>
                   </div>
