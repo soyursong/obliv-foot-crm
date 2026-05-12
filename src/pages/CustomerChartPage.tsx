@@ -2713,6 +2713,58 @@ export default function CustomerChartPage() {
             </div>
           )}
 
+          {/* 예약내역 (우측 패널 간략) — T-20260513-foot-C22-ZONE-REORDER: 최근방문→예약내역→회차차감 순서 */}
+          <div className="border-b border-gray-200 px-3 py-2">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="text-[11px] font-semibold text-[#1e4e6e]">예약내역</div>
+              {/* AC-2: 예약하기 → 예약관리 풀페이지 이동 (T-20260512-foot-RESV-MGMT-OVERHAUL) */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (customer) {
+                    navigate('/admin/reservations', {
+                      state: {
+                        openReservationFor: {
+                          customer_id: customer.id,
+                          name: customer.name,
+                          phone: customer.phone ?? '',
+                          visit_type: customer.visit_type,
+                        },
+                      },
+                    });
+                  }
+                }}
+                className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
+              >
+                <Plus className="h-3 w-3" /> 예약하기
+              </button>
+            </div>
+            {reservations.length === 0 ? (
+              <div className="text-[11px] text-muted-foreground">예약 없음</div>
+            ) : (
+              <div className="space-y-1">
+                {reservations.slice(0, 5).map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => {
+                      setEditResvId(r.id);
+                      setEditResvForm({
+                        date: r.reservation_date,
+                        startTime: r.reservation_time.slice(0, 5),
+                        memo: r.booking_memo ?? '',
+                      });
+                    }}
+                    className="w-full flex items-center justify-between text-[11px] rounded hover:bg-muted/50 px-1 py-0.5 transition text-left"
+                  >
+                    <span className="text-gray-700">{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
+                    <Badge variant="secondary" className="text-[10px] px-1.5">{r.status}</Badge>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* C22-PKG-DEDUCT: 회차 차감 인라인 폼 — 복구 T-20260510-foot-C22-SECTION-MERGE regression fix */}
           <div className="border-b border-gray-200 px-3 py-2">
             <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1.5 flex items-center gap-1">
@@ -2785,58 +2837,6 @@ export default function CustomerChartPage() {
                 {savingC22Deduct ? '저장 중…' : '저장'}
               </button>
             </div>
-          </div>
-
-          {/* 예약내역 (우측 패널 간략) */}
-          <div className="border-b border-gray-200 px-3 py-2">
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="text-[11px] font-semibold text-[#1e4e6e]">예약내역</div>
-              {/* AC-2: 예약하기 → 예약관리 풀페이지 이동 (T-20260512-foot-RESV-MGMT-OVERHAUL) */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (customer) {
-                    navigate('/admin/reservations', {
-                      state: {
-                        openReservationFor: {
-                          customer_id: customer.id,
-                          name: customer.name,
-                          phone: customer.phone ?? '',
-                          visit_type: customer.visit_type,
-                        },
-                      },
-                    });
-                  }
-                }}
-                className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
-              >
-                <Plus className="h-3 w-3" /> 예약하기
-              </button>
-            </div>
-            {reservations.length === 0 ? (
-              <div className="text-[11px] text-muted-foreground">예약 없음</div>
-            ) : (
-              <div className="space-y-1">
-                {reservations.slice(0, 5).map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => {
-                      setEditResvId(r.id);
-                      setEditResvForm({
-                        date: r.reservation_date,
-                        startTime: r.reservation_time.slice(0, 5),
-                        memo: r.booking_memo ?? '',
-                      });
-                    }}
-                    className="w-full flex items-center justify-between text-[11px] rounded hover:bg-muted/50 px-1 py-0.5 transition text-left"
-                  >
-                    <span className="text-gray-700">{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
-                    <Badge variant="secondary" className="text-[10px] px-1.5">{r.status}</Badge>
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
 
           {/* C23-DETAIL-SIMPLIFY: 상세 패널 (2-3) */}
