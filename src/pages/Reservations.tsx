@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { addDays, format, startOfWeek, isSameDay } from 'date-fns';
+import { addDays, format, parseISO, startOfWeek, isSameDay } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { toast } from 'sonner';
@@ -29,7 +29,7 @@ import { VISIT_TYPE_KO } from '@/lib/status';
 import { formatPhone, maskPhoneTail } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
-import type { Reservation, Service, VisitType } from '@/lib/types';
+import type { Reservation, VisitType } from '@/lib/types';
 
 const STATUS_STYLE: Record<Reservation['status'], string> = {
   confirmed: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -38,8 +38,9 @@ const STATUS_STYLE: Record<Reservation['status'], string> = {
   noshow: 'bg-red-100 text-red-700 border-red-200',
 };
 
+// AC-8: 초진 → 연한 노랑, 재진 → 연두 유지
 const VISIT_TYPE_STYLE: Record<VisitType, string> = {
-  new: 'border-l-[3px] border-l-blue-500 bg-blue-50/60',
+  new: 'border-l-[3px] border-l-yellow-500 bg-yellow-100/70',
   returning: 'border-l-[3px] border-l-emerald-500 bg-emerald-50/60',
   experience: 'border-l-[3px] border-l-amber-500 bg-amber-50/60',
 };
@@ -119,6 +120,16 @@ export default function Reservations() {
       customer_id: customer_id ?? null,
     });
   }, [clinic, location.state]);
+
+  // AC-7: 좌측 캘린더 날짜 클릭 → 해당 날짜 포함 주로 이동
+  useEffect(() => {
+    const state = location.state as { goToWeekOf?: string } | null;
+    if (!state?.goToWeekOf) return;
+    window.history.replaceState({}, '');
+    const targetDate = parseISO(state.goToWeekOf);
+    setWeekStart(startOfWeek(targetDate, { weekStartsOn: 1 }));
+    setViewMode('week');
+  }, [location.state]);
 
   const fetchWeek = useCallback(async () => {
     if (!clinic) return;
@@ -225,12 +236,13 @@ export default function Reservations() {
     [resvByKey],
   );
 
+  // AC-1: 시간당 초진 6건 + 재진 6건 = 합 12건 상한 (하드코딩, clinic.max_per_slot 불사용)
+  const SLOT_MAX_TOTAL = 12;
   const isSlotFull = useCallback(
     (dateStr: string, time: string) => {
-      if (!clinic) return false;
-      return slotActiveCount(dateStr, time) >= clinic.max_per_slot;
+      return slotActiveCount(dateStr, time) >= SLOT_MAX_TOTAL;
     },
-    [clinic, slotActiveCount],
+    [slotActiveCount],
   );
 
   const openNewSlot = (d: Date, time: string) => {
@@ -293,8 +305,8 @@ export default function Reservations() {
     if (r.reservation_date === newDate && r.reservation_time.slice(0, 5) === newTime) return;
 
     const activeCount = slotActiveCount(newDate, newTime);
-    if (activeCount >= clinic.max_per_slot) {
-      toast.error(`이 시간대는 마감입니다 (${activeCount}/${clinic.max_per_slot})`);
+    if (activeCount >= 12) {
+      toast.error(`이 시간대는 마감입니다 (${activeCount}/12)`);
       return;
     }
 
@@ -588,7 +600,7 @@ export default function Reservations() {
       <ReservationEditor
         draft={editor}
         clinicId={clinic?.id}
-        maxPerSlot={clinic?.max_per_slot ?? 5}
+        maxPerSlot={12}
         changedBy={changedBy}
         onClose={() => setEditor(null)}
         onSaved={() => {
@@ -632,22 +644,10 @@ function ReservationEditor({
 }) {
   const [state, setState] = useState<ReservationDraft | null>(draft);
   const [submitting, setSubmitting] = useState(false);
-  const [services, setServices] = useState<Service[]>([]);
 
   useEffect(() => {
     setState(draft);
   }, [draft]);
-
-  useEffect(() => {
-    if (!clinicId) return;
-    supabase
-      .from('services')
-      .select('*')
-      .eq('clinic_id', clinicId)
-      .eq('active', true)
-      .order('sort_order')
-      .then(({ data }) => setServices((data ?? []) as Service[]));
-  }, [clinicId]);
 
   if (!state) return null;
 
@@ -884,23 +884,7 @@ function ReservationEditor({
               ))}
             </div>
           </div>
-          {services.length > 0 && (
-            <div className="space-y-1.5">
-              <Label>서비스</Label>
-              <select
-                value={state.service_id ?? ''}
-                onChange={(e) => update('service_id', e.target.value || null)}
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
-              >
-                <option value="">선택 안 함</option>
-                {services.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.duration_min}분)
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          {/* AC-4: [서비스] 필드 제거 (DB 컬럼은 유지, UI 비노출) */}
           {/* T-20260504-foot-MEMO-RESTRUCTURE: 예약메모 / 고객메모 분리 */}
           <div className="space-y-1.5">
             <Label>예약메모 <span className="text-muted-foreground font-normal text-xs">(예약 경로 확인용)</span></Label>
@@ -992,14 +976,8 @@ function ReservationDetail({
         .eq('reservation_date', reservation.reservation_date)
         .eq('reservation_time', reservation.reservation_time)
         .neq('status', 'cancelled');
-      const { data: c } = await supabase
-        .from('clinics')
-        .select('max_per_slot')
-        .eq('id', reservation.clinic_id)
-        .maybeSingle();
-      const maxSlot = (c as { max_per_slot?: number } | null)?.max_per_slot ?? 5;
-      if ((count ?? 0) >= maxSlot) {
-        toast.error(`이 시간대는 마감입니다 (${count}/${maxSlot}). 다른 시간으로 옮긴 뒤 복원하세요.`);
+      if ((count ?? 0) >= 12) {
+        toast.error(`이 시간대는 마감입니다 (${count}/12). 다른 시간으로 옮긴 뒤 복원하세요.`);
         setBusy(false);
         return;
       }

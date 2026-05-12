@@ -32,7 +32,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
@@ -60,6 +60,7 @@ const WEEK_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 export default function CalendarNoticePanel() {
   const clinic = useClinic();
   const { profile } = useAuth();
+  const navigate = useNavigate();
 
   // ── 캘린더 상태 ──────────────────────────────────────────────────────────
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
@@ -239,7 +240,13 @@ export default function CalendarNoticePanel() {
             return (
               <button
                 key={dateKey}
-                onClick={() => setSelectedDate(isSelected ? null : day)}
+                onClick={() => {
+                  setSelectedDate(isSelected ? null : day);
+                  // AC-7: 날짜 클릭 → 예약관리 해당 주 이동
+                  navigate('/admin/reservations', {
+                    state: { goToWeekOf: format(day, 'yyyy-MM-dd') },
+                  });
+                }}
                 className={cn(
                   'w-full py-1 text-[11px] font-medium rounded-full transition-colors leading-none aspect-square flex items-center justify-center',
                   !isCurrentMonth && 'opacity-25',
