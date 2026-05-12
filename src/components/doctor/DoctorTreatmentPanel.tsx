@@ -79,10 +79,11 @@ interface DoctorCheckInFields {
   prescription_status: 'none' | 'pending' | 'confirmed';
 }
 
-// foot-crm visit_type 라벨 (초진/재진)
+// foot-crm visit_type 라벨 (초진/재진/선체험)
 const VISIT_TYPE_LABELS: Record<VisitType, string> = {
   new: '초진',
   returning: '재진',
+  experience: '선체험',
 };
 
 // ---------------------------------------------------------------------------

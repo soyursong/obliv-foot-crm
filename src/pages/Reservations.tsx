@@ -38,10 +38,11 @@ const STATUS_STYLE: Record<Reservation['status'], string> = {
   noshow: 'bg-red-100 text-red-700 border-red-200',
 };
 
-// 초진(파란) / 재진(초록)
+// 초진(파란) / 재진(초록) / 선체험(amber)
 const VISIT_TYPE_STYLE: Record<VisitType, string> = {
   new: 'border-l-[3px] border-l-blue-500 bg-blue-50/60',
   returning: 'border-l-[3px] border-l-emerald-500 bg-emerald-50/60',
+  experience: 'border-l-[3px] border-l-amber-500 bg-amber-50/60',
 };
 
 const STATUS_LABEL: Record<Reservation['status'], string> = {

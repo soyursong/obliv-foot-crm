@@ -1964,7 +1964,7 @@ export default function Dashboard() {
       .select('*')
       .eq('clinic_id', clinic.id)
       .not('status', 'in', '("cancelled","done")')
-      .in('visit_type', ['new', 'returning'])
+      .in('visit_type', ['new', 'returning', 'experience'])
       .gte('checked_in_at', start)
       .lte('checked_in_at', end)
       .order('checked_in_at', { ascending: true });

@@ -91,9 +91,9 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, onContext
     setVisible(true);
   }, []);
 
-  // 표시 정보 계산 — 초진(파란) / 재진(초록) 2종
+  // 표시 정보 계산 — 초진(파란) / 재진(초록) 2종 / 체험 배지 미표시 (AC-4)
   const visitType = checkIn.visit_type;
-  const visitLabel = visitType === 'new' ? '초진' : '재진';
+  const visitLabel = visitType === 'new' ? '초진' : visitType === 'returning' ? '재진' : null;
   const visitColor =
     visitType === 'new' ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800';
 
@@ -165,9 +165,11 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, onContext
                 ({[genderLabel, age != null ? `${age}세` : null].filter(Boolean).join('/')})
               </span>
             )}
-            <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', visitColor)}>
-              {visitLabel}
-            </span>
+            {visitLabel && (
+              <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', visitColor)}>
+                {visitLabel}
+              </span>
+            )}
           </div>
 
           <div className="border-t border-gray-100" />

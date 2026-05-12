@@ -44,14 +44,18 @@ export const RETURNING_PATIENT_STAGES: CheckInStatus[] = [
   'done',                // 완료
 ];
 
+// ── 체험 환자 (초진 동선과 동일)
+export const EXPERIENCE_PATIENT_STAGES: CheckInStatus[] = NEW_PATIENT_STAGES;
+
 export function stagesFor(visitType: VisitType): CheckInStatus[] {
   if (visitType === 'returning') return RETURNING_PATIENT_STAGES;
-  return NEW_PATIENT_STAGES; // 'new'
+  return NEW_PATIENT_STAGES; // 'new' | 'experience'
 }
 
 export const VISIT_TYPE_KO: Record<VisitType, string> = {
   new: '초진',
   returning: '재진',
+  experience: '예약없이 방문',
 };
 
 /** 상태별 배지 색상 (Tailwind classes) — 대기실·일일이력 등 공통 사용 */
@@ -72,10 +76,11 @@ export const STATUS_COLOR: Record<CheckInStatus, string> = {
   checklist: 'bg-yellow-100 text-yellow-800', // deprecated
 };
 
-/** 방문유형별 배지 색상 — 초진(파란) / 재진(초록) */
+/** 방문유형별 배지 색상 — 초진(파란) / 재진(초록) / 체험(amber, 배지 미표시) */
 export const VISIT_TYPE_COLOR: Record<VisitType, string> = {
   new: 'bg-blue-100 text-blue-700',
   returning: 'bg-emerald-100 text-emerald-700',
+  experience: 'bg-amber-100 text-amber-700',
 };
 
 /** 호출/진행 중 상태 (대기실 화면에서 "진행 중" 그룹으로 표시) */

@@ -2,7 +2,7 @@
 
 import type { InsuranceGrade, InsuranceGradeSource, HiraCategory } from './insurance';
 
-export type VisitType = 'new' | 'returning';
+export type VisitType = 'new' | 'returning' | 'experience';
 
 /** 고객 상태 플래그 (카드 배경색 변경) — T-20260502-foot-STATUS-COLOR-FLAG */
 export type StatusFlag =

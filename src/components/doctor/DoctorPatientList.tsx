@@ -24,7 +24,7 @@ import type { CheckInStatus } from '@/lib/types';
 interface PatientRow {
   id: string;
   customer_name: string;
-  visit_type: 'new' | 'returning';
+  visit_type: 'new' | 'returning' | 'experience';
   status: CheckInStatus;
   checked_in_at: string;
   queue_number: number | null;
@@ -116,7 +116,11 @@ function useConfirmPrescription() {
 // 방문 유형 배지
 // ---------------------------------------------------------------------------
 function VisitTypeBadge({ type }: { type: PatientRow['visit_type'] }) {
-  const map = { new: { label: '초진', cls: 'bg-blue-100 text-blue-700' }, returning: { label: '재진', cls: 'bg-emerald-100 text-emerald-700' } };
+  const map: Record<string, { label: string; cls: string }> = {
+    new: { label: '초진', cls: 'bg-blue-100 text-blue-700' },
+    returning: { label: '재진', cls: 'bg-emerald-100 text-emerald-700' },
+    // experience: 배지 미표시 (AC-4) — fallback 처리
+  };
   const { label, cls } = map[type] ?? { label: type, cls: 'bg-gray-100 text-gray-600' };
   return (
     <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>

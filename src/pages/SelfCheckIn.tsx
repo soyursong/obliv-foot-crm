@@ -77,6 +77,8 @@ const T: Record<Lang, {
   visitNewDesc: string;
   visitReturning: string;
   visitReturningDesc: string;
+  visitExperience: string;
+  visitExperienceDesc: string;
   failPrefix: string;
   errorPrefix: string;
   referrer: string;
@@ -112,6 +114,8 @@ const T: Record<Lang, {
     visitNewDesc: '처음 방문 입니다',
     visitReturning: '재진',
     visitReturningDesc: '재방문 입니다',
+    visitExperience: '예약없이 방문',
+    visitExperienceDesc: '',
     failPrefix: '접수 실패: ',
     errorPrefix: '오류가 발생했습니다: ',
     referrer: '추천인',
@@ -147,6 +151,8 @@ const T: Record<Lang, {
     visitNewDesc: 'First visit',
     visitReturning: 'Follow-up',
     visitReturningDesc: 'Returning visit',
+    visitExperience: 'Walk-in',
+    visitExperienceDesc: 'No reservation',
     failPrefix: 'Failed: ',
     errorPrefix: 'Error: ',
     referrer: 'Referred by',
@@ -159,6 +165,7 @@ function visitChoices(lang: Lang): { value: VisitType; label: string; desc: stri
   return [
     { value: 'new', label: t.visitNew, desc: t.visitNewDesc },
     { value: 'returning', label: t.visitReturning, desc: t.visitReturningDesc },
+    { value: 'experience', label: t.visitExperience, desc: t.visitExperienceDesc },
   ];
 }
 
@@ -167,8 +174,8 @@ const DONE_RESET_SECONDS = 15;
 /** 입력 화면 비활동 타임아웃 (초) */
 const IDLE_TIMEOUT_SECONDS = 60;
 
-/** 신분증 확인 필요 여부 — 초진(new)만 */
-const needsIdCheck = (vt: VisitType) => vt === 'new';
+/** 신분증 확인 필요 여부 — 초진(new) + 예약없이 방문(experience) */
+const needsIdCheck = (vt: VisitType) => vt === 'new' || vt === 'experience';
 
 // ── 공통 폰트 스타일 (Noto Serif KR 고급 웰니스 테마) ──
 const FONT_STYLE: React.CSSProperties = {
@@ -691,9 +698,11 @@ export default function SelfCheckIn() {
       let queue: number | null = null;
       if (!queueErr) queue = queueData as number;
 
-      // 신분증 확인 필요 플래그: 초진(new)만 자동 ON
+      // 신분증 확인 필요 플래그: 초진(new) + 예약없이 방문(experience)은 자동 ON
+      // 예약없이 방문(walk_in) 플래그: 슬롯 라우팅 추적용
       const notesParts: Record<string, unknown> = {};
       if (needsIdCheck(visitType)) notesParts.id_check_required = true;
+      if (visitType === 'experience') notesParts.walk_in = true;
       const notesPayload = Object.keys(notesParts).length > 0 ? notesParts : null;
 
       const { error: ciErr } = await anonClient.from('check_ins').insert({
@@ -702,7 +711,7 @@ export default function SelfCheckIn() {
         customer_name: name.trim(),
         customer_phone: phoneStored,
         visit_type: visitType,
-        // 재진→치료대기(treatment_waiting) 직행 / 초진→상담대기(consult_waiting) 직행
+        // 재진→치료대기(treatment_waiting) 직행 / 초진·체험→상담대기(consult_waiting) 직행
         status: visitType === 'returning' ? 'treatment_waiting' : 'consult_waiting',
         queue_number: queue,
         notes: notesPayload,
