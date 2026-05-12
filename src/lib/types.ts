@@ -271,6 +271,8 @@ export interface CheckIn {
   doctor_confirm_document: boolean;
   doctor_confirmed_at: string | null;
   healer_laser_confirm: boolean;
+  /** 빠른처방 상태 — T-20260512-foot-QUICK-RX-BUTTON */
+  prescription_status: 'none' | 'pending' | 'confirmed';
   /** 상태 플래그 — T-20260502-foot-STATUS-COLOR-FLAG */
   status_flag: StatusFlag | null;
   status_flag_history: Array<{ flag: StatusFlag | null; changed_at: string; changed_by: string | null }> | null;
