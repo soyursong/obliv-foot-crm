@@ -7,7 +7,7 @@
  * - DB: treatment_sets + treatment_set_items
  */
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
@@ -36,6 +36,20 @@ import { Loader2, Plus, Pencil, Trash2, Copy, X, Hash, Syringe } from 'lucide-re
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+/** AC-5: services 테이블에서 로드하는 카탈로그 항목 */
+interface ServiceCatalogItem {
+  id: string;
+  service_code: string | null;
+  hira_code: string | null;
+  name: string;
+  category_label: string | null;
+}
+
+/** 카탈로그 항목의 코드 값 (hira_code 우선, 없으면 service_code) */
+function getServiceCodeValue(item: ServiceCatalogItem): string {
+  return (item.hira_code ?? item.service_code ?? '').toUpperCase();
+}
 
 export type TreatmentSetCategory = '초진' | '재진' | '기타';
 
@@ -91,6 +105,23 @@ const CATEGORY_COLORS: Record<TreatmentSetCategory, string> = {
 // ---------------------------------------------------------------------------
 // Hooks
 // ---------------------------------------------------------------------------
+
+/** AC-5: services 테이블 전체 로드 (5분 캐시) */
+function useServiceCatalog() {
+  return useQuery({
+    queryKey: ['services_catalog'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('services')
+        .select('id, service_code, hira_code, name, category_label')
+        .eq('active', true)
+        .order('sort_order', { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as ServiceCatalogItem[];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
 
 function useTreatmentSets() {
   return useQuery({
@@ -249,30 +280,121 @@ function useDeleteTreatmentSet() {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-interface CodeRowProps {
+/**
+ * AC-5: 서비스관리 코드 검색/선택 드롭다운이 내장된 코드 입력 행
+ * - 코드 입력 시 catalog를 실시간 필터링해 드롭다운 표시
+ * - 선택하면 코드 + 설명 자동 입력 (AC-5c)
+ * - 수동 입력도 유지 (AC-5e)
+ */
+interface ServiceSearchRowProps {
   value: { code: string; description: string };
   index: number;
+  catalog: ServiceCatalogItem[];   // 삽입코드용 vs 상병코드용 필터링된 목록 전달
   placeholder: string;
   onChange: (idx: number, field: 'code' | 'description', val: string) => void;
   onRemove: (idx: number) => void;
   canRemove: boolean;
+  'data-testid'?: string;
 }
 
-function CodeRow({ value, index, placeholder, onChange, onRemove, canRemove }: CodeRowProps) {
+function ServiceSearchRow({
+  value,
+  index,
+  catalog,
+  placeholder,
+  onChange,
+  onRemove,
+  canRemove,
+  'data-testid': testId,
+}: ServiceSearchRowProps) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // 현재 코드 입력값으로 catalog 필터링
+  const query = value.code.trim().toLowerCase();
+  const filtered = query.length > 0
+    ? catalog.filter((item) => {
+        const code = getServiceCodeValue(item).toLowerCase();
+        const name = item.name.toLowerCase();
+        return code.includes(query) || name.includes(query);
+      })
+    : catalog.slice(0, 10);  // 빈 입력 시 상위 10개 표시
+
+  // 컨테이너 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!open) return;
+    function handleOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  function handleSelect(item: ServiceCatalogItem) {
+    const code = getServiceCodeValue(item);
+    onChange(index, 'code', code);
+    onChange(index, 'description', item.name);
+    setOpen(false);
+  }
+
   return (
-    <div className="flex items-center gap-1.5">
-      <Input
-        value={value.code}
-        onChange={(e) => onChange(index, 'code', e.target.value)}
-        placeholder={placeholder}
-        className="h-7 text-xs w-28 font-mono uppercase"
-      />
+    <div ref={containerRef} className="relative flex items-center gap-1.5" data-testid={testId}>
+      {/* 코드 입력 + 드롭다운 */}
+      <div className="relative w-28 shrink-0">
+        <Input
+          value={value.code}
+          onChange={(e) => {
+            onChange(index, 'code', e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          placeholder={placeholder}
+          className="h-7 text-xs w-full font-mono uppercase"
+          autoComplete="off"
+          data-testid={testId ? `${testId}-code` : undefined}
+        />
+        {/* AC-5a~5d: 드롭다운 목록 */}
+        {open && filtered.length > 0 && (
+          <div
+            className="absolute top-full left-0 z-50 mt-0.5 w-80 max-h-52 overflow-y-auto rounded-md border bg-white shadow-lg"
+            data-testid={testId ? `${testId}-dropdown` : undefined}
+          >
+            {filtered.slice(0, 10).map((item) => {
+              const code = getServiceCodeValue(item);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()} // blur 방지
+                  onClick={() => handleSelect(item)}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-teal-50 text-left border-b border-gray-50 last:border-0"
+                >
+                  <span className="font-mono text-teal-700 w-20 shrink-0 truncate">{code || '—'}</span>
+                  <span className="text-muted-foreground truncate flex-1">{item.name}</span>
+                </button>
+              );
+            })}
+            {/* AC-5e: catalog 결과 없을 때 수동 입력 안내 */}
+            {filtered.length === 0 && (
+              <div className="px-3 py-2 text-xs text-muted-foreground">
+                일치하는 코드가 없습니다 — 직접 입력해주세요
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 설명 입력 (선택/자동) */}
       <Input
         value={value.description}
         onChange={(e) => onChange(index, 'description', e.target.value)}
         placeholder="설명 (선택)"
         className="h-7 text-xs flex-1"
       />
+
+      {/* 삭제 버튼 */}
       <Button
         type="button"
         variant="ghost"
@@ -297,6 +419,11 @@ export default function TreatmentSetsTab() {
   const clinicId = sets[0]?.clinic_id ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8';
   const upsert = useUpsertTreatmentSet(clinicId);
   const del = useDeleteTreatmentSet();
+
+  // AC-5: 서비스 카탈로그 (삽입코드용 / 상병코드용 분리)
+  const { data: catalog = [] } = useServiceCatalog();
+  const insertionCatalog = catalog.filter((s) => s.category_label !== '상병');
+  const diseaseCatalog = catalog.filter((s) => s.category_label === '상병');
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<TreatmentSet | null>(null);
@@ -570,14 +697,16 @@ export default function TreatmentSetsTab() {
               </div>
               <div className="space-y-1.5">
                 {form.insertion_codes.map((item, idx) => (
-                  <CodeRow
+                  <ServiceSearchRow
                     key={idx}
                     value={item}
                     index={idx}
+                    catalog={insertionCatalog}
                     placeholder="AA154"
                     onChange={handleInsertionChange}
                     onRemove={removeInsertion}
                     canRemove={form.insertion_codes.length > 1}
+                    data-testid={`insertion-code-row-${idx}`}
                   />
                 ))}
               </div>
@@ -605,14 +734,16 @@ export default function TreatmentSetsTab() {
               </div>
               <div className="space-y-1.5">
                 {form.disease_codes.map((item, idx) => (
-                  <CodeRow
+                  <ServiceSearchRow
                     key={idx}
                     value={item}
                     index={idx}
+                    catalog={diseaseCatalog}
                     placeholder="B351"
                     onChange={handleDiseaseChange}
                     onRemove={removeDisease}
                     canRemove={form.disease_codes.length > 1}
+                    data-testid={`disease-code-row-${idx}`}
                   />
                 ))}
               </div>
