@@ -1,5 +1,26 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-12 09:10 — dev-foot | deploy-ready | T-20260512-foot-QUICK-RX-BUTTON — [P2] 빠른처방 단축 버튼 구현
+
+**커밋: 135676a → origin/main push 완료 → Vercel 자동배포 예정**
+
+### 구현 내용
+- ✅ **DB 마이그레이션** `20260512000030_quick_rx_buttons`: `quick_rx_buttons` 테이블 + `check_ins.prescription_status` 컬럼(none/pending/confirmed) + RLS
+- ✅ **DB 마이그레이션** `20260512000010_treatment_sets`: `treatment_sets` + `treatment_set_items` 테이블 + 진료세트 시드 2건 (초진/재진 발톱무좀)
+- ✅ **QuickRxButtonsTab** (어드민): 빠른처방 버튼 CRUD (아이콘 8종 + 이름 + prescription_set 연결) + 미리보기
+- ✅ **QuickRxBar** (공용): 차트 상단 / 리스트 행 공용 버튼 바. 의사(admin/manager/director)=즉시확정, 치료사=임시(pending)
+- ✅ **DoctorPatientList**: 오늘 진료 환자 리스트 + 행별 빠른처방 버튼(펼치기) + 임시→확정 전환 + 필터(전체/임시/처방없음)
+- ✅ **DoctorTreatmentPanel**: 처방 탭 상단 QuickRxBar 통합 (콜백 모드 — 세트처방 항목 자동 입력)
+- ✅ **DoctorTools**: 빠른처방 버튼 관리 탭 + 진료 환자 목록 탭 추가
+- ✅ **App.tsx**: doctor-tools 라우트에 therapist/technician/part_lead 역할 접근 허용
+
+### DB 변경 사항 (롤백 SQL 완비)
+- `check_ins.prescription_status TEXT DEFAULT 'none' CHECK IN ('none','pending','confirmed')`
+- `quick_rx_buttons` 테이블: id, clinic_id, name, icon, prescription_set_id, sort_order, is_active
+- 롤백: `20260512000030_quick_rx_buttons.down.sql` / `20260512000010_treatment_sets.down.sql`
+
+---
+
 ## 2026-05-11 17:35 — dev-foot | simulation-pass | T-20260511-foot-SELFCHECKIN-CRM-SYNC — [P0] 3경로 CRM 자동연동 시뮬레이션 완료
 
 ### 시뮬레이션 결과 (3경로 전부 PASS)
@@ -2023,3 +2044,35 @@ Supabase Studio → SQL Editor → migration 000091 SQL 실행 (MQ 전달 완료
 | 2026-05-10T21:30:00+09:00 | supervisor | qa-pass (재QA) | T-20260430-foot-CONSENT-FORMS — tsc exit0, env 2변수 확인, bundle 9nbv3ClS supabase.co 매치, diag-browser PASS(root=2325 errs=0), 로컬 uncommitted별개 무관, 전 항목 PASS, 재배포 불필요 |
 | 2026-05-10T13:23:00Z(22:23 KST) | supervisor | qa-confirmed | T-20260430-foot-CONSENT-FORMS — tsc exit0, env VITE_SUPABASE_URL+ANON_KEY only, bundle C7IElQa3(a44837a) supabase.co 매치✅, diag-browser PASS(root=2325 page_errors=0 console_errors=0 warns=0 network_errors=0), ConsentFormDialog dead code 확인, forms/ConsentForm→CheckInDetailSheet L35,L1256 정상, 롤백SQL down.sql 존재, RLS ENABLED+auth_users_all, Vercel last-modified 2026-05-10T13:05:24Z. 전 항목 최종 PASS. 배포 완료 유지. |
 | 2026-05-11T00:56:00+09:00 | supervisor | qa-pass (정례QA) | T-20260430-foot-CONSENT-FORMS — tsc EXIT0(1a20add), rollback SQL 완전(3DROP INDEX+1DROP TABLE), env VITE_SUPABASE_URL+ANON_KEY only, bundle neuULF5R supabase.co 매치✅, Dashboard-CxiMAsIn+CustomerChartPage-BdMl16Zg consent_forms=1✅, SignaturePad(1893B)+DocumentViewer(5207B)✅, Vercel 00:42 KST, diag-browser PASS(root=2325 errs=0 warns=0). 전 6항목 PASS. status=deployed 유지. |
+
+---
+ts: 2026-05-12 04:00
+from: dev-foot
+to: supervisor
+type: deploy-ready
+ref: T-20260512-foot-TREATMENT-SET
+---
+## [deploy-ready] T-20260512-foot-TREATMENT-SET — 진료세트 관리 + 건보 산정 연동
+
+구현 완료 (commit 135676a, origin/main 반영):
+
+### DB
+- `treatment_sets` 테이블 + `treatment_set_items` 테이블 생성 (migration 20260512000010)
+- RLS ENABLED, authenticated_all 정책 적용
+- 롤백 SQL: 20260512000010_treatment_sets.down.sql
+- 시드 2건 DB 적용 확인 완료 (REST API 검증)
+  - 초진-발톱무좀(대면/균검사/레이저/처방O): 삽입 AA154·D6591·AA700·SZ035-30·PC / 상병 B351·B353·L600·K297
+  - 재진-발톱무좀(진료X/레이저/처방X): 삽입 AA222·SZ035-30·PC / 상병 B351·B353·L600·K297
+
+### 컴포넌트
+- `src/components/admin/TreatmentSetsTab.tsx` — 진료도구 메뉴 내 CRUD (생성/수정/삭제/복제)
+- `src/components/insurance/TreatmentSetLoadButton.tsx` — [세트 불러오기] 버튼
+- `src/components/insurance/Chart2InsuranceCalcPanel.tsx` — serviceCodeFilter + diseaseCodes props 추가
+- `src/pages/DoctorTools.tsx` — 진료세트 탭 추가
+- `src/pages/CustomerChartPage.tsx` — 2번차트 연동 (selectedTreatmentSet state + onLoad 콜백)
+
+### QA 체크포인트
+- tsc --noEmit: EXIT 0
+- 진료도구 → 진료세트 탭: 목록/추가/수정/삭제/복제 동작
+- 2번차트 [세트 불러오기]: 세트 선택 → 삽입코드 필터 + 상병코드 배지 표시
+- 진료비 자동산정: 세트 필터 적용 시 해당 삽입코드 서비스만 합산
