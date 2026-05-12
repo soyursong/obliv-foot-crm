@@ -166,7 +166,7 @@ export function InsuranceDocPanel({ checkIn, onUpdated }: Props) {
             <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
               <FileText className="h-3 w-3" /> 경과분석지
             </span>
-            <p className="text-[11px] text-muted-foreground mt-0.5">원장님 공유 시 업로드</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">원장님 공유 시 데스크에서 업로드</p>
           </div>
           <Button variant="outline" className="gap-1 text-xs" onClick={() => setProgressOpen(true)}>
             <Plus className="h-3 w-3" /> 업로드
