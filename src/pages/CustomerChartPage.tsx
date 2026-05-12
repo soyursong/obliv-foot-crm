@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { ExternalLink, Package as PackageIcon, Pencil, Plus, Printer, Trash2, Upload, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -389,6 +389,7 @@ function ReceiptUploadSection({
 
 export default function CustomerChartPage() {
   const { customerId } = useParams<{ customerId: string }>();
+  const navigate = useNavigate();
   const { profile, loading: authLoading } = useAuth();
   // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
   const clinic = useClinic();
@@ -1794,17 +1795,7 @@ export default function CustomerChartPage() {
                   </td>
                 </tr>
 
-                {/* ⑫ 예약메모 — 최근 예약 기준, 읽기 전용 (T-20260512-foot-C1-VISIT-ROUTE-MEMO) */}
-                {reservations[0]?.booking_memo && (
-                  <tr>
-                    <td className={LC}>예약메모</td>
-                    <td className={VC} colSpan={3}>
-                      <span className="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
-                        {reservations[0].booking_memo}
-                      </span>
-                    </td>
-                  </tr>
-                )}
+                {/* ⑫ 예약메모 삭제됨 — AC-6: 예약메모는 2번차트 1구역(예약내역 패널)에서만 표시 (T-20260512-foot-RESV-MGMT-OVERHAUL) */}
 
                 {/* ⑬ 고객메모 (인라인 편집) */}
                 <tr>
@@ -2704,11 +2695,22 @@ export default function CustomerChartPage() {
           <div className="border-b border-gray-200 px-3 py-2">
             <div className="flex items-center justify-between mb-1.5">
               <div className="text-[11px] font-semibold text-[#1e4e6e]">예약내역</div>
+              {/* AC-2: 예약하기 → 예약관리 풀페이지 이동 (T-20260512-foot-RESV-MGMT-OVERHAUL) */}
               <button
                 type="button"
                 onClick={() => {
-                  setResvMiniForm({ date: format(new Date(), 'yyyy-MM-dd'), startTime: '', memo: '' });
-                  setOpenResvMiniPopup(true);
+                  if (customer) {
+                    navigate('/admin/reservations', {
+                      state: {
+                        openReservationFor: {
+                          customer_id: customer.id,
+                          name: customer.name,
+                          phone: customer.phone ?? '',
+                          visit_type: customer.visit_type,
+                        },
+                      },
+                    });
+                  }
                 }}
                 className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
               >

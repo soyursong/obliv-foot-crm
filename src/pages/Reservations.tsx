@@ -60,6 +60,7 @@ interface ReservationDraft {
   visit_type: VisitType;
   memo: string;
   booking_memo: string;  // T-20260504-foot-MEMO-RESTRUCTURE: 예약 경로 확인용
+  visit_route?: string;  // AC-5: 초진/예약없이방문 방문경로 (customers.visit_route에 저장)
   existingId?: string;
   service_id?: string | null;
   customer_id?: string | null;
@@ -117,6 +118,7 @@ export default function Reservations() {
       visit_type,
       memo: '',
       booking_memo: '',
+      visit_route: '',
       customer_id: customer_id ?? null,
     });
   }, [clinic, location.state]);
@@ -254,6 +256,7 @@ export default function Reservations() {
       visit_type: 'returning',
       memo: '',
       booking_memo: '',
+      visit_route: '',
     });
   };
 
@@ -267,6 +270,7 @@ export default function Reservations() {
       visit_type: r.visit_type,
       memo: r.memo ?? '',
       booking_memo: r.booking_memo ?? '',
+      visit_route: '',  // AC-5: 편집 시 기존 방문경로 미리 불러오지 않음 (변경 시에만 덮어씀)
     });
     setDetail(null);
   };
@@ -727,6 +731,14 @@ function ReservationEditor({
       }
     }
 
+    // AC-5: 초진/예약없이방문이고 방문경로 선택 시 customers.visit_route 업데이트
+    if (customerId && (state.visit_type === 'new' || state.visit_type === 'experience') && state.visit_route) {
+      await supabase
+        .from('customers')
+        .update({ visit_route: state.visit_route })
+        .eq('id', customerId);
+    }
+
     const payload = {
       clinic_id: clinicId,
       customer_id: customerId,
@@ -885,7 +897,25 @@ function ReservationEditor({
             </div>
           </div>
           {/* AC-4: [서비스] 필드 제거 (DB 컬럼은 유지, UI 비노출) */}
+          {/* AC-5: 방문경로 드롭다운 — 초진/예약없이방문(experience)만 표시, 재진 미표시 */}
+          {(state.visit_type === 'new' || state.visit_type === 'experience') && (
+            <div className="space-y-1.5">
+              <Label>방문경로 <span className="text-muted-foreground font-normal text-xs">(선택)</span></Label>
+              <select
+                value={state.visit_route ?? ''}
+                onChange={(e) => update('visit_route', e.target.value)}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">— 선택 안 함 —</option>
+                <option value="TM">TM</option>
+                <option value="인바운드">인바운드</option>
+                <option value="워크인">워크인</option>
+                <option value="지인소개">지인소개</option>
+              </select>
+            </div>
+          )}
           {/* T-20260504-foot-MEMO-RESTRUCTURE: 예약메모 / 고객메모 분리 */}
+          {/* AC-6: 예약메모 = 2번차트 1구역 예약메모와 동일 데이터(reservations.booking_memo) */}
           <div className="space-y-1.5">
             <Label>예약메모 <span className="text-muted-foreground font-normal text-xs">(예약 경로 확인용)</span></Label>
             <Textarea value={state.booking_memo ?? ''} onChange={(e) => update('booking_memo', e.target.value)} rows={2} placeholder="예: 인스타그램 광고, 지인 소개, 인바운드 전화 등" className="text-sm" />
