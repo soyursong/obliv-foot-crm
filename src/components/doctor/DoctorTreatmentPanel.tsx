@@ -36,9 +36,12 @@ import {
   ChevronUp,
   Search,
   Zap,
+  AlertCircle,
 } from 'lucide-react';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import type { VisitType } from '@/lib/types';
+import QuickRxBar, { isDoctor } from './QuickRxBar';
+import { useAuth } from '@/lib/auth';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -73,6 +76,7 @@ interface DoctorCheckInFields {
   doctor_confirm_document: boolean;
   doctor_confirmed_at: string | null;
   healer_laser_confirm: boolean;
+  prescription_status: 'none' | 'pending' | 'confirmed';
 }
 
 // foot-crm visit_type 라벨 (초진/재진/체험)
@@ -139,7 +143,7 @@ function useDoctorFields(checkInId: string | null) {
       const { data, error } = await supabase
         .from('check_ins')
         .select(
-          'id, doctor_note, prescription_items, document_content, doctor_confirm_charting, doctor_confirm_prescription, doctor_confirm_document, doctor_confirmed_at, healer_laser_confirm',
+          'id, doctor_note, prescription_items, document_content, doctor_confirm_charting, doctor_confirm_prescription, doctor_confirm_document, doctor_confirmed_at, healer_laser_confirm, prescription_status',
         )
         .eq('id', checkInId)
         .maybeSingle();
@@ -148,6 +152,7 @@ function useDoctorFields(checkInId: string | null) {
       return {
         ...data,
         prescription_items: (data.prescription_items as unknown as PrescriptionItem[]) ?? [],
+        prescription_status: (data.prescription_status as 'none' | 'pending' | 'confirmed') ?? 'none',
       } as DoctorCheckInFields;
     },
     staleTime: 10_000,
@@ -513,6 +518,8 @@ export default function DoctorTreatmentPanel({
   hasHealerLaser = false,
   onUpdated,
 }: DoctorTreatmentPanelProps) {
+  const { profile } = useAuth();
+  const doctorMode = isDoctor(profile?.role ?? '');
   const { data: fields, isLoading } = useDoctorFields(checkInId);
   const save = useSaveDoctorFields(checkInId);
 
@@ -598,10 +605,12 @@ export default function DoctorTreatmentPanel({
         doctor_confirmed_at: now,
       });
     } else if (type === 'prescription') {
+      // T-20260512-foot-QUICK-RX-BUTTON: prescription_status도 'confirmed'로 동기화
       await save.mutateAsync({
         prescription_items: rxItems,
         doctor_confirm_prescription: true,
         doctor_confirmed_at: now,
+        prescription_status: 'confirmed',
       });
     } else {
       await save.mutateAsync({
@@ -634,6 +643,7 @@ export default function DoctorTreatmentPanel({
     doctor_confirm_prescription: false,
     doctor_confirm_document: false,
     healer_laser_confirm: false,
+    prescription_status: 'none' as const,
   };
 
   return (
@@ -742,6 +752,50 @@ export default function DoctorTreatmentPanel({
 
         {/* ── Tab 2: 처방 ── */}
         <TabsContent value="prescription" className="space-y-3 pt-3">
+
+          {/* ── T-20260512-foot-QUICK-RX-BUTTON: 빠른처방 버튼 바 ── */}
+          {!confirmed.doctor_confirm_prescription && (
+            <QuickRxBar
+              doctorMode={doctorMode}
+              onSelectItems={(items) => {
+                // 콜백 모드: 처방 목록에 추가 (DB는 부모가 저장)
+                setRxItems((prev) => {
+                  const existingNames = new Set(prev.map((i) => i.name));
+                  const newItems = items.filter((i) => !existingNames.has(i.name));
+                  return [...prev, ...newItems];
+                });
+                // 필드 재동기화를 위해 fieldsSynced 리셋
+                setFieldsSynced(false);
+              }}
+              className="rounded-lg border border-dashed border-teal-200 bg-teal-50/30 p-2"
+            />
+          )}
+
+          {/* ── 임시처방 대기 배너 (의사에게 확인 요청) ── */}
+          {confirmed.prescription_status === 'pending' && !confirmed.doctor_confirm_prescription && (
+            <div
+              className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2"
+              data-testid="prescription-pending-banner"
+            >
+              <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+              <span className="text-xs font-medium text-amber-800 flex-1">
+                임시 처방이 입력됨 — 원장 확인 후 확정하세요
+              </span>
+              {doctorMode && (
+                <Button
+                  size="sm"
+                  className="h-6 text-[11px] bg-teal-600 hover:bg-teal-700 shrink-0"
+                  onClick={() => handleConfirm('prescription')}
+                  disabled={save.isPending}
+                  data-testid="quick-rx-confirm-btn"
+                >
+                  {save.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-0.5" />}
+                  확정
+                </Button>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <button
               type="button"

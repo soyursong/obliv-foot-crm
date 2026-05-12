@@ -82,7 +82,8 @@ function App() {
                 <Route path="history" element={<DailyHistory />} />
                 <Route path="accounts" element={<RoleGuard roles={['admin']}><Accounts /></RoleGuard>} />
                 <Route path="services" element={<RoleGuard roles={['admin', 'manager']}><Services /></RoleGuard>} />
-                <Route path="doctor-tools" element={<RoleGuard roles={['admin', 'manager']}><DoctorTools /></RoleGuard>} />
+                {/* T-20260512-foot-QUICK-RX-BUTTON: 치료사/원장도 진료환자목록 탭 접근 가능 */}
+                <Route path="doctor-tools" element={<RoleGuard roles={['admin', 'manager', 'director', 'therapist', 'technician', 'part_lead']}><DoctorTools /></RoleGuard>} />
                 <Route path="treatment-table" element={<TreatmentTable />} />
                 <Route path="notices" element={<Notices />} />
                 {/* calendar 풀페이지 → 대시보드로 리다이렉트 (사이드바 패널로 대체) */}
