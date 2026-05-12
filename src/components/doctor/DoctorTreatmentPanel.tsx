@@ -79,11 +79,10 @@ interface DoctorCheckInFields {
   prescription_status: 'none' | 'pending' | 'confirmed';
 }
 
-// foot-crm visit_type 라벨 (초진/재진/체험)
+// foot-crm visit_type 라벨 (초진/재진)
 const VISIT_TYPE_LABELS: Record<VisitType, string> = {
   new: '초진',
   returning: '재진',
-  experience: '체험',
 };
 
 // ---------------------------------------------------------------------------
@@ -663,7 +662,6 @@ export default function DoctorTreatmentPanel({
           {VISIT_TYPE_LABELS[visitType]}
           {visitType === 'new' && ' — 예진차트 확인 필요'}
           {visitType === 'returning' && ' — 기존 차트 조회'}
-          {visitType === 'experience' && ' — 체험 동선'}
         </Badge>
       </div>
 

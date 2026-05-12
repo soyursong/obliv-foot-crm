@@ -38,11 +38,10 @@ const STATUS_STYLE: Record<Reservation['status'], string> = {
   noshow: 'bg-red-100 text-red-700 border-red-200',
 };
 
-// AC-8: 초진 → 연한 노랑, 재진 → 연두 유지
+// 초진(파란) / 재진(초록)
 const VISIT_TYPE_STYLE: Record<VisitType, string> = {
-  new: 'border-l-[3px] border-l-yellow-500 bg-yellow-100/70',
+  new: 'border-l-[3px] border-l-blue-500 bg-blue-50/60',
   returning: 'border-l-[3px] border-l-emerald-500 bg-emerald-50/60',
-  experience: 'border-l-[3px] border-l-amber-500 bg-amber-50/60',
 };
 
 const STATUS_LABEL: Record<Reservation['status'], string> = {
@@ -731,8 +730,8 @@ function ReservationEditor({
       }
     }
 
-    // AC-5: 초진/예약없이방문이고 방문경로 선택 시 customers.visit_route 업데이트
-    if (customerId && (state.visit_type === 'new' || state.visit_type === 'experience') && state.visit_route) {
+    // AC-5: 초진이고 방문경로 선택 시 customers.visit_route 업데이트
+    if (customerId && state.visit_type === 'new' && state.visit_route) {
       await supabase
         .from('customers')
         .update({ visit_route: state.visit_route })
@@ -878,8 +877,8 @@ function ReservationEditor({
           </div>
           <div className="space-y-1.5">
             <Label>유형</Label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['new', 'returning', 'experience'] as VisitType[]).map((v) => (
+            <div className="grid grid-cols-2 gap-2">
+              {(['new', 'returning'] as VisitType[]).map((v) => (
                 <button
                   key={v}
                   type="button"
@@ -897,8 +896,8 @@ function ReservationEditor({
             </div>
           </div>
           {/* AC-4: [서비스] 필드 제거 (DB 컬럼은 유지, UI 비노출) */}
-          {/* AC-5: 방문경로 드롭다운 — 초진/예약없이방문(experience)만 표시, 재진 미표시 */}
-          {(state.visit_type === 'new' || state.visit_type === 'experience') && (
+          {/* AC-5: 방문경로 드롭다운 — 초진만 표시, 재진 미표시 */}
+          {state.visit_type === 'new' && (
             <div className="space-y-1.5">
               <Label>방문경로 <span className="text-muted-foreground font-normal text-xs">(선택)</span></Label>
               <select

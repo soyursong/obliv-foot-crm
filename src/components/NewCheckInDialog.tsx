@@ -26,9 +26,8 @@ interface Props {
 }
 
 const VISIT_CHOICES: { value: VisitType; label: string }[] = [
-  { value: 'new', label: '신규' },
+  { value: 'new', label: '초진' },
   { value: 'returning', label: '재진' },
-  { value: 'experience', label: '체험' },
 ];
 
 export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Props) {
@@ -314,7 +313,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
 
           <div className="space-y-1.5">
             <Label>유형</Label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {VISIT_CHOICES.map((c) => (
                 <button
                   key={c.value}

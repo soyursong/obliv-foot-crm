@@ -137,7 +137,6 @@ const customCollision: CollisionDetection = (args) => {
 // (치료대기·레이저대기·힐러대기 각각 배치편집 모드에서 개별 이동 가능)
 const DEFAULT_GROUP_ORDER = [
   'exam_section',
-  'experience_queue',
   'consult_waiting_col',
   'consult_rooms',
   'treatment_waiting_col',
@@ -152,7 +151,6 @@ type KanbanGroupId = (typeof DEFAULT_GROUP_ORDER)[number];
 
 const KANBAN_GROUP_LABELS: Record<KanbanGroupId, string> = {
   exam_section: '진료',
-  experience_queue: '선체험',
   consult_waiting_col: '상담대기',
   consult_rooms: '상담실',
   treatment_waiting_col: '치료대기',
@@ -365,9 +363,9 @@ function DraggableCard({
           </div>
         </div>
         {/* T-20260506-foot-SLOT-LAYOUT-REBUILD: 초진 딱지 → 연한노랑, 재진 → 없음 */}
-        {(checkIn.visit_type === 'new' || checkIn.visit_type === 'experience') && (
+        {checkIn.visit_type === 'new' && (
           <div className="mt-0.5">
-            <span className="bg-yellow-100 text-yellow-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
+            <span className="bg-blue-100 text-blue-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
           </div>
         )}
       </div>
@@ -468,8 +466,8 @@ function DraggableCard({
           {checkIn.priority_flag && <Badge variant="destructive" className="h-3.5 px-0.5 text-[9px]">우선</Badge>}
         </div>
       </div>
-      {/* T-20260506-foot-SLOT-LAYOUT-REBUILD: 초진 딱지 → 연한노랑으로 통일, 재진 → 없음 */}
-      {(checkIn.visit_type === 'new' || checkIn.visit_type === 'experience') && (
+      {/* T-20260513-foot-VISITTYPE-SIMPLIFY: 초진 딱지, 재진 → 없음 */}
+      {checkIn.visit_type === 'new' && (
         <div className="mt-0.5">
           <span className="bg-yellow-100 text-yellow-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
         </div>
@@ -927,8 +925,7 @@ void SLOT_MAX; // suppress noUnusedLocals
 /**
  * 예약/셀프접수 1건 미니 카드
  * T-20260506-foot-SLOT-LAYOUT-REBUILD:
- *   - 초진/체험 = 연한노랑 (bg-yellow-100) + "초" 딱지
- *   - 재진 = 연두색 (bg-green-100) + 딱지 없음
+ *   - 초진 = 파란 배지 / 재진 = 초록 배지 (T-20260513-foot-VISITTYPE-SIMPLIFY: 체험 제거)
  * @deprecated REWORK 이후 미사용 — 삭제 금지 (하위 호환 보존)
  */
 // @ts-ignore -- 하위 호환 보존, 삭제 금지
@@ -939,13 +936,13 @@ function TimelineCard({
   struck,
 }: {
   name: string;
-  visitType: 'new' | 'returning' | 'experience';
+  visitType: 'new' | 'returning';
   dimmed?: boolean;
   struck?: boolean;
 }) {
   // T-20260509-foot-SLOT-CARD-STYLE: 흰색 큰박스 (다른 슬롯 고객카드와 동일)
   // 컬러는 슬롯메뉴명(시간 헤더)에만 적용 → 카드 자체는 색상 중립
-  const showBadge = visitType === 'new' || visitType === 'experience';
+  const showBadge = visitType === 'new';
 
   return (
     <div
@@ -954,10 +951,10 @@ function TimelineCard({
         dimmed && 'opacity-50',
         struck && 'line-through opacity-30',
       )}
-      title={`${name}${visitType === 'experience' ? ' (체험)' : ''}`}
+      title={name}
     >
       {showBadge && (
-        <span className="shrink-0 bg-yellow-200 text-yellow-900 text-[9px] px-0.5 rounded leading-tight font-bold">초</span>
+        <span className="shrink-0 bg-blue-200 text-blue-900 text-[9px] px-0.5 rounded leading-tight font-bold">초</span>
       )}
       <span className="truncate text-gray-800">{name}</span>
     </div>
@@ -968,7 +965,7 @@ function TimelineCard({
  * T-20260508-foot-DASH-SLOT-REMOVE: 통합시간표 내 체크인 고객 인터랙티브 카드
  * - useDraggable → 칸반 열로 드래그 이동 가능 (DnD 컨텍스트를 타임라인까지 확장)
  * - onClick → CheckInDetailSheet 열기
- * - 초진/체험: 연한노랑 + "초" 딱지 / 재진: 연두색 + 딱지 없음 (김주연 확정)
+ * - 초진(파란)/재진(초록) 2종 배지 (T-20260513-foot-VISITTYPE-SIMPLIFY: 체험 제거)
  */
 function TimelineCheckInCard({
   checkIn,
@@ -984,9 +981,9 @@ function TimelineCheckInCard({
     data: { checkIn },
   });
 
-  const visitType = checkIn.visit_type as 'new' | 'returning' | 'experience';
+  const visitType = checkIn.visit_type as 'new' | 'returning';
   // T-20260509-foot-SLOT-CARD-STYLE: 흰색 큰박스 — 레이저실·치료실 카드와 동일 스타일
-  const showBadge = visitType === 'new' || visitType === 'experience';
+  const showBadge = visitType === 'new';
 
   const style: React.CSSProperties = {
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
@@ -1152,8 +1149,8 @@ function DashboardTimeline({
       checkInByResvId.get(r.id) ??
       (r.customer_id ? checkInByCustomerId.get(r.customer_id) : undefined);
 
-    if (r.visit_type === 'new' || r.visit_type === 'experience') {
-      // 초진 / 체험
+    if (r.visit_type === 'new') {
+      // 초진
       if (!ci) {
         // 셀프접수 전 → 1번 박스 (비활성)
         if (r.status === 'confirmed') sd.newBox1.push(r);
@@ -1185,7 +1182,7 @@ function DashboardTimeline({
     const mm = d.getMinutes();
     const slot = `${String(h).padStart(2, '0')}:${mm < 30 ? '00' : '30'}`;
     const sd = ensure(slot);
-    if (ci.visit_type === 'new' || ci.visit_type === 'experience') {
+    if (ci.visit_type === 'new') {
       sd.newBox2Ci.push(ci);
     } else {
       sd.retBox2Ci.push(ci);
@@ -1446,7 +1443,7 @@ function QuickReservationDialog({
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">방문유형</Label>
               <div className="flex gap-1.5">
-                {(['new', 'returning', 'experience'] as VisitType[]).map((vt) => (
+                {(['new', 'returning'] as VisitType[]).map((vt) => (
                   <button
                     key={vt}
                     type="button"
@@ -2140,7 +2137,7 @@ export default function Dashboard() {
           if (
             payload.eventType === 'INSERT' &&
             newRow?.status === 'consult_waiting' &&
-            (newRow?.visit_type === 'new' || newRow?.visit_type === 'experience') &&
+            newRow?.visit_type === 'new' &&
             newRow?.id
           ) {
             pendingAutoOpenId.current = newRow.id;
@@ -2374,9 +2371,9 @@ export default function Dashboard() {
         setStageStartMap((prev) => new Map(prev).set(row.id, now));
       }
       toastWithUndo(`${roomName}(으)로 이동`, row);
-    } else if (target === 'returning_zone' || target === 'experience_zone') {
-      // 재진/선체험 대기열로 이동 → status = registered + visit_type 변경 (양방향 자유 이동)
-      const targetVisitType: VisitType = target === 'returning_zone' ? 'returning' : 'experience';
+    } else if (target === 'returning_zone') {
+      // 재진 대기열로 이동 → status = registered + visit_type 변경 (양방향 자유 이동)
+      const targetVisitType: VisitType = 'returning';
       if (row.status === 'registered' && row.visit_type === targetVisitType) return;
       markRecentlyUpdated(row.id);
       let prevRow: CheckIn | undefined;
@@ -2405,7 +2402,7 @@ export default function Dashboard() {
         });
         setStageStartMap((prev) => new Map(prev).set(row.id, now));
       }
-      const zoneLabel = targetVisitType === 'returning' ? '재진' : '선체험';
+      const zoneLabel = '재진'; // T-20260513-foot-VISITTYPE-SIMPLIFY: 체험 제거, 재진만
       toastWithUndo(`${zoneLabel} 대기로 이동`, row);
     } else if (target === 'laser_waiting') {
       if (row.status === 'laser_waiting') return;
@@ -3003,7 +3000,6 @@ export default function Dashboard() {
   // 슬롯별 분류
   const newRegistered = allRegistered.filter((ci) => ci.visit_type === 'new');
   const returningWaiting = (byStatus['registered'] ?? []).filter((ci) => ci.visit_type === 'returning');
-  const experienceWaiting = (byStatus['registered'] ?? []).filter((ci) => ci.visit_type === 'experience');
   // 레이저대기: laser_waiting 상태 (4/30 표준 v2 — 이전 'laser' + no room 방식에서 전환)
   const laserWaiting = filtered.filter((ci) => ci.status === 'laser_waiting');
   // 힐러대기: healer_waiting 상태 (T-20260502-foot-HEALER-WAIT-SLOT)
@@ -3071,30 +3067,7 @@ export default function Dashboard() {
             </DroppableColumn>
           </div>
         );
-      case 'experience_queue':
-        return (
-          <div key="experience_queue" className="w-44 shrink-0">
-            <DroppableColumn
-              id="experience_zone"
-              label="선체험"
-              count={experienceWaiting.length}
-              className="h-full"
-              highlight="text-amber-700"
-            >
-              {experienceWaiting.map((ci) => (
-                <DraggableCard
-                  key={ci.id}
-                  checkIn={ci}
-                  compact
-                  stageStart={getStageStart(ci)}
-                  packageLabel={getPkgLabel(ci)}
-                  onClick={() => handleCardClick(ci)}
-                  onContextMenu={(e) => handleCardContext(ci, e)}
-                />
-              ))}
-            </DroppableColumn>
-          </div>
-        );
+      // experience_queue: T-20260513-foot-VISITTYPE-SIMPLIFY — 체험 전면 삭제로 제거됨
       case 'consult_waiting_col':
         return (
           <div key="consult_waiting_col" className="w-44 shrink-0">
@@ -3358,7 +3331,7 @@ export default function Dashboard() {
     newRegistered, newPendingReservations, returningWaiting, returningPendingReservations,
     examRooms, consultRooms, treatmentRooms, laserRooms,
     byStatus, filtered, assignments, doctors, therapists, consultants,
-    experienceWaiting, laserWaiting, paymentTotal, doneTotal, dayPayments, doneCount,
+    laserWaiting, paymentTotal, doneTotal, dayPayments, doneCount,
     getStageStart, getPkgLabel, swapSortOrder,
     handleReservationCheckIn, handleCardClick, handleCardContext,
     handleDoctorChange, handleConsultantChange, handleTherapistChange, handleHeatedLaserDoctorChange,
@@ -3542,7 +3515,7 @@ export default function Dashboard() {
                             <span className="text-[10px] text-muted-foreground">
                               {r.reservation_time?.slice(0, 5)}
                               {' · '}
-                              {r.visit_type === 'new' ? '신규' : r.visit_type === 'experience' ? '체험' : '재진'}
+                              {r.visit_type === 'new' ? '초진' : '재진'}
                               {chart && ` · #${chart}`}
                             </span>
                           </div>
