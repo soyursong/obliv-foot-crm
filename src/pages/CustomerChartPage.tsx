@@ -1292,23 +1292,24 @@ export default function CustomerChartPage() {
 
   // T-20260507-foot-CHART2-FULL-LAYOUT: 전능CRM SMARTDOCTOR 레이아웃 탭 정의
   // T-20260510-foot-C21-TAB-CLEANUP: 마크류/스마트서베이/면담기록지/예약내역/통화내역/소개자가족 삭제
+  // T-20260513-foot-C21-TAB-RESTRUCTURE-A: 상단6+하단5 재배치, 서류발행 상단 이동
   const CLINICAL_TABS = [
     { key: 'checklist',   label: '문진' },
     { key: 'pen_chart',   label: '펜차트' },
-    { key: 'images',      label: '진료이미지' },
     { key: 'test_result', label: '검사결과' },
+    { key: 'progress',    label: '경과내역' },
+    { key: 'documents',   label: '서류발행' },
+    { key: 'payments',    label: '수납내역' },
   ];
   const HISTORY_TABS = [
     { key: 'consultations', label: '상담내역' },
-    { key: 'payments',      label: '수납내역' },
-    { key: 'treatments',    label: '시술내역' },
     { key: 'packages',      label: '패키지' },
+    { key: 'treatments',    label: '시술내역' },
+    { key: 'images',        label: '진료이미지' },
     { key: 'messages',      label: '메시지' },
-    { key: 'progress',      label: '경과내역' },
-    { key: 'documents',     label: '서류발행' },
   ];
-  const IMPLEMENTED_CLINICAL = ['checklist', 'images'];
-  const IMPLEMENTED_HISTORY  = ['consultations', 'payments', 'treatments', 'packages', 'progress', 'documents'];
+  const IMPLEMENTED_CLINICAL = ['checklist', 'progress', 'documents', 'payments'];
+  const IMPLEMENTED_HISTORY  = ['consultations', 'packages', 'treatments', 'images'];
 
   const handleClinicalTab = (key: string) => { setChartTab(key); setChartTabGroup('clinical'); };
   const handleHistoryTab  = (key: string) => { setChartTab(key); setChartTabGroup('history'); };
@@ -2105,8 +2106,8 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-              {/* History: 수납내역 */}
-              {chartTabGroup === 'history' && chartTab === 'payments' && (
+              {/* Clinical: 수납내역 — T-20260513-foot-C21-TAB-RESTRUCTURE-A: 상단 이동 */}
+              {chartTabGroup === 'clinical' && chartTab === 'payments' && (
             <div className="space-y-3">
               {/* 일반 결제 */}
               <div className="rounded-lg border bg-white p-3 text-xs">
@@ -2420,8 +2421,8 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-              {/* Clinical: 진료이미지 — T-20260510-foot-C21-IMG-PROGRESS: 동의서/영수증→상담내역 이동, 비포에프터만 표시 */}
-              {chartTabGroup === 'clinical' && chartTab === 'images' && (
+              {/* History: 진료이미지 — T-20260513-foot-C21-TAB-RESTRUCTURE-A: 하단 이동 */}
+              {chartTabGroup === 'history' && chartTab === 'images' && (
             <div className="space-y-3">
               {/* 치료사 영역 — 비포/에프터 (1번차트 체크인 연동) */}
               <div className="rounded-lg border bg-white p-3 text-xs">
@@ -2492,8 +2493,8 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-              {/* History: 경과내역 — T-20260510-foot-C21-IMG-PROGRESS: 경과 사진 업로드 */}
-              {chartTabGroup === 'history' && chartTab === 'progress' && (
+              {/* Clinical: 경과내역 — T-20260513-foot-C21-TAB-RESTRUCTURE-A: 상단 이동 */}
+              {chartTabGroup === 'clinical' && chartTab === 'progress' && (
             <div className="space-y-3">
               {/* 경과내역 사진 업로드 */}
               <div className="rounded-lg border bg-white p-3 text-xs">
@@ -2532,8 +2533,8 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-              {/* History: 서류발행 — T-20260510-foot-C2-DOC-ISSUANCE */}
-              {chartTabGroup === 'history' && chartTab === 'documents' && (
+              {/* Clinical: 서류발행 — T-20260513-foot-C21-TAB-RESTRUCTURE-A: 상단 이동 */}
+              {chartTabGroup === 'clinical' && chartTab === 'documents' && (
             <div className="space-y-3">
               {latestCheckIn ? (
                 <DocumentPrintPanel
