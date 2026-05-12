@@ -1787,16 +1787,28 @@ export default function CustomerChartPage() {
                     >
                       <option value="">— 선택 —</option>
                       <option value="TM">TM</option>
-                      <option value="워크인">워크인</option>
                       <option value="인바운드">인바운드</option>
+                      <option value="워크인">워크인</option>
                       <option value="지인소개">지인소개</option>
                     </select>
                   </td>
                 </tr>
 
-                {/* ⑫ 예약메모 (인라인 편집) — C2-MEMO-RENAME: 고객메모→예약메모 */}
+                {/* ⑫ 예약메모 — 최근 예약 기준, 읽기 전용 (T-20260512-foot-C1-VISIT-ROUTE-MEMO) */}
+                {reservations[0]?.booking_memo && (
+                  <tr>
+                    <td className={LC}>예약메모</td>
+                    <td className={VC} colSpan={3}>
+                      <span className="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
+                        {reservations[0].booking_memo}
+                      </span>
+                    </td>
+                  </tr>
+                )}
+
+                {/* ⑬ 고객메모 (인라인 편집) */}
                 <tr>
-                  <td className={cn(LC, 'align-top pt-2 border-b-0')}>예약메모</td>
+                  <td className={cn(LC, 'align-top pt-2 border-b-0')}>고객메모</td>
                   <td className={cn(VC, 'border-b-0')} colSpan={3}>
                     {editingCustomerMemo ? (
                       <div className="space-y-1">
