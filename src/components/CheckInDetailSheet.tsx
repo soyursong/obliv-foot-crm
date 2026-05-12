@@ -36,7 +36,7 @@ import { ConsentForm } from '@/components/forms/ConsentForm';
 import { DocumentViewer } from '@/components/forms/DocumentViewer';
 import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
-import type { CheckIn, Package as PackageType, PackageRemaining, Service } from '@/lib/types';
+import type { CheckIn, Package as PackageType, PackageRemaining, Service, VisitType } from '@/lib/types';
 
 // ─── 시술 항목 / 회차 차감 타입 ──────────────────────────────────────────────
 
@@ -346,6 +346,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const [chartNumber, setChartNumber] = useState<string | null>(null);
   /** T-20260506-foot-CHART-LINK-SYNC: customer_id null 시 phone으로 조회된 고객 ID (2순위 식별) */
   const [resolvedCustomerId, setResolvedCustomerId] = useState<string | null>(null);
+  /** T-20260512-foot-CUSTMGMT-AC6-AC9: customerMode에서 최근 체크인 전체 (서류발행·의사소견·접수상태 표시용) */
+  const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
 
   // ── 진료종류 상태 (T-20260430-foot-TREATMENT-LABEL) — DB 호환성 유지 ──
   const [consultationDone, setConsultationDone] = useState(false);
@@ -362,6 +364,12 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const [staffList, setStaffList] = useState<Array<{ id: string; name: string; role: string }>>([]);
   /** T-20260510-foot-C1-VISIT-ROUTE-MEMO: 방문경로 */
   const [visitRoute, setVisitRoute] = useState<string>('');
+  /** T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 예약메모(booking_memo) / 기타메모(memo) */
+  const [bookingMemo, setBookingMemo] = useState('');
+  const [savingBookingMemo, setSavingBookingMemo] = useState(false);
+  const [etcMemo, setEtcMemo] = useState('');
+  const [savingEtcMemo, setSavingEtcMemo] = useState(false);
+  const [latestResvId, setLatestResvId] = useState<string | null>(null);
 
   // ── 시술 항목 상태 (ServiceSelectModal/SessionUseInSheetDialog 유지용) ──
   const [, setTreatmentItems] = useState<TreatmentItem[]>([]);
@@ -380,6 +388,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setTreatmentItems([]);
     setChartNumber(null);
     setResolvedCustomerId(null);
+    setLatestCheckIn(null);
     if (checkIn) {
       setConsultationDone(checkIn.consultation_done ?? false);
       setTreatmentKind(checkIn.treatment_kind ?? '');
@@ -399,7 +408,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     // ── customer_id 기반 조회 모드 (고객관리 1번차트 T-20260511-foot-CUSTMGMT-DETAIL-SHEET) ──
     if (!checkIn && customerMode) {
       const { customerId, clinicId } = customerMode;
-      const [pkgRes, histRes, custRes, staffRes] = await Promise.all([
+      const [pkgRes, histRes, custRes, staffRes, latestCiRes, latestResvRes] = await Promise.all([
         supabase
           .from('packages')
           .select('*')
@@ -414,7 +423,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           .limit(10),
         supabase
           .from('customers')
-          .select('id, chart_number, customer_memo, visit_route')
+          .select('id, chart_number, customer_memo, visit_route, memo')
           .eq('id', customerId)
           .single(),
         supabase
@@ -424,15 +433,40 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           .eq('active', true)
           .in('role', ['consultant'])
           .order('name'),
+        // T-20260512-foot-CUSTMGMT-AC6-AC9: 서류발행·의사소견·접수상태 표시용 최근 체크인 전체 조회
+        supabase
+          .from('check_ins')
+          .select('*')
+          .eq('customer_id', customerId)
+          .neq('status', 'cancelled')
+          .order('checked_in_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        // T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 예약메모 — 최근 예약 booking_memo
+        supabase
+          .from('reservations')
+          .select('id, booking_memo')
+          .eq('customer_id', customerId)
+          .order('reservation_date', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
       ]);
       const pkgs = (pkgRes.data ?? []) as PackageType[];
       setPackages(pkgs);
       setHistory((histRes.data ?? []) as VisitHistory[]);
-      const custData = custRes.data as { chart_number: string | null; customer_memo: string | null; visit_route?: string | null } | null;
+      const custData = custRes.data as { chart_number: string | null; customer_memo: string | null; visit_route?: string | null; memo?: string | null } | null;
       setChartNumber(custData?.chart_number ?? customerMode.chartNumber ?? null);
       setCustomerMemo(custData?.customer_memo ?? '');
       setVisitRoute(custData?.visit_route ?? '');
+      setEtcMemo(custData?.memo ?? '');
+      const latestResvData = latestResvRes.data as { id: string; booking_memo: string | null } | null;
+      setLatestResvId(latestResvData?.id ?? null);
+      setBookingMemo(latestResvData?.booking_memo ?? '');
       setStaffList((staffRes.data ?? []) as Array<{ id: string; name: string; role: string }>);
+      const latestCi = (latestCiRes.data as CheckIn | null) ?? null;
+      setLatestCheckIn(latestCi);
+      // T-20260511-foot-CUSTMGMT-DETAIL-SHEET 3차: doctorNote 초기화 (편집 가능)
+      setDoctorNote(latestCi?.doctor_note ?? '');
       const remMap = new Map<string, PackageRemaining>();
       await Promise.all(
         pkgs.map(async (p) => {
@@ -447,7 +481,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     // TypeScript narrowing: 이 아래부터 checkIn은 반드시 non-null
     if (!checkIn) return;
 
-    const [svcRes, payRes, histRes, pkgRes, custRes, staffRes] = await Promise.all([
+    const [svcRes, payRes, histRes, pkgRes, custRes, staffRes, resvRes] = await Promise.all([
       supabase
         .from('services')
         .select('*')
@@ -480,20 +514,19 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       checkIn.customer_id
         ? supabase
             .from('customers')
-            .select('id, chart_number, customer_memo, visit_route')
+            .select('id, chart_number, customer_memo, visit_route, memo')
             .eq('id', checkIn.customer_id)
             .single()
         : checkIn.customer_phone
           ? supabase
               .from('customers')
-              .select('id, chart_number, customer_memo, visit_route')
+              .select('id, chart_number, customer_memo, visit_route, memo')
               .eq('clinic_id', checkIn.clinic_id)
               .ilike('phone', `%${checkIn.customer_phone.replace(/\D/g, '')}%`)
               .order('created_at', { ascending: false })
               .limit(1)
               .maybeSingle()
           : Promise.resolve({ data: null }),
-      // T-20260512: 예약메모 쿼리 제거 — 2번차트에서만 표시
       // 담당실장 드롭다운용 스태프 목록 — 실장(상담실장) 역할만 (T-20260506 항목8)
       supabase
         .from('staff')
@@ -502,20 +535,40 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
         .eq('active', true)
         .in('role', ['consultant'])
         .order('name'),
+      // T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 예약메모 — reservation_id 우선, 없으면 최근 예약
+      checkIn.reservation_id
+        ? supabase
+            .from('reservations')
+            .select('id, booking_memo')
+            .eq('id', checkIn.reservation_id)
+            .single()
+        : checkIn.customer_id
+          ? supabase
+              .from('reservations')
+              .select('id, booking_memo')
+              .eq('customer_id', checkIn.customer_id)
+              .order('reservation_date', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
     ]);
 
     setServices((svcRes.data ?? []) as Service[]);
     setPayments((payRes.data ?? []) as PaymentRow[]);
     setHistory((histRes.data ?? []) as VisitHistory[]);
-    const custData = custRes.data as { id?: string; chart_number: string | null; customer_memo: string | null; visit_route?: string | null } | null;
+    const custData = custRes.data as { id?: string; chart_number: string | null; customer_memo: string | null; visit_route?: string | null; memo?: string | null } | null;
     setChartNumber(custData?.chart_number ?? null);
     setCustomerMemo(custData?.customer_memo ?? '');
     setVisitRoute(custData?.visit_route ?? '');
+    setEtcMemo(custData?.memo ?? '');
     // T-20260506-foot-CHART-LINK-SYNC: customer_id null 케이스 — phone으로 찾은 고객 ID 2순위 저장
     if (!checkIn.customer_id && custData?.id) {
       setResolvedCustomerId(custData.id);
     }
-    // T-20260512: 예약메모(booking_memo)는 2번차트에서 표시. 1번차트 로드 불필요.
+    // T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 예약메모 — reservation 로드
+    const resvData = resvRes.data as { id: string; booking_memo: string | null } | null;
+    setLatestResvId(resvData?.id ?? null);
+    setBookingMemo(resvData?.booking_memo ?? '');
     setStaffList((staffRes.data ?? []) as Array<{ id: string; name: string; role: string }>);
     const pkgs = (pkgRes.data ?? []) as PackageType[];
     setPackages(pkgs);
@@ -538,6 +591,20 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   useEffect(() => {
     load();
   }, [load]);
+
+  // AC-8 쌍방연동 — 2번차트(CustomerChartPage)가 저장하면 이쪽도 즉시 반영
+  useEffect(() => {
+    const myCustomerId = () => checkIn?.customer_id ?? resolvedCustomerId ?? customerMode?.customerId;
+    const handler = (e: StorageEvent) => {
+      if (e.key !== 'foot_crm_customer_refresh' || !e.newValue) return;
+      try {
+        const { customerId: changedId } = JSON.parse(e.newValue) as { customerId: string };
+        if (myCustomerId() && changedId === myCustomerId()) load();
+      } catch { /* ignore */ }
+    };
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }, [checkIn?.customer_id, resolvedCustomerId, customerMode?.customerId, load]);
 
   const deleteCheckIn = async () => {
     if (!checkIn) return;
@@ -588,6 +655,20 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     toast.success('메모 저장됨');
     setIsDirty(false);
     onUpdated();
+  };
+
+  // T-20260511-foot-CUSTMGMT-DETAIL-SHEET 3차: customerMode 원장 소견 저장 (latestCheckIn 대상)
+  const saveCustomerModeDoctorNote = async () => {
+    if (!latestCheckIn) return;
+    setSaving(true);
+    const { error } = await supabase
+      .from('check_ins')
+      .update({ doctor_note: doctorNote || null })
+      .eq('id', latestCheckIn.id);
+    setSaving(false);
+    if (error) { toast.error('소견 저장 실패: ' + error.message); return; }
+    toast.success('소견이 저장되었습니다');
+    setLatestCheckIn((prev) => prev ? { ...prev, doctor_note: doctorNote || null } : prev);
   };
 
   // T-20260511-foot-C1-SAVE-DIRTY-AUTOSAVE: stale closure 방지용 ref (항상 최신 함수 참조)
@@ -642,6 +723,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     const customerId = checkIn?.customer_id ?? resolvedCustomerId ?? customerMode?.customerId;
     if (!customerId) return;
     await supabase.from('customers').update({ visit_route: val || null }).eq('id', customerId);
+    // AC-8 쌍방연동 — 2번차트에 변경 알림
+    localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId, ts: Date.now() }));
   };
 
   // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 저장
@@ -657,6 +740,39 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setSavingCustomerMemo(false);
     if (error) { toast.error('고객메모 저장 실패'); return; }
     toast.success('고객메모 저장됨');
+    // AC-8 쌍방연동 — 2번차트에 변경 알림
+    const customerId2 = checkIn?.customer_id ?? customerMode?.customerId;
+    if (customerId2) localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customerId2, ts: Date.now() }));
+  };
+
+  // T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 예약메모 저장 (reservations.booking_memo)
+  const saveBookingMemo = async () => {
+    if (!latestResvId) { toast.error('연결된 예약이 없습니다'); return; }
+    setSavingBookingMemo(true);
+    const { error } = await supabase
+      .from('reservations')
+      .update({ booking_memo: bookingMemo.trim() || null })
+      .eq('id', latestResvId);
+    setSavingBookingMemo(false);
+    if (error) { toast.error('예약메모 저장 실패'); return; }
+    toast.success('예약메모 저장됨');
+    const customerId3 = checkIn?.customer_id ?? resolvedCustomerId ?? customerMode?.customerId;
+    if (customerId3) localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customerId3, ts: Date.now() }));
+  };
+
+  // T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 기타메모 저장 (customers.memo)
+  const saveEtcMemo = async () => {
+    const customerId = checkIn?.customer_id ?? resolvedCustomerId ?? customerMode?.customerId;
+    if (!customerId) return;
+    setSavingEtcMemo(true);
+    const { error } = await supabase
+      .from('customers')
+      .update({ memo: etcMemo.trim() || null })
+      .eq('id', customerId);
+    setSavingEtcMemo(false);
+    if (error) { toast.error('기타메모 저장 실패'); return; }
+    toast.success('기타메모 저장됨');
+    localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId, ts: Date.now() }));
   };
 
   const totalPaid = payments
@@ -702,9 +818,32 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               {formatPhone(customerMode.customerPhone)}
             </div>
 
-            {/* 고객메모 / 방문경로 */}
+            {/* AC9: 접수 상태 표시 — 항상 표시 (T-20260511-CUSTMGMT 3차) */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-muted-foreground">최근 접수</span>
+              {latestCheckIn ? (
+                <>
+                  <Badge variant="outline" className="text-xs">
+                    {STATUS_KO[latestCheckIn.status as keyof typeof STATUS_KO] ?? latestCheckIn.status}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {format(new Date(latestCheckIn.checked_in_at), 'MM/dd HH:mm')}
+                  </span>
+                  {latestCheckIn.visit_type === 'new' ? (
+                    <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-700">초진</span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-700">재진</span>
+                  )}
+                </>
+              ) : (
+                <span className="text-xs text-muted-foreground italic">방문 이력 없음</span>
+              )}
+            </div>
+
+            {/* T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 방문경로/예약메모/고객메모/기타메모 4항목 */}
             <Separator />
             <div className="space-y-3">
+              {/* ① 방문경로 */}
               <div className="flex items-center gap-2">
                 <Label className="text-xs font-semibold text-teal-700 shrink-0">방문경로</Label>
                 <select
@@ -717,11 +856,34 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 >
                   <option value="">— 선택 —</option>
                   <option value="TM">TM</option>
-                  <option value="워크인">워크인</option>
                   <option value="인바운드">인바운드</option>
+                  <option value="워크인">워크인</option>
                   <option value="지인소개">지인소개</option>
                 </select>
               </div>
+              {/* ② 예약메모 (reservations.booking_memo) — AC-5 복구 */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
+                  <FileText className="h-3 w-3" /> 예약메모
+                </Label>
+                <Textarea
+                  value={bookingMemo}
+                  onChange={(e) => setBookingMemo(e.target.value)}
+                  placeholder="예약 관련 메모"
+                  rows={2}
+                  className="text-xs"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs w-full border-teal-300 text-teal-700 hover:bg-teal-50"
+                  onClick={saveBookingMemo}
+                  disabled={savingBookingMemo}
+                >
+                  {savingBookingMemo ? '저장 중…' : '예약메모 저장'}
+                </Button>
+              </div>
+              {/* ③ 고객메모 (customers.customer_memo) — AC-6 추가 */}
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
                   <FileText className="h-3 w-3" /> 고객메모
@@ -741,6 +903,28 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   disabled={savingCustomerMemo}
                 >
                   {savingCustomerMemo ? '저장 중…' : '고객메모 저장'}
+                </Button>
+              </div>
+              {/* ④ 기타메모 (customers.memo) — AC-6 추가 */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
+                  <FileText className="h-3 w-3" /> 기타메모
+                </Label>
+                <Textarea
+                  value={etcMemo}
+                  onChange={(e) => setEtcMemo(e.target.value)}
+                  placeholder="기타 참고사항"
+                  rows={2}
+                  className="text-xs"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs w-full border-teal-300 text-teal-700 hover:bg-teal-50"
+                  onClick={saveEtcMemo}
+                  disabled={savingEtcMemo}
+                >
+                  {savingEtcMemo ? '저장 중…' : '기타메모 저장'}
                 </Button>
               </div>
             </div>
@@ -833,6 +1017,106 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               )}
             </div>
 
+            {/* AC6: 원장 소견 / 의사 진료 패널 — T-20260511-CUSTMGMT 3차 (편집 가능 + DoctorTreatmentPanel) */}
+            <Separator />
+            {latestCheckIn && (latestCheckIn.status === 'examination' || latestCheckIn.status === 'exam_waiting') ? (
+              <div className="space-y-3 rounded-md p-3 bg-violet-50 ring-2 ring-violet-300">
+                <Label className="text-sm font-semibold text-violet-900 flex items-center gap-1">
+                  <Stethoscope className="h-3 w-3" /> 의사 진료 패널
+                  <span className="ml-auto text-xs font-normal text-violet-700/80">진료 중</span>
+                </Label>
+                <DoctorTreatmentPanel
+                  checkInId={latestCheckIn.id}
+                  visitType={latestCheckIn.visit_type as VisitType}
+                  hasHealerLaser={false}
+                  onUpdated={onUpdated}
+                />
+              </div>
+            ) : (
+              <div className="space-y-2 rounded-md p-3 bg-violet-50/40 ring-1 ring-violet-100">
+                <Label className="text-sm font-semibold text-violet-900 flex items-center gap-1">
+                  <Stethoscope className="h-3 w-3" /> 원장 소견
+                  <span className="ml-auto text-xs font-normal text-violet-700/80">
+                    {latestCheckIn ? format(new Date(latestCheckIn.checked_in_at), 'MM/dd') + ' 방문 기준' : '최근 방문 없음'}
+                  </span>
+                </Label>
+                <Textarea
+                  value={doctorNote}
+                  onChange={(e) => setDoctorNote(e.target.value)}
+                  placeholder={latestCheckIn ? '원장 소견을 입력하세요' : '방문 이력이 없어 소견 입력 불가'}
+                  rows={3}
+                  disabled={!latestCheckIn}
+                  className="text-sm bg-white border-violet-200 focus-visible:ring-violet-400"
+                />
+                {latestCheckIn && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs w-full border-violet-300 text-violet-700 hover:bg-violet-50"
+                    onClick={saveCustomerModeDoctorNote}
+                    disabled={saving}
+                  >
+                    {saving ? '저장 중…' : '소견 저장'}
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {/* AC8: 시술 항목 관리 / 패키지 회차 차감 — 항상 표시 (T-20260511-CUSTMGMT 3차) */}
+            <Separator />
+            <div className="space-y-2">
+              <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                <Package className="h-3 w-3" /> 시술 항목 관리
+              </span>
+              {packages.some((p) => (pkgRemaining.get(p.id)?.total_remaining ?? 0) > 0) ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2 border-teal-400 text-teal-700 hover:bg-teal-50 h-10"
+                  onClick={() => {
+                    const pkg = packages.find((p) => {
+                      const rem = pkgRemaining.get(p.id);
+                      return rem && rem.total_remaining > 0;
+                    });
+                    if (!pkg) { toast.error('잔여 회차가 없습니다'); return; }
+                    const rem = pkgRemaining.get(pkg.id)!;
+                    const firstType = (
+                      ['unheated_laser', 'heated_laser', 'iv', 'preconditioning'] as const
+                    ).find((t) => (rem[SESSION_TYPE_TO_REM_KEY[t]] as number) > 0) ?? ('unheated_laser' as SessionType);
+                    setSessionUsePkg(pkg);
+                    setSessionUseRemaining(rem);
+                    setSessionUseType(firstType);
+                    setSessionUseTreatmentIdx(-1);
+                    setSessionUseOpen(true);
+                  }}
+                >
+                  <Package className="h-3.5 w-3.5" /> 패키지 회차 차감
+                </Button>
+              ) : (
+                <p className="text-xs text-muted-foreground">잔여 회차 없음 (패키지 등록 후 이용 가능)</p>
+              )}
+            </div>
+
+            {/* AC7: 보험 영수증 / 처방전 — 항상 표시 (T-20260511-CUSTMGMT 3차) */}
+            <Separator />
+            {latestCheckIn ? (
+              <InsuranceDocPanel checkIn={latestCheckIn} onUpdated={onUpdated} />
+            ) : (
+              <div className="text-xs text-muted-foreground py-1 flex items-center gap-1">
+                <FileText className="h-3 w-3" /> 방문 이력이 없어 서류 업로드 불가
+              </div>
+            )}
+
+            {/* AC7: 서류 발행 (실손 보험 서류 + 인쇄) — 항상 표시 (T-20260511-CUSTMGMT 3차) */}
+            <Separator />
+            {latestCheckIn ? (
+              <DocumentPrintPanel checkIn={latestCheckIn} onUpdated={onUpdated} />
+            ) : (
+              <div className="text-xs text-muted-foreground py-1 flex items-center gap-1">
+                <FileText className="h-3 w-3" /> 방문 이력이 없어 서류 발행 불가
+              </div>
+            )}
+
             {/* 방문 이력 */}
             {history.length > 0 && (
               <>
@@ -862,6 +1146,18 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             onSaved={() => {
               setDocRefreshKey((k) => k + 1);
               onUpdated();
+            }}
+          />
+          {/* AC8: 패키지 회차 사용 다이얼로그 (customerMode) — T-20260512-foot-CUSTMGMT-AC6-AC9 */}
+          <SessionUseInSheetDialog
+            open={sessionUseOpen}
+            pkg={sessionUsePkg}
+            remaining={sessionUseRemaining}
+            defaultSessionType={sessionUseType}
+            onOpenChange={setSessionUseOpen}
+            onDone={() => {
+              setSessionUseOpen(false);
+              load();
             }}
           />
         </SheetContent>
@@ -933,10 +1229,6 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               {checkIn.visit_type === 'new' ? (
                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-blue-100 text-blue-700 shrink-0">
                   초진
-                </span>
-              ) : checkIn.visit_type === 'experience' ? (
-                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-purple-100 text-purple-700 shrink-0">
-                  체험
                 </span>
               ) : (
                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-emerald-100 text-emerald-700 shrink-0">
@@ -1053,14 +1345,13 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             </Button>
           )}
 
-          {/* ── T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 / 방문경로 ── */}
-          {/* T-20260512-foot-C1-VISIT-ROUTE-MEMO: 예약메모 1번차트 삭제 → 2번차트 1구역에서만 표시 */}
+          {/* T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 방문경로/예약메모/고객메모/기타메모 4항목 쌍방연동 */}
           {(checkIn.customer_id || resolvedCustomerId) && (
             <>
               <Separator />
               <div className="space-y-3">
-                {/* 방문경로 — 초진/체험(예약없이방문)만 노출. 재진 미노출. T-20260510-foot-C1-VISIT-ROUTE-MEMO */}
-                {(checkIn.customer_id || resolvedCustomerId) && checkIn.visit_type !== 'returning' && (
+                {/* ① 방문경로 — 초진/체험(예약없이방문)만 노출. 재진 미노출. */}
+                {checkIn.visit_type !== 'returning' && (
                   <div className="flex items-center gap-2">
                     <Label className="text-xs font-semibold text-teal-700 shrink-0">방문경로</Label>
                     <select
@@ -1079,7 +1370,29 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                     </select>
                   </div>
                 )}
-                {/* 고객메모 — 편집 가능 */}
+                {/* ② 예약메모 (reservations.booking_memo) — AC-5 복구 */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
+                    <FileText className="h-3 w-3" /> 예약메모
+                  </Label>
+                  <Textarea
+                    value={bookingMemo}
+                    onChange={(e) => setBookingMemo(e.target.value)}
+                    placeholder="예약 관련 메모"
+                    rows={2}
+                    className="text-xs"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs w-full border-teal-300 text-teal-700 hover:bg-teal-50"
+                    onClick={saveBookingMemo}
+                    disabled={savingBookingMemo}
+                  >
+                    {savingBookingMemo ? '저장 중…' : '예약메모 저장'}
+                  </Button>
+                </div>
+                {/* ③ 고객메모 (customers.customer_memo) — AC-6 추가 */}
                 {checkIn.customer_id && (
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
@@ -1100,6 +1413,30 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                       disabled={savingCustomerMemo}
                     >
                       {savingCustomerMemo ? '저장 중…' : '고객메모 저장'}
+                    </Button>
+                  </div>
+                )}
+                {/* ④ 기타메모 (customers.memo) — AC-6 추가 */}
+                {checkIn.customer_id && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
+                      <FileText className="h-3 w-3" /> 기타메모
+                    </Label>
+                    <Textarea
+                      value={etcMemo}
+                      onChange={(e) => setEtcMemo(e.target.value)}
+                      placeholder="기타 참고사항"
+                      rows={2}
+                      className="text-xs"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs w-full border-teal-300 text-teal-700 hover:bg-teal-50"
+                      onClick={saveEtcMemo}
+                      disabled={savingEtcMemo}
+                    >
+                      {savingEtcMemo ? '저장 중…' : '기타메모 저장'}
                     </Button>
                   </div>
                 )}

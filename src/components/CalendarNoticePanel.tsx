@@ -319,9 +319,12 @@ export default function CalendarNoticePanel() {
           </Button>
         </div>
 
+        {/* 공지 폼 + 목록 — 단일 스크롤 영역 (T-20260512-foot-NOTICE-SCROLL) */}
+        <div className="flex-1 overflow-y-auto">
+
         {/* 공지 작성/수정 폼 */}
         {editingId !== null && (
-          <div className="shrink-0 border-b bg-teal-50/60 px-3 py-2.5 space-y-2">
+          <div className="border-b bg-teal-50/60 px-3 py-2.5 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-teal-800">
                 {editingId === 'new' ? '새 공지 작성' : '공지 수정'}
@@ -386,7 +389,7 @@ export default function CalendarNoticePanel() {
         )}
 
         {/* 공지 목록 */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+        <div className="p-2 space-y-1.5">
           {noticeLoading ? (
             <div className="py-6 text-center text-xs text-muted-foreground">불러오는 중…</div>
           ) : notices.length === 0 ? (
@@ -450,6 +453,7 @@ export default function CalendarNoticePanel() {
             ))
           )}
         </div>
+        </div>{/* /단일 스크롤 영역 */}
       </div>
     </aside>
   );
