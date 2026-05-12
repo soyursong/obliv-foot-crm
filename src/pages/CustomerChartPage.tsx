@@ -1776,9 +1776,10 @@ export default function CustomerChartPage() {
                       className="rounded border border-gray-300 px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
                     >
                       <option value="">— 선택 —</option>
-                      {staffList.map((s) => (
+                      {/* C2-MANAGER-PAYMENT-MAP v3: 담당자 드롭다운에서만 role='director'(원장) 제외 — DB 비활성 금지, 코드 레벨 필터 */}
+                      {staffList.filter(s => s.role !== 'director').map((s) => (
                         <option key={s.id} value={s.id}>
-                          {s.name} ({s.role === 'consultant' ? '상담실장' : s.role === 'coordinator' ? '데스크' : '원장'})
+                          {s.name} ({s.role === 'consultant' ? '상담실장' : s.role === 'coordinator' ? '데스크' : s.role})
                         </option>
                       ))}
                     </select>
