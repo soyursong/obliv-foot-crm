@@ -1,5 +1,22 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-15 22:30 — dev-foot | deploy-ready | T-20260515-foot-STAMP-PRINT-BUG — [P1] 소견서 도장 이미지 미출력 수정 완료
+
+**커밋: 7ef3ead → origin/main push 완료 → Vercel 자동배포 예정**
+
+### 수정 내용
+- ✅ Fix 1: `formTemplates.ts` — `new URL(/* @vite-ignore */ ...)` → `@vite-ignore` 제거, Vite가 jongno-foot-stamp.png(16KB) 번들에 포함
+- ✅ Fix 2: `DocumentPrintPanel.tsx` — `firstImg.onload = () => print()` → `Promise.all(모든 img)` 로드 완료 후 print() 호출
+- ✅ AC-1/2/3: 소견서·다른 서류 인쇄 시 도장 이미지 정상 출력
+- ✅ AC-4: onerror 핸들러로 이미지 로드 실패 시 블락 없이 graceful 처리
+- `e2e_spec_exempt_reason` 미기재 — 시나리오 있으나 인쇄 다이얼로그는 Playwright 자동화 불가 (window.print() 브라우저 네이티브 UI)
+
+### 영향 범위
+- FE only (obliv-foot-crm) — DB 변경 없음
+- 수정 파일: `src/lib/formTemplates.ts`, `src/components/DocumentPrintPanel.tsx` (2파일)
+
+---
+
 ## 2026-05-15 22:05 — dev-foot | deploy-ready | T-20260515-foot-SELFCHECKIN-TESTDATA — [P1] 셀프접수 테스트 더미 예약 20건 삽입 완료
 
 **커밋: ad0a3ec → origin/main push 완료 (db_only, Vercel 배포 불필요)**
