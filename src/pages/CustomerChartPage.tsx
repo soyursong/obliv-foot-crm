@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { format, parseISO } from 'date-fns';
+import { useParams } from 'react-router-dom';
+import { addDays, format, parseISO } from 'date-fns';
 import { ExternalLink, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, Send, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation } from '@/lib/types';
+import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation, VisitType } from '@/lib/types';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 업로드된 양식 조회
 import { DocumentViewer } from '@/components/forms/DocumentViewer';
 // T-20260510-foot-C2-DOC-ISSUANCE: 서류발행 패널
@@ -501,7 +501,6 @@ function TreatmentImagesSection({
 
 export default function CustomerChartPage() {
   const { customerId } = useParams<{ customerId: string }>();
-  const navigate = useNavigate();
   const { profile, loading: authLoading } = useAuth();
   // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
   const clinic = useClinic();
@@ -620,6 +619,13 @@ export default function CustomerChartPage() {
   const [editResvId, setEditResvId] = useState<string | null>(null);
   const [editResvForm, setEditResvForm] = useState({ date: '', startTime: '', memo: '' });
   const [savingEditResv, setSavingEditResv] = useState(false);
+  // T-20260515-foot-INLINE-RESV: 강화 인라인 예약 패널 (슬롯 그리드 + 담당의 + 진료종류)
+  const [inlineResvOpen, setInlineResvOpen] = useState(false);
+  const [inlineResvDate, setInlineResvDate] = useState('');
+  const [inlineResvSlotMap, setInlineResvSlotMap] = useState<Record<string, Array<{ name: string; visit_type: VisitType; therapist: string | null }>>>({});
+  const [inlineResvLoading, setInlineResvLoading] = useState(false);
+  const [savingInlineResv, setSavingInlineResv] = useState(false);
+  const [inlineResvMemo, setInlineResvMemo] = useState('');
   // T-20260511-foot-C21-PKG-USAGE-EDIT: 시술내역 수정/삭제 다이얼로그
   const [editSessionDlg, setEditSessionDlg] = useState<PackageSession | null>(null);
   const [editSessionForm, setEditSessionForm] = useState({
@@ -1393,6 +1399,88 @@ export default function CustomerChartPage() {
     const d = parseISO(editResvForm.date);
     return generateSlots(openTimeFor(clinic), closeTimeFor(d, clinic), clinic.slot_interval);
   }, [clinic, editResvForm.date]);
+
+  // T-20260515-foot-INLINE-RESV: 선택일 슬롯 목록
+  const inlineResvSlotList = useMemo(() => {
+    if (!clinic || !inlineResvDate) return [];
+    const d = parseISO(inlineResvDate);
+    return generateSlots(openTimeFor(clinic), closeTimeFor(d, clinic), clinic.slot_interval);
+  }, [clinic, inlineResvDate]);
+
+  // T-20260515-foot-INLINE-RESV: 선택일 예약 현황 로드 (담당의=check_ins.therapist_id 조인)
+  const loadInlineResvSlots = useCallback(async (dateStr: string) => {
+    if (!customer) return;
+    setInlineResvLoading(true);
+    const { data: resvData } = await supabase
+      .from('reservations')
+      .select('id, reservation_time, customer_name, visit_type, status')
+      .eq('clinic_id', customer.clinic_id)
+      .eq('reservation_date', dateStr)
+      .neq('status', 'cancelled');
+    const resvList = (resvData ?? []) as Array<{
+      id: string; reservation_time: string; customer_name: string | null; visit_type: VisitType; status: string;
+    }>;
+    const resvIds = resvList.map((r) => r.id);
+    const ciTherapistMap: Record<string, string | null> = {};
+    if (resvIds.length > 0) {
+      const { data: ciData } = await supabase
+        .from('check_ins')
+        .select('reservation_id, therapist_id')
+        .in('reservation_id', resvIds);
+      for (const ci of (ciData ?? []) as Array<{ reservation_id: string | null; therapist_id: string | null }>) {
+        if (!ci.reservation_id) continue;
+        ciTherapistMap[ci.reservation_id] = therapistList.find((t) => t.id === ci.therapist_id)?.name ?? null;
+      }
+    }
+    const slotMap: Record<string, Array<{ name: string; visit_type: VisitType; therapist: string | null }>> = {};
+    for (const r of resvList) {
+      const time = r.reservation_time.slice(0, 5);
+      (slotMap[time] ??= []).push({
+        name: r.customer_name ?? '?',
+        visit_type: r.visit_type,
+        therapist: ciTherapistMap[r.id] ?? null,
+      });
+    }
+    setInlineResvSlotMap(slotMap);
+    setInlineResvLoading(false);
+  }, [customer, therapistList]);
+
+  // T-20260515-foot-INLINE-RESV: 패널이 열리거나 날짜가 바뀔 때 슬롯 데이터 갱신
+  useEffect(() => {
+    if (!inlineResvOpen || !inlineResvDate) return;
+    loadInlineResvSlots(inlineResvDate);
+  }, [inlineResvOpen, inlineResvDate, loadInlineResvSlots]);
+
+  // T-20260515-foot-INLINE-RESV: 빈 슬롯 클릭 시 예약 등록
+  const saveInlineResv = async (time: string) => {
+    if (!customer || !inlineResvDate) return;
+    setSavingInlineResv(true);
+    const { error } = await supabase.from('reservations').insert({
+      customer_id: customer.id,
+      clinic_id: customer.clinic_id,
+      customer_name: customer.name,
+      customer_phone: customer.phone ?? null,
+      reservation_date: inlineResvDate,
+      reservation_time: time,
+      visit_type: 'returning',
+      booking_memo: inlineResvMemo.trim() || null,
+      status: 'confirmed',
+      created_by: profile?.id ?? null,
+    });
+    setSavingInlineResv(false);
+    if (error) { toast.error(`예약 저장 실패: ${error.message}`); return; }
+    toast.success(`${inlineResvDate} ${time} 예약 등록 완료`);
+    // 예약 이력 즉시 갱신
+    const { data: resvData } = await supabase
+      .from('reservations')
+      .select('*')
+      .eq('customer_id', customer.id)
+      .order('reservation_date', { ascending: false })
+      .limit(30);
+    setReservations((resvData ?? []) as Reservation[]);
+    // 슬롯 그리드 갱신 (방금 만든 예약 반영)
+    await loadInlineResvSlots(inlineResvDate);
+  };
 
   const totalPaid =
     payments.filter((p) => p.payment_type === 'payment').reduce((x, p) => x + p.amount, 0) +
@@ -3074,26 +3162,19 @@ export default function CustomerChartPage() {
           <div className="border-b border-gray-200 px-3 py-2">
             <div className="flex items-center justify-between mb-1.5">
               <div className="text-[11px] font-semibold text-[#1e4e6e]">예약내역</div>
-              {/* AC-2: 예약하기 → 예약관리 풀페이지 이동 (T-20260512-foot-RESV-MGMT-OVERHAUL) */}
+              {/* T-20260515-foot-INLINE-RESV: 다음 예약 → 인라인 예약 패널 (페이지 이동 없음) */}
               <button
                 type="button"
                 onClick={() => {
-                  if (customer) {
-                    navigate('/admin/reservations', {
-                      state: {
-                        openReservationFor: {
-                          customer_id: customer.id,
-                          name: customer.name,
-                          phone: customer.phone ?? '',
-                          visit_type: customer.visit_type,
-                        },
-                      },
-                    });
-                  }
+                  setInlineResvMemo('');
+                  setInlineResvDate(format(addDays(new Date(), 1), 'yyyy-MM-dd'));
+                  setInlineResvSlotMap({});
+                  setInlineResvOpen(true);
                 }}
                 className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
+                data-testid="btn-next-reservation"
               >
-                <Plus className="h-3 w-3" /> 예약하기
+                <Plus className="h-3 w-3" /> 다음 예약
               </button>
             </div>
             {reservations.length === 0 ? (
@@ -3499,6 +3580,133 @@ export default function CustomerChartPage() {
               </Button>
               <Button variant="outline" className="h-8 text-xs px-3" onClick={() => setEditResvId(null)}>취소</Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* T-20260515-foot-INLINE-RESV: 강화 인라인 예약 패널 — 슬롯 그리드 + 담당의 + 진료종류 */}
+      {inlineResvOpen && customer && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center pt-12 bg-black/30"
+          onClick={() => setInlineResvOpen(false)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl border border-gray-200 w-[480px] max-h-[85vh] overflow-y-auto p-4 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-[#1e4e6e]">다음 예약 — {customer.name}</h3>
+              <button
+                type="button"
+                onClick={() => setInlineResvOpen(false)}
+                className="p-1 rounded hover:bg-muted text-muted-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-0.5">
+                  예약일자 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={inlineResvDate}
+                  min={format(new Date(), 'yyyy-MM-dd')}
+                  onChange={(e) => setInlineResvDate(e.target.value)}
+                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                  data-testid="inline-resv-date"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-0.5">예약메모</label>
+                <input
+                  type="text"
+                  value={inlineResvMemo}
+                  onChange={(e) => setInlineResvMemo(e.target.value)}
+                  placeholder="예약 관련 메모"
+                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                />
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1.5 flex items-center gap-2">
+                시간대별 예약 현황
+                <span className="text-[10px] font-normal text-muted-foreground">
+                  ○ 빈 슬롯 클릭 시 예약 등록 · ● 예약됨
+                </span>
+                {inlineResvLoading && (
+                  <span className="text-[10px] font-normal text-muted-foreground ml-auto">불러오는 중…</span>
+                )}
+              </div>
+              {!inlineResvDate ? (
+                <div className="py-3 text-center text-xs text-muted-foreground">날짜를 선택하세요</div>
+              ) : (
+                <div className="space-y-0.5 max-h-[400px] overflow-y-auto" data-testid="inline-resv-slot-grid">
+                  {inlineResvSlotList.map((time) => {
+                    const booked = inlineResvSlotMap[time] ?? [];
+                    const count = booked.length;
+                    const isFull = count >= 12;
+                    return (
+                      <div
+                        key={time}
+                        className={cn(
+                          'rounded border px-2 py-1 text-xs',
+                          count === 0
+                            ? 'border-dashed border-teal-200 bg-teal-50/30 hover:bg-teal-50 hover:border-teal-400 transition'
+                            : isFull
+                              ? 'border-red-200 bg-red-50/40'
+                              : 'border-blue-100 bg-blue-50/20',
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="w-12 shrink-0 font-mono font-medium text-gray-700">{time}</span>
+                          {count > 0 && (
+                            <span className={cn('text-[10px]', isFull ? 'text-red-600 font-semibold' : 'text-blue-600')}>
+                              {count}/12
+                            </span>
+                          )}
+                          {isFull ? (
+                            <span className="ml-auto text-[10px] font-medium text-red-500">● 마감</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => saveInlineResv(time)}
+                              disabled={savingInlineResv}
+                              className="ml-auto text-[10px] font-medium text-teal-700 hover:underline disabled:opacity-50"
+                              data-testid={`slot-${time}`}
+                            >
+                              ○ {count === 0 ? '빈 슬롯 · 예약' : '추가 예약'}
+                            </button>
+                          )}
+                        </div>
+                        {booked.map((b, i) => (
+                          <div
+                            key={i}
+                            className="ml-14 mt-0.5 flex items-center gap-1.5 text-[10px] text-gray-600"
+                          >
+                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-400" />
+                            <span className="font-medium">{b.name}</span>
+                            <span className="text-muted-foreground">
+                              {VISIT_TYPE_KO[b.visit_type]}
+                              {b.therapist ? ` · 담당: ${b.therapist}` : ''}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 w-full text-xs"
+              onClick={() => setInlineResvOpen(false)}
+            >
+              닫기
+            </Button>
           </div>
         </div>
       )}

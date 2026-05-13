@@ -593,6 +593,15 @@ export default function Reservations() {
                                         </span>
                                       )}
                                     </div>
+                                    {/* T-20260515-foot-INLINE-RESV AC-4: 예약메모 한눈에 표시 */}
+                                    {r.booking_memo && (
+                                      <div
+                                        className="truncate text-[10px] text-amber-600"
+                                        title={r.booking_memo}
+                                      >
+                                        📝 {r.booking_memo}
+                                      </div>
+                                    )}
                                   </div>
                                 ))}
                                 {(() => {
