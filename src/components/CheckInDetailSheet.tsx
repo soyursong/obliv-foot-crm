@@ -39,6 +39,8 @@ import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 import { PaymentEditDialog, PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 import type { EditMode, PaymentRowForEdit } from '@/components/PaymentEditDialog';
 import type { CheckIn, Package as PackageType, PackageRemaining, Room, Service, VisitType } from '@/lib/types';
+// T-20260514-foot-CHART-EXPAND-UX: 고객차트 슬라이드 패널
+import { CustomerChartSheet } from '@/components/CustomerChartSheet';
 
 // ─── 시술 항목 / 회차 차감 타입 ──────────────────────────────────────────────
 
@@ -506,6 +508,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
   const [payEditTarget, setPayEditTarget] = useState<PaymentRowForEdit | null>(null);
   const [payEditMode, setPayEditMode] = useState<EditMode>('edit');
+  // T-20260514-foot-CHART-EXPAND-UX: 고객차트 슬라이드 패널 (window.open 대체)
+  const [chartSheetId, setChartSheetId] = useState<string | null>(null);
   // T-20260513-foot-C1-SPACE-ASSIGN-RESTORE: 공간배정 이동이력
   const [roomLogs, setRoomLogs] = useState<RoomLog[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -963,11 +967,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       toast.error('고객 정보를 찾을 수 없습니다 — 데스크에 문의하세요');
       return;
     }
-    window.open(
-      `/chart/${data.id}`,
-      `chart-${data.id}`,
-      'width=820,height=960,scrollbars=yes,resizable=yes',
-    );
+    // T-20260514-foot-CHART-EXPAND-UX: window.open → 슬라이드 패널
+    setChartSheetId(data.id);
   };
 
   // T-20260510-foot-C1-VISIT-ROUTE-MEMO: 방문경로 저장
@@ -1036,6 +1037,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   if (!checkIn && customerMode) {
     const effectiveChartNumber = chartNumber ?? customerMode.chartNumber;
     return (
+    <>
       <Sheet open={true} onOpenChange={(o) => !o && onClose()}>
         <SheetContent className="w-[400px] sm:w-[440px] max-h-screen overflow-y-auto">
           <SheetHeader>
@@ -1043,16 +1045,11 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               <SheetTitle className="flex items-center gap-2 flex-1 flex-wrap">
                 {customerMode.customerName}
               </SheetTitle>
+              {/* T-20260514-foot-CHART-EXPAND-UX: window.open → 슬라이드 패널 */}
               <Button
                 size="sm"
                 className="gap-1 h-8 text-xs bg-teal-600 hover:bg-teal-700 shrink-0"
-                onClick={() =>
-                  window.open(
-                    `/chart/${customerMode.customerId}`,
-                    `chart-${customerMode.customerId}`,
-                    'width=820,height=960,scrollbars=yes,resizable=yes',
-                  )
-                }
+                onClick={() => setChartSheetId(customerMode.customerId)}
               >
                 <ExternalLink className="h-3.5 w-3.5" />
                 고객차트(2번)
@@ -1415,6 +1412,12 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           />
         </SheetContent>
       </Sheet>
+      {/* T-20260514-foot-CHART-EXPAND-UX: 고객차트 슬라이드 패널 (customerMode) */}
+      <CustomerChartSheet
+        customerId={chartSheetId}
+        onClose={() => setChartSheetId(null)}
+      />
+    </>
     );
   }
 
@@ -1469,6 +1472,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   };
 
   return (
+    <>
     <Sheet open={!!checkIn} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-[400px] sm:w-[440px] max-h-screen overflow-y-auto">
         <SheetHeader>
@@ -1573,20 +1577,13 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               size="sm"
               className="w-full gap-2 border-teal-400 text-teal-700 hover:bg-teal-50 text-sm h-11"
               onClick={() => {
+                // T-20260514-foot-CHART-EXPAND-UX: window.open → 슬라이드 패널
                 if (checkIn.customer_id) {
                   // 1순위: customer_id FK 직접 참조 (가장 확실)
-                  window.open(
-                    `/chart/${checkIn.customer_id}`,
-                    `chart-${checkIn.customer_id}`,
-                    'width=820,height=960,scrollbars=yes,resizable=yes',
-                  );
+                  setChartSheetId(checkIn.customer_id);
                 } else if (resolvedCustomerId) {
                   // 2순위: chart_number + phone 일치로 조회된 고객 ID (환자명 불일치 허용)
-                  window.open(
-                    `/chart/${resolvedCustomerId}`,
-                    `chart-${resolvedCustomerId}`,
-                    'width=820,height=960,scrollbars=yes,resizable=yes',
-                  );
+                  setChartSheetId(resolvedCustomerId);
                 } else {
                   // 3순위: phone 기반 실시간 조회 (로드 타임 조회 실패 시 재시도)
                   openChartFallback();
@@ -2272,6 +2269,12 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
         />
       </SheetContent>
     </Sheet>
+    {/* T-20260514-foot-CHART-EXPAND-UX: 고객차트 슬라이드 패널 (main path) */}
+    <CustomerChartSheet
+      customerId={chartSheetId}
+      onClose={() => setChartSheetId(null)}
+    />
+    </>
   );
 }
 
