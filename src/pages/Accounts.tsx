@@ -193,6 +193,14 @@ export default function Accounts() {
       return;
     }
 
+    // 중복 이메일 감지: Supabase는 이미 등록된 이메일로 signUp 시 가짜 UUID를 반환하고
+    // auth.users row를 만들지 않음 → identities 배열이 비어있으면 중복 이메일
+    if (!data.user.identities || data.user.identities.length === 0) {
+      setInviteBusy(false);
+      toast.error(`이미 등록된 이메일이에요. 기존 계정 목록에서 확인하거나 다른 이메일을 사용하세요.`);
+      return;
+    }
+
     // 2) user_profiles 등록 + staff 매핑/생성 (RPC 트랜잭션)
     const { error: rpcErr } = await supabase.rpc('admin_register_user', {
       target_user_id: data.user.id,
@@ -203,7 +211,17 @@ export default function Accounts() {
       staff_id: inviteStaffId || null,
     });
     setInviteBusy(false);
-    if (rpcErr) { toast.error(`프로필/staff 매핑 실패: ${rpcErr.message}`); return; }
+    if (rpcErr) {
+      // auth.users에 고아 레코드가 남았을 수 있음 (UUID: data.user.id)
+      // → Supabase 대시보드 Authentication > Users에서 해당 이메일 삭제 후 재등록 필요
+      const isNotFound = rpcErr.message?.includes('not found');
+      toast.error(
+        isNotFound
+          ? `프로필 매핑 실패: 이메일 인증 미완료이거나 중복 이메일입니다. 이메일 확인 후 재시도하세요.`
+          : `프로필/staff 매핑 실패: ${rpcErr.message}`
+      );
+      return;
+    }
     toast.success(`${email} 등록 완료 (즉시 승인)`);
     setInviteOpen(false);
     setInviteEmail('');
