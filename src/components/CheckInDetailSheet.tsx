@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
-import { ChevronDown, Clock, CreditCard, ExternalLink, Phone, FileText, Camera, Package, Stethoscope, Trash2, Bell, Upload } from 'lucide-react';
+import { ChevronDown, Clock, CreditCard, ExternalLink, Phone, FileText, Camera, Package, Stethoscope, Trash2, Bell, Upload, MapPin } from 'lucide-react';
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
 import { toast } from 'sonner';
 import {
@@ -38,11 +38,47 @@ import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
 import { PaymentEditDialog, PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 import type { EditMode, PaymentRowForEdit } from '@/components/PaymentEditDialog';
-import type { CheckIn, Package as PackageType, PackageRemaining, Service, VisitType } from '@/lib/types';
+import type { CheckIn, Package as PackageType, PackageRemaining, Room, Service, VisitType } from '@/lib/types';
 
 // ─── 시술 항목 / 회차 차감 타입 ──────────────────────────────────────────────
 
 type SessionType = 'heated_laser' | 'unheated_laser' | 'iv' | 'preconditioning';
+
+// ─── 공간배정 이동이력 타입 (T-20260513-foot-C1-SPACE-ASSIGN-RESTORE) ─────────
+
+interface RoomLog {
+  id: string;
+  check_in_id: string;
+  assigned_room: string;
+  room_type: string;
+  logged_at: string;
+}
+
+function getRoomField(roomName: string): 'examination_room' | 'consultation_room' | 'treatment_room' | 'laser_room' | null {
+  if (roomName.startsWith('원장실')) return 'examination_room';
+  if (roomName.startsWith('상담실')) return 'consultation_room';
+  if (roomName.startsWith('치료실')) return 'treatment_room';
+  if (roomName.startsWith('레이저실')) return 'laser_room';
+  return null;
+}
+function getRoomType(roomName: string): 'examination' | 'consultation' | 'treatment' | 'laser' | null {
+  if (roomName.startsWith('원장실')) return 'examination';
+  if (roomName.startsWith('상담실')) return 'consultation';
+  if (roomName.startsWith('치료실')) return 'treatment';
+  if (roomName.startsWith('레이저실')) return 'laser';
+  return null;
+}
+/** 오늘(서울 기준) 날짜 문자열 반환 */
+function todaySeoulStr(): string {
+  return new Date().toLocaleDateString('ko-KR', {
+    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+}
+function logDateStr(isoStr: string): string {
+  return new Date(isoStr).toLocaleDateString('ko-KR', {
+    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+}
 
 interface TreatmentItem {
   /** 로컬 식별자 */
@@ -470,6 +506,11 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
   const [payEditTarget, setPayEditTarget] = useState<PaymentRowForEdit | null>(null);
   const [payEditMode, setPayEditMode] = useState<EditMode>('edit');
+  // T-20260513-foot-C1-SPACE-ASSIGN-RESTORE: 공간배정 이동이력
+  const [roomLogs, setRoomLogs] = useState<RoomLog[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [selectedRoom, setSelectedRoom] = useState('');
+  const [assigningRoom, setAssigningRoom] = useState(false);
 
   // ── 시술 항목 상태 (ServiceSelectModal/SessionUseInSheetDialog 유지용) ──
   const [, setTreatmentItems] = useState<TreatmentItem[]>([]);
@@ -687,6 +728,38 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setNotes(noteObj?.text ?? '');
     setTreatmentMemo(checkIn.treatment_memo?.details ?? '');
     setDoctorNote(checkIn.doctor_note ?? '');
+
+    // T-20260513-foot-C1-SPACE-ASSIGN-RESTORE: 공간배정 이동이력 + rooms 목록 로드
+    const [roomsRes] = await Promise.all([
+      supabase
+        .from('rooms')
+        .select('*')
+        .eq('clinic_id', checkIn.clinic_id)
+        .eq('active', true)
+        .order('sort_order', { ascending: true }),
+    ]);
+    setRooms((roomsRes.data ?? []) as Room[]);
+
+    // 이동이력 로드 — 테이블 미존재 시 graceful skip
+    try {
+      const { data: logsData } = await supabase
+        .from('check_in_room_logs')
+        .select('id, check_in_id, assigned_room, room_type, logged_at')
+        .eq('check_in_id', checkIn.id)
+        .order('logged_at', { ascending: true });
+      setRoomLogs((logsData ?? []) as RoomLog[]);
+    } catch {
+      setRoomLogs([]);
+    }
+
+    // 현재 배정된 공간을 드롭다운 초기값으로 설정
+    const cur =
+      checkIn.examination_room ??
+      checkIn.consultation_room ??
+      checkIn.treatment_room ??
+      checkIn.laser_room ??
+      '';
+    setSelectedRoom(cur);
   }, [checkIn, customerMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -758,6 +831,71 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     onUpdated();
   };
 
+  // T-20260513-foot-C1-SPACE-ASSIGN-RESTORE: 공간 배정 함수
+  const assignRoom = async (roomName: string) => {
+    if (!checkIn || !roomName) return;
+    const field = getRoomField(roomName);
+    const roomType = getRoomType(roomName);
+    if (!field || !roomType) return;
+
+    // 중복 방지: 오늘 이동이력 중 마지막과 동일 공간이면 무시
+    const todayLogs = roomLogs.filter((l) => logDateStr(l.logged_at) === todaySeoulStr());
+    const lastLog = todayLogs[todayLogs.length - 1];
+    if (lastLog?.assigned_room === roomName) {
+      toast('이미 해당 공간에 배정되어 있어요');
+      return;
+    }
+
+    setAssigningRoom(true);
+    try {
+      // check_ins 업데이트 — 다른 방 필드 초기화 (현재 방만 유지)
+      const patch: Record<string, string | null> = {
+        examination_room: null,
+        consultation_room: null,
+        treatment_room: null,
+        laser_room: null,
+        [field]: roomName,
+      };
+      const { error: ciErr } = await supabase
+        .from('check_ins')
+        .update(patch)
+        .eq('id', checkIn.id);
+      if (ciErr) { toast.error('배정 실패: ' + ciErr.message); return; }
+
+      // 이동이력 기록 (table이 없으면 graceful skip)
+      const logEntry: RoomLog = {
+        id: crypto.randomUUID(),
+        check_in_id: checkIn.id,
+        assigned_room: roomName,
+        room_type: roomType,
+        logged_at: new Date().toISOString(),
+      };
+      // 이동이력 기록 — 테이블 미존재 시 로컬 상태로 폴백 (graceful)
+      let inserted: RoomLog | null = null;
+      try {
+        const { data } = await supabase
+          .from('check_in_room_logs')
+          .insert({
+            check_in_id: checkIn.id,
+            clinic_id: checkIn.clinic_id,
+            assigned_room: roomName,
+            room_type: roomType,
+          })
+          .select('id, check_in_id, assigned_room, room_type, logged_at')
+          .single();
+        inserted = data as RoomLog | null;
+      } catch {
+        // table not yet created — use local fallback
+      }
+      setRoomLogs((prev) => [...prev, inserted ?? logEntry]);
+      setSelectedRoom(roomName);
+      toast.success(`${roomName} 배정됨`);
+      onUpdated();
+    } finally {
+      setAssigningRoom(false);
+    }
+  };
+
   // T-20260511-foot-CUSTMGMT-DETAIL-SHEET 3차: customerMode 원장 소견 저장 (latestCheckIn 대상)
   const saveCustomerModeDoctorNote = async () => {
     if (!latestCheckIn) return;
@@ -771,6 +909,20 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     toast.success('소견이 저장되었습니다');
     setLatestCheckIn((prev) => prev ? { ...prev, doctor_note: doctorNote || null } : prev);
   };
+
+  // T-20260513-foot-C1-SPACE-ASSIGN-RESTORE: 오늘 이동이력 (연속 중복 제거 + 날짜 필터)
+  const todayRoomLogs = useMemo(() => {
+    const today = todaySeoulStr();
+    const todayFiltered = roomLogs.filter((l) => logDateStr(l.logged_at) === today);
+    // 연속 중복만 제거: 치료실→상담실→치료실→상담실 순서도 전부 표시
+    return todayFiltered.filter((l, idx, arr) => {
+      if (idx === 0) return true;
+      return arr[idx - 1].assigned_room !== l.assigned_room;
+    });
+  }, [roomLogs]);
+
+  // 공간 드롭다운 옵션 (rooms 테이블 기반)
+  const roomOptions = useMemo<string[]>(() => rooms.map((r) => r.name), [rooms]);
 
   // T-20260511-foot-C1-SAVE-DIRTY-AUTOSAVE: stale closure 방지용 ref (항상 최신 함수 참조)
   const saveNotesRef = useRef(saveNotes);
@@ -1575,22 +1727,6 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             </>
           )}
 
-          {/* 공간 배정 */}
-          {(checkIn.examination_room || checkIn.consultation_room || checkIn.treatment_room || checkIn.laser_room) && (
-            <>
-              <Separator />
-              <div className="space-y-1">
-                <span className="text-sm font-semibold text-muted-foreground">공간 배정</span>
-                <div className="flex flex-wrap gap-1.5 text-xs">
-                  {checkIn.examination_room && <Badge variant="outline">원장실: {checkIn.examination_room}</Badge>}
-                  {checkIn.consultation_room && <Badge variant="outline">상담실: {checkIn.consultation_room}</Badge>}
-                  {checkIn.treatment_room && <Badge variant="outline">치료실: {checkIn.treatment_room}</Badge>}
-                  {checkIn.laser_room && <Badge variant="outline">레이저실: {checkIn.laser_room}</Badge>}
-                </div>
-              </div>
-            </>
-          )}
-
           {/* 체크리스트 + 동의서 */}
           <Separator />
           <div className="space-y-2">
@@ -1627,6 +1763,55 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 />
               )}
             </div>
+          </div>
+
+          {/* T-20260513-foot-C1-SPACE-ASSIGN-RESTORE: 공간배정 (체크리스트/동의서 하단) */}
+          <Separator />
+          <div className="space-y-2" data-testid="space-assign-section">
+            <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+              <MapPin className="h-3.5 w-3.5" /> 공간배정
+            </span>
+            <div className="flex gap-2">
+              <select
+                value={selectedRoom}
+                onChange={(e) => setSelectedRoom(e.target.value)}
+                className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
+                data-testid="space-assign-select"
+              >
+                <option value="">— 공간 선택 —</option>
+                {roomOptions.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                className="h-9 min-w-[52px] bg-teal-600 hover:bg-teal-700 text-white"
+                onClick={() => assignRoom(selectedRoom)}
+                disabled={!selectedRoom || assigningRoom}
+                data-testid="space-assign-btn"
+              >
+                {assigningRoom ? '…' : '배정'}
+              </Button>
+            </div>
+            {/* 당일 이동이력 */}
+            {todayRoomLogs.length > 0 && (
+              <div className="space-y-1 pt-0.5">
+                <span className="text-xs text-muted-foreground">금일 이동이력</span>
+                <div className="flex flex-wrap items-center gap-1 text-xs">
+                  {todayRoomLogs.map((log, idx) => (
+                    <span key={log.id} className="flex items-center gap-1">
+                      {idx > 0 && <span className="text-muted-foreground/60">→</span>}
+                      <Badge variant="outline" className="text-xs font-normal py-0">
+                        <span className="text-muted-foreground mr-1">
+                          {format(new Date(log.logged_at), 'HH:mm')}
+                        </span>
+                        {log.assigned_room}
+                      </Badge>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* T-20260510-foot-CHART1-PAYMENT-ORDER: 결제 섹션은 서류발행 위로 이동됨 */}
