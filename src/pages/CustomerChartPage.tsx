@@ -5,7 +5,7 @@ import { ExternalLink, Package as PackageIcon, Pencil, Plus, Printer, Trash2, Up
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { formatAmount, formatPhone, parseAmount } from '@/lib/format';
+import { formatAmount, formatPhone, formatPhoneInput, parseAmount } from '@/lib/format';
 import { VISIT_TYPE_KO } from '@/lib/status';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
@@ -387,6 +387,102 @@ function ReceiptUploadSection({
   );
 }
 
+// T-20260513-foot-C21-TAB-RESTRUCTURE-B: 진료이미지 Storage 섹션 (업로드+삭제, 출력은 상위에서)
+function TreatmentImagesSection({
+  customerId,
+  onUrlsLoaded,
+}: {
+  customerId: string;
+  onUrlsLoaded: (urls: string[]) => void;
+}) {
+  const [images, setImages] = useState<StorageImageItem[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const storagePath = `customer/${customerId}/treatment-images`;
+
+  const load = useCallback(async () => {
+    const { data: files } = await supabase.storage.from('photos').list(storagePath, {
+      limit: 100,
+      sortBy: { column: 'name', order: 'desc' },
+    });
+    if (!files || files.length === 0) { setImages([]); onUrlsLoaded([]); return; }
+    const withUrls = await Promise.all(
+      files
+        .filter((f) => f.name && !f.id?.endsWith('/'))
+        .map(async (file) => {
+          const path = `${storagePath}/${file.name}`;
+          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
+          return { path, signedUrl: data?.signedUrl ?? '', name: file.name };
+        }),
+    );
+    const valid = withUrls.filter((i) => i.signedUrl);
+    setImages(valid);
+    onUrlsLoaded(valid.map((i) => i.signedUrl));
+  }, [storagePath, onUrlsLoaded]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    for (const file of Array.from(files)) {
+      const ext = file.name.split('.').pop() ?? 'jpg';
+      const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
+      if (error) toast.error(`업로드 실패: ${error.message}`);
+    }
+    setUploading(false);
+    e.target.value = '';
+    await load();
+  };
+
+  const remove = async (img: StorageImageItem) => {
+    if (!window.confirm('이미지를 삭제하시겠습니까?')) return;
+    await supabase.storage.from('photos').remove([img.path]);
+    await load();
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between rounded border border-teal-200 bg-teal-50 px-2.5 py-1.5">
+        <span className="text-xs text-teal-800 font-medium">이미지 목록</span>
+        <label className="cursor-pointer">
+          <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
+          <span className="inline-flex items-center gap-1 text-xs border border-teal-200 rounded px-2 py-0.5 bg-white text-teal-700 hover:bg-teal-100 transition cursor-pointer">
+            <Upload className="h-3 w-3" />
+            {uploading ? '업로드 중…' : '업로드'}
+          </span>
+        </label>
+      </div>
+      {images.length === 0 ? (
+        <div className="rounded border border-dashed py-3 text-center text-xs text-muted-foreground">
+          진료이미지 없음
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-1.5">
+          {images.map((img) => (
+            <div key={img.path} className="relative group aspect-square">
+              <img
+                src={img.signedUrl}
+                alt={img.name}
+                className="w-full h-full object-cover rounded border cursor-pointer"
+                onClick={() => window.open(img.signedUrl, '_blank')}
+              />
+              <button
+                onClick={() => remove(img)}
+                className="absolute top-1 right-1 hidden group-hover:flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow"
+                title="삭제"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CustomerChartPage() {
   const { customerId } = useParams<{ customerId: string }>();
   const navigate = useNavigate();
@@ -437,6 +533,8 @@ export default function CustomerChartPage() {
   // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: editingEmail/editingPassport 제거 — 항상 활성화
   const [emailText, setEmailText] = useState('');
   const [passportText, setPassportText] = useState('');
+  // T-20260513-foot-C21-TAB-RESTRUCTURE-B: 진료이미지 출력용 URL 목록
+  const [treatmentImageUrls, setTreatmentImageUrls] = useState<string[]>([]);
   // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 예약메모 인라인 편집 상태
   const [resvMemoInputs, setResvMemoInputs] = useState<Record<string, string>>({});
   // T-20260513-foot-C21-PHONE-EDIT-BTN: 핸드폰번호 인라인 편집
@@ -1308,7 +1406,7 @@ export default function CustomerChartPage() {
     { key: 'images',        label: '진료이미지' },
     { key: 'messages',      label: '메시지' },
   ];
-  const IMPLEMENTED_CLINICAL = ['checklist', 'progress', 'documents', 'payments'];
+  const IMPLEMENTED_CLINICAL = ['checklist', 'progress', 'documents', 'payments', 'test_result'];
   const IMPLEMENTED_HISTORY  = ['consultations', 'packages', 'treatments', 'images'];
 
   const handleClinicalTab = (key: string) => { setChartTab(key); setChartTabGroup('clinical'); };
@@ -1578,7 +1676,7 @@ export default function CustomerChartPage() {
                         <input
                           type="tel"
                           value={phoneText}
-                          onChange={(e) => { setPhoneText(e.target.value); setIsDirty(true); }}
+                          onChange={(e) => { setPhoneText(formatPhoneInput(e.target.value)); setIsDirty(true); }}
                           autoFocus
                           placeholder="010-1234-5678"
                           className="h-5 w-[110px] text-[11px] rounded border border-teal-400 px-1.5 focus:outline-none focus:border-teal-600"
@@ -2422,18 +2520,50 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-              {/* History: 진료이미지 — T-20260513-foot-C21-TAB-RESTRUCTURE-A: 하단 이동 */}
+              {/* History: 진료이미지 — T-20260513-foot-C21-TAB-RESTRUCTURE-B: 업로드/삭제/출력 + 발톱이력 */}
               {chartTabGroup === 'history' && chartTab === 'images' && (
             <div className="space-y-3">
-              {/* 치료사 영역 — 비포/에프터 (1번차트 체크인 연동) */}
+              {/* 진료이미지 — Storage 기반 업로드/삭제/출력 (쌍방연동) */}
               <div className="rounded-lg border bg-white p-3 text-xs">
-                <div className="flex items-center gap-1.5 font-bold text-amber-800 mb-2">
-                  <span className="h-2 w-2 rounded-full bg-amber-500" />
-                  일자별 비포/에프터
+                <div className="flex items-center justify-between mb-2">
+                  <span className="flex items-center gap-1.5 font-bold text-teal-800">
+                    <span className="h-2 w-2 rounded-full bg-teal-500" />
+                    진료이미지
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-teal-600">1번↔2번차트 쌍방연동</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const imgs = treatmentImageUrls.filter(Boolean);
+                        if (imgs.length === 0) { toast.error('출력할 이미지가 없습니다'); return; }
+                        const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' });
+                        const imgTags = imgs.map((url, i) => `<div class="photo-item"><img src="${url}" alt="진료이미지 ${i+1}" /><p class="photo-label">사진 ${i+1}</p></div>`).join('');
+                        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>진료이미지 — ${customer.name}</title><style>@page{size:A4 landscape;margin:12mm}body{font-family:'Malgun Gothic',sans-serif;margin:0;padding:0;background:#fff}.header{text-align:center;margin-bottom:8px;border-bottom:1.5px solid #333;padding-bottom:6px}.header h2{font-size:16px;margin:0 0 2px}.header p{font-size:11px;color:#666;margin:0}.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;padding:8px 0}.photo-item{text-align:center}.photo-item img{width:100%;height:160px;object-fit:cover;border:1px solid #ccc;border-radius:4px}.photo-label{font-size:10px;color:#555;margin-top:3px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><div class="header"><h2>진료이미지 — ${customer.name}</h2><p>출력일: ${today} · 총 ${imgs.length}장</p></div><div class="photo-grid">${imgTags}</div></body></html>`;
+                        const w = window.open('', '_blank');
+                        if (!w) { toast.error('팝업이 차단되었습니다'); return; }
+                        w.document.write(html); w.document.close(); w.focus();
+                        const firstImg = w.document.querySelector('img');
+                        if (firstImg) { firstImg.onload = () => w.print(); } else { setTimeout(() => w.print(), 600); }
+                      }}
+                      className="inline-flex items-center gap-1 rounded border border-teal-200 bg-white px-2 py-0.5 text-[10px] text-teal-700 hover:bg-teal-50 transition"
+                    >
+                      <Printer className="h-3 w-3" /> 출력
+                    </button>
+                  </div>
                 </div>
-                {checkInHistory.filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0).length === 0 ? (
-                  <div className="rounded border border-dashed py-2.5 text-center text-muted-foreground">사진 없음 (간편차트에서 업로드)</div>
-                ) : (
+                <TreatmentImagesSection
+                  customerId={customer.id}
+                  onUrlsLoaded={(urls) => setTreatmentImageUrls(urls)}
+                />
+              </div>
+              {/* 발톱 치료 before·after 일자별 이력 (AC-6) */}
+              {checkInHistory.filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0).length > 0 && (
+                <div className="rounded-lg border bg-white p-3 text-xs">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-800 mb-2">
+                    <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    발톱 치료 이력 (Before/After)
+                  </div>
                   <div className="space-y-3">
                     {checkInHistory
                       .filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0)
@@ -2454,8 +2584,8 @@ export default function CustomerChartPage() {
                         </div>
                       ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -2494,43 +2624,17 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-              {/* Clinical: 경과내역 — T-20260513-foot-C21-TAB-RESTRUCTURE-A: 상단 이동 */}
+              {/* Clinical: 경과내역 — T-20260513-foot-C21-TAB-RESTRUCTURE-B: 경과분석지 + 간편차트 연동 제거 */}
               {chartTabGroup === 'clinical' && chartTab === 'progress' && (
             <div className="space-y-3">
-              {/* 경과내역 사진 업로드 */}
+              {/* 경과분석지 업로드 */}
               <div className="rounded-lg border bg-white p-3 text-xs">
-                <div className="flex items-center gap-1.5 font-bold text-teal-800 mb-2">
-                  <span className="h-2 w-2 rounded-full bg-teal-500" />
-                  경과내역 사진
+                <div className="flex items-center gap-1.5 font-bold text-orange-800 mb-2">
+                  <span className="h-2 w-2 rounded-full bg-orange-500" />
+                  경과분석지
                 </div>
-                <CustomerStorageImageSection customerId={customer.id} prefix="progress" label="경과 사진 업로드" accent="orange" />
+                <CustomerStorageImageSection customerId={customer.id} prefix="progress" label="경과분석지 업로드" accent="orange" />
               </div>
-              {/* 1번차트 연동 — 체크인별 시술 사진 */}
-              {checkInHistory.filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0).length > 0 && (
-                <div className="rounded-lg border bg-white p-3 text-xs">
-                  <div className="flex items-center gap-1.5 font-bold text-amber-800 mb-2">
-                    <span className="h-2 w-2 rounded-full bg-amber-500" />
-                    간편차트 시술사진 (1번차트 연동)
-                  </div>
-                  <div className="space-y-3">
-                    {checkInHistory
-                      .filter((ci) => ci.treatment_photos && ci.treatment_photos.length > 0)
-                      .map((ci) => (
-                        <div key={ci.id}>
-                          <div className="text-[10px] text-muted-foreground mb-1 font-medium">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd')}</div>
-                          <div className="grid grid-cols-3 gap-1">
-                            {(ci.treatment_photos ?? []).map((url, idx) => (
-                              <img key={idx} src={url} alt={`사진 ${idx + 1}`}
-                                className="rounded w-full object-cover aspect-square bg-muted cursor-pointer"
-                                onClick={() => window.open(url, '_blank')}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -2547,6 +2651,28 @@ export default function CustomerChartPage() {
                   접수 기록이 없어 서류 발행을 사용할 수 없습니다
                 </div>
               )}
+            </div>
+          )}
+
+              {/* Clinical: 검사결과 — T-20260513-foot-C21-TAB-RESTRUCTURE-B: KOH균검사 쌍방연동 */}
+              {chartTabGroup === 'clinical' && chartTab === 'test_result' && (
+            <div className="space-y-3">
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="flex items-center gap-1.5 font-bold text-teal-800">
+                    <span className="h-2 w-2 rounded-full bg-teal-500" />
+                    KOH균검사
+                  </span>
+                  <span className="text-[10px] text-teal-600">1번↔2번차트 쌍방연동</span>
+                </div>
+                <CustomerStorageImageSection
+                  customerId={customer.id}
+                  prefix="koh-results"
+                  label="KOH균검사 결과 업로드"
+                  accent="green"
+                  accept="image/*"
+                />
+              </div>
             </div>
           )}
 
