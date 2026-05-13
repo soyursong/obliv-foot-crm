@@ -70,6 +70,7 @@ import { cn } from '@/lib/utils';
 import { NewCheckInDialog } from '@/components/NewCheckInDialog';
 import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
 import { PaymentDialog } from '@/components/PaymentDialog';
+import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import { StatusContextMenu } from '@/components/StatusContextMenu';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import { CustomerHoverCard } from '@/components/CustomerHoverCard';
@@ -1592,6 +1593,10 @@ export default function Dashboard() {
   const [selectedCheckIn, setSelectedCheckIn] = useState<CheckIn | null>(null);
   const [paymentTarget, setPaymentTarget] = useState<CheckIn | null>(null);
   const [paymentInitialMode, setPaymentInitialMode] = useState<'single' | 'package'>('single');
+  // T-20260515-foot-PAYMENT-MINI-WINDOW: 결제 미니창 (수납대기 [결제하기])
+  const [miniPayTarget, setMiniPayTarget] = useState<CheckIn | null>(null);
+  // AC-7: 수납대기 check_in_services 합산 (check_in_id → pending amount)
+  const [pendingServiceMap, setPendingServiceMap] = useState<Map<string, number>>(new Map());
   const [dayPayments, setDayPayments] = useState<Map<string, number>>(new Map());
   const [contextMenu, setContextMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
   const [customerMenu, setCustomerMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
@@ -1969,6 +1974,28 @@ export default function Dashboard() {
     setDayPayments(map);
   }, [clinic, dateStr]);
 
+  // T-20260515-foot-PAYMENT-MINI-WINDOW AC-7: 수납대기 check_in_services 합산
+  const fetchPendingServices = useCallback(async () => {
+    if (!clinic) return;
+    // 수납대기 check_in ID 수집 (rows 기반)
+    const paymentWaitingIds = rows
+      .filter((ci) => ci.status === 'payment_waiting')
+      .map((ci) => ci.id);
+    if (paymentWaitingIds.length === 0) {
+      setPendingServiceMap(new Map());
+      return;
+    }
+    const { data } = await supabase
+      .from('check_in_services')
+      .select('check_in_id, price')
+      .in('check_in_id', paymentWaitingIds);
+    const m = new Map<string, number>();
+    for (const row of (data ?? []) as { check_in_id: string; price: number }[]) {
+      m.set(row.check_in_id, (m.get(row.check_in_id) ?? 0) + row.price);
+    }
+    setPendingServiceMap(m);
+  }, [clinic, rows]);
+
   // 타임라인용 — 취소 제외 전체 예약 (confirmed + checked_in + noshow)
   const fetchTimelineReservations = useCallback(async () => {
     if (!clinic) return;
@@ -2156,6 +2183,11 @@ export default function Dashboard() {
     fetchDoctors();
     fetchConsultants();
   }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchPayments, fetchReservations, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts, fetchPackageLabels, fetchTherapists, fetchDoctors, fetchConsultants]);
+
+  // T-20260515-foot-PAYMENT-MINI-WINDOW AC-7: rows 변경 시 수납대기 pending 금액 갱신
+  useEffect(() => {
+    fetchPendingServices();
+  }, [fetchPendingServices]);
 
   useEffect(() => {
     if (!clinic) return;
@@ -3318,8 +3350,15 @@ export default function Dashboard() {
               {(byStatus['payment_waiting'] ?? []).map((ci) => (
                 <div key={ci.id}>
                   <DraggableCard checkIn={ci} compact stageStart={getStageStart(ci)} packageLabel={getPkgLabel(ci)} onClick={() => handleCardClick(ci)} onContextMenu={(e) => handleCardContext(ci, e)} />
+                  {/* AC-7: 수납대기 pending 금액 표시 (check_in_services 기반) */}
+                  {(pendingServiceMap.get(ci.id) ?? 0) > 0 && (
+                    <div className="mt-0.5 px-1 text-xs text-purple-700 font-semibold tabular-nums text-right">
+                      대기 {formatAmount(pendingServiceMap.get(ci.id)!)}
+                    </div>
+                  )}
+                  {/* T-20260515-foot-PAYMENT-MINI-WINDOW AC-1: [결제하기] → 미니창 */}
                   <button
-                    onClick={(e) => { e.stopPropagation(); setPaymentTarget(ci); }}
+                    onClick={(e) => { e.stopPropagation(); setMiniPayTarget(ci); }}
                     className="mt-0.5 w-full rounded bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-100 transition flex items-center justify-center gap-0.5"
                   >
                     <CreditCard className="h-2.5 w-2.5" /> 결제하기
@@ -3806,6 +3845,21 @@ export default function Dashboard() {
           setPaymentInitialMode('single');
           fetchCheckIns();
           fetchPayments();
+        }}
+      />
+
+      {/* T-20260515-foot-PAYMENT-MINI-WINDOW: 수납대기 [결제하기] 미니창 */}
+      <PaymentMiniWindow
+        checkIn={miniPayTarget}
+        onClose={() => setMiniPayTarget(null)}
+        onComplete={() => {
+          setMiniPayTarget(null);
+          fetchCheckIns();
+          fetchPayments();
+        }}
+        onSaved={() => {
+          // AC-7: 시술 저장 후 pending 금액 즉시 갱신
+          fetchPendingServices();
         }}
       />
 
