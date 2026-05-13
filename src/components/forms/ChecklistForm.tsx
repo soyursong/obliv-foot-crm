@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { FormModal } from './FormModal';
 import { SignaturePad, type SignaturePadHandle } from './SignaturePad';
 import { useDocumentUpload } from '@/hooks/useDocumentUpload';
+import { formatPhoneInput } from '@/lib/format';
 
 interface Props {
   open: boolean;
@@ -223,7 +224,7 @@ export function ChecklistForm({
             <Label className="text-xs">연락처</Label>
             <Input
               value={data.phone}
-              onChange={(e) => setData((d) => ({ ...d, phone: e.target.value }))}
+              onChange={(e) => setData((d) => ({ ...d, phone: formatPhoneInput(e.target.value) }))}
               className="h-11 text-sm"
               placeholder="010-0000-0000"
             />
