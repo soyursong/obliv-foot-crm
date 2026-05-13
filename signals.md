@@ -1,5 +1,30 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-13 22:00 — dev-foot | deploy-ready | T-20260512-foot-CONTRACT-ALIGN — [P1] Cross-CRM 계약 정렬
+
+**커밋: 0610647 → origin/main push 완료 → Vercel 자동배포 예정**
+
+### 구현 내용
+- ✅ **B. staff.role CHECK 확장** `20260513000040`: 5종→표준 8종 (`admin/manager/tm` 추가)
+- ✅ **B. user_profiles.role CHECK 확장**: `director` 추가 (총 9종, `staff` 레거시 유지)
+- ✅ **B. admin_register_user RPC 갱신**: `director` 허용 + 임상직 판단(v_clinical)에 포함
+- ✅ **A. normalize_phone() SQL 함수 신설**: E.164 변환 (`010-XXXX-XXXX` → `+8210XXXXXXXX`, idempotent)
+- ✅ **C. reservations 컬럼 추가** `20260513000050`: `source_system`, `external_id` TEXT NULL
+- ✅ **C. UNIQUE 부분인덱스**: `idx_reservations_source_external (source_system, external_id) WHERE NOT NULL`
+- ✅ **C. upsert_reservation_from_source() RPC**: SECURITY DEFINER, idempotent ON CONFLICT, 도파민 push 표준
+- ✅ **D. clinics slug**: `jongno-foot` 기존 확인, 변경 없음
+- ✅ **E2E spec**: `tests/e2e/T-20260512-foot-CONTRACT-ALIGN.spec.ts` — contract §6 체크리스트 8항목
+
+### DB 변경 사항 (롤백 SQL 완비)
+- `staff.role` CHECK: 8종 표준 enum
+- `user_profiles.role` CHECK: 9종 (표준 8종 + 레거시 staff)
+- `reservations.source_system TEXT`, `reservations.external_id TEXT`
+- `normalize_phone(TEXT) → TEXT` SQL 함수
+- `upsert_reservation_from_source(...)` SECURITY DEFINER 함수
+- 롤백: `20260513000040_contract_align_roles.down.sql` / `20260513000050_reservations_source_system.down.sql`
+
+---
+
 ## 2026-05-12 09:10 — dev-foot | deploy-ready | T-20260512-foot-QUICK-RX-BUTTON — [P2] 빠른처방 단축 버튼 구현
 
 **커밋: 135676a → origin/main push 완료 → Vercel 자동배포 예정**
