@@ -1,5 +1,32 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-15 21:00 — dev-foot | deploy-ready | T-20260515-foot-RESV-CANCEL — [P1] 예약 취소 기능 (기록 보존)
+
+**커밋: 01201e3 → origin/main push 완료 → Vercel 자동배포 예정**
+
+### 구현 내용
+- ✅ `Reservation` type: `cancelled_at TIMESTAMPTZ | null`, `cancel_reason TEXT | null` 추가
+- ✅ 예약 상세 다이얼로그: [취소] 버튼 → 취소 사유 입력 다이얼로그 (삭제 버튼과 별도)
+- ✅ 사유 미입력 시 [취소 확인] 비활성화 (AC-2)
+- ✅ 취소된 예약: 목록 유지 + 줄 그음 + "취소됨" 배지 (AC-3)
+- ✅ 취소일시 + 취소 사유 상세 패널 표시
+- ✅ `reservation_logs` 취소 이력 기록 (action: 'cancel')
+- ✅ 마이그레이션 파일: `20260515000020_reservation_cancel_fields.sql` + down.sql
+- ✅ E2E spec: `tests/e2e/T-20260515-foot-RESV-CANCEL.spec.ts` (4 scenarios, AC-1~3 검증)
+- ✅ TypeScript: `npx tsc --noEmit` PASS
+
+### ⚠️ DB 마이그레이션 수동 실행 필요
+- **Supabase Studio → SQL Editor → 아래 SQL 실행:**
+```sql
+ALTER TABLE reservations
+  ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ NULL,
+  ADD COLUMN IF NOT EXISTS cancel_reason TEXT NULL;
+```
+- 또는: `supabase/migrations/20260515000020_reservation_cancel_fields.sql` 전체 실행
+- 롤백: `supabase/migrations/20260515000020_reservation_cancel_fields.down.sql`
+
+---
+
 ## 2026-05-13 22:00 — dev-foot | deploy-ready | T-20260512-foot-CONTRACT-ALIGN — [P1] Cross-CRM 계약 정렬
 
 **커밋: 0610647 → origin/main push 완료 → Vercel 자동배포 예정**
