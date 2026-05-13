@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { formatPhoneInput } from '@/lib/format';
 
 export interface PatientMatch {
   id: string;
@@ -156,7 +157,11 @@ export function InlinePatientSearch({
       <Input
         id={id}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          // phone 검색 필드: 실시간 하이픈 자동 포맷 (T-20260513-foot-PHONE-HYPHEN-FORMAT)
+          const next = searchField === 'phone' ? formatPhoneInput(e.target.value) : e.target.value;
+          onChange(next);
+        }}
         placeholder={placeholder}
         disabled={disabled}
         required={required}

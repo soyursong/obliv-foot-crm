@@ -19,7 +19,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
-import { formatAmount, parseAmount } from '@/lib/format';
+import { formatAmount, formatPhone, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Customer, Package, PackageRemaining, PackageTemplate } from '@/lib/types';
 
@@ -137,7 +137,7 @@ export default function Packages() {
               >
                 <td className="px-3 py-2 font-medium">
                   {p.customer?.name}
-                  <span className="ml-1 text-xs text-muted-foreground">{p.customer?.phone}</span>
+                  <span className="ml-1 text-xs text-muted-foreground">{formatPhone(p.customer?.phone)}</span>
                 </td>
                 <td className="px-3 py-2">{p.package_name}</td>
                 <td className="px-3 py-2 text-right">{p.total_sessions}</td>
@@ -1172,7 +1172,7 @@ function PackageDetailSheet({
         <div className="space-y-4 text-sm">
           <div>
             <div className="font-medium">{pkg.customer?.name}</div>
-            <div className="text-xs text-muted-foreground">{pkg.customer?.phone}</div>
+            <div className="text-xs text-muted-foreground">{formatPhone(pkg.customer?.phone)}</div>
           </div>
 
           <div className="grid grid-cols-4 gap-2 text-xs">
@@ -1569,7 +1569,7 @@ function TransferDialog({ open, pkg, onOpenChange, onDone }: {
           <div className="rounded bg-muted/30 px-3 py-2 text-xs">{pkg.customer?.name} → 새로운 고객 검색</div>
           {target ? (
             <div className="flex items-center justify-between rounded border px-3 py-2">
-              <span><span className="font-medium">{target.name}</span><span className="ml-2 text-muted-foreground">{target.phone}</span></span>
+              <span><span className="font-medium">{target.name}</span><span className="ml-2 text-muted-foreground">{formatPhone(target.phone)}</span></span>
               <Button variant="ghost" size="sm" onClick={() => setTarget(null)}>변경</Button>
             </div>
           ) : (
@@ -1580,7 +1580,7 @@ function TransferDialog({ open, pkg, onOpenChange, onDone }: {
                   {matches.map((c) => (
                     <button key={c.id} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted" onClick={() => setTarget(c)}>
                       <span className="font-medium">{c.name}</span>
-                      <span className="text-muted-foreground">{c.phone}</span>
+                      <span className="text-muted-foreground">{formatPhone(c.phone)}</span>
                     </button>
                   ))}
                 </div>
