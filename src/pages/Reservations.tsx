@@ -555,6 +555,8 @@ export default function Reservations() {
                                         className={cn(
                                           'font-semibold',
                                           r.customer_id && 'cursor-pointer hover:underline hover:text-teal-700 transition-colors',
+                                          // T-20260515-foot-RESV-CANCEL: 취소된 예약 줄 그음
+                                          r.status === 'cancelled' && 'line-through',
                                         )}
                                         onClick={(e) => {
                                           if (!r.customer_id) return;
@@ -568,6 +570,10 @@ export default function Reservations() {
                                       >
                                         {r.customer_name}
                                       </span>
+                                      {/* T-20260515-foot-RESV-CANCEL: 취소됨 배지 */}
+                                      {r.status === 'cancelled' && (
+                                        <span className="text-[9px] bg-gray-200 text-gray-500 rounded px-0.5 leading-none">취소됨</span>
+                                      )}
                                       {/* T-20260514-foot-CHART-NO-VISIBLE: AC-2 차트번호 상시 표시 */}
                                       {r.customer_id && resvChartMap.get(r.customer_id) && (
                                         <span className="text-[10px] font-mono text-teal-600">
@@ -1012,9 +1018,17 @@ function ReservationDetail({
 }) {
   const [busy, setBusy] = useState(false);
   const [logs, setLogs] = useState<ReservationLog[]>([]);
+  // T-20260515-foot-RESV-CANCEL: 취소 사유 다이얼로그 상태
+  const [cancelDialog, setCancelDialog] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
 
   useEffect(() => {
-    if (!reservation) { setLogs([]); return; }
+    if (!reservation) {
+      setLogs([]);
+      setCancelDialog(false);
+      setCancelReason('');
+      return;
+    }
     supabase
       .from('reservation_logs')
       .select('id, action, old_data, new_data, created_at')
@@ -1025,6 +1039,38 @@ function ReservationDetail({
   }, [reservation]);
 
   if (!reservation) return null;
+
+  // T-20260515-foot-RESV-CANCEL: 취소 사유 포함 취소 (기록 보존)
+  const cancelWithReason = async () => {
+    if (!cancelReason.trim()) return;
+    setBusy(true);
+    const { error } = await supabase
+      .from('reservations')
+      .update({
+        status: 'cancelled',
+        cancelled_at: new Date().toISOString(),
+        cancel_reason: cancelReason.trim(),
+      })
+      .eq('id', reservation.id);
+    if (error) {
+      toast.error(`취소 실패: ${error.message}`);
+      setBusy(false);
+      return;
+    }
+    await supabase.from('reservation_logs').insert({
+      reservation_id: reservation.id,
+      clinic_id: reservation.clinic_id,
+      action: 'cancel',
+      old_data: { status: reservation.status },
+      new_data: { status: 'cancelled', cancel_reason: cancelReason.trim() },
+      changed_by: changedBy,
+    });
+    setBusy(false);
+    setCancelDialog(false);
+    setCancelReason('');
+    toast.success('예약 취소됨');
+    onChanged();
+  };
 
   const deleteReservation = async () => {
     if (!reservation) return;
@@ -1147,6 +1193,7 @@ function ReservationDetail({
   };
 
   return (
+    <>
     <Dialog open onOpenChange={(o) => (!o ? onClose() : undefined)}>
       <DialogContent>
         <DialogHeader>
@@ -1164,6 +1211,20 @@ function ReservationDetail({
           {reservation.customer_phone && (
             <div className="text-muted-foreground">
               {formatPhone(reservation.customer_phone)} (뒤 4자리 ···{maskPhoneTail(reservation.customer_phone)})
+            </div>
+          )}
+          {/* T-20260515-foot-RESV-CANCEL: 취소 정보 표시 */}
+          {reservation.status === 'cancelled' && (reservation.cancelled_at || reservation.cancel_reason) && (
+            <div className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-xs space-y-0.5">
+              <div className="text-red-600 font-medium">취소됨</div>
+              {reservation.cancelled_at && (
+                <div className="text-muted-foreground">
+                  {format(new Date(reservation.cancelled_at), 'yyyy/MM/dd HH:mm', { locale: ko })}
+                </div>
+              )}
+              {reservation.cancel_reason && (
+                <div className="text-red-700 whitespace-pre-wrap">사유: {reservation.cancel_reason}</div>
+              )}
             </div>
           )}
           {/* T-20260504-foot-MEMO-RESTRUCTURE: booking_memo 우선, 없으면 memo */}
@@ -1229,13 +1290,13 @@ function ReservationDetail({
               }}>
                 노쇼
               </Button>
+              {/* T-20260515-foot-RESV-CANCEL: 취소 사유 다이얼로그로 변경 */}
               <Button
                 variant="destructive"
                 size="sm"
                 disabled={busy}
-                onClick={() => {
-                  if (window.confirm(`${reservation.customer_name}님 예약을 취소하시겠습니까?`)) setStatus('cancelled');
-                }}
+                data-testid="btn-reservation-cancel"
+                onClick={() => { setCancelReason(''); setCancelDialog(true); }}
               >
                 취소
               </Button>
@@ -1256,6 +1317,58 @@ function ReservationDetail({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* T-20260515-foot-RESV-CANCEL: 취소 사유 입력 다이얼로그 */}
+    {cancelDialog && (
+      <Dialog open onOpenChange={(o) => { if (!o && !busy) { setCancelDialog(false); setCancelReason(''); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>예약 취소 — {reservation.customer_name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {reservation.reservation_date} {reservation.reservation_time.slice(0, 5)} 예약을 취소합니다.
+              취소된 예약은 목록에 기록으로 남습니다.
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="cancel-reason">
+                취소 사유 <span className="text-destructive">*</span>
+              </Label>
+              <Textarea
+                id="cancel-reason"
+                data-testid="cancel-reason-input"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="예: 환자 요청으로 취소, 일정 변경, 연락 두절 등"
+                rows={3}
+                className="text-sm"
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => { setCancelDialog(false); setCancelReason(''); }}
+            >
+              돌아가기
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={busy || !cancelReason.trim()}
+              data-testid="btn-cancel-confirm"
+              onClick={cancelWithReason}
+            >
+              {busy ? '처리 중…' : '취소 확인'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )}
+    </>
   );
 }
 

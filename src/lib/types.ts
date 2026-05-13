@@ -390,6 +390,8 @@ export interface Reservation {
   memo: string | null;
   booking_memo: string | null;              // 예약메모 (예약 경로 확인용) — T-20260504-foot-MEMO-RESTRUCTURE
   status: 'confirmed' | 'checked_in' | 'cancelled' | 'noshow';
+  cancelled_at: string | null;             // 취소 일시 — T-20260515-foot-RESV-CANCEL
+  cancel_reason: string | null;            // 취소 사유 — T-20260515-foot-RESV-CANCEL
   referral_source: string | null;
   created_by: string | null;
   created_at: string;
