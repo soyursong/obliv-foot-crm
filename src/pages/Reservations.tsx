@@ -89,6 +89,10 @@ export default function Reservations() {
   const [noshowByCustomer, setNoshowByCustomer] = useState<Record<string, number>>({});
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  // T-20260515-foot-RESV-DND-SHORTCUT: 키보드 클립보드 (Ctrl+C/X/V)
+  const [selectedResvId, setSelectedResvId] = useState<string | null>(null);
+  const [clipboard, setClipboard] = useState<{ id: string; mode: 'copy' | 'cut' } | null>(null);
+  const [clipboardTarget, setClipboardTarget] = useState<{ date: string; time: string } | null>(null);
 
   const weekDays = useMemo(
     () => Array.from({ length: 6 }).map((_, i) => addDays(weekStart, i)), // 월~토만
@@ -227,6 +231,153 @@ export default function Reservations() {
     };
   }, [clinic, weekStart, fetchWeek]);
 
+  // T-20260515-foot-RESV-DND-SHORTCUT: 키보드 단축키 핸들러 (Ctrl+C/X/V, Escape)
+  useEffect(() => {
+    const handler = async (e: KeyboardEvent) => {
+      // 텍스트 입력 중이거나 다이얼로그 열려있으면 무시
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (detail !== null || editor !== null) return;
+
+      if (e.key === 'Escape') {
+        setSelectedResvId(null);
+        setClipboard(null);
+        setClipboardTarget(null);
+        return;
+      }
+      if (!(e.ctrlKey || e.metaKey)) return;
+
+      const r = selectedResvId ? rows.find((x) => x.id === selectedResvId) : null;
+
+      if (e.key === 'c' && r && r.status === 'confirmed') {
+        e.preventDefault();
+        setClipboard({ id: r.id, mode: 'copy' });
+        setClipboardTarget(null);
+        toast.info(`${r.customer_name} 복사됨 — 붙여넣기할 슬롯 클릭 후 Ctrl+V`, { duration: 4000 });
+        return;
+      }
+
+      if (e.key === 'x' && r && r.status === 'confirmed') {
+        e.preventDefault();
+        setClipboard({ id: r.id, mode: 'cut' });
+        setClipboardTarget(null);
+        toast.info(`${r.customer_name} 잘라내기됨 — 이동할 슬롯 클릭 후 Ctrl+V`, { duration: 4000 });
+        return;
+      }
+
+      if (e.key === 'v' && clipboard && clipboardTarget && clinic) {
+        e.preventDefault();
+        const cb = clipboard;
+        const target = clipboardTarget;
+        const srcRow = rows.find((x) => x.id === cb.id);
+        if (!srcRow) return;
+
+        // 슬롯 충돌 확인
+        const activeInSlot = rows.filter(
+          (x) =>
+            x.reservation_date === target.date &&
+            x.reservation_time.slice(0, 5) === target.time &&
+            x.status !== 'cancelled',
+        ).length;
+        if (activeInSlot >= 12) {
+          toast.error('해당 시간에 이미 예약이 있습니다');
+          return;
+        }
+
+        if (cb.mode === 'copy') {
+          const { data, error } = await supabase
+            .from('reservations')
+            .insert({
+              clinic_id: clinic.id,
+              customer_id: srcRow.customer_id,
+              customer_name: srcRow.customer_name,
+              customer_phone: srcRow.customer_phone,
+              reservation_date: target.date,
+              reservation_time: target.time,
+              visit_type: srcRow.visit_type,
+              memo: srcRow.memo,
+              booking_memo: srcRow.booking_memo,
+              status: 'confirmed',
+            })
+            .select('id')
+            .single();
+          if (error) {
+            toast.error(`복사 실패: ${error.message}`);
+            return;
+          }
+          await supabase.from('reservation_logs').insert({
+            reservation_id: (data as { id: string }).id,
+            clinic_id: clinic.id,
+            action: 'create',
+            old_data: null,
+            new_data: {
+              date: target.date,
+              time: target.time,
+              visit_type: srcRow.visit_type,
+              customer_name: srcRow.customer_name,
+              customer_phone: srcRow.customer_phone,
+              via: 'keyboard_copy',
+              source_id: cb.id,
+            },
+            changed_by: changedBy,
+          });
+          toast.success(`${srcRow.customer_name} 복사 완료 → ${target.date} ${target.time}`);
+        } else {
+          // cut → 이동 (낙관적 업데이트)
+          if (srcRow.status !== 'confirmed') return;
+          if (
+            srcRow.reservation_date === target.date &&
+            srcRow.reservation_time.slice(0, 5) === target.time
+          ) return;
+
+          setRows((prev) =>
+            prev.map((x) =>
+              x.id === cb.id
+                ? { ...x, reservation_date: target.date, reservation_time: target.time }
+                : x,
+            ),
+          );
+          const { error: moveErr } = await supabase
+            .from('reservations')
+            .update({ reservation_date: target.date, reservation_time: target.time })
+            .eq('id', cb.id);
+          if (moveErr) {
+            setRows((prev) =>
+              prev.map((x) =>
+                x.id === cb.id
+                  ? { ...x, reservation_date: srcRow.reservation_date, reservation_time: srcRow.reservation_time }
+                  : x,
+              ),
+            );
+            toast.error(`이동 실패: ${moveErr.message}`);
+            return;
+          }
+          await supabase.from('reservation_logs').insert({
+            reservation_id: cb.id,
+            clinic_id: clinic.id,
+            action: 'reschedule',
+            old_data: { date: srcRow.reservation_date, time: srcRow.reservation_time.slice(0, 5) },
+            new_data: { date: target.date, time: target.time },
+            changed_by: changedBy,
+          });
+          const sameDay = srcRow.reservation_date === target.date;
+          toast.success(
+            sameDay
+              ? `${srcRow.customer_name} ${srcRow.reservation_time.slice(0, 5)} → ${target.time} 이동 완료`
+              : `${srcRow.customer_name} 이동 완료: ${srcRow.reservation_date} → ${target.date} ${target.time}`,
+          );
+        }
+
+        setClipboard(null);
+        setClipboardTarget(null);
+        setSelectedResvId(null);
+        fetchWeek();
+      }
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [selectedResvId, rows, clipboard, clipboardTarget, detail, editor, clinic, changedBy, fetchWeek]);
+
   const slotsFor = useCallback(
     (d: Date): string[] => {
       if (!clinic) return [];
@@ -324,7 +475,7 @@ export default function Reservations() {
 
     const activeCount = slotActiveCount(newDate, newTime);
     if (activeCount >= 12) {
-      toast.error(`이 시간대는 마감입니다 (${activeCount}/12)`);
+      toast.error(`해당 시간에 이미 예약이 있습니다 (${activeCount}/12)`);
       return;
     }
 
@@ -366,7 +517,12 @@ export default function Reservations() {
       changed_by: changedBy,
     });
 
-    toast.success(`${r.customer_name} 예약 이동: ${oldData.date} ${oldData.time} → ${newData.date} ${newData.time}`);
+    const sameDay = oldData.date === newData.date;
+    toast.success(
+      sameDay
+        ? `${r.customer_name} ${oldData.time} → ${newData.time} 이동 완료`
+        : `${r.customer_name} 이동 완료: ${oldData.date} ${oldData.time} → ${newData.date} ${newData.time}`,
+    );
     fetchWeek();
   };
 
@@ -465,6 +621,30 @@ export default function Reservations() {
         </div>
       </div>
 
+      {/* T-20260515-foot-RESV-DND-SHORTCUT: 클립보드 상태 힌트 바 */}
+      {clipboard && (
+        <div
+          data-testid="clipboard-hint"
+          className="mb-2 flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs"
+        >
+          <span className="text-amber-700">
+            {clipboard.mode === 'copy' ? '📋 복사 대기' : '✂️ 이동 대기'}:{' '}
+            <span className="font-semibold">
+              {rows.find((r) => r.id === clipboard.id)?.customer_name ?? '?'}
+            </span>
+            {clipboardTarget
+              ? ` → ${clipboardTarget.date} ${clipboardTarget.time} (Ctrl+V로 붙여넣기)`
+              : ' — 슬롯 클릭 후 Ctrl+V / Esc로 취소'}
+          </span>
+          <button
+            onClick={() => { setClipboard(null); setClipboardTarget(null); }}
+            className="ml-2 text-amber-400 hover:text-amber-700 font-bold"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-auto rounded-lg border bg-background">
         {loading && rows.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -514,6 +694,11 @@ export default function Reservations() {
                         const activeCount = slotActiveCount(dateStr, time);
                         const cellKey = `${dateStr}_${time}`;
                         const isDragOver = dropTarget === cellKey;
+                        // T-20260515-foot-RESV-DND-SHORTCUT: 클립보드 타겟 슬롯 하이라이트
+                        const isClipboardTarget =
+                          !!clipboard &&
+                          clipboardTarget?.date === dateStr &&
+                          clipboardTarget?.time === time;
                         return (
                           <td
                             key={d.toISOString() + time}
@@ -523,10 +708,14 @@ export default function Reservations() {
                               full && !isDragOver && 'bg-red-50',
                               isDragOver && allowed && !full && 'bg-teal-50 ring-2 ring-inset ring-teal-400',
                               isDragOver && full && 'bg-red-100 ring-2 ring-inset ring-red-400',
+                              isClipboardTarget && 'bg-green-50 ring-2 ring-inset ring-green-400',
                             )}
                             onDragOver={(e) => { if (allowed) { e.preventDefault(); setDropTarget(cellKey); } }}
                             onDragLeave={() => setDropTarget(null)}
                             onDrop={(e) => { if (allowed) handleDrop(e, dateStr, time); }}
+                            onClick={() => {
+                              if (clipboard && allowed) setClipboardTarget({ date: dateStr, time });
+                            }}
                           >
                             {allowed && (
                               <div className="flex h-full w-full flex-col gap-0.5 rounded text-left">
@@ -534,11 +723,13 @@ export default function Reservations() {
                                 {list.map((r) => (
                                   <div
                                     key={r.id}
+                                    data-testid={`resv-card-${r.id}`}
                                     draggable={r.status === 'confirmed'}
                                     onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, r.id); }}
                                     onDragEnd={() => { setDraggedId(null); setDropTarget(null); }}
                                     onClick={(e) => {
                                       e.stopPropagation();
+                                      setSelectedResvId(r.id);
                                       setDetail(r);
                                     }}
                                     className={cn(
@@ -547,6 +738,10 @@ export default function Reservations() {
                                       draggedId === r.id && 'opacity-40',
                                       STATUS_STYLE[r.status],
                                       VISIT_TYPE_STYLE[r.visit_type],
+                                      // T-20260515-foot-RESV-DND-SHORTCUT: 클립보드 시각적 피드백
+                                      selectedResvId === r.id && !clipboard && 'ring-2 ring-teal-500',
+                                      clipboard?.id === r.id && clipboard.mode === 'copy' && 'ring-2 ring-blue-400',
+                                      clipboard?.id === r.id && clipboard.mode === 'cut' && 'opacity-60 ring-2 ring-amber-400',
                                     )}
                                   >
                                     <div className="flex items-center gap-1">
@@ -626,7 +821,15 @@ export default function Reservations() {
                                 })()}
                                 {!full ? (
                                   <button
-                                    onClick={(e) => { e.stopPropagation(); openNewSlot(d, time); }}
+                                    data-testid={`slot-plus-${dateStr}-${time}`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (clipboard) {
+                                        setClipboardTarget({ date: dateStr, time });
+                                      } else {
+                                        openNewSlot(d, time);
+                                      }
+                                    }}
                                     className={cn(
                                       'flex items-center justify-center rounded border border-dashed border-muted-foreground/30 text-muted-foreground/50 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-600 transition',
                                       list.length === 0 ? 'flex-1 min-h-[24px]' : 'h-5 w-full mt-0.5',
