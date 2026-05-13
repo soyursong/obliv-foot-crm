@@ -408,8 +408,8 @@ let _stampUrl: string | null | undefined = undefined; // undefined = 아직 확�
 export function getStampUrl(): string | null {
   if (_stampUrl !== undefined) return _stampUrl;
   try {
-    // @vite-ignore — 도장 파일은 현장 수급 후 추가 예정 (없으면 graceful degrade)
-    _stampUrl = new URL(/* @vite-ignore */ '../assets/forms/stamps/jongno-foot-stamp.png', import.meta.url).href;
+    // jongno-foot-stamp.png은 5/9 추가 완료 (16KB, 488×488 RGBA) — @vite-ignore 제거
+    _stampUrl = new URL('../assets/forms/stamps/jongno-foot-stamp.png', import.meta.url).href;
   } catch {
     _stampUrl = null;
   }

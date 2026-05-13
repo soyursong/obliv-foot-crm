@@ -1,5 +1,25 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-15 22:05 — dev-foot | deploy-ready | T-20260515-foot-SELFCHECKIN-TESTDATA — [P1] 셀프접수 테스트 더미 예약 20건 삽입 완료
+
+**커밋: ad0a3ec → origin/main push 완료 (db_only, Vercel 배포 불필요)**
+
+### 구현 내용
+- ✅ AC-1: 초진 10건 — [TEST2] 초진고객01~10, +821099020001~10, new, confirmed (체크인 없음)
+- ✅ AC-2: 재진 10건 — [TEST2] 재진고객01~10, +821099020011~20, returning, confirmed (체크인 없음, 과거방문이력 있음)
+- ✅ AC-3: is_simulation=true, [TEST2] prefix, +82109902xxxx 대역 ([TEST]의 +82109901xxxx와 분리)
+- ✅ AC-4: 롤백 SQL → `scripts/rollback_selfcheckin_testdata_20260515.sql`
+- ✅ AC-5 검증: phone 기준 confirmed 예약 매칭 4건 샘플 확인 (+821099020001, +821099020010, +821099020011, +821099020020 모두 히트)
+- `e2e_spec_exempt_reason: db_only` 해당 (INSERT only, 코드 변경 없음)
+
+### DB 삽입 내역
+- customers: 20건 신규
+- reservations: 20건 (reservation_date=2026-05-16, status=confirmed)
+- check_ins: 재진 10건 과거방문이력만 (오늘 체크인 없음)
+- 롤백: `DELETE WHERE name LIKE '[TEST2]%' AND is_simulation=true`
+
+---
+
 ## 2026-05-14 03:10 — dev-foot | deploy-ready | T-20260515-foot-RLS-REGISTER-BUG — [P1] user_profiles 자가 등록 INSERT RLS 정책 복구
 
 **커밋: 4bb1378 → origin/main push 완료 → Vercel 자동배포 예정**
