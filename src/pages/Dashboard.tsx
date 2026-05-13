@@ -1016,7 +1016,9 @@ function TimelineCheckInCard({
 
   const style: React.CSSProperties = {
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-    opacity: isDragging ? 0.3 : 1,
+    // T-20260514-foot-CHECKIN-AUTO-STAGE AC-3: 내원 완료 카드는 CSS opacity-50으로 처리
+    // 드래그 중에는 0.3으로 추가 감소, 비드래그 시 undefined로 CSS 클래스에 위임
+    opacity: isDragging ? 0.3 : undefined,
     touchAction: 'none',
     // T-20260511-foot-DASH-DRAG-PERF: GPU 레이어 승격 힌트
     willChange: isDragging ? 'transform' : undefined,
@@ -1035,7 +1037,9 @@ function TimelineCheckInCard({
       {...attributes}
       {...listeners}
       className={cn(
-        'flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-semibold w-full shadow-sm cursor-grab active:cursor-grabbing transition',
+        // T-20260514-foot-CHECKIN-AUTO-STAGE AC-3: 내원 완료(체크인 있음) → opacity-50 희미 처리
+        // 미내원(예약만) = Box1Card/Box2ReservationCard → 아래 따로 처리 (opacity-100)
+        'flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-semibold w-full shadow-sm cursor-grab active:cursor-grabbing transition opacity-50',
         box2Cls,
       )}
       title={`${checkIn.customer_name} — 드래그=다음단계 이동 · 클릭=상세`}
@@ -1065,19 +1069,20 @@ function TimelineCheckInCard({
   );
 }
 
-// T-20260510-foot-DASH-SLOT-REWORK-P0: 1번 박스 — 초진 예약 비활성 (셀프접수 매칭 전)
-// 스크린샷: 작은 박스, 흐릿, "(초) 이름 1234" — 셀프접수 전이므로 passive 스타일
+// T-20260510-foot-DASH-SLOT-REWORK-P0: 1번 박스 — 초진 예약 (셀프접수 매칭 전, 미내원)
+// T-20260514-foot-CHECKIN-AUTO-STAGE AC-3: 미내원 = opacity-100 진하게 (이전 opacity-75 → 제거)
+// 목적: '아직 안 오신 분'이 눈에 바로 띄도록 미내원은 bold+full opacity
 function Box1Card({ name, phone }: { name: string; phone: string }) {
   const tail = (phone ?? '').replace(/\D/g, '').slice(-4) || '????';
   return (
     <div
-      className="flex items-center gap-1 rounded border border-dashed border-yellow-300 bg-yellow-50/60 px-2 py-0.5 text-[10px] w-full select-none cursor-default opacity-75"
+      className="flex items-center gap-1 rounded border border-yellow-400 bg-yellow-50 px-2 py-1 text-[10px] w-full select-none cursor-default"
       onClick={(e) => e.stopPropagation()}
-      title="예약 등록됨 — 셀프접수 대기 중"
+      title="예약 등록됨 — 아직 미내원 (셀프접수 대기 중)"
     >
       <span className="shrink-0 bg-yellow-200 text-yellow-800 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
-      <span className="truncate text-yellow-900 font-normal">{name}</span>
-      <span className="shrink-0 text-yellow-700/60 font-mono ml-auto text-[9px]">{tail}</span>
+      <span className="truncate text-yellow-900 font-semibold">{name}</span>
+      <span className="shrink-0 text-yellow-700 font-mono ml-auto text-[9px]">{tail}</span>
     </div>
   );
 }

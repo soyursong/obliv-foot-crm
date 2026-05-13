@@ -733,11 +733,13 @@ export default function Reservations() {
                                       setDetail(r);
                                     }}
                                     className={cn(
-                                      'rounded border px-1.5 py-0.5 text-xs leading-tight',
+                                      'rounded border px-1.5 py-0.5 text-xs leading-tight transition-opacity',
                                       r.status === 'confirmed' && 'cursor-grab active:cursor-grabbing',
                                       draggedId === r.id && 'opacity-40',
                                       STATUS_STYLE[r.status],
                                       VISIT_TYPE_STYLE[r.visit_type],
+                                      // AC-3: 내원완료(checked_in) → 희미하게, 미내원(confirmed) → 진하게 (T-20260514-foot-CHECKIN-AUTO-STAGE)
+                                      r.status === 'checked_in' && draggedId !== r.id && 'opacity-50',
                                       // T-20260515-foot-RESV-DND-SHORTCUT: 클립보드 시각적 피드백
                                       selectedResvId === r.id && !clipboard && 'ring-2 ring-teal-500',
                                       clipboard?.id === r.id && clipboard.mode === 'copy' && 'ring-2 ring-blue-400',
@@ -1370,7 +1372,8 @@ function ReservationDetail({
       customer_name: reservation.customer_name ?? '',
       customer_phone: reservation.customer_phone,
       visit_type: reservation.visit_type,
-      status: 'registered',
+      // AC-1/AC-2: 초진·체험 → 상담대기, 재진 → 치료대기 자동 세팅 (T-20260514-foot-CHECKIN-AUTO-STAGE)
+      status: reservation.visit_type === 'returning' ? 'treatment_waiting' : 'consult_waiting',
       queue_number: queueData as number,
     });
     if (error) {
