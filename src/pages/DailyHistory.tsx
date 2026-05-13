@@ -20,6 +20,9 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
+// T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
+import { PaymentEditDialog, PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
+import type { EditMode, PaymentRowForEdit } from '@/components/PaymentEditDialog';
 import type { CheckIn, CheckInStatus, Reservation } from '@/lib/types';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, METHOD_KO } from '@/lib/status';
 import { elapsedLabel } from '@/lib/elapsed';
@@ -44,9 +47,13 @@ interface PaymentRow {
   customer_id: string | null;
   amount: number;
   method: string;
+  installment: number | null;
   payment_type: 'payment' | 'refund';
   memo: string | null;
   created_at: string;
+  // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
+  status?: string | null;
+  clinic_id?: string | null;
 }
 
 interface PackagePaymentRow {
@@ -118,6 +125,9 @@ export default function DailyHistory() {
   const [visitFilter, setVisitFilter] = useState<VisitFilter>('all');
   const [sort, setSort] = useState<SortMode>('queue');
   const [showNoshow, setShowNoshow] = useState(false);
+  // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
+  const [payEditTarget, setPayEditTarget] = useState<PaymentRowForEdit | null>(null);
+  const [payEditMode, setPayEditMode] = useState<EditMode>('edit');
 
   // Fetch data when clinic or date changes
   const fetchData = useCallback(async () => {
@@ -142,10 +152,11 @@ export default function DailyHistory() {
         .order('transitioned_at', { ascending: true }),
       supabase
         .from('payments')
-        .select('id, check_in_id, customer_id, amount, method, payment_type, memo, created_at')
+        .select('id, check_in_id, customer_id, amount, method, installment, payment_type, memo, created_at, status, clinic_id')
         .eq('clinic_id', clinic.id)
         .gte('created_at', start)
-        .lte('created_at', end),
+        .lte('created_at', end)
+        .neq('status', 'deleted'),
       supabase
         .from('package_payments')
         .select('id, package_id, customer_id, amount, method, payment_type, memo, created_at')
@@ -824,6 +835,7 @@ export default function DailyHistory() {
                                   <th className="pb-1.5 font-medium">유형</th>
                                   <th className="pb-1.5 font-medium text-right">금액</th>
                                   <th className="pb-1.5 font-medium">메모</th>
+                                  <th className="pb-1.5 font-medium text-right">작업</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -836,20 +848,53 @@ export default function DailyHistory() {
                                     <td className="py-1.5">
                                       <Badge
                                         className={
-                                          p.payment_type === 'refund'
-                                            ? 'bg-red-100 text-red-600 text-[10px] px-1.5 py-0'
-                                            : 'bg-emerald-100 text-emerald-700 text-[10px] px-1.5 py-0'
+                                          p.status === 'cancelled'
+                                            ? 'bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0'
+                                            : p.payment_type === 'refund'
+                                              ? 'bg-red-100 text-red-600 text-[10px] px-1.5 py-0'
+                                              : 'bg-emerald-100 text-emerald-700 text-[10px] px-1.5 py-0'
                                         }
                                       >
-                                        {p.payment_type === 'refund' ? '환불' : '결제'}
+                                        {p.status === 'cancelled' ? '취소' : p.payment_type === 'refund' ? '환불' : '결제'}
                                       </Badge>
                                     </td>
-                                    <td className="py-1.5 text-right tabular-nums font-medium">
+                                    <td className={`py-1.5 text-right tabular-nums font-medium ${p.status === 'cancelled' ? 'line-through text-muted-foreground' : ''}`}>
                                       {p.payment_type === 'refund' ? '-' : ''}
                                       {formatAmount(p.amount)}
                                     </td>
-                                    <td className="py-1.5 text-muted-foreground truncate max-w-[120px]">
+                                    <td className="py-1.5 text-muted-foreground truncate max-w-[100px]">
                                       {p.memo || '—'}
+                                    </td>
+                                    {/* T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE */}
+                                    <td className="py-1.5 text-right">
+                                      <div className="flex items-center justify-end gap-0.5">
+                                        {p.status !== 'cancelled' && (
+                                          <button
+                                            type="button"
+                                            data-testid={`btn-edit-payment-${p.id}`}
+                                            title="수납 수정"
+                                            onClick={() => { setPayEditTarget(p as PaymentRowForEdit); setPayEditMode('edit'); }}
+                                            className="rounded px-1 py-0.5 text-[10px] text-blue-600 hover:bg-blue-50 transition"
+                                          >수정</button>
+                                        )}
+                                        {p.status !== 'cancelled' && (
+                                          <button
+                                            type="button"
+                                            data-testid={`btn-cancel-payment-${p.id}`}
+                                            title="수납 취소"
+                                            onClick={() => { setPayEditTarget(p as PaymentRowForEdit); setPayEditMode('cancel'); }}
+                                            className="rounded px-1 py-0.5 text-[10px] text-amber-600 hover:bg-amber-50 transition"
+                                          >취소</button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          data-testid={`btn-delete-payment-${p.id}`}
+                                          title="수납 삭제"
+                                          onClick={() => { setPayEditTarget(p as PaymentRowForEdit); setPayEditMode('delete'); }}
+                                          className="rounded px-1 py-0.5 text-[10px] text-red-500 hover:bg-red-50 transition"
+                                        >삭제</button>
+                                        <PaymentAuditLogsPanel paymentId={p.id} />
+                                      </div>
                                     </td>
                                   </tr>
                                 ))}
@@ -866,6 +911,14 @@ export default function DailyHistory() {
           })}
         </div>
       )}
+
+      {/* T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE */}
+      <PaymentEditDialog
+        payment={payEditTarget}
+        mode={payEditMode}
+        onClose={() => setPayEditTarget(null)}
+        onDone={() => { setPayEditTarget(null); fetchData(); }}
+      />
     </div>
   );
 }

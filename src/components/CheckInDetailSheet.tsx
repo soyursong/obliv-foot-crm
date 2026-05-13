@@ -35,6 +35,9 @@ import { ConsentForm } from '@/components/forms/ConsentForm';
 import { DocumentViewer } from '@/components/forms/DocumentViewer';
 import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
+// T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
+import { PaymentEditDialog, PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
+import type { EditMode, PaymentRowForEdit } from '@/components/PaymentEditDialog';
 import type { CheckIn, Package as PackageType, PackageRemaining, Service, VisitType } from '@/lib/types';
 
 // ─── 시술 항목 / 회차 차감 타입 ──────────────────────────────────────────────
@@ -87,6 +90,10 @@ interface PaymentRow {
   installment: number | null;
   payment_type: string;
   created_at: string;
+  // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
+  status?: string | null;
+  check_in_id?: string | null;
+  clinic_id?: string | null;
 }
 
 interface VisitHistory {
@@ -460,6 +467,9 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const [etcMemo, setEtcMemo] = useState('');
   const [savingEtcMemo, setSavingEtcMemo] = useState(false);
   const [latestResvId, setLatestResvId] = useState<string | null>(null);
+  // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
+  const [payEditTarget, setPayEditTarget] = useState<PaymentRowForEdit | null>(null);
+  const [payEditMode, setPayEditMode] = useState<EditMode>('edit');
 
   // ── 시술 항목 상태 (ServiceSelectModal/SessionUseInSheetDialog 유지용) ──
   const [, setTreatmentItems] = useState<TreatmentItem[]>([]);
@@ -580,8 +590,9 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
         .order('sort_order'),
       supabase
         .from('payments')
-        .select('id, amount, method, installment, payment_type, created_at')
-        .eq('check_in_id', checkIn.id),
+        .select('id, amount, method, installment, payment_type, created_at, status, check_in_id, clinic_id')
+        .eq('check_in_id', checkIn.id)
+        .neq('status', 'deleted'),
       checkIn.customer_id
         ? supabase
             .from('check_ins')
@@ -1927,17 +1938,50 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               )}
             </div>
             {payments.length > 0 ? (
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 {payments.map((p) => (
-                  <div key={p.id} className="flex justify-between text-xs">
-                    <span>
-                      {METHOD_LABEL[p.method] ?? p.method}
-                      {p.installment && p.installment > 0 ? ` ${p.installment}개월` : ''}
-                    </span>
-                    <span className={cn('tabular-nums', p.payment_type === 'refund' && 'text-red-600')}>
-                      {p.payment_type === 'refund' ? '-' : ''}
-                      {formatAmount(p.amount)}
-                    </span>
+                  <div key={p.id} className="space-y-0.5">
+                    <div className="flex items-center gap-1 text-xs">
+                      <span className="flex-1">
+                        {METHOD_LABEL[p.method] ?? p.method}
+                        {p.installment && p.installment > 0 ? ` ${p.installment}개월` : ''}
+                        {p.status === 'cancelled' && (
+                          <span className="ml-1 text-[10px] text-amber-600 font-medium">[취소]</span>
+                        )}
+                      </span>
+                      <span className={cn('tabular-nums mr-1', p.payment_type === 'refund' && 'text-red-600', p.status === 'cancelled' && 'line-through text-muted-foreground')}>
+                        {p.payment_type === 'refund' ? '-' : ''}
+                        {formatAmount(p.amount)}
+                      </span>
+                      {/* 수정/취소/삭제 버튼 (T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE) */}
+                      {p.status !== 'cancelled' && (
+                        <button
+                          type="button"
+                          data-testid={`btn-edit-payment-${p.id}`}
+                          title="수납 수정"
+                          onClick={() => { setPayEditTarget(p as PaymentRowForEdit); setPayEditMode('edit'); }}
+                          className="rounded px-1 py-0.5 text-[10px] text-blue-600 hover:bg-blue-50 transition"
+                        >수정</button>
+                      )}
+                      {p.status !== 'cancelled' && (
+                        <button
+                          type="button"
+                          data-testid={`btn-cancel-payment-${p.id}`}
+                          title="수납 취소"
+                          onClick={() => { setPayEditTarget(p as PaymentRowForEdit); setPayEditMode('cancel'); }}
+                          className="rounded px-1 py-0.5 text-[10px] text-amber-600 hover:bg-amber-50 transition"
+                        >취소</button>
+                      )}
+                      <button
+                        type="button"
+                        data-testid={`btn-delete-payment-${p.id}`}
+                        title="수납 삭제"
+                        onClick={() => { setPayEditTarget(p as PaymentRowForEdit); setPayEditMode('delete'); }}
+                        className="rounded px-1 py-0.5 text-[10px] text-red-500 hover:bg-red-50 transition"
+                      >삭제</button>
+                    </div>
+                    {/* 수납 이력 보기 (AC-7) */}
+                    <PaymentAuditLogsPanel paymentId={p.id} />
                   </div>
                 ))}
               </div>
@@ -2032,6 +2076,14 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             }
             load(); // 잔여회차 갱신
           }}
+        />
+
+        {/* T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE */}
+        <PaymentEditDialog
+          payment={payEditTarget}
+          mode={payEditMode}
+          onClose={() => setPayEditTarget(null)}
+          onDone={() => { setPayEditTarget(null); load(); }}
         />
       </SheetContent>
     </Sheet>
