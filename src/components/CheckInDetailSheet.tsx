@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
-import { ChevronDown, Clock, CreditCard, ExternalLink, Phone, FileText, Camera, Package, Stethoscope, Trash2, Bell } from 'lucide-react';
+import { ChevronDown, Clock, CreditCard, ExternalLink, Phone, FileText, Camera, Package, Stethoscope, Trash2, Bell, Upload } from 'lucide-react';
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
 import { toast } from 'sonner';
 import {
@@ -29,7 +29,6 @@ import { STATUS_KO } from '@/lib/status';
 import { formatAmount, formatPhone, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { PreChecklist } from '@/components/PreChecklist';
-import { PhotoUpload } from '@/components/PhotoUpload';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 작성 양식 + 자동 업로드
 import { ChecklistForm } from '@/components/forms/ChecklistForm';
 import { ConsentForm } from '@/components/forms/ConsentForm';
@@ -305,6 +304,97 @@ function ActivePackageSummary({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// T-20260513-foot-C21-TAB-RESTRUCTURE-B: 1번차트 진료이미지 섹션 (Storage 기반, 2번차트와 쌍방연동)
+function Chart1TreatmentImages({ customerId }: { customerId: string }) {
+  const [images, setImages] = useState<Array<{ path: string; signedUrl: string; name: string }>>([]);
+  const [uploading, setUploading] = useState(false);
+  const storagePath = `customer/${customerId}/treatment-images`;
+
+  const load = useCallback(async () => {
+    const { data: files } = await supabase.storage.from('photos').list(storagePath, {
+      limit: 100,
+      sortBy: { column: 'name', order: 'desc' },
+    });
+    if (!files || files.length === 0) { setImages([]); return; }
+    const withUrls = await Promise.all(
+      files
+        .filter((f) => f.name && !f.id?.endsWith('/'))
+        .map(async (file) => {
+          const path = `${storagePath}/${file.name}`;
+          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
+          return { path, signedUrl: data?.signedUrl ?? '', name: file.name };
+        }),
+    );
+    setImages(withUrls.filter((i) => i.signedUrl));
+  }, [storagePath]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    for (const file of Array.from(files)) {
+      const ext = file.name.split('.').pop() ?? 'jpg';
+      const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
+      if (error) toast.error(`업로드 실패: ${error.message}`);
+    }
+    setUploading(false);
+    e.target.value = '';
+    await load();
+  };
+
+  const remove = async (path: string) => {
+    if (!window.confirm('이미지를 삭제하시겠습니까?')) return;
+    await supabase.storage.from('photos').remove([path]);
+    await load();
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+          <Upload className="h-3 w-3" /> 진료이미지
+          {images.length > 0 && <span className="ml-1 text-teal-600 font-normal">{images.length}장</span>}
+        </span>
+        <label className="cursor-pointer">
+          <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
+          <span className="inline-flex items-center gap-1 text-xs border border-teal-200 rounded px-2 py-0.5 bg-white text-teal-700 hover:bg-teal-50 cursor-pointer transition">
+            <Upload className="h-3 w-3" />
+            {uploading ? '중…' : '업로드'}
+          </span>
+        </label>
+      </div>
+      {images.length === 0 ? (
+        <div className="rounded-lg border border-dashed py-4 text-center text-xs text-muted-foreground">
+          진료이미지 없음
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-2">
+          {images.map((img) => (
+            <div key={img.path} className="relative group">
+              <img
+                src={img.signedUrl}
+                alt={img.name}
+                className="w-full h-24 object-cover rounded-lg border cursor-pointer"
+                onClick={() => window.open(img.signedUrl, '_blank')}
+              />
+              <button
+                onClick={() => remove(img.path)}
+                className="absolute top-1 right-1 hidden group-hover:flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600"
+                title="삭제"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1811,13 +1901,13 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             )}
           </div>
 
-          {/* 비포/애프터 사진 */}
-          <Separator />
-          <PhotoUpload
-            checkInId={checkIn.id}
-            photos={checkIn.treatment_photos ?? []}
-            onUpdated={onUpdated}
-          />
+          {/* 진료이미지 — T-20260513-foot-C21-TAB-RESTRUCTURE-B: AC-3b 명칭변경 + AC-8 비포에프터 삭제 */}
+          {checkIn.customer_id && (
+            <>
+              <Separator />
+              <Chart1TreatmentImages customerId={checkIn.customer_id} />
+            </>
+          )}
 
           {/* 보험 영수증 / 처방전 */}
           <Separator />
