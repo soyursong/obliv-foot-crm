@@ -81,6 +81,8 @@ export default function Reservations() {
   const [selectedDay, setSelectedDay] = useState<Date>(() => new Date());
   const [rows, setRows] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
+  // T-20260514-foot-CHART-NO-VISIBLE: AC-2 예약관리 차트번호 컬럼 (customer_id → chart_number)
+  const [resvChartMap, setResvChartMap] = useState<Map<string, string>>(new Map());
 
   const [editor, setEditor] = useState<ReservationDraft | null>(null);
   const [detail, setDetail] = useState<Reservation | null>(null);
@@ -188,8 +190,20 @@ export default function Reservations() {
         if (id) counts[id] = (counts[id] ?? 0) + 1;
       }
       setNoshowByCustomer(counts);
+
+      // T-20260514-foot-CHART-NO-VISIBLE: AC-2 차트번호 컬럼용 사전 로드
+      const { data: chartData } = await supabase
+        .from('customers')
+        .select('id, chart_number')
+        .in('id', customerIds);
+      const chartM = new Map<string, string>();
+      for (const c of (chartData ?? []) as { id: string; chart_number: string | null }[]) {
+        if (c.chart_number) chartM.set(c.id, c.chart_number);
+      }
+      setResvChartMap(chartM);
     } else {
       setNoshowByCustomer({});
+      setResvChartMap(new Map());
     }
   }, [clinic, weekDays, viewMode, selectedDay]);
 
@@ -532,6 +546,12 @@ export default function Reservations() {
                                       >
                                         {r.customer_name}
                                       </span>
+                                      {/* T-20260514-foot-CHART-NO-VISIBLE: AC-2 차트번호 상시 표시 */}
+                                      {r.customer_id && resvChartMap.get(r.customer_id) && (
+                                        <span className="text-[10px] font-mono text-teal-600">
+                                          #{resvChartMap.get(r.customer_id)}
+                                        </span>
+                                      )}
                                       {r.customer_id && noshowByCustomer[r.customer_id] ? (
                                         <Badge variant="destructive" className="h-4 px-1 text-xs">
                                           노쇼 {noshowByCustomer[r.customer_id]}
