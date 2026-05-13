@@ -78,7 +78,7 @@ import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
 import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Clinic, Customer, Reservation, Room, RoomFieldKey, Staff, StatusFlag, VisitType } from '@/lib/types';
-import { ClinicMemoPanel } from '@/components/ClinicMemoPanel';
+
 
 type TabKey = 'all' | 'new' | 'returning';
 
@@ -3706,11 +3706,6 @@ export default function Dashboard() {
             onCardClick={!isPast ? handleCardClick : undefined}
             onCardContext={!isPast ? handleCardContext : undefined}
             onReservationClick={!isPast ? handleReservationCheckIn : undefined}
-          />
-          <ClinicMemoPanel
-            date={date}
-            clinicId={clinic?.id}
-            userRole={profile?.role}
           />
         </div>
 
