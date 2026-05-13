@@ -177,9 +177,9 @@ const IDLE_TIMEOUT_SECONDS = 60;
 /** 신분증 확인 필요 여부 — 초진(new) + 예약없이 방문(experience) */
 const needsIdCheck = (vt: VisitType) => vt === 'new' || vt === 'experience';
 
-// ── 공통 폰트 스타일 (Noto Serif KR 고급 웰니스 테마) ──
+// ── 공통 폰트 스타일 (Pretendard 모던 고딕 — T-20260514-foot-SELFCHECKIN-FONT) ──
 const FONT_STYLE: React.CSSProperties = {
-  fontFamily: "'Noto Serif KR', 'Apple SD Gothic Neo', 'Malgun Gothic', Georgia, serif",
+  fontFamily: "'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif",
 };
 
 // ── 숫자패드 컴포넌트 ──
