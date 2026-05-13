@@ -1,5 +1,25 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-14 02:40 — dev-foot | deploy-ready | T-20260515-foot-RESV-DND-SHORTCUT — [P1] 예약 D&D 이동 + 키보드 단축키(Ctrl+C/X/V)
+
+**커밋: 4426d52 → origin/main push 완료 → Vercel 자동배포 예정**
+
+### 구현 내용
+- ✅ AC-1 DnD: 토스트 "14:00 → 15:30 이동 완료" (같은 날 시간만 표시), 에러 "해당 시간에 이미 예약이 있습니다"
+- ✅ AC-2 Ctrl+C: 예약 선택 후 Ctrl+C → 파란 ring + 힌트 바 → 슬롯 클릭 → Ctrl+V → 새 예약 생성 + reservation_logs create
+- ✅ AC-3 Ctrl+X: 예약 선택 후 Ctrl+X → amber ring + 힌트 바 → 슬롯 클릭 → Ctrl+V → 이동 + reservation_logs reschedule
+- ✅ AC-4: DB 스키마 변경 없음 — 기존 reservation_logs (action: create/reschedule) 재사용
+- ✅ 클립보드 힌트 바 (`data-testid="clipboard-hint"`) — Escape/✕ 취소
+- ✅ 선택된 예약: teal ring, 복사: blue ring, 잘라내기: amber ring + opacity-60
+- ✅ td/+버튼 onClick: clipboard 활성 시 타겟 슬롯 설정 → 녹색 ring 표시
+- ✅ E2E spec: `tests/e2e/T-20260515-foot-RESV-DND-SHORTCUT.spec.ts` (6 tests)
+- ✅ TypeScript: `npx tsc --noEmit` PASS
+
+### DB 변경
+없음
+
+---
+
 ## 2026-05-15 21:00 — dev-foot | deploy-ready | T-20260515-foot-RESV-CANCEL — [P1] 예약 취소 기능 (기록 보존)
 
 **커밋: 01201e3 → origin/main push 완료 → Vercel 자동배포 예정**
