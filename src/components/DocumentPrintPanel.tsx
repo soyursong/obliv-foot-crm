@@ -32,6 +32,9 @@ import {
   Plus,
   Trash2,
   Upload,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -1010,6 +1013,7 @@ function TemplateSection({
 
 /** 서비스 항목 (T-20260507-foot-SERVICE-CATALOG-SEED Phase 3) */
 interface ServiceChargeItem {
+  id: string;
   service_code: string | null;
   name: string;
   amount: number;
@@ -1053,6 +1057,29 @@ function IssueDialog({
   const [addServiceId, setAddServiceId] = useState('');
   const [addServiceAmountStr, setAddServiceAmountStr] = useState('');
   const [addingService, setAddingService] = useState(false);
+  // T-20260513-foot-BILLING-DETAIL-EDIT: 수정/삭제
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingAmountStr, setEditingAmountStr] = useState('');
+
+  // T-20260513-foot-BILLING-DETAIL-EDIT: service_charges 새로고침 공통 헬퍼
+  const refreshServiceItems = useCallback(async () => {
+    const { data } = await supabase
+      .from('service_charges')
+      .select('id, base_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code)')
+      .eq('check_in_id', checkIn.id);
+    if (!data) return;
+    setServiceItems(data.map((c) => {
+      const svc = Array.isArray(c.service) ? c.service[0] : c.service;
+      return {
+        id: c.id,
+        service_code: svc?.service_code ?? null,
+        name: svc?.name ?? '(알 수 없음)',
+        amount: c.base_amount ?? 0,
+        hira_code: svc?.hira_code ?? null,
+        is_insurance_covered: c.is_insurance_covered ?? false,
+      };
+    }));
+  }, [checkIn.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -1061,13 +1088,14 @@ function IssueDialog({
     // 서비스 항목 조회 (service_charges JOIN services — T-20260507-SERVICE-CATALOG-SEED Phase 3)
     supabase
       .from('service_charges')
-      .select('base_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code)')
+      .select('id, base_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code)')
       .eq('check_in_id', checkIn.id)
       .then(({ data }) => {
         if (cancelled || !data) return;
         const items: ServiceChargeItem[] = data.map((c) => {
           const svc = Array.isArray(c.service) ? c.service[0] : c.service;
           return {
+            id: c.id,
             service_code: svc?.service_code ?? null,
             name: svc?.name ?? '(알 수 없음)',
             amount: c.base_amount ?? 0,
@@ -1118,14 +1146,47 @@ function IssueDialog({
     };
   }, [open, checkIn, dutyDoctors]);
 
+  // T-20260513-foot-BILLING-DETAIL-EDIT: 항목 삭제
+  const handleDeleteItem = async (id: string) => {
+    const { error } = await supabase.from('service_charges').delete().eq('id', id);
+    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+    await refreshServiceItems();
+    toast.success('항목이 삭제되었습니다');
+  };
+
+  // T-20260513-foot-BILLING-DETAIL-EDIT: 항목 금액 수정 저장
+  const handleSaveEditItem = async (id: string) => {
+    const newAmount = parseInt(editingAmountStr.replace(/,/g, ''), 10);
+    if (isNaN(newAmount) || newAmount < 0) { toast.error('유효한 금액을 입력해주세요'); return; }
+    const { error } = await supabase
+      .from('service_charges')
+      .update({ base_amount: newAmount, copayment_amount: newAmount })
+      .eq('id', id);
+    if (error) { toast.error(`수정 실패: ${error.message}`); return; }
+    await refreshServiceItems();
+    setEditingItemId(null);
+    setEditingAmountStr('');
+    toast.success('항목이 수정되었습니다');
+  };
+
+  // T-20260513-foot-BILLING-DETAIL-EDIT: serviceItems 합계 자동 계산
+  const computedTotal = useMemo(() => {
+    if (serviceItems.length === 0) return null;
+    return serviceItems.reduce((s, item) => s + item.amount, 0);
+  }, [serviceItems]);
+
   // 복수 원장님일 때 selectedDoctorName을 doctor_name 필드에 주입
+  // T-20260513-foot-BILLING-DETAIL-EDIT: computedTotal로 total_amount 자동 갱신
   const allValues = useMemo(() => {
     const base = { ...autoValues, ...manualValues };
     if (dutyDoctors.length > 1 && selectedDoctorName) {
       base.doctor_name = selectedDoctorName;
     }
+    if (computedTotal !== null) {
+      base.total_amount = formatAmount(computedTotal);
+    }
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal]);
 
   const editableFields = useMemo(() => {
     if (template.field_map.length > 0) return template.field_map;
@@ -1174,23 +1235,8 @@ function IssueDialog({
       setAddingService(false);
       return;
     }
-    // serviceItems 새로고침
-    const { data } = await supabase
-      .from('service_charges')
-      .select('base_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code)')
-      .eq('check_in_id', checkIn.id);
-    if (data) {
-      setServiceItems(data.map((c) => {
-        const sv = Array.isArray(c.service) ? c.service[0] : c.service;
-        return {
-          service_code: sv?.service_code ?? null,
-          name: sv?.name ?? '(알 수 없음)',
-          amount: c.base_amount ?? 0,
-          hira_code: sv?.hira_code ?? null,
-          is_insurance_covered: c.is_insurance_covered ?? false,
-        };
-      }));
-    }
+    // T-20260513-foot-BILLING-DETAIL-EDIT: 공통 새로고침
+    await refreshServiceItems();
     setAddServiceId('');
     setAddServiceAmountStr('');
     setAddServiceOpen(false);
@@ -1319,34 +1365,103 @@ function IssueDialog({
               </div>
             )}
 
-            {/* 진료 항목 참조 (T-20260507-SERVICE-CATALOG-SEED Phase 3) */}
+            {/* 진료 항목 참조 — T-20260507-SERVICE-CATALOG-SEED Phase 3
+                T-20260513-foot-BILLING-DETAIL-EDIT: 수정/삭제 + 합계 자동계산 */}
             {serviceItems.length > 0 && (
               <div className="rounded-lg border bg-muted/30 p-3 space-y-1.5">
                 <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
                   <FileText className="h-3 w-3" /> 진료 항목 (진료비 코드 참조)
                 </div>
                 <div className="space-y-1">
-                  {serviceItems.map((item, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs py-0.5">
-                      <div className="flex items-center gap-2 min-w-0">
-                        {item.service_code && (
-                          <span className="font-mono text-[10px] bg-teal-50 border border-teal-200 text-teal-700 px-1.5 py-0.5 rounded shrink-0">
-                            {item.service_code}
-                          </span>
-                        )}
-                        {item.hira_code && (
-                          <span className="font-mono text-[10px] bg-blue-50 border border-blue-200 text-blue-700 px-1.5 py-0.5 rounded shrink-0">
-                            {item.hira_code}
-                          </span>
-                        )}
-                        <span className="truncate text-foreground">{item.name}</span>
-                      </div>
-                      <span className="tabular-nums text-muted-foreground shrink-0 ml-2">
-                        {formatAmount(item.amount)}
-                      </span>
+                  {serviceItems.map((item) => (
+                    <div key={item.id} className="text-xs group">
+                      {editingItemId === item.id ? (
+                        /* ── 인라인 편집 행 ── */
+                        <div className="flex items-center gap-1.5 py-1">
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            {item.service_code && (
+                              <span className="font-mono text-[10px] bg-teal-50 border border-teal-200 text-teal-700 px-1.5 py-0.5 rounded shrink-0">
+                                {item.service_code}
+                              </span>
+                            )}
+                            <span className="truncate text-foreground shrink-0">{item.name}</span>
+                          </div>
+                          <Input
+                            value={editingAmountStr}
+                            onChange={(e) => setEditingAmountStr(e.target.value)}
+                            inputMode="numeric"
+                            placeholder="금액"
+                            className="h-6 text-xs w-28 shrink-0"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveEditItem(item.id);
+                              if (e.key === 'Escape') { setEditingItemId(null); setEditingAmountStr(''); }
+                            }}
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => handleSaveEditItem(item.id)}
+                            className="h-6 w-6 flex items-center justify-center rounded text-teal-600 hover:bg-teal-50 shrink-0"
+                            title="저장"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => { setEditingItemId(null); setEditingAmountStr(''); }}
+                            className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:bg-muted shrink-0"
+                            title="취소"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        /* ── 일반 표시 행 ── */
+                        <div className="flex items-center justify-between py-0.5">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            {item.service_code && (
+                              <span className="font-mono text-[10px] bg-teal-50 border border-teal-200 text-teal-700 px-1.5 py-0.5 rounded shrink-0">
+                                {item.service_code}
+                              </span>
+                            )}
+                            {item.hira_code && (
+                              <span className="font-mono text-[10px] bg-blue-50 border border-blue-200 text-blue-700 px-1.5 py-0.5 rounded shrink-0">
+                                {item.hira_code}
+                              </span>
+                            )}
+                            <span className="truncate text-foreground">{item.name}</span>
+                          </div>
+                          <div className="flex items-center gap-0.5 shrink-0 ml-2">
+                            <span className="tabular-nums text-muted-foreground">
+                              {formatAmount(item.amount)}
+                            </span>
+                            <button
+                              onClick={() => { setEditingItemId(item.id); setEditingAmountStr(String(item.amount)); }}
+                              className="h-6 w-6 hidden group-hover:flex items-center justify-center rounded text-teal-600 hover:bg-teal-50 ml-1"
+                              title="수정"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteItem(item.id)}
+                              className="h-6 w-6 hidden group-hover:flex items-center justify-center rounded text-red-500 hover:bg-red-50"
+                              title="삭제"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
+                {/* T-20260513-foot-BILLING-DETAIL-EDIT: 합계금액 자동 표시 */}
+                {serviceItems.length > 0 && (
+                  <div className="flex items-center justify-between pt-1.5 border-t text-xs font-semibold">
+                    <span className="text-muted-foreground">합계</span>
+                    <span className="tabular-nums text-teal-700" data-testid="billing-items-total">
+                      {formatAmount(serviceItems.reduce((s, item) => s + item.amount, 0))}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
