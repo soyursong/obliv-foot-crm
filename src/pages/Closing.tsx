@@ -57,6 +57,8 @@ interface PaymentRow {
   installment: number | null;
   memo: string | null;
   check_in_id: string | null;
+  /** T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE: soft-delete/cancel 상태 */
+  status?: string | null;
 }
 
 interface PackagePaymentRow {
@@ -204,10 +206,12 @@ export default function Closing() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('payments')
-        .select('amount, method, payment_type, created_at, customer_id, installment, memo, check_in_id')
+        .select('amount, method, payment_type, created_at, customer_id, installment, memo, check_in_id, status')
         .eq('clinic_id', clinic!.id)
         .gte('created_at', start)
         .lte('created_at', end)
+        // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE: 삭제된 수납은 일마감 집계에서 제외
+        .neq('status', 'deleted')
         .order('created_at', { ascending: true });
       if (error) throw error;
       return (data ?? []) as PaymentRow[];
