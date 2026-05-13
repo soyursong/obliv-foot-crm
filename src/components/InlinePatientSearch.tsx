@@ -93,8 +93,15 @@ export function InlinePatientSearch({
 
       if (isPhone) {
         const hyphenated = toHyphenated(digits);
-        // 후미 숫자 검색(raw)과 앞자리 부분 검색(hyphenated) 둘 다 OR
-        baseQuery = baseQuery.or(`phone.ilike.%${digits}%,phone.ilike.%${hyphenated}%`);
+        // T-20260513-foot-PHONE-E164-SEARCH: E.164 포맷 고객 매칭
+        // DB에 +821022222222로 저장된 경우 010… substring 불일치 → leading 0 제거 후 OR 추가
+        // '01022222222' → '1022222222' → '+821022222222' 내 substring으로 매칭
+        const digitsNoLeadingZero = digits.startsWith('0') ? digits.slice(1) : null;
+        const orParts = [`phone.ilike.%${digits}%`, `phone.ilike.%${hyphenated}%`];
+        if (digitsNoLeadingZero && digitsNoLeadingZero.length >= 4) {
+          orParts.push(`phone.ilike.%${digitsNoLeadingZero}%`);
+        }
+        baseQuery = baseQuery.or(orParts.join(','));
       } else {
         baseQuery = baseQuery.ilike('name', `%${q.trim()}%`);
       }
