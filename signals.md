@@ -1,5 +1,30 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-14 22:00 — dev-foot | deploy-ready | T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE — [P2] 수납 완료 건 수정/취소/삭제 + audit 이력
+
+**커밋: f76709b → origin/main push 완료 → Vercel 자동배포 예정**
+
+### 구현 내용
+- ✅ AC-1: CheckInDetailSheet + DailyHistory 결제 목록에 수정/취소/삭제 버튼 표시
+- ✅ AC-2: 수정 → 금액·수단·할인 UPDATE + payment_audit_logs INSERT (action='edit', before/after)
+- ✅ AC-3: 취소 → 사유 입력 모달 → status='cancelled' + cancelled_at/by/reason + audit INSERT
+- ✅ AC-4: 삭제 → 사유 입력 모달 → status='deleted' soft-delete + deleted_at/by/reason + audit INSERT
+- ✅ AC-5: 일마감 이후에도 수정/취소/삭제 가능 (시간 제약 없음)
+- ✅ AC-6: 권한 체크 없음 (모든 직원 접근)
+- ✅ AC-7: PaymentAuditLogsPanel — 수납 상세에서 수정/취소/삭제 이력 확인
+- ✅ Closing.tsx: deleted 수납 일마감 집계에서 제외 (.neq('status','deleted') 추가)
+
+### DB
+- payments 테이블: status/deleted_at/deleted_by/delete_reason/cancelled_at/cancelled_by/cancel_reason 컬럼 추가
+- payment_audit_logs 테이블: 신규 생성 (action, before_data, after_data JSONB)
+- DB 적용 확인: API 직접 검증 (payment_audit_logs 존재, payments.status 컬럼 반환)
+- migration: 20260514000010_payment_edit_cancel_delete.sql
+
+### E2E
+- tests/e2e/T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE.spec.ts (5개 시나리오)
+
+---
+
 ## 2026-05-14 07:30 — dev-foot | deploy-ready | T-20260514-foot-CHECKIN-AUTO-STAGE — [P2] 접수 스테이지 자동 이동 + 통합 시간표 내원상태 시각 표시
 
 **커밋: 25f5388 → origin/main push 완료 → Vercel 자동배포 예정**
