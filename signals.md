@@ -1,5 +1,25 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-14 07:30 — dev-foot | deploy-ready | T-20260514-foot-CHECKIN-AUTO-STAGE — [P2] 접수 스테이지 자동 이동 + 통합 시간표 내원상태 시각 표시
+
+**커밋: 25f5388 → origin/main push 완료 → Vercel 자동배포 예정**
+
+### 구현 내용
+- ✅ AC-1: NewCheckInDialog + ReservationDetail 초진 접수 → `consult_waiting` 자동 세팅 (이전: `registered`)
+- ✅ AC-2: 재진 접수 → `treatment_waiting` 자동 세팅 (SelfCheckIn은 이미 구현, 수동접수 경로 보완)
+- ✅ AC-3: 통합 시간표 Box1Card `opacity-75` 제거 → `opacity-100` bold (미내원 진하게, '아직 안 오신 분 눈에 띄도록')
+- ✅ AC-3: TimelineCheckInCard `opacity-50` 추가 (내원 완료 희미하게)
+- ✅ AC-3: Reservations 주간뷰 `checked_in` 예약 `opacity-50` 적용
+- ✅ E2E spec: `tests/e2e/T-20260514-foot-CHECKIN-AUTO-STAGE.spec.ts` (4개 시나리오)
+
+### 변경 파일
+- `src/components/NewCheckInDialog.tsx` — status 필드 `registered` → 방문유형 분기
+- `src/pages/Dashboard.tsx` — Box1Card, TimelineCheckInCard 스타일
+- `src/pages/Reservations.tsx` — ReservationDetail 체크인 status 분기, 주간뷰 opacity
+- `tests/e2e/T-20260514-foot-CHECKIN-AUTO-STAGE.spec.ts` (신규)
+
+---
+
 ## 2026-05-15 22:30 — dev-foot | deploy-ready | T-20260515-foot-STAMP-PRINT-BUG — [P1] 소견서 도장 이미지 미출력 수정 완료
 
 **커밋: 7ef3ead → origin/main push 완료 → Vercel 자동배포 예정**
