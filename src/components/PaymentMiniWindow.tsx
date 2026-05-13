@@ -4,12 +4,22 @@
  *
  * 대시보드 수납대기 [결제하기] 클릭 시 오픈.
  * Phase 1 (AC-1~7 + AC-11): 서비스 코드 선택 → 수가 산정 → 세금 분류 → 수납
- * Phase 2 (AC-8~10): FORM-TEMPLATE-REFRESH 완료 후 서류발행 연동
+ * Phase 2 (AC-8~10): 서류발행 섹션 — FORM-TEMPLATE-REFRESH 완료 후 활성화
  */
 
 import { useEffect, useState } from 'react';
+import { format } from 'date-fns';
 import { toast } from 'sonner';
-import { Check, ChevronRight, CreditCard, Trash2 } from 'lucide-react';
+import {
+  Check,
+  ChevronRight,
+  CreditCard,
+  FileText,
+  Printer,
+  Square,
+  CheckSquare,
+  Trash2,
+} from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -21,6 +31,14 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { formatAmount } from '@/lib/format';
 import type { CheckIn, Service } from '@/lib/types';
+import {
+  FALLBACK_TEMPLATES,
+  FORM_META,
+  getTemplateImageUrl,
+  getStampUrl,
+  type FormTemplate,
+  type FieldMapEntry,
+} from '@/lib/formTemplates';
 
 // ── 세금 구분 ────────────────────────────────────────────────────────────────
 
@@ -57,6 +75,171 @@ interface SelectedItem {
   qty: number;
 }
 
+// ── 서류 출력 유틸 (DocumentPrintPanel 패턴 인라인) ──────────────────────────
+
+/** 자동 바인딩 값 로드 (미니창용 — 기본 필드만) */
+async function loadMiniAutoBindValues(checkIn: CheckIn): Promise<Record<string, string>> {
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const visitDate = checkIn.checked_in_at
+    ? format(new Date(checkIn.checked_in_at), 'yyyy-MM-dd')
+    : today;
+
+  // 고객 정보
+  let patientName = checkIn.customer_name ?? '';
+  let patientRrn = '';
+  if (checkIn.customer_id) {
+    const { data } = await supabase
+      .from('customers')
+      .select('name, memo')
+      .eq('id', checkIn.customer_id)
+      .maybeSingle();
+    if (data) patientName = data.name ?? patientName;
+  }
+
+  // 클리닉 정보
+  const { data: clinicData } = await supabase
+    .from('clinics')
+    .select('name, address')
+    .eq('id', checkIn.clinic_id)
+    .maybeSingle();
+
+  // 결제 합계 (check_in_services 기반)
+  const { data: cisData } = await supabase
+    .from('check_in_services')
+    .select('price')
+    .eq('check_in_id', checkIn.id);
+  const totalAmount = (cisData ?? []).reduce((s, r) => s + (r.price ?? 0), 0);
+
+  // 원장님 — duty_roster → staff fallback
+  let doctorName = '';
+  const { data: rosterData } = await supabase
+    .from('duty_roster')
+    .select('staff:staff(name)')
+    .eq('clinic_id', checkIn.clinic_id)
+    .eq('date', visitDate)
+    .eq('active', true)
+    .limit(1);
+  if (rosterData && rosterData.length > 0) {
+    const staffEntry = rosterData[0].staff;
+    const svc = Array.isArray(staffEntry) ? staffEntry[0] : staffEntry;
+    doctorName = (svc as { name?: string } | null)?.name ?? '';
+  }
+  if (!doctorName) {
+    const { data: staffData } = await supabase
+      .from('staff')
+      .select('name')
+      .eq('clinic_id', checkIn.clinic_id)
+      .eq('role', 'director')
+      .eq('active', true)
+      .limit(1)
+      .maybeSingle();
+    doctorName = staffData?.name ?? '';
+  }
+
+  return {
+    patient_name: patientName,
+    patient_rrn: patientRrn,
+    visit_date: visitDate,
+    issue_date: today,
+    doctor_name: doctorName,
+    total_amount: totalAmount > 0 ? formatAmount(totalAmount) : '',
+    clinic_name: clinicData?.name ?? '오블리브 풋센터 종로',
+    clinic_address: clinicData?.address ?? '',
+    diagnosis_ko: '',
+  };
+}
+
+/** 단일 양식의 인쇄용 HTML page div 생성 */
+function buildPageHtml(
+  template: FormTemplate,
+  fieldValues: Record<string, string>,
+  imgUrl: string,
+): string {
+  const stampUrl = getStampUrl();
+
+  const overlayHtml =
+    template.field_map.length > 0
+      ? template.field_map
+          .map((f: FieldMapEntry) => {
+            const val = fieldValues[f.key] ?? '';
+            if (!val) return '';
+            const style = [
+              'position:absolute',
+              `left:${f.x}px`,
+              `top:${f.y}px`,
+              f.w ? `width:${f.w}px` : '',
+              f.h ? `height:${f.h}px` : '',
+              `font-size:${f.font ?? 14}px`,
+              "font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif",
+              'color:#000',
+              'line-height:1.4',
+              'white-space:pre-wrap',
+            ]
+              .filter(Boolean)
+              .join(';');
+            return `<div style="${style}">${val}</div>`;
+          })
+          .join('\n')
+      : `<div style="position:absolute;bottom:20px;left:20px;background:rgba(255,245,157,0.9);padding:8px 12px;border-radius:4px;font-size:13px;color:#333;">
+           ⚠ 좌표 미설정 — 원본 양식만 표시됩니다.
+         </div>`;
+
+  const stampHtml = stampUrl
+    ? `<img src="${stampUrl}" alt="원내 도장"
+        style="position:absolute;right:52px;bottom:52px;width:88px;height:88px;opacity:0.85;pointer-events:none;"
+        onerror="this.style.display='none'" />`
+    : '';
+
+  return `<div class="page">
+  <img src="${imgUrl}" alt="${template.name_ko}" />
+  ${overlayHtml}
+  ${stampHtml}
+</div>`;
+}
+
+/** 여러 page div를 하나의 인쇄 창으로 출력 */
+function openBatchPrintWindow(pages: string[], title: string): Window | null {
+  const html = `<!DOCTYPE html><html><head>
+<meta charset="utf-8">
+<title>${title}</title>
+<style>
+  @page { size: A4; margin: 0; }
+  body { margin: 0; padding: 0; }
+  .page {
+    position: relative;
+    width: 210mm;
+    height: 297mm;
+    overflow: hidden;
+    page-break-after: always;
+  }
+  .page img:first-child {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head><body>
+${pages.join('\n')}
+</body></html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) return null;
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+
+  const firstImg = w.document.querySelector('img');
+  if (firstImg) {
+    firstImg.onload = () => w.print();
+  } else {
+    setTimeout(() => w.print(), 600);
+  }
+  return w;
+}
+
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -78,9 +261,17 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const [payMethod, setPayMethod] = useState<PayMethod>('card');
   const [submitting, setSubmitting] = useState(false);
 
-  // ── 서비스 목록 로드 (탭 전환 시 재조회 불필요 — 전체 1회 로드) ──────────────
+  // ── Phase 2 — 서류발행 (AC-8~10) ──────────────────────────────────────────
+  const [templates, setTemplates] = useState<FormTemplate[]>([]);
+  const [selectedDocKeys, setSelectedDocKeys] = useState<Set<string>>(new Set());
+  const [docPrinting, setDocPrinting] = useState(false);
+  const [docSettlePrinting, setDocSettlePrinting] = useState(false);
+
+  // ── 서비스 목록 + 양식 목록 로드 ────────────────────────────────────────────
   useEffect(() => {
     if (!checkIn) return;
+
+    // 서비스 목록 (Phase 1)
     supabase
       .from('services')
       .select('*')
@@ -88,11 +279,25 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       .eq('active', true)
       .order('sort_order')
       .then(({ data }) => setServices((data ?? []) as Service[]));
+
+    // 서류 양식 목록 (Phase 2 — AC-8)
+    supabase
+      .from('form_templates')
+      .select('*')
+      .eq('clinic_id', checkIn.clinic_id)
+      .eq('category', 'foot-service')
+      .eq('active', true)
+      .order('sort_order')
+      .then(({ data }) => {
+        setTemplates(data && data.length > 0 ? (data as FormTemplate[]) : FALLBACK_TEMPLATES);
+      });
+
     // 창 열릴 때마다 리셋
     setSelectedItems([]);
     setSaved(false);
     setPayMethod('card');
     setActiveTab('풋케어');
+    setSelectedDocKeys(new Set());
   }, [checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!checkIn) return null;
@@ -176,6 +381,37 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     onSaved?.();
   };
 
+  // ── auto-done 공통 핸들러 (PAYMENT-AUTO-DONE reuse) ──────────────────────
+  const executeAutoDone = async (amount: number, method: PayMethod) => {
+    const { error: payErr } = await supabase.from('payments').insert({
+      check_in_id: checkIn.id,
+      clinic_id: checkIn.clinic_id,
+      customer_id: checkIn.customer_id,
+      amount,
+      method,
+      installment: null,
+      memo: null,
+      payment_type: 'payment',
+    });
+    if (payErr) throw payErr;
+
+    const { error: ciErr } = await supabase
+      .from('check_ins')
+      .update({ status: 'done' })
+      .eq('id', checkIn.id);
+    if (ciErr) throw ciErr;
+
+    const { error: trErr } = await supabase.from('status_transitions').insert({
+      check_in_id: checkIn.id,
+      clinic_id: checkIn.clinic_id,
+      from_status: checkIn.status,
+      to_status: 'done',
+    });
+    if (trErr) {
+      console.warn('status_transitions insert failed:', trErr.message);
+    }
+  };
+
   // ── AC-11: 수납 (PAYMENT-AUTO-DONE reuse) ─────────────────────────────────
   const handleSettle = async () => {
     if (!saved) {
@@ -188,37 +424,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     }
     setSubmitting(true);
     try {
-      // 결제 기록 INSERT
-      const { error: payErr } = await supabase.from('payments').insert({
-        check_in_id: checkIn.id,
-        clinic_id: checkIn.clinic_id,
-        customer_id: checkIn.customer_id,
-        amount: grandTotal,
-        method: payMethod,
-        installment: null,
-        memo: null,
-        payment_type: 'payment',
-      });
-      if (payErr) throw payErr;
-
-      // payment_waiting → done (T-20260514-foot-PAYMENT-AUTO-DONE reuse)
-      const { error: ciErr } = await supabase
-        .from('check_ins')
-        .update({ status: 'done' })
-        .eq('id', checkIn.id);
-      if (ciErr) throw ciErr;
-
-      const { error: trErr } = await supabase.from('status_transitions').insert({
-        check_in_id: checkIn.id,
-        clinic_id: checkIn.clinic_id,
-        from_status: checkIn.status,
-        to_status: 'done',
-      });
-      if (trErr) {
-        // status_transitions 실패는 치명적이지 않으므로 경고만
-        console.warn('status_transitions insert failed:', trErr.message);
-      }
-
+      await executeAutoDone(grandTotal, payMethod);
       toast.success('수납 완료 — 완료 슬롯으로 이동됩니다');
       onComplete();
     } catch (e: unknown) {
@@ -228,11 +434,95 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     }
   };
 
+  // ── AC-8: 서류 체크박스 토글 ──────────────────────────────────────────────
+  const toggleDocKey = (formKey: string) => {
+    setSelectedDocKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(formKey)) next.delete(formKey);
+      else next.add(formKey);
+      return next;
+    });
+  };
+
+  // ── AC-9: [출력] — 서류 인쇄 (수납 없음) ─────────────────────────────────
+  const handleDocPrint = async () => {
+    const selected = templates.filter((t) => selectedDocKeys.has(t.form_key));
+    if (selected.length === 0) {
+      toast.error('서류를 선택해주세요');
+      return;
+    }
+    setDocPrinting(true);
+    try {
+      const autoValues = await loadMiniAutoBindValues(checkIn);
+      const pages = selected.flatMap((t) => {
+        const imgUrl = getTemplateImageUrl(t.form_key);
+        if (!imgUrl) return [];
+        return [buildPageHtml(t, autoValues, imgUrl)];
+      });
+      if (pages.length === 0) {
+        toast.warning('출력 가능한 이미지 양식이 없습니다');
+        return;
+      }
+      const w = openBatchPrintWindow(pages, `서류 출력 — ${checkIn.customer_name}`);
+      if (!w) {
+        toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
+        return;
+      }
+      toast.success(`${selected.length}종 출력 요청됨`);
+    } finally {
+      setDocPrinting(false);
+    }
+  };
+
+  // ── AC-10: [출력 및 수납] — 서류 인쇄 + auto-done ─────────────────────────
+  const handleDocAndSettle = async () => {
+    const selected = templates.filter((t) => selectedDocKeys.has(t.form_key));
+    if (selected.length === 0) {
+      toast.error('서류를 선택해주세요');
+      return;
+    }
+    if (!saved) {
+      toast.error('[시술 저장 및 금액 산정]을 먼저 완료해주세요');
+      return;
+    }
+    if (grandTotal <= 0) {
+      toast.error('결제 금액이 없습니다');
+      return;
+    }
+    setDocSettlePrinting(true);
+    try {
+      // 1. 서류 출력
+      const autoValues = await loadMiniAutoBindValues(checkIn);
+      const pages = selected.flatMap((t) => {
+        const imgUrl = getTemplateImageUrl(t.form_key);
+        if (!imgUrl) return [];
+        return [buildPageHtml(t, autoValues, imgUrl)];
+      });
+      if (pages.length > 0) {
+        const w = openBatchPrintWindow(pages, `서류 출력 — ${checkIn.customer_name}`);
+        if (!w) {
+          toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
+          setDocSettlePrinting(false);
+          return;
+        }
+      }
+
+      // 2. 수납 + auto-done (PAYMENT-AUTO-DONE reuse)
+      await executeAutoDone(grandTotal, payMethod);
+      toast.success('출력 및 수납 완료 — 완료 슬롯으로 이동됩니다');
+      onComplete();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : '출력 및 수납 처리 실패';
+      toast.error(msg);
+      setDocSettlePrinting(false);
+    }
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <Dialog open={!!checkIn} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
-        className="max-w-3xl max-h-[85vh] p-0 overflow-hidden flex flex-col"
+        className="max-w-3xl max-h-[90vh] p-0 overflow-hidden flex flex-col"
       >
         {/* 헤더 */}
         <DialogHeader className="px-5 pt-4 pb-3 border-b shrink-0">
@@ -246,7 +536,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         </DialogHeader>
 
         {/* 본문 3열 */}
-        <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div className="flex min-h-0" style={{ height: '340px' }}>
           {/* ── 좌측: 카테고리 탭 ── */}
           <div className="w-28 shrink-0 border-r bg-muted/30 flex flex-col py-2">
             {TAB_LABELS.map((tab) => (
@@ -417,20 +707,86 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   className="w-full h-10 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold"
                   onClick={handleSettle}
                   disabled={submitting}
+                  data-testid="btn-settle"
                 >
                   {submitting ? '처리 중...' : `수납 ${formatAmount(grandTotal)}`}
                 </Button>
               )}
-
-              {/* Phase 2 placeholder (AC-8~10 — FORM-TEMPLATE-REFRESH 완료 후) */}
-              <div className="rounded border border-dashed border-muted-foreground/30 p-2 text-center">
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  서류발행 (출력 / 출력 및 수납)
-                  <br />
-                  FORM-TEMPLATE-REFRESH 완료 후 활성화
-                </p>
-              </div>
             </div>
+          </div>
+        </div>
+
+        {/* ── Phase 2: 서류발행 섹션 (AC-8~10) ────────────────────────────────── */}
+        <div className="border-t bg-slate-50 flex flex-col shrink-0">
+          {/* 섹션 헤더 */}
+          <div className="flex items-center gap-2 px-4 pt-3 pb-2">
+            <FileText className="h-3.5 w-3.5 text-teal-600" />
+            <span className="text-xs font-semibold text-teal-700">서류발행</span>
+            {selectedDocKeys.size > 0 && (
+              <span className="text-xs text-muted-foreground">({selectedDocKeys.size}종 선택)</span>
+            )}
+          </div>
+
+          {/* 서류 체크박스 목록 */}
+          <div className="px-4 pb-2">
+            <div className="flex flex-wrap gap-1.5" data-testid="doc-template-list">
+              {templates.map((tpl) => {
+                const meta = FORM_META[tpl.form_key];
+                const isSelected = selectedDocKeys.has(tpl.form_key);
+                return (
+                  <button
+                    key={tpl.form_key}
+                    onClick={() => toggleDocKey(tpl.form_key)}
+                    className={cn(
+                      'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all',
+                      isSelected
+                        ? 'bg-teal-600 text-white border-teal-600'
+                        : 'bg-white text-muted-foreground border-gray-200 hover:border-teal-300 hover:text-teal-700',
+                    )}
+                    data-testid={`doc-checkbox-${tpl.form_key}`}
+                  >
+                    {isSelected ? (
+                      <CheckSquare className="h-3 w-3 shrink-0" />
+                    ) : (
+                      <Square className="h-3 w-3 shrink-0" />
+                    )}
+                    <span>{meta?.icon ?? '📄'} {tpl.name_ko}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* AC-9/10 버튼 */}
+          <div className="flex items-center gap-2 px-4 pb-3">
+            {/* AC-9: 출력 */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs border-teal-300 text-teal-700 hover:bg-teal-50"
+              onClick={handleDocPrint}
+              disabled={docPrinting || selectedDocKeys.size === 0}
+              data-testid="btn-doc-print"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              {docPrinting ? '출력 중...' : '출력'}
+            </Button>
+
+            {/* AC-10: 출력 및 수납 */}
+            <Button
+              size="sm"
+              className="gap-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white"
+              onClick={handleDocAndSettle}
+              disabled={docSettlePrinting || selectedDocKeys.size === 0 || !saved}
+              data-testid="btn-doc-settle"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              {docSettlePrinting ? '처리 중...' : `출력 및 수납${saved ? ` ${formatAmount(grandTotal)}` : ''}`}
+            </Button>
+
+            {!saved && selectedDocKeys.size > 0 && (
+              <span className="text-xs text-amber-600">시술 저장 후 활성화</span>
+            )}
           </div>
         </div>
       </DialogContent>
