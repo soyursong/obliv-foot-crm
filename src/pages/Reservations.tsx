@@ -426,6 +426,28 @@ export default function Reservations() {
           </Button>
         </div>
         <div className="flex items-center gap-2">
+          {/* T-20260513-foot-RESV-PLUS-PHONE-SEARCH: 페이지 상단 새 예약 버튼 — InlinePatientSearch(phone) 연결 */}
+          <Button
+            size="sm"
+            onClick={() => {
+              const today = format(new Date(), 'yyyy-MM-dd');
+              setEditor({
+                date: today,
+                time: '10:00',
+                name: '',
+                phone: '',
+                visit_type: 'returning',
+                memo: '',
+                booking_memo: '',
+                visit_route: '',
+                customer_id: null,
+              });
+            }}
+            className="gap-1.5"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            새 예약
+          </Button>
           <div className="flex rounded-md border">
             <button
               onClick={() => setViewMode('day')}
