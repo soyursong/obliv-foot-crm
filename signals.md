@@ -1,5 +1,23 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-14 03:10 — dev-foot | deploy-ready | T-20260515-foot-RLS-REGISTER-BUG — [P1] user_profiles 자가 등록 INSERT RLS 정책 복구
+
+**커밋: 4bb1378 → origin/main push 완료 → Vercel 자동배포 예정**
+
+### 구현 내용
+- ✅ AC-1: `20260515000030_register_rls_insert_fix.sql` — `allow_insert_own_profile` 정책 추가
+  - `FOR INSERT TO authenticated WITH CHECK (id = auth.uid())`
+  - DROP IF EXISTS로 idempotent 처리
+- ✅ AC-3: 롤백 SQL → `20260515000030_register_rls_insert_fix.down.sql`
+- ✅ AC-5: 기존 `user_profiles_admin_all` 정책 영향 없음 (건드리지 않음)
+- ✅ `e2e_spec_exempt_reason: db_only` 해당 (프론트 코드 변경 없음)
+
+### DB 변경
+- `user_profiles` 테이블: `allow_insert_own_profile` RLS INSERT 정책 추가
+- **supervisor 마이그레이션 적용 필요**: `20260515000030_register_rls_insert_fix.sql`
+
+---
+
 ## 2026-05-14 02:40 — dev-foot | deploy-ready | T-20260515-foot-RESV-DND-SHORTCUT — [P1] 예약 D&D 이동 + 키보드 단축키(Ctrl+C/X/V)
 
 **커밋: 4426d52 → origin/main push 완료 → Vercel 자동배포 예정**
