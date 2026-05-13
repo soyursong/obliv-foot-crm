@@ -1449,12 +1449,10 @@ export default function CustomerChartPage() {
     { key: 'treatments',    label: '시술내역' },
     { key: 'images',        label: '진료이미지' },
     { key: 'messages',      label: '메시지' },
-    { key: 'customer_info', label: '고객정보' },
   ];
   // T-20260513-foot-C21-TAB-RESTRUCTURE-C: pen_chart + messages 구현 완료
-  // T-20260515-foot-CHART-INFO-SPLIT: customer_info 탭 추가
   const IMPLEMENTED_CLINICAL = ['checklist', 'progress', 'documents', 'payments', 'test_result', 'pen_chart'];
-  const IMPLEMENTED_HISTORY  = ['consultations', 'packages', 'treatments', 'images', 'messages', 'customer_info'];
+  const IMPLEMENTED_HISTORY  = ['consultations', 'packages', 'treatments', 'images', 'messages'];
 
   const handleClinicalTab = (key: string) => { setChartTab(key); setChartTabGroup('clinical'); };
   const handleHistoryTab  = (key: string) => { setChartTab(key); setChartTabGroup('history'); };
@@ -1495,51 +1493,30 @@ export default function CustomerChartPage() {
         {/* ════════════════════════════════════════════════════════════════ */}
         <div className="flex flex-col overflow-hidden border-r border-gray-400 bg-white" style={{ width: '60%', minWidth: 0 }}>
 
-          {/* T-20260515-foot-CHART-INFO-SPLIT: 컴팩트 고객 요약 한 줄 헤더 (AC-1) */}
-          <div data-testid="chart-compact-header" className="flex items-center gap-2 bg-[#d8e8f0] border-b border-gray-300 px-3 py-1 shrink-0 text-[11px]">
-            <span className="font-semibold text-[#1e4e6e]">{customer.name}</span>
-            {customer.phone && <span className="text-muted-foreground">{formatPhone(customer.phone)}</span>}
-            {customer.chart_number && <span className="text-muted-foreground">#{customer.chart_number}</span>}
-            {/* AC-1: 초재진 배지 */}
-            <Badge
-              variant={customer.visit_type === 'new' ? 'teal' : 'secondary'}
-              className="text-[10px] py-0 h-4 shrink-0"
-            >
-              {VISIT_TYPE_KO[customer.visit_type as keyof typeof VISIT_TYPE_KO] ?? customer.visit_type}
-            </Badge>
-            <span className="border-l border-gray-300 pl-2 ml-0.5 text-muted-foreground">
+          {/* 패널 서브헤더 — T-20260510-foot-C21-SAVE-UNIFY: 통합 저장 버튼 */}
+          <div className="flex items-center gap-3 bg-[#d8e8f0] border-b border-gray-300 px-3 py-1 shrink-0">
+            <span className="text-[11px] font-semibold text-[#1e4e6e]">고객정보</span>
+            <span className="text-[11px] text-muted-foreground">
               방문 <strong className="text-teal-700">{visits.length}회</strong>
               {' · '}결제 <strong className="text-teal-700">{formatAmount(totalPaid)}</strong>
               {' · '}패키지 <strong className="text-teal-700">{packages.length}건</strong>
             </span>
-            {/* 고객정보 탭에서만 저장 버튼 표시 (AC-3) */}
-            {chartTabGroup === 'history' && chartTab === 'customer_info' && (
-              <>
-                <Button
-                  size="sm"
-                  className="ml-auto h-6 text-[11px] px-3 bg-teal-600 hover:bg-teal-700"
-                  onClick={() => handleInfoPanelSave()}
-                  disabled={savingInfoPanel || !isDirty}
-                >
-                  {savingInfoPanel ? '저장 중…' : '저장'}
-                </Button>
-                {/* T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: 자동저장 인디케이터 */}
-                {showAutoSaved && (
-                  <span className="text-[10px] text-teal-600 ml-1 shrink-0 animate-pulse">자동저장됨 ✓</span>
-                )}
-              </>
+            <Button
+              size="sm"
+              className="ml-auto h-6 text-[11px] px-3 bg-teal-600 hover:bg-teal-700"
+              onClick={() => handleInfoPanelSave()}
+              disabled={savingInfoPanel || !isDirty}
+            >
+              {savingInfoPanel ? '저장 중…' : '저장'}
+            </Button>
+            {/* T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: 자동저장 인디케이터 */}
+            {showAutoSaved && (
+              <span className="text-[10px] text-teal-600 ml-1 shrink-0 animate-pulse">자동저장됨 ✓</span>
             )}
           </div>
 
-            {/* T-20260515-foot-CHART-INFO-SPLIT: 고객정보 탭 콘텐츠 — order-3 으로 탭바 아래 표시 (AC-2, AC-3) */}
-            <div
-              data-testid="chart-info-panel"
-              className={cn(
-              'order-3 min-h-0',
-              chartTabGroup === 'history' && chartTab === 'customer_info'
-                ? 'flex-1 overflow-y-auto'
-                : 'hidden'
-            )}>
+          {/* 스크롤 영역 — 고객정보 + 탭바 + 탭콘텐츠 */}
+          <div data-testid="chart-info-panel" className="flex-1 overflow-y-auto">
 
             {/* ── 고객정보 폼 테이블 (전능CRM 스타일) ── */}
             <table className="w-full border-collapse text-xs">
@@ -2096,10 +2073,9 @@ export default function CustomerChartPage() {
               </div>
             )}
 
-            </div>{/* /고객정보 tab content */}
 
             {/* ─ 탭 열 1 (문진 / 진료 탭) ─────────────────────────────── */}
-            <div data-testid="chart-tab-clinical" className="order-1 border-t-2 border-gray-300 shrink-0">
+            <div data-testid="chart-tab-clinical" className="border-t-2 border-gray-300 shrink-0">
               <div className="flex overflow-x-auto bg-[#d8e8f0]">
                 {CLINICAL_TABS.map(({ key, label }) => (
                   <button
@@ -2120,7 +2096,7 @@ export default function CustomerChartPage() {
             </div>
 
             {/* ─ 탭 열 2 (이력 탭) ─────────────────────────────────────── */}
-            <div data-testid="chart-tab-history" className="order-2 border-b border-gray-300 shrink-0">
+            <div data-testid="chart-tab-history" className="border-b border-gray-300 shrink-0">
               <div className="flex overflow-x-auto bg-[#e4eef4]">
                 {HISTORY_TABS.map(({ key, label }) => (
                   <button
@@ -2143,12 +2119,7 @@ export default function CustomerChartPage() {
             {/* ─ 탭 콘텐츠 ─────────────────────────────────────────────── */}
             <div
               data-testid="chart-tab-content"
-              className={cn(
-              'order-4 p-3 space-y-3 min-h-0',
-              chartTabGroup === 'history' && chartTab === 'customer_info'
-                ? 'hidden'
-                : 'flex-1 overflow-y-auto'
-            )}>
+              className="p-3 space-y-3">
 
               {/* 준비 중 탭 공통 */}
               {((chartTabGroup === 'clinical' && !IMPLEMENTED_CLINICAL.includes(chartTab)) ||
@@ -3017,6 +2988,7 @@ export default function CustomerChartPage() {
           )}
 
             </div>{/* /tab-content */}
+          </div>{/* /scrollable area */}
         </div>{/* /left-panel */}
 
         {/* ════════════════════════════════════════════════════════════════ */}
