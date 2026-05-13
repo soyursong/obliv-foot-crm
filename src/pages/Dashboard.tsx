@@ -65,7 +65,7 @@ import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
-import { formatAmount, formatPhone, maskPhoneTail } from '@/lib/format';
+import { formatAmount, formatPhone, formatPhoneInput, maskPhoneTail } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { NewCheckInDialog } from '@/components/NewCheckInDialog';
 import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
@@ -101,6 +101,10 @@ const CardHandlersCtx = createContext<CardHandlers | null>(null);
 // ── 예약시간 맵 컨텍스트 (reservation_id → reservation_time) ──────────────────
 /** DraggableCard에서 useContext로 읽어 CustomerHoverCard에 예약시간 전달 */
 const ResvTimeMapCtx = createContext<Map<string, string>>(new Map());
+
+// ── 차트번호 맵 컨텍스트 (customer_id → chart_number) ─────────────────────────
+/** T-20260514-foot-CHART-NO-VISIBLE: 칸반·타임라인 카드 차트번호 상시 표시 (AC-1) */
+const ChartNumberMapCtx = createContext<Map<string, string>>(new Map());
 
 interface RoomAssignment {
   id: string;
@@ -246,6 +250,9 @@ function DraggableCard({
   const cardHandlers = useContext(CardHandlersCtx);
   const resvTimeMap = useContext(ResvTimeMapCtx);
   const reservationTime = checkIn.reservation_id ? (resvTimeMap.get(checkIn.reservation_id) ?? null) : null;
+  // T-20260514-foot-CHART-NO-VISIBLE: AC-1 차트번호 상시 표시
+  const chartNumberMap = useContext(ChartNumberMapCtx);
+  const chartNum = checkIn.customer_id ? chartNumberMap.get(checkIn.customer_id) : undefined;
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: checkIn.id,
     data: { checkIn },
@@ -305,6 +312,10 @@ function DraggableCard({
                 cardHandlers?.onNameContext(checkIn, e);
               }}
             />
+            {/* T-20260514-foot-CHART-NO-VISIBLE: AC-1 차트번호 상시 표시 */}
+            {chartNum && (
+              <span className="text-[10px] font-mono text-teal-600 shrink-0">#{chartNum}</span>
+            )}
             {checkIn.queue_number != null && (
               <span className="text-[10px] text-teal-600 shrink-0">#{checkIn.queue_number}</span>
             )}
@@ -422,6 +433,10 @@ function DraggableCard({
               cardHandlers?.onNameContext(checkIn, e);
             }}
           />
+          {/* T-20260514-foot-CHART-NO-VISIBLE: AC-1 차트번호 상시 표시 */}
+          {chartNum && (
+            <span className="text-[10px] font-mono text-teal-600 shrink-0">#{chartNum}</span>
+          )}
           {checkIn.queue_number != null && (
             <span className="text-[10px] text-teal-600 shrink-0">#{checkIn.queue_number}</span>
           )}
@@ -994,6 +1009,9 @@ function TimelineCheckInCard({
   const visitType = checkIn.visit_type as 'new' | 'returning';
   // T-20260509-foot-SLOT-CARD-STYLE: 흰색 큰박스 — 레이저실·치료실 카드와 동일 스타일
   const showBadge = visitType === 'new';
+  // T-20260514-foot-CHART-NO-VISIBLE: AC-1 타임라인 카드 차트번호 상시 표시
+  const timelineChartMap = useContext(ChartNumberMapCtx);
+  const timelineChartNum = checkIn.customer_id ? timelineChartMap.get(checkIn.customer_id) : undefined;
 
   const style: React.CSSProperties = {
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
@@ -1036,6 +1054,10 @@ function TimelineCheckInCard({
         </span>
       )}
       <span className={cn('truncate', visitType === 'returning' ? 'text-green-900' : 'text-yellow-900')}>{checkIn.customer_name}</span>
+      {/* T-20260514-foot-CHART-NO-VISIBLE: 차트번호 상시 표시 */}
+      {timelineChartNum && (
+        <span className="text-[9px] font-mono text-teal-600 shrink-0">#{timelineChartNum}</span>
+      )}
       {/* 드래그 힌트 화살표 */}
       <span className="text-[8px] opacity-50 shrink-0 ml-0.5">↗</span>
     </div>
@@ -1069,6 +1091,10 @@ function Box2ReservationCard({
   reservation: Reservation;
   onClick?: () => void;
 }) {
+  // T-20260514-foot-CHART-NO-VISIBLE: AC-1 재진 예약 카드 차트번호 상시 표시
+  const resvChartMap = useContext(ChartNumberMapCtx);
+  const resvChartNum = reservation.customer_id ? resvChartMap.get(reservation.customer_id) : undefined;
+
   return (
     <div
       className={cn(
@@ -1079,6 +1105,10 @@ function Box2ReservationCard({
       title={`${reservation.customer_name} — 클릭하여 체크인 및 차트 열기`}
     >
       <span className="truncate text-green-900">{reservation.customer_name}</span>
+      {/* T-20260514-foot-CHART-NO-VISIBLE: 차트번호 상시 표시 */}
+      {resvChartNum && (
+        <span className="text-[9px] font-mono text-green-700 shrink-0">#{resvChartNum}</span>
+      )}
       {onClick && <span className="text-[9px] text-green-600 shrink-0 ml-auto font-bold">↗</span>}
     </div>
   );
@@ -1376,8 +1406,10 @@ function QuickReservationDialog({
     }
   }, [draft]);
 
-  const handlePhoneChange = async (phone: string) => {
+  const handlePhoneChange = async (rawPhone: string) => {
     if (!form) return;
+    // T-20260513-foot-PHONE-HYPHEN-FORMAT: 실시간 하이픈 포맷팅
+    const phone = formatPhoneInput(rawPhone);
     setForm((f) => f ? { ...f, phone } : f);
     setCustomerId(null);
     if (phone.replace(/\D/g, '').length >= 4 && clinicId) {
@@ -2875,13 +2907,15 @@ export default function Dashboard() {
   };
 
   // ── 당일 예약 전용 검색 (T-20260504-foot-SEARCH-SPLIT) ─────────────────────
-  // 당일 예약 고객의 차트번호 사전 로드
+  // T-20260514-foot-CHART-NO-VISIBLE: 예약 + 체크인 고객 모두 차트번호 로드 (AC-1 칸반 상시 표시용)
   useEffect(() => {
-    const ids = [...new Set(
-      timelineReservations
-        .map((r) => r.customer_id)
-        .filter((id): id is string => !!id),
-    )];
+    const reservationIds = timelineReservations
+      .map((r) => r.customer_id)
+      .filter((id): id is string => !!id);
+    const checkInIds = rows
+      .map((ci) => ci.customer_id)
+      .filter((id): id is string => !!id);
+    const ids = [...new Set([...reservationIds, ...checkInIds])];
     if (ids.length === 0) { setTodayCustomerChartMap(new Map()); return; }
     supabase
       .from('customers')
@@ -2894,7 +2928,7 @@ export default function Dashboard() {
         }
         setTodayCustomerChartMap(m);
       });
-  }, [timelineReservations]);
+  }, [timelineReservations, rows]);
 
   // 당일 예약 검색 함수 (이름 · 전화 뒷번호 4자리↑ · 차트번호)
   const doTodaySearch = useCallback((q: string) => {
@@ -3596,6 +3630,7 @@ export default function Dashboard() {
       {/* Content: 타임라인 사이드바 + 칸반 */}
       {/* T-20260508-foot-DASH-SLOT-REMOVE: 카드 DnD 컨텍스트를 타임라인까지 확장
           → 타임라인 고객박스에서 칸반 열로 직접 드래그 이동 가능 */}
+      <ChartNumberMapCtx.Provider value={todayCustomerChartMap}>
       <CardHandlersCtx.Provider value={cardHandlersValue}>
       <ChecklistDoneCtx.Provider value={checklistDone}>
       <ConsentMapCtx.Provider value={consentMap}>
@@ -3723,6 +3758,7 @@ export default function Dashboard() {
       </ConsentMapCtx.Provider>
       </ChecklistDoneCtx.Provider>
       </CardHandlersCtx.Provider>
+      </ChartNumberMapCtx.Provider>
 
       {/* 빠른 예약 다이얼로그 */}
       <QuickReservationDialog
