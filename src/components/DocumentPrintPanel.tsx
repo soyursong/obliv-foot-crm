@@ -323,10 +323,23 @@ ${pages.join('\n')}
   w.document.close();
   w.focus();
 
-  // 첫 번째 img 로드 후 인쇄
-  const firstImg = w.document.querySelector('img');
-  if (firstImg) {
-    firstImg.onload = () => w.print();
+  // 모든 img(배경 템플릿 + 도장 포함) 로드 완료 후 인쇄
+  // 첫 번째 img만 대기하던 기존 로직을 수정 — T-20260515-foot-STAMP-PRINT-BUG
+  const images = w.document.querySelectorAll('img');
+  if (images.length > 0) {
+    Promise.all(
+      Array.from(images).map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            if ((img as HTMLImageElement).complete) {
+              resolve();
+            } else {
+              (img as HTMLImageElement).onload = () => resolve();
+              (img as HTMLImageElement).onerror = () => resolve(); // 로드 실패해도 블락 안 함
+            }
+          }),
+      ),
+    ).then(() => w.print());
   } else {
     setTimeout(() => w.print(), 600);
   }
