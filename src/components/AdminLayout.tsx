@@ -17,6 +17,8 @@ import {
   Stethoscope,
   BookOpen,
   Table2,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import CalendarNoticePanel from '@/components/CalendarNoticePanel';
 import { supabase } from '@/lib/supabase';
@@ -53,6 +55,9 @@ export default function AdminLayout() {
   const { profile, signOut } = useAuth();
   const clinic = useClinic();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem('foot-sidebar-collapsed') === 'true',
+  );
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ id: string; name: string; phone: string; birth_date: string | null; chart_number: string | null }[]>([]);
@@ -111,6 +116,14 @@ export default function AdminLayout() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('foot-sidebar-collapsed', String(next));
+      return next;
+    });
+  };
 
   const handleLogout = async () => {
     await signOut();
@@ -186,9 +199,109 @@ export default function AdminLayout() {
 
   return (
     <div className="flex h-screen bg-muted/30">
-      {/* Desktop sidebar */}
-      <aside className="hidden lg:flex w-56 shrink-0 flex-col border-r bg-background">
-        {sidebarContent}
+      {/* Desktop sidebar — T-20260513-foot-SIDEBAR-COLLAPSE */}
+      <aside
+        data-testid="desktop-sidebar"
+        className={cn(
+          'hidden lg:flex shrink-0 flex-col border-r bg-background transition-[width] duration-200 overflow-hidden',
+          sidebarCollapsed ? 'w-10' : 'w-56',
+        )}
+      >
+        {/* Header */}
+        <div
+          className={cn(
+            'border-b flex items-center',
+            sidebarCollapsed ? 'px-1.5 py-5 justify-center' : 'px-5 py-5 justify-between',
+          )}
+        >
+          {!sidebarCollapsed && (
+            <div>
+              <div className="text-sm font-semibold text-teal-700">오블리브</div>
+              <div className="mt-0.5 text-base font-bold">풋센터 종로</div>
+            </div>
+          )}
+          <button
+            data-testid="sidebar-toggle"
+            className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground"
+            onClick={toggleSidebar}
+            title={sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'}
+          >
+            {sidebarCollapsed
+              ? <ChevronRight className="h-4 w-4" />
+              : <ChevronLeft className="h-4 w-4" />}
+          </button>
+        </div>
+
+        {/* Nav */}
+        <nav className={cn('flex-1 py-3', sidebarCollapsed ? 'px-1' : 'px-2')}>
+          {NAV_ITEMS.filter((item) => !item.roles || (profile?.role && item.roles.includes(profile.role))).map((item) => {
+            const showBadge = (item.to === '/admin' || item.to === '/admin/closing') && paymentWaitingCount > 0;
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                className={({ isActive }) =>
+                  cn(
+                    'flex items-center rounded-md text-sm font-medium transition-colors',
+                    sidebarCollapsed ? 'justify-center px-1.5 py-2' : 'gap-2.5 px-3 py-2',
+                    isActive
+                      ? 'bg-teal-50 text-teal-700'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )
+                }
+                title={sidebarCollapsed ? item.label : undefined}
+              >
+                <div className="relative shrink-0">
+                  <item.icon className="h-4 w-4" />
+                  {sidebarCollapsed && showBadge && (
+                    <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-amber-500" />
+                  )}
+                </div>
+                {!sidebarCollapsed && (
+                  <>
+                    <span className="flex-1">{item.label}</span>
+                    {showBadge && (
+                      <span
+                        className="inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 py-0 text-[10px] font-semibold text-white min-w-[18px]"
+                        title={`결제대기 ${paymentWaitingCount}건`}
+                      >
+                        {paymentWaitingCount}
+                      </span>
+                    )}
+                  </>
+                )}
+              </NavLink>
+            );
+          })}
+        </nav>
+
+        {/* Footer */}
+        {sidebarCollapsed ? (
+          <div className="border-t py-3 flex flex-col items-center">
+            <button
+              className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground"
+              onClick={handleLogout}
+              title="로그아웃"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="border-t px-4 py-3 text-xs">
+            <div className="truncate font-medium">{profile?.name ?? profile?.email ?? '사용자'}</div>
+            <div className="text-muted-foreground">{profile?.role}</div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-2 h-8 w-full justify-start gap-2 text-muted-foreground"
+              onClick={handleLogout}
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              로그아웃
+            </Button>
+          </div>
+        )}
       </aside>
 
       {/* Mobile sidebar overlay */}
