@@ -278,8 +278,21 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
         .eq('id', checkIn.id);
     }
 
-    const autoTransitionStatuses = ['payment_waiting', 'consultation', 'consult_waiting'];
-    if (autoTransitionStatuses.includes(checkIn.status)) {
+    // AC-1/AC-4 (T-20260514-foot-PAYMENT-AUTO-DONE):
+    // payment_waiting → done (수납 완료 = 최종 완료)
+    // consultation / consult_waiting → treatment_waiting (상담 후 시술 대기 흐름)
+    if (checkIn.status === 'payment_waiting') {
+      await supabase
+        .from('check_ins')
+        .update({ status: 'done' })
+        .eq('id', checkIn.id);
+      await supabase.from('status_transitions').insert({
+        check_in_id: checkIn.id,
+        clinic_id: checkIn.clinic_id,
+        from_status: checkIn.status,
+        to_status: 'done',
+      });
+    } else if (['consultation', 'consult_waiting'].includes(checkIn.status)) {
       await supabase
         .from('check_ins')
         .update({ status: 'treatment_waiting' })
