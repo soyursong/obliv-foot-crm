@@ -190,7 +190,8 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
       customer_name: name.trim(),
       customer_phone: phone.trim() ? (normalizeToE164(phone) ?? phone.trim()) : null,
       visit_type: visitType,
-      status: 'registered',
+      // AC-1/AC-2: 초진·체험 → 상담대기, 재진 → 치료대기 자동 세팅 (T-20260514-foot-CHECKIN-AUTO-STAGE)
+      status: visitType === 'returning' ? 'treatment_waiting' : 'consult_waiting',
       queue_number: queueData as number,
       consultant_id: consultantId,
     });
