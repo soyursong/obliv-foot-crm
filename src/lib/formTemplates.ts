@@ -115,11 +115,15 @@ function resolveDosuAsset(filename: string): string {
 }
 
 try {
-  IMAGE_MAP.diag_opinion = resolveAsset('소견서.jpg');
-  IMAGE_MAP.diagnosis = resolveAsset('진단서.jpg');
-  IMAGE_MAP.bill_detail = resolveAsset('진료비내역서.pdf');
-  IMAGE_MAP.treat_confirm = resolveAsset('진료확인서.jpg');
-  IMAGE_MAP.visit_confirm = resolveAsset('통원확인서.jpg');
+  // T-20260515-foot-FORM-TEMPLATE-REFRESH: 신규 이미지로 교체 (JPG→PNG)
+  IMAGE_MAP.diag_opinion = resolveAsset('diag_opinion.png');
+  IMAGE_MAP.diagnosis    = resolveAsset('diagnosis.png');
+  IMAGE_MAP.bill_detail  = resolveAsset('bill_detail.png');
+  IMAGE_MAP.treat_confirm = resolveAsset('treat_confirm.png');
+  IMAGE_MAP.visit_confirm = resolveAsset('visit_confirm.png');
+  // 신규 2종
+  IMAGE_MAP.rx_standard  = resolveAsset('rx_standard.jpg');
+  IMAGE_MAP.bill_receipt = resolveAsset('bill_receipt.jpg');
 } catch {
   // asset 미존재 시 graceful degrade — 미리보기만 불가
 }
@@ -155,6 +159,9 @@ const FOOT_CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
 /**
  * T-20260506-foot-CHART-SIMPLE-REVAMP: 5/4 22:04 요청 반영
  * 별도 요청 서류 목록 전면 개정
+ *
+ * T-20260515-foot-FORM-TEMPLATE-REFRESH: 7종 이미지 갱신 + 신규 2종 추가
+ *   기존 5종(JPG/PDF) → 새 PNG 교체, rx_standard/bill_receipt 신규 등록
  */
 export const FALLBACK_TEMPLATES: FormTemplate[] = [
   // ── 기본 서류 ──
@@ -164,15 +171,16 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     category: 'foot-service',
     form_key: 'bill_detail',
     name_ko: '진료비내역서',
-    template_path: '/assets/forms/foot-service/진료비내역서.pdf',
-    template_format: 'pdf',
-    // PDF: pdf-lib 좌표계 (좌하단 원점, 포인트 단위, A4 595×842pt)
-    // Phase 2 초기 추정치 — 문지은 원장 시각 검증 후 확정
+    // T-20260515: PDF → PNG 교체 (1123×789 px, 가로형)
+    template_path: '/assets/forms/foot-service/bill_detail.png',
+    template_format: 'png',
+    // 가로형 PNG — CSS position:absolute (픽셀, 좌상단 원점)
+    // 초기 추정치 — 원장 시각 검증 후 확정
     field_map: [
-      { key: 'patient_name', label: '환자성명', type: 'text',   x: 140, y: 788, font: 11 },
-      { key: 'issue_date',   label: '발행일',   type: 'date',   x: 420, y: 788, font: 11 },
-      { key: 'total_amount', label: '합계금액', type: 'amount', x: 440, y: 145, font: 12 },
-      { key: 'clinic_name',  label: '기관명',   type: 'text',   x: 140, y: 58,  font: 10 },
+      { key: 'patient_name', label: '환자성명',   type: 'text',   x: 200, y: 90,  font: 13 },
+      { key: 'issue_date',   label: '발행일',     type: 'date',   x: 500, y: 475, font: 13 },
+      { key: 'total_amount', label: '합계금액',   type: 'amount', x: 750, y: 428, font: 12 },
+      { key: 'clinic_name',  label: '요양기관명', type: 'text',   x: 205, y: 500, font: 12 },
     ],
     requires_signature: false,
     required_role: 'admin|manager|coordinator',
@@ -201,16 +209,17 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     category: 'foot-service',
     form_key: 'diag_opinion',
     name_ko: '소견서',
-    template_path: '/assets/forms/foot-service/소견서.jpg',
-    template_format: 'jpg',
-    // 636×884 px — Phase 2 초기 추정치
+    // T-20260515: 새 PNG 교체 (645×884 px)
+    template_path: '/assets/forms/foot-service/diag_opinion.png',
+    template_format: 'png',
+    // 645×884 px — 초기 추정치
     field_map: [
-      { key: 'patient_name', label: '환자성명', type: 'text',      x: 108, y: 103, font: 14 },
-      { key: 'patient_rrn',  label: '주민번호', type: 'text',      x: 272, y: 62,  font: 12 },
-      { key: 'diagnosis_ko', label: '상병명',   type: 'multiline', x: 108, y: 163, w: 400, h: 55, font: 13 },
-      { key: 'issue_date',   label: '발행일',   type: 'date',      x: 115, y: 672, font: 13 },
-      { key: 'clinic_name',  label: '의료기관', type: 'text',      x: 115, y: 692, font: 12 },
-      { key: 'doctor_name',  label: '의사성명', type: 'text',      x: 490, y: 840, font: 13 },
+      { key: 'patient_name', label: '환자성명', type: 'text',      x: 130, y: 138, font: 14 },
+      { key: 'patient_rrn',  label: '주민번호', type: 'text',      x: 272, y: 103, font: 12 },
+      { key: 'diagnosis_ko', label: '상병명',   type: 'multiline', x: 200, y: 186, w: 400, h: 55, font: 13 },
+      { key: 'issue_date',   label: '발행일',   type: 'date',      x: 130, y: 718, font: 13 },
+      { key: 'clinic_name',  label: '의료기관', type: 'text',      x: 105, y: 742, font: 12 },
+      { key: 'doctor_name',  label: '의사성명', type: 'text',      x: 480, y: 877, font: 13 },
     ],
     requires_signature: false,
     required_role: 'admin|manager',
@@ -223,16 +232,17 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     category: 'foot-service',
     form_key: 'diagnosis',
     name_ko: '진단서',
-    template_path: '/assets/forms/foot-service/진단서.jpg',
-    template_format: 'jpg',
-    // 612×820 px — Phase 2 초기 추정치
+    // T-20260515: 새 PNG 교체 (621×835 px)
+    template_path: '/assets/forms/foot-service/diagnosis.png',
+    template_format: 'png',
+    // 621×835 px — 초기 추정치
     field_map: [
-      { key: 'patient_name', label: '환자성명',    type: 'text',      x: 118, y: 95,  font: 14 },
-      { key: 'patient_rrn',  label: '주민등록번호', type: 'text',      x: 390, y: 95,  font: 12 },
-      { key: 'diagnosis_ko', label: '병명',        type: 'multiline', x: 110, y: 143, w: 395, h: 50, font: 13 },
-      { key: 'issue_date',   label: '발행일',      type: 'date',      x: 110, y: 558, font: 13 },
-      { key: 'clinic_name',  label: '의료기관',    type: 'text',      x: 110, y: 578, font: 12 },
-      { key: 'doctor_name',  label: '의사성명',    type: 'text',      x: 548, y: 770, font: 13 },
+      { key: 'patient_name', label: '환자성명',    type: 'text',      x: 118, y: 136, font: 14 },
+      { key: 'patient_rrn',  label: '주민등록번호', type: 'text',      x: 390, y: 136, font: 12 },
+      { key: 'diagnosis_ko', label: '병명',        type: 'multiline', x: 195, y: 193, w: 380, h: 50, font: 13 },
+      { key: 'issue_date',   label: '발행일',      type: 'date',      x: 170, y: 632, font: 13 },
+      { key: 'clinic_name',  label: '의료기관',    type: 'text',      x: 100, y: 650, font: 12 },
+      { key: 'doctor_name',  label: '의사성명',    type: 'text',      x: 470, y: 812, font: 13 },
     ],
     requires_signature: false,
     required_role: 'admin|manager',
@@ -240,27 +250,95 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     sort_order: 30,
   },
   {
-    id: 'fallback-visit-confirm',
+    id: 'fallback-treat-confirm',
     clinic_id: FOOT_CLINIC_ID,
     category: 'foot-service',
-    form_key: 'visit_confirm',
-    name_ko: '통원확인서',
-    template_path: '/assets/forms/foot-service/통원확인서.jpg',
-    template_format: 'jpg',
-    // 637×800 px — Phase 2 초기 추정치
+    form_key: 'treat_confirm',
+    name_ko: '진료확인서',
+    // T-20260515: 새 PNG 교체 (693×907 px, 빈 양식)
+    template_path: '/assets/forms/foot-service/treat_confirm.png',
+    template_format: 'png',
+    // 693×907 px — 초기 추정치
     field_map: [
-      { key: 'patient_name', label: '환자성명', type: 'text',      x: 108, y: 133, font: 14 },
-      { key: 'patient_rrn',  label: '주민번호', type: 'text',      x: 108, y: 156, font: 12 },
-      { key: 'diagnosis_ko', label: '병명',     type: 'multiline', x: 108, y: 177, w: 400, h: 50, font: 13 },
-      { key: 'issue_date',   label: '발행일',   type: 'date',      x: 105, y: 640, font: 13 },
-      { key: 'clinic_name',  label: '의료기관', type: 'text',      x: 105, y: 660, font: 12 },
-      { key: 'doctor_name',  label: '의사성명', type: 'text',      x: 555, y: 750, font: 13 },
+      { key: 'patient_name', label: '환자성명', type: 'text',      x: 130, y: 163, font: 16 },
+      { key: 'patient_rrn',  label: '주민번호', type: 'text',      x: 130, y: 187, font: 14 },
+      { key: 'diagnosis_ko', label: '병명',     type: 'multiline', x: 140, y: 218, w: 520, h: 50, font: 14 },
+      { key: 'issue_date',   label: '발행일',   type: 'date',      x: 130, y: 790, font: 16 },
+      { key: 'clinic_name',  label: '의료기관', type: 'text',      x: 130, y: 812, font: 14 },
+      { key: 'doctor_name',  label: '의사성명', type: 'text',      x: 560, y: 900, font: 14 },
     ],
     requires_signature: false,
     required_role: 'admin|manager|coordinator',
     active: true,
     sort_order: 40,
   },
+  {
+    id: 'fallback-visit-confirm',
+    clinic_id: FOOT_CLINIC_ID,
+    category: 'foot-service',
+    form_key: 'visit_confirm',
+    name_ko: '통원확인서',
+    // T-20260515: 새 PNG 교체 (639×800 px)
+    template_path: '/assets/forms/foot-service/visit_confirm.png',
+    template_format: 'png',
+    // 639×800 px — 초기 추정치
+    field_map: [
+      { key: 'patient_name', label: '환자성명', type: 'text',      x: 128, y: 153, font: 14 },
+      { key: 'patient_rrn',  label: '주민번호', type: 'text',      x: 120, y: 174, font: 12 },
+      { key: 'diagnosis_ko', label: '병명',     type: 'multiline', x: 140, y: 205, w: 450, h: 50, font: 13 },
+      { key: 'issue_date',   label: '발행일',   type: 'date',      x: 120, y: 692, font: 13 },
+      { key: 'clinic_name',  label: '의료기관', type: 'text',      x: 120, y: 710, font: 12 },
+      { key: 'doctor_name',  label: '의사성명', type: 'text',      x: 540, y: 793, font: 13 },
+    ],
+    requires_signature: false,
+    required_role: 'admin|manager|coordinator',
+    active: true,
+    sort_order: 40,
+  },
+  // ── T-20260515: 신규 2종 ──
+  {
+    id: 'fallback-rx-standard',
+    clinic_id: FOOT_CLINIC_ID,
+    category: 'foot-service',
+    form_key: 'rx_standard',
+    name_ko: '처방전(표준처방전)',
+    template_path: '/assets/forms/foot-service/rx_standard.jpg',
+    template_format: 'jpg',
+    // 1206×1735 px — 초기 추정치 (원장 검증 후 확정)
+    field_map: [
+      { key: 'patient_name', label: '피보성명(환자성명)', type: 'text', x: 155, y: 345, font: 18 },
+      { key: 'patient_rrn',  label: '주민번호',           type: 'text', x: 155, y: 388, font: 16 },
+      { key: 'diagnosis_ko', label: '질병분류기호',       type: 'text', x: 30,  y: 455, font: 16 },
+      { key: 'issue_date',   label: '교부일',             type: 'date', x: 155, y: 313, font: 16 },
+      { key: 'clinic_name',  label: '의료기관명칭',       type: 'text', x: 705, y: 313, font: 16 },
+      { key: 'doctor_name',  label: '처방의사성명',       type: 'text', x: 570, y: 455, font: 16 },
+    ],
+    requires_signature: false,
+    required_role: 'admin|manager|director',
+    active: true,
+    sort_order: 15,
+  },
+  {
+    id: 'fallback-bill-receipt',
+    clinic_id: FOOT_CLINIC_ID,
+    category: 'foot-service',
+    form_key: 'bill_receipt',
+    name_ko: '진료비 계산서·영수증',
+    template_path: '/assets/forms/foot-service/bill_receipt.jpg',
+    template_format: 'jpg',
+    // 1206×1779 px — 초기 추정치 (원장 검증 후 확정)
+    field_map: [
+      { key: 'patient_name', label: '환자성명',   type: 'text',   x: 200, y: 65,   font: 16 },
+      { key: 'total_amount', label: '총진료비',   type: 'amount', x: 950, y: 218,  font: 14 },
+      { key: 'issue_date',   label: '발행일',     type: 'date',   x: 230, y: 1496, font: 14 },
+      { key: 'clinic_name',  label: '요양기관명', type: 'text',   x: 400, y: 1461, font: 14 },
+    ],
+    requires_signature: false,
+    required_role: 'admin|manager|coordinator',
+    active: true,
+    sort_order: 35,
+  },
+
   {
     id: 'fallback-med-record-short',
     clinic_id: FOOT_CLINIC_ID,
@@ -360,7 +438,8 @@ export const FORM_META: Record<
   bill_detail: {
     icon: '🧾',
     color: 'bg-amber-50 border-amber-200',
-    description: '진료비 세부 내역 (PDF)',
+    // T-20260515: PDF → PNG 교체
+    description: '진료비 세부산정내역 (별지 제1호)',
     print_preset: 'default',
   },
   // 별도 요청 서류 (T-20260506-foot-CHART-SIMPLE-REVAMP)
@@ -368,6 +447,19 @@ export const FORM_META: Record<
     icon: '💊',
     color: 'bg-pink-50 border-pink-200',
     description: '처방전',
+    print_preset: 'optional',
+  },
+  // T-20260515: 신규 2종
+  rx_standard: {
+    icon: '💊',
+    color: 'bg-violet-50 border-violet-200',
+    description: '처방전 (표준처방전, 약국보관용)',
+    print_preset: 'optional',
+  },
+  bill_receipt: {
+    icon: '🧾',
+    color: 'bg-orange-50 border-orange-200',
+    description: '진료비 계산서·영수증 (외래, 별지 제1호)',
     print_preset: 'optional',
   },
   diag_opinion: {
