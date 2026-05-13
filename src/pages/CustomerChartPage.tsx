@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { ExternalLink, Package as PackageIcon, Pencil, Plus, Printer, Trash2, Upload, X } from 'lucide-react';
+import { ExternalLink, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, Send, Trash2, Upload, X } from 'lucide-react';
+// T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
+import { PenChartTab } from '@/components/PenChartTab';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -28,6 +30,20 @@ import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
+
+// T-20260513-foot-C21-TAB-RESTRUCTURE-C: 문자 이력
+interface MessageLog {
+  id: string;
+  customer_id: string;
+  clinic_id: string;
+  sent_at: string;
+  content: string;
+  status: 'sent' | 'failed' | 'pending';
+  message_type: 'sms' | 'kakao' | 'manual';
+  sent_by_name: string | null;
+  memo: string | null;
+  created_at: string;
+}
 
 interface Payment {
   id: string;
@@ -617,6 +633,13 @@ export default function CustomerChartPage() {
   // T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: isDirty 패턴 + 자동저장 인디케이터
   const [isDirty, setIsDirty] = useState(false);
   const [showAutoSaved, setShowAutoSaved] = useState(false);
+  // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 메시지 이력 + 수동 입력
+  const [messageLogs, setMessageLogs] = useState<MessageLog[]>([]);
+  const [messageForm, setMessageForm] = useState<{
+    content: string;
+    message_type: 'sms' | 'kakao' | 'manual';
+  }>({ content: '', message_type: 'manual' });
+  const [savingMessage, setSavingMessage] = useState(false);
 
   // C23-PHRASE-LINK: 마운트 시 [일반] 카테고리 상용구 한 번 조회
   useEffect(() => {
@@ -762,6 +785,15 @@ export default function CustomerChartPage() {
         setChecklistEntries((clRes.data ?? []) as { id: string; completed_at: string | null; started_at: string; checklist_data: Record<string, unknown> }[]);
       }
 
+      // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 메시지 이력 로드
+      const { data: msgData } = await supabase
+        .from('message_logs')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('sent_at', { ascending: false })
+        .limit(50);
+      setMessageLogs((msgData ?? []) as MessageLog[]);
+
       setLoading(false);
     })();
   }, [customerId, profile]);
@@ -776,6 +808,18 @@ export default function CustomerChartPage() {
       .order('created_at', { ascending: false })
       .limit(50);
     setPayments((data ?? []) as Payment[]);
+  }, [customerId]);
+
+  // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 메시지 이력 새로고침
+  const refreshMessageLogs = useCallback(async () => {
+    if (!customerId) return;
+    const { data } = await supabase
+      .from('message_logs')
+      .select('*')
+      .eq('customer_id', customerId)
+      .order('sent_at', { ascending: false })
+      .limit(50);
+    setMessageLogs((data ?? []) as MessageLog[]);
   }, [customerId]);
 
   // C21-RESIDENT-ID: 고객 로드 시 주민번호 존재 여부 확인
@@ -1405,9 +1449,12 @@ export default function CustomerChartPage() {
     { key: 'treatments',    label: '시술내역' },
     { key: 'images',        label: '진료이미지' },
     { key: 'messages',      label: '메시지' },
+    { key: 'customer_info', label: '고객정보' },
   ];
-  const IMPLEMENTED_CLINICAL = ['checklist', 'progress', 'documents', 'payments', 'test_result'];
-  const IMPLEMENTED_HISTORY  = ['consultations', 'packages', 'treatments', 'images'];
+  // T-20260513-foot-C21-TAB-RESTRUCTURE-C: pen_chart + messages 구현 완료
+  // T-20260515-foot-CHART-INFO-SPLIT: customer_info 탭 추가
+  const IMPLEMENTED_CLINICAL = ['checklist', 'progress', 'documents', 'payments', 'test_result', 'pen_chart'];
+  const IMPLEMENTED_HISTORY  = ['consultations', 'packages', 'treatments', 'images', 'messages', 'customer_info'];
 
   const handleClinicalTab = (key: string) => { setChartTab(key); setChartTabGroup('clinical'); };
   const handleHistoryTab  = (key: string) => { setChartTab(key); setChartTabGroup('history'); };
@@ -1424,6 +1471,7 @@ export default function CustomerChartPage() {
         <span className="text-sm font-bold tracking-tight">SMART DOCTOR — 고객정보</span>
         <div className="flex items-center gap-2 ml-2 text-xs">
           <span className="bg-white/20 rounded px-2 py-0.5 font-semibold">{customer.name}</span>
+          {customer.phone && <span className="text-white/70 text-[11px]">{formatPhone(customer.phone)}</span>}
           {customer.chart_number && <span className="text-white/60"># {customer.chart_number}</span>}
           <Badge variant={customer.visit_type === 'new' ? 'teal' : 'secondary'} className="text-[10px]">
             {VISIT_TYPE_KO[customer.visit_type as keyof typeof VISIT_TYPE_KO] ?? customer.visit_type}
@@ -1447,30 +1495,51 @@ export default function CustomerChartPage() {
         {/* ════════════════════════════════════════════════════════════════ */}
         <div className="flex flex-col overflow-hidden border-r border-gray-400 bg-white" style={{ width: '60%', minWidth: 0 }}>
 
-          {/* 패널 서브헤더 — T-20260510-foot-C21-SAVE-UNIFY: 통합 저장 버튼 */}
-          <div className="flex items-center gap-3 bg-[#d8e8f0] border-b border-gray-300 px-3 py-1 shrink-0">
-            <span className="text-[11px] font-semibold text-[#1e4e6e]">고객정보</span>
-            <span className="text-[11px] text-muted-foreground">
+          {/* T-20260515-foot-CHART-INFO-SPLIT: 컴팩트 고객 요약 한 줄 헤더 (AC-1) */}
+          <div data-testid="chart-compact-header" className="flex items-center gap-2 bg-[#d8e8f0] border-b border-gray-300 px-3 py-1 shrink-0 text-[11px]">
+            <span className="font-semibold text-[#1e4e6e]">{customer.name}</span>
+            {customer.phone && <span className="text-muted-foreground">{formatPhone(customer.phone)}</span>}
+            {customer.chart_number && <span className="text-muted-foreground">#{customer.chart_number}</span>}
+            {/* AC-1: 초재진 배지 */}
+            <Badge
+              variant={customer.visit_type === 'new' ? 'teal' : 'secondary'}
+              className="text-[10px] py-0 h-4 shrink-0"
+            >
+              {VISIT_TYPE_KO[customer.visit_type as keyof typeof VISIT_TYPE_KO] ?? customer.visit_type}
+            </Badge>
+            <span className="border-l border-gray-300 pl-2 ml-0.5 text-muted-foreground">
               방문 <strong className="text-teal-700">{visits.length}회</strong>
               {' · '}결제 <strong className="text-teal-700">{formatAmount(totalPaid)}</strong>
               {' · '}패키지 <strong className="text-teal-700">{packages.length}건</strong>
             </span>
-            <Button
-              size="sm"
-              className="ml-auto h-6 text-[11px] px-3 bg-teal-600 hover:bg-teal-700"
-              onClick={() => handleInfoPanelSave()}
-              disabled={savingInfoPanel || !isDirty}
-            >
-              {savingInfoPanel ? '저장 중…' : '저장'}
-            </Button>
-            {/* T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: 자동저장 인디케이터 */}
-            {showAutoSaved && (
-              <span className="text-[10px] text-teal-600 ml-1 shrink-0 animate-pulse">자동저장됨 ✓</span>
+            {/* 고객정보 탭에서만 저장 버튼 표시 (AC-3) */}
+            {chartTabGroup === 'history' && chartTab === 'customer_info' && (
+              <>
+                <Button
+                  size="sm"
+                  className="ml-auto h-6 text-[11px] px-3 bg-teal-600 hover:bg-teal-700"
+                  onClick={() => handleInfoPanelSave()}
+                  disabled={savingInfoPanel || !isDirty}
+                >
+                  {savingInfoPanel ? '저장 중…' : '저장'}
+                </Button>
+                {/* T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: 자동저장 인디케이터 */}
+                {showAutoSaved && (
+                  <span className="text-[10px] text-teal-600 ml-1 shrink-0 animate-pulse">자동저장됨 ✓</span>
+                )}
+              </>
             )}
           </div>
 
-          {/* 스크롤 영역 */}
-          <div className="flex-1 overflow-y-auto">
+            {/* T-20260515-foot-CHART-INFO-SPLIT: 고객정보 탭 콘텐츠 — order-3 으로 탭바 아래 표시 (AC-2, AC-3) */}
+            <div
+              data-testid="chart-info-panel"
+              className={cn(
+              'order-3 min-h-0',
+              chartTabGroup === 'history' && chartTab === 'customer_info'
+                ? 'flex-1 overflow-y-auto'
+                : 'hidden'
+            )}>
 
             {/* ── 고객정보 폼 테이블 (전능CRM 스타일) ── */}
             <table className="w-full border-collapse text-xs">
@@ -2027,8 +2096,10 @@ export default function CustomerChartPage() {
               </div>
             )}
 
+            </div>{/* /고객정보 tab content */}
+
             {/* ─ 탭 열 1 (문진 / 진료 탭) ─────────────────────────────── */}
-            <div className="border-t-2 border-gray-300 shrink-0">
+            <div data-testid="chart-tab-clinical" className="order-1 border-t-2 border-gray-300 shrink-0">
               <div className="flex overflow-x-auto bg-[#d8e8f0]">
                 {CLINICAL_TABS.map(({ key, label }) => (
                   <button
@@ -2049,7 +2120,7 @@ export default function CustomerChartPage() {
             </div>
 
             {/* ─ 탭 열 2 (이력 탭) ─────────────────────────────────────── */}
-            <div className="border-b border-gray-300 shrink-0">
+            <div data-testid="chart-tab-history" className="order-2 border-b border-gray-300 shrink-0">
               <div className="flex overflow-x-auto bg-[#e4eef4]">
                 {HISTORY_TABS.map(({ key, label }) => (
                   <button
@@ -2070,7 +2141,14 @@ export default function CustomerChartPage() {
             </div>
 
             {/* ─ 탭 콘텐츠 ─────────────────────────────────────────────── */}
-            <div className="p-3 space-y-3">
+            <div
+              data-testid="chart-tab-content"
+              className={cn(
+              'order-4 p-3 space-y-3 min-h-0',
+              chartTabGroup === 'history' && chartTab === 'customer_info'
+                ? 'hidden'
+                : 'flex-1 overflow-y-auto'
+            )}>
 
               {/* 준비 중 탭 공통 */}
               {((chartTabGroup === 'clinical' && !IMPLEMENTED_CLINICAL.includes(chartTab)) ||
@@ -2083,6 +2161,75 @@ export default function CustomerChartPage() {
               {/* Clinical: 문진·동의서 */}
               {chartTabGroup === 'clinical' && chartTab === 'checklist' && (
             <div className="space-y-3">
+              {/* T-20260513-foot-C21-TAB-RESTRUCTURE-C: 원장 메인 요약 뷰 (AC-3) */}
+              {checklistEntries.length > 0 && (() => {
+                const latest = checklistEntries[0];
+                const d = latest.checklist_data as {
+                  has_allergy?: boolean; allergy_types?: string[];
+                  medications?: string[]; medications_none?: boolean;
+                  pain_severity?: string; medical_history?: string[];
+                  prior_conditions?: string; nail_locations?: string[];
+                  pain_duration?: string;
+                };
+                const severityLabel: Record<string, string> = { '1': '경미', '2': '불편', '3': '심함 ⚠️', '4': '매우심함 🚨' };
+                const hasAlert = d.has_allergy || (!d.medications_none && (d.medications ?? []).length > 0) || (d.medical_history ?? []).length > 0;
+                return (
+                  <div className={`rounded-lg border p-3 text-xs ${hasAlert ? 'bg-amber-50 border-amber-200' : 'bg-teal-50 border-teal-200'}`}>
+                    <div className="flex items-center gap-1.5 font-bold text-teal-800 mb-2">
+                      <span className="h-2 w-2 rounded-full bg-teal-500" />
+                      원장 핵심 요약
+                      <span className="text-[10px] font-normal text-teal-600 ml-1">최신 체크리스트 기준</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                      {d.has_allergy && (d.allergy_types ?? []).length > 0 && (
+                        <div className="col-span-2 flex gap-1.5 text-rose-700 font-semibold">
+                          <span className="text-muted-foreground font-normal w-14 shrink-0">🚨 알레르기</span>
+                          <span>{(d.allergy_types ?? []).join(', ')}</span>
+                        </div>
+                      )}
+                      {!d.medications_none && (d.medications ?? []).length > 0 && (
+                        <div className="col-span-2 flex gap-1.5 text-orange-700">
+                          <span className="text-muted-foreground w-14 shrink-0">⚠️ 복용약</span>
+                          <span>{(d.medications ?? []).join(', ')}</span>
+                        </div>
+                      )}
+                      {(d.medical_history ?? []).length > 0 && (
+                        <div className="flex gap-1.5">
+                          <span className="text-muted-foreground w-14 shrink-0">병력</span>
+                          <span>{(d.medical_history ?? []).join(', ')}</span>
+                        </div>
+                      )}
+                      {d.prior_conditions && (
+                        <div className="flex gap-1.5">
+                          <span className="text-muted-foreground w-14 shrink-0">기왕증</span>
+                          <span>{d.prior_conditions}</span>
+                        </div>
+                      )}
+                      {d.pain_severity && (
+                        <div className="flex gap-1.5">
+                          <span className="text-muted-foreground w-14 shrink-0">통증강도</span>
+                          <span className={parseInt(d.pain_severity) >= 3 ? 'font-semibold text-orange-700' : ''}>
+                            {severityLabel[d.pain_severity] ?? d.pain_severity}
+                          </span>
+                        </div>
+                      )}
+                      {(d.nail_locations ?? []).length > 0 && (
+                        <div className="flex gap-1.5">
+                          <span className="text-muted-foreground w-14 shrink-0">통증부위</span>
+                          <span>{(d.nail_locations ?? []).join(', ')}</span>
+                        </div>
+                      )}
+                      {d.pain_duration && (
+                        <div className="flex gap-1.5">
+                          <span className="text-muted-foreground w-14 shrink-0">유병기간</span>
+                          <span>{d.pain_duration}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* 사전 체크리스트 응답 */}
               {checklistEntries.length > 0 && (
                 <div className="rounded-lg border bg-white p-3 space-y-2 text-xs">
@@ -2283,6 +2430,21 @@ export default function CustomerChartPage() {
                   </div>
                 </div>
               )}
+
+              {/* T-20260513-foot-C21-TAB-RESTRUCTURE-C: 영수증 자동업로드 — AC-1 */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-green-800 mb-2">
+                  <span className="h-2 w-2 rounded-full bg-green-500" />
+                  영수증 사진
+                </div>
+                <CustomerStorageImageSection
+                  customerId={customer.id}
+                  prefix="receipt"
+                  label="영수증 업로드 (결제 완료 시 자동 첨부)"
+                  accent="green"
+                  accept="image/*"
+                />
+              </div>
             </div>
           )}
 
@@ -2589,9 +2751,52 @@ export default function CustomerChartPage() {
             </div>
           )}
 
-              {/* History: 상담내역 — T-20260510-foot-C21-IMG-PROGRESS: 동의서+영수증 통합 */}
+              {/* History: 상담내역 — T-20260513-foot-C21-TAB-RESTRUCTURE-C: 필수서류 + 수납연결 (AC-2) */}
               {chartTabGroup === 'history' && chartTab === 'consultations' && (
             <div className="space-y-3">
+              {/* T-20260513-foot-C21-TAB-RESTRUCTURE-C: 필수서류 체크리스트 */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-indigo-800 mb-2">
+                  <span className="h-2 w-2 rounded-full bg-indigo-500" />
+                  필수서류 현황
+                </div>
+                <div className="space-y-1">
+                  {/* 전자서명 동의서 */}
+                  {(['treatment', 'non_covered', 'privacy'] as const).map((fType) => {
+                    const done = consentEntries.some((c) => c.form_type === fType);
+                    return (
+                      <div key={fType} className={`flex items-center gap-2 rounded px-2 py-1 ${done ? 'bg-teal-50' : 'bg-gray-50'}`}>
+                        <span className={done ? 'text-teal-600' : 'text-gray-300'}>
+                          {done ? '✓' : '○'}
+                        </span>
+                        <span className={done ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>
+                          {FORM_TITLES[fType] ?? fType}
+                        </span>
+                        {done && (
+                          <span className="ml-auto text-muted-foreground text-[10px]">
+                            {format(new Date(consentEntries.find((c) => c.form_type === fType)!.signed_at), 'MM-dd')}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {/* 사전 체크리스트 */}
+                  <div className={`flex items-center gap-2 rounded px-2 py-1 ${checklistEntries.length > 0 ? 'bg-teal-50' : 'bg-gray-50'}`}>
+                    <span className={checklistEntries.length > 0 ? 'text-teal-600' : 'text-gray-300'}>
+                      {checklistEntries.length > 0 ? '✓' : '○'}
+                    </span>
+                    <span className={checklistEntries.length > 0 ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>
+                      사전 체크리스트
+                    </span>
+                    {checklistEntries.length > 0 && checklistEntries[0].completed_at && (
+                      <span className="ml-auto text-muted-foreground text-[10px]">
+                        {format(new Date(checklistEntries[0].completed_at), 'MM-dd')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* 동의서 사진 + 결제영수증 */}
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center gap-1.5 font-bold text-blue-800 mb-2">
@@ -2607,6 +2812,29 @@ export default function CustomerChartPage() {
                   />
                 </div>
               </div>
+
+              {/* T-20260513-foot-C21-TAB-RESTRUCTURE-C: 영수증 → 수납내역 연결 (AC-2) */}
+              {payments.filter((p) => p.memo === '영수증 업로드').length > 0 && (
+                <div className="rounded-lg border bg-white p-3 text-xs">
+                  <div className="flex items-center gap-1.5 font-semibold text-green-800 mb-2">
+                    <span className="h-2 w-2 rounded-full bg-green-500" />
+                    영수증 연결 수납내역
+                  </div>
+                  <div className="space-y-1">
+                    {payments
+                      .filter((p) => p.memo === '영수증 업로드')
+                      .map((p) => (
+                        <div key={p.id} className="flex items-center gap-2 rounded bg-green-50 px-2 py-1">
+                          <span className="text-muted-foreground tabular-nums">{format(new Date(p.created_at), 'MM-dd HH:mm')}</span>
+                          <span className="font-semibold text-green-700">{formatAmount(p.amount)}</span>
+                          <span className="text-muted-foreground">{p.method}</span>
+                          <Badge variant="secondary" className="text-[10px] ml-auto">수납내역 연결</Badge>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
               {/* 전자서명 동의서 목록 */}
               {consentEntries.length > 0 && (
                 <div className="rounded-lg border bg-white p-3 text-xs">
@@ -2676,8 +2904,119 @@ export default function CustomerChartPage() {
             </div>
           )}
 
+              {/* Clinical: 펜차트 — T-20260513-foot-C21-TAB-RESTRUCTURE-C (AC-4) */}
+              {chartTabGroup === 'clinical' && chartTab === 'pen_chart' && (
+                <PenChartTab
+                  customerId={customer.id}
+                  clinicId={customer.clinic_id}
+                />
+              )}
+
+              {/* History: 메시지 — T-20260513-foot-C21-TAB-RESTRUCTURE-C (AC-5) */}
+              {chartTabGroup === 'history' && chartTab === 'messages' && (
+            <div className="space-y-3">
+              {/* 메시지 수동 입력 */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-sky-800 mb-2">
+                  <span className="h-2 w-2 rounded-full bg-sky-500" />
+                  문자 이력 등록
+                </div>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <select
+                      value={messageForm.message_type}
+                      onChange={(e) => setMessageForm((f) => ({ ...f, message_type: e.target.value as 'sms' | 'kakao' | 'manual' }))}
+                      className="border rounded px-2 py-1 text-xs bg-white shrink-0"
+                    >
+                      <option value="manual">수동기록</option>
+                      <option value="sms">SMS</option>
+                      <option value="kakao">카카오</option>
+                    </select>
+                    <input
+                      className="border rounded px-2 py-1 text-xs flex-1 min-w-0"
+                      placeholder="발송 내용 입력…"
+                      value={messageForm.content}
+                      onChange={(e) => setMessageForm((f) => ({ ...f, content: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); }
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      className="h-7 text-[11px] px-3 bg-sky-600 hover:bg-sky-700 shrink-0"
+                      disabled={savingMessage || !messageForm.content.trim()}
+                      onClick={async () => {
+                        if (!messageForm.content.trim() || !customer) return;
+                        setSavingMessage(true);
+                        const { error } = await supabase.from('message_logs').insert({
+                          customer_id: customer.id,
+                          clinic_id: customer.clinic_id,
+                          content: messageForm.content.trim(),
+                          message_type: messageForm.message_type,
+                          status: 'sent',
+                          sent_at: new Date().toISOString(),
+                        });
+                        setSavingMessage(false);
+                        if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+                        toast.success('문자 이력 등록 완료');
+                        setMessageForm((f) => ({ ...f, content: '' }));
+                        refreshMessageLogs();
+                      }}
+                    >
+                      <Send className="h-3.5 w-3.5 mr-1" />
+                      {savingMessage ? '저장 중…' : '등록'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 메시지 이력 목록 */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="flex items-center gap-1.5 font-semibold text-muted-foreground mb-2">
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  발송 이력
+                </div>
+                {messageLogs.length === 0 ? (
+                  <div className="py-4 text-center text-muted-foreground border border-dashed rounded">
+                    문자 발송 이력 없음
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {messageLogs.map((msg) => (
+                      <div key={msg.id} className="rounded border border-gray-100 bg-gray-50 px-2.5 py-2 space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="tabular-nums text-muted-foreground">
+                            {format(new Date(msg.sent_at), 'MM-dd HH:mm')}
+                          </span>
+                          <Badge
+                            variant={msg.message_type === 'kakao' ? 'teal' : msg.message_type === 'sms' ? 'secondary' : 'outline'}
+                            className="text-[10px]"
+                          >
+                            {msg.message_type === 'kakao' ? '카카오' : msg.message_type === 'sms' ? 'SMS' : '수동'}
+                          </Badge>
+                          <Badge
+                            variant={msg.status === 'failed' ? 'destructive' : msg.status === 'pending' ? 'secondary' : 'outline'}
+                            className={cn('text-[10px]', msg.status === 'sent' && 'text-teal-700 border-teal-300')}
+                          >
+                            {msg.status === 'sent' ? '발송완료' : msg.status === 'failed' ? '실패' : '대기'}
+                          </Badge>
+                          {msg.sent_by_name && (
+                            <span className="ml-auto text-muted-foreground text-[10px]">{msg.sent_by_name}</span>
+                          )}
+                        </div>
+                        <div className="text-gray-700 leading-snug whitespace-pre-wrap">{msg.content}</div>
+                        {msg.memo && (
+                          <div className="text-muted-foreground text-[10px]">메모: {msg.memo}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
             </div>{/* /tab-content */}
-          </div>{/* /scrollable-area */}
         </div>{/* /left-panel */}
 
         {/* ════════════════════════════════════════════════════════════════ */}

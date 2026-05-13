@@ -1,0 +1,2 @@
+-- Rollback: T-20260513-foot-C21-TAB-RESTRUCTURE-C
+DROP TABLE IF EXISTS message_logs;
