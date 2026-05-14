@@ -1,5 +1,26 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-14 22:30 — dev-foot | deploy-ready | T-20260514-foot-SELFCHECKIN-TESTDATA — [P2] 셀프접수 테스트용 [TEST3] 더미 예약 20건 삽입
+
+**커밋: ba0883a → origin/main push 완료 (DB-only, Vercel 배포 없음)**
+
+### 구현 내용
+- ✅ AC-1: [TEST3] 초진고객01~10 생성 (phone +821099030001~0010, new, confirmed, 체크인 없음)
+- ✅ AC-2: [TEST3] 재진고객01~10 생성 (phone +821099030011~0020, returning, confirmed, 과거 check_in 이력)
+- ✅ AC-3: [TEST3] prefix + is_simulation=true + +82109903xxxx 대역
+- ✅ AC-4: rollback_selfcheckin_testdata_20260514.sql (BEGIN/COMMIT 트랜잭션 보호)
+- ✅ AC-5: 셀프접수 매칭 동작 확인 — 현장 테스트 진행 중 (13건 checked_in 전환 확인됨)
+
+### DB 결과
+- customers 20건 삽입 (is_simulation=true)
+- reservations 20건 삽입 (reservation_date=2026-05-14, status=confirmed 초기)
+- 현장 테스트 결과: 13건 checked_in 전환 → 셀프접수 매칭 정상 동작 확인
+
+### E2E
+- e2e_spec_exempt_reason: db_only
+
+---
+
 ## 2026-05-14 22:00 — dev-foot | deploy-ready | T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE — [P2] 수납 완료 건 수정/취소/삭제 + audit 이력
 
 **커밋: f76709b → origin/main push 완료 → Vercel 자동배포 예정**
