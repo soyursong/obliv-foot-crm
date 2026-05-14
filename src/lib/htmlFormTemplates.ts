@@ -872,6 +872,401 @@ ${COMMON_STYLE}
 </div>
 `;
 
+// ─── 진료비 납입증명서(소득공제용) ───
+
+const PAYMENT_CERT_HTML = `
+${COMMON_STYLE}
+<div class="form-wrap">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;">
+    <div style="flex:1;">
+      <div style="font-size:17pt; font-weight:bold; letter-spacing:4px; margin-top:6px;">진료비&nbsp;&nbsp;납입증명서(소득공제용)</div>
+    </div>
+    <div style="font-size:9pt; text-align:left; line-height:1.8; white-space:nowrap; padding-top:4px;">
+      진&nbsp;&nbsp;료&nbsp;&nbsp;과&nbsp;:&nbsp;&nbsp;&nbsp;<br>
+      작&nbsp;&nbsp;성&nbsp;&nbsp;자&nbsp;:&nbsp;&nbsp;&nbsp;<br>
+      일&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;자&nbsp;:&nbsp;20&nbsp;&nbsp;&nbsp;&nbsp;년&nbsp;&nbsp;&nbsp;&nbsp;월&nbsp;&nbsp;&nbsp;&nbsp;일
+    </div>
+  </div>
+
+  <table style="margin-bottom:4px;">
+    <tbody>
+      <tr>
+        <td style="width:70px; background:#f8f8f8;">등&nbsp;록&nbsp;번&nbsp;호</td>
+        <td style="width:200px;">{{record_no}}</td>
+        <td style="width:30px; background:#f8f8f8; text-align:center;">No</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8;">수신자(수신처)</td>
+        <td colspan="3">{{recipient}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="font-weight:bold; font-size:9.5pt; margin:6px 0 2px;">■ 인적사항</div>
+  <table style="margin-bottom:4px;">
+    <tbody>
+      <tr>
+        <td style="width:55px; background:#f8f8f8; text-align:center;">성&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;명</td>
+        <td style="width:180px;">{{patient_name}}</td>
+        <td style="width:80px; background:#f8f8f8; text-align:center;">주민등록번호</td>
+        <td>{{patient_rrn}}</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">주&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;소</td>
+        <td colspan="3">{{patient_address}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="font-weight:bold; font-size:9.5pt; margin:6px 0 2px;">■ {{year}}년도 진료비 납입현황</div>
+  <table style="margin-bottom:4px;">
+    <thead>
+      <tr>
+        <th style="width:36px;">기&nbsp;&nbsp;간</th>
+        <th>외&nbsp;&nbsp;&nbsp;&nbsp;래</th>
+        <th style="width:70px;">일&nbsp;&nbsp;&nbsp;&nbsp;원</th>
+        <th style="width:36px;">기&nbsp;&nbsp;간</th>
+        <th>외&nbsp;&nbsp;&nbsp;&nbsp;래</th>
+        <th style="width:70px;">일&nbsp;&nbsp;&nbsp;&nbsp;원</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">1 월</td><td>{{m01_outpatient}}</td><td>{{m01_inpatient}}</td>
+        <td style="background:#f8f8f8; text-align:center;">7 월</td><td>{{m07_outpatient}}</td><td>{{m07_inpatient}}</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">2 월</td><td>{{m02_outpatient}}</td><td>{{m02_inpatient}}</td>
+        <td style="background:#f8f8f8; text-align:center;">8 월</td><td>{{m08_outpatient}}</td><td>{{m08_inpatient}}</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">3 월</td><td>{{m03_outpatient}}</td><td>{{m03_inpatient}}</td>
+        <td style="background:#f8f8f8; text-align:center;">9 월</td><td>{{m09_outpatient}}</td><td>{{m09_inpatient}}</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">4 월</td><td>{{m04_outpatient}}</td><td>{{m04_inpatient}}</td>
+        <td style="background:#f8f8f8; text-align:center;">10 월</td><td>{{m10_outpatient}}</td><td>{{m10_inpatient}}</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">5 월</td><td>{{m05_outpatient}}</td><td>{{m05_inpatient}}</td>
+        <td style="background:#f8f8f8; text-align:center;">11 월</td><td>{{m11_outpatient}}</td><td>{{m11_inpatient}}</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">6 월</td><td>{{m06_outpatient}}</td><td>{{m06_inpatient}}</td>
+        <td style="background:#f8f8f8; text-align:center;">12 월</td><td>{{m12_outpatient}}</td><td>{{m12_inpatient}}</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;" colspan="2">사용목적</td>
+        <td colspan="2" style="text-align:center; font-size:8.5pt;">진료비 소득공제 신청용</td>
+        <td style="background:#f8f8f8; text-align:center;">연간 합계액</td>
+        <td style="text-align:right; font-weight:bold;">{{annual_total}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="font-size:8.5pt; padding:3px 6px; margin-bottom:4px;">
+    ▷ 상기 금액에는 교정 및 종합검진료 {{excluded_items}}가 제외되어 있습니다.
+  </div>
+
+  <div style="font-size:9pt; padding:6px 0; line-height:1.7;">
+    소득세법 제52조 및 소득세법 시행령 제110조 규정에 의하여 위와 같이 진료비를 납입하였음을 증명합니다.
+  </div>
+
+  <div style="text-align:center; font-size:10pt; padding:16px 0 8px;">
+    {{issue_date}}
+  </div>
+
+  <div style="font-size:9pt; margin:8px 0 4px;">{{clinic_name}}</div>
+
+  <table style="margin-top:4px; width:auto; min-width:300px; margin-left:auto;">
+    <tbody>
+      <tr>
+        <td style="border:none; padding:2px 6px 2px 0; background:none; white-space:nowrap;">병&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;원&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;장&nbsp;:</td>
+        <td style="border:none; padding:2px 0; background:none; min-width:120px;"></td>
+      </tr>
+      <tr>
+        <td style="border:none; padding:2px 6px 2px 0; background:none; white-space:nowrap;">사업자등록번호&nbsp;:</td>
+        <td style="border:none; padding:2px 0; background:none;">{{business_reg_no}}</td>
+      </tr>
+      <tr>
+        <td style="border:none; padding:2px 6px 2px 0; background:none; white-space:nowrap;">사업자&nbsp;&nbsp;소재지&nbsp;:</td>
+        <td style="border:none; padding:2px 0; background:none;">{{clinic_address}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="font-size:8.5pt; margin-top:14px; border-top:1px solid #999; padding-top:4px; line-height:1.8; color:#333;">
+    ※ 본 진료비는 20&nbsp;&nbsp;&nbsp;&nbsp;년&nbsp;&nbsp;&nbsp;&nbsp;월까지의 진료비 내역으로 이후 진료비에 대한 소득공제는 진료일에 발행하는 진료비 영수증으로 제출하시기 바랍니다.<br>
+    ※ 본 증명서는 상기목적 이외의 타용도로 사용할 수 없습니다.
+  </div>
+</div>
+`;
+
+// ─── 진료의뢰서 ───
+
+const REFERRAL_LETTER_HTML = `
+${COMMON_STYLE}
+<div class="form-wrap" style="border:1px solid #000; padding:0;">
+  <div style="border-bottom:1px solid #000; padding:10px 14px 8px;">
+    <div class="title" style="font-size:18pt; letter-spacing:14px; padding:8px 0 6px;">진 료 의 뢰 서</div>
+  </div>
+
+  <div style="border-bottom:1px solid #000; padding:8px 14px;">
+    <div style="font-size:9.5pt; margin-bottom:4px;">
+      진료의뢰일&nbsp;:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="border-bottom:1px solid #000; min-width:40px; display:inline-block;">{{referral_year}}</span>년&nbsp;
+      <span style="border-bottom:1px solid #000; min-width:30px; display:inline-block;">{{referral_month}}</span>월&nbsp;
+      <span style="border-bottom:1px solid #000; min-width:30px; display:inline-block;">{{referral_day}}</span>일
+    </div>
+    <div style="font-size:9.5pt;">
+      한방&nbsp;/&nbsp;양방&nbsp;:&nbsp;과명&nbsp;<span style="border-bottom:1px solid #000; min-width:80px; display:inline-block;">{{dept_name}}</span>
+      &nbsp;&nbsp;&nbsp;의사명&nbsp;<span style="border-bottom:1px solid #000; min-width:80px; display:inline-block;">{{referring_doctor}}</span>
+    </div>
+  </div>
+
+  <div style="border-bottom:1px solid #000; padding:8px 14px;">
+    <table style="border:none; margin:0;">
+      <tbody>
+        <tr>
+          <td style="border:none; padding:2px 4px; width:60px; background:none; white-space:nowrap; font-size:9.5pt;">성&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;명</td>
+          <td style="border:none; border-bottom:1px solid #000; padding:2px 4px; min-width:100px; background:none; font-size:9.5pt;">{{patient_name}}</td>
+          <td style="border:none; padding:2px 16px 2px 16px; background:none; white-space:nowrap; font-size:9.5pt;">주민등록번호</td>
+          <td style="border:none; border-bottom:1px solid #000; padding:2px 4px; min-width:120px; background:none; font-size:9.5pt; letter-spacing:1px;">
+            <span>{{rrn_front}}</span>&nbsp;-&nbsp;<span>{{rrn_back}}</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="border:none; padding:2px 4px; background:none; white-space:nowrap; font-size:9.5pt;">성별/나이</td>
+          <td style="border:none; border-bottom:1px solid #000; padding:2px 4px; background:none; font-size:9.5pt;">{{patient_gender}}&nbsp;/&nbsp;{{patient_age}}</td>
+          <td style="border:none; padding:2px 16px 2px 16px; background:none; white-space:nowrap; font-size:9.5pt;">연&nbsp;&nbsp;락&nbsp;&nbsp;처</td>
+          <td style="border:none; border-bottom:1px solid #000; padding:2px 4px; background:none; font-size:9.5pt;">{{patient_phone}}</td>
+        </tr>
+        <tr>
+          <td style="border:none; padding:2px 4px; background:none; white-space:nowrap; font-size:9.5pt;">진료&nbsp;구분</td>
+          <td style="border:none; padding:2px 4px; background:none; font-size:9.5pt;">외래&nbsp;·&nbsp;입원</td>
+          <td style="border:none; padding:2px 16px 2px 16px; background:none; white-space:nowrap; font-size:9.5pt;">E-mail&nbsp;주소</td>
+          <td style="border:none; border-bottom:1px solid #000; padding:2px 4px; background:none; font-size:9.5pt;">{{patient_email}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="border-bottom:1px solid #000; padding:10px 14px; min-height:70px;">
+    <div style="font-size:9.5pt; font-weight:bold; margin-bottom:4px;">■&nbsp;진&nbsp;단&nbsp;명&nbsp;:</div>
+    <div style="font-size:9.5pt; min-height:40px; padding-left:12px;">{{diagnosis}}</div>
+  </div>
+
+  <div style="border-bottom:1px solid #000; padding:10px 14px; min-height:70px;">
+    <div style="font-size:9.5pt; font-weight:bold; margin-bottom:4px;">■&nbsp;병력&nbsp;및&nbsp;소견&nbsp;:</div>
+    <div style="font-size:9.5pt; min-height:40px; padding-left:12px; white-space:pre-wrap;">{{medical_history}}</div>
+  </div>
+
+  <div style="border-bottom:1px solid #000; padding:10px 14px; min-height:70px;">
+    <div style="font-size:9.5pt; font-weight:bold; margin-bottom:4px;">■&nbsp;의뢰내용&nbsp;:</div>
+    <div style="font-size:9.5pt; min-height:40px; padding-left:12px; white-space:pre-wrap;">{{referral_content}}</div>
+  </div>
+
+  <div style="border-bottom:1px solid #000; padding:8px 14px;">
+    <div style="display:flex; gap:24px; font-size:9.5pt;">
+      <div>☐&nbsp;검사후&nbsp;결과&nbsp;통보&nbsp;요망</div>
+      <div>☐&nbsp;진료후&nbsp;환자&nbsp;회송&nbsp;요망</div>
+    </div>
+  </div>
+
+  <div style="border-bottom:1px solid #000; padding:8px 14px;">
+    <table style="border:none;">
+      <tbody>
+        <tr>
+          <td style="border:none; padding:2px 8px 2px 0; background:none; white-space:nowrap; font-size:9.5pt;">의&nbsp;&nbsp;뢰&nbsp;&nbsp;병&nbsp;&nbsp;원&nbsp;:</td>
+          <td style="border:none; border-bottom:1px solid #000; padding:2px 4px; min-width:160px; background:none; font-size:9.5pt;">{{referral_to_hospital}}</td>
+          <td style="border:none; padding:2px 0 2px 24px; background:none; white-space:nowrap; font-size:9.5pt;">전화/FAX&nbsp;번호&nbsp;:</td>
+          <td style="border:none; border-bottom:1px solid #000; padding:2px 4px; min-width:120px; background:none; font-size:9.5pt;">{{clinic_phone}}</td>
+        </tr>
+        <tr>
+          <td style="border:none; padding:2px 8px 2px 0; background:none; white-space:nowrap; font-size:9.5pt;">의&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;사&nbsp;:</td>
+          <td style="border:none; border-bottom:1px solid #000; padding:2px 4px; background:none; font-size:9.5pt;">{{doctor_name}}</td>
+          <td style="border:none; padding:2px 0 2px 24px; background:none; white-space:nowrap; font-size:9.5pt;">(날인)</td>
+          <td style="border:none; padding:2px 4px; background:none;"></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="padding:8px 14px; text-align:center;">
+    <div style="font-size:14pt; letter-spacing:6px; font-weight:bold;">{{clinic_name}}</div>
+  </div>
+</div>
+`;
+
+// ─── 의무기록사본발급신청서 ───
+
+const MEDICAL_RECORD_REQUEST_HTML = `
+${COMMON_STYLE}
+<div class="form-wrap">
+  <div class="title" style="font-size:16pt; letter-spacing:6px; padding:10px 0 12px;">의무기록사본발급신청서</div>
+
+  <table style="margin-bottom:6px;">
+    <tbody>
+      <tr>
+        <td style="background:#f8f8f8; width:60px; text-align:center;">환&nbsp;자&nbsp;명</td>
+        <td style="width:180px;">{{patient_name}}</td>
+        <td style="background:#f8f8f8; width:60px; text-align:center;">병록번호</td>
+        <td>{{record_no}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="font-size:9.5pt; line-height:2.0; padding:6px 4px;">
+    나는&nbsp;:&nbsp;<span style="border-bottom:1px solid #000; display:inline-block; min-width:240px;">{{request_purpose}}</span>&nbsp;목적으로
+  </div>
+
+  <div style="font-size:9.5pt; line-height:2.0; padding:2px 4px;">
+    (본인·상기환자)의 의무기록을(열람·복사)하고자 하오니 승낙하여 주시기 바랍니다.<br>
+    (단, 미성년자, 정신·물리적 무능력자, 사망환자의 경우에는<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;부모, 보호자, 또는 대리인이 대신할 수 있다.)
+  </div>
+
+  <div style="font-size:9.5pt; line-height:2.2; padding:8px 4px;">
+    열람 또는 복사를 목적하는 부문&nbsp;
+    <span style="border-bottom:1px solid #000; display:inline-block; min-width:200px;">{{record_section}}</span>
+  </div>
+
+  <div style="font-size:9.5pt; line-height:2.2; padding:2px 4px;">
+    본인이 아닌 경우 환자와의 관계&nbsp;
+    <span style="border-bottom:1px solid #000; display:inline-block; min-width:80px;">{{requester_relation}}</span>의&nbsp;
+    <span style="border-bottom:1px solid #000; display:inline-block; min-width:120px;">{{requester_name}}</span>
+  </div>
+
+  <div style="font-size:9.5pt; line-height:2.2; padding:2px 4px;">
+    주소&nbsp;:&nbsp;<span style="border-bottom:1px solid #000; display:inline-block; min-width:280px;">{{patient_address}}</span>
+  </div>
+
+  <div style="text-align:center; font-size:10pt; padding:16px 0; letter-spacing:4px;">
+    {{issue_date}}
+  </div>
+
+  <table style="margin-top:8px;">
+    <tbody>
+      <tr>
+        <td style="background:#f8f8f8; width:120px; white-space:nowrap;">환자(대리인)&nbsp;서명</td>
+        <td style="min-width:200px;">{{patient_name}}</td>
+        <td style="background:#f8f8f8; width:30px; text-align:center;">(인)</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; white-space:nowrap;">주민등록번호</td>
+        <td colspan="2">{{patient_rrn}}</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; white-space:nowrap;">주치의&nbsp;서명</td>
+        <td>{{doctor_name}}</td>
+        <td style="background:#f8f8f8; text-align:center;">(인)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="margin-top:24px; text-align:center; font-size:12pt; letter-spacing:2px; font-weight:bold;">
+    {{clinic_name}}
+  </div>
+</div>
+`;
+
+// ─── 소견서 variant (diag_opinion_v2) ───
+// AC-6 결정: diag_opinion_v2 별도 등록 (교체 X)
+// 사유: ① 보험청구용 소견서로 기존 diag_opinion과 목적·레이아웃 상이
+//       ② 기존 diag_opinion은 현장 사용 중 — 교체 시 혼란 발생
+//       ③ 3분할 테이블(임상적/최종, 총간병기간, 보조기명) 구조가 완전히 다름
+
+const DIAG_OPINION_V2_HTML = `
+${COMMON_STYLE}
+<div class="form-wrap">
+  <div class="title" style="font-size:18pt; letter-spacing:12px; padding:8px 0 10px;">소 견 서</div>
+
+  <table style="margin-bottom:4px;">
+    <tbody>
+      <tr>
+        <td style="width:55px; background:#f8f8f8; text-align:center;">성&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;명</td>
+        <td style="width:180px;">{{patient_name}}</td>
+        <td style="width:80px; background:#f8f8f8; text-align:center;">주민등록번호</td>
+        <td>{{patient_rrn}}</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">주&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;소</td>
+        <td colspan="3">{{patient_address}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <table style="margin-bottom:4px;">
+    <tbody>
+      <tr>
+        <td rowspan="4" style="width:60px; background:#f8f8f8; text-align:center; vertical-align:middle; font-size:9pt; line-height:2.0;">
+          ☐&nbsp;임상적<br>☐&nbsp;최&nbsp;&nbsp;&nbsp;종
+        </td>
+        <td rowspan="2" style="background:#f0f0f0; text-align:center; width:60px; font-size:9pt;">병&nbsp;&nbsp;&nbsp;&nbsp;명</td>
+        <td rowspan="2" style="min-width:120px; font-size:9.5pt;">{{disease_name}}</td>
+        <td style="background:#f8f8f8; text-align:center; width:80px; font-size:8.5pt; white-space:nowrap;">총&nbsp;간병기간</td>
+        <td style="white-space:nowrap; font-size:8.5pt;">
+          입원&nbsp;<span style="border-bottom:1px solid #000; min-width:50px; display:inline-block;">{{inpatient_start}}</span>&nbsp;~&nbsp;<span style="border-bottom:1px solid #000; min-width:50px; display:inline-block;">{{inpatient_end}}</span>
+        </td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center; font-size:8.5pt; white-space:nowrap;"></td>
+        <td style="white-space:nowrap; font-size:8.5pt;">
+          외래&nbsp;<span style="border-bottom:1px solid #000; min-width:50px; display:inline-block;">{{outpatient_start}}</span>&nbsp;~&nbsp;<span style="border-bottom:1px solid #000; min-width:50px; display:inline-block;">{{outpatient_end}}</span>
+        </td>
+      </tr>
+      <tr>
+        <td style="background:#f0f0f0; text-align:center; font-size:8.5pt; white-space:nowrap;">발&nbsp;병&nbsp;일</td>
+        <td style="font-size:9pt;">{{onset_date}}</td>
+        <td style="background:#f8f8f8; text-align:center; font-size:8.5pt; white-space:nowrap;">보&nbsp;조&nbsp;기&nbsp;명</td>
+        <td style="font-size:8.5pt;">{{assistive_device}}&nbsp;&nbsp;(분류번호&nbsp;:&nbsp;{{classification_code}}&nbsp;)</td>
+      </tr>
+      <tr>
+        <td style="background:#f0f0f0; text-align:center; font-size:8.5pt; white-space:nowrap;">제&nbsp;&nbsp;출&nbsp;&nbsp;처</td>
+        <td style="font-size:9pt;">{{submit_to}}</td>
+        <td style="background:#f8f8f8; text-align:center; font-size:8.5pt; white-space:nowrap;">사&nbsp;용&nbsp;기&nbsp;간</td>
+        <td style="font-size:8.5pt; white-space:nowrap;">{{device_start}}&nbsp;~&nbsp;{{device_end}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <table style="margin-bottom:4px;">
+    <tbody>
+      <tr>
+        <td style="width:55px; background:#f8f8f8; text-align:center; vertical-align:middle; line-height:1.8; font-size:9.5pt; height:100px;">소&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;견</td>
+        <td style="min-height:100px; vertical-align:top; padding:6px; font-size:9.5pt; white-space:pre-wrap;">{{opinion_text}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <table style="margin-bottom:4px;">
+    <tbody>
+      <tr>
+        <td style="width:80px; background:#f8f8f8;">※&nbsp;참고사항</td>
+        <td style="min-height:40px; vertical-align:top; padding:4px; font-size:9pt; white-space:pre-wrap;">{{remarks}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="font-size:9pt; margin-top:8px; line-height:1.8;">
+    병(예)원 주소&nbsp;:&nbsp;{{clinic_address}}<br>
+    전화번호&nbsp;:&nbsp;{{clinic_phone}}
+  </div>
+
+  <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:8px; border:1px solid #000; padding:6px 10px;">
+    <div>
+      <div style="font-size:9.5pt; font-weight:bold;">병(예)원 명칭&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(직인)</div>
+      <div style="font-size:9pt;">{{clinic_name}}</div>
+      <div style="font-size:8.5pt;">(면허번호&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;호)</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:9.5pt; letter-spacing:2px;">{{issue_date}}</div>
+      <div style="font-size:9.5pt; margin-top:4px;">담당의사&nbsp;:&nbsp;{{doctor_name}}&nbsp;&nbsp;(인)</div>
+    </div>
+  </div>
+</div>
+`;
+
 // ─── 템플릿 맵 ───
 
 const HTML_TEMPLATE_MAP: Record<string, string> = {
@@ -880,6 +1275,11 @@ const HTML_TEMPLATE_MAP: Record<string, string> = {
   visit_confirm: VISIT_CONFIRM_HTML,
   diag_opinion: DIAG_OPINION_HTML,
   bill_detail: BILL_DETAIL_HTML,
+  // T-20260514-foot-DOC-4FORM-IMPL: 4종 신규
+  payment_cert: PAYMENT_CERT_HTML,
+  referral_letter: REFERRAL_LETTER_HTML,
+  medical_record_request: MEDICAL_RECORD_REQUEST_HTML,
+  diag_opinion_v2: DIAG_OPINION_V2_HTML,
 };
 
 /**
