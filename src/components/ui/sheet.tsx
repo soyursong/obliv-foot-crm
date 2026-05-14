@@ -23,22 +23,27 @@ export const SheetClose = BaseDialog.Close;
 export function SheetContent({
   className,
   side = 'right',
+  /** 중첩 Sheet용 z-index 레벨. 기본 0 (z-40/z-50). 1로 올리면 z-[60]/z-[70] */
+  zLevel = 0,
   children,
 }: {
   className?: string;
   side?: 'left' | 'right';
+  zLevel?: number;
   children?: React.ReactNode;
 }) {
   const sideClass =
     side === 'right'
       ? 'right-0 top-0 h-full w-full max-w-md border-l data-[open]:slide-in-from-right data-[closed]:slide-out-to-right'
       : 'left-0 top-0 h-full w-full max-w-md border-r data-[open]:slide-in-from-left data-[closed]:slide-out-to-left';
+  const backdropZ = zLevel === 0 ? 'z-40' : 'z-[60]';
+  const popupZ    = zLevel === 0 ? 'z-50' : 'z-[70]';
   return (
     <BaseDialog.Portal>
-      <BaseDialog.Backdrop className="fixed inset-0 z-40 bg-black/40" />
+      <BaseDialog.Backdrop className={`fixed inset-0 ${backdropZ} bg-black/40`} />
       <BaseDialog.Popup
         className={cn(
-          'fixed z-50 bg-background p-6 shadow-lg focus:outline-none overflow-y-auto',
+          `fixed ${popupZ} bg-background p-6 shadow-lg focus:outline-none overflow-y-auto`,
           'data-[open]:animate-in data-[closed]:animate-out',
           sideClass,
           className,

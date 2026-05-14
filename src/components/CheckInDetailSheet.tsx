@@ -1037,7 +1037,6 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   if (!checkIn && customerMode) {
     const effectiveChartNumber = chartNumber ?? customerMode.chartNumber;
     return (
-    <>
       <Sheet open={true} onOpenChange={(o) => !o && onClose()}>
         <SheetContent className="w-[400px] sm:w-[440px] max-h-screen overflow-y-auto">
           <SheetHeader>
@@ -1410,14 +1409,14 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               load();
             }}
           />
+          {/* T-20260514-foot-CHART-EXPAND-UX: 고객차트 슬라이드 패널 (customerMode)
+               SheetContent 안에 배치 → @base-ui/react 중첩 다이얼로그 context 정상 연결 */}
+          <CustomerChartSheet
+            customerId={chartSheetId}
+            onClose={() => setChartSheetId(null)}
+          />
         </SheetContent>
       </Sheet>
-      {/* T-20260514-foot-CHART-EXPAND-UX: 고객차트 슬라이드 패널 (customerMode) */}
-      <CustomerChartSheet
-        customerId={chartSheetId}
-        onClose={() => setChartSheetId(null)}
-      />
-    </>
     );
   }
 
@@ -1472,7 +1471,6 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   };
 
   return (
-    <>
     <Sheet open={!!checkIn} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-[400px] sm:w-[440px] max-h-screen overflow-y-auto">
         <SheetHeader>
@@ -2267,14 +2265,14 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           onClose={() => setPayEditTarget(null)}
           onDone={() => { setPayEditTarget(null); load(); }}
         />
+        {/* T-20260514-foot-CHART-EXPAND-UX: 고객차트 슬라이드 패널 (main path)
+             SheetContent 안에 배치 → @base-ui/react 중첩 다이얼로그 context 정상 연결 */}
+        <CustomerChartSheet
+          customerId={chartSheetId}
+          onClose={() => setChartSheetId(null)}
+        />
       </SheetContent>
     </Sheet>
-    {/* T-20260514-foot-CHART-EXPAND-UX: 고객차트 슬라이드 패널 (main path) */}
-    <CustomerChartSheet
-      customerId={chartSheetId}
-      onClose={() => setChartSheetId(null)}
-    />
-    </>
   );
 }
 
