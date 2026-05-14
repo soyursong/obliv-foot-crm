@@ -1244,7 +1244,12 @@ function DashboardTimeline({
   }
 
   return (
-    <div className="flex flex-col bg-white overflow-hidden flex-1 min-h-0">
+    // T-20260514-foot-TIMETABLE-MOBILE-HSCROLL:
+    // [overflow-x:clip] — X축 clip은 scroll context를 생성하지 않으므로
+    // 하위 sticky left-0 이 외부(level-1) overflow-x-auto 컨테이너까지 전파됨.
+    // overflow-y-hidden — 수직 팽창 억제 (내부 overflow-y-auto가 자체 처리).
+    // md:overflow-hidden — PC에서 원래 동작 복원.
+    <div className="flex flex-col bg-white [overflow-x:clip] overflow-y-hidden md:overflow-hidden flex-1 min-h-0">
       {/* 헤더 */}
       {/* T-20260510-foot-DASH-DUAL-HSCROLL: sticky 제거 → shrink-0으로 교체 (스크롤 컨테이너 밖이므로 sticky 불필요) */}
       <div className="text-xs font-semibold px-2 py-1.5 border-b bg-muted/20 text-gray-600 shrink-0 flex items-center gap-1">
@@ -1254,11 +1259,15 @@ function DashboardTimeline({
           문제1 — 이중 X스크롤바: overflow-y-auto는 CSS 규격상 overflow-x도 auto로 강제 →
             overflow-x-hidden 명시로 내부 가로스크롤바 완전 제거
           문제2 — 컬럼 잘림/오정렬: 헤더가 overflow-y-auto 바깥에 있으면 Y스크롤바 폭(~15px)만큼
-            열 너비가 헤더와 본문 사이에 어긋남 → 헤더를 안으로 이동해 자동 동기화 */}
-      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+            열 너비가 헤더와 본문 사이에 어긋남 → 헤더를 안으로 이동해 자동 동기화
+          T-20260514-foot-TIMETABLE-MOBILE-HSCROLL:
+            [overflow-x:clip] → scroll context 미생성, sticky left-0 외부 전파 허용
+            md:overflow-x-hidden → PC에서 원래 동작 */}
+      <div className="flex-1 min-h-0 overflow-y-auto [overflow-x:clip] md:overflow-x-hidden">
         {/* 컬럼 헤더 — 초진(연노랑)/재진(연두): sticky로 슬롯 스크롤 시 상단 고정 */}
         <div className="grid grid-cols-[2.5rem_1fr_1fr] border-b sticky top-0 z-10 bg-white">
-          <div className="py-1 border-r bg-gray-50" />
+          {/* T-20260514-foot-TIMETABLE-MOBILE-HSCROLL: sticky left-0 z-20 — 코너 셀(시간 헤더)도 좌측 고정 */}
+          <div className="py-1 border-r bg-gray-50 sticky left-0 z-20" data-testid="timeline-time-col" />
           <div className="py-1 text-[9px] font-bold text-yellow-800 text-center border-r bg-yellow-50 flex items-center justify-center gap-0.5">
             <span className="bg-yellow-200 text-yellow-900 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
             초진
@@ -1293,11 +1302,11 @@ function DashboardTimeline({
               )}
               style={{ minHeight: hasAny ? `${maxRows * 28 + 8}px` : '36px' }}
             >
-              {/* 시간 레이블 */}
+              {/* 시간 레이블 — T-20260514-foot-TIMETABLE-MOBILE-HSCROLL: sticky left-0 z-10 */}
               <div
                 className={cn(
-                  'flex flex-col items-center justify-start pt-1.5 pb-1 border-r shrink-0',
-                  isCurrentSlot ? 'bg-teal-50' : 'bg-gray-50/60',
+                  'flex flex-col items-center justify-start pt-1.5 pb-1 border-r shrink-0 sticky left-0 z-10',
+                  isCurrentSlot ? 'bg-teal-50' : 'bg-gray-50',
                 )}
               >
                 <span
@@ -3698,10 +3707,14 @@ export default function Dashboard() {
         }}
       >
       {/* T-20260509-foot-DASH-SCROLL-FIX: min-h-0 추가 — flex 자식이 할당 영역 밖으로 팽창하지 않도록 */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      {/* T-20260514-foot-TIMETABLE-MOBILE-HSCROLL:
+          mobile → overflow-x-auto (가로 스와이프 활성), overflow-y-hidden (수직 고정)
+          desktop → md:overflow-hidden (원래 동작 복원) */}
+      <div className="flex flex-1 min-h-0 overflow-y-hidden overflow-x-auto md:overflow-hidden" data-testid="dashboard-content-scroll">
         {/* 좌측: 통합 시간표 + 원내 메모 — T-20260504-foot-SCHEDULE-UNIFIED-VIEW */}
         {/* T-20260509-foot-DASH-SLOT-STICKY: min-h-0으로 세로 팽창 억제 → 타임라인 자체 스크롤 유지 */}
-        <div className="w-80 shrink-0 flex flex-col min-h-0 border-r overflow-hidden">
+        {/* T-20260514-foot-TIMETABLE-MOBILE-HSCROLL: [overflow-x:clip] → scroll context 미생성 (sticky 전파), md:overflow-hidden 복원 */}
+        <div className="w-80 shrink-0 flex flex-col min-h-0 border-r [overflow-x:clip] overflow-y-hidden md:overflow-hidden">
           <DashboardTimeline
             date={date}
             clinic={clinic}
@@ -3716,7 +3729,10 @@ export default function Dashboard() {
 
         {/* 우측: 칸반 (줌 + 레이아웃 편집 지원) */}
       {/* T-20260510-foot-DASH-DUAL-HSCROLL: min-w-0 추가 — flex 자식이 가로 팽창하지 않도록 */}
-      <div className="flex-1 min-w-0 overflow-auto p-3">
+      {/* T-20260514-foot-TIMETABLE-MOBILE-HSCROLL:
+          mobile → min-w-[15rem] shrink-0: 240px 최소폭 보장 → 외부 컨테이너 overflow 강제 (가로 스크롤 트리거)
+          desktop → md:flex-1 md:min-w-0 md:shrink: 원래 flex-1 min-w-0 동작 복원 */}
+      <div className="min-w-[15rem] shrink-0 md:flex-1 md:min-w-0 md:shrink overflow-auto p-3">
         {loading && rows.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             불러오는 중…
