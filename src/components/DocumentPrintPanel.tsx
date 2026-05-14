@@ -65,6 +65,12 @@ import {
   type FormSubmission,
   type FormTemplate,
 } from '@/lib/formTemplates';
+import {
+  bindHtmlTemplate,
+  buildBillDetailItemsHtml,
+  getHtmlTemplate,
+  isHtmlTemplate,
+} from '@/lib/htmlFormTemplates';
 
 // ─── 타입 ───
 
@@ -233,17 +239,41 @@ async function loadAutoBindContext(
   });
 }
 
+// ─── HTML 양식 인쇄 페이지 생성 ───
+
+/**
+ * HTML/CSS 기반 양식의 인쇄용 페이지 div를 생성.
+ * T-20260514-foot-FORM-CLARITY-REWORK
+ */
+function buildHtmlPageHtml(
+  template: FormTemplate,
+  fieldValues: Record<string, string>,
+): string {
+  const htmlTpl = getHtmlTemplate(template.form_key);
+  if (!htmlTpl) return '';
+  const bound = bindHtmlTemplate(htmlTpl, fieldValues);
+  const isLandscape = template.form_key === 'bill_detail';
+  return `<div class="page${isLandscape ? ' page-landscape' : ''}">
+  ${bound}
+</div>`;
+}
+
 // ─── JPG 인쇄 HTML 생성 ───
 
 /**
  * 단일 양식의 인쇄용 HTML page div를 생성한다.
- * 도장 이미지는 각 page 우하단에 오버레이된다.
+ * HTML 양식이면 이미지 없이 HTML/CSS로, 나머지는 IMG 오버레이 방식.
  */
 function buildPageHtml(
   template: FormTemplate,
   fieldValues: Record<string, string>,
   imgUrl: string,
 ): string {
+  // ── HTML/CSS 디지털 양식 분기 (T-20260514-foot-FORM-CLARITY-REWORK) ──
+  if (template.template_format === 'html' || isHtmlTemplate(template.form_key)) {
+    return buildHtmlPageHtml(template, fieldValues);
+  }
+
   const stampUrl = getStampUrl();
 
   const overlayHtml =
@@ -295,14 +325,19 @@ function openBatchPrintWindow(
 <meta charset="utf-8">
 <title>${title}</title>
 <style>
-  @page { size: A4; margin: 0; }
+  @page { size: A4 portrait; margin: 0; }
+  @page landscape { size: A4 landscape; margin: 0; }
   body { margin: 0; padding: 0; }
   .page {
     position: relative;
     width: 210mm;
-    height: 297mm;
+    min-height: 297mm;
     overflow: hidden;
     page-break-after: always;
+  }
+  .page-landscape {
+    width: 297mm;
+    min-height: 210mm;
   }
   .page img:first-child {
     width: 100%;
@@ -311,6 +346,7 @@ function openBatchPrintWindow(
   }
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page-landscape { page: landscape; }
   }
 </style>
 </head><body>
@@ -528,8 +564,16 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
       const autoValues = await loadAutoBindContext(checkIn, resolvedDoctorName);
       const isFallback = templates[0]?.id.startsWith('fallback-');
 
-      const jpgTemplates = selectedTemplates.filter((t) => t.template_format !== 'pdf');
+      const htmlTemplates = selectedTemplates.filter((t) => t.template_format === 'html' || isHtmlTemplate(t.form_key));
+      const jpgTemplates = selectedTemplates.filter((t) => t.template_format !== 'pdf' && t.template_format !== 'html' && !isHtmlTemplate(t.form_key));
       const pdfTemplates = selectedTemplates.filter((t) => t.template_format === 'pdf');
+
+      // HTML/CSS 디지털 양식 — 한 창에 모아 인쇄 (T-20260514-foot-FORM-CLARITY-REWORK)
+      if (htmlTemplates.length > 0) {
+        const pages = htmlTemplates.map((t) => buildHtmlPageHtml(t, autoValues));
+        const w = openBatchPrintWindow(pages, `서류 일괄 출력 — ${checkIn.customer_name}`);
+        if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
+      }
 
       // JPG — 한 창에 모아 인쇄
       if (jpgTemplates.length > 0) {
@@ -1190,6 +1234,7 @@ function IssueDialog({
 
   // 복수 원장님일 때 selectedDoctorName을 doctor_name 필드에 주입
   // T-20260513-foot-BILLING-DETAIL-EDIT: computedTotal로 total_amount 자동 갱신
+  // T-20260514-foot-FORM-CLARITY-REWORK: HTML 양식용 items_html / record_no 주입
   const allValues = useMemo(() => {
     const base = { ...autoValues, ...manualValues };
     if (dutyDoctors.length > 1 && selectedDoctorName) {
@@ -1198,8 +1243,43 @@ function IssueDialog({
     if (computedTotal !== null) {
       base.total_amount = formatAmount(computedTotal);
     }
+
+    // bill_detail HTML 양식: 서비스 항목 rows 주입
+    if (template.form_key === 'bill_detail' && serviceItems.length > 0) {
+      const billItems = serviceItems.map((item) => ({
+        category: item.is_insurance_covered ? '이학요법료' : '기타',
+        date: base.visit_date ?? '',
+        code: item.service_code ?? item.hira_code ?? '',
+        name: item.name,
+        amount: item.amount,
+        count: 1,
+        days: 1,
+        is_insurance_covered: item.is_insurance_covered,
+      }));
+      base.items_html = buildBillDetailItemsHtml(billItems);
+      const nonCoveredTotal = billItems
+        .filter((i) => !i.is_insurance_covered)
+        .reduce((s, i) => s + i.amount, 0);
+      base.subtotal_amount = base.total_amount;
+      base.subtotal_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
+      base.total_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
+    } else if (template.form_key === 'bill_detail') {
+      base.items_html = buildBillDetailItemsHtml([]);
+      base.subtotal_amount = base.total_amount;
+      base.subtotal_noncovered = '0';
+      base.total_noncovered = '0';
+    }
+
+    // 등록번호/연번호 기본값 (없으면 checkIn.id 앞 8자)
+    if (!base.record_no) {
+      base.record_no = checkIn.customer_id?.slice(0, 8) ?? '';
+    }
+    if (!base.visit_no) {
+      base.visit_no = checkIn.id.slice(0, 8) ?? '';
+    }
+
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, checkIn]);
 
   const editableFields = useMemo(() => {
     if (template.field_map.length > 0) return template.field_map;
@@ -1258,6 +1338,11 @@ function IssueDialog({
   };
 
   const renderPreview = useCallback(() => {
+    // T-20260514-foot-FORM-CLARITY-REWORK: HTML 양식은 항상 미리보기 가능
+    if (template.template_format === 'html' || isHtmlTemplate(template.form_key)) {
+      setPreviewOpen(true);
+      return;
+    }
     const imgUrl = getTemplateImageUrl(template.form_key);
     if (!imgUrl || template.template_format === 'pdf') {
       toast.info('PDF 양식은 미리보기 없이 바로 출력됩니다');
@@ -1267,6 +1352,13 @@ function IssueDialog({
   }, [template]);
 
   const printJpg = useCallback(() => {
+    // T-20260514-foot-FORM-CLARITY-REWORK: HTML 양식 분기
+    if (template.template_format === 'html' || isHtmlTemplate(template.form_key)) {
+      const pageHtml = buildHtmlPageHtml(template, allValues);
+      const w = openBatchPrintWindow([pageHtml], `${template.name_ko} — ${checkIn.customer_name}`);
+      if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
+      return;
+    }
     const imgUrl = getTemplateImageUrl(template.form_key);
     if (!imgUrl) {
       toast.error('양식 이미지를 찾을 수 없습니다');
@@ -1342,6 +1434,7 @@ function IssueDialog({
     if (template.template_format === 'pdf') {
       await printPdf();
     } else {
+      // html 포함 모든 비-PDF는 printJpg (내부에서 html 분기 처리)
       printJpg();
     }
 
@@ -1614,7 +1707,7 @@ function IssueDialog({
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0">
-            {template.template_format !== 'pdf' && (
+            {(template.template_format !== 'pdf') && (
               <Button variant="outline" size="sm" className="gap-1" onClick={renderPreview}>
                 <Eye className="h-3.5 w-3.5" /> 미리보기
               </Button>
@@ -1658,6 +1751,41 @@ function PreviewDialog({
   onOpenChange: (o: boolean) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // T-20260514-foot-FORM-CLARITY-REWORK: HTML/CSS 디지털 양식 미리보기
+  if (template.template_format === 'html' || isHtmlTemplate(template.form_key)) {
+    const htmlTpl = getHtmlTemplate(template.form_key);
+    if (!htmlTpl) return null;
+    const boundHtml = bindHtmlTemplate(htmlTpl, fieldValues);
+    const isLandscape = template.form_key === 'bill_detail';
+
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent
+          className={`${isLandscape ? 'max-w-5xl' : 'max-w-2xl'} max-h-[90vh] overflow-y-auto p-0`}
+        >
+          <DialogHeader className="px-4 pt-4">
+            <DialogTitle className="text-sm flex items-center gap-2">
+              미리보기 — {template.name_ko}
+              <span className="text-xs text-teal-600 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5">
+                HTML/CSS 디지털 양식
+              </span>
+            </DialogTitle>
+          </DialogHeader>
+          <div
+            ref={containerRef}
+            className="mx-4 mb-4 border rounded-lg overflow-auto bg-white shadow-sm"
+            data-testid="html-form-preview"
+            // dangerouslySetInnerHTML: 신뢰된 내부 HTML 템플릿 (외부 입력 아님)
+            // eslint-disable-next-line react/no-danger
+            dangerouslySetInnerHTML={{ __html: boundHtml }}
+          />
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // 기존 PNG/JPG 이미지 오버레이 방식
   const imgUrl = getTemplateImageUrl(template.form_key);
   const stampUrl = getStampUrl();
   const hasCoords = template.field_map.length > 0;

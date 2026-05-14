@@ -51,7 +51,8 @@ export interface FormTemplate {
   form_key: string;
   name_ko: string;
   template_path: string;
-  template_format: 'jpg' | 'png' | 'pdf';
+  /** T-20260514-foot-FORM-CLARITY-REWORK: 'html' 추가 — HTML/CSS 기반 디지털 양식 */
+  template_format: 'jpg' | 'png' | 'pdf' | 'html';
   field_map: FieldMapEntry[];
   requires_signature: boolean;
   required_role: string;
@@ -171,16 +172,18 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     category: 'foot-service',
     form_key: 'bill_detail',
     name_ko: '진료비내역서',
-    // T-20260515: PDF → PNG 교체 (1123×789 px, 가로형)
-    template_path: '/assets/forms/foot-service/bill_detail.png',
-    template_format: 'png',
-    // 가로형 PNG — CSS position:absolute (픽셀, 좌상단 원점)
-    // 초기 추정치 — 원장 시각 검증 후 확정
+    // T-20260514-foot-FORM-CLARITY-REWORK: PNG → HTML/CSS 디지털 양식
+    template_path: '',
+    template_format: 'html',
+    // HTML 템플릿 변수 바인딩 (좌표 불필요 — x/y 미사용)
     field_map: [
-      { key: 'patient_name', label: '환자성명',   type: 'text',   x: 200, y: 90,  font: 13 },
-      { key: 'issue_date',   label: '발행일',     type: 'date',   x: 500, y: 475, font: 13 },
-      { key: 'total_amount', label: '합계금액',   type: 'amount', x: 750, y: 428, font: 12 },
-      { key: 'clinic_name',  label: '요양기관명', type: 'text',   x: 205, y: 500, font: 12 },
+      { key: 'patient_name',  label: '환자성명',   type: 'text',   x: 0, y: 0 },
+      { key: 'record_no',     label: '등록번호',   type: 'text',   x: 0, y: 0 },
+      { key: 'visit_date',    label: '진료일',     type: 'date',   x: 0, y: 0 },
+      { key: 'issue_date',    label: '발행일',     type: 'date',   x: 0, y: 0 },
+      { key: 'total_amount',  label: '합계금액',   type: 'amount', x: 0, y: 0 },
+      { key: 'clinic_name',   label: '요양기관명', type: 'text',   x: 0, y: 0 },
+      { key: 'doctor_name',   label: '대표자',     type: 'text',   x: 0, y: 0 },
     ],
     requires_signature: false,
     required_role: 'admin|manager|coordinator',
@@ -209,17 +212,19 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     category: 'foot-service',
     form_key: 'diag_opinion',
     name_ko: '소견서',
-    // T-20260515: 새 PNG 교체 (645×884 px)
-    template_path: '/assets/forms/foot-service/diag_opinion.png',
-    template_format: 'png',
-    // 645×884 px — 초기 추정치
+    // T-20260514-foot-FORM-CLARITY-REWORK: PNG → HTML/CSS
+    template_path: '',
+    template_format: 'html',
     field_map: [
-      { key: 'patient_name', label: '환자성명', type: 'text',      x: 130, y: 138, font: 14 },
-      { key: 'patient_rrn',  label: '주민번호', type: 'text',      x: 272, y: 103, font: 12 },
-      { key: 'diagnosis_ko', label: '상병명',   type: 'multiline', x: 200, y: 186, w: 400, h: 55, font: 13 },
-      { key: 'issue_date',   label: '발행일',   type: 'date',      x: 130, y: 718, font: 13 },
-      { key: 'clinic_name',  label: '의료기관', type: 'text',      x: 105, y: 742, font: 12 },
-      { key: 'doctor_name',  label: '의사성명', type: 'text',      x: 480, y: 877, font: 13 },
+      { key: 'patient_name', label: '환자성명', type: 'text',      x: 0, y: 0 },
+      { key: 'patient_rrn',  label: '주민번호', type: 'text',      x: 0, y: 0 },
+      { key: 'patient_phone',label: '전화번호', type: 'text',      x: 0, y: 0 },
+      { key: 'patient_address', label: '주소', type: 'text',       x: 0, y: 0 },
+      { key: 'diagnosis_ko', label: '소견',    type: 'multiline',  x: 0, y: 0 },
+      { key: 'issue_date',   label: '발행일',  type: 'date',       x: 0, y: 0 },
+      { key: 'clinic_name',  label: '의료기관',type: 'text',       x: 0, y: 0 },
+      { key: 'clinic_address',label: '주소',   type: 'text',       x: 0, y: 0 },
+      { key: 'doctor_name',  label: '의사성명',type: 'text',       x: 0, y: 0 },
     ],
     requires_signature: false,
     required_role: 'admin|manager',
@@ -232,17 +237,19 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     category: 'foot-service',
     form_key: 'diagnosis',
     name_ko: '진단서',
-    // T-20260515: 새 PNG 교체 (621×835 px)
-    template_path: '/assets/forms/foot-service/diagnosis.png',
-    template_format: 'png',
-    // 621×835 px — 초기 추정치
+    // T-20260514-foot-FORM-CLARITY-REWORK: PNG → HTML/CSS
+    template_path: '',
+    template_format: 'html',
     field_map: [
-      { key: 'patient_name', label: '환자성명',    type: 'text',      x: 118, y: 136, font: 14 },
-      { key: 'patient_rrn',  label: '주민등록번호', type: 'text',      x: 390, y: 136, font: 12 },
-      { key: 'diagnosis_ko', label: '병명',        type: 'multiline', x: 195, y: 193, w: 380, h: 50, font: 13 },
-      { key: 'issue_date',   label: '발행일',      type: 'date',      x: 170, y: 632, font: 13 },
-      { key: 'clinic_name',  label: '의료기관',    type: 'text',      x: 100, y: 650, font: 12 },
-      { key: 'doctor_name',  label: '의사성명',    type: 'text',      x: 470, y: 812, font: 13 },
+      { key: 'patient_name',    label: '환자성명',    type: 'text',      x: 0, y: 0 },
+      { key: 'patient_rrn',     label: '주민등록번호', type: 'text',      x: 0, y: 0 },
+      { key: 'patient_address', label: '주소',        type: 'text',      x: 0, y: 0 },
+      { key: 'patient_phone',   label: '전화번호',    type: 'text',      x: 0, y: 0 },
+      { key: 'diagnosis_ko',    label: '소견',        type: 'multiline', x: 0, y: 0 },
+      { key: 'issue_date',      label: '발행일',      type: 'date',      x: 0, y: 0 },
+      { key: 'clinic_name',     label: '의료기관',    type: 'text',      x: 0, y: 0 },
+      { key: 'clinic_address',  label: '주소',        type: 'text',      x: 0, y: 0 },
+      { key: 'doctor_name',     label: '의사성명',    type: 'text',      x: 0, y: 0 },
     ],
     requires_signature: false,
     required_role: 'admin|manager',
@@ -255,17 +262,18 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     category: 'foot-service',
     form_key: 'treat_confirm',
     name_ko: '진료확인서',
-    // T-20260515: 새 PNG 교체 (693×907 px, 빈 양식)
-    template_path: '/assets/forms/foot-service/treat_confirm.png',
-    template_format: 'png',
-    // 693×907 px — 초기 추정치
+    // T-20260514-foot-FORM-CLARITY-REWORK: PNG → HTML/CSS
+    template_path: '',
+    template_format: 'html',
     field_map: [
-      { key: 'patient_name', label: '환자성명', type: 'text',      x: 130, y: 163, font: 16 },
-      { key: 'patient_rrn',  label: '주민번호', type: 'text',      x: 130, y: 187, font: 14 },
-      { key: 'diagnosis_ko', label: '병명',     type: 'multiline', x: 140, y: 218, w: 520, h: 50, font: 14 },
-      { key: 'issue_date',   label: '발행일',   type: 'date',      x: 130, y: 790, font: 16 },
-      { key: 'clinic_name',  label: '의료기관', type: 'text',      x: 130, y: 812, font: 14 },
-      { key: 'doctor_name',  label: '의사성명', type: 'text',      x: 560, y: 900, font: 14 },
+      { key: 'patient_name',    label: '환자성명', type: 'text',      x: 0, y: 0 },
+      { key: 'patient_rrn',     label: '주민번호', type: 'text',      x: 0, y: 0 },
+      { key: 'patient_address', label: '주소',    type: 'text',      x: 0, y: 0 },
+      { key: 'visit_date',      label: '진료일',  type: 'date',      x: 0, y: 0 },
+      { key: 'issue_date',      label: '발행일',  type: 'date',      x: 0, y: 0 },
+      { key: 'clinic_name',     label: '의료기관',type: 'text',      x: 0, y: 0 },
+      { key: 'clinic_address',  label: '주소',    type: 'text',      x: 0, y: 0 },
+      { key: 'doctor_name',     label: '의사성명',type: 'text',      x: 0, y: 0 },
     ],
     requires_signature: false,
     required_role: 'admin|manager|coordinator',
@@ -278,22 +286,23 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     category: 'foot-service',
     form_key: 'visit_confirm',
     name_ko: '통원확인서',
-    // T-20260515: 새 PNG 교체 (639×800 px)
-    template_path: '/assets/forms/foot-service/visit_confirm.png',
-    template_format: 'png',
-    // 639×800 px — 초기 추정치
+    // T-20260514-foot-FORM-CLARITY-REWORK: PNG → HTML/CSS
+    template_path: '',
+    template_format: 'html',
     field_map: [
-      { key: 'patient_name', label: '환자성명', type: 'text',      x: 128, y: 153, font: 14 },
-      { key: 'patient_rrn',  label: '주민번호', type: 'text',      x: 120, y: 174, font: 12 },
-      { key: 'diagnosis_ko', label: '병명',     type: 'multiline', x: 140, y: 205, w: 450, h: 50, font: 13 },
-      { key: 'issue_date',   label: '발행일',   type: 'date',      x: 120, y: 692, font: 13 },
-      { key: 'clinic_name',  label: '의료기관', type: 'text',      x: 120, y: 710, font: 12 },
-      { key: 'doctor_name',  label: '의사성명', type: 'text',      x: 540, y: 793, font: 13 },
+      { key: 'patient_name',    label: '환자성명', type: 'text',      x: 0, y: 0 },
+      { key: 'patient_rrn',     label: '주민번호', type: 'text',      x: 0, y: 0 },
+      { key: 'patient_address', label: '주소',    type: 'text',      x: 0, y: 0 },
+      { key: 'visit_date',      label: '진료일',  type: 'date',      x: 0, y: 0 },
+      { key: 'issue_date',      label: '발행일',  type: 'date',      x: 0, y: 0 },
+      { key: 'clinic_name',     label: '의료기관',type: 'text',      x: 0, y: 0 },
+      { key: 'clinic_address',  label: '주소',    type: 'text',      x: 0, y: 0 },
+      { key: 'doctor_name',     label: '의사성명',type: 'text',      x: 0, y: 0 },
     ],
     requires_signature: false,
     required_role: 'admin|manager|coordinator',
     active: true,
-    sort_order: 40,
+    sort_order: 42,
   },
   // ── T-20260515: 신규 2종 ──
   {
