@@ -32,6 +32,8 @@ import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { useChartSheetClose } from '@/lib/chartSheetContext';
 // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 패널
 import { PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
+// T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
+import { NhisLookupPanel } from '@/components/insurance/NhisLookupPanel';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
@@ -58,6 +60,9 @@ interface Payment {
   payment_type: 'payment' | 'refund';
   memo: string | null;
   created_at: string;
+  // T-20260515-foot-RECEIPT-TAX-SPLIT AC-6: 현금영수증 필드 (DB 마이그레이션 전 null)
+  cash_receipt_issued?: boolean | null;
+  cash_receipt_type?: 'income_deduction' | 'expense_proof' | null;
 }
 
 interface PackagePayment {
@@ -1759,7 +1764,7 @@ export default function CustomerChartPage() {
                       {/* 조회 버튼 — Y일 때만 활성 */}
                       <button
                         type="button"
-                        onClick={() => window.open('https://www.nhis.or.kr/nhis/minwon/wbhame03400m01.do', '_blank')}
+                        onClick={() => window.open('https://medicare.nhis.or.kr/portal/refer/selectReferInq.do', '_blank')}
                         disabled={!(customer.hira_consent ?? false)}
                         className={cn(
                           'inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] transition',
@@ -2448,6 +2453,7 @@ export default function CustomerChartPage() {
                 ) : (
                   <div className="overflow-x-auto">
                     {/* T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 — 행 클릭으로 expand */}
+                    {/* T-20260515-foot-RECEIPT-TAX-SPLIT AC-6: 현금영수증 컬럼 추가 */}
                     <table className="w-full border-collapse">
                       <thead>
                         <tr className="bg-muted/30 text-muted-foreground">
@@ -2455,6 +2461,7 @@ export default function CustomerChartPage() {
                           <th className="text-right px-2 py-1.5 font-medium border-b">금액</th>
                           <th className="text-left px-2 py-1.5 font-medium border-b">방법</th>
                           <th className="text-left px-2 py-1.5 font-medium border-b">구분</th>
+                          <th className="text-left px-2 py-1.5 font-medium border-b">현금영수증</th>
                           <th className="text-left px-2 py-1.5 font-medium border-b">메모</th>
                         </tr>
                       </thead>
@@ -2475,11 +2482,24 @@ export default function CustomerChartPage() {
                                   {p.payment_type === 'refund' ? '환불' : '결제'}
                                 </Badge>
                               </td>
+                              {/* T-20260515-foot-RECEIPT-TAX-SPLIT AC-6: 현금영수증 발행여부 */}
+                              <td className="px-2 py-1.5">
+                                {p.cash_receipt_issued === true ? (
+                                  <span className="inline-flex items-center gap-0.5 text-emerald-700">
+                                    <span>✅</span>
+                                    <span className="text-[10px]">
+                                      {p.cash_receipt_type === 'income_deduction' ? '소득공제' : p.cash_receipt_type === 'expense_proof' ? '지출증빙' : ''}
+                                    </span>
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground/50">—</span>
+                                )}
+                              </td>
                               <td className="px-2 py-1.5 text-muted-foreground max-w-[100px] truncate">{p.memo ?? '-'}</td>
                             </tr>
                             {expandedPaymentId === p.id && (
                               <tr>
-                                <td colSpan={5} className="px-3 pb-2 pt-1 bg-muted/5 border-b border-muted/20">
+                                <td colSpan={6} className="px-3 pb-2 pt-1 bg-muted/5 border-b border-muted/20">
                                   <div className="text-[11px] font-semibold text-muted-foreground mb-1">수납 이력</div>
                                   <PaymentAuditLogsPanel paymentId={p.id} autoLoad />
                                 </td>
@@ -3143,15 +3163,32 @@ export default function CustomerChartPage() {
                   currentSetName={selectedTreatmentSet?.setName}
                 />
                 <a
-                  href="https://www.nhis.or.kr/nhis/minwon/wbhame03400m01.do"
+                  href="https://medicare.nhis.or.kr/portal/refer/selectReferInq.do"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-2 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100 transition"
                 >
-                  <ExternalLink className="h-3 w-3" /> 건보 조회
+                  <ExternalLink className="h-3 w-3" /> 외부조회
                 </a>
               </div>
             </div>
+            {/* T-20260515-foot-KENBO-API-NATIVE: 건보공단 Native API 자격조회 */}
+            <NhisLookupPanel
+              customerId={customer.id}
+              clinicId={customer.clinic_id}
+              hiraConsent={customer.hira_consent ?? false}
+              onGradeUpdated={() => {
+                supabase
+                  .from('customers')
+                  .select('insurance_grade, insurance_grade_source, insurance_grade_verified_at, insurance_grade_memo')
+                  .eq('id', customer.id)
+                  .maybeSingle()
+                  .then(({ data }) => {
+                    if (data) setCustomer((prev) => prev ? { ...prev, ...data } : prev);
+                  });
+                setInsuranceGradeRefreshKey((k) => k + 1);
+              }}
+            />
             <InsuranceGradeSelect
               customerId={customer.id}
               editable
