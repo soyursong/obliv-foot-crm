@@ -277,6 +277,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     setPayMethod('card');
     setActiveTab('풋케어');
     setSelectedDocKeys(new Set());
+    // T-20260514-foot-PAYMENT-CONSECUTIVE-STUCK BUG2 fix:
+    // checkIn 변경 시 submitting 계열 state 리셋 — 연속 수납 시 이전 환자의 submitting=true 잔류 방지
+    setSubmitting(false);
+    setDocPrinting(false);
+    setDocSettlePrinting(false);
 
     // T-20260514-foot-DASH-REALTIME-FAIL AC-1 fix:
     // services + 기존 check_in_services 동시 로드 → pre-populate selectedItems

@@ -1609,6 +1609,10 @@ export default function Dashboard() {
   const [selectedCheckIn, setSelectedCheckIn] = useState<CheckIn | null>(null);
   const [paymentTarget, setPaymentTarget] = useState<CheckIn | null>(null);
   const [paymentInitialMode, setPaymentInitialMode] = useState<'single' | 'package'>('single');
+  // T-20260514-foot-PAYMENT-CONSECUTIVE-STUCK BUG4 fix:
+  // 같은 check-in 연속 결제 시에도 강제 리마운트 — key에 counter 포함
+  const [paymentAttemptCounter, setPaymentAttemptCounter] = useState(0);
+  const [miniPayAttemptCounter, setMiniPayAttemptCounter] = useState(0);
   // T-20260515-foot-PAYMENT-MINI-WINDOW: 결제 미니창 (수납대기 [결제하기])
   const [miniPayTarget, setMiniPayTarget] = useState<CheckIn | null>(null);
   // AC-7: 수납대기 check_in_services 합산 (check_in_id → pending amount)
@@ -3864,7 +3868,7 @@ export default function Dashboard() {
       />
 
       <PaymentDialog
-        key={`${paymentTarget?.id ?? 'none'}-${paymentInitialMode}`}
+        key={`${paymentTarget?.id ?? 'none'}-${paymentInitialMode}-${paymentAttemptCounter}`}
         checkIn={paymentTarget}
         initialMode={paymentInitialMode}
         onClose={() => {
@@ -3874,6 +3878,8 @@ export default function Dashboard() {
         onPaid={() => {
           setPaymentTarget(null);
           setPaymentInitialMode('single');
+          // T-20260514-foot-PAYMENT-CONSECUTIVE-STUCK BUG4: 결제 완료 시 counter++ → 같은 checkIn 재결제 시 강제 리마운트
+          setPaymentAttemptCounter((c) => c + 1);
           fetchCheckIns();
           fetchPayments();
         }}
@@ -3881,10 +3887,13 @@ export default function Dashboard() {
 
       {/* T-20260515-foot-PAYMENT-MINI-WINDOW: 수납대기 [결제하기] 미니창 */}
       <PaymentMiniWindow
+        key={`mini-${miniPayTarget?.id ?? 'none'}-${miniPayAttemptCounter}`}
         checkIn={miniPayTarget}
         onClose={() => setMiniPayTarget(null)}
         onComplete={() => {
           setMiniPayTarget(null);
+          // T-20260514-foot-PAYMENT-CONSECUTIVE-STUCK BUG4: 결제 완료 시 counter++ → 같은 checkIn 재결제 시 강제 리마운트
+          setMiniPayAttemptCounter((c) => c + 1);
           fetchCheckIns();
           fetchPayments();
         }}
