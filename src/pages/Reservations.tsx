@@ -31,6 +31,11 @@ import { cn } from '@/lib/utils';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import type { Reservation, VisitType } from '@/lib/types';
 
+// AC-5 재오픈 fix: 모듈 레벨 클립보드 백업 — 컴포넌트 remount 시에도 상태 복원
+// (navigate('/admin/reservations', { state }) + lazy/Suspense remount 케이스 대응)
+let _clipboardBackup: { resv: Reservation; mode: 'copy' | 'cut' } | null = null;
+let _clipboardTargetBackup: { date: string; time: string } | null = null;
+
 const STATUS_STYLE: Record<Reservation['status'], string> = {
   confirmed: 'bg-blue-100 text-blue-700 border-blue-200',
   checked_in: 'bg-emerald-100 text-emerald-700 border-emerald-200',
@@ -90,9 +95,18 @@ export default function Reservations() {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   // T-20260515-foot-RESV-DND-SHORTCUT: 키보드 클립보드 (Ctrl+C/X/V)
+  // AC-5 재오픈 fix: 모듈 레벨 백업에서 초기화 → remount 후에도 클립보드 유지
   const [selectedResvId, setSelectedResvId] = useState<string | null>(null);
-  const [clipboard, setClipboard] = useState<{ id: string; mode: 'copy' | 'cut' } | null>(null);
-  const [clipboardTarget, setClipboardTarget] = useState<{ date: string; time: string } | null>(null);
+  const [clipboard, setClipboardState] = useState<{ resv: Reservation; mode: 'copy' | 'cut' } | null>(() => _clipboardBackup);
+  const [clipboardTarget, setClipboardTargetState] = useState<{ date: string; time: string } | null>(() => _clipboardTargetBackup);
+  const setClipboard = useCallback((val: { resv: Reservation; mode: 'copy' | 'cut' } | null) => {
+    _clipboardBackup = val;
+    setClipboardState(val);
+  }, []);
+  const setClipboardTarget = useCallback((val: { date: string; time: string } | null) => {
+    _clipboardTargetBackup = val;
+    setClipboardTargetState(val);
+  }, []);
 
   const weekDays = useMemo(
     () => Array.from({ length: 6 }).map((_, i) => addDays(weekStart, i)), // 월~토만
@@ -250,7 +264,7 @@ export default function Reservations() {
 
       if (e.key === 'c' && r && r.status === 'confirmed') {
         e.preventDefault();
-        setClipboard({ id: r.id, mode: 'copy' });
+        setClipboard({ resv: r, mode: 'copy' });
         setClipboardTarget(null);
         toast.info(`${r.customer_name} 복사됨 — 붙여넣기할 슬롯 클릭 후 Ctrl+V`, { duration: 4000 });
         return;
@@ -258,7 +272,7 @@ export default function Reservations() {
 
       if (e.key === 'x' && r && r.status === 'confirmed') {
         e.preventDefault();
-        setClipboard({ id: r.id, mode: 'cut' });
+        setClipboard({ resv: r, mode: 'cut' });
         setClipboardTarget(null);
         toast.info(`${r.customer_name} 잘라내기됨 — 이동할 슬롯 클릭 후 Ctrl+V`, { duration: 4000 });
         return;
@@ -268,8 +282,8 @@ export default function Reservations() {
         e.preventDefault();
         const cb = clipboard;
         const target = clipboardTarget;
-        const srcRow = rows.find((x) => x.id === cb.id);
-        if (!srcRow) return;
+        // AC-5: resv 객체를 직접 사용 → 날짜 이동 후에도 rows 재조회 불필요
+        const srcRow = cb.resv;
 
         // 슬롯 충돌 확인
         const activeInSlot = rows.filter(
@@ -316,7 +330,7 @@ export default function Reservations() {
               customer_name: srcRow.customer_name,
               customer_phone: srcRow.customer_phone,
               via: 'keyboard_copy',
-              source_id: cb.id,
+              source_id: cb.resv.id,
             },
             changed_by: changedBy,
           });
@@ -331,7 +345,7 @@ export default function Reservations() {
 
           setRows((prev) =>
             prev.map((x) =>
-              x.id === cb.id
+              x.id === cb.resv.id
                 ? { ...x, reservation_date: target.date, reservation_time: target.time }
                 : x,
             ),
@@ -339,11 +353,11 @@ export default function Reservations() {
           const { error: moveErr } = await supabase
             .from('reservations')
             .update({ reservation_date: target.date, reservation_time: target.time })
-            .eq('id', cb.id);
+            .eq('id', cb.resv.id);
           if (moveErr) {
             setRows((prev) =>
               prev.map((x) =>
-                x.id === cb.id
+                x.id === cb.resv.id
                   ? { ...x, reservation_date: srcRow.reservation_date, reservation_time: srcRow.reservation_time }
                   : x,
               ),
@@ -352,7 +366,7 @@ export default function Reservations() {
             return;
           }
           await supabase.from('reservation_logs').insert({
-            reservation_id: cb.id,
+            reservation_id: cb.resv.id,
             clinic_id: clinic.id,
             action: 'reschedule',
             old_data: { date: srcRow.reservation_date, time: srcRow.reservation_time.slice(0, 5) },
@@ -630,7 +644,7 @@ export default function Reservations() {
           <span className="text-amber-700">
             {clipboard.mode === 'copy' ? '📋 복사 대기' : '✂️ 이동 대기'}:{' '}
             <span className="font-semibold">
-              {rows.find((r) => r.id === clipboard.id)?.customer_name ?? '?'}
+              {clipboard.resv.customer_name}
             </span>
             {clipboardTarget
               ? ` → ${clipboardTarget.date} ${clipboardTarget.time} (Ctrl+V로 붙여넣기)`
@@ -742,8 +756,8 @@ export default function Reservations() {
                                       r.status === 'checked_in' && draggedId !== r.id && 'opacity-50',
                                       // T-20260515-foot-RESV-DND-SHORTCUT: 클립보드 시각적 피드백
                                       selectedResvId === r.id && !clipboard && 'ring-2 ring-teal-500',
-                                      clipboard?.id === r.id && clipboard.mode === 'copy' && 'ring-2 ring-blue-400',
-                                      clipboard?.id === r.id && clipboard.mode === 'cut' && 'opacity-60 ring-2 ring-amber-400',
+                                      clipboard?.resv.id === r.id && clipboard.mode === 'copy' && 'ring-2 ring-blue-400',
+                                      clipboard?.resv.id === r.id && clipboard.mode === 'cut' && 'opacity-60 ring-2 ring-amber-400',
                                     )}
                                   >
                                     <div className="flex items-center gap-1">
