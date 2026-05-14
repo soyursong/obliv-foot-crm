@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
 import { ExternalLink, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, Send, Trash2, Upload, X } from 'lucide-react';
@@ -30,6 +30,8 @@ import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드 닫기 (window.close 대체)
 import { useChartSheetClose } from '@/lib/chartSheetContext';
+// T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 패널
+import { PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
@@ -643,6 +645,8 @@ export default function CustomerChartPage() {
   // T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: isDirty 패턴 + 자동저장 인디케이터
   const [isDirty, setIsDirty] = useState(false);
   const [showAutoSaved, setShowAutoSaved] = useState(false);
+  // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 확장 행 상태
+  const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null);
   // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 메시지 이력 + 수동 입력
   const [messageLogs, setMessageLogs] = useState<MessageLog[]>([]);
   const [messageForm, setMessageForm] = useState<{
@@ -831,6 +835,20 @@ export default function CustomerChartPage() {
       .limit(50);
     setMessageLogs((data ?? []) as MessageLog[]);
   }, [customerId]);
+
+  // T-20260514-foot-C2-PAYMENT-SYNC AC-1: payments realtime → 2번차트 자동 갱신
+  useEffect(() => {
+    if (!customerId) return;
+    const channel = supabase
+      .channel(`c2_payments_${customerId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'payments', filter: `customer_id=eq.${customerId}` },
+        () => { refreshPayments(); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [customerId, refreshPayments]);
 
   // C21-RESIDENT-ID: 고객 로드 시 주민번호 존재 여부 확인
   useEffect(() => {
@@ -2429,6 +2447,7 @@ export default function CustomerChartPage() {
                   <div className="text-muted-foreground py-2">결제 없음</div>
                 ) : (
                   <div className="overflow-x-auto">
+                    {/* T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 — 행 클릭으로 expand */}
                     <table className="w-full border-collapse">
                       <thead>
                         <tr className="bg-muted/30 text-muted-foreground">
@@ -2441,19 +2460,32 @@ export default function CustomerChartPage() {
                       </thead>
                       <tbody>
                         {payments.map((p) => (
-                          <tr key={p.id} className="border-b border-muted/20 hover:bg-muted/10">
-                            <td className="px-2 py-1.5 tabular-nums text-muted-foreground">{format(new Date(p.created_at), 'MM-dd HH:mm')}</td>
-                            <td className={cn('px-2 py-1.5 text-right tabular-nums font-medium', p.payment_type === 'refund' && 'text-red-600')}>
-                              {p.payment_type === 'refund' ? '-' : ''}{formatAmount(p.amount)}
-                            </td>
-                            <td className="px-2 py-1.5">{p.method}{p.installment > 1 ? ` ${p.installment}개월` : ''}</td>
-                            <td className="px-2 py-1.5">
-                              <Badge variant={p.payment_type === 'refund' ? 'destructive' : 'secondary'} className="text-[10px]">
-                                {p.payment_type === 'refund' ? '환불' : '결제'}
-                              </Badge>
-                            </td>
-                            <td className="px-2 py-1.5 text-muted-foreground max-w-[100px] truncate">{p.memo ?? '-'}</td>
-                          </tr>
+                          <Fragment key={p.id}>
+                            <tr
+                              className="border-b border-muted/20 hover:bg-muted/10 cursor-pointer select-none"
+                              onClick={() => setExpandedPaymentId(prev => prev === p.id ? null : p.id)}
+                            >
+                              <td className="px-2 py-1.5 tabular-nums text-muted-foreground">{format(new Date(p.created_at), 'MM-dd HH:mm')}</td>
+                              <td className={cn('px-2 py-1.5 text-right tabular-nums font-medium', p.payment_type === 'refund' && 'text-red-600')}>
+                                {p.payment_type === 'refund' ? '-' : ''}{formatAmount(p.amount)}
+                              </td>
+                              <td className="px-2 py-1.5">{p.method}{p.installment > 1 ? ` ${p.installment}개월` : ''}</td>
+                              <td className="px-2 py-1.5">
+                                <Badge variant={p.payment_type === 'refund' ? 'destructive' : 'secondary'} className="text-[10px]">
+                                  {p.payment_type === 'refund' ? '환불' : '결제'}
+                                </Badge>
+                              </td>
+                              <td className="px-2 py-1.5 text-muted-foreground max-w-[100px] truncate">{p.memo ?? '-'}</td>
+                            </tr>
+                            {expandedPaymentId === p.id && (
+                              <tr>
+                                <td colSpan={5} className="px-3 pb-2 pt-1 bg-muted/5 border-b border-muted/20">
+                                  <div className="text-[11px] font-semibold text-muted-foreground mb-1">수납 이력</div>
+                                  <PaymentAuditLogsPanel paymentId={p.id} autoLoad />
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
                         ))}
                       </tbody>
                     </table>
