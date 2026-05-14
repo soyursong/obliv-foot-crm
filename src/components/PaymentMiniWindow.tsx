@@ -543,6 +543,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // 2. 수납 + auto-done (PAYMENT-AUTO-DONE reuse)
       await executeAutoDone(grandTotal, payMethod);
       toast.success('출력 및 수납 완료 — 완료 슬롯으로 이동됩니다');
+      setDocSettlePrinting(false); // PAYMENT-SUBMIT-STUCK AC-2: success path에서도 명시 해제
       onComplete();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '출력 및 수납 처리 실패';
