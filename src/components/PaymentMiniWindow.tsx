@@ -458,6 +458,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     try {
       await executeAutoDone(grandTotal, payMethod);
       toast.success('수납 완료 — 완료 슬롯으로 이동됩니다');
+      setSubmitting(false); // PAYMENT-SUBMIT-STUCK: success path에서도 명시 해제
       onComplete();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '수납 처리 실패';
@@ -712,6 +713,17 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   </>
                 )}
               </Button>
+
+              {/* PAYMENT-BLOCKED AC-2: 산정 미완료 안내 — 항목 선택 후 저장 전 */}
+              {!saved && selectedItems.length > 0 && (
+                <p
+                  className="text-xs text-amber-600 flex items-center gap-1"
+                  data-testid="settle-hint"
+                >
+                  <ChevronRight className="h-3 w-3 shrink-0" />
+                  금액 산정 완료 후 수납 버튼이 나타납니다
+                </p>
+              )}
 
               {/* 결제 수단 선택 (저장 후 표시) */}
               {saved && (
