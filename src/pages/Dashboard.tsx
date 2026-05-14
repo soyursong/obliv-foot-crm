@@ -2908,18 +2908,19 @@ export default function Dashboard() {
     await supabase.from('reservations').update({ status: 'checked_in' }).eq('id', res.id);
     setPendingReservations((prev) => prev.filter((r) => r.id !== res.id));
 
-    const nextStatus: CheckInStatus = res.visit_type === 'new' ? 'consult_waiting' : 'registered';
-    if (nextStatus !== 'registered') {
-      await supabase.from('check_ins').update({ status: nextStatus }).eq('id', realId);
-      const transNow = new Date().toISOString();
-      await supabase.from('status_transitions').insert({
-        check_in_id: realId,
-        clinic_id: clinic.id,
-        from_status: 'registered',
-        to_status: nextStatus,
-      });
-      setStageStartMap((prev) => new Map(prev).set(realId, transNow));
-    }
+    // T-20260514-foot-CHECKIN-AUTO-STAGE FIX: 재진 → 치료대기, 초진/체험 → 상담대기
+    // 기존 코드: res.visit_type === 'new' ? 'consult_waiting' : 'registered'
+    // → 재진이 'registered'에 갇혀 치료대기로 이동 안 됨 (김주연 매니저 현장 보고 5/14)
+    const nextStatus: CheckInStatus = res.visit_type === 'returning' ? 'treatment_waiting' : 'consult_waiting';
+    await supabase.from('check_ins').update({ status: nextStatus }).eq('id', realId);
+    const transNow = new Date().toISOString();
+    await supabase.from('status_transitions').insert({
+      check_in_id: realId,
+      clinic_id: clinic.id,
+      from_status: 'registered',
+      to_status: nextStatus,
+    });
+    setStageStartMap((prev) => new Map(prev).set(realId, transNow));
 
     // DB 완료 후 rows에 추가 (실제 UUID)
     const newCheckIn: CheckIn = {
