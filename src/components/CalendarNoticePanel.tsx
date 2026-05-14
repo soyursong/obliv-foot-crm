@@ -23,6 +23,7 @@ import { ko } from 'date-fns/locale';
 import {
   Bell,
   CalendarDays,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
@@ -70,6 +71,24 @@ export default function CalendarNoticePanel() {
   // ── 공지사항 상태 ─────────────────────────────────────────────────────────
   const [notices, setNotices] = useState<Notice[]>([]);
   const [noticeLoading, setNoticeLoading] = useState(true);
+
+  // ── 모바일 접힘 상태 (T-20260514-foot-MOBILE-CAL-COLLAPSE) ────────────────
+  const [isMobile, setIsMobile] = useState<boolean>(
+    () => typeof window !== 'undefined' && window.innerWidth <= 768,
+  );
+  const [mobileCollapsed, setMobileCollapsed] = useState<boolean>(
+    () => typeof window !== 'undefined' && window.innerWidth <= 768,
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const handler = (e: MediaQueryListEvent) => {
+      setIsMobile(e.matches);
+      if (e.matches) setMobileCollapsed(true);
+    };
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   // ── 공지 폼 상태 ──────────────────────────────────────────────────────────
   const [editingId, setEditingId] = useState<string | 'new' | null>(null);
@@ -180,12 +199,49 @@ export default function CalendarNoticePanel() {
   };
 
   // ── 렌더 ─────────────────────────────────────────────────────────────────
+
+  // AC-1: 모바일 + 접힘 상태 → 날짜 바 한 줄만 표시
+  if (isMobile && mobileCollapsed) {
+    return (
+      <button
+        data-testid="mobile-cal-bar"
+        className="w-full shrink-0 border-b bg-white flex items-center justify-between px-4 py-2.5 text-left"
+        onClick={() => setMobileCollapsed(false)}
+        aria-label="달력 펼치기"
+      >
+        <div className="flex items-center gap-2">
+          <CalendarDays className="h-4 w-4 text-teal-600" />
+          <span className="text-sm font-semibold">
+            {format(selectedDate ?? new Date(), 'M월 d일 (E)', { locale: ko })}
+          </span>
+        </div>
+        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+      </button>
+    );
+  }
+
   return (
-    <aside className="w-72 shrink-0 border-r bg-white flex flex-col overflow-hidden">
+    <aside
+      className={cn(
+        'shrink-0 bg-white flex flex-col overflow-hidden',
+        isMobile ? 'w-full border-b' : 'w-72 border-r',
+      )}
+    >
       {/* 패널 헤더 */}
       <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2.5 bg-white/80">
         <CalendarDays className="h-4 w-4 text-teal-600" />
         <span className="text-sm font-semibold">달력</span>
+        {/* AC-2: 모바일 펼침 상태에서 닫기 버튼 */}
+        {isMobile && (
+          <button
+            data-testid="mobile-cal-close"
+            className="ml-auto p-1 rounded hover:bg-muted text-muted-foreground"
+            onClick={() => setMobileCollapsed(true)}
+            aria-label="달력 접기"
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       {/* ── 미니 캘린더 ────────────────────────────────────────────────────── */}
@@ -246,6 +302,8 @@ export default function CalendarNoticePanel() {
                   navigate('/admin/reservations', {
                     state: { goToWeekOf: format(day, 'yyyy-MM-dd') },
                   });
+                  // AC-3: 모바일 날짜 선택 → 달력 자동 접힘
+                  if (isMobile) setMobileCollapsed(true);
                 }}
                 className={cn(
                   'w-full py-1 text-[11px] font-medium rounded-full transition-colors leading-none aspect-square flex items-center justify-center',
