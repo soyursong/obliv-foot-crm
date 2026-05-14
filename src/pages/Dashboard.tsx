@@ -74,6 +74,8 @@ import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import { StatusContextMenu } from '@/components/StatusContextMenu';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import { CustomerHoverCard } from '@/components/CustomerHoverCard';
+// T-20260514-foot-CHART2-OPEN-BUG (재오픈): Dashboard 진입경로 누락 수정
+import { CustomerChartSheet } from '@/components/CustomerChartSheet';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
@@ -1614,6 +1616,8 @@ export default function Dashboard() {
   const [dayPayments, setDayPayments] = useState<Map<string, number>>(new Map());
   const [contextMenu, setContextMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
   const [customerMenu, setCustomerMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
+  // T-20260514-foot-CHART2-OPEN-BUG (재오픈): Dashboard 카드 컨텍스트 메뉴 → 슬라이드 패널
+  const [dashChartSheetId, setDashChartSheetId] = useState<string | null>(null);
   const [stageStartMap, setStageStartMap] = useState<Map<string, string>>(new Map());
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
   const [consentMap, setConsentMap] = useState<Map<string, ConsentEntry>>(new Map());
@@ -2688,17 +2692,14 @@ export default function Dashboard() {
     setContextMenu({ checkIn: ci, pos: { x: e.clientX, y: e.clientY } });
   };
 
+  // T-20260514-foot-CHART2-OPEN-BUG (재오픈): window.open → 슬라이드 패널
+  // f545660에서 CheckInDetailSheet만 수정하고 Dashboard 진입경로 누락 — AC-4 미충족
   const handleOpenChart = useCallback((ci: CheckIn) => {
     if (!ci.customer_id) {
       toast.info('고객 정보가 연결되어 있지 않습니다');
       return;
     }
-    // T-20260506-foot-CHART-UNIFIED-ACCESS: 고객차트 = 2번차트(미니홈피) 새 창 오픈
-    window.open(
-      `/chart/${ci.customer_id}`,
-      `chart-${ci.customer_id}`,
-      'width=820,height=960,scrollbars=yes,resizable=yes'
-    );
+    setDashChartSheetId(ci.customer_id);
   }, []);
 
 
@@ -3913,6 +3914,12 @@ export default function Dashboard() {
         onClose={() => setCustomerMenu(null)}
         onOpenChart={handleOpenChart}
         onNewReservation={handleNewReservation}
+      />
+
+      {/* T-20260514-foot-CHART2-OPEN-BUG (재오픈): Dashboard 진입경로 — createPortal 슬라이드 패널 */}
+      <CustomerChartSheet
+        customerId={dashChartSheetId}
+        onClose={() => setDashChartSheetId(null)}
       />
     </div>
   );

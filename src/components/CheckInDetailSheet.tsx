@@ -1409,8 +1409,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               load();
             }}
           />
-          {/* T-20260514-foot-CHART-EXPAND-UX: 고객차트 슬라이드 패널 (customerMode)
-               SheetContent 안에 배치 → @base-ui/react 중첩 다이얼로그 context 정상 연결 */}
+          {/* T-20260514-foot-CHART2-OPEN-BUG v2 fix: createPortal 방식 — nested dialog 독립 */}
           <CustomerChartSheet
             customerId={chartSheetId}
             onClose={() => setChartSheetId(null)}
@@ -2265,8 +2264,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           onClose={() => setPayEditTarget(null)}
           onDone={() => { setPayEditTarget(null); load(); }}
         />
-        {/* T-20260514-foot-CHART-EXPAND-UX: 고객차트 슬라이드 패널 (main path)
-             SheetContent 안에 배치 → @base-ui/react 중첩 다이얼로그 context 정상 연결 */}
+        {/* T-20260514-foot-CHART2-OPEN-BUG v2 fix: createPortal 방식 — nested dialog 독립 */}
         <CustomerChartSheet
           customerId={chartSheetId}
           onClose={() => setChartSheetId(null)}
