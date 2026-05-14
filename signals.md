@@ -1,5 +1,40 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-14 — dev-foot | deploy-ready | T-20260514-foot-C2-PAYMENT-SYNC — [P2] 2번차트 수납내역 3건 개선
+
+**커밋: 5bc003c (E2E spec) + a704378 (feat) → origin/main push 완료**
+
+### 구현 내용
+- ✅ AC-1: CustomerChartPage — Supabase realtime channel `c2_payments_{customerId}` 구독. payments 변경 시 즉시 refreshPayments() 호출
+- ✅ AC-2: Dashboard 완료 칸반 카드 + 상단 합계: `formatAmount(paid)` (toLocaleString('ko-KR')) — 원 단위 콤마 표시. 만원 반올림 제거
+- ✅ AC-3: 2번차트 수납내역 행 클릭 → expand row → `PaymentAuditLogsPanel` with `autoLoad` — 수납 이력 자동 표시. 이력 없음 시 "이력 없음" 표시
+
+### E2E
+- tests/e2e/T-20260514-foot-C2-PAYMENT-SYNC.spec.ts — 5개 spec (AC-1 채널 구조 / AC-2 포맷 / AC-3 이력 표시 / 이력 없음 엣지케이스 / audit 내용 확인)
+
+---
+
+## 2026-05-14 — dev-foot | deploy-ready | T-20260514-foot-TESTDATA-CLEANUP — [P1] 셀프접수 테스트 더미 데이터 DB 정리 — 수납대기 노출 해소
+
+**커밋: 5f51563 → origin/main push 완료 (DB-only, Vercel 배포 없음)**
+
+### 구현 내용
+- ✅ AC-1: dry-run SELECT — [TEST]/[TEST2]/[TEST3] 70명, reservations 77건, check_ins 83건(미완료 34건), payments 21건 확인
+- ✅ AC-2: 11개 테이블 cascade 삭제 (check_in_services → package_sessions → status_transitions → consent_forms → checklists → payments → package_payments → payment_audit_logs → service_charges → check_ins → packages → reservations → customers)
+- ✅ AC-3: is_simulation=true 필터 필수 안전망 적용 — 실 환자 0건
+- ✅ AC-4: 검증 완료 — 테스트 고객 0건 잔여, 수납대기 칸 테스트 데이터 0건
+
+### DB 결과
+- customers 70건 삭제 (is_simulation=true 전체)
+- check_ins 83건 삭제 (수납대기 미완료 34건 포함)
+- reservations 77건 삭제
+- 현장 대시보드 정상화
+
+### E2E
+- e2e_spec_exempt_reason: db_only
+
+---
+
 ## 2026-05-14 22:30 — dev-foot | deploy-ready | T-20260514-foot-SELFCHECKIN-TESTDATA — [P2] 셀프접수 테스트용 [TEST3] 더미 예약 20건 삽입
 
 **커밋: ba0883a → origin/main push 완료 (DB-only, Vercel 배포 없음)**
