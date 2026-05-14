@@ -200,4 +200,67 @@ test.describe('T-20260515-foot-RESV-DND-SHORTCUT', () => {
     // 어느 쪽이든 페이지 구조는 정상이어야 함
     await expect(page).toHaveURL(/reservations/);
   });
+
+  // AC-5 (재오픈 fix): 날짜 전환 후에도 클립보드 힌트 바가 유지된다
+  test('AC-5: Ctrl+C 후 다른 주로 이동해도 클립보드 힌트 바가 유지된다', async ({ page }) => {
+    await page.goto(`${BASE_URL}/reservations`);
+    await page.waitForLoadState('networkidle');
+
+    const confirmedCards = page.locator('.bg-blue-100, .bg-emerald-100');
+    if (await confirmedCards.count() === 0) { test.skip(); return; }
+
+    // 예약 선택 후 상세창 닫기
+    await confirmedCards.first().click();
+    await page.waitForTimeout(200);
+    const dialog = page.locator('[role="dialog"]').first();
+    if (await dialog.isVisible({ timeout: 1500 }).catch(() => false)) {
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+    }
+
+    // Ctrl+C → 클립보드 힌트 바 표시 확인
+    await page.keyboard.press('Control+c');
+    await page.waitForTimeout(300);
+    const hint = page.getByTestId('clipboard-hint');
+    const hintVisibleBefore = await hint.isVisible({ timeout: 2000 }).catch(() => false);
+    if (!hintVisibleBefore) { test.skip(); return; }
+
+    // 다음 주로 이동 (ChevronRight 클릭)
+    await page.getByRole('button').filter({ has: page.locator('svg') }).nth(1).click();
+    await page.waitForTimeout(500);
+
+    // 날짜 전환 후에도 클립보드 힌트 바가 그대로 표시되어야 함 (AC-5 핵심)
+    await expect(hint).toBeVisible({ timeout: 3000 });
+    await expect(hint).toContainText('복사 대기');
+  });
+
+  // AC-5: Ctrl+X 후 날짜 전환 → 클립보드(이동 대기) 유지
+  test('AC-5: Ctrl+X 후 다른 주로 이동해도 이동 대기 힌트가 유지된다', async ({ page }) => {
+    await page.goto(`${BASE_URL}/reservations`);
+    await page.waitForLoadState('networkidle');
+
+    const confirmedCards = page.locator('.bg-blue-100, .bg-emerald-100');
+    if (await confirmedCards.count() === 0) { test.skip(); return; }
+
+    await confirmedCards.first().click();
+    await page.waitForTimeout(200);
+    const dialog = page.locator('[role="dialog"]').first();
+    if (await dialog.isVisible({ timeout: 1500 }).catch(() => false)) {
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+    }
+
+    await page.keyboard.press('Control+x');
+    await page.waitForTimeout(300);
+    const hint = page.getByTestId('clipboard-hint');
+    if (!await hint.isVisible({ timeout: 2000 }).catch(() => false)) { test.skip(); return; }
+
+    // 이전 주로 이동 (ChevronLeft 클릭)
+    await page.getByRole('button').filter({ has: page.locator('svg') }).nth(0).click();
+    await page.waitForTimeout(500);
+
+    // 날짜 전환 후에도 이동 대기 힌트 유지
+    await expect(hint).toBeVisible({ timeout: 3000 });
+    await expect(hint).toContainText('이동 대기');
+  });
 });
