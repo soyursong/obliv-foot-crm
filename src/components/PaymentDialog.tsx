@@ -135,6 +135,8 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
 
   const handleSubmit = async () => {
     setSubmitting(true);
+    // T-20260514-foot-PAYMENTDLG-TRYCATCH: 네트워크 오류 등 미처리 예외 → submitting 영구 멈춤 방지
+    try {
 
     if (paymentMode === 'package') {
       if (!selectedPreset) {
@@ -306,8 +308,13 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
     }
 
     toast.success(paymentMode === 'package' ? '패키지 결제 완료' : '결제 완료');
-    setSubmitting(false);
     onPaid();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : '결제 처리 중 오류가 발생했습니다';
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
