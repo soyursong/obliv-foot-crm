@@ -7,7 +7,7 @@
  * Phase 2 (AC-8~10): 서류발행 섹션 — FORM-TEMPLATE-REFRESH 완료 후 활성화
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import {
@@ -73,6 +73,19 @@ const METHOD_OPTIONS: { value: PayMethod; label: string }[] = [
 interface SelectedItem {
   service: Service;
   qty: number;
+}
+
+// ── draft persist (localStorage) ─────────────────────────────────────────────
+// T-20260515-foot-PAYMENT-CODE-PERSIST: 시술코드 선택 후 모달 닫기→재오픈 시 유지
+// Key: `payment-draft-{checkIn.id}` → AC-3 슬롯 간 격리 자동 보장
+
+interface DraftItem {
+  serviceId: string;
+  qty: number;
+}
+
+function draftKey(checkInId: string): string {
+  return `payment-draft-${checkInId}`;
 }
 
 // ── 서류 출력 유틸 (DocumentPrintPanel 패턴 인라인) ──────────────────────────
@@ -267,9 +280,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const [docPrinting, setDocPrinting] = useState(false);
   const [docSettlePrinting, setDocSettlePrinting] = useState(false);
 
+  // T-20260515-foot-PAYMENT-CODE-PERSIST: 비동기 초기 로드 중 persist effect 차단용 ref
+  // (로드 완료 전 selectedItems=[] 상태를 draft로 덮어쓰는 것 방지)
+  const skipPersistRef = useRef(true);
+
   // ── 서비스 목록 + 기존 시술 pre-load + 양식 목록 로드 ────────────────────────
   useEffect(() => {
     if (!checkIn) return;
+
+    // 비동기 로드 시작 전 persist effect 차단 (빈 상태를 draft로 저장하는 것 방지)
+    skipPersistRef.current = true;
 
     // 창 열릴 때마다 즉시 리셋 (비동기 로드 전에 빈 상태로 시작)
     setSelectedItems([]);
@@ -327,6 +347,30 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           setSelectedItems(items);
           setSaved(true); // DB에 이미 저장된 데이터 → saved=true로 즉시 수납 가능
         }
+        // DB가 정본 → 잔류 draft 제거
+        localStorage.removeItem(draftKey(checkIn.id));
+      } else {
+        // T-20260515-foot-PAYMENT-CODE-PERSIST AC-1:
+        // DB에 check_in_services 없으면 localStorage draft 복원 (모달 닫기→재열기 시 코드 유지)
+        try {
+          const raw = localStorage.getItem(draftKey(checkIn.id));
+          if (raw) {
+            const draft: DraftItem[] = JSON.parse(raw);
+            const items: SelectedItem[] = draft
+              .map((d) => {
+                const svc = svcs.find((s) => s.id === d.serviceId);
+                return svc ? { service: svc, qty: d.qty } : null;
+              })
+              .filter((x): x is SelectedItem => x !== null);
+            if (items.length > 0) {
+              setSelectedItems(items);
+              // saved=false 유지 — DB에 없으므로 저장 버튼 필요
+            }
+          }
+        } catch {
+          // 파싱 실패 시 draft 폐기 (corrupt data)
+          localStorage.removeItem(draftKey(checkIn.id));
+        }
       }
 
       setTemplates(
@@ -334,8 +378,28 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           ? (tplRes.data as FormTemplate[])
           : FALLBACK_TEMPLATES,
       );
+
+      // 비동기 로드 완료 — 이후 selectedItems 변경은 persist effect가 처리
+      skipPersistRef.current = false;
     });
   }, [checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // T-20260515-foot-PAYMENT-CODE-PERSIST AC-1/AC-3: 미저장 draft → localStorage 동기화
+  // saved=false 상태에서 selectedItems 변경 시마다 슬롯별 키로 저장
+  useEffect(() => {
+    if (!checkIn || skipPersistRef.current) return;
+    if (saved) {
+      // DB가 정본 — 잔류 draft 제거
+      localStorage.removeItem(draftKey(checkIn.id));
+      return;
+    }
+    if (selectedItems.length === 0) {
+      localStorage.removeItem(draftKey(checkIn.id));
+      return;
+    }
+    const draft: DraftItem[] = selectedItems.map((i) => ({ serviceId: i.service.id, qty: i.qty }));
+    localStorage.setItem(draftKey(checkIn.id), JSON.stringify(draft));
+  }, [selectedItems, saved, checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!checkIn) return null;
 
@@ -414,6 +478,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     }
 
     setSaved(true);
+    // T-20260515-foot-PAYMENT-CODE-PERSIST: draft → DB로 승격, localStorage 클리어
+    localStorage.removeItem(draftKey(checkIn.id));
     toast.success('시술 저장 완료 — 금액 산정됨');
     onSaved?.();
   };
@@ -462,6 +528,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     setSubmitting(true);
     try {
       await executeAutoDone(grandTotal, payMethod);
+      // T-20260515-foot-PAYMENT-CODE-PERSIST AC-2: 결제 완료 시 draft 클리어
+      localStorage.removeItem(draftKey(checkIn.id));
       toast.success('수납 완료 — 완료 슬롯으로 이동됩니다');
       setSubmitting(false); // PAYMENT-SUBMIT-STUCK: success path에서도 명시 해제
       onComplete();
@@ -547,6 +615,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
       // 2. 수납 + auto-done (PAYMENT-AUTO-DONE reuse)
       await executeAutoDone(grandTotal, payMethod);
+      // T-20260515-foot-PAYMENT-CODE-PERSIST AC-2: 결제 완료 시 draft 클리어
+      localStorage.removeItem(draftKey(checkIn.id));
       toast.success('출력 및 수납 완료 — 완료 슬롯으로 이동됩니다');
       setDocSettlePrinting(false); // PAYMENT-SUBMIT-STUCK AC-2: success path에서도 명시 해제
       onComplete();
