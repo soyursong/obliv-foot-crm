@@ -8,7 +8,7 @@
  *  delete — 삭제 사유 모달 → soft-delete + audit INSERT
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Pencil, XCircle, Trash2 } from 'lucide-react';
 import {
@@ -406,9 +406,11 @@ interface AuditLog {
 
 interface PaymentAuditLogsPanelProps {
   paymentId: string;
+  /** true면 마운트 시 자동 로드 (2번차트 expand 행 전용) */
+  autoLoad?: boolean;
 }
 
-export function PaymentAuditLogsPanel({ paymentId }: PaymentAuditLogsPanelProps) {
+export function PaymentAuditLogsPanel({ paymentId, autoLoad }: PaymentAuditLogsPanelProps) {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [open, setOpen] = useState(false);
@@ -423,6 +425,11 @@ export function PaymentAuditLogsPanel({ paymentId }: PaymentAuditLogsPanelProps)
     setLoaded(true);
     setOpen(true);
   };
+
+  // T-20260514-foot-C2-PAYMENT-SYNC AC-3: autoLoad 시 마운트 즉시 로드
+  useEffect(() => {
+    if (autoLoad) load();
+  }, [paymentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ACTION_KO: Record<string, string> = {
     create: '생성',

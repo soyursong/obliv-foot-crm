@@ -3419,9 +3419,10 @@ export default function Dashboard() {
                       onClick={() => handleCardClick(ci)}
                       onContextMenu={(e) => handleCardContext(ci, e)}
                     />
+                    {/* T-20260514-foot-C2-PAYMENT-SYNC AC-2: 원 단위 실제 금액 (만원 반올림 → formatAmount) */}
                     {paid != null && paid > 0 && (
                       <div className="mt-0.5 px-1 text-xs text-emerald-700 font-medium text-right tabular-nums">
-                        {Math.round(paid / 10000)}만
+                        {formatAmount(paid)}
                       </div>
                     )}
                   </div>
