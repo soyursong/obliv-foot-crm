@@ -28,6 +28,8 @@ import { TreatmentSetLoadButton, type TreatmentSetSelection } from '@/components
 // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
 import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
+// T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드 닫기 (window.close 대체)
+import { useChartSheetClose } from '@/lib/chartSheetContext';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
@@ -504,6 +506,8 @@ export default function CustomerChartPage() {
   const { profile, loading: authLoading } = useAuth();
   // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
   const clinic = useClinic();
+  // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드에서 닫기 콜백 (null이면 독립 페이지 모드)
+  const chartSheetClose = useChartSheetClose();
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [packages, setPackages] = useState<PackageWithRemaining[]>([]);
@@ -1534,7 +1538,7 @@ export default function CustomerChartPage() {
   const HISTORY_TABS = [
     { key: 'consultations', label: '상담내역' },
     { key: 'packages',      label: '패키지' },
-    { key: 'treatments',    label: '시술내역' },
+    { key: 'treatments',    label: '진료내역' },
     { key: 'images',        label: '진료이미지' },
     { key: 'messages',      label: '메시지' },
   ];
@@ -1567,7 +1571,11 @@ export default function CustomerChartPage() {
           <button onClick={() => window.print()} className="rounded px-2 py-1 text-xs bg-white/10 hover:bg-white/20 transition flex items-center gap-1">
             <Printer className="h-3.5 w-3.5" /> 인쇄
           </button>
-          <button onClick={() => window.close()} className="rounded px-2 py-1 text-xs bg-white/10 hover:bg-white/20 transition">
+          {/* T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드 → Sheet 닫기, 독립 페이지 → window.close */}
+          <button
+            onClick={() => chartSheetClose ? chartSheetClose() : window.close()}
+            className="rounded px-2 py-1 text-xs bg-white/10 hover:bg-white/20 transition"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
