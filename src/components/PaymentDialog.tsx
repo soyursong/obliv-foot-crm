@@ -76,6 +76,9 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
       setSplitCardStr('');
       setSplitCashStr('');
       setMemo('');
+      // T-20260514-foot-PAYMENT-CONSECUTIVE-STUCK BUG3 fix:
+      // checkIn 변경 시 submitting 리셋 — 연속 결제 시 이전 환자의 submitting=true 잔류 방지
+      setSubmitting(false);
       // 결제담당: 체크인의 기존 consultant_id로 초기화
       setSelectedStaffId(checkIn.consultant_id ?? '');
       // 활성 직원 목록 로드
