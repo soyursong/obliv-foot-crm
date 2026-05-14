@@ -267,37 +267,69 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const [docPrinting, setDocPrinting] = useState(false);
   const [docSettlePrinting, setDocSettlePrinting] = useState(false);
 
-  // ── 서비스 목록 + 양식 목록 로드 ────────────────────────────────────────────
+  // ── 서비스 목록 + 기존 시술 pre-load + 양식 목록 로드 ────────────────────────
   useEffect(() => {
     if (!checkIn) return;
 
-    // 서비스 목록 (Phase 1)
-    supabase
-      .from('services')
-      .select('*')
-      .eq('clinic_id', checkIn.clinic_id)
-      .eq('active', true)
-      .order('sort_order')
-      .then(({ data }) => setServices((data ?? []) as Service[]));
-
-    // 서류 양식 목록 (Phase 2 — AC-8)
-    supabase
-      .from('form_templates')
-      .select('*')
-      .eq('clinic_id', checkIn.clinic_id)
-      .eq('category', 'foot-service')
-      .eq('active', true)
-      .order('sort_order')
-      .then(({ data }) => {
-        setTemplates(data && data.length > 0 ? (data as FormTemplate[]) : FALLBACK_TEMPLATES);
-      });
-
-    // 창 열릴 때마다 리셋
+    // 창 열릴 때마다 즉시 리셋 (비동기 로드 전에 빈 상태로 시작)
     setSelectedItems([]);
     setSaved(false);
     setPayMethod('card');
     setActiveTab('풋케어');
     setSelectedDocKeys(new Set());
+
+    // T-20260514-foot-DASH-REALTIME-FAIL AC-1 fix:
+    // services + 기존 check_in_services 동시 로드 → pre-populate selectedItems
+    // 수납대기 카드에 이미 시술이 저장되어 있을 경우, 재선택 없이 바로 수납 가능
+    Promise.all([
+      supabase
+        .from('services')
+        .select('*')
+        .eq('clinic_id', checkIn.clinic_id)
+        .eq('active', true)
+        .order('sort_order'),
+      supabase
+        .from('check_in_services')
+        .select('service_id, price')
+        .eq('check_in_id', checkIn.id),
+      supabase
+        .from('form_templates')
+        .select('*')
+        .eq('clinic_id', checkIn.clinic_id)
+        .eq('category', 'foot-service')
+        .eq('active', true)
+        .order('sort_order'),
+    ]).then(([svcsRes, cisRes, tplRes]) => {
+      const svcs = (svcsRes.data ?? []) as Service[];
+      setServices(svcs);
+
+      // 기존 check_in_services가 있으면 selectedItems pre-populate + saved=true
+      const existingCis = (cisRes.data ?? []) as { service_id: string; price: number }[];
+      if (existingCis.length > 0) {
+        const items: SelectedItem[] = [];
+        for (const ci of existingCis) {
+          const svc = svcs.find((s) => s.id === ci.service_id);
+          if (svc) {
+            const existing = items.find((i) => i.service.id === svc.id);
+            if (existing) {
+              existing.qty += 1;
+            } else {
+              items.push({ service: svc, qty: 1 });
+            }
+          }
+        }
+        if (items.length > 0) {
+          setSelectedItems(items);
+          setSaved(true); // DB에 이미 저장된 데이터 → saved=true로 즉시 수납 가능
+        }
+      }
+
+      setTemplates(
+        tplRes.data && tplRes.data.length > 0
+          ? (tplRes.data as FormTemplate[])
+          : FALLBACK_TEMPLATES,
+      );
+    });
   }, [checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!checkIn) return null;

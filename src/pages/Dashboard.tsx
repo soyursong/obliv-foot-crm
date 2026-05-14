@@ -2271,10 +2271,19 @@ export default function Dashboard() {
         () => debouncedResvRefetch(),
       )
       .subscribe();
+
+    // T-20260514-foot-DASH-REALTIME-FAIL AC-4: Realtime 단절 대비 60초 폴링 fallback
+    // Supabase WebSocket이 간헐적으로 끊길 경우 최대 60초 이내 자동 복구
+    const pollTimer = setInterval(() => {
+      fetchCheckIns();
+      fetchSelfCheckIns();
+    }, 60000);
+
     return () => {
       if (checkInTimer) clearTimeout(checkInTimer);
       if (assignTimer) clearTimeout(assignTimer);
       if (resvTimer) clearTimeout(resvTimer);
+      clearInterval(pollTimer);
       supabase.removeChannel(channel);
     };
   }, [clinic, dateStr, fetchCheckIns, fetchAssignments, fetchReservations, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts]);
@@ -3111,7 +3120,10 @@ export default function Dashboard() {
   // 힐러대기: healer_waiting 상태 (T-20260502-foot-HEALER-WAIT-SLOT)
   const healerWaiting = filtered.filter((ci) => ci.status === 'healer_waiting');
 
-  const paymentTotal = Array.from(dayPayments.values()).reduce((s, v) => s + v, 0);
+  // T-20260514-foot-DASH-REALTIME-FAIL AC-3 fix:
+  // paymentTotal → pendingTotal (수납대기 컬럼 헤더 = 미수납 예정금액, not 전체 결제합계)
+  // 기존 paymentTotal = dayPayments 전체합(done 포함) → 수납대기 컬럼에 오해 소지
+  const pendingTotal = Array.from(pendingServiceMap.values()).reduce((s, v) => s + v, 0);
   const doneTotal = (byStatus['done'] ?? []).reduce((s, ci) => s + (dayPayments.get(ci.id) ?? 0), 0);
 
   const examRooms = roomsByType['examination'] ?? [];
@@ -3355,9 +3367,9 @@ export default function Dashboard() {
               count={(byStatus['payment_waiting'] ?? []).length}
               highlight="text-purple-700"
               subtitle={
-                paymentTotal > 0 ? (
+                pendingTotal > 0 ? (
                   <div className="text-xs font-semibold text-purple-700 tabular-nums">
-                    대기 {formatAmount(paymentTotal)}
+                    대기 {formatAmount(pendingTotal)}
                   </div>
                 ) : undefined
               }
@@ -3444,7 +3456,7 @@ export default function Dashboard() {
     newRegistered, newPendingReservations, returningWaiting, returningPendingReservations,
     examRooms, consultRooms, treatmentRooms, laserRooms,
     byStatus, filtered, assignments, doctors, therapists, consultants,
-    laserWaiting, paymentTotal, doneTotal, dayPayments, doneCount,
+    laserWaiting, pendingTotal, doneTotal, dayPayments, doneCount,
     getStageStart, getPkgLabel, swapSortOrder,
     handleReservationCheckIn, handleCardClick, handleCardContext,
     handleDoctorChange, handleConsultantChange, handleTherapistChange, handleHeatedLaserDoctorChange,
