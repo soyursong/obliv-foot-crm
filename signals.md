@@ -1,5 +1,26 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-16 01:30 — dev-foot | deploy-ready | T-20260515-foot-RECEIPT-TAX-SPLIT
+
+**커밋: 6ff1114 → origin/main push 완료**
+
+### 구현 내용 (AC-1 ~ AC-6 전체)
+- **AC-1** `PaymentDialog.tsx`: 현금 결제 시 현금영수증 발행 체크박스 + 소득공제용/지출증빙용 선택 + 번호 입력창. 카드/이체 시 비활성.
+- **AC-2** `PaymentDialog.tsx`: 과세/비과세 금액 분리 입력창. 합계 일치 여부 실시간 검증 UI (✓/⚠).
+- **AC-3** `supabase/migrations/20260519000010_payment_tax_receipt_fields.sql`: payments 테이블 5컬럼 추가 (cash_receipt_issued, cash_receipt_type, cash_receipt_number, taxable_amount, tax_exempt_amount) — 모두 nullable, 기존 데이터 소급 불필요.
+- **AC-4** `Closing.tsx`: 결제내역 탭 과세/비과세/현금영수증 3컬럼 추가 + tfoot 합계(건수/합계 표시) + 하단 3-카드 요약.
+- **AC-5**: 신규 필드 optional — 미입력 시 기존 수납 정상 동작.
+- **AC-6** `CustomerChartPage.tsx`: 2번차트 수납내역 현금영수증 컬럼 추가 (null graceful 처리).
+- **E2E**: `tests/e2e/T-20260515-foot-RECEIPT-TAX-SPLIT.spec.ts` (AC-1/2/4/5/6 시나리오)
+
+### ⚠️ supervisor 필수 확인
+- DB 마이그레이션 미적용: `supabase/migrations/20260519000010_payment_tax_receipt_fields.sql` 실행 필요
+- 롤백 SQL: `supabase/migrations/20260519000010_payment_tax_receipt_fields.down.sql`
+- FE는 nullable 처리 완료 — 마이그레이션 전도 에러 없음 (컬럼 select 시 undefined graceful)
+
+---
+
+
 ## 2026-05-15 16:00 — dev-foot | deploy-ready | T-20260515-foot-RESPONSIVE-UI-SHELL Phase 0 완료
 
 **커밋: ade2a6b → origin/main push 완료**
