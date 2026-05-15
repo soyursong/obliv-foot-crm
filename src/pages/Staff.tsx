@@ -28,11 +28,12 @@ import { STAFF_ROLE_LABEL as ROLE_LABEL, STAFF_ROLE_ORDER as ROLE_ORDER } from '
 
 type Role = StaffRole;
 
+// T-20260515-foot-SPACE-ASSIGN-REVAMP AC-10: 원장실 → 원장실 C5
 const ROOM_TYPE_LABEL: Record<Room['room_type'], string> = {
   treatment: '치료실',
   laser: '레이저실',
   consultation: '상담실',
-  examination: '원장실',
+  examination: '원장실 C5',
 };
 
 const ROOM_TYPE_ORDER: Room['room_type'][] = ['treatment', 'laser', 'consultation', 'examination'];
@@ -475,9 +476,12 @@ type RoomViewMode = 'daily' | 'weekly';
 
 function RoomTab({ clinic }: { clinic: Clinic }) {
   const qc = useQueryClient();
-  const [date, setDate] = useState(todayStr());
   const [roomView, setRoomView] = useState<RoomViewMode>('daily');
   const [weekStart, setWeekStart] = useState<Date>(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
+  // AC-1/AC-3 T-20260515-foot-SPACE-ASSIGN-REVAMP: 로컬 배정 변경 버퍼
+  const [pending, setPending] = useState<Record<string, string>>({});
+  const [isDirty, setIsDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const weekDays = useMemo(() => Array.from({ length: 6 }).map((_, i) => addDays(weekStart, i)), [weekStart]);
 
@@ -531,25 +535,48 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
     return map;
   }, [roomRoleMappings]);
 
-  /** 공간 유형에 따라 배정 가능한 직원 반환 (하위호환: 미설정 → 전체) */
+  /**
+   * 공간 유형에 따라 배정 가능한 직원 반환
+   * AC-8 T-20260515-foot-SPACE-ASSIGN-REVAMP:
+   * 레이저실은 room_role_mapping 미설정 시 technician(장비명) 역할만 기본값으로 동적 조회.
+   * 현장에서 직원>[장비명] 탭에 항목 추가 → 레이저실 드롭다운에 즉시 반영됨.
+   */
   const getFilteredStaff = (roomType: string): Staff[] => {
     const allowed = roomTypeAllowedRoles[roomType];
-    if (!allowed || allowed.length === 0) return staffList;
+    if (!allowed || allowed.length === 0) {
+      // AC-8: 레이저실은 mapping 미설정 시 장비명(technician) 역할 기본
+      if (roomType === 'laser') return staffList.filter(s => s.role === 'technician');
+      return staffList;
+    }
     return staffList.filter(s => allowed.includes(s.role));
   };
 
+  // AC-1 T-20260515: 마지막 저장된 스냅샷 로드 (날짜 무관)
   const { data: assignments = [] } = useQuery<RoomAssignmentRow[]>({
-    queryKey: ['room_assignments', clinic.id, date],
+    queryKey: ['room_assignments_latest', clinic.id],
     queryFn: async () => {
+      const { data: maxRow } = await supabase
+        .from('room_assignments')
+        .select('date')
+        .eq('clinic_id', clinic.id)
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!maxRow) return [];
+
       const { data, error } = await supabase
         .from('room_assignments')
         .select('*')
         .eq('clinic_id', clinic.id)
-        .eq('date', date);
+        .eq('date', maxRow.date);
+
       if (error) throw error;
       return (data ?? []) as RoomAssignmentRow[];
     },
   });
+
+  const lastSavedDate = assignments[0]?.date ?? null;
 
   const weekStartStr = format(weekDays[0], 'yyyy-MM-dd');
   const weekEndStr = format(weekDays[5], 'yyyy-MM-dd');
@@ -592,7 +619,7 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
   }, [rooms]);
 
   const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['room_assignments', clinic.id, date] });
+    qc.invalidateQueries({ queryKey: ['room_assignments_latest', clinic.id] });
     qc.invalidateQueries({ queryKey: ['room_assignments_week', clinic.id, weekStartStr] });
   };
 
@@ -619,88 +646,64 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
     refresh();
   };
 
-  const handleAssign = async (room: Room, staffId: string) => {
-    const existing = assignmentByRoom.get(room.name);
-    const staff = staffList.find((s) => s.id === staffId);
-
-    if (!staffId) {
-      // 미배정으로 설정 → 기존 행 삭제
-      if (existing) {
-        const { error } = await supabase
-          .from('room_assignments')
-          .delete()
-          .eq('id', existing.id);
-        if (error) {
-          toast.error(`해제 실패: ${error.message}`);
-          return;
-        }
-        toast.success(`${room.name} 배정 해제`);
-        refresh();
-      }
-      return;
-    }
-
-    if (existing) {
-      const { data: updated, error } = await supabase
-        .from('room_assignments')
-        .update({ staff_id: staffId, staff_name: staff?.name ?? null })
-        .eq('id', existing.id)
-        .select('id');
-      if (error) {
-        toast.error(`배정 실패: ${error.message}`);
-        return;
-      }
-      // RLS denial 등으로 0행 영향 → silent 실패 가시화
-      if (!updated || updated.length === 0) {
-        toast.error('배정 변경 권한이 없습니다 (admin/manager만 가능)');
-        return;
-      }
-    } else {
-      const { error } = await supabase.from('room_assignments').insert({
-        clinic_id: clinic.id,
-        date,
-        room_name: room.name,
-        room_type: room.room_type,
-        staff_id: staffId,
-        staff_name: staff?.name ?? null,
-      });
-      if (error) {
-        toast.error(`배정 실패: ${error.message}`);
-        return;
-      }
-    }
-    toast.success(`${room.name} → ${staff?.name ?? ''}`);
-    refresh();
+  // AC-3 T-20260515: 배정 변경 → 로컬 버퍼에만 기록 (즉시 저장 X)
+  const handlePendingChange = (roomName: string, staffId: string) => {
+    setPending(prev => ({ ...prev, [roomName]: staffId }));
+    setIsDirty(true);
   };
 
-  const copyPrevDay = async () => {
-    const prev = new Date(date);
-    prev.setDate(prev.getDate() - 1);
-    const prevDate = prev.toISOString().slice(0, 10);
-    const { data: prevAssigns, error } = await supabase
+  // pending 우선, 없으면 서버 상태
+  const getEffectiveStaffId = (roomName: string): string => {
+    if (roomName in pending) return pending[roomName];
+    return assignmentByRoom.get(roomName)?.staff_id ?? '';
+  };
+
+  // AC-3 T-20260515: [저장] 버튼 — 오늘 날짜로 전체 스냅샷 저장
+  const handleSave = async () => {
+    setSaving(true);
+    const today = todayStr();
+
+    const { error: delErr } = await supabase
       .from('room_assignments')
-      .select('room_name, room_type, staff_id, staff_name')
+      .delete()
       .eq('clinic_id', clinic.id)
-      .eq('date', prevDate);
-    if (error || !prevAssigns?.length) {
-      toast.error('전날 배정이 없습니다');
+      .eq('date', today);
+
+    if (delErr) {
+      toast.error(`저장 실패: ${delErr.message}`);
+      setSaving(false);
       return;
     }
-    const inserts = prevAssigns.map((a) => ({
-      clinic_id: clinic.id,
-      date,
-      room_name: a.room_name,
-      room_type: a.room_type,
-      staff_id: a.staff_id,
-      staff_name: a.staff_name,
-    }));
-    if (assignments.length > 0) {
-      if (!window.confirm(`${date}에 이미 ${assignments.length}건 배정이 있습니다. 덮어쓰시겠습니까?`)) return;
-      await supabase.from('room_assignments').delete().eq('clinic_id', clinic.id).eq('date', date);
+
+    const inserts = rooms
+      .map(room => {
+        const staffId = getEffectiveStaffId(room.name);
+        if (!staffId) return null;
+        const staff = staffList.find(s => s.id === staffId);
+        return {
+          clinic_id: clinic.id,
+          date: today,
+          room_name: room.name,
+          room_type: room.room_type,
+          staff_id: staffId,
+          staff_name: staff?.name ?? null,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+
+    if (inserts.length > 0) {
+      const { error: insErr } = await supabase.from('room_assignments').insert(inserts);
+      if (insErr) {
+        toast.error(`저장 실패: ${insErr.message}`);
+        setSaving(false);
+        return;
+      }
     }
-    const { error: insErr } = await supabase.from('room_assignments').insert(inserts);
-    if (insErr) { toast.error(`복사 실패: ${insErr.message}`); return; }
-    toast.success(`${prevDate} 배정 복사 완료 (${inserts.length}건)`);
+
+    toast.success(`공간배정 저장됨 (${inserts.length}건)`);
+    setPending({});
+    setIsDirty(false);
+    setSaving(false);
     refresh();
   };
 
@@ -709,13 +712,22 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div className="flex items-end gap-2">
           {roomView === 'daily' ? (
-            <>
-              <div className="space-y-1">
-                <Label>날짜</Label>
-                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-44" />
-              </div>
-              <Button variant="outline" size="sm" onClick={copyPrevDay}>전날 복사</Button>
-            </>
+            <div className="flex items-center gap-3">
+              {/* AC-1 T-20260515: 마지막 저장 날짜 표시 */}
+              <span className="text-sm text-muted-foreground">
+                {lastSavedDate ? `마지막 저장: ${lastSavedDate}` : '저장된 배정 없음'}
+              </span>
+              {/* AC-3 T-20260515: [저장] 버튼 */}
+              <Button
+                size="sm"
+                onClick={handleSave}
+                disabled={saving}
+                variant={isDirty ? 'default' : 'outline'}
+                className={isDirty ? 'bg-teal-600 hover:bg-teal-700 text-white' : ''}
+              >
+                {saving ? '저장 중…' : isDirty ? '저장 *' : '저장'}
+              </Button>
+            </div>
           ) : (
             <div className="flex items-center gap-2">
               <Button variant="outline" size="icon-sm" onClick={() => setWeekStart((w) => addDays(w, -7))}>
@@ -744,7 +756,7 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
           </div>
           {roomView === 'daily' && (
             <span className="text-xs text-muted-foreground">
-              배정 {assignments.length} / 공간 {rooms.length}
+              배정 {rooms.filter(r => getEffectiveStaffId(r.name)).length} / 공간 {rooms.length}
             </span>
           )}
         </div>
@@ -765,21 +777,36 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
                 <CardContent>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {list.map((room) => {
-                      const assigned = assignmentByRoom.get(room.name);
+                      // AC-6: C5 보라색 테두리 + "원장실" 라벨
+                      const isC5 = room.name === 'C5' && room.room_type === 'treatment';
+                      // AC-9: 레이저실은 "장비 선택" placeholder
+                      const isLaser = room.room_type === 'laser';
                       return (
-                        <div key={room.id} className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm">
-                          <span className="w-16 shrink-0 font-medium">{room.name}</span>
+                        <div
+                          key={room.id}
+                          className={`flex items-center gap-2 rounded-md bg-card px-3 py-2 text-sm ${
+                            isC5 ? 'border-2 border-purple-400' : 'border'
+                          }`}
+                        >
+                          <div className="w-20 shrink-0">
+                            <span className="font-medium">{room.name}</span>
+                            {/* AC-6: C5 원장실 라벨 */}
+                            {isC5 && (
+                              <span className="ml-1 text-xs text-purple-600">원장실</span>
+                            )}
+                          </div>
                           <select
                             className="h-8 flex-1 rounded-md border bg-background px-2 text-sm"
-                            value={assigned?.staff_id ?? ''}
-                            onChange={(e) => handleAssign(room, e.target.value)}
+                            value={getEffectiveStaffId(room.name)}
+                            onChange={(e) => handlePendingChange(room.name, e.target.value)}
                             title={roomTypeAllowedRoles[room.room_type]?.length
                               ? `배정 가능: ${roomTypeAllowedRoles[room.room_type].map(r => ROLE_LABEL[r as Staff['role']] ?? r).join(', ')}`
                               : '전체 직원 배정 가능'}
                           >
-                            <option value="">— 미배정 —</option>
+                            {/* AC-9: 레이저실 placeholder = 장비 선택 */}
+                            <option value="">{isLaser ? '— 장비 선택 —' : '— 미배정 —'}</option>
                             {getFilteredStaff(room.room_type).map((s) => (
-                              <option key={s.id} value={s.id}>{s.name} · {ROLE_LABEL[s.role]}</option>
+                              <option key={s.id} value={s.id}>{s.name}</option>
                             ))}
                           </select>
                         </div>
