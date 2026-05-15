@@ -90,6 +90,10 @@ export default function CalendarNoticePanel() {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
+  // ── PC 접힘 상태 (T-20260516-foot-PC-CAL-COLLAPSE) ────────────────────────
+  // AC-6: PC 초기 상태는 펼쳐진 상태
+  const [pcCollapsed, setPcCollapsed] = useState<boolean>(false);
+
   // ── 공지 폼 상태 ──────────────────────────────────────────────────────────
   const [editingId, setEditingId] = useState<string | 'new' | null>(null);
   const [formTitle, setFormTitle] = useState('');
@@ -220,6 +224,33 @@ export default function CalendarNoticePanel() {
     );
   }
 
+  // AC-2: PC + 접힘 상태 → 좌측 날짜 바 strip만 표시 (T-20260516-foot-PC-CAL-COLLAPSE)
+  if (!isMobile && pcCollapsed) {
+    return (
+      <aside
+        data-testid="pc-cal-bar"
+        className="w-10 shrink-0 border-r bg-white flex flex-col items-center gap-2 py-2"
+      >
+        {/* 펼치기 버튼 */}
+        <button
+          data-testid="pc-cal-expand"
+          onClick={() => setPcCollapsed(false)}
+          className="p-1.5 rounded hover:bg-muted text-muted-foreground"
+          aria-label="달력 펼치기"
+        >
+          <ChevronRight className="h-4 w-4 text-teal-600" />
+        </button>
+        {/* 날짜 세로 표기 */}
+        <span
+          className="text-[10px] font-semibold text-teal-700 select-none"
+          style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+        >
+          {format(selectedDate ?? new Date(), 'M월 d일 (E)', { locale: ko })}
+        </span>
+      </aside>
+    );
+  }
+
   return (
     <aside
       className={cn(
@@ -231,6 +262,17 @@ export default function CalendarNoticePanel() {
       <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2.5 bg-white/80">
         <CalendarDays className="h-4 w-4 text-teal-600" />
         <span className="text-sm font-semibold">달력</span>
+        {/* AC-1: PC 접기 토글 버튼 (T-20260516-foot-PC-CAL-COLLAPSE) */}
+        {!isMobile && (
+          <button
+            data-testid="pc-cal-toggle"
+            className="ml-auto p-1 rounded hover:bg-muted text-muted-foreground"
+            onClick={() => setPcCollapsed(true)}
+            aria-label="달력 접기"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        )}
         {/* AC-2: 모바일 펼침 상태에서 닫기 버튼 */}
         {isMobile && (
           <button
@@ -302,8 +344,9 @@ export default function CalendarNoticePanel() {
                   navigate('/admin/reservations', {
                     state: { goToWeekOf: format(day, 'yyyy-MM-dd') },
                   });
-                  // AC-3: 모바일 날짜 선택 → 달력 자동 접힘
+                  // AC-3: 날짜 선택 → 달력 자동 접힘 (모바일 + PC 공통)
                   if (isMobile) setMobileCollapsed(true);
+                  else setPcCollapsed(true);
                 }}
                 className={cn(
                   'w-full py-1 text-[11px] font-medium rounded-full transition-colors leading-none aspect-square flex items-center justify-center',
