@@ -165,6 +165,8 @@ interface Props {
   onUpdated: () => void;
   /** initialMode: 상담 단계 진입 시 'package' 전달 → PaymentDialog 패키지 모드 default */
   onPayment: (ci: CheckIn, initialMode?: 'package') => void;
+  /** T-20260515-foot-MEDICAL-CHART-V1 AC-7: 진료차트 패널 열기 */
+  onOpenMedicalChart?: (customerId: string) => void;
 }
 
 const METHOD_LABEL: Record<string, string> = {
@@ -452,7 +454,7 @@ function Chart1TreatmentImages({ customerId }: { customerId: string }) {
 // 기본 레이저 시간 단위 (어드민 설정 미존재 시 fallback) — 10분 추가 (T-20260504-foot-TREATMENT-SIMPLIFY)
 const DEFAULT_LASER_TIME_UNITS = [10, 15, 20, 30];
 
-export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, onPayment }: Props) {
+export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, onPayment, onOpenMedicalChart }: Props) {
   const { profile } = useAuth();
   const clinic = useClinic();
   const isAdmin = profile?.role === 'admin';
@@ -551,6 +553,15 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       setTreatmentContents(checkIn.treatment_contents ?? []);
     }
   }, [checkIn?.id, customerMode?.customerId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // T-20260515-foot-INITIAL-CHART-OPEN (재구현): 초진 카드 열릴 때 2번차트 자동 오픈
+  // Dashboard 레벨 대신 내부 chartSheetId 사용 → z-index 충돌 원천 차단
+  // visit_type === 'new' + customer_id 있을 때만, 카드 변경 시마다 실행
+  useEffect(() => {
+    if (checkIn?.visit_type === 'new' && checkIn.customer_id) {
+      setChartSheetId(checkIn.customer_id);
+    }
+  }, [checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async () => {
     if (!checkIn && !customerMode) return;
@@ -1582,30 +1593,46 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             </span>
           </div>
 
-          {/* 고객차트보기 — T-20260505-foot-SIMPLE-CHART-BUTTON + T-20260506-foot-CHART-LINK-SYNC */}
+          {/* T-20260515-foot-MEDICAL-CHART-V1 AC-7: [고객차트] [진료차트] 버튼 나란히 */}
           {/* 식별 우선순위: 1순위 customer_id → 2순위 resolvedCustomerId(phone 기반) → 3순위 실시간 조회 */}
           {(checkIn.customer_id || resolvedCustomerId || checkIn.customer_phone) && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full gap-2 border-teal-400 text-teal-700 hover:bg-teal-50 text-sm h-11"
-              onClick={() => {
-                // T-20260514-foot-CHART-EXPAND-UX: window.open → 슬라이드 패널
-                if (checkIn.customer_id) {
-                  // 1순위: customer_id FK 직접 참조 (가장 확실)
-                  setChartSheetId(checkIn.customer_id);
-                } else if (resolvedCustomerId) {
-                  // 2순위: chart_number + phone 일치로 조회된 고객 ID (환자명 불일치 허용)
-                  setChartSheetId(resolvedCustomerId);
-                } else {
-                  // 3순위: phone 기반 실시간 조회 (로드 타임 조회 실패 시 재시도)
-                  openChartFallback();
-                }
-              }}
-            >
-              <ExternalLink className="h-4 w-4" />
-              고객차트보기
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 gap-2 border-teal-400 text-teal-700 hover:bg-teal-50 text-sm h-11"
+                onClick={() => {
+                  // T-20260514-foot-CHART-EXPAND-UX: window.open → 슬라이드 패널
+                  if (checkIn.customer_id) {
+                    // 1순위: customer_id FK 직접 참조 (가장 확실)
+                    setChartSheetId(checkIn.customer_id);
+                  } else if (resolvedCustomerId) {
+                    // 2순위: chart_number + phone 일치로 조회된 고객 ID (환자명 불일치 허용)
+                    setChartSheetId(resolvedCustomerId);
+                  } else {
+                    // 3순위: phone 기반 실시간 조회 (로드 타임 조회 실패 시 재시도)
+                    openChartFallback();
+                  }
+                }}
+              >
+                <ExternalLink className="h-4 w-4" />
+                고객차트
+              </Button>
+              {onOpenMedicalChart && (checkIn.customer_id || resolvedCustomerId) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 gap-2 border-emerald-400 text-emerald-700 hover:bg-emerald-50 text-sm h-11"
+                  onClick={() => {
+                    const cid = checkIn.customer_id || resolvedCustomerId;
+                    if (cid) onOpenMedicalChart(cid);
+                  }}
+                >
+                  <Stethoscope className="h-4 w-4" />
+                  진료차트
+                </Button>
+              )}
+            </div>
           )}
 
           {/* T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 방문경로/예약메모/고객메모/기타메모 4항목 쌍방연동 */}
