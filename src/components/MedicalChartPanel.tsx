@@ -44,6 +44,7 @@ interface CustomerBasic {
   id: string;
   name: string;
   phone: string;
+  birth_date: string | null;
   chart_number: string | null;
 }
 
@@ -101,7 +102,7 @@ export default function MedicalChartPanel({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
           .from('customers')
-          .select('id, name, phone, chart_number')
+          .select('id, name, phone, birth_date, chart_number')
           .eq('id', customerId)
           .maybeSingle(),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -274,8 +275,15 @@ export default function MedicalChartPanel({
                     <span className="text-xs text-muted-foreground font-mono">#{customer.chart_number}</span>
                   )}
                 </div>
-                <div className="text-sm text-muted-foreground">
-                  {formatPhone(customer.phone)}
+                <div className="text-sm text-muted-foreground space-x-2">
+                  <span>{formatPhone(customer.phone)}</span>
+                  {customer.birth_date && (
+                    <span>
+                      {/^\d{6}$/.test(customer.birth_date)
+                        ? `${customer.birth_date.slice(0, 2)}/${customer.birth_date.slice(2, 4)}/${customer.birth_date.slice(4, 6)}`
+                        : customer.birth_date}
+                    </span>
+                  )}
                 </div>
               </div>
             )}
