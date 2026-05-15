@@ -10,6 +10,10 @@
  * T-20260510-foot-CUSTMGMT-CHART-PATTERN:
  *   대시보드와 접근 패턴 통일.
  *   클릭 → 1번차트(간편요약, 우측 패널), 우클릭 → 2번차트(미니홈피) 새 창
+ *
+ * T-20260514-foot-CHART2-OPEN-BUG (3차 재오픈):
+ *   openChart() window.open() → CustomerChartSheet DrawerSheet로 전환.
+ *   window.open() 팝업 차단 시 2번차트 안열리는 버그 해소.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
@@ -30,6 +34,7 @@ import {
 } from '@/components/ui/dialog';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
+import { CustomerChartSheet } from '@/components/CustomerChartSheet';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
@@ -55,14 +60,6 @@ function getPageNumbers(current: number, total: number): (number | '…')[] {
   return [1, '…', current - 1, current, current + 1, '…', total];
 }
 
-/** 2번차트(미니홈피)를 새 창으로 열기 */
-function openChart(customerId: string) {
-  window.open(
-    `/chart/${customerId}`,
-    `chart-${customerId}`,
-    'width=820,height=960,scrollbars=yes,resizable=yes',
-  );
-}
 
 export default function Customers() {
   const location = useLocation();
@@ -78,6 +75,9 @@ export default function Customers() {
   // T-20260510-foot-CUSTMGMT-CHART-PATTERN: 1번차트 우측 패널
   // T-20260511-foot-CUSTMGMT-DETAIL-SHEET: CheckInDetailSheet customerMode로 교체
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  // T-20260514-foot-CHART2-OPEN-BUG: 2번차트 팝업 차단 해소 → CustomerChartSheet 슬라이드 패널
+  const [chart2Id, setChart2Id] = useState<string | null>(null);
+  const openChart = (customerId: string) => setChart2Id(customerId);
   // 우클릭 컨텍스트 메뉴
   const [ctxMenu, setCtxMenu] = useState<{ customer: Customer; x: number; y: number } | null>(null);
   const [statsMap, setStatsMap] = useState<Map<string, CustomerStats>>(new Map());
@@ -438,6 +438,12 @@ export default function Customers() {
           isAdmin={isAdmin}
         />
       )}
+
+      {/* T-20260514-foot-CHART2-OPEN-BUG: 2번차트 슬라이드 패널 (팝업 차단 해소) */}
+      <CustomerChartSheet
+        customerId={chart2Id}
+        onClose={() => setChart2Id(null)}
+      />
     </div>
   );
 }
