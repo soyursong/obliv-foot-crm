@@ -1197,12 +1197,19 @@ function DraggableBox1Card({ reservation }: { reservation: Reservation }) {
 }
 
 // T-20260515-foot-DASH-SLOT-DRAG: 재진 미내원 예약 드래그 가능 카드 (Box2ReservationCard 드래그 버전)
+// T-20260515-foot-REVISIT-CLICK-AUTOCHECK: 카드 클릭(onSelect=차트조회)과 접수 버튼(onCheckIn=체크인)을 분리
+// - onSelect: 카드 본문 클릭 → 차트 조회만 (체크인 X) — AC-1
+// - onCheckIn: 내부 '접수' 버튼 클릭 → 체크인 생성 (4경로 중 하나) — AC-2
 function DraggableBox2ResvCard({
   reservation,
-  onClick,
+  onSelect,
+  onCheckIn,
 }: {
   reservation: Reservation;
-  onClick?: () => void;
+  /** 카드 클릭 = 차트 조회 (체크인 X) — T-20260515-foot-REVISIT-CLICK-AUTOCHECK AC-1 */
+  onSelect?: () => void;
+  /** 접수 버튼 클릭 = 체크인 생성 — T-20260515-foot-REVISIT-CLICK-AUTOCHECK AC-2 */
+  onCheckIn?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `box2r-${reservation.id}`,
@@ -1223,17 +1230,28 @@ function DraggableBox2ResvCard({
       {...listeners}
       className={cn(
         'flex items-center gap-1 rounded border border-green-300 bg-green-50 px-2 py-1 text-[11px] font-semibold w-full shadow-sm',
-        onClick ? 'cursor-grab active:cursor-grabbing hover:bg-green-100 hover:border-green-400 transition' : 'cursor-default',
+        onSelect ? 'cursor-grab active:cursor-grabbing hover:bg-green-100 hover:border-green-400 transition' : 'cursor-default',
       )}
-      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
-      title={`${reservation.customer_name} — 드래그=시간변경 · 클릭=체크인`}
+      onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
+      title={`${reservation.customer_name} — 드래그=시간변경 · 클릭=차트조회`}
       data-testid="box2-resv-card"
     >
       <span className="truncate text-green-900">{reservation.customer_name}</span>
       {resvChartNum && (
         <span className="text-[9px] font-mono text-green-700 shrink-0">#{resvChartNum}</span>
       )}
-      {onClick && <span className="text-[9px] text-green-600 shrink-0 ml-auto font-bold">↗</span>}
+      {/* T-20260515-foot-REVISIT-CLICK-AUTOCHECK AC-2: 접수 버튼 — 카드 드래그(DnD) 와 분리 위해 onPointerDown stopPropagation */}
+      {onCheckIn && (
+        <button
+          type="button"
+          className="shrink-0 ml-auto text-[9px] font-bold text-white bg-green-500 hover:bg-green-600 active:bg-green-700 rounded px-1 py-0.5 leading-none transition cursor-pointer"
+          title="접수 (체크인 시작)"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onCheckIn(); }}
+        >
+          접수
+        </button>
+      )}
     </div>
   );
 }
@@ -1247,7 +1265,8 @@ function DashboardTimeline({
   onSlotClick,
   onCardClick,
   onCardContext,
-  onReservationClick,
+  onReservationSelect,
+  onReservationCheckIn,
   clinic,
 }: {
   date: Date;
@@ -1258,8 +1277,10 @@ function DashboardTimeline({
   onSlotClick: (slot: { date: string; time: string; visit_type?: VisitType }) => void;
   onCardClick?: (ci: CheckIn) => void;
   onCardContext?: (ci: CheckIn, e: React.MouseEvent) => void;
-  /** 재진 예약 2번 박스 클릭 → 체크인 생성 + 차트 열기 (T-20260510-foot-DASH-SLOT-REWORK-P0) */
-  onReservationClick?: (r: Reservation) => void;
+  /** 재진 예약 카드 클릭 → 차트 조회만 (체크인 X) — T-20260515-foot-REVISIT-CLICK-AUTOCHECK AC-1 */
+  onReservationSelect?: (r: Reservation) => void;
+  /** 재진 접수 버튼 클릭 → 체크인 생성 (4경로 중 하나) — T-20260515-foot-REVISIT-CLICK-AUTOCHECK AC-2 */
+  onReservationCheckIn?: (r: Reservation) => void;
 }) {
   const now = new Date();
   const isToday = isSameDay(date, now);
@@ -1485,10 +1506,12 @@ function DashboardTimeline({
                 data-testid="timeline-slot-ret"
               >
                 {retBox2Resv.map((r) => (
+                  // T-20260515-foot-REVISIT-CLICK-AUTOCHECK: onSelect=차트조회, onCheckIn=접수 버튼 — 이벤트 분리
                   <DraggableBox2ResvCard
                     key={`b2r-${r.id}`}
                     reservation={r}
-                    onClick={onReservationClick ? () => onReservationClick(r) : undefined}
+                    onSelect={onReservationSelect ? () => onReservationSelect(r) : undefined}
+                    onCheckIn={onReservationCheckIn ? () => onReservationCheckIn(r) : undefined}
                   />
                 ))}
                 {retBox2Ci.map((ci) => (
@@ -3107,6 +3130,17 @@ export default function Dashboard() {
     toast.success(`플래그: ${label}`);
   };
 
+  // T-20260515-foot-REVISIT-CLICK-AUTOCHECK AC-1: 슬롯 카드 클릭 = 차트 조회만 (체크인 X)
+  // 체크인은 handleReservationCheckIn (접수 버튼 / 4경로) 에서만 발생
+  const handleReservationSelect = useCallback((res: Reservation) => {
+    if (res.customer_id) {
+      setDashChartSheetId(res.customer_id);
+    } else {
+      const timeStr = res.reservation_time ? res.reservation_time.slice(0, 5) : '';
+      toast.info(`${res.customer_name ?? ''} — ${timeStr} 예약 (차트 없음)`);
+    }
+  }, []);
+
   const handleReservationCheckIn = async (res: Reservation) => {
     if (!clinic) return;
     // B-3: 프론트 중복 방지 — 이미 체크인된 예약이면 차단 (DB UNIQUE 외 사용자 피드백)
@@ -3973,7 +4007,8 @@ export default function Dashboard() {
             onSlotClick={handleQuickSlotClick}
             onCardClick={!isPast ? handleCardClick : undefined}
             onCardContext={!isPast ? handleCardContext : undefined}
-            onReservationClick={!isPast ? handleReservationCheckIn : undefined}
+            onReservationSelect={!isPast ? handleReservationSelect : undefined}
+            onReservationCheckIn={!isPast ? handleReservationCheckIn : undefined}
           />
         </div>
 
