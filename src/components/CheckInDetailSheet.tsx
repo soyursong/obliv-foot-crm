@@ -36,8 +36,9 @@ import { DocumentViewer } from '@/components/forms/DocumentViewer';
 import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
+// T-20260515-foot-PAYMENT-EDIT-REFLECT: PaymentDonePayload 추가 import
 import { PaymentEditDialog, PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
-import type { EditMode, PaymentRowForEdit } from '@/components/PaymentEditDialog';
+import type { EditMode, PaymentRowForEdit, PaymentDonePayload } from '@/components/PaymentEditDialog';
 import type { CheckIn, Package as PackageType, PackageRemaining, Room, Service, VisitType } from '@/lib/types';
 // T-20260514-foot-CHART-EXPAND-UX: 고객차트 슬라이드 패널
 import { CustomerChartSheet } from '@/components/CustomerChartSheet';
@@ -2258,11 +2259,25 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
         />
 
         {/* T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE */}
+        {/* T-20260515-foot-PAYMENT-EDIT-REFLECT: onDone에 낙관적 업데이트 추가 */}
         <PaymentEditDialog
           payment={payEditTarget}
           mode={payEditMode}
           onClose={() => setPayEditTarget(null)}
-          onDone={() => { setPayEditTarget(null); load(); }}
+          onDone={(updated?: PaymentDonePayload) => {
+            setPayEditTarget(null);
+            // 낙관적 업데이트: DB 재조회 대기 없이 즉시 UI 반영
+            if (updated) {
+              setPayments((prev) => {
+                const mapped = prev.map((p) =>
+                  p.id === updated.id ? ({ ...p, ...updated } as typeof p) : p
+                );
+                // soft-delete된 수납은 목록에서 즉시 제거
+                return mapped.filter((p) => p.status !== 'deleted');
+              });
+            }
+            load(); // DB 재조회로 최종 확인
+          }}
         />
         {/* T-20260514-foot-CHART2-OPEN-BUG v2 fix: createPortal 방식 — nested dialog 독립 */}
         <CustomerChartSheet
