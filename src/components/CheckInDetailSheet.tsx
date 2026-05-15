@@ -42,6 +42,8 @@ import type { EditMode, PaymentRowForEdit, PaymentDonePayload } from '@/componen
 import type { CheckIn, Package as PackageType, PackageRemaining, Room, Service, VisitType } from '@/lib/types';
 // T-20260514-foot-CHART-EXPAND-UX: 고객차트 슬라이드 패널
 import { CustomerChartSheet } from '@/components/CustomerChartSheet';
+// T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
+import { NhisLookupPanel } from '@/components/insurance/NhisLookupPanel';
 
 // ─── 시술 항목 / 회차 차감 타입 ──────────────────────────────────────────────
 
@@ -516,6 +518,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const [rooms, setRooms] = useState<Room[]>([]);
   const [selectedRoom, setSelectedRoom] = useState('');
   const [assigningRoom, setAssigningRoom] = useState(false);
+  // T-20260515-foot-KENBO-API-NATIVE: 고객 건보 조회 동의 여부
+  const [hiraConsent, setHiraConsent] = useState(false);
 
   // ── 시술 항목 상태 (ServiceSelectModal/SessionUseInSheetDialog 유지용) ──
   const [, setTreatmentItems] = useState<TreatmentItem[]>([]);
@@ -569,7 +573,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           .limit(10),
         supabase
           .from('customers')
-          .select('id, chart_number, customer_memo, visit_route, memo')
+          .select('id, chart_number, customer_memo, visit_route, memo, hira_consent')
           .eq('id', customerId)
           .single(),
         supabase
@@ -600,11 +604,12 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       const pkgs = (pkgRes.data ?? []) as PackageType[];
       setPackages(pkgs);
       setHistory((histRes.data ?? []) as VisitHistory[]);
-      const custData = custRes.data as { chart_number: string | null; customer_memo: string | null; visit_route?: string | null; memo?: string | null } | null;
+      const custData = custRes.data as { chart_number: string | null; customer_memo: string | null; visit_route?: string | null; memo?: string | null; hira_consent?: boolean | null } | null;
       setChartNumber(custData?.chart_number ?? customerMode.chartNumber ?? null);
       setCustomerMemo(custData?.customer_memo ?? '');
       setVisitRoute(custData?.visit_route ?? '');
       setEtcMemo(custData?.memo ?? '');
+      setHiraConsent(custData?.hira_consent ?? false);
       const latestResvData = latestResvRes.data as { id: string; booking_memo: string | null } | null;
       setLatestResvId(latestResvData?.id ?? null);
       setBookingMemo(latestResvData?.booking_memo ?? '');
@@ -661,13 +666,13 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       checkIn.customer_id
         ? supabase
             .from('customers')
-            .select('id, chart_number, customer_memo, visit_route, memo')
+            .select('id, chart_number, customer_memo, visit_route, memo, hira_consent')
             .eq('id', checkIn.customer_id)
             .single()
         : checkIn.customer_phone
           ? supabase
               .from('customers')
-              .select('id, chart_number, customer_memo, visit_route, memo')
+              .select('id, chart_number, customer_memo, visit_route, memo, hira_consent')
               .eq('clinic_id', checkIn.clinic_id)
               .ilike('phone', `%${checkIn.customer_phone.replace(/\D/g, '')}%`)
               .order('created_at', { ascending: false })
@@ -703,11 +708,12 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setServices((svcRes.data ?? []) as Service[]);
     setPayments((payRes.data ?? []) as PaymentRow[]);
     setHistory((histRes.data ?? []) as VisitHistory[]);
-    const custData = custRes.data as { id?: string; chart_number: string | null; customer_memo: string | null; visit_route?: string | null; memo?: string | null } | null;
+    const custData = custRes.data as { id?: string; chart_number: string | null; customer_memo: string | null; visit_route?: string | null; memo?: string | null; hira_consent?: boolean | null } | null;
     setChartNumber(custData?.chart_number ?? null);
     setCustomerMemo(custData?.customer_memo ?? '');
     setVisitRoute(custData?.visit_route ?? '');
     setEtcMemo(custData?.memo ?? '');
+    setHiraConsent(custData?.hira_consent ?? false);
     // T-20260506-foot-CHART-LINK-SYNC: customer_id null 케이스 — phone으로 찾은 고객 ID 2순위 저장
     if (!checkIn.customer_id && custData?.id) {
       setResolvedCustomerId(custData.id);
@@ -1346,6 +1352,15 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 <p className="text-xs text-muted-foreground">잔여 회차 없음 (패키지 등록 후 이용 가능)</p>
               )}
             </div>
+
+            {/* T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 (customerMode) */}
+            <Separator />
+            <NhisLookupPanel
+              customerId={customerMode.customerId}
+              clinicId={customerMode.clinicId}
+              hiraConsent={hiraConsent}
+              onGradeUpdated={load}
+            />
 
             {/* AC7: 보험 영수증 / 처방전 — 항상 표시 (T-20260511-CUSTMGMT 3차) */}
             <Separator />
@@ -2097,6 +2112,19 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             <>
               <Separator />
               <Chart1TreatmentImages customerId={checkIn.customer_id} />
+            </>
+          )}
+
+          {/* T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 */}
+          {checkIn.customer_id && (
+            <>
+              <Separator />
+              <NhisLookupPanel
+                customerId={checkIn.customer_id}
+                clinicId={checkIn.clinic_id}
+                hiraConsent={hiraConsent}
+                onGradeUpdated={load}
+              />
             </>
           )}
 
