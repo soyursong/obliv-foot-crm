@@ -42,6 +42,7 @@ import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { toast } from 'sonner';
 import { BarChart2, Users, Layers, UserCheck, User } from 'lucide-react';
+import { SalesDailyTab } from '@/components/sales/SalesDailyTab';
 
 // 탭 정의
 const SALES_TABS = [
@@ -132,7 +133,7 @@ export default function Sales() {
 
           {/* 일일결산 — T-20260515-foot-SALES-TAB-DAILY */}
           <TabsContent value="daily">
-            <TabPlaceholder label="일일결산 (T-20260515-foot-SALES-TAB-DAILY)" />
+            <SalesDailyTab filter={filter} />
           </TabsContent>
 
           {/* 환자별 — T-20260515-foot-SALES-TAB-PATIENT */}
