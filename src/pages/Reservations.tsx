@@ -84,6 +84,8 @@ export default function Reservations() {
   const changedBy = profile?.id ?? null;
   const clinic = useClinic();
   const navStateConsumed = useRef(false);
+  // T-20260515-foot-RESV-BOX-INTERACT: AC-4 단일클릭/더블클릭 300ms 디바운스 타이머
+  const clickTimerRef = useRef<{ resvId: string; timerId: ReturnType<typeof setTimeout> } | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [weekStart, setWeekStart] = useState<Date>(() =>
     startOfWeek(new Date(), { weekStartsOn: 1 }),
@@ -854,7 +856,17 @@ export default function Reservations() {
                             onDragLeave={() => setDropTarget(null)}
                             onDrop={(e) => { if (allowed) handleDrop(e, dateStr, time); }}
                             onClick={() => {
-                              if (clipboard && allowed) setClipboardTarget({ date: dateStr, time });
+                              // T-20260515-foot-RESV-BOX-INTERACT: AC-1 빈 영역 클릭 → 선택 해제
+                              if (clipboard && allowed) {
+                                setClipboardTarget({ date: dateStr, time });
+                              } else if (!clipboard) {
+                                // 카드 클릭 미완료 타이머도 취소
+                                if (clickTimerRef.current) {
+                                  clearTimeout(clickTimerRef.current.timerId);
+                                  clickTimerRef.current = null;
+                                }
+                                setSelectedResvId(null);
+                              }
                             }}
                           >
                             {allowed && (
@@ -869,13 +881,26 @@ export default function Reservations() {
                                     onDragEnd={() => { setDraggedId(null); setDropTarget(null); }}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setSelectedResvId(r.id);
-                                      // T-20260515-foot-RESPONSIVE-UI-SHELL Shell-2: 태블릿 풀스크린 모달
-                                      if (isTabletViewport()) {
-                                        setTabletModalInfo({ date: r.reservation_date, time: r.reservation_time.slice(0, 5) });
-                                        setTabletModalOpen(true);
+                                      // T-20260515-foot-RESV-BOX-INTERACT: AC-4
+                                      // 300ms 디바운스로 단일클릭(선택) / 더블클릭(예약수정) 구분
+                                      if (clickTimerRef.current?.resvId === r.id) {
+                                        // 300ms 이내 동일 카드 재클릭 → 더블클릭: 예약 수정 모달
+                                        clearTimeout(clickTimerRef.current.timerId);
+                                        clickTimerRef.current = null;
+                                        openEdit(r);  // AC-3: 기존 예약 수정 모달 (첨부이미지는 resv 스키마 미지원)
                                       } else {
-                                        setDetail(r);
+                                        // 다른 카드 타이머 취소
+                                        if (clickTimerRef.current) {
+                                          clearTimeout(clickTimerRef.current.timerId);
+                                        }
+                                        // 단일클릭: 300ms 후 선택 상태 전환 (AC-1)
+                                        clickTimerRef.current = {
+                                          resvId: r.id,
+                                          timerId: setTimeout(() => {
+                                            clickTimerRef.current = null;
+                                            setSelectedResvId(r.id);  // AC-1: 선택 상태 (테두리 ring-teal-500)
+                                          }, 300),
+                                        };
                                       }
                                     }}
                                     className={cn(
