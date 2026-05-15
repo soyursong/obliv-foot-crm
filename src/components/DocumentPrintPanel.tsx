@@ -68,6 +68,7 @@ import {
 import {
   bindHtmlTemplate,
   buildBillDetailItemsHtml,
+  buildRxItemsHtml,
   getHtmlTemplate,
   isHtmlTemplate,
 } from '@/lib/htmlFormTemplates';
@@ -1268,6 +1269,20 @@ function IssueDialog({
       base.subtotal_amount = base.total_amount;
       base.subtotal_noncovered = '0';
       base.total_noncovered = '0';
+    }
+
+    // rx_standard HTML 양식: 처방 의약품 rows 주입 (T-20260515-foot-FORM-ONELINE-RX)
+    if (template.form_key === 'rx_standard') {
+      const rxItems = serviceItems.map((item) => ({
+        name: item.name,
+        unit_dose: '1',
+        daily_freq: '1',
+        total_days: '7',
+        method: '',
+      }));
+      base.rx_items_html = buildRxItemsHtml(rxItems);
+      if (!base.usage_days) base.usage_days = '7';
+      if (!base.issue_no) base.issue_no = checkIn.id.slice(0, 5).toUpperCase();
     }
 
     // 등록번호/연번호 기본값 (없으면 checkIn.id 앞 8자)

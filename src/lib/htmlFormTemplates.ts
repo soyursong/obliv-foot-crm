@@ -99,9 +99,12 @@ const COMMON_STYLE = `
     .circle { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid #000; }
     .circle-filled { background: #111; }
     .large-area { min-height: 60px; }
+    /* T-20260515-foot-FORM-ONELINE-RX: 라벨 셀 한줄 정렬 — background:#f8f8f8 셀 전체 적용 */
+    td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; }
     @media print {
       .form-wrap { padding: 6mm 8mm; width: 195mm; }
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; }
     }
   </style>
 `;
@@ -1267,6 +1270,195 @@ ${COMMON_STYLE}
 </div>
 `;
 
+// ─── 처방전(표준처방전, 약국보관용) — T-20260515-foot-FORM-ONELINE-RX ───
+
+const RX_STANDARD_HTML = `
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  .rx-wrap {
+    font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', NanumGothic, sans-serif;
+    font-size: 9pt;
+    color: #000;
+    background: #fff;
+    padding: 6mm 8mm;
+    width: 190mm;
+    min-height: 267mm;
+  }
+  .rx-wrap table { width: 100%; border-collapse: collapse; }
+  .rx-wrap td, .rx-wrap th {
+    border: 1px solid #000;
+    padding: 2px 4px;
+    vertical-align: middle;
+    font-size: 8.5pt;
+  }
+  .rx-wrap th { background: #f0f0f0; font-weight: bold; text-align: center; white-space: nowrap; }
+  .rx-title {
+    text-align: center;
+    font-size: 22pt;
+    font-weight: bold;
+    letter-spacing: 14px;
+    padding: 6px 0 4px;
+  }
+  /* 라벨 셀 한줄 정렬 */
+  .rx-wrap td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; }
+  .rx-wrap td[style*="background:#f0f0f0"] { white-space: nowrap; }
+  @media print {
+    @page { size: A4 portrait; margin: 8mm; }
+    .rx-wrap { padding: 4mm 6mm; width: 195mm; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .rx-wrap td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; }
+  }
+</style>
+<div class="rx-wrap">
+
+  <!-- ① 상단 헤더 -->
+  <div style="display:flex; align-items:flex-start; gap:8px; margin-bottom:3px;">
+    <div style="font-size:7.5pt; line-height:1.9; min-width:110px; white-space:nowrap;">
+      환자정보 :&nbsp;{{record_no}}<br>
+      피보성명 :&nbsp;{{patient_name}}<br>
+      피보주민 :&nbsp;&nbsp;<br>
+      조합기호 :&nbsp;&nbsp;<br>
+      증&nbsp;번&nbsp;호 :&nbsp;&nbsp;<br>
+      보호종별 :&nbsp;&nbsp;
+    </div>
+    <div style="flex:1; text-align:center;">
+      <div style="font-size:8pt; margin-bottom:2px;">(약국보관용)</div>
+      <div class="rx-title">처&nbsp;&nbsp;방&nbsp;&nbsp;전</div>
+    </div>
+    <div style="width:72px; height:72px; border:1px solid #bbb; display:flex; align-items:center; justify-content:center; font-size:7pt; color:#999; text-align:center; flex-shrink:0;">
+      E-Health<br>앱 처방전
+    </div>
+  </div>
+
+  <!-- ② 보험 구분 -->
+  <div style="border:1px solid #000; padding:2px 6px; font-size:8pt; display:flex; justify-content:space-between; margin-bottom:-1px;">
+    <span>[&bull;]의료보험&nbsp;&nbsp;[&nbsp;]의료보호&nbsp;&nbsp;[&nbsp;]산재보험&nbsp;&nbsp;[&nbsp;]자동차보험&nbsp;&nbsp;[&nbsp;]기타</span>
+    <span>요양기관기호&nbsp;:&nbsp;&nbsp;{{clinic_code}}</span>
+  </div>
+
+  <!-- ③ 환자 + 의료기관 -->
+  <table>
+    <tbody>
+      <tr>
+        <td style="width:80px; background:#f8f8f8; text-align:center;">교부년월일번호</td>
+        <td colspan="2">{{issue_date}}&nbsp;&nbsp;제&nbsp;{{issue_no}}&nbsp;호</td>
+        <td rowspan="4" style="width:18px; background:#f8f8f8; text-align:center; font-size:7.5pt; padding:2px;">의<br>료<br>기<br>관</td>
+        <td style="width:60px; background:#f8f8f8; text-align:center;">명&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;칭</td>
+        <td>{{clinic_name}}</td>
+      </tr>
+      <tr>
+        <td rowspan="3" style="width:18px; background:#f8f8f8; text-align:center; font-size:7.5pt; padding:2px;">환<br>자</td>
+        <td style="width:55px; background:#f8f8f8; text-align:center;">성&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;명</td>
+        <td style="width:160px;">{{patient_name}}</td>
+        <td style="background:#f8f8f8; text-align:center;">전&nbsp;화&nbsp;번&nbsp;호</td>
+        <td>{{clinic_phone}}</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">주&nbsp;민&nbsp;번&nbsp;호</td>
+        <td>{{patient_rrn}}</td>
+        <td style="background:#f8f8f8; text-align:center;">팩&nbsp;스&nbsp;번&nbsp;호</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td></td>
+        <td></td>
+        <td style="background:#f8f8f8; text-align:center;">E-mail&nbsp;주소</td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ④ 진단 + 의사 -->
+  <table style="border-top:none;">
+    <tbody>
+      <tr>
+        <td rowspan="2" style="width:55px; background:#f8f8f8; text-align:center; font-size:8pt;">질병분류기호</td>
+        <td style="width:90px;">{{diag_code_1}}</td>
+        <td rowspan="2" style="width:65px; background:#f8f8f8; text-align:center; font-size:8pt;">처&nbsp;방<br>의료인의<br>성&nbsp;&nbsp;&nbsp;&nbsp;명</td>
+        <td rowspan="2" style="width:130px;">{{doctor_name}}</td>
+        <td style="width:55px; background:#f8f8f8; text-align:center;">면&nbsp;허&nbsp;종&nbsp;별</td>
+        <td>의사</td>
+      </tr>
+      <tr>
+        <td>{{diag_code_2}}</td>
+        <td style="background:#f8f8f8; text-align:center;">면&nbsp;허&nbsp;번&nbsp;호</td>
+        <td>{{license_no}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ⑤ 처방 의약품 -->
+  <table style="margin-top:4px;">
+    <thead>
+      <tr>
+        <th>처&nbsp;방&nbsp;의&nbsp;약&nbsp;품&nbsp;의&nbsp;명&nbsp;칭</th>
+        <th style="width:52px;">1회<br>투약량</th>
+        <th style="width:52px;">1일투여<br>횟&nbsp;&nbsp;&nbsp;수</th>
+        <th style="width:52px;">총투약<br>일&nbsp;&nbsp;&nbsp;수</th>
+        <th style="width:110px;">용&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;법</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{rx_items_html}}
+    </tbody>
+  </table>
+
+  <!-- ⑥ 주사제 처방내역 -->
+  <table style="border-top:none;">
+    <tbody>
+      <tr>
+        <td colspan="2" style="font-size:8.5pt; width:310px;">
+          주사제&nbsp;처방내역&nbsp;&nbsp;(&nbsp;원내조제&nbsp;[&nbsp;&nbsp;&nbsp;]&nbsp;,&nbsp;원외조제&nbsp;[&nbsp;&nbsp;&nbsp;]&nbsp;)
+        </td>
+        <td rowspan="2" style="background:#f8f8f8; text-align:center; width:70px; font-size:8pt;">조제시<br>참고사항</td>
+        <td rowspan="2"></td>
+      </tr>
+      <tr>
+        <td colspan="2" style="height:36px;"></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ⑦ 사용기간 -->
+  <table style="border-top:none;">
+    <tbody>
+      <tr>
+        <td style="width:55px; background:#f8f8f8; text-align:center;">사&nbsp;용&nbsp;기&nbsp;간</td>
+        <td style="width:290px;">교부일로부터&nbsp;&nbsp;(&nbsp;&nbsp;{{usage_days}}&nbsp;&nbsp;)&nbsp;&nbsp;일간</td>
+        <td>사용기간내에 약국에 제출하여야 합니다</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ⑧ 의약품조제내역 -->
+  <table style="border-top:none;">
+    <tbody>
+      <tr>
+        <td colspan="4" style="text-align:center; font-weight:bold; font-size:9.5pt; background:#f0f0f0; padding:3px;">
+          의&nbsp;&nbsp;약&nbsp;&nbsp;품&nbsp;&nbsp;조&nbsp;&nbsp;제&nbsp;&nbsp;내&nbsp;&nbsp;역
+        </td>
+      </tr>
+      <tr>
+        <td rowspan="4" style="width:22px; background:#f8f8f8; text-align:center; font-size:7.5pt; padding:2px;">조<br>제<br>내<br>역</td>
+        <td style="width:90px; background:#f8f8f8;">조제기관의명</td>
+        <td rowspan="4" style="min-height:80px; vertical-align:top; width:200px;"></td>
+        <td rowspan="4" style="font-size:8pt; vertical-align:top; padding:4px;">처방의 변경.수정.확인.대체시 그 내용 등</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; font-size:8pt;">조&nbsp;&nbsp;제&nbsp;&nbsp;약&nbsp;&nbsp;&nbsp;&nbsp;성&nbsp;&nbsp;명</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8;">조제량(조제일수)</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; font-size:8pt;">조&nbsp;&nbsp;제&nbsp;&nbsp;년&nbsp;&nbsp;월</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+`;
+
 // ─── 템플릿 맵 ───
 
 const HTML_TEMPLATE_MAP: Record<string, string> = {
@@ -1280,6 +1472,8 @@ const HTML_TEMPLATE_MAP: Record<string, string> = {
   referral_letter: REFERRAL_LETTER_HTML,
   medical_record_request: MEDICAL_RECORD_REQUEST_HTML,
   diag_opinion_v2: DIAG_OPINION_V2_HTML,
+  // T-20260515-foot-FORM-ONELINE-RX: 처방전 HTML/CSS 전환
+  rx_standard: RX_STANDARD_HTML,
 };
 
 /**
@@ -1362,4 +1556,44 @@ export function buildBillDetailItemsHtml(
 /** HTML 양식 여부 확인 */
 export function isHtmlTemplate(formKey: string): boolean {
   return formKey in HTML_TEMPLATE_MAP;
+}
+
+/**
+ * rx_standard용 처방 의약품 행 HTML 생성.
+ * `rx_items_html` 변수에 주입할 `<tr>...</tr>` 뭉치 반환.
+ * 최소 8행 보장 (빈 행 포함).
+ *
+ * @see T-20260515-foot-FORM-ONELINE-RX
+ */
+export function buildRxItemsHtml(
+  items: Array<{
+    name: string;
+    unit_dose?: string;
+    daily_freq?: string;
+    total_days?: string;
+    method?: string;
+  }>,
+): string {
+  const TOTAL_ROWS = 8;
+  const rows = items.map((item) => ({
+    name: item.name,
+    unit_dose: item.unit_dose ?? '',
+    daily_freq: item.daily_freq ?? '',
+    total_days: item.total_days ?? '',
+    method: item.method ?? '',
+  }));
+  while (rows.length < TOTAL_ROWS) {
+    rows.push({ name: '', unit_dose: '', daily_freq: '', total_days: '', method: '' });
+  }
+  return rows
+    .map(
+      (row) => `<tr style="height:24px;">
+        <td style="text-align:left; font-size:8.5pt;">${row.name}</td>
+        <td style="text-align:center;">${row.unit_dose}</td>
+        <td style="text-align:center;">${row.daily_freq}</td>
+        <td style="text-align:center;">${row.total_days}</td>
+        <td style="text-align:center;">${row.method}</td>
+      </tr>`,
+    )
+    .join('\n');
 }
