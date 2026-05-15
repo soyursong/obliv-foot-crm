@@ -386,4 +386,6 @@ export interface Reservation {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /** T-20260516-foot-HEALER-RESV-BTN: 힐러예약 플래그 — 치료사 수동 설정, 예약 당일 대시보드 HL(노랑) 자동 표시 후 false로 리셋 (1회성) */
+  healer_flag?: boolean | null;
 }

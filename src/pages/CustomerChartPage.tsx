@@ -628,6 +628,8 @@ export default function CustomerChartPage() {
     packageId: '',  // 복수 활성 패키지 지원
   });
   const [savingC22Deduct, setSavingC22Deduct] = useState(false);
+  // T-20260516-foot-HEALER-RESV-BTN: 힐러예약 플래그 버튼
+  const [healerFlagLoading, setHealerFlagLoading] = useState(false);
   // C22-RESV-EDIT: 예약 수정 모달
   const [editResvId, setEditResvId] = useState<string | null>(null);
   const [editResvForm, setEditResvForm] = useState({ date: '', startTime: '', memo: '' });
@@ -1388,6 +1390,36 @@ export default function CustomerChartPage() {
     );
     setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remaining[i] })));
     setC22DeductForm(f => ({ ...f, therapistId: '', treatmentType: 'heated_laser' }));
+  };
+
+  // T-20260516-foot-HEALER-RESV-BTN: 힐러예약 플래그 토글
+  const handleHealerFlag = async () => {
+    if (!customer || healerFlagLoading) return;
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const nextResv = reservations
+      .filter(r => r.reservation_date > today && r.status !== 'cancelled' && r.status !== 'noshow')
+      .sort((a, b) => a.reservation_date.localeCompare(b.reservation_date))[0] ?? null;
+    if (!nextResv) {
+      toast.error('다음 예약이 없습니다. 예약 후 다시 시도해주세요.');
+      return;
+    }
+    setHealerFlagLoading(true);
+    const newFlag = !nextResv.healer_flag;
+    const { error } = await supabase
+      .from('reservations')
+      .update({ healer_flag: newFlag })
+      .eq('id', nextResv.id);
+    setHealerFlagLoading(false);
+    if (error) {
+      toast.error(`힐러 플래그 저장 실패: ${error.message}`);
+      return;
+    }
+    setReservations(prev => prev.map(r => r.id === nextResv.id ? { ...r, healer_flag: newFlag } : r));
+    if (newFlag) {
+      toast.success(`다음 예약(${nextResv.reservation_date})에 힐러 플래그 설정됨`);
+    } else {
+      toast.success('힐러 플래그 해제됨');
+    }
   };
 
   // C22-RESV-EDIT: 예약 수정 저장
@@ -3480,6 +3512,30 @@ export default function CustomerChartPage() {
               >
                 {savingC22Deduct ? '저장 중…' : '저장'}
               </button>
+              {/* T-20260516-foot-HEALER-RESV-BTN: 힐러예약 플래그 버튼 */}
+              {(() => {
+                const today = format(new Date(), 'yyyy-MM-dd');
+                const nextResv = reservations
+                  .filter(r => r.reservation_date > today && r.status !== 'cancelled' && r.status !== 'noshow')
+                  .sort((a, b) => a.reservation_date.localeCompare(b.reservation_date))[0] ?? null;
+                const isActive = !!nextResv?.healer_flag;
+                return (
+                  <button
+                    type="button"
+                    onClick={handleHealerFlag}
+                    disabled={healerFlagLoading}
+                    title={nextResv ? `다음 예약: ${nextResv.reservation_date}` : '다음 예약 없음'}
+                    className={cn(
+                      'w-full rounded py-1.5 text-[10px] font-medium transition disabled:opacity-50 mt-1',
+                      isActive
+                        ? 'bg-blue-500 text-white hover:bg-blue-600'
+                        : 'bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100',
+                    )}
+                  >
+                    {healerFlagLoading ? '저장 중…' : isActive ? '힐러예약 ✓ (클릭→해제)' : '힐러예약'}
+                  </button>
+                );
+              })()}
             </div>
           </div>
 

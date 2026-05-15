@@ -2171,6 +2171,37 @@ export default function Dashboard() {
     } else {
       setChecklistDone(new Set());
     }
+
+    // ── T-20260516-foot-HEALER-RESV-BTN: healer_flag 자동 HL(노랑) 적용 ──
+    // 당일 예약 중 healer_flag=true인 고객 → status_flag null/'white'인 체크인에 HL 적용 후 플래그 리셋 (1회성)
+    const eligibleCis = filtered.filter(
+      ci => ci.customer_id && (ci.status_flag === null || ci.status_flag === 'white'),
+    );
+    const eligibleCustomerIds = [...new Set(eligibleCis.map(ci => ci.customer_id!))];
+    if (eligibleCustomerIds.length > 0) {
+      const { data: healerResvs } = await supabase
+        .from('reservations')
+        .select('id, customer_id')
+        .in('customer_id', eligibleCustomerIds)
+        .eq('reservation_date', dateStr)
+        .eq('healer_flag', true);
+      if (healerResvs && healerResvs.length > 0) {
+        const healerCidSet = new Set(healerResvs.map((r: { customer_id: string }) => r.customer_id));
+        const resvIds = healerResvs.map((r: { id: string }) => r.id);
+        // 1회성: 플래그 소모 (reset before HL so reload won't double-apply)
+        await supabase.from('reservations').update({ healer_flag: false }).in('id', resvIds);
+        // 매칭 체크인에 HL(노랑) 적용
+        const hlCiIds = eligibleCis
+          .filter(ci => ci.customer_id && healerCidSet.has(ci.customer_id))
+          .map(ci => ci.id);
+        if (hlCiIds.length > 0) {
+          await supabase.from('check_ins').update({ status_flag: 'yellow' }).in('id', hlCiIds);
+          setRows(curr => curr.map(r =>
+            hlCiIds.includes(r.id) ? { ...r, status_flag: 'yellow' as StatusFlag } : r,
+          ));
+        }
+      }
+    }
   }, [clinic, dateStr]);
 
   const fetchPayments = useCallback(async () => {
