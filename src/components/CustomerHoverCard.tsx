@@ -69,9 +69,9 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, onContext
 
   const handleMouseEnter = useCallback(
     (e: React.MouseEvent) => {
-      // 카드 위치: 커서 기준 약간 우하단 (viewport 고정)
-      const x = e.clientX + 12;
-      const y = e.clientY + 8;
+      // T-20260515-foot-HOVER-POPUP-POS: 커서 기준 우하단 초기 위치
+      const x = e.clientX + 14;
+      const y = e.clientY + 10;
       setCardPos({ x, y });
       timerRef.current = setTimeout(() => {
         setVisible(true);
@@ -80,6 +80,12 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, onContext
     },
     [fetchDetails],
   );
+
+  // T-20260515-foot-HOVER-POPUP-POS: 마우스 이동 시 팝업이 커서 바로 옆으로 추적
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!visible) return;
+    setCardPos({ x: e.clientX + 14, y: e.clientY + 10 });
+  }, [visible]);
 
   const handleMouseLeave = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -120,6 +126,7 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, onContext
       className="relative"
       style={{ display: 'inline-block' }}
       onMouseEnter={handleMouseEnter}
+      onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
       {/* 성함 텍스트 */}
