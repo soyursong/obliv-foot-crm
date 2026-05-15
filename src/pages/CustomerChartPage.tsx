@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
-import { ExternalLink, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, Send, Trash2, Upload, X } from 'lucide-react';
+import { ExternalLink, FileText, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, Send, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
 import { Badge } from '@/components/ui/badge';
@@ -524,6 +524,8 @@ export default function CustomerChartPage() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [checkInHistory, setCheckInHistory] = useState<CheckIn[]>([]);
   const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
+  // T-20260515-foot-DOC-REISSUE-BTN: 서류 재발급 모달 대상 체크인
+  const [docReissueCheckIn, setDocReissueCheckIn] = useState<CheckIn | null>(null);
   const [prescriptions, setPrescriptions] = useState<PrescriptionRow[]>([]);
   const [consentEntries, setConsentEntries] = useState<{ form_type: string; signed_at: string }[]>([]);
   const [submissionEntries, setSubmissionEntries] = useState<{ template_key?: string; printed_at: string }[]>([]);
@@ -2074,6 +2076,26 @@ export default function CustomerChartPage() {
                   </td>
                 </tr>
 
+                {/* T-20260515-foot-REFERRAL-NAME: 지인소개 시 소개자 성함 */}
+                {customer.visit_route === '지인소개' && (
+                  <tr>
+                    <td className={LC}>소개자 성함</td>
+                    <td className={VC} colSpan={3}>
+                      <input
+                        type="text"
+                        value={(customer as unknown as { referral_name?: string }).referral_name ?? ''}
+                        onChange={(e) => {
+                          setIsDirty(true);
+                          saveCustomerField({ referral_name: e.target.value.trim() || null } as Record<string, string | null>);
+                        }}
+                        disabled={savingField}
+                        placeholder="예: 홍길동"
+                        className="rounded border border-gray-300 px-2 py-0.5 text-[11px] w-full focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
+                      />
+                    </td>
+                  </tr>
+                )}
+
                 {/* ⑫ 예약메모 삭제됨 — AC-6: 예약메모는 2번차트 1구역(예약내역 패널)에서만 표시 (T-20260512-foot-RESV-MGMT-OVERHAUL) */}
 
                 {/* ⑬ 고객메모 (인라인 편집) */}
@@ -2570,6 +2592,54 @@ export default function CustomerChartPage() {
               {/* History: 시술내역 */}
               {chartTabGroup === 'history' && chartTab === 'treatments' && (
             <div className="space-y-3">
+              {/* T-20260515-foot-DOC-REISSUE-BTN: 진료내역 리스트 + 서류 재발급 버튼 */}
+              <div className="rounded-lg border bg-white p-3 text-xs space-y-1">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="font-semibold text-muted-foreground">진료내역 리스트</div>
+                  <span className="text-[10px] text-muted-foreground">행별 서류 재발급 가능</span>
+                </div>
+                {checkInHistory.length === 0 && (
+                  <div className="text-muted-foreground py-2 text-center">진료 기록 없음</div>
+                )}
+                {checkInHistory.map((ci) => {
+                  const isCancelled = ci.status === 'cancelled';
+                  const dateStr = format(new Date(ci.checked_in_at), 'yyyy-MM-dd');
+                  const timeStr = format(new Date(ci.checked_in_at), 'HH:mm');
+                  const treatContent = ci.treatment_kind ?? (ci.consultation_done ? '상담' : '');
+                  return (
+                    <div
+                      key={ci.id}
+                      className={cn(
+                        'flex items-center gap-2 rounded border px-2 py-1.5',
+                        isCancelled && 'opacity-60',
+                      )}
+                    >
+                      <span className={cn('tabular-nums shrink-0', isCancelled && 'line-through text-muted-foreground')}>
+                        {dateStr}
+                      </span>
+                      <span className="tabular-nums shrink-0 text-muted-foreground">{timeStr}</span>
+                      {isCancelled && (
+                        <Badge variant="destructive" className="text-[9px] px-1 py-0">취소</Badge>
+                      )}
+                      <span className="flex-1 truncate">{treatContent || '—'}</span>
+                      <button
+                        disabled={isCancelled}
+                        onClick={() => setDocReissueCheckIn(ci)}
+                        className={cn(
+                          'flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium transition',
+                          isCancelled
+                            ? 'border-muted text-muted-foreground cursor-not-allowed'
+                            : 'border-teal-300 bg-teal-50 text-teal-700 hover:bg-teal-100',
+                        )}
+                      >
+                        <FileText className="h-3 w-3" />
+                        서류 재발급
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
               {/* 원장소견 */}
               {checkInHistory.filter((ci) => ci.doctor_note).length > 0 && (
                 <div className="rounded-lg border bg-white p-3 text-xs space-y-2">
@@ -2647,6 +2717,37 @@ export default function CustomerChartPage() {
               )}
             </div>
           )}
+
+              {/* T-20260515-foot-DOC-REISSUE-BTN: 서류 재발급 모달 */}
+              {docReissueCheckIn && (
+                <div
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+                  onClick={() => setDocReissueCheckIn(null)}
+                >
+                  <div
+                    className="relative w-full max-w-2xl max-h-[90vh] overflow-auto rounded-xl bg-white shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-center justify-between border-b px-4 py-3">
+                      <div className="font-semibold text-sm">
+                        서류 재발급 — {format(new Date(docReissueCheckIn.checked_in_at), 'yyyy-MM-dd HH:mm')}
+                      </div>
+                      <button
+                        onClick={() => setDocReissueCheckIn(null)}
+                        className="rounded p-1 hover:bg-gray-100"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="p-4">
+                      <DocumentPrintPanel
+                        checkIn={docReissueCheckIn}
+                        onUpdated={() => {}}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* History: 패키지 — T-20260510-foot-C22-SECTION-MERGE: 치료플랜 요약 제거, 티켓 상세만 표시 */}
               {chartTabGroup === 'history' && chartTab === 'packages' && (

@@ -59,6 +59,11 @@ interface PaymentRow {
   check_in_id: string | null;
   /** T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE: soft-delete/cancel 상태 */
   status?: string | null;
+  /** T-20260515-foot-RECEIPT-TAX-SPLIT AC-4: 과세/비과세/현금영수증 */
+  cash_receipt_issued?: boolean | null;
+  cash_receipt_type?: string | null;
+  taxable_amount?: number | null;
+  tax_exempt_amount?: number | null;
 }
 
 interface PackagePaymentRow {
@@ -147,6 +152,11 @@ interface EnrichedRow {
   manual_id?: string;
   /** 수기 수정용 raw entry */
   manual_raw?: ManualPaymentRow;
+  /** T-20260515-foot-RECEIPT-TAX-SPLIT AC-4: 과세/비과세/현금영수증 */
+  taxable_amount: number | null;
+  tax_exempt_amount: number | null;
+  cash_receipt_issued: boolean | null;
+  cash_receipt_type: string | null;
 }
 
 const LEAD_SOURCE_OPTIONS = ['TM', '인바운드', '워크인', '지인소개', '온라인', '기타'];
@@ -206,7 +216,7 @@ export default function Closing() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('payments')
-        .select('amount, method, payment_type, created_at, customer_id, installment, memo, check_in_id, status')
+        .select('amount, method, payment_type, created_at, customer_id, installment, memo, check_in_id, status, cash_receipt_issued, cash_receipt_type, taxable_amount, tax_exempt_amount')
         .eq('clinic_id', clinic!.id)
         .gte('created_at', start)
         .lte('created_at', end)
@@ -498,6 +508,11 @@ export default function Closing() {
         method: p.method,
         payment_type: p.payment_type,
         source: 'payment',
+        // T-20260515-foot-RECEIPT-TAX-SPLIT AC-4
+        taxable_amount: p.taxable_amount ?? null,
+        tax_exempt_amount: p.tax_exempt_amount ?? null,
+        cash_receipt_issued: p.cash_receipt_issued ?? null,
+        cash_receipt_type: p.cash_receipt_type ?? null,
       });
     }
 
@@ -519,6 +534,10 @@ export default function Closing() {
         method: p.method,
         payment_type: p.payment_type,
         source: 'package',
+        taxable_amount: null,
+        tax_exempt_amount: null,
+        cash_receipt_issued: null,
+        cash_receipt_type: null,
       });
     }
 
@@ -539,6 +558,10 @@ export default function Closing() {
         source: 'manual',
         manual_id: m.id,
         manual_raw: m,
+        taxable_amount: null,
+        tax_exempt_amount: null,
+        cash_receipt_issued: null,
+        cash_receipt_type: null,
       });
     }
 
@@ -1145,6 +1168,9 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                       <th className="py-2 px-2 text-left font-medium w-16">초진/재진</th>
                       <th className="py-2 px-2 text-left font-medium w-20">결제담당</th>
                       <th className="py-2 px-2 text-right font-medium w-24">결제금액</th>
+                      <th className="py-2 px-2 text-right font-medium w-20">과세</th>
+                      <th className="py-2 px-2 text-right font-medium w-20">비과세</th>
+                      <th className="py-2 px-2 text-center font-medium w-16">현금영수증</th>
                       <th className="py-2 px-2 text-left font-medium w-16">결제수단</th>
                       <th className="py-2 px-2 text-center font-medium w-16">구분</th>
                       <th className="py-2 px-2 w-16 text-center">관리</th>
@@ -1153,7 +1179,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                   <tbody>
                     {filteredEnrichedRows.length === 0 && (
                       <tr>
-                        <td colSpan={11} className="py-8 text-center text-sm text-muted-foreground">
+                        <td colSpan={14} className="py-8 text-center text-sm text-muted-foreground">
                           결제내역이 없습니다
                         </td>
                       </tr>
@@ -1176,6 +1202,25 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                         <td className="py-2 px-2 text-xs">{r.staff_name ?? '-'}</td>
                         <td className="py-2 px-2 text-right tabular-nums font-medium">
                           {r.payment_type === 'refund' ? '-' : ''}{formatAmount(r.amount)}
+                        </td>
+                        {/* T-20260515-foot-RECEIPT-TAX-SPLIT AC-4: 과세/비과세/현금영수증 */}
+                        <td className="py-2 px-2 text-right tabular-nums text-xs text-muted-foreground">
+                          {r.taxable_amount != null && r.taxable_amount > 0 ? formatAmount(r.taxable_amount) : '-'}
+                        </td>
+                        <td className="py-2 px-2 text-right tabular-nums text-xs text-muted-foreground">
+                          {r.tax_exempt_amount != null && r.tax_exempt_amount > 0 ? formatAmount(r.tax_exempt_amount) : '-'}
+                        </td>
+                        <td className="py-2 px-2 text-center">
+                          {r.cash_receipt_issued === true ? (
+                            <span className="inline-flex items-center gap-0.5 text-emerald-700 text-xs">
+                              <span>✅</span>
+                              <span className="text-[10px]">
+                                {r.cash_receipt_type === 'income_deduction' ? '소득' : r.cash_receipt_type === 'expense_proof' ? '지출' : ''}
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/40 text-xs">—</span>
+                          )}
                         </td>
                         <td className="py-2 px-2">
                           <Badge variant="outline" className="text-xs">
@@ -1220,6 +1265,25 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                         <td className="py-2 px-2 text-right tabular-nums text-sm text-emerald-700">
                           {formatAmount(filteredEnrichedRows.reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0))}
                         </td>
+                        {/* T-20260515-foot-RECEIPT-TAX-SPLIT AC-4: 과세/비과세 합계 */}
+                        <td className="py-2 px-2 text-right tabular-nums text-xs text-muted-foreground">
+                          {(() => {
+                            const t = filteredEnrichedRows.reduce((s, r) => s + (r.taxable_amount ?? 0), 0);
+                            return t > 0 ? formatAmount(t) : '-';
+                          })()}
+                        </td>
+                        <td className="py-2 px-2 text-right tabular-nums text-xs text-muted-foreground">
+                          {(() => {
+                            const t = filteredEnrichedRows.reduce((s, r) => s + (r.tax_exempt_amount ?? 0), 0);
+                            return t > 0 ? formatAmount(t) : '-';
+                          })()}
+                        </td>
+                        <td className="py-2 px-2 text-center text-xs text-muted-foreground">
+                          {(() => {
+                            const n = filteredEnrichedRows.filter(r => r.cash_receipt_issued === true).length;
+                            return n > 0 ? `${n}건` : '-';
+                          })()}
+                        </td>
                         <td colSpan={3}></td>
                       </tr>
                     </tfoot>
@@ -1244,6 +1308,30 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* T-20260515-foot-RECEIPT-TAX-SPLIT AC-4: 과세/비과세/현금영수증 합계 */}
+          {filteredEnrichedRows.some(r => r.taxable_amount != null || r.tax_exempt_amount != null || r.cash_receipt_issued != null) && (
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-lg border bg-card p-3 text-center">
+                <div className="text-xs text-muted-foreground mb-1">과세 합계</div>
+                <div className="tabular-nums font-semibold text-sm">
+                  {formatAmount(filteredEnrichedRows.reduce((s, r) => s + (r.taxable_amount ?? 0), 0))}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-card p-3 text-center">
+                <div className="text-xs text-muted-foreground mb-1">비과세 합계</div>
+                <div className="tabular-nums font-semibold text-sm">
+                  {formatAmount(filteredEnrichedRows.reduce((s, r) => s + (r.tax_exempt_amount ?? 0), 0))}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-card p-3 text-center">
+                <div className="text-xs text-muted-foreground mb-1">현금영수증 발행</div>
+                <div className="tabular-nums font-semibold text-sm">
+                  {filteredEnrichedRows.filter(r => r.cash_receipt_issued === true).length}건
+                </div>
+              </div>
             </div>
           )}
 

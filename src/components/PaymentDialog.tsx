@@ -61,6 +61,13 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
   const [splitCashStr, setSplitCashStr] = useState('');
   const [memo, setMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // T-20260515-foot-RECEIPT-TAX-SPLIT AC-1: 현금영수증
+  const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
+  const [cashReceiptType, setCashReceiptType] = useState<'income_deduction' | 'expense_proof'>('income_deduction');
+  const [cashReceiptNumber, setCashReceiptNumber] = useState('');
+  // T-20260515-foot-RECEIPT-TAX-SPLIT AC-2: 과세/비과세 분리
+  const [taxableAmountStr, setTaxableAmountStr] = useState('');
+  const [taxExemptAmountStr, setTaxExemptAmountStr] = useState('');
   // C2-MANAGER-PAYMENT-MAP: 결제담당 선택
   const [staffList, setStaffList] = useState<StaffOption[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
@@ -79,6 +86,12 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
       // T-20260514-foot-PAYMENT-CONSECUTIVE-STUCK BUG3 fix:
       // checkIn 변경 시 submitting 리셋 — 연속 결제 시 이전 환자의 submitting=true 잔류 방지
       setSubmitting(false);
+      // T-20260515-foot-RECEIPT-TAX-SPLIT: 신규 필드 초기화
+      setCashReceiptIssued(false);
+      setCashReceiptType('income_deduction');
+      setCashReceiptNumber('');
+      setTaxableAmountStr('');
+      setTaxExemptAmountStr('');
       // 결제담당: 체크인의 기존 consultant_id로 초기화
       setSelectedStaffId(checkIn.consultant_id ?? '');
       // 활성 직원 목록 로드
@@ -106,6 +119,13 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
   const splitCard = parseAmount(splitCardStr);
   const splitCash = parseAmount(splitCashStr);
   const selectedPreset = selectedPackageKey ? PACKAGE_PRESETS[selectedPackageKey] : null;
+  // T-20260515-foot-RECEIPT-TAX-SPLIT: 과세/비과세 금액
+  const taxable = parseAmount(taxableAmountStr);
+  const taxExempt = parseAmount(taxExemptAmountStr);
+  // 현금 결제가 포함된 경우 (단건 현금 or 분할 현금 > 0)
+  const hasCashPayment = !isSplit ? method === 'cash' : splitCash > 0;
+  // 현재 결제 총액
+  const totalPayment = isSplit ? splitCard + splitCash : amount;
 
   const handleSelectPackage = (key: string) => {
     setSelectedPackageKey(key);
@@ -121,6 +141,12 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
       memo: string | null;
       payment_type: string;
       package_id?: string | null;
+      // T-20260515-foot-RECEIPT-TAX-SPLIT AC-3: 새 필드 (optional)
+      cash_receipt_issued?: boolean | null;
+      cash_receipt_type?: string | null;
+      cash_receipt_number?: string | null;
+      taxable_amount?: number | null;
+      tax_exempt_amount?: number | null;
     }>,
   ) => {
     const payload = rows.map((r) => ({
@@ -132,6 +158,11 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
       installment: r.installment,
       memo: r.memo,
       payment_type: r.payment_type,
+      cash_receipt_issued: r.cash_receipt_issued ?? null,
+      cash_receipt_type: r.cash_receipt_type ?? null,
+      cash_receipt_number: r.cash_receipt_number ?? null,
+      taxable_amount: r.taxable_amount ?? null,
+      tax_exempt_amount: r.tax_exempt_amount ?? null,
     }));
     return supabase.from('payments').insert(payload);
   };
@@ -227,6 +258,11 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
           installment: number | null;
           memo: string | null;
           payment_type: string;
+          cash_receipt_issued?: boolean | null;
+          cash_receipt_type?: string | null;
+          cash_receipt_number?: string | null;
+          taxable_amount?: number | null;
+          tax_exempt_amount?: number | null;
         }> = [];
         if (splitCard > 0) {
           rows.push({
@@ -235,6 +271,12 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
             installment: installment || null,
             memo: `분할: 카드 ${formatAmount(splitCard)} + 현금 ${formatAmount(splitCash)}`,
             payment_type: 'payment',
+            // T-20260515-foot-RECEIPT-TAX-SPLIT: 카드 분할행 — 현금영수증 없음
+            cash_receipt_issued: null,
+            cash_receipt_type: null,
+            cash_receipt_number: null,
+            taxable_amount: null,
+            tax_exempt_amount: null,
           });
         }
         if (splitCash > 0) {
@@ -244,6 +286,12 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
             installment: null,
             memo: `분할: 카드 ${formatAmount(splitCard)} + 현금 ${formatAmount(splitCash)}`,
             payment_type: 'payment',
+            // T-20260515-foot-RECEIPT-TAX-SPLIT: 현금 분할행 — 과세/비과세 + 현금영수증
+            cash_receipt_issued: cashReceiptIssued ? true : null,
+            cash_receipt_type: cashReceiptIssued ? cashReceiptType : null,
+            cash_receipt_number: cashReceiptIssued && cashReceiptNumber ? cashReceiptNumber : null,
+            taxable_amount: taxable > 0 ? taxable : null,
+            tax_exempt_amount: taxExempt > 0 ? taxExempt : null,
           });
         }
         const { error } = await insertPayments(rows);
@@ -265,6 +313,12 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
             installment: method === 'card' && installment > 0 ? installment : null,
             memo: memo || null,
             payment_type: 'payment',
+            // T-20260515-foot-RECEIPT-TAX-SPLIT: 과세/비과세 + 현금영수증
+            cash_receipt_issued: method === 'cash' && cashReceiptIssued ? true : null,
+            cash_receipt_type: method === 'cash' && cashReceiptIssued ? cashReceiptType : null,
+            cash_receipt_number: method === 'cash' && cashReceiptIssued && cashReceiptNumber ? cashReceiptNumber : null,
+            taxable_amount: taxable > 0 ? taxable : null,
+            tax_exempt_amount: taxExempt > 0 ? taxExempt : null,
           },
         ]);
         if (error) {
@@ -553,6 +607,100 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                   </div>
                 )}
               </>
+            )}
+
+            {/* T-20260515-foot-RECEIPT-TAX-SPLIT AC-2: 과세/비과세 분리 */}
+            {paymentMode === 'single' && (
+              <div className="space-y-2 rounded-md border border-dashed border-muted-foreground/30 p-3 bg-muted/20">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-muted-foreground font-medium">과세/비과세 분리 <span className="text-[10px] font-normal">(선택)</span></Label>
+                  {(taxable > 0 || taxExempt > 0) && totalPayment > 0 && (
+                    <span className={cn(
+                      'text-[10px] tabular-nums',
+                      taxable + taxExempt === totalPayment ? 'text-emerald-600' : 'text-amber-600',
+                    )}>
+                      {taxable + taxExempt === totalPayment ? '✓ 합계 일치' : `⚠ 합계 ${formatAmount(taxable + taxExempt)} (결제금액 ${formatAmount(totalPayment)})`}
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">과세 금액</Label>
+                    <Input
+                      value={taxableAmountStr}
+                      onChange={(e) => setTaxableAmountStr(e.target.value)}
+                      placeholder="0"
+                      inputMode="numeric"
+                      className="text-right tabular-nums h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">비과세(면세) 금액</Label>
+                    <Input
+                      value={taxExemptAmountStr}
+                      onChange={(e) => setTaxExemptAmountStr(e.target.value)}
+                      placeholder="0"
+                      inputMode="numeric"
+                      className="text-right tabular-nums h-8 text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* T-20260515-foot-RECEIPT-TAX-SPLIT AC-1: 현금영수증 (현금 결제 시만 활성) */}
+            {hasCashPayment && (
+              <div className="space-y-2 rounded-md border border-dashed border-muted-foreground/30 p-3 bg-muted/20">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="cash-receipt-issued"
+                    checked={cashReceiptIssued}
+                    onChange={(e) => setCashReceiptIssued(e.target.checked)}
+                    className="h-4 w-4 rounded border border-input accent-teal-600 cursor-pointer"
+                  />
+                  <Label htmlFor="cash-receipt-issued" className="cursor-pointer text-sm font-medium">
+                    현금영수증 발행
+                  </Label>
+                </div>
+                {cashReceiptIssued && (
+                  <div className="space-y-2 pl-6">
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCashReceiptType('income_deduction')}
+                        className={cn(
+                          'rounded border px-2 h-8 text-xs font-medium transition',
+                          cashReceiptType === 'income_deduction'
+                            ? 'border-teal-600 bg-teal-50 text-teal-700'
+                            : 'border-input hover:bg-muted',
+                        )}
+                      >
+                        소득공제용
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCashReceiptType('expense_proof')}
+                        className={cn(
+                          'rounded border px-2 h-8 text-xs font-medium transition',
+                          cashReceiptType === 'expense_proof'
+                            ? 'border-teal-600 bg-teal-50 text-teal-700'
+                            : 'border-input hover:bg-muted',
+                        )}
+                      >
+                        지출증빙용
+                      </button>
+                    </div>
+                    <Input
+                      value={cashReceiptNumber}
+                      onChange={(e) => setCashReceiptNumber(e.target.value)}
+                      placeholder="010-0000-0000 또는 사업자번호"
+                      className="text-sm h-8"
+                      data-testid="input-cash-receipt-number"
+                    />
+                  </div>
+                )}
+              </div>
             )}
 
             {/* C2-MANAGER-PAYMENT-MAP: 결제담당 선택 */}
