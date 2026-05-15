@@ -2834,6 +2834,37 @@ export default function Dashboard() {
         return;
       }
       toastWithUndo(needsExam ? '재진(진료)로 이동' : '재진(직행)으로 이동', row);
+    } else if (target === 'consultation') {
+      // T-20260516-foot-CONSULT-KANBAN-MISS: 상담 칸 드롭 시 consultation_room 초기화
+      if (row.status === 'consultation' && !row.consultation_room) return;
+      markRecentlyUpdated(row.id);
+      let prevRow: CheckIn | undefined;
+      setRows((curr) => {
+        prevRow = curr.find((r) => r.id === row.id);
+        return curr.map((r) =>
+          r.id === row.id ? { ...r, status: 'consultation' as CheckInStatus, consultation_room: null } : r,
+        );
+      });
+      const { error: consultErr } = await supabase
+        .from('check_ins')
+        .update({ status: 'consultation', consultation_room: null })
+        .eq('id', row.id);
+      if (consultErr) {
+        setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
+        toast.error(`이동 실패: ${consultErr.message}`);
+        return;
+      }
+      if (row.status !== 'consultation') {
+        const now = new Date().toISOString();
+        await supabase.from('status_transitions').insert({
+          check_in_id: row.id,
+          clinic_id: row.clinic_id,
+          from_status: row.status,
+          to_status: 'consultation',
+        });
+        setStageStartMap((prev) => new Map(prev).set(row.id, now));
+      }
+      toastWithUndo('상담으로 이동', row);
     } else if (target === 'registered') {
       // 초진 대기열로 이동 → status = registered + visit_type = new (양방향 자유 이동)
       if (row.status === 'registered' && row.visit_type === 'new') return;
@@ -3492,26 +3523,52 @@ export default function Dashboard() {
             </DroppableColumn>
           </div>
         );
-      case 'consult_rooms':
-        return consultRooms.length > 0 ? (
-          <div key="consult_rooms" className="w-44 shrink-0">
-            <RoomSection
-              title="상담"
-              color="bg-blue-100 text-blue-800"
-              rooms={consultRooms}
-              roomType="consultation"
-              checkIns={filtered}
-              assignments={assignments}
-              gridCols="grid-cols-1"
-              onCardClick={handleCardClick}
-              onCardContext={handleCardContext}
-              getStageStart={getStageStart}
-              getPkgLabel={getPkgLabel}
-              therapists={consultants}
-              onTherapistChange={handleConsultantChange}
-            />
+      case 'consult_rooms': {
+        // T-20260516-foot-CONSULT-KANBAN-MISS: consultation_room 미배정 고객을 '상담' 칸에 표시
+        // 드롭다운으로 status='consultation' 변경 시 consultation_room=null → 기존엔 칸반 어디에도 미표시
+        const consultUnassigned = (byStatus['consultation'] ?? []).filter((ci) => !ci.consultation_room);
+        return (
+          <div key="consult_rooms" className="w-44 shrink-0 flex flex-col gap-2">
+            <DroppableColumn
+              id="consultation"
+              label="상담"
+              count={consultUnassigned.length}
+              className="flex-1"
+              highlight="text-indigo-700"
+            >
+              {consultUnassigned.map((ci) => (
+                <div key={ci.id} className="relative group">
+                  <DraggableCard
+                    checkIn={ci}
+                    compact
+                    stageStart={getStageStart(ci)}
+                    packageLabel={getPkgLabel(ci)}
+                    onClick={() => handleCardClick(ci)}
+                    onContextMenu={(e) => handleCardContext(ci, e)}
+                  />
+                </div>
+              ))}
+            </DroppableColumn>
+            {consultRooms.length > 0 && (
+              <RoomSection
+                title="상담실"
+                color="bg-blue-100 text-blue-800"
+                rooms={consultRooms}
+                roomType="consultation"
+                checkIns={filtered}
+                assignments={assignments}
+                gridCols="grid-cols-1"
+                onCardClick={handleCardClick}
+                onCardContext={handleCardContext}
+                getStageStart={getStageStart}
+                getPkgLabel={getPkgLabel}
+                therapists={consultants}
+                onTherapistChange={handleConsultantChange}
+              />
+            )}
           </div>
-        ) : null;
+        );
+      }
       // T-20260511-foot-DASH-BATCH-INDIVIDUAL: waiting_columns → 3개 독립 케이스
       // 배치편집 모드에서 각 슬롯을 개별 드래그/이동할 수 있도록 분리
       case 'treatment_waiting_col':
