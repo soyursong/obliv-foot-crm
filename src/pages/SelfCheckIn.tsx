@@ -1,3 +1,4 @@
+// LOGIC-LOCK: L-001 — 셀프접수 고객정보 노출 금지. 변경 시 현장 승인 필수
 /**
  * 셀프체크인 페이지 — /checkin/:clinicSlug
  *
@@ -288,11 +289,8 @@ export default function SelfCheckIn() {
   // 완료 화면 카운트다운
   const [countdown, setCountdown] = useState(DONE_RESET_SECONDS);
 
-  // T-20260510-foot-SELFCHECKIN-NO-PREFILL: 인라인 환자 검색 상태 제거
-  // (selectedPatientId는 submit 시 서버 매칭 결과 캐시로만 사용. 폼 자동 채움 X)
-  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
-
-  // T-20260510-foot-SELFCHECKIN-NO-PREFILL: 폼 DOM 강제 재마운트 카운터
+  // LOGIC-LOCK L-001: selectedPatientId 제거 — 셀프접수 화면에서 고객 검색/선택 상태 완전 폐지
+  // 폼 DOM 강제 재마운트 카운터
   // 매 리셋마다 key가 바뀌어 브라우저 자동완성 캐시를 무효화한다
   const [resetKey, setResetKey] = useState(0);
 
@@ -337,7 +335,6 @@ export default function SelfCheckIn() {
     setErrorMsg('');
     setReservationBanner(null);
     setCountdown(DONE_RESET_SECONDS);
-    setSelectedPatientId(null);
   }, []);
 
   // ── 완료 화면 자동 리셋 (15초 카운트다운) ──
@@ -491,14 +488,15 @@ export default function SelfCheckIn() {
     setErrorMsg('');
 
     try {
-      // 인라인 검색으로 선택된 환자 ID 우선 사용
-      let customerId: string | null = selectedPatientId ?? null;
+      // LOGIC-LOCK L-001: customerId는 항상 null에서 시작 — 화면에서 고객 선택/표시 금지
+      // 고객 조회는 submit 후 백엔드 전용 (전화번호 매칭만)
+      let customerId: string | null = null;
       const phoneDigits = phone.replace(/\D/g, '');
       const phoneE164 = normalizeToE164(phone);
       const phoneStored = phoneE164 ?? phoneDigits;
 
-      // customerId 없을 경우 전화번호로 조회
-      let existing: { id: string } | null = customerId ? { id: customerId } : null;
+      // 전화번호로 고객 조회 (submit 처리 전용 — UI 미노출)
+      let existing: { id: string } | null = null;
       if (!existing) {
         const res = await anonClient
           .from('customers')
@@ -975,21 +973,20 @@ export default function SelfCheckIn() {
               {t.name}
             </label>
             <div className="relative">
+              {/* LOGIC-LOCK: L-001 — 셀프접수 고객정보 노출 금지. 변경 시 현장 승인 필수 */}
               <input
                 key={`sc-name-${resetKey}`}
                 id="sc-name"
                 type="text"
+                name="obliv-fn-lock"
                 value={name}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  if (selectedPatientId) setSelectedPatientId(null);
-                }}
+                onChange={(e) => setName(e.target.value)}
                 placeholder={t.namePlaceholder}
                 autoComplete="new-password"
                 className="h-14 w-full rounded-xl px-4 text-lg outline-none transition"
                 style={{
-                  border: `1.5px solid ${selectedPatientId ? C.medium : C.border}`,
-                  backgroundColor: selectedPatientId ? C.bannerBg : 'white',
+                  border: `1.5px solid ${C.border}`,
+                  backgroundColor: 'white',
                   color: C.dark,
                 }}
                 onFocus={(e) => {
@@ -997,7 +994,7 @@ export default function SelfCheckIn() {
                   e.currentTarget.style.boxShadow = `0 0 0 3px ${C.borderActive}18`;
                 }}
                 onBlur={(e) => {
-                  e.currentTarget.style.borderColor = selectedPatientId ? C.medium : C.border;
+                  e.currentTarget.style.borderColor = C.border;
                   e.currentTarget.style.boxShadow = 'none';
                 }}
               />
