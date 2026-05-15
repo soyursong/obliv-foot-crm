@@ -1006,7 +1006,8 @@ function TimelineCheckInCard({
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: checkIn.id,
-    data: { checkIn },
+    // T-20260515-foot-DASH-SLOT-DRAG: reservationId 추가 → timeslot 드롭 시 reservation_time 업데이트
+    data: { checkIn, reservationId: checkIn.reservation_id },
   });
 
   const visitType = checkIn.visit_type as 'new' | 'returning';
@@ -1045,6 +1046,7 @@ function TimelineCheckInCard({
         box2Cls,
       )}
       title={`${checkIn.customer_name} — 드래그=다음단계 이동 · 클릭=상세`}
+      data-testid="timeline-checkin-card"
       onClick={(e) => {
         e.stopPropagation();
         onClick?.();
@@ -1071,9 +1073,18 @@ function TimelineCheckInCard({
   );
 }
 
+// T-20260515-foot-DASH-SLOT-DRAG: 예약시간 슬롯 계산 (module-level, handleDragEnd에서도 사용)
+function resvToSlot(time: string | null | undefined): string {
+  if (!time) return '00:00';
+  const t = time.slice(0, 5);
+  const [h, mm] = t.split(':').map(Number);
+  return `${String(h).padStart(2, '0')}:${mm < 30 ? '00' : '30'}`;
+}
+
 // T-20260510-foot-DASH-SLOT-REWORK-P0: 1번 박스 — 초진 예약 (셀프접수 매칭 전, 미내원)
 // T-20260514-foot-CHECKIN-AUTO-STAGE AC-3: 미내원 = opacity-100 진하게 (이전 opacity-75 → 제거)
-// 목적: '아직 안 오신 분'이 눈에 바로 띄도록 미내원은 bold+full opacity
+// T-20260515-foot-DASH-SLOT-DRAG: DraggableBox1Card로 교체됨 (하위 호환 보존, 삭제 금지)
+// @ts-ignore -- 하위 호환 보존, 삭제 금지
 function Box1Card({ name, phone }: { name: string; phone: string }) {
   const tail = (phone ?? '').replace(/\D/g, '').slice(-4) || '????';
   return (
@@ -1090,8 +1101,8 @@ function Box1Card({ name, phone }: { name: string; phone: string }) {
 }
 
 // T-20260510-foot-DASH-SLOT-REWORK-P0: 재진 예약 2번 박스 (셀프접수 전, 차트 사전 접근)
-// 스크린샷: 활성화 상태 — 방문 이력 있으므로 예약부터 active 스타일 (연두색 계열)
-// 클릭 → 체크인 생성 + 차트 열기 (AC6)
+// T-20260515-foot-DASH-SLOT-DRAG: DraggableBox2ResvCard로 교체됨 (하위 호환 보존, 삭제 금지)
+// @ts-ignore -- 하위 호환 보존, 삭제 금지
 function Box2ReservationCard({
   reservation,
   onClick,
@@ -1114,6 +1125,109 @@ function Box2ReservationCard({
     >
       <span className="truncate text-green-900">{reservation.customer_name}</span>
       {/* T-20260514-foot-CHART-NO-VISIBLE: 차트번호 상시 표시 */}
+      {resvChartNum && (
+        <span className="text-[9px] font-mono text-green-700 shrink-0">#{resvChartNum}</span>
+      )}
+      {onClick && <span className="text-[9px] text-green-600 shrink-0 ml-auto font-bold">↗</span>}
+    </div>
+  );
+}
+
+// T-20260515-foot-DASH-SLOT-DRAG: 타임라인 슬롯 드롭존 컴포넌트
+// slotId = "timeslot-new:HH:MM" 또는 "timeslot-ret:HH:MM"
+function SlotDropCell({
+  slotId,
+  children,
+  className,
+  onClick,
+  title,
+  'data-testid': dataTestId,
+}: {
+  slotId: string;
+  children: React.ReactNode;
+  className?: string;
+  onClick?: () => void;
+  title?: string;
+  'data-testid'?: string;
+}) {
+  const { isOver, setNodeRef } = useDroppable({ id: slotId });
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(className, isOver && 'ring-2 ring-inset ring-teal-400 bg-teal-50/40')}
+      onClick={onClick}
+      title={title}
+      data-testid={dataTestId}
+    >
+      {children}
+    </div>
+  );
+}
+
+// T-20260515-foot-DASH-SLOT-DRAG: 초진 미내원 예약 드래그 가능 카드 (Box1Card 드래그 버전)
+function DraggableBox1Card({ reservation }: { reservation: Reservation }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `box1-${reservation.id}`,
+    data: { reservationType: 'timeline-resv', reservationId: reservation.id, visitType: reservation.visit_type },
+  });
+  const tail = (reservation.customer_phone ?? '').replace(/\D/g, '').slice(-4) || '????';
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+        opacity: isDragging ? 0.4 : 1,
+        touchAction: 'none',
+        willChange: isDragging ? 'transform' : undefined,
+      }}
+      {...attributes}
+      {...listeners}
+      className="flex items-center gap-1 rounded border border-yellow-400 bg-yellow-50 px-2 py-1 text-[10px] w-full select-none cursor-grab active:cursor-grabbing"
+      onClick={(e) => e.stopPropagation()}
+      title={`${reservation.customer_name} — 드래그하여 시간 변경 / 아직 미내원`}
+      data-testid="box1-resv-card"
+    >
+      <span className="shrink-0 bg-yellow-200 text-yellow-800 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
+      <span className="truncate text-yellow-900 font-semibold">{reservation.customer_name}</span>
+      <span className="shrink-0 text-yellow-700 font-mono ml-auto text-[9px]">{tail}</span>
+    </div>
+  );
+}
+
+// T-20260515-foot-DASH-SLOT-DRAG: 재진 미내원 예약 드래그 가능 카드 (Box2ReservationCard 드래그 버전)
+function DraggableBox2ResvCard({
+  reservation,
+  onClick,
+}: {
+  reservation: Reservation;
+  onClick?: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `box2r-${reservation.id}`,
+    data: { reservationType: 'timeline-resv', reservationId: reservation.id, visitType: reservation.visit_type },
+  });
+  const resvChartMap = useContext(ChartNumberMapCtx);
+  const resvChartNum = reservation.customer_id ? resvChartMap.get(reservation.customer_id) : undefined;
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+        opacity: isDragging ? 0.4 : 1,
+        touchAction: 'none',
+        willChange: isDragging ? 'transform' : undefined,
+      }}
+      {...attributes}
+      {...listeners}
+      className={cn(
+        'flex items-center gap-1 rounded border border-green-300 bg-green-50 px-2 py-1 text-[11px] font-semibold w-full shadow-sm',
+        onClick ? 'cursor-grab active:cursor-grabbing hover:bg-green-100 hover:border-green-400 transition' : 'cursor-default',
+      )}
+      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+      title={`${reservation.customer_name} — 드래그=시간변경 · 클릭=체크인`}
+      data-testid="box2-resv-card"
+    >
+      <span className="truncate text-green-900">{reservation.customer_name}</span>
       {resvChartNum && (
         <span className="text-[9px] font-mono text-green-700 shrink-0">#{resvChartNum}</span>
       )}
@@ -1185,12 +1299,7 @@ function DashboardTimeline({
     if (!slotMap[s]) slotMap[s] = { newBox1: [], newBox2Ci: [], retBox2Resv: [], retBox2Ci: [] };
     return slotMap[s];
   };
-  const resvToSlot = (time: string | null | undefined): string => {
-    if (!time) return '00:00';
-    const t = time.slice(0, 5);
-    const [h, mm] = t.split(':').map(Number);
-    return `${String(h).padStart(2, '0')}:${mm < 30 ? '00' : '30'}`;
-  };
+  // resvToSlot: module-level 함수 사용 (T-20260515-foot-DASH-SLOT-DRAG)
 
   const matchedCiIds = new Set<string>();
 
@@ -1332,21 +1441,21 @@ function DashboardTimeline({
                 )}
               </div>
 
-              {/* 초진 컬럼 — 빈 영역 클릭 시 예약 추가 */}
-              <div
+              {/* 초진 컬럼 — T-20260515-foot-DASH-SLOT-DRAG: SlotDropCell로 교체 (드래그 드롭 시간 변경) */}
+              <SlotDropCell
+                slotId={`timeslot-new:${slot}`}
                 className={cn(
                   'px-1 pt-1 pb-0.5 border-r space-y-0.5 min-w-0',
                   isCurrentSlot ? 'bg-teal-50/20' : newCnt > 0 ? 'bg-yellow-50/40' : '',
                 )}
                 onClick={() => onSlotClick({ date: dateStr, time: slot })}
-                style={{ cursor: 'default' }}
-                title="빈 영역 클릭 → 초진 예약 추가"
+                title="빈 영역 클릭 → 초진 예약 추가 / 카드 드롭 → 시간 변경"
+                data-testid="timeline-slot-new"
               >
                 {newBox1.map((r) => (
-                  <Box1Card
+                  <DraggableBox1Card
                     key={`b1-${r.id}`}
-                    name={r.customer_name ?? ''}
-                    phone={r.customer_phone ?? ''}
+                    reservation={r}
                   />
                 ))}
                 {newBox2Ci.map((ci) => (
@@ -1360,20 +1469,21 @@ function DashboardTimeline({
                 {newCnt === 0 && (
                   <div className="text-[9px] text-gray-200 text-center leading-none py-1 select-none">+</div>
                 )}
-              </div>
+              </SlotDropCell>
 
-              {/* 재진 컬럼 — T-20260511-foot-DASH-REVISIT-RESERVE-BUG: 빈 영역 클릭 시 재진 예약 추가 */}
-              <div
+              {/* 재진 컬럼 — T-20260515-foot-DASH-SLOT-DRAG: SlotDropCell로 교체 */}
+              <SlotDropCell
+                slotId={`timeslot-ret:${slot}`}
                 className={cn(
                   'px-1 pt-1 pb-0.5 space-y-0.5 min-w-0',
                   isCurrentSlot ? 'bg-teal-50/20' : retCnt > 0 ? 'bg-green-50/40' : '',
                 )}
                 onClick={() => onSlotClick({ date: dateStr, time: slot, visit_type: 'returning' })}
-                style={{ cursor: 'default' }}
-                title="빈 영역 클릭 → 재진 예약 추가"
+                title="빈 영역 클릭 → 재진 예약 추가 / 카드 드롭 → 시간 변경"
+                data-testid="timeline-slot-ret"
               >
                 {retBox2Resv.map((r) => (
-                  <Box2ReservationCard
+                  <DraggableBox2ResvCard
                     key={`b2r-${r.id}`}
                     reservation={r}
                     onClick={onReservationClick ? () => onReservationClick(r) : undefined}
@@ -1387,7 +1497,7 @@ function DashboardTimeline({
                     onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
                   />
                 ))}
-              </div>
+              </SlotDropCell>
             </div>
           );
         })}
@@ -1634,6 +1744,13 @@ export default function Dashboard() {
   const [timelineReservations, setTimelineReservations] = useState<Reservation[]>([]);
   /** 셀프접수 walk-in 체크인 (reservation_id 없는 당일 체크인) — 통합 시간표용 */
   const [selfCheckIns, setSelfCheckIns] = useState<CheckIn[]>([]);
+  // T-20260515-foot-DASH-SLOT-DRAG: 슬롯 드래그 충돌 확인 대기 상태
+  const [pendingSlotDrag, setPendingSlotDrag] = useState<{
+    reservationId: string;
+    newTimeStr: string;   // HH:MM:SS
+    reservation: Reservation;
+    conflictCount: number;
+  } | null>(null);
   /** reservation_id → reservation_time (HH:MM:SS) — CustomerHoverCard 예약시간 표시용 */
   const resvTimeMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -1733,6 +1850,48 @@ export default function Dashboard() {
       return next;
     });
   }, []);
+
+  // T-20260515-foot-DASH-SLOT-DRAG: 예약 시간 변경 실행 (낙관적 업데이트 + 감사 로그)
+  const executeSlotDrag = useCallback(async (
+    reservationId: string,
+    newTimeStr: string,   // HH:MM:SS
+    currentReservation: Reservation,
+  ) => {
+    const oldTime = currentReservation.reservation_time.slice(0, 5);
+    const newTime = newTimeStr.slice(0, 5);
+    if (oldTime === newTime) return;
+
+    // 낙관적 업데이트
+    setTimelineReservations((prev) =>
+      prev.map((r) => r.id === reservationId ? { ...r, reservation_time: newTimeStr } : r),
+    );
+
+    const { error } = await supabase
+      .from('reservations')
+      .update({ reservation_time: newTimeStr })
+      .eq('id', reservationId);
+
+    if (error) {
+      // 실패 시 롤백
+      setTimelineReservations((prev) =>
+        prev.map((r) => r.id === reservationId ? currentReservation : r),
+      );
+      toast.error(`시간 변경 실패: ${error.message}`);
+      return;
+    }
+
+    // 감사 로그 (reservation_logs.action = 'reschedule')
+    await supabase.from('reservation_logs').insert({
+      reservation_id: reservationId,
+      clinic_id: currentReservation.clinic_id,
+      action: 'reschedule',
+      old_data: { date: currentReservation.reservation_date, time: oldTime },
+      new_data: { date: currentReservation.reservation_date, time: newTime },
+      changed_by: profile?.id ?? null,
+    });
+
+    toast.success(`${currentReservation.customer_name} ${oldTime} → ${newTime} 이동 완료`);
+  }, [profile, setTimelineReservations]);
 
   const resetGroupOrder = useCallback(async () => {
     const defaults = [...DEFAULT_GROUP_ORDER];
@@ -2404,8 +2563,55 @@ export default function Dashboard() {
   const handleDragEnd = async (e: DragEndEvent) => {
     setDragging(null);
     const target = e.over?.id as string | undefined;
+    if (!target) return;
+
+    // T-20260515-foot-DASH-SLOT-DRAG: 타임라인 슬롯 드롭 처리 — checkIn 없이도 작동
+    if (target.startsWith('timeslot-new:') || target.startsWith('timeslot-ret:')) {
+      if (isPast) { toast.info('과거 날짜는 수정할 수 없습니다'); return; }
+
+      const newSlot = target.replace(/^timeslot-(?:new|ret):/, ''); // e.g. "11:00"
+      const dragData = e.active.data.current;
+
+      // reservationId 추출: DraggableBox1Card/DraggableBox2ResvCard or TimelineCheckInCard
+      let reservationId: string | null = null;
+      if (dragData?.reservationType === 'timeline-resv') {
+        reservationId = dragData.reservationId as string;
+      } else if (dragData?.reservationId) {
+        // TimelineCheckInCard — data: { checkIn, reservationId }
+        reservationId = dragData.reservationId as string;
+      }
+
+      if (!reservationId) {
+        toast.info('예약 정보가 없어 시간을 변경할 수 없습니다');
+        return;
+      }
+
+      const reservation = timelineReservations.find((r) => r.id === reservationId);
+      if (!reservation) return;
+
+      const currentSlotOfResv = resvToSlot(reservation.reservation_time);
+      if (currentSlotOfResv === newSlot) return; // 같은 슬롯, no-op
+
+      const newTimeStr = `${newSlot}:00`; // HH:MM:SS
+
+      // 충돌 검사: 같은 날짜·슬롯에 다른 활성 예약이 있는지
+      const conflicting = timelineReservations.filter((r) => {
+        if (r.id === reservationId) return false;
+        if (r.status === 'cancelled' || r.status === 'noshow') return false;
+        return resvToSlot(r.reservation_time) === newSlot;
+      });
+
+      if (conflicting.length > 0) {
+        setPendingSlotDrag({ reservationId, newTimeStr, reservation, conflictCount: conflicting.length });
+        return;
+      }
+
+      await executeSlotDrag(reservationId, newTimeStr, reservation);
+      return;
+    }
+
     const row = e.active.data.current?.checkIn as CheckIn | undefined;
-    if (!target || !row) return;
+    if (!row) return;
 
     if (row.id.startsWith('temp-')) {
       toast.info('체크인 처리 중입니다. 잠시 후 다시 시도해주세요.');
@@ -3833,6 +4039,46 @@ export default function Dashboard() {
       </ChecklistDoneCtx.Provider>
       </CardHandlersCtx.Provider>
       </ChartNumberMapCtx.Provider>
+
+      {/* T-20260515-foot-DASH-SLOT-DRAG: 슬롯 이동 충돌 확인 다이얼로그 */}
+      <Dialog open={!!pendingSlotDrag} onOpenChange={(open) => { if (!open) setPendingSlotDrag(null); }}>
+        <DialogContent className="max-w-sm" data-testid="slot-drag-conflict-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-base">예약 시간 변경</DialogTitle>
+          </DialogHeader>
+          {pendingSlotDrag && (
+            <div className="space-y-2 py-1">
+              <p className="text-sm text-gray-700">
+                <span className="font-semibold">{pendingSlotDrag.reservation.customer_name}</span> 예약을{' '}
+                <span className="font-bold text-teal-700">
+                  {pendingSlotDrag.newTimeStr.slice(0, 5)}
+                </span>
+                으로 이동하시겠어요?
+              </p>
+              <p className="text-xs text-amber-600">
+                해당 시간에 이미 {pendingSlotDrag.conflictCount}건의 예약이 있습니다.
+                이동하면 같은 시간에 복수 예약이 공존합니다.
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingSlotDrag(null)}>취소</Button>
+            <Button
+              onClick={async () => {
+                if (!pendingSlotDrag) return;
+                await executeSlotDrag(
+                  pendingSlotDrag.reservationId,
+                  pendingSlotDrag.newTimeStr,
+                  pendingSlotDrag.reservation,
+                );
+                setPendingSlotDrag(null);
+              }}
+            >
+              이동
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 빠른 예약 다이얼로그 */}
       <QuickReservationDialog
