@@ -676,7 +676,7 @@ export default function Reservations() {
             불러오는 중…
           </div>
         ) : (
-          <table className="w-full border-collapse text-sm">
+          <table className="w-full min-w-[700px] border-collapse text-sm">{/* T-20260515-foot-RESPONSIVE-SHELL: min-w 추가 → 모바일 수평 스크롤 활성화 */}
             <thead className="sticky top-0 z-10 bg-muted/60">
               <tr>
                 {/* T-20260515-foot-RESPONSIVE-UI-SHELL Shell-1: 시간축 sticky left-0 (모바일 수평 스크롤 시 고정) */}
