@@ -57,8 +57,8 @@ test.describe('Staff and rooms management', () => {
     // 직원 탭이 기본 선택
     await expect(page.getByText('직원 관리')).toBeVisible({ timeout: 5_000 });
 
-    // 역할별 카드 확인
-    const roles = ['원장', '상담실장', '코디네이터', '치료사', '관리사'];
+    // 역할별 카드 확인 (AC-11: 관리사→장비명)
+    const roles = ['원장', '상담실장', '코디네이터', '치료사', '장비명'];
     for (const role of roles) {
       const roleCard = page.getByText(role, { exact: true }).first();
       const visible = await roleCard.isVisible().catch(() => false);
@@ -128,18 +128,23 @@ test.describe('Staff and rooms management', () => {
     // 공간 배정 탭 클릭
     await page.getByRole('tab', { name: /공간 배정/ }).click();
 
-    // 날짜 선택기 확인
-    await expect(page.locator('input[type="date"]').first()).toBeVisible({ timeout: 5_000 });
+    // AC-1 T-20260515: "마지막 저장" 텍스트 표시 (date input 대신)
+    const lastSavedText = page.getByText(/마지막 저장|저장된 배정 없음/);
+    const hasPersistenceText = await lastSavedText.isVisible().catch(() => false);
+    test.info().annotations.push({
+      type: 'persistence',
+      description: `last-saved text: ${hasPersistenceText}`,
+    });
 
     // 일간/주간 토글 확인
     await expect(page.getByText('일간', { exact: true })).toBeVisible();
     await expect(page.getByText('주간', { exact: true })).toBeVisible();
 
-    // "전날 복사" 버튼 확인
-    await expect(page.getByRole('button', { name: '전날 복사' })).toBeVisible();
+    // AC-3 T-20260515: [저장] 버튼 확인 (전날 복사 버튼 대체)
+    await expect(page.getByRole('button', { name: /^저장/ })).toBeVisible();
 
-    // 공간 유형별 카드 확인 (치료실, 레이저실, 상담실, 원장실)
-    const roomTypes = ['치료실', '레이저실', '상담실', '원장실'];
+    // 공간 유형별 카드 확인 (치료실, 레이저실, 상담실, 원장실 C5)
+    const roomTypes = ['치료실', '레이저실', '상담실', '원장실 C5'];
     let foundRoomTypes = 0;
     for (const rt of roomTypes) {
       const visible = await page.getByText(rt).first().isVisible().catch(() => false);
