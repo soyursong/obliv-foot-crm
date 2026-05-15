@@ -2184,7 +2184,8 @@ export default function Dashboard() {
         .select('id, customer_id')
         .in('customer_id', eligibleCustomerIds)
         .eq('reservation_date', dateStr)
-        .eq('healer_flag', true);
+        .eq('healer_flag', true)
+        .eq('clinic_id', clinic.id);
       if (healerResvs && healerResvs.length > 0) {
         const healerCidSet = new Set(healerResvs.map((r: { customer_id: string }) => r.customer_id));
         const resvIds = healerResvs.map((r: { id: string }) => r.id);
