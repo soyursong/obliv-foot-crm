@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { addDays, format, parseISO, startOfWeek, isSameDay } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Plus, User } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, User, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -107,6 +107,11 @@ export default function Reservations() {
     _clipboardTargetBackup = val;
     setClipboardTargetState(val);
   }, []);
+
+  // T-20260515-foot-RESPONSIVE-UI-SHELL: Shell-2 태블릿 풀스크린 모달
+  const [tabletModalOpen, setTabletModalOpen] = useState(false);
+  const [tabletModalInfo, setTabletModalInfo] = useState<{ date: string; time: string } | null>(null);
+  const isTabletViewport = () => typeof window !== 'undefined' && window.innerWidth >= 769;
 
   const weekDays = useMemo(
     () => Array.from({ length: 6 }).map((_, i) => addDays(weekStart, i)), // 월~토만
@@ -427,6 +432,12 @@ export default function Reservations() {
   );
 
   const openNewSlot = (d: Date, time: string) => {
+    // T-20260515-foot-RESPONSIVE-UI-SHELL Shell-2: 태블릿(>=769px)에서 풀스크린 모달
+    if (isTabletViewport()) {
+      setTabletModalInfo({ date: format(d, 'yyyy-MM-dd'), time });
+      setTabletModalOpen(true);
+      return;
+    }
     setEditor({
       date: format(d, 'yyyy-MM-dd'),
       time,
@@ -668,9 +679,13 @@ export default function Reservations() {
           <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-muted/60">
               <tr>
-                <th className="w-20 border-b border-r py-2 text-xs font-medium text-muted-foreground">
-                  시간
-                </th>
+                {/* T-20260515-foot-RESPONSIVE-UI-SHELL Shell-1: 시간축 sticky left-0 (모바일 수평 스크롤 시 고정) */}
+              <th
+                data-testid="resv-time-col-header"
+                className="w-20 border-b border-r py-2 text-xs font-medium text-muted-foreground sticky left-0 z-20 bg-muted/60"
+              >
+                시간
+              </th>
                 {(viewMode === 'week' ? weekDays : [selectedDay]).map((d, i) => (
                   <th
                     key={d.toISOString()}
@@ -696,7 +711,11 @@ export default function Reservations() {
                 ).map(
                   (time) => (
                     <tr key={time}>
-                      <td className="w-20 border-b border-r py-1.5 text-center text-xs font-medium text-muted-foreground">
+                      {/* T-20260515-foot-RESPONSIVE-UI-SHELL Shell-1: 시간축 sticky left-0 */}
+                      <td
+                        data-testid="resv-time-col-cell"
+                        className="w-20 border-b border-r py-1.5 text-center text-xs font-medium text-muted-foreground sticky left-0 bg-background z-10"
+                      >
                         {time}
                       </td>
                       {(viewMode === 'week' ? weekDays : [selectedDay]).map((d) => {
@@ -744,7 +763,13 @@ export default function Reservations() {
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setSelectedResvId(r.id);
-                                      setDetail(r);
+                                      // T-20260515-foot-RESPONSIVE-UI-SHELL Shell-2: 태블릿 풀스크린 모달
+                                      if (isTabletViewport()) {
+                                        setTabletModalInfo({ date: r.reservation_date, time: r.reservation_time.slice(0, 5) });
+                                        setTabletModalOpen(true);
+                                      } else {
+                                        setDetail(r);
+                                      }
                                     }}
                                     className={cn(
                                       'rounded border px-1.5 py-0.5 text-xs leading-tight transition-opacity',
@@ -876,6 +901,13 @@ export default function Reservations() {
           </table>
         )}
       </div>
+
+      {/* T-20260515-foot-RESPONSIVE-UI-SHELL Shell-2: 태블릿 풀스크린 모달 */}
+      <TabletFullscreenModal
+        open={tabletModalOpen}
+        info={tabletModalInfo}
+        onClose={() => { setTabletModalOpen(false); setTabletModalInfo(null); }}
+      />
 
       <ReservationEditor
         draft={editor}
@@ -1761,6 +1793,97 @@ function ReservationDetail({
       </Dialog>
     )}
     </>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   T-20260515-foot-RESPONSIVE-UI-SHELL: Shell-2
+   TabletFullscreenModal — 태블릿(Galaxy Tab S10 Lite 등) 풀스크린 빈 모달
+   Phase 0: 빈 캔버스 (S-Pen/Inking 없음). Phase 1에서 E-Form 연동 예정.
+   AC-5: 슬롯/카드 탭 시 열림 (Split 뷰 대체)
+   AC-6: 10.9인치 화면 꽉 채움
+   AC-7: 닫기 → 시간표 복귀
+   AC-8: slide-up/slide-down 부드러운 애니메이션
+───────────────────────────────────────────────────────────────────────────── */
+function TabletFullscreenModal({
+  open,
+  info,
+  onClose,
+}: {
+  open: boolean;
+  info: { date: string; time: string } | null;
+  onClose: () => void;
+}) {
+  const [mounted, setMounted] = useState(false);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      // requestAnimationFrame으로 enter 애니메이션 트리거
+      const raf = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(raf);
+    } else {
+      setVisible(false);
+      const t = setTimeout(() => setMounted(false), 300);
+      return () => clearTimeout(t);
+    }
+  }, [open]);
+
+  if (!mounted) return null;
+
+  return (
+    <div
+      data-testid="tablet-fullscreen-modal"
+      role="dialog"
+      aria-modal="true"
+      className={cn(
+        'fixed inset-0 z-[100] flex flex-col bg-white transition-transform duration-300 ease-in-out',
+        visible ? 'translate-y-0' : 'translate-y-full',
+      )}
+    >
+      {/* 헤더 */}
+      <div className="flex shrink-0 items-center justify-between border-b px-6 py-4 bg-white shadow-sm">
+        <div className="flex items-center gap-3">
+          <span className="text-base font-semibold text-teal-700">
+            {info?.date ?? '—'} · {info?.time ?? '—'}
+          </span>
+          <span className="rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-medium text-teal-700">
+            Phase 0 Shell
+          </span>
+        </div>
+        <button
+          data-testid="tablet-modal-close"
+          onClick={onClose}
+          aria-label="모달 닫기"
+          className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-muted transition-colors"
+        >
+          <X className="h-6 w-6" />
+        </button>
+      </div>
+
+      {/* 빈 캔버스 (AC-6: 빈 캔버스, Phase 1에서 S-Pen/Inking 연동) */}
+      <div
+        data-testid="tablet-modal-canvas"
+        className="flex flex-1 flex-col items-center justify-center gap-4 bg-gray-50/60 p-8"
+      >
+        <div className="flex h-24 w-24 items-center justify-center rounded-full bg-teal-100">
+          <svg viewBox="0 0 48 48" fill="none" className="h-12 w-12 text-teal-500" stroke="currentColor" strokeWidth={1.5}>
+            <rect x="8" y="8" width="32" height="32" rx="4" />
+            <path d="M16 24h16M24 16v16" />
+          </svg>
+        </div>
+        <div className="text-center space-y-1">
+          <p className="text-sm font-medium text-gray-700">빈 캔버스</p>
+          <p className="text-xs text-muted-foreground">Phase 1에서 E-Form / S-Pen Inking 연동 예정</p>
+          {info && (
+            <p className="mt-2 text-xs font-mono text-teal-600">
+              {info.date} {info.time}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
