@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { format } from 'date-fns';
-import { BookOpen, ExternalLink, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { BookOpen, CreditCard, ExternalLink, Pencil, Plus, Search, Stethoscope, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,6 +35,8 @@ import {
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
 import { CustomerChartSheet } from '@/components/CustomerChartSheet';
+// T-20260515-foot-CONTEXT-MENU-4ITEM AC-4: 진료차트 패널
+import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
@@ -78,6 +80,9 @@ export default function Customers() {
   // T-20260514-foot-CHART2-OPEN-BUG: 2번차트 팝업 차단 해소 → CustomerChartSheet 슬라이드 패널
   const [chart2Id, setChart2Id] = useState<string | null>(null);
   const openChart = (customerId: string) => setChart2Id(customerId);
+  // T-20260515-foot-CONTEXT-MENU-4ITEM AC-4: 진료차트 패널
+  const [medicalChartOpen, setMedicalChartOpen] = useState(false);
+  const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
   // 우클릭 컨텍스트 메뉴
   const [ctxMenu, setCtxMenu] = useState<{ customer: Customer; x: number; y: number } | null>(null);
   const [statsMap, setStatsMap] = useState<Map<string, CustomerStats>>(new Map());
@@ -427,6 +432,7 @@ export default function Customers() {
       />
 
       {/* T-20260510-foot-CUSTMGMT-CHART-PATTERN: 우클릭 컨텍스트 메뉴 */}
+      {/* T-20260515-foot-CONTEXT-MENU-4ITEM AC-4: 4항목으로 확장 */}
       {ctxMenu && (
         <CustomerContextMenu
           customer={ctxMenu.customer}
@@ -434,6 +440,11 @@ export default function Customers() {
           y={ctxMenu.y}
           onClose={() => setCtxMenu(null)}
           onOpenChart={(c) => { openChart(c.id); setCtxMenu(null); }}
+          onOpenMedicalChart={(c) => {
+            setMedicalChartCustomerId(c.id);
+            setMedicalChartOpen(true);
+            setCtxMenu(null);
+          }}
           onEdit={(c) => { setEditingCustomer(c); setCtxMenu(null); }}
           isAdmin={isAdmin}
         />
@@ -443,6 +454,16 @@ export default function Customers() {
       <CustomerChartSheet
         customerId={chart2Id}
         onClose={() => setChart2Id(null)}
+      />
+
+      {/* T-20260515-foot-CONTEXT-MENU-4ITEM AC-4: 진료차트 패널 (고객관리 진입) */}
+      <MedicalChartPanel
+        open={medicalChartOpen}
+        onOpenChange={(v) => { if (!v) { setMedicalChartOpen(false); setMedicalChartCustomerId(null); } }}
+        customerId={medicalChartCustomerId}
+        clinicId={clinic?.id ?? ''}
+        currentUserRole={profile?.role ?? ''}
+        currentUserEmail={profile?.email ?? null}
       />
     </div>
   );
@@ -913,6 +934,8 @@ function CreateCustomerDialog({
 }
 
 // ─── T-20260510-foot-CUSTMGMT-CHART-PATTERN: 우클릭 컨텍스트 메뉴 ─────────────
+// T-20260515-foot-CONTEXT-MENU-4ITEM AC-4: 4항목으로 확장
+// 순서: 고객차트 → 진료차트 → 예약하기(미지원) → 수납(안내 토스트) → 정보수정
 
 interface CustomerContextMenuProps {
   customer: Customer;
@@ -920,11 +943,12 @@ interface CustomerContextMenuProps {
   y: number;
   onClose: () => void;
   onOpenChart: (c: Customer) => void;
+  onOpenMedicalChart: (c: Customer) => void;
   onEdit: (c: Customer) => void;
   isAdmin: boolean;
 }
 
-function CustomerContextMenu({ customer, x, y, onClose, onOpenChart, onEdit, isAdmin }: CustomerContextMenuProps) {
+function CustomerContextMenu({ customer, x, y, onClose, onOpenChart, onOpenMedicalChart, onEdit, isAdmin }: CustomerContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -941,7 +965,7 @@ function CustomerContextMenu({ customer, x, y, onClose, onOpenChart, onEdit, isA
   }, [onClose]);
 
   const safeX = Math.min(x, window.innerWidth - 190);
-  const safeY = Math.min(y, window.innerHeight - 120);
+  const safeY = Math.min(y, window.innerHeight - 200);
 
   return (
     <div
@@ -953,21 +977,61 @@ function CustomerContextMenu({ customer, x, y, onClose, onOpenChart, onEdit, isA
       <div className="px-3 py-1.5 text-xs font-semibold text-teal-700 border-b truncate">
         {customer.name}
       </div>
+
+      {/* 1. 고객차트 */}
       <button
         className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-teal-50 transition text-left"
         onClick={() => onOpenChart(customer)}
       >
         <BookOpen className="h-4 w-4 text-teal-600 shrink-0" />
-        고객차트 (2번)
+        고객차트
       </button>
+
+      {/* 2. 진료차트 — T-20260515-foot-CONTEXT-MENU-4ITEM AC-2 */}
+      <button
+        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-teal-50 transition text-left"
+        onClick={() => { onOpenMedicalChart(customer); onClose(); }}
+      >
+        <Stethoscope className="h-4 w-4 text-teal-600 shrink-0" />
+        진료차트
+      </button>
+
+      {/* 3. 예약하기 — 예약 페이지로 이동 */}
+      <button
+        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-teal-50 transition text-left"
+        onClick={() => {
+          toast('예약 페이지에서 해당 고객을 검색해 예약하세요');
+          onClose();
+        }}
+      >
+        <ExternalLink className="h-4 w-4 text-teal-600 shrink-0" />
+        예약하기
+      </button>
+
+      {/* 4. 수납 — T-20260515-foot-CONTEXT-MENU-4ITEM AC-3 (고객관리: 대시보드 안내) */}
+      <button
+        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-teal-50 transition text-left"
+        onClick={() => {
+          toast('대시보드에서 해당 환자 체크인 후 수납해주세요');
+          onClose();
+        }}
+      >
+        <CreditCard className="h-4 w-4 text-teal-600 shrink-0" />
+        수납
+      </button>
+
+      {/* 정보 수정 (admin 전용) */}
       {isAdmin && (
-        <button
-          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-muted/50 transition text-left"
-          onClick={() => onEdit(customer)}
-        >
-          <Pencil className="h-4 w-4 text-muted-foreground shrink-0" />
-          정보 수정
-        </button>
+        <>
+          <div className="border-t my-1" />
+          <button
+            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-muted/50 transition text-left"
+            onClick={() => onEdit(customer)}
+          >
+            <Pencil className="h-4 w-4 text-muted-foreground shrink-0" />
+            정보 수정
+          </button>
+        </>
       )}
     </div>
   );

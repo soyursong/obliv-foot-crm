@@ -76,6 +76,8 @@ import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import { CustomerHoverCard } from '@/components/CustomerHoverCard';
 // T-20260514-foot-CHART2-OPEN-BUG (재오픈): Dashboard 진입경로 누락 수정
 import { CustomerChartSheet } from '@/components/CustomerChartSheet';
+// T-20260515-foot-CONTEXT-MENU-4ITEM: 진료차트 패널
+import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
@@ -1732,6 +1734,9 @@ export default function Dashboard() {
   const [customerMenu, setCustomerMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
   // T-20260514-foot-CHART2-OPEN-BUG (재오픈): Dashboard 카드 컨텍스트 메뉴 → 슬라이드 패널
   const [dashChartSheetId, setDashChartSheetId] = useState<string | null>(null);
+  // T-20260515-foot-CONTEXT-MENU-4ITEM: 진료차트 패널 상태
+  const [medicalChartOpen, setMedicalChartOpen] = useState(false);
+  const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
   const [stageStartMap, setStageStartMap] = useState<Map<string, string>>(new Map());
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
   const [consentMap, setConsentMap] = useState<Map<string, ConsentEntry>>(new Map());
@@ -2898,14 +2903,10 @@ export default function Dashboard() {
     setSelectedCheckIn(ci);
   };
 
-  // T-20260515-foot-INITIAL-CHART-OPEN: 타임라인 초진 슬롯 전용 — 1번+2번 차트 동시 열림
-  // 상담대기/치료대기/완료(handleCardClick)는 1번만; 초진 타임라인은 2번도 자동 오픈
-  const handleTimelineCardClick = useCallback((ci: CheckIn) => {
-    setSelectedCheckIn(ci); // 1번 차트 (CheckInDetailSheet)
-    if (ci.visit_type === 'new' && ci.customer_id) {
-      setDashChartSheetId(ci.customer_id); // 2번 차트 (CustomerChartSheet)
-    }
-  }, []);
+  // T-20260515-foot-CHART2-REOPEN: handleTimelineCardClick 제거
+  // 원인: Dashboard 레벨에서 setDashChartSheetId(z-70)와 setSelectedCheckIn(z-50)을 동시 호출 →
+  //       CustomerChartSheet 백드롭(z-60)이 CheckInDetailSheet(z-50)를 덮어 2번차트 경로 충돌.
+  // 복구: 타임라인도 handleCardClick 사용. 초진 자동 열기는 CheckInDetailSheet 내부에서 처리.
 
   const handleCardContext = (ci: CheckIn, e: React.MouseEvent) => {
     setContextMenu({ checkIn: ci, pos: { x: e.clientX, y: e.clientY } });
@@ -2934,6 +2935,21 @@ export default function Dashboard() {
       },
     });
   }, [navigate]);
+
+  // T-20260515-foot-CONTEXT-MENU-4ITEM AC-2: 진료차트 열기
+  const handleOpenMedicalChart = useCallback((ci: CheckIn) => {
+    if (!ci.customer_id) {
+      toast.info('고객 정보가 연결되어 있지 않습니다');
+      return;
+    }
+    setMedicalChartCustomerId(ci.customer_id);
+    setMedicalChartOpen(true);
+  }, []);
+
+  // T-20260515-foot-CONTEXT-MENU-4ITEM AC-3: 수납 — PaymentMiniWindow 재사용
+  const handleOpenPaymentFromMenu = useCallback((ci: CheckIn) => {
+    setMiniPayTarget(ci);
+  }, []);
 
   const cardHandlersValue = useMemo<CardHandlers>(() => ({
     onNameContext: (ci, e) => setCustomerMenu({ checkIn: ci, pos: { x: e.clientX, y: e.clientY } }),
@@ -3955,7 +3971,7 @@ export default function Dashboard() {
             reservations={enrichedTimelineReservations}
             selfCheckIns={selfCheckIns}
             onSlotClick={handleQuickSlotClick}
-            onCardClick={!isPast ? handleTimelineCardClick : undefined}
+            onCardClick={!isPast ? handleCardClick : undefined}
             onCardContext={!isPast ? handleCardContext : undefined}
             onReservationClick={!isPast ? handleReservationCheckIn : undefined}
           />
@@ -4120,6 +4136,11 @@ export default function Dashboard() {
           setPaymentInitialMode(initialMode ?? 'single');
           setPaymentTarget(ci);
         }}
+        onOpenMedicalChart={(customerId) => {
+          setSelectedCheckIn(null);
+          setMedicalChartCustomerId(customerId);
+          setMedicalChartOpen(true);
+        }}
       />
 
       <PaymentDialog
@@ -4177,13 +4198,25 @@ export default function Dashboard() {
         position={customerMenu?.pos ?? null}
         onClose={() => setCustomerMenu(null)}
         onOpenChart={handleOpenChart}
+        onOpenMedicalChart={handleOpenMedicalChart}
         onNewReservation={handleNewReservation}
+        onOpenPayment={handleOpenPaymentFromMenu}
       />
 
       {/* T-20260514-foot-CHART2-OPEN-BUG (재오픈): Dashboard 진입경로 — createPortal 슬라이드 패널 */}
       <CustomerChartSheet
         customerId={dashChartSheetId}
         onClose={() => setDashChartSheetId(null)}
+      />
+
+      {/* T-20260515-foot-CONTEXT-MENU-4ITEM AC-2: 진료차트 패널 */}
+      <MedicalChartPanel
+        open={medicalChartOpen}
+        onOpenChange={(v) => { if (!v) { setMedicalChartOpen(false); setMedicalChartCustomerId(null); } }}
+        customerId={medicalChartCustomerId}
+        clinicId={clinic?.id ?? ''}
+        currentUserRole={profile?.role ?? ''}
+        currentUserEmail={profile?.email ?? null}
       />
     </div>
   );
