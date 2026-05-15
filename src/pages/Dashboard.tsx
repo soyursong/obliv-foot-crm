@@ -2959,12 +2959,18 @@ export default function Dashboard() {
     });
   }, [navigate]);
 
-  // T-20260515-foot-CONTEXT-MENU-4ITEM AC-2: 진료차트 열기
+  // T-20260516-foot-CHART-ROUTE-FIX: 진료차트 열기 — 경쟁 시트 닫기 후 MedicalChartPanel 열기
+  // 버그: CheckInDetailSheet(z-50) 또는 CustomerChartSheet(z-70)가 열린 상태에서
+  //       MedicalChartPanel(z-50)을 열면 뒤에 가려져 "Chart1(고객차트) 형식"으로 보임
+  // 수정: 경쟁 시트 먼저 닫고 MedicalChartPanel 단독 표시
   const handleOpenMedicalChart = useCallback((ci: CheckIn) => {
     if (!ci.customer_id) {
       toast.info('고객 정보가 연결되어 있지 않습니다');
       return;
     }
+    // 경쟁 시트 닫기 (T-20260516-foot-CHART-ROUTE-FIX AC-1)
+    setSelectedCheckIn(null);   // CheckInDetailSheet 닫기
+    setDashChartSheetId(null);  // CustomerChartSheet(Chart1) 닫기
     setMedicalChartCustomerId(ci.customer_id);
     setMedicalChartOpen(true);
   }, []);
