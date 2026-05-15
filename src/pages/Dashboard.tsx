@@ -378,6 +378,15 @@ function DraggableCard({
                 {checkIn.laser_minutes}분
               </Badge>
             )}
+            {/* T-20260516-foot-CONSULT-KANBAN-MISS AC-7: 상담실 실번호 카드 표시 */}
+            {checkIn.status === 'consultation' && checkIn.consultation_room && (
+              <Badge
+                data-testid="consultation-room-badge"
+                className="h-3.5 px-0.5 text-[9px] bg-indigo-100 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
+              >
+                {checkIn.consultation_room}
+              </Badge>
+            )}
             {checkIn.notes?.id_check_required && (
               <Badge variant="destructive" className="h-3.5 px-0.5 text-[9px]">신분증</Badge>
             )}
@@ -3058,6 +3067,42 @@ export default function Dashboard() {
     toast.success(`${STATUS_KO[newStatus]}(으)로 변경`);
   };
 
+  /** 상담실 번호 선택 후 status='consultation' + consultation_room 동시 업데이트
+   *  — T-20260516-foot-CONSULT-KANBAN-MISS AC-6
+   */
+  const handleContextConsultStatusChange = async (ci: CheckIn, consultRoom: string) => {
+    if (ci.id.startsWith('temp-')) {
+      toast.info('체크인 처리 중입니다. 잠시 후 다시 시도해주세요.');
+      return;
+    }
+    markRecentlyUpdated(ci.id);
+    let prevRow: CheckIn | undefined;
+    setRows((curr) => {
+      prevRow = curr.find((r) => r.id === ci.id);
+      return curr.map((r) =>
+        r.id === ci.id ? { ...r, status: 'consultation' as CheckInStatus, consultation_room: consultRoom } : r,
+      );
+    });
+    const patch: Record<string, unknown> = { status: 'consultation', consultation_room: consultRoom };
+    const { error } = await supabase.from('check_ins').update(patch).eq('id', ci.id);
+    if (error) {
+      setRows((curr) => curr.map((r) => (r.id === ci.id && prevRow ? prevRow : r)));
+      toast.error(`상태 변경 실패: ${error.message}`);
+      return;
+    }
+    {
+      const now = new Date().toISOString();
+      await supabase.from('status_transitions').insert({
+        check_in_id: ci.id,
+        clinic_id: ci.clinic_id,
+        from_status: ci.status,
+        to_status: 'consultation',
+      });
+      setStageStartMap((prev) => new Map(prev).set(ci.id, now));
+    }
+    toast.success(`${consultRoom} 입실`);
+  };
+
   /** 치료실 번호 선택 후 status='preconditioning' + treatment_room 동시 업데이트
    *  — T-20260511-foot-DASH-STAGE-ALL-SLOTS
    */
@@ -4279,6 +4324,7 @@ export default function Dashboard() {
 
       {/* T-20260504-foot-TABLET-LASER-ROOM-SELECT: laserRooms + 레이저실 번호 선택 */}
       {/* T-20260511-foot-DASH-STAGE-ALL-SLOTS: 전체 슬롯 표기 + 치료실 세부 선택 */}
+      {/* T-20260516-foot-CONSULT-KANBAN-MISS AC-6: 상담실 실번호 선택 */}
       <StatusContextMenu
         checkIn={contextMenu?.checkIn!}
         position={contextMenu?.pos ?? null}
@@ -4289,6 +4335,8 @@ export default function Dashboard() {
         onLaserStatusChange={handleContextLaserStatusChange}
         treatmentRooms={treatmentRooms.map((r) => r.name)}
         onTreatmentStatusChange={handleContextTreatmentStatusChange}
+        consultationRooms={consultRooms.map((r) => r.name)}
+        onConsultStatusChange={handleContextConsultStatusChange}
       />
 
       <CustomerQuickMenu
