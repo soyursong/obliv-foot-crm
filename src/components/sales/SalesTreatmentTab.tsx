@@ -2,9 +2,11 @@
  * T-20260515-foot-SALES-TAB-TREATMENT
  * 매출집계 탭3 — 시술별 통계
  *
- * AC-1: services.category 기준 대분류 아코디언
+ * AC-1: services.category_label(또는 category) 기준 대분류 아코디언
  * AC-2: 오더 건수 + 수납 기여액 + 매출 비중
- * AC-3: 복합 결제 안분 (service_charges.base_amount 비율)
+ * AC-3: 복합 결제 안분 — check_in_services.price 비율로 결제금액 안분
+ *        (service_charges는 보험청구 케이스에만 생성됨 →
+ *         항상 존재하는 check_in_services.price 로 비율 산출)
  *
  * READ-ONLY. DB 변경 없음.
  */
@@ -21,8 +23,14 @@ import type { SalesFilterState } from '@/components/sales/SalesFilterBar';
 // ─── 타입 ───────────────────────────────────────────────────────────────────
 
 interface CheckInService {
-  base_amount: number;
-  services: { name: string | null; category: string | null } | null;
+  /** check_in_services.price — 시술별 청구금액. 안분 비율 산출에 사용. */
+  price: number;
+  services: {
+    name: string | null;
+    category: string | null;
+    /** services.category_label — 한글 대분류명. null이면 category 폴백 */
+    category_label: string | null;
+  } | null;
 }
 
 interface PaymentWithServices {
@@ -49,6 +57,11 @@ interface TreatmentStat {
   revenue: number;
 }
 
+/** services 레코드에서 표시용 대분류명 결정 (category_label 우선, 없으면 category, 없으면 기타) */
+function resolveCategoryLabel(svc: CheckInService['services']): string {
+  return svc?.category_label ?? svc?.category ?? '기타';
+}
+
 // ─── 메인 컴포넌트 ──────────────────────────────────────────────────────────
 
 export function SalesTreatmentTab({ filter }: Props) {
@@ -56,7 +69,8 @@ export function SalesTreatmentTab({ filter }: Props) {
   const { from, to } = filter.dateRange;
   const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set());
 
-  // payments + service_charges join
+  // payments → check_ins → check_in_services(price) → services(name, category, category_label)
+  // 집계 기준: accounting_date (소급 차단)
   const { data: payments = [], isLoading: payLoading } = useQuery<PaymentWithServices[]>({
     queryKey: ['sales-treatment', clinic?.id, from, to],
     enabled: !!clinic,
@@ -67,8 +81,8 @@ export function SalesTreatmentTab({ filter }: Props) {
           id, amount, payment_type, status, accounting_date,
           check_ins(
             check_in_services(
-              base_amount,
-              services(name, category)
+              price,
+              services(name, category, category_label)
             )
           )
         `)
@@ -82,6 +96,8 @@ export function SalesTreatmentTab({ filter }: Props) {
   });
 
   // 시술별 집계 (복합결제 안분)
+  // AC-3: 복합결제 → check_in_services.price 비율로 결제금액 안분
+  //        안분 후 합계 = 원 결제금액 (부동소수 오차는 마지막 항목에 보정)
   const stats = useMemo<TreatmentStat[]>(() => {
     const map = new Map<string, TreatmentStat>();
 
@@ -90,13 +106,14 @@ export function SalesTreatmentTab({ filter }: Props) {
       const svcs = p.check_ins?.check_in_services ?? [];
       if (svcs.length === 0) continue;
 
-      const totalBase = svcs.reduce((s: number, cs: CheckInService) => s + (cs.base_amount ?? 0), 0);
+      // 안분 기준: price 합계 (0이면 균등 분배)
+      const totalBase = svcs.reduce((s: number, cs: CheckInService) => s + (cs.price ?? 0), 0);
 
       for (const cs of svcs) {
         const svc = cs.services;
         if (!svc?.name) continue;
         const key = svc.name;
-        const ratio = totalBase > 0 ? (cs.base_amount ?? 0) / totalBase : 1 / svcs.length;
+        const ratio = totalBase > 0 ? (cs.price ?? 0) / totalBase : 1 / svcs.length;
         const contrib = netAmt * ratio;
 
         const existing = map.get(key);
@@ -106,7 +123,7 @@ export function SalesTreatmentTab({ filter }: Props) {
         } else {
           map.set(key, {
             name: svc.name,
-            category: svc.category ?? '기타',
+            category: resolveCategoryLabel(svc),
             count: 1,
             revenue: contrib,
           });
@@ -143,7 +160,10 @@ export function SalesTreatmentTab({ filter }: Props) {
 
   if (payLoading) {
     return (
-      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+      <div
+        data-testid="sales-treatment-loading"
+        className="flex items-center justify-center py-16 text-sm text-muted-foreground"
+      >
         불러오는 중…
       </div>
     );
@@ -151,26 +171,39 @@ export function SalesTreatmentTab({ filter }: Props) {
 
   if (grouped.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed bg-muted/30 py-16 text-center">
+      <div
+        data-testid="sales-treatment-empty"
+        className="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed bg-muted/30 py-16 text-center"
+      >
         <span className="text-sm text-muted-foreground">해당 기간에 시술 데이터가 없습니다</span>
       </div>
     );
   }
 
   return (
-    <div className="space-y-2 text-xs">
+    <div
+      data-testid="sales-treatment-tab"
+      className="space-y-2 text-xs"
+    >
       {grouped.map(([cat, items]) => {
         const expanded = expandedCats.has(cat);
         const catTotal = items.reduce((s, x) => s + x.revenue, 0);
         const catCount = items.reduce((s, x) => s + x.count, 0);
         const pct = totalRevenue > 0 ? (catTotal / totalRevenue) * 100 : 0;
+        const safeKey = cat.replace(/\s+/g, '-');
 
         return (
-          <div key={cat} className="rounded-lg border bg-background">
+          <div
+            key={cat}
+            data-testid={`sales-treatment-category-${safeKey}`}
+            className="rounded-lg border bg-background"
+          >
             {/* 대분류 헤더 */}
             <button
+              data-testid={`sales-treatment-category-btn-${safeKey}`}
               className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-muted/40"
               onClick={() => toggleCat(cat)}
+              aria-expanded={expanded}
             >
               {expanded ? (
                 <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -187,7 +220,10 @@ export function SalesTreatmentTab({ filter }: Props) {
                   />
                 </div>
                 <span className="w-8 text-right text-muted-foreground">{pct.toFixed(1)}%</span>
-                <span className="w-24 text-right font-semibold tabular-nums">
+                <span
+                  data-testid={`sales-treatment-cat-total-${safeKey}`}
+                  className="w-24 text-right font-semibold tabular-nums"
+                >
                   {formatAmount(Math.round(catTotal))}원
                 </span>
               </div>
@@ -195,7 +231,10 @@ export function SalesTreatmentTab({ filter }: Props) {
 
             {/* 소분류 */}
             {expanded && (
-              <div className="border-t">
+              <div
+                data-testid={`sales-treatment-category-items-${safeKey}`}
+                className="border-t"
+              >
                 {items.map((item) => {
                   const itemPct = totalRevenue > 0 ? (item.revenue / totalRevenue) * 100 : 0;
                   return (
@@ -219,7 +258,10 @@ export function SalesTreatmentTab({ filter }: Props) {
       })}
 
       {/* 전체 합계 */}
-      <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2 font-semibold">
+      <div
+        data-testid="sales-treatment-total"
+        className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2 font-semibold"
+      >
         <span>전체 합계</span>
         <span className="tabular-nums">{formatAmount(Math.round(totalRevenue))}원</span>
       </div>
