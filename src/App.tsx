@@ -25,6 +25,7 @@ const DoctorTools = lazy(() => import('@/pages/DoctorTools'));
 const TreatmentTable = lazy(() => import('@/pages/TreatmentTable'));
 const TabletChecklistPage = lazy(() => import('@/pages/TabletChecklistPage'));
 const Notices = lazy(() => import('@/pages/Notices'));
+const Sales = lazy(() => import('@/pages/Sales'));
 // ClinicCalendar 풀페이지는 T-20260510-foot-CALENDAR-NOTICE AC v3에 따라 우측 사이드바로 대체됨.
 // 직접 URL 접근 시 대시보드로 리다이렉트.
 
@@ -86,6 +87,8 @@ function App() {
                 <Route path="doctor-tools" element={<RoleGuard roles={['admin', 'manager', 'director', 'therapist', 'technician', 'part_lead']}><DoctorTools /></RoleGuard>} />
                 <Route path="treatment-table" element={<TreatmentTable />} />
                 <Route path="notices" element={<Notices />} />
+                {/* T-20260515-foot-SALES-COMMON-DB: 매출집계 */}
+                <Route path="sales" element={<RoleGuard roles={['admin', 'manager']}><Sales /></RoleGuard>} />
                 {/* calendar 풀페이지 → 대시보드로 리다이렉트 (사이드바 패널로 대체) */}
                 <Route path="calendar" element={<Navigate to="/admin" replace />} />
               </Route>

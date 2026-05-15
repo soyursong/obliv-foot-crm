@@ -19,6 +19,7 @@ import {
   Table2,
   ChevronLeft,
   ChevronRight,
+  TrendingUp,
 } from 'lucide-react';
 import CalendarNoticePanel from '@/components/CalendarNoticePanel';
 import { supabase } from '@/lib/supabase';
@@ -47,6 +48,7 @@ const NAV_ITEMS: {
   { to: '/admin/services', label: '서비스관리', icon: Stethoscope, roles: ['admin', 'manager'] },
   { to: '/admin/doctor-tools', label: '진료 도구', icon: BookOpen, roles: ['admin', 'manager'] },
   { to: '/admin/treatment-table', label: '치료 테이블', icon: Table2 },
+  { to: '/admin/sales', label: '매출집계', icon: TrendingUp, roles: ['admin', 'manager'] },
   { to: '/admin/accounts', label: '계정관리', icon: ShieldCheck, roles: ['admin'] },
 ];
 
