@@ -1,5 +1,21 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-15 16:00 — dev-foot | deploy-ready | T-20260515-foot-RESPONSIVE-UI-SHELL Phase 0 완료
+
+**커밋: ade2a6b → origin/main push 완료**
+
+### 구현 내용
+- **Shell-1**: `Reservations.tsx` 시간축 `<th>/<td>` `sticky left-0` 추가 (모바일 수평 스크롤 방어)
+- **Shell-2**: `TabletFullscreenModal` 컴포넌트 신규 — 태블릿(>=769px) 슬롯/카드 탭 시 풀스크린 빈 모달 + slide-up 300ms 애니메이션
+- **E2E**: `tests/e2e/T-20260515-foot-RESPONSIVE-UI-SHELL.spec.ts` (Shell-1 AC-1/2/3 + Shell-2 AC-5~8 + 엣지)
+- DB 변경: 없음. 빌드: TypeScript OK
+
+### 다음 단계
+- supervisor QA 대기 (스테이징 링크 또는 GIF → 이광현 팀장 컨펌)
+- Shell-1+2 ✅ 컨펌 후 Phase 1 착수
+
+---
+
 ## 2026-05-15 09:20 — dev-foot | deploy-ready | T-20260514-foot-CHART2-OPEN-BUG (3차 재오픈 최종 수정)
 
 **커밋: 4f27020 → origin/main push 완료**
