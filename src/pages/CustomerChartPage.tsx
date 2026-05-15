@@ -34,6 +34,8 @@ import { useChartSheetClose } from '@/lib/chartSheetContext';
 import { PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 // T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
 import { NhisLookupPanel } from '@/components/insurance/NhisLookupPanel';
+// T-20260515-foot-DOC-REISSUE-BTN: 서류 발급 이력 표시용 메타
+import { FORM_META } from '@/lib/formTemplates';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
@@ -528,7 +530,7 @@ export default function CustomerChartPage() {
   const [docReissueCheckIn, setDocReissueCheckIn] = useState<CheckIn | null>(null);
   const [prescriptions, setPrescriptions] = useState<PrescriptionRow[]>([]);
   const [consentEntries, setConsentEntries] = useState<{ form_type: string; signed_at: string }[]>([]);
-  const [submissionEntries, setSubmissionEntries] = useState<{ template_key?: string; printed_at: string }[]>([]);
+  const [submissionEntries, setSubmissionEntries] = useState<{ check_in_id: string; template_key?: string; printed_at: string }[]>([]);
   // T-20260430-foot-PRESCREEN-CHECKLIST: 사전 체크리스트 응답
   const [checklistEntries, setChecklistEntries] = useState<{
     id: string;
@@ -789,7 +791,7 @@ export default function CustomerChartPage() {
             .order('signed_at', { ascending: false }),
           supabase
             .from('form_submissions')
-            .select('template_key, printed_at')
+            .select('check_in_id, template_key, printed_at')
             .in('check_in_id', checkInIds)
             .order('printed_at', { ascending: false })
             .limit(30),
@@ -804,7 +806,7 @@ export default function CustomerChartPage() {
         ]);
         setPrescriptions((rxRes.data ?? []) as PrescriptionRow[]);
         setConsentEntries((consentRes.data ?? []) as { form_type: string; signed_at: string }[]);
-        setSubmissionEntries((subRes.data ?? []) as { template_key?: string; printed_at: string }[]);
+        setSubmissionEntries((subRes.data ?? []) as { check_in_id: string; template_key?: string; printed_at: string }[]);
         setChecklistEntries((clRes.data ?? []) as { id: string; completed_at: string | null; started_at: string; checklist_data: Record<string, unknown> }[]);
       }
 
@@ -2638,35 +2640,59 @@ export default function CustomerChartPage() {
                   const dateStr = format(new Date(ci.checked_in_at), 'yyyy-MM-dd');
                   const timeStr = format(new Date(ci.checked_in_at), 'HH:mm');
                   const treatContent = ci.treatment_kind ?? (ci.consultation_done ? '상담' : '');
+                  // T-20260515-foot-DOC-REISSUE-BTN AC-2: 이 진료건에 발급된 서류 목록
+                  const ciSubs = submissionEntries.filter((s) => s.check_in_id === ci.id);
                   return (
                     <div
                       key={ci.id}
                       className={cn(
-                        'flex items-center gap-2 rounded border px-2 py-1.5',
+                        'rounded border px-2 py-1.5 space-y-1',
                         isCancelled && 'opacity-60',
                       )}
                     >
-                      <span className={cn('tabular-nums shrink-0', isCancelled && 'line-through text-muted-foreground')}>
-                        {dateStr}
-                      </span>
-                      <span className="tabular-nums shrink-0 text-muted-foreground">{timeStr}</span>
-                      {isCancelled && (
-                        <Badge variant="destructive" className="text-[9px] px-1 py-0">취소</Badge>
-                      )}
-                      <span className="flex-1 truncate">{treatContent || '—'}</span>
-                      <button
-                        disabled={isCancelled}
-                        onClick={() => setDocReissueCheckIn(ci)}
-                        className={cn(
-                          'flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium transition',
-                          isCancelled
-                            ? 'border-muted text-muted-foreground cursor-not-allowed'
-                            : 'border-teal-300 bg-teal-50 text-teal-700 hover:bg-teal-100',
+                      {/* 상단 행: 날짜·시간·취소·시술명·재발급 버튼 */}
+                      <div className="flex items-center gap-2">
+                        <span className={cn('tabular-nums shrink-0', isCancelled && 'line-through text-muted-foreground')}>
+                          {dateStr}
+                        </span>
+                        <span className="tabular-nums shrink-0 text-muted-foreground">{timeStr}</span>
+                        {isCancelled && (
+                          <Badge variant="destructive" className="text-[9px] px-1 py-0">취소</Badge>
                         )}
-                      >
-                        <FileText className="h-3 w-3" />
-                        서류 재발급
-                      </button>
+                        <span className="flex-1 truncate">{treatContent || '—'}</span>
+                        <button
+                          disabled={isCancelled}
+                          onClick={() => setDocReissueCheckIn(ci)}
+                          className={cn(
+                            'flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium transition shrink-0',
+                            isCancelled
+                              ? 'border-muted text-muted-foreground cursor-not-allowed'
+                              : 'border-teal-300 bg-teal-50 text-teal-700 hover:bg-teal-100',
+                          )}
+                        >
+                          <FileText className="h-3 w-3" />
+                          서류 재발급
+                        </button>
+                      </div>
+                      {/* 하단 행: 서류출력내용 (AC-2) */}
+                      {ciSubs.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pl-1">
+                          {ciSubs.map((s, i) => {
+                            const meta = s.template_key ? FORM_META[s.template_key] : undefined;
+                            const label = meta?.description ?? s.template_key ?? '서류';
+                            return (
+                              <span
+                                key={i}
+                                className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-600"
+                                title={`발급: ${format(new Date(s.printed_at), 'yyyy-MM-dd HH:mm')}`}
+                              >
+                                <Printer className="h-2.5 w-2.5 shrink-0" />
+                                {label}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
