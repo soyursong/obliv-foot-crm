@@ -1,5 +1,23 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-16 06:35 — dev-foot | deploy-ready | T-20260516-foot-HEALER-RESV-BTN
+
+**커밋: da4b503 → origin/main push 완료**
+
+### 구현 내용 (AC-1 ~ AC-7 전체)
+- **AC-1** `CustomerChartPage.tsx`: 2번차트 회차차감 영역 하단 [힐러예약] 버튼 배치
+- **AC-2** `CustomerChartPage.tsx`: handleHealerFlag — 다음 예약 조회 + healer_flag 토글 + 성공/실패 토스트
+- **AC-3** `Dashboard.tsx`: fetchCheckIns 내 healer_flag=true 당일 예약 → 자동 HL(yellow) 적용
+- **AC-4/5** `Dashboard.tsx`: status_flag null/'white' 인 체크인만 대상 → 수동 오버라이드 우선 + 기존 플래그 보존
+- **AC-6** `CustomerChartPage.tsx`: 버튼 활성(파랑)/비활성(앰버) 토글 + 날짜 tooltip
+- **AC-7** `Dashboard.tsx`: healer_flag reset BEFORE HL apply → 1회성 소모 보장
+- **픽스** `Dashboard.tsx`: healer_flag 쿼리에 clinic_id 격리 추가 (멀티클리닉 데이터 격리)
+- **DB**: `supabase/migrations/20260519000020_healer_flag.sql` — reservations.healer_flag boolean DEFAULT false (적용 완료)
+- **E2E**: `tests/e2e/T-20260516-foot-HEALER-RESV-BTN.spec.ts` (7 AC spec, TS clean)
+- **빌드**: TypeScript noEmit 통과 · DB column 존재 확인 완료
+
+---
+
 ## 2026-05-16 01:30 — dev-foot | deploy-ready | T-20260515-foot-RECEIPT-TAX-SPLIT
 
 **커밋: 6ff1114 → origin/main push 완료**
