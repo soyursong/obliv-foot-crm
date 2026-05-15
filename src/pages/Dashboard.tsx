@@ -2898,6 +2898,15 @@ export default function Dashboard() {
     setSelectedCheckIn(ci);
   };
 
+  // T-20260515-foot-INITIAL-CHART-OPEN: 타임라인 초진 슬롯 전용 — 1번+2번 차트 동시 열림
+  // 상담대기/치료대기/완료(handleCardClick)는 1번만; 초진 타임라인은 2번도 자동 오픈
+  const handleTimelineCardClick = useCallback((ci: CheckIn) => {
+    setSelectedCheckIn(ci); // 1번 차트 (CheckInDetailSheet)
+    if (ci.visit_type === 'new' && ci.customer_id) {
+      setDashChartSheetId(ci.customer_id); // 2번 차트 (CustomerChartSheet)
+    }
+  }, []);
+
   const handleCardContext = (ci: CheckIn, e: React.MouseEvent) => {
     setContextMenu({ checkIn: ci, pos: { x: e.clientX, y: e.clientY } });
   };
@@ -3946,7 +3955,7 @@ export default function Dashboard() {
             reservations={enrichedTimelineReservations}
             selfCheckIns={selfCheckIns}
             onSlotClick={handleQuickSlotClick}
-            onCardClick={!isPast ? handleCardClick : undefined}
+            onCardClick={!isPast ? handleTimelineCardClick : undefined}
             onCardContext={!isPast ? handleCardContext : undefined}
             onReservationClick={!isPast ? handleReservationCheckIn : undefined}
           />
