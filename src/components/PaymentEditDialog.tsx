@@ -40,11 +40,24 @@ export interface PaymentRowForEdit {
   clinic_id?: string | null;
 }
 
+/**
+ * T-20260515-foot-PAYMENT-EDIT-REFLECT
+ * onDone에 업데이트 데이터를 전달해 호출 측에서 즉각적인 낙관적 상태 업데이트를 할 수 있게 함.
+ */
+export interface PaymentDonePayload {
+  id: string;
+  amount?: number;
+  method?: string;
+  installment?: number | null;
+  status?: string;
+}
+
 interface Props {
   payment: PaymentRowForEdit | null;
   mode: EditMode;
   onClose: () => void;
-  onDone: () => void;
+  /** updated가 있으면 낙관적 업데이트에 사용. 없으면 단순 refresh. */
+  onDone: (updated?: PaymentDonePayload) => void;
 }
 
 const METHOD_OPTIONS: { value: PayMethod; label: string }[] = [
@@ -138,7 +151,13 @@ export function PaymentEditDialog({ payment, mode, onClose, onDone }: Props) {
 
       await insertAudit({ action: 'edit', before, after, actor });
       toast.success('수정 완료');
-      onDone();
+      // T-20260515-foot-PAYMENT-EDIT-REFLECT: 업데이트된 값 전달 → 호출 측 낙관적 업데이트
+      onDone({
+        id: payment.id,
+        amount: newAmount,
+        method,
+        installment: method === 'card' && installment > 0 ? installment : null,
+      });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       toast.error(`수정 실패: ${msg}`);
@@ -176,7 +195,8 @@ export function PaymentEditDialog({ payment, mode, onClose, onDone }: Props) {
         reason: reason.trim(),
       });
       toast.success('취소 완료');
-      onDone();
+      // T-20260515-foot-PAYMENT-EDIT-REFLECT: 취소 상태 전달 → 호출 측 낙관적 업데이트
+      onDone({ id: payment.id, status: 'cancelled' });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       toast.error(`취소 실패: ${msg}`);
@@ -214,7 +234,8 @@ export function PaymentEditDialog({ payment, mode, onClose, onDone }: Props) {
         reason: reason.trim(),
       });
       toast.success('삭제 완료');
-      onDone();
+      // T-20260515-foot-PAYMENT-EDIT-REFLECT: 삭제 상태 전달 → 호출 측 낙관적 업데이트
+      onDone({ id: payment.id, status: 'deleted' });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       toast.error(`삭제 실패: ${msg}`);
