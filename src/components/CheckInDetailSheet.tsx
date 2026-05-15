@@ -541,6 +541,10 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setChartNumber(null);
     setResolvedCustomerId(null);
     setLatestCheckIn(null);
+    // T-20260515-foot-CHART2-REOPEN 4차 fix: 환자 전환 시 stale chartSheetId 초기화
+    // 이전 환자의 2번차트가 새 환자에게 잘못 표시되는 문제 방지.
+    // 초진 자동 오픈은 아래 useEffect(checkIn?.id)에서 reset 이후 재설정.
+    setChartSheetId(null);
     if (checkIn) {
       setConsultationDone(checkIn.consultation_done ?? false);
       setTreatmentKind(checkIn.treatment_kind ?? '');
