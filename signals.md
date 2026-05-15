@@ -1,5 +1,29 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-15 09:20 — dev-foot | deploy-ready | T-20260514-foot-CHART2-OPEN-BUG (3차 재오픈 최종 수정)
+
+**커밋: 4f27020 → origin/main push 완료**
+
+### WSOD root cause & fix
+- **원인**: `b6803ae`가 `NhisLookupPanel` import 커밋 but 파일 미커밋 → Vercel build "module not found" 실패 → 구 deployment 서빙 → 전체 WSOD
+- **수정**: `src/components/insurance/NhisLookupPanel.tsx` git add & commit → Vercel build 정상화
+
+### Customers.tsx fix (AC-6, AC-7)
+- `openChart()` 모듈 레벨 `window.open()` 제거
+- `chart2Id` state + `setChart2Id(customerId)` + `<CustomerChartSheet>` JSX 추가
+- 4개 진입경로 모두 DrawerSheet 방식: Dashboard / CheckInDetailSheet / Customers / URL직접
+
+### AC 충족 요약
+- AC-6: Customers.tsx → DrawerSheet 2번차트 열림 ✅
+- AC-7: 전 진입경로 DrawerSheet 방식 확인 ✅
+- AC-8: 앱 전체 정상 렌더링 복구 (NhisLookupPanel 커밋) ✅
+- AC-9: Vercel build error 해소 ✅
+- AC-10: JS 런타임 에러 0건 ✅
+
+### DB 변경: 없음 | TSC: pass | E2E exempt (bugfix)
+
+---
+
 ## 2026-05-14 — dev-foot | deploy-ready | T-20260514-foot-C2-PAYMENT-SYNC — [P2] 2번차트 수납내역 3건 개선
 
 **커밋: 5bc003c (E2E spec) + a704378 (feat) → origin/main push 완료**
