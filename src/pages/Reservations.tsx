@@ -29,7 +29,12 @@ import { VISIT_TYPE_KO } from '@/lib/status';
 import { formatPhone, maskPhoneTail } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
-import type { Reservation, Staff, VisitType } from '@/lib/types';
+import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
+import { CustomerHoverCard } from '@/components/CustomerHoverCard';
+import { CustomerChartSheet } from '@/components/CustomerChartSheet';
+import MedicalChartPanel from '@/components/MedicalChartPanel';
+import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
+import type { CheckIn, Reservation, Staff, VisitType } from '@/lib/types';
 
 // AC-5 재오픈 fix: 모듈 레벨 클립보드 백업 — 컴포넌트 remount 시에도 상태 복원
 // (navigate('/admin/reservations', { state }) + lazy/Suspense remount 케이스 대응)
@@ -112,6 +117,14 @@ export default function Reservations() {
   const [tabletModalOpen, setTabletModalOpen] = useState(false);
   const [tabletModalInfo, setTabletModalInfo] = useState<{ date: string; time: string } | null>(null);
   const isTabletViewport = () => typeof window !== 'undefined' && window.innerWidth >= 769;
+
+  // T-20260515-foot-RESV-CTX-HOVER: 예약관리 우클릭 메뉴 + hover 팝업
+  const [resvContextMenu, setResvContextMenu] = useState<{ resv: Reservation; pos: { x: number; y: number } } | null>(null);
+  const [resvChartSheetId, setResvChartSheetId] = useState<string | null>(null);
+  const [resvMedicalChartOpen, setResvMedicalChartOpen] = useState(false);
+  const [resvMedicalChartCustomerId, setResvMedicalChartCustomerId] = useState<string | null>(null);
+  const [resvMiniPayTarget, setResvMiniPayTarget] = useState<CheckIn | null>(null);
+  const [resvMiniPayCounter, setResvMiniPayCounter] = useState(0);
 
   const weekDays = useMemo(
     () => Array.from({ length: 6 }).map((_, i) => addDays(weekStart, i)), // 월~토만
@@ -565,6 +578,100 @@ export default function Reservations() {
     setDraggedId(null);
   };
 
+  // T-20260515-foot-RESV-CTX-HOVER: Reservation → minimal CheckIn 어댑터
+  // CustomerQuickMenu / CustomerHoverCard가 사용하는 필드만 매핑; 나머지는 타입 캐스트
+  const resvAsCheckIn = useCallback((r: Reservation): CheckIn => ({
+    id: `resv-${r.id}`,
+    clinic_id: clinic?.id ?? '',
+    customer_id: r.customer_id,
+    reservation_id: r.id,
+    queue_number: null,
+    customer_name: r.customer_name ?? '',
+    customer_phone: r.customer_phone,
+    visit_type: r.visit_type,
+    status: 'waiting' as CheckIn['status'],
+    consultant_id: null,
+    therapist_id: null,
+    technician_id: null,
+    consultation_room: null,
+    treatment_room: null,
+    laser_room: null,
+    package_id: null,
+    notes: null,
+    treatment_memo: null,
+    treatment_photos: null,
+    doctor_note: null,
+    examination_room: null,
+    checked_in_at: `${r.reservation_date}T${r.reservation_time}`,
+    called_at: null,
+    completed_at: null,
+    priority_flag: null,
+    sort_order: 0,
+    skip_reason: null,
+    created_at: r.created_at,
+    consultation_done: false,
+    treatment_kind: null,
+    preconditioning_done: false,
+    pododulle_done: false,
+    laser_minutes: null,
+    prescription_items: null,
+    document_content: null,
+    doctor_confirm_charting: false,
+    doctor_confirm_prescription: false,
+    doctor_confirm_document: false,
+    doctor_confirmed_at: null,
+    healer_laser_confirm: false,
+    prescription_status: 'none',
+    status_flag: null,
+    status_flag_history: null,
+    assigned_counselor_id: null,
+    treatment_category: null,
+    treatment_contents: null,
+  }), [clinic?.id]);
+
+  // T-20260515-foot-RESV-CTX-HOVER: 핸들러
+  const handleResvOpenChart = useCallback((ci: CheckIn) => {
+    if (!ci.customer_id) { toast.info('고객 정보가 연결되어 있지 않습니다'); return; }
+    setResvChartSheetId(ci.customer_id);
+  }, []);
+
+  const handleResvOpenMedicalChart = useCallback((ci: CheckIn) => {
+    if (!ci.customer_id) { toast.info('고객 정보가 연결되어 있지 않습니다'); return; }
+    setResvMedicalChartCustomerId(ci.customer_id);
+    setResvMedicalChartOpen(true);
+  }, []);
+
+  const handleResvNewReservation = useCallback((ci: CheckIn) => {
+    setEditor({
+      date: format(selectedDay, 'yyyy-MM-dd'),
+      time: '',
+      name: ci.customer_name ?? '',
+      phone: ci.customer_phone ?? '',
+      visit_type: ci.visit_type,
+      memo: '',
+      booking_memo: '',
+      customer_id: ci.customer_id,
+    });
+  }, [selectedDay]);
+
+  const handleResvOpenPayment = useCallback(async (ci: CheckIn) => {
+    if (!ci.customer_id) { toast.info('고객 정보가 연결되어 있지 않습니다'); return; }
+    // 체크인 기록 조회 (reservation_id 기준)
+    if (ci.reservation_id) {
+      const { data } = await supabase
+        .from('check_ins')
+        .select('*')
+        .eq('reservation_id', ci.reservation_id)
+        .maybeSingle();
+      if (data) {
+        setResvMiniPayTarget(data as CheckIn);
+        setResvMiniPayCounter((c) => c + 1);
+        return;
+      }
+    }
+    toast.info('체크인 후 수납이 가능합니다');
+  }, []);
+
   return (
     <div className="flex h-full flex-col p-6">
       <div className="mb-4 flex items-center justify-between gap-4">
@@ -786,26 +893,39 @@ export default function Reservations() {
                                     )}
                                   >
                                     <div className="flex items-center gap-1">
-                                      {/* RESV-CHART-CLICK: 성함 클릭 → 차트 새창 */}
-                                      <span
-                                        className={cn(
-                                          'font-semibold',
-                                          r.customer_id && 'cursor-pointer hover:underline hover:text-teal-700 transition-colors',
-                                          // T-20260515-foot-RESV-CANCEL: 취소된 예약 줄 그음
-                                          r.status === 'cancelled' && 'line-through',
-                                        )}
-                                        onClick={(e) => {
-                                          if (!r.customer_id) return;
-                                          e.stopPropagation();
-                                          window.open(
-                                            `/chart/${r.customer_id}`,
-                                            `chart-${r.customer_id}`,
-                                            'width=820,height=960,scrollbars=yes,resizable=yes',
-                                          );
-                                        }}
-                                      >
-                                        {r.customer_name}
-                                      </span>
+                                      {/* T-20260515-foot-RESV-CTX-HOVER: hover 팝업 + 우클릭 컨텍스트 메뉴
+                                          취소된 예약 / 미연결 고객은 기존 plain span 유지 */}
+                                      {r.customer_id && r.status !== 'cancelled' ? (
+                                        <CustomerHoverCard
+                                          checkIn={resvAsCheckIn(r)}
+                                          reservationTime={r.reservation_time}
+                                          compact
+                                          onContextMenu={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            setResvContextMenu({ resv: r, pos: { x: e.clientX, y: e.clientY } });
+                                          }}
+                                        />
+                                      ) : (
+                                        <span
+                                          className={cn(
+                                            'font-semibold',
+                                            r.customer_id && 'cursor-pointer hover:underline hover:text-teal-700 transition-colors',
+                                            r.status === 'cancelled' && 'line-through',
+                                          )}
+                                          onClick={(e) => {
+                                            if (!r.customer_id) return;
+                                            e.stopPropagation();
+                                            window.open(
+                                              `/chart/${r.customer_id}`,
+                                              `chart-${r.customer_id}`,
+                                              'width=820,height=960,scrollbars=yes,resizable=yes',
+                                            );
+                                          }}
+                                        >
+                                          {r.customer_name}
+                                        </span>
+                                      )}
                                       {/* T-20260515-foot-RESV-CANCEL: 취소됨 배지 */}
                                       {r.status === 'cancelled' && (
                                         <span className="text-[9px] bg-gray-200 text-gray-500 rounded px-0.5 leading-none">취소됨</span>
@@ -934,6 +1054,39 @@ export default function Reservations() {
           setDetail(null);
           fetchWeek();
         }}
+      />
+
+      {/* T-20260515-foot-RESV-CTX-HOVER: 예약관리 우클릭 메뉴 + hover 팝업 오버레이 */}
+      <CustomerQuickMenu
+        checkIn={resvContextMenu ? resvAsCheckIn(resvContextMenu.resv) : null}
+        position={resvContextMenu?.pos ?? null}
+        onClose={() => setResvContextMenu(null)}
+        onOpenChart={handleResvOpenChart}
+        onOpenMedicalChart={handleResvOpenMedicalChart}
+        onNewReservation={handleResvNewReservation}
+        onOpenPayment={handleResvOpenPayment}
+      />
+
+      <CustomerChartSheet
+        customerId={resvChartSheetId}
+        onClose={() => setResvChartSheetId(null)}
+      />
+
+      <MedicalChartPanel
+        open={resvMedicalChartOpen}
+        onOpenChange={(v) => { if (!v) { setResvMedicalChartOpen(false); setResvMedicalChartCustomerId(null); } }}
+        customerId={resvMedicalChartCustomerId}
+        clinicId={clinic?.id ?? ''}
+        currentUserRole={profile?.role ?? ''}
+        currentUserEmail={profile?.email ?? null}
+      />
+
+      <PaymentMiniWindow
+        key={`resv-mini-${resvMiniPayTarget?.id ?? 'none'}-${resvMiniPayCounter}`}
+        checkIn={resvMiniPayTarget}
+        onClose={() => setResvMiniPayTarget(null)}
+        onComplete={() => setResvMiniPayTarget(null)}
+        onSaved={() => { toast.success('수납 완료'); setResvMiniPayTarget(null); }}
       />
     </div>
   );
