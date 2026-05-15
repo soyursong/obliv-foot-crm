@@ -43,6 +43,10 @@ import { useClinic } from '@/hooks/useClinic';
 import { toast } from 'sonner';
 import { BarChart2, Users, Layers, UserCheck, User } from 'lucide-react';
 import { SalesDailyTab } from '@/components/sales/SalesDailyTab';
+import { SalesPatientTab } from '@/components/sales/SalesPatientTab';
+import { SalesTreatmentTab } from '@/components/sales/SalesTreatmentTab';
+import { SalesDoctorTab } from '@/components/sales/SalesDoctorTab';
+import { SalesStaffTab } from '@/components/sales/SalesStaffTab';
 
 // 탭 정의
 const SALES_TABS = [
@@ -54,19 +58,6 @@ const SALES_TABS = [
 ] as const;
 
 type SalesTabValue = (typeof SALES_TABS)[number]['value'];
-
-/** 개별 탭 미구현 플레이스홀더 */
-function TabPlaceholder({ label }: { label: string }) {
-  return (
-    <div
-      data-testid={`sales-placeholder-${label}`}
-      className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/30 py-20 text-center"
-    >
-      <span className="text-sm font-medium text-muted-foreground">{label}</span>
-      <span className="text-xs text-muted-foreground">개발 진행 중</span>
-    </div>
-  );
-}
 
 export default function Sales() {
   const clinic = useClinic();
@@ -138,22 +129,22 @@ export default function Sales() {
 
           {/* 환자별 — T-20260515-foot-SALES-TAB-PATIENT */}
           <TabsContent value="patient">
-            <TabPlaceholder label="환자별 (T-20260515-foot-SALES-TAB-PATIENT)" />
+            <SalesPatientTab filter={filter} />
           </TabsContent>
 
           {/* 시술별 — T-20260515-foot-SALES-TAB-TREATMENT */}
           <TabsContent value="treatment">
-            <TabPlaceholder label="시술별 (T-20260515-foot-SALES-TAB-TREATMENT)" />
+            <SalesTreatmentTab filter={filter} />
           </TabsContent>
 
           {/* 담당의별 — T-20260515-foot-SALES-TAB-DOCTOR */}
           <TabsContent value="doctor">
-            <TabPlaceholder label="담당의별 (T-20260515-foot-SALES-TAB-DOCTOR)" />
+            <SalesDoctorTab filter={filter} />
           </TabsContent>
 
           {/* 담당직원별 — T-20260515-foot-SALES-TAB-STAFF */}
           <TabsContent value="staff">
-            <TabPlaceholder label="담당직원별 (T-20260515-foot-SALES-TAB-STAFF)" />
+            <SalesStaffTab filter={filter} />
           </TabsContent>
         </Tabs>
       </div>
