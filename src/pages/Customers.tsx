@@ -999,6 +999,7 @@ function CustomerContextMenu({ customer, x, y, onClose, onOpenChart, onOpenMedic
         className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-teal-50 transition text-left"
         onClick={() => {
           onClose();
+          // LOGIC-LOCK: L-002 — 변경 시 현장 승인 필수
           navigate('/admin/reservations', {
             state: {
               openReservationFor: {
