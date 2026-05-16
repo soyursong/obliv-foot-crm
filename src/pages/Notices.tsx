@@ -41,7 +41,7 @@ export default function Notices() {
   const [formPinned, setFormPinned] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const fetchNotices = useCallback(async () => {
+  const fetchNotices = useCallback(async (forceOverwrite = false) => {
     if (!clinic) return;
     setLoading(true);
     const { data, error } = await supabase
@@ -53,12 +53,23 @@ export default function Notices() {
     if (error) {
       toast.error('공지사항 불러오기 실패: ' + error.message);
     } else {
-      setNotices((data ?? []) as Notice[]);
+      // T-20260516-foot-NOTICE-SAVE-FAIL: SELECT RLS 미적용 상태에서 0건이 반환돼도
+      // forceOverwrite=false(CRUD 후 동기화 용)이면 기존 state 유지
+      // forceOverwrite=true(초기 로드)이면 항상 덮어씀
+      const fetched = (data ?? []) as Notice[];
+      setNotices(prev => {
+        if (!forceOverwrite && fetched.length === 0 && prev.length > 0) {
+          // RLS로 인한 빈 결과로 추정 — 로컬 state 유지
+          return prev;
+        }
+        return fetched;
+      });
     }
     setLoading(false);
   }, [clinic]);
 
-  useEffect(() => { fetchNotices(); }, [fetchNotices]);
+  // 초기 로드: forceOverwrite=true (DB 결과 그대로 덮어씀)
+  useEffect(() => { fetchNotices(true); }, [fetchNotices]);
 
   const openNew = () => {
     setEditingId('new');
