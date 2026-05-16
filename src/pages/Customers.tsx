@@ -16,9 +16,9 @@
  *   window.open() 팝업 차단 시 2번차트 안열리는 버그 해소.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { BookOpen, CreditCard, ExternalLink, Pencil, Plus, Search, Stethoscope, Trash2 } from 'lucide-react';
+import { BookOpen, CalendarPlus, CreditCard, ExternalLink, Pencil, Plus, Search, Stethoscope, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -932,7 +932,7 @@ function CreateCustomerDialog({
 
 // ─── T-20260510-foot-CUSTMGMT-CHART-PATTERN: 우클릭 컨텍스트 메뉴 ─────────────
 // T-20260515-foot-CONTEXT-MENU-4ITEM AC-4: 4항목으로 확장
-// 순서: 고객차트 → 진료차트 → 예약하기(미지원) → 수납(안내 토스트) → 정보수정
+// 순서: 고객차트 → 진료차트 → 예약하기(예약관리 전환+자동채움) → 수납(안내 토스트) → 정보수정
 
 interface CustomerContextMenuProps {
   customer: Customer;
@@ -947,6 +947,7 @@ interface CustomerContextMenuProps {
 
 function CustomerContextMenu({ customer, x, y, onClose, onOpenChart, onOpenMedicalChart, onEdit, isAdmin }: CustomerContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -993,15 +994,24 @@ function CustomerContextMenu({ customer, x, y, onClose, onOpenChart, onOpenMedic
         진료차트
       </button>
 
-      {/* 3. 예약하기 — 예약 페이지로 이동 */}
+      {/* 3. 예약하기 — T-20260516-foot-RESV-ROUTE-FIX: navigate + 고객 자동채움 */}
       <button
         className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-teal-50 transition text-left"
         onClick={() => {
-          toast('예약 페이지에서 해당 고객을 검색해 예약하세요');
           onClose();
+          navigate('/admin/reservations', {
+            state: {
+              openReservationFor: {
+                customer_id: customer.id,
+                name: customer.name,
+                phone: customer.phone ?? '',
+                visit_type: customer.visit_type,
+              },
+            },
+          });
         }}
       >
-        <ExternalLink className="h-4 w-4 text-teal-600 shrink-0" />
+        <CalendarPlus className="h-4 w-4 text-teal-600 shrink-0" />
         예약하기
       </button>
 
