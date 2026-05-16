@@ -94,6 +94,14 @@ export const AUTO_BIND_KEYS = [
   'clinic_name',
   'clinic_address',
   'issue_date',
+  // T-20260516-foot-CLINIC-DOC-INFO: 원장·병원 상세 정보
+  'doctor_license_no',
+  'doctor_specialist_no',
+  'doctor_seal_image',
+  'clinic_business_no',
+  'clinic_phone',
+  'clinic_established_date',
+  'business_reg_no',   // 하위 호환 alias
 ] as const;
 
 export type AutoBindKey = (typeof AUTO_BIND_KEYS)[number];
