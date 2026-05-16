@@ -37,7 +37,7 @@ import { NhisLookupPanel } from '@/components/insurance/NhisLookupPanel';
 // T-20260515-foot-DOC-REISSUE-BTN: 서류 발급 이력 표시용 메타
 import { FORM_META } from '@/lib/formTemplates';
 // T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 삽입 헬퍼
-import { insertReservationMemo } from '@/components/ReservationMemoTimeline';
+import { ReservationMemoTimeline, insertReservationMemo } from '@/components/ReservationMemoTimeline';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
@@ -550,10 +550,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260507-foot-CHART2-FULL-LAYOUT: 탭 네비게이션 (전능CRM 이중 탭)
   const [chartTab, setChartTab] = useState<string>('checklist');
   const [chartTabGroup, setChartTabGroup] = useState<'clinical' | 'history'>('clinical');
-  // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 인라인 편집
-  const [editingCustomerMemo, setEditingCustomerMemo] = useState(false);
-  const [customerMemoText, setCustomerMemoText] = useState('');
-  const customerMemoRef = useRef<HTMLTextAreaElement>(null);
   // T-20260511-foot-C2-INSURANCE-AUTO-CALC: 건보 자격등급 변경 감지 트리거
   const [insuranceGradeRefreshKey, setInsuranceGradeRefreshKey] = useState(0);
   // T-20260512-foot-TREATMENT-SET: 진료세트 선택 상태
@@ -692,7 +688,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         .single();
       if (!custData) { setLoading(false); return; }
       setCustomer(custData as Customer);
-      setCustomerMemoText((custData as Customer).customer_memo ?? '');
       setAddressText((custData as Customer).address ?? '');
       setAddressDetailText((custData as Customer).address_detail ?? '');
       setEmailText((custData as Customer).customer_email ?? '');
@@ -901,7 +896,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         supabase.from('customers').select('*').eq('id', customerId).single().then(({ data }) => {
           if (!data) return;
           setCustomer(data as Customer);
-          setCustomerMemoText((data as Customer).customer_memo ?? '');
           setResvDetailForm((f) => ({
             ...f,
             memo: (data as Customer).customer_memo ?? '',
@@ -1040,7 +1034,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         }
         patch.phone = `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
       }
-      if (editingCustomerMemo) patch.customer_memo = customerMemoText.trim() || null;
       if (Object.keys(patch).length > 0) {
         const { error } = await supabase.from('customers').update(patch).eq('id', customer.id);
         if (error) { toast.error(`저장 실패: ${error.message}`); return; }
@@ -1067,7 +1060,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       // 4) 모든 편집 상태 닫기 + isDirty 리셋
       // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: setEditingEmail/setEditingPassport/setEditingAddress 제거
       setEditingPhone(false);
-      setEditingCustomerMemo(false);
       setIsDirty(false);
     } finally {
       setSavingInfoPanel(false);
@@ -2150,44 +2142,19 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
                 {/* ⑫ 예약메모 삭제됨 — AC-6: 예약메모는 2번차트 1구역(예약내역 패널)에서만 표시 (T-20260512-foot-RESV-MGMT-OVERHAUL) */}
 
-                {/* ⑬ 고객메모 (인라인 편집) */}
+                {/* ⑬ 예약메모 — T-20260516-foot-RESV-MEMO-C2-ROUTE: reservation_memo_history 연동 */}
                 <tr>
-                  <td className={cn(LC, 'align-top pt-2 border-b-0')}>고객메모</td>
+                  <td className={cn(LC, 'align-top pt-2 border-b-0')}>예약메모</td>
                   <td className={cn(VC, 'border-b-0')} colSpan={3}>
-                    {editingCustomerMemo ? (
-                      <div className="space-y-1">
-                        <Textarea
-                          ref={customerMemoRef}
-                          value={customerMemoText}
-                          onChange={(e) => { setCustomerMemoText(e.target.value); setIsDirty(true); }}
-                          rows={3}
-                          className="text-xs"
-                          autoFocus
-                        />
-                        <div className="flex gap-1">
-                          <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => { setEditingCustomerMemo(false); setCustomerMemoText(customer.customer_memo ?? ''); }}>
-                            취소
-                          </Button>
-                        </div>
-                      </div>
+                    {reservations[0]?.id ? (
+                      <ReservationMemoTimeline
+                        reservationId={reservations[0].id}
+                        clinicId={customer?.clinic_id ?? ''}
+                        authorName={profile?.name ?? ''}
+                        compact
+                      />
                     ) : (
-                      <div className="flex items-start gap-1 min-h-[40px]">
-                        <div className="flex-1">
-                          {(customer.customer_memo ?? customer.memo) ? (
-                            <div className="text-xs whitespace-pre-wrap text-gray-700 line-clamp-4">{customer.customer_memo ?? customer.memo}</div>
-                          ) : (
-                            <span className="text-muted-foreground/50 text-[11px]">메모 없음</span>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => { setEditingCustomerMemo(true); setCustomerMemoText(customer.customer_memo ?? customer.memo ?? ''); setIsDirty(true); }}
-                          className="shrink-0 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-teal-700"
-                          title="고객메모 편집"
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </button>
-                      </div>
+                      <span className="text-muted-foreground/50 text-[11px]">연결된 예약 없음</span>
                     )}
                   </td>
                 </tr>
