@@ -20,7 +20,7 @@ test.describe('T-20260516 NOTICE-SAVE-FAIL 공지사항 등록 저장', () => {
   test('AC-1 + AC-2 + AC-3: 공지사항 정상 등록 — 저장 버튼 작동 + 목록 즉시 반영', async ({ page }) => {
     // 공지사항 메뉴 진입
     await page.goto('/admin/notices');
-    await expect(page.getByText('공지사항')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: '공지사항' })).toBeVisible({ timeout: 10_000 });
 
     // 새 공지 작성 버튼 클릭
     const newBtn = page.getByRole('button', { name: '새 공지' });
@@ -59,7 +59,7 @@ test.describe('T-20260516 NOTICE-SAVE-FAIL 공지사항 등록 저장', () => {
 
   test('AC-4: 제목 없이 저장 시 toast.error 노출', async ({ page }) => {
     await page.goto('/admin/notices');
-    await expect(page.getByText('공지사항')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: '공지사항' })).toBeVisible({ timeout: 10_000 });
 
     const newBtn = page.getByRole('button', { name: '새 공지' });
     await newBtn.click();
