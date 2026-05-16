@@ -71,6 +71,7 @@ interface ReservationDraft {
   memo: string;
   booking_memo: string;  // T-20260504-foot-MEMO-RESTRUCTURE: 예약 경로 확인용
   visit_route?: string;  // AC-5: 초진/예약없이방문 방문경로 (customers.visit_route에 저장)
+  referral_name?: string; // T-20260515-foot-REFERRAL-NAME: 지인소개 시 소개자 성함
   existingId?: string;
   service_id?: string | null;
   customer_id?: string | null;
@@ -1332,10 +1333,15 @@ function ReservationEditor({
     }
 
     // AC-5: 초진이고 방문경로 선택 시 customers.visit_route 업데이트
+    // T-20260515-foot-REFERRAL-NAME: 지인소개 시 referral_name도 함께 저장
     if (customerId && state.visit_type === 'new' && state.visit_route) {
+      const customerUpdate: Record<string, string | null> = { visit_route: state.visit_route };
+      if (state.visit_route === '지인소개') {
+        customerUpdate.referral_name = state.referral_name?.trim() || null;
+      }
       await supabase
         .from('customers')
-        .update({ visit_route: state.visit_route })
+        .update(customerUpdate)
         .eq('id', customerId);
     }
 
@@ -1572,6 +1578,19 @@ function ReservationEditor({
               </select>
             </div>
           )}
+          {/* T-20260515-foot-REFERRAL-NAME: 지인소개 시 소개자 성함 입력칸 */}
+          {state.visit_type === 'new' && state.visit_route === '지인소개' && (
+            <div className="space-y-1.5">
+              <Label>소개자 성함 <span className="text-muted-foreground font-normal text-xs">(선택)</span></Label>
+              <input
+                type="text"
+                value={state.referral_name ?? ''}
+                onChange={(e) => update('referral_name', e.target.value)}
+                placeholder="예: 홍길동"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+          )}
           {/* T-20260504-foot-MEMO-RESTRUCTURE: 예약메모 / 고객메모 분리 */}
           {/* AC-6: 예약메모 = 2번차트 1구역 예약메모와 동일 데이터(reservations.booking_memo) */}
           <div className="space-y-1.5">
@@ -1622,12 +1641,15 @@ function ReservationDetail({
   // T-20260515-foot-RESV-CANCEL: 취소 사유 다이얼로그 상태
   const [cancelDialog, setCancelDialog] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  // T-20260515-foot-REFERRAL-NAME: 예약 상세에서 방문경로+소개자 표시용
+  const [custVisitInfo, setCustVisitInfo] = useState<{ visit_route: string | null; referral_name: string | null } | null>(null);
 
   useEffect(() => {
     if (!reservation) {
       setLogs([]);
       setCancelDialog(false);
       setCancelReason('');
+      setCustVisitInfo(null);
       return;
     }
     supabase
@@ -1637,6 +1659,23 @@ function ReservationDetail({
       .order('created_at', { ascending: false })
       .limit(20)
       .then(({ data }) => setLogs((data ?? []) as ReservationLog[]));
+
+    // T-20260515-foot-REFERRAL-NAME: 고객의 방문경로+소개자 조회
+    if (reservation.customer_id) {
+      supabase
+        .from('customers')
+        .select('visit_route, referral_name')
+        .eq('id', reservation.customer_id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            const d = data as { visit_route: string | null; referral_name: string | null };
+            setCustVisitInfo(d.visit_route ? d : null);
+          }
+        });
+    } else {
+      setCustVisitInfo(null);
+    }
   }, [reservation]);
 
   if (!reservation) return null;
@@ -1827,6 +1866,18 @@ function ReservationDetail({
               {reservation.cancel_reason && (
                 <div className="text-red-700 whitespace-pre-wrap">사유: {reservation.cancel_reason}</div>
               )}
+            </div>
+          )}
+          {/* T-20260515-foot-REFERRAL-NAME: 방문경로 표시 (초진 + 지인소개 시 소개자 성함) */}
+          {custVisitInfo?.visit_route && (
+            <div className="rounded border border-teal-200 bg-teal-50 px-2 py-1.5 text-xs">
+              <span className="text-teal-700 font-medium">방문경로: </span>
+              <span>
+                {custVisitInfo.visit_route}
+                {custVisitInfo.visit_route === '지인소개' && custVisitInfo.referral_name
+                  ? ` (${custVisitInfo.referral_name})`
+                  : ''}
+              </span>
             </div>
           )}
           {/* T-20260504-foot-MEMO-RESTRUCTURE: booking_memo 우선, 없으면 memo */}

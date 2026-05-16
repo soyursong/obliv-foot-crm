@@ -2117,10 +2117,10 @@ export default function CustomerChartPage() {
                     <td className={VC} colSpan={3}>
                       <input
                         type="text"
-                        value={(customer as unknown as { referral_name?: string }).referral_name ?? ''}
+                        value={customer.referral_name ?? ''}
                         onChange={(e) => {
                           setIsDirty(true);
-                          saveCustomerField({ referral_name: e.target.value.trim() || null } as Record<string, string | null>);
+                          saveCustomerField({ referral_name: e.target.value.trim() || null });
                         }}
                         disabled={savingField}
                         placeholder="예: 홍길동"
