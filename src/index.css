@@ -187,3 +187,12 @@
   0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
   50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
 }
+
+/* T-20260516-foot-HEALER-RESV-BTN AC-10: 재진 슬롯 힐러 대상자 노란색 깜빡 border animation */
+@keyframes healer-border-blink {
+  0%, 100% { border-color: #fbbf24; box-shadow: 0 0 0 1px #fbbf2460; }
+  50%       { border-color: #f59e0b; box-shadow: 0 0 0 3px #f59e0b40; }
+}
+.healer-blink {
+  animation: healer-border-blink 1s ease-in-out infinite;
+}

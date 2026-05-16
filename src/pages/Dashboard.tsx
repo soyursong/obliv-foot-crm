@@ -1240,12 +1240,20 @@ function DraggableBox2ResvCard({
       className={cn(
         'flex items-center gap-1 rounded border border-green-300 bg-green-50 px-2 py-1 text-[11px] font-semibold w-full shadow-sm',
         onSelect ? 'cursor-grab active:cursor-grabbing hover:bg-green-100 hover:border-green-400 transition' : 'cursor-default',
+        // T-20260516-foot-HEALER-RESV-BTN AC-10: healer_flag=true인 재진 예약 → 노란색 깜빡 border
+        reservation.healer_flag && 'healer-blink',
       )}
       onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
-      title={`${reservation.customer_name} — 드래그=시간변경 · 클릭=차트조회`}
+      title={reservation.healer_flag
+        ? `${reservation.customer_name} — 힐러 치료 예정 · 드래그=시간변경 · 클릭=차트조회`
+        : `${reservation.customer_name} — 드래그=시간변경 · 클릭=차트조회`}
       data-testid="box2-resv-card"
     >
       <span className="truncate text-green-900">{reservation.customer_name}</span>
+      {/* T-20260516-foot-HEALER-RESV-BTN AC-10: 힐러 배지 표시 */}
+      {reservation.healer_flag && (
+        <span className="shrink-0 text-[8px] font-bold text-yellow-700 bg-yellow-100 border border-yellow-300 rounded px-0.5 leading-tight">힐</span>
+      )}
       {resvChartNum && (
         <span className="text-[9px] font-mono text-green-700 shrink-0">#{resvChartNum}</span>
       )}
