@@ -156,6 +156,7 @@ export interface Customer {
   hira_consent?: boolean | null;        // 건강보험 조회 동의 Y/N (C2-HIRA-CONSENT)
   hira_consent_at?: string | null;      // 건강보험 조회 동의 일시
   visit_route?: 'TM' | '워크인' | '인바운드' | '지인소개' | null; // 방문경로 (C2-VISIT-ROUTE)
+  referral_name?: string | null;          // 소개자 성함 (방문경로='지인소개' 시) — T-20260515-foot-REFERRAL-NAME
   // C23-DETAIL-SIMPLIFY
   treatment_note?: string | null;       // 치료메모: 치료사끼리 공유하는 고객 특이사항 메모
   // T-20260510-foot-ADDRESS-DETAIL-FIX
