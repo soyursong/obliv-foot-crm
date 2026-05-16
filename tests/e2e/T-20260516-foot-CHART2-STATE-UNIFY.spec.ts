@@ -122,7 +122,7 @@ test.describe('T-20260516-foot-CHART2-STATE-UNIFY — 4경로 2번차트 단일 
     await expect(chartA).toBeVisible({ timeout: 8000 });
 
     // 닫기 → 환자 B [차트보기] 클릭
-    const closeBtn = page.getByRole('button', { name: '닫기' }).first();
+    const closeBtn = chartA.getByRole('button', { name: '닫기' });
     await closeBtn.click();
     await expect(chartA).toBeHidden({ timeout: 3000 });
 

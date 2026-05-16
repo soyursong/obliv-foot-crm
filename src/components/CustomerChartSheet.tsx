@@ -69,7 +69,7 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
       >
         {/* X 닫기 버튼 */}
         <button
-          className="absolute right-3 top-3 z-10 rounded-md p-1 text-muted-foreground hover:bg-muted transition"
+          className="sticky top-3 right-3 z-10 self-end rounded-md p-1 text-muted-foreground hover:bg-muted transition"
           onClick={onClose}
           aria-label="닫기"
           type="button"
