@@ -44,6 +44,8 @@ import type { CheckIn, Package as PackageType, PackageRemaining, Room, Service, 
 import { CustomerChartSheet } from '@/components/CustomerChartSheet';
 // T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
 import { NhisLookupPanel } from '@/components/insurance/NhisLookupPanel';
+// T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 이력
+import { ReservationMemoTimeline } from '@/components/ReservationMemoTimeline';
 
 // ─── 시술 항목 / 회차 차감 타입 ──────────────────────────────────────────────
 
@@ -504,9 +506,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const [staffList, setStaffList] = useState<Array<{ id: string; name: string; role: string }>>([]);
   /** T-20260510-foot-C1-VISIT-ROUTE-MEMO: 방문경로 */
   const [visitRoute, setVisitRoute] = useState<string>('');
-  /** T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 예약메모(booking_memo) / 기타메모(memo) */
-  const [bookingMemo, setBookingMemo] = useState('');
-  const [savingBookingMemo, setSavingBookingMemo] = useState(false);
+  /** T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 기타메모(memo) */
   const [etcMemo, setEtcMemo] = useState('');
   const [savingEtcMemo, setSavingEtcMemo] = useState(false);
   const [latestResvId, setLatestResvId] = useState<string | null>(null);
@@ -623,9 +623,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       setVisitRoute(custData?.visit_route ?? '');
       setEtcMemo(custData?.memo ?? '');
       setHiraConsent(custData?.hira_consent ?? false);
-      const latestResvData = latestResvRes.data as { id: string; booking_memo: string | null } | null;
+      const latestResvData = latestResvRes.data as { id: string } | null;
       setLatestResvId(latestResvData?.id ?? null);
-      setBookingMemo(latestResvData?.booking_memo ?? '');
       setStaffList((staffRes.data ?? []) as Array<{ id: string; name: string; role: string }>);
       const latestCi = (latestCiRes.data as CheckIn | null) ?? null;
       setLatestCheckIn(latestCi);
@@ -731,10 +730,9 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     if (!checkIn.customer_id && custData?.id) {
       setResolvedCustomerId(custData.id);
     }
-    // T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 예약메모 — reservation 로드
-    const resvData = resvRes.data as { id: string; booking_memo: string | null } | null;
+    // T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 예약 ID 세팅
+    const resvData = resvRes.data as { id: string } | null;
     setLatestResvId(resvData?.id ?? null);
-    setBookingMemo(resvData?.booking_memo ?? '');
     setStaffList((staffRes.data ?? []) as Array<{ id: string; name: string; role: string }>);
     const pkgs = (pkgRes.data ?? []) as PackageType[];
     setPackages(pkgs);
@@ -1019,21 +1017,6 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     if (customerId2) localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customerId2, ts: Date.now() }));
   };
 
-  // T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 예약메모 저장 (reservations.booking_memo)
-  const saveBookingMemo = async () => {
-    if (!latestResvId) { toast.error('연결된 예약이 없습니다'); return; }
-    setSavingBookingMemo(true);
-    const { error } = await supabase
-      .from('reservations')
-      .update({ booking_memo: bookingMemo.trim() || null })
-      .eq('id', latestResvId);
-    setSavingBookingMemo(false);
-    if (error) { toast.error('예약메모 저장 실패'); return; }
-    toast.success('예약메모 저장됨');
-    const customerId3 = checkIn?.customer_id ?? resolvedCustomerId ?? customerMode?.customerId;
-    if (customerId3) localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customerId3, ts: Date.now() }));
-  };
-
   // T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 기타메모 저장 (customers.memo)
   const saveEtcMemo = async () => {
     const customerId = checkIn?.customer_id ?? resolvedCustomerId ?? customerMode?.customerId;
@@ -1130,27 +1113,21 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   <option value="지인소개">지인소개</option>
                 </select>
               </div>
-              {/* ② 예약메모 (reservations.booking_memo) — AC-5 복구 */}
+              {/* ② 예약메모 (T-20260515-foot-RESV-MEMO-APPEND: append-only 타임라인) */}
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
                   <FileText className="h-3 w-3" /> 예약메모
                 </Label>
-                <Textarea
-                  value={bookingMemo}
-                  onChange={(e) => setBookingMemo(e.target.value)}
-                  placeholder="예약 관련 메모"
-                  rows={2}
-                  className="text-xs"
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 text-xs w-full border-teal-300 text-teal-700 hover:bg-teal-50"
-                  onClick={saveBookingMemo}
-                  disabled={savingBookingMemo}
-                >
-                  {savingBookingMemo ? '저장 중…' : '예약메모 저장'}
-                </Button>
+                {latestResvId ? (
+                  <ReservationMemoTimeline
+                    reservationId={latestResvId}
+                    clinicId={clinic?.id ?? ''}
+                    authorName={profile?.name ?? ''}
+                    compact
+                  />
+                ) : (
+                  <div className="text-xs text-muted-foreground italic">연결된 예약 없음</div>
+                )}
               </div>
               {/* ③ 고객메모 (customers.customer_memo) — AC-6 추가 */}
               <div className="space-y-1.5">
@@ -1662,27 +1639,21 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                     </select>
                   </div>
                 )}
-                {/* ② 예약메모 (reservations.booking_memo) — AC-5 복구 */}
+                {/* ② 예약메모 (T-20260515-foot-RESV-MEMO-APPEND: append-only 타임라인) */}
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
                     <FileText className="h-3 w-3" /> 예약메모
                   </Label>
-                  <Textarea
-                    value={bookingMemo}
-                    onChange={(e) => setBookingMemo(e.target.value)}
-                    placeholder="예약 관련 메모"
-                    rows={2}
-                    className="text-xs"
-                  />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs w-full border-teal-300 text-teal-700 hover:bg-teal-50"
-                    onClick={saveBookingMemo}
-                    disabled={savingBookingMemo}
-                  >
-                    {savingBookingMemo ? '저장 중…' : '예약메모 저장'}
-                  </Button>
+                  {latestResvId ? (
+                    <ReservationMemoTimeline
+                      reservationId={latestResvId}
+                      clinicId={clinic?.id ?? ''}
+                      authorName={profile?.name ?? ''}
+                      compact
+                    />
+                  ) : (
+                    <div className="text-xs text-muted-foreground italic">연결된 예약 없음</div>
+                  )}
                 </div>
                 {/* ③ 고객메모 (customers.customer_memo) — AC-6 추가 */}
                 {checkIn.customer_id && (
