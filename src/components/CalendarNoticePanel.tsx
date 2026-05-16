@@ -341,6 +341,7 @@ export default function CalendarNoticePanel() {
                 onClick={() => {
                   setSelectedDate(isSelected ? null : day);
                   // AC-7: 날짜 클릭 → 예약관리 해당 주 이동
+                  // LOGIC-LOCK: L-002 — 변경 시 현장 승인 필수
                   navigate('/admin/reservations', {
                     state: { goToWeekOf: format(day, 'yyyy-MM-dd') },
                   });

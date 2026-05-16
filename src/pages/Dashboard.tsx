@@ -3019,6 +3019,7 @@ export default function Dashboard() {
 
 
   const handleNewReservation = useCallback((ci: CheckIn) => {
+    // LOGIC-LOCK: L-002 — 변경 시 현장 승인 필수
     navigate('/admin/reservations', {
       state: {
         openReservationFor: {
