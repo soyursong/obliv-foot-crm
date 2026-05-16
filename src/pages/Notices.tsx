@@ -79,18 +79,35 @@ export default function Notices() {
   };
 
   const handleSave = async () => {
-    if (!clinic || !formTitle.trim()) { toast.error('제목을 입력해주세요'); return; }
+    if (!formTitle.trim()) { toast.error('제목을 입력해주세요'); return; }
+    if (!clinic) { toast.error('클리닉 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.'); return; }
     setSaving(true);
     if (editingId === 'new') {
-      const { error } = await supabase.from('notices').insert({
+      // T-20260516-foot-NOTICE-SAVE-FAIL: INSERT 후 반환값 사용해 로컬 state 즉시 업데이트
+      // (SELECT RLS 정책 수정 전 임시 우회 — DB 마이그레이션 20260519000030 적용 후 완전 해결)
+      const { data: inserted, error } = await supabase.from('notices').insert({
         clinic_id: clinic.id,
         title: formTitle.trim(),
         content: formContent.trim() || null,
         is_pinned: formPinned,
         created_by: profile?.id ?? null,
-      });
+      }).select().single();
       if (error) { toast.error('저장 실패: ' + error.message); }
-      else { toast.success('공지사항이 등록되었습니다'); closeForm(); fetchNotices(); }
+      else {
+        toast.success('공지사항이 등록되었습니다');
+        closeForm();
+        // 로컬 state 즉시 반영 (SELECT RLS 우회)
+        if (inserted) {
+          setNotices(prev => {
+            const updated = [inserted as Notice, ...prev];
+            return updated.sort((a, b) =>
+              (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0) ||
+              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            );
+          });
+        }
+        fetchNotices(); // DB RLS 정상화 후 실제 목록 동기화 (실패해도 UI 유지)
+      }
     } else if (editingId) {
       const { error } = await supabase.from('notices').update({
         title: formTitle.trim(),
@@ -98,7 +115,21 @@ export default function Notices() {
         is_pinned: formPinned,
       }).eq('id', editingId);
       if (error) { toast.error('수정 실패: ' + error.message); }
-      else { toast.success('공지사항이 수정되었습니다'); closeForm(); fetchNotices(); }
+      else {
+        toast.success('공지사항이 수정되었습니다');
+        closeForm();
+        // 로컬 state 즉시 반영
+        setNotices(prev =>
+          prev.map(n => n.id === editingId
+            ? { ...n, title: formTitle.trim(), content: formContent.trim() || null, is_pinned: formPinned }
+            : n
+          ).sort((a, b) =>
+            (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0) ||
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )
+        );
+        fetchNotices();
+      }
     }
     setSaving(false);
   };
@@ -107,13 +138,27 @@ export default function Notices() {
     if (!confirm('이 공지사항을 삭제하시겠습니까?')) return;
     const { error } = await supabase.from('notices').delete().eq('id', id);
     if (error) { toast.error('삭제 실패: ' + error.message); }
-    else { toast.success('삭제되었습니다'); fetchNotices(); }
+    else {
+      toast.success('삭제되었습니다');
+      setNotices(prev => prev.filter(n => n.id !== id));
+      fetchNotices();
+    }
   };
 
   const handleTogglePin = async (n: Notice) => {
-    const { error } = await supabase.from('notices').update({ is_pinned: !n.is_pinned }).eq('id', n.id);
+    const newPinned = !n.is_pinned;
+    const { error } = await supabase.from('notices').update({ is_pinned: newPinned }).eq('id', n.id);
     if (error) { toast.error('핀 변경 실패'); }
-    else { fetchNotices(); }
+    else {
+      setNotices(prev =>
+        prev.map(item => item.id === n.id ? { ...item, is_pinned: newPinned } : item)
+          .sort((a, b) =>
+            (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0) ||
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )
+      );
+      fetchNotices();
+    }
   };
 
   return (
