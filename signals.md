@@ -2411,3 +2411,4 @@ ref: T-20260512-foot-TREATMENT-SET
 | 2026-05-16 12:07 | dev-foot | deploy-ready | T-20260515-foot-SALES-TAB-STAFF: 담당직원별 정산 탭 — 검색필터(AC-4)+data-testid 보완. 빌드 OK. DB변경: 없음 |
 
 | 2026-05-16T12:20:30+09:00 | supervisor | qa-pass + deployed | T-20260515-foot-SALES-TAB-STAFF: 담당직원별 정산 — Green, commit c17f137, bundle Sales-DperOSZ-, 소급방지 AC-3 확인 |
+| 2026-05-16 12:42 | supervisor | qa-pass + deployed | T-20260516-foot-CLINIC-DOC-INFO — 병원·원장 정보 설정 + 서류 field_map 바인딩. build 3.04s, bundle d11c11a, Yellow |
