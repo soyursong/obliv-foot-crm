@@ -536,15 +536,22 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const docPrintRef = useRef<HTMLDivElement>(null);
 
   // 체크인 변경 시 시술 항목 + 진료종류 초기화
+  // T-20260515-foot-CHART2-REOPEN 5차 fix (atomic): data-reset + auto-open 단일 effect로 병합.
+  // 이전 4차 fix(068239c): 두 개의 별도 effect로 분리 → React 18에서 effect 간 배칭 순서가
+  // 비결정적일 수 있어 setChartSheetId(null) 이후 auto-open이 누락되는 경우 발생.
+  // 해결: 단일 effect 내에서 reset → 조건부 auto-open을 원자적으로 처리.
+  // 결과: data-reset과 auto-open이 항상 동일 effect flush에서 실행 → 순서 보장.
   useEffect(() => {
     setTreatmentItems([]);
     setChartNumber(null);
     setResolvedCustomerId(null);
     setLatestCheckIn(null);
-    // T-20260515-foot-CHART2-REOPEN 4차 fix: 환자 전환 시 stale chartSheetId 초기화
-    // 이전 환자의 2번차트가 새 환자에게 잘못 표시되는 문제 방지.
-    // 초진 자동 오픈은 아래 useEffect(checkIn?.id)에서 reset 이후 재설정.
-    setChartSheetId(null);
+    // 초진(new) + customer_id 있으면 자동 오픈, 그 외 모두 reset
+    if (checkIn?.visit_type === 'new' && checkIn.customer_id) {
+      setChartSheetId(checkIn.customer_id); // 초진 자동 오픈
+    } else {
+      setChartSheetId(null); // 환자 전환 시 stale 차트 닫기
+    }
     if (checkIn) {
       setConsultationDone(checkIn.consultation_done ?? false);
       setTreatmentKind(checkIn.treatment_kind ?? '');
@@ -557,15 +564,6 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       setTreatmentContents(checkIn.treatment_contents ?? []);
     }
   }, [checkIn?.id, customerMode?.customerId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // T-20260515-foot-INITIAL-CHART-OPEN (재구현): 초진 카드 열릴 때 2번차트 자동 오픈
-  // Dashboard 레벨 대신 내부 chartSheetId 사용 → z-index 충돌 원천 차단
-  // visit_type === 'new' + customer_id 있을 때만, 카드 변경 시마다 실행
-  useEffect(() => {
-    if (checkIn?.visit_type === 'new' && checkIn.customer_id) {
-      setChartSheetId(checkIn.customer_id);
-    }
-  }, [checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async () => {
     if (!checkIn && !customerMode) return;
