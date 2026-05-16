@@ -64,6 +64,9 @@ const STATUS_LABEL: Record<Reservation['status'], string> = {
   noshow: '노쇼',
 };
 
+// AC-1: 예약수정 모달 시간 선택 드롭다운 — 07:00~22:00, 30분 단위
+const EDIT_TIME_SLOTS = generateSlots('07:00', '22:00', 30);
+
 interface ReservationDraft {
   date: string;
   time: string;
@@ -479,8 +482,9 @@ export default function Reservations() {
       phone: r.customer_phone ?? '',
       visit_type: r.visit_type,
       memo: r.memo ?? '',
-      booking_memo: '',  // T-20260515-foot-RESV-MEMO-APPEND: 편집 시 항상 빈 값 (새 메모 추가용)
-      visit_route: '',  // AC-5: 편집 시 기존 방문경로 미리 불러오지 않음 (변경 시에만 덮어씀)
+      booking_memo: '',  // 편집 시 항상 빈 값 (ReservationMemoTimeline이 직접 처리)
+      visit_route: '',   // AC-3: ReservationEditor 내부 useEffect에서 customer.visit_route 프리로드
+      customer_id: r.customer_id ?? null,  // AC-3: visit_route 조회용
     });
     setDetail(null);
   };
@@ -1168,6 +1172,29 @@ function ReservationEditor({
     setOverrideTherapistId('');
   }, [draft]);
 
+  // AC-3: 초진 편집 모달 열릴 때 customer.visit_route + referral_name 자동 로드
+  useEffect(() => {
+    if (!draft?.existingId || !draft?.customer_id || draft?.visit_type !== 'new') return;
+    supabase
+      .from('customers')
+      .select('visit_route, referral_name')
+      .eq('id', draft.customer_id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!data) return;
+        const d = data as { visit_route: string | null; referral_name: string | null };
+        if (d.visit_route) {
+          setState((s) => s ? {
+            ...s,
+            visit_route: d.visit_route ?? s.visit_route ?? '',
+            referral_name: d.referral_name ?? s.referral_name ?? '',
+          } : s);
+        }
+      });
+  // draft 객체 참조가 바뀔 때만 — existingId/customer_id/visit_type 복합 의존
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft?.existingId, draft?.customer_id, draft?.visit_type]);
+
   // T-20260515-foot-RESV-THERAPIST-HIST: 재진 + customer_id 변경 시 치료사 이력 조회
   useEffect(() => {
     const customerId = state?.customer_id;
@@ -1453,46 +1480,86 @@ function ReservationEditor({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {state.existingId ? '예약 수정' : '예약 등록'} · {state.date} {state.time}
+            {state.existingId ? '예약 수정' : '예약 등록'}
+            {!state.existingId && ` · ${state.date} ${state.time}`}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
-          {/* 이름 — 인라인 자동검색 (신규·수정 모두 표시) */}
-          <div className="space-y-1.5">
-            <Label>이름</Label>
-            <InlinePatientSearch
-              value={state.name}
-              onChange={(v) => {
-                update('name', v);
-                if (state.customer_id) update('customer_id', null);
-              }}
-              onSelect={handlePatientSelect}
-              onClearSelection={() => update('customer_id', null)}
-              searchField="name"
-              clinicId={clinicId}
-              selectedCustomerId={state.customer_id}
-              placeholder="홍길동"
-              required
-            />
-          </div>
-          {/* 전화번호 — 인라인 자동검색 */}
-          <div className="space-y-1.5">
-            <Label>전화번호</Label>
-            <InlinePatientSearch
-              value={state.phone}
-              onChange={(v) => {
-                update('phone', v);
-                if (state.customer_id) update('customer_id', null);
-              }}
-              onSelect={handlePatientSelect}
-              onClearSelection={() => update('customer_id', null)}
-              searchField="phone"
-              clinicId={clinicId}
-              selectedCustomerId={state.customer_id}
-              placeholder="010-1234-5678"
-              inputMode="tel"
-            />
-          </div>
+          {/* AC-1: 날짜/시간 변경 — 수정 모달에서만 표시 */}
+          {state.existingId && (
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label>날짜</Label>
+                <input
+                  type="date"
+                  value={state.date}
+                  onChange={(e) => update('date', e.target.value)}
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>시간</Label>
+                <select
+                  value={state.time}
+                  onChange={(e) => update('time', e.target.value)}
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  {EDIT_TIME_SLOTS.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* AC-2/2b: 고객정보 — 수정 모달은 읽기 전용, 신규 예약은 InlinePatientSearch 유지 */}
+          {state.existingId ? (
+            /* AC-2: 수정 모달 — 고객정보 편집폼 제거, 이름·전화 읽기 표시만 유지 */
+            <div className="rounded-md border border-muted bg-muted/30 px-3 py-2 text-sm space-y-0.5">
+              <div className="font-medium">{state.name || '(이름 없음)'}</div>
+              {state.phone && (
+                <div className="text-muted-foreground text-xs">{formatPhone(state.phone)}</div>
+              )}
+            </div>
+          ) : (
+            /* AC-2b: 신규 예약 — 기존 InlinePatientSearch 유지 */
+            <>
+              <div className="space-y-1.5">
+                <Label>이름</Label>
+                <InlinePatientSearch
+                  value={state.name}
+                  onChange={(v) => {
+                    update('name', v);
+                    if (state.customer_id) update('customer_id', null);
+                  }}
+                  onSelect={handlePatientSelect}
+                  onClearSelection={() => update('customer_id', null)}
+                  searchField="name"
+                  clinicId={clinicId}
+                  selectedCustomerId={state.customer_id}
+                  placeholder="홍길동"
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>전화번호</Label>
+                <InlinePatientSearch
+                  value={state.phone}
+                  onChange={(v) => {
+                    update('phone', v);
+                    if (state.customer_id) update('customer_id', null);
+                  }}
+                  onSelect={handlePatientSelect}
+                  onClearSelection={() => update('customer_id', null)}
+                  searchField="phone"
+                  clinicId={clinicId}
+                  selectedCustomerId={state.customer_id}
+                  placeholder="010-1234-5678"
+                  inputMode="tel"
+                />
+              </div>
+            </>
+          )}
           <div className="space-y-1.5">
             <Label>유형</Label>
             <div className="grid grid-cols-2 gap-2">
@@ -1602,10 +1669,29 @@ function ReservationEditor({
               />
             </div>
           )}
-          {/* T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 추가 (append-only) */}
+          {/* AC-4: 예약메모 — 수정 모달은 ReservationMemoTimeline(append-only), 신규는 단순 Textarea */}
           <div className="space-y-1.5">
-            <Label>예약메모 추가 <span className="text-muted-foreground font-normal text-xs">(저장 시 기록에 누적됨)</span></Label>
-            <Textarea value={state.booking_memo ?? ''} onChange={(e) => update('booking_memo', e.target.value)} rows={2} placeholder="예: 인스타그램 광고, 지인 소개, 힐러 지정 등" className="text-sm" />
+            {state.existingId ? (
+              <>
+                <Label>예약메모 히스토리</Label>
+                <ReservationMemoTimeline
+                  reservationId={state.existingId}
+                  clinicId={clinicId ?? ''}
+                  authorName={authorName}
+                />
+              </>
+            ) : (
+              <>
+                <Label>예약메모 추가 <span className="text-muted-foreground font-normal text-xs">(저장 시 기록에 누적됨)</span></Label>
+                <Textarea
+                  value={state.booking_memo ?? ''}
+                  onChange={(e) => update('booking_memo', e.target.value)}
+                  rows={2}
+                  placeholder="예: 인스타그램 광고, 지인 소개, 힐러 지정 등"
+                  className="text-sm"
+                />
+              </>
+            )}
           </div>
         </div>
         <DialogFooter>
