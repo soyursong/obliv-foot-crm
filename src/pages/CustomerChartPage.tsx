@@ -1263,7 +1263,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       return;
     }
     setSavingResvMini(true);
-    const { error } = await supabase.from('reservations').insert({
+    const { data: newResv, error } = await supabase.from('reservations').insert({
       customer_id: customer.id,
       clinic_id: customer.clinic_id,
       customer_name: customer.name,
@@ -1274,9 +1274,15 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       booking_memo: resvMiniForm.memo || null,
       status: 'confirmed',
       created_by: profile?.id ?? null,
-    });
+    }).select('id').single();
     setSavingResvMini(false);
     if (error) { toast.error(`예약 저장 실패: ${error.message}`); return; }
+    // AC-8: pending_healer_flag → 신규 예약에 healer_flag 자동 적용 후 1회 소모
+    if (newResv && customer.pending_healer_flag) {
+      await supabase.from('reservations').update({ healer_flag: true }).eq('id', newResv.id);
+      await supabase.from('customers').update({ pending_healer_flag: false }).eq('id', customer.id);
+      setCustomer(prev => prev ? { ...prev, pending_healer_flag: false } : prev);
+    }
     // 예약 목록 새로고침
     const { data: resvData } = await supabase
       .from('reservations')
@@ -1404,18 +1410,37 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     setC22DeductForm(f => ({ ...f, therapistId: '', treatmentType: 'heated_laser' }));
   };
 
-  // T-20260516-foot-HEALER-RESV-BTN: 힐러예약 플래그 토글
+  // T-20260516-foot-HEALER-RESV-BTN v2: 힐러예약 플래그 토글
+  // AC-2: 다음 예약 없음 → pending_healer_flag 저장 (AC-9: 재클릭 토글)
+  // AC-3~7: 다음 예약 있음 → healer_flag 토글 (기존 동작 유지)
   const handleHealerFlag = async () => {
     if (!customer || healerFlagLoading) return;
     const today = format(new Date(), 'yyyy-MM-dd');
     const nextResv = reservations
       .filter(r => r.reservation_date > today && r.status !== 'cancelled' && r.status !== 'noshow')
       .sort((a, b) => a.reservation_date.localeCompare(b.reservation_date))[0] ?? null;
+
+    setHealerFlagLoading(true);
+
     if (!nextResv) {
-      toast.error('다음 예약이 없습니다. 예약 후 다시 시도해주세요.');
+      // AC-2 + AC-9: 다음 예약 없음 → pending_healer_flag 토글
+      const newPendingFlag = !customer.pending_healer_flag;
+      const { error } = await supabase
+        .from('customers')
+        .update({ pending_healer_flag: newPendingFlag })
+        .eq('id', customer.id);
+      setHealerFlagLoading(false);
+      if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+      setCustomer(prev => prev ? { ...prev, pending_healer_flag: newPendingFlag } : prev);
+      if (newPendingFlag) {
+        toast.success('힐러 예약 대기 설정됨. 다음 예약 시 자동 적용돼요.');
+      } else {
+        toast.success('힐러 대기 해제됨');
+      }
       return;
     }
-    setHealerFlagLoading(true);
+
+    // 다음 예약 있음: reservations.healer_flag 토글
     const newFlag = !nextResv.healer_flag;
     const { error } = await supabase
       .from('reservations')
@@ -1528,7 +1553,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const saveInlineResv = async (time: string) => {
     if (!customer || !inlineResvDate) return;
     setSavingInlineResv(true);
-    const { error } = await supabase.from('reservations').insert({
+    const { data: newResv, error } = await supabase.from('reservations').insert({
       customer_id: customer.id,
       clinic_id: customer.clinic_id,
       customer_name: customer.name,
@@ -1539,9 +1564,15 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       booking_memo: inlineResvMemo.trim() || null,
       status: 'confirmed',
       created_by: profile?.id ?? null,
-    });
+    }).select('id').single();
     setSavingInlineResv(false);
     if (error) { toast.error(`예약 저장 실패: ${error.message}`); return; }
+    // AC-8: pending_healer_flag → 신규 예약에 healer_flag 자동 적용 후 1회 소모
+    if (newResv && customer.pending_healer_flag) {
+      await supabase.from('reservations').update({ healer_flag: true }).eq('id', newResv.id);
+      await supabase.from('customers').update({ pending_healer_flag: false }).eq('id', customer.id);
+      setCustomer(prev => prev ? { ...prev, pending_healer_flag: false } : prev);
+    }
     toast.success(`${inlineResvDate} ${time} 예약 등록 완료`);
     // 예약 이력 즉시 갱신
     const { data: resvData } = await supabase
@@ -3506,36 +3537,49 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   </select>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={saveC22Deduct}
-                disabled={savingC22Deduct || !c22DeductForm.therapistId || packages.filter(p => p.status === 'active').length === 0}
-                className="w-full rounded bg-teal-600 text-white py-1.5 text-[10px] font-medium hover:bg-teal-700 transition disabled:opacity-50"
-              >
-                {savingC22Deduct ? '저장 중…' : '저장'}
-              </button>
-              {/* T-20260516-foot-HEALER-RESV-BTN: 힐러예약 플래그 버튼 */}
+              {/* T-20260516-foot-HEALER-RESV-BTN v2: [차감] + [힐러예약 후 차감] 한 줄 배치 */}
               {(() => {
                 const today = format(new Date(), 'yyyy-MM-dd');
                 const nextResv = reservations
                   .filter(r => r.reservation_date > today && r.status !== 'cancelled' && r.status !== 'noshow')
                   .sort((a, b) => a.reservation_date.localeCompare(b.reservation_date))[0] ?? null;
-                const isActive = !!nextResv?.healer_flag;
+                // isActive: 다음 예약 healer_flag OR pending_healer_flag 중 하나라도 켜진 상태
+                const isActive = !!nextResv?.healer_flag || !!customer.pending_healer_flag;
+                const isPending = !nextResv && !!customer.pending_healer_flag;
+                const healerTitle = nextResv
+                  ? `다음 예약: ${nextResv.reservation_date}${nextResv.healer_flag ? ' (힐러 플래그 ON)' : ''}`
+                  : isPending
+                    ? '힐러 대기 설정됨 — 다음 예약 시 자동 적용'
+                    : '다음 예약 없음 — 클릭 시 대기 플래그 설정';
                 return (
-                  <button
-                    type="button"
-                    onClick={handleHealerFlag}
-                    disabled={healerFlagLoading}
-                    title={nextResv ? `다음 예약: ${nextResv.reservation_date}` : '다음 예약 없음'}
-                    className={cn(
-                      'w-full rounded py-1.5 text-[10px] font-medium transition disabled:opacity-50 mt-1',
-                      isActive
-                        ? 'bg-blue-500 text-white hover:bg-blue-600'
-                        : 'bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100',
-                    )}
-                  >
-                    {healerFlagLoading ? '저장 중…' : isActive ? '힐러예약 ✓ (클릭→해제)' : '힐러예약'}
-                  </button>
+                  <div className="flex gap-1 mt-1">
+                    <button
+                      type="button"
+                      onClick={saveC22Deduct}
+                      disabled={savingC22Deduct || !c22DeductForm.therapistId || packages.filter(p => p.status === 'active').length === 0}
+                      className="flex-1 rounded bg-teal-600 text-white py-1.5 text-[10px] font-medium hover:bg-teal-700 transition disabled:opacity-50"
+                    >
+                      {savingC22Deduct ? '저장 중…' : '차감'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleHealerFlag}
+                      disabled={healerFlagLoading}
+                      title={healerTitle}
+                      className={cn(
+                        'flex-1 rounded py-1.5 text-[10px] font-medium transition disabled:opacity-50',
+                        isActive
+                          ? 'bg-blue-500 text-white hover:bg-blue-600'
+                          : 'bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100',
+                      )}
+                    >
+                      {healerFlagLoading
+                        ? '저장 중…'
+                        : isActive
+                          ? '힐러예약 후 차감 ✓'
+                          : '힐러예약 후 차감'}
+                    </button>
+                  </div>
                 );
               })()}
             </div>

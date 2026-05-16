@@ -161,6 +161,8 @@ export interface Customer {
   treatment_note?: string | null;       // 치료메모: 치료사끼리 공유하는 고객 특이사항 메모
   // T-20260510-foot-ADDRESS-DETAIL-FIX
   address_detail?: string | null;       // 상세주소 (동·호수·건물명 등)
+  // T-20260516-foot-HEALER-RESV-BTN v2: 힐러 대기 플래그 (예약 없을 때 임시 보관, 예약 생성 시 1회 소모)
+  pending_healer_flag?: boolean | null;
 }
 
 export interface Service {
