@@ -547,9 +547,11 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setChartNumber(null);
     setResolvedCustomerId(null);
     setLatestCheckIn(null);
-    // 초진(new) + customer_id 있으면 자동 오픈, 그 외 모두 reset (T-20260516-foot-CHART2-STATE-UNIFY)
-    if (checkIn?.visit_type === 'new' && checkIn.customer_id) {
-      openChart(checkIn.customer_id); // 초진 자동 오픈
+    // T-20260516-foot-CHART-OPEN-UNIFY AC-5: 칸반 슬롯 간 동일 열림 방식 통일
+    // 기존: visit_type === 'new' 조건 → 초진만 2번차트 자동 오픈 (상담대기/치료대기/진료대기 불일치)
+    // 변경: customer_id 있으면 visit_type 무관 2번차트 자동 오픈 (김사비 방식 = 전체 통일 기준)
+    if (checkIn?.customer_id) {
+      openChart(checkIn.customer_id); // 모든 슬롯 2번차트 자동 오픈
     } else {
       closeChart(); // 환자 전환 시 stale 차트 닫기
     }
@@ -701,21 +703,39 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
         .in('role', ['consultant'])
         .order('name'),
       // T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 예약메모 — reservation_id 우선, 없으면 최근 예약
+      // T-20260516-foot-RESV-MEMO-REVISIT: 재진 고객 customer_id OR phone 복합 매칭 + 당일 우선
       checkIn.reservation_id
         ? supabase
             .from('reservations')
             .select('id, booking_memo')
             .eq('id', checkIn.reservation_id)
             .single()
-        : checkIn.customer_id
-          ? supabase
+        : (async () => {
+            const orParts: string[] = [];
+            if (checkIn.customer_id) orParts.push(`customer_id.eq.${checkIn.customer_id}`);
+            if (checkIn.customer_phone) orParts.push(`customer_phone.eq.${checkIn.customer_phone}`);
+            if (orParts.length === 0) return Promise.resolve({ data: null });
+            const orFilter = orParts.join(',');
+            const today = format(new Date(), 'yyyy-MM-dd');
+            // 1순위: 당일 예약 (customer_id OR phone 매칭, 시간 오름차순)
+            const { data: todayData } = await supabase
               .from('reservations')
               .select('id, booking_memo')
-              .eq('customer_id', checkIn.customer_id)
+              .eq('reservation_date', today)
+              .or(orFilter)
+              .order('reservation_time', { ascending: true })
+              .limit(1)
+              .maybeSingle();
+            if (todayData) return { data: todayData };
+            // 2순위: 최근 예약 fallback (customer_id OR phone 매칭)
+            return supabase
+              .from('reservations')
+              .select('id, booking_memo')
+              .or(orFilter)
               .order('reservation_date', { ascending: false })
               .limit(1)
-              .maybeSingle()
-          : Promise.resolve({ data: null }),
+              .maybeSingle();
+          })(),
     ]);
 
     setServices((svcRes.data ?? []) as Service[]);
