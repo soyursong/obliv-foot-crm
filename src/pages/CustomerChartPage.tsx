@@ -1026,7 +1026,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         setRrnBack('');
         setRrnText('');
       }
-      // 2) 나머지 필드 일괄 patch
+      // 2) 나머지 필드 일괄 patch (address 제외 — T-20260516-foot-C21-SAVE-REGRESS)
       const patch: Partial<Customer> = {};
       // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 항상 포함 (editingEmail/editingPassport 가드 제거)
       patch.customer_email = emailText.trim() || null;
@@ -1040,17 +1040,31 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         }
         patch.phone = `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
       }
-      // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 항상 포함 (editingAddress 가드 제거)
-      patch.address = addressText.trim() || null;
-      patch.address_detail = addressDetailText.trim() || null;
-      patch.postal_code = postalCodeText.trim() || null;
       if (editingCustomerMemo) patch.customer_memo = customerMemoText.trim() || null;
       if (Object.keys(patch).length > 0) {
         const { error } = await supabase.from('customers').update(patch).eq('id', customer.id);
         if (error) { toast.error(`저장 실패: ${error.message}`); return; }
         setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
       }
-      // 3) 모든 편집 상태 닫기 + isDirty 리셋
+      // 3) address 독립 저장 — 실패해도 다른 필드 저장 결과에 영향 없음 (T-20260516-foot-C21-SAVE-REGRESS)
+      // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 항상 포함 (editingAddress 가드 제거)
+      try {
+        const addressPatch = {
+          address: addressText.trim() || null,
+          address_detail: addressDetailText.trim() || null,
+          postal_code: postalCodeText.trim() || null,
+        };
+        const { error: addrErr } = await supabase.from('customers').update(addressPatch).eq('id', customer.id);
+        if (addrErr) {
+          console.error('[C21-SAVE-REGRESS] address 저장 실패 (다른 필드는 정상 저장됨):', addrErr.message);
+          toast.error(`주소 저장 실패: ${addrErr.message}`);
+        } else {
+          setCustomer((prev) => prev ? { ...prev, ...addressPatch } : prev);
+        }
+      } catch (addrEx) {
+        console.error('[C21-SAVE-REGRESS] address 예외 (다른 필드는 정상 저장됨):', addrEx);
+      }
+      // 4) 모든 편집 상태 닫기 + isDirty 리셋
       // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: setEditingEmail/setEditingPassport/setEditingAddress 제거
       setEditingPhone(false);
       setEditingCustomerMemo(false);
