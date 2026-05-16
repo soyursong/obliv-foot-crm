@@ -1,5 +1,23 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-16 12:40 — dev-foot | deploy-ready | T-20260516-foot-CLINIC-DOC-INFO
+
+**커밋: f495be9 → origin/main push 완료**
+
+### 구현 내용 (AC-1 ~ AC-5 전체)
+- **AC-1** `supabase/migrations/20260516000020_clinic_doctor_info.sql`: clinics 테이블 business_no/established_date 컬럼 추가 + clinic_doctors 테이블 신설 (다중 의사 CRUD, RLS 포함). rollback SQL 첨부.
+- **AC-2** `src/pages/ClinicSettings.tsx` (신규): /admin/clinic-settings 페이지 — 섹션A 병원기본정보 CRUD + 섹션B 원장(의사) 정보 CRUD + 직인 이미지 업로드 (Supabase Storage). 다중 의사 추가/삭제/기본의사 지정/순서변경.
+- **AC-2** `src/App.tsx`: Route `/admin/clinic-settings` (RoleGuard admin/manager) 추가.
+- **AC-2** `src/components/AdminLayout.tsx`: NAV_ITEMS에 "병원·원장 정보" (Building2 아이콘) 추가.
+- **AC-3** `src/components/DocumentPrintPanel.tsx`: loadAutoBindContext 내 clinic_doctors 조회 + buildAutoBindValues에 doctor_license_no / doctor_specialist_no / doctor_seal_image / clinic_business_no / clinic_phone / clinic_established_date / business_reg_no(alias) 바인딩 추가. 직인 이미지 → signed URL 변환 (1시간).
+- **AC-3** `src/lib/formTemplates.ts`: AUTO_BIND_KEYS에 신규 8개 필드 추가.
+- **AC-4** `src/components/DocumentPrintPanel.tsx`: clinicDoctors 상태 + 다중 의사 등록 시 IssueDialog 내 "면허번호·직인 기준 의사 선택" 배너 + 선택 변경 시 doctor_* 오버라이드. 1명이면 자동 바인딩.
+- **AC-5** `tests/e2e/T-20260516-foot-CLINIC-DOC-INFO.spec.ts`: 5개 시나리오 (페이지 렌더, 의사추가폼, 저장버튼, IssueDialog field_map, 다중의사 선택배너).
+- **빌드**: TypeScript tsc -b exit 0 (타입 에러 없음)
+- **DB변경**: 있음 (clinic_doctors 신규 테이블 + clinics 컬럼 추가). supervisor migration 실행 필요.
+
+---
+
 ## 2026-05-16 06:35 — dev-foot | deploy-ready | T-20260516-foot-HEALER-RESV-BTN
 
 **커밋: da4b503 → origin/main push 완료**
@@ -2387,3 +2405,9 @@ ref: T-20260512-foot-TREATMENT-SET
 | 2026-05-12T17:44:17+09:00 | supervisor | qa-pass + deployed | T-20260512-foot-TREATMENT-SET: 진료세트 관리 + 건보 산정 연동 — Yellow, commit c2c8dfe, bundle BwQiCsF2 |
 
 | 2026-05-12T19:52:36+09:00 | supervisor | qa-pass + deployed | T-20260511-foot-DASH-BATCH-INDIVIDUAL: 배치편집 대기슬롯 개별 이동 — Green, commit c2c8dfe, bundle Dashboard-DXOprHXY |
+
+| 2026-05-16T11:20:42+09:00 | supervisor | qa-pass + deployed | T-20260515-foot-RESV-MEMO-APPEND: 예약메모 append-only 누적 저장 — Yellow, commit 102d829, bundle D4ARQkgN, AC-5 RLS후속P3 |
+
+| 2026-05-16 12:07 | dev-foot | deploy-ready | T-20260515-foot-SALES-TAB-STAFF: 담당직원별 정산 탭 — 검색필터(AC-4)+data-testid 보완. 빌드 OK. DB변경: 없음 |
+
+| 2026-05-16T12:20:30+09:00 | supervisor | qa-pass + deployed | T-20260515-foot-SALES-TAB-STAFF: 담당직원별 정산 — Green, commit c17f137, bundle Sales-DperOSZ-, 소급방지 AC-3 확인 |
