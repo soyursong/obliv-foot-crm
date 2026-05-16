@@ -307,6 +307,7 @@ export default function Customers() {
                   <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-center gap-1">
                       <button
+                        data-testid="open-chart-btn"
                         onClick={(e) => { e.stopPropagation(); openChart(c.id); }}
                         className="rounded p-1.5 hover:bg-teal-50 transition"
                         title="2번차트(미니홈피) 열기"
