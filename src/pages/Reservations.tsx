@@ -31,8 +31,9 @@ import { cn } from '@/lib/utils';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import { CustomerHoverCard } from '@/components/CustomerHoverCard';
-import { CustomerChartSheet } from '@/components/CustomerChartSheet';
+// T-20260516-foot-CHART-OPEN-UNIFY AC-1: CustomerChartSheet 직접 렌더 제거 → AdminLayout ChartContext 통합
 import MedicalChartPanel from '@/components/MedicalChartPanel';
+import { useChart } from '@/lib/chartContext';
 import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import type { CheckIn, Reservation, Staff, VisitType } from '@/lib/types';
 import { ReservationMemoTimeline, insertReservationMemo } from '@/components/ReservationMemoTimeline';
@@ -81,6 +82,8 @@ interface ReservationDraft {
 type ViewMode = 'week' | 'day';
 
 export default function Reservations() {
+  // T-20260516-foot-CHART-OPEN-UNIFY AC-1: AdminLayout ChartContext (단일 소스)
+  const { openChart } = useChart();
   const location = useLocation();
   const { profile } = useAuth();
   const changedBy = profile?.id ?? null;
@@ -124,7 +127,7 @@ export default function Reservations() {
 
   // T-20260515-foot-RESV-CTX-HOVER: 예약관리 우클릭 메뉴 + hover 팝업
   const [resvContextMenu, setResvContextMenu] = useState<{ resv: Reservation; pos: { x: number; y: number } } | null>(null);
-  const [resvChartSheetId, setResvChartSheetId] = useState<string | null>(null);
+  // T-20260516-foot-CHART-OPEN-UNIFY AC-1: resvChartSheetId 제거 → useChart() 단일 소스로 통합
   const [resvMedicalChartOpen, setResvMedicalChartOpen] = useState(false);
   const [resvMedicalChartCustomerId, setResvMedicalChartCustomerId] = useState<string | null>(null);
   const [resvMiniPayTarget, setResvMiniPayTarget] = useState<CheckIn | null>(null);
@@ -634,10 +637,11 @@ export default function Reservations() {
   }), [clinic?.id]);
 
   // T-20260515-foot-RESV-CTX-HOVER: 핸들러
+  // T-20260516-foot-CHART-OPEN-UNIFY AC-1: setResvChartSheetId → openChart (ChartContext 단일 소스)
   const handleResvOpenChart = useCallback((ci: CheckIn) => {
     if (!ci.customer_id) { toast.info('고객 정보가 연결되어 있지 않습니다'); return; }
-    setResvChartSheetId(ci.customer_id);
-  }, []);
+    openChart(ci.customer_id);
+  }, [openChart]);
 
   const handleResvOpenMedicalChart = useCallback((ci: CheckIn) => {
     if (!ci.customer_id) { toast.info('고객 정보가 연결되어 있지 않습니다'); return; }
@@ -1096,10 +1100,7 @@ export default function Reservations() {
         onOpenPayment={handleResvOpenPayment}
       />
 
-      <CustomerChartSheet
-        customerId={resvChartSheetId}
-        onClose={() => setResvChartSheetId(null)}
-      />
+      {/* T-20260516-foot-CHART-OPEN-UNIFY AC-1: CustomerChartSheet 렌더 제거 → AdminLayout 단일 렌더로 통합 */}
 
       <MedicalChartPanel
         open={resvMedicalChartOpen}
