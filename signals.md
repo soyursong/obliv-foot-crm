@@ -1,5 +1,25 @@
 # FDD Signals — obliv-foot-crm
 
+## 2026-05-17 — dev-foot | deploy-ready | T-20260516-foot-C2Z1-MEMO-SYNC
+
+**커밋: c746b58 (RESV-MEMO-C2-ROUTE) → 정본 티켓 귀속**
+
+2번차트 1구역 방문경로 하단 [고객메모]→[예약메모] 명칭 변경 + reservation_memo_history append-only 연동.
+AC-1~4 전체 완료. Row ⑬ ReservationMemoTimeline 재사용, 1번차트 동일 reservation_id 자동 연동.
+JSX 주석 C2Z1-MEMO-SYNC 정본으로 업데이트. 빌드 OK (tsc --noEmit exit 0). DB변경: 없음.
+Note: 구현 커밋은 c746b58 (RESV-MEMO-C2-ROUTE=중복 MQ), 정본 티켓 C2Z1-MEMO-SYNC로 귀속 확인.
+
+---
+
+## 2026-05-17 — dev-foot | deploy-ready | T-20260516-foot-RESV-MEMO-C2-ROUTE
+
+**커밋: c746b58 → origin/main push 완료**
+
+2번차트(CustomerChartPage) 1구역 방문경로 [고객메모]→[예약메모] 명칭 변경 + reservation_memo_history 연동.
+Row ⑬ ReservationMemoTimeline 교체. 빌드 OK. DB변경: 없음.
+
+---
+
 ## 2026-05-16 12:40 — dev-foot | deploy-ready | T-20260516-foot-CLINIC-DOC-INFO
 
 **커밋: f495be9 → origin/main push 완료**
@@ -2417,3 +2437,4 @@ ref: T-20260512-foot-TREATMENT-SET
 | 2026-05-16 20:27 | dev-foot | deploy-ready | T-20260516-foot-CHART2-STATE-UNIFY: 2번차트 열림 state 단일화 — AC-4 E2E Green (6 passed/1 skipped). MemoryRouter→prop inject Fix. commit 6b9e10e. 빌드 OK. DB변경: 없음. e2e_spec: tests/e2e/T-20260516-foot-CHART2-STATE-UNIFY.spec.ts |
 | 2026-05-16 20:35 | supervisor | qa-fail (phase2) | T-20260516-foot-CHART2-STATE-UNIFY: E2E 시나리오2 일관 실패 + 시나리오3 flaky. 원인: 닫기 버튼 absolute top-3 in overflow-y-auto → 실데이터 환경에서 scroll-out-of-viewport. FIX-REQUEST→dev-foot (MSG-20260516-203935-wind). |
 | 2026-05-16 23:30 | dev-foot | deploy-ready | T-20260516-foot-NOTICE-SAVE-FAIL [P0]: 공지사항 저장 실패 핫픽스 — 원인: notices SELECT/UPDATE/DELETE RLS broken(staff.id=auth.uid() 불일치). FE: INSERT 후 .select().single() + optimistic local state update로 즉시 반영. commit 974cd58. 빌드 OK. ⚠️ DB마이그레이션 수동 적용 필요: 20260519000030_notices_rls_full_fix.sql (supervisor 직접 실행 요청). e2e_spec: tests/e2e/T-20260516-foot-NOTICE-SAVE-FAIL.spec.ts |
+| 2026-05-17T04:47:09+09:00 | supervisor | qa-pass + deployed | T-20260516-foot-RESV-MEMO-C2-ROUTE: 2번차트 [고객메모]→[예약메모] + ReservationMemoTimeline 연동. build 3.16s, commit c746b58, bundle CustomerChartPage-DPTGPjI8, Green. 기존 customer_memo C23 참조 무결 확인. |

@@ -2142,7 +2142,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
                 {/* ⑫ 예약메모 삭제됨 — AC-6: 예약메모는 2번차트 1구역(예약내역 패널)에서만 표시 (T-20260512-foot-RESV-MGMT-OVERHAUL) */}
 
-                {/* ⑬ 예약메모 — T-20260516-foot-RESV-MEMO-C2-ROUTE: reservation_memo_history 연동 */}
+                {/* ⑬ 예약메모 — T-20260516-foot-C2Z1-MEMO-SYNC(정본): reservation_memo_history append-only 연동 */}
                 <tr>
                   <td className={cn(LC, 'align-top pt-2 border-b-0')}>예약메모</td>
                   <td className={cn(VC, 'border-b-0')} colSpan={3}>
