@@ -35,6 +35,7 @@ import {
   Pencil,
   Check,
   X,
+  Stethoscope,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -96,12 +97,21 @@ interface Props {
 
 // ─── 자동 바인딩 컨텍스트 ───
 
+interface ClinicDoctorInfo {
+  name: string;
+  license_no: string | null;
+  specialist_no: string | null;
+  seal_image_url: string | null;
+}
+
 interface AutoBindContext {
   customer?: { name: string; phone: string; rrn?: string; address?: string } | null;
   checkIn: CheckIn;
   payments?: { total: number; insurance_covered: number; copayment?: number; non_covered: number };
-  clinic?: { name: string; address: string } | null;
+  clinic?: { name: string; address: string; phone?: string | null; business_no?: string | null; established_date?: string | null } | null;
   doctor?: string | null;
+  /** T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors에서 매칭된 원장 상세 정보 */
+  clinicDoctor?: ClinicDoctorInfo | null;
 }
 
 function buildAutoBindValues(ctx: AutoBindContext): Record<string, string> {
@@ -125,6 +135,15 @@ function buildAutoBindValues(ctx: AutoBindContext): Record<string, string> {
     clinic_name: ctx.clinic?.name ?? '오블리브 풋센터 종로',
     clinic_address: ctx.clinic?.address ?? '',
     issue_date: today,
+    // T-20260516-foot-CLINIC-DOC-INFO: 원장·병원 상세 정보
+    doctor_license_no: ctx.clinicDoctor?.license_no ?? '',
+    doctor_specialist_no: ctx.clinicDoctor?.specialist_no ?? '',
+    doctor_seal_image: ctx.clinicDoctor?.seal_image_url ?? '',
+    clinic_business_no: ctx.clinic?.business_no ?? '',
+    clinic_phone: ctx.clinic?.phone ?? '',
+    clinic_established_date: ctx.clinic?.established_date ?? '',
+    // 하위 호환 alias
+    business_reg_no: ctx.clinic?.business_no ?? '',
   };
 }
 
@@ -134,10 +153,13 @@ function buildAutoBindValues(ctx: AutoBindContext): Record<string, string> {
  * @param doctorNameOverride — 듀티 로스터에서 미리 결정된 원장님 이름.
  *   undefined이면 duty_roster 조회 후 fallback(최초 활성 director) 사용.
  *   '' (빈 문자열)이면 복수 근무로 아직 미선택 — doctor_name 빈 채로 반환.
+ * @param clinicDoctorId — T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors에서 선택된 의사 ID.
+ *   undefined이면 doctor_name으로 이름 매칭, 그래도 없으면 default 또는 첫 번째.
  */
 async function loadAutoBindContext(
   checkIn: CheckIn,
   doctorNameOverride?: string,
+  clinicDoctorId?: string,
 ): Promise<Record<string, string>> {
   // 고객 정보
   let customer = null;
@@ -185,12 +207,24 @@ async function loadAutoBindContext(
   const copayment = hasCharges ? chargesCopay : 0;
   const nonCovered = hasCharges ? chargesNonCovered : nonCoveredFromReceipts;
 
-  // 클리닉 정보
+  // 클리닉 정보 (T-20260516-foot-CLINIC-DOC-INFO: business_no, phone, established_date 추가)
   const { data: clinicData } = await supabase
     .from('clinics')
-    .select('name, address')
+    .select('name, address, phone, business_no, established_date')
     .eq('id', checkIn.clinic_id)
     .maybeSingle();
+
+  // T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors 전체 로드
+  const { data: clinicDoctorsData } = await supabase
+    .from('clinic_doctors')
+    .select('id, name, license_no, specialist_no, seal_image_url, is_default')
+    .eq('clinic_id', checkIn.clinic_id)
+    .eq('active', true)
+    .order('sort_order')
+    .order('created_at');
+
+  type ClinicDoctorRow = { id: string; name: string; license_no: string | null; specialist_no: string | null; seal_image_url: string | null; is_default: boolean };
+  const clinicDoctors = (clinicDoctorsData ?? []) as ClinicDoctorRow[];
 
   // ── 진료 의사 결정 (T-20260502-foot-DUTY-ROSTER) ──
   // 1순위: 외부에서 전달된 이름 (이미 결정됨)
@@ -226,6 +260,34 @@ async function loadAutoBindContext(
     // dutyDocs.length > 1: doctorName = null → UI에서 선택
   }
 
+  // T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors에서 원장 상세 결정
+  // 1순위: clinicDoctorId 직접 지정
+  // 2순위: doctorName으로 이름 매칭
+  // 3순위: is_default=true 의사
+  // 4순위: 첫 번째 등록 의사
+  let clinicDoctor: ClinicDoctorRow | null = null;
+  if (clinicDoctors.length > 0) {
+    if (clinicDoctorId) {
+      clinicDoctor = clinicDoctors.find((d) => d.id === clinicDoctorId) ?? null;
+    }
+    if (!clinicDoctor && doctorName) {
+      clinicDoctor = clinicDoctors.find((d) => d.name === doctorName) ?? null;
+    }
+    if (!clinicDoctor) {
+      clinicDoctor = clinicDoctors.find((d) => d.is_default) ?? clinicDoctors[0];
+    }
+  }
+
+  // 직인 이미지: storage path → signed URL (1시간)
+  if (clinicDoctor?.seal_image_url) {
+    const { data: signed } = await supabase.storage
+      .from('documents')
+      .createSignedUrl(clinicDoctor.seal_image_url, 3600);
+    if (signed?.signedUrl) {
+      clinicDoctor = { ...clinicDoctor, seal_image_url: signed.signedUrl };
+    }
+  }
+
   return buildAutoBindValues({
     customer,
     checkIn,
@@ -237,6 +299,7 @@ async function loadAutoBindContext(
     },
     clinic: clinicData,
     doctor: doctorName,
+    clinicDoctor,
   });
 }
 
@@ -1107,6 +1170,10 @@ function IssueDialog({
   const [previewOpen, setPreviewOpen] = useState(false);
   // 복수 원장님일 때 선택 상태 (단일이면 자동 설정됨)
   const [selectedDoctorName, setSelectedDoctorName] = useState<string>('');
+  // T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors 다중 의사 선택
+  const [clinicDoctors, setClinicDoctors] = useState<{ id: string; name: string; is_default: boolean }[]>([]);
+  const [selectedClinicDoctorId, setSelectedClinicDoctorId] = useState<string>('');
+  const [clinicDoctorOverrides, setClinicDoctorOverrides] = useState<Record<string, string>>({});
   // Phase 3: 서비스 항목 (진료 코드 참조)
   const [serviceItems, setServiceItems] = useState<ServiceChargeItem[]>([]);
   // E2E 통합 — 비급여 서비스 직접 추가 (T-20260507-foot-PATIENT-FLOW-E2E)
@@ -1192,6 +1259,27 @@ function IssueDialog({
       setSelectedDoctorName(dutyDoctors[0].name); // 첫 번째 기본 선택
     }
 
+    // T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors 로드
+    supabase
+      .from('clinic_doctors')
+      .select('id, name, is_default')
+      .eq('clinic_id', checkIn.clinic_id)
+      .eq('active', true)
+      .order('sort_order')
+      .order('created_at')
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        const docs = data as { id: string; name: string; is_default: boolean }[];
+        setClinicDoctors(docs);
+        // 기본 의사 또는 첫 번째 사전 선택
+        if (docs.length > 1) {
+          const def = docs.find((d) => d.is_default) ?? docs[0];
+          setSelectedClinicDoctorId(def.id);
+        } else if (docs.length === 1) {
+          setSelectedClinicDoctorId(docs[0].id);
+        }
+      });
+
     loadAutoBindContext(checkIn, resolvedDoctorName).then((vals) => {
       if (!cancelled) setAutoValues(vals);
     });
@@ -1233,6 +1321,37 @@ function IssueDialog({
     return serviceItems.reduce((s, item) => s + item.amount, 0);
   }, [serviceItems]);
 
+  // T-20260516-foot-CLINIC-DOC-INFO: selectedClinicDoctorId 변경 시 의사 상세 오버라이드
+  useEffect(() => {
+    if (!selectedClinicDoctorId || clinicDoctors.length <= 1) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('clinic_doctors')
+        .select('name, license_no, specialist_no, seal_image_url')
+        .eq('id', selectedClinicDoctorId)
+        .maybeSingle();
+      if (cancelled || !data) return;
+      let sealUrl = data.seal_image_url ?? '';
+      if (sealUrl) {
+        const { data: signed } = await supabase.storage
+          .from('documents')
+          .createSignedUrl(sealUrl, 3600);
+        sealUrl = signed?.signedUrl ?? sealUrl;
+      }
+      if (!cancelled) {
+        setClinicDoctorOverrides({
+          doctor_name: data.name ?? '',
+          doctor_license_no: data.license_no ?? '',
+          doctor_specialist_no: data.specialist_no ?? '',
+          doctor_seal_image: sealUrl,
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClinicDoctorId]);
+
   // 복수 원장님일 때 selectedDoctorName을 doctor_name 필드에 주입
   // T-20260513-foot-BILLING-DETAIL-EDIT: computedTotal로 total_amount 자동 갱신
   // T-20260514-foot-FORM-CLARITY-REWORK: HTML 양식용 items_html / record_no 주입
@@ -1240,6 +1359,10 @@ function IssueDialog({
     const base = { ...autoValues, ...manualValues };
     if (dutyDoctors.length > 1 && selectedDoctorName) {
       base.doctor_name = selectedDoctorName;
+    }
+    // T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors 다중 선택 시 오버라이드
+    if (clinicDoctors.length > 1 && selectedClinicDoctorId && Object.keys(clinicDoctorOverrides).length > 0) {
+      Object.assign(base, clinicDoctorOverrides);
     }
     if (computedTotal !== null) {
       base.total_amount = formatAmount(computedTotal);
@@ -1294,7 +1417,7 @@ function IssueDialog({
     }
 
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, checkIn]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides]);
 
   const editableFields = useMemo(() => {
     if (template.field_map.length > 0) return template.field_map;
@@ -1668,6 +1791,35 @@ function IssueDialog({
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* T-20260516-foot-CLINIC-DOC-INFO: 다중 의사 등록 시 면허번호 기준 의사 선택 */}
+            {clinicDoctors.length > 1 && (
+              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-800">
+                  <Stethoscope className="h-3.5 w-3.5" />
+                  면허번호·직인 기준 의사 선택
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {clinicDoctors.map((d) => (
+                    <button
+                      key={d.id}
+                      className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                        selectedClinicDoctorId === d.id
+                          ? 'border-blue-500 bg-blue-600 text-white'
+                          : 'border-blue-300 text-blue-700 hover:bg-blue-100'
+                      }`}
+                      onClick={() => setSelectedClinicDoctorId(d.id)}
+                    >
+                      {d.name}
+                      {d.is_default && <span className="ml-1 opacity-70">★</span>}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-blue-600">
+                  선택한 의사의 면허번호·전문의자격번호·직인이 서류에 반영됩니다
+                </p>
               </div>
             )}
 

@@ -97,7 +97,7 @@ export const STAFF_ROLE_LABEL: Record<StaffRole, string> = {
   consultant: '상담실장',
   coordinator: '코디네이터',
   therapist: '치료사',
-  technician: '관리사',
+  technician: '장비명', // AC-11 T-20260515-foot-SPACE-ASSIGN-REVAMP: 관리사→장비명
 };
 
 /** 직원 직책 표시 순서 */
@@ -118,7 +118,7 @@ export const USER_ROLE_LABEL: Record<UserRole, string> = {
   consultant: '상담실장',
   coordinator: '코디네이터',
   therapist: '치료사',
-  technician: '관리사',
+  technician: '장비명', // AC-11 T-20260515-foot-SPACE-ASSIGN-REVAMP
   tm: 'TM',
   staff: '스태프',
 };
