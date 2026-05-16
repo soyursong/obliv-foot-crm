@@ -35,6 +35,7 @@ import { CustomerChartSheet } from '@/components/CustomerChartSheet';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import type { CheckIn, Reservation, Staff, VisitType } from '@/lib/types';
+import { ReservationMemoTimeline, insertReservationMemo } from '@/components/ReservationMemoTimeline';
 
 // AC-5 재오픈 fix: 모듈 레벨 클립보드 백업 — 컴포넌트 remount 시에도 상태 복원
 // (navigate('/admin/reservations', { state }) + lazy/Suspense remount 케이스 대응)
@@ -475,7 +476,7 @@ export default function Reservations() {
       phone: r.customer_phone ?? '',
       visit_type: r.visit_type,
       memo: r.memo ?? '',
-      booking_memo: r.booking_memo ?? '',
+      booking_memo: '',  // T-20260515-foot-RESV-MEMO-APPEND: 편집 시 항상 빈 값 (새 메모 추가용)
       visit_route: '',  // AC-5: 편집 시 기존 방문경로 미리 불러오지 않음 (변경 시에만 덮어씀)
     });
     setDetail(null);
@@ -1060,6 +1061,7 @@ export default function Reservations() {
         clinicId={clinic?.id}
         maxPerSlot={12}
         changedBy={changedBy}
+        authorName={profile?.name ?? ''}
         onClose={() => setEditor(null)}
         onSaved={() => {
           setEditor(null);
@@ -1073,6 +1075,7 @@ export default function Reservations() {
           detail?.customer_id ? noshowByCustomer[detail.customer_id] ?? 0 : 0
         }
         changedBy={changedBy}
+        authorName={profile?.name ?? ''}
         isAdmin={profile?.role === 'admin'}
         onClose={() => setDetail(null)}
         onEdit={openEdit}
@@ -1136,6 +1139,7 @@ function ReservationEditor({
   clinicId,
   maxPerSlot,
   changedBy,
+  authorName,
   onClose,
   onSaved,
 }: {
@@ -1143,6 +1147,7 @@ function ReservationEditor({
   clinicId: string | undefined;
   maxPerSlot: number;
   changedBy: string | null;
+  authorName: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -1432,6 +1437,11 @@ function ReservationEditor({
       }
     }
 
+    // T-20260515-foot-RESV-MEMO-APPEND: 입력된 예약메모 → 이력 테이블 INSERT
+    if (savedId && clinicId && state.booking_memo?.trim()) {
+      await insertReservationMemo(savedId, clinicId, state.booking_memo.trim(), authorName);
+    }
+
     toast.success(state.existingId ? '수정됨' : '예약 등록');
     setSubmitting(false);
     onSaved();
@@ -1591,11 +1601,10 @@ function ReservationEditor({
               />
             </div>
           )}
-          {/* T-20260504-foot-MEMO-RESTRUCTURE: 예약메모 / 고객메모 분리 */}
-          {/* AC-6: 예약메모 = 2번차트 1구역 예약메모와 동일 데이터(reservations.booking_memo) */}
+          {/* T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 추가 (append-only) */}
           <div className="space-y-1.5">
-            <Label>예약메모 <span className="text-muted-foreground font-normal text-xs">(예약 경로 확인용)</span></Label>
-            <Textarea value={state.booking_memo ?? ''} onChange={(e) => update('booking_memo', e.target.value)} rows={2} placeholder="예: 인스타그램 광고, 지인 소개, 인바운드 전화 등" className="text-sm" />
+            <Label>예약메모 추가 <span className="text-muted-foreground font-normal text-xs">(저장 시 기록에 누적됨)</span></Label>
+            <Textarea value={state.booking_memo ?? ''} onChange={(e) => update('booking_memo', e.target.value)} rows={2} placeholder="예: 인스타그램 광고, 지인 소개, 힐러 지정 등" className="text-sm" />
           </div>
         </div>
         <DialogFooter>
@@ -1623,6 +1632,7 @@ function ReservationDetail({
   reservation,
   noshowCount,
   changedBy,
+  authorName,
   isAdmin,
   onClose,
   onEdit,
@@ -1631,6 +1641,7 @@ function ReservationDetail({
   reservation: Reservation | null;
   noshowCount: number;
   changedBy: string | null;
+  authorName: string;
   isAdmin?: boolean;
   onClose: () => void;
   onEdit: (r: Reservation) => void;
@@ -1880,22 +1891,16 @@ function ReservationDetail({
               </span>
             </div>
           )}
-          {/* T-20260504-foot-MEMO-RESTRUCTURE: booking_memo 우선, 없으면 memo */}
-          {(reservation.booking_memo || reservation.memo) && (
-            <div className="space-y-1">
-              {reservation.booking_memo && (
-                <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs">
-                  <span className="text-amber-700 font-medium">예약경로: </span>
-                  <span className="whitespace-pre-wrap">{reservation.booking_memo}</span>
-                </div>
-              )}
-              {reservation.memo && !reservation.booking_memo && (
-                <div className="rounded border bg-muted/30 p-2 whitespace-pre-wrap text-xs">
-                  {reservation.memo}
-                </div>
-              )}
-            </div>
-          )}
+          {/* T-20260515-foot-RESV-MEMO-APPEND: 예약메모 히스토리 타임라인 */}
+          <div className="space-y-1">
+            <div className="text-xs font-semibold text-amber-700">예약메모</div>
+            <ReservationMemoTimeline
+              reservationId={reservation.id}
+              clinicId={reservation.clinic_id}
+              authorName={authorName}
+              compact
+            />
+          </div>
           {logs.length > 0 && (
             <div className="space-y-1 border-t pt-2">
               <div className="text-xs font-medium text-muted-foreground">변경 이력</div>

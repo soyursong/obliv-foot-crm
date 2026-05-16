@@ -36,6 +36,8 @@ import { PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 import { NhisLookupPanel } from '@/components/insurance/NhisLookupPanel';
 // T-20260515-foot-DOC-REISSUE-BTN: 서류 발급 이력 표시용 메타
 import { FORM_META } from '@/lib/formTemplates';
+// T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 삽입 헬퍼
+import { insertReservationMemo } from '@/components/ReservationMemoTimeline';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
@@ -3434,31 +3436,22 @@ export default function CustomerChartPage() {
                       <span className="text-gray-700">{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
                       <Badge variant="secondary" className="text-[10px] px-1.5">{r.status}</Badge>
                     </button>
-                    {/* T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 예약메모 인라인 항상 활성화 */}
+                    {/* T-20260515-foot-RESV-MEMO-APPEND: 예약메모 인라인 추가 (append-only) */}
                     <input
                       type="text"
-                      value={resvMemoInputs[r.id] ?? r.booking_memo ?? ''}
+                      value={resvMemoInputs[r.id] ?? ''}
                       onChange={(e) => setResvMemoInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
-                      onBlur={async () => {
-                        const currentMemo = resvMemoInputs[r.id];
-                        if (currentMemo === undefined) return;
-                        const savedMemo = r.booking_memo ?? '';
-                        if (currentMemo === savedMemo) return;
-                        const { error } = await supabase
-                          .from('reservations')
-                          .update({ booking_memo: currentMemo.trim() || null })
-                          .eq('id', r.id);
-                        if (!error) {
-                          setReservations(prev => prev.map(rv =>
-                            rv.id === r.id ? { ...rv, booking_memo: currentMemo.trim() || null } : rv
-                          ));
-                          // AC-8 쌍방연동 — 예약메모 변경 시 1번차트에 알림
-                          if (customer) localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
-                        } else {
-                          toast.error('메모 저장 실패');
-                        }
+                      onKeyDown={async (e) => {
+                        if (e.key !== 'Enter') return;
+                        const content = (resvMemoInputs[r.id] ?? '').trim();
+                        if (!content) return;
+                        const clinicId = customer?.clinic_id ?? '';
+                        await insertReservationMemo(r.id, clinicId, content, profile?.name ?? null);
+                        setResvMemoInputs(prev => ({ ...prev, [r.id]: '' }));
+                        // AC-8 쌍방연동 — 예약메모 추가 시 1번차트에 알림
+                        if (customer) localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
                       }}
-                      placeholder="예약메모"
+                      placeholder="예약메모 추가 후 Enter"
                       className="w-full h-5 text-[10px] rounded border border-gray-200 px-1.5 focus:outline-none focus:border-teal-400 bg-white text-gray-600 placeholder:text-gray-300"
                     />
                   </div>

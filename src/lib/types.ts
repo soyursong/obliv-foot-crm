@@ -367,6 +367,17 @@ export interface UserProfile {
 }
 
 
+/** T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 이력 (append-only) */
+export interface ReservationMemoHistory {
+  id: string;
+  reservation_id: string;
+  clinic_id: string;
+  content: string;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+}
+
 export interface Reservation {
   id: string;
   clinic_id: string;
