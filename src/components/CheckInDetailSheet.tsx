@@ -40,8 +40,8 @@ import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 import { PaymentEditDialog, PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 import type { EditMode, PaymentRowForEdit, PaymentDonePayload } from '@/components/PaymentEditDialog';
 import type { CheckIn, Package as PackageType, PackageRemaining, Room, Service, VisitType } from '@/lib/types';
-// T-20260514-foot-CHART-EXPAND-UX: 고객차트 슬라이드 패널
-import { CustomerChartSheet } from '@/components/CustomerChartSheet';
+// T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동
+import { useChart } from '@/lib/chartContext';
 // T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
 import { NhisLookupPanel } from '@/components/insurance/NhisLookupPanel';
 // T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 이력
@@ -460,6 +460,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const { profile } = useAuth();
   const clinic = useClinic();
   const isAdmin = profile?.role === 'admin';
+  // T-20260516-foot-CHART2-STATE-UNIFY: chartSheetId 제거 → AdminLayout ChartContext 사용
+  const { openChart, closeChart } = useChart();
   /** 클리닉 설정 기반 레이저 시간 단위 목록 */
   const laserTimeUnits: number[] = clinic?.laser_time_units?.length
     ? clinic.laser_time_units
@@ -513,8 +515,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
   const [payEditTarget, setPayEditTarget] = useState<PaymentRowForEdit | null>(null);
   const [payEditMode, setPayEditMode] = useState<EditMode>('edit');
-  // T-20260514-foot-CHART-EXPAND-UX: 고객차트 슬라이드 패널 (window.open 대체)
-  const [chartSheetId, setChartSheetId] = useState<string | null>(null);
+  // T-20260516-foot-CHART2-STATE-UNIFY: chartSheetId state 제거 (AdminLayout ChartContext로 통합)
   // T-20260513-foot-C1-SPACE-ASSIGN-RESTORE: 공간배정 이동이력
   const [roomLogs, setRoomLogs] = useState<RoomLog[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -546,11 +547,11 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setChartNumber(null);
     setResolvedCustomerId(null);
     setLatestCheckIn(null);
-    // 초진(new) + customer_id 있으면 자동 오픈, 그 외 모두 reset
+    // 초진(new) + customer_id 있으면 자동 오픈, 그 외 모두 reset (T-20260516-foot-CHART2-STATE-UNIFY)
     if (checkIn?.visit_type === 'new' && checkIn.customer_id) {
-      setChartSheetId(checkIn.customer_id); // 초진 자동 오픈
+      openChart(checkIn.customer_id); // 초진 자동 오픈
     } else {
-      setChartSheetId(null); // 환자 전환 시 stale 차트 닫기
+      closeChart(); // 환자 전환 시 stale 차트 닫기
     }
     if (checkIn) {
       setConsultationDone(checkIn.consultation_done ?? false);
@@ -985,8 +986,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       toast.error('고객 정보를 찾을 수 없습니다 — 데스크에 문의하세요');
       return;
     }
-    // T-20260514-foot-CHART-EXPAND-UX: window.open → 슬라이드 패널
-    setChartSheetId(data.id);
+    // T-20260516-foot-CHART2-STATE-UNIFY: ChartContext openChart 사용
+    openChart(data.id);
   };
 
   // T-20260510-foot-C1-VISIT-ROUTE-MEMO: 방문경로 저장
@@ -1047,11 +1048,11 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               <SheetTitle className="flex items-center gap-2 flex-1 flex-wrap">
                 {customerMode.customerName}
               </SheetTitle>
-              {/* T-20260514-foot-CHART-EXPAND-UX: window.open → 슬라이드 패널 */}
+              {/* T-20260516-foot-CHART2-STATE-UNIFY: ChartContext openChart 사용 */}
               <Button
                 size="sm"
                 className="gap-1 h-8 text-xs bg-teal-600 hover:bg-teal-700 shrink-0"
-                onClick={() => setChartSheetId(customerMode.customerId)}
+                onClick={() => openChart(customerMode.customerId)}
               >
                 <ExternalLink className="h-3.5 w-3.5" />
                 고객차트(2번)
@@ -1415,11 +1416,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               load();
             }}
           />
-          {/* T-20260514-foot-CHART2-OPEN-BUG v2 fix: createPortal 방식 — nested dialog 독립 */}
-          <CustomerChartSheet
-            customerId={chartSheetId}
-            onClose={() => setChartSheetId(null)}
-          />
+          {/* T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout으로 이동 */}
         </SheetContent>
       </Sheet>
     );
@@ -1581,13 +1578,13 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 size="sm"
                 className="flex-1 gap-2 border-teal-400 text-teal-700 hover:bg-teal-50 text-sm h-11"
                 onClick={() => {
-                  // T-20260514-foot-CHART-EXPAND-UX: window.open → 슬라이드 패널
+                  // T-20260516-foot-CHART2-STATE-UNIFY: ChartContext openChart 사용
                   if (checkIn.customer_id) {
                     // 1순위: customer_id FK 직접 참조 (가장 확실)
-                    setChartSheetId(checkIn.customer_id);
+                    openChart(checkIn.customer_id);
                   } else if (resolvedCustomerId) {
                     // 2순위: chart_number + phone 일치로 조회된 고객 ID (환자명 불일치 허용)
-                    setChartSheetId(resolvedCustomerId);
+                    openChart(resolvedCustomerId);
                   } else {
                     // 3순위: phone 기반 실시간 조회 (로드 타임 조회 실패 시 재시도)
                     openChartFallback();
@@ -2307,11 +2304,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             load(); // DB 재조회로 최종 확인
           }}
         />
-        {/* T-20260514-foot-CHART2-OPEN-BUG v2 fix: createPortal 방식 — nested dialog 독립 */}
-        <CustomerChartSheet
-          customerId={chartSheetId}
-          onClose={() => setChartSheetId(null)}
-        />
+        {/* T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout으로 이동 */}
       </SheetContent>
     </Sheet>
   );

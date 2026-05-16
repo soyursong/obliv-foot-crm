@@ -34,7 +34,8 @@ import {
 } from '@/components/ui/dialog';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
-import { CustomerChartSheet } from '@/components/CustomerChartSheet';
+// T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동
+import { useChart } from '@/lib/chartContext';
 // T-20260515-foot-CONTEXT-MENU-4ITEM AC-4: 진료차트 패널
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { supabase } from '@/lib/supabase';
@@ -77,9 +78,8 @@ export default function Customers() {
   // T-20260510-foot-CUSTMGMT-CHART-PATTERN: 1번차트 우측 패널
   // T-20260511-foot-CUSTMGMT-DETAIL-SHEET: CheckInDetailSheet customerMode로 교체
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  // T-20260514-foot-CHART2-OPEN-BUG: 2번차트 팝업 차단 해소 → CustomerChartSheet 슬라이드 패널
-  const [chart2Id, setChart2Id] = useState<string | null>(null);
-  const openChart = (customerId: string) => setChart2Id(customerId);
+  // T-20260516-foot-CHART2-STATE-UNIFY: chart2Id state 제거 → AdminLayout ChartContext 사용
+  const { openChart } = useChart();
   // T-20260515-foot-CONTEXT-MENU-4ITEM AC-4: 진료차트 패널
   const [medicalChartOpen, setMedicalChartOpen] = useState(false);
   const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
@@ -450,11 +450,7 @@ export default function Customers() {
         />
       )}
 
-      {/* T-20260514-foot-CHART2-OPEN-BUG: 2번차트 슬라이드 패널 (팝업 차단 해소) */}
-      <CustomerChartSheet
-        customerId={chart2Id}
-        onClose={() => setChart2Id(null)}
-      />
+      {/* T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동 */}
 
       {/* T-20260515-foot-CONTEXT-MENU-4ITEM AC-4: 진료차트 패널 (고객관리 진입) */}
       <MedicalChartPanel
