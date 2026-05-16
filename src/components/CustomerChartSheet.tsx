@@ -12,9 +12,10 @@
  * - ESC 키, 백드롭 클릭 닫기 지원
  * - zLevel=1 대응: z-[60](백드롭) / z-[70](패널)
  */
+// T-20260516-foot-CHART2-STATE-UNIFY: MemoryRouter 제거 — RR6.30 nested Router 금지
+// CustomerChartPage에 customerId prop 직접 주입으로 대체
 import { useEffect, useRef, Suspense, lazy } from 'react';
 import { createPortal } from 'react-dom';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ChartSheetCloseCtx } from '@/lib/chartSheetContext';
 
 const CustomerChartPage = lazy(() => import('@/pages/CustomerChartPage'));
@@ -79,24 +80,16 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
         </button>
 
         <ChartSheetCloseCtx.Provider value={onClose}>
-          <MemoryRouter initialEntries={[`/chart/${customerId}`]}>
-            <Routes>
-              <Route
-                path="/chart/:customerId"
-                element={
-                  <Suspense
-                    fallback={
-                      <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">
-                        차트 불러오는 중…
-                      </div>
-                    }
-                  >
-                    <CustomerChartPage />
-                  </Suspense>
-                }
-              />
-            </Routes>
-          </MemoryRouter>
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">
+                차트 불러오는 중…
+              </div>
+            }
+          >
+            {/* customerId prop 직접 주입 — useParams() 대신 prop 우선 사용 */}
+            <CustomerChartPage customerId={customerId} />
+          </Suspense>
         </ChartSheetCloseCtx.Provider>
       </div>
     </>,

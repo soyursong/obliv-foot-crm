@@ -512,8 +512,10 @@ function TreatmentImagesSection({
   );
 }
 
-export default function CustomerChartPage() {
-  const { customerId } = useParams<{ customerId: string }>();
+// T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 내에서 prop으로 주입 가능 (MemoryRouter 불필요)
+export default function CustomerChartPage({ customerId: propCustomerId }: { customerId?: string } = {}) {
+  const params = useParams<{ customerId: string }>();
+  const customerId = propCustomerId ?? params.customerId;
   const { profile, loading: authLoading } = useAuth();
   // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
   const clinic = useClinic();
