@@ -74,8 +74,8 @@ import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import { StatusContextMenu } from '@/components/StatusContextMenu';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import { CustomerHoverCard } from '@/components/CustomerHoverCard';
-// T-20260514-foot-CHART2-OPEN-BUG (재오픈): Dashboard 진입경로 누락 수정
-import { CustomerChartSheet } from '@/components/CustomerChartSheet';
+// T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동
+import { useChart } from '@/lib/chartContext';
 // T-20260515-foot-CONTEXT-MENU-4ITEM: 진료차트 패널
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { playOvertimeAlert } from '@/lib/audio';
@@ -1764,8 +1764,8 @@ export default function Dashboard() {
   const [dayPayments, setDayPayments] = useState<Map<string, number>>(new Map());
   const [contextMenu, setContextMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
   const [customerMenu, setCustomerMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
-  // T-20260514-foot-CHART2-OPEN-BUG (재오픈): Dashboard 카드 컨텍스트 메뉴 → 슬라이드 패널
-  const [dashChartSheetId, setDashChartSheetId] = useState<string | null>(null);
+  // T-20260516-foot-CHART2-STATE-UNIFY: dashChartSheetId 제거 → AdminLayout ChartContext 사용
+  const { openChart: ctxOpenChart, closeChart: ctxCloseChart } = useChart();
   // T-20260515-foot-CONTEXT-MENU-4ITEM: 진료차트 패널 상태
   const [medicalChartOpen, setMedicalChartOpen] = useState(false);
   const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
@@ -3014,8 +3014,8 @@ export default function Dashboard() {
       toast.info('고객 정보가 연결되어 있지 않습니다');
       return;
     }
-    setDashChartSheetId(ci.customer_id);
-  }, []);
+    ctxOpenChart(ci.customer_id);
+  }, [ctxOpenChart]);
 
 
   const handleNewReservation = useCallback((ci: CheckIn) => {
@@ -3041,11 +3041,11 @@ export default function Dashboard() {
       return;
     }
     // 경쟁 시트 닫기 (T-20260516-foot-CHART-ROUTE-FIX AC-1)
-    setSelectedCheckIn(null);   // CheckInDetailSheet 닫기
-    setDashChartSheetId(null);  // CustomerChartSheet(Chart1) 닫기
+    setSelectedCheckIn(null);  // CheckInDetailSheet 닫기
+    ctxCloseChart();           // CustomerChartSheet 닫기 (T-20260516-foot-CHART2-STATE-UNIFY)
     setMedicalChartCustomerId(ci.customer_id);
     setMedicalChartOpen(true);
-  }, []);
+  }, [ctxCloseChart]);
 
   // T-20260515-foot-CONTEXT-MENU-4ITEM AC-3: 수납 — PaymentMiniWindow 재사용
   const handleOpenPaymentFromMenu = useCallback((ci: CheckIn) => {
@@ -3248,12 +3248,12 @@ export default function Dashboard() {
   // 체크인은 handleReservationCheckIn (접수 버튼 / 4경로) 에서만 발생
   const handleReservationSelect = useCallback((res: Reservation) => {
     if (res.customer_id) {
-      setDashChartSheetId(res.customer_id);
+      ctxOpenChart(res.customer_id);
     } else {
       const timeStr = res.reservation_time ? res.reservation_time.slice(0, 5) : '';
       toast.info(`${res.customer_name ?? ''} — ${timeStr} 예약 (차트 없음)`);
     }
-  }, []);
+  }, [ctxOpenChart]);
 
   const handleReservationCheckIn = async (res: Reservation) => {
     if (!clinic) return;
@@ -4381,11 +4381,7 @@ export default function Dashboard() {
         onOpenPayment={handleOpenPaymentFromMenu}
       />
 
-      {/* T-20260514-foot-CHART2-OPEN-BUG (재오픈): Dashboard 진입경로 — createPortal 슬라이드 패널 */}
-      <CustomerChartSheet
-        customerId={dashChartSheetId}
-        onClose={() => setDashChartSheetId(null)}
-      />
+      {/* T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동 */}
 
       {/* T-20260515-foot-CONTEXT-MENU-4ITEM AC-2: 진료차트 패널 */}
       <MedicalChartPanel

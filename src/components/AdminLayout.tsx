@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { ChartContext } from '@/lib/chartContext';
+import { CustomerChartSheet } from '@/components/CustomerChartSheet';
 import {
   LayoutDashboard,
   CalendarDays,
@@ -69,6 +71,14 @@ export default function AdminLayout() {
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // UX-9: 사이드바 알림 뱃지 — 오늘 결제대기 건수
   const [paymentWaitingCount, setPaymentWaitingCount] = useState<number>(0);
+  // T-20260516-foot-CHART2-STATE-UNIFY AC-1: 2번차트 단일 소스 (3개 분산 state 통합)
+  const [chartId, setChartId] = useState<string | null>(null);
+  const openChart = useCallback((customerId: string) => setChartId(customerId), []);
+  const closeChart = useCallback(() => setChartId(null), []);
+  const chartContextValue = useMemo(
+    () => ({ chartId, openChart, closeChart }),
+    [chartId, openChart, closeChart],
+  );
 
   useEffect(() => {
     if (!clinic) return;
@@ -202,6 +212,7 @@ export default function AdminLayout() {
   );
 
   return (
+    <ChartContext.Provider value={chartContextValue}>
     <div className="flex h-screen bg-muted/30">
       {/* Desktop sidebar — T-20260513-foot-SIDEBAR-COLLAPSE */}
       <aside
@@ -404,5 +415,8 @@ export default function AdminLayout() {
         </div>
       </main>
     </div>
+    {/* T-20260516-foot-CHART2-STATE-UNIFY AC-2: 단일 렌더 (4곳 중복 제거) — createPortal로 document.body에 마운트 */}
+    <CustomerChartSheet customerId={chartId} onClose={closeChart} />
+    </ChartContext.Provider>
   );
 }
