@@ -10,7 +10,6 @@ import { format } from 'date-fns';
 import { Bell, Pencil, Pin, Plus, Trash2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
-import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -30,7 +29,6 @@ interface Notice {
 
 export default function Notices() {
   const clinic = useClinic();
-  const { profile } = useAuth();
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -101,7 +99,7 @@ export default function Notices() {
         title: formTitle.trim(),
         content: formContent.trim() || null,
         is_pinned: formPinned,
-        created_by: profile?.id ?? null,
+        created_by: null,  // T-20260517-foot-NOTICE-VIOLATION-BLOCK: staff.id≠auth.uid() FK 불일치, nullable 설계로 null 전달
       }).select().single();
       if (error) { toast.error('저장 실패: ' + error.message); }
       else {
