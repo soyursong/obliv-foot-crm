@@ -1,5 +1,6 @@
 # FDD Signals — obliv-foot-crm
 
+| 2026-05-17 21:30 | dev-foot | deploy-ready | T-20260517-foot-SELFCHECKIN-TESTDATA5: [TEST5] 초진 20명 더미 예약 삽입 완료. customers 20/20 + reservations 20/20 (10:00~16:58 22분간격). 체크인 없음. 5/18 4진입경로 검증 준비. DB변경: INSERT only. rollback: rollback_selfcheckin_testdata5_20260517.mjs. |
 | 2026-05-17 21:10 | dev-foot | deploy-ready | T-20260517-foot-OPENDAY-TESTSEED: 개원일(5/18) 초진 20명 시드 완료. customers 20/20 + reservations 20/20 (09:00~18:30). 차트1(CheckInDetailSheet)/차트2(CustomerChartSheet AdminLayout) 코드 정상. cleanup: rollback_openday_testdata_20260517.mjs. DB변경: INSERT only. commit: b149467. |
 | 2026-05-17 18:18 | dev-foot | deploy-ready | T-20260517-foot-TREATROOM-RESV-UNIFY [P0 hotfix]: 치료실현황 예약창 → 당일현황 빠른예약창 기준 통일. AC-1 이름/연락처 InlinePatientSearch, AC-2 신규환자 즉석등록(E.164+INSERT), AC-3 [초진][재진][체험] 한글버튼, AC-4 예약메모, AC-5 customer_id+phone 셀프체크인 매칭 보장. tsc clean. DB변경: 없음. commit: 026bcf3. E2E spec: T-20260517-foot-TREATROOM-RESV-UNIFY.spec.ts (6 scenarios). |
 | 2026-05-17 15:15 | dev-foot | deploy-ready | T-20260517-foot-E164-AUDIT: phone E.164 전수 감사 완료. 미적용 6포인트 일괄 수정 (Reservations/Dashboard/Customers 저장, Dashboard 검색 noLeadingZero OR, CheckInDetailSheet ilike slice(-8)). 회귀 없음. tsc clean. DB변경: 없음. commit: 47bb692 |
