@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
-import { ExternalLink, FileText, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, Send, Trash2, Upload, X } from 'lucide-react';
+import { CalendarPlus, ExternalLink, FileText, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, Send, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
 import { Badge } from '@/components/ui/badge';
@@ -516,6 +516,7 @@ function TreatmentImagesSection({
 export default function CustomerChartPage({ customerId: propCustomerId }: { customerId?: string } = {}) {
   const params = useParams<{ customerId: string }>();
   const customerId = propCustomerId ?? params.customerId;
+  const navigate = useNavigate();
   const { profile, loading: authLoading } = useAuth();
   // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
   const clinic = useClinic();
@@ -925,7 +926,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         postal_code: postalCodeText.trim() || null,
       })
       .eq('id', customer.id);
-    if (error) { toast.error('저장 실패'); return; }
+    if (error) {
+      console.error('[C21-SAVE-REGRESS] saveAddress 실패:', error.message);
+      toast.error(`주소 저장 실패: ${error.message}`);
+      return;
+    }
     setCustomer((prev) => prev ? {
       ...prev,
       address: addressText.trim() || null,
@@ -1036,8 +1041,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       }
       if (Object.keys(patch).length > 0) {
         const { error } = await supabase.from('customers').update(patch).eq('id', customer.id);
-        if (error) { toast.error(`저장 실패: ${error.message}`); return; }
-        setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
+        if (error) {
+          console.error('[C21-SAVE-REGRESS] 다른 필드 저장 실패 (address 저장은 계속 진행):', error.message);
+          toast.error(`저장 실패: ${error.message}`);
+          // return 제거 — address 저장 블록은 다른 필드 저장 결과와 독립 (T-20260516-foot-C21-SAVE-REGRESS AC-3)
+        } else {
+          setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
+        }
       }
       // 3) address 독립 저장 — 실패해도 다른 필드 저장 결과에 영향 없음 (T-20260516-foot-C21-SAVE-REGRESS)
       // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 항상 포함 (editingAddress 가드 제거)
@@ -1219,7 +1229,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             postal_code: zoneCode || null,
             address: fullAddr || null,
           }).eq('id', customer!.id).then(({ error }) => {
-            if (error) { toast.error('주소 저장 실패'); return; }
+            if (error) {
+              console.error('[C21-SAVE-REGRESS] 카카오 주소 즉시 저장 실패:', error.message);
+              toast.error(`주소 저장 실패: ${error.message}`);
+              return;
+            }
             setCustomer((prev) => prev ? { ...prev, postal_code: zoneCode, address: fullAddr } : prev);
           });
         },
@@ -1668,6 +1682,26 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           </Badge>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
+          {/* T-20260517-foot-RESV-NAV-DIRECT: 고객 컨텍스트 있음 → 예약관리로 이동 + 고객 자동채움 */}
+          <button
+            onClick={() => {
+              navigate('/admin/reservations', {
+                state: {
+                  openReservationFor: {
+                    customer_id: customer.id,
+                    name: customer.name,
+                    phone: customer.phone ?? '',
+                    visit_type: customer.visit_type,
+                  },
+                },
+              });
+              chartSheetClose?.();
+            }}
+            className="rounded px-2 py-1 text-xs bg-emerald-500/80 hover:bg-emerald-500 transition flex items-center gap-1"
+            data-testid="btn-chart-make-reservation"
+          >
+            <CalendarPlus className="h-3.5 w-3.5" /> 예약하기
+          </button>
           <button onClick={() => window.print()} className="rounded px-2 py-1 text-xs bg-white/10 hover:bg-white/20 transition flex items-center gap-1">
             <Printer className="h-3.5 w-3.5" /> 인쇄
           </button>
