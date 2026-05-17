@@ -160,16 +160,25 @@ function buildPrintHtml(pages: string[], title: string): string {
 </head><body>${pages.join('\n')}</body></html>`;
 }
 
+/** T-20260517-foot-RX-DOSAGE-DYNAMIC: 처방 기본 용량/용법/투약일수 (미입력 시 1/1/7) */
+interface RxDosage {
+  unit_dose: string;
+  daily_freq: string;
+  total_days: string;
+}
+
 /**
  * T-20260517-foot-DOC-CODE-INSERT: 선택된 상병코드/처방약 코드를 fieldValues에 주입.
  * - 상병코드(category_label='상병') → diag_code_N / diag_name_N (N=1~)
  * - 처방약(category_label='처방약') → rx_items_html (rx_standard 전용)
  * - 상병코드는 rx_standard의 질병분류기호(diag_code_N)에도 동일 주입
+ * T-20260517-foot-RX-DOSAGE-DYNAMIC: rxDosage 주입으로 하드코딩 1/1/7 해소
  */
 function buildCodeEnrichedValues(
   base: Record<string, string>,
   codeItems: SelectedItem[],
   formKey: string,
+  rxDosage?: RxDosage,
 ): Record<string, string> {
   const values = { ...base };
 
@@ -182,10 +191,16 @@ function buildCodeEnrichedValues(
   });
 
   // rx_standard: 처방약 → rx_items_html
+  // T-20260517-foot-RX-DOSAGE-DYNAMIC: 미입력 시 1/1/7 fallback
   if (formKey === 'rx_standard') {
     const rxItems = codeItems.filter((i) => (i.service.category_label ?? '') === '처방약');
-    values.rx_items_html = buildRxItemsHtml(rxItems.map((i) => ({ name: i.service.name })));
-    if (!values.usage_days) values.usage_days = '7';
+    values.rx_items_html = buildRxItemsHtml(rxItems.map((i) => ({
+      name: i.service.name,
+      unit_dose: rxDosage?.unit_dose || '1',
+      daily_freq: rxDosage?.daily_freq || '1',
+      total_days: rxDosage?.total_days || '7',
+    })));
+    if (!values.usage_days) values.usage_days = rxDosage?.total_days || '7';
     if (!values.issue_no) values.issue_no = '';
   }
 
@@ -387,6 +402,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const [payMethod, setPayMethod] = useState<PayMethod>('card');
   const [submitting, setSubmitting] = useState(false);
 
+  // ── T-20260517-foot-RX-DOSAGE-DYNAMIC: 처방전 용량/용법/투약일수 (미입력 시 1/1/7)
+  const [rxDosage, setRxDosage] = useState<RxDosage>({ unit_dose: '', daily_freq: '', total_days: '' });
+
   // ── PAY-CASH-RECEIPT: 현금영수증
   const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
   const [cashReceiptType, setCashReceiptType] = useState<'income_deduction' | 'expense_proof'>(
@@ -447,6 +465,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     setDeductAmount(0);
     setActivePackages([]);
     setTodayTreatments([]);
+    setRxDosage({ unit_dose: '', daily_freq: '', total_days: '' });
 
     Promise.all([
       supabase
@@ -995,7 +1014,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       const autoValues = await loadMiniAutoBindValues(checkIn);
       const pages = selected.flatMap((t) => {
         // T-20260517-foot-DOC-CODE-INSERT: 상병코드/처방약 주입
-        const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key);
+        // T-20260517-foot-RX-DOSAGE-DYNAMIC: rxDosage 전달
+        const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxDosage);
         // HTML 양식 우선 (template_format='html' 또는 HTML_TEMPLATE_MAP에 등록된 키)
         if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
           const page = buildHtmlPageDiv(t, enriched);
@@ -1040,9 +1060,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     try {
       // 1. 서류 출력 (iframe — PAY-SLOT-MOVE AC-4)
       // T-20260517-foot-DOC-CODE-INSERT: 상병코드/처방약 주입
+      // T-20260517-foot-RX-DOSAGE-DYNAMIC: rxDosage 전달
       const autoValues = await loadMiniAutoBindValues(checkIn);
       const pages = selected.flatMap((t) => {
-        const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key);
+        const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxDosage);
         if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
           const page = buildHtmlPageDiv(t, enriched);
           return page ? [page] : [];
@@ -1631,6 +1652,44 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                 })}
               </div>
             </div>
+
+            {/* T-20260517-foot-RX-DOSAGE-DYNAMIC: 처방전 용량/용법/투약일수 입력 */}
+            {selectedDocKeys.has('rx_standard') &&
+              codeItems.some((i) => (i.service.category_label ?? '') === '처방약') && (
+              <div className="px-2 py-1.5 border-t bg-amber-50/60 space-y-1">
+                <p className="text-[10px] font-semibold text-amber-800">처방 용량/용법/투약일수</p>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-muted-foreground w-6 shrink-0 text-right">용량</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={rxDosage.unit_dose}
+                    onChange={(e) => setRxDosage((p) => ({ ...p, unit_dose: e.target.value }))}
+                    placeholder="1"
+                    className="h-5 w-10 text-[10px] text-center border rounded px-1 bg-white"
+                  />
+                  <span className="text-[10px] text-muted-foreground w-6 shrink-0 text-right">횟수</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={rxDosage.daily_freq}
+                    onChange={(e) => setRxDosage((p) => ({ ...p, daily_freq: e.target.value }))}
+                    placeholder="1"
+                    className="h-5 w-10 text-[10px] text-center border rounded px-1 bg-white"
+                  />
+                  <span className="text-[10px] text-muted-foreground w-6 shrink-0 text-right">일수</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={rxDosage.total_days}
+                    onChange={(e) => setRxDosage((p) => ({ ...p, total_days: e.target.value }))}
+                    placeholder="7"
+                    className="h-5 w-10 text-[10px] text-center border rounded px-1 bg-white"
+                  />
+                </div>
+                <p className="text-[9px] text-muted-foreground">미입력 시 기본값(1/1/7) 적용</p>
+              </div>
+            )}
 
             {/* Zone 3 — 서류 버튼 */}
             <div className="border-t px-2 py-2 space-y-1.5 shrink-0">

@@ -32,6 +32,8 @@ interface PatientRow {
   doctor_confirmed_at: string | null;
   prescription_items: unknown;
   doctor_confirm_prescription: boolean;
+  /** T-20260517-foot-HEALER-MEMO-DISPLAY: 예약메모 (reservations.booking_memo join) */
+  booking_memo: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -71,10 +73,11 @@ function useTodayPatients(clinicId: string | null) {
     queryFn: async () => {
       if (!clinicId) return [];
       const today = format(new Date(), 'yyyy-MM-dd');
+      // T-20260517-foot-HEALER-MEMO-DISPLAY: reservation:reservation_id join → booking_memo
       const { data, error } = await supabase
         .from('check_ins')
         .select(
-          'id, customer_name, visit_type, status, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription',
+          'id, customer_name, visit_type, status, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, reservation:reservation_id(booking_memo)',
         )
         .eq('clinic_id', clinicId)
         .gte('checked_in_at', `${today}T00:00:00`)
@@ -82,7 +85,17 @@ function useTodayPatients(clinicId: string | null) {
         .neq('status', 'cancelled')
         .order('checked_in_at', { ascending: true });
       if (error) throw error;
-      return (data ?? []) as PatientRow[];
+      // Supabase may return reservation as array or object — flatten to booking_memo
+      return ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => {
+        const resv = row['reservation'];
+        let booking_memo: string | null = null;
+        if (Array.isArray(resv) && resv.length > 0) {
+          booking_memo = (resv[0] as { booking_memo?: string | null }).booking_memo ?? null;
+        } else if (resv && typeof resv === 'object' && !Array.isArray(resv)) {
+          booking_memo = (resv as { booking_memo?: string | null }).booking_memo ?? null;
+        }
+        return { ...row, booking_memo } as unknown as PatientRow;
+      });
     },
     refetchInterval: 30_000,
     staleTime: 15_000,
@@ -170,6 +183,15 @@ function PatientRow({
         {/* 상태 */}
         <span className="text-[11px] text-muted-foreground shrink-0 hidden sm:block">
           {STATUS_KO[row.status] ?? row.status}
+        </span>
+
+        {/* 예약메모 — T-20260517-foot-HEALER-MEMO-DISPLAY AC-1~4 */}
+        <span
+          className="text-[11px] text-muted-foreground truncate hidden sm:block max-w-[160px]"
+          title={row.booking_memo ?? undefined}
+          data-testid="booking-memo"
+        >
+          {row.booking_memo || '—'}
         </span>
 
         {/* 처방 상태 */}

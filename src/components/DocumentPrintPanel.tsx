@@ -1185,6 +1185,8 @@ function IssueDialog({
   // T-20260513-foot-BILLING-DETAIL-EDIT: 수정/삭제
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editingAmountStr, setEditingAmountStr] = useState('');
+  // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item 용량/용법/투약일수 (rx_standard 전용)
+  const [rxItemDosages, setRxItemDosages] = useState<Record<string, { unit_dose: string; daily_freq: string; total_days: string }>>({});
 
   // T-20260513-foot-BILLING-DETAIL-EDIT: service_charges 새로고침 공통 헬퍼
   const refreshServiceItems = useCallback(async () => {
@@ -1395,12 +1397,13 @@ function IssueDialog({
     }
 
     // rx_standard HTML 양식: 처방 의약품 rows 주입 (T-20260515-foot-FORM-ONELINE-RX)
+    // T-20260517-foot-RX-DOSAGE-DYNAMIC: 하드코딩 → per-item 사용자 입력, 미입력 시 1/1/7 fallback
     if (template.form_key === 'rx_standard') {
       const rxItems = serviceItems.map((item) => ({
         name: item.name,
-        unit_dose: '1',
-        daily_freq: '1',
-        total_days: '7',
+        unit_dose: rxItemDosages[item.id]?.unit_dose || '1',
+        daily_freq: rxItemDosages[item.id]?.daily_freq || '1',
+        total_days: rxItemDosages[item.id]?.total_days || '7',
         method: '',
       }));
       base.rx_items_html = buildRxItemsHtml(rxItems);
@@ -1417,7 +1420,7 @@ function IssueDialog({
     }
 
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages]);
 
   const editableFields = useMemo(() => {
     if (template.field_map.length > 0) return template.field_map;
@@ -1659,39 +1662,79 @@ function IssueDialog({
                         </div>
                       ) : (
                         /* ── 일반 표시 행 ── */
-                        <div className="flex items-center justify-between py-0.5">
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            {item.service_code && (
-                              <span className="font-mono text-[10px] bg-teal-50 border border-teal-200 text-teal-700 px-1.5 py-0.5 rounded shrink-0">
-                                {item.service_code}
+                        <div className="py-0.5">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              {item.service_code && (
+                                <span className="font-mono text-[10px] bg-teal-50 border border-teal-200 text-teal-700 px-1.5 py-0.5 rounded shrink-0">
+                                  {item.service_code}
+                                </span>
+                              )}
+                              {item.hira_code && (
+                                <span className="font-mono text-[10px] bg-blue-50 border border-blue-200 text-blue-700 px-1.5 py-0.5 rounded shrink-0">
+                                  {item.hira_code}
+                                </span>
+                              )}
+                              <span className="truncate text-foreground">{item.name}</span>
+                            </div>
+                            <div className="flex items-center gap-0.5 shrink-0 ml-2">
+                              <span className="tabular-nums text-muted-foreground">
+                                {formatAmount(item.amount)}
                               </span>
-                            )}
-                            {item.hira_code && (
-                              <span className="font-mono text-[10px] bg-blue-50 border border-blue-200 text-blue-700 px-1.5 py-0.5 rounded shrink-0">
-                                {item.hira_code}
-                              </span>
-                            )}
-                            <span className="truncate text-foreground">{item.name}</span>
+                              <button
+                                onClick={() => { setEditingItemId(item.id); setEditingAmountStr(String(item.amount)); }}
+                                className="h-6 w-6 hidden group-hover:flex items-center justify-center rounded text-teal-600 hover:bg-teal-50 ml-1"
+                                title="수정"
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteItem(item.id)}
+                                className="h-6 w-6 hidden group-hover:flex items-center justify-center rounded text-red-500 hover:bg-red-50"
+                                title="삭제"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-0.5 shrink-0 ml-2">
-                            <span className="tabular-nums text-muted-foreground">
-                              {formatAmount(item.amount)}
-                            </span>
-                            <button
-                              onClick={() => { setEditingItemId(item.id); setEditingAmountStr(String(item.amount)); }}
-                              className="h-6 w-6 hidden group-hover:flex items-center justify-center rounded text-teal-600 hover:bg-teal-50 ml-1"
-                              title="수정"
-                            >
-                              <Pencil className="h-3 w-3" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteItem(item.id)}
-                              className="h-6 w-6 hidden group-hover:flex items-center justify-center rounded text-red-500 hover:bg-red-50"
-                              title="삭제"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          </div>
+                          {/* T-20260517-foot-RX-DOSAGE-DYNAMIC: rx_standard 전용 용량/용법/투약일수 입력 */}
+                          {template.form_key === 'rx_standard' && (
+                            <div className="flex items-center gap-1 mt-1 ml-0.5">
+                              <span className="text-[10px] text-muted-foreground shrink-0">용량</span>
+                              <Input
+                                value={rxItemDosages[item.id]?.unit_dose ?? ''}
+                                onChange={(e) => setRxItemDosages((prev) => ({
+                                  ...prev,
+                                  [item.id]: { ...prev[item.id], unit_dose: e.target.value },
+                                }))}
+                                placeholder="1"
+                                className="h-5 text-[10px] w-10 px-1 text-center"
+                                inputMode="numeric"
+                              />
+                              <span className="text-[10px] text-muted-foreground shrink-0">횟수</span>
+                              <Input
+                                value={rxItemDosages[item.id]?.daily_freq ?? ''}
+                                onChange={(e) => setRxItemDosages((prev) => ({
+                                  ...prev,
+                                  [item.id]: { ...prev[item.id], daily_freq: e.target.value },
+                                }))}
+                                placeholder="1"
+                                className="h-5 text-[10px] w-10 px-1 text-center"
+                                inputMode="numeric"
+                              />
+                              <span className="text-[10px] text-muted-foreground shrink-0">일수</span>
+                              <Input
+                                value={rxItemDosages[item.id]?.total_days ?? ''}
+                                onChange={(e) => setRxItemDosages((prev) => ({
+                                  ...prev,
+                                  [item.id]: { ...prev[item.id], total_days: e.target.value },
+                                }))}
+                                placeholder="7"
+                                className="h-5 text-[10px] w-10 px-1 text-center"
+                                inputMode="numeric"
+                              />
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

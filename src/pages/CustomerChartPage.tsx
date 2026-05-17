@@ -38,6 +38,9 @@ import { NhisLookupPanel } from '@/components/insurance/NhisLookupPanel';
 import { FORM_META } from '@/lib/formTemplates';
 // T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 삽입 헬퍼
 import { ReservationMemoTimeline, insertReservationMemo } from '@/components/ReservationMemoTimeline';
+// T-20260517-foot-C2-CONSULT-DOCS: 동의서 [작성] 다이얼로그
+import { ConsentFormDialog, type FormType } from '@/components/ConsentFormDialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
@@ -610,6 +613,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [savingConsultation, setSavingConsultation] = useState(false);
   // C23-PHRASE-LINK: 상담 탭 상용구 — phrase_templates WHERE category='general' DB 연동
   const [generalPhrases, setGeneralPhrases] = useState<{ id: number; name: string; content: string }[]>([]);
+  // T-20260517-foot-C2-CONSULT-DOCS: 필수서류 [작성]/[내용보기] 다이얼로그 상태
+  const [consentDialogFormType, setConsentDialogFormType] = useState<FormType | null>(null);
+  const [viewDocGroup, setViewDocGroup] = useState<1 | 2 | null>(null);
   // C23-DETAIL-SIMPLIFY: 치료메모 탭 상태
   const [treatmentMemoText, setTreatmentMemoText] = useState('');
   const [savingTreatmentMemo, setSavingTreatmentMemo] = useState(false);
@@ -701,6 +707,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         etcMemo: (custData as Customer).memo ?? '',
       });
       setConsultationMemo((custData as Customer).tm_memo ?? '');
+      // AC-6 쌍방연동: consultationStaffId 초기값을 Zone 1 assigned_staff_id 와 동기화
+      setConsultationStaffId((custData as Customer).assigned_staff_id ?? '');
       // treatment_note 컬럼 적용 전 memo 폴백 (migration 20260508000090)
       setTreatmentMemoText((custData as Customer).treatment_note ?? (custData as Customer).memo ?? '');
 
@@ -2145,6 +2153,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       onChange={(e) => {
                         setIsDirty(true);
                         saveCustomerField({ assigned_staff_id: e.target.value || null });
+                        setConsultationStaffId(e.target.value); // AC-6 쌍방연동
                       }}
                       disabled={savingField}
                       className="rounded border border-gray-300 px-2 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
@@ -3079,27 +3088,76 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </div>
           )}
 
-              {/* History: 상담내역 — T-20260513-foot-C21-TAB-RESTRUCTURE-C: 필수서류 + 수납연결 (AC-2) */}
+              {/* History: 상담내역 — T-20260517-foot-C2-CONSULT-DOCS: 필수서류 2그룹 분리 */}
               {chartTabGroup === 'history' && chartTab === 'consultations' && (
             <div className="space-y-3">
-              {/* T-20260513-foot-C21-TAB-RESTRUCTURE-C: 필수서류 체크리스트 */}
+
+              {/* ── 그룹1: 개인정보 / 체크리스트 ── */}
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center gap-1.5 font-bold text-indigo-800 mb-2">
                   <span className="h-2 w-2 rounded-full bg-indigo-500" />
-                  필수서류 현황
+                  개인정보 / 체크리스트
                 </div>
-                <div className="space-y-1">
-                  {/* 전자서명 동의서 */}
-                  {(['treatment', 'non_covered', 'privacy'] as const).map((fType) => {
+                <div className="space-y-1 mb-2">
+                  {/* 개인정보 동의서 */}
+                  {(() => {
+                    const done = consentEntries.some((c) => c.form_type === 'privacy');
+                    return (
+                      <div className={`flex items-center gap-2 rounded px-2 py-1 ${done ? 'bg-teal-50' : 'bg-gray-50'}`}>
+                        <span className={done ? 'text-teal-600' : 'text-gray-300'}>{done ? '✓' : '○'}</span>
+                        <span className={done ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>개인정보 동의서</span>
+                        {done && (
+                          <span className="ml-auto text-muted-foreground text-[10px]">
+                            {format(new Date(consentEntries.find((c) => c.form_type === 'privacy')!.signed_at), 'MM-dd')}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  {/* 사전 체크리스트 */}
+                  <div className={`flex items-center gap-2 rounded px-2 py-1 ${checklistEntries.length > 0 ? 'bg-teal-50' : 'bg-gray-50'}`}>
+                    <span className={checklistEntries.length > 0 ? 'text-teal-600' : 'text-gray-300'}>
+                      {checklistEntries.length > 0 ? '✓' : '○'}
+                    </span>
+                    <span className={checklistEntries.length > 0 ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>사전 체크리스트</span>
+                    {checklistEntries.length > 0 && checklistEntries[0].completed_at && (
+                      <span className="ml-auto text-muted-foreground text-[10px]">
+                        {format(new Date(checklistEntries[0].completed_at), 'MM-dd')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!latestCheckIn) { toast.error('접수 기록이 없습니다. 먼저 접수해주세요.'); return; }
+                      setConsentDialogFormType('privacy');
+                    }}
+                    className="flex-1 rounded border border-indigo-300 bg-indigo-50 py-1 text-[10px] font-medium text-indigo-700 hover:bg-indigo-100 transition"
+                  >작성</button>
+                  <button
+                    type="button"
+                    onClick={() => setViewDocGroup(1)}
+                    disabled={!consentEntries.some((c) => c.form_type === 'privacy') && checklistEntries.length === 0}
+                    className="flex-1 rounded border border-gray-200 bg-white py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                  >내용보기</button>
+                </div>
+              </div>
+
+              {/* ── 그룹2: 환불 / 비급여 동의서 ── */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-purple-800 mb-2">
+                  <span className="h-2 w-2 rounded-full bg-purple-500" />
+                  환불 / 비급여 동의서
+                </div>
+                <div className="space-y-1 mb-2">
+                  {(['non_covered', 'refund'] as const).map((fType) => {
                     const done = consentEntries.some((c) => c.form_type === fType);
                     return (
                       <div key={fType} className={`flex items-center gap-2 rounded px-2 py-1 ${done ? 'bg-teal-50' : 'bg-gray-50'}`}>
-                        <span className={done ? 'text-teal-600' : 'text-gray-300'}>
-                          {done ? '✓' : '○'}
-                        </span>
-                        <span className={done ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>
-                          {FORM_TITLES[fType] ?? fType}
-                        </span>
+                        <span className={done ? 'text-teal-600' : 'text-gray-300'}>{done ? '✓' : '○'}</span>
+                        <span className={done ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>{FORM_TITLES[fType] ?? fType}</span>
                         {done && (
                           <span className="ml-auto text-muted-foreground text-[10px]">
                             {format(new Date(consentEntries.find((c) => c.form_type === fType)!.signed_at), 'MM-dd')}
@@ -3108,40 +3166,39 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       </div>
                     );
                   })}
-                  {/* 사전 체크리스트 */}
-                  <div className={`flex items-center gap-2 rounded px-2 py-1 ${checklistEntries.length > 0 ? 'bg-teal-50' : 'bg-gray-50'}`}>
-                    <span className={checklistEntries.length > 0 ? 'text-teal-600' : 'text-gray-300'}>
-                      {checklistEntries.length > 0 ? '✓' : '○'}
-                    </span>
-                    <span className={checklistEntries.length > 0 ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>
-                      사전 체크리스트
-                    </span>
-                    {checklistEntries.length > 0 && checklistEntries[0].completed_at && (
-                      <span className="ml-auto text-muted-foreground text-[10px]">
-                        {format(new Date(checklistEntries[0].completed_at), 'MM-dd')}
-                      </span>
-                    )}
-                  </div>
+                </div>
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!latestCheckIn) { toast.error('접수 기록이 없습니다. 먼저 접수해주세요.'); return; }
+                      // 미서명 항목 순서대로 열기: non_covered → refund
+                      const nextForm = !consentEntries.some((c) => c.form_type === 'non_covered')
+                        ? 'non_covered'
+                        : 'refund';
+                      setConsentDialogFormType(nextForm);
+                    }}
+                    className="flex-1 rounded border border-purple-300 bg-purple-50 py-1 text-[10px] font-medium text-purple-700 hover:bg-purple-100 transition"
+                  >작성</button>
+                  <button
+                    type="button"
+                    onClick={() => setViewDocGroup(2)}
+                    disabled={!consentEntries.some((c) => c.form_type === 'refund') && !consentEntries.some((c) => c.form_type === 'non_covered')}
+                    className="flex-1 rounded border border-gray-200 bg-white py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                  >내용보기</button>
                 </div>
               </div>
 
-              {/* 동의서 사진 + 결제영수증 */}
+              {/* ── 결제영수증 (AC-4: 기존 기능 유지 + 자동 매출 산정 이미 도입됨) ── */}
               <div className="rounded-lg border bg-white p-3 text-xs">
-                <div className="flex items-center gap-1.5 font-bold text-blue-800 mb-2">
-                  <span className="h-2 w-2 rounded-full bg-blue-500" />
-                  상담실장 서류
-                </div>
-                <div className="space-y-2">
-                  <CustomerStorageImageSection customerId={customer.id} prefix="consent" label="동의서 사진 (환불 + 비급여동의서)" accent="blue" />
-                  <ReceiptUploadSection
-                    customerId={customer.id}
-                    clinicId={customer.clinic_id}
-                    onPaymentCreated={refreshPayments}
-                  />
-                </div>
+                <ReceiptUploadSection
+                  customerId={customer.id}
+                  clinicId={customer.clinic_id}
+                  onPaymentCreated={refreshPayments}
+                />
               </div>
 
-              {/* T-20260513-foot-C21-TAB-RESTRUCTURE-C: 영수증 → 수납내역 연결 (AC-2) */}
+              {/* 영수증 연결 수납내역 */}
               {payments.filter((p) => p.memo === '영수증 업로드').length > 0 && (
                 <div className="rounded-lg border bg-white p-3 text-xs">
                   <div className="flex items-center gap-1.5 font-semibold text-green-800 mb-2">
@@ -3159,21 +3216,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           <Badge variant="secondary" className="text-[10px] ml-auto">수납내역 연결</Badge>
                         </div>
                       ))}
-                  </div>
-                </div>
-              )}
-
-              {/* 전자서명 동의서 목록 */}
-              {consentEntries.length > 0 && (
-                <div className="rounded-lg border bg-white p-3 text-xs">
-                  <div className="font-semibold text-muted-foreground mb-2">전자서명 동의서</div>
-                  <div className="space-y-1">
-                    {consentEntries.map((c, i) => (
-                      <div key={i} className="flex items-center gap-2 rounded bg-blue-50 px-2 py-1">
-                        <span className="text-muted-foreground">{format(new Date(c.signed_at), 'MM-dd HH:mm')}</span>
-                        <span>{FORM_TITLES[c.form_type] ?? c.form_type}</span>
-                      </div>
-                    ))}
                   </div>
                 </div>
               )}
@@ -3684,7 +3726,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   <label className="block text-[11px] text-muted-foreground mb-0.5">담당자</label>
                   <select
                     value={consultationStaffId}
-                    onChange={(e) => setConsultationStaffId(e.target.value)}
+                    onChange={(e) => {
+                      setConsultationStaffId(e.target.value);
+                      saveCustomerField({ assigned_staff_id: e.target.value || null }); // AC-6 쌍방연동
+                    }}
                     className="w-full h-7 rounded border border-gray-300 px-1.5 text-[11px] focus:outline-none focus:border-teal-500 bg-white"
                   >
                     <option value="">— 실장 선택 —</option>
@@ -3716,7 +3761,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   <Textarea
                     value={consultationMemo}
                     onChange={(e) => setConsultationMemo(e.target.value)}
-                    rows={4}
+                    rows={8}
                     className="text-[11px] resize-none"
                   />
                 </div>
@@ -4209,6 +4254,79 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             setPackages(pkgs.map((p, i) => ({ ...p, remaining: remaining[i] })));
           }}
         />
+      )}
+
+      {/* T-20260517-foot-C2-CONSULT-DOCS: 동의서 [작성] 다이얼로그 (Option A — CRM 직접 오픈) */}
+      {consentDialogFormType && (
+        <ConsentFormDialog
+          checkIn={latestCheckIn}
+          formType={consentDialogFormType}
+          open={!!consentDialogFormType}
+          onOpenChange={(o) => { if (!o) setConsentDialogFormType(null); }}
+          onSigned={() => {
+            setConsentDialogFormType(null);
+            // consent_forms 새로고침
+            const ids = checkInHistory.map((ci) => ci.id);
+            if (ids.length > 0) {
+              supabase.from('consent_forms').select('form_type, signed_at').in('check_in_id', ids).order('signed_at', { ascending: false }).then(({ data }) => {
+                setConsentEntries((data ?? []) as { form_type: string; signed_at: string }[]);
+              });
+            }
+          }}
+        />
+      )}
+
+      {/* T-20260517-foot-C2-CONSULT-DOCS: 필수서류 [내용보기] 다이얼로그 */}
+      {viewDocGroup !== null && (
+        <Dialog open={viewDocGroup !== null} onOpenChange={(o) => { if (!o) setViewDocGroup(null); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-sm">
+                {viewDocGroup === 1 ? '개인정보 / 체크리스트' : '환불 / 비급여 동의서'}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-2 text-xs max-h-72 overflow-y-auto">
+              {viewDocGroup === 1 && (
+                <>
+                  {consentEntries.filter((c) => c.form_type === 'privacy').map((c, i) => (
+                    <div key={i} className="rounded-lg border bg-teal-50 p-3">
+                      <div className="font-semibold text-teal-800 mb-1">개인정보 동의서</div>
+                      <div className="text-muted-foreground">{format(new Date(c.signed_at), 'yyyy-MM-dd HH:mm')} 서명 완료</div>
+                    </div>
+                  ))}
+                  {checklistEntries.length > 0 && (
+                    <div className="rounded-lg border bg-teal-50 p-3">
+                      <div className="font-semibold text-teal-800 mb-1">사전 체크리스트</div>
+                      <div className="text-muted-foreground">
+                        {checklistEntries[0].completed_at
+                          ? format(new Date(checklistEntries[0].completed_at), 'yyyy-MM-dd HH:mm')
+                          : '날짜 미기록'}{' '}작성 완료
+                      </div>
+                    </div>
+                  )}
+                  {consentEntries.filter((c) => c.form_type === 'privacy').length === 0 && checklistEntries.length === 0 && (
+                    <p className="text-muted-foreground text-center py-4">서명된 서류가 없습니다</p>
+                  )}
+                </>
+              )}
+              {viewDocGroup === 2 && (
+                <>
+                  {(['non_covered', 'refund'] as const).map((fType) =>
+                    consentEntries.filter((c) => c.form_type === fType).map((c, i) => (
+                      <div key={`${fType}-${i}`} className="rounded-lg border bg-purple-50 p-3">
+                        <div className="font-semibold text-purple-800 mb-1">{FORM_TITLES[fType]}</div>
+                        <div className="text-muted-foreground">{format(new Date(c.signed_at), 'yyyy-MM-dd HH:mm')} 서명 완료</div>
+                      </div>
+                    ))
+                  )}
+                  {consentEntries.filter((c) => c.form_type === 'refund' || c.form_type === 'non_covered').length === 0 && (
+                    <p className="text-muted-foreground text-center py-4">서명된 서류가 없습니다</p>
+                  )}
+                </>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

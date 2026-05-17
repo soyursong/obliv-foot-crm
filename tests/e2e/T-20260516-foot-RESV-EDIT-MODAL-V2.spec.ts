@@ -178,19 +178,61 @@ test.describe('RESV-EDIT-MODAL-V2 — 예약수정 모달 구성 개선 4건', (
     await page.keyboard.press('Escape');
   });
 
-  // ─────────────────── AC-3: 방문경로 자동 로드 DB 검증 ───────────────────
-  test('[AC-3] 초진 방문경로 → customers.visit_route 저장 + 재조회', async () => {
+  // ─────────────────── AC-3 FIX: 방문경로 자동 로드 — referral_source 경로 검증 ───────────────────
+  test('[AC-3] 초진 방문경로 → reservations.referral_source 저장 + 재조회 (FIX)', async () => {
     const clinicId = await getClinicId();
 
-    // 테스트 고객 생성
+    // AC-3 FIX: 예약 레코드에 referral_source 저장 → openEdit()에서 즉시 프리로드 경로
+    const { data: resv, error: resvErr } = await service
+      .from('reservations')
+      .insert({
+        clinic_id: clinicId,
+        customer_name: '__TEST_AC3_REFERRAL_SOURCE__',
+        customer_phone: '010-7777-8888',
+        reservation_date: TOMORROW,
+        reservation_time: '11:00',
+        visit_type: 'new',
+        status: 'confirmed',
+        referral_source: 'TM',  // FIX: visit_route를 reservations.referral_source에도 저장
+      })
+      .select('id, referral_source')
+      .single();
+    expect(resvErr).toBeNull();
+    expect(resv?.referral_source).toBe('TM');
+    console.log('[AC-3 FIX] reservations.referral_source 저장 확인 OK');
+
+    const resvId = resv!.id as string;
+
+    try {
+      // referral_source 수정 (편집 시나리오)
+      await service
+        .from('reservations')
+        .update({ referral_source: '지인소개' })
+        .eq('id', resvId);
+      const { data: updated } = await service
+        .from('reservations')
+        .select('referral_source')
+        .eq('id', resvId)
+        .single();
+      expect(updated?.referral_source).toBe('지인소개');
+      console.log('[AC-3 FIX] referral_source 수정 후 재조회 확인 OK');
+    } finally {
+      await service.from('reservations').delete().eq('id', resvId);
+    }
+  });
+
+  test('[AC-3] customers.visit_route + lead_source fallback 저장 + 재조회', async () => {
+    const clinicId = await getClinicId();
+
+    // 고객에 lead_source 설정 (visit_route 없음 — 구형 고객 시뮬레이션)
     const { data: customer, error: custErr } = await service
       .from('customers')
       .insert({
         clinic_id: clinicId,
-        name: '__TEST_LEAD_SOURCE__',
+        name: '__TEST_LEAD_SOURCE_FALLBACK__',
         phone: '010-8888-7777',
         visit_type: 'new',
-        visit_route: '네이버 검색',
+        lead_source: 'TM',  // visit_route 없이 lead_source만 있는 경우
       })
       .select('id')
       .single();
@@ -198,27 +240,29 @@ test.describe('RESV-EDIT-MODAL-V2 — 예약수정 모달 구성 개선 4건', (
     const customerId = customer!.id as string;
 
     try {
-      // visit_route 조회
+      // lead_source 조회 (fallback 경로)
       const { data: fetched } = await service
         .from('customers')
-        .select('visit_route')
+        .select('visit_route, lead_source, referral_name')
         .eq('id', customerId)
         .single();
-      expect(fetched?.visit_route).toBe('네이버 검색');
-      console.log('[AC-3] customers.visit_route 저장 확인 OK');
+      expect(fetched?.lead_source).toBe('TM');
+      expect(fetched?.visit_route).toBeNull();  // visit_route는 null, lead_source만 있음
+      console.log('[AC-3] customers.lead_source fallback 저장 확인 OK');
 
-      // visit_route 수정 (편집 시나리오)
+      // visit_route + lead_source 동기 업데이트 (save 경로 검증)
       await service
         .from('customers')
-        .update({ visit_route: '지인소개' })
+        .update({ visit_route: '지인소개', lead_source: '지인소개' })
         .eq('id', customerId);
       const { data: updated } = await service
         .from('customers')
-        .select('visit_route')
+        .select('visit_route, lead_source')
         .eq('id', customerId)
         .single();
       expect(updated?.visit_route).toBe('지인소개');
-      console.log('[AC-3] customers.visit_route 수정 후 재조회 확인 OK');
+      expect(updated?.lead_source).toBe('지인소개');
+      console.log('[AC-3] visit_route + lead_source 동기 업데이트 확인 OK');
     } finally {
       await service.from('customers').delete().eq('id', customerId);
     }
