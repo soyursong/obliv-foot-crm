@@ -140,21 +140,39 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
       selectedCustomerId ?? effectiveLinkedReservation?.customer_id ?? null;
 
     if (!customerId && phone.trim()) {
+      // Fix-1 (T-20260517-foot-CHECKIN-E164): E.164 정규화 후 조회
+      const phoneE164 = normalizeToE164(phone) ?? phone.trim();
+      const phoneDigits = phone.replace(/\D/g, '');
+
       const { data: existing } = await supabase
         .from('customers')
         .select('id')
         .eq('clinic_id', clinicId)
-        .eq('phone', phone.trim())
+        .eq('phone', phoneE164)
         .maybeSingle();
-      if (existing) {
-        customerId = existing.id as string;
+
+      // Fix-3: 2차 fallback — E.164 매칭 실패 시 digits-only ilike (SelfCheckIn.tsx 패턴)
+      let resolvedExisting = existing as { id: string } | null;
+      if (!resolvedExisting && phoneDigits.length >= 8) {
+        const { data: fallback } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('clinic_id', clinicId)
+          .ilike('phone', `%${phoneDigits.slice(-8)}%`)
+          .maybeSingle();
+        resolvedExisting = fallback as { id: string } | null;
+      }
+
+      if (resolvedExisting) {
+        customerId = resolvedExisting.id as string;
       } else {
         const { data: created, error: cErr } = await supabase
           .from('customers')
           .insert({
             clinic_id: clinicId,
             name: name.trim(),
-            phone: phone.trim(),
+            // Fix-2 (T-20260517-foot-CHECKIN-E164): 신규 생성 시 E.164 저장
+            phone: phoneE164,
             visit_type: visitType === 'new' ? 'new' : 'returning',
           })
           .select('id')
