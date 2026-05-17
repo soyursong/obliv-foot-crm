@@ -5,6 +5,7 @@ import { CustomerChartSheet } from '@/components/CustomerChartSheet';
 import {
   LayoutDashboard,
   CalendarDays,
+  CalendarPlus,
   Users,
   Package,
   UserCog,
@@ -341,6 +342,27 @@ export default function AdminLayout() {
             <span className="text-sm font-semibold">{clinic?.name ?? '풋센터 종로'}</span>
             <span className="text-xs text-muted-foreground hidden sm:inline">{today}</span>
           </div>
+          <div className="flex items-center gap-2">
+            {/* T-20260517-foot-RESV-NAV-DIRECT: 전역 [예약하기] — 고객 컨텍스트 없음, 빈 예약 생성 */}
+            <button
+              onClick={() =>
+                navigate('/admin/reservations', {
+                  state: {
+                    openReservationFor: {
+                      customer_id: null,
+                      name: '',
+                      phone: '',
+                      visit_type: 'returning' as const,
+                    },
+                  },
+                })
+              }
+              className="hidden sm:flex items-center gap-1.5 rounded-md bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700 transition"
+              data-testid="btn-header-make-reservation"
+            >
+              <CalendarPlus className="h-3.5 w-3.5" />
+              예약하기
+            </button>
           <div className="relative">
             <button
               onClick={() => { setSearchOpen(true); setTimeout(() => searchRef.current?.focus(), 50); }}
@@ -398,6 +420,7 @@ export default function AdminLayout() {
                 )}
               </div>
             )}
+          </div>
           </div>
         </header>
         {/* T-20260509-foot-DASH-SCROLL-FIX: overflow-hidden으로 변경 — 뷰포트 고정 레이아웃.

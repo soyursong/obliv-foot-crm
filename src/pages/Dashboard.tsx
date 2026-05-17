@@ -1473,7 +1473,7 @@ function DashboardTimeline({
                 <span
                   className={cn(
                     'text-[9px] font-mono tabular-nums leading-none mt-0.5',
-                    isCurrentSlot ? 'text-teal-600' : 'text-gray-300',
+                    isCurrentSlot ? 'text-teal-600' : 'text-gray-400',
                   )}
                 >
                   {slot.slice(3)}
