@@ -1,5 +1,35 @@
 # FDD Signals — obliv-foot-crm
 
+| 2026-05-17 12:45 | dev-foot | deploy-ready | T-20260516-foot-MEDICAL-CHART-EXPAND FIX: 전체화면 6항목 미표시 수정. formOpen 자동오픈(useEffect). 빌드 OK (tsc --noEmit exit 0). DB변경: 없음. commit: 70c7831 |
+
+## 2026-05-17 — dev-foot | deploy-ready | T-20260516-foot-C21-SAVE-REGRESS (AC-3 재픽스)
+
+**DB migration 직접 적용 + E2E spec 추가 (commit pending push)**
+
+### 근본원인 확정
+`address` 컬럼이 production DB에 미존재 (migration 20260507000010 미적용).
+PostgREST 에러 코드 42703 = 스키마 캐시 X, 컬럼 자체 없음.
+`address_detail`, `postal_code`는 존재 — `address`만 빠짐.
+
+### 적용 조치
+1. **DB migration 직접 적용** (Management API, PAT): `ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS address TEXT;` — 성공 (2026-05-17 10:xx KST)
+2. **NOTIFY pgrst** `'reload schema'` 실행 — PostgREST 캐시 갱신
+3. **검증**: `SELECT address, address_detail, postal_code` → 3필드 모두 정상 반환 ✅, `UPDATE address='테스트...'` → 성공 ✅
+
+### FE 코드 변경
+없음 — 기존 `saveAddress()` + `handleInfoPanelSave()` partial save 로직 이미 정상 (7dcf75e).
+
+### E2E spec
+`tests/e2e/T-20260516-foot-C21-SAVE-REGRESS.spec.ts` 신규 (AC-3-a~d):
+- AC-3-a: PostgREST address SELECT 에러 0건
+- AC-3-b: address UPDATE + 원복
+- AC-3-c: FE 저장 에러 토스트 0건
+- AC-3-d: 새로고침 후 3필드 로드 유지
+
+빌드: TypeScript tsc --noEmit OK. Vite build 진행중. DB변경: address 컬럼 추가 (recovery).
+
+---
+
 ## 2026-05-17 — dev-foot | deploy-ready | T-20260516-foot-C2Z1-MEMO-SYNC
 
 **커밋: c746b58 (RESV-MEMO-C2-ROUTE) → 정본 티켓 귀속**
