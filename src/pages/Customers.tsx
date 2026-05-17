@@ -42,6 +42,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, formatPhone } from '@/lib/format';
+import { normalizeToE164 } from '@/lib/phone';
 import type { Customer, LeadSource } from '@/lib/types';
 
 interface CustomerStats {
@@ -793,7 +794,7 @@ function CreateCustomerDialog({
     const { error } = await supabase.from('customers').insert({
       clinic_id: clinicId,
       name: name.trim(),
-      phone: phone.trim(),
+      phone: normalizeToE164(phone) ?? phone.trim(),
       birth_date: birthDate.trim() || null,
       // chart_number: DB BEFORE INSERT 트리거가 자동 채번 (F-XXXX 형식)
       memo: memo.trim() || null,

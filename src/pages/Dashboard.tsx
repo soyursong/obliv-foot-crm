@@ -66,6 +66,7 @@ import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
 import { formatAmount, formatPhone, formatPhoneInput, maskPhoneTail } from '@/lib/format';
+import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 import { NewCheckInDialog } from '@/components/NewCheckInDialog';
 import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
@@ -1582,11 +1583,14 @@ function QuickReservationDialog({
     setForm((f) => f ? { ...f, phone } : f);
     setCustomerId(null);
     if (phone.replace(/\D/g, '').length >= 4 && clinicId) {
+      // T-20260517-foot-E164-AUDIT: E.164 저장 고객 매칭 — leading 0 제거 OR 패턴 (InlinePatientSearch 동일)
+      const d = phone.replace(/\D/g, '');
+      const noZero = d.startsWith('0') ? d.slice(1) : d;
       const { data } = await supabase
         .from('customers')
         .select('id, name, phone')
         .eq('clinic_id', clinicId)
-        .ilike('phone', `%${phone.replace(/\D/g, '')}%`)
+        .or(`phone.ilike.%${d}%,phone.ilike.%${noZero}%`)
         .limit(5);
       setCustomerSuggestions((data ?? []) as Customer[]);
     } else {
@@ -1608,7 +1612,7 @@ function QuickReservationDialog({
       clinic_id: clinicId,
       customer_id: customerId ?? null,
       customer_name: form.name.trim(),
-      customer_phone: form.phone.trim() || null,
+      customer_phone: (normalizeToE164(form.phone) ?? form.phone.trim()) || null,
       reservation_date: form.date,
       reservation_time: form.time + ':00',
       visit_type: form.visit_type,
