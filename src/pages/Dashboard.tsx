@@ -65,9 +65,10 @@ import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
-import { formatAmount, formatPhone, formatPhoneInput, maskPhoneTail } from '@/lib/format';
+import { formatAmount, maskPhoneTail } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
+import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import { NewCheckInDialog } from '@/components/NewCheckInDialog';
 import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
 import { PaymentDialog } from '@/components/PaymentDialog';
@@ -82,7 +83,7 @@ import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
-import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Clinic, Customer, Reservation, Room, RoomFieldKey, Staff, StatusFlag, VisitType } from '@/lib/types';
+import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Clinic, Reservation, Room, RoomFieldKey, Staff, StatusFlag, VisitType } from '@/lib/types';
 
 
 type TabKey = 'all' | 'new' | 'returning';
@@ -1550,6 +1551,12 @@ function DashboardTimeline({
 }
 
 // ── QuickReservationDialog ─────────────────────────────────────────────────────
+// T-20260517-foot-TREATROOM-RESV-UNIFY: 치료실현황 예약창 → 당일현황 빠른예약 기준 통일
+//   AC-1: 이름/연락처 InlinePatientSearch — 기존 환자 검색·자동 로드
+//   AC-2: 신규 환자 즉석 등록 (이름+전화번호 필수, E.164 정규화)
+//   AC-3: 방문유형 한글 버튼 [초진][재진][체험] — DB 영문 유지
+//   AC-4: 예약메모 입력 (booking_memo)
+//   AC-5: customer_id + phone 반드시 포함 → 셀프체크인 매칭 보장
 function QuickReservationDialog({
   draft,
   clinicId,
@@ -1565,43 +1572,66 @@ function QuickReservationDialog({
 }) {
   const [form, setForm] = useState<QuickResvDraft | null>(null);
   const [saving, setSaving] = useState(false);
-  const [customerSuggestions, setCustomerSuggestions] = useState<Customer[]>([]);
   const [customerId, setCustomerId] = useState<string | null>(null);
+  const [selectedBirthDate, setSelectedBirthDate] = useState<string | null>(null);
+  // AC-2: 신규 환자 즉석 등록 패널
+  const [showNewPatient, setShowNewPatient] = useState(false);
+  const [npName, setNpName] = useState('');
+  const [npPhone, setNpPhone] = useState('');
+  const [npBirth, setNpBirth] = useState('');
+  const [registering, setRegistering] = useState(false);
 
   useEffect(() => {
     if (draft) {
       setForm({ ...draft });
       setCustomerId(null);
-      setCustomerSuggestions([]);
+      setSelectedBirthDate(null);
+      setShowNewPatient(false);
+      setNpName('');
+      setNpPhone('');
+      setNpBirth('');
     }
   }, [draft]);
 
-  const handlePhoneChange = async (rawPhone: string) => {
-    if (!form) return;
-    // T-20260513-foot-PHONE-HYPHEN-FORMAT: 실시간 하이픈 포맷팅
-    const phone = formatPhoneInput(rawPhone);
-    setForm((f) => f ? { ...f, phone } : f);
-    setCustomerId(null);
-    if (phone.replace(/\D/g, '').length >= 4 && clinicId) {
-      // T-20260517-foot-E164-AUDIT: E.164 저장 고객 매칭 — leading 0 제거 OR 패턴 (InlinePatientSearch 동일)
-      const d = phone.replace(/\D/g, '');
-      const noZero = d.startsWith('0') ? d.slice(1) : d;
-      const { data } = await supabase
-        .from('customers')
-        .select('id, name, phone')
-        .eq('clinic_id', clinicId)
-        .or(`phone.ilike.%${d}%,phone.ilike.%${noZero}%`)
-        .limit(5);
-      setCustomerSuggestions((data ?? []) as Customer[]);
-    } else {
-      setCustomerSuggestions([]);
-    }
+  /** AC-1: 이름/연락처 InlinePatientSearch에서 기존 환자 선택 */
+  const handlePatientSelect = (p: PatientMatch) => {
+    setForm((f) => f ? { ...f, name: p.name, phone: p.phone } : f);
+    setCustomerId(p.id);
+    setSelectedBirthDate(p.birth_date);
+    setShowNewPatient(false);
   };
 
-  const handleSelectCustomer = (c: Customer) => {
+  /** 고객 선택 해제 */
+  const handleClearSelection = () => {
+    setCustomerId(null);
+    setSelectedBirthDate(null);
+  };
+
+  /** AC-2: 신규 환자 즉석 등록 → customers INSERT → customer_id 연결 */
+  const handleRegisterNew = async () => {
+    if (!clinicId) return;
+    if (!npName.trim()) { toast.error('이름을 입력해주세요'); return; }
+    if (!npPhone.trim()) { toast.error('전화번호를 입력해주세요'); return; }
+    setRegistering(true);
+    const e164 = normalizeToE164(npPhone) ?? npPhone.trim();
+    const { data, error } = await supabase
+      .from('customers')
+      .insert({
+        clinic_id: clinicId,
+        name: npName.trim(),
+        phone: e164,
+        birth_date: npBirth.trim() || null,
+      })
+      .select('id, name, phone, birth_date')
+      .single();
+    setRegistering(false);
+    if (error) { toast.error('등록 실패: ' + error.message); return; }
+    const c = data as PatientMatch;
     setForm((f) => f ? { ...f, name: c.name, phone: c.phone } : f);
     setCustomerId(c.id);
-    setCustomerSuggestions([]);
+    setSelectedBirthDate(c.birth_date);
+    setShowNewPatient(false);
+    toast.success(`${c.name} 신규 환자 등록 완료`);
   };
 
   const handleSave = async () => {
@@ -1625,6 +1655,13 @@ function QuickReservationDialog({
     toast.success(`${form.name} ${form.time} 예약이 생성되었어요`);
     onCreated();
     onClose();
+  };
+
+  /** 생년월일 포맷 (YYMMDD → YY/MM/DD) */
+  const formatBirthDisplay = (b: string | null): string => {
+    if (!b) return '';
+    if (/^\d{6}$/.test(b)) return `${b.slice(0, 2)}/${b.slice(2, 4)}/${b.slice(4, 6)}`;
+    return b;
   };
 
   const timeSlots = generateSlots('10:00', '20:00', 30);
@@ -1662,11 +1699,11 @@ function QuickReservationDialog({
               </div>
             </div>
 
-            {/* 방문유형 */}
+            {/* AC-3: 방문유형 한글 버튼 [초진][재진][체험] */}
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">방문유형</Label>
               <div className="flex gap-1.5">
-                {(['new', 'returning'] as VisitType[]).map((vt) => (
+                {(['new', 'returning', 'experience'] as VisitType[]).map((vt) => (
                   <button
                     key={vt}
                     type="button"
@@ -1684,44 +1721,108 @@ function QuickReservationDialog({
               </div>
             </div>
 
-            {/* 이름 */}
+            {/* AC-1: 이름 — InlinePatientSearch (이름 검색, debounce 300ms, 2자↑) */}
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">이름</Label>
-              <Input
+              <Label className="text-xs text-muted-foreground">이름으로 검색</Label>
+              <InlinePatientSearch
                 value={form.name}
-                onChange={(e) => setForm((f) => f ? { ...f, name: e.target.value } : f)}
+                onChange={(v) => {
+                  setForm((f) => f ? { ...f, name: v } : f);
+                  if (customerId) handleClearSelection();
+                }}
+                onSelect={handlePatientSelect}
+                onClearSelection={handleClearSelection}
+                searchField="name"
+                clinicId={clinicId}
+                selectedCustomerId={customerId}
                 placeholder="홍길동"
-                className="h-8 text-sm"
+                autoFocus
               />
             </div>
 
-            {/* 전화번호 + 자동완성 */}
+            {/* AC-1: 연락처 — InlinePatientSearch (연락처 검색, debounce 300ms, 4자리↑) */}
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">전화번호</Label>
-              <Input
+              <Label className="text-xs text-muted-foreground">연락처로 검색</Label>
+              <InlinePatientSearch
                 value={form.phone}
-                onChange={(e) => handlePhoneChange(e.target.value)}
+                onChange={(v) => {
+                  setForm((f) => f ? { ...f, phone: v } : f);
+                  if (customerId) handleClearSelection();
+                }}
+                onSelect={handlePatientSelect}
+                onClearSelection={handleClearSelection}
+                searchField="phone"
+                clinicId={clinicId}
+                selectedCustomerId={customerId}
                 placeholder="010-1234-5678"
-                className="h-8 text-sm"
+                inputMode="tel"
               />
-              {customerSuggestions.length > 0 && (
-                <div className="border rounded-md bg-white shadow-sm overflow-hidden">
-                  {customerSuggestions.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-teal-50 border-b last:border-b-0 transition"
-                      onClick={() => handleSelectCustomer(c)}
-                    >
-                      <span className="font-medium">{c.name}</span>
-                      <span className="ml-1.5 text-muted-foreground">{formatPhone(c.phone)}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
 
-            {/* 예약메모 — T-20260504-foot-MEMO-RESTRUCTURE */}
+            {/* 선택된 기존 환자 생년월일 표시 */}
+            {customerId && selectedBirthDate && (
+              <div className="flex items-center gap-1.5 rounded-md bg-teal-50 border border-teal-200 px-2.5 py-1.5">
+                <span className="text-[10px] text-teal-600 font-medium">생년월일</span>
+                <span className="text-[11px] text-teal-700 font-semibold">{formatBirthDisplay(selectedBirthDate)}</span>
+              </div>
+            )}
+
+            {/* AC-2: 신규 환자 즉석 등록 */}
+            {!customerId && !showNewPatient && (
+              <button
+                type="button"
+                onClick={() => { setShowNewPatient(true); setNpName(form.name); setNpPhone(form.phone); }}
+                className="text-xs text-teal-600 hover:text-teal-700 hover:underline underline-offset-2 transition"
+              >
+                + 신규 환자 등록
+              </button>
+            )}
+            {showNewPatient && (
+              <div className="rounded-md border border-teal-200 bg-teal-50/40 p-2.5 space-y-2">
+                <div className="text-[11px] font-semibold text-teal-700">신규 환자 즉석 등록</div>
+                <Input
+                  value={npName}
+                  onChange={(e) => setNpName(e.target.value)}
+                  placeholder="이름 *"
+                  className="h-8 text-sm"
+                />
+                <Input
+                  value={npPhone}
+                  onChange={(e) => setNpPhone(e.target.value)}
+                  placeholder="010-1234-5678 *"
+                  inputMode="tel"
+                  className="h-8 text-sm"
+                />
+                <Input
+                  value={npBirth}
+                  onChange={(e) => setNpBirth(e.target.value)}
+                  placeholder="생년월일 (선택, 예: 901231)"
+                  className="h-8 text-sm"
+                />
+                <div className="flex gap-2 pt-0.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-xs h-7"
+                    onClick={() => setShowNewPatient(false)}
+                  >
+                    취소
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="text-xs h-7 bg-teal-600 hover:bg-teal-700 text-white"
+                    onClick={handleRegisterNew}
+                    disabled={registering}
+                  >
+                    {registering ? '등록 중…' : '등록 후 예약 연결'}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* AC-4: 예약메모 — T-20260504-foot-MEMO-RESTRUCTURE */}
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">예약메모 (예약경로 등)</Label>
               <Textarea
