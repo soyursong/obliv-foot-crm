@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
-import { CalendarPlus, ExternalLink, FileText, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, Send, Trash2, Upload, X } from 'lucide-react';
+import { CalendarPlus, ChevronDown, ChevronRight, ExternalLink, FileText, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, Send, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
 import { Badge } from '@/components/ui/badge';
@@ -419,7 +419,28 @@ function ReceiptUploadSection({
   );
 }
 
-// T-20260513-foot-C21-TAB-RESTRUCTURE-B: 진료이미지 Storage 섹션 (업로드+삭제, 출력은 상위에서)
+// T-20260517-foot-C2-TAB-SYNC: 진료이미지 일자별 히스토리 (업로드+삭제+출력, 비포/애프터 구분)
+// 파일명 규칙: {type}_{timestamp}_{random}.{ext}  (type: before | after | photo)
+// 구버전 호환: 타입 없는 파일({timestamp}_{random}.{ext})은 'photo'로 처리
+
+type TreatImgType = 'before' | 'after' | 'photo';
+
+interface TreatImgItem extends StorageImageItem {
+  imgType: TreatImgType;
+  dateStr: string;   // 'yyyy-MM-dd'
+  timestamp: number; // 정렬용
+}
+
+function parseTreatImgMeta(name: string): { imgType: TreatImgType; timestamp: number } {
+  const parts = name.split('_');
+  if (parts[0] === 'before' || parts[0] === 'after') {
+    const ts = parseInt(parts[1], 10);
+    return { imgType: parts[0] as TreatImgType, timestamp: isNaN(ts) ? 0 : ts };
+  }
+  const ts = parseInt(parts[0], 10);
+  return { imgType: 'photo', timestamp: isNaN(ts) ? 0 : ts };
+}
+
 function TreatmentImagesSection({
   customerId,
   onUrlsLoaded,
@@ -427,8 +448,10 @@ function TreatmentImagesSection({
   customerId: string;
   onUrlsLoaded: (urls: string[]) => void;
 }) {
-  const [images, setImages] = useState<StorageImageItem[]>([]);
+  const [items, setItems] = useState<TreatImgItem[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [uploadType, setUploadType] = useState<TreatImgType>('photo');
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const storagePath = `customer/${customerId}/treatment-images`;
 
   const load = useCallback(async () => {
@@ -436,22 +459,52 @@ function TreatmentImagesSection({
       limit: 100,
       sortBy: { column: 'name', order: 'desc' },
     });
-    if (!files || files.length === 0) { setImages([]); onUrlsLoaded([]); return; }
-    const withUrls = await Promise.all(
+    if (!files || files.length === 0) { setItems([]); onUrlsLoaded([]); return; }
+    const withMeta = await Promise.all(
       files
         .filter((f) => f.name && !f.id?.endsWith('/'))
         .map(async (file) => {
           const path = `${storagePath}/${file.name}`;
           const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
-          return { path, signedUrl: data?.signedUrl ?? '', name: file.name };
+          const { imgType, timestamp } = parseTreatImgMeta(file.name);
+          const dateStr = timestamp > 0
+            ? new Date(timestamp).toISOString().slice(0, 10)
+            : (file.created_at ? file.created_at.slice(0, 10) : 'unknown');
+          return {
+            path,
+            signedUrl: data?.signedUrl ?? '',
+            name: file.name,
+            imgType,
+            dateStr,
+            timestamp,
+          } as TreatImgItem;
         }),
     );
-    const valid = withUrls.filter((i) => i.signedUrl);
-    setImages(valid);
+    const valid = withMeta.filter((i) => i.signedUrl);
+    setItems(valid);
     onUrlsLoaded(valid.map((i) => i.signedUrl));
+    // 최신 날짜 자동 펼치기
+    if (valid.length > 0) {
+      const newestDate = valid.reduce((a, b) => (a.dateStr > b.dateStr ? a : b)).dateStr;
+      setExpandedDates((prev) => new Set([...prev, newestDate]));
+    }
   }, [storagePath, onUrlsLoaded]);
 
   useEffect(() => { load(); }, [load]);
+
+  // 일자별 그룹핑 (최신순)
+  const grouped = useMemo(() => {
+    const map = new Map<string, TreatImgItem[]>();
+    for (const item of items) {
+      if (!map.has(item.dateStr)) map.set(item.dateStr, []);
+      map.get(item.dateStr)!.push(item);
+    }
+    // 각 그룹 내 최신순 정렬
+    for (const arr of map.values()) {
+      arr.sort((a, b) => b.timestamp - a.timestamp);
+    }
+    return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [items]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -459,7 +512,8 @@ function TreatmentImagesSection({
     setUploading(true);
     for (const file of Array.from(files)) {
       const ext = file.name.split('.').pop() ?? 'jpg';
-      const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+      // T-20260517: 파일명에 type 접두사 포함
+      const path = `${storagePath}/${uploadType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
       const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
       if (error) toast.error(`업로드 실패: ${error.message}`);
     }
@@ -468,47 +522,124 @@ function TreatmentImagesSection({
     await load();
   };
 
-  const remove = async (img: StorageImageItem) => {
+  const remove = async (img: TreatImgItem) => {
     if (!window.confirm('이미지를 삭제하시겠습니까?')) return;
     await supabase.storage.from('photos').remove([img.path]);
     await load();
   };
 
+  const toggleDate = (d: string) =>
+    setExpandedDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(d)) next.delete(d); else next.add(d);
+      return next;
+    });
+
+  const TYPE_LABEL: Record<TreatImgType, string> = { before: '시술 전', after: '시술 후', photo: '기타' };
+  const TYPE_COLOR: Record<TreatImgType, string> = {
+    before: 'bg-blue-100 text-blue-700',
+    after:  'bg-emerald-100 text-emerald-700',
+    photo:  'bg-gray-100 text-gray-600',
+  };
+
   return (
     <div className="space-y-1.5">
+      {/* 업로드 바 */}
       <div className="flex items-center justify-between rounded border border-teal-200 bg-teal-50 px-2.5 py-1.5">
-        <span className="text-xs text-teal-800 font-medium">이미지 목록</span>
-        <label className="cursor-pointer">
-          <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
-          <span className="inline-flex items-center gap-1 text-xs border border-teal-200 rounded px-2 py-0.5 bg-white text-teal-700 hover:bg-teal-100 transition cursor-pointer">
-            <Upload className="h-3 w-3" />
-            {uploading ? '업로드 중…' : '업로드'}
-          </span>
-        </label>
+        <span className="text-xs text-teal-800 font-medium">일자별 이미지 이력</span>
+        <div className="flex items-center gap-1.5">
+          {/* 업로드 유형 선택 */}
+          <select
+            value={uploadType}
+            onChange={(e) => setUploadType(e.target.value as TreatImgType)}
+            className="text-[11px] border border-teal-200 rounded px-1.5 py-0.5 bg-white text-teal-800"
+          >
+            <option value="before">시술 전</option>
+            <option value="after">시술 후</option>
+            <option value="photo">기타</option>
+          </select>
+          <label className="cursor-pointer">
+            <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
+            <span className="inline-flex items-center gap-1 text-xs border border-teal-200 rounded px-2 py-0.5 bg-white text-teal-700 hover:bg-teal-100 transition cursor-pointer">
+              <Upload className="h-3 w-3" />
+              {uploading ? '업로드 중…' : '업로드'}
+            </span>
+          </label>
+        </div>
       </div>
-      {images.length === 0 ? (
+
+      {/* 일자별 그룹 */}
+      {grouped.length === 0 ? (
         <div className="rounded border border-dashed py-3 text-center text-xs text-muted-foreground">
           진료이미지 없음
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-1.5">
-          {images.map((img) => (
-            <div key={img.path} className="relative group aspect-square">
-              <img
-                src={img.signedUrl}
-                alt={img.name}
-                className="w-full h-full object-cover rounded border cursor-pointer"
-                onClick={() => window.open(img.signedUrl, '_blank')}
-              />
-              <button
-                onClick={() => remove(img)}
-                className="absolute top-1 right-1 hidden group-hover:flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow"
-                title="삭제"
-              >
-                <Trash2 className="h-3 w-3" />
-              </button>
-            </div>
-          ))}
+        <div className="space-y-1">
+          {grouped.map(([dateStr, dateItems]) => {
+            const expanded = expandedDates.has(dateStr);
+            const beforeItems = dateItems.filter((i) => i.imgType === 'before');
+            const afterItems  = dateItems.filter((i) => i.imgType === 'after');
+            const photoItems  = dateItems.filter((i) => i.imgType === 'photo');
+            return (
+              <div key={dateStr} className="rounded border border-gray-200 overflow-hidden">
+                {/* 날짜 헤더 */}
+                <button
+                  type="button"
+                  onClick={() => toggleDate(dateStr)}
+                  className="w-full flex items-center justify-between px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 transition text-left"
+                >
+                  <span className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+                    {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                    {dateStr}
+                    <span className="text-muted-foreground font-normal">{dateItems.length}장</span>
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {beforeItems.length > 0 && (
+                      <span className={`text-[10px] rounded px-1 ${TYPE_COLOR.before}`}>전 {beforeItems.length}</span>
+                    )}
+                    {afterItems.length > 0 && (
+                      <span className={`text-[10px] rounded px-1 ${TYPE_COLOR.after}`}>후 {afterItems.length}</span>
+                    )}
+                  </div>
+                </button>
+
+                {/* 사진 그리드 */}
+                {expanded && (
+                  <div className="p-2 space-y-2 bg-white">
+                    {([['before', beforeItems], ['after', afterItems], ['photo', photoItems]] as Array<[TreatImgType, TreatImgItem[]]>).map(
+                      ([type, typeItems]) =>
+                        typeItems.length > 0 && (
+                          <div key={type}>
+                            <div className={`inline-flex text-[10px] rounded px-1.5 py-0.5 mb-1 ${TYPE_COLOR[type]}`}>
+                              {TYPE_LABEL[type]}
+                            </div>
+                            <div className="grid grid-cols-3 gap-1">
+                              {typeItems.map((img) => (
+                                <div key={img.path} className="relative group aspect-square">
+                                  <img
+                                    src={img.signedUrl}
+                                    alt={img.name}
+                                    className="w-full h-full object-cover rounded border cursor-pointer"
+                                    onClick={() => window.open(img.signedUrl, '_blank')}
+                                  />
+                                  <button
+                                    onClick={() => remove(img)}
+                                    className="absolute top-0.5 right-0.5 hidden group-hover:flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white shadow"
+                                    title="삭제"
+                                  >
+                                    <Trash2 className="h-2.5 w-2.5" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ),
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
