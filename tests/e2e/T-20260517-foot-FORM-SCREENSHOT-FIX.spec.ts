@@ -79,4 +79,23 @@ test.describe('T-20260517-foot-FORM-SCREENSHOT-FIX', () => {
       expect(html, `{{${v}}} should be in bill_receipt template`).toContain(`{{${v}}}`);
     }
   });
+
+  test('AC-5c: 의사 면허번호 바인딩 — 진단서·확인서 4종 + 소견서v2 + 처방전', () => {
+    // doctor_license_no: buildAutoBindValues()에서 제공하는 키 — 하드코딩된 빈칸 대체
+    const TEMPLATES_WITH_LICENSE = ['diagnosis', 'treat_confirm', 'visit_confirm', 'diag_opinion', 'diag_opinion_v2', 'rx_standard'];
+    for (const key of TEMPLATES_WITH_LICENSE) {
+      const html = getHtmlTemplate(key);
+      expect(html, `${key} should have {{doctor_license_no}}`).not.toBeNull();
+      expect(html, `${key} must bind {{doctor_license_no}} (not hardcoded blank)`).toContain('{{doctor_license_no}}');
+    }
+  });
+
+  test('AC-5d: 병원 전화번호 바인딩 — 진단서·확인서 4종 (clinic_phone)', () => {
+    const TEMPLATES_WITH_PHONE = ['diagnosis', 'treat_confirm', 'visit_confirm', 'diag_opinion'];
+    for (const key of TEMPLATES_WITH_PHONE) {
+      const html = getHtmlTemplate(key);
+      expect(html, `${key} should have {{clinic_phone}}`).not.toBeNull();
+      expect(html, `${key} must bind {{clinic_phone}}`).toContain('{{clinic_phone}}');
+    }
+  });
 });
