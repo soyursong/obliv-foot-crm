@@ -1,5 +1,6 @@
 # FDD Signals — obliv-foot-crm
 
+| 2026-05-17 21:10 | dev-foot | deploy-ready | T-20260517-foot-OPENDAY-TESTSEED: 개원일(5/18) 초진 20명 시드 완료. customers 20/20 + reservations 20/20 (09:00~18:30). 차트1(CheckInDetailSheet)/차트2(CustomerChartSheet AdminLayout) 코드 정상. cleanup: rollback_openday_testdata_20260517.mjs. DB변경: INSERT only. commit: b149467. |
 | 2026-05-17 18:18 | dev-foot | deploy-ready | T-20260517-foot-TREATROOM-RESV-UNIFY [P0 hotfix]: 치료실현황 예약창 → 당일현황 빠른예약창 기준 통일. AC-1 이름/연락처 InlinePatientSearch, AC-2 신규환자 즉석등록(E.164+INSERT), AC-3 [초진][재진][체험] 한글버튼, AC-4 예약메모, AC-5 customer_id+phone 셀프체크인 매칭 보장. tsc clean. DB변경: 없음. commit: 026bcf3. E2E spec: T-20260517-foot-TREATROOM-RESV-UNIFY.spec.ts (6 scenarios). |
 | 2026-05-17 15:15 | dev-foot | deploy-ready | T-20260517-foot-E164-AUDIT: phone E.164 전수 감사 완료. 미적용 6포인트 일괄 수정 (Reservations/Dashboard/Customers 저장, Dashboard 검색 noLeadingZero OR, CheckInDetailSheet ilike slice(-8)). 회귀 없음. tsc clean. DB변경: 없음. commit: 47bb692 |
 | 2026-05-17 14:30 | dev-foot | deploy-ready | T-20260517-foot-STAFF-BULK: 직원 18명 계정 일괄 생성 스크립트. DRY-RUN 18/18 OK. 중복 0건. clinic=74967aea. admin 9건 무영향. DB변경: INSERT only(schema 무변경). 롤백 SQL: rollback_staff_accounts_20260517.mjs. commit: 4b430c8. supervisor prod 실행 요청. |
