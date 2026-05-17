@@ -16,7 +16,7 @@
  */
 import { test, expect } from '@playwright/test';
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8082';
 
 async function loginIfNeeded(page: import('@playwright/test').Page) {
   await page.goto(BASE_URL);
