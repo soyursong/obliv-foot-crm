@@ -3436,11 +3436,11 @@ export default function Dashboard() {
     };
     setRows((prev) => [...prev, newCheckIn]);
     toast.success(`${res.customer_name} 체크인 완료 (#${qn})`);
-    // T-20260510-foot-DASH-SLOT-REWORK-P0 AC6: 재진 Box2 클릭 시 차트 자동 열림
-    // 스탭이 통합시간표 재진 예약카드 클릭 → 체크인 즉시 차트 열어 사전 접근 제공
-    if (res.visit_type === 'returning') {
-      setSelectedCheckIn(newCheckIn);
-    }
+    // T-20260510-foot-DASH-SLOT-REWORK-P0 AC6 → T-20260518-foot-SELFCHECKIN-TESTDATA5 D-Day 수정
+    // 기존: 재진(returning) 접수 시만 1번차트 자동 열림
+    // 수정: 초진(new)/재진(returning) 전체 — 접수 버튼 클릭 직후 1번차트 즉시 열기
+    // 근거: [TEST5] D-Day 현장 재확인 — 초진 "접수" 버튼 후 차트 미오픈 P0 버그
+    setSelectedCheckIn(newCheckIn);
   };
 
   // 미니 캘린더 클릭-외부 닫기
