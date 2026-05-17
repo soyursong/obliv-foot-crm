@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Download, Eye, EyeOff } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Plus, Pencil, Trash2, Download, Eye, EyeOff, Search } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,13 @@ import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Service } from '@/lib/types';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 const VAT_LABEL: Record<Service['vat_type'], string> = {
   none: '비과세',
@@ -47,6 +54,10 @@ export default function Services() {
   const [editTarget, setEditTarget] = useState<Service | null>(null);
   // T-20260511-foot-SVCMENU-HARDDELETE: 비활성 항목 표시 토글 (기본 숨김)
   const [showInactive, setShowInactive] = useState(false);
+  // T-20260517-foot-SVC-FILTER-SEARCH: 카테고리 드롭다운 필터 + 텍스트 검색
+  const [categoryFilter, setCategoryFilter] = useState('전체');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   // 엑셀 내보내기 (T-20260507-foot-SERVICE-CATALOG-SEED Phase 2)
   const exportExcel = () => {
@@ -83,6 +94,28 @@ export default function Services() {
   }, [clinic]);
 
   useEffect(() => { fetchServices(); }, [fetchServices]);
+
+  // debounce 300ms
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // T-20260517-foot-SVC-FILTER-SEARCH: 카테고리 + 검색 AND 필터
+  const filteredRows = useMemo(() => {
+    return rows.filter((svc) => {
+      if (!svc.active && !showInactive) return false;
+      if (categoryFilter !== '전체' && svc.category_label !== categoryFilter) return false;
+      if (debouncedSearch) {
+        const q = debouncedSearch.toLowerCase();
+        if (
+          !svc.name.toLowerCase().includes(q) &&
+          !(svc.service_code ?? '').toLowerCase().includes(q)
+        ) return false;
+      }
+      return true;
+    });
+  }, [rows, showInactive, categoryFilter, debouncedSearch]);
 
   // T-20260510-foot-SVCMENU-REVAMP: 삭제 (soft delete = active=false)
   // toggleActive 제거됨 — 신구조에서는 [관리]에 수정/삭제만 노출
@@ -161,6 +194,29 @@ export default function Services() {
         </div>
       </div>
 
+      {/* T-20260517-foot-SVC-FILTER-SEARCH: 카테고리 드롭다운 + 텍스트 검색창 */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <SelectTrigger className="w-36 shrink-0">
+            <SelectValue placeholder="카테고리" />
+          </SelectTrigger>
+          <SelectContent>
+            {['전체', '기본', '검사', '상병', '풋케어', '수액', '풋화장품'].map((c) => (
+              <SelectItem key={c} value={c}>{c}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="relative min-w-[180px] flex-1">
+          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="시술명 또는 상품코드 검색"
+            className="pl-8"
+          />
+        </div>
+      </div>
+
       {/* T-20260510-foot-SVCMENU-REVAMP: 항목분류/상품코드/시술명/단가/VAT/관리 6컬럼 구조 */}
       <div className="flex-1 overflow-auto rounded-lg border bg-background">
         {loading ? (
@@ -178,8 +234,8 @@ export default function Services() {
               </tr>
             </thead>
             <tbody>
-              {/* T-20260511-foot-SVCMENU-HARDDELETE: showInactive 토글에 따라 비활성 항목 필터 */}
-              {rows.filter((svc) => svc.active || showInactive).map((svc) => (
+              {/* T-20260517-foot-SVC-FILTER-SEARCH: filteredRows(카테고리+검색+showInactive) */}
+              {filteredRows.map((svc) => (
                 <tr key={svc.id} className={cn('border-t', !svc.active && 'opacity-50 bg-muted/30')}>
                   <td className="px-4 py-2 text-xs text-muted-foreground">{svc.category_label ?? svc.category ?? '—'}</td>
                   <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{svc.service_code ?? '—'}</td>
@@ -225,10 +281,12 @@ export default function Services() {
                   )}
                 </tr>
               ))}
-              {!loading && rows.filter((svc) => svc.active || showInactive).length === 0 && (
+              {!loading && filteredRows.length === 0 && (
                 <tr>
                   <td colSpan={isAdmin ? 6 : 5} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                    등록된 서비스가 없습니다
+                    {categoryFilter !== '전체' || debouncedSearch
+                      ? '검색 결과 없음'
+                      : '등록된 서비스가 없습니다'}
                   </td>
                 </tr>
               )}
