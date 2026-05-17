@@ -1459,6 +1459,193 @@ const RX_STANDARD_HTML = `
 </div>
 `;
 
+// ─── 진료비 계산서·영수증 ───
+// T-20260517-foot-FORM-SCREENSHOT-FIX: bill_receipt HTML/CSS 신규 구현
+// 변수: patient_name, patient_rrn, visit_date, clinic_name, clinic_address,
+//       insurance_covered, non_covered, total_amount, doctor_name, issue_date
+
+const BILL_RECEIPT_HTML = `
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  .br-wrap {
+    font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', NanumGothic, sans-serif;
+    font-size: 9pt;
+    color: #000;
+    background: #fff;
+    padding: 8mm 10mm;
+    width: 190mm;
+    min-height: 267mm;
+  }
+  .br-wrap table { width: 100%; border-collapse: collapse; }
+  .br-wrap td, .br-wrap th {
+    border: 1px solid #000;
+    padding: 2px 5px;
+    vertical-align: middle;
+    font-size: 8.5pt;
+  }
+  .br-wrap th {
+    background: #f0f0f0;
+    font-weight: bold;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .br-title {
+    text-align: center;
+    font-size: 18pt;
+    font-weight: bold;
+    letter-spacing: 8px;
+    padding: 6px 0 5px;
+  }
+  .br-label { background: #f8f8f8; white-space: nowrap; }
+  .br-num { text-align: right; padding-right: 8px; }
+  .br-footer { font-size: 8.5pt; margin-top: 6px; border: 1px solid #000; padding: 6px 10px; }
+  .br-sign-row { display: flex; justify-content: flex-end; gap: 24px; margin-top: 4px; }
+  .br-sign-item { display: flex; align-items: center; gap: 6px; font-size: 8.5pt; }
+  .br-sign-box { border: 1px solid #000; width: 60px; height: 26px; display: inline-block; }
+  .br-notice { font-size: 7.5pt; color: #333; margin-top: 8px; line-height: 1.5; }
+  @media print {
+    @page { size: A4 portrait; margin: 8mm; }
+    .br-wrap { padding: 5mm 8mm; width: 195mm; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+<div class="br-wrap">
+
+  <!-- 제목 -->
+  <div class="br-title">진료비 계산서·영수증</div>
+  <div style="text-align:center; font-size:8pt; color:#555; margin-bottom:4px;">
+    (Health Insurance Medical Fee Receipt)
+  </div>
+
+  <!-- 요양기관 + 환자 정보 -->
+  <table style="margin-bottom:-1px;">
+    <tbody>
+      <tr>
+        <td rowspan="3" class="br-label" style="width:20px; text-align:center; font-size:7.5pt; padding:2px; letter-spacing:1px;">요<br>양<br>기<br>관</td>
+        <td class="br-label" style="width:70px; text-align:center;">명&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;칭</td>
+        <td colspan="3" style="font-weight:bold;">{{clinic_name}}</td>
+        <td rowspan="3" class="br-label" style="width:20px; text-align:center; font-size:7.5pt; padding:2px; letter-spacing:1px;">환<br>자</td>
+        <td class="br-label" style="width:70px; text-align:center;">성&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;명</td>
+        <td colspan="3" style="font-weight:bold;">{{patient_name}}</td>
+      </tr>
+      <tr>
+        <td class="br-label" style="text-align:center;">주&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;소</td>
+        <td colspan="3">{{clinic_address}}</td>
+        <td class="br-label" style="text-align:center;">주민번호</td>
+        <td colspan="3">{{patient_rrn}}</td>
+      </tr>
+      <tr>
+        <td class="br-label" style="text-align:center;">진&nbsp;료&nbsp;일</td>
+        <td colspan="3">{{visit_date}}</td>
+        <td class="br-label" style="text-align:center;">발&nbsp;행&nbsp;일</td>
+        <td colspan="3">{{issue_date}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- 진료비 내역 -->
+  <table>
+    <thead>
+      <tr>
+        <th rowspan="2" style="width:24%;">구&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;분</th>
+        <th colspan="2">급&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;여</th>
+        <th rowspan="2" style="width:20%;">비&nbsp;&nbsp;급&nbsp;&nbsp;여</th>
+        <th rowspan="2" style="width:18%;">합&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;계</th>
+      </tr>
+      <tr>
+        <th style="width:20%;">공단부담</th>
+        <th style="width:18%;">본인부담</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="br-label">진찰료</td>
+        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
+      </tr>
+      <tr>
+        <td class="br-label">입원료</td>
+        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
+      </tr>
+      <tr>
+        <td class="br-label">식&nbsp;&nbsp;&nbsp;대</td>
+        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
+      </tr>
+      <tr>
+        <td class="br-label">투약 및 조제료</td>
+        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
+      </tr>
+      <tr>
+        <td class="br-label">주사료</td>
+        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
+      </tr>
+      <tr>
+        <td class="br-label">처치 및 수술료</td>
+        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
+      </tr>
+      <tr>
+        <td class="br-label">검&nbsp;&nbsp;&nbsp;사&nbsp;&nbsp;&nbsp;료</td>
+        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
+      </tr>
+      <tr>
+        <td class="br-label">영상진단 및 방사선치료료</td>
+        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
+      </tr>
+      <tr>
+        <td class="br-label">재활 및 물리치료료</td>
+        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
+      </tr>
+      <tr>
+        <td class="br-label">정신요법료</td>
+        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
+      </tr>
+      <tr>
+        <td class="br-label">치과행위</td>
+        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
+      </tr>
+      <tr>
+        <td class="br-label">한방행위</td>
+        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
+      </tr>
+      <tr>
+        <td class="br-label" style="font-weight:bold;">소&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;계</td>
+        <td class="br-num" style="font-weight:bold;">{{insurance_covered}}</td>
+        <td class="br-num"></td>
+        <td class="br-num" style="font-weight:bold;">{{non_covered}}</td>
+        <td class="br-num" style="font-weight:bold;">{{total_amount}}</td>
+      </tr>
+      <tr style="height:32px;">
+        <td class="br-label" style="font-size:9pt; font-weight:bold; text-align:center;">총&nbsp;진료비&nbsp;합계</td>
+        <td colspan="4" style="font-size:13pt; font-weight:bold; text-align:center; letter-spacing:2px;">
+          ₩ {{total_amount}}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- 영수 문구 + 서명란 -->
+  <div class="br-footer">
+    <div style="text-align:center; font-size:10pt; font-weight:bold; margin-bottom:4px;">
+      위와 같이 청구(영수)합니다.
+    </div>
+    <div class="br-sign-row">
+      <div class="br-sign-item">
+        요양기관명 : <span style="font-weight:bold;">{{clinic_name}}</span>
+      </div>
+      <div class="br-sign-item">
+        진료의사 : {{doctor_name}} <span class="br-sign-box"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 주의사항 -->
+  <div class="br-notice">
+    ※ 이 계산서·영수증은 연말정산 의료비 공제 및 보험 청구에 사용하실 수 있습니다.<br>
+    ※ 영수증 분실 시 재발급이 되지 않을 수 있으니 잘 보관하시기 바랍니다.
+  </div>
+
+</div>
+`;
+
 // ─── 템플릿 맵 ───
 
 const HTML_TEMPLATE_MAP: Record<string, string> = {
@@ -1474,6 +1661,8 @@ const HTML_TEMPLATE_MAP: Record<string, string> = {
   diag_opinion_v2: DIAG_OPINION_V2_HTML,
   // T-20260515-foot-FORM-ONELINE-RX: 처방전 HTML/CSS 전환
   rx_standard: RX_STANDARD_HTML,
+  // T-20260517-foot-FORM-SCREENSHOT-FIX: 진료비 계산서·영수증 HTML 신규
+  bill_receipt: BILL_RECEIPT_HTML,
 };
 
 /**
