@@ -1,0 +1,38 @@
+-- ============================================================
+-- 주의: handle_new_user Auth Trigger 동작 기록
+-- T-20260517-foot-STAFF-BULK — supervisor 발견 · 2026-05-17
+-- ============================================================
+--
+-- 증상
+--   auth.admin.createUser() 호출 시 Supabase Auth Hook(또는 DB trigger)
+--   "handle_new_user" 류가 user_profiles에 자동 선삽입함.
+--   선삽입 값: name=이메일, role='coordinator', approved=false, clinic_id=null
+--
+-- 위치
+--   Supabase Dashboard → Auth → Hooks (SQL migration 파일 아님)
+--   → 마이그레이션 변경으로 제어 불가. Dashboard 직접 확인 필요.
+--
+-- 영향 범위
+--   모든 admin.createUser() 호출에 동일하게 영향.
+--   (관리자 초대, bulk 생성 스크립트, Edge Function 내부 createUser 등)
+--
+-- 대응 패턴 (확정 — 2026-05-17)
+--   createUser() 호출 후 INSERT 아닌 UPDATE 사용:
+--
+--   const { error } = await supabase
+--     .from('user_profiles')
+--     .update({ name, role, approved, active, clinic_id })
+--     .eq('id', userId);
+--
+--   이유: trigger가 이미 row를 선삽입하므로 INSERT는 CONFLICT 발생.
+--         UPDATE로 덮어쓰면 trigger 영향을 안전하게 우회.
+--
+-- 관련 파일
+--   scripts/create_staff_accounts_20260517.mjs  ← UPDATE 패턴 적용됨
+--   scripts/fix_staff_profiles_20260517.mjs     ← 이번 건 긴급 보정 스크립트 (보존용)
+--   scripts/rollback_staff_accounts_20260517.mjs
+--
+-- 향후 조치 검토 사항 (선택)
+--   Option B: Supabase Dashboard Auth Hook에서 role 기본값을 'staff' 또는 null로 변경하면
+--             INSERT 패턴 복원 가능. 단, 일반 회원가입 동선과 충돌 여부 사전 확인 필요.
+-- ============================================================
