@@ -127,9 +127,9 @@ export default function Reservations() {
   }, []);
 
   // T-20260515-foot-RESPONSIVE-UI-SHELL: Shell-2 태블릿 풀스크린 모달
+  // T-20260516-foot-RESV-PLUS-CANVAS AC-2 🔒L-004: tabletModal 상태 유지하되 [+] 버튼에서 미사용
   const [tabletModalOpen, setTabletModalOpen] = useState(false);
   const [tabletModalInfo, setTabletModalInfo] = useState<{ date: string; time: string } | null>(null);
-  const isTabletViewport = () => typeof window !== 'undefined' && window.innerWidth >= 769;
 
   // T-20260515-foot-RESV-CTX-HOVER: 예약관리 우클릭 메뉴 + hover 팝업
   const [resvContextMenu, setResvContextMenu] = useState<{ resv: Reservation; pos: { x: number; y: number } } | null>(null);
@@ -458,12 +458,7 @@ export default function Reservations() {
   );
 
   const openNewSlot = (d: Date, time: string) => {
-    // T-20260515-foot-RESPONSIVE-UI-SHELL Shell-2: 태블릿(>=769px)에서 풀스크린 모달
-    if (isTabletViewport()) {
-      setTabletModalInfo({ date: format(d, 'yyyy-MM-dd'), time });
-      setTabletModalOpen(true);
-      return;
-    }
+    // T-20260516-foot-RESV-PLUS-CANVAS AC-1 🔒L-004: 항상 예약 생성 폼 (캔버스/Phase0Shell 연결 금지)
     setEditor({
       date: format(d, 'yyyy-MM-dd'),
       time,
