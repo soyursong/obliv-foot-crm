@@ -1,5 +1,7 @@
 # FDD Signals — obliv-foot-crm
 
+| 2026-05-17 15:15 | dev-foot | deploy-ready | T-20260517-foot-E164-AUDIT: phone E.164 전수 감사 완료. 미적용 6포인트 일괄 수정 (Reservations/Dashboard/Customers 저장, Dashboard 검색 noLeadingZero OR, CheckInDetailSheet ilike slice(-8)). 회귀 없음. tsc clean. DB변경: 없음. commit: 47bb692 |
+| 2026-05-17 14:30 | dev-foot | deploy-ready | T-20260517-foot-STAFF-BULK: 직원 18명 계정 일괄 생성 스크립트. DRY-RUN 18/18 OK. 중복 0건. clinic=74967aea. admin 9건 무영향. DB변경: INSERT only(schema 무변경). 롤백 SQL: rollback_staff_accounts_20260517.mjs. commit: 4b430c8. supervisor prod 실행 요청. |
 | 2026-05-17 12:45 | dev-foot | deploy-ready | T-20260516-foot-MEDICAL-CHART-EXPAND FIX: 전체화면 6항목 미표시 수정. formOpen 자동오픈(useEffect). 빌드 OK (tsc --noEmit exit 0). DB변경: 없음. commit: 70c7831 |
 
 ## 2026-05-17 — dev-foot | deploy-ready | T-20260516-foot-C21-SAVE-REGRESS (AC-3 재픽스)
