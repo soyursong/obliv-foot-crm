@@ -148,6 +148,17 @@ export default function MedicalChartPanel({
   useEffect(() => {
     if (open && customerId) {
       loadData();
+      // T-20260516-foot-MEDICAL-CHART-EXPAND FIX: 전체화면 열릴 때 폼 자동 오픈
+      // → 6항목(기본정보/주호소/진단/치료기록/원장메모/경과타임라인) 즉시 표시
+      setEditingId(null);
+      setFormDate(format(new Date(), 'yyyy-MM-dd'));
+      setFormCC('');
+      setFormDx('');
+      setFormTx('');
+      setFormMaterials('');
+      setFormResult('');
+      setFormMemo('');
+      setFormOpen(true);
     } else {
       setCustomer(null);
       setCharts([]);
