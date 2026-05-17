@@ -92,7 +92,8 @@ function isCodeItem(svc: Service): boolean {
 
 // ── 선수금차감 2-tier 자동 매칭 ──────────────────────────────────────────────
 // T-20260517-foot-PREPAID-DEDUCT AC-3 확정 기준
-const PREPAID_KEYWORDS = ['가열', '비가열', '포돌로게', '수액'] as const;
+// '비가열'이 '가열'의 상위집합(superstring)이므로 비가열을 먼저 체크해야 잘못 매칭 방지
+const PREPAID_KEYWORDS = ['비가열', '가열', '포돌로게', '수액'] as const;
 const PREPAID_CODE_MAP: Record<string, string[]> = {
   가열: ['SZ035-35'],
   비가열: ['SZ035-30'],
