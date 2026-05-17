@@ -6,6 +6,7 @@
  * T-20260517-foot-PAY-SLOT-MOVE        슬롯 이동 버그 수정 + iframe 인쇄 (중복 창 제거)
  * T-20260517-foot-PAY-CASH-RECEIPT     현금영수증 체크박스 + 일일마감 연동
  * T-20260517-foot-PREPAID-DEDUCT       선수금차감 듀얼 버튼 + 보라색 선택박스 + 2번차트 자동매칭
+ * T-20260517-foot-DOC-CODE-INSERT      상병코드/처방약 → 서류 양식 자동 삽입 (AC-1~AC-4)
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
@@ -40,6 +41,12 @@ import {
   type FormTemplate,
   type FieldMapEntry,
 } from '@/lib/formTemplates';
+import {
+  bindHtmlTemplate,
+  buildRxItemsHtml,
+  getHtmlTemplate,
+  isHtmlTemplate,
+} from '@/lib/htmlFormTemplates';
 
 // ── 세금 구분 ────────────────────────────────────────────────────────────────
 
@@ -130,6 +137,7 @@ function buildPrintHtml(pages: string[], title: string): string {
 <style>
   @page { size: A4; margin: 0; }
   body { margin: 0; padding: 0; }
+  /* 이미지 오버레이 방식 페이지 */
   .page {
     position: relative;
     width: 210mm; height: 297mm;
@@ -137,9 +145,63 @@ function buildPrintHtml(pages: string[], title: string): string {
     page-break-after: always;
   }
   .page img:first-child { width: 100%; height: 100%; object-fit: contain; }
+  /* HTML/CSS 디지털 양식 페이지 */
+  .html-page {
+    position: relative;
+    width: 210mm;
+    min-height: 267mm;
+    page-break-after: always;
+    overflow: visible;
+  }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 </style>
 </head><body>${pages.join('\n')}</body></html>`;
+}
+
+/**
+ * T-20260517-foot-DOC-CODE-INSERT: 선택된 상병코드/처방약 코드를 fieldValues에 주입.
+ * - 상병코드(category_label='상병') → diag_code_N / diag_name_N (N=1~)
+ * - 처방약(category_label='처방약') → rx_items_html (rx_standard 전용)
+ * - 상병코드는 rx_standard의 질병분류기호(diag_code_N)에도 동일 주입
+ */
+function buildCodeEnrichedValues(
+  base: Record<string, string>,
+  codeItems: SelectedItem[],
+  formKey: string,
+): Record<string, string> {
+  const values = { ...base };
+
+  // 상병코드 items → diag_code_N / diag_name_N
+  const diagItems = codeItems.filter((i) => (i.service.category_label ?? '') === '상병');
+  diagItems.forEach((item, idx) => {
+    const n = idx + 1;
+    values[`diag_code_${n}`] = item.service.service_code ?? '';
+    values[`diag_name_${n}`] = item.service.name;
+  });
+
+  // rx_standard: 처방약 → rx_items_html
+  if (formKey === 'rx_standard') {
+    const rxItems = codeItems.filter((i) => (i.service.category_label ?? '') === '처방약');
+    values.rx_items_html = buildRxItemsHtml(rxItems.map((i) => ({ name: i.service.name })));
+    if (!values.usage_days) values.usage_days = '7';
+    if (!values.issue_no) values.issue_no = '';
+  }
+
+  return values;
+}
+
+/**
+ * T-20260517-foot-DOC-CODE-INSERT: HTML 양식 page div 생성.
+ * bindHtmlTemplate으로 {{key}} 플레이스홀더 치환 후 html-page div에 래핑.
+ */
+function buildHtmlPageDiv(
+  template: FormTemplate,
+  fieldValues: Record<string, string>,
+): string {
+  const htmlTpl = getHtmlTemplate(template.form_key);
+  if (!htmlTpl) return '';
+  const bound = bindHtmlTemplate(htmlTpl, fieldValues);
+  return `<div class="html-page">${bound}</div>`;
 }
 
 /** iframe 인쇄 — 단 하나의 OS 프린트 다이얼로그만 노출 */
@@ -839,6 +901,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   };
 
   // ── [출력] — PAY-SLOT-MOVE: 출력만, 슬롯 이동 없음 ─────────────────────────
+  // T-20260517-foot-DOC-CODE-INSERT: HTML 템플릿 렌더링 + 상병코드/처방약 자동 주입
   const handleDocPrint = async () => {
     const selected = templates.filter((t) => selectedDocKeys.has(t.form_key));
     if (selected.length === 0) {
@@ -849,12 +912,20 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     try {
       const autoValues = await loadMiniAutoBindValues(checkIn);
       const pages = selected.flatMap((t) => {
+        // T-20260517-foot-DOC-CODE-INSERT: 상병코드/처방약 주입
+        const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key);
+        // HTML 양식 우선 (template_format='html' 또는 HTML_TEMPLATE_MAP에 등록된 키)
+        if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
+          const page = buildHtmlPageDiv(t, enriched);
+          return page ? [page] : [];
+        }
+        // JPG/PNG 이미지 오버레이 방식
         const imgUrl = getTemplateImageUrl(t.form_key);
         if (!imgUrl) return [];
-        return [buildPageHtml(t, autoValues, imgUrl)];
+        return [buildPageHtml(t, enriched, imgUrl)];
       });
       if (pages.length === 0) {
-        toast.warning('출력 가능한 이미지 양식이 없습니다');
+        toast.warning('출력 가능한 양식이 없습니다');
         return;
       }
       // PAY-SLOT-MOVE AC-4: iframe 인쇄 — 중복 창 없음
@@ -867,6 +938,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   };
 
   // ── [출력 및 수납] — 출력 + auto-done ───────────────────────────────────────
+  // T-20260517-foot-DOC-CODE-INSERT: HTML 템플릿 렌더링 + 상병코드/처방약 자동 주입
   const handleDocAndSettle = async () => {
     const selected = templates.filter((t) => selectedDocKeys.has(t.form_key));
     if (selected.length === 0) {
@@ -885,11 +957,17 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     setDocSettlePrinting(true);
     try {
       // 1. 서류 출력 (iframe — PAY-SLOT-MOVE AC-4)
+      // T-20260517-foot-DOC-CODE-INSERT: 상병코드/처방약 주입
       const autoValues = await loadMiniAutoBindValues(checkIn);
       const pages = selected.flatMap((t) => {
+        const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key);
+        if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
+          const page = buildHtmlPageDiv(t, enriched);
+          return page ? [page] : [];
+        }
         const imgUrl = getTemplateImageUrl(t.form_key);
         if (!imgUrl) return [];
-        return [buildPageHtml(t, autoValues, imgUrl)];
+        return [buildPageHtml(t, enriched, imgUrl)];
       });
       if (pages.length > 0) {
         printViaIframe(buildPrintHtml(pages, `서류 출력 — ${checkIn.customer_name}`));
