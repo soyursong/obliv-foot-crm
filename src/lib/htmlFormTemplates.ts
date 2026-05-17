@@ -245,11 +245,11 @@ ${COMMON_STYLE}
       </tr>
       <tr>
         <td style="background:#f8f8f8; white-space:nowrap; font-size:8pt;">전화 및 팩스</td>
-        <td colspan="7"></td>
+        <td colspan="7">{{clinic_phone}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">면 허 번 호</td>
-        <td colspan="3">제&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;호</td>
+        <td colspan="3">제&nbsp;{{doctor_license_no}}&nbsp;호</td>
         <td style="background:#f8f8f8; text-align:right; white-space:nowrap;">의 사 성 명</td>
         <td colspan="2">{{doctor_name}}</td>
         <td style="text-align:center;">(인)</td>
@@ -410,11 +410,11 @@ ${COMMON_STYLE}
         <td style="background:#f8f8f8;">의 료 기 관</td>
         <td>{{clinic_name}}</td>
         <td style="background:#f8f8f8; white-space:nowrap; font-size:8pt;">전화 및 팩스</td>
-        <td></td>
+        <td>{{clinic_phone}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">면 허 번 호</td>
-        <td colspan="1">제&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;호</td>
+        <td colspan="1">제&nbsp;{{doctor_license_no}}&nbsp;호</td>
         <td style="background:#f8f8f8; text-align:right; white-space:nowrap;">의 사 성 명</td>
         <td>{{doctor_name}}&nbsp;&nbsp;(인)</td>
       </tr>
@@ -569,11 +569,11 @@ ${COMMON_STYLE}
         <td style="background:#f8f8f8;">의 료 기 관</td>
         <td>{{clinic_name}}</td>
         <td style="background:#f8f8f8; white-space:nowrap; font-size:8pt;">전화 및 팩스</td>
-        <td></td>
+        <td>{{clinic_phone}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">면 허 번 호</td>
-        <td>제&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;호</td>
+        <td>제&nbsp;{{doctor_license_no}}&nbsp;호</td>
         <td style="background:#f8f8f8; text-align:right; white-space:nowrap;">의 사 성 명</td>
         <td>{{doctor_name}}&nbsp;&nbsp;(인)</td>
       </tr>
@@ -714,11 +714,11 @@ ${COMMON_STYLE}
       </tr>
       <tr>
         <td style="background:#f8f8f8; white-space:nowrap; font-size:8pt;">전화 및 팩스</td>
-        <td colspan="3"></td>
+        <td colspan="3">{{clinic_phone}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">면 허 번 호</td>
-        <td>제&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;호</td>
+        <td>제&nbsp;{{doctor_license_no}}&nbsp;호</td>
         <td style="background:#f8f8f8; text-align:right; white-space:nowrap;">의 사 성 명</td>
         <td>{{doctor_name}}&nbsp;&nbsp;(인)</td>
       </tr>
@@ -1260,7 +1260,7 @@ ${COMMON_STYLE}
     <div>
       <div style="font-size:9.5pt; font-weight:bold;">병(예)원 명칭&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(직인)</div>
       <div style="font-size:9pt;">{{clinic_name}}</div>
-      <div style="font-size:8.5pt;">(면허번호&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;호)</div>
+      <div style="font-size:8.5pt;">(면허번호&nbsp;{{doctor_license_no}}&nbsp;호)</div>
     </div>
     <div style="text-align:right;">
       <div style="font-size:9.5pt; letter-spacing:2px;">{{issue_date}}</div>
@@ -1382,7 +1382,7 @@ const RX_STANDARD_HTML = `
       <tr>
         <td>{{diag_code_2}}</td>
         <td style="background:#f8f8f8; text-align:center;">면&nbsp;허&nbsp;번&nbsp;호</td>
-        <td>{{license_no}}</td>
+        <td>{{doctor_license_no}}</td>
       </tr>
     </tbody>
   </table>
