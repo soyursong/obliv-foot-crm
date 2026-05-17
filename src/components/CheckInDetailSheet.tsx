@@ -702,40 +702,57 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
         .eq('active', true)
         .in('role', ['consultant'])
         .order('name'),
-      // T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 예약메모 — reservation_id 우선, 없으면 최근 예약
-      // T-20260516-foot-RESV-MEMO-REVISIT: 재진 고객 customer_id OR phone 복합 매칭 + 당일 우선
-      checkIn.reservation_id
-        ? supabase
+      // T-20260516-foot-RESV-MEMO-REVISIT: 3단계 폴백 — 초진/재진/워크인 무관 동일 경로
+      // 수정 이유: ① .single() → 레코드 없을 때 null 반환이나 폴백 없음
+      //           ② .or() 내 E.164 '+' 접두사가 PostgREST 필터에서 포맷 불일치 유발
+      // 수정: reservation_id 직접 → customer_id → phone digits(ilike) 순 3단계 순차 폴백
+      (async (): Promise<{ data: { id: string; booking_memo?: string | null } | null }> => {
+        const today = format(new Date(), 'yyyy-MM-dd');
+        // 1단계: reservation_id 직접 조회 (예약연결 체크인 — 초진/재진 모두)
+        if (checkIn.reservation_id) {
+          const { data: byId } = await supabase
             .from('reservations')
             .select('id, booking_memo')
             .eq('id', checkIn.reservation_id)
-            .single()
-        : (async () => {
-            const orParts: string[] = [];
-            if (checkIn.customer_id) orParts.push(`customer_id.eq.${checkIn.customer_id}`);
-            if (checkIn.customer_phone) orParts.push(`customer_phone.eq.${checkIn.customer_phone}`);
-            if (orParts.length === 0) return Promise.resolve({ data: null });
-            const orFilter = orParts.join(',');
-            const today = format(new Date(), 'yyyy-MM-dd');
-            // 1순위: 당일 예약 (customer_id OR phone 매칭, 시간 오름차순)
-            const { data: todayData } = await supabase
-              .from('reservations')
-              .select('id, booking_memo')
-              .eq('reservation_date', today)
-              .or(orFilter)
-              .order('reservation_time', { ascending: true })
-              .limit(1)
-              .maybeSingle();
-            if (todayData) return { data: todayData };
-            // 2순위: 최근 예약 fallback (customer_id OR phone 매칭)
-            return supabase
-              .from('reservations')
-              .select('id, booking_memo')
-              .or(orFilter)
-              .order('reservation_date', { ascending: false })
-              .limit(1)
-              .maybeSingle();
-          })(),
+            .maybeSingle();
+          if (byId) return { data: byId };
+          // reservation_id 있으나 레코드 없음 → 폴백 진행 (삭제된 예약 등)
+        }
+        // 2단계: customer_id 기반 (manual check-in 또는 1단계 폴백)
+        if (checkIn.customer_id) {
+          const { data: todayById } = await supabase
+            .from('reservations')
+            .select('id, booking_memo')
+            .eq('customer_id', checkIn.customer_id)
+            .eq('reservation_date', today)
+            .order('reservation_time', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          if (todayById) return { data: todayById };
+          const { data: latestById } = await supabase
+            .from('reservations')
+            .select('id, booking_memo')
+            .eq('customer_id', checkIn.customer_id)
+            .order('reservation_date', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (latestById) return { data: latestById };
+        }
+        // 3단계: phone digits ilike (포맷 불일치 방어 — E.164 vs 010-XXXX)
+        if (checkIn.customer_phone) {
+          const digits = checkIn.customer_phone.replace(/\D/g, '').slice(-8);
+          const { data: todayByPhone } = await supabase
+            .from('reservations')
+            .select('id, booking_memo')
+            .eq('reservation_date', today)
+            .ilike('customer_phone', `%${digits}%`)
+            .order('reservation_time', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          if (todayByPhone) return { data: todayByPhone };
+        }
+        return { data: null };
+      })(),
     ]);
 
     setServices((svcRes.data ?? []) as Service[]);
