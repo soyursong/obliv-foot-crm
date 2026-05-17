@@ -27,6 +27,7 @@ import {
 } from '@/lib/schedule';
 import { VISIT_TYPE_KO } from '@/lib/status';
 import { formatPhone, maskPhoneTail } from '@/lib/format';
+import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
@@ -37,6 +38,8 @@ import { useChart } from '@/lib/chartContext';
 import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import type { CheckIn, Reservation, Staff, VisitType } from '@/lib/types';
 import { ReservationMemoTimeline, insertReservationMemo } from '@/components/ReservationMemoTimeline';
+// T-20260516-foot-RESV-DETAIL-POPUP: 4분할 예약 상세 팝업
+import { ReservationDetailPopup } from '@/components/ReservationDetailPopup';
 
 // AC-5 재오픈 fix: 모듈 레벨 클립보드 백업 — 컴포넌트 remount 시에도 상태 복원
 // (navigate('/admin/reservations', { state }) + lazy/Suspense remount 케이스 대응)
@@ -483,8 +486,10 @@ export default function Reservations() {
       visit_type: r.visit_type,
       memo: r.memo ?? '',
       booking_memo: '',  // 편집 시 항상 빈 값 (ReservationMemoTimeline이 직접 처리)
-      visit_route: '',   // AC-3: ReservationEditor 내부 useEffect에서 customer.visit_route 프리로드
-      customer_id: r.customer_id ?? null,  // AC-3: visit_route 조회용
+      // AC-3 FIX: referral_source(예약 컬럼)에서 즉시 프리로드 — 비동기 fetch 불필요
+      // useEffect fallback은 referral_source가 null인 구형 예약 대응용으로 유지
+      visit_route: r.referral_source ?? '',
+      customer_id: r.customer_id ?? null,  // AC-3 fallback: customer.visit_route/lead_source 조회용
     });
     setDetail(null);
   };
@@ -1077,7 +1082,8 @@ export default function Reservations() {
         }}
       />
 
-      <ReservationDetail
+      {/* T-20260516-foot-RESV-DETAIL-POPUP: 4분할 팝업으로 교체 */}
+      <ReservationDetailPopup
         reservation={detail}
         noshowCount={
           detail?.customer_id ? noshowByCustomer[detail.customer_id] ?? 0 : 0
@@ -1172,28 +1178,34 @@ function ReservationEditor({
     setOverrideTherapistId('');
   }, [draft]);
 
-  // AC-3: 초진 편집 모달 열릴 때 customer.visit_route + referral_name 자동 로드
+  // AC-3 FIX: 초진 편집 모달 — referral_source가 없는 구형 예약 대응 fallback
+  // openEdit()에서 r.referral_source로 즉시 프리로드하므로, 이 useEffect는
+  // visit_route가 아직 빈 경우(구형 예약)에만 customers.visit_route / lead_source 참조
   useEffect(() => {
     if (!draft?.existingId || !draft?.customer_id || draft?.visit_type !== 'new') return;
+    // referral_source로 이미 채워진 경우(openEdit FIX 적용 이후) 재fetch 불필요
+    if (draft?.visit_route) return;
     supabase
       .from('customers')
-      .select('visit_route, referral_name')
+      .select('visit_route, referral_name, lead_source')
       .eq('id', draft.customer_id)
       .maybeSingle()
       .then(({ data }) => {
         if (!data) return;
-        const d = data as { visit_route: string | null; referral_name: string | null };
-        if (d.visit_route) {
+        const d = data as { visit_route: string | null; referral_name: string | null; lead_source: string | null };
+        // visit_route 우선, 없으면 lead_source fallback (spec: customers.lead_source 참조)
+        const routeValue = d.visit_route ?? d.lead_source ?? null;
+        if (routeValue) {
           setState((s) => s ? {
             ...s,
-            visit_route: d.visit_route ?? s.visit_route ?? '',
+            visit_route: routeValue,
             referral_name: d.referral_name ?? s.referral_name ?? '',
           } : s);
         }
       });
-  // draft 객체 참조가 바뀔 때만 — existingId/customer_id/visit_type 복합 의존
+  // draft 객체 참조가 바뀔 때만 — existingId/customer_id/visit_type/visit_route 복합 의존
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft?.existingId, draft?.customer_id, draft?.visit_type]);
+  }, [draft?.existingId, draft?.customer_id, draft?.visit_type, draft?.visit_route]);
 
   // T-20260515-foot-RESV-THERAPIST-HIST: 재진 + customer_id 변경 시 치료사 이력 조회
   useEffect(() => {
@@ -1342,7 +1354,7 @@ function ReservationEditor({
         .from('customers')
         .select('id')
         .eq('clinic_id', clinicId)
-        .eq('phone', state.phone.trim())
+        .eq('phone', normalizeToE164(state.phone) ?? state.phone.trim())
         .maybeSingle();
       if (existing) customerId = existing.id as string;
       else {
@@ -1351,7 +1363,7 @@ function ReservationEditor({
           .insert({
             clinic_id: clinicId,
             name: state.name.trim(),
-            phone: state.phone.trim(),
+            phone: normalizeToE164(state.phone) ?? state.phone.trim(),
             visit_type: state.visit_type === 'new' ? 'new' : 'returning',
           })
           .select('id')
@@ -1365,10 +1377,14 @@ function ReservationEditor({
       }
     }
 
-    // AC-5: 초진이고 방문경로 선택 시 customers.visit_route 업데이트
+    // AC-5: 초진이고 방문경로 선택 시 customers.visit_route + lead_source 동기 업데이트
     // T-20260515-foot-REFERRAL-NAME: 지인소개 시 referral_name도 함께 저장
+    // AC-3 FIX: lead_source도 함께 업데이트 — Customers.tsx / Closing.tsx와 일관성 유지
     if (customerId && state.visit_type === 'new' && state.visit_route) {
-      const customerUpdate: Record<string, string | null> = { visit_route: state.visit_route };
+      const customerUpdate: Record<string, string | null> = {
+        visit_route: state.visit_route,
+        lead_source: state.visit_route,  // AC-3 FIX: lead_source에도 동기화
+      };
       if (state.visit_route === '지인소개') {
         customerUpdate.referral_name = state.referral_name?.trim() || null;
       }
@@ -1382,7 +1398,7 @@ function ReservationEditor({
       clinic_id: clinicId,
       customer_id: customerId,
       customer_name: state.name.trim(),
-      customer_phone: state.phone.trim() || null,
+      customer_phone: (normalizeToE164(state.phone) ?? state.phone.trim()) || null,
       reservation_date: state.date,
       reservation_time: state.time,
       visit_type: state.visit_type,
@@ -1390,6 +1406,8 @@ function ReservationEditor({
       memo: state.memo.trim() || null,
       // T-20260504-foot-MEMO-RESTRUCTURE: 예약 경로 확인용 메모
       booking_memo: state.booking_memo?.trim() || null,
+      // AC-3 FIX: 방문경로를 예약 레코드에 직접 저장 → 수정 모달 재진입 시 즉시 프리로드
+      referral_source: (state.visit_type === 'new' && state.visit_route) ? state.visit_route : null,
     };
 
     // 수정 전 원본 캡처 (감사 로그용)
@@ -1707,415 +1725,6 @@ function ReservationEditor({
   );
 }
 
-interface ReservationLog {
-  id: string;
-  action: string;
-  old_data: Record<string, string> | null;
-  new_data: Record<string, string> | null;
-  created_at: string;
-}
-
-function ReservationDetail({
-  reservation,
-  noshowCount,
-  changedBy,
-  authorName,
-  isAdmin,
-  onClose,
-  onEdit,
-  onChanged,
-}: {
-  reservation: Reservation | null;
-  noshowCount: number;
-  changedBy: string | null;
-  authorName: string;
-  isAdmin?: boolean;
-  onClose: () => void;
-  onEdit: (r: Reservation) => void;
-  onChanged: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [logs, setLogs] = useState<ReservationLog[]>([]);
-  // T-20260515-foot-RESV-CANCEL: 취소 사유 다이얼로그 상태
-  const [cancelDialog, setCancelDialog] = useState(false);
-  const [cancelReason, setCancelReason] = useState('');
-  // T-20260515-foot-REFERRAL-NAME: 예약 상세에서 방문경로+소개자 표시용
-  const [custVisitInfo, setCustVisitInfo] = useState<{ visit_route: string | null; referral_name: string | null } | null>(null);
-
-  useEffect(() => {
-    if (!reservation) {
-      setLogs([]);
-      setCancelDialog(false);
-      setCancelReason('');
-      setCustVisitInfo(null);
-      return;
-    }
-    supabase
-      .from('reservation_logs')
-      .select('id, action, old_data, new_data, created_at')
-      .eq('reservation_id', reservation.id)
-      .order('created_at', { ascending: false })
-      .limit(20)
-      .then(({ data }) => setLogs((data ?? []) as ReservationLog[]));
-
-    // T-20260515-foot-REFERRAL-NAME: 고객의 방문경로+소개자 조회
-    if (reservation.customer_id) {
-      supabase
-        .from('customers')
-        .select('visit_route, referral_name')
-        .eq('id', reservation.customer_id)
-        .maybeSingle()
-        .then(({ data }) => {
-          if (data) {
-            const d = data as { visit_route: string | null; referral_name: string | null };
-            setCustVisitInfo(d.visit_route ? d : null);
-          }
-        });
-    } else {
-      setCustVisitInfo(null);
-    }
-  }, [reservation]);
-
-  if (!reservation) return null;
-
-  // T-20260515-foot-RESV-CANCEL: 취소 사유 포함 취소 (기록 보존)
-  const cancelWithReason = async () => {
-    if (!cancelReason.trim()) return;
-    setBusy(true);
-    const { error } = await supabase
-      .from('reservations')
-      .update({
-        status: 'cancelled',
-        cancelled_at: new Date().toISOString(),
-        cancel_reason: cancelReason.trim(),
-      })
-      .eq('id', reservation.id);
-    if (error) {
-      toast.error(`취소 실패: ${error.message}`);
-      setBusy(false);
-      return;
-    }
-    await supabase.from('reservation_logs').insert({
-      reservation_id: reservation.id,
-      clinic_id: reservation.clinic_id,
-      action: 'cancel',
-      old_data: { status: reservation.status },
-      new_data: { status: 'cancelled', cancel_reason: cancelReason.trim() },
-      changed_by: changedBy,
-    });
-    setBusy(false);
-    setCancelDialog(false);
-    setCancelReason('');
-    toast.success('예약 취소됨');
-    onChanged();
-  };
-
-  const deleteReservation = async () => {
-    if (!reservation) return;
-    if (!window.confirm(`${reservation.customer_name}님 예약을 완전 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
-    setBusy(true);
-    const { count } = await supabase
-      .from('check_ins')
-      .select('id', { count: 'exact', head: true })
-      .eq('reservation_id', reservation.id);
-    if ((count ?? 0) > 0) {
-      toast.error('체크인이 연결된 예약은 삭제할 수 없습니다');
-      setBusy(false);
-      return;
-    }
-    const { error } = await supabase.from('reservations').delete().eq('id', reservation.id);
-    setBusy(false);
-    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
-    toast.success('예약 삭제됨');
-    onChanged();
-  };
-
-  const setStatus = async (status: Reservation['status'], action?: string) => {
-    setBusy(true);
-    // 복원 시 슬롯 마감 여부 재확인
-    if (action === 'restore' || (status === 'confirmed' && reservation.status === 'cancelled')) {
-      const { count } = await supabase
-        .from('reservations')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinic_id', reservation.clinic_id)
-        .eq('reservation_date', reservation.reservation_date)
-        .eq('reservation_time', reservation.reservation_time)
-        .neq('status', 'cancelled');
-      if ((count ?? 0) >= 12) {
-        toast.error(`이 시간대는 마감입니다 (${count}/12). 다른 시간으로 옮긴 뒤 복원하세요.`);
-        setBusy(false);
-        return;
-      }
-    }
-    const { error } = await supabase
-      .from('reservations')
-      .update({ status })
-      .eq('id', reservation.id);
-    if (error) {
-      toast.error(`업데이트 실패: ${error.message}`);
-      setBusy(false);
-      return;
-    }
-    const resolvedAction = action
-      ?? (status === 'cancelled' ? 'cancel'
-        : status === 'confirmed' && reservation.status === 'cancelled' ? 'restore'
-        : 'status_change');
-    await supabase.from('reservation_logs').insert({
-      reservation_id: reservation.id,
-      clinic_id: reservation.clinic_id,
-      action: resolvedAction,
-      old_data: { status: reservation.status },
-      new_data: { status },
-      changed_by: changedBy,
-    });
-    setBusy(false);
-    toast.success(
-      resolvedAction === 'restore'
-        ? '예약 복원됨'
-        : `상태 변경: ${STATUS_LABEL[status]}`,
-    );
-    onChanged();
-  };
-
-  const convertToCheckIn = async () => {
-    setBusy(true);
-    const { data: existing } = await supabase
-      .from('check_ins')
-      .select('id')
-      .eq('reservation_id', reservation.id)
-      .maybeSingle();
-    if (existing) {
-      toast.info('이미 이 예약으로 체크인이 생성되어 있습니다');
-      setBusy(false);
-      return;
-    }
-    const { data: queueData, error: qErr } = await supabase.rpc('next_queue_number', {
-      p_clinic_id: reservation.clinic_id,
-      p_date: reservation.reservation_date,
-    });
-    if (qErr) {
-      toast.error(`대기번호 생성 실패: ${qErr.message}`);
-      setBusy(false);
-      return;
-    }
-    const { error } = await supabase.from('check_ins').insert({
-      clinic_id: reservation.clinic_id,
-      customer_id: reservation.customer_id,
-      reservation_id: reservation.id,
-      customer_name: reservation.customer_name ?? '',
-      customer_phone: reservation.customer_phone,
-      visit_type: reservation.visit_type,
-      // AC-1/AC-2: 초진·체험 → 상담대기, 재진 → 치료대기 자동 세팅 (T-20260514-foot-CHECKIN-AUTO-STAGE)
-      status: reservation.visit_type === 'returning' ? 'treatment_waiting' : 'consult_waiting',
-      queue_number: queueData as number,
-    });
-    if (error) {
-      toast.error(`체크인 실패: ${error.message}`);
-      setBusy(false);
-      return;
-    }
-    await supabase
-      .from('reservations')
-      .update({ status: 'checked_in' })
-      .eq('id', reservation.id);
-    await supabase.from('reservation_logs').insert({
-      reservation_id: reservation.id,
-      clinic_id: reservation.clinic_id,
-      action: 'checkin_convert',
-      old_data: { status: reservation.status },
-      new_data: { status: 'checked_in', queue_number: queueData },
-      changed_by: changedBy,
-    });
-    toast.success('체크인 완료');
-    setBusy(false);
-    onChanged();
-  };
-
-  return (
-    <>
-    <Dialog open onOpenChange={(o) => (!o ? onClose() : undefined)}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {reservation.customer_name} · {reservation.reservation_date}{' '}
-            {reservation.reservation_time.slice(0, 5)}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-2 text-sm">
-          <div className="flex items-center gap-2">
-            <Badge variant="teal">{VISIT_TYPE_KO[reservation.visit_type]}</Badge>
-            <Badge>{STATUS_LABEL[reservation.status]}</Badge>
-            {noshowCount > 0 && <Badge variant="destructive">노쇼 {noshowCount}회</Badge>}
-          </div>
-          {reservation.customer_phone && (
-            <div className="text-muted-foreground">
-              {formatPhone(reservation.customer_phone)} (뒤 4자리 ···{maskPhoneTail(reservation.customer_phone)})
-            </div>
-          )}
-          {/* T-20260515-foot-RESV-CANCEL: 취소 정보 표시 */}
-          {reservation.status === 'cancelled' && (reservation.cancelled_at || reservation.cancel_reason) && (
-            <div className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-xs space-y-0.5">
-              <div className="text-red-600 font-medium">취소됨</div>
-              {reservation.cancelled_at && (
-                <div className="text-muted-foreground">
-                  {format(new Date(reservation.cancelled_at), 'yyyy/MM/dd HH:mm', { locale: ko })}
-                </div>
-              )}
-              {reservation.cancel_reason && (
-                <div className="text-red-700 whitespace-pre-wrap">사유: {reservation.cancel_reason}</div>
-              )}
-            </div>
-          )}
-          {/* T-20260515-foot-REFERRAL-NAME: 방문경로 표시 (초진 + 지인소개 시 소개자 성함) */}
-          {custVisitInfo?.visit_route && (
-            <div className="rounded border border-teal-200 bg-teal-50 px-2 py-1.5 text-xs">
-              <span className="text-teal-700 font-medium">방문경로: </span>
-              <span>
-                {custVisitInfo.visit_route}
-                {custVisitInfo.visit_route === '지인소개' && custVisitInfo.referral_name
-                  ? ` (${custVisitInfo.referral_name})`
-                  : ''}
-              </span>
-            </div>
-          )}
-          {/* T-20260515-foot-RESV-MEMO-APPEND: 예약메모 히스토리 타임라인 */}
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-amber-700">예약메모</div>
-            <ReservationMemoTimeline
-              reservationId={reservation.id}
-              clinicId={reservation.clinic_id}
-              authorName={authorName}
-              compact
-            />
-          </div>
-          {logs.length > 0 && (
-            <div className="space-y-1 border-t pt-2">
-              <div className="text-xs font-medium text-muted-foreground">변경 이력</div>
-              {logs.map((l) => (
-                <div key={l.id} className="flex items-start gap-2 text-xs text-muted-foreground">
-                  <span className="shrink-0 tabular-nums">{format(new Date(l.created_at), 'MM/dd HH:mm')}</span>
-                  <span>
-                    {l.action === 'create'
-                      ? `예약 생성: ${l.new_data?.date} ${l.new_data?.time}`
-                      : l.action === 'reschedule'
-                        ? `일정 변경: ${l.old_data?.date} ${l.old_data?.time} → ${l.new_data?.date} ${l.new_data?.time}`
-                        : l.action === 'cancel'
-                          ? '예약 취소'
-                          : l.action === 'restore'
-                            ? '예약 복원'
-                            : l.action === 'checkin_convert'
-                              ? '체크인 전환'
-                              : l.action === 'update'
-                                ? '예약 수정'
-                                : l.action === 'status_change'
-                                  ? `상태: ${STATUS_LABEL[(l.old_data?.status as Reservation['status']) ?? 'confirmed']} → ${STATUS_LABEL[(l.new_data?.status as Reservation['status']) ?? 'confirmed']}`
-                                  : l.action}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <DialogFooter className="flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => onEdit(reservation)}>
-            수정
-          </Button>
-          {isAdmin && (
-            <Button variant="destructive" size="sm" disabled={busy} onClick={deleteReservation}>
-              완전 삭제
-            </Button>
-          )}
-          {reservation.status === 'confirmed' && (
-            <>
-              <Button size="sm" disabled={busy} onClick={convertToCheckIn}>
-                체크인 전환
-              </Button>
-              <Button variant="outline" size="sm" disabled={busy} onClick={() => {
-                if (window.confirm(`${reservation.customer_name}님을 노쇼 처리하시겠습니까?`)) setStatus('noshow');
-              }}>
-                노쇼
-              </Button>
-              {/* T-20260515-foot-RESV-CANCEL: 취소 사유 다이얼로그로 변경 */}
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={busy}
-                data-testid="btn-reservation-cancel"
-                onClick={() => { setCancelReason(''); setCancelDialog(true); }}
-              >
-                취소
-              </Button>
-            </>
-          )}
-          {(reservation.status === 'cancelled' || reservation.status === 'noshow') && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() => {
-                if (window.confirm(`${reservation.customer_name}님 예약을 복원하시겠습니까?`)) setStatus('confirmed');
-              }}
-            >
-              복원
-            </Button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-
-    {/* T-20260515-foot-RESV-CANCEL: 취소 사유 입력 다이얼로그 */}
-    {cancelDialog && (
-      <Dialog open onOpenChange={(o) => { if (!o && !busy) { setCancelDialog(false); setCancelReason(''); } }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>예약 취소 — {reservation.customer_name}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              {reservation.reservation_date} {reservation.reservation_time.slice(0, 5)} 예약을 취소합니다.
-              취소된 예약은 목록에 기록으로 남습니다.
-            </p>
-            <div className="space-y-1.5">
-              <Label htmlFor="cancel-reason">
-                취소 사유 <span className="text-destructive">*</span>
-              </Label>
-              <Textarea
-                id="cancel-reason"
-                data-testid="cancel-reason-input"
-                value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
-                placeholder="예: 환자 요청으로 취소, 일정 변경, 연락 두절 등"
-                rows={3}
-                className="text-sm"
-                autoFocus
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() => { setCancelDialog(false); setCancelReason(''); }}
-            >
-              돌아가기
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={busy || !cancelReason.trim()}
-              data-testid="btn-cancel-confirm"
-              onClick={cancelWithReason}
-            >
-              {busy ? '처리 중…' : '취소 확인'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    )}
-    </>
-  );
-}
 
 /* ─────────────────────────────────────────────────────────────────────────────
    T-20260515-foot-RESPONSIVE-UI-SHELL: Shell-2

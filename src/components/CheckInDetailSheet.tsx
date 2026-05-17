@@ -689,7 +689,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               .from('customers')
               .select('id, chart_number, customer_memo, visit_route, memo, hira_consent')
               .eq('clinic_id', checkIn.clinic_id)
-              .ilike('phone', `%${checkIn.customer_phone.replace(/\D/g, '')}%`)
+              .ilike('phone', `%${checkIn.customer_phone.replace(/\D/g, '').slice(-8)}%`)
               .order('created_at', { ascending: false })
               .limit(1)
               .maybeSingle()
@@ -998,7 +998,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       .from('customers')
       .select('id, name, chart_number')
       .eq('clinic_id', checkIn.clinic_id)
-      .ilike('phone', `%${phoneDigits}%`)
+      .ilike('phone', `%${phoneDigits.slice(-8)}%`)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
