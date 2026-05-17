@@ -257,7 +257,7 @@ export default function Accounts() {
   }, [staffList, inviteRole]);
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="h-full overflow-auto flex flex-col gap-6 p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold">계정 관리</h1>
         <div className="flex items-center gap-3">
