@@ -168,7 +168,7 @@ async function createAccount(staff, clinicId, dryRun) {
 
   if (dryRun) {
     log(`  [DRY] auth.admin.createUser(${emailLower}) → 스킵`);
-    log(`  [DRY] user_profiles INSERT { name:'${staff.name}', role:'staff', approved:true, clinic_id:... }`);
+    log(`  [DRY] user_profiles UPDATE { name:'${staff.name}', role:'staff', approved:true, clinic_id:... } WHERE id=userId`);
     return { success: true, dry: true };
   }
 
@@ -185,24 +185,27 @@ async function createAccount(staff, clinicId, dryRun) {
 
   const userId = authData.user.id;
 
-  // 2) user_profiles INSERT
+  // 2) user_profiles UPDATE
+  // ⚠️ handle_new_user DB trigger가 createUser() 직후 user_profiles를 자동 선삽입함.
+  //    (name=email, role='coordinator', approved=false, clinic_id=null 로 잘못된 값)
+  //    INSERT 대신 UPDATE로 올바른 값으로 덮어씀. (2026-05-17 supervisor 확인)
   const { error: profileErr } = await supabase
     .from('user_profiles')
-    .insert({
-      id: userId,
+    .update({
       email: emailLower,
       name: staff.name,
       role: 'staff',
       approved: true,
       active: true,
       clinic_id: clinicId,
-    });
+    })
+    .eq('id', userId);
 
   if (profileErr) {
     return {
       success: false,
       userId,
-      error: `user_profiles INSERT 실패: ${profileErr.message}`,
+      error: `user_profiles UPDATE 실패: ${profileErr.message}`,
     };
   }
 
