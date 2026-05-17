@@ -406,6 +406,20 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const [docPrinting, setDocPrinting] = useState(false);
   const [docSettlePrinting, setDocSettlePrinting] = useState(false);
 
+  // ── T-20260517-foot-BILLING-3ZONE: Zone 3 — 구매패키지 (AC-4) + 금일 시술내역 (AC-5)
+  interface ActivePackageInfo {
+    id: string;
+    package_name: string;
+    remaining_sessions: number;
+    paid_amount: number;
+  }
+  interface TodayTreatment {
+    service_name: string;
+    price: number;
+  }
+  const [activePackages, setActivePackages] = useState<ActivePackageInfo[]>([]);
+  const [todayTreatments, setTodayTreatments] = useState<TodayTreatment[]>([]);
+
   // ── persist ref
   const skipPersistRef = useRef(true);
 
@@ -429,6 +443,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     setCustomAmounts(new Map());
     setDeductMode(false);
     setDeductAmount(0);
+    setActivePackages([]);
+    setTodayTreatments([]);
 
     Promise.all([
       supabase
@@ -507,6 +523,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     // PREPAID-DEDUCT: 오늘 2번차트 차감 이력 로드 (자동 매칭용)
     if (checkIn.customer_id) {
       loadTodayPackageSessions(checkIn.customer_id);
+      // BILLING-3ZONE: Zone 3 데이터 비동기 로드 (AC-4, AC-5)
+      loadZone3Data(checkIn);
     }
   }, [checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -547,6 +565,68 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   );
 
   const [todaySessionTypes, setTodaySessionTypes] = useState<string[]>([]);
+
+  // ── BILLING-3ZONE: Zone 3 데이터 로드 (AC-4 구매패키지 + AC-5 금일 시술내역) ───
+  const loadZone3Data = useCallback(async (ci: CheckIn) => {
+    if (!ci.customer_id) return;
+    const today = format(new Date(), 'yyyy-MM-dd');
+
+    const [pkgRes, ciRes] = await Promise.all([
+      // AC-4: 활성 패키지 목록
+      supabase
+        .from('packages')
+        .select('id, package_name, total_sessions, paid_amount')
+        .eq('customer_id', ci.customer_id)
+        .eq('status', 'active'),
+      // AC-5: 금일 체크인 ID 목록
+      supabase
+        .from('check_ins')
+        .select('id')
+        .eq('customer_id', ci.customer_id)
+        .eq('clinic_id', ci.clinic_id)
+        .gte('checked_in_at', `${today}T00:00:00`)
+        .lte('checked_in_at', `${today}T23:59:59`),
+    ]);
+
+    // AC-4: 잔여 회차 계산 (사용된 세션 카운트)
+    const pkgs = (pkgRes.data ?? []) as { id: string; package_name: string; total_sessions: number; paid_amount: number }[];
+    if (pkgs.length > 0) {
+      const pkgIds = pkgs.map((p) => p.id);
+      const { data: sessData } = await supabase
+        .from('package_sessions')
+        .select('package_id')
+        .in('package_id', pkgIds)
+        .eq('status', 'used');
+      const usedMap = new Map<string, number>();
+      (sessData ?? []).forEach((s: { package_id: string }) => {
+        usedMap.set(s.package_id, (usedMap.get(s.package_id) ?? 0) + 1);
+      });
+      setActivePackages(
+        pkgs.map((pkg) => ({
+          id: pkg.id,
+          package_name: pkg.package_name,
+          remaining_sessions: Math.max(0, pkg.total_sessions - (usedMap.get(pkg.id) ?? 0)),
+          paid_amount: pkg.paid_amount,
+        })),
+      );
+    }
+
+    // AC-5: 금일 시술내역 (price > 0 항목만 — 상병코드·처방약 제외)
+    const todayCIIds = (ciRes.data ?? []).map((c: { id: string }) => c.id);
+    if (todayCIIds.length > 0) {
+      const { data: cisData } = await supabase
+        .from('check_in_services')
+        .select('service_name, price')
+        .in('check_in_id', todayCIIds)
+        .gt('price', 0);
+      setTodayTreatments(
+        (cisData ?? []).map((c: { service_name: string; price: number }) => ({
+          service_name: c.service_name ?? '',
+          price: c.price ?? 0,
+        })),
+      );
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 2번차트 자동 매칭: services + todaySessionTypes 모두 준비된 시점 ──────────
   useEffect(() => {
@@ -1000,7 +1080,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         if (!open) handleClose();
       }}
     >
-      <DialogContent className="max-w-3xl max-h-[92vh] p-0 overflow-hidden flex flex-col">
+      {/* BILLING-3ZONE: max-w-[1080px] — 3구역(좌메뉴+코드 / 중산정 / 우서류+패키지) */}
+      <DialogContent className="max-w-[1080px] max-h-[92vh] p-0 overflow-hidden flex flex-col">
         {/* 헤더 */}
         <DialogHeader className="px-5 pt-4 pb-3 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2 text-base font-semibold">
@@ -1019,8 +1100,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           </DialogTitle>
         </DialogHeader>
 
-        {/* 본문 3열 */}
-        <div className="flex min-h-0" style={{ height: '380px' }}>
+        {/* 본문 3구역: Zone1(좌메뉴+코드) / Zone2(중산정) / Zone3(우서류+패키지) */}
+        <div className="flex min-h-0" style={{ height: '520px' }}>
 
           {/* ── 좌측: 카테고리 탭 ── */}
           <div className="w-28 shrink-0 border-r bg-muted/30 flex flex-col py-2">
@@ -1126,61 +1207,60 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             )}
           </div>
 
-          {/* ── 우측: 탭별 분기 패널 (AC-1) ── */}
-          <div className="w-72 shrink-0 border-l flex flex-col min-h-0">
+          {/* ─────────────────────────────────────────────────────────────────────
+               BILLING-3ZONE Zone 2: 차트 코드 저장 + 진료비 산정 (항상 표시)
+               AC-1: 탭 조건 제거 — 상병코드·풋케어 모두 동일 세로 영역에 공존
+               AC-2: 코드항목(상단) + 수가항목(하단) 통합 표시
+          ─────────────────────────────────────────────────────────────────── */}
+          <div className="w-60 shrink-0 border-l flex flex-col min-h-0">
 
-            {/* ─── [차트 저장 모드] 상병코드 / 처방약 탭 (AC-1) ─── */}
-            {(activeTab === '상병코드' || activeTab === '처방약') && (
-              <>
-                <div className="px-3 pt-3 pb-1 shrink-0 border-b bg-blue-50/60">
-                  <p className="text-xs font-semibold text-blue-700">
-                    서류 코드 ({codeItems.length}건)
-                  </p>
-                  <p className="text-[10px] text-blue-500 mt-0.5">차트 저장 · 서류 삽입용</p>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2 space-y-1 min-h-0">
-                  {codeItems.length === 0 ? (
-                    <p className="text-xs text-muted-foreground text-center py-6">
-                      좌측에서 코드를 선택하세요
-                    </p>
-                  ) : (
-                    codeItems.map(({ service, qty }) => (
-                      <div
-                        key={service.id}
-                        className="flex items-center gap-1.5 rounded border px-2 py-1.5 bg-blue-50 border-blue-200"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium leading-tight truncate">
-                            {service.name}
+            {/* Zone 2 헤더 */}
+            <div className="px-3 pt-2 pb-1.5 shrink-0 border-b bg-muted/20">
+              <p className="text-xs font-semibold text-muted-foreground">
+                차트 코드 + 진료비 산정
+              </p>
+            </div>
+
+            {/* Zone 2 코드 항목 (상병코드·처방약) — 선택 시만 표시 */}
+            {codeItems.length > 0 && (
+              <div className="border-b shrink-0">
+                <p className="text-[10px] font-semibold text-blue-700 px-2 pt-1.5 pb-0.5">
+                  서류 코드 ({codeItems.length}건)
+                </p>
+                <div className="max-h-28 overflow-y-auto p-2 space-y-1">
+                  {codeItems.map(({ service, qty }) => (
+                    <div
+                      key={service.id}
+                      className="flex items-center gap-1.5 rounded border px-2 py-1 bg-blue-50 border-blue-200"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium leading-tight truncate">{service.name}</p>
+                        {service.service_code && (
+                          <p className="text-[10px] text-blue-600 mt-0.5">
+                            {service.service_code}
+                            {qty > 1 && <span className="text-blue-500"> ×{qty}</span>}
                           </p>
-                          {service.service_code && (
-                            <p className="text-[10px] text-blue-600 mt-0.5">
-                              {service.service_code}
-                              {qty > 1 && <span className="text-blue-500"> ×{qty}</span>}
-                            </p>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => handleRemoveItem(service.id)}
-                          className="shrink-0 text-muted-foreground hover:text-destructive transition-colors p-0.5"
-                          title="제거"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        )}
                       </div>
-                    ))
-                  )}
+                      <button
+                        onClick={() => handleRemoveItem(service.id)}
+                        className="shrink-0 text-muted-foreground hover:text-destructive transition-colors p-0.5"
+                        title="제거"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              </>
+              </div>
             )}
 
-            {/* ─── [결제 산정 모드] 풋케어 탭 (AC-2·AC-5·AC-6) ─── */}
-            {activeTab === '풋케어' && (
-              <>
-                {/* 선택 항목 — compact 1줄 (AC-5 + AC-6 자동 확장) */}
-                <div className="flex-1 overflow-y-auto p-2 min-h-0 space-y-1">
+            {/* Zone 2 수가 항목 (풋케어) — 항상 표시 */}
+            <>
+              {/* 선택 항목 — compact 1줄 */}
+              <div className="flex-1 overflow-y-auto p-2 min-h-0 space-y-1">
                   <p className="text-xs font-semibold text-muted-foreground mb-1.5 px-1">
-                    선택 항목 ({pricingItems.length}건)
+                    수가 항목 ({pricingItems.length}건)
                   </p>
                   {pricingItems.length === 0 && (
                     <p className="text-xs text-muted-foreground text-center py-4">
@@ -1444,85 +1524,143 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     </Button>
                   )}
                 </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* ── Phase 2: 서류발행 섹션 (AC-8~10) ─────────────────────────────────── */}
-        <div className="border-t bg-slate-50 flex flex-col shrink-0">
-          <div className="flex items-center gap-2 px-4 pt-3 pb-2">
-            <FileText className="h-3.5 w-3.5 text-teal-600" />
-            <span className="text-xs font-semibold text-teal-700">서류발행</span>
-            {selectedDocKeys.size > 0 && (
-              <span className="text-xs text-muted-foreground">
-                ({selectedDocKeys.size}종 선택)
-              </span>
-            )}
+            </>
           </div>
 
-          <div className="px-4 pb-2">
-            <div className="flex flex-wrap gap-1.5" data-testid="doc-template-list">
-              {templates.map((tpl) => {
-                const meta = FORM_META[tpl.form_key];
-                const isSelected = selectedDocKeys.has(tpl.form_key);
-                return (
-                  <button
-                    key={tpl.form_key}
-                    onClick={() => toggleDocKey(tpl.form_key)}
-                    className={cn(
-                      'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all',
-                      isSelected
-                        ? 'bg-teal-600 text-white border-teal-600'
-                        : 'bg-white text-muted-foreground border-gray-200 hover:border-teal-300 hover:text-teal-700',
-                    )}
-                    data-testid={`doc-checkbox-${tpl.form_key}`}
-                  >
-                    {isSelected ? (
-                      <CheckSquare className="h-3 w-3 shrink-0" />
-                    ) : (
-                      <Square className="h-3 w-3 shrink-0" />
-                    )}
-                    <span>
-                      {meta?.icon ?? '📄'} {tpl.name_ko}
-                    </span>
-                  </button>
-                );
-              })}
+          {/* ─────────────────────────────────────────────────────────────────────
+               BILLING-3ZONE Zone 3: 구매패키지 + 금일 시술내역 + 서류발행
+               AC-3: 서류발행 우측 이동 / AC-4: 패키지 읽기 / AC-5: 시술이력 읽기
+          ─────────────────────────────────────────────────────────────────── */}
+          <div className="w-64 shrink-0 border-l flex flex-col min-h-0 bg-slate-50/50">
+
+            {/* Zone 3 — AC-4: 구매패키지 (읽기 전용) */}
+            <div className="border-b shrink-0">
+              <p className="text-[10px] font-semibold text-purple-700 px-2 pt-2 pb-1 flex items-center gap-1">
+                <span>패키지</span>
+                {activePackages.length > 0 && (
+                  <span className="ml-auto text-[9px] text-purple-500 font-normal">교차확인용</span>
+                )}
+              </p>
+              {activePackages.length === 0 ? (
+                <p className="text-[10px] text-muted-foreground px-2 pb-2">활성 패키지 없음</p>
+              ) : (
+                <div className="px-2 pb-2 space-y-1 max-h-24 overflow-y-auto">
+                  {activePackages.map((pkg) => (
+                    <div
+                      key={pkg.id}
+                      className="rounded border border-purple-200 bg-purple-50 px-2 py-1"
+                    >
+                      <p className="text-[11px] font-medium text-purple-800 leading-tight truncate">
+                        {pkg.package_name}
+                      </p>
+                      <p className="text-[10px] text-purple-600 mt-0.5 tabular-nums">
+                        잔여 {pkg.remaining_sessions}회 · {formatAmount(pkg.paid_amount)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
 
-          <div className="flex items-center gap-2 px-4 pb-3">
-            {/* [출력] — 수납 없음, 슬롯 이동 없음 */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 text-xs border-teal-300 text-teal-700 hover:bg-teal-50"
-              onClick={handleDocPrint}
-              disabled={docPrinting || selectedDocKeys.size === 0}
-              data-testid="btn-doc-print"
-            >
-              <Printer className="h-3.5 w-3.5" />
-              {docPrinting ? '출력 중...' : '출력'}
-            </Button>
+            {/* Zone 3 — AC-5: 금일 시술내역 (읽기 전용) */}
+            <div className="border-b shrink-0">
+              <p className="text-[10px] font-semibold text-teal-700 px-2 pt-1.5 pb-1 flex items-center gap-1">
+                <span>금일 시술내역</span>
+                {todayTreatments.length > 0 && (
+                  <span className="ml-auto text-[9px] text-teal-500 font-normal">
+                    {todayTreatments.length}건
+                  </span>
+                )}
+              </p>
+              {todayTreatments.length === 0 ? (
+                <p className="text-[10px] text-muted-foreground px-2 pb-2">금일 시술 없음</p>
+              ) : (
+                <div className="px-2 pb-2 space-y-0.5 max-h-28 overflow-y-auto">
+                  {todayTreatments.map((t, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between gap-1 rounded border border-teal-100 bg-teal-50/60 px-1.5 py-0.5"
+                    >
+                      <span className="text-[10px] text-teal-800 truncate flex-1">
+                        {t.service_name}
+                      </span>
+                      <span className="text-[10px] text-teal-600 tabular-nums shrink-0">
+                        {formatAmount(t.price)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
-            {/* [출력 및 수납] */}
-            <Button
-              size="sm"
-              className="gap-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white"
-              onClick={handleDocAndSettle}
-              disabled={docSettlePrinting || selectedDocKeys.size === 0 || !saved}
-              data-testid="btn-doc-settle"
-            >
-              <Printer className="h-3.5 w-3.5" />
-              {docSettlePrinting
-                ? '처리 중...'
-                : `출력 및 수납${saved ? ` ${formatAmount(displayAmount)}` : ''}`}
-            </Button>
+            {/* Zone 3 — AC-3: 서류발행 */}
+            <div className="flex-1 overflow-y-auto px-2 pt-1.5 pb-1 min-h-0">
+              <p className="text-[10px] font-semibold text-slate-600 mb-1 flex items-center gap-1">
+                <FileText className="h-3 w-3" />
+                <span>서류발행</span>
+                {selectedDocKeys.size > 0 && (
+                  <span className="text-muted-foreground font-normal">({selectedDocKeys.size}종)</span>
+                )}
+              </p>
+              <div className="flex flex-col gap-1" data-testid="doc-template-list">
+                {templates.map((tpl) => {
+                  const meta = FORM_META[tpl.form_key];
+                  const isSelected = selectedDocKeys.has(tpl.form_key);
+                  return (
+                    <button
+                      key={tpl.form_key}
+                      onClick={() => toggleDocKey(tpl.form_key)}
+                      className={cn(
+                        'flex items-center gap-1.5 rounded border px-2 py-1 text-xs font-medium transition-all text-left w-full',
+                        isSelected
+                          ? 'bg-teal-600 text-white border-teal-600'
+                          : 'bg-white text-muted-foreground border-gray-200 hover:border-teal-300 hover:text-teal-700',
+                      )}
+                      data-testid={`doc-checkbox-${tpl.form_key}`}
+                    >
+                      {isSelected ? (
+                        <CheckSquare className="h-3 w-3 shrink-0" />
+                      ) : (
+                        <Square className="h-3 w-3 shrink-0" />
+                      )}
+                      <span className="truncate">{meta?.icon ?? '📄'} {tpl.name_ko}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-            {!saved && selectedDocKeys.size > 0 && (
-              <span className="text-xs text-amber-600">시술 저장 후 활성화</span>
-            )}
+            {/* Zone 3 — 서류 버튼 */}
+            <div className="border-t px-2 py-2 space-y-1.5 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-1.5 text-xs border-teal-300 text-teal-700 hover:bg-teal-50"
+                onClick={handleDocPrint}
+                disabled={docPrinting || selectedDocKeys.size === 0}
+                data-testid="btn-doc-print"
+              >
+                <Printer className="h-3.5 w-3.5" />
+                {docPrinting ? '출력 중...' : '출력'}
+              </Button>
+
+              <Button
+                size="sm"
+                className="w-full gap-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white"
+                onClick={handleDocAndSettle}
+                disabled={docSettlePrinting || selectedDocKeys.size === 0 || !saved}
+                data-testid="btn-doc-settle"
+              >
+                <Printer className="h-3.5 w-3.5" />
+                {docSettlePrinting
+                  ? '처리 중...'
+                  : `출력 및 수납${saved ? ` ${formatAmount(displayAmount)}` : ''}`}
+              </Button>
+
+              {!saved && selectedDocKeys.size > 0 && (
+                <p className="text-[10px] text-amber-600 text-center">시술 저장 후 활성화</p>
+              )}
+            </div>
           </div>
         </div>
       </DialogContent>
