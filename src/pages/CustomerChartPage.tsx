@@ -701,6 +701,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: editingEmail/editingPassport 제거 — 항상 활성화
   const [emailText, setEmailText] = useState('');
   const [passportText, setPassportText] = useState('');
+  // T-20260515-foot-REFERRAL-NAME AC-2: 소개자 성함 로컬 상태 (optimistic update)
+  const [referralNameText, setReferralNameText] = useState('');
   // T-20260513-foot-C21-TAB-RESTRUCTURE-B: 진료이미지 출력용 URL 목록
   const [treatmentImageUrls, setTreatmentImageUrls] = useState<string[]>([]);
   // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 예약메모 인라인 편집 상태
@@ -836,6 +838,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       setAddressDetailText((custData as Customer).address_detail ?? '');
       setEmailText((custData as Customer).customer_email ?? '');
       setPassportText((custData as Customer).passport_number ?? '');
+      setReferralNameText((custData as Customer).referral_name ?? '');
       setPostalCodeText((custData as Customer).postal_code ?? '');
       // C23-DETAIL-SIMPLIFY: 2-3 상세 패널 폼 데이터 초기화
       setResvDetailForm({
@@ -1177,6 +1180,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 항상 포함 (editingEmail/editingPassport 가드 제거)
       patch.customer_email = emailText.trim() || null;
       patch.passport_number = passportText.trim() || null;
+      // T-20260515-foot-REFERRAL-NAME AC-2: 소개자 성함 통합 저장 (optimistic — saveCustomerField 직접 호출 제거)
+      patch.referral_name = referralNameText.trim() || null;
       if (editingPhone) {
         const digits = phoneText.replace(/\D/g, '');
         if (digits.length === 0) { toast.error('번호를 입력해주세요'); return; }
@@ -2338,18 +2343,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 </tr>
 
                 {/* T-20260515-foot-REFERRAL-NAME: 지인소개 시 소개자 성함 */}
+                {/* AC-2 fix: referralNameText 로컬 state 바인딩 → optimistic update (saveCustomerField onChange 직접 호출 제거) */}
                 {customer.visit_route === '지인소개' && (
                   <tr>
                     <td className={LC}>소개자 성함</td>
                     <td className={VC} colSpan={3}>
                       <input
                         type="text"
-                        value={customer.referral_name ?? ''}
+                        value={referralNameText}
                         onChange={(e) => {
+                          setReferralNameText(e.target.value);
                           setIsDirty(true);
-                          saveCustomerField({ referral_name: e.target.value.trim() || null });
                         }}
-                        disabled={savingField}
                         placeholder="예: 홍길동"
                         className="rounded border border-gray-300 px-2 py-0.5 text-[11px] w-full focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
                       />
