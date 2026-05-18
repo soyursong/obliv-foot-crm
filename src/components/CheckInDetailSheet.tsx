@@ -61,14 +61,53 @@ interface RoomLog {
   logged_at: string;
 }
 
+// ─── 환자 일일 동선 기록 타입 (T-20260516-foot-ROOM-MOVE-TRACK) ──────────────
+
+type TrackedSlotType = '상담실' | '치료실' | '가열성레이저' | '레이저실';
+// 슬롯 표시 순서 (상담실 → 치료실 → 가열성레이저 → 레이저실)
+const TRACKED_SLOT_ORDER: TrackedSlotType[] = ['상담실', '치료실', '가열성레이저', '레이저실'];
+
+interface PatientRoomDailyLog {
+  id: string;
+  patient_id: string;
+  date: string;
+  slot_type: TrackedSlotType;
+  room_number: string;
+  last_moved_at: string;
+  clinic_id: string;
+}
+
+/** room_type → TrackedSlotType 매핑 */
+const ROOM_TYPE_TO_SLOT: Partial<Record<string, TrackedSlotType>> = {
+  consultation: '상담실',
+  treatment: '치료실',
+  heated_laser: '가열성레이저',
+  laser: '레이저실',
+};
+
+/** 방 이름으로 슬롯 유형 반환 (rooms 상태 기반, 가열성레이저는 특수 처리) */
+function getSlotType(roomName: string, roomsState: Room[]): TrackedSlotType | null {
+  if (roomName === '가열성레이저') return '가열성레이저';
+  const room = roomsState.find((r) => r.name === roomName);
+  if (!room) return null;
+  return ROOM_TYPE_TO_SLOT[room.room_type] ?? null;
+}
+
+/** 오늘(서울 기준) YYYY-MM-DD 반환 */
+function todaySeoulISODate(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+}
+
 function getRoomField(roomName: string): 'examination_room' | 'consultation_room' | 'treatment_room' | 'laser_room' | null {
+  if (roomName === '가열성레이저') return 'laser_room'; // T-20260516-foot-ROOM-MOVE-TRACK
   if (roomName.startsWith('원장실')) return 'examination_room';
   if (roomName.startsWith('상담실')) return 'consultation_room';
   if (roomName.startsWith('치료실')) return 'treatment_room';
   if (roomName.startsWith('레이저실')) return 'laser_room';
   return null;
 }
-function getRoomType(roomName: string): 'examination' | 'consultation' | 'treatment' | 'laser' | null {
+function getRoomType(roomName: string): 'examination' | 'consultation' | 'treatment' | 'laser' | 'heated_laser' | null {
+  if (roomName === '가열성레이저') return 'heated_laser'; // T-20260516-foot-ROOM-MOVE-TRACK
   if (roomName.startsWith('원장실')) return 'examination';
   if (roomName.startsWith('상담실')) return 'consultation';
   if (roomName.startsWith('치료실')) return 'treatment';
@@ -732,6 +771,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const [rooms, setRooms] = useState<Room[]>([]);
   const [selectedRoom, setSelectedRoom] = useState('');
   const [assigningRoom, setAssigningRoom] = useState(false);
+  // T-20260516-foot-ROOM-MOVE-TRACK: 슬롯별 마지막 위치 (4종, last-room-wins)
+  const [dailyRoomLog, setDailyRoomLog] = useState<PatientRoomDailyLog[]>([]);
   // T-20260515-foot-KENBO-API-NATIVE: 고객 건보 조회 동의 여부
   const [hiraConsent, setHiraConsent] = useState(false);
 
@@ -1046,6 +1087,21 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       setRoomLogs([]);
     }
 
+    // T-20260516-foot-ROOM-MOVE-TRACK: 슬롯별 마지막 위치 로드
+    if (checkIn.customer_id) {
+      try {
+        const { data: drlData } = await supabase
+          .from('patient_room_daily_log')
+          .select('id, patient_id, date, slot_type, room_number, last_moved_at, clinic_id')
+          .eq('patient_id', checkIn.customer_id)
+          .eq('date', todaySeoulISODate())
+          .eq('clinic_id', checkIn.clinic_id);
+        setDailyRoomLog((drlData ?? []) as PatientRoomDailyLog[]);
+      } catch {
+        setDailyRoomLog([]);
+      }
+    }
+
     // 현재 배정된 공간을 드롭다운 초기값으로 설정
     const cur =
       checkIn.examination_room ??
@@ -1182,6 +1238,45 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
         // table not yet created — use local fallback
       }
       setRoomLogs((prev) => [...prev, inserted ?? logEntry]);
+
+      // T-20260516-foot-ROOM-MOVE-TRACK: 4종 슬롯 UPSERT (last-room-wins)
+      if (checkIn.customer_id) {
+        const slotType = getSlotType(roomName, rooms);
+        if (slotType) {
+          try {
+            const { data: drlData } = await supabase
+              .from('patient_room_daily_log')
+              .upsert(
+                {
+                  patient_id: checkIn.customer_id,
+                  date: todaySeoulISODate(),
+                  slot_type: slotType,
+                  room_number: roomName,
+                  last_moved_at: new Date().toISOString(),
+                  clinic_id: checkIn.clinic_id,
+                },
+                { onConflict: 'patient_id,date,slot_type,clinic_id', ignoreDuplicates: false },
+              )
+              .select('id, patient_id, date, slot_type, room_number, last_moved_at, clinic_id')
+              .single();
+            if (drlData) {
+              const upserted = drlData as PatientRoomDailyLog;
+              setDailyRoomLog((prev) => {
+                const idx = prev.findIndex((r) => r.slot_type === slotType);
+                if (idx >= 0) {
+                  const next = [...prev];
+                  next[idx] = upserted;
+                  return next;
+                }
+                return [...prev, upserted];
+              });
+            }
+          } catch {
+            // graceful skip — 테이블 미배포 시 무시
+          }
+        }
+      }
+
       setSelectedRoom(roomName);
       toast.success(`${roomName} 배정됨`);
       onUpdated();
@@ -2087,6 +2182,28 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                       </Badge>
                     </span>
                   ))}
+                </div>
+              </div>
+            )}
+            {/* T-20260516-foot-ROOM-MOVE-TRACK: 금일 동선 (슬롯별 마지막 위치) */}
+            {dailyRoomLog.length > 0 && (
+              <div className="space-y-1 pt-0.5" data-testid="daily-room-log-section">
+                <span className="text-xs text-muted-foreground">금일 동선</span>
+                <div className="flex flex-wrap gap-1">
+                  {TRACKED_SLOT_ORDER
+                    .map((slotType) => dailyRoomLog.find((l) => l.slot_type === slotType))
+                    .filter((l): l is PatientRoomDailyLog => l !== undefined)
+                    .map((log) => (
+                      <Badge
+                        key={log.slot_type}
+                        variant="secondary"
+                        className="text-xs font-normal py-0 gap-1"
+                        data-testid={`daily-log-${log.slot_type}`}
+                      >
+                        <span className="text-muted-foreground">{log.slot_type}</span>
+                        <span className="font-medium">{log.room_number}</span>
+                      </Badge>
+                    ))}
                 </div>
               </div>
             )}

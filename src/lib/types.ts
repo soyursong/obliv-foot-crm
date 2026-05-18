@@ -225,7 +225,7 @@ export interface Room {
   id: string;
   clinic_id: string;
   name: string;
-  room_type: 'treatment' | 'laser' | 'consultation' | 'examination';
+  room_type: 'treatment' | 'laser' | 'consultation' | 'examination' | 'heated_laser';
   active: boolean;
   sort_order: number;
   max_occupancy: number;
