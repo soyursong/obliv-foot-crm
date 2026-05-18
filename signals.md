@@ -1,4 +1,6 @@
 # FDD Signals — obliv-foot-crm
+| 2026-05-18 23:15 | dev-foot | deploy-ready | T-20260515-foot-REFERRAL-NAME AC-2 FIX: 소개자 성함 optimistic update 수정. referralNameText 로컬 state 추가(emailText 동일 패턴) + handleInfoPanelSave patch 포함 + onChange DB직접호출 제거. tsc EXIT:0. DB변경: 없음. commit: f43f747. |
+| 2026-05-18 23:15 | dev-foot | supervisor-action-required | T-20260515-foot-SPACE-ASSIGN-REVAMP migration 미적용 — supervisor SQL 실행 요청. 파일: supabase/migrations/20260515_space_assign_revamp.sql (rooms 명칭 치료실N→CN/레이저실N→LN/원장실→원장실 C5, C10 신설, room_role_mapping laser→technician). FE 코드: 기적용(commit c815caa). DB만 미반영. rollback: 20260515_space_assign_revamp.down.sql. 직접 DB 접근 불가(psql/Supabase CLI PAT 없음) → supervisor Supabase SQL editor 실행 필요. |
 | 2026-05-18 16:20 | dev-foot | deploy-ready | T-20260517-foot-CHECKIN-2STEP: 셀프체크인 방문유형·유입경로 2단계 구조 개편. AC-1~5c 전체 충족. 방문유형 2단계(예약여부→초진/재진), 워크인 안내 팝업(→초진 접수), 체험 FE 제거(DB 유지), 유입경로 대분류 5종+SNS 소분류 4종, 소개자 입력 제거. tsc clean. E2E spec 14 케이스(T-20260517-foot-CHECKIN-2STEP.spec.ts). DB변경: 없음(experience CHECK constraint 유지). |
 | 2026-05-18 15:10 | dev-foot | deploy-ready | T-20260516-foot-ROOM-MOVE-TRACK: 1번차트 공간배정 금일 동선 자동 기록. patient_room_daily_log 신규 테이블(4종 슬롯 last-room-wins UPSERT) + CheckInDetailSheet assignRoom UPSERT 로직 + 금일 동선 섹션 UI. Room.room_type heated_laser 추가. E2E spec 4케이스(AC-1/3/4/5/6). DB변경: 있음(테이블 직접 적용 완료). commit: ce057fe. |
 
