@@ -939,7 +939,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             .order('signed_at', { ascending: false }),
           supabase
             .from('form_submissions')
-            .select('check_in_id, template_key, printed_at')
+            // T-20260515-foot-DOC-REISSUE-BTN fix: template_key 컬럼 없음 → template_id JOIN form_templates(form_key)
+            .select('check_in_id, printed_at, form_templates!template_id(form_key)')
             .in('check_in_id', checkInIds)
             .order('printed_at', { ascending: false })
             .limit(30),
@@ -954,7 +955,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         ]);
         setPrescriptions((rxRes.data ?? []) as PrescriptionRow[]);
         setConsentEntries((consentRes.data ?? []) as { form_type: string; signed_at: string }[]);
-        setSubmissionEntries((subRes.data ?? []) as { check_in_id: string; template_key?: string; printed_at: string }[]);
+        // T-20260515-foot-DOC-REISSUE-BTN fix: JOIN 결과에서 form_key 추출
+        setSubmissionEntries(
+          (subRes.data ?? []).map((s: Record<string, unknown>) => ({
+            check_in_id: s.check_in_id as string,
+            template_key: (s.form_templates as { form_key: string } | null)?.form_key,
+            printed_at: s.printed_at as string,
+          }))
+        );
         setChecklistEntries((clRes.data ?? []) as { id: string; completed_at: string | null; started_at: string; checklist_data: Record<string, unknown> }[]);
       }
 
