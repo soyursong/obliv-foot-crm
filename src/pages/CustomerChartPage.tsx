@@ -41,6 +41,9 @@ import { ReservationMemoTimeline, insertReservationMemo } from '@/components/Res
 // T-20260517-foot-C2-CONSULT-DOCS: 동의서 [작성] 다이얼로그
 import { ConsentFormDialog, type FormType } from '@/components/ConsentFormDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+// T-20260517-foot-C2-CONSULT-DOCS AC-R1: 합본 양식 (개인정보+체크리스트 / 환불+비급여)
+import { ChecklistForm } from '@/components/forms/ChecklistForm';
+import { ConsentForm } from '@/components/forms/ConsentForm';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
@@ -747,6 +750,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260517-foot-C2-CONSULT-DOCS: 필수서류 [작성]/[내용보기] 다이얼로그 상태
   const [consentDialogFormType, setConsentDialogFormType] = useState<FormType | null>(null);
   const [viewDocGroup, setViewDocGroup] = useState<1 | 2 | null>(null);
+  // T-20260517-foot-C2-CONSULT-DOCS AC-R1: 합본 양식 모달
+  const [showChecklistForm, setShowChecklistForm] = useState(false);
+  const [showConsentFormModal, setShowConsentFormModal] = useState(false);
   // C23-DETAIL-SIMPLIFY: 치료메모 탭 상태
   const [treatmentMemoText, setTreatmentMemoText] = useState('');
   const [savingTreatmentMemo, setSavingTreatmentMemo] = useState(false);
@@ -1055,16 +1061,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 저장
   // T-20260510-foot-C21-SAVE-UNIFY: 우편번호+주소 동시 저장 (저장버튼 단일화)
   // T-20260510-foot-ADDRESS-DETAIL-FIX: address_detail 동시 저장
+  // T-20260516-foot-C21-SAVE-REGRESS AC-3: REST UPDATE → RPC 전환 (PostgREST 스키마 캐시 우회)
   const saveAddress = async () => {
     if (!customer) return;
-    const { error } = await supabase
-      .from('customers')
-      .update({
-        address: addressText.trim() || null,
-        address_detail: addressDetailText.trim() || null,
-        postal_code: postalCodeText.trim() || null,
-      })
-      .eq('id', customer.id);
+    const p_address = addressText.trim() || null;
+    const p_address_detail = addressDetailText.trim() || null;
+    const p_postal_code = postalCodeText.trim() || null;
+    const { error } = await supabase.rpc('save_customer_address', {
+      p_customer_id: customer.id,
+      p_address,
+      p_address_detail,
+      p_postal_code,
+    });
     if (error) {
       console.error('[C21-SAVE-REGRESS] saveAddress 실패:', error.message);
       toast.error(`주소 저장 실패: ${error.message}`);
@@ -1072,9 +1080,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }
     setCustomer((prev) => prev ? {
       ...prev,
-      address: addressText.trim() || null,
-      address_detail: addressDetailText.trim() || null,
-      postal_code: postalCodeText.trim() || null,
+      address: p_address,
+      address_detail: p_address_detail,
+      postal_code: p_postal_code,
     } : prev);
     // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: setEditingAddress(false) 제거 — 항상 활성화
   };
@@ -1190,18 +1198,22 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       }
       // 3) address 독립 저장 — 실패해도 다른 필드 저장 결과에 영향 없음 (T-20260516-foot-C21-SAVE-REGRESS)
       // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 항상 포함 (editingAddress 가드 제거)
+      // T-20260516-foot-C21-SAVE-REGRESS AC-3: REST UPDATE → RPC 전환 (PostgREST 스키마 캐시 우회)
       try {
-        const addressPatch = {
-          address: addressText.trim() || null,
-          address_detail: addressDetailText.trim() || null,
-          postal_code: postalCodeText.trim() || null,
-        };
-        const { error: addrErr } = await supabase.from('customers').update(addressPatch).eq('id', customer.id);
+        const p_address = addressText.trim() || null;
+        const p_address_detail = addressDetailText.trim() || null;
+        const p_postal_code = postalCodeText.trim() || null;
+        const { error: addrErr } = await supabase.rpc('save_customer_address', {
+          p_customer_id: customer.id,
+          p_address,
+          p_address_detail,
+          p_postal_code,
+        });
         if (addrErr) {
           console.error('[C21-SAVE-REGRESS] address 저장 실패 (다른 필드는 정상 저장됨):', addrErr.message);
           toast.error(`주소 저장 실패: ${addrErr.message}`);
         } else {
-          setCustomer((prev) => prev ? { ...prev, ...addressPatch } : prev);
+          setCustomer((prev) => prev ? { ...prev, address: p_address, address_detail: p_address_detail, postal_code: p_postal_code } : prev);
         }
       } catch (addrEx) {
         console.error('[C21-SAVE-REGRESS] address 예외 (다른 필드는 정상 저장됨):', addrEx);
@@ -3223,48 +3235,32 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               {chartTabGroup === 'history' && chartTab === 'consultations' && (
             <div className="space-y-3">
 
-              {/* ── 그룹1: 개인정보 / 체크리스트 ── */}
+              {/* ── 그룹1: 개인정보 / 체크리스트 — AC-R1/R2: 합본 기준 단일 상태 ── */}
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center gap-1.5 font-bold text-indigo-800 mb-2">
                   <span className="h-2 w-2 rounded-full bg-indigo-500" />
                   개인정보 / 체크리스트
                 </div>
-                <div className="space-y-1 mb-2">
-                  {/* 개인정보 동의서 */}
-                  {(() => {
-                    const done = consentEntries.some((c) => c.form_type === 'privacy');
-                    return (
-                      <div className={`flex items-center gap-2 rounded px-2 py-1 ${done ? 'bg-teal-50' : 'bg-gray-50'}`}>
-                        <span className={done ? 'text-teal-600' : 'text-gray-300'}>{done ? '✓' : '○'}</span>
-                        <span className={done ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>개인정보 동의서</span>
-                        {done && (
-                          <span className="ml-auto text-muted-foreground text-[10px]">
-                            {format(new Date(consentEntries.find((c) => c.form_type === 'privacy')!.signed_at), 'MM-dd')}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })()}
-                  {/* 사전 체크리스트 */}
-                  <div className={`flex items-center gap-2 rounded px-2 py-1 ${checklistEntries.length > 0 ? 'bg-teal-50' : 'bg-gray-50'}`}>
-                    <span className={checklistEntries.length > 0 ? 'text-teal-600' : 'text-gray-300'}>
-                      {checklistEntries.length > 0 ? '✓' : '○'}
-                    </span>
-                    <span className={checklistEntries.length > 0 ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>사전 체크리스트</span>
-                    {checklistEntries.length > 0 && checklistEntries[0].completed_at && (
-                      <span className="ml-auto text-muted-foreground text-[10px]">
-                        {format(new Date(checklistEntries[0].completed_at), 'MM-dd')}
-                      </span>
-                    )}
-                  </div>
-                </div>
+                {/* AC-R2: 개별 서브항목 제거 → 합본 단일 상태 */}
+                {(() => {
+                  const done = consentEntries.some((c) => c.form_type === 'privacy') || checklistEntries.length > 0;
+                  const dateStr = checklistEntries[0]?.completed_at
+                    ? format(new Date(checklistEntries[0].completed_at), 'MM-dd')
+                    : consentEntries.find((c) => c.form_type === 'privacy')?.signed_at
+                      ? format(new Date(consentEntries.find((c) => c.form_type === 'privacy')!.signed_at), 'MM-dd')
+                      : null;
+                  return (
+                    <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${done ? 'bg-teal-50' : 'bg-gray-50'}`}>
+                      <span className={done ? 'text-teal-600' : 'text-gray-300'}>{done ? '✓' : '○'}</span>
+                      <span className={done ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>합본 양식 (개인정보 + 체크리스트)</span>
+                      {done && dateStr && <span className="ml-auto text-muted-foreground text-[10px]">{dateStr}</span>}
+                    </div>
+                  );
+                })()}
                 <div className="flex gap-1.5">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (!latestCheckIn) { toast.error('접수 기록이 없습니다. 먼저 접수해주세요.'); return; }
-                      setConsentDialogFormType('privacy');
-                    }}
+                    onClick={() => setShowChecklistForm(true)}
                     className="flex-1 rounded border border-indigo-300 bg-indigo-50 py-1 text-[10px] font-medium text-indigo-700 hover:bg-indigo-100 transition"
                   >작성</button>
                   <button
@@ -3276,39 +3272,29 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 </div>
               </div>
 
-              {/* ── 그룹2: 환불 / 비급여 동의서 ── */}
+              {/* ── 그룹2: 환불 / 비급여 동의서 — AC-R1/R2: 합본 기준 단일 상태 ── */}
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center gap-1.5 font-bold text-purple-800 mb-2">
                   <span className="h-2 w-2 rounded-full bg-purple-500" />
                   환불 / 비급여 동의서
                 </div>
-                <div className="space-y-1 mb-2">
-                  {(['non_covered', 'refund'] as const).map((fType) => {
-                    const done = consentEntries.some((c) => c.form_type === fType);
-                    return (
-                      <div key={fType} className={`flex items-center gap-2 rounded px-2 py-1 ${done ? 'bg-teal-50' : 'bg-gray-50'}`}>
-                        <span className={done ? 'text-teal-600' : 'text-gray-300'}>{done ? '✓' : '○'}</span>
-                        <span className={done ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>{FORM_TITLES[fType] ?? fType}</span>
-                        {done && (
-                          <span className="ml-auto text-muted-foreground text-[10px]">
-                            {format(new Date(consentEntries.find((c) => c.form_type === fType)!.signed_at), 'MM-dd')}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                {/* AC-R2: 개별 서브항목 제거 → 합본 단일 상태 */}
+                {(() => {
+                  const done = consentEntries.some((c) => c.form_type === 'non_covered') || consentEntries.some((c) => c.form_type === 'refund');
+                  const dateEntry = consentEntries.find((c) => c.form_type === 'non_covered') ?? consentEntries.find((c) => c.form_type === 'refund');
+                  const dateStr = dateEntry ? format(new Date(dateEntry.signed_at), 'MM-dd') : null;
+                  return (
+                    <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${done ? 'bg-purple-50' : 'bg-gray-50'}`}>
+                      <span className={done ? 'text-purple-600' : 'text-gray-300'}>{done ? '✓' : '○'}</span>
+                      <span className={done ? 'text-purple-700 font-medium' : 'text-muted-foreground'}>합본 양식 (환불 + 비급여)</span>
+                      {done && dateStr && <span className="ml-auto text-muted-foreground text-[10px]">{dateStr}</span>}
+                    </div>
+                  );
+                })()}
                 <div className="flex gap-1.5">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (!latestCheckIn) { toast.error('접수 기록이 없습니다. 먼저 접수해주세요.'); return; }
-                      // 미서명 항목 순서대로 열기: non_covered → refund
-                      const nextForm = !consentEntries.some((c) => c.form_type === 'non_covered')
-                        ? 'non_covered'
-                        : 'refund';
-                      setConsentDialogFormType(nextForm);
-                    }}
+                    onClick={() => setShowConsentFormModal(true)}
                     className="flex-1 rounded border border-purple-300 bg-purple-50 py-1 text-[10px] font-medium text-purple-700 hover:bg-purple-100 transition"
                   >작성</button>
                   <button
@@ -4458,6 +4444,45 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </div>
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* T-20260517-foot-C2-CONSULT-DOCS AC-R1: 합본1 — 개인정보 + 체크리스트 */}
+      {showChecklistForm && (
+        <ChecklistForm
+          open={showChecklistForm}
+          onOpenChange={setShowChecklistForm}
+          customerId={customer.id}
+          defaultName={customer.name}
+          defaultPhone={customer.phone ?? undefined}
+          defaultBirthDate={customer.birth_date ?? undefined}
+          onSaved={() => {
+            setShowChecklistForm(false);
+            // Storage 저장 후 DB checklist 재조회 시도 (태블릿 경로 체크리스트가 있을 경우 반영)
+            void supabase
+              .from('checklists')
+              .select('id, completed_at, started_at, checklist_data')
+              .eq('customer_id', customer.id)
+              .not('completed_at', 'is', null)
+              .order('completed_at', { ascending: false })
+              .limit(10)
+              .then(({ data }) => {
+                if (data) setChecklistEntries(data as { id: string; completed_at: string | null; started_at: string; checklist_data: Record<string, unknown> }[]);
+              });
+          }}
+        />
+      )}
+
+      {/* T-20260517-foot-C2-CONSULT-DOCS AC-R1: 합본2 — 환불 + 비급여 동의서 */}
+      {showConsentFormModal && (
+        <ConsentForm
+          open={showConsentFormModal}
+          onOpenChange={setShowConsentFormModal}
+          customerId={customer.id}
+          defaultName={customer.name}
+          onSaved={() => {
+            setShowConsentFormModal(false);
+          }}
+        />
       )}
     </div>
   );

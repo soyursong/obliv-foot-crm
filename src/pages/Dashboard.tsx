@@ -3107,14 +3107,21 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  const handleCardClick = (ci: CheckIn) => {
+  // T-20260518-foot-SELFCHECKIN-TESTDATA5 D-Day 재오픈 수정:
+  // 문제: setSelectedCheckIn(ci)만 호출 → CheckInDetailSheet useEffect 간접 경로에만 의존
+  //       현장 재현: Dashboard 칸반 클릭 시 1번차트·2번차트 둘 다 미오픈
+  // 비교: Customers는 openChart(c.id) 직접 호출로 정상 동작
+  // 수정: ctxOpenChart(ci.customer_id) 직접 추가 (Customers 패턴 통일)
+  // 참고: handleTimelineCardClick 제거 사유(setDashChartSheetId 이중 인스턴스 충돌)는
+  //       CHART2-STATE-UNIFY(f4a82af)로 AdminLayout 단일 ChartContext 통합 후 해소됨.
+  //       이제 ctxOpenChart는 단일 인스턴스를 직접 호출 → 충돌 없음.
+  const handleCardClick = useCallback((ci: CheckIn) => {
     setSelectedCheckIn(ci);
-  };
-
-  // T-20260515-foot-CHART2-REOPEN: handleTimelineCardClick 제거
-  // 원인: Dashboard 레벨에서 setDashChartSheetId(z-70)와 setSelectedCheckIn(z-50)을 동시 호출 →
-  //       CustomerChartSheet 백드롭(z-60)이 CheckInDetailSheet(z-50)를 덮어 2번차트 경로 충돌.
-  // 복구: 타임라인도 handleCardClick 사용. 초진 자동 열기는 CheckInDetailSheet 내부에서 처리.
+    // 2번차트 직접 오픈 — CheckInDetailSheet useEffect 간접 경로 보완
+    if (ci.customer_id) {
+      ctxOpenChart(ci.customer_id);
+    }
+  }, [ctxOpenChart]);
 
   const handleCardContext = (ci: CheckIn, e: React.MouseEvent) => {
     setContextMenu({ checkIn: ci, pos: { x: e.clientX, y: e.clientY } });
