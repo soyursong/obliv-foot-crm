@@ -1,4 +1,6 @@
 # FDD Signals — obliv-foot-crm
+| 2026-05-18 16:20 | dev-foot | deploy-ready | T-20260517-foot-CHECKIN-2STEP: 셀프체크인 방문유형·유입경로 2단계 구조 개편. AC-1~5c 전체 충족. 방문유형 2단계(예약여부→초진/재진), 워크인 안내 팝업(→초진 접수), 체험 FE 제거(DB 유지), 유입경로 대분류 5종+SNS 소분류 4종, 소개자 입력 제거. tsc clean. E2E spec 14 케이스(T-20260517-foot-CHECKIN-2STEP.spec.ts). DB변경: 없음(experience CHECK constraint 유지). |
+| 2026-05-18 15:10 | dev-foot | deploy-ready | T-20260516-foot-ROOM-MOVE-TRACK: 1번차트 공간배정 금일 동선 자동 기록. patient_room_daily_log 신규 테이블(4종 슬롯 last-room-wins UPSERT) + CheckInDetailSheet assignRoom UPSERT 로직 + 금일 동선 섹션 UI. Room.room_type heated_laser 추가. E2E spec 4케이스(AC-1/3/4/5/6). DB변경: 있음(테이블 직접 적용 완료). commit: ce057fe. |
 
 | 2026-05-18 12:35 | dev-foot | deploy-ready | T-20260516-foot-CHART-UNIFORM-LOCK: 고객별 차트 동작 불일치 해소. AC-1 resolvedCustomerId useEffect→2번차트 자동오픈(김사비 기준 통일), AC-2 latestResvId 4단계폴백 추가, AC-4 CHART_UNIFORMITY_LOCK 주석+E2E spec. tsc clean. DB변경: 없음. commit: 0ffcdcc. |
 | 2026-05-17 21:30 | dev-foot | deploy-ready | T-20260517-foot-SELFCHECKIN-TESTDATA5: [TEST5] 초진 20명 더미 예약 삽입 완료. customers 20/20 + reservations 20/20 (10:00~16:58 22분간격). 체크인 없음. 5/18 4진입경로 검증 준비. DB변경: INSERT only. rollback: rollback_selfcheckin_testdata5_20260517.mjs. |

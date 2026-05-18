@@ -3,7 +3,7 @@
  * 셀프체크인 페이지 — /checkin/:clinicSlug
  *
  * 인증 불필요 (anon). 태블릿/모바일 전체화면 최적화 (키오스크 모드).
- * 흐름: 성함+전화번호 입력 → 방문유형 선택 → 접수 확인 → 접수 완료
+ * 흐름: 성함+전화번호 입력 → 방문유형(2단계) 선택 → 유입경로(2단계) 선택 → 접수 확인 → 접수 완료
  *
  * 키오스크 기능:
  * - 완료 화면 15초 자동 리셋 (카운트다운 표시)
@@ -14,6 +14,13 @@
  * - 초진/예약없이 방문 시 신분증 확인 필요 플래그 자동 설정
  *
  * 디자인: 브라운/베이지 고급 웰니스 클리닉 테마 (T-20260428-foot-CHECKIN-UX)
+ *
+ * T-20260517-foot-CHECKIN-2STEP:
+ *  - 방문유형 2단계: 예약여부(1단계) → 초진/재진(2단계)
+ *  - 워크인 안내 팝업 → 초진으로 접수
+ *  - 체험(experience) 셀프체크인 노출 제거 (TM CRM 직접 입력용)
+ *  - 유입경로 2단계: 대분류(1단계) → SNS 소분류(2단계)
+ *  - 소개자 이름+전화번호 입력란 제거
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
@@ -48,6 +55,9 @@ const C = {
 type Step = 'input' | 'confirm' | 'done' | 'error';
 type Lang = 'ko' | 'en';
 
+/** 예약 여부 1단계 선택값 */
+type ReservationType = 'reserved' | 'walkin';
+
 const T: Record<Lang, {
   selfCheckIn: string;
   name: string;
@@ -55,6 +65,27 @@ const T: Record<Lang, {
   phone: string;
   phonePlaceholder: string;
   visitType: string;
+  visitStep1Reserved: string;
+  visitStep1WalkIn: string;
+  visitStep2Title: string;
+  visitNew: string;
+  visitNewDesc: string;
+  visitReturning: string;
+  visitReturningDesc: string;
+  walkInModalTitle: string;
+  walkInModalBody: string;
+  walkInModalConfirm: string;
+  leadSourceTitle: string;
+  leadSNS: string;
+  leadSearch: string;
+  leadReferral: string;
+  leadPartnership: string;
+  leadOther: string;
+  leadSNSSubTitle: string;
+  leadInstagram: string;
+  leadFacebook: string;
+  leadYoutube: string;
+  leadBlogCafe: string;
   checkIn: string;
   confirm: string;
   edit: string;
@@ -74,16 +105,8 @@ const T: Record<Lang, {
   loading: string;
   clearAll: string;
   reservationBanner: (time: string, type: string) => string;
-  visitNew: string;
-  visitNewDesc: string;
-  visitReturning: string;
-  visitReturningDesc: string;
-  visitExperience: string;
-  visitExperienceDesc: string;
   failPrefix: string;
   errorPrefix: string;
-  referrer: string;
-  referrerPlaceholder: string;
 }> = {
   ko: {
     selfCheckIn: '셀프 접수',
@@ -92,6 +115,27 @@ const T: Record<Lang, {
     phone: '연락처',
     phonePlaceholder: '예약하신 번호로 입력해주세요',
     visitType: '방문 유형',
+    visitStep1Reserved: '예약하고 왔어요',
+    visitStep1WalkIn: '예약 없이 방문했어요',
+    visitStep2Title: '방문 구분',
+    visitNew: '초진',
+    visitNewDesc: '처음 방문입니다',
+    visitReturning: '재진',
+    visitReturningDesc: '재방문입니다',
+    walkInModalTitle: '안내',
+    walkInModalBody: '당일 예약 상황에 따라\n진료가 어려울 수 있습니다.\n데스크에 문의해주세요.',
+    walkInModalConfirm: '확인 후 접수하기',
+    leadSourceTitle: '유입경로',
+    leadSNS: 'SNS',
+    leadSearch: '검색',
+    leadReferral: '지인소개',
+    leadPartnership: '제휴',
+    leadOther: '기타',
+    leadSNSSubTitle: 'SNS 채널 선택',
+    leadInstagram: '인스타그램',
+    leadFacebook: '페이스북',
+    leadYoutube: '유튜브',
+    leadBlogCafe: '블로그/카페',
     checkIn: '접수하기',
     confirm: '접수하기',
     edit: '수정',
@@ -111,16 +155,8 @@ const T: Record<Lang, {
     loading: '불러오는 중...',
     clearAll: '전체삭제',
     reservationBanner: (time, type) => `오늘 예약이 있습니다: ${time} ${type}`,
-    visitNew: '초진',
-    visitNewDesc: '처음 방문 입니다',
-    visitReturning: '재진',
-    visitReturningDesc: '재방문 입니다',
-    visitExperience: '예약없이 방문',
-    visitExperienceDesc: '',
     failPrefix: '접수 실패: ',
     errorPrefix: '오류가 발생했습니다: ',
-    referrer: '추천인',
-    referrerPlaceholder: '추천해 주신 분 성함 (선택)',
   },
   en: {
     selfCheckIn: 'Self Check-In',
@@ -129,6 +165,27 @@ const T: Record<Lang, {
     phone: 'Phone',
     phonePlaceholder: 'Your reservation phone number',
     visitType: 'Visit Type',
+    visitStep1Reserved: 'I have a reservation',
+    visitStep1WalkIn: 'Walk-in (no reservation)',
+    visitStep2Title: 'Visit Category',
+    visitNew: 'New Patient',
+    visitNewDesc: 'First visit',
+    visitReturning: 'Follow-up',
+    visitReturningDesc: 'Returning visit',
+    walkInModalTitle: 'Please Note',
+    walkInModalBody: 'Walk-in availability depends\non daily schedule.\nPlease check with the front desk.',
+    walkInModalConfirm: 'Understood, proceed',
+    leadSourceTitle: 'How did you hear about us?',
+    leadSNS: 'SNS',
+    leadSearch: 'Search',
+    leadReferral: 'Friend / Family',
+    leadPartnership: 'Partnership',
+    leadOther: 'Other',
+    leadSNSSubTitle: 'Select SNS channel',
+    leadInstagram: 'Instagram',
+    leadFacebook: 'Facebook',
+    leadYoutube: 'YouTube',
+    leadBlogCafe: 'Blog / Cafe',
     checkIn: 'Check In',
     confirm: 'Confirm',
     edit: 'Edit',
@@ -148,35 +205,15 @@ const T: Record<Lang, {
     loading: 'Loading...',
     clearAll: 'Clear',
     reservationBanner: (time, type) => `Reservation found: ${time} ${type}`,
-    visitNew: 'New Patient',
-    visitNewDesc: 'First visit',
-    visitReturning: 'Follow-up',
-    visitReturningDesc: 'Returning visit',
-    visitExperience: 'Walk-in',
-    visitExperienceDesc: 'No reservation',
     failPrefix: 'Failed: ',
     errorPrefix: 'Error: ',
-    referrer: 'Referred by',
-    referrerPlaceholder: 'Name of person who referred you (optional)',
   },
 };
-
-function visitChoices(lang: Lang): { value: VisitType; label: string; desc: string }[] {
-  const t = T[lang];
-  return [
-    { value: 'new', label: t.visitNew, desc: t.visitNewDesc },
-    { value: 'returning', label: t.visitReturning, desc: t.visitReturningDesc },
-    { value: 'experience', label: t.visitExperience, desc: t.visitExperienceDesc },
-  ];
-}
 
 /** 완료 화면 자동 리셋 (초) */
 const DONE_RESET_SECONDS = 15;
 /** 입력 화면 비활동 타임아웃 (초) */
 const IDLE_TIMEOUT_SECONDS = 60;
-
-/** 신분증 확인 필요 여부 — 초진(new) + 예약없이 방문(experience) */
-const needsIdCheck = (vt: VisitType) => vt === 'new' || vt === 'experience';
 
 // ── 공통 폰트 스타일 (Pretendard 모던 고딕 — T-20260514-foot-SELFCHECKIN-FONT) ──
 const FONT_STYLE: React.CSSProperties = {
@@ -259,6 +296,68 @@ function NumPad({
   );
 }
 
+// ── 워크인 안내 팝업 ──
+function WalkInModal({
+  open,
+  body,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+  fontStyle,
+}: {
+  open: boolean;
+  body: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  fontStyle: React.CSSProperties;
+}) {
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-6"
+      style={{ backgroundColor: 'rgba(61,43,26,0.5)' }}
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-sm rounded-2xl p-8 shadow-xl"
+        style={{ backgroundColor: 'white', border: `2px solid ${C.border}`, ...fontStyle }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 아이콘 */}
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full"
+          style={{ backgroundColor: C.bannerBg, border: `2px solid ${C.bannerBorder}` }}>
+          <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: C.medium }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        {/* 본문 */}
+        <p className="text-center text-base leading-relaxed" style={{ color: C.dark, whiteSpace: 'pre-line' }}>
+          {body}
+        </p>
+        {/* 확인 버튼 */}
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="mt-6 w-full rounded-xl py-4 text-lg font-bold text-white transition active:scale-[0.99]"
+          style={{ backgroundColor: C.primary }}
+        >
+          {confirmLabel}
+        </button>
+        {/* 취소 */}
+        <button
+          type="button"
+          onClick={onCancel}
+          className="mt-3 w-full rounded-xl py-3 text-base font-medium transition active:scale-[0.99]"
+          style={{ border: `1.5px solid ${C.border}`, color: C.muted, backgroundColor: 'white' }}
+        >
+          돌아가기
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function SelfCheckIn() {
   const { clinicSlug } = useParams<{ clinicSlug: string }>();
 
@@ -271,14 +370,22 @@ export default function SelfCheckIn() {
   const [step, setStep] = useState<Step>('input');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [visitType, setVisitType] = useState<VisitType>('new');
-  const [referrerName, setReferrerName] = useState('');
+
+  // ── 방문유형 2단계 (T-20260517-foot-CHECKIN-2STEP) ──
+  const [reservationType, setReservationType] = useState<ReservationType | null>(null);
+  const [visitType, setVisitType] = useState<VisitType>('new');   // 최종 DB 저장값
+  const [walkInModalOpen, setWalkInModalOpen] = useState(false);
+  const [walkInConfirmed, setWalkInConfirmed] = useState(false);
+
+  // ── 유입경로 2단계 (T-20260517-foot-CHECKIN-2STEP) ──
+  const [leadSource, setLeadSource] = useState<string | null>(null);
+  const [leadSourceDetail, setLeadSourceDetail] = useState<string | null>(null);
+
   const [submitting, setSubmitting] = useState(false);
   const [queueNumber, setQueueNumber] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
 
   const t = T[lang];
-  const VISIT_CHOICES = visitChoices(lang);
 
   // 예약 정보
   const [reservationBanner, setReservationBanner] = useState<{
@@ -289,9 +396,7 @@ export default function SelfCheckIn() {
   // 완료 화면 카운트다운
   const [countdown, setCountdown] = useState(DONE_RESET_SECONDS);
 
-  // LOGIC-LOCK L-001: selectedPatientId 제거 — 셀프접수 화면에서 고객 검색/선택 상태 완전 폐지
-  // 폼 DOM 강제 재마운트 카운터
-  // 매 리셋마다 key가 바뀌어 브라우저 자동완성 캐시를 무효화한다
+  // LOGIC-LOCK L-001: 폼 DOM 강제 재마운트 카운터
   const [resetKey, setResetKey] = useState(0);
 
   // 비활동 타임아웃 ref
@@ -321,16 +426,18 @@ export default function SelfCheckIn() {
   }, [clinicSlug]);
 
   // ── 폼 리셋 ──
-  // T-20260510-foot-SELFCHECKIN-NO-PREFILL: resetKey 증가 → 입력 DOM 재마운트 → 브라우저 자동완성 캐시 무효화
   const resetForm = useCallback(() => {
-    // sessionStorage 전체 초기화 (셀프접수 페이지 전용 스토리지 보호)
     try { sessionStorage.clear(); } catch { /* 무시 */ }
     setResetKey((k) => k + 1);
     setStep('input');
     setName('');
     setPhone('');
+    setReservationType(null);
     setVisitType('new');
-    setReferrerName('');
+    setWalkInModalOpen(false);
+    setWalkInConfirmed(false);
+    setLeadSource(null);
+    setLeadSourceDetail(null);
     setQueueNumber(null);
     setErrorMsg('');
     setReservationBanner(null);
@@ -455,9 +562,14 @@ export default function SelfCheckIn() {
         if (reservation) {
           const timeStr = (reservation.reservation_time as string).slice(0, 5);
           const vt = reservation.visit_type as VisitType;
-          const vtLabel = VISIT_CHOICES.find((c) => c.value === vt)?.label ?? vt;
+          // 예약 배너 표시 — 방문유형 라벨 (체험 제외, new/returning만)
+          const vtLabel = vt === 'new' ? t.visitNew : vt === 'returning' ? t.visitReturning : '';
           setReservationBanner({ time: timeStr, visitType: vtLabel });
-          setVisitType(vt);
+          // 예약 확인되면 자동으로 '예약하고 왔어요' + 해당 방문유형 설정
+          if (vt === 'new' || vt === 'returning') {
+            setReservationType('reserved');
+            setVisitType(vt);
+          }
         } else {
           setReservationBanner(null);
         }
@@ -468,14 +580,58 @@ export default function SelfCheckIn() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clinicId, phone]);
 
-  // T-20260510-foot-SELFCHECKIN-NO-PREFILL: 이름/전화 자동완성 검색 비활성화
-  // 기존 고객 매칭은 submit 이후 서버 측 로직(handleSubmit)에서만 수행한다.
-  // (인라인 드롭다운 자동 채움 UX 제거 — 매번 빈 폼으로 시작)
+  // ── 방문유형 1단계 선택 핸들러 ──
+  const handleReservationTypeSelect = useCallback((rt: ReservationType) => {
+    if (rt === 'walkin') {
+      setReservationType('walkin');
+      setWalkInModalOpen(true);
+    } else {
+      setReservationType('reserved');
+      setWalkInModalOpen(false);
+      setWalkInConfirmed(false);
+    }
+  }, []);
 
-  // T-20260510-foot-SELFCHECKIN-NO-PREFILL: handleKioskPatientSelect 제거
-  // (이전 고객 자동 채움 UX 폐지)
+  // ── 워크인 확인 핸들러 ──
+  const handleWalkInConfirm = useCallback(() => {
+    setWalkInModalOpen(false);
+    setWalkInConfirmed(true);
+    setVisitType('new'); // 워크인 = 초진으로 접수
+  }, []);
 
-  const canSubmit = name.trim().length >= 1 && phone.replace(/\D/g, '').length >= 10;
+  const handleWalkInCancel = useCallback(() => {
+    setWalkInModalOpen(false);
+    setReservationType(null); // 선택 취소
+  }, []);
+
+  // ── 유입경로 대분류 선택 ──
+  const handleLeadSourceSelect = useCallback((source: string) => {
+    setLeadSource(source);
+    if (source !== 'sns') {
+      // SNS 외 → 즉시 완료 (소분류 없음)
+      setLeadSourceDetail(null);
+    } else {
+      // SNS → 소분류 선택 대기 (detail 초기화)
+      setLeadSourceDetail(null);
+    }
+  }, []);
+
+  // ── 제출 가능 여부 ──
+  // 1) 이름+전화 완성
+  // 2) 방문유형 완성: (reserved + visitType 선택) 또는 (walkin confirmed)
+  // 3) 유입경로 완성: leadSource 선택 + SNS면 detail도 선택
+  const visitTypeComplete =
+    (reservationType === 'reserved' && (visitType === 'new' || visitType === 'returning')) ||
+    (reservationType === 'walkin' && walkInConfirmed);
+
+  const leadSourceComplete =
+    leadSource !== null && (leadSource !== 'sns' || leadSourceDetail !== null);
+
+  const canSubmit =
+    name.trim().length >= 1 &&
+    phone.replace(/\D/g, '').length >= 10 &&
+    visitTypeComplete &&
+    leadSourceComplete;
 
   const handleConfirm = () => {
     if (!canSubmit) return;
@@ -488,8 +644,7 @@ export default function SelfCheckIn() {
     setErrorMsg('');
 
     try {
-      // LOGIC-LOCK L-001: customerId는 항상 null에서 시작 — 화면에서 고객 선택/표시 금지
-      // 고객 조회는 submit 후 백엔드 전용 (전화번호 매칭만)
+      // LOGIC-LOCK L-001: 화면에서 고객 선택/표시 금지
       let customerId: string | null = null;
       const phoneDigits = phone.replace(/\D/g, '');
       const phoneE164 = normalizeToE164(phone);
@@ -515,7 +670,7 @@ export default function SelfCheckIn() {
           .maybeSingle();
         existing = legacy;
       }
-      // 세 번째 시도: 하이픈 포맷 (010-XXXX-XXXX) — 레거시 DB 엔트리 대응
+      // 세 번째 시도: 하이픈 포맷 (010-XXXX-XXXX)
       if (!existing) {
         const d = phoneDigits;
         const phoneFormatted =
@@ -542,13 +697,10 @@ export default function SelfCheckIn() {
             name: name.trim(),
             phone: phoneStored,
             visit_type: visitType === 'new' ? 'new' : 'returning',
-            referrer_name: referrerName.trim() || null,
           })
           .select('id')
           .single();
         if (cErr) {
-          // unique constraint 위반(23505): phone이 이미 존재 → 재조회
-          // (E164 변환 이전 포맷으로 저장된 고객 등 phone 불일치 시 발생)
           if (cErr.code === '23505') {
             const { data: retryData } = await anonClient
               .from('customers')
@@ -570,12 +722,11 @@ export default function SelfCheckIn() {
       }
 
       // ── T-20260506-foot-SELFCHECKIN-MERGE: 예약 merge 로직 ────────────────
-      // 한 박스 원칙: 이름+전화번호 일치 시 무조건 단일 박스 유지
       const todayDate = new Date().toISOString().slice(0, 10);
       const todayStart = `${todayDate}T00:00:00+09:00`;
       const todayEnd = `${todayDate}T23:59:59+09:00`;
 
-      // (1) 당일 기존 체크인 중복 방지: 동일 고객 check_in 존재 시 새 INSERT 금지
+      // (1) 당일 기존 체크인 중복 방지
       if (customerId) {
         const { data: existingCi } = await anonClient
           .from('check_ins')
@@ -589,7 +740,6 @@ export default function SelfCheckIn() {
           .maybeSingle();
 
         if (existingCi) {
-          // 이미 접수된 고객 → 중복 생성 금지, 완료 화면으로 이동
           const ci = existingCi as { id: string; queue_number?: number | null };
           setQueueNumber(ci.queue_number ?? null);
           setStep('done');
@@ -598,7 +748,7 @@ export default function SelfCheckIn() {
         }
       }
 
-      // (2) 당일 예약 매칭: customer_id 기준 → fallback: customer_phone 기준
+      // (2) 당일 예약 매칭
       let matchedReservationId: string | null = null;
       try {
         if (customerId) {
@@ -616,8 +766,6 @@ export default function SelfCheckIn() {
         }
 
         if (!matchedReservationId) {
-          // Fallback 1: phone 기준 (중복 제거 후 순서대로 시도)
-          // 하이픈 포맷 포함 — 레거시 DB 엔트리 대응
           const d = phoneDigits;
           const phoneFormatted =
             d.length === 11 ? `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}` :
@@ -643,8 +791,7 @@ export default function SelfCheckIn() {
           }
         }
 
-        // Fallback 2: digits-only 비교 (E164/하이픈/공백 무관)
-        // DB에 어떤 포맷으로 저장되어 있어도 숫자만 비교해 매칭
+        // Fallback: digits-only 비교
         if (!matchedReservationId && phoneDigits.length >= 10) {
           const { data: allResv } = await anonClient
             .from('reservations')
@@ -660,13 +807,10 @@ export default function SelfCheckIn() {
           }
         }
       } catch {
-        // 예약 조회 실패 → 무시 (신규 접수로 처리)
+        // 예약 조회 실패 → 신규 접수로 처리
       }
-      // ── merge 로직 끝 ──────────────────────────────────────────────────────
 
-      // (2.5) 예약에 연결된 기존 체크인 확인 (staff 선체크인 중복 INSERT 방지)
-      // staff가 대시보드에서 예약 슬롯을 클릭해 이미 체크인 생성한 경우 → 고객 셀프접수 시 재생성 금지
-      // customer_id 기반 step (1)이 customer_id=null 케이스를 놓칠 수 있으므로 reservation_id로 재확인
+      // (2.5) 예약에 연결된 기존 체크인 확인
       if (matchedReservationId) {
         try {
           const { data: linkedCi } = await anonClient
@@ -684,7 +828,7 @@ export default function SelfCheckIn() {
             return;
           }
         } catch {
-          // RLS 차단 등 조회 실패 → 무시, 새 INSERT 진행
+          // RLS 차단 등 → 무시
         }
       }
 
@@ -696,11 +840,12 @@ export default function SelfCheckIn() {
       let queue: number | null = null;
       if (!queueErr) queue = queueData as number;
 
-      // 신분증 확인 필요 플래그: 초진(new) + 예약없이 방문(experience)은 자동 ON
-      // 예약없이 방문(walk_in) 플래그: 슬롯 라우팅 추적용
+      // notes: 신분증 확인 + 워크인 플래그 + 유입경로 저장
       const notesParts: Record<string, unknown> = {};
-      if (needsIdCheck(visitType)) notesParts.id_check_required = true;
-      if (visitType === 'experience') notesParts.walk_in = true;
+      if (visitType === 'new') notesParts.id_check_required = true;
+      if (reservationType === 'walkin') notesParts.walk_in = true;
+      if (leadSource) notesParts.lead_source = leadSource;
+      if (leadSourceDetail) notesParts.lead_source_detail = leadSourceDetail;
       const notesPayload = Object.keys(notesParts).length > 0 ? notesParts : null;
 
       const { error: ciErr } = await anonClient.from('check_ins').insert({
@@ -709,11 +854,10 @@ export default function SelfCheckIn() {
         customer_name: name.trim(),
         customer_phone: phoneStored,
         visit_type: visitType,
-        // 재진→치료대기(treatment_waiting) 직행 / 초진·체험→상담대기(consult_waiting) 직행
+        // 재진→치료대기 직행 / 초진→상담대기 직행
         status: visitType === 'returning' ? 'treatment_waiting' : 'consult_waiting',
         queue_number: queue,
         notes: notesPayload,
-        // T-20260506-foot-SELFCHECKIN-MERGE: 예약 있으면 reservation_id 링크 (중복 박스 방지)
         reservation_id: matchedReservationId,
       });
 
@@ -724,16 +868,16 @@ export default function SelfCheckIn() {
         return;
       }
 
-      // (3) 매칭된 예약 → checked_in 상태 업데이트 (최선 노력, RLS 차단 시 무시)
+      // (3) 매칭된 예약 → checked_in 상태 업데이트
       if (matchedReservationId) {
         try {
           await anonClient
             .from('reservations')
             .update({ status: 'checked_in' })
             .eq('id', matchedReservationId)
-            .eq('status', 'confirmed'); // safety: confirmed 상태만 업데이트
+            .eq('status', 'confirmed');
         } catch {
-          // RLS/권한 오류 → 체크인 자체는 성공이므로 무시
+          // RLS/권한 오류 → 무시
         }
       }
 
@@ -802,12 +946,9 @@ export default function SelfCheckIn() {
       >
         <LangToggle />
         <div className="w-full max-w-md space-y-8 text-center">
-          {/* 클리닉명 */}
           <p className="text-base font-medium tracking-wide" style={{ color: C.medium }}>
             {clinicName}
           </p>
-
-          {/* 체크마크 펄스 */}
           <div
             className="mx-auto flex h-28 w-28 items-center justify-center rounded-full animate-pulse"
             style={{ backgroundColor: C.beige, border: `2px solid ${C.gold}` }}
@@ -823,7 +964,6 @@ export default function SelfCheckIn() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-
           <div>
             <h1 className="text-3xl font-bold tracking-tight" style={{ color: C.dark }}>{t.done}</h1>
             {queueNumber != null && (
@@ -840,11 +980,9 @@ export default function SelfCheckIn() {
               {t.waitMsg}
             </p>
           </div>
-
           <p className="text-sm" style={{ color: C.gold }}>
             {t.autoReset(countdown)}
           </p>
-
           <button
             onClick={resetForm}
             className="mx-auto block rounded-xl px-8 py-4 text-lg font-medium transition active:scale-95"
@@ -882,7 +1020,21 @@ export default function SelfCheckIn() {
 
   // ── 확인 ──
   if (step === 'confirm') {
-    const visitLabel = VISIT_CHOICES.find((c) => c.value === visitType)?.label ?? visitType;
+    const visitLabel = visitType === 'new' ? t.visitNew : t.visitReturning;
+    const reservationLabel = reservationType === 'walkin' ? t.visitStep1WalkIn : t.visitStep1Reserved;
+    const leadSourceLabel: Record<string, string> = {
+      sns: t.leadSNS,
+      search: t.leadSearch,
+      referral: t.leadReferral,
+      partnership: t.leadPartnership,
+      other: t.leadOther,
+    };
+    const leadDetailLabel: Record<string, string> = {
+      instagram: t.leadInstagram,
+      facebook: t.leadFacebook,
+      youtube: t.leadYoutube,
+      blog_cafe: t.leadBlogCafe,
+    };
     return (
       <div
         className="flex min-h-dvh flex-col items-center justify-center px-6"
@@ -906,16 +1058,19 @@ export default function SelfCheckIn() {
               <span style={{ color: C.muted }}>{t.contact}</span>
               <span className="font-semibold" style={{ color: C.dark }}>{phone}</span>
             </div>
-            <div className={`flex justify-between${referrerName.trim() ? ' border-b pb-3' : ''}`} style={{ borderColor: C.border }}>
+            <div className="flex justify-between border-b pb-3" style={{ borderColor: C.border }}>
               <span style={{ color: C.muted }}>{t.visitType}</span>
-              <span className="font-semibold" style={{ color: C.dark }}>{visitLabel}</span>
+              <span className="font-semibold text-right" style={{ color: C.dark }}>
+                {reservationLabel} / {visitLabel}
+              </span>
             </div>
-            {referrerName.trim() && (
-              <div className="flex justify-between">
-                <span style={{ color: C.muted }}>{t.referrer}</span>
-                <span className="font-semibold" style={{ color: C.dark }}>{referrerName.trim()}</span>
-              </div>
-            )}
+            <div className="flex justify-between">
+              <span style={{ color: C.muted }}>{t.leadSourceTitle}</span>
+              <span className="font-semibold" style={{ color: C.dark }}>
+                {leadSource ? leadSourceLabel[leadSource] ?? leadSource : '-'}
+                {leadSourceDetail ? ` / ${leadDetailLabel[leadSourceDetail] ?? leadSourceDetail}` : ''}
+              </span>
+            </div>
           </div>
           <div className="flex gap-3">
             <button
@@ -947,6 +1102,16 @@ export default function SelfCheckIn() {
     >
       <LangToggle />
 
+      {/* 워크인 안내 팝업 */}
+      <WalkInModal
+        open={walkInModalOpen}
+        body={t.walkInModalBody}
+        confirmLabel={t.walkInModalConfirm}
+        onConfirm={handleWalkInConfirm}
+        onCancel={handleWalkInCancel}
+        fontStyle={FONT_STYLE}
+      />
+
       {/* 헤더 */}
       <header className="px-6 pb-2 pt-10 text-center">
         <p className="text-xs tracking-[0.2em] uppercase mb-1" style={{ color: C.gold }}>
@@ -973,7 +1138,7 @@ export default function SelfCheckIn() {
               {t.name}
             </label>
             <div className="relative">
-              {/* LOGIC-LOCK: L-001 — 셀프접수 고객정보 노출 금지. 변경 시 현장 승인 필수 */}
+              {/* LOGIC-LOCK: L-001 */}
               <input
                 key={`sc-name-${resetKey}`}
                 id="sc-name"
@@ -998,7 +1163,6 @@ export default function SelfCheckIn() {
                   e.currentTarget.style.boxShadow = 'none';
                 }}
               />
-              {/* T-20260510-foot-SELFCHECKIN-NO-PREFILL: 이름 검색 드롭다운 제거 */}
             </div>
           </div>
 
@@ -1027,8 +1191,6 @@ export default function SelfCheckIn() {
                 </span>
               )}
             </div>
-
-            {/* T-20260510-foot-SELFCHECKIN-NO-PREFILL: 전화번호 인라인 환자 매칭 드롭다운 제거 */}
 
             {/* 예약 배너 */}
             {reservationBanner && (
@@ -1064,92 +1226,188 @@ export default function SelfCheckIn() {
             />
           </div>
 
-          {/* 방문 유형 — 세로 스택 (태블릿 터치 최적화) */}
-          <div className="space-y-2">
+          {/* 방문유형 — 2단계 (T-20260517-foot-CHECKIN-2STEP) */}
+          <div className="space-y-3">
             <span className="block text-sm font-medium tracking-wide" style={{ color: C.medium }}>
               {t.visitType}
             </span>
-            <div className="space-y-2">
-              {VISIT_CHOICES.map((c) => {
-                const isActive = visitType === c.value;
+
+            {/* 1단계: 예약 여부 */}
+            <div className="grid grid-cols-2 gap-3">
+              {(['reserved', 'walkin'] as ReservationType[]).map((rt) => {
+                const isActive =
+                  rt === 'reserved'
+                    ? reservationType === 'reserved'
+                    : reservationType === 'walkin' && walkInConfirmed;
+                const label = rt === 'reserved' ? t.visitStep1Reserved : t.visitStep1WalkIn;
                 return (
                   <button
-                    key={c.value}
+                    key={rt}
                     type="button"
-                    onClick={() => setVisitType(c.value)}
-                    className="flex w-full items-center justify-between rounded-xl px-5 py-4 text-left transition active:scale-[0.99]"
+                    onClick={() => handleReservationTypeSelect(rt)}
+                    className="flex min-h-[72px] w-full items-center justify-center rounded-xl px-4 py-4 text-center transition active:scale-[0.99]"
                     style={{
                       border: `1.5px solid ${isActive ? C.primary : C.border}`,
                       backgroundColor: isActive ? C.beige : 'white',
                       boxShadow: isActive ? `0 0 0 2px ${C.primary}22` : 'none',
                     }}
                   >
-                    <div>
-                      <span
-                        className="text-lg font-bold"
-                        style={{ color: isActive ? C.dark : C.muted }}
-                      >
-                        {c.label}
-                      </span>
-                      {c.desc && (
-                        <p className="text-sm mt-0.5" style={{ color: isActive ? C.medium : C.border }}>
-                          {c.desc}
-                        </p>
-                      )}
-                    </div>
-                    {/* 라디오 인디케이터 */}
-                    <div
-                      className="h-5 w-5 rounded-full flex items-center justify-center flex-shrink-0 ml-3"
-                      style={{
-                        border: `2px solid ${isActive ? C.primary : C.border}`,
-                        backgroundColor: isActive ? C.primary : 'white',
-                      }}
+                    <span
+                      className="text-base font-bold leading-snug"
+                      style={{ color: isActive ? C.dark : C.muted }}
                     >
-                      {isActive && (
-                        <div className="h-2 w-2 rounded-full" style={{ backgroundColor: 'white' }} />
-                      )}
-                    </div>
+                      {label}
+                    </span>
                   </button>
                 );
               })}
             </div>
+
+            {/* 2단계: 초진/재진 (예약 고객만 표시) */}
+            {reservationType === 'reserved' && (
+              <div className="space-y-2 pt-1">
+                <span className="block text-xs font-medium tracking-wide" style={{ color: C.gold }}>
+                  {t.visitStep2Title}
+                </span>
+                {([
+                  { value: 'new' as VisitType, label: t.visitNew, desc: t.visitNewDesc },
+                  { value: 'returning' as VisitType, label: t.visitReturning, desc: t.visitReturningDesc },
+                ]).map((c) => {
+                  const isActive = visitType === c.value;
+                  return (
+                    <button
+                      key={c.value}
+                      type="button"
+                      onClick={() => setVisitType(c.value)}
+                      className="flex w-full items-center justify-between rounded-xl px-5 py-4 text-left transition active:scale-[0.99]"
+                      style={{
+                        border: `1.5px solid ${isActive ? C.primary : C.border}`,
+                        backgroundColor: isActive ? C.beige : 'white',
+                        boxShadow: isActive ? `0 0 0 2px ${C.primary}22` : 'none',
+                      }}
+                    >
+                      <div>
+                        <span
+                          className="text-lg font-bold"
+                          style={{ color: isActive ? C.dark : C.muted }}
+                        >
+                          {c.label}
+                        </span>
+                        <p className="text-sm mt-0.5" style={{ color: isActive ? C.medium : C.border }}>
+                          {c.desc}
+                        </p>
+                      </div>
+                      <div
+                        className="h-5 w-5 rounded-full flex items-center justify-center flex-shrink-0 ml-3"
+                        style={{
+                          border: `2px solid ${isActive ? C.primary : C.border}`,
+                          backgroundColor: isActive ? C.primary : 'white',
+                        }}
+                      >
+                        {isActive && (
+                          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: 'white' }} />
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* 워크인 확인 후 안내 텍스트 */}
+            {reservationType === 'walkin' && walkInConfirmed && (
+              <div
+                className="rounded-xl px-4 py-3 text-sm"
+                style={{
+                  backgroundColor: C.bannerBg,
+                  border: `1.5px solid ${C.bannerBorder}`,
+                  color: C.medium,
+                }}
+              >
+                초진으로 접수됩니다. 데스크에서 안내 받으세요.
+              </div>
+            )}
           </div>
 
-          {/* 추천인 — 신규 방문 시만 표시 */}
-          {visitType === 'new' && (
-            <div className="space-y-1.5">
-              <label
-                htmlFor="sc-referrer"
-                className="block text-sm font-medium tracking-wide"
-                style={{ color: C.medium }}
-              >
-                {t.referrer} <span className="text-xs font-normal" style={{ color: C.muted }}>(선택)</span>
-              </label>
-              <input
-                key={`sc-referrer-${resetKey}`}
-                id="sc-referrer"
-                type="text"
-                value={referrerName}
-                onChange={(e) => setReferrerName(e.target.value)}
-                placeholder={t.referrerPlaceholder}
-                autoComplete="new-password"
-                className="h-14 w-full rounded-xl px-4 text-lg outline-none transition"
-                style={{
-                  border: `1.5px solid ${C.border}`,
-                  backgroundColor: 'white',
-                  color: C.dark,
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = C.borderActive;
-                  e.currentTarget.style.boxShadow = `0 0 0 3px ${C.borderActive}18`;
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = C.border;
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
-              />
+          {/* 유입경로 — 2단계 (T-20260517-foot-CHECKIN-2STEP) */}
+          <div className="space-y-3">
+            <span className="block text-sm font-medium tracking-wide" style={{ color: C.medium }}>
+              {t.leadSourceTitle}
+            </span>
+
+            {/* 1단계: 대분류 5종 */}
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { value: 'sns', label: t.leadSNS },
+                { value: 'search', label: t.leadSearch },
+                { value: 'referral', label: t.leadReferral },
+                { value: 'partnership', label: t.leadPartnership },
+                { value: 'other', label: t.leadOther },
+              ]).map((src) => {
+                const isActive = leadSource === src.value;
+                return (
+                  <button
+                    key={src.value}
+                    type="button"
+                    onClick={() => handleLeadSourceSelect(src.value)}
+                    className="flex h-14 items-center justify-center rounded-xl px-2 text-center transition active:scale-[0.99]"
+                    style={{
+                      border: `1.5px solid ${isActive ? C.primary : C.border}`,
+                      backgroundColor: isActive ? C.beige : 'white',
+                      boxShadow: isActive ? `0 0 0 2px ${C.primary}22` : 'none',
+                      gridColumn: src.value === 'other' ? 'span 1' : undefined,
+                    }}
+                  >
+                    <span
+                      className="text-sm font-bold"
+                      style={{ color: isActive ? C.dark : C.muted }}
+                    >
+                      {src.label}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-          )}
+
+            {/* 2단계: SNS 소분류 (SNS 선택 시만 표시) */}
+            {leadSource === 'sns' && (
+              <div className="space-y-2 pt-1">
+                <span className="block text-xs font-medium tracking-wide" style={{ color: C.gold }}>
+                  {t.leadSNSSubTitle}
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { value: 'instagram', label: t.leadInstagram },
+                    { value: 'facebook', label: t.leadFacebook },
+                    { value: 'youtube', label: t.leadYoutube },
+                    { value: 'blog_cafe', label: t.leadBlogCafe },
+                  ]).map((detail) => {
+                    const isActive = leadSourceDetail === detail.value;
+                    return (
+                      <button
+                        key={detail.value}
+                        type="button"
+                        onClick={() => setLeadSourceDetail(detail.value)}
+                        className="flex h-14 items-center justify-center rounded-xl px-3 text-center transition active:scale-[0.99]"
+                        style={{
+                          border: `1.5px solid ${isActive ? C.primary : C.border}`,
+                          backgroundColor: isActive ? C.beige : 'white',
+                          boxShadow: isActive ? `0 0 0 2px ${C.primary}22` : 'none',
+                        }}
+                      >
+                        <span
+                          className="text-sm font-bold"
+                          style={{ color: isActive ? C.dark : C.muted }}
+                        >
+                          {detail.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* 접수 버튼 */}
           <button
