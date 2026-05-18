@@ -31,10 +31,11 @@ export function DialogContent({
 }) {
   return (
     <BaseDialog.Portal>
-      <BaseDialog.Backdrop className="fixed inset-0 z-40 bg-black/50 data-[open]:animate-in data-[closed]:animate-out data-[open]:fade-in-0 data-[closed]:fade-out-0" />
+      {/* Sheet(z-50) · CustomerChartSheet(z-[70]) 위에 항상 렌더되도록 z-[80]/z-[90] 사용 */}
+      <BaseDialog.Backdrop className="fixed inset-0 z-[80] bg-black/50 data-[open]:animate-in data-[closed]:animate-out data-[open]:fade-in-0 data-[closed]:fade-out-0" />
       <BaseDialog.Popup
         className={cn(
-          'fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg',
+          'fixed left-1/2 top-1/2 z-[90] -translate-x-1/2 -translate-y-1/2 w-full max-w-lg',
           'rounded-xl border bg-background p-6 shadow-lg focus:outline-none',
           'data-[open]:animate-in data-[closed]:animate-out data-[open]:fade-in-0 data-[closed]:fade-out-0',
           'data-[open]:zoom-in-95 data-[closed]:zoom-out-95',
