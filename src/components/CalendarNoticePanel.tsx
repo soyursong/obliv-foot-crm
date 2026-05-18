@@ -341,10 +341,11 @@ export default function CalendarNoticePanel() {
                 onClick={() => {
                   setSelectedDate(isSelected ? null : day);
                   // AC-7: 날짜 클릭 → 예약관리 해당 주 이동
+                  // T-20260517-foot-MINICAL-REGRESS: location.state → URL ?date= 로 변경
+                  //   state 방식은 이미 마운트된 Reservations 에서 재클릭 시 불안정 + 새로고침 소실.
+                  //   URL param으로 전환하면 searchParams 변경 → useEffect 확실히 트리거됨.
                   // LOGIC-LOCK: L-002 — 변경 시 현장 승인 필수
-                  navigate('/admin/reservations', {
-                    state: { goToWeekOf: format(day, 'yyyy-MM-dd') },
-                  });
+                  navigate(`/admin/reservations?date=${format(day, 'yyyy-MM-dd')}`);
                   // AC-3: 날짜 선택 → 달력 자동 접힘 (모바일 + PC 공통)
                   if (isMobile) setMobileCollapsed(true);
                   else setPcCollapsed(true);
