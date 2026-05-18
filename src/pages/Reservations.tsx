@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { addDays, format, parseISO, startOfWeek, isSameDay } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Plus, User, X } from 'lucide-react';
@@ -91,6 +91,7 @@ export default function Reservations() {
   // T-20260516-foot-CHART-OPEN-UNIFY AC-1: AdminLayout ChartContext (단일 소스)
   const { openChart } = useChart();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { profile } = useAuth();
   const changedBy = profile?.id ?? null;
   const clinic = useClinic();
@@ -174,7 +175,7 @@ export default function Reservations() {
     });
   }, [clinic, location.state]);
 
-  // AC-7: 좌측 캘린더 날짜 클릭 → 해당 날짜 포함 주로 이동
+  // AC-7: 좌측 캘린더 날짜 클릭 → 해당 날짜 포함 주로 이동 (state 방식 — 레거시 호환)
   useEffect(() => {
     const state = location.state as { goToWeekOf?: string } | null;
     if (!state?.goToWeekOf) return;
@@ -183,6 +184,24 @@ export default function Reservations() {
     setWeekStart(startOfWeek(targetDate, { weekStartsOn: 1 }));
     setViewMode('week');
   }, [location.state]);
+
+  // T-20260517-foot-MINICAL-REGRESS: URL ?date=YYYY-MM-DD 파라미터 감지 → 예약판 날짜 전환
+  // CalendarNoticePanel이 navigate('/admin/reservations?date=...') 로 전환 시 이미 마운트된
+  // Reservations 컴포넌트가 searchParams 변경을 즉시 감지해 selectedDay + weekStart 갱신.
+  // (state 방식은 replaceState 후 재클릭 시 불안정 + 새로고침 소실 문제 있음)
+  // goPrev/goNext 는 setWeekStart 직접 호출이므로 루프 없음.
+  const dateParam = searchParams.get('date');
+  useEffect(() => {
+    if (!dateParam) return;
+    const parsed = new Date(`${dateParam}T00:00:00`);
+    if (isNaN(parsed.getTime())) return;
+    setSelectedDay((prev) => {
+      const prevStr = format(prev, 'yyyy-MM-dd');
+      return prevStr === dateParam ? prev : parsed;
+    });
+    setWeekStart(startOfWeek(new Date(`${dateParam}T00:00:00`), { weekStartsOn: 1 }));
+    setViewMode('week');
+  }, [dateParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchWeek = useCallback(async () => {
     if (!clinic) return;
