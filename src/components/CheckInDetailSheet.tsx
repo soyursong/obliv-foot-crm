@@ -779,6 +779,16 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     }
   }, [checkIn?.id, customerMode?.customerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // T-20260516-foot-CHART-UNIFORM-LOCK AC-1: resolvedCustomerId 확정 후 2번차트 자동 오픈
+  // customer_id=null 케이스(초진/워크인)에서 phone 해석 완료 시점에 2번차트 열기
+  // → 모든 고객 클릭 시 customer 식별만 되면 2번차트가 동일하게 열림 (김사비 기준 통일)
+  // CHART_UNIFORMITY_LOCK: 이 동작을 조건부로 만들면 고객별 불일치 재발. 제거·분기 금지.
+  useEffect(() => {
+    if (resolvedCustomerId && !checkIn?.customer_id) {
+      openChart(resolvedCustomerId);
+    }
+  }, [resolvedCustomerId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const load = useCallback(async () => {
     if (!checkIn && !customerMode) return;
 
@@ -979,9 +989,22 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     if (!checkIn.customer_id && custData?.id) {
       setResolvedCustomerId(custData.id);
     }
-    // T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 예약 ID 세팅
+    // T-20260516-foot-CHART-UNIFORM-LOCK AC-2: 예약메모 표시 균일화 — 4단계 폴백
+    // 3단계(reservation_id → customer_id → phone) 실패 시 custData.id로 최신 예약 재탐색
+    // CHART_UNIFORMITY_LOCK: 예약메모 UI는 모든 고객에게 동일하게 적용. 분기 금지.
     const resvData = resvRes.data as { id: string } | null;
-    setLatestResvId(resvData?.id ?? null);
+    if (!resvData && custData?.id) {
+      const { data: fallbackResv } = await supabase
+        .from('reservations')
+        .select('id')
+        .eq('customer_id', custData.id)
+        .order('reservation_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      setLatestResvId((fallbackResv as { id: string } | null)?.id ?? null);
+    } else {
+      setLatestResvId(resvData?.id ?? null);
+    }
     setStaffList((staffRes.data ?? []) as Array<{ id: string; name: string; role: string }>);
     const pkgs = (pkgRes.data ?? []) as PackageType[];
     setPackages(pkgs);
