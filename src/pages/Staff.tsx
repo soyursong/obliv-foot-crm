@@ -34,6 +34,7 @@ const ROOM_TYPE_LABEL: Record<Room['room_type'], string> = {
   laser: '레이저실',
   consultation: '상담실',
   examination: '원장실 C5',
+  heated_laser: '가열성레이저',
 };
 
 const ROOM_TYPE_ORDER: Room['room_type'][] = ['treatment', 'laser', 'consultation', 'examination'];
@@ -613,6 +614,7 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
       laser: [],
       consultation: [],
       examination: [],
+      heated_laser: [],
     };
     for (const r of rooms) map[r.room_type].push(r);
     return map;
