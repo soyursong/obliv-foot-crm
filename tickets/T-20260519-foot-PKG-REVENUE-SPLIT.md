@@ -1,15 +1,22 @@
 ---
 id: T-20260519-foot-PKG-REVENUE-SPLIT
 title: "패키지 차감건 매출 이중계상 수정"
-status: deploy-ready
+status: deployed
 priority: P1
 domain: foot
 created_at: 2026-05-19
 deploy_ready_at: 2026-05-19
+deployed_at: "2026-05-19T23:45:00+09:00"
 commit_sha: b7bdee9
+deploy_commit: f11ba02991cd8bf13e2e3e67cd16f1b500aa921f
+bundle_hash: CustomerHoverCard-KRTMQhZW/Closing-DytLcfSs
 db_migration: false
 build_passed: true
+qa_result: pass
+qa_grade: Yellow
+e2e_result: "3 passed / 3 skipped (데이터 없는 조건부 skip)"
 e2e_spec: tests/e2e/T-20260519-foot-PKG-REVENUE-SPLIT.spec.ts
+field_soak_until: "2026-05-20T23:45:00+09:00"
 ---
 
 ## 현장 보고

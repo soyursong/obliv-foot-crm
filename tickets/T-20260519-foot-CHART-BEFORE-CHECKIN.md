@@ -1,7 +1,7 @@
 ---
 id: T-20260519-foot-CHART-BEFORE-CHECKIN
 domain: foot
-status: deploy-ready
+status: deployed
 priority: P1
 deploy-ready: true
 build-ok: true
@@ -10,6 +10,12 @@ regression-risk: low
 e2e-spec: tests/e2e/T-20260519-foot-CHART-BEFORE-CHECKIN.spec.ts
 created: 2026-05-19
 deadline: 2026-05-20
+qa_result: pass
+qa_grade: Green
+deployed_at: 2026-05-19T22:09:00+09:00
+deploy_commit: 95713ad
+bundle_hash: CustomerChartPage-BcMsQE1b
+field_soak_until: 2026-05-20T22:09:00+09:00
 ---
 
 # T-20260519-foot-CHART-BEFORE-CHECKIN — 초진 카드(Box1) 클릭 시 접수 전 차트 열람
