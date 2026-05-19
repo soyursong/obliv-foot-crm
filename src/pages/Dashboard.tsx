@@ -2308,7 +2308,18 @@ export default function Dashboard() {
       const age = now - new Date(ci.checked_in_at).getTime();
       return age < STALE_MS;
     });
-    setRows(filtered);
+    // T-20260519-foot-STATUS-REVERT fix: recentlyUpdated 보호 — 병렬 fetch가
+    // DB 쓰기 완료 전 스냅샷을 읽어 optimistic update를 덮어쓰는 경합 방지.
+    // markRecentlyUpdated 보호 중인 row는 로컬 상태 우선 유지 (2초 후 만료 → 다음 fetch에서 DB값 적용).
+    setRows(prev => {
+      const recentIds = recentlyUpdated.current;
+      if (recentIds.size === 0) return filtered;
+      return filtered.map(row =>
+        recentIds.has(row.id)
+          ? (prev.find(r => r.id === row.id) ?? row)
+          : row,
+      );
+    });
     setLoading(false);
 
     // ── 동의서 상태 일괄 조회 (카드 배지용) ──
@@ -3446,6 +3457,10 @@ export default function Dashboard() {
   /** 상태 플래그 변경 — T-20260502-foot-STATUS-COLOR-FLAG */
   const handleFlagChange = async (ci: CheckIn, flag: StatusFlag | null) => {
     if (ci.id.startsWith('temp-')) return;
+    // T-20260519-foot-STATUS-REVERT fix: markRecentlyUpdated 호출 누락으로 Realtime이
+    // DB 쓰기 중 fetchCheckIns()를 트리거 → MVCC 스냅샷 경합 → optimistic update 덮어쓰기 버그
+    // 다른 모든 상태 변경 핸들러와 동일하게 markRecentlyUpdated 선행 호출
+    markRecentlyUpdated(ci.id);
     // 낙관적 업데이트
     setRows((curr) => curr.map((r) => r.id === ci.id ? { ...r, status_flag: flag } : r));
     const now = new Date().toISOString();
