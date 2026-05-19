@@ -433,11 +433,21 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const [docSettlePrinting, setDocSettlePrinting] = useState(false);
 
   // ── T-20260517-foot-BILLING-3ZONE: Zone 3 — 구매패키지 (AC-4) + 금일 시술내역 (AC-5)
+  // ── T-20260519-foot-BILLING-ITEM-PRICE: 항목별 수가 표시 (AC-1, AC-2)
   interface ActivePackageInfo {
     id: string;
     package_name: string;
     remaining_sessions: number;
     paid_amount: number;
+    // 항목별 세션 수 + 적용 수가 (AC-2)
+    heated_sessions: number;
+    heated_unit_price: number;
+    unheated_sessions: number;
+    unheated_unit_price: number;
+    iv_sessions: number;
+    iv_unit_price: number;
+    podologe_sessions: number;
+    podologe_unit_price: number;
   }
   interface TodayTreatment {
     service_name: string;
@@ -599,10 +609,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     const today = format(new Date(), 'yyyy-MM-dd');
 
     const [pkgRes, ciRes] = await Promise.all([
-      // AC-4: 활성 패키지 목록
+      // AC-4: 활성 패키지 목록 (T-20260519-foot-BILLING-ITEM-PRICE: 항목별 수가 필드 추가)
       supabase
         .from('packages')
-        .select('id, package_name, total_sessions, paid_amount')
+        .select('id, package_name, total_sessions, paid_amount, heated_sessions, heated_unit_price, unheated_sessions, unheated_unit_price, iv_sessions, iv_unit_price, podologe_sessions, podologe_unit_price')
         .eq('customer_id', ci.customer_id)
         .eq('status', 'active'),
       // AC-5: 금일 체크인 ID 목록
@@ -616,7 +626,14 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     ]);
 
     // AC-4: 잔여 회차 계산 (사용된 세션 카운트)
-    const pkgs = (pkgRes.data ?? []) as { id: string; package_name: string; total_sessions: number; paid_amount: number }[];
+    // T-20260519-foot-BILLING-ITEM-PRICE: 항목별 수가 필드 포함
+    const pkgs = (pkgRes.data ?? []) as {
+      id: string; package_name: string; total_sessions: number; paid_amount: number;
+      heated_sessions: number; heated_unit_price: number;
+      unheated_sessions: number; unheated_unit_price: number;
+      iv_sessions: number; iv_unit_price: number;
+      podologe_sessions: number; podologe_unit_price: number;
+    }[];
     if (pkgs.length > 0) {
       const pkgIds = pkgs.map((p) => p.id);
       const { data: sessData } = await supabase
@@ -634,6 +651,14 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           package_name: pkg.package_name,
           remaining_sessions: Math.max(0, pkg.total_sessions - (usedMap.get(pkg.id) ?? 0)),
           paid_amount: pkg.paid_amount,
+          heated_sessions: pkg.heated_sessions ?? 0,
+          heated_unit_price: pkg.heated_unit_price ?? 0,
+          unheated_sessions: pkg.unheated_sessions ?? 0,
+          unheated_unit_price: pkg.unheated_unit_price ?? 0,
+          iv_sessions: pkg.iv_sessions ?? 0,
+          iv_unit_price: pkg.iv_unit_price ?? 0,
+          podologe_sessions: pkg.podologe_sessions ?? 0,
+          podologe_unit_price: pkg.podologe_unit_price ?? 0,
         })),
       );
     }
@@ -1573,20 +1598,47 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
               {activePackages.length === 0 ? (
                 <p className="text-[10px] text-muted-foreground px-2 pb-2">활성 패키지 없음</p>
               ) : (
-                <div className="px-2 pb-2 space-y-1 max-h-24 overflow-y-auto">
-                  {activePackages.map((pkg) => (
-                    <div
-                      key={pkg.id}
-                      className="rounded border border-purple-200 bg-purple-50 px-2 py-1"
-                    >
-                      <p className="text-[11px] font-medium text-purple-800 leading-tight truncate">
-                        {pkg.package_name}
-                      </p>
-                      <p className="text-[10px] text-purple-600 mt-0.5 tabular-nums">
-                        잔여 {pkg.remaining_sessions}회 · {formatAmount(pkg.paid_amount)}
-                      </p>
-                    </div>
-                  ))}
+                /* T-20260519-foot-BILLING-ITEM-PRICE: max-h 확장 (항목 행 추가) */
+                <div className="px-2 pb-2 space-y-1.5 max-h-40 overflow-y-auto">
+                  {activePackages.map((pkg) => {
+                    // AC-1+AC-2: 세션 수 > 0 인 항목만 표시
+                    const items: { label: string; unitPrice: number; sessions: number }[] = [];
+                    if (pkg.heated_sessions > 0) items.push({ label: '가열성', unitPrice: pkg.heated_unit_price, sessions: pkg.heated_sessions });
+                    if (pkg.unheated_sessions > 0) items.push({ label: '비가열성', unitPrice: pkg.unheated_unit_price, sessions: pkg.unheated_sessions });
+                    if (pkg.iv_sessions > 0) items.push({ label: '수액', unitPrice: pkg.iv_unit_price, sessions: pkg.iv_sessions });
+                    if (pkg.podologe_sessions > 0) items.push({ label: '포돌로게', unitPrice: pkg.podologe_unit_price, sessions: pkg.podologe_sessions });
+                    return (
+                      <div
+                        key={pkg.id}
+                        className="rounded border border-purple-200 bg-purple-50 px-2 py-1.5"
+                      >
+                        {/* AC-1: 패키지명 */}
+                        <p className="text-[11px] font-medium text-purple-800 leading-tight truncate mb-1">
+                          {pkg.package_name}
+                        </p>
+                        {/* AC-1+AC-2: 항목명 + 적용 수가 행별 표시 */}
+                        {items.length > 0 && (
+                          <div className="space-y-0.5 mb-1">
+                            {items.map((item) => (
+                              <div key={item.label} className="flex items-center justify-between gap-1">
+                                <span className="text-[9px] text-purple-600 shrink-0">{item.label}</span>
+                                <span className="text-[9px] text-purple-500 tabular-nums">
+                                  {item.sessions}회 × {formatAmount(item.unitPrice)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* AC-3: 총합계 유지 + 잔여 */}
+                        <div className="flex items-center justify-between border-t border-purple-200 pt-0.5">
+                          <span className="text-[9px] text-purple-500">잔여 {pkg.remaining_sessions}회</span>
+                          <span className="text-[10px] text-purple-700 font-semibold tabular-nums">
+                            {formatAmount(pkg.paid_amount)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
