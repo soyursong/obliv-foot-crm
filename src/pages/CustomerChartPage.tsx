@@ -2364,6 +2364,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       value={customer.visit_route ?? ''}
                       onChange={(e) => {
                         const val = e.target.value as Customer['visit_route'];
+                        // T-20260519-foot-VISIT-ROUTE-DROPDOWN: optimistic update 즉시 반영
+                        // → "지인소개" 선택 시 소개자 칸 즉시 표시
+                        setCustomer((prev) => prev ? { ...prev, visit_route: val || null } : prev);
                         setIsDirty(true);
                         saveCustomerField({ visit_route: val || null });
                       }}
