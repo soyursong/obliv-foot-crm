@@ -1178,7 +1178,20 @@ function SlotDropCell({
 }
 
 // T-20260515-foot-DASH-SLOT-DRAG: 초진 미내원 예약 드래그 가능 카드 (Box1Card 드래그 버전)
-function DraggableBox1Card({ reservation }: { reservation: Reservation }) {
+// T-20260519-foot-FIRSTVISIT-CHECKIN: 초진 예약 카드에 onSelect(차트조회) + onCheckIn(접수) 추가
+// AC-1: '접수' 버튼 — DraggableBox2ResvCard onCheckIn 패턴 재사용
+// AC-3: 카드 클릭 → onSelect 차트조회 (체크인 X)
+function DraggableBox1Card({
+  reservation,
+  onSelect,
+  onCheckIn,
+}: {
+  reservation: Reservation;
+  /** 카드 클릭 = 차트 조회 (체크인 X) — T-20260519-foot-FIRSTVISIT-CHECKIN AC-3 */
+  onSelect?: () => void;
+  /** 접수 버튼 클릭 = 체크인 생성 — T-20260519-foot-FIRSTVISIT-CHECKIN AC-1 */
+  onCheckIn?: () => void;
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `box1-${reservation.id}`,
     data: { reservationType: 'timeline-resv', reservationId: reservation.id, visitType: reservation.visit_type },
@@ -1195,14 +1208,29 @@ function DraggableBox1Card({ reservation }: { reservation: Reservation }) {
       }}
       {...attributes}
       {...listeners}
-      className="flex items-center gap-1 rounded border border-yellow-400 bg-yellow-50 px-2 py-1 text-[10px] w-full select-none cursor-grab active:cursor-grabbing"
-      onClick={(e) => e.stopPropagation()}
-      title={`${reservation.customer_name} — 드래그하여 시간 변경 / 아직 미내원`}
+      className={cn(
+        'flex items-center gap-1 rounded border border-yellow-400 bg-yellow-50 px-2 py-1 text-[10px] w-full select-none',
+        onSelect ? 'cursor-grab active:cursor-grabbing hover:bg-yellow-100 hover:border-yellow-500 transition' : 'cursor-default',
+      )}
+      onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
+      title={`${reservation.customer_name} — 드래그=시간변경 · 클릭=차트조회 · 접수버튼=체크인`}
       data-testid="box1-resv-card"
     >
       <span className="shrink-0 bg-yellow-200 text-yellow-800 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
       <span className="truncate text-yellow-900 font-semibold">{reservation.customer_name}</span>
-      <span className="shrink-0 text-yellow-700 font-mono ml-auto text-[9px]">{tail}</span>
+      <span className="shrink-0 text-yellow-700 font-mono text-[9px]">{tail}</span>
+      {/* T-20260519-foot-FIRSTVISIT-CHECKIN AC-1: 접수 버튼 — DnD와 분리 위해 onPointerDown stopPropagation */}
+      {onCheckIn && (
+        <button
+          type="button"
+          className="shrink-0 ml-auto text-[9px] font-bold text-white bg-yellow-500 hover:bg-yellow-600 active:bg-yellow-700 rounded px-1 py-0.5 leading-none transition cursor-pointer"
+          title="접수 (체크인 시작)"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onCheckIn(); }}
+        >
+          접수
+        </button>
+      )}
     </div>
   );
 }
@@ -1495,9 +1523,12 @@ function DashboardTimeline({
                 data-testid="timeline-slot-new"
               >
                 {newBox1.map((r) => (
+                  // T-20260519-foot-FIRSTVISIT-CHECKIN AC-1/AC-3: onSelect=차트조회, onCheckIn=접수 버튼
                   <DraggableBox1Card
                     key={`b1-${r.id}`}
                     reservation={r}
+                    onSelect={onReservationSelect ? () => onReservationSelect(r) : undefined}
+                    onCheckIn={onReservationCheckIn ? () => onReservationCheckIn(r) : undefined}
                   />
                 ))}
                 {newBox2Ci.map((ci) => (
