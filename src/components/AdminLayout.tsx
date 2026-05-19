@@ -351,6 +351,7 @@ export default function AdminLayout() {
           </div>
           <div className="flex items-center gap-2">
             {/* T-20260517-foot-RESV-NAV-DIRECT: 전역 [예약하기] — 고객 컨텍스트 없음, 빈 예약 생성 */}
+            {/* LOGIC-LOCK: L-002 — [예약하기] 클릭 시 항상 /admin/reservations full page 전환. 예외 없음. 변경 시 현장 승인 필수 */}
             <button
               onClick={() =>
                 navigate('/admin/reservations', {
