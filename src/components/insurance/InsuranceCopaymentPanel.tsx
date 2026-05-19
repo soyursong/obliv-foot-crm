@@ -1,16 +1,14 @@
 /**
  * InsuranceCopaymentPanel — 결제 다이얼로그 내 급여 진료비 미리보기
  *
- * T-20260504-foot-INSURANCE-COPAYMENT
+ * T-20260504-foot-INSURANCE-COPAYMENT (최초 구현)
+ * T-20260520-foot-INS-UI              (AC-4: insurance_claims 연동 / AC-5: 이중기록 방지)
  *
- * - 환자 등급(insurance_grade) 표시
- * - 클리닉의 급여 항목 (services where is_insurance_covered=true) 다중 선택
- * - 선택된 서비스별 calc_copayment RPC 호출 → 합계 표시
- * - 비급여 항목은 별 panel 없이 PaymentDialog 메모에 안내
- *
- * 기존 결제 로직 미변경 — 본인부담 미리보기/안내 전용. 실제 결제 row는 기존 흐름 그대로 payments / package_payments 에 기록.
- *
- * 제출 시 service_charges 테이블에 산출 이력 INSERT (감사·STATS용).
+ * 저장 전략:
+ *  - service_charges (append-only 감사 로그) — 기존 흐름 유지 (AC-5)
+ *  - insurance_claims + claim_items (현재 청구 상태 upsert) — 신규 (AC-4)
+ *    check_in_id 기준으로 draft claim 1개만 유지.
+ *    재저장 시: 기존 claim_items 삭제 → 재삽입, claim 합계 갱신.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -134,44 +132,137 @@ export function InsuranceCopaymentPanel({ checkIn }: Props) {
     });
   };
 
+  /**
+   * 산출 이력 저장
+   *
+   * AC-5: service_charges 는 append-only 감사 로그 — 기존 로직 유지.
+   * AC-4: insurance_claims 는 check_in_id 기준 upsert (draft 1건 유지).
+   *        재저장 시 claim_items 를 삭제 후 재삽입하여 최신 상태 보존.
+   */
   const persistCharges = async () => {
     if (!customerId) return;
     if (selectedIds.size === 0) return;
     setSaving(true);
+    setSavedAt(null);
 
-    // 선택된 서비스별 산출 결과를 service_charges 에 INSERT
-    const rows: Array<Record<string, unknown>> = [];
+    // ── 1. service_charges INSERT (append-only 감사) ──────────────────────
+    const chargeRows: Array<Record<string, unknown>> = [];
     for (const sid of selectedIds) {
       const r = results.get(sid);
       const svc = services.find((s) => s.id === sid);
       if (!r || !svc) continue;
-      rows.push({
-        clinic_id: checkIn.clinic_id,
-        check_in_id: checkIn.id,
-        customer_id: customerId,
-        service_id: sid,
-        is_insurance_covered: svc.is_insurance_covered,
-        hira_score: svc.hira_score,
-        base_amount: r.base_amount,
-        insurance_covered_amount: r.insurance_covered_amount,
-        copayment_amount: r.copayment_amount,
-        exempt_amount: r.exempt_amount,
-        customer_grade_at_charge: r.applied_grade,
-        copayment_rate_at_charge: r.applied_rate,
+      chargeRows.push({
+        clinic_id:                  checkIn.clinic_id,
+        check_in_id:                checkIn.id,
+        customer_id:                customerId,
+        service_id:                 sid,
+        is_insurance_covered:       svc.is_insurance_covered,
+        hira_score:                 svc.hira_score,
+        base_amount:                r.base_amount,
+        insurance_covered_amount:   r.insurance_covered_amount,
+        copayment_amount:           r.copayment_amount,
+        exempt_amount:              r.exempt_amount,
+        customer_grade_at_charge:   r.applied_grade,
+        copayment_rate_at_charge:   r.applied_rate,
       });
     }
-    if (rows.length === 0) {
+
+    if (chargeRows.length === 0) {
       setSaving(false);
       return;
     }
-    const { error } = await supabase.from('service_charges').insert(rows);
-    setSaving(false);
-    if (error) {
-      // Toast 는 호출자 부담 — 패널은 in-place 메시지만 (PaymentDialog 의 toast 사용 안 함)
-      setSavedAt(`저장 실패: ${error.message}`);
+
+    const { error: chargeErr } = await supabase.from('service_charges').insert(chargeRows);
+    if (chargeErr) {
+      setSaving(false);
+      setSavedAt(`저장 실패: ${chargeErr.message}`);
       return;
     }
-    setSavedAt(`${rows.length}건 산출 이력 저장 완료`);
+
+    // ── 2. insurance_claims UPSERT (check_in_id 기준 draft 1건) ──────────
+    // check_in_id 로 기존 draft claim 조회
+    let claimId: string | null = null;
+
+    const { data: existingClaim } = await supabase
+      .from('insurance_claims')
+      .select('id')
+      .eq('check_in_id', checkIn.id)
+      .eq('claim_status', 'draft')
+      .maybeSingle();
+
+    if (existingClaim?.id) {
+      // 기존 claim 재사용 — claim_items 삭제 후 재삽입
+      claimId = existingClaim.id;
+      await supabase.from('claim_items').delete().eq('claim_id', claimId);
+
+      // 합계 갱신
+      const { error: updateErr } = await supabase
+        .from('insurance_claims')
+        .update({
+          total_base:       totals.base,
+          total_copayment:  totals.copay,
+          total_covered:    totals.covered,
+          visit_date:       checkIn.checked_in_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+        })
+        .eq('id', claimId);
+
+      if (updateErr) {
+        setSaving(false);
+        setSavedAt(`청구 갱신 실패: ${updateErr.message}`);
+        return;
+      }
+    } else {
+      // 신규 claim 생성
+      const { data: newClaim, error: claimErr } = await supabase
+        .from('insurance_claims')
+        .insert({
+          clinic_id:     checkIn.clinic_id,
+          customer_id:   customerId,
+          check_in_id:   checkIn.id,
+          visit_date:    checkIn.checked_in_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+          claim_status:  'draft',
+          total_base:    totals.base,
+          total_copayment: totals.copay,
+          total_covered: totals.covered,
+        })
+        .select('id')
+        .single();
+
+      if (claimErr || !newClaim) {
+        setSaving(false);
+        setSavedAt(`청구 생성 실패: ${claimErr?.message ?? '알 수 없는 오류'}`);
+        return;
+      }
+      claimId = newClaim.id;
+    }
+
+    // ── 3. claim_items INSERT ─────────────────────────────────────────────
+    const itemRows: Array<Record<string, unknown>> = [];
+    for (const sid of selectedIds) {
+      const r = results.get(sid);
+      const svc = services.find((s) => s.id === sid);
+      if (!r || !svc) continue;
+      itemRows.push({
+        claim_id:           claimId,
+        service_id:         sid,
+        hira_code:          svc.hira_code,
+        hira_score:         svc.hira_score,
+        quantity:           1,
+        base_amount:        r.base_amount,
+        copayment_amount:   r.copayment_amount,
+        covered_amount:     r.insurance_covered_amount,
+      });
+    }
+
+    const { error: itemErr } = await supabase.from('claim_items').insert(itemRows);
+    setSaving(false);
+
+    if (itemErr) {
+      setSavedAt(`항목 저장 실패: ${itemErr.message}`);
+      return;
+    }
+
+    setSavedAt(`${chargeRows.length}건 산출·청구 이력 저장 완료`);
   };
 
   const groupedServices = useMemo(() => {
@@ -289,7 +380,7 @@ export function InsuranceCopaymentPanel({ checkIn }: Props) {
             </div>
           )}
 
-          {/* 산출 이력 저장 (감사용) */}
+          {/* 산출 이력 저장 (감사 + 청구 기록) */}
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-2">
               <Button
@@ -302,7 +393,16 @@ export function InsuranceCopaymentPanel({ checkIn }: Props) {
               >
                 {saving ? '저장 중…' : '산출 이력 저장'}
               </Button>
-              {savedAt && <span className="text-[11px] text-muted-foreground">{savedAt}</span>}
+              {savedAt && (
+                <span
+                  className={cn(
+                    'text-[11px]',
+                    savedAt.includes('실패') ? 'text-destructive' : 'text-muted-foreground',
+                  )}
+                >
+                  {savedAt}
+                </span>
+              )}
             </div>
           )}
         </div>
