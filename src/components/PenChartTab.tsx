@@ -25,7 +25,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import {
   ClipboardList, Download, Eraser, Pencil, Plus, RotateCcw,
-  Save, Trash2, Type, X, ChevronLeft, FileText,
+  Save, Trash2, Type, X, ChevronLeft, FileText, Undo2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -91,8 +91,28 @@ export const BUILTIN_HEALTH_Q_SENIOR: Template = {
   form_key: 'health_questionnaire_senior',
 };
 
+// T-20260519-foot-PENCHART-FORM-ADD (FIX): 개인정보+체크리스트 PDF 원본 폴백
+// template_format 'pdf_overlay' — DB 미적용 시 공개 에셋 직접 경로
+export const BUILTIN_PERSONAL_CHECKLIST_GENERAL: Template = {
+  id: 'builtin-personal-checklist-general',
+  name_ko: '개인정보+체크리스트 (일반)',
+  template_path: '/forms/personal_checklist_general.png',
+  template_format: 'pdf_overlay',
+  form_key: 'personal_checklist_general',
+};
+
+export const BUILTIN_PERSONAL_CHECKLIST_SENIOR: Template = {
+  id: 'builtin-personal-checklist-senior',
+  name_ko: '개인정보+체크리스트 (어르신용)',
+  template_path: '/forms/personal_checklist_senior.png',
+  template_format: 'pdf_overlay',
+  form_key: 'personal_checklist_senior',
+};
+
 const CANVAS_W = 720;
 const CANVAS_H = 1020; // A4 비율 약 1:√2
+// 어르신용 개인정보+체크리스트: 2페이지 세로 연결 (1241×3508 → 720×2040)
+const CANVAS_H_SENIOR_CHECKLIST = 2040;
 
 const PEN_COLORS = [
   { label: '검정', value: '#1a1a1a' },
@@ -106,6 +126,19 @@ type TabMode = 'list' | 'select' | 'draw' | 'fill';
 
 /** draw 모드에서 활성 양식이 발건강 질문지인지 구분 */
 const isHealthQFormKey = (k: string) => k.startsWith('health_questionnaire_');
+
+/** T-20260519-foot-PENCHART-FORM-ADD (FIX): 개인정보+체크리스트 PDF 오버레이 양식 */
+const isPdfOverlayFormKey = (k: string) => k.startsWith('personal_checklist_');
+
+/** 어르신용 체크리스트인지 (2페이지 캔버스 높이 적용) */
+const isSeniorChecklistKey = (k: string) => k === 'personal_checklist_senior';
+
+/** 양식에 따른 캔버스 높이 반환 */
+const getCanvasHeightForForm = (formKey: string | undefined): number => {
+  if (!formKey) return CANVAS_H;
+  if (isSeniorChecklistKey(formKey)) return CANVAS_H_SENIOR_CHECKLIST;
+  return CANVAS_H;
+};
 
 // ─── 개인정보/체크리스트 양식 데이터 ───
 interface PersonalChecklistData {
@@ -499,6 +532,10 @@ export function PenChartTab({
   const lastPosRef = useRef<{ x: number; y: number } | null>(null);
   const emptyRef = useRef(true);
 
+  // T-20260519-foot-PENCHART-FORM-ADD (FIX): Undo 10단계
+  const undoStackRef = useRef<ImageData[]>([]);
+  const UNDO_LIMIT = 10;
+
   const storagePath = `customer/${customerId}/pen-chart`;
 
   // ── staff.id 조회 ─────────────────────────────────────────────────────────
@@ -559,11 +596,17 @@ export function PenChartTab({
       const checklists = (data as Template[]).filter((t) => t.form_key.startsWith('personal_checklist_'));
       const healthQs  = (data as Template[]).filter((t) => t.form_key.startsWith('health_questionnaire_'));
       setPenChartTemplate(penChart ?? BUILTIN_PEN_CHART_TEMPLATE);
-      setChecklistTemplates(checklists);
+      // T-20260519-foot-PENCHART-FORM-ADD (FIX): pdf_overlay 형식이면 draw 모드용 그대로 사용
+      // DB에 pdf_overlay 미적용(= template_path 빈 문자열)이면 내장 폴백
+      const checklistsWithFallback = checklists.length > 0 && checklists.every((t) => t.template_path)
+        ? checklists
+        : [BUILTIN_PERSONAL_CHECKLIST_GENERAL, BUILTIN_PERSONAL_CHECKLIST_SENIOR];
+      setChecklistTemplates(checklistsWithFallback);
       // DB에 발건강 질문지 행 없으면 내장 폴백 사용
       setHealthQTemplates(healthQs.length > 0 ? healthQs : [BUILTIN_HEALTH_Q_GENERAL, BUILTIN_HEALTH_Q_SENIOR]);
     } else {
       setPenChartTemplate(BUILTIN_PEN_CHART_TEMPLATE);
+      setChecklistTemplates([BUILTIN_PERSONAL_CHECKLIST_GENERAL, BUILTIN_PERSONAL_CHECKLIST_SENIOR]);
       setHealthQTemplates([BUILTIN_HEALTH_Q_GENERAL, BUILTIN_HEALTH_Q_SENIOR]);
     }
 
@@ -590,19 +633,23 @@ export function PenChartTab({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const dpr = window.devicePixelRatio || 1;
+
+    // T-20260519-foot-PENCHART-FORM-ADD (FIX): 어르신용 개인정보+체크리스트는 2배 높이
+    const canvasH = getCanvasHeightForForm(activeDrawTemplate?.form_key);
+
     canvas.width = CANVAS_W * dpr;
-    canvas.height = CANVAS_H * dpr;
+    canvas.height = canvasH * dpr;
     canvas.style.width = `${CANVAS_W}px`;
-    canvas.style.height = `${CANVAS_H}px`;
+    canvas.style.height = `${canvasH}px`;
     ctx.scale(dpr, dpr);
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.fillRect(0, 0, CANVAS_W, canvasH);
 
     // T-20260519-foot-HEALTH-Q-PEN: 활성 draw 템플릿 배경 우선 사용.
-    // health_questionnaire_* → 공개 에셋 직접 경로
+    // health_questionnaire_* + personal_checklist_* → 공개 에셋 직접 경로 (pdf_overlay)
     // pen_chart → templateImgUrl (public path 또는 Supabase signed URL)
     let bgUrl: string | null = null;
-    if (activeDrawTemplate && isHealthQFormKey(activeDrawTemplate.form_key)) {
+    if (activeDrawTemplate && (isHealthQFormKey(activeDrawTemplate.form_key) || isPdfOverlayFormKey(activeDrawTemplate.form_key))) {
       bgUrl = activeDrawTemplate.template_path ?? null;
     } else {
       bgUrl = templateImgUrl;
@@ -611,7 +658,7 @@ export function PenChartTab({
     if (bgUrl) {
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      img.onload = () => { ctx.drawImage(img, 0, 0, CANVAS_W, CANVAS_H); };
+      img.onload = () => { ctx.drawImage(img, 0, 0, CANVAS_W, canvasH); };
       img.src = bgUrl;
     }
     emptyRef.current = true;
@@ -619,6 +666,8 @@ export function PenChartTab({
     setBoilerplateMode('idle');
     setPendingBoilerplate('');
     setShowBoilerplatePanel(false);
+    // T-20260519-foot-PENCHART-FORM-ADD (FIX): Undo 스택 초기화
+    undoStackRef.current = [];
   }, [templateImgUrl, activeDrawTemplate]);
 
   useEffect(() => {
@@ -627,6 +676,33 @@ export function PenChartTab({
       return () => clearTimeout(t);
     }
   }, [mode, initCanvas]);
+
+  // ── Undo 저장/복원 ────────────────────────────────────────────────────
+  // T-20260519-foot-PENCHART-FORM-ADD (FIX): 각 획 시작 전 상태 저장 (최대 10단계)
+  const saveUndoState = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const stack = undoStackRef.current;
+    stack.push(imageData);
+    if (stack.length > UNDO_LIMIT) stack.shift();
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    if (undoStackRef.current.length === 0) {
+      toast('되돌릴 내용이 없습니다', { duration: 1500 });
+      return;
+    }
+    const imageData = undoStackRef.current.pop()!;
+    ctx.putImageData(imageData, 0, 0);
+    if (undoStackRef.current.length === 0) setHasDrawing(false);
+  }, []);
 
   // ── 포인터 이벤트 ────────────────────────────────────────────────────
   const getPos = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -664,6 +740,8 @@ export function PenChartTab({
     if (!canvas) return;
     const pos = getPos(e);
     if (boilerplateMode === 'placing' && pendingBoilerplate) { placeBoilerplate(pos.x, pos.y); return; }
+    // T-20260519-foot-PENCHART-FORM-ADD (FIX): 획 시작 전 Undo 상태 저장
+    saveUndoState();
     canvas.setPointerCapture(e.pointerId);
     drawingRef.current = true;
     lastPosRef.current = pos;
@@ -726,15 +804,20 @@ export function PenChartTab({
       const res = await fetch(dataUrl);
       const blob = await res.blob();
       // T-20260519-foot-HEALTH-Q-PEN: health_questionnaire 파일에 'hq_' prefix
-      const prefix = activeDrawTemplate && isHealthQFormKey(activeDrawTemplate.form_key)
-        ? `hq_${activeDrawTemplate.form_key === 'health_questionnaire_senior' ? 'sr_' : ''}`
-        : '';
+      // T-20260519-foot-PENCHART-FORM-ADD (FIX): personal_checklist 파일에 'pc_' prefix
+      let prefix = '';
+      if (activeDrawTemplate && isHealthQFormKey(activeDrawTemplate.form_key)) {
+        prefix = `hq_${activeDrawTemplate.form_key === 'health_questionnaire_senior' ? 'sr_' : ''}`;
+      } else if (activeDrawTemplate && isPdfOverlayFormKey(activeDrawTemplate.form_key)) {
+        prefix = `pc_${isSeniorChecklistKey(activeDrawTemplate.form_key) ? 'sr_' : ''}`;
+      }
       const fileName = `${prefix}${Date.now()}_${Math.random().toString(36).slice(2, 6)}.png`;
       const path = `${storagePath}/${fileName}`;
       const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/png', upsert: false });
       if (error) { toast.error(`저장 실패: ${error.message}`); return; }
       const isHQ = activeDrawTemplate && isHealthQFormKey(activeDrawTemplate.form_key);
-      toast.success(isHQ ? '발건강 질문지 저장 완료' : '펜차트 저장 완료');
+      const isPC = activeDrawTemplate && isPdfOverlayFormKey(activeDrawTemplate.form_key);
+      toast.success(isHQ ? '발건강 질문지 저장 완료' : isPC ? '개인정보+체크리스트 저장 완료' : '펜차트 저장 완료');
       await loadSavedCharts();
       setActiveDrawTemplate(null);
       setMode('list');
@@ -813,12 +896,13 @@ export function PenChartTab({
 
   // ── 양식 선택 ─────────────────────────────────────────────────────────
   const handleSelectTemplate = (tpl: Template) => {
-    if (tpl.form_key === 'pen_chart' || isHealthQFormKey(tpl.form_key)) {
-      // T-20260519-foot-HEALTH-Q-PEN: 발건강 질문지도 draw 모드 (PDF 캔버스)
+    if (tpl.form_key === 'pen_chart' || isHealthQFormKey(tpl.form_key) || isPdfOverlayFormKey(tpl.form_key)) {
+      // T-20260519-foot-HEALTH-Q-PEN: 발건강 질문지 draw 모드 (PDF 캔버스)
+      // T-20260519-foot-PENCHART-FORM-ADD (FIX): 개인정보+체크리스트 → PDF 원본 캔버스 draw 모드
       setActiveDrawTemplate(tpl);
       setMode('draw');
     } else {
-      // personal_checklist_* 레거시 fill 모드
+      // 기타 레거시 fill 모드 (현재 미사용)
       setSelectedFillTemplate(tpl);
       setFillData(initialFillData({ name: customerName, phone: customerPhone, birth_date: customerBirthDate }));
       setMode('fill');
@@ -919,23 +1003,48 @@ export function PenChartTab({
               );
             })}
 
-            {/* 개인정보+체크리스트 레거시 (텍스트 입력 — 이전 방식) */}
+            {/* T-20260519-foot-PENCHART-FORM-ADD (FIX): 개인정보+체크리스트 PDF 원본 캔버스 */}
             {checklistTemplates.length > 0 && checklistTemplates.map((tpl) => {
-              const isSenior = tpl.form_key === 'personal_checklist_senior';
+              const isSr = tpl.form_key === 'personal_checklist_senior';
               return (
                 <button
                   key={tpl.id}
                   onClick={() => handleSelectTemplate(tpl)}
-                  className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-left hover:border-gray-300 hover:bg-gray-100 transition"
-                >
-                  <ClipboardList className="h-4 w-4 text-gray-400 shrink-0" />
-                  <div>
-                    <div className="font-medium text-xs text-gray-600">{tpl.name_ko}</div>
-                    <div className="text-[10px] text-gray-400 mt-0.5">텍스트 입력 방식 (레거시)</div>
-                  </div>
-                  {isSenior && (
-                    <span className="ml-auto rounded bg-gray-200 px-1.5 py-0.5 text-[9px] text-gray-500">어르신</span>
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg border-2 p-4 text-left transition',
+                    isSr
+                      ? 'border-indigo-200 bg-indigo-50 hover:border-indigo-400 hover:bg-indigo-100'
+                      : 'border-sky-200 bg-sky-50 hover:border-sky-400 hover:bg-sky-100',
                   )}
+                >
+                  <div className={cn(
+                    'flex h-10 w-10 items-center justify-center rounded-full',
+                    isSr ? 'bg-indigo-200' : 'bg-sky-200',
+                  )}>
+                    <ClipboardList className={cn('h-5 w-5', isSr ? 'text-indigo-700' : 'text-sky-700')} />
+                  </div>
+                  <div>
+                    <div className={cn('font-semibold text-sm', isSr ? 'text-indigo-800' : 'text-sky-800')}>
+                      {tpl.name_ko}
+                    </div>
+                    <div className={cn('text-xs mt-0.5', isSr ? 'text-indigo-600' : 'text-sky-600')}>
+                      {isSr
+                        ? '개인정보·체크리스트 (어르신용 2p) — 태블릿펜으로 직접 기입'
+                        : '개인정보·체크리스트 — 태블릿펜으로 직접 기입 후 저장'}
+                    </div>
+                  </div>
+                  {isSr && (
+                    <span className="ml-auto rounded-full bg-indigo-200 px-2 py-0.5 text-[10px] font-bold text-indigo-800">
+                      어르신용
+                    </span>
+                  )}
+                  <span className={cn(
+                    'rounded-full px-2 py-0.5 text-[10px] font-bold',
+                    isSr ? 'bg-indigo-100 text-indigo-700' : 'bg-sky-100 text-sky-700',
+                    isSr ? '' : 'ml-auto',
+                  )}>
+                    PDF 원본
+                  </span>
                 </button>
               );
             })}
@@ -1062,6 +1171,14 @@ export function PenChartTab({
           </div>
 
           <div className="ml-auto flex gap-1.5">
+            {/* T-20260519-foot-PENCHART-FORM-ADD (FIX): Undo 버튼 (최대 10단계) */}
+            <button
+              onClick={handleUndo}
+              className="flex items-center gap-1 px-2 py-1 rounded text-xs border border-gray-200 hover:bg-gray-50"
+              title="되돌리기 (Undo)"
+            >
+              <Undo2 className="h-3.5 w-3.5" /> 되돌리기
+            </button>
             <button
               onClick={initCanvas}
               className="flex items-center gap-1 px-2 py-1 rounded text-xs border border-gray-200 hover:bg-gray-50"
@@ -1154,6 +1271,12 @@ export function PenChartTab({
           </span>
           <span className="rounded bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[11px] text-emerald-700">
             📋 발건강 질문지 (어르신용)
+          </span>
+          <span className="rounded bg-sky-50 border border-sky-100 px-2 py-0.5 text-[11px] text-sky-700">
+            📄 개인정보+체크리스트 (일반)
+          </span>
+          <span className="rounded bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-[11px] text-indigo-700">
+            📄 개인정보+체크리스트 (어르신용)
           </span>
         </div>
 
