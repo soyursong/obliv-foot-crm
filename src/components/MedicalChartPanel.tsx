@@ -1,3 +1,4 @@
+// LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
 /**
  * MedicalChartPanel — 풋센터 진료차트 패널
  * T-20260515-foot-CONTEXT-MENU-4ITEM: AC-2 진료차트 메뉴 항목 — cross-CRM 포팅

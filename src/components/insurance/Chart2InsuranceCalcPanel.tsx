@@ -1,3 +1,4 @@
+// LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
 /**
  * Chart2InsuranceCalcPanel — 2번차트 건보 자격등급 변경 시 실시간 진료비 자동산정
  *
