@@ -8,6 +8,10 @@
  * T-20260517-foot-PREPAID-DEDUCT       선수금차감 듀얼 버튼 + 보라색 선택박스 + 2번차트 자동매칭
  * T-20260517-foot-BILLING-3ZONE        진료비 산정 3구역 레이아웃 + 서류발행 패키지/시술이력 연동
  * T-20260517-foot-DOC-CODE-INSERT      상병코드/처방약 → 서류 양식 자동 삽입 (AC-1~AC-4)
+ * T-20260519-foot-PKG-REVENUE-SPLIT    패키지 차감건 매출 이중계상 수정 (AC-1~AC-5)
+ *   - 적용 경로 역전 해소: deductMode에서 잔액은 실제 결제수단(card/cash/transfer) 사용
+ *   - is_package_session=true 마킹: 선수금차감 항목은 패키지 세션으로 DB 기록
+ *   - 전액 패키지 차감(잔액=0)만 method='membership' 사용 (payment 레코드 확인용)
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
@@ -850,7 +854,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       .reduce((s, item) => s + getItemAmount(item), 0);
 
   // ── 공통 check_in_services 저장 ──────────────────────────────────────────
-  const saveCheckInServices = async (): Promise<boolean> => {
+  // T-20260519-foot-PKG-REVENUE-SPLIT AC-1:
+  //   isDeductMode=true 시 prepaidIds 항목에 is_package_session=true 마킹
+  //   → 해당 항목은 Closing 시술별 통계/매출 집계에서 자동 제외됨
+  const saveCheckInServices = async (isDeductMode: boolean = false): Promise<boolean> => {
     if (pricingItems.length === 0 && codeItems.length === 0) {
       toast.error('시술 코드를 선택해주세요');
       return false;
@@ -870,13 +877,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         customAmounts.get(service.id) !== undefined
           ? customAmounts.get(service.id)!
           : service.price;
+      // T-20260519-foot-PKG-REVENUE-SPLIT AC-1:
+      // 선수금차감 모드에서 보라색(prepaid) 항목 = 패키지 세션으로 마킹
+      const isPkgSession = isDeductMode && prepaidIds.has(service.id);
       return Array.from({ length: qty }, () => ({
         check_in_id: checkIn.id,
         service_id: service.id,
         service_name: service.name,
         price: unitPrice,
         original_price: service.price,
-        is_package_session: false,
+        is_package_session: isPkgSession,
       }));
     });
 
@@ -894,7 +904,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
   // ── [시술 저장 및 포함 금액 산정] (기존 handleSave, 전체 금액) ─────────────
   const handleSaveFull = async () => {
-    const ok = await saveCheckInServices();
+    // T-20260519-foot-PKG-REVENUE-SPLIT: 일반 저장은 isDeductMode=false
+    const ok = await saveCheckInServices(false);
     if (!ok) return;
     setSaved(true);
     setDeductMode(false);
@@ -912,7 +923,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       toast.error('시술 코드를 선택해주세요');
       return;
     }
-    const ok = await saveCheckInServices();
+    // T-20260519-foot-PKG-REVENUE-SPLIT: 선수금차감 모드에서 prepaid 항목 is_package_session=true 마킹
+    const ok = await saveCheckInServices(true);
     if (!ok) return;
 
     const deducted = calcDeductAmount();
@@ -971,7 +983,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       return;
     }
     const amount = deductMode ? deductAmount : grandTotal;
-    const method = deductMode ? 'membership' : payMethod;
+    // T-20260519-foot-PKG-REVENUE-SPLIT AC-1: 적용 경로 역전 해소
+    // - 전액 패키지 차감(잔액=0): method='membership' (결제 레코드 마커, amount=0)
+    // - 잔액 있는 경우: payMethod(card/cash/transfer)로 잔액만 결제 → 일일 매출 정확 집계
+    const method = deductMode ? (deductAmount > 0 ? payMethod : 'membership') : payMethod;
     const taxType = deductMode ? '선수금' : null;
 
     if (amount < 0) {
@@ -1108,7 +1123,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       }
 
       // 2. 수납 + auto-done
-      const method = deductMode ? 'membership' : payMethod;
+      // T-20260519-foot-PKG-REVENUE-SPLIT AC-1: 잔액 있는 경우 payMethod 사용
+      const method = deductMode ? (deductAmount > 0 ? payMethod : 'membership') : payMethod;
       const taxType = deductMode ? '선수금' : null;
       await executeAutoDone(amount, method, taxType);
       localStorage.removeItem(draftKey(checkIn.id));
@@ -1500,8 +1516,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     </p>
                   )}
 
-                  {/* 결제 수단 선택 (저장 후 표시, 선수금차감 모드 아닐 때) */}
-                  {saved && !deductMode && (
+                  {/* 결제 수단 선택 (저장 후 표시)
+                      T-20260519-foot-PKG-REVENUE-SPLIT AC-1:
+                      선수금차감 모드(deductMode)에서도 잔액(deductAmount > 0) 있으면 표시
+                      → 잔액을 card/cash/transfer 중 선택해 결제 */}
+                  {saved && (!deductMode || deductAmount > 0) && (
                     <div className="flex gap-1">
                       {METHOD_OPTIONS.map((m) => (
                         <button
@@ -1520,8 +1539,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     </div>
                   )}
 
-                  {/* PAY-CASH-RECEIPT: 현금영수증 체크박스 — 현금/이체 선택 시 표시 */}
-                  {saved && !deductMode && (payMethod === 'cash' || payMethod === 'transfer') && (
+                  {/* PAY-CASH-RECEIPT: 현금영수증 체크박스 — 현금/이체 선택 시 표시
+                      T-20260519-foot-PKG-REVENUE-SPLIT: 잔액 있는 deductMode에도 표시 */}
+                  {saved && (!deductMode || deductAmount > 0) && (payMethod === 'cash' || payMethod === 'transfer') && (
                     <div className="rounded border px-2.5 py-2 bg-muted/20 space-y-1.5">
                       <button
                         onClick={() => setCashReceiptIssued((v) => !v)}
@@ -1571,9 +1591,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                       data-testid="btn-settle"
                     >
                       {submitting ? '처리 중...' : (
-                        deductMode
-                          ? `수납 (선수금차감) ${formatAmount(displayAmount)}`
-                          : `수납 ${formatAmount(displayAmount)}`
+                        // T-20260519-foot-PKG-REVENUE-SPLIT AC-1: 상황별 버튼 레이블
+                        // 전액 패키지차감(잔액=0) / 잔액 있는 차감 / 일반 결제
+                        deductMode && deductAmount === 0
+                          ? '수납 (패키지차감완료, 잔액없음)'
+                          : deductMode && deductAmount > 0
+                            ? `수납 잔액 ${formatAmount(displayAmount)}`
+                            : `수납 ${formatAmount(displayAmount)}`
                       )}
                     </Button>
                   )}
