@@ -800,6 +800,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [savingEditSession, setSavingEditSession] = useState(false);
   // T-20260510-foot-C21-SAVE-UNIFY: 고객정보 패널 통합 저장 로딩 상태
   const [savingInfoPanel, setSavingInfoPanel] = useState(false);
+  // T-20260519-foot-PRECHECKIN-CHART AC-3: 내원콜 방문 확인 로딩 상태
+  const [confirmingVisit, setConfirmingVisit] = useState(false);
   // T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: isDirty 패턴 + 자동저장 인디케이터
   const [isDirty, setIsDirty] = useState(false);
   const [showAutoSaved, setShowAutoSaved] = useState(false);
@@ -1494,6 +1496,21 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     } : prev);
     // AC-8 쌍방연동 — 1번차트에 변경 알림
     localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+  };
+
+  // T-20260519-foot-PRECHECKIN-CHART AC-3: 내원콜 방문 확인 기록 (check_in 없이 reservation_memo_history에 append)
+  const handleVisitConfirm = async (willVisit: boolean) => {
+    const nextResv = reservations.find((r) => r.status === 'confirmed');
+    if (!nextResv || !customer) return;
+    setConfirmingVisit(true);
+    const content = willVisit ? '[방문확인] 방문 예정' : '[방문확인] 방문 안함';
+    await insertReservationMemo(nextResv.id, customer.clinic_id, content, profile?.name ?? null);
+    setConfirmingVisit(false);
+    if (willVisit) {
+      toast.success('방문 예정으로 기록되었습니다');
+    } else {
+      toast.info('방문 안함으로 기록되었습니다');
+    }
   };
 
   // C23-DETAIL-SIMPLIFY: 상담 탭 저장
@@ -3630,6 +3647,43 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 : '방문 이력 없음'}
             </div>
           </div>
+
+          {/* T-20260519-foot-PRECHECKIN-CHART AC-3: 접수 전 내원콜 방문 확인 */}
+          {/* check_in 없음 + confirmed 예약 존재 시에만 표시 */}
+          {latestCheckIn === null && reservations.some((r) => r.status === 'confirmed') && (() => {
+            const nextResv = reservations.find((r) => r.status === 'confirmed')!;
+            return (
+              <div className="border-b border-amber-200 bg-amber-50 px-3 py-2">
+                <div className="text-[11px] font-semibold text-amber-800 mb-1.5 flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-amber-400 inline-block shrink-0" />
+                  내원콜 방문 확인 (접수 전)
+                </div>
+                <div className="text-[11px] text-amber-700 mb-2">
+                  예약: {nextResv.reservation_date} {nextResv.reservation_time.slice(0, 5)}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={confirmingVisit}
+                    onClick={() => handleVisitConfirm(true)}
+                    data-testid="btn-visit-confirm-yes"
+                    className="flex-1 rounded bg-teal-600 text-white py-1.5 text-[11px] font-semibold hover:bg-teal-700 transition disabled:opacity-50"
+                  >
+                    방문 예정 ✓
+                  </button>
+                  <button
+                    type="button"
+                    disabled={confirmingVisit}
+                    onClick={() => handleVisitConfirm(false)}
+                    data-testid="btn-visit-confirm-no"
+                    className="flex-1 rounded border border-gray-300 bg-white text-gray-700 py-1.5 text-[11px] font-semibold hover:bg-gray-100 transition disabled:opacity-50"
+                  >
+                    방문 안함 ✗
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* 상담메모 */}
           {customer.tm_memo && (
