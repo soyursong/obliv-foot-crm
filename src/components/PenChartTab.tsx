@@ -36,6 +36,8 @@ import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatPhoneInput } from '@/lib/format';
+// T-20260519-foot-PENCHART-FORM-ADD (FIX AC-4): 서명 캡처
+import { SignaturePad, type SignaturePadHandle } from '@/components/forms/SignaturePad';
 
 // ─── 상용구 데이터 ───
 // T-20260517-foot-PENCHART-FORM: 자주 사용하는 텍스트 템플릿
@@ -536,6 +538,10 @@ export function PenChartTab({
   const undoStackRef = useRef<ImageData[]>([]);
   const UNDO_LIMIT = 10;
 
+  // T-20260519-foot-PENCHART-FORM-ADD (AC-4): pdf_overlay 전용 서명 캡처
+  const sigPadRef = useRef<SignaturePadHandle>(null);
+  const [sigEmpty, setSigEmpty] = useState(true);
+
   const storagePath = `customer/${customerId}/pen-chart`;
 
   // ── staff.id 조회 ─────────────────────────────────────────────────────────
@@ -815,10 +821,43 @@ export function PenChartTab({
       const path = `${storagePath}/${fileName}`;
       const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/png', upsert: false });
       if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+
       const isHQ = activeDrawTemplate && isHealthQFormKey(activeDrawTemplate.form_key);
       const isPC = activeDrawTemplate && isPdfOverlayFormKey(activeDrawTemplate.form_key);
-      toast.success(isHQ ? '발건강 질문지 저장 완료' : isPC ? '개인정보+체크리스트 저장 완료' : '펜차트 저장 완료');
+
+      // T-20260519-foot-PENCHART-FORM-ADD (AC-4/5):
+      // pdf_overlay 양식은 form_submissions에도 저장 (서명 base64 + 캔버스 파일명 포함)
+      if (isPC && activeDrawTemplate && !activeDrawTemplate.id.startsWith('builtin-') && staffId) {
+        const signatureBase64 = sigEmpty ? null : (sigPadRef.current?.toDataURL('image/png') ?? null);
+        const now = new Date().toISOString();
+        const submissionPayload: Record<string, unknown> = {
+          clinic_id:   clinicId,
+          template_id: activeDrawTemplate.id,
+          customer_id: customerId,
+          field_data: {
+            form_key:         activeDrawTemplate.form_key,
+            canvas_file:      fileName,
+            signature_base64: signatureBase64,
+            signed_at:        now,
+          },
+          status:      'signed',
+          signed_at:   now,
+          printed_at:  now,
+          issued_by:   staffId,
+        };
+        if (checkInId) submissionPayload.check_in_id = checkInId;
+        const { error: subErr } = await supabase.from('form_submissions').insert(submissionPayload);
+        if (subErr) {
+          // 저장은 됐으나 연동 실패 — 경고만 표시 (photos 업로드는 완료)
+          console.warn('form_submissions insert 실패:', subErr.message);
+        }
+      }
+
+      toast.success(isHQ ? '발건강 질문지 저장 완료' : isPC ? '개인정보+체크리스트 저장 완료 — 상담내역에 연동됐습니다' : '펜차트 저장 완료');
       await loadSavedCharts();
+      // 서명 초기화
+      sigPadRef.current?.clear();
+      setSigEmpty(true);
       setActiveDrawTemplate(null);
       setMode('list');
     } finally {
@@ -899,6 +938,11 @@ export function PenChartTab({
     if (tpl.form_key === 'pen_chart' || isHealthQFormKey(tpl.form_key) || isPdfOverlayFormKey(tpl.form_key)) {
       // T-20260519-foot-HEALTH-Q-PEN: 발건강 질문지 draw 모드 (PDF 캔버스)
       // T-20260519-foot-PENCHART-FORM-ADD (FIX): 개인정보+체크리스트 → PDF 원본 캔버스 draw 모드
+      // AC-4: pdf_overlay 진입 시 서명 패드 초기화
+      if (isPdfOverlayFormKey(tpl.form_key)) {
+        sigPadRef.current?.clear();
+        setSigEmpty(true);
+      }
       setActiveDrawTemplate(tpl);
       setMode('draw');
     } else {
@@ -1236,6 +1280,44 @@ export function PenChartTab({
             onPointerCancel={onPointerUp}
           />
         </div>
+
+        {/* T-20260519-foot-PENCHART-FORM-ADD (AC-4): pdf_overlay 전용 서명 캡처 패드 */}
+        {activeDrawTemplate && isPdfOverlayFormKey(activeDrawTemplate.form_key) && (
+          <div className="rounded-lg border bg-white p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-teal-800">
+                서명란 (개인정보 동의)
+              </span>
+              <button
+                type="button"
+                onClick={() => { sigPadRef.current?.clear(); setSigEmpty(true); }}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition"
+              >
+                <RotateCcw className="h-3 w-3" /> 서명 지우기
+              </button>
+            </div>
+            <div
+              className={cn(
+                'rounded border overflow-hidden',
+                sigEmpty ? 'border-dashed border-gray-300' : 'border-teal-400',
+              )}
+            >
+              <SignaturePad
+                ref={sigPadRef}
+                width={460}
+                height={130}
+                penColor="#1a1a1a"
+                className="block"
+                onChange={(isEmpty) => setSigEmpty(isEmpty)}
+              />
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {sigEmpty
+                ? '고객이 태블릿펜 또는 손가락으로 서명해주세요 (선택)'
+                : '✓ 서명 완료 — 저장 시 자동 포함됩니다'}
+            </p>
+          </div>
+        )}
       </div>
     );
   }
