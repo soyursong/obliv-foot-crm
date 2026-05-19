@@ -24,6 +24,7 @@ import {
   ChevronRight,
   TrendingUp,
   Building2,
+  KeyRound,
 } from 'lucide-react';
 import CalendarNoticePanel from '@/components/CalendarNoticePanel';
 import { supabase } from '@/lib/supabase';
@@ -33,6 +34,7 @@ import { useClinic } from '@/hooks/useClinic';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { UserRole } from '@/lib/types';
+import ChangePasswordDialog from '@/components/ChangePasswordDialog';
 
 const NAV_ITEMS: {
   to: string;
@@ -65,6 +67,8 @@ export default function AdminLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem('foot-sidebar-collapsed') === 'true',
   );
+  // T-20260519-foot-STAFF-PW-CHANGE: 비밀번호 변경 다이얼로그
+  const [pwChangeOpen, setPwChangeOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ id: string; name: string; phone: string; birth_date: string | null; chart_number: string | null }[]>([]);
@@ -206,10 +210,20 @@ export default function AdminLayout() {
       <div className="border-t px-4 py-3 text-xs">
         <div className="truncate font-medium">{profile?.name ?? profile?.email ?? '사용자'}</div>
         <div className="text-muted-foreground">{profile?.role}</div>
+        {/* T-20260519-foot-STAFF-PW-CHANGE AC-1: 비밀번호 변경 — 모든 역할 노출 */}
         <Button
           variant="ghost"
           size="sm"
-          className="mt-2 h-8 w-full justify-start gap-2 text-muted-foreground"
+          className="mt-1 h-8 w-full justify-start gap-2 text-muted-foreground"
+          onClick={() => setPwChangeOpen(true)}
+        >
+          <KeyRound className="h-3.5 w-3.5" />
+          비밀번호 변경
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-full justify-start gap-2 text-muted-foreground"
           onClick={handleLogout}
         >
           <LogOut className="h-3.5 w-3.5" />
@@ -301,7 +315,15 @@ export default function AdminLayout() {
 
         {/* Footer */}
         {sidebarCollapsed ? (
-          <div className="border-t py-3 flex flex-col items-center">
+          <div className="border-t py-3 flex flex-col items-center gap-1">
+            {/* T-20260519-foot-STAFF-PW-CHANGE AC-1: 비밀번호 변경 아이콘 (축소 상태) */}
+            <button
+              className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground"
+              onClick={() => setPwChangeOpen(true)}
+              title="비밀번호 변경"
+            >
+              <KeyRound className="h-4 w-4" />
+            </button>
             <button
               className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground"
               onClick={handleLogout}
@@ -314,10 +336,20 @@ export default function AdminLayout() {
           <div className="border-t px-4 py-3 text-xs">
             <div className="truncate font-medium">{profile?.name ?? profile?.email ?? '사용자'}</div>
             <div className="text-muted-foreground">{profile?.role}</div>
+            {/* T-20260519-foot-STAFF-PW-CHANGE AC-1: 비밀번호 변경 (확장 상태) */}
             <Button
               variant="ghost"
               size="sm"
-              className="mt-2 h-8 w-full justify-start gap-2 text-muted-foreground"
+              className="mt-1 h-8 w-full justify-start gap-2 text-muted-foreground"
+              onClick={() => setPwChangeOpen(true)}
+            >
+              <KeyRound className="h-3.5 w-3.5" />
+              비밀번호 변경
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-full justify-start gap-2 text-muted-foreground"
               onClick={handleLogout}
             >
               <LogOut className="h-3.5 w-3.5" />
@@ -452,6 +484,8 @@ export default function AdminLayout() {
         다른 위치에 중복 렌더 추가 금지. customerId/onClose 대체 구현 금지.
         회귀 방지 spec: tests/e2e/T-20260519-foot-CHART-OPEN-GUARD.spec.ts */}
     <CustomerChartSheet customerId={chartId} onClose={closeChart} />
+    {/* T-20260519-foot-STAFF-PW-CHANGE: 비밀번호 변경 다이얼로그 */}
+    <ChangePasswordDialog open={pwChangeOpen} onOpenChange={setPwChangeOpen} />
     </ChartContext.Provider>
   );
 }
