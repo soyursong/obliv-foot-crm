@@ -1181,6 +1181,13 @@ function SlotDropCell({
 // T-20260519-foot-FIRSTVISIT-CHECKIN: 초진 예약 카드에 onSelect(차트조회) + onCheckIn(접수) 추가
 // AC-1: '접수' 버튼 — DraggableBox2ResvCard onCheckIn 패턴 재사용
 // AC-3: 카드 클릭 → onSelect 차트조회 (체크인 X)
+// ─────────────────────────────────────────────────────────────────────────────
+// CRITICAL: DO NOT MODIFY — Chart Open Guard
+// T-20260519-foot-CHART-OPEN-GUARD: DraggableBox1Card.onSelect 는
+// 초진 고객의 1·2번 차트 열림 진입점. onClick→onSelect→ctxOpenChart 체인 유지 필수.
+// 이 체인을 끊거나 onSelect 제거 시 초진 차트 열람 불가 재발.
+// 회귀 방지 spec: tests/e2e/T-20260519-foot-CHART-OPEN-GUARD.spec.ts
+// ─────────────────────────────────────────────────────────────────────────────
 function DraggableBox1Card({
   reservation,
   onSelect,
@@ -1239,6 +1246,13 @@ function DraggableBox1Card({
 // T-20260515-foot-REVISIT-CLICK-AUTOCHECK: 카드 클릭(onSelect=차트조회)과 접수 버튼(onCheckIn=체크인)을 분리
 // - onSelect: 카드 본문 클릭 → 차트 조회만 (체크인 X) — AC-1
 // - onCheckIn: 내부 '접수' 버튼 클릭 → 체크인 생성 (4경로 중 하나) — AC-2
+// ─────────────────────────────────────────────────────────────────────────────
+// CRITICAL: DO NOT MODIFY — Chart Open Guard
+// T-20260519-foot-CHART-OPEN-GUARD: DraggableBox2ResvCard.onSelect 는
+// 재진 고객의 1·2번 차트 열림 진입점. onClick→onSelect→ctxOpenChart 체인 유지 필수.
+// 이 체인을 끊거나 onSelect 제거 시 재진 차트 열람 불가 재발.
+// 회귀 방지 spec: tests/e2e/T-20260519-foot-CHART-OPEN-GUARD.spec.ts
+// ─────────────────────────────────────────────────────────────────────────────
 function DraggableBox2ResvCard({
   reservation,
   onSelect,
@@ -3461,6 +3475,14 @@ export default function Dashboard() {
 
   // T-20260515-foot-REVISIT-CLICK-AUTOCHECK AC-1: 슬롯 카드 클릭 = 차트 조회만 (체크인 X)
   // 체크인은 handleReservationCheckIn (접수 버튼 / 4경로) 에서만 발생
+  // ─────────────────────────────────────────────────────────────────────────────
+  // CRITICAL: DO NOT MODIFY — Chart Open Guard
+  // T-20260519-foot-CHART-OPEN-GUARD: handleReservationSelect 는
+  // DraggableBox1Card/DraggableBox2ResvCard onSelect 의 구현체.
+  // ctxOpenChart(res.customer_id) 호출이 1·2번 차트 열림의 실제 트리거.
+  // 조건 변경·우회·null 허용 시 모든 경로에서 차트 열람 불가.
+  // 회귀 방지 spec: tests/e2e/T-20260519-foot-CHART-OPEN-GUARD.spec.ts
+  // ─────────────────────────────────────────────────────────────────────────────
   const handleReservationSelect = useCallback((res: Reservation) => {
     if (res.customer_id) {
       ctxOpenChart(res.customer_id);
