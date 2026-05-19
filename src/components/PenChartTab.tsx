@@ -715,20 +715,34 @@ export function PenChartTab({
     if (fillData.agree_privacy !== true) { toast.error('개인정보 수집·이용에 동의해주세요 (필수)'); return; }
     if (!selectedFillTemplate) return;
 
+    // T-20260519-foot-PENCHART-FORMS: 폴백 템플릿 ID는 real UUID가 아님 → FK 위반 방지
+    if (selectedFillTemplate.id.startsWith('fallback-')) {
+      toast.error('양식 템플릿을 불러오는 중입니다. 잠시 후 다시 시도해주세요.');
+      return;
+    }
+    // issued_by NOT NULL — staffId 미확보 시 저장 불가
+    if (!staffId) {
+      toast.error('직원 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.');
+      return;
+    }
+
     setFillSaving(true);
     try {
+      const now = new Date().toISOString();
       const payload: Record<string, unknown> = {
         clinic_id: clinicId,
         template_id: selectedFillTemplate.id,
         customer_id: customerId,
         field_data: fillData,
         status: 'signed',
-        signed_at: new Date().toISOString(),
+        signed_at: now,
+        // printed_at: 상담내역 submissionEntries 쿼리가 printed_at 기준으로 정렬·표시함
+        // 기입 완료 = 서류 발행 시점과 동일하게 처리 (T-20260519-foot-PENCHART-FORMS AC-6)
+        printed_at: now,
+        issued_by: staffId,
       };
-      // check_in_id: 내원 상담 자동 연동 (AC-4)
+      // check_in_id: 내원 상담 자동 연동 (AC-5)
       if (checkInId) payload.check_in_id = checkInId;
-      // issued_by: staff.id (조회 성공 시)
-      if (staffId) payload.issued_by = staffId;
 
       const { error } = await supabase.from('form_submissions').insert(payload);
       if (error) {
