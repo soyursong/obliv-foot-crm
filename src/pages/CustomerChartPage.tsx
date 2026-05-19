@@ -1876,6 +1876,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         </div>
         <div className="ml-auto flex items-center gap-1.5">
           {/* T-20260517-foot-RESV-NAV-DIRECT: 고객 컨텍스트 있음 → 예약관리로 이동 + 고객 자동채움 */}
+          {/* LOGIC-LOCK: L-002 — [예약하기] 클릭 시 항상 /admin/reservations full page 전환. 예외 없음. 변경 시 현장 승인 필수 */}
           <button
             onClick={() => {
               navigate('/admin/reservations', {
