@@ -1,24 +1,36 @@
 /**
- * PenChartTab — PDF 양식 위에 태블릿 직접 필기
+ * PenChartTab — PDF 양식 위에 태블릿 직접 필기 + 개인정보/체크리스트 합본 양식
  *
  * T-20260513-foot-C21-TAB-RESTRUCTURE-C (AC-4)
  * T-20260517-foot-PENCHART-FORM: PDF 양식 배경 + 상용구
+ * T-20260519-foot-PENCHART-FORM-ADD: 개인정보+체크리스트 합본 2종 (일반/어르신)
  *
- * - form_templates WHERE form_key='pen_chart' 템플릿 이미지 배경 렌더링
- * - Canvas API + PointerEvent 로 직접 필기 (SignaturePad 패턴 재사용)
- * - 완성본 Supabase Storage photos 버킷 `customer/{id}/pen-chart/` 저장
- * - 저장된 차트 목록 조회 + 이미지 뷰어
- * - 상용구 (boilerplate) 기능: 미리 등록된 텍스트 → 원하는 위치에 삽입
- * - 새 npm 패키지 불필요
+ * 모드 구조:
+ *   list   — 저장된 차트 목록 + 새 차트 버튼
+ *   select — 양식 선택 패널 (pen_chart / general / senior)
+ *   draw   — 기존 캔버스 필기 모드 (pen_chart 전용)
+ *   fill   — 텍스트 입력 양식 모드 (personal_checklist_* 전용)
+ *
+ * form_submissions 저장 (fill 모드):
+ *   - check_in_id: checkInId prop (최근 내원 상담 자동 연동)
+ *   - issued_by: staff.id (profile.id → user_id 경유 조회)
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { Download, Eraser, Pencil, Plus, RotateCcw, Save, Trash2, Type, X } from 'lucide-react';
+import {
+  ClipboardList, Download, Eraser, Pencil, Plus, RotateCcw,
+  Save, Trash2, Type, X, ChevronLeft, FileText,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { formatPhoneInput } from '@/lib/format';
 
 // ─── 상용구 데이터 ───
 // T-20260517-foot-PENCHART-FORM: 자주 사용하는 텍스트 템플릿
@@ -44,6 +56,7 @@ interface Template {
   name_ko: string;
   template_path: string;
   template_format: string;
+  form_key: string;
 }
 
 // ─── 내장 폴백 템플릿 ───
@@ -53,6 +66,7 @@ export const BUILTIN_PEN_CHART_TEMPLATE: Template = {
   name_ko: '펜차트 양식',
   template_path: '/forms/pen_chart_form.png',
   template_format: 'png',
+  form_key: 'pen_chart',
 };
 
 const CANVAS_W = 720;
@@ -65,20 +79,381 @@ const PEN_COLORS = [
   { label: '초록', value: '#16a34a' },
 ];
 
-type BoilerplateMode = 'idle' | 'selecting' | 'placing';
+type DrawMode = 'idle' | 'selecting' | 'placing';
+type TabMode = 'list' | 'select' | 'draw' | 'fill';
 
+// ─── 개인정보/체크리스트 양식 데이터 ───
+interface PersonalChecklistData {
+  name: string;
+  phone: string;
+  birth_date: string;
+  address: string;
+  symptoms: string[];
+  symptoms_other: string;
+  pain_areas: string[];
+  medical_history: string[];
+  medical_history_other: string;
+  has_allergy: boolean | null; // null = 미선택
+  allergy_detail: string;
+  agree_privacy: boolean | null; // null = 미선택
+  agree_marketing: boolean;
+}
+
+const SYMPTOM_OPTIONS = ['굳은살/티눈', '무좀', '내성발톱', '발냄새', '발건조/각질', '당뇨발/혈액순환', '기타'];
+const PAIN_AREA_OPTIONS = ['발앞꿈치', '발뒤꿈치', '발바닥', '발등', '발목'];
+const MEDICAL_OPTIONS = ['당뇨', '고혈압', '심장질환', '혈액순환장애', '기타'];
+
+const PRIVACY_TEXT = [
+  '1. 수집 항목: 성명, 생년월일, 연락처, 발 건강 정보, 시술 사진',
+  '2. 수집 목적: 시술·상담 진행, 예약 관리, 사후 관리',
+  '3. 보유 기간: 의료법에 따른 진료기록 보존 기간 (최소 5년)',
+  '4. 동의를 거부할 권리가 있으나, 거부 시 시술이 제한될 수 있습니다.',
+];
+
+const MARKETING_TEXT = [
+  '1. 수집 항목: 성명, 연락처',
+  '2. 수집 목적: 마케팅 정보 발송 (이벤트·신규 시술 안내)',
+  '3. 보유 기간: 동의 철회 시까지',
+  '4. 본 동의는 선택이며 거부해도 시술 이용에 제한이 없습니다.',
+];
+
+const initialFillData = (defaults?: { name?: string; phone?: string; birth_date?: string }): PersonalChecklistData => ({
+  name: defaults?.name ?? '',
+  phone: defaults?.phone ?? '',
+  birth_date: defaults?.birth_date ?? '',
+  address: '',
+  symptoms: [],
+  symptoms_other: '',
+  pain_areas: [],
+  medical_history: [],
+  medical_history_other: '',
+  has_allergy: null,
+  allergy_detail: '',
+  agree_privacy: null,
+  agree_marketing: false,
+});
+
+// ─── 개인정보/체크리스트 양식 렌더러 ────────────────────────────────────────
+function PersonalChecklistFillView({
+  isSenior,
+  data,
+  onChange,
+  onSave,
+  onCancel,
+  saving,
+}: {
+  isSenior: boolean;
+  data: PersonalChecklistData;
+  onChange: (d: PersonalChecklistData) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  saving: boolean;
+}) {
+  const fs = isSenior ? 'text-xl' : 'text-sm';
+  const fsLabel = isSenior ? 'text-base' : 'text-xs';
+  const inputH = isSenior ? 'h-16 text-xl' : 'h-11 text-sm';
+  const btnH = isSenior ? 'min-h-16 text-xl px-6 py-3' : 'min-h-12 px-4 py-2 text-sm';
+
+  const toggle = (key: 'symptoms' | 'pain_areas' | 'medical_history', val: string) => {
+    const arr = data[key] as string[];
+    onChange({ ...data, [key]: arr.includes(val) ? arr.filter((v) => v !== val) : [...arr, val] });
+  };
+
+  const canSave = data.name.trim() && data.agree_privacy === true;
+
+  return (
+    <div className="space-y-4">
+      {/* 상단 툴바 */}
+      <div className="rounded-lg border bg-white p-2 flex items-center gap-2 sticky top-0 z-10 shadow-sm">
+        <button
+          onClick={onCancel}
+          className="flex items-center gap-1 px-2 py-1 rounded text-xs border border-gray-200 hover:bg-gray-50"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" /> 취소
+        </button>
+        <span className={cn('flex-1 font-semibold text-teal-800', isSenior ? 'text-lg' : 'text-sm')}>
+          {isSenior ? '개인정보+체크리스트 (어르신용)' : '개인정보+체크리스트 (일반)'}
+        </span>
+        <Button
+          size={isSenior ? 'default' : 'sm'}
+          className={cn(
+            isSenior ? 'h-12 text-base px-6' : 'h-7 text-[11px] px-3',
+            'bg-teal-600 hover:bg-teal-700',
+          )}
+          onClick={onSave}
+          disabled={!canSave || saving}
+        >
+          <Save className={cn('mr-1', isSenior ? 'h-5 w-5' : 'h-3.5 w-3.5')} />
+          {saving ? '저장 중…' : '저장'}
+        </Button>
+      </div>
+
+      {/* 기본 정보 */}
+      <section className="rounded-lg border bg-white p-4 space-y-3">
+        <h3 className={cn('font-semibold text-teal-800', isSenior ? 'text-xl' : 'text-sm')}>기본 정보</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label className={fsLabel}>성명 *</Label>
+            <Input
+              value={data.name}
+              onChange={(e) => onChange({ ...data, name: e.target.value })}
+              className={inputH}
+              placeholder="홍길동"
+            />
+          </div>
+          <div>
+            <Label className={fsLabel}>연락처</Label>
+            <Input
+              value={data.phone}
+              onChange={(e) => onChange({ ...data, phone: formatPhoneInput(e.target.value) })}
+              className={inputH}
+              placeholder="010-0000-0000"
+            />
+          </div>
+          <div>
+            <Label className={fsLabel}>생년월일</Label>
+            <Input
+              type="date"
+              value={data.birth_date}
+              onChange={(e) => onChange({ ...data, birth_date: e.target.value })}
+              className={inputH}
+            />
+          </div>
+          <div>
+            <Label className={fsLabel}>주소</Label>
+            <Input
+              value={data.address}
+              onChange={(e) => onChange({ ...data, address: e.target.value })}
+              className={inputH}
+              placeholder="서울시 종로구…"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* 발 관련 증상 */}
+      <section className="rounded-lg border bg-white p-4 space-y-3">
+        <h3 className={cn('font-semibold text-teal-800', isSenior ? 'text-xl' : 'text-sm')}>
+          발 관련 증상 (해당 항목 모두 선택)
+        </h3>
+        <div className="flex flex-wrap gap-2">
+          {SYMPTOM_OPTIONS.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => toggle('symptoms', opt)}
+              className={cn(
+                'rounded-md border font-medium transition',
+                btnH,
+                data.symptoms.includes(opt)
+                  ? 'border-teal-600 bg-teal-50 text-teal-700'
+                  : 'border-input hover:bg-muted',
+              )}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+        {data.symptoms.includes('기타') && (
+          <Input
+            value={data.symptoms_other}
+            onChange={(e) => onChange({ ...data, symptoms_other: e.target.value })}
+            placeholder="기타 증상 직접 입력"
+            className={inputH}
+          />
+        )}
+      </section>
+
+      {/* 통증 부위 */}
+      <section className="rounded-lg border bg-white p-4 space-y-3">
+        <h3 className={cn('font-semibold text-teal-800', isSenior ? 'text-xl' : 'text-sm')}>통증 부위</h3>
+        <div className="flex flex-wrap gap-2">
+          {PAIN_AREA_OPTIONS.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => toggle('pain_areas', opt)}
+              className={cn(
+                'rounded-md border font-medium transition',
+                btnH,
+                data.pain_areas.includes(opt)
+                  ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+                  : 'border-input hover:bg-muted',
+              )}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* 과거병력 */}
+      <section className="rounded-lg border bg-white p-4 space-y-3">
+        <h3 className={cn('font-semibold text-teal-800', isSenior ? 'text-xl' : 'text-sm')}>과거병력</h3>
+        <div className="flex flex-wrap gap-2">
+          {MEDICAL_OPTIONS.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => toggle('medical_history', opt)}
+              className={cn(
+                'rounded-md border font-medium transition',
+                btnH,
+                data.medical_history.includes(opt)
+                  ? 'border-amber-600 bg-amber-50 text-amber-700'
+                  : 'border-input hover:bg-muted',
+              )}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+        {data.medical_history.includes('기타') && (
+          <Input
+            value={data.medical_history_other}
+            onChange={(e) => onChange({ ...data, medical_history_other: e.target.value })}
+            placeholder="기타 과거병력 직접 입력"
+            className={inputH}
+          />
+        )}
+      </section>
+
+      {/* 알레르기 */}
+      <section className="rounded-lg border bg-white p-4 space-y-3">
+        <h3 className={cn('font-semibold text-teal-800', isSenior ? 'text-xl' : 'text-sm')}>알레르기 여부</h3>
+        <div className="flex gap-3">
+          {[
+            { value: false as const, label: '없음', color: 'teal' as const },
+            { value: true as const,  label: '있음', color: 'rose' as const },
+          ].map(({ value, label, color }) => (
+            <button
+              key={String(value)}
+              type="button"
+              onClick={() => onChange({ ...data, has_allergy: value, allergy_detail: value ? data.allergy_detail : '' })}
+              className={cn(
+                'flex-1 rounded-md border-2 font-semibold transition',
+                btnH,
+                data.has_allergy === value
+                  ? color === 'teal'
+                    ? 'border-teal-600 bg-teal-600 text-white'
+                    : 'border-rose-500 bg-rose-500 text-white'
+                  : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {data.has_allergy && (
+          <Textarea
+            value={data.allergy_detail}
+            onChange={(e) => onChange({ ...data, allergy_detail: e.target.value })}
+            placeholder="알레르기 내역을 입력해주세요"
+            rows={isSenior ? 3 : 2}
+            className={cn(fs)}
+          />
+        )}
+      </section>
+
+      {/* 개인정보 동의 (필수) */}
+      <section className="rounded-lg border bg-muted/20 p-4 space-y-3">
+        <h3 className={cn('font-semibold text-teal-800', isSenior ? 'text-xl' : 'text-sm')}>
+          개인정보 수집·이용 동의 (필수)
+        </h3>
+        <div className="space-y-1 text-muted-foreground leading-relaxed" style={{ fontSize: isSenior ? '1rem' : '0.75rem' }}>
+          {PRIVACY_TEXT.map((line, i) => <p key={i}>{line}</p>)}
+        </div>
+        <div className="flex gap-3 pt-1">
+          {[
+            { value: true  as const, label: '동의합니다',       color: 'teal' as const },
+            { value: false as const, label: '동의하지 않습니다', color: 'rose' as const },
+          ].map(({ value, label, color }) => (
+            <button
+              key={String(value)}
+              type="button"
+              onClick={() => onChange({ ...data, agree_privacy: value })}
+              className={cn(
+                'flex-1 rounded-md border-2 font-semibold transition',
+                btnH,
+                data.agree_privacy === value
+                  ? color === 'teal'
+                    ? 'border-teal-600 bg-teal-600 text-white'
+                    : 'border-rose-500 bg-rose-500 text-white'
+                  : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {data.agree_privacy === false && (
+          <p className="text-rose-600 font-medium" style={{ fontSize: isSenior ? '1rem' : '0.7rem' }}>
+            ※ 개인정보 수집·이용에 동의하지 않으면 시술이 제한될 수 있습니다.
+          </p>
+        )}
+      </section>
+
+      {/* 마케팅 동의 (선택) */}
+      <section className="rounded-lg border bg-muted/10 p-4 space-y-3">
+        <h3 className={cn('font-semibold text-muted-foreground', isSenior ? 'text-xl' : 'text-sm')}>
+          마케팅 정보 수신 동의 (선택)
+        </h3>
+        <div className="space-y-1 text-muted-foreground leading-relaxed" style={{ fontSize: isSenior ? '1rem' : '0.75rem' }}>
+          {MARKETING_TEXT.map((line, i) => <p key={i}>{line}</p>)}
+        </div>
+        <label className="flex items-center gap-3 cursor-pointer pt-1">
+          <input
+            type="checkbox"
+            checked={data.agree_marketing}
+            onChange={(e) => onChange({ ...data, agree_marketing: e.target.checked })}
+            className={isSenior ? 'h-7 w-7 rounded border-gray-300' : 'h-5 w-5 rounded border-gray-300'}
+          />
+          <span className={cn(isSenior ? 'text-lg' : 'text-sm')}>마케팅 정보 수신에 동의합니다.</span>
+        </label>
+      </section>
+
+      {/* 저장 불가 안내 */}
+      {!canSave && (
+        <p className="text-center text-rose-600" style={{ fontSize: isSenior ? '1rem' : '0.75rem' }}>
+          {!data.name.trim() ? '성명을 입력해주세요.' : '개인정보 동의 여부를 선택해주세요 (필수).'}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── 메인 컴포넌트 ──────────────────────────────────────────────────────────
 export function PenChartTab({
   customerId,
   clinicId,
+  checkInId,
+  customerName,
+  customerPhone,
+  customerBirthDate,
 }: {
   customerId: string;
   clinicId: string;
+  /** 현재 내원 check_in_id — form_submissions.check_in_id 자동 연동 */
+  checkInId?: string;
+  /** 고객 기본 정보 (양식 자동 채움) */
+  customerName?: string;
+  customerPhone?: string;
+  customerBirthDate?: string;
 }) {
+  const { profile } = useAuth();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [savedCharts, setSavedCharts] = useState<SavedChart[]>([]);
-  const [template, setTemplate] = useState<Template | null>(null);
+  const [penChartTemplate, setPenChartTemplate] = useState<Template | null>(null);
+  const [checklistTemplates, setChecklistTemplates] = useState<Template[]>([]);
   const [templateImgUrl, setTemplateImgUrl] = useState<string | null>(null);
-  const [mode, setMode] = useState<'list' | 'draw'>('list');
+  const [mode, setMode] = useState<TabMode>('list');
+  const [selectedFillTemplate, setSelectedFillTemplate] = useState<Template | null>(null);
+  const [fillData, setFillData] = useState<PersonalChecklistData>(() => initialFillData());
+  const [fillSaving, setFillSaving] = useState(false);
+  // staff.id — issued_by FK (profile.id ≠ staff.id, user_id 경유 조회)
+  const [staffId, setStaffId] = useState<string | null>(null);
+
+  // Canvas/draw states
   const [penColor, setPenColor] = useState('#1a1a1a');
   const [penSize, setPenSize] = useState(2.5);
   const [isEraser, setIsEraser] = useState(false);
@@ -86,8 +461,8 @@ export function PenChartTab({
   const [hasDrawing, setHasDrawing] = useState(false);
   const [selectedChart, setSelectedChart] = useState<SavedChart | null>(null);
 
-  // ─── 상용구 상태 ───
-  const [boilerplateMode, setBoilerplateMode] = useState<BoilerplateMode>('idle');
+  // 상용구 상태
+  const [boilerplateMode, setBoilerplateMode] = useState<DrawMode>('idle');
   const [pendingBoilerplate, setPendingBoilerplate] = useState<string>('');
   const [showBoilerplatePanel, setShowBoilerplatePanel] = useState(false);
 
@@ -96,6 +471,19 @@ export function PenChartTab({
   const emptyRef = useRef(true);
 
   const storagePath = `customer/${customerId}/pen-chart`;
+
+  // ── staff.id 조회 ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!profile?.id || !clinicId) return;
+    supabase
+      .from('staff')
+      .select('id')
+      .eq('user_id', profile.id)
+      .eq('clinic_id', clinicId)
+      .eq('active', true)
+      .maybeSingle()
+      .then(({ data }) => setStaffId(data?.id ?? null));
+  }, [profile?.id, clinicId]);
 
   // ── 저장된 차트 목록 로드 ────────────────────────────────────────────
   const loadSavedCharts = useCallback(async () => {
@@ -124,38 +512,39 @@ export function PenChartTab({
   }, [storagePath]);
 
   // ── 템플릿 로드 ──────────────────────────────────────────────────────
-  const loadTemplate = useCallback(async () => {
+  const loadTemplates = useCallback(async () => {
     const { data } = await supabase
       .from('form_templates')
-      .select('id, name_ko, template_path, template_format')
+      .select('id, name_ko, template_path, template_format, form_key')
       .eq('clinic_id', clinicId)
-      .eq('form_key', 'pen_chart')
+      .in('form_key', ['pen_chart', 'personal_checklist_general', 'personal_checklist_senior'])
       .eq('active', true)
-      .maybeSingle();
+      .order('sort_order', { ascending: true });
 
-    // DB에 pen_chart 템플릿 없으면 내장 폴백 사용
-    const tpl = (data as Template | null) ?? BUILTIN_PEN_CHART_TEMPLATE;
-    setTemplate(tpl);
-
-    const path = tpl.template_path;
-    if (!path) return;
-
-    // '/'로 시작하면 public/ 정적 파일 (Vercel/개발서버 직접 서빙)
-    if (path.startsWith('/')) {
-      setTemplateImgUrl(path);
+    if (data) {
+      const penChart = (data as Template[]).find((t) => t.form_key === 'pen_chart');
+      const checklists = (data as Template[]).filter((t) => t.form_key.startsWith('personal_checklist_'));
+      setPenChartTemplate(penChart ?? BUILTIN_PEN_CHART_TEMPLATE);
+      setChecklistTemplates(checklists);
     } else {
-      // Supabase Storage 경로 → signed URL
-      const { data: urlData } = await supabase.storage
-        .from('photos')
-        .createSignedUrl(path, 3600);
+      setPenChartTemplate(BUILTIN_PEN_CHART_TEMPLATE);
+    }
+
+    // pen_chart 이미지 URL 로드
+    const penTpl = (data as Template[] | null)?.find((t) => t.form_key === 'pen_chart') ?? BUILTIN_PEN_CHART_TEMPLATE;
+    const path = penTpl.template_path;
+    if (path?.startsWith('/')) {
+      setTemplateImgUrl(path);
+    } else if (path) {
+      const { data: urlData } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
       if (urlData?.signedUrl) setTemplateImgUrl(urlData.signedUrl);
     }
   }, [clinicId]);
 
   useEffect(() => {
     loadSavedCharts();
-    loadTemplate();
-  }, [loadSavedCharts, loadTemplate]);
+    loadTemplates();
+  }, [loadSavedCharts, loadTemplates]);
 
   // ── 캔버스 초기화 ─────────────────────────────────────────────────────
   const initCanvas = useCallback(() => {
@@ -172,13 +561,10 @@ export function PenChartTab({
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-    // 템플릿 이미지 그리기 (PDF 양식 배경)
     if (templateImgUrl) {
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        ctx.drawImage(img, 0, 0, CANVAS_W, CANVAS_H);
-      };
+      img.onload = () => { ctx.drawImage(img, 0, 0, CANVAS_W, CANVAS_H); };
       img.src = templateImgUrl;
     }
     emptyRef.current = true;
@@ -190,7 +576,6 @@ export function PenChartTab({
 
   useEffect(() => {
     if (mode === 'draw') {
-      // 약간의 딜레이 후 캔버스 초기화 (DOM mount 대기)
       const t = setTimeout(initCanvas, 50);
       return () => clearTimeout(t);
     }
@@ -203,30 +588,22 @@ export function PenChartTab({
     const rect = canvas.getBoundingClientRect();
     const scaleX = CANVAS_W / rect.width;
     const scaleY = CANVAS_H / rect.height;
-    return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY,
-    };
+    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
   };
 
-  // 상용구 배치: 캔버스 클릭 시 해당 위치에 텍스트 삽입
   const placeBoilerplate = (x: number, y: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
     const lines = pendingBoilerplate.split('\n');
     ctx.save();
     ctx.font = `${penSize * 4 + 6}px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif`;
     ctx.fillStyle = penColor;
     ctx.textBaseline = 'top';
     const lineHeight = penSize * 4 + 12;
-    lines.forEach((line, i) => {
-      ctx.fillText(line, x, y + i * lineHeight);
-    });
+    lines.forEach((line, i) => { ctx.fillText(line, x, y + i * lineHeight); });
     ctx.restore();
-
     emptyRef.current = false;
     setHasDrawing(true);
     setBoilerplateMode('idle');
@@ -238,15 +615,8 @@ export function PenChartTab({
     e.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const pos = getPos(e);
-
-    // 상용구 배치 모드: 클릭 위치에 텍스트 삽입
-    if (boilerplateMode === 'placing' && pendingBoilerplate) {
-      placeBoilerplate(pos.x, pos.y);
-      return;
-    }
-
+    if (boilerplateMode === 'placing' && pendingBoilerplate) { placeBoilerplate(pos.x, pos.y); return; }
     canvas.setPointerCapture(e.pointerId);
     drawingRef.current = true;
     lastPosRef.current = pos;
@@ -265,7 +635,7 @@ export function PenChartTab({
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (boilerplateMode === 'placing') return; // 배치 모드에서는 그리기 무시
+    if (boilerplateMode === 'placing') return;
     if (!drawingRef.current) return;
     e.preventDefault();
     const canvas = canvasRef.current;
@@ -274,7 +644,6 @@ export function PenChartTab({
     if (!ctx) return;
     const pos = getPos(e);
     const last = lastPosRef.current ?? pos;
-
     if (isEraser) {
       ctx.clearRect(pos.x - penSize * 4, pos.y - penSize * 4, penSize * 8, penSize * 8);
     } else {
@@ -297,13 +666,11 @@ export function PenChartTab({
     drawingRef.current = false;
     lastPosRef.current = null;
     const canvas = canvasRef.current;
-    if (canvas && canvas.hasPointerCapture(e.pointerId)) {
-      canvas.releasePointerCapture(e.pointerId);
-    }
+    if (canvas && canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
   };
 
-  // ── 저장 ─────────────────────────────────────────────────────────────
-  const handleSave = async () => {
+  // ── 캔버스 저장 ──────────────────────────────────────────────────────
+  const handleDrawSave = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     setSaving(true);
@@ -313,10 +680,7 @@ export function PenChartTab({
       const blob = await res.blob();
       const fileName = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}.png`;
       const path = `${storagePath}/${fileName}`;
-      const { error } = await supabase.storage.from('photos').upload(path, blob, {
-        contentType: 'image/png',
-        upsert: false,
-      });
+      const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/png', upsert: false });
       if (error) { toast.error(`저장 실패: ${error.message}`); return; }
       toast.success('펜차트 저장 완료');
       await loadSavedCharts();
@@ -336,7 +700,7 @@ export function PenChartTab({
     await loadSavedCharts();
   };
 
-  // ── 상용구 선택 처리 ─────────────────────────────────────────────────
+  // ── 상용구 선택 ──────────────────────────────────────────────────────
   const handleBoilerplateSelect = (text: string) => {
     setPendingBoilerplate(text);
     setBoilerplateMode('placing');
@@ -345,293 +709,421 @@ export function PenChartTab({
     toast('캔버스를 클릭해 상용구를 삽입하세요', { duration: 2000 });
   };
 
-  // ── 렌더: 목록 뷰 ────────────────────────────────────────────────────
-  if (mode === 'list') {
+  // ── fill 모드 저장 ────────────────────────────────────────────────────
+  const handleFillSave = async () => {
+    if (!fillData.name.trim()) { toast.error('성명을 입력해주세요'); return; }
+    if (fillData.agree_privacy !== true) { toast.error('개인정보 수집·이용에 동의해주세요 (필수)'); return; }
+    if (!selectedFillTemplate) return;
+
+    setFillSaving(true);
+    try {
+      const payload: Record<string, unknown> = {
+        clinic_id: clinicId,
+        template_id: selectedFillTemplate.id,
+        customer_id: customerId,
+        field_data: fillData,
+        status: 'signed',
+        signed_at: new Date().toISOString(),
+      };
+      // check_in_id: 내원 상담 자동 연동 (AC-4)
+      if (checkInId) payload.check_in_id = checkInId;
+      // issued_by: staff.id (조회 성공 시)
+      if (staffId) payload.issued_by = staffId;
+
+      const { error } = await supabase.from('form_submissions').insert(payload);
+      if (error) {
+        toast.error(`저장 실패: ${error.message}`);
+        return;
+      }
+      toast.success('양식 저장 완료 — 상담내역에 연동됐습니다');
+      setMode('list');
+      setSelectedFillTemplate(null);
+      setFillData(initialFillData({ name: customerName, phone: customerPhone, birth_date: customerBirthDate }));
+    } finally {
+      setFillSaving(false);
+    }
+  };
+
+  // ── 양식 선택 ─────────────────────────────────────────────────────────
+  const handleSelectTemplate = (tpl: Template) => {
+    if (tpl.form_key === 'pen_chart') {
+      setMode('draw');
+    } else {
+      setSelectedFillTemplate(tpl);
+      setFillData(initialFillData({ name: customerName, phone: customerPhone, birth_date: customerBirthDate }));
+      setMode('fill');
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────
+  // 렌더: fill 모드 (개인정보/체크리스트 텍스트 입력)
+  // ─────────────────────────────────────────────────────────────────────
+  if (mode === 'fill' && selectedFillTemplate) {
+    const isSenior = selectedFillTemplate.form_key === 'personal_checklist_senior';
+    return (
+      <PersonalChecklistFillView
+        isSenior={isSenior}
+        data={fillData}
+        onChange={setFillData}
+        onSave={handleFillSave}
+        onCancel={() => { setMode('list'); setSelectedFillTemplate(null); }}
+        saving={fillSaving}
+      />
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // 렌더: select 모드 (양식 선택 패널)
+  // ─────────────────────────────────────────────────────────────────────
+  if (mode === 'select') {
     return (
       <div className="space-y-3">
-        <div className="rounded-lg border bg-white p-3 text-xs">
-          <div className="flex items-center justify-between mb-3">
-            <span className="flex items-center gap-1.5 font-bold text-purple-800">
-              <span className="h-2 w-2 rounded-full bg-purple-500" />
-              펜차트 — PDF 양식 위 직접 필기
-            </span>
-            <Button
-              size="sm"
-              className="h-7 text-[11px] px-3 bg-purple-600 hover:bg-purple-700"
-              onClick={() => setMode('draw')}
+        <div className="rounded-lg border bg-white p-3">
+          <div className="flex items-center gap-2 mb-3">
+            <button
+              onClick={() => setMode('list')}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
             >
-              <Plus className="h-3.5 w-3.5 mr-1" />
-              새 차트 작성
-            </Button>
+              <ChevronLeft className="h-3.5 w-3.5" /> 목록으로
+            </button>
+            <span className="text-sm font-bold text-purple-800">양식 선택</span>
           </div>
+          <div className="grid gap-3">
+            {/* 펜차트 (캔버스 필기) */}
+            <button
+              onClick={() => handleSelectTemplate(penChartTemplate ?? BUILTIN_PEN_CHART_TEMPLATE)}
+              className="flex items-center gap-3 rounded-lg border-2 border-purple-200 bg-purple-50 p-4 text-left hover:border-purple-400 hover:bg-purple-100 transition"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-200">
+                <FileText className="h-5 w-5 text-purple-700" />
+              </div>
+              <div>
+                <div className="font-semibold text-purple-800 text-sm">펜차트 양식</div>
+                <div className="text-xs text-purple-600 mt-0.5">PDF 양식 위에 태블릿/마우스로 직접 필기</div>
+              </div>
+            </button>
 
-          {template && (
-            <div className="mb-2 rounded bg-purple-50 border border-purple-100 px-2 py-1 text-[11px] text-purple-700">
-              템플릿: {template.name_ko}
-            </div>
-          )}
-          {!template && (
-            <div className="mb-2 rounded bg-gray-50 border border-dashed px-2 py-1 text-[11px] text-muted-foreground">
-              템플릿 없음 — 빈 캔버스(A4)로 작성합니다
-            </div>
-          )}
-
-          {savedCharts.length === 0 ? (
-            <div className="py-6 text-center text-muted-foreground border border-dashed rounded">
-              저장된 펜차트 없음
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
-              {savedCharts.map((chart) => (
-                <div
-                  key={chart.name}
+            {/* 개인정보+체크리스트 2종 (DB) or 기본 2종 (폴백) */}
+            {(checklistTemplates.length > 0 ? checklistTemplates : [
+              { id: 'fallback-general', name_ko: '개인정보+체크리스트 (일반)', template_path: '', template_format: 'html', form_key: 'personal_checklist_general' },
+              { id: 'fallback-senior',  name_ko: '개인정보+체크리스트 (어르신)', template_path: '', template_format: 'html', form_key: 'personal_checklist_senior' },
+            ] as Template[]).map((tpl) => {
+              const isSenior = tpl.form_key === 'personal_checklist_senior';
+              return (
+                <button
+                  key={tpl.id}
+                  onClick={() => handleSelectTemplate(tpl)}
                   className={cn(
-                    'relative rounded border cursor-pointer overflow-hidden',
-                    selectedChart?.name === chart.name
-                      ? 'border-purple-400 ring-1 ring-purple-300'
-                      : 'border-gray-200 hover:border-purple-300',
+                    'flex items-center gap-3 rounded-lg border-2 p-4 text-left transition',
+                    isSenior
+                      ? 'border-emerald-200 bg-emerald-50 hover:border-emerald-400 hover:bg-emerald-100'
+                      : 'border-teal-200 bg-teal-50 hover:border-teal-400 hover:bg-teal-100',
                   )}
-                  onClick={() => setSelectedChart(chart.name === selectedChart?.name ? null : chart)}
                 >
-                  <img
-                    src={chart.url}
-                    alt={chart.name}
-                    className="w-full object-cover"
-                    style={{ maxHeight: 200 }}
-                  />
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/40 text-white text-[10px] px-1.5 py-1 flex items-center justify-between">
-                    <span>
-                      {chart.uploadedAt
-                        ? format(new Date(chart.uploadedAt), 'MM-dd HH:mm')
-                        : chart.name}
-                    </span>
-                    <div className="flex gap-1">
-                      <a
-                        href={chart.url}
-                        download={chart.name}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-white/80 hover:text-white"
-                      >
-                        <Download className="h-3 w-3" />
-                      </a>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDelete(chart); }}
-                        className="text-red-300 hover:text-red-100"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
+                  <div className={cn(
+                    'flex h-10 w-10 items-center justify-center rounded-full',
+                    isSenior ? 'bg-emerald-200' : 'bg-teal-200',
+                  )}>
+                    <ClipboardList className={cn('h-5 w-5', isSenior ? 'text-emerald-700' : 'text-teal-700')} />
+                  </div>
+                  <div>
+                    <div className={cn('font-semibold text-sm', isSenior ? 'text-emerald-800' : 'text-teal-800')}>
+                      {tpl.name_ko}
+                    </div>
+                    <div className={cn('text-xs mt-0.5', isSenior ? 'text-emerald-600' : 'text-teal-600')}>
+                      {isSenior
+                        ? '큰 글씨 + 넓은 입력 필드 — 어르신 직접 기입용'
+                        : '개인정보·체크리스트 — 고객 직접 기입 후 자동 저장'}
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* 선택된 차트 확대 뷰 */}
-        {selectedChart && (
-          <div className="rounded-lg border bg-white p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-muted-foreground">
-                {selectedChart.uploadedAt
-                  ? format(new Date(selectedChart.uploadedAt), 'yyyy-MM-dd HH:mm')
-                  : selectedChart.name}
-              </span>
-              <button
-                onClick={() => setSelectedChart(null)}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                닫기
-              </button>
-            </div>
-            <img src={selectedChart.url} alt="펜차트" className="w-full rounded border" />
+                  {isSenior && (
+                    <span className="ml-auto rounded-full bg-emerald-200 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                      어르신용
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-        )}
+        </div>
       </div>
     );
   }
 
-  // ── 렌더: 그리기 모드 ────────────────────────────────────────────────
-  return (
-    <div className="space-y-2">
-      {/* 툴바 */}
-      <div className="rounded-lg border bg-white p-2 flex items-center gap-2 flex-wrap sticky top-0 z-10 shadow-sm">
-        {/* 펜/지우개 */}
-        <button
-          onClick={() => { setIsEraser(false); setBoilerplateMode('idle'); }}
-          className={cn(
-            'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
-            !isEraser && boilerplateMode === 'idle'
-              ? 'bg-purple-100 border-purple-400 text-purple-700'
-              : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
-          )}
-        >
-          <Pencil className="h-3.5 w-3.5" /> 펜
-        </button>
-        <button
-          onClick={() => { setIsEraser(true); setBoilerplateMode('idle'); }}
-          className={cn(
-            'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
-            isEraser ? 'bg-orange-100 border-orange-400 text-orange-700' : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
-          )}
-        >
-          <Eraser className="h-3.5 w-3.5" /> 지우개
-        </button>
-
-        {/* 상용구 버튼 */}
-        <div className="relative">
+  // ─────────────────────────────────────────────────────────────────────
+  // 렌더: draw 모드 (캔버스 필기)
+  // ─────────────────────────────────────────────────────────────────────
+  if (mode === 'draw') {
+    return (
+      <div className="space-y-2">
+        {/* 툴바 */}
+        <div className="rounded-lg border bg-white p-2 flex items-center gap-2 flex-wrap sticky top-0 z-10 shadow-sm">
+          {/* 펜/지우개 */}
           <button
-            onClick={() => {
-              setShowBoilerplatePanel(!showBoilerplatePanel);
-              setBoilerplateMode('selecting');
-              setIsEraser(false);
-            }}
+            onClick={() => { setIsEraser(false); setBoilerplateMode('idle'); }}
             className={cn(
               'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
-              boilerplateMode !== 'idle'
-                ? 'bg-teal-100 border-teal-400 text-teal-700'
+              !isEraser && boilerplateMode === 'idle'
+                ? 'bg-purple-100 border-purple-400 text-purple-700'
                 : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
             )}
           >
-            <Type className="h-3.5 w-3.5" /> 상용구
-            {boilerplateMode === 'placing' && (
-              <span className="ml-0.5 text-teal-600 animate-pulse">●</span>
+            <Pencil className="h-3.5 w-3.5" /> 펜
+          </button>
+          <button
+            onClick={() => { setIsEraser(true); setBoilerplateMode('idle'); }}
+            className={cn(
+              'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
+              isEraser ? 'bg-orange-100 border-orange-400 text-orange-700' : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
             )}
+          >
+            <Eraser className="h-3.5 w-3.5" /> 지우개
           </button>
 
-          {/* 상용구 패널 */}
-          {showBoilerplatePanel && (
-            <div className="absolute top-8 left-0 z-20 w-52 rounded-lg border bg-white shadow-lg overflow-hidden">
-              <div className="flex items-center justify-between px-2 py-1.5 bg-teal-50 border-b">
-                <span className="text-[11px] font-bold text-teal-800">상용구 선택</span>
-                <button
-                  onClick={() => { setShowBoilerplatePanel(false); setBoilerplateMode('idle'); }}
-                  className="text-teal-500 hover:text-teal-700"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <div className="max-h-56 overflow-y-auto">
-                {BOILERPLATE_ITEMS.map((item) => (
+          {/* 상용구 버튼 */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowBoilerplatePanel(!showBoilerplatePanel);
+                setBoilerplateMode('selecting');
+                setIsEraser(false);
+              }}
+              className={cn(
+                'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
+                boilerplateMode !== 'idle'
+                  ? 'bg-teal-100 border-teal-400 text-teal-700'
+                  : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
+              )}
+            >
+              <Type className="h-3.5 w-3.5" /> 상용구
+              {boilerplateMode === 'placing' && <span className="ml-0.5 text-teal-600 animate-pulse">●</span>}
+            </button>
+
+            {showBoilerplatePanel && (
+              <div className="absolute top-8 left-0 z-20 w-52 rounded-lg border bg-white shadow-lg overflow-hidden">
+                <div className="flex items-center justify-between px-2 py-1.5 bg-teal-50 border-b">
+                  <span className="text-[11px] font-bold text-teal-800">상용구 선택</span>
                   <button
-                    key={item.id}
-                    onClick={() => handleBoilerplateSelect(item.text)}
-                    className="w-full text-left px-3 py-2 text-[11px] hover:bg-teal-50 border-b border-gray-100 last:border-0 transition"
+                    onClick={() => { setShowBoilerplatePanel(false); setBoilerplateMode('idle'); }}
+                    className="text-teal-500 hover:text-teal-700"
                   >
-                    <div className="font-medium text-gray-800">{item.label}</div>
-                    <div className="text-gray-400 mt-0.5 text-[10px] truncate">{item.text.split('\n')[0]}</div>
+                    <X className="h-3.5 w-3.5" />
                   </button>
-                ))}
+                </div>
+                <div className="max-h-56 overflow-y-auto">
+                  {BOILERPLATE_ITEMS.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => handleBoilerplateSelect(item.text)}
+                      className="w-full text-left px-3 py-2 text-[11px] hover:bg-teal-50 border-b border-gray-100 last:border-0 transition"
+                    >
+                      <div className="font-medium text-gray-800">{item.label}</div>
+                      <div className="text-gray-400 mt-0.5 text-[10px] truncate">{item.text.split('\n')[0]}</div>
+                    </button>
+                  ))}
+                </div>
               </div>
+            )}
+          </div>
+
+          {boilerplateMode === 'placing' && (
+            <div className="flex items-center gap-1 px-2 py-1 rounded bg-teal-50 border border-teal-300 text-[11px] text-teal-700">
+              <span className="animate-pulse">●</span>
+              캔버스 클릭해 삽입
+              <button
+                onClick={() => { setBoilerplateMode('idle'); setPendingBoilerplate(''); }}
+                className="ml-1 text-teal-400 hover:text-teal-700"
+              >
+                <X className="h-3 w-3" />
+              </button>
             </div>
           )}
-        </div>
 
-        {/* 상용구 배치 모드 안내 */}
-        {boilerplateMode === 'placing' && (
-          <div className="flex items-center gap-1 px-2 py-1 rounded bg-teal-50 border border-teal-300 text-[11px] text-teal-700">
-            <span className="animate-pulse">●</span>
-            캔버스 클릭해 삽입
-            <button
-              onClick={() => { setBoilerplateMode('idle'); setPendingBoilerplate(''); }}
-              className="ml-1 text-teal-400 hover:text-teal-700"
-            >
-              <X className="h-3 w-3" />
-            </button>
+          {/* 색상 */}
+          <div className="flex items-center gap-1">
+            {PEN_COLORS.map((c) => (
+              <button
+                key={c.value}
+                onClick={() => { setPenColor(c.value); setIsEraser(false); setBoilerplateMode('idle'); }}
+                className={cn(
+                  'h-5 w-5 rounded-full border-2 transition',
+                  penColor === c.value && !isEraser ? 'border-gray-600 scale-110' : 'border-transparent',
+                )}
+                style={{ backgroundColor: c.value }}
+                title={c.label}
+              />
+            ))}
           </div>
-        )}
 
-        {/* 색상 */}
-        <div className="flex items-center gap-1">
-          {PEN_COLORS.map((c) => (
-            <button
-              key={c.value}
-              onClick={() => { setPenColor(c.value); setIsEraser(false); setBoilerplateMode('idle'); }}
-              className={cn(
-                'h-5 w-5 rounded-full border-2 transition',
-                penColor === c.value && !isEraser ? 'border-gray-600 scale-110' : 'border-transparent',
-              )}
-              style={{ backgroundColor: c.value }}
-              title={c.label}
+          {/* 굵기 */}
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span>굵기</span>
+            <input
+              type="range" min={1} max={8} step={0.5} value={penSize}
+              onChange={(e) => setPenSize(parseFloat(e.target.value))}
+              className="w-16"
             />
-          ))}
+            <span className="tabular-nums w-4">{penSize}</span>
+          </div>
+
+          <div className="ml-auto flex gap-1.5">
+            <button
+              onClick={initCanvas}
+              className="flex items-center gap-1 px-2 py-1 rounded text-xs border border-gray-200 hover:bg-gray-50"
+              title="전체 초기화"
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> 초기화
+            </button>
+            <Button
+              size="sm" variant="outline" className="h-7 text-[11px] px-2"
+              onClick={() => {
+                if (hasDrawing && !window.confirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) return;
+                setMode('list');
+              }}
+            >
+              취소
+            </Button>
+            <Button
+              size="sm"
+              className="h-7 text-[11px] px-3 bg-purple-600 hover:bg-purple-700"
+              onClick={handleDrawSave}
+              disabled={saving}
+            >
+              <Save className="h-3.5 w-3.5 mr-1" />
+              {saving ? '저장 중…' : '저장'}
+            </Button>
+          </div>
         </div>
 
-        {/* 굵기 */}
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <span>굵기</span>
-          <input
-            type="range"
-            min={1}
-            max={8}
-            step={0.5}
-            value={penSize}
-            onChange={(e) => setPenSize(parseFloat(e.target.value))}
-            className="w-16"
-          />
-          <span className="tabular-nums w-4">{penSize}</span>
-        </div>
-
-        <div className="ml-auto flex gap-1.5">
-          <button
-            onClick={initCanvas}
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs border border-gray-200 hover:bg-gray-50"
-            title="전체 초기화"
-          >
-            <RotateCcw className="h-3.5 w-3.5" /> 초기화
-          </button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-[11px] px-2"
-            onClick={() => {
-              if (hasDrawing && !window.confirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) return;
-              setMode('list');
+        {/* 캔버스 */}
+        <div className="rounded-lg border bg-white p-2 overflow-x-auto">
+          <div className="text-[10px] text-muted-foreground mb-1">
+            {penChartTemplate ? `템플릿: ${penChartTemplate.name_ko}` : '빈 캔버스 (A4)'}
+            {' — 태블릿/마우스로 직접 필기'}
+            {boilerplateMode === 'placing' && (
+              <span className="ml-2 text-teal-600 font-medium">클릭하여 상용구 삽입</span>
+            )}
+          </div>
+          <canvas
+            ref={canvasRef}
+            style={{
+              touchAction: 'none',
+              cursor: boilerplateMode === 'placing' ? 'text' : isEraser ? 'cell' : 'crosshair',
+              border: '1px solid #e2e8f0',
+              display: 'block',
+              maxWidth: '100%',
             }}
-          >
-            취소
-          </Button>
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerLeave={onPointerUp}
+            onPointerCancel={onPointerUp}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // 렌더: list 모드 (저장된 차트 목록)
+  // ─────────────────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border bg-white p-3 text-xs">
+        <div className="flex items-center justify-between mb-3">
+          <span className="flex items-center gap-1.5 font-bold text-purple-800">
+            <span className="h-2 w-2 rounded-full bg-purple-500" />
+            펜차트 — 양식 작성
+          </span>
           <Button
             size="sm"
             className="h-7 text-[11px] px-3 bg-purple-600 hover:bg-purple-700"
-            onClick={handleSave}
-            disabled={saving}
+            onClick={() => setMode('select')}
           >
-            <Save className="h-3.5 w-3.5 mr-1" />
-            {saving ? '저장 중…' : '저장'}
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            새 차트 작성
           </Button>
         </div>
+
+        {/* 양식 종류 뱃지 */}
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          <span className="rounded bg-purple-50 border border-purple-100 px-2 py-0.5 text-[11px] text-purple-700">
+            📝 펜차트 (필기)
+          </span>
+          <span className="rounded bg-teal-50 border border-teal-100 px-2 py-0.5 text-[11px] text-teal-700">
+            ✅ 개인정보+체크리스트 (일반)
+          </span>
+          <span className="rounded bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[11px] text-emerald-700">
+            ✅ 개인정보+체크리스트 (어르신)
+          </span>
+        </div>
+
+        {savedCharts.length === 0 ? (
+          <div className="py-6 text-center text-muted-foreground border border-dashed rounded">
+            저장된 펜차트 없음
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {savedCharts.map((chart) => (
+              <div
+                key={chart.name}
+                className={cn(
+                  'relative rounded border cursor-pointer overflow-hidden',
+                  selectedChart?.name === chart.name
+                    ? 'border-purple-400 ring-1 ring-purple-300'
+                    : 'border-gray-200 hover:border-purple-300',
+                )}
+                onClick={() => setSelectedChart(chart.name === selectedChart?.name ? null : chart)}
+              >
+                <img
+                  src={chart.url}
+                  alt={chart.name}
+                  className="w-full object-cover"
+                  style={{ maxHeight: 200 }}
+                />
+                <div className="absolute bottom-0 left-0 right-0 bg-black/40 text-white text-[10px] px-1.5 py-1 flex items-center justify-between">
+                  <span>
+                    {chart.uploadedAt ? format(new Date(chart.uploadedAt), 'MM-dd HH:mm') : chart.name}
+                  </span>
+                  <div className="flex gap-1">
+                    <a
+                      href={chart.url}
+                      download={chart.name}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-white/80 hover:text-white"
+                    >
+                      <Download className="h-3 w-3" />
+                    </a>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDelete(chart); }}
+                      className="text-red-300 hover:text-red-100"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* 캔버스 */}
-      <div className="rounded-lg border bg-white p-2 overflow-x-auto">
-        <div className="text-[10px] text-muted-foreground mb-1">
-          {template ? `템플릿: ${template.name_ko}` : '빈 캔버스 (A4)'}
-          {' — 태블릿/마우스로 직접 필기'}
-          {boilerplateMode === 'placing' && (
-            <span className="ml-2 text-teal-600 font-medium">클릭하여 상용구 삽입</span>
-          )}
+      {/* 선택된 차트 확대 뷰 */}
+      {selectedChart && (
+        <div className="rounded-lg border bg-white p-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-muted-foreground">
+              {selectedChart.uploadedAt
+                ? format(new Date(selectedChart.uploadedAt), 'yyyy-MM-dd HH:mm')
+                : selectedChart.name}
+            </span>
+            <button onClick={() => setSelectedChart(null)} className="text-xs text-muted-foreground hover:text-foreground">
+              닫기
+            </button>
+          </div>
+          <img src={selectedChart.url} alt="펜차트" className="w-full rounded border" />
         </div>
-        <canvas
-          ref={canvasRef}
-          style={{
-            touchAction: 'none',
-            cursor: boilerplateMode === 'placing'
-              ? 'text'
-              : isEraser
-              ? 'cell'
-              : 'crosshair',
-            border: '1px solid #e2e8f0',
-            display: 'block',
-            maxWidth: '100%',
-          }}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerLeave={onPointerUp}
-          onPointerCancel={onPointerUp}
-        />
-      </div>
+      )}
     </div>
   );
 }

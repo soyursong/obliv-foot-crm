@@ -3404,11 +3404,17 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </div>
           )}
 
-              {/* Clinical: 펜차트 — T-20260513-foot-C21-TAB-RESTRUCTURE-C (AC-4) */}
+              {/* Clinical: 펜차트 — T-20260513-foot-C21-TAB-RESTRUCTURE-C (AC-4)
+                  T-20260519-foot-PENCHART-FORM-ADD: checkInId + 고객 기본정보 전달
+                    → form_submissions.check_in_id 자동 연동 (AC-4) */}
               {chartTabGroup === 'clinical' && chartTab === 'pen_chart' && (
                 <PenChartTab
                   customerId={customer.id}
                   clinicId={customer.clinic_id}
+                  checkInId={latestCheckIn?.id}
+                  customerName={customer.name}
+                  customerPhone={customer.phone ?? undefined}
+                  customerBirthDate={customer.birth_date ?? undefined}
                 />
               )}
 
