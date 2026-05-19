@@ -1151,7 +1151,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       }}
     >
       {/* BILLING-3ZONE: max-w-[1080px] — 3구역(좌메뉴+코드 / 중산정 / 우서류+패키지) */}
-      <DialogContent className="max-w-[1080px] max-h-[92vh] p-0 overflow-hidden flex flex-col">
+      <DialogContent className="sm:max-w-[1080px] max-w-full w-full max-h-[92vh] p-0 overflow-hidden flex flex-col">
         {/* 헤더 */}
         <DialogHeader className="px-5 pt-4 pb-3 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2 text-base font-semibold">
@@ -1170,11 +1170,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           </DialogTitle>
         </DialogHeader>
 
-        {/* 본문 3구역: Zone1(좌메뉴+코드) / Zone2(중산정) / Zone3(우서류+패키지) */}
-        <div className="flex min-h-0" style={{ height: '520px' }}>
+        {/* 본문 3구역: Zone1(좌메뉴+코드) / Zone2(중산정) / Zone3(우서류+패키지)
+            모바일(<sm): flex-col 세로 스택 + overflow-y-auto
+            태블릿/PC(≥sm): 기존 3열 가로 레이아웃 */}
+        <div className="flex flex-col sm:flex-row flex-1 min-h-0 overflow-y-auto sm:overflow-hidden sm:flex-none sm:h-[520px]">
 
-          {/* ── 좌측: 카테고리 탭 ── */}
-          <div className="w-28 shrink-0 border-r bg-muted/30 flex flex-col py-2">
+          {/* ── 좌측: 카테고리 탭 (모바일: 가로 상단 탭바 / 데스크탑: 세로 사이드) ── */}
+          <div className="shrink-0 border-b sm:border-b-0 sm:border-r bg-muted/30 flex flex-row sm:flex-col py-0 sm:py-2 sm:w-20 md:w-24 lg:w-28">
             {TAB_LABELS.map((tab) => (
               <button
                 key={tab}
@@ -1182,7 +1184,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   setActiveTab(tab);
                 }}
                 className={cn(
-                  'w-full px-3 py-3 text-sm font-medium text-left transition border-l-2',
+                  'flex-1 sm:flex-none sm:w-full px-2 sm:px-3 py-2 sm:py-3 text-sm font-medium text-center sm:text-left transition border-b-2 sm:border-b-0 sm:border-l-2 min-h-[44px]',
                   activeTab === tab
                     ? 'bg-teal-50 text-teal-700 border-teal-600'
                     : 'text-muted-foreground border-transparent hover:bg-muted',
@@ -1193,8 +1195,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             ))}
           </div>
 
-          {/* ── 중앙: 코드 목록 / 그리드 ── */}
-          <div className="flex-1 flex flex-col min-h-0 min-w-0">
+          {/* ── 중앙: 코드 목록 / 그리드 (모바일: 고정 높이 52 / 데스크탑: flex-1) ── */}
+          <div className="flex flex-col min-w-0 min-h-0 h-52 sm:h-auto sm:flex-1">
             {/* 풋케어 탭: 서브 카테고리 버튼 */}
             {activeTab === '풋케어' && (
               <div className="flex gap-1 px-2 py-1.5 border-b shrink-0 flex-wrap">
@@ -1205,7 +1207,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                       setFootcareCat(cat);
                     }}
                     className={cn(
-                      'px-2 py-1 text-xs rounded border transition-colors',
+                      'px-2 py-1 text-xs rounded border transition-colors min-h-[44px] sm:min-h-0',
                       footcareCat === cat
                         ? 'bg-teal-600 text-white border-teal-600'
                         : 'border-input hover:bg-muted',
@@ -1225,7 +1227,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     등록된 코드가 없습니다
                   </p>
                 ) : (
-                  <div className="grid grid-cols-4 gap-1.5">
+                  <div className="grid grid-cols-3 lg:grid-cols-4 gap-1.5">
                     {tabServices.map((svc) => (
                       <button
                         key={svc.id}
@@ -1262,7 +1264,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     <button
                       key={svc.id}
                       onClick={() => handleSelectService(svc)}
-                      className="w-full text-left rounded-md border px-3 py-2.5 hover:bg-blue-50 hover:border-blue-300 transition-colors"
+                      className="w-full text-left rounded-md border px-3 py-2.5 hover:bg-blue-50 hover:border-blue-300 transition-colors min-h-[44px]"
                     >
                       <p className="text-sm font-medium leading-tight">{svc.name}</p>
                       {svc.service_code && (
@@ -1282,7 +1284,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                AC-1: 탭 조건 제거 — 상병코드·풋케어 모두 동일 세로 영역에 공존
                AC-2: 코드항목(상단) + 수가항목(하단) 통합 표시
           ─────────────────────────────────────────────────────────────────── */}
-          <div className="w-60 shrink-0 border-l flex flex-col min-h-0">
+          <div className="sm:w-52 md:w-56 lg:w-60 shrink-0 border-t sm:border-t-0 sm:border-l flex flex-col sm:min-h-0">
 
             {/* Zone 2 헤더 */}
             <div className="px-3 pt-2 pb-1.5 shrink-0 border-b bg-muted/20">
@@ -1328,7 +1330,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             {/* Zone 2 수가 항목 (풋케어) — 항상 표시 */}
             <>
               {/* 선택 항목 — compact 1줄 */}
-              <div className="flex-1 overflow-y-auto p-2 min-h-0 space-y-1">
+              <div className="overflow-y-auto p-2 min-h-0 space-y-1 max-h-48 sm:max-h-none sm:flex-1">
                   <p className="text-xs font-semibold text-muted-foreground mb-1.5 px-1">
                     수가 항목 ({pricingItems.length}건)
                   </p>
@@ -1463,7 +1465,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   {/* [시술 저장 및 포함 금액 산정] */}
                   <Button
                     variant="outline"
-                    className="w-full text-xs h-9"
+                    className="w-full text-xs h-11 sm:h-9"
                     onClick={handleSaveFull}
                     disabled={pricingItems.length === 0}
                   >
@@ -1484,7 +1486,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   <Button
                     variant="outline"
                     className={cn(
-                      'w-full text-xs h-9',
+                      'w-full text-xs h-11 sm:h-9',
                       hasActivePackage
                         ? 'border-purple-300 text-purple-700 hover:bg-purple-50'
                         : 'opacity-50',
@@ -1527,7 +1529,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                           key={m.value}
                           onClick={() => setPayMethod(m.value)}
                           className={cn(
-                            'flex-1 h-8 rounded text-xs font-medium border transition-colors',
+                            'flex-1 h-11 sm:h-8 rounded text-xs font-medium border transition-colors',
                             payMethod === m.value
                               ? 'bg-purple-600 text-white border-purple-600'
                               : 'border-input hover:bg-muted',
@@ -1585,7 +1587,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   {/* 수납 버튼 (저장 후 표시) */}
                   {saved && (
                     <Button
-                      className="w-full h-10 text-white text-sm font-semibold bg-purple-600 hover:bg-purple-700"
+                      className="w-full h-11 sm:h-10 text-white text-sm font-semibold bg-purple-600 hover:bg-purple-700"
                       onClick={handleSettle}
                       disabled={submitting}
                       data-testid="btn-settle"
@@ -1609,7 +1611,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                BILLING-3ZONE Zone 3: 구매패키지 + 금일 시술내역 + 서류발행
                AC-3: 서류발행 우측 이동 / AC-4: 패키지 읽기 / AC-5: 시술이력 읽기
           ─────────────────────────────────────────────────────────────────── */}
-          <div className="w-64 shrink-0 border-l flex flex-col min-h-0 bg-slate-50/50">
+          <div className="sm:w-52 md:w-56 lg:w-64 shrink-0 border-t sm:border-t-0 sm:border-l flex flex-col sm:min-h-0 bg-slate-50/50">
 
             {/* Zone 3 — AC-4: 구매패키지 (읽기 전용) */}
             <div className="border-b shrink-0">
@@ -1699,7 +1701,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             </div>
 
             {/* Zone 3 — AC-3: 서류발행 */}
-            <div className="flex-1 overflow-y-auto px-2 pt-1.5 pb-1 min-h-0">
+            <div className="overflow-y-auto px-2 pt-1.5 pb-1 min-h-0 max-h-40 sm:max-h-none sm:flex-1">
               <p className="text-[10px] font-semibold text-slate-600 mb-1 flex items-center gap-1">
                 <FileText className="h-3 w-3" />
                 <span>서류발행</span>
@@ -1716,7 +1718,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                       key={tpl.form_key}
                       onClick={() => toggleDocKey(tpl.form_key)}
                       className={cn(
-                        'flex items-center gap-1.5 rounded border px-2 py-1 text-xs font-medium transition-all text-left w-full',
+                        'flex items-center gap-1.5 rounded border px-2 py-2.5 sm:py-1 text-xs font-medium transition-all text-left w-full min-h-[44px] sm:min-h-0',
                         isSelected
                           ? 'bg-teal-600 text-white border-teal-600'
                           : 'bg-white text-muted-foreground border-gray-200 hover:border-teal-300 hover:text-teal-700',
@@ -1794,7 +1796,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full gap-1.5 text-xs border-teal-300 text-teal-700 hover:bg-teal-50"
+                className="w-full gap-1.5 text-xs border-teal-300 text-teal-700 hover:bg-teal-50 h-11 sm:h-9"
                 onClick={handleDocPrint}
                 disabled={docPrinting || selectedDocKeys.size === 0}
                 data-testid="btn-doc-print"
@@ -1805,7 +1807,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
               <Button
                 size="sm"
-                className="w-full gap-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white"
+                className="w-full gap-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white h-11 sm:h-9"
                 onClick={handleDocAndSettle}
                 disabled={docSettlePrinting || selectedDocKeys.size === 0 || !saved}
                 data-testid="btn-doc-settle"
