@@ -2001,6 +2001,14 @@ export default function Dashboard() {
   });
   const [isLayoutEdit, setIsLayoutEdit] = useState(false);
 
+  // T-20260519-foot-SLOT-BATCH-EDIT: 상담 슬롯 배치편집 상태
+  const [slotBatchEditMode, setSlotBatchEditMode] = useState(false);
+  const [addConsultSlotOpen, setAddConsultSlotOpen] = useState(false);
+  const [addConsultSlotName, setAddConsultSlotName] = useState('');
+  const [addConsultSlotLoading, setAddConsultSlotLoading] = useState(false);
+  const [defaultConsultRoomIds, setDefaultConsultRoomIds] = useState<Set<string>>(new Set());
+  const defaultConsultRoomsInitialized = useRef(false);
+
   const handleZoom = useCallback((delta: number) => {
     setZoomLevel((prev) => {
       const next = Math.min(150, Math.max(50, prev + delta));
@@ -2241,6 +2249,13 @@ export default function Dashboard() {
       .eq('active', true)
       .order('sort_order', { ascending: true });
     setRooms((data ?? []) as Room[]);
+    // T-20260519-foot-SLOT-BATCH-EDIT: 최초 로드 시 기본 상담실 ID 캡처 (기본 vs 커스텀 구분)
+    if (!defaultConsultRoomsInitialized.current) {
+      setDefaultConsultRoomIds(
+        new Set(((data ?? []) as Room[]).filter((r) => r.room_type === 'consultation').map((r) => r.id)),
+      );
+      defaultConsultRoomsInitialized.current = true;
+    }
   }, [clinic]);
 
   const fetchAssignments = useCallback(async () => {
@@ -3287,6 +3302,54 @@ export default function Dashboard() {
     toast.success(`${consultRoom} 입실`);
   };
 
+  // T-20260519-foot-SLOT-BATCH-EDIT: 커스텀 상담 슬롯 추가 (rooms 테이블 INSERT)
+  const handleAddConsultSlot = async (name: string) => {
+    if (!clinic || !name.trim()) return;
+    setAddConsultSlotLoading(true);
+    try {
+      const { error } = await supabase.from('rooms').insert({
+        clinic_id: clinic.id,
+        name: name.trim(),
+        room_type: 'consultation',
+        active: true,
+        sort_order: 999,
+        max_occupancy: 3,
+      });
+      if (error) {
+        toast.error(`슬롯 추가 실패: ${error.message}`);
+        return;
+      }
+      await fetchRooms();
+      setAddConsultSlotName('');
+      setAddConsultSlotOpen(false);
+      toast.success(`"${name.trim()}" 슬롯 추가 완료`);
+    } finally {
+      setAddConsultSlotLoading(false);
+    }
+  };
+
+  // T-20260519-foot-SLOT-BATCH-EDIT: 커스텀 상담 슬롯 삭제 (rooms 테이블 DELETE)
+  const handleDeleteConsultSlot = async (roomId: string, roomName: string) => {
+    const occupants = rows.filter(
+      (ci) => ci.consultation_room === roomName && ci.status === 'consultation',
+    );
+    if (occupants.length > 0) {
+      if (
+        !window.confirm(
+          `"${roomName}" 슬롯에 환자(${occupants.length}명)가 있습니다.\n삭제 시 해당 환자는 다른 슬롯으로 이동해주세요.\n삭제하시겠습니까?`,
+        )
+      )
+        return;
+    }
+    const { error } = await supabase.from('rooms').delete().eq('id', roomId);
+    if (error) {
+      toast.error(`슬롯 삭제 실패: ${error.message}`);
+      return;
+    }
+    await fetchRooms();
+    toast.success(`"${roomName}" 슬롯 삭제 완료`);
+  };
+
   /** 치료실 번호 선택 후 status='preconditioning' + treatment_room 동시 업데이트
    *  — T-20260511-foot-DASH-STAGE-ALL-SLOTS
    */
@@ -3753,47 +3816,96 @@ export default function Dashboard() {
           </div>
         );
       case 'consult_rooms': {
-        // T-20260516-foot-CONSULT-KANBAN-MISS: consultation_room 미배정 고객을 '상담' 칸에 표시
-        // 드롭다운으로 status='consultation' 변경 시 consultation_room=null → 기존엔 칸반 어디에도 미표시
+        // T-20260519-foot-SLOT-BATCH-EDIT: AC-1 [상담] 슬롯 행 제거 → 미배정 graceful 배너
+        // T-20260516-foot-CONSULT-KANBAN-MISS: consultation_room 미배정 고객 graceful 처리 유지
         const consultUnassigned = (byStatus['consultation'] ?? []).filter((ci) => !ci.consultation_room);
         return (
           <div key="consult_rooms" className="w-44 shrink-0 flex flex-col gap-2">
-            <DroppableColumn
-              id="consultation"
-              label="상담"
-              count={consultUnassigned.length}
-              className="flex-1"
-              highlight="text-indigo-700"
-            >
-              {consultUnassigned.map((ci) => (
-                <div key={ci.id} className="relative group">
-                  <DraggableCard
-                    checkIn={ci}
-                    compact
-                    stageStart={getStageStart(ci)}
-                    packageLabel={getPkgLabel(ci)}
-                    onClick={() => handleCardClick(ci)}
-                    onContextMenu={(e) => handleCardContext(ci, e)}
-                  />
+            {/* AC-1: [상담] DroppableColumn 제거 → 미배정 환자 배너 + 카드 표시 */}
+            {consultUnassigned.length > 0 && (
+              <div className="mb-0">
+                <div className="px-1.5 py-1 bg-amber-50 border border-amber-200 rounded text-[10px] text-amber-700 mb-1">
+                  ⚠️ 상담실 미배정 {consultUnassigned.length}명 — 슬롯으로 이동해주세요
                 </div>
-              ))}
-            </DroppableColumn>
+                {consultUnassigned.map((ci) => (
+                  <div key={ci.id} className="mb-1">
+                    <DraggableCard
+                      checkIn={ci}
+                      compact
+                      stageStart={getStageStart(ci)}
+                      packageLabel={getPkgLabel(ci)}
+                      onClick={() => handleCardClick(ci)}
+                      onContextMenu={(e) => handleCardContext(ci, e)}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* AC-3/AC-4: 배치편집 모드 패널 (오늘만) */}
+            {slotBatchEditMode && isToday && (
+              <div className="flex items-center gap-1 flex-wrap" data-testid="slot-batch-edit-panel">
+                <span className="text-[10px] font-medium text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">편집 모드</span>
+                <button
+                  data-testid="add-consult-slot-btn"
+                  className="text-[10px] px-2 py-0.5 rounded bg-blue-500 text-white hover:bg-blue-600"
+                  onClick={() => { setAddConsultSlotName(''); setAddConsultSlotOpen(true); }}
+                >+ 슬롯추가</button>
+                <button
+                  className="text-[10px] px-2 py-0.5 rounded border border-input text-muted-foreground hover:bg-muted"
+                  onClick={() => setSlotBatchEditMode(false)}
+                >완료</button>
+              </div>
+            )}
+            {/* AC-2: 상담실1~N 슬롯 정상 유지 + 배치편집 잠금/삭제 오버레이 */}
             {consultRooms.length > 0 && (
-              <RoomSection
-                title="상담실"
-                color="bg-blue-100 text-blue-800"
-                rooms={consultRooms}
-                roomType="consultation"
-                checkIns={filtered}
-                assignments={assignments}
-                gridCols="grid-cols-1"
-                onCardClick={handleCardClick}
-                onCardContext={handleCardContext}
-                getStageStart={getStageStart}
-                getPkgLabel={getPkgLabel}
-                therapists={consultants}
-                onTherapistChange={handleConsultantChange}
-              />
+              <div className="flex flex-col">
+                <div className="text-xs font-bold px-2 py-1 rounded-t-lg bg-blue-100 text-blue-800">
+                  상담실
+                  <span className="ml-1.5 font-normal opacity-70">({consultRooms.length}실)</span>
+                </div>
+                <div className="grid gap-x-1.5 gap-y-1.5 p-1.5 bg-muted/10 rounded-b-lg border border-t-0 grid-cols-1">
+                  {consultRooms.map((room) => {
+                    const isDefault = defaultConsultRoomIds.has(room.id);
+                    const roomStaff = assignments.find((a) => a.room_name === room.name);
+                    const roomOccupants = filtered.filter(
+                      (ci) => ci.consultation_room === room.name && ci.status === 'consultation',
+                    );
+                    return (
+                      <div key={room.id} className="relative">
+                        <RoomSlot
+                          roomName={room.name}
+                          roomType="consultation"
+                          staffName={roomStaff?.staff_name ?? null}
+                          occupants={roomOccupants}
+                          maxOccupancy={room.max_occupancy}
+                          onCardClick={handleCardClick}
+                          onCardContext={handleCardContext}
+                          getStageStart={getStageStart}
+                          getPkgLabel={getPkgLabel}
+                          therapists={consultants}
+                          currentStaffId={roomStaff?.staff_id ?? null}
+                          onTherapistChange={handleConsultantChange}
+                        />
+                        {/* 배치편집 모드: 기본 슬롯=잠금, 커스텀 슬롯=삭제 버튼 */}
+                        {slotBatchEditMode && isToday && (
+                          <div className="absolute top-1 right-1 z-10">
+                            {isDefault ? (
+                              <span className="text-[10px] text-gray-400" title="기본 슬롯은 삭제 불가">🔒</span>
+                            ) : (
+                              <button
+                                data-testid={`delete-consult-slot-${room.id}`}
+                                className="text-[10px] text-red-500 hover:text-red-700 px-1 rounded bg-white/90 border border-red-200 hover:bg-red-50"
+                                title="슬롯 삭제"
+                                onClick={(e) => { e.stopPropagation(); handleDeleteConsultSlot(room.id, room.name); }}
+                              >✕</button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </div>
         );
@@ -4023,6 +4135,8 @@ export default function Dashboard() {
     getStageStart, getPkgLabel, swapSortOrder,
     handleReservationCheckIn, handleCardClick, handleCardContext,
     handleDoctorChange, handleConsultantChange, handleTherapistChange, handleHeatedLaserDoctorChange,
+    slotBatchEditMode, defaultConsultRoomIds, handleAddConsultSlot, handleDeleteConsultSlot,
+    setAddConsultSlotName, setAddConsultSlotOpen, setSlotBatchEditMode,
   ]);
 
   // T-20260510-foot-DASH-DUAL-HSCROLL v2: overflow-hidden — Dashboard 자체 가로 팽창 격리
@@ -4111,6 +4225,23 @@ export default function Dashboard() {
               <ZoomIn className="h-3.5 w-3.5 text-gray-600" />
             </button>
           </div>
+
+          {/* T-20260519-foot-SLOT-BATCH-EDIT: 상담 슬롯 배치편집 버튼 (오늘만, AC-3/4) */}
+          {isToday && (
+            <button
+              data-testid="slot-batch-edit-btn"
+              className={cn(
+                'flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border transition',
+                slotBatchEditMode
+                  ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
+                  : 'text-gray-600 hover:bg-gray-100 border-gray-200',
+              )}
+              onClick={() => setSlotBatchEditMode((v) => !v)}
+              title="상담 슬롯 추가/삭제 (오늘만)"
+            >
+              상담슬롯
+            </button>
+          )}
 
           {/* 레이아웃 편집 (관리자 전용) */}
           {profile?.role === 'admin' && (
@@ -4544,6 +4675,51 @@ export default function Dashboard() {
         currentUserRole={profile?.role ?? ''}
         currentUserEmail={profile?.email ?? null}
       />
+
+      {/* T-20260519-foot-SLOT-BATCH-EDIT: 슬롯 추가 다이얼로그 (AC-3) */}
+      <Dialog
+        open={addConsultSlotOpen}
+        onOpenChange={(v) => { if (!v) { setAddConsultSlotOpen(false); setAddConsultSlotName(''); } }}
+      >
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>상담 슬롯 추가</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div>
+              <label className="block text-xs font-medium mb-1">슬롯 이름</label>
+              <Input
+                data-testid="consult-slot-name-input"
+                placeholder="예: VIP 상담실, 임시 상담실 …"
+                value={addConsultSlotName}
+                onChange={(e) => setAddConsultSlotName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && addConsultSlotName.trim())
+                    handleAddConsultSlot(addConsultSlotName);
+                }}
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                data-testid="confirm-add-consult-slot-btn"
+                className="flex-1 text-xs"
+                disabled={!addConsultSlotName.trim() || addConsultSlotLoading}
+                onClick={() => handleAddConsultSlot(addConsultSlotName)}
+              >
+                {addConsultSlotLoading ? '추가 중…' : '생성'}
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1 text-xs"
+                onClick={() => { setAddConsultSlotOpen(false); setAddConsultSlotName(''); }}
+              >
+                취소
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
