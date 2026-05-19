@@ -928,8 +928,41 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       setLatestCheckIn(ciHistory[0] ?? null);
 
       const checkInIds = ciHistory.map((ci: CheckIn) => ci.id);
+
+      // T-20260519-foot-CHART-BEFORE-CHECKIN AC-2:
+      // checklists + form_submissions → customer_id 기반, check_in gate 제거
+      // 접수(체크인) 전에도 사전 체크리스트·양식 표시 가능 (Box1 초진 카드 클릭 시 포함)
+      const [clRes, subRes] = await Promise.all([
+        // T-20260430-foot-PRESCREEN-CHECKLIST: 사전 체크리스트 — customer_id 기반 (check_in 불요)
+        supabase
+          .from('checklists')
+          .select('id, completed_at, started_at, checklist_data')
+          .eq('customer_id', customerId)
+          .not('completed_at', 'is', null)
+          .order('completed_at', { ascending: false })
+          .limit(10),
+        // T-20260515-foot-DOC-REISSUE-BTN fix: template_key JOIN
+        // T-20260519-foot-PENCHART-FORMS: signed_at 추가
+        // T-20260519-foot-CHART-BEFORE-CHECKIN: customer_id 기반으로 전환 (check_in_id=null 포함)
+        supabase
+          .from('form_submissions')
+          .select('check_in_id, printed_at, signed_at, form_templates!template_id(form_key)')
+          .eq('customer_id', customerId)
+          .order('printed_at', { ascending: false, nullsFirst: false })
+          .limit(30),
+      ]);
+      setChecklistEntries((clRes.data ?? []) as { id: string; completed_at: string | null; started_at: string; checklist_data: Record<string, unknown> }[]);
+      setSubmissionEntries(
+        (subRes.data ?? []).map((s: Record<string, unknown>) => ({
+          check_in_id: s.check_in_id as string,
+          template_key: (s.form_templates as { form_key: string } | null)?.form_key,
+          printed_at: (s.printed_at as string | null) ?? null,
+          signed_at:  (s.signed_at  as string | null) ?? null,
+        }))
+      );
+
       if (checkInIds.length > 0) {
-        const [rxRes, consentRes, subRes, clRes] = await Promise.all([
+        const [rxRes, consentRes] = await Promise.all([
           supabase
             .from('prescriptions')
             .select('id, prescribed_by_name, diagnosis, prescribed_at, prescription_items(medication_name, dosage, duration_days)')
@@ -941,36 +974,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             .select('form_type, signed_at')
             .in('check_in_id', checkInIds)
             .order('signed_at', { ascending: false }),
-          supabase
-            .from('form_submissions')
-            // T-20260515-foot-DOC-REISSUE-BTN fix: template_key 컬럼 없음 → template_id JOIN form_templates(form_key)
-            // T-20260519-foot-PENCHART-FORMS: signed_at 추가 — personal_checklist는 printed_at=null 대응
-            .select('check_in_id, printed_at, signed_at, form_templates!template_id(form_key)')
-            .in('check_in_id', checkInIds)
-            .order('printed_at', { ascending: false, nullsFirst: false })
-            .limit(30),
-          // T-20260430-foot-PRESCREEN-CHECKLIST: checklists 테이블에서 사전 체크리스트 응답 조회
-          supabase
-            .from('checklists')
-            .select('id, completed_at, started_at, checklist_data')
-            .eq('customer_id', customerId)
-            .not('completed_at', 'is', null)
-            .order('completed_at', { ascending: false })
-            .limit(10),
         ]);
         setPrescriptions((rxRes.data ?? []) as PrescriptionRow[]);
         setConsentEntries((consentRes.data ?? []) as { form_type: string; signed_at: string }[]);
-        // T-20260515-foot-DOC-REISSUE-BTN fix: JOIN 결과에서 form_key 추출
-        // T-20260519-foot-PENCHART-FORMS: signed_at 포함 — personal_checklist printed_at=null 대응
-        setSubmissionEntries(
-          (subRes.data ?? []).map((s: Record<string, unknown>) => ({
-            check_in_id: s.check_in_id as string,
-            template_key: (s.form_templates as { form_key: string } | null)?.form_key,
-            printed_at: (s.printed_at as string | null) ?? null,
-            signed_at:  (s.signed_at  as string | null) ?? null,
-          }))
-        );
-        setChecklistEntries((clRes.data ?? []) as { id: string; completed_at: string | null; started_at: string; checklist_data: Record<string, unknown> }[]);
       }
 
       // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 메시지 이력 로드
@@ -2555,8 +2561,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
               {/* Clinical: 문진·동의서 */}
               {chartTabGroup === 'clinical' && chartTab === 'checklist' && (
-            <div className="space-y-3">
+            <div className="space-y-3" data-testid="checklist-tab-content">
               {/* T-20260513-foot-C21-TAB-RESTRUCTURE-C: 원장 메인 요약 뷰 (AC-3) */}
+              {/* T-20260519-foot-CHART-BEFORE-CHECKIN: checklistEntries는 check_in 없이도 표시 (customer_id 기반) */}
               {checklistEntries.length > 0 && (() => {
                 const latest = checklistEntries[0];
                 const d = latest.checklist_data as {
@@ -2569,7 +2576,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 const severityLabel: Record<string, string> = { '1': '경미', '2': '불편', '3': '심함 ⚠️', '4': '매우심함 🚨' };
                 const hasAlert = d.has_allergy || (!d.medications_none && (d.medications ?? []).length > 0) || (d.medical_history ?? []).length > 0;
                 return (
-                  <div className={`rounded-lg border p-3 text-xs ${hasAlert ? 'bg-amber-50 border-amber-200' : 'bg-teal-50 border-teal-200'}`}>
+                  <div data-testid="checklist-summary" className={`rounded-lg border p-3 text-xs ${hasAlert ? 'bg-amber-50 border-amber-200' : 'bg-teal-50 border-teal-200'}`}>
                     <div className="flex items-center gap-1.5 font-bold text-teal-800 mb-2">
                       <span className="h-2 w-2 rounded-full bg-teal-500" />
                       원장 핵심 요약
