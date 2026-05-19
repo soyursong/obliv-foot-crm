@@ -2,7 +2,7 @@
 id: T-20260519-foot-INS-UI
 domain: foot
 priority: P1
-status: deploy-ready
+status: deployed
 title: 풋센터 건보 UI 통합 + 시드 데이터
 created: 2026-05-19
 assignee: dev-foot
@@ -12,6 +12,14 @@ build-ok: true
 regression-risk: low
 e2e-spec: tests/e2e/T-20260519-foot-INS-UI.spec.ts
 deploy_commit: 38e152a50df6d6a34c280ec3ab449cfe5e204f88
+qa_result: pass
+qa_grade: green
+deployed_at: "2026-05-19T16:43:15+09:00"
+deployed_by: dev-foot
+precheck_pass: true
+precheck_at: "2026-05-19T19:15:00+09:00"
+e2e_skipped_reason: auth_env
+field_soak_until: "2026-05-20T19:15:00+09:00"
 related:
   - T-20260504-foot-INSURANCE-COPAYMENT
   - T-20260515-foot-KENBO-API-NATIVE
@@ -62,6 +70,21 @@ copayCalc.ts 로직 분리 + 4개 신규 테이블 + 시드 정비 + InsuranceCo
 | `src/components/insurance/InsuranceCopaymentPanel.tsx` | 412줄 (164줄 수정) |
 | `tests/e2e/T-20260519-foot-INS-UI.spec.ts` | E2E 5 tests |
 
-## 배포 대기
-- commit: 38e152a50df6d6a34c280ec3ab449cfe5e204f88
-- supervisor QA 대기
+## QA 결과 (supervisor, 2026-05-19 19:15 KST)
+
+**판정: GO (Green)** — precheck C1~C7 PASS (C2 WARN: auth_env — 차단 없음)
+
+| 항목 | 결과 |
+|------|------|
+| C1 env 매트릭스 | PASS |
+| C2 E2E spec | WARN (auth_env — spec 실재, 실행은 맥북 자격증명 미설정) |
+| C3 RLS/DB | PASS (migration + rollback SQL 실재, RLS 전 테이블 적용) |
+| C4 Cross-CRM | PASS (신규 테이블만, contract 테이블 변경 0건) |
+| C5 빌드 | PASS (3.34s, exit 0) |
+| C6 Lovable | N/A (foot=Vercel) |
+| C7 배포 알림 | PASS (C0ATE5P6JTH) |
+
+**배포 확정**: commit 38e152a → origin/main merge (2026-05-19 16:43:15 KST) → Vercel 자동 배포.
+**field_soak_until**: 2026-05-20 19:15 KST
+
+> 배경: esc1 PHANTOM_DEPLOY_VOIDED 판정은 관제탑 맥북 stale clone(23일) 오판. RETRACTION MSG-20260519-190500-rtr1 수신, supervisor 재검증으로 모든 파일·커밋 실재 확인 후 GO 판정.
