@@ -1,5 +1,5 @@
 /**
- * E2E Spec: T-20260520-foot-INS-UI
+ * E2E Spec: T-20260519-foot-INS-UI
  * 풋센터 건보 UI 통합 + 시드 데이터
  *
  * AC-1: copayCalc.ts 모듈 분리 — insurance.ts 에서 재수출 정상 동작
