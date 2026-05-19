@@ -1499,8 +1499,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   };
 
   // T-20260519-foot-PRECHECKIN-CHART AC-3: 내원콜 방문 확인 기록 (check_in 없이 reservation_memo_history에 append)
+  // BUG FIX: reservations는 DESC로 로드되므로 find()가 가장 먼 미래 예약을 반환.
+  // → 날짜+시간 기준 오름차순 정렬 후 첫번째(=가장 가까운) confirmed 예약 선택.
   const handleVisitConfirm = async (willVisit: boolean) => {
-    const nextResv = reservations.find((r) => r.status === 'confirmed');
+    const nextResv = [...reservations]
+      .filter((r) => r.status === 'confirmed')
+      .sort((a, b) => {
+        const da = `${a.reservation_date}T${a.reservation_time}`;
+        const db = `${b.reservation_date}T${b.reservation_time}`;
+        return da.localeCompare(db);
+      })[0];
     if (!nextResv || !customer) return;
     setConfirmingVisit(true);
     const content = willVisit ? '[방문확인] 방문 예정' : '[방문확인] 방문 안함';
@@ -3651,7 +3659,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           {/* T-20260519-foot-PRECHECKIN-CHART AC-3: 접수 전 내원콜 방문 확인 */}
           {/* check_in 없음 + confirmed 예약 존재 시에만 표시 */}
           {latestCheckIn === null && reservations.some((r) => r.status === 'confirmed') && (() => {
-            const nextResv = reservations.find((r) => r.status === 'confirmed')!;
+            // BUG FIX: DESC 정렬된 reservations에서 가장 가까운 confirmed 예약 선택
+            const nextResv = [...reservations]
+              .filter((r) => r.status === 'confirmed')
+              .sort((a, b) => {
+                const da = `${a.reservation_date}T${a.reservation_time}`;
+                const db = `${b.reservation_date}T${b.reservation_time}`;
+                return da.localeCompare(db);
+              })[0];
             return (
               <div className="border-b border-amber-200 bg-amber-50 px-3 py-2">
                 <div className="text-[11px] font-semibold text-amber-800 mb-1.5 flex items-center gap-1.5">
