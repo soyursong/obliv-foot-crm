@@ -611,6 +611,8 @@ function RoomSlot({
   // T-20260520-foot-LASER-DROPDOWN: laser 포함 — 장비명 드롭다운 regression 복구
   const showStaffDropdown = (roomType === 'treatment' || roomType === 'examination' || roomType === 'consultation' || roomType === 'laser') && therapists && onTherapistChange;
   const showStaffLabel = roomType !== 'laser' && roomType !== 'treatment' && roomType !== 'examination' && roomType !== 'consultation' && staffName;
+  // T-20260520-foot-LASER-C5-COLOR: C5 = 치료실5(원장실) — 공간배정 Staff.tsx isC5와 동일 조건
+  const isC5 = roomName === 'C5' && roomType === 'treatment';
 
   return (
     <div
@@ -625,10 +627,16 @@ function RoomSlot({
         isEmpty && !isOver && 'border-dashed border-gray-200',
         !isEmpty && !isOver && !isFull && 'border-gray-300',
         isFull && !isOver && 'border-red-200',
+        // T-20260520-foot-LASER-C5-COLOR: C5 보라색 테두리 (공간배정 border-purple-400 동일, AC-1·AC-3)
+        isC5 && !isOver && 'border-2 border-purple-400',
       )}
     >
       <div className="flex items-center justify-between px-1 mb-1 gap-1">
-        <span className="text-xs font-semibold text-gray-600 shrink-0">{roomName}</span>
+        <span className="text-xs font-semibold text-gray-600 shrink-0">
+          {roomName}
+          {/* T-20260520-foot-LASER-C5-COLOR: C5 원장실 라벨 — Staff.tsx와 동일 (AC-1) */}
+          {isC5 && <span className="ml-1 text-[10px] text-purple-600 font-normal">원장실</span>}
+        </span>
         {showStaffDropdown && (
           <select
             value={currentStaffId ?? ''}
