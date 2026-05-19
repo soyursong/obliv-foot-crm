@@ -190,6 +190,51 @@ export interface Service {
   copayment_rate_override?: number | null;
 }
 
+// ── 건보 청구 관련 (T-20260520-foot-INS-UI AC-2) ──────────────────────────
+
+export type InsuranceClaimStatus = 'draft' | 'submitted' | 'accepted' | 'rejected' | 'cancelled';
+
+/** insurance_claims — 진료비 청구 요약 */
+export interface InsuranceClaim {
+  id: string;
+  clinic_id: string;
+  customer_id: string;
+  check_in_id: string | null;
+  visit_date: string;
+  claim_status: InsuranceClaimStatus;
+  total_base: number;
+  total_copayment: number;
+  total_covered: number;
+  created_at: string;
+  updated_at: string;
+  submitted_at: string | null;
+  calculation_engine_version: string | null;
+}
+
+/** claim_items — 청구 항목 (서비스별) */
+export interface ClaimItem {
+  id: string;
+  claim_id: string;
+  service_id: string;
+  hira_code: string | null;
+  hira_score: number | null;
+  quantity: number;
+  base_amount: number;
+  copayment_amount: number;
+  covered_amount: number;
+  created_at: string;
+}
+
+/** claim_diagnoses — 청구 상병코드 */
+export interface ClaimDiagnosis {
+  id: string;
+  claim_id: string;
+  kcd_code: string;
+  is_primary: boolean;
+  sort_order: number;
+  created_at: string;
+}
+
 /** service_charges — 결제별 수가 산출 이력 (T-20260504-foot-INSURANCE-COPAYMENT) */
 export interface ServiceCharge {
   id: string;
