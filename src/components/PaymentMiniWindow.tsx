@@ -983,10 +983,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       return;
     }
     const amount = deductMode ? deductAmount : grandTotal;
-    // T-20260519-foot-PKG-REVENUE-SPLIT AC-1: 적용 경로 역전 해소
-    // - 전액 패키지 차감(잔액=0): method='membership' (결제 레코드 마커, amount=0)
-    // - 잔액 있는 경우: payMethod(card/cash/transfer)로 잔액만 결제 → 일일 매출 정확 집계
-    const method = deductMode ? (deductAmount > 0 ? payMethod : 'membership') : payMethod;
+    // T-20260519-foot-DEDUCT-PAY-METHOD AC-1: deductMode에서도 실제 결제수단 사용
+    // 선수금차감 여부와 무관하게 항상 사용자가 선택한 payMethod 기록
+    // (선수금차감 추적은 package_sessions 회차 소진으로 별도 관리)
+    const method = payMethod;
     const taxType = deductMode ? '선수금' : null;
 
     if (amount < 0) {
@@ -1123,8 +1123,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       }
 
       // 2. 수납 + auto-done
-      // T-20260519-foot-PKG-REVENUE-SPLIT AC-1: 잔액 있는 경우 payMethod 사용
-      const method = deductMode ? (deductAmount > 0 ? payMethod : 'membership') : payMethod;
+      // T-20260519-foot-DEDUCT-PAY-METHOD AC-1: deductMode에서도 실제 결제수단 사용
+      const method = payMethod;
       const taxType = deductMode ? '선수금' : null;
       await executeAutoDone(amount, method, taxType);
       localStorage.removeItem(draftKey(checkIn.id));
@@ -1516,11 +1516,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     </p>
                   )}
 
-                  {/* 결제 수단 선택 (저장 후 표시)
-                      T-20260519-foot-PKG-REVENUE-SPLIT AC-1:
-                      선수금차감 모드(deductMode)에서도 잔액(deductAmount > 0) 있으면 표시
-                      → 잔액을 card/cash/transfer 중 선택해 결제 */}
-                  {saved && (!deductMode || deductAmount > 0) && (
+                  {/* 결제 수단 선택 (저장 후 항상 표시)
+                      T-20260519-foot-DEDUCT-PAY-METHOD AC-2:
+                      deductMode 여부·잔액 무관 — 저장 후 항상 결제수단 선택 노출
+                      선수금차감(잔액=0)이어도 실제 수단을 기록해 일마감 분류 정확성 보장 */}
+                  {saved && (
                     <div className="flex gap-1">
                       {METHOD_OPTIONS.map((m) => (
                         <button
@@ -1540,8 +1540,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   )}
 
                   {/* PAY-CASH-RECEIPT: 현금영수증 체크박스 — 현금/이체 선택 시 표시
-                      T-20260519-foot-PKG-REVENUE-SPLIT: 잔액 있는 deductMode에도 표시 */}
-                  {saved && (!deductMode || deductAmount > 0) && (payMethod === 'cash' || payMethod === 'transfer') && (
+                      T-20260519-foot-DEDUCT-PAY-METHOD: deductMode 무관 항상 표시 */}
+                  {saved && (payMethod === 'cash' || payMethod === 'transfer') && (
                     <div className="rounded border px-2.5 py-2 bg-muted/20 space-y-1.5">
                       <button
                         onClick={() => setCashReceiptIssued((v) => !v)}
