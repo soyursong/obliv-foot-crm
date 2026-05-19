@@ -672,7 +672,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [docReissueCheckIn, setDocReissueCheckIn] = useState<CheckIn | null>(null);
   const [prescriptions, setPrescriptions] = useState<PrescriptionRow[]>([]);
   const [consentEntries, setConsentEntries] = useState<{ form_type: string; signed_at: string }[]>([]);
-  const [submissionEntries, setSubmissionEntries] = useState<{ check_in_id: string; template_key?: string; printed_at: string }[]>([]);
+  // T-20260519-foot-PENCHART-FORMS: printed_at nullable 대응 → signed_at 폴백
+  const [submissionEntries, setSubmissionEntries] = useState<{ check_in_id: string; template_key?: string; printed_at: string | null; signed_at?: string | null }[]>([]);
   // T-20260430-foot-PRESCREEN-CHECKLIST: 사전 체크리스트 응답
   const [checklistEntries, setChecklistEntries] = useState<{
     id: string;
@@ -940,9 +941,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           supabase
             .from('form_submissions')
             // T-20260515-foot-DOC-REISSUE-BTN fix: template_key 컬럼 없음 → template_id JOIN form_templates(form_key)
-            .select('check_in_id, printed_at, form_templates!template_id(form_key)')
+            // T-20260519-foot-PENCHART-FORMS: signed_at 추가 — personal_checklist는 printed_at=null 대응
+            .select('check_in_id, printed_at, signed_at, form_templates!template_id(form_key)')
             .in('check_in_id', checkInIds)
-            .order('printed_at', { ascending: false })
+            .order('printed_at', { ascending: false, nullsFirst: false })
             .limit(30),
           // T-20260430-foot-PRESCREEN-CHECKLIST: checklists 테이블에서 사전 체크리스트 응답 조회
           supabase
@@ -956,11 +958,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         setPrescriptions((rxRes.data ?? []) as PrescriptionRow[]);
         setConsentEntries((consentRes.data ?? []) as { form_type: string; signed_at: string }[]);
         // T-20260515-foot-DOC-REISSUE-BTN fix: JOIN 결과에서 form_key 추출
+        // T-20260519-foot-PENCHART-FORMS: signed_at 포함 — personal_checklist printed_at=null 대응
         setSubmissionEntries(
           (subRes.data ?? []).map((s: Record<string, unknown>) => ({
             check_in_id: s.check_in_id as string,
             template_key: (s.form_templates as { form_key: string } | null)?.form_key,
-            printed_at: s.printed_at as string,
+            printed_at: (s.printed_at as string | null) ?? null,
+            signed_at:  (s.signed_at  as string | null) ?? null,
           }))
         );
         setChecklistEntries((clRes.data ?? []) as { id: string; completed_at: string | null; started_at: string; checklist_data: Record<string, unknown> }[]);
@@ -2691,19 +2695,32 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 </div>
               )}
 
-              {/* 서류발행 */}
+              {/* 서류발행 / 기입 완료 양식 (T-20260519-foot-PENCHART-FORMS AC-6) */}
               {submissionEntries.length > 0 && (
                 <div className="rounded-lg border bg-white p-3 text-xs space-y-1">
-                  <div className="font-semibold text-muted-foreground mb-1">서류발행</div>
-                  {submissionEntries.map((s, i) => (
-                    <div key={i} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
-                      <span>{s.template_key ?? '-'}</span>
-                      <span className="text-muted-foreground flex items-center gap-1">
-                        <Printer className="h-3 w-3" />
-                        {format(new Date(s.printed_at), 'MM-dd HH:mm')}
-                      </span>
-                    </div>
-                  ))}
+                  <div className="font-semibold text-muted-foreground mb-1">서류발행·기입완료</div>
+                  {submissionEntries.map((s, i) => {
+                    // form_key → 한국어 레이블 변환
+                    const FORM_KEY_LABEL: Record<string, string> = {
+                      personal_checklist_general: '개인정보+체크리스트 (일반)',
+                      personal_checklist_senior:  '개인정보+체크리스트 (어르신)',
+                      pen_chart: '펜차트',
+                      consent_form: '동의서',
+                      receipt: '영수증',
+                    };
+                    const label = (s.template_key && FORM_KEY_LABEL[s.template_key]) || s.template_key || '-';
+                    // printed_at이 null일 때 signed_at 폴백 (personal_checklist 기입 완료 시각)
+                    const tsStr = s.printed_at ?? s.signed_at;
+                    return (
+                      <div key={i} className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
+                        <span>{label}</span>
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          <Printer className="h-3 w-3" />
+                          {tsStr ? format(new Date(tsStr), 'MM-dd HH:mm') : '-'}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -2899,7 +2916,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               <span
                                 key={i}
                                 className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-600"
-                                title={`발급: ${format(new Date(s.printed_at), 'yyyy-MM-dd HH:mm')}`}
+                                title={`발급: ${s.printed_at || s.signed_at ? format(new Date((s.printed_at ?? s.signed_at)!), 'yyyy-MM-dd HH:mm') : '-'}`}
                               >
                                 <Printer className="h-2.5 w-2.5 shrink-0" />
                                 {label}
