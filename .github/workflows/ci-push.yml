@@ -15,6 +15,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── 0) CHART-ACCESS-LOCK 가드 ─────────────────
+  chart-access-lock:
+    name: "🔒 Chart Access Lock"
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: "차트 접근 경로 필수 심볼 검증"
+        run: bash scripts/check-chart-access-lock.sh
+
   # ── 1) TypeScript 타입 체크 ──────────────────
   typecheck:
     name: "🔍 TypeCheck"
