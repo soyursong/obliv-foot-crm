@@ -264,13 +264,16 @@ export default function Closing() {
   });
 
   // ── 시술별 통계 ────────────────────────────────────────────
+  // T-20260519-foot-PKG-REVENUE-SPLIT AC-2/AC-3:
+  //   is_package_session=true 항목 제외 — 패키지 차감 세션은 이미 결제된 건
   const { data: procedureStats = [] } = useQuery<{ service_name: string; count: number; revenue: number }[]>({
     queryKey: ['closing-procedures', clinic?.id, date],
     enabled: !!clinic,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('check_in_services')
-        .select('service_name, price, check_in_id')
+        // is_package_session 포함해 JS에서 필터링 (null 안전성)
+        .select('service_name, price, check_in_id, is_package_session')
         .in('check_in_id', (await supabase
           .from('check_ins')
           .select('id')
@@ -281,7 +284,9 @@ export default function Closing() {
         ));
       if (error) throw error;
       const byName: Record<string, { count: number; revenue: number }> = {};
-      for (const row of (data ?? []) as { service_name: string; price: number }[]) {
+      for (const row of (data ?? []) as { service_name: string; price: number; is_package_session?: boolean | null }[]) {
+        // T-20260519-foot-PKG-REVENUE-SPLIT: 패키지 세션 항목 제외
+        if (row.is_package_session === true) continue;
         const entry = byName[row.service_name] ??= { count: 0, revenue: 0 };
         entry.count++;
         entry.revenue += row.price;
@@ -448,7 +453,11 @@ export default function Closing() {
       payments.filter(r => r.payment_type === 'refund').reduce((s, r) => s + r.amount, 0) +
       pkgPayments.filter(r => r.payment_type === 'refund').reduce((s, r) => s + r.amount, 0);
 
-    const grossTotal = totalCard + totalCash + totalTransfer + singleMembership;
+    // T-20260519-foot-PKG-REVENUE-SPLIT AC-2/AC-3:
+    // grossTotal에서 singleMembership 제외.
+    // 'membership' method = 전액 패키지 차감건(amount=0 마커) 또는 구형 패키지차감건
+    // 패키지는 최초 구매 시점(package_payments)에 이미 집계됨 → 차감 시점에 재집계 불가
+    const grossTotal = totalCard + totalCash + totalTransfer;
 
     return {
       pkgCard, pkgCash, pkgTransfer,
@@ -641,12 +650,13 @@ export default function Closing() {
   };
 
   // ── CSV 내보내기 (총 합계 탭) ─────────────────────────────
+  // T-20260519-foot-PKG-REVENUE-SPLIT: grossTotal은 패키지차감(membership) 제외
   const exportCSV = () => {
     const rows = [
-      ['구분', '카드', '현금', '이체', '멤버십', '합계'],
-      ['패키지', totals.pkgCard, totals.pkgCash, totals.pkgTransfer, 0, totals.pkgCard + totals.pkgCash + totals.pkgTransfer],
-      ['단건', totals.singleCard, totals.singleCash, totals.singleTransfer, totals.singleMembership, totals.singleCard + totals.singleCash + totals.singleTransfer + totals.singleMembership],
-      ['합계', totals.totalCard, totals.totalCash, totals.totalTransfer, totals.singleMembership, totals.grossTotal],
+      ['구분', '카드', '현금', '이체', '패키지차감(매출제외)', '매출합계'],
+      ['패키지구매', totals.pkgCard, totals.pkgCash, totals.pkgTransfer, 0, totals.pkgCard + totals.pkgCash + totals.pkgTransfer],
+      ['단건', totals.singleCard, totals.singleCash, totals.singleTransfer, totals.singleMembership, totals.singleCard + totals.singleCash + totals.singleTransfer],
+      ['합계(멤버십제외)', totals.totalCard, totals.totalCash, totals.totalTransfer, totals.singleMembership, totals.grossTotal],
       [],
       ['정산', '시스템', '실제', '차이'],
       ['카드', totals.totalCard, actualCard, cardDiff],
@@ -817,17 +827,17 @@ ${enrichedRows.length ? `<tfoot><tr><td colspan="7">합계</td><td class="num">$
 <div class="meta">${clinic?.name ?? '오블리브 풋센터'}${isClosed ? ' · 마감 확정' : ' · 임시저장'}</div>
 
 <div class="grand">
-  <span class="label">당일 총 결제 합계</span>
+  <span class="label">당일 매출 합계 (패키지차감 제외)</span>
   <span class="amount">${fmt(totals.grossTotal)}원</span>
 </div>
 
 <h3>결제수단별 내역</h3>
 <table>
-<thead><tr><th>구분</th><th>카드</th><th>현금</th><th>이체</th><th>멤버십</th><th>합계</th></tr></thead>
+<thead><tr><th>구분</th><th>카드</th><th>현금</th><th>이체</th><th>패키지차감(매출제외)</th><th>매출합계</th></tr></thead>
 <tbody>
-<tr><td>패키지</td><td class="num">${fmt(totals.pkgCard)}</td><td class="num">${fmt(totals.pkgCash)}</td><td class="num">${fmt(totals.pkgTransfer)}</td><td class="num">0</td><td class="num">${fmt(totals.pkgCard + totals.pkgCash + totals.pkgTransfer)}</td></tr>
-<tr><td>단건</td><td class="num">${fmt(totals.singleCard)}</td><td class="num">${fmt(totals.singleCash)}</td><td class="num">${fmt(totals.singleTransfer)}</td><td class="num">${fmt(totals.singleMembership)}</td><td class="num">${fmt(totals.singleCard + totals.singleCash + totals.singleTransfer + totals.singleMembership)}</td></tr>
-<tr class="total"><td>합계</td><td class="num">${fmt(totals.totalCard)}</td><td class="num">${fmt(totals.totalCash)}</td><td class="num">${fmt(totals.totalTransfer)}</td><td class="num">${fmt(totals.singleMembership)}</td><td class="num">${fmt(totals.grossTotal)}</td></tr>
+<tr><td>패키지구매</td><td class="num">${fmt(totals.pkgCard)}</td><td class="num">${fmt(totals.pkgCash)}</td><td class="num">${fmt(totals.pkgTransfer)}</td><td class="num">0</td><td class="num">${fmt(totals.pkgCard + totals.pkgCash + totals.pkgTransfer)}</td></tr>
+<tr><td>단건</td><td class="num">${fmt(totals.singleCard)}</td><td class="num">${fmt(totals.singleCash)}</td><td class="num">${fmt(totals.singleTransfer)}</td><td class="num">${fmt(totals.singleMembership)}</td><td class="num">${fmt(totals.singleCard + totals.singleCash + totals.singleTransfer)}</td></tr>
+<tr class="total"><td>합계(멤버십제외)</td><td class="num">${fmt(totals.totalCard)}</td><td class="num">${fmt(totals.totalCash)}</td><td class="num">${fmt(totals.totalTransfer)}</td><td class="num">${fmt(totals.singleMembership)}</td><td class="num">${fmt(totals.grossTotal)}</td></tr>
 </tbody>
 </table>
 
@@ -1012,15 +1022,20 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               ]}
               total={totals.pkgCard + totals.pkgCash + totals.pkgTransfer}
             />
+            {/* T-20260519-foot-PKG-REVENUE-SPLIT AC-2/AC-3/AC-5:
+                단건 결제 합계에서 singleMembership 제외.
+                패키지차감건(method='membership')은 이미 package_payments에서 집계됨 */}
             <SummaryCard
               title="단건 결제"
               rows={[
                 ['카드', totals.singleCard],
                 ['현금', totals.singleCash],
                 ['이체', totals.singleTransfer],
-                ['멤버십', totals.singleMembership],
+                ...(totals.singleMembership > 0
+                  ? [['패키지차감(매출제외)', totals.singleMembership] as [string, number]]
+                  : []),
               ]}
-              total={totals.singleCard + totals.singleCash + totals.singleTransfer + totals.singleMembership}
+              total={totals.singleCard + totals.singleCash + totals.singleTransfer}
             />
             <SummaryCard
               title="합계 (결제수단별)"
