@@ -1188,6 +1188,9 @@ function PackageDetailSheet({
             </div>
           )}
 
+          {/* 항목별 수가 금액 — T-20260519-foot-PKG-ITEM-FEE */}
+          <PackageItemFees pkg={pkg} />
+
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-lg bg-muted/40 px-3 py-2">
               <div className="text-xs text-muted-foreground">총 계약금</div>
@@ -1268,6 +1271,90 @@ function PackageDetailSheet({
           onDone={() => { setTransferOpen(false); onChanged(); }} />
       </SheetContent>
     </Sheet>
+  );
+}
+
+// ============================================================
+// 항목별 수가 금액 — T-20260519-foot-PKG-ITEM-FEE
+// unit_price 필드가 없는 구형 패키지는 조용히 숨김
+// ============================================================
+function PackageItemFees({ pkg }: { pkg: Package }) {
+  const feeRows = [
+    pkg.heated_sessions > 0
+      ? { label: '가열 레이저', sessions: pkg.heated_sessions, unitPrice: pkg.heated_unit_price ?? 0 }
+      : null,
+    pkg.unheated_sessions > 0
+      ? { label: '비가열 레이저', sessions: pkg.unheated_sessions, unitPrice: pkg.unheated_unit_price ?? 0 }
+      : null,
+    (pkg.podologe_sessions ?? 0) > 0
+      ? { label: '포돌로게', sessions: pkg.podologe_sessions ?? 0, unitPrice: pkg.podologe_unit_price ?? 0 }
+      : null,
+    pkg.iv_sessions > 0
+      ? {
+          label: `수액${pkg.iv_company ? ` (${pkg.iv_company})` : ''}`,
+          sessions: pkg.iv_sessions,
+          unitPrice: pkg.iv_unit_price ?? 0,
+        }
+      : null,
+  ].filter((r): r is { label: string; sessions: number; unitPrice: number } => r !== null);
+
+  // unit_price 데이터가 하나도 없으면 표시하지 않음 (구형 패키지 대응)
+  const hasUnitPrices = feeRows.some((r) => r.unitPrice > 0);
+  if (!hasUnitPrices || feeRows.length === 0) return null;
+
+  const computedTotal = feeRows.reduce((s, r) => s + r.sessions * r.unitPrice, 0);
+  // price_override로 수기조정된 경우 계약금과 다를 수 있음
+  const hasOverride = computedTotal !== pkg.total_amount;
+
+  return (
+    <div className="rounded-lg border border-teal-100 bg-teal-50/20 overflow-hidden text-xs">
+      <div className="px-3 py-1.5 bg-teal-50 border-b border-teal-100 text-xs font-semibold text-teal-800">
+        항목별 수가
+      </div>
+      <table className="w-full border-collapse">
+        <thead>
+          <tr className="text-muted-foreground border-b border-teal-50/60 bg-white/40">
+            <th className="text-left px-3 py-1 font-medium">시술명</th>
+            <th className="text-center px-2 py-1 font-medium">회수</th>
+            <th className="text-right px-2 py-1 font-medium">수가(1회)</th>
+            <th className="text-right px-3 py-1 font-medium">소계</th>
+          </tr>
+        </thead>
+        <tbody>
+          {feeRows.map((row) => (
+            <tr key={row.label} className="border-b border-teal-50/40 last:border-b-0">
+              <td className="px-3 py-1.5 font-medium text-teal-900">{row.label}</td>
+              <td className="px-2 py-1.5 text-center tabular-nums">{row.sessions}회</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">
+                {row.unitPrice > 0 ? formatAmount(row.unitPrice) : <span className="text-muted-foreground/60">-</span>}
+              </td>
+              <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-teal-700">
+                {row.sessions > 0 && row.unitPrice > 0
+                  ? formatAmount(row.sessions * row.unitPrice)
+                  : <span className="text-muted-foreground/60">-</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="bg-teal-50/60 border-t border-teal-100">
+            <td colSpan={3} className="px-3 py-1.5 font-semibold text-teal-800">
+              합계
+            </td>
+            <td className="px-3 py-1.5 text-right tabular-nums font-bold text-teal-800">
+              {formatAmount(computedTotal)}
+            </td>
+          </tr>
+          {hasOverride && (
+            <tr>
+              <td colSpan={4} className="px-3 pb-1 text-right text-[10px] text-amber-600">
+                ※ 계약금 {formatAmount(pkg.total_amount)} (수기조정 적용)
+              </td>
+            </tr>
+          )}
+        </tfoot>
+      </table>
+    </div>
   );
 }
 
