@@ -1,0 +1,98 @@
+{
+  "_meta": {
+    "version": "1.0",
+    "description": "차트 접근 경로 코드 락 (CHART-ACCESS-LOCK). 필수 심볼이 소스에서 제거되면 push 차단.",
+    "created": "2026-05-19",
+    "ticket": "T-20260519-foot-CHART-ACCESS-LOCK",
+    "history": "차트 열림 5회+ 재발 히스토리. FIRSTVISIT-CHECKIN + PRECHECKIN-CHART deployed 완료 후 재회귀 구조적 방지 가드.",
+    "bypass_procedure": [
+      "1. BYPASS_CHART_LOCK=1 git push 로 일시 우회 가능",
+      "2. 반드시 planner 에 FOLLOWUP 발행 — bypass 사유 + 김주연 매니저 승인 명시 필수",
+      "3. 차트 접근 경로 수정이 필요한 경우: planner 티켓 생성 → supervisor GO 판정 → 이 파일 해당 항목 active:false 변경",
+      "4. PR 에 bypass 사유 + 승인자 명시 필수"
+    ],
+    "approval_contact": "김주연 매니저 (풋센터 종로 현장)"
+  },
+  "required_patterns": [
+    {
+      "id": "CHART-LOCK-001",
+      "description": "useChart hook — 차트 열기/닫기 단일 진입 hook",
+      "file": "src/lib/chartContext.ts",
+      "pattern": "export function useChart",
+      "reason": "useChart() hook 제거 시 전체 차트 접근 경로가 컴파일 에러로 붕괴됨. T-20260516-foot-CHART2-STATE-UNIFY 핵심 산출물.",
+      "active": true
+    },
+    {
+      "id": "CHART-LOCK-002",
+      "description": "ChartContext export — Context 객체 존재",
+      "file": "src/lib/chartContext.ts",
+      "pattern": "export const ChartContext",
+      "reason": "ChartContext 제거 시 AdminLayout Provider 연결 불가.",
+      "active": true
+    },
+    {
+      "id": "CHART-LOCK-003",
+      "description": "AdminLayout — openChart 구현",
+      "file": "src/components/AdminLayout.tsx",
+      "pattern": "openChart",
+      "reason": "AdminLayout openChart 구현(useState + useCallback) 제거 시 전체 차트 열림 불가. 단일 소스.",
+      "active": true
+    },
+    {
+      "id": "CHART-LOCK-004",
+      "description": "AdminLayout — ChartContext.Provider 래핑",
+      "file": "src/components/AdminLayout.tsx",
+      "pattern": "ChartContext.Provider",
+      "reason": "Provider 제거 시 하위 컴포넌트의 useChart() 가 default value (noop) 반환 → 차트 열림 무반응.",
+      "active": true
+    },
+    {
+      "id": "CHART-LOCK-005",
+      "description": "AdminLayout — CustomerChartSheet 단일 렌더",
+      "file": "src/components/AdminLayout.tsx",
+      "pattern": "CustomerChartSheet",
+      "reason": "T-20260516-foot-CHART2-STATE-UNIFY: 4곳 중복 제거 후 AdminLayout 1곳 단일 렌더. 제거 시 차트 패널 미표시.",
+      "active": true
+    },
+    {
+      "id": "CHART-LOCK-006",
+      "description": "CustomerChartSheet — createPortal 렌더",
+      "file": "src/components/CustomerChartSheet.tsx",
+      "pattern": "createPortal",
+      "reason": "createPortal 제거 시 nested Dialog race condition 재발 (Portal-inside-Portal). T-20260514-foot-CHART2-OPEN-BUG 원인.",
+      "active": true
+    },
+    {
+      "id": "CHART-LOCK-007",
+      "description": "CheckInDetailSheet — openChart 호출",
+      "file": "src/components/CheckInDetailSheet.tsx",
+      "pattern": "openChart",
+      "reason": "칸반 카드 클릭 → CheckInDetailSheet → 2번차트 자동 오픈 경로. 제거 시 체크인 후 차트 자동 표시 불가.",
+      "active": true
+    },
+    {
+      "id": "CHART-LOCK-008",
+      "description": "Customers 페이지 — openChart 호출",
+      "file": "src/pages/Customers.tsx",
+      "pattern": "openChart",
+      "reason": "고객관리 → 차트 열기 경로. T-20260516-foot-CHART2-STATE-UNIFY 통합 후 ChartContext 경유 필수.",
+      "active": true
+    },
+    {
+      "id": "CHART-LOCK-009",
+      "description": "Dashboard — openChart 호출",
+      "file": "src/pages/Dashboard.tsx",
+      "pattern": "openChart",
+      "reason": "대시보드 → Box1Card/Box2Card 클릭 → 차트 열기. FIRSTVISIT-CHECKIN + PRECHECKIN-CHART 핵심 경로.",
+      "active": true
+    },
+    {
+      "id": "CHART-LOCK-010",
+      "description": "Reservations — openChart 호출",
+      "file": "src/pages/Reservations.tsx",
+      "pattern": "openChart",
+      "reason": "예약관리 → 고객차트 컨텍스트 메뉴 경로. T-20260516-foot-CHART-OPEN-UNIFY 통합 산출물.",
+      "active": true
+    }
+  ]
+}

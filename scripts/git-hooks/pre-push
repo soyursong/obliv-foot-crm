@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# pre-push hook — CHART-ACCESS-LOCK 가드 (차트 접근 경로 재회귀 방지)
+# T-20260519-foot-CHART-ACCESS-LOCK
+#
+# 설치: scripts/install-hooks.sh 실행 (또는 아래 한 줄)
+#   cp scripts/git-hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+
+SCRIPT_DIR="$(git rev-parse --show-toplevel)/scripts"
+CHECK_SCRIPT="$SCRIPT_DIR/check-chart-access-lock.sh"
+
+if [ ! -f "$CHECK_SCRIPT" ]; then
+  echo "⚠️  check-chart-access-lock.sh 없음 — 검사 건너뜀"
+  exit 0
+fi
+
+bash "$CHECK_SCRIPT"
