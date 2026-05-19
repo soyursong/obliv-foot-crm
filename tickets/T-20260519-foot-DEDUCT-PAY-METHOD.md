@@ -6,7 +6,7 @@ priority: P0
 domain: foot
 created_at: 2026-05-19
 deploy_ready_at: 2026-05-19
-commit_sha: TBD
+commit_sha: ab3f279
 db_migration: false
 build_passed: true
 e2e_spec: tests/e2e/T-20260519-foot-DEDUCT-PAY-METHOD.spec.ts
