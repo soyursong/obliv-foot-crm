@@ -3,7 +3,13 @@ ticket_id: T-20260520-foot-NHIS-HARDEN
 title: NHIS 자격조회 API 실가동 보강 (Phase b+c)
 domain: foot
 priority: P1
-status: deploy-ready
+status: deployed
+qa_result: pass
+qa_grade: Yellow
+deploy_commit: f65842dd6b90ea1c1aab61af478353a074565f3c
+deployed_at: 2026-05-19T20:04:00+09:00
+bundle_hash: ConsentForm-D5Ch2hec
+field_soak_until: 2026-05-20T20:04:00+09:00
 deploy_ready: true
 db_change: true
 db_change_note: |

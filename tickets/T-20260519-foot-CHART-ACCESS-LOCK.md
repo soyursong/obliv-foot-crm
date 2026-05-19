@@ -1,7 +1,7 @@
 ---
 id: T-20260519-foot-CHART-ACCESS-LOCK
 domain: foot
-status: deploy-ready
+status: deployed
 priority: P0
 deploy-ready: true
 build-ok: true
@@ -9,6 +9,12 @@ db-change: false
 regression-risk: low
 e2e-spec: tests/e2e/T-20260519-foot-CHART-ACCESS-LOCK.spec.ts
 created: 2026-05-19
+qa_result: pass
+qa_grade: Green
+deploy_commit: 8e6570644ef47fd958a5a95812303c4c257849bc
+deployed_at: "2026-05-19T18:55:00+09:00"
+bundle_hash: index-LmNgu_pw.js (etag:1780a2cc212e5eccde17c47fd92ea78b)
+field_soak_until: "2026-05-20T18:55:00+09:00"
 ---
 
 # T-20260519-foot-CHART-ACCESS-LOCK — 차트 열림 경로 코드 락 + 전 고객 차트 접근 보장
