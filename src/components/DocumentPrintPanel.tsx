@@ -88,6 +88,15 @@ interface InvoiceDoc {
   created_at: string;
 }
 
+// T-20260519-foot-RECEIPT-REISSUE: 결제 체크박스용
+interface PaymentItem {
+  id: string;
+  amount: number;
+  method: string | null;
+  payment_type: string | null;
+  created_at: string;
+}
+
 // ─── Props ───
 
 interface Props {
@@ -466,6 +475,11 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
   const [invoiceDocs, setInvoiceDocs] = useState<InvoiceDoc[]>([]);
   const [invoiceOpen, setInvoiceOpen] = useState(false);
 
+  // ── 진료비 영수증 — 결제 데이터 체크박스 (T-20260519-foot-RECEIPT-REISSUE) ──
+  const [paymentItems, setPaymentItems] = useState<PaymentItem[]>([]);
+  const [selectedPaymentIds, setSelectedPaymentIds] = useState<Set<string>>(new Set());
+  const [receiptReissuePrinting, setReceiptReissuePrinting] = useState(false);
+
   // 방문일 기준 근무원장님 목록 (T-20260502-foot-DUTY-ROSTER)
   const visitDate = checkIn.checked_in_at
     ? format(new Date(checkIn.checked_in_at), 'yyyy-MM-dd')
@@ -485,7 +499,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
   }, [profile?.id, checkIn.clinic_id]);
 
   const load = useCallback(async () => {
-    const [tplRes, subRes, invRes] = await Promise.all([
+    const [tplRes, subRes, invRes, payRes] = await Promise.all([
       supabase
         .from('form_templates')
         .select('*')
@@ -504,6 +518,13 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
         .eq('check_in_id', checkIn.id)
         .eq('receipt_type', 'detail')
         .order('created_at', { ascending: false }),
+      // T-20260519-foot-RECEIPT-REISSUE: 결제 체크박스용 payments 조회
+      supabase
+        .from('payments')
+        .select('id, amount, method, payment_type, created_at')
+        .eq('check_in_id', checkIn.id)
+        .neq('status', 'deleted')
+        .order('created_at'),
     ]);
 
     const tpls =
@@ -511,6 +532,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
     setTemplates(tpls);
     setSubmissions((subRes.data ?? []) as FormSubmission[]);
     setInvoiceDocs((invRes.data ?? []) as InvoiceDoc[]);
+    setPaymentItems((payRes.data ?? []) as PaymentItem[]);
   }, [checkIn.id, checkIn.clinic_id]);
 
   useEffect(() => {
@@ -548,6 +570,69 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
     const { error } = await supabase.from('insurance_receipts').delete().eq('id', id);
     if (error) { toast.error('삭제 실패'); return; }
     toast.success('삭제됨'); load();
+  };
+
+  // ── 결제 체크박스 토글 (T-20260519-foot-RECEIPT-REISSUE) ──
+  const togglePayment = (id: string) => {
+    setSelectedPaymentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // ── 진료비 영수증 재발급 — 체크박스 선택 기반 (T-20260519-foot-RECEIPT-REISSUE) ──
+  const handleReceiptReissue = async () => {
+    if (selectedPaymentIds.size === 0) return;
+    setReceiptReissuePrinting(true);
+    try {
+      const selected = paymentItems.filter((p) => selectedPaymentIds.has(p.id));
+      const totalAmt = selected.reduce((sum, p) => sum + (p.amount ?? 0), 0);
+
+      const autoValues = await loadAutoBindContext(checkIn);
+      const billReceiptTpl = templates.find((t) => t.form_key === 'bill_receipt');
+
+      const bindValues: Record<string, string> = {
+        ...autoValues,
+        total_amount: formatAmount(totalAmt),
+      };
+
+      // 출력
+      const htmlTpl = getHtmlTemplate('bill_receipt');
+      if (htmlTpl) {
+        const bound = bindHtmlTemplate(htmlTpl, bindValues);
+        const pageHtml = `<div class="page">${bound}</div>`;
+        const w = openBatchPrintWindow([pageHtml], `진료비 영수증 재발급 — ${checkIn.customer_name}`);
+        if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
+      }
+
+      // form_submissions 이력 INSERT
+      if (billReceiptTpl && staffId) {
+        const now = new Date().toISOString();
+        const { error: subErr } = await supabase.from('form_submissions').insert({
+          clinic_id: checkIn.clinic_id,
+          template_id: billReceiptTpl.id,
+          check_in_id: checkIn.id,
+          customer_id: checkIn.customer_id ?? null,
+          issued_by: staffId,
+          field_data: bindValues,
+          diagnosis_codes: null,
+          signature_url: null,
+          status: 'printed',
+          printed_at: now,
+        });
+        if (subErr) toast.error(`이력 저장 실패: ${subErr.message}`);
+        else toast.success('영수증 재발급 완료');
+      } else {
+        toast.success('영수증 출력 완료');
+      }
+
+      load();
+      onUpdated();
+    } finally {
+      setReceiptReissuePrinting(false);
+    }
   };
 
   // ── 진료비 영수증 인쇄 ──
@@ -849,9 +934,9 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
               );
             })}
 
-            {/* 진료비 영수증 카드 — 기본 서류 그리드 내 배치 (T-20260513-foot-RX-BOX-DESIGN: 진료내역서와 동일 스타일) */}
+            {/* 진료비 영수증 카드 — T-20260519-foot-RECEIPT-REISSUE: 결제 데이터 체크박스 + 재발급 추가 */}
             <div className="relative rounded-lg border p-2.5 text-xs space-y-1.5 bg-amber-50 border-amber-200">
-              {/* 헤더 — 진료내역서 카드와 동일 구조: 아이콘 상단, 타이틀·설명 수직 스택 */}
+              {/* 헤더 */}
               <div className="flex items-start justify-between">
                 <span className="text-base">🧾</span>
                 {invoiceDocs.length > 0 && (
@@ -861,11 +946,69 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
                 )}
               </div>
               <div className="font-semibold text-foreground">진료비 영수증</div>
-              <div className="text-muted-foreground text-[11px] mt-0.5 line-clamp-1">데스크 금액 등록</div>
 
-              {/* 발급 이력 */}
+              {/* ── 결제 데이터 체크박스 목록 (T-20260519-foot-RECEIPT-REISSUE) ── */}
+              <div className="mt-1 space-y-1">
+                {paymentItems.length === 0 ? (
+                  <div className="text-[10px] text-muted-foreground py-1">
+                    이 방문의 결제 내역이 없습니다.
+                  </div>
+                ) : (
+                  paymentItems.map((pay) => {
+                    const isSel = selectedPaymentIds.has(pay.id);
+                    const methodLabel =
+                      pay.method === 'card' ? '카드' :
+                      pay.method === 'cash' ? '현금' :
+                      pay.method === 'transfer' ? '이체' : (pay.method ?? '');
+                    return (
+                      <div
+                        key={pay.id}
+                        className={`flex items-center gap-1.5 rounded border px-2 py-1.5 cursor-pointer select-none transition-all
+                          ${isSel ? 'border-teal-400 bg-teal-50 ring-1 ring-teal-300' : 'border-gray-200 bg-white hover:border-teal-200'}`}
+                        onClick={() => togglePayment(pay.id)}
+                      >
+                        <span className="text-teal-500 shrink-0">
+                          {isSel ? (
+                            <CheckSquare className="h-3.5 w-3.5" />
+                          ) : (
+                            <Square className="h-3.5 w-3.5 text-muted-foreground/50" />
+                          )}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1">
+                            <span className="font-semibold text-foreground">{formatAmount(pay.amount)}</span>
+                            {methodLabel && (
+                              <Badge variant="outline" className="text-[9px] px-1 h-3.5 border-amber-300 text-amber-700">
+                                {methodLabel}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {format(new Date(pay.created_at), 'MM/dd HH:mm')}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* 재발급 버튼 — 1건 이상 선택 시 활성화 */}
+              {selectedPaymentIds.size > 0 && (
+                <button
+                  className="mt-1 w-full flex items-center justify-center gap-1 rounded border border-teal-400 bg-teal-50 py-1.5 text-[11px] font-semibold text-teal-700 hover:bg-teal-100 disabled:opacity-50 transition-all"
+                  onClick={handleReceiptReissue}
+                  disabled={receiptReissuePrinting}
+                >
+                  <Printer className="h-3 w-3" />
+                  {receiptReissuePrinting ? '출력 중…' : `재발급 (${selectedPaymentIds.size}건)`}
+                </button>
+              )}
+
+              {/* 기존 발급 이력 (insurance_receipts 기반) */}
               {invoiceDocs.length > 0 && (
-                <div className="space-y-1 mt-1">
+                <div className="space-y-1 pt-1 border-t border-amber-200 mt-1">
+                  <div className="text-[10px] text-muted-foreground">기존 등록 영수증</div>
                   {invoiceDocs.map((doc) => (
                     <div key={doc.id} className="flex items-center justify-between rounded border bg-white px-2 py-1.5 group">
                       <div className="min-w-0 flex-1">
@@ -898,7 +1041,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
                 </div>
               )}
 
-              {/* 등록 버튼 — 진료내역서 "상세 발행 →" 패턴과 동일 */}
+              {/* +등록 버튼 — 기존 금액 직접 입력 방식 유지 (AC-4) */}
               <button
                 className="mt-2 w-full text-[10px] text-teal-600 hover:underline text-left flex items-center gap-0.5"
                 onClick={() => setInvoiceOpen(true)}
