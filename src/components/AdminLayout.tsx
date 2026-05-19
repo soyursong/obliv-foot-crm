@@ -73,6 +73,13 @@ export default function AdminLayout() {
   // UX-9: 사이드바 알림 뱃지 — 오늘 결제대기 건수
   const [paymentWaitingCount, setPaymentWaitingCount] = useState<number>(0);
   // T-20260516-foot-CHART2-STATE-UNIFY AC-1: 2번차트 단일 소스 (3개 분산 state 통합)
+  // ─────────────────────────────────────────────────────────────────────────────
+  // CRITICAL: DO NOT MODIFY — Chart Open Guard
+  // T-20260519-foot-CHART-OPEN-GUARD: chartId/openChart/closeChart 는
+  // 모든 고객(초진·재진·체험) 1·2번 차트 열림의 단일 상태 소스.
+  // setChartId 직접 호출·state 분산·로직 우회 시 CHART2-REOPEN 재발 확정.
+  // 회귀 방지 spec: tests/e2e/T-20260519-foot-CHART-OPEN-GUARD.spec.ts
+  // ─────────────────────────────────────────────────────────────────────────────
   const [chartId, setChartId] = useState<string | null>(null);
   const openChart = useCallback((customerId: string) => setChartId(customerId), []);
   const closeChart = useCallback(() => setChartId(null), []);
@@ -439,6 +446,10 @@ export default function AdminLayout() {
       </main>
     </div>
     {/* T-20260516-foot-CHART2-STATE-UNIFY AC-2: 단일 렌더 (4곳 중복 제거) — createPortal로 document.body에 마운트 */}
+    {/* CRITICAL: DO NOT MODIFY — Chart Open Guard
+        T-20260519-foot-CHART-OPEN-GUARD: CustomerChartSheet는 이 1곳에서만 렌더.
+        다른 위치에 중복 렌더 추가 금지. customerId/onClose 대체 구현 금지.
+        회귀 방지 spec: tests/e2e/T-20260519-foot-CHART-OPEN-GUARD.spec.ts */}
     <CustomerChartSheet customerId={chartId} onClose={closeChart} />
     </ChartContext.Provider>
   );
