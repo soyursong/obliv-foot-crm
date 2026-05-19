@@ -608,7 +608,8 @@ function RoomSlot({
   const isFull = occupants.length >= maxOccupancy;
   const { isOver, setNodeRef } = useDroppable({ id: dropId, data: { roomName, roomType, isFull } });
   const isEmpty = occupants.length === 0;
-  const showStaffDropdown = (roomType === 'treatment' || roomType === 'examination' || roomType === 'consultation') && therapists && onTherapistChange;
+  // T-20260520-foot-LASER-DROPDOWN: laser 포함 — 장비명 드롭다운 regression 복구
+  const showStaffDropdown = (roomType === 'treatment' || roomType === 'examination' || roomType === 'consultation' || roomType === 'laser') && therapists && onTherapistChange;
   const showStaffLabel = roomType !== 'laser' && roomType !== 'treatment' && roomType !== 'examination' && roomType !== 'consultation' && staffName;
 
   return (
@@ -638,7 +639,8 @@ function RoomSlot({
             }}
             className="text-xs h-5 border border-gray-200 rounded bg-white/80 px-0.5 max-w-[80px] truncate text-muted-foreground"
           >
-            <option value="">미배정</option>
+            {/* T-20260520-foot-LASER-DROPDOWN: laser는 "장비 선택" placeholder (AC-9) */}
+            <option value="">{roomType === 'laser' ? '장비 선택' : '미배정'}</option>
             {therapists.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
@@ -2604,6 +2606,11 @@ export default function Dashboard() {
     handleStaffAssign('가열성레이저', 'heated_laser', staffId, staffName);
   }, [handleStaffAssign]);
 
+  // T-20260520-foot-LASER-DROPDOWN: 레이저실 장비명 배정 핸들러 (room_type='laser')
+  const handleLaserTechChange = useCallback((roomName: string, staffId: string | null, staffName: string | null) => {
+    handleStaffAssign(roomName, 'laser', staffId, staffName);
+  }, [handleStaffAssign]);
+
   useEffect(() => {
     fetchCheckIns();
     fetchRooms();
@@ -4146,6 +4153,7 @@ export default function Dashboard() {
       case 'laser_rooms':
         return laserRooms.length > 0 ? (
           <div key="laser_rooms" className="w-[480px] shrink-0">
+            {/* T-20260520-foot-LASER-DROPDOWN: therapists(technician only) + onTherapistChange 전달 — 장비명 드롭다운 복구 */}
             <RoomSection
               title="레이저실"
               color="bg-rose-100 text-rose-800"
@@ -4158,6 +4166,8 @@ export default function Dashboard() {
               onCardContext={handleCardContext}
               getStageStart={getStageStart}
               getPkgLabel={getPkgLabel}
+              therapists={therapists.filter(s => s.role === 'technician')}
+              onTherapistChange={handleLaserTechChange}
             />
           </div>
         ) : null;
@@ -4172,7 +4182,7 @@ export default function Dashboard() {
     laserWaiting, pendingTotal, doneTotal, dayPayments, doneCount,
     getStageStart, getPkgLabel, swapSortOrder,
     handleReservationCheckIn, handleCardClick, handleCardContext,
-    handleDoctorChange, handleConsultantChange, handleTherapistChange, handleHeatedLaserDoctorChange,
+    handleDoctorChange, handleConsultantChange, handleTherapistChange, handleHeatedLaserDoctorChange, handleLaserTechChange,
     slotBatchEditMode, defaultConsultRoomIds, handleAddConsultSlot, handleDeleteConsultSlot,
     setAddConsultSlotName, setAddConsultSlotOpen, setSlotBatchEditMode,
   ]);
