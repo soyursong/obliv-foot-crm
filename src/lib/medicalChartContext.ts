@@ -1,3 +1,4 @@
+// LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
 /**
  * T-20260516-foot-CHART-OPEN-UNIFY AC-2 — 진료차트 열림 단일 소스
  *
