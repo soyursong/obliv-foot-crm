@@ -902,7 +902,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       setTherapistList((therapistData ?? []) as {id: string; name: string}[]);
 
       const [pkgRes, visitRes, payRes, pkgPayRes, resvRes, ciHistRes] = await Promise.all([
-        supabase.from('packages').select('*').eq('customer_id', customerId).order('contract_date', { ascending: false }),
+        supabase.from('packages').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }),  // T-20260520-foot-PKG-SORT: created_at DESC (이름순→최신순)
         supabase.from('check_ins').select('*').eq('customer_id', customerId).order('checked_in_at', { ascending: false }).limit(50),
         supabase.from('payments').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
         supabase.from('package_payments').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
@@ -4699,7 +4699,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           onCreated={async () => {
             setOpenPackagePurchase(false);
             // 패키지 목록 새로고침
-            const pkgRes = await supabase.from('packages').select('*').eq('customer_id', customer.id).order('contract_date', { ascending: false });
+            const pkgRes = await supabase.from('packages').select('*').eq('customer_id', customer.id).order('created_at', { ascending: false });  // T-20260520-foot-PKG-SORT
             const pkgs = (pkgRes.data ?? []) as Package[];
             const remaining = await Promise.all(
               pkgs.map(async (p) => {
@@ -4720,7 +4720,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           onOpenChange={setOpenPackageAddon}
           onDone={async () => {
             setOpenPackageAddon(false);
-            const pkgRes = await supabase.from('packages').select('*').eq('customer_id', customer.id).order('contract_date', { ascending: false });
+            const pkgRes = await supabase.from('packages').select('*').eq('customer_id', customer.id).order('created_at', { ascending: false });  // T-20260520-foot-PKG-SORT
             const pkgs = (pkgRes.data ?? []) as Package[];
             const remaining = await Promise.all(
               pkgs.map(async (p) => {
