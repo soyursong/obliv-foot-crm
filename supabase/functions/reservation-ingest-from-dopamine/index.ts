@@ -1,0 +1,273 @@
+/**
+ * reservation-ingest-from-dopamine — TA2
+ * 도파민 → 풋CRM Forward 수신부
+ *
+ * 도파민 TM이 예약 확정 후 Push할 때 풋이 받는 EF.
+ * 스펙: memory/_handoff/spec_foot_dopamine_integration_20260520.md §3-1, §6-1, §5, §7
+ *
+ * ── Auth ────────────────────────────────────────────────────────
+ *   헤더: X-Callback-Secret: <DOPAMINE_CALLBACK_SECRET>
+ *   불일치 시 401, 처리 없음
+ *
+ * ── Request Body (§6-1) ─────────────────────────────────────────
+ *   {
+ *     "source_system": "dopamine",
+ *     "external_id": "<cue_card_id UUID>",
+ *     "clinic_slug": "foot-jongno",
+ *     "customer": {
+ *       "phone_e164": "+82102345...",
+ *       "name": "홍길동",
+ *       "birth_year": 1985,      // optional
+ *       "gender": "F",           // optional
+ *       "consent_marketing": true // optional
+ *     },
+ *     "reservation": {
+ *       "scheduled_at": "2026-05-25T14:30:00+09:00",
+ *       "slot_type": "new_consult",
+ *       "memo": "도파민 TM 상담 메모",
+ *       "campaign_id": "...",
+ *       "adset_id": "...",
+ *       "ad_id": "..."
+ *     }
+ *   }
+ *
+ * ── Response ────────────────────────────────────────────────────
+ *   200 정상:   { ok: true, reservation_id: "<uuid>", applied: true }
+ *   200 중복:   { ok: true, reservation_id: "<uuid>", applied: false, reason: "duplicate" }
+ *   400 스키마: { ok: false, error: "INVALID_BODY" | "MISSING_FIELD", detail: string }
+ *   401 인증:   { ok: false, error: "UNAUTHORIZED" }
+ *   422 불일치: { ok: false, error: "EXTERNAL_ID_MISMATCH", reason: "external_id_not_found" }
+ *   500 내부:   { ok: false, error: "INTERNAL", detail: string }
+ *
+ * ── 멱등성 ──────────────────────────────────────────────────────
+ *   UNIQUE(source_system, external_id) partial index on reservations
+ *   중복 시 기존 reservation_id 반환 (200 applied:false)
+ *
+ * ── 클리닉 ID ────────────────────────────────────────────────────
+ *   env FOOT_CLINIC_ID — 풋센터 clinic.id (UUID)
+ *   clinic_slug='foot-jongno' 검증 추가
+ */
+
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-callback-secret',
+  'Content-Type': 'application/json',
+};
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: CORS_HEADERS });
+}
+
+// E.164 phone validation (+[country][number], 7-15 digits after +)
+function isE164(phone: string): boolean {
+  return /^\+[1-9]\d{6,14}$/.test(phone);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+Deno.serve(async (req) => {
+  // CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: CORS_HEADERS });
+  }
+
+  if (req.method !== 'POST') {
+    return json({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+  }
+
+  // ── AC-2: X-Callback-Secret 인증 ──────────────────────────────────────────
+  const expectedSecret = Deno.env.get('DOPAMINE_CALLBACK_SECRET') ?? '';
+  const receivedSecret = req.headers.get('X-Callback-Secret') ?? '';
+  if (!expectedSecret || receivedSecret !== expectedSecret) {
+    console.warn('[reservation-ingest] 401 — secret mismatch');
+    return json({ ok: false, error: 'UNAUTHORIZED' }, 401);
+  }
+
+  // ── AC-3: Payload 파싱 ───────────────────────────────────────────────────
+  let body: Record<string, unknown> = {};
+  try {
+    body = await req.json();
+  } catch {
+    return json({ ok: false, error: 'INVALID_BODY', detail: 'JSON parse failed' }, 400);
+  }
+
+  // 필수 최상위 필드
+  const sourceSystem = body['source_system'] as string | undefined;
+  const externalId   = body['external_id']   as string | undefined;
+  const clinicSlug   = body['clinic_slug']   as string | undefined;
+  const customer     = body['customer']       as Record<string, unknown> | undefined;
+  const reservation  = body['reservation']   as Record<string, unknown> | undefined;
+
+  if (!externalId) {
+    return json({ ok: false, error: 'MISSING_FIELD', detail: 'external_id required' }, 400);
+  }
+  if (!customer || typeof customer !== 'object') {
+    return json({ ok: false, error: 'MISSING_FIELD', detail: 'customer object required' }, 400);
+  }
+  if (!reservation || typeof reservation !== 'object') {
+    return json({ ok: false, error: 'MISSING_FIELD', detail: 'reservation object required' }, 400);
+  }
+
+  // clinic_slug 검증 (스펙: foot-jongno 만 허용)
+  if (clinicSlug && clinicSlug !== 'foot-jongno') {
+    return json({ ok: false, error: 'MISSING_FIELD', detail: `clinic_slug '${clinicSlug}' not supported here` }, 400);
+  }
+
+  // customer 필수 필드
+  const phoneE164 = customer['phone_e164'] as string | undefined;
+  const name      = customer['name']       as string | undefined;
+  if (!phoneE164 || !name) {
+    return json({ ok: false, error: 'MISSING_FIELD', detail: 'customer.phone_e164 and customer.name required' }, 400);
+  }
+
+  // AC-4: E.164 포맷 검증
+  if (!isE164(phoneE164)) {
+    return json({ ok: false, error: 'MISSING_FIELD', detail: `customer.phone_e164 '${phoneE164}' is not valid E.164` }, 400);
+  }
+
+  // reservation 필수 필드
+  const scheduledAt = reservation['scheduled_at'] as string | undefined;
+  if (!scheduledAt) {
+    return json({ ok: false, error: 'MISSING_FIELD', detail: 'reservation.scheduled_at required' }, 400);
+  }
+
+  // ── 선택 필드 추출 ─────────────────────────────────────────────────────────
+  const birthYear         = customer['birth_year']         as number | undefined;
+  const gender            = customer['gender']             as string | undefined;
+  const consentMarketing  = customer['consent_marketing']  as boolean | undefined;
+  const slotType          = reservation['slot_type']       as string | undefined;
+  const memo              = reservation['memo']            as string | undefined;
+  const campaignId        = reservation['campaign_id']     as string | undefined;
+  const adsetId           = reservation['adset_id']        as string | undefined;
+  const adId              = reservation['ad_id']           as string | undefined;
+
+  // ── Supabase service role client ──────────────────────────────────────────
+  const supabaseUrl  = Deno.env.get('SUPABASE_URL')!;
+  const serviceKey   = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const clinicId     = Deno.env.get('FOOT_CLINIC_ID') ?? '';
+  const admin        = createClient(supabaseUrl, serviceKey);
+
+  try {
+    // ── AC-5: 중복 체크 먼저 ─────────────────────────────────────────────────
+    // UNIQUE partial index (source_system IS NOT NULL AND external_id IS NOT NULL)
+    // 중복 시 기존 reservation_id 반환 (applied:false)
+    const { data: existing } = await admin
+      .from('reservations')
+      .select('id')
+      .eq('source_system', sourceSystem ?? 'dopamine')
+      .eq('external_id', externalId)
+      .maybeSingle();
+
+    if (existing) {
+      console.log(`[reservation-ingest] duplicate external_id ${externalId} → existing ${existing.id}`);
+      return json({ ok: true, reservation_id: existing.id, applied: false, reason: 'duplicate' });
+    }
+
+    // ── AC-4: Customer upsert (phone_e164 기준) ────────────────────────────
+    let customerId: string;
+    const { data: existingCustomer } = await admin
+      .from('customers')
+      .select('id')
+      .eq('phone', phoneE164)
+      .maybeSingle();
+
+    if (existingCustomer) {
+      customerId = existingCustomer.id as string;
+      // 이름 업데이트 (더 최신 정보 반영)
+      await admin
+        .from('customers')
+        .update({
+          name,
+          ...(birthYear != null ? { birth_year: birthYear } : {}),
+          ...(gender ? { gender } : {}),
+          ...(consentMarketing != null ? { consent_marketing: consentMarketing } : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', customerId);
+    } else {
+      // 신규 고객 생성
+      const insertPayload: Record<string, unknown> = {
+        name,
+        phone: phoneE164,
+        ...(clinicId ? { clinic_id: clinicId } : {}),
+        ...(birthYear != null ? { birth_year: birthYear } : {}),
+        ...(gender ? { gender } : {}),
+        ...(consentMarketing != null ? { consent_marketing: consentMarketing } : {}),
+      };
+
+      const { data: newCustomer, error: custErr } = await admin
+        .from('customers')
+        .insert(insertPayload)
+        .select('id')
+        .single();
+
+      if (custErr || !newCustomer) {
+        // 중복 phone race condition 처리
+        if (custErr?.code === '23505') {
+          const { data: raceCustomer } = await admin
+            .from('customers')
+            .select('id')
+            .eq('phone', phoneE164)
+            .single();
+          if (!raceCustomer) {
+            return json({ ok: false, error: 'INTERNAL', detail: `customer race-condition: ${custErr.message}` }, 500);
+          }
+          customerId = raceCustomer.id as string;
+        } else {
+          return json({ ok: false, error: 'INTERNAL', detail: `customer insert failed: ${custErr?.message}` }, 500);
+        }
+      } else {
+        customerId = newCustomer.id as string;
+      }
+    }
+
+    // ── AC-5: Reservation INSERT ─────────────────────────────────────────────
+    const rsvPayload: Record<string, unknown> = {
+      customer_id:   customerId,
+      source_system: sourceSystem ?? 'dopamine',
+      external_id:   externalId,
+      scheduled_at:  scheduledAt,
+      status:        'confirmed',
+      ...(clinicId    ? { clinic_id: clinicId } : {}),
+      ...(slotType    ? { slot_type: slotType } : {}),
+      ...(memo        ? { memo } : {}),
+      ...(campaignId  ? { campaign_id: campaignId } : {}),
+      ...(adsetId     ? { adset_id: adsetId } : {}),
+      ...(adId        ? { ad_id: adId } : {}),
+    };
+
+    const { data: newRsv, error: rsvErr } = await admin
+      .from('reservations')
+      .insert(rsvPayload)
+      .select('id')
+      .single();
+
+    if (rsvErr) {
+      // UNIQUE 위반 — race condition 중복
+      if (rsvErr.code === '23505') {
+        const { data: raceRsv } = await admin
+          .from('reservations')
+          .select('id')
+          .eq('source_system', sourceSystem ?? 'dopamine')
+          .eq('external_id', externalId)
+          .single();
+        if (raceRsv) {
+          return json({ ok: true, reservation_id: raceRsv.id, applied: false, reason: 'duplicate' });
+        }
+      }
+      return json({ ok: false, error: 'INTERNAL', detail: `reservation insert failed: ${rsvErr.message}` }, 500);
+    }
+
+    if (!newRsv) {
+      return json({ ok: false, error: 'INTERNAL', detail: 'reservation insert returned no data' }, 500);
+    }
+
+    console.log(`[reservation-ingest] OK external_id=${externalId} reservation_id=${newRsv.id} customer_id=${customerId}`);
+    return json({ ok: true, reservation_id: newRsv.id, applied: true });
+
+  } catch (err) {
+    console.error('[reservation-ingest] unexpected error:', err);
+    return json({ ok: false, error: 'INTERNAL', detail: String(err).slice(0, 500) }, 500);
+  }
+});
