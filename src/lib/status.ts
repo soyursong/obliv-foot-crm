@@ -6,8 +6,8 @@ export const STATUS_KO: Record<CheckInStatus, string> = {
   consultation: '상담',
   exam_waiting: '진료대기',
   examination: '원장실',
-  treatment_waiting: '관리대기',
-  preconditioning: '관리',
+  treatment_waiting: '치료대기',
+  preconditioning: '치료실',
   laser_waiting: '레이저대기',
   healer_waiting: '힐러대기',
   laser: '레이저',
@@ -24,8 +24,8 @@ export const NEW_PATIENT_STAGES: CheckInStatus[] = [
   'consultation',        // 상담
   'exam_waiting',        // 진료대기
   'examination',         // 원장실
-  'treatment_waiting',   // 관리대기
-  'preconditioning',     // 관리
+  'treatment_waiting',   // 치료대기
+  'preconditioning',     // 치료실
   'laser_waiting',       // 레이저대기
   'healer_waiting',      // 힐러대기
   'laser',               // 레이저
@@ -33,10 +33,10 @@ export const NEW_PATIENT_STAGES: CheckInStatus[] = [
   'done',                // 완료
 ];
 
-// ── 재진 환자 6단계 (관리부터 시작)
+// ── 재진 환자 6단계 (치료대기부터 시작)
 export const RETURNING_PATIENT_STAGES: CheckInStatus[] = [
-  'treatment_waiting',   // 관리대기
-  'preconditioning',     // 관리
+  'treatment_waiting',   // 치료대기
+  'preconditioning',     // 치료실
   'laser_waiting',       // 레이저대기
   'healer_waiting',      // 힐러대기
   'laser',               // 레이저
