@@ -78,21 +78,29 @@ function App() {
                 <Route path="reservations" element={<Reservations />} />
                 <Route path="customers" element={<Customers />} />
                 {/* T-20260520-foot-STAFF-PKG-ACCESS: staff/part_lead READ-only 접근 추가 */}
-                <Route path="packages" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'staff', 'part_lead']}><Packages /></RoleGuard>} />
-                <Route path="staff" element={<RoleGuard roles={['admin', 'manager']}><Staff /></RoleGuard>} />
-                <Route path="closing" element={<RoleGuard roles={['admin', 'manager']}><Closing /></RoleGuard>} />
+                {/* T-20260520-foot-RBAC-MENU-EXPAND AC-4: therapist 패키지 접근 추가 */}
+                <Route path="packages" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'staff', 'part_lead', 'therapist']}><Packages /></RoleGuard>} />
+                {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 직원·공간 접근 */}
+                <Route path="staff" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><Staff /></RoleGuard>} />
+                {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 일마감 접근 (뷰 전용) */}
+                <Route path="closing" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><Closing /></RoleGuard>} />
+                {/* AC-6: 통계 — consultant/coordinator/therapist 직접 URL 차단 유지 */}
                 <Route path="stats" element={<RoleGuard roles={['admin', 'manager', 'part_lead']}><Stats /></RoleGuard>} />
                 <Route path="history" element={<DailyHistory />} />
+                {/* AC-6: 계정관리 — admin 전용 유지 */}
                 <Route path="accounts" element={<RoleGuard roles={['admin']}><Accounts /></RoleGuard>} />
-                <Route path="services" element={<RoleGuard roles={['admin', 'manager']}><Services /></RoleGuard>} />
+                {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 서비스관리 접근 (뷰 전용) */}
+                <Route path="services" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><Services /></RoleGuard>} />
                 {/* T-20260512-foot-QUICK-RX-BUTTON: 치료사/원장도 진료환자목록 탭 접근 가능 */}
-                <Route path="doctor-tools" element={<RoleGuard roles={['admin', 'manager', 'director', 'therapist', 'technician', 'part_lead']}><DoctorTools /></RoleGuard>} />
+                {/* T-20260520-foot-RBAC-MENU-EXPAND AC-2: consultant/coordinator 진료도구 접근 추가 */}
+                <Route path="doctor-tools" element={<RoleGuard roles={['admin', 'manager', 'director', 'therapist', 'technician', 'part_lead', 'consultant', 'coordinator']}><DoctorTools /></RoleGuard>} />
                 <Route path="treatment-table" element={<TreatmentTable />} />
                 <Route path="notices" element={<Notices />} />
-                {/* T-20260515-foot-SALES-COMMON-DB: 매출집계 */}
+                {/* T-20260515-foot-SALES-COMMON-DB: 매출집계 — AC-6 미노출 유지 */}
                 <Route path="sales" element={<RoleGuard roles={['admin', 'manager']}><Sales /></RoleGuard>} />
                 {/* T-20260516-foot-CLINIC-DOC-INFO: 병원·원장 정보 설정 */}
-                <Route path="clinic-settings" element={<RoleGuard roles={['admin', 'manager']}><ClinicSettings /></RoleGuard>} />
+                {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 접근 추가 */}
+                <Route path="clinic-settings" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><ClinicSettings /></RoleGuard>} />
                 {/* calendar 풀페이지 → 대시보드로 리다이렉트 (사이드바 패널로 대체) */}
                 <Route path="calendar" element={<Navigate to="/admin" replace />} />
               </Route>

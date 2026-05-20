@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
 import { getClinic } from '@/lib/clinic';
 import { formatAmount, formatPhone } from '@/lib/format';
 import { METHOD_KO, STATUS_KO, VISIT_TYPE_KO } from '@/lib/status';
@@ -189,6 +190,10 @@ function visitTypeLabel(vt: string | null): string {
 export default function Closing() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  // T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 뷰 전용
+  // 임시저장·마감 확정·재오픈·수기수정 버튼은 admin/manager만 표시
+  const { profile } = useAuth();
+  const isAdminOrManager = profile?.role === 'admin' || profile?.role === 'manager';
 
   const [tab, setTab] = useState<'summary' | 'payments'>('summary');
   const [date, setDate] = useState(todayStr());
@@ -927,7 +932,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             <Button variant="ghost" size="icon" onClick={handlePrint} title="인쇄">
               <Printer className="h-4 w-4" />
             </Button>
-            {isClosed ? (
+            {/* T-20260520-foot-RBAC-MENU-EXPAND: 임시저장·마감 확정·재오픈 = admin/manager 전용 */}
+            {isAdminOrManager && (isClosed ? (
               <Button variant="outline" onClick={() => {
                 if (!window.confirm('마감을 재오픈하시겠습니까?')) return;
                 reopen();
@@ -943,7 +949,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                   <Lock className="mr-1 h-4 w-4" /> 마감 확정
                 </Button>
               </>
-            )}
+            ))}
           </div>
 
           {!isClosed && (
@@ -1153,9 +1159,12 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               </div>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => { setManualEditTarget(null); setShowManualDialog(true); }}>
-                <Plus className="mr-1 h-4 w-4" /> 수기 추가
-              </Button>
+              {/* T-20260520-foot-RBAC-MENU-EXPAND: 수기 추가 = admin/manager 전용 */}
+              {isAdminOrManager && (
+                <Button variant="outline" size="sm" onClick={() => { setManualEditTarget(null); setShowManualDialog(true); }}>
+                  <Plus className="mr-1 h-4 w-4" /> 수기 추가
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={exportExcel} title="Excel 다운로드">
                 <FileSpreadsheet className="mr-1 h-4 w-4" /> Excel
               </Button>
@@ -1251,7 +1260,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                           </Badge>
                         </td>
                         <td className="py-2 px-1 text-center">
-                          {r.source === 'manual' && r.manual_id && r.manual_raw && (
+                          {r.source === 'manual' && r.manual_id && r.manual_raw && isAdminOrManager && (
                             <div className="flex items-center justify-center gap-1">
                               <button
                                 onClick={() => { setManualEditTarget(r.manual_raw!); setShowManualDialog(true); }}
