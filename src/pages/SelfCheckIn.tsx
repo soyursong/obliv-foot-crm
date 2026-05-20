@@ -3,7 +3,7 @@
  * 셀프체크인 페이지 — /checkin/:clinicSlug
  *
  * 인증 불필요 (anon). 태블릿/모바일 전체화면 최적화 (키오스크 모드).
- * 흐름: 성함+전화번호 입력 → 방문유형(2단계) 선택 → 유입경로(2단계) 선택 → 접수 확인 → 접수 완료
+ * 흐름: 성함+전화번호 입력 → 방문유형(2단계) 선택 → 유입경로(워크인만) 선택 → 접수 확인 → 접수 완료
  *
  * 키오스크 기능:
  * - 완료 화면 15초 자동 리셋 (카운트다운 표시)
@@ -589,6 +589,9 @@ export default function SelfCheckIn() {
       setReservationType('reserved');
       setWalkInModalOpen(false);
       setWalkInConfirmed(false);
+      // T-20260520-foot-SELFCHECKIN-LEADSRC-COND: 예약 경로는 leadSource 미수집
+      setLeadSource(null);
+      setLeadSourceDetail(null);
     }
   }, []);
 
@@ -602,6 +605,8 @@ export default function SelfCheckIn() {
   const handleWalkInCancel = useCallback(() => {
     setWalkInModalOpen(false);
     setReservationType(null); // 선택 취소
+    setLeadSource(null);
+    setLeadSourceDetail(null);
   }, []);
 
   // ── 유입경로 대분류 선택 ──
@@ -627,11 +632,14 @@ export default function SelfCheckIn() {
   const leadSourceComplete =
     leadSource !== null && (leadSource !== 'sns' || leadSourceDetail !== null);
 
+  // T-20260520-foot-SELFCHECKIN-LEADSRC-COND: 워크인만 유입경로 수집
+  const showLeadSource = reservationType === 'walkin';
+
   const canSubmit =
     name.trim().length >= 1 &&
     phone.replace(/\D/g, '').length >= 10 &&
     visitTypeComplete &&
-    leadSourceComplete;
+    (!showLeadSource || leadSourceComplete);
 
   const handleConfirm = () => {
     if (!canSubmit) return;
@@ -1058,19 +1066,26 @@ export default function SelfCheckIn() {
               <span style={{ color: C.muted }}>{t.contact}</span>
               <span className="font-semibold" style={{ color: C.dark }}>{phone}</span>
             </div>
-            <div className="flex justify-between border-b pb-3" style={{ borderColor: C.border }}>
+            {/* T-20260520-foot-SELFCHECKIN-LEADSRC-COND: 워크인일 때만 border-b */}
+            <div
+              className={`flex justify-between pb-3${reservationType === 'walkin' ? ' border-b' : ''}`}
+              style={{ borderColor: C.border }}
+            >
               <span style={{ color: C.muted }}>{t.visitType}</span>
               <span className="font-semibold text-right" style={{ color: C.dark }}>
                 {reservationLabel} / {visitLabel}
               </span>
             </div>
-            <div className="flex justify-between">
-              <span style={{ color: C.muted }}>{t.leadSourceTitle}</span>
-              <span className="font-semibold" style={{ color: C.dark }}>
-                {leadSource ? leadSourceLabel[leadSource] ?? leadSource : '-'}
-                {leadSourceDetail ? ` / ${leadDetailLabel[leadSourceDetail] ?? leadSourceDetail}` : ''}
-              </span>
-            </div>
+            {/* T-20260520-foot-SELFCHECKIN-LEADSRC-COND: 워크인만 유입경로 표시 */}
+            {reservationType === 'walkin' && (
+              <div className="flex justify-between">
+                <span style={{ color: C.muted }}>{t.leadSourceTitle}</span>
+                <span className="font-semibold" style={{ color: C.dark }}>
+                  {leadSource ? leadSourceLabel[leadSource] ?? leadSource : '-'}
+                  {leadSourceDetail ? ` / ${leadDetailLabel[leadSourceDetail] ?? leadSourceDetail}` : ''}
+                </span>
+              </div>
+            )}
           </div>
           <div className="flex gap-3">
             <button
@@ -1329,85 +1344,87 @@ export default function SelfCheckIn() {
             )}
           </div>
 
-          {/* 유입경로 — 2단계 (T-20260517-foot-CHECKIN-2STEP) */}
-          <div className="space-y-3">
-            <span className="block text-sm font-medium tracking-wide" style={{ color: C.medium }}>
-              {t.leadSourceTitle}
-            </span>
+          {/* 유입경로 — 워크인만 표시 (T-20260520-foot-SELFCHECKIN-LEADSRC-COND) */}
+          {showLeadSource && (
+            <div className="space-y-3">
+              <span className="block text-sm font-medium tracking-wide" style={{ color: C.medium }}>
+                {t.leadSourceTitle}
+              </span>
 
-            {/* 1단계: 대분류 5종 */}
-            <div className="grid grid-cols-3 gap-2">
-              {([
-                { value: 'sns', label: t.leadSNS },
-                { value: 'search', label: t.leadSearch },
-                { value: 'referral', label: t.leadReferral },
-                { value: 'partnership', label: t.leadPartnership },
-                { value: 'other', label: t.leadOther },
-              ]).map((src) => {
-                const isActive = leadSource === src.value;
-                return (
-                  <button
-                    key={src.value}
-                    type="button"
-                    onClick={() => handleLeadSourceSelect(src.value)}
-                    className="flex h-14 items-center justify-center rounded-xl px-2 text-center transition active:scale-[0.99]"
-                    style={{
-                      border: `1.5px solid ${isActive ? C.primary : C.border}`,
-                      backgroundColor: isActive ? C.beige : 'white',
-                      boxShadow: isActive ? `0 0 0 2px ${C.primary}22` : 'none',
-                      gridColumn: src.value === 'other' ? 'span 1' : undefined,
-                    }}
-                  >
-                    <span
-                      className="text-sm font-bold"
-                      style={{ color: isActive ? C.dark : C.muted }}
+              {/* 1단계: 대분류 5종 */}
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { value: 'sns', label: t.leadSNS },
+                  { value: 'search', label: t.leadSearch },
+                  { value: 'referral', label: t.leadReferral },
+                  { value: 'partnership', label: t.leadPartnership },
+                  { value: 'other', label: t.leadOther },
+                ]).map((src) => {
+                  const isActive = leadSource === src.value;
+                  return (
+                    <button
+                      key={src.value}
+                      type="button"
+                      onClick={() => handleLeadSourceSelect(src.value)}
+                      className="flex h-14 items-center justify-center rounded-xl px-2 text-center transition active:scale-[0.99]"
+                      style={{
+                        border: `1.5px solid ${isActive ? C.primary : C.border}`,
+                        backgroundColor: isActive ? C.beige : 'white',
+                        boxShadow: isActive ? `0 0 0 2px ${C.primary}22` : 'none',
+                        gridColumn: src.value === 'other' ? 'span 1' : undefined,
+                      }}
                     >
-                      {src.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* 2단계: SNS 소분류 (SNS 선택 시만 표시) */}
-            {leadSource === 'sns' && (
-              <div className="space-y-2 pt-1">
-                <span className="block text-xs font-medium tracking-wide" style={{ color: C.gold }}>
-                  {t.leadSNSSubTitle}
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  {([
-                    { value: 'instagram', label: t.leadInstagram },
-                    { value: 'facebook', label: t.leadFacebook },
-                    { value: 'youtube', label: t.leadYoutube },
-                    { value: 'blog_cafe', label: t.leadBlogCafe },
-                  ]).map((detail) => {
-                    const isActive = leadSourceDetail === detail.value;
-                    return (
-                      <button
-                        key={detail.value}
-                        type="button"
-                        onClick={() => setLeadSourceDetail(detail.value)}
-                        className="flex h-14 items-center justify-center rounded-xl px-3 text-center transition active:scale-[0.99]"
-                        style={{
-                          border: `1.5px solid ${isActive ? C.primary : C.border}`,
-                          backgroundColor: isActive ? C.beige : 'white',
-                          boxShadow: isActive ? `0 0 0 2px ${C.primary}22` : 'none',
-                        }}
+                      <span
+                        className="text-sm font-bold"
+                        style={{ color: isActive ? C.dark : C.muted }}
                       >
-                        <span
-                          className="text-sm font-bold"
-                          style={{ color: isActive ? C.dark : C.muted }}
-                        >
-                          {detail.label}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                        {src.label}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-            )}
-          </div>
+
+              {/* 2단계: SNS 소분류 (SNS 선택 시만 표시) */}
+              {leadSource === 'sns' && (
+                <div className="space-y-2 pt-1">
+                  <span className="block text-xs font-medium tracking-wide" style={{ color: C.gold }}>
+                    {t.leadSNSSubTitle}
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { value: 'instagram', label: t.leadInstagram },
+                      { value: 'facebook', label: t.leadFacebook },
+                      { value: 'youtube', label: t.leadYoutube },
+                      { value: 'blog_cafe', label: t.leadBlogCafe },
+                    ]).map((detail) => {
+                      const isActive = leadSourceDetail === detail.value;
+                      return (
+                        <button
+                          key={detail.value}
+                          type="button"
+                          onClick={() => setLeadSourceDetail(detail.value)}
+                          className="flex h-14 items-center justify-center rounded-xl px-3 text-center transition active:scale-[0.99]"
+                          style={{
+                            border: `1.5px solid ${isActive ? C.primary : C.border}`,
+                            backgroundColor: isActive ? C.beige : 'white',
+                            boxShadow: isActive ? `0 0 0 2px ${C.primary}22` : 'none',
+                          }}
+                        >
+                          <span
+                            className="text-sm font-bold"
+                            style={{ color: isActive ? C.dark : C.muted }}
+                          >
+                            {detail.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 접수 버튼 */}
           <button

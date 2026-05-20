@@ -1,12 +1,12 @@
 /**
  * 셀프체크인 E2E 테스트 (인증 불필요)
  *
- * [UPDATED for T-20260517-foot-CHECKIN-2STEP]
+ * [UPDATED for T-20260517-foot-CHECKIN-2STEP + T-20260520-foot-SELFCHECKIN-LEADSRC-COND]
  * - /checkin/jongno-foot 접속
  * - 클리닉명 표시 확인
  * - 이름 입력 + 전화번호 NumPad 입력
  * - 방문유형 2단계 선택 (예약여부 → 초진/재진)
- * - 유입경로 대분류 선택
+ * - 유입경로: 워크인만 표시 (예약 경로는 미표시)
  * - 확인 화면 -> 접수 완료 화면
  * - 잘못된 slug -> 에러 메시지 확인
  */
@@ -35,10 +35,10 @@ test.describe('Self check-in flow', () => {
     await page.getByRole('button', { name: '예약하고 왔어요' }).click();
     await page.locator('button').filter({ hasText: '재진' }).first().click();
 
-    // 유입경로: 검색 선택
-    await page.getByRole('button', { name: '검색' }).click();
+    // T-20260520-foot-SELFCHECKIN-LEADSRC-COND: 예약 경로 → leadSource 미표시·미필요
+    await expect(page.getByRole('button', { name: '검색' })).not.toBeVisible();
 
-    // 접수하기 버튼 활성화 확인
+    // 접수하기 버튼 활성화 확인 (leadSource 없이도 가능)
     const submitBtn = page.getByRole('button', { name: '접수하기' });
     await expect(submitBtn).toBeEnabled();
 
@@ -116,8 +116,7 @@ test.describe('Self check-in flow', () => {
     // 방문유형 2단계: 예약하고 왔어요 → 초진
     await page.getByRole('button', { name: '예약하고 왔어요' }).click();
     await page.locator('button').filter({ hasText: '초진' }).first().click();
-    // 유입경로: 기타
-    await page.getByRole('button', { name: '기타' }).click();
+    // T-20260520-foot-SELFCHECKIN-LEADSRC-COND: 예약 경로 → leadSource 미표시·미필요
 
     // 접수하기 클릭 → confirm 화면
     await page.getByRole('button', { name: '접수하기' }).click();
