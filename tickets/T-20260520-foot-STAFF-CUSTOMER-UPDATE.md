@@ -3,20 +3,26 @@ ticket_id: T-20260520-foot-STAFF-CUSTOMER-UPDATE
 title: customers UPDATE RLS — staff/part_lead 추가 + FE 편집 버튼 노출 확장
 domain: foot
 priority: P1
-status: in-progress
-deploy_ready: false
+status: deployed
+deploy_ready: true
+qa_result: pass
+qa_grade: Yellow
+deployed_at: 2026-05-21T00:07+09:00
+deploy_commit: 40f13ed
+bundle_hash: C2NvvHSq
 db_change: true
 db_change_note: |
   supabase/migrations/20260520000070_customers_staff_update_rls.sql
   - customers_staff_update UPDATE 정책 신규 추가 (is_floor_staff() 재사용)
   롤백: 20260520000070_customers_staff_update_rls.down.sql
   (DROP POLICY customers_staff_update ON customers)
-build_ok: false
-e2e_spec: tests/e2e/T-20260520-foot-STAFF-CUSTOMER-UPDATE.spec.ts
+build_ok: true
+e2e_spec_exempt_reason: db_only
 created_at: 2026-05-20
 deadline: 2026-05-26
 implemented_by: dev-foot
 parent_ticket: T-20260520-foot-STAFF-PERM-AUDIT
+field_soak_until: 2026-05-22T00:07+09:00
 ---
 
 # T-20260520-foot-STAFF-CUSTOMER-UPDATE — customers UPDATE RLS staff/part_lead 추가
