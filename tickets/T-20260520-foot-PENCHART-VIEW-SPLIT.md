@@ -1,15 +1,15 @@
 ---
 id: T-20260520-foot-PENCHART-VIEW-SPLIT
 domain: foot
-status: in-progress
-deploy-ready: false
-commit_sha: TBD
-build_ok: false
+status: deploy-ready
+deploy-ready: true
+commit_sha: 79a8118
+build_ok: true
 db_changed: false
 spec_file: tests/e2e/T-20260520-foot-PENCHART-VIEW-SPLIT.spec.ts
 risk: GO
 created_at: 2026-05-20
-completed_at: TBD
+completed_at: 2026-05-20
 ---
 
 # T-20260520-foot-PENCHART-VIEW-SPLIT
