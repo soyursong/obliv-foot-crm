@@ -1,7 +1,7 @@
 ---
 id: T-20260520-foot-LABEL-STAGE-RENAME
 title: "풋센터 대시보드 진행단계 라벨 통일 (치료대기·치료실)"
-status: deploy-ready
+status: deployed
 priority: P2
 domain: foot
 assigned_to: dev-foot
@@ -11,6 +11,12 @@ db_migration: false
 e2e_spec_exempt: true
 e2e_spec_reason: "라벨 텍스트 정정만 (typo fix), e2e_spec_exempt 승인"
 commit: 4dfa7d0
+qa_result: pass
+qa_grade: Green
+deployed_at: "2026-05-21T00:06:00+09:00"
+deploy_commit: fac47a45f4bf6222b13db541fe35f8247d0eead7
+bundle_hash: Dashboard-xf6RTBbA
+field_soak_until: "2026-05-22T00:06:00+09:00"
 created_at: 2026-05-20
 completed_at: 2026-05-20
 deadline: 2026-05-27
