@@ -6,6 +6,7 @@
  * T-20260517-foot-PENCHART-FORM: PDF 양식 배경 + 상용구
  * T-20260519-foot-PENCHART-FORM-ADD: 개인정보+체크리스트 합본 2종 (일반/어르신)
  * T-20260519-foot-HEALTH-Q-PEN: 발건강 질문지 PDF 캔버스 + 태블릿펜 기입
+ * T-20260520-foot-PENCHART-MODAL: draw/fill → shadcn Dialog fullscreen (backdrop + ESC close)
  *
  * 모드 구조:
  *   list   — 저장된 차트 목록 + 새 차트 버튼
@@ -23,7 +24,6 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { format } from 'date-fns';
 import {
   ClipboardList, Download, Eraser, Pencil, Plus, RotateCcw,
@@ -35,6 +35,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatPhoneInput } from '@/lib/format';
@@ -960,19 +961,27 @@ export function PenChartTab({
   // ─────────────────────────────────────────────────────────────────────
   if (mode === 'fill' && selectedFillTemplate) {
     const isSenior = selectedFillTemplate.form_key === 'personal_checklist_senior';
-    // T-20260520-foot-PENCHART-FULLSCREEN (AC-1/2): 고객 기입 시 차트 내용 완전 차단
-    return createPortal(
-      <div className="fixed inset-0 z-[9999] bg-white overflow-auto p-4">
-        <PersonalChecklistFillView
-          isSenior={isSenior}
-          data={fillData}
-          onChange={setFillData}
-          onSave={handleFillSave}
-          onCancel={() => { setMode('list'); setSelectedFillTemplate(null); }}
-          saving={fillSaving}
-        />
-      </div>,
-      document.body,
+    // T-20260520-foot-PENCHART-MODAL (AC-1/2/3): shadcn Dialog — backdrop으로 배경 차트 완전 차단
+    return (
+      <Dialog
+        open={true}
+        onOpenChange={(open) => {
+          if (!open) { setMode('list'); setSelectedFillTemplate(null); }
+        }}
+      >
+        <DialogContent size="fullscreen" hideClose>
+          <div className="h-full overflow-auto p-4 bg-white">
+            <PersonalChecklistFillView
+              isSenior={isSenior}
+              data={fillData}
+              onChange={setFillData}
+              onSave={handleFillSave}
+              onCancel={() => { setMode('list'); setSelectedFillTemplate(null); }}
+              saving={fillSaving}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     );
   }
 
@@ -1108,9 +1117,20 @@ export function PenChartTab({
   // 렌더: draw 모드 (캔버스 필기)
   // ─────────────────────────────────────────────────────────────────────
   if (mode === 'draw') {
-    // T-20260520-foot-PENCHART-FULLSCREEN (AC-1/2): 고객 기입 시 차트 내용 완전 차단
-    return createPortal(
-      <div className="fixed inset-0 z-[9999] bg-white flex flex-col">
+    // T-20260520-foot-PENCHART-MODAL (AC-1/2/3): shadcn Dialog fullscreen — backdrop으로 배경 차단
+    return (
+      <Dialog
+        open={true}
+        onOpenChange={(open) => {
+          if (!open) {
+            if (hasDrawing && !window.confirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) return;
+            setActiveDrawTemplate(null);
+            setMode('list');
+          }
+        }}
+      >
+      <DialogContent size="fullscreen" hideClose>
+      <div className="flex flex-col h-full bg-white">
         {/* 툴바 — fullscreen 고정 헤더 (AC-2 태블릿 전체화면) */}
         <div className="flex-none border-b bg-white p-2 flex items-center gap-2 flex-wrap shadow-sm">
           {/* 펜/지우개 */}
@@ -1328,8 +1348,9 @@ export function PenChartTab({
           </div>
         )}
         </div>{/* end 스크롤 콘텐츠 */}
-      </div>,
-      document.body,
+      </div>
+      </DialogContent>
+      </Dialog>
     );
   }
 
