@@ -1,18 +1,18 @@
 ---
 id: T-20260520-foot-SLOT-MOVE-REVERT
 title: "슬롯 이동 충돌 확인창 제거 — 즉시 이동 처리"
-status: in_progress
+status: deploy-ready
 priority: P2
 domain: foot
 created_at: 2026-05-20
-deploy_ready_at: 2026-05-20
+deploy_ready_at: 2026-05-21
 commit_sha: 14f3727
 db_migration: false
 build_passed: true
 e2e_spec: tests/e2e/T-20260520-foot-SLOT-MOVE-REVERT.spec.ts
-qa_result: fail
+qa_result: fixed
 qa_fail_phase: phase2
-qa_fail_reason: spec_missing
+qa_fail_reason: fixed — spec 신규 생성 완료 (2026-05-21)
 ---
 
 ## 개요
