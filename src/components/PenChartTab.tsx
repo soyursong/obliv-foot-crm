@@ -23,6 +23,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { format } from 'date-fns';
 import {
   ClipboardList, Download, Eraser, Pencil, Plus, RotateCcw,
@@ -959,15 +960,19 @@ export function PenChartTab({
   // ─────────────────────────────────────────────────────────────────────
   if (mode === 'fill' && selectedFillTemplate) {
     const isSenior = selectedFillTemplate.form_key === 'personal_checklist_senior';
-    return (
-      <PersonalChecklistFillView
-        isSenior={isSenior}
-        data={fillData}
-        onChange={setFillData}
-        onSave={handleFillSave}
-        onCancel={() => { setMode('list'); setSelectedFillTemplate(null); }}
-        saving={fillSaving}
-      />
+    // T-20260520-foot-PENCHART-FULLSCREEN (AC-1/2): 고객 기입 시 차트 내용 완전 차단
+    return createPortal(
+      <div className="fixed inset-0 z-[9999] bg-white overflow-auto p-4">
+        <PersonalChecklistFillView
+          isSenior={isSenior}
+          data={fillData}
+          onChange={setFillData}
+          onSave={handleFillSave}
+          onCancel={() => { setMode('list'); setSelectedFillTemplate(null); }}
+          saving={fillSaving}
+        />
+      </div>,
+      document.body,
     );
   }
 
@@ -1103,10 +1108,11 @@ export function PenChartTab({
   // 렌더: draw 모드 (캔버스 필기)
   // ─────────────────────────────────────────────────────────────────────
   if (mode === 'draw') {
-    return (
-      <div className="space-y-2">
-        {/* 툴바 */}
-        <div className="rounded-lg border bg-white p-2 flex items-center gap-2 flex-wrap sticky top-0 z-10 shadow-sm">
+    // T-20260520-foot-PENCHART-FULLSCREEN (AC-1/2): 고객 기입 시 차트 내용 완전 차단
+    return createPortal(
+      <div className="fixed inset-0 z-[9999] bg-white flex flex-col">
+        {/* 툴바 — fullscreen 고정 헤더 (AC-2 태블릿 전체화면) */}
+        <div className="flex-none border-b bg-white p-2 flex items-center gap-2 flex-wrap shadow-sm">
           {/* 펜/지우개 */}
           <button
             onClick={() => { setIsEraser(false); setBoilerplateMode('idle'); }}
@@ -1252,6 +1258,8 @@ export function PenChartTab({
             </Button>
           </div>
         </div>
+        {/* 스크롤 콘텐츠 — 태블릿 전체화면 확대 영역 (AC-2) */}
+        <div className="flex-1 overflow-auto p-4 space-y-4">
 
         {/* 캔버스 */}
         <div className="rounded-lg border bg-white p-2 overflow-x-auto">
@@ -1319,7 +1327,9 @@ export function PenChartTab({
             </p>
           </div>
         )}
-      </div>
+        </div>{/* end 스크롤 콘텐츠 */}
+      </div>,
+      document.body,
     );
   }
 
