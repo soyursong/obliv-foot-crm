@@ -3157,8 +3157,9 @@ export default function Dashboard() {
         setStageStartMap((prev) => new Map(prev).set(row.id, now));
       }
 
+      // AC-4: 수납대기 이동 시 PaymentDialog 대신 PaymentMiniWindow 직접 오픈
       if (newStatus === 'payment_waiting') {
-        setPaymentTarget({ ...row, status: newStatus });
+        setMiniPayTarget({ ...row, status: newStatus });
       }
       if (newStatus === 'done' && row.package_id) {
         const err = await autoDeductSession(row.id, row.package_id);
@@ -3283,7 +3284,8 @@ export default function Dashboard() {
       });
       setStageStartMap((prev) => new Map(prev).set(ci.id, now));
     }
-    if (newStatus === 'payment_waiting') setPaymentTarget({ ...ci, status: newStatus });
+    // AC-4: 수납대기 이동 시 PaymentMiniWindow 직접 오픈
+    if (newStatus === 'payment_waiting') setMiniPayTarget({ ...ci, status: newStatus });
     if (newStatus === 'done' && ci.package_id) {
       const err = await autoDeductSession(ci.id, ci.package_id);
       if (err) toast.error(`세션 소진 실패: ${err}`);

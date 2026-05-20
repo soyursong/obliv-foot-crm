@@ -668,7 +668,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     }
 
     // AC-5: 금일 시술내역 (price > 0 항목만 — 상병코드·처방약 제외)
-    const todayCIIds = (ciRes.data ?? []).map((c: { id: string }) => c.id);
+    // AC-3 fix: 현재 checkIn.id를 명시적으로 포함 (날짜 필터 timezone 불일치로 누락 방지)
+    const todayCIIds = [...new Set([ci.id, ...(ciRes.data ?? []).map((c: { id: string }) => c.id)])];
     if (todayCIIds.length > 0) {
       const { data: cisData } = await supabase
         .from('check_in_services')
@@ -911,6 +912,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     setDeductMode(false);
     toast.success('시술 저장 완료 — 금액 산정됨');
     onSaved?.();
+    // AC-3: 저장 후 금일 시술내역(Zone3) 즉시 갱신 — 2번차트 연동
+    loadZone3Data(checkIn);
   };
 
   // ── [선수금 차감 후 금액 산정] (PREPAID-DEDUCT AC-1) ─────────────────────
@@ -933,6 +936,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     setSaved(true);
     toast.success(`선수금 차감 후 청구 금액: ${formatAmount(deducted)}`);
     onSaved?.();
+    // AC-3: 저장 후 금일 시술내역(Zone3) 즉시 갱신 — 2번차트 연동
+    loadZone3Data(checkIn);
   };
 
   // ── executeAutoDone ────────────────────────────────────────────────────────
@@ -1252,28 +1257,32 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
               </div>
             )}
 
-            {/* 상병코드 / 처방약 탭: 리스트 (코드 선택용, 가격 표시 없음) */}
+            {/* 상병코드 / 처방약 탭: 소형 그리드 (AC-1: 풋케어 스타일 소형화 — 한 눈에 전체 카테고리) */}
             {(activeTab === '상병코드' || activeTab === '처방약') && (
-              <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+              <div className="flex-1 overflow-y-auto p-2">
                 {tabServices.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-8">
                     등록된 코드가 없습니다
                   </p>
                 ) : (
-                  tabServices.map((svc) => (
-                    <button
-                      key={svc.id}
-                      onClick={() => handleSelectService(svc)}
-                      className="w-full text-left rounded-md border px-3 py-2.5 hover:bg-blue-50 hover:border-blue-300 transition-colors min-h-[44px]"
-                    >
-                      <p className="text-sm font-medium leading-tight">{svc.name}</p>
-                      {svc.service_code && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {svc.service_code}
-                        </p>
-                      )}
-                    </button>
-                  ))
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-1.5">
+                    {tabServices.map((svc) => (
+                      <button
+                        key={svc.id}
+                        onClick={() => handleSelectService(svc)}
+                        className="flex flex-col items-center justify-center rounded border p-1.5 hover:bg-blue-50 hover:border-blue-300 transition-colors text-center min-h-[56px] sm:min-h-[48px]"
+                      >
+                        <span className="text-[10px] font-medium leading-tight line-clamp-2 w-full text-center">
+                          {svc.name}
+                        </span>
+                        {svc.service_code && (
+                          <span className="text-[9px] text-blue-500 mt-0.5 truncate w-full text-center">
+                            {svc.service_code}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
@@ -1284,7 +1293,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                AC-1: 탭 조건 제거 — 상병코드·풋케어 모두 동일 세로 영역에 공존
                AC-2: 코드항목(상단) + 수가항목(하단) 통합 표시
           ─────────────────────────────────────────────────────────────────── */}
-          <div className="sm:w-52 md:w-56 lg:w-60 shrink-0 border-t sm:border-t-0 sm:border-l flex flex-col sm:min-h-0">
+          {/* AC-2: Zone2 폭 확장 — sm:w-52→w-60, md:w-56→w-64, lg:w-60→w-72 (너무 좁아 잘림 해소) */}
+          <div className="sm:w-60 md:w-64 lg:w-72 shrink-0 border-t sm:border-t-0 sm:border-l flex flex-col sm:min-h-0">
 
             {/* Zone 2 헤더 */}
             <div className="px-3 pt-2 pb-1.5 shrink-0 border-b bg-muted/20">
@@ -1369,8 +1379,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                           )}
                           title={isPrepaid ? '선수금차감 해제' : '선수금차감 지정'}
                         />
-                        {/* 코드번호 */}
-                        <span className="w-14 shrink-0 text-[9px] text-muted-foreground truncate">
+                        {/* 코드번호 — AC-2: 차트코드 열 축소(w-14→w-9) → 코드명·금액 공간 확보 */}
+                        <span className="w-9 shrink-0 text-[9px] text-muted-foreground truncate">
                           {service.service_code ?? ''}
                         </span>
                         {/* 코드명 */}
