@@ -7,6 +7,7 @@
  * T-20260519-foot-PENCHART-FORM-ADD: 개인정보+체크리스트 합본 2종 (일반/어르신)
  * T-20260519-foot-HEALTH-Q-PEN: 발건강 질문지 PDF 캔버스 + 태블릿펜 기입
  * T-20260520-foot-PENCHART-MODAL: draw/fill → shadcn Dialog fullscreen (backdrop + ESC close)
+ * T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 PDF 원본 + 오버레이 입력
  *
  * 모드 구조:
  *   list   — 저장된 차트 목록 + 새 차트 버튼
@@ -114,10 +115,21 @@ export const BUILTIN_PERSONAL_CHECKLIST_SENIOR: Template = {
   form_key: 'personal_checklist_senior',
 };
 
+// T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 PDF 원본 폴백 (3페이지 세로 연결)
+export const BUILTIN_REFUND_CONSENT: Template = {
+  id: 'builtin-refund-consent',
+  name_ko: '환불/비급여 동의서',
+  template_path: '/forms/refund_consent.png',
+  template_format: 'pdf_overlay',
+  form_key: 'refund_consent',
+};
+
 const CANVAS_W = 720;
 const CANVAS_H = 1020; // A4 비율 약 1:√2
 // 어르신용 개인정보+체크리스트: 2페이지 세로 연결 (1241×3508 → 720×2040)
 const CANVAS_H_SENIOR_CHECKLIST = 2040;
+// T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 3페이지 세로 연결 (1241×5262 → 720×3052)
+const CANVAS_H_REFUND_CONSENT = 3052;
 
 const PEN_COLORS = [
   { label: '검정', value: '#1a1a1a' },
@@ -133,15 +145,21 @@ type TabMode = 'list' | 'select' | 'draw' | 'fill';
 const isHealthQFormKey = (k: string) => k.startsWith('health_questionnaire_');
 
 /** T-20260519-foot-PENCHART-FORM-ADD (FIX): 개인정보+체크리스트 PDF 오버레이 양식 */
-const isPdfOverlayFormKey = (k: string) => k.startsWith('personal_checklist_');
+/** T-20260520-foot-PENCHART-REFUND-FORM: refund_consent도 pdf_overlay로 동일 패턴 */
+const isPdfOverlayFormKey = (k: string) =>
+  k.startsWith('personal_checklist_') || k === 'refund_consent';
 
 /** 어르신용 체크리스트인지 (2페이지 캔버스 높이 적용) */
 const isSeniorChecklistKey = (k: string) => k === 'personal_checklist_senior';
+
+/** T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 여부 (3페이지) */
+const isRefundConsentKey = (k: string) => k === 'refund_consent';
 
 /** 양식에 따른 캔버스 높이 반환 */
 const getCanvasHeightForForm = (formKey: string | undefined): number => {
   if (!formKey) return CANVAS_H;
   if (isSeniorChecklistKey(formKey)) return CANVAS_H_SENIOR_CHECKLIST;
+  if (isRefundConsentKey(formKey)) return CANVAS_H_REFUND_CONSENT;
   return CANVAS_H;
 };
 
@@ -536,6 +554,8 @@ export function PenChartTab({
   const [checklistTemplates, setChecklistTemplates] = useState<Template[]>([]);
   /** 발건강 질문지 템플릿 2종 (일반/어르신) — T-20260519-foot-HEALTH-Q-PEN */
   const [healthQTemplates, setHealthQTemplates] = useState<Template[]>([]);
+  /** T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 템플릿 */
+  const [refundConsentTemplate, setRefundConsentTemplate] = useState<Template | null>(null);
   const [templateImgUrl, setTemplateImgUrl] = useState<string | null>(null);
   const [mode, setMode] = useState<TabMode>('list');
   /** draw 모드에서 현재 활성 양식 (pen_chart | health_questionnaire_*) */
@@ -622,6 +642,7 @@ export function PenChartTab({
         'pen_chart',
         'personal_checklist_general', 'personal_checklist_senior',
         'health_questionnaire_general', 'health_questionnaire_senior',
+        'refund_consent', // T-20260520-foot-PENCHART-REFUND-FORM
       ])
       .eq('active', true)
       .order('sort_order', { ascending: true });
@@ -630,6 +651,8 @@ export function PenChartTab({
       const penChart = (data as Template[]).find((t) => t.form_key === 'pen_chart');
       const checklists = (data as Template[]).filter((t) => t.form_key.startsWith('personal_checklist_'));
       const healthQs  = (data as Template[]).filter((t) => t.form_key.startsWith('health_questionnaire_'));
+      // T-20260520-foot-PENCHART-REFUND-FORM: DB 또는 내장 폴백
+      const refundConsent = (data as Template[]).find((t) => t.form_key === 'refund_consent');
       setPenChartTemplate(penChart ?? BUILTIN_PEN_CHART_TEMPLATE);
       // T-20260519-foot-PENCHART-FORM-ADD (FIX): pdf_overlay 형식이면 draw 모드용 그대로 사용
       // DB에 pdf_overlay 미적용(= template_path 빈 문자열)이면 내장 폴백
@@ -639,10 +662,13 @@ export function PenChartTab({
       setChecklistTemplates(checklistsWithFallback);
       // DB에 발건강 질문지 행 없으면 내장 폴백 사용
       setHealthQTemplates(healthQs.length > 0 ? healthQs : [BUILTIN_HEALTH_Q_GENERAL, BUILTIN_HEALTH_Q_SENIOR]);
+      // T-20260520-foot-PENCHART-REFUND-FORM: DB 또는 내장 폴백
+      setRefundConsentTemplate(refundConsent ?? BUILTIN_REFUND_CONSENT);
     } else {
       setPenChartTemplate(BUILTIN_PEN_CHART_TEMPLATE);
       setChecklistTemplates([BUILTIN_PERSONAL_CHECKLIST_GENERAL, BUILTIN_PERSONAL_CHECKLIST_SENIOR]);
       setHealthQTemplates([BUILTIN_HEALTH_Q_GENERAL, BUILTIN_HEALTH_Q_SENIOR]);
+      setRefundConsentTemplate(BUILTIN_REFUND_CONSENT);
     }
 
     // pen_chart 이미지 URL 로드 (Supabase storage 경로일 경우 signed URL 필요)
@@ -840,9 +866,12 @@ export function PenChartTab({
       const blob = await res.blob();
       // T-20260519-foot-HEALTH-Q-PEN: health_questionnaire 파일에 'hq_' prefix
       // T-20260519-foot-PENCHART-FORM-ADD (FIX): personal_checklist 파일에 'pc_' prefix
+      // T-20260520-foot-PENCHART-REFUND-FORM: refund_consent 파일에 'rc_' prefix
       let prefix = '';
       if (activeDrawTemplate && isHealthQFormKey(activeDrawTemplate.form_key)) {
         prefix = `hq_${activeDrawTemplate.form_key === 'health_questionnaire_senior' ? 'sr_' : ''}`;
+      } else if (activeDrawTemplate && isRefundConsentKey(activeDrawTemplate.form_key)) {
+        prefix = 'rc_';
       } else if (activeDrawTemplate && isPdfOverlayFormKey(activeDrawTemplate.form_key)) {
         prefix = `pc_${isSeniorChecklistKey(activeDrawTemplate.form_key) ? 'sr_' : ''}`;
       }
@@ -852,16 +881,17 @@ export function PenChartTab({
       if (error) { toast.error(`저장 실패: ${error.message}`); return; }
 
       const isHQ = activeDrawTemplate && isHealthQFormKey(activeDrawTemplate.form_key);
-      const isPC = activeDrawTemplate && isPdfOverlayFormKey(activeDrawTemplate.form_key);
+      const isPC = activeDrawTemplate && isPdfOverlayFormKey(activeDrawTemplate.form_key); // personal_checklist + refund_consent
 
       // T-20260519-foot-PENCHART-FORM-ADD (AC-4/5):
-      // pdf_overlay 양식은 form_submissions에도 저장 (서명 base64 + 캔버스 파일명 포함)
-      if (isPC && activeDrawTemplate && !activeDrawTemplate.id.startsWith('builtin-') && staffId) {
+      // pdf_overlay 양식 (personal_checklist + refund_consent) 은 form_submissions에도 저장
+      // (서명 base64 + 캔버스 파일명 포함)
+      // builtin ID면 template_id FK 미적용 — staffId 있으면 builtin도 field_data 저장 시도
+      if (isPC && activeDrawTemplate && staffId) {
         const signatureBase64 = sigEmpty ? null : (sigPadRef.current?.toDataURL('image/png') ?? null);
         const now = new Date().toISOString();
         const submissionPayload: Record<string, unknown> = {
           clinic_id:   clinicId,
-          template_id: activeDrawTemplate.id,
           customer_id: customerId,
           field_data: {
             form_key:         activeDrawTemplate.form_key,
@@ -874,6 +904,10 @@ export function PenChartTab({
           printed_at:  now,
           issued_by:   staffId,
         };
+        // template_id: builtin ID는 FK 위반 방지를 위해 포함하지 않음
+        if (!activeDrawTemplate.id.startsWith('builtin-')) {
+          submissionPayload.template_id = activeDrawTemplate.id;
+        }
         if (checkInId) submissionPayload.check_in_id = checkInId;
         const { error: subErr } = await supabase.from('form_submissions').insert(submissionPayload);
         if (subErr) {
@@ -882,7 +916,13 @@ export function PenChartTab({
         }
       }
 
-      toast.success(isHQ ? '발건강 질문지 저장 완료' : isPC ? '개인정보+체크리스트 저장 완료 — 상담내역에 연동됐습니다' : '펜차트 저장 완료');
+      const isRefund = activeDrawTemplate && isRefundConsentKey(activeDrawTemplate.form_key);
+      toast.success(
+        isHQ     ? '발건강 질문지 저장 완료' :
+        isRefund ? '환불/비급여 동의서 저장 완료 — 상담내역에 연동됐습니다' :
+        isPC     ? '개인정보+체크리스트 저장 완료 — 상담내역에 연동됐습니다' :
+                   '펜차트 저장 완료',
+      );
       await loadSavedCharts();
       // 서명 초기화
       sigPadRef.current?.clear();
@@ -1138,6 +1178,25 @@ export function PenChartTab({
                 </button>
               );
             })}
+
+            {/* T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 (3페이지) */}
+            {refundConsentTemplate && (
+              <button
+                onClick={() => handleSelectTemplate(refundConsentTemplate)}
+                className="flex items-center gap-3 rounded-lg border-2 border-rose-200 bg-rose-50 p-4 text-left hover:border-rose-400 hover:bg-rose-100 transition"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-200">
+                  <FileText className="h-5 w-5 text-rose-700" />
+                </div>
+                <div>
+                  <div className="font-semibold text-rose-800 text-sm">환불/비급여 동의서</div>
+                  <div className="text-xs text-rose-600 mt-0.5">환불·비급여 동의 PDF 원본 (3p) — 태블릿펜으로 직접 기입 + 서명</div>
+                </div>
+                <span className="ml-auto rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700">
+                  3페이지
+                </span>
+              </button>
+            )}
           </div>
         </div>
         </div>{/* max-w-lg mx-auto */}
@@ -1422,6 +1481,10 @@ export function PenChartTab({
           </span>
           <span className="rounded bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-[11px] text-indigo-700">
             📄 개인정보+체크리스트 (어르신용)
+          </span>
+          {/* T-20260520-foot-PENCHART-REFUND-FORM */}
+          <span className="rounded bg-rose-50 border border-rose-100 px-2 py-0.5 text-[11px] text-rose-700">
+            📋 환불/비급여 동의서 (3p)
           </span>
         </div>
 
