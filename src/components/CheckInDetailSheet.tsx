@@ -1481,20 +1481,18 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 </select>
               </div>
               {/* ② 예약메모 (T-20260515-foot-RESV-MEMO-APPEND: append-only 타임라인) */}
+              {/* T-20260520-foot-RESV-MEMO-WALKIN: reservationId 없어도 customerId fallback으로 메모 작성 가능 */}
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
                   <FileText className="h-3 w-3" /> 예약메모
                 </Label>
-                {latestResvId ? (
-                  <ReservationMemoTimeline
-                    reservationId={latestResvId}
-                    clinicId={clinic?.id ?? ''}
-                    authorName={profile?.name ?? ''}
-                    compact
-                  />
-                ) : (
-                  <div className="text-xs text-muted-foreground italic">연결된 예약 없음</div>
-                )}
+                <ReservationMemoTimeline
+                  reservationId={latestResvId ?? undefined}
+                  customerId={customerMode?.customerId}
+                  clinicId={clinic?.id ?? ''}
+                  authorName={profile?.name ?? ''}
+                  compact
+                />
               </div>
               {/* ③ 고객메모 (customers.customer_memo) — AC-6 추가 */}
               <div className="space-y-1.5">
@@ -2003,20 +2001,18 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   </div>
                 )}
                 {/* ② 예약메모 (T-20260515-foot-RESV-MEMO-APPEND: append-only 타임라인) */}
+                {/* T-20260520-foot-RESV-MEMO-WALKIN: reservationId 없어도 customerId fallback으로 메모 작성 가능 */}
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
                     <FileText className="h-3 w-3" /> 예약메모
                   </Label>
-                  {latestResvId ? (
-                    <ReservationMemoTimeline
-                      reservationId={latestResvId}
-                      clinicId={clinic?.id ?? ''}
-                      authorName={profile?.name ?? ''}
-                      compact
-                    />
-                  ) : (
-                    <div className="text-xs text-muted-foreground italic">연결된 예약 없음</div>
-                  )}
+                  <ReservationMemoTimeline
+                    reservationId={latestResvId ?? undefined}
+                    customerId={checkIn?.customer_id ?? resolvedCustomerId ?? undefined}
+                    clinicId={clinic?.id ?? ''}
+                    authorName={profile?.name ?? ''}
+                    compact
+                  />
                 </div>
                 {/* ③ 고객메모 (customers.customer_memo) — AC-6 추가 */}
                 {checkIn.customer_id && (

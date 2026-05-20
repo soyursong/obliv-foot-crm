@@ -2586,16 +2586,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <tr>
                   <td className={cn(LC, 'align-top pt-2 border-b-0')}>예약메모</td>
                   <td className={cn(VC, 'border-b-0')} colSpan={3}>
-                    {reservations[0]?.id ? (
-                      <ReservationMemoTimeline
-                        reservationId={reservations[0].id}
-                        clinicId={customer?.clinic_id ?? ''}
-                        authorName={profile?.name ?? ''}
-                        compact
-                      />
-                    ) : (
-                      <span className="text-muted-foreground/50 text-[11px]">연결된 예약 없음</span>
-                    )}
+                    {/* T-20260520-foot-RESV-MEMO-WALKIN: reservationId 없어도 customerId fallback으로 메모 작성 가능 */}
+                    <ReservationMemoTimeline
+                      reservationId={reservations[0]?.id}
+                      customerId={customerId}
+                      clinicId={customer?.clinic_id ?? ''}
+                      authorName={profile?.name ?? ''}
+                      compact
+                    />
                   </td>
                 </tr>
 

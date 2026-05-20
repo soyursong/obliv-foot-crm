@@ -1,8 +1,10 @@
 // T-20260515-foot-RESV-MEMO-APPEND
+// T-20260520-foot-RESV-MEMO-WALKIN: customer_id fallback — 예약 없는 워크인도 메모 작성 가능
 // 예약메모 누적 히스토리 타임라인 컴포넌트 (append-only)
 // - reservation_memo_history 테이블에서 이력 조회
 // - 최신 메모 상단 표시
 // - 하단 입력 필드로 새 메모 추가
+// - reservationId 없을 때 customerId 기준 fallback (워크인 지원)
 
 import { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
@@ -14,14 +16,18 @@ import { supabase } from '@/lib/supabase';
 
 export interface MemoHistoryItem {
   id: string;
-  reservation_id: string;
+  reservation_id: string | null;
+  customer_id?: string | null;
   content: string;
   created_by_name: string | null;
   created_at: string;
 }
 
 interface Props {
-  reservationId: string;
+  /** 예약 ID (있을 때만 전달 — 없으면 customerId fallback) */
+  reservationId?: string | null;
+  /** 예약 없는 고객(워크인)의 customer_id fallback (T-20260520-foot-RESV-MEMO-WALKIN) */
+  customerId?: string | null;
   clinicId: string;
   /** 현재 로그인 사용자 표시 이름 */
   authorName: string;
@@ -33,6 +39,7 @@ interface Props {
 
 export function ReservationMemoTimeline({
   reservationId,
+  customerId,
   clinicId,
   authorName,
   compact = false,
@@ -45,40 +52,54 @@ export function ReservationMemoTimeline({
   const [expanded, setExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // T-20260520-foot-RESV-MEMO-WALKIN: reservationId → customer_id 순 fallback
+  const effectiveKey = reservationId ? `resv:${reservationId}` : customerId ? `cust:${customerId}` : null;
+
+  // effectiveKey 없으면 로딩 상태 초기화
   useEffect(() => {
-    if (!reservationId) return;
+    if (!effectiveKey) setLoading(false);
+  }, [effectiveKey]);
+
+  useEffect(() => {
+    if (!effectiveKey) return;
     let cancelled = false;
     setLoading(true);
-    supabase
+    const query = supabase
       .from('reservation_memo_history')
-      .select('id, reservation_id, content, created_by_name, created_at')
-      .eq('reservation_id', reservationId)
-      .order('created_at', { ascending: false })
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) {
-          console.error('[ReservationMemoTimeline] fetch error', error);
-        } else {
-          setItems((data as MemoHistoryItem[]) ?? []);
-        }
-        setLoading(false);
-      });
+      .select('id, reservation_id, customer_id, content, created_by_name, created_at')
+      .order('created_at', { ascending: false });
+
+    const filteredQuery = reservationId
+      ? query.eq('reservation_id', reservationId)
+      : query.eq('customer_id', customerId!);
+
+    filteredQuery.then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) {
+        console.error('[ReservationMemoTimeline] fetch error', error);
+      } else {
+        setItems((data as MemoHistoryItem[]) ?? []);
+      }
+      setLoading(false);
+    });
     return () => { cancelled = true; };
-  }, [reservationId]);
+  }, [effectiveKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addMemo = async () => {
     const content = inputVal.trim();
     if (!content) return;
+    if (!reservationId && !customerId) return;
     setSubmitting(true);
+
+    // T-20260520-foot-RESV-MEMO-WALKIN: reservationId 있으면 reservation 기준, 없으면 customer 기준
+    const insertPayload = reservationId
+      ? { reservation_id: reservationId, clinic_id: clinicId, content, created_by_name: authorName || null }
+      : { customer_id: customerId, clinic_id: clinicId, content, created_by_name: authorName || null };
+
     const { data, error } = await supabase
       .from('reservation_memo_history')
-      .insert({
-        reservation_id: reservationId,
-        clinic_id: clinicId,
-        content,
-        created_by_name: authorName || null,
-      })
-      .select('id, reservation_id, content, created_by_name, created_at')
+      .insert(insertPayload)
+      .select('id, reservation_id, customer_id, content, created_by_name, created_at')
       .single();
     setSubmitting(false);
     if (error) {
@@ -147,7 +168,7 @@ export function ReservationMemoTimeline({
           variant="outline"
           className="h-8 px-2 text-xs border-teal-300 text-teal-700 hover:bg-teal-50 shrink-0"
           onClick={addMemo}
-          disabled={submitting || !inputVal.trim()}
+          disabled={submitting || !inputVal.trim() || !effectiveKey}
         >
           <MessageSquarePlus className="h-3.5 w-3.5 mr-0.5" />
           추가
