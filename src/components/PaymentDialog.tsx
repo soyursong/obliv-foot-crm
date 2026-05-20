@@ -244,6 +244,40 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
         .from('check_ins')
         .update({ package_id: newPackageId })
         .eq('id', checkIn.id);
+
+      // ── T-20260520-foot-PAID-CALLBACK-EMIT (TA4) ─────────────────────
+      // 도파민 경유 예약(source_system='dopamine')의 첫 패키지 결제 시 paid 콜백 발사.
+      // fire-and-forget: 콜백 실패가 결제 완료 UX를 블록하지 않음.
+      // EF 내부에서 is_first_package 판정 + outbound_log 멱등 보장.
+      if (checkIn.reservation_id) {
+        (async () => {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session?.access_token) return;
+
+            const { data: rsvRow } = await supabase
+              .from('reservations')
+              .select('source_system, external_id')
+              .eq('id', checkIn.reservation_id!)
+              .single();
+
+            if (rsvRow?.source_system === 'dopamine' && rsvRow?.external_id) {
+              await supabase.functions.invoke('dopamine-callback', {
+                body: {
+                  type: 'paid',
+                  check_in_id: checkIn.id,
+                  package_id: newPackageId,
+                  amount: totalAmount,
+                  package_name: selectedPreset.label,
+                },
+              });
+            }
+          } catch (cbErr) {
+            // non-fatal — outbound_log에 pending 기록이 남아 재처리 가능
+            console.warn('[paid-callback] 도파민 paid 콜백 발사 오류 (non-fatal):', cbErr);
+          }
+        })();
+      }
     } else {
       // 단건 결제 (기존 로직)
       if (isSplit) {
