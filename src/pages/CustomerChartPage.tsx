@@ -977,10 +977,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           .limit(30),
       ]);
       setChecklistEntries((clRes.data ?? []) as { id: string; completed_at: string | null; started_at: string; checklist_data: Record<string, unknown> }[]);
+      // T-20260520-foot-PENCHART-REFINE AC-1:
+      // builtin 템플릿 저장 시 template_id FK 없음 → JOIN 결과 null → template_key null
+      // field_data.form_key fallback 으로 [내용보기] 활성화 보장
       setSubmissionEntries(
         (subRes.data ?? []).map((s: Record<string, unknown>) => ({
           check_in_id: s.check_in_id as string,
-          template_key: (s.form_templates as { form_key: string } | null)?.form_key,
+          template_key: (s.form_templates as { form_key: string } | null)?.form_key
+            ?? ((s.field_data as Record<string, unknown> | null)?.form_key as string | undefined),
           printed_at: (s.printed_at as string | null) ?? null,
           signed_at:  (s.signed_at  as string | null) ?? null,
           field_data: (s.field_data as Record<string, unknown> | null) ?? null,
