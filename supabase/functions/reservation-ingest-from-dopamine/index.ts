@@ -142,10 +142,16 @@ Deno.serve(async (req) => {
   const adsetId           = reservation['adset_id']        as string | undefined;
   const adId              = reservation['ad_id']           as string | undefined;
 
+  // ── 결함 3 수정: FOOT_CLINIC_ID 필수 검증 (조기 실패) ──────────────────────
+  const clinicId = Deno.env.get('FOOT_CLINIC_ID');
+  if (!clinicId) {
+    console.error('[reservation-ingest] FOOT_CLINIC_ID env not configured');
+    return json({ ok: false, error: 'INTERNAL', detail: 'server misconfiguration' }, 500);
+  }
+
   // ── Supabase service role client ──────────────────────────────────────────
   const supabaseUrl  = Deno.env.get('SUPABASE_URL')!;
   const serviceKey   = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const clinicId     = Deno.env.get('FOOT_CLINIC_ID') ?? '';
   const admin        = createClient(supabaseUrl, serviceKey);
 
   try {
@@ -174,7 +180,7 @@ Deno.serve(async (req) => {
 
     if (existingCustomer) {
       customerId = existingCustomer.id as string;
-      // 이름 업데이트 (더 최신 정보 반영)
+      // 이름 업데이트 (더 최신 정보 반영) + 광고 추적 필드 선택적 반영
       await admin
         .from('customers')
         .update({
@@ -182,18 +188,27 @@ Deno.serve(async (req) => {
           ...(birthYear != null ? { birth_year: birthYear } : {}),
           ...(gender ? { gender } : {}),
           ...(consentMarketing != null ? { consent_marketing: consentMarketing } : {}),
+          // 결함 5 수정: campaign_id/adset_id/ad_id 는 customers 컬럼
+          ...(campaignId ? { campaign_id: campaignId } : {}),
+          ...(adsetId    ? { adset_id:    adsetId    } : {}),
+          ...(adId       ? { ad_id:       adId       } : {}),
           updated_at: new Date().toISOString(),
         })
         .eq('id', customerId);
     } else {
       // 신규 고객 생성
+      // 결함 3 수정: clinicId 는 이미 필수 검증됨 — 조건부 spread 불필요
+      // 결함 5 수정: campaign_id/adset_id/ad_id 는 customers 컬럼
       const insertPayload: Record<string, unknown> = {
         name,
         phone: phoneE164,
-        ...(clinicId ? { clinic_id: clinicId } : {}),
+        clinic_id: clinicId,
         ...(birthYear != null ? { birth_year: birthYear } : {}),
         ...(gender ? { gender } : {}),
         ...(consentMarketing != null ? { consent_marketing: consentMarketing } : {}),
+        ...(campaignId ? { campaign_id: campaignId } : {}),
+        ...(adsetId    ? { adset_id:    adsetId    } : {}),
+        ...(adId       ? { ad_id:       adId       } : {}),
       };
 
       const { data: newCustomer, error: custErr } = await admin
@@ -223,18 +238,24 @@ Deno.serve(async (req) => {
     }
 
     // ── AC-5: Reservation INSERT ─────────────────────────────────────────────
+    // 결함 1/2 수정: scheduledAt(ISO 8601) → reservation_date + reservation_time 분리
+    // DB: reservation_date DATE NOT NULL, reservation_time TIME NOT NULL (no scheduled_at 컬럼)
+    const scheduledDate = scheduledAt.substring(0, 10);   // "2026-05-25"
+    const scheduledTime = scheduledAt.substring(11, 19);  // "14:30:00"
+
     const rsvPayload: Record<string, unknown> = {
-      customer_id:   customerId,
-      source_system: sourceSystem ?? 'dopamine',
-      external_id:   externalId,
-      scheduled_at:  scheduledAt,
-      status:        'confirmed',
-      ...(clinicId    ? { clinic_id: clinicId } : {}),
-      ...(slotType    ? { slot_type: slotType } : {}),
-      ...(memo        ? { memo } : {}),
-      ...(campaignId  ? { campaign_id: campaignId } : {}),
-      ...(adsetId     ? { adset_id: adsetId } : {}),
-      ...(adId        ? { ad_id: adId } : {}),
+      customer_id:      customerId,
+      clinic_id:        clinicId,                          // 결함 3 수정: 필수 직접 할당 (조건부 아님)
+      source_system:    sourceSystem ?? 'dopamine',
+      external_id:      externalId,
+      reservation_date: scheduledDate,                     // 결함 1 수정: DATE NOT NULL 충족
+      reservation_time: scheduledTime,                     // 결함 2 수정: TIME NOT NULL 충족
+      // 결함 4 수정: scheduled_at 컬럼 없음 — 제거
+      status:           'confirmed',
+      // 결함 5 수정: slot_type 컬럼 없음 → visit_type 으로 매핑
+      ...(slotType ? { visit_type: slotType === 'new_consult' ? 'new' : 'returning' } : {}),
+      ...(memo     ? { memo } : {}),
+      // 결함 5 수정: campaign_id/adset_id/ad_id 는 customers 컬럼 — reservations에서 제거
     };
 
     const { data: newRsv, error: rsvErr } = await admin

@@ -45,13 +45,18 @@ test('TA2-2: X-Callback-Secret 검증 로직 포함', () => {
 });
 
 // ── 3. Payload 파싱 + 필수 필드 ──────────────────────────────────
-test('TA2-3: 필수 필드 검증 (external_id, customer, reservation)', () => {
+test('TA2-3: 필수 필드 검증 (external_id, customer, reservation, reservation_date/time)', () => {
   const src = fs.readFileSync(EF_PATH, 'utf-8');
   expect(src).toContain('external_id');
   expect(src).toContain('phone_e164');
-  expect(src).toContain('scheduled_at');
+  expect(src).toContain('scheduled_at');    // 입력 필드 (파싱 소스)
+  expect(src).toContain('reservation_date'); // DB INSERT 컬럼 (결함 1 수정)
+  expect(src).toContain('reservation_time'); // DB INSERT 컬럼 (결함 2 수정)
   expect(src).toContain('MISSING_FIELD');
   expect(src).toContain('400');
+  // scheduled_at 은 rsvPayload 에 직접 삽입되지 않음 — DB 컬럼 없음
+  expect(src).not.toContain('scheduled_at:  scheduledAt');
+  expect(src).not.toContain("scheduled_at: scheduledAt");
 });
 
 // ── 4. E.164 포맷 검증 ────────────────────────────────────────────
@@ -91,11 +96,24 @@ test('TA2-7: customer upsert 로직 (phone 매칭 + 신규 생성)', () => {
 });
 
 // ── 8. Reservation INSERT ────────────────────────────────────────
-test('TA2-8: reservation INSERT — source_system + external_id 설정', () => {
+test('TA2-8: reservation INSERT — reservation_date/time/clinic_id 필수 포함', () => {
   const src = fs.readFileSync(EF_PATH, 'utf-8');
-  expect(src).toContain("source_system: sourceSystem ?? 'dopamine'");
-  expect(src).toContain('external_id:   externalId');
+  expect(src).toContain("source_system:    sourceSystem ?? 'dopamine'");
+  expect(src).toContain('external_id:      externalId');
   expect(src).toContain("'reservations'");
+  // 결함 1/2 수정 검증: DATE/TIME 분리 저장
+  expect(src).toContain('reservation_date: scheduledDate');
+  expect(src).toContain('reservation_time: scheduledTime');
+  // 결함 3 수정 검증: clinic_id 직접 할당 (조건부 아님)
+  expect(src).toContain('clinic_id:        clinicId');
+  // 결함 4 수정 검증: scheduled_at 컬럼 미존재 — rsvPayload에 없음
+  const rsvPayloadBlock = src.split('// ── AC-5: Reservation INSERT')[1]?.split('const { data: newRsv')[0] ?? '';
+  // scheduled_at: 프로퍼티 할당 없어야 함
+  expect(rsvPayloadBlock).not.toMatch(/scheduled_at\s*:/);
+  // 결함 5 수정 검증: campaign_id/adset_id/ad_id 는 rsvPayload 프로퍼티에 없음 (주석 제외)
+  expect(rsvPayloadBlock).not.toMatch(/^\s+campaign_id\s*:/m);
+  expect(rsvPayloadBlock).not.toMatch(/^\s+adset_id\s*:/m);
+  expect(rsvPayloadBlock).not.toMatch(/^\s+ad_id\s*:/m);
 });
 
 // ── 9. clinic_slug 검증 ──────────────────────────────────────────
@@ -103,4 +121,18 @@ test('TA2-9: clinic_slug foot-jongno 검증 포함', () => {
   const src = fs.readFileSync(EF_PATH, 'utf-8');
   expect(src).toContain('foot-jongno');
   expect(src).toContain('clinic_slug');
+});
+
+// ── 10. FOOT_CLINIC_ID 조기 필수 검증 (결함 3 수정) ─────────────────
+test('TA2-10: FOOT_CLINIC_ID 미설정 시 500 반환 — 조건부 spread 금지', () => {
+  const src = fs.readFileSync(EF_PATH, 'utf-8');
+  // 조기 실패 검증 코드 존재
+  expect(src).toContain('FOOT_CLINIC_ID');
+  expect(src).toContain('server misconfiguration');
+  // clinicId 가 falsy 일 때 early return 하는 구조
+  expect(src).toContain("if (!clinicId)");
+  // rsvPayload에 조건부 clinic_id spread 없음 — 직접 할당
+  const rsvBlock = src.split('// ── AC-5: Reservation INSERT')[1]?.split('const { data: newRsv')[0] ?? '';
+  expect(rsvBlock).not.toContain('? { clinic_id');
+  expect(rsvBlock).not.toContain('clinicId ?');
 });
