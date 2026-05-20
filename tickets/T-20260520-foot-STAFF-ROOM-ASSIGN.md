@@ -3,14 +3,21 @@ ticket_id: T-20260520-foot-STAFF-ROOM-ASSIGN
 title: room_assignments UPDATE RLS — staff/part_lead 추가
 domain: foot
 priority: P2
-status: approved
-deploy_ready: false
+status: deploy-ready
+deploy_ready: true
+deploy_ready_at: "2026-05-21T00:25:00+09:00"
 db_change: true
 db_change_note: |
   room_assignments UPDATE 정책에 is_floor_staff() 추가
-  예정 마이그레이션: 20260528000010_room_assignments_staff_update_rls.sql
-build_ok: false
+  마이그레이션: 20260521000040_room_assignments_staff_update_rls.sql
+migration_file: supabase/migrations/20260521000040_room_assignments_staff_update_rls.sql
+rollback_file: supabase/migrations/20260521000040_room_assignments_staff_update_rls.down.sql
+commit: 583d9a9
+build_ok: true
 e2e_spec: none
+e2e_spec_exempt_reason: db_only
+risk_verdict: GO_WARN
+risk_reason: "DB RLS UPDATE 정책 추가 — staff/part_lead 역할 room_assignments 수정 권한"
 created_at: 2026-05-20
 deadline: 2026-05-28
 implemented_by: dev-foot

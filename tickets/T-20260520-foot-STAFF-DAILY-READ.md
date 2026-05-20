@@ -3,15 +3,22 @@ ticket_id: T-20260520-foot-STAFF-DAILY-READ
 title: daily_closings SELECT RLS — staff/part_lead 읽기 허용
 domain: foot
 priority: P2
-status: approved
-deploy_ready: false
+status: deploy-ready
+deploy_ready: true
+deploy_ready_at: "2026-05-21T00:25:00+09:00"
 db_change: true
 db_change_note: |
   daily_closings SELECT 정책에 is_approved_user() 추가 (읽기전용)
-  예정 마이그레이션: 20260528000030_daily_closings_staff_read_rls.sql
+  마이그레이션: 20260521000030_daily_closings_staff_select_rls.sql
   CRUD는 admin/manager 유지
-build_ok: false
+migration_file: supabase/migrations/20260521000030_daily_closings_staff_select_rls.sql
+rollback_file: supabase/migrations/20260521000030_daily_closings_staff_select_rls.down.sql
+commit: efd06a7
+build_ok: true
 e2e_spec: none
+e2e_spec_exempt_reason: db_only
+risk_verdict: GO_WARN
+risk_reason: "DB RLS SELECT 정책 추가 — staff/part_lead 역할 daily_closings 열람 권한"
 created_at: 2026-05-20
 deadline: 2026-05-28
 implemented_by: dev-foot
