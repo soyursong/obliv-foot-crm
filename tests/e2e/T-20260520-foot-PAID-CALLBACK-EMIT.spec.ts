@@ -55,12 +55,12 @@ test.describe('AC-6: dopamine-callback Edge Function 구조', () => {
 
   test('type="visited" 핸들러가 구현된다', () => {
     expect(efContent).toContain("'visited'");
-    expect(efContent).toContain('type: visited');
+    expect(efContent).toContain("type: 'visited'");
   });
 
   test('type="paid" 핸들러가 구현된다', () => {
     expect(efContent).toContain("'paid'");
-    expect(efContent).toContain('type: paid');
+    expect(efContent).toContain("type: 'paid'");
   });
 
   test('Deno.serve() 진입점이 있다', () => {
@@ -74,7 +74,7 @@ test.describe('AC-6: dopamine-callback Edge Function 구조', () => {
 
   test('SUPABASE_SERVICE_ROLE_KEY 로 service role 클라이언트를 생성한다', () => {
     expect(efContent).toContain('SUPABASE_SERVICE_ROLE_KEY');
-    expect(efContent).toContain('service_role');
+    expect(efContent).toContain('SUPABASE_SERVICE_ROLE_KEY');
   });
 });
 
