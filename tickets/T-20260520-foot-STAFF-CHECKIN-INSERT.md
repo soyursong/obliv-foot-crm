@@ -3,15 +3,24 @@ ticket_id: T-20260520-foot-STAFF-CHECKIN-INSERT
 title: check_ins INSERT RLS — staff/part_lead 추가
 domain: foot
 priority: P2
-status: approved
-deploy_ready: false
+status: deployed
+deploy_ready: true
 db_change: true
 db_change_note: |
   check_ins INSERT 정책에 is_floor_staff() 추가
-  예정 마이그레이션: 20260528000020_check_ins_staff_insert_rls.sql
+  마이그레이션: 20260521000020_check_ins_staff_insert_rls.sql
   (UPDATE는 T-20260520-foot-CHECKIN-RLS-STAFF에서 이미 완료)
-build_ok: false
+build_ok: true
 e2e_spec: none
+e2e_spec_exempt_reason: db_only
+qa_result: pass
+qa_grade: Green
+qa_fail_reason: null
+deployed_at: 2026-05-21T00:41:49+09:00
+deploy_commit: 276888ed7ef8b9e4cb5a9fb28c725906bfa198b7
+bundle_hash: C2NvvHSq (db-only, bundle unchanged)
+migration_file: supabase/migrations/20260521000020_check_ins_staff_insert_rls.sql
+rollback_file: supabase/migrations/20260521000020_check_ins_staff_insert_rls.down.sql
 created_at: 2026-05-20
 deadline: 2026-05-28
 implemented_by: dev-foot
