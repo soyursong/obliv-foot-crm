@@ -9,7 +9,7 @@ created: 2026-05-20
 deadline: 2026-05-21
 assignee: dev-foot
 deploy_ready: true
-commit_sha: ""
+commit_sha: "5bea053"
 build_ok: true
 db_change: true
 db_rollback_sql: supabase/migrations/20260520120000_clinics_nhis_fax.down.sql
