@@ -447,4 +447,9 @@ export interface Reservation {
   updated_at: string;
   /** T-20260516-foot-HEALER-RESV-BTN: 힐러예약 플래그 — 치료사 수동 설정, 예약 당일 대시보드 HL(노랑) 자동 표시 후 false로 리셋 (1회성) */
   healer_flag?: boolean | null;
+  // ── 도파민 연동 (T-20260520-foot-DOPAMINE-SCHEMA) ─────────────────────
+  /** 예약 유입 경로: null=일반/워크인, 'dopamine'=도파민 TM 경유, 'foot-walkin'=풋 자체 워크인 */
+  source_system?: string | null;
+  /** 도파민 cue_card.id (UUID) — 큐카드 master=도파민 모델 */
+  external_id?: string | null;
 }
