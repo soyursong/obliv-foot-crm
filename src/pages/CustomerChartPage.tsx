@@ -778,6 +778,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260520-foot-MEMO-HISTORY: 치료메모 히스토리 누적 방식
   const [treatmentMemos, setTreatmentMemos] = useState<TreatmentMemoEntry[]>([]);
   const [treatmentMemosLoaded, setTreatmentMemosLoaded] = useState(false);
+  // AC-3 (T-20260520-foot-MEMO-SAVE-ERR): 테이블 미존재 시 graceful fallback 플래그
+  const [treatmentMemoUnavailable, setTreatmentMemoUnavailable] = useState(false);
   const [newMemoText, setNewMemoText] = useState('');
   const [savingNewMemo, setSavingNewMemo] = useState(false);
   const [editingMemoId, setEditingMemoId] = useState<string | null>(null);
@@ -1619,8 +1621,17 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       .order('created_at', { ascending: false });
 
     if (error) {
-      // 테이블 미생성 등 — graceful fallback
-      console.warn('[TreatmentMemo] load error:', error.message);
+      // AC-3 (T-20260520-foot-MEMO-SAVE-ERR): 테이블 미존재 / 스키마 캐시 오류 → graceful fallback
+      const isTableMissing =
+        error.message?.includes('schema cache') ||
+        error.message?.includes('customer_treatment_memos') ||
+        (error as { code?: string }).code === 'PGRST205';
+      if (isTableMissing) {
+        console.warn('[TreatmentMemo] 테이블 미존재 — graceful fallback 적용');
+        setTreatmentMemoUnavailable(true);
+      } else {
+        console.warn('[TreatmentMemo] load error:', error.message);
+      }
       setTreatmentMemosLoaded(true);
       return;
     }
@@ -1677,7 +1688,20 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       .select('id, content, created_by, created_by_name, created_at, updated_at')
       .single();
     setSavingNewMemo(false);
-    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+    if (error) {
+      // AC-3: 테이블 미존재 시 친절한 안내 (raw 에러 노출 금지)
+      const isTableMissing =
+        error.message?.includes('schema cache') ||
+        error.message?.includes('customer_treatment_memos') ||
+        (error as { code?: string }).code === 'PGRST205';
+      if (isTableMissing) {
+        toast.error('치료메모 기능 준비 중입니다. 잠시 후 다시 시도해주세요.');
+        setTreatmentMemoUnavailable(true);
+      } else {
+        toast.error(`저장 실패: ${error.message}`);
+      }
+      return;
+    }
     if (data) setTreatmentMemos(prev => [data as TreatmentMemoEntry, ...prev]);
     setNewMemoText('');
   };
@@ -4184,25 +4208,35 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             {/* 치료메모 탭 — T-20260520-foot-MEMO-HISTORY: 히스토리 누적 방식 */}
             {resvDetailTab === '치료메모' && (
               <div className="p-2 space-y-2">
-                {/* 새 메모 입력 */}
-                <div>
-                  <label className="block text-[11px] text-muted-foreground mb-0.5">새 메모 추가</label>
-                  <Textarea
-                    value={newMemoText}
-                    onChange={(e) => setNewMemoText(e.target.value)}
-                    rows={3}
-                    placeholder="치료 메모를 입력하세요…"
-                    className="text-[11px] resize-none"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={saveNewTreatmentMemo}
-                  disabled={savingNewMemo || !newMemoText.trim()}
-                  className="w-full rounded bg-teal-600 text-white py-1.5 text-[11px] font-medium hover:bg-teal-700 transition disabled:opacity-50"
-                >
-                  {savingNewMemo ? '저장 중…' : '메모 추가'}
-                </button>
+                {/* AC-3: 테이블 미존재 graceful fallback 배너 */}
+                {treatmentMemoUnavailable && (
+                  <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700 text-center">
+                    치료메모 기능 준비 중입니다. 잠시 후 다시 이용해주세요.
+                  </div>
+                )}
+                {/* 새 메모 입력 — AC-3: 테이블 unavailable 시 숨김 */}
+                {!treatmentMemoUnavailable && (
+                  <>
+                    <div>
+                      <label className="block text-[11px] text-muted-foreground mb-0.5">새 메모 추가</label>
+                      <Textarea
+                        value={newMemoText}
+                        onChange={(e) => setNewMemoText(e.target.value)}
+                        rows={3}
+                        placeholder="치료 메모를 입력하세요…"
+                        className="text-[11px] resize-none"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={saveNewTreatmentMemo}
+                      disabled={savingNewMemo || !newMemoText.trim()}
+                      className="w-full rounded bg-teal-600 text-white py-1.5 text-[11px] font-medium hover:bg-teal-700 transition disabled:opacity-50"
+                    >
+                      {savingNewMemo ? '저장 중…' : '메모 추가'}
+                    </button>
+                  </>
+                )}
 
                 {/* 이력 목록 (최신순 DESC) */}
                 {!treatmentMemosLoaded ? (
