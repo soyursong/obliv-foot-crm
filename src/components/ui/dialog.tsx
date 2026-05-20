@@ -24,21 +24,27 @@ export function DialogContent({
   className,
   children,
   hideClose,
+  size = 'default',
 }: {
   className?: string;
   children?: React.ReactNode;
   hideClose?: boolean;
+  /** 'fullscreen' — fixed inset-0, 배경 overlay + 전체화면 팝업 (태블릿 펜차트 등) */
+  size?: 'default' | 'fullscreen';
 }) {
+  const isFullscreen = size === 'fullscreen';
   return (
     <BaseDialog.Portal>
       {/* Sheet(z-50) · CustomerChartSheet(z-[70]) 위에 항상 렌더되도록 z-[80]/z-[90] 사용 */}
       <BaseDialog.Backdrop className="fixed inset-0 z-[80] bg-black/50 data-[open]:animate-in data-[closed]:animate-out data-[open]:fade-in-0 data-[closed]:fade-out-0" />
       <BaseDialog.Popup
         className={cn(
-          'fixed left-1/2 top-1/2 z-[90] -translate-x-1/2 -translate-y-1/2 w-full max-w-lg',
-          'rounded-xl border bg-background p-6 shadow-lg focus:outline-none',
+          isFullscreen
+            ? 'fixed inset-0 z-[90] w-full h-full max-w-none rounded-none p-0 bg-transparent'
+            : 'fixed left-1/2 top-1/2 z-[90] -translate-x-1/2 -translate-y-1/2 w-full max-w-lg rounded-xl border bg-background p-6 shadow-lg',
+          'focus:outline-none',
           'data-[open]:animate-in data-[closed]:animate-out data-[open]:fade-in-0 data-[closed]:fade-out-0',
-          'data-[open]:zoom-in-95 data-[closed]:zoom-out-95',
+          !isFullscreen && 'data-[open]:zoom-in-95 data-[closed]:zoom-out-95',
           className,
         )}
       >
