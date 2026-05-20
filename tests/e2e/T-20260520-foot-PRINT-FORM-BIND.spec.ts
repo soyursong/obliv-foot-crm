@@ -203,6 +203,60 @@ test.describe('AC-7 — 행 HTML 생성 함수', () => {
   });
 });
 
+// ── AC-layout: 소견서(diag_opinion) 레이아웃 수정 확인 ────────────────────
+
+test.describe('AC-layout — diag_opinion 레이아웃 수정 (T-20260520-foot-PRINT-FORM-BIND)', () => {
+  test('AC-4.2: 상병 표시 비활성화 항목 삭제 확인', () => {
+    const tmpl = getHtmlTemplate('diag_opinion');
+    expect(tmpl).not.toBeNull();
+    expect(tmpl).not.toContain('☐ 상병 표시 비활성화');
+  });
+
+  test('AC-4.3: 병록번호 → 환자정보 라벨 변경', () => {
+    const tmpl = getHtmlTemplate('diag_opinion');
+    expect(tmpl).not.toContain('병 록 번 호');
+    expect(tmpl).toContain('환 자 정 보');
+    // 차트번호 데이터는 record_no 플레이스홀더
+    expect(tmpl).toContain('{{record_no}}');
+  });
+
+  test('AC-4.4: 연번호 라인 삭제 확인', () => {
+    const tmpl = getHtmlTemplate('diag_opinion');
+    expect(tmpl).not.toContain('연 번 호');
+  });
+
+  test('AC-4.9: 상병코드/상병명 칸 크기 확대 (min-height:30px)', () => {
+    const tmpl = getHtmlTemplate('diag_opinion');
+    // min-height:30px 이 diag_code/name 셀에 적용됐는지
+    expect(tmpl).toContain('min-height:30px');
+  });
+});
+
+// ── AC-layout: 진단서(diagnosis) 칸 크기 확대 확인 ───────────────────────
+
+test.describe('AC-5.4 — diagnosis 상병코드/상병명 칸 크기 확대', () => {
+  test('diagnosis diag_code_1/name_1 셀 min-height:30px 적용', () => {
+    const tmpl = getHtmlTemplate('diagnosis');
+    expect(tmpl).not.toBeNull();
+    expect(tmpl).toContain('min-height:30px');
+    // 기존 min-height:20px 는 제거됐어야 함
+    expect(tmpl).not.toContain('min-height:20px');
+  });
+});
+
+// ── AC-1.1: bill_detail @page 충돌 제거 (빈 페이지 방지) ─────────────────
+
+test.describe('AC-1.1 — bill_detail @page 충돌 제거', () => {
+  test('@page landscape 내부 선언 제거됐는지 확인', () => {
+    const tmpl = getHtmlTemplate('bill_detail');
+    expect(tmpl).not.toBeNull();
+    // 내부 @page size A4 landscape 선언이 없어야 함
+    expect(tmpl).not.toMatch(/@page\s*\{\s*size:\s*A4 landscape/);
+    // overflow: hidden 추가됐는지
+    expect(tmpl).toContain('overflow: hidden');
+  });
+});
+
 // ── HTML 양식 전수 확인 ────────────────────────────────────────────────────
 
 test.describe('isHtmlTemplate 등록 확인', () => {

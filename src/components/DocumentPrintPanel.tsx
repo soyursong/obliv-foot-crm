@@ -860,6 +860,61 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
       const autoValues = await loadAutoBindContext(checkIn, resolvedDoctorName);
       const isFallback = templates[0]?.id.startsWith('fallback-');
 
+      // T-20260520-foot-PRINT-FORM-BIND: bill_detail/rx_standard 항목 로딩 (배치출력용)
+      const needsItems = selectedTemplates.some(
+        (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard',
+      );
+      if (needsItems) {
+        const { data: chargeItems } = await supabase
+          .from('service_charges')
+          .select('id, base_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code)')
+          .eq('check_in_id', checkIn.id);
+
+        if (chargeItems && chargeItems.length > 0) {
+          const mappedItems = chargeItems.map((c) => {
+            const svc = Array.isArray(c.service) ? c.service[0] : c.service;
+            return {
+              id: c.id as string,
+              service_code: (svc as { service_code?: string | null } | null)?.service_code ?? null,
+              name: (svc as { name?: string } | null)?.name ?? '(알 수 없음)',
+              amount: (c.base_amount as number) ?? 0,
+              hira_code: (svc as { hira_code?: string | null } | null)?.hira_code ?? null,
+              is_insurance_covered: (c.is_insurance_covered as boolean) ?? false,
+            };
+          });
+          const billItems = mappedItems.map((item) => ({
+            category: item.is_insurance_covered ? '이학요법료' : '기타',
+            date: autoValues.visit_date ?? '',
+            code: item.service_code ?? item.hira_code ?? '',
+            name: item.name,
+            amount: item.amount,
+            count: 1,
+            days: 1,
+            is_insurance_covered: item.is_insurance_covered,
+          }));
+          autoValues.items_html = buildBillDetailItemsHtml(billItems);
+          const rxItems = mappedItems.map((item) => ({
+            name: item.name,
+            unit_dose: '1',
+            daily_freq: '1',
+            total_days: '7',
+            method: '',
+          }));
+          autoValues.rx_items_html = buildRxItemsHtml(rxItems);
+          const total = mappedItems.reduce((s, item) => s + item.amount, 0);
+          autoValues.total_amount = formatAmount(total);
+          const nonCoveredTotal = mappedItems
+            .filter((i) => !i.is_insurance_covered)
+            .reduce((s, i) => s + i.amount, 0);
+          autoValues.subtotal_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
+          autoValues.total_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
+          autoValues.subtotal_amount = autoValues.total_amount;
+        } else {
+          autoValues.items_html = buildBillDetailItemsHtml([]);
+          autoValues.rx_items_html = buildRxItemsHtml([]);
+        }
+      }
+
       const htmlTemplates = selectedTemplates.filter((t) => t.template_format === 'html' || isHtmlTemplate(t.form_key));
       const jpgTemplates = selectedTemplates.filter((t) => t.template_format !== 'pdf' && t.template_format !== 'html' && !isHtmlTemplate(t.form_key));
       const pdfTemplates = selectedTemplates.filter((t) => t.template_format === 'pdf');

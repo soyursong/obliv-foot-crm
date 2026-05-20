@@ -148,14 +148,14 @@ ${COMMON_STYLE}
         <td style="background:#f0f0f0; text-align:center; width:70px;">특 정 기 호</td>
       </tr>
       <tr>
-        <td style="min-height:20px;">{{diag_code_1}}</td>
-        <td style="min-height:20px;">{{diag_name_1}}</td>
-        <td style="min-height:20px;">{{diag_flag_1}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_code_1}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_name_1}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_flag_1}}</td>
       </tr>
       <tr>
-        <td style="min-height:20px;">{{diag_code_2}}</td>
-        <td style="min-height:20px;">{{diag_name_2}}</td>
-        <td style="min-height:20px;">{{diag_flag_2}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_code_2}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_name_2}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_flag_2}}</td>
       </tr>
     </tbody>
   </table>
@@ -594,21 +594,14 @@ ${COMMON_STYLE}
       <div class="stamp-box">원부대조필<br>인</div>
     </div>
   </div>
-  <div style="text-align:center; font-size:8pt; margin-bottom:4px; color:#555;">
-    ☐ 상병 표시 비활성화
-  </div>
 
   <table>
     <tbody>
       <tr>
-        <td style="width:70px; background:#f8f8f8;">병 록 번 호</td>
+        <td style="width:70px; background:#f8f8f8;">환 자 정 보</td>
         <td style="width:140px;">{{record_no}}</td>
         <td style="width:70px; background:#f8f8f8;">주 민 번 호</td>
         <td>{{patient_rrn}}</td>
-      </tr>
-      <tr>
-        <td style="background:#f8f8f8;">연 번 호</td>
-        <td colspan="3">{{visit_no}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">환자 성명</td>
@@ -639,14 +632,14 @@ ${COMMON_STYLE}
         <td style="background:#f0f0f0; text-align:center; width:70px;">특 정 기 호</td>
       </tr>
       <tr>
-        <td>{{diag_code_1}}</td>
-        <td>{{diag_name_1}}</td>
-        <td>{{diag_flag_1}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_code_1}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_name_1}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_flag_1}}</td>
       </tr>
       <tr>
-        <td>{{diag_code_2}}</td>
-        <td>{{diag_name_2}}</td>
-        <td>{{diag_flag_2}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_code_2}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_name_2}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_flag_2}}</td>
       </tr>
     </tbody>
   </table>
@@ -758,8 +751,7 @@ ${COMMON_STYLE}
   .bill-wrap .header-note { font-size: 8pt; margin-bottom: 3px; }
   .num-cell { text-align: right; font-variant-numeric: tabular-nums; }
   @media print {
-    @page { size: A4 landscape; margin: 8mm; }
-    .bill-wrap { width: 272mm; padding: 4mm 6mm; }
+    .bill-wrap { width: 272mm; padding: 4mm 6mm; overflow: hidden; }
   }
 </style>
 <div class="bill-wrap">
