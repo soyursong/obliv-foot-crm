@@ -77,7 +77,8 @@ function App() {
                 <Route index element={<Dashboard />} />
                 <Route path="reservations" element={<Reservations />} />
                 <Route path="customers" element={<Customers />} />
-                <Route path="packages" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator']}><Packages /></RoleGuard>} />
+                {/* T-20260520-foot-STAFF-PKG-ACCESS: staff/part_lead READ-only 접근 추가 */}
+                <Route path="packages" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'staff', 'part_lead']}><Packages /></RoleGuard>} />
                 <Route path="staff" element={<RoleGuard roles={['admin', 'manager']}><Staff /></RoleGuard>} />
                 <Route path="closing" element={<RoleGuard roles={['admin', 'manager']}><Closing /></RoleGuard>} />
                 <Route path="stats" element={<RoleGuard roles={['admin', 'manager', 'part_lead']}><Stats /></RoleGuard>} />

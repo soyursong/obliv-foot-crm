@@ -1952,13 +1952,7 @@ export default function Dashboard() {
   const [timelineReservations, setTimelineReservations] = useState<Reservation[]>([]);
   /** 셀프접수 walk-in 체크인 (reservation_id 없는 당일 체크인) — 통합 시간표용 */
   const [selfCheckIns, setSelfCheckIns] = useState<CheckIn[]>([]);
-  // T-20260515-foot-DASH-SLOT-DRAG: 슬롯 드래그 충돌 확인 대기 상태
-  const [pendingSlotDrag, setPendingSlotDrag] = useState<{
-    reservationId: string;
-    newTimeStr: string;   // HH:MM:SS
-    reservation: Reservation;
-    conflictCount: number;
-  } | null>(null);
+  // T-20260520-foot-SLOT-MOVE-REVERT: pendingSlotDrag 제거 — 확인창 없이 즉시 이동
   /** reservation_id → reservation_time (HH:MM:SS) — CustomerHoverCard 예약시간 표시용 */
   const resvTimeMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -2865,18 +2859,7 @@ export default function Dashboard() {
 
       const newTimeStr = `${newSlot}:00`; // HH:MM:SS
 
-      // 충돌 검사: 같은 날짜·슬롯에 다른 활성 예약이 있는지
-      const conflicting = timelineReservations.filter((r) => {
-        if (r.id === reservationId) return false;
-        if (r.status === 'cancelled' || r.status === 'noshow') return false;
-        return resvToSlot(r.reservation_time) === newSlot;
-      });
-
-      if (conflicting.length > 0) {
-        setPendingSlotDrag({ reservationId, newTimeStr, reservation, conflictCount: conflicting.length });
-        return;
-      }
-
+      // T-20260520-foot-SLOT-MOVE-REVERT: 충돌 검사·확인창 제거 — 즉시 이동
       await executeSlotDrag(reservationId, newTimeStr, reservation);
       return;
     }
@@ -4581,45 +4564,7 @@ export default function Dashboard() {
       </CardHandlersCtx.Provider>
       </ChartNumberMapCtx.Provider>
 
-      {/* T-20260515-foot-DASH-SLOT-DRAG: 슬롯 이동 충돌 확인 다이얼로그 */}
-      <Dialog open={!!pendingSlotDrag} onOpenChange={(open) => { if (!open) setPendingSlotDrag(null); }}>
-        <DialogContent className="max-w-sm" data-testid="slot-drag-conflict-dialog">
-          <DialogHeader>
-            <DialogTitle className="text-base">예약 시간 변경</DialogTitle>
-          </DialogHeader>
-          {pendingSlotDrag && (
-            <div className="space-y-2 py-1">
-              <p className="text-sm text-gray-700">
-                <span className="font-semibold">{pendingSlotDrag.reservation.customer_name}</span> 예약을{' '}
-                <span className="font-bold text-teal-700">
-                  {pendingSlotDrag.newTimeStr.slice(0, 5)}
-                </span>
-                으로 이동하시겠어요?
-              </p>
-              <p className="text-xs text-amber-600">
-                해당 시간에 이미 {pendingSlotDrag.conflictCount}건의 예약이 있습니다.
-                이동하면 같은 시간에 복수 예약이 공존합니다.
-              </p>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPendingSlotDrag(null)}>취소</Button>
-            <Button
-              onClick={async () => {
-                if (!pendingSlotDrag) return;
-                await executeSlotDrag(
-                  pendingSlotDrag.reservationId,
-                  pendingSlotDrag.newTimeStr,
-                  pendingSlotDrag.reservation,
-                );
-                setPendingSlotDrag(null);
-              }}
-            >
-              이동
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* T-20260520-foot-SLOT-MOVE-REVERT: 확인 다이얼로그 제거 — 즉시 이동 */}
 
       {/* 빠른 예약 다이얼로그 */}
       <QuickReservationDialog

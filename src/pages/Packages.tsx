@@ -40,6 +40,8 @@ export default function Packages() {
   const clinic = useClinic();
   const { profile } = useAuth();
   const isAdmin = profile?.role === 'admin';
+  // T-20260520-foot-STAFF-PKG-ACCESS: staff/part_lead = READ only (생성/편집/삭제 차단)
+  const canWritePackage = ['admin', 'manager', 'consultant', 'coordinator'].includes(profile?.role ?? '');
   const [filter, setFilter] = useState<FilterStatus>('active');
   const [rows, setRows] = useState<PackageListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,9 +111,12 @@ export default function Packages() {
               <Layers className="h-4 w-4" /> 템플릿 관리
             </Button>
           )}
-          <Button onClick={() => setOpenCreate(true)} className="gap-1">
-            <Plus className="h-4 w-4" /> 패키지 생성
-          </Button>
+          {/* T-20260520-foot-STAFF-PKG-ACCESS: staff/part_lead는 READ only — 생성 버튼 숨김 */}
+          {canWritePackage && (
+            <Button onClick={() => setOpenCreate(true)} className="gap-1">
+              <Plus className="h-4 w-4" /> 패키지 생성
+            </Button>
+          )}
         </div>
       </div>
 
@@ -216,9 +221,11 @@ export default function Packages() {
         onOpenChange={setOpenTemplates}
       />
 
+      {/* T-20260520-foot-STAFF-PKG-ACCESS: canWrite=false → 회차소진·환불·양도 버튼 숨김 */}
       <PackageDetailSheet
         packageId={selectedId}
         isAdmin={isAdmin}
+        canWrite={canWritePackage}
         onClose={() => setSelectedId(null)}
         onChanged={() => {
           setSelectedId(null);
@@ -1110,10 +1117,12 @@ function PackageCreateDialog({
 }
 
 function PackageDetailSheet({
-  packageId, isAdmin, onClose, onChanged,
+  packageId, isAdmin, canWrite, onClose, onChanged,
 }: {
   packageId: string | null;
   isAdmin?: boolean;
+  /** T-20260520-foot-STAFF-PKG-ACCESS: staff/part_lead는 false → 회차소진·결제추가·환불·양도 차단 */
+  canWrite?: boolean;
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -1207,10 +1216,11 @@ function PackageDetailSheet({
 
           {pkg.status === 'active' && (
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => setUseSessionOpen(true)}>회차 소진</Button>
-              <PackagePaymentAdd packageId={pkg.id} customerId={pkg.customer_id} clinicId={pkg.clinic_id} onAdded={reload} />
-              <Button variant="outline" size="sm" onClick={() => setRefundOpen(true)} disabled={(pkg.status as string) === 'refunded'}>환불</Button>
-              <Button variant="outline" size="sm" onClick={() => setTransferOpen(true)}>양도</Button>
+              {/* T-20260520-foot-STAFF-PKG-ACCESS: canWrite=false(staff/part_lead) → 쓰기 버튼 숨김 */}
+              {(canWrite !== false) && <Button size="sm" onClick={() => setUseSessionOpen(true)}>회차 소진</Button>}
+              {(canWrite !== false) && <PackagePaymentAdd packageId={pkg.id} customerId={pkg.customer_id} clinicId={pkg.clinic_id} onAdded={reload} />}
+              {(canWrite !== false) && <Button variant="outline" size="sm" onClick={() => setRefundOpen(true)} disabled={(pkg.status as string) === 'refunded'}>환불</Button>}
+              {(canWrite !== false) && <Button variant="outline" size="sm" onClick={() => setTransferOpen(true)}>양도</Button>}
               {isAdmin && sessions.length === 0 && pkgPayments.length === 0 && (
                 <Button variant="destructive" size="sm" className="gap-1"
                   onClick={async () => {

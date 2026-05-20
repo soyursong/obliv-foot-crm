@@ -69,7 +69,11 @@ export default function Customers() {
   const location = useLocation();
   const clinic = useClinic();
   const { profile } = useAuth();
-  const isAdmin = profile?.role === 'admin';
+  // T-20260520-foot-STAFF-CUSTOMER-UPDATE: isAdmin → 역할별 권한 분리 (isAdmin 제거됨)
+  // staff/part_lead도 customers UPDATE 가능 (RLS: customers_staff_update)
+  const canEditCustomer = ['admin', 'manager', 'consultant', 'coordinator', 'staff', 'part_lead'].includes(profile?.role ?? '');
+  // 삭제는 admin만 (기존 동작 유지)
+  const canDeleteCustomer = profile?.role === 'admin';
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
@@ -304,7 +308,7 @@ export default function Customers() {
                     {/* T-20260504-foot-MEMO-RESTRUCTURE: customer_memo 표시 */}
                     {c.customer_memo ?? ''}
                   </td>
-                  {/* 관리 열: 차트보기(모든 역할) + 수정·삭제(admin만) */}
+                  {/* 관리 열: 차트보기(모든 역할) + 수정(staff 이상) + 삭제(admin만) */}
                   <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-center gap-1">
                       <button
@@ -315,23 +319,25 @@ export default function Customers() {
                       >
                         <ExternalLink className="h-3.5 w-3.5 text-teal-600" />
                       </button>
-                      {isAdmin && (
-                        <>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setEditingCustomer(c); }}
-                            className="rounded p-1.5 hover:bg-muted transition"
-                            title="고객 정보 수정"
-                          >
-                            <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); deleteCustomer(c); }}
-                            className="rounded p-1.5 hover:bg-red-50 transition"
-                            title="삭제"
-                          >
-                            <Trash2 className="h-3.5 w-3.5 text-red-400" />
-                          </button>
-                        </>
+                      {/* T-20260520-foot-STAFF-CUSTOMER-UPDATE: 수정 버튼 staff/part_lead까지 노출 */}
+                      {canEditCustomer && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setEditingCustomer(c); }}
+                          className="rounded p-1.5 hover:bg-muted transition"
+                          title="고객 정보 수정"
+                        >
+                          <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                        </button>
+                      )}
+                      {/* 삭제 버튼은 admin만 (canDeleteCustomer) */}
+                      {canDeleteCustomer && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); deleteCustomer(c); }}
+                          className="rounded p-1.5 hover:bg-red-50 transition"
+                          title="삭제"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                        </button>
                       )}
                     </div>
                   </td>
@@ -394,6 +400,7 @@ export default function Customers() {
       )}
 
       {/* T-20260506-foot-CHART-CONSOLIDATE: CustomerDetailSheet 폐지 → 수정 전용 다이얼로그 */}
+      {/* T-20260520-foot-STAFF-CUSTOMER-UPDATE: canEditSensitive — staff/part_lead는 민감 컬럼 readonly */}
       <EditCustomerDialog
         customer={editingCustomer}
         onOpenChange={(o) => { if (!o) setEditingCustomer(null); }}
@@ -401,6 +408,7 @@ export default function Customers() {
           setEditingCustomer(null);
           runSearch(query, page);
         }}
+        canEditSensitive={['admin', 'manager', 'consultant', 'coordinator'].includes(profile?.role ?? '')}
       />
 
       <CreateCustomerDialog
@@ -448,7 +456,7 @@ export default function Customers() {
             setCtxMenu(null);
           }}
           onEdit={(c) => { setEditingCustomer(c); setCtxMenu(null); }}
-          isAdmin={isAdmin}
+          canEditCustomer={canEditCustomer}
         />
       )}
 
@@ -478,10 +486,13 @@ function EditCustomerDialog({
   customer,
   onOpenChange,
   onUpdated,
+  canEditSensitive = true,
 }: {
   customer: Customer | null;
   onOpenChange: (o: boolean) => void;
   onUpdated: () => void;
+  /** admin/manager/consultant/coordinator만 true. staff/part_lead는 false → 민감 컬럼 readonly */
+  canEditSensitive?: boolean;
 }) {
   const [name, setName] = useState('');
   // phone: 읽기전용 표시 (T-20260508-foot-CUST-FORM-REVAMP: 전화번호 기입칸 삭제)
@@ -625,14 +636,21 @@ function EditCustomerDialog({
             />
           </div>
           {/* 여권번호 — T-20260508-foot-CUST-FORM-REVAMP */}
+          {/* T-20260520-foot-STAFF-CUSTOMER-UPDATE: staff/part_lead는 여권번호 readonly */}
           <div className="space-y-1.5">
-            <Label>여권번호 <span className="text-xs text-muted-foreground font-normal">(외국인)</span></Label>
-            <Input
-              value={passportNumber}
-              onChange={(e) => setPassportNumber(e.target.value.toUpperCase())}
-              placeholder="예: M12345678"
-              className="font-mono"
-            />
+            <Label>여권번호 <span className="text-xs text-muted-foreground font-normal">(외국인){!canEditSensitive && ' — 열람 전용'}</span></Label>
+            {canEditSensitive ? (
+              <Input
+                value={passportNumber}
+                onChange={(e) => setPassportNumber(e.target.value.toUpperCase())}
+                placeholder="예: M12345678"
+                className="font-mono"
+              />
+            ) : (
+              <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground font-mono select-all">
+                {passportNumber || '—'}
+              </div>
+            )}
           </div>
           {/* 우편번호 — T-20260508-foot-CUST-FORM-REVAMP */}
           <div className="space-y-1.5">
@@ -943,10 +961,10 @@ interface CustomerContextMenuProps {
   onOpenChart: (c: Customer) => void;
   onOpenMedicalChart: (c: Customer) => void;
   onEdit: (c: Customer) => void;
-  isAdmin: boolean;
+  canEditCustomer: boolean;
 }
 
-function CustomerContextMenu({ customer, x, y, onClose, onOpenChart, onOpenMedicalChart, onEdit, isAdmin }: CustomerContextMenuProps) {
+function CustomerContextMenu({ customer, x, y, onClose, onOpenChart, onOpenMedicalChart, onEdit, canEditCustomer }: CustomerContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
@@ -1029,8 +1047,8 @@ function CustomerContextMenu({ customer, x, y, onClose, onOpenChart, onOpenMedic
         수납
       </button>
 
-      {/* 정보 수정 (admin 전용) */}
-      {isAdmin && (
+      {/* 정보 수정 (T-20260520-foot-STAFF-CUSTOMER-UPDATE: staff/part_lead까지 허용) */}
+      {canEditCustomer && (
         <>
           <div className="border-t my-1" />
           <button
