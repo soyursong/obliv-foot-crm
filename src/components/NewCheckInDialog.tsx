@@ -199,6 +199,17 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     let consultantId: string | null = null;
     if (visitType === 'new') {
       consultantId = await autoAssignConsultant(clinicId);
+    } else if (visitType === 'returning' && customerId) {
+      // T-20260520-foot-REVISIT-CONSULTANT-AUTOFILL
+      // AC-1: 재진 체크인 시 customers.assigned_staff_id → consultant_id 자동 세팅
+      // AC-2: assigned_staff_id NULL → consultantId null 유지 (기존 동작)
+      // AC-3: INSERT 시점에만 세팅 — UPDATE 이후 수동 변경은 덮어쓰지 않음
+      const { data: cust } = await supabase
+        .from('customers')
+        .select('assigned_staff_id')
+        .eq('id', customerId)
+        .maybeSingle();
+      consultantId = (cust?.assigned_staff_id as string | null) ?? null;
     }
 
     const { error } = await supabase.from('check_ins').insert({
