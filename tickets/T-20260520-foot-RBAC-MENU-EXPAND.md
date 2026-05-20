@@ -2,7 +2,7 @@
 id: T-20260520-foot-RBAC-MENU-EXPAND
 domain: foot
 priority: P1
-status: deploy-ready
+status: deployed
 title: consultant/coordinator/therapist 3역할 통계·매출집계·계정관리 제외 전체 메뉴 권한 열기
 created: 2026-05-20
 assignee: dev-foot
@@ -11,6 +11,12 @@ build-ok: true
 db-change: true
 regression-risk: low
 e2e-spec: tests/e2e/T-20260520-foot-RBAC-MENU-EXPAND.spec.ts
+qa_result: pass
+qa_grade: Yellow
+deploy_commit: e412f94
+deployed_at: "2026-05-20T23:54:18+09:00"
+bundle_hash: 5feb86d957421a836567642a0387615f
+field_soak_until: "2026-05-21T23:54:18+09:00"
 ---
 
 # T-20260520-foot-RBAC-MENU-EXPAND

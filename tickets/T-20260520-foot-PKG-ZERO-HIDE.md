@@ -1,22 +1,22 @@
 ---
 id: T-20260520-foot-PKG-ZERO-HIDE
 title: "2번차트 1구역 활성패키지 리스트 — 잔여 0회 패키지 자동 비노출"
-status: in_progress
+status: deploy-ready
 priority: P2
 domain: foot
 reporter: 김주연 총괄 (U0ATDB587PV)
 assignee: dev-foot
 created: 2026-05-20
 deadline: 2026-05-27
-deploy_ready: false
+deploy_ready: true
+deploy_ready_at: "2026-05-21T00:25:00+09:00"
 db_change: false
 build_pass: true
 spec_added: true
+spec_fix_commit: 58fc761
 regression_risk: low
-qa_result: fail
-qa_fail_phase: phase2
-qa_fail_reason: spec_fail_new
-qa_grade: Yellow
+qa_result: pending
+qa_note: "spec fix 58fc761 반영 — package_type NOT NULL 필드 pkgZero/pkgOne 양쪽 추가. supervisor 재QA 요청."
 ---
 
 ## 수용기준
@@ -89,3 +89,23 @@ Error: 패키지A 생성 실패: null value in column "package_type" of relation
 **참고**: 구현 코드(`CustomerChartPage.tsx`)는 정상. prod에 이미 반영됨(bundle hash 일치).
 
 → FIX-REQUEST 발송: MSG-20260521-001942-f0ur (dev-foot, P2)
+
+## spec 수정 (2026-05-21 dev-foot, commit 58fc761)
+
+`tests/e2e/T-20260520-foot-PKG-ZERO-HIDE.spec.ts` seed 함수에 `package_type: 'custom'` 추가.
+
+```diff
+  const { data: pkgZero } = await supabase.from('packages').insert({
+    ...
++   package_type: 'custom',
+    ...
+  })
+  const { data: pkgOne } = await supabase.from('packages').insert({
+    ...
++   package_type: 'custom',
+    ...
+  })
+```
+
+구현 코드(`CustomerChartPage.tsx`)는 변경 없음. spec 시드 버그만 수정.
+→ deploy-ready 재마킹. supervisor 재QA 대기.
