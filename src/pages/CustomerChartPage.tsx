@@ -771,7 +771,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [generalPhrases, setGeneralPhrases] = useState<{ id: number; name: string; content: string }[]>([]);
   // T-20260517-foot-C2-CONSULT-DOCS: 필수서류 [작성]/[내용보기] 다이얼로그 상태
   const [consentDialogFormType, setConsentDialogFormType] = useState<FormType | null>(null);
-  const [viewDocGroup, setViewDocGroup] = useState<1 | 2 | null>(null);
+  // T-20260520-foot-PENCHART-VIEW-SPLIT: 그룹3 발건강 질문지 추가
+  const [viewDocGroup, setViewDocGroup] = useState<1 | 2 | 3 | null>(null);
   // T-20260517-foot-C2-CONSULT-DOCS AC-R1: 합본 양식 모달
   const [showChecklistForm, setShowChecklistForm] = useState(false);
   const [showConsentFormModal, setShowConsentFormModal] = useState(false);
@@ -1050,13 +1051,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
   // T-20260520-foot-PENCHART-VIEW-SPLIT: form_submissions 이미지 뷰어 핸들러
   // 그룹에 맞는 template_key 필터로 canvas_file → signed URL 생성
+  // 그룹3: 발건강 질문지 (health_questionnaire_*) — T-20260520-foot-PENCHART-VIEW-SPLIT 확장
   const openSubmissionViewer = useCallback(async (
-    group: 1 | 2,
+    group: 1 | 2 | 3,
     cid: string,
   ) => {
     const filterKey = group === 1
       ? (k: string) => k.startsWith('personal_checklist_')
-      : (k: string) => k === 'refund_consent';
+      : group === 2
+      ? (k: string) => k === 'refund_consent'
+      : (k: string) => k.startsWith('health_questionnaire_');
     const subs = submissionEntries.filter((s) => s.template_key && filterKey(s.template_key));
     if (subs.length === 0) { setSubmissionImages([]); return; }
     setSubmissionImagesLoading(true);
@@ -1073,6 +1077,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           if (s.template_key === 'personal_checklist_general') label = '개인정보+체크리스트 (일반)';
           else if (s.template_key === 'personal_checklist_senior') label = '개인정보+체크리스트 (어르신용)';
           else if (s.template_key === 'refund_consent') label = '환불/비급여 동의서';
+          else if (s.template_key === 'health_questionnaire_general') label = '발건강 질문지 (일반)';
+          else if (s.template_key === 'health_questionnaire_senior') label = '발건강 질문지 (어르신용)';
           else label = s.template_key ?? '';
           return { url: data.signedUrl, date: dateStr, label };
         }),
@@ -3578,6 +3584,49 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 </div>
               </div>
 
+              {/* ── 그룹3: 발건강 질문지 — T-20260520-foot-PENCHART-VIEW-SPLIT ── */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-teal-800 mb-2">
+                  <span className="h-2 w-2 rounded-full bg-teal-500" />
+                  발건강 질문지
+                </div>
+                {(() => {
+                  const hasHQ = submissionEntries.some((s) => s.template_key?.startsWith('health_questionnaire_'));
+                  const dateStr = (() => {
+                    if (!hasHQ) return null;
+                    const newest = submissionEntries.filter((s) => s.template_key?.startsWith('health_questionnaire_'))[0];
+                    const d = newest?.printed_at ?? newest?.signed_at;
+                    return d ? format(new Date(d), 'MM-dd') : null;
+                  })();
+                  return (
+                    <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${hasHQ ? 'bg-teal-50' : 'bg-gray-50'}`}>
+                      <span className={hasHQ ? 'text-teal-600' : 'text-gray-300'}>{hasHQ ? '✓' : '○'}</span>
+                      <span className={hasHQ ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>발건강 질문지 (일반 / 어르신용)</span>
+                      {hasHQ && dateStr && <span className="ml-auto text-muted-foreground text-[10px]">{dateStr}</span>}
+                    </div>
+                  );
+                })()}
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => { handleClinicalTab('pen_chart'); }}
+                    className="flex-1 rounded border border-teal-200 bg-teal-50 py-1 text-[10px] font-medium text-teal-600 hover:bg-teal-100 transition"
+                    title="펜차트 탭에서 작성"
+                  >펜차트에서 작성</button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const hasHQ = submissionEntries.some((s) => s.template_key?.startsWith('health_questionnaire_'));
+                      if (!hasHQ) return;
+                      void openSubmissionViewer(3, customer.id);
+                      setViewDocGroup(3);
+                    }}
+                    disabled={!submissionEntries.some((s) => s.template_key?.startsWith('health_questionnaire_'))}
+                    className="flex-1 rounded border border-gray-200 bg-white py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                  >내용보기</button>
+                </div>
+              </div>
+
               {/* ── 결제영수증 (AC-4: 기존 기능 유지 + 자동 매출 산정 이미 도입됨) ── */}
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <ReceiptUploadSection
@@ -4787,13 +4836,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       )}
 
       {/* T-20260517-foot-C2-CONSULT-DOCS: 필수서류 [내용보기] 다이얼로그 */}
-      {/* T-20260520-foot-PENCHART-VIEW-SPLIT: form_submissions PNG 이미지 뷰어 통합 */}
+      {/* T-20260520-foot-PENCHART-VIEW-SPLIT: form_submissions PNG 이미지 뷰어 통합 (그룹3 발건강 질문지 포함) */}
       {viewDocGroup !== null && (
         <Dialog open={viewDocGroup !== null} onOpenChange={(o) => { if (!o) { setViewDocGroup(null); setSubmissionImages([]); } }}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle className="text-sm">
-                {viewDocGroup === 1 ? '개인정보 / 체크리스트' : '환불 / 비급여 동의서'}
+                {viewDocGroup === 1 ? '개인정보 / 체크리스트' : viewDocGroup === 2 ? '환불 / 비급여 동의서' : '발건강 질문지'}
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-3 text-xs max-h-[70vh] overflow-y-auto">
@@ -4880,6 +4929,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     consentEntries.filter((c) => c.form_type === 'refund' || c.form_type === 'non_covered').length === 0 && (
                       <p className="text-muted-foreground text-center py-4">서명된 서류가 없습니다</p>
                     )}
+                </>
+              )}
+              {/* T-20260520-foot-PENCHART-VIEW-SPLIT: 그룹3 — 발건강 질문지 (health_questionnaire_*) */}
+              {viewDocGroup === 3 && (
+                <>
+                  {!submissionImagesLoading && submissionImages.length === 0 && (
+                    <p className="text-muted-foreground text-center py-4">저장된 발건강 질문지가 없습니다</p>
+                  )}
                 </>
               )}
             </div>
