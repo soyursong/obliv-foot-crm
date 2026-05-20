@@ -1482,6 +1482,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               </div>
               {/* ② 예약메모 (T-20260515-foot-RESV-MEMO-APPEND: append-only 타임라인) */}
               {/* T-20260520-foot-RESV-MEMO-WALKIN: reservationId 없어도 customerId fallback으로 메모 작성 가능 */}
+              {/* T-20260521-foot-WALKIN-MEMO-GAP: customerMode 컨텍스트엔 checkInId 불필요 (customerId 항상 있음) */}
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
                   <FileText className="h-3 w-3" /> 예약메모
@@ -2002,6 +2003,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 )}
                 {/* ② 예약메모 (T-20260515-foot-RESV-MEMO-APPEND: append-only 타임라인) */}
                 {/* T-20260520-foot-RESV-MEMO-WALKIN: reservationId 없어도 customerId fallback으로 메모 작성 가능 */}
+                {/* T-20260521-foot-WALKIN-MEMO-GAP: customer_id=null 수기 워크인에 checkInId 3순위 fallback */}
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
                     <FileText className="h-3 w-3" /> 예약메모
@@ -2009,6 +2011,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   <ReservationMemoTimeline
                     reservationId={latestResvId ?? undefined}
                     customerId={checkIn?.customer_id ?? resolvedCustomerId ?? undefined}
+                    checkInId={checkIn?.id}
                     clinicId={clinic?.id ?? ''}
                     authorName={profile?.name ?? ''}
                     compact
