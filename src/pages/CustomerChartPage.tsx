@@ -2603,12 +2603,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </table>
 
             {/* ─ 패키지 구매항목 요약 — T-20260510-foot-C21-PKG-ITEM-DETAIL ─ */}
-            {packages.filter((p) => p.status === 'active').length > 0 && (
+            {/* T-20260520-foot-PKG-ZERO-HIDE: remaining_count===0 패키지 비노출 (FE 필터, DB 삭제 아님) */}
+            {packages.filter((p) => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length > 0 && (
               <div className="border-t border-gray-200 bg-teal-50/40 px-3 py-2 space-y-1.5 text-[11px]">
                 <div className="font-semibold text-teal-800 flex items-center gap-1">
                   <PackageIcon className="h-3.5 w-3.5" /> 활성 패키지
                 </div>
-                {packages.filter((p) => p.status === 'active').map((p) => {
+                {packages.filter((p) => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).map((p) => {
                   const rem = p.remaining;
                   return (
                     <div key={p.id} className="rounded border border-teal-200 bg-white px-2 py-1.5 space-y-1">
