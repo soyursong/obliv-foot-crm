@@ -86,6 +86,7 @@ export const AUTO_BIND_KEYS = [
   'patient_name',
   'patient_phone',
   'patient_rrn',
+  'patient_address',
   'visit_date',
   'doctor_name',
   'total_amount',
@@ -102,6 +103,17 @@ export const AUTO_BIND_KEYS = [
   'clinic_phone',
   'clinic_established_date',
   'business_reg_no',   // 하위 호환 alias
+  // T-20260520-foot-PRINT-FORM-BIND: 확장 바인딩
+  'patient_gender',
+  'patient_birthdate',
+  'patient_age',
+  'record_no',
+  'diag_code_1',
+  'diag_name_1',
+  'diag_code_2',
+  'diag_name_2',
+  'clinic_nhis_code',
+  'clinic_fax',
 ] as const;
 
 export type AutoBindKey = (typeof AUTO_BIND_KEYS)[number];
