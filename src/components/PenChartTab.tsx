@@ -485,6 +485,32 @@ function PersonalChecklistFillView({
   );
 }
 
+// ─── FullscreenFormWrapper ─────────────────────────────────────────────────
+/**
+ * FullscreenFormWrapper — 태블릿 최적화 공통 전체화면 래퍼
+ * T-20260520-foot-PENCHART-FULLSCREEN AC-5~7:
+ *   - 펜차트 탭 내 모든 양식(select/draw/fill + 향후 신규)이 동일 fullscreen UX
+ *   - 개별 양식마다 Dialog 분기 없음 — 이 래퍼 하나만 적용
+ *   - 향후 양식 추가 시 자동으로 fullscreen 적용됨 (확장성 보장)
+ */
+function FullscreenFormWrapper({
+  open,
+  onOpenChange,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="fullscreen" hideClose>
+        {children}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── 메인 컴포넌트 ──────────────────────────────────────────────────────────
 export function PenChartTab({
   customerId,
@@ -961,36 +987,41 @@ export function PenChartTab({
   // ─────────────────────────────────────────────────────────────────────
   if (mode === 'fill' && selectedFillTemplate) {
     const isSenior = selectedFillTemplate.form_key === 'personal_checklist_senior';
-    // T-20260520-foot-PENCHART-MODAL (AC-1/2/3): shadcn Dialog — backdrop으로 배경 차트 완전 차단
+    // T-20260520-foot-PENCHART-FULLSCREEN AC-5~7: FullscreenFormWrapper 공통 래퍼 사용
     return (
-      <Dialog
+      <FullscreenFormWrapper
         open={true}
         onOpenChange={(open) => {
           if (!open) { setMode('list'); setSelectedFillTemplate(null); }
         }}
       >
-        <DialogContent size="fullscreen" hideClose>
-          <div className="h-full overflow-auto p-4 bg-white">
-            <PersonalChecklistFillView
-              isSenior={isSenior}
-              data={fillData}
-              onChange={setFillData}
-              onSave={handleFillSave}
-              onCancel={() => { setMode('list'); setSelectedFillTemplate(null); }}
-              saving={fillSaving}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
+        <div className="h-full overflow-auto p-4 bg-white">
+          <PersonalChecklistFillView
+            isSenior={isSenior}
+            data={fillData}
+            onChange={setFillData}
+            onSave={handleFillSave}
+            onCancel={() => { setMode('list'); setSelectedFillTemplate(null); }}
+            saving={fillSaving}
+          />
+        </div>
+      </FullscreenFormWrapper>
     );
   }
 
   // ─────────────────────────────────────────────────────────────────────
   // 렌더: select 모드 (양식 선택 패널)
+  // T-20260520-foot-PENCHART-FULLSCREEN AC-6/7: 양식 선택 패널도 fullscreen
+  // 태블릿 최적화 — 차트 배경 완전 차단, 모든 양식 진입점 동일 UX
   // ─────────────────────────────────────────────────────────────────────
   if (mode === 'select') {
     return (
-      <div className="space-y-3">
+      <FullscreenFormWrapper
+        open={true}
+        onOpenChange={(open) => { if (!open) setMode('list'); }}
+      >
+        <div className="h-full overflow-auto p-4 bg-white">
+        <div className="max-w-lg mx-auto space-y-3">
         <div className="rounded-lg border bg-white p-3">
           <div className="flex items-center gap-2 mb-3">
             <button
@@ -1109,7 +1140,9 @@ export function PenChartTab({
             })}
           </div>
         </div>
-      </div>
+        </div>{/* max-w-lg mx-auto */}
+        </div>{/* h-full overflow-auto */}
+      </FullscreenFormWrapper>
     );
   }
 
@@ -1117,9 +1150,9 @@ export function PenChartTab({
   // 렌더: draw 모드 (캔버스 필기)
   // ─────────────────────────────────────────────────────────────────────
   if (mode === 'draw') {
-    // T-20260520-foot-PENCHART-MODAL (AC-1/2/3): shadcn Dialog fullscreen — backdrop으로 배경 차단
+    // T-20260520-foot-PENCHART-FULLSCREEN AC-5~7: FullscreenFormWrapper 공통 래퍼 사용
     return (
-      <Dialog
+      <FullscreenFormWrapper
         open={true}
         onOpenChange={(open) => {
           if (!open) {
@@ -1129,7 +1162,6 @@ export function PenChartTab({
           }
         }}
       >
-      <DialogContent size="fullscreen" hideClose>
       <div className="flex flex-col h-full bg-white">
         {/* 툴바 — fullscreen 고정 헤더 (AC-2 태블릿 전체화면) */}
         <div className="flex-none border-b bg-white p-2 flex items-center gap-2 flex-wrap shadow-sm">
@@ -1349,8 +1381,7 @@ export function PenChartTab({
         )}
         </div>{/* end 스크롤 콘텐츠 */}
       </div>
-      </DialogContent>
-      </Dialog>
+      </FullscreenFormWrapper>
     );
   }
 
