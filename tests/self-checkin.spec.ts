@@ -1,11 +1,11 @@
 /**
  * 셀프체크인 UI 검증
  *
- * [UPDATED for T-20260517-foot-CHECKIN-2STEP]
+ * [UPDATED for T-20260517-foot-CHECKIN-2STEP + T-20260520-foot-SELFCHECKIN-LEADSRC-COND]
  * - 방문유형: 2단계 (1단계: 예약여부 / 2단계: 초진·재진)
- * - 유입경로: 대분류 5종 (SNS 선택 시 소분류 4종 추가)
+ * - 유입경로: 워크인(예약없이 방문)만 수집. 예약 경로는 leadSource 미표시.
  * - 전화번호: 온스크린 NumPad (sc-phone input 없음)
- * - canSubmit = 이름 + 전화(10+) + visitTypeComplete + leadSourceComplete
+ * - canSubmit = 이름 + 전화(10+) + visitTypeComplete + (워크인 ? leadSourceComplete : true)
  */
 import { test, expect } from '@playwright/test';
 import { loginAndWaitForDashboard } from './helpers';
@@ -32,7 +32,7 @@ test.describe('Self check-in', () => {
     // 기존 평면 3버튼(초진/재진/예약없이 방문)은 더 이상 노출되지 않음
     await expect(page.getByRole('button', { name: '예약없이 방문', exact: true })).not.toBeVisible();
 
-    // 접수하기 버튼 (비활성 — 이름·전화·visitType·leadSource 모두 필요)
+    // 접수하기 버튼 (비활성 — 이름·전화·visitType 필요. leadSource는 워크인만)
     const submitBtn = page.getByRole('button', { name: '접수하기' });
     await expect(submitBtn).toBeVisible();
     await expect(submitBtn).toBeDisabled();
@@ -49,24 +49,25 @@ test.describe('Self check-in', () => {
 
     const submitBtn = page.getByRole('button', { name: '접수하기' });
 
-    // 이름만 입력 — 여전히 비활성 (전화·visitType·leadSource 없음)
+    // 이름만 입력 — 여전히 비활성 (전화·visitType 없음)
     await page.locator('#sc-name').fill('테스트');
     await expect(submitBtn).toBeDisabled();
 
-    // 전화번호 NumPad 입력 — 여전히 비활성 (visitType·leadSource 없음)
+    // 전화번호 NumPad 입력 — 여전히 비활성 (visitType 없음)
     for (const d of ['0', '1', '0', '1', '2', '3', '4', '5', '6', '7', '8']) {
       await page.getByRole('button', { name: d, exact: true }).click();
     }
     await expect(submitBtn).toBeDisabled();
 
-    // 방문유형 선택 — 여전히 비활성 (leadSource 없음)
+    // T-20260520-foot-SELFCHECKIN-LEADSRC-COND:
+    // 예약 경로(reserved)는 leadSource 미필요 → visitType 선택만으로 활성화
     await page.getByRole('button', { name: '예약하고 왔어요' }).click();
     await page.locator('button').filter({ hasText: '재진' }).first().click();
-    await expect(submitBtn).toBeDisabled();
-
-    // 유입경로 선택 → 버튼 활성화
-    await page.getByRole('button', { name: '검색' }).click();
     await expect(submitBtn).toBeEnabled();
+
+    // 유입경로 섹션 미표시 확인 (예약 경로)
+    await expect(page.getByRole('button', { name: 'SNS' })).not.toBeVisible();
+    await expect(page.getByRole('button', { name: '검색' })).not.toBeVisible();
   });
 
   test('Self check-in phone auto-format via NumPad', async ({ page }) => {
