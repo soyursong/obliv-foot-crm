@@ -1,23 +1,18 @@
 // LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
 /**
- * PenChartTab — PDF 양식 위에 태블릿 직접 필기 + 개인정보/체크리스트 합본 양식
+ * PenChartTab — PDF 양식 위에 태블릿 직접 필기
  *
  * T-20260513-foot-C21-TAB-RESTRUCTURE-C (AC-4)
  * T-20260517-foot-PENCHART-FORM: PDF 양식 배경 + 상용구
- * T-20260519-foot-PENCHART-FORM-ADD: 개인정보+체크리스트 합본 2종 (일반/어르신)
  * T-20260519-foot-HEALTH-Q-PEN: 발건강 질문지 PDF 캔버스 + 태블릿펜 기입
- * T-20260520-foot-PENCHART-MODAL: draw/fill → shadcn Dialog fullscreen (backdrop + ESC close)
+ * T-20260520-foot-PENCHART-MODAL: draw → shadcn Dialog fullscreen (backdrop + ESC close)
  * T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 PDF 원본 + 오버레이 입력
+ * T-20260520-foot-PENCHART-CHECKLIST-REMOVE: 개인정보+체크리스트 2종 양식 제거
  *
  * 모드 구조:
  *   list   — 저장된 차트 목록 + 새 차트 버튼
- *   select — 양식 선택 패널 (pen_chart / health_questionnaire_* / personal_checklist_*)
- *   draw   — 캔버스 필기 모드 (pen_chart + health_questionnaire_* 공용)
- *   fill   — 텍스트 입력 양식 모드 (personal_checklist_* 레거시 전용)
- *
- * form_submissions 저장 (fill 모드):
- *   - check_in_id: checkInId prop (최근 내원 상담 자동 연동)
- *   - issued_by: staff.id (profile.id → user_id 경유 조회)
+ *   select — 양식 선택 패널 (pen_chart / health_questionnaire_* / refund_consent)
+ *   draw   — 캔버스 필기 모드 (pen_chart + health_questionnaire_* + refund_consent 공용)
  *
  * draw 모드 저장:
  *   - photos bucket / customer/{id}/pen-chart/{ts}_{rand}.png
@@ -31,16 +26,12 @@ import {
   Save, Trash2, Type, X, ChevronLeft, FileText, Undo2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { formatPhoneInput } from '@/lib/format';
-// T-20260519-foot-PENCHART-FORM-ADD (FIX AC-4): 서명 캡처
+// T-20260520-foot-PENCHART-REFUND-FORM: 서명 캡처 (pdf_overlay 공용)
 import { SignaturePad, type SignaturePadHandle } from '@/components/forms/SignaturePad';
 
 // ─── 상용구 데이터 ───
@@ -97,24 +88,6 @@ export const BUILTIN_HEALTH_Q_SENIOR: Template = {
   form_key: 'health_questionnaire_senior',
 };
 
-// T-20260519-foot-PENCHART-FORM-ADD (FIX): 개인정보+체크리스트 PDF 원본 폴백
-// template_format 'pdf_overlay' — DB 미적용 시 공개 에셋 직접 경로
-export const BUILTIN_PERSONAL_CHECKLIST_GENERAL: Template = {
-  id: 'builtin-personal-checklist-general',
-  name_ko: '개인정보+체크리스트 (일반)',
-  template_path: '/forms/personal_checklist_general.png',
-  template_format: 'pdf_overlay',
-  form_key: 'personal_checklist_general',
-};
-
-export const BUILTIN_PERSONAL_CHECKLIST_SENIOR: Template = {
-  id: 'builtin-personal-checklist-senior',
-  name_ko: '개인정보+체크리스트 (어르신용)',
-  template_path: '/forms/personal_checklist_senior.png',
-  template_format: 'pdf_overlay',
-  form_key: 'personal_checklist_senior',
-};
-
 // T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 PDF 원본 폴백 (3페이지 세로 연결)
 export const BUILTIN_REFUND_CONSENT: Template = {
   id: 'builtin-refund-consent',
@@ -126,8 +99,6 @@ export const BUILTIN_REFUND_CONSENT: Template = {
 
 const CANVAS_W = 720;
 const CANVAS_H = 1020; // A4 비율 약 1:√2
-// 어르신용 개인정보+체크리스트: 2페이지 세로 연결 (1241×3508 → 720×2040)
-const CANVAS_H_SENIOR_CHECKLIST = 2040;
 // T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 3페이지 세로 연결 (1241×5262 → 720×3052)
 const CANVAS_H_REFUND_CONSENT = 3052;
 
@@ -139,18 +110,13 @@ const PEN_COLORS = [
 ];
 
 type DrawMode = 'idle' | 'selecting' | 'placing';
-type TabMode = 'list' | 'select' | 'draw' | 'fill';
+type TabMode = 'list' | 'select' | 'draw';
 
 /** draw 모드에서 활성 양식이 발건강 질문지인지 구분 */
 const isHealthQFormKey = (k: string) => k.startsWith('health_questionnaire_');
 
-/** T-20260519-foot-PENCHART-FORM-ADD (FIX): 개인정보+체크리스트 PDF 오버레이 양식 */
-/** T-20260520-foot-PENCHART-REFUND-FORM: refund_consent도 pdf_overlay로 동일 패턴 */
-const isPdfOverlayFormKey = (k: string) =>
-  k.startsWith('personal_checklist_') || k === 'refund_consent';
-
-/** 어르신용 체크리스트인지 (2페이지 캔버스 높이 적용) */
-const isSeniorChecklistKey = (k: string) => k === 'personal_checklist_senior';
+/** T-20260520-foot-PENCHART-REFUND-FORM: pdf_overlay 양식 (환불/비급여 동의서) */
+const isPdfOverlayFormKey = (k: string) => k === 'refund_consent';
 
 /** T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 여부 (3페이지) */
 const isRefundConsentKey = (k: string) => k === 'refund_consent';
@@ -158,350 +124,11 @@ const isRefundConsentKey = (k: string) => k === 'refund_consent';
 /** 양식에 따른 캔버스 높이 반환 */
 const getCanvasHeightForForm = (formKey: string | undefined): number => {
   if (!formKey) return CANVAS_H;
-  if (isSeniorChecklistKey(formKey)) return CANVAS_H_SENIOR_CHECKLIST;
   if (isRefundConsentKey(formKey)) return CANVAS_H_REFUND_CONSENT;
   return CANVAS_H;
 };
 
-// ─── 개인정보/체크리스트 양식 데이터 ───
-interface PersonalChecklistData {
-  name: string;
-  phone: string;
-  birth_date: string;
-  address: string;
-  symptoms: string[];
-  symptoms_other: string;
-  pain_areas: string[];
-  medical_history: string[];
-  medical_history_other: string;
-  has_allergy: boolean | null; // null = 미선택
-  allergy_detail: string;
-  agree_privacy: boolean | null; // null = 미선택
-  agree_marketing: boolean;
-}
 
-const SYMPTOM_OPTIONS = ['굳은살/티눈', '무좀', '내성발톱', '발냄새', '발건조/각질', '당뇨발/혈액순환', '기타'];
-const PAIN_AREA_OPTIONS = ['발앞꿈치', '발뒤꿈치', '발바닥', '발등', '발목'];
-const MEDICAL_OPTIONS = ['당뇨', '고혈압', '심장질환', '혈액순환장애', '기타'];
-
-const PRIVACY_TEXT = [
-  '1. 수집 항목: 성명, 생년월일, 연락처, 발 건강 정보, 시술 사진',
-  '2. 수집 목적: 시술·상담 진행, 예약 관리, 사후 관리',
-  '3. 보유 기간: 의료법에 따른 진료기록 보존 기간 (최소 5년)',
-  '4. 동의를 거부할 권리가 있으나, 거부 시 시술이 제한될 수 있습니다.',
-];
-
-const MARKETING_TEXT = [
-  '1. 수집 항목: 성명, 연락처',
-  '2. 수집 목적: 마케팅 정보 발송 (이벤트·신규 시술 안내)',
-  '3. 보유 기간: 동의 철회 시까지',
-  '4. 본 동의는 선택이며 거부해도 시술 이용에 제한이 없습니다.',
-];
-
-const initialFillData = (defaults?: { name?: string; phone?: string; birth_date?: string }): PersonalChecklistData => ({
-  name: defaults?.name ?? '',
-  phone: defaults?.phone ?? '',
-  birth_date: defaults?.birth_date ?? '',
-  address: '',
-  symptoms: [],
-  symptoms_other: '',
-  pain_areas: [],
-  medical_history: [],
-  medical_history_other: '',
-  has_allergy: null,
-  allergy_detail: '',
-  agree_privacy: null,
-  agree_marketing: false,
-});
-
-// ─── 개인정보/체크리스트 양식 렌더러 ────────────────────────────────────────
-function PersonalChecklistFillView({
-  isSenior,
-  data,
-  onChange,
-  onSave,
-  onCancel,
-  saving,
-}: {
-  isSenior: boolean;
-  data: PersonalChecklistData;
-  onChange: (d: PersonalChecklistData) => void;
-  onSave: () => void;
-  onCancel: () => void;
-  saving: boolean;
-}) {
-  const fs = isSenior ? 'text-xl' : 'text-sm';
-  const fsLabel = isSenior ? 'text-base' : 'text-xs';
-  const inputH = isSenior ? 'h-16 text-xl' : 'h-11 text-sm';
-  const btnH = isSenior ? 'min-h-16 text-xl px-6 py-3' : 'min-h-12 px-4 py-2 text-sm';
-
-  const toggle = (key: 'symptoms' | 'pain_areas' | 'medical_history', val: string) => {
-    const arr = data[key] as string[];
-    onChange({ ...data, [key]: arr.includes(val) ? arr.filter((v) => v !== val) : [...arr, val] });
-  };
-
-  const canSave = data.name.trim() && data.agree_privacy === true;
-
-  return (
-    <div className="space-y-4">
-      {/* 상단 툴바 */}
-      <div className="rounded-lg border bg-white p-2 flex items-center gap-2 sticky top-0 z-10 shadow-sm">
-        <button
-          onClick={onCancel}
-          className="flex items-center gap-1 px-2 py-1 rounded text-xs border border-gray-200 hover:bg-gray-50"
-        >
-          <ChevronLeft className="h-3.5 w-3.5" /> 취소
-        </button>
-        <span className={cn('flex-1 font-semibold text-teal-800', isSenior ? 'text-lg' : 'text-sm')}>
-          {isSenior ? '개인정보+체크리스트 (어르신용)' : '개인정보+체크리스트 (일반)'}
-        </span>
-        <Button
-          size={isSenior ? 'default' : 'sm'}
-          className={cn(
-            isSenior ? 'h-12 text-base px-6' : 'h-7 text-[11px] px-3',
-            'bg-teal-600 hover:bg-teal-700',
-          )}
-          onClick={onSave}
-          disabled={!canSave || saving}
-        >
-          <Save className={cn('mr-1', isSenior ? 'h-5 w-5' : 'h-3.5 w-3.5')} />
-          {saving ? '저장 중…' : '저장'}
-        </Button>
-      </div>
-
-      {/* 기본 정보 */}
-      <section className="rounded-lg border bg-white p-4 space-y-3">
-        <h3 className={cn('font-semibold text-teal-800', isSenior ? 'text-xl' : 'text-sm')}>기본 정보</h3>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label className={fsLabel}>성명 *</Label>
-            <Input
-              value={data.name}
-              onChange={(e) => onChange({ ...data, name: e.target.value })}
-              className={inputH}
-              placeholder="홍길동"
-            />
-          </div>
-          <div>
-            <Label className={fsLabel}>연락처</Label>
-            <Input
-              value={data.phone}
-              onChange={(e) => onChange({ ...data, phone: formatPhoneInput(e.target.value) })}
-              className={inputH}
-              placeholder="010-0000-0000"
-            />
-          </div>
-          <div>
-            <Label className={fsLabel}>생년월일</Label>
-            <Input
-              type="date"
-              value={data.birth_date}
-              onChange={(e) => onChange({ ...data, birth_date: e.target.value })}
-              className={inputH}
-            />
-          </div>
-          <div>
-            <Label className={fsLabel}>주소</Label>
-            <Input
-              value={data.address}
-              onChange={(e) => onChange({ ...data, address: e.target.value })}
-              className={inputH}
-              placeholder="서울시 종로구…"
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* 발 관련 증상 */}
-      <section className="rounded-lg border bg-white p-4 space-y-3">
-        <h3 className={cn('font-semibold text-teal-800', isSenior ? 'text-xl' : 'text-sm')}>
-          발 관련 증상 (해당 항목 모두 선택)
-        </h3>
-        <div className="flex flex-wrap gap-2">
-          {SYMPTOM_OPTIONS.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              onClick={() => toggle('symptoms', opt)}
-              className={cn(
-                'rounded-md border font-medium transition',
-                btnH,
-                data.symptoms.includes(opt)
-                  ? 'border-teal-600 bg-teal-50 text-teal-700'
-                  : 'border-input hover:bg-muted',
-              )}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-        {data.symptoms.includes('기타') && (
-          <Input
-            value={data.symptoms_other}
-            onChange={(e) => onChange({ ...data, symptoms_other: e.target.value })}
-            placeholder="기타 증상 직접 입력"
-            className={inputH}
-          />
-        )}
-      </section>
-
-      {/* 통증 부위 */}
-      <section className="rounded-lg border bg-white p-4 space-y-3">
-        <h3 className={cn('font-semibold text-teal-800', isSenior ? 'text-xl' : 'text-sm')}>통증 부위</h3>
-        <div className="flex flex-wrap gap-2">
-          {PAIN_AREA_OPTIONS.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              onClick={() => toggle('pain_areas', opt)}
-              className={cn(
-                'rounded-md border font-medium transition',
-                btnH,
-                data.pain_areas.includes(opt)
-                  ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
-                  : 'border-input hover:bg-muted',
-              )}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* 과거병력 */}
-      <section className="rounded-lg border bg-white p-4 space-y-3">
-        <h3 className={cn('font-semibold text-teal-800', isSenior ? 'text-xl' : 'text-sm')}>과거병력</h3>
-        <div className="flex flex-wrap gap-2">
-          {MEDICAL_OPTIONS.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              onClick={() => toggle('medical_history', opt)}
-              className={cn(
-                'rounded-md border font-medium transition',
-                btnH,
-                data.medical_history.includes(opt)
-                  ? 'border-amber-600 bg-amber-50 text-amber-700'
-                  : 'border-input hover:bg-muted',
-              )}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-        {data.medical_history.includes('기타') && (
-          <Input
-            value={data.medical_history_other}
-            onChange={(e) => onChange({ ...data, medical_history_other: e.target.value })}
-            placeholder="기타 과거병력 직접 입력"
-            className={inputH}
-          />
-        )}
-      </section>
-
-      {/* 알레르기 */}
-      <section className="rounded-lg border bg-white p-4 space-y-3">
-        <h3 className={cn('font-semibold text-teal-800', isSenior ? 'text-xl' : 'text-sm')}>알레르기 여부</h3>
-        <div className="flex gap-3">
-          {[
-            { value: false as const, label: '없음', color: 'teal' as const },
-            { value: true as const,  label: '있음', color: 'rose' as const },
-          ].map(({ value, label, color }) => (
-            <button
-              key={String(value)}
-              type="button"
-              onClick={() => onChange({ ...data, has_allergy: value, allergy_detail: value ? data.allergy_detail : '' })}
-              className={cn(
-                'flex-1 rounded-md border-2 font-semibold transition',
-                btnH,
-                data.has_allergy === value
-                  ? color === 'teal'
-                    ? 'border-teal-600 bg-teal-600 text-white'
-                    : 'border-rose-500 bg-rose-500 text-white'
-                  : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50',
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {data.has_allergy && (
-          <Textarea
-            value={data.allergy_detail}
-            onChange={(e) => onChange({ ...data, allergy_detail: e.target.value })}
-            placeholder="알레르기 내역을 입력해주세요"
-            rows={isSenior ? 3 : 2}
-            className={cn(fs)}
-          />
-        )}
-      </section>
-
-      {/* 개인정보 동의 (필수) */}
-      <section className="rounded-lg border bg-muted/20 p-4 space-y-3">
-        <h3 className={cn('font-semibold text-teal-800', isSenior ? 'text-xl' : 'text-sm')}>
-          개인정보 수집·이용 동의 (필수)
-        </h3>
-        <div className="space-y-1 text-muted-foreground leading-relaxed" style={{ fontSize: isSenior ? '1rem' : '0.75rem' }}>
-          {PRIVACY_TEXT.map((line, i) => <p key={i}>{line}</p>)}
-        </div>
-        <div className="flex gap-3 pt-1">
-          {[
-            { value: true  as const, label: '동의합니다',       color: 'teal' as const },
-            { value: false as const, label: '동의하지 않습니다', color: 'rose' as const },
-          ].map(({ value, label, color }) => (
-            <button
-              key={String(value)}
-              type="button"
-              onClick={() => onChange({ ...data, agree_privacy: value })}
-              className={cn(
-                'flex-1 rounded-md border-2 font-semibold transition',
-                btnH,
-                data.agree_privacy === value
-                  ? color === 'teal'
-                    ? 'border-teal-600 bg-teal-600 text-white'
-                    : 'border-rose-500 bg-rose-500 text-white'
-                  : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50',
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {data.agree_privacy === false && (
-          <p className="text-rose-600 font-medium" style={{ fontSize: isSenior ? '1rem' : '0.7rem' }}>
-            ※ 개인정보 수집·이용에 동의하지 않으면 시술이 제한될 수 있습니다.
-          </p>
-        )}
-      </section>
-
-      {/* 마케팅 동의 (선택) */}
-      <section className="rounded-lg border bg-muted/10 p-4 space-y-3">
-        <h3 className={cn('font-semibold text-muted-foreground', isSenior ? 'text-xl' : 'text-sm')}>
-          마케팅 정보 수신 동의 (선택)
-        </h3>
-        <div className="space-y-1 text-muted-foreground leading-relaxed" style={{ fontSize: isSenior ? '1rem' : '0.75rem' }}>
-          {MARKETING_TEXT.map((line, i) => <p key={i}>{line}</p>)}
-        </div>
-        <label className="flex items-center gap-3 cursor-pointer pt-1">
-          <input
-            type="checkbox"
-            checked={data.agree_marketing}
-            onChange={(e) => onChange({ ...data, agree_marketing: e.target.checked })}
-            className={isSenior ? 'h-7 w-7 rounded border-gray-300' : 'h-5 w-5 rounded border-gray-300'}
-          />
-          <span className={cn(isSenior ? 'text-lg' : 'text-sm')}>마케팅 정보 수신에 동의합니다.</span>
-        </label>
-      </section>
-
-      {/* 저장 불가 안내 */}
-      {!canSave && (
-        <p className="text-center text-rose-600" style={{ fontSize: isSenior ? '1rem' : '0.75rem' }}>
-          {!data.name.trim() ? '성명을 입력해주세요.' : '개인정보 동의 여부를 선택해주세요 (필수).'}
-        </p>
-      )}
-    </div>
-  );
-}
 
 // ─── FullscreenFormWrapper ─────────────────────────────────────────────────
 /**
@@ -534,9 +161,10 @@ export function PenChartTab({
   customerId,
   clinicId,
   checkInId,
-  customerName,
-  customerPhone,
-  customerBirthDate,
+  // 향후 양식 자동 채움 용도 (현재 미사용 — TS6133 방지)
+  customerName: _customerName,
+  customerPhone: _customerPhone,
+  customerBirthDate: _customerBirthDate,
 }: {
   customerId: string;
   clinicId: string;
@@ -551,18 +179,14 @@ export function PenChartTab({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [savedCharts, setSavedCharts] = useState<SavedChart[]>([]);
   const [penChartTemplate, setPenChartTemplate] = useState<Template | null>(null);
-  const [checklistTemplates, setChecklistTemplates] = useState<Template[]>([]);
   /** 발건강 질문지 템플릿 2종 (일반/어르신) — T-20260519-foot-HEALTH-Q-PEN */
   const [healthQTemplates, setHealthQTemplates] = useState<Template[]>([]);
   /** T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 템플릿 */
   const [refundConsentTemplate, setRefundConsentTemplate] = useState<Template | null>(null);
   const [templateImgUrl, setTemplateImgUrl] = useState<string | null>(null);
   const [mode, setMode] = useState<TabMode>('list');
-  /** draw 모드에서 현재 활성 양식 (pen_chart | health_questionnaire_*) */
+  /** draw 모드에서 현재 활성 양식 (pen_chart | health_questionnaire_* | refund_consent) */
   const [activeDrawTemplate, setActiveDrawTemplate] = useState<Template | null>(null);
-  const [selectedFillTemplate, setSelectedFillTemplate] = useState<Template | null>(null);
-  const [fillData, setFillData] = useState<PersonalChecklistData>(() => initialFillData());
-  const [fillSaving, setFillSaving] = useState(false);
   // staff.id — issued_by FK (profile.id ≠ staff.id, user_id 경유 조회)
   const [staffId, setStaffId] = useState<string | null>(null);
 
@@ -633,6 +257,7 @@ export function PenChartTab({
   }, [storagePath]);
 
   // ── 템플릿 로드 ──────────────────────────────────────────────────────
+  // T-20260520-foot-PENCHART-CHECKLIST-REMOVE: personal_checklist_* 제거됨
   const loadTemplates = useCallback(async () => {
     const { data } = await supabase
       .from('form_templates')
@@ -640,7 +265,6 @@ export function PenChartTab({
       .eq('clinic_id', clinicId)
       .in('form_key', [
         'pen_chart',
-        'personal_checklist_general', 'personal_checklist_senior',
         'health_questionnaire_general', 'health_questionnaire_senior',
         'refund_consent', // T-20260520-foot-PENCHART-REFUND-FORM
       ])
@@ -649,24 +273,16 @@ export function PenChartTab({
 
     if (data) {
       const penChart = (data as Template[]).find((t) => t.form_key === 'pen_chart');
-      const checklists = (data as Template[]).filter((t) => t.form_key.startsWith('personal_checklist_'));
       const healthQs  = (data as Template[]).filter((t) => t.form_key.startsWith('health_questionnaire_'));
       // T-20260520-foot-PENCHART-REFUND-FORM: DB 또는 내장 폴백
       const refundConsent = (data as Template[]).find((t) => t.form_key === 'refund_consent');
       setPenChartTemplate(penChart ?? BUILTIN_PEN_CHART_TEMPLATE);
-      // T-20260519-foot-PENCHART-FORM-ADD (FIX): pdf_overlay 형식이면 draw 모드용 그대로 사용
-      // DB에 pdf_overlay 미적용(= template_path 빈 문자열)이면 내장 폴백
-      const checklistsWithFallback = checklists.length > 0 && checklists.every((t) => t.template_path)
-        ? checklists
-        : [BUILTIN_PERSONAL_CHECKLIST_GENERAL, BUILTIN_PERSONAL_CHECKLIST_SENIOR];
-      setChecklistTemplates(checklistsWithFallback);
       // DB에 발건강 질문지 행 없으면 내장 폴백 사용
       setHealthQTemplates(healthQs.length > 0 ? healthQs : [BUILTIN_HEALTH_Q_GENERAL, BUILTIN_HEALTH_Q_SENIOR]);
       // T-20260520-foot-PENCHART-REFUND-FORM: DB 또는 내장 폴백
       setRefundConsentTemplate(refundConsent ?? BUILTIN_REFUND_CONSENT);
     } else {
       setPenChartTemplate(BUILTIN_PEN_CHART_TEMPLATE);
-      setChecklistTemplates([BUILTIN_PERSONAL_CHECKLIST_GENERAL, BUILTIN_PERSONAL_CHECKLIST_SENIOR]);
       setHealthQTemplates([BUILTIN_HEALTH_Q_GENERAL, BUILTIN_HEALTH_Q_SENIOR]);
       setRefundConsentTemplate(BUILTIN_REFUND_CONSENT);
     }
@@ -865,15 +481,12 @@ export function PenChartTab({
       const res = await fetch(dataUrl);
       const blob = await res.blob();
       // T-20260519-foot-HEALTH-Q-PEN: health_questionnaire 파일에 'hq_' prefix
-      // T-20260519-foot-PENCHART-FORM-ADD (FIX): personal_checklist 파일에 'pc_' prefix
       // T-20260520-foot-PENCHART-REFUND-FORM: refund_consent 파일에 'rc_' prefix
       let prefix = '';
       if (activeDrawTemplate && isHealthQFormKey(activeDrawTemplate.form_key)) {
         prefix = `hq_${activeDrawTemplate.form_key === 'health_questionnaire_senior' ? 'sr_' : ''}`;
       } else if (activeDrawTemplate && isRefundConsentKey(activeDrawTemplate.form_key)) {
         prefix = 'rc_';
-      } else if (activeDrawTemplate && isPdfOverlayFormKey(activeDrawTemplate.form_key)) {
-        prefix = `pc_${isSeniorChecklistKey(activeDrawTemplate.form_key) ? 'sr_' : ''}`;
       }
       const fileName = `${prefix}${Date.now()}_${Math.random().toString(36).slice(2, 6)}.png`;
       const path = `${storagePath}/${fileName}`;
@@ -881,10 +494,11 @@ export function PenChartTab({
       if (error) { toast.error(`저장 실패: ${error.message}`); return; }
 
       const isHQ = activeDrawTemplate && isHealthQFormKey(activeDrawTemplate.form_key);
-      const isPC = activeDrawTemplate && isPdfOverlayFormKey(activeDrawTemplate.form_key); // personal_checklist + refund_consent
+      // isPC = 환불/비급여 동의서 (refund_consent) — form_submissions 자동 연동
+      const isPC = activeDrawTemplate && isPdfOverlayFormKey(activeDrawTemplate.form_key);
 
-      // T-20260519-foot-PENCHART-FORM-ADD (AC-4/5):
-      // pdf_overlay 양식 (personal_checklist + refund_consent) 은 form_submissions에도 저장
+      // T-20260520-foot-PENCHART-REFUND-FORM:
+      // pdf_overlay 양식 (refund_consent) 은 form_submissions에도 저장
       // (서명 base64 + 캔버스 파일명 포함)
       // builtin ID면 template_id FK 미적용 — staffId 있으면 builtin도 field_data 저장 시도
       if (isPC && activeDrawTemplate && staffId) {
@@ -916,12 +530,10 @@ export function PenChartTab({
         }
       }
 
-      const isRefund = activeDrawTemplate && isRefundConsentKey(activeDrawTemplate.form_key);
       toast.success(
-        isHQ     ? '발건강 질문지 저장 완료' :
-        isRefund ? '환불/비급여 동의서 저장 완료 — 상담내역에 연동됐습니다' :
-        isPC     ? '개인정보+체크리스트 저장 완료 — 상담내역에 연동됐습니다' :
-                   '펜차트 저장 완료',
+        isHQ ? '발건강 질문지 저장 완료' :
+        isPC ? '환불/비급여 동의서 저장 완료 — 상담내역에 연동됐습니다' :
+               '펜차트 저장 완료',
       );
       await loadSavedCharts();
       // 서명 초기화
@@ -953,101 +565,17 @@ export function PenChartTab({
     toast('캔버스를 클릭해 상용구를 삽입하세요', { duration: 2000 });
   };
 
-  // ── fill 모드 저장 ────────────────────────────────────────────────────
-  const handleFillSave = async () => {
-    if (!fillData.name.trim()) { toast.error('성명을 입력해주세요'); return; }
-    if (fillData.agree_privacy !== true) { toast.error('개인정보 수집·이용에 동의해주세요 (필수)'); return; }
-    if (!selectedFillTemplate) return;
-
-    // T-20260519-foot-PENCHART-FORMS: 폴백 템플릿 ID는 real UUID가 아님 → FK 위반 방지
-    if (selectedFillTemplate.id.startsWith('fallback-')) {
-      toast.error('양식 템플릿을 불러오는 중입니다. 잠시 후 다시 시도해주세요.');
-      return;
-    }
-    // issued_by NOT NULL — staffId 미확보 시 저장 불가
-    if (!staffId) {
-      toast.error('직원 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.');
-      return;
-    }
-
-    setFillSaving(true);
-    try {
-      const now = new Date().toISOString();
-      const payload: Record<string, unknown> = {
-        clinic_id: clinicId,
-        template_id: selectedFillTemplate.id,
-        customer_id: customerId,
-        field_data: fillData,
-        status: 'signed',
-        signed_at: now,
-        // printed_at: 상담내역 submissionEntries 쿼리가 printed_at 기준으로 정렬·표시함
-        // 기입 완료 = 서류 발행 시점과 동일하게 처리 (T-20260519-foot-PENCHART-FORMS AC-6)
-        printed_at: now,
-        issued_by: staffId,
-      };
-      // check_in_id: 내원 상담 자동 연동 (AC-5)
-      if (checkInId) payload.check_in_id = checkInId;
-
-      const { error } = await supabase.from('form_submissions').insert(payload);
-      if (error) {
-        toast.error(`저장 실패: ${error.message}`);
-        return;
-      }
-      toast.success('양식 저장 완료 — 상담내역에 연동됐습니다');
-      setMode('list');
-      setSelectedFillTemplate(null);
-      setFillData(initialFillData({ name: customerName, phone: customerPhone, birth_date: customerBirthDate }));
-    } finally {
-      setFillSaving(false);
-    }
-  };
-
   // ── 양식 선택 ─────────────────────────────────────────────────────────
+  // T-20260520-foot-PENCHART-CHECKLIST-REMOVE: 모든 양식은 draw 모드로 진입
   const handleSelectTemplate = (tpl: Template) => {
-    if (tpl.form_key === 'pen_chart' || isHealthQFormKey(tpl.form_key) || isPdfOverlayFormKey(tpl.form_key)) {
-      // T-20260519-foot-HEALTH-Q-PEN: 발건강 질문지 draw 모드 (PDF 캔버스)
-      // T-20260519-foot-PENCHART-FORM-ADD (FIX): 개인정보+체크리스트 → PDF 원본 캔버스 draw 모드
-      // AC-4: pdf_overlay 진입 시 서명 패드 초기화
-      if (isPdfOverlayFormKey(tpl.form_key)) {
-        sigPadRef.current?.clear();
-        setSigEmpty(true);
-      }
-      setActiveDrawTemplate(tpl);
-      setMode('draw');
-    } else {
-      // 기타 레거시 fill 모드 (현재 미사용)
-      setSelectedFillTemplate(tpl);
-      setFillData(initialFillData({ name: customerName, phone: customerPhone, birth_date: customerBirthDate }));
-      setMode('fill');
+    // T-20260520-foot-PENCHART-REFUND-FORM: pdf_overlay 진입 시 서명 패드 초기화
+    if (isPdfOverlayFormKey(tpl.form_key)) {
+      sigPadRef.current?.clear();
+      setSigEmpty(true);
     }
+    setActiveDrawTemplate(tpl);
+    setMode('draw');
   };
-
-  // ─────────────────────────────────────────────────────────────────────
-  // 렌더: fill 모드 (개인정보/체크리스트 텍스트 입력)
-  // ─────────────────────────────────────────────────────────────────────
-  if (mode === 'fill' && selectedFillTemplate) {
-    const isSenior = selectedFillTemplate.form_key === 'personal_checklist_senior';
-    // T-20260520-foot-PENCHART-FULLSCREEN AC-5~7: FullscreenFormWrapper 공통 래퍼 사용
-    return (
-      <FullscreenFormWrapper
-        open={true}
-        onOpenChange={(open) => {
-          if (!open) { setMode('list'); setSelectedFillTemplate(null); }
-        }}
-      >
-        <div className="h-full overflow-auto p-4 bg-white">
-          <PersonalChecklistFillView
-            isSenior={isSenior}
-            data={fillData}
-            onChange={setFillData}
-            onSave={handleFillSave}
-            onCancel={() => { setMode('list'); setSelectedFillTemplate(null); }}
-            saving={fillSaving}
-          />
-        </div>
-      </FullscreenFormWrapper>
-    );
-  }
 
   // ─────────────────────────────────────────────────────────────────────
   // 렌더: select 모드 (양식 선택 패널)
@@ -1128,52 +656,6 @@ export function PenChartTab({
                     isSenior ? '' : 'ml-auto',
                   )}>
                     PDF 양식
-                  </span>
-                </button>
-              );
-            })}
-
-            {/* T-20260519-foot-PENCHART-FORM-ADD (FIX): 개인정보+체크리스트 PDF 원본 캔버스 */}
-            {checklistTemplates.length > 0 && checklistTemplates.map((tpl) => {
-              const isSr = tpl.form_key === 'personal_checklist_senior';
-              return (
-                <button
-                  key={tpl.id}
-                  onClick={() => handleSelectTemplate(tpl)}
-                  className={cn(
-                    'flex items-center gap-3 rounded-lg border-2 p-4 text-left transition',
-                    isSr
-                      ? 'border-indigo-200 bg-indigo-50 hover:border-indigo-400 hover:bg-indigo-100'
-                      : 'border-sky-200 bg-sky-50 hover:border-sky-400 hover:bg-sky-100',
-                  )}
-                >
-                  <div className={cn(
-                    'flex h-10 w-10 items-center justify-center rounded-full',
-                    isSr ? 'bg-indigo-200' : 'bg-sky-200',
-                  )}>
-                    <ClipboardList className={cn('h-5 w-5', isSr ? 'text-indigo-700' : 'text-sky-700')} />
-                  </div>
-                  <div>
-                    <div className={cn('font-semibold text-sm', isSr ? 'text-indigo-800' : 'text-sky-800')}>
-                      {tpl.name_ko}
-                    </div>
-                    <div className={cn('text-xs mt-0.5', isSr ? 'text-indigo-600' : 'text-sky-600')}>
-                      {isSr
-                        ? '개인정보·체크리스트 (어르신용 2p) — 태블릿펜으로 직접 기입'
-                        : '개인정보·체크리스트 — 태블릿펜으로 직접 기입 후 저장'}
-                    </div>
-                  </div>
-                  {isSr && (
-                    <span className="ml-auto rounded-full bg-indigo-200 px-2 py-0.5 text-[10px] font-bold text-indigo-800">
-                      어르신용
-                    </span>
-                  )}
-                  <span className={cn(
-                    'rounded-full px-2 py-0.5 text-[10px] font-bold',
-                    isSr ? 'bg-indigo-100 text-indigo-700' : 'bg-sky-100 text-sky-700',
-                    isSr ? '' : 'ml-auto',
-                  )}>
-                    PDF 원본
                   </span>
                 </button>
               );
@@ -1475,12 +957,6 @@ export function PenChartTab({
           </span>
           <span className="rounded bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[11px] text-emerald-700">
             📋 발건강 질문지 (어르신용)
-          </span>
-          <span className="rounded bg-sky-50 border border-sky-100 px-2 py-0.5 text-[11px] text-sky-700">
-            📄 개인정보+체크리스트 (일반)
-          </span>
-          <span className="rounded bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-[11px] text-indigo-700">
-            📄 개인정보+체크리스트 (어르신용)
           </span>
           {/* T-20260520-foot-PENCHART-REFUND-FORM */}
           <span className="rounded bg-rose-50 border border-rose-100 px-2 py-0.5 text-[11px] text-rose-700">
