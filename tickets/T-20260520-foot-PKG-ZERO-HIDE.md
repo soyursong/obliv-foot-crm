@@ -1,18 +1,22 @@
 ---
 id: T-20260520-foot-PKG-ZERO-HIDE
 title: "2번차트 1구역 활성패키지 리스트 — 잔여 0회 패키지 자동 비노출"
-status: deploy-ready
+status: in_progress
 priority: P2
 domain: foot
 reporter: 김주연 총괄 (U0ATDB587PV)
 assignee: dev-foot
 created: 2026-05-20
 deadline: 2026-05-27
-deploy_ready: true
+deploy_ready: false
 db_change: false
 build_pass: true
 spec_added: true
 regression_risk: low
+qa_result: fail
+qa_fail_phase: phase2
+qa_fail_reason: spec_fail_new
+qa_grade: Yellow
 ---
 
 ## 수용기준
@@ -60,3 +64,28 @@ packages.filter((p) => p.status === 'active' && (p.remaining === null || p.remai
 ## 빌드
 
 ✅ `npm run build` — 오류 없음 (3.14s)
+
+## QA 결과 (2026-05-21 supervisor)
+
+| 항목 | 결과 | 비고 |
+|------|------|------|
+| 빌드 | ✅ PASS | 3.14s, exit 0 |
+| 코드 리뷰 | ✅ PASS | `p.remaining === null` null guard 정상 |
+| Runtime Safety Gate §7.5 | ✅ PASS | 명시적 null 체크 후 `.total_remaining` 접근 |
+| env 매트릭스 (Phase 1.5) | ✅ PASS | VITE_SUPABASE_URL/ANON_KEY 기존 변수만 사용 |
+| 브라우저 접근 | ✅ PASS | prod bundle hash `CvswHZAQ` 일치, `total_remaining` 3회 매치 확인 |
+| E2E spec | ❌ **FAIL** | spec seed에서 `package_type` NOT NULL 필드 누락 |
+
+### E2E 실패 상세
+
+```
+Error: 패키지A 생성 실패: null value in column "package_type" of relation "packages" violates not-null constraint
+```
+
+**원인**: `tests/e2e/T-20260520-foot-PKG-ZERO-HIDE.spec.ts` seed 함수의 packages 인서트에 `package_type` 컬럼이 빠짐.
+
+**수정 필요**: `pkgZero`, `pkgOne` 인서트 모두에 `package_type: 'custom'` 추가.
+
+**참고**: 구현 코드(`CustomerChartPage.tsx`)는 정상. prod에 이미 반영됨(bundle hash 일치).
+
+→ FIX-REQUEST 발송: MSG-20260521-001942-f0ur (dev-foot, P2)
