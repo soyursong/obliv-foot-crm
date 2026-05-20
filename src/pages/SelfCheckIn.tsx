@@ -889,6 +889,19 @@ export default function SelfCheckIn() {
         }
       }
 
+      // (3.5) TA3 — 도파민 visited 콜백 fire-and-forget
+      // 도파민 경유 예약(source_system='dopamine')인 경우에만 EF가 내부 판정 후 발사.
+      // 실패해도 체크인 완료 UX를 블록하지 않음.
+      if (matchedReservationId) {
+        anonClient.functions
+          .invoke('checkin-visited-fire', {
+            body: { reservation_id: matchedReservationId },
+          })
+          .catch(() => {
+            // 네트워크 오류 등 — 무시. outbound_log 재시도는 서버 측 담당.
+          });
+      }
+
       setQueueNumber(queue);
       setStep('done');
     } catch (err) {
