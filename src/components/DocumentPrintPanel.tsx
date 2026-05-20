@@ -113,14 +113,100 @@ interface ClinicDoctorInfo {
   seal_image_url: string | null;
 }
 
+/** T-20260520-foot-PRINT-FORM-BIND: 고객 확장 필드 포함 */
+interface CustomerBindInfo {
+  name: string;
+  phone: string;
+  rrn?: string | null;           // 복호화된 주민번호 (rrn_decrypt RPC)
+  address?: string | null;
+  address_detail?: string | null;
+  birth_date?: string | null;    // YYMMDD 텍스트 (예: 900515)
+  chart_number?: string | null;  // 차트번호
+  gender?: 'M' | 'F' | null;
+}
+
 interface AutoBindContext {
-  customer?: { name: string; phone: string; rrn?: string; address?: string } | null;
+  customer?: CustomerBindInfo | null;
   checkIn: CheckIn;
   payments?: { total: number; insurance_covered: number; copayment?: number; non_covered: number };
-  clinic?: { name: string; address: string; phone?: string | null; business_no?: string | null; established_date?: string | null } | null;
+  /** T-20260520-foot-PRINT-FORM-BIND: nhis_code, fax 추가 */
+  clinic?: {
+    name: string;
+    address: string;
+    phone?: string | null;
+    fax?: string | null;
+    nhis_code?: string | null;
+    business_no?: string | null;
+    established_date?: string | null;
+  } | null;
   doctor?: string | null;
   /** T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors에서 매칭된 원장 상세 정보 */
   clinicDoctor?: ClinicDoctorInfo | null;
+  /** T-20260520-foot-PRINT-FORM-BIND: medical_charts에서 읽은 진단 정보 */
+  diagCodes?: {
+    code1?: string;
+    name1?: string;
+    code2?: string;
+    name2?: string;
+  } | null;
+}
+
+/**
+ * birth_date(YYMMDD) → "YYYY년 MM월 DD일" 형식
+ * "900515" → "1990년 05월 15일"
+ * 2000년대는 "00" ~ "09" 가 아닌 년도 추정이 필요하므로:
+ *   앞 두자리 > 현재 년도 끝 두자리면 1900s, 아니면 2000s
+ */
+function formatBirthDate(yymmdd: string | null | undefined): string {
+  if (!yymmdd || yymmdd.length < 6) return yymmdd ?? '';
+  const yy = parseInt(yymmdd.slice(0, 2), 10);
+  const currentYY = new Date().getFullYear() % 100;
+  const fullYear = yy > currentYY ? 1900 + yy : 2000 + yy;
+  const mm = yymmdd.slice(2, 4);
+  const dd = yymmdd.slice(4, 6);
+  return `${fullYear}년 ${mm}월 ${dd}일`;
+}
+
+/**
+ * birth_date(YYMMDD) → 만 나이 계산
+ */
+function calcAge(yymmdd: string | null | undefined): string {
+  if (!yymmdd || yymmdd.length < 6) return '';
+  const yy = parseInt(yymmdd.slice(0, 2), 10);
+  const currentYY = new Date().getFullYear() % 100;
+  const fullYear = yy > currentYY ? 1900 + yy : 2000 + yy;
+  const mm = parseInt(yymmdd.slice(2, 4), 10) - 1;
+  const dd = parseInt(yymmdd.slice(4, 6), 10);
+  const birth = new Date(fullYear, mm, dd);
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  if (
+    today.getMonth() < birth.getMonth() ||
+    (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())
+  ) age--;
+  return age >= 0 ? String(age) : '';
+}
+
+/**
+ * gender 'M'/'F' → 체크박스 형태 문자열
+ * (DIAG_OPINION_HTML {{patient_gender}} 바인딩용)
+ */
+function formatGenderCheckbox(gender: 'M' | 'F' | null | undefined): string {
+  if (gender === 'F') return '☑ 여  ☐ 남';
+  if (gender === 'M') return '☐ 여  ☑ 남';
+  return '☐ 여  ☐ 남';
+}
+
+/**
+ * medical_charts.diagnosis 텍스트에서 ICD 코드 분리 시도.
+ * 예: "L60.0 내향성 발톱" → { code: "L60.0", name: "내향성 발톱" }
+ * 추출 실패 시: { code: "", name: 원본 텍스트 }
+ */
+function parseIcdFromText(text: string | null | undefined): { code: string; name: string } {
+  if (!text) return { code: '', name: '' };
+  const match = text.match(/^([A-Z][0-9]{2,3}(?:\.[0-9])?)\s+(.+)$/);
+  if (match) return { code: match[1], name: match[2].trim() };
+  return { code: '', name: text.trim() };
 }
 
 function buildAutoBindValues(ctx: AutoBindContext): Record<string, string> {
@@ -129,11 +215,28 @@ function buildAutoBindValues(ctx: AutoBindContext): Record<string, string> {
     ? format(new Date(ctx.checkIn.checked_in_at), 'yyyy-MM-dd')
     : today;
 
+  // T-20260520-foot-PRINT-FORM-BIND: 주소 조합 (address + address_detail)
+  const addrParts = [ctx.customer?.address, ctx.customer?.address_detail].filter(Boolean);
+  const fullAddress = addrParts.join(' ');
+
+  // T-20260520-foot-PRINT-FORM-BIND: 주민번호 마스킹 없이 그대로 (서류 출력용)
+  const patientRrn = ctx.customer?.rrn ?? '';
+
+  // T-20260520-foot-PRINT-FORM-BIND: 전화/팩스 조합 (clinic)
+  const clinicPhoneFax = [
+    ctx.clinic?.phone ? formatPhone(ctx.clinic.phone) : '',
+    ctx.clinic?.fax ? 'FAX ' + formatPhone(ctx.clinic.fax) : '',
+  ].filter(Boolean).join(' / ');
+
   return {
     patient_name: ctx.customer?.name ?? ctx.checkIn.customer_name ?? '',
     patient_phone: formatPhone(ctx.customer?.phone ?? ctx.checkIn.customer_phone),
-    patient_rrn: ctx.customer?.rrn ?? '',
-    patient_address: ctx.customer?.address ?? '',
+    patient_rrn: patientRrn,
+    patient_address: fullAddress,
+    // T-20260520-foot-PRINT-FORM-BIND: 신규 바인딩 필드
+    patient_gender: formatGenderCheckbox(ctx.customer?.gender),
+    patient_birthdate: formatBirthDate(ctx.customer?.birth_date),
+    patient_age: calcAge(ctx.customer?.birth_date),
     visit_date: visitDate,
     doctor_name: ctx.doctor ?? '',
     total_amount: ctx.payments ? formatAmount(ctx.payments.total) : '',
@@ -149,8 +252,19 @@ function buildAutoBindValues(ctx: AutoBindContext): Record<string, string> {
     doctor_specialist_no: ctx.clinicDoctor?.specialist_no ?? '',
     doctor_seal_image: ctx.clinicDoctor?.seal_image_url ?? '',
     clinic_business_no: ctx.clinic?.business_no ?? '',
-    clinic_phone: ctx.clinic?.phone ?? '',
+    clinic_phone: clinicPhoneFax || (ctx.clinic?.phone ?? ''),
     clinic_established_date: ctx.clinic?.established_date ?? '',
+    // T-20260520-foot-PRINT-FORM-BIND: 요양기관번호 + 팩스
+    clinic_nhis_code: ctx.clinic?.nhis_code ?? '',
+    clinic_code: ctx.clinic?.nhis_code ?? '',    // rx_standard {{clinic_code}} alias
+    clinic_fax: ctx.clinic?.fax ? formatPhone(ctx.clinic.fax) : '',
+    // T-20260520-foot-PRINT-FORM-BIND: 차트번호 (record_no fallback)
+    record_no: ctx.customer?.chart_number ?? ctx.checkIn.customer_id?.slice(0, 8) ?? '',
+    // T-20260520-foot-PRINT-FORM-BIND: 진단 코드·명칭
+    diag_code_1: ctx.diagCodes?.code1 ?? '',
+    diag_name_1: ctx.diagCodes?.name1 ?? '',
+    diag_code_2: ctx.diagCodes?.code2 ?? '',
+    diag_name_2: ctx.diagCodes?.name2 ?? '',
     // 하위 호환 alias
     business_reg_no: ctx.clinic?.business_no ?? '',
   };
@@ -170,15 +284,24 @@ async function loadAutoBindContext(
   doctorNameOverride?: string,
   clinicDoctorId?: string,
 ): Promise<Record<string, string>> {
-  // 고객 정보
-  let customer = null;
+  // T-20260520-foot-PRINT-FORM-BIND: 고객 정보 확장 (rrn/address/birth_date/gender/chart_number)
+  let customer: CustomerBindInfo | null = null;
   if (checkIn.customer_id) {
-    const { data } = await supabase
-      .from('customers')
-      .select('name, phone, memo')
-      .eq('id', checkIn.customer_id)
-      .maybeSingle();
-    customer = data;
+    const [custRes, rrnRes] = await Promise.all([
+      supabase
+        .from('customers')
+        .select('name, phone, address, address_detail, birth_date, chart_number, gender')
+        .eq('id', checkIn.customer_id)
+        .maybeSingle(),
+      // rrn_decrypt RPC — 주민번호 복호화 (암호화된 컬럼 직접 접근 불가)
+      supabase.rpc('rrn_decrypt', { customer_uuid: checkIn.customer_id }),
+    ]);
+    if (custRes.data) {
+      customer = {
+        ...custRes.data,
+        rrn: (rrnRes.data as string | null) ?? null,
+      };
+    }
   }
 
   // 결제 정보
@@ -216,12 +339,33 @@ async function loadAutoBindContext(
   const copayment = hasCharges ? chargesCopay : 0;
   const nonCovered = hasCharges ? chargesNonCovered : nonCoveredFromReceipts;
 
-  // 클리닉 정보 (T-20260516-foot-CLINIC-DOC-INFO: business_no, phone, established_date 추가)
+  // T-20260520-foot-PRINT-FORM-BIND: 클리닉 정보 확장 (nhis_code, fax 추가)
   const { data: clinicData } = await supabase
     .from('clinics')
-    .select('name, address, phone, business_no, established_date')
+    .select('name, address, phone, fax, nhis_code, business_no, established_date')
     .eq('id', checkIn.clinic_id)
     .maybeSingle();
+
+  // T-20260520-foot-PRINT-FORM-BIND: medical_charts에서 진단명·코드 조회 (최신 1건)
+  let diagCodes: AutoBindContext['diagCodes'] = null;
+  if (checkIn.customer_id) {
+    const visitDate = checkIn.checked_in_at
+      ? format(new Date(checkIn.checked_in_at), 'yyyy-MM-dd')
+      : format(new Date(), 'yyyy-MM-dd');
+    const { data: chartRow } = await supabase
+      .from('medical_charts')
+      .select('diagnosis')
+      .eq('customer_id', checkIn.customer_id)
+      .eq('clinic_id', checkIn.clinic_id)
+      .eq('visit_date', visitDate)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (chartRow?.diagnosis) {
+      const parsed = parseIcdFromText(chartRow.diagnosis);
+      diagCodes = { code1: parsed.code, name1: parsed.name };
+    }
+  }
 
   // T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors 전체 로드
   const { data: clinicDoctorsData } = await supabase
@@ -246,11 +390,11 @@ async function loadAutoBindContext(
     doctorName = doctorNameOverride || null;
   } else {
     // duty_roster 조회
-    const visitDate = checkIn.checked_in_at
+    const visitDateStr = checkIn.checked_in_at
       ? format(new Date(checkIn.checked_in_at), 'yyyy-MM-dd')
       : format(new Date(), 'yyyy-MM-dd');
 
-    const dutyDocs = await fetchDutyDoctors(checkIn.clinic_id, visitDate);
+    const dutyDocs = await fetchDutyDoctors(checkIn.clinic_id, visitDateStr);
 
     if (dutyDocs.length === 1) {
       doctorName = dutyDocs[0].name;
@@ -309,6 +453,7 @@ async function loadAutoBindContext(
     clinic: clinicData,
     doctor: doctorName,
     clinicDoctor,
+    diagCodes,
   });
 }
 
@@ -420,6 +565,8 @@ function openBatchPrintWindow(
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .page-landscape { page: landscape; }
+    /* AC-1: 마지막 페이지 빈 페이지 방지 */
+    .page:last-child { page-break-after: avoid; }
   }
 </style>
 </head><body>

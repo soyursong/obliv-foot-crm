@@ -614,7 +614,7 @@ ${COMMON_STYLE}
         <td style="background:#f8f8f8;">환자 성명</td>
         <td>{{patient_name}}</td>
         <td style="background:#f8f8f8;">성별</td>
-        <td>☐ 여&nbsp;&nbsp;☑ 남</td>
+        <td>{{patient_gender}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">생년월일</td>
@@ -1357,7 +1357,7 @@ const RX_STANDARD_HTML = `
         <td style="background:#f8f8f8; text-align:center;">주&nbsp;민&nbsp;번&nbsp;호</td>
         <td>{{patient_rrn}}</td>
         <td style="background:#f8f8f8; text-align:center;">팩&nbsp;스&nbsp;번&nbsp;호</td>
-        <td></td>
+        <td>{{clinic_fax}}</td>
       </tr>
       <tr>
         <td></td>
@@ -1684,7 +1684,10 @@ export function bindHtmlTemplate(
 ): string {
   return html.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
     const val = fieldValues[key] ?? '';
-    // 기본 HTML 이스케이프 (XSS 방지 — 필드값은 신뢰 데이터이지만 방어적으로 처리)
+    // _html 접미사 키(items_html, rx_items_html 등)는 내부 생성 HTML → 이스케이프 생략
+    // T-20260520-foot-PRINT-FORM-BIND: items_html/rx_items_html raw 렌더링 버그 수정
+    if (key.endsWith('_html')) return val;
+    // 그 외 필드: 기본 HTML 이스케이프 (XSS 방지)
     return val
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')

@@ -95,6 +95,9 @@ export interface Clinic {
   hira_unit_value_year?: number | null;
   // 레이저 시간 단위 설정 (T-20260502-foot-LASER-TIME-UNIT)
   laser_time_units?: number[] | null;
+  // 서류 바인딩 (T-20260520-foot-PRINT-FORM-BIND)
+  nhis_code?: string | null;    // 요양기관번호
+  fax?: string | null;          // 팩스번호
 }
 
 export type LeadSource = 'TM' | '인바운드' | '워크인' | '지인소개' | '온라인' | '기타';
