@@ -6,7 +6,7 @@ priority: P0
 domain: foot
 created_at: 2026-05-20
 deploy_ready_at: 2026-05-20
-commit_sha: TBD
+commit_sha: 55d7753
 db_migration: false
 build_passed: true
 e2e_spec: tests/e2e/T-20260520-foot-PAYMENT-MINI-UX.spec.ts
