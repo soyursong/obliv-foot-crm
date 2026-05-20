@@ -99,3 +99,21 @@ loadZone3Data(checkIn);
 
 - T-20260520-foot-PAYMENT-RESPONSIVE 동시 수정 주의 → 동일 파일 PaymentMiniWindow.tsx. 반응형 클래스 충돌 없음 확인.
 - Zone2 폭 확장(sm:w-52→w-60)으로 총 3열 합계가 1080px을 초과하지 않음 (sm: 20+60+52=132 = ~528px, 여유 있음)
+
+## 재검증 노트 (2026-05-20 22:29 KST)
+
+**배경**: 2026-05-20 21:11~21:58 INCIDENT(commit 0d81c49 slotData.bookings 직접접근) 기간 중 원 QA(21:19)가 수행돼 §7.5 Runtime Safety Gate 소급 점검 시행.
+
+**결과: ALL PASS** (Green GO 유지)
+
+| Gate | 결과 | 비고 |
+|------|------|------|
+| Phase 1 Build | ✓ 3.20s exit 0 | HEAD 4dfa7d0 기준 |
+| Phase 1.5 Env Matrix | ✓ | VITE_SUPABASE_URL/ANON_KEY — 번들 포함 확인 |
+| AC-1 bundle 확인 | ✓ | `grid-cols-2` / `lg:grid-cols-3` in CustomerHoverCard-uD5cFqnI.js |
+| AC-2 bundle 확인 | ✓ | `sm:w-60 md:w-64 lg:w-72` 동 번들 |
+| Phase 2 E2E | ✓ 6/6 | spec 재실행 pass |
+| §7.5 Runtime Null Safety | ✓ Clean | Object.values() 없음 · ciRes.data ?? [] guard · loadZone3Data ci.customer_id guard |
+| 브라우저 | ✓ | 로그인 페이지 정상 렌더 (화이트스크린 없음) |
+
+**INCIDENT 관계**: 이 티켓(PAYMENT-MINI-UX) 코드는 INCIDENT 원인 커밋(`0d81c49`, 별도 티켓)과 무관. 변경된 AC-1~4 코드에 §7.5 위반 패턴 없음 확인.
