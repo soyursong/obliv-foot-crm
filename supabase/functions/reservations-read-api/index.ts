@@ -157,6 +157,17 @@ Deno.serve(async (req) => {
     pageSize = Math.min(parsed, MAX_PAGE_SIZE);
   }
 
+  // AC-7: 필수 파라미터 검증
+  if (!clinicSlug) {
+    return json({ ok: false, error: 'INVALID_PARAM', detail: 'clinic_slug is required' }, 400);
+  }
+  if (!dateFrom) {
+    return json({ ok: false, error: 'INVALID_PARAM', detail: 'date_from is required' }, 400);
+  }
+  if (!dateTo) {
+    return json({ ok: false, error: 'INVALID_PARAM', detail: 'date_to is required' }, 400);
+  }
+
   // phone_e164 포맷 검증
   if (phoneE164 !== undefined && !isE164(phoneE164)) {
     return json({ ok: false, error: 'INVALID_PARAM', detail: `phone_e164 '${phoneE164}' is not valid E.164` }, 400);
@@ -181,6 +192,18 @@ Deno.serve(async (req) => {
       error: 'INVALID_VALUE',
       detail: `source_system '${sourceSystem}' must be one of: all, dopamine, walkin`,
     }, 422);
+  }
+
+  // AC-7: status 허용값 검증 (422)
+  const VALID_STATUSES = new Set(['all', 'confirmed', 'checked_in', 'cancelled', 'noshow']);
+  if (statusFilter !== undefined && statusFilter !== '' && statusFilter !== 'all') {
+    if (!VALID_STATUSES.has(statusFilter)) {
+      return json({
+        ok: false,
+        error: 'INVALID_VALUE',
+        detail: `status '${statusFilter}' must be one of: all, confirmed, checked_in, cancelled, noshow`,
+      }, 422);
+    }
   }
 
   // ── Supabase service role client ──────────────────────────────────────────

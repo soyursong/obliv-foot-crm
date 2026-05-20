@@ -38,10 +38,10 @@ test('TD2-1: reservations-read-api EF 파일 존재', () => {
 });
 
 // ── 2. 인증 로직 검증 ─────────────────────────────────────────────
-test('TD2-2: X-Callback-Secret 인증 로직 포함', () => {
+test('TD2-2: X-ReadAPI-Secret 인증 로직 포함', () => {
   const src = fs.readFileSync(EF_PATH, 'utf-8');
-  expect(src).toContain('X-Callback-Secret');
-  expect(src).toContain('DOPAMINE_CALLBACK_SECRET');
+  expect(src).toContain('X-ReadAPI-Secret');
+  expect(src).toContain('DOPAMINE_READ_INBOUND_SECRET');
   expect(src).toContain("'UNAUTHORIZED'");
   expect(src).toContain('401');
 });
@@ -59,12 +59,12 @@ test('TD2-3: GET/POST 양방향 파라미터 파싱', () => {
 });
 
 // ── 4. 쿼리 파라미터 검증 ─────────────────────────────────────────
-test('TD2-4: limit/phone/date 파라미터 검증 로직', () => {
+test('TD2-4: page_size/phone/date 파라미터 검증 로직', () => {
   const src = fs.readFileSync(EF_PATH, 'utf-8');
-  // limit 범위 제한
-  expect(src).toContain('MAX_LIMIT');
-  expect(src).toContain('DEFAULT_LIMIT');
-  expect(src).toContain('Math.min(parsed, MAX_LIMIT)');
+  // page_size 범위 제한
+  expect(src).toContain('MAX_PAGE_SIZE');
+  expect(src).toContain('DEFAULT_PAGE_SIZE');
+  expect(src).toContain('Math.min(parsed, MAX_PAGE_SIZE)');
   // E.164 포맷 검증
   expect(src).toContain('isE164');
   // 날짜 포맷 검증
@@ -111,7 +111,7 @@ test('TD2-7: reservations 쿼리 — 다중 필터 + customers/clinics join', ()
   // 정렬
   expect(src).toContain("order('reservation_date'");
   // limit
-  expect(src).toContain('.limit(limit)');
+  expect(src).toContain('.limit(pageSize)');
 });
 
 // ── 8. 응답 포맷 ─────────────────────────────────────────────────

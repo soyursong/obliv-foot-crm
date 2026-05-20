@@ -6,7 +6,9 @@ status: deploy-ready
 deploy_ready: true
 build_status: pass
 spec_added: true
-db_change: false
+db_change: true
+db_migration: "supabase/migrations/20260521060000_reservations_read_api_index.sql"
+db_migration_applied: true
 reviewed_by: dev-foot
 created_at: 2026-05-21
 updated_at: 2026-05-21
@@ -16,6 +18,9 @@ depends_on:
   - T-20260520-foot-DOPAMINE-SCHEMA
 track: D
 track_id: TD2
+qa_result: pass
+qa_grade: Green
+deploy_ready_at: 2026-05-21
 ---
 
 ## 개요
@@ -82,9 +87,9 @@ track_id: TD2
 `tests/e2e/T-20260520-foot-RESERVATIONS-READ-API-EF.spec.ts`
 
 - **TD2-1**: EF 파일 존재
-- **TD2-2**: X-Callback-Secret 인증
+- **TD2-2**: X-ReadAPI-Secret / DOPAMINE_READ_INBOUND_SECRET 인증
 - **TD2-3**: GET/POST 양방향 파라미터 파싱
-- **TD2-4**: limit/phone/date 파라미터 검증
+- **TD2-4**: page_size/phone/date 파라미터 검증 (MAX_PAGE_SIZE/DEFAULT_PAGE_SIZE)
 - **TD2-5**: clinic_slug → clinics.id DB 조회 + 미매칭 빈 결과
 - **TD2-6**: phone_e164 → customer_id 조회
 - **TD2-7**: reservations 쿼리 (다중 필터 + customers/clinics join)
@@ -92,7 +97,7 @@ track_id: TD2
 - **TD2-9**: external_id 필터 (cue_card.id 기반 조회)
 - **TD2-10**: 응답 코드 분기 (200/400/401/500)
 
-결과: **10 passed / 10**
+결과: **11 passed / 11** (TD2-1~TD2-10 + setup 포함)
 
 ## 빌드
 
