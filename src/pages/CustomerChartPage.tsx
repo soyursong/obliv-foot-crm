@@ -2,6 +2,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
+import { ko } from 'date-fns/locale';
 import { CalendarPlus, ChevronDown, ChevronRight, ExternalLink, FileText, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, Send, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
@@ -24,8 +25,7 @@ import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 import { InsuranceGradeSelect } from '@/components/insurance/InsuranceGradeSelect';
 // T-20260511-foot-C2-INSURANCE-AUTO-CALC: 2번차트 진료비 자동산정 패널
 import { Chart2InsuranceCalcPanel } from '@/components/insurance/Chart2InsuranceCalcPanel';
-// T-20260512-foot-TREATMENT-SET: 진료세트 불러오기 버튼
-import { TreatmentSetLoadButton, type TreatmentSetSelection } from '@/components/insurance/TreatmentSetLoadButton';
+// T-20260520-foot-SET-LOAD-REMOVE: TreatmentSetLoadButton 2구역 상단에서 제거
 // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
 import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
@@ -85,6 +85,16 @@ interface PackagePayment {
   payment_type: 'payment' | 'refund';
   memo: string | null;
   created_at: string;
+}
+
+// T-20260520-foot-MEMO-HISTORY: 치료메모 히스토리 항목
+interface TreatmentMemoEntry {
+  id: string;
+  content: string;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // T-20260506-foot-CHART-MINI-HOMEPAGE: 구매 패키지(티켓) 섹션
@@ -702,8 +712,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [chartTabGroup, setChartTabGroup] = useState<'clinical' | 'history'>('clinical');
   // T-20260511-foot-C2-INSURANCE-AUTO-CALC: 건보 자격등급 변경 감지 트리거
   const [insuranceGradeRefreshKey, setInsuranceGradeRefreshKey] = useState(0);
-  // T-20260512-foot-TREATMENT-SET: 진료세트 선택 상태
-  const [selectedTreatmentSet, setSelectedTreatmentSet] = useState<TreatmentSetSelection | null>(null);
   // T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 인라인 편집
   // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: editingAddress 제거 — 항상 활성화
   const [addressText, setAddressText] = useState('');
@@ -767,9 +775,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260517-foot-C2-CONSULT-DOCS AC-R1: 합본 양식 모달
   const [showChecklistForm, setShowChecklistForm] = useState(false);
   const [showConsentFormModal, setShowConsentFormModal] = useState(false);
-  // C23-DETAIL-SIMPLIFY: 치료메모 탭 상태
-  const [treatmentMemoText, setTreatmentMemoText] = useState('');
-  const [savingTreatmentMemo, setSavingTreatmentMemo] = useState(false);
+  // T-20260520-foot-MEMO-HISTORY: 치료메모 히스토리 누적 방식
+  const [treatmentMemos, setTreatmentMemos] = useState<TreatmentMemoEntry[]>([]);
+  const [treatmentMemosLoaded, setTreatmentMemosLoaded] = useState(false);
+  const [newMemoText, setNewMemoText] = useState('');
+  const [savingNewMemo, setSavingNewMemo] = useState(false);
+  const [editingMemoId, setEditingMemoId] = useState<string | null>(null);
+  const [editingMemoText, setEditingMemoText] = useState('');
+  const [savingEditMemo, setSavingEditMemo] = useState(false);
   // C21-RESIDENT-ID: 주민번호 입력/표시
   // T-20260511-foot-SSN-SAVE-BUG: 앞6자리 plain + 뒷7자리 masked (2-split input)
   const [editingRrn, setEditingRrn] = useState(false);
@@ -863,8 +876,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       setConsultationMemo((custData as Customer).tm_memo ?? '');
       // AC-6 쌍방연동: consultationStaffId 초기값을 Zone 1 assigned_staff_id 와 동기화
       setConsultationStaffId((custData as Customer).assigned_staff_id ?? '');
-      // treatment_note 컬럼 적용 전 memo 폴백 (migration 20260508000090)
-      setTreatmentMemoText((custData as Customer).treatment_note ?? (custData as Customer).memo ?? '');
+      // T-20260520-foot-MEMO-HISTORY: 메모 히스토리는 lazy load (탭 진입 시 로드)
+      setTreatmentMemos([]);
+      setTreatmentMemosLoaded(false);
 
       // C2-STAFF-DROPDOWN: 담당자 직원 목록 로드 (coordinator + consultant + director)
       // C2-MANAGER-PAYMENT-MAP: active=true DB 필터만으로 비활성 직원 제외 (하드코드 제거)
@@ -1591,27 +1605,108 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     setCustomer((prev) => prev ? { ...prev, tm_memo: newTmMemo || null } : prev);
   };
 
-  // C23-DETAIL-SIMPLIFY: 치료메모 탭 저장
-  // 우선 treatment_note 컬럼 시도, 미존재(42703) 시 기존 memo 컬럼 폴백
-  const saveTreatmentMemo = async () => {
+  // T-20260520-foot-MEMO-HISTORY: 치료메모 히스토리 로드 (lazy — 탭 진입 시)
+  const loadTreatmentMemos = useCallback(async () => {
     if (!customer) return;
-    setSavingTreatmentMemo(true);
-    const { error } = await supabase.from('customers').update({
-      treatment_note: treatmentMemoText || null,
-    }).eq('id', customer.id);
-    if (error?.code === '42703') {
-      // treatment_note 컬럼 미생성 — memo 폴백 (migration 20260508000090 대기 중)
-      const { error: e2 } = await supabase.from('customers').update({
-        memo: treatmentMemoText || null,
-      }).eq('id', customer.id);
-      setSavingTreatmentMemo(false);
-      if (e2) { toast.error(`저장 실패: ${e2.message}`); return; }
-      setCustomer((prev) => prev ? { ...prev, memo: treatmentMemoText || null } : prev);
+    const { data, error } = await supabase
+      .from('customer_treatment_memos')
+      .select('id, content, created_by, created_by_name, created_at, updated_at')
+      .eq('customer_id', customer.id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      // 테이블 미생성 등 — graceful fallback
+      console.warn('[TreatmentMemo] load error:', error.message);
+      setTreatmentMemosLoaded(true);
       return;
     }
-    setSavingTreatmentMemo(false);
+
+    const items = (data ?? []) as TreatmentMemoEntry[];
+
+    // AC-3: lazy migration — 기존 treatment_note 데이터 → 히스토리 첫 항목으로 이관
+    if (items.length === 0) {
+      const existingNote = customer.treatment_note ?? customer.memo;
+      if (existingNote) {
+        const { data: inserted } = await supabase
+          .from('customer_treatment_memos')
+          .insert({
+            customer_id: customer.id,
+            clinic_id: customer.clinic_id,
+            content: existingNote,
+            created_by: null,
+            created_by_name: '(이전 기록)',
+          })
+          .select('id, content, created_by, created_by_name, created_at, updated_at')
+          .single();
+        if (inserted) {
+          setTreatmentMemos([inserted as TreatmentMemoEntry]);
+          setTreatmentMemosLoaded(true);
+          return;
+        }
+      }
+    }
+
+    setTreatmentMemos(items);
+    setTreatmentMemosLoaded(true);
+  }, [customer]);
+
+  // 치료메모 탭 진입 시 lazy load
+  useEffect(() => {
+    if (resvDetailTab === '치료메모' && !treatmentMemosLoaded && customer) {
+      loadTreatmentMemos();
+    }
+  }, [resvDetailTab, treatmentMemosLoaded, customer, loadTreatmentMemos]);
+
+  // 새 메모 저장
+  const saveNewTreatmentMemo = async () => {
+    if (!customer || !newMemoText.trim()) return;
+    setSavingNewMemo(true);
+    const { data, error } = await supabase
+      .from('customer_treatment_memos')
+      .insert({
+        customer_id: customer.id,
+        clinic_id: customer.clinic_id,
+        content: newMemoText.trim(),
+        created_by: profile?.email ?? null,
+        created_by_name: profile?.name ?? null,
+      })
+      .select('id, content, created_by, created_by_name, created_at, updated_at')
+      .single();
+    setSavingNewMemo(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
-    setCustomer((prev) => prev ? { ...prev, treatment_note: treatmentMemoText || null } : prev);
+    if (data) setTreatmentMemos(prev => [data as TreatmentMemoEntry, ...prev]);
+    setNewMemoText('');
+  };
+
+  // 메모 수정 저장
+  const saveTreatmentMemoEdit = async () => {
+    if (!editingMemoId || !editingMemoText.trim()) return;
+    setSavingEditMemo(true);
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from('customer_treatment_memos')
+      .update({ content: editingMemoText.trim(), updated_at: now })
+      .eq('id', editingMemoId);
+    setSavingEditMemo(false);
+    if (error) { toast.error(`수정 실패: ${error.message}`); return; }
+    setTreatmentMemos(prev =>
+      prev.map(m => m.id === editingMemoId
+        ? { ...m, content: editingMemoText.trim(), updated_at: now }
+        : m)
+    );
+    setEditingMemoId(null);
+    setEditingMemoText('');
+  };
+
+  // 메모 삭제 (본인 작성분)
+  const deleteTreatmentMemo = async (id: string) => {
+    if (!window.confirm('메모를 삭제하시겠습니까?')) return;
+    const { error } = await supabase
+      .from('customer_treatment_memos')
+      .delete()
+      .eq('id', id);
+    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+    setTreatmentMemos(prev => prev.filter(m => m.id !== id));
   };
 
   // C22-PKG-DEDUCT: 치료사 차감 인라인 폼 저장 (복구 — regression fix)
@@ -3678,14 +3773,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-[#1e4e6e]">건강보험 자격등급</span>
               <div className="flex items-center gap-1.5">
-                {/* T-20260512-foot-TREATMENT-SET: 진료세트 불러오기 */}
-                <TreatmentSetLoadButton
-                  clinicId={customer.clinic_id}
-                  onLoad={(sel) =>
-                    setSelectedTreatmentSet(sel.setId ? sel : null)
-                  }
-                  currentSetName={selectedTreatmentSet?.setName}
-                />
                 <a
                   href="https://medicare.nhis.or.kr/portal/refer/selectReferInq.do"
                   target="_blank"
@@ -3730,14 +3817,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               }}
             />
             {/* T-20260511-foot-C2-INSURANCE-AUTO-CALC: 등급 변경 시 진료비 실시간 자동산정 */}
-            {/* T-20260512-foot-TREATMENT-SET: 진료세트 필터 + 상병코드 연동 */}
+            {/* T-20260520-foot-SET-LOAD-REMOVE: 세트 필터 props 제거 */}
             <Chart2InsuranceCalcPanel
               customerId={customer.id}
               clinicId={customer.clinic_id}
               refreshTrigger={insuranceGradeRefreshKey}
-              serviceCodeFilter={selectedTreatmentSet?.insertionCodes}
-              diseaseCodes={selectedTreatmentSet?.diseaseCodes}
-              activeSetName={selectedTreatmentSet?.setName}
             />
           </div>
 
@@ -4093,26 +4177,98 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               </div>
             )}
 
-            {/* 치료메모 탭 */}
+            {/* 치료메모 탭 — T-20260520-foot-MEMO-HISTORY: 히스토리 누적 방식 */}
             {resvDetailTab === '치료메모' && (
               <div className="p-2 space-y-2">
+                {/* 새 메모 입력 */}
                 <div>
-                  <label className="block text-[11px] text-muted-foreground mb-0.5">치료메모</label>
+                  <label className="block text-[11px] text-muted-foreground mb-0.5">새 메모 추가</label>
                   <Textarea
-                    value={treatmentMemoText}
-                    onChange={(e) => setTreatmentMemoText(e.target.value)}
-                    rows={5}
+                    value={newMemoText}
+                    onChange={(e) => setNewMemoText(e.target.value)}
+                    rows={3}
+                    placeholder="치료 메모를 입력하세요…"
                     className="text-[11px] resize-none"
                   />
                 </div>
                 <button
                   type="button"
-                  onClick={saveTreatmentMemo}
-                  disabled={savingTreatmentMemo}
+                  onClick={saveNewTreatmentMemo}
+                  disabled={savingNewMemo || !newMemoText.trim()}
                   className="w-full rounded bg-teal-600 text-white py-1.5 text-[11px] font-medium hover:bg-teal-700 transition disabled:opacity-50"
                 >
-                  {savingTreatmentMemo ? '저장 중…' : '저장'}
+                  {savingNewMemo ? '저장 중…' : '메모 추가'}
                 </button>
+
+                {/* 이력 목록 (최신순 DESC) */}
+                {!treatmentMemosLoaded ? (
+                  <div className="text-[11px] text-muted-foreground text-center py-2">불러오는 중…</div>
+                ) : treatmentMemos.length === 0 ? (
+                  <div className="text-[11px] text-muted-foreground text-center py-3">아직 치료메모가 없습니다</div>
+                ) : (
+                  <div className="space-y-1.5 mt-1">
+                    <label className="block text-[11px] font-semibold text-[#1e4e6e]">메모 이력</label>
+                    {treatmentMemos.map((memo) => (
+                      <div key={memo.id} className="rounded border border-gray-200 bg-gray-50/50 p-2 space-y-1">
+                        {editingMemoId === memo.id ? (
+                          <>
+                            <Textarea
+                              value={editingMemoText}
+                              onChange={(e) => setEditingMemoText(e.target.value)}
+                              rows={3}
+                              className="text-[11px] resize-none"
+                              autoFocus
+                            />
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={saveTreatmentMemoEdit}
+                                disabled={savingEditMemo || !editingMemoText.trim()}
+                                className="flex-1 rounded bg-teal-600 text-white py-1 text-[11px] font-medium hover:bg-teal-700 transition disabled:opacity-50"
+                              >
+                                {savingEditMemo ? '저장 중…' : '수정 저장'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setEditingMemoId(null); setEditingMemoText(''); }}
+                                className="px-2 rounded border border-gray-300 text-[11px] hover:bg-gray-100 transition"
+                              >
+                                취소
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-[11px] text-gray-800 whitespace-pre-wrap">{memo.content}</p>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-muted-foreground">
+                                {memo.created_by_name ?? '알 수 없음'} · {format(new Date(memo.created_at), 'yyyy-MM-dd HH:mm', { locale: ko })}
+                              </span>
+                              {memo.created_by && memo.created_by === profile?.email && (
+                                <div className="flex gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => { setEditingMemoId(memo.id); setEditingMemoText(memo.content); }}
+                                    className="text-[10px] text-teal-600 hover:underline"
+                                  >
+                                    수정
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteTreatmentMemo(memo.id)}
+                                    className="text-[10px] text-red-500 hover:underline"
+                                  >
+                                    삭제
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
