@@ -1,10 +1,12 @@
 /**
  * 셀프체크인 E2E 테스트 (인증 불필요)
  *
+ * [UPDATED for T-20260517-foot-CHECKIN-2STEP]
  * - /checkin/jongno-foot 접속
  * - 클리닉명 표시 확인
- * - 이름 + 전화번호 입력
- * - 방문유형 선택
+ * - 이름 입력 + 전화번호 NumPad 입력
+ * - 방문유형 2단계 선택 (예약여부 → 초진/재진)
+ * - 유입경로 대분류 선택
  * - 확인 화면 -> 접수 완료 화면
  * - 잘못된 slug -> 에러 메시지 확인
  */
@@ -22,22 +24,25 @@ test.describe('Self check-in flow', () => {
     await expect(nameInput).toBeVisible();
     await nameInput.fill('셀프체크인테스트');
 
-    // 전화번호 입력
-    const phoneInput = page.locator('#sc-phone');
-    await expect(phoneInput).toBeVisible();
-    await phoneInput.fill('01012340000');
+    // 전화번호 NumPad 입력 (T-20260517-foot-CHECKIN-2STEP: sc-phone input 없음)
+    for (const d of ['0', '1', '0', '1', '2', '3', '4', '0', '0', '0', '0']) {
+      await page.getByRole('button', { name: d, exact: true }).click();
+    }
+    // 자동 포맷 표시 확인
+    await expect(page.getByText('010-1234-0000')).toBeVisible();
 
-    // 전화번호 자동 포맷 확인
-    await expect(phoneInput).toHaveValue('010-1234-0000');
+    // 방문유형 2단계: 예약하고 왔어요 → 재진
+    await page.getByRole('button', { name: '예약하고 왔어요' }).click();
+    await page.locator('button').filter({ hasText: '재진' }).first().click();
 
-    // 방문유형: 재진 선택
-    await page.getByText('재진', { exact: true }).click();
+    // 유입경로: 검색 선택
+    await page.getByRole('button', { name: '검색' }).click();
 
-    // 접수 버튼 활성화 확인
-    const submitBtn = page.getByRole('button', { name: '접수' });
+    // 접수하기 버튼 활성화 확인
+    const submitBtn = page.getByRole('button', { name: '접수하기' });
     await expect(submitBtn).toBeEnabled();
 
-    // 접수 버튼 클릭 -> 확인 화면
+    // 접수하기 버튼 클릭 -> 확인 화면
     await submitBtn.click();
 
     // 확인 화면
@@ -102,10 +107,20 @@ test.describe('Self check-in flow', () => {
     await page.goto('/checkin/jongno-foot');
     await expect(page.getByText('셀프 접수')).toBeVisible({ timeout: 10_000 });
 
+    // 이름 입력
     await page.locator('#sc-name').fill('수정테스트');
-    await page.locator('#sc-phone').fill('01099998888');
+    // 전화번호 NumPad 입력
+    for (const d of ['0', '1', '0', '9', '9', '9', '9', '8', '8', '8', '8']) {
+      await page.getByRole('button', { name: d, exact: true }).click();
+    }
+    // 방문유형 2단계: 예약하고 왔어요 → 초진
+    await page.getByRole('button', { name: '예약하고 왔어요' }).click();
+    await page.locator('button').filter({ hasText: '초진' }).first().click();
+    // 유입경로: 기타
+    await page.getByRole('button', { name: '기타' }).click();
 
-    await page.getByRole('button', { name: '접수' }).click();
+    // 접수하기 클릭 → confirm 화면
+    await page.getByRole('button', { name: '접수하기' }).click();
     await expect(page.getByText('접수 정보 확인')).toBeVisible({ timeout: 5_000 });
 
     // "수정" 버튼 클릭 -> 입력 폼으로 돌아감
@@ -127,18 +142,29 @@ test.describe('Self check-in flow', () => {
     });
   });
 
-  test('Visit type selection works', async ({ page }) => {
+  test('Visit type selection works (2단계 flow)', async ({ page }) => {
     await page.goto('/checkin/jongno-foot');
     await expect(page.getByText('셀프 접수')).toBeVisible({ timeout: 10_000 });
 
-    // 각 방문유형 버튼이 클릭 가능한지 확인 (a2bc54e 리뉴얼 후 레이블: 초진/재진/예약없이 방문)
-    const types = ['초진', '재진', '예약없이 방문'];
-    for (const typeName of types) {
-      const btn = page.getByText(typeName, { exact: true });
-      await expect(btn).toBeVisible();
-      await btn.click();
-      // 선택된 버튼에 border-teal-600 클래스 확인 (시각적으로 활성화됨)
-    }
+    // [T-20260517-foot-CHECKIN-2STEP] 1단계: 예약여부 2버튼 표시 확인
+    await expect(page.getByRole('button', { name: '예약하고 왔어요' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '예약 없이 방문했어요' })).toBeVisible();
+    // 기존 평면 '예약없이 방문' 버튼은 없음
+    await expect(page.getByRole('button', { name: '예약없이 방문', exact: true })).not.toBeVisible();
+
+    // 예약 선택 시 2단계(초진/재진) 버튼 노출
+    await page.getByRole('button', { name: '예약하고 왔어요' }).click();
+    await expect(page.locator('button').filter({ hasText: '초진' }).first()).toBeVisible({ timeout: 3_000 });
+    await expect(page.locator('button').filter({ hasText: '재진' }).first()).toBeVisible({ timeout: 3_000 });
+
+    // 재진 선택
+    await page.locator('button').filter({ hasText: '재진' }).first().click();
+    // 워크인: 예약 없이 방문했어요 → 팝업
+    await page.getByRole('button', { name: '예약 없이 방문했어요' }).click();
+    await expect(page.getByText('당일 예약 상황에 따라')).toBeVisible({ timeout: 3_000 });
+    // 팝업 확인
+    await page.getByRole('button', { name: '확인 후 접수하기' }).click();
+    await expect(page.getByText('당일 예약 상황에 따라')).not.toBeVisible({ timeout: 3_000 });
   });
 
   test('Submit button disabled without required fields', async ({ page }) => {
