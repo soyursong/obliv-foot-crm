@@ -835,7 +835,7 @@ ${COMMON_STYLE}
         <td class="num-cell">{{subtotal_noncovered}}</td>
       </tr>
       <tr>
-        <td colspan="7" style="text-align:center; background:#f8f8f8;">골처리 조정금액</td>
+        <td colspan="7" style="text-align:center; background:#f8f8f8;">끝처리 조정금액</td>
         <td class="num-cell">0</td>
         <td class="num-cell">0</td>
         <td class="num-cell">0</td>
@@ -1326,7 +1326,7 @@ const RX_STANDARD_HTML = `
       <div class="rx-title">처&nbsp;&nbsp;방&nbsp;&nbsp;전</div>
     </div>
     <div style="width:72px; height:72px; border:1px solid #bbb; display:flex; align-items:center; justify-content:center; font-size:7pt; color:#999; text-align:center; flex-shrink:0;">
-      E-Health<br>앱 처방전
+      처방전<br>QR코드
     </div>
   </div>
 
@@ -1513,9 +1513,6 @@ const BILL_RECEIPT_HTML = `
 
   <!-- 제목 -->
   <div class="br-title">진료비 계산서·영수증</div>
-  <div style="text-align:center; font-size:8pt; color:#555; margin-bottom:4px;">
-    (Health Insurance Medical Fee Receipt)
-  </div>
 
   <!-- 요양기관 + 환자 정보 -->
   <table style="margin-bottom:-1px;">
@@ -1580,7 +1577,9 @@ const BILL_RECEIPT_HTML = `
       </tr>
       <tr>
         <td class="br-label">처치 및 수술료</td>
-        <td class="br-num"></td><td class="br-num"></td><td class="br-num"></td><td class="br-num"></td>
+        <td class="br-num"></td><td class="br-num"></td>
+        <td class="br-num">{{non_covered}}</td>
+        <td class="br-num">{{total_amount}}</td>
       </tr>
       <tr>
         <td class="br-label">검&nbsp;&nbsp;&nbsp;사&nbsp;&nbsp;&nbsp;료</td>
