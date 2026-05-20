@@ -1,15 +1,21 @@
 ---
 id: T-20260520-foot-PAYMENT-MINI-UX
 title: "결제미니창 UX 개선 4건 (상병코드 소형화·Zone2 확장·금일 시술내역 연동·수납대기 직결)"
-status: deploy-ready
+status: deployed
 priority: P0
 domain: foot
 created_at: 2026-05-20
 deploy_ready_at: 2026-05-20
 commit_sha: 55d7753
+deploy_commit: 00d349574edbc0c0536c31cce581170be83797f3
+deployed_at: 2026-05-20T21:19:54+09:00
+qa_result: pass
+qa_grade: Green
+bundle_hash: index-B6S5uvGO.js
 db_migration: false
 build_passed: true
 e2e_spec: tests/e2e/T-20260520-foot-PAYMENT-MINI-UX.spec.ts
+field_soak_until: 2026-05-21T21:19:54+09:00
 deadline: 2026-05-22
 ---
 
