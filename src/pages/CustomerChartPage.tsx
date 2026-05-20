@@ -674,7 +674,17 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [prescriptions, setPrescriptions] = useState<PrescriptionRow[]>([]);
   const [consentEntries, setConsentEntries] = useState<{ form_type: string; signed_at: string }[]>([]);
   // T-20260519-foot-PENCHART-FORMS: printed_at nullable 대응 → signed_at 폴백
-  const [submissionEntries, setSubmissionEntries] = useState<{ check_in_id: string; template_key?: string; printed_at: string | null; signed_at?: string | null }[]>([]);
+  // T-20260520-foot-PENCHART-VIEW-SPLIT: field_data 추가 (canvas_file 조회용)
+  const [submissionEntries, setSubmissionEntries] = useState<{
+    check_in_id: string;
+    template_key?: string;
+    printed_at: string | null;
+    signed_at?: string | null;
+    field_data?: Record<string, unknown> | null;
+  }[]>([]);
+  // T-20260520-foot-PENCHART-VIEW-SPLIT: 이미지 뷰어 상태
+  const [submissionImages, setSubmissionImages] = useState<{ url: string; date: string; label: string }[]>([]);
+  const [submissionImagesLoading, setSubmissionImagesLoading] = useState(false);
   // T-20260430-foot-PRESCREEN-CHECKLIST: 사전 체크리스트 응답
   const [checklistEntries, setChecklistEntries] = useState<{
     id: string;
@@ -944,9 +954,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         // T-20260515-foot-DOC-REISSUE-BTN fix: template_key JOIN
         // T-20260519-foot-PENCHART-FORMS: signed_at 추가
         // T-20260519-foot-CHART-BEFORE-CHECKIN: customer_id 기반으로 전환 (check_in_id=null 포함)
+        // T-20260520-foot-PENCHART-VIEW-SPLIT: field_data 추가 (canvas_file 조회용)
         supabase
           .from('form_submissions')
-          .select('check_in_id, printed_at, signed_at, form_templates!template_id(form_key)')
+          .select('check_in_id, printed_at, signed_at, field_data, form_templates!template_id(form_key)')
           .eq('customer_id', customerId)
           .order('printed_at', { ascending: false, nullsFirst: false })
           .limit(30),
@@ -958,6 +969,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           template_key: (s.form_templates as { form_key: string } | null)?.form_key,
           printed_at: (s.printed_at as string | null) ?? null,
           signed_at:  (s.signed_at  as string | null) ?? null,
+          field_data: (s.field_data as Record<string, unknown> | null) ?? null,
         }))
       );
 
@@ -1015,6 +1027,41 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       .limit(50);
     setMessageLogs((data ?? []) as MessageLog[]);
   }, [customerId]);
+
+  // T-20260520-foot-PENCHART-VIEW-SPLIT: form_submissions 이미지 뷰어 핸들러
+  // 그룹에 맞는 template_key 필터로 canvas_file → signed URL 생성
+  const openSubmissionViewer = useCallback(async (
+    group: 1 | 2,
+    cid: string,
+  ) => {
+    const filterKey = group === 1
+      ? (k: string) => k.startsWith('personal_checklist_')
+      : (k: string) => k === 'refund_consent';
+    const subs = submissionEntries.filter((s) => s.template_key && filterKey(s.template_key));
+    if (subs.length === 0) { setSubmissionImages([]); return; }
+    setSubmissionImagesLoading(true);
+    try {
+      const results = await Promise.all(
+        subs.map(async (s) => {
+          const canvasFile = (s.field_data as Record<string, unknown> | null)?.canvas_file as string | undefined;
+          if (!canvasFile) return null;
+          const path = `customer/${cid}/pen-chart/${canvasFile}`;
+          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
+          if (!data?.signedUrl) return null;
+          const dateStr = s.printed_at ?? s.signed_at ?? '';
+          let label = '';
+          if (s.template_key === 'personal_checklist_general') label = '개인정보+체크리스트 (일반)';
+          else if (s.template_key === 'personal_checklist_senior') label = '개인정보+체크리스트 (어르신용)';
+          else if (s.template_key === 'refund_consent') label = '환불/비급여 동의서';
+          else label = s.template_key ?? '';
+          return { url: data.signedUrl, date: dateStr, label };
+        }),
+      );
+      setSubmissionImages(results.filter(Boolean) as { url: string; date: string; label: string }[]);
+    } finally {
+      setSubmissionImagesLoading(false);
+    }
+  }, [submissionEntries]);
 
   // T-20260514-foot-C2-PAYMENT-SYNC AC-1: payments realtime → 2번차트 자동 갱신
   useEffect(() => {
@@ -3309,13 +3356,21 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   개인정보 / 체크리스트
                 </div>
                 {/* AC-R2: 개별 서브항목 제거 → 합본 단일 상태 */}
+                {/* T-20260520-foot-PENCHART-VIEW-SPLIT: form_submissions personal_checklist_* 포함 */}
                 {(() => {
-                  const done = consentEntries.some((c) => c.form_type === 'privacy') || checklistEntries.length > 0;
-                  const dateStr = checklistEntries[0]?.completed_at
-                    ? format(new Date(checklistEntries[0].completed_at), 'MM-dd')
-                    : consentEntries.find((c) => c.form_type === 'privacy')?.signed_at
-                      ? format(new Date(consentEntries.find((c) => c.form_type === 'privacy')!.signed_at), 'MM-dd')
-                      : null;
+                  const hasOld = consentEntries.some((c) => c.form_type === 'privacy') || checklistEntries.length > 0;
+                  const hasNew = submissionEntries.some((s) => s.template_key?.startsWith('personal_checklist_'));
+                  const done = hasOld || hasNew;
+                  const dateStr = (() => {
+                    if (hasNew) {
+                      const newest = submissionEntries.filter((s) => s.template_key?.startsWith('personal_checklist_'))[0];
+                      const d = newest?.printed_at ?? newest?.signed_at;
+                      return d ? format(new Date(d), 'MM-dd') : null;
+                    }
+                    if (checklistEntries[0]?.completed_at) return format(new Date(checklistEntries[0].completed_at), 'MM-dd');
+                    const pe = consentEntries.find((c) => c.form_type === 'privacy');
+                    return pe ? format(new Date(pe.signed_at), 'MM-dd') : null;
+                  })();
                   return (
                     <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${done ? 'bg-teal-50' : 'bg-gray-50'}`}>
                       <span className={done ? 'text-teal-600' : 'text-gray-300'}>{done ? '✓' : '○'}</span>
@@ -3324,16 +3379,22 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     </div>
                   );
                 })()}
+                {/* T-20260520-foot-PENCHART-VIEW-SPLIT AC-2: [작성] 제거 (A안) — 펜차트 탭에서 작성 */}
                 <div className="flex gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setShowChecklistForm(true)}
-                    className="flex-1 rounded border border-indigo-300 bg-indigo-50 py-1 text-[10px] font-medium text-indigo-700 hover:bg-indigo-100 transition"
-                  >작성</button>
-                  <button
-                    type="button"
-                    onClick={() => setViewDocGroup(1)}
-                    disabled={!consentEntries.some((c) => c.form_type === 'privacy') && checklistEntries.length === 0}
+                    onClick={() => {
+                      const hasNew = submissionEntries.some((s) => s.template_key?.startsWith('personal_checklist_'));
+                      const hasOld = consentEntries.some((c) => c.form_type === 'privacy') || checklistEntries.length > 0;
+                      if (!hasNew && !hasOld) return;
+                      void openSubmissionViewer(1, customer.id);
+                      setViewDocGroup(1);
+                    }}
+                    disabled={
+                      !submissionEntries.some((s) => s.template_key?.startsWith('personal_checklist_')) &&
+                      !consentEntries.some((c) => c.form_type === 'privacy') &&
+                      checklistEntries.length === 0
+                    }
                     className="flex-1 rounded border border-gray-200 bg-white py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
                   >내용보기</button>
                 </div>
@@ -3346,10 +3407,20 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   환불 / 비급여 동의서
                 </div>
                 {/* AC-R2: 개별 서브항목 제거 → 합본 단일 상태 */}
+                {/* T-20260520-foot-PENCHART-VIEW-SPLIT: form_submissions refund_consent 포함 */}
                 {(() => {
-                  const done = consentEntries.some((c) => c.form_type === 'non_covered') || consentEntries.some((c) => c.form_type === 'refund');
-                  const dateEntry = consentEntries.find((c) => c.form_type === 'non_covered') ?? consentEntries.find((c) => c.form_type === 'refund');
-                  const dateStr = dateEntry ? format(new Date(dateEntry.signed_at), 'MM-dd') : null;
+                  const hasOld = consentEntries.some((c) => c.form_type === 'non_covered') || consentEntries.some((c) => c.form_type === 'refund');
+                  const hasNew = submissionEntries.some((s) => s.template_key === 'refund_consent');
+                  const done = hasOld || hasNew;
+                  const dateStr = (() => {
+                    if (hasNew) {
+                      const newest = submissionEntries.filter((s) => s.template_key === 'refund_consent')[0];
+                      const d = newest?.printed_at ?? newest?.signed_at;
+                      return d ? format(new Date(d), 'MM-dd') : null;
+                    }
+                    const dateEntry = consentEntries.find((c) => c.form_type === 'non_covered') ?? consentEntries.find((c) => c.form_type === 'refund');
+                    return dateEntry ? format(new Date(dateEntry.signed_at), 'MM-dd') : null;
+                  })();
                   return (
                     <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${done ? 'bg-purple-50' : 'bg-gray-50'}`}>
                       <span className={done ? 'text-purple-600' : 'text-gray-300'}>{done ? '✓' : '○'}</span>
@@ -3358,16 +3429,28 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     </div>
                   );
                 })()}
+                {/* T-20260520-foot-PENCHART-VIEW-SPLIT AC-5: [작성] → 펜차트 탭 이동 (B안 브릿지) */}
                 <div className="flex gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setShowConsentFormModal(true)}
-                    className="flex-1 rounded border border-purple-300 bg-purple-50 py-1 text-[10px] font-medium text-purple-700 hover:bg-purple-100 transition"
-                  >작성</button>
+                    onClick={() => { handleClinicalTab('pen_chart'); }}
+                    className="flex-1 rounded border border-purple-200 bg-purple-50 py-1 text-[10px] font-medium text-purple-600 hover:bg-purple-100 transition"
+                    title="펜차트 탭에서 작성"
+                  >펜차트에서 작성</button>
                   <button
                     type="button"
-                    onClick={() => setViewDocGroup(2)}
-                    disabled={!consentEntries.some((c) => c.form_type === 'refund') && !consentEntries.some((c) => c.form_type === 'non_covered')}
+                    onClick={() => {
+                      const hasNew = submissionEntries.some((s) => s.template_key === 'refund_consent');
+                      const hasOld = consentEntries.some((c) => c.form_type === 'refund') || consentEntries.some((c) => c.form_type === 'non_covered');
+                      if (!hasNew && !hasOld) return;
+                      void openSubmissionViewer(2, customer.id);
+                      setViewDocGroup(2);
+                    }}
+                    disabled={
+                      !submissionEntries.some((s) => s.template_key === 'refund_consent') &&
+                      !consentEntries.some((c) => c.form_type === 'refund') &&
+                      !consentEntries.some((c) => c.form_type === 'non_covered')
+                    }
                     className="flex-1 rounded border border-gray-200 bg-white py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
                   >내용보기</button>
                 </div>
@@ -4511,26 +4594,67 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       )}
 
       {/* T-20260517-foot-C2-CONSULT-DOCS: 필수서류 [내용보기] 다이얼로그 */}
+      {/* T-20260520-foot-PENCHART-VIEW-SPLIT: form_submissions PNG 이미지 뷰어 통합 */}
       {viewDocGroup !== null && (
-        <Dialog open={viewDocGroup !== null} onOpenChange={(o) => { if (!o) setViewDocGroup(null); }}>
-          <DialogContent className="max-w-sm">
+        <Dialog open={viewDocGroup !== null} onOpenChange={(o) => { if (!o) { setViewDocGroup(null); setSubmissionImages([]); } }}>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle className="text-sm">
                 {viewDocGroup === 1 ? '개인정보 / 체크리스트' : '환불 / 비급여 동의서'}
               </DialogTitle>
             </DialogHeader>
-            <div className="space-y-2 text-xs max-h-72 overflow-y-auto">
+            <div className="space-y-3 text-xs max-h-[70vh] overflow-y-auto">
+
+              {/* ── 펜차트 저장 이미지 (form_submissions) ── */}
+              {submissionImagesLoading && (
+                <div className="py-4 text-center text-muted-foreground text-[11px]">이미지 로딩 중…</div>
+              )}
+              {!submissionImagesLoading && submissionImages.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+                    <span className="h-1.5 w-1.5 rounded-full bg-purple-400" />
+                    펜차트 저장 양식
+                  </div>
+                  {submissionImages.map((img, i) => (
+                    <div key={i} className="rounded-lg border bg-gray-50 overflow-hidden">
+                      <div className="flex items-center justify-between px-2 py-1 bg-white border-b">
+                        <span className="font-medium text-[11px] text-gray-700">{img.label}</span>
+                        {img.date && (
+                          <span className="text-[10px] text-muted-foreground">
+                            {format(new Date(img.date), 'yyyy-MM-dd HH:mm')}
+                          </span>
+                        )}
+                        <a
+                          href={img.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] text-teal-600 hover:underline ml-2"
+                        >
+                          원본 보기
+                        </a>
+                      </div>
+                      <img
+                        src={img.url}
+                        alt={img.label}
+                        className="w-full object-contain max-h-[400px]"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ── 구형 레거시 데이터 (consent_forms / checklists) ── */}
               {viewDocGroup === 1 && (
                 <>
                   {consentEntries.filter((c) => c.form_type === 'privacy').map((c, i) => (
                     <div key={i} className="rounded-lg border bg-teal-50 p-3">
-                      <div className="font-semibold text-teal-800 mb-1">개인정보 동의서</div>
+                      <div className="font-semibold text-teal-800 mb-1">개인정보 동의서 (이전 방식)</div>
                       <div className="text-muted-foreground">{format(new Date(c.signed_at), 'yyyy-MM-dd HH:mm')} 서명 완료</div>
                     </div>
                   ))}
                   {checklistEntries.length > 0 && (
                     <div className="rounded-lg border bg-teal-50 p-3">
-                      <div className="font-semibold text-teal-800 mb-1">사전 체크리스트</div>
+                      <div className="font-semibold text-teal-800 mb-1">사전 체크리스트 (이전 방식)</div>
                       <div className="text-muted-foreground">
                         {checklistEntries[0].completed_at
                           ? format(new Date(checklistEntries[0].completed_at), 'yyyy-MM-dd HH:mm')
@@ -4538,9 +4662,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       </div>
                     </div>
                   )}
-                  {consentEntries.filter((c) => c.form_type === 'privacy').length === 0 && checklistEntries.length === 0 && (
-                    <p className="text-muted-foreground text-center py-4">서명된 서류가 없습니다</p>
-                  )}
+                  {/* 전체 없음 */}
+                  {!submissionImagesLoading &&
+                    submissionImages.length === 0 &&
+                    consentEntries.filter((c) => c.form_type === 'privacy').length === 0 &&
+                    checklistEntries.length === 0 && (
+                      <p className="text-muted-foreground text-center py-4">서명된 서류가 없습니다</p>
+                    )}
                 </>
               )}
               {viewDocGroup === 2 && (
@@ -4548,14 +4676,17 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   {(['non_covered', 'refund'] as const).map((fType) =>
                     consentEntries.filter((c) => c.form_type === fType).map((c, i) => (
                       <div key={`${fType}-${i}`} className="rounded-lg border bg-purple-50 p-3">
-                        <div className="font-semibold text-purple-800 mb-1">{FORM_TITLES[fType]}</div>
+                        <div className="font-semibold text-purple-800 mb-1">{FORM_TITLES[fType]} (이전 방식)</div>
                         <div className="text-muted-foreground">{format(new Date(c.signed_at), 'yyyy-MM-dd HH:mm')} 서명 완료</div>
                       </div>
                     ))
                   )}
-                  {consentEntries.filter((c) => c.form_type === 'refund' || c.form_type === 'non_covered').length === 0 && (
-                    <p className="text-muted-foreground text-center py-4">서명된 서류가 없습니다</p>
-                  )}
+                  {/* 전체 없음 */}
+                  {!submissionImagesLoading &&
+                    submissionImages.length === 0 &&
+                    consentEntries.filter((c) => c.form_type === 'refund' || c.form_type === 'non_covered').length === 0 && (
+                      <p className="text-muted-foreground text-center py-4">서명된 서류가 없습니다</p>
+                    )}
                 </>
               )}
             </div>
