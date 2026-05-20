@@ -497,12 +497,15 @@ export function PenChartTab({
       // isPC = 환불/비급여 동의서 (refund_consent) — form_submissions 자동 연동
       const isPC = activeDrawTemplate && isPdfOverlayFormKey(activeDrawTemplate.form_key);
 
+      // T-20260520-foot-PENCHART-VIEW-SPLIT:
+      // health_questionnaire_* 도 form_submissions에 저장 → 상담내역 [내용보기] 연동
       // T-20260520-foot-PENCHART-REFUND-FORM:
-      // pdf_overlay 양식 (refund_consent) 은 form_submissions에도 저장
-      // (서명 base64 + 캔버스 파일명 포함)
+      // pdf_overlay 양식 (refund_consent) 은 form_submissions에도 저장 (서명 base64 포함)
       // builtin ID면 template_id FK 미적용 — staffId 있으면 builtin도 field_data 저장 시도
-      if (isPC && activeDrawTemplate && staffId) {
-        const signatureBase64 = sigEmpty ? null : (sigPadRef.current?.toDataURL('image/png') ?? null);
+      if ((isPC || isHQ) && activeDrawTemplate && staffId) {
+        const signatureBase64 = (isPC && !sigEmpty)
+          ? (sigPadRef.current?.toDataURL('image/png') ?? null)
+          : null;
         const now = new Date().toISOString();
         const submissionPayload: Record<string, unknown> = {
           clinic_id:   clinicId,
@@ -511,13 +514,14 @@ export function PenChartTab({
             form_key:         activeDrawTemplate.form_key,
             canvas_file:      fileName,
             signature_base64: signatureBase64,
-            signed_at:        now,
+            saved_at:         now,
           },
-          status:      'signed',
-          signed_at:   now,
-          printed_at:  now,
-          issued_by:   staffId,
+          status:     isPC ? 'signed' : 'completed',
+          printed_at: now,
+          issued_by:  staffId,
         };
+        // refund_consent: signed_at 추가
+        if (isPC) submissionPayload.signed_at = now;
         // template_id: builtin ID는 FK 위반 방지를 위해 포함하지 않음
         if (!activeDrawTemplate.id.startsWith('builtin-')) {
           submissionPayload.template_id = activeDrawTemplate.id;
@@ -531,7 +535,7 @@ export function PenChartTab({
       }
 
       toast.success(
-        isHQ ? '발건강 질문지 저장 완료' :
+        isHQ ? '발건강 질문지 저장 완료 — 상담내역에 연동됐습니다' :
         isPC ? '환불/비급여 동의서 저장 완료 — 상담내역에 연동됐습니다' :
                '펜차트 저장 완료',
       );
