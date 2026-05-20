@@ -1,15 +1,15 @@
 ---
 id: T-20260520-foot-PENCHART-REFINE
 domain: foot
-status: in-progress
-deploy-ready: false
-commit_sha: ""
-build_ok: false
+status: deploy-ready
+deploy-ready: true
+commit_sha: e0e3f55
+build_ok: true
 db_changed: false
 spec_file: tests/e2e/T-20260520-foot-PENCHART-REFINE.spec.ts
 risk: GO
 created_at: 2026-05-20
-completed_at: ""
+completed_at: 2026-05-20
 ---
 
 # T-20260520-foot-PENCHART-REFINE
