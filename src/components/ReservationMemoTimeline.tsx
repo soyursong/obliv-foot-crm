@@ -1,10 +1,11 @@
 // T-20260515-foot-RESV-MEMO-APPEND
 // T-20260520-foot-RESV-MEMO-WALKIN: customer_id fallback — 예약 없는 워크인도 메모 작성 가능
+// T-20260521-foot-WALKIN-MEMO-GAP: check_in_id fallback — customer_id도 없는 수기 워크인 지원
 // 예약메모 누적 히스토리 타임라인 컴포넌트 (append-only)
 // - reservation_memo_history 테이블에서 이력 조회
 // - 최신 메모 상단 표시
 // - 하단 입력 필드로 새 메모 추가
-// - reservationId 없을 때 customerId 기준 fallback (워크인 지원)
+// - 우선순위: reservationId → customerId → checkInId
 
 import { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
@@ -18,6 +19,7 @@ export interface MemoHistoryItem {
   id: string;
   reservation_id: string | null;
   customer_id?: string | null;
+  check_in_id?: string | null;
   content: string;
   created_by_name: string | null;
   created_at: string;
@@ -28,6 +30,8 @@ interface Props {
   reservationId?: string | null;
   /** 예약 없는 고객(워크인)의 customer_id fallback (T-20260520-foot-RESV-MEMO-WALKIN) */
   customerId?: string | null;
+  /** customer_id도 없는 수기 워크인의 check_in_id 3순위 fallback (T-20260521-foot-WALKIN-MEMO-GAP) */
+  checkInId?: string | null;
   clinicId: string;
   /** 현재 로그인 사용자 표시 이름 */
   authorName: string;
@@ -40,6 +44,7 @@ interface Props {
 export function ReservationMemoTimeline({
   reservationId,
   customerId,
+  checkInId,
   clinicId,
   authorName,
   compact = false,
@@ -53,7 +58,14 @@ export function ReservationMemoTimeline({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // T-20260520-foot-RESV-MEMO-WALKIN: reservationId → customer_id 순 fallback
-  const effectiveKey = reservationId ? `resv:${reservationId}` : customerId ? `cust:${customerId}` : null;
+  // T-20260521-foot-WALKIN-MEMO-GAP: → check_in_id 3순위 fallback (customer_id도 없는 수기 워크인)
+  const effectiveKey = reservationId
+    ? `resv:${reservationId}`
+    : customerId
+    ? `cust:${customerId}`
+    : checkInId
+    ? `ci:${checkInId}`
+    : null;
 
   // effectiveKey 없으면 로딩 상태 초기화
   useEffect(() => {
@@ -66,12 +78,15 @@ export function ReservationMemoTimeline({
     setLoading(true);
     const query = supabase
       .from('reservation_memo_history')
-      .select('id, reservation_id, customer_id, content, created_by_name, created_at')
+      .select('id, reservation_id, customer_id, check_in_id, content, created_by_name, created_at')
       .order('created_at', { ascending: false });
 
+    // T-20260521-foot-WALKIN-MEMO-GAP: 3순위 fallback — reservation_id → customer_id → check_in_id
     const filteredQuery = reservationId
       ? query.eq('reservation_id', reservationId)
-      : query.eq('customer_id', customerId!);
+      : customerId
+      ? query.eq('customer_id', customerId)
+      : query.eq('check_in_id', checkInId!);
 
     filteredQuery.then(({ data, error }) => {
       if (cancelled) return;
@@ -88,13 +103,16 @@ export function ReservationMemoTimeline({
   const addMemo = async () => {
     const content = inputVal.trim();
     if (!content) return;
-    if (!reservationId && !customerId) return;
+    if (!reservationId && !customerId && !checkInId) return;
     setSubmitting(true);
 
     // T-20260520-foot-RESV-MEMO-WALKIN: reservationId 있으면 reservation 기준, 없으면 customer 기준
+    // T-20260521-foot-WALKIN-MEMO-GAP: customer_id도 없으면 check_in_id 기준
     const insertPayload = reservationId
       ? { reservation_id: reservationId, clinic_id: clinicId, content, created_by_name: authorName || null }
-      : { customer_id: customerId, clinic_id: clinicId, content, created_by_name: authorName || null };
+      : customerId
+      ? { customer_id: customerId, clinic_id: clinicId, content, created_by_name: authorName || null }
+      : { check_in_id: checkInId, clinic_id: clinicId, content, created_by_name: authorName || null };
 
     const { data, error } = await supabase
       .from('reservation_memo_history')
@@ -169,6 +187,7 @@ export function ReservationMemoTimeline({
           className="h-8 px-2 text-xs border-teal-300 text-teal-700 hover:bg-teal-50 shrink-0"
           onClick={addMemo}
           disabled={submitting || !inputVal.trim() || !effectiveKey}
+          data-testid="memo-add-btn"
         >
           <MessageSquarePlus className="h-3.5 w-3.5 mr-0.5" />
           추가
