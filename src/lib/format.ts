@@ -10,6 +10,7 @@ export function parseAmount(value: string): number {
 }
 
 // PHONE_E164: 입력 E.164(+8210...) / 010 / 01012345678 모두 한국식(010-1234-5678)로 표시.
+// T-20260521-foot-CLINIC-INFO-SYNC: 서울(02) 지역번호 특수 처리 추가
 export function formatPhone(phone: string | null | undefined): string {
   if (!phone) return '';
   let digits = phone.replace(/\D/g, '');
@@ -18,6 +19,13 @@ export function formatPhone(phone: string | null | undefined): string {
     digits = '0' + digits.slice(2);
   }
   if (digits.length === 11) return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  // 서울(02) 지역번호: 10자리 = 02-XXXX-XXXX, 9자리 = 02-XXX-XXXX
+  if (digits.length === 10 && digits.startsWith('02')) {
+    return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  if (digits.length === 9 && digits.startsWith('02')) {
+    return `${digits.slice(0, 2)}-${digits.slice(2, 5)}-${digits.slice(5)}`;
+  }
   if (digits.length === 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
   return phone;
 }
