@@ -1826,11 +1826,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260516-foot-HEALER-RESV-BTN v2: 힐러예약 플래그 토글
   // AC-2: 다음 예약 없음 → pending_healer_flag 저장 (AC-9: 재클릭 토글)
   // AC-3~7: 다음 예약 있음 → healer_flag 토글 (기존 동작 유지)
+  // FIX(v3): reservation_date >= today (당일 포함) — 기존 > today는 당일 예약을 제외해
+  //   pending_healer_flag로 fallback되어 AC-10 애니·AC-3 HL 모두 미동작하던 버그 수정
   const handleHealerFlag = async () => {
     if (!customer || healerFlagLoading) return;
     const today = format(new Date(), 'yyyy-MM-dd');
     const nextResv = reservations
-      .filter(r => r.reservation_date > today && r.status !== 'cancelled' && r.status !== 'noshow')
+      .filter(r => r.reservation_date >= today && r.status !== 'cancelled' && r.status !== 'noshow')
       .sort((a, b) => a.reservation_date.localeCompare(b.reservation_date))[0] ?? null;
 
     setHealerFlagLoading(true);
