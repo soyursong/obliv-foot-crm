@@ -386,12 +386,19 @@ export function PenChartTab({
   }, []);
 
   // ── 포인터 이벤트 ────────────────────────────────────────────────────
+  // T-20260522-foot-PENCHART-PEN-OFFSET fix:
+  // canvas.width/height는 DPR 포함 물리 픽셀 — dpr로 나눠 논리 픽셀 계산.
+  // 이전 CANVAS_H(1020) 하드코딩은 refund_consent(3052px) 등 height 가변 양식에서
+  // scaleY ≈ 0.33으로 오산해 터치 위치 대비 위쪽에 드로잉되는 버그 유발.
   const getPos = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    const scaleX = CANVAS_W / rect.width;
-    const scaleY = CANVAS_H / rect.height;
+    const dpr = window.devicePixelRatio || 1;
+    const logicalW = canvas.width / dpr;
+    const logicalH = canvas.height / dpr;
+    const scaleX = logicalW / rect.width;
+    const scaleY = logicalH / rect.height;
     return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
   };
 
@@ -416,6 +423,10 @@ export function PenChartTab({
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // T-20260522-foot-PENCHART-SCROLL-BLOCK fix (방안 A):
+    // touch pointerType은 스크롤 전용 — 드로잉 건너뜀.
+    // touchAction:'pan-y' CSS와 함께 이중 방어: touch 이벤트가 도달해도 드로잉 불가.
+    if (e.pointerType === 'touch') return;
     e.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -441,6 +452,8 @@ export function PenChartTab({
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // T-20260522-foot-PENCHART-SCROLL-BLOCK fix: touch=스크롤, pen/mouse=드로잉
+    if (e.pointerType === 'touch') return;
     if (boilerplateMode === 'placing') return;
     if (!drawingRef.current) return;
     e.preventDefault();
@@ -885,7 +898,10 @@ export function PenChartTab({
           <canvas
             ref={canvasRef}
             style={{
-              touchAction: 'none',
+              // T-20260522-foot-PENCHART-SCROLL-BLOCK fix:
+              // 'pan-y': touch 수직 스크롤은 브라우저가 처리 (pointer 이벤트 미전달).
+              // pen/mouse 입력은 touch-action 영향 없으므로 드로잉 정상 동작.
+              touchAction: 'pan-y',
               cursor: boilerplateMode === 'placing' ? 'text' : isEraser ? 'cell' : 'crosshair',
               border: '1px solid #e2e8f0',
               display: 'block',
