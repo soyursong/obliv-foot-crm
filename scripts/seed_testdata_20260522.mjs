@@ -2,13 +2,15 @@
  * 풋센터 CRM 더미 데이터 — 5/22 현장 테스트용
  * T-20260521-foot-DUMMY-TEST-DATA (P1)
  *
- * 구성: 초진 32명 + 재진 32명 = 64명
- *   - 시간대: 10:00~17:00, 1시간 간격 8슬롯
- *   - 슬롯당: 초진 4명 + 재진 4명
+ * 구성: 초진 N명 + 재진 N명 (슬롯 수 × 4)
+ *   - 시간대: START_HOUR~END_HOUR, 30분 간격
+ *   - 슬롯당: 초진 4명 + 재진 4명 = 8명
  * 마킹: [TEST6] prefix + is_simulation=true
  * 정리: rollback_testdata_20260522.mjs 실행
  *
  * ⚠️  파라미터 섹션만 수정하면 시간대·인원 즉시 조정 가능
+ * ⚠️  START_HOUR / END_HOUR — 김주연 총괄 확인 중 (미확정)
+ *     확정 시 TICKET-UPDATE로 전달 예정
  */
 
 import { createClient } from '@supabase/supabase-js';
@@ -16,13 +18,13 @@ import { createClient } from '@supabase/supabase-js';
 // ============================================================
 // === 파라미터 (총괄 요청에 따라 조정) ===
 // ============================================================
-const TARGET_DATE    = '2026-05-22'; // 테스트 날짜
-const START_HOUR     = 10;           // 시작 시간 (포함)
-const END_HOUR       = 17;           // 마지막 슬롯 시간 (17:00)
-const SLOT_INTERVAL  = 1;            // 간격 (시간 단위)
-const NEW_PER_SLOT   = 4;            // 슬롯당 초진 인원
-const RET_PER_SLOT   = 4;            // 슬롯당 재진 인원
-const PAST_DATE      = '2026-05-01'; // 재진 판별용 과거 체크인 날짜
+const TARGET_DATE       = '2026-05-22'; // 테스트 날짜
+const START_HOUR        = 10;           // 시작 시간 (포함) ← 미확정, 총괄 확인 중
+const END_HOUR          = 17;           // 마지막 슬롯 시간  ← 미확정, 총괄 확인 중
+const SLOT_INTERVAL_MIN = 30;           // 간격 (분 단위) — 30분 확정 (2026-05-21 21:55)
+const NEW_PER_SLOT      = 4;            // 슬롯당 초진 인원
+const RET_PER_SLOT      = 4;            // 슬롯당 재진 인원
+const PAST_DATE         = '2026-05-01'; // 재진 판별용 과거 체크인 날짜
 // ============================================================
 
 const SUPABASE_URL = 'https://rxlomoozakkjesdqjtvd.supabase.co';
@@ -42,11 +44,15 @@ async function must(label, promise) {
   return data;
 }
 
-/** 슬롯 시간 배열 생성 */
+/** 슬롯 시간 배열 생성 (분 단위 간격) */
 function buildSlots() {
   const slots = [];
-  for (let h = START_HOUR; h <= END_HOUR; h += SLOT_INTERVAL) {
-    slots.push(`${String(h).padStart(2, '0')}:00`);
+  const startMin = START_HOUR * 60;
+  const endMin   = END_HOUR   * 60;
+  for (let m = startMin; m <= endMin; m += SLOT_INTERVAL_MIN) {
+    const h   = Math.floor(m / 60);
+    const min = m % 60;
+    slots.push(`${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`);
   }
   return slots;
 }
@@ -69,7 +75,7 @@ function makeName(type, seq) {
 // ─── 메인 ───────────────────────────────────────────────────
 async function main() {
   console.log('🚀 [TEST6] 더미 데이터 삽입 시작');
-  console.log(`   날짜: ${TARGET_DATE} / 슬롯: ${START_HOUR}~${END_HOUR}시 ${SLOT_INTERVAL}h간격`);
+  console.log(`   날짜: ${TARGET_DATE} / 슬롯: ${START_HOUR}:00~${END_HOUR}:00, ${SLOT_INTERVAL_MIN}분 간격`);
   console.log(`   슬롯당 초진${NEW_PER_SLOT} + 재진${RET_PER_SLOT} = ${NEW_PER_SLOT + RET_PER_SLOT}명`);
 
   // 클리닉 확인
@@ -101,7 +107,9 @@ async function main() {
   let totalRet = 0;
 
   for (const slotTime of slots) {
-    const slotHour = parseInt(slotTime.split(':')[0]);
+    const [slotHourStr, slotMinStr] = slotTime.split(':');
+    const slotHour = parseInt(slotHourStr, 10);
+    const slotMin  = parseInt(slotMinStr,  10);
     console.log(`\n⏰ 슬롯 ${slotTime}`);
 
     // ── 초진 ──────────────────────────────────────────────
@@ -186,8 +194,13 @@ async function main() {
           visit_type:     'returning',
           status:         'done',
           queue_number:   retSeq + 200,
-          checked_in_at:  `${PAST_DATE}T${String(slotHour).padStart(2,'0')}:00:00+09:00`,
-          completed_at:   `${PAST_DATE}T${String(slotHour + 1).padStart(2,'0')}:00:00+09:00`,
+          checked_in_at:  `${PAST_DATE}T${String(slotHour).padStart(2,'0')}:${String(slotMin).padStart(2,'0')}:00+09:00`,
+          completed_at:   (() => {
+            const endTotalMin = slotHour * 60 + slotMin + SLOT_INTERVAL_MIN;
+            const endH = Math.floor(endTotalMin / 60);
+            const endM = endTotalMin % 60;
+            return `${PAST_DATE}T${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}:00+09:00`;
+          })(),
           sort_order:     retSeq + 200,
           notes:          JSON.stringify({ test6: true, past_checkin: true }),
         })
