@@ -435,6 +435,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const [selectedDocKeys, setSelectedDocKeys] = useState<Set<string>>(new Set());
   const [docPrinting, setDocPrinting] = useState(false);
   const [docSettlePrinting, setDocSettlePrinting] = useState(false);
+  // T-20260521-foot-DOC-PRINT-UNIFY AC-2: form_submissions 기록용 staffId
+  const [staffId, setStaffId] = useState<string | null>(null);
 
   // ── T-20260517-foot-BILLING-3ZONE: Zone 3 — 구매패키지 (AC-4) + 금일 시술내역 (AC-5)
   // ── T-20260519-foot-BILLING-ITEM-PRICE: 항목별 수가 표시 (AC-1, AC-2)
@@ -568,6 +570,22 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       loadZone3Data(checkIn);
     }
   }, [checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // T-20260521-foot-DOC-PRINT-UNIFY AC-2: staffId 로드 (form_submissions issued_by용)
+  useEffect(() => {
+    if (!checkIn?.clinic_id) return;
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      supabase
+        .from('staff')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('clinic_id', checkIn.clinic_id)
+        .eq('active', true)
+        .maybeSingle()
+        .then(({ data }) => setStaffId(data?.id ?? null));
+    });
+  }, [checkIn?.clinic_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 오늘 패키지 세션 로드 → 서비스 목록과 매칭해 자동 prepaid 선택 ──────────
   const loadTodayPackageSessions = useCallback(
@@ -1084,6 +1102,24 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // PAY-SLOT-MOVE AC-4: iframe 인쇄 — 중복 창 없음
       printViaIframe(buildPrintHtml(pages, `서류 출력 — ${checkIn.customer_name}`));
       toast.success(`${selected.length}종 출력 요청됨`);
+      // T-20260521-foot-DOC-PRINT-UNIFY AC-2: form_submissions 이력 기록 (fire & forget)
+      const isFallback = templates[0]?.id.startsWith('fallback-');
+      if (!isFallback && staffId) {
+        const now = new Date().toISOString();
+        const submissionRows = selected.map((t) => ({
+          clinic_id: checkIn.clinic_id,
+          template_id: t.id,
+          check_in_id: checkIn.id,
+          customer_id: checkIn.customer_id ?? null,
+          issued_by: staffId,
+          field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages),
+          status: 'printed' as const,
+          printed_at: now,
+        }));
+        supabase.from('form_submissions').insert(submissionRows).then(({ error }) => {
+          if (error) console.warn('[DOC-PRINT-UNIFY] form_submissions 기록 실패:', error.message);
+        });
+      }
       // 슬롯 이동 없음 (onComplete 호출 X)
     } finally {
       setDocPrinting(false);
@@ -1125,6 +1161,24 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       });
       if (pages.length > 0) {
         printViaIframe(buildPrintHtml(pages, `서류 출력 — ${checkIn.customer_name}`));
+        // T-20260521-foot-DOC-PRINT-UNIFY AC-2: form_submissions 이력 기록 (fire & forget)
+        const isFallbackTpl = templates[0]?.id.startsWith('fallback-');
+        if (!isFallbackTpl && staffId) {
+          const now = new Date().toISOString();
+          const submissionRows = selected.map((t) => ({
+            clinic_id: checkIn.clinic_id,
+            template_id: t.id,
+            check_in_id: checkIn.id,
+            customer_id: checkIn.customer_id ?? null,
+            issued_by: staffId,
+            field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages),
+            status: 'printed' as const,
+            printed_at: now,
+          }));
+          supabase.from('form_submissions').insert(submissionRows).then(({ error }) => {
+            if (error) console.warn('[DOC-PRINT-UNIFY] form_submissions 기록 실패(settle):', error.message);
+          });
+        }
       }
 
       // 2. 수납 + auto-done

@@ -38,10 +38,12 @@ export default defineConfig({
     {
       // unit: auth 불필요 순수 함수 테스트 (htmlFormTemplates, formTemplates 등)
       // T-20260521-foot-CLINIC-INFO-SYNC PUSH 대응: 전종 검증 스펙 포함
+      // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
         '**/T-20260520-foot-PRINT-FORM-BIND.spec.ts',
         '**/T-20260521-foot-CLINIC-INFO-SYNC-FULLSUITE.spec.ts',
+        '**/T-20260521-foot-DOC-PRINT-UNIFY.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
