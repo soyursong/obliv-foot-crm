@@ -1,4 +1,5 @@
-import { lazy, Suspense, type ReactNode } from 'react';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- lazy<T> 자체가 ComponentType<any> 상한을 요구
+import { lazy, Suspense, type ComponentType, type LazyExoticComponent, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
@@ -6,27 +7,57 @@ import { AuthProvider } from '@/lib/auth';
 import { ProtectedRoute, RoleGuard } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 
-const Login = lazy(() => import('@/pages/Login'));
-const Register = lazy(() => import('@/pages/Register'));
-const Dashboard = lazy(() => import('@/pages/Dashboard'));
-const Reservations = lazy(() => import('@/pages/Reservations'));
-const Customers = lazy(() => import('@/pages/Customers'));
-const Packages = lazy(() => import('@/pages/Packages'));
-const Staff = lazy(() => import('@/pages/Staff'));
-const Closing = lazy(() => import('@/pages/Closing'));
-const Stats = lazy(() => import('@/pages/Stats'));
-const Accounts = lazy(() => import('@/pages/Accounts'));
-const SelfCheckIn = lazy(() => import('@/pages/SelfCheckIn'));
-const Waiting = lazy(() => import('@/pages/Waiting'));
-const CustomerChartPage = lazy(() => import('@/pages/CustomerChartPage'));
-const DailyHistory = lazy(() => import('@/pages/DailyHistory'));
-const Services = lazy(() => import('@/pages/Services'));
-const DoctorTools = lazy(() => import('@/pages/DoctorTools'));
-const TreatmentTable = lazy(() => import('@/pages/TreatmentTable'));
-const TabletChecklistPage = lazy(() => import('@/pages/TabletChecklistPage'));
-const Notices = lazy(() => import('@/pages/Notices'));
-const Sales = lazy(() => import('@/pages/Sales'));
-const ClinicSettings = lazy(() => import('@/pages/ClinicSettings'));
+/**
+ * T-20260522-foot-SPA-NAV-RELOAD: chunk load failure 자동 복구
+ * 새 배포 후 구버전 chunk URL이 404를 반환할 때 자동 리로드로 복구.
+ * sessionStorage 플래그로 무한 리로드 방지 (최대 1회).
+ * 성공 시 플래그 해제 → 이후 다른 청크 오류도 한 번 더 시도 가능.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function lazyWithRetry<T extends ComponentType<any>>(
+  factory: () => Promise<{ default: T }>,
+): LazyExoticComponent<T> {
+  return lazy<T>(() =>
+    factory()
+      .then((mod) => {
+        // 정상 로드 → 이전 실패 플래그 초기화
+        sessionStorage.removeItem('spa_reload_tried');
+        return mod;
+      })
+      .catch((): Promise<{ default: T }> => {
+        if (!sessionStorage.getItem('spa_reload_tried')) {
+          sessionStorage.setItem('spa_reload_tried', '1');
+          window.location.reload();
+          // 페이지가 곧 리로드됨 — 이 Promise는 resolve되지 않음
+          return new Promise<{ default: T }>(() => {});
+        }
+        // 리로드 후에도 실패 → ErrorBoundary에서 복구 UI 제공
+        return Promise.reject(new Error('페이지 청크 로드 실패 — 새로고침이 필요합니다.'));
+      }),
+  );
+}
+
+const Login = lazyWithRetry(() => import('@/pages/Login'));
+const Register = lazyWithRetry(() => import('@/pages/Register'));
+const Dashboard = lazyWithRetry(() => import('@/pages/Dashboard'));
+const Reservations = lazyWithRetry(() => import('@/pages/Reservations'));
+const Customers = lazyWithRetry(() => import('@/pages/Customers'));
+const Packages = lazyWithRetry(() => import('@/pages/Packages'));
+const Staff = lazyWithRetry(() => import('@/pages/Staff'));
+const Closing = lazyWithRetry(() => import('@/pages/Closing'));
+const Stats = lazyWithRetry(() => import('@/pages/Stats'));
+const Accounts = lazyWithRetry(() => import('@/pages/Accounts'));
+const SelfCheckIn = lazyWithRetry(() => import('@/pages/SelfCheckIn'));
+const Waiting = lazyWithRetry(() => import('@/pages/Waiting'));
+const CustomerChartPage = lazyWithRetry(() => import('@/pages/CustomerChartPage'));
+const DailyHistory = lazyWithRetry(() => import('@/pages/DailyHistory'));
+const Services = lazyWithRetry(() => import('@/pages/Services'));
+const DoctorTools = lazyWithRetry(() => import('@/pages/DoctorTools'));
+const TreatmentTable = lazyWithRetry(() => import('@/pages/TreatmentTable'));
+const TabletChecklistPage = lazyWithRetry(() => import('@/pages/TabletChecklistPage'));
+const Notices = lazyWithRetry(() => import('@/pages/Notices'));
+const Sales = lazyWithRetry(() => import('@/pages/Sales'));
+const ClinicSettings = lazyWithRetry(() => import('@/pages/ClinicSettings'));
 // ClinicCalendar 풀페이지는 T-20260510-foot-CALENDAR-NOTICE AC v3에 따라 우측 사이드바로 대체됨.
 // 직접 URL 접근 시 대시보드로 리다이렉트.
 

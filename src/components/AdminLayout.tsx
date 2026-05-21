@@ -1,5 +1,5 @@
 // LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { ChartContext } from '@/lib/chartContext';
 import { CustomerChartSheet } from '@/components/CustomerChartSheet';
@@ -36,6 +36,45 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { UserRole } from '@/lib/types';
 import ChangePasswordDialog from '@/components/ChangePasswordDialog';
+
+// ── T-20260522-foot-SPA-NAV-RELOAD ───────────────────────────────────────────
+// Outlet 전용 Suspense + ErrorBoundary.
+// AdminLayout(사이드바·헤더·CalendarNoticePanel)이 route 전환 중에도 unmount되지 않도록
+// Outlet만 독립적인 Suspense 경계 안에 감싼다.
+// App.tsx 최상위 Suspense는 비-admin 경로(Login·Register·SelfCheckIn 등)를 위해 유지.
+// ─────────────────────────────────────────────────────────────────────────────
+function OutletPageLoader() {
+  return (
+    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+      불러오는 중…
+    </div>
+  );
+}
+
+interface EBState { hasError: boolean }
+class ChunkErrorBoundary extends Component<{ children: ReactNode }, EBState> {
+  state: EBState = { hasError: false };
+  static getDerivedStateFromError(): EBState { return { hasError: true }; }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
+          <p className="text-sm text-muted-foreground">
+            페이지를 불러오는 중 오류가 발생했습니다.
+          </p>
+          <button
+            className="rounded-md bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 transition-colors"
+            onClick={() => window.location.reload()}
+          >
+            새로고침
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS: {
   to: string;
@@ -482,8 +521,13 @@ export default function AdminLayout() {
           {/* T-20260510-foot-DASH-DUAL-HSCROLL v2: min-w-0 추가 — row-flex 내 flex-1 아이템
               min-width:auto로 Dashboard 칸반 폭만큼 팽창 → overflow-hidden이 무력화됨.
               min-w-0 추가 시 overflow-hidden이 정상 동작 → Dashboard 내용이 이 div 안에 갇힘. */}
-          <div className="flex-1 min-w-0 min-h-0 overflow-hidden">
-            <Outlet />
+          {/* T-20260522-foot-SPA-NAV-RELOAD: Outlet에 독립 Suspense 경계 — AdminLayout unmount 방지 */}
+          <div data-testid="page-content-area" className="flex-1 min-w-0 min-h-0 overflow-hidden">
+            <ChunkErrorBoundary>
+              <Suspense fallback={<OutletPageLoader />}>
+                <Outlet />
+              </Suspense>
+            </ChunkErrorBoundary>
           </div>
         </div>
       </main>
