@@ -2,7 +2,12 @@
 id: T-20260522-foot-TRIAL-PKG-ADD
 domain: foot
 priority: P2
-status: deploy-ready
+status: deployed
+qa_result: pass
+qa_grade: Yellow
+deployed_at: "2026-05-22T01:10:00+09:00"
+deploy_commit: 85280f5
+bundle_hash: DnLoCVhZ
 hotfix: false
 created: 2026-05-22 00:37
 deadline: 2026-05-27
@@ -15,7 +20,7 @@ e2e_spec: tests/e2e/T-20260522-foot-TRIAL-PKG-ADD.spec.ts
 slack_channel: C0ATE5P6JTH
 slack_thread_ts: null
 reporter: 김주연 총괄
-reporter_slack_id: null
+reporter_slack_id: U0ATDB587PV
 attachments: []
 e2e_spec_exempt_reason: null
 risk_verdict: GO_WARN
