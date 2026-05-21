@@ -2,6 +2,7 @@
  * ConsentForm — 환불 & 비급여 통합 동의서
  *
  * T-20260506-foot-CHECKLIST-AUTOUPLOAD.
+ * T-20260522-foot-PENCHART-REFUND-AUTOFILL: 차트번호·이름·서명란 자동 불러오기.
  *
  * 태블릿 입력 UI + 서명 → 저장 시 documents/customer/{id}/ 자동 업로드.
  * 저장물:
@@ -25,12 +26,18 @@ interface Props {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   customerId: string;
+  /** REFUND-AUTOFILL AC-1: 차트번호 자동 불러오기 */
+  defaultChartNumber?: string | null;
+  /** REFUND-AUTOFILL AC-2: 환자 이름 자동 불러오기 */
   defaultName?: string;
   defaultServiceName?: string;
   onSaved?: (paths: { jsonPath: string; signaturePath: string }) => void;
 }
 
 interface ConsentData {
+  /** REFUND-AUTOFILL AC-1 */
+  chart_number: string;
+  /** REFUND-AUTOFILL AC-2 */
   name: string;
   service_name: string;
   // 비급여 항목 확인 체크
@@ -58,7 +65,8 @@ const REFUND_TEXT = [
   '4. 환불 금액은 원래 결제 수단으로 환불되며 처리에 영업일 기준 3-7일이 소요될 수 있습니다.',
 ];
 
-const initial = (defaults: { name?: string; service?: string }): ConsentData => ({
+const initial = (defaults: { chartNumber?: string | null; name?: string; service?: string }): ConsentData => ({
+  chart_number: defaults.chartNumber ?? '',
   name: defaults.name ?? '',
   service_name: defaults.service ?? '',
   ack_non_covered: false,
@@ -71,24 +79,25 @@ export function ConsentForm({
   open,
   onOpenChange,
   customerId,
+  defaultChartNumber,
   defaultName,
   defaultServiceName,
   onSaved,
 }: Props) {
   const sigRef = useRef<SignaturePadHandle>(null);
   const [data, setData] = useState<ConsentData>(() =>
-    initial({ name: defaultName, service: defaultServiceName }),
+    initial({ chartNumber: defaultChartNumber, name: defaultName, service: defaultServiceName }),
   );
   const [sigEmpty, setSigEmpty] = useState(true);
   const { upload, uploading } = useDocumentUpload();
 
   useEffect(() => {
     if (open) {
-      setData(initial({ name: defaultName, service: defaultServiceName }));
+      setData(initial({ chartNumber: defaultChartNumber, name: defaultName, service: defaultServiceName }));
       setSigEmpty(true);
       setTimeout(() => sigRef.current?.clear(), 60);
     }
-  }, [open, defaultName, defaultServiceName]);
+  }, [open, defaultChartNumber, defaultName, defaultServiceName]);
 
   const allChecked =
     data.ack_non_covered && data.ack_refund_before && data.ack_refund_after && data.agree_all;
@@ -159,9 +168,18 @@ export function ConsentForm({
       submitting={uploading}
       submitDisabled={!allChecked || sigEmpty}
     >
-      {/* 신원 + 서비스 */}
+      {/* REFUND-AUTOFILL: 차트번호·성명·서비스명 자동 불러오기 (AC-1, AC-2, AC-4) */}
       <section className="space-y-2">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <Label className="text-xs">차트번호</Label>
+            <Input
+              value={data.chart_number}
+              onChange={(e) => setData((d) => ({ ...d, chart_number: e.target.value }))}
+              className="h-11 text-sm font-mono"
+              placeholder="자동 입력"
+            />
+          </div>
           <div>
             <Label className="text-xs">성명 *</Label>
             <Input
@@ -247,10 +265,19 @@ export function ConsentForm({
         </label>
       </section>
 
-      {/* 서명 */}
+      {/* 서명 — REFUND-AUTOFILL AC-3: 서명란 이름 자동 표시 */}
       <section className="space-y-2">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-teal-800">서명 *</h3>
+          <div className="flex items-center gap-3">
+            <h3 className="text-sm font-semibold text-teal-800">서명 *</h3>
+            {/* AC-3: 서명란 성명 자동 표시 */}
+            {data.name && (
+              <span className="text-xs text-teal-700 bg-teal-50 rounded px-2 py-0.5 border border-teal-200">
+                서명인: <strong>{data.name}</strong>
+                {data.chart_number && <span className="ml-1 text-teal-500 font-mono">#{data.chart_number}</span>}
+              </span>
+            )}
+          </div>
           <Button
             variant="ghost"
             size="sm"
