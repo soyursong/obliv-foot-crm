@@ -502,6 +502,9 @@ export function PenChartTab({
       // T-20260520-foot-PENCHART-REFUND-FORM:
       // pdf_overlay 양식 (refund_consent) 은 form_submissions에도 저장 (서명 base64 포함)
       // builtin ID면 template_id FK 미적용 — staffId 있으면 builtin도 field_data 저장 시도
+      // T-20260521-foot-PENCHART-VIEW-SPLIT-REOPEN BUG FIX:
+      // status 'completed'는 form_submissions CHECK constraint('draft','printed','signed','voided') 위반
+      // → INSERT 무성 실패 → 상담내역 [내용보기] 버튼 비활성. 'signed'로 통일.
       if ((isPC || isHQ) && activeDrawTemplate && staffId) {
         const signatureBase64 = (isPC && !sigEmpty)
           ? (sigPadRef.current?.toDataURL('image/png') ?? null)
@@ -516,12 +519,11 @@ export function PenChartTab({
             signature_base64: signatureBase64,
             saved_at:         now,
           },
-          status:     isPC ? 'signed' : 'completed',
+          status:     'signed',   // 'completed'는 CHECK constraint 위반 — 'signed'로 통일
           printed_at: now,
+          signed_at:  now,        // HQ/PC 모두 signed_at 기록 (상담내역 날짜 표시용)
           issued_by:  staffId,
         };
-        // refund_consent: signed_at 추가
-        if (isPC) submissionPayload.signed_at = now;
         // template_id: builtin ID는 FK 위반 방지를 위해 포함하지 않음
         if (!activeDrawTemplate.id.startsWith('builtin-')) {
           submissionPayload.template_id = activeDrawTemplate.id;
@@ -529,8 +531,9 @@ export function PenChartTab({
         if (checkInId) submissionPayload.check_in_id = checkInId;
         const { error: subErr } = await supabase.from('form_submissions').insert(submissionPayload);
         if (subErr) {
-          // 저장은 됐으나 연동 실패 — 경고만 표시 (photos 업로드는 완료)
-          console.warn('form_submissions insert 실패:', subErr.message);
+          // 저장은 됐으나 상담내역 연동 실패 — 사용자에게 경고
+          console.error('form_submissions insert 실패:', subErr.message);
+          toast.error(`상담내역 연동 실패: ${subErr.message} (이미지는 저장됨)`);
         }
       }
 
