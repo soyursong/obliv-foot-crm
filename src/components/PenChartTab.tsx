@@ -102,6 +102,36 @@ const CANVAS_H = 1020; // A4 비율 약 1:√2
 // T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 3페이지 세로 연결 (1241×5262 → 720×3052)
 const CANVAS_H_REFUND_CONSENT = 3052;
 
+// ─── T-20260522-foot-PENCHART-REFUND-AUTOFILL ────────────────────────────
+// 환불/비급여 동의서 자동채움 필드 타입 + 위치 상수
+interface AutofillFields {
+  date:      string; // 작성일
+  name:      string; // 고객 성명
+  birthDate: string; // 생년월일
+  phone:     string; // 연락처
+}
+
+// [환자 동의서] 섹션 (page 3, ≈ y 2650–2760) 자동채움 좌표
+// 실제 폼 레이아웃에 맞게 조정 가능
+const REFUND_AUTOFILL_POS: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
+  { key: 'date',      x: 476, y: 2662 }, // 작성 일자 (우측)
+  { key: 'name',      x: 110, y: 2706 }, // 환자 성명
+  { key: 'birthDate', x: 290, y: 2706 }, // 생년월일 (성명과 같은 행)
+  { key: 'phone',     x: 110, y: 2748 }, // 연락처
+];
+
+function drawAutofillOnCtx(ctx: CanvasRenderingContext2D, fields: AutofillFields) {
+  ctx.save();
+  ctx.fillStyle = '#6b7280'; // gray-500 — 수기 입력과 시각적 구분
+  ctx.font = 'italic 15px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+  ctx.textBaseline = 'top';
+  for (const { key, x, y } of REFUND_AUTOFILL_POS) {
+    const val = fields[key];
+    if (val) ctx.fillText(val, x, y);
+  }
+  ctx.restore();
+}
+
 const PEN_COLORS = [
   { label: '검정', value: '#1a1a1a' },
   { label: '파랑', value: '#1d4ed8' },
@@ -161,10 +191,10 @@ export function PenChartTab({
   customerId,
   clinicId,
   checkInId,
-  // 향후 양식 자동 채움 용도 (현재 미사용 — TS6133 방지)
-  customerName: _customerName,
-  customerPhone: _customerPhone,
-  customerBirthDate: _customerBirthDate,
+  // T-20260522-foot-PENCHART-REFUND-AUTOFILL: 환불동의서 자동채움에 사용
+  customerName,
+  customerPhone,
+  customerBirthDate,
   // T-20260520-foot-PENCHART-VIEW-SPLIT HOTFIX2: 상담내역 즉시 갱신
   onFormSubmissionSaved,
 }: {
@@ -181,6 +211,8 @@ export function PenChartTab({
 }) {
   const { profile } = useAuth();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // T-20260522-foot-PENCHART-REFUND-AUTOFILL: 환불동의서 자동채움 데이터 (initCanvas 내 img.onload 에서 읽음)
+  const autofillDataRef = useRef<AutofillFields | null>(null);
   const [savedCharts, setSavedCharts] = useState<SavedChart[]>([]);
   const [penChartTemplate, setPenChartTemplate] = useState<Template | null>(null);
   /** 발건강 질문지 템플릿 2종 (일반/어르신) — T-20260519-foot-HEALTH-Q-PEN */
@@ -233,6 +265,21 @@ export function PenChartTab({
       .maybeSingle()
       .then(({ data }) => setStaffId(data?.id ?? null));
   }, [profile?.id, clinicId]);
+
+  // ── T-20260522-foot-PENCHART-REFUND-AUTOFILL: 환불동의서 자동채움 데이터 준비 ──
+  // activeDrawTemplate 변경 시 동기 실행 → initCanvas 내 setTimeout(50ms) 전에 ref 확정
+  useEffect(() => {
+    if (activeDrawTemplate && isRefundConsentKey(activeDrawTemplate.form_key)) {
+      autofillDataRef.current = {
+        date:      new Date().toLocaleDateString('ko-KR'),
+        name:      customerName      ?? '',
+        birthDate: customerBirthDate ?? '',
+        phone:     customerPhone     ?? '',
+      };
+    } else {
+      autofillDataRef.current = null;
+    }
+  }, [activeDrawTemplate, customerName, customerPhone, customerBirthDate]);
 
   // ── 저장된 차트 목록 로드 ────────────────────────────────────────────
   const loadSavedCharts = useCallback(async () => {
@@ -339,7 +386,15 @@ export function PenChartTab({
     if (bgUrl) {
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      img.onload = () => { ctx.drawImage(img, 0, 0, CANVAS_W, canvasH); };
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, CANVAS_W, canvasH);
+        // T-20260522-foot-PENCHART-REFUND-AUTOFILL:
+        // 환불/비급여 동의서에서만 고객 정보 자동채움 텍스트 삽입 (회색 이탤릭)
+        // 배경 위에 그린 후 저장 → toDataURL에 자동 포함 (AC-4)
+        if (isRefundConsentKey(activeDrawTemplate?.form_key ?? '') && autofillDataRef.current) {
+          drawAutofillOnCtx(ctx, autofillDataRef.current);
+        }
+      };
       img.src = bgUrl;
     }
     emptyRef.current = true;
@@ -816,6 +871,13 @@ export function PenChartTab({
               >
                 <X className="h-3 w-3" />
               </button>
+            </div>
+          )}
+
+          {/* T-20260522-foot-PENCHART-REFUND-AUTOFILL: 자동채움 적용 배지 (AC-2) */}
+          {activeDrawTemplate && isRefundConsentKey(activeDrawTemplate.form_key) && customerName && (
+            <div className="flex items-center gap-1 px-2 py-1 rounded bg-blue-50 border border-blue-200 text-[11px] text-blue-700" title="성명·생년월일·연락처가 양식에 자동 채워졌습니다">
+              ✓ 자동채움: {customerName}
             </div>
           )}
 

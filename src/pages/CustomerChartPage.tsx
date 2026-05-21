@@ -5397,11 +5397,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       )}
 
       {/* T-20260517-foot-C2-CONSULT-DOCS AC-R1: 합본2 — 환불 + 비급여 동의서 */}
+      {/* T-20260522-foot-PENCHART-REFUND-AUTOFILL: 차트번호·이름 자동 불러오기 */}
       {showConsentFormModal && (
         <ConsentForm
           open={showConsentFormModal}
           onOpenChange={setShowConsentFormModal}
           customerId={customer.id}
+          defaultChartNumber={customer.chart_number}
           defaultName={customer.name}
           onSaved={() => {
             setShowConsentFormModal(false);

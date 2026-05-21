@@ -1,14 +1,18 @@
 ---
 id: T-20260522-foot-PENCHART-REFUND-AUTOFILL
 title: "펜차트 환불동의서 — 고객정보 자동채움"
-status: approved
+status: deploy-ready
+deploy-ready: true
 priority: P1
 domain: foot
 created_at: 2026-05-22
 deadline: 2026-05-24
-착수예정: 2026-05-24
-deploy_ready: false
-db_migration: false
+completed_at: 2026-05-22
+commit_sha: (pending commit)
+build_ok: true
+db_changed: false
+spec_file: tests/e2e/T-20260522-foot-PENCHART-REFUND-AUTOFILL.spec.ts
+risk: GO
 assignee: dev-foot
 depends_on:
   - T-20260522-foot-PENCHART-PEN-OFFSET
@@ -65,3 +69,32 @@ PENCHART-REFUND-FORM(deploy-ready)으로 환불/비급여동의서 PDF 오버레
 
 - T-20260522-foot-PENCHART-PEN-OFFSET deploy-ready ✅
 - T-20260522-foot-PENCHART-SCROLL-BLOCK deploy-ready ✅
+
+## 구현 결과
+
+### 방식 (canvas-bake)
+- `AutofillFields` interface + `REFUND_AUTOFILL_POS` 상수 (4개 필드 좌표)
+- `drawAutofillOnCtx()`: gray-500 italic 15px — 수기 입력과 시각적 구분
+- `autofillDataRef` (useRef): activeDrawTemplate 변경 useEffect에서 동기 설정
+- `initCanvas()` → `img.onload` 내 `drawAutofillOnCtx()` 호출 → canvas에 bake → toDataURL 자동 포함
+- 툴바: `✓ 자동채움: {customerName}` 배지 (customerName 있을 때만)
+
+### 자동채움 좌표 (refund_consent 3p, page3 ≈ y>2034)
+| 필드 | x | y |
+|------|---|---|
+| 작성일 | 476 | 2662 |
+| 고객 성명 | 110 | 2706 |
+| 생년월일 | 290 | 2706 |
+| 연락처 | 110 | 2748 |
+
+### ConsentForm React 폼 autofill 추가 (T-20260522 본건 확장)
+- `ConsentForm.tsx`: `defaultChartNumber` prop 신규 (AC-1 차트번호)
+- UI: 차트번호·성명·서비스명 3열 그리드 (chart_number field)
+- 서명란 뱃지: `서명인: [이름] #[차트번호]` 자동 표시 (AC-3)
+- Input onChange 수정 가능 (AC-4)
+- `CheckInDetailSheet.tsx` 2곳: `defaultChartNumber={chartNumber ?? customerMode.chartNumber}` 전달
+- `CustomerChartPage.tsx`: `defaultChartNumber={customer.chart_number}` 전달
+
+### AC 검증
+- AC-1 ✓ · AC-2 ✓ · AC-3 ✓ · AC-4 ✓ · AC-5 ✓ · AC-6 ✓ (build OK 3.35s)
+- E2E: 16개 spec 통과

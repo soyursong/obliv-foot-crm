@@ -1759,10 +1759,12 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               onUpdated();
             }}
           />
+          {/* T-20260522-foot-PENCHART-REFUND-AUTOFILL: 차트번호·이름 자동 불러오기 */}
           <ConsentForm
             open={tabletConsentOpen}
             onOpenChange={setTabletConsentOpen}
             customerId={customerMode.customerId}
+            defaultChartNumber={chartNumber ?? customerMode.chartNumber}
             defaultName={customerMode.customerName}
             onSaved={() => {
               setDocRefreshKey((k) => k + 1);
@@ -2656,10 +2658,12 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 onUpdated();
               }}
             />
+            {/* T-20260522-foot-PENCHART-REFUND-AUTOFILL: 차트번호·이름 자동 불러오기 */}
             <ConsentForm
               open={tabletConsentOpen}
               onOpenChange={setTabletConsentOpen}
               customerId={checkIn.customer_id}
+              defaultChartNumber={chartNumber}
               defaultName={checkIn.customer_name ?? undefined}
               onSaved={() => {
                 setDocRefreshKey((k) => k + 1);
