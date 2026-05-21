@@ -107,7 +107,7 @@ interface CheckInDetail {
   id: string;
   customer_name: string;
   visit_type: string;
-  consultant_id: string | null;
+  // T-20260522-foot-CLOSING-PAY-3COL: consultant_id 제거 — assigned_staff_id 단일 소스 확정
   customer_id: string | null;
 }
 
@@ -309,7 +309,8 @@ export default function Closing() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('check_ins')
-        .select('id, customer_name, visit_type, consultant_id, customer_id')
+        .select('id, customer_name, visit_type, customer_id')
+        // T-20260522-foot-CLOSING-PAY-3COL: consultant_id 제거 — assigned_staff_id 단일 소스
         .eq('clinic_id', clinic!.id)
         .gte('checked_in_at', start)
         .lte('checked_in_at', end);
@@ -516,8 +517,9 @@ export default function Closing() {
       const ci = p.check_in_id ? checkInDetailMap.get(p.check_in_id) : null;
       const customerId = p.customer_id ?? ci?.customer_id ?? null;
       const cust = customerId ? customerMap.get(customerId) : null;
-      // T-20260522-foot-CLOSING-PAY-3COL: 결제담당자 — check_in.consultant_id 우선, null 시 customers.assigned_staff_id fallback
-      const payStaffId = ci?.consultant_id ?? cust?.assigned_staff_id ?? null;
+      // T-20260522-foot-CLOSING-PAY-3COL: 결제담당자 = customers.assigned_staff_id (2번차트 1구역 담당자 드롭 단일 소스)
+      // consultant_id 혼재 제거 — 현장 확정 2026-05-22
+      const payStaffId = cust?.assigned_staff_id ?? null;
       const consultantName = payStaffId ? (staffMap.get(payStaffId) ?? null) : null;
       const customerName = ci?.customer_name ?? cust?.name ?? '-';
       const dt = new Date(p.created_at);
