@@ -12,7 +12,7 @@ deploy_ready_by: dev-foot
 db_migration: false
 build_passed: true
 build_time: "3.19s"
-commit_sha: TBD
+commit_sha: 5caa0646014a41464935063fdc65225dabf1f7ab
 e2e_spec: tests/e2e/T-20260522-foot-SLOT-SNAP-FIX.spec.ts
 related: T-20260520-foot-SLOT-MOVE-REVERT (14f3727, 별개)
 ---
