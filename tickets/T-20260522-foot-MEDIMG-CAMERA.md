@@ -13,7 +13,7 @@ deploy_ready_by: dev-foot
 db_migration: false
 build_passed: true
 build_time: "3.41s"
-commit_sha: TBD
+commit_sha: db3173b
 e2e_spec: tests/e2e/T-20260522-foot-MEDIMG-CAMERA.spec.ts
 signals_recorded: true
 fix_applied: "flickering — useCallback([])+RAF+getUserMedia-constraints+GPU-layer"
