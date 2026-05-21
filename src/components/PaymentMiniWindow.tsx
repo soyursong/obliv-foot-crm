@@ -48,10 +48,12 @@ import {
 } from '@/lib/formTemplates';
 import {
   bindHtmlTemplate,
+  buildBillDetailItemsHtml,
   buildRxItemsHtml,
   getHtmlTemplate,
   isHtmlTemplate,
 } from '@/lib/htmlFormTemplates';
+import { loadAutoBindContext } from '@/lib/autoBindContext';
 
 // ── 세금 구분 ────────────────────────────────────────────────────────────────
 
@@ -137,29 +139,32 @@ function draftKey(checkInId: string): string {
 
 // ── 인쇄 유틸 — iframe 방식 (PAY-SLOT-MOVE AC-4: 중복 창 제거) ───────────────
 
+// T-20260521-foot-DOC-PRINT-UNIFY PUSH: CSS를 DocumentPrintPanel openBatchPrintWindow와 동일하게 통일.
+// 경로 4 = 1순위 메인 출력 경로 — 레이아웃이 경로 1과 완전 동일해야 함.
 function buildPrintHtml(pages: string[], title: string): string {
   return `<!DOCTYPE html><html><head>
 <meta charset="utf-8"><title>${title}</title>
 <style>
-  @page { size: A4; margin: 0; }
+  @page { size: A4 portrait; margin: 0; }
+  @page landscape { size: A4 landscape; margin: 0; }
   body { margin: 0; padding: 0; }
-  /* 이미지 오버레이 방식 페이지 */
   .page {
     position: relative;
-    width: 210mm; height: 297mm;
+    width: 210mm;
+    min-height: 297mm;
     overflow: hidden;
     page-break-after: always;
   }
-  .page img:first-child { width: 100%; height: 100%; object-fit: contain; }
-  /* HTML/CSS 디지털 양식 페이지 */
-  .html-page {
-    position: relative;
-    width: 210mm;
-    min-height: 267mm;
-    page-break-after: always;
-    overflow: visible;
+  .page-landscape {
+    width: 297mm;
+    min-height: 210mm;
   }
-  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  .page img:first-child { width: 100%; height: 100%; object-fit: contain; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page-landscape { page: landscape; }
+    .page:last-child { page-break-after: avoid; }
+  }
 </style>
 </head><body>${pages.join('\n')}</body></html>`;
 }
@@ -219,7 +224,9 @@ function buildCodeEnrichedValues(
 
 /**
  * T-20260517-foot-DOC-CODE-INSERT: HTML 양식 page div 생성.
- * bindHtmlTemplate으로 {{key}} 플레이스홀더 치환 후 html-page div에 래핑.
+ * T-20260521-foot-DOC-PRINT-UNIFY PUSH: `html-page` → `page` 클래스로 통일.
+ *   DocumentPrintPanel buildHtmlPageHtml과 완전 동일한 클래스/레이아웃 사용.
+ * T-20260521-foot-CLINIC-INFO-SYNC: HTML 양식 원내 도장 오버레이 추가 (DocumentPrintPanel 동기화).
  */
 function buildHtmlPageDiv(
   template: FormTemplate,
@@ -228,7 +235,12 @@ function buildHtmlPageDiv(
   const htmlTpl = getHtmlTemplate(template.form_key);
   if (!htmlTpl) return '';
   const bound = bindHtmlTemplate(htmlTpl, fieldValues);
-  return `<div class="html-page">${bound}</div>`;
+  const isLandscape = template.form_key === 'bill_detail';
+  const stampUrl = getStampUrl();
+  const stampOverlay = stampUrl
+    ? `<img src="${stampUrl}" alt="원내 도장" style="position:absolute;right:52px;bottom:52px;width:88px;height:88px;opacity:0.85;pointer-events:none;" onerror="this.style.display='none'" />`
+    : '';
+  return `<div class="page${isLandscape ? ' page-landscape' : ''}">${bound}${stampOverlay}</div>`;
 }
 
 /** iframe 인쇄 — 단 하나의 OS 프린트 다이얼로그만 노출 */
@@ -319,72 +331,8 @@ function buildPageHtml(
 </div>`;
 }
 
-/** 자동 바인딩 값 로드 (미니창용 — 기본 필드만) */
-async function loadMiniAutoBindValues(checkIn: CheckIn): Promise<Record<string, string>> {
-  const today = format(new Date(), 'yyyy-MM-dd');
-  const visitDate = checkIn.checked_in_at
-    ? format(new Date(checkIn.checked_in_at), 'yyyy-MM-dd')
-    : today;
-
-  let patientName = checkIn.customer_name ?? '';
-  if (checkIn.customer_id) {
-    const { data } = await supabase
-      .from('customers')
-      .select('name')
-      .eq('id', checkIn.customer_id)
-      .maybeSingle();
-    if (data) patientName = data.name ?? patientName;
-  }
-
-  const { data: clinicData } = await supabase
-    .from('clinics')
-    .select('name, address')
-    .eq('id', checkIn.clinic_id)
-    .maybeSingle();
-
-  const { data: cisData } = await supabase
-    .from('check_in_services')
-    .select('price')
-    .eq('check_in_id', checkIn.id);
-  const totalAmount = (cisData ?? []).reduce((s, r) => s + (r.price ?? 0), 0);
-
-  let doctorName = '';
-  const { data: rosterData } = await supabase
-    .from('duty_roster')
-    .select('staff:staff(name)')
-    .eq('clinic_id', checkIn.clinic_id)
-    .eq('date', visitDate)
-    .eq('active', true)
-    .limit(1);
-  if (rosterData && rosterData.length > 0) {
-    const staffEntry = rosterData[0].staff;
-    const svc = Array.isArray(staffEntry) ? staffEntry[0] : staffEntry;
-    doctorName = (svc as { name?: string } | null)?.name ?? '';
-  }
-  if (!doctorName) {
-    const { data: staffData } = await supabase
-      .from('staff')
-      .select('name')
-      .eq('clinic_id', checkIn.clinic_id)
-      .eq('role', 'director')
-      .eq('active', true)
-      .limit(1)
-      .maybeSingle();
-    doctorName = staffData?.name ?? '';
-  }
-
-  return {
-    patient_name: patientName,
-    patient_rrn: '',
-    visit_date: visitDate,
-    issue_date: today,
-    doctor_name: doctorName,
-    total_amount: totalAmount > 0 ? formatAmount(totalAmount) : '',
-    clinic_name: clinicData?.name ?? '오블리브 풋센터 종로',
-    clinic_address: clinicData?.address ?? '',
-    diagnosis_ko: '',
-  };
-}
+// T-20260521-foot-DOC-PRINT-UNIFY PUSH: loadMiniAutoBindValues 제거됨.
+// 경로 4 = 1순위 — 공유 loadAutoBindContext(@/lib/autoBindContext.ts) 사용.
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -1080,7 +1028,32 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     }
     setDocPrinting(true);
     try {
-      const autoValues = await loadMiniAutoBindValues(checkIn);
+      // T-20260521-foot-DOC-PRINT-UNIFY PUSH: loadAutoBindContext (공유 lib) 로 교체.
+      // 경로 4 = 1순위 — DocumentPrintPanel과 동일한 25+ 필드 바인딩 사용.
+      const autoValues = await loadAutoBindContext(checkIn);
+
+      // bill_detail items_html 주입 (결제 전 in-memory 데이터 사용)
+      if (selected.some((t) => t.form_key === 'bill_detail') && pricingItems.length > 0) {
+        const billItems = pricingItems.map(({ service, qty }) => {
+          const unitPrice = customAmounts.get(service.id) ?? service.price ?? 0;
+          return {
+            category: service.is_insurance_covered ? '이학요법료' : '기타',
+            date: autoValues.visit_date ?? '',
+            code: service.service_code ?? '',
+            name: service.name,
+            amount: unitPrice,
+            count: qty,
+            days: 1,
+            is_insurance_covered: service.is_insurance_covered ?? false,
+          };
+        });
+        autoValues.items_html = buildBillDetailItemsHtml(billItems);
+        if (grandTotal > 0) {
+          autoValues.total_amount = formatAmount(grandTotal);
+          autoValues.subtotal_amount = formatAmount(grandTotal);
+        }
+      }
+
       const pages = selected.flatMap((t) => {
         // T-20260517-foot-DOC-CODE-INSERT: 상병코드/처방약 주입
         // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item rxItemDosages 전달
@@ -1148,7 +1121,31 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // 1. 서류 출력 (iframe — PAY-SLOT-MOVE AC-4)
       // T-20260517-foot-DOC-CODE-INSERT: 상병코드/처방약 주입
       // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item rxItemDosages 전달
-      const autoValues = await loadMiniAutoBindValues(checkIn);
+      // T-20260521-foot-DOC-PRINT-UNIFY PUSH: loadAutoBindContext (경로 4 = 1순위 통일 바인딩)
+      const autoValues = await loadAutoBindContext(checkIn);
+
+      // bill_detail items_html 주입 (결제 전 in-memory 데이터 사용)
+      if (selected.some((t) => t.form_key === 'bill_detail') && pricingItems.length > 0) {
+        const billItems = pricingItems.map(({ service, qty }) => {
+          const unitPrice = customAmounts.get(service.id) ?? service.price ?? 0;
+          return {
+            category: service.is_insurance_covered ? '이학요법료' : '기타',
+            date: autoValues.visit_date ?? '',
+            code: service.service_code ?? '',
+            name: service.name,
+            amount: unitPrice,
+            count: qty,
+            days: 1,
+            is_insurance_covered: service.is_insurance_covered ?? false,
+          };
+        });
+        autoValues.items_html = buildBillDetailItemsHtml(billItems);
+        if (grandTotal > 0) {
+          autoValues.total_amount = formatAmount(grandTotal);
+          autoValues.subtotal_amount = formatAmount(grandTotal);
+        }
+      }
+
       const pages = selected.flatMap((t) => {
         const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages);
         if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
