@@ -14,7 +14,7 @@ deploy_ready_by: dev-foot
 db_migration: false
 build_passed: true
 build_time: "3.19s"
-commit_sha: TBD
+commit_sha: e3471a5
 e2e_spec: tests/e2e/T-20260522-foot-TIMETABLE-FOLD.spec.ts
 ---
 
