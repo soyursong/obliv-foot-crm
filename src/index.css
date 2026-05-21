@@ -11,6 +11,9 @@
     --font-sans: 'Geist Variable', sans-serif
   }
   :root {
+    /* T-20260522-foot-TOUCH-EXPAND: 태블릿 터치 타겟 최소 크기 */
+    --touch-min: 44px;
+
     /* Background / Surface — 화이트 (CRM 관리화면, 2026-05-08 김주연 B안) */
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
@@ -196,6 +199,15 @@
 }
 .healer-blink {
   animation: healer-border-blink 1.2s ease-in-out infinite;
+}
+
+/* ── T-20260522-foot-TOUCH-EXPAND: touch-target 유틸리티 클래스 ──────────────────── */
+/* Apple HIG / Material Design 44×44px 최소 터치 타겟 */
+@layer utilities {
+  .touch-target {
+    min-height: var(--touch-min);
+    min-width: var(--touch-min);
+  }
 }
 
 /* ── T-20260522-foot-TABLET-DUAL-LAYOUT: 태블릿 터치 최적화 ──────────────────────── */

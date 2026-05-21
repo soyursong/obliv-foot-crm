@@ -138,7 +138,7 @@ export default function Packages() {
               <tr
                 key={p.id}
                 onClick={() => setSelectedId(p.id)}
-                className="cursor-pointer border-t hover:bg-muted/40"
+                className="cursor-pointer border-t hover:bg-muted/40 h-11"
               >
                 <td className="px-3 py-2 font-medium">
                   {p.customer?.name}
@@ -1508,7 +1508,7 @@ function PackagePaymentAdd({ packageId, customerId, clinicId, onAdded }: {
               <div className="grid grid-cols-3 gap-2">
                 {(['card', 'cash', 'transfer'] as const).map((m) => (
                   <button key={m} onClick={() => setMethod(m)}
-                    className={cn('h-9 rounded-md border text-sm', method === m ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}>
+                    className={cn('min-h-[44px] rounded-md border text-sm', method === m ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}>
                     {methodLabel(m)}
                   </button>
                 ))}
@@ -1579,7 +1579,7 @@ function UseSessionDialog({ open, pkg, remaining, onOpenChange, onDone }: {
             <div className="grid grid-cols-2 gap-2">
               {(['unheated_laser', 'heated_laser', 'iv', 'preconditioning'] as const).map((t) => (
                 <button key={t} onClick={() => setSessionType(t)} disabled={available[t] <= 0}
-                  className={cn('h-10 rounded-md border text-sm', available[t] <= 0 && 'opacity-40',
+                  className={cn('min-h-[44px] rounded-md border text-sm', available[t] <= 0 && 'opacity-40',
                     sessionType === t ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}>
                   {sessionTypeLabel(t)}<span className="ml-1 text-xs text-muted-foreground">({available[t]})</span>
                 </button>
@@ -1656,7 +1656,7 @@ function RefundDialog({ open, packageId, customerId, clinicId, pkgStatus: _pkgSt
               <div className="grid grid-cols-3 gap-2">
                 {(['card', 'cash', 'transfer'] as const).map((m) => (
                   <button key={m} onClick={() => setMethod(m)}
-                    className={cn('h-9 rounded-md border text-sm', method === m ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}>
+                    className={cn('min-h-[44px] rounded-md border text-sm', method === m ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted')}>
                     {methodLabel(m)}
                   </button>
                 ))}

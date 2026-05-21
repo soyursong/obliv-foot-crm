@@ -770,13 +770,13 @@ export default function Reservations() {
           <div className="flex rounded-md border">
             <button
               onClick={() => setViewMode('day')}
-              className={cn('px-3 py-1 text-xs font-medium transition', viewMode === 'day' ? 'bg-teal-50 text-teal-700' : 'text-muted-foreground hover:bg-muted')}
+              className={cn('px-3 min-h-[44px] text-xs font-medium transition flex items-center', viewMode === 'day' ? 'bg-teal-50 text-teal-700' : 'text-muted-foreground hover:bg-muted')}
             >
               일간
             </button>
             <button
               onClick={() => setViewMode('week')}
-              className={cn('px-3 py-1 text-xs font-medium transition', viewMode === 'week' ? 'bg-teal-50 text-teal-700' : 'text-muted-foreground hover:bg-muted')}
+              className={cn('px-3 min-h-[44px] text-xs font-medium transition flex items-center', viewMode === 'week' ? 'bg-teal-50 text-teal-700' : 'text-muted-foreground hover:bg-muted')}
             >
               주간
             </button>
