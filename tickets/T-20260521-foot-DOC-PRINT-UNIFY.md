@@ -1,14 +1,15 @@
 ---
 ticket_id: T-20260521-foot-DOC-PRINT-UNIFY
 title: 서류 출력 통일 QA — 12종+ × 4경로 전부 검증
-status: approved
+status: deploy-ready
 priority: P1
 domain: foot
-deploy_ready: false
+deploy_ready: true
 db_changed: false
-build_status: n/a
-e2e_spec: n/a
-commit: n/a
+build_status: "✅ 3.18s"
+e2e_spec: "tests/e2e/T-20260521-foot-DOC-PRINT-UNIFY.spec.ts (56/56 pass)"
+commit: "1e8bd3d feat(doc-print): 서류 출력 경로 통일 + E2E 락"
+deployed_at: 2026-05-21
 created_at: 2026-05-21
 ---
 
