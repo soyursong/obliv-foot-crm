@@ -1,7 +1,7 @@
 ---
 id: T-20260522-foot-SLOT-SNAP-FIX
 title: "대시보드 슬롯 드래그 ghost ↔ 실제 터치 포인트 정렬 보정 (S Pen 태블릿)"
-status: deploy-ready
+status: deployed
 priority: P2
 domain: foot
 created_at: 2026-05-22
@@ -15,6 +15,12 @@ build_time: "3.19s"
 commit_sha: 5caa0646014a41464935063fdc65225dabf1f7ab
 e2e_spec: tests/e2e/T-20260522-foot-SLOT-SNAP-FIX.spec.ts
 related: T-20260520-foot-SLOT-MOVE-REVERT (14f3727, 별개)
+qa_result: pass
+qa_grade: Green
+deployed_at: 2026-05-22T05:18:20+09:00
+deploy_commit: 8d4afb37149775e902dfc2680a0f6f3789771226
+bundle_hash: DklynnpN
+field_soak_until: 2026-05-23T05:18:20+09:00
 ---
 
 ## 개요
