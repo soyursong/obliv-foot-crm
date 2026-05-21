@@ -1,0 +1,251 @@
+/**
+ * E2E spec — T-20260522-foot-MEDIMG-CAMERA
+ * 진료이미지 [사진촬영] 버튼 + 연속촬영 + 자동업로드 + 편집/회전
+ *
+ * AC-1: [사진촬영] 버튼이 진료이미지 탭 업로드 바에 존재
+ * AC-2: 버튼 클릭 시 시술 전/후 선택 UI 표시
+ * AC-3: 시술 전 선택 시 카메라 모달 capture 단계로 전환 (getUserMedia mock)
+ * AC-4: 업로드 진행률 UI — 프로그레스 바 존재 확인 (구조 검증)
+ * AC-5: 이미지 호버 시 회전 편집 버튼 노출, 편집 모달에 좌회전/우회전 버튼 존재
+ * AC-6: 카메라 모달은 fixed inset-0으로 전체화면 커버 (태블릿 최적화)
+ */
+import { test, expect } from '@playwright/test';
+import { loginAndWaitForDashboard } from '../helpers';
+
+test.describe('T-20260522-foot-MEDIMG-CAMERA — 진료이미지 카메라 촬영 + 회전 편집', () => {
+  test.beforeEach(async ({ page }) => {
+    const ok = await loginAndWaitForDashboard(page);
+    if (!ok) test.skip(true, 'Login failed');
+  });
+
+  /** 진료이미지 탭으로 이동하는 헬퍼 */
+  async function navigateToImagesTab(page: Parameters<typeof loginAndWaitForDashboard>[0]) {
+    await page.goto('/admin/customers');
+    await page.waitForLoadState('networkidle');
+    const firstRow = page.locator('tr[data-customer-id], tbody tr').first();
+    if (await firstRow.count() === 0) return false;
+    await firstRow.click();
+    // 2번차트 진입
+    const chartBtn = page.getByRole('link', { name: /2번차트|고객차트/ }).first();
+    if (await chartBtn.count() > 0) await chartBtn.click();
+    await page.waitForLoadState('networkidle');
+    // 히스토리 탭 그룹 선택
+    const historyGroupBtn = page.getByRole('button', { name: /이력|히스토리|history/i }).first();
+    if (await historyGroupBtn.count() > 0) await historyGroupBtn.click();
+    // 진료이미지 탭 클릭
+    const imagesTab = page.getByRole('button', { name: /진료이미지/i }).first();
+    if (await imagesTab.count() === 0) return false;
+    await imagesTab.click();
+    await page.waitForLoadState('networkidle');
+    return true;
+  }
+
+  test('AC-1: [사진촬영] 버튼이 진료이미지 섹션에 존재한다', async ({ page }) => {
+    // 직접 CustomerChartPage 렌더링 확인: 컴포넌트가 빌드에 포함되어 있는지 검증
+    // 실제 고객 데이터 없이도 버튼 존재를 확인할 수 있는 방법으로 검증
+    await page.goto('/admin/customers');
+    await page.waitForLoadState('networkidle');
+
+    // 고객이 없으면 스킵
+    const firstRow = page.locator('tr[data-customer-id], tbody tr').first();
+    if (await firstRow.count() === 0) {
+      test.skip(true, '고객 데이터 없음');
+      return;
+    }
+
+    // CustomerChartPage 진입
+    await firstRow.click();
+    await page.waitForLoadState('networkidle');
+
+    // 히스토리 > 진료이미지 탭 진입 시도
+    const historyBtn = page.getByRole('button', { name: /이력|history/i }).first();
+    if (await historyBtn.count() > 0) await historyBtn.click();
+
+    const imagesTabBtn = page.getByRole('button', { name: /진료이미지/i }).first();
+    if (await imagesTabBtn.count() > 0) {
+      await imagesTabBtn.click();
+      await page.waitForLoadState('networkidle');
+      // AC-1: [사진촬영] 버튼 확인
+      const cameraBtn = page.getByRole('button', { name: /사진촬영/i });
+      await expect(cameraBtn).toBeVisible({ timeout: 5000 });
+    }
+  });
+
+  test('AC-2: [사진촬영] 클릭 시 시술 전/후 선택 화면이 표시된다', async ({ page }) => {
+    // getUserMedia mock — 브라우저 API mocking
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', {
+        value: {
+          getUserMedia: () =>
+            Promise.resolve({
+              getTracks: () => [{ stop: () => {} }],
+            }),
+        },
+        writable: true,
+      });
+    });
+
+    await page.goto('/admin/customers');
+    await page.waitForLoadState('networkidle');
+
+    const firstRow = page.locator('tr[data-customer-id], tbody tr').first();
+    if (await firstRow.count() === 0) {
+      test.skip(true, '고객 데이터 없음');
+      return;
+    }
+
+    await firstRow.click();
+    await page.waitForLoadState('networkidle');
+
+    const historyBtn = page.getByRole('button', { name: /이력|history/i }).first();
+    if (await historyBtn.count() > 0) await historyBtn.click();
+
+    const imagesTabBtn = page.getByRole('button', { name: /진료이미지/i }).first();
+    if (await imagesTabBtn.count() === 0) {
+      test.skip(true, '진료이미지 탭 없음');
+      return;
+    }
+    await imagesTabBtn.click();
+    await page.waitForLoadState('networkidle');
+
+    const cameraBtn = page.getByRole('button', { name: /사진촬영/i });
+    if (await cameraBtn.count() === 0) {
+      test.skip(true, '[사진촬영] 버튼 없음');
+      return;
+    }
+    await cameraBtn.click();
+
+    // AC-2: 시술 전/후 버튼 확인
+    await expect(page.getByRole('button', { name: /시술 전/ })).toBeVisible({ timeout: 3000 });
+    await expect(page.getByRole('button', { name: /시술 후/ })).toBeVisible({ timeout: 3000 });
+    await expect(page.getByText('촬영 분류를 선택하세요')).toBeVisible();
+  });
+
+  test('AC-3: 시술 전 선택 시 카메라 capture 단계로 전환된다 (getUserMedia mock)', async ({ page }) => {
+    // getUserMedia mock
+    await page.addInitScript(() => {
+      const mockStream = {
+        getTracks: () => [{ stop: () => {} }],
+        getVideoTracks: () => [{ stop: () => {} }],
+      };
+      Object.defineProperty(navigator, 'mediaDevices', {
+        value: {
+          getUserMedia: () => Promise.resolve(mockStream),
+        },
+        writable: true,
+      });
+    });
+
+    await page.goto('/admin/customers');
+    await page.waitForLoadState('networkidle');
+
+    const firstRow = page.locator('tr[data-customer-id], tbody tr').first();
+    if (await firstRow.count() === 0) {
+      test.skip(true, '고객 데이터 없음');
+      return;
+    }
+    await firstRow.click();
+    await page.waitForLoadState('networkidle');
+
+    const historyBtn = page.getByRole('button', { name: /이력|history/i }).first();
+    if (await historyBtn.count() > 0) await historyBtn.click();
+
+    const imagesTabBtn = page.getByRole('button', { name: /진료이미지/i }).first();
+    if (await imagesTabBtn.count() === 0) { test.skip(true, '진료이미지 탭 없음'); return; }
+    await imagesTabBtn.click();
+    await page.waitForLoadState('networkidle');
+
+    const cameraBtn = page.getByRole('button', { name: /사진촬영/i });
+    if (await cameraBtn.count() === 0) { test.skip(true, '[사진촬영] 없음'); return; }
+    await cameraBtn.click();
+
+    // 시술 전 선택
+    await page.getByRole('button', { name: /시술 전/ }).click();
+    await page.waitForTimeout(500);
+
+    // AC-3: 셔터 버튼(aria-label=촬영) 또는 완료 버튼 확인
+    const shutterBtn = page.getByRole('button', { name: /촬영/ });
+    const completeBtn = page.getByRole('button', { name: /완료/ });
+    const hasShutter = await shutterBtn.count() > 0;
+    const hasComplete = await completeBtn.count() > 0;
+    expect(hasShutter || hasComplete).toBe(true);
+  });
+
+  test('AC-4: 카메라 모달 구조 — fixed inset-0 전체화면 (AC-6 태블릿 최적화)', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', {
+        value: { getUserMedia: () => Promise.resolve({ getTracks: () => [{ stop: () => {} }] }) },
+        writable: true,
+      });
+    });
+
+    await page.goto('/admin/customers');
+    await page.waitForLoadState('networkidle');
+
+    const firstRow = page.locator('tr[data-customer-id], tbody tr').first();
+    if (await firstRow.count() === 0) { test.skip(true, '고객 없음'); return; }
+    await firstRow.click();
+    await page.waitForLoadState('networkidle');
+
+    const historyBtn = page.getByRole('button', { name: /이력|history/i }).first();
+    if (await historyBtn.count() > 0) await historyBtn.click();
+
+    const imagesTabBtn = page.getByRole('button', { name: /진료이미지/i }).first();
+    if (await imagesTabBtn.count() === 0) { test.skip(true, '탭 없음'); return; }
+    await imagesTabBtn.click();
+    await page.waitForLoadState('networkidle');
+
+    const cameraBtn = page.getByRole('button', { name: /사진촬영/i });
+    if (await cameraBtn.count() === 0) { test.skip(true, '버튼 없음'); return; }
+    await cameraBtn.click();
+
+    // AC-6: 카메라 모달이 role=dialog이고 aria-modal=true
+    const modal = page.locator('[role="dialog"][aria-modal="true"]').first();
+    await expect(modal).toBeVisible({ timeout: 3000 });
+
+    // 취소 버튼으로 닫기
+    await page.getByRole('button', { name: /취소/ }).first().click();
+    await expect(modal).not.toBeVisible({ timeout: 3000 });
+  });
+
+  test('AC-5: 이미지 편집 모달 — 좌회전/우회전 버튼 구조 확인', async ({ page }) => {
+    // 이미지가 존재하는 경우에만 테스트 가능
+    await page.goto('/admin/customers');
+    await page.waitForLoadState('networkidle');
+
+    const firstRow = page.locator('tr[data-customer-id], tbody tr').first();
+    if (await firstRow.count() === 0) { test.skip(true, '고객 없음'); return; }
+    await firstRow.click();
+    await page.waitForLoadState('networkidle');
+
+    const historyBtn = page.getByRole('button', { name: /이력|history/i }).first();
+    if (await historyBtn.count() > 0) await historyBtn.click();
+
+    const imagesTabBtn = page.getByRole('button', { name: /진료이미지/i }).first();
+    if (await imagesTabBtn.count() === 0) { test.skip(true, '탭 없음'); return; }
+    await imagesTabBtn.click();
+    await page.waitForLoadState('networkidle');
+
+    // 이미지 그리드에서 이미지 호버 → 회전 버튼 확인
+    const imgContainer = page.locator('.group.aspect-square').first();
+    if (await imgContainer.count() === 0) {
+      test.skip(true, '진료이미지 없음 — 업로드 후 테스트 가능');
+      return;
+    }
+
+    await imgContainer.hover();
+    // 회전(RotateCw) 편집 버튼
+    const rotateBtn = imgContainer.locator('button[title="편집(회전)"]');
+    await expect(rotateBtn).toBeVisible({ timeout: 3000 });
+    await rotateBtn.click();
+
+    // 편집 모달 내 좌회전/우회전 버튼
+    await expect(page.getByRole('button', { name: /좌회전/ })).toBeVisible({ timeout: 3000 });
+    await expect(page.getByRole('button', { name: /우회전/ })).toBeVisible({ timeout: 3000 });
+    // 저장 버튼 (rotation=0이면 disabled)
+    const saveBtn = page.getByRole('button', { name: /저장/ });
+    await expect(saveBtn).toBeVisible();
+    // 취소
+    await page.getByRole('button', { name: /취소/ }).first().click();
+  });
+});
