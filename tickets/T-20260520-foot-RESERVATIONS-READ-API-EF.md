@@ -2,7 +2,7 @@
 ticket_id: T-20260520-foot-RESERVATIONS-READ-API-EF
 title: "reservations-read-api EF — 풋 예약 Read API (도파민 연동용)"
 domain: foot
-status: deploy-ready
+status: deployed
 deploy_ready: true
 build_status: pass
 spec_added: true
@@ -11,7 +11,7 @@ db_migration: "supabase/migrations/20260521060000_reservations_read_api_index.sq
 db_migration_applied: true
 reviewed_by: dev-foot
 created_at: 2026-05-21
-updated_at: 2026-05-21
+updated_at: 2026-05-21T12:52:15+09:00
 priority: P1
 deadline: 2026-05-27
 depends_on:
@@ -21,6 +21,10 @@ track_id: TD2
 qa_result: pass
 qa_grade: Green
 deploy_ready_at: 2026-05-21
+deployed_at: 2026-05-21T12:52:15+09:00
+deploy_commit: 4be6fb9
+deployed_by: supervisor
+field_soak_until: 2026-05-22T12:52:15+09:00
 ---
 
 ## 개요
