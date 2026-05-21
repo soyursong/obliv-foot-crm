@@ -3,7 +3,7 @@ id: T-20260522-foot-PENCHART-SCROLL-BLOCK
 domain: foot
 status: deploy-ready
 deploy-ready: true
-commit_sha: TBD
+commit_sha: b9cd022
 build_ok: true
 db_changed: false
 spec_file: tests/e2e/T-20260522-foot-PENCHART-SCROLL-BLOCK.spec.ts

@@ -338,6 +338,10 @@ function TemplateManageSheet({
                 {t.iv_sessions > 0 && (
                   <div>수액 {t.iv_sessions}회 · {formatAmount(t.iv_unit_price)}{t.iv_company ? ` (${t.iv_company})` : ''}</div>
                 )}
+                {/* T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목 */}
+                {(t.trial_sessions ?? 0) > 0 && (
+                  <div>체험권 {t.trial_sessions}회 · {formatAmount(t.trial_unit_price ?? 0)}</div>
+                )}
               </div>
               <div className="mt-1.5 font-medium text-teal-700">
                 총 {formatAmount(t.total_price)}
@@ -402,6 +406,9 @@ function PackageTemplateDialog({
   const [ivCompany, setIvCompany] = useState('');
   const [ivSessions, setIvSessions] = useState(0);
   const [ivUnitPrice, setIvUnitPrice] = useState(0);
+  // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
+  const [trialSessions, setTrialSessions] = useState(0);
+  const [trialUnitPrice, setTrialUnitPrice] = useState(0);
   // 총금액
   const [priceOverride, setPriceOverride] = useState(false);
   const [manualPrice, setManualPrice] = useState(0);
@@ -415,8 +422,9 @@ function PackageTemplateDialog({
       heatedSessions * heatedUnitPrice +
       unheatedSessions * unheatedUnitPrice +
       podologeSessions * podologeUnitPrice +
-      ivSessions * ivUnitPrice,
-    [heatedSessions, heatedUnitPrice, unheatedSessions, unheatedUnitPrice, podologeSessions, podologeUnitPrice, ivSessions, ivUnitPrice],
+      ivSessions * ivUnitPrice +
+      trialSessions * trialUnitPrice,
+    [heatedSessions, heatedUnitPrice, unheatedSessions, unheatedUnitPrice, podologeSessions, podologeUnitPrice, ivSessions, ivUnitPrice, trialSessions, trialUnitPrice],
   );
 
   const finalPrice = priceOverride ? manualPrice : computedTotal;
@@ -436,6 +444,8 @@ function PackageTemplateDialog({
       setIvCompany(template.iv_company ?? '');
       setIvSessions(template.iv_sessions);
       setIvUnitPrice(template.iv_unit_price);
+      setTrialSessions(template.trial_sessions ?? 0);
+      setTrialUnitPrice(template.trial_unit_price ?? 0);
       setPriceOverride(template.price_override);
       setManualPrice(template.total_price);
       setMemo(template.memo ?? '');
@@ -446,6 +456,7 @@ function PackageTemplateDialog({
       setUnheatedSessions(0); setUnheatedUnitPrice(0); setUnheatedUpgrade(false);
       setPodologeSessions(0); setPodologeUnitPrice(0);
       setIvCompany(''); setIvSessions(0); setIvUnitPrice(0);
+      setTrialSessions(0); setTrialUnitPrice(0);
       setPriceOverride(false); setManualPrice(0);
       setMemo(''); setSortOrder(0);
     }
@@ -473,6 +484,9 @@ function PackageTemplateDialog({
       iv_company: ivCompany.trim() || null,
       iv_sessions: ivSessions,
       iv_unit_price: ivUnitPrice,
+      // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
+      trial_sessions: trialSessions,
+      trial_unit_price: trialUnitPrice,
       total_price: finalPrice,
       price_override: priceOverride,
       memo: memo.trim() || null,
@@ -629,6 +643,29 @@ function PackageTemplateDialog({
             )}
           </div>
 
+          {/* T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목 */}
+          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+            <div className="text-xs font-semibold text-muted-foreground">체험권</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">회수</Label>
+                <Input type="number" min={0} value={trialSessions}
+                  onChange={(e) => setTrialSessions(Math.max(0, Number(e.target.value) || 0))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">수가 (회당)</Label>
+                <Input value={formatAmount(trialUnitPrice)}
+                  onChange={(e) => setTrialUnitPrice(parseAmount(e.target.value))}
+                  inputMode="numeric" />
+              </div>
+            </div>
+            {trialSessions > 0 && (
+              <div className="text-xs text-muted-foreground text-right">
+                소계: {formatAmount(trialSessions * trialUnitPrice)}
+              </div>
+            )}
+          </div>
+
           {/* 총금액 */}
           <div className="rounded-lg border border-teal-200 bg-teal-50/40 p-3 space-y-2">
             <div className="flex items-center justify-between">
@@ -718,6 +755,9 @@ function PackageCreateDialog({
   const [iv, setIv] = useState(0);
   const [ivUnitPrice, setIvUnitPrice] = useState(0);
   const [ivCompany, setIvCompany] = useState('');
+  // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
+  const [trial, setTrial] = useState(0);
+  const [trialUnitPrice, setTrialUnitPrice] = useState(0);
 
   // 총금액
   const [priceOverride, setPriceOverride] = useState(false);
@@ -731,8 +771,9 @@ function PackageCreateDialog({
       heated * heatedUnitPrice +
       unheated * unheatedUnitPrice +
       podologe * podologeUnitPrice +
-      iv * ivUnitPrice,
-    [heated, heatedUnitPrice, unheated, unheatedUnitPrice, podologe, podologeUnitPrice, iv, ivUnitPrice],
+      iv * ivUnitPrice +
+      trial * trialUnitPrice,
+    [heated, heatedUnitPrice, unheated, unheatedUnitPrice, podologe, podologeUnitPrice, iv, ivUnitPrice, trial, trialUnitPrice],
   );
   const finalTotal = priceOverride ? manualTotal : computedTotal;
 
@@ -760,6 +801,7 @@ function PackageCreateDialog({
           setPodologe(first.podologe_sessions); setPodologeUnitPrice(first.podologe_unit_price);
           setIv(first.iv_sessions); setIvUnitPrice(first.iv_unit_price);
           setIvCompany(first.iv_company ?? '');
+          setTrial(first.trial_sessions ?? 0); setTrialUnitPrice(first.trial_unit_price ?? 0);
           setPriceOverride(false);
           setMemo(first.memo ?? '');
         }
@@ -775,6 +817,7 @@ function PackageCreateDialog({
     setUnheated(0); setUnheatedUnitPrice(0); setUnheatedUpgrade(false);
     setPodologe(0); setPodologeUnitPrice(0);
     setIv(0); setIvUnitPrice(0); setIvCompany('');
+    setTrial(0); setTrialUnitPrice(0);
     setPriceOverride(false); setManualTotal(0); setMemo('');
   }, [open]);
 
@@ -797,6 +840,8 @@ function PackageCreateDialog({
     setIv(tmpl.iv_sessions);
     setIvUnitPrice(tmpl.iv_unit_price);
     setIvCompany(tmpl.iv_company ?? '');
+    setTrial(tmpl.trial_sessions ?? 0);
+    setTrialUnitPrice(tmpl.trial_unit_price ?? 0);
     setPriceOverride(false);
     setMemo(tmpl.memo ?? '');
   };
@@ -808,13 +853,14 @@ function PackageCreateDialog({
     setUnheated(0); setUnheatedUnitPrice(0); setUnheatedUpgrade(false);
     setPodologe(0); setPodologeUnitPrice(0);
     setIv(0); setIvUnitPrice(0); setIvCompany('');
+    setTrial(0); setTrialUnitPrice(0);
     setPriceOverride(false); setManualTotal(0); setMemo('');
   };
 
   const submit = async () => {
     if (!clinicId) return;
     if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
-    if (heated + unheated + podologe + iv === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
+    if (heated + unheated + podologe + iv + trial === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
     setSubmitting(true);
     const { error } = await supabase.from('package_templates').insert({
       clinic_id: clinicId,
@@ -830,6 +876,9 @@ function PackageCreateDialog({
       iv_company: ivCompany.trim() || null,
       iv_sessions: iv,
       iv_unit_price: ivUnitPrice,
+      // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
+      trial_sessions: trial,
+      trial_unit_price: trialUnitPrice,
       total_price: finalTotal,
       price_override: priceOverride,
       memo: memo.trim() || null,
@@ -1020,6 +1069,29 @@ function PackageCreateDialog({
             )}
           </div>
 
+          {/* T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목 */}
+          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+            <div className="text-xs font-semibold text-muted-foreground">체험권</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">회수</Label>
+                <Input type="number" min={0} value={trial}
+                  onChange={(e) => setTrial(Math.max(0, Number(e.target.value) || 0))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">수가 (회당)</Label>
+                <Input value={formatAmount(trialUnitPrice)}
+                  onChange={(e) => setTrialUnitPrice(parseAmount(e.target.value))}
+                  inputMode="numeric" />
+              </div>
+            </div>
+            {trial > 0 && trialUnitPrice > 0 && (
+              <div className="text-xs text-muted-foreground text-right">
+                소계: {formatAmount(trial * trialUnitPrice)}
+              </div>
+            )}
+          </div>
+
           {/* T-20260511-foot-PKG-DYNAMIC-TABLE: 기입된 항목만 표시하는 동적 요약 표 */}
           {(() => {
             const previewRows = [
@@ -1034,6 +1106,9 @@ function PackageCreateDialog({
                 : null,
               iv > 0 || ivUnitPrice > 0
                 ? { label: `수액${ivCompany ? ` (${ivCompany})` : ''}`, count: iv, unitPrice: ivUnitPrice, subtotal: iv * ivUnitPrice }
+                : null,
+              trial > 0 || trialUnitPrice > 0
+                ? { label: '체험권', count: trial, unitPrice: trialUnitPrice, subtotal: trial * trialUnitPrice }
                 : null,
             ].filter(Boolean) as { label: string; count: number; unitPrice: number; subtotal: number }[];
             if (previewRows.length === 0) return null;
