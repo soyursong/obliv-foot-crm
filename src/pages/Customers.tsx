@@ -286,7 +286,7 @@ export default function Customers() {
                   key={c.id}
                   onClick={() => handleRowClick(c)}
                   onContextMenu={(e) => handleRowContextMenu(e, c)}
-                  className="cursor-pointer border-t hover:bg-teal-50/40"
+                  className="cursor-pointer border-t hover:bg-teal-50/40 h-11"
                 >
                   <td className="px-4 py-2 font-medium">
                     <span className="flex items-center gap-1.5">

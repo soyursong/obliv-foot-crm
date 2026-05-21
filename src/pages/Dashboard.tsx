@@ -1620,7 +1620,7 @@ function DashboardTimeline({
           type="button"
           onClick={() => setView('time')}
           className={cn(
-            'flex-1 py-1.5 text-[10px] font-semibold border-b-2 transition',
+            'flex-1 min-h-[44px] py-1.5 text-[10px] font-semibold border-b-2 transition flex items-center justify-center',
             viewMode === 'time'
               ? 'text-teal-700 border-teal-500 bg-teal-50/50'
               : 'text-gray-400 border-transparent hover:text-gray-600 hover:bg-gray-50',
@@ -1632,7 +1632,7 @@ function DashboardTimeline({
           type="button"
           onClick={() => setView('therapist')}
           className={cn(
-            'flex-1 py-1.5 text-[10px] font-semibold border-b-2 transition',
+            'flex-1 min-h-[44px] py-1.5 text-[10px] font-semibold border-b-2 transition flex items-center justify-center',
             viewMode === 'therapist'
               ? 'text-teal-700 border-teal-500 bg-teal-50/50'
               : 'text-gray-400 border-transparent hover:text-gray-600 hover:bg-gray-50',
@@ -1658,7 +1658,7 @@ function DashboardTimeline({
               <button
                 type="button"
                 onClick={foldAllTherapists}
-                className="flex-1 text-[10px] font-medium text-gray-600 hover:text-teal-700 hover:bg-teal-50 rounded px-1.5 py-1 transition text-center"
+                className="flex-1 min-h-[44px] text-[10px] font-medium text-gray-600 hover:text-teal-700 hover:bg-teal-50 rounded px-1.5 py-1 transition flex items-center justify-center"
               >
                 전체 접기
               </button>
@@ -1666,7 +1666,7 @@ function DashboardTimeline({
               <button
                 type="button"
                 onClick={unfoldAllTherapists}
-                className="flex-1 text-[10px] font-medium text-gray-600 hover:text-teal-700 hover:bg-teal-50 rounded px-1.5 py-1 transition text-center"
+                className="flex-1 min-h-[44px] text-[10px] font-medium text-gray-600 hover:text-teal-700 hover:bg-teal-50 rounded px-1.5 py-1 transition flex items-center justify-center"
               >
                 전체 펼치기
               </button>
@@ -4549,10 +4549,10 @@ export default function Dashboard() {
           </div>
 
           <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
-            <TabsList className="h-8">
-              <TabsTrigger value="all" className="text-xs px-2.5">전체</TabsTrigger>
-              <TabsTrigger value="new" className="text-xs px-2.5">신규</TabsTrigger>
-              <TabsTrigger value="returning" className="text-xs px-2.5">재진</TabsTrigger>
+            <TabsList className="h-11">
+              <TabsTrigger value="all" className="text-xs px-2.5 min-h-[44px]">전체</TabsTrigger>
+              <TabsTrigger value="new" className="text-xs px-2.5 min-h-[44px]">신규</TabsTrigger>
+              <TabsTrigger value="returning" className="text-xs px-2.5 min-h-[44px]">재진</TabsTrigger>
             </TabsList>
           </Tabs>
 

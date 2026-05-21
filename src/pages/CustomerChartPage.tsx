@@ -3148,7 +3148,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     type="button"
                     onClick={() => handleClinicalTab(key)}
                     className={cn(
-                      'shrink-0 px-3 py-1.5 text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition',
+                      'shrink-0 px-3 min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center',
                       chartTabGroup === 'clinical' && chartTab === key
                         ? 'bg-white text-teal-700 font-semibold shadow-sm'
                         : 'text-[#334e65] hover:bg-white/60',
@@ -3169,7 +3169,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     type="button"
                     onClick={() => handleHistoryTab(key)}
                     className={cn(
-                      'shrink-0 px-3 py-1.5 text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition',
+                      'shrink-0 px-3 min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center',
                       chartTabGroup === 'history' && chartTab === key
                         ? 'bg-white text-teal-700 font-semibold shadow-sm'
                         : 'text-[#334e65] hover:bg-white/60',
@@ -4573,7 +4573,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   type="button"
                   onClick={() => setResvDetailTab(tab)}
                   className={cn(
-                    'flex-1 px-2 py-1.5 text-[11px] font-medium border-r border-gray-200 last:border-r-0 transition',
+                    'flex-1 px-2 min-h-[44px] text-[11px] font-medium border-r border-gray-200 last:border-r-0 transition flex items-center justify-center',
                     resvDetailTab === tab
                       ? 'bg-white text-teal-700 font-semibold'
                       : 'bg-[#eef3f7] text-[#334e65] hover:bg-white/70',
