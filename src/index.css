@@ -197,3 +197,28 @@
 .healer-blink {
   animation: healer-border-blink 1.2s ease-in-out infinite;
 }
+
+/* ── T-20260522-foot-TABLET-DUAL-LAYOUT: 태블릿 터치 최적화 ──────────────────────── */
+/* AC-1: 가로 모드(landscape) + 터치 디바이스(pointer:coarse) — 최소 44px 터치 타겟 */
+@media (orientation: landscape) and (pointer: coarse) {
+  /* 대시보드 헤더 버튼 / 탭 44px 최소 */
+  [data-dashboard-header] button,
+  [data-dashboard-header] [role="tab"] {
+    min-height: 2.75rem; /* 44px */
+    padding-top: 0.375rem;
+    padding-bottom: 0.375rem;
+  }
+  /* 사이드바 네비게이션 항목 44px (landscape 데스크탑 사이드바) */
+  [data-sidebar-nav] a {
+    min-height: 2.75rem;
+    display: flex;
+    align-items: center;
+  }
+}
+/* AC-2 보조: portrait + coarse — 명시적 타임라인 최소화 (JS auto-fold 보완 fallback) */
+@media (orientation: portrait) and (pointer: coarse) {
+  /* 타임라인 컨테이너가 JS fold 전에도 시각적으로 최소 너비 유지 */
+  [data-testid="dashboard-content-scroll"] > div:first-child {
+    max-width: 2rem;
+  }
+}

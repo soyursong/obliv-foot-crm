@@ -86,6 +86,8 @@ import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
 import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Clinic, Reservation, Room, RoomFieldKey, Staff, StatusFlag, VisitType } from '@/lib/types';
+// T-20260522-foot-TABLET-DUAL-LAYOUT: orientation 훅
+import { useOrientation } from '@/hooks/useOrientation';
 
 
 type TabKey = 'all' | 'new' | 'returning';
@@ -2207,6 +2209,25 @@ export default function Dashboard() {
       return next;
     });
   }, []);
+
+  // T-20260522-foot-TABLET-DUAL-LAYOUT: AC-2 portrait 자동 fold / AC-1 landscape 복원
+  // AC-3: fold state만 조정 — 작성 중 폼 데이터(rows/payments/quickResvDraft 등)는 건드리지 않음
+  const orientation = useOrientation();
+  useEffect(() => {
+    if (orientation === 'portrait') {
+      // portrait 진입: 타임라인 자동 접기 (차트 영역 최대화)
+      setTimelineFolded(true);
+    } else {
+      // landscape 복원: localStorage 저장값 우선 (사용자 수동 설정 보존)
+      try {
+        const saved = localStorage.getItem('foot-crm-timeline-folded');
+        setTimelineFolded(saved === 'true');
+      } catch {
+        setTimelineFolded(false);
+      }
+    }
+  }, [orientation]);
+
   const [showCalendar, setShowCalendar] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState<Date>(() => new Date());
   const [quickResvDraft, setQuickResvDraft] = useState<QuickResvDraft | null>(null);
@@ -4445,9 +4466,11 @@ export default function Dashboard() {
 
   // T-20260510-foot-DASH-DUAL-HSCROLL v2: overflow-hidden — Dashboard 자체 가로 팽창 격리
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+    // T-20260522-foot-TABLET-DUAL-LAYOUT: data-orientation + data-testid="dashboard-root" (E2E 테스트용)
+    <div className="flex h-full min-h-0 flex-col overflow-hidden" data-orientation={orientation} data-testid="dashboard-root">
       {/* Header */}
-      <div className="flex shrink-0 items-center justify-between gap-4 px-4 py-2 border-b bg-white/80">
+      {/* T-20260522-foot-TABLET-DUAL-LAYOUT: data-dashboard-header — CSS 터치 타겟 타겟팅용 */}
+      <div className="flex shrink-0 items-center justify-between gap-4 px-4 py-2 border-b bg-white/80" data-dashboard-header>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon-sm" onClick={() => setDate((d) => subDays(d, 1))}>
             <ChevronLeft className="h-4 w-4" />
