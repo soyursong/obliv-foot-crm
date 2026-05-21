@@ -12,6 +12,7 @@ deployed_at: "2026-05-22T05:19:42+09:00"
 deploy_commit: ec5dfb6f09071c25e695a78e97ed9e767c51ee31
 bundle_hash: CEKBe316
 field_soak_until: "2026-05-23T05:19:42+09:00"
+field_validation_slack_ts: "1779394877.098519"
 ---
 
 # T-20260522-foot-TABLET-DUAL-LAYOUT: 태블릿 가로/세로 이중 레이아웃 (Phase 1 대시보드)
