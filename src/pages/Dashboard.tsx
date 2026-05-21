@@ -47,6 +47,7 @@ import {
   Users,
   X,
   ZoomIn,
+  Package,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -102,6 +103,9 @@ const ConsentMapCtx = createContext<Map<string, ConsentEntry>>(new Map());
 
 /** 체크인 ID → 체크리스트 완료 여부 맵 (T-20260430-foot-PRESCREEN-CHECKLIST) */
 const ChecklistDoneCtx = createContext<Set<string>>(new Set());
+
+/** 활성 패키지 보유 고객 customer_id 집합 (잔여>0) (T-20260522-foot-PKG-BOX-INDICATOR) */
+const PkgHolderCtx = createContext<Set<string>>(new Set());
 
 // ── 카드 고객 이름 우클릭/롱프레스 핸들러 컨텍스트 ────────────────────────────
 interface CardHandlers {
@@ -290,6 +294,9 @@ function DraggableCard({
   // T-20260514-foot-CHART-NO-VISIBLE: AC-1 차트번호 상시 표시
   const chartNumberMap = useContext(ChartNumberMapCtx);
   const chartNum = checkIn.customer_id ? chartNumberMap.get(checkIn.customer_id) : undefined;
+  // T-20260522-foot-PKG-BOX-INDICATOR: 활성 패키지 보유 여부
+  const pkgHolderSet = useContext(PkgHolderCtx);
+  const hasPkg = !!(checkIn.customer_id && pkgHolderSet.has(checkIn.customer_id));
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: checkIn.id,
     data: { checkIn },
@@ -430,11 +437,21 @@ function DraggableCard({
           </div>
         </div>
         {/* T-20260506-foot-SLOT-LAYOUT-REBUILD: 초진 딱지 → 연한노랑, 재진 → 없음 */}
-        {checkIn.visit_type === 'new' && (
-          <div className="mt-0.5">
+        {/* T-20260522-foot-PKG-BOX-INDICATOR: 패키지 보유 배지 + 초진 딱지 동시 표시 가능 */}
+        <div className="mt-0.5 flex items-center gap-0.5 flex-wrap">
+          {checkIn.visit_type === 'new' && (
             <span className="bg-blue-100 text-blue-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
-          </div>
-        )}
+          )}
+          {hasPkg && (
+            <span
+              data-testid="pkg-holder-badge"
+              className="inline-flex items-center gap-0.5 bg-violet-100 text-violet-700 text-[9px] px-0.5 py-px rounded font-medium"
+            >
+              <Package className="h-2 w-2" />
+              패키지
+            </span>
+          )}
+        </div>
       </div>
     );
   }
@@ -538,11 +555,21 @@ function DraggableCard({
         </div>
       </div>
       {/* T-20260513-foot-VISITTYPE-SIMPLIFY: 초진 딱지, 재진 → 없음 */}
-      {checkIn.visit_type === 'new' && (
-        <div className="mt-0.5">
+      {/* T-20260522-foot-PKG-BOX-INDICATOR: 패키지 보유 배지 + 초진 딱지 나란히 */}
+      <div className="mt-0.5 flex items-center gap-0.5 flex-wrap">
+        {checkIn.visit_type === 'new' && (
           <span className="bg-yellow-100 text-yellow-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
-        </div>
-      )}
+        )}
+        {hasPkg && (
+          <span
+            data-testid="pkg-holder-badge"
+            className="inline-flex items-center gap-0.5 bg-violet-100 text-violet-700 text-[9px] px-0.5 py-px rounded font-medium"
+          >
+            <Package className="h-2 w-2" />
+            패키지
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -2188,6 +2215,8 @@ export default function Dashboard() {
   const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
   const [stageStartMap, setStageStartMap] = useState<Map<string, string>>(new Map());
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
+  // T-20260522-foot-PKG-BOX-INDICATOR: 잔여>0인 활성 패키지 보유 고객 ID 집합
+  const [pkgHolderSet, setPkgHolderSet] = useState<Set<string>>(new Set());
   const [consentMap, setConsentMap] = useState<Map<string, ConsentEntry>>(new Map());
   const [checklistDone, setChecklistDone] = useState<Set<string>>(new Set());
   const [therapists, setTherapists] = useState<Staff[]>([]);
@@ -2792,7 +2821,7 @@ export default function Dashboard() {
       .select('id, customer_id, package_name, total_sessions')
       .eq('clinic_id', clinic.id)
       .eq('status', 'active');
-    if (!pkgs || pkgs.length === 0) { setPkgMap(new Map()); return; }
+    if (!pkgs || pkgs.length === 0) { setPkgMap(new Map()); setPkgHolderSet(new Set()); return; }
 
     const pkgIds = pkgs.map((p: { id: string }) => p.id);
     const { data: sessions } = await supabase
@@ -2807,12 +2836,16 @@ export default function Dashboard() {
     }
 
     const map = new Map<string, PackageLabel>();
+    // T-20260522-foot-PKG-BOX-INDICATOR: 잔여>0 고객 ID 집합 (배치 조인, 추가 DB 쿼리 없음)
+    const holderSet = new Set<string>();
     for (const p of pkgs as { id: string; customer_id: string; package_name: string; total_sessions: number }[]) {
       const used = usedMap.get(p.id) ?? 0;
       const remaining = Math.max(0, p.total_sessions - used);
       map.set(p.customer_id, { name: p.package_name, remaining, total: p.total_sessions });
+      if (remaining > 0) holderSet.add(p.customer_id);
     }
     setPkgMap(map);
+    setPkgHolderSet(holderSet);
   }, [clinic]);
 
   const fetchTherapists = useCallback(async () => {
@@ -4720,6 +4753,7 @@ export default function Dashboard() {
       <ChartNumberMapCtx.Provider value={todayCustomerChartMap}>
       <CardHandlersCtx.Provider value={cardHandlersValue}>
       <ChecklistDoneCtx.Provider value={checklistDone}>
+      <PkgHolderCtx.Provider value={pkgHolderSet}>
       <ConsentMapCtx.Provider value={consentMap}>
       <ResvTimeMapCtx.Provider value={resvTimeMap}>
       <DndContext
@@ -4856,6 +4890,7 @@ export default function Dashboard() {
       </DndContext>
       </ResvTimeMapCtx.Provider>
       </ConsentMapCtx.Provider>
+      </PkgHolderCtx.Provider>
       </ChecklistDoneCtx.Provider>
       </CardHandlersCtx.Provider>
       </ChartNumberMapCtx.Provider>
