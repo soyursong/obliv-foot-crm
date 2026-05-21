@@ -602,21 +602,27 @@ export default function Closing() {
   }, [payments, pkgPayments, manualEntries, checkInDetailMap, customerIdToCheckInMap, customerMap, staffMap]);
 
   // C2-MANAGER-PAYMENT-MAP: 담당자 필터 적용
+  // T-20260522-foot-DAILY-SETTLE-STAFF AC-3: NULL → '미지정' 통일
   const filteredEnrichedRows = useMemo<EnrichedRow[]>(() => {
     if (!staffFilter) return enrichedRows;
-    return enrichedRows.filter(r => (r.staff_name ?? '미배정') === staffFilter);
+    return enrichedRows.filter(r => (r.staff_name ?? '미지정') === staffFilter);
   }, [enrichedRows, staffFilter]);
 
-  // C2-MANAGER-PAYMENT-MAP: 담당자별 매출 집계 (enrichedRows 기준 — 필터 무관)
-  const staffTotals = useMemo<Array<{ name: string; total: number }>>(() => {
-    const map = new Map<string, number>();
+  // T-20260522-foot-DAILY-SETTLE-STAFF AC-2: 담당자별 매출 집계 — 카드/현금/이체 소계 추가
+  // AC-3: NULL staff_id → '미지정' 표시 (enrichedRows 기준 — 필터 무관)
+  const staffTotals = useMemo<Array<{ name: string; total: number; card: number; cash: number; transfer: number }>>(() => {
+    const map = new Map<string, { name: string; total: number; card: number; cash: number; transfer: number }>();
     for (const r of enrichedRows) {
-      const key = r.staff_name ?? '미배정';
-      map.set(key, (map.get(key) ?? 0) + (r.payment_type === 'refund' ? -r.amount : r.amount));
+      const key = r.staff_name ?? '미지정';
+      const existing = map.get(key) ?? { name: key, total: 0, card: 0, cash: 0, transfer: 0 };
+      const amt = r.payment_type === 'refund' ? -r.amount : r.amount;
+      existing.total += amt;
+      if (r.method === 'card' || r.method === 'membership') existing.card += amt;
+      else if (r.method === 'cash') existing.cash += amt;
+      else if (r.method === 'transfer') existing.transfer += amt;
+      map.set(key, existing);
     }
-    return [...map.entries()]
-      .map(([name, total]) => ({ name, total }))
-      .sort((a, b) => b.total - a.total);
+    return [...map.values()].sort((a, b) => b.total - a.total);
   }, [enrichedRows]);
 
   // ── 핸들러 ────────────────────────────────────────────────
@@ -1165,7 +1171,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                   {staffList.map(s => (
                     <option key={s.id} value={s.name}>{s.name}</option>
                   ))}
-                  <option value="미배정">미배정</option>
+                  {/* T-20260522-foot-DAILY-SETTLE-STAFF AC-3: '미배정' → '미지정' */}
+                  <option value="미지정">미지정</option>
                 </select>
                 {staffFilter && (
                   <button
@@ -1241,7 +1248,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                         <td className="py-2 px-2 font-medium">{r.customer_name}</td>
                         <td className="py-2 px-2 text-xs">{r.lead_source ?? '-'}</td>
                         <td className="py-2 px-2 text-xs">{r.visit_type_label}</td>
-                        <td className="py-2 px-2 text-xs">{r.staff_name ?? '-'}</td>
+                        {/* T-20260522-foot-DAILY-SETTLE-STAFF AC-3: NULL → '미지정' */}
+                        <td className="py-2 px-2 text-xs">{r.staff_name ?? <span className="text-muted-foreground/60">미지정</span>}</td>
                         <td className="py-2 px-2 text-right tabular-nums font-medium">
                           {r.payment_type === 'refund' ? '-' : ''}{formatAmount(r.amount)}
                         </td>
@@ -1377,7 +1385,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             </div>
           )}
 
-          {/* C2-MANAGER-PAYMENT-MAP: 담당자별 매출 집계 (전체 기준 — 필터 무관) */}
+          {/* T-20260522-foot-DAILY-SETTLE-STAFF AC-2: 담당자별 매출 집계 — 카드/현금/이체 소계 (전체 기준 — 필터 무관) */}
           {staffTotals.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
@@ -1388,11 +1396,14 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                   <thead>
                     <tr className="border-b text-xs text-muted-foreground">
                       <th className="py-1.5 px-3 text-left font-medium">담당자</th>
-                      <th className="py-1.5 px-3 text-right font-medium">매출</th>
+                      <th className="py-1.5 px-2 text-right font-medium">카드</th>
+                      <th className="py-1.5 px-2 text-right font-medium">현금</th>
+                      <th className="py-1.5 px-2 text-right font-medium">이체</th>
+                      <th className="py-1.5 px-3 text-right font-medium">합계</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {staffTotals.map(({ name, total }) => (
+                    {staffTotals.map(({ name, total, card, cash, transfer }) => (
                       <tr
                         key={name}
                         className={cn(
@@ -1408,6 +1419,9 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                             <span className="ml-1.5 text-[10px] bg-teal-100 text-teal-700 rounded px-1">필터 중</span>
                           )}
                         </td>
+                        <td className="py-1.5 px-2 text-right tabular-nums text-xs text-muted-foreground">{card !== 0 ? formatAmount(card) : '-'}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums text-xs text-muted-foreground">{cash !== 0 ? formatAmount(cash) : '-'}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums text-xs text-muted-foreground">{transfer !== 0 ? formatAmount(transfer) : '-'}</td>
                         <td className="py-1.5 px-3 text-right tabular-nums font-medium text-emerald-700">{formatAmount(total)}</td>
                       </tr>
                     ))}
@@ -1415,6 +1429,15 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                   <tfoot>
                     <tr className="border-t-2 font-semibold bg-muted/50">
                       <td className="py-1.5 px-3 text-sm">합계</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums text-xs text-muted-foreground">
+                        {formatAmount(staffTotals.reduce((s, x) => s + x.card, 0))}
+                      </td>
+                      <td className="py-1.5 px-2 text-right tabular-nums text-xs text-muted-foreground">
+                        {formatAmount(staffTotals.reduce((s, x) => s + x.cash, 0))}
+                      </td>
+                      <td className="py-1.5 px-2 text-right tabular-nums text-xs text-muted-foreground">
+                        {formatAmount(staffTotals.reduce((s, x) => s + x.transfer, 0))}
+                      </td>
                       <td className="py-1.5 px-3 text-right tabular-nums text-sm text-emerald-700">
                         {formatAmount(staffTotals.reduce((s, x) => s + x.total, 0))}
                       </td>
