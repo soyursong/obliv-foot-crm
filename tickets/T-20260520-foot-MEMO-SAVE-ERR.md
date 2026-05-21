@@ -2,8 +2,16 @@
 id: T-20260520-foot-MEMO-SAVE-ERR
 domain: foot
 priority: P0
-status: deploy-ready
+status: deployed
 deploy_ready: true
+qa_result: pass
+qa_grade: GO
+deploy_commit: 1fb053c
+deployed_at: "2026-05-21T12:55:00+09:00"
+deployed_by: supervisor
+precheck_pass: true
+precheck_at: "2026-05-21T12:55:00+09:00"
+field_soak_until: "2026-05-22T12:55:00+09:00"
 commit: 1fb053c
 db_changed: true
 rollback_sql: supabase/migrations/20260520000100_customer_treatment_memos.down.sql
