@@ -44,6 +44,7 @@ import {
   RotateCcw,
   Search,
   User,
+  Users,
   X,
   ZoomIn,
 } from 'lucide-react';
@@ -65,7 +66,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
-import { STATUS_KO, VISIT_TYPE_KO, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
+import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
 import { formatAmount, maskPhoneTail } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
@@ -1369,6 +1370,7 @@ function DashboardTimeline({
   clinic,
   folded,
   onToggleFold,
+  staffMap,
 }: {
   date: Date;
   /** T-20260513-foot-TIMETABLE-20H: DB close_time 동적 참조 */
@@ -1386,6 +1388,8 @@ function DashboardTimeline({
   folded?: boolean;
   /** T-20260522-foot-TIMETABLE-FOLD: 접기/펼치기 토글 콜백 */
   onToggleFold?: () => void;
+  /** T-20260522-foot-TIMETABLE-FOLD: 치료사별 뷰 — 직원 이름 조회 맵 */
+  staffMap?: Map<string, { name: string }>;
 }) {
   const now = new Date();
   const isToday = isSameDay(date, now);
@@ -1393,6 +1397,61 @@ function DashboardTimeline({
   const currentH = now.getHours();
   const currentM = now.getMinutes();
   const currentSlot = `${String(currentH).padStart(2, '0')}:${currentM < 30 ? '00' : '30'}`;
+
+  // ── T-20260522-foot-TIMETABLE-FOLD: 치료사별 뷰 상태 ──────────────────────────
+
+  // AC-5: 뷰 모드 sessionStorage 유지 ('time' | 'therapist')
+  const [viewMode, setViewMode] = useState<'time' | 'therapist'>(() => {
+    try { return (sessionStorage.getItem('foot-crm-timetable-viewmode') as 'time' | 'therapist') ?? 'time'; }
+    catch { return 'time'; }
+  });
+
+  // AC-5: 접혀있는 치료사 ID Set — sessionStorage 세션 내 유지
+  const [foldedTherapists, setFoldedTherapists] = useState<Set<string>>(() => {
+    try {
+      const raw = sessionStorage.getItem('foot-crm-therapist-fold');
+      return raw ? new Set<string>(JSON.parse(raw) as string[]) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
+
+  // 치료사별 체크인 그룹 (checked_in_at 오름차순 정렬)
+  const checkInsByTherapist = useMemo(() => {
+    const groups = new Map<string, CheckIn[]>();
+    for (const ci of selfCheckIns) {
+      const key = ci.therapist_id ?? '__none__';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(ci);
+    }
+    for (const [, cis] of groups) {
+      cis.sort((a, b) => a.checked_in_at.localeCompare(b.checked_in_at));
+    }
+    return groups;
+  }, [selfCheckIns]);
+
+  const allTherapistKeys = useMemo(() => [...checkInsByTherapist.keys()], [checkInsByTherapist]);
+
+  function setView(mode: 'time' | 'therapist') {
+    setViewMode(mode);
+    try { sessionStorage.setItem('foot-crm-timetable-viewmode', mode); } catch {/* ignore */}
+  }
+  function toggleTherapistFold(id: string) {
+    setFoldedTherapists(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      try { sessionStorage.setItem('foot-crm-therapist-fold', JSON.stringify([...next])); } catch {/* ignore */}
+      return next;
+    });
+  }
+  // AC-4: 전체 접기
+  function foldAllTherapists() {
+    setFoldedTherapists(new Set(allTherapistKeys));
+    try { sessionStorage.setItem('foot-crm-therapist-fold', JSON.stringify(allTherapistKeys)); } catch {/* ignore */}
+  }
+  // AC-4: 전체 펼치기
+  function unfoldAllTherapists() {
+    setFoldedTherapists(new Set());
+    try { sessionStorage.removeItem('foot-crm-therapist-fold'); } catch {/* ignore */}
+  }
 
   // T-20260513-foot-TIMETABLE-20H: 하드코딩 '20:00' → DB clinic.close_time 동적 참조
   // 기존: generateSlots('10:00', '20:00', 30) → 마지막 슬롯 19:30 (20:00 누락)
@@ -1526,6 +1585,33 @@ function DashboardTimeline({
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
       </div>
+      {/* T-20260522-foot-TIMETABLE-FOLD: 뷰 모드 탭 (시간표 | 치료사별) */}
+      <div className="flex shrink-0 border-b bg-white">
+        <button
+          type="button"
+          onClick={() => setView('time')}
+          className={cn(
+            'flex-1 py-1.5 text-[10px] font-semibold border-b-2 transition',
+            viewMode === 'time'
+              ? 'text-teal-700 border-teal-500 bg-teal-50/50'
+              : 'text-gray-400 border-transparent hover:text-gray-600 hover:bg-gray-50',
+          )}
+        >
+          시간표
+        </button>
+        <button
+          type="button"
+          onClick={() => setView('therapist')}
+          className={cn(
+            'flex-1 py-1.5 text-[10px] font-semibold border-b-2 transition',
+            viewMode === 'therapist'
+              ? 'text-teal-700 border-teal-500 bg-teal-50/50'
+              : 'text-gray-400 border-transparent hover:text-gray-600 hover:bg-gray-50',
+          )}
+        >
+          치료사별
+        </button>
+      </div>
       {/* T-20260510-foot-DASH-DUAL-HSCROLL: 컬럼헤더를 스크롤 컨테이너 내부로 이동
           문제1 — 이중 X스크롤바: overflow-y-auto는 CSS 규격상 overflow-x도 auto로 강제 →
             overflow-x-hidden 명시로 내부 가로스크롤바 완전 제거
@@ -1535,6 +1621,97 @@ function DashboardTimeline({
             [overflow-x:clip] → scroll context 미생성, sticky left-0 외부 전파 허용
             md:overflow-x-hidden → PC에서 원래 동작 */}
       <div className="flex-1 min-h-0 overflow-y-auto [overflow-x:clip] md:overflow-x-hidden">
+        {viewMode === 'therapist' ? (
+          /* ── T-20260522-foot-TIMETABLE-FOLD: 치료사별 뷰 ─────────────────── */
+          <div className="flex flex-col">
+            {/* AC-4: 전체 접기/펼치기 — sticky top-0 */}
+            <div className="flex items-center gap-1 px-2 py-1 border-b bg-gray-50 sticky top-0 z-10">
+              <button
+                type="button"
+                onClick={foldAllTherapists}
+                className="flex-1 text-[10px] font-medium text-gray-600 hover:text-teal-700 hover:bg-teal-50 rounded px-1.5 py-1 transition text-center"
+              >
+                전체 접기
+              </button>
+              <div className="w-px h-3 bg-gray-200 shrink-0" />
+              <button
+                type="button"
+                onClick={unfoldAllTherapists}
+                className="flex-1 text-[10px] font-medium text-gray-600 hover:text-teal-700 hover:bg-teal-50 rounded px-1.5 py-1 transition text-center"
+              >
+                전체 펼치기
+              </button>
+            </div>
+            {allTherapistKeys.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-xs text-gray-400 gap-2">
+                <Users className="h-6 w-6 opacity-30" />
+                <span>오늘 배정된 치료사 없음</span>
+              </div>
+            ) : (
+              [...checkInsByTherapist.entries()].map(([therapistId, cis]) => {
+                const tname = therapistId === '__none__'
+                  ? '미배정'
+                  : staffMap?.get(therapistId)?.name ?? '치료사';
+                const isFolded = foldedTherapists.has(therapistId);
+                return (
+                  <div key={therapistId} className="border-b last:border-0">
+                    {/* AC-1: 행 헤더 chevron 토글 — AC-6: min-h-[44px] 터치 44px 확보 */}
+                    <button
+                      type="button"
+                      onClick={() => toggleTherapistFold(therapistId)}
+                      style={{ minHeight: '44px' }}
+                      className="w-full flex items-center gap-2 px-2 bg-gray-50 hover:bg-teal-50 active:bg-teal-100 transition"
+                      aria-expanded={!isFolded}
+                      aria-label={`${tname} ${isFolded ? '펼치기' : '접기'}`}
+                    >
+                      {isFolded
+                        ? <ChevronRight className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                        : <ChevronDown className="h-3.5 w-3.5 text-teal-600 shrink-0" />}
+                      {/* AC-2: 접기 시 이름 + 예약건수만 표시 */}
+                      <span className={cn(
+                        'text-xs font-semibold flex-1 text-left truncate',
+                        therapistId === '__none__' ? 'text-gray-400 italic' : 'text-gray-800',
+                      )}>
+                        {tname}
+                      </span>
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700 tabular-nums shrink-0">
+                        {cis.length}건
+                      </span>
+                    </button>
+                    {/* 행 본문 — 접힌 상태엔 헤더만, 펼친 상태엔 체크인 목록 */}
+                    {!isFolded && (
+                      <div>
+                        {cis.map((ci) => (
+                          <div
+                            key={ci.id}
+                            onClick={() => onCardClick?.(ci)}
+                            onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
+                            className="flex items-center gap-1.5 px-2.5 py-2 border-t border-gray-100 hover:bg-gray-50 cursor-pointer transition"
+                          >
+                            <span className="text-[10px] font-mono text-gray-400 shrink-0 w-9 tabular-nums leading-none">
+                              {format(new Date(ci.checked_in_at), 'HH:mm')}
+                            </span>
+                            <span className="text-[11px] font-medium flex-1 truncate text-gray-800">
+                              {ci.customer_name}
+                            </span>
+                            <Badge className={cn(VISIT_TYPE_COLOR[ci.visit_type], 'text-[9px] px-1 py-0 shrink-0 leading-tight')}>
+                              {VISIT_TYPE_KO[ci.visit_type]}
+                            </Badge>
+                            <Badge className={cn(STATUS_COLOR[ci.status], 'text-[9px] px-1 py-0 shrink-0 leading-tight')}>
+                              {STATUS_KO[ci.status]}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        ) : (
+          /* ── 기존 시간표 뷰 ─────────────────────────────────────────────── */
+          <>
         {/* 컬럼 헤더 — 초진(연노랑)/재진(연두): sticky로 슬롯 스크롤 시 상단 고정 */}
         <div className="grid grid-cols-[2.5rem_1fr_1fr] border-b sticky top-0 z-10 bg-white">
           {/* T-20260514-foot-TIMETABLE-MOBILE-HSCROLL: sticky left-0 z-20 — 코너 셀(시간 헤더)도 좌측 고정 */}
@@ -1668,6 +1845,8 @@ function DashboardTimeline({
             </div>
           );
         })}
+          </>
+        )}
       </div>
     </div>
   );
@@ -2010,6 +2189,12 @@ export default function Dashboard() {
   const [consentMap, setConsentMap] = useState<Map<string, ConsentEntry>>(new Map());
   const [checklistDone, setChecklistDone] = useState<Set<string>>(new Set());
   const [therapists, setTherapists] = useState<Staff[]>([]);
+  // T-20260522-foot-TIMETABLE-FOLD: 치료사별 뷰 — therapist ID → {name} 맵
+  const therapistNameMap = useMemo(() => {
+    const m = new Map<string, { name: string }>();
+    for (const s of therapists) m.set(s.id, { name: s.name });
+    return m;
+  }, [therapists]);
   // ── 달력 + 타임라인 상태 ──────────────────────────────────────────────────────
   // T-20260522-foot-TIMETABLE-FOLD: localStorage 기반 접기/펼치기 상태
   const [timelineFolded, setTimelineFolded] = useState<boolean>(() => {
@@ -4559,6 +4744,7 @@ export default function Dashboard() {
             onReservationCheckIn={!isPast ? handleReservationCheckIn : undefined}
             folded={timelineFolded}
             onToggleFold={handleToggleTimeline}
+            staffMap={therapistNameMap}
           />
         </div>
 
