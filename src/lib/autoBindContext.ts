@@ -16,6 +16,11 @@ import { formatAmount } from '@/lib/format';
 import { formatPhone } from '@/lib/format';
 import { fetchDutyDoctors } from '@/hooks/useDutyRoster';
 import type { CheckIn } from '@/lib/types';
+import {
+  INSURANCE_GRADE_LABELS,
+  getBaseCopayRate,
+  type InsuranceGrade,
+} from '@/lib/insurance';
 
 // ─── 타입 ───────────────────────────────────────────────────────────────────
 
@@ -36,6 +41,16 @@ export interface CustomerBindInfo {
   birth_date?: string | null;    // YYMMDD 텍스트 (예: 900515)
   chart_number?: string | null;  // 차트번호
   gender?: 'M' | 'F' | null;
+}
+
+/** T-20260522-foot-INS-DOC-PRINT: 보험서류 바인딩용 건보 정보 */
+export interface InsuranceBindInfo {
+  /** 건보 등급 라벨 (예: "일반 (30%)") */
+  gradeLabel: string;
+  /** 본인부담률 텍스트 (예: "30%") */
+  copayRateText: string;
+  /** 산정특례코드 — 해당 없으면 빈 문자열 */
+  specialTreatmentCode: string;
 }
 
 export interface AutoBindContext {
@@ -62,6 +77,8 @@ export interface AutoBindContext {
     code2?: string;
     name2?: string;
   } | null;
+  /** T-20260522-foot-INS-DOC-PRINT: 건보 등급·부담률·산정특례 */
+  insuranceInfo?: InsuranceBindInfo | null;
 }
 
 // ─── 헬퍼 함수 ───────────────────────────────────────────────────────────────
@@ -182,6 +199,10 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     diag_name_2: ctx.diagCodes?.name2 ?? '',
     // 하위 호환 alias
     business_reg_no: ctx.clinic?.business_no ?? '',
+    // T-20260522-foot-INS-DOC-PRINT: 건보 등급·부담률·산정특례 바인딩
+    insurance_grade_label: ctx.insuranceInfo?.gradeLabel ?? '',
+    copay_rate:            ctx.insuranceInfo?.copayRateText ?? '',
+    special_treatment_code: ctx.insuranceInfo?.specialTreatmentCode ?? '',
   };
 }
 
@@ -202,12 +223,14 @@ export async function loadAutoBindContext(
   clinicDoctorId?: string,
 ): Promise<Record<string, string>> {
   // T-20260520-foot-PRINT-FORM-BIND: 고객 정보 확장 (rrn/address/birth_date/gender/chart_number)
+  // T-20260522-foot-INS-DOC-PRINT: insurance_grade 추가 로드
   let customer: CustomerBindInfo | null = null;
+  let customerInsuranceGrade: InsuranceGrade | null = null;
   if (checkIn.customer_id) {
     const [custRes, rrnRes] = await Promise.all([
       supabase
         .from('customers')
-        .select('name, phone, address, address_detail, birth_date, chart_number, gender')
+        .select('name, phone, address, address_detail, birth_date, chart_number, gender, insurance_grade')
         .eq('id', checkIn.customer_id)
         .maybeSingle(),
       // rrn_decrypt RPC — 주민번호 복호화 (암호화된 컬럼 직접 접근 불가)
@@ -218,6 +241,7 @@ export async function loadAutoBindContext(
         ...custRes.data,
         rrn: (rrnRes.data as string | null) ?? null,
       };
+      customerInsuranceGrade = (custRes.data.insurance_grade as InsuranceGrade | null) ?? null;
     }
   }
 
@@ -358,6 +382,17 @@ export async function loadAutoBindContext(
     }
   }
 
+  // T-20260522-foot-INS-DOC-PRINT: 건보 등급·부담률·산정특례 바인딩
+  let insuranceInfo: InsuranceBindInfo | null = null;
+  if (customerInsuranceGrade) {
+    const rate = getBaseCopayRate(customerInsuranceGrade);
+    insuranceInfo = {
+      gradeLabel: INSURANCE_GRADE_LABELS[customerInsuranceGrade] ?? customerInsuranceGrade,
+      copayRateText: `${Math.round(rate * 100)}%`,
+      specialTreatmentCode: '',  // 현장 운영 중 확인 후 추가 (Phase 2)
+    };
+  }
+
   return buildAutoBindValues({
     customer,
     checkIn,
@@ -371,5 +406,6 @@ export async function loadAutoBindContext(
     doctor: doctorName,
     clinicDoctor,
     diagCodes,
+    insuranceInfo,
   });
 }

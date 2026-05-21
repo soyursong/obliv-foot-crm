@@ -114,6 +114,10 @@ export const AUTO_BIND_KEYS = [
   'diag_name_2',
   'clinic_nhis_code',
   'clinic_fax',
+  // T-20260522-foot-INS-DOC-PRINT: 보험서류 전용 바인딩
+  'insurance_grade_label',
+  'copay_rate',
+  'special_treatment_code',
 ] as const;
 
 export type AutoBindKey = (typeof AUTO_BIND_KEYS)[number];
@@ -708,6 +712,13 @@ export const FORM_META: Record<
     description: '소견서(보험청구용) — 보조기·간병기간·분류번호 포함',
     print_preset: 'optional',
   },
+  // T-20260522-foot-INS-DOC-PRINT: 보험서류 카테고리
+  ins_claim_form: {
+    icon: '🏥',
+    color: 'bg-blue-50 border-blue-200',
+    description: '실손/단체/자동차보험 청구 공통서식 — 건보 등급·부담률·산정특례 자동 바인딩',
+    print_preset: 'optional',
+  },
 };
 
 // ─── 도수센터 서류 메타 ───
@@ -802,3 +813,67 @@ export const MARKETING_FORM_KEYS: ReadonlyArray<string> = [
   'model_contract_2',
   'experience_portrait',
 ];
+
+// ─── 보험서류 (T-20260522-foot-INS-DOC-PRINT) ───
+
+/**
+ * 보험청구용 서류 종류 (현장 확인 기준 v1.0)
+ *
+ * 확정 리스트 (2026-05-22):
+ *   1. 보험청구서 (ins_claim_form)     — 실손/단체/자동차보험 공통 청구서
+ *
+ * 현장 후보 목록 (기존 foot-service 서류 중 보험청구 겸용):
+ *   - bill_detail            진료비내역서       (foot-service, 기본 서류)
+ *   - bill_receipt           진료비 계산서·영수증 (foot-service)
+ *   - diag_opinion_v2        소견서(보험청구용)  (foot-service)
+ *   - diagnosis              진단서             (foot-service)
+ *   - treat_confirm_code     진료확인서(코드포함) (foot-service)
+ *   - payment_cert           진료비납입증명서     (foot-service)
+ *
+ * ⚠️ 위 기존 서류는 별도요청 서류에 이미 존재 → 중복 등록 불필요.
+ *    신규 `insurance` 카테고리는 보험청구 전용 양식만 포함.
+ */
+
+/**
+ * 보험서류 fallback 템플릿 (DB 미세팅 시 사용)
+ */
+export const INSURANCE_FALLBACK_TEMPLATES: FormTemplate[] = [
+  {
+    id: 'fallback-ins-claim-form',
+    clinic_id: FOOT_CLINIC_ID,
+    category: 'insurance',
+    form_key: 'ins_claim_form',
+    name_ko: '보험청구서',
+    template_path: '',
+    template_format: 'html',
+    field_map: [
+      { key: 'patient_name',            label: '환자성명',       type: 'text',   x: 0, y: 0 },
+      { key: 'patient_rrn',             label: '주민등록번호',   type: 'text',   x: 0, y: 0 },
+      { key: 'patient_phone',           label: '연락처',         type: 'text',   x: 0, y: 0 },
+      { key: 'patient_address',         label: '주소',           type: 'text',   x: 0, y: 0 },
+      { key: 'insurance_grade_label',   label: '건보 등급',      type: 'text',   x: 0, y: 0 },
+      { key: 'copay_rate',              label: '본인부담률',     type: 'text',   x: 0, y: 0 },
+      { key: 'special_treatment_code',  label: '산정특례코드',   type: 'text',   x: 0, y: 0 },
+      { key: 'diag_code_1',             label: '주상병코드',     type: 'text',   x: 0, y: 0 },
+      { key: 'diag_name_1',             label: '주상병명',       type: 'text',   x: 0, y: 0 },
+      { key: 'diag_code_2',             label: '부상병코드',     type: 'text',   x: 0, y: 0 },
+      { key: 'diag_name_2',             label: '부상병명',       type: 'text',   x: 0, y: 0 },
+      { key: 'visit_date',              label: '진료일',         type: 'date',   x: 0, y: 0 },
+      { key: 'total_amount',            label: '진료비합계',     type: 'amount', x: 0, y: 0 },
+      { key: 'insurance_covered',       label: '공단부담금',     type: 'amount', x: 0, y: 0 },
+      { key: 'copayment',               label: '본인부담금',     type: 'amount', x: 0, y: 0 },
+      { key: 'non_covered',             label: '비급여',         type: 'amount', x: 0, y: 0 },
+      { key: 'issue_date',              label: '발행일',         type: 'date',   x: 0, y: 0 },
+      { key: 'clinic_name',             label: '의료기관명',     type: 'text',   x: 0, y: 0 },
+      { key: 'clinic_phone',            label: '전화번호',       type: 'text',   x: 0, y: 0 },
+      { key: 'doctor_name',             label: '담당의사',       type: 'text',   x: 0, y: 0 },
+    ],
+    requires_signature: false,
+    required_role: 'admin|manager|coordinator',
+    active: true,
+    sort_order: 10,
+  },
+];
+
+/** insurance 카테고리 form_key 목록 */
+export const INSURANCE_FORM_KEYS: ReadonlyArray<string> = ['ins_claim_form'];
