@@ -363,6 +363,9 @@ export interface Package {
   iv_unit_price?: number;
   iv_company?: string | null;
   template_id?: string | null;
+  // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
+  trial_sessions?: number;
+  trial_unit_price?: number;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -374,6 +377,7 @@ export interface PackageRemaining {
   iv: number;
   preconditioning: number;
   podologe?: number;  // packages.podologe_sessions 참조 (컬럼명 오타 유지)
+  trial?: number;     // T-20260522-foot-PKG-TRIAL: 체험권 잔여 회차
   total_used: number;
   total_remaining: number;
 }
@@ -394,6 +398,9 @@ export interface PackageTemplate {
   iv_company: string | null;
   iv_sessions: number;
   iv_unit_price: number;
+  // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
+  trial_sessions: number;
+  trial_unit_price: number;
   total_price: number;
   price_override: boolean;
   memo: string | null;

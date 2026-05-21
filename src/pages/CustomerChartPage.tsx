@@ -2690,6 +2690,15 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                 <td className="text-center py-0.5 font-semibold text-teal-700">{rem.iv}회</td>
                               </tr>
                             )}
+                            {/* T-20260522-foot-PKG-TRIAL: 체험권 잔여 0이면 비노출 */}
+                            {(p.trial_sessions ?? 0) > 0 && (rem.trial ?? 0) > 0 && (
+                              <tr>
+                                <td className="py-0.5">체험권</td>
+                                <td className="text-center py-0.5">{p.trial_sessions}회</td>
+                                <td className="text-center py-0.5">{(p.trial_sessions ?? 0) - (rem.trial ?? 0)}회</td>
+                                <td className="text-center py-0.5 font-semibold text-teal-700">{rem.trial ?? 0}회</td>
+                              </tr>
+                            )}
                             <tr className="border-t border-teal-100">
                               <td colSpan={3} className="pt-1 text-muted-foreground">전체 잔여</td>
                               <td className="text-center pt-1 font-bold text-teal-700">{rem.total_remaining}회</td>
@@ -3318,6 +3327,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         ((p.heated_sessions ?? 0) > 0 || (p.heated_unit_price ?? 0) > 0) && { label: '가열', qty: p.heated_sessions ?? 0, unitPrice: p.heated_unit_price ?? 0, used: usedByType['heated_laser'] ?? 0 },
                         ((p.podologe_sessions ?? 0) > 0 || (p.podologe_unit_price ?? 0) > 0) && { label: '포돌로게', qty: p.podologe_sessions ?? 0, unitPrice: p.podologe_unit_price ?? 0, used: usedByType['podologue'] ?? 0 },
                         ((p.iv_sessions ?? 0) > 0 || (p.iv_unit_price ?? 0) > 0) && { label: `수액${p.iv_company ? ` (${p.iv_company})` : ''}`, qty: p.iv_sessions ?? 0, unitPrice: p.iv_unit_price ?? 0, used: usedByType['iv'] ?? 0 },
+                        // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
+                        ((p.trial_sessions ?? 0) > 0 || (p.trial_unit_price ?? 0) > 0) && { label: '체험권', qty: p.trial_sessions ?? 0, unitPrice: p.trial_unit_price ?? 0, used: usedByType['trial'] ?? 0 },
                       ].filter(Boolean) as { label: string; qty: number; unitPrice: number; used: number }[];
                       // 시술내역 리스트 (회차 차감 기록)
                       const TREAT_KO: Record<string, string> = { heated_laser: '가열', unheated_laser: '비가열', podologue: '포돌로게', iv: '수액', preconditioning: '프컨', trial: '체험권' };
@@ -5010,6 +5021,9 @@ function PackagePurchaseFromTemplateDialog({
   const [iv, setIv] = useState(0);
   const [ivUnitPrice, setIvUnitPrice] = useState(0);
   const [ivCompany, setIvCompany] = useState('');
+  // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
+  const [trial, setTrial] = useState(0);
+  const [trialUnitPrice, setTrialUnitPrice] = useState(0);
   // 사전처치
   const [precon, setPrecon] = useState(0);
   // 총금액
@@ -5024,13 +5038,15 @@ function PackagePurchaseFromTemplateDialog({
       heated * heatedUnitPrice +
       unheated * unheatedUnitPrice +
       podologe * podologeUnitPrice +
-      iv * ivUnitPrice,
-    [heated, heatedUnitPrice, unheated, unheatedUnitPrice, podologe, podologeUnitPrice, iv, ivUnitPrice],
+      iv * ivUnitPrice +
+      trial * trialUnitPrice,
+    [heated, heatedUnitPrice, unheated, unheatedUnitPrice, podologe, podologeUnitPrice, iv, ivUnitPrice, trial, trialUnitPrice],
   );
   const upgradeSurcharge = (heatedUpgrade ? 50000 : 0) + (unheatedUpgrade ? 40000 : 0);
   const grandTotal = priceOverride ? manualTotal : computedTotal + upgradeSurcharge;
   // T-20260510-foot-PKG-CREATE-FIX3: 포돌로게 포함 (total_sessions에 반영)
-  const totalSessions = heated + unheated + iv + precon + podologe;
+  // T-20260522-foot-PKG-TRIAL: 체험권 포함
+  const totalSessions = heated + unheated + iv + precon + podologe + trial;
 
   // T-20260510-foot-PKG-CREATE-FIX3: 템플릿 로드 후 첫 번째 자동 선택 (button 활성화 보장)
   useEffect(() => {
@@ -5053,6 +5069,7 @@ function PackagePurchaseFromTemplateDialog({
           setUnheated(first.unheated_sessions); setUnheatedUnitPrice(first.unheated_unit_price); setUnheatedUpgrade(false);
           setPodologe(first.podologe_sessions); setPodologeUnitPrice(first.podologe_unit_price);
           setIv(first.iv_sessions); setIvUnitPrice(first.iv_unit_price); setIvCompany(first.iv_company ?? '');
+          setTrial(first.trial_sessions ?? 0); setTrialUnitPrice(first.trial_unit_price ?? 0);
           setPrecon(0); setPriceOverride(false); setMemo(first.memo ?? '');
         }
       });
@@ -5066,6 +5083,7 @@ function PackagePurchaseFromTemplateDialog({
     setUnheated(0); setUnheatedUnitPrice(0); setUnheatedUpgrade(false);
     setPodologe(0); setPodologeUnitPrice(0);
     setIv(0); setIvUnitPrice(0); setIvCompany('');
+    setTrial(0); setTrialUnitPrice(0);
     setPrecon(0);
     setPriceOverride(false); setManualTotal(0); setMemo('');
   }, [open]);
@@ -5090,6 +5108,8 @@ function PackagePurchaseFromTemplateDialog({
     setIv(tmpl.iv_sessions);
     setIvUnitPrice(tmpl.iv_unit_price);
     setIvCompany(tmpl.iv_company ?? '');
+    setTrial(tmpl.trial_sessions ?? 0);
+    setTrialUnitPrice(tmpl.trial_unit_price ?? 0);
     setPrecon(0);
     setPriceOverride(false);
     setMemo(tmpl.memo ?? '');
@@ -5102,6 +5122,7 @@ function PackagePurchaseFromTemplateDialog({
     setUnheated(0); setUnheatedUnitPrice(0); setUnheatedUpgrade(false);
     setPodologe(0); setPodologeUnitPrice(0);
     setIv(0); setIvUnitPrice(0); setIvCompany('');
+    setTrial(0); setTrialUnitPrice(0);
     setPrecon(0);
     setPriceOverride(false); setManualTotal(0); setMemo('');
   };
@@ -5128,6 +5149,9 @@ function PackagePurchaseFromTemplateDialog({
       podologe_sessions: podologe,
       podologe_unit_price: podologeUnitPrice,
       iv_company: ivCompany.trim() || null,
+      // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
+      trial_sessions: trial,
+      trial_unit_price: trialUnitPrice,
       shot_upgrade: heatedUpgrade,
       af_upgrade: unheatedUpgrade,
       upgrade_surcharge: upgradeSurcharge,
@@ -5154,6 +5178,8 @@ function PackagePurchaseFromTemplateDialog({
       unheated_sessions: unheated, unheated_unit_price: unheatedUnitPrice, unheated_upgrade_available: unheatedUpgrade,
       podologe_sessions: podologe, podologe_unit_price: podologeUnitPrice,
       iv_company: ivCompany.trim() || null, iv_sessions: iv, iv_unit_price: ivUnitPrice,
+      // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
+      trial_sessions: trial, trial_unit_price: trialUnitPrice,
       total_price: grandTotal, price_override: priceOverride,
       memo: memo.trim() || null, sort_order: 0, is_active: true,
       updated_at: new Date().toISOString(),
@@ -5168,6 +5194,8 @@ function PackagePurchaseFromTemplateDialog({
       iv_sessions: iv, iv_unit_price: ivUnitPrice, preconditioning_sessions: precon,
       podologe_sessions: podologe, podologe_unit_price: podologeUnitPrice,
       iv_company: ivCompany.trim() || null, shot_upgrade: heatedUpgrade, af_upgrade: unheatedUpgrade,
+      // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
+      trial_sessions: trial, trial_unit_price: trialUnitPrice,
       upgrade_surcharge: upgradeSurcharge, total_amount: grandTotal, paid_amount: 0,
       status: 'active', memo: memo.trim() || null,
     });
@@ -5389,6 +5417,33 @@ function PackagePurchaseFromTemplateDialog({
             )}
           </div>
 
+          {/* T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목 */}
+          <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
+            <div className="text-xs font-semibold text-gray-500">체험권</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">회수</label>
+                <input
+                  type="number" min={0} value={trial}
+                  onChange={(e) => setTrial(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">수가 (회당)</label>
+                <input
+                  value={formatAmount(trialUnitPrice)}
+                  onChange={(e) => setTrialUnitPrice(parseAmount(e.target.value))}
+                  inputMode="numeric"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                />
+              </div>
+            </div>
+            {trial > 0 && trialUnitPrice > 0 && (
+              <div className="text-xs text-gray-400 text-right">소계: {formatAmount(trial * trialUnitPrice)}</div>
+            )}
+          </div>
+
           {/* 사전처치 */}
           <div className="space-y-1">
             <label className="text-xs text-gray-500">사전처치 회수 (프리컨디셔닝 — 수가 미포함)</label>
@@ -5413,6 +5468,9 @@ function PackagePurchaseFromTemplateDialog({
                 : null,
               iv > 0 || ivUnitPrice > 0
                 ? { label: `수액${ivCompany ? ` (${ivCompany})` : ''}`, count: iv, unitPrice: ivUnitPrice, subtotal: iv * ivUnitPrice }
+                : null,
+              trial > 0 || trialUnitPrice > 0
+                ? { label: '체험권', count: trial, unitPrice: trialUnitPrice, subtotal: trial * trialUnitPrice }
                 : null,
               precon > 0
                 ? { label: '사전처치 (프리컨)', count: precon, unitPrice: 0, subtotal: 0 }
