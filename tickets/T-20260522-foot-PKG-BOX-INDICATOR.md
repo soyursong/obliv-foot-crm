@@ -4,7 +4,7 @@ domain: foot
 priority: P2
 status: deploy-ready
 deploy-ready: true
-commit_sha: TBD
+commit_sha: f7d0c56
 build_ok: true
 db_changed: false
 spec_file: tests/e2e/T-20260522-foot-PKG-BOX-INDICATOR.spec.ts
