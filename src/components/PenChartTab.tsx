@@ -518,11 +518,14 @@ export function PenChartTab({
       // health_questionnaire_* 도 form_submissions에 저장 → 상담내역 [내용보기] 연동
       // T-20260520-foot-PENCHART-REFUND-FORM:
       // pdf_overlay 양식 (refund_consent) 은 form_submissions에도 저장 (서명 base64 포함)
-      // builtin ID면 template_id FK 미적용 — staffId 있으면 builtin도 field_data 저장 시도
+      // builtin ID면 template_id FK 미적용 — staffId 없어도 issued_by null 허용(nullable)
       // T-20260521-foot-PENCHART-VIEW-SPLIT-REOPEN BUG FIX:
       // status 'completed'는 form_submissions CHECK constraint('draft','printed','signed','voided') 위반
       // → INSERT 무성 실패 → 상담내역 [내용보기] 버튼 비활성. 'signed'로 통일.
-      if ((isPC || isHQ) && activeDrawTemplate && staffId) {
+      // T-20260522-foot-PENCHART-VIEW-SPLIT-REOPEN3 ROOT CAUSE FIX:
+      // staff 테이블의 user_id가 전부 null → staffId 조회 항상 null → INSERT 블록 진입 불가
+      // issued_by 컬럼은 nullable(YES) — staffId 조건 제거하여 INSERT 항상 실행
+      if ((isPC || isHQ) && activeDrawTemplate) {
         const signatureBase64 = (isPC && !sigEmpty)
           ? (sigPadRef.current?.toDataURL('image/png') ?? null)
           : null;
@@ -539,7 +542,7 @@ export function PenChartTab({
           status:     'signed',   // 'completed'는 CHECK constraint 위반 — 'signed'로 통일
           printed_at: now,
           signed_at:  now,        // HQ/PC 모두 signed_at 기록 (상담내역 날짜 표시용)
-          issued_by:  staffId,
+          ...(staffId ? { issued_by: staffId } : {}),  // nullable — null은 생략
         };
         // template_id: builtin ID는 FK 위반 방지를 위해 포함하지 않음
         if (!activeDrawTemplate.id.startsWith('builtin-')) {

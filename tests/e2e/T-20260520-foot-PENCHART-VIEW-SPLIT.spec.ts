@@ -16,12 +16,33 @@
  */
 
 import { test, expect } from '@playwright/test';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 test.describe('PENCHART-VIEW-SPLIT: 상담내역 탭 읽기 전용 뷰어', () => {
   // AC-6: 앱 정상 로드 확인
   test('AC-6: 앱 정상 로드 — HTTP 200', async ({ page }) => {
     const response = await page.goto('/');
     expect(response?.status()).toBeLessThan(400);
+  });
+
+  // REOPEN3 ROOT CAUSE FIX: staffId null 가드 제거 검증
+  // 근본 원인: staff.user_id = null → staffId 항상 null → INSERT 블록 진입 불가
+  // 수정: `&& staffId` 조건 제거 → issued_by nullable 허용
+  test('REOPEN3: staffId 조건 제거 — INSERT 항상 실행 (정적 코드 검증)', () => {
+    const penChartPath = path.join(__dirname, '../../src/components/PenChartTab.tsx');
+    const content = fs.readFileSync(penChartPath, 'utf8');
+    // 수정 전: if ((isPC || isHQ) && activeDrawTemplate && staffId)
+    // 수정 후: if ((isPC || isHQ) && activeDrawTemplate)  — staffId 제거
+    expect(content).not.toContain('&& staffId)');
+    // issued_by는 조건부 포함 (nullable)
+    expect(content).toContain('staffId ? { issued_by: staffId }');
+    // INSERT 로직은 유지
+    expect(content).toContain("form_submissions').insert(submissionPayload)");
+    // onFormSubmissionSaved 콜백 유지
+    expect(content).toContain('onFormSubmissionSaved?.()');
   });
 
   // AC-7: 그룹1 "개인정보/체크리스트" 섹션 상담내역 탭에 미표시
