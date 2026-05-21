@@ -2566,3 +2566,5 @@ ref: T-20260512-foot-TREATMENT-SET
 | 2026-05-21 18:55 | dev-foot | deploy-ready | T-20260520-foot-PENCHART-VIEW-SPLIT REOPEN: [내용보기] 비활성 근본원인 수정 — form_submissions.status CHECK constraint에 'completed' 미포함 → INSERT 무성 실패. FE: status='signed'로 통일 + toast.error 추가. AC-7: 상담내역 탭 그룹1 '개인정보/체크리스트' 섹션 제거. DB: CHECK constraint에 'completed' 추가(적용완료). 빌드 3.18s OK. commit: 4d7db36. DB변경: 있음 |
 
 | 2026-05-21 19:30 | dev-foot | deploy-ready | T-20260521-foot-PKG-ZONE2-HIDE: 2구역 C22-PKG-DEDUCT 잔여 0회 패키지 비노출 4곳 필터 적용. 선행 1구역 동일 패턴 재사용. 빌드 3.23s OK. commit: d328e32. DB변경: 없음 |
+
+| 2026-05-21 21:03 | dev-foot | deploy-ready | T-20260521-foot-CLINIC-INFO-SYNC PUSH P0 대응: AC-4 범위 정정(5종→12+종 전종). field_map 연결 5개 양식: diag_opinion/diagnosis/treat_confirm/visit_confirm(clinic_phone), rx_standard(clinic_phone+clinic_fax). E2E FULLSUITE 140 tests 전체 PASS(병원정보 4항목×11 HTML양식 + 고객정보 3항목 × 11 + 미치환 플레이스홀더 0건). 빌드 PASS 3.18s. DB변경: 없음. commit: a34ce38. |
