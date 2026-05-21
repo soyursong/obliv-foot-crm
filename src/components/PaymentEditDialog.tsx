@@ -26,7 +26,8 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { formatAmount, parseAmount } from '@/lib/format';
 
-type PayMethod = 'card' | 'cash' | 'transfer';
+// T-20260522-foot-PAY-DROPDOWN-LONGRE: 롱레 CRM 정합성 — membership 추가
+type PayMethod = 'card' | 'cash' | 'transfer' | 'membership';
 export type EditMode = 'edit' | 'cancel' | 'delete';
 
 export interface PaymentRowForEdit {
@@ -64,6 +65,7 @@ const METHOD_OPTIONS: { value: PayMethod; label: string }[] = [
   { value: 'card', label: '카드' },
   { value: 'cash', label: '현금' },
   { value: 'transfer', label: '이체' },
+  { value: 'membership', label: '멤버십' },
 ];
 
 const INSTALLMENT_OPTIONS = [

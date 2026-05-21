@@ -19,7 +19,8 @@ import { PACKAGE_PRESETS } from '@/lib/packagePresets';
 import { InsuranceCopaymentPanel } from '@/components/insurance/InsuranceCopaymentPanel';
 import type { CheckIn } from '@/lib/types';
 
-type PayMethod = 'card' | 'cash' | 'transfer';
+// T-20260522-foot-PAY-DROPDOWN-LONGRE: 롱레 CRM 정합성 — membership 추가
+type PayMethod = 'card' | 'cash' | 'transfer' | 'membership';
 type PaymentMode = 'single' | 'package';
 
 interface StaffOption {
@@ -39,6 +40,7 @@ const METHOD_OPTIONS: { value: PayMethod; label: string; icon: string }[] = [
   { value: 'card', label: '카드', icon: '💳' },
   { value: 'cash', label: '현금', icon: '💵' },
   { value: 'transfer', label: '이체', icon: '🏦' },
+  { value: 'membership', label: '멤버십', icon: '🎫' },
 ];
 
 const INSTALLMENT_OPTIONS = [
