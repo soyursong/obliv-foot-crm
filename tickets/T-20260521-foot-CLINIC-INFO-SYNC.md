@@ -1,7 +1,7 @@
 ---
 ticket_id: T-20260521-foot-CLINIC-INFO-SYNC
 title: 병원정보 DB 동기화 + 서류 출력 데이터 바인딩 수정 (전종 검증 완료)
-status: deploy-ready
+status: deployed
 priority: P0
 domain: foot
 deploy_ready: true
@@ -10,8 +10,13 @@ build_status: pass
 e2e_spec: tests/e2e/T-20260521-foot-CLINIC-INFO-SYNC-FULLSUITE.spec.ts
 e2e_count: 140
 commit: a34ce38
+deploy_commit: f3e28b7
 created_at: 2026-05-21
 completed_at: 2026-05-21
+qa_result: pass
+qa_grade: Yellow
+deployed_at: 2026-05-21T22:09:26+09:00
+field_soak_until: 2026-05-22T22:09:26+09:00
 ---
 
 ## 배경
@@ -103,6 +108,17 @@ MSG-20260521-202955-pkhd (planner PUSH):
 - `src/lib/formTemplates.ts`: 5개 양식 field_map에 clinic_phone/fax 연결
 - `tests/e2e/T-20260521-foot-CLINIC-INFO-SYNC-FULLSUITE.spec.ts`: 신규 140 tests
 - `playwright.config.ts`: unit 프로젝트 추가 (auth 불필요 순수함수 테스트)
+
+## Supervisor QA 후속 업데이트 (2026-05-21T22:09:26+09:00)
+
+- 판정: **GO (Yellow)** — risk_verdict GO_WARN 1/5 (서류 출력 핵심 경로)
+- 빌드: ✅ 3.11s
+- FULLSUITE E2E: ✅ 140/140 pass (`tests/e2e/T-20260521-foot-CLINIC-INFO-SYNC-FULLSUITE.spec.ts`)
+- main spec auth: ⚠️ dev-server at localhost:8082 부재로 UI browser 테스트 skip (infra, code defect 아님)
+- Runtime Safety: ✅ `field_map: FieldMapEntry[]` 타입 보증, DB fetch 전건 `?? []` 가드
+- Cross-CRM Contract: ✅ 스키마 변경 없음, data UPDATE only
+- Vercel: ✅ HTTP/2 200 @ 2026-05-21 13:44 UTC (commit f3e28b7)
+- field-soak: 2026-05-22T22:09:26+09:00 까지
 
 ## 검증 쿼리
 
