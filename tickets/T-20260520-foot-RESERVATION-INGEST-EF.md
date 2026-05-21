@@ -2,8 +2,18 @@
 ticket_id: T-20260520-foot-RESERVATION-INGEST-EF
 title: "reservation-ingest-from-dopamine EF v2 — clinic_slug→clinics.id DB 조회 + 스키마 불일치 5건 수정"
 domain: foot
-status: deploy-ready
+status: deployed
 deploy_ready: true
+qa_result: pass
+qa_grade: GO_WARN
+deploy_commit: cf88118
+ef_deployed_version: 3
+ef_deployed_at: "2026-05-20T21:11:12+09:00"
+deployed_at: "2026-05-21T12:55:00+09:00"
+deployed_by: supervisor
+precheck_pass: true
+precheck_at: "2026-05-21T12:55:00+09:00"
+field_soak_until: "2026-05-22T12:55:00+09:00"
 build_status: pass
 spec_added: true
 db_change: false

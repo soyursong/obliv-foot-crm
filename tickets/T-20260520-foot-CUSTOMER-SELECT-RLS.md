@@ -3,8 +3,16 @@ ticket_id: T-20260520-foot-CUSTOMER-SELECT-RLS
 title: customers SELECT RLS — staff/part_lead/tm 초진 차트 안 열림 P0 hotfix
 domain: foot
 priority: P0
-status: deploy-ready
+status: deployed
 deploy_ready: true
+qa_result: pass
+qa_grade: GO_WARN
+deploy_commit: 89a50e0
+deployed_at: "2026-05-21T12:55:00+09:00"
+deployed_by: supervisor
+precheck_pass: true
+precheck_at: "2026-05-21T12:55:00+09:00"
+field_soak_until: "2026-05-22T12:55:00+09:00"
 db_change: true
 db_change_note: |
   supabase/migrations/20260520000090_customers_staff_select_rls.sql
