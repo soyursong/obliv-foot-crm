@@ -7,7 +7,7 @@ deploy_ready: true
 db_change: true
 rollback_sql: scripts/rollback_testdata_20260522.mjs
 spec_file: tickets/T-20260521-foot-DUMMY-TEST-DATA.md
-summary: "5/22 현장 테스트용 더미 데이터 64명 생성 (초진32+재진32, 8슬롯×4+4)"
+summary: "5/22 현장 테스트용 더미 데이터 생성 (30분 간격, 슬롯당 초진4+재진4, 시간 범위 미확정)"
 created: 2026-05-21
 updated: 2026-05-21
 reporter: 김주연 총괄 (U0ATDB587PV)
@@ -23,7 +23,7 @@ reporter: 김주연 총괄 (U0ATDB587PV)
 ## AC (Acceptance Criteria)
 
 - [x] **AC-1**: 초진 고객 32명 + 재진 고객 32명 (customers INSERT, is_simulation=true)
-- [x] **AC-2**: 예약 64건 (reservations, 날짜 2026-05-22, 10~17시 1h간격)
+- [x] **AC-2**: 예약 N건 (reservations, 날짜 2026-05-22, **30분 간격** 확정, 시간 범위 미확정 — 총괄 재확인 중)
 - [x] **AC-3**: 셀프접수 매칭 보장 — E.164 phone 정합, 초진=new플로우 / 재진=returning플로우
 - [x] **AC-4**: 재진 고객 과거 check_in 1건 (2026-05-01, status=done) — 재진 판별 로직 충족
 - [x] **AC-5**: 정리 가이드 — `WHERE name LIKE '[TEST6]%' AND is_simulation=true` 일괄 삭제
@@ -38,9 +38,12 @@ reporter: 김주연 총괄 (U0ATDB587PV)
 
 | 구분 | 슬롯 | 인원 | 총계 |
 |------|------|------|------|
-| 초진 | 10:00~17:00 (8슬롯) | 4명/슬롯 | 32명 |
-| 재진 | 10:00~17:00 (8슬롯) | 4명/슬롯 | 32명 |
-| **합계** | | | **64명** |
+| 초진 | 30분 간격 (시간 범위 미확정) | 4명/슬롯 | 슬롯 수 × 4명 |
+| 재진 | 30분 간격 (시간 범위 미확정) | 4명/슬롯 | 슬롯 수 × 4명 |
+| **합계** | | | **슬롯 수 × 8명** |
+
+> ⚠️ 현재 임시: START_HOUR=10, END_HOUR=17 → 15슬롯 × 8명 = 120명
+> 시간 범위 확정 시 TICKET-UPDATE 추가 예정 (김주연 총괄 확인 중)
 
 ### 전화번호 범위
 - 신규: `+821099060001` ~ `+821099060032` (010-9906-0001 ~ 010-9906-0032)
@@ -53,12 +56,12 @@ reporter: 김주연 총괄 (U0ATDB587PV)
 ### 파라미터 (조정 가능)
 ```javascript
 // scripts/seed_testdata_20260522.mjs 상단
-const TARGET_DATE   = '2026-05-22';
-const START_HOUR    = 10;   // 시작 시간
-const END_HOUR      = 17;   // 마지막 슬롯
-const SLOT_INTERVAL = 1;    // 간격(시간)
-const NEW_PER_SLOT  = 4;    // 슬롯당 초진
-const RET_PER_SLOT  = 4;    // 슬롯당 재진
+const TARGET_DATE       = '2026-05-22';
+const START_HOUR        = 10;   // 시작 시간 ← 미확정
+const END_HOUR          = 17;   // 마지막 슬롯 ← 미확정
+const SLOT_INTERVAL_MIN = 30;   // 간격(분) — 30분 확정 (2026-05-21 21:55)
+const NEW_PER_SLOT      = 4;    // 슬롯당 초진
+const RET_PER_SLOT      = 4;    // 슬롯당 재진
 ```
 
 ## 셀프접수 테스트 방법
@@ -86,7 +89,7 @@ DELETE FROM customers WHERE name LIKE '[TEST6]%' AND is_simulation = true;
 
 ## DB 변경 사항
 
-- **INSERT**: customers ×64, reservations ×64, check_ins ×32 (재진 과거 체크인)
+- **INSERT**: customers ×(슬롯수×8), reservations ×(슬롯수×8), check_ins ×(슬롯수×4) (재진 과거 체크인) — 시간 범위 확정 시 정확한 수량 결정
 - **DELETE 가이드**: is_simulation=true + [TEST6] prefix 일괄 삭제 가능
 - **실 고객 충돌 방지**: 전화번호 범위 +82109906XXXX는 기존 고객 범위와 분리됨
 
