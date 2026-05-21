@@ -1556,9 +1556,9 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
           <DialogTitle>{isEdit ? '수기 결제내역 수정' : '수기 결제내역 추가'}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
-          {/* T-20260512-foot-OCR-RECEIPT: 영수증 업로드 + 자동기입 */}
+          {/* T-20260512-foot-OCR-RECEIPT / T-20260522-foot-RECEIPT-OCR-AUTO: 영수증 업로드 + OCR 자동기입 */}
           {!isEdit && (
-            <ReceiptUpload onExtracted={handleReceiptExtracted} />
+            <ReceiptUpload onExtracted={handleReceiptExtracted} clinicId={clinicId} />
           )}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
