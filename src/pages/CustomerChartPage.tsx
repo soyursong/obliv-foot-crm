@@ -4666,6 +4666,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   <option value="unheated_laser">비가열 레이저</option>
                   <option value="preconditioning">사전처치(프컨)</option>
                   <option value="iv">수액</option>
+                  {/* T-20260521-foot-TRIAL-DROP-ADD: 체험권 회차 차감 */}
+                  <option value="trial">체험권</option>
                 </select>
               </div>
             </div>
@@ -4711,6 +4713,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   <option value="preconditioning">사전처치(프컨)</option>
                   <option value="podologue">포돌로게</option>
                   <option value="iv">수액</option>
+                  {/* T-20260521-foot-TRIAL-DROP-ADD: 체험권 회차 차감 */}
+                  <option value="trial">체험권</option>
                 </select>
               </div>
               <div>
