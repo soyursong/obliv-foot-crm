@@ -1,9 +1,10 @@
 ---
 id: T-20260520-foot-PENCHART-VIEW-SPLIT
 domain: foot
+priority: P0
 status: deploy-ready
 deploy-ready: true
-commit_sha: 4d7db36
+commit_sha: 61a2b52
 build_ok: true
 db_changed: true
 spec_file: tests/e2e/T-20260520-foot-PENCHART-VIEW-SPLIT.spec.ts
@@ -12,6 +13,9 @@ created_at: 2026-05-20
 completed_at: 2026-05-21
 reopen_reason: "배포 후 현장 미동작 — status='completed' CHECK constraint 위반 + AC-7 그룹1 미제거"
 reopen_fixed_at: 2026-05-21
+hotfix2_commit: 61a2b52
+hotfix2_reason: "onFormSubmissionSaved callback — 펜차트 저장 후 상담내역 [내용보기] 즉시 활성화 (페이지 새로고침 불필요)"
+deadline: 2026-05-22
 ---
 
 # T-20260520-foot-PENCHART-VIEW-SPLIT
