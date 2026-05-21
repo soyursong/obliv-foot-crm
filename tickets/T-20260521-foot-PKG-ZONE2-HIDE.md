@@ -1,7 +1,7 @@
 ---
 id: T-20260521-foot-PKG-ZONE2-HIDE
 title: "2번차트 2구역 C22 활성패키지 — 잔여 0회 패키지 자동 비노출"
-status: deploy-ready
+status: deployed
 priority: P2
 domain: foot
 reporter: planner (MSG-20260521-190103-0cs2)
@@ -14,6 +14,12 @@ db_change: false
 build_pass: true
 spec_added: true
 regression_risk: low
+qa_result: pass
+qa_grade: Yellow
+deployed_at: "2026-05-21T23:51:00+09:00"
+deploy_commit: d328e326d381ff846830c91729ea2a10777807be
+bundle_hash: CustomerChartPage-Bs3ShnFn.js
+field_soak_until: "2026-05-22T23:51:00+09:00"
 ---
 
 ## 수용기준

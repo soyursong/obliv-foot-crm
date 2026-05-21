@@ -2,15 +2,17 @@
 id: T-20260520-foot-STAFF-PERM-AUDIT
 domain: foot
 priority: P2
-status: in-progress
+status: done
 title: 스태프 vs 관리자 권한 범위 비교 분석
 created: 2026-05-20
+completed: 2026-05-21
 assignee: dev-foot
 db-change: false
 deploy-ready: false
 build-ok: true
 regression-risk: none
 e2e-spec: none
+done_reason: "AC-1~AC-4 분석 완전 완료. 산출물: RLS 정책 36테이블 비교표 + FE 역할 비교표 + 후속 티켓 제안. 이후 STAFF-PKG-ACCESS·STAFF-CUSTOMER-UPDATE 등 후속 티켓 생성됐으나 2026-05-21 김주연 총괄 지시로 전건 롤백. 분석 자체는 완료. STAFF-PERM-HOLD로 관련 확장 보류 중."
 ---
 
 # T-20260520-foot-STAFF-PERM-AUDIT — 스태프 vs 관리자 권한 범위 비교 분석

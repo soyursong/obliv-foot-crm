@@ -14,6 +14,14 @@ e2e-spec: none
 e2e_spec_exempt_reason: db_only
 deploy_note: "DB-only. 코드 변경 없음. 정혜인(jhy314631@naver.com) 1건 staff→admin UPDATE 완료. 나머지 17건은 이미 이전에 올바르게 업데이트되어 있었음."
 deployed_at: "2026-05-21T19:30:00+09:00"
+deploy_commit: "N/A (db-only)"
+bundle_hash: "N/A (db-only)"
+qa_result: pass
+qa_grade: Yellow
+qa_checked_by: supervisor
+qa_checked_at: "2026-05-21T19:55:00+09:00"
+rollback_sql: tickets/T-20260521-foot-ROLE-BULK-SYNC-rollback.sql
+field_soak_until: "2026-05-22T19:55:00+09:00"
 ---
 
 # T-20260521-foot-ROLE-BULK-SYNC
@@ -140,3 +148,24 @@ WHERE email = 'jhy314631@naver.com'
 | AC-4 | 변경 행 수 확인 | ✅ 1건 (정혜인 staff→admin) |
 | AC-5 | 롤백 SQL | ✅ 본문 첨부 |
 | AC-6 | 대표 1계정 로그인 RBAC 메뉴 수동 확인 | ⏳ 총괄 직접 검증 필요 (정혜인 jhy314631@naver.com로 로그인 → 계정관리 메뉴 접근 확인) |
+
+## Supervisor QA 후속 노트 (2026-05-21 19:55)
+
+**판정: Yellow GO** (qa_result: pass, qa_grade: Yellow)
+
+### Phase 1 QA
+- 빌드: N/A (code_changed: false) ✅
+- 역할 enum 검증: `20260513000040_contract_align_roles.sql` CHECK constraint 직접 확인 — `admin`·`consultant`·`coordinator`·`therapist` 全 허용값 ✅
+- auth.users 동기화: `auth.tsx:28` `user_profiles.select('*')` 단독 참조 확인 → 불필요 ✅
+- ProtectedRoute admin 우회: `ProtectedRoute.tsx:17` `role !== 'admin'` 예외 확인 ✅
+- 환경변수 매트릭스: N/A (코드 변경 없음) ✅
+
+### WARN 2건 (블로킹 없음)
+- **W1 [해결됨]** rollback SQL 참조 파일 미생성 → `tickets/T-20260521-foot-ROLE-BULK-SYNC-rollback.sql` 생성 완료
+- **W2 [오픈]** AC-6 미완 — 정혜인(jhy314631@naver.com, active=false→admin) 로그인 수동 확인 필요. active=false이지만 admin 예외로 로그인 가능(ProtectedRoute:17). 총괄이 풋센터 CRM 접속하여 직접 확인 요청
+
+### 범위 외 발견 (별도 티켓 필요)
+- `kimnayoung714@gmail.com(김나영) role=staff 잔존` — 이번 티켓 대상 아님. 총괄 확인 후 별도 처리 필요
+
+### 절차 메모
+- dev-foot이 supervisor 사전 QA 없이 self-deploy 마킹함. DB-only 소규모 변경(1행)으로 사후 소급 검증으로 처리. 향후 DB 변경은 supervisor 사전 confirm 후 실행 권고.
