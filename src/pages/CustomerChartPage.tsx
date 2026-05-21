@@ -3981,17 +3981,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           </div>
 
           {/* C22-PKG-DEDUCT: 회차 차감 인라인 폼 — 복구 T-20260510-foot-C22-SECTION-MERGE regression fix */}
+          {/* T-20260521-foot-PKG-ZONE2-HIDE: remaining_count===0 패키지 비노출 (FE 필터, DB 삭제 아님) */}
           <div className="border-b border-gray-200 px-3 py-2">
             <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1.5 flex items-center gap-1">
               회차 차감
               <span className="text-[9px] font-normal bg-teal-100 text-teal-700 rounded px-1 py-0.5">치료사 기입</span>
-              {packages.filter(p => p.status === 'active').length === 0 && (
+              {packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length === 0 && (
                 <span className="ml-1 text-[10px] font-normal text-amber-500">— 활성 패키지 없음</span>
               )}
             </div>
             <div className="space-y-1.5">
               {/* 복수 활성 패키지가 있을 때 선택 드롭다운 */}
-              {packages.filter(p => p.status === 'active').length > 1 && (
+              {packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length > 1 && (
                 <div>
                   <label className="block text-[10px] text-muted-foreground mb-0.5">패키지 선택</label>
                   <select
@@ -4000,7 +4001,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     className="w-full h-6 rounded border border-gray-300 px-1 text-[10px] focus:outline-none focus:border-teal-500 bg-white"
                   >
                     <option value="">— 첫 번째 활성 패키지</option>
-                    {packages.filter(p => p.status === 'active').map(p => (
+                    {packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).map(p => (
                       <option key={p.id} value={p.id}>{p.package_name}</option>
                     ))}
                   </select>
@@ -4062,7 +4063,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     <button
                       type="button"
                       onClick={saveC22Deduct}
-                      disabled={savingC22Deduct || !c22DeductForm.therapistId || packages.filter(p => p.status === 'active').length === 0}
+                      disabled={savingC22Deduct || !c22DeductForm.therapistId || packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length === 0}
                       className="flex-1 rounded bg-teal-600 text-white py-1.5 text-[10px] font-medium hover:bg-teal-700 transition disabled:opacity-50"
                     >
                       {savingC22Deduct ? '저장 중…' : '차감'}
