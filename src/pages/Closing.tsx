@@ -115,7 +115,11 @@ interface CustomerBasic {
   id: string;
   name: string;
   chart_number: string | null;
-  lead_source: string | null;
+  // T-20260522-foot-DAILY-SETTLE-STAFF: 2번차트 고객정보 확정
+  // lead_source → visit_route (customers.visit_route 실제 컬럼)
+  visit_route: string | null;
+  // T-20260522-foot-DAILY-SETTLE-STAFF: 초진/재진 — customers.visit_type (2번차트 고객정보)
+  visit_type: string | null;
   // T-20260510-foot-C21-STAFF-REVENUE: 담당자 매출 자동연동
   assigned_staff_id: string | null;
 }
@@ -335,7 +339,7 @@ export default function Closing() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('customers')
-        .select('id, name, chart_number, lead_source, assigned_staff_id')
+        .select('id, name, chart_number, visit_route, visit_type, assigned_staff_id')
         .in('id', customerIds);
       if (error) throw error;
       return (data ?? []) as CustomerBasic[];
@@ -497,17 +501,6 @@ export default function Closing() {
     return map;
   }, [checkInsDetail]);
 
-  // ── 고객ID → 체크인 맵 (패키지 결제 visit_type 조회용) ─────────
-  // T-20260522-foot-CLOSING-PAY-3COL: 패키지 결제는 check_in_id 없음
-  // → 같은 날짜 체크인을 customer_id 기준으로 조회해 visit_type 복원
-  const customerIdToCheckInMap = useMemo(() => {
-    const map = new Map<string, CheckInDetail>();
-    for (const c of checkInsDetail) {
-      if (c.customer_id) map.set(c.customer_id, c);
-    }
-    return map;
-  }, [checkInsDetail]);
-
   // ── 통합 결제내역 (enriched) ────────────────────────────────
   const enrichedRows = useMemo<EnrichedRow[]>(() => {
     const rows: EnrichedRow[] = [];
@@ -530,8 +523,9 @@ export default function Closing() {
         pay_time: format(dt, 'HH:mm'),
         chart_number: cust?.chart_number ?? null,
         customer_name: customerName,
-        lead_source: cust?.lead_source ?? null,
-        visit_type_label: visitTypeLabel(ci?.visit_type ?? null),
+        // T-20260522-foot-DAILY-SETTLE-STAFF: 내원경로=customers.visit_route, 초진재진=customers.visit_type
+        lead_source: cust?.visit_route ?? null,
+        visit_type_label: visitTypeLabel(cust?.visit_type ?? null),
         staff_name: consultantName,
         amount: p.amount,
         method: p.method,
@@ -550,17 +544,15 @@ export default function Closing() {
       const cust = p.customer_id ? customerMap.get(p.customer_id) : null;
       const dt = new Date(p.created_at);
       const assignedStaffName = cust?.assigned_staff_id ? (staffMap.get(cust.assigned_staff_id) ?? null) : null;
-      // T-20260522-foot-CLOSING-PAY-3COL: 패키지 결제 visit_type
-      // package_payments는 check_in_id 없음 → 같은 날 customer_id로 check_in 조회해 복원
-      const ciByCustomer = p.customer_id ? customerIdToCheckInMap.get(p.customer_id) : null;
       rows.push({
         sort_key: p.created_at,
         pay_date: format(dt, 'yyyy-MM-dd'),
         pay_time: format(dt, 'HH:mm'),
         chart_number: cust?.chart_number ?? null,
         customer_name: cust?.name ?? '-',
-        lead_source: cust?.lead_source ?? null,
-        visit_type_label: visitTypeLabel(ciByCustomer?.visit_type ?? null),
+        // T-20260522-foot-DAILY-SETTLE-STAFF: 내원경로=customers.visit_route, 초진재진=customers.visit_type
+        lead_source: cust?.visit_route ?? null,
+        visit_type_label: visitTypeLabel(cust?.visit_type ?? null),
         staff_name: assignedStaffName,
         amount: p.amount,
         method: p.method,
@@ -599,7 +591,7 @@ export default function Closing() {
 
     rows.sort((a, b) => a.sort_key.localeCompare(b.sort_key));
     return rows;
-  }, [payments, pkgPayments, manualEntries, checkInDetailMap, customerIdToCheckInMap, customerMap, staffMap]);
+  }, [payments, pkgPayments, manualEntries, checkInDetailMap, customerMap, staffMap]);
 
   // C2-MANAGER-PAYMENT-MAP: 담당자 필터 적용
   // T-20260522-foot-DAILY-SETTLE-STAFF AC-3: NULL → '미지정' 통일
