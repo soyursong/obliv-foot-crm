@@ -40,6 +40,7 @@ import { formatAmount } from '@/lib/format';
 import type { CheckIn, Service } from '@/lib/types';
 import {
   FALLBACK_TEMPLATES,
+  INSURANCE_FALLBACK_TEMPLATES,
   FORM_META,
   getTemplateImageUrl,
   getStampUrl,
@@ -450,11 +451,12 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         .from('check_in_services')
         .select('service_id, price')
         .eq('check_in_id', checkIn.id),
+      // T-20260522-foot-INS-DOC-PRINT: insurance 카테고리 추가
       supabase
         .from('form_templates')
         .select('*')
         .eq('clinic_id', checkIn.clinic_id)
-        .eq('category', 'foot-service')
+        .in('category', ['foot-service', 'insurance'])
         .eq('active', true)
         .order('sort_order'),
     ]).then(([svcsRes, cisRes, tplRes]) => {
@@ -504,11 +506,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         }
       }
 
-      setTemplates(
-        tplRes.data && tplRes.data.length > 0
-          ? (tplRes.data as FormTemplate[])
-          : FALLBACK_TEMPLATES,
-      );
+      // T-20260522-foot-INS-DOC-PRINT: category별 fallback 병합
+      {
+        const dbTpls = (tplRes.data ?? []) as FormTemplate[];
+        const footDbTpls = dbTpls.filter((t) => t.category === 'foot-service');
+        const insDbTpls  = dbTpls.filter((t) => t.category === 'insurance');
+        setTemplates([
+          ...(footDbTpls.length > 0 ? footDbTpls : FALLBACK_TEMPLATES),
+          ...(insDbTpls.length  > 0 ? insDbTpls  : INSURANCE_FALLBACK_TEMPLATES),
+        ]);
+      }
 
       skipPersistRef.current = false;
     });
@@ -1772,31 +1779,71 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   <span className="text-muted-foreground font-normal">({selectedDocKeys.size}종)</span>
                 )}
               </p>
+              {/* T-20260522-foot-INS-DOC-PRINT: foot-service + insurance 카테고리 분리 렌더링 */}
               <div className="flex flex-col gap-1" data-testid="doc-template-list">
-                {templates.map((tpl) => {
-                  const meta = FORM_META[tpl.form_key];
-                  const isSelected = selectedDocKeys.has(tpl.form_key);
-                  return (
-                    <button
-                      key={tpl.form_key}
-                      onClick={() => toggleDocKey(tpl.form_key)}
-                      className={cn(
-                        'flex items-center gap-1.5 rounded border px-2 py-2.5 sm:py-1 text-xs font-medium transition-all text-left w-full min-h-[44px] sm:min-h-0',
-                        isSelected
-                          ? 'bg-teal-600 text-white border-teal-600'
-                          : 'bg-white text-muted-foreground border-gray-200 hover:border-teal-300 hover:text-teal-700',
-                      )}
-                      data-testid={`doc-checkbox-${tpl.form_key}`}
-                    >
-                      {isSelected ? (
-                        <CheckSquare className="h-3 w-3 shrink-0" />
-                      ) : (
-                        <Square className="h-3 w-3 shrink-0" />
-                      )}
-                      <span className="truncate">{meta?.icon ?? '📄'} {tpl.name_ko}</span>
-                    </button>
-                  );
-                })}
+                {templates
+                  .filter((t) => t.category !== 'insurance')
+                  .map((tpl) => {
+                    const meta = FORM_META[tpl.form_key];
+                    const isSelected = selectedDocKeys.has(tpl.form_key);
+                    return (
+                      <button
+                        key={tpl.form_key}
+                        onClick={() => toggleDocKey(tpl.form_key)}
+                        className={cn(
+                          'flex items-center gap-1.5 rounded border px-2 py-2.5 sm:py-1 text-xs font-medium transition-all text-left w-full min-h-[44px] sm:min-h-0',
+                          isSelected
+                            ? 'bg-teal-600 text-white border-teal-600'
+                            : 'bg-white text-muted-foreground border-gray-200 hover:border-teal-300 hover:text-teal-700',
+                        )}
+                        data-testid={`doc-checkbox-${tpl.form_key}`}
+                      >
+                        {isSelected ? (
+                          <CheckSquare className="h-3 w-3 shrink-0" />
+                        ) : (
+                          <Square className="h-3 w-3 shrink-0" />
+                        )}
+                        <span className="truncate">{meta?.icon ?? '📄'} {tpl.name_ko}</span>
+                      </button>
+                    );
+                  })}
+
+                {/* 보험서류 구분선 */}
+                {templates.some((t) => t.category === 'insurance') && (
+                  <>
+                    <div className="flex items-center gap-1 pt-1 pb-0.5">
+                      <div className="flex-1 border-t border-blue-200" />
+                      <span className="text-[9px] text-blue-500 font-semibold px-1">보험서류</span>
+                      <div className="flex-1 border-t border-blue-200" />
+                    </div>
+                    {templates
+                      .filter((t) => t.category === 'insurance')
+                      .map((tpl) => {
+                        const meta = FORM_META[tpl.form_key];
+                        const isSelected = selectedDocKeys.has(tpl.form_key);
+                        return (
+                          <button
+                            key={tpl.form_key}
+                            onClick={() => toggleDocKey(tpl.form_key)}
+                            className={cn(
+                              'flex items-center gap-1.5 rounded border px-2 py-2.5 sm:py-1 text-xs font-medium transition-all text-left w-full min-h-[44px] sm:min-h-0',
+                              isSelected
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-blue-50 text-blue-700 border-blue-200 hover:border-blue-400 hover:bg-blue-100',
+                            )}
+                            data-testid={`doc-checkbox-${tpl.form_key}`}
+                          >
+                            {isSelected ? (
+                              <CheckSquare className="h-3 w-3 shrink-0" />
+                            ) : (
+                              <Square className="h-3 w-3 shrink-0" />
+                            )}
+                            <span className="truncate">{meta?.icon ?? '🏥'} {tpl.name_ko}</span>
+                          </button>
+                        );
+                      })}
+                  </>
+                )}
               </div>
             </div>
 

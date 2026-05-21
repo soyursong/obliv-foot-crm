@@ -1637,6 +1637,133 @@ const BILL_RECEIPT_HTML = `
 </div>
 `;
 
+// ─── 보험청구서 (T-20260522-foot-INS-DOC-PRINT) ───
+
+const INS_CLAIM_FORM_HTML = `
+${COMMON_STYLE}
+<div class="form-wrap">
+  <div class="title" style="font-size:18pt; letter-spacing:8px; margin-bottom:6px;">보 험 청 구 서</div>
+  <div class="subtitle" style="font-size:9pt; margin-bottom:10px; color:#555;">
+    실손의료비 / 단체보험 / 자동차보험 공통 청구서식
+  </div>
+
+  <!-- 1. 환자 정보 -->
+  <div style="font-weight:bold; font-size:9.5pt; margin:6px 0 2px; background:#f0f0f0; padding:2px 4px;">■ 1. 환자 인적사항</div>
+  <table style="margin-bottom:6px;">
+    <tbody>
+      <tr>
+        <td style="width:80px; background:#f8f8f8; text-align:center;">성&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;명</td>
+        <td style="width:160px;">{{patient_name}}</td>
+        <td style="width:100px; background:#f8f8f8; text-align:center;">주민등록번호</td>
+        <td>{{patient_rrn}}</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">연&nbsp;&nbsp;락&nbsp;&nbsp;처</td>
+        <td>{{patient_phone}}</td>
+        <td style="background:#f8f8f8; text-align:center;">주&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;소</td>
+        <td>{{patient_address}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- 2. 건강보험 정보 -->
+  <div style="font-weight:bold; font-size:9.5pt; margin:6px 0 2px; background:#f0f0f0; padding:2px 4px;">■ 2. 건강보험 자격정보</div>
+  <table style="margin-bottom:6px;">
+    <tbody>
+      <tr>
+        <td style="width:80px; background:#f8f8f8; text-align:center;">건보 등급</td>
+        <td style="width:160px;">{{insurance_grade_label}}</td>
+        <td style="width:100px; background:#f8f8f8; text-align:center;">본인부담률</td>
+        <td style="width:120px;">{{copay_rate}}</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">산정특례코드</td>
+        <td colspan="3">{{special_treatment_code}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- 3. 진단 정보 -->
+  <div style="font-weight:bold; font-size:9.5pt; margin:6px 0 2px; background:#f0f0f0; padding:2px 4px;">■ 3. 상병명</div>
+  <table style="margin-bottom:6px;">
+    <thead>
+      <tr>
+        <th style="width:30px;">구분</th>
+        <th style="width:90px;">상병코드</th>
+        <th>상병명</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">주</td>
+        <td>{{diag_code_1}}</td>
+        <td>{{diag_name_1}}</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">부</td>
+        <td>{{diag_code_2}}</td>
+        <td>{{diag_name_2}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- 4. 진료비 내역 -->
+  <div style="font-weight:bold; font-size:9.5pt; margin:6px 0 2px; background:#f0f0f0; padding:2px 4px;">■ 4. 진료비 내역</div>
+  <table style="margin-bottom:6px;">
+    <tbody>
+      <tr>
+        <td style="width:80px; background:#f8f8f8; text-align:center;">진료일</td>
+        <td style="width:160px;">{{visit_date}}</td>
+        <td style="width:100px; background:#f8f8f8; text-align:center;">발행일</td>
+        <td>{{issue_date}}</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">진료비 합계</td>
+        <td style="font-weight:bold; text-align:right;">{{total_amount}}&nbsp;원</td>
+        <td style="background:#f8f8f8; text-align:center;">공단부담금</td>
+        <td style="text-align:right;">{{insurance_covered}}&nbsp;원</td>
+      </tr>
+      <tr>
+        <td style="background:#f8f8f8; text-align:center;">본인부담금</td>
+        <td style="text-align:right;">{{copayment}}&nbsp;원</td>
+        <td style="background:#f8f8f8; text-align:center;">비&nbsp;&nbsp;&nbsp;급&nbsp;&nbsp;&nbsp;여</td>
+        <td style="text-align:right;">{{non_covered}}&nbsp;원</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- 5. 의료기관 확인 -->
+  <div style="font-weight:bold; font-size:9.5pt; margin:6px 0 2px; background:#f0f0f0; padding:2px 4px;">■ 5. 의료기관 확인</div>
+  <div style="font-size:9pt; padding:6px 0; line-height:1.8;">
+    위와 같이 진료하였음을 증명합니다.
+  </div>
+  <div style="text-align:center; font-size:10pt; padding:10px 0 6px;">
+    {{issue_date}}
+  </div>
+  <table style="margin-top:4px; width:auto; min-width:320px; margin-left:auto;">
+    <tbody>
+      <tr>
+        <td style="border:none; padding:2px 6px 2px 0; background:none; white-space:nowrap;">의&nbsp;료&nbsp;기&nbsp;관&nbsp;명&nbsp;&nbsp;:&nbsp;</td>
+        <td style="border:none; padding:2px 0; background:none; min-width:160px;">{{clinic_name}}</td>
+      </tr>
+      <tr>
+        <td style="border:none; padding:2px 6px 2px 0; background:none; white-space:nowrap;">전&nbsp;&nbsp;화&nbsp;&nbsp;번&nbsp;&nbsp;호&nbsp;&nbsp;:&nbsp;</td>
+        <td style="border:none; padding:2px 0; background:none;">{{clinic_phone}}</td>
+      </tr>
+      <tr>
+        <td style="border:none; padding:2px 6px 2px 0; background:none; white-space:nowrap;">담&nbsp;&nbsp;당&nbsp;&nbsp;의&nbsp;&nbsp;사&nbsp;&nbsp;:&nbsp;</td>
+        <td style="border:none; padding:2px 0; background:none;">{{doctor_name}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="font-size:8.5pt; margin-top:14px; border-top:1px solid #999; padding-top:4px; line-height:1.8; color:#555;">
+    ※ 본 서류는 보험청구 목적으로 발급되었으며 타 용도로 사용할 수 없습니다.<br>
+    ※ 산정특례코드가 있는 경우 해당 코드를 보험사에 함께 제출하시기 바랍니다.
+  </div>
+</div>
+`;
+
 // ─── 템플릿 맵 ───
 
 const HTML_TEMPLATE_MAP: Record<string, string> = {
@@ -1654,6 +1781,8 @@ const HTML_TEMPLATE_MAP: Record<string, string> = {
   rx_standard: RX_STANDARD_HTML,
   // T-20260517-foot-FORM-SCREENSHOT-FIX: 진료비 계산서·영수증 HTML 신규
   bill_receipt: BILL_RECEIPT_HTML,
+  // T-20260522-foot-INS-DOC-PRINT: 보험청구서
+  ins_claim_form: INS_CLAIM_FORM_HTML,
 };
 
 /**

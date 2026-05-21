@@ -58,6 +58,7 @@ import { useDutyDoctors, type DutyDoctor } from '@/hooks/useDutyRoster';
 import {
   DEFAULT_PRESET_KEYS,
   FALLBACK_TEMPLATES,
+  INSURANCE_FALLBACK_TEMPLATES,
   FORM_META,
   getStampUrl,
   getTemplateImageUrl,
@@ -312,7 +313,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
         .from('form_templates')
         .select('*')
         .eq('clinic_id', checkIn.clinic_id)
-        .eq('category', 'foot-service')
+        .in('category', ['foot-service', 'insurance'])
         .eq('active', true)
         .order('sort_order'),
       supabase
@@ -335,9 +336,15 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
         .order('created_at'),
     ]);
 
-    const tpls =
-      tplRes.data && tplRes.data.length > 0 ? (tplRes.data as FormTemplate[]) : FALLBACK_TEMPLATES;
-    setTemplates(tpls);
+    // T-20260522-foot-INS-DOC-PRINT: category별 fallback 병합
+    // foot-service 없으면 FALLBACK_TEMPLATES, insurance 없으면 INSURANCE_FALLBACK_TEMPLATES
+    const dbTpls = (tplRes.data ?? []) as FormTemplate[];
+    const footDbTpls = dbTpls.filter((t) => t.category === 'foot-service');
+    const insDbTpls  = dbTpls.filter((t) => t.category === 'insurance');
+    setTemplates([
+      ...(footDbTpls.length > 0 ? footDbTpls : FALLBACK_TEMPLATES),
+      ...(insDbTpls.length  > 0 ? insDbTpls  : INSURANCE_FALLBACK_TEMPLATES),
+    ]);
     setSubmissions((subRes.data ?? []) as FormSubmission[]);
     setInvoiceDocs((invRes.data ?? []) as InvoiceDoc[]);
     setPaymentItems((payRes.data ?? []) as PaymentItem[]);
@@ -358,8 +365,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
   const defaultTemplates = templates.filter(
     (t) => FORM_META[t.form_key]?.print_preset === 'default',
   );
+  // T-20260522-foot-INS-DOC-PRINT: insurance 카테고리 전용 섹션 분리
+  const insuranceTemplates = templates.filter((t) => t.category === 'insurance');
   const optionalTemplates = templates.filter(
-    (t) => FORM_META[t.form_key]?.print_preset !== 'default',
+    (t) => FORM_META[t.form_key]?.print_preset !== 'default' && t.category !== 'insurance',
   );
 
   // ── 선택 토글 ──
@@ -921,6 +930,19 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
         <TemplateSection
           title="별도 요청 서류"
           templates={optionalTemplates}
+          submissions={submissions}
+          selectedKeys={selectedKeys}
+          canAccess={canAccess}
+          onToggle={toggleSelect}
+          onCardClick={handleSelectTemplate}
+        />
+      )}
+
+      {/* 보험서류 섹션 — T-20260522-foot-INS-DOC-PRINT */}
+      {insuranceTemplates.length > 0 && (
+        <TemplateSection
+          title="보험서류"
+          templates={insuranceTemplates}
           submissions={submissions}
           selectedKeys={selectedKeys}
           canAccess={canAccess}
