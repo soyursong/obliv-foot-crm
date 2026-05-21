@@ -2561,3 +2561,5 @@ ref: T-20260512-foot-TREATMENT-SET
 | 2026-05-21T00:57:00+09:00 | supervisor | qa-pass + deployed | T-20260520-foot-PENCHART-CHECKLIST-REMOVE: 펜차트 양식 선택 패널 개인정보+체크리스트 2종 제거. build 3.15s exit 0. personal_checklist FE 코드 완전 제거 + DB active=false 이미 반영 확인. prod bundle index-C2NvvHSq.js 로컬=운영 일치. 브라우저 접속 OK(white screen 없음). Runtime Safety Gate PASS. CustomerChartPage 기존 이력 보존 로직 유지. Green GO. commit 8e6c3fe. field_soak_until 2026-05-22T00:57:00+09:00. |
 | 2026-05-21 14:03 | dev-foot | deploy-ready | T-20260521-foot-PARK-MJ-FOOT-AUTH: 박민지 풋CRM admin 계정 등록. auth기존재+비번설정+responder INFO발행. 빌드OK. DB변경: 없음 |
 | 2026-05-21 18:55 | dev-foot | deploy-ready | T-20260520-foot-PENCHART-VIEW-SPLIT REOPEN: [내용보기] 비활성 근본원인 수정 — form_submissions.status CHECK constraint에 'completed' 미포함 → INSERT 무성 실패. FE: status='signed'로 통일 + toast.error 추가. AC-7: 상담내역 탭 그룹1 '개인정보/체크리스트' 섹션 제거. DB: CHECK constraint에 'completed' 추가(적용완료). 빌드 3.18s OK. commit: 4d7db36. DB변경: 있음 |
+
+| 2026-05-21 19:30 | dev-foot | deploy-ready | T-20260521-foot-PKG-ZONE2-HIDE: 2구역 C22-PKG-DEDUCT 잔여 0회 패키지 비노출 4곳 필터 적용. 선행 1구역 동일 패턴 재사용. 빌드 3.23s OK. commit: d328e32. DB변경: 없음 |
