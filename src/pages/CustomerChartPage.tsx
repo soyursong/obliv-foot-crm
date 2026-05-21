@@ -468,6 +468,10 @@ function TreatmentImagesSection({
   const [uploadType, setUploadType] = useState<TreatImgType>('photo');
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
 
+  // T-20260522-foot-IMGDROP-REMOVE: 수동 업로드 분류 다이얼로그 (AC-2)
+  const [uploadTypeDialogOpen, setUploadTypeDialogOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   // T-20260522-foot-MEDIMG-CAMERA: 카메라 상태 (AC-1 ~ AC-4, AC-6)
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -732,24 +736,25 @@ function TreatmentImagesSection({
       <div className="flex items-center justify-between rounded border border-teal-200 bg-teal-50 px-2.5 py-1.5">
         <span className="text-xs text-teal-800 font-medium">일자별 이미지 이력</span>
         <div className="flex items-center gap-1.5">
-          {/* 업로드 유형 선택 */}
-          <select
-            value={uploadType}
-            onChange={(e) => setUploadType(e.target.value as TreatImgType)}
-            className="text-[11px] border border-teal-200 rounded px-1.5 py-0.5 bg-white text-teal-800"
+          {/* T-20260522-foot-IMGDROP-REMOVE: 드롭다운 제거 → 업로드 클릭 시 분류 다이얼로그 (AC-1, AC-2) */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={handleUpload}
+            disabled={uploading}
+          />
+          <button
+            type="button"
+            onClick={() => setUploadTypeDialogOpen(true)}
+            disabled={uploading}
+            className="inline-flex items-center gap-1 text-xs border border-teal-200 rounded px-2 py-0.5 bg-white text-teal-700 hover:bg-teal-100 transition cursor-pointer disabled:opacity-50"
           >
-            <option value="before">시술 전</option>
-            <option value="after">시술 후</option>
-            <option value="photo">기타</option>
-          </select>
-          {/* 파일 업로드 */}
-          <label className="cursor-pointer">
-            <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
-            <span className="inline-flex items-center gap-1 text-xs border border-teal-200 rounded px-2 py-0.5 bg-white text-teal-700 hover:bg-teal-100 transition cursor-pointer">
-              <Upload className="h-3 w-3" />
-              {uploading ? '업로드 중…' : '업로드'}
-            </span>
-          </label>
+            <Upload className="h-3 w-3" />
+            {uploading ? '업로드 중…' : '업로드'}
+          </button>
           {/* T-20260522-foot-MEDIMG-CAMERA: [사진촬영] 버튼 (AC-1) */}
           <button
             type="button"
@@ -847,6 +852,60 @@ function TreatmentImagesSection({
       )}
 
       {/* ── T-20260522-foot-MEDIMG-CAMERA: 카메라 모달 (AC-2 ~ AC-4, AC-6) ── */}
+      {/* T-20260522-foot-IMGDROP-REMOVE: 수동 업로드 분류 다이얼로그 (AC-2) */}
+      {uploadTypeDialogOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-2xl p-6 flex flex-col items-center gap-5 w-[min(90vw,400px)] shadow-2xl">
+            <p className="text-sm font-semibold text-gray-800">업로드 분류를 선택하세요</p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setUploadType('before');
+                  setUploadTypeDialogOpen(false);
+                  fileInputRef.current?.click();
+                }}
+                className="flex flex-col items-center gap-2 px-7 py-5 rounded-2xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-bold transition min-w-[100px]"
+              >
+                <Upload className="h-6 w-6" />
+                시술 전
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUploadType('after');
+                  setUploadTypeDialogOpen(false);
+                  fileInputRef.current?.click();
+                }}
+                className="flex flex-col items-center gap-2 px-7 py-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-sm font-bold transition min-w-[100px]"
+              >
+                <Upload className="h-6 w-6" />
+                시술 후
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUploadType('photo');
+                  setUploadTypeDialogOpen(false);
+                  fileInputRef.current?.click();
+                }}
+                className="flex flex-col items-center gap-2 px-7 py-5 rounded-2xl bg-gray-500 hover:bg-gray-600 active:bg-gray-700 text-white text-sm font-bold transition min-w-[100px]"
+              >
+                <Upload className="h-6 w-6" />
+                기타
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setUploadTypeDialogOpen(false)}
+              className="text-gray-400 hover:text-gray-600 text-sm underline transition"
+            >
+              취소
+            </button>
+          </div>
+        </div>
+      )}
+
       {cameraOpen && (
         <div className="fixed inset-0 z-[200] flex flex-col bg-black" role="dialog" aria-modal="true">
           {/* 숨김 canvas — 스냅샷 캡처용 */}
