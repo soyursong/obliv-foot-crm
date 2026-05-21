@@ -1073,7 +1073,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [openPackageAddon, setOpenPackageAddon] = useState(false);
   const [loading, setLoading] = useState(true);
   // T-20260507-foot-CHART2-FULL-LAYOUT: 탭 네비게이션 (전능CRM 이중 탭)
-  const [chartTab, setChartTab] = useState<string>('checklist');
+  // T-20260522-foot-CHART2-TAB-PENCHART: 기본 탭 → 펜차트 (현장 요청)
+  const [chartTab, setChartTab] = useState<string>('pen_chart');
   const [chartTabGroup, setChartTabGroup] = useState<'clinical' | 'history'>('clinical');
   // T-20260511-foot-C2-INSURANCE-AUTO-CALC: 건보 자격등급 변경 감지 트리거
   const [insuranceGradeRefreshKey, setInsuranceGradeRefreshKey] = useState(0);
@@ -2407,9 +2408,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260507-foot-CHART2-FULL-LAYOUT: 전능CRM SMARTDOCTOR 레이아웃 탭 정의
   // T-20260510-foot-C21-TAB-CLEANUP: 마크류/스마트서베이/면담기록지/예약내역/통화내역/소개자가족 삭제
   // T-20260513-foot-C21-TAB-RESTRUCTURE-A: 상단6+하단5 재배치, 서류발행 상단 이동
+  // T-20260522-foot-CHART2-TAB-PENCHART: 펜차트 → 첫 번째 위치 (기본 탭과 일치)
   const CLINICAL_TABS = [
-    { key: 'checklist',   label: '문진' },
     { key: 'pen_chart',   label: '펜차트' },
+    { key: 'checklist',   label: '문진' },
     { key: 'test_result', label: '검사결과' },
     { key: 'progress',    label: '경과내역' },
     { key: 'documents',   label: '서류발행' },
