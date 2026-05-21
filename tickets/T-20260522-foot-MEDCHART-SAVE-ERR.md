@@ -4,7 +4,7 @@ domain: foot
 priority: P0
 status: deploy-ready
 deploy-ready: true
-commit_sha: tbd_after_commit
+commit_sha: 825e2ca
 db_applied: true
 db_applied_at: 2026-05-22
 build_ok: true
