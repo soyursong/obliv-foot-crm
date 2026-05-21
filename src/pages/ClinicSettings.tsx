@@ -67,6 +67,7 @@ export default function ClinicSettings() {
     name: '',
     address: '',
     phone: '',
+    fax: '',
     business_no: '',
     established_date: '',
   });
@@ -92,7 +93,7 @@ export default function ClinicSettings() {
     const [{ data: clinicData }, { data: doctorData }] = await Promise.all([
       supabase
         .from('clinics')
-        .select('id, name, address, phone, business_no, established_date')
+        .select('id, name, address, phone, fax, business_no, established_date')
         .eq('id', clinic.id)
         .maybeSingle(),
       supabase
@@ -109,6 +110,7 @@ export default function ClinicSettings() {
         name: clinicData.name ?? '',
         address: clinicData.address ?? '',
         phone: clinicData.phone ?? '',
+        fax: clinicData.fax ?? '',
         business_no: clinicData.business_no ?? '',
         established_date: clinicData.established_date ?? '',
       });
@@ -166,6 +168,7 @@ export default function ClinicSettings() {
           name: clinicForm.name.trim() || undefined,
           address: clinicForm.address.trim() || null,
           phone: clinicForm.phone.trim() || null,
+          fax: clinicForm.fax.trim() || null,
           business_no: clinicForm.business_no.trim() || null,
           established_date: clinicForm.established_date || null,
         })
@@ -356,6 +359,18 @@ export default function ClinicSettings() {
                 disabled={!canEdit}
               />
             </div>
+            <div className="space-y-1">
+              <Label className="text-xs">팩스</Label>
+              <Input
+                value={clinicForm.fax}
+                onChange={(e) => setClinicForm((p) => ({ ...p, fax: e.target.value }))}
+                placeholder="02-1234-5679"
+                disabled={!canEdit}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">사업자등록번호</Label>
               <Input
