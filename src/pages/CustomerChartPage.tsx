@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useNavigate, useParams } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { CalendarPlus, ChevronDown, ChevronRight, ExternalLink, FileText, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, Send, Trash2, Upload, X } from 'lucide-react';
+import { CalendarPlus, Camera, ChevronDown, ChevronRight, ExternalLink, FileText, Loader2, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
 import { Badge } from '@/components/ui/badge';
@@ -434,6 +434,7 @@ function ReceiptUploadSection({
 }
 
 // T-20260517-foot-C2-TAB-SYNC: 진료이미지 일자별 히스토리 (업로드+삭제+출력, 비포/애프터 구분)
+// T-20260522-foot-MEDIMG-CAMERA: [사진촬영] 버튼 + 연속촬영 + 자동업로드 + 편집/회전
 // 파일명 규칙: {type}_{timestamp}_{random}.{ext}  (type: before | after | photo)
 // 구버전 호환: 타입 없는 파일({timestamp}_{random}.{ext})은 'photo'로 처리
 
@@ -466,6 +467,23 @@ function TreatmentImagesSection({
   const [uploading, setUploading] = useState(false);
   const [uploadType, setUploadType] = useState<TreatImgType>('photo');
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+
+  // T-20260522-foot-MEDIMG-CAMERA: 카메라 상태 (AC-1 ~ AC-4, AC-6)
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraPhase, setCameraPhase] = useState<'select-type' | 'capture'>('select-type');
+  const [cameraType, setCameraType] = useState<TreatImgType>('before');
+  const [capturedBlobs, setCapturedBlobs] = useState<{ blob: Blob; previewUrl: string }[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+
+  // T-20260522-foot-MEDIMG-CAMERA: 이미지 편집/회전 상태 (AC-5)
+  const [editingImg, setEditingImg] = useState<TreatImgItem | null>(null);
+  const [editRotation, setEditRotation] = useState(0);
+  const [savingRotation, setSavingRotation] = useState(false);
+
   const storagePath = `customer/${customerId}/treatment-images`;
 
   const load = useCallback(async () => {
@@ -549,6 +567,150 @@ function TreatmentImagesSection({
       return next;
     });
 
+  // ── T-20260522-foot-MEDIMG-CAMERA: 카메라 함수 ───────────────────────────
+
+  const stopStream = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  };
+
+  const openCameraModal = () => {
+    setCapturedBlobs([]);
+    setCameraPhase('select-type');
+    setCameraError(null);
+    setCameraOpen(true);
+  };
+
+  const selectTypeAndStart = async (type: TreatImgType) => {
+    setCameraType(type);
+    setCameraError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setCameraPhase('capture');
+    } catch (_err) {
+      setCameraError('카메라 접근 권한이 없습니다. 브라우저 설정에서 카메라를 허용해주세요.');
+    }
+  };
+
+  // video ref callback — DOM 마운트 직후 스트림 연결 (AC-6 태블릿 대응)
+  const videoRefCallback = (el: HTMLVideoElement | null) => {
+    videoRef.current = el;
+    if (el && streamRef.current) {
+      el.srcObject = streamRef.current;
+      el.play().catch(() => {});
+    }
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const previewUrl = URL.createObjectURL(blob);
+      setCapturedBlobs((prev) => [...prev, { blob, previewUrl }]);
+    }, 'image/jpeg', 0.9);
+  };
+
+  const removeCaptured = (index: number) => {
+    setCapturedBlobs((prev) => {
+      URL.revokeObjectURL(prev[index].previewUrl);
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
+  const uploadCaptured = async () => {
+    if (capturedBlobs.length === 0) { closeCamera(); return; }
+    const total = capturedBlobs.length;
+    setUploadProgress({ done: 0, total });
+    let done = 0;
+    for (const { blob, previewUrl } of capturedBlobs) {
+      const path = `${storagePath}/${cameraType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.jpg`;
+      const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' });
+      if (error) toast.error(`업로드 실패: ${error.message}`);
+      URL.revokeObjectURL(previewUrl);
+      done++;
+      setUploadProgress({ done, total });
+    }
+    stopStream();
+    setCapturedBlobs([]);
+    setCameraOpen(false);
+    setUploadProgress(null);
+    await load();
+    toast.success(`${done}장 저장 완료`);
+  };
+
+  const closeCamera = () => {
+    stopStream();
+    capturedBlobs.forEach((b) => URL.revokeObjectURL(b.previewUrl));
+    setCapturedBlobs([]);
+    setCameraOpen(false);
+    setUploadProgress(null);
+    setCameraError(null);
+  };
+
+  // ── T-20260522-foot-MEDIMG-CAMERA: 회전 함수 (AC-5) ─────────────────────
+
+  const openEdit = (img: TreatImgItem) => {
+    setEditingImg(img);
+    setEditRotation(0);
+  };
+
+  const saveRotation = async () => {
+    if (!editingImg) return;
+    if (editRotation === 0) { setEditingImg(null); return; }
+    setSavingRotation(true);
+    try {
+      const loadImg = (): Promise<HTMLImageElement> =>
+        new Promise((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+          img.src = editingImg.signedUrl;
+        });
+      const srcImg = await loadImg();
+      const rad = (editRotation * Math.PI) / 180;
+      const sin = Math.abs(Math.sin(rad));
+      const cos = Math.abs(Math.cos(rad));
+      const newW = Math.round(srcImg.width * cos + srcImg.height * sin);
+      const newH = Math.round(srcImg.width * sin + srcImg.height * cos);
+      const canvas = document.createElement('canvas');
+      canvas.width = newW;
+      canvas.height = newH;
+      const ctx = canvas.getContext('2d')!;
+      ctx.translate(newW / 2, newH / 2);
+      ctx.rotate(rad);
+      ctx.drawImage(srcImg, -srcImg.width / 2, -srcImg.height / 2);
+      const rotatedBlob: Blob = await new Promise((resolve, reject) => {
+        canvas.toBlob((b) => { if (b) resolve(b); else reject(new Error('toBlob failed')); }, 'image/jpeg', 0.92);
+      });
+      // 원본 삭제 후 회전본 업로드 (동일 경로 — 파일명 보존)
+      await supabase.storage.from('photos').remove([editingImg.path]);
+      const { error } = await supabase.storage.from('photos').upload(editingImg.path, rotatedBlob, {
+        contentType: 'image/jpeg',
+        upsert: true,
+      });
+      if (error) throw error;
+      toast.success('회전 저장 완료');
+      setEditingImg(null);
+      await load();
+    } catch (_err) {
+      toast.error('회전 저장 실패');
+    } finally {
+      setSavingRotation(false);
+    }
+  };
+
   const TYPE_LABEL: Record<TreatImgType, string> = { before: '시술 전', after: '시술 후', photo: '기타' };
   const TYPE_COLOR: Record<TreatImgType, string> = {
     before: 'bg-blue-100 text-blue-700',
@@ -572,6 +734,7 @@ function TreatmentImagesSection({
             <option value="after">시술 후</option>
             <option value="photo">기타</option>
           </select>
+          {/* 파일 업로드 */}
           <label className="cursor-pointer">
             <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
             <span className="inline-flex items-center gap-1 text-xs border border-teal-200 rounded px-2 py-0.5 bg-white text-teal-700 hover:bg-teal-100 transition cursor-pointer">
@@ -579,6 +742,15 @@ function TreatmentImagesSection({
               {uploading ? '업로드 중…' : '업로드'}
             </span>
           </label>
+          {/* T-20260522-foot-MEDIMG-CAMERA: [사진촬영] 버튼 (AC-1) */}
+          <button
+            type="button"
+            onClick={openCameraModal}
+            className="inline-flex items-center gap-1 text-xs border border-teal-400 rounded px-2 py-0.5 bg-teal-600 text-white hover:bg-teal-700 active:bg-teal-800 transition font-medium"
+          >
+            <Camera className="h-3 w-3" />
+            사진촬영
+          </button>
         </div>
       </div>
 
@@ -636,12 +808,21 @@ function TreatmentImagesSection({
                                     className="w-full h-full object-cover rounded border cursor-pointer"
                                     onClick={() => window.open(img.signedUrl, '_blank')}
                                   />
+                                  {/* 삭제 버튼 */}
                                   <button
                                     onClick={() => remove(img)}
                                     className="absolute top-0.5 right-0.5 hidden group-hover:flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white shadow"
                                     title="삭제"
                                   >
                                     <Trash2 className="h-2.5 w-2.5" />
+                                  </button>
+                                  {/* T-20260522-foot-MEDIMG-CAMERA: 회전 편집 버튼 (AC-5) */}
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); openEdit(img); }}
+                                    className="absolute bottom-0.5 right-0.5 hidden group-hover:flex h-5 w-5 items-center justify-center rounded-full bg-teal-600 text-white shadow"
+                                    title="편집(회전)"
+                                  >
+                                    <RotateCw className="h-2.5 w-2.5" />
                                   </button>
                                 </div>
                               ))}
@@ -654,6 +835,178 @@ function TreatmentImagesSection({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ── T-20260522-foot-MEDIMG-CAMERA: 카메라 모달 (AC-2 ~ AC-4, AC-6) ── */}
+      {cameraOpen && (
+        <div className="fixed inset-0 z-[200] flex flex-col bg-black" role="dialog" aria-modal="true">
+          {/* 숨김 canvas — 스냅샷 캡처용 */}
+          <canvas ref={canvasRef} className="hidden" />
+
+          {cameraPhase === 'select-type' ? (
+            /* ── 단계 1: 시술 전/후 선택 (AC-2) ── */
+            <div className="flex flex-col items-center justify-center flex-1 gap-6 p-8">
+              <p className="text-white text-xl font-semibold">촬영 분류를 선택하세요</p>
+              {cameraError && (
+                <p className="text-red-400 text-sm text-center max-w-xs">{cameraError}</p>
+              )}
+              <div className="flex gap-4">
+                <button
+                  onClick={() => selectTypeAndStart('before')}
+                  className="flex flex-col items-center gap-2 px-10 py-6 rounded-2xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-lg font-bold transition min-w-[140px]"
+                >
+                  <Camera className="h-8 w-8" />
+                  시술 전
+                </button>
+                <button
+                  onClick={() => selectTypeAndStart('after')}
+                  className="flex flex-col items-center gap-2 px-10 py-6 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-lg font-bold transition min-w-[140px]"
+                >
+                  <Camera className="h-8 w-8" />
+                  시술 후
+                </button>
+              </div>
+              <button
+                onClick={closeCamera}
+                className="mt-4 text-gray-400 hover:text-white text-sm underline transition"
+              >
+                취소
+              </button>
+            </div>
+          ) : uploadProgress ? (
+            /* ── 업로드 진행 중 (AC-4) ── */
+            <div className="flex flex-col items-center justify-center flex-1 gap-6 p-8">
+              <Loader2 className="h-12 w-12 text-teal-400 animate-spin" />
+              <p className="text-white text-lg font-semibold">
+                업로드 중… {uploadProgress.done} / {uploadProgress.total}
+              </p>
+              <div className="w-64 h-2 bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-teal-500 rounded-full transition-all duration-300"
+                  style={{ width: `${(uploadProgress.done / uploadProgress.total) * 100}%` }}
+                />
+              </div>
+            </div>
+          ) : (
+            /* ── 단계 2: 연속 촬영 (AC-3, AC-6) ── */
+            <>
+              {/* 카메라 뷰포트 — 가로 전체화면 */}
+              <div className="relative flex-1 bg-black overflow-hidden">
+                <video
+                  ref={videoRefCallback}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+                {/* 분류 배지 */}
+                <div className="absolute top-4 left-4 z-10">
+                  <span className={`text-sm font-bold rounded-full px-3 py-1 ${cameraType === 'before' ? 'bg-blue-600 text-white' : 'bg-emerald-600 text-white'}`}>
+                    {cameraType === 'before' ? '시술 전' : '시술 후'}
+                  </span>
+                </div>
+                {/* 촬영 미리보기 (우상단) */}
+                {capturedBlobs.length > 0 && (
+                  <div className="absolute top-4 right-4 z-10 flex flex-col items-end gap-1">
+                    <span className="text-white text-xs bg-black/60 rounded px-2 py-0.5 mb-1">{capturedBlobs.length}장 촬영됨</span>
+                    <div className="flex flex-wrap gap-1 max-w-[180px] justify-end">
+                      {capturedBlobs.map((b, i) => (
+                        <div key={i} className="relative">
+                          <img src={b.previewUrl} alt={`촬영 ${i + 1}`} className="w-14 h-14 object-cover rounded border-2 border-white shadow" />
+                          <button
+                            onClick={() => removeCaptured(i)}
+                            className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-white flex items-center justify-center text-[9px] font-bold"
+                            aria-label="촬영 취소"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 하단 컨트롤 바 */}
+              <div className="flex items-center justify-between px-8 py-5 bg-black gap-4">
+                {/* 취소 */}
+                <button
+                  onClick={closeCamera}
+                  className="text-gray-400 hover:text-white text-sm transition min-w-[64px]"
+                >
+                  취소
+                </button>
+                {/* 셔터 버튼 (S Pen 터치 대응 — 큰 원형) */}
+                <button
+                  onClick={capturePhoto}
+                  className="h-16 w-16 rounded-full border-4 border-white bg-white/10 hover:bg-white/25 active:bg-white/50 transition flex-shrink-0 shadow-lg"
+                  aria-label="촬영"
+                />
+                {/* 완료 버튼 */}
+                <button
+                  onClick={uploadCaptured}
+                  disabled={capturedBlobs.length === 0}
+                  className="text-sm font-semibold transition min-w-[64px] text-right disabled:text-gray-600 text-teal-400 hover:text-teal-300 disabled:cursor-not-allowed"
+                >
+                  완료 ({capturedBlobs.length})
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── T-20260522-foot-MEDIMG-CAMERA: 이미지 편집 모달 (AC-5) ── */}
+      {editingImg && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-2xl p-4 flex flex-col items-center gap-4 w-[min(90vw,480px)]">
+            <p className="text-sm font-semibold text-gray-800">이미지 편집 — 회전</p>
+            <div
+              className="w-full flex items-center justify-center overflow-hidden bg-gray-100 rounded-lg"
+              style={{ minHeight: 200, maxHeight: '50vh' }}
+            >
+              <img
+                src={editingImg.signedUrl}
+                alt="편집 중"
+                className="max-w-full object-contain transition-transform duration-200"
+                style={{ transform: `rotate(${editRotation}deg)`, maxHeight: '50vh' }}
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setEditRotation((r) => (r - 90 + 360) % 360)}
+                disabled={savingRotation}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-300 text-sm hover:bg-gray-50 transition disabled:opacity-50"
+              >
+                <RotateCcw className="h-4 w-4" /> 좌회전
+              </button>
+              <button
+                onClick={() => setEditRotation((r) => (r + 90) % 360)}
+                disabled={savingRotation}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-300 text-sm hover:bg-gray-50 transition disabled:opacity-50"
+              >
+                <RotateCw className="h-4 w-4" /> 우회전
+              </button>
+            </div>
+            <div className="flex gap-2 w-full">
+              <button
+                onClick={() => setEditingImg(null)}
+                disabled={savingRotation}
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-sm hover:bg-gray-50 transition disabled:opacity-50"
+              >
+                취소
+              </button>
+              <button
+                onClick={saveRotation}
+                disabled={savingRotation || editRotation === 0}
+                className="flex-1 px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {savingRotation && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                저장
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
