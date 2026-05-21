@@ -12,7 +12,7 @@ deploy_ready_at: 2026-05-22T17:00:00+09:00
 deploy_ready_by: dev-foot
 db_migration: true
 build_passed: true
-commit_sha: TBD
+commit_sha: fc18dfc
 e2e_spec: tests/e2e/T-20260522-foot-PHOTO-CAPTURE.spec.ts
 signals_recorded: true
 ---
