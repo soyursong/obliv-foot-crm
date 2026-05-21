@@ -36,6 +36,8 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { UserRole } from '@/lib/types';
 import ChangePasswordDialog from '@/components/ChangePasswordDialog';
+// T-20260522-foot-TABLET-DUAL-LAYOUT: orientation 훅
+import { useOrientation } from '@/hooks/useOrientation';
 
 // ── T-20260522-foot-SPA-NAV-RELOAD ───────────────────────────────────────────
 // Outlet 전용 Suspense + ErrorBoundary.
@@ -116,6 +118,25 @@ export default function AdminLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem('foot-sidebar-collapsed') === 'true',
   );
+
+  // T-20260522-foot-TABLET-DUAL-LAYOUT: AC-2 portrait 사이드바 자동 최소화
+  // portrait 진입 시: viewport >= lg(1024px)이면 사이드바 자동 접기 (localStorage 보존)
+  // landscape 복귀 시: localStorage 저장값 복원 (사용자 수동 설정 보존)
+  const orientation = useOrientation();
+  useEffect(() => {
+    if (orientation === 'portrait') {
+      // SM-X400 portrait(~800px)은 lg 이하라 desktop sidebar가 hidden — 무해
+      // 혹시 lg+ 세로 태블릿이면 자동 최소화 (localStorage에는 쓰지 않아 landscape 복원 시 원래 값 유지)
+      if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+        setSidebarCollapsed(true);
+      }
+    } else {
+      // landscape 복원
+      const saved = localStorage.getItem('foot-sidebar-collapsed') === 'true';
+      setSidebarCollapsed(saved);
+    }
+  }, [orientation]);
+
   // T-20260519-foot-STAFF-PW-CHANGE: 비밀번호 변경 다이얼로그
   const [pwChangeOpen, setPwChangeOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -319,7 +340,8 @@ export default function AdminLayout() {
         </div>
 
         {/* Nav */}
-        <nav className={cn('flex-1 py-3', sidebarCollapsed ? 'px-1' : 'px-2')}>
+        {/* T-20260522-foot-TABLET-DUAL-LAYOUT: data-sidebar-nav — landscape 터치 타겟 CSS용 */}
+        <nav className={cn('flex-1 py-3', sidebarCollapsed ? 'px-1' : 'px-2')} data-sidebar-nav>
           {NAV_ITEMS.filter((item) => !item.roles || (profile?.role && item.roles.includes(profile.role))).map((item) => {
             const showBadge = (item.to === '/admin' || item.to === '/admin/closing') && paymentWaitingCount > 0;
             return (
