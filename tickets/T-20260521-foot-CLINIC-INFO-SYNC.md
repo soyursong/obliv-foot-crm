@@ -1,14 +1,15 @@
 ---
 ticket_id: T-20260521-foot-CLINIC-INFO-SYNC
-title: 병원정보 DB 동기화 + 서류 출력 데이터 바인딩 수정
+title: 병원정보 DB 동기화 + 서류 출력 데이터 바인딩 수정 (전종 검증 완료)
 status: deploy-ready
 priority: P0
 domain: foot
 deploy_ready: true
 db_changed: true
 build_status: pass
-e2e_spec: n/a
-commit: 825d9be
+e2e_spec: tests/e2e/T-20260521-foot-CLINIC-INFO-SYNC-FULLSUITE.spec.ts
+e2e_count: 140
+commit: a34ce38
 created_at: 2026-05-21
 completed_at: 2026-05-21
 ---
@@ -85,10 +86,23 @@ ON CONFLICT (version) DO NOTHING;
 - [x] AC-1: clinics.fax / clinics.nhis_code 컬럼 추가 → 쿼리 성공
 - [x] AC-2: clinic row fax = '02-6956-3439' UPDATE 완료
 - [x] AC-3: 병원명/대표번호/사업자번호 이미 올바름 확인
-- [x] AC-4: formatPhone 서울번호 02-XXXX-XXXX 올바른 포맷
-- [x] AC-5: 빌드 PASS (3.13s)
+- [x] AC-4: 서류 **전종(12종+)** 재출력 검증 (PUSH P0 2026-05-21 20:29 정정)
+  - diag_opinion / diagnosis / treat_confirm / visit_confirm: clinic_phone field_map 추가
+  - rx_standard: clinic_phone + clinic_fax field_map 추가
+  - E2E FULLSUITE 140 tests PASS — clinic_name/phone/fax/business_reg_no × 11 HTML 양식 전종
+- [x] AC-5: 빌드 PASS (3.18s, commit a34ce38)
 - [x] AC-6: git push main → Vercel auto-deploy 트리거
 - [x] 문제 2 (도장): 파일 존재 확인, 조치 불필요
+
+## PUSH P0 대응 이력 (2026-05-21 20:29)
+
+MSG-20260521-202955-pkhd (planner PUSH):
+> AC-4 범위 정정: 5종 → 12종+ 전종
+
+### 변경 내역 (commit a34ce38)
+- `src/lib/formTemplates.ts`: 5개 양식 field_map에 clinic_phone/fax 연결
+- `tests/e2e/T-20260521-foot-CLINIC-INFO-SYNC-FULLSUITE.spec.ts`: 신규 140 tests
+- `playwright.config.ts`: unit 프로젝트 추가 (auth 불필요 순수함수 테스트)
 
 ## 검증 쿼리
 
