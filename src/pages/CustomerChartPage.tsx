@@ -585,8 +585,10 @@ function TreatmentImagesSection({
     setCameraType(type);
     setCameraError(null);
     try {
+      // FIX T-20260522-foot-MEDIMG-CAMERA (flickering):
+      // width/height ideal 제거 — Galaxy Tab 카메라 해상도 재협상 방지
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        video: { facingMode: { ideal: 'environment' } },
         audio: false,
       });
       streamRef.current = stream;
@@ -596,14 +598,20 @@ function TreatmentImagesSection({
     }
   };
 
-  // video ref callback — DOM 마운트 직후 스트림 연결 (AC-6 태블릿 대응)
-  const videoRefCallback = (el: HTMLVideoElement | null) => {
+  // FIX T-20260522-foot-MEDIMG-CAMERA (flickering):
+  // useCallback([]): 렌더마다 새 함수가 생성되지 않도록 메모이제이션.
+  // capturedBlobs 상태변경 시 React가 old→null/new→el을 반복 호출하던 버그 해소.
+  // RAF로 play() 지연: Android WebView에서 srcObject 직후 즉시 play() 시 프레임 드롭 방지.
+  const videoRefCallback = useCallback((el: HTMLVideoElement | null) => {
     videoRef.current = el;
     if (el && streamRef.current) {
       el.srcObject = streamRef.current;
-      el.play().catch(() => {});
+      // Android WebView: RAF 1프레임 대기 후 play — 스트림 바인딩 안정화
+      requestAnimationFrame(() => {
+        if (el.srcObject) el.play().catch(() => {});
+      });
     }
-  };
+  }, []); // 의존성 없음 — 생명주기 전체에서 동일 함수 참조 유지
 
   const capturePhoto = () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -898,7 +906,11 @@ function TreatmentImagesSection({
                   autoPlay
                   playsInline
                   muted
+                  disablePictureInPicture
                   className="absolute inset-0 w-full h-full object-cover"
+                  // FIX T-20260522-foot-MEDIMG-CAMERA: GPU 컴포지팅 레이어 고정
+                  // translateZ(0) + willChange: transform → Android WebView 비디오 리페인트 분리
+                  style={{ transform: 'translateZ(0)', willChange: 'transform' }}
                 />
                 {/* 분류 배지 */}
                 <div className="absolute top-4 left-4 z-10">
