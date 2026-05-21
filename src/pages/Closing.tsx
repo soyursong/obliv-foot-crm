@@ -496,6 +496,17 @@ export default function Closing() {
     return map;
   }, [checkInsDetail]);
 
+  // ── 고객ID → 체크인 맵 (패키지 결제 visit_type 조회용) ─────────
+  // T-20260522-foot-CLOSING-PAY-3COL: 패키지 결제는 check_in_id 없음
+  // → 같은 날짜 체크인을 customer_id 기준으로 조회해 visit_type 복원
+  const customerIdToCheckInMap = useMemo(() => {
+    const map = new Map<string, CheckInDetail>();
+    for (const c of checkInsDetail) {
+      if (c.customer_id) map.set(c.customer_id, c);
+    }
+    return map;
+  }, [checkInsDetail]);
+
   // ── 통합 결제내역 (enriched) ────────────────────────────────
   const enrichedRows = useMemo<EnrichedRow[]>(() => {
     const rows: EnrichedRow[] = [];
@@ -505,7 +516,9 @@ export default function Closing() {
       const ci = p.check_in_id ? checkInDetailMap.get(p.check_in_id) : null;
       const customerId = p.customer_id ?? ci?.customer_id ?? null;
       const cust = customerId ? customerMap.get(customerId) : null;
-      const consultantName = ci?.consultant_id ? (staffMap.get(ci.consultant_id) ?? null) : null;
+      // T-20260522-foot-CLOSING-PAY-3COL: 결제담당자 — check_in.consultant_id 우선, null 시 customers.assigned_staff_id fallback
+      const payStaffId = ci?.consultant_id ?? cust?.assigned_staff_id ?? null;
+      const consultantName = payStaffId ? (staffMap.get(payStaffId) ?? null) : null;
       const customerName = ci?.customer_name ?? cust?.name ?? '-';
       const dt = new Date(p.created_at);
 
@@ -535,6 +548,9 @@ export default function Closing() {
       const cust = p.customer_id ? customerMap.get(p.customer_id) : null;
       const dt = new Date(p.created_at);
       const assignedStaffName = cust?.assigned_staff_id ? (staffMap.get(cust.assigned_staff_id) ?? null) : null;
+      // T-20260522-foot-CLOSING-PAY-3COL: 패키지 결제 visit_type
+      // package_payments는 check_in_id 없음 → 같은 날 customer_id로 check_in 조회해 복원
+      const ciByCustomer = p.customer_id ? customerIdToCheckInMap.get(p.customer_id) : null;
       rows.push({
         sort_key: p.created_at,
         pay_date: format(dt, 'yyyy-MM-dd'),
@@ -542,7 +558,7 @@ export default function Closing() {
         chart_number: cust?.chart_number ?? null,
         customer_name: cust?.name ?? '-',
         lead_source: cust?.lead_source ?? null,
-        visit_type_label: '-',
+        visit_type_label: visitTypeLabel(ciByCustomer?.visit_type ?? null),
         staff_name: assignedStaffName,
         amount: p.amount,
         method: p.method,
@@ -581,7 +597,7 @@ export default function Closing() {
 
     rows.sort((a, b) => a.sort_key.localeCompare(b.sort_key));
     return rows;
-  }, [payments, pkgPayments, manualEntries, checkInDetailMap, customerMap, staffMap]);
+  }, [payments, pkgPayments, manualEntries, checkInDetailMap, customerIdToCheckInMap, customerMap, staffMap]);
 
   // C2-MANAGER-PAYMENT-MAP: 담당자 필터 적용
   const filteredEnrichedRows = useMemo<EnrichedRow[]>(() => {
