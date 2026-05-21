@@ -244,6 +244,8 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
       { key: 'issue_date',   label: '발행일',  type: 'date',       x: 0, y: 0 },
       { key: 'clinic_name',  label: '의료기관',type: 'text',       x: 0, y: 0 },
       { key: 'clinic_address',label: '주소',   type: 'text',       x: 0, y: 0 },
+      // T-20260521-foot-CLINIC-INFO-SYNC PUSH: 전종 field_map 연결 — clinic_phone
+      { key: 'clinic_phone', label: '전화 및 팩스', type: 'text', x: 0, y: 0 },
       { key: 'doctor_name',  label: '의사성명',type: 'text',       x: 0, y: 0 },
     ],
     requires_signature: false,
@@ -269,6 +271,8 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
       { key: 'issue_date',      label: '발행일',      type: 'date',      x: 0, y: 0 },
       { key: 'clinic_name',     label: '의료기관',    type: 'text',      x: 0, y: 0 },
       { key: 'clinic_address',  label: '주소',        type: 'text',      x: 0, y: 0 },
+      // T-20260521-foot-CLINIC-INFO-SYNC PUSH: 전종 field_map 연결 — clinic_phone
+      { key: 'clinic_phone',    label: '전화 및 팩스',type: 'text',      x: 0, y: 0 },
       { key: 'doctor_name',     label: '의사성명',    type: 'text',      x: 0, y: 0 },
     ],
     requires_signature: false,
@@ -293,6 +297,8 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
       { key: 'issue_date',      label: '발행일',  type: 'date',      x: 0, y: 0 },
       { key: 'clinic_name',     label: '의료기관',type: 'text',      x: 0, y: 0 },
       { key: 'clinic_address',  label: '주소',    type: 'text',      x: 0, y: 0 },
+      // T-20260521-foot-CLINIC-INFO-SYNC PUSH: 전종 field_map 연결 — clinic_phone
+      { key: 'clinic_phone',    label: '전화 및 팩스', type: 'text', x: 0, y: 0 },
       { key: 'doctor_name',     label: '의사성명',type: 'text',      x: 0, y: 0 },
     ],
     requires_signature: false,
@@ -317,6 +323,8 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
       { key: 'issue_date',      label: '발행일',  type: 'date',      x: 0, y: 0 },
       { key: 'clinic_name',     label: '의료기관',type: 'text',      x: 0, y: 0 },
       { key: 'clinic_address',  label: '주소',    type: 'text',      x: 0, y: 0 },
+      // T-20260521-foot-CLINIC-INFO-SYNC PUSH: 전종 field_map 연결 — clinic_phone
+      { key: 'clinic_phone',    label: '전화 및 팩스', type: 'text', x: 0, y: 0 },
       { key: 'doctor_name',     label: '의사성명',type: 'text',      x: 0, y: 0 },
     ],
     requires_signature: false,
@@ -340,6 +348,9 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
       { key: 'diagnosis_ko', label: '질병분류기호',       type: 'text', x: 0, y: 0 },
       { key: 'issue_date',   label: '교부일',             type: 'date', x: 0, y: 0 },
       { key: 'clinic_name',  label: '의료기관명칭',       type: 'text', x: 0, y: 0 },
+      // T-20260521-foot-CLINIC-INFO-SYNC PUSH: 전종 field_map 연결 — clinic_phone + clinic_fax
+      { key: 'clinic_phone', label: '전화번호',           type: 'text', x: 0, y: 0 },
+      { key: 'clinic_fax',   label: '팩스번호',           type: 'text', x: 0, y: 0 },
       { key: 'doctor_name',  label: '처방의사성명',       type: 'text', x: 0, y: 0 },
     ],
     requires_signature: false,
