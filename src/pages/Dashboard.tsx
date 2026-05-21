@@ -23,7 +23,7 @@ import {
   useSortable,
   arrayMove,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { CSS, getEventCoordinates } from '@dnd-kit/utilities';
 import { addDays, format, isSameDay, subDays } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import {
@@ -109,6 +109,32 @@ const CardHandlersCtx = createContext<CardHandlers | null>(null);
 // ── 예약시간 맵 컨텍스트 (reservation_id → reservation_time) ──────────────────
 /** DraggableCard에서 useContext로 읽어 CustomerHoverCard에 예약시간 전달 */
 const ResvTimeMapCtx = createContext<Map<string, string>>(new Map());
+
+// T-20260522-foot-SLOT-SNAP-FIX: S Pen 태블릿 drag ghost ↔ 실제 터치 포인트 정렬 보정
+// DragOverlay가 드래그 노드 중심에서 시작하도록 activatorEvent 좌표 기반으로 transform 보정.
+// @dnd-kit/modifiers 없이 getEventCoordinates (@dnd-kit/utilities 내장) 만으로 구현.
+function snapToCursorModifier({
+  activatorEvent,
+  draggingNodeRect,
+  transform,
+}: {
+  activatorEvent: Event | null;
+  draggingNodeRect: { left: number; top: number; width: number; height: number } | null;
+  transform: { x: number; y: number; scaleX: number; scaleY: number };
+  [key: string]: unknown;
+}) {
+  if (draggingNodeRect && activatorEvent) {
+    const coords = getEventCoordinates(activatorEvent as MouseEvent | TouchEvent);
+    if (coords) {
+      return {
+        ...transform,
+        x: transform.x + coords.x - draggingNodeRect.left - draggingNodeRect.width / 2,
+        y: transform.y + coords.y - draggingNodeRect.top - draggingNodeRect.height / 2,
+      };
+    }
+  }
+  return transform;
+}
 
 // ── 차트번호 맵 컨텍스트 (customer_id → chart_number) ─────────────────────────
 /** T-20260514-foot-CHART-NO-VISIBLE: 칸반·타임라인 카드 차트번호 상시 표시 (AC-1) */
@@ -1330,6 +1356,7 @@ function DraggableBox2ResvCard({
 
 // T-20260510-foot-DASH-SLOT-REWORK-P0: 통합 시간표 전면 리워크
 // 3컬럼(시간 | 초진 | 재진) — 1번/2번 고객박스 이원화 + 셀프접수 자동매칭
+// T-20260522-foot-TIMETABLE-FOLD: folded/onToggleFold props 추가 — 접기/펼치기 토글
 function DashboardTimeline({
   date,
   reservations,
@@ -1340,6 +1367,8 @@ function DashboardTimeline({
   onReservationSelect,
   onReservationCheckIn,
   clinic,
+  folded,
+  onToggleFold,
 }: {
   date: Date;
   /** T-20260513-foot-TIMETABLE-20H: DB close_time 동적 참조 */
@@ -1353,6 +1382,10 @@ function DashboardTimeline({
   onReservationSelect?: (r: Reservation) => void;
   /** 재진 접수 버튼 클릭 → 체크인 생성 (4경로 중 하나) — T-20260515-foot-REVISIT-CLICK-AUTOCHECK AC-2 */
   onReservationCheckIn?: (r: Reservation) => void;
+  /** T-20260522-foot-TIMETABLE-FOLD: 접힌 상태 (localStorage 유지) */
+  folded?: boolean;
+  /** T-20260522-foot-TIMETABLE-FOLD: 접기/펼치기 토글 콜백 */
+  onToggleFold?: () => void;
 }) {
   const now = new Date();
   const isToday = isSameDay(date, now);
@@ -1449,6 +1482,26 @@ function DashboardTimeline({
     }
   }
 
+  // T-20260522-foot-TIMETABLE-FOLD: 접힌 상태 — 세로 스트립만 표시 (토글 버튼 + 라벨)
+  if (folded) {
+    return (
+      <div className="flex flex-col items-center bg-white border-r flex-1 min-h-0">
+        <button
+          type="button"
+          onClick={onToggleFold}
+          className="w-full flex flex-col items-center py-2 gap-1.5 hover:bg-teal-50 active:bg-teal-100 transition text-teal-700"
+          title="시간표 펼치기"
+          aria-label="시간표 펼치기"
+        >
+          <ChevronRight className="h-4 w-4" />
+          <span className="text-[9px] font-semibold text-gray-500 [writing-mode:vertical-lr] tracking-widest mt-1">
+            통합 시간표
+          </span>
+        </button>
+      </div>
+    );
+  }
+
   return (
     // T-20260514-foot-TIMETABLE-MOBILE-HSCROLL:
     // [overflow-x:clip] — X축 clip은 scroll context를 생성하지 않으므로
@@ -1458,8 +1511,20 @@ function DashboardTimeline({
     <div className="flex flex-col bg-white [overflow-x:clip] overflow-y-hidden md:overflow-hidden flex-1 min-h-0">
       {/* 헤더 */}
       {/* T-20260510-foot-DASH-DUAL-HSCROLL: sticky 제거 → shrink-0으로 교체 (스크롤 컨테이너 밖이므로 sticky 불필요) */}
-      <div className="text-xs font-semibold px-2 py-1.5 border-b bg-muted/20 text-gray-600 shrink-0 flex items-center gap-1">
-        <Clock className="h-3 w-3" /> 통합 시간표
+      {/* T-20260522-foot-TIMETABLE-FOLD: 접기 버튼 추가 */}
+      <div className="text-xs font-semibold px-2 py-1.5 border-b bg-muted/20 text-gray-600 shrink-0 flex items-center justify-between gap-1">
+        <span className="flex items-center gap-1">
+          <Clock className="h-3 w-3" /> 통합 시간표
+        </span>
+        <button
+          type="button"
+          onClick={onToggleFold}
+          className="rounded p-0.5 hover:bg-teal-100 text-gray-400 hover:text-teal-700 transition"
+          title="시간표 접기"
+          aria-label="시간표 접기"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
       </div>
       {/* T-20260510-foot-DASH-DUAL-HSCROLL: 컬럼헤더를 스크롤 컨테이너 내부로 이동
           문제1 — 이중 X스크롤바: overflow-y-auto는 CSS 규격상 overflow-x도 auto로 강제 →
@@ -1946,6 +2011,17 @@ export default function Dashboard() {
   const [checklistDone, setChecklistDone] = useState<Set<string>>(new Set());
   const [therapists, setTherapists] = useState<Staff[]>([]);
   // ── 달력 + 타임라인 상태 ──────────────────────────────────────────────────────
+  // T-20260522-foot-TIMETABLE-FOLD: localStorage 기반 접기/펼치기 상태
+  const [timelineFolded, setTimelineFolded] = useState<boolean>(() => {
+    try { return localStorage.getItem('foot-crm-timeline-folded') === 'true'; } catch { return false; }
+  });
+  const handleToggleTimeline = useCallback(() => {
+    setTimelineFolded((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('foot-crm-timeline-folded', String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
   const [showCalendar, setShowCalendar] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState<Date>(() => new Date());
   const [quickResvDraft, setQuickResvDraft] = useState<QuickResvDraft | null>(null);
@@ -4464,7 +4540,13 @@ export default function Dashboard() {
         {/* 좌측: 통합 시간표 + 원내 메모 — T-20260504-foot-SCHEDULE-UNIFIED-VIEW */}
         {/* T-20260509-foot-DASH-SLOT-STICKY: min-h-0으로 세로 팽창 억제 → 타임라인 자체 스크롤 유지 */}
         {/* T-20260514-foot-TIMETABLE-MOBILE-HSCROLL: [overflow-x:clip] → scroll context 미생성 (sticky 전파), md:overflow-hidden 복원 */}
-        <div className="w-80 shrink-0 flex flex-col min-h-0 border-r [overflow-x:clip] overflow-y-hidden md:overflow-hidden">
+        {/* T-20260522-foot-TIMETABLE-FOLD: 접힌 상태 w-8, 펼친 상태 w-80 (transition 포함) */}
+        <div
+          className={cn(
+            'shrink-0 flex flex-col min-h-0 border-r [overflow-x:clip] overflow-y-hidden md:overflow-hidden transition-all duration-200',
+            timelineFolded ? 'w-8' : 'w-80',
+          )}
+        >
           <DashboardTimeline
             date={date}
             clinic={clinic}
@@ -4475,6 +4557,8 @@ export default function Dashboard() {
             onCardContext={!isPast ? handleCardContext : undefined}
             onReservationSelect={!isPast ? handleReservationSelect : undefined}
             onReservationCheckIn={!isPast ? handleReservationCheckIn : undefined}
+            folded={timelineFolded}
+            onToggleFold={handleToggleTimeline}
           />
         </div>
 
@@ -4556,7 +4640,8 @@ export default function Dashboard() {
       </div>
       {/* flex flex-1 overflow-hidden wrapper 닫기 */}
       </div>
-      <DragOverlay>
+      {/* T-20260522-foot-SLOT-SNAP-FIX: snapToCursorModifier — S Pen 터치 포인트에 ghost 정렬 */}
+      <DragOverlay modifiers={[snapToCursorModifier]}>
         {dragging && <DraggableCard checkIn={dragging} compact />}
       </DragOverlay>
       </DndContext>
