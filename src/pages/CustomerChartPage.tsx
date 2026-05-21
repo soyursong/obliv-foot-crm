@@ -1089,6 +1089,29 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }
   }, [submissionEntries]);
 
+  // T-20260520-foot-PENCHART-VIEW-SPLIT HOTFIX2:
+  // PenChartTab이 form_submissions INSERT 성공 후 콜백 → submissionEntries 즉시 갱신
+  // → 상담내역 탭 [내용보기] 버튼 페이지 새로고침 없이 활성화
+  const refreshSubmissionEntries = useCallback(async () => {
+    if (!customerId) return;
+    const { data } = await supabase
+      .from('form_submissions')
+      .select('check_in_id, printed_at, signed_at, field_data, form_templates!template_id(form_key)')
+      .eq('customer_id', customerId)
+      .order('printed_at', { ascending: false, nullsFirst: false })
+      .limit(30);
+    setSubmissionEntries(
+      (data ?? []).map((s: Record<string, unknown>) => ({
+        check_in_id: s.check_in_id as string,
+        template_key: (s.form_templates as { form_key: string } | null)?.form_key
+          ?? ((s.field_data as Record<string, unknown> | null)?.form_key as string | undefined),
+        printed_at: (s.printed_at as string | null) ?? null,
+        signed_at:  (s.signed_at  as string | null) ?? null,
+        field_data: (s.field_data as Record<string, unknown> | null) ?? null,
+      }))
+    );
+  }, [customerId]);
+
   // T-20260514-foot-C2-PAYMENT-SYNC AC-1: payments realtime → 2번차트 자동 갱신
   useEffect(() => {
     if (!customerId) return;
@@ -3667,7 +3690,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
               {/* Clinical: 펜차트 — T-20260513-foot-C21-TAB-RESTRUCTURE-C (AC-4)
                   T-20260519-foot-PENCHART-FORM-ADD: checkInId + 고객 기본정보 전달
-                    → form_submissions.check_in_id 자동 연동 (AC-4) */}
+                    → form_submissions.check_in_id 자동 연동 (AC-4)
+                  T-20260520-foot-PENCHART-VIEW-SPLIT HOTFIX2: onFormSubmissionSaved
+                    → 저장 후 상담내역 탭 [내용보기] 즉시 활성화 */}
               {chartTabGroup === 'clinical' && chartTab === 'pen_chart' && (
                 <PenChartTab
                   customerId={customer.id}
@@ -3676,6 +3701,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   customerName={customer.name}
                   customerPhone={customer.phone ?? undefined}
                   customerBirthDate={customer.birth_date ?? undefined}
+                  onFormSubmissionSaved={refreshSubmissionEntries}
                 />
               )}
 

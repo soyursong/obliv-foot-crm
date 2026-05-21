@@ -165,6 +165,8 @@ export function PenChartTab({
   customerName: _customerName,
   customerPhone: _customerPhone,
   customerBirthDate: _customerBirthDate,
+  // T-20260520-foot-PENCHART-VIEW-SPLIT HOTFIX2: 상담내역 즉시 갱신
+  onFormSubmissionSaved,
 }: {
   customerId: string;
   clinicId: string;
@@ -174,6 +176,8 @@ export function PenChartTab({
   customerName?: string;
   customerPhone?: string;
   customerBirthDate?: string;
+  /** form_submissions INSERT 성공 시 — 상담내역 탭 [내용보기] 즉시 활성화 트리거 */
+  onFormSubmissionSaved?: () => void;
 }) {
   const { profile } = useAuth();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -534,6 +538,11 @@ export function PenChartTab({
           // 저장은 됐으나 상담내역 연동 실패 — 사용자에게 경고
           console.error('form_submissions insert 실패:', subErr.message);
           toast.error(`상담내역 연동 실패: ${subErr.message} (이미지는 저장됨)`);
+        } else {
+          // T-20260520-foot-PENCHART-VIEW-SPLIT HOTFIX2:
+          // INSERT 성공 → 부모(CustomerChartPage)에 즉시 갱신 트리거
+          // → 상담내역 탭 [내용보기] 버튼 즉시 활성화 (페이지 새로고침 불필요)
+          onFormSubmissionSaved?.();
         }
       }
 
