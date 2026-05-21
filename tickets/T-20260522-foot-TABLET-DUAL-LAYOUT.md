@@ -1,11 +1,17 @@
 ---
 id: T-20260522-foot-TABLET-DUAL-LAYOUT
-status: deploy-ready
+status: deployed
 deploy_ready: true
 build_ok: true
 db_migration: false
 e2e_spec: tests/e2e/T-20260522-foot-TABLET-DUAL-LAYOUT.spec.ts
 summary: "SM-X400 태블릿 가로/세로 이중 레이아웃 최적화 Phase 1 (대시보드). useOrientation 훅 + portrait 타임라인 자동 fold + landscape 터치 최적화 CSS."
+qa_result: pass
+qa_grade: Green
+deployed_at: "2026-05-22T05:19:42+09:00"
+deploy_commit: ec5dfb6f09071c25e695a78e97ed9e767c51ee31
+bundle_hash: CEKBe316
+field_soak_until: "2026-05-23T05:19:42+09:00"
 ---
 
 # T-20260522-foot-TABLET-DUAL-LAYOUT: 태블릿 가로/세로 이중 레이아웃 (Phase 1 대시보드)
@@ -44,3 +50,21 @@ summary: "SM-X400 태블릿 가로/세로 이중 레이아웃 최적화 Phase 1 
 ## deadline
 
 2026-06-05
+
+## supervisor QA 결과 (2026-05-22)
+
+| 항목 | 결과 | 비고 |
+|------|------|------|
+| Phase 1 빌드 | ✅ PASS | npm run build 3.21s exit 0 |
+| 기존 기능 영향 | ✅ PASS | FE-only CSS/layout, 비즈로직 미변경 |
+| DB 호환성 | ✅ N/A | db_changed: false |
+| 권한/RLS | ✅ N/A | FE only |
+| 롤백 SQL | ✅ N/A | FE only, no DB |
+| Phase 1.5 env 매트릭스 | ✅ PASS | VITE_SUPABASE_URL/ANON_KEY 운영 bundle 매치 확인 |
+| Runtime Safety Gate | ✅ PASS | 신규 코드: matchMedia/localStorage/state setter만 사용 — 직접 nullable 접근 없음 |
+| E2E spec | ✅ 18/18 PASS | T-20260522-foot-TABLET-DUAL-LAYOUT.spec.ts (8.1s) |
+| 브라우저 시뮬레이션 | ✅ PASS | 운영 URL 정상 로드 (로그인 화면 렌더, white-screen 없음) |
+| Cross-CRM Contract | ✅ N/A | db_changed: false |
+
+**판정: GO — Green**
+- origin/main `ec5dfb6` 포함 배포 완료 (Vercel 자동 배포, 운영 bundle `index-CEKBe316.js` 확인)
