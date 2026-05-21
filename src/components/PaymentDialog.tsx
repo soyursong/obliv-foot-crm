@@ -20,6 +20,9 @@ import { InsuranceCopaymentPanel } from '@/components/insurance/InsuranceCopayme
 import type { CheckIn } from '@/lib/types';
 
 // T-20260522-foot-PAY-DROPDOWN-LONGRE: 롱레 CRM 정합성 — membership 추가
+// AC-5: payments CHECK ✅ membership 허용
+//        package_payments CHECK ❌ membership 제외 (card/cash/transfer 3종만)
+//        → paymentMode==='package'에서 membership 필터링으로 해결
 type PayMethod = 'card' | 'cash' | 'transfer' | 'membership';
 type PaymentMode = 'single' | 'package';
 
@@ -128,6 +131,11 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
   const hasCashPayment = !isSplit ? method === 'cash' : splitCash > 0;
   // 현재 결제 총액
   const totalPayment = isSplit ? splitCard + splitCash : amount;
+  // AC-5(A): package_payments CHECK ❌ membership 제외 — UI 레벨 필터
+  // 패키지 모드에서는 membership 버튼 숨김 (card/cash/transfer 3종만 노출)
+  const visibleMethodOptions = paymentMode === 'package'
+    ? METHOD_OPTIONS.filter((m) => m.value !== 'membership')
+    : METHOD_OPTIONS;
 
   const handleSelectPackage = (key: string) => {
     setSelectedPackageKey(key);
@@ -175,6 +183,12 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
     try {
 
     if (paymentMode === 'package') {
+      // AC-5(B): package_payments CHECK ❌ membership 제외 — submit 가드
+      if (!isSplit && method === 'membership') {
+        toast.error('패키지 결제는 멤버십 결제수단을 지원하지 않습니다');
+        setSubmitting(false);
+        return;
+      }
       if (!selectedPreset) {
         toast.error('패키지를 선택하세요');
         setSubmitting(false);
@@ -444,7 +458,13 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
               </button>
               <button
                 type="button"
-                onClick={() => canShowPackageMode && setPaymentMode('package')}
+                onClick={() => {
+                  if (canShowPackageMode) {
+                    setPaymentMode('package');
+                    // AC-5: 패키지 모드 전환 시 membership이 선택돼 있으면 card로 리셋
+                    if (method === 'membership') setMethod('card');
+                  }
+                }}
                 disabled={!canShowPackageMode}
                 title={
                   !canShowPackageMode
@@ -588,7 +608,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                 <div className="space-y-2">
                   <Label>결제 수단</Label>
                   <div className="grid grid-cols-3 gap-2">
-                    {METHOD_OPTIONS.map((m) => (
+                    {visibleMethodOptions.map((m) => (
                       <button
                         key={m.value}
                         type="button"
