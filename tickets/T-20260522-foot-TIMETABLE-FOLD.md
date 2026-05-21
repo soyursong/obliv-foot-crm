@@ -2,10 +2,12 @@
 id: T-20260522-foot-TIMETABLE-FOLD
 title: "통합시간표 접기/펼치기 토글 + localStorage 상태 유지"
 status: deploy-ready
-priority: P2
+priority: P1
 domain: foot
 created_at: 2026-05-22
-deadline: 2026-05-29
+deadline: 2026-05-26
+priority_updated_at: 2026-05-22
+priority_updated_by: planner (MSG-20260522-011218-g41d)
 deploy_ready: true
 deploy_ready_at: 2026-05-22
 deploy_ready_by: dev-foot
