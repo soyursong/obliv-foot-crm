@@ -8,7 +8,7 @@ domain: foot
 created_at: 2026-05-22
 deadline: 2026-05-24
 completed_at: 2026-05-22
-commit_sha: (pending commit)
+commit_sha: a13b518
 build_ok: true
 db_changed: false
 spec_file: tests/e2e/T-20260522-foot-PENCHART-REFUND-AUTOFILL.spec.ts
