@@ -3295,7 +3295,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         ((p.iv_sessions ?? 0) > 0 || (p.iv_unit_price ?? 0) > 0) && { label: `수액${p.iv_company ? ` (${p.iv_company})` : ''}`, qty: p.iv_sessions ?? 0, unitPrice: p.iv_unit_price ?? 0, used: usedByType['iv'] ?? 0 },
                       ].filter(Boolean) as { label: string; qty: number; unitPrice: number; used: number }[];
                       // 시술내역 리스트 (회차 차감 기록)
-                      const TREAT_KO: Record<string, string> = { heated_laser: '가열', unheated_laser: '비가열', podologue: '포돌로게', iv: '수액', preconditioning: '프컨' };
+                      const TREAT_KO: Record<string, string> = { heated_laser: '가열', unheated_laser: '비가열', podologue: '포돌로게', iv: '수액', preconditioning: '프컨', trial: '체험권' };
                       return (
                         <div key={p.id} className="rounded-lg border border-muted/40 overflow-hidden">
                           {/* 패키지 헤더 — T-20260511-foot-C21-PKG-TICKET-DATE: 발행일자 추가 */}
@@ -4041,6 +4041,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     <option value="unheated_laser">비가열</option>
                     <option value="podologue">포돌로게</option>
                     <option value="iv">수액</option>
+                    {/* T-20260521-foot-TRIAL-DROP-ADD: 체험권 회차 차감 */}
+                    <option value="trial">체험권</option>
                   </select>
                 </div>
               </div>
