@@ -3477,56 +3477,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               {chartTabGroup === 'history' && chartTab === 'consultations' && (
             <div className="space-y-3">
 
-              {/* ── 그룹1: 개인정보 / 체크리스트 — AC-R1/R2: 합본 기준 단일 상태 ── */}
-              <div className="rounded-lg border bg-white p-3 text-xs">
-                <div className="flex items-center gap-1.5 font-bold text-indigo-800 mb-2">
-                  <span className="h-2 w-2 rounded-full bg-indigo-500" />
-                  개인정보 / 체크리스트
-                </div>
-                {/* AC-R2: 개별 서브항목 제거 → 합본 단일 상태 */}
-                {/* T-20260520-foot-PENCHART-VIEW-SPLIT: form_submissions personal_checklist_* 포함 */}
-                {(() => {
-                  const hasOld = consentEntries.some((c) => c.form_type === 'privacy') || checklistEntries.length > 0;
-                  const hasNew = submissionEntries.some((s) => s.template_key?.startsWith('personal_checklist_'));
-                  const done = hasOld || hasNew;
-                  const dateStr = (() => {
-                    if (hasNew) {
-                      const newest = submissionEntries.filter((s) => s.template_key?.startsWith('personal_checklist_'))[0];
-                      const d = newest?.printed_at ?? newest?.signed_at;
-                      return d ? format(new Date(d), 'MM-dd') : null;
-                    }
-                    if (checklistEntries[0]?.completed_at) return format(new Date(checklistEntries[0].completed_at), 'MM-dd');
-                    const pe = consentEntries.find((c) => c.form_type === 'privacy');
-                    return pe ? format(new Date(pe.signed_at), 'MM-dd') : null;
-                  })();
-                  return (
-                    <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${done ? 'bg-teal-50' : 'bg-gray-50'}`}>
-                      <span className={done ? 'text-teal-600' : 'text-gray-300'}>{done ? '✓' : '○'}</span>
-                      <span className={done ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>합본 양식 (개인정보 + 체크리스트)</span>
-                      {done && dateStr && <span className="ml-auto text-muted-foreground text-[10px]">{dateStr}</span>}
-                    </div>
-                  );
-                })()}
-                {/* T-20260520-foot-PENCHART-VIEW-SPLIT AC-2: [작성] 제거 (A안) — 펜차트 탭에서 작성 */}
-                <div className="flex gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const hasNew = submissionEntries.some((s) => s.template_key?.startsWith('personal_checklist_'));
-                      const hasOld = consentEntries.some((c) => c.form_type === 'privacy') || checklistEntries.length > 0;
-                      if (!hasNew && !hasOld) return;
-                      void openSubmissionViewer(1, customer.id);
-                      setViewDocGroup(1);
-                    }}
-                    disabled={
-                      !submissionEntries.some((s) => s.template_key?.startsWith('personal_checklist_')) &&
-                      !consentEntries.some((c) => c.form_type === 'privacy') &&
-                      checklistEntries.length === 0
-                    }
-                    className="flex-1 rounded border border-gray-200 bg-white py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
-                  >내용보기</button>
-                </div>
-              </div>
+              {/* ── 그룹1 (개인정보/체크리스트) 제거됨 — T-20260521-foot-PENCHART-VIEW-SPLIT-REOPEN AC-7
+                  CHECKLIST-REMOVE로 personal_checklist form_templates soft-delete 완료.
+                  발건강 질문지(그룹3)가 동일 내용을 대체하므로 중복 표시 제거. ── */}
 
               {/* ── 그룹2: 환불 / 비급여 동의서 — AC-R1/R2: 합본 기준 단일 상태 ── */}
               <div className="rounded-lg border bg-white p-3 text-xs">
