@@ -1,21 +1,17 @@
 ---
 id: T-20260520-foot-PENCHART-VIEW-SPLIT
 domain: foot
-status: deployed
+status: deploy-ready
 deploy-ready: true
-commit_sha: 773e71b
+commit_sha: 4d7db36
 build_ok: true
-db_changed: false
+db_changed: true
 spec_file: tests/e2e/T-20260520-foot-PENCHART-VIEW-SPLIT.spec.ts
 risk: GO
 created_at: 2026-05-20
-completed_at: 2026-05-20
-qa_result: pass
-qa_grade: Green
-deployed_at: 2026-05-20T23:42:41+09:00
-deploy_commit: 773e71b
-bundle_hash: CvswHZAQ
-field_soak_until: 2026-05-21T23:42:41+09:00
+completed_at: 2026-05-21
+reopen_reason: "배포 후 현장 미동작 — status='completed' CHECK constraint 위반 + AC-7 그룹1 미제거"
+reopen_fixed_at: 2026-05-21
 ---
 
 # T-20260520-foot-PENCHART-VIEW-SPLIT
