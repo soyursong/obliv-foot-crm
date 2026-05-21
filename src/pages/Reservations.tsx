@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { addDays, format, parseISO, startOfWeek, isSameDay } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Plus, User, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Plus, User, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -1159,6 +1159,16 @@ interface TherapistHistoryInfo {
   lastTherapistName: string | null;
 }
 
+// T-20260522-foot-RESV-TREAT-HISTORY: 시술내역 행 타입
+interface TreatHistoryRow {
+  session_id: string;
+  package_name: string;
+  session_number: number;
+  total_sessions: number;
+  session_type: string;
+  session_date: string;
+}
+
 function ReservationEditor({
   draft,
   clinicId,
@@ -1185,11 +1195,19 @@ function ReservationEditor({
   const [therapistList, setTherapistList] = useState<Staff[]>([]);
   const [overrideTherapistId, setOverrideTherapistId] = useState<string | ''>('');
 
+  // T-20260522-foot-RESV-TREAT-HISTORY: AC-1/2/4 상태
+  const [treatHistory, setTreatHistory] = useState<TreatHistoryRow[]>([]);
+  const [treatHistoryLoading, setTreatHistoryLoading] = useState(false);
+  const [treatHistoryShowAll, setTreatHistoryShowAll] = useState(false);
+
   useEffect(() => {
     setState(draft);
     // draft 리셋 시 이력 초기화
     setTherapistHistory(null);
     setOverrideTherapistId('');
+    // T-20260522-foot-RESV-TREAT-HISTORY: 시술내역 초기화
+    setTreatHistory([]);
+    setTreatHistoryShowAll(false);
   }, [draft]);
 
   // AC-3 FIX: 초진 편집 모달 — referral_source가 없는 구형 예약 대응 fallback
@@ -1312,6 +1330,74 @@ function ReservationEditor({
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.customer_id, state?.visit_type, clinicId]);
+
+  // T-20260522-foot-RESV-TREAT-HISTORY: AC-1/2/3/4 — 기존 고객 선택 시 시술내역 조회
+  // AC-3: 기존 쿼리/서비스 재사용 (package_sessions + packages 동일 소스)
+  useEffect(() => {
+    const customerId = state?.customer_id;
+    if (!customerId) {
+      setTreatHistory([]);
+      setTreatHistoryShowAll(false);
+      return;
+    }
+
+    let cancelled = false;
+    setTreatHistoryLoading(true);
+
+    const fetchTreatHistory = async () => {
+      // 1) 고객의 패키지 목록 (전체 상태)
+      const { data: pkgData } = await supabase
+        .from('packages')
+        .select('id, package_name, total_sessions')
+        .eq('customer_id', customerId)
+        .order('contract_date', { ascending: false });
+
+      if (cancelled) return;
+
+      const pkgs = (pkgData ?? []) as { id: string; package_name: string; total_sessions: number }[];
+      if (pkgs.length === 0) {
+        setTreatHistory([]);
+        setTreatHistoryLoading(false);
+        return;
+      }
+
+      // 2) 회차(시술) 이력 조회 — session_date 내림차순 (AC-2)
+      const pkgIds = pkgs.map((p) => p.id);
+      const pkgMap = new Map(pkgs.map((p) => [p.id, p]));
+
+      const { data: sessData } = await supabase
+        .from('package_sessions')
+        .select('id, package_id, session_number, session_type, session_date')
+        .in('package_id', pkgIds)
+        .not('session_date', 'is', null)
+        .order('session_date', { ascending: false })
+        .limit(200);
+
+      if (cancelled) return;
+
+      const rows: TreatHistoryRow[] = (sessData ?? []).map((s: Record<string, unknown>) => {
+        const pkg = pkgMap.get(s.package_id as string);
+        return {
+          session_id: s.id as string,
+          package_name: pkg?.package_name ?? '—',
+          session_number: s.session_number as number,
+          total_sessions: pkg?.total_sessions ?? 0,
+          session_type: (s.session_type as string) || '—',
+          session_date: s.session_date as string,
+        };
+      });
+
+      setTreatHistory(rows);
+      setTreatHistoryLoading(false);
+    };
+
+    fetchTreatHistory().catch(() => {
+      if (!cancelled) setTreatHistoryLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.customer_id]);
 
   if (!state) return null;
 
@@ -1664,6 +1750,68 @@ function ReservationEditor({
                         ))}
                       </select>
                     </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* T-20260522-foot-RESV-TREAT-HISTORY: AC-1 기존 고객 선택 시 시술내역 표시 */}
+          {/* AC-1: customer_id 존재(기존 고객) 시만 표시 — 신규 등록(customer_id=null) 시 미표시 */}
+          {state.customer_id && (
+            <div
+              data-testid="treat-history-panel"
+              className="rounded-md border border-teal-100 bg-teal-50/40 px-3 py-2 text-xs space-y-1.5"
+            >
+              <div className="font-medium text-teal-700">시술내역</div>
+              {treatHistoryLoading ? (
+                /* AC-4: 로딩 스피너 */
+                <div
+                  data-testid="treat-history-loading"
+                  className="flex items-center gap-1.5 text-muted-foreground"
+                >
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span>이력 조회 중…</span>
+                </div>
+              ) : treatHistory.length === 0 ? (
+                /* AC-4: 이력 없음 안내 */
+                <div
+                  data-testid="treat-history-empty"
+                  className="text-muted-foreground italic"
+                >
+                  시술 이력이 없습니다
+                </div>
+              ) : (
+                <>
+                  {/* AC-2: 4컬럼 헤더 */}
+                  <div className="grid grid-cols-4 gap-1 text-[10px] font-semibold text-muted-foreground pb-0.5 border-b border-teal-100">
+                    <span>패키지명</span>
+                    <span>회차</span>
+                    <span>치료명</span>
+                    <span>시술일</span>
+                  </div>
+                  {/* AC-2: 최근 10건 + 더보기 (시술일 내림차순은 fetch 시 ORDER BY session_date DESC로 보장) */}
+                  {(treatHistoryShowAll ? treatHistory : treatHistory.slice(0, 10)).map((row) => (
+                    <div
+                      key={row.session_id}
+                      data-testid={`treat-history-row-${row.session_id}`}
+                      className="grid grid-cols-4 gap-1 items-start"
+                    >
+                      <span className="truncate" title={row.package_name}>{row.package_name}</span>
+                      <span className="tabular-nums">{row.session_number}/{row.total_sessions}</span>
+                      <span className="truncate" title={row.session_type}>{row.session_type || '—'}</span>
+                      <span className="tabular-nums text-muted-foreground">{row.session_date}</span>
+                    </div>
+                  ))}
+                  {!treatHistoryShowAll && treatHistory.length > 10 && (
+                    <button
+                      type="button"
+                      data-testid="treat-history-show-more"
+                      onClick={() => setTreatHistoryShowAll(true)}
+                      className="text-[10px] text-teal-600 hover:underline mt-0.5"
+                    >
+                      더보기 ({treatHistory.length - 10}건 더)
+                    </button>
                   )}
                 </>
               )}
