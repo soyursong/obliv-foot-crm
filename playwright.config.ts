@@ -36,6 +36,19 @@ export default defineConfig({
       testMatch: /auth\.setup\.ts/,
     },
     {
+      // unit: auth 불필요 순수 함수 테스트 (htmlFormTemplates, formTemplates 등)
+      // T-20260521-foot-CLINIC-INFO-SYNC PUSH 대응: 전종 검증 스펙 포함
+      name: 'unit',
+      testMatch: [
+        '**/T-20260520-foot-PRINT-FORM-BIND.spec.ts',
+        '**/T-20260521-foot-CLINIC-INFO-SYNC-FULLSUITE.spec.ts',
+      ],
+      use: {
+        ...devices['Desktop Chrome'],
+      },
+      // auth 의존성 없음 — page 객체 미사용 순수 함수 테스트
+    },
+    {
       name: 'desktop-chrome',
       use: {
         ...devices['Desktop Chrome'],
