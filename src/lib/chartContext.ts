@@ -1,4 +1,5 @@
 // LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
+// LOGIC-LOCK: L-004 — 차트 접근 경로 잠금. useChart() hook / ChartContext 단일 경로만 허용. 변경 시 현장 승인 필수
 /**
  * T-20260516-foot-CHART2-STATE-UNIFY — 2번차트 열림 단일 소스
  *
@@ -31,6 +32,7 @@ export interface ChartContextValue {
   closeChart: () => void;
 }
 
+// LOGIC-LOCK: L-004 [CHART-LOCK-002] — ChartContext 단일 소스. 우회·복제 금지.
 export const ChartContext = createContext<ChartContextValue>({
   chartId: null,
   openChart: () => {},
@@ -38,6 +40,7 @@ export const ChartContext = createContext<ChartContextValue>({
 });
 
 /** 2번차트 열기/닫기/ID 읽기. AdminLayout 하위 어디서나 사용 가능. */
+// LOGIC-LOCK: L-004 [CHART-LOCK-001] — useChart() 단일 게이트웨이. 직접 useContext(ChartContext) 우회 금지.
 export function useChart(): ChartContextValue {
   return useContext(ChartContext);
 }

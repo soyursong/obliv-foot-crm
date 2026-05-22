@@ -1,3 +1,4 @@
+// LOGIC-LOCK: L-004 — 차트 접근 경로 잠금. useChart() hook 경유만 허용. 변경 시 현장 승인 필수
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { addDays, format, parseISO, startOfWeek, isSameDay } from 'date-fns';
@@ -89,6 +90,7 @@ type ViewMode = 'week' | 'day';
 
 export default function Reservations() {
   // T-20260516-foot-CHART-OPEN-UNIFY AC-1: AdminLayout ChartContext (단일 소스)
+  // LOGIC-LOCK: L-004 [CHART-LOCK-010] — openChart 호출은 useChart() 경유만. 직접 접근 금지.
   const { openChart } = useChart();
   const location = useLocation();
   const [searchParams] = useSearchParams();

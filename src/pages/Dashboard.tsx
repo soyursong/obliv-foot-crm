@@ -1,4 +1,5 @@
 // LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
+// LOGIC-LOCK: L-004 — 차트 접근 경로 잠금. useChart() hook 경유만 허용. 변경 시 현장 승인 필수
 import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -2278,6 +2279,7 @@ export default function Dashboard() {
   const [contextMenu, setContextMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
   const [customerMenu, setCustomerMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
   // T-20260516-foot-CHART2-STATE-UNIFY: dashChartSheetId 제거 → AdminLayout ChartContext 사용
+  // LOGIC-LOCK: L-004 [CHART-LOCK-009] — openChart 호출은 useChart() 경유만. 직접 ChartContext 접근 금지.
   const { openChart: ctxOpenChart, closeChart: ctxCloseChart } = useChart();
   // T-20260515-foot-CONTEXT-MENU-4ITEM: 진료차트 패널 상태
   const [medicalChartOpen, setMedicalChartOpen] = useState(false);

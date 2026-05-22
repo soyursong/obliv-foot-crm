@@ -1,4 +1,5 @@
 // LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
+// LOGIC-LOCK: L-004 — 차트 접근 경로 잠금. openChart/ChartContext.Provider/CustomerChartSheet 단일 구현. 변경 시 현장 승인 필수
 import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { ChartContext } from '@/lib/chartContext';
@@ -155,6 +156,7 @@ export default function AdminLayout() {
   // 회귀 방지 spec: tests/e2e/T-20260519-foot-CHART-OPEN-GUARD.spec.ts
   // ─────────────────────────────────────────────────────────────────────────────
   const [chartId, setChartId] = useState<string | null>(null);
+  // LOGIC-LOCK: L-004 [CHART-LOCK-003] — openChart 단일 구현. setChartId 직접 노출 금지. 중복 구현 금지.
   const openChart = useCallback((customerId: string) => setChartId(customerId), []);
   const closeChart = useCallback(() => setChartId(null), []);
   const chartContextValue = useMemo(
@@ -303,6 +305,7 @@ export default function AdminLayout() {
     </>
   );
 
+  // LOGIC-LOCK: L-004 [CHART-LOCK-004] — ChartContext.Provider AdminLayout 단일 마운트. 중복 Provider 절대 금지.
   return (
     <ChartContext.Provider value={chartContextValue}>
     <div className="flex h-screen bg-muted/30">
@@ -559,6 +562,7 @@ export default function AdminLayout() {
         T-20260519-foot-CHART-OPEN-GUARD: CustomerChartSheet는 이 1곳에서만 렌더.
         다른 위치에 중복 렌더 추가 금지. customerId/onClose 대체 구현 금지.
         회귀 방지 spec: tests/e2e/T-20260519-foot-CHART-OPEN-GUARD.spec.ts */}
+    {/* LOGIC-LOCK: L-004 [CHART-LOCK-005] — CustomerChartSheet 이 1곳 단일 렌더. 중복 렌더 추가 금지. */}
     <CustomerChartSheet customerId={chartId} onClose={closeChart} />
     {/* T-20260519-foot-STAFF-PW-CHANGE: 비밀번호 변경 다이얼로그 */}
     <ChangePasswordDialog open={pwChangeOpen} onOpenChange={setPwChangeOpen} />
