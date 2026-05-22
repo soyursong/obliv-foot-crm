@@ -1264,8 +1264,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 상태
   const [designatedTherapistId, setDesignatedTherapistId] = useState<string>('');
   const [savingDesignatedTherapist, setSavingDesignatedTherapist] = useState(false);
-  // T-20260516-foot-HEALER-RESV-BTN: 힐러예약 플래그 버튼
-  const [healerFlagLoading, setHealerFlagLoading] = useState(false);
+  // T-20260516-foot-HEALER-RESV-BTN → T-20260522-foot-PKG-HEALER-DEDUCT 통합으로 healerFlagLoading 폐기
+  // T-20260522-foot-PKG-HEALER-DEDUCT: [힐러예약 후 차감] 복합 동작 로딩
+  const [savingHealerDeduct, setSavingHealerDeduct] = useState(false);
   // C22-RESV-EDIT: 예약 수정 모달
   const [editResvId, setEditResvId] = useState<string | null>(null);
   const [editResvForm, setEditResvForm] = useState({ date: '', startTime: '', memo: '' });
@@ -2390,54 +2391,101 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     toast.success(therapistName ? `지정 치료사: ${therapistName}` : '지정 치료사 해제');
   };
 
-  // T-20260516-foot-HEALER-RESV-BTN v2: 힐러예약 플래그 토글
-  // AC-2: 다음 예약 없음 → pending_healer_flag 저장 (AC-9: 재클릭 토글)
-  // AC-3~7: 다음 예약 있음 → healer_flag 토글 (기존 동작 유지)
-  // FIX(v3): reservation_date >= today (당일 포함) — 기존 > today는 당일 예약을 제외해
-  //   pending_healer_flag로 fallback되어 AC-10 애니·AC-3 HL 모두 미동작하던 버그 수정
-  const handleHealerFlag = async () => {
-    if (!customer || healerFlagLoading) return;
+  // T-20260516-foot-HEALER-RESV-BTN v2: 힐러예약 플래그 토글 → T-20260522-foot-PKG-HEALER-DEDUCT에서 handleHealerDeduct로 통합됨.
+  // 기존 handleHealerFlag(토글 OFF 포함)는 git history 참조(commit ebe1dd7 이전). 토글 OFF 동선 필요 시 후속 티켓에서 복원.
+
+  // T-20260522-foot-PKG-HEALER-DEDUCT: [힐러예약 후 차감] 복합 핸들러
+  // 패키지 회차 차감(saveC22Deduct 로직) + 힐러 플래그 ON(handleHealerFlag 로직) 순차 실행
+  // 버그: 기존 버튼이 handleHealerFlag만 호출 → 패키지 차감 누락. savingHealerDeduct 사용.
+  const handleHealerDeduct = async () => {
+    if (!customer || savingHealerDeduct) return;
+
+    // 1. 패키지 차감 프리체크
+    if (!c22DeductForm.therapistId) {
+      toast.error('치료사를 선택해주세요');
+      return;
+    }
+    const activePackages = packages.filter(p => p.status === 'active');
+    const targetPkg = c22DeductForm.packageId
+      ? activePackages.find(p => p.id === c22DeductForm.packageId)
+      : activePackages[0];
+    if (!targetPkg) {
+      toast.error('활성 패키지가 없습니다');
+      return;
+    }
+
+    setSavingHealerDeduct(true);
+
+    // 2. 패키지 회차 차감 (saveC22Deduct 동일 로직)
+    const usedCount = packageSessions.filter(s => s.package_id === targetPkg.id && s.status === 'used').length;
+    const { error: deductError } = await supabase.from('package_sessions').insert({
+      package_id: targetPkg.id,
+      session_number: usedCount + 1,
+      session_type: c22DeductForm.treatmentType,
+      session_date: c22DeductForm.sessionDate,
+      performed_by: c22DeductForm.therapistId,
+      status: 'used',
+    });
+    if (deductError) {
+      setSavingHealerDeduct(false);
+      toast.error(`차감 실패: ${deductError.message}`);
+      return;
+    }
+
+    // 세션 새로고침 (remaining 집계)
+    const pkgIds = packages.map(p => p.id);
+    const { data: sessData } = await supabase
+      .from('package_sessions')
+      .select('id, package_id, session_number, session_type, session_date, performed_by, status, memo, staff:performed_by(name)')
+      .in('package_id', pkgIds)
+      .order('session_number', { ascending: true });
+    setPackageSessions(
+      (sessData ?? []).map((s: Record<string, unknown>) => ({
+        id: s.id as string,
+        package_id: s.package_id as string,
+        session_number: s.session_number as number,
+        session_type: s.session_type as string,
+        session_date: s.session_date as string,
+        performed_by: s.performed_by as string | null,
+        staff_name: (s.staff as { name: string } | null)?.name ?? null,
+        status: s.status as string,
+        memo: s.memo as string | null,
+      }))
+    );
+    const remainingArr = computeRemainingFromSessionRows(packages, (sessData ?? []) as _SessRow[]);
+    setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? prev[i]?.remaining ?? null })));
+    setC22DeductForm(f => ({
+      ...f,
+      therapistId: customer.designated_therapist_id ?? '',
+      treatmentType: 'heated_laser',
+    }));
+
+    // 3. 힐러 플래그 ON (토글 아닌 SET — 차감과 동시이므로 항상 ON)
     const today = format(new Date(), 'yyyy-MM-dd');
     const nextResv = reservations
       .filter(r => r.reservation_date >= today && r.status !== 'cancelled' && r.status !== 'noshow')
       .sort((a, b) => a.reservation_date.localeCompare(b.reservation_date))[0] ?? null;
 
-    setHealerFlagLoading(true);
-
     if (!nextResv) {
-      // AC-2 + AC-9: 다음 예약 없음 → pending_healer_flag 토글
-      const newPendingFlag = !customer.pending_healer_flag;
-      const { error } = await supabase
+      // 다음 예약 없음 → pending_healer_flag ON
+      const { error: flagError } = await supabase
         .from('customers')
-        .update({ pending_healer_flag: newPendingFlag })
+        .update({ pending_healer_flag: true })
         .eq('id', customer.id);
-      setHealerFlagLoading(false);
-      if (error) { toast.error(`저장 실패: ${error.message}`); return; }
-      setCustomer(prev => prev ? { ...prev, pending_healer_flag: newPendingFlag } : prev);
-      if (newPendingFlag) {
-        toast.success('힐러 예약 대기 설정됨. 다음 예약 시 자동 적용돼요.');
-      } else {
-        toast.success('힐러 대기 해제됨');
-      }
-      return;
-    }
-
-    // 다음 예약 있음: reservations.healer_flag 토글
-    const newFlag = !nextResv.healer_flag;
-    const { error } = await supabase
-      .from('reservations')
-      .update({ healer_flag: newFlag })
-      .eq('id', nextResv.id);
-    setHealerFlagLoading(false);
-    if (error) {
-      toast.error(`힐러 플래그 저장 실패: ${error.message}`);
-      return;
-    }
-    setReservations(prev => prev.map(r => r.id === nextResv.id ? { ...r, healer_flag: newFlag } : r));
-    if (newFlag) {
-      toast.success(`다음 예약(${nextResv.reservation_date})에 힐러 플래그 설정됨`);
+      setSavingHealerDeduct(false);
+      if (flagError) { toast.error(`힐러 플래그 저장 실패: ${flagError.message}`); return; }
+      setCustomer(prev => prev ? { ...prev, pending_healer_flag: true } : prev);
+      toast.success('회차 차감 + 힐러 예약 대기 설정 완료');
     } else {
-      toast.success('힐러 플래그 해제됨');
+      // 다음 예약 있음 → healer_flag ON
+      const { error: flagError } = await supabase
+        .from('reservations')
+        .update({ healer_flag: true })
+        .eq('id', nextResv.id);
+      setSavingHealerDeduct(false);
+      if (flagError) { toast.error(`힐러 플래그 저장 실패: ${flagError.message}`); return; }
+      setReservations(prev => prev.map(r => r.id === nextResv.id ? { ...r, healer_flag: true } : r));
+      toast.success(`회차 차감 + 다음 예약(${nextResv.reservation_date}) 힐러 플래그 설정 완료`);
     }
   };
 
@@ -4730,8 +4778,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     </button>
                     <button
                       type="button"
-                      onClick={handleHealerFlag}
-                      disabled={healerFlagLoading}
+                      onClick={handleHealerDeduct}
+                      disabled={savingHealerDeduct || !c22DeductForm.therapistId || packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length === 0}
                       title={healerTitle}
                       className={cn(
                         'flex-1 rounded py-1.5 text-[10px] font-medium transition disabled:opacity-50',
@@ -4740,7 +4788,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           : 'bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100',
                       )}
                     >
-                      {healerFlagLoading
+                      {savingHealerDeduct
                         ? '저장 중…'
                         : isActive
                           ? '힐러예약 후 차감 ✓'
