@@ -370,7 +370,8 @@ export default function Closing() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('staff')
-        .select('id, name, role, clinic_id, active, created_at')
+        // T-20260522-foot-STAFF-NAME-UNIFY: display_name 추가 → 드롭다운 구성명 표시
+        .select('id, name, display_name, role, clinic_id, active, created_at')
         .eq('clinic_id', clinic!.id)
         .eq('active', true)
         .in('role', ['consultant', 'coordinator', 'director', 'therapist'])
@@ -507,9 +508,10 @@ export default function Closing() {
     return map;
   }, [customersBasic]);
 
+  // T-20260522-foot-STAFF-NAME-UNIFY: id → display_name(구성명) fallback to name
   const staffMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const s of staffList) map.set(s.id, s.name);
+    for (const s of staffList) map.set(s.id, s.display_name || s.name);
     return map;
   }, [staffList]);
 
@@ -1185,8 +1187,9 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                 >
                   <option value="">전체</option>
                   {/* T-20260522-foot-CLOSING-STAFF-DROP AC-1: 2번차트 동일 — role='director'(원장) 코드 레벨 제외 */}
+                  {/* T-20260522-foot-STAFF-NAME-UNIFY: display_name(구성명) fallback to name */}
                   {staffList.filter(s => s.role !== 'director').map(s => (
-                    <option key={s.id} value={s.name}>{s.name}</option>
+                    <option key={s.id} value={s.display_name || s.name}>{s.display_name || s.name}</option>
                   ))}
                   {/* T-20260522-foot-DAILY-SETTLE-STAFF AC-3: '미배정' → '미지정' */}
                   <option value="미지정">미지정</option>
@@ -1650,7 +1653,8 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
               onChange={e => setStaffName(e.target.value)}
             >
               <option value="">— 선택 —</option>
-              {staffList.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+              {/* T-20260522-foot-STAFF-NAME-UNIFY: 수기결제 담당자도 display_name fallback */}
+              {staffList.map(s => <option key={s.id} value={s.display_name || s.name}>{s.display_name || s.name}</option>)}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
