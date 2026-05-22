@@ -1,0 +1,220 @@
+/**
+ * E2E spec — T-20260522-foot-RESV-PKG-HISTORY
+ * 재진 예약 등록 팝업 — 고객 선택 시 구매패키지 시술내역 표시
+ *
+ * AC-1: 재진 예약 등록 팝업에서 고객 선택 후 패키지명·회차·치료명·시술일 표시
+ * AC-2: 데이터 소스 = packages + package_sessions (신규 DB 불필요)
+ * AC-3: 시술내역 없는 고객은 "시술내역 없음" 안내 표시
+ * AC-4: 태블릿(SM-X400) 해상도(1200×800)에서 팝업 레이아웃 유지
+ *
+ * 시나리오 1: 재진 예약 → 시술내역 있는 고객 선택 → 패키지 시술내역 표시
+ * 시나리오 2: 재진 예약 → 시술내역 없는 고객 선택 → "시술내역 없음" 안내
+ * 시나리오 3: 태블릿 해상도에서 팝업 레이아웃 확인
+ *
+ * 비고: 구현은 T-20260522-foot-RESV-TREAT-HISTORY(878c79b)와 동일.
+ *       본 티켓은 티켓 파일 누락 보정 — 동일 기능을 다른 티켓 ID로 검증.
+ */
+import { test, expect } from '@playwright/test';
+import { createClient } from '@supabase/supabase-js';
+
+const SUPA_URL = process.env.VITE_SUPABASE_URL!;
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+const APP_URL = process.env.APP_URL ?? 'http://localhost:5173';
+
+// ─── 헬퍼 ────────────────────────────────────────────────────────────
+async function loginAdmin(page: import('@playwright/test').Page) {
+  await page.goto(`${APP_URL}/login`);
+  await page.fill('input[type="email"]', process.env.TEST_EMAIL ?? 'admin@test.com');
+  await page.fill('input[type="password"]', process.env.TEST_PASSWORD ?? 'test1234');
+  await page.click('button[type="submit"]');
+  await page.waitForURL(/admin/, { timeout: 15_000 });
+}
+
+function makeServiceClient() {
+  return createClient(SUPA_URL, SERVICE_KEY, { auth: { persistSession: false } });
+}
+
+async function createTestCustomer(
+  sb: ReturnType<typeof createClient>,
+  name: string,
+) {
+  const phone = `+821055${Date.now().toString().slice(-6)}`;
+  const { data, error } = await sb
+    .from('customers')
+    .insert({ clinic_id: CLINIC_ID, name, phone, visit_type: 'returning' })
+    .select('id')
+    .single();
+  if (error) throw new Error(`고객 생성 실패: ${error.message}`);
+  return (data as { id: string }).id;
+}
+
+async function createTestPackageWithSessions(
+  sb: ReturnType<typeof createClient>,
+  customerId: string,
+  packageName: string,
+  sessionCount: number,
+) {
+  const { data: pkg, error: pkgErr } = await sb
+    .from('packages')
+    .insert({
+      clinic_id: CLINIC_ID,
+      customer_id: customerId,
+      package_name: packageName,
+      total_sessions: sessionCount,
+      status: 'active',
+      contract_date: new Date().toISOString().slice(0, 10),
+    })
+    .select('id')
+    .single();
+  if (pkgErr) throw new Error(`패키지 생성 실패: ${pkgErr.message}`);
+  const pkgId = (pkg as { id: string }).id;
+
+  const sessions = Array.from({ length: sessionCount }, (_, i) => ({
+    package_id: pkgId,
+    session_number: i + 1,
+    session_type: `레이저 ${i + 1}회`,
+    session_date: new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10),
+    status: 'completed',
+  }));
+  await sb.from('package_sessions').insert(sessions);
+  return pkgId;
+}
+
+async function cleanup(sb: ReturnType<typeof createClient>, customerIds: string[]) {
+  for (const cid of customerIds) {
+    const { data: pkgs } = await sb.from('packages').select('id').eq('customer_id', cid);
+    const pkgIds = (pkgs ?? []).map((p: { id: string }) => p.id);
+    if (pkgIds.length > 0) {
+      await sb.from('package_sessions').delete().in('package_id', pkgIds);
+      await sb.from('packages').delete().in('id', pkgIds);
+    }
+    await sb.from('customers').delete().eq('id', cid);
+  }
+}
+
+async function openNewReservationEditor(page: import('@playwright/test').Page) {
+  await page.goto(`${APP_URL}/admin/reservations`);
+  await page.click('button:has-text("새 예약")');
+  await page.waitForSelector('role=dialog', { timeout: 8_000 });
+}
+
+async function selectCustomerInEditor(
+  page: import('@playwright/test').Page,
+  customerName: string,
+) {
+  const nameInput = page.locator('input[placeholder="홍길동"]');
+  await nameInput.fill(customerName);
+  await page.waitForTimeout(600);
+  const option = page.locator('[data-testid="patient-option"]').first();
+  if (await option.isVisible()) await option.click();
+}
+
+// ─── 테스트 ──────────────────────────────────────────────────────────
+test.describe('T-20260522-foot-RESV-PKG-HISTORY', () => {
+  const toCleanup: string[] = [];
+  let sb: ReturnType<typeof createClient>;
+
+  test.beforeAll(() => {
+    sb = makeServiceClient();
+  });
+
+  test.afterAll(async () => {
+    if (toCleanup.length > 0) await cleanup(sb, toCleanup);
+  });
+
+  // ── S1: 재진 예약 — 시술내역 있는 고객 ────────────────────────────
+  test('S1: 고객 선택 시 패키지명·회차·치료명·시술일 4컬럼 표시 (AC-1/2)', async ({ page }) => {
+    const cid = await createTestCustomer(sb, '재진이력고객_PKG');
+    toCleanup.push(cid);
+    await createTestPackageWithSessions(sb, cid, '풋케어 10회권', 3);
+
+    await loginAdmin(page);
+    await openNewReservationEditor(page);
+    await selectCustomerInEditor(page, '재진이력고객_PKG');
+
+    // AC-1: 시술내역 패널 표시
+    const panel = page.locator('[data-testid="treat-history-panel"]');
+    await panel.waitFor({ timeout: 10_000 });
+
+    // 로딩 완료 대기
+    await page
+      .locator('[data-testid="treat-history-loading"]')
+      .waitFor({ state: 'hidden', timeout: 10_000 })
+      .catch(() => {});
+
+    // AC-1: 4컬럼 헤더
+    await expect(panel).toContainText('패키지명');
+    await expect(panel).toContainText('회차');
+    await expect(panel).toContainText('치료명');
+    await expect(panel).toContainText('시술일');
+
+    // AC-2: 데이터 rows — 패키지명 + 회차 형식 N/M
+    await expect(panel).toContainText('풋케어 10회권');
+    await expect(panel).toContainText('1/3');
+
+    // AC-2: 최소 1건 이상
+    const rows = panel.locator('[data-testid^="treat-history-row-"]');
+    expect(await rows.count()).toBeGreaterThanOrEqual(1);
+  });
+
+  // ── S2: 재진 예약 — 시술내역 없는 고객 ────────────────────────────
+  test('S2: 시술내역 없는 고객 선택 시 "시술 이력이 없습니다" 안내 (AC-3)', async ({ page }) => {
+    const cid = await createTestCustomer(sb, '재진이력없음_PKG');
+    toCleanup.push(cid);
+    // 패키지/세션 없음 — 고객만 생성
+
+    await loginAdmin(page);
+    await openNewReservationEditor(page);
+    await selectCustomerInEditor(page, '재진이력없음_PKG');
+
+    // AC-1: 패널 표시
+    const panel = page.locator('[data-testid="treat-history-panel"]');
+    await panel.waitFor({ timeout: 10_000 });
+
+    // AC-3: "시술 이력이 없습니다" 안내
+    const emptyMsg = page.locator('[data-testid="treat-history-empty"]');
+    await emptyMsg.waitFor({ timeout: 10_000 });
+    await expect(emptyMsg).toBeVisible();
+  });
+
+  // ── S3: 태블릿 해상도(1200×800) 팝업 레이아웃 ──────────────────
+  test('S3: 태블릿(SM-X400) 해상도에서 팝업 레이아웃 정상 (AC-4)', async ({ page }) => {
+    // AC-4: SM-X400 landscape 해상도
+    await page.setViewportSize({ width: 1200, height: 800 });
+
+    const cid = await createTestCustomer(sb, '태블릿레이아웃_PKG');
+    toCleanup.push(cid);
+    await createTestPackageWithSessions(sb, cid, '체험패키지', 2);
+
+    await loginAdmin(page);
+    await openNewReservationEditor(page);
+    await selectCustomerInEditor(page, '태블릿레이아웃_PKG');
+
+    const panel = page.locator('[data-testid="treat-history-panel"]');
+    await panel.waitFor({ timeout: 10_000 });
+    await page
+      .locator('[data-testid="treat-history-loading"]')
+      .waitFor({ state: 'hidden', timeout: 10_000 })
+      .catch(() => {});
+
+    // AC-4: 패널이 viewport 안에 온전히 렌더됨
+    const box = await panel.boundingBox();
+    expect(box).not.toBeNull();
+    if (box) {
+      // 패널이 viewport 우측을 벗어나지 않음
+      expect(box.x + box.width).toBeLessThanOrEqual(1210);
+      // 패널 높이가 합리적 범위 내 (0 ~ 600px)
+      expect(box.height).toBeGreaterThan(0);
+      expect(box.height).toBeLessThan(600);
+    }
+
+    // 저장 버튼 접근 가능
+    const saveBtn = page.locator('button:has-text("저장")').last();
+    await expect(saveBtn).toBeVisible();
+    const saveBtnBox = await saveBtn.boundingBox();
+    if (saveBtnBox) {
+      expect(saveBtnBox.x + saveBtnBox.width).toBeLessThanOrEqual(1210);
+    }
+  });
+});
