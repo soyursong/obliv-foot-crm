@@ -1,7 +1,7 @@
 ---
 id: T-20260522-foot-DRAG-RESP-OPT
 title: "대시보드 슬롯 드래그 반응속도 추가 최적화"
-status: deploy-ready
+status: deployed
 priority: P1
 domain: foot
 created_at: 2026-05-22
@@ -11,8 +11,15 @@ deploy_ready_at: 2026-05-22
 deploy_ready_by: dev-foot
 db_migration: false
 build_passed: true
-build_time: "3.27s"
-commit_sha: TBD
+build_time: "3.52s"
+commit_sha: 171f8f24766d292fb3f67c75cdcd9fc2ce59dc4a
+qa_result: pass
+qa_grade: Green
+deployed_at: "2026-05-22T11:24:10+09:00"
+deploy_commit: 171f8f24766d292fb3f67c75cdcd9fc2ce59dc4a
+bundle_hash: "CDr3iSO-"
+field_soak_until: "2026-05-23T11:24:10+09:00"
+field_validation_slack_ts: "1779416692.054619"
 e2e_spec: tests/e2e/T-20260522-foot-DRAG-RESP-OPT.spec.ts
 related: T-20260522-foot-SLOT-SNAP-FIX (deployed), T-20260520-foot-SLOT-MOVE-REVERT (deploy-ready), T-20260522-foot-PERF-TUNING (in_progress)
 reporter: 김주연 총괄
