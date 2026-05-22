@@ -8,6 +8,10 @@
  * AC-4: 업로드 진행률 UI — 프로그레스 바 존재 확인 (구조 검증)
  * AC-5: 이미지 호버 시 회전 편집 버튼 노출, 편집 모달에 좌회전/우회전 버튼 존재
  * AC-6: 카메라 모달은 fixed inset-0으로 전체화면 커버 (태블릿 최적화)
+ *
+ * FIX-AC-5 (autofocus): getUserMedia 성공 후 applyConstraints({ focusMode: 'continuous' }) 호출
+ *   - Galaxy Tab Android WebView 기본값이 manual/none 될 수 있어 연속 AF 명시 필요
+ *   - 미지원 기기(iOS Safari 등)는 try/catch로 graceful ignore
  */
 import { test, expect } from '@playwright/test';
 import { loginAndWaitForDashboard } from '../helpers';
@@ -246,6 +250,144 @@ test.describe('T-20260522-foot-MEDIMG-CAMERA — 진료이미지 카메라 촬�
     const saveBtn = page.getByRole('button', { name: /저장/ });
     await expect(saveBtn).toBeVisible();
     // 취소
+    await page.getByRole('button', { name: /취소/ }).first().click();
+  });
+
+  /**
+   * FIX-AC-5 (autofocus): getUserMedia 후 applyConstraints({ focusMode: 'continuous' }) 호출 검증
+   * - Galaxy Tab에서 연속 AF가 명시적으로 설정되는지 확인
+   * - 미지원 기기에서 throw해도 카메라 정상 진입 확인 (graceful ignore)
+   */
+  test('FIX-AC-5: getUserMedia 후 applyConstraints focusMode:continuous 호출, 미지원 시 graceful', async ({ page }) => {
+    await page.addInitScript(() => {
+      // applyConstraints 호출 기록
+      (window as unknown as Record<string, unknown>).__afConstraintsCalled = false;
+      (window as unknown as Record<string, unknown>).__afFocusMode = null;
+
+      const mockTrack = {
+        stop: () => {},
+        kind: 'video',
+        enabled: true,
+        applyConstraints: (constraints: MediaTrackConstraints) => {
+          const advanced = (constraints as unknown as { advanced?: { focusMode?: string }[] }).advanced;
+          if (advanced && advanced[0]?.focusMode) {
+            (window as unknown as Record<string, unknown>).__afConstraintsCalled = true;
+            (window as unknown as Record<string, unknown>).__afFocusMode = advanced[0].focusMode;
+          }
+          return Promise.resolve();
+        },
+      };
+      const mockStream = {
+        getTracks: () => [mockTrack],
+        getVideoTracks: () => [mockTrack],
+        active: true,
+      };
+      Object.defineProperty(navigator, 'mediaDevices', {
+        value: { getUserMedia: () => Promise.resolve(mockStream) },
+        writable: true,
+      });
+    });
+
+    await page.goto('/admin/customers');
+    await page.waitForLoadState('networkidle');
+
+    const firstRow = page.locator('tr[data-customer-id], tbody tr').first();
+    if (await firstRow.count() === 0) { test.skip(true, '고객 없음'); return; }
+    await firstRow.click();
+    await page.waitForLoadState('networkidle');
+
+    const historyBtn = page.getByRole('button', { name: /이력|history/i }).first();
+    if (await historyBtn.count() > 0) await historyBtn.click();
+
+    const imagesTabBtn = page.getByRole('button', { name: /진료이미지/i }).first();
+    if (await imagesTabBtn.count() === 0) { test.skip(true, '탭 없음'); return; }
+    await imagesTabBtn.click();
+    await page.waitForLoadState('networkidle');
+
+    const cameraBtn = page.getByRole('button', { name: /사진촬영/i });
+    if (await cameraBtn.count() === 0) { test.skip(true, '사진촬영 버튼 없음'); return; }
+    await cameraBtn.click();
+
+    // 시술 전 선택 → selectTypeAndStart 실행
+    const beforeBtn = page.getByRole('button', { name: /시술 전/ });
+    if (await beforeBtn.count() === 0) { test.skip(true, '시술 전 버튼 없음'); return; }
+    await beforeBtn.click();
+    await page.waitForTimeout(500);
+
+    // FIX-AC-5 검증: applyConstraints가 focusMode: 'continuous'로 호출되었는지
+    const afCalled: boolean = await page.evaluate(() =>
+      (window as unknown as Record<string, unknown>).__afConstraintsCalled as boolean ?? false
+    );
+    const afFocusMode: string | null = await page.evaluate(() =>
+      (window as unknown as Record<string, unknown>).__afFocusMode as string | null
+    );
+    expect(afCalled).toBe(true);
+    expect(afFocusMode).toBe('continuous');
+
+    // capture phase로 정상 진입 확인 (autofocus 설정이 화면 전환을 막지 않음)
+    const shutterOrComplete = page.getByRole('button', { name: /촬영|완료/ });
+    await expect(shutterOrComplete.first()).toBeVisible({ timeout: 3000 });
+
+    // 취소
+    await page.getByRole('button', { name: /취소/ }).first().click();
+  });
+
+  test('FIX-AC-5-GRACEFUL: applyConstraints throw 시에도 카메라 정상 진입 (iOS 등 미지원 기기)', async ({ page }) => {
+    await page.addInitScript(() => {
+      (window as unknown as Record<string, unknown>).__gracefulPassed = false;
+
+      const mockTrack = {
+        stop: () => {},
+        kind: 'video',
+        enabled: true,
+        applyConstraints: () => {
+          // 미지원 기기 시뮬레이션 — throw
+          return Promise.reject(new Error('OverconstrainedError: focusMode not supported'));
+        },
+      };
+      const mockStream = {
+        getTracks: () => [mockTrack],
+        getVideoTracks: () => [mockTrack],
+        active: true,
+      };
+      Object.defineProperty(navigator, 'mediaDevices', {
+        value: { getUserMedia: () => Promise.resolve(mockStream) },
+        writable: true,
+      });
+    });
+
+    await page.goto('/admin/customers');
+    await page.waitForLoadState('networkidle');
+
+    const firstRow = page.locator('tr[data-customer-id], tbody tr').first();
+    if (await firstRow.count() === 0) { test.skip(true, '고객 없음'); return; }
+    await firstRow.click();
+    await page.waitForLoadState('networkidle');
+
+    const historyBtn = page.getByRole('button', { name: /이력|history/i }).first();
+    if (await historyBtn.count() > 0) await historyBtn.click();
+
+    const imagesTabBtn = page.getByRole('button', { name: /진료이미지/i }).first();
+    if (await imagesTabBtn.count() === 0) { test.skip(true, '탭 없음'); return; }
+    await imagesTabBtn.click();
+    await page.waitForLoadState('networkidle');
+
+    const cameraBtn = page.getByRole('button', { name: /사진촬영/i });
+    if (await cameraBtn.count() === 0) { test.skip(true, '버튼 없음'); return; }
+    await cameraBtn.click();
+
+    const beforeBtn = page.getByRole('button', { name: /시술 전/ });
+    if (await beforeBtn.count() === 0) { test.skip(true, '시술 전 없음'); return; }
+    await beforeBtn.click();
+    await page.waitForTimeout(500);
+
+    // applyConstraints가 throw해도 에러 메시지 없이 capture phase 진입해야 함
+    const cameraError = page.getByText(/카메라 접근 권한/);
+    await expect(cameraError).not.toBeVisible({ timeout: 2000 });
+
+    const shutterOrComplete = page.getByRole('button', { name: /촬영|완료/ });
+    await expect(shutterOrComplete.first()).toBeVisible({ timeout: 3000 });
+
     await page.getByRole('button', { name: /취소/ }).first().click();
   });
 

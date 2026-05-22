@@ -628,6 +628,23 @@ function TreatmentImagesSection({
         audio: false,
       });
       streamRef.current = stream;
+
+      // FIX-AC-5 T-20260522-foot-MEDIMG-CAMERA (autofocus):
+      // flickering fix 이후 getUserMedia constraints에 focusMode 미지정 →
+      // Galaxy Tab Android WebView 기본값이 'manual'/'none'이 될 수 있음.
+      // applyConstraints({ advanced: [{ focusMode: 'continuous' }] })로 연속 AF 명시.
+      // 미지원 기기(iOS Safari 등)는 try/catch로 무시 — flickering 픽스 영향 없음.
+      try {
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          await videoTrack.applyConstraints({
+            advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
+          });
+        }
+      } catch (_afErr) {
+        // focusMode 미지원 기기는 무시 (iOS Safari, 구형 Chrome 등)
+      }
+
       setCameraPhase('capture');
     } catch (_err) {
       setCameraError('카메라 접근 권한이 없습니다. 브라우저 설정에서 카메라를 허용해주세요.');

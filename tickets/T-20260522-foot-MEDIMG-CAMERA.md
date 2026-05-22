@@ -12,11 +12,11 @@ deploy_ready_at: 2026-05-22T14:45:00+09:00
 deploy_ready_by: dev-foot
 db_migration: false
 build_passed: true
-build_time: "3.41s"
-commit_sha: db3173b
+build_time: "3.16s"
+commit_sha: pending
 e2e_spec: tests/e2e/T-20260522-foot-MEDIMG-CAMERA.spec.ts
 signals_recorded: true
-fix_applied: "flickering — useCallback([])+RAF+getUserMedia-constraints+GPU-layer"
+fix_applied: "flickering+autofocus — useCallback([])+RAF+getUserMedia-constraints+GPU-layer+applyConstraints(focusMode:continuous)"
 ---
 
 ## 개요
@@ -81,10 +81,39 @@ S Pen 태블릿에서 원내에서 직접 시술 전/후 사진 촬영 → Supab
 - FIX-AC-2: `videoRefCallback` 미메모이제이션 + constraints + RAF 3가지 원인 특정 ✅
 - FIX-AC-3: useCallback+RAF+GPU 레이어로 안정적 프리뷰 ✅
 - FIX-AC-4: 기존 업로드·편집·연속촬영 로직 무변경 (regression 없음) ✅
+- FIX-AC-5: 초점(autofocus) 정상 동작 — `applyConstraints({ advanced: [{ focusMode: 'continuous' }] })` 명시 설정 ✅
+
+### FIX-AC-5 — autofocus 초점 미잡힘 (2026-05-22 23:25 추가 보고)
+
+**증상**: "2번차트 진료 이미지 촬영 시 초점이 정상적으로 잡히지 않아 이미지 화질 저하" (김주연 총괄)
+
+**원인 분석**:
+- flickering fix에서 `width/height` constraints 제거 후 `getUserMedia` constraint이 `facingMode`만 남음
+- `focusMode` 미지정 시 Galaxy Tab Android WebView는 기기 기본값(`manual` 또는 `none`)이 적용될 수 있음
+- `videoRefCallback useCallback([])` 및 RAF play() 지연은 autofocus에 영향 없음 (AF는 MediaStreamTrack 레벨)
+- `getUserMedia` 자체에 `focusMode` 추가 불가 (Chrome 미지원) → `applyConstraints` 사후 적용
+
+**수정 내용** (`selectTypeAndStart` 함수):
+```typescript
+const videoTrack = stream.getVideoTracks()[0];
+if (videoTrack) {
+  await videoTrack.applyConstraints({
+    advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
+  });
+}
+```
+- `try/catch`로 미지원 기기(iOS Safari 등) graceful ignore
+- flickering fix (useCallback+RAF+GPU layer) 완전 유지
+
+**E2E Spec 추가**:
+- `FIX-AC-5`: `applyConstraints` mock으로 `focusMode: 'continuous'` 호출 검증
+- `FIX-AC-5-GRACEFUL`: `applyConstraints` throw 시에도 capture phase 정상 진입
 
 ### E2E Regression spec 추가
 
 `FIX-REGRESSION: 썸네일 추가 후 video srcObject 안정 유지` — play() 재호출 횟수 ≤1 검증
+`FIX-AC-5: getUserMedia 후 applyConstraints focusMode:continuous 호출 검증`
+`FIX-AC-5-GRACEFUL: applyConstraints throw 시에도 카메라 정상 진입`
 
 ## 참고
 
