@@ -11,7 +11,7 @@ deploy_ready_by: dev-foot
 db_migration: false
 build_passed: true
 build_time: "3.16s"
-commit_sha: TBD
+commit_sha: 1badbae
 e2e_spec: ""
 e2e_spec_exempt_reason: "FE-only 팝업/토스트 조건부 분기. DB 변경 없음. 리스크 0/5."
 related: T-20260522-foot-RESV-MOVE-CONFIRM (deployed), T-20260522-foot-SLOT-SNAP-FIX (deployed), T-20260522-foot-DRAG-RESP-OPT (deployed), T-20260522-foot-TIMETABLE-FOLD (deployed)
