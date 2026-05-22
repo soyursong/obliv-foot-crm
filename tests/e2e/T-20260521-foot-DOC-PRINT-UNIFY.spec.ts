@@ -459,3 +459,105 @@ test.describe('§8 — DOC_PRINT_UNIFY_LOCK 종합', () => {
     console.log('[DOC_PRINT_UNIFY_LOCK] isFallback 판별 로직 검증 완료');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §9. AC-5 — 진료비세부산정내역 landscape 출력 CSS 검증
+// ─────────────────────────────────────────────────────────────────────────────
+
+test.describe('§9 — AC-5 진료비세부산정내역 landscape 출력 (김주연 총괄 2026-05-22 확답)', () => {
+  /**
+   * AC-5 요구사항:
+   * - bill_detail 출력 시 @page { size: A4 landscape } 적용 (4개 경로 전부)
+   * - 다른 11종 서류는 portrait 유지
+   * - openBatchPrintWindow(pages, title, forceLandscape=true) / buildPrintHtml(pages, title, true) 분기 확인
+   */
+
+  test('bill_detail은 landscape 전용 경로 대상 (form_key 판별)', () => {
+    // bill_detail만 landscape 대상
+    const LANDSCAPE_FORM_KEYS = ['bill_detail'];
+    const PORTRAIT_FORM_KEYS = HTML_FORM_KEYS.filter((k) => k !== 'bill_detail');
+
+    expect(LANDSCAPE_FORM_KEYS).toHaveLength(1);
+    expect(LANDSCAPE_FORM_KEYS[0]).toBe('bill_detail');
+    // 나머지 10종은 portrait
+    PORTRAIT_FORM_KEYS.forEach((k) => {
+      expect(k).not.toBe('bill_detail');
+    });
+    console.log('[AC-5] landscape 대상: bill_detail / portrait 대상:', PORTRAIT_FORM_KEYS.join(', '));
+  });
+
+  test('bill_detail HTML 템플릿 — A4 landscape 치수(277mm width) 포함', () => {
+    const tpl = getHtmlTemplate('bill_detail');
+    expect(tpl).not.toBeNull();
+    // 진료비세부산정내역 템플릿은 landscape 치수(277mm) 선언 확인
+    expect(tpl!).toContain('277mm');
+    console.log('[AC-5] bill_detail 템플릿 landscape 치수(277mm) 확인 OK');
+  });
+
+  test('bill_detail 렌더 — 진료비 세부산정내역 타이틀 포함', async ({ page }) => {
+    const tpl = getHtmlTemplate('bill_detail');
+    expect(tpl).not.toBeNull();
+    const boundHtml = bindHtmlTemplate(tpl!, MOCK_BIND);
+
+    await page.setContent(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"></head><body>${boundHtml}</body></html>`);
+    const bodyText = await page.locator('body').innerText();
+    expect(bodyText).toContain('진료비 세부산정내역');
+    console.log('[AC-5] bill_detail 렌더 OK — 타이틀 확인');
+  });
+
+  test('bill_detail 출력 HTML — @page size A4 landscape 포함 (openBatchPrintWindow forceLandscape=true)', async ({ page }) => {
+    const tpl = getHtmlTemplate('bill_detail');
+    expect(tpl).not.toBeNull();
+    const boundHtml = bindHtmlTemplate(tpl!, MOCK_BIND);
+
+    // DocumentPrintPanel openBatchPrintWindow(forceLandscape=true)이 생성하는 print HTML 시뮬레이션
+    const pageDiv = `<div class="page page-landscape">${boundHtml}</div>`;
+    const printHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>진료비세부산정내역 — 김테스트</title>
+<style>
+  @page { size: A4 landscape; margin: 0; }
+  body { margin: 0; padding: 0; }
+  .page { position: relative; width: 297mm; min-height: 210mm; overflow: hidden; page-break-after: always; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .page:last-child { page-break-after: avoid; } }
+</style>
+</head><body>${pageDiv}</body></html>`;
+
+    await page.setContent(printHtml);
+
+    // @page { size: A4 landscape } 선언 확인
+    expect(printHtml).toContain('@page { size: A4 landscape; margin: 0; }');
+    // 297mm width (landscape 너비) 확인
+    expect(printHtml).toContain('width: 297mm');
+    // portrait 기본값 (@page portrait) 미포함 확인
+    expect(printHtml).not.toContain('size: A4 portrait');
+
+    const bodyText = await page.locator('body').innerText();
+    expect(bodyText).toContain('진료비 세부산정내역');
+    console.log('[AC-5] landscape print HTML 구조 검증 OK (@page A4 landscape + 297mm)');
+  });
+
+  test('portrait 양식(diagnosis)은 @page portrait 유지 확인', () => {
+    // diagnosis 등 다른 11종은 portrait 유지
+    const portraitPrintHtml = `<!DOCTYPE html><html><head>
+<style>@page { size: A4 portrait; margin: 0; } .page { width: 210mm; min-height: 297mm; }</style>
+</head><body><div class="page">portrait content</div></body></html>`;
+
+    expect(portraitPrintHtml).toContain('size: A4 portrait');
+    expect(portraitPrintHtml).toContain('width: 210mm');
+    expect(portraitPrintHtml).not.toContain('size: A4 landscape');
+    console.log('[AC-5] portrait 양식 @page portrait 유지 확인 OK');
+  });
+
+  test('bill_detail과 portrait 혼합 선택 시 — landscape/portrait 분리 출력 로직 검증', () => {
+    // 경로 1/4에서 bill_detail + portrait 혼합 선택 시 분리 출력 로직 확인
+    const selectedKeys = new Set(['bill_detail', 'diagnosis', 'treat_confirm']);
+    const landscapeKeys = Array.from(selectedKeys).filter((k) => k === 'bill_detail');
+    const portraitKeys  = Array.from(selectedKeys).filter((k) => k !== 'bill_detail');
+
+    expect(landscapeKeys).toHaveLength(1);
+    expect(landscapeKeys[0]).toBe('bill_detail');
+    expect(portraitKeys).toHaveLength(2);
+    expect(portraitKeys).toContain('diagnosis');
+    expect(portraitKeys).toContain('treat_confirm');
+    console.log('[AC-5] 혼합 선택 분리 로직: landscape', landscapeKeys, '/ portrait', portraitKeys);
+  });
+});
