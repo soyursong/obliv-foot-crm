@@ -2,7 +2,7 @@
 id: T-20260522-foot-FOOT-PKG-DEDUCT-BUG
 domain: foot
 priority: P0
-status: deploy-ready
+status: deployed
 hotfix: true
 deploy-ready: true
 fix_commit: 01ebfc3
@@ -13,7 +13,18 @@ db_change: false
 created: 2026-05-22
 deadline: 2026-05-22
 reporter: 김주연 총괄
+reporter_slack_id: U0ATDB587PV
+slack_channel: C0ATE5P6JTH
+slack_thread_ts: "1779437454.843149"
 risk_verdict: GO_WARN
+qa_result: pass
+qa_grade: Yellow
+deployed_at: "2026-05-22T18:26:43+09:00"
+deploy_commit: 005f6ef
+bundle_hash: CustomerChartPage-D7bnd9yh
+field_soak_until: "2026-05-23T18:26:43+09:00"
+field_validation_slack_ts: "1779442403.611919"
+supervisor_qa_at: "2026-05-22T09:32:30Z"
 ---
 
 # T-20260522-foot-FOOT-PKG-DEDUCT-BUG — 힐러 예약 후 패키지 회차 차감 미작동 (P0 hotfix)
@@ -74,3 +85,44 @@ risk_verdict: GO_WARN
 
 - **T-20260522-foot-PKG-HEALER-DEDUCT** (01ebfc3): 동일 이슈. 본 티켓이 planner MSG 수신 후 재추적. 동일 fix로 해결됨.
 - **T-20260516-foot-HEALER-RESV-BTN** v3 (7c1e9c3+96e53b0): 날짜 비교 버그만 수정. 패키지 차감 미포함. 독립적.
+
+---
+
+## Supervisor QA 독립 검증 (2026-05-22T09:32Z)
+
+**판정: GO — Yellow (GO_WARN)**
+
+### QA 6항목
+
+| 항목 | 결과 | 비고 |
+|------|------|------|
+| 빌드 | ✅ | npm run build 3.17s, exit 0 |
+| 기존 기능 회귀 | ✅ | saveC22Deduct (line 2316) + onClick={saveC22Deduct} (line 4773) 미변경 |
+| DB 호환 | ✅ | db_change: false. package_sessions 기존 스키마 재사용 |
+| 권한·RLS | ✅ | DB 변경 없음. package_sessions insert는 기존 허용 권한 재사용 |
+| 모바일 레이아웃 | ✅ | 기존 버튼 교체 (동일 위치·클래스 구조 유지) |
+| 빌드 env 매트릭스 | ✅ | VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY grep 확인 |
+
+### Runtime Safety Gate §7.5
+
+- `for (const s of sessions)` — sessions = `(sessData ?? [])` null 가드 ✅
+- `Object.values(used)` — `used = usedMap.get(p.id) ?? {}` null 가드 ✅
+- `remainingArr[i] ?? prev[i]?.remaining ?? null` optional chaining ✅
+- `(s.staff as { name: string } | null)?.name ?? null` optional chaining ✅
+- 위험 패턴 검출 없음
+
+### Cross-CRM Contract Gate
+
+DB 변경 없음 → 해당 없음 (pass)
+
+### 브라우저 시뮬레이션
+
+- URL: https://obliv-foot-crm.vercel.app → /login 리다이렉트
+- page_errors: 0, console_errors: 0, network_errors: 0 ✅
+- White screen 없음 ✅
+
+### 배포 확인
+
+- origin/main push: 이미 완료 (commit 01ebfc3 포함)
+- Vercel 자동 배포 트리거됨
+- 슬랙 배포 알림: C0ATE5P6JTH, thread_ts=1779442403.611919, broadcast ✅

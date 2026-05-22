@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
-import { ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Phone, FileText, Camera, Package, Stethoscope, Trash2, Bell, Upload, MapPin } from 'lucide-react';
+import { ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Phone, FileText, Camera, Package, Stethoscope, Timer, Trash2, Bell, Upload, MapPin } from 'lucide-react';
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
 import { toast } from 'sonner';
 import {
@@ -752,6 +752,11 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const [pododulleDone, setPododulleDone] = useState(false);
   const [laserMinutes, setLaserMinutes] = useState<number | null>(null);
 
+  // T-20260522-foot-LASER-TIMER AC-1: 비가열 타이머 상태
+  const [timerRecord, setTimerRecord] = useState<{ id: string; ends_at: string } | null>(null);
+  const [timerNow, setTimerNow] = useState(Date.now());
+  const [timerLoading, setTimerLoading] = useState(false);
+
   // ── 진료 기록 간소화 상태 (T-20260504-foot-TREATMENT-SIMPLIFY) ──
   const [assignedCounselorId, setAssignedCounselorId] = useState<string | null>(null);
   const [treatmentCategory, setTreatmentCategory] = useState<string | null>(null);
@@ -1132,6 +1137,33 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     return () => window.removeEventListener('storage', handler);
   }, [checkIn?.customer_id, resolvedCustomerId, customerMode?.customerId, load]);
 
+  // T-20260522-foot-LASER-TIMER AC-1/AC-4: 체크인 변경 시 활성 타이머 로드
+  useEffect(() => {
+    if (!checkIn?.id) { setTimerRecord(null); return; }
+    let cancelled = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from('timer_records')
+      .select('id, ends_at')
+      .eq('check_in_id', checkIn.id)
+      .is('stopped_at', null)
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }: { data: { id: string; ends_at: string } | null }) => {
+        if (!cancelled) setTimerRecord(data ?? null);
+      });
+    return () => { cancelled = true; };
+  }, [checkIn?.id]);
+
+  // T-20260522-foot-LASER-TIMER AC-1: 타이머 활성 시 1초 tick
+  useEffect(() => {
+    if (!timerRecord) return;
+    setTimerNow(Date.now());
+    const t = setInterval(() => setTimerNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [timerRecord]);
+
   const deleteCheckIn = async () => {
     if (!checkIn) return;
     if (!window.confirm('체크인을 삭제하시겠습니까?\n결제 데이터가 없을 때만 삭제됩니다.')) return;
@@ -1181,6 +1213,45 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     toast.success('메모 저장됨');
     setIsDirty(false);
     onUpdated();
+  };
+
+  // T-20260522-foot-LASER-TIMER AC-1: 타이머 시작 (INSERT → timer_records)
+  const startTimer = async (minutes: 5 | 15 | 20) => {
+    if (!checkIn || timerRecord || timerLoading) return;
+    setTimerLoading(true);
+    const startsAt = new Date();
+    const endsAt = new Date(startsAt.getTime() + minutes * 60 * 1000);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from('timer_records')
+        .insert({
+          check_in_id: checkIn.id,
+          clinic_id: checkIn.clinic_id,
+          duration_minutes: minutes,
+          started_at: startsAt.toISOString(),
+          ends_at: endsAt.toISOString(),
+          created_by: profile?.id ?? null,
+        })
+        .select('id, ends_at')
+        .single();
+      if (error) { toast.error('타이머 시작 실패'); return; }
+      setTimerRecord({ id: (data as { id: string; ends_at: string }).id, ends_at: (data as { id: string; ends_at: string }).ends_at });
+      setTimerNow(Date.now());
+    } finally {
+      setTimerLoading(false);
+    }
+  };
+
+  // T-20260522-foot-LASER-TIMER AC-1: 타이머 취소 (UPDATE stopped_at)
+  const stopTimer = async () => {
+    if (!timerRecord) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any)
+      .from('timer_records')
+      .update({ stopped_at: new Date().toISOString() })
+      .eq('id', timerRecord.id);
+    setTimerRecord(null);
   };
 
   // T-20260513-foot-C1-SPACE-ASSIGN-RESTORE: 공간 배정 함수
@@ -2466,6 +2537,60 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 )}
               </div>
             </div>
+
+            {/* T-20260522-foot-LASER-TIMER AC-1: 비가열 레이저 타이머 */}
+            {(() => {
+              const remainMs = timerRecord ? new Date(timerRecord.ends_at).getTime() - timerNow : 0;
+              const remainSec = Math.max(0, Math.ceil(remainMs / 1000));
+              const mm = String(Math.floor(remainSec / 60)).padStart(2, '0');
+              const ss = String(remainSec % 60).padStart(2, '0');
+              const isOver = timerRecord && remainMs <= 0;
+              const isAlert = timerRecord && remainMs > 0 && remainMs <= 60000;
+              return (
+                <div className="space-y-1.5" data-testid="laser-timer-panel">
+                  <Label className="text-sm text-emerald-900 flex items-center gap-1.5">
+                    <Timer className="h-3.5 w-3.5" />
+                    <span>비가열 타이머</span>
+                    {timerRecord && (
+                      <span
+                        data-testid="laser-timer-countdown"
+                        className={cn(
+                          'ml-1 font-mono text-sm font-bold tabular-nums tracking-wide',
+                          isOver ? 'text-gray-400' : isAlert ? 'text-red-600 animate-pulse' : 'text-emerald-700',
+                        )}
+                      >
+                        {isOver ? '종료' : `${mm}:${ss}`}
+                      </span>
+                    )}
+                  </Label>
+                  {!timerRecord ? (
+                    <div className="flex gap-1.5" data-testid="laser-timer-start-buttons">
+                      {([5, 15, 20] as const).map((min) => (
+                        <button
+                          key={min}
+                          type="button"
+                          disabled={timerLoading}
+                          data-testid={`laser-timer-btn-${min}`}
+                          onClick={() => startTimer(min)}
+                          className="flex-1 h-10 rounded-md border border-emerald-300 bg-emerald-50 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 active:bg-emerald-200 transition disabled:opacity-50 touch-target"
+                        >
+                          {min}분
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      data-testid="laser-timer-stop-btn"
+                      onClick={stopTimer}
+                      className="w-full h-10 rounded-md border border-red-200 bg-red-50 text-sm font-medium text-red-700 hover:bg-red-100 active:bg-red-200 transition touch-target"
+                    >
+                      타이머 취소
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* 메모 */}
             <div className="space-y-1.5">

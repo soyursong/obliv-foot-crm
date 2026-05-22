@@ -3,9 +3,15 @@ ticket_id: T-20260522-foot-STAFF-REEXPAND
 title: staff 권한 재확대 — 5/21 롤백 4건 재적용
 domain: foot
 priority: P1
-status: deploy-ready
+status: deployed
 deploy_ready: true
 deploy_ready_at: "2026-05-22T14:00:00+09:00"
+qa_result: pass
+qa_grade: Yellow
+deployed_at: "2026-05-22T19:26:00+09:00"
+deploy_commit: ac9485a
+bundle_hash: f4m7ZfvA
+field_soak_until: "2026-05-23T19:26:00+09:00"
 db_change: true
 db_change_note: |
   1. customers_staff_update (UPDATE) 재생성 — 20260522090010_customers_staff_update_rls_reapply.sql

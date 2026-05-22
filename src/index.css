@@ -201,6 +201,15 @@
   animation: healer-border-blink 1.2s ease-in-out infinite;
 }
 
+/* T-20260522-foot-LASER-TIMER AC-3: 레이저 타이머 1분 이하 카드 깜빡임 (빨강 pulse) */
+@keyframes laser-timer-alert {
+  0%, 100% { border-color: #ef4444; box-shadow: 0 0 6px 2px #ef444466; }
+  50%       { border-color: #fca5a5; box-shadow: none; }
+}
+.laser-timer-blink {
+  animation: laser-timer-alert 0.8s ease-in-out infinite;
+}
+
 /* ── T-20260522-foot-TOUCH-EXPAND: touch-target 유틸리티 클래스 ──────────────────── */
 /* Apple HIG / Material Design 44×44px 최소 터치 타겟 */
 @layer utilities {

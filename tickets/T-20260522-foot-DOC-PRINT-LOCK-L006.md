@@ -1,7 +1,7 @@
 ---
 id: T-20260522-foot-DOC-PRINT-LOCK-L006
 domain: foot
-status: deploy-ready
+status: deployed
 priority: P0
 deploy-ready: true
 build-ok: true
@@ -9,6 +9,12 @@ db-change: false
 regression-risk: none
 e2e_spec_exempt_reason: "주석+문서만, UI/로직 변경 없음"
 created: 2026-05-22
+qa_result: pass
+qa_grade: Green
+deployed_at: 2026-05-22T18:37:07+09:00
+deploy_commit: 4b3a1d7
+bundle_hash: index-BmPENLwU
+field_soak_until: 2026-05-23T18:37+09:00
 ---
 
 # T-20260522-foot-DOC-PRINT-LOCK-L006 — 서류출력 경로 통일 코드 보호 락 (L-006)
