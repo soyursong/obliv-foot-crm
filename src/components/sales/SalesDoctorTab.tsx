@@ -1,11 +1,13 @@
 /**
- * T-20260515-foot-SALES-TAB-DOCTOR
- * 매출집계 탭4 — 담당의별 통계
+ * T-20260515-foot-SALES-TAB-DOCTOR / T-20260522-foot-SETTLE-STAFF-LABEL
+ * 매출집계 탭4 — 담당실장별 통계
  *
- * AC-1: check_ins.consultant_id 기준 그룹, 의사 실명 표시
- * AC-2: 비급여 순매출(과세+면세) + 급여 본부금 + 공단청구액(EDI) + 오더 건수
- *       복합결제 안분 — check_in_services.price 비율로 결제금액 안분 (TREATMENT 동일 로직)
- * AC-3: 글로벌 필터(기간·검색) + 엑셀 다운로드는 Sales.tsx 공통 레이어 사용
+ * AC-1 (SETTLE-STAFF-LABEL): "담당의별" → "담당실장별" 라벨 변경
+ * AC-2 (SETTLE-STAFF-LABEL): 데이터소스 consultant_id(deprecated) → customers.assigned_staff_id
+ *   - DAILY-SETTLE-STAFF(9a97d5a) 동일 소스: 2번차트 1구역 담당자 드롭
+ *   - 3-step join: payments(customer_id) → customers(assigned_staff_id) → staff(name)
+ *   - NULL assigned_staff → '미지정' 포함 (DAILY-SETTLE-STAFF AC-3 일관성)
+ * AC-3: 글로벌 필터(기간·검색) + 집계 기준: accounting_date
  *
  * READ-ONLY. DB 변경 없음.
  */
@@ -24,36 +26,43 @@ interface Props {
 
 // ─── DB row types ────────────────────────────────────────────────────────────
 
-interface DoctorPayRow {
+interface PayRow {
   id: string;
   amount: number;
   payment_type: string | null;
   tax_type: string | null;
   accounting_date: string | null;
-  check_ins: {
-    consultant: { id: string; name: string } | null;
-    /** check_in_services.price — 복합결제 안분 비율 산출용 */
-    check_in_services: {
-      price: number;
-    }[] | null;
-  } | null;
+  customer_id: string | null;
+}
+
+interface CustomerRow {
+  id: string;
+  assigned_staff_id: string | null;
+}
+
+interface StaffNameRow {
+  id: string;
+  name: string;
+}
+
+// 쿼리 결과 묶음
+interface StaffPayData {
+  rows: PayRow[];
+  /** customer_id → staff_id */
+  custStaffMap: Map<string, string>;
+  /** staff_id → name */
+  staffNameMap: Map<string, string>;
 }
 
 // ─── 집계 타입 ────────────────────────────────────────────────────────────────
 
-interface DoctorStat {
-  doctorId: string;
-  doctorName: string;
-  /** 오더 건수 (결제 건 수) */
+interface StaffStat {
+  staffId: string;     // staff UUID or '__UNASSIGNED__'
+  staffName: string;   // 실명 or '미지정'
   orderCount: number;
-  /** 비급여 순매출: 과세_비급여 + 면세_비급여 (환불 마이너스 반영) */
   nonInsuranceRevenue: number;
-  /** 급여 본부금: 보험 적용 본인부담금 */
   insuranceCopay: number;
-  /**
-   * 공단청구액 (EDI): 보험청구 시스템 연동 전이므로 항상 0.
-   * 향후 claim_diagnoses / EDI API 연동 시 채울 자리.
-   */
+  /** 공단청구액 — EDI 미연동, 항상 0 */
   ediClaim: number;
 }
 
@@ -64,59 +73,79 @@ export function SalesDoctorTab({ filter }: Props) {
   const { from, to } = filter.dateRange;
   const searchQuery = filter.searchQuery.trim().toLowerCase();
 
-  // payments → check_ins(consultant, check_in_services.price)
-  // 집계 기준: accounting_date (소급 차단)
-  const { data: payments = [], isLoading } = useQuery<DoctorPayRow[]>({
-    queryKey: ['sales-doctor', clinic?.id, from, to],
+  // ── 3-step fetch (DAILY-SETTLE-STAFF 패턴 동일) ───────────────────────────
+  // Step 1: payments(customer_id)
+  // Step 2: customers(assigned_staff_id) for those customer_ids
+  // Step 3: staff(name) for those staff_ids
+  const { data, isLoading } = useQuery<StaffPayData>({
+    queryKey: ['sales-staff-label', clinic?.id, from, to],
     enabled: !!clinic,
     queryFn: async () => {
-      const { data, error } = await supabase
+      // 1. 결제 내역 (accounting_date 기준)
+      const { data: pays, error: payErr } = await supabase
         .from('payments')
-        .select(`
-          id, amount, payment_type, tax_type, accounting_date,
-          check_ins(
-            consultant:staff!check_ins_consultant_id_fkey(id, name),
-            check_in_services(price)
-          )
-        `)
+        .select('id, amount, payment_type, tax_type, accounting_date, customer_id')
         .eq('clinic_id', clinic!.id)
         .not('status', 'eq', 'deleted')
         .gte('accounting_date', from)
         .lte('accounting_date', to);
-      if (error) throw error;
-      return data as unknown as DoctorPayRow[];
+      if (payErr) throw payErr;
+
+      const rows = (pays ?? []) as PayRow[];
+
+      // 2. customer_ids 수집 → customers(assigned_staff_id)
+      const custIds = [...new Set(
+        rows.map((r) => r.customer_id).filter(Boolean) as string[]
+      )];
+
+      const custStaffMap = new Map<string, string>(); // customer_id → staff_id
+      if (custIds.length > 0) {
+        const { data: custs, error: custErr } = await supabase
+          .from('customers')
+          .select('id, assigned_staff_id')
+          .in('id', custIds);
+        if (custErr) throw custErr;
+        for (const c of (custs ?? []) as CustomerRow[]) {
+          if (c.assigned_staff_id) custStaffMap.set(c.id, c.assigned_staff_id);
+        }
+      }
+
+      // 3. staff_ids 수집 → staff(name)
+      const staffIds = [...new Set([...custStaffMap.values()])];
+      const staffNameMap = new Map<string, string>(); // staff_id → name
+      if (staffIds.length > 0) {
+        const { data: staffList, error: staffErr } = await supabase
+          .from('staff')
+          .select('id, name')
+          .in('id', staffIds);
+        if (staffErr) throw staffErr;
+        for (const s of (staffList ?? []) as StaffNameRow[]) {
+          staffNameMap.set(s.id, s.name);
+        }
+      }
+
+      return { rows, custStaffMap, staffNameMap };
     },
   });
 
-  // ── 담당의별 집계 (AC-2 복합결제 안분) ────────────────────────────────────
-  // check_ins.consultant_id는 visit당 단일 의사이므로 안분 후 합산 = 동일.
-  // TREATMENT 동일 로직 적용: price 합계 0이면 균등 분배.
-  const stats = useMemo<DoctorStat[]>(() => {
-    const map = new Map<string, DoctorStat>();
+  // ── 담당실장별 집계 ────────────────────────────────────────────────────────
+  // NULL assigned_staff → key='__UNASSIGNED__', name='미지정' (DAILY-SETTLE-STAFF AC-3 일관)
+  const stats = useMemo<StaffStat[]>(() => {
+    const { rows = [], custStaffMap = new Map(), staffNameMap = new Map() } = data ?? {};
+    const map = new Map<string, StaffStat>();
 
-    for (const p of payments) {
-      const consultant = p.check_ins?.consultant;
-      if (!consultant) continue;
+    for (const p of rows) {
+      const staffId = (p.customer_id ? custStaffMap.get(p.customer_id) : undefined) ?? '__UNASSIGNED__';
+      const staffName = staffId === '__UNASSIGNED__'
+        ? '미지정'
+        : (staffNameMap.get(staffId) ?? '알 수 없음');
 
-      const key = consultant.id;
       const netAmt = p.payment_type === 'refund' ? -p.amount : p.amount;
       const isInsurance = p.tax_type === '급여';
 
-      // 복합결제 안분: services의 price 비율로 안분
-      // (단일 의사이므로 안분 합 = netAmt — 정합성 보장)
-      const svcs = p.check_ins?.check_in_services ?? [];
-      const totalBase = svcs.reduce((s, cs) => s + (cs.price ?? 0), 0);
-      const allocatedAmt =
-        svcs.length > 0
-          ? svcs.reduce((s, cs) => {
-              const ratio = totalBase > 0 ? (cs.price ?? 0) / totalBase : 1 / svcs.length;
-              return s + netAmt * ratio;
-            }, 0)
-          : netAmt; // check_in_services 없을 때 전액 귀속
-
-      const stat = map.get(key) ?? {
-        doctorId: consultant.id,
-        doctorName: consultant.name,
+      const stat = map.get(staffId) ?? {
+        staffId,
+        staffName,
         orderCount: 0,
         nonInsuranceRevenue: 0,
         insuranceCopay: 0,
@@ -125,21 +154,26 @@ export function SalesDoctorTab({ filter }: Props) {
 
       stat.orderCount += 1;
       if (isInsurance) {
-        stat.insuranceCopay += allocatedAmt;
+        stat.insuranceCopay += netAmt;
       } else {
-        stat.nonInsuranceRevenue += allocatedAmt;
+        stat.nonInsuranceRevenue += netAmt;
       }
 
-      map.set(key, stat);
+      map.set(staffId, stat);
     }
 
-    return Array.from(map.values()).sort((a, b) => b.nonInsuranceRevenue - a.nonInsuranceRevenue);
-  }, [payments]);
+    return Array.from(map.values()).sort((a, b) => {
+      // '미지정'은 항상 맨 아래
+      if (a.staffId === '__UNASSIGNED__') return 1;
+      if (b.staffId === '__UNASSIGNED__') return -1;
+      return b.nonInsuranceRevenue - a.nonInsuranceRevenue;
+    });
+  }, [data]);
 
-  // AC-3: 검색 필터 — 담당의 이름 포함 검색
-  const filtered = useMemo<DoctorStat[]>(() => {
+  // AC-3: 검색 필터 — 담당실장 이름 포함 검색
+  const filtered = useMemo<StaffStat[]>(() => {
     if (!searchQuery) return stats;
-    return stats.filter((s) => s.doctorName.toLowerCase().includes(searchQuery));
+    return stats.filter((s) => s.staffName.toLowerCase().includes(searchQuery));
   }, [stats, searchQuery]);
 
   const totals = useMemo(
@@ -147,7 +181,6 @@ export function SalesDoctorTab({ filter }: Props) {
       orders: filtered.reduce((s, x) => s + x.orderCount, 0),
       nonIns: filtered.reduce((s, x) => s + x.nonInsuranceRevenue, 0),
       copay: filtered.reduce((s, x) => s + x.insuranceCopay, 0),
-      edi: 0,
     }),
     [filtered],
   );
@@ -171,9 +204,9 @@ export function SalesDoctorTab({ filter }: Props) {
         data-testid="sales-doctor-empty"
         className="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed bg-muted/30 py-16 text-center"
       >
-        <span className="text-sm text-muted-foreground">해당 기간에 담당의 데이터가 없습니다</span>
+        <span className="text-sm text-muted-foreground">해당 기간에 담당실장 데이터가 없습니다</span>
         <span className="text-xs text-muted-foreground">
-          수납에 담당의(consultant)가 연결되지 않은 경우 표시되지 않습니다
+          고객 카드(2번차트)에 담당실장이 지정되지 않은 경우 표시되지 않습니다
         </span>
       </div>
     );
@@ -187,7 +220,7 @@ export function SalesDoctorTab({ filter }: Props) {
       <table className="w-full border-collapse">
         <thead className="sticky top-0 z-10 bg-muted/70">
           <tr>
-            {['담당의', '오더 건수', '비급여 순매출', '급여 본부금', '공단청구액 (EDI)'].map((h) => (
+            {['담당실장', '오더 건수', '비급여 순매출', '급여 본부금', '공단청구액 (EDI)'].map((h) => (
               <th
                 key={h}
                 className="whitespace-nowrap border-b px-3 py-2 text-left font-medium text-muted-foreground"
@@ -200,14 +233,16 @@ export function SalesDoctorTab({ filter }: Props) {
         <tbody>
           {filtered.map((s) => (
             <tr
-              key={s.doctorId}
-              data-testid={`sales-doctor-row-${s.doctorId}`}
+              key={s.staffId}
+              data-testid={`sales-doctor-row-${s.staffId}`}
               className="border-b transition hover:bg-muted/30"
             >
-              <td className="px-3 py-2 font-medium">{s.doctorName}</td>
+              <td className={cn('px-3 py-2 font-medium', s.staffId === '__UNASSIGNED__' && 'text-muted-foreground')}>
+                {s.staffName}
+              </td>
               <td className="px-3 py-2 tabular-nums text-center">{s.orderCount}</td>
               <td
-                data-testid={`sales-doctor-nonins-${s.doctorId}`}
+                data-testid={`sales-doctor-nonins-${s.staffId}`}
                 className={cn(
                   'px-3 py-2 tabular-nums text-right font-semibold',
                   s.nonInsuranceRevenue < 0 && 'text-red-600',
@@ -247,7 +282,7 @@ export function SalesDoctorTab({ filter }: Props) {
         </tfoot>
       </table>
       <p className="px-3 py-1.5 text-right text-[10px] text-muted-foreground">
-        * 공단청구액(EDI)은 보험청구 시스템 연동 후 표시됩니다
+        * 담당실장: 고객 2번차트 지정 기준 · 공단청구액(EDI)은 보험청구 시스템 연동 후 표시
       </p>
     </div>
   );
