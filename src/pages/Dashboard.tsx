@@ -1494,6 +1494,13 @@ function DashboardTimeline({
   const currentM = now.getMinutes();
   const currentSlot = `${String(currentH).padStart(2, '0')}:${currentM < 30 ? '00' : '30'}`;
 
+  // T-20260522-foot-TIMETABLE-FOLD V2 AC-7: 시간대별 예약 명단 아코디언 상태
+  // ChartNumberMapCtx: customer_id → chart_number 맵 (부모에서 주입)
+  const chartMap = useContext(ChartNumberMapCtx);
+  // expandedSlot: 현재 펼쳐진 슬롯 (null = 모두 접힘)
+  // props 변경(reservations/selfCheckIns 갱신) 시 아코디언 내용 자동 갱신 — 추가 구독 불필요
+  const [expandedSlot, setExpandedSlot] = useState<string | null>(null);
+
   // ── T-20260522-foot-TIMETABLE-FOLD: 치료사별 뷰 상태 ──────────────────────────
 
   // AC-5: 뷰 모드 sessionStorage 유지 ('time' | 'therapist')
@@ -1841,107 +1848,180 @@ function DashboardTimeline({
             parseInt(slot.split(':')[0]) * 60 + parseInt(slot.split(':')[1]) <
               currentH * 60 + currentM - 30;
 
+          // T-20260522-foot-TIMETABLE-FOLD V2 AC-7: 아코디언용 예약 목록 구성
+          // 초진(new) 우선, 재진(returning) 다음 — 슬롯 안의 모든 예약·체크인 합산
+          type AccordionItem = { name: string | null; visitType: VisitType; customerId: string | null };
+          const accordionItems: AccordionItem[] = [
+            ...newBox1.map((r): AccordionItem => ({ name: r.customer_name, visitType: 'new', customerId: r.customer_id })),
+            ...newBox2Ci.map((ci): AccordionItem => ({ name: ci.customer_name, visitType: 'new', customerId: ci.customer_id })),
+            ...retBox2Resv.map((r): AccordionItem => ({ name: r.customer_name, visitType: 'returning', customerId: r.customer_id })),
+            ...retBox2Ci.map((ci): AccordionItem => ({ name: ci.customer_name, visitType: 'returning', customerId: ci.customer_id })),
+          ];
+          const isExpanded = expandedSlot === slot;
+
           return (
+            // T-20260522-foot-TIMETABLE-FOLD V2 AC-7: 슬롯 행 = flex-col 래퍼 (grid → 아코디언 지지 구조)
             <div
               key={slot}
               className={cn(
-                'grid grid-cols-[2.5rem_1fr_1fr] border-b border-gray-100',
+                'border-b border-gray-100',
                 isPastSlot && 'opacity-55',
               )}
-              style={{ minHeight: hasAny ? `${maxRows * 28 + 8}px` : '36px' }}
+              data-testid="timeline-slot-row"
             >
-              {/* 시간 레이블 — T-20260514-foot-TIMETABLE-MOBILE-HSCROLL: sticky left-0 z-10
-                   T-20260517-foot-TIMELINE-MINLABEL: 분 레이블 text-gray-300→text-gray-500
-                   (bg-gray-50 불투명 배경에서 대비비 복원; hours text-gray-400 유지) */}
+              {/* ── 메인 슬롯 그리드 ── */}
               <div
-                className={cn(
-                  'flex flex-col items-center justify-start pt-1.5 pb-1 border-r shrink-0 sticky left-0 z-10',
-                  isCurrentSlot ? 'bg-teal-50' : 'bg-gray-50',
-                )}
+                className="grid grid-cols-[2.5rem_1fr_1fr]"
+                style={{ minHeight: hasAny ? `${maxRows * 28 + 8}px` : '36px' }}
               >
-                <span
+                {/* 시간 레이블 — AC-7: 버튼으로 전환 → 탭/클릭으로 아코디언 토글
+                     T-20260514-foot-TIMETABLE-MOBILE-HSCROLL: sticky left-0 z-10
+                     T-20260517-foot-TIMELINE-MINLABEL: 분 레이블 대비비 복원 */}
+                <button
+                  type="button"
+                  onClick={() => setExpandedSlot((s) => (s === slot ? null : slot))}
                   className={cn(
-                    'text-[9px] font-mono tabular-nums leading-none',
-                    isCurrentSlot ? 'text-teal-700 font-bold' : 'text-gray-400',
+                    'flex flex-col items-center justify-start pt-1.5 pb-1 border-r shrink-0 sticky left-0 z-10 w-full transition-colors',
+                    isCurrentSlot
+                      ? 'bg-teal-50 hover:bg-teal-100 active:bg-teal-200'
+                      : 'bg-gray-50 hover:bg-gray-100 active:bg-gray-200',
                   )}
+                  aria-expanded={isExpanded}
+                  aria-label={`${slot} 슬롯 예약 명단 ${isExpanded ? '접기' : '펼치기'}`}
+                  title={`${slot} — 탭하면 예약 명단 펼침`}
+                  data-testid={`timeline-slot-time-${slot}`}
                 >
-                  {slot.slice(0, 2)}
-                </span>
-                <span
+                  <span
+                    className={cn(
+                      'text-[9px] font-mono tabular-nums leading-none',
+                      isCurrentSlot ? 'text-teal-700 font-bold' : 'text-gray-400',
+                    )}
+                  >
+                    {slot.slice(0, 2)}
+                  </span>
+                  <span
+                    className={cn(
+                      'text-[9px] font-mono tabular-nums leading-none mt-0.5',
+                      isCurrentSlot ? 'text-teal-600' : 'text-gray-500',
+                    )}
+                  >
+                    {slot.slice(3)}
+                  </span>
+                  {isCurrentSlot && (
+                    <div className="h-1 w-1 rounded-full bg-teal-500 animate-pulse mt-1" />
+                  )}
+                  {/* AC-7: 예약있는 슬롯에만 방향 표시기 */}
+                  {hasAny && (
+                    isExpanded
+                      ? <ChevronDown className="h-2 w-2 text-teal-600 mt-0.5 shrink-0" />
+                      : <ChevronRight className="h-2 w-2 text-gray-300 mt-0.5 shrink-0" />
+                  )}
+                </button>
+
+                {/* 초진 컬럼 — T-20260515-foot-DASH-SLOT-DRAG: SlotDropCell로 교체 (드래그 드롭 시간 변경) */}
+                <SlotDropCell
+                  slotId={`timeslot-new:${slot}`}
                   className={cn(
-                    'text-[9px] font-mono tabular-nums leading-none mt-0.5',
-                    isCurrentSlot ? 'text-teal-600' : 'text-gray-500',
+                    'px-1 pt-1 pb-0.5 border-r space-y-0.5 min-w-0',
+                    isCurrentSlot ? 'bg-teal-50/20' : newCnt > 0 ? 'bg-yellow-50/40' : '',
                   )}
+                  onClick={() => onSlotClick({ date: dateStr, time: slot })}
+                  title="빈 영역 클릭 → 초진 예약 추가 / 카드 드롭 → 시간 변경"
+                  data-testid="timeline-slot-new"
                 >
-                  {slot.slice(3)}
-                </span>
-                {isCurrentSlot && (
-                  <div className="h-1 w-1 rounded-full bg-teal-500 animate-pulse mt-1" />
-                )}
+                  {newBox1.map((r) => (
+                    // T-20260519-foot-FIRSTVISIT-CHECKIN AC-1/AC-3: onSelect=차트조회, onCheckIn=접수 버튼
+                    <DraggableBox1Card
+                      key={`b1-${r.id}`}
+                      reservation={r}
+                      onSelect={onReservationSelect ? () => onReservationSelect(r) : undefined}
+                      onCheckIn={onReservationCheckIn ? () => onReservationCheckIn(r) : undefined}
+                    />
+                  ))}
+                  {newBox2Ci.map((ci) => (
+                    <TimelineCheckInCard
+                      key={`b2n-${ci.id}`}
+                      checkIn={ci}
+                      onClick={onCardClick ? () => onCardClick(ci) : undefined}
+                      onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
+                    />
+                  ))}
+                  {newCnt === 0 && (
+                    <div className="text-[9px] text-gray-200 text-center leading-none py-1 select-none">+</div>
+                  )}
+                </SlotDropCell>
+
+                {/* 재진 컬럼 — T-20260515-foot-DASH-SLOT-DRAG: SlotDropCell로 교체 */}
+                <SlotDropCell
+                  slotId={`timeslot-ret:${slot}`}
+                  className={cn(
+                    'px-1 pt-1 pb-0.5 space-y-0.5 min-w-0',
+                    isCurrentSlot ? 'bg-teal-50/20' : retCnt > 0 ? 'bg-green-50/40' : '',
+                  )}
+                  onClick={() => onSlotClick({ date: dateStr, time: slot, visit_type: 'returning' })}
+                  title="빈 영역 클릭 → 재진 예약 추가 / 카드 드롭 → 시간 변경"
+                  data-testid="timeline-slot-ret"
+                >
+                  {retBox2Resv.map((r) => (
+                    // T-20260515-foot-REVISIT-CLICK-AUTOCHECK: onSelect=차트조회, onCheckIn=접수 버튼 — 이벤트 분리
+                    <DraggableBox2ResvCard
+                      key={`b2r-${r.id}`}
+                      reservation={r}
+                      onSelect={onReservationSelect ? () => onReservationSelect(r) : undefined}
+                      onCheckIn={onReservationCheckIn ? () => onReservationCheckIn(r) : undefined}
+                    />
+                  ))}
+                  {retBox2Ci.map((ci) => (
+                    <TimelineCheckInCard
+                      key={`b2c-${ci.id}`}
+                      checkIn={ci}
+                      onClick={onCardClick ? () => onCardClick(ci) : undefined}
+                      onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
+                    />
+                  ))}
+                </SlotDropCell>
               </div>
 
-              {/* 초진 컬럼 — T-20260515-foot-DASH-SLOT-DRAG: SlotDropCell로 교체 (드래그 드롭 시간 변경) */}
-              <SlotDropCell
-                slotId={`timeslot-new:${slot}`}
-                className={cn(
-                  'px-1 pt-1 pb-0.5 border-r space-y-0.5 min-w-0',
-                  isCurrentSlot ? 'bg-teal-50/20' : newCnt > 0 ? 'bg-yellow-50/40' : '',
-                )}
-                onClick={() => onSlotClick({ date: dateStr, time: slot })}
-                title="빈 영역 클릭 → 초진 예약 추가 / 카드 드롭 → 시간 변경"
-                data-testid="timeline-slot-new"
-              >
-                {newBox1.map((r) => (
-                  // T-20260519-foot-FIRSTVISIT-CHECKIN AC-1/AC-3: onSelect=차트조회, onCheckIn=접수 버튼
-                  <DraggableBox1Card
-                    key={`b1-${r.id}`}
-                    reservation={r}
-                    onSelect={onReservationSelect ? () => onReservationSelect(r) : undefined}
-                    onCheckIn={onReservationCheckIn ? () => onReservationCheckIn(r) : undefined}
-                  />
-                ))}
-                {newBox2Ci.map((ci) => (
-                  <TimelineCheckInCard
-                    key={`b2n-${ci.id}`}
-                    checkIn={ci}
-                    onClick={onCardClick ? () => onCardClick(ci) : undefined}
-                    onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
-                  />
-                ))}
-                {newCnt === 0 && (
-                  <div className="text-[9px] text-gray-200 text-center leading-none py-1 select-none">+</div>
-                )}
-              </SlotDropCell>
-
-              {/* 재진 컬럼 — T-20260515-foot-DASH-SLOT-DRAG: SlotDropCell로 교체 */}
-              <SlotDropCell
-                slotId={`timeslot-ret:${slot}`}
-                className={cn(
-                  'px-1 pt-1 pb-0.5 space-y-0.5 min-w-0',
-                  isCurrentSlot ? 'bg-teal-50/20' : retCnt > 0 ? 'bg-green-50/40' : '',
-                )}
-                onClick={() => onSlotClick({ date: dateStr, time: slot, visit_type: 'returning' })}
-                title="빈 영역 클릭 → 재진 예약 추가 / 카드 드롭 → 시간 변경"
-                data-testid="timeline-slot-ret"
-              >
-                {retBox2Resv.map((r) => (
-                  // T-20260515-foot-REVISIT-CLICK-AUTOCHECK: onSelect=차트조회, onCheckIn=접수 버튼 — 이벤트 분리
-                  <DraggableBox2ResvCard
-                    key={`b2r-${r.id}`}
-                    reservation={r}
-                    onSelect={onReservationSelect ? () => onReservationSelect(r) : undefined}
-                    onCheckIn={onReservationCheckIn ? () => onReservationCheckIn(r) : undefined}
-                  />
-                ))}
-                {retBox2Ci.map((ci) => (
-                  <TimelineCheckInCard
-                    key={`b2c-${ci.id}`}
-                    checkIn={ci}
-                    onClick={onCardClick ? () => onCardClick(ci) : undefined}
-                    onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
-                  />
-                ))}
-              </SlotDropCell>
+              {/* ── AC-7: 아코디언 패널 — 해당 슬롯 예약 명단 ──
+                   isExpanded = true일 때만 렌더.
+                   props(reservations/selfCheckIns) 변경 시 accordionItems 자동 재계산 → 실시간 반영.
+                   DB변경 없음 (UI 레이어만). */}
+              {isExpanded && (
+                <div
+                  className="border-t border-teal-100 bg-teal-50/30 px-2 py-1.5"
+                  data-testid={`timeline-slot-accordion-${slot}`}
+                >
+                  {accordionItems.length === 0 ? (
+                    <p className="text-[10px] text-gray-400 text-center py-0.5 select-none">예약 없음</p>
+                  ) : (
+                    <div className="flex flex-col gap-0.5">
+                      {accordionItems.map((item, idx) => {
+                        const chartNo = item.customerId ? (chartMap.get(item.customerId) ?? null) : null;
+                        return (
+                          <div key={idx} className="flex items-center gap-1.5 py-0.5">
+                            <Badge
+                              className={cn(
+                                VISIT_TYPE_COLOR[item.visitType],
+                                'text-[9px] px-1 py-0 shrink-0 leading-tight',
+                              )}
+                            >
+                              {VISIT_TYPE_KO[item.visitType]}
+                            </Badge>
+                            <span className="text-[11px] font-medium text-gray-800 flex-1 truncate">
+                              {item.name ?? '(이름 없음)'}
+                            </span>
+                            {chartNo && (
+                              <span className="text-[9px] text-gray-400 tabular-nums shrink-0">
+                                #{chartNo}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
@@ -3088,9 +3168,11 @@ export default function Dashboard() {
 
     // T-20260514-foot-DASH-REALTIME-FAIL AC-4: Realtime 단절 대비 60초 폴링 fallback
     // Supabase WebSocket이 간헐적으로 끊길 경우 최대 60초 이내 자동 복구
+    // T-20260522-foot-TIMETABLE-FOLD V2 AC-6: 예약 변경도 폴링 커버 추가
     const pollTimer = setInterval(() => {
       fetchCheckIns();
       fetchSelfCheckIns();
+      fetchTimelineReservations(); // AC-6: reservation INSERT/UPDATE/DELETE → 3초 이내 UI 반영
     }, 60000);
 
     return () => {
