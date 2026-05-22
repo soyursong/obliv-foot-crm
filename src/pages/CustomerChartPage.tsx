@@ -2414,9 +2414,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       return;
     }
     const activePackages = packages.filter(p => p.status === 'active');
-    // T-20260522-foot-PKG-AUTOSELECT-REMOVE AC-4: 패키지 2개 이상 시 미선택 차단
+    // T-20260523-foot-PKG-AUTOSEL-REMOVE AC-2: 활성 패키지 1개 이상 시 미선택 차단
     const activeDisplayPackages = packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0));
-    if (activeDisplayPackages.length > 1 && !c22DeductForm.packageId) {
+    if (activeDisplayPackages.length >= 1 && !c22DeductForm.packageId) {
       toast.error('차감할 패키지를 선택해주세요');
       return;
     }
@@ -2506,9 +2506,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       toast.error('치료사를 선택해주세요');
       return;
     }
-    // T-20260522-foot-PKG-AUTOSELECT-REMOVE AC-4: 패키지 2개 이상 시 미선택 차단
+    // T-20260523-foot-PKG-AUTOSEL-REMOVE AC-2/AC-4: 활성 패키지 1개 이상 시 미선택 차단 (handleHealerDeduct 동일 적용)
     const activeDisplayPackages = packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0));
-    if (activeDisplayPackages.length > 1 && !c22DeductForm.packageId) {
+    if (activeDisplayPackages.length >= 1 && !c22DeductForm.packageId) {
       toast.error('차감할 패키지를 선택해주세요');
       return;
     }
@@ -4952,8 +4952,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               )}
             </div>
             <div className="space-y-1.5">
-              {/* 복수 활성 패키지가 있을 때 선택 드롭다운 — T-20260522-foot-PKG-AUTOSELECT-REMOVE: 자동선택 옵션 제거, 수동선택 강제 */}
-              {packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length > 1 && (
+              {/* 활성 패키지 1개 이상 시 선택 드롭다운 — T-20260523-foot-PKG-AUTOSEL-REMOVE: 단일 패키지도 자동선택 제거, 수동선택 강제 */}
+              {packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length >= 1 && (
                 <div>
                   <label className="block text-[10px] text-muted-foreground mb-0.5">패키지 선택 <span className="text-red-500">*</span></label>
                   <select
@@ -5029,7 +5029,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     <button
                       type="button"
                       onClick={saveC22Deduct}
-                      disabled={savingC22Deduct || !c22DeductForm.therapistId || packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length === 0}
+                      disabled={savingC22Deduct || !c22DeductForm.therapistId || packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length === 0 || (packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length >= 1 && !c22DeductForm.packageId)}
                       className="flex-1 rounded bg-teal-600 text-white py-1.5 text-[10px] font-medium hover:bg-teal-700 transition disabled:opacity-50"
                     >
                       {savingC22Deduct ? '저장 중…' : '차감'}
@@ -5037,7 +5037,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     <button
                       type="button"
                       onClick={handleHealerDeduct}
-                      disabled={savingHealerDeduct || !c22DeductForm.therapistId || packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length === 0}
+                      disabled={savingHealerDeduct || !c22DeductForm.therapistId || packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length === 0 || (packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length >= 1 && !c22DeductForm.packageId)}
                       title={healerTitle}
                       className={cn(
                         'flex-1 rounded py-1.5 text-[10px] font-medium transition disabled:opacity-50',
