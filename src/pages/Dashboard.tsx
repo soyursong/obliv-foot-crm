@@ -4477,7 +4477,8 @@ export default function Dashboard() {
   // T-20260510-foot-DASH-DUAL-HSCROLL v2: overflow-hidden — Dashboard 자체 가로 팽창 격리
   return (
     // T-20260522-foot-TABLET-DUAL-LAYOUT: data-orientation + data-testid="dashboard-root" (E2E 테스트용)
-    <div className="flex h-full min-h-0 flex-col overflow-hidden" data-orientation={orientation} data-testid="dashboard-root">
+    // T-20260522-foot-TIMETABLE-SCROLL: data-timeline-folded — CSS max-width:2rem fallback를 fold 상태에만 한정
+    <div className="flex h-full min-h-0 flex-col overflow-hidden" data-orientation={orientation} data-timeline-folded={String(timelineFolded)} data-testid="dashboard-root">
       {/* Header */}
       {/* T-20260522-foot-TABLET-DUAL-LAYOUT: data-dashboard-header — CSS 터치 타겟 타겟팅용 */}
       <div className="flex shrink-0 items-center justify-between gap-4 px-4 py-2 border-b bg-white/80" data-dashboard-header>
