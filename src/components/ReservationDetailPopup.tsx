@@ -2,8 +2,10 @@
 // 환자 클릭 시 2열 × 2행 = 4분할 모달
 // 좌상: 환자정보 8필드 | 우상: 선택 예약 상세
 // 좌하: 전체 예약 히스토리 | 우하: 메모 2종
+// T-20260522-foot-CHECKIN-FIRST-INFO: 초진 접수 시 정보입력 폼 분기
 
 import { useEffect, useState } from 'react';
+import { CheckinFirstInfoDialog } from '@/components/CheckinFirstInfoDialog';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -73,6 +75,8 @@ export function ReservationDetailPopup({
   const [busy, setBusy] = useState(false);
   const [cancelDialog, setCancelDialog] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  // T-20260522-foot-CHECKIN-FIRST-INFO: 초진 정보입력 폼 다이얼로그
+  const [showFirstInfoDialog, setShowFirstInfoDialog] = useState(false);
 
   // ── 4분할 데이터
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -264,8 +268,11 @@ export function ReservationDetailPopup({
     onChanged();
   };
 
-  // ── 액션: 체크인 전환
-  const convertToCheckIn = async () => {
+  // ── 액션: 체크인 전환 (실제 DB INSERT)
+  // T-20260522-foot-CHECKIN-FIRST-INFO: 분리된 DB 로직 — 초진/재진 모두 consult_waiting
+  // ※ 기존: returning → treatment_waiting. 이 경로(예약팝업 접수)만 consult_waiting으로 변경.
+  //   NewCheckInDialog / batchCheckIn / SelfCheckIn 은 AC-4 회귀 방지로 변경 없음.
+  const doCheckIn = async () => {
     setBusy(true);
     const { data: existing } = await supabase
       .from('check_ins')
@@ -289,7 +296,8 @@ export function ReservationDetailPopup({
       customer_name: reservation.customer_name ?? '',
       customer_phone: reservation.customer_phone,
       visit_type: reservation.visit_type,
-      status: reservation.visit_type === 'returning' ? 'treatment_waiting' : 'consult_waiting',
+      // AC-2/AC-3: 초진·재진 모두 → 상담대기(consult_waiting) (예약팝업 접수 경로)
+      status: 'consult_waiting',
       queue_number: queueData as number,
     });
     if (error) { toast.error(`체크인 실패: ${error.message}`); setBusy(false); return; }
@@ -305,6 +313,18 @@ export function ReservationDetailPopup({
     toast.success('체크인 완료');
     setBusy(false);
     onChanged();
+  };
+
+  // ── 액션: 체크인 전환 (진입점 — 초진/재진 분기)
+  // T-20260522-foot-CHECKIN-FIRST-INFO
+  // - 초진(new): 정보입력 폼 다이얼로그 → 완료 후 doCheckIn 호출
+  // - 재진/선체험: 폼 없이 바로 doCheckIn
+  const convertToCheckIn = async () => {
+    if (reservation.visit_type === 'new') {
+      setShowFirstInfoDialog(true);
+    } else {
+      await doCheckIn();
+    }
   };
 
   // ── 고객메모 저장
@@ -714,6 +734,14 @@ export function ReservationDetailPopup({
           </DialogContent>
         </Dialog>
       )}
+
+      {/* T-20260522-foot-CHECKIN-FIRST-INFO: 초진 접수 정보입력 폼 */}
+      <CheckinFirstInfoDialog
+        reservation={reservation}
+        open={showFirstInfoDialog}
+        onOpenChange={(o) => { if (!o) setShowFirstInfoDialog(false); }}
+        onCompleted={doCheckIn}
+      />
     </>
   );
 }

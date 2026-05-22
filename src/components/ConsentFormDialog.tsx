@@ -16,7 +16,7 @@ import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import type { CheckIn } from '@/lib/types';
 
-export type FormType = 'refund' | 'non_covered' | 'treatment' | 'privacy';
+export type FormType = 'refund' | 'non_covered' | 'treatment' | 'privacy' | 'hira_consent';
 
 interface Props {
   checkIn: CheckIn | null;
@@ -31,6 +31,7 @@ const FORM_TITLES: Record<FormType, string> = {
   non_covered: '비급여 진료비 확인 동의서',
   treatment: '시술 동의서',
   privacy: '개인정보 수집·이용 동의서',
+  hira_consent: '건강보험 자격조회 동의서',
 };
 
 const FORM_CONTENT: Record<FormType, string[]> = {
@@ -60,6 +61,13 @@ const FORM_CONTENT: Record<FormType, string[]> = {
     '3. 환불 처리 후 패키지 잔여 회차는 소멸됩니다.',
     '4. 환불 금액은 원래 결제 수단으로 환불되며, 처리 기간이 소요될 수 있습니다.',
     '5. 본인은 위 환불 조건을 이해하고 동의합니다.',
+  ],
+  hira_consent: [
+    '1. 건강보험심사평가원의 요양급여 적정성 평가 등을 위해 진료 정보가 활용될 수 있습니다.',
+    '2. 건강보험 자격 및 보험료 납부 현황을 조회할 수 있음에 동의합니다.',
+    '3. 개인정보는 진료 목적 외에 사용되지 않으며, 관련 법령에 따라 보호됩니다.',
+    '4. 동의를 거부할 수 있으나, 건강보험 급여 적용이 불가할 수 있습니다.',
+    '5. 본인은 위 내용을 확인하고 건강보험 자격 조회에 동의합니다.',
   ],
 };
 
