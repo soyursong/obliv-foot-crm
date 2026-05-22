@@ -3485,6 +3485,18 @@ export default function Dashboard() {
         });
         setStageStartMap((prev) => new Map(prev).set(row.id, now));
       }
+      // T-20260522-foot-SPACE-AUTOROUTE AC-4/AC-5: DnD room drop → check_in_room_logs INSERT (graceful)
+      // 드래그 이동도 금일 동선에 자동 반영 (상담실·치료실·레이저실·가열성레이저 포함)
+      void (async () => {
+        try {
+          await supabase.from('check_in_room_logs').insert({
+            check_in_id: row.id,
+            clinic_id: row.clinic_id,
+            assigned_room: roomName,
+            room_type: roomType,
+          });
+        } catch { /* graceful skip — 테이블 미존재 시 무시 */ }
+      })();
     } else if (target === 'returning_zone') {
       // 재진 대기열로 이동 → status = registered + visit_type 변경 (양방향 자유 이동)
       const targetVisitType: VisitType = 'returning';
