@@ -633,16 +633,20 @@ function TreatmentImagesSection({
       // flickering fix 이후 getUserMedia constraints에 focusMode 미지정 →
       // Galaxy Tab Android WebView 기본값이 'manual'/'none'이 될 수 있음.
       // applyConstraints({ advanced: [{ focusMode: 'continuous' }] })로 연속 AF 명시.
+      // AC-3 T-20260522-foot-CHART2-CAM-FOCUS (해상도):
+      // width: { min: 1280 } — getUserMedia에서 width/height 제거(flickering fix) 후 재협상 없이
+      // 스트림 레벨에서 최소 1280px 보장. applyConstraints는 stream 교체 없이 constraint 조정.
       // 미지원 기기(iOS Safari 등)는 try/catch로 무시 — flickering 픽스 영향 없음.
       try {
         const videoTrack = stream.getVideoTracks()[0];
         if (videoTrack) {
           await videoTrack.applyConstraints({
+            width: { min: 1280 },
             advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
           });
         }
       } catch (_afErr) {
-        // focusMode 미지원 기기는 무시 (iOS Safari, 구형 Chrome 등)
+        // focusMode/해상도 미지원 기기는 무시 (iOS Safari, 구형 Chrome 등)
       }
 
       setCameraPhase('capture');
@@ -670,11 +674,17 @@ function TreatmentImagesSection({
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    canvas.width = video.videoWidth || 1280;
-    canvas.height = video.videoHeight || 720;
+    const naturalW = video.videoWidth || 1280;
+    const naturalH = video.videoHeight || 720;
+    // AC-3 T-20260522-foot-CHART2-CAM-FOCUS: 캡처 이미지 최소 1280px 보장
+    // applyConstraints(width≥1280)로 스트림 레벨 대응 + 실패 시 canvas scale-up double-safety
+    const minWidth = 1280;
+    const scale = naturalW < minWidth ? minWidth / naturalW : 1;
+    canvas.width = Math.round(naturalW * scale);
+    canvas.height = Math.round(naturalH * scale);
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.drawImage(video, 0, 0);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     canvas.toBlob((blob) => {
       if (!blob) return;
       const previewUrl = URL.createObjectURL(blob);
