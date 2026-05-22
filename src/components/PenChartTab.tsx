@@ -30,7 +30,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import {
   BookOpen, ClipboardList, Download, Eraser, Highlighter, Pencil, Plus, RotateCcw,
-  Save, Trash2, Type, X, ChevronLeft, FileText, Undo2, TextCursorInput,
+  Save, Trash2, Type, X, ChevronLeft, FileText, Undo2, TextCursorInput, Paintbrush,
+  GripVertical, CheckSquare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
@@ -170,9 +171,31 @@ const HIGHLIGHT_COLORS = [
   { label: '연두', value: '#86efac' },
 ];
 
-// T-20260522-foot-PENCHART-TOOLS-V2: 도구 모드 통합 타입
+// T-20260522-foot-PENCHART-TOOLS-V3: 도구 모드 통합 타입
+// white: 배경색(흰색) 덮어쓰기 도구 — source-over white fill (지우개와 달리 bg도 덮음)
 // boilerplate-placing: 상용구 삽입 대기 (캔버스 클릭 시 상용구 배치)
-type ActiveTool = 'pen' | 'eraser' | 'text' | 'highlight' | 'boilerplate-placing';
+type ActiveTool = 'pen' | 'eraser' | 'white' | 'text' | 'highlight' | 'boilerplate-placing';
+
+// T-20260522-foot-PENCHART-TOOLS-V3: 도구별 기본 굵기
+const DEFAULT_THICKNESS: Record<ActiveTool, number> = {
+  pen:                  1.5,
+  eraser:               3,
+  white:                3,
+  text:                 2,
+  highlight:            2,
+  'boilerplate-placing': 1.5,
+};
+
+// T-20260522-foot-PENCHART-TOOLS-V3: 배치된 텍스트/상용구 객체 (드래그·삭제·다중선택용)
+interface PlacedItem {
+  id: string;
+  type: 'text' | 'boilerplate';
+  x: number;       // 캔버스 논리 좌표 (CSS 1:1)
+  y: number;
+  text: string;
+  fontSize: number; // px
+  color: string;
+}
 
 type TabMode = 'list' | 'select' | 'draw';
 
@@ -225,6 +248,134 @@ function FullscreenFormWrapper({
   );
 }
 
+// ─── PlacedItemOverlay ─────────────────────────────────────────────────────
+/**
+ * V3 AC-7~9, AC-13~16:
+ * 배치된 텍스트/상용구를 draggable DOM 오버레이로 렌더링.
+ * 드래그 이동 + 삭제 + Shift+클릭 다중선택 지원.
+ */
+function PlacedItemOverlay({
+  item, isSelected, approxH, onSelect, onMove, onDelete,
+}: {
+  item: PlacedItem;
+  isSelected: boolean;
+  approxH: number;
+  onSelect: (id: string, multi: boolean) => void;
+  onMove: (id: string, dx: number, dy: number) => void;
+  onDelete: (id: string) => void;
+}) {
+  const dragStart = useRef<{ px: number; py: number } | null>(null);
+  const hasMoved  = useRef(false);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    dragStart.current = { px: e.clientX, py: e.clientY };
+    hasMoved.current  = false;
+    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStart.current) return;
+    e.stopPropagation();
+    const dx = e.clientX - dragStart.current.px;
+    const dy = e.clientY - dragStart.current.py;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      hasMoved.current = true;
+      onMove(item.id, dx, dy);
+      dragStart.current = { px: e.clientX, py: e.clientY };
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    if (!hasMoved.current) {
+      onSelect(item.id, e.shiftKey);
+    }
+    dragStart.current = null;
+    hasMoved.current  = false;
+  };
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: item.x,
+        top: item.y,
+        minWidth: 60,
+        minHeight: approxH,
+        cursor: 'grab',
+        userSelect: 'none',
+        zIndex: 20,
+        border: isSelected ? '1.5px dashed #7c3aed' : '1px dashed transparent',
+        borderRadius: 4,
+        padding: '2px 4px',
+        background: isSelected ? 'rgba(124,58,237,0.04)' : 'transparent',
+        boxSizing: 'border-box',
+        touchAction: 'none',
+      }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+    >
+      {/* テキスト内容 — 実際にはcanvas描画と同じフォント */}
+      <div
+        style={{
+          font: `${item.fontSize}px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif`,
+          color: item.color,
+          whiteSpace: 'pre-wrap',
+          lineHeight: `${item.fontSize + 6}px`,
+          opacity: 0.85,
+          pointerEvents: 'none',
+        }}
+      >
+        {item.text}
+      </div>
+      {/* 아이템 우상단 — 삭제 버튼 (선택 시 표시) */}
+      {isSelected && (
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
+          style={{
+            position: 'absolute',
+            top: -10,
+            right: -10,
+            width: 18,
+            height: 18,
+            borderRadius: '50%',
+            background: '#dc2626',
+            color: '#fff',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 10,
+            fontWeight: 'bold',
+            zIndex: 30,
+          }}
+          title="삭제"
+        >
+          ×
+        </button>
+      )}
+      {/* 드래그 핸들 힌트 (선택 시 표시) */}
+      {isSelected && (
+        <div style={{
+          position: 'absolute',
+          top: -10,
+          left: -2,
+          color: '#7c3aed',
+          fontSize: 9,
+          pointerEvents: 'none',
+        }}>
+          <GripVertical style={{ width: 10, height: 10 }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── 메인 컴포넌트 ──────────────────────────────────────────────────────────
 export function PenChartTab({
   customerId,
@@ -269,18 +420,22 @@ export function PenChartTab({
 
   // Canvas/draw states
   const [penColor, setPenColor] = useState('#1a1a1a');
-  const [penSize, setPenSize] = useState(2.5);
-  // T-20260522-foot-PENCHART-TOOLS-V2: 통합 도구 상태 (pen/eraser/text/highlight/boilerplate-placing)
+  // T-20260522-foot-PENCHART-TOOLS-V3: 초기 굵기 1.5 (펜 기본값)
+  const [penSize, setPenSize] = useState(DEFAULT_THICKNESS.pen);
+  // T-20260522-foot-PENCHART-TOOLS-V3: 통합 도구 상태 (pen/eraser/white/text/highlight/boilerplate-placing)
   const [activeTool, setActiveTool] = useState<ActiveTool>('pen');
   // T-20260522-foot-PENCHART-TOOLS-V2 AC-5: 형광펜 색상
   const [highlightColor, setHighlightColor] = useState('#fde047');
+  // T-20260522-foot-PENCHART-TOOLS-V3: 배치된 아이템 목록 (텍스트/상용구 드래그·삭제용)
+  const [placedItems, setPlacedItems] = useState<PlacedItem[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [hasDrawing, setHasDrawing] = useState(false);
   const [selectedChart, setSelectedChart] = useState<SavedChart | null>(null);
 
   // 상용구 상태
   const [pendingBoilerplate, setPendingBoilerplate] = useState<string>('');
-  const [showBoilerplatePanel, setShowBoilerplatePanel] = useState(false);
+  // V3: showBoilerplatePanel 제거 — 단일 상용구 메뉴(showPhrasePanel)로 통합
 
   // T-20260522-foot-PENCHART-PHRASE: phrase_templates DB 연동 상태
   const [phraseTemplates, setPhraseTemplates] = useState<Array<{
@@ -489,17 +644,30 @@ export function PenChartTab({
     // 드로잉 레이어는 투명으로 시작 — fillRect 없음
   }, [activeDrawTemplate]);
 
+  // T-20260522-foot-PENCHART-TOOLS-V3: 도구 전환 + 해당 도구의 기본 굵기 자동 적용
+  const switchTool = useCallback((tool: ActiveTool) => {
+    setActiveTool(tool);
+    setPenSize(DEFAULT_THICKNESS[tool]);
+
+    setShowPhrasePanel(false);
+    setTextInputPos(null);
+    setTextInputValue('');
+  }, []);
+
   const initCanvas = useCallback(() => {
     initBgCanvas();
     initDrawCanvas();
     emptyRef.current = true;
     setHasDrawing(false);
     setActiveTool('pen');
+    setPenSize(DEFAULT_THICKNESS.pen);
     setPendingBoilerplate('');
-    setShowBoilerplatePanel(false);
+
     setShowPhrasePanel(false);
     setTextInputPos(null);
     setTextInputValue('');
+    setPlacedItems([]);
+    setSelectedIds(new Set());
     undoStackRef.current = [];
   }, [initBgCanvas, initDrawCanvas]);
 
@@ -542,7 +710,7 @@ export function PenChartTab({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     if (undoStackRef.current.length === 0) {
-      toast('되돌릴 내용이 없습니다', { duration: 1500 });
+      // V3 C-2: 에러 시에만 토스트 — undo 없음은 silent
       return;
     }
     const imageData = undoStackRef.current.pop()!;
@@ -567,53 +735,43 @@ export function PenChartTab({
     return { x: cssX * scaleX, y: cssY * scaleY, cssX, cssY };
   };
 
-  // ── 상용구 배치 ──────────────────────────────────────────────────────
+  // ── 상용구 배치 (V3: placedItems 에 추가 — 드래그·삭제 지원) ─────────────
   const placeBoilerplate = (x: number, y: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const lines = pendingBoilerplate.split('\n');
-    ctx.save();
-    ctx.font = `${penSize * 4 + 6}px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif`;
-    ctx.fillStyle = penColor;
-    ctx.textBaseline = 'top';
-    ctx.globalAlpha = 1;
-    const lineHeight = penSize * 4 + 12;
-    lines.forEach((line, i) => { ctx.fillText(line, x, y + i * lineHeight); });
-    ctx.restore();
+    const fontSize = Math.round(penSize * 4 + 6);
+    const newItem: PlacedItem = {
+      id: `bp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type: 'boilerplate',
+      x, y,
+      text: pendingBoilerplate,
+      fontSize,
+      color: penColor,
+    };
+    setPlacedItems((prev) => [...prev, newItem]);
     emptyRef.current = false;
     setHasDrawing(true);
-    setActiveTool('pen');
+    switchTool('pen');
     setPendingBoilerplate('');
-    toast.success('상용구 삽입 완료');
   };
 
-  // T-20260522-foot-PENCHART-TOOLS-V2 AC-3: 텍스트 도구 — 캔버스에 삽입
+  // T-20260522-foot-PENCHART-TOOLS-V3 AC-7~9: 텍스트 도구 — placedItems에 추가 (드래그·삭제 지원)
   const handleTextConfirm = useCallback(() => {
     if (!textInputValue.trim() || !textInputPos) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    saveUndoState();
-    const lines = textInputValue.split('\n');
-    ctx.save();
-    ctx.font = `${penSize * 4 + 6}px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif`;
-    ctx.fillStyle = penColor;
-    ctx.textBaseline = 'top';
-    ctx.globalAlpha = 1;
-    const lineHeight = penSize * 4 + 12;
-    lines.forEach((line, i) => {
-      ctx.fillText(line, textInputPos.x, textInputPos.y + i * lineHeight);
-    });
-    ctx.restore();
+    const fontSize = Math.round(penSize * 4 + 6);
+    const newItem: PlacedItem = {
+      id: `txt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type: 'text',
+      x: textInputPos.x,
+      y: textInputPos.y,
+      text: textInputValue,
+      fontSize,
+      color: penColor,
+    };
+    setPlacedItems((prev) => [...prev, newItem]);
     emptyRef.current = false;
     setHasDrawing(true);
     setTextInputPos(null);
     setTextInputValue('');
-    toast.success('텍스트 삽입 완료');
-  }, [textInputValue, textInputPos, penSize, penColor, saveUndoState]);
+  }, [textInputValue, textInputPos, penSize, penColor]);
 
   // ── 포인터 이벤트 ────────────────────────────────────────────────────
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -650,14 +808,28 @@ export function PenChartTab({
     if (!ctx) return;
 
     if (activeTool === 'eraser') {
+      // V3 AC-3: 드로잉 레이어만 clearRect → bg(상용구 템플릿) 보존
       const sz = penSize * 4;
       ctx.clearRect(pos.x - sz, pos.y - sz, sz * 2, sz * 2);
+    } else if (activeTool === 'white') {
+      // V3 AC-4~6: 화이트 도구 — source-over 흰색으로 전 레이어 덮어쓰기
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = '#ffffff';
+      ctx.globalAlpha = 1;
+      const sz = penSize * 4;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, sz, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      emptyRef.current = false;
+      setHasDrawing(true);
     } else if (activeTool === 'highlight') {
-      // 탭(클릭)에도 점 찍기
+      // V3 AC-10~11: 투명도 35%→20%
       ctx.beginPath();
       const r = Math.max(penSize * 3 + 3, 4);
       ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
-      ctx.globalAlpha = 0.35;
+      ctx.globalAlpha = 0.20;
       ctx.fillStyle = highlightColor;
       ctx.fill();
       ctx.globalAlpha = 1;
@@ -706,13 +878,31 @@ export function PenChartTab({
       const last = lastPosRef.current ?? pos;
 
       if (activeTool === 'eraser') {
+        // V3 AC-3: 드로잉 레이어만 clearRect → bg(상용구 템플릿) 보존
         const sz = penSize * 4;
         ctx.clearRect(pos.x - sz, pos.y - sz, sz * 2, sz * 2);
-      } else if (activeTool === 'highlight') {
+      } else if (activeTool === 'white') {
+        // V3 AC-4~6: 화이트 도구 — source-over 흰색 선
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-over';
         ctx.beginPath();
         ctx.moveTo(last.x, last.y);
         ctx.lineTo(pos.x, pos.y);
-        ctx.globalAlpha = 0.35;
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = penSize * 8;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+        ctx.restore();
+        emptyRef.current = false;
+        setHasDrawing(true);
+      } else if (activeTool === 'highlight') {
+        // V3 AC-10~11: 투명도 35%→20%
+        ctx.beginPath();
+        ctx.moveTo(last.x, last.y);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.globalAlpha = 0.20;
         ctx.strokeStyle = highlightColor;
         ctx.lineWidth = penSize * 6 + 6;
         ctx.lineCap = 'round';
@@ -753,6 +943,26 @@ export function PenChartTab({
     if (!canvas) return;
     setSaving(true);
     try {
+      // T-20260522-foot-PENCHART-TOOLS-V3: placedItems(텍스트·상용구)를 draw canvas에 먼저 래스터화
+      if (placedItems.length > 0) {
+        const drawCtx = canvas.getContext('2d');
+        if (drawCtx) {
+          for (const item of placedItems) {
+            const lines = item.text.split('\n');
+            drawCtx.save();
+            drawCtx.font = `${item.fontSize}px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif`;
+            drawCtx.fillStyle = item.color;
+            drawCtx.textBaseline = 'top';
+            drawCtx.globalAlpha = 1;
+            const lineH = item.fontSize + 6;
+            lines.forEach((line, i) => {
+              drawCtx.fillText(line, item.x, item.y + i * lineH);
+            });
+            drawCtx.restore();
+          }
+        }
+      }
+
       // T-20260522-foot-PENCHART-TOOLS-V2 AC-1: bg natural 해상도 기준으로 합성
       // bg canvas: naturalWidth × naturalHeight (원본 해상도)
       // draw canvas: CANVAS_W*dpr × canvasH*dpr (DPR 스케일)
@@ -830,15 +1040,12 @@ export function PenChartTab({
         }
       }
 
-      toast.success(
-        isHQ  ? '발건강 질문지 저장 완료 — 상담내역에 연동됐습니다' :
-        isPC  ? '환불/비급여 동의서 저장 완료 — 상담내역에 연동됐습니다' :
-        isPCL ? '개인정보+체크리스트 저장 완료 — 상담내역에 연동됐습니다' :
-               '펜차트 저장 완료',
-      );
+      // V3 C-2: 토스트는 에러 시에만 표시 — 저장 성공 시 토스트 없이 목록으로 복귀
       await loadSavedCharts();
       sigPadRef.current?.clear();
       setSigEmpty(true);
+      setPlacedItems([]);
+      setSelectedIds(new Set());
       setActiveDrawTemplate(null);
       setMode('list');
     } finally {
@@ -850,8 +1057,8 @@ export function PenChartTab({
   const handleDelete = async (chart: SavedChart) => {
     if (!window.confirm(`"${chart.name}" 을 삭제하시겠습니까?`)) return;
     const path = `${storagePath}/${chart.name}`;
-    await supabase.storage.from('photos').remove([path]);
-    toast.success('삭제 완료');
+    const { error } = await supabase.storage.from('photos').remove([path]);
+    if (error) toast.error(`삭제 실패: ${error.message}`);
     if (selectedChart?.name === chart.name) setSelectedChart(null);
     await loadSavedCharts();
   };
@@ -860,9 +1067,11 @@ export function PenChartTab({
   const handleBoilerplateSelect = (text: string) => {
     setPendingBoilerplate(text);
     setActiveTool('boilerplate-placing');
-    setShowBoilerplatePanel(false);
+    setPenSize(DEFAULT_THICKNESS['boilerplate-placing']);
+
+    setShowPhrasePanel(false);
     setTextInputPos(null);
-    toast('캔버스를 클릭해 상용구를 삽입하세요', { duration: 2000 });
+    // V3 C-2: 안내 토스트 제거 (인라인 배지로 대체)
   };
 
   // ── 양식 선택 ─────────────────────────────────────────────────────────
@@ -989,9 +1198,11 @@ export function PenChartTab({
   if (mode === 'draw') {
     const canvasH = getCanvasHeightForForm(activeDrawTemplate?.form_key);
     const isEraser    = activeTool === 'eraser';
+    const isWhite     = activeTool === 'white';
     const isHighlight = activeTool === 'highlight';
     const isTextTool  = activeTool === 'text';
     const isBoilerplatePlacing = activeTool === 'boilerplate-placing';
+    const hasSelectedItems = selectedIds.size > 0;
 
     return (
       <FullscreenFormWrapper
@@ -1007,10 +1218,10 @@ export function PenChartTab({
       <div className="flex flex-col h-full bg-white">
         {/* 툴바 */}
         <div className="flex-none border-b bg-white p-2 flex items-center gap-1.5 flex-wrap shadow-sm">
-          {/* ── 기본 도구 ── */}
-          {/* 펜 */}
+          {/* ── 기본 도구 (V3: switchTool + per-tool defaults) ── */}
+          {/* 펜 — 초기 굵기 1.5 */}
           <button
-            onClick={() => { setActiveTool('pen'); setShowBoilerplatePanel(false); setShowPhrasePanel(false); setTextInputPos(null); }}
+            onClick={() => switchTool('pen')}
             className={cn(
               'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
               activeTool === 'pen'
@@ -1021,24 +1232,37 @@ export function PenChartTab({
             <Pencil className="h-3.5 w-3.5" /> 펜
           </button>
 
-          {/* 지우개 */}
+          {/* 지우개 — 초기 굵기 3, 드로잉 레이어만 삭제(bg 보존) */}
           <button
-            onClick={() => { setActiveTool('eraser'); setShowBoilerplatePanel(false); setShowPhrasePanel(false); setTextInputPos(null); }}
+            onClick={() => switchTool('eraser')}
             className={cn(
               'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
               isEraser ? 'bg-orange-100 border-orange-400 text-orange-700' : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
             )}
+            title="드로잉 레이어만 지움 — 배경 양식 보존"
           >
             <Eraser className="h-3.5 w-3.5" /> 지우개
           </button>
 
-          {/* T-20260522-foot-PENCHART-TOOLS-V2 AC-3: 텍스트 도구 */}
+          {/* 화이트 — 초기 굵기 3, source-over 흰색 덮어쓰기 (배경 포함 전 레이어) */}
+          <button
+            onClick={() => switchTool(isWhite ? 'pen' : 'white')}
+            className={cn(
+              'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
+              isWhite
+                ? 'bg-slate-200 border-slate-500 text-slate-700'
+                : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
+            )}
+            title="화이트 — 흰색으로 덮어쓰기 (배경 포함 전 레이어)"
+          >
+            <Paintbrush className="h-3.5 w-3.5" />
+            <span>화이트</span>
+          </button>
+
+          {/* 텍스트 — 초기 굵기 2, 저장 후 드래그·삭제 */}
           <button
             onClick={() => {
-              setActiveTool(isTextTool ? 'pen' : 'text');
-              setShowBoilerplatePanel(false);
-              setShowPhrasePanel(false);
-              setTextInputPos(null);
+              switchTool(isTextTool ? 'pen' : 'text');
             }}
             className={cn(
               'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
@@ -1046,20 +1270,17 @@ export function PenChartTab({
                 ? 'bg-blue-100 border-blue-400 text-blue-700'
                 : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
             )}
-            title="텍스트 도구 — 캔버스를 클릭해 타자 입력"
+            title="텍스트 도구 — 캔버스를 클릭해 타자 입력 후 드래그·삭제"
           >
             <TextCursorInput className="h-3.5 w-3.5" />
             <span>텍스트</span>
             {isTextTool && <span className="ml-0.5 text-blue-600 animate-pulse">●</span>}
           </button>
 
-          {/* T-20260522-foot-PENCHART-TOOLS-V2 AC-5: 형광펜 도구 */}
+          {/* 형광펜 — 초기 굵기 2, 투명도 20% */}
           <button
             onClick={() => {
-              setActiveTool(isHighlight ? 'pen' : 'highlight');
-              setShowBoilerplatePanel(false);
-              setShowPhrasePanel(false);
-              setTextInputPos(null);
+              switchTool(isHighlight ? 'pen' : 'highlight');
             }}
             className={cn(
               'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
@@ -1067,7 +1288,7 @@ export function PenChartTab({
                 ? 'bg-yellow-100 border-yellow-400 text-yellow-700'
                 : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
             )}
-            title="형광펜 — 반투명 두꺼운 선 (지우개로 지울 수 있음)"
+            title="형광펜 — 반투명 두꺼운 선 (투명도 20%, 지우개로 지울 수 있음)"
           >
             <Highlighter className="h-3.5 w-3.5" />
             <span>형광펜</span>
@@ -1091,71 +1312,26 @@ export function PenChartTab({
             </div>
           )}
 
-          {/* 상용구 버튼 */}
-          <div className="relative">
-            <button
-              onClick={() => {
-                setShowBoilerplatePanel(!showBoilerplatePanel);
-                setShowPhrasePanel(false);
-                setTextInputPos(null);
-              }}
-              className={cn(
-                'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
-                isBoilerplatePlacing || showBoilerplatePanel
-                  ? 'bg-teal-100 border-teal-400 text-teal-700'
-                  : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
-              )}
-            >
-              <Type className="h-3.5 w-3.5" /> 상용구
-              {isBoilerplatePlacing && <span className="ml-0.5 text-teal-600 animate-pulse">●</span>}
-            </button>
-
-            {showBoilerplatePanel && (
-              <div className="absolute top-8 left-0 z-20 w-52 rounded-lg border bg-white shadow-lg overflow-hidden">
-                <div className="flex items-center justify-between px-2 py-1.5 bg-teal-50 border-b">
-                  <span className="text-[11px] font-bold text-teal-800">상용구 선택</span>
-                  <button
-                    onClick={() => { setShowBoilerplatePanel(false); if (activeTool === 'boilerplate-placing') setActiveTool('pen'); }}
-                    className="text-teal-500 hover:text-teal-700"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <div className="max-h-56 overflow-y-auto">
-                  {BOILERPLATE_ITEMS.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => handleBoilerplateSelect(item.text)}
-                      className="w-full text-left px-3 py-2 text-[11px] hover:bg-teal-50 border-b border-gray-100 last:border-0 transition"
-                    >
-                      <div className="font-medium text-gray-800">{item.label}</div>
-                      <div className="text-gray-400 mt-0.5 text-[10px] truncate">{item.text.split('\n')[0]}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* T-20260522-foot-PENCHART-PHRASE: 상용구 불러오기 — phrase_templates DB 연동 */}
+          {/* V3 AC-12: T상용구 — 중복 메뉴 통합. phrase_templates(DB) 단일 메뉴로 통합 */}
           <div className="relative">
             <button
               onClick={() => {
                 setShowPhrasePanel(!showPhrasePanel);
-                setShowBoilerplatePanel(false);
+            
                 setTextInputPos(null);
               }}
               className={cn(
                 'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
-                showPhrasePanel
-                  ? 'bg-emerald-100 border-emerald-400 text-emerald-700'
+                isBoilerplatePlacing || showPhrasePanel
+                  ? 'bg-teal-100 border-teal-400 text-teal-700'
                   : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
               )}
-              title="어드민 등록 상용구 불러오기 (phrase_templates)"
+              title="상용구 — 드래그·삭제·다중선택 지원"
               data-testid="phrase-library-btn"
             >
               <BookOpen className="h-3.5 w-3.5" />
-              <span>불러오기</span>
+              <span>상용구</span>
+              {isBoilerplatePlacing && <span className="ml-0.5 text-teal-600 animate-pulse">●</span>}
             </button>
 
             {showPhrasePanel && (
@@ -1164,20 +1340,19 @@ export function PenChartTab({
                 data-testid="phrase-library-panel"
               >
                 {/* 헤더 */}
-                <div className="flex items-center justify-between px-2 py-1.5 bg-emerald-50 border-b">
-                  <span className="text-[11px] font-bold text-emerald-800">상용구 불러오기</span>
+                <div className="flex items-center justify-between px-2 py-1.5 bg-teal-50 border-b">
+                  <span className="text-[11px] font-bold text-teal-800">상용구</span>
                   <button
                     onClick={() => setShowPhrasePanel(false)}
-                    className="text-emerald-500 hover:text-emerald-700"
+                    className="text-teal-500 hover:text-teal-700"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
 
-                {/* AC-4: 사이드 메뉴 스타일 카테고리 + 목록 2-컬럼 레이아웃 */}
-                {/* AC-3: document '서류' → '원장님' */}
+                {/* 카테고리 사이드 메뉴 + 목록 */}
                 <div className="flex" data-testid="phrase-category-tabs">
-                  {/* 좌: 카테고리 사이드 메뉴 */}
+                  {/* 좌: 카테고리 */}
                   <div className="w-[58px] flex-shrink-0 border-r bg-gray-50 flex flex-col">
                     {(
                       [
@@ -1195,7 +1370,7 @@ export function PenChartTab({
                           className={cn(
                             'flex flex-col items-center gap-0.5 px-1 py-2 text-center border-b border-gray-100 last:border-0 transition',
                             phraseCategory === key
-                              ? 'bg-emerald-50 text-emerald-700 font-semibold border-l-2 border-l-emerald-500'
+                              ? 'bg-teal-50 text-teal-700 font-semibold border-l-2 border-l-teal-500'
                               : 'text-muted-foreground hover:bg-gray-100',
                           )}
                           data-testid={`phrase-cat-${key}`}
@@ -1207,7 +1382,7 @@ export function PenChartTab({
                     })}
                   </div>
 
-                  {/* 우: 상용구 목록 (AC-2: 컴팩트) */}
+                  {/* 우: 상용구 목록 */}
                   <div className="flex-1 min-w-0 max-h-56 overflow-y-auto" data-testid="phrase-list">
                     {phraseTemplates.filter((p) => p.category === phraseCategory).length === 0 ? (
                       <div
@@ -1228,7 +1403,7 @@ export function PenChartTab({
                               handleBoilerplateSelect(phrase.content);
                               setShowPhrasePanel(false);
                             }}
-                            className="w-full text-left px-2.5 py-1.5 text-[11px] hover:bg-emerald-50 border-b border-gray-100 last:border-0 transition"
+                            className="w-full text-left px-2.5 py-1.5 text-[11px] hover:bg-teal-50 border-b border-gray-100 last:border-0 transition"
                             data-testid={`phrase-item-${phrase.id}`}
                           >
                             <div className="font-medium text-gray-800 truncate">{phrase.name}</div>
@@ -1250,8 +1425,31 @@ export function PenChartTab({
               <span className="animate-pulse">●</span>
               캔버스 클릭해 삽입
               <button
-                onClick={() => { setActiveTool('pen'); setPendingBoilerplate(''); }}
+                onClick={() => { switchTool('pen'); setPendingBoilerplate(''); }}
                 className="ml-1 text-teal-400 hover:text-teal-700"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+
+          {/* V3: 배치된 아이템 다중선택 삭제 */}
+          {hasSelectedItems && (
+            <div className="flex items-center gap-1 px-2 py-1 rounded bg-red-50 border border-red-300 text-[11px] text-red-700">
+              <CheckSquare className="h-3 w-3" />
+              <span>{selectedIds.size}개 선택됨</span>
+              <button
+                onClick={() => {
+                  setPlacedItems((prev) => prev.filter((it) => !selectedIds.has(it.id)));
+                  setSelectedIds(new Set());
+                }}
+                className="ml-1 flex items-center gap-0.5 text-red-500 hover:text-red-700"
+              >
+                <Trash2 className="h-3 w-3" /> 삭제
+              </button>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                className="ml-1 text-red-400 hover:text-red-700"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -1291,11 +1489,11 @@ export function PenChartTab({
             </div>
           )}
 
-          {/* 굵기 슬라이더 */}
+          {/* V3 C-1: 굵기 슬라이더 max 8→5 */}
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <span>굵기</span>
             <input
-              type="range" min={1} max={8} step={0.5} value={penSize}
+              type="range" min={1} max={5} step={0.5} value={penSize}
               onChange={(e) => setPenSize(parseFloat(e.target.value))}
               className="w-16"
             />
@@ -1446,6 +1644,43 @@ export function PenChartTab({
                 </div>
               </div>
             )}
+
+            {/* V3 AC-7~9, AC-13~16: 배치된 아이템 오버레이 (텍스트·상용구 드래그·삭제·다중선택) */}
+            {placedItems.map((item) => {
+              const isSelected = selectedIds.has(item.id);
+              const lineH = item.fontSize + 6;
+              const lines = item.text.split('\n');
+              const approxH = lines.length * lineH + 8;
+              return (
+                <PlacedItemOverlay
+                  key={item.id}
+                  item={item}
+                  isSelected={isSelected}
+                  approxH={approxH}
+                  onSelect={(id, multi) => {
+                    setSelectedIds((prev) => {
+                      const next = new Set(prev);
+                      if (multi) {
+                        if (next.has(id)) next.delete(id); else next.add(id);
+                      } else {
+                        if (next.has(id) && next.size === 1) next.clear();
+                        else { next.clear(); next.add(id); }
+                      }
+                      return next;
+                    });
+                  }}
+                  onMove={(id, dx, dy) => {
+                    setPlacedItems((prev) =>
+                      prev.map((it) => it.id === id ? { ...it, x: it.x + dx, y: it.y + dy } : it)
+                    );
+                  }}
+                  onDelete={(id) => {
+                    setPlacedItems((prev) => prev.filter((it) => it.id !== id));
+                    setSelectedIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+                  }}
+                />
+              );
+            })}
           </div>
         </div>
 
