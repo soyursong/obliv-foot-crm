@@ -108,9 +108,9 @@ function App() {
                 <Route index element={<Dashboard />} />
                 <Route path="reservations" element={<Reservations />} />
                 <Route path="customers" element={<Customers />} />
-                {/* T-20260521-foot-STAFF-PKG-ROLLBACK: staff/part_lead 차단, consultant/coordinator/therapist READ 오픈 */}
-                {/* T-20260520-foot-RBAC-MENU-EXPAND AC-4: therapist 패키지 접근 유지 */}
-                <Route path="packages" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><Packages /></RoleGuard>} />
+                {/* T-20260522-foot-STAFF-REEXPAND: staff/part_lead 재허용 (총괄 직원 리뷰 완료 후 재적용) */}
+                {/* consultant/coordinator=WRITE, therapist/staff/part_lead=READ-only (Packages.tsx canWritePackage 기준) */}
+                <Route path="packages" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist', 'staff', 'part_lead']}><Packages /></RoleGuard>} />
                 {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 직원·공간 접근 */}
                 <Route path="staff" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><Staff /></RoleGuard>} />
                 {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 일마감 접근 (뷰 전용) */}

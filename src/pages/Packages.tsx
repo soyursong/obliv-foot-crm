@@ -40,7 +40,7 @@ export default function Packages() {
   const clinic = useClinic();
   const { profile } = useAuth();
   const isAdmin = profile?.role === 'admin';
-  // T-20260521-foot-STAFF-PKG-ROLLBACK: consultant/coordinator=WRITE, therapist=READ-only (staff/part_lead 접근 차단)
+  // T-20260522-foot-STAFF-REEXPAND: consultant/coordinator=WRITE, therapist/staff/part_lead=READ-only (총괄 재허용)
   const canWritePackage = ['admin', 'manager', 'consultant', 'coordinator'].includes(profile?.role ?? '');
   const [filter, setFilter] = useState<FilterStatus>('active');
   const [rows, setRows] = useState<PackageListItem[]>([]);
