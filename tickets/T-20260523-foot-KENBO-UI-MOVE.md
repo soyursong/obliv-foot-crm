@@ -2,13 +2,15 @@
 ticket_id: T-20260523-foot-KENBO-UI-MOVE
 status: deploy-ready
 deploy_ready: true
-deploy_ready_at: 2026-05-23T08:30:00+09:00
+deploy_ready_at: 2026-05-23T08:45:00+09:00
 db_change: false
 build_ok: true
 e2e_spec: tests/e2e/T-20260523-foot-KENBO-UI-MOVE.spec.ts
 domain: foot
 priority: P2
 deadline: 2026-05-29
+qa_result: pending
+fix_note: spec fix — S-1 strict mode(.or→.first), S-4 태블릿 viewport waitFor(#root attach+networkidle)
 ---
 
 ## T-20260523-foot-KENBO-UI-MOVE — 1번차트 건보공단 조회 위치 이동
