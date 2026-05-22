@@ -1709,12 +1709,36 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   };
 
   // C21-RESIDENT-ID: 주민번호 암호화 저장
+  // T-20260522-foot-SSN-SESSION-KILL: 저장 전 세션 체크 + 에러 코드별 메시지 분기
+  //   root cause: JWT 만료 → PostgREST 401 → SDK 토큰 갱신 실패 → SIGNED_OUT 연쇄
+  //   fix 1(auth.tsx): SIGNED_OUT 150ms 디바운스로 갱신 race condition 허용
+  //   fix 2(here): 저장 전 세션 유효성 확인, 401/JWT 에러 명시적 메시지
   const saveRrn = async () => {
     if (!customer) return;
     const digits = (rrnFront + rrnBack).replace(/\D/g, '');
     if (digits.length !== 13) { toast.error('주민번호 13자리를 입력해주세요'); return; }
+
+    // AC-4: 저장 전 세션 유효성 확인 — JWT 만료 선제 처리
+    const { data: { session: currentSess } } = await supabase.auth.getSession();
+    if (!currentSess) {
+      toast.error('세션이 만료되었습니다. 페이지를 새로고침하고 다시 시도해주세요.');
+      return;
+    }
+
     const { error } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });
-    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+    if (error) {
+      // AC-2: 저장 실패 시 에러 메시지 표시 (세션 종료 X)
+      // PGRST301 = JWT expired, status 401 = 인증 오류 → 세션 만료 안내
+      const isAuthErr = (error as { code?: string; status?: number }).code === 'PGRST301'
+        || (error as { status?: number }).status === 401
+        || error.message?.toLowerCase().includes('jwt');
+      if (isAuthErr) {
+        toast.error('세션이 만료되었습니다. 페이지를 새로고침하고 다시 시도해주세요.');
+      } else {
+        toast.error(`주민번호 저장 실패: ${error.message}`);
+      }
+      return;
+    }
     setRrnMasked(rrnFront + '-' + '*'.repeat(7));
     setEditingRrn(false);
     setRrnFront('');
@@ -1729,11 +1753,31 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     setSavingInfoPanel(true);
     try {
       // 1) 주민번호 — 암호화 RPC 별도 처리 (T-20260511-foot-SSN-SAVE-BUG: split input 사용)
+      // T-20260522-foot-SSN-SESSION-KILL: 저장 전 세션 체크 + 에러 코드별 분기
       if (editingRrn) {
         const digits = (rrnFront + rrnBack).replace(/\D/g, '');
         if (digits.length !== 13) { toast.error('주민번호 13자리를 입력해주세요'); return; }
+
+        // AC-4: 저장 전 세션 유효성 확인 — JWT 만료 선제 처리
+        const { data: { session: rrnSess } } = await supabase.auth.getSession();
+        if (!rrnSess) {
+          toast.error('세션이 만료되었습니다. 페이지를 새로고침하고 다시 시도해주세요.');
+          return;
+        }
+
         const { error } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });
-        if (error) { toast.error(`주민번호 저장 실패: ${error.message}`); return; }
+        if (error) {
+          // AC-2: 저장 실패 — 세션 오류는 명시적 안내, 그 외 일반 에러 토스트
+          const isAuthErr = (error as { code?: string; status?: number }).code === 'PGRST301'
+            || (error as { status?: number }).status === 401
+            || error.message?.toLowerCase().includes('jwt');
+          if (isAuthErr) {
+            toast.error('세션이 만료되었습니다. 페이지를 새로고침하고 다시 시도해주세요.');
+          } else {
+            toast.error(`주민번호 저장 실패: ${error.message}`);
+          }
+          return;
+        }
         setRrnMasked(rrnFront + '-' + '*'.repeat(7));
         setEditingRrn(false);
         setRrnFront('');
