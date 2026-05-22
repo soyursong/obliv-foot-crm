@@ -1710,9 +1710,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
   // C21-RESIDENT-ID: 주민번호 암호화 저장
   // T-20260522-foot-SSN-SESSION-KILL: 저장 전 세션 체크 + 에러 코드별 메시지 분기
-  //   root cause: JWT 만료 → PostgREST 401 → SDK 토큰 갱신 실패 → SIGNED_OUT 연쇄
-  //   fix 1(auth.tsx): SIGNED_OUT 150ms 디바운스로 갱신 race condition 허용
-  //   fix 2(here): 저장 전 세션 유효성 확인, 401/JWT 에러 명시적 메시지
+  // T-20260522-foot-CUST-REG-LOGOUT: 401 수신 시 refreshSession() 후 1회 재시도 추가
+  //   root cause: RPC 호출 직전 JWT 만료 → 401 → SDK SIGNED_OUT 발화 → 세션 소실
+  //   fix 1(auth.tsx v2): refreshSession() 적극 복구 + 100ms fallback
+  //   fix 2(here): 401 에러 시 refresh 후 rrn_encrypt 1회 재시도 — SDK SIGNED_OUT 발화 전에 복구
   const saveRrn = async () => {
     if (!customer) return;
     const digits = (rrnFront + rrnBack).replace(/\D/g, '');
@@ -1725,15 +1726,30 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       return;
     }
 
+    const isJwtError = (err: { code?: string; status?: number; message?: string }) =>
+      err.code === 'PGRST301' || err.status === 401 || err.message?.toLowerCase().includes('jwt');
+
     const { error } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });
     if (error) {
-      // AC-2: 저장 실패 시 에러 메시지 표시 (세션 종료 X)
-      // PGRST301 = JWT expired, status 401 = 인증 오류 → 세션 만료 안내
-      const isAuthErr = (error as { code?: string; status?: number }).code === 'PGRST301'
-        || (error as { status?: number }).status === 401
-        || error.message?.toLowerCase().includes('jwt');
-      if (isAuthErr) {
-        toast.error('세션이 만료되었습니다. 페이지를 새로고침하고 다시 시도해주세요.');
+      // AC-2: 401/JWT 에러 → refreshSession() 후 1회 재시도 (세션 종료 방지)
+      if (isJwtError(error as { code?: string; status?: number; message?: string })) {
+        const { data: refreshData } = await supabase.auth.refreshSession();
+        if (refreshData.session) {
+          // 세션 갱신 성공 → 재시도
+          const { error: retryErr } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });
+          if (!retryErr) {
+            setRrnMasked(rrnFront + '-' + '*'.repeat(7));
+            setEditingRrn(false);
+            setRrnFront('');
+            setRrnBack('');
+            setRrnText('');
+            return;
+          }
+          toast.error(`주민번호 저장 실패: ${retryErr.message}`);
+        } else {
+          // 세션 갱신도 실패 → 로그인 재시도 안내 (로그아웃은 auth.tsx가 처리)
+          toast.error('세션이 만료되었습니다. 페이지를 새로고침하고 다시 시도해주세요.');
+        }
       } else {
         toast.error(`주민번호 저장 실패: ${error.message}`);
       }
@@ -1754,6 +1770,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     try {
       // 1) 주민번호 — 암호화 RPC 별도 처리 (T-20260511-foot-SSN-SAVE-BUG: split input 사용)
       // T-20260522-foot-SSN-SESSION-KILL: 저장 전 세션 체크 + 에러 코드별 분기
+      // T-20260522-foot-CUST-REG-LOGOUT: 401 시 refreshSession() 후 1회 재시도 추가
       if (editingRrn) {
         const digits = (rrnFront + rrnBack).replace(/\D/g, '');
         if (digits.length !== 13) { toast.error('주민번호 13자리를 입력해주세요'); return; }
@@ -1765,18 +1782,29 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           return;
         }
 
+        const isRrnJwtErr = (err: { code?: string; status?: number; message?: string }) =>
+          err.code === 'PGRST301' || err.status === 401 || err.message?.toLowerCase().includes('jwt');
+
         const { error } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });
         if (error) {
-          // AC-2: 저장 실패 — 세션 오류는 명시적 안내, 그 외 일반 에러 토스트
-          const isAuthErr = (error as { code?: string; status?: number }).code === 'PGRST301'
-            || (error as { status?: number }).status === 401
-            || error.message?.toLowerCase().includes('jwt');
-          if (isAuthErr) {
-            toast.error('세션이 만료되었습니다. 페이지를 새로고침하고 다시 시도해주세요.');
+          // AC-2: 401/JWT 에러 → refreshSession() 후 1회 재시도
+          if (isRrnJwtErr(error as { code?: string; status?: number; message?: string })) {
+            const { data: refreshData } = await supabase.auth.refreshSession();
+            if (refreshData.session) {
+              const { error: retryErr } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });
+              if (retryErr) {
+                toast.error(`주민번호 저장 실패: ${retryErr.message}`);
+                return;
+              }
+              // 재시도 성공 — 아래 setRrnMasked 블록으로 fall-through
+            } else {
+              toast.error('세션이 만료되었습니다. 페이지를 새로고침하고 다시 시도해주세요.');
+              return;
+            }
           } else {
             toast.error(`주민번호 저장 실패: ${error.message}`);
+            return;
           }
-          return;
         }
         setRrnMasked(rrnFront + '-' + '*'.repeat(7));
         setEditingRrn(false);

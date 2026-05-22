@@ -61,16 +61,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, s) => {
-      // T-20260522-foot-SSN-SESSION-KILL: SIGNED_OUT 디바운스 복구 로직
+      // T-20260522-foot-SSN-SESSION-KILL: SIGNED_OUT 디바운스 복구 로직 (v1)
+      // T-20260522-foot-CUST-REG-LOGOUT: 150ms 단순 대기 → refreshSession() 적극 복구로 교체 (v2)
       //
       // 문제: rrn_encrypt RPC 호출 시 JWT 만료 → PostgREST 401 반환 →
       //       SDK 내부 토큰 갱신 실패 → SIGNED_OUT 즉시 발화 → 세션 소실
       //
-      // 수정: 명시적 signOut()이 아닌 SIGNED_OUT 이벤트는 150ms 후 재확인.
-      //       토큰 갱신 race condition(다른 탭 or 백그라운드 갱신 완료)을 허용.
-      //       150ms 후에도 세션이 없으면 정상적으로 로그아웃 처리.
+      // v1 한계: 150ms 고정 대기는 SDK refresh가 150ms 이상 걸리거나
+      //          네트워크 순단으로 refresh 자체가 실패하면 여전히 로그아웃.
+      //
+      // v2 수정: SIGNED_OUT 수신 시 refreshSession() 직접 재시도.
+      //   ① refreshSession() 성공 → 세션 복구, 로그아웃 없음.
+      //   ② refreshSession() 실패 (refresh token 만료 등) → 100ms 대기 후
+      //      getSession()으로 다른 탭 갱신 결과 확인. 그래도 null이면 정상 로그아웃.
+      //
+      // 명시적 signOut()은 explicitSignOutRef.current=true로 이 블록 건너뜀.
       if (_event === 'SIGNED_OUT' && !explicitSignOutRef.current) {
-        await new Promise((r) => setTimeout(r, 150));
+        try {
+          const { data: refreshData } = await supabase.auth.refreshSession();
+          if (refreshData.session) {
+            setSession(refreshData.session);
+            void loadProfile(refreshData.session);
+            return;
+          }
+        } catch {
+          // refreshSession 예외 무시 — getSession() fallback으로 진행
+        }
+        // refresh 실패 시: 100ms 대기 후 다른 탭 갱신 결과 확인
+        await new Promise((r) => setTimeout(r, 100));
         const { data } = await supabase.auth.getSession();
         const recoveredSession = data.session ?? null;
         setSession(recoveredSession);
