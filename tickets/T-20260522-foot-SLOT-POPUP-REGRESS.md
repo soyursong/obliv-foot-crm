@@ -2,11 +2,14 @@
 id: T-20260522-foot-SLOT-POPUP-REGRESS
 title: 슬롯 이동 확인 팝업 회귀 제거
 domain: foot
-status: in_progress
+status: deploy-ready
 priority: P1
 created: 2026-05-22
-deploy_ready: false
+completed: 2026-05-22
+deploy_ready: true
 db_changes: false
+commit: 94bfd83
+build: ok
 ---
 
 ## 배경
