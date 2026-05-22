@@ -54,10 +54,11 @@ test.describe('AC-4: click/touch 이중 바인딩 검증', () => {
     expect(src).not.toMatch(/useSensor\(\s*PointerSensor/);
   });
 
-  test('TouchSensor distance:8 유지', () => {
+  test('TouchSensor activationConstraint distance 설정 유지', () => {
     const src = fs.readFileSync(DASHBOARD_PATH, 'utf-8');
-    // TouchSensor 설정 유지 (contextmenu 보장 위한 distance-only 방식)
-    expect(src).toMatch(/TouchSensor.*activationConstraint.*distance.*8/s);
+    // T-20260522-foot-DRAG-RESP-OPT AC-1: distance 8 → 5 변경 반영
+    // contextmenu 보장 위한 distance-only 방식 유지 (5px ≥ accidental tap 3px 기준)
+    expect(src).toMatch(/TouchSensor.*activationConstraint.*distance.*[5-9]/s);
   });
 });
 
