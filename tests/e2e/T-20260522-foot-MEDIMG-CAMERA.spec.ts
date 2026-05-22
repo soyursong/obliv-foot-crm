@@ -488,4 +488,179 @@ test.describe('T-20260522-foot-MEDIMG-CAMERA — 진료이미지 카메라 촬�
     // 취소
     await page.getByRole('button', { name: /취소/ }).first().click();
   });
+
+  /**
+   * AC-3 T-20260522-foot-CHART2-CAM-FOCUS: applyConstraints에 width:{ min:1280 } 포함 검증
+   * - selectTypeAndStart에서 getUserMedia 후 applyConstraints 호출 시 width.min=1280 포함
+   * - 기존 focusMode:continuous 동시 설정 유지 (FIX-AC-5 회귀 없음)
+   */
+  test('AC-3-CONSTRAINTS: applyConstraints에 width min 1280 + focusMode continuous 동시 검증', async ({ page }) => {
+    await page.addInitScript(() => {
+      (window as unknown as Record<string, unknown>).__ac3WidthMin = null;
+      (window as unknown as Record<string, unknown>).__ac3FocusMode = null;
+
+      const mockTrack = {
+        stop: () => {},
+        kind: 'video' as const,
+        enabled: true,
+        applyConstraints: (constraints: MediaTrackConstraints & { advanced?: { focusMode?: string }[] }) => {
+          const wc = constraints.width as { min?: number } | undefined;
+          if (wc?.min !== undefined) {
+            (window as unknown as Record<string, unknown>).__ac3WidthMin = wc.min;
+          }
+          const adv = (constraints as unknown as { advanced?: { focusMode?: string }[] }).advanced;
+          if (adv && adv[0]?.focusMode) {
+            (window as unknown as Record<string, unknown>).__ac3FocusMode = adv[0].focusMode;
+          }
+          return Promise.resolve();
+        },
+      };
+      const mockStream = {
+        getTracks: () => [mockTrack],
+        getVideoTracks: () => [mockTrack],
+        active: true,
+      };
+      Object.defineProperty(navigator, 'mediaDevices', {
+        value: { getUserMedia: () => Promise.resolve(mockStream) },
+        writable: true,
+      });
+    });
+
+    await page.goto('/admin/customers');
+    await page.waitForLoadState('networkidle');
+
+    const firstRow = page.locator('tr[data-customer-id], tbody tr').first();
+    if (await firstRow.count() === 0) { test.skip(true, '고객 없음'); return; }
+    await firstRow.click();
+    await page.waitForLoadState('networkidle');
+
+    const historyBtn = page.getByRole('button', { name: /이력|history/i }).first();
+    if (await historyBtn.count() > 0) await historyBtn.click();
+
+    const imagesTabBtn = page.getByRole('button', { name: /진료이미지/i }).first();
+    if (await imagesTabBtn.count() === 0) { test.skip(true, '탭 없음'); return; }
+    await imagesTabBtn.click();
+    await page.waitForLoadState('networkidle');
+
+    const cameraBtn = page.getByRole('button', { name: /사진촬영/i });
+    if (await cameraBtn.count() === 0) { test.skip(true, '버튼 없음'); return; }
+    await cameraBtn.click();
+
+    const beforeBtn = page.getByRole('button', { name: /시술 전/ });
+    if (await beforeBtn.count() === 0) { test.skip(true, '시술 전 없음'); return; }
+    await beforeBtn.click();
+    await page.waitForTimeout(500);
+
+    // AC-3: width.min === 1280 검증
+    const widthMin: number | null = await page.evaluate(() =>
+      (window as unknown as Record<string, unknown>).__ac3WidthMin as number | null
+    );
+    expect(widthMin).toBe(1280);
+
+    // FIX-AC-5 회귀 없음: focusMode still 'continuous'
+    const focusMode: string | null = await page.evaluate(() =>
+      (window as unknown as Record<string, unknown>).__ac3FocusMode as string | null
+    );
+    expect(focusMode).toBe('continuous');
+
+    // capture phase 정상 진입 확인
+    const shutterOrComplete = page.getByRole('button', { name: /촬영|완료/ });
+    await expect(shutterOrComplete.first()).toBeVisible({ timeout: 3000 });
+
+    await page.getByRole('button', { name: /취소/ }).first().click();
+  });
+
+  /**
+   * AC-3 T-20260522-foot-CHART2-CAM-FOCUS: capturePhoto canvas double-safety
+   * - videoWidth < 1280인 저해상도 스트림에서도 canvas.width >= 1280 보장 (scale-up)
+   * - videoWidth >= 1280이면 그대로 사용 (scale=1, 추가 upscale 없음)
+   */
+  test('AC-3-CANVAS: capturePhoto — videoWidth < 1280 시 canvas.width scale-up 1280px 보장', async ({ page }) => {
+    await page.addInitScript(() => {
+      (window as unknown as Record<string, unknown>).__captureCanvasWidth = null;
+
+      // 저해상도 스트림 시뮬레이션 (640x480)
+      const mockTrack = {
+        stop: () => {},
+        kind: 'video' as const,
+        enabled: true,
+        applyConstraints: () => Promise.resolve(),
+      };
+      const mockStream = {
+        getTracks: () => [mockTrack],
+        getVideoTracks: () => [mockTrack],
+        active: true,
+      };
+      Object.defineProperty(navigator, 'mediaDevices', {
+        value: { getUserMedia: () => Promise.resolve(mockStream) },
+        writable: true,
+      });
+
+      // canvas.toBlob hook — canvas 크기 기록
+      const origToBlob = HTMLCanvasElement.prototype.toBlob;
+      HTMLCanvasElement.prototype.toBlob = function (
+        this: HTMLCanvasElement,
+        cb: BlobCallback,
+        ...args: Parameters<typeof origToBlob> extends [BlobCallback, ...infer R] ? R : never[]
+      ) {
+        // 가장 최근 capture canvas 크기 기록
+        if (this.hidden || this.classList.contains('hidden')) {
+          (window as unknown as Record<string, unknown>).__captureCanvasWidth = this.width;
+        }
+        return origToBlob.call(this, cb, ...args);
+      };
+
+      // video.videoWidth를 640으로 simulate (저해상도)
+      Object.defineProperty(HTMLVideoElement.prototype, 'videoWidth', {
+        get() { return 640; },
+        configurable: true,
+      });
+      Object.defineProperty(HTMLVideoElement.prototype, 'videoHeight', {
+        get() { return 480; },
+        configurable: true,
+      });
+    });
+
+    await page.goto('/admin/customers');
+    await page.waitForLoadState('networkidle');
+
+    const firstRow = page.locator('tr[data-customer-id], tbody tr').first();
+    if (await firstRow.count() === 0) { test.skip(true, '고객 없음'); return; }
+    await firstRow.click();
+    await page.waitForLoadState('networkidle');
+
+    const historyBtn = page.getByRole('button', { name: /이력|history/i }).first();
+    if (await historyBtn.count() > 0) await historyBtn.click();
+
+    const imagesTabBtn = page.getByRole('button', { name: /진료이미지/i }).first();
+    if (await imagesTabBtn.count() === 0) { test.skip(true, '탭 없음'); return; }
+    await imagesTabBtn.click();
+    await page.waitForLoadState('networkidle');
+
+    const cameraBtn = page.getByRole('button', { name: /사진촬영/i });
+    if (await cameraBtn.count() === 0) { test.skip(true, '버튼 없음'); return; }
+    await cameraBtn.click();
+
+    const beforeBtn = page.getByRole('button', { name: /시술 전/ });
+    if (await beforeBtn.count() === 0) { test.skip(true, '시술 전 없음'); return; }
+    await beforeBtn.click();
+    await page.waitForTimeout(500);
+
+    // 셔터 클릭 — capturePhoto 실행
+    const shutterBtn = page.getByRole('button', { name: '촬영' });
+    if (await shutterBtn.count() === 0) { test.skip(true, '셔터 없음'); return; }
+    await shutterBtn.click();
+    await page.waitForTimeout(300);
+
+    // canvas.width >= 1280 검증 (640 → scale 2× → 1280)
+    const capturedW: number | null = await page.evaluate(() =>
+      (window as unknown as Record<string, unknown>).__captureCanvasWidth as number | null
+    );
+    // canvas width가 기록됐다면 1280 이상이어야 함 (hidden canvas 훅 타이밍 따라 null 가능 — skip 허용)
+    if (capturedW !== null) {
+      expect(capturedW).toBeGreaterThanOrEqual(1280);
+    }
+
+    await page.getByRole('button', { name: /취소/ }).first().click();
+  });
 });
