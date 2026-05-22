@@ -420,6 +420,7 @@ export function PenChartTab({
     canvas.height = canvasH * dpr;
     canvas.style.width = `${CANVAS_W}px`;
     canvas.style.height = `${canvasH}px`;
+    ctx.scale(dpr, dpr); // T-20260522-foot-PENCHART-ERASER-CLARITY: dpr=2(iPad/Retina) 드로잉 좌표 오프셋 수정
     // 드로잉 레이어는 투명으로 시작 — fillRect 없음 (지우개 → bgCanvas 노출)
     // ctx.clearRect(0, 0, canvas.width, canvas.height); // canvas.width 리셋 시 자동 클리어
   }, [activeDrawTemplate]);
