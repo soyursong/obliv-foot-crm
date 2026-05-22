@@ -6,10 +6,10 @@ status: deploy-ready
 deploy-ready: true
 build-ok: true
 db-change: false
-spec-added: false
+spec-added: true
 rollback-sql: ""
 created: 2026-05-22
-updated: 2026-05-22
+updated: 2026-05-23
 commit: c0735cc
 ---
 
