@@ -211,6 +211,8 @@ export function PenChartTab({
 }) {
   const { profile } = useAuth();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // T-20260522-foot-PENCHART-ERASER-CLARITY: 배경 레이어 (양식 이미지 전용 — 지우개 미적용)
+  const bgCanvasRef = useRef<HTMLCanvasElement>(null);
   // T-20260522-foot-PENCHART-REFUND-AUTOFILL: 환불동의서 자동채움 데이터 (initCanvas 내 img.onload 에서 읽음)
   const autofillDataRef = useRef<AutofillFields | null>(null);
   const [savedCharts, setSavedCharts] = useState<SavedChart[]>([]);
@@ -352,27 +354,33 @@ export function PenChartTab({
     loadTemplates();
   }, [loadSavedCharts, loadTemplates]);
 
-  // ── 캔버스 초기화 ─────────────────────────────────────────────────────
-  const initCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
+  // ── 캔버스 초기화 (T-20260522-foot-PENCHART-ERASER-CLARITY) ─────────────
+  // 2-layer canvas 구조:
+  //   bgCanvasRef (아래) — 양식 배경 이미지 전용. 지우개 미적용.
+  //   canvasRef   (위)   — 드로잉 전용 (투명 배경). clearRect 지우개 → bgCanvas 노출.
+  // 저장 시 tempCanvas에 bg+draw 합성 후 toDataURL.
+  // AC-3: bgCanvas에 imageSmoothingQuality='high' → 양식 이미지 선명도 개선.
+
+  /** 배경 레이어 초기화: 양식 이미지 로드 + 고해상도 렌더링 */
+  const initBgCanvas = useCallback(() => {
+    const canvas = bgCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const dpr = window.devicePixelRatio || 1;
-
-    // T-20260519-foot-PENCHART-FORM-ADD (FIX): 어르신용 개인정보+체크리스트는 2배 높이
     const canvasH = getCanvasHeightForForm(activeDrawTemplate?.form_key);
 
     canvas.width = CANVAS_W * dpr;
     canvas.height = canvasH * dpr;
     canvas.style.width = `${CANVAS_W}px`;
     canvas.style.height = `${canvasH}px`;
+    canvas.style.display = 'block';
     ctx.scale(dpr, dpr);
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, CANVAS_W, canvasH);
 
     // T-20260519-foot-HEALTH-Q-PEN: 활성 draw 템플릿 배경 우선 사용.
-    // health_questionnaire_* + personal_checklist_* → 공개 에셋 직접 경로 (pdf_overlay)
+    // health_questionnaire_* + pdf_overlay → 공개 에셋 직접 경로
     // pen_chart → templateImgUrl (public path 또는 Supabase signed URL)
     let bgUrl: string | null = null;
     if (activeDrawTemplate && (isHealthQFormKey(activeDrawTemplate.form_key) || isPdfOverlayFormKey(activeDrawTemplate.form_key))) {
@@ -385,24 +393,48 @@ export function PenChartTab({
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
+        // AC-3: 고해상도 렌더링 (imageSmoothingQuality=high → 양식 선명도 개선)
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, CANVAS_W, canvasH);
         // T-20260522-foot-PENCHART-REFUND-AUTOFILL:
-        // 환불/비급여 동의서에서만 고객 정보 자동채움 텍스트 삽입 (회색 이탤릭)
-        // 배경 위에 그린 후 저장 → toDataURL에 자동 포함 (AC-4)
+        // 환불/비급여 동의서에서만 고객 정보 자동채움 (배경 레이어에 포함 → 합성 저장에 반영)
         if (isRefundConsentKey(activeDrawTemplate?.form_key ?? '') && autofillDataRef.current) {
           drawAutofillOnCtx(ctx, autofillDataRef.current);
         }
       };
       img.src = bgUrl;
     }
+  }, [templateImgUrl, activeDrawTemplate]);
+
+  /** 드로잉 레이어 초기화: 투명 배경 — 지우개 clearRect → bgCanvas 노출 */
+  const initDrawCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    const canvasH = getCanvasHeightForForm(activeDrawTemplate?.form_key);
+
+    canvas.width = CANVAS_W * dpr;
+    canvas.height = canvasH * dpr;
+    canvas.style.width = `${CANVAS_W}px`;
+    canvas.style.height = `${canvasH}px`;
+    // 드로잉 레이어는 투명으로 시작 — fillRect 없음 (지우개 → bgCanvas 노출)
+    // ctx.clearRect(0, 0, canvas.width, canvas.height); // canvas.width 리셋 시 자동 클리어
+  }, [activeDrawTemplate]);
+
+  const initCanvas = useCallback(() => {
+    initBgCanvas();
+    initDrawCanvas();
     emptyRef.current = true;
     setHasDrawing(false);
     setBoilerplateMode('idle');
     setPendingBoilerplate('');
     setShowBoilerplatePanel(false);
-    // T-20260519-foot-PENCHART-FORM-ADD (FIX): Undo 스택 초기화
+    // T-20260519-foot-PENCHART-FORM-ADD (FIX): Undo 스택 초기화 (draw 레이어만)
     undoStackRef.current = [];
-  }, [templateImgUrl, activeDrawTemplate]);
+  }, [initBgCanvas, initDrawCanvas]);
 
   useEffect(() => {
     if (mode === 'draw') {
@@ -547,7 +579,16 @@ export function PenChartTab({
     if (!canvas) return;
     setSaving(true);
     try {
-      const dataUrl = canvas.toDataURL('image/png');
+      // T-20260522-foot-PENCHART-ERASER-CLARITY: bg+draw 2-layer 합성 후 toDataURL
+      // bgCanvas(배경 양식) + drawCanvas(드로잉 스트로크) 를 tempCanvas에 순서대로 합성
+      const bgCanvas = bgCanvasRef.current;
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvas.width;   // 물리 픽셀 (CANVAS_W * dpr)
+      tempCanvas.height = canvas.height; // 물리 픽셀 (canvasH * dpr)
+      const tCtx = tempCanvas.getContext('2d')!;
+      if (bgCanvas) tCtx.drawImage(bgCanvas, 0, 0); // 1) 배경 양식
+      tCtx.drawImage(canvas, 0, 0);                  // 2) 드로잉 스트로크
+      const dataUrl = tempCanvas.toDataURL('image/png');
       const res = await fetch(dataUrl);
       const blob = await res.blob();
       // T-20260519-foot-HEALTH-Q-PEN: health_questionnaire 파일에 'hq_' prefix
@@ -946,7 +987,7 @@ export function PenChartTab({
         {/* 스크롤 콘텐츠 — 태블릿 전체화면 확대 영역 (AC-2) */}
         <div className="flex-1 overflow-auto p-4 space-y-4">
 
-        {/* 캔버스 */}
+        {/* 캔버스 — T-20260522-foot-PENCHART-ERASER-CLARITY: 2-layer 스택 */}
         <div className="rounded-lg border bg-white p-2 overflow-x-auto">
           <div className="text-[10px] text-muted-foreground mb-1">
             {/* T-20260519-foot-HEALTH-Q-PEN: 활성 템플릿 이름 표시 */}
@@ -958,24 +999,40 @@ export function PenChartTab({
               <span className="ml-2 text-teal-600 font-medium">클릭하여 상용구 삽입</span>
             )}
           </div>
-          <canvas
-            ref={canvasRef}
-            style={{
-              // T-20260522-foot-PENCHART-SCROLL-BLOCK fix:
-              // 'pan-y': touch 수직 스크롤은 브라우저가 처리 (pointer 이벤트 미전달).
-              // pen/mouse 입력은 touch-action 영향 없으므로 드로잉 정상 동작.
-              touchAction: 'pan-y',
-              cursor: boilerplateMode === 'placing' ? 'text' : isEraser ? 'cell' : 'crosshair',
-              border: '1px solid #e2e8f0',
-              display: 'block',
-              maxWidth: '100%',
-            }}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerLeave={onPointerUp}
-            onPointerCancel={onPointerUp}
-          />
+          {/* 2-layer canvas 스택
+              Layer 1 bgCanvas(아래): 양식 이미지 전용 — 지우개 미적용
+              Layer 2 drawCanvas(위): 드로잉 스트로크 — 투명 배경, clearRect 지우개 → bgCanvas 노출 */}
+          <div style={{ position: 'relative', display: 'inline-block', maxWidth: '100%', border: '1px solid #e2e8f0' }}>
+            {/* 배경 레이어: 양식 이미지 + imageSmoothingQuality=high — pointer 이벤트 없음 */}
+            <canvas
+              ref={bgCanvasRef}
+              style={{
+                display: 'block',
+                maxWidth: '100%',
+                pointerEvents: 'none',
+              }}
+            />
+            {/* 드로잉 레이어: 투명 배경 — 펜/지우개 포인터 이벤트 수신 */}
+            <canvas
+              ref={canvasRef}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                // T-20260522-foot-PENCHART-SCROLL-BLOCK fix:
+                // 'pan-y': touch 수직 스크롤은 브라우저가 처리 (pointer 이벤트 미전달).
+                // pen/mouse 입력은 touch-action 영향 없으므로 드로잉 정상 동작.
+                touchAction: 'pan-y',
+                cursor: boilerplateMode === 'placing' ? 'text' : isEraser ? 'cell' : 'crosshair',
+                display: 'block',
+              }}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerLeave={onPointerUp}
+              onPointerCancel={onPointerUp}
+            />
+          </div>
         </div>
 
         {/* T-20260519-foot-PENCHART-FORM-ADD (AC-4): pdf_overlay 전용 서명 캡처 패드 */}
