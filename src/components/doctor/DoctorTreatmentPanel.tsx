@@ -209,11 +209,12 @@ function PhrasePicker({ open, onClose, onSelect, mode }: PhrasePickerProps) {
     return matchCat && matchSearch;
   });
 
+  // AC-3: document '서류' → '원장님'
   const CAT_LABELS: Record<string, string> = {
     all: '전체',
     charting: '차팅',
     prescription: '처방',
-    document: '서류',
+    document: '원장님',
     general: '일반',
   };
 
