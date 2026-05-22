@@ -1,4 +1,5 @@
 // LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
+// LOGIC-LOCK: L-004 — 차트 접근 경로 잠금. createPortal 제거 금지. AdminLayout 단일 마운트. 변경 시 현장 승인 필수
 /**
  * T-20260514-foot-CHART2-OPEN-BUG (재오픈 수정)
  * 고객차트(2번차트) 오른쪽 슬라이드 패널
@@ -51,6 +52,7 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
 
   if (!customerId) return null;
 
+  // LOGIC-LOCK: L-004 [CHART-LOCK-006] — createPortal 제거 금지. AdminLayout 외부에서 중복 마운트 절대 금지.
   return createPortal(
     <>
       {/* 백드롭 */}

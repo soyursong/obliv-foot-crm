@@ -1,3 +1,4 @@
+// LOGIC-LOCK: L-004 — 차트 접근 경로 잠금. useChart() hook 경유만 허용. 변경 시 현장 승인 필수
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
@@ -711,6 +712,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const clinic = useClinic();
   const isAdmin = profile?.role === 'admin';
   // T-20260516-foot-CHART2-STATE-UNIFY: chartSheetId 제거 → AdminLayout ChartContext 사용
+  // LOGIC-LOCK: L-004 [CHART-LOCK-007] — openChart 호출은 useChart() 경유만. 직접 ChartContext 접근 금지.
   const { openChart, closeChart } = useChart();
   /** 클리닉 설정 기반 레이저 시간 단위 목록 */
   const laserTimeUnits: number[] = clinic?.laser_time_units?.length

@@ -1,3 +1,4 @@
+// LOGIC-LOCK: L-004 — 차트 접근 경로 잠금. useChart() hook 경유만 허용. 변경 시 현장 승인 필수
 /**
  * 고객관리 페이지
  *
@@ -84,6 +85,7 @@ export default function Customers() {
   // T-20260511-foot-CUSTMGMT-DETAIL-SHEET: CheckInDetailSheet customerMode로 교체
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   // T-20260516-foot-CHART2-STATE-UNIFY: chart2Id state 제거 → AdminLayout ChartContext 사용
+  // LOGIC-LOCK: L-004 [CHART-LOCK-008] — openChart 호출은 useChart() 경유만. 직접 접근 금지.
   const { openChart } = useChart();
   // T-20260515-foot-CONTEXT-MENU-4ITEM AC-4: 진료차트 패널
   const [medicalChartOpen, setMedicalChartOpen] = useState(false);

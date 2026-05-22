@@ -79,10 +79,13 @@
 
 | 항목 | 내용 |
 |------|------|
-| **상태** | ACTIVE · deployed · pre-push guard 적용 |
+| **상태** | ACTIVE · deployed · pre-push guard 적용 · 코드 주석 삽입 완료 |
+| **잠금일** | 2026-05-19 (T-20260519-foot-CHART-ACCESS-LOCK 배포) |
+| **기배포** | commit 원본: T-20260519-foot-CHART-ACCESS-LOCK · 코드 주석 삽입: T-20260522-foot-LOCK-L004-CODE-COMMENT (2026-05-22) |
+| **현장확인** | 완료 (T-20260519-foot-CHART-ACCESS-LOCK 현장 요청에 의해 구현) |
 | **원칙** | 차트(CustomerChartSheet) 열기/닫기는 반드시 `useChart()` hook 경유. `AdminLayout.tsx` 에서 단일 렌더. createPortal 제거 금지. |
 | **이유** | nested Dialog race condition 재발 이력 5회+. T-20260516-foot-CHART2-STATE-UNIFY 구조적 방지 가드. |
-| **티켓** | T-20260519-foot-CHART-ACCESS-LOCK, T-20260516-foot-CHART2-STATE-UNIFY |
+| **티켓** | T-20260519-foot-CHART-ACCESS-LOCK, T-20260516-foot-CHART2-STATE-UNIFY, T-20260522-foot-LOCK-L004-CODE-COMMENT |
 
 ### CHART-ACCESS-LOCK ↔ L-004 세부 매핑
 
@@ -214,4 +217,4 @@ Override (OVERRIDE-RULE)
 
 ---
 
-*last updated: 2026-05-22 · by dev-foot · ticket: T-20260522-foot-LOCK-O004-REGISTRY-ADD (O-004 레지스트리 등록 확인 · L-001/L-002 잠금일·기배포·현장확인 메타데이터 보완)*
+*last updated: 2026-05-22 · by dev-foot · ticket: T-20260522-foot-LOCK-L004-CODE-COMMENT (L-004 코드 주석 삽입 7파일 · 잠금일·기배포·현장확인 메타데이터 보완)*
