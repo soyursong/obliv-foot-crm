@@ -12,7 +12,7 @@ deploy_ready_by: dev-foot
 db_migration: false
 build_passed: true
 build_time: "3.14s"
-commit_sha: pending
+commit_sha: 996eb6f
 e2e_spec: tests/e2e/T-20260522-foot-MEDIMG-CAMERA.spec.ts
 e2e_spec_exempt_reason: null
 related_ticket: T-20260522-foot-MEDIMG-CAMERA (flickering fix 모티켓), T-20260522-foot-TAB-CAM-FOCUS (autofocus FIX-AC-5)
