@@ -1204,8 +1204,7 @@ function ReservationEditor({
   const [therapistHistoryLoading, setTherapistHistoryLoading] = useState(false);
   const [therapistList, setTherapistList] = useState<Staff[]>([]);
   // OVERRIDE-RULE: O-003 — 예약 치료사 수동 배정 (overrideTherapistId)
-  // 적용 경로: 예약 편집 시 치료사를 수동으로 지정하는 경로에만 추가 적용
-  // 기본규칙 유지 여부: 유지 (예약 연동 흐름 유지, override 없으면 최빈 치료사 자동배정)
+  // OVERRIDE: Reservations — overrideTherapistId 치료사 수동 배정 추가 적용. 기본 로직 전체 연동.
   const [overrideTherapistId, setOverrideTherapistId] = useState<string | ''>('');
 
   // T-20260522-foot-RESV-TREAT-HISTORY: AC-1/2/4 상태
