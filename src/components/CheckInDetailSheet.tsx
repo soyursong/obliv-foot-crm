@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
-import { ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Phone, FileText, Camera, Package, Stethoscope, Timer, Trash2, Bell, Upload, MapPin } from 'lucide-react';
+import { ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Phone, FileText, Camera, Package, Stethoscope, Timer, Trash2, Bell, Upload } from 'lucide-react';
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
 import { toast } from 'sonner';
 import {
@@ -27,20 +27,20 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { STATUS_KO } from '@/lib/status';
-import { formatAmount, formatPhone, parseAmount, todaySeoulISODate, todaySeoulStr } from '@/lib/format';
+import { formatAmount, formatPhone, parseAmount, todaySeoulStr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { PreChecklist } from '@/components/PreChecklist';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 작성 양식 + 자동 업로드
 import { ChecklistForm } from '@/components/forms/ChecklistForm';
 import { ConsentForm } from '@/components/forms/ConsentForm';
-import { DocumentViewer } from '@/components/forms/DocumentViewer';
+// T-20260522-foot-CHART1-TRIM AC-2: DocumentViewer 제거 (체크리스트/동의서 섹션 삭제)
 import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
 // T-20260515-foot-PAYMENT-EDIT-REFLECT: PaymentDonePayload 추가 import
 import { PaymentEditDialog, PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 import type { EditMode, PaymentRowForEdit, PaymentDonePayload } from '@/components/PaymentEditDialog';
-import type { CheckIn, Package as PackageType, PackageRemaining, Room, Service, VisitType } from '@/lib/types';
+import type { CheckIn, Package as PackageType, PackageRemaining, Service, VisitType } from '@/lib/types';
 // T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동
 import { useChart } from '@/lib/chartContext';
 // T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
@@ -62,56 +62,19 @@ interface RoomLog {
   logged_at: string;
 }
 
-// ─── 환자 일일 동선 기록 타입 (T-20260516-foot-ROOM-MOVE-TRACK) ──────────────
+// ─── 금일 동선 슬롯 타입 (T-20260522-foot-SPACE-AUTOROUTE) ──────────────────
 
 type TrackedSlotType = '상담실' | '치료실' | '가열성레이저' | '레이저실';
 // 슬롯 표시 순서 (상담실 → 치료실 → 가열성레이저 → 레이저실)
 const TRACKED_SLOT_ORDER: TrackedSlotType[] = ['상담실', '치료실', '가열성레이저', '레이저실'];
 
-interface PatientRoomDailyLog {
-  id: string;
-  patient_id: string;
-  date: string;
-  slot_type: TrackedSlotType;
-  room_number: string;
-  last_moved_at: string;
-  clinic_id: string;
-}
-
-/** room_type → TrackedSlotType 매핑 */
+/** room_type → TrackedSlotType 매핑 (check_in_room_logs.room_type 기반) */
 const ROOM_TYPE_TO_SLOT: Partial<Record<string, TrackedSlotType>> = {
   consultation: '상담실',
   treatment: '치료실',
   heated_laser: '가열성레이저',
   laser: '레이저실',
 };
-
-/** 방 이름으로 슬롯 유형 반환 (rooms 상태 기반, 가열성레이저는 특수 처리) */
-function getSlotType(roomName: string, roomsState: Room[]): TrackedSlotType | null {
-  if (roomName === '가열성레이저') return '가열성레이저';
-  const room = roomsState.find((r) => r.name === roomName);
-  if (!room) return null;
-  return ROOM_TYPE_TO_SLOT[room.room_type] ?? null;
-}
-
-// [SYNC: G-007] todaySeoulISODate / todaySeoulStr → lib/format.ts 중앙화 (T-20260522-foot-LOGIC-SYNC-MANDATE)
-
-function getRoomField(roomName: string): 'examination_room' | 'consultation_room' | 'treatment_room' | 'laser_room' | null {
-  if (roomName === '가열성레이저') return 'laser_room'; // T-20260516-foot-ROOM-MOVE-TRACK
-  if (roomName.startsWith('원장실')) return 'examination_room';
-  if (roomName.startsWith('상담실')) return 'consultation_room';
-  if (roomName.startsWith('치료실')) return 'treatment_room';
-  if (roomName.startsWith('레이저실')) return 'laser_room';
-  return null;
-}
-function getRoomType(roomName: string): 'examination' | 'consultation' | 'treatment' | 'laser' | 'heated_laser' | null {
-  if (roomName === '가열성레이저') return 'heated_laser'; // T-20260516-foot-ROOM-MOVE-TRACK
-  if (roomName.startsWith('원장실')) return 'examination';
-  if (roomName.startsWith('상담실')) return 'consultation';
-  if (roomName.startsWith('치료실')) return 'treatment';
-  if (roomName.startsWith('레이저실')) return 'laser';
-  return null;
-}
 function logDateStr(isoStr: string): string {
   return new Date(isoStr).toLocaleDateString('ko-KR', {
     timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -280,116 +243,7 @@ function VisitHistoryAccordion({ history }: { history: VisitHistory[] }) {
   );
 }
 
-// ─── 서브 컴포넌트: 활성 패키지 잔여회차 요약 카드 ──────────────────────────
-
-function ActivePackageSummary({
-  packages,
-  pkgRemaining,
-  emphasize,
-}: {
-  packages: PackageType[];
-  pkgRemaining: Map<string, PackageRemaining>;
-  /** payment_waiting 단계: 카드 강조 스타일 */
-  emphasize?: boolean;
-}) {
-  if (packages.length === 0) return null;
-
-  return (
-    <div className={cn('space-y-1.5', emphasize && 'rounded-xl bg-teal-50 border-2 border-teal-400 p-3')}>
-      <span className={cn(
-        'text-sm font-semibold flex items-center gap-1',
-        emphasize ? 'text-teal-800' : 'text-teal-700',
-      )}>
-        <Package className={cn('h-3.5 w-3.5', emphasize && 'h-4 w-4')} />
-        패키지 잔여회차
-        {emphasize && (
-          <span className="ml-1 text-xs font-normal text-teal-600 bg-teal-100 rounded px-1.5 py-0.5">
-            회차 차감 단계
-          </span>
-        )}
-      </span>
-      {packages.map((pkg) => {
-        const rem = pkgRemaining.get(pkg.id);
-        const hasAny = rem && rem.total_remaining > 0;
-        return (
-          <div
-            key={pkg.id}
-            className={cn(
-              'rounded-lg border px-2.5 py-2 space-y-1.5',
-              emphasize
-                ? hasAny
-                  ? 'border-teal-400 bg-white shadow-sm'
-                  : 'border-gray-300 bg-gray-50'
-                : hasAny
-                  ? 'border-teal-300 bg-teal-50/60'
-                  : 'border-gray-200 bg-gray-50/60',
-            )}
-          >
-            <div className="flex items-center justify-between">
-              <span className={cn(
-                'font-semibold',
-                emphasize ? 'text-sm text-teal-900' : 'text-xs text-teal-900',
-              )}>{pkg.package_name}</span>
-              {rem && (
-                <span className={cn(
-                  'text-muted-foreground',
-                  emphasize
-                    ? hasAny
-                      ? 'text-sm font-bold text-teal-700'
-                      : 'text-xs'
-                    : 'text-xs',
-                )}>
-                  잔여 {rem.total_remaining}/{pkg.total_sessions}회
-                </span>
-              )}
-            </div>
-            {rem ? (
-              <div className="flex gap-1.5 flex-wrap">
-                {rem.heated > 0 && (
-                  <span className={cn(
-                    'inline-flex items-center bg-orange-100 text-orange-700 rounded-full font-medium',
-                    emphasize ? 'text-sm px-2.5 py-1' : 'text-xs px-2 py-0.5',
-                  )}>
-                    가열 {rem.heated}
-                  </span>
-                )}
-                {rem.unheated > 0 && (
-                  <span className={cn(
-                    'inline-flex items-center bg-blue-100 text-blue-700 rounded-full font-medium',
-                    emphasize ? 'text-sm px-2.5 py-1' : 'text-xs px-2 py-0.5',
-                  )}>
-                    비가열 {rem.unheated}
-                  </span>
-                )}
-                {rem.iv > 0 && (
-                  <span className={cn(
-                    'inline-flex items-center bg-purple-100 text-purple-700 rounded-full font-medium',
-                    emphasize ? 'text-sm px-2.5 py-1' : 'text-xs px-2 py-0.5',
-                  )}>
-                    수액 {rem.iv}
-                  </span>
-                )}
-                {rem.preconditioning > 0 && (
-                  <span className={cn(
-                    'inline-flex items-center bg-emerald-100 text-emerald-700 rounded-full font-medium',
-                    emphasize ? 'text-sm px-2.5 py-1' : 'text-xs px-2 py-0.5',
-                  )}>
-                    사전처치 {rem.preconditioning}
-                  </span>
-                )}
-                {rem.total_remaining === 0 && (
-                  <span className="text-xs text-muted-foreground">잔여 없음</span>
-                )}
-              </div>
-            ) : (
-              <span className="text-xs text-muted-foreground">로딩 중…</span>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+// T-20260522-foot-CHART1-TRIM AC-1: ActivePackageSummary 제거 (패키지 탭 중복)
 
 // T-20260517-foot-C2-TAB-SYNC: 1번차트 진료이미지 일자별 히스토리 (2번차트와 쌍방연동)
 // 파일명 규칙: {type}_{timestamp}_{random}.{ext}  (type: before | after | photo)
@@ -728,7 +582,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 양식 다이얼로그
   const [tabletChecklistOpen, setTabletChecklistOpen] = useState(false);
   const [tabletConsentOpen, setTabletConsentOpen] = useState(false);
-  const [docRefreshKey, setDocRefreshKey] = useState(0);
+  // T-20260522-foot-CHART1-TRIM AC-2: docRefreshKey 제거 (DocumentViewer 제거로 불필요)
   /** 고객 차트번호 (T-20260504-foot-CHART-UI-BADGE) */
   const [chartNumber, setChartNumber] = useState<string | null>(null);
   /** T-20260506-foot-CHART-LINK-SYNC: customer_id null 시 phone으로 조회된 고객 ID (2순위 식별) */
@@ -765,12 +619,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const [payEditMode, setPayEditMode] = useState<EditMode>('edit');
   // T-20260516-foot-CHART2-STATE-UNIFY: chartSheetId state 제거 (AdminLayout ChartContext로 통합)
   // T-20260513-foot-C1-SPACE-ASSIGN-RESTORE: 공간배정 이동이력
+  // T-20260522-foot-SPACE-AUTOROUTE: selectedRoom/assigningRoom/rooms/dailyRoomLog 제거 (수동배정 폐지)
   const [roomLogs, setRoomLogs] = useState<RoomLog[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [selectedRoom, setSelectedRoom] = useState('');
-  const [assigningRoom, setAssigningRoom] = useState(false);
-  // T-20260516-foot-ROOM-MOVE-TRACK: 슬롯별 마지막 위치 (4종, last-room-wins)
-  const [dailyRoomLog, setDailyRoomLog] = useState<PatientRoomDailyLog[]>([]);
   // T-20260515-foot-KENBO-API-NATIVE: 고객 건보 조회 동의 여부
   const [hiraConsent, setHiraConsent] = useState(false);
 
@@ -1062,18 +912,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setTreatmentMemo(checkIn.treatment_memo?.details ?? '');
     setDoctorNote(checkIn.doctor_note ?? '');
 
-    // T-20260513-foot-C1-SPACE-ASSIGN-RESTORE: 공간배정 이동이력 + rooms 목록 로드
-    const [roomsRes] = await Promise.all([
-      supabase
-        .from('rooms')
-        .select('*')
-        .eq('clinic_id', checkIn.clinic_id)
-        .eq('active', true)
-        .order('sort_order', { ascending: true }),
-    ]);
-    setRooms((roomsRes.data ?? []) as Room[]);
-
-    // 이동이력 로드 — 테이블 미존재 시 graceful skip
+    // T-20260522-foot-SPACE-AUTOROUTE: 이동이력 로드 — 테이블 미존재 시 graceful skip
     try {
       const { data: logsData } = await supabase
         .from('check_in_room_logs')
@@ -1084,30 +923,6 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     } catch {
       setRoomLogs([]);
     }
-
-    // T-20260516-foot-ROOM-MOVE-TRACK: 슬롯별 마지막 위치 로드
-    if (checkIn.customer_id) {
-      try {
-        const { data: drlData } = await supabase
-          .from('patient_room_daily_log')
-          .select('id, patient_id, date, slot_type, room_number, last_moved_at, clinic_id')
-          .eq('patient_id', checkIn.customer_id)
-          .eq('date', todaySeoulISODate())
-          .eq('clinic_id', checkIn.clinic_id);
-        setDailyRoomLog((drlData ?? []) as PatientRoomDailyLog[]);
-      } catch {
-        setDailyRoomLog([]);
-      }
-    }
-
-    // 현재 배정된 공간을 드롭다운 초기값으로 설정
-    const cur =
-      checkIn.examination_room ??
-      checkIn.consultation_room ??
-      checkIn.treatment_room ??
-      checkIn.laser_room ??
-      '';
-    setSelectedRoom(cur);
   }, [checkIn, customerMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -1245,109 +1060,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setTimerRecord(null);
   };
 
-  // T-20260513-foot-C1-SPACE-ASSIGN-RESTORE: 공간 배정 함수
-  const assignRoom = async (roomName: string) => {
-    if (!checkIn || !roomName) return;
-    const field = getRoomField(roomName);
-    const roomType = getRoomType(roomName);
-    if (!field || !roomType) return;
-
-    // 중복 방지: 오늘 이동이력 중 마지막과 동일 공간이면 무시
-    const todayLogs = roomLogs.filter((l) => logDateStr(l.logged_at) === todaySeoulStr());
-    const lastLog = todayLogs[todayLogs.length - 1];
-    if (lastLog?.assigned_room === roomName) {
-      toast('이미 해당 공간에 배정되어 있어요');
-      return;
-    }
-
-    setAssigningRoom(true);
-    try {
-      // check_ins 업데이트 — 다른 방 필드 초기화 (현재 방만 유지)
-      const patch: Record<string, string | null> = {
-        examination_room: null,
-        consultation_room: null,
-        treatment_room: null,
-        laser_room: null,
-        [field]: roomName,
-      };
-      const { error: ciErr } = await supabase
-        .from('check_ins')
-        .update(patch)
-        .eq('id', checkIn.id);
-      if (ciErr) { toast.error('배정 실패: ' + ciErr.message); return; }
-
-      // 이동이력 기록 (table이 없으면 graceful skip)
-      const logEntry: RoomLog = {
-        id: crypto.randomUUID(),
-        check_in_id: checkIn.id,
-        assigned_room: roomName,
-        room_type: roomType,
-        logged_at: new Date().toISOString(),
-      };
-      // 이동이력 기록 — 테이블 미존재 시 로컬 상태로 폴백 (graceful)
-      let inserted: RoomLog | null = null;
-      try {
-        const { data } = await supabase
-          .from('check_in_room_logs')
-          .insert({
-            check_in_id: checkIn.id,
-            clinic_id: checkIn.clinic_id,
-            assigned_room: roomName,
-            room_type: roomType,
-          })
-          .select('id, check_in_id, assigned_room, room_type, logged_at')
-          .single();
-        inserted = data as RoomLog | null;
-      } catch {
-        // table not yet created — use local fallback
-      }
-      setRoomLogs((prev) => [...prev, inserted ?? logEntry]);
-
-      // T-20260516-foot-ROOM-MOVE-TRACK: 4종 슬롯 UPSERT (last-room-wins)
-      if (checkIn.customer_id) {
-        const slotType = getSlotType(roomName, rooms);
-        if (slotType) {
-          try {
-            const { data: drlData } = await supabase
-              .from('patient_room_daily_log')
-              .upsert(
-                {
-                  patient_id: checkIn.customer_id,
-                  date: todaySeoulISODate(),
-                  slot_type: slotType,
-                  room_number: roomName,
-                  last_moved_at: new Date().toISOString(),
-                  clinic_id: checkIn.clinic_id,
-                },
-                { onConflict: 'patient_id,date,slot_type,clinic_id', ignoreDuplicates: false },
-              )
-              .select('id, patient_id, date, slot_type, room_number, last_moved_at, clinic_id')
-              .single();
-            if (drlData) {
-              const upserted = drlData as PatientRoomDailyLog;
-              setDailyRoomLog((prev) => {
-                const idx = prev.findIndex((r) => r.slot_type === slotType);
-                if (idx >= 0) {
-                  const next = [...prev];
-                  next[idx] = upserted;
-                  return next;
-                }
-                return [...prev, upserted];
-              });
-            }
-          } catch {
-            // graceful skip — 테이블 미배포 시 무시
-          }
-        }
-      }
-
-      setSelectedRoom(roomName);
-      toast.success(`${roomName} 배정됨`);
-      onUpdated();
-    } finally {
-      setAssigningRoom(false);
-    }
-  };
+  // T-20260522-foot-SPACE-AUTOROUTE: assignRoom 제거 (수동 배정 폐지 — 금일동선 자동집계로 전환)
 
   // T-20260511-foot-CUSTMGMT-DETAIL-SHEET 3차: customerMode 원장 소견 저장 (latestCheckIn 대상)
   const saveCustomerModeDoctorNote = async () => {
@@ -1363,19 +1076,21 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setLatestCheckIn((prev) => prev ? { ...prev, doctor_note: doctorNote || null } : prev);
   };
 
-  // T-20260513-foot-C1-SPACE-ASSIGN-RESTORE: 오늘 이동이력 (연속 중복 제거 + 날짜 필터)
-  const todayRoomLogs = useMemo(() => {
-    const today = todaySeoulStr();
-    const todayFiltered = roomLogs.filter((l) => logDateStr(l.logged_at) === today);
-    // 연속 중복만 제거: 치료실→상담실→치료실→상담실 순서도 전부 표시
-    return todayFiltered.filter((l, idx, arr) => {
-      if (idx === 0) return true;
-      return arr[idx - 1].assigned_room !== l.assigned_room;
-    });
-  }, [roomLogs]);
+  // T-20260522-foot-CHART1-TRIM AC-3: 금일 이동이력 제거 — dailySlotSummary만 사용
 
-  // 공간 드롭다운 옵션 (rooms 테이블 기반)
-  const roomOptions = useMemo<string[]>(() => rooms.map((r) => r.name), [rooms]);
+  // T-20260522-foot-SPACE-AUTOROUTE: 금일 동선 — check_in_room_logs 기반 슬롯별 마지막 위치 (last-room-wins)
+  // T-20260522-foot-CHART1-TRIM AC-4: 치료실·레이저실 항상 표시 (logs 없어도 "—" 표기)
+  const dailySlotSummary = useMemo(() => {
+    const today = todaySeoulStr();
+    const todayLogs = roomLogs.filter((l) => logDateStr(l.logged_at) === today);
+    const slotMap = new Map<TrackedSlotType, string>();
+    for (const log of todayLogs) {
+      const slotType = ROOM_TYPE_TO_SLOT[log.room_type];
+      if (slotType) slotMap.set(slotType, log.assigned_room); // last-room-wins
+    }
+    // 4개 슬롯 항상 반환 — 미방문 슬롯은 null
+    return TRACKED_SLOT_ORDER.map((st) => ({ slotType: st, roomNumber: slotMap.get(st) ?? null }));
+  }, [roomLogs]);
 
   // T-20260511-foot-C1-SAVE-DIRTY-AUTOSAVE: stale closure 방지용 ref (항상 최신 함수 참조)
   const saveNotesRef = useRef(saveNotes);
@@ -1605,44 +1320,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               </div>
             </div>
 
-            {/* 체크리스트 / 동의서 */}
-            <Separator />
-            <div className="space-y-2">
-              <span className="text-sm font-semibold text-muted-foreground">체크리스트 / 동의서</span>
-              <div className="space-y-1.5 pt-1">
-                <div className="flex flex-wrap gap-1.5">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 text-xs gap-1 border-teal-300 text-teal-700 hover:bg-teal-50"
-                    onClick={() => setTabletChecklistOpen(true)}
-                  >
-                    📝 사전 체크리스트 & 개인정보
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 text-xs gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                    onClick={() => setTabletConsentOpen(true)}
-                  >
-                    📝 환불 & 비급여 동의서
-                  </Button>
-                </div>
-                <DocumentViewer
-                  key={docRefreshKey}
-                  customerId={customerMode.customerId}
-                  compact
-                />
-              </div>
-            </div>
-
-            {/* 패키지 잔여회차 요약 */}
-            {packages.length > 0 && (
-              <>
-                <Separator />
-                <ActivePackageSummary packages={packages} pkgRemaining={pkgRemaining} />
-              </>
-            )}
+            {/* T-20260522-foot-CHART1-TRIM AC-2: 체크리스트/동의서 제거 (펜차트 양식 대체) */}
+            {/* T-20260522-foot-CHART1-TRIM AC-1: 패키지 잔여회차 제거 (패키지 탭 중복) */}
 
             {/* 패키지 상세 목록 */}
             <Separator />
@@ -1819,7 +1498,6 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             defaultName={customerMode.customerName}
             defaultPhone={customerMode.customerPhone}
             onSaved={() => {
-              setDocRefreshKey((k) => k + 1);
               onUpdated();
             }}
           />
@@ -1831,7 +1509,6 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             defaultChartNumber={chartNumber ?? customerMode.chartNumber}
             defaultName={customerMode.customerName}
             onSaved={() => {
-              setDocRefreshKey((k) => k + 1);
               onUpdated();
             }}
           />
@@ -2152,126 +1829,28 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           )}
 
           {/* ── 패키지 생성은 고객차트(미니홈피창)에서 진행 (T-20260506-foot-CHART-SIMPLE-REVAMP) ── */}
+          {/* T-20260522-foot-CHART1-TRIM AC-1: 패키지 잔여회차 요약 제거 (패키지 탭 중복) */}
+          {/* T-20260522-foot-CHART1-TRIM AC-2: 체크리스트/동의서 제거 (펜차트 양식 대체) */}
 
-          {/* ── 활성 패키지 잔여회차 요약 (패키지 있을 때만) ── */}
-          {packages.length > 0 && (
-            <>
-              <Separator />
-              <ActivePackageSummary
-                packages={packages}
-                pkgRemaining={pkgRemaining}
-                emphasize={isDeskStage}
-              />
-            </>
-          )}
-
-          {/* 체크리스트 + 동의서 */}
+          {/* T-20260522-foot-CHART1-TRIM AC-3/AC-4: 금일 동선 — 항상 표시, 4개 슬롯 고정 */}
           <Separator />
-          <div className="space-y-2">
-            <span className="text-sm font-semibold text-muted-foreground">체크리스트 / 동의서</span>
-
-            {/* T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 양식 → Storage 자동 업로드 */}
-            {/* T-20260510-foot-CHECKLIST-ALWAYS-VISIBLE: customer_id 없어도 버튼 항상 표시 */}
-            <div className="space-y-1.5 pt-1">
-              <div className="flex flex-wrap gap-1.5">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 text-xs gap-1 border-teal-300 text-teal-700 hover:bg-teal-50"
-                  onClick={() => setTabletChecklistOpen(true)}
-                  data-testid="tablet-checklist-btn"
+          <div className="space-y-1" data-testid="space-assign-section">
+            <span className="text-xs text-muted-foreground">금일 동선</span>
+            <div className="flex flex-wrap gap-1" data-testid="daily-room-log-section">
+              {dailySlotSummary.map(({ slotType, roomNumber }) => (
+                <Badge
+                  key={slotType}
+                  variant={roomNumber ? 'secondary' : 'outline'}
+                  className={cn('text-xs font-normal py-0 gap-1', !roomNumber && 'opacity-50')}
+                  data-testid={`daily-log-${slotType}`}
                 >
-                  📝 사전 체크리스트 & 개인정보
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 text-xs gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                  onClick={() => setTabletConsentOpen(true)}
-                  data-testid="tablet-consent-btn"
-                >
-                  📝 환불 & 비급여 동의서
-                </Button>
-              </div>
-              {checkIn.customer_id && (
-                <DocumentViewer
-                  key={docRefreshKey}
-                  customerId={checkIn.customer_id}
-                  compact
-                />
-              )}
+                  <span className="text-muted-foreground">{slotType}</span>
+                  <span className={cn('font-medium', !roomNumber && 'text-muted-foreground/60')}>
+                    {roomNumber ?? '—'}
+                  </span>
+                </Badge>
+              ))}
             </div>
-          </div>
-
-          {/* T-20260513-foot-C1-SPACE-ASSIGN-RESTORE: 공간배정 (체크리스트/동의서 하단) */}
-          <Separator />
-          <div className="space-y-2" data-testid="space-assign-section">
-            <span className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
-              <MapPin className="h-3.5 w-3.5" /> 공간배정
-            </span>
-            <div className="flex gap-2">
-              <select
-                value={selectedRoom}
-                onChange={(e) => setSelectedRoom(e.target.value)}
-                className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
-                data-testid="space-assign-select"
-              >
-                <option value="">— 공간 선택 —</option>
-                {roomOptions.map((r) => (
-                  <option key={r} value={r}>{r}</option>
-                ))}
-              </select>
-              <Button
-                size="sm"
-                className="h-9 min-w-[52px] bg-teal-600 hover:bg-teal-700 text-white"
-                onClick={() => assignRoom(selectedRoom)}
-                disabled={!selectedRoom || assigningRoom}
-                data-testid="space-assign-btn"
-              >
-                {assigningRoom ? '…' : '배정'}
-              </Button>
-            </div>
-            {/* 당일 이동이력 */}
-            {todayRoomLogs.length > 0 && (
-              <div className="space-y-1 pt-0.5">
-                <span className="text-xs text-muted-foreground">금일 이동이력</span>
-                <div className="flex flex-wrap items-center gap-1 text-xs">
-                  {todayRoomLogs.map((log, idx) => (
-                    <span key={log.id} className="flex items-center gap-1">
-                      {idx > 0 && <span className="text-muted-foreground/60">→</span>}
-                      <Badge variant="outline" className="text-xs font-normal py-0">
-                        <span className="text-muted-foreground mr-1">
-                          {format(new Date(log.logged_at), 'HH:mm')}
-                        </span>
-                        {log.assigned_room}
-                      </Badge>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* T-20260516-foot-ROOM-MOVE-TRACK: 금일 동선 (슬롯별 마지막 위치) */}
-            {dailyRoomLog.length > 0 && (
-              <div className="space-y-1 pt-0.5" data-testid="daily-room-log-section">
-                <span className="text-xs text-muted-foreground">금일 동선</span>
-                <div className="flex flex-wrap gap-1">
-                  {TRACKED_SLOT_ORDER
-                    .map((slotType) => dailyRoomLog.find((l) => l.slot_type === slotType))
-                    .filter((l): l is PatientRoomDailyLog => l !== undefined)
-                    .map((log) => (
-                      <Badge
-                        key={log.slot_type}
-                        variant="secondary"
-                        className="text-xs font-normal py-0 gap-1"
-                        data-testid={`daily-log-${log.slot_type}`}
-                      >
-                        <span className="text-muted-foreground">{log.slot_type}</span>
-                        <span className="font-medium">{log.room_number}</span>
-                      </Badge>
-                    ))}
-                </div>
-              </div>
-            )}
           </div>
 
           {/* T-20260510-foot-CHART1-PAYMENT-ORDER: 결제 섹션은 서류발행 위로 이동됨 */}
@@ -2771,10 +2350,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               customerId={checkIn.customer_id}
               defaultName={checkIn.customer_name ?? undefined}
               defaultPhone={checkIn.customer_phone ?? undefined}
-              onSaved={() => {
-                setDocRefreshKey((k) => k + 1);
-                onUpdated();
-              }}
+              onSaved={onUpdated}
             />
             {/* T-20260522-foot-PENCHART-REFUND-AUTOFILL: 차트번호·이름 자동 불러오기 */}
             <ConsentForm
@@ -2783,10 +2359,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               customerId={checkIn.customer_id}
               defaultChartNumber={chartNumber}
               defaultName={checkIn.customer_name ?? undefined}
-              onSaved={() => {
-                setDocRefreshKey((k) => k + 1);
-                onUpdated();
-              }}
+              onSaved={onUpdated}
             />
           </>
         )}
