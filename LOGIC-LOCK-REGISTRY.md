@@ -78,6 +78,26 @@
 
 ---
 
+## L-006 — 서류출력 경로 통일 코드 보호 (DOC-PRINT-UNIFY)
+
+| 항목 | 내용 |
+|------|------|
+| **상태** | ACTIVE · deployed |
+| **잠금일** | 2026-05-22 |
+| **원칙** | 서류 출력은 **DocumentPrintPanel 기준 단일 렌더링 경로**만 허용. 4개 확정 경로(PATH-1/2: CheckInDetailSheet DocumentPrintPanel · PATH-3: CustomerChartPage 재발급 모달 DocumentPrintPanel · PATH-4: PaymentMiniWindow printViaIframe)를 벗어난 신규 출력 경로 추가 절대 금지. |
+| **금지** | DocumentPrintPanel 우회 직접 print() 호출 / buildPageHtml·buildHtmlPageDiv·bindHtmlTemplate 독립 복제 / PaymentMiniWindow Zone 3 서류발행 로직 외부 이동 |
+| **이유** | 출력 경로 산발로 form_submissions 이력 미기록·병원정보 누락·HTML 양식 불일치 재발. T-20260521-foot-DOC-PRINT-UNIFY 구조적 방지. 현장 확인 완료(2026-05-22). |
+| **변경 시** | E2E regression 56종 통과 필수 (`tests/e2e/T-20260521-foot-DOC-PRINT-UNIFY.spec.ts`) |
+| **파일 목록** | |
+| ↳ `src/components/DocumentPrintPanel.tsx` | 서류 발행 패널 (PATH-1/2/3 표준 렌더) |
+| ↳ `src/lib/htmlFormTemplates.ts` | `bindHtmlTemplate()` · HTML 11종 양식 정의 |
+| ↳ `src/lib/formTemplates.ts` | `FALLBACK_TEMPLATES` · `AUTO_BIND_KEYS` · 타입 정의 |
+| ↳ `src/components/PaymentMiniWindow.tsx` | Zone 3 서류발행 · `buildHtmlPageDiv` · `buildPageHtml` (PATH-4) |
+| **기배포** | commit 9b0c36b (2026-05-22) · 현장 확인 완료 |
+| **티켓** | T-20260521-foot-DOC-PRINT-UNIFY, T-20260522-foot-DOC-PRINT-LOCK-L006 |
+
+---
+
 ## Override 연동 규칙 — O-{ID} 체계
 
 > **티켓**: T-20260522-foot-OVERRIDE-RULE · **최종 확정**: 2026-05-22 · **승인자**: 김주연 총괄
@@ -165,4 +185,4 @@ Override (OVERRIDE-RULE)
 
 ---
 
-*last updated: 2026-05-22 · by dev-foot · ticket: T-20260522-foot-OVERRIDE-RULE*
+*last updated: 2026-05-22 · by dev-foot · ticket: T-20260522-foot-DOC-PRINT-LOCK-L006 (L-006 추가)*

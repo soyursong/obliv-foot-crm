@@ -1,3 +1,5 @@
+// LOGIC-LOCK: L-006 — 서류출력 경로 통일. FALLBACK_TEMPLATES·AUTO_BIND_KEYS 단일 소스. 변경 시 현장 승인 필수
+
 /**
  * 서류 양식 타입 정의 + fallback 템플릿 데이터
  *
@@ -82,6 +84,7 @@ export interface FormSubmission {
 // ─── 자동 바인딩 필드 키 ───
 
 /** 시스템이 자동으로 채워주는 필드 키 목록 */
+// LOGIC-LOCK L-006: AUTO_BIND_KEYS — 전 경로 공통 자동 바인딩 키. 목록 변경 시 56종 E2E regression 통과 필수
 export const AUTO_BIND_KEYS = [
   'patient_name',
   'patient_phone',
@@ -188,6 +191,7 @@ const FOOT_CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
  * T-20260515-foot-FORM-TEMPLATE-REFRESH: 7종 이미지 갱신 + 신규 2종 추가
  *   기존 5종(JPG/PDF) → 새 PNG 교체, rx_standard/bill_receipt 신규 등록
  */
+// LOGIC-LOCK L-006: FALLBACK_TEMPLATES — form_templates DB 미적용 시 단일 fallback 소스. 중복 정의 금지
 export const FALLBACK_TEMPLATES: FormTemplate[] = [
   // ── 기본 서류 ──
   {

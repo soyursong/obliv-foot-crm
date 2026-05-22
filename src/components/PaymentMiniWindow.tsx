@@ -1,3 +1,5 @@
+// LOGIC-LOCK: L-006 — 서류출력 경로 통일. Zone 3 서류발행(PATH-4) 단일 출력 경로. 변경 시 현장 승인 필수
+
 /**
  * PaymentMiniWindow — 풋센터 결제 미니창 (모달)
  *
@@ -231,6 +233,7 @@ function buildCodeEnrichedValues(
  *   DocumentPrintPanel buildHtmlPageHtml과 완전 동일한 클래스/레이아웃 사용.
  * T-20260521-foot-CLINIC-INFO-SYNC: HTML 양식 원내 도장 오버레이 추가 (DocumentPrintPanel 동기화).
  */
+// LOGIC-LOCK: L-006 — 서류출력 경로 통일. buildHtmlPageDiv는 PATH-4(PaymentMiniWindow) 전용 페이지 생성. 변경 시 현장 승인 필수
 function buildHtmlPageDiv(
   template: FormTemplate,
   fieldValues: Record<string, string>,
@@ -287,6 +290,7 @@ function printViaIframe(html: string): void {
 }
 
 /** 단일 양식 page div 생성 */
+// LOGIC-LOCK L-006: buildPageHtml — PATH-4 이미지 양식 래핑 함수. 중복 구현 금지
 function buildPageHtml(
   template: FormTemplate,
   fieldValues: Record<string, string>,
