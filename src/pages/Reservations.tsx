@@ -816,7 +816,7 @@ export default function Reservations() {
             불러오는 중…
           </div>
         ) : (
-          <table className="w-full min-w-[700px] border-collapse text-sm">{/* T-20260515-foot-RESPONSIVE-SHELL: min-w 추가 → 모바일 수평 스크롤 활성화 */}
+          <table className="w-full min-w-[800px] table-fixed border-collapse text-sm">{/* T-20260515-foot-RESPONSIVE-SHELL: min-w 추가 → 모바일 수평 스크롤 활성화 / T-20260522-foot-RESV-CAL-COLWIDTH: table-fixed → 6칸 균등 배분, min-w 700→800px (시간축80+6×120) */}
             <thead className="sticky top-0 z-10 bg-muted/60">
               <tr>
                 {/* T-20260515-foot-RESPONSIVE-UI-SHELL Shell-1: 시간축 sticky left-0 (모바일 수평 스크롤 시 고정) */}
@@ -830,7 +830,7 @@ export default function Reservations() {
                   <th
                     key={d.toISOString()}
                     className={cn(
-                      'border-b border-r p-2 text-left text-xs font-medium',
+                      'border-b border-r p-2 text-left text-xs font-medium overflow-hidden', // T-20260522-foot-RESV-CAL-COLWIDTH: overflow-hidden → table-fixed 시 텍스트 셀 밖 넘침 방지
                       !isOpenDay(d) && 'bg-gray-50 text-muted-foreground',
                       isSameDay(d, new Date()) && 'bg-teal-50 text-teal-700',
                     )}
@@ -901,7 +901,7 @@ export default function Reservations() {
                             }}
                           >
                             {allowed && (
-                              <div className="flex h-full w-full flex-col gap-0.5 rounded text-left">
+                              <div className="flex h-full w-full min-w-0 flex-col gap-0.5 rounded text-left">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 → 자식 flex 아이템이 셀 너비 이하로 수축 허용 */}
 
                                 {list.map((r) => (
                                   <div
@@ -935,7 +935,8 @@ export default function Reservations() {
                                       }
                                     }}
                                     className={cn(
-                                      'rounded border px-1.5 py-0.5 text-xs leading-tight transition-opacity',
+                                      'w-full overflow-hidden rounded border px-1.5 py-0.5 text-xs leading-tight transition-opacity', // T-20260522-foot-RESV-CAL-COLWIDTH: w-full + overflow-hidden → 카드가 셀 너비에 맞게 수축, 내용 클립
+
                                       r.status === 'confirmed' && 'cursor-grab active:cursor-grabbing',
                                       draggedId === r.id && 'opacity-40',
                                       STATUS_STYLE[r.status],
@@ -948,7 +949,7 @@ export default function Reservations() {
                                       clipboard?.resv.id === r.id && clipboard.mode === 'cut' && 'opacity-60 ring-2 ring-amber-400',
                                     )}
                                   >
-                                    <div className="flex items-center gap-1">
+                                    <div className="flex min-w-0 items-center gap-1">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 → 이름·배지 행 수축 허용 */}
                                       {/* T-20260515-foot-RESV-CTX-HOVER: hover 팝업 + 우클릭 컨텍스트 메뉴
                                           취소된 예약 / 미연결 고객은 기존 plain span 유지 */}
                                       {r.customer_id && r.status !== 'cancelled' ? (
@@ -999,7 +1000,7 @@ export default function Reservations() {
                                       ) : null}
                                     </div>
                                     {/* RESV-SLOT-INFO: 방문유형·상태 + 전화번호 뒷4자리 */}
-                                    <div className="text-xs opacity-80 flex items-center gap-1">
+                                    <div className="flex min-w-0 items-center gap-1 overflow-hidden text-xs opacity-80">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 + overflow-hidden → 상태줄 셀 밖 넘침 방지 */}
                                       <span className={cn(
                                         'inline-block h-1.5 w-1.5 rounded-full',
                                         r.visit_type === 'new' ? 'bg-blue-500' : 'bg-emerald-500',
