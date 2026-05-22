@@ -15,9 +15,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
 import { formatAmount, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { PACKAGE_PRESETS } from '@/lib/packagePresets';
 import { InsuranceCopaymentPanel } from '@/components/insurance/InsuranceCopaymentPanel';
-import type { CheckIn } from '@/lib/types';
+import type { CheckIn, PackageTemplate } from '@/lib/types';
 
 // T-20260522-foot-PAY-DROPDOWN-LONGRE: 롱레 CRM 정합성 — membership 추가
 // AC-5: payments CHECK ✅ membership 허용
@@ -57,7 +56,10 @@ const INSTALLMENT_OPTIONS = [
 
 export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) {
   const [paymentMode, setPaymentMode] = useState<PaymentMode>(initialMode ?? 'single');
-  const [selectedPackageKey, setSelectedPackageKey] = useState<string | null>(null);
+  // T-20260523-foot-PKG-TMPL-LINK: 하드코딩 PACKAGE_PRESETS → package_templates DB 연동
+  const [pkgTemplates, setPkgTemplates] = useState<PackageTemplate[]>([]);
+  const [pkgTemplatesLoading, setPkgTemplatesLoading] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [method, setMethod] = useState<PayMethod>('card');
   const [amountStr, setAmountStr] = useState('');
   const [installment, setInstallment] = useState(0);
@@ -77,10 +79,27 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
   const [staffList, setStaffList] = useState<StaffOption[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
 
+  // T-20260523-foot-PKG-TMPL-LINK: clinic_id 기준으로 package_templates 로드
+  useEffect(() => {
+    if (!checkIn?.clinic_id) return;
+    setPkgTemplatesLoading(true);
+    supabase
+      .from('package_templates')
+      .select('*')
+      .eq('clinic_id', checkIn.clinic_id)
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true })
+      .then(({ data }) => {
+        setPkgTemplates((data ?? []) as PackageTemplate[]);
+        setPkgTemplatesLoading(false);
+      });
+  }, [checkIn?.clinic_id]);
+
   useEffect(() => {
     if (checkIn) {
       setPaymentMode(initialMode ?? 'single');
-      setSelectedPackageKey(null);
+      setSelectedTemplateId(null);
       setMethod('card');
       setAmountStr('');
       setInstallment(0);
@@ -123,7 +142,10 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
   const amount = parseAmount(amountStr);
   const splitCard = parseAmount(splitCardStr);
   const splitCash = parseAmount(splitCashStr);
-  const selectedPreset = selectedPackageKey ? PACKAGE_PRESETS[selectedPackageKey] : null;
+  // T-20260523-foot-PKG-TMPL-LINK: DB 템플릿에서 선택된 항목
+  const selectedTemplate = selectedTemplateId
+    ? (pkgTemplates.find((t) => t.id === selectedTemplateId) ?? null)
+    : null;
   // T-20260515-foot-RECEIPT-TAX-SPLIT: 과세/비과세 금액
   const taxable = parseAmount(taxableAmountStr);
   const taxExempt = parseAmount(taxExemptAmountStr);
@@ -137,10 +159,11 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
     ? METHOD_OPTIONS.filter((m) => m.value !== 'membership')
     : METHOD_OPTIONS;
 
-  const handleSelectPackage = (key: string) => {
-    setSelectedPackageKey(key);
-    const p = PACKAGE_PRESETS[key];
-    if (p) setAmountStr(String(p.suggestedPrice));
+  // T-20260523-foot-PKG-TMPL-LINK: 템플릿 선택 시 금액 자동 세팅 (total_price 기준)
+  const handleSelectTemplate = (id: string) => {
+    setSelectedTemplateId(id);
+    const t = pkgTemplates.find((tmpl) => tmpl.id === id);
+    if (t) setAmountStr(String(t.total_price));
   };
 
   const insertPayments = async (
@@ -189,7 +212,8 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
         setSubmitting(false);
         return;
       }
-      if (!selectedPreset) {
+      // T-20260523-foot-PKG-TMPL-LINK: 선택된 템플릿 기준 검증
+      if (!selectedTemplate) {
         toast.error('패키지를 선택하세요');
         setSubmitting(false);
         return;
@@ -201,19 +225,40 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
         return;
       }
 
+      // T-20260523-foot-PKG-TMPL-LINK AC-3: template_id 연결 + 스냅샷 필드 저장
+      const tmplTotalSessions =
+        selectedTemplate.heated_sessions +
+        selectedTemplate.unheated_sessions +
+        selectedTemplate.iv_sessions +
+        selectedTemplate.podologe_sessions +
+        (selectedTemplate.trial_sessions ?? 0);
+
       const { data: pkgRow, error: pkgErr } = await supabase
         .from('packages')
         .insert({
           clinic_id: checkIn.clinic_id,
           customer_id: checkIn.customer_id,
-          package_name: selectedPreset.label,
-          package_type: selectedPackageKey ?? `preset_${selectedPreset.total}`,
-          total_sessions: selectedPreset.total,
-          heated_sessions: selectedPreset.heated,
-          unheated_sessions: selectedPreset.unheated,
-          iv_sessions: selectedPreset.iv,
-          preconditioning_sessions: selectedPreset.preconditioning,
-          total_amount: selectedPreset.suggestedPrice,
+          package_name: selectedTemplate.name,
+          package_type: 'template',
+          template_id: selectedTemplate.id,
+          total_sessions: tmplTotalSessions,
+          heated_sessions: selectedTemplate.heated_sessions,
+          heated_unit_price: selectedTemplate.heated_unit_price,
+          unheated_sessions: selectedTemplate.unheated_sessions,
+          unheated_unit_price: selectedTemplate.unheated_unit_price,
+          iv_sessions: selectedTemplate.iv_sessions,
+          iv_unit_price: selectedTemplate.iv_unit_price,
+          iv_company: selectedTemplate.iv_company ?? null,
+          podologe_sessions: selectedTemplate.podologe_sessions,
+          podologe_unit_price: selectedTemplate.podologe_unit_price,
+          trial_sessions: selectedTemplate.trial_sessions ?? 0,
+          trial_unit_price: selectedTemplate.trial_unit_price ?? 0,
+          preconditioning_sessions: 0,
+          shot_upgrade: false,
+          af_upgrade: false,
+          upgrade_surcharge: 0,
+          // AC-4: total_amount = 템플릿 기준가(스냅샷), paid_amount = 실납부액
+          total_amount: selectedTemplate.total_price,
           paid_amount: totalAmount,
           status: 'active',
           contract_date: new Date().toISOString().slice(0, 10),
@@ -284,7 +329,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                   check_in_id: checkIn.id,
                   package_id: newPackageId,
                   amount: totalAmount,
-                  package_name: selectedPreset.label,
+                  package_name: selectedTemplate.name,
                 },
               });
             }
@@ -489,38 +534,57 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
               </div>
             )}
 
-            {/* 패키지 선택 (패키지 모드일 때만) */}
+            {/* 패키지 선택 (패키지 모드일 때만) — T-20260523-foot-PKG-TMPL-LINK */}
             {paymentMode === 'package' && canShowPackageMode && (
               <div className="space-y-2">
                 <Label>패키지 선택</Label>
-                <div className="grid grid-cols-1 gap-2">
-                  {Object.entries(PACKAGE_PRESETS).map(([key, p]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => handleSelectPackage(key)}
-                      className={cn(
-                        'rounded-md border px-3 py-2 text-left transition',
-                        selectedPackageKey === key
-                          ? 'border-violet-600 bg-violet-50'
-                          : 'border-input hover:bg-muted',
-                      )}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-sm">{p.label}</span>
-                        <span className="text-xs text-muted-foreground tabular-nums">
-                          {formatAmount(p.suggestedPrice)}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        총 {p.total}회 · 가열 {p.heated} · 비가열 {p.unheated} · 수액 {p.iv} · 프리컨 {p.preconditioning}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-                {selectedPreset && (
+                {pkgTemplatesLoading ? (
+                  <div className="text-sm text-muted-foreground py-2">패키지 목록 로딩 중…</div>
+                ) : pkgTemplates.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-muted-foreground/30 px-3 py-4 text-sm text-center text-muted-foreground">
+                    등록된 패키지 템플릿이 없습니다
+                    <div className="text-[11px] mt-0.5">관리자 → 패키지 템플릿 관리에서 추가하세요</div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2">
+                    {pkgTemplates.map((t) => {
+                      const totalSess =
+                        t.heated_sessions + t.unheated_sessions + t.iv_sessions +
+                        t.podologe_sessions + (t.trial_sessions ?? 0);
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => handleSelectTemplate(t.id)}
+                          className={cn(
+                            'rounded-md border px-3 py-2 text-left transition',
+                            selectedTemplateId === t.id
+                              ? 'border-violet-600 bg-violet-50'
+                              : 'border-input hover:bg-muted',
+                          )}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-sm">{t.name}</span>
+                            <span className="text-xs text-muted-foreground tabular-nums">
+                              {formatAmount(t.total_price)}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            총 {totalSess}회
+                            {t.heated_sessions > 0 && ` · 가열 ${t.heated_sessions}`}
+                            {t.unheated_sessions > 0 && ` · 비가열 ${t.unheated_sessions}`}
+                            {t.iv_sessions > 0 && ` · 수액 ${t.iv_sessions}`}
+                            {t.podologe_sessions > 0 && ` · 포돌로게 ${t.podologe_sessions}`}
+                            {(t.trial_sessions ?? 0) > 0 && ` · 체험 ${t.trial_sessions}`}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {selectedTemplate && (
                   <div className="text-xs text-muted-foreground">
-                    선택: {selectedPreset.label} (권장가 {formatAmount(selectedPreset.suggestedPrice)} — 할인 가능)
+                    선택: {selectedTemplate.name} (권장가 {formatAmount(selectedTemplate.total_price)} — 할인 가능)
                   </div>
                 )}
               </div>
