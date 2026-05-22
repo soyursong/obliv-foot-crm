@@ -1,3 +1,5 @@
+// LOGIC-LOCK: L-006 — 서류출력 경로 통일. DocumentPrintPanel이 PATH-1/2/3 단일 렌더링 기준. 변경 시 현장 승인 필수
+
 /**
  * DocumentPrintPanel — 풋센터 서류 발행 패널
  *

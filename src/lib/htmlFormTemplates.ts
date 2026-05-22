@@ -1,3 +1,5 @@
+// LOGIC-LOCK: L-006 — 서류출력 경로 통일. bindHtmlTemplate + HTML 11종 양식 정의. 변경 시 현장 승인 필수
+
 /**
  * HTML/CSS 기반 디지털 양식 템플릿
  *
@@ -1798,6 +1800,7 @@ export function getHtmlTemplate(formKey: string): string | null {
  * 값이 없는 키는 빈 문자열로 치환.
  * HTML injection 방지: 신뢰된 내부 데이터만 주입.
  */
+// LOGIC-LOCK L-006: bindHtmlTemplate — 전 경로 양식 바인딩 단일 함수. 복제·우회 금지
 export function bindHtmlTemplate(
   html: string,
   fieldValues: Record<string, string>,
