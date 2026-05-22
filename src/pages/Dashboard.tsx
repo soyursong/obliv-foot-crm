@@ -2592,9 +2592,10 @@ export default function Dashboard() {
 
   const fetchAssignments = useCallback(async () => {
     if (!clinic) return;
+    // T-20260522-foot-PERF-TUNING OPT-5: select('*') → 필요 컬럼만 (페이로드 축소)
     const { data } = await supabase
       .from('room_assignments')
-      .select('*')
+      .select('id, clinic_id, date, room_name, room_type, staff_id, staff_name')
       .eq('clinic_id', clinic.id)
       .eq('date', dateStr);
     setAssignments((data ?? []) as RoomAssignment[]);
@@ -2639,38 +2640,38 @@ export default function Dashboard() {
     });
     setLoading(false);
 
-    // ── 동의서 상태 일괄 조회 (카드 배지용) ──
+    // ── 동의서 + 체크리스트 일괄 조회 (카드 배지용) ──
+    // T-20260522-foot-PERF-TUNING OPT-2: 두 쿼리 Promise.all 병렬화 (순차 대기 제거)
     const ids = filtered.map((ci) => ci.id);
     if (ids.length > 0) {
-      const { data: cData } = await supabase
-        .from('consent_forms')
-        .select('check_in_id, form_type, signed_at')
-        .in('check_in_id', ids)
-        .in('form_type', ['refund', 'non_covered']);
+      const [consentRes, checklistRes] = await Promise.all([
+        supabase
+          .from('consent_forms')
+          .select('check_in_id, form_type, signed_at')
+          .in('check_in_id', ids)
+          .in('form_type', ['refund', 'non_covered']),
+        supabase
+          .from('checklists')
+          .select('check_in_id')
+          .in('check_in_id', ids)
+          .not('completed_at', 'is', null),
+      ]);
+
       const cMap = new Map<string, ConsentEntry>();
-      for (const c of (cData ?? []) as { check_in_id: string; form_type: string; signed_at: string }[]) {
+      for (const c of (consentRes.data ?? []) as { check_in_id: string; form_type: string; signed_at: string }[]) {
         const entry = cMap.get(c.check_in_id) ?? {};
         if (c.form_type === 'refund') entry.refundAt = c.signed_at;
         if (c.form_type === 'non_covered') entry.nonCoveredAt = c.signed_at;
         cMap.set(c.check_in_id, entry);
       }
       setConsentMap(cMap);
-    } else {
-      setConsentMap(new Map());
-    }
 
-    // ── 체크리스트 완료 일괄 조회 (T-20260430-foot-PRESCREEN-CHECKLIST) ──
-    if (ids.length > 0) {
-      const { data: clData } = await supabase
-        .from('checklists')
-        .select('check_in_id')
-        .in('check_in_id', ids)
-        .not('completed_at', 'is', null);
       const clSet = new Set<string>(
-        (clData ?? []).map((c: { check_in_id: string }) => c.check_in_id),
+        (checklistRes.data ?? []).map((c: { check_in_id: string }) => c.check_in_id),
       );
       setChecklistDone(clSet);
     } else {
+      setConsentMap(new Map());
       setChecklistDone(new Set());
     }
 
@@ -2782,18 +2783,12 @@ export default function Dashboard() {
     setSelfCheckIns((data ?? []) as CheckIn[]);
   }, [clinic, dateStr]);
 
-  const [pendingReservations, setPendingReservations] = useState<Reservation[]>([]);
-  const fetchReservations = useCallback(async () => {
-    if (!clinic) return;
-    const { data } = await supabase
-      .from('reservations')
-      .select('*')
-      .eq('clinic_id', clinic.id)
-      .eq('reservation_date', dateStr)
-      .eq('status', 'confirmed')
-      .order('reservation_time', { ascending: true });
-    setPendingReservations((data ?? []) as Reservation[]);
-  }, [clinic, dateStr]);
+  // T-20260522-foot-PERF-TUNING OPT-3: pendingReservations → timelineReservations 파생 (DB round trip 1회 절감)
+  // fetchReservations 제거 — timelineReservations(비취소 전체) 중 confirmed만 필터
+  const pendingReservations = useMemo(
+    () => timelineReservations.filter((r) => r.status === 'confirmed'),
+    [timelineReservations],
+  );
 
   const fetchStageStarts = useCallback(async () => {
     if (!clinic) return;
@@ -2848,42 +2843,22 @@ export default function Dashboard() {
     setPkgHolderSet(holderSet);
   }, [clinic]);
 
-  const fetchTherapists = useCallback(async () => {
-    if (!clinic) return;
-    const { data } = await supabase
-      .from('staff')
-      .select('*')
-      .eq('clinic_id', clinic.id)
-      .eq('active', true)
-      .in('role', ['therapist', 'technician'])
-      .order('name');
-    setTherapists((data ?? []) as Staff[]);
-  }, [clinic]);
-
+  // T-20260522-foot-PERF-TUNING OPT-1: 3개 개별 staff 쿼리 → 1개 통합 쿼리 (2 round trip 절감)
   const [consultants, setConsultants] = useState<Staff[]>([]);
-  const fetchConsultants = useCallback(async () => {
-    if (!clinic) return;
-    const { data } = await supabase
-      .from('staff')
-      .select('*')
-      .eq('clinic_id', clinic.id)
-      .eq('active', true)
-      .eq('role', 'consultant')
-      .order('name');
-    setConsultants((data ?? []) as Staff[]);
-  }, [clinic]);
-
   const [doctors, setDoctors] = useState<Staff[]>([]);
-  const fetchDoctors = useCallback(async () => {
+  const fetchAllStaff = useCallback(async () => {
     if (!clinic) return;
     const { data } = await supabase
       .from('staff')
       .select('*')
       .eq('clinic_id', clinic.id)
       .eq('active', true)
-      .eq('role', 'director')
+      .in('role', ['therapist', 'technician', 'consultant', 'director'])
       .order('name');
-    setDoctors((data ?? []) as Staff[]);
+    const all = (data ?? []) as Staff[];
+    setTherapists(all.filter((s) => s.role === 'therapist' || s.role === 'technician'));
+    setConsultants(all.filter((s) => s.role === 'consultant'));
+    setDoctors(all.filter((s) => s.role === 'director'));
   }, [clinic]);
 
   const handleStaffAssign = useCallback(async (roomName: string, roomType: string, staffId: string | null, staffName: string | null) => {
@@ -2935,15 +2910,12 @@ export default function Dashboard() {
     fetchRooms();
     fetchAssignments();
     fetchPayments();
-    fetchReservations();
     fetchTimelineReservations();
     fetchSelfCheckIns();
     fetchStageStarts();
     fetchPackageLabels();
-    fetchTherapists();
-    fetchDoctors();
-    fetchConsultants();
-  }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchPayments, fetchReservations, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts, fetchPackageLabels, fetchTherapists, fetchDoctors, fetchConsultants]);
+    fetchAllStaff();
+  }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchPayments, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts, fetchPackageLabels, fetchAllStaff]);
 
   // T-20260515-foot-PAYMENT-MINI-WINDOW AC-7: rows 변경 시 수납대기 pending 금액 갱신
   useEffect(() => {
@@ -2967,7 +2939,7 @@ export default function Dashboard() {
     };
     const debouncedResvRefetch = () => {
       if (resvTimer) clearTimeout(resvTimer);
-      resvTimer = setTimeout(() => { fetchReservations(); fetchTimelineReservations(); }, 800);
+      resvTimer = setTimeout(() => { fetchTimelineReservations(); }, 800);
     };
 
     const channel = supabase
@@ -3033,7 +3005,7 @@ export default function Dashboard() {
       clearInterval(pollTimer);
       supabase.removeChannel(channel);
     };
-  }, [clinic, dateStr, fetchCheckIns, fetchAssignments, fetchReservations, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts]);
+  }, [clinic, dateStr, fetchCheckIns, fetchAssignments, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts]);
 
   const STAGE_ALERT_MINS: Partial<Record<CheckInStatus, number>> = {
     consult_waiting: 20,
@@ -3869,7 +3841,8 @@ export default function Dashboard() {
 
     const realId = inserted.id;
     await supabase.from('reservations').update({ status: 'checked_in' }).eq('id', res.id);
-    setPendingReservations((prev) => prev.filter((r) => r.id !== res.id));
+    // T-20260522-foot-PERF-TUNING OPT-3: pendingReservations는 timelineReservations 파생값 → 갱신으로 대체
+    fetchTimelineReservations();
 
     // T-20260514-foot-CHECKIN-AUTO-STAGE FIX: 재진 → 치료대기, 초진/체험 → 상담대기
     // 기존 코드: res.visit_type === 'new' ? 'consult_waiting' : 'registered'
@@ -4903,14 +4876,14 @@ export default function Dashboard() {
         clinicId={clinic?.id}
         createdBy={profile?.id ?? null}
         onClose={() => setQuickResvDraft(null)}
-        onCreated={() => { fetchReservations(); fetchTimelineReservations(); }}
+        onCreated={() => { fetchTimelineReservations(); }}
       />
 
       <NewCheckInDialog
         open={openNew}
         onOpenChange={setOpenNew}
         clinicId={clinic?.id}
-        onCreated={() => { fetchCheckIns(); fetchReservations(); }}
+        onCreated={() => { fetchCheckIns(); fetchTimelineReservations(); }}
       />
 
       <CheckInDetailSheet
