@@ -1142,63 +1142,71 @@ export function PenChartTab({
                   </button>
                 </div>
 
-                {/* 카테고리 필터 (charting 우선) */}
-                <div className="flex gap-0.5 px-2 py-1.5 border-b bg-gray-50 flex-wrap" data-testid="phrase-category-tabs">
-                  {(
-                    [
-                      { key: 'charting',     label: '차팅' },
-                      { key: 'prescription', label: '처방' },
-                      { key: 'document',     label: '서류' },
-                      { key: 'general',      label: '일반' },
-                    ] as const
-                  ).map(({ key, label }) => (
-                    <button
-                      key={key}
-                      onClick={() => setPhraseCategory(key)}
-                      className={cn(
-                        'px-2 py-0.5 rounded text-[10px] border transition',
-                        phraseCategory === key
-                          ? 'bg-emerald-600 border-emerald-600 text-white'
-                          : 'bg-white border-gray-200 text-muted-foreground hover:bg-emerald-50',
-                      )}
-                      data-testid={`phrase-cat-${key}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* 목록 */}
-                <div className="max-h-56 overflow-y-auto" data-testid="phrase-list">
-                  {phraseTemplates.filter((p) => p.category === phraseCategory).length === 0 ? (
-                    <div
-                      className="flex flex-col items-center justify-center py-6 text-[11px] text-muted-foreground"
-                      data-testid="phrase-empty-state"
-                    >
-                      <Type className="h-5 w-5 mb-1.5 opacity-30" />
-                      <span>등록된 상용구가 없습니다</span>
-                      <span className="text-[10px] mt-0.5 text-gray-400">어드민 &gt; 상용구에서 추가하세요</span>
-                    </div>
-                  ) : (
-                    phraseTemplates
-                      .filter((p) => p.category === phraseCategory)
-                      .map((phrase) => (
+                {/* AC-4: 사이드 메뉴 스타일 카테고리 + 목록 2-컬럼 레이아웃 */}
+                {/* AC-3: document '서류' → '원장님' */}
+                <div className="flex" data-testid="phrase-category-tabs">
+                  {/* 좌: 카테고리 사이드 메뉴 */}
+                  <div className="w-[58px] flex-shrink-0 border-r bg-gray-50 flex flex-col">
+                    {(
+                      [
+                        { key: 'charting',     label: '차팅' },
+                        { key: 'prescription', label: '처방' },
+                        { key: 'document',     label: '원장님' },
+                        { key: 'general',      label: '일반' },
+                      ] as const
+                    ).map(({ key, label }) => {
+                      const cnt = phraseTemplates.filter((p) => p.category === key).length;
+                      return (
                         <button
-                          key={phrase.id}
-                          onClick={() => {
-                            handleBoilerplateSelect(phrase.content);
-                            setShowPhrasePanel(false);
-                          }}
-                          className="w-full text-left px-3 py-2 text-[11px] hover:bg-emerald-50 border-b border-gray-100 last:border-0 transition"
-                          data-testid={`phrase-item-${phrase.id}`}
+                          key={key}
+                          onClick={() => setPhraseCategory(key)}
+                          className={cn(
+                            'flex flex-col items-center gap-0.5 px-1 py-2 text-center border-b border-gray-100 last:border-0 transition',
+                            phraseCategory === key
+                              ? 'bg-emerald-50 text-emerald-700 font-semibold border-l-2 border-l-emerald-500'
+                              : 'text-muted-foreground hover:bg-gray-100',
+                          )}
+                          data-testid={`phrase-cat-${key}`}
                         >
-                          <div className="font-medium text-gray-800">{phrase.name}</div>
-                          <div className="text-gray-400 mt-0.5 text-[10px] truncate">
-                            {phrase.content.split('\n')[0]}
-                          </div>
+                          <span className="text-[10px] leading-tight break-keep">{label}</span>
+                          <span className="text-[9px] tabular-nums text-muted-foreground/60">{cnt}</span>
                         </button>
-                      ))
-                  )}
+                      );
+                    })}
+                  </div>
+
+                  {/* 우: 상용구 목록 (AC-2: 컴팩트) */}
+                  <div className="flex-1 min-w-0 max-h-56 overflow-y-auto" data-testid="phrase-list">
+                    {phraseTemplates.filter((p) => p.category === phraseCategory).length === 0 ? (
+                      <div
+                        className="flex flex-col items-center justify-center py-6 text-[11px] text-muted-foreground"
+                        data-testid="phrase-empty-state"
+                      >
+                        <Type className="h-5 w-5 mb-1.5 opacity-30" />
+                        <span>등록된 상용구가 없습니다</span>
+                        <span className="text-[10px] mt-0.5 text-gray-400">어드민 &gt; 상용구에서 추가하세요</span>
+                      </div>
+                    ) : (
+                      phraseTemplates
+                        .filter((p) => p.category === phraseCategory)
+                        .map((phrase) => (
+                          <button
+                            key={phrase.id}
+                            onClick={() => {
+                              handleBoilerplateSelect(phrase.content);
+                              setShowPhrasePanel(false);
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 text-[11px] hover:bg-emerald-50 border-b border-gray-100 last:border-0 transition"
+                            data-testid={`phrase-item-${phrase.id}`}
+                          >
+                            <div className="font-medium text-gray-800 truncate">{phrase.name}</div>
+                            <div className="text-gray-400 mt-0.5 text-[10px] truncate">
+                              {phrase.content.split('\n')[0]}
+                            </div>
+                          </button>
+                        ))
+                    )}
+                  </div>
                 </div>
               </div>
             )}

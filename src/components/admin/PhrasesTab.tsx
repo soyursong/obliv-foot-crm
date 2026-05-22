@@ -1,6 +1,9 @@
 // PhrasesTab — 상용구 템플릿 관리
 // Ticket: T-20260502-foot-DOCTOR-TREATMENT-FLOW (Sub 2, 포팅: derm → foot)
-// 어드민에서 상용구 CRUD — 진료 시 의사가 불러쓰는 문구 관리
+// T-20260522-foot-PHRASE-MENU-UX:
+//   AC-1: 드롭다운 → 사이드 메뉴 클릭 형태
+//   AC-2: 리스트 행 높이/간격 축소 (컴팩트)
+//   AC-3: [서류] → [원장님] 라벨 변경
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -17,13 +20,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { Loader2, Plus, Pencil, Trash2 } from 'lucide-react';
@@ -56,12 +52,22 @@ const EMPTY_FORM: PhraseForm = {
   sort_order: 0,
 };
 
+// AC-3: document '서류' → '원장님'
 const CATEGORY_LABELS: Record<string, string> = {
   charting: '차팅',
   prescription: '처방',
-  document: '서류',
+  document: '원장님',
   general: '일반',
 };
+
+// AC-1: 사이드 메뉴용 카테고리 목록 (전체 포함)
+const SIDE_MENU_CATS = [
+  { key: 'all', label: '전체' },
+  { key: 'charting', label: '차팅' },
+  { key: 'prescription', label: '처방' },
+  { key: 'document', label: '원장님' },
+  { key: 'general', label: '일반' },
+] as const;
 
 // ---------------------------------------------------------------------------
 // Hooks
@@ -177,82 +183,117 @@ export default function PhrasesTab() {
     );
 
   return (
-    <div className="space-y-4">
-      {/* 헤더 */}
+    <div className="space-y-3">
+      {/* 헤더: 추가 버튼만 (카운트는 사이드 메뉴에 표시) */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Select value={filterCat} onValueChange={setFilterCat}>
-            <SelectTrigger className="h-8 w-28 text-xs">
-              <SelectValue placeholder="카테고리" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">전체</SelectItem>
-              {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
-                <SelectItem key={k} value={k}>{v}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span className="text-xs text-muted-foreground">{displayed.length}개</span>
-        </div>
+        <span className="text-sm font-medium text-muted-foreground">
+          {filterCat === 'all' ? `전체 ${phrases.length}개` : `${CATEGORY_LABELS[filterCat] ?? filterCat} ${displayed.length}개`}
+        </span>
         <Button size="sm" variant="outline" onClick={openAdd} data-testid="phrase-add-btn">
           <Plus className="h-3.5 w-3.5 mr-1" />
           상용구 추가
         </Button>
       </div>
 
-      {/* 목록 */}
-      {displayed.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          등록된 상용구가 없습니다.
+      {/* AC-1: 사이드 메뉴 + 리스트 2-컬럼 레이아웃 */}
+      <div className="flex rounded-lg border overflow-hidden min-h-[240px]" data-testid="phrase-side-menu-layout">
+        {/* 좌측 사이드 메뉴 — 카테고리 클릭 */}
+        <div
+          className="w-20 flex-shrink-0 border-r bg-muted/10 flex flex-col"
+          data-testid="phrase-category-sidebar"
+        >
+          {SIDE_MENU_CATS.map(({ key, label }) => {
+            const count = key === 'all' ? phrases.length : phrases.filter((p) => p.category === key).length;
+            const isActive = filterCat === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFilterCat(key)}
+                className={`w-full flex flex-col items-center gap-0.5 px-1 py-2.5 text-center transition-colors border-b border-border/30 last:border-0 ${
+                  isActive
+                    ? 'bg-teal-50 text-teal-700 font-semibold border-l-2 border-l-teal-500'
+                    : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'
+                }`}
+                data-testid={`phrase-cat-btn-${key}`}
+              >
+                <span className="text-[11px] leading-tight break-keep">{label}</span>
+                <span className={`text-[10px] tabular-nums ${isActive ? 'text-teal-500' : 'text-muted-foreground/60'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
-      ) : (
-        <div className="space-y-2" data-testid="phrase-list">
-          {displayed.map((p) => (
-            <div
-              key={p.id}
-              className="flex items-start justify-between rounded-lg border bg-card px-4 py-3 gap-3"
-              data-testid="phrase-item"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
-                    {CATEGORY_LABELS[p.category] ?? p.category}
-                  </Badge>
-                  <span className={`text-sm font-medium truncate ${!p.is_active ? 'text-muted-foreground line-through' : ''}`}>
-                    {p.name}
-                  </span>
-                  {!p.is_active && (
-                    <Badge variant="outline" className="text-[10px] py-0">비활성</Badge>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground line-clamp-2 whitespace-pre-wrap">
-                  {p.content}
-                </p>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => openEdit(p)}
-                  data-testid="phrase-edit-btn"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-destructive hover:text-destructive"
-                  onClick={() => handleDelete(p.id, p.name)}
-                  disabled={del.isPending}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
+
+        {/* 우측 리스트 영역 */}
+        <div className="flex-1 min-w-0 overflow-y-auto max-h-[600px]">
+          {displayed.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full py-12 text-sm text-muted-foreground gap-1.5">
+              <span>등록된 상용구가 없습니다.</span>
+              <button
+                type="button"
+                onClick={openAdd}
+                className="text-teal-600 text-xs hover:underline"
+              >
+                + 상용구 추가하기
+              </button>
             </div>
-          ))}
+          ) : (
+            // AC-2: 컴팩트 리스트 — py-3→py-1.5, space-y-2→divide-y
+            <div data-testid="phrase-list" className="divide-y divide-border/40">
+              {displayed.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between px-3 py-1.5 gap-2 hover:bg-muted/20 transition-colors"
+                  data-testid="phrase-item"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">
+                        {CATEGORY_LABELS[p.category] ?? p.category}
+                      </Badge>
+                      <span
+                        className={`text-xs font-medium truncate ${
+                          !p.is_active ? 'text-muted-foreground line-through' : ''
+                        }`}
+                      >
+                        {p.name}
+                      </span>
+                      {!p.is_active && (
+                        <Badge variant="outline" className="text-[10px] py-0 shrink-0">비활성</Badge>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground line-clamp-1 whitespace-pre-wrap mt-0.5 pl-0.5">
+                      {p.content}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={() => openEdit(p)}
+                      data-testid="phrase-edit-btn"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-destructive hover:text-destructive"
+                      onClick={() => handleDelete(p.id, p.name)}
+                      disabled={del.isPending}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* 추가/편집 다이얼로그 */}
       <Dialog open={open} onOpenChange={setOpen}>
