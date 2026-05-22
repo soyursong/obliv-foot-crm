@@ -4123,10 +4123,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                     type="button"
                                     title="패키지 삭제"
                                     onClick={() => {
-                                      // AC-4: 사용 이력(usedSessions>0) 차단
+                                      // AC-3: 사용 이력(sessions) 있으면 차단
                                       const usedCount = packageSessions.filter((s) => s.package_id === p.id && s.status === 'used').length;
                                       if (usedCount > 0) {
-                                        toast.error('사용 이력이 있어 삭제할 수 없습니다.');
+                                        toast.error('시술 사용 이력이 있어 삭제할 수 없습니다.');
+                                        return;
+                                      }
+                                      // AC-3: 결제 이력(pkgPayments) 있으면 차단
+                                      const paidCount = pkgPayments.filter((pay) => pay.package_id === p.id && pay.payment_type === 'payment').length;
+                                      if (paidCount > 0) {
+                                        toast.error('결제 이력이 있어 삭제할 수 없습니다.');
                                         return;
                                       }
                                       setDeletePkgDlg(p);
@@ -5727,6 +5733,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <X className="h-4 w-4" />
               </button>
             </div>
+            {/* AC-3: 사용/결제 이력 경고 배너 */}
+            {editPkgDlg && (
+              packageSessions.filter((s) => s.package_id === editPkgDlg.id && s.status === 'used').length > 0 ||
+              pkgPayments.filter((pay) => pay.package_id === editPkgDlg.id && pay.payment_type === 'payment').length > 0
+            ) && (
+              <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700 flex items-start gap-1.5">
+                <span className="mt-0.5 shrink-0">⚠️</span>
+                <span>시술 또는 결제 이력이 있는 패키지입니다. 수정 시 내용을 신중히 확인하세요.</span>
+              </div>
+            )}
             <div className="space-y-3">
               {/* 상품명 */}
               <div>
