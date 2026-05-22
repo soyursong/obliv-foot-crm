@@ -3787,6 +3787,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       <DocumentPrintPanel
                         checkIn={docReissueCheckIn}
                         onUpdated={() => {}}
+                        altStatus={altStatus}
                       />
                     </div>
                   </div>
@@ -4178,6 +4179,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <DocumentPrintPanel
                   checkIn={latestCheckIn}
                   onUpdated={refreshPayments}
+                  altStatus={altStatus}
                 />
               ) : (
                 <div className="flex items-center justify-center py-10 text-sm text-muted-foreground border border-dashed rounded-lg">
