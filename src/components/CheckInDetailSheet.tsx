@@ -1162,6 +1162,14 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   <option value="지인소개">지인소개</option>
                 </select>
               </div>
+              {/* T-20260523-foot-KENBO-UI-MOVE: 건보공단 자격조회 — 예약메모 바로 위 */}
+              {/* T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 (customerMode) */}
+              <NhisLookupPanel
+                customerId={customerMode.customerId}
+                clinicId={customerMode.clinicId}
+                hiraConsent={hiraConsent}
+                onGradeUpdated={load}
+              />
               {/* ② 예약메모 (T-20260515-foot-RESV-MEMO-APPEND: append-only 타임라인) */}
               {/* T-20260520-foot-RESV-MEMO-WALKIN: reservationId 없어도 customerId fallback으로 메모 작성 가능 */}
               {/* T-20260521-foot-WALKIN-MEMO-GAP: customerMode 컨텍스트엔 checkInId 불필요 (customerId 항상 있음) */}
@@ -1328,15 +1336,6 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 <p className="text-xs text-muted-foreground">잔여 회차 없음 (패키지 등록 후 이용 가능)</p>
               )}
             </div>
-
-            {/* T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 (customerMode) */}
-            <Separator />
-            <NhisLookupPanel
-              customerId={customerMode.customerId}
-              clinicId={customerMode.clinicId}
-              hiraConsent={hiraConsent}
-              onGradeUpdated={load}
-            />
 
             {/* AC7: 보험 영수증 / 처방전 — 항상 표시 (T-20260511-CUSTMGMT 3차) */}
             <Separator />
@@ -1599,6 +1598,16 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                       <option value="지인소개">지인소개</option>
                     </select>
                   </div>
+                )}
+                {/* T-20260523-foot-KENBO-UI-MOVE: 건보공단 자격조회 — 예약메모 바로 위 */}
+                {/* T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 */}
+                {checkIn.customer_id && (
+                  <NhisLookupPanel
+                    customerId={checkIn.customer_id}
+                    clinicId={checkIn.clinic_id}
+                    hiraConsent={hiraConsent}
+                    onGradeUpdated={load}
+                  />
                 )}
                 {/* ② 예약메모 (T-20260515-foot-RESV-MEMO-APPEND: append-only 타임라인) */}
                 {/* T-20260520-foot-RESV-MEMO-WALKIN: reservationId 없어도 customerId fallback으로 메모 작성 가능 */}
@@ -1867,19 +1876,6 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             <>
               <Separator />
               <Chart1TreatmentImages customerId={checkIn.customer_id} />
-            </>
-          )}
-
-          {/* T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 */}
-          {checkIn.customer_id && (
-            <>
-              <Separator />
-              <NhisLookupPanel
-                customerId={checkIn.customer_id}
-                clinicId={checkIn.clinic_id}
-                hiraConsent={hiraConsent}
-                onGradeUpdated={load}
-              />
             </>
           )}
 
