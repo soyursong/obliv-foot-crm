@@ -168,6 +168,10 @@ export interface Customer {
   pending_healer_flag?: boolean | null;
   // T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 FK
   designated_therapist_id?: string | null;
+  // T-20260522-foot-ALT-BADGE: ALT(올트) 배지 시스템 (AC-2)
+  alt_status?: boolean | null;      // ALT 활성 여부 (보험 반려 → 레이저 병행 대상)
+  alt_detail?: string | null;       // ALT 상세 내용 (예: "5회차까지 진행, 보험 반려됨")
+  alt_activated_at?: string | null; // ALT 활성화 일시
 }
 
 export interface Service {

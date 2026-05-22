@@ -103,6 +103,22 @@ interface PaymentItem {
 interface Props {
   checkIn: CheckIn;
   onUpdated: () => void;
+  /** T-20260522-foot-ALT-BADGE: ALT 활성 여부 — 레이저코드 삽입 차단 (AC-12) */
+  altStatus?: boolean;
+}
+
+// T-20260522-foot-ALT-BADGE AC-12: 레이저 관련 서비스 판별 — category OR name 기반
+function isLaserService(svc: { service_code?: string | null; name?: string; category?: string }): boolean {
+  const cat = svc.category ?? '';
+  const name = svc.name ?? '';
+  const code = svc.service_code ?? '';
+  // category가 laser/heated_laser 이거나, 이름에 '레이저' 포함, 또는 코드가 레이저 관련
+  return (
+    cat === 'laser' ||
+    cat === 'heated_laser' ||
+    name.includes('레이저') ||
+    code.toUpperCase().startsWith('MM') // 이학요법료 레이저 수가코드 접두사
+  );
 }
 
 // ─── 자동 바인딩 컨텍스트 — @/lib/autoBindContext.ts 로 추출됨 ───
@@ -266,7 +282,7 @@ ${pages.join('\n')}
 
 // ─── 메인 컴포넌트 ───
 
-export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
+export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Props) {
   const { profile } = useAuth();
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
   const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
@@ -718,6 +734,17 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
         </div>
       )}
 
+      {/* T-20260522-foot-ALT-BADGE AC-13: ALT 레이저코드 차단/허용 상태 시각적 표시 */}
+      {altStatus ? (
+        <div className="flex items-center gap-2 rounded-md bg-red-50 border border-red-200 px-2.5 py-1.5">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+          <span className="text-xs text-red-700">
+            <span className="font-semibold">ALT 활성 — 레이저코드 삽입 차단 중.</span>
+            <span className="ml-1">보험 반려 대상 고객. 레이저 수가코드는 서류에 추가할 수 없습니다.</span>
+          </span>
+        </div>
+      ) : null}
+
       {/* 일괄 출력 액션 바 */}
       <div className="flex items-center gap-2">
         <Button
@@ -1047,6 +1074,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated }: Props) {
           open={issueDialogOpen}
           staffId={staffId}
           dutyDoctors={dutyDoctors}
+          altStatus={altStatus}
           onOpenChange={(o) => {
             setIssueDialogOpen(o);
             if (!o) setSelectedTemplate(null);
@@ -1178,6 +1206,7 @@ function IssueDialog({
   onIssued,
   staffId,
   dutyDoctors,
+  altStatus = false,
 }: {
   template: FormTemplate;
   checkIn: CheckIn;
@@ -1188,6 +1217,8 @@ function IssueDialog({
   staffId: string | null;
   /** 당일 근무원장님 목록 (T-20260502-foot-DUTY-ROSTER) */
   dutyDoctors: DutyDoctor[];
+  /** T-20260522-foot-ALT-BADGE AC-12: ALT 활성 여부 — 레이저코드 삽입 차단 */
+  altStatus?: boolean;
 }) {
   const [saving, setSaving] = useState(false);
   const [autoValues, setAutoValues] = useState<Record<string, string>>({});
@@ -1473,10 +1504,19 @@ function IssueDialog({
   };
 
   // 비급여 서비스 직접 추가 핸들러 (T-20260507-foot-PATIENT-FLOW-E2E)
+  // T-20260522-foot-ALT-BADGE AC-12: ALT ON 시 레이저코드 삽입 차단
   const handleAddService = async () => {
     if (!addServiceId) return;
     const svc = allServices.find((s) => s.id === addServiceId);
     if (!svc) return;
+    // AC-12: ALT 활성 상태에서 레이저 관련 서비스 삽입 시도 → 자동 차단
+    if (altStatus && isLaserService(svc)) {
+      toast.error('ALT 활성 고객 — 레이저코드 삽입이 차단되었습니다. (보험 반려 대상)', {
+        description: 'ALT 해제 후 레이저코드를 추가할 수 있습니다.',
+        duration: 5000,
+      });
+      return;
+    }
     const amount = parseInt(addServiceAmountStr.replace(/,/g, ''), 10) || svc.price;
     setAddingService(true);
     const { error } = await supabase.from('service_charges').insert({
@@ -1780,6 +1820,17 @@ function IssueDialog({
               </div>
             )}
 
+            {/* T-20260522-foot-ALT-BADGE AC-13: ALT 활성 시 레이저코드 차단 상태 배너 */}
+            {altStatus && (
+              <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+                <div className="text-xs">
+                  <span className="font-semibold text-red-700">ALT 활성 — 레이저코드 삽입 차단 중</span>
+                  <span className="ml-1.5 text-red-600">보험 반려 대상 고객. 레이저 관련 수가코드 삽입 불가.</span>
+                </div>
+              </div>
+            )}
+
             {/* 비급여 서비스 직접 추가 — E2E 통합 (T-20260507-foot-PATIENT-FLOW-E2E) */}
             {allServices.length > 0 && (
               <div className="rounded-lg border border-dashed border-teal-200 p-3 space-y-2">
@@ -1805,11 +1856,20 @@ function IssueDialog({
                       className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-teal-500"
                     >
                       <option value="">서비스 선택…</option>
-                      {allServices.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.service_code ? `[${s.service_code}] ` : ''}{s.name} — {formatAmount(s.price)}
-                        </option>
-                      ))}
+                      {allServices.map((s) => {
+                        // T-20260522-foot-ALT-BADGE AC-12/13: ALT ON 시 레이저 서비스 시각적 차단 표시
+                        const isBlocked = altStatus && isLaserService(s);
+                        return (
+                          <option
+                            key={s.id}
+                            value={s.id}
+                            disabled={isBlocked}
+                            style={isBlocked ? { color: '#9ca3af', fontStyle: 'italic' } : undefined}
+                          >
+                            {isBlocked ? '🚫 ' : ''}{s.service_code ? `[${s.service_code}] ` : ''}{s.name} — {formatAmount(s.price)}{isBlocked ? ' (차단됨)' : ''}
+                          </option>
+                        );
+                      })}
                     </select>
                     <div className="flex gap-2">
                       <Input
@@ -1820,11 +1880,16 @@ function IssueDialog({
                       />
                       <Button
                         size="sm"
-                        className="h-7 text-xs bg-teal-600 hover:bg-teal-700 whitespace-nowrap"
+                        className={`h-7 text-xs whitespace-nowrap ${
+                          altStatus && isLaserService(allServices.find((s) => s.id === addServiceId) ?? {})
+                            ? 'bg-red-300 cursor-not-allowed'
+                            : 'bg-teal-600 hover:bg-teal-700'
+                        }`}
                         onClick={handleAddService}
-                        disabled={!addServiceId || addingService}
+                        disabled={!addServiceId || addingService || (altStatus && isLaserService(allServices.find((s) => s.id === addServiceId) ?? {}))}
+                        title={altStatus && isLaserService(allServices.find((s) => s.id === addServiceId) ?? {}) ? 'ALT 활성 — 레이저코드 삽입 불가' : undefined}
                       >
-                        {addingService ? '추가 중…' : '추가'}
+                        {addingService ? '추가 중…' : (altStatus && isLaserService(allServices.find((s) => s.id === addServiceId) ?? {}) ? '차단됨' : '추가')}
                       </Button>
                       <Button
                         size="sm"
