@@ -3,8 +3,13 @@ id: T-20260522-foot-PENCHART-PHRASE
 domain: foot
 type: feature
 priority: P2
-status: in-progress
-deploy-ready: false
+status: deploy-ready
+deploy-ready: true
+deploy-ready-at: 2026-05-22T21:43:00+09:00
+build: OK
+db-change: false
+e2e-spec: tests/e2e/T-20260522-foot-PENCHART-PHRASE.spec.ts
+commit: 25e0867
 created: 2026-05-22
 deadline: 2026-06-05
 assignee: dev-foot
