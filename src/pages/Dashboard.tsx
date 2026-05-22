@@ -2451,7 +2451,7 @@ export default function Dashboard() {
       changed_by: profile?.id ?? null,
     });
 
-    toast.success(`${currentReservation.customer_name} ${oldTime} → ${newTime} 이동 완료`);
+    // T-20260522-foot-SLOT-TIMETABLE-POPUP AC-2: 성공 토스트 제거 (시각적 반영으로 충분)
   }, [profile, setTimelineReservations]);
 
   const resetGroupOrder = useCallback(async () => {
@@ -3120,40 +3120,7 @@ export default function Dashboard() {
     setTimeout(() => recentlyUpdated.current.delete(id), 2000);
   };
 
-  const undoDrag = useCallback(async (original: CheckIn) => {
-    const revertPatch: Record<string, unknown> = {
-      status: original.status,
-      consultation_room: original.consultation_room,
-      treatment_room: original.treatment_room,
-      laser_room: original.laser_room,
-      examination_room: original.examination_room,
-      notes: original.notes,
-    };
-    if (original.status !== 'done') revertPatch.completed_at = null;
-    const { error } = await supabase.from('check_ins').update(revertPatch).eq('id', original.id);
-    if (error) {
-      toast.error('되돌리기 실패');
-      return;
-    }
-    setRows((curr) => curr.map((r) => (r.id === original.id ? { ...r, ...revertPatch } as CheckIn : r)));
-    setStageStartMap((prev) => {
-      const next = new Map(prev);
-      next.delete(original.id);
-      return next;
-    });
-    fetchStageStarts();
-    toast.success('되돌리기 완료');
-  }, [fetchStageStarts]);
-
-  const toastWithUndo = useCallback((msg: string, original: CheckIn) => {
-    toast(msg, {
-      duration: 5000,
-      action: {
-        label: '되돌리기',
-        onClick: () => undoDrag(original),
-      },
-    });
-  }, [undoDrag]);
+  // T-20260522-foot-SLOT-TIMETABLE-POPUP AC-2: undoDrag/toastWithUndo 제거 — 슬롯 이동 성공 토스트 미표시
 
   // T-20260511-foot-DASH-DRAG-PERF: useCallback으로 안정화 — DndContext props 불필요한 재생성 방지
   const handleDragStart = useCallback((e: DragStartEvent) => {
@@ -3286,7 +3253,6 @@ export default function Dashboard() {
         });
         setStageStartMap((prev) => new Map(prev).set(row.id, now));
       }
-      toastWithUndo(`${roomName}(으)로 이동`, row);
     } else if (target === 'returning_zone') {
       // 재진 대기열로 이동 → status = registered + visit_type 변경 (양방향 자유 이동)
       const targetVisitType: VisitType = 'returning';
@@ -3318,8 +3284,6 @@ export default function Dashboard() {
         });
         setStageStartMap((prev) => new Map(prev).set(row.id, now));
       }
-      const zoneLabel = '재진'; // T-20260513-foot-VISITTYPE-SIMPLIFY: 체험 제거, 재진만
-      toastWithUndo(`${zoneLabel} 대기로 이동`, row);
     } else if (target === 'laser_waiting') {
       if (row.status === 'laser_waiting') return;
       markRecentlyUpdated(row.id);
@@ -3347,7 +3311,6 @@ export default function Dashboard() {
         to_status: 'laser_waiting',
       });
       setStageStartMap((prev) => new Map(prev).set(row.id, now));
-      toastWithUndo('레이저대기로 이동', row);
     } else if (target === 'healer_waiting') {
       // T-20260502-foot-HEALER-WAIT-SLOT
       if (row.status === 'healer_waiting') return;
@@ -3376,7 +3339,6 @@ export default function Dashboard() {
         to_status: 'healer_waiting',
       });
       setStageStartMap((prev) => new Map(prev).set(row.id, now));
-      toastWithUndo('힐러대기로 이동', row);
     } else if (target === 'returning_exam' || target === 'returning_treatment') {
       const needsExam = target === 'returning_exam';
       markRecentlyUpdated(row.id);
@@ -3395,7 +3357,6 @@ export default function Dashboard() {
         toast.error(`이동 실패: ${error.message}`);
         return;
       }
-      toastWithUndo(needsExam ? '재진(진료)로 이동' : '재진(직행)으로 이동', row);
     } else if (target === 'consultation') {
       // T-20260516-foot-CONSULT-KANBAN-MISS: 상담 칸 드롭 시 consultation_room 초기화
       if (row.status === 'consultation' && !row.consultation_room) return;
@@ -3426,7 +3387,6 @@ export default function Dashboard() {
         });
         setStageStartMap((prev) => new Map(prev).set(row.id, now));
       }
-      toastWithUndo('상담으로 이동', row);
     } else if (target === 'registered') {
       // 초진 대기열로 이동 → status = registered + visit_type = new (양방향 자유 이동)
       if (row.status === 'registered' && row.visit_type === 'new') return;
@@ -3458,7 +3418,6 @@ export default function Dashboard() {
         });
         setStageStartMap((prev) => new Map(prev).set(row.id, now));
       }
-      toastWithUndo('초진 대기로 이동', row);
     } else {
       const newStatus = target as CheckInStatus;
       if (row.status === newStatus) return;
@@ -3502,7 +3461,6 @@ export default function Dashboard() {
         if (err) toast.error(`세션 소진 실패: ${err}`);
         else toast.success('패키지 1회 자동 소진');
       }
-      toastWithUndo(`${STATUS_KO[newStatus]}(으)로 이동`, row);
     }
   };
 
@@ -3628,7 +3586,7 @@ export default function Dashboard() {
       if (err) toast.error(`세션 소진 실패: ${err}`);
       else toast.success('패키지 1회 자동 소진');
     }
-    toast.success(`${STATUS_KO[newStatus]}(으)로 변경`);
+    // T-20260522-foot-SLOT-TIMETABLE-POPUP AC-2: 성공 토스트 제거
   };
 
   /** 상담실 번호 선택 후 status='consultation' + consultation_room 동시 업데이트
@@ -3664,7 +3622,7 @@ export default function Dashboard() {
       });
       setStageStartMap((prev) => new Map(prev).set(ci.id, now));
     }
-    toast.success(`${consultRoom} 입실`);
+    // T-20260522-foot-SLOT-TIMETABLE-POPUP AC-2: 성공 토스트 제거
   };
 
   // T-20260519-foot-SLOT-BATCH-EDIT: 커스텀 상담 슬롯 추가 (rooms 테이블 INSERT)
@@ -3751,7 +3709,7 @@ export default function Dashboard() {
       });
       setStageStartMap((prev) => new Map(prev).set(ci.id, now));
     }
-    toast.success(`${treatmentRoom} 입실`);
+    // T-20260522-foot-SLOT-TIMETABLE-POPUP AC-2: 성공 토스트 제거
   };
 
   /** 레이저실 번호 선택 후 status='laser' + laser_room 동시 업데이트
@@ -3790,7 +3748,7 @@ export default function Dashboard() {
       });
       setStageStartMap((prev) => new Map(prev).set(ci.id, now));
     }
-    toast.success(`${laserRoom} 입실`);
+    // T-20260522-foot-SLOT-TIMETABLE-POPUP AC-2: 성공 토스트 제거
   };
 
   /** 상태 플래그 변경 — T-20260502-foot-STATUS-COLOR-FLAG */
