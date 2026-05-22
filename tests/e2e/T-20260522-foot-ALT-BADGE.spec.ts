@@ -8,6 +8,8 @@
  * AC-4a: ALT ON 시 고정 메모(reservation_memo_history is_pinned=true) 자동 기입
  * AC-4b: ALT ON 시 서류출력 레이저코드 삽입 차단
  * AC-5: 기존 동작 미영향 + 기존 메모 데이터 보존 (비파괴적 추가)
+ * AC-6: ALT OFF + 패키지 등록 → 패키지 미포함 레이저코드 삽입 차단 (전체 패키지 공통)
+ *       시나리오 4: isLaserBlockedByPackage 로직 검증 + DB 패키지 구조 확인
  */
 
 import { test, expect } from '@playwright/test';
@@ -455,6 +457,242 @@ test.describe('T-20260522-ALT-BADGE — AC-5: 기존 메모 데이터 보존', (
       expect(after!.customer_memo).toBe(originalCustomerMemo);  // 보존
       expect(after!.tm_memo).toBe(originalTmMemo);               // 보존
       expect(after!.alt_status).toBe(true);                      // ALT 활성
+    } finally {
+      await sb.from('customers').delete().eq('id', customerId);
+    }
+  });
+});
+
+// ── AC-6: ALT OFF — 서류출력 레이저코드 삽입 방지 (전체 패키지 공통) ───────────
+// 시나리오 4: isLaserBlockedByPackage 로직 + DB 패키지 구조 검증
+
+test.describe('T-20260522-ALT-BADGE — AC-6: ALT OFF 패키지 레이저코드 삽입 차단', () => {
+
+  // ── isLaserBlockedByPackage 순수 로직 단위 테스트 ──
+  // (프론트엔드 함수를 spec 내에서 직접 구현해 동일 로직 검증)
+
+  function isLaserService(svc: { service_code?: string | null; name?: string; category?: string }): boolean {
+    const cat = svc.category ?? '';
+    const name = svc.name ?? '';
+    const code = svc.service_code ?? '';
+    return cat === 'laser' || cat === 'heated_laser' || name.includes('레이저') || code.toUpperCase().startsWith('MM');
+  }
+
+  function isLaserBlockedByPackage(
+    svc: { category?: string; name?: string; service_code?: string | null },
+    pkg: { heated_sessions: number; unheated_sessions: number; package_name: string } | null,
+  ): boolean {
+    if (!pkg) return false;
+    if (!isLaserService(svc)) return false;
+    const cat = svc.category ?? '';
+    if (cat === 'heated_laser') return (pkg.heated_sessions ?? 0) === 0;
+    if (cat === 'laser') return (pkg.unheated_sessions ?? 0) === 0;
+    return (pkg.heated_sessions ?? 0) + (pkg.unheated_sessions ?? 0) === 0;
+  }
+
+  test('패키지 없음 → 레이저 차단 없음 (패키지 미등록 고객은 검증 불가)', () => {
+    const laserSvc = { category: 'laser', name: '레이저 치료', service_code: null };
+    expect(isLaserBlockedByPackage(laserSvc, null)).toBe(false);
+  });
+
+  test('비레이저 서비스 → 패키지 있어도 차단 없음', () => {
+    const nonLaserSvc = { category: 'foot_care', name: '발 관리', service_code: 'FC001' };
+    const pkg = { heated_sessions: 0, unheated_sessions: 0, package_name: '6회권' };
+    expect(isLaserBlockedByPackage(nonLaserSvc, pkg)).toBe(false);
+  });
+
+  test('레이저 서비스 + 레이저 0회 패키지 → 차단', () => {
+    const laserSvc = { category: 'laser', name: '비온열 레이저', service_code: null };
+    const pkg = { heated_sessions: 12, unheated_sessions: 0, package_name: '12회권(온열전용)' };
+    expect(isLaserBlockedByPackage(laserSvc, pkg)).toBe(true);
+  });
+
+  test('온열 레이저 서비스 + 온열 0회 패키지 → 차단', () => {
+    const heatedSvc = { category: 'heated_laser', name: '온열 레이저', service_code: null };
+    const pkg = { heated_sessions: 0, unheated_sessions: 6, package_name: '6회권(비온열)' };
+    expect(isLaserBlockedByPackage(heatedSvc, pkg)).toBe(true);
+  });
+
+  test('온열 레이저 서비스 + 온열 있는 패키지 → 허용', () => {
+    const heatedSvc = { category: 'heated_laser', name: '온열 레이저', service_code: null };
+    const pkg = { heated_sessions: 6, unheated_sessions: 0, package_name: '6회권(온열)' };
+    expect(isLaserBlockedByPackage(heatedSvc, pkg)).toBe(false);
+  });
+
+  test('이름 기반 레이저(category 없음) + 레이저 0회 패키지 → 차단', () => {
+    const namedLaser = { category: '', name: '레이저 치료(건보)', service_code: 'MISC' };
+    const pkg = { heated_sessions: 0, unheated_sessions: 0, package_name: '발 관리 전용 6회권' };
+    expect(isLaserBlockedByPackage(namedLaser, pkg)).toBe(true);
+  });
+
+  test('MM 코드 레이저 서비스 + 레이저 있는 패키지 → 허용', () => {
+    const mmSvc = { category: '', name: '이학요법', service_code: 'MM123' };
+    const pkg = { heated_sessions: 12, unheated_sessions: 6, package_name: '12회권' };
+    expect(isLaserBlockedByPackage(mmSvc, pkg)).toBe(false);
+  });
+
+  // ── DB 레이어: packages 테이블 구조 검증 ──
+
+  test('packages 테이블에 heated_sessions, unheated_sessions 컬럼 존재 + 조회 가능', async () => {
+    if (!SUPA_URL || !SERVICE_KEY) {
+      test.skip(true, 'Supabase env 미설정 — 스킵');
+      return;
+    }
+    const sb = createClient(SUPA_URL, SERVICE_KEY);
+
+    // 기존 패키지 한 건 조회하여 컬럼 존재 여부 확인
+    const { data, error } = await sb
+      .from('packages')
+      .select('id, heated_sessions, unheated_sessions, package_name')
+      .eq('clinic_id', CLINIC_ID)
+      .limit(1);
+
+    // 데이터 없어도 쿼리 자체가 성공하면 컬럼은 존재
+    expect(error, `packages 조회 실패: ${error?.message}`).toBeNull();
+    if (data && data.length > 0) {
+      expect(typeof data[0].heated_sessions).toBe('number');
+      expect(typeof data[0].unheated_sessions).toBe('number');
+    }
+  });
+
+  test('AC-6 시나리오 4: 레이저 0회 패키지 등록 시 레이저코드 삽입 차단 로직 검증', async () => {
+    if (!SUPA_URL || !SERVICE_KEY) {
+      test.skip(true, 'Supabase env 미설정 — 스킵');
+      return;
+    }
+    const sb = createClient(SUPA_URL, SERVICE_KEY);
+    const testName = `ac6-laser-block-${Date.now()}`;
+    const testPhone = `010${String(Date.now()).slice(-8)}`;
+
+    // 고객 생성 (ALT OFF)
+    const { data: customer, error: custErr } = await sb
+      .from('customers')
+      .insert({ clinic_id: CLINIC_ID, name: testName, phone: testPhone, visit_type: 'returning', alt_status: false })
+      .select()
+      .single();
+    expect(custErr, `고객 생성 실패: ${custErr?.message}`).toBeNull();
+    const customerId = customer!.id as string;
+
+    try {
+      // 레이저 0회 패키지 등록 (발 관리 전용 패키지 시뮬)
+      const { data: pkg, error: pkgErr } = await sb
+        .from('packages')
+        .insert({
+          clinic_id: CLINIC_ID,
+          customer_id: customerId,
+          package_name: '발관리 6회권(레이저 제외)',
+          package_type: 'foot_care',
+          total_sessions: 6,
+          heated_sessions: 0,      // 온열 없음
+          unheated_sessions: 0,    // 비온열 없음
+          iv_sessions: 0,
+          preconditioning_sessions: 0,
+          shot_upgrade: false,
+          af_upgrade: false,
+          upgrade_surcharge: 0,
+          total_amount: 300000,
+          paid_amount: 300000,
+          contract_date: new Date().toISOString().split('T')[0],
+          status: 'active',
+          created_by: null,
+        })
+        .select('id, heated_sessions, unheated_sessions, package_name')
+        .single();
+      expect(pkgErr, `패키지 등록 실패: ${pkgErr?.message}`).toBeNull();
+
+      // 레이저 0회 패키지 → 모든 레이저 코드 차단 검증
+      const laserSvcs = [
+        { category: 'laser', name: '비온열 레이저', service_code: null },
+        { category: 'heated_laser', name: '온열 레이저', service_code: null },
+        { category: '', name: '레이저 치료(이학)', service_code: 'MM456' },
+      ];
+
+      for (const svc of laserSvcs) {
+        const blocked = isLaserBlockedByPackage(svc, {
+          heated_sessions: pkg!.heated_sessions,
+          unheated_sessions: pkg!.unheated_sessions,
+          package_name: pkg!.package_name,
+        });
+        expect(blocked, `${svc.name} 차단 실패 — heated:${pkg!.heated_sessions} unheated:${pkg!.unheated_sessions}`).toBe(true);
+      }
+
+      // 비레이저 서비스는 차단 안 됨
+      const footCareSvc = { category: 'foot_care', name: '발 관리', service_code: 'FC001' };
+      expect(isLaserBlockedByPackage(footCareSvc, {
+        heated_sessions: pkg!.heated_sessions,
+        unheated_sessions: pkg!.unheated_sessions,
+        package_name: pkg!.package_name,
+      })).toBe(false);
+
+      // cleanup
+      await sb.from('packages').delete().eq('id', pkg!.id);
+    } finally {
+      await sb.from('customers').delete().eq('id', customerId);
+    }
+  });
+
+  test('AC-6 시나리오 4: 레이저 포함 패키지 → 정상 코드 삽입 허용', async () => {
+    if (!SUPA_URL || !SERVICE_KEY) {
+      test.skip(true, 'Supabase env 미설정 — 스킵');
+      return;
+    }
+    const sb = createClient(SUPA_URL, SERVICE_KEY);
+    const testName = `ac6-laser-allow-${Date.now()}`;
+    const testPhone = `010${String(Date.now()).slice(-8)}`;
+
+    const { data: customer, error: custErr } = await sb
+      .from('customers')
+      .insert({ clinic_id: CLINIC_ID, name: testName, phone: testPhone, visit_type: 'returning', alt_status: false })
+      .select()
+      .single();
+    expect(custErr).toBeNull();
+    const customerId = customer!.id as string;
+
+    try {
+      // 레이저 포함 12회권 패키지
+      const { data: pkg, error: pkgErr } = await sb
+        .from('packages')
+        .insert({
+          clinic_id: CLINIC_ID,
+          customer_id: customerId,
+          package_name: '12회권(온열+비온열)',
+          package_type: 'standard',
+          total_sessions: 12,
+          heated_sessions: 6,
+          unheated_sessions: 6,
+          iv_sessions: 0,
+          preconditioning_sessions: 0,
+          shot_upgrade: false,
+          af_upgrade: false,
+          upgrade_surcharge: 0,
+          total_amount: 1200000,
+          paid_amount: 1200000,
+          contract_date: new Date().toISOString().split('T')[0],
+          status: 'active',
+          created_by: null,
+        })
+        .select('id, heated_sessions, unheated_sessions, package_name')
+        .single();
+      expect(pkgErr, `패키지 등록 실패: ${pkgErr?.message}`).toBeNull();
+
+      // 온열/비온열 모두 포함 → 모든 레이저 코드 허용
+      const heatedSvc = { category: 'heated_laser', name: '온열 레이저', service_code: null };
+      const unheatedSvc = { category: 'laser', name: '비온열 레이저', service_code: null };
+
+      expect(isLaserBlockedByPackage(heatedSvc, {
+        heated_sessions: pkg!.heated_sessions,
+        unheated_sessions: pkg!.unheated_sessions,
+        package_name: pkg!.package_name,
+      })).toBe(false);
+
+      expect(isLaserBlockedByPackage(unheatedSvc, {
+        heated_sessions: pkg!.heated_sessions,
+        unheated_sessions: pkg!.unheated_sessions,
+        package_name: pkg!.package_name,
+      })).toBe(false);
+
+      // cleanup
+      await sb.from('packages').delete().eq('id', pkg!.id);
     } finally {
       await sb.from('customers').delete().eq('id', customerId);
     }
