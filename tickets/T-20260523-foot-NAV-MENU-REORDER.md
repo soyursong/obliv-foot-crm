@@ -6,7 +6,7 @@ status: deploy-ready
 deploy_ready: true
 build_ok: true
 db_change: false
-e2e_spec: false
+e2e_spec: true
 commit: 796fce2
 created: 2026-05-23
 deadline: 2026-05-29
@@ -46,4 +46,4 @@ deadline: 2026-05-29
 ## 비고
 - FE-only. DB 변경 없음.
 - CHART-ACCESS-LOCK 가드 10/10 통과
-- E2E spec: FE-only 순서 변경으로 기존 spec 영향 없음 (신규 spec 불필요)
+- E2E spec: `tests/e2e/T-20260523-foot-NAV-MENU-REORDER.spec.ts` — 코드 레벨 AC-1~4 검증 + 브라우저 통합 시나리오(skip)
