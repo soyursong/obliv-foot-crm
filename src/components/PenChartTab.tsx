@@ -9,7 +9,9 @@
  * T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 PDF 원본 + 오버레이 입력
  * T-20260520-foot-PENCHART-CHECKLIST-REMOVE: 개인정보+체크리스트 2종 양식 제거
  * T-20260522-foot-PENCHART-TOOLS-V2:
- *   AC-1: 배경 캔버스를 원본 이미지 natural 해상도로 렌더 → 화질 개선
+ *   AC-1: bg 캔버스를 natural 해상도로 렌더 + draw canvas DPR 2.0 강제
+ *         CANVAS_W=794(A4 96DPI), DRAW_DPR=2 → 물리 픽셀 1588×2246 (A4 192DPI)
+ *         래스터 이미지 4개 196 DPI 이상 렌더 보장. device DPR 무관.
  *   AC-2: getCoalescedEvents() 활용 → 태블릿 펜 획 누락·지연 개선
  *   AC-3: [T] 텍스트 도구 — 탭 위치 키보드 입력 후 캔버스 삽입
  *   AC-5: 형광펜 도구 — 반투명 두꺼운 선, 지우개 호환
@@ -102,12 +104,17 @@ export const BUILTIN_REFUND_CONSENT: Template = {
   form_key: 'refund_consent',
 };
 
-const CANVAS_W = 720;
-const CANVAS_H = 1020; // A4 비율 약 1:√2
-// T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 3페이지 세로 연결 (1241×5262 → 720×3052)
-const CANVAS_H_REFUND_CONSENT = 3052;
-// T-20260522-foot-PENCHART-HIRES-FORM: 개인정보+체크리스트 어르신용 2페이지 세로 연결 (2482×7016 → 720×2036)
-const CANVAS_H_PC_SENIOR = 2036;
+// T-20260522-foot-PENCHART-TOOLS-V2 AC-1 DPR 2.0:
+// CANVAS_W = 794 = A4 너비 at 96 DPI (210mm × 96/25.4 ≈ 793.7px)
+// DRAW_DPR = 2 강제 → draw canvas 물리 픽셀 = 1588×2246 (A4 192 DPI)
+// window.devicePixelRatio 무관 — 항상 2x 보장 (Galaxy Tab DPR 불문)
+const CANVAS_W = 794;
+const CANVAS_H = 1123; // A4 높이 at 96 DPI (297mm × 96/25.4 ≈ 1122.5px)
+const DRAW_DPR = 2;   // 드로잉 레이어 강제 DPR (device DPR 무관)
+// T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 3페이지 세로 연결 (1440×6104 → 794×3369)
+const CANVAS_H_REFUND_CONSENT = 3369; // 1123 * 3
+// T-20260522-foot-PENCHART-HIRES-FORM: 개인정보+체크리스트 어르신용 2페이지 세로 연결 (2482×7016 → 794×2246)
+const CANVAS_H_PC_SENIOR = 2246; // 1123 * 2
 
 // ─── T-20260522-foot-PENCHART-REFUND-AUTOFILL ────────────────────────────
 // 환불/비급여 동의서 자동채움 필드 타입 + 위치 상수
@@ -118,12 +125,13 @@ interface AutofillFields {
   phone:     string; // 연락처
 }
 
-// [환자 동의서] 섹션 (page 3, ≈ y 2650–2760) 자동채움 좌표 (기준: CANVAS_W=720)
+// [환자 동의서] 섹션 (page 3) 자동채움 좌표 (기준: CANVAS_W=794, CANVAS_H_REFUND_CONSENT=3369)
+// 구버전 CANVAS_W=720 좌표 × (794/720) + y × (3369/3052) 비례 환산
 const REFUND_AUTOFILL_POS: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
-  { key: 'date',      x: 476, y: 2662 },
-  { key: 'name',      x: 110, y: 2706 },
-  { key: 'birthDate', x: 290, y: 2706 },
-  { key: 'phone',     x: 110, y: 2748 },
+  { key: 'date',      x: 525, y: 2939 },
+  { key: 'name',      x: 121, y: 2987 },
+  { key: 'birthDate', x: 320, y: 2987 },
+  { key: 'phone',     x: 121, y: 3033 },
 ];
 
 /**
@@ -460,13 +468,17 @@ export function PenChartTab({
     }
   }, [templateImgUrl, activeDrawTemplate]);
 
-  /** 드로잉 레이어 초기화: 투명 배경 — 지우개 clearRect → bgCanvas 노출 */
+  /** 드로잉 레이어 초기화: 투명 배경 — 지우개 clearRect → bgCanvas 노출
+   * T-20260522-foot-PENCHART-TOOLS-V2 AC-1 DPR 2.0:
+   *   DRAW_DPR=2 강제 → window.devicePixelRatio 무관
+   *   물리 픽셀 = CANVAS_W*2 × canvasH*2 = 1588×2246 (A4 192 DPI)
+   */
   const initDrawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = DRAW_DPR; // 강제 2x — device DPR 무관
     const canvasH = getCanvasHeightForForm(activeDrawTemplate?.form_key);
 
     canvas.width = CANVAS_W * dpr;
@@ -540,11 +552,12 @@ export function PenChartTab({
 
   // ── 포인터 좌표 계산 ─────────────────────────────────────────────────
   // getPos: React 합성 이벤트 → 논리 좌표 + CSS 좌표 (text overlay 위치용)
+  // T-20260522-foot-PENCHART-TOOLS-V2 AC-1: DRAW_DPR=2 강제 사용 (device DPR 무관)
   const getPos = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0, cssX: 0, cssY: 0 };
     const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = DRAW_DPR; // 강제 2x — initDrawCanvas와 동일
     const logicalW = canvas.width / dpr;
     const logicalH = canvas.height / dpr;
     const scaleX = logicalW / rect.width;
@@ -675,8 +688,9 @@ export function PenChartTab({
     if (!ctx) return;
 
     // rect 1회 계산 후 모든 coalesced events에 재사용
+    // T-20260522-foot-PENCHART-TOOLS-V2 AC-1: DRAW_DPR=2 강제 (device DPR 무관)
     const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = DRAW_DPR; // 강제 2x — initDrawCanvas/getPos 동일
     const scaleX = (canvas.width / dpr) / rect.width;
     const scaleY = (canvas.height / dpr) / rect.height;
     const toLogical = (ev: PointerEvent) => ({
