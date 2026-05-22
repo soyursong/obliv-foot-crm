@@ -1313,6 +1313,21 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     therapistId: '',
   });
   const [savingEditSession, setSavingEditSession] = useState(false);
+  // T-20260522-foot-PKG-EDIT-DEL: 구매 패키지 수정 다이얼로그
+  const [editPkgDlg, setEditPkgDlg] = useState<PackageWithRemaining | null>(null);
+  const [editPkgForm, setEditPkgForm] = useState({
+    package_name: '',
+    total_amount: '',
+    heated_sessions: '', heated_unit_price: '',
+    unheated_sessions: '', unheated_unit_price: '',
+    podologe_sessions: '', podologe_unit_price: '',
+    iv_sessions: '', iv_unit_price: '',
+    trial_sessions: '', trial_unit_price: '',
+  });
+  const [savingEditPkg, setSavingEditPkg] = useState(false);
+  // T-20260522-foot-PKG-EDIT-DEL: 구매 패키지 삭제 확인 다이얼로그
+  const [deletePkgDlg, setDeletePkgDlg] = useState<PackageWithRemaining | null>(null);
+  const [deletingPkg, setDeletingPkg] = useState(false);
   // T-20260510-foot-C21-SAVE-UNIFY: 고객정보 패널 통합 저장 로딩 상태
   const [savingInfoPanel, setSavingInfoPanel] = useState(false);
   // T-20260519-foot-PRECHECKIN-CHART AC-3: 내원콜 방문 확인 로딩 상태
@@ -2013,6 +2028,53 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
     toast.success('시술내역이 삭제되었습니다. (잔여횟수 +1)');
     await refreshPackageData(packages);
+  };
+
+  // T-20260522-foot-PKG-EDIT-DEL: 구매 패키지 수정 저장
+  const saveEditPkg = async () => {
+    if (!editPkgDlg || !customer) return;
+    setSavingEditPkg(true);
+    const updates = {
+      package_name: editPkgForm.package_name.trim() || editPkgDlg.package_name,
+      total_amount: parseAmount(editPkgForm.total_amount),
+      heated_sessions: parseInt(editPkgForm.heated_sessions) || 0,
+      heated_unit_price: parseAmount(editPkgForm.heated_unit_price),
+      unheated_sessions: parseInt(editPkgForm.unheated_sessions) || 0,
+      unheated_unit_price: parseAmount(editPkgForm.unheated_unit_price),
+      podologe_sessions: parseInt(editPkgForm.podologe_sessions) || 0,
+      podologe_unit_price: parseAmount(editPkgForm.podologe_unit_price),
+      iv_sessions: parseInt(editPkgForm.iv_sessions) || 0,
+      iv_unit_price: parseAmount(editPkgForm.iv_unit_price),
+      trial_sessions: parseInt(editPkgForm.trial_sessions) || 0,
+      trial_unit_price: parseAmount(editPkgForm.trial_unit_price),
+    };
+    const { error } = await supabase.from('packages').update(updates).eq('id', editPkgDlg.id);
+    setSavingEditPkg(false);
+    if (error) { toast.error(`수정 실패: ${error.message}`); return; }
+    setEditPkgDlg(null);
+    // 목록 갱신 (T-20260522-foot-PERF-TUNING OPT-4 패턴 재사용)
+    const pkgRes = await supabase.from('packages').select('*').eq('customer_id', customer.id).order('created_at', { ascending: false });
+    const pkgs = (pkgRes.data ?? []) as Package[];
+    if (pkgs.length > 0) {
+      const pkgIds = pkgs.map((p) => p.id);
+      const { data: sessData } = await supabase.from('package_sessions').select('package_id, session_type, status').in('package_id', pkgIds);
+      const remainingArr = computeRemainingFromSessionRows(pkgs, (sessData ?? []) as _SessRow[]);
+      setPackages(pkgs.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? null })));
+    } else {
+      setPackages([]);
+    }
+  };
+
+  // T-20260522-foot-PKG-EDIT-DEL: 구매 패키지 soft delete (status='cancelled', 물리삭제 금지 AC-5)
+  const softDeletePkg = async () => {
+    if (!deletePkgDlg) return;
+    setDeletingPkg(true);
+    const { error } = await supabase.from('packages').update({ status: 'cancelled' }).eq('id', deletePkgDlg.id);
+    setDeletingPkg(false);
+    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+    // 목록에서 즉시 제거 (AC-2/AC-5: 비노출)
+    setPackages((prev) => prev.filter((p) => p.id !== deletePkgDlg.id));
+    setDeletePkgDlg(null);
   };
 
   // 우편번호 카카오 주소검색 팝업 (Kakao Postcode API)
@@ -3984,11 +4046,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     </div>
                   )}
                 </div>
-                {packages.length === 0 ? (
+                {packages.filter((p) => p.status !== 'cancelled').length === 0 ? (
                   <div className="text-muted-foreground py-2">패키지 없음</div>
                 ) : (
                   <div className="space-y-3">
-                    {packages.map((p) => {
+                    {/* T-20260522-foot-PKG-EDIT-DEL AC-5: cancelled(soft delete) 패키지 비노출 */}
+                    {packages.filter((p) => p.status !== 'cancelled').map((p) => {
                       const usedSessions = packageSessions.filter((s) => s.package_id === p.id && s.status === 'used');
                       // 시술 타입별 사용횟수 집계
                       const usedByType: Record<string, number> = {};
@@ -4007,6 +4070,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       return (
                         <div key={p.id} className="rounded-lg border border-muted/40 overflow-hidden">
                           {/* 패키지 헤더 — T-20260511-foot-C21-PKG-TICKET-DATE: 발행일자 추가 */}
+                          {/* T-20260522-foot-PKG-EDIT-DEL: 수정/삭제 버튼 추가 */}
                           <div className="flex items-center justify-between bg-muted/20 px-3 py-1.5">
                             <span className="text-xs font-semibold text-teal-800">{p.package_name}</span>
                             <div className="flex items-center gap-1.5 shrink-0 ml-1">
@@ -4024,6 +4088,51 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               }`}>
                                 {PKG_STATUS_KO[p.status] ?? p.status}
                               </span>
+                              {/* AC-1/AC-3: 수정·삭제 버튼 — admin/manager/consultant만 */}
+                              {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant') && (
+                                <span className="flex items-center gap-0.5">
+                                  <button
+                                    type="button"
+                                    title="패키지 수정"
+                                    onClick={() => {
+                                      setEditPkgDlg(p);
+                                      setEditPkgForm({
+                                        package_name: p.package_name,
+                                        total_amount: String(p.total_amount),
+                                        heated_sessions: String(p.heated_sessions ?? 0),
+                                        heated_unit_price: String(p.heated_unit_price ?? 0),
+                                        unheated_sessions: String(p.unheated_sessions ?? 0),
+                                        unheated_unit_price: String(p.unheated_unit_price ?? 0),
+                                        podologe_sessions: String(p.podologe_sessions ?? 0),
+                                        podologe_unit_price: String(p.podologe_unit_price ?? 0),
+                                        iv_sessions: String(p.iv_sessions ?? 0),
+                                        iv_unit_price: String(p.iv_unit_price ?? 0),
+                                        trial_sessions: String(p.trial_sessions ?? 0),
+                                        trial_unit_price: String(p.trial_unit_price ?? 0),
+                                      });
+                                    }}
+                                    className="h-5 w-5 flex items-center justify-center rounded hover:bg-teal-100 text-teal-600 transition"
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title="패키지 삭제"
+                                    onClick={() => {
+                                      // AC-4: 사용 이력(usedSessions>0) 차단
+                                      const usedCount = packageSessions.filter((s) => s.package_id === p.id && s.status === 'used').length;
+                                      if (usedCount > 0) {
+                                        toast.error('사용 이력이 있어 삭제할 수 없습니다.');
+                                        return;
+                                      }
+                                      setDeletePkgDlg(p);
+                                    }}
+                                    className="h-5 w-5 flex items-center justify-center rounded hover:bg-red-100 text-red-500 transition"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </button>
+                                </span>
+                              )}
                             </div>
                           </div>
                           {/* 총금액 */}
@@ -5596,6 +5705,116 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 {savingEditSession ? '저장 중…' : '수정 저장'}
               </Button>
               <Button variant="outline" className="h-9 text-xs px-3" onClick={() => setEditSessionDlg(null)}>
+                취소
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* T-20260522-foot-PKG-EDIT-DEL: 구매 패키지 수정 다이얼로그 (AC-1/AC-2) */}
+      {editPkgDlg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-96 p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <div className="font-semibold text-teal-800 text-sm">패키지 수정</div>
+              <button type="button" onClick={() => setEditPkgDlg(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              {/* 상품명 */}
+              <div>
+                <label className="text-xs font-medium text-gray-700 mb-1 block">상품명</label>
+                <input
+                  type="text"
+                  value={editPkgForm.package_name}
+                  onChange={(e) => setEditPkgForm((f) => ({ ...f, package_name: e.target.value }))}
+                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                />
+              </div>
+              {/* 총금액 */}
+              <div>
+                <label className="text-xs font-medium text-gray-700 mb-1 block">총 금액</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={editPkgForm.total_amount}
+                  onChange={(e) => setEditPkgForm((f) => ({ ...f, total_amount: e.target.value }))}
+                  className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                />
+              </div>
+              {/* 시술별 횟수·수가 */}
+              {[
+                { label: '가열', sessKey: 'heated_sessions' as const, priceKey: 'heated_unit_price' as const },
+                { label: '비가열', sessKey: 'unheated_sessions' as const, priceKey: 'unheated_unit_price' as const },
+                { label: '포돌로게', sessKey: 'podologe_sessions' as const, priceKey: 'podologe_unit_price' as const },
+                { label: '수액', sessKey: 'iv_sessions' as const, priceKey: 'iv_unit_price' as const },
+                { label: '체험권', sessKey: 'trial_sessions' as const, priceKey: 'trial_unit_price' as const },
+              ].map(({ label, sessKey, priceKey }) => (
+                <div key={label} className="grid grid-cols-2 gap-2 items-end">
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 mb-1 block">{label} 횟수</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={editPkgForm[sessKey]}
+                      onChange={(e) => setEditPkgForm((f) => ({ ...f, [sessKey]: e.target.value }))}
+                      className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 mb-1 block">{label} 수가(회당)</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={editPkgForm[priceKey]}
+                      onChange={(e) => setEditPkgForm((f) => ({ ...f, [priceKey]: e.target.value }))}
+                      className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button
+                className="flex-1 bg-teal-600 hover:bg-teal-700 h-9 text-xs"
+                onClick={saveEditPkg}
+                disabled={savingEditPkg}
+              >
+                {savingEditPkg ? '저장 중…' : '수정 저장'}
+              </Button>
+              <Button variant="outline" className="h-9 text-xs px-3" onClick={() => setEditPkgDlg(null)}>
+                취소
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* T-20260522-foot-PKG-EDIT-DEL: 구매 패키지 삭제 확인 다이얼로그 (AC-3/AC-5) */}
+      {deletePkgDlg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-80 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="font-semibold text-red-700 text-sm">패키지 삭제</div>
+              <button type="button" onClick={() => setDeletePkgDlg(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="text-xs text-gray-700">
+              <span className="font-semibold text-gray-900">"{deletePkgDlg.package_name}"</span> 패키지를 삭제하시겠습니까?<br />
+              <span className="text-muted-foreground">삭제된 패키지는 목록에서 숨겨집니다.</span>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button
+                className="flex-1 bg-red-600 hover:bg-red-700 h-9 text-xs"
+                onClick={softDeletePkg}
+                disabled={deletingPkg}
+              >
+                {deletingPkg ? '삭제 중…' : '삭제'}
+              </Button>
+              <Button variant="outline" className="h-9 text-xs px-3" onClick={() => setDeletePkgDlg(null)}>
                 취소
               </Button>
             </div>
