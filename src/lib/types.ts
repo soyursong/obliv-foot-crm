@@ -430,15 +430,23 @@ export interface UserProfile {
 }
 
 
-/** T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 이력 (append-only) */
+/** T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 이력 (append-only)
+ *  T-20260520-foot-RESV-MEMO-WALKIN: reservation_id nullable + customer_id 추가
+ *  T-20260521-foot-WALKIN-MEMO-GAP: check_in_id 3순위 fallback 추가
+ *  T-20260522-foot-ALT-BADGE: is_pinned / pinned_at 고정 기능 */
 export interface ReservationMemoHistory {
   id: string;
-  reservation_id: string;
+  reservation_id: string | null;     // T-20260520: nullable (워크인 지원)
+  customer_id?: string | null;        // T-20260520: 예약 없는 고객 fallback
+  check_in_id?: string | null;        // T-20260521: customer_id 없는 수기 워크인 fallback
   clinic_id: string;
   content: string;
   created_by: string | null;
   created_by_name: string | null;
   created_at: string;
+  // T-20260522-foot-ALT-BADGE: 고객메모 고정 기능
+  is_pinned: boolean;                 // 최상단 고정 여부 (default false)
+  pinned_at: string | null;           // 고정 설정 일시
 }
 
 export interface Reservation {
