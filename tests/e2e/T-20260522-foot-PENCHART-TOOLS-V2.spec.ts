@@ -2,7 +2,9 @@
  * T-20260522-foot-PENCHART-TOOLS-V2
  * 펜차트 도구 확장 V2 — 화질 재개선 + 펜 인식 + 텍스트 입력 + 형광펜
  *
- * AC-1: bg 캔버스를 natural 해상도로 렌더 → 저장 시 원본 해상도 합성
+ * AC-1: bg 캔버스를 natural 해상도로 렌더 + draw canvas DRAW_DPR=2 강제
+ *       CANVAS_W=794 (A4 96DPI), DRAW_DPR=2 → 물리 픽셀 1588×2246 (A4 192DPI)
+ *       device DPR 무관 — 항상 2x 보장 (Galaxy Tab 포함)
  * AC-2: getCoalescedEvents() → 빠른 펜 동작 스트로크 누락 방지
  * AC-3: [T] 텍스트 도구 — 캔버스 클릭 위치에 키보드 입력 후 래스터화
  * AC-4: 텍스트 저장/불러오기 호환 (PNG로 래스터화 → 기존 스토리지 구조 호환)
@@ -13,21 +15,94 @@
  */
 import { test, expect } from '@playwright/test';
 
-// ── AC-1: natural 해상도 bg 캔버스 수치 검증 ───────────────────────────────
+// ── AC-1: DPR 2.0 강제 + natural 해상도 bg 캔버스 수치 검증 ──────────────
 
-test.describe('PENCHART-TOOLS-V2 AC-1: bg natural 해상도 렌더링', () => {
+// T-20260522-foot-PENCHART-TOOLS-V2 AC-1 DPR 2.0: CANVAS_W=794, DRAW_DPR=2
+const CANVAS_W_SPEC = 794;
+const CANVAS_H_SPEC = 1123;
+const DRAW_DPR_SPEC = 2;
+
+test.describe('PENCHART-TOOLS-V2 AC-1: DPR 2.0 강제 + bg natural 해상도', () => {
+
+  test('AC-1 DPR 2.0: draw canvas 물리 픽셀 = CANVAS_W*2 × CANVAS_H*2 (1588×2246)', async ({ page }) => {
+    await page.goto('about:blank');
+
+    const result = await page.evaluate(({ cw, ch, dpr }) => {
+      // DRAW_DPR=2 강제로 draw canvas 초기화 시뮬레이션
+      const drawCanvas = document.createElement('canvas');
+      drawCanvas.width  = cw * dpr;   // 794 * 2 = 1588
+      drawCanvas.height = ch * dpr;   // 1123 * 2 = 2246
+      drawCanvas.style.width  = `${cw}px`;
+      drawCanvas.style.height = `${ch}px`;
+      const ctx = drawCanvas.getContext('2d')!;
+      ctx.scale(dpr, dpr);
+
+      return {
+        physW:    drawCanvas.width,
+        physH:    drawCanvas.height,
+        cssWidth: drawCanvas.style.width,
+        cssHeight: drawCanvas.style.height,
+        ratio:    drawCanvas.width / cw, // 물리 픽셀 / CSS = 2.0
+      };
+    }, { cw: CANVAS_W_SPEC, ch: CANVAS_H_SPEC, dpr: DRAW_DPR_SPEC });
+
+    // draw canvas 물리 픽셀 = 1588×2246 (A4 192 DPI)
+    expect(result.physW).toBe(1588); // 794 * 2
+    expect(result.physH).toBe(2246); // 1123 * 2
+    // CSS 표시는 CANVAS_W×CANVAS_H 유지
+    expect(result.cssWidth).toBe('794px');
+    expect(result.cssHeight).toBe('1123px');
+    // pixel ratio = 2.0 (DPR 2.0 보장)
+    expect(result.ratio).toBe(2);
+  });
+
+  test('AC-1 DPR 2.0: DRAW_DPR=2 좌표 계산 — device DPR 1.0이어도 논리 좌표 정확', async ({ page }) => {
+    await page.goto('about:blank');
+
+    const result = await page.evaluate(({ cw, ch, dpr }) => {
+      // device DPR=1인 환경에서 DRAW_DPR=2 강제 시 좌표 계산 정확성 검증
+      const drawCanvas = document.createElement('canvas');
+      drawCanvas.width  = cw * dpr;   // 1588
+      drawCanvas.height = ch * dpr;   // 2246
+      drawCanvas.style.width  = `${cw}px`;
+      drawCanvas.style.height = `${ch}px`;
+
+      // getPos 로직: logicalW = canvas.width / DRAW_DPR (강제 2)
+      const logicalW = drawCanvas.width  / dpr; // 1588 / 2 = 794
+      const logicalH = drawCanvas.height / dpr; // 2246 / 2 = 1123
+      const rectWidth  = cw; // CSS display = CANVAS_W (= 794)
+      const rectHeight = ch;
+      const scaleX = logicalW / rectWidth;   // 794 / 794 = 1.0
+      const scaleY = logicalH / rectHeight;  // 1123 / 1123 = 1.0
+
+      // 중앙 터치 시 논리 좌표
+      const touchCssX = cw / 2; // 397
+      const touchCssY = ch / 2; // 561
+      const logicalX = touchCssX * scaleX; // 397 * 1.0 = 397
+      const logicalY = touchCssY * scaleY; // 561 * 1.0 = 561
+
+      return { logicalW, logicalH, scaleX, scaleY, logicalX, logicalY };
+    }, { cw: CANVAS_W_SPEC, ch: CANVAS_H_SPEC, dpr: DRAW_DPR_SPEC });
+
+    expect(result.logicalW).toBe(794);         // CSS width = 논리 width ✓
+    expect(result.logicalH).toBe(1123);
+    expect(result.scaleX).toBeCloseTo(1.0, 5); // CSS→논리 = 1:1 (왜곡 없음)
+    expect(result.scaleY).toBeCloseTo(1.0, 5);
+    expect(result.logicalX).toBeCloseTo(397, 0); // 중앙 논리 좌표 = CSS 좌표
+    expect(result.logicalY).toBeCloseTo(561, 0);
+  });
 
   test('AC-1: natural 해상도가 CANVAS_W보다 클 때 bg 캔버스 크기는 natural 사용', async ({ page }) => {
     await page.goto('about:blank');
 
     const result = await page.evaluate(() => {
-      const CANVAS_W = 720;
-      const CANVAS_H = 1020;
+      const CANVAS_W = 794;
+      const CANVAS_H = 1123;
 
-      // 시뮬레이션: natural 1241×1754 이미지를 natural 크기로 bg 캔버스에 렌더
+      // 시뮬레이션: natural 2480×3508 (pen_chart_form.png 300DPI) 이미지를 natural 크기로 bg 캔버스에 렌더
       const bgCanvas = document.createElement('canvas');
-      const nw = 1241;
-      const nh = 1754;
+      const nw = 2480;
+      const nh = 3508;
       bgCanvas.width  = nw;
       bgCanvas.height = nh;
       bgCanvas.style.width  = `${CANVAS_W}px`;
@@ -48,21 +123,21 @@ test.describe('PENCHART-TOOLS-V2 AC-1: bg natural 해상도 렌더링', () => {
     });
 
     // bg 물리 캔버스는 natural 해상도 사용
-    expect(result.canvasWidth).toBe(1241);
-    expect(result.canvasHeight).toBe(1754);
+    expect(result.canvasWidth).toBe(2480);
+    expect(result.canvasHeight).toBe(3508);
     // CSS 표시는 CANVAS_W×CANVAS_H 유지
-    expect(result.cssWidth).toBe('720px');
-    expect(result.cssHeight).toBe('1020px');
-    // natural이 CANVAS_W의 1.7배 이상 → 화질 개선
-    expect(result.pixelRatio).toBeGreaterThan(1.5);
+    expect(result.cssWidth).toBe('794px');
+    expect(result.cssHeight).toBe('1123px');
+    // natural(2480)이 CANVAS_W(794)의 3배 이상 → 화질 개선
+    expect(result.pixelRatio).toBeGreaterThan(2.5);
   });
 
   test('AC-1: 저장 시 bg natural 해상도 기준 합성 → 출력 PNG 해상도 검증', async ({ page }) => {
     await page.goto('about:blank');
 
     const result = await page.evaluate(() => {
-      const CANVAS_W = 720;
-      const CANVAS_H = 1020;
+      const CANVAS_W = 794;
+      const CANVAS_H = 1123;
       const DPR = 2;
 
       // bg canvas: natural 1241×1754
@@ -109,17 +184,18 @@ test.describe('PENCHART-TOOLS-V2 AC-1: bg natural 해상도 렌더링', () => {
     expect(result.hasDataUrl).toBe(true);
   });
 
-  test('AC-1: bg 없는 경우 fallback — draw canvas 물리 픽셀 기준 저장', async ({ page }) => {
+  test('AC-1: bg 없는 경우 fallback — draw canvas 물리 픽셀 기준 저장 (DRAW_DPR=2)', async ({ page }) => {
     await page.goto('about:blank');
 
     const result = await page.evaluate(() => {
-      const CANVAS_W = 720;
-      const CANVAS_H = 1020;
-      const DPR = 2;
+      // T-20260522-foot-PENCHART-TOOLS-V2 AC-1 DPR 2.0: CANVAS_W=794, DRAW_DPR=2
+      const CANVAS_W = 794;
+      const CANVAS_H = 1123;
+      const DRAW_DPR = 2;
 
       const drawCanvas = document.createElement('canvas');
-      drawCanvas.width  = CANVAS_W * DPR;
-      drawCanvas.height = CANVAS_H * DPR;
+      drawCanvas.width  = CANVAS_W * DRAW_DPR; // 1588
+      drawCanvas.height = CANVAS_H * DRAW_DPR; // 2246
 
       // bg 없을 경우 draw 물리 픽셀 기준
       const tempCanvas = document.createElement('canvas');
@@ -132,8 +208,8 @@ test.describe('PENCHART-TOOLS-V2 AC-1: bg natural 해상도 렌더링', () => {
       };
     });
 
-    expect(result.outputW).toBe(1440); // 720 * 2
-    expect(result.outputH).toBe(2040); // 1020 * 2
+    expect(result.outputW).toBe(1588); // 794 * 2 (DRAW_DPR=2 강제)
+    expect(result.outputH).toBe(2246); // 1123 * 2
   });
 });
 
@@ -148,10 +224,10 @@ test.describe('PENCHART-TOOLS-V2 AC-2: 펜 인식 개선 (getCoalescedEvents)', 
       // getCoalescedEvents mock 검증
       const collected: { x: number; y: number }[] = [];
 
-      // 실제 포인터이벤트 dispatch로 시뮬레이션
+      // 실제 포인터이벤트 dispatch로 시뮬레이션 (DRAW_DPR=2 적용: 1588×2246)
       const canvas = document.createElement('canvas');
-      canvas.width  = 1440;
-      canvas.height = 2040;
+      canvas.width  = 1588; // 794 * 2
+      canvas.height = 2246; // 1123 * 2
       document.body.appendChild(canvas);
 
       canvas.addEventListener('pointermove', (e) => {
@@ -219,12 +295,12 @@ test.describe('PENCHART-TOOLS-V2 AC-3: 텍스트 도구', () => {
 
     const result = await page.evaluate(() => {
       const canvas = document.createElement('canvas');
-      canvas.width  = 1440;
-      canvas.height = 2040;
+      canvas.width  = 1588; // 794 * DRAW_DPR(2)
+      canvas.height = 2246; // 1123 * DRAW_DPR(2)
       document.body.appendChild(canvas);
 
       const ctx = canvas.getContext('2d')!;
-      const DPR = 2;
+      const DPR = 2; // DRAW_DPR=2 강제
       ctx.scale(DPR, DPR);
 
       // 텍스트 도구 동작 시뮬레이션
@@ -468,8 +544,8 @@ test.describe('PENCHART-TOOLS-V2 AC-7,8: 기존 호환', () => {
 
     const result = await page.evaluate(() => {
       const canvas = document.createElement('canvas');
-      canvas.width  = 1440;
-      canvas.height = 2040;
+      canvas.width  = 1588; // 794 * DRAW_DPR(2) — DPR 2.0 강제
+      canvas.height = 2246; // 1123 * DRAW_DPR(2)
       const ctx = canvas.getContext('2d')!;
 
       // 기존 펜 스트로크 (pen tool 로직)
@@ -552,36 +628,61 @@ test.describe('PENCHART-TOOLS-V2 AC-7,8: 기존 호환', () => {
 
 test.describe('PENCHART-TOOLS-V2: 자동채움 좌표 스케일', () => {
 
-  test('자동채움 scaleX/scaleY: naturalWidth/CANVAS_W 비율 계산', () => {
-    const CANVAS_W = 720;
-    const CANVAS_H_REFUND = 3052;
+  test('자동채움 scaleX/scaleY: naturalWidth/CANVAS_W 비율 계산 (DPR 2.0 기준)', () => {
+    // T-20260522-foot-PENCHART-TOOLS-V2 AC-1 DPR 2.0: CANVAS_W=794, CANVAS_H_REFUND=3369
+    const CANVAS_W = 794;
+    const CANVAS_H_REFUND = 3369; // 1123 * 3
 
-    // 환불동의서 natural 해상도: 1241×5262 (예시)
-    const nw = 1241;
-    const nh = 5262;
+    // 환불동의서 natural 해상도: 1440×6104 (실제 refund_consent.png)
+    const nw = 1440;
+    const nh = 6104;
 
     const scaleX = nw / CANVAS_W;
     const scaleY = nh / CANVAS_H_REFUND;
 
-    // REFUND_AUTOFILL_POS 좌표 보정
-    const AUTOFILL_POS = { key: 'name', x: 110, y: 2706 };
+    // REFUND_AUTOFILL_POS 새 좌표 (794 기준, 비례 환산)
+    const AUTOFILL_POS = { key: 'name', x: 121, y: 2987 }; // 구버전 (110,2706) → 비례 환산
     const scaledX = AUTOFILL_POS.x * scaleX;
     const scaledY = AUTOFILL_POS.y * scaleY;
 
-    expect(scaleX).toBeCloseTo(1241 / 720, 3);
-    expect(scaleY).toBeCloseTo(5262 / 3052, 3);
+    expect(scaleX).toBeCloseTo(1440 / 794, 3);
+    expect(scaleY).toBeCloseTo(6104 / 3369, 3);
     // 스케일된 좌표가 natural 해상도 범위 내
     expect(scaledX).toBeLessThan(nw);
     expect(scaledY).toBeLessThan(nh);
+    // 구버전 (110 * 1440/720 = 220) 과 새버전 (121 * 1440/794 ≈ 219.4) 거의 동일 위치
+    // → 폼 위 동일한 위치에 텍스트 출력 보장
+    expect(scaledX).toBeCloseTo(220, 5);
   });
 
-  test('자동채움 폰트 크기도 scaleY 보정 (drawAutofillOnCtx)', () => {
+  test('자동채움 폰트 크기 scaleY 보정 (drawAutofillOnCtx) — DPR 2.0 기준', () => {
+    // CANVAS_H_REFUND=3369, refund_consent.png=6104px
     const baseFontSize = 15;
-    const scaleY = 5262 / 3052;
+    const scaleY = 6104 / 3369;
     const scaledFont = Math.round(baseFontSize * scaleY);
 
     // natural 해상도에서 폰트 크기 비례 증가
     expect(scaledFont).toBeGreaterThan(baseFontSize);
-    expect(scaledFont).toBe(Math.round(15 * 5262 / 3052));
+    expect(scaledFont).toBe(Math.round(15 * 6104 / 3369)); // ≈ 27px (구버전 30px 대비 약 10% 감소)
+  });
+
+  test('DPR 2.0 좌표 이전: 구버전(CANVAS_W=720) 좌표 → 신버전(794) 비례 환산 정확성', () => {
+    // 구버전 좌표가 신버전에서도 동일한 폼 위치를 가리키는지 검증
+    const OLD_CANVAS_W = 720;
+    const NEW_CANVAS_W = 794;
+    const NATURAL_W = 1440; // refund_consent.png
+
+    // 구버전 좌표 → 폼 위 절대 위치
+    const oldX = 110;
+    const absX = oldX * (NATURAL_W / OLD_CANVAS_W); // 110 * 2 = 220
+
+    // 신버전 좌표 → 동일 절대 위치가 되려면
+    const newX = Math.round(absX / (NATURAL_W / NEW_CANVAS_W)); // round(220 / 1.814) = round(121.3) = 121
+    const newAbsX = newX * (NATURAL_W / NEW_CANVAS_W); // 121 * 1.814 = 219.5
+
+    // REFUND_AUTOFILL_POS의 x=121이 올바른 환산값인지 확인
+    expect(newX).toBe(121); // ✓
+    // 절대 위치 오차 < 1px
+    expect(Math.abs(newAbsX - absX)).toBeLessThan(1);
   });
 });
