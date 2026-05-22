@@ -8,6 +8,11 @@
  * T-20260520-foot-PENCHART-MODAL: draw → shadcn Dialog fullscreen (backdrop + ESC close)
  * T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 PDF 원본 + 오버레이 입력
  * T-20260520-foot-PENCHART-CHECKLIST-REMOVE: 개인정보+체크리스트 2종 양식 제거
+ * T-20260522-foot-PENCHART-TOOLS-V2:
+ *   AC-1: 배경 캔버스를 원본 이미지 natural 해상도로 렌더 → 화질 개선
+ *   AC-2: getCoalescedEvents() 활용 → 태블릿 펜 획 누락·지연 개선
+ *   AC-3: [T] 텍스트 도구 — 탭 위치 키보드 입력 후 캔버스 삽입
+ *   AC-5: 형광펜 도구 — 반투명 두꺼운 선, 지우개 호환
  *
  * 모드 구조:
  *   list   — 저장된 차트 목록 + 새 차트 버튼
@@ -22,8 +27,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import {
-  ClipboardList, Download, Eraser, Pencil, Plus, RotateCcw,
-  Save, Trash2, Type, X, ChevronLeft, FileText, Undo2,
+  ClipboardList, Download, Eraser, Highlighter, Pencil, Plus, RotateCcw,
+  Save, Trash2, Type, X, ChevronLeft, FileText, Undo2, TextCursorInput,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
@@ -111,23 +116,31 @@ interface AutofillFields {
   phone:     string; // 연락처
 }
 
-// [환자 동의서] 섹션 (page 3, ≈ y 2650–2760) 자동채움 좌표
-// 실제 폼 레이아웃에 맞게 조정 가능
+// [환자 동의서] 섹션 (page 3, ≈ y 2650–2760) 자동채움 좌표 (기준: CANVAS_W=720)
 const REFUND_AUTOFILL_POS: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
-  { key: 'date',      x: 476, y: 2662 }, // 작성 일자 (우측)
-  { key: 'name',      x: 110, y: 2706 }, // 환자 성명
-  { key: 'birthDate', x: 290, y: 2706 }, // 생년월일 (성명과 같은 행)
-  { key: 'phone',     x: 110, y: 2748 }, // 연락처
+  { key: 'date',      x: 476, y: 2662 },
+  { key: 'name',      x: 110, y: 2706 },
+  { key: 'birthDate', x: 290, y: 2706 },
+  { key: 'phone',     x: 110, y: 2748 },
 ];
 
-function drawAutofillOnCtx(ctx: CanvasRenderingContext2D, fields: AutofillFields) {
+/**
+ * T-20260522-foot-PENCHART-TOOLS-V2 AC-1:
+ * scaleX/scaleY — bg canvas가 naturalWidth×naturalHeight 기준일 때 좌표 보정
+ */
+function drawAutofillOnCtx(
+  ctx: CanvasRenderingContext2D,
+  fields: AutofillFields,
+  scaleX = 1,
+  scaleY = 1,
+) {
   ctx.save();
   ctx.fillStyle = '#6b7280'; // gray-500 — 수기 입력과 시각적 구분
-  ctx.font = 'italic 15px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+  ctx.font = `italic ${Math.round(15 * scaleY)}px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif`;
   ctx.textBaseline = 'top';
   for (const { key, x, y } of REFUND_AUTOFILL_POS) {
     const val = fields[key];
-    if (val) ctx.fillText(val, x, y);
+    if (val) ctx.fillText(val, x * scaleX, y * scaleY);
   }
   ctx.restore();
 }
@@ -139,7 +152,18 @@ const PEN_COLORS = [
   { label: '초록', value: '#16a34a' },
 ];
 
-type DrawMode = 'idle' | 'selecting' | 'placing';
+// T-20260522-foot-PENCHART-TOOLS-V2 AC-5: 형광펜 색상
+const HIGHLIGHT_COLORS = [
+  { label: '노랑', value: '#fde047' },
+  { label: '분홍', value: '#f9a8d4' },
+  { label: '하늘', value: '#67e8f9' },
+  { label: '연두', value: '#86efac' },
+];
+
+// T-20260522-foot-PENCHART-TOOLS-V2: 도구 모드 통합 타입
+// boilerplate-placing: 상용구 삽입 대기 (캔버스 클릭 시 상용구 배치)
+type ActiveTool = 'pen' | 'eraser' | 'text' | 'highlight' | 'boilerplate-placing';
+
 type TabMode = 'list' | 'select' | 'draw';
 
 /** draw 모드에서 활성 양식이 발건강 질문지인지 구분 */
@@ -231,15 +255,27 @@ export function PenChartTab({
   // Canvas/draw states
   const [penColor, setPenColor] = useState('#1a1a1a');
   const [penSize, setPenSize] = useState(2.5);
-  const [isEraser, setIsEraser] = useState(false);
+  // T-20260522-foot-PENCHART-TOOLS-V2: 통합 도구 상태 (pen/eraser/text/highlight/boilerplate-placing)
+  const [activeTool, setActiveTool] = useState<ActiveTool>('pen');
+  // T-20260522-foot-PENCHART-TOOLS-V2 AC-5: 형광펜 색상
+  const [highlightColor, setHighlightColor] = useState('#fde047');
   const [saving, setSaving] = useState(false);
   const [hasDrawing, setHasDrawing] = useState(false);
   const [selectedChart, setSelectedChart] = useState<SavedChart | null>(null);
 
   // 상용구 상태
-  const [boilerplateMode, setBoilerplateMode] = useState<DrawMode>('idle');
   const [pendingBoilerplate, setPendingBoilerplate] = useState<string>('');
   const [showBoilerplatePanel, setShowBoilerplatePanel] = useState(false);
+
+  // T-20260522-foot-PENCHART-TOOLS-V2 AC-3: 텍스트 도구 상태
+  const [textInputPos, setTextInputPos] = useState<{
+    x: number;     // 캔버스 논리 좌표 (fillText 위치)
+    y: number;
+    cssX: number;  // CSS 픽셀 좌표 (오버레이 표시 위치)
+    cssY: number;
+  } | null>(null);
+  const [textInputValue, setTextInputValue] = useState('');
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
   const drawingRef = useRef(false);
   const lastPosRef = useRef<{ x: number; y: number } | null>(null);
@@ -269,7 +305,6 @@ export function PenChartTab({
   }, [profile?.id, clinicId]);
 
   // ── T-20260522-foot-PENCHART-REFUND-AUTOFILL: 환불동의서 자동채움 데이터 준비 ──
-  // activeDrawTemplate 변경 시 동기 실행 → initCanvas 내 setTimeout(50ms) 전에 ref 확정
   useEffect(() => {
     if (activeDrawTemplate && isRefundConsentKey(activeDrawTemplate.form_key)) {
       autofillDataRef.current = {
@@ -291,7 +326,6 @@ export function PenChartTab({
 
     if (!files || files.length === 0) { setSavedCharts([]); return; }
 
-    // T-20260522-foot-PERF-TUNING OPT-7: N × createSignedUrl → createSignedUrls 1회 배치 (N 라운드트립 제거)
     const filtered = files.filter((f) => f.name && !f.id?.endsWith('/'));
     const paths = filtered.map((f) => `${storagePath}/${f.name}`);
     const { data: urlData } = await supabase.storage.from('photos').createSignedUrls(paths, 3600);
@@ -308,7 +342,6 @@ export function PenChartTab({
   }, [storagePath]);
 
   // ── 템플릿 로드 ──────────────────────────────────────────────────────
-  // T-20260520-foot-PENCHART-CHECKLIST-REMOVE: personal_checklist_* 제거됨
   const loadTemplates = useCallback(async () => {
     const { data } = await supabase
       .from('form_templates')
@@ -317,7 +350,7 @@ export function PenChartTab({
       .in('form_key', [
         'pen_chart',
         'health_questionnaire_general', 'health_questionnaire_senior',
-        'refund_consent', // T-20260520-foot-PENCHART-REFUND-FORM
+        'refund_consent',
       ])
       .eq('active', true)
       .order('sort_order', { ascending: true });
@@ -325,12 +358,9 @@ export function PenChartTab({
     if (data) {
       const penChart = (data as Template[]).find((t) => t.form_key === 'pen_chart');
       const healthQs  = (data as Template[]).filter((t) => t.form_key.startsWith('health_questionnaire_'));
-      // T-20260520-foot-PENCHART-REFUND-FORM: DB 또는 내장 폴백
       const refundConsent = (data as Template[]).find((t) => t.form_key === 'refund_consent');
       setPenChartTemplate(penChart ?? BUILTIN_PEN_CHART_TEMPLATE);
-      // DB에 발건강 질문지 행 없으면 내장 폴백 사용
       setHealthQTemplates(healthQs.length > 0 ? healthQs : [BUILTIN_HEALTH_Q_GENERAL, BUILTIN_HEALTH_Q_SENIOR]);
-      // T-20260520-foot-PENCHART-REFUND-FORM: DB 또는 내장 폴백
       setRefundConsentTemplate(refundConsent ?? BUILTIN_REFUND_CONSENT);
     } else {
       setPenChartTemplate(BUILTIN_PEN_CHART_TEMPLATE);
@@ -338,7 +368,6 @@ export function PenChartTab({
       setRefundConsentTemplate(BUILTIN_REFUND_CONSENT);
     }
 
-    // pen_chart 이미지 URL 로드 (Supabase storage 경로일 경우 signed URL 필요)
     const penTpl = (data as Template[] | null)?.find((t) => t.form_key === 'pen_chart') ?? BUILTIN_PEN_CHART_TEMPLATE;
     const path = penTpl.template_path;
     if (path?.startsWith('/')) {
@@ -354,34 +383,31 @@ export function PenChartTab({
     loadTemplates();
   }, [loadSavedCharts, loadTemplates]);
 
-  // ── 캔버스 초기화 (T-20260522-foot-PENCHART-ERASER-CLARITY) ─────────────
+  // ── 캔버스 초기화 ─────────────────────────────────────────────────────
   // 2-layer canvas 구조:
   //   bgCanvasRef (아래) — 양식 배경 이미지 전용. 지우개 미적용.
   //   canvasRef   (위)   — 드로잉 전용 (투명 배경). clearRect 지우개 → bgCanvas 노출.
-  // 저장 시 tempCanvas에 bg+draw 합성 후 toDataURL.
-  // AC-3: bgCanvas에 imageSmoothingQuality='high' → 양식 이미지 선명도 개선.
+  //
+  // T-20260522-foot-PENCHART-TOOLS-V2 AC-1:
+  //   bgCanvas는 이미지 naturalWidth×naturalHeight 그대로 렌더 (CSS로 CANVAS_W×canvasH에 표시)
+  //   → 원본 해상도 보존으로 화질 개선. 저장 시 bg 기준 해상도로 합성.
 
-  /** 배경 레이어 초기화: 양식 이미지 로드 + 고해상도 렌더링 */
+  /** 배경 레이어 초기화: 양식 이미지 natural 해상도로 렌더 */
   const initBgCanvas = useCallback(() => {
     const canvas = bgCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
     const canvasH = getCanvasHeightForForm(activeDrawTemplate?.form_key);
 
-    canvas.width = CANVAS_W * dpr;
-    canvas.height = canvasH * dpr;
+    // 초기값: CSS display size 기준 (이미지 로드 전 레이아웃 확정)
+    canvas.width = CANVAS_W;
+    canvas.height = canvasH;
     canvas.style.width = `${CANVAS_W}px`;
     canvas.style.height = `${canvasH}px`;
-    canvas.style.display = 'block';
-    ctx.scale(dpr, dpr);
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, CANVAS_W, canvasH);
 
-    // T-20260519-foot-HEALTH-Q-PEN: 활성 draw 템플릿 배경 우선 사용.
-    // health_questionnaire_* + pdf_overlay → 공개 에셋 직접 경로
-    // pen_chart → templateImgUrl (public path 또는 Supabase signed URL)
     let bgUrl: string | null = null;
     if (activeDrawTemplate && (isHealthQFormKey(activeDrawTemplate.form_key) || isPdfOverlayFormKey(activeDrawTemplate.form_key))) {
       bgUrl = activeDrawTemplate.template_path ?? null;
@@ -393,14 +419,21 @@ export function PenChartTab({
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
-        // AC-3: 고해상도 렌더링 (imageSmoothingQuality=high → 양식 선명도 개선)
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, CANVAS_W, canvasH);
-        // T-20260522-foot-PENCHART-REFUND-AUTOFILL:
-        // 환불/비급여 동의서에서만 고객 정보 자동채움 (배경 레이어에 포함 → 합성 저장에 반영)
+        // AC-1: 이미지 natural 해상도로 bg 캔버스 설정 (CSS는 CANVAS_W×canvasH 유지)
+        const nw = img.naturalWidth || CANVAS_W;
+        const nh = img.naturalHeight || canvasH;
+        canvas.width = nw;
+        canvas.height = nh;
+        canvas.style.width = `${CANVAS_W}px`;
+        canvas.style.height = `${canvasH}px`;
+        // AC-1: 1:1 픽셀 렌더링 — 보간 없이 원본 해상도 그대로
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, 0, 0, nw, nh);
+        // 자동채움: 좌표를 naturalWidth/CANVAS_W 비율로 스케일
         if (isRefundConsentKey(activeDrawTemplate?.form_key ?? '') && autofillDataRef.current) {
-          drawAutofillOnCtx(ctx, autofillDataRef.current);
+          const scaleX = nw / CANVAS_W;
+          const scaleY = nh / canvasH;
+          drawAutofillOnCtx(ctx, autofillDataRef.current, scaleX, scaleY);
         }
       };
       img.src = bgUrl;
@@ -420,9 +453,8 @@ export function PenChartTab({
     canvas.height = canvasH * dpr;
     canvas.style.width = `${CANVAS_W}px`;
     canvas.style.height = `${canvasH}px`;
-    ctx.scale(dpr, dpr); // T-20260522-foot-PENCHART-ERASER-CLARITY: dpr=2(iPad/Retina) 드로잉 좌표 오프셋 수정
-    // 드로잉 레이어는 투명으로 시작 — fillRect 없음 (지우개 → bgCanvas 노출)
-    // ctx.clearRect(0, 0, canvas.width, canvas.height); // canvas.width 리셋 시 자동 클리어
+    ctx.scale(dpr, dpr);
+    // 드로잉 레이어는 투명으로 시작 — fillRect 없음
   }, [activeDrawTemplate]);
 
   const initCanvas = useCallback(() => {
@@ -430,10 +462,11 @@ export function PenChartTab({
     initDrawCanvas();
     emptyRef.current = true;
     setHasDrawing(false);
-    setBoilerplateMode('idle');
+    setActiveTool('pen');
     setPendingBoilerplate('');
     setShowBoilerplatePanel(false);
-    // T-20260519-foot-PENCHART-FORM-ADD (FIX): Undo 스택 초기화 (draw 레이어만)
+    setTextInputPos(null);
+    setTextInputValue('');
     undoStackRef.current = [];
   }, [initBgCanvas, initDrawCanvas]);
 
@@ -445,7 +478,6 @@ export function PenChartTab({
   }, [mode, initCanvas]);
 
   // ── Undo 저장/복원 ────────────────────────────────────────────────────
-  // T-20260519-foot-PENCHART-FORM-ADD (FIX): 각 획 시작 전 상태 저장 (최대 10단계)
   const saveUndoState = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -471,23 +503,23 @@ export function PenChartTab({
     if (undoStackRef.current.length === 0) setHasDrawing(false);
   }, []);
 
-  // ── 포인터 이벤트 ────────────────────────────────────────────────────
-  // T-20260522-foot-PENCHART-PEN-OFFSET fix:
-  // canvas.width/height는 DPR 포함 물리 픽셀 — dpr로 나눠 논리 픽셀 계산.
-  // 이전 CANVAS_H(1020) 하드코딩은 refund_consent(3052px) 등 height 가변 양식에서
-  // scaleY ≈ 0.33으로 오산해 터치 위치 대비 위쪽에 드로잉되는 버그 유발.
+  // ── 포인터 좌표 계산 ─────────────────────────────────────────────────
+  // getPos: React 합성 이벤트 → 논리 좌표 + CSS 좌표 (text overlay 위치용)
   const getPos = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
+    if (!canvas) return { x: 0, y: 0, cssX: 0, cssY: 0 };
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     const logicalW = canvas.width / dpr;
     const logicalH = canvas.height / dpr;
     const scaleX = logicalW / rect.width;
     const scaleY = logicalH / rect.height;
-    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+    const cssX = e.clientX - rect.left;
+    const cssY = e.clientY - rect.top;
+    return { x: cssX * scaleX, y: cssY * scaleY, cssX, cssY };
   };
 
+  // ── 상용구 배치 ──────────────────────────────────────────────────────
   const placeBoilerplate = (x: number, y: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -498,38 +530,96 @@ export function PenChartTab({
     ctx.font = `${penSize * 4 + 6}px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif`;
     ctx.fillStyle = penColor;
     ctx.textBaseline = 'top';
+    ctx.globalAlpha = 1;
     const lineHeight = penSize * 4 + 12;
     lines.forEach((line, i) => { ctx.fillText(line, x, y + i * lineHeight); });
     ctx.restore();
     emptyRef.current = false;
     setHasDrawing(true);
-    setBoilerplateMode('idle');
+    setActiveTool('pen');
     setPendingBoilerplate('');
     toast.success('상용구 삽입 완료');
   };
 
+  // T-20260522-foot-PENCHART-TOOLS-V2 AC-3: 텍스트 도구 — 캔버스에 삽입
+  const handleTextConfirm = useCallback(() => {
+    if (!textInputValue.trim() || !textInputPos) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    saveUndoState();
+    const lines = textInputValue.split('\n');
+    ctx.save();
+    ctx.font = `${penSize * 4 + 6}px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif`;
+    ctx.fillStyle = penColor;
+    ctx.textBaseline = 'top';
+    ctx.globalAlpha = 1;
+    const lineHeight = penSize * 4 + 12;
+    lines.forEach((line, i) => {
+      ctx.fillText(line, textInputPos.x, textInputPos.y + i * lineHeight);
+    });
+    ctx.restore();
+    emptyRef.current = false;
+    setHasDrawing(true);
+    setTextInputPos(null);
+    setTextInputValue('');
+    toast.success('텍스트 삽입 완료');
+  }, [textInputValue, textInputPos, penSize, penColor, saveUndoState]);
+
+  // ── 포인터 이벤트 ────────────────────────────────────────────────────
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    // T-20260522-foot-PENCHART-SCROLL-BLOCK fix (방안 A):
-    // touch pointerType은 스크롤 전용 — 드로잉 건너뜀.
-    // touchAction:'pan-y' CSS와 함께 이중 방어: touch 이벤트가 도달해도 드로잉 불가.
+    // touch → 스크롤 전용 (draw 건너뜀)
     if (e.pointerType === 'touch') return;
     e.preventDefault();
+    e.stopPropagation();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const pos = getPos(e);
-    if (boilerplateMode === 'placing' && pendingBoilerplate) { placeBoilerplate(pos.x, pos.y); return; }
-    // T-20260519-foot-PENCHART-FORM-ADD (FIX): 획 시작 전 Undo 상태 저장
+
+    // 상용구 배치 모드
+    if (activeTool === 'boilerplate-placing' && pendingBoilerplate) {
+      saveUndoState();
+      placeBoilerplate(pos.x, pos.y);
+      return;
+    }
+
+    // T-20260522-foot-PENCHART-TOOLS-V2 AC-3: 텍스트 도구
+    if (activeTool === 'text') {
+      // 기존 입력창이 열려있으면 닫기
+      if (textInputPos) { setTextInputPos(null); setTextInputValue(''); return; }
+      setTextInputPos({ x: pos.x, y: pos.y, cssX: pos.cssX, cssY: pos.cssY });
+      setTextInputValue('');
+      // textarea는 textAreaRef로 autoFocus 처리됨
+      return;
+    }
+
     saveUndoState();
     canvas.setPointerCapture(e.pointerId);
     drawingRef.current = true;
-    lastPosRef.current = pos;
+    lastPosRef.current = { x: pos.x, y: pos.y };
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.beginPath();
-    if (isEraser) {
-      ctx.clearRect(pos.x - penSize * 4, pos.y - penSize * 4, penSize * 8, penSize * 8);
+
+    if (activeTool === 'eraser') {
+      const sz = penSize * 4;
+      ctx.clearRect(pos.x - sz, pos.y - sz, sz * 2, sz * 2);
+    } else if (activeTool === 'highlight') {
+      // 탭(클릭)에도 점 찍기
+      ctx.beginPath();
+      const r = Math.max(penSize * 3 + 3, 4);
+      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = highlightColor;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      emptyRef.current = false;
+      setHasDrawing(true);
     } else {
+      // pen
+      ctx.beginPath();
       ctx.arc(pos.x, pos.y, penSize * 0.5, 0, Math.PI * 2);
+      ctx.globalAlpha = 1;
       ctx.fillStyle = penColor;
       ctx.fill();
       emptyRef.current = false;
@@ -537,33 +627,67 @@ export function PenChartTab({
     }
   };
 
+  // T-20260522-foot-PENCHART-TOOLS-V2 AC-2: getCoalescedEvents() 활용
+  // 프레임 사이 중간 포인터 위치를 모두 수집 → 빠른 펜 동작에서 획 누락 방지
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    // T-20260522-foot-PENCHART-SCROLL-BLOCK fix: touch=스크롤, pen/mouse=드로잉
     if (e.pointerType === 'touch') return;
-    if (boilerplateMode === 'placing') return;
+    if (activeTool === 'text' || activeTool === 'boilerplate-placing') return;
     if (!drawingRef.current) return;
     e.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const pos = getPos(e);
-    const last = lastPosRef.current ?? pos;
-    if (isEraser) {
-      ctx.clearRect(pos.x - penSize * 4, pos.y - penSize * 4, penSize * 8, penSize * 8);
-    } else {
-      ctx.beginPath();
-      ctx.moveTo(last.x, last.y);
-      ctx.lineTo(pos.x, pos.y);
-      ctx.strokeStyle = penColor;
-      ctx.lineWidth = penSize;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.stroke();
-      emptyRef.current = false;
-      setHasDrawing(true);
+
+    // rect 1회 계산 후 모든 coalesced events에 재사용
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const scaleX = (canvas.width / dpr) / rect.width;
+    const scaleY = (canvas.height / dpr) / rect.height;
+    const toLogical = (ev: PointerEvent) => ({
+      x: (ev.clientX - rect.left) * scaleX,
+      y: (ev.clientY - rect.top)  * scaleY,
+    });
+
+    // AC-2: coalesced events — 중간 좌표 모두 처리
+    const events: PointerEvent[] = (e.nativeEvent as any).getCoalescedEvents?.() ?? [e.nativeEvent];
+
+    for (const evt of events) {
+      const pos = toLogical(evt);
+      const last = lastPosRef.current ?? pos;
+
+      if (activeTool === 'eraser') {
+        const sz = penSize * 4;
+        ctx.clearRect(pos.x - sz, pos.y - sz, sz * 2, sz * 2);
+      } else if (activeTool === 'highlight') {
+        ctx.beginPath();
+        ctx.moveTo(last.x, last.y);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = highlightColor;
+        ctx.lineWidth = penSize * 6 + 6;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        emptyRef.current = false;
+        setHasDrawing(true);
+      } else {
+        // pen
+        ctx.beginPath();
+        ctx.moveTo(last.x, last.y);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = penColor;
+        ctx.lineWidth = penSize;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+        emptyRef.current = false;
+        setHasDrawing(true);
+      }
+      lastPosRef.current = pos;
     }
-    lastPosRef.current = pos;
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -580,20 +704,32 @@ export function PenChartTab({
     if (!canvas) return;
     setSaving(true);
     try {
-      // T-20260522-foot-PENCHART-ERASER-CLARITY: bg+draw 2-layer 합성 후 toDataURL
-      // bgCanvas(배경 양식) + drawCanvas(드로잉 스트로크) 를 tempCanvas에 순서대로 합성
+      // T-20260522-foot-PENCHART-TOOLS-V2 AC-1: bg natural 해상도 기준으로 합성
+      // bg canvas: naturalWidth × naturalHeight (원본 해상도)
+      // draw canvas: CANVAS_W*dpr × canvasH*dpr (DPR 스케일)
+      // → temp canvas를 bg 해상도에 맞추고 draw를 스케일해 올림
       const bgCanvas = bgCanvasRef.current;
       const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = canvas.width;   // 물리 픽셀 (CANVAS_W * dpr)
-      tempCanvas.height = canvas.height; // 물리 픽셀 (canvasH * dpr)
-      const tCtx = tempCanvas.getContext('2d')!;
-      if (bgCanvas) tCtx.drawImage(bgCanvas, 0, 0); // 1) 배경 양식
-      tCtx.drawImage(canvas, 0, 0);                  // 2) 드로잉 스트로크
+
+      if (bgCanvas && bgCanvas.width > 0 && bgCanvas.height > 0) {
+        // bg 원본 해상도로 저장 (최고 화질)
+        tempCanvas.width  = bgCanvas.width;
+        tempCanvas.height = bgCanvas.height;
+        const tCtx = tempCanvas.getContext('2d')!;
+        tCtx.drawImage(bgCanvas, 0, 0);                                        // 배경 (원본 해상도)
+        tCtx.drawImage(canvas, 0, 0, bgCanvas.width, bgCanvas.height);         // 드로잉 (bg 크기에 맞게 스케일)
+      } else {
+        // bg 없을 경우 draw canvas 물리 픽셀 기준
+        tempCanvas.width  = canvas.width;
+        tempCanvas.height = canvas.height;
+        const tCtx = tempCanvas.getContext('2d')!;
+        tCtx.drawImage(canvas, 0, 0);
+      }
+
       const dataUrl = tempCanvas.toDataURL('image/png');
       const res = await fetch(dataUrl);
       const blob = await res.blob();
-      // T-20260519-foot-HEALTH-Q-PEN: health_questionnaire 파일에 'hq_' prefix
-      // T-20260520-foot-PENCHART-REFUND-FORM: refund_consent 파일에 'rc_' prefix
+
       let prefix = '';
       if (activeDrawTemplate && isHealthQFormKey(activeDrawTemplate.form_key)) {
         prefix = `hq_${activeDrawTemplate.form_key === 'health_questionnaire_senior' ? 'sr_' : ''}`;
@@ -606,20 +742,8 @@ export function PenChartTab({
       if (error) { toast.error(`저장 실패: ${error.message}`); return; }
 
       const isHQ = activeDrawTemplate && isHealthQFormKey(activeDrawTemplate.form_key);
-      // isPC = 환불/비급여 동의서 (refund_consent) — form_submissions 자동 연동
       const isPC = activeDrawTemplate && isPdfOverlayFormKey(activeDrawTemplate.form_key);
 
-      // T-20260520-foot-PENCHART-VIEW-SPLIT:
-      // health_questionnaire_* 도 form_submissions에 저장 → 상담내역 [내용보기] 연동
-      // T-20260520-foot-PENCHART-REFUND-FORM:
-      // pdf_overlay 양식 (refund_consent) 은 form_submissions에도 저장 (서명 base64 포함)
-      // builtin ID면 template_id FK 미적용 — staffId 없어도 issued_by null 허용(nullable)
-      // T-20260521-foot-PENCHART-VIEW-SPLIT-REOPEN BUG FIX:
-      // status 'completed'는 form_submissions CHECK constraint('draft','printed','signed','voided') 위반
-      // → INSERT 무성 실패 → 상담내역 [내용보기] 버튼 비활성. 'signed'로 통일.
-      // T-20260522-foot-PENCHART-VIEW-SPLIT-REOPEN3 ROOT CAUSE FIX:
-      // staff 테이블의 user_id가 전부 null → staffId 조회 항상 null → INSERT 블록 진입 불가
-      // issued_by 컬럼은 nullable(YES) — staffId 조건 제거하여 INSERT 항상 실행
       if ((isPC || isHQ) && activeDrawTemplate) {
         const signatureBase64 = (isPC && !sigEmpty)
           ? (sigPadRef.current?.toDataURL('image/png') ?? null)
@@ -634,25 +758,20 @@ export function PenChartTab({
             signature_base64: signatureBase64,
             saved_at:         now,
           },
-          status:     'signed',   // 'completed'는 CHECK constraint 위반 — 'signed'로 통일
+          status:     'signed',
           printed_at: now,
-          signed_at:  now,        // HQ/PC 모두 signed_at 기록 (상담내역 날짜 표시용)
-          ...(staffId ? { issued_by: staffId } : {}),  // nullable — null은 생략
+          signed_at:  now,
+          ...(staffId ? { issued_by: staffId } : {}),
         };
-        // template_id: builtin ID는 FK 위반 방지를 위해 포함하지 않음
         if (!activeDrawTemplate.id.startsWith('builtin-')) {
           submissionPayload.template_id = activeDrawTemplate.id;
         }
         if (checkInId) submissionPayload.check_in_id = checkInId;
         const { error: subErr } = await supabase.from('form_submissions').insert(submissionPayload);
         if (subErr) {
-          // 저장은 됐으나 상담내역 연동 실패 — 사용자에게 경고
           console.error('form_submissions insert 실패:', subErr.message);
           toast.error(`상담내역 연동 실패: ${subErr.message} (이미지는 저장됨)`);
         } else {
-          // T-20260520-foot-PENCHART-VIEW-SPLIT HOTFIX2:
-          // INSERT 성공 → 부모(CustomerChartPage)에 즉시 갱신 트리거
-          // → 상담내역 탭 [내용보기] 버튼 즉시 활성화 (페이지 새로고침 불필요)
           onFormSubmissionSaved?.();
         }
       }
@@ -663,7 +782,6 @@ export function PenChartTab({
                '펜차트 저장 완료',
       );
       await loadSavedCharts();
-      // 서명 초기화
       sigPadRef.current?.clear();
       setSigEmpty(true);
       setActiveDrawTemplate(null);
@@ -686,16 +804,14 @@ export function PenChartTab({
   // ── 상용구 선택 ──────────────────────────────────────────────────────
   const handleBoilerplateSelect = (text: string) => {
     setPendingBoilerplate(text);
-    setBoilerplateMode('placing');
+    setActiveTool('boilerplate-placing');
     setShowBoilerplatePanel(false);
-    setIsEraser(false);
+    setTextInputPos(null);
     toast('캔버스를 클릭해 상용구를 삽입하세요', { duration: 2000 });
   };
 
   // ── 양식 선택 ─────────────────────────────────────────────────────────
-  // T-20260520-foot-PENCHART-CHECKLIST-REMOVE: 모든 양식은 draw 모드로 진입
   const handleSelectTemplate = (tpl: Template) => {
-    // T-20260520-foot-PENCHART-REFUND-FORM: pdf_overlay 진입 시 서명 패드 초기화
     if (isPdfOverlayFormKey(tpl.form_key)) {
       sigPadRef.current?.clear();
       setSigEmpty(true);
@@ -706,8 +822,6 @@ export function PenChartTab({
 
   // ─────────────────────────────────────────────────────────────────────
   // 렌더: select 모드 (양식 선택 패널)
-  // T-20260520-foot-PENCHART-FULLSCREEN AC-6/7: 양식 선택 패널도 fullscreen
-  // 태블릿 최적화 — 차트 배경 완전 차단, 모든 양식 진입점 동일 UX
   // ─────────────────────────────────────────────────────────────────────
   if (mode === 'select') {
     return (
@@ -742,7 +856,7 @@ export function PenChartTab({
               </div>
             </button>
 
-            {/* T-20260519-foot-HEALTH-Q-PEN: 발건강 질문지 2종 (PDF 캔버스 필기) */}
+            {/* 발건강 질문지 2종 */}
             {healthQTemplates.map((tpl) => {
               const isSenior = tpl.form_key === 'health_questionnaire_senior';
               return (
@@ -788,7 +902,7 @@ export function PenChartTab({
               );
             })}
 
-            {/* T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 (3페이지) */}
+            {/* 환불/비급여 동의서 */}
             {refundConsentTemplate && (
               <button
                 onClick={() => handleSelectTemplate(refundConsentTemplate)}
@@ -808,8 +922,8 @@ export function PenChartTab({
             )}
           </div>
         </div>
-        </div>{/* max-w-lg mx-auto */}
-        </div>{/* h-full overflow-auto */}
+        </div>
+        </div>
       </FullscreenFormWrapper>
     );
   }
@@ -818,7 +932,12 @@ export function PenChartTab({
   // 렌더: draw 모드 (캔버스 필기)
   // ─────────────────────────────────────────────────────────────────────
   if (mode === 'draw') {
-    // T-20260520-foot-PENCHART-FULLSCREEN AC-5~7: FullscreenFormWrapper 공통 래퍼 사용
+    const canvasH = getCanvasHeightForForm(activeDrawTemplate?.form_key);
+    const isEraser    = activeTool === 'eraser';
+    const isHighlight = activeTool === 'highlight';
+    const isTextTool  = activeTool === 'text';
+    const isBoilerplatePlacing = activeTool === 'boilerplate-placing';
+
     return (
       <FullscreenFormWrapper
         open={true}
@@ -831,22 +950,25 @@ export function PenChartTab({
         }}
       >
       <div className="flex flex-col h-full bg-white">
-        {/* 툴바 — fullscreen 고정 헤더 (AC-2 태블릿 전체화면) */}
-        <div className="flex-none border-b bg-white p-2 flex items-center gap-2 flex-wrap shadow-sm">
-          {/* 펜/지우개 */}
+        {/* 툴바 */}
+        <div className="flex-none border-b bg-white p-2 flex items-center gap-1.5 flex-wrap shadow-sm">
+          {/* ── 기본 도구 ── */}
+          {/* 펜 */}
           <button
-            onClick={() => { setIsEraser(false); setBoilerplateMode('idle'); }}
+            onClick={() => { setActiveTool('pen'); setShowBoilerplatePanel(false); setTextInputPos(null); }}
             className={cn(
               'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
-              !isEraser && boilerplateMode === 'idle'
+              activeTool === 'pen'
                 ? 'bg-purple-100 border-purple-400 text-purple-700'
                 : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
             )}
           >
             <Pencil className="h-3.5 w-3.5" /> 펜
           </button>
+
+          {/* 지우개 */}
           <button
-            onClick={() => { setIsEraser(true); setBoilerplateMode('idle'); }}
+            onClick={() => { setActiveTool('eraser'); setShowBoilerplatePanel(false); setTextInputPos(null); }}
             className={cn(
               'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
               isEraser ? 'bg-orange-100 border-orange-400 text-orange-700' : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
@@ -855,23 +977,79 @@ export function PenChartTab({
             <Eraser className="h-3.5 w-3.5" /> 지우개
           </button>
 
+          {/* T-20260522-foot-PENCHART-TOOLS-V2 AC-3: 텍스트 도구 */}
+          <button
+            onClick={() => {
+              setActiveTool(isTextTool ? 'pen' : 'text');
+              setShowBoilerplatePanel(false);
+              setTextInputPos(null);
+            }}
+            className={cn(
+              'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
+              isTextTool
+                ? 'bg-blue-100 border-blue-400 text-blue-700'
+                : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
+            )}
+            title="텍스트 도구 — 캔버스를 클릭해 타자 입력"
+          >
+            <TextCursorInput className="h-3.5 w-3.5" />
+            <span>텍스트</span>
+            {isTextTool && <span className="ml-0.5 text-blue-600 animate-pulse">●</span>}
+          </button>
+
+          {/* T-20260522-foot-PENCHART-TOOLS-V2 AC-5: 형광펜 도구 */}
+          <button
+            onClick={() => {
+              setActiveTool(isHighlight ? 'pen' : 'highlight');
+              setShowBoilerplatePanel(false);
+              setTextInputPos(null);
+            }}
+            className={cn(
+              'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
+              isHighlight
+                ? 'bg-yellow-100 border-yellow-400 text-yellow-700'
+                : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
+            )}
+            title="형광펜 — 반투명 두꺼운 선 (지우개로 지울 수 있음)"
+          >
+            <Highlighter className="h-3.5 w-3.5" />
+            <span>형광펜</span>
+          </button>
+
+          {/* 형광펜 색상 선택 (형광펜 모드일 때만 표시) */}
+          {isHighlight && (
+            <div className="flex items-center gap-1 pl-1 border-l border-gray-200">
+              {HIGHLIGHT_COLORS.map((c) => (
+                <button
+                  key={c.value}
+                  onClick={() => setHighlightColor(c.value)}
+                  className={cn(
+                    'h-5 w-5 rounded border-2 transition',
+                    highlightColor === c.value ? 'border-gray-600 scale-125' : 'border-transparent hover:border-gray-400',
+                  )}
+                  style={{ backgroundColor: c.value }}
+                  title={c.label}
+                />
+              ))}
+            </div>
+          )}
+
           {/* 상용구 버튼 */}
           <div className="relative">
             <button
               onClick={() => {
                 setShowBoilerplatePanel(!showBoilerplatePanel);
-                setBoilerplateMode('selecting');
-                setIsEraser(false);
+                setTextInputPos(null);
               }}
               className={cn(
                 'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
-                boilerplateMode !== 'idle'
+                isBoilerplatePlacing || showBoilerplatePanel
                   ? 'bg-teal-100 border-teal-400 text-teal-700'
                   : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
               )}
             >
               <Type className="h-3.5 w-3.5" /> 상용구
-              {boilerplateMode === 'placing' && <span className="ml-0.5 text-teal-600 animate-pulse">●</span>}
+              {isBoilerplatePlacing && <span className="ml-0.5 text-teal-600 animate-pulse">●</span>}
             </button>
 
             {showBoilerplatePanel && (
@@ -879,7 +1057,7 @@ export function PenChartTab({
                 <div className="flex items-center justify-between px-2 py-1.5 bg-teal-50 border-b">
                   <span className="text-[11px] font-bold text-teal-800">상용구 선택</span>
                   <button
-                    onClick={() => { setShowBoilerplatePanel(false); setBoilerplateMode('idle'); }}
+                    onClick={() => { setShowBoilerplatePanel(false); if (activeTool === 'boilerplate-placing') setActiveTool('pen'); }}
                     className="text-teal-500 hover:text-teal-700"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -901,12 +1079,13 @@ export function PenChartTab({
             )}
           </div>
 
-          {boilerplateMode === 'placing' && (
+          {/* 상용구 배치 안내 */}
+          {isBoilerplatePlacing && (
             <div className="flex items-center gap-1 px-2 py-1 rounded bg-teal-50 border border-teal-300 text-[11px] text-teal-700">
               <span className="animate-pulse">●</span>
               캔버스 클릭해 삽입
               <button
-                onClick={() => { setBoilerplateMode('idle'); setPendingBoilerplate(''); }}
+                onClick={() => { setActiveTool('pen'); setPendingBoilerplate(''); }}
                 className="ml-1 text-teal-400 hover:text-teal-700"
               >
                 <X className="h-3 w-3" />
@@ -914,30 +1093,40 @@ export function PenChartTab({
             </div>
           )}
 
-          {/* T-20260522-foot-PENCHART-REFUND-AUTOFILL: 자동채움 적용 배지 (AC-2) */}
+          {/* 텍스트 도구 안내 */}
+          {isTextTool && !textInputPos && (
+            <div className="flex items-center gap-1 px-2 py-1 rounded bg-blue-50 border border-blue-300 text-[11px] text-blue-700">
+              <span className="animate-pulse">●</span>
+              캔버스를 클릭해 텍스트 입력
+            </div>
+          )}
+
+          {/* 자동채움 배지 */}
           {activeDrawTemplate && isRefundConsentKey(activeDrawTemplate.form_key) && customerName && (
             <div className="flex items-center gap-1 px-2 py-1 rounded bg-blue-50 border border-blue-200 text-[11px] text-blue-700" title="성명·생년월일·연락처가 양식에 자동 채워졌습니다">
               ✓ 자동채움: {customerName}
             </div>
           )}
 
-          {/* 색상 */}
-          <div className="flex items-center gap-1">
-            {PEN_COLORS.map((c) => (
-              <button
-                key={c.value}
-                onClick={() => { setPenColor(c.value); setIsEraser(false); setBoilerplateMode('idle'); }}
-                className={cn(
-                  'h-5 w-5 rounded-full border-2 transition',
-                  penColor === c.value && !isEraser ? 'border-gray-600 scale-110' : 'border-transparent',
-                )}
-                style={{ backgroundColor: c.value }}
-                title={c.label}
-              />
-            ))}
-          </div>
+          {/* ── 펜 색상 (펜/상용구/텍스트 모드) ── */}
+          {(activeTool === 'pen' || activeTool === 'text' || activeTool === 'boilerplate-placing') && (
+            <div className="flex items-center gap-1">
+              {PEN_COLORS.map((c) => (
+                <button
+                  key={c.value}
+                  onClick={() => setPenColor(c.value)}
+                  className={cn(
+                    'h-5 w-5 rounded-full border-2 transition',
+                    penColor === c.value ? 'border-gray-600 scale-110' : 'border-transparent hover:border-gray-400',
+                  )}
+                  style={{ backgroundColor: c.value }}
+                  title={c.label}
+                />
+              ))}
+            </div>
+          )}
 
-          {/* 굵기 */}
+          {/* 굵기 슬라이더 */}
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <span>굵기</span>
             <input
@@ -949,7 +1138,7 @@ export function PenChartTab({
           </div>
 
           <div className="ml-auto flex gap-1.5">
-            {/* T-20260519-foot-PENCHART-FORM-ADD (FIX): Undo 버튼 (최대 10단계) */}
+            {/* Undo */}
             <button
               onClick={handleUndo}
               className="flex items-center gap-1 px-2 py-1 rounded text-xs border border-gray-200 hover:bg-gray-50"
@@ -957,6 +1146,7 @@ export function PenChartTab({
             >
               <Undo2 className="h-3.5 w-3.5" /> 되돌리기
             </button>
+            {/* 초기화 */}
             <button
               onClick={initCanvas}
               className="flex items-center gap-1 px-2 py-1 rounded text-xs border border-gray-200 hover:bg-gray-50"
@@ -964,6 +1154,7 @@ export function PenChartTab({
             >
               <RotateCcw className="h-3.5 w-3.5" /> 초기화
             </button>
+            {/* 취소 */}
             <Button
               size="sm" variant="outline" className="h-7 text-[11px] px-2"
               onClick={() => {
@@ -974,6 +1165,7 @@ export function PenChartTab({
             >
               취소
             </Button>
+            {/* 저장 */}
             <Button
               size="sm"
               className="h-7 text-[11px] px-3 bg-purple-600 hover:bg-purple-700"
@@ -985,46 +1177,50 @@ export function PenChartTab({
             </Button>
           </div>
         </div>
-        {/* 스크롤 콘텐츠 — 태블릿 전체화면 확대 영역 (AC-2) */}
+
+        {/* 스크롤 콘텐츠 */}
         <div className="flex-1 overflow-auto p-4 space-y-4">
 
-        {/* 캔버스 — T-20260522-foot-PENCHART-ERASER-CLARITY: 2-layer 스택 */}
+        {/* 캔버스 — 2-layer 스택 */}
         <div className="rounded-lg border bg-white p-2 overflow-x-auto">
           <div className="text-[10px] text-muted-foreground mb-1">
-            {/* T-20260519-foot-HEALTH-Q-PEN: 활성 템플릿 이름 표시 */}
             {activeDrawTemplate
               ? `양식: ${activeDrawTemplate.name_ko}`
               : (penChartTemplate ? `템플릿: ${penChartTemplate.name_ko}` : '빈 캔버스 (A4)')}
             {' — 태블릿/마우스로 직접 필기'}
-            {boilerplateMode === 'placing' && (
+            {isBoilerplatePlacing && (
               <span className="ml-2 text-teal-600 font-medium">클릭하여 상용구 삽입</span>
             )}
+            {isTextTool && (
+              <span className="ml-2 text-blue-600 font-medium">클릭하여 텍스트 입력 위치 지정</span>
+            )}
           </div>
-          {/* 2-layer canvas 스택
-              Layer 1 bgCanvas(아래): 양식 이미지 전용 — 지우개 미적용
-              Layer 2 drawCanvas(위): 드로잉 스트로크 — 투명 배경, clearRect 지우개 → bgCanvas 노출 */}
-          <div style={{ position: 'relative', display: 'inline-block', maxWidth: '100%', border: '1px solid #e2e8f0' }}>
-            {/* 배경 레이어: 양식 이미지 + imageSmoothingQuality=high — pointer 이벤트 없음 */}
+
+          {/* canvas container — position:relative 로 text overlay 포함 */}
+          <div
+            style={{ position: 'relative', display: 'inline-block', maxWidth: '100%', border: '1px solid #e2e8f0' }}
+          >
+            {/* 배경 레이어: natural 해상도 이미지 — pointer 이벤트 없음 */}
             <canvas
               ref={bgCanvasRef}
               style={{
                 display: 'block',
                 maxWidth: '100%',
                 pointerEvents: 'none',
+                // AC-1: CSS downscale → GPU 고품질 보간
+                imageRendering: 'auto',
               }}
             />
-            {/* 드로잉 레이어: 투명 배경 — 펜/지우개 포인터 이벤트 수신 */}
+            {/* 드로잉 레이어: 투명 배경 */}
             <canvas
               ref={canvasRef}
               style={{
                 position: 'absolute',
                 top: 0,
                 left: 0,
-                // T-20260522-foot-PENCHART-SCROLL-BLOCK fix:
-                // 'pan-y': touch 수직 스크롤은 브라우저가 처리 (pointer 이벤트 미전달).
-                // pen/mouse 입력은 touch-action 영향 없으므로 드로잉 정상 동작.
+                maxWidth: '100%',
                 touchAction: 'pan-y',
-                cursor: boilerplateMode === 'placing' ? 'text' : isEraser ? 'cell' : 'crosshair',
+                cursor: isBoilerplatePlacing ? 'text' : isTextTool ? 'text' : isEraser ? 'cell' : isHighlight ? 'crosshair' : 'crosshair',
                 display: 'block',
               }}
               onPointerDown={onPointerDown}
@@ -1033,10 +1229,62 @@ export function PenChartTab({
               onPointerLeave={onPointerUp}
               onPointerCancel={onPointerUp}
             />
+
+            {/* T-20260522-foot-PENCHART-TOOLS-V2 AC-3: 텍스트 입력 오버레이 */}
+            {textInputPos && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: Math.min(textInputPos.cssX, CANVAS_W - 220),
+                  top: Math.min(textInputPos.cssY, canvasH - 140),
+                  zIndex: 30,
+                  background: 'white',
+                  border: '2px solid #7c3aed',
+                  borderRadius: 8,
+                  padding: 8,
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+                  minWidth: 210,
+                  pointerEvents: 'all',
+                }}
+                onPointerDown={(e) => e.stopPropagation()} // 오버레이 클릭이 캔버스로 전파되지 않도록
+              >
+                <div className="text-[11px] text-purple-700 font-semibold mb-1.5 flex items-center gap-1">
+                  <TextCursorInput className="h-3 w-3" /> 텍스트 입력
+                </div>
+                <textarea
+                  ref={textAreaRef}
+                  autoFocus
+                  rows={3}
+                  value={textInputValue}
+                  onChange={(e) => setTextInputValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextConfirm(); }
+                    if (e.key === 'Escape') { setTextInputPos(null); setTextInputValue(''); }
+                  }}
+                  placeholder={'텍스트 입력\n(Enter: 삽입 / Shift+Enter: 줄바꿈)'}
+                  className="w-full resize-none text-xs border border-gray-200 rounded p-1.5 outline-none focus:border-purple-400"
+                  style={{ minHeight: 64 }}
+                />
+                <div className="flex gap-1.5 mt-1.5">
+                  <button
+                    onClick={handleTextConfirm}
+                    className="flex-1 rounded bg-purple-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-purple-700 transition"
+                  >
+                    삽입
+                  </button>
+                  <button
+                    onClick={() => { setTextInputPos(null); setTextInputValue(''); }}
+                    className="flex-1 rounded bg-gray-100 px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-200 transition"
+                  >
+                    취소
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* T-20260519-foot-PENCHART-FORM-ADD (AC-4): pdf_overlay 전용 서명 캡처 패드 */}
+        {/* pdf_overlay 전용 서명 캡처 패드 */}
         {activeDrawTemplate && isPdfOverlayFormKey(activeDrawTemplate.form_key) && (
           <div className="rounded-lg border bg-white p-3 space-y-2">
             <div className="flex items-center justify-between">
@@ -1111,7 +1359,6 @@ export function PenChartTab({
           <span className="rounded bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[11px] text-emerald-700">
             📋 발건강 질문지 (어르신용)
           </span>
-          {/* T-20260520-foot-PENCHART-REFUND-FORM */}
           <span className="rounded bg-rose-50 border border-rose-100 px-2 py-0.5 text-[11px] text-rose-700">
             📋 환불/비급여 동의서 (3p)
           </span>
