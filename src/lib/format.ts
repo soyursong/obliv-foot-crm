@@ -54,3 +54,18 @@ export function maskPhoneTail(phone: string | null | undefined): string {
   const digits = phone.replace(/\D/g, '');
   return digits.slice(-4);
 }
+
+// [SYNC: G-007] 오늘(서울 기준) 날짜 유틸 — CheckInDetailSheet.tsx 로컬 정의에서 중앙화
+// T-20260522-foot-LOGIC-SYNC-MANDATE Phase 2
+
+/** 오늘(서울 기준) YYYY-MM-DD 반환 (en-CA locale trick) */
+export function todaySeoulISODate(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+}
+
+/** 오늘(서울 기준) ko-KR 날짜 문자열 반환 (예: "2026. 05. 22.") */
+export function todaySeoulStr(): string {
+  return new Date().toLocaleDateString('ko-KR', {
+    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+}

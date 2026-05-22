@@ -27,7 +27,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { STATUS_KO } from '@/lib/status';
-import { formatAmount, formatPhone, parseAmount } from '@/lib/format';
+import { formatAmount, formatPhone, parseAmount, todaySeoulISODate, todaySeoulStr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { PreChecklist } from '@/components/PreChecklist';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 작성 양식 + 자동 업로드
@@ -94,10 +94,7 @@ function getSlotType(roomName: string, roomsState: Room[]): TrackedSlotType | nu
   return ROOM_TYPE_TO_SLOT[room.room_type] ?? null;
 }
 
-/** 오늘(서울 기준) YYYY-MM-DD 반환 */
-function todaySeoulISODate(): string {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
-}
+// [SYNC: G-007] todaySeoulISODate / todaySeoulStr → lib/format.ts 중앙화 (T-20260522-foot-LOGIC-SYNC-MANDATE)
 
 function getRoomField(roomName: string): 'examination_room' | 'consultation_room' | 'treatment_room' | 'laser_room' | null {
   if (roomName === '가열성레이저') return 'laser_room'; // T-20260516-foot-ROOM-MOVE-TRACK
@@ -114,12 +111,6 @@ function getRoomType(roomName: string): 'examination' | 'consultation' | 'treatm
   if (roomName.startsWith('치료실')) return 'treatment';
   if (roomName.startsWith('레이저실')) return 'laser';
   return null;
-}
-/** 오늘(서울 기준) 날짜 문자열 반환 */
-function todaySeoulStr(): string {
-  return new Date().toLocaleDateString('ko-KR', {
-    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
-  });
 }
 function logDateStr(isoStr: string): string {
   return new Date(isoStr).toLocaleDateString('ko-KR', {
