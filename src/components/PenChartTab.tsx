@@ -27,7 +27,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import {
-  ClipboardList, Download, Eraser, Highlighter, Pencil, Plus, RotateCcw,
+  BookOpen, ClipboardList, Download, Eraser, Highlighter, Pencil, Plus, RotateCcw,
   Save, Trash2, Type, X, ChevronLeft, FileText, Undo2, TextCursorInput,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -267,6 +267,14 @@ export function PenChartTab({
   const [pendingBoilerplate, setPendingBoilerplate] = useState<string>('');
   const [showBoilerplatePanel, setShowBoilerplatePanel] = useState(false);
 
+  // T-20260522-foot-PENCHART-PHRASE: phrase_templates DB 연동 상태
+  const [phraseTemplates, setPhraseTemplates] = useState<Array<{
+    id: number; category: string; name: string; content: string;
+  }>>([]);
+  const [phraseTemplatesLoaded, setPhraseTemplatesLoaded] = useState(false);
+  const [showPhrasePanel, setShowPhrasePanel] = useState(false);
+  const [phraseCategory, setPhraseCategory] = useState<string>('charting');
+
   // T-20260522-foot-PENCHART-TOOLS-V2 AC-3: 텍스트 도구 상태
   const [textInputPos, setTextInputPos] = useState<{
     x: number;     // 캔버스 논리 좌표 (fillText 위치)
@@ -465,6 +473,7 @@ export function PenChartTab({
     setActiveTool('pen');
     setPendingBoilerplate('');
     setShowBoilerplatePanel(false);
+    setShowPhrasePanel(false);
     setTextInputPos(null);
     setTextInputValue('');
     undoStackRef.current = [];
@@ -476,6 +485,20 @@ export function PenChartTab({
       return () => clearTimeout(t);
     }
   }, [mode, initCanvas]);
+
+  // T-20260522-foot-PENCHART-PHRASE: phrase_templates 로드 (draw 진입 시 1회)
+  useEffect(() => {
+    if (mode !== 'draw' || phraseTemplatesLoaded) return;
+    supabase
+      .from('phrase_templates')
+      .select('id, category, name, content')
+      .eq('is_active', true)
+      .order('sort_order')
+      .then(({ data }) => {
+        setPhraseTemplates(data ?? []);
+        setPhraseTemplatesLoaded(true);
+      });
+  }, [mode, phraseTemplatesLoaded]);
 
   // ── Undo 저장/복원 ────────────────────────────────────────────────────
   const saveUndoState = useCallback(() => {
@@ -955,7 +978,7 @@ export function PenChartTab({
           {/* ── 기본 도구 ── */}
           {/* 펜 */}
           <button
-            onClick={() => { setActiveTool('pen'); setShowBoilerplatePanel(false); setTextInputPos(null); }}
+            onClick={() => { setActiveTool('pen'); setShowBoilerplatePanel(false); setShowPhrasePanel(false); setTextInputPos(null); }}
             className={cn(
               'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
               activeTool === 'pen'
@@ -968,7 +991,7 @@ export function PenChartTab({
 
           {/* 지우개 */}
           <button
-            onClick={() => { setActiveTool('eraser'); setShowBoilerplatePanel(false); setTextInputPos(null); }}
+            onClick={() => { setActiveTool('eraser'); setShowBoilerplatePanel(false); setShowPhrasePanel(false); setTextInputPos(null); }}
             className={cn(
               'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
               isEraser ? 'bg-orange-100 border-orange-400 text-orange-700' : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
@@ -982,6 +1005,7 @@ export function PenChartTab({
             onClick={() => {
               setActiveTool(isTextTool ? 'pen' : 'text');
               setShowBoilerplatePanel(false);
+              setShowPhrasePanel(false);
               setTextInputPos(null);
             }}
             className={cn(
@@ -1002,6 +1026,7 @@ export function PenChartTab({
             onClick={() => {
               setActiveTool(isHighlight ? 'pen' : 'highlight');
               setShowBoilerplatePanel(false);
+              setShowPhrasePanel(false);
               setTextInputPos(null);
             }}
             className={cn(
@@ -1039,6 +1064,7 @@ export function PenChartTab({
             <button
               onClick={() => {
                 setShowBoilerplatePanel(!showBoilerplatePanel);
+                setShowPhrasePanel(false);
                 setTextInputPos(null);
               }}
               className={cn(
@@ -1074,6 +1100,105 @@ export function PenChartTab({
                       <div className="text-gray-400 mt-0.5 text-[10px] truncate">{item.text.split('\n')[0]}</div>
                     </button>
                   ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* T-20260522-foot-PENCHART-PHRASE: 상용구 불러오기 — phrase_templates DB 연동 */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowPhrasePanel(!showPhrasePanel);
+                setShowBoilerplatePanel(false);
+                setTextInputPos(null);
+              }}
+              className={cn(
+                'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
+                showPhrasePanel
+                  ? 'bg-emerald-100 border-emerald-400 text-emerald-700'
+                  : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
+              )}
+              title="어드민 등록 상용구 불러오기 (phrase_templates)"
+              data-testid="phrase-library-btn"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              <span>불러오기</span>
+            </button>
+
+            {showPhrasePanel && (
+              <div
+                className="absolute top-8 left-0 z-20 w-64 rounded-lg border bg-white shadow-lg overflow-hidden"
+                data-testid="phrase-library-panel"
+              >
+                {/* 헤더 */}
+                <div className="flex items-center justify-between px-2 py-1.5 bg-emerald-50 border-b">
+                  <span className="text-[11px] font-bold text-emerald-800">상용구 불러오기</span>
+                  <button
+                    onClick={() => setShowPhrasePanel(false)}
+                    className="text-emerald-500 hover:text-emerald-700"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                {/* 카테고리 필터 (charting 우선) */}
+                <div className="flex gap-0.5 px-2 py-1.5 border-b bg-gray-50 flex-wrap" data-testid="phrase-category-tabs">
+                  {(
+                    [
+                      { key: 'charting',     label: '차팅' },
+                      { key: 'prescription', label: '처방' },
+                      { key: 'document',     label: '서류' },
+                      { key: 'general',      label: '일반' },
+                    ] as const
+                  ).map(({ key, label }) => (
+                    <button
+                      key={key}
+                      onClick={() => setPhraseCategory(key)}
+                      className={cn(
+                        'px-2 py-0.5 rounded text-[10px] border transition',
+                        phraseCategory === key
+                          ? 'bg-emerald-600 border-emerald-600 text-white'
+                          : 'bg-white border-gray-200 text-muted-foreground hover:bg-emerald-50',
+                      )}
+                      data-testid={`phrase-cat-${key}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 목록 */}
+                <div className="max-h-56 overflow-y-auto" data-testid="phrase-list">
+                  {phraseTemplates.filter((p) => p.category === phraseCategory).length === 0 ? (
+                    <div
+                      className="flex flex-col items-center justify-center py-6 text-[11px] text-muted-foreground"
+                      data-testid="phrase-empty-state"
+                    >
+                      <Type className="h-5 w-5 mb-1.5 opacity-30" />
+                      <span>등록된 상용구가 없습니다</span>
+                      <span className="text-[10px] mt-0.5 text-gray-400">어드민 &gt; 상용구에서 추가하세요</span>
+                    </div>
+                  ) : (
+                    phraseTemplates
+                      .filter((p) => p.category === phraseCategory)
+                      .map((phrase) => (
+                        <button
+                          key={phrase.id}
+                          onClick={() => {
+                            handleBoilerplateSelect(phrase.content);
+                            setShowPhrasePanel(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-[11px] hover:bg-emerald-50 border-b border-gray-100 last:border-0 transition"
+                          data-testid={`phrase-item-${phrase.id}`}
+                        >
+                          <div className="font-medium text-gray-800">{phrase.name}</div>
+                          <div className="text-gray-400 mt-0.5 text-[10px] truncate">
+                            {phrase.content.split('\n')[0]}
+                          </div>
+                        </button>
+                      ))
+                  )}
                 </div>
               </div>
             )}
