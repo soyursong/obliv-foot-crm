@@ -268,6 +268,8 @@ export interface Staff {
   id: string;
   clinic_id: string;
   name: string;
+  /** T-20260522-foot-STAFF-NAME-UNIFY: 구성명(현장 표시명). null이면 name fallback */
+  display_name?: string | null;
   role: StaffRole;
   active: boolean;
   created_at: string;

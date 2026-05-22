@@ -1217,7 +1217,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [postalCodeText, setPostalCodeText] = useState(''); // editingPostalCode 제거 — SAVE-UNIFY
   const [savingField, setSavingField] = useState(false);
   // C2-STAFF-DROPDOWN: 실제 직원 목록 (coordinator + consultant + director)
-  const [staffList, setStaffList] = useState<{id: string; name: string; role: string}[]>([]);
+  // T-20260522-foot-STAFF-NAME-UNIFY: display_name(구성명) 추가
+  const [staffList, setStaffList] = useState<{id: string; name: string; display_name: string | null; role: string}[]>([]);
   // C2-PKG-TICKET-TABLE: 치료사 목록 (role = 'therapist')
   const [therapistList, setTherapistList] = useState<{id: string; name: string}[]>([]);
   // C2-PKG-TICKET-TABLE: 회차 차감 + 치료사 드롭다운 다이얼로그
@@ -1405,7 +1406,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         clRes, subRes,
       ] = await Promise.all([
         // C2-STAFF-DROPDOWN: 담당자(consultant/coordinator/director) + 치료사 1쿼리 통합
-        supabase.from('staff').select('id, name, role').eq('clinic_id', clinicId).eq('active', true)
+        // T-20260522-foot-STAFF-NAME-UNIFY: display_name 추가 → 드롭다운 구성명 표시
+        supabase.from('staff').select('id, name, display_name, role').eq('clinic_id', clinicId).eq('active', true)
           .in('role', ['consultant', 'coordinator', 'director', 'therapist']).order('name', { ascending: true }),
         // 6 main data (기존 병렬 그룹)
         supabase.from('packages').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }),  // T-20260520-foot-PKG-SORT
@@ -1422,7 +1424,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       ]);
 
       // staff 분기: role별 분류
-      const allStaff = (staffAllRes.data ?? []) as {id: string; name: string; role: string}[];
+      // T-20260522-foot-STAFF-NAME-UNIFY: display_name 포함
+      const allStaff = (staffAllRes.data ?? []) as {id: string; name: string; display_name: string | null; role: string}[];
       setStaffList(allStaff.filter((s) => ['consultant', 'coordinator', 'director'].includes(s.role)));
       setTherapistList(allStaff.filter((s) => s.role === 'therapist'));
 
@@ -3285,9 +3288,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     >
                       <option value="">— 선택 —</option>
                       {/* C2-MANAGER-PAYMENT-MAP v3: 담당자 드롭다운에서만 role='director'(원장) 제외 — DB 비활성 금지, 코드 레벨 필터 */}
+                      {/* T-20260522-foot-STAFF-NAME-UNIFY: display_name(구성명) fallback to name */}
                       {staffList.filter(s => s.role !== 'director').map((s) => (
                         <option key={s.id} value={s.id}>
-                          {s.name} ({s.role === 'consultant' ? '상담실장' : s.role === 'coordinator' ? '데스크' : s.role})
+                          {s.display_name || s.name} ({s.role === 'consultant' ? '상담실장' : s.role === 'coordinator' ? '데스크' : s.role})
                         </option>
                       ))}
                     </select>
@@ -5090,8 +5094,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     className="w-full h-7 rounded border border-gray-300 px-1.5 text-[11px] focus:outline-none focus:border-teal-500 bg-white"
                   >
                     <option value="">— 실장 선택 —</option>
+                    {/* T-20260522-foot-STAFF-NAME-UNIFY: display_name(구성명) fallback to name */}
                     {staffList.filter(s => s.role === 'consultant' || s.role === 'coordinator' || s.role === 'director').map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
+                      <option key={s.id} value={s.id}>{s.display_name || s.name}</option>
                     ))}
                   </select>
                 </div>
