@@ -79,6 +79,7 @@ class ChunkErrorBoundary extends Component<{ children: ReactNode }, EBState> {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// T-20260523-foot-NAV-MENU-REORDER: 사이드바 메뉴 순서 재배치
 const NAV_ITEMS: {
   to: string;
   label: string;
@@ -92,22 +93,22 @@ const NAV_ITEMS: {
   // T-20260520-foot-RBAC-MENU-EXPAND: consultant/coordinator/therapist 메뉴 권한 확장
   // AC-4: therapist → 패키지 신규 접근
   { to: '/admin/packages', label: '패키지', icon: Package, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
+  // AC-2: consultant/coordinator → 진료도구 신규 접근
+  { to: '/admin/doctor-tools', label: '진료 도구', icon: BookOpen, roles: ['admin', 'manager', 'consultant', 'coordinator'] },
+  // AC-1: 3역할 → 서비스관리 접근 (뷰 전용; WRITE=admin만)
+  { to: '/admin/services', label: '서비스관리', icon: Stethoscope, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
   // AC-1: 3역할 → 직원·공간관리 접근
   { to: '/admin/staff', label: '직원·공간', icon: UserCog, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
+  // AC-1: 3역할 → 병원·원장 정보 접근 (뷰 전용)
+  { to: '/admin/clinic-settings', label: '병원·원장 정보', icon: Building2, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
+  { to: '/admin/treatment-table', label: '치료 테이블', icon: Table2 },
   // AC-1: 3역할 → 일마감 접근 (뷰 전용; WRITE=admin/manager만)
   { to: '/admin/closing', label: '일마감', icon: Receipt, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
   { to: '/admin/history', label: '일일 이력', icon: ClipboardList },
   // AC-6: 통계 미노출 유지 (consultant/coordinator/therapist 제외)
   { to: '/admin/stats', label: '통계', icon: BarChart3, roles: ['admin', 'manager', 'part_lead'] },
-  // AC-1: 3역할 → 서비스관리 접근 (뷰 전용; WRITE=admin만)
-  { to: '/admin/services', label: '서비스관리', icon: Stethoscope, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
-  // AC-2: consultant/coordinator → 진료도구 신규 접근
-  { to: '/admin/doctor-tools', label: '진료 도구', icon: BookOpen, roles: ['admin', 'manager', 'consultant', 'coordinator'] },
-  { to: '/admin/treatment-table', label: '치료 테이블', icon: Table2 },
   // AC-6: 매출집계 미노출 유지
   { to: '/admin/sales', label: '매출집계', icon: TrendingUp, roles: ['admin', 'manager'] },
-  // AC-1: 3역할 → 병원·원장 정보 접근 (뷰 전용)
-  { to: '/admin/clinic-settings', label: '병원·원장 정보', icon: Building2, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
   { to: '/admin/accounts', label: '계정관리', icon: ShieldCheck, roles: ['admin'] },
 ];
 
