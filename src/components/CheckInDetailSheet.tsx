@@ -450,98 +450,8 @@ function Chart1TreatmentImages({ customerId }: { customerId: string }) {
   );
 }
 
-// T-20260517-foot-C2-TAB-SYNC: 1번차트 스토리지 이미지 섹션 (KOH균검사·경과분석지)
-// 2번차트(CustomerChartPage) CustomerStorageImageSection과 동일 storage 경로 사용 → SSOT 단일 원천
-// prefix="koh-results" → KOH균검사, prefix="progress" → 경과분석지
-function Chart1StorageSection({ customerId, prefix, label }: { customerId: string; prefix: string; label: string }) {
-  const [images, setImages] = useState<{ path: string; signedUrl: string; name: string }[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const storagePath = `customer/${customerId}/${prefix}`;
-
-  const load = useCallback(async () => {
-    const { data: files } = await supabase.storage.from('photos').list(storagePath, {
-      limit: 50,
-      sortBy: { column: 'name', order: 'desc' },
-    });
-    if (!files || files.length === 0) { setImages([]); return; }
-    const withUrls = await Promise.all(
-      files
-        .filter((f) => f.name && !f.id?.endsWith('/'))
-        .map(async (file) => {
-          const path = `${storagePath}/${file.name}`;
-          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
-          return { path, signedUrl: data?.signedUrl ?? '', name: file.name };
-        }),
-    );
-    setImages(withUrls.filter((i) => i.signedUrl));
-  }, [storagePath]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    setUploading(true);
-    for (const file of Array.from(files)) {
-      const ext = file.name.split('.').pop() ?? 'jpg';
-      const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type });
-      if (error) toast.error(`업로드 실패: ${error.message}`);
-    }
-    setUploading(false);
-    e.target.value = '';
-    await load();
-  };
-
-  const remove = async (img: { path: string; signedUrl: string; name: string }) => {
-    if (!window.confirm('이미지를 삭제하시겠습니까?')) return;
-    await supabase.storage.from('photos').remove([img.path]);
-    await load();
-  };
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
-          <Upload className="h-3 w-3" /> {label}
-          {images.length > 0 && <span className="ml-1 text-teal-600 font-normal">{images.length}장</span>}
-        </span>
-        <label className="cursor-pointer">
-          <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
-          <span className="inline-flex items-center gap-1 text-xs border border-teal-200 rounded px-2 py-0.5 bg-white text-teal-700 hover:bg-teal-50 cursor-pointer transition">
-            <Upload className="h-3 w-3" />
-            {uploading ? '중…' : '업로드'}
-          </span>
-        </label>
-      </div>
-      {images.length === 0 ? (
-        <div className="rounded-lg border border-dashed py-3 text-center text-xs text-muted-foreground">
-          {label} 없음
-        </div>
-      ) : (
-        <div className="grid grid-cols-3 gap-1.5">
-          {images.map((img) => (
-            <div key={img.path} className="relative group aspect-square">
-              <img
-                src={img.signedUrl}
-                alt={img.name}
-                className="w-full h-full object-cover rounded border cursor-pointer"
-                onClick={() => window.open(img.signedUrl, '_blank')}
-              />
-              <button
-                onClick={() => remove(img)}
-                className="absolute top-0.5 right-0.5 hidden group-hover:flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white shadow"
-                title="삭제"
-              >
-                <Trash2 className="h-2.5 w-2.5" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+// T-20260522-foot-CHART1-TRIM AC-9/10: Chart1StorageSection 제거 (KOH균검사·경과분석지 하단 비노출)
+// DB 기존 데이터 보존, FE 표시만 제거
 
 // ─── 메인 컴포넌트 ────────────────────────────────────────────────────────────
 
@@ -1843,32 +1753,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             )}
           </div>
 
-          {/* KOH균검사 — T-20260517-foot-C2-TAB-SYNC: 1번차트↔2번차트 검사결과탭 쌍방연동 */}
-          {/* storage: customer/{id}/koh-results — 2번차트 test_result탭과 동일 경로 (SSOT) */}
-          {checkIn.customer_id && (
-            <>
-              <Separator />
-              <Chart1StorageSection
-                customerId={checkIn.customer_id}
-                prefix="koh-results"
-                label="KOH균검사"
-              />
-            </>
-          )}
-
-          {/* 경과분석지 — T-20260517-foot-C2-TAB-SYNC: 1번차트↔2번차트 경과내역탭 정상화 */}
-          {/* storage: customer/{id}/progress — 2번차트 progress탭과 동일 경로 (SSOT) */}
-          {/* [경과내역 사진] 항목 제거 완료 (T-20260513-foot-C21-TAB-RESTRUCTURE-B) */}
-          {checkIn.customer_id && (
-            <>
-              <Separator />
-              <Chart1StorageSection
-                customerId={checkIn.customer_id}
-                prefix="progress"
-                label="경과분석지"
-              />
-            </>
-          )}
+          {/* AC-9 T-20260522-foot-CHART1-TRIM: KOH균검사 하단구역 제거 (DB 기존 데이터 보존, FE 비노출) */}
+          {/* AC-10 T-20260522-foot-CHART1-TRIM: 경과분석지 하단구역 제거 (DB 기존 데이터 보존, FE 비노출) */}
 
           {/* 진료이미지 — T-20260513-foot-C21-TAB-RESTRUCTURE-B: AC-3b 명칭변경 + AC-8 비포에프터 삭제 */}
           {/* T-20260517-foot-C2-TAB-SYNC: 일자별 히스토리 (before/after 구분) */}
