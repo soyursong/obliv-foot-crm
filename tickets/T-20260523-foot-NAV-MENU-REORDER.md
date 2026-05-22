@@ -2,7 +2,7 @@
 id: T-20260523-foot-NAV-MENU-REORDER
 domain: foot
 priority: P2
-status: deploy-ready
+status: deployed
 deploy_ready: true
 build_ok: true
 db_change: false
@@ -10,6 +10,12 @@ e2e_spec: true
 commit: 796fce2
 created: 2026-05-23
 deadline: 2026-05-29
+qa_result: pass
+qa_grade: Green
+deployed_at: 2026-05-23T10:48:00+09:00
+deploy_commit: 2ce9b45e67ac8aed8b5e124006456e9fc318db86
+bundle_hash: index-DgdN5E3D.js
+field_soak_until: 2026-05-24T10:48:00+09:00
 ---
 
 # T-20260523-foot-NAV-MENU-REORDER — CRM 사이드바 메뉴 순서 변경
