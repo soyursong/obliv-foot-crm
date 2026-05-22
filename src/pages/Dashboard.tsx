@@ -107,6 +107,9 @@ const ChecklistDoneCtx = createContext<Set<string>>(new Set());
 /** 활성 패키지 보유 고객 customer_id 집합 (잔여>0) (T-20260522-foot-PKG-BOX-INDICATOR) */
 const PkgHolderCtx = createContext<Set<string>>(new Set());
 
+/** ALT(올트) 활성 고객 customer_id 집합 (T-20260522-foot-ALT-BADGE) */
+const AltHolderCtx = createContext<Set<string>>(new Set());
+
 // ── 카드 고객 이름 우클릭/롱프레스 핸들러 컨텍스트 ────────────────────────────
 interface CardHandlers {
   onNameContext: (ci: CheckIn, e: React.MouseEvent) => void;
@@ -314,6 +317,9 @@ const DraggableCard = memo(function DraggableCard({
   // T-20260522-foot-PKG-BOX-INDICATOR: 활성 패키지 보유 여부
   const pkgHolderSet = useContext(PkgHolderCtx);
   const hasPkg = !!(checkIn.customer_id && pkgHolderSet.has(checkIn.customer_id));
+  // T-20260522-foot-ALT-BADGE: ALT 활성 여부
+  const altHolderSet = useContext(AltHolderCtx);
+  const isAlt = !!(checkIn.customer_id && altHolderSet.has(checkIn.customer_id));
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: checkIn.id,
     data: { checkIn },
@@ -455,6 +461,7 @@ const DraggableCard = memo(function DraggableCard({
         </div>
         {/* T-20260506-foot-SLOT-LAYOUT-REBUILD: 초진 딱지 → 연한노랑, 재진 → 없음 */}
         {/* T-20260522-foot-PKG-BOX-INDICATOR: 패키지 보유 배지 + 초진 딱지 동시 표시 가능 */}
+        {/* T-20260522-foot-ALT-BADGE: ALT 배지 (메탈릭 실버) */}
         <div className="mt-0.5 flex items-center gap-0.5 flex-wrap">
           {checkIn.visit_type === 'new' && (
             <span className="bg-blue-100 text-blue-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
@@ -466,6 +473,20 @@ const DraggableCard = memo(function DraggableCard({
             >
               <Package className="h-2 w-2" />
               패키지
+            </span>
+          )}
+          {isAlt && (
+            <span
+              data-testid="alt-badge"
+              className="text-[9px] px-0.5 py-px rounded font-bold tracking-wide"
+              style={{
+                background: 'linear-gradient(135deg, #c8c8c8 0%, #e8e8e8 40%, #b0b0b0 60%, #d4d4d4 100%)',
+                color: '#2a2a2a',
+                border: '1px solid #a0a0a0',
+                boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.6)',
+              }}
+            >
+              ALT
             </span>
           )}
         </div>
@@ -573,6 +594,7 @@ const DraggableCard = memo(function DraggableCard({
       </div>
       {/* T-20260513-foot-VISITTYPE-SIMPLIFY: 초진 딱지, 재진 → 없음 */}
       {/* T-20260522-foot-PKG-BOX-INDICATOR: 패키지 보유 배지 + 초진 딱지 나란히 */}
+      {/* T-20260522-foot-ALT-BADGE: ALT 배지 (메탈릭 실버) */}
       <div className="mt-0.5 flex items-center gap-0.5 flex-wrap">
         {checkIn.visit_type === 'new' && (
           <span className="bg-yellow-100 text-yellow-800 text-[9px] px-0.5 py-px rounded font-medium">초진</span>
@@ -584,6 +606,20 @@ const DraggableCard = memo(function DraggableCard({
           >
             <Package className="h-2 w-2" />
             패키지
+          </span>
+        )}
+        {isAlt && (
+          <span
+            data-testid="alt-badge"
+            className="text-[9px] px-0.5 py-px rounded font-bold tracking-wide"
+            style={{
+              background: 'linear-gradient(135deg, #c8c8c8 0%, #e8e8e8 40%, #b0b0b0 60%, #d4d4d4 100%)',
+              color: '#2a2a2a',
+              border: '1px solid #a0a0a0',
+              boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.6)',
+            }}
+          >
+            ALT
           </span>
         )}
       </div>
@@ -2250,6 +2286,8 @@ export default function Dashboard() {
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
   // T-20260522-foot-PKG-BOX-INDICATOR: 잔여>0인 활성 패키지 보유 고객 ID 집합
   const [pkgHolderSet, setPkgHolderSet] = useState<Set<string>>(new Set());
+  // T-20260522-foot-ALT-BADGE: ALT 활성 고객 ID 집합
+  const [altHolderSet, setAltHolderSet] = useState<Set<string>>(new Set());
   const [consentMap, setConsentMap] = useState<Map<string, ConsentEntry>>(new Map());
   const [checklistDone, setChecklistDone] = useState<Set<string>>(new Set());
   const [therapists, setTherapists] = useState<Staff[]>([]);
@@ -2296,14 +2334,6 @@ export default function Dashboard() {
   const [timelineReservations, setTimelineReservations] = useState<Reservation[]>([]);
   /** 셀프접수 walk-in 체크인 (reservation_id 없는 당일 체크인) — 통합 시간표용 */
   const [selfCheckIns, setSelfCheckIns] = useState<CheckIn[]>([]);
-  // T-20260522-foot-RESV-MOVE-CONFIRM AC-1: 예약 슬롯 이동 확인 다이얼로그 상태
-  const [slotMoveConfirm, setSlotMoveConfirm] = useState<{
-    reservationId: string;
-    newTimeStr: string;
-    reservation: Reservation;
-    oldSlot: string;
-    newSlot: string;
-  } | null>(null);
   /** reservation_id → reservation_time (HH:MM:SS) — CustomerHoverCard 예약시간 표시용 */
   const resvTimeMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -2890,6 +2920,18 @@ export default function Dashboard() {
     setPkgHolderSet(holderSet);
   }, [clinic]);
 
+  // T-20260522-foot-ALT-BADGE: ALT 활성 고객 ID 집합 조회
+  const fetchAltHolders = useCallback(async () => {
+    if (!clinic) return;
+    const { data } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('clinic_id', clinic.id)
+      .eq('alt_status', true);
+    const s = new Set<string>((data ?? []).map((r: { id: string }) => r.id));
+    setAltHolderSet(s);
+  }, [clinic]);
+
   // T-20260522-foot-PERF-TUNING OPT-1: 3개 개별 staff 쿼리 → 1개 통합 쿼리 (2 round trip 절감)
   const [consultants, setConsultants] = useState<Staff[]>([]);
   const [doctors, setDoctors] = useState<Staff[]>([]);
@@ -2962,7 +3004,8 @@ export default function Dashboard() {
     fetchStageStarts();
     fetchPackageLabels();
     fetchAllStaff();
-  }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchPayments, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts, fetchPackageLabels, fetchAllStaff]);
+    fetchAltHolders();
+  }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchPayments, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts, fetchPackageLabels, fetchAllStaff, fetchAltHolders]);
 
   // T-20260515-foot-PAYMENT-MINI-WINDOW AC-7: rows 변경 시 수납대기 pending 금액 갱신
   useEffect(() => {
@@ -3162,8 +3205,8 @@ export default function Dashboard() {
 
       const newTimeStr = `${newSlot}:00`; // HH:MM:SS
 
-      // T-20260522-foot-RESV-MOVE-CONFIRM AC-1: 시간 변경 확인 다이얼로그 표시 (취소 시 원위치 복귀)
-      setSlotMoveConfirm({ reservationId, newTimeStr, reservation, oldSlot: currentSlotOfResv, newSlot });
+      // T-20260522-foot-SLOT-POPUP-REGRESS: 즉시 이동 (확인 다이얼로그 없음 — T-20260520-foot-SLOT-MOVE-REVERT 정책 유지)
+      await executeSlotDrag(reservationId, newTimeStr, reservation);
       return;
     }
 
@@ -4740,6 +4783,7 @@ export default function Dashboard() {
       <CardHandlersCtx.Provider value={cardHandlersValue}>
       <ChecklistDoneCtx.Provider value={checklistDone}>
       <PkgHolderCtx.Provider value={pkgHolderSet}>
+      <AltHolderCtx.Provider value={altHolderSet}>
       <ConsentMapCtx.Provider value={consentMap}>
       <ResvTimeMapCtx.Provider value={resvTimeMap}>
       <DndContext
@@ -4876,6 +4920,7 @@ export default function Dashboard() {
       </DndContext>
       </ResvTimeMapCtx.Provider>
       </ConsentMapCtx.Provider>
+      </AltHolderCtx.Provider>
       </PkgHolderCtx.Provider>
       </ChecklistDoneCtx.Provider>
       </CardHandlersCtx.Provider>
@@ -4996,47 +5041,6 @@ export default function Dashboard() {
         currentUserRole={profile?.role ?? ''}
         currentUserEmail={profile?.email ?? null}
       />
-
-      {/* T-20260522-foot-RESV-MOVE-CONFIRM AC-1: 예약 슬롯 이동 확인 다이얼로그 */}
-      <Dialog
-        open={!!slotMoveConfirm}
-        onOpenChange={(open) => { if (!open) setSlotMoveConfirm(null); }}
-      >
-        <DialogContent className="max-w-xs" data-testid="slot-move-confirm-dialog">
-          <DialogHeader>
-            <DialogTitle>예약시간을 변경하시겠습니까?</DialogTitle>
-          </DialogHeader>
-          {slotMoveConfirm && (
-            <div className="py-2 text-center text-sm text-gray-700">
-              <span className="font-semibold text-teal-700">{slotMoveConfirm.oldSlot}</span>
-              <span className="mx-2 text-gray-400">→</span>
-              <span className="font-semibold text-teal-700">{slotMoveConfirm.newSlot}</span>
-            </div>
-          )}
-          <DialogFooter className="gap-2 sm:gap-2">
-            <Button
-              variant="outline"
-              className="flex-1"
-              data-testid="slot-move-cancel-btn"
-              onClick={() => setSlotMoveConfirm(null)}
-            >
-              취소
-            </Button>
-            <Button
-              className="flex-1 bg-teal-600 hover:bg-teal-700 text-white"
-              data-testid="slot-move-confirm-btn"
-              onClick={async () => {
-                if (!slotMoveConfirm) return;
-                const { reservationId, newTimeStr, reservation } = slotMoveConfirm;
-                setSlotMoveConfirm(null);
-                await executeSlotDrag(reservationId, newTimeStr, reservation);
-              }}
-            >
-              확인
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* T-20260519-foot-SLOT-BATCH-EDIT: 슬롯 추가 다이얼로그 (AC-3) */}
       <Dialog
