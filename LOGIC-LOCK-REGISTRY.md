@@ -43,8 +43,10 @@
 | 항목 | 내용 |
 |------|------|
 | **상태** | ACTIVE · deployed |
-| **잠금일** | 2026-05-22 (T-20260522-foot-OVERRIDE-RULE-REDEFINE AC-5) |
-| **원칙** | 차트 수정사항(MedicalChartPanel, PenChartTab, Chart2InsuranceCalcPanel 등)은 CRM 전체 고객에게 동일하게 적용된다. 특정 고객 또는 특정 경로에만 다른 차트 로직을 독립 적용하는 것은 금지. |
+| **잠금일** | 2026-05-16 (최초 코드 배포 · commit f65842d) |
+| **규칙 재정비** | 2026-05-22 (T-20260522-foot-OVERRIDE-RULE-REDEFINE AC-5) |
+| **기배포** | commit f65842d (2026-05-16) · 코드 주석 10개 파일 |
+| **원칙** | 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수. MedicalChartPanel, PenChartTab, Chart2InsuranceCalcPanel 등은 CRM 전체 고객에게 동일하게 적용된다. 특정 고객 또는 특정 경로에만 다른 차트 로직을 독립 적용하는 것은 금지. |
 | **허용** | `ChartContext` / `chartSheetContext` / `medicalChartContext` 단일 경로 경유 차트 열람·수정. |
 | **금지** | 특정 고객 ID·경로에 따라 차트 렌더링 로직을 분기하는 독립 구현. Override 적용 시 반드시 `// OVERRIDE-RULE: O-{ID}` + `// OVERRIDE: {경로} — {기능}. 기본 로직 전체 연동.` 주석 필수. |
 | **이유** | 차트 내용이 고객·경로마다 달라지면 임상 기록 불일치 발생. T-20260522-foot-OVERRIDE-RULE-REDEFINE AC-5. |
@@ -61,7 +63,7 @@
 | ↳ `src/components/AdminLayout.tsx` | 어드민 레이아웃 차트 연동 |
 | **L-003 ↔ Override 관계** | Override(O-{ID})는 차트 렌더링 로직 자체를 분기하지 않는다. Override가 허용되는 것은 차트 내 특정 필드값(예: `copayment_rate_override`)에 국한. L-003의 "전체 고객 동일 적용" 원칙은 Override로도 우회 불가. |
 | **이전 상태** | BLOCKED (원문 잘림) — 코드에 이미 적용되었으나 레지스트리 미갱신. T-20260522-foot-OVERRIDE-RULE-REDEFINE AC-5로 복원. |
-| **티켓** | T-20260519-foot-LOGIC-LOCK-REGISTRY, T-20260522-foot-OVERRIDE-RULE-REDEFINE |
+| **티켓** | T-20260519-foot-LOGIC-LOCK-REGISTRY, T-20260522-foot-OVERRIDE-RULE-REDEFINE, T-20260522-foot-LOCK-L003-REGISTRY-UPDATE |
 
 ---
 
@@ -208,4 +210,4 @@ Override (OVERRIDE-RULE)
 
 ---
 
-*last updated: 2026-05-22 · by dev-foot · ticket: T-20260522-foot-OVERRIDE-RULE-REDEFINE (L-003 복원, O-004 등록, 주석 체계 재정비)*
+*last updated: 2026-05-22 · by dev-foot · ticket: T-20260522-foot-LOCK-L003-REGISTRY-UPDATE (L-003 잠금일 2026-05-16·commit f65842d 반영, 원칙란 정식 기입)*
