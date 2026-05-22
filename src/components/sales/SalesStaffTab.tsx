@@ -6,6 +6,7 @@
  * AC-2: 시술 건수 + 실적 금액 + 환불 차감액
  * AC-3: 소급 방지 환불 차감 엔진 — 당월(accounting_date) 마이너스 표출
  * AC-4: 글로벌 필터(기간·검색) + 엑셀 — Sales.tsx 공통 레이어 사용
+ * T-20260522-foot-DESIGNATED-THERAPIST AC-4: 치료사별 지정환자수 컬럼
  *
  * READ-ONLY. DB 변경 없음.
  */
@@ -41,6 +42,8 @@ interface StaffStat {
   count: number;
   revenue: number;
   refundAmount: number;
+  /** T-20260522-foot-DESIGNATED-THERAPIST AC-4: 지정환자수 */
+  designatedCount: number;
 }
 
 export function SalesStaffTab({ filter }: Props) {
@@ -71,9 +74,31 @@ export function SalesStaffTab({ filter }: Props) {
     },
   });
 
+  // T-20260522-foot-DESIGNATED-THERAPIST AC-4: 치료사별 지정환자수
+  const { data: designatedMap = {} } = useQuery<Record<string, number>>({
+    queryKey: ['sales-staff-designated', clinic?.id],
+    enabled: !!clinic,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('designated_therapist_id')
+        .eq('clinic_id', clinic!.id)
+        .not('designated_therapist_id', 'is', null);
+      if (error) throw error;
+      const map: Record<string, number> = {};
+      for (const row of (data ?? []) as { designated_therapist_id: string | null }[]) {
+        if (row.designated_therapist_id) {
+          map[row.designated_therapist_id] = (map[row.designated_therapist_id] ?? 0) + 1;
+        }
+      }
+      return map;
+    },
+  });
+
   // ── 담당직원별 집계 (AC-1 · AC-2 · AC-3) ────────────────────────────────
   // AC-3 소급 방지: accounting_date 범위 내 수납/환불만 당월 실적에 반영.
   // parent_payment_id로 원거래 추적 → 환불은 환불 발생 당월 해당 직원 실적에 차감.
+  // T-20260522-foot-DESIGNATED-THERAPIST AC-4: designatedMap 주입
   const stats = useMemo<StaffStat[]>(() => {
     const map = new Map<string, StaffStat>();
 
@@ -91,6 +116,7 @@ export function SalesStaffTab({ filter }: Props) {
         count: 0,
         revenue: 0,
         refundAmount: 0,
+        designatedCount: designatedMap[staffId] ?? 0,
       };
       if (netAmt < 0) {
         // 환불액 — 당월 실적에서 차감 (소급 없음, AC-3)
@@ -116,7 +142,7 @@ export function SalesStaffTab({ filter }: Props) {
       const rb = b.revenue - b.refundAmount;
       return rb - ra;
     });
-  }, [payments]);
+  }, [payments, designatedMap]);
 
   // AC-4: 검색 필터 — 직원 이름 포함 검색 (글로벌 필터 공통 레이어)
   const filtered = useMemo<StaffStat[]>(() => {
@@ -168,7 +194,7 @@ export function SalesStaffTab({ filter }: Props) {
       <table className="w-full border-collapse">
         <thead className="sticky top-0 z-10 bg-muted/70">
           <tr>
-            {['직원명', '역할', '시술 건수', '실적 금액', '환불 차감액', '순 실적'].map((h) => (
+            {['직원명', '역할', '시술 건수', '지정환자수', '실적 금액', '환불 차감액', '순 실적'].map((h) => (
               <th
                 key={h}
                 className="whitespace-nowrap border-b px-3 py-2 text-left font-medium text-muted-foreground"
@@ -192,6 +218,17 @@ export function SalesStaffTab({ filter }: Props) {
                   {s.role === 'therapist' ? '치료사' : '장비명'}
                 </td>
                 <td className="px-3 py-2 tabular-nums text-center">{s.count}</td>
+                {/* T-20260522-foot-DESIGNATED-THERAPIST AC-4 */}
+                <td
+                  data-testid={`sales-staff-designated-${s.role}-${s.staffId}`}
+                  className="px-3 py-2 tabular-nums text-center"
+                >
+                  {s.role === 'therapist' ? (
+                    <span className={cn(s.designatedCount > 0 && 'font-semibold text-emerald-700')}>
+                      {s.designatedCount}
+                    </span>
+                  ) : '—'}
+                </td>
                 <td className="px-3 py-2 tabular-nums text-right">
                   {formatAmount(Math.round(s.revenue))}원
                 </td>
@@ -226,6 +263,7 @@ export function SalesStaffTab({ filter }: Props) {
             >
               {totals.count}
             </td>
+            <td className="px-3 py-2 tabular-nums text-center text-muted-foreground text-xs">—</td>
             <td
               data-testid="sales-staff-total-revenue"
               className="px-3 py-2 tabular-nums text-right"
