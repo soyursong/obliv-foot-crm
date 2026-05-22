@@ -104,6 +104,28 @@
 
 ---
 
+## L-005 — 동일 로직 연동 의무 (LOGIC-SYNC-MANDATE)
+
+| 항목 | 내용 |
+|------|------|
+| **상태** | ACTIVE · phase1-complete |
+| **잠금일** | 2026-05-22 (T-20260522-foot-LOGIC-SYNC-MANDATE) |
+| **기배포** | T-20260522-foot-LOGIC-SYNC-MANDATE Phase 1 완료 (매핑 레지스트리 생성). Phase 2 커밋 태그 적용 진행 중. |
+| **현장확인** | 완료 (현장(풋센터) 봇 경유, MSG-20260522-07664479) |
+| **원칙** | CRM 내 동일/유사 로직을 `memory/_handoff/foot_logic_sync_registry.md`로 관리. 매핑된 로직(G-001~G-010) 수정 시 그룹 내 전체 대상 동시 수정 의무. 커밋 태그: `[SYNC: G-{그룹ID}]`. |
+| **허용** | 현장이 "해당 기능은 여기 경로에만 적용시켜줘" 명시 지시한 건 → 레지스트리에 `exception: true` 마킹 후 연동 제외. |
+| **금지** | 매핑 그룹 내 한쪽 로직 수정 후 나머지 연동 대상 미수정. `foot_logic_sync_registry.md` 미확인 수정. |
+| **이유** | 동일/유사 로직 분산 시 한 쪽만 수정되어 불일치 발생 이력. 전수 매핑 후 연동 강제. |
+| **파일** | `memory/_handoff/foot_logic_sync_registry.md` (G-001~G-010, 57항목) |
+| **코드 주석** | `// LOGIC-LOCK: L-005 — SYNC GROUP 변경 시 foot_logic_sync_registry.md 확인 필수` |
+| **티켓** | T-20260522-foot-LOGIC-SYNC-MANDATE |
+
+> **채번 이력**: 2026-05-22 등록 당시 SSOT(claude-sync)에서 L-004로 임시 기재됐으나,
+> obliv-foot-crm에 L-004=CHART-ACCESS-LOCK(5/19 선등록)이 이미 존재.
+> 2026-05-22 T-20260522-foot-LOCK-RENUMBER-SYNC에서 **L-005로 재채번** 확정.
+
+---
+
 ## L-006 — 서류출력 경로 통일 코드 보호 (DOC-PRINT-UNIFY)
 
 | 항목 | 내용 |
@@ -217,4 +239,4 @@ Override (OVERRIDE-RULE)
 
 ---
 
-*last updated: 2026-05-22 · by dev-foot · ticket: T-20260522-foot-LOCK-L004-CODE-COMMENT (L-004 코드 주석 삽입 7파일 · 잠금일·기배포·현장확인 메타데이터 보완)*
+*last updated: 2026-05-22 · by dev-foot · ticket: T-20260522-foot-LOCK-RENUMBER-SYNC (L-005 LOGIC-SYNC-MANDATE 섹션 신설 · L-004/L-005/L-006 번호 확정)*
