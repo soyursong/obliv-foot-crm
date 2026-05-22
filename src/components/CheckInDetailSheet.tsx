@@ -29,11 +29,7 @@ import { useAuth } from '@/lib/auth';
 import { STATUS_KO } from '@/lib/status';
 import { formatAmount, formatPhone, parseAmount, todaySeoulStr } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { PreChecklist } from '@/components/PreChecklist';
-// T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 작성 양식 + 자동 업로드
-import { ChecklistForm } from '@/components/forms/ChecklistForm';
-import { ConsentForm } from '@/components/forms/ConsentForm';
-// T-20260522-foot-CHART1-TRIM AC-2: DocumentViewer 제거 (체크리스트/동의서 섹션 삭제)
+// T-20260522-foot-CHECKIN-CONSENT-REMOVE: PreChecklist/ChecklistForm/ConsentForm 제거 (PenChart 이관 완료)
 import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
@@ -578,11 +574,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   // T-20260511-foot-C1-SAVE-DIRTY-AUTOSAVE: isDirty 패턴 + 자동저장 인디케이터
   const [isDirty, setIsDirty] = useState(false);
   const [showAutoSaved, setShowAutoSaved] = useState(false);
-  const [checklistOpen, setChecklistOpen] = useState(false);
-  // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 양식 다이얼로그
-  const [tabletChecklistOpen, setTabletChecklistOpen] = useState(false);
-  const [tabletConsentOpen, setTabletConsentOpen] = useState(false);
-  // T-20260522-foot-CHART1-TRIM AC-2: docRefreshKey 제거 (DocumentViewer 제거로 불필요)
+  // T-20260522-foot-CHECKIN-CONSENT-REMOVE: checklistOpen/tabletChecklistOpen/tabletConsentOpen 제거
   /** 고객 차트번호 (T-20260504-foot-CHART-UI-BADGE) */
   const [chartNumber, setChartNumber] = useState<string | null>(null);
   /** T-20260506-foot-CHART-LINK-SYNC: customer_id null 시 phone으로 조회된 고객 ID (2순위 식별) */
@@ -1490,28 +1482,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             )}
           </div>
 
-          {/* 태블릿 양식 모달 */}
-          <ChecklistForm
-            open={tabletChecklistOpen}
-            onOpenChange={setTabletChecklistOpen}
-            customerId={customerMode.customerId}
-            defaultName={customerMode.customerName}
-            defaultPhone={customerMode.customerPhone}
-            onSaved={() => {
-              onUpdated();
-            }}
-          />
-          {/* T-20260522-foot-PENCHART-REFUND-AUTOFILL: 차트번호·이름 자동 불러오기 */}
-          <ConsentForm
-            open={tabletConsentOpen}
-            onOpenChange={setTabletConsentOpen}
-            customerId={customerMode.customerId}
-            defaultChartNumber={chartNumber ?? customerMode.chartNumber}
-            defaultName={customerMode.customerName}
-            onSaved={() => {
-              onUpdated();
-            }}
-          />
+          {/* T-20260522-foot-CHECKIN-CONSENT-REMOVE: ChecklistForm/ConsentForm 제거 (PenChart 이관 완료) */}
           {/* AC8: 패키지 회차 사용 다이얼로그 (customerMode) — T-20260512-foot-CUSTMGMT-AC6-AC9 */}
           <SessionUseInSheetDialog
             open={sessionUseOpen}
@@ -2331,38 +2302,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           )}
         </div>
 
-        <PreChecklist
-          checkIn={checkIn}
-          open={checklistOpen}
-          onOpenChange={setChecklistOpen}
-          onCompleted={() => {
-            setChecklistOpen(false);
-            onUpdated();
-          }}
-        />
-
-        {/* T-20260506-foot-CHECKLIST-AUTOUPLOAD: 태블릿 작성 양식 모달 */}
-        {checkIn.customer_id && (
-          <>
-            <ChecklistForm
-              open={tabletChecklistOpen}
-              onOpenChange={setTabletChecklistOpen}
-              customerId={checkIn.customer_id}
-              defaultName={checkIn.customer_name ?? undefined}
-              defaultPhone={checkIn.customer_phone ?? undefined}
-              onSaved={onUpdated}
-            />
-            {/* T-20260522-foot-PENCHART-REFUND-AUTOFILL: 차트번호·이름 자동 불러오기 */}
-            <ConsentForm
-              open={tabletConsentOpen}
-              onOpenChange={setTabletConsentOpen}
-              customerId={checkIn.customer_id}
-              defaultChartNumber={chartNumber}
-              defaultName={checkIn.customer_name ?? undefined}
-              onSaved={onUpdated}
-            />
-          </>
-        )}
+        {/* T-20260522-foot-CHECKIN-CONSENT-REMOVE: PreChecklist/ChecklistForm/ConsentForm 제거 (PenChart 이관 완료) */}
 
         {/* 시술 선택 모달 */}
         <ServiceSelectModal
