@@ -2684,10 +2684,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     { key: 'treatments',    label: '진료내역' },
     { key: 'images',        label: '진료이미지' },
     { key: 'messages',      label: '메시지' },
+    { key: 'refunds',       label: '환불내역' },
   ];
   // T-20260513-foot-C21-TAB-RESTRUCTURE-C: pen_chart + messages 구현 완료
+  // T-20260522-foot-REFUND-HIST-TAB: 환불내역 탭 추가
   const IMPLEMENTED_CLINICAL = ['checklist', 'progress', 'documents', 'payments', 'test_result', 'pen_chart'];
-  const IMPLEMENTED_HISTORY  = ['consultations', 'packages', 'treatments', 'images', 'messages'];
+  const IMPLEMENTED_HISTORY  = ['consultations', 'packages', 'treatments', 'images', 'messages', 'refunds'];
 
   const handleClinicalTab = (key: string) => { setChartTab(key); setChartTabGroup('clinical'); };
   const handleHistoryTab  = (key: string) => { setChartTab(key); setChartTabGroup('history'); };
@@ -3342,15 +3344,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
 
             {/* ─ 탭 열 1 (문진 / 진료 탭) ─────────────────────────────── */}
+            {/* T-20260522-foot-REFUND-HIST-TAB AC-3: flex 균등 배치 (좌측 쏠림 해소) */}
             <div data-testid="chart-tab-clinical" className="border-t-2 border-gray-300 shrink-0">
-              <div className="flex overflow-x-auto bg-[#d8e8f0]">
+              <div className="flex bg-[#d8e8f0]">
                 {CLINICAL_TABS.map(({ key, label }) => (
                   <button
                     key={key}
                     type="button"
                     onClick={() => handleClinicalTab(key)}
                     className={cn(
-                      'shrink-0 px-3 min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center',
+                      'flex-1 justify-center min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center',
                       chartTabGroup === 'clinical' && chartTab === key
                         ? 'bg-white text-teal-700 font-semibold shadow-sm'
                         : 'text-[#334e65] hover:bg-white/60',
@@ -3363,15 +3366,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </div>
 
             {/* ─ 탭 열 2 (이력 탭) ─────────────────────────────────────── */}
+            {/* T-20260522-foot-REFUND-HIST-TAB AC-3: flex 균등 배치 (좌측 쏠림 해소) */}
             <div data-testid="chart-tab-history" className="border-b border-gray-300 shrink-0">
-              <div className="flex overflow-x-auto bg-[#e4eef4]">
+              <div className="flex bg-[#e4eef4]">
                 {HISTORY_TABS.map(({ key, label }) => (
                   <button
                     key={key}
                     type="button"
                     onClick={() => handleHistoryTab(key)}
                     className={cn(
-                      'shrink-0 px-3 min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center',
+                      'flex-1 justify-center min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center',
                       chartTabGroup === 'history' && chartTab === key
                         ? 'bg-white text-teal-700 font-semibold shadow-sm'
                         : 'text-[#334e65] hover:bg-white/60',
@@ -4347,6 +4351,70 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   onFormSubmissionSaved={refreshSubmissionEntries}
                 />
               )}
+
+              {/* History: 환불내역 — T-20260522-foot-REFUND-HIST-TAB */}
+              {chartTabGroup === 'history' && chartTab === 'refunds' && (() => {
+                // payments + package_payments 중 payment_type='refund' 필터링, 최신순 정렬
+                type RefundRow = { id: string; amount: number; method: string; created_at: string; memo: string | null; source: 'payment' | 'package' };
+                const allRefunds: RefundRow[] = [
+                  ...payments.filter((p) => p.payment_type === 'refund').map((p) => ({
+                    id: p.id, amount: p.amount, method: p.method, created_at: p.created_at, memo: p.memo, source: 'payment' as const,
+                  })),
+                  ...pkgPayments.filter((p) => p.payment_type === 'refund').map((p) => ({
+                    id: p.id, amount: p.amount, method: p.method, created_at: p.created_at, memo: p.memo, source: 'package' as const,
+                  })),
+                ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                const totalRefund = allRefunds.reduce((s, r) => s + r.amount, 0);
+                return (
+                  <div className="space-y-3">
+                    <div className="rounded-lg border bg-white p-3 text-xs">
+                      <div className="flex items-center gap-1.5 font-bold text-red-700 mb-2">
+                        <span className="h-2 w-2 rounded-full bg-red-500" />
+                        환불내역
+                        {allRefunds.length > 0 && (
+                          <span className="ml-auto text-red-600 tabular-nums font-semibold">
+                            합계 -{formatAmount(totalRefund)}
+                          </span>
+                        )}
+                      </div>
+                      {allRefunds.length === 0 ? (
+                        <div className="py-6 text-center text-muted-foreground border border-dashed rounded">
+                          환불 내역 없음
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full border-collapse">
+                            <thead>
+                              <tr className="bg-muted/30 text-muted-foreground">
+                                <th className="text-left px-2 py-1.5 font-medium border-b">일시</th>
+                                <th className="text-right px-2 py-1.5 font-medium border-b">환불금액</th>
+                                <th className="text-left px-2 py-1.5 font-medium border-b">수단</th>
+                                <th className="text-left px-2 py-1.5 font-medium border-b">구분</th>
+                                <th className="text-left px-2 py-1.5 font-medium border-b">메모</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {allRefunds.map((r) => (
+                                <tr key={r.id} className="border-b border-muted/20 hover:bg-red-50/40 bg-red-50/20">
+                                  <td className="px-2 py-1.5 tabular-nums text-muted-foreground">{format(new Date(r.created_at), 'MM-dd HH:mm')}</td>
+                                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-red-600">-{formatAmount(r.amount)}</td>
+                                  <td className="px-2 py-1.5">{r.method}</td>
+                                  <td className="px-2 py-1.5">
+                                    <Badge variant="destructive" className="text-[10px]">
+                                      {r.source === 'package' ? '패키지 환불' : '단건 환불'}
+                                    </Badge>
+                                  </td>
+                                  <td className="px-2 py-1.5 text-muted-foreground max-w-[120px] truncate">{r.memo ?? '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* History: 메시지 — T-20260513-foot-C21-TAB-RESTRUCTURE-C (AC-5) */}
               {chartTabGroup === 'history' && chartTab === 'messages' && (
