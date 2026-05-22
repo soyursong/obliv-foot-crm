@@ -1,14 +1,15 @@
 /**
- * T-20260522-foot-RESV-MOVE-CONFIRM
+ * T-20260522-foot-RESV-MOVE-CONFIRM — CANCELLED
  * 예약 슬롯 이동 확인창 + 변경이력 자동기록
  *
- * AC-1: 대시보드 슬롯 드래그 시 확인 다이얼로그 표시 (시간 변경 시에만)
- *   - "예약시간을 변경하시겠습니까?" 문구 + 변경 전 → 변경 후 시간 표시
- *   - "확인" → 이동 실행 / "취소" → 원위치 복귀 (다이얼로그 닫힘)
- *   - 같은 시간대 내 이동(currentSlot === newSlot): 확인창 미표시
- * AC-2: 예약 시간 변경 완료 시 reservation_logs에 'reschedule' 이벤트 기록
- *   → 2번차트 2구역 예약내역 패널(ReservationAuditLogPanel)에 이력 표시
- * AC-3: 기존 동작 유지 — 신규 예약 생성/드래그 성능/기존 confirm 영향 없음
+ * ※ 이 티켓은 대표 방침("슬롯 이동 팝업 불필요")에 따라 취소됨.
+ *    슬롯 이동 팝업은 T-20260522-foot-SLOT-POPUP-REGRESS(94bfd83)에서 완전 제거.
+ *    이 스펙 파일은 이력 보존 목적으로 유지하되, AC-1은 NOT-exist 검증으로 전환.
+ *
+ * 원래 AC:
+ * AC-1: 대시보드 슬롯 드래그 시 확인 다이얼로그 표시 (시간 변경 시에만) — CANCELLED
+ * AC-2: 예약 시간 변경 완료 시 reservation_logs에 'reschedule' 이벤트 기록 — 유지
+ * AC-3: 기존 동작 유지 — 신규 예약 생성/드래그 성능/기존 confirm 영향 없음 — 유지
  */
 import { test, expect } from '@playwright/test';
 
@@ -40,16 +41,17 @@ test.describe('T-20260522-foot-RESV-MOVE-CONFIRM', () => {
     await expect(dialog).not.toBeVisible({ timeout: 5000 });
   });
 
-  // AC-1: "확인" / "취소" 버튼 testid 존재 확인 (다이얼로그 강제 open 트리거 불가 → 구조 검증)
-  test('AC-1: 확인/취소 버튼 testid가 코드에 정의되어 있다 (정적 검증)', async ({ page }) => {
+  // AC-1: 티켓 RESV-MOVE-CONFIRM은 CANCELLED 처리됨 (대표 방침: 슬롯 이동 팝업 불필요).
+  //        확인 다이얼로그 testid는 T-20260522-foot-SLOT-POPUP-REGRESS(94bfd83)에서 제거됨.
+  //        이 테스트는 제거 이후 회귀 방지용으로 NOT-exist 검증으로 전환.
+  test('AC-1(REVISED): slot-move-confirm 관련 testid가 번들에 없다 (CANCELLED 이후)', async ({ page }) => {
     await page.goto(`${BASE_URL}/dashboard`);
     await page.waitForLoadState('networkidle');
 
-    // 페이지 소스에 testid 속성 포함 여부 확인
+    // RESV-MOVE-CONFIRM은 취소됨 — 확인 다이얼로그 testid가 번들에 없어야 함
     const source = await page.content();
-    expect(source).toContain('slot-move-confirm-btn');
-    expect(source).toContain('slot-move-cancel-btn');
-    expect(source).toContain('slot-move-confirm-dialog');
+    expect(source).not.toContain('slot-move-confirm-btn');
+    expect(source).not.toContain('slot-move-confirm-dialog');
   });
 
   // AC-1: 대시보드 타임라인 슬롯(드롭존)이 존재하여 드래그 이동 가능한 구조 유지
