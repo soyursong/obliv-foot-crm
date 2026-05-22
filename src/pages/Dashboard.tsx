@@ -5,7 +5,7 @@ import {
   DndContext,
   DragOverlay,
   MeasuringStrategy,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   useSensor,
   useSensors,
@@ -1235,6 +1235,9 @@ function SlotDropCell({
     <div
       ref={setNodeRef}
       className={cn(className, isOver && 'ring-2 ring-inset ring-teal-400 bg-teal-50/40')}
+      // T-20260522-foot-CHART-TAP-DELAY AC-3: 드롭 셀은 draggable 아님 → manipulation으로 300ms tap delay 제거
+      // 내부 draggable 카드는 touch-action:none 인라인 스타일로 자체 오버라이드
+      style={{ touchAction: 'manipulation' }}
       onClick={onClick}
       title={title}
       data-testid={dataTestId}
@@ -2568,9 +2571,12 @@ export default function Dashboard() {
   // T-20260506-foot-CHART-UNIFIED-ACCESS: TouchSensor distance-only 방식으로 변경
   // 이유: delay:200ms 방식은 200ms 후 dnd-kit이 터치를 선점해 브라우저 contextmenu(롱프레스) 이벤트 억제
   // distance:8 방식은 8px 이상 이동해야 드래그 시작 → 롱프레스 시 contextmenu 자연 발생 보장
-  // T-20260511-foot-DASH-DRAG-PERF: PointerSensor distance 5→3 (더 빠른 드래그 시작 응답)
+  // T-20260522-foot-CHART-TAP-DELAY: PointerSensor → MouseSensor 교체
+  // 이유: PointerSensor는 마우스+터치 모두 가로챔 → 태블릿에서 distance:3px 조건에 탭이 drag로 인식됨
+  //       MouseSensor(마우스 전용) + TouchSensor(터치 전용 distance:8) 분리로 충돌 제거
+  //       터치 탭(<8px) → TouchSensor 미활성화 → click 정상 발화 보장
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
     useSensor(TouchSensor, { activationConstraint: { distance: 8 } }),
   );
 
