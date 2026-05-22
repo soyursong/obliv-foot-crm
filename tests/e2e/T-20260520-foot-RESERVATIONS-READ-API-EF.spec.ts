@@ -147,3 +147,19 @@ test('TD2-10: 응답 코드 분기 (200/400/401/500)', () => {
   expect(src).toContain('401');
   expect(src).toContain('500');
 });
+
+// ── 11. include_full_pii=true 전체 PII 반환 (CAL-UNMASK) ─────────
+test('TD2-11: include_full_pii=true 파라미터 파싱 + 전체 PII 반환 로직', () => {
+  const src = fs.readFileSync(EF_PATH, 'utf-8');
+  // 파라미터 파싱
+  expect(src).toContain("params['include_full_pii']");
+  expect(src).toContain("=== 'true'");
+  expect(src).toContain('includeFullPii');
+  // 전체 PII 조건부 반환 (spread 패턴)
+  expect(src).toContain('includeFullPii &&');
+  expect(src).toContain("name:");
+  expect(src).toContain("phone_e164:");
+  // 하위 호환 — name_masked / phone_e164_last4 항상 포함
+  expect(src).toContain('name_masked:');
+  expect(src).toContain('phone_e164_last4:');
+});
