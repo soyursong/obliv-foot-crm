@@ -74,6 +74,7 @@ import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import { NewCheckInDialog } from '@/components/NewCheckInDialog';
+import { CheckinFirstInfoDialog } from '@/components/CheckinFirstInfoDialog';
 import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
 import { PaymentDialog } from '@/components/PaymentDialog';
 import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
@@ -2264,6 +2265,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState<CheckIn | null>(null);
   const [openNew, setOpenNew] = useState(false);
+  // T-20260522-foot-CHECKIN-FIRST-INFO: 초진 접수 정보입력 폼 다이얼로그 상태
+  const [firstInfoTarget, setFirstInfoTarget] = useState<Reservation | null>(null);
   const [selectedCheckIn, setSelectedCheckIn] = useState<CheckIn | null>(null);
   const [paymentTarget, setPaymentTarget] = useState<CheckIn | null>(null);
   const [paymentInitialMode, setPaymentInitialMode] = useState<'single' | 'package'>('single');
@@ -3850,15 +3853,10 @@ export default function Dashboard() {
     }
   }, [ctxOpenChart]);
 
-  const handleReservationCheckIn = async (res: Reservation) => {
+  // T-20260522-foot-CHECKIN-FIRST-INFO: 실제 DB INSERT 함수 (초진 폼 완료 후 또는 재진 직접 호출)
+  // 초진(new) → consult_waiting, 재진(returning) → treatment_waiting
+  const doCheckInForReservation = async (res: Reservation) => {
     if (!clinic) return;
-    // B-3: 프론트 중복 방지 — 이미 체크인된 예약이면 차단 (DB UNIQUE 외 사용자 피드백)
-    const already = rows.find((r) => r.reservation_id === res.id && r.status !== 'cancelled');
-    if (already) {
-      toast.info(`${res.customer_name}님은 이미 체크인되어 있습니다`);
-      setSelectedCheckIn(already);
-      return;
-    }
     const { data: queueData, error: qErr } = await supabase.rpc('next_queue_number', {
       p_clinic_id: clinic.id,
       p_date: format(new Date(), 'yyyy-MM-dd'),
@@ -3871,9 +3869,6 @@ export default function Dashboard() {
     const needsExam = res.visit_type === 'returning';
 
     // T-20260522-foot-REVISIT-TREAT-WAIT FIX: INSERT 시 status 직접 세팅 (2단계 INSERT→UPDATE 패턴 폐기)
-    // 근본 원인: 기존 패턴은 status='registered'로 INSERT 후 별도 UPDATE → UPDATE 에러 체크 없음 →
-    //   UPDATE 실패 시 묵묵히 'registered'에 고착, Realtime 경합 시에도 동일 증상.
-    // 수정: SelfCheckIn/NewCheckInDialog/ReservationDetailPopup과 동일하게 INSERT 시점에 최종 status 직접 세팅.
     // 재진(returning) → treatment_waiting, 초진/체험 → consult_waiting
     const nextStatus: CheckInStatus = res.visit_type === 'returning' ? 'treatment_waiting' : 'consult_waiting';
 
@@ -3904,7 +3899,6 @@ export default function Dashboard() {
     // T-20260522-foot-PERF-TUNING OPT-3: pendingReservations는 timelineReservations 파생값 → 갱신으로 대체
     fetchTimelineReservations();
 
-    // UPDATE 단계 제거 — INSERT에서 직접 nextStatus로 세팅됨 (위 참조)
     const transNow = new Date().toISOString();
     await supabase.from('status_transitions').insert({
       check_in_id: realId,
@@ -3921,11 +3915,30 @@ export default function Dashboard() {
     };
     setRows((prev) => [...prev, newCheckIn]);
     toast.success(`${res.customer_name} 체크인 완료 (#${qn})`);
-    // T-20260510-foot-DASH-SLOT-REWORK-P0 AC6 → T-20260518-foot-SELFCHECKIN-TESTDATA5 D-Day 수정
-    // 기존: 재진(returning) 접수 시만 1번차트 자동 열림
-    // 수정: 초진(new)/재진(returning) 전체 — 접수 버튼 클릭 직후 1번차트 즉시 열기
-    // 근거: [TEST5] D-Day 현장 재확인 — 초진 "접수" 버튼 후 차트 미오픈 P0 버그
+    // 접수 버튼 클릭 직후 1번차트 즉시 열기
     setSelectedCheckIn(newCheckIn);
+  };
+
+  // T-20260522-foot-CHECKIN-FIRST-INFO: 접수 진입점 — 초진/재진 분기
+  // - 초진(new): 정보입력 폼 다이얼로그 오픈 → 완료 후 doCheckInForReservation 호출
+  // - 재진/체험: 폼 없이 바로 doCheckInForReservation
+  const handleReservationCheckIn = async (res: Reservation) => {
+    if (!clinic) return;
+    // B-3: 프론트 중복 방지 — 이미 체크인된 예약이면 차단 (DB UNIQUE 외 사용자 피드백)
+    const already = rows.find((r) => r.reservation_id === res.id && r.status !== 'cancelled');
+    if (already) {
+      toast.info(`${res.customer_name}님은 이미 체크인되어 있습니다`);
+      setSelectedCheckIn(already);
+      return;
+    }
+
+    if (res.visit_type === 'new') {
+      // 초진: 정보입력 폼 다이얼로그 → 완료 후 doCheckInForReservation
+      setFirstInfoTarget(res);
+    } else {
+      // 재진/체험: 폼 없이 바로 체크인
+      await doCheckInForReservation(res);
+    }
   };
 
   // 미니 캘린더 클릭-외부 닫기
@@ -5091,6 +5104,21 @@ export default function Dashboard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* T-20260522-foot-CHECKIN-FIRST-INFO: 초진 접수 정보입력 폼 다이얼로그 */}
+      {firstInfoTarget && (
+        <CheckinFirstInfoDialog
+          reservation={firstInfoTarget}
+          open
+          onOpenChange={(o) => { if (!o) setFirstInfoTarget(null); }}
+          onCompleted={() => {
+            // 클로저 캡처 방지: 현재 타겟 로컬에 복사 후 state 초기화
+            const target = firstInfoTarget;
+            setFirstInfoTarget(null);
+            doCheckInForReservation(target);
+          }}
+        />
+      )}
     </div>
   );
 }
