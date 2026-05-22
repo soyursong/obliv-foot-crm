@@ -472,7 +472,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
 
   // ── 진료비 영수증 인쇄 ──
   const printInvoice = (doc: InvoiceDoc) => {
-    const fmtAmt = (n: number) => n.toLocaleString('ko-KR') + '원';
+    // [SYNC: G-007] fmtAmt 로컬 중복 제거 → formatAmount(중앙함수) + '원' 교체
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>진료비 영수증 — ${checkIn.customer_name}</title>
 <style>
   body{font-family:'Malgun Gothic',sans-serif;padding:20mm;color:#222;font-size:13px}
@@ -488,9 +488,9 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
 <table>
   <tr><td>발행일</td><td>${format(new Date(doc.issue_date), 'yyyy-MM-dd')}</td></tr>
   <tr><td>환자명</td><td>${checkIn.customer_name}</td></tr>
-  <tr><td>급여 (공단+본인)</td><td>${fmtAmt(doc.insurance_covered)}</td></tr>
-  <tr><td>비급여</td><td>${fmtAmt(doc.non_covered)}</td></tr>
-  <tr class="total"><td>실제 납부액</td><td>${fmtAmt(doc.paid_amount)}</td></tr>
+  <tr><td>급여 (공단+본인)</td><td>${formatAmount(doc.insurance_covered)}원</td></tr>
+  <tr><td>비급여</td><td>${formatAmount(doc.non_covered)}원</td></tr>
+  <tr class="total"><td>실제 납부액</td><td>${formatAmount(doc.paid_amount)}원</td></tr>
 </table>
 </body></html>`;
     const w = window.open('', '_blank');
