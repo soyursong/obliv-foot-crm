@@ -1,15 +1,18 @@
 // T-20260515-foot-RESV-MEMO-APPEND
 // T-20260520-foot-RESV-MEMO-WALKIN: customer_id fallback — 예약 없는 워크인도 메모 작성 가능
 // T-20260521-foot-WALKIN-MEMO-GAP: check_in_id fallback — customer_id도 없는 수기 워크인 지원
+// T-20260522-foot-ALT-BADGE: is_pinned/pinned_at — 히스토리 메모 고정 기능 (AC-9, AC-10)
 // 예약메모 누적 히스토리 타임라인 컴포넌트 (append-only)
 // - reservation_memo_history 테이블에서 이력 조회
-// - 최신 메모 상단 표시
+// - 고정 메모 최상단 표시 (is_pinned=true), 나머지는 created_at DESC
 // - 하단 입력 필드로 새 메모 추가
 // - 우선순위: reservationId → customerId → checkInId
+// - [고정] 버튼은 히스토리 형태(reservation_memo_history rows)에만 표시 (AC-10)
+//   단건/일반 텍스트 메모(customers.customer_memo)에는 고정 기능 없음
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { MessageSquarePlus } from 'lucide-react';
+import { MessageSquarePlus, Pin, PinOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -23,6 +26,9 @@ export interface MemoHistoryItem {
   content: string;
   created_by_name: string | null;
   created_at: string;
+  // T-20260522-foot-ALT-BADGE AC-9,10: 고정 기능
+  is_pinned: boolean;
+  pinned_at: string | null;
 }
 
 interface Props {
@@ -41,6 +47,18 @@ interface Props {
   onAdded?: () => void;
 }
 
+// T-20260522-foot-ALT-BADGE AC-10: 고정 정렬 — is_pinned 먼저(pinned_at DESC), 나머지 created_at DESC
+function sortMemoItems(items: MemoHistoryItem[]): MemoHistoryItem[] {
+  const pinned = items.filter((i) => i.is_pinned).sort((a, b) => {
+    if (a.pinned_at && b.pinned_at) return b.pinned_at.localeCompare(a.pinned_at);
+    return 0;
+  });
+  const rest = items.filter((i) => !i.is_pinned).sort((a, b) =>
+    b.created_at.localeCompare(a.created_at)
+  );
+  return [...pinned, ...rest];
+}
+
 export function ReservationMemoTimeline({
   reservationId,
   customerId,
@@ -55,6 +73,7 @@ export function ReservationMemoTimeline({
   const [inputVal, setInputVal] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [togglingPinId, setTogglingPinId] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // T-20260520-foot-RESV-MEMO-WALKIN: reservationId → customer_id 순 fallback
@@ -76,9 +95,10 @@ export function ReservationMemoTimeline({
     if (!effectiveKey) return;
     let cancelled = false;
     setLoading(true);
+    // T-20260522-foot-ALT-BADGE: is_pinned, pinned_at 포함해서 조회
     const query = supabase
       .from('reservation_memo_history')
-      .select('id, reservation_id, customer_id, check_in_id, content, created_by_name, created_at')
+      .select('id, reservation_id, customer_id, check_in_id, content, created_by_name, created_at, is_pinned, pinned_at')
       .order('created_at', { ascending: false });
 
     // T-20260521-foot-WALKIN-MEMO-GAP: 3순위 fallback — reservation_id → customer_id → check_in_id
@@ -93,7 +113,7 @@ export function ReservationMemoTimeline({
       if (error) {
         console.error('[ReservationMemoTimeline] fetch error', error);
       } else {
-        setItems((data as MemoHistoryItem[]) ?? []);
+        setItems(sortMemoItems((data as MemoHistoryItem[]) ?? []));
       }
       setLoading(false);
     });
@@ -117,17 +137,44 @@ export function ReservationMemoTimeline({
     const { data, error } = await supabase
       .from('reservation_memo_history')
       .insert(insertPayload)
-      .select('id, reservation_id, customer_id, content, created_by_name, created_at')
+      .select('id, reservation_id, customer_id, content, created_by_name, created_at, is_pinned, pinned_at')
       .single();
     setSubmitting(false);
     if (error) {
       toast.error(`메모 저장 실패: ${error.message}`);
       return;
     }
-    setItems((prev) => [data as MemoHistoryItem, ...prev]);
+    setItems((prev) => sortMemoItems([data as MemoHistoryItem, ...prev]));
     setInputVal('');
     onAdded?.();
   };
+
+  // T-20260522-foot-ALT-BADGE AC-9: 고정/해제 토글
+  const togglePin = useCallback(async (item: MemoHistoryItem) => {
+    setTogglingPinId(item.id);
+    const newPinned = !item.is_pinned;
+    const { error } = await supabase
+      .from('reservation_memo_history')
+      .update({
+        is_pinned: newPinned,
+        pinned_at: newPinned ? new Date().toISOString() : null,
+      })
+      .eq('id', item.id);
+    setTogglingPinId(null);
+    if (error) {
+      toast.error(`고정 ${newPinned ? '설정' : '해제'} 실패: ${error.message}`);
+      return;
+    }
+    setItems((prev) =>
+      sortMemoItems(
+        prev.map((i) =>
+          i.id === item.id
+            ? { ...i, is_pinned: newPinned, pinned_at: newPinned ? new Date().toISOString() : null }
+            : i
+        )
+      )
+    );
+  }, []);
 
   const displayItems = compact && !expanded ? items.slice(0, 3) : items;
   const hasMore = compact && !expanded && items.length > 3;
@@ -142,13 +189,44 @@ export function ReservationMemoTimeline({
           {displayItems.map((item) => (
             <div
               key={item.id}
-              className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs"
+              className={`rounded border px-2 py-1.5 text-xs ${
+                item.is_pinned
+                  ? 'border-teal-300 bg-teal-50'
+                  : 'border-amber-200 bg-amber-50'
+              }`}
+              data-testid={item.is_pinned ? 'memo-pinned' : 'memo-item'}
             >
-              <span className="text-amber-600 font-medium tabular-nums mr-1">
-                [{format(new Date(item.created_at), 'MM/dd HH:mm')}
-                {item.created_by_name ? ` ${item.created_by_name}` : ''}]
-              </span>
-              <span className="whitespace-pre-wrap text-gray-800">{item.content}</span>
+              <div className="flex items-start justify-between gap-1">
+                <div className="flex-1 min-w-0">
+                  <span className={`font-medium tabular-nums mr-1 ${item.is_pinned ? 'text-teal-700' : 'text-amber-600'}`}>
+                    {item.is_pinned && (
+                      <Pin className="inline h-3 w-3 mr-0.5 text-teal-600 shrink-0" />
+                    )}
+                    [{format(new Date(item.created_at), 'MM/dd HH:mm')}
+                    {item.created_by_name ? ` ${item.created_by_name}` : ''}]
+                  </span>
+                  <span className="whitespace-pre-wrap text-gray-800">{item.content}</span>
+                </div>
+                {/* T-20260522-foot-ALT-BADGE AC-10: [고정] 버튼 — 히스토리 메모에만 표시 */}
+                <button
+                  type="button"
+                  onClick={() => togglePin(item)}
+                  disabled={togglingPinId === item.id}
+                  title={item.is_pinned ? '고정 해제' : '최상단 고정'}
+                  className={`shrink-0 rounded p-0.5 transition ${
+                    item.is_pinned
+                      ? 'text-teal-600 hover:bg-teal-100'
+                      : 'text-gray-400 hover:text-teal-600 hover:bg-teal-50'
+                  } disabled:opacity-40`}
+                  data-testid={item.is_pinned ? 'memo-unpin-btn' : 'memo-pin-btn'}
+                >
+                  {item.is_pinned ? (
+                    <PinOff className="h-3.5 w-3.5" />
+                  ) : (
+                    <Pin className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </div>
             </div>
           ))}
           {hasMore && (
@@ -236,5 +314,29 @@ export async function insertReservationMemo(
   if (error) {
     console.error('[insertReservationMemo] error', error);
     toast.error('예약메모 저장 실패 (예약은 등록됨)');
+  }
+}
+
+/** T-20260522-foot-ALT-BADGE AC-11: ALT ON 시 고정 메모 삽입 helper */
+export async function insertAltPinnedMemo(opts: {
+  customerId: string;
+  reservationId?: string | null;
+  clinicId: string;
+  altDetail: string | null;
+  authorName: string | null;
+}): Promise<void> {
+  const content = `ALT 대상 — ${opts.altDetail?.trim() || '상세내용 없음'}`;
+  const { error } = await supabase.from('reservation_memo_history').insert({
+    ...(opts.reservationId ? { reservation_id: opts.reservationId } : {}),
+    customer_id: opts.customerId,
+    clinic_id: opts.clinicId,
+    content,
+    created_by_name: opts.authorName || null,
+    is_pinned: true,
+    pinned_at: new Date().toISOString(),
+  });
+  if (error) {
+    console.error('[insertAltPinnedMemo] error', error);
+    toast.error('ALT 고정 메모 저장 실패');
   }
 }
