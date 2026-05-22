@@ -144,6 +144,9 @@ Deno.serve(async (req) => {
   const dateFrom      = params['date_from']       as string | undefined;
   const dateTo        = params['date_to']         as string | undefined;
   const statusFilter  = params['status']          as string | undefined;
+  // T-20260522-dopamine-CAL-UNMASK: 내부 신뢰 호출자(X-ReadAPI-Secret 인증 완료)에게 전체 PII 반환
+  // 외부 공개 API 기본값은 false(마스킹 유지). 도파민 TM 캘린더는 true로 요청.
+  const includeFullPii = params['include_full_pii'] === 'true';
   // page_size 우선, 없으면 limit (하위 호환)
   const rawPageSize   = params['page_size'] ?? params['limit'];
 
@@ -330,12 +333,19 @@ Deno.serve(async (req) => {
         memo:             row['memo']          ?? null,
         clinic_id:        row['clinic_id'],
         clinic_slug:      clinicJoin?.['slug'] ?? null,
-        // AC-3: 개인정보 마스킹 — 원본 name/phone 절대 노출 금지
+        // AC-3: 개인정보 마스킹 — 기본값은 마스킹 유지.
+        // T-20260522-dopamine-CAL-UNMASK: include_full_pii=true(신뢰 호출자) 시 전체 PII 추가 반환.
+        // name_masked / phone_e164_last4 는 하위 호환을 위해 항상 포함.
         customer: customer
           ? {
               id:               customer['id'],
-              name_masked:      maskName(customer['name']),        // "홍**"
-              phone_e164_last4: maskPhoneLast4(customer['phone']), // 끝 4자리
+              name_masked:      maskName(customer['name']),        // "홍**" — 항상 포함 (하위 호환)
+              phone_e164_last4: maskPhoneLast4(customer['phone']), // 끝 4자리 — 항상 포함 (하위 호환)
+              // 신뢰 호출자(include_full_pii=true) 전용 — 미인증 외부 경로로는 절대 노출 안 됨
+              ...(includeFullPii && {
+                name:       typeof customer['name']  === 'string' ? customer['name']  : undefined,
+                phone_e164: typeof customer['phone'] === 'string' ? customer['phone'] : undefined,
+              }),
             }
           : null,
         created_at: row['created_at'],
