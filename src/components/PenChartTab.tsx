@@ -289,21 +289,19 @@ export function PenChartTab({
 
     if (!files || files.length === 0) { setSavedCharts([]); return; }
 
-    const charts = await Promise.all(
-      files
-        .filter((f) => f.name && !f.id?.endsWith('/'))
-        .map(async (file) => {
-          const path = `${storagePath}/${file.name}`;
-          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
-          const tsMatch = file.name.match(/^(\d+)/);
-          const ts = tsMatch ? parseInt(tsMatch[1], 10) : 0;
-          return {
-            name: file.name,
-            url: data?.signedUrl ?? '',
-            uploadedAt: ts ? new Date(ts).toISOString() : '',
-          };
-        }),
-    );
+    // T-20260522-foot-PERF-TUNING OPT-7: N × createSignedUrl → createSignedUrls 1회 배치 (N 라운드트립 제거)
+    const filtered = files.filter((f) => f.name && !f.id?.endsWith('/'));
+    const paths = filtered.map((f) => `${storagePath}/${f.name}`);
+    const { data: urlData } = await supabase.storage.from('photos').createSignedUrls(paths, 3600);
+    const charts = filtered.map((file, i) => {
+      const tsMatch = file.name.match(/^(\d+)/);
+      const ts = tsMatch ? parseInt(tsMatch[1], 10) : 0;
+      return {
+        name: file.name,
+        url: urlData?.[i]?.signedUrl ?? '',
+        uploadedAt: ts ? new Date(ts).toISOString() : '',
+      };
+    });
     setSavedCharts(charts.filter((c) => c.url));
   }, [storagePath]);
 
