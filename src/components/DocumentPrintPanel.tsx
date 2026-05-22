@@ -123,6 +123,33 @@ function isLaserService(svc: { service_code?: string | null; name?: string; cate
   );
 }
 
+// T-20260522-foot-ALT-BADGE AC-6: 패키지 유형과 레이저코드 호환성 검증 (ALT OFF 전체 패키지 공통)
+// - 패키지에 해당 레이저 회차가 없으면 삽입 차단 (잘못된 레이저코드 삽입 방지)
+export interface ActivePackageInfo {
+  heated_sessions: number;
+  unheated_sessions: number;
+  package_name: string;
+}
+
+function isLaserBlockedByPackage(
+  svc: { category?: string; name?: string; service_code?: string | null },
+  pkg: ActivePackageInfo | null,
+): boolean {
+  if (!pkg) return false; // 패키지 없음 → 검증 불가, 허용
+  if (!isLaserService(svc)) return false; // 레이저 서비스 아님 → 해당 없음
+  const cat = svc.category ?? '';
+  if (cat === 'heated_laser') {
+    // 온열 레이저: 패키지에 온열 회차 없으면 차단
+    return (pkg.heated_sessions ?? 0) === 0;
+  }
+  if (cat === 'laser') {
+    // 비온열 레이저: 패키지에 비온열 회차 없으면 차단
+    return (pkg.unheated_sessions ?? 0) === 0;
+  }
+  // 이름/코드 기반 레이저(category 미분류): 전체 레이저 회차가 0이면 차단
+  return (pkg.heated_sessions ?? 0) + (pkg.unheated_sessions ?? 0) === 0;
+}
+
 // ─── 자동 바인딩 컨텍스트 — @/lib/autoBindContext.ts 로 추출됨 ───
 // T-20260521-foot-DOC-PRINT-UNIFY PUSH: 경로 4 (PaymentMiniWindow)와 공유하기 위해 공통 lib으로 이전.
 // loadAutoBindContext, buildAutoBindValues, AutoBindContext 등은 import에서 가져옴.
@@ -305,6 +332,18 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
   // ── 진료비 영수증 — 결제 데이터 체크박스 (T-20260519-foot-RECEIPT-REISSUE) ──
   const [paymentItems, setPaymentItems] = useState<PaymentItem[]>([]);
   const [selectedPaymentIds, setSelectedPaymentIds] = useState<Set<string>>(new Set());
+
+  // T-20260522-foot-ALT-BADGE AC-6: 활성 패키지 페치 — 레이저코드 호환성 검증용
+  const [activePackage, setActivePackage] = useState<ActivePackageInfo | null>(null);
+  useEffect(() => {
+    if (!checkIn.package_id) { setActivePackage(null); return; }
+    supabase
+      .from('packages')
+      .select('heated_sessions, unheated_sessions, package_name')
+      .eq('id', checkIn.package_id)
+      .maybeSingle()
+      .then(({ data }) => setActivePackage(data ?? null));
+  }, [checkIn.package_id]);
   const [receiptReissuePrinting, setReceiptReissuePrinting] = useState(false);
 
   // 방문일 기준 근무원장님 목록 (T-20260502-foot-DUTY-ROSTER)
@@ -1077,6 +1116,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
           staffId={staffId}
           dutyDoctors={dutyDoctors}
           altStatus={altStatus}
+          activePackage={activePackage}
           onOpenChange={(o) => {
             setIssueDialogOpen(o);
             if (!o) setSelectedTemplate(null);
@@ -1209,6 +1249,7 @@ function IssueDialog({
   staffId,
   dutyDoctors,
   altStatus = false,
+  activePackage = null,
 }: {
   template: FormTemplate;
   checkIn: CheckIn;
@@ -1221,6 +1262,8 @@ function IssueDialog({
   dutyDoctors: DutyDoctor[];
   /** T-20260522-foot-ALT-BADGE AC-12: ALT 활성 여부 — 레이저코드 삽입 차단 */
   altStatus?: boolean;
+  /** T-20260522-foot-ALT-BADGE AC-6: 활성 패키지 정보 — ALT OFF 레이저코드 호환성 검증 */
+  activePackage?: ActivePackageInfo | null;
 }) {
   const [saving, setSaving] = useState(false);
   const [autoValues, setAutoValues] = useState<Record<string, string>>({});
@@ -1507,6 +1550,7 @@ function IssueDialog({
 
   // 비급여 서비스 직접 추가 핸들러 (T-20260507-foot-PATIENT-FLOW-E2E)
   // T-20260522-foot-ALT-BADGE AC-12: ALT ON 시 레이저코드 삽입 차단
+  // T-20260522-foot-ALT-BADGE AC-6:  ALT OFF 시 패키지 미포함 레이저코드 삽입 차단
   const handleAddService = async () => {
     if (!addServiceId) return;
     const svc = allServices.find((s) => s.id === addServiceId);
@@ -1515,6 +1559,17 @@ function IssueDialog({
     if (altStatus && isLaserService(svc)) {
       toast.error('ALT 활성 고객 — 레이저코드 삽입이 차단되었습니다. (보험 반려 대상)', {
         description: 'ALT 해제 후 레이저코드를 추가할 수 있습니다.',
+        duration: 5000,
+      });
+      return;
+    }
+    // AC-6: ALT OFF + 패키지 등록 상태 → 패키지 미포함 레이저코드 삽입 차단 (전체 패키지 공통)
+    if (!altStatus && isLaserBlockedByPackage(svc, activePackage)) {
+      const pkgName = activePackage?.package_name ?? '현재 패키지';
+      const isHeated = svc.category === 'heated_laser';
+      const sessionType = isHeated ? '온열 레이저' : '레이저';
+      toast.error(`패키지 미포함 항목 — ${sessionType}코드 삽입이 차단되었습니다.`, {
+        description: `${pkgName}에 ${sessionType} 회차가 없습니다. 잘못된 코드 삽입을 방지합니다.`,
         duration: 5000,
       });
       return;
@@ -1833,6 +1888,33 @@ function IssueDialog({
               </div>
             )}
 
+            {/* T-20260522-foot-ALT-BADGE AC-6: ALT OFF + 패키지 검증 활성 배너 */}
+            {!altStatus && activePackage && (activePackage.heated_sessions + activePackage.unheated_sessions) === 0 && (
+              <div className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+                <div className="text-xs">
+                  <span className="font-semibold text-amber-800">패키지 검증 — 레이저코드 삽입 차단 중</span>
+                  <span className="ml-1.5 text-amber-700">{activePackage.package_name}에 레이저 회차 없음. 레이저 항목 잘못 삽입 방지.</span>
+                </div>
+              </div>
+            )}
+            {!altStatus && activePackage && (activePackage.heated_sessions + activePackage.unheated_sessions) > 0 && (
+              (activePackage.heated_sessions === 0 || activePackage.unheated_sessions === 0) && (
+                <div className="flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+                  <div className="text-xs">
+                    <span className="font-semibold text-blue-800">패키지 검증 활성</span>
+                    <span className="ml-1.5 text-blue-700">
+                      {activePackage.package_name} —{' '}
+                      {activePackage.heated_sessions === 0
+                        ? '온열 레이저 미포함 (온열 코드 삽입 차단)'
+                        : '비온열 레이저 미포함 (비온열 코드 삽입 차단)'}
+                    </span>
+                  </div>
+                </div>
+              )
+            )}
+
             {/* 비급여 서비스 직접 추가 — E2E 통합 (T-20260507-foot-PATIENT-FLOW-E2E) */}
             {allServices.length > 0 && (
               <div className="rounded-lg border border-dashed border-teal-200 p-3 space-y-2">
@@ -1859,8 +1941,12 @@ function IssueDialog({
                     >
                       <option value="">서비스 선택…</option>
                       {allServices.map((s) => {
-                        // T-20260522-foot-ALT-BADGE AC-12/13: ALT ON 시 레이저 서비스 시각적 차단 표시
-                        const isBlocked = altStatus && isLaserService(s);
+                        // T-20260522-foot-ALT-BADGE AC-12: ALT ON 시 레이저 서비스 시각적 차단 표시
+                        const isBlockedByAlt = altStatus && isLaserService(s);
+                        // T-20260522-foot-ALT-BADGE AC-6: ALT OFF + 패키지 미포함 레이저코드 시각적 차단
+                        const isBlockedByPkg = !altStatus && isLaserBlockedByPackage(s, activePackage);
+                        const isBlocked = isBlockedByAlt || isBlockedByPkg;
+                        const blockedLabel = isBlockedByAlt ? ' (ALT 차단)' : isBlockedByPkg ? ' (패키지 미포함)' : '';
                         return (
                           <option
                             key={s.id}
@@ -1868,7 +1954,7 @@ function IssueDialog({
                             disabled={isBlocked}
                             style={isBlocked ? { color: '#9ca3af', fontStyle: 'italic' } : undefined}
                           >
-                            {isBlocked ? '🚫 ' : ''}{s.service_code ? `[${s.service_code}] ` : ''}{s.name} — {formatAmount(s.price)}{isBlocked ? ' (차단됨)' : ''}
+                            {isBlocked ? '🚫 ' : ''}{s.service_code ? `[${s.service_code}] ` : ''}{s.name} — {formatAmount(s.price)}{blockedLabel}
                           </option>
                         );
                       })}
@@ -1880,19 +1966,30 @@ function IssueDialog({
                         onChange={(e) => setAddServiceAmountStr(e.target.value)}
                         className="h-7 text-xs flex-1"
                       />
-                      <Button
-                        size="sm"
-                        className={`h-7 text-xs whitespace-nowrap ${
-                          altStatus && isLaserService(allServices.find((s) => s.id === addServiceId) ?? {})
-                            ? 'bg-red-300 cursor-not-allowed'
-                            : 'bg-teal-600 hover:bg-teal-700'
-                        }`}
-                        onClick={handleAddService}
-                        disabled={!addServiceId || addingService || (altStatus && isLaserService(allServices.find((s) => s.id === addServiceId) ?? {}))}
-                        title={altStatus && isLaserService(allServices.find((s) => s.id === addServiceId) ?? {}) ? 'ALT 활성 — 레이저코드 삽입 불가' : undefined}
-                      >
-                        {addingService ? '추가 중…' : (altStatus && isLaserService(allServices.find((s) => s.id === addServiceId) ?? {}) ? '차단됨' : '추가')}
-                      </Button>
+                      {(() => {
+                        const selectedSvc = allServices.find((s) => s.id === addServiceId) ?? {};
+                        const blockedByAlt = altStatus && isLaserService(selectedSvc);
+                        const blockedByPkg = !altStatus && isLaserBlockedByPackage(selectedSvc, activePackage);
+                        const isCurrentBlocked = blockedByAlt || blockedByPkg;
+                        const blockTitle = blockedByAlt
+                          ? 'ALT 활성 — 레이저코드 삽입 불가'
+                          : blockedByPkg
+                          ? `패키지 미포함 — ${activePackage?.package_name ?? '현재 패키지'}에 해당 레이저 회차 없음`
+                          : undefined;
+                        return (
+                          <Button
+                            size="sm"
+                            className={`h-7 text-xs whitespace-nowrap ${
+                              isCurrentBlocked ? 'bg-red-300 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700'
+                            }`}
+                            onClick={handleAddService}
+                            disabled={!addServiceId || addingService || isCurrentBlocked}
+                            title={blockTitle}
+                          >
+                            {addingService ? '추가 중…' : isCurrentBlocked ? '차단됨' : '추가'}
+                          </Button>
+                        );
+                      })()}
                       <Button
                         size="sm"
                         variant="outline"
