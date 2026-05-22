@@ -1648,8 +1648,12 @@ function DashboardTimeline({
             열 너비가 헤더와 본문 사이에 어긋남 → 헤더를 안으로 이동해 자동 동기화
           T-20260514-foot-TIMETABLE-MOBILE-HSCROLL:
             [overflow-x:clip] → scroll context 미생성, sticky left-0 외부 전파 허용
-            md:overflow-x-hidden → PC에서 원래 동작 */}
-      <div className="flex-1 min-h-0 overflow-y-auto [overflow-x:clip] md:overflow-x-hidden">
+            md:overflow-x-hidden → PC에서 원래 동작
+          T-20260522-foot-TIMETABLE-SCROLL: portrait 세로 스크롤 — data-testid로 CSS max-height 바인딩 */}
+      <div
+        data-testid="timeline-inner-scroll"
+        className="flex-1 min-h-0 overflow-y-auto [overflow-x:clip] md:overflow-x-hidden"
+      >
         {viewMode === 'therapist' ? (
           /* ── T-20260522-foot-TIMETABLE-FOLD: 치료사별 뷰 ─────────────────── */
           <div className="flex flex-col">

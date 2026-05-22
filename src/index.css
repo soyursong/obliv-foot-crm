@@ -234,3 +234,13 @@
     max-width: 2rem;
   }
 }
+
+/* T-20260522-foot-TIMETABLE-SCROLL: portrait 세로 스크롤 보장
+   flex-1 min-h-0 체인이 portrait(md:overflow-hidden + max-width:2rem) 환경에서
+   높이를 콘텐츠 높이로 팽창시켜 부모가 하단 클립하는 문제 수정.
+   max-height 명시로 스크롤 컨텍스트 강제 확보. */
+[data-orientation="portrait"] [data-testid="timeline-inner-scroll"] {
+  max-height: calc(100vh - 200px);    /* vh fallback (구형 브라우저) */
+  max-height: calc(100dvh - 200px);   /* dvh 우선 (dynamic viewport, 주소바 제외) */
+  overflow-y: auto;
+}
