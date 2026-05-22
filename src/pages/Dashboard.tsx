@@ -1,5 +1,5 @@
 // LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   DndContext,
@@ -116,6 +116,14 @@ const CardHandlersCtx = createContext<CardHandlers | null>(null);
 // ── 예약시간 맵 컨텍스트 (reservation_id → reservation_time) ──────────────────
 /** DraggableCard에서 useContext로 읽어 CustomerHoverCard에 예약시간 전달 */
 const ResvTimeMapCtx = createContext<Map<string, string>>(new Map());
+
+// T-20260522-foot-DRAG-RESP-OPT: 드래그 반응속도 최적화 — TickCtx
+// 역할: DraggableCard가 타이머 틱(10s)으로만 시간 표시를 갱신하고,
+//        드래그 상태 변경(setDragging) 시에는 불필요한 re-render를 건너뛰도록 분리.
+// - React.memo는 부모 re-render를 막지만 Context 구독은 memo를 우회함.
+// - setDragging → tick 변경 없 → TickCtx 변경 없 → 카드 body 실행 생략
+// - setTick(v+1) → TickCtx 값 변경 → 카드 body 실행(elapsedMMSS 갱신) ✓
+const TickCtx = createContext(0);
 
 // T-20260522-foot-SLOT-SNAP-FIX: S Pen 태블릿 drag ghost ↔ 실제 터치 포인트 정렬 보정
 // DragOverlay가 드래그 노드 중심에서 시작하도록 activatorEvent 좌표 기반으로 transform 보정.
@@ -269,7 +277,13 @@ const ROOM_FIELD_MAP: Record<string, RoomFieldKey> = {
   heated_laser: 'laser_room', // T-MQ-20260506: 가열성레이저 DnD 지원
 };
 
-function DraggableCard({
+// T-20260522-foot-DRAG-RESP-OPT: React.memo + 커스텀 비교자
+// 비교 대상: checkIn(동일 ref 여부) · compact · stageStart · packageLabel
+// 의도적 제외: onClick / onContextMenu — 인라인 클로저라 매 render마다 새 ref지만
+//   내부 handleCardClick/handleCardContext가 useCallback 안정적이므로 동작 동일.
+// 효과: setDragging(card) 시 Dashboard 전체 re-render → 이 memo가 비(非)드래그 카드 생략
+//       → drag start 첫 프레임에서 카드 body 재실행 0회 → 체감 반응속도 개선.
+const DraggableCard = memo(function DraggableCard({
   checkIn,
   compact,
   stageStart,
@@ -284,6 +298,9 @@ function DraggableCard({
   onClick?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
+  // TickCtx 구독: 타이머 틱(10s)이 바뀌면 이 카드도 re-render → elapsedMMSS 갱신
+  // memo 비교자는 tick을 prop으로 받지 않으므로 부모 re-render에는 무반응
+  useContext(TickCtx);
   const consentMap = useContext(ConsentMapCtx);
   const consentEntry = consentMap.get(checkIn.id);
   const checklistDoneSet = useContext(ChecklistDoneCtx);
@@ -572,7 +589,13 @@ function DraggableCard({
       </div>
     </div>
   );
-}
+// T-20260522-foot-DRAG-RESP-OPT: memo 비교자 — data props만 비교, 핸들러 제외
+}, (prev, next) =>
+  prev.checkIn === next.checkIn &&
+  prev.compact === next.compact &&
+  prev.stageStart === next.stageStart &&
+  prev.packageLabel === next.packageLabel
+);
 
 function DroppableColumn({
   id,
@@ -604,6 +627,9 @@ function DroppableColumn({
         isOver && invalidDrop && 'border-red-300 bg-red-50/30 opacity-60',
         className,
       )}
+      // T-20260522-foot-DRAG-RESP-OPT AC-3: 드롭 열 헤더·본문 tap delay 제거
+      // 내부 draggable 카드는 touch-action:none 인라인 스타일로 자체 오버라이드
+      style={{ touchAction: 'manipulation' }}
     >
       <div className="px-2.5 py-1.5 border-b bg-muted/30 rounded-t-lg">
         <div className="flex items-center justify-between">
@@ -2573,11 +2599,15 @@ export default function Dashboard() {
   // distance:8 방식은 8px 이상 이동해야 드래그 시작 → 롱프레스 시 contextmenu 자연 발생 보장
   // T-20260522-foot-CHART-TAP-DELAY: PointerSensor → MouseSensor 교체
   // 이유: PointerSensor는 마우스+터치 모두 가로챔 → 태블릿에서 distance:3px 조건에 탭이 drag로 인식됨
-  //       MouseSensor(마우스 전용) + TouchSensor(터치 전용 distance:8) 분리로 충돌 제거
-  //       터치 탭(<8px) → TouchSensor 미활성화 → click 정상 발화 보장
+  //       MouseSensor(마우스 전용) + TouchSensor(터치 전용 distance:5) 분리로 충돌 제거
+  //       터치 탭(<5px) → TouchSensor 미활성화 → click 정상 발화 보장
+  // T-20260522-foot-DRAG-RESP-OPT AC-1: TouchSensor distance 8 → 5
+  // 이유: 8px 이동 후 드래그 활성화 → 반응이 "살짝 느리다" 반복 피드백 (김주연 총괄)
+  //       5px로 단축해 활성화 거리를 37.5% 줄임 → 터치→드래그 전환 체감 속도 개선
+  //       5px는 여전히 accidental tap(≤3px 손가락 흔들림)과 충분히 구분됨 (MouseSensor 3px 기준 상회)
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
-    useSensor(TouchSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { distance: 5 } }),
   );
 
   const dateStr = useMemo(() => format(date, 'yyyy-MM-dd'), [date]);
@@ -3030,7 +3060,9 @@ export default function Dashboard() {
     payment_waiting: 15,
   };
 
-  const [, setTick] = useState(0);
+  // T-20260522-foot-DRAG-RESP-OPT: tick을 TickCtx.Provider value에 주입 (이전: 버려지던 값)
+  // setTick → TickCtx 값 변경 → 모든 DraggableCard(TickCtx 구독) re-render → elapsedMMSS 갱신
+  const [tick, setTick] = useState(0);
   const alertedIds = useRef<Set<string>>(new Set());
   useEffect(() => {
     const t = setInterval(() => {
@@ -3493,9 +3525,10 @@ export default function Dashboard() {
     }
   }, [ctxOpenChart]);
 
-  const handleCardContext = (ci: CheckIn, e: React.MouseEvent) => {
+  // T-20260522-foot-DRAG-RESP-OPT: useCallback 안정화 — 호출 측 클로저 의존성 최소화
+  const handleCardContext = useCallback((ci: CheckIn, e: React.MouseEvent) => {
     setContextMenu({ checkIn: ci, pos: { x: e.clientX, y: e.clientY } });
-  };
+  }, []);
 
   // T-20260514-foot-CHART2-OPEN-BUG (재오픈): window.open → 슬라이드 패널
   // f545660에서 CheckInDetailSheet만 수정하고 Dashboard 진입경로 누락 — AC-4 미충족
@@ -4734,6 +4767,10 @@ export default function Dashboard() {
       {/* Content: 타임라인 사이드바 + 칸반 */}
       {/* T-20260508-foot-DASH-SLOT-REMOVE: 카드 DnD 컨텍스트를 타임라인까지 확장
           → 타임라인 고객박스에서 칸반 열로 직접 드래그 이동 가능 */}
+      {/* T-20260522-foot-DRAG-RESP-OPT: TickCtx — 타이머 틱을 DraggableCard에 context로 전달
+          DraggableCard는 TickCtx 구독으로 10s마다 elapsed time 갱신.
+          setDragging 변경 시에는 tick 값이 변하지 않으므로 카드 body 재실행 없음. */}
+      <TickCtx.Provider value={tick}>
       <ChartNumberMapCtx.Provider value={todayCustomerChartMap}>
       <CardHandlersCtx.Provider value={cardHandlersValue}>
       <ChecklistDoneCtx.Provider value={checklistDone}>
@@ -4878,6 +4915,7 @@ export default function Dashboard() {
       </ChecklistDoneCtx.Provider>
       </CardHandlersCtx.Provider>
       </ChartNumberMapCtx.Provider>
+      </TickCtx.Provider>
 
       {/* T-20260520-foot-SLOT-MOVE-REVERT: 확인 다이얼로그 제거 — 즉시 이동 */}
 
