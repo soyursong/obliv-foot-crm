@@ -16,6 +16,14 @@
  *   AC-3: [T] 텍스트 도구 — 탭 위치 키보드 입력 후 캔버스 삽입
  *   AC-5: 형광펜 도구 — 반투명 두꺼운 선, 지우개 호환
  *
+ * T-20260522-foot-PENCHART-TOOL-UX (P2):
+ *   AC-1: 펜 quadratic bezier 스무딩 → 글씨 인식 개선 (lastMidRef 추적)
+ *   AC-2: 지우개 — placedItems 미삭제 (드로잉 레이어 스트로크만)
+ *   AC-3: 화이트 — placedItems hit-test 삭제 (상용구 포함 전체)
+ *   AC-4: 텍스트 — 저장 후 이동·삭제 (PlacedItemOverlay 기존 구현)
+ *   AC-5: 형광펜 — globalAlpha 0.20 (기존 구현)
+ *   AC-6: T상용구 패널 헤더 중복 라벨 제거
+ *
  * 모드 구조:
  *   list   — 저장된 차트 목록 + 새 차트 버튼
  *   select — 양식 선택 패널 (pen_chart / health_questionnaire_* / refund_consent)
@@ -457,6 +465,8 @@ export function PenChartTab({
 
   const drawingRef = useRef(false);
   const lastPosRef = useRef<{ x: number; y: number } | null>(null);
+  // T-20260522-foot-PENCHART-TOOL-UX AC-1: 펜 bezier 스무딩용 이전 midpoint 추적
+  const lastMidRef = useRef<{ x: number; y: number } | null>(null);
   const emptyRef = useRef(true);
 
   // T-20260519-foot-PENCHART-FORM-ADD (FIX): Undo 10단계
@@ -669,6 +679,8 @@ export function PenChartTab({
     setPlacedItems([]);
     setSelectedIds(new Set());
     undoStackRef.current = [];
+    // T-20260522-foot-PENCHART-TOOL-UX AC-1: bezier 스무딩 상태 초기화
+    lastMidRef.current = null;
   }, [initBgCanvas, initDrawCanvas]);
 
   useEffect(() => {
@@ -808,11 +820,11 @@ export function PenChartTab({
     if (!ctx) return;
 
     if (activeTool === 'eraser') {
-      // V3 AC-3: 드로잉 레이어만 clearRect → bg(상용구 템플릿) 보존
+      // V3 AC-3: 드로잉 레이어만 clearRect → bg(상용구 템플릿) 보존, placedItems 미삭제
       const sz = penSize * 4;
       ctx.clearRect(pos.x - sz, pos.y - sz, sz * 2, sz * 2);
     } else if (activeTool === 'white') {
-      // V3 AC-4~6: 화이트 도구 — source-over 흰색으로 전 레이어 덮어쓰기
+      // T-20260522-foot-PENCHART-TOOL-UX AC-3: 화이트 — source-over 흰색 + placedItems hit-test 삭제
       ctx.save();
       ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = '#ffffff';
@@ -824,6 +836,15 @@ export function PenChartTab({
       ctx.restore();
       emptyRef.current = false;
       setHasDrawing(true);
+      // 화이트 브러시 반경 내 배치된 아이템 삭제 (상용구 포함 전체)
+      setPlacedItems((prev) => prev.filter((item) => {
+        const lineH = item.fontSize + 6;
+        const lines = item.text.split('\n');
+        const itemH = lines.length * lineH + 8;
+        const itemW = Math.max(60, item.text.length * (item.fontSize * 0.55));
+        return !(pos.x + sz > item.x && pos.x - sz < item.x + itemW &&
+                 pos.y + sz > item.y && pos.y - sz < item.y + itemH);
+      }));
     } else if (activeTool === 'highlight') {
       // V3 AC-10~11: 투명도 35%→20%
       ctx.beginPath();
@@ -836,12 +857,13 @@ export function PenChartTab({
       emptyRef.current = false;
       setHasDrawing(true);
     } else {
-      // pen
+      // T-20260522-foot-PENCHART-TOOL-UX AC-1: 펜 — 시작점 dot + bezier 상태 초기화
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, penSize * 0.5, 0, Math.PI * 2);
       ctx.globalAlpha = 1;
       ctx.fillStyle = penColor;
       ctx.fill();
+      lastMidRef.current = null; // bezier 스무딩 상태 리셋 (새 획 시작)
       emptyRef.current = false;
       setHasDrawing(true);
     }
@@ -878,11 +900,11 @@ export function PenChartTab({
       const last = lastPosRef.current ?? pos;
 
       if (activeTool === 'eraser') {
-        // V3 AC-3: 드로잉 레이어만 clearRect → bg(상용구 템플릿) 보존
+        // V3 AC-3: 드로잉 레이어만 clearRect → bg(상용구 템플릿) 보존, placedItems 미삭제
         const sz = penSize * 4;
         ctx.clearRect(pos.x - sz, pos.y - sz, sz * 2, sz * 2);
       } else if (activeTool === 'white') {
-        // V3 AC-4~6: 화이트 도구 — source-over 흰색 선
+        // T-20260522-foot-PENCHART-TOOL-UX AC-3: 화이트 — source-over 흰색 선 + placedItems hit-test 삭제
         ctx.save();
         ctx.globalCompositeOperation = 'source-over';
         ctx.beginPath();
@@ -897,6 +919,16 @@ export function PenChartTab({
         ctx.restore();
         emptyRef.current = false;
         setHasDrawing(true);
+        // 화이트 브러시 반경 내 배치된 아이템 삭제
+        const wsz = penSize * 4;
+        setPlacedItems((prev) => prev.filter((item) => {
+          const lineH = item.fontSize + 6;
+          const lines = item.text.split('\n');
+          const itemH = lines.length * lineH + 8;
+          const itemW = Math.max(60, item.text.length * (item.fontSize * 0.55));
+          return !(pos.x + wsz > item.x && pos.x - wsz < item.x + itemW &&
+                   pos.y + wsz > item.y && pos.y - wsz < item.y + itemH);
+        }));
       } else if (activeTool === 'highlight') {
         // V3 AC-10~11: 투명도 35%→20%
         ctx.beginPath();
@@ -912,16 +944,26 @@ export function PenChartTab({
         emptyRef.current = false;
         setHasDrawing(true);
       } else {
-        // pen
+        // T-20260522-foot-PENCHART-TOOL-UX AC-1: 펜 — quadratic bezier 스무딩 (글씨 인식 개선)
+        // midpoint bezier: 연속 획 사이를 곡선으로 연결 → 자연스러운 글씨체
+        const mid = { x: (last.x + pos.x) / 2, y: (last.y + pos.y) / 2 };
         ctx.beginPath();
-        ctx.moveTo(last.x, last.y);
-        ctx.lineTo(pos.x, pos.y);
+        if (lastMidRef.current) {
+          // 이전 midpoint에서 현재 midpoint까지 — last를 bezier 제어점으로 사용
+          ctx.moveTo(lastMidRef.current.x, lastMidRef.current.y);
+          ctx.quadraticCurveTo(last.x, last.y, mid.x, mid.y);
+        } else {
+          // 첫 세그먼트는 직선
+          ctx.moveTo(last.x, last.y);
+          ctx.lineTo(mid.x, mid.y);
+        }
         ctx.globalAlpha = 1;
         ctx.strokeStyle = penColor;
         ctx.lineWidth = penSize;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.stroke();
+        lastMidRef.current = mid; // 다음 세그먼트 시작점 = 현재 midpoint
         emptyRef.current = false;
         setHasDrawing(true);
       }
@@ -933,6 +975,7 @@ export function PenChartTab({
     if (!drawingRef.current) return;
     drawingRef.current = false;
     lastPosRef.current = null;
+    lastMidRef.current = null; // T-20260522-foot-PENCHART-TOOL-UX AC-1: 획 종료 시 bezier 상태 초기화
     const canvas = canvasRef.current;
     if (canvas && canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
   };
@@ -1339,9 +1382,8 @@ export function PenChartTab({
                 className="absolute top-8 left-0 z-20 w-64 rounded-lg border bg-white shadow-lg overflow-hidden"
                 data-testid="phrase-library-panel"
               >
-                {/* 헤더 */}
-                <div className="flex items-center justify-between px-2 py-1.5 bg-teal-50 border-b">
-                  <span className="text-[11px] font-bold text-teal-800">상용구</span>
+                {/* T-20260522-foot-PENCHART-TOOL-UX AC-6: 패널 헤더 중복 라벨 제거 (버튼에 이미 "상용구" 표시됨) */}
+                <div className="flex items-center justify-end px-2 py-1 bg-teal-50 border-b">
                   <button
                     onClick={() => setShowPhrasePanel(false)}
                     className="text-teal-500 hover:text-teal-700"
