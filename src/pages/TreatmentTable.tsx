@@ -128,96 +128,20 @@ export default function TreatmentTable() {
     setLoading(true);
     const { start, end } = dayBoundsRange(dateFrom, dateTo);
 
-    /* check_ins */
-    const { data: ciData } = await supabase
-      .from('check_ins')
-      .select('*')
-      .eq('clinic_id', clinic.id)
-      .gte('checked_in_at', start)
-      .lte('checked_in_at', end)
-      .order('checked_in_at', { ascending: true });
+    // T-20260522-foot-PERF-TUNING OPT-6: check_ins + staff + duty_roster 병렬 실행
+    // (이전: check_ins → staff(순차) → packages(순차) → payments(순차) → reservations(순차) → duty_roster(순차))
+    const [{ data: ciData }, { data: staffData }, { data: dutyData }] = await Promise.all([
+      supabase.from('check_ins').select('*').eq('clinic_id', clinic.id)
+        .gte('checked_in_at', start).lte('checked_in_at', end)
+        .order('checked_in_at', { ascending: true }),
+      supabase.from('staff').select('*').eq('clinic_id', clinic.id).eq('active', true).order('name'),
+      supabase.from('duty_roster').select('date, doctor_id, staff:doctor_id(name)')
+        .eq('clinic_id', clinic.id).gte('date', dateFrom).lte('date', dateTo).order('date'),
+    ]);
 
     const ciRows = (ciData ?? []) as CheckIn[];
     setCheckIns(ciRows);
-
-    /* staff */
-    const { data: staffData } = await supabase
-      .from('staff')
-      .select('*')
-      .eq('clinic_id', clinic.id)
-      .eq('active', true)
-      .order('name');
     setStaffList((staffData ?? []) as Staff[]);
-
-    /* packages (check_ins 중 package_id 있는 것만) */
-    const pkgIds = [...new Set(ciRows.map((c) => c.package_id).filter(Boolean))] as string[];
-    if (pkgIds.length > 0) {
-      const { data: pkgData } = await supabase
-        .from('packages')
-        .select('id, package_name, package_type, total_sessions, total_amount')
-        .in('id', pkgIds);
-      setPackages((pkgData ?? []) as PackageInfo[]);
-    } else {
-      setPackages([]);
-    }
-
-    /* payments — check_in_id 기준 합산 */
-    const ciIds = ciRows.map((c) => c.id);
-    if (ciIds.length > 0) {
-      const { data: payData } = await supabase
-        .from('payments')
-        .select('check_in_id, amount, method, payment_type')
-        .in('check_in_id', ciIds);
-
-      const pmap = new Map<string, PaymentSummary>();
-      for (const p of (payData ?? []) as {
-        check_in_id: string;
-        amount: number;
-        method: string;
-        payment_type: string;
-      }[]) {
-        if (!p.check_in_id) continue;
-        const prev = pmap.get(p.check_in_id) ?? { check_in_id: p.check_in_id, total: 0, methods: [] };
-        prev.total += p.payment_type === 'refund' ? -p.amount : p.amount;
-        if (!prev.methods.includes(p.method)) prev.methods.push(p.method);
-        pmap.set(p.check_in_id, prev);
-      }
-      setPaymentMap(pmap);
-    } else {
-      setPaymentMap(new Map());
-    }
-
-    /* 다음 예약 — customer_id 기준 (오늘 이후 첫 예약) */
-    const custIds = [...new Set(ciRows.map((c) => c.customer_id).filter(Boolean))] as string[];
-    if (custIds.length > 0) {
-      const { data: resvData } = await supabase
-        .from('reservations')
-        .select('customer_id, reservation_date, reservation_time')
-        .eq('clinic_id', clinic.id)
-        .in('customer_id', custIds)
-        .gt('reservation_date', today)
-        .in('status', ['confirmed', 'checked_in'])
-        .order('reservation_date', { ascending: true });
-
-      const rmap = new Map<string, NextReservation>();
-      for (const r of (resvData ?? []) as NextReservation[]) {
-        if (r.customer_id && !rmap.has(r.customer_id)) {
-          rmap.set(r.customer_id, r);
-        }
-      }
-      setNextResvMap(rmap);
-    } else {
-      setNextResvMap(new Map());
-    }
-
-    /* 당직 원장 (duty_roster) */
-    const { data: dutyData } = await supabase
-      .from('duty_roster')
-      .select('date, doctor_id, staff:doctor_id(name)')
-      .eq('clinic_id', clinic.id)
-      .gte('date', dateFrom)
-      .lte('date', dateTo)
-      .order('date');
     setDutyDoctors(
       (dutyData ?? []).map((d: Record<string, unknown>) => ({
         date: d.date as string,
@@ -225,6 +149,49 @@ export default function TreatmentTable() {
         staff: d.staff as { name: string } | undefined,
       })),
     );
+
+    // check_ins 의존 쿼리: packages + payments + 다음 예약 병렬 실행
+    const pkgIds  = [...new Set(ciRows.map((c) => c.package_id).filter(Boolean))] as string[];
+    const ciIds   = ciRows.map((c) => c.id);
+    const custIds = [...new Set(ciRows.map((c) => c.customer_id).filter(Boolean))] as string[];
+
+    const [pkgRes, payRes, resvRes] = await Promise.all([
+      pkgIds.length > 0
+        ? supabase.from('packages').select('id, package_name, package_type, total_sessions, total_amount').in('id', pkgIds)
+        : Promise.resolve({ data: [] as PackageInfo[] }),
+      ciIds.length > 0
+        ? supabase.from('payments').select('check_in_id, amount, method, payment_type').in('check_in_id', ciIds)
+        : Promise.resolve({ data: [] as { check_in_id: string; amount: number; method: string; payment_type: string }[] }),
+      custIds.length > 0
+        ? supabase.from('reservations').select('customer_id, reservation_date, reservation_time')
+            .eq('clinic_id', clinic.id).in('customer_id', custIds)
+            .gt('reservation_date', today).in('status', ['confirmed', 'checked_in'])
+            .order('reservation_date', { ascending: true })
+        : Promise.resolve({ data: [] as NextReservation[] }),
+    ]);
+
+    setPackages((pkgRes.data ?? []) as PackageInfo[]);
+
+    const pmap = new Map<string, PaymentSummary>();
+    for (const p of (payRes.data ?? []) as {
+      check_in_id: string;
+      amount: number;
+      method: string;
+      payment_type: string;
+    }[]) {
+      if (!p.check_in_id) continue;
+      const prev = pmap.get(p.check_in_id) ?? { check_in_id: p.check_in_id, total: 0, methods: [] };
+      prev.total += p.payment_type === 'refund' ? -p.amount : p.amount;
+      if (!prev.methods.includes(p.method)) prev.methods.push(p.method);
+      pmap.set(p.check_in_id, prev);
+    }
+    setPaymentMap(ciIds.length > 0 ? pmap : new Map());
+
+    const rmap = new Map<string, NextReservation>();
+    for (const r of (resvRes.data ?? []) as NextReservation[]) {
+      if (r.customer_id && !rmap.has(r.customer_id)) rmap.set(r.customer_id, r);
+    }
+    setNextResvMap(custIds.length > 0 ? rmap : new Map());
 
     setLoading(false);
   }, [clinic, dateFrom, dateTo, today]);
