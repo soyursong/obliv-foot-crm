@@ -5,7 +5,7 @@
  * 원내 일정 등록/조회/수정/삭제 (월간 캘린더 뷰 + 공지사항 통합 표시)
  * clinic_events 테이블 CRUD + notices 테이블 읽기 통합
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   addMonths,
   eachDayOfInterval,
@@ -154,17 +154,21 @@ export default function ClinicCalendar() {
   }, [selectedDate, events]);
 
   // ─── 달력 날짜 배열 ──────────────────────────────────────────────────
-  const calendarDays = eachDayOfInterval({
+  // T-20260522-foot-PERF-TUNING OPT-4: useMemo — currentDate/events 변경 시만 재계산
+  const calendarDays = useMemo(() => eachDayOfInterval({
     start: startOfWeek(startOfMonth(currentDate), { weekStartsOn: 0 }),
     end: endOfWeek(endOfMonth(currentDate), { weekStartsOn: 0 }),
-  });
+  }), [currentDate]);
 
-  const eventsMap = new Map<string, ClinicEvent[]>();
-  for (const ev of events) {
-    const k = ev.event_date;
-    if (!eventsMap.has(k)) eventsMap.set(k, []);
-    eventsMap.get(k)!.push(ev);
-  }
+  const eventsMap = useMemo(() => {
+    const m = new Map<string, ClinicEvent[]>();
+    for (const ev of events) {
+      const k = ev.event_date;
+      if (!m.has(k)) m.set(k, []);
+      m.get(k)!.push(ev);
+    }
+    return m;
+  }, [events]);
 
   // ─── 폼 조작 ──────────────────────────────────────────────────────────
   const openNew = (date?: Date) => {
