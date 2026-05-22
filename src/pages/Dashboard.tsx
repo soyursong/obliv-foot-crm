@@ -112,6 +112,9 @@ const PkgHolderCtx = createContext<Set<string>>(new Set());
 /** ALT(올트) 활성 고객 customer_id 집합 (T-20260522-foot-ALT-BADGE) */
 const AltHolderCtx = createContext<Set<string>>(new Set());
 
+/** T-20260522-foot-LASER-TIMER AC-3: 타이머 1분 이하 남은 check_in_id 집합 → 카드 깜빡임 */
+const TimerAlertCtx = createContext<Set<string>>(new Set());
+
 // ── 카드 고객 이름 우클릭/롱프레스 핸들러 컨텍스트 ────────────────────────────
 interface CardHandlers {
   onNameContext: (ci: CheckIn, e: React.MouseEvent) => void;
@@ -322,6 +325,9 @@ const DraggableCard = memo(function DraggableCard({
   // T-20260522-foot-ALT-BADGE: ALT 활성 여부
   const altHolderSet = useContext(AltHolderCtx);
   const isAlt = !!(checkIn.customer_id && altHolderSet.has(checkIn.customer_id));
+  // T-20260522-foot-LASER-TIMER AC-3: 타이머 1분 이하 → 카드 깜빡임
+  const timerAlertSet = useContext(TimerAlertCtx);
+  const isTimerAlert = timerAlertSet.has(checkIn.id);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: checkIn.id,
     data: { checkIn },
@@ -366,6 +372,8 @@ const DraggableCard = memo(function DraggableCard({
         className={cn(
           'cursor-grab touch-none rounded border px-1.5 py-1 text-xs shadow-sm transition hover:shadow active:cursor-grabbing',
           flagBg || 'bg-white',
+          // T-20260522-foot-LASER-TIMER AC-3: 타이머 1분 이하 → 카드 깜빡임
+          isTimerAlert && 'laser-timer-blink',
         )}
       >
         <div className="flex items-center justify-between gap-1">
@@ -520,6 +528,8 @@ const DraggableCard = memo(function DraggableCard({
       className={cn(
         'cursor-grab touch-none rounded border p-1 shadow-sm transition hover:shadow active:cursor-grabbing',
         flagBg || 'bg-white',
+        // T-20260522-foot-LASER-TIMER AC-3: 타이머 1분 이하 → 카드 깜빡임
+        isTimerAlert && 'laser-timer-blink',
       )}
     >
       <div className="flex items-center justify-between gap-1.5">
@@ -2367,12 +2377,16 @@ export default function Dashboard() {
   // T-20260515-foot-CONTEXT-MENU-4ITEM: 진료차트 패널 상태
   const [medicalChartOpen, setMedicalChartOpen] = useState(false);
   const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
+  // T-20260522-foot-LASER-TIMER: 진료차트 열릴 때 check_in_id 전달 (타이머 연동)
+  const [medicalChartCheckInId, setMedicalChartCheckInId] = useState<string | null>(null);
   const [stageStartMap, setStageStartMap] = useState<Map<string, string>>(new Map());
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
   // T-20260522-foot-PKG-BOX-INDICATOR: 잔여>0인 활성 패키지 보유 고객 ID 집합
   const [pkgHolderSet, setPkgHolderSet] = useState<Set<string>>(new Set());
   // T-20260522-foot-ALT-BADGE: ALT 활성 고객 ID 집합
   const [altHolderSet, setAltHolderSet] = useState<Set<string>>(new Set());
+  // T-20260522-foot-LASER-TIMER AC-3/5: 활성 타이머 맵 checkInId → endsAt
+  const [activeTimersMap, setActiveTimersMap] = useState<Map<string, Date>>(new Map());
   const [consentMap, setConsentMap] = useState<Map<string, ConsentEntry>>(new Map());
   const [checklistDone, setChecklistDone] = useState<Set<string>>(new Set());
   const [therapists, setTherapists] = useState<Staff[]>([]);
@@ -3184,6 +3198,69 @@ export default function Dashboard() {
     };
   }, [clinic, dateStr, fetchCheckIns, fetchAssignments, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts]);
 
+  // T-20260522-foot-LASER-TIMER AC-5: timer_records Realtime 구독 + 초기 로드
+  useEffect(() => {
+    if (!clinic) return;
+
+    // 초기 로드: 오늘 check_in의 활성 타이머 가져오기
+    const loadTimers = async () => {
+      if (!rows.length) return;
+      const checkInIds = rows.map((r) => r.id);
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data } = await (supabase as any)
+          .from('timer_records')
+          .select('check_in_id, ends_at')
+          .in('check_in_id', checkInIds)
+          .is('stopped_at', null);
+        const map = new Map<string, Date>();
+        for (const row of (data ?? []) as { check_in_id: string; ends_at: string }[]) {
+          map.set(row.check_in_id, new Date(row.ends_at));
+        }
+        setActiveTimersMap(map);
+      } catch {
+        // 타이머 로드 실패 무시
+      }
+    };
+    loadTimers();
+
+    // Realtime: INSERT (타이머 시작) / UPDATE (타이머 종료)
+    const timerChannel = supabase
+      .channel(`timer_records_rt_${clinic.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'timer_records', filter: `clinic_id=eq.${clinic.id}` },
+        (payload) => {
+          const row = payload.new as { check_in_id: string; ends_at: string; stopped_at: string | null };
+          if (!row.stopped_at) {
+            setActiveTimersMap((prev) => {
+              const next = new Map(prev);
+              next.set(row.check_in_id, new Date(row.ends_at));
+              return next;
+            });
+          }
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'timer_records', filter: `clinic_id=eq.${clinic.id}` },
+        (payload) => {
+          const row = payload.new as { check_in_id: string; stopped_at: string | null };
+          if (row.stopped_at) {
+            // 타이머 종료 → 맵에서 제거
+            setActiveTimersMap((prev) => {
+              const next = new Map(prev);
+              next.delete(row.check_in_id);
+              return next;
+            });
+          }
+        },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(timerChannel); };
+  }, [clinic, rows]);
+
   const STAGE_ALERT_MINS: Partial<Record<CheckInStatus, number>> = {
     consult_waiting: 20,
     consultation: 25,
@@ -3219,6 +3296,18 @@ export default function Dashboard() {
     }, 10000);
     return () => clearInterval(t);
   }, [rows, stageStartMap]);
+
+  // T-20260522-foot-LASER-TIMER AC-3: 타이머 1분 이하 check_in_id 집합 (tick 마다 재계산)
+  const timerAlertSet = useMemo(() => {
+    const set = new Set<string>();
+    const now = Date.now();
+    for (const [checkInId, endsAt] of activeTimersMap) {
+      const remaining = endsAt.getTime() - now;
+      if (remaining > 0 && remaining <= 60000) set.add(checkInId);
+    }
+    return set;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick, activeTimersMap]);
 
   const filtered = useMemo(() => {
     if (tab === 'all') return rows.filter((r) => r.status !== 'cancelled');
@@ -3589,7 +3678,7 @@ export default function Dashboard() {
       if (newStatus === 'done' && row.package_id) {
         const err = await autoDeductSession(row.id, row.package_id);
         if (err) toast.error(`세션 소진 실패: ${err}`);
-        else toast.success('패키지 1회 자동 소진');
+        // T-20260522-foot-SLOT-TOAST-REMOVE AC-1: 슬롯 이동 성공 토스트 제거
       }
     }
   };
@@ -3663,6 +3752,8 @@ export default function Dashboard() {
     setSelectedCheckIn(null);  // CheckInDetailSheet 닫기
     ctxCloseChart();           // CustomerChartSheet 닫기 (T-20260516-foot-CHART2-STATE-UNIFY)
     setMedicalChartCustomerId(ci.customer_id);
+    // T-20260522-foot-LASER-TIMER: check_in_id 전달 → 타이머 활성화
+    setMedicalChartCheckInId(ci.id);
     setMedicalChartOpen(true);
   }, [ctxCloseChart]);
 
@@ -3714,9 +3805,9 @@ export default function Dashboard() {
     if (newStatus === 'done' && ci.package_id) {
       const err = await autoDeductSession(ci.id, ci.package_id);
       if (err) toast.error(`세션 소진 실패: ${err}`);
-      else toast.success('패키지 1회 자동 소진');
+      // T-20260522-foot-SLOT-TOAST-REMOVE AC-1: 슬롯 이동 성공 토스트 제거
     }
-    // T-20260522-foot-SLOT-TIMETABLE-POPUP AC-2: 성공 토스트 제거
+    // T-20260522-foot-SLOT-TIMETABLE-POPUP AC-2 / T-20260522-foot-SLOT-TOAST-REMOVE AC-1: 성공 토스트 제거
   };
 
   /** 상담실 번호 선택 후 status='consultation' + consultation_room 동시 업데이트
@@ -4884,6 +4975,8 @@ export default function Dashboard() {
       <ChecklistDoneCtx.Provider value={checklistDone}>
       <PkgHolderCtx.Provider value={pkgHolderSet}>
       <AltHolderCtx.Provider value={altHolderSet}>
+      {/* T-20260522-foot-LASER-TIMER AC-3: 타이머 1분 이하 카드 깜빡임 */}
+      <TimerAlertCtx.Provider value={timerAlertSet}>
       <ConsentMapCtx.Provider value={consentMap}>
       <ResvTimeMapCtx.Provider value={resvTimeMap}>
       <DndContext
@@ -5020,6 +5113,7 @@ export default function Dashboard() {
       </DndContext>
       </ResvTimeMapCtx.Provider>
       </ConsentMapCtx.Provider>
+      </TimerAlertCtx.Provider>
       </AltHolderCtx.Provider>
       </PkgHolderCtx.Provider>
       </ChecklistDoneCtx.Provider>
@@ -5133,13 +5227,15 @@ export default function Dashboard() {
       {/* T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동 */}
 
       {/* T-20260515-foot-CONTEXT-MENU-4ITEM AC-2: 진료차트 패널 */}
+      {/* T-20260522-foot-LASER-TIMER: checkInId 추가 → 타이머 패널 활성화 */}
       <MedicalChartPanel
         open={medicalChartOpen}
-        onOpenChange={(v) => { if (!v) { setMedicalChartOpen(false); setMedicalChartCustomerId(null); } }}
+        onOpenChange={(v) => { if (!v) { setMedicalChartOpen(false); setMedicalChartCustomerId(null); setMedicalChartCheckInId(null); } }}
         customerId={medicalChartCustomerId}
         clinicId={clinic?.id ?? ''}
         currentUserRole={profile?.role ?? ''}
         currentUserEmail={profile?.email ?? null}
+        checkInId={medicalChartCheckInId}
       />
 
       {/* T-20260519-foot-SLOT-BATCH-EDIT: 슬롯 추가 다이얼로그 (AC-3) */}
