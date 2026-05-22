@@ -2296,7 +2296,14 @@ export default function Dashboard() {
   const [timelineReservations, setTimelineReservations] = useState<Reservation[]>([]);
   /** 셀프접수 walk-in 체크인 (reservation_id 없는 당일 체크인) — 통합 시간표용 */
   const [selfCheckIns, setSelfCheckIns] = useState<CheckIn[]>([]);
-  // T-20260520-foot-SLOT-MOVE-REVERT: pendingSlotDrag 제거 — 확인창 없이 즉시 이동
+  // T-20260522-foot-RESV-MOVE-CONFIRM AC-1: 예약 슬롯 이동 확인 다이얼로그 상태
+  const [slotMoveConfirm, setSlotMoveConfirm] = useState<{
+    reservationId: string;
+    newTimeStr: string;
+    reservation: Reservation;
+    oldSlot: string;
+    newSlot: string;
+  } | null>(null);
   /** reservation_id → reservation_time (HH:MM:SS) — CustomerHoverCard 예약시간 표시용 */
   const resvTimeMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -3188,8 +3195,8 @@ export default function Dashboard() {
 
       const newTimeStr = `${newSlot}:00`; // HH:MM:SS
 
-      // T-20260520-foot-SLOT-MOVE-REVERT: 충돌 검사·확인창 제거 — 즉시 이동
-      await executeSlotDrag(reservationId, newTimeStr, reservation);
+      // T-20260522-foot-RESV-MOVE-CONFIRM AC-1: 시간 변경 확인 다이얼로그 표시 (취소 시 원위치 복귀)
+      setSlotMoveConfirm({ reservationId, newTimeStr, reservation, oldSlot: currentSlotOfResv, newSlot });
       return;
     }
 
@@ -5031,6 +5038,47 @@ export default function Dashboard() {
         currentUserRole={profile?.role ?? ''}
         currentUserEmail={profile?.email ?? null}
       />
+
+      {/* T-20260522-foot-RESV-MOVE-CONFIRM AC-1: 예약 슬롯 이동 확인 다이얼로그 */}
+      <Dialog
+        open={!!slotMoveConfirm}
+        onOpenChange={(open) => { if (!open) setSlotMoveConfirm(null); }}
+      >
+        <DialogContent className="max-w-xs" data-testid="slot-move-confirm-dialog">
+          <DialogHeader>
+            <DialogTitle>예약시간을 변경하시겠습니까?</DialogTitle>
+          </DialogHeader>
+          {slotMoveConfirm && (
+            <div className="py-2 text-center text-sm text-gray-700">
+              <span className="font-semibold text-teal-700">{slotMoveConfirm.oldSlot}</span>
+              <span className="mx-2 text-gray-400">→</span>
+              <span className="font-semibold text-teal-700">{slotMoveConfirm.newSlot}</span>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              data-testid="slot-move-cancel-btn"
+              onClick={() => setSlotMoveConfirm(null)}
+            >
+              취소
+            </Button>
+            <Button
+              className="flex-1 bg-teal-600 hover:bg-teal-700 text-white"
+              data-testid="slot-move-confirm-btn"
+              onClick={async () => {
+                if (!slotMoveConfirm) return;
+                const { reservationId, newTimeStr, reservation } = slotMoveConfirm;
+                setSlotMoveConfirm(null);
+                await executeSlotDrag(reservationId, newTimeStr, reservation);
+              }}
+            >
+              확인
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* T-20260519-foot-SLOT-BATCH-EDIT: 슬롯 추가 다이얼로그 (AC-3) */}
       <Dialog
