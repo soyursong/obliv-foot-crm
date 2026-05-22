@@ -9,9 +9,10 @@
  * T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 PDF 원본 + 오버레이 입력
  * T-20260520-foot-PENCHART-CHECKLIST-REMOVE: 개인정보+체크리스트 2종 양식 제거
  * T-20260522-foot-PENCHART-TOOLS-V2:
- *   AC-1: bg 캔버스를 natural 해상도로 렌더 + draw canvas DPR 2.0 강제
- *         CANVAS_W=794(A4 96DPI), DRAW_DPR=2 → 물리 픽셀 1588×2246 (A4 192DPI)
- *         래스터 이미지 4개 196 DPI 이상 렌더 보장. device DPR 무관.
+ *   AC-1: bg 캔버스 + draw canvas 모두 DRAW_DPR=2 강제 → 저장 PNG 1588×2246 (A4 192DPI)
+ *         bgCanvas: nw*2 × nh*2, ctx.scale(2,2), imageSmoothingQuality=high
+ *         drawCanvas: CANVAS_W*2 × canvasH*2 (기존 유지)
+ *         저장 tempCanvas = bgCanvas 해상도(1588×2246) → draw 1:1 합성. device DPR 무관.
  *   AC-2: getCoalescedEvents() 활용 → 태블릿 펜 획 누락·지연 개선
  *   AC-3: [T] 텍스트 도구 — 탭 위치 키보드 입력 후 캔버스 삽입
  *   AC-5: 형광펜 도구 — 반투명 두꺼운 선, 지우개 호환
@@ -577,8 +578,8 @@ export function PenChartTab({
   //   canvasRef   (위)   — 드로잉 전용 (투명 배경). clearRect 지우개 → bgCanvas 노출.
   //
   // T-20260522-foot-PENCHART-TOOLS-V2 AC-1:
-  //   bgCanvas는 이미지 naturalWidth×naturalHeight 그대로 렌더 (CSS로 CANVAS_W×canvasH에 표시)
-  //   → 원본 해상도 보존으로 화질 개선. 저장 시 bg 기준 해상도로 합성.
+  //   bgCanvas도 DRAW_DPR=2 적용: nw*2 × nh*2 물리 픽셀, ctx.scale(2,2)
+  //   → 저장 시 bgCanvas 기준(1588×2246)으로 합성. drawCanvas(1588×2246)와 1:1 합성.
 
   /** 배경 레이어 초기화: 양식 이미지 natural 해상도로 렌더 */
   const initBgCanvas = useCallback(() => {
@@ -612,17 +613,22 @@ export function PenChartTab({
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
-        // AC-1: 이미지 natural 해상도로 bg 캔버스 설정 (CSS는 CANVAS_W×canvasH 유지)
+        // T-20260522-foot-PENCHART-TOOLS-V2 AC-1 재정비 (bgCanvas DPR 2x):
+        //   bgCanvas를 draw canvas와 동일한 DRAW_DPR=2로 설정 →
+        //   저장 PNG 출력이 1588×2246 (draw canvas와 1:1 합성, 다운스케일 없음)
+        //   ctx.scale(DRAW_DPR, DRAW_DPR): 이후 좌표는 논리(1x) 단위, ctx가 2x 변환
+        //   imageSmoothingQuality=high: 소스 이미지 업스케일 최고 품질 보간
         const nw = img.naturalWidth || CANVAS_W;
         const nh = img.naturalHeight || canvasH;
-        canvas.width = nw;
-        canvas.height = nh;
-        canvas.style.width = `${CANVAS_W}px`;
+        canvas.width  = nw * DRAW_DPR;   // 물리 픽셀 2x (e.g. 1588)
+        canvas.height = nh * DRAW_DPR;   // 물리 픽셀 2x (e.g. 2246)
+        canvas.style.width  = `${CANVAS_W}px`;
         canvas.style.height = `${canvasH}px`;
-        // AC-1: 1:1 픽셀 렌더링 — 보간 없이 원본 해상도 그대로
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(img, 0, 0, nw, nh);
-        // 자동채움: 좌표를 naturalWidth/CANVAS_W 비율로 스케일
+        ctx.scale(DRAW_DPR, DRAW_DPR);        // 논리 좌표 = CSS 크기 기준
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';   // 최고 품질 업스케일
+        ctx.drawImage(img, 0, 0, nw, nh);    // 논리 좌표로 그림 → ctx가 2x 확대
+        // 자동채움: ctx.scale(2,2) 적용 상태이므로 scaleX/scaleY는 논리 비율 그대로
         if (isRefundConsentKey(activeDrawTemplate?.form_key ?? '') && autofillDataRef.current) {
           const scaleX = nw / CANVAS_W;
           const scaleY = nh / canvasH;
@@ -1006,10 +1012,10 @@ export function PenChartTab({
         }
       }
 
-      // T-20260522-foot-PENCHART-TOOLS-V2 AC-1: bg natural 해상도 기준으로 합성
-      // bg canvas: naturalWidth × naturalHeight (원본 해상도)
-      // draw canvas: CANVAS_W*dpr × canvasH*dpr (DPR 스케일)
-      // → temp canvas를 bg 해상도에 맞추고 draw를 스케일해 올림
+      // T-20260522-foot-PENCHART-TOOLS-V2 AC-1 재정비: bg+draw 모두 DRAW_DPR=2
+      // bgCanvas: nw*2 × nh*2 (DRAW_DPR=2 적용, e.g. 1588×2246)
+      // drawCanvas: CANVAS_W*2 × canvasH*2 (DRAW_DPR=2 적용, e.g. 1588×2246)
+      // → tempCanvas = bgCanvas 크기(1588×2246), draw 1:1 합성 — 다운스케일 없음
       const bgCanvas = bgCanvasRef.current;
       const tempCanvas = document.createElement('canvas');
 
