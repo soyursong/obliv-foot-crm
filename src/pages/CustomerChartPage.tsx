@@ -1727,13 +1727,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       return;
     }
 
-    const isJwtError = (err: { code?: string; status?: number; message?: string }) =>
+    const isAuthErr = (err: { code?: string; status?: number; message?: string }) =>
       err.code === 'PGRST301' || err.status === 401 || err.message?.toLowerCase().includes('jwt');
 
     const { error } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });
     if (error) {
       // AC-2: 401/JWT 에러 → refreshSession() 후 1회 재시도 (세션 종료 방지)
-      if (isJwtError(error as { code?: string; status?: number; message?: string })) {
+      if (isAuthErr(error as { code?: string; status?: number; message?: string })) {
         const { data: refreshData } = await supabase.auth.refreshSession();
         if (refreshData.session) {
           // 세션 갱신 성공 → 재시도
@@ -1783,13 +1783,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           return;
         }
 
-        const isRrnJwtErr = (err: { code?: string; status?: number; message?: string }) =>
+        const isAuthErr = (err: { code?: string; status?: number; message?: string }) =>
           err.code === 'PGRST301' || err.status === 401 || err.message?.toLowerCase().includes('jwt');
 
         const { error } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });
         if (error) {
           // AC-2: 401/JWT 에러 → refreshSession() 후 1회 재시도
-          if (isRrnJwtErr(error as { code?: string; status?: number; message?: string })) {
+          if (isAuthErr(error as { code?: string; status?: number; message?: string })) {
             const { data: refreshData } = await supabase.auth.refreshSession();
             if (refreshData.session) {
               const { error: retryErr } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });

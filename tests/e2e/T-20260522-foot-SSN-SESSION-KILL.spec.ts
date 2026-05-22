@@ -5,9 +5,11 @@
  * 배경: rrn_encrypt RPC 호출 시 JWT 만료 → SDK 토큰 갱신 실패 → SIGNED_OUT 연쇄
  *       접수 워크플로 완전 중단. 대표 직접 보고. 재현: #62 김테스트.
  *
- * Fix:
- *   1. auth.tsx: SIGNED_OUT 150ms 디바운스 + explicitSignOutRef 플래그
- *   2. CustomerChartPage.tsx: saveRrn/handleInfoPanelSave 저장 전 세션 체크 + 에러 분기
+ * Fix v2 (T-20260522-foot-CUST-REG-LOGOUT):
+ *   1. auth.tsx: SIGNED_OUT 수신 시 refreshSession() 적극 복구 + explicitSignOutRef 명시적 로그아웃 플래그
+ *      (v1 150ms 단순 대기 → v2 refreshSession() 재시도 + 100ms fallback getSession())
+ *   2. CustomerChartPage.tsx: saveRrn/handleInfoPanelSave 저장 전 getSession() 세션 체크
+ *      + isAuthErr(JWT/401) 분기 + refreshSession() 1회 재시도
  *
  * AC-1: 주민번호 저장 시 세션 유지 (로그아웃 X)
  * AC-2: 저장 실패 시 에러 메시지 표시 (세션 종료 X)
@@ -30,16 +32,17 @@ const SRC_CHART = path.resolve(__dirname, '../../src/pages/CustomerChartPage.tsx
 
 // ── AC-1 / AC-2 / AC-4: 소스 정적 검증 ─────────────────────────────────────────
 
-test.describe('AC-4: auth.tsx SIGNED_OUT 디바운스 구현 확인 (소스 정적)', () => {
+test.describe('AC-4: auth.tsx SIGNED_OUT 복구 로직 구현 확인 (소스 정적)', () => {
   test('explicitSignOutRef 플래그 존재', () => {
     const src = fs.readFileSync(SRC_AUTH, 'utf-8');
     expect(src).toContain('explicitSignOutRef');
   });
 
-  test('SIGNED_OUT 조건부 디바운스 (150ms) 존재', () => {
+  test('SIGNED_OUT 조건부 복구 — refreshSession() + getSession() fallback 존재 (v2)', () => {
     const src = fs.readFileSync(SRC_AUTH, 'utf-8');
     expect(src).toContain('SIGNED_OUT');
-    expect(src).toContain('150');
+    // v2: refreshSession()으로 적극 복구 (v1 150ms 단순 대기에서 업그레이드)
+    expect(src).toContain('refreshSession');
     expect(src).toContain('getSession');
   });
 
