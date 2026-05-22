@@ -39,6 +39,8 @@ import { NhisLookupPanel } from '@/components/insurance/NhisLookupPanel';
 import { FORM_META } from '@/lib/formTemplates';
 // T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 삽입 헬퍼
 import { ReservationMemoTimeline, insertReservationMemo } from '@/components/ReservationMemoTimeline';
+// T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 공유 패널 (2번차트 2구역 예약내역)
+import { ReservationAuditLogPanel } from '@/components/ReservationAuditLogPanel';
 // T-20260517-foot-C2-CONSULT-DOCS: 동의서 [작성] 다이얼로그
 import { ConsentFormDialog, type FormType } from '@/components/ConsentFormDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -132,6 +134,36 @@ const FORM_TITLES: Record<string, string> = {
   refund: '환불 동의서',
 };
 
+// T-20260522-foot-PERF-TUNING OPT-4: N × get_package_remaining RPC → package_sessions 1회 조회 + 클라이언트 집계
+// session_type 매핑: heated_laser→heated, unheated_laser→unheated, iv→iv, preconditioning→preconditioning,
+//                    podologue(DB) → podologe(PackageRemaining 필드, 오타 유지), trial→trial
+interface _SessRow { package_id: string; session_type: string; status: string }
+function computeRemainingFromSessionRows(
+  pkgs: Package[],
+  sessions: _SessRow[],
+): PackageRemaining[] {
+  const usedMap = new Map<string, Record<string, number>>();
+  for (const s of sessions) {
+    if (s.status !== 'used') continue;
+    const byType = usedMap.get(s.package_id) ?? {};
+    byType[s.session_type] = (byType[s.session_type] ?? 0) + 1;
+    usedMap.set(s.package_id, byType);
+  }
+  return pkgs.map((p) => {
+    const used = usedMap.get(p.id) ?? {};
+    const totalUsed = Object.values(used).reduce((a, b) => a + b, 0);
+    return {
+      heated:          (p.heated_sessions          ?? 0) - (used['heated_laser']    ?? 0),
+      unheated:        (p.unheated_sessions        ?? 0) - (used['unheated_laser']  ?? 0),
+      iv:              (p.iv_sessions              ?? 0) - (used['iv']              ?? 0),
+      preconditioning: (p.preconditioning_sessions ?? 0) - (used['preconditioning'] ?? 0),
+      podologe:        (p.podologe_sessions        ?? 0) - (used['podologue']       ?? 0),
+      trial:           (p.trial_sessions           ?? 0) - (used['trial']           ?? 0),
+      total_used:      totalUsed,
+      total_remaining: Math.max(0, (p.total_sessions ?? 0) - totalUsed),
+    };
+  });
+}
 
 // T-20260506-foot-CHART-MINI-HOMEPAGE: 고객 스토리지 이미지 업로드 컴포넌트 (역할별)
 // - 상담실장 영역: 동의서(consent), 결제영수증(receipt)
@@ -160,15 +192,15 @@ function CustomerStorageImageSection({
       sortBy: { column: 'name', order: 'desc' },
     });
     if (!files || files.length === 0) { setImages([]); return; }
-    const withUrls = await Promise.all(
-      files
-        .filter((f) => f.name && !f.id?.endsWith('/'))
-        .map(async (file) => {
-          const path = `${storagePath}/${file.name}`;
-          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
-          return { path, signedUrl: data?.signedUrl ?? '', name: file.name };
-        }),
-    );
+    // T-20260522-foot-PERF-TUNING OPT-7: N × createSignedUrl → createSignedUrls 1회 배치 (N 라운드트립 제거)
+    const filtered = files.filter((f) => f.name && !f.id?.endsWith('/'));
+    const paths = filtered.map((f) => `${storagePath}/${f.name}`);
+    const { data: urlData } = await supabase.storage.from('photos').createSignedUrls(paths, 3600);
+    const withUrls = filtered.map((file, i) => ({
+      path: paths[i],
+      signedUrl: urlData?.[i]?.signedUrl ?? '',
+      name: file.name,
+    }));
     setImages(withUrls.filter((i) => i.signedUrl));
   }, [storagePath]);
 
@@ -278,15 +310,15 @@ function ReceiptUploadSection({
       sortBy: { column: 'name', order: 'desc' },
     });
     if (!files || files.length === 0) { setImages([]); return; }
-    const withUrls = await Promise.all(
-      files
-        .filter((f) => f.name && !f.id?.endsWith('/'))
-        .map(async (file) => {
-          const path = `${storagePath}/${file.name}`;
-          const { data } = await supabase.storage.from('photos').createSignedUrl(path, 3600);
-          return { path, signedUrl: data?.signedUrl ?? '', name: file.name };
-        }),
-    );
+    // T-20260522-foot-PERF-TUNING OPT-7: N × createSignedUrl → createSignedUrls 1회 배치 (N 라운드트립 제거)
+    const filtered = files.filter((f) => f.name && !f.id?.endsWith('/'));
+    const paths = filtered.map((f) => `${storagePath}/${f.name}`);
+    const { data: urlData } = await supabase.storage.from('photos').createSignedUrls(paths, 3600);
+    const withUrls = filtered.map((file, i) => ({
+      path: paths[i],
+      signedUrl: urlData?.[i]?.signedUrl ?? '',
+      name: file.name,
+    }));
     setImages(withUrls.filter((i) => i.signedUrl));
   }, [storagePath]);
 
@@ -1308,46 +1340,40 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       setTreatmentMemos([]);
       setTreatmentMemosLoaded(false);
 
-      // C2-STAFF-DROPDOWN: 담당자 직원 목록 로드 (coordinator + consultant + director)
-      // C2-MANAGER-PAYMENT-MAP: active=true DB 필터만으로 비활성 직원 제외 (하드코드 제거)
-      const { data: staffData } = await supabase
-        .from('staff')
-        .select('id, name, role')
-        .eq('clinic_id', (custData as Customer).clinic_id)
-        .eq('active', true)
-        .in('role', ['consultant', 'coordinator', 'director'])
-        .order('name', { ascending: true });
-      setStaffList((staffData ?? []) as {id: string; name: string; role: string}[]);
-
-      // C2-PKG-TICKET-TABLE: 치료사 목록 로드 (role = 'therapist')
-      const { data: therapistData } = await supabase
-        .from('staff')
-        .select('id, name')
-        .eq('clinic_id', (custData as Customer).clinic_id)
-        .eq('active', true)
-        .eq('role', 'therapist')
-        .order('name', { ascending: true });
-      setTherapistList((therapistData ?? []) as {id: string; name: string}[]);
-
-      const [pkgRes, visitRes, payRes, pkgPayRes, resvRes, ciHistRes] = await Promise.all([
-        supabase.from('packages').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }),  // T-20260520-foot-PKG-SORT: created_at DESC (이름순→최신순)
+      // T-20260522-foot-PERF-TUNING OPT-5: staff 2쿼리 → 1쿼리 + 클라이언트 분기
+      // + staff / 6 main data / 2 checklist 전체 병렬 실행 (이전: staff → 6 main → N RPC → sessions → checklists)
+      const clinicId = (custData as Customer).clinic_id;
+      const [
+        staffAllRes,
+        pkgRes, visitRes, payRes, pkgPayRes, resvRes, ciHistRes,
+        clRes, subRes,
+      ] = await Promise.all([
+        // C2-STAFF-DROPDOWN: 담당자(consultant/coordinator/director) + 치료사 1쿼리 통합
+        supabase.from('staff').select('id, name, role').eq('clinic_id', clinicId).eq('active', true)
+          .in('role', ['consultant', 'coordinator', 'director', 'therapist']).order('name', { ascending: true }),
+        // 6 main data (기존 병렬 그룹)
+        supabase.from('packages').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }),  // T-20260520-foot-PKG-SORT
         supabase.from('check_ins').select('*').eq('customer_id', customerId).order('checked_in_at', { ascending: false }).limit(50),
         supabase.from('payments').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
         supabase.from('package_payments').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
         supabase.from('reservations').select('*').eq('customer_id', customerId).order('reservation_date', { ascending: false }).limit(30),
         supabase.from('check_ins').select('*').eq('customer_id', customerId).neq('status', 'cancelled').order('checked_in_at', { ascending: false }).limit(100),
+        // T-20260519-foot-CHART-BEFORE-CHECKIN AC-2: checklists + form_submissions 병렬 선행 (customerId만 필요)
+        supabase.from('checklists').select('id, completed_at, started_at, checklist_data').eq('customer_id', customerId)
+          .not('completed_at', 'is', null).order('completed_at', { ascending: false }).limit(10),
+        supabase.from('form_submissions').select('check_in_id, printed_at, signed_at, field_data, form_templates!template_id(form_key)')
+          .eq('customer_id', customerId).order('printed_at', { ascending: false, nullsFirst: false }).limit(30),
       ]);
 
-      const pkgs = (pkgRes.data ?? []) as Package[];
-      const remaining = await Promise.all(
-        pkgs.map(async (p) => {
-          const { data } = await supabase.rpc('get_package_remaining', { p_package_id: p.id });
-          return data as PackageRemaining | null;
-        }),
-      );
-      setPackages(pkgs.map((p, i) => ({ ...p, remaining: remaining[i] })));
+      // staff 분기: role별 분류
+      const allStaff = (staffAllRes.data ?? []) as {id: string; name: string; role: string}[];
+      setStaffList(allStaff.filter((s) => ['consultant', 'coordinator', 'director'].includes(s.role)));
+      setTherapistList(allStaff.filter((s) => s.role === 'therapist'));
 
-      // T-20260506-foot-CHART-MINI-HOMEPAGE: 구매 패키지(티켓) — 회차별 치료사명 조회
+      const pkgs = (pkgRes.data ?? []) as Package[];
+
+      // T-20260522-foot-PERF-TUNING OPT-4: package_sessions 1회 조회 → remaining 클라이언트 집계
+      // (이전: N × get_package_remaining RPC 호출)
       if (pkgs.length > 0) {
         const pkgIds = pkgs.map((p) => p.id);
         const { data: sessData } = await supabase
@@ -1368,6 +1394,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             memo: s.memo as string | null,
           })),
         );
+        // sessData를 재사용해 remaining 계산 — N RPC 완전 제거
+        const remainingArr = computeRemainingFromSessionRows(
+          pkgs,
+          (sessData ?? []) as _SessRow[],
+        );
+        setPackages(pkgs.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? null })));
+      } else {
+        setPackages([]);
       }
 
       setVisits((visitRes.data ?? []) as CheckIn[]);
@@ -1380,30 +1414,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       setLatestCheckIn(ciHistory[0] ?? null);
 
       const checkInIds = ciHistory.map((ci: CheckIn) => ci.id);
-
-      // T-20260519-foot-CHART-BEFORE-CHECKIN AC-2:
-      // checklists + form_submissions → customer_id 기반, check_in gate 제거
-      // 접수(체크인) 전에도 사전 체크리스트·양식 표시 가능 (Box1 초진 카드 클릭 시 포함)
-      const [clRes, subRes] = await Promise.all([
-        // T-20260430-foot-PRESCREEN-CHECKLIST: 사전 체크리스트 — customer_id 기반 (check_in 불요)
-        supabase
-          .from('checklists')
-          .select('id, completed_at, started_at, checklist_data')
-          .eq('customer_id', customerId)
-          .not('completed_at', 'is', null)
-          .order('completed_at', { ascending: false })
-          .limit(10),
-        // T-20260515-foot-DOC-REISSUE-BTN fix: template_key JOIN
-        // T-20260519-foot-PENCHART-FORMS: signed_at 추가
-        // T-20260519-foot-CHART-BEFORE-CHECKIN: customer_id 기반으로 전환 (check_in_id=null 포함)
-        // T-20260520-foot-PENCHART-VIEW-SPLIT: field_data 추가 (canvas_file 조회용)
-        supabase
-          .from('form_submissions')
-          .select('check_in_id, printed_at, signed_at, field_data, form_templates!template_id(form_key)')
-          .eq('customer_id', customerId)
-          .order('printed_at', { ascending: false, nullsFirst: false })
-          .limit(30),
-      ]);
       setChecklistEntries((clRes.data ?? []) as { id: string; completed_at: string | null; started_at: string; checklist_data: Record<string, unknown> }[]);
       // T-20260520-foot-PENCHART-REFINE AC-1:
       // builtin 템플릿 저장 시 template_id FK 없음 → JOIN 결과 null → template_key null
@@ -1828,13 +1838,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           memo: s.memo as string | null,
         })),
       );
-      const remaining = await Promise.all(
-        packages.map(async (p) => {
-          const { data } = await supabase.rpc('get_package_remaining', { p_package_id: p.id });
-          return data as PackageRemaining | null;
-        }),
-      );
-      setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remaining[i] })));
+      // T-20260522-foot-PERF-TUNING OPT-4: sessData 재사용 → remaining 클라이언트 집계 (N RPC 제거)
+      const remainingArr = computeRemainingFromSessionRows(packages, (sessData ?? []) as _SessRow[]);
+      setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? prev[i]?.remaining ?? null })));
     }
 
     setUseSessionDlg(null);
@@ -1862,13 +1868,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         memo: s.memo as string | null,
       })),
     );
-    const remaining = await Promise.all(
-      pkgList.map(async (p) => {
-        const { data } = await supabase.rpc('get_package_remaining', { p_package_id: p.id });
-        return data as PackageRemaining | null;
-      }),
-    );
-    setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remaining[i] })));
+    // T-20260522-foot-PERF-TUNING OPT-4: sessData 재사용 → remaining 클라이언트 집계 (N RPC 제거)
+    const remainingArr = computeRemainingFromSessionRows(pkgList, (sessData ?? []) as _SessRow[]);
+    setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? prev[i]?.remaining ?? null })));
   };
 
   // T-20260511-foot-C21-PKG-USAGE-EDIT: 시술내역 수정 저장
@@ -2237,14 +2239,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         memo: s.memo as string | null,
       }))
     );
-    // 잔여회수 새로고침
-    const remaining = await Promise.all(
-      packages.map(async (p) => {
-        const { data } = await supabase.rpc('get_package_remaining', { p_package_id: p.id });
-        return data as PackageRemaining | null;
-      }),
-    );
-    setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remaining[i] })));
+    // T-20260522-foot-PERF-TUNING OPT-4: sessData 재사용 → remaining 클라이언트 집계 (N RPC 제거)
+    const remainingArr = computeRemainingFromSessionRows(packages, (sessData ?? []) as _SessRow[]);
+    setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? prev[i]?.remaining ?? null })));
     setC22DeductForm(f => ({ ...f, therapistId: '', treatmentType: 'heated_laser' }));
   };
 
@@ -4439,6 +4436,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       placeholder="예약메모 추가 후 Enter"
                       className="w-full h-5 text-[10px] rounded border border-gray-200 px-1.5 focus:outline-none focus:border-teal-400 bg-white text-gray-600 placeholder:text-gray-300"
                     />
+                    {/* T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 (2번차트 2구역 예약내역) */}
+                    {/* AC-3: ReservationAuditLogPanel 공유 컴포넌트 — 화면별 분리 금지 */}
+                    <ReservationAuditLogPanel
+                      reservationId={r.id}
+                      compact
+                    />
                   </div>
                 ))}
               </div>
@@ -5206,16 +5209,17 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           onOpenChange={setOpenPackagePurchase}
           onCreated={async () => {
             setOpenPackagePurchase(false);
-            // 패키지 목록 새로고침
+            // T-20260522-foot-PERF-TUNING OPT-4: packages + package_sessions 병렬 조회 → remaining 클라이언트 집계 (N RPC 제거)
             const pkgRes = await supabase.from('packages').select('*').eq('customer_id', customer.id).order('created_at', { ascending: false });  // T-20260520-foot-PKG-SORT
             const pkgs = (pkgRes.data ?? []) as Package[];
-            const remaining = await Promise.all(
-              pkgs.map(async (p) => {
-                const { data } = await supabase.rpc('get_package_remaining', { p_package_id: p.id });
-                return data as PackageRemaining | null;
-              }),
-            );
-            setPackages(pkgs.map((p, i) => ({ ...p, remaining: remaining[i] })));
+            if (pkgs.length > 0) {
+              const pkgIds = pkgs.map((p) => p.id);
+              const { data: sessData } = await supabase.from('package_sessions').select('package_id, session_type, status').in('package_id', pkgIds);
+              const remainingArr = computeRemainingFromSessionRows(pkgs, (sessData ?? []) as _SessRow[]);
+              setPackages(pkgs.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? null })));
+            } else {
+              setPackages([]);
+            }
           }}
         />
       )}
@@ -5228,15 +5232,17 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           onOpenChange={setOpenPackageAddon}
           onDone={async () => {
             setOpenPackageAddon(false);
+            // T-20260522-foot-PERF-TUNING OPT-4: packages + package_sessions 병렬 조회 → remaining 클라이언트 집계 (N RPC 제거)
             const pkgRes = await supabase.from('packages').select('*').eq('customer_id', customer.id).order('created_at', { ascending: false });  // T-20260520-foot-PKG-SORT
             const pkgs = (pkgRes.data ?? []) as Package[];
-            const remaining = await Promise.all(
-              pkgs.map(async (p) => {
-                const { data } = await supabase.rpc('get_package_remaining', { p_package_id: p.id });
-                return data as PackageRemaining | null;
-              }),
-            );
-            setPackages(pkgs.map((p, i) => ({ ...p, remaining: remaining[i] })));
+            if (pkgs.length > 0) {
+              const pkgIds = pkgs.map((p) => p.id);
+              const { data: sessData } = await supabase.from('package_sessions').select('package_id, session_type, status').in('package_id', pkgIds);
+              const remainingArr = computeRemainingFromSessionRows(pkgs, (sessData ?? []) as _SessRow[]);
+              setPackages(pkgs.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? null })));
+            } else {
+              setPackages([]);
+            }
           }}
         />
       )}

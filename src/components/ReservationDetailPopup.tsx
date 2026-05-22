@@ -29,6 +29,8 @@ import { VISIT_TYPE_KO } from '@/lib/status';
 import { formatPhone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { ReservationMemoTimeline } from '@/components/ReservationMemoTimeline';
+// T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 공유 패널
+import { ReservationAuditLogPanel } from '@/components/ReservationAuditLogPanel';
 import type { Customer, Package, Reservation, Staff } from '@/lib/types';
 
 const STATUS_LABEL: Record<Reservation['status'], string> = {
@@ -543,6 +545,19 @@ export function ReservationDetailPopup({
                       상담사 없음 (role=consultant 미등록)
                     </div>
                   )}
+                </div>
+
+                {/* T-20260522-foot-RESV-HISTORY-SYNC AC-1/2/3: 예약시간 변경 이력 */}
+                {/* AC-2: 예약관리 화면 이력 표시 강조 — 우상(예약 상세) 영역에 통합 */}
+                {/* AC-3: ReservationAuditLogPanel 단일 컴포넌트 import (화면별 분리 금지) */}
+                <div className="mt-2 pt-2 border-t">
+                  <div className="text-[11px] font-medium text-teal-700 mb-1">
+                    예약 변경 이력
+                  </div>
+                  <ReservationAuditLogPanel
+                    reservationId={selectedResv?.id ?? null}
+                    compact
+                  />
                 </div>
               </div>
 
