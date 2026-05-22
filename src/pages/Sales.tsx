@@ -6,7 +6,7 @@
  *   일일결산(daily)  — T-20260515-foot-SALES-TAB-DAILY 구현 예정
  *   환자별(patient)  — T-20260515-foot-SALES-TAB-PATIENT 구현 예정
  *   시술별(treatment)— T-20260515-foot-SALES-TAB-TREATMENT 구현 예정
- *   담당의별(doctor) — T-20260515-foot-SALES-TAB-DOCTOR 구현 예정
+ *   담당실장별(doctor) — T-20260515-foot-SALES-TAB-DOCTOR / T-20260522-foot-SETTLE-STAFF-LABEL
  *   담당직원별(staff)— T-20260515-foot-SALES-TAB-STAFF 구현 예정
  *
  * 이 파일은 COMMON-DB 범위: 탭 셸 + 공통 필터 + 엑셀 다운로드 공통 레이어.
@@ -53,7 +53,7 @@ const SALES_TABS = [
   { value: 'daily',     label: '일일결산',   icon: BarChart2 },
   { value: 'patient',   label: '환자별',     icon: Users },
   { value: 'treatment', label: '시술별',     icon: Layers },
-  { value: 'doctor',    label: '담당의별',   icon: UserCheck },
+  { value: 'doctor',    label: '담당실장별', icon: UserCheck },
   { value: 'staff',     label: '담당직원별', icon: User },
 ] as const;
 
@@ -137,7 +137,7 @@ export default function Sales() {
             <SalesTreatmentTab filter={filter} />
           </TabsContent>
 
-          {/* 담당의별 — T-20260515-foot-SALES-TAB-DOCTOR */}
+          {/* 담당실장별 — T-20260515-foot-SALES-TAB-DOCTOR / T-20260522-foot-SETTLE-STAFF-LABEL */}
           <TabsContent value="doctor">
             <SalesDoctorTab filter={filter} />
           </TabsContent>
