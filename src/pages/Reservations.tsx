@@ -1159,6 +1159,16 @@ interface TherapistHistoryInfo {
   lastTherapistName: string | null;
 }
 
+// T-20260522-foot-RESV-TREAT-UX AC-3: 치료명 한글 매핑 (CustomerChartPage TREAT_KO 재사용)
+const TREAT_KO: Record<string, string> = {
+  heated_laser: '가열',
+  unheated_laser: '비가열',
+  podologue: '포돌로게',
+  iv: '수액',
+  preconditioning: '프컨',
+  trial: '체험권',
+};
+
 // T-20260522-foot-RESV-TREAT-HISTORY: 시술내역 행 타입
 interface TreatHistoryRow {
   session_id: string;
@@ -1790,27 +1800,29 @@ function ReservationEditor({
                     <span>치료명</span>
                     <span>시술일</span>
                   </div>
-                  {/* AC-2: 최근 10건 + 더보기 (시술일 내림차순은 fetch 시 ORDER BY session_date DESC로 보장) */}
-                  {(treatHistoryShowAll ? treatHistory : treatHistory.slice(0, 10)).map((row) => (
+                  {/* T-20260522-foot-RESV-TREAT-UX AC-1: 최신 1건만 기본 표시 + 더보기 */}
+                  {(treatHistoryShowAll ? treatHistory : treatHistory.slice(0, 1)).map((row) => (
                     <div
                       key={row.session_id}
                       data-testid={`treat-history-row-${row.session_id}`}
                       className="grid grid-cols-4 gap-1 items-start"
                     >
                       <span className="truncate" title={row.package_name}>{row.package_name}</span>
-                      <span className="tabular-nums">{row.session_number}/{row.total_sessions}</span>
-                      <span className="truncate" title={row.session_type}>{row.session_type || '—'}</span>
+                      {/* AC-2: 회차 빨간색+굵게 */}
+                      <span className="tabular-nums text-red-600 font-bold">{row.session_number}/{row.total_sessions}</span>
+                      {/* AC-3: 치료명 한글 매핑 */}
+                      <span className="truncate" title={row.session_type}>{TREAT_KO[row.session_type] ?? (row.session_type || '—')}</span>
                       <span className="tabular-nums text-muted-foreground">{row.session_date}</span>
                     </div>
                   ))}
-                  {!treatHistoryShowAll && treatHistory.length > 10 && (
+                  {!treatHistoryShowAll && treatHistory.length > 1 && (
                     <button
                       type="button"
                       data-testid="treat-history-show-more"
                       onClick={() => setTreatHistoryShowAll(true)}
                       className="text-[10px] text-teal-600 hover:underline mt-0.5"
                     >
-                      더보기 ({treatHistory.length - 10}건 더)
+                      더보기 ({treatHistory.length - 1}건 더)
                     </button>
                   )}
                 </>
