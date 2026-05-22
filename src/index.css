@@ -227,10 +227,13 @@
     align-items: center;
   }
 }
-/* AC-2 보조: portrait + coarse — 명시적 타임라인 최소화 (JS auto-fold 보완 fallback) */
+/* AC-2 보조: portrait + coarse — 명시적 타임라인 최소화 (JS auto-fold 보완 fallback)
+   T-20260522-foot-TIMETABLE-SCROLL 보완: data-timeline-folded="true" 조건 추가.
+   사용자가 portrait 에서 수동으로 펼칠 때 max-width:2rem 이 w-80 을 덮어쓰는 문제 수정.
+   JS fold 상태를 CSS 가 인식하도록 data-timeline-folded 속성을 root 에 바인딩. */
 @media (orientation: portrait) and (pointer: coarse) {
-  /* 타임라인 컨테이너가 JS fold 전에도 시각적으로 최소 너비 유지 */
-  [data-testid="dashboard-content-scroll"] > div:first-child {
+  /* 타임라인 컨테이너 — 실제로 접혀있을 때만 2rem 제한 */
+  [data-testid="dashboard-root"][data-timeline-folded="true"] [data-testid="dashboard-content-scroll"] > div:first-child {
     max-width: 2rem;
   }
 }
