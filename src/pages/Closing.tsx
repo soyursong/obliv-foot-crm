@@ -362,6 +362,8 @@ export default function Closing() {
   });
 
   // ── 직원 목록 (결제담당 조회) ──────────────────────────────
+  // T-20260522-foot-CLOSING-STAFF-DROP: 2번차트 1구역 담당자 드롭과 동일 쿼리/필터/정렬
+  // 2번차트: .in('role', ['consultant','coordinator','director','therapist']).order('name')
   const { data: staffList = [] } = useQuery<Staff[]>({
     queryKey: ['staff', clinic?.id, 'closing'],
     enabled: !!clinic,
@@ -371,7 +373,8 @@ export default function Closing() {
         .select('id, name, role, clinic_id, active, created_at')
         .eq('clinic_id', clinic!.id)
         .eq('active', true)
-        .order('name');
+        .in('role', ['consultant', 'coordinator', 'director', 'therapist'])
+        .order('name', { ascending: true });
       if (error) throw error;
       return (data ?? []) as Staff[];
     },
@@ -1181,7 +1184,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                   className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none"
                 >
                   <option value="">전체</option>
-                  {staffList.map(s => (
+                  {/* T-20260522-foot-CLOSING-STAFF-DROP AC-1: 2번차트 동일 — role='director'(원장) 코드 레벨 제외 */}
+                  {staffList.filter(s => s.role !== 'director').map(s => (
                     <option key={s.id} value={s.name}>{s.name}</option>
                   ))}
                   {/* T-20260522-foot-DAILY-SETTLE-STAFF AC-3: '미배정' → '미지정' */}
