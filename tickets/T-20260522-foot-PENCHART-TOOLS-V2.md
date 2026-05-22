@@ -6,10 +6,11 @@ status: deploy-ready
 deploy-ready: true
 build-ok: true
 db-change: false
-spec-added: false
+spec-added: true
 rollback-sql: ""
 created: 2026-05-22
 updated: 2026-05-22
+commit: 829e63a
 ---
 
 # T-20260522-foot-PENCHART-TOOLS-V2 — 펜차트 양식 PDF 고해상도 재생성
@@ -62,6 +63,24 @@ Python PIL Lanczos 업스케일 + 300DPI 메타데이터 기록.
 ## 빌드
 
 `npm run build` → ✓ built in 3.29s (에러 없음)
+
+## AC 추가 이력
+
+### 2026-05-22 23:xx — DPR 2.0 강제 (planner PUSH MSG-20260522-224908-7rvc 반영)
+
+| 변경 항목 | 변경 전 | 변경 후 |
+|-----------|---------|---------|
+| CANVAS_W | 720 | 794 (A4 96 DPI) |
+| CANVAS_H | 1020 | 1123 |
+| DRAW_DPR | window.devicePixelRatio | 2 (강제) |
+| CANVAS_H_REFUND_CONSENT | 3052 | 3369 |
+| CANVAS_H_PC_SENIOR | 2036 | 2246 |
+| draw canvas 물리 픽셀 | 720×1020 (DPR=1 시) | 1588×2246 (항상) |
+| REFUND_AUTOFILL_POS | CANVAS_W=720 기준 | CANVAS_W=794 비례 환산 |
+
+- getPos / onPointerMove: window.devicePixelRatio → DRAW_DPR=2 교체
+- spec: DPR 2.0 강제 테스트 2종 신규 추가
+- 빌드: ✓ 3.27s · commit 829e63a
 
 ## 참조
 
