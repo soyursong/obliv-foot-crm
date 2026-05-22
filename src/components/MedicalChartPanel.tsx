@@ -8,19 +8,25 @@
  *         - 진료일 / 진단명 / 치료(결제내역 연동) / 치료사차트 / 임상경과(상용구) / 진료메모(원장전용) / 처방내역(세트)
  *   AC-4: 경과 타임라인 좌측 배치 (최신 상단, 날짜 클릭 → 우측 폼 전환)
  *
+ * T-20260522-foot-LASER-TIMER:
+ *   AC-1: 치료메모 상단 타이머 버튼 [5분] [15분] [20분] + 카운트다운
+ *   AC-2: ends_at 기준 카운트다운 (탭 비활성 대응 — 서버시각 앵커)
+ *   AC-4: timer_records 신규 테이블 사용
+ *   checkInId prop 추가 (optional — 없으면 타이머 미표시)
+ *
  * 이전 버전:
  *   T-20260515-foot-MEDICAL-CHART-V1 — 최초 구현 (6항목)
  *   T-20260516-foot-MEDICAL-CHART-EXPAND — 전체화면 전환 (이 버전으로 대체)
  *
  * Props: open / onOpenChange / customerId / clinicId / currentUserRole / currentUserEmail
- *   — 3곳 caller(Dashboard/Customers/Reservations) props 변경 없음
+ *   — 기존 caller 변경 없음. checkInId 신규 (optional)
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { BookOpen, ChevronRight, Loader2, Plus, Stethoscope, X } from 'lucide-react';
+import { BookOpen, ChevronRight, Loader2, Plus, Stethoscope, Timer, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -81,6 +87,24 @@ interface VisitPayment {
   method: string;
 }
 
+// ── Timer ─────────────────────────────────────────────────────────────────────
+
+interface TimerRecord {
+  id: string;
+  check_in_id: string;
+  duration_minutes: number;
+  started_at: string;
+  ends_at: string;
+  stopped_at: string | null;
+}
+
+function formatRemaining(secs: number): string {
+  if (secs <= 0) return '00:00';
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export interface MedicalChartPanelProps {
@@ -90,6 +114,8 @@ export interface MedicalChartPanelProps {
   clinicId: string;
   currentUserRole: string;
   currentUserEmail: string | null;
+  /** T-20260522-foot-LASER-TIMER: 타이머 기능 활성화. 없으면 타이머 미표시. */
+  checkInId?: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -128,6 +154,7 @@ export default function MedicalChartPanel({
   clinicId,
   currentUserRole,
   currentUserEmail,
+  checkInId,
 }: MedicalChartPanelProps) {
   const isDirector = canViewDoctorMemo(currentUserRole);
 
@@ -160,6 +187,11 @@ export default function MedicalChartPanel({
 
   // ── 처방세트 다이얼로그 ────────────────────────────────────────────────────────
   const [rxDialogOpen, setRxDialogOpen] = useState(false);
+
+  // ── T-20260522-foot-LASER-TIMER: 타이머 상태 ──────────────────────────────────
+  const [activeTimer, setActiveTimer] = useState<TimerRecord | null>(null);
+  const [timerRemainingSecs, setTimerRemainingSecs] = useState(0);
+  const [timerLoading, setTimerLoading] = useState(false);
 
   // ── 데이터 로드 ──────────────────────────────────────────────────────────────
 
@@ -247,6 +279,89 @@ export default function MedicalChartPanel({
     }
   }, [customerId]);
 
+  // ── T-20260522-foot-LASER-TIMER: 활성 타이머 로드 ────────────────────────────
+
+  const loadActiveTimer = useCallback(async () => {
+    if (!checkInId) return;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any)
+        .from('timer_records')
+        .select('*')
+        .eq('check_in_id', checkInId)
+        .is('stopped_at', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      setActiveTimer(data ?? null);
+    } catch {
+      // 타이머 로드 실패는 무시 (비핵심 기능)
+    }
+  }, [checkInId]);
+
+  // AC-2: ends_at 기준 카운트다운 — 탭 비활성 대응
+  // Date.now() vs ends_at(서버시각 앵커) → 탭 복귀 시 자동 보정
+  useEffect(() => {
+    if (!activeTimer) { setTimerRemainingSecs(0); return; }
+    const tick = () => {
+      const remaining = Math.max(0, new Date(activeTimer.ends_at).getTime() - Date.now()) / 1000;
+      setTimerRemainingSecs(Math.ceil(remaining));
+    };
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [activeTimer]);
+
+  // 타이머 시작
+  const handleStartTimer = useCallback(async (minutes: 5 | 15 | 20) => {
+    if (!checkInId) return;
+    setTimerLoading(true);
+    try {
+      const now = new Date();
+      const ends = new Date(now.getTime() + minutes * 60 * 1000);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from('timer_records')
+        .insert({
+          check_in_id: checkInId,
+          clinic_id: clinicId,
+          duration_minutes: minutes,
+          started_at: now.toISOString(),
+          ends_at: ends.toISOString(),
+          created_by: currentUserEmail,
+        })
+        .select('*')
+        .maybeSingle();
+      if (error) throw error;
+      setActiveTimer(data);
+      toast.success(`레이저 타이머 ${minutes}분 시작`);
+    } catch (err: unknown) {
+      toast.error(`타이머 시작 실패: ${err instanceof Error ? err.message : '오류'}`);
+    } finally {
+      setTimerLoading(false);
+    }
+  }, [checkInId, clinicId, currentUserEmail]);
+
+  // 타이머 중지
+  const handleStopTimer = useCallback(async () => {
+    if (!activeTimer) return;
+    setTimerLoading(true);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from('timer_records')
+        .update({ stopped_at: new Date().toISOString() })
+        .eq('id', activeTimer.id);
+      if (error) throw error;
+      setActiveTimer(null);
+      toast.info('레이저 타이머 종료');
+    } catch (err: unknown) {
+      toast.error(`타이머 종료 실패: ${err instanceof Error ? err.message : '오류'}`);
+    } finally {
+      setTimerLoading(false);
+    }
+  }, [activeTimer]);
+
   // ── 폼 채우기 ────────────────────────────────────────────────────────────────
 
   const resetForm = useCallback((chart?: MedicalChart | null) => {
@@ -279,12 +394,15 @@ export default function MedicalChartPanel({
       resetForm(null);
       setPhrasePanelOpen(false);
       setPhrasePopoverVisible(false);
+      // T-20260522-foot-LASER-TIMER: 패널 열릴 때 활성 타이머 로드
+      if (checkInId) loadActiveTimer();
     } else {
       setCustomer(null);
       setCharts([]);
       setSelectedChartId(null);
+      setActiveTimer(null);
     }
-  }, [open, customerId, loadData, resetForm]);
+  }, [open, customerId, checkInId, loadData, resetForm, loadActiveTimer]);
 
   // ESC 키 닫기
   useEffect(() => {
@@ -586,6 +704,79 @@ export default function MedicalChartPanel({
               {/* ── 우측: 컴팩트 폼 (AC-3) ────────────────────────────────────── */}
               <div className="flex-1 overflow-y-auto p-5" data-testid="medical-chart-form">
                 <div className="max-w-3xl space-y-4">
+
+                  {/* T-20260522-foot-LASER-TIMER AC-1: 타이머 버튼 + 카운트다운 */}
+                  {checkInId && (
+                    <div
+                      className={`rounded-xl border p-3 flex flex-col gap-2 ${
+                        activeTimer
+                          ? timerRemainingSecs <= 60
+                            ? 'border-red-400 bg-red-50'
+                            : 'border-blue-300 bg-blue-50'
+                          : 'border-muted bg-muted/20'
+                      }`}
+                      data-testid="laser-timer-panel"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Timer className="h-4 w-4 text-blue-600 shrink-0" />
+                        <span className="text-sm font-semibold text-blue-700">비가열 레이저 타이머</span>
+                        {activeTimer && (
+                          <span
+                            className={`ml-auto tabular-nums font-mono text-xl font-bold ${
+                              timerRemainingSecs <= 60 ? 'text-red-600' : 'text-blue-700'
+                            }`}
+                            data-testid="laser-timer-countdown"
+                          >
+                            {formatRemaining(timerRemainingSecs)}
+                          </span>
+                        )}
+                      </div>
+
+                      {!activeTimer ? (
+                        /* 타이머 미실행 — 시작 버튼 3종 */
+                        <div className="flex gap-2" data-testid="laser-timer-start-buttons">
+                          {([5, 15, 20] as const).map((min) => (
+                            <button
+                              key={min}
+                              type="button"
+                              disabled={timerLoading}
+                              onClick={() => handleStartTimer(min)}
+                              className="flex-1 rounded-lg border-2 border-blue-400 bg-white text-blue-700 font-bold text-lg py-2.5 hover:bg-blue-50 active:bg-blue-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              data-testid={`laser-timer-btn-${min}`}
+                            >
+                              {timerLoading ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : `${min}분`}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        /* 타이머 실행 중 — 진행 바 + 중지 버튼 */
+                        <div className="space-y-2">
+                          <div className="w-full h-2 rounded-full bg-blue-100 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                timerRemainingSecs <= 60 ? 'bg-red-500' : 'bg-blue-500'
+                              }`}
+                              style={{
+                                width: `${Math.min(100, (timerRemainingSecs / (activeTimer.duration_minutes * 60)) * 100)}%`,
+                              }}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span>{activeTimer.duration_minutes}분 타이머</span>
+                            <button
+                              type="button"
+                              disabled={timerLoading}
+                              onClick={handleStopTimer}
+                              className="flex items-center gap-1 rounded border border-red-300 bg-white text-red-600 text-xs font-medium px-2 py-1 hover:bg-red-50 transition-colors disabled:opacity-50"
+                              data-testid="laser-timer-stop-btn"
+                            >
+                              {timerLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : '■ 종료'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* 타이틀 */}
                   <div className="flex items-center gap-2 pb-1.5 border-b">

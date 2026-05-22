@@ -3,7 +3,7 @@ id: T-20260522-foot-SSN-SESSION-KILL
 title: 주민번호 저장 후 로그아웃(세션 종료) 오류
 domain: foot
 priority: P1
-status: deploy-ready
+status: deployed
 deploy_ready: true
 risk_verdict: GO_WARN
 db_changes: false
@@ -12,6 +12,13 @@ e2e_spec: tests/e2e/T-20260522-foot-SSN-SESSION-KILL.spec.ts
 created: 2026-05-22
 deadline: 2026-05-26
 reporter: 대표 직접 보고
+reporter_slack_id: U05LTA8TSM6
+qa_result: pass
+qa_grade: Green
+deployed_at: 2026-05-22T19:30:00+09:00
+deploy_commit: 46189ee
+bundle_hash: CustomerChartPage-D2_0dLpc.js
+field_soak_until: 2026-05-23T19:30:00+09:00
 ---
 
 ## 현상
