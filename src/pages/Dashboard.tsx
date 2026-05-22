@@ -112,8 +112,10 @@ const PkgHolderCtx = createContext<Set<string>>(new Set());
 /** ALT(올트) 활성 고객 customer_id 집합 (T-20260522-foot-ALT-BADGE) */
 const AltHolderCtx = createContext<Set<string>>(new Set());
 
-/** T-20260522-foot-LASER-TIMER AC-3: 타이머 1분 이하 남은 check_in_id 집합 → 카드 깜빡임 */
+/** T-20260522-foot-LASER-TIMER AC-3: 타이머 1분 이하 남은 check_in_id 집합 → amber 깜빡임 */
 const TimerAlertCtx = createContext<Set<string>>(new Set());
+/** T-20260523-foot-LASER-TIMER AC-3 보강: 만료(0:00 이후) check_in_id 집합 → red 깜빡임 */
+const TimerExpiredCtx = createContext<Set<string>>(new Set());
 
 // ── 카드 고객 이름 우클릭/롱프레스 핸들러 컨텍스트 ────────────────────────────
 interface CardHandlers {
@@ -325,9 +327,11 @@ const DraggableCard = memo(function DraggableCard({
   // T-20260522-foot-ALT-BADGE: ALT 활성 여부
   const altHolderSet = useContext(AltHolderCtx);
   const isAlt = !!(checkIn.customer_id && altHolderSet.has(checkIn.customer_id));
-  // T-20260522-foot-LASER-TIMER AC-3: 타이머 1분 이하 → 카드 깜빡임
+  // T-20260522-foot-LASER-TIMER AC-3 / T-20260523 보강: amber(warn) + red(expire)
   const timerAlertSet = useContext(TimerAlertCtx);
-  const isTimerAlert = timerAlertSet.has(checkIn.id);
+  const timerExpiredSet = useContext(TimerExpiredCtx);
+  const isTimerWarn = timerAlertSet.has(checkIn.id);      // 1분 이하, amber
+  const isTimerExpired = timerExpiredSet.has(checkIn.id); // 만료, red
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: checkIn.id,
     data: { checkIn },
@@ -372,8 +376,10 @@ const DraggableCard = memo(function DraggableCard({
         className={cn(
           'cursor-grab touch-none rounded border px-1.5 py-1 text-xs shadow-sm transition hover:shadow active:cursor-grabbing',
           flagBg || 'bg-white',
-          // T-20260522-foot-LASER-TIMER AC-3: 타이머 1분 이하 → 카드 깜빡임
-          isTimerAlert && 'laser-timer-blink',
+          // T-20260523-foot-LASER-TIMER AC-3 보강: amber(warn) → red(expire) 2단계
+          isTimerExpired ? 'laser-timer-expire'
+            : isTimerWarn ? 'laser-timer-warn'
+            : '',
         )}
       >
         <div className="flex items-center justify-between gap-1">
@@ -528,8 +534,10 @@ const DraggableCard = memo(function DraggableCard({
       className={cn(
         'cursor-grab touch-none rounded border p-1 shadow-sm transition hover:shadow active:cursor-grabbing',
         flagBg || 'bg-white',
-        // T-20260522-foot-LASER-TIMER AC-3: 타이머 1분 이하 → 카드 깜빡임
-        isTimerAlert && 'laser-timer-blink',
+        // T-20260523-foot-LASER-TIMER AC-3 보강: amber(warn) → red(expire) 2단계
+        isTimerExpired ? 'laser-timer-expire'
+          : isTimerWarn ? 'laser-timer-warn'
+          : '',
       )}
     >
       <div className="flex items-center justify-between gap-1.5">
@@ -3297,15 +3305,20 @@ export default function Dashboard() {
     return () => clearInterval(t);
   }, [rows, stageStartMap]);
 
-  // T-20260522-foot-LASER-TIMER AC-3: 타이머 1분 이하 check_in_id 집합 (tick 마다 재계산)
-  const timerAlertSet = useMemo(() => {
-    const set = new Set<string>();
+  // T-20260522-foot-LASER-TIMER AC-3 / T-20260523 보강: amber(warn) + red(expire) 분리
+  const { timerAlertSet, timerExpiredSet } = useMemo(() => {
+    const warn = new Set<string>();
+    const expire = new Set<string>();
     const now = Date.now();
     for (const [checkInId, endsAt] of activeTimersMap) {
       const remaining = endsAt.getTime() - now;
-      if (remaining > 0 && remaining <= 60000) set.add(checkInId);
+      if (remaining <= 0) {
+        expire.add(checkInId); // 만료 → red
+      } else if (remaining <= 60000) {
+        warn.add(checkInId);   // 1분 이하 → amber
+      }
     }
-    return set;
+    return { timerAlertSet: warn, timerExpiredSet: expire };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tick, activeTimersMap]);
 
@@ -5008,8 +5021,9 @@ export default function Dashboard() {
       <ChecklistDoneCtx.Provider value={checklistDone}>
       <PkgHolderCtx.Provider value={pkgHolderSet}>
       <AltHolderCtx.Provider value={altHolderSet}>
-      {/* T-20260522-foot-LASER-TIMER AC-3: 타이머 1분 이하 카드 깜빡임 */}
+      {/* T-20260523-foot-LASER-TIMER AC-3 보강: amber(warn) + red(expire) 2단계 */}
       <TimerAlertCtx.Provider value={timerAlertSet}>
+      <TimerExpiredCtx.Provider value={timerExpiredSet}>
       <ConsentMapCtx.Provider value={consentMap}>
       <ResvTimeMapCtx.Provider value={resvTimeMap}>
       <DndContext
@@ -5146,6 +5160,7 @@ export default function Dashboard() {
       </DndContext>
       </ResvTimeMapCtx.Provider>
       </ConsentMapCtx.Provider>
+      </TimerExpiredCtx.Provider>
       </TimerAlertCtx.Provider>
       </AltHolderCtx.Provider>
       </PkgHolderCtx.Provider>

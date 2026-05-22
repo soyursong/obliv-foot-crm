@@ -192,6 +192,8 @@ export default function MedicalChartPanel({
   const [activeTimer, setActiveTimer] = useState<TimerRecord | null>(null);
   const [timerRemainingSecs, setTimerRemainingSecs] = useState(0);
   const [timerLoading, setTimerLoading] = useState(false);
+  // T-20260523-foot-LASER-TIMER AC-4: 종료 확인 다이얼로그 상태
+  const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
 
   // ── 데이터 로드 ──────────────────────────────────────────────────────────────
 
@@ -342,10 +344,11 @@ export default function MedicalChartPanel({
     }
   }, [checkInId, clinicId, currentUserEmail]);
 
-  // 타이머 중지
+  // 타이머 중지 (T-20260523 AC-4: confirm 후 호출)
   const handleStopTimer = useCallback(async () => {
     if (!activeTimer) return;
     setTimerLoading(true);
+    setStopConfirmOpen(false);
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error } = await (supabase as any)
@@ -401,6 +404,7 @@ export default function MedicalChartPanel({
       setCharts([]);
       setSelectedChartId(null);
       setActiveTimer(null);
+      setStopConfirmOpen(false); // T-20260523 AC-4: 패널 닫힐 때 confirm 리셋
     }
   }, [open, customerId, checkInId, loadData, resetForm, loadActiveTimer]);
 
@@ -763,16 +767,46 @@ export default function MedicalChartPanel({
                           </div>
                           <div className="flex items-center justify-between text-xs text-muted-foreground">
                             <span>{activeTimer.duration_minutes}분 타이머</span>
+                            {/* T-20260523-foot-LASER-TIMER AC-4: 종료 전 확인 다이얼로그 */}
                             <button
                               type="button"
                               disabled={timerLoading}
-                              onClick={handleStopTimer}
+                              onClick={() => setStopConfirmOpen(true)}
                               className="flex items-center gap-1 rounded border border-red-300 bg-white text-red-600 text-xs font-medium px-2 py-1 hover:bg-red-50 transition-colors disabled:opacity-50"
                               data-testid="laser-timer-stop-btn"
                             >
                               {timerLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : '■ 종료'}
                             </button>
                           </div>
+
+                          {/* 종료 확인 인라인 박스 */}
+                          {stopConfirmOpen && (
+                            <div
+                              className="mt-1 rounded-lg border border-red-300 bg-red-50 p-2.5 flex flex-col gap-2"
+                              data-testid="laser-timer-stop-confirm"
+                            >
+                              <p className="text-xs text-red-700 font-medium">타이머를 종료하시겠습니까?</p>
+                              <div className="flex gap-2 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => setStopConfirmOpen(false)}
+                                  className="rounded border border-gray-300 bg-white text-gray-600 text-xs font-medium px-3 py-1 hover:bg-gray-50 transition-colors"
+                                  data-testid="laser-timer-stop-cancel"
+                                >
+                                  취소
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={timerLoading}
+                                  onClick={() => { setStopConfirmOpen(false); handleStopTimer(); }}
+                                  className="rounded bg-red-500 text-white text-xs font-semibold px-3 py-1 hover:bg-red-600 transition-colors disabled:opacity-50"
+                                  data-testid="laser-timer-stop-confirm-btn"
+                                >
+                                  {timerLoading ? <Loader2 className="h-3 w-3 animate-spin inline" /> : '종료'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
