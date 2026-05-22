@@ -3843,6 +3843,17 @@ export default function Dashboard() {
       });
       setStageStartMap((prev) => new Map(prev).set(ci.id, now));
     }
+    // T-20260522-foot-SPACE-AUTOROUTE: 금일동선 자동기입 — check_in_room_logs INSERT (graceful)
+    void (async () => {
+      try {
+        await supabase.from('check_in_room_logs').insert({
+          check_in_id: ci.id,
+          clinic_id: ci.clinic_id,
+          assigned_room: consultRoom,
+          room_type: 'consultation',
+        });
+      } catch { /* graceful skip */ }
+    })();
     // T-20260522-foot-SLOT-TIMETABLE-POPUP AC-2: 성공 토스트 제거
   };
 
@@ -3930,6 +3941,17 @@ export default function Dashboard() {
       });
       setStageStartMap((prev) => new Map(prev).set(ci.id, now));
     }
+    // T-20260522-foot-SPACE-AUTOROUTE: 금일동선 자동기입 — check_in_room_logs INSERT (graceful)
+    void (async () => {
+      try {
+        await supabase.from('check_in_room_logs').insert({
+          check_in_id: ci.id,
+          clinic_id: ci.clinic_id,
+          assigned_room: treatmentRoom,
+          room_type: 'treatment',
+        });
+      } catch { /* graceful skip */ }
+    })();
     // T-20260522-foot-SLOT-TIMETABLE-POPUP AC-2: 성공 토스트 제거
   };
 
@@ -3969,6 +3991,17 @@ export default function Dashboard() {
       });
       setStageStartMap((prev) => new Map(prev).set(ci.id, now));
     }
+    // T-20260522-foot-SPACE-AUTOROUTE: 금일동선 자동기입 — check_in_room_logs INSERT (graceful)
+    void (async () => {
+      try {
+        await supabase.from('check_in_room_logs').insert({
+          check_in_id: ci.id,
+          clinic_id: ci.clinic_id,
+          assigned_room: laserRoom,
+          room_type: laserRoom === '가열성레이저' ? 'heated_laser' : 'laser',
+        });
+      } catch { /* graceful skip */ }
+    })();
     // T-20260522-foot-SLOT-TIMETABLE-POPUP AC-2: 성공 토스트 제거
   };
 
