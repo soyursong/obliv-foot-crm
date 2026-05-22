@@ -1,21 +1,25 @@
 ---
 id: T-20260522-foot-TIMETABLE-FOLD
-title: "통합시간표 접기/펼치기 토글 + localStorage 상태 유지"
+title: "통합시간표 V2 — 실시간 갱신(AC-6) + 시간대별 예약 명단 아코디언(AC-7)"
 status: deploy-ready
-priority: P1
+priority: P2
 domain: foot
 created_at: 2026-05-22
 deadline: 2026-05-26
 priority_updated_at: 2026-05-22
-priority_updated_by: planner (MSG-20260522-011218-g41d)
+priority_updated_by: planner (MSG-20260522-170846-wx3h)
 deploy_ready: true
 deploy_ready_at: 2026-05-22
 deploy_ready_by: dev-foot
 db_migration: false
 build_passed: true
-build_time: "3.19s"
-commit_sha: e3471a5
-e2e_spec: tests/e2e/T-20260522-foot-TIMETABLE-FOLD.spec.ts
+build_time: "3.23s"
+commit_sha: a8c0517
+e2e_spec: tests/e2e/T-20260522-foot-TIMETABLE-FOLD-V2.spec.ts
+e2e_count: 20
+e2e_pass: 20
+v1_e2e_spec: tests/e2e/T-20260522-foot-TIMETABLE-FOLD.spec.ts
+v1_e2e_pass: 12
 ---
 
 ## 개요
