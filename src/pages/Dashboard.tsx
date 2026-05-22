@@ -3870,6 +3870,13 @@ export default function Dashboard() {
     const qn = queueData as number;
     const needsExam = res.visit_type === 'returning';
 
+    // T-20260522-foot-REVISIT-TREAT-WAIT FIX: INSERT 시 status 직접 세팅 (2단계 INSERT→UPDATE 패턴 폐기)
+    // 근본 원인: 기존 패턴은 status='registered'로 INSERT 후 별도 UPDATE → UPDATE 에러 체크 없음 →
+    //   UPDATE 실패 시 묵묵히 'registered'에 고착, Realtime 경합 시에도 동일 증상.
+    // 수정: SelfCheckIn/NewCheckInDialog/ReservationDetailPopup과 동일하게 INSERT 시점에 최종 status 직접 세팅.
+    // 재진(returning) → treatment_waiting, 초진/체험 → consult_waiting
+    const nextStatus: CheckInStatus = res.visit_type === 'returning' ? 'treatment_waiting' : 'consult_waiting';
+
     // INSERT 먼저 완료 후 rows에 추가 (tempId 사용 금지 — UUID 불일치 방지)
     const { data: inserted, error } = await supabase
       .from('check_ins')
@@ -3881,7 +3888,7 @@ export default function Dashboard() {
         customer_id: res.customer_id,
         reservation_id: res.id,
         visit_type: res.visit_type,
-        status: 'registered',
+        status: nextStatus,
         notes: res.visit_type === 'returning' ? { needs_exam: needsExam } : {},
       })
       .select()
@@ -3897,11 +3904,7 @@ export default function Dashboard() {
     // T-20260522-foot-PERF-TUNING OPT-3: pendingReservations는 timelineReservations 파생값 → 갱신으로 대체
     fetchTimelineReservations();
 
-    // T-20260514-foot-CHECKIN-AUTO-STAGE FIX: 재진 → 치료대기, 초진/체험 → 상담대기
-    // 기존 코드: res.visit_type === 'new' ? 'consult_waiting' : 'registered'
-    // → 재진이 'registered'에 갇혀 치료대기로 이동 안 됨 (김주연 매니저 현장 보고 5/14)
-    const nextStatus: CheckInStatus = res.visit_type === 'returning' ? 'treatment_waiting' : 'consult_waiting';
-    await supabase.from('check_ins').update({ status: nextStatus }).eq('id', realId);
+    // UPDATE 단계 제거 — INSERT에서 직접 nextStatus로 세팅됨 (위 참조)
     const transNow = new Date().toISOString();
     await supabase.from('status_transitions').insert({
       check_in_id: realId,
