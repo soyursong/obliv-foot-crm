@@ -146,17 +146,23 @@ function draftKey(checkInId: string): string {
 
 // T-20260521-foot-DOC-PRINT-UNIFY PUSH: CSS를 DocumentPrintPanel openBatchPrintWindow와 동일하게 통일.
 // 경로 4 = 1순위 메인 출력 경로 — 레이아웃이 경로 1과 완전 동일해야 함.
-function buildPrintHtml(pages: string[], title: string): string {
+// AC-5: forceLandscape=true 시 @page { size: A4 landscape } 적용 (진료비세부산정내역 전용).
+function buildPrintHtml(pages: string[], title: string, forceLandscape = false): string {
+  // AC-5: 진료비세부산정내역 landscape 전용 — @page size 분기
+  const pageRule = forceLandscape
+    ? '@page { size: A4 landscape; margin: 0; }'
+    : '@page { size: A4 portrait; margin: 0; }';
+  const pageWidth  = forceLandscape ? '297mm' : '210mm';
+  const pageHeight = forceLandscape ? '210mm' : '297mm';
   return `<!DOCTYPE html><html><head>
 <meta charset="utf-8"><title>${title}</title>
 <style>
-  @page { size: A4 portrait; margin: 0; }
-  @page landscape { size: A4 landscape; margin: 0; }
+  ${pageRule}
   body { margin: 0; padding: 0; }
   .page {
     position: relative;
-    width: 210mm;
-    min-height: 297mm;
+    width: ${pageWidth};
+    min-height: ${pageHeight};
     overflow: hidden;
     page-break-after: always;
   }
@@ -167,7 +173,6 @@ function buildPrintHtml(pages: string[], title: string): string {
   .page img:first-child { width: 100%; height: 100%; object-fit: contain; }
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .page-landscape { page: landscape; }
     .page:last-child { page-break-after: avoid; }
   }
 </style>
@@ -1078,26 +1083,41 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         }
       }
 
-      const pages = selected.flatMap((t) => {
-        // T-20260517-foot-DOC-CODE-INSERT: 상병코드/처방약 주입
-        // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item rxItemDosages 전달
-        const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages);
-        // HTML 양식 우선 (template_format='html' 또는 HTML_TEMPLATE_MAP에 등록된 키)
-        if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
-          const page = buildHtmlPageDiv(t, enriched);
-          return page ? [page] : [];
-        }
-        // JPG/PNG 이미지 오버레이 방식
-        const imgUrl = getTemplateImageUrl(t.form_key);
-        if (!imgUrl) return [];
-        return [buildPageHtml(t, enriched, imgUrl)];
-      });
-      if (pages.length === 0) {
+      // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 iframe으로 분리
+      const landscapeSelected = selected.filter((t) => t.form_key === 'bill_detail');
+      const portraitSelected  = selected.filter((t) => t.form_key !== 'bill_detail');
+
+      const buildPages = (tmplList: typeof selected) =>
+        tmplList.flatMap((t) => {
+          // T-20260517-foot-DOC-CODE-INSERT: 상병코드/처방약 주입
+          // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item rxItemDosages 전달
+          const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages);
+          // HTML 양식 우선 (template_format='html' 또는 HTML_TEMPLATE_MAP에 등록된 키)
+          if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
+            const page = buildHtmlPageDiv(t, enriched);
+            return page ? [page] : [];
+          }
+          // JPG/PNG 이미지 오버레이 방식
+          const imgUrl = getTemplateImageUrl(t.form_key);
+          if (!imgUrl) return [];
+          return [buildPageHtml(t, enriched, imgUrl)];
+        });
+
+      const landscapePages = buildPages(landscapeSelected);
+      const portraitPages  = buildPages(portraitSelected);
+
+      if (landscapePages.length === 0 && portraitPages.length === 0) {
         toast.warning('출력 가능한 양식이 없습니다');
         return;
       }
       // PAY-SLOT-MOVE AC-4: iframe 인쇄 — 중복 창 없음
-      printViaIframe(buildPrintHtml(pages, `서류 출력 — ${checkIn.customer_name}`));
+      // AC-5: landscape(진료비세부산정내역)와 portrait 분리 출력
+      if (landscapePages.length > 0) {
+        printViaIframe(buildPrintHtml(landscapePages, `서류 출력 — ${checkIn.customer_name}`, true));
+      }
+      if (portraitPages.length > 0) {
+        printViaIframe(buildPrintHtml(portraitPages, `서류 출력 — ${checkIn.customer_name}`));
+      }
       toast.success(`${selected.length}종 출력 요청됨`);
       // T-20260521-foot-DOC-PRINT-UNIFY AC-2: form_submissions 이력 기록 (fire & forget)
       const isFallback = templates[0]?.id.startsWith('fallback-');
@@ -1170,36 +1190,47 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         }
       }
 
-      const pages = selected.flatMap((t) => {
-        const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages);
-        if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
-          const page = buildHtmlPageDiv(t, enriched);
-          return page ? [page] : [];
-        }
-        const imgUrl = getTemplateImageUrl(t.form_key);
-        if (!imgUrl) return [];
-        return [buildPageHtml(t, enriched, imgUrl)];
-      });
-      if (pages.length > 0) {
-        printViaIframe(buildPrintHtml(pages, `서류 출력 — ${checkIn.customer_name}`));
-        // T-20260521-foot-DOC-PRINT-UNIFY AC-2: form_submissions 이력 기록 (fire & forget)
-        const isFallbackTpl = templates[0]?.id.startsWith('fallback-');
-        if (!isFallbackTpl && staffId) {
-          const now = new Date().toISOString();
-          const submissionRows = selected.map((t) => ({
-            clinic_id: checkIn.clinic_id,
-            template_id: t.id,
-            check_in_id: checkIn.id,
-            customer_id: checkIn.customer_id ?? null,
-            issued_by: staffId,
-            field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages),
-            status: 'printed' as const,
-            printed_at: now,
-          }));
-          supabase.from('form_submissions').insert(submissionRows).then(({ error }) => {
-            if (error) console.warn('[DOC-PRINT-UNIFY] form_submissions 기록 실패(settle):', error.message);
+      // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 iframe으로 분리
+      {
+        const landscapeSel = selected.filter((t) => t.form_key === 'bill_detail');
+        const portraitSel  = selected.filter((t) => t.form_key !== 'bill_detail');
+        const buildPages2 = (tmplList: typeof selected) =>
+          tmplList.flatMap((t) => {
+            const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages);
+            if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
+              const page = buildHtmlPageDiv(t, enriched);
+              return page ? [page] : [];
+            }
+            const imgUrl = getTemplateImageUrl(t.form_key);
+            if (!imgUrl) return [];
+            return [buildPageHtml(t, enriched, imgUrl)];
           });
+        if (landscapeSel.length > 0) {
+          const lPages = buildPages2(landscapeSel);
+          if (lPages.length > 0) printViaIframe(buildPrintHtml(lPages, `서류 출력 — ${checkIn.customer_name}`, true));
         }
+        if (portraitSel.length > 0) {
+          const pPages = buildPages2(portraitSel);
+          if (pPages.length > 0) printViaIframe(buildPrintHtml(pPages, `서류 출력 — ${checkIn.customer_name}`));
+        }
+      }
+      // T-20260521-foot-DOC-PRINT-UNIFY AC-2: form_submissions 이력 기록 (fire & forget)
+      const isFallbackTpl = templates[0]?.id.startsWith('fallback-');
+      if (!isFallbackTpl && staffId) {
+        const now = new Date().toISOString();
+        const submissionRows = selected.map((t) => ({
+          clinic_id: checkIn.clinic_id,
+          template_id: t.id,
+          check_in_id: checkIn.id,
+          customer_id: checkIn.customer_id ?? null,
+          issued_by: staffId,
+          field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages),
+          status: 'printed' as const,
+          printed_at: now,
+        }));
+        supabase.from('form_submissions').insert(submissionRows).then(({ error }) => {
+          if (error) console.warn('[DOC-PRINT-UNIFY] form_submissions 기록 실패(settle):', error.message);
+        });
       }
 
       // 2. 수납 + auto-done

@@ -241,22 +241,31 @@ function buildPageHtml(
 </div>`;
 }
 
-/** 여러 page div를 하나의 인쇄 창으로 출력 */
+/** 여러 page div를 하나의 인쇄 창으로 출력
+ * AC-5: forceLandscape=true 시 @page { size: A4 landscape } 적용 (진료비세부산정내역 전용).
+ * landscape 양식은 별도 창으로 분리하여 portrait 페이지에 영향 없이 출력.
+ */
 function openBatchPrintWindow(
   pages: string[],
   title: string,
+  forceLandscape = false,
 ): Window | null {
+  // AC-5: 진료비세부산정내역 landscape 전용 — @page size 분기
+  const pageRule = forceLandscape
+    ? '@page { size: A4 landscape; margin: 0; }'
+    : '@page { size: A4 portrait; margin: 0; }';
+  const pageWidth  = forceLandscape ? '297mm' : '210mm';
+  const pageHeight = forceLandscape ? '210mm' : '297mm';
   const html = `<!DOCTYPE html><html><head>
 <meta charset="utf-8">
 <title>${title}</title>
 <style>
-  @page { size: A4 portrait; margin: 0; }
-  @page landscape { size: A4 landscape; margin: 0; }
+  ${pageRule}
   body { margin: 0; padding: 0; }
   .page {
     position: relative;
-    width: 210mm;
-    min-height: 297mm;
+    width: ${pageWidth};
+    min-height: ${pageHeight};
     overflow: hidden;
     page-break-after: always;
   }
@@ -271,7 +280,6 @@ function openBatchPrintWindow(
   }
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .page-landscape { page: landscape; }
     /* AC-1: 마지막 페이지 빈 페이지 방지 */
     .page:last-child { page-break-after: avoid; }
   }
@@ -647,10 +655,20 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
       const pdfTemplates = selectedTemplates.filter((t) => t.template_format === 'pdf');
 
       // HTML/CSS 디지털 양식 — 한 창에 모아 인쇄 (T-20260514-foot-FORM-CLARITY-REWORK)
-      if (htmlTemplates.length > 0) {
-        const pages = htmlTemplates.map((t) => buildHtmlPageHtml(t, autoValues));
-        const w = openBatchPrintWindow(pages, `서류 일괄 출력 — ${checkIn.customer_name}`);
-        if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
+      // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 창으로 분리
+      {
+        const landscapeHtmlTpls = htmlTemplates.filter((t) => t.form_key === 'bill_detail');
+        const portraitHtmlTpls  = htmlTemplates.filter((t) => t.form_key !== 'bill_detail');
+        if (landscapeHtmlTpls.length > 0) {
+          const pages = landscapeHtmlTpls.map((t) => buildHtmlPageHtml(t, autoValues));
+          const w = openBatchPrintWindow(pages, `서류 일괄 출력 — ${checkIn.customer_name}`, true);
+          if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
+        }
+        if (portraitHtmlTpls.length > 0) {
+          const pages = portraitHtmlTpls.map((t) => buildHtmlPageHtml(t, autoValues));
+          const w = openBatchPrintWindow(pages, `서류 일괄 출력 — ${checkIn.customer_name}`);
+          if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
+        }
       }
 
       // JPG — 한 창에 모아 인쇄
@@ -1621,7 +1639,9 @@ function IssueDialog({
     // T-20260514-foot-FORM-CLARITY-REWORK: HTML 양식 분기
     if (template.template_format === 'html' || isHtmlTemplate(template.form_key)) {
       const pageHtml = buildHtmlPageHtml(template, allValues);
-      const w = openBatchPrintWindow([pageHtml], `${template.name_ko} — ${checkIn.customer_name}`);
+      // AC-5: 진료비세부산정내역(bill_detail)은 landscape 전용 창
+      const isLandscape = template.form_key === 'bill_detail';
+      const w = openBatchPrintWindow([pageHtml], `${template.name_ko} — ${checkIn.customer_name}`, isLandscape);
       if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
       return;
     }
