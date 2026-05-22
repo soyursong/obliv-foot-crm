@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
-import { ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Phone, FileText, Camera, Package, Stethoscope, Timer, Trash2, Bell, Upload } from 'lucide-react';
+import { ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Phone, FileText, Package, Stethoscope, Trash2, Bell, Upload } from 'lucide-react';
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
 import { toast } from 'sonner';
 import {
@@ -545,9 +545,6 @@ function Chart1StorageSection({ customerId, prefix, label }: { customerId: strin
 
 // ─── 메인 컴포넌트 ────────────────────────────────────────────────────────────
 
-// 기본 레이저 시간 단위 (어드민 설정 미존재 시 fallback) — 10분 추가 (T-20260504-foot-TREATMENT-SIMPLIFY)
-const DEFAULT_LASER_TIME_UNITS = [10, 15, 20, 30];
-
 export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, onPayment, onOpenMedicalChart }: Props) {
   const { profile } = useAuth();
   const clinic = useClinic();
@@ -555,10 +552,6 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   // T-20260516-foot-CHART2-STATE-UNIFY: chartSheetId 제거 → AdminLayout ChartContext 사용
   // LOGIC-LOCK: L-004 [CHART-LOCK-007] — openChart 호출은 useChart() 경유만. 직접 ChartContext 접근 금지.
   const { openChart, closeChart } = useChart();
-  /** 클리닉 설정 기반 레이저 시간 단위 목록 */
-  const laserTimeUnits: number[] = clinic?.laser_time_units?.length
-    ? clinic.laser_time_units
-    : DEFAULT_LASER_TIME_UNITS;
   const [services, setServices] = useState<Service[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [history, setHistory] = useState<VisitHistory[]>([]);
@@ -589,17 +582,12 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const [pododulleDone, setPododulleDone] = useState(false);
   const [laserMinutes, setLaserMinutes] = useState<number | null>(null);
 
-  // T-20260522-foot-LASER-TIMER AC-1: 비가열 타이머 상태
-  const [timerRecord, setTimerRecord] = useState<{ id: string; ends_at: string } | null>(null);
-  const [timerNow, setTimerNow] = useState(Date.now());
-  const [timerLoading, setTimerLoading] = useState(false);
-
-  // ── 진료 기록 간소화 상태 (T-20260504-foot-TREATMENT-SIMPLIFY) ──
+  // ── 진료 기록 간소화 상태 (T-20260504-foot-TREATMENT-SIMPLIFY) — UI 제거(AC-7), 저장 호환성 유지 ──
   const [assignedCounselorId, setAssignedCounselorId] = useState<string | null>(null);
   const [treatmentCategory, setTreatmentCategory] = useState<string | null>(null);
   const [treatmentContents, setTreatmentContents] = useState<string[]>([]);
-  /** 담당실장 드롭다운용 스태프 목록 */
-  const [staffList, setStaffList] = useState<Array<{ id: string; name: string; role: string }>>([]);
+  /** 담당실장 드롭다운용 스태프 목록 (AC-7 UI 제거 — 세터만 유지하여 load 호환성 보존) */
+  const [, setStaffList] = useState<Array<{ id: string; name: string; role: string }>>([]);
   /** T-20260510-foot-C1-VISIT-ROUTE-MEMO: 방문경로 */
   const [visitRoute, setVisitRoute] = useState<string>('');
   /** T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 기타메모(memo) */
@@ -935,32 +923,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     return () => window.removeEventListener('storage', handler);
   }, [checkIn?.customer_id, resolvedCustomerId, customerMode?.customerId, load]);
 
-  // T-20260522-foot-LASER-TIMER AC-1/AC-4: 체크인 변경 시 활성 타이머 로드
-  useEffect(() => {
-    if (!checkIn?.id) { setTimerRecord(null); return; }
-    let cancelled = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
-      .from('timer_records')
-      .select('id, ends_at')
-      .eq('check_in_id', checkIn.id)
-      .is('stopped_at', null)
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-      .then(({ data }: { data: { id: string; ends_at: string } | null }) => {
-        if (!cancelled) setTimerRecord(data ?? null);
-      });
-    return () => { cancelled = true; };
-  }, [checkIn?.id]);
-
-  // T-20260522-foot-LASER-TIMER AC-1: 타이머 활성 시 1초 tick
-  useEffect(() => {
-    if (!timerRecord) return;
-    setTimerNow(Date.now());
-    const t = setInterval(() => setTimerNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [timerRecord]);
+  // AC-7 T-20260522-foot-CHART1-TRIM: 타이머 관련 useEffect 제거 (비가열 타이머 UI 제거)
 
   const deleteCheckIn = async () => {
     if (!checkIn) return;
@@ -1013,60 +976,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     onUpdated();
   };
 
-  // T-20260522-foot-LASER-TIMER AC-1: 타이머 시작 (INSERT → timer_records)
-  const startTimer = async (minutes: 5 | 15 | 20) => {
-    if (!checkIn || timerRecord || timerLoading) return;
-    setTimerLoading(true);
-    const startsAt = new Date();
-    const endsAt = new Date(startsAt.getTime() + minutes * 60 * 1000);
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase as any)
-        .from('timer_records')
-        .insert({
-          check_in_id: checkIn.id,
-          clinic_id: checkIn.clinic_id,
-          duration_minutes: minutes,
-          started_at: startsAt.toISOString(),
-          ends_at: endsAt.toISOString(),
-          created_by: profile?.id ?? null,
-        })
-        .select('id, ends_at')
-        .single();
-      if (error) { toast.error('타이머 시작 실패'); return; }
-      setTimerRecord({ id: (data as { id: string; ends_at: string }).id, ends_at: (data as { id: string; ends_at: string }).ends_at });
-      setTimerNow(Date.now());
-    } finally {
-      setTimerLoading(false);
-    }
-  };
-
-  // T-20260522-foot-LASER-TIMER AC-1: 타이머 취소 (UPDATE stopped_at)
-  const stopTimer = async () => {
-    if (!timerRecord) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any)
-      .from('timer_records')
-      .update({ stopped_at: new Date().toISOString() })
-      .eq('id', timerRecord.id);
-    setTimerRecord(null);
-  };
-
   // T-20260522-foot-SPACE-AUTOROUTE: assignRoom 제거 (수동 배정 폐지 — 금일동선 자동집계로 전환)
-
-  // T-20260511-foot-CUSTMGMT-DETAIL-SHEET 3차: customerMode 원장 소견 저장 (latestCheckIn 대상)
-  const saveCustomerModeDoctorNote = async () => {
-    if (!latestCheckIn) return;
-    setSaving(true);
-    const { error } = await supabase
-      .from('check_ins')
-      .update({ doctor_note: doctorNote || null })
-      .eq('id', latestCheckIn.id);
-    setSaving(false);
-    if (error) { toast.error('소견 저장 실패: ' + error.message); return; }
-    toast.success('소견이 저장되었습니다');
-    setLatestCheckIn((prev) => prev ? { ...prev, doctor_note: doctorNote || null } : prev);
-  };
+  // AC-6/7 T-20260522-foot-CHART1-TRIM: startTimer/stopTimer/saveCustomerModeDoctorNote 제거
 
   // T-20260522-foot-CHART1-TRIM AC-3: 금일 이동이력 제거 — dailySlotSummary만 사용
 
@@ -1364,49 +1275,23 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               )}
             </div>
 
-            {/* AC6: 원장 소견 / 의사 진료 패널 — T-20260511-CUSTMGMT 3차 (편집 가능 + DoctorTreatmentPanel) */}
-            <Separator />
-            {latestCheckIn && (latestCheckIn.status === 'examination' || latestCheckIn.status === 'exam_waiting') ? (
-              <div className="space-y-3 rounded-md p-3 bg-violet-50 ring-2 ring-violet-300">
-                <Label className="text-sm font-semibold text-violet-900 flex items-center gap-1">
-                  <Stethoscope className="h-3 w-3" /> 의사 진료 패널
-                  <span className="ml-auto text-xs font-normal text-violet-700/80">진료 중</span>
-                </Label>
-                <DoctorTreatmentPanel
-                  checkInId={latestCheckIn.id}
-                  visitType={latestCheckIn.visit_type as VisitType}
-                  hasHealerLaser={false}
-                  onUpdated={onUpdated}
-                />
-              </div>
-            ) : (
-              <div className="space-y-2 rounded-md p-3 bg-violet-50/40 ring-1 ring-violet-100">
-                <Label className="text-sm font-semibold text-violet-900 flex items-center gap-1">
-                  <Stethoscope className="h-3 w-3" /> 원장 소견
-                  <span className="ml-auto text-xs font-normal text-violet-700/80">
-                    {latestCheckIn ? format(new Date(latestCheckIn.checked_in_at), 'MM/dd') + ' 방문 기준' : '최근 방문 없음'}
-                  </span>
-                </Label>
-                <Textarea
-                  value={doctorNote}
-                  onChange={(e) => setDoctorNote(e.target.value)}
-                  placeholder={latestCheckIn ? '원장 소견을 입력하세요' : '방문 이력이 없어 소견 입력 불가'}
-                  rows={3}
-                  disabled={!latestCheckIn}
-                  className="text-sm bg-white border-violet-200 focus-visible:ring-violet-400"
-                />
-                {latestCheckIn && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs w-full border-violet-300 text-violet-700 hover:bg-violet-50"
-                    onClick={saveCustomerModeDoctorNote}
-                    disabled={saving}
-                  >
-                    {saving ? '저장 중…' : '소견 저장'}
-                  </Button>
-                )}
-              </div>
+            {/* AC-6 T-20260522-foot-CHART1-TRIM: 원장 소견 완전 제거 — 진료 중(examination)일 때만 의사 진료 패널 표시 */}
+            {latestCheckIn && (latestCheckIn.status === 'examination' || latestCheckIn.status === 'exam_waiting') && (
+              <>
+                <Separator />
+                <div className="space-y-3 rounded-md p-3 bg-violet-50 ring-2 ring-violet-300">
+                  <Label className="text-sm font-semibold text-violet-900 flex items-center gap-1">
+                    <Stethoscope className="h-3 w-3" /> 의사 진료 패널
+                    <span className="ml-auto text-xs font-normal text-violet-700/80">진료 중</span>
+                  </Label>
+                  <DoctorTreatmentPanel
+                    checkInId={latestCheckIn.id}
+                    visitType={latestCheckIn.visit_type as VisitType}
+                    hasHealerLaser={false}
+                    onUpdated={onUpdated}
+                  />
+                </div>
+              </>
             )}
 
             {/* AC8: 시술 항목 관리 / 패키지 회차 차감 — 항상 표시 (T-20260511-CUSTMGMT 3차) */}
@@ -1909,247 +1794,35 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             </>
           )}
 
-          {/* 원장 소견 / 진료 패널 */}
-          {(() => {
-            const isExaminationStage = checkIn.status === 'examination' || checkIn.status === 'exam_waiting';
-            if (isExaminationStage) {
-              return (
-                <div className="space-y-3 rounded-md p-3 bg-violet-50 ring-2 ring-violet-300 transition">
-                  {/* 진료콜 알람 배너 (exam_waiting 단계) */}
-                  {checkIn.status === 'exam_waiting' && (
-                    <div className="flex items-center gap-2 rounded-lg border border-violet-300 bg-violet-100 px-3 py-2">
-                      <Bell className="h-4 w-4 text-violet-600 animate-pulse shrink-0" />
-                      <span className="text-xs font-semibold text-violet-800">진료 대기 중 — 원장님을 호출하세요</span>
-                    </div>
-                  )}
-                  <Label className="text-sm font-semibold text-violet-900 flex items-center gap-1">
-                    <Stethoscope className="h-3 w-3" /> 의사 진료 패널
-                    <span className="ml-auto text-xs font-normal text-violet-700/80">진료 중</span>
-                  </Label>
-                  {/* T-20260502-foot-DOCTOR-TREATMENT-FLOW: DoctorTreatmentPanel */}
-                  <DoctorTreatmentPanel
-                    checkInId={checkIn.id}
-                    visitType={checkIn.visit_type}
-                    hasHealerLaser={
-                      // 힐러레이저 포함 여부: 시술 항목명에 '힐러레이저' 포함 시 true
-                      !!(checkIn.treatment_memo as { details?: string } | null)?.details?.includes('힐러레이저')
-                    }
-                    onUpdated={onUpdated}
-                  />
+          {/* AC-6 T-20260522-foot-CHART1-TRIM: 원장 소견 완전 제거 — 진료 중(examination)일 때만 의사 진료 패널 표시 */}
+          {(checkIn.status === 'examination' || checkIn.status === 'exam_waiting') && (
+            <div className="space-y-3 rounded-md p-3 bg-violet-50 ring-2 ring-violet-300 transition">
+              {/* 진료콜 알람 배너 (exam_waiting 단계) */}
+              {checkIn.status === 'exam_waiting' && (
+                <div className="flex items-center gap-2 rounded-lg border border-violet-300 bg-violet-100 px-3 py-2">
+                  <Bell className="h-4 w-4 text-violet-600 animate-pulse shrink-0" />
+                  <span className="text-xs font-semibold text-violet-800">진료 대기 중 — 원장님을 호출하세요</span>
                 </div>
-              );
-            }
-            // 비진료 단계: 간단한 원장 소견 텍스트
-            return (
-              <div className="space-y-2 rounded-md p-3 bg-violet-50/40 ring-1 ring-violet-100 transition">
-                <Label className="text-sm font-semibold text-violet-900 flex items-center gap-1">
-                  <Stethoscope className="h-3 w-3" /> 원장 소견
-                  <span className="ml-auto text-xs font-normal text-violet-700/80">
-                    선택 입력 (원장 미진료 시 대리 메모 가능)
-                  </span>
-                </Label>
-                <Textarea
-                  value={doctorNote}
-                  onChange={(e) => { setDoctorNote(e.target.value); setIsDirty(true); }}
-                  placeholder="원장 소견을 자유롭게 입력하세요"
-                  rows={3}
-                  className="text-sm bg-white border-violet-200 focus-visible:ring-violet-400"
-                />
-              </div>
-            );
-          })()}
-
-          {/* 진료 기록 — T-20260504-foot-TREATMENT-SIMPLIFY (간소화) */}
-          <div className="space-y-3 rounded-md p-3 bg-emerald-50/40 ring-1 ring-emerald-100">
-            <span className="text-sm font-semibold text-emerald-900 flex items-center gap-1">
-              <Stethoscope className="h-3.5 w-3.5" /> 진료 기록
-            </span>
-
-            {/* 담당실장 */}
-            <div className="space-y-1.5">
-              <Label className="text-sm text-emerald-900">담당실장</Label>
-              <select
-                value={assignedCounselorId ?? ''}
-                onChange={(e) => { setAssignedCounselorId(e.target.value || null); setIsDirty(true); }}
-                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 text-foreground"
-              >
-                <option value="">선택하세요</option>
-                {staffList.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* 치료구분 (단일선택) */}
-            <div className="space-y-1.5">
-              <Label className="text-sm text-emerald-900">치료구분</Label>
-              <div className="flex gap-1.5">
-                {['발톱무좀', '내성발톱'].map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => { setTreatmentCategory((v) => (v === cat ? null : cat)); setIsDirty(true); }}
-                    className={cn(
-                      'flex-1 h-9 rounded-md border text-sm font-medium transition',
-                      treatmentCategory === cat
-                        ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
-                        : 'border-input hover:bg-muted text-muted-foreground',
-                    )}
-                  >
-                    {treatmentCategory === cat ? '✓ ' : ''}{cat}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 치료내용 (중복선택) */}
-            <div className="space-y-1.5">
-              <Label className="text-sm text-emerald-900">
-                치료내용
-                <span className="ml-1.5 text-xs font-normal text-muted-foreground">중복선택</span>
+              )}
+              <Label className="text-sm font-semibold text-violet-900 flex items-center gap-1">
+                <Stethoscope className="h-3 w-3" /> 의사 진료 패널
+                <span className="ml-auto text-xs font-normal text-violet-700/80">진료 중</span>
               </Label>
-              <div className="grid grid-cols-2 gap-1.5">
-                {['가열', '비가열', '포돌로게', '수액'].map((content) => {
-                  const isChecked = treatmentContents.includes(content);
-                  return (
-                    <button
-                      key={content}
-                      type="button"
-                      onClick={() => {
-                        setTreatmentContents((prev) =>
-                          isChecked ? prev.filter((c) => c !== content) : [...prev, content],
-                        );
-                        setIsDirty(true);
-                      }}
-                      className={cn(
-                        'h-9 rounded-md border text-sm font-medium transition',
-                        isChecked
-                          ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
-                          : 'border-input hover:bg-muted text-muted-foreground',
-                      )}
-                    >
-                      {isChecked ? '✓ ' : ''}{content}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 레이저 시간 — T-20260502-foot-LASER-TIME-UNIT + 10분 추가 */}
-            <div className="space-y-1.5">
-              <Label className="text-sm text-emerald-900">레이저 시간</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {laserTimeUnits.map((min) => (
-                  <button
-                    key={min}
-                    type="button"
-                    onClick={() => { setLaserMinutes(laserMinutes === min ? null : min); setIsDirty(true); }}
-                    className={cn(
-                      'min-w-[52px] h-9 rounded-md border text-sm font-medium transition px-2',
-                      laserMinutes === min
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'border-input hover:bg-muted text-muted-foreground',
-                    )}
-                  >
-                    {min}분
-                  </button>
-                ))}
-                {/* 직접 입력 — 목록에 없는 값 처리 */}
-                {laserMinutes != null && !laserTimeUnits.includes(laserMinutes) && (
-                  <span className="inline-flex items-center h-9 rounded-md border border-blue-400 bg-blue-50 px-2.5 text-sm font-medium text-blue-700">
-                    {laserMinutes}분 (직접)
-                    <button
-                      type="button"
-                      onClick={() => { setLaserMinutes(null); setIsDirty(true); }}
-                      className="ml-1.5 text-blue-400 hover:text-blue-700"
-                      title="취소"
-                    >✕</button>
-                  </span>
-                )}
-                {laserMinutes != null && (
-                  <button
-                    type="button"
-                    onClick={() => { setLaserMinutes(null); setIsDirty(true); }}
-                    className="h-9 px-2 rounded-md border border-dashed border-gray-300 text-xs text-muted-foreground hover:bg-muted transition"
-                    title="레이저 시간 초기화"
-                  >
-                    초기화
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* T-20260522-foot-LASER-TIMER AC-1: 비가열 레이저 타이머 */}
-            {(() => {
-              const remainMs = timerRecord ? new Date(timerRecord.ends_at).getTime() - timerNow : 0;
-              const remainSec = Math.max(0, Math.ceil(remainMs / 1000));
-              const mm = String(Math.floor(remainSec / 60)).padStart(2, '0');
-              const ss = String(remainSec % 60).padStart(2, '0');
-              const isOver = timerRecord && remainMs <= 0;
-              const isAlert = timerRecord && remainMs > 0 && remainMs <= 60000;
-              return (
-                <div className="space-y-1.5" data-testid="laser-timer-panel">
-                  <Label className="text-sm text-emerald-900 flex items-center gap-1.5">
-                    <Timer className="h-3.5 w-3.5" />
-                    <span>비가열 타이머</span>
-                    {timerRecord && (
-                      <span
-                        data-testid="laser-timer-countdown"
-                        className={cn(
-                          'ml-1 font-mono text-sm font-bold tabular-nums tracking-wide',
-                          isOver ? 'text-gray-400' : isAlert ? 'text-red-600 animate-pulse' : 'text-emerald-700',
-                        )}
-                      >
-                        {isOver ? '종료' : `${mm}:${ss}`}
-                      </span>
-                    )}
-                  </Label>
-                  {!timerRecord ? (
-                    <div className="flex gap-1.5" data-testid="laser-timer-start-buttons">
-                      {([5, 15, 20] as const).map((min) => (
-                        <button
-                          key={min}
-                          type="button"
-                          disabled={timerLoading}
-                          data-testid={`laser-timer-btn-${min}`}
-                          onClick={() => startTimer(min)}
-                          className="flex-1 h-10 rounded-md border border-emerald-300 bg-emerald-50 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 active:bg-emerald-200 transition disabled:opacity-50 touch-target"
-                        >
-                          {min}분
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      data-testid="laser-timer-stop-btn"
-                      onClick={stopTimer}
-                      className="w-full h-10 rounded-md border border-red-200 bg-red-50 text-sm font-medium text-red-700 hover:bg-red-100 active:bg-red-200 transition touch-target"
-                    >
-                      타이머 취소
-                    </button>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* 메모 */}
-            <div className="space-y-1.5">
-              <Label className="text-sm text-emerald-900 flex items-center gap-1">
-                <Camera className="h-3 w-3" /> 메모
-                {checkIn.treatment_memo?.details && (
-                  <span className="ml-1 text-xs font-normal text-teal-600 bg-teal-50 rounded px-1.5 py-0.5">저장됨</span>
-                )}
-              </Label>
-              <Textarea
-                value={treatmentMemo}
-                onChange={(e) => { setTreatmentMemo(e.target.value); setIsDirty(true); }}
-                placeholder="시술 기록, 사용 장비, 특이사항"
-                rows={3}
-                className="text-sm"
+              {/* T-20260502-foot-DOCTOR-TREATMENT-FLOW: DoctorTreatmentPanel */}
+              <DoctorTreatmentPanel
+                checkInId={checkIn.id}
+                visitType={checkIn.visit_type}
+                hasHealerLaser={
+                  // 힐러레이저 포함 여부: 시술 항목명에 '힐러레이저' 포함 시 true
+                  !!(checkIn.treatment_memo as { details?: string } | null)?.details?.includes('힐러레이저')
+                }
+                onUpdated={onUpdated}
               />
             </div>
-          </div>
+          )}
+
+          {/* AC-7 T-20260522-foot-CHART1-TRIM: 진료 기록 섹션 완전 제거
+              (담당실장·치료구분·치료내용·레이저시간·비가열타이머·메모 — DB 기존 데이터 보존, 표시만 제거) */}
 
           {/* T-20260511-foot-C1-SAVE-DIRTY-AUTOSAVE: isDirty 기반 저장 버튼 + 자동저장 인디케이터 */}
           <div className="flex items-center gap-2">
