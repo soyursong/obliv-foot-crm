@@ -38,7 +38,7 @@ import { NhisLookupPanel } from '@/components/insurance/NhisLookupPanel';
 // T-20260515-foot-DOC-REISSUE-BTN: 서류 발급 이력 표시용 메타
 import { FORM_META } from '@/lib/formTemplates';
 // T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 삽입 헬퍼
-import { ReservationMemoTimeline, insertReservationMemo } from '@/components/ReservationMemoTimeline';
+import { ReservationMemoTimeline, insertReservationMemo, insertAltPinnedMemo } from '@/components/ReservationMemoTimeline';
 // T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 공유 패널 (2번차트 2구역 예약내역)
 import { ReservationAuditLogPanel } from '@/components/ReservationAuditLogPanel';
 // T-20260517-foot-C2-CONSULT-DOCS: 동의서 [작성] 다이얼로그
@@ -1302,6 +1302,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   }>({ content: '', message_type: 'manual' });
   const [savingMessage, setSavingMessage] = useState(false);
 
+  // T-20260522-foot-ALT-BADGE: ALT 토글 상태 (S2)
+  const [altStatus, setAltStatus] = useState(false);
+  const [altDetail, setAltDetail] = useState('');
+  const [savingAlt, setSavingAlt] = useState(false);
+
   // C23-PHRASE-LINK: 마운트 시 [일반] 카테고리 상용구 한 번 조회
   useEffect(() => {
     supabase
@@ -1341,6 +1346,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       setConsultationMemo((custData as Customer).tm_memo ?? '');
       // AC-6 쌍방연동: consultationStaffId 초기값을 Zone 1 assigned_staff_id 와 동기화
       setConsultationStaffId((custData as Customer).assigned_staff_id ?? '');
+      // T-20260522-foot-ALT-BADGE: ALT 초기값 로드 (S2)
+      setAltStatus((custData as Customer).alt_status ?? false);
+      setAltDetail((custData as Customer).alt_detail ?? '');
       // T-20260520-foot-MEMO-HISTORY: 메모 히스토리는 lazy load (탭 진입 시 로드)
       setTreatmentMemos([]);
       setTreatmentMemosLoaded(false);
@@ -2070,6 +2078,39 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     setSavingConsultation(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
     setCustomer((prev) => prev ? { ...prev, tm_memo: newTmMemo || null } : prev);
+  };
+
+  // T-20260522-foot-ALT-BADGE: ALT 토글 저장 (S2 AC-5,6,7 + S4 AC-11)
+  const saveAlt = async (newStatus: boolean) => {
+    if (!customer) return;
+    setSavingAlt(true);
+    const now = new Date().toISOString();
+    const { error } = await supabase.from('customers').update({
+      alt_status: newStatus,
+      alt_activated_at: newStatus ? now : null,
+      alt_detail: altDetail.trim() || null,
+    }).eq('id', customer.id);
+    setSavingAlt(false);
+    if (error) { toast.error(`ALT 저장 실패: ${error.message}`); return; }
+    setAltStatus(newStatus);
+    setCustomer((prev) => prev ? {
+      ...prev,
+      alt_status: newStatus,
+      alt_activated_at: newStatus ? now : null,
+      alt_detail: altDetail.trim() || null,
+    } : prev);
+    // AC-11: ALT ON 시 고정 메모 자동 삽입
+    if (newStatus && customer.id && customer.clinic_id) {
+      await insertAltPinnedMemo({
+        customerId: customer.id,
+        clinicId: customer.clinic_id,
+        altDetail: altDetail.trim() || null,
+        authorName: profile?.name ?? null,
+      });
+      toast.success('ALT 활성화 — 고정 메모 추가됨');
+    } else if (!newStatus) {
+      toast.success('ALT 해제 — 배지 제거 및 레이저코드 차단 해제');
+    }
   };
 
   // T-20260520-foot-MEMO-HISTORY: 치료메모 히스토리 로드 (lazy — 탭 진입 시)
@@ -4714,6 +4755,63 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     ))}
                   </select>
                 </div>
+                {/* T-20260522-foot-ALT-BADGE: ALT 토글 (AC-4,5,6,7) — 담당자 드롭다운 하단 */}
+                <div className="rounded-lg border border-dashed border-gray-300 p-2 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="text-[11px] font-bold tracking-wide px-1.5 py-0.5 rounded"
+                        style={{
+                          background: 'linear-gradient(135deg, #c8c8c8 0%, #e8e8e8 40%, #b0b0b0 60%, #d4d4d4 100%)',
+                          color: '#2a2a2a',
+                          border: '1px solid #a0a0a0',
+                          boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.6)',
+                        }}
+                      >
+                        ALT
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">올트 — 보험 반려 레이저 병행</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => saveAlt(true)}
+                        disabled={savingAlt || altStatus}
+                        className="h-6 px-2 rounded text-[10px] font-medium bg-gray-800 text-white hover:bg-gray-900 transition disabled:opacity-40"
+                        data-testid="alt-on-btn"
+                      >
+                        ON
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => saveAlt(false)}
+                        disabled={savingAlt || !altStatus}
+                        className="h-6 px-2 rounded text-[10px] font-medium border border-gray-400 text-gray-600 hover:bg-gray-100 transition disabled:opacity-40"
+                        data-testid="alt-off-btn"
+                      >
+                        OFF
+                      </button>
+                    </div>
+                  </div>
+                  {altStatus && (
+                    <div className="flex items-center gap-1 text-[10px] text-gray-500">
+                      <span className="w-1.5 h-1.5 rounded-full bg-gray-600 inline-block shrink-0" />
+                      ALT 활성 중 — 서류출력 레이저코드 차단
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-[10px] text-muted-foreground mb-0.5">상세내용</label>
+                    <textarea
+                      value={altDetail}
+                      onChange={(e) => setAltDetail(e.target.value)}
+                      rows={2}
+                      placeholder="예: 5회차까지 진행, 보험 반려됨"
+                      className="w-full rounded border border-gray-300 px-1.5 py-1 text-[11px] resize-none focus:outline-none focus:border-teal-500"
+                      data-testid="alt-detail-input"
+                    />
+                  </div>
+                </div>
+
                 {/* 상용구 — C23-PHRASE-LINK: phrase_templates WHERE category='general' DB 연동 */}
                 {generalPhrases.length > 0 && (
                   <div>
