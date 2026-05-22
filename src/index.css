@@ -201,7 +201,28 @@
   animation: healer-border-blink 1.2s ease-in-out infinite;
 }
 
-/* T-20260522-foot-LASER-TIMER AC-3: 레이저 타이머 1분 이하 카드 깜빡임 (빨강 pulse) */
+/* T-20260522-foot-LASER-TIMER AC-3: 레이저 타이머 깜빡임 (2단계)
+ * T-20260523-foot-LASER-TIMER AC-3 보강: amber(1분 경고) + red(만료) 분리 */
+
+/* 1단계: 1분 이하 남음 → amber 경고 */
+@keyframes laser-timer-warn-kf {
+  0%, 100% { border-color: #f59e0b; box-shadow: 0 0 6px 2px #f59e0b55; }
+  50%       { border-color: #fde68a; box-shadow: none; }
+}
+.laser-timer-warn {
+  animation: laser-timer-warn-kf 0.9s ease-in-out infinite;
+}
+
+/* 2단계: 만료(0:00) → red 긴급 */
+@keyframes laser-timer-expire-kf {
+  0%, 100% { border-color: #ef4444; box-shadow: 0 0 8px 3px #ef444488; }
+  50%       { border-color: #fca5a5; box-shadow: none; }
+}
+.laser-timer-expire {
+  animation: laser-timer-expire-kf 0.55s ease-in-out infinite;
+}
+
+/* legacy alias (T-20260522 이전 참조 호환) */
 @keyframes laser-timer-alert {
   0%, 100% { border-color: #ef4444; box-shadow: 0 0 6px 2px #ef444466; }
   50%       { border-color: #fca5a5; box-shadow: none; }
