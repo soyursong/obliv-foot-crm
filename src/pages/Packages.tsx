@@ -1388,6 +1388,9 @@ function PackageItemFees({ pkg }: { pkg: Package }) {
   if (!hasUnitPrices || feeRows.length === 0) return null;
 
   const computedTotal = feeRows.reduce((s, r) => s + r.sessions * r.unitPrice, 0);
+  // OVERRIDE-RULE: O-002 — 패키지 수기 금액 조정 (price_override)
+  // 적용 경로: 패키지 계약금 수기 설정 경로에만 추가 적용
+  // 기본규칙 유지 여부: 유지 (패키지 연동 흐름 유지, override 없으면 computedTotal = total_amount)
   // price_override로 수기조정된 경우 계약금과 다를 수 있음
   const hasOverride = computedTotal !== pkg.total_amount;
 

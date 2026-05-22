@@ -113,6 +113,9 @@ export function calcCopayment(
 
   // ── 3. 수가 산출 ──────────────────────────────────────
   const baseRate = getBaseCopayRate(grade);
+  // OVERRIDE-RULE: O-001 — 서비스별 실손보험 자기부담률 개별 적용
+  // 적용 경로: copayment_rate_override가 DB에 설정된 서비스에만 추가 적용
+  // 기본규칙 유지 여부: 유지 (보험 급여 연동 흐름 그대로 유지, 해당 필드 없으면 baseRate 사용)
   const rate = service.copayment_rate_override ?? baseRate;
   const unitValue = clinic.hira_unit_value ?? 89.4;
   const base = Math.round(service.hira_score * unitValue);
