@@ -13,6 +13,7 @@ import {
   Pencil,
   Plus,
   Printer,
+  RotateCcw,
   Save,
   Trash2,
   Unlock,
@@ -50,6 +51,8 @@ type Method = 'card' | 'cash' | 'transfer' | 'membership';
 type PaymentType = 'payment' | 'refund';
 
 interface PaymentRow {
+  /** T-20260522-foot-CLOSING-REFUND: 환불 RPC 호출용 */
+  id: string;
   amount: number;
   method: Method;
   payment_type: PaymentType;
@@ -68,6 +71,10 @@ interface PaymentRow {
 }
 
 interface PackagePaymentRow {
+  /** T-20260522-foot-CLOSING-REFUND: package_payments row id */
+  id: string;
+  /** T-20260522-foot-CLOSING-REFUND: refund_package_atomic에 전달할 packages.id */
+  package_id: string;
   amount: number;
   method: 'card' | 'cash' | 'transfer';
   payment_type: PaymentType;
@@ -162,6 +169,10 @@ interface EnrichedRow {
   tax_exempt_amount: number | null;
   cash_receipt_issued: boolean | null;
   cash_receipt_type: string | null;
+  /** T-20260522-foot-CLOSING-REFUND: 환불 처리용 */
+  payment_id?: string;       // source === 'payment' 시 payments.id
+  package_id?: string;       // source === 'package' 시 packages.id (refund_package_atomic용)
+  row_customer_id?: string;  // refund_package_atomic p_customer_id용
 }
 
 const LEAD_SOURCE_OPTIONS = ['TM', '인바운드', '워크인', '지인소개', '온라인', '기타'];
@@ -210,6 +221,8 @@ export default function Closing() {
   const [manualEditTarget, setManualEditTarget] = useState<ManualPaymentRow | null>(null);
   /** C2-MANAGER-PAYMENT-MAP: 결제내역 담당자 필터 */
   const [staffFilter, setStaffFilter] = useState('');
+  /** T-20260522-foot-CLOSING-REFUND: 환불 처리 대상 결제 행 */
+  const [refundTarget, setRefundTarget] = useState<EnrichedRow | null>(null);
 
   const { data: clinic } = useQuery<Clinic | null>({
     queryKey: ['clinic'],
@@ -225,7 +238,8 @@ export default function Closing() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('payments')
-        .select('amount, method, payment_type, created_at, customer_id, installment, memo, check_in_id, status, cash_receipt_issued, cash_receipt_type, taxable_amount, tax_exempt_amount')
+        // T-20260522-foot-CLOSING-REFUND: id 추가 (환불 RPC 호출용)
+        .select('id, amount, method, payment_type, created_at, customer_id, installment, memo, check_in_id, status, cash_receipt_issued, cash_receipt_type, taxable_amount, tax_exempt_amount')
         .eq('clinic_id', clinic!.id)
         .gte('created_at', start)
         .lte('created_at', end)
@@ -244,7 +258,8 @@ export default function Closing() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('package_payments')
-        .select('amount, method, payment_type, created_at, customer_id, installment, memo')
+        // T-20260522-foot-CLOSING-REFUND: id, package_id 추가 (환불 RPC 호출용)
+        .select('id, package_id, amount, method, payment_type, created_at, customer_id, installment, memo')
         .eq('clinic_id', clinic!.id)
         .gte('created_at', start)
         .lte('created_at', end)
@@ -536,6 +551,9 @@ export default function Closing() {
         tax_exempt_amount: p.tax_exempt_amount ?? null,
         cash_receipt_issued: p.cash_receipt_issued ?? null,
         cash_receipt_type: p.cash_receipt_type ?? null,
+        // T-20260522-foot-CLOSING-REFUND: 환불 RPC 호출용
+        payment_id: p.id,
+        row_customer_id: p.customer_id ?? undefined,
       });
     }
 
@@ -562,6 +580,9 @@ export default function Closing() {
         tax_exempt_amount: null,
         cash_receipt_issued: null,
         cash_receipt_type: null,
+        // T-20260522-foot-CLOSING-REFUND: 환불 RPC 호출용
+        package_id: p.package_id,
+        row_customer_id: p.customer_id,
       });
     }
 
@@ -1278,24 +1299,37 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                           </Badge>
                         </td>
                         <td className="py-2 px-1 text-center">
-                          {r.source === 'manual' && r.manual_id && r.manual_raw && isAdminOrManager && (
-                            <div className="flex items-center justify-center gap-1">
+                          <div className="flex items-center justify-center gap-1">
+                            {/* T-20260522-foot-CLOSING-REFUND: 환불 버튼 — admin/manager + 이미 환불 아닌 건 + payment/package 소스만 */}
+                            {isAdminOrManager && r.payment_type !== 'refund' && (r.source === 'payment' || r.source === 'package') && (
                               <button
-                                onClick={() => { setManualEditTarget(r.manual_raw!); setShowManualDialog(true); }}
-                                className="text-muted-foreground hover:text-primary transition-colors p-1"
-                                title="수정"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                onClick={() => deleteManual(r.manual_id!)}
+                                onClick={() => setRefundTarget(r)}
                                 className="text-muted-foreground hover:text-destructive transition-colors p-1"
-                                title="삭제"
+                                title="환불"
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <RotateCcw className="h-3.5 w-3.5" />
                               </button>
-                            </div>
-                          )}
+                            )}
+                            {/* 수기 수정/삭제 버튼 */}
+                            {r.source === 'manual' && r.manual_id && r.manual_raw && isAdminOrManager && (
+                              <>
+                                <button
+                                  onClick={() => { setManualEditTarget(r.manual_raw!); setShowManualDialog(true); }}
+                                  className="text-muted-foreground hover:text-primary transition-colors p-1"
+                                  title="수정"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => deleteManual(r.manual_id!)}
+                                  className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                                  title="삭제"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1454,6 +1488,20 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             setShowManualDialog(false);
             setManualEditTarget(null);
             qc.invalidateQueries({ queryKey: ['closing-manual', clinic.id, date] });
+          }}
+        />
+      )}
+
+      {/* T-20260522-foot-CLOSING-REFUND: 환불 처리 다이얼로그 */}
+      {refundTarget && clinic && (
+        <ClosingRefundDialog
+          open={!!refundTarget}
+          row={refundTarget}
+          clinicId={clinic.id}
+          onClose={() => setRefundTarget(null)}
+          onSuccess={() => {
+            setRefundTarget(null);
+            refreshPayments();
           }}
         />
       )}
@@ -1679,6 +1727,220 @@ function SummaryCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// T-20260522-foot-CLOSING-REFUND: 환불 처리 다이얼로그
+// 단건(source='payment'): 금액+수단+사유 → refund_single_payment RPC
+// 패키지(source='package'): calc_refund_amount 견적+수단+사유 → refund_package_atomic
+// ──────────────────────────────────────────────────────────────
+
+interface RefundQuote {
+  refund_amount: number;
+  total_sessions: number;
+  used_sessions: number;
+  remaining_sessions: number;
+  unit_price: number;
+}
+
+interface ClosingRefundDialogProps {
+  open: boolean;
+  row: EnrichedRow;
+  clinicId: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: ClosingRefundDialogProps) {
+  const isPackage = row.source === 'package';
+
+  const [pkgQuote, setPkgQuote] = useState<RefundQuote | null>(null);
+  const [refundAmountStr, setRefundAmountStr] = useState(String(row.amount));
+  const [method, setMethod] = useState<'card' | 'cash' | 'transfer'>(
+    (['card', 'cash', 'transfer'].includes(row.method) ? row.method : 'card') as 'card' | 'cash' | 'transfer',
+  );
+  const [refundMemo, setRefundMemo] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  // 다이얼로그 오픈 시 초기화 + 패키지 견적 조회
+  useEffect(() => {
+    if (!open) {
+      setPkgQuote(null);
+      setRefundAmountStr(String(row.amount));
+      setMethod((['card', 'cash', 'transfer'].includes(row.method) ? row.method : 'card') as 'card' | 'cash' | 'transfer');
+      setRefundMemo('');
+      return;
+    }
+    if (isPackage && row.package_id) {
+      (async () => {
+        const { data } = await supabase.rpc('calc_refund_amount', { p_package_id: row.package_id });
+        setPkgQuote(data as RefundQuote | null);
+      })();
+    }
+  }, [open, isPackage, row.package_id, row.method, row.amount]);
+
+  const handleSubmit = async () => {
+    if (!refundMemo.trim()) {
+      toast.error('환불 사유를 입력해 주세요.');
+      return;
+    }
+    setSubmitting(true);
+
+    if (isPackage) {
+      // 패키지 환불: refund_package_atomic 호출
+      if (!pkgQuote) {
+        toast.error('환불 금액 계산 중입니다. 잠시 후 다시 시도해 주세요.');
+        setSubmitting(false);
+        return;
+      }
+      if (!window.confirm(`패키지 환불 금액 ${formatAmount(pkgQuote.refund_amount)}을 환불하시겠습니까?`)) {
+        setSubmitting(false);
+        return;
+      }
+      const { data, error } = await supabase.rpc('refund_package_atomic', {
+        p_package_id: row.package_id!,
+        p_clinic_id: clinicId,
+        p_customer_id: row.row_customer_id!,
+        p_method: method,
+      });
+      if (error) { toast.error(`환불 실패: ${error.message}`); setSubmitting(false); return; }
+      const result = data as { ok?: boolean; error?: string };
+      if (result?.error) { toast.error(result.error); setSubmitting(false); return; }
+    } else {
+      // 단건 환불: refund_single_payment RPC 호출
+      const amt = parseInt(refundAmountStr.replace(/[^\d]/g, ''), 10);
+      if (!amt || amt <= 0) { toast.error('환불금액을 입력하세요.'); setSubmitting(false); return; }
+      if (amt > row.amount) {
+        toast.error(`환불금액이 원결제 금액(${formatAmount(row.amount)})을 초과할 수 없습니다.`);
+        setSubmitting(false);
+        return;
+      }
+      const { data, error } = await supabase.rpc('refund_single_payment', {
+        p_payment_id: row.payment_id!,
+        p_clinic_id: clinicId,
+        p_amount: amt,
+        p_method: method,
+        p_memo: refundMemo.trim(),
+      });
+      if (error) { toast.error(`환불 실패: ${error.message}`); setSubmitting(false); return; }
+      const result = data as { ok?: boolean; error?: string };
+      if (result?.error) { toast.error(result.error); setSubmitting(false); return; }
+    }
+
+    setSubmitting(false);
+    toast.success('환불 처리 완료');
+    onSuccess();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o && !submitting) onClose(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>환불 처리 — {row.customer_name}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3 text-sm">
+          {/* 원결제 요약 */}
+          <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs space-y-0.5">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">원결제금액</span>
+              <span className="font-medium tabular-nums">{formatAmount(row.amount)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">결제수단</span>
+              <span>{METHOD_KO[row.method as keyof typeof METHOD_KO] ?? row.method}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">구분</span>
+              <span>{isPackage ? '패키지' : '단건'}</span>
+            </div>
+          </div>
+
+          {/* 패키지 환불: 견적 표시 */}
+          {isPackage && (
+            pkgQuote ? (
+              <div className="rounded-lg border bg-teal-50 p-3 space-y-1.5">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+                  <span>총 회차</span>
+                  <span className="text-foreground">{pkgQuote.total_sessions}회</span>
+                  <span>사용</span>
+                  <span className="text-foreground">{pkgQuote.used_sessions}회</span>
+                  <span>잔여</span>
+                  <span className="text-foreground">{pkgQuote.remaining_sessions}회</span>
+                  <span>회당 단가</span>
+                  <span className="text-foreground tabular-nums">{formatAmount(pkgQuote.unit_price)}</span>
+                </div>
+                <div className="mt-1 border-t pt-1.5">
+                  <div className="text-xs text-muted-foreground">환불 금액 (할인가 기준)</div>
+                  <div className="text-xl font-bold text-teal-700 tabular-nums">{formatAmount(pkgQuote.refund_amount)}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="py-4 text-center text-xs text-muted-foreground">환불 금액 계산 중…</div>
+            )
+          )}
+
+          {/* 단건 환불: 금액 입력 */}
+          {!isPackage && (
+            <div className="space-y-1">
+              <Label>환불금액 <span className="text-destructive">*</span></Label>
+              <Input
+                inputMode="numeric"
+                value={refundAmountStr}
+                onChange={e => setRefundAmountStr(e.target.value.replace(/[^\d]/g, ''))}
+                placeholder={String(row.amount)}
+              />
+              <p className="text-[11px] text-muted-foreground">최대 {formatAmount(row.amount)}</p>
+            </div>
+          )}
+
+          {/* 환불수단 선택 */}
+          <div className="space-y-1">
+            <Label>환불수단 <span className="text-destructive">*</span></Label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['card', 'cash', 'transfer'] as const).map(m => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMethod(m)}
+                  className={cn(
+                    'min-h-[40px] rounded-md border text-sm transition-colors',
+                    method === m
+                      ? 'border-teal-600 bg-teal-50 text-teal-700 font-medium'
+                      : 'border-input hover:bg-muted',
+                  )}
+                >
+                  {METHOD_KO[m]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 사유 (필수) */}
+          <div className="space-y-1">
+            <Label>환불 사유 <span className="text-destructive">*</span></Label>
+            <Textarea
+              rows={2}
+              value={refundMemo}
+              onChange={e => setRefundMemo(e.target.value)}
+              placeholder="예: 고객 요청, 시술 불만족 등"
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" disabled={submitting} onClick={onClose}>취소</Button>
+          <Button
+            variant="destructive"
+            disabled={submitting || (isPackage && !pkgQuote)}
+            onClick={handleSubmit}
+          >
+            {submitting ? '처리 중…' : '환불 확인'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
