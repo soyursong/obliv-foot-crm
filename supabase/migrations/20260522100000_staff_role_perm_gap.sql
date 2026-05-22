@@ -69,26 +69,44 @@ COMMENT ON POLICY package_sessions_coord_update ON package_sessions IS
   'T-20260522-foot-STAFF-ROLE-PERM-GAP: coordinator 패키지 회차 UPDATE 허용 (선수금차감 흐름).';
 
 -- ============================================================
--- 3. check_in_services: coordinator / therapist INSERT 추가
+-- 3. check_in_services: coordinator / therapist INSERT + DELETE 추가
 --    기존: consult ALL + admin ALL + approved READ
---    신규: coordinator INSERT + therapist INSERT
+--    신규: coordinator INSERT + DELETE / therapist INSERT + DELETE
 --    UPDATE는 비허용 (가격 수정은 consultant/admin 전용 유지)
+--
+--    DELETE가 필요한 이유:
+--    saveCheckInServices() / handleClose()는 delete-then-insert 패턴을 사용.
+--    INSERT만 허용하면 재저장 시 기존 행이 삭제되지 않아 중복 발생 → 수납목록 버그 재현.
 -- ============================================================
 
 DROP POLICY IF EXISTS check_in_services_coord_insert  ON check_in_services;
 DROP POLICY IF EXISTS check_in_services_therap_insert ON check_in_services;
+DROP POLICY IF EXISTS check_in_services_coord_delete  ON check_in_services;
+DROP POLICY IF EXISTS check_in_services_therap_delete ON check_in_services;
 
 CREATE POLICY check_in_services_coord_insert ON check_in_services FOR INSERT TO authenticated
   WITH CHECK (is_coordinator_or_above());
 
 COMMENT ON POLICY check_in_services_coord_insert ON check_in_services IS
-  'T-20260522-foot-STAFF-ROLE-PERM-GAP: coordinator 수납목록(시술항목) INSERT 허용.';
+  'T-20260522-foot-PAY-PRINT-BUGS: coordinator 수납목록(시술항목) INSERT 허용.';
 
 CREATE POLICY check_in_services_therap_insert ON check_in_services FOR INSERT TO authenticated
   WITH CHECK (is_therapist_or_technician());
 
 COMMENT ON POLICY check_in_services_therap_insert ON check_in_services IS
-  'T-20260522-foot-STAFF-ROLE-PERM-GAP: therapist 시술항목 INSERT 허용. UPDATE(가격수정)는 consultant/admin 전용 유지.';
+  'T-20260522-foot-PAY-PRINT-BUGS: therapist 시술항목 INSERT 허용. UPDATE(가격수정)는 consultant/admin 전용 유지.';
+
+CREATE POLICY check_in_services_coord_delete ON check_in_services FOR DELETE TO authenticated
+  USING (is_coordinator_or_above());
+
+COMMENT ON POLICY check_in_services_coord_delete ON check_in_services IS
+  'T-20260522-foot-PAY-PRINT-BUGS: coordinator 시술항목 DELETE 허용 (delete-then-insert 저장 패턴 지원).';
+
+CREATE POLICY check_in_services_therap_delete ON check_in_services FOR DELETE TO authenticated
+  USING (is_therapist_or_technician());
+
+COMMENT ON POLICY check_in_services_therap_delete ON check_in_services IS
+  'T-20260522-foot-PAY-PRINT-BUGS: therapist 시술항목 DELETE 허용 (delete-then-insert 저장 패턴 지원).';
 
 -- ============================================================
 -- 4. form_templates required_role: 임상 서류에 3역할 추가
