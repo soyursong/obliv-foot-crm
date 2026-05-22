@@ -994,6 +994,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   };
 
   // ── PAY-SLOT-MOVE AC-3: X 닫기 → 자동 저장 + 수납대기 유지 ─────────────────
+  // T-20260522-foot-PAY-PRINT-BUGS Bug D fix:
+  //   기존: INSERT 에러를 체크하지 않고 항상 localStorage.removeItem() 호출
+  //         → INSERT RLS 실패 시 draft도 삭제되어 "목록 사라짐" 발생
+  //   수정: INSERT 에러 시 draft 보존(removeItem 스킵) → 재진입 시 선택 내용 복원
   const handleClose = async () => {
     // 미저장 항목이 있으면 DB 자동 저장 (수납대기 유지 — status 변경 없음)
     if (!saved && selectedItems.length > 0) {
@@ -1013,7 +1017,12 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           })),
         );
         if (rows.length > 0) {
-          await supabase.from('check_in_services').insert(rows);
+          const { error: insertErr } = await supabase.from('check_in_services').insert(rows);
+          // INSERT 실패(RLS 등) 시 draft를 보존하고 창만 닫음 — localStorage 삭제 금지
+          if (insertErr) {
+            onClose();
+            return;
+          }
         }
         localStorage.removeItem(draftKey(checkIn.id));
       } catch {

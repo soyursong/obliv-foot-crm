@@ -12,9 +12,11 @@ DROP POLICY IF EXISTS payments_therap_insert ON payments;
 DROP POLICY IF EXISTS package_sessions_coord_insert ON package_sessions;
 DROP POLICY IF EXISTS package_sessions_coord_update ON package_sessions;
 
--- 3. check_in_services: coordinator/therapist INSERT 정책 제거
+-- 3. check_in_services: coordinator/therapist INSERT + DELETE 정책 제거
 DROP POLICY IF EXISTS check_in_services_coord_insert  ON check_in_services;
 DROP POLICY IF EXISTS check_in_services_therap_insert ON check_in_services;
+DROP POLICY IF EXISTS check_in_services_coord_delete  ON check_in_services;
+DROP POLICY IF EXISTS check_in_services_therap_delete ON check_in_services;
 
 -- 4. form_templates required_role 원복
 --    4a. 임상 행정 서류 → coordinator 포함, consultant/therapist 제외로 원복
