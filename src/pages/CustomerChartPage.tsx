@@ -2319,6 +2319,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       return;
     }
     const activePackages = packages.filter(p => p.status === 'active');
+    // T-20260522-foot-PKG-AUTOSELECT-REMOVE AC-4: 패키지 2개 이상 시 미선택 차단
+    const activeDisplayPackages = packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0));
+    if (activeDisplayPackages.length > 1 && !c22DeductForm.packageId) {
+      toast.error('차감할 패키지를 선택해주세요');
+      return;
+    }
     const targetPkg = c22DeductForm.packageId
       ? activePackages.find(p => p.id === c22DeductForm.packageId)
       : activePackages[0];
@@ -2403,6 +2409,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     // 1. 패키지 차감 프리체크
     if (!c22DeductForm.therapistId) {
       toast.error('치료사를 선택해주세요');
+      return;
+    }
+    // T-20260522-foot-PKG-AUTOSELECT-REMOVE AC-4: 패키지 2개 이상 시 미선택 차단
+    const activeDisplayPackages = packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0));
+    if (activeDisplayPackages.length > 1 && !c22DeductForm.packageId) {
+      toast.error('차감할 패키지를 선택해주세요');
       return;
     }
     const activePackages = packages.filter(p => p.status === 'active');
@@ -4764,16 +4776,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               )}
             </div>
             <div className="space-y-1.5">
-              {/* 복수 활성 패키지가 있을 때 선택 드롭다운 */}
+              {/* 복수 활성 패키지가 있을 때 선택 드롭다운 — T-20260522-foot-PKG-AUTOSELECT-REMOVE: 자동선택 옵션 제거, 수동선택 강제 */}
               {packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).length > 1 && (
                 <div>
-                  <label className="block text-[10px] text-muted-foreground mb-0.5">패키지 선택</label>
+                  <label className="block text-[10px] text-muted-foreground mb-0.5">패키지 선택 <span className="text-red-500">*</span></label>
                   <select
                     value={c22DeductForm.packageId}
                     onChange={(e) => setC22DeductForm(f => ({ ...f, packageId: e.target.value }))}
-                    className="w-full h-6 rounded border border-gray-300 px-1 text-[10px] focus:outline-none focus:border-teal-500 bg-white"
+                    className={`w-full h-6 rounded border px-1 text-[10px] focus:outline-none focus:border-teal-500 bg-white ${
+                      c22DeductForm.packageId === '' ? 'border-red-400 text-gray-400' : 'border-gray-300 text-gray-900'
+                    }`}
                   >
-                    <option value="">— 첫 번째 활성 패키지</option>
+                    <option value="" disabled>패키지를 선택하세요</option>
                     {packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0)).map(p => (
                       <option key={p.id} value={p.id}>{p.package_name}</option>
                     ))}
