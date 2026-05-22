@@ -1261,6 +1261,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     packageId: '',  // 복수 활성 패키지 지원
   });
   const [savingC22Deduct, setSavingC22Deduct] = useState(false);
+  // T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 상태
+  const [designatedTherapistId, setDesignatedTherapistId] = useState<string>('');
+  const [savingDesignatedTherapist, setSavingDesignatedTherapist] = useState(false);
   // T-20260516-foot-HEALER-RESV-BTN: 힐러예약 플래그 버튼
   const [healerFlagLoading, setHealerFlagLoading] = useState(false);
   // C22-RESV-EDIT: 예약 수정 모달
@@ -1321,6 +1324,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         .single();
       if (!custData) { setLoading(false); return; }
       setCustomer(custData as Customer);
+      // T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 초기화
+      setDesignatedTherapistId((custData as Customer).designated_therapist_id ?? '');
       setAddressText((custData as Customer).address ?? '');
       setAddressDetailText((custData as Customer).address_detail ?? '');
       setEmailText((custData as Customer).customer_email ?? '');
@@ -2242,7 +2247,34 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     // T-20260522-foot-PERF-TUNING OPT-4: sessData 재사용 → remaining 클라이언트 집계 (N RPC 제거)
     const remainingArr = computeRemainingFromSessionRows(packages, (sessData ?? []) as _SessRow[]);
     setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? prev[i]?.remaining ?? null })));
-    setC22DeductForm(f => ({ ...f, therapistId: '', treatmentType: 'heated_laser' }));
+    // AC-3: 차감 후 리셋 — 지정 치료사로 자동 복원
+    setC22DeductForm(f => ({
+      ...f,
+      therapistId: customer.designated_therapist_id ?? '',
+      treatmentType: 'heated_laser',
+    }));
+    toast.success('회차 차감 완료');
+  };
+
+  // T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 저장
+  const saveDesignatedTherapist = async (newTherapistId: string) => {
+    if (!customer) return;
+    setSavingDesignatedTherapist(true);
+    const { error } = await supabase
+      .from('customers')
+      .update({ designated_therapist_id: newTherapistId || null })
+      .eq('id', customer.id);
+    setSavingDesignatedTherapist(false);
+    if (error) {
+      toast.error(`지정 치료사 저장 실패: ${error.message}`);
+      return;
+    }
+    setDesignatedTherapistId(newTherapistId);
+    setCustomer(prev => prev ? { ...prev, designated_therapist_id: newTherapistId || null } : prev);
+    // AC-3: 회차 차감 폼 자동 동기화
+    setC22DeductForm(f => ({ ...f, therapistId: newTherapistId }));
+    const therapistName = therapistList.find(t => t.id === newTherapistId)?.name;
+    toast.success(therapistName ? `지정 치료사: ${therapistName}` : '지정 치료사 해제');
   };
 
   // T-20260516-foot-HEALER-RESV-BTN v2: 힐러예약 플래그 토글
@@ -2385,6 +2417,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     if (!inlineResvOpen || !inlineResvDate) return;
     loadInlineResvSlots(inlineResvDate);
   }, [inlineResvOpen, inlineResvDate, loadInlineResvSlots]);
+
+  // T-20260522-foot-DESIGNATED-THERAPIST AC-3: 지정 치료사 로드 시 c22DeductForm 자동 세팅
+  // therapistList 확정 후 지정 치료사가 존재하면 회차 차감 폼에 선입력
+  useEffect(() => {
+    if (!designatedTherapistId || therapistList.length === 0) return;
+    const inList = therapistList.some(t => t.id === designatedTherapistId);
+    if (!inList) return;
+    setC22DeductForm(f => ({
+      ...f,
+      therapistId: f.therapistId || designatedTherapistId,
+    }));
+  }, [designatedTherapistId, therapistList]);
 
   // T-20260515-foot-INLINE-RESV: 빈 슬롯 클릭 시 예약 등록
   const saveInlineResv = async (time: string) => {
@@ -4445,6 +4489,36 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+
+          {/* T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 드롭다운 (예약내역↔회차차감 사이) */}
+          <div className="border-b border-gray-200 px-3 py-2">
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-[11px] font-semibold text-[#1e4e6e] flex items-center gap-1">
+                지정 치료사
+                <span className="text-[9px] font-normal bg-emerald-100 text-emerald-700 rounded px-1 py-0.5">자동 선택</span>
+              </div>
+              {savingDesignatedTherapist && (
+                <span className="text-[9px] text-muted-foreground">저장 중…</span>
+              )}
+            </div>
+            <select
+              data-testid="designated-therapist-select"
+              value={designatedTherapistId}
+              onChange={(e) => saveDesignatedTherapist(e.target.value)}
+              disabled={savingDesignatedTherapist}
+              className="w-full h-7 rounded border border-gray-300 px-1.5 text-[11px] focus:outline-none focus:border-emerald-500 bg-white disabled:opacity-60"
+            >
+              <option value="">— 지정 치료사 없음</option>
+              {therapistList.map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            {designatedTherapistId && therapistList.length > 0 && (
+              <p className="mt-0.5 text-[9px] text-emerald-700">
+                회차 차감 시 자동 선택됩니다
+              </p>
             )}
           </div>
 
