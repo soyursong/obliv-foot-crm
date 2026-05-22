@@ -50,6 +50,7 @@
 | **잠금일** | 2026-05-16 (최초 코드 배포 · commit f65842d) |
 | **규칙 재정비** | 2026-05-22 (T-20260522-foot-OVERRIDE-RULE-REDEFINE AC-5) |
 | **기배포** | commit f65842d (2026-05-16) · 코드 주석 10개 파일 |
+| **현장확인** | 완료 (T-20260519-foot-LOGIC-LOCK-L003 배포 완료, 2026-05-19) |
 | **원칙** | 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수. MedicalChartPanel, PenChartTab, Chart2InsuranceCalcPanel 등은 CRM 전체 고객에게 동일하게 적용된다. 특정 고객 또는 특정 경로에만 다른 차트 로직을 독립 적용하는 것은 금지. |
 | **허용** | `ChartContext` / `chartSheetContext` / `medicalChartContext` 단일 경로 경유 차트 열람·수정. |
 | **금지** | 특정 고객 ID·경로에 따라 차트 렌더링 로직을 분기하는 독립 구현. Override 적용 시 반드시 `// OVERRIDE-RULE: O-{ID}` + `// OVERRIDE: {경로} — {기능}. 기본 로직 전체 연동.` 주석 필수. |
@@ -239,4 +240,4 @@ Override (OVERRIDE-RULE)
 
 ---
 
-*last updated: 2026-05-22 · by dev-foot · ticket: T-20260522-foot-LOCK-RENUMBER-SYNC (L-005 LOGIC-SYNC-MANDATE 섹션 신설 · L-004/L-005/L-006 번호 확정)*
+*last updated: 2026-05-22 · by dev-foot · ticket: T-20260522-foot-LOCK-L003-REGISTRY-UPDATE (L-003 현장확인 메타데이터 필드 추가 · AC-6 완료)*
