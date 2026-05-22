@@ -379,8 +379,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   // ── PREPAID-DEDUCT: 선수금차감 UI
   const [prepaidIds, setPrepaidIds] = useState<Set<string>>(new Set());
   // OVERRIDE-RULE: O-002 — 결제 금액 수기 조정 (customAmounts)
-  // 적용 경로: 결제 창에서 수기 금액 입력 경로에만 추가 적용 (기본 service.price는 그대로 유지)
-  // 기본규칙 유지 여부: 유지 (결제 연동 흐름 유지, override 없으면 service.price 사용)
+  // OVERRIDE: PaymentMiniWindow — customAmounts 결제 창 수기 금액 추가 적용. 기본 로직 전체 연동.
   const [customAmounts, setCustomAmounts] = useState<Map<string, number>>(new Map());
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
   const [editingPriceValue, setEditingPriceValue] = useState('');

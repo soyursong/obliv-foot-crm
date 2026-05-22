@@ -38,13 +38,30 @@
 
 ---
 
-## L-003 — [BLOCKED]
+## L-003 — 차트 수정사항 CRM 전체 고객 동일 적용
 
 | 항목 | 내용 |
 |------|------|
-| **상태** | BLOCKED — 원문 잘림으로 스펙 미확보 |
-| **처리** | 원문 확보 후 planner → dev-foot NEW-TASK 발행 예정 |
-| **티켓** | T-20260519-foot-LOGIC-LOCK-REGISTRY (하위 항목) |
+| **상태** | ACTIVE · deployed |
+| **잠금일** | 2026-05-22 (T-20260522-foot-OVERRIDE-RULE-REDEFINE AC-5) |
+| **원칙** | 차트 수정사항(MedicalChartPanel, PenChartTab, Chart2InsuranceCalcPanel 등)은 CRM 전체 고객에게 동일하게 적용된다. 특정 고객 또는 특정 경로에만 다른 차트 로직을 독립 적용하는 것은 금지. |
+| **허용** | `ChartContext` / `chartSheetContext` / `medicalChartContext` 단일 경로 경유 차트 열람·수정. |
+| **금지** | 특정 고객 ID·경로에 따라 차트 렌더링 로직을 분기하는 독립 구현. Override 적용 시 반드시 `// OVERRIDE-RULE: O-{ID}` + `// OVERRIDE: {경로} — {기능}. 기본 로직 전체 연동.` 주석 필수. |
+| **이유** | 차트 내용이 고객·경로마다 달라지면 임상 기록 불일치 발생. T-20260522-foot-OVERRIDE-RULE-REDEFINE AC-5. |
+| **파일 목록** | |
+| ↳ `src/components/MedicalChartPanel.tsx` | 의무기록 차트 패널 |
+| ↳ `src/components/CustomerChartSheet.tsx` | 차트 시트 래퍼 |
+| ↳ `src/components/PenChartTab.tsx` | 펜차트 탭 |
+| ↳ `src/components/insurance/Chart2InsuranceCalcPanel.tsx` | 실손보험 계산 패널 |
+| ↳ `src/lib/chartContext.ts` | 1번차트 컨텍스트 |
+| ↳ `src/lib/chartSheetContext.ts` | 차트시트 컨텍스트 |
+| ↳ `src/lib/medicalChartContext.ts` | 의무기록 컨텍스트 |
+| ↳ `src/pages/Dashboard.tsx` | 대시보드 차트 연동 |
+| ↳ `src/pages/CustomerChartPage.tsx` | 고객 차트 페이지 |
+| ↳ `src/components/AdminLayout.tsx` | 어드민 레이아웃 차트 연동 |
+| **L-003 ↔ Override 관계** | Override(O-{ID})는 차트 렌더링 로직 자체를 분기하지 않는다. Override가 허용되는 것은 차트 내 특정 필드값(예: `copayment_rate_override`)에 국한. L-003의 "전체 고객 동일 적용" 원칙은 Override로도 우회 불가. |
+| **이전 상태** | BLOCKED (원문 잘림) — 코드에 이미 적용되었으나 레지스트리 미갱신. T-20260522-foot-OVERRIDE-RULE-REDEFINE AC-5로 복원. |
+| **티켓** | T-20260519-foot-LOGIC-LOCK-REGISTRY, T-20260522-foot-OVERRIDE-RULE-REDEFINE |
 
 ---
 
@@ -128,18 +145,23 @@ Override (OVERRIDE-RULE)
      4. 코드 주석: // OVERRIDE-CONFLICT: O-{ID} ↔ L-{ID} — 현장 승인일 {date}
 ```
 
-### 코드 주석 체계
+### 코드 주석 체계 (T-20260522-foot-OVERRIDE-RULE-REDEFINE 재정비)
 
 ```typescript
 // OVERRIDE-RULE: O-001 — {한 줄 설명}
-// 적용 경로: {이 경로에서만 추가 적용되는 이유}
-// 기본규칙 유지 여부: 유지 (연동 제외 아님)
+// OVERRIDE: {파일/모듈} — {기능 한 줄}. 기본 로직 전체 연동.
 ```
+
+**3원칙 반영:**
+- `OVERRIDE-RULE: O-{ID}` — ID 추적 + 설명 (등록 레지스트리 연결)
+- `OVERRIDE: {경로} — {기능}. 기본 로직 전체 연동.` — 기능 한정 + 연동 우선 원칙 명시
+- 경로 독립 분기(`if (path === X) { ... 별도로직 }`) 패턴 금지. 발견 시 planner FOLLOWUP 즉시.
 
 기존 LOGIC-LOCK 주석과 병행 사용:
 ```typescript
 // LOGIC-LOCK: L-002 — [예약하기] 클릭 시 항상 /admin/reservations full page 전환. 예외 없음. 변경 시 현장 승인 필수
 // OVERRIDE-RULE: O-003 — 특정 예약 편집 시 치료사 수동 배정 (기본 자동배정 위에 추가 적용)
+// OVERRIDE: Reservations — overrideTherapistId 치료사 수동 배정 추가 적용. 기본 로직 전체 연동.
 ```
 
 ### Override 등록 절차
@@ -170,8 +192,9 @@ Override (OVERRIDE-RULE)
 | O-ID | 상태 | 적용 경로 | 설명 | 충돌하는 L-{ID} | 등록일 |
 |------|------|-----------|------|-----------------|--------|
 | O-001 | ACTIVE | `src/lib/copayCalc.ts`, `InsuranceCopaymentPanel.tsx` | `copayment_rate_override` — 서비스별 실손보험 자기부담률 개별 적용 | 없음 | 2026-05-22 |
-| O-002 | ACTIVE | `src/components/PaymentMiniWindow.tsx`, `src/pages/Packages.tsx` | `customAmounts` / `price_override` — 결제 금액 수기 조정 경로에만 추가 적용 | 없음 | 2026-05-22 |
+| O-002 | ACTIVE | `src/components/PaymentMiniWindow.tsx` | `customAmounts` — 결제 창 수기 금액 조정 (기본 service.price 위에 추가 적용) | 없음 | 2026-05-22 |
 | O-003 | ACTIVE | `src/pages/Reservations.tsx` | `overrideTherapistId` — 예약 편집 시 치료사 수동 배정 추가 적용 | 없음 | 2026-05-22 |
+| O-004 | ACTIVE | `src/pages/Packages.tsx` | `price_override` — 패키지 계약금 수기 조정 (기본 computedTotal 위에 추가 적용) | 없음 | 2026-05-22 |
 
 ---
 
@@ -185,4 +208,4 @@ Override (OVERRIDE-RULE)
 
 ---
 
-*last updated: 2026-05-22 · by dev-foot · ticket: T-20260522-foot-DOC-PRINT-LOCK-L006 (L-006 추가)*
+*last updated: 2026-05-22 · by dev-foot · ticket: T-20260522-foot-OVERRIDE-RULE-REDEFINE (L-003 복원, O-004 등록, 주석 체계 재정비)*
