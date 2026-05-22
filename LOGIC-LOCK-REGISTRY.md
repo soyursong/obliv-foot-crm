@@ -78,6 +78,83 @@
 
 ---
 
+## Override 연동 규칙 — O-{ID} 체계
+
+> **티켓**: T-20260522-foot-OVERRIDE-RULE · **최종 확정**: 2026-05-22 · **승인자**: 김주연 총괄
+
+### 확정 개념
+
+| | 설명 |
+|---|---|
+| ❌ 잘못된 해석 | Override = 해당 경로를 독립시켜 연동에서 **제외** |
+| ✅ 확정 해석 | Override = 특정 기능을 특정 경로에만 **추가 적용** (연동 유지, 경로 독립화 아님) |
+
+### 3단 구조
+
+```
+기본규칙 (LOGIC-LOCK)
+  └─ 전체 경로에 적용되는 표준 동작. L-{ID}로 관리.
+
+Override (OVERRIDE-RULE)
+  └─ 기본규칙 위에 특정 경로에만 추가 적용되는 규칙. O-{ID}로 관리.
+     ⚠️ Override는 기본규칙을 "제거"하거나 "격리"하지 않는다.
+     ⚠️ Override 적용 후에도 기본규칙의 연동·검증 흐름은 그대로 유지된다.
+
+충돌처리 (Conflict Handling)
+  └─ Override가 기본규칙(L-{ID})과 충돌할 경우:
+     1. 코드 작성 즉시 중단
+     2. planner MQ FOLLOWUP 보고 (type: FOLLOWUP, body: "Override 충돌 후보: O-{ID} ↔ L-{ID}")
+     3. 현장 승인 획득 후에만 진행
+     4. 코드 주석: // OVERRIDE-CONFLICT: O-{ID} ↔ L-{ID} — 현장 승인일 {date}
+```
+
+### 코드 주석 체계
+
+```typescript
+// OVERRIDE-RULE: O-001 — {한 줄 설명}
+// 적용 경로: {이 경로에서만 추가 적용되는 이유}
+// 기본규칙 유지 여부: 유지 (연동 제외 아님)
+```
+
+기존 LOGIC-LOCK 주석과 병행 사용:
+```typescript
+// LOGIC-LOCK: L-002 — [예약하기] 클릭 시 항상 /admin/reservations full page 전환. 예외 없음. 변경 시 현장 승인 필수
+// OVERRIDE-RULE: O-003 — 특정 예약 편집 시 치료사 수동 배정 (기본 자동배정 위에 추가 적용)
+```
+
+### Override 등록 절차
+
+1. dev-foot이 Override 필요성 식별
+2. planner MQ FOLLOWUP 보고 (`type: FOLLOWUP`, body에 적용 경로·이유 명시)
+3. planner → 현장 승인
+4. 승인 후 이 레지스트리 O-{ID} 등록 + 코드 주석 마킹
+
+### Override 충돌 시 사전 보고 프로세스 (AC-3)
+
+```bash
+~/claude-sync/scripts/mq_emit.sh \
+  --to planner \
+  --type FOLLOWUP \
+  --priority P0 \
+  --from dev-foot \
+  --ticket-id {현재_티켓_ID} \
+  --body "Override 충돌 후보: O-{ID}(설명) ↔ L-{ID}(설명). 코드 작성 중단 대기 중. 현장 승인 필요."
+```
+
+---
+
+## Override 등록 목록
+
+> 전수조사 기준일: 2026-05-22 · 티켓: T-20260522-foot-OVERRIDE-RULE
+
+| O-ID | 상태 | 적용 경로 | 설명 | 충돌하는 L-{ID} | 등록일 |
+|------|------|-----------|------|-----------------|--------|
+| O-001 | ACTIVE | `src/lib/copayCalc.ts`, `InsuranceCopaymentPanel.tsx` | `copayment_rate_override` — 서비스별 실손보험 자기부담률 개별 적용 | 없음 | 2026-05-22 |
+| O-002 | ACTIVE | `src/components/PaymentMiniWindow.tsx`, `src/pages/Packages.tsx` | `customAmounts` / `price_override` — 결제 금액 수기 조정 경로에만 추가 적용 | 없음 | 2026-05-22 |
+| O-003 | ACTIVE | `src/pages/Reservations.tsx` | `overrideTherapistId` — 예약 편집 시 치료사 수동 배정 추가 적용 | 없음 | 2026-05-22 |
+
+---
+
 ## 변경 절차
 
 1. 현장(김주연 매니저) 승인 획득
@@ -88,4 +165,4 @@
 
 ---
 
-*last updated: 2026-05-19 · by dev-foot · ticket: T-20260519-foot-LOGIC-LOCK-REGISTRY*
+*last updated: 2026-05-22 · by dev-foot · ticket: T-20260522-foot-OVERRIDE-RULE*
