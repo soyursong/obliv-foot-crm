@@ -240,4 +240,4 @@ Override (OVERRIDE-RULE)
 
 ---
 
-*last updated: 2026-05-22 · by dev-foot · ticket: T-20260522-foot-LOCK-L003-REGISTRY-UPDATE (L-003 현장확인 메타데이터 필드 추가 · AC-6 완료)*
+*last updated: 2026-05-22 · by dev-foot · ticket: T-20260522-foot-LOCK-RENUMBER-SYNC (L-004 충돌 해소 · LOGIC-SYNC-MANDATE L-005 재채번 · L-006 DOC-PRINT-UNIFY SSOT 동기화 · SSOT 3중 동기화 완료)*
