@@ -78,13 +78,9 @@ export function InlinePatientSearch({
       // T-20260512-foot-RESV-PHONE-SEARCH: DB phone 컬럼은 '010-1234-5678' 형식(하이픈 포함).
       // 수정 전: toHyphenated가 8~10자리에서 잘못된 패턴 생성 (d.length-4 슬라이싱 버그),
       //          단순 ilike 한 개라 후미 4자리 검색 등 불일치.
-      // 수정 후: (1) toHyphenated 슬라이싱 고정 (두 번째 세그먼트 항상 index 3~7),
+      // 수정 후: (1) formatPhoneInput(중앙함수) 슬라이싱 고정 (두 번째 세그먼트 항상 index 3~7),
       //          (2) 원시 숫자 패턴 OR 하이픈 패턴 — 어느 입력 방식도 매칭.
-      const toHyphenated = (d: string): string => {
-        if (d.length <= 3) return d;                                         // 010 → 010
-        if (d.length <= 7) return `${d.slice(0, 3)}-${d.slice(3)}`;        // 01012 → 010-12
-        return `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`;          // 01012345678 → 010-1234-5678
-      };
+      // [SYNC: G-006] toHyphenated 로컬 중복 제거 → formatPhoneInput(중앙함수) 교체
 
       let baseQuery = supabase
         .from('customers')
@@ -92,7 +88,7 @@ export function InlinePatientSearch({
         .eq('clinic_id', clinicId);
 
       if (isPhone) {
-        const hyphenated = toHyphenated(digits);
+        const hyphenated = formatPhoneInput(digits);
         // T-20260513-foot-PHONE-E164-SEARCH: E.164 포맷 고객 매칭
         // DB에 +821022222222로 저장된 경우 010… substring 불일치 → leading 0 제거 후 OR 추가
         // '01022222222' → '1022222222' → '+821022222222' 내 substring으로 매칭
