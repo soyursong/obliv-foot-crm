@@ -1569,9 +1569,9 @@ export function PenChartTab({
             </div>
           )}
 
-          {/* 자동채움 배지 */}
-          {activeDrawTemplate && isRefundConsentKey(activeDrawTemplate.form_key) && customerName && (
-            <div className="flex items-center gap-1 px-2 py-1 rounded bg-blue-50 border border-blue-200 text-[11px] text-blue-700" title="성명·생년월일·연락처가 양식에 자동 채워졌습니다">
+          {/* 자동채움 배지 — refund_consent(차트번호·성함·날짜) + pen_chart(성함·생년월일) */}
+          {activeDrawTemplate && (isRefundConsentKey(activeDrawTemplate.form_key) || activeDrawTemplate.form_key === 'pen_chart') && customerName && (
+            <div className="flex items-center gap-1 px-2 py-1 rounded bg-blue-50 border border-blue-200 text-[11px] text-blue-700" title="성명·생년월일이 양식에 자동 채워졌습니다">
               ✓ 자동채움: {customerName}
             </div>
           )}
