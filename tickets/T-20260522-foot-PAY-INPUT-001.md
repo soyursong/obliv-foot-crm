@@ -2,12 +2,18 @@
 id: T-20260522-foot-PAY-INPUT-001
 domain: foot
 priority: P1
-status: deploy-ready
+status: deployed
 deploy_ready: true
 deploy_ready_at: "2026-05-23 21:40 KST"
 fix_commit: 6c503b3
+deploy_commit: 31d78521853d86c4db0ae8c29cb3cc97ee100a1a
+deployed_at: "2026-05-24T02:52:00+09:00"
+qa_result: pass
+qa_grade: Yellow
+bundle_hash: D5lTJ_QI
 build_status: OK
-build_time: 3.22s
+build_time: 3.23s
+field_soak_until: "2026-05-25T02:52:00+09:00"
 db_change: true
 db_migration: supabase/migrations/20260523040000_pay_external_fields.sql
 db_migration_down: supabase/migrations/20260523040000_pay_external_fields.down.sql
