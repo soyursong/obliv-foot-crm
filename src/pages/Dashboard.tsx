@@ -1517,7 +1517,16 @@ function DashboardTimeline({
   const chartMap = useContext(ChartNumberMapCtx);
   // expandedSlot: 현재 펼쳐진 슬롯 (null = 모두 접힘)
   // props 변경(reservations/selfCheckIns 갱신) 시 아코디언 내용 자동 갱신 — 추가 구독 불필요
-  const [expandedSlot, setExpandedSlot] = useState<string | null>(null);
+  // T-20260523-foot-TIMETABLE-SCROLL AC-3: 오늘이면 currentSlot을 초기값으로 설정
+  const [expandedSlot, setExpandedSlot] = useState<string | null>(isToday ? currentSlot : null);
+
+  // T-20260523-foot-TIMETABLE-SCROLL AC-2: 현재 시간 슬롯 자동 스크롤
+  const currentSlotRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isToday) {
+      currentSlotRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [currentSlot, isToday]);
 
   // ── T-20260522-foot-TIMETABLE-FOLD: 치료사별 뷰 상태 ──────────────────────────
 
@@ -1879,8 +1888,10 @@ function DashboardTimeline({
 
           return (
             // T-20260522-foot-TIMETABLE-FOLD V2 AC-7: 슬롯 행 = flex-col 래퍼 (grid → 아코디언 지지 구조)
+            // T-20260523-foot-TIMETABLE-SCROLL AC-1: currentSlot 행에 ref 부착 → scrollIntoView 타깃
             <div
               key={slot}
+              ref={isCurrentSlot ? currentSlotRef : undefined}
               className={cn(
                 'border-b border-gray-100',
                 isPastSlot && 'opacity-55',
