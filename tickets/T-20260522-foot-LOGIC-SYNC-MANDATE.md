@@ -1,16 +1,22 @@
 ---
 ticket_id: T-20260522-foot-LOGIC-SYNC-MANDATE
 title: 동일 로직 전수 매핑 + 연동 체계 수립
-status: phase1-complete
+status: deployed
 priority: P2
 domain: foot
 created: 2026-05-22
-phase: 1
-deploy_ready: false
+phase: 2
+deploy_ready: true
 e2e_spec_exempt_reason: ef_only
 db_changes: none
-code_changes: none
+code_changes: G-006(03987ec) G-007(03987ec bcf647d)
 registry_path: memory/_handoff/foot_logic_sync_registry.md
+qa_result: pass
+qa_grade: Yellow
+deployed_at: 2026-05-24T03:14:00+09:00
+deploy_commit: d0c9c521cdbe75075fa9ff304347276b95724c54
+bundle_hash: CHtNx3rj
+field_soak_until: 2026-05-25T03:14:00+09:00
 ---
 
 ## 완료 내역 (Phase 1)
