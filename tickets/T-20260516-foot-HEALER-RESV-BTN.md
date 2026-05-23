@@ -6,7 +6,7 @@ deploy-ready: true
 build-passed: true
 db-change: false
 e2e-spec: false
-summary: "v3+v4 합산: AC-10 CSS box-shadow 애니 실동작 + v4 > today(당일 제외) — 당일 즉시 노란색 전환 방지"
+summary: "v5 AC-11: saveResvMini+saveInlineResv AC-8 경로 날짜 가드 추가 — 당일 예약 생성 시 pending_healer_flag 소모 금지. 빌드 OK. commit: 89778ff"
 ---
 
 ## T-20260516-foot-HEALER-RESV-BTN — v3+v4 FIX
