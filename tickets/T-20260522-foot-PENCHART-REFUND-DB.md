@@ -89,3 +89,4 @@ T-20260522-foot-PENCHART-ERASER-CLARITY AC-6 form_templates 전수 검토 결과
 - 2026-05-22 11:28 — dev-foot 구현 완료. apply_20260522060000_form_templates_audit_fix.mjs 작성 + 실행. DB 검증 AC-1/2/3 전건 PASS. 빌드 3.19s OK. commit dfb59f2. deploy-ready 마킹.
 - 2026-05-22 11:32 — planner: FORM-AUDIT(a557a04)에서 refund_consent INSERT 이미 완료 확인. closed-superseded 처리.
 - 2026-05-22 11:35 — supervisor QA PASS (Green). 빌드/env/브라우저/runtime-safety 전 항목. origin/main 2d54451. deployed 마킹.
+- 2026-05-23 20:11 — supervisor 재검증 (conductor 요청). 전 항목 재확인 PASS. 빌드 3.44s/prod bundle rxlomoozakkjesdqjtvd 확인/롤백SQL down.sql 존재/RLS form_templates_admin_all+approved_read/브라우저 4/4. DB INSERT 영구 적용 확인. bundle_hash 현재 prod=index-DEXomt-X (후속 티켓 배포로 갱신, DB 변경은 무관).
