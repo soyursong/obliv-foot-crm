@@ -51,7 +51,7 @@ test.describe('T-20260522-foot-STAFF-REEXPAND — RoleGuard 권한 매트릭스'
     test(`AC-4: ${route.path} — staff 접근 차단 유지`, async ({ page }) => {
       // staff는 잠금 경로 allowedRoles에 없음 → RoleGuard 차단 확인
       expect(route.allowedRoles).not.toContain('staff');
-      expect(route.allowedRoles).not.toContain('part_lead');
+      // part_lead는 stats 허용(App.tsx L119) — 단언 제거 (T-20260522 FIX-REQUEST)
     });
   }
 
