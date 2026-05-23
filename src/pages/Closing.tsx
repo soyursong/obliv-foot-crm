@@ -1242,7 +1242,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                       <th className="py-2 px-2 text-center font-medium w-16">현금영수증</th>
                       <th className="py-2 px-2 text-left font-medium w-16">결제수단</th>
                       <th className="py-2 px-2 text-center font-medium w-16">구분</th>
-                      <th className="py-2 px-2 w-16 text-center">관리</th>
+                      <th className="py-2 px-2 w-16 text-center">환불</th>
                     </tr>
                   </thead>
                   <tbody>
