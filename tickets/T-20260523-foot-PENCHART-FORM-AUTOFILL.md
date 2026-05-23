@@ -2,25 +2,25 @@
 id: T-20260523-foot-PENCHART-FORM-AUTOFILL
 domain: foot
 priority: P1
-status: deploy-ready
+status: deployed
 deploy-ready: true
 build-ok: true
 db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: ""
-commit_sha: "0009322"
-qa_result: ""
-qa_grade: ""
-deployed_at: ""
-deploy_commit: ""
-bundle_hash: ""
-field_soak_until: ""
+commit_sha: "e86c953"
+qa_result: pass
+qa_grade: Yellow
+deployed_at: "2026-05-24T03:38:39+09:00"
+deploy_commit: "e86c953"
+bundle_hash: "CustomerChartPage-88tiC3Zn.js"
+field_soak_until: "2026-05-25T03:38:39+09:00"
 created: 2026-05-23 23:00
 completed: 2026-05-23 23:30
 deadline: 2026-05-27
 assignee: dev-foot
-reporter_slack_id: null
+reporter_slack_id: U0ATDB587PV
 slack_channel: C0ATE5P6JTH
 related_tickets:
   - T-20260523-foot-PENCHART-PEN-SLOW
