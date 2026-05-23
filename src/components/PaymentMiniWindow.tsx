@@ -1284,7 +1284,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         {/* 본문 3구역: Zone1(좌메뉴+코드) / Zone2(중산정) / Zone3(우서류+패키지)
             모바일(<sm): flex-col 세로 스택 + overflow-y-auto
             태블릿/PC(≥sm): 기존 3열 가로 레이아웃 */}
-        <div className="flex flex-col sm:flex-row flex-1 min-h-0 overflow-y-auto sm:overflow-hidden sm:flex-none sm:h-[520px]">
+        {/* FEE-ITEM-SCROLL: 520→600px — 수가 항목 5건 노출 보장 */}
+        <div className="flex flex-col sm:flex-row flex-1 min-h-0 overflow-y-auto sm:overflow-hidden sm:flex-none sm:h-[600px]">
 
           {/* ── 좌측: 카테고리 탭 (모바일: 가로 상단 탭바 / 데스크탑: 세로 사이드) ── */}
           <div className="shrink-0 border-b sm:border-b-0 sm:border-r bg-muted/30 flex flex-row sm:flex-col py-0 sm:py-2 sm:w-20 md:w-24 lg:w-28">
@@ -1445,8 +1446,17 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
             {/* Zone 2 수가 항목 (풋케어) — 항상 표시 */}
             <>
-              {/* 선택 항목 — compact 1줄 */}
-              <div className="overflow-y-auto p-2 min-h-0 space-y-1 max-h-48 sm:max-h-none sm:flex-1">
+              {/* 선택 항목 — compact 1줄
+                  FEE-ITEM-SCROLL:
+                    AC-1: max-h-80 mobile / sm:flex-1 desktop → 5건 노출
+                    AC-2: overflow-y-auto + scroll-smooth → 6건+ 스크롤
+                    AC-4: items=0 시 max-h-28 compact (빈 컨테이너 불필요 팽창 방지) */}
+              <div className={cn(
+                "overflow-y-auto p-2 min-h-0 space-y-1 scroll-smooth",
+                pricingItems.length === 0
+                  ? "max-h-28"
+                  : "max-h-80 sm:max-h-none sm:flex-1",
+              )}>
                   <p className="text-xs font-semibold text-muted-foreground mb-1.5 px-1">
                     수가 항목 ({pricingItems.length}건)
                   </p>

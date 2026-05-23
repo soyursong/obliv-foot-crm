@@ -148,7 +148,7 @@ test.describe('T-20260520-foot-PAYMENT-RESPONSIVE — 결제 미니창 반응형
   });
 
   // ── AC-5: PC regression 없음 ─────────────────────────────────────────────────
-  test('AC-5: PC(1280px) — 3열 레이아웃, 고정 높이 520px 보존', async ({ page }) => {
+  test('AC-5: PC(1280px) — 3열 레이아웃, 고정 높이 600px 보존 (FEE-ITEM-SCROLL: 520→600)', async ({ page }) => {
     await page.setViewportSize(VIEWPORT_PC);
 
     const opened = await openPaymentDialog(page);
