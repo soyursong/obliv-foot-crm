@@ -1,9 +1,10 @@
 ---
 id: T-20260522-foot-PENCHART-ERASER-CLARITY
 domain: foot
-status: deploy-ready
+status: deployed
 deploy-ready: true
 commit_sha: fea5644
+deploy_commit: 0352f50
 build_ok: true
 db_changed: false
 spec_file: tests/e2e/T-20260522-foot-PENCHART-ERASER-CLARITY.spec.ts
@@ -12,6 +13,14 @@ created_at: 2026-05-22
 completed_at: 2026-05-22
 priority: P0
 deadline: 2026-05-22
+qa_result: pass
+qa_grade: Green
+deployed_at: "2026-05-23T14:30:00+09:00"
+bundle_hash: CustomerChartPage-DUzqL-hj
+field_soak_until: "2026-05-24T14:30:00+09:00"
+reporter_slack_id: U0ATDB587PV
+slack_channel: C0ATE5P6JTH
+slack_thread_ts: "1779414645.335609"
 ---
 
 # T-20260522-foot-PENCHART-ERASER-CLARITY (P0 FIX)
