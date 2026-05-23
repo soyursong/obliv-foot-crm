@@ -1,7 +1,7 @@
 ---
 id: T-20260522-foot-TIMETABLE-FOLD
 title: "통합시간표 V2 — 실시간 갱신(AC-6) + 시간대별 예약 명단 아코디언(AC-7)"
-status: deploy-ready
+status: deployed
 priority: P2
 domain: foot
 created_at: 2026-05-22
@@ -20,6 +20,14 @@ e2e_count: 20
 e2e_pass: 20
 v1_e2e_spec: tests/e2e/T-20260522-foot-TIMETABLE-FOLD.spec.ts
 v1_e2e_pass: 12
+qa_result: pass
+qa_grade: Green
+deployed_at: 2026-05-23T20:00:00+09:00
+deploy_commit: a8c0517018493bc684e61dfc569126cd7ec30a4d
+bundle_hash: disk-full-unverified
+field_soak_until: 2026-05-24T20:00:00+09:00
+field_validation_slack_ts: "1779534187.965579"
+qa_note: "supervisor GO Green. Phase1/1.5/7.5 PASS(code review). E2E 20/20(dev-foot). ENOSPC — local build+browser-QA skipped; commit in prod 26h, no incident."
 ---
 
 ## 개요
