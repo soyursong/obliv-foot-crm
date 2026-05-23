@@ -4538,6 +4538,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   T-20260520-foot-PENCHART-VIEW-SPLIT HOTFIX2: onFormSubmissionSaved
                     → 저장 후 상담내역 탭 [내용보기] 즉시 활성화 */}
               {chartTabGroup === 'clinical' && chartTab === 'pen_chart' && (
+                // T-20260523-foot-PENCHART-FORM-AUTOFILL: customerChartNumber 추가, customerPhone 유지(deprecated)
                 <PenChartTab
                   customerId={customer.id}
                   clinicId={customer.clinic_id}
@@ -4545,6 +4546,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   customerName={customer.name}
                   customerPhone={customer.phone ?? undefined}
                   customerBirthDate={customer.birth_date ?? undefined}
+                  customerChartNumber={customer.chart_number?.toString() ?? undefined}
                   onFormSubmissionSaved={refreshSubmissionEntries}
                 />
               )}

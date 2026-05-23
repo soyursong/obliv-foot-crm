@@ -135,30 +135,48 @@ const CANVAS_H_REFUND_CONSENT = 3369; // 1123 * 3
 const CANVAS_H_PC_SENIOR = 2246; // 1123 * 2
 
 // ─── T-20260522-foot-PENCHART-REFUND-AUTOFILL ────────────────────────────
-// 환불/비급여 동의서 자동채움 필드 타입 + 위치 상수
+// T-20260523-foot-PENCHART-FORM-AUTOFILL: 연락처 제거 + 차트번호 추가 + 펜차트 양식 성함/주민번호 연동
 interface AutofillFields {
-  date:      string; // 작성일
-  name:      string; // 고객 성명
-  birthDate: string; // 생년월일
-  phone:     string; // 연락처
+  date:        string; // 작성일
+  name:        string; // 고객 성명
+  birthDate:   string; // 생년월일 (주민번호 앞자리)
+  chartNumber: string; // 차트번호 (환불동의서 page 1 + 펜차트)
+  // phone 제거 — T-20260523-foot-PENCHART-FORM-AUTOFILL AC: 연락처 자동채움 불필요
 }
 
-// [환자 동의서] 섹션 (page 3) 자동채움 좌표 (기준: CANVAS_W=794, CANVAS_H_REFUND_CONSENT=3369)
-// 구버전 CANVAS_W=720 좌표 × (794/720) + y × (3369/3052) 비례 환산
-const REFUND_AUTOFILL_POS: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
+// ── 환불/비급여 동의서 자동채움 좌표 (기준: CANVAS_W=794, CANVAS_H_REFUND_CONSENT=3369) ──
+// page 1 상단 환자 정보 박스 (차트번호 + 환자이름)
+// T-20260523-foot-PENCHART-FORM-AUTOFILL AC: 위치 보정 — page 1 필드 추가
+// [NOTE] 좌표는 refund_consent.png 300DPI 원본 기준 추정값 — 현장 육안 보정 필요
+const REFUND_AUTOFILL_POS_P1: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
+  { key: 'chartNumber', x: 225, y: 190 }, // page 1: ● 차트번호 : ___
+  { key: 'name',        x: 225, y: 240 }, // page 1: ● 환자이름 : ___
+];
+// page 3 서명 섹션 (날짜 + 성명 + 생년월일)
+const REFUND_AUTOFILL_POS_P3: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
   { key: 'date',      x: 525, y: 2939 },
   { key: 'name',      x: 121, y: 2987 },
   { key: 'birthDate', x: 320, y: 2987 },
-  { key: 'phone',     x: 121, y: 3033 },
+  // phone 항목 제거 — T-20260523-foot-PENCHART-FORM-AUTOFILL
+];
+
+// ── 펜차트 양식(초진 문진표) 자동채움 좌표 (기준: CANVAS_W=794, CANVAS_H=1123) ──
+// T-20260523-foot-PENCHART-FORM-AUTOFILL AC: 성함/주민번호 연동
+// [NOTE] 좌표는 pen_chart_form.png 300DPI 원본 기준 추정값 — 현장 육안 보정 필요
+const PENCHART_AUTOFILL_POS: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
+  { key: 'name',      x: 165, y: 68 }, // 성명 필드
+  { key: 'birthDate', x: 420, y: 68 }, // 생년월일(주민번호 앞자리) 필드
 ];
 
 /**
  * T-20260522-foot-PENCHART-TOOLS-V2 AC-1:
  * scaleX/scaleY — bg canvas가 naturalWidth×naturalHeight 기준일 때 좌표 보정
+ * T-20260523-foot-PENCHART-FORM-AUTOFILL: positions 파라미터로 범용화
  */
 function drawAutofillOnCtx(
   ctx: CanvasRenderingContext2D,
   fields: AutofillFields,
+  positions: Array<{ key: keyof AutofillFields; x: number; y: number }>,
   scaleX = 1,
   scaleY = 1,
 ) {
@@ -166,7 +184,7 @@ function drawAutofillOnCtx(
   ctx.fillStyle = '#6b7280'; // gray-500 — 수기 입력과 시각적 구분
   ctx.font = `italic ${Math.round(15 * scaleY)}px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif`;
   ctx.textBaseline = 'top';
-  for (const { key, x, y } of REFUND_AUTOFILL_POS) {
+  for (const { key, x, y } of positions) {
     const val = fields[key];
     if (val) ctx.fillText(val, x * scaleX, y * scaleY);
   }
@@ -399,9 +417,10 @@ export function PenChartTab({
   clinicId,
   checkInId,
   // T-20260522-foot-PENCHART-REFUND-AUTOFILL: 환불동의서 자동채움에 사용
+  // T-20260523-foot-PENCHART-FORM-AUTOFILL: customerPhone 제거, customerChartNumber 추가
   customerName,
-  customerPhone,
   customerBirthDate,
+  customerChartNumber,
   // T-20260520-foot-PENCHART-VIEW-SPLIT HOTFIX2: 상담내역 즉시 갱신
   onFormSubmissionSaved,
 }: {
@@ -411,8 +430,11 @@ export function PenChartTab({
   checkInId?: string;
   /** 고객 기본 정보 (양식 자동 채움) */
   customerName?: string;
-  customerPhone?: string;
+  /** @deprecated T-20260523-foot-PENCHART-FORM-AUTOFILL: 연락처 자동채움 제거 */
+  customerPhone?: string; // 하위 호환용 — 내부 미사용
   customerBirthDate?: string;
+  /** 차트번호 — 환불동의서 page 1 + 펜차트 자동채움용 (T-20260523-foot-PENCHART-FORM-AUTOFILL) */
+  customerChartNumber?: string;
   /** form_submissions INSERT 성공 시 — 상담내역 탭 [내용보기] 즉시 활성화 트리거 */
   onFormSubmissionSaved?: () => void;
 }) {
@@ -477,6 +499,8 @@ export function PenChartTab({
   // T-20260522-foot-PENCHART-TOOL-UX AC-1: 펜 bezier 스무딩용 이전 midpoint 추적
   const lastMidRef = useRef<{ x: number; y: number } | null>(null);
   const emptyRef = useRef(true);
+  // T-20260523-foot-PENCHART-PEN-SLOW: React re-render 억제 — drawing 중 setHasDrawing 중복 호출 방지
+  const hasDrawingRef = useRef(false);
 
   // T-20260519-foot-PENCHART-FORM-ADD (FIX): Undo 10단계
   const undoStackRef = useRef<ImageData[]>([]);
@@ -501,19 +525,23 @@ export function PenChartTab({
       .then(({ data }) => setStaffId(data?.id ?? null));
   }, [profile?.id, clinicId]);
 
-  // ── T-20260522-foot-PENCHART-REFUND-AUTOFILL: 환불동의서 자동채움 데이터 준비 ──
+  // ── T-20260522-foot-PENCHART-REFUND-AUTOFILL + T-20260523-foot-PENCHART-FORM-AUTOFILL ──
+  // 자동채움 데이터: refund_consent + pen_chart 모두 지원 (phone 제거, chartNumber 추가)
   useEffect(() => {
-    if (activeDrawTemplate && isRefundConsentKey(activeDrawTemplate.form_key)) {
+    const isAutofillForm =
+      isRefundConsentKey(activeDrawTemplate?.form_key ?? '') ||
+      activeDrawTemplate?.form_key === 'pen_chart';
+    if (activeDrawTemplate && isAutofillForm) {
       autofillDataRef.current = {
-        date:      new Date().toLocaleDateString('ko-KR'),
-        name:      customerName      ?? '',
-        birthDate: customerBirthDate ?? '',
-        phone:     customerPhone     ?? '',
+        date:        new Date().toLocaleDateString('ko-KR'),
+        name:        customerName        ?? '',
+        birthDate:   customerBirthDate   ?? '',
+        chartNumber: customerChartNumber ?? '',
       };
     } else {
       autofillDataRef.current = null;
     }
-  }, [activeDrawTemplate, customerName, customerPhone, customerBirthDate]);
+  }, [activeDrawTemplate, customerName, customerBirthDate, customerChartNumber]);
 
   // ── 저장된 차트 목록 로드 ────────────────────────────────────────────
   const loadSavedCharts = useCallback(async () => {
@@ -639,9 +667,18 @@ export function PenChartTab({
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';     // 300DPI 소스 → canvas 크기로 다운샘플 고품질
         ctx.drawImage(img, 0, 0, CANVAS_W, canvasH);  // 소스 → 논리 CANVAS_W×canvasH로 fit
-        // 자동채움: bgCanvas가 CANVAS_W×canvasH 논리이므로 scaleX/scaleY=1 (CSS 좌표 그대로)
-        if (isRefundConsentKey(activeDrawTemplate?.form_key ?? '') && autofillDataRef.current) {
-          drawAutofillOnCtx(ctx, autofillDataRef.current);
+        // T-20260523-foot-PENCHART-FORM-AUTOFILL: positions 기반 범용 자동채움
+        // bgCanvas가 CANVAS_W×canvasH 논리이므로 scaleX/scaleY=1 (CSS 좌표 그대로)
+        if (autofillDataRef.current) {
+          const fk = activeDrawTemplate?.form_key ?? '';
+          if (isRefundConsentKey(fk)) {
+            // 환불동의서: page 1 (차트번호·환자이름) + page 3 (날짜·성명·생년월일) 양방향 채움
+            drawAutofillOnCtx(ctx, autofillDataRef.current, REFUND_AUTOFILL_POS_P1);
+            drawAutofillOnCtx(ctx, autofillDataRef.current, REFUND_AUTOFILL_POS_P3);
+          } else if (fk === 'pen_chart') {
+            // 펜차트 양식(초진 문진표): 성명 + 생년월일(주민번호 앞자리)
+            drawAutofillOnCtx(ctx, autofillDataRef.current, PENCHART_AUTOFILL_POS);
+          }
         }
       };
       img.src = bgUrl;
@@ -656,7 +693,8 @@ export function PenChartTab({
   const initDrawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    // T-20260523-foot-PENCHART-PEN-SLOW: desynchronized=true → compositor와 독립 업데이트 → 펜 지연 감소
+    const ctx = canvas.getContext('2d', { desynchronized: true });
     if (!ctx) return;
     const dpr = DRAW_DPR; // 강제 2x — device DPR 무관
     const canvasH = getCanvasHeightForForm(activeDrawTemplate?.form_key);
@@ -683,6 +721,7 @@ export function PenChartTab({
     initBgCanvas();
     initDrawCanvas();
     emptyRef.current = true;
+    hasDrawingRef.current = false; // T-20260523-foot-PENCHART-PEN-SLOW
     setHasDrawing(false);
     setActiveTool('pen');
     setPenSize(DEFAULT_THICKNESS.pen);
@@ -742,7 +781,10 @@ export function PenChartTab({
     }
     const imageData = undoStackRef.current.pop()!;
     ctx.putImageData(imageData, 0, 0);
-    if (undoStackRef.current.length === 0) setHasDrawing(false);
+    if (undoStackRef.current.length === 0) {
+      hasDrawingRef.current = false; // T-20260523-foot-PENCHART-PEN-SLOW
+      setHasDrawing(false);
+    }
   }, []);
 
   // ── 포인터 좌표 계산 ─────────────────────────────────────────────────
@@ -850,7 +892,8 @@ export function PenChartTab({
       ctx.fill();
       ctx.restore();
       emptyRef.current = false;
-      setHasDrawing(true);
+      // T-20260523-foot-PENCHART-PEN-SLOW: 첫 획 전환 시에만 setHasDrawing → React 재렌더 최소화
+      if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
       // 화이트 브러시 반경 내 배치된 아이템 삭제 (상용구 포함 전체)
       setPlacedItems((prev) => prev.filter((item) => {
         const lineH = item.fontSize + 6;
@@ -870,7 +913,8 @@ export function PenChartTab({
       ctx.fill();
       ctx.globalAlpha = 1;
       emptyRef.current = false;
-      setHasDrawing(true);
+      // T-20260523-foot-PENCHART-PEN-SLOW: 첫 획 전환 시에만 setHasDrawing → React 재렌더 최소화
+      if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
     } else {
       // T-20260522-foot-PENCHART-TOOL-UX AC-1: 펜 — 시작점 dot + bezier 상태 초기화
       ctx.beginPath();
@@ -880,7 +924,8 @@ export function PenChartTab({
       ctx.fill();
       lastMidRef.current = null; // bezier 스무딩 상태 리셋 (새 획 시작)
       emptyRef.current = false;
-      setHasDrawing(true);
+      // T-20260523-foot-PENCHART-PEN-SLOW: 첫 획 전환 시에만 setHasDrawing → React 재렌더 최소화
+      if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
     }
   };
 
@@ -933,7 +978,8 @@ export function PenChartTab({
         ctx.stroke();
         ctx.restore();
         emptyRef.current = false;
-        setHasDrawing(true);
+        // T-20260523-foot-PENCHART-PEN-SLOW: 첫 획 전환 시에만 setHasDrawing → React 재렌더 최소화
+        if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
         // 화이트 브러시 반경 내 배치된 아이템 삭제
         const wsz = penSize * 4;
         setPlacedItems((prev) => prev.filter((item) => {
@@ -957,7 +1003,8 @@ export function PenChartTab({
         ctx.stroke();
         ctx.globalAlpha = 1;
         emptyRef.current = false;
-        setHasDrawing(true);
+        // T-20260523-foot-PENCHART-PEN-SLOW: 첫 획 전환 시에만 setHasDrawing → React 재렌더 최소화
+        if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
       } else {
         // T-20260522-foot-PENCHART-TOOL-UX AC-1: 펜 — quadratic bezier 스무딩 (글씨 인식 개선)
         // midpoint bezier: 연속 획 사이를 곡선으로 연결 → 자연스러운 글씨체
@@ -980,7 +1027,8 @@ export function PenChartTab({
         ctx.stroke();
         lastMidRef.current = mid; // 다음 세그먼트 시작점 = 현재 midpoint
         emptyRef.current = false;
-        setHasDrawing(true);
+        // T-20260523-foot-PENCHART-PEN-SLOW: 첫 획 전환 시에만 setHasDrawing → React 재렌더 최소화
+        if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
       }
       lastPosRef.current = pos;
     }
@@ -1642,6 +1690,8 @@ export function PenChartTab({
                 touchAction: 'pan-y',
                 cursor: isBoilerplatePlacing ? 'text' : isTextTool ? 'text' : isEraser ? 'cell' : isHighlight ? 'crosshair' : 'crosshair',
                 display: 'block',
+                // T-20260523-foot-PENCHART-PEN-SLOW: GPU 레이어 승격 → 펜 획 합성 지연 감소
+                willChange: 'transform',
               }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
