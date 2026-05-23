@@ -370,8 +370,9 @@ export default function Closing() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('staff')
-        // T-20260522-foot-STAFF-NAME-UNIFY: display_name 추가 → 드롭다운 구성명 표시
-        .select('id, name, display_name, role, clinic_id, active, created_at')
+        // T-20260523-foot-PKG-DEDUCT-THERAPIST bugfix: display_name 컬럼 미존재 → 400 에러 방지
+        // display_name은 UI에서 || name fallback으로 처리. migration 적용 전까지 select 제외.
+        .select('id, name, role, clinic_id, active, created_at')
         .eq('clinic_id', clinic!.id)
         .eq('active', true)
         .in('role', ['consultant', 'coordinator', 'director', 'therapist'])
