@@ -88,9 +88,10 @@ interface Template {
 
 // ─── 내장 폴백 템플릿 ───
 // T-20260517-foot-PENCHART-FORM: DB 미적용 시 폴백 (public/forms/ 에셋)
+// T-20260523-foot-PENCHART-INSURANCE (스펙 정정): 양식 명칭 '[보험차트]'로 변경 (보험 청구 목적)
 export const BUILTIN_PEN_CHART_TEMPLATE: Template = {
   id: 'builtin-pen-chart',
-  name_ko: '펜차트 양식',
+  name_ko: '[보험차트]',
   template_path: '/forms/pen_chart_form.png',
   template_format: 'png',
   form_key: 'pen_chart',
@@ -160,12 +161,14 @@ const REFUND_AUTOFILL_POS_P3: Array<{ key: keyof AutofillFields; x: number; y: n
   // phone 항목 제거 — T-20260523-foot-PENCHART-FORM-AUTOFILL
 ];
 
-// ── 펜차트 양식(초진 문진표) 자동채움 좌표 (기준: CANVAS_W=794, CANVAS_H=1123) ──
-// T-20260523-foot-PENCHART-FORM-AUTOFILL AC: 성함/주민번호 연동
-// [NOTE] 좌표는 pen_chart_form.png 300DPI 원본 기준 추정값 — 현장 육안 보정 필요
+// ── [보험차트] 자동채움 좌표 (기준: CANVAS_W=794, CANVAS_H=1123) ──
+// T-20260523-foot-PENCHART-INSURANCE (스펙 정정):
+//   위치 = Obliv Clinic 로고 우측, 담당의·담당실장 좌측 중앙 빨간 박스
+//   성함(상단)·주민번호 앞자리(하단) 세로 스택 배치
+// [NOTE] 좌표 추정값 — 현장 육안 보정 필요
 const PENCHART_AUTOFILL_POS: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
-  { key: 'name',      x: 165, y: 68 }, // 성명 필드
-  { key: 'birthDate', x: 420, y: 68 }, // 생년월일(주민번호 앞자리) 필드
+  { key: 'name',      x: 285, y: 48 }, // [보험차트] 성함 — 중앙 박스 상단 (로고 우측·담당의 좌측)
+  { key: 'birthDate', x: 285, y: 72 }, // [보험차트] 주민번호 앞자리(YYMMDD) — 동일 박스 하단
 ];
 
 /**
@@ -676,7 +679,8 @@ export function PenChartTab({
             drawAutofillOnCtx(ctx, autofillDataRef.current, REFUND_AUTOFILL_POS_P1);
             drawAutofillOnCtx(ctx, autofillDataRef.current, REFUND_AUTOFILL_POS_P3);
           } else if (fk === 'pen_chart') {
-            // 펜차트 양식(초진 문진표): 성명 + 생년월일(주민번호 앞자리)
+            // [보험차트]: 성함 + 주민번호 앞자리(YYMMDD) — 중앙 빨간 박스 세로 스택
+            // T-20260523-foot-PENCHART-INSURANCE (스펙 정정)
             drawAutofillOnCtx(ctx, autofillDataRef.current, PENCHART_AUTOFILL_POS);
           }
         }
@@ -1221,7 +1225,10 @@ export function PenChartTab({
                 <FileText className="h-5 w-5 text-purple-700" />
               </div>
               <div>
-                <div className="font-semibold text-purple-800 text-sm">펜차트 양식</div>
+                {/* T-20260523-foot-PENCHART-INSURANCE (AC-3): 선택 패널 명칭 동적 — [보험차트] */}
+                <div className="font-semibold text-purple-800 text-sm">
+                  {(penChartTemplate ?? BUILTIN_PEN_CHART_TEMPLATE).name_ko}
+                </div>
                 <div className="text-xs text-purple-600 mt-0.5">PDF 양식 위에 태블릿/마우스로 직접 필기</div>
               </div>
             </button>
