@@ -177,3 +177,28 @@ const handleCardContext = useCallback((ci, e) => { ... }, []);
 | Field Soak | ✅ 완료 | `field_soak_until` 2026-05-23T11:24+09:00 경과 |
 
 **판정: Green GO ✅ — 전항목 PASS. 기존 배포(2026-05-22T11:24+09:00) 및 frontmatter 유효.**
+
+---
+
+## Supervisor 재검증 — 2026-05-24T08:00+09:00
+
+| 항목 | 결과 | 비고 |
+|------|------|------|
+| Phase 1 빌드 | ✅ PASS | `✓ built in 3.48s` (HEAD a2621c2) |
+| AC-1 TouchSensor distance | ✅ `distance: 5` | L.2817 grep 확인 |
+| AC-2 React.memo + TickCtx | ✅ 코드 존재 | L.137 TickCtx / L.297 memo / L.314 useContext(TickCtx) |
+| AC-2d memo 비교자 | ✅ L.651-654 | checkIn·compact·stageStart·packageLabel 4필드 |
+| AC-2e TickCtx.Provider JSX | ✅ L.5202-5203 | `<TickCtx.Provider value={tick}>` 존재 |
+| AC-2f handleCardContext useCallback | ✅ L.3891 | deps `[]` |
+| AC-3 touchAction:manipulation | ✅ L.689, L.1370 | DroppableColumn 2곳 |
+| AC-3 touchAction:none | ✅ L.346, L.1235, L.1413, L.1479 | DraggableCard 4곳 |
+| AC-5a snapToCursorModifier | ✅ L.142, L.5344 | SLOT-SNAP-FIX 비회귀 |
+| AC-5b pendingSlotDrag 없음 | ✅ grep 미검출 | SLOT-MOVE-REVERT 비회귀 |
+| DB 변경 | N/A | `db_migration: false` |
+| Phase 1.5 env 매트릭스 | ✅ PASS | VITE_SUPABASE_URL/ANON_KEY 2종만. bundle grep `rxlomoozakkjesdqjtvd.supabase.co` 1건 매치 |
+| Runtime Safety Gate (§7.5) | ✅ PASS | 신규 diff 47줄 — memo/TickCtx/useCallback/touchAction/distance만. `Object.values()`·`for-of`·직접 필드 접근 없음 |
+| E2E spec | ✅ 13/13 PASS (7.6s) | `tests/e2e/T-20260522-foot-DRAG-RESP-OPT.spec.ts` 전건 |
+| 브라우저 시뮬 | ✅ HTTP 200 | `obliv-foot-crm.vercel.app` 정상 응답 |
+| Field Soak | ✅ 완료 | `field_soak_until` 2026-05-23T11:24+09:00 경과 (silent — PM 확인 대기 없음) |
+
+**판정: Green GO ✅ — 재검증 전항목 PASS. 기존 배포(2026-05-22T11:24+09:00) 유효. 추가 조치 불필요.**
