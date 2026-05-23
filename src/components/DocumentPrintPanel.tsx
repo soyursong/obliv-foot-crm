@@ -605,9 +605,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
         (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard',
       );
       if (needsItems) {
+        // T-20260524-foot-INS-DOC-COPAY-LINK: copayment_amount 추가 → bill_detail 본인부담 열
         const { data: chargeItems } = await supabase
           .from('service_charges')
-          .select('id, base_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code)')
+          .select('id, base_amount, copayment_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code)')
           .eq('check_in_id', checkIn.id);
 
         if (chargeItems && chargeItems.length > 0) {
@@ -618,6 +619,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
               service_code: (svc as { service_code?: string | null } | null)?.service_code ?? null,
               name: (svc as { name?: string } | null)?.name ?? '(알 수 없음)',
               amount: (c.base_amount as number) ?? 0,
+              copayment_amount: (c.copayment_amount as number | null) ?? null,
               hira_code: (svc as { hira_code?: string | null } | null)?.hira_code ?? null,
               is_insurance_covered: (c.is_insurance_covered as boolean) ?? false,
             };
@@ -631,6 +633,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
             count: 1,
             days: 1,
             is_insurance_covered: item.is_insurance_covered,
+            copayment_amount: item.copayment_amount ?? undefined,
           }));
           autoValues.items_html = buildBillDetailItemsHtml(billItems);
           const rxItems = mappedItems.map((item) => ({
@@ -2301,16 +2304,45 @@ function InvoiceDialog({
   const [nonCovered, setNonCovered] = useState(0);
   const [paidAmount, setPaidAmount] = useState(0);
   const [file, setFile] = useState<File | null>(null);
+  // T-20260524-foot-INS-DOC-COPAY-LINK: insurance_claims draft 자동채움 여부
+  const [autoFilledFromClaim, setAutoFilledFromClaim] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      setReceiptNo('');
-      setInsuranceCovered(0);
-      setNonCovered(0);
-      setPaidAmount(0);
-      setFile(null);
-    }
-  }, [open]);
+    if (!open) return;
+    // 다이얼로그 열릴 때 항상 초기화
+    setReceiptNo('');
+    setInsuranceCovered(0);
+    setNonCovered(0);
+    setPaidAmount(0);
+    setFile(null);
+    setAutoFilledFromClaim(false);
+
+    // insurance_claims draft 조회 → 급여(공단+본인) 자동채움
+    (async () => {
+      const { data: claim } = await supabase
+        .from('insurance_claims')
+        .select('total_covered, total_copayment, total_base')
+        .eq('check_in_id', checkIn.id)
+        .eq('claim_status', 'draft')
+        .maybeSingle();
+
+      if (claim) {
+        setInsuranceCovered(claim.total_covered ?? 0);
+        // 비급여: service_charges 비급여 합산
+        const { data: charges } = await supabase
+          .from('service_charges')
+          .select('base_amount, is_insurance_covered')
+          .eq('check_in_id', checkIn.id);
+        if (charges) {
+          const nonCoveredSum = charges
+            .filter((c) => !c.is_insurance_covered)
+            .reduce((s, c) => s + ((c.base_amount as number) ?? 0), 0);
+          if (nonCoveredSum > 0) setNonCovered(nonCoveredSum);
+        }
+        setAutoFilledFromClaim(true);
+      }
+    })();
+  }, [open, checkIn.id]);
 
   const handleSave = async () => {
     if (paidAmount <= 0) {
@@ -2376,6 +2408,14 @@ function InvoiceDialog({
               className="text-sm mt-1"
             />
           </div>
+
+          {/* T-20260524-foot-INS-DOC-COPAY-LINK: 자동채움 안내 뱃지 */}
+          {autoFilledFromClaim && (
+            <div className="flex items-center gap-1.5 rounded-md bg-teal-50 border border-teal-200 px-2.5 py-1.5 text-xs text-teal-700">
+              <Check className="h-3 w-3 shrink-0" />
+              산출 결과에서 불러왔습니다 (수정 가능)
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-2">
             <div>

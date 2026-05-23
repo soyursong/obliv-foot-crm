@@ -1834,6 +1834,8 @@ export function buildBillDetailItemsHtml(
     count?: number;
     days?: number;
     is_insurance_covered?: boolean;
+    /** T-20260524-foot-INS-DOC-COPAY-LINK: 일부본인부담 > 본인부담금 열 표시용 */
+    copayment_amount?: number;
   }>,
 ): string {
   if (items.length === 0) {
@@ -1850,6 +1852,15 @@ export function buildBillDetailItemsHtml(
       const total = item.amount * count * days;
       const totalStr = total.toLocaleString('ko-KR');
       const nonCoveredStr = !item.is_insurance_covered ? totalStr : '0';
+      // 급여 항목: 일부본인부담(본인부담금/공단부담금) 채움
+      const copayStr =
+        item.is_insurance_covered && item.copayment_amount != null
+          ? item.copayment_amount.toLocaleString('ko-KR')
+          : '0';
+      const fundStr =
+        item.is_insurance_covered && item.copayment_amount != null
+          ? Math.max(0, total - item.copayment_amount).toLocaleString('ko-KR')
+          : '0';
       return `<tr>
         <td>${item.category ?? '기타'}</td>
         <td style="font-size:7.5pt;">${item.date ?? ''}</td>
@@ -1859,8 +1870,8 @@ export function buildBillDetailItemsHtml(
         <td class="num-cell">${count}</td>
         <td class="num-cell">${days}</td>
         <td class="num-cell">${totalStr}</td>
-        <td class="num-cell">0</td>
-        <td class="num-cell">0</td>
+        <td class="num-cell">${copayStr}</td>
+        <td class="num-cell">${fundStr}</td>
         <td class="num-cell">0</td>
         <td class="num-cell">${nonCoveredStr}</td>
       </tr>`;
