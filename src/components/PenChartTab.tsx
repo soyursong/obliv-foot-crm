@@ -516,6 +516,12 @@ export function PenChartTab({
   const emptyRef = useRef(true);
   // T-20260523-foot-PENCHART-PEN-SLOW: React re-render 억제 — drawing 중 setHasDrawing 중복 호출 방지
   const hasDrawingRef = useRef(false);
+  // T-20260523-foot-PENCHART-PEN-SLOW Fix-2: draw canvas ctx 캐싱 — onPointerMove마다 getContext 제거
+  const drawCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  // T-20260523-foot-PENCHART-PEN-SLOW Fix-3: getBoundingClientRect 캐싱 — 획 동안 재사용, onPointerMove마다 강제 레이아웃 제거
+  const strokeRectRef = useRef<DOMRect | null>(null);
+  // T-20260523-foot-PENCHART-PEN-SLOW Fix-4: white 도구 획 경로 — onPointerUp에서 한 번만 hit-test
+  const whiteStrokePathRef = useRef<Array<{ x: number; y: number }>>([]);
 
   // T-20260519-foot-PENCHART-FORM-ADD (FIX): Undo 10단계
   const undoStackRef = useRef<ImageData[]>([]);
@@ -633,7 +639,13 @@ export function PenChartTab({
   //   bgCanvas = CANVAS_W*DRAW_DPR × canvasH*DRAW_DPR 고정 (= 1588×2246)
   //   소스 300DPI 이미지 → HQ downsample → bgCanvas. drawCanvas와 1:1 합성 보장.
 
-  /** 배경 레이어 초기화: 300DPI 원본을 CANVAS_W×canvasH 논리 크기로 다운샘플 */
+  /** 배경 레이어 초기화: 300DPI 원본을 CANVAS_W×canvasH 논리 크기로 다운샘플
+   * T-20260523-foot-PENCHART-PEN-SLOW Fix-1:
+   *   구 코드는 초기 canvas.width=794(1x)로 설정 후 img.onload에서 canvas.width=1588(2x)으로 재설정.
+   *   canvas.width 재할당은 (a) context transform 리셋 + (b) 브라우저 레이아웃 강제 재계산을 유발.
+   *   img.onload는 비동기 — 사용자가 이미 drawing 중일 때 발화 → getBoundingClientRect() 강제 flush.
+   *   → 최종 크기(CANVAS_W*DRAW_DPR × canvasH*DRAW_DPR)로 즉시 초기화, img.onload에서 재설정 없음.
+   */
   const initBgCanvas = useCallback(() => {
     const canvas = bgCanvasRef.current;
     if (!canvas) return;
@@ -641,13 +653,16 @@ export function PenChartTab({
     if (!ctx) return;
     const canvasH = getCanvasHeightForForm(activeDrawTemplate?.form_key);
 
-    // 초기값: CSS display size 기준 (이미지 로드 전 레이아웃 확정)
-    canvas.width = CANVAS_W;
-    canvas.height = canvasH;
-    canvas.style.width = `${CANVAS_W}px`;
+    // T-20260523-foot-PENCHART-PEN-SLOW Fix-1:
+    //   최종 물리 해상도(CANVAS_W*DRAW_DPR × canvasH*DRAW_DPR)로 즉시 확정 →
+    //   img.onload 시 canvas.width 재할당(= 레이아웃 강제 재계산) 없음
+    canvas.width  = CANVAS_W * DRAW_DPR;
+    canvas.height = canvasH  * DRAW_DPR;
+    canvas.style.width  = `${CANVAS_W}px`;
     canvas.style.height = `${canvasH}px`;
+    ctx.scale(DRAW_DPR, DRAW_DPR);
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, CANVAS_W, canvasH);
+    ctx.fillRect(0, 0, CANVAS_W, canvasH);   // 이미지 로드 전 흰 배경 표시
 
     let bgUrl: string | null = null;
     if (activeDrawTemplate && (
@@ -665,24 +680,18 @@ export function PenChartTab({
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
-        // T-20260523-foot-FORM-TEMPLATE-REGEN: bgCanvas를 CANVAS_W×canvasH 논리 크기로 고정
-        //   소스 이미지 300DPI(2481×3508)를 CANVAS_W×canvasH 논리 좌표에 downsample →
-        //   imageSmoothingQuality=high Lanczos → 픽셀 유래 blurriness 없이 선명
+        // T-20260523-foot-PENCHART-PEN-SLOW Fix-1:
+        //   canvas.width/height 재할당 없음 — 이미 CANVAS_W*DRAW_DPR × canvasH*DRAW_DPR 확정.
+        //   ctx transform도 이미 scale(DRAW_DPR, DRAW_DPR) 적용됨 — 리셋 없이 redraw만 수행.
         //
-        // T-20260522-foot-PENCHART-TOOLS-V2 AC-1 원래 설계 의도 복원:
-        //   bgCanvas = CANVAS_W*DRAW_DPR × canvasH*DRAW_DPR (= 1588×2246)
-        //   drawCanvas = CANVAS_W*DRAW_DPR × canvasH*DRAW_DPR (= 1588×2246)
-        //   → 저장 PNG 1588×2246, draw 1:1 합성, 다운스케일 없음
-        //   (구 코드는 nw*DRAW_DPR로 bgCanvas를 과도하게 크게 만들어
-        //    drawCanvas 업스케일 및 GPU 메모리 낭비 유발 — 수정)
-        canvas.width  = CANVAS_W * DRAW_DPR;   // 1588 고정 — drawCanvas와 동일
-        canvas.height = canvasH * DRAW_DPR;    // 2246 고정 (refund: 6738)
-        canvas.style.width  = `${CANVAS_W}px`;
-        canvas.style.height = `${canvasH}px`;
-        ctx.scale(DRAW_DPR, DRAW_DPR);
+        // T-20260523-foot-FORM-TEMPLATE-REGEN: 300DPI 소스(2481×3508) → 논리 CANVAS_W×canvasH 다운샘플
+        //   imageSmoothingQuality=high (Lanczos-equivalent) → 선명도 보장
+        ctx.clearRect(0, 0, CANVAS_W, canvasH);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, CANVAS_W, canvasH);
         ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';     // 300DPI 소스 → canvas 크기로 다운샘플 고품질
-        ctx.drawImage(img, 0, 0, CANVAS_W, canvasH);  // 소스 → 논리 CANVAS_W×canvasH로 fit
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, CANVAS_W, canvasH);
         // T-20260523-foot-PENCHART-FORM-AUTOFILL: positions 기반 범용 자동채움
         // bgCanvas가 CANVAS_W×canvasH 논리이므로 scaleX/scaleY=1 (CSS 좌표 그대로)
         if (autofillDataRef.current) {
@@ -713,6 +722,8 @@ export function PenChartTab({
     // T-20260523-foot-PENCHART-PEN-SLOW: desynchronized=true → compositor와 독립 업데이트 → 펜 지연 감소
     const ctx = canvas.getContext('2d', { desynchronized: true });
     if (!ctx) return;
+    // T-20260523-foot-PENCHART-PEN-SLOW Fix-2: ctx 캐싱 → onPointerMove마다 getContext 불필요
+    drawCtxRef.current = ctx;
     const dpr = DRAW_DPR; // 강제 2x — device DPR 무관
     const canvasH = getCanvasHeightForForm(activeDrawTemplate?.form_key);
 
@@ -890,7 +901,10 @@ export function PenChartTab({
     canvas.setPointerCapture(e.pointerId);
     drawingRef.current = true;
     lastPosRef.current = { x: pos.x, y: pos.y };
-    const ctx = canvas.getContext('2d');
+    // T-20260523-foot-PENCHART-PEN-SLOW Fix-3: getBoundingClientRect 획 시작 시 1회 캐싱
+    strokeRectRef.current = canvas.getBoundingClientRect();
+    // T-20260523-foot-PENCHART-PEN-SLOW Fix-2: 캐싱된 ctx 사용
+    const ctx = drawCtxRef.current ?? canvas.getContext('2d');
     if (!ctx) return;
 
     if (activeTool === 'eraser') {
@@ -911,15 +925,8 @@ export function PenChartTab({
       emptyRef.current = false;
       // T-20260523-foot-PENCHART-PEN-SLOW: 첫 획 전환 시에만 setHasDrawing → React 재렌더 최소화
       if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
-      // 화이트 브러시 반경 내 배치된 아이템 삭제 (상용구 포함 전체)
-      setPlacedItems((prev) => prev.filter((item) => {
-        const lineH = item.fontSize + 6;
-        const lines = item.text.split('\n');
-        const itemH = lines.length * lineH + 8;
-        const itemW = Math.max(60, item.text.length * (item.fontSize * 0.55));
-        return !(pos.x + sz > item.x && pos.x - sz < item.x + itemW &&
-                 pos.y + sz > item.y && pos.y - sz < item.y + itemH);
-      }));
+      // T-20260523-foot-PENCHART-PEN-SLOW Fix-4: hit-test는 onPointerUp에서 1회만 (onPointerDown 시작점 기록)
+      whiteStrokePathRef.current = [{ x: pos.x, y: pos.y }];
     } else if (activeTool === 'highlight') {
       // V3 AC-10~11: 투명도 35%→20%
       ctx.beginPath();
@@ -955,13 +962,15 @@ export function PenChartTab({
     e.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    // T-20260523-foot-PENCHART-PEN-SLOW Fix-2: 캐싱된 ctx 사용 → getContext 반복 호출 제거
+    const ctx = drawCtxRef.current ?? canvas.getContext('2d');
     if (!ctx) return;
 
-    // rect 1회 계산 후 모든 coalesced events에 재사용
+    // T-20260523-foot-PENCHART-PEN-SLOW Fix-3: strokeRectRef 캐시 사용 → getBoundingClientRect 강제 레이아웃 제거
+    // strokeRectRef는 onPointerDown에서 한 번 계산 → 획 동안 재사용
+    const rect = strokeRectRef.current ?? canvas.getBoundingClientRect();
     // T-20260522-foot-PENCHART-TOOLS-V2 AC-1: DRAW_DPR=2 강제 (device DPR 무관)
-    const rect = canvas.getBoundingClientRect();
-    const dpr = DRAW_DPR; // 강제 2x — initDrawCanvas/getPos 동일
+    const dpr = DRAW_DPR;
     const scaleX = (canvas.width / dpr) / rect.width;
     const scaleY = (canvas.height / dpr) / rect.height;
     const toLogical = (ev: PointerEvent) => ({
@@ -981,7 +990,7 @@ export function PenChartTab({
         const sz = penSize * 4;
         ctx.clearRect(pos.x - sz, pos.y - sz, sz * 2, sz * 2);
       } else if (activeTool === 'white') {
-        // T-20260522-foot-PENCHART-TOOL-UX AC-3: 화이트 — source-over 흰색 선 + placedItems hit-test 삭제
+        // T-20260522-foot-PENCHART-TOOL-UX AC-3: 화이트 — source-over 흰색 선
         ctx.save();
         ctx.globalCompositeOperation = 'source-over';
         ctx.beginPath();
@@ -997,16 +1006,9 @@ export function PenChartTab({
         emptyRef.current = false;
         // T-20260523-foot-PENCHART-PEN-SLOW: 첫 획 전환 시에만 setHasDrawing → React 재렌더 최소화
         if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
-        // 화이트 브러시 반경 내 배치된 아이템 삭제
-        const wsz = penSize * 4;
-        setPlacedItems((prev) => prev.filter((item) => {
-          const lineH = item.fontSize + 6;
-          const lines = item.text.split('\n');
-          const itemH = lines.length * lineH + 8;
-          const itemW = Math.max(60, item.text.length * (item.fontSize * 0.55));
-          return !(pos.x + wsz > item.x && pos.x - wsz < item.x + itemW &&
-                   pos.y + wsz > item.y && pos.y - wsz < item.y + itemH);
-        }));
+        // T-20260523-foot-PENCHART-PEN-SLOW Fix-4: placedItems hit-test를 onPointerMove에서 제거 →
+        //   onPointerMove마다 setPlacedItems(React re-render) 없음. 포인트만 누적 → onPointerUp에서 1회 처리.
+        whiteStrokePathRef.current.push(pos);
       } else if (activeTool === 'highlight') {
         // V3 AC-10~11: 투명도 35%→20%
         ctx.beginPath();
@@ -1056,6 +1058,27 @@ export function PenChartTab({
     drawingRef.current = false;
     lastPosRef.current = null;
     lastMidRef.current = null; // T-20260522-foot-PENCHART-TOOL-UX AC-1: 획 종료 시 bezier 상태 초기화
+    // T-20260523-foot-PENCHART-PEN-SLOW Fix-3: strokeRect 캐시 해제
+    strokeRectRef.current = null;
+
+    // T-20260523-foot-PENCHART-PEN-SLOW Fix-4: white 도구 hit-test — 획 종료 시 1회만 실행
+    // (onPointerMove에서 매 이벤트마다 setPlacedItems 호출 제거 → React re-render 억제)
+    if (activeTool === 'white' && whiteStrokePathRef.current.length > 0) {
+      const wsz = penSize * 4;
+      const path = whiteStrokePathRef.current;
+      setPlacedItems((prev) => prev.filter((item) => {
+        const lineH = item.fontSize + 6;
+        const lines = item.text.split('\n');
+        const itemH = lines.length * lineH + 8;
+        const itemW = Math.max(60, item.text.length * (item.fontSize * 0.55));
+        return !path.some(({ x, y }) =>
+          x + wsz > item.x && x - wsz < item.x + itemW &&
+          y + wsz > item.y && y - wsz < item.y + itemH
+        );
+      }));
+      whiteStrokePathRef.current = [];
+    }
+
     const canvas = canvasRef.current;
     if (canvas && canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
   };
