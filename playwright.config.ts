@@ -46,6 +46,8 @@ export default defineConfig({
         '**/T-20260521-foot-DOC-PRINT-UNIFY.spec.ts',
         // T-20260523-foot-FORM-TEMPLATE-REGEN: pen_chart 이미지 오매핑 회귀 방지 (파일시스템 검증)
         '**/T-20260523-foot-FORM-TEMPLATE-REGEN.spec.ts',
+        // T-20260523-foot-PENCHART-INSURANCE: [보험차트] 명칭 + 자동채움 위치 (소스 grep, DB 검증)
+        '**/T-20260523-foot-PENCHART-INSURANCE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

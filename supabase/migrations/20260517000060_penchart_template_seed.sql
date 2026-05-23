@@ -1,5 +1,6 @@
 -- T-20260517-foot-PENCHART-FORM
 -- 펜차트 양식 form_templates 시드
+-- T-20260523-foot-PENCHART-INSURANCE (스펙 정정): name_ko '[보험차트]'로 변경 (보험 청구 목적)
 -- pen_chart_form.png: 현장 제공 PDF → PNG 변환 (720×1020px, A4 비율)
 -- template_path: '/forms/pen_chart_form.png' (public/ 정적 파일, Vercel 서빙)
 -- 멱등: INSERT ... ON CONFLICT DO UPDATE
@@ -16,7 +17,7 @@ BEGIN
     v_clinic,
     'foot-service',
     'pen_chart',
-    '펜차트 양식',
+    '[보험차트]',
     '/forms/pen_chart_form.png',
     'png',
     '[]'::jsonb,
