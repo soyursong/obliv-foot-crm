@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { Plus, UserCog, DoorOpen, ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, Settings, X } from 'lucide-react';
+import { Plus, UserCog, DoorOpen, ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, Settings, X, PowerOff, Power } from 'lucide-react';
 import { DutyRosterTab } from '@/components/DutyRosterTab';
 
 import { supabase } from '@/lib/supabase';
@@ -49,9 +49,7 @@ interface RoomAssignmentRow {
   staff_name: string | null;
 }
 
-function todayStr(): string {
-  return format(new Date(), 'yyyy-MM-dd');
-}
+// todayStr 함수 제거 — 컴포넌트 내부 const todayStr 로 통일 (shadow 충돌 방지)
 
 export default function StaffPage() {
   const [tab, setTab] = useState('duty');
@@ -475,6 +473,15 @@ function EditStaffDialog({
 // ============================================================
 type RoomViewMode = 'daily' | 'weekly';
 
+/** T-20260523-foot-SPACE-DASH-AUTOSYNC Feature B: 당일 방 비활성화 상태 */
+interface DailyRoomStatus {
+  id: string;
+  clinic_id: string;
+  date: string;
+  room_name: string;
+  is_active: boolean;
+}
+
 function RoomTab({ clinic }: { clinic: Clinic }) {
   const qc = useQueryClient();
   const [roomView, setRoomView] = useState<RoomViewMode>('daily');
@@ -483,6 +490,8 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
   const [pending, setPending] = useState<Record<string, string>>({});
   const [isDirty, setIsDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-B1: 방 비활성화 토글 처리 중 맵
+  const [togglingRoom, setTogglingRoom] = useState<string | null>(null);
 
   const weekDays = useMemo(() => Array.from({ length: 6 }).map((_, i) => addDays(weekStart, i)), [weekStart]);
 
@@ -513,6 +522,61 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
       return (data ?? []) as Staff[];
     },
   });
+
+  // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-B1: 당일 방 비활성화 상태 로드
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const { data: dailyRoomStatuses = [], refetch: refetchRoomStatuses } = useQuery<DailyRoomStatus[]>({
+    queryKey: ['daily_room_status', clinic.id, todayStr],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('daily_room_status')
+        .select('*')
+        .eq('clinic_id', clinic.id)
+        .eq('date', todayStr);
+      if (error) throw error;
+      return (data ?? []) as DailyRoomStatus[];
+    },
+  });
+
+  /** 방 이름 → 비활성 여부 맵 (is_active=false인 항목만 비활성) */
+  const inactiveRoomNames = useMemo(() => {
+    const s = new Set<string>();
+    for (const row of dailyRoomStatuses) {
+      if (!row.is_active) s.add(row.room_name);
+    }
+    return s;
+  }, [dailyRoomStatuses]);
+
+  /** AC-B1: 방 비활성화 토글 핸들러 */
+  const handleRoomToggle = async (roomName: string) => {
+    setTogglingRoom(roomName);
+    const existing = dailyRoomStatuses.find(r => r.room_name === roomName);
+    const currentlyInactive = existing && !existing.is_active;
+    try {
+      if (currentlyInactive) {
+        // 재활성화: 행 삭제 (없음 = 활성 기본)
+        await supabase.from('daily_room_status').delete().eq('id', existing.id);
+        toast.success(`${roomName} 활성화됨`);
+      } else {
+        // 비활성화: upsert (당일 한정)
+        const { error } = await supabase.from('daily_room_status').upsert({
+          ...(existing ? { id: existing.id } : {}),
+          clinic_id: clinic.id,
+          date: todayStr,
+          room_name: roomName,
+          is_active: false,
+        }, { onConflict: 'clinic_id,date,room_name' });
+        if (error) throw error;
+        toast.success(`${roomName} 비활성화됨 (당일 한정)`);
+      }
+      qc.invalidateQueries({ queryKey: ['daily_room_status', clinic.id, todayStr] });
+      await refetchRoomStatuses();
+    } catch (err) {
+      toast.error(`토글 실패: ${(err as Error).message}`);
+    } finally {
+      setTogglingRoom(null);
+    }
+  };
 
   // T-20260508-foot-ROOM-STAFF-LINK: 공간 유형별 허용 역할 매핑
   const { data: roomRoleMappings = [] } = useQuery<{ room_type: string; allowed_role: string }[]>({
@@ -553,14 +617,15 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
   };
 
   // AC-1 T-20260515: 마지막 저장된 스냅샷 로드 (날짜 무관)
+  // T-20260523-foot-SPACE-DASH-SYNC 정정 2026-05-24: MAX(created_at) 기준 (saved_at 프록시, 전날 하드코딩 금지)
   const { data: assignments = [] } = useQuery<RoomAssignmentRow[]>({
     queryKey: ['room_assignments_latest', clinic.id],
     queryFn: async () => {
       const { data: maxRow } = await supabase
         .from('room_assignments')
-        .select('date')
+        .select('date, created_at')
         .eq('clinic_id', clinic.id)
-        .order('date', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
@@ -663,7 +728,7 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
   // AC-3 T-20260515: [저장] 버튼 — 오늘 날짜로 전체 스냅샷 저장
   const handleSave = async () => {
     setSaving(true);
-    const today = todayStr();
+    const today = todayStr; // const todayStr = format(new Date(), 'yyyy-MM-dd') — 컴포넌트 스코프
 
     const { error: delErr } = await supabase
       .from('room_assignments')
@@ -783,34 +848,70 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
                       const isC5 = room.name === 'C5' && room.room_type === 'treatment';
                       // AC-9: 레이저실은 "장비 선택" placeholder
                       const isLaser = room.room_type === 'laser';
+                      // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-B1/B2: 비활성 방 판정
+                      const isInactive = inactiveRoomNames.has(room.name);
+                      const isToggling = togglingRoom === room.name;
                       return (
                         <div
                           key={room.id}
-                          className={`flex items-center gap-2 rounded-md bg-card px-3 py-2 text-sm ${
-                            isC5 ? 'border-2 border-purple-400' : 'border'
+                          data-testid={`room-row-${room.name}`}
+                          className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
+                            isC5 && !isInactive ? 'border-2 border-purple-400 bg-card'
+                            : isInactive ? 'border border-gray-200 bg-gray-50 opacity-60'
+                            : 'border bg-card'
                           }`}
                         >
                           <div className="w-20 shrink-0">
-                            <span className="font-medium">{room.name}</span>
-                            {/* AC-6: C5 원장실 라벨 */}
-                            {isC5 && (
+                            {/* AC-B2: 비활성 방 취소선 */}
+                            <span className={`font-medium ${isInactive ? 'line-through text-gray-400' : ''}`}>
+                              {room.name}
+                            </span>
+                            {isC5 && !isInactive && (
                               <span className="ml-1 text-xs text-purple-600">원장실</span>
+                            )}
+                            {/* AC-B2: 비활성 배지 */}
+                            {isInactive && (
+                              <span className="ml-1 text-xs text-gray-400 font-normal">비활성</span>
                             )}
                           </div>
                           <select
-                            className="h-8 flex-1 rounded-md border bg-background px-2 text-sm"
-                            value={getEffectiveStaffId(room.name)}
-                            onChange={(e) => handlePendingChange(room.name, e.target.value)}
-                            title={roomTypeAllowedRoles[room.room_type]?.length
-                              ? `배정 가능: ${roomTypeAllowedRoles[room.room_type].map(r => ROLE_LABEL[r as Staff['role']] ?? r).join(', ')}`
-                              : '전체 직원 배정 가능'}
+                            className={`h-8 flex-1 rounded-md border px-2 text-sm ${
+                              isInactive ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-background'
+                            }`}
+                            value={isInactive ? '' : getEffectiveStaffId(room.name)}
+                            onChange={(e) => !isInactive && handlePendingChange(room.name, e.target.value)}
+                            disabled={isInactive}
+                            title={isInactive ? '비활성 방 — 배정 불가' : (
+                              roomTypeAllowedRoles[room.room_type]?.length
+                                ? `배정 가능: ${roomTypeAllowedRoles[room.room_type].map(r => ROLE_LABEL[r as Staff['role']] ?? r).join(', ')}`
+                                : '전체 직원 배정 가능'
+                            )}
                           >
                             {/* AC-9: 레이저실 placeholder = 장비 선택 */}
-                            <option value="">{isLaser ? '— 장비 선택 —' : '— 미배정 —'}</option>
-                            {getFilteredStaff(room.room_type).map((s) => (
+                            <option value="">{isInactive ? '— 비활성 —' : isLaser ? '— 장비 선택 —' : '— 미배정 —'}</option>
+                            {!isInactive && getFilteredStaff(room.room_type).map((s) => (
                               <option key={s.id} value={s.id}>{s.name}</option>
                             ))}
                           </select>
+                          {/* AC-B1: 비활성화 토글 버튼 */}
+                          <button
+                            type="button"
+                            data-testid={`room-toggle-${room.name}`}
+                            onClick={() => handleRoomToggle(room.name)}
+                            disabled={isToggling}
+                            title={isInactive ? `${room.name} 활성화` : `${room.name} 비활성화 (당일 한정)`}
+                            className={`shrink-0 rounded p-1 transition-colors ${
+                              isInactive
+                                ? 'text-gray-400 hover:text-teal-600 hover:bg-teal-50'
+                                : 'text-gray-300 hover:text-red-500 hover:bg-red-50'
+                            } disabled:opacity-40`}
+                          >
+                            {isInactive ? (
+                              <Power className="h-3.5 w-3.5" />
+                            ) : (
+                              <PowerOff className="h-3.5 w-3.5" />
+                            )}
+                          </button>
                         </div>
                       );
                     })}

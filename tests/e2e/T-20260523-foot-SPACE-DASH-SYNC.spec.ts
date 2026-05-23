@@ -2,14 +2,18 @@
  * E2E spec — T-20260523-foot-SPACE-DASH-SYNC
  * 공간배정(직원.공간 > 공간배정) → 대시보드 슬롯 자동 연동
  *
- * AC-1: 대시보드 진입 시, 전날 공간배정 데이터가 자동으로 당일 대시보드 슬롯에 반영됨
- * AC-2: 새 날(00:00 KST 이후 첫 접속) 전날 마지막 저장 상태 기반 반영
- * AC-3: 당일 공간배정이 없는 경우, 전날 공간배정이 그대로 대시보드에 표시됨
+ * AC-1: 대시보드 진입 시, 마지막 저장된 공간배정 데이터가 자동으로 당일 대시보드 슬롯에 반영됨
+ * AC-2: 새 날(00:00 KST 이후 첫 접속) 마지막 저장 상태 기반 반영 (전날 한정 아님)
+ * AC-3: 당일 공간배정이 없는 경우, 마지막 저장된 공간배정이 그대로 대시보드에 표시됨
+ *        예: 월요일 저장 → 화·수 미저장 → 수요일 대시보드에 월요일 저장 데이터 표시
  * AC-4: 공간배정 페이지에서 변경 후 [저장] → 대시보드 슬롯에 즉각 반영
  * AC-5: 새로고침 시 변경된 배정 정보 반영
  * AC-6: SPACE-AUTOROUTE(금일동선 자동기입) 회귀 없음
  * AC-7: SPACE-ASSIGN-REVAMP(공간배정 지속성) 회귀 없음
  * AC-8: 빌드 성공, 기존 E2E 회귀 없음
+ *
+ * fallback 구현: MAX(created_at) 기준 (saved_at 프록시). "전날" 하드코딩 절대 금지.
+ * 정정 이력: 2026-05-24 김주연 총괄 — "전날" → "마지막 저장" 전면 교체 (MSG-20260524-003349-f9qx)
  */
 import { test, expect } from '@playwright/test';
 import { loginAndWaitForDashboard } from '../helpers';
@@ -113,8 +117,10 @@ test.describe('T-20260523-foot-SPACE-DASH-SYNC 공간배정 → 대시보드 자
   // ===========================================================
   // 시나리오 3: 공간배정 fallback 로직 확인 (AC-2, AC-3)
   // ===========================================================
-  test('AC-2/AC-3: fetchAssignments fallback — 오늘 배정 없을 때 마지막 저장 carry-over', async ({ page }) => {
-    // 대시보드 로드 후 슬롯이 비어있거나 전날 배정이 표시되어야 함
+  test('AC-2/AC-3: fetchAssignments fallback — 오늘 배정 없을 때 마지막 저장 carry-over (월~수 미저장 후 수요일 체크)', async ({ page }) => {
+    // 대시보드 로드 후 슬롯이 비어있거나 마지막 저장 배정이 표시되어야 함
+    // 시나리오: 월요일 저장 → 화·수 미저장 → 수요일 대시보드에 월요일 저장 데이터 표시
+    // fallback: MAX(created_at) 기준 최신 레코드 조회 (saved_at 프록시, 전날 하드코딩 없음)
     // (DB에 배정 데이터가 있을 때만 검증 가능한 케이스 — 없으면 graceful skip)
     await page.goto(DASHBOARD_URL);
     await page.waitForTimeout(3_000);
