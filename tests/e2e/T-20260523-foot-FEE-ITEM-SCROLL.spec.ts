@@ -19,7 +19,10 @@ const VIEWPORT_PC      = { width: 1280, height: 800  };
 // ── 결제 미니창 열기 헬퍼 ─────────────────────────────────────────────────────
 async function openPaymentDialog(page: import('@playwright/test').Page) {
   await page.goto('/admin');
-  await page.getByText('대시보드', { exact: true }).first().waitFor({ timeout: 15_000 });
+  // 모바일/태블릿에서 사이드바가 collapsed → '대시보드' span이 hidden 상태.
+  // waitFor() 기본값 state:'visible' 에서 15초 timeout 발생하므로
+  // networkidle 로 변경 (모바일·데스크탑 공통 동작 보장)
+  await page.waitForLoadState('networkidle', { timeout: 15_000 });
 
   const payBtns = page.locator('[data-testid="btn-open-payment"]');
   const count = await payBtns.count();
