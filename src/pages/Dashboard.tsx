@@ -2788,12 +2788,34 @@ export default function Dashboard() {
   const fetchAssignments = useCallback(async () => {
     if (!clinic) return;
     // T-20260522-foot-PERF-TUNING OPT-5: select('*') → 필요 컬럼만 (페이로드 축소)
-    const { data } = await supabase
+    // T-20260523-foot-SPACE-DASH-SYNC AC-1,2,3: 당일 배정 없으면 마지막 저장 carry-over
+    const { data: todayData } = await supabase
       .from('room_assignments')
       .select('id, clinic_id, date, room_name, room_type, staff_id, staff_name')
       .eq('clinic_id', clinic.id)
       .eq('date', dateStr);
-    setAssignments((data ?? []) as RoomAssignment[]);
+    if (todayData && todayData.length > 0) {
+      setAssignments(todayData as RoomAssignment[]);
+      return;
+    }
+    // 당일 배정 없음 → 가장 최근 저장된 날짜의 배정 fallback (전날 한정 아님 — MAX(date) 기준)
+    const { data: maxRow } = await supabase
+      .from('room_assignments')
+      .select('date')
+      .eq('clinic_id', clinic.id)
+      .order('date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!maxRow) {
+      setAssignments([]);
+      return;
+    }
+    const { data: lastData } = await supabase
+      .from('room_assignments')
+      .select('id, clinic_id, date, room_name, room_type, staff_id, staff_name')
+      .eq('clinic_id', clinic.id)
+      .eq('date', maxRow.date);
+    setAssignments((lastData ?? []) as RoomAssignment[]);
   }, [clinic, dateStr]);
 
   const fetchCheckIns = useCallback(async () => {
@@ -3078,7 +3100,10 @@ export default function Dashboard() {
 
   const handleStaffAssign = useCallback(async (roomName: string, roomType: string, staffId: string | null, staffName: string | null) => {
     if (!clinic) return;
-    const existing = assignments.find((a) => a.room_name === roomName && a.room_type === roomType);
+    // T-20260523-foot-SPACE-DASH-SYNC: fallback 데이터(이전 날짜)는 UPDATE 대신 INSERT로 처리.
+    // assignments에 당일(dateStr) 레코드가 없을 경우 전날 carry-over 데이터가 담길 수 있으므로
+    // date === dateStr 조건을 추가해 오늘 레코드만 existing으로 인식.
+    const existing = assignments.find((a) => a.room_name === roomName && a.room_type === roomType && a.date === dateStr);
     if (!staffId) {
       if (existing) {
         await supabase.from('room_assignments').delete().eq('id', existing.id);
