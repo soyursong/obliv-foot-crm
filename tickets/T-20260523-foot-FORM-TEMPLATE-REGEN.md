@@ -1,25 +1,24 @@
 ---
 id: T-20260523-foot-FORM-TEMPLATE-REGEN
 domain: foot
-priority: P2
-status: deployed
+priority: P1
+status: deploy-ready
 deploy-ready: true
 build-ok: true
 db-change: false
-spec-added: false
-spec-exempt: true
-spec_exempt_reason: "이미지 에셋 교체만 — 코드 로직 변경 없음. bgCanvas 크기 버그(주석 전용 수정 포함)는 기존 spec으로 커버."
+spec-added: true
+spec-exempt: false
 rollback-sql: ""
-commit_sha: c5edb46
-qa_result: pass
-qa_grade: Green
-deployed_at: "2026-05-23T16:20:48+09:00"
-deploy_commit: c5edb46
-bundle_hash: index-BFgLHliU
-field_soak_until: "2026-05-24T16:20:00+09:00"
+commit_sha: f398fe3
+qa_result: ""
+qa_grade: ""
+deployed_at: ""
+deploy_commit: f398fe3
+bundle_hash: ""
+field_soak_until: ""
 created: 2026-05-23 15:25
-completed: 2026-05-23 15:51
-deadline: 2026-05-29
+completed: 2026-05-23 19:05
+deadline: 2026-05-24
 assignee: dev-foot
 reporter_slack_id: null
 slack_channel: C0ATE5P6JTH
@@ -92,8 +91,29 @@ personal_checklist 2종은 PENCHART-HIRES-FORM(c13eee9)에서 이미 완료:
 
 `npm run build` → ✓ built in 3.72s
 
+## FIX-REQUEST (MSG-20260523-183200-q7fm) — 회귀 수정
+
+**현상 (c5edb46 배포 후)**: pen_chart_form.png에 발건강 질문지(health_q) 이미지가 잘못 배치됨
+→ 펜차트 > 양식 선택 > [펜차트 양식] 클릭 시 발건강 질문지 표시
+
+**루트코즈**: c5edb46에서 300DPI 재래스터화 시 오블리브_발건강_질문지 PDF가 pen_chart_form.png 위치에 오배치.
+
+**수정 내용 (commit f398fe3)**:
+- AC-R1/R2: 펜차트양식_자체제작.pdf(202KB) → pdftoppm -r 300 PNG 변환 → public/forms/pen_chart_form.png 교체
+  - 2482×3510 px, 300DPI, 116KB
+  - 내용: Obliv Clinic SEOUL ORIGIN 줄차트 (담당의·담당실장·DATE 행 구조)
+- AC-R3: 전수 검증 spec 추가 (tests/e2e/T-20260523-foot-FORM-TEMPLATE-REGEN.spec.ts, 10케이스)
+  - pen_chart_form.png ≠ health_q_general.png 바이트 검증
+  - 4종 경로 중복 없음 / 파일 존재 / 크기 범위 검증
+- playwright.config.ts unit testMatch 등록
+
+**검증**: E2E 10/10 passed | 빌드 3.17s ✓
+
 ## 진행 이력
 
 - 2026-05-23 15:25 — planner 티켓 생성 (MSG-20260523-17796729)
 - 2026-05-23 15:51 — dev-foot 구현 완료, commit c5edb46 push → origin/main (Vercel 자동 배포)
 - 2026-05-23 15:55 — signals.md deploy-ready 마킹
+- 2026-05-23 16:20 — supervisor QA PASS + deployed 마킹 (bundle_hash: index-BFgLHliU)
+- 2026-05-23 18:32 — FIX-REQUEST MSG-20260523-183200-q7fm (planner → dev-foot): pen_chart_form 오배치 회귀
+- 2026-05-23 19:05 — dev-foot 핫픽스 완료, commit f398fe3 push → origin/main (Vercel 자동 배포)
