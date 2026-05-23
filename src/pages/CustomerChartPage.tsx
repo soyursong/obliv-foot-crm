@@ -2568,9 +2568,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }));
 
     // 3. 힐러 플래그 ON (토글 아닌 SET — 차감과 동시이므로 항상 ON)
+    // v4: > today (strictly greater) — 오늘 예약 제외. 당일 고객박스가 즉시 노란색으로 변하는 문제 수정.
     const today = format(new Date(), 'yyyy-MM-dd');
     const nextResv = reservations
-      .filter(r => r.reservation_date >= today && r.status !== 'cancelled' && r.status !== 'noshow')
+      .filter(r => r.reservation_date > today && r.status !== 'cancelled' && r.status !== 'noshow')
       .sort((a, b) => a.reservation_date.localeCompare(b.reservation_date))[0] ?? null;
 
     if (!nextResv) {
@@ -5010,13 +5011,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 </div>
               </div>
               {/* T-20260516-foot-HEALER-RESV-BTN v2: [차감] + [힐러예약 후 차감] 한 줄 배치 */}
-              {/* FIX(v3/RECHECK): > today → >= today — handleHealerFlag와 동일 기준. 당일 예약도 nextResv로 인식해 버튼 활성 표시 */}
+              {/* FIX(v4): >= today → > today — 오늘 예약 제외. 당일 고객박스 즉시 노란색 전환 방지. */}
               {(() => {
                 const today = format(new Date(), 'yyyy-MM-dd');
                 const nextResv = reservations
-                  .filter(r => r.reservation_date >= today && r.status !== 'cancelled' && r.status !== 'noshow')
+                  .filter(r => r.reservation_date > today && r.status !== 'cancelled' && r.status !== 'noshow')
                   .sort((a, b) => a.reservation_date.localeCompare(b.reservation_date))[0] ?? null;
-                // isActive: 다음 예약(당일 포함) healer_flag OR pending_healer_flag 중 하나라도 켜진 상태
+                // isActive: 다음 예약(오늘 제외) healer_flag OR pending_healer_flag 중 하나라도 켜진 상태
                 const isActive = !!nextResv?.healer_flag || !!customer.pending_healer_flag;
                 const isPending = !nextResv && !!customer.pending_healer_flag;
                 const healerTitle = nextResv

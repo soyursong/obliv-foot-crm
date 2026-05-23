@@ -21,10 +21,11 @@ qa_result: pass
 qa_grade: Yellow
 deployed_at: "2026-05-22T18:26:43+09:00"
 deploy_commit: 005f6ef
-bundle_hash: CustomerChartPage-D7bnd9yh
+bundle_hash: CustomerChartPage-DUzqL-hj
 field_soak_until: "2026-05-23T18:26:43+09:00"
 field_validation_slack_ts: "1779442403.611919"
 supervisor_qa_at: "2026-05-22T09:32:30Z"
+supervisor_reverify_at: "2026-05-23T05:40:00Z"
 ---
 
 # T-20260522-foot-FOOT-PKG-DEDUCT-BUG — 힐러 예약 후 패키지 회차 차감 미작동 (P0 hotfix)
@@ -126,3 +127,22 @@ DB 변경 없음 → 해당 없음 (pass)
 - origin/main push: 이미 완료 (commit 01ebfc3 포함)
 - Vercel 자동 배포 트리거됨
 - 슬랙 배포 알림: C0ATE5P6JTH, thread_ts=1779442403.611919, broadcast ✅
+
+---
+
+## Supervisor 재검증 (2026-05-23T05:40Z)
+
+**목적**: 이전 세션 QA 독립 재확인 + bundle hash 갱신
+
+| 항목 | 결과 | 비고 |
+|------|------|------|
+| 빌드 | ✅ | npm run build 3.62s, exit 0 (HEAD 35be317) |
+| 운영 번들 hash | ✅ | CustomerChartPage-DUzqL-hj (로컬=운영 일치) |
+| VITE env 매트릭스 | ✅ | SUPABASE_URL→rxlomoozakkjesdqjtvd 운영 bundle 확인 |
+| Runtime Safety §7.5 | ✅ | packages/packageSessions `useState([])` init, sessData `?? []` 가드 |
+| E2E spec | ✅ | 3 passed / 2 skipped (활성 카드 없음) — 18.0s |
+| 브라우저 | ✅ | HTTP/2 200, 로그인 페이지 정상, white screen 없음 |
+| fix 포함 여부 | ✅ | git merge-base --is-ancestor 01ebfc3 HEAD → IS in HEAD |
+
+**재판정: GO — 기존 Yellow 유지**  
+Field Soak 진행 중 (`field_soak_until: 2026-05-23T18:26:43+09:00`)

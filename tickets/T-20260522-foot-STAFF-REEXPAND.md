@@ -104,3 +104,25 @@ rollback_of_rollback:
 - is_floor_staff() 함수: 이미 존재, CREATE OR REPLACE로 idempotent 적용
 - PAY-PRINT-BUGS 4건: 이 RLS 재적용으로 동시 해소 가능 — 배포 후 supervisor 확인 필요
 - 빌드: ✅ (3.27s, 오류 없음)
+
+## Supervisor 독립 재검증 — 2026-05-23
+
+**검증 시각**: 2026-05-23T15:24+09:00  
+**검증자**: supervisor (독립 세션, 이전 QA와 별도)  
+**판정**: **GO Yellow 확인** — 이전 배포(ac9485a) 정합성 재검증
+
+| 항목 | 결과 | 비고 |
+|------|------|------|
+| 빌드 (npm run build) | ✅ PASS | 3.27s, exit 0 |
+| RLS SQL 3건 | ✅ PASS | idempotent DROP IF EXISTS + CREATE. USING/WITH CHECK(is_floor_staff()) 정확. SECURITY DEFINER + search_path 명시 |
+| 롤백 SQL 3건 | ✅ PASS | DROP POLICY IF EXISTS 각 1줄, is_floor_staff() 함수 보존 |
+| FE RoleGuard (App.tsx) | ✅ PASS | packages 라우트 `['admin','manager','consultant','coordinator','therapist','staff','part_lead']` |
+| canWritePackage (READ-only) | ✅ PASS | staff/part_lead 쓰기 차단 유지 (Packages.tsx:44) |
+| 환경변수 매트릭스 | ✅ PASS | 신규 env var 없음. VITE_SUPABASE_URL/ANON_KEY 기존 등록 |
+| Runtime Safety Gate | ✅ PASS | diff 2파일(App.tsx+Packages.tsx) — Object.values/for-of/직접접근 패턴 없음 |
+| 브라우저 렌더 | ✅ PASS | 화이트스크린 없음. 로그인 화면 정상 렌더. /admin/packages 접근 시 로그인 리다이렉트 정상 |
+| E2E spec | ✅ 면제 | e2e_spec_exempt_reason: db_only |
+| 운영 URL 응답 | ✅ PASS | obliv-foot-crm.vercel.app 200 OK, etag 정상 |
+
+**잠금 유지 확인**: stats(admin/manager/part_lead) / sales(admin/manager) / accounts(admin) — 변경 없음 ✅  
+**Field Soak**: 진행 중 (`field_soak_until: 2026-05-23T19:26+09:00`)

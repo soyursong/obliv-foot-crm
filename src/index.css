@@ -192,10 +192,11 @@
 }
 
 /* T-20260516-foot-HEALER-RESV-BTN AC-10: 재진 슬롯 힐러 대상자 노란색 깜빡 border animation */
-/* FIX(v3): green-300(#86efac) ↔ amber-400(#fbbf24)+glow 명확 교번으로 가시성 확보 */
+/* FIX(v4): box-shadow 기반으로 교체 — Tailwind border-green-300 충돌(specificity) 해소.
+   border-color 애니메이션은 Tailwind 유틸리티에 밀려 미동작했음. box-shadow는 독립 작동. */
 @keyframes healer-border-blink {
-  0%, 100% { border-color: #fbbf24; box-shadow: 0 0 5px 2px #fbbf2466; }
-  50%       { border-color: #86efac; box-shadow: none; }
+  0%, 100% { box-shadow: 0 0 0 2px #fbbf24, 0 0 6px 2px #fbbf2455; }
+  50%       { box-shadow: 0 0 0 2px #86efac; }
 }
 .healer-blink {
   animation: healer-border-blink 1.2s ease-in-out infinite;

@@ -6,10 +6,10 @@ deploy-ready: true
 build-passed: true
 db-change: false
 e2e-spec: false
-summary: "AC-10 healer_flag 깜빡 + AC-3 체크인 HL 자동 적용 — v3 fix: handleHealerFlag 당일예약 포함 + CSS 가시성 개선"
+summary: "v3+v4 합산: AC-10 CSS box-shadow 애니 실동작 + v4 > today(당일 제외) — 당일 즉시 노란색 전환 방지"
 ---
 
-## T-20260516-foot-HEALER-RESV-BTN — v3 FIX
+## T-20260516-foot-HEALER-RESV-BTN — v3+v4 FIX
 
 ### 버그 요약
 
@@ -49,9 +49,32 @@ migrations 불필요. `healer_flag` 컬럼(20260519000020) 기존 존재.
 
 | 검증 항목 | 결과 |
 |-----------|------|
-| CSS @keyframes 코드 존재 여부 | ✓ index.css line 192 |
-| healer_flag=true 조건 조회 로직 | ✓ fetchCheckIns line 2378 |
-| 체크인 전 슬롯 렌더링 경로 | ✓ ResvCard className cn() line 1299 |
-| 체크인 핸들러 healer_flag 기반 HL 로직 | ✓ fetchCheckIns line 2366-2396 |
-| AC-4 수동 오버라이드 간섭 여부 | ✗ 간섭 없음. eligibleCis가 status_flag null/white만 필터 — 새 체크인은 null로 생성 |
-| **실제 원인** | `handleHealerFlag > today` → 당일 예약 제외 → healer_flag never set |
+| CSS @keyframes 코드 존재 여부 | ✓ index.css line 197 — box-shadow 방식 |
+| healer_flag=true 조건 조회 로직 | ✓ fetchCheckIns line 2878 |
+| 체크인 전 슬롯 렌더링 경로 | ✓ ResvCard className cn() — healer-blink 클래스 |
+| 체크인 핸들러 healer_flag 기반 HL 로직 | ✓ fetchCheckIns lines 2862-2892 |
+| AC-4 수동 오버라이드 간섭 여부 | ✗ 간섭 없음. eligibleCis가 status_flag null/white만 필터 |
+| **실제 원인** | `handleHealerFlag >= today` → 당일 예약 포함 → 즉시 노란박스 |
+
+---
+
+## v3+v4 변경 이력
+
+### v3 (2026-05-22 commit 7c1e9c3)
+- `handleHealerFlag`: `> today` → `>= today` (당일 예약 포함) — AC-10/AC-3 실동작 보장
+- CSS: border-color 애니 → green↔amber 교번 가시성 개선
+
+### v4 (2026-05-23 — 김주연 총괄 현장 피드백)
+**문제**: 당일 예약 고객이 버튼 클릭 즉시 노란박스로 변경 → 데스크에서 당일 힐러 고객으로 오인
+**수정**:
+- `handleHealerDeduct`: `>= today` → `> today` (오늘 제외, 내일 이후 예약만)
+- 버튼 display `nextResv` 조회: `>= today` → `> today` (동일 기준)
+- CSS: `border-color` → `box-shadow` 기반으로 교체 (Tailwind `border-green-300` specificity 충돌 해소)
+- 파일 말미 고아 JSX 태그(`</div></div></div>}`) syntax error 제거
+
+**연쇄 해소**:
+- AC-3 당일 노란색 전환: 오늘 예약에 healer_flag 안 걸리므로 자연 해소 ✓
+- AC-10 깜빡: CSS box-shadow 방식으로 Tailwind 충돌 해소, 실동작 확인 ✓
+- pending_healer_flag 로직(다음 예약 없을 때): 정상 동작 중 — 변경 없음 ✓
+
+### DB 변경 없음
