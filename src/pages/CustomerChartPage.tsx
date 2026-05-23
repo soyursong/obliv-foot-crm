@@ -2172,11 +2172,15 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }).select('id').single();
     setSavingResvMini(false);
     if (error) { toast.error(`예약 저장 실패: ${error.message}`); return; }
-    // AC-8: pending_healer_flag → 신규 예약에 healer_flag 자동 적용 후 1회 소모
-    if (newResv && customer.pending_healer_flag) {
-      await supabase.from('reservations').update({ healer_flag: true }).eq('id', newResv.id);
-      await supabase.from('customers').update({ pending_healer_flag: false }).eq('id', customer.id);
-      setCustomer(prev => prev ? { ...prev, pending_healer_flag: false } : prev);
+    // AC-8+AC-11: pending_healer_flag → 신규 예약에 healer_flag 자동 적용 후 1회 소모
+    // AC-11: 당일(오늘) 예약에는 적용 금지 — 다음날 이후(> today)만 소모. 당일 고객박스 노란색 전환 방지.
+    {
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      if (newResv && customer.pending_healer_flag && resvMiniForm.date > todayStr) {
+        await supabase.from('reservations').update({ healer_flag: true }).eq('id', newResv.id);
+        await supabase.from('customers').update({ pending_healer_flag: false }).eq('id', customer.id);
+        setCustomer(prev => prev ? { ...prev, pending_healer_flag: false } : prev);
+      }
     }
     // 예약 목록 새로고침
     const { data: resvData } = await supabase
@@ -2744,11 +2748,15 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }).select('id').single();
     setSavingInlineResv(false);
     if (error) { toast.error(`예약 저장 실패: ${error.message}`); return; }
-    // AC-8: pending_healer_flag → 신규 예약에 healer_flag 자동 적용 후 1회 소모
-    if (newResv && customer.pending_healer_flag) {
-      await supabase.from('reservations').update({ healer_flag: true }).eq('id', newResv.id);
-      await supabase.from('customers').update({ pending_healer_flag: false }).eq('id', customer.id);
-      setCustomer(prev => prev ? { ...prev, pending_healer_flag: false } : prev);
+    // AC-8+AC-11: pending_healer_flag → 신규 예약에 healer_flag 자동 적용 후 1회 소모
+    // AC-11: 당일(오늘) 예약에는 적용 금지 — 다음날 이후(> today)만 소모. 당일 고객박스 노란색 전환 방지.
+    {
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      if (newResv && customer.pending_healer_flag && inlineResvDate > todayStr) {
+        await supabase.from('reservations').update({ healer_flag: true }).eq('id', newResv.id);
+        await supabase.from('customers').update({ pending_healer_flag: false }).eq('id', customer.id);
+        setCustomer(prev => prev ? { ...prev, pending_healer_flag: false } : prev);
+      }
     }
     toast.success(`${inlineResvDate} ${time} 예약 등록 완료`);
     // 예약 이력 즉시 갱신
