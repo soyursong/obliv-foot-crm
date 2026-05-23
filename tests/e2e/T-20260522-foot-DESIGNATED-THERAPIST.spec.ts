@@ -5,7 +5,8 @@
  * SC-1: 2번차트에 [지정 치료사] 드롭다운이 렌더된다 (예약내역↔회차차감 사이)
  * SC-2: 드롭다운 변경 시 DB 저장 후 토스트 노출
  * SC-3: 차트 재방문 시 저장된 지정 치료사가 유지된다
- * SC-4: 지정 치료사 설정 시 회차 차감 폼 therapistId 자동 선택
+ * SC-4: [AC-R1] 지정 치료사 설정 시에도 회차 차감 폼 치료사 드롭다운은 빈 상태 (수기 선택)
+ *        (이전 SC-4: 자동선택 검증 → 2026-05-23 FIX-REQUEST로 로직 제거, 반대 동작 검증으로 교체)
  * SC-5: 매출집계 > 담당직원별 탭에 [지정환자수] 컬럼 존재
  * SC-6: 지정 치료사 '없음' 설정 시 designated_therapist_id = null로 저장
  */
@@ -96,8 +97,9 @@ test.describe('T-20260522-foot-DESIGNATED-THERAPIST', () => {
     await expect(page.getByTestId('designated-therapist-select')).toHaveValue(secondValue!, { timeout: 8_000 });
   });
 
-  // SC-4: 지정 치료사 설정 → 회차 차감 폼 therapistId 자동 선택
-  test('SC-4: 지정 치료사 설정 시 회차 차감 치료사 자동 동기화', async ({ page }) => {
+  // SC-4: [AC-R1] 지정 치료사가 설정돼 있어도 회차 차감 폼 치료사 드롭다운은 빈 상태
+  // 현장 원문: "환자가 특정 치료사 지정하면 해당 치료사나 데스크에서 수기로 넣는거야!"
+  test('SC-4: 지정 치료사 설정돼도 회차차감 치료사 드롭다운은 빈 상태(수기 선택)', async ({ page }) => {
     test.skip(SKIP_NO_SEED, '시드 데이터 없음 — CI skip');
 
     const customerId = process.env.PLAYWRIGHT_SEED_CUSTOMER_ID!;
@@ -110,14 +112,16 @@ test.describe('T-20260522-foot-DESIGNATED-THERAPIST', () => {
     const options = await designatedSelect.locator('option').all();
     if (options.length < 2) { test.skip(); }
 
+    // 지정 치료사 세팅
     const secondValue = await options[1].getAttribute('value');
     await designatedSelect.selectOption(secondValue!);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(800);
 
-    // 회차 차감 치료사 select 확인
-    const deductTherapistSelect = page.locator('select').filter({ hasText: '선택' }).first();
-    // 실제로 회차차감 치료사 셀렉트가 같은 값을 가져야 함
-    await expect(deductTherapistSelect).toHaveValue(secondValue!);
+    // AC-R1: 회차 차감 폼의 치료사 드롭다운은 빈 상태여야 함 (자동선택 안 됨)
+    const deductTherapistSelect = page.getByTestId('deduct-therapist-select');
+    // 드롭다운이 존재하면 빈 값('' 또는 placeholder)인지 확인
+    const deductValue = await deductTherapistSelect.inputValue().catch(() => '');
+    expect(deductValue).toBe('');
   });
 
   // SC-5: 매출집계 > 담당직원별 탭에 [지정환자수] 컬럼
