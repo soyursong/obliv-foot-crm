@@ -4923,7 +4923,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             <div className="flex items-center justify-between mb-1">
               <div className="text-[11px] font-semibold text-[#1e4e6e] flex items-center gap-1">
                 지정 치료사
-                <span className="text-[9px] font-normal bg-emerald-100 text-emerald-700 rounded px-1 py-0.5">자동 선택</span>
+                {/* AC-R1 (2026-05-23): 자동 선택 배지 제거 — 수기 선택 방식 */}
               </div>
               {savingDesignatedTherapist && (
                 <span className="text-[9px] text-muted-foreground">저장 중…</span>
@@ -4941,11 +4941,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
-            {designatedTherapistId && therapistList.length > 0 && (
-              <p className="mt-0.5 text-[9px] text-emerald-700">
-                회차 차감 시 자동 선택됩니다
-              </p>
-            )}
+            {/* AC-R1 (2026-05-23): "회차 차감 시 자동 선택됩니다" 텍스트 제거 — 수기 선택 방식 */}
           </div>
 
           {/* C22-PKG-DEDUCT: 회차 차감 인라인 폼 — 복구 T-20260510-foot-C22-SECTION-MERGE regression fix */}
