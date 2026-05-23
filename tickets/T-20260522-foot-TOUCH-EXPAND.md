@@ -1,14 +1,20 @@
 ---
 id: T-20260522-foot-TOUCH-EXPAND
 title: "태블릿 터치영역(버튼·셀·탭) 최소 44px 확대"
-status: approved
+status: deploy-ready
 priority: P1
 domain: foot
 created_at: 2026-05-22
 deadline: 2026-05-26
 착수예정: 2026-05-24
-deploy_ready: false
+completed_at: 2026-05-22
+deploy_ready: true
+deploy_ready_at: 2026-05-22
+fix_commit: 2c60a30
+build_ok: true
 db_migration: false
+db_change: false
+e2e_spec: tests/e2e/T-20260522-foot-TOUCH-EXPAND.spec.ts
 assignee: dev-foot
 depends_on:
   - T-20260522-foot-PENCHART-REFUND-AUTOFILL
