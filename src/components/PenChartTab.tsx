@@ -140,35 +140,40 @@ const CANVAS_H_PC_SENIOR = 2246; // 1123 * 2
 interface AutofillFields {
   date:        string; // 작성일
   name:        string; // 고객 성명
-  birthDate:   string; // 생년월일 (주민번호 앞자리)
-  chartNumber: string; // 차트번호 (환불동의서 page 1 + 펜차트)
+  birthDate:   string; // 생년월일 (하위 호환 유지 — 현재 포지션 미사용)
+  chartNumber: string; // 차트번호 (환불동의서 page 1)
+  rrn:         string; // 주민번호 마스킹값 (보험차트 전용 — 예: "990101-*******")
   // phone 제거 — T-20260523-foot-PENCHART-FORM-AUTOFILL AC: 연락처 자동채움 불필요
 }
 
 // ── 환불/비급여 동의서 자동채움 좌표 (기준: CANVAS_W=794, CANVAS_H_REFUND_CONSENT=3369) ──
 // page 1 상단 환자 정보 박스 (차트번호 + 환자이름)
-// T-20260523-foot-PENCHART-FORM-AUTOFILL AC: 위치 보정 — page 1 필드 추가
-// [NOTE] 좌표는 refund_consent.png 300DPI 원본 기준 추정값 — 현장 육안 보정 필요
+// T-20260523-foot-PENCHART-FORM-AUTOFILL AC-1~2: 위치 보정 (PNG 픽셀 분석 기반)
+//   refund_consent.png 2481×10524 → canvas 794×3369 (scale=0.32)
+//   P1 fields: ● 차트번호 / ● 환자이름 (측정값)
 const REFUND_AUTOFILL_POS_P1: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
-  { key: 'chartNumber', x: 225, y: 190 }, // page 1: ● 차트번호 : ___
-  { key: 'name',        x: 225, y: 240 }, // page 1: ● 환자이름 : ___
+  { key: 'chartNumber', x: 163, y: 155 }, // page 1: ● 차트번호 : ___ (코론 우측 시작)
+  { key: 'name',        x: 163, y: 188 }, // page 1: ● 환자이름 : ___
 ];
-// page 3 서명 섹션 (날짜 + 성명 + 생년월일)
+// page 3 [본인 동의서] 서명 섹션 (날짜 + 이름)
+// T-20260523-foot-PENCHART-FORM-AUTOFILL AC-3~4: 위치 보정
+//   P3 [본인 동의서] 섹션: canvas y=2866~3369 범위 PNG 분석
+//   "년 월 일" 라인: page3 local y≈205 (canvas 3071), 이름 셀: page3 local y≈340 (canvas 3206)
+//   birthDate 제거 — [본인 동의서]에는 생년월일 란 없음
 const REFUND_AUTOFILL_POS_P3: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
-  { key: 'date',      x: 525, y: 2939 },
-  { key: 'name',      x: 121, y: 2987 },
-  { key: 'birthDate', x: 320, y: 2987 },
-  // phone 항목 제거 — T-20260523-foot-PENCHART-FORM-AUTOFILL
+  { key: 'date', x: 440, y: 3071 }, // [본인 동의서] "     년    월    일" — 날짜 앞 공간
+  { key: 'name', x: 55,  y: 3206 }, // [본인 동의서] "이름" 셀 내부
+  // phone/birthDate 제거 — T-20260523-foot-PENCHART-FORM-AUTOFILL
 ];
 
 // ── [보험차트] 자동채움 좌표 (기준: CANVAS_W=794, CANVAS_H=1123) ──
-// T-20260523-foot-PENCHART-INSURANCE (스펙 정정):
-//   위치 = Obliv Clinic 로고 우측, 담당의·담당실장 좌측 중앙 빨간 박스
-//   성함(상단)·주민번호 앞자리(하단) 세로 스택 배치
-// [NOTE] 좌표 추정값 — 현장 육안 보정 필요
+// T-20260523-foot-PENCHART-FORM-AUTOFILL AC-7~8:
+//   pen_chart_form.png 2482×3510 → canvas 794×1123 (scale=0.32)
+//   위치 = Obliv Clinic 로고(x≈25-185) 우측 · 담당의(x≈530, y≈23)/담당실장(x≈530, y≈43) 좌측 공백
+//   성함(담당의 라인) + 주민번호(담당실장 라인) 세로 2열 배치
 const PENCHART_AUTOFILL_POS: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
-  { key: 'name',      x: 285, y: 48 }, // [보험차트] 성함 — 중앙 박스 상단 (로고 우측·담당의 좌측)
-  { key: 'birthDate', x: 285, y: 72 }, // [보험차트] 주민번호 앞자리(YYMMDD) — 동일 박스 하단
+  { key: 'name', x: 285, y: 23 }, // [보험차트] 성함 — 로고 우측 빈 공간 상단 (담당의 라인 정렬)
+  { key: 'rrn',  x: 285, y: 44 }, // [보험차트] 주민번호(마스킹) — 동일 박스 하단 (담당실장 라인 정렬)
 ];
 
 /**
@@ -420,10 +425,11 @@ export function PenChartTab({
   clinicId,
   checkInId,
   // T-20260522-foot-PENCHART-REFUND-AUTOFILL: 환불동의서 자동채움에 사용
-  // T-20260523-foot-PENCHART-FORM-AUTOFILL: customerPhone 제거, customerChartNumber 추가
+  // T-20260523-foot-PENCHART-FORM-AUTOFILL: customerPhone 제거, customerChartNumber 추가, customerRrn 신규
   customerName,
   customerBirthDate,
   customerChartNumber,
+  customerRrn,
   // T-20260520-foot-PENCHART-VIEW-SPLIT HOTFIX2: 상담내역 즉시 갱신
   onFormSubmissionSaved,
 }: {
@@ -436,8 +442,14 @@ export function PenChartTab({
   /** @deprecated T-20260523-foot-PENCHART-FORM-AUTOFILL: 연락처 자동채움 제거 */
   customerPhone?: string; // 하위 호환용 — 내부 미사용
   customerBirthDate?: string;
-  /** 차트번호 — 환불동의서 page 1 + 펜차트 자동채움용 (T-20260523-foot-PENCHART-FORM-AUTOFILL) */
+  /** 차트번호 — 환불동의서 page 1 자동채움용 */
   customerChartNumber?: string;
+  /**
+   * 주민번호 마스킹값 — [보험차트] 상단 자동 연동 (T-20260523-foot-PENCHART-FORM-AUTOFILL AC-8)
+   * 형식: "YYMMDD-*******" (rrn_decrypt → 앞 6자리 + 하이픈 + 7개 별표)
+   * 마스킹 정책: B-lite (뒷자리 전체 마스킹). 현장 결정 후 전체/부분 표시로 전환 가능.
+   */
+  customerRrn?: string;
   /** form_submissions INSERT 성공 시 — 상담내역 탭 [내용보기] 즉시 활성화 트리거 */
   onFormSubmissionSaved?: () => void;
 }) {
@@ -529,7 +541,7 @@ export function PenChartTab({
   }, [profile?.id, clinicId]);
 
   // ── T-20260522-foot-PENCHART-REFUND-AUTOFILL + T-20260523-foot-PENCHART-FORM-AUTOFILL ──
-  // 자동채움 데이터: refund_consent + pen_chart 모두 지원 (phone 제거, chartNumber 추가)
+  // 자동채움 데이터: refund_consent + pen_chart 모두 지원 (phone 제거, rrn 추가)
   useEffect(() => {
     const isAutofillForm =
       isRefundConsentKey(activeDrawTemplate?.form_key ?? '') ||
@@ -540,11 +552,12 @@ export function PenChartTab({
         name:        customerName        ?? '',
         birthDate:   customerBirthDate   ?? '',
         chartNumber: customerChartNumber ?? '',
+        rrn:         customerRrn         ?? '', // 주민번호 마스킹값 — [보험차트] 전용
       };
     } else {
       autofillDataRef.current = null;
     }
-  }, [activeDrawTemplate, customerName, customerBirthDate, customerChartNumber]);
+  }, [activeDrawTemplate, customerName, customerBirthDate, customerChartNumber, customerRrn]);
 
   // ── 저장된 차트 목록 로드 ────────────────────────────────────────────
   const loadSavedCharts = useCallback(async () => {
@@ -1577,9 +1590,18 @@ export function PenChartTab({
           )}
 
           {/* 자동채움 배지 — refund_consent(차트번호·성함·날짜) + pen_chart(성함·생년월일) */}
+          {/* 자동채움 배지 — refund_consent(차트번호·성함·날짜) + pen_chart(성함·주민번호) */}
           {activeDrawTemplate && (isRefundConsentKey(activeDrawTemplate.form_key) || activeDrawTemplate.form_key === 'pen_chart') && customerName && (
-            <div className="flex items-center gap-1 px-2 py-1 rounded bg-blue-50 border border-blue-200 text-[11px] text-blue-700" title="성명·생년월일이 양식에 자동 채워졌습니다">
+            <div className="flex items-center gap-1 px-2 py-1 rounded bg-blue-50 border border-blue-200 text-[11px] text-blue-700"
+              title={activeDrawTemplate.form_key === 'pen_chart'
+                ? `성명·주민번호가 양식 상단에 자동 채워졌습니다${customerRrn ? '' : ' (주민번호 미등록)'}`
+                : '차트번호·성명·날짜가 양식에 자동 채워졌습니다'
+              }
+            >
               ✓ 자동채움: {customerName}
+              {activeDrawTemplate.form_key === 'pen_chart' && customerRrn && (
+                <span className="text-blue-500"> · {customerRrn}</span>
+              )}
             </div>
           )}
 
