@@ -2887,17 +2887,25 @@ export default function Dashboard() {
       if (healerResvs && healerResvs.length > 0) {
         const healerCidSet = new Set(healerResvs.map((r: { customer_id: string }) => r.customer_id));
         const resvIds = healerResvs.map((r: { id: string }) => r.id);
-        // 1회성: 플래그 소모 (reset before HL so reload won't double-apply)
-        await supabase.from('reservations').update({ healer_flag: false }).in('id', resvIds);
         // 매칭 체크인에 HL(노랑) 적용
         const hlCiIds = eligibleCis
           .filter(ci => ci.customer_id && healerCidSet.has(ci.customer_id))
           .map(ci => ci.id);
         if (hlCiIds.length > 0) {
+          // T-20260516-foot-HEALER-RESV-BTN AC-3 FIX(2026-05-24): recentlyUpdated 보호 추가
+          // 원인: status_flag=yellow DB 쓰기 후 Realtime이 fetchCheckIns를 재트리거.
+          // 재트리거된 fetchCheckIns가 replica lag으로 stale(null) 데이터를 읽으면
+          // optimistic yellow가 null로 덮어써지고, healer_flag는 이미 false라 재적용 불가 → HL 소실.
+          // 수정: markRecentlyUpdated로 2초간 해당 check-in을 보호 → stale 덮어쓰기 방지.
+          hlCiIds.forEach(id => markRecentlyUpdated(id));
+          // 1회성: healer_flag 소모 (HL 적용 직전 reset — 재진입 방지)
+          await supabase.from('reservations').update({ healer_flag: false }).in('id', resvIds);
           await supabase.from('check_ins').update({ status_flag: 'yellow' }).in('id', hlCiIds);
           setRows(curr => curr.map(r =>
             hlCiIds.includes(r.id) ? { ...r, status_flag: 'yellow' as StatusFlag } : r,
           ));
+        } else {
+          // 체크인 없는 healer_flag는 유지 (체크인 시 소모 예정)
         }
       }
     }

@@ -192,14 +192,15 @@
 }
 
 /* T-20260516-foot-HEALER-RESV-BTN AC-10: 재진 슬롯 힐러 대상자 노란색 깜빡 border animation */
-/* FIX(v4): box-shadow 기반으로 교체 — Tailwind border-green-300 충돌(specificity) 해소.
-   border-color 애니메이션은 Tailwind 유틸리티에 밀려 미동작했음. box-shadow는 독립 작동. */
+/* FIX(v5 2026-05-24): outline 기반으로 교체 — overflow:auto/hidden 컨테이너에서 outset box-shadow가
+   클립되는 문제 해소. CSS outline은 overflow 클리핑 모델 밖에서 렌더링되므로 항상 가시적. */
 @keyframes healer-border-blink {
-  0%, 100% { box-shadow: 0 0 0 2px #fbbf24, 0 0 6px 2px #fbbf2455; }
-  50%       { box-shadow: 0 0 0 2px #86efac; }
+  0%, 100% { outline: 2px solid #f59e0b; outline-offset: 0px; }
+  50%       { outline: 2px solid transparent; outline-offset: 0px; }
 }
 .healer-blink {
-  animation: healer-border-blink 1.2s ease-in-out infinite;
+  animation: healer-border-blink 1s ease-in-out infinite;
+  outline: 2px solid transparent; /* 마운트 시 초기 상태 — 깜빡임 시작 전 노출 방지 */
 }
 
 /* T-20260522-foot-LASER-TIMER AC-3: 레이저 타이머 깜빡임 (2단계)

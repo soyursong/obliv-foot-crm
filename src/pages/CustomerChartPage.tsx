@@ -1409,8 +1409,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         clRes, subRes,
       ] = await Promise.all([
         // C2-STAFF-DROPDOWN: 담당자(consultant/coordinator/director) + 치료사 1쿼리 통합
-        // T-20260522-foot-STAFF-NAME-UNIFY: display_name 추가 → 드롭다운 구성명 표시
-        supabase.from('staff').select('id, name, display_name, role').eq('clinic_id', clinicId).eq('active', true)
+        // T-20260523-foot-PKG-DEDUCT-THERAPIST bugfix: display_name 컬럼 미존재 → 쿼리 400 에러 → 치료사 드롭다운 비어있음
+        // display_name 컬럼은 별도 migration(20260523050000)으로 추가될 예정. UI는 display_name||name fallback 유지.
+        supabase.from('staff').select('id, name, role').eq('clinic_id', clinicId).eq('active', true)
           .in('role', ['consultant', 'coordinator', 'director', 'therapist']).order('name', { ascending: true }),
         // 6 main data (기존 병렬 그룹)
         supabase.from('packages').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }),  // T-20260520-foot-PKG-SORT
@@ -2466,10 +2467,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     // T-20260522-foot-PERF-TUNING OPT-4: sessData 재사용 → remaining 클라이언트 집계 (N RPC 제거)
     const remainingArr = computeRemainingFromSessionRows(packages, (sessData ?? []) as _SessRow[]);
     setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? prev[i]?.remaining ?? null })));
-    // AC-3: 차감 후 리셋 — T-20260523-foot-ACCT-HISTORY-VERIFY: 치료사 계정 우선, fallback 지정치료사
+    // AC-R1 (2026-05-23): 차감 후 리셋 — 지정 치료사 자동세팅 제거, 치료사 계정만 유지
+    // 치료사 계정: currentUserStaffId(RLS 준수), admin/consultant: 빈 상태(수기 선택)
     setC22DeductForm(f => ({
       ...f,
-      therapistId: currentUserStaffId || customer.designated_therapist_id || '',
+      therapistId: currentUserStaffId || '',
       treatmentType: 'heated_laser',
     }));
     toast.success('회차 차감 완료');
@@ -2490,8 +2492,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }
     setDesignatedTherapistId(newTherapistId);
     setCustomer(prev => prev ? { ...prev, designated_therapist_id: newTherapistId || null } : prev);
-    // AC-3: 회차 차감 폼 자동 동기화
-    setC22DeductForm(f => ({ ...f, therapistId: newTherapistId }));
+    // AC-R1 (2026-05-23): 지정 치료사 변경 시 차감 폼 자동 동기화 제거 — 수기 선택 방식
     const therapistName = therapistList.find(t => t.id === newTherapistId)?.name;
     toast.success(therapistName ? `지정 치료사: ${therapistName}` : '지정 치료사 해제');
   };
@@ -2565,9 +2566,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     );
     const remainingArr = computeRemainingFromSessionRows(packages, (sessData ?? []) as _SessRow[]);
     setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? prev[i]?.remaining ?? null })));
+    // AC-R1 (2026-05-23): 힐러차감 후 리셋 — 지정 치료사 자동세팅 제거
     setC22DeductForm(f => ({
       ...f,
-      therapistId: customer.designated_therapist_id ?? '',
+      therapistId: currentUserStaffId || '',
       treatmentType: 'heated_laser',
     }));
 
@@ -2706,29 +2708,23 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       .then(({ data }) => setCurrentUserStaffId((data as { id: string } | null)?.id ?? ''));
   }, [profile?.id, customer?.clinic_id]);
 
-  // T-20260522-foot-DESIGNATED-THERAPIST AC-3: 지정 치료사 로드 시 c22DeductForm 자동 세팅
   // T-20260523-foot-ACCT-HISTORY-VERIFY: 치료사 계정 로그인 시 본인 우선 세팅 (RLS 준수)
-  // 우선순위: 1) 현재 로그인 직원이 therapistList에 있으면 본인 세팅 → 2) 지정 치료사 fallback
+  // RLS: package_sessions_therap_insert → performed_by IS NULL OR = current_staff_id() 강제
+  // AC-R3: RLS 제약이므로 치료사 계정 UI 자동선택 유지
+  // AC-R1 (2026-05-23): 지정 치료사 자동선택 제거 — admin/consultant는 매번 수기 선택
+  //   현장 원문: "환자가 특정 치료사 지정하면 해당 치료사나 데스크에서 수기로 넣는거야!"
   useEffect(() => {
     if (therapistList.length === 0) return;
-    // 1) 현재 로그인 직원이 치료사 목록에 있으면 본인 우선 세팅
-    // RLS: package_sessions_therap_insert → performed_by = current_staff_id() 강제
+    // 치료사 계정 로그인 시 본인 우선 세팅 (RLS 제약 반영)
     if (currentUserStaffId && therapistList.some(t => t.id === currentUserStaffId)) {
       setC22DeductForm(f => ({
         ...f,
         therapistId: f.therapistId || currentUserStaffId,
       }));
-      return;
     }
-    // 2) admin/consultant: 지정 치료사 세팅 (기존 동작 유지)
-    if (!designatedTherapistId) return;
-    const inList = therapistList.some(t => t.id === designatedTherapistId);
-    if (!inList) return;
-    setC22DeductForm(f => ({
-      ...f,
-      therapistId: f.therapistId || designatedTherapistId,
-    }));
-  }, [currentUserStaffId, designatedTherapistId, therapistList]);
+    // AC-R1: 지정 치료사 자동선택 제거 — 드롭다운은 빈 상태로 시작, 매번 수기 선택
+    // designated_therapist_id 컬럼 및 표시는 유지, UI 자동세팅만 제거
+  }, [currentUserStaffId, therapistList]);
 
   // T-20260515-foot-INLINE-RESV: 빈 슬롯 클릭 시 예약 등록
   const saveInlineResv = async (time: string) => {
@@ -4994,6 +4990,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <div>
                   <label className="block text-[10px] text-muted-foreground mb-0.5">치료사</label>
                   <select
+                    data-testid="deduct-therapist-select"
                     value={c22DeductForm.therapistId}
                     onChange={(e) => setC22DeductForm(f => ({ ...f, therapistId: e.target.value }))}
                     className="w-full h-6 rounded border border-gray-300 px-1 text-[10px] focus:outline-none focus:border-teal-500 bg-white"
@@ -7062,3 +7059,4 @@ function PackageAddonDialog({
     </div>
   );
 }
+
