@@ -2,7 +2,7 @@
 id: T-20260523-foot-FORM-TEMPLATE-REGEN
 domain: foot
 priority: P1
-status: deploy-ready
+status: deployed
 deploy-ready: true
 build-ok: true
 db-change: false
@@ -10,17 +10,17 @@ spec-added: true
 spec-exempt: false
 rollback-sql: ""
 commit_sha: f398fe3
-qa_result: ""
-qa_grade: ""
-deployed_at: ""
+qa_result: pass
+qa_grade: Green
+deployed_at: "2026-05-23T19:03:49+09:00"
 deploy_commit: f398fe3
-bundle_hash: ""
-field_soak_until: ""
+bundle_hash: index-D-Vk4yUa
+field_soak_until: "2026-05-24T19:03:49+09:00"
 created: 2026-05-23 15:25
 completed: 2026-05-23 19:05
 deadline: 2026-05-24
 assignee: dev-foot
-reporter_slack_id: null
+reporter_slack_id: U0ATDB587PV
 slack_channel: C0ATE5P6JTH
 related_tickets:
   - T-20260522-foot-PENCHART-ERASER-CLARITY
