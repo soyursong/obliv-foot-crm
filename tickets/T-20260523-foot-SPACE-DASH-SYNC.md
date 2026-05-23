@@ -2,7 +2,7 @@
 ticket_id: T-20260523-foot-SPACE-DASH-SYNC
 title: "공간배정 → 대시보드 슬롯 자동 연동 (마지막 저장 carry-over)"
 domain: foot
-status: deploy-ready
+status: deployed
 priority: P2
 created_at: 2026-05-23
 updated_at: 2026-05-24
@@ -14,6 +14,14 @@ affected_files:
   - src/pages/Dashboard.tsx
   - src/pages/Staff.tsx
   - tests/e2e/T-20260523-foot-SPACE-DASH-SYNC.spec.ts
+qa_result: pass
+qa_grade: Green
+deployed_at: 2026-05-24T09:40:00+09:00
+deploy_commit: c65bf0f32579faf48f39c9f1d539f7f359b32ff2
+bundle_hash: Dashboard-CqIGSXMe
+field_soak_until: 2026-05-25T09:40:00+09:00
+precheck_pass: true
+precheck_at: 2026-05-24T09:40:00+09:00
 ---
 
 ## 개요
