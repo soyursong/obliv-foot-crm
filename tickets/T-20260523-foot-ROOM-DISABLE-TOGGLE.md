@@ -2,16 +2,22 @@
 id: T-20260523-foot-ROOM-DISABLE-TOGGLE
 domain: foot
 priority: P2
-status: deploy-ready
+status: deployed
 deploy_ready: true
 deploy_ready_at: "2026-05-24 17:00 KST"
-fix_commit: null
+fix_commit: c7662bb
 build_status: OK
-build_time: 3.14s
+build_time: 3.24s
 db_change: true
 db_migration: supabase/migrations/20260524010000_daily_room_status.sql
 db_migration_down: supabase/migrations/20260524010000_daily_room_status.down.sql
 e2e_spec: tests/e2e/T-20260523-foot-ROOM-DISABLE-TOGGLE.spec.ts
+qa_result: pass
+qa_grade: Yellow
+deployed_at: "2026-05-24T04:06:16+09:00"
+deploy_commit: 53ea0ebe942c86f2ac3747f57e7f579c12947fe1
+bundle_hash: BnV8Af6e
+field_soak_until: "2026-05-25T04:06:16+09:00"
 ---
 
 # T-20260523-foot-ROOM-DISABLE-TOGGLE — 대시보드 슬롯 방별 비활성화 토글
