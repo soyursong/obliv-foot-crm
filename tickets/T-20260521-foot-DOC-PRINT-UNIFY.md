@@ -1,21 +1,22 @@
 ---
 ticket_id: T-20260521-foot-DOC-PRINT-UNIFY
 title: 서류 출력 통일 QA — 12종+ × 4경로 전부 검증
-status: deployed
+status: deploy-ready
 priority: P1
 domain: foot
 deploy_ready: true
 db_changed: false
-build_status: "✅ 3.14s"
-e2e_spec: "tests/e2e/T-20260521-foot-DOC-PRINT-UNIFY.spec.ts (56/56 pass)"
-commit: "1e8bd3d feat(doc-print): 서류 출력 경로 통일 + E2E 락"
-deploy_commit: "9b0c36bd590b8d1afb186ae676607cf4ed37fb30"
+build_status: "✅ 빌드 확인 필요 (AC-6 stamp 복구)"
+e2e_spec: "tests/e2e/T-20260521-foot-DOC-PRINT-UNIFY.spec.ts (§10 AC-6 8개 추가)"
+commit: "6a27ccd fix(foot): T-20260521-foot-DOC-PRINT-UNIFY AC-6 — 진료비 영수증 재발급 stamp 오버레이 복구"
+deploy_commit: "6a27ccd"
 deployed_at: "2026-05-21T23:36:00+09:00"
 created_at: 2026-05-21
-qa_result: pass
-qa_grade: Green
-bundle_hash: "index-5ldOfAps.js"
-field_soak_until: "2026-05-22T23:36:00+09:00"
+ac6_stamp_fix_at: "2026-05-23"
+qa_result: pending
+qa_grade: pending
+bundle_hash: ""
+field_soak_until: ""
 ---
 
 ## 배경
