@@ -481,10 +481,15 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
       };
 
       // 출력
+      // AC-6: stamp 오버레이 복구 — DOC-PRINT-UNIFY 리팩토링 중 탈락된 stamp 렌더링 재삽입
       const htmlTpl = getHtmlTemplate('bill_receipt');
       if (htmlTpl) {
         const bound = bindHtmlTemplate(htmlTpl, bindValues);
-        const pageHtml = `<div class="page">${bound}</div>`;
+        const stampUrl = getStampUrl();
+        const stampOverlay = stampUrl
+          ? `<img src="${stampUrl}" alt="원내 도장" style="position:absolute;right:52px;bottom:52px;width:88px;height:88px;opacity:0.85;pointer-events:none;" onerror="this.style.display='none'" />`
+          : '';
+        const pageHtml = `<div class="page">${bound}${stampOverlay}</div>`;
         const w = openBatchPrintWindow([pageHtml], `진료비 영수증 재발급 — ${checkIn.customer_name}`);
         if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
       }
