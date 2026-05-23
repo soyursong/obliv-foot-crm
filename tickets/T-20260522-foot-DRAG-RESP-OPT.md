@@ -157,3 +157,23 @@ const handleCardContext = useCallback((ci, e) => { ... }, []);
 ---
 
 *담당: dev-foot · 2026-05-22*
+
+---
+
+## Supervisor 재검증 — 2026-05-24T05:10+09:00
+
+| 항목 | 결과 | 비고 |
+|------|------|------|
+| Phase 1 빌드 | ✅ PASS | `✓ built in 3.18s` (HEAD c65bf0f) |
+| AC-1 TouchSensor distance | ✅ `distance: 5` | L.2817 grep 확인 |
+| AC-2 React.memo + TickCtx | ✅ 코드 존재 | L.137 TickCtx, L.297 memo, L.314 useContext(TickCtx) |
+| AC-3 touchAction manipulation | ✅ L.689 확인 | DroppableColumn style 존재 |
+| AC-2 handleCardContext useCallback | ✅ L.3891 | deps `[]` — setContextMenu(stable) 전용, stale closure 없음 |
+| DB 변경 | N/A | `db_migration: false` |
+| Phase 1.5 env 매트릭스 | ✅ PASS | VITE_SUPABASE_URL/ANON_KEY만 사용, bundle grep `rxlomoozakkjesdqjtvd.supabase.co` 매치 |
+| Runtime Safety Gate (§7.5) | ✅ PASS | 신규 diff = memo/TickCtx/useCallback/touchAction/distance 조정만. `Object.values()` 직접 접근 패턴 없음 |
+| E2E spec | ✅ 13/13 PASS (8.2s) | `tests/e2e/T-20260522-foot-DRAG-RESP-OPT.spec.ts` |
+| 브라우저 시뮬 | ✅ white-screen 없음 | HTTP 200, 로그인 화면 정상 렌더 |
+| Field Soak | ✅ 완료 | `field_soak_until` 2026-05-23T11:24+09:00 경과 |
+
+**판정: Green GO ✅ — 전항목 PASS. 기존 배포(2026-05-22T11:24+09:00) 및 frontmatter 유효.**
