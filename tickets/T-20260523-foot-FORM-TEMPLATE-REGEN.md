@@ -2,7 +2,7 @@
 id: T-20260523-foot-FORM-TEMPLATE-REGEN
 domain: foot
 priority: P2
-status: deploy-ready
+status: deployed
 deploy-ready: true
 build-ok: true
 db-change: false
@@ -11,6 +11,12 @@ spec-exempt: true
 spec_exempt_reason: "이미지 에셋 교체만 — 코드 로직 변경 없음. bgCanvas 크기 버그(주석 전용 수정 포함)는 기존 spec으로 커버."
 rollback-sql: ""
 commit_sha: c5edb46
+qa_result: pass
+qa_grade: Green
+deployed_at: "2026-05-23T16:20:48+09:00"
+deploy_commit: c5edb46
+bundle_hash: index-BFgLHliU
+field_soak_until: "2026-05-24T16:20:00+09:00"
 created: 2026-05-23 15:25
 completed: 2026-05-23 15:51
 deadline: 2026-05-29
