@@ -37,6 +37,7 @@ import {
   ChevronRight,
   Clock,
   CreditCard,
+  EyeOff,
   GripVertical,
   LayoutGrid,
   Minus,
@@ -728,6 +729,9 @@ function RoomSlot({
   therapists,
   currentStaffId,
   onTherapistChange,
+  isInactive,
+  canToggle,
+  onToggle,
 }: {
   roomName: string;
   roomType: string;
@@ -741,6 +745,10 @@ function RoomSlot({
   therapists?: Staff[];
   currentStaffId?: string | null;
   onTherapistChange?: (roomName: string, staffId: string | null, staffName: string | null) => void;
+  // T-20260523-foot-ROOM-DISABLE-TOGGLE
+  isInactive?: boolean;
+  canToggle?: boolean;
+  onToggle?: () => void;
 }) {
   const dropId = `room:${roomName}`;
   const isFull = occupants.length >= maxOccupancy;
@@ -758,24 +766,39 @@ function RoomSlot({
       data-droppable-id={dropId}
       data-room-name={roomName}
       data-room-type={roomType}
+      data-inactive={isInactive ? 'true' : undefined}
       className={cn(
-        'rounded-lg border bg-white/60 p-1.5 min-h-[70px] transition-colors',
-        isOver && !isFull && 'border-teal-400 bg-teal-50/50',
-        isOver && isFull && 'border-red-400 bg-red-50/30 opacity-60',
-        isEmpty && !isOver && 'border-dashed border-gray-200',
-        !isEmpty && !isOver && !isFull && 'border-gray-300',
-        isFull && !isOver && 'border-red-200',
+        'rounded-lg border bg-white/60 p-1.5 min-h-[70px] transition-colors relative',
+        isInactive && 'opacity-50 bg-gray-100/60 border-dashed border-gray-300',
+        !isInactive && isOver && !isFull && 'border-teal-400 bg-teal-50/50',
+        !isInactive && isOver && isFull && 'border-red-400 bg-red-50/30 opacity-60',
+        !isInactive && isEmpty && !isOver && 'border-dashed border-gray-200',
+        !isInactive && !isEmpty && !isOver && !isFull && 'border-gray-300',
+        !isInactive && isFull && !isOver && 'border-red-200',
         // T-20260520-foot-LASER-C5-COLOR: C5 보라색 테두리 (공간배정 border-purple-400 동일, AC-1·AC-3)
-        isC5 && !isOver && 'border-2 border-purple-400',
+        !isInactive && isC5 && !isOver && 'border-2 border-purple-400',
       )}
     >
       <div className="flex items-center justify-between px-1 mb-1 gap-1">
-        <span className="text-xs font-semibold text-gray-600 shrink-0">
+        <span className={cn('text-xs font-semibold shrink-0', isInactive ? 'text-gray-400' : 'text-gray-600')}>
           {roomName}
           {/* T-20260520-foot-LASER-C5-COLOR: C5 원장실 라벨 — Staff.tsx와 동일 (AC-1) */}
-          {isC5 && <span className="ml-1 text-[10px] text-purple-600 font-normal">원장실</span>}
+          {isC5 && !isInactive && <span className="ml-1 text-[10px] text-purple-600 font-normal">원장실</span>}
         </span>
-        {showStaffDropdown && (
+        {/* T-20260523-foot-ROOM-DISABLE-TOGGLE AC-1: 비활성 뱃지 */}
+        {isInactive && (
+          <span className="text-[10px] text-gray-400 flex items-center gap-0.5 shrink-0">
+            <EyeOff className="h-3 w-3" />
+            비활성
+          </span>
+        )}
+        {/* T-20260523-foot-ROOM-DISABLE-TOGGLE AC-4: 비활성 방에 기존 예약 존재 시 경고 */}
+        {isInactive && occupants.length > 0 && (
+          <span className="text-[10px] text-amber-600 font-medium shrink-0" title="비활성 방에 배정된 환자가 있습니다">
+            ⚠️ {occupants.length}명
+          </span>
+        )}
+        {!isInactive && showStaffDropdown && (
           <select
             value={currentStaffId ?? ''}
             onChange={(e) => {
@@ -792,13 +815,13 @@ function RoomSlot({
             ))}
           </select>
         )}
-        {showStaffLabel && (
+        {!isInactive && showStaffLabel && (
           <span className="text-xs text-muted-foreground flex items-center gap-0.5">
             <User className="h-2.5 w-2.5" />
             {staffName}
           </span>
         )}
-        {occupants.length > 0 && (
+        {!isInactive && occupants.length > 0 && (
           <span className={cn(
             'text-[10px] tabular-nums',
             isFull ? 'text-red-600 font-medium' : 'text-muted-foreground',
@@ -806,8 +829,23 @@ function RoomSlot({
             {occupants.length}/{maxOccupancy}
           </span>
         )}
+        {/* T-20260523-foot-ROOM-DISABLE-TOGGLE AC-1/6: 토글 버튼 (admin/manager만) */}
+        {canToggle && onToggle && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggle(); }}
+            title={isInactive ? '방 활성화' : '방 비활성화 (당일 한정)'}
+            className={cn(
+              'ml-auto shrink-0 rounded px-1 py-0.5 text-[10px] font-medium border transition',
+              isInactive
+                ? 'border-teal-300 text-teal-600 hover:bg-teal-50'
+                : 'border-gray-200 text-gray-400 hover:text-gray-600 hover:bg-gray-50',
+            )}
+          >
+            {isInactive ? '활성화' : '끄기'}
+          </button>
+        )}
       </div>
-      <div className="space-y-1">
+      <div className={cn('space-y-1', isInactive && 'pointer-events-none')}>
         {occupants.map((ci, i) => (
           <div key={ci.id} style={{ opacity: i === 0 ? 1 : 0.7 }}>
             <DraggableCard checkIn={ci} compact stageStart={getStageStart?.(ci)} packageLabel={getPkgLabel?.(ci)} onClick={() => onCardClick(ci)} onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined} />
@@ -927,6 +965,9 @@ function RoomSection({
   getPkgLabel,
   therapists,
   onTherapistChange,
+  inactiveRooms,
+  canToggle,
+  onToggleRoom,
 }: {
   title: string;
   color: string;
@@ -943,6 +984,10 @@ function RoomSection({
   getPkgLabel?: (ci: CheckIn) => PackageLabel | null;
   therapists?: Staff[];
   onTherapistChange?: (roomName: string, staffId: string | null, staffName: string | null) => void;
+  // T-20260523-foot-ROOM-DISABLE-TOGGLE
+  inactiveRooms?: Set<string>;
+  canToggle?: boolean;
+  onToggleRoom?: (roomName: string) => void;
 }) {
   const getRoomOccupants = (roomName: string): CheckIn[] => {
     const field = ROOM_FIELD_MAP[roomType];
@@ -1005,6 +1050,9 @@ function RoomSection({
             therapists={therapists}
             currentStaffId={getStaffId(room.name)}
             onTherapistChange={onTherapistChange}
+            isInactive={inactiveRooms?.has(room.name)}
+            canToggle={canToggle}
+            onToggle={onToggleRoom ? () => onToggleRoom(room.name) : undefined}
           />
         ))}
       </div>
@@ -2371,6 +2419,10 @@ export default function Dashboard() {
   const [rows, setRows] = useState<CheckIn[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [assignments, setAssignments] = useState<RoomAssignment[]>([]);
+  // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-A1: 공간배정 carry-over 여부 (마지막 저장 데이터 표시 중)
+  const [assignCarryOver, setAssignCarryOver] = useState<string | null>(null); // 마지막 저장 날짜 문자열 or null
+  // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-B1: 당일 비활성 방 이름 집합
+  const [inactiveRooms, setInactiveRooms] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState<CheckIn | null>(null);
   const [openNew, setOpenNew] = useState(false);
@@ -2788,7 +2840,7 @@ export default function Dashboard() {
   const fetchAssignments = useCallback(async () => {
     if (!clinic) return;
     // T-20260522-foot-PERF-TUNING OPT-5: select('*') → 필요 컬럼만 (페이로드 축소)
-    // T-20260523-foot-SPACE-DASH-SYNC AC-1,2,3: 당일 배정 없으면 마지막 저장 carry-over
+    // T-20260523-foot-SPACE-DASH-SYNC AC-1,2,3 (정정 2026-05-24): 당일 배정 없으면 마지막 저장 carry-over
     const { data: todayData } = await supabase
       .from('room_assignments')
       .select('id, clinic_id, date, room_name, room_type, staff_id, staff_name')
@@ -2796,18 +2848,22 @@ export default function Dashboard() {
       .eq('date', dateStr);
     if (todayData && todayData.length > 0) {
       setAssignments(todayData as RoomAssignment[]);
+      setAssignCarryOver(null); // 당일 데이터 → carry-over 아님
       return;
     }
-    // 당일 배정 없음 → 가장 최근 저장된 날짜의 배정 fallback (전날 한정 아님 — MAX(date) 기준)
+    // 당일 배정 없음 → 가장 최근 저장된 배정 fallback.
+    // "전날" 하드코딩 금지 — MAX(created_at) 기준 최신 레코드 조회 (saved_at 프록시).
+    // 예: 월요일 저장 → 화·수 미저장 → 수요일 대시보드에 월요일 저장 데이터 표시
     const { data: maxRow } = await supabase
       .from('room_assignments')
-      .select('date')
+      .select('date, created_at')
       .eq('clinic_id', clinic.id)
-      .order('date', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
     if (!maxRow) {
       setAssignments([]);
+      setAssignCarryOver(null);
       return;
     }
     const { data: lastData } = await supabase
@@ -2816,7 +2872,59 @@ export default function Dashboard() {
       .eq('clinic_id', clinic.id)
       .eq('date', maxRow.date);
     setAssignments((lastData ?? []) as RoomAssignment[]);
+    // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-A1: carry-over 인디케이터 — 마지막 저장 날짜 표시
+    setAssignCarryOver(maxRow.date);
   }, [clinic, dateStr]);
+
+  // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-B1: 당일 비활성 방 로드
+  const fetchInactiveRooms = useCallback(async () => {
+    if (!clinic) return;
+    const { data } = await supabase
+      .from('daily_room_status')
+      .select('room_name, is_active')
+      .eq('clinic_id', clinic.id)
+      .eq('date', dateStr)
+      .eq('is_active', false);
+    const names = new Set<string>((data ?? []).map((r: { room_name: string }) => r.room_name));
+    setInactiveRooms(names);
+  }, [clinic, dateStr]);
+
+  // T-20260523-foot-ROOM-DISABLE-TOGGLE AC-1/2/3/6
+  // admin/manager만 토글 가능. 당일 한정(dateStr=today만 활성).
+  // 낙관적 UI → DB upsert → 실패 시 롤백 + refetch
+  const handleToggleRoom = useCallback(async (roomName: string) => {
+    if (!clinic) return;
+    const nowActive = !inactiveRooms.has(roomName); // 현재 active → disable, inactive → activate
+    // AC-3: 오늘 날짜 기준만 토글 (과거 날짜에서는 토글 버튼 자체가 숨겨져 있음)
+    // 낙관적 업데이트
+    setInactiveRooms((prev) => {
+      const next = new Set(prev);
+      if (nowActive) {
+        next.add(roomName); // active → inactive
+      } else {
+        next.delete(roomName); // inactive → active
+      }
+      return next;
+    });
+    const { error } = await supabase
+      .from('daily_room_status')
+      .upsert(
+        {
+          clinic_id: clinic.id,
+          date: dateStr,
+          room_name: roomName,
+          is_active: !nowActive, // nowActive=true이면 비활성화(false), 반대는 활성화(true)
+        },
+        { onConflict: 'clinic_id,date,room_name' },
+      );
+    if (error) {
+      toast.error(`방 상태 변경 실패: ${error.message}`);
+      // 롤백
+      await fetchInactiveRooms();
+      return;
+    }
+    toast.success(nowActive ? `${roomName} 비활성화 (당일 한정)` : `${roomName} 활성화`);
+  }, [clinic, dateStr, inactiveRooms, fetchInactiveRooms]);
 
   const fetchCheckIns = useCallback(async () => {
     if (!clinic) return;
@@ -3149,6 +3257,7 @@ export default function Dashboard() {
     fetchCheckIns();
     fetchRooms();
     fetchAssignments();
+    fetchInactiveRooms(); // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-B1
     fetchPayments();
     fetchTimelineReservations();
     fetchSelfCheckIns();
@@ -3156,7 +3265,7 @@ export default function Dashboard() {
     fetchPackageLabels();
     fetchAllStaff();
     fetchAltHolders();
-  }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchPayments, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts, fetchPackageLabels, fetchAllStaff, fetchAltHolders]);
+  }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchInactiveRooms, fetchPayments, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts, fetchPackageLabels, fetchAllStaff, fetchAltHolders]);
 
   // T-20260515-foot-PAYMENT-MINI-WINDOW AC-7: rows 변경 시 수납대기 pending 금액 갱신
   useEffect(() => {
@@ -4347,6 +4456,8 @@ export default function Dashboard() {
 
   const isToday = isSameDay(date, new Date());
   const isPast = date < new Date(new Date().setHours(0, 0, 0, 0));
+  // T-20260523-foot-ROOM-DISABLE-TOGGLE AC-6: admin/manager만 + 오늘만 토글 허용
+  const canToggleRoom = isToday && (profile?.role === 'admin' || profile?.role === 'manager');
 
   const doneCount = (byStatus['done'] ?? []).length;
   const totalActive = filtered.filter((r) => r.status !== 'done').length;
@@ -4425,6 +4536,9 @@ export default function Dashboard() {
                 getPkgLabel={getPkgLabel}
                 therapists={doctors}
                 onTherapistChange={handleDoctorChange}
+                inactiveRooms={inactiveRooms}
+                canToggle={canToggleRoom}
+                onToggleRoom={handleToggleRoom}
               />
             ) : (
               <div className="text-xs font-bold px-2 py-1 rounded-t-lg bg-violet-100 text-violet-800">진료</div>
@@ -4557,6 +4671,9 @@ export default function Dashboard() {
                           therapists={consultants}
                           currentStaffId={roomStaff?.staff_id ?? null}
                           onTherapistChange={handleConsultantChange}
+                          isInactive={inactiveRooms.has(room.name)}
+                          canToggle={canToggleRoom}
+                          onToggle={() => handleToggleRoom(room.name)}
                         />
                         {/* 배치편집 모드: 기본 슬롯=잠금, 커스텀 슬롯=삭제 버튼 */}
                         {slotBatchEditMode && isToday && (
@@ -4700,6 +4817,9 @@ export default function Dashboard() {
               getPkgLabel={getPkgLabel}
               therapists={therapists}
               onTherapistChange={handleTherapistChange}
+              inactiveRooms={inactiveRooms}
+              canToggle={canToggleRoom}
+              onToggleRoom={handleToggleRoom}
             />
           </div>
         );
@@ -4795,6 +4915,9 @@ export default function Dashboard() {
               getPkgLabel={getPkgLabel}
               therapists={therapists.filter(s => s.role === 'technician')}
               onTherapistChange={handleLaserTechChange}
+              inactiveRooms={inactiveRooms}
+              canToggle={canToggleRoom}
+              onToggleRoom={handleToggleRoom}
             />
           </div>
         ) : null;
@@ -4812,6 +4935,8 @@ export default function Dashboard() {
     handleDoctorChange, handleConsultantChange, handleTherapistChange, handleHeatedLaserDoctorChange, handleLaserTechChange,
     slotBatchEditMode, defaultConsultRoomIds, handleAddConsultSlot, handleDeleteConsultSlot,
     setAddConsultSlotName, setAddConsultSlotOpen, setSlotBatchEditMode,
+    // T-20260523-foot-ROOM-DISABLE-TOGGLE
+    inactiveRooms, canToggleRoom, handleToggleRoom,
   ]);
 
   // T-20260510-foot-DASH-DUAL-HSCROLL v2: overflow-hidden — Dashboard 자체 가로 팽창 격리
@@ -4856,6 +4981,12 @@ export default function Dashboard() {
             <Button variant="ghost" size="sm" onClick={() => setDate(new Date())}>
               오늘로
             </Button>
+          )}
+          {/* T-20260523-foot-SPACE-DASH-AUTOSYNC AC-A1: 공간배정 carry-over 인디케이터 */}
+          {assignCarryOver && (
+            <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5" title={`공간배정: ${assignCarryOver} 데이터 적용 중`}>
+              배정 carry-over ({assignCarryOver})
+            </span>
           )}
         </div>
 
