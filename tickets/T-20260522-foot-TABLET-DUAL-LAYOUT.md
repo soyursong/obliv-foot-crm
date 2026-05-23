@@ -10,7 +10,7 @@ qa_result: pass
 qa_grade: Green
 deployed_at: "2026-05-22T05:19:42+09:00"
 deploy_commit: ec5dfb6f09071c25e695a78e97ed9e767c51ee31
-bundle_hash: CEKBe316
+bundle_hash: DEXomt-X
 field_soak_until: "2026-05-23T05:19:42+09:00"
 field_validation_slack_ts: "1779394877.098519"
 ---
@@ -69,3 +69,20 @@ field_validation_slack_ts: "1779394877.098519"
 
 **판정: GO — Green**
 - origin/main `ec5dfb6` 포함 배포 완료 (Vercel 자동 배포, 운영 bundle `index-CEKBe316.js` 확인)
+
+## re-QA 재검증 (2026-05-23)
+
+field_soak_until 경과(05:19) 후 재검증 요청. 전항목 재확인.
+
+| 항목 | 결과 | 비고 |
+|------|------|------|
+| 빌드 | ✅ PASS | npm run build 3.25s exit 0 |
+| Phase 1.5 env 매트릭스 | ✅ PASS | 운영 bundle `index-DEXomt-X.js` — `https://rxlomoozakkjesdqjtvd.supabase.co` 매치 확인 |
+| Runtime Safety Gate | ✅ PASS | useOrientation/Dashboard/AdminLayout 신규 코드 null-access 없음 |
+| E2E 18/18 | ✅ PASS | 8.4s — 기존 spec 회귀 없음 |
+| 브라우저 시뮬레이션 | ✅ PASS | 운영 URL 정상 로드 (로그인 화면 렌더, white-screen 없음, auth 리다이렉트 정상) |
+| Cross-CRM Contract | ✅ N/A | db_changed: false |
+
+**재판정: GO — Green 유지**
+- 운영 bundle `DEXomt-X` (이후 타 티켓 커밋으로 해시 갱신, orientation 코드 포함 확인)
+- field_soak 경과 17h. 🔴 반응 없음. 48h 자동 done 대기 (2026-05-24T05:19:42+09:00)
