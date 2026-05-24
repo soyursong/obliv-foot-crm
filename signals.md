@@ -2745,3 +2745,4 @@ ref: T-20260512-foot-TREATMENT-SET
 | 2026-05-24 23:00 | dev-foot | idle-scan | 자율 탐색 완료(2차). MQ 전건 done(0 pending). foot open/approved 티켓 0건. deploy-ready 대기 2건(LASER-TIMER P2/ROOM-DISABLE-TOGGLE P2) — supervisor QA 대기 중(dev-foot 역할 완료). 빌드 ✓ 3.16s. TODO/FIXME 유의미 항목 없음. 신규 작업 0건. |
 
 | 2026-05-24 21:19 | dev-foot | deploy-ready | T-20260522-foot-RESV-PKG-HISTORY [P2 FIX-REQUEST AC-R1]: 시술내역 치료사 컬럼 추가 (4→5컬럼). 코드: bb44f1c (T-20260524-foot-RESV-TREAT-REFORMAT에서 이미 구현됨). spec 업데이트(S1 5컬럼 헤더 체크 + S4 AC-R1 전용). 티켓 파일 신규 생성. DB변경: 없음. 빌드: OK. |
+| 2026-05-24T22:02:00+09:00 | supervisor | qa-pass + deployed | T-20260524-foot-DESIG-SAVE-ERR [P1]: Yellow GO. 지정 치료사 저장 에러 수정 — save_designated_therapist RPC 미생성 → REST UPDATE 전환 4곳. Build exit 0 3.34s. Runtime Safety PASS(updatedRows null guard). RLS PASS(customers_coord/consult_update). env vars: 신규 없음. bundle CustomerChartPage-D9WfDI1N (로컬=운영 동일). commit d4a0a66. Field Soak until 2026-05-25T22:02:00+09:00. |
