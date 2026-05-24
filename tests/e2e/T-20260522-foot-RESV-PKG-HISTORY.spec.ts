@@ -6,10 +6,12 @@
  * AC-2: 데이터 소스 = packages + package_sessions (신규 DB 불필요)
  * AC-3: 시술내역 없는 고객은 "시술내역 없음" 안내 표시
  * AC-4: 태블릿(SM-X400) 해상도(1200×800)에서 팝업 레이아웃 유지
+ * AC-R1: 시술내역 표시를 5컬럼으로 — 패키지명/회차/치료명/치료사/시술일 (FIX-20260524)
  *
- * 시나리오 1: 재진 예약 → 시술내역 있는 고객 선택 → 패키지 시술내역 표시
+ * 시나리오 1: 재진 예약 → 시술내역 있는 고객 선택 → 패키지 시술내역 표시 (5컬럼)
  * 시나리오 2: 재진 예약 → 시술내역 없는 고객 선택 → "시술내역 없음" 안내
  * 시나리오 3: 태블릿 해상도에서 팝업 레이아웃 확인
+ * 시나리오 4: AC-R1 — 치료사 컬럼 렌더 (performed_by null → "—" fallback)
  *
  * 비고: 구현은 T-20260522-foot-RESV-TREAT-HISTORY(878c79b)와 동일.
  *       본 티켓은 티켓 파일 누락 보정 — 동일 기능을 다른 티켓 ID로 검증.
@@ -175,10 +177,11 @@ test.describe('T-20260522-foot-RESV-PKG-HISTORY', () => {
       .waitFor({ state: 'hidden', timeout: 10_000 })
       .catch(() => {});
 
-    // AC-1: 4컬럼 헤더
+    // AC-1 + AC-R1: 5컬럼 헤더 (패키지명/회차/치료명/치료사/시술일)
     await expect(panel).toContainText('패키지명');
     await expect(panel).toContainText('회차');
     await expect(panel).toContainText('치료명');
+    await expect(panel).toContainText('치료사');
     await expect(panel).toContainText('시술일');
 
     // AC-2: 데이터 rows — 패키지명 + 회차 형식 N/M
@@ -254,5 +257,34 @@ test.describe('T-20260522-foot-RESV-PKG-HISTORY', () => {
     if (saveBtnBox) {
       expect(saveBtnBox.x + saveBtnBox.width).toBeLessThanOrEqual(1210);
     }
+  });
+
+  // ── S4: AC-R1 — 치료사 컬럼 렌더 (performed_by null → "—" fallback) ──
+  test('S4: AC-R1 — 시술내역 5컬럼, 치료사 헤더 존재 + fallback "—" 렌더', async ({ page }) => {
+    const suffix = Date.now().toString().slice(-7);
+    const customerName = `치료사컬럼_PKG_${suffix}`;
+    const cid = await createTestCustomer(sb, customerName);
+    toCleanup.push(cid);
+    // performed_by 없는 세션 생성 → therapist_name "—" fallback
+    await createTestPackageWithSessions(sb, cid, '치료사테스트패키지', 2);
+
+    await loginAdmin(page);
+    await openNewReservationEditor(page);
+    await selectCustomerInEditor(page, customerName);
+
+    const panel = page.locator('[data-testid="treat-history-panel"]');
+    await panel.waitFor({ timeout: 10_000 });
+    await page
+      .locator('[data-testid="treat-history-loading"]')
+      .waitFor({ state: 'hidden', timeout: 10_000 })
+      .catch(() => {});
+
+    // AC-R1: 5컬럼 헤더에 "치료사" 존재
+    await expect(panel).toContainText('치료사');
+
+    // AC-R1: row에 치료사 fallback "—" 렌더 (performed_by null)
+    const firstRow = panel.locator('[data-testid^="treat-history-row-"]').first();
+    await firstRow.waitFor({ timeout: 5_000 });
+    await expect(firstRow).toContainText('—');
   });
 });
