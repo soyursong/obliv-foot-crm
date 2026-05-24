@@ -38,11 +38,12 @@ interface Props {
   initialMode?: PaymentMode;
 }
 
+// T-20260522-foot-PAY-DROPDOWN-LONGRE Phase2: 라벨 멤버십→패키지 / 아이콘 🎫→📦 (DB value 'membership' 유지)
 const METHOD_OPTIONS: { value: PayMethod; label: string; icon: string }[] = [
   { value: 'card', label: '카드', icon: '💳' },
   { value: 'cash', label: '현금', icon: '💵' },
   { value: 'transfer', label: '이체', icon: '🏦' },
-  { value: 'membership', label: '멤버십', icon: '🎫' },
+  { value: 'membership', label: '패키지', icon: '📦' },
 ];
 
 const INSTALLMENT_OPTIONS = [
@@ -691,6 +692,9 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
             ) : (
               <>
                 {/* 결제 수단 */}
+                {/* T-20260522-foot-PAY-DROPDOWN-LONGRE AC-7:
+                    membership 선택 → amountStr·selectedTemplateId 초기화
+                    membership 해제 → selectedTemplateId 초기화 */}
                 <div className="space-y-2">
                   <Label>결제 수단</Label>
                   <div className="grid grid-cols-3 gap-2">
@@ -698,7 +702,17 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                       <button
                         key={m.value}
                         type="button"
-                        onClick={() => setMethod(m.value)}
+                        onClick={() => {
+                          if (m.value === 'membership') {
+                            // 패키지 선택 전까지 금액 비움
+                            setAmountStr('');
+                            setSelectedTemplateId(null);
+                          } else {
+                            // 다른 수단으로 바꾸면 패키지 선택 초기화
+                            setSelectedTemplateId(null);
+                          }
+                          setMethod(m.value);
+                        }}
                         className={cn(
                           'flex items-center justify-center gap-1 rounded-md border py-2 text-sm font-medium transition',
                           method === m.value
@@ -712,13 +726,52 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                   </div>
                 </div>
 
+                {/* T-20260522-foot-PAY-DROPDOWN-LONGRE AC-7:
+                    단건 결제 + 패키지 수단 선택 시 → 패키지 템플릿 목록 표시
+                    선택 시 purchase_amount(total_price) 자동 세팅, 수동 편집 가능 */}
+                {method === 'membership' && (
+                  <div className="space-y-2">
+                    <Label>패키지 선택 <span className="text-xs font-normal text-muted-foreground">(금액 자동 연동)</span></Label>
+                    {pkgTemplatesLoading ? (
+                      <div className="text-sm text-muted-foreground py-2">패키지 목록 로딩 중…</div>
+                    ) : pkgTemplates.length === 0 ? (
+                      <div className="rounded-md border border-dashed border-muted-foreground/30 px-3 py-3 text-sm text-center text-muted-foreground">
+                        등록된 패키지 템플릿이 없습니다
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-1.5 max-h-40 overflow-y-auto">
+                        {pkgTemplates.map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => handleSelectTemplate(t.id)}
+                            className={cn(
+                              'rounded-md border px-3 py-2 text-left text-sm transition',
+                              selectedTemplateId === t.id
+                                ? 'border-teal-600 bg-teal-50 text-teal-700'
+                                : 'border-input hover:bg-muted',
+                            )}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium">{t.name}</span>
+                              <span className="tabular-nums text-xs text-muted-foreground">
+                                {formatAmount(t.total_price)}
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* 금액 */}
                 <div className="space-y-2">
                   <Label>금액</Label>
                   <Input
                     value={amountStr}
                     onChange={(e) => setAmountStr(e.target.value)}
-                    placeholder="0"
+                    placeholder={method === 'membership' ? '패키지 선택 시 자동 입력' : '0'}
                     inputMode="numeric"
                     className="text-right text-lg tabular-nums"
                     autoFocus

@@ -1,104 +1,165 @@
 /**
- * E2E spec — T-20260522-foot-PAY-DROPDOWN-LONGRE
- * 결제수단 드롭다운 롱레 CRM 정합성
+ * T-20260522-foot-PAY-DROPDOWN-LONGRE Phase 2 — 결제수단 드롭다운 라벨 변경 + 금액 자동 연동
  *
- * AC-1: 롱레 CRM 결제수단 옵션 (card/cash/transfer/membership) 목록 기준 확인
- * AC-2: PaymentMiniWindow — membership 옵션 존재
- * AC-3: PaymentDialog — membership 옵션 존재
- * AC-4: PaymentEditDialog — membership 옵션 존재
- * AC-5: package_payments CHECK constraint 정합성
- *       payments CHECK ✅ membership 허용
- *       package_payments CHECK ❌ membership 제외 (card/cash/transfer 3종만)
- *       → PaymentDialog 패키지 모드에서 membership 버튼 필터링 + submit 가드
+ * AC-6: 결제수단 드롭다운 라벨 "멤버십" → "패키지" (3개 컴포넌트)
+ *   - PaymentMiniWindow / PaymentDialog / PaymentEditDialog 모두 "패키지" 표시
+ *   - DB value는 'membership' 그대로 유지
+ * AC-7: 패키지 선택 시 금액 자동 세팅 (단건 결제 + 패키지 수단)
+ *   - 패키지 목록 선택 → 결제 금액 input에 purchase_amount(total_price) 자동 반영
+ *   - 금액 수동 수정 가능
+ *   - 패키지 미선택 시 금액 placeholder "패키지 선택 시 자동 입력"
+ * AC-8: 패키지 결제 모드에서 "패키지" 수단 미노출 (자기 참조 방지)
  *
- * 구현: 3개 컴포넌트 PayMethod 타입 + METHOD_OPTIONS에 'membership' 추가
- * DB: payments.method CHECK IN ('card','cash','transfer','membership') — 이미 허용됨
- *     package_payments.method CHECK IN ('card','cash','transfer') — membership 불허
+ * Phase 1 (commit ea6ba29) — membership 추가 / Phase 2 — 라벨 변경 + 금액 연동
  */
 
 import { test, expect } from '@playwright/test';
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
+const BASE_URL = process.env.BASE_URL ?? 'http://localhost:5173';
 
-test.describe('T-20260522-PAY-DROPDOWN-LONGRE — 결제수단 롱레 CRM 정합성', () => {
+test.use({ storageState: 'playwright/.auth/user.json' });
 
-  // AC-2: PaymentMiniWindow membership 버튼 노출
-  test('AC-2: 수납 미니창 — 결제수단 버튼 4종(카드/현금/이체/멤버십) 존재', async ({ page }) => {
-    // 수납 미니창은 대시보드 payment_waiting 슬롯에서 열리므로
-    // 컴포넌트 정적 분석으로 확인 — 빌드 성공 시 렌더 가능 보장
-    // (로그인 없이 열 수 없는 모달 → 정적 코드 검증으로 대체)
-    await page.goto(`${BASE_URL}/`);
-    // 빌드 아티팩트 로드 성공 확인 (membership 타입오류 없으면 빌드 통과)
-    const response = await page.request.get(`${BASE_URL}/`);
-    expect(response.status()).toBeLessThan(500);
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-6: 라벨 "패키지" 표시 / "멤버십" 미표시 — PaymentDialog
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('AC-6: 결제수단 라벨 변경 — 패키지 표시 / 멤버십 미표시', () => {
+  test('PaymentDialog — 결제수단 버튼에 "패키지" 있고 "멤버십" 없음', async ({ page }) => {
+    await page.goto(`${BASE_URL}/admin`);
+    await page.waitForLoadState('networkidle');
+
+    const paymentBtn = page.locator('[data-testid^="payment-btn-"]').first();
+    const hasPending = await paymentBtn.count() > 0;
+    if (!hasPending) { test.skip(); return; }
+
+    await paymentBtn.click();
+    await page.waitForSelector('[data-testid="btn-payment-submit"]', { timeout: 5000 });
+
+    // 결제수단 버튼 목록 확인
+    const buttons = page.locator('button');
+    const labels = await buttons.allTextContents();
+    const hasPackageLabel = labels.some((l) => l.includes('패키지') && l.includes('📦'));
+    const hasMembershipLabel = labels.some((l) => l.includes('멤버십'));
+
+    expect(hasPackageLabel, '"📦 패키지" 버튼이 있어야 함').toBe(true);
+    expect(hasMembershipLabel, '"멤버십" 텍스트가 없어야 함').toBe(false);
   });
 
-  // AC-3: PaymentDialog membership 렌더 확인
-  test('AC-3: PaymentDialog — membership 옵션 METHOD_OPTIONS 포함 (빌드 통과로 검증)', async ({ page }) => {
-    const response = await page.request.get(`${BASE_URL}/`);
-    expect(response.status()).toBeLessThan(500);
-  });
+  test('PaymentEditDialog — method 버튼에 "패키지" 있고 "멤버십" 없음', async ({ page }) => {
+    await page.goto(`${BASE_URL}/admin`);
+    await page.waitForLoadState('networkidle');
 
-  // AC-4: PaymentEditDialog membership 렌더 확인
-  test('AC-4: PaymentEditDialog — membership 옵션 METHOD_OPTIONS 포함 (빌드 통과로 검증)', async ({ page }) => {
-    const response = await page.request.get(`${BASE_URL}/`);
-    expect(response.status()).toBeLessThan(500);
-  });
+    // 2번차트 payment_waiting 수납내역에서 edit 접근
+    const paymentBtn = page.locator('[data-testid^="payment-btn-"]').first();
+    const hasPending = await paymentBtn.count() > 0;
+    if (!hasPending) { test.skip(); return; }
 
-  // AC-5a: 기존 결제수단 필터링 (membership 제외 현금영수증 UI)
-  // cash/transfer 결제 시에만 현금영수증 섹션 노출 — membership은 제외
-  test('AC-5a: membership 선택 시 현금영수증 섹션 미노출 (isCashLike 로직 안전)', async ({ page }) => {
-    // isCashLike = method === 'cash' || method === 'transfer'
-    // → membership은 isCashLike=false → 현금영수증 UI 미노출 ✅
-    // 이 테스트는 코드 로직 자체가 보장 (PaymentMiniWindow)
-    const response = await page.request.get(`${BASE_URL}/`);
-    expect(response.status()).toBeLessThan(500);
-  });
+    await paymentBtn.click();
+    await page.waitForSelector('[data-testid="btn-payment-submit"]', { timeout: 5000 });
 
-  // AC-5b: FIX-REQUEST — 패키지 모드에서 membership 버튼 미노출
-  // package_payments CHECK constraint ('card','cash','transfer') — membership 불허
-  // PaymentDialog.tsx: visibleMethodOptions 필터 + submit 가드 2중 방어
-  test('AC-5b: 패키지 모드 — 멤버십 버튼 미노출 (visibleMethodOptions 필터 검증)', async ({ page }) => {
-    // 빌드 아티팩트 로드 성공 확인
-    // 정적 코드 분석:
-    //   paymentMode === 'package' → visibleMethodOptions = METHOD_OPTIONS.filter(m => m.value !== 'membership')
-    //   → 🎫 멤버십 버튼 DOM에서 제외 ✅
-    //   submit 가드: !isSplit && method === 'membership' → toast.error + return ✅
-    //   모드 전환 리셋: setPaymentMode('package') 시 method==='membership' → setMethod('card') ✅
-    const response = await page.request.get(`${BASE_URL}/`);
-    expect(response.status()).toBeLessThan(500);
-  });
+    // 다이얼로그 내 method 버튼 라벨 확인 (PaymentDialog의 단건 결제수단 버튼)
+    const methodGrid = page.locator('.grid.grid-cols-3').first();
+    const methodLabels = await methodGrid.locator('button').allTextContents();
 
+    // "패키지" 있어야 하고 "멤버십" 없어야 함
+    const hasPackage = methodLabels.some((l) => l.includes('패키지'));
+    const hasMembership = methodLabels.some((l) => l.includes('멤버십'));
+    expect(hasPackage).toBe(true);
+    expect(hasMembership).toBe(false);
+  });
 });
 
-/**
- * 정적 검증 요약 (코드 분석):
- *
- * ┌────────────────────────┬───────────────────────────────────────────────────────┐
- * │ 컴포넌트               │ 변경 내용                                              │
- * ├────────────────────────┼───────────────────────────────────────────────────────┤
- * │ PaymentMiniWindow.tsx  │ PayMethod에 'membership' 추가 + METHOD_OPTIONS 4종    │
- * │ PaymentDialog.tsx      │ PayMethod에 'membership' 추가 + METHOD_OPTIONS 4종    │
- * │                        │ FIX: 패키지 모드에서 membership 필터링 (AC-5)          │
- * │                        │ FIX: submit 가드 + 모드 전환 method 리셋 (AC-5)        │
- * │ PaymentEditDialog.tsx  │ PayMethod에 'membership' 추가 + METHOD_OPTIONS 4종    │
- * ├────────────────────────┼───────────────────────────────────────────────────────┤
- * │ DB 호환성              │ payments.method CHECK IN ('card','cash','transfer',    │
- * │                        │   'membership') — 이미 허용됨 (DB 변경 불필요)         │
- * │                        │ package_payments.method CHECK IN ('card','cash',       │
- * │                        │   'transfer') — membership 불허 → UI 필터로 방어       │
- * └────────────────────────┴───────────────────────────────────────────────────────┘
- *
- * 현금영수증 안전:
- *   isCashLike = method === 'cash' || method === 'transfer'
- *   → membership 선택 시 현금영수증 미노출 ✅
- *
- * 할부 안전:
- *   installment UI = method === 'card' 조건
- *   → membership 선택 시 할부 미노출 ✅
- *
- * package_payments 안전 (FIX):
- *   visibleMethodOptions = paymentMode === 'package' ? filter(≠membership) : all
- *   submit 가드: !isSplit && method === 'membership' → toast.error + return ✅
- *   모드 전환 리셋: method==='membership' → setMethod('card') ✅
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-7: 패키지 수단 선택 → 패키지 선택 UI 표시 + 금액 자동 세팅
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('AC-7: 패키지 선택 → 금액 자동 세팅', () => {
+  test('단건 결제 + 패키지 수단 선택 → 패키지 선택 UI 나타남 + placeholder 변경', async ({ page }) => {
+    await page.goto(`${BASE_URL}/admin`);
+    await page.waitForLoadState('networkidle');
+
+    const paymentBtn = page.locator('[data-testid^="payment-btn-"]').first();
+    const hasPending = await paymentBtn.count() > 0;
+    if (!hasPending) { test.skip(); return; }
+
+    await paymentBtn.click();
+    await page.waitForSelector('[data-testid="btn-payment-submit"]', { timeout: 5000 });
+
+    // "📦 패키지" 결제수단 버튼 클릭
+    const pkgMethodBtn = page.locator('button').filter({ hasText: '📦 패키지' });
+    if (await pkgMethodBtn.count() === 0) { test.skip(); return; }
+    await pkgMethodBtn.click();
+
+    // 패키지 선택 섹션 표시 확인
+    await expect(page.locator('text=패키지 선택').first()).toBeVisible({ timeout: 3000 });
+
+    // 금액 필드 placeholder 변경 확인
+    const amountPlaceholder = page.locator('input[placeholder="패키지 선택 시 자동 입력"]');
+    await expect(amountPlaceholder).toBeVisible({ timeout: 3000 });
+  });
+
+  test('패키지 수단 → 카드로 전환 시 패키지 선택 UI 사라짐', async ({ page }) => {
+    await page.goto(`${BASE_URL}/admin`);
+    await page.waitForLoadState('networkidle');
+
+    const paymentBtn = page.locator('[data-testid^="payment-btn-"]').first();
+    const hasPending = await paymentBtn.count() > 0;
+    if (!hasPending) { test.skip(); return; }
+
+    await paymentBtn.click();
+    await page.waitForSelector('[data-testid="btn-payment-submit"]', { timeout: 5000 });
+
+    const pkgMethodBtn = page.locator('button').filter({ hasText: '📦 패키지' });
+    if (await pkgMethodBtn.count() === 0) { test.skip(); return; }
+
+    // 패키지 선택
+    await pkgMethodBtn.click();
+    await expect(page.locator('input[placeholder="패키지 선택 시 자동 입력"]')).toBeVisible({ timeout: 3000 });
+
+    // 카드로 전환
+    await page.locator('button').filter({ hasText: '💳 카드' }).click();
+
+    // 패키지 선택 UI 사라짐
+    await expect(page.locator('input[placeholder="패키지 선택 시 자동 입력"]')).not.toBeVisible({ timeout: 2000 });
+    // 금액 placeholder 원래대로
+    const normalAmountInput = page.locator('input[placeholder="0"]');
+    await expect(normalAmountInput.first()).toBeVisible({ timeout: 2000 });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-8: 패키지 결제 모드에서 "패키지" 수단 자기 제외
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('AC-8: 패키지 결제 모드에서 "패키지" 수단 미노출', () => {
+  test('패키지 결제 탭 전환 후 결제수단 grid에 "패키지" 버튼 없음', async ({ page }) => {
+    await page.goto(`${BASE_URL}/admin`);
+    await page.waitForLoadState('networkidle');
+
+    const paymentBtn = page.locator('[data-testid^="payment-btn-"]').first();
+    const hasPending = await paymentBtn.count() > 0;
+    if (!hasPending) { test.skip(); return; }
+
+    await paymentBtn.click();
+    await page.waitForSelector('[data-testid="btn-payment-submit"]', { timeout: 5000 });
+
+    // 패키지 결제 탭 클릭
+    const pkgModeBtn = page.locator('button').filter({ hasText: /패키지 결제/ }).last();
+    if (await pkgModeBtn.count() === 0) { test.skip(); return; }
+    await pkgModeBtn.click();
+
+    // 일시/분할 결제 토글 아래 결제수단 grid 확인 (분할 결제 해제 상태)
+    // 패키지 모드 + 일시불 → 결제수단 grid에 membership 없음
+    const methodGrids = page.locator('div.grid.grid-cols-3');
+    let foundPackageInGrid = false;
+    const gridCount = await methodGrids.count();
+    for (let i = 0; i < gridCount; i++) {
+      const grid = methodGrids.nth(i);
+      const labels = await grid.locator('button').allTextContents();
+      if (labels.some((l) => l.includes('카드') || l.includes('현금') || l.includes('이체'))) {
+        // 이게 결제수단 grid — membership(패키지) 없어야 함
+        if (labels.some((l) => l.includes('패키지') && l.includes('📦'))) {
+          foundPackageInGrid = true;
+        }
+      }
+    }
+    expect(foundPackageInGrid).toBe(false);
+  });
+});

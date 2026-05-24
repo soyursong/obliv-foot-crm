@@ -61,11 +61,12 @@ interface Props {
   onDone: (updated?: PaymentDonePayload) => void;
 }
 
+// T-20260522-foot-PAY-DROPDOWN-LONGRE Phase2: 라벨 멤버십→패키지 (DB value 'membership' 유지)
 const METHOD_OPTIONS: { value: PayMethod; label: string }[] = [
   { value: 'card', label: '카드' },
   { value: 'cash', label: '현금' },
   { value: 'transfer', label: '이체' },
-  { value: 'membership', label: '멤버십' },
+  { value: 'membership', label: '패키지' },
 ];
 
 const INSTALLMENT_OPTIONS = [
