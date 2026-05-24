@@ -730,6 +730,8 @@ function RoomSlot({
   currentStaffId,
   onTherapistChange,
   isInactive,
+  isTomorrowInactive,
+  isMyRoom,
   canToggle,
   onToggle,
 }: {
@@ -745,11 +747,15 @@ function RoomSlot({
   therapists?: Staff[];
   currentStaffId?: string | null;
   onTherapistChange?: (roomName: string, staffId: string | null, staffName: string | null) => void;
-  // T-20260523-foot-ROOM-DISABLE-TOGGLE
+  // T-20260523-foot-ROOM-DISABLE-TOGGLE (AC-6/8/9 3차)
   isInactive?: boolean;
+  isTomorrowInactive?: boolean; // AC-8: 내일치 비활성 사전 예약 여부
+  isMyRoom?: boolean; // AC-9: 내 담당 방 하이라이트
   canToggle?: boolean;
-  onToggle?: () => void;
+  onToggle?: (target: 'today' | 'tomorrow') => void; // AC-8: 날짜 선택 토글
 }) {
+  const [showDatePicker, setShowDatePicker] = useState(false); // AC-8: 날짜 선택 팝오버
+
   const dropId = `room:${roomName}`;
   const isFull = occupants.length >= maxOccupancy;
   const { isOver, setNodeRef } = useDroppable({ id: dropId, data: { roomName, roomType, isFull } });
@@ -767,6 +773,7 @@ function RoomSlot({
       data-room-name={roomName}
       data-room-type={roomType}
       data-inactive={isInactive ? 'true' : undefined}
+      data-my-room={isMyRoom ? 'true' : undefined}
       className={cn(
         'rounded-lg border bg-white/60 p-1.5 min-h-[70px] transition-colors relative',
         isInactive && 'opacity-50 bg-gray-100/60 border-dashed border-gray-300',
@@ -777,6 +784,8 @@ function RoomSlot({
         !isInactive && isFull && !isOver && 'border-red-200',
         // T-20260520-foot-LASER-C5-COLOR: C5 보라색 테두리 (공간배정 border-purple-400 동일, AC-1·AC-3)
         !isInactive && isC5 && !isOver && 'border-2 border-purple-400',
+        // T-20260523-foot-ROOM-DISABLE-TOGGLE AC-9: 내 담당 방 teal 좌측 테두리 하이라이트
+        !isInactive && isMyRoom && !isC5 && 'border-l-2 border-l-teal-400',
       )}
     >
       <div className="flex items-center justify-between px-1 mb-1 gap-1">
@@ -784,6 +793,8 @@ function RoomSlot({
           {roomName}
           {/* T-20260520-foot-LASER-C5-COLOR: C5 원장실 라벨 — Staff.tsx와 동일 (AC-1) */}
           {isC5 && !isInactive && <span className="ml-1 text-[10px] text-purple-600 font-normal">원장실</span>}
+          {/* T-20260523-foot-ROOM-DISABLE-TOGGLE AC-9: 내 담당 방 뱃지 */}
+          {isMyRoom && !isInactive && <span className="ml-1 text-[9px] text-teal-600 font-normal" title="내 담당 방">내 방</span>}
         </span>
         {/* T-20260523-foot-ROOM-DISABLE-TOGGLE AC-1: 비활성 뱃지 */}
         {/* AC-3: carry-over 여부 — laser/heated_laser는 활성화 전까지 유지 */}
@@ -799,6 +810,12 @@ function RoomSlot({
             </span>
           );
         })()}
+        {/* T-20260523-foot-ROOM-DISABLE-TOGGLE AC-8: 내일치 비활성 사전 예약 뱃지 */}
+        {!isInactive && isTomorrowInactive && (
+          <span className="text-[9px] text-indigo-500 flex items-center gap-0.5 shrink-0" title="내일 비활성화 예약됨">
+            <EyeOff className="h-2.5 w-2.5" />내일 오프
+          </span>
+        )}
         {/* T-20260523-foot-ROOM-DISABLE-TOGGLE AC-4: 비활성 방에 기존 예약 존재 시 경고 */}
         {isInactive && occupants.length > 0 && (
           <span className="text-[10px] text-amber-600 font-medium shrink-0" title="비활성 방에 배정된 환자가 있습니다">
@@ -836,25 +853,53 @@ function RoomSlot({
             {occupants.length}/{maxOccupancy}
           </span>
         )}
-        {/* T-20260523-foot-ROOM-DISABLE-TOGGLE AC-1/6/7: 토글 버튼 (admin/manager만) */}
+        {/* T-20260523-foot-ROOM-DISABLE-TOGGLE AC-1/6/7/8: 토글 버튼 */}
         {canToggle && onToggle && (() => {
           const isCarryOver = roomType === 'laser' || roomType === 'heated_laser';
-          const disableTitle = isCarryOver
-            ? '방 비활성화 (활성화 전까지 유지)'
-            : '방 비활성화 (오늘만)';
+          if (isInactive) {
+            // 비활성 상태 → "활성화" 버튼 (오늘만, 날짜 선택 불필요)
+            return (
+              <button
+                onClick={(e) => { e.stopPropagation(); onToggle('today'); }}
+                title="방 활성화"
+                className="ml-auto shrink-0 rounded px-1 py-0.5 text-[10px] font-medium border border-teal-300 text-teal-600 hover:bg-teal-50 transition"
+              >
+                활성화
+              </button>
+            );
+          }
+          // 활성 상태 → AC-8: 끄기 버튼 클릭 시 날짜 선택 팝오버
           return (
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggle(); }}
-              title={isInactive ? '방 활성화' : disableTitle}
-              className={cn(
-                'ml-auto shrink-0 rounded px-1 py-0.5 text-[10px] font-medium border transition',
-                isInactive
-                  ? 'border-teal-300 text-teal-600 hover:bg-teal-50'
-                  : 'border-gray-200 text-gray-400 hover:text-gray-600 hover:bg-gray-50',
+            <div className="relative ml-auto shrink-0">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowDatePicker((v) => !v); }}
+                title={isCarryOver ? '방 비활성화 (활성화 전까지 유지)' : '방 비활성화 (오늘 또는 내일)'}
+                className="rounded px-1 py-0.5 text-[10px] font-medium border border-gray-200 text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition"
+                data-toggle-btn={roomName}
+              >
+                끄기▾
+              </button>
+              {/* AC-8: 날짜 선택 팝오버 */}
+              {showDatePicker && (
+                <div
+                  className="absolute right-0 top-full mt-0.5 z-50 bg-white border border-gray-200 rounded shadow-md p-1 flex flex-col gap-0.5 min-w-[80px]"
+                  data-date-picker={roomName}
+                >
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowDatePicker(false); onToggle('today'); }}
+                    className="text-[10px] px-2 py-1 rounded hover:bg-gray-100 text-left text-gray-700 font-medium"
+                  >
+                    오늘 끄기
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowDatePicker(false); onToggle('tomorrow'); }}
+                    className="text-[10px] px-2 py-1 rounded hover:bg-indigo-50 text-left text-indigo-600 font-medium"
+                  >
+                    내일 미리 끄기
+                  </button>
+                </div>
               )}
-            >
-              {isInactive ? '활성화' : '끄기'}
-            </button>
+            </div>
           );
         })()}
       </div>
@@ -987,6 +1032,8 @@ function RoomSection({
   therapists,
   onTherapistChange,
   inactiveRooms,
+  tomorrowInactiveRooms,
+  myAssignedRoomNames,
   canToggle,
   onToggleRoom,
 }: {
@@ -1006,9 +1053,13 @@ function RoomSection({
   therapists?: Staff[];
   onTherapistChange?: (roomName: string, staffId: string | null, staffName: string | null) => void;
   // T-20260523-foot-ROOM-DISABLE-TOGGLE (AC-3 분기: roomType 전달)
+  // T-20260524-foot-ROOM-NEXTDAY-STAFF AC-4: boolean(전체) 또는 per-room 함수 모두 허용
+  // T-20260523-foot-ROOM-DISABLE-TOGGLE AC-6/8/9 (3차): 내일치 + 담당방 props
   inactiveRooms?: Set<string>;
-  canToggle?: boolean;
-  onToggleRoom?: (roomName: string, roomType: string) => void;
+  tomorrowInactiveRooms?: Set<string>; // AC-8: 내일치 비활성 방 집합
+  myAssignedRoomNames?: Set<string>; // AC-6/9: staff 담당 방 강조
+  canToggle?: boolean | ((roomName: string) => boolean);
+  onToggleRoom?: (roomName: string, roomType: string, target: 'today' | 'tomorrow') => void;
 }) {
   const getRoomOccupants = (roomName: string): CheckIn[] => {
     const field = ROOM_FIELD_MAP[roomType];
@@ -1072,8 +1123,10 @@ function RoomSection({
             currentStaffId={getStaffId(room.name)}
             onTherapistChange={onTherapistChange}
             isInactive={inactiveRooms?.has(room.name)}
-            canToggle={canToggle}
-            onToggle={onToggleRoom ? () => onToggleRoom(room.name, roomType) : undefined}
+            isTomorrowInactive={tomorrowInactiveRooms?.has(room.name)}
+            isMyRoom={myAssignedRoomNames?.has(room.name)}
+            canToggle={typeof canToggle === 'function' ? canToggle(room.name) : canToggle}
+            onToggle={onToggleRoom ? (target) => onToggleRoom(room.name, roomType, target) : undefined}
           />
         ))}
       </div>
@@ -2444,6 +2497,12 @@ export default function Dashboard() {
   const [assignCarryOver, setAssignCarryOver] = useState<string | null>(null); // 마지막 저장 날짜 문자열 or null
   // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-B1: 당일 비활성 방 이름 집합
   const [inactiveRooms, setInactiveRooms] = useState<Set<string>>(new Set());
+  // T-20260523-foot-ROOM-DISABLE-TOGGLE AC-8: 내일치 비활성 방 이름 집합
+  const [tomorrowInactiveRooms, setTomorrowInactiveRooms] = useState<Set<string>>(new Set());
+  // T-20260523-foot-ROOM-DISABLE-TOGGLE AC-6: staff 담당 방 이름 집합
+  const [myAssignedRoomNames, setMyAssignedRoomNames] = useState<Set<string>>(new Set());
+  // T-20260524-foot-ROOM-NEXTDAY-STAFF AC-4: 현재 사용자의 staff.id (staff 권한 방 필터링용)
+  const [myStaffId, setMyStaffId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState<CheckIn | null>(null);
   const [openNew, setOpenNew] = useState(false);
@@ -2948,37 +3007,69 @@ export default function Dashboard() {
     }
 
     setInactiveRooms(names);
+
+    // AC-8: 내일치 비활성 방 조회 (오늘 + 내일 2일치만)
+    const tomorrowStr = format(addDays(new Date(dateStr + 'T12:00:00'), 1), 'yyyy-MM-dd');
+    const { data: tomorrowData } = await supabase
+      .from('daily_room_status')
+      .select('room_name, is_active')
+      .eq('clinic_id', clinic.id)
+      .eq('date', tomorrowStr);
+    const tomorrowNames = new Set<string>();
+    for (const r of (tomorrowData ?? []) as { room_name: string; is_active: boolean }[]) {
+      if (!r.is_active) tomorrowNames.add(r.room_name);
+    }
+    setTomorrowInactiveRooms(tomorrowNames);
   }, [clinic, dateStr]);
 
   // T-20260523-foot-ROOM-DISABLE-TOGGLE AC-1/2/3/6/7
-  // admin/manager만 토글 가능. 오늘 날짜 기준.
+  // AC-6: admin/manager=전체 방, staff=본인 담당 방 토글 가능.
+  // AC-8: target='today'(당일) / 'tomorrow'(내일치 사전 설정) 분기.
   // AC-3 분기: laser/heated_laser → carry_over=true (활성화 전까지 유지)
   //           그 외 → carry_over=false (당일 한정)
   // 낙관적 UI → DB upsert → 실패 시 롤백 + refetch
-  const handleToggleRoom = useCallback(async (roomName: string, roomType = '') => {
+  const handleToggleRoom = useCallback(async (roomName: string, roomType = '', target: 'today' | 'tomorrow' = 'today') => {
     if (!clinic) return;
-    const nowActive = !inactiveRooms.has(roomName); // 현재 active → disable, inactive → activate
+    // AC-8: 대상 날짜 결정
+    const effectiveDate = target === 'tomorrow'
+      ? format(addDays(new Date(dateStr + 'T12:00:00'), 1), 'yyyy-MM-dd')
+      : dateStr;
+    const isTomorrow = target === 'tomorrow';
+    const currentlyInactive = isTomorrow
+      ? tomorrowInactiveRooms.has(roomName)
+      : inactiveRooms.has(roomName);
+    const nowActive = !currentlyInactive; // 현재 active → disable, inactive → activate
     // AC-3: laser/heated_laser = carry-over, 나머지 = daily reset
     const isCarryOver = roomType === 'laser' || roomType === 'heated_laser';
     // 낙관적 업데이트
-    setInactiveRooms((prev) => {
-      const next = new Set(prev);
-      if (nowActive) {
-        next.add(roomName); // active → inactive
-      } else {
-        next.delete(roomName); // inactive → active
-      }
-      return next;
-    });
+    if (isTomorrow) {
+      setTomorrowInactiveRooms((prev) => {
+        const next = new Set(prev);
+        if (nowActive) next.add(roomName); else next.delete(roomName);
+        return next;
+      });
+    } else {
+      setInactiveRooms((prev) => {
+        const next = new Set(prev);
+        if (nowActive) {
+          next.add(roomName); // active → inactive
+        } else {
+          next.delete(roomName); // inactive → active
+        }
+        return next;
+      });
+    }
     const { error } = await supabase
       .from('daily_room_status')
       .upsert(
         {
           clinic_id: clinic.id,
-          date: dateStr,
+          date: effectiveDate,
           room_name: roomName,
           is_active: !nowActive, // nowActive=true이면 비활성화(false), 반대는 활성화(true)
           carry_over: isCarryOver && nowActive, // 비활성화 시 carry-over 여부 설정
+          // T-20260524-foot-ROOM-NEXTDAY-STAFF AC-6: 비활성화 시 설정자 기록
+          disabled_by: nowActive ? (myStaffId ?? null) : null,
         },
         { onConflict: 'clinic_id,date,room_name' },
       );
@@ -2988,16 +3079,18 @@ export default function Dashboard() {
       await fetchInactiveRooms();
       return;
     }
-    // AC-7: room_type별 토스트 메시지
+    // AC-7/AC-8: room_type별 + 날짜별 토스트 메시지
     if (nowActive) {
+      const dateLabel = isTomorrow ? '내일' : '오늘';
       const msg = isCarryOver
-        ? `${roomName} 비활성화 (활성화 전까지 유지)`
-        : `${roomName} 비활성화 (오늘만)`;
+        ? `${roomName} ${dateLabel} 비활성화 (활성화 전까지 유지)`
+        : `${roomName} ${dateLabel} 비활성화`;
       toast.success(msg);
     } else {
-      toast.success(`${roomName} 활성화`);
+      const dateLabel = isTomorrow ? '내일 ' : '';
+      toast.success(`${roomName} ${dateLabel}활성화`);
     }
-  }, [clinic, dateStr, inactiveRooms, fetchInactiveRooms]);
+  }, [clinic, dateStr, inactiveRooms, tomorrowInactiveRooms, fetchInactiveRooms, myStaffId]);
 
   const fetchCheckIns = useCallback(async () => {
     if (!clinic) return;
@@ -3279,6 +3372,31 @@ export default function Dashboard() {
     setDoctors(all.filter((s) => s.role === 'director'));
   }, [clinic]);
 
+  // T-20260524-foot-ROOM-NEXTDAY-STAFF AC-4: 현재 사용자의 staff.id 조회
+  // staff 권한 계정이 본인 담당 방만 토글할 수 있도록 staff.id를 캐시
+  const fetchMyStaffId = useCallback(async () => {
+    if (!profile || profile.role !== 'staff') { setMyStaffId(null); return; }
+    const { data } = await supabase
+      .from('staff')
+      .select('id')
+      .eq('user_id', profile.id)
+      .eq('active', true)
+      .maybeSingle();
+    setMyStaffId((data as { id: string } | null)?.id ?? null);
+  }, [profile]);
+
+  // T-20260523-foot-ROOM-DISABLE-TOGGLE AC-6/AC-9: staff 담당 방 이름 집합 조회
+  // room_assignments에서 본인(myStaffId) 담당 방을 가져와 canToggleRoom + isMyRoom 하이라이트에 사용
+  const fetchMyAssignedRooms = useCallback(async () => {
+    if (!clinic || !myStaffId) { setMyAssignedRoomNames(new Set()); return; }
+    const { data } = await supabase
+      .from('room_assignments')
+      .select('room_name')
+      .eq('clinic_id', clinic.id)
+      .eq('staff_id', myStaffId);
+    setMyAssignedRoomNames(new Set((data ?? []).map((r: { room_name: string }) => r.room_name)));
+  }, [clinic, myStaffId]);
+
   const handleStaffAssign = useCallback(async (roomName: string, roomType: string, staffId: string | null, staffName: string | null) => {
     if (!clinic) return;
     // T-20260523-foot-SPACE-DASH-SYNC: fallback 데이터(이전 날짜)는 UPDATE 대신 INSERT로 처리.
@@ -3338,7 +3456,13 @@ export default function Dashboard() {
     fetchPackageLabels();
     fetchAllStaff();
     fetchAltHolders();
-  }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchInactiveRooms, fetchPayments, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts, fetchPackageLabels, fetchAllStaff, fetchAltHolders]);
+    fetchMyStaffId(); // T-20260524-foot-ROOM-NEXTDAY-STAFF AC-4
+  }, [fetchCheckIns, fetchRooms, fetchAssignments, fetchInactiveRooms, fetchPayments, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts, fetchPackageLabels, fetchAllStaff, fetchAltHolders, fetchMyStaffId]);
+
+  // T-20260523-foot-ROOM-DISABLE-TOGGLE AC-6/9: myStaffId 확정 후 담당 방 이름 조회
+  useEffect(() => {
+    fetchMyAssignedRooms();
+  }, [fetchMyAssignedRooms]);
 
   // T-20260515-foot-PAYMENT-MINI-WINDOW AC-7: rows 변경 시 수납대기 pending 금액 갱신
   useEffect(() => {
@@ -4529,8 +4653,15 @@ export default function Dashboard() {
 
   const isToday = isSameDay(date, new Date());
   const isPast = date < new Date(new Date().setHours(0, 0, 0, 0));
-  // T-20260523-foot-ROOM-DISABLE-TOGGLE AC-6: admin/manager만 + 오늘만 토글 허용
-  const canToggleRoom = isToday && (profile?.role === 'admin' || profile?.role === 'manager');
+  // T-20260523-foot-ROOM-DISABLE-TOGGLE AC-6 (3차): per-room 권한 함수
+  //   admin/manager: 전체 방 토글 가능 (과거 날짜 제외)
+  //   staff: room_assignments 기준 본인 담당 방만 토글 가능
+  const canToggleRoom = useCallback((roomName: string): boolean => {
+    if (isPast) return false;
+    if (profile?.role === 'admin' || profile?.role === 'manager') return true;
+    if (profile?.role === 'staff') return myAssignedRoomNames.has(roomName);
+    return false;
+  }, [isPast, profile, myAssignedRoomNames]);
 
   const doneCount = (byStatus['done'] ?? []).length;
   const totalActive = filtered.filter((r) => r.status !== 'done').length;
@@ -4610,6 +4741,8 @@ export default function Dashboard() {
                 therapists={doctors}
                 onTherapistChange={handleDoctorChange}
                 inactiveRooms={inactiveRooms}
+                tomorrowInactiveRooms={tomorrowInactiveRooms}
+                myAssignedRoomNames={myAssignedRoomNames}
                 canToggle={canToggleRoom}
                 onToggleRoom={handleToggleRoom}
               />
@@ -4745,8 +4878,10 @@ export default function Dashboard() {
                           currentStaffId={roomStaff?.staff_id ?? null}
                           onTherapistChange={handleConsultantChange}
                           isInactive={inactiveRooms.has(room.name)}
-                          canToggle={canToggleRoom}
-                          onToggle={() => handleToggleRoom(room.name, 'consultation')}
+                          isTomorrowInactive={tomorrowInactiveRooms.has(room.name)}
+                          isMyRoom={myAssignedRoomNames.has(room.name)}
+                          canToggle={canToggleRoom(room.name)}
+                          onToggle={(target) => handleToggleRoom(room.name, 'consultation', target)}
                         />
                         {/* 배치편집 모드: 기본 슬롯=잠금, 커스텀 슬롯=삭제 버튼 */}
                         {slotBatchEditMode && isToday && (
@@ -4891,6 +5026,8 @@ export default function Dashboard() {
               therapists={therapists}
               onTherapistChange={handleTherapistChange}
               inactiveRooms={inactiveRooms}
+              tomorrowInactiveRooms={tomorrowInactiveRooms}
+              myAssignedRoomNames={myAssignedRoomNames}
               canToggle={canToggleRoom}
               onToggleRoom={handleToggleRoom}
             />
@@ -4989,6 +5126,8 @@ export default function Dashboard() {
               therapists={therapists.filter(s => s.role === 'technician')}
               onTherapistChange={handleLaserTechChange}
               inactiveRooms={inactiveRooms}
+              tomorrowInactiveRooms={tomorrowInactiveRooms}
+              myAssignedRoomNames={myAssignedRoomNames}
               canToggle={canToggleRoom}
               onToggleRoom={handleToggleRoom}
             />
@@ -5008,8 +5147,8 @@ export default function Dashboard() {
     handleDoctorChange, handleConsultantChange, handleTherapistChange, handleHeatedLaserDoctorChange, handleLaserTechChange,
     slotBatchEditMode, defaultConsultRoomIds, handleAddConsultSlot, handleDeleteConsultSlot,
     setAddConsultSlotName, setAddConsultSlotOpen, setSlotBatchEditMode,
-    // T-20260523-foot-ROOM-DISABLE-TOGGLE
-    inactiveRooms, canToggleRoom, handleToggleRoom,
+    // T-20260523-foot-ROOM-DISABLE-TOGGLE (AC-6/8/9 3차)
+    inactiveRooms, tomorrowInactiveRooms, myAssignedRoomNames, canToggleRoom, handleToggleRoom,
   ]);
 
   // T-20260510-foot-DASH-DUAL-HSCROLL v2: overflow-hidden — Dashboard 자체 가로 팽창 격리
