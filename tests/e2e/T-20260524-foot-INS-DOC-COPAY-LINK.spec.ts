@@ -33,8 +33,9 @@ test.describe('T-20260524-foot-INS-DOC-COPAY-LINK — 진료비 영수증 자동
     expect(src).toContain("from('insurance_claims')");
     // draft 상태 필터
     expect(src).toContain("eq('claim_status', 'draft')");
-    // total_covered 자동채움
-    expect(src).toContain('setInsuranceCovered(claim.total_covered ?? 0)');
+    // 급여(공단+본인) = total_covered + total_copayment 자동채움 (FIX: total_covered 단독 사용 금지)
+    expect(src).toContain('setInsuranceCovered(');
+    expect(src).toContain('total_copayment');  // 급여 본인부담 반드시 포함
   });
 
   test('AC-2: autoFilledFromClaim state + teal 뱃지 텍스트 존재', () => {
