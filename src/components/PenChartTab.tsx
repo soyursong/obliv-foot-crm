@@ -528,6 +528,10 @@ export function PenChartTab({
   // T-20260519-foot-PENCHART-FORM-ADD (FIX): Undo 10단계
   const undoStackRef = useRef<ImageData[]>([]);
   const UNDO_LIMIT = 10;
+  // T-20260524-foot-PENCHART-PEN-SLOW Fix-5: async pre-capture — getImageData를 획 시작(hot path) 밖으로 이동
+  // 매 onPointerUp 후 rAF에서 캡처 → onPointerDown 시 이미 준비된 ImageData를 stack에 적재 (sync 없음)
+  const pendingUndoDataRef = useRef<ImageData | null>(null);
+  const pendingUndoRafRef  = useRef<number | null>(null);
 
   // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: 서명 캡처 UI 제거 — signature_base64 항상 null
 
@@ -745,6 +749,48 @@ export function PenChartTab({
     setTextInputValue('');
   }, []);
 
+  // ── Undo async 사전 캡처 (Fix-5) — initCanvas보다 앞에 선언해야 useCallback dep 참조 가능 ──
+  /**
+   * T-20260524-foot-PENCHART-PEN-SLOW Fix-5:
+   * async 사전 캡처 — rAF에서 getImageData 실행 (onPointerUp 후 ~16ms, hot path 밖)
+   * 다음 onPointerDown 전에 이미 완료 → hot path에서 getImageData 없음
+   */
+  const captureUndoAsync = useCallback(() => {
+    if (pendingUndoRafRef.current !== null) return; // 이미 예약됨
+    pendingUndoRafRef.current = requestAnimationFrame(() => {
+      pendingUndoRafRef.current = null;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      // Fix-2: drawCtxRef 재사용
+      const ctx = drawCtxRef.current ?? canvas.getContext('2d');
+      if (!ctx) return;
+      pendingUndoDataRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    });
+  }, []);
+
+  /**
+   * T-20260524-foot-PENCHART-PEN-SLOW Fix-5:
+   * onPointerDown 대신 호출 — pre-captured ImageData를 stack에 적재
+   * rAF 미발화 시(연속 빠른 획): sync 폴백 (rare case, ~16ms 이내 연속 획)
+   */
+  const flushPendingUndo = useCallback(() => {
+    if (pendingUndoRafRef.current !== null) {
+      // rAF 아직 미발화 → 취소 후 동기 캡처 (빠른 연속 획 폴백)
+      cancelAnimationFrame(pendingUndoRafRef.current);
+      pendingUndoRafRef.current = null;
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = drawCtxRef.current ?? canvas.getContext('2d');
+        if (ctx) pendingUndoDataRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      }
+    }
+    if (pendingUndoDataRef.current !== null) {
+      undoStackRef.current.push(pendingUndoDataRef.current);
+      if (undoStackRef.current.length > UNDO_LIMIT) undoStackRef.current.shift();
+      pendingUndoDataRef.current = null;
+    }
+  }, []);
+
   const initCanvas = useCallback(() => {
     initBgCanvas();
     initDrawCanvas();
@@ -763,7 +809,15 @@ export function PenChartTab({
     undoStackRef.current = [];
     // T-20260522-foot-PENCHART-TOOL-UX AC-1: bezier 스무딩 상태 초기화
     lastMidRef.current = null;
-  }, [initBgCanvas, initDrawCanvas]);
+    // T-20260524-foot-PENCHART-PEN-SLOW Fix-5: pending undo 초기화 + blank 상태 async 사전 캡처
+    // initCanvas 직후 rAF → blank draw canvas 캡처 → 첫 획 onPointerDown에서 stack에 즉시 적재 가능
+    if (pendingUndoRafRef.current !== null) {
+      cancelAnimationFrame(pendingUndoRafRef.current);
+      pendingUndoRafRef.current = null;
+    }
+    pendingUndoDataRef.current = null;
+    captureUndoAsync();
+  }, [initBgCanvas, initDrawCanvas, captureUndoAsync]);
 
   useEffect(() => {
     if (mode === 'draw') {
@@ -787,21 +841,13 @@ export function PenChartTab({
   }, [mode, phraseTemplatesLoaded]);
 
   // ── Undo 저장/복원 ────────────────────────────────────────────────────
-  const saveUndoState = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const stack = undoStackRef.current;
-    stack.push(imageData);
-    if (stack.length > UNDO_LIMIT) stack.shift();
-  }, []);
+  // captureUndoAsync / flushPendingUndo 선언은 initCanvas 위 (Fix-5, 참조 순서)
 
   const handleUndo = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    // Fix-2: drawCtxRef 재사용
+    const ctx = drawCtxRef.current ?? canvas.getContext('2d');
     if (!ctx) return;
     if (undoStackRef.current.length === 0) {
       // V3 C-2: 에러 시에만 토스트 — undo 없음은 silent
@@ -809,19 +855,23 @@ export function PenChartTab({
     }
     const imageData = undoStackRef.current.pop()!;
     ctx.putImageData(imageData, 0, 0);
+    // undo 후 현재(복원) 상태를 다음 획용으로 async 사전 캡처
+    captureUndoAsync();
     if (undoStackRef.current.length === 0) {
       hasDrawingRef.current = false; // T-20260523-foot-PENCHART-PEN-SLOW
       setHasDrawing(false);
     }
-  }, []);
+  }, [captureUndoAsync]);
 
   // ── 포인터 좌표 계산 ─────────────────────────────────────────────────
   // getPos: React 합성 이벤트 → 논리 좌표 + CSS 좌표 (text overlay 위치용)
   // T-20260522-foot-PENCHART-TOOLS-V2 AC-1: DRAW_DPR=2 강제 사용 (device DPR 무관)
+  // T-20260524-foot-PENCHART-PEN-SLOW Fix-6: strokeRectRef 우선 사용 → onPointerDown에서 getBoundingClientRect 중복 제거
   const getPos = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0, cssX: 0, cssY: 0 };
-    const rect = canvas.getBoundingClientRect();
+    // strokeRectRef가 onPointerDown에서 이미 캐싱됐으면 재사용 — getBoundingClientRect 강제 레이아웃 생략
+    const rect = strokeRectRef.current ?? canvas.getBoundingClientRect();
     const dpr = DRAW_DPR; // 강제 2x — initDrawCanvas와 동일
     const logicalW = canvas.width / dpr;
     const logicalH = canvas.height / dpr;
@@ -878,12 +928,17 @@ export function PenChartTab({
     e.stopPropagation();
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // T-20260524-foot-PENCHART-PEN-SLOW Fix-6: rect 먼저 캐싱 → getPos가 재사용 (getBoundingClientRect 1회만)
+    strokeRectRef.current = canvas.getBoundingClientRect();
     const pos = getPos(e);
 
     // 상용구 배치 모드
     if (activeTool === 'boilerplate-placing' && pendingBoilerplate) {
-      saveUndoState();
+      // Fix-5: flushPendingUndo → pre-captured 상태 stack 적재 (sync getImageData 없음)
+      flushPendingUndo();
       placeBoilerplate(pos.x, pos.y);
+      // 상용구 배치 후 현재 상태 async 캡처 (다음 획 undo 용)
+      captureUndoAsync();
       return;
     }
 
@@ -897,12 +952,13 @@ export function PenChartTab({
       return;
     }
 
-    saveUndoState();
+    // T-20260524-foot-PENCHART-PEN-SLOW Fix-5: saveUndoState() 제거 → flushPendingUndo() 대체
+    // pre-captured ImageData를 stack에 올림 — getImageData 없음 (rAF에서 이미 완료)
+    flushPendingUndo();
     canvas.setPointerCapture(e.pointerId);
     drawingRef.current = true;
     lastPosRef.current = { x: pos.x, y: pos.y };
-    // T-20260523-foot-PENCHART-PEN-SLOW Fix-3: getBoundingClientRect 획 시작 시 1회 캐싱
-    strokeRectRef.current = canvas.getBoundingClientRect();
+    // strokeRectRef는 위에서 이미 캐싱됨 (Fix-6) — 중복 호출 제거
     // T-20260523-foot-PENCHART-PEN-SLOW Fix-2: 캐싱된 ctx 사용
     const ctx = drawCtxRef.current ?? canvas.getContext('2d');
     if (!ctx) return;
@@ -1081,6 +1137,9 @@ export function PenChartTab({
 
     const canvas = canvasRef.current;
     if (canvas && canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+    // T-20260524-foot-PENCHART-PEN-SLOW Fix-5: 획 종료 후 rAF에서 undo 상태 사전 캡처
+    // → 다음 onPointerDown 시 getImageData 없음 (hot path 완전 제거)
+    captureUndoAsync();
   };
 
   // ── 캔버스 저장 ──────────────────────────────────────────────────────
