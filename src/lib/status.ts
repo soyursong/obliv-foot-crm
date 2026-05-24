@@ -179,5 +179,6 @@ export const METHOD_KO: Record<string, string> = {
   card: '카드',
   cash: '현금',
   transfer: '이체',
-  membership: '멤버십',
+  // T-20260524-foot-PKG-LABEL-AMOUNT AC-3: 기존 레코드도 "패키지"로 표시 (DB value 'membership' 유지)
+  membership: '패키지',
 };
