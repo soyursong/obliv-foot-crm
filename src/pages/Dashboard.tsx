@@ -2512,6 +2512,15 @@ export default function Dashboard() {
   const [dayPayments, setDayPayments] = useState<Map<string, number>>(new Map());
   const [contextMenu, setContextMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
   const [customerMenu, setCustomerMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
+  // T-20260524-foot-TIMETABLE-TIME-CONFIRM: 시간 변경 확인 대기 상태
+  const [pendingTimeChange, setPendingTimeChange] = useState<{
+    reservationId: string;
+    newTimeStr: string;        // HH:MM:SS
+    reservation: Reservation;
+    oldTime: string;           // HH:MM (표시용)
+    newTime: string;           // HH:MM (표시용)
+    visitType: VisitType;      // 'new' | 'returning'
+  } | null>(null);
   // T-20260516-foot-CHART2-STATE-UNIFY: dashChartSheetId 제거 → AdminLayout ChartContext 사용
   // LOGIC-LOCK: L-004 [CHART-LOCK-009] — openChart 호출은 useChart() 경유만. 직접 ChartContext 접근 금지.
   const { openChart: ctxOpenChart, closeChart: ctxCloseChart } = useChart();
@@ -3734,8 +3743,12 @@ export default function Dashboard() {
 
       const newTimeStr = `${newSlot}:00`; // HH:MM:SS
 
-      // T-20260522-foot-SLOT-POPUP-REGRESS: 즉시 이동 (확인 다이얼로그 없음 — T-20260520-foot-SLOT-MOVE-REVERT 정책 유지)
-      await executeSlotDrag(reservationId, newTimeStr, reservation);
+      // T-20260524-foot-TIMETABLE-TIME-CONFIRM: 즉시 실행 대신 확인 다이얼로그 표시
+      // (AC-1/AC-2: 초진/재진 시간 변경 시 confirm, AC-3: 확인→적용 / 취소→복원, AC-4: 변경 전/후 시간 표시)
+      const oldTimeHM = reservation.reservation_time.slice(0, 5); // HH:MM
+      const newTimeHM = newSlot;                                   // HH:MM
+      const visitType: VisitType = target.startsWith('timeslot-new:') ? 'new' : 'returning';
+      setPendingTimeChange({ reservationId, newTimeStr, reservation, oldTime: oldTimeHM, newTime: newTimeHM, visitType });
       return;
     }
 
@@ -5554,7 +5567,58 @@ export default function Dashboard() {
       </ChartNumberMapCtx.Provider>
       </TickCtx.Provider>
 
-      {/* T-20260520-foot-SLOT-MOVE-REVERT: 확인 다이얼로그 제거 — 즉시 이동 */}
+      {/* T-20260524-foot-TIMETABLE-TIME-CONFIRM: 시간 변경 확인 다이얼로그
+          AC-1: 초진 시간 변경 시 confirm
+          AC-2: 재진 시간 변경 시 confirm
+          AC-3: 확인→executeSlotDrag 적용 / 취소→setPendingTimeChange(null) 복원
+          AC-4: 변경 전/후 시간 표시 */}
+      {pendingTimeChange && (
+        <Dialog open onOpenChange={(o) => { if (!o) setPendingTimeChange(null); }}>
+          <DialogContent className="max-w-xs" hideClose>
+            <DialogHeader>
+              <DialogTitle className="text-base text-center">예약시간을 변경하시겠습니까?</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-1">
+              {/* AC-4: 변경 전/후 시간 */}
+              <div className="flex items-center justify-center gap-4">
+                <div className="text-center min-w-[64px]">
+                  <p className="text-[11px] text-muted-foreground mb-1">변경 전</p>
+                  <p className="font-mono font-semibold text-gray-600 text-2xl leading-none">{pendingTimeChange.oldTime}</p>
+                </div>
+                <span className="text-gray-300 text-2xl select-none">→</span>
+                <div className="text-center min-w-[64px]">
+                  <p className="text-[11px] text-muted-foreground mb-1">변경 후</p>
+                  <p className="font-mono font-bold text-teal-600 text-2xl leading-none">{pendingTimeChange.newTime}</p>
+                </div>
+              </div>
+              <p className="text-xs text-center text-muted-foreground">
+                {pendingTimeChange.visitType === 'new' ? '초진' : '재진'} &middot; {pendingTimeChange.reservation.customer_name ?? '고객'}
+              </p>
+            </div>
+            <DialogFooter className="gap-2 mt-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                data-testid="time-change-cancel-btn"
+                onClick={() => setPendingTimeChange(null)}
+              >
+                취소
+              </Button>
+              <Button
+                className="flex-1 bg-teal-600 hover:bg-teal-700"
+                data-testid="time-change-confirm-btn"
+                onClick={async () => {
+                  const { reservationId, newTimeStr, reservation } = pendingTimeChange;
+                  setPendingTimeChange(null);
+                  await executeSlotDrag(reservationId, newTimeStr, reservation);
+                }}
+              >
+                확인
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* 빠른 예약 다이얼로그 */}
       <QuickReservationDialog
