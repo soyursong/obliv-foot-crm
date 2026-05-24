@@ -147,24 +147,43 @@ interface AutofillFields {
 
 // ── 환불/비급여 동의서 자동채움 좌표 (기준: CANVAS_W=794, CANVAS_H_REFUND_CONSENT=3369) ──
 // page 1 상단 환자 정보 박스 (차트번호 + 환자이름)
-// T-20260523-foot-PENCHART-FORM-AUTOFILL AC-1~2: 위치 보정 (PNG 픽셀 분석 기반)
+// T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R5: 좌표 전수 재보정 (실기기 스크린샷 증거 기반)
 //   refund_consent.png 2481×10524 → canvas 794×3369 (scale=0.32)
-//   P1 fields: ● 차트번호 / ● 환자이름 (측정값)
+//   PNG 픽셀 분석: "● 차트번호 :" 라벨 텍스트 = canvas y=201, 라벨 끝(코론 우측) = canvas x≈176
+//                 "● 환자이름 :" 라벨 텍스트 = canvas y=236
+//   기존 y=155/188 → 라벨(y=201/236) 위에 겹침 확인(스크린샷 110451). y 46px 상향 오류 수정.
 const REFUND_AUTOFILL_POS_P1: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
-  { key: 'chartNumber', x: 163, y: 155 }, // page 1: ● 차트번호 : ___ (코론 우측 시작)
-  { key: 'name',        x: 163, y: 188 }, // page 1: ● 환자이름 : ___
+  { key: 'chartNumber', x: 182, y: 201 }, // page 1: ● 차트번호 : ___ (라벨 우측 빈칸, 라벨 동일 라인)
+  { key: 'name',        x: 182, y: 236 }, // page 1: ● 환자이름 : ___ (라벨 동일 라인)
 ];
-// page 3 [본인 동의서] 서명 섹션 (날짜만 — 이름 제거)
-// T-20260523-foot-PENCHART-FORM-AUTOFILL AC-3~4: 위치 보정
-//   P3 [본인 동의서] 섹션: canvas y=2866~3369 범위 PNG 분석
-//   "년 월 일" 라인: page3 local y≈205 (canvas 3071)
-// T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: 이름 셀(x=55 y=3206) 제거
-//   현장 피드백: "하단 별도 서명란 불필요 제거" — 직원이 직접 기입하는 방식으로 통일
-const REFUND_AUTOFILL_POS_P3: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
-  { key: 'date', x: 440, y: 3071 }, // [본인 동의서] "     년    월    일" — 날짜 앞 공간
-  // name(x=55,y=3206) 제거 — AC-R4: 하단 서명란 이름 자동채움 불필요
-  // phone/birthDate 제거 — T-20260523-foot-PENCHART-FORM-AUTOFILL
-];
+
+// ── 환불동의서 P3 날짜 분리 렌더링 (AC-R5) ──
+// T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R5: 날짜 "년/월/일" 분리 배치
+//   PNG 픽셀 분석: "년" at canvas x≈544, "월" at canvas x≈614, "일" at canvas x≈678
+//                 날짜 라인: canvas y≈3071
+//   기존: "2026. 5. 24." 전체를 x=440 에 배치 → "2026." 우측이 "년" 와 겹침 수정
+//   수정: 연/월/일 각각 우측 정렬로 해당 마커 바로 앞에 배치
+function drawRefundP3DateAutofill(
+  ctx: CanvasRenderingContext2D,
+  fields: AutofillFields,
+) {
+  const dateStr = fields.date; // e.g. "2026. 5. 24." (ko-KR locale)
+  if (!dateStr) return;
+  // "2026. 5. 24." → remove dots → "2026 5 24" → split
+  const parts = dateStr.replace(/\./g, '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 3) return;
+  const [year, month, day] = parts;
+  ctx.save();
+  ctx.fillStyle = '#6b7280'; // gray-500
+  ctx.font = 'italic 15px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'right'; // 우측 정렬 — 각 마커 바로 앞에 붙임
+  const DATE_Y = 3071;
+  if (year)  ctx.fillText(year,  537, DATE_Y); // "년"(x≈544) 7px 전
+  if (month) ctx.fillText(month, 607, DATE_Y); // "월"(x≈614) 7px 전
+  if (day)   ctx.fillText(day,   671, DATE_Y); // "일"(x≈678) 7px 전
+  ctx.restore();
+}
 
 // ── [보험차트] 자동채움 — 성함+주민번호 1줄 inline (AC-R6) ──
 // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R6:
@@ -717,9 +736,10 @@ export function PenChartTab({
         if (autofillDataRef.current) {
           const fk = activeDrawTemplate?.form_key ?? '';
           if (isRefundConsentKey(fk)) {
-            // 환불동의서: page 1 (차트번호·환자이름) + page 3 (날짜·성명·생년월일) 양방향 채움
+            // 환불동의서: page 1 (차트번호·환자이름) + page 3 (날짜 분리 배치)
+            // AC-R5: P1 좌표 재보정 + P3 날짜 년/월/일 분리 우측정렬
             drawAutofillOnCtx(ctx, autofillDataRef.current, REFUND_AUTOFILL_POS_P1);
-            drawAutofillOnCtx(ctx, autofillDataRef.current, REFUND_AUTOFILL_POS_P3);
+            drawRefundP3DateAutofill(ctx, autofillDataRef.current);
           } else if (fk === 'pen_chart') {
             // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R6: 성함+주민번호 1줄 inline + 폰트 축소
             drawPenChartAutofillInline(ctx, autofillDataRef.current);
