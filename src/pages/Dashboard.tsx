@@ -730,7 +730,6 @@ function RoomSlot({
   currentStaffId,
   onTherapistChange,
   isInactive,
-  isTomorrowInactive,
   isMyRoom,
   canToggle,
   onToggle,
@@ -749,7 +748,6 @@ function RoomSlot({
   onTherapistChange?: (roomName: string, staffId: string | null, staffName: string | null) => void;
   // T-20260523-foot-ROOM-DISABLE-TOGGLE (AC-6/8/9 3차)
   isInactive?: boolean;
-  isTomorrowInactive?: boolean; // AC-8: 내일치 비활성 사전 예약 여부
   isMyRoom?: boolean; // AC-9: 내 담당 방 하이라이트
   canToggle?: boolean;
   onToggle?: (target: 'today' | 'tomorrow') => void; // AC-8: 날짜 선택 토글
@@ -810,12 +808,7 @@ function RoomSlot({
             </span>
           );
         })()}
-        {/* T-20260523-foot-ROOM-DISABLE-TOGGLE AC-8: 내일치 비활성 사전 예약 뱃지 */}
-        {!isInactive && isTomorrowInactive && (
-          <span className="text-[9px] text-indigo-500 flex items-center gap-0.5 shrink-0" title="내일 비활성화 예약됨">
-            <EyeOff className="h-2.5 w-2.5" />내일 오프
-          </span>
-        )}
+        {/* T-20260524-foot-DASH-NEXTDAY-OFF-HIDE AC-1: 내일 오프 뱃지 제거 (당일 대시보드 불필요) */}
         {/* T-20260523-foot-ROOM-DISABLE-TOGGLE AC-4: 비활성 방에 기존 예약 존재 시 경고 */}
         {isInactive && occupants.length > 0 && (
           <span className="text-[10px] text-amber-600 font-medium shrink-0" title="비활성 방에 배정된 환자가 있습니다">
@@ -1032,7 +1025,6 @@ function RoomSection({
   therapists,
   onTherapistChange,
   inactiveRooms,
-  tomorrowInactiveRooms,
   myAssignedRoomNames,
   canToggle,
   onToggleRoom,
@@ -1056,7 +1048,6 @@ function RoomSection({
   // T-20260524-foot-ROOM-NEXTDAY-STAFF AC-4: boolean(전체) 또는 per-room 함수 모두 허용
   // T-20260523-foot-ROOM-DISABLE-TOGGLE AC-6/8/9 (3차): 내일치 + 담당방 props
   inactiveRooms?: Set<string>;
-  tomorrowInactiveRooms?: Set<string>; // AC-8: 내일치 비활성 방 집합
   myAssignedRoomNames?: Set<string>; // AC-6/9: staff 담당 방 강조
   canToggle?: boolean | ((roomName: string) => boolean);
   onToggleRoom?: (roomName: string, roomType: string, target: 'today' | 'tomorrow') => void;
@@ -1123,7 +1114,6 @@ function RoomSection({
             currentStaffId={getStaffId(room.name)}
             onTherapistChange={onTherapistChange}
             isInactive={inactiveRooms?.has(room.name)}
-            isTomorrowInactive={tomorrowInactiveRooms?.has(room.name)}
             isMyRoom={myAssignedRoomNames?.has(room.name)}
             canToggle={typeof canToggle === 'function' ? canToggle(room.name) : canToggle}
             onToggle={onToggleRoom ? (target) => onToggleRoom(room.name, roomType, target) : undefined}
@@ -4741,7 +4731,6 @@ export default function Dashboard() {
                 therapists={doctors}
                 onTherapistChange={handleDoctorChange}
                 inactiveRooms={inactiveRooms}
-                tomorrowInactiveRooms={tomorrowInactiveRooms}
                 myAssignedRoomNames={myAssignedRoomNames}
                 canToggle={canToggleRoom}
                 onToggleRoom={handleToggleRoom}
@@ -4878,7 +4867,6 @@ export default function Dashboard() {
                           currentStaffId={roomStaff?.staff_id ?? null}
                           onTherapistChange={handleConsultantChange}
                           isInactive={inactiveRooms.has(room.name)}
-                          isTomorrowInactive={tomorrowInactiveRooms.has(room.name)}
                           isMyRoom={myAssignedRoomNames.has(room.name)}
                           canToggle={canToggleRoom(room.name)}
                           onToggle={(target) => handleToggleRoom(room.name, 'consultation', target)}
@@ -5026,7 +5014,6 @@ export default function Dashboard() {
               therapists={therapists}
               onTherapistChange={handleTherapistChange}
               inactiveRooms={inactiveRooms}
-              tomorrowInactiveRooms={tomorrowInactiveRooms}
               myAssignedRoomNames={myAssignedRoomNames}
               canToggle={canToggleRoom}
               onToggleRoom={handleToggleRoom}
@@ -5126,7 +5113,6 @@ export default function Dashboard() {
               therapists={therapists.filter(s => s.role === 'technician')}
               onTherapistChange={handleLaserTechChange}
               inactiveRooms={inactiveRooms}
-              tomorrowInactiveRooms={tomorrowInactiveRooms}
               myAssignedRoomNames={myAssignedRoomNames}
               canToggle={canToggleRoom}
               onToggleRoom={handleToggleRoom}
