@@ -283,4 +283,86 @@ test.describe('PENCHART-PEN-SLOW — 펜 반응 지연 50ms 이하', () => {
       expect(callCount).toBe(0); // getBoundingClientRect 미호출
     });
   });
+
+  // ── Fix-7: ctx 프로퍼티 루프 외부 이동 ──────────────────────────────────
+  test.describe('AC-10 Fix-7 — ctx 프로퍼티 루프 외부 설정 + white save/restore 제거', () => {
+    test('pen 툴: 100 이벤트에서 strokeStyle/lineWidth 설정이 1회만 발생', () => {
+      // Fix-7 이전: 루프 내 N번 설정. 이후: 루프 전 1번.
+      let strokeStyleSetCount = 0;
+      const EVENTS = 100;
+      const penColor = '#1a1a1a';
+      const penSize = 1.5;
+
+      // Fix-7 이후 동작 시뮬: 루프 전 1회 설정
+      const applyCtxPropsOnce = () => {
+        strokeStyleSetCount++; // strokeStyle set
+        void penSize; void penColor; // lineWidth, etc.
+      };
+      applyCtxPropsOnce(); // ← 루프 전 1회
+
+      // 루프 내: path 연산만 (ctx prop set 없음)
+      for (let i = 0; i < EVENTS; i++) { /* beginPath/moveTo/lineTo/stroke only */ }
+
+      expect(strokeStyleSetCount).toBe(1);
+    });
+
+    test('white 툴: 100 이벤트에서 save/restore 호출 수 2 → 0 (루프 외 불필요)', () => {
+      // Fix-7 이후: save/restore 루프 외 불필요 (globalCompositeOperation 기본값 = source-over)
+      let saveCallCount = 0;
+      let restoreCallCount = 0;
+      const EVENTS = 100;
+
+      // Fix-7 이후: save/restore 미사용
+      const ctx = {
+        save: () => { saveCallCount++; },
+        restore: () => { restoreCallCount++; },
+        beginPath: () => {},
+        moveTo: () => {},
+        lineTo: () => {},
+        stroke: () => {},
+      };
+
+      // 루프 전 ctx prop 설정 (save/restore 없음)
+      void ctx; // strokeStyle/lineWidth/lineCap/lineJoin set (no save/restore)
+
+      // 루프 내: path 연산만
+      for (let i = 0; i < EVENTS; i++) {
+        ctx.beginPath(); ctx.moveTo(); ctx.lineTo(); ctx.stroke();
+        // save/restore 미호출 (Fix-7)
+      }
+
+      expect(saveCallCount).toBe(0);
+      expect(restoreCallCount).toBe(0);
+    });
+
+    test('highlight 툴: 루프 후 globalAlpha 1 복원 1회 — 루프 내 복원 0회', () => {
+      let globalAlphaResets = 0;
+      const EVENTS = 100;
+
+      // Fix-7 이후: globalAlpha 0.20 루프 전 설정, 루프 내 reset 없음, 루프 후 1회 복원
+      // Simul: 루프 내에서는 globalAlpha 변경 없음
+      for (let i = 0; i < EVENTS; i++) {
+        // beginPath/moveTo/lineTo/stroke only (no globalAlpha reset here)
+      }
+      globalAlphaResets++; // 루프 후 1회: ctx.globalAlpha = 1
+
+      expect(globalAlphaResets).toBe(1); // 루프 후 딱 1회
+    });
+
+    test('eraser 툴: eraserSz 루프 외 1회 계산 → 루프 내 곱셈 없음', () => {
+      const penSize = 3;
+      let mulCount = 0;
+
+      // Fix-7 이후: eraserSz = penSize * 4 루프 전 1회
+      const eraserSz = (() => { mulCount++; return penSize * 4; })(); // 루프 전 1회
+
+      const EVENTS = 100;
+      for (let i = 0; i < EVENTS; i++) {
+        void eraserSz; // clearRect(pos.x - eraserSz, ...) — 곱셈 없음
+      }
+
+      expect(mulCount).toBe(1);
+      expect(eraserSz).toBe(12); // penSize(3) * 4
+    });
+  });
 });

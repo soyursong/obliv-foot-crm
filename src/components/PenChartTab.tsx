@@ -1082,28 +1082,47 @@ export function PenChartTab({
     // AC-2: coalesced events — 중간 좌표 모두 처리
     const events: PointerEvent[] = (e.nativeEvent as any).getCoalescedEvents?.() ?? [e.nativeEvent];
 
+    // T-20260523-foot-PENCHART-PEN-SLOW Fix-7: ctx 프로퍼티 루프 외부로 이동
+    // 획 중 penColor/penSize/highlightColor는 불변 → 루프마다 재설정 불필요
+    // white: ctx.save()/restore()를 루프에서 제거 (100이벤트×2 스택 연산→1+1)
+    if (activeTool === 'pen') {
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = penColor;
+      ctx.lineWidth = penSize;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+    } else if (activeTool === 'white') {
+      // globalCompositeOperation은 기본값이 'source-over' — save/restore 불필요
+      ctx.strokeStyle = '#ffffff';
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = penSize * 8;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+    } else if (activeTool === 'highlight') {
+      ctx.globalAlpha = 0.20;
+      ctx.strokeStyle = highlightColor;
+      ctx.lineWidth = penSize * 6 + 6;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+    } else if (activeTool === 'eraser') {
+      // eraser는 clearRect — ctx 프로퍼티 불필요, sz만 사전 계산
+    }
+    const eraserSz = activeTool === 'eraser' ? penSize * 4 : 0;
+
     for (const evt of events) {
       const pos = toLogical(evt);
       const last = lastPosRef.current ?? pos;
 
       if (activeTool === 'eraser') {
         // V3 AC-3: 드로잉 레이어만 clearRect → bg(상용구 템플릿) 보존, placedItems 미삭제
-        const sz = penSize * 4;
-        ctx.clearRect(pos.x - sz, pos.y - sz, sz * 2, sz * 2);
+        ctx.clearRect(pos.x - eraserSz, pos.y - eraserSz, eraserSz * 2, eraserSz * 2);
       } else if (activeTool === 'white') {
         // T-20260522-foot-PENCHART-TOOL-UX AC-3: 화이트 — source-over 흰색 선
-        ctx.save();
-        ctx.globalCompositeOperation = 'source-over';
+        // Fix-7: ctx 프로퍼티 루프 외부 설정 + save/restore 제거
         ctx.beginPath();
         ctx.moveTo(last.x, last.y);
         ctx.lineTo(pos.x, pos.y);
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = penSize * 8;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
         ctx.stroke();
-        ctx.restore();
         emptyRef.current = false;
         // T-20260523-foot-PENCHART-PEN-SLOW: 첫 획 전환 시에만 setHasDrawing → React 재렌더 최소화
         if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
@@ -1112,22 +1131,18 @@ export function PenChartTab({
         whiteStrokePathRef.current.push(pos);
       } else if (activeTool === 'highlight') {
         // V3 AC-10~11: 투명도 35%→20%
+        // Fix-7: ctx 프로퍼티 루프 외부 설정
         ctx.beginPath();
         ctx.moveTo(last.x, last.y);
         ctx.lineTo(pos.x, pos.y);
-        ctx.globalAlpha = 0.20;
-        ctx.strokeStyle = highlightColor;
-        ctx.lineWidth = penSize * 6 + 6;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
         ctx.stroke();
-        ctx.globalAlpha = 1;
         emptyRef.current = false;
         // T-20260523-foot-PENCHART-PEN-SLOW: 첫 획 전환 시에만 setHasDrawing → React 재렌더 최소화
         if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
       } else {
         // T-20260522-foot-PENCHART-TOOL-UX AC-1: 펜 — quadratic bezier 스무딩 (글씨 인식 개선)
         // midpoint bezier: 연속 획 사이를 곡선으로 연결 → 자연스러운 글씨체
+        // Fix-7: ctx 프로퍼티 루프 외부 설정
         const mid = { x: (last.x + pos.x) / 2, y: (last.y + pos.y) / 2 };
         ctx.beginPath();
         if (lastMidRef.current) {
@@ -1139,11 +1154,6 @@ export function PenChartTab({
           ctx.moveTo(last.x, last.y);
           ctx.lineTo(mid.x, mid.y);
         }
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = penColor;
-        ctx.lineWidth = penSize;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
         ctx.stroke();
         lastMidRef.current = mid; // 다음 세그먼트 시작점 = 현재 midpoint
         emptyRef.current = false;
@@ -1152,6 +1162,9 @@ export function PenChartTab({
       }
       lastPosRef.current = pos;
     }
+
+    // Fix-7 루프 후 정리: highlight globalAlpha 복원
+    if (activeTool === 'highlight') ctx.globalAlpha = 1;
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
