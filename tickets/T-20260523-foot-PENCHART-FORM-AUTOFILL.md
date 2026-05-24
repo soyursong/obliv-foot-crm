@@ -2,14 +2,14 @@
 id: T-20260523-foot-PENCHART-FORM-AUTOFILL
 domain: foot
 priority: P1
-status: deployed
+status: deploy-ready
 deploy-ready: true
 build-ok: true
 db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: ""
-commit_sha: "179795c"
+commit_sha: "f0515e7"
 qa_result: pass
 qa_grade: Yellow
 deployed_at: "2026-05-24T03:38:39+09:00"
@@ -26,7 +26,7 @@ related_tickets:
   - T-20260523-foot-PENCHART-PEN-SLOW
   - T-20260522-foot-PENCHART-REFUND-AUTOFILL
 risk_verdict: GO_WARN
-risk_note: "AC-R5 좌표는 코드레벨 범위 검증만. 실기기 시각 확인 현장 배포 후 필요."
+risk_note: "AC-R5 좌표 재보정 완료(f0515e7). 실기기 시각 확인 현장 배포 후 필요."
 re_qa_at: "2026-05-24T07:45:00+09:00"
 re_qa_result: pass
 re_qa_bundle_hash: "CustomerChartPage-DtCQgKC8.js"
@@ -35,6 +35,12 @@ reopen_deploy_notification_ts: "1779605260.964899"
 reopen_commit_sha: "179795c"
 reopen_reason: "MSG-20260524-110842-pnuu: AC-8 A안 확정 + AC-R4 서명란 제거 + AC-R5 좌표 스펙"
 reopen_at: "2026-05-24T11:30:00+09:00"
+reopen3_commit_sha: "8bb8186"
+reopen3_reason: "MSG-20260524-191911-roce: AC-R6 성함+주민번호 1줄 inline 배치 + 폰트 축소"
+reopen3_at: "2026-05-24T19:30:00+09:00"
+reopen4_commit_sha: "f0515e7"
+reopen4_reason: "AC-R5 환불동의서 좌표 전수 재보정 — P1 y 46px 수정(155→201,188→236) + P3 날짜 년/월/일 분리 배치"
+reopen4_at: "2026-05-24T20:00:00+09:00"
 ---
 
 # T-20260523-foot-PENCHART-FORM-AUTOFILL
