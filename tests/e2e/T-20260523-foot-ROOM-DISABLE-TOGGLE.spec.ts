@@ -4,16 +4,23 @@
  *
  * AC-1: 각 방(room) 헤더에 비활성화 토글 버튼 존재 (admin/manager)
  * AC-2: 토글 OFF 시 해당 방 컬럼 grayed-out 또는 숨김 처리
- * AC-3: 비활성화 상태는 당일 한정 — 날짜 변경 시 자동 복귀
+ * AC-3: 비활성화 상태 — room_type별 carry-over 정책
+ *        consultation/treatment: 당일 한정 (daily reset)
+ *        laser/heated_laser:     활성화 전까지 유지 (carry-over)
  * AC-4: 비활성 방에 기존 예약 존재 시 경고 표시 (예약 삭제 X)
- * AC-5: DB daily_room_status 테이블 upsert 동작
+ * AC-5: DB daily_room_status.carry_over 컬럼 upsert 동작
  * AC-6: admin/manager만 토글 가능 (staff는 토글 버튼 미표시)
+ * AC-7: 비활성화 시 room_type별 UI 안내 텍스트 표시
+ *        laser/heated_laser: "이 방은 다시 활성화할 때까지 비활성 상태가 유지됩니다"
+ *        그 외:              "오늘만 비활성화됩니다"
  *
  * 현장 클릭 시나리오:
  *   시나리오 1: 정상 — 방 비활성화 → grayed-out 확인
  *   시나리오 2: 비활성 방에 기존 예약 → 경고 표시
  *   시나리오 3: 다음 날 자동 복귀 (날짜 기반 검증)
  *   시나리오 4: staff 권한 계정 — 토글 버튼 미표시
+ *   시나리오 5: 레이저실 carry-over — 비활성화 시 "활성화 전까지 유지" 안내 표시
+ *   시나리오 6: 상담실 daily reset — 비활성화 시 "오늘만 비활성화됩니다" 안내 표시
  */
 import { test, expect } from '@playwright/test';
 import { loginAndWaitForDashboard } from '../helpers';
@@ -217,6 +224,124 @@ test.describe('T-20260523-foot-ROOM-DISABLE-TOGGLE 방 비활성화 토글', () 
     );
     expect(criticalErrors.length).toBe(0);
     console.log(`[AC-6] 방 토글 관련 콘솔 에러 0건 OK`);
+  });
+
+  // ================================================================
+  // 시나리오 5: 레이저실 carry-over — 비활성화 시 "활성화 전까지 유지" 안내 (AC-3, AC-7)
+  // ================================================================
+  test('AC-3/AC-7: 레이저실 비활성화 시 carry-over 안내 텍스트 표시', async ({ page }) => {
+    await page.goto(DASHBOARD_URL);
+    await page.waitForTimeout(3_000);
+    await expect(page.getByText('대시보드', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+
+    // 레이저실 슬롯 탐색 (data-room-type="laser" 또는 "heated_laser")
+    const laserSlots = page.locator('[data-room-type="laser"], [data-room-type="heated_laser"]');
+    const laserCount = await laserSlots.count();
+    console.log(`[AC-7/레이저실] 레이저실 슬롯 수: ${laserCount}`);
+
+    if (laserCount === 0) {
+      console.log('[AC-7/레이저실] 레이저실 슬롯 없음 — 스킵');
+      return;
+    }
+
+    // 레이저실 비활성화 버튼 (끄기) 탐색
+    const laserSlot = laserSlots.first();
+    const laserOffBtn = laserSlot.locator('button:has-text("끄기")').first();
+    const hasLaserOffBtn = await laserOffBtn.isVisible().catch(() => false);
+
+    if (!hasLaserOffBtn) {
+      console.log('[AC-7/레이저실] "끄기" 버튼 없음 — 권한 부족 또는 이미 비활성');
+      // 이미 비활성 상태이면 carry-over 안내 확인
+      const carryOverMsg = page.getByText('이 방은 다시 활성화할 때까지 비활성 상태가 유지됩니다').first();
+      const hasMsg = await carryOverMsg.isVisible().catch(() => false);
+      if (hasMsg) {
+        console.log('[AC-7/레이저실] carry-over 안내 텍스트 이미 표시 OK');
+      }
+      return;
+    }
+
+    // 레이저실 비활성화
+    await laserOffBtn.click();
+    await page.waitForTimeout(1_500);
+    console.log('[AC-7/레이저실] 비활성화 클릭 완료');
+
+    // AC-7: carry-over 안내 텍스트 확인
+    const carryOverMsg = page.getByText('이 방은 다시 활성화할 때까지 비활성 상태가 유지됩니다').first();
+    const hasMsg = await carryOverMsg.isVisible().catch(() => false);
+    console.log(`[AC-7/레이저실] carry-over 안내 텍스트: ${hasMsg ? 'OK' : '미발견'}`);
+    expect(hasMsg).toBe(true);
+
+    // AC-7: 뱃지 텍스트 "비활성(유지)" 확인
+    const carryBadge = page.getByText('비활성(유지)').first();
+    const hasBadge = await carryBadge.isVisible().catch(() => false);
+    console.log(`[AC-7/레이저실] "비활성(유지)" 뱃지: ${hasBadge ? 'OK' : '미발견'}`);
+
+    // 복구
+    const restoreBtn = laserSlots.first().locator('button:has-text("활성화")').first();
+    if (await restoreBtn.isVisible().catch(() => false)) {
+      await restoreBtn.click();
+      await page.waitForTimeout(1_000);
+      console.log('[AC-7/레이저실] 복원 OK');
+    }
+  });
+
+  // ================================================================
+  // 시나리오 6: 상담실 daily reset — 비활성화 시 "오늘만" 안내 (AC-3, AC-7)
+  // ================================================================
+  test('AC-3/AC-7: 상담실 비활성화 시 daily reset 안내 텍스트 표시', async ({ page }) => {
+    await page.goto(DASHBOARD_URL);
+    await page.waitForTimeout(3_000);
+    await expect(page.getByText('대시보드', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+
+    // 상담실 슬롯 탐색 (data-room-type="consultation")
+    const consultSlots = page.locator('[data-room-type="consultation"]');
+    const consultCount = await consultSlots.count();
+    console.log(`[AC-7/상담실] 상담실 슬롯 수: ${consultCount}`);
+
+    if (consultCount === 0) {
+      console.log('[AC-7/상담실] 상담실 슬롯 없음 — 스킵');
+      return;
+    }
+
+    // 상담실 비활성화 버튼 탐색
+    const consultSlot = consultSlots.first();
+    const consultOffBtn = consultSlot.locator('button:has-text("끄기")').first();
+    const hasConsultOffBtn = await consultOffBtn.isVisible().catch(() => false);
+
+    if (!hasConsultOffBtn) {
+      console.log('[AC-7/상담실] "끄기" 버튼 없음 — 권한 부족 또는 이미 비활성');
+      // 이미 비활성 상태이면 daily reset 안내 확인
+      const dailyMsg = page.getByText('오늘만 비활성화됩니다').first();
+      const hasMsg = await dailyMsg.isVisible().catch(() => false);
+      if (hasMsg) {
+        console.log('[AC-7/상담실] daily reset 안내 텍스트 이미 표시 OK');
+      }
+      return;
+    }
+
+    // 상담실 비활성화
+    await consultOffBtn.click();
+    await page.waitForTimeout(1_500);
+    console.log('[AC-7/상담실] 비활성화 클릭 완료');
+
+    // AC-7: daily reset 안내 텍스트 확인
+    const dailyMsg = page.getByText('오늘만 비활성화됩니다').first();
+    const hasMsg = await dailyMsg.isVisible().catch(() => false);
+    console.log(`[AC-7/상담실] daily reset 안내 텍스트: ${hasMsg ? 'OK' : '미발견'}`);
+    expect(hasMsg).toBe(true);
+
+    // AC-7: 뱃지 텍스트 "비활성" (유지 없음) 확인
+    const normalBadge = consultSlot.getByText('비활성').first();
+    const hasBadge = await normalBadge.isVisible().catch(() => false);
+    console.log(`[AC-7/상담실] "비활성" 뱃지 표시: ${hasBadge ? 'OK' : '미발견'}`);
+
+    // 복구
+    const restoreBtn = consultSlot.locator('button:has-text("활성화")').first();
+    if (await restoreBtn.isVisible().catch(() => false)) {
+      await restoreBtn.click();
+      await page.waitForTimeout(1_000);
+      console.log('[AC-7/상담실] 복원 OK');
+    }
   });
 
   // ================================================================
