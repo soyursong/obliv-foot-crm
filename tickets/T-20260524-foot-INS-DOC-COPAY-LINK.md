@@ -5,7 +5,8 @@ status: deploy-ready
 deploy_ready: true
 build_ok: true
 db_change: false
-spec_added: false
+spec_added: true
+e2e_spec: tests/e2e/T-20260524-foot-INS-DOC-COPAY-LINK.spec.ts
 summary: "InvoiceDialog insurance_claims draft 자동채움 + bill_detail 본인부담 열 연동"
 ---
 
