@@ -21,6 +21,10 @@
  *   - [F4] total_amount/paid_amount 0 추가 (NOT NULL 제약)
  *   - [F5] selectCustomerInEditor 셀렉터 수정 (.z-30 button + dispatchEvent mousedown)
  *   - [F6] 고객명 런타임 suffix — stale DB 데이터 충돌 방지
+ *
+ * FIX-2026-05-24 (MSG-20260524-125934-exu8):
+ *   - [F7] session_type '레이저 N회' → 'heated_laser' (CHECK constraint 준수)
+ *   - [F7] 세션 insert 에러 로깅 추가 (묵음 실패 방지)
  */
 import { test, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
@@ -86,11 +90,13 @@ async function createTestPackageWithSessions(
   const sessions = Array.from({ length: sessionCount }, (_, i) => ({
     package_id: pkgId,
     session_number: i + 1,
-    session_type: `레이저 ${i + 1}회`,
+    // [F7] session_type CHECK constraint 준수 — 허용값: heated_laser|unheated_laser|iv|preconditioning|podologue|trial
+    session_type: 'heated_laser' as const,
     session_date: new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10),
     status: 'completed',
   }));
-  await sb.from('package_sessions').insert(sessions);
+  const { error: sessErr } = await sb.from('package_sessions').insert(sessions);
+  if (sessErr) throw new Error(`세션 생성 실패: ${sessErr.message}`);
   return pkgId;
 }
 
