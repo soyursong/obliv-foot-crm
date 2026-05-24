@@ -1243,7 +1243,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // C2-RESV-MINI-POPUP: 예약하기 미니창
   const [openResvMiniPopup, setOpenResvMiniPopup] = useState(false);
   // T-20260508-foot-C22-RESV-EDIT: endTime 삭제 (불필요)
-  const [resvMiniForm, setResvMiniForm] = useState({ date: '', startTime: '', memo: '' });
+  // T-20260524-foot-DESIG-BIDIRECT: designatedTherapistId 추가 (AC-2 역동기화용, 빈 상태로 시작 — AC-4)
+  const [resvMiniForm, setResvMiniForm] = useState({ date: '', startTime: '', memo: '', designatedTherapistId: '' });
   const [savingResvMini, setSavingResvMini] = useState(false);
   // C2-RESV-DETAIL-PANEL: 예약상세 탭
   const [resvDetailTab, setResvDetailTab] = useState<'예약' | '상담' | '치료메모'>('예약');
@@ -1298,12 +1299,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 상태
   const [designatedTherapistId, setDesignatedTherapistId] = useState<string>('');
   const [savingDesignatedTherapist, setSavingDesignatedTherapist] = useState(false);
+  // T-20260524-foot-DESIG-SAVE-ERR: 인라인 배지 → toast.success 유지 (배지 렌더링 미사용)
   // T-20260516-foot-HEALER-RESV-BTN → T-20260522-foot-PKG-HEALER-DEDUCT 통합으로 healerFlagLoading 폐기
   // T-20260522-foot-PKG-HEALER-DEDUCT: [힐러예약 후 차감] 복합 동작 로딩
   const [savingHealerDeduct, setSavingHealerDeduct] = useState(false);
   // C22-RESV-EDIT: 예약 수정 모달
   const [editResvId, setEditResvId] = useState<string | null>(null);
-  const [editResvForm, setEditResvForm] = useState({ date: '', startTime: '', memo: '' });
+  // T-20260524-foot-THERAPIST-BISYNC: therapistId + visitType 추가 (AC-2 역동기화용)
+  const [editResvForm, setEditResvForm] = useState({ date: '', startTime: '', memo: '', therapistId: '', visitType: '' });
   const [savingEditResv, setSavingEditResv] = useState(false);
   // T-20260515-foot-INLINE-RESV: 강화 인라인 예약 패널 (슬롯 그리드 + 담당의 + 진료종류)
   const [inlineResvOpen, setInlineResvOpen] = useState(false);
@@ -1312,6 +1315,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [inlineResvLoading, setInlineResvLoading] = useState(false);
   const [savingInlineResv, setSavingInlineResv] = useState(false);
   const [inlineResvMemo, setInlineResvMemo] = useState('');
+  // T-20260524-foot-THERAPIST-BISYNC: 인라인 예약 치료사 (AC-1 pre-fill + AC-2 역동기화)
+  const [inlineResvTherapistId, setInlineResvTherapistId] = useState('');
   // T-20260511-foot-C21-PKG-USAGE-EDIT: 시술내역 수정/삭제 다이얼로그
   const [editSessionDlg, setEditSessionDlg] = useState<PackageSession | null>(null);
   const [editSessionForm, setEditSessionForm] = useState({
@@ -2180,9 +2185,20 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       booking_memo: resvMiniForm.memo || null,
       status: 'confirmed',
       created_by: profile?.id ?? null,
+      // T-20260524-foot-DESIG-BIDIRECT AC-3: preferred_therapist_id = 선택된 지정치료사 또는 기존 지정치료사
+      preferred_therapist_id: resvMiniForm.designatedTherapistId || customer.designated_therapist_id || null,
     }).select('id').single();
     setSavingResvMini(false);
     if (error) { toast.error(`예약 저장 실패: ${error.message}`); return; }
+    // T-20260524-foot-DESIG-BIDIRECT AC-2: 새 지정 치료사 선택 시 customers.designated_therapist_id 역동기화 (RPC)
+    if (resvMiniForm.designatedTherapistId && resvMiniForm.designatedTherapistId !== (customer.designated_therapist_id ?? '')) {
+      await supabase.rpc('save_designated_therapist', {
+        p_customer_id: customer.id,
+        p_therapist_id: resvMiniForm.designatedTherapistId,
+      });
+      setDesignatedTherapistId(resvMiniForm.designatedTherapistId);
+      setCustomer(prev => prev ? { ...prev, designated_therapist_id: resvMiniForm.designatedTherapistId } : prev);
+    }
     // AC-8+AC-11: pending_healer_flag → 신규 예약에 healer_flag 자동 적용 후 1회 소모
     // AC-11: 당일(오늘) 예약에는 적용 금지 — 다음날 이후(> today)만 소모. 당일 고객박스 노란색 전환 방지.
     {
@@ -2202,7 +2218,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       .limit(30);
     setReservations((resvData ?? []) as Reservation[]);
     setOpenResvMiniPopup(false);
-    setResvMiniForm({ date: '', startTime: '', memo: '' });
+    setResvMiniForm({ date: '', startTime: '', memo: '', designatedTherapistId: '' });
   };
 
   // C23-DETAIL-SIMPLIFY: 예약 탭 저장 (고객메모 + 기타메모)
@@ -2488,16 +2504,28 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   };
 
   // T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 저장
+  // T-20260524-foot-DESIG-SAVE-ERR AC-1: RPC 전환 — PostgREST 스키마 캐시 우회
+  //   루트 코즈: designated_therapist_id 컬럼(20260522070000) 추가 후 PostgREST 캐시 미갱신 →
+  //             REST UPDATE → PGRST116 "Could not find column" 오류. save_customer_address 동일 패턴.
+  //   수정: supabase.rpc('save_designated_therapist', {...}) — SQL 직접 실행 → 캐시 우회
+  // ※ T-20260524-foot-THERAPIST-BISYNC (preferred_therapist_id 예약 동기화)는
+  //   20260524040000_reservations_preferred_therapist 마이그레이션 적용 후
+  //   DESIG-BIDIRECT 티켓에서 별도 구현
   const saveDesignatedTherapist = async (newTherapistId: string) => {
     if (!customer) return;
     setSavingDesignatedTherapist(true);
-    const { error } = await supabase
-      .from('customers')
-      .update({ designated_therapist_id: newTherapistId || null })
-      .eq('id', customer.id);
+    const { data: rowCount, error } = await supabase.rpc('save_designated_therapist', {
+      p_customer_id: customer.id,
+      p_therapist_id: newTherapistId || null,
+    });
     setSavingDesignatedTherapist(false);
     if (error) {
       toast.error(`지정 치료사 저장 실패: ${error.message}`);
+      return;
+    }
+    // 0-row: RLS 투명 차단(권한 부족) 또는 고객 ID 불일치
+    if (rowCount === 0) {
+      toast.error('지정 치료사 저장 실패: 권한 오류 (관리자에게 문의)');
       return;
     }
     setDesignatedTherapistId(newTherapistId);
@@ -2614,19 +2642,39 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   };
 
   // C22-RESV-EDIT: 예약 수정 저장
+  // T-20260524-foot-THERAPIST-BISYNC AC-2: 재진 예약 치료사 수기 선택 → customers.designated_therapist_id 역동기화
   const saveEditResv = async () => {
     if (!editResvId || !editResvForm.date || !editResvForm.startTime) {
       toast.error('예약일자와 시간을 입력하세요');
       return;
     }
     setSavingEditResv(true);
-    const { error } = await supabase.from('reservations').update({
+    const updatePayload: Record<string, unknown> = {
       reservation_date: editResvForm.date,
       reservation_time: editResvForm.startTime,
       booking_memo: editResvForm.memo || null,
-    }).eq('id', editResvId);
+    };
+    // T-20260524-foot-THERAPIST-BISYNC: 치료사 필드도 함께 업데이트 (null 허용)
+    if (editResvForm.visitType === 'returning') {
+      updatePayload.preferred_therapist_id = editResvForm.therapistId || null;
+    }
+    const { error } = await supabase.from('reservations').update(updatePayload).eq('id', editResvId);
     setSavingEditResv(false);
     if (error) { toast.error(`수정 실패: ${error.message}`); return; }
+    // T-20260524-foot-DESIG-BIDIRECT AC-2: 재진 예약 치료사 수기 변경 시 → designated_therapist_id 역동기화 (RPC)
+    if (
+      customer &&
+      editResvForm.visitType === 'returning' &&
+      editResvForm.therapistId &&
+      editResvForm.therapistId !== (customer.designated_therapist_id ?? '')
+    ) {
+      await supabase.rpc('save_designated_therapist', {
+        p_customer_id: customer.id,
+        p_therapist_id: editResvForm.therapistId,
+      });
+      setDesignatedTherapistId(editResvForm.therapistId);
+      setCustomer(prev => prev ? { ...prev, designated_therapist_id: editResvForm.therapistId } : prev);
+    }
     const { data: resvData } = await supabase
       .from('reservations')
       .select('*')
@@ -2737,6 +2785,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   }, [currentUserStaffId, therapistList]);
 
   // T-20260515-foot-INLINE-RESV: 빈 슬롯 클릭 시 예약 등록
+  // T-20260524-foot-THERAPIST-BISYNC AC-2: 치료사 선택 시 preferred_therapist_id 저장 + designated_therapist_id 역동기화
   const saveInlineResv = async (time: string) => {
     if (!customer || !inlineResvDate) return;
     setSavingInlineResv(true);
@@ -2751,9 +2800,21 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       booking_memo: inlineResvMemo.trim() || null,
       status: 'confirmed',
       created_by: profile?.id ?? null,
+      // T-20260524-foot-THERAPIST-BISYNC: 선택된 치료사 저장 (AC-2)
+      preferred_therapist_id: inlineResvTherapistId || null,
     }).select('id').single();
     setSavingInlineResv(false);
     if (error) { toast.error(`예약 저장 실패: ${error.message}`); return; }
+    // T-20260524-foot-DESIG-BIDIRECT AC-2: 치료사 수기 선택 저장 → customers.designated_therapist_id 역동기화 (RPC)
+    // AC-3: visit_type = 'returning'만 (이 함수는 항상 returning이므로 조건 충족)
+    if (inlineResvTherapistId && inlineResvTherapistId !== (customer.designated_therapist_id ?? '')) {
+      await supabase.rpc('save_designated_therapist', {
+        p_customer_id: customer.id,
+        p_therapist_id: inlineResvTherapistId,
+      });
+      setDesignatedTherapistId(inlineResvTherapistId);
+      setCustomer(prev => prev ? { ...prev, designated_therapist_id: inlineResvTherapistId } : prev);
+    }
     // AC-8+AC-11: pending_healer_flag → 신규 예약에 healer_flag 자동 적용 후 1회 소모
     // AC-11: 당일(오늘) 예약에는 적용 금지 — 다음날 이후(> today)만 소모. 당일 고객박스 노란색 전환 방지.
     {
@@ -2775,6 +2836,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     setReservations((resvData ?? []) as Reservation[]);
     // 슬롯 그리드 갱신 (방금 만든 예약 반영)
     await loadInlineResvSlots(inlineResvDate);
+    // T-20260524-foot-DESIG-BIDIRECT: 지정 치료사 선택 리셋 (다음 예약 시 빈 상태 — AC-4)
+    setInlineResvTherapistId('');
   };
 
   const totalPaid =
@@ -4896,6 +4959,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           date: r.reservation_date,
                           startTime: r.reservation_time.slice(0, 5),
                           memo: resvMemoInputs[r.id] ?? r.booking_memo ?? '',
+                          // T-20260524-foot-DESIG-BIDIRECT: 예약의 preferred_therapist_id 로드 (빈 상태 시작 — AC-4 "자동 미리 선택 금지")
+                          // 단, 수정 모달은 기존 값을 유지해야 하므로 기존 preferred_therapist_id 복원
+                          therapistId: r.preferred_therapist_id ?? '',
+                          visitType: r.visit_type,
                         });
                       }}
                       className="w-full flex items-center justify-between text-[11px] rounded hover:bg-muted/50 px-1 py-0.5 transition text-left"
@@ -5425,6 +5492,26 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   className="text-xs resize-none"
                 />
               </div>
+              {/* T-20260524-foot-DESIG-BIDIRECT AC-1: 지정 치료사 참고 표시 + AC-2: 변경 선택 */}
+              <div>
+                {customer.designated_therapist_id && (
+                  <div className="text-[10px] text-teal-600 mb-0.5">
+                    현재 지정 치료사: {therapistList.find(t => t.id === customer.designated_therapist_id)?.name ?? '-'}
+                  </div>
+                )}
+                <label className="block text-muted-foreground mb-0.5">지정 치료사 변경</label>
+                <select
+                  value={resvMiniForm.designatedTherapistId}
+                  onChange={(e) => setResvMiniForm(f => ({ ...f, designatedTherapistId: e.target.value }))}
+                  className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500 bg-white"
+                  data-testid="resv-mini-designated-therapist"
+                >
+                  <option value="">— 변경 없음</option>
+                  {therapistList.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="flex gap-2 pt-1">
               <Button
@@ -5487,6 +5574,28 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   onChange={(e) => setEditResvForm(f => ({ ...f, memo: e.target.value }))}
                   rows={2} className="text-xs resize-none" />
               </div>
+              {/* T-20260524-foot-DESIG-BIDIRECT AC-1: 지정 치료사 참고 + AC-2: 수기 변경 */}
+              {editResvForm.visitType === 'returning' && (
+                <div>
+                  {customer?.designated_therapist_id && (
+                    <div className="text-[10px] text-teal-600 mb-0.5">
+                      현재 지정 치료사: {therapistList.find(t => t.id === customer?.designated_therapist_id)?.name ?? '-'}
+                    </div>
+                  )}
+                  <label className="block text-muted-foreground mb-0.5">지정 치료사 변경</label>
+                  <select
+                    value={editResvForm.therapistId}
+                    onChange={(e) => setEditResvForm(f => ({ ...f, therapistId: e.target.value }))}
+                    className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500 bg-white"
+                    data-testid="edit-resv-designated-therapist"
+                  >
+                    <option value="">— 변경 없음</option>
+                    {therapistList.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
             <div className="flex gap-2 pt-1">
               <Button className="flex-1 bg-teal-600 hover:bg-teal-700 h-8 text-xs"
@@ -5543,6 +5652,26 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
                 />
               </div>
+            </div>
+            {/* T-20260524-foot-DESIG-BIDIRECT AC-1: 지정 치료사 참고 + AC-2: 수기 변경 */}
+            <div>
+              {customer.designated_therapist_id && (
+                <div className="text-[10px] text-teal-600 mb-0.5">
+                  현재 지정 치료사: {therapistList.find(t => t.id === customer.designated_therapist_id)?.name ?? '-'}
+                </div>
+              )}
+              <label className="block text-xs text-muted-foreground mb-0.5">지정 치료사 변경</label>
+              <select
+                value={inlineResvTherapistId}
+                onChange={(e) => setInlineResvTherapistId(e.target.value)}
+                className="w-full h-8 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500 bg-white"
+                data-testid="inline-resv-designated-therapist"
+              >
+                <option value="">— 변경 없음</option>
+                {therapistList.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
             </div>
             <div>
               <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1.5 flex items-center gap-2">
