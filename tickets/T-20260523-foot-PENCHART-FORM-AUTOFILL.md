@@ -2,7 +2,7 @@
 id: T-20260523-foot-PENCHART-FORM-AUTOFILL
 domain: foot
 priority: P1
-status: deploy-ready
+status: deployed
 deploy-ready: true
 build-ok: true
 db-change: false
@@ -10,12 +10,12 @@ spec-added: true
 spec-exempt: false
 rollback-sql: ""
 commit_sha: "179795c"
-qa_result: pending
-qa_grade: ""
+qa_result: pass
+qa_grade: Yellow
 deployed_at: "2026-05-24T03:38:39+09:00"
-deploy_commit: "e86c953"
-bundle_hash: "CustomerChartPage-88tiC3Zn.js"
-field_soak_until: "2026-05-25T03:38:39+09:00"
+deploy_commit: "179795c"
+bundle_hash: "CustomerChartPage-f4WX0pYc.js"
+field_soak_until: "2026-05-25T16:15:00+09:00"
 created: 2026-05-23 23:00
 completed: 2026-05-23 23:30
 deadline: 2026-05-27
@@ -31,6 +31,7 @@ re_qa_at: "2026-05-24T07:45:00+09:00"
 re_qa_result: pass
 re_qa_bundle_hash: "CustomerChartPage-DtCQgKC8.js"
 slack_deploy_notification_ts: "1779576451.982619"
+reopen_deploy_notification_ts: "1779605260.964899"
 reopen_commit_sha: "179795c"
 reopen_reason: "MSG-20260524-110842-pnuu: AC-8 A안 확정 + AC-R4 서명란 제거 + AC-R5 좌표 스펙"
 reopen_at: "2026-05-24T11:30:00+09:00"
@@ -100,3 +101,21 @@ supervisor 재검증 통과. 최초 QA(03:48 KST, 5358afd) 결과 유효 확인.
 | 배포 알림 | 발송 | <@U0ATDB587PV> C0ATE5P6JTH thread:1779543851.547859 → ts:1779576451.982619 |
 
 **판정: Yellow GO_WARN 유지** — PII(주민번호) B-lite 마스킹 정책 현장 확인 필요. bundle_hash 변경(88tiC3Zn→DtCQgKC8)은 후속 5 commits(SPACE-DASH-SYNC 등) 반영에 의한 정상 갱신.
+
+## REOPEN QA 최종 검증 (2026-05-24T16:15:00+09:00) — conductor KICK N=1 처리
+
+supervisor 재검증. reopen_commit 179795c (AC-8 A안 + AC-R4 + AC-R5) 최종 QA PASS.
+
+| 항목 | 결과 | 비고 |
+|------|------|------|
+| C5 빌드 | PASS | 3.37s, exit 0 |
+| C1 env 매트릭스 | PASS | 신규 env var 없음 (순수 프론트엔드 변경) |
+| E2E spec | PASS | 33/33 (17.2s) — AC-1~12 + AC-R4 + AC-R5 전체 커버 |
+| Phase 7.5 Runtime Safety | PASS | for-of: const배열/length>0 가드 / autofillDataRef.current null체크 / customerRrn??'' / rrnFull??undefined |
+| 운영 bundle 확인 | PASS | CustomerChartPage-f4WX0pYc.js (274KB) — customerRrn(2건) + 3071(1건) grep 확인. 3206 없음=AC-R4 name제거 정상 |
+| 브라우저 smoke | PASS | https://obliv-foot-crm.vercel.app/ 200 OK, white-screen 없음 |
+| DB/RLS/Cross-CRM | N/A | db_change: false |
+| AC-R4 서명란 제거 | PASS | SignaturePad import 없음, REFUND_AUTOFILL_POS_P3 date만 유지 |
+| AC-8 A안 (rrnFull) | PASS | CustomerChartPage rrnFull 상태(slice포맷) → PenChartTab customerRrn 전달 |
+
+**최종 판정: Yellow GO (deployed)** — AC-8 A안(주민번호 전체표시)은 현장 확정(김주연 총괄). 실기기 좌표 시각 확인은 field-soak 중 현장 자체 검증. field_soak_until: 2026-05-25T16:15:00+09:00.
