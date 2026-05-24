@@ -3,16 +3,15 @@
  * HEALER-RESV-BTN(b059856) 현장 미동작 2건 검증
  *
  * 검증 대상 (7c1e9c3 + RECHECK 수정 포함):
- *   AC-1 (RECHECK): 재진 슬롯 healer-blink CSS — amber-400(#fbbf24) ↔ green-300(#86efac) 명확 교번
+ *   AC-1 (RECHECK): 재진 슬롯 healer-blink CSS — v5: outline 기반 amber-500(#f59e0b) 단색 blink (green 교번 제거)
  *   AC-2 (RECHECK): 셀프접수 후 자동 HL — fetchCheckIns healer_flag 쿼리 + reset 구조 정상
  *   AC-3: 체크인 전→후 전환 동선 — 대시보드 로드 + 칸반 렌더 + 에러 없음
  *   AC-4: HEALER-RESV-BTN 핵심 기능 회귀 없음 (btn 렌더 / pending_healer_flag / CSS 애니)
- *   AC-5 (추가): 버튼 display nextResv 당일 포함 — >= today 필터 적용 확인 (소스 정적)
+ *   AC-5 (추가): CSS healer-border-blink 존재 + v5 outline amber-500(#f59e0b) 단색 확인 (소스 정적)
  *
  * 수정 파일:
- *   - src/pages/CustomerChartPage.tsx: 버튼 display nextResv 필터 > today → >= today
- *   - src/index.css: (7c1e9c3에서) healer-border-blink 앰버↔그린 명확 교번
- *   - src/pages/CustomerChartPage.tsx: (7c1e9c3에서) handleHealerFlag >= today 적용
+ *   - src/pages/CustomerChartPage.tsx: v4 — handleHealerDeduct + 버튼 display > today (당일 제외, 김주연 총괄 UX 피드백)
+ *   - src/index.css: v5 — healer-border-blink outline 기반 amber-500(#f59e0b) 단색 (overflow 클리핑 해소)
  */
 
 import { test, expect } from '@playwright/test';
@@ -24,7 +23,7 @@ const REPO_ROOT = path.resolve(__dirname, '../..');
 
 // ── AC-1: CSS animation 가시성 — amber-400 ↔ green-300 교번 ──────────────────
 
-test('AC-1 css: healer-border-blink @keyframes — amber-400(#fbbf24)↔green-300(#86efac) 명확 교번', async ({ page }) => {
+test('AC-1 css: healer-border-blink @keyframes — v5 outline 기반 amber-500(#f59e0b) 단색 blink', async ({ page }) => {
   await page.goto(`${BASE_URL}/admin/dashboard`);
   await expect(page.getByText('통합 시간표')).toBeVisible({ timeout: 15000 });
 
@@ -34,13 +33,10 @@ test('AC-1 css: healer-border-blink @keyframes — amber-400(#fbbf24)↔green-30
         for (const rule of Array.from(sheet.cssRules ?? [])) {
           if (rule instanceof CSSKeyframesRule && rule.name === 'healer-border-blink') {
             const text = rule.cssText;
-            // amber-400 (#fbbf24) 포함 확인
-            const hasAmber = text.includes('fbbf24');
-            // green-300 (#86efac) OR Tailwind-processed 포함 확인
-            const hasGreen = text.includes('86efac');
-            // 원래 버그: amber-400↔amber-500 (fbbf24↔f59e0b) — 유사 색상 → 미인식
-            const hasDualAmberBug = text.includes('f59e0b');
-            return { hasAmber, hasGreen, hasDualAmberBug, text: text.slice(0, 200) };
+            // v5: outline 기반 amber-500(#f59e0b) 단색 blink — green 교번 제거됨
+            const hasOutlineAmber = text.includes('f59e0b');
+            const isOutlineBased = text.includes('outline');
+            return { hasOutlineAmber, isOutlineBased, text: text.slice(0, 200) };
           }
         }
       } catch {
@@ -51,9 +47,8 @@ test('AC-1 css: healer-border-blink @keyframes — amber-400(#fbbf24)↔green-30
   });
 
   expect(animResult).not.toBeNull();
-  expect(animResult!.hasAmber).toBe(true);
-  // green-300↔amber-400 교번이 확인되어야 함 (원래 버그인 dual-amber가 아님)
-  expect(animResult!.hasDualAmberBug).toBe(false);
+  expect(animResult!.hasOutlineAmber).toBe(true);
+  expect(animResult!.isOutlineBased).toBe(true);
 });
 
 test('AC-1 static: healer-blink 클래스가 번들에 포함되고 JS 런타임 에러 없음', async ({ page }) => {
@@ -139,37 +134,32 @@ test('AC-4 regression: 힐러예약 후 차감 버튼 관련 컴포넌트 렌더
   expect(pageErrors).toHaveLength(0);
 });
 
-test('AC-4 source: handleHealerFlag가 >= today (당일 포함) 사용 확인', async () => {
+test('AC-4 source: handleHealerDeduct가 > today (당일 제외) 사용 확인', async () => {
   const chartSrc = fs.readFileSync(path.join(REPO_ROOT, 'src/pages/CustomerChartPage.tsx'), 'utf-8');
 
-  // 수정된 handleHealerFlag: >= today
-  expect(chartSrc).toContain('reservation_date >= today');
-  // 버그 패턴 (> today 단독)이 handleHealerFlag 내부에 없어야 함 (미래만)
-  // 주의: 버튼 display에도 >= today가 들어가서 2회 이상 포함됨
-  const matches = (chartSrc.match(/reservation_date >= today/g) ?? []).length;
-  expect(matches).toBeGreaterThanOrEqual(2); // handleHealerFlag + 버튼 display 양쪽
+  // v4: >= today → > today (당일 예약 제외 — 김주연 총괄 UX 피드백)
+  expect(chartSrc).toContain('reservation_date > today');
+  const matches = (chartSrc.match(/reservation_date > today/g) ?? []).length;
+  expect(matches).toBeGreaterThanOrEqual(2); // handleHealerDeduct(1) + 버튼 display(1) 양쪽
 });
 
-test('AC-4 source: 버튼 display nextResv 필터가 >= today (RECHECK 수정 포함)', async () => {
+test('AC-4 source: 버튼 display nextResv 필터가 > today (v4 수정 — 당일 제외)', async () => {
   const chartSrc = fs.readFileSync(path.join(REPO_ROOT, 'src/pages/CustomerChartPage.tsx'), 'utf-8');
 
-  // FIX(RECHECK): 버튼 display도 >= today — 당일 healer_flag=true 예약 시 버튼이 활성으로 표시
-  const matchGte = (chartSrc.match(/reservation_date >= today/g) ?? []).length;
-  // handleHealerFlag(1) + 버튼display(1) = 최소 2개
-  expect(matchGte).toBeGreaterThanOrEqual(2);
+  // v4: >= today → > today (당일 제외)
+  const matchGt = (chartSrc.match(/reservation_date > today/g) ?? []).length;
+  expect(matchGt).toBeGreaterThanOrEqual(2);
 });
 
 // ── AC-5: CSS 기반 깜빡 → source 검증 ────────────────────────────────────────
 
-test('AC-5 source: index.css healer-blink + healer-border-blink 정의됨', async () => {
+test('AC-5 source: index.css healer-blink + healer-border-blink 정의됨 (v5 outline amber-500)', async () => {
   const cssSrc = fs.readFileSync(path.join(REPO_ROOT, 'src/index.css'), 'utf-8');
 
   expect(cssSrc).toContain('@keyframes healer-border-blink');
   expect(cssSrc).toContain('.healer-blink');
   expect(cssSrc).toContain('animation: healer-border-blink');
-  // amber-400(#fbbf24) 포함
-  expect(cssSrc).toContain('fbbf24');
-  // 원래 버그(amber-500 #f59e0b만 사용)가 아님
-  // v3 수정에서 green-300(#86efac) 교번으로 변경됨
-  expect(cssSrc).toContain('86efac');
+  // v5: outline 기반 amber-500(#f59e0b) — green 교번 제거, overflow 클리핑 해소
+  expect(cssSrc).toContain('f59e0b');
+  expect(cssSrc).toContain('outline');
 });
