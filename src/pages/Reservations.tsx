@@ -1009,6 +1009,7 @@ export default function Reservations() {
                                       {/* T-20260515-foot-RESV-CTX-HOVER: hover 팝업 + 우클릭 컨텍스트 메뉴
                                           취소된 예약 / 미연결 고객은 기존 plain span 유지 */}
                                       {r.customer_id && r.status !== 'cancelled' ? (
+                                        // T-20260525-foot-RSVMGMT-CHART-OPEN AC-1: onClick → openChart (대시보드 동작과 동일)
                                         <CustomerHoverCard
                                           checkIn={resvAsCheckIn(r)}
                                           reservationTime={r.reservation_time}
@@ -1018,6 +1019,7 @@ export default function Reservations() {
                                             e.stopPropagation();
                                             setResvContextMenu({ resv: r, pos: { x: e.clientX, y: e.clientY } });
                                           }}
+                                          onClick={() => handleResvOpenChart(resvAsCheckIn(r))}
                                         />
                                       ) : (
                                         <span
