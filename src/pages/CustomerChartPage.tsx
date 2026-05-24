@@ -2190,12 +2190,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }).select('id').single();
     setSavingResvMini(false);
     if (error) { toast.error(`예약 저장 실패: ${error.message}`); return; }
-    // T-20260524-foot-DESIG-BIDIRECT AC-2: 새 지정 치료사 선택 시 customers.designated_therapist_id 역동기화 (RPC)
+    // T-20260524-foot-DESIG-BIDIRECT AC-2: 새 지정 치료사 선택 시 customers.designated_therapist_id 역동기화 (REST UPDATE)
+    // T-20260524-foot-DESIG-SAVE-ERR: RPC → REST UPDATE 전환 (RPC 미생성 대응)
     if (resvMiniForm.designatedTherapistId && resvMiniForm.designatedTherapistId !== (customer.designated_therapist_id ?? '')) {
-      await supabase.rpc('save_designated_therapist', {
-        p_customer_id: customer.id,
-        p_therapist_id: resvMiniForm.designatedTherapistId,
-      });
+      await supabase
+        .from('customers')
+        .update({ designated_therapist_id: resvMiniForm.designatedTherapistId })
+        .eq('id', customer.id);
       setDesignatedTherapistId(resvMiniForm.designatedTherapistId);
       setCustomer(prev => prev ? { ...prev, designated_therapist_id: resvMiniForm.designatedTherapistId } : prev);
     }
@@ -2504,27 +2505,26 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   };
 
   // T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 저장
-  // T-20260524-foot-DESIG-SAVE-ERR AC-1: RPC 전환 — PostgREST 스키마 캐시 우회
-  //   루트 코즈: designated_therapist_id 컬럼(20260522070000) 추가 후 PostgREST 캐시 미갱신 →
-  //             REST UPDATE → PGRST116 "Could not find column" 오류. save_customer_address 동일 패턴.
-  //   수정: supabase.rpc('save_designated_therapist', {...}) — SQL 직접 실행 → 캐시 우회
-  // ※ T-20260524-foot-THERAPIST-BISYNC (preferred_therapist_id 예약 동기화)는
-  //   20260524040000_reservations_preferred_therapist 마이그레이션 적용 후
-  //   DESIG-BIDIRECT 티켓에서 별도 구현
+  // T-20260524-foot-DESIG-SAVE-ERR AC-2: REST UPDATE 전환
+  //   루트 코즈: save_designated_therapist RPC가 live DB에 미생성
+  //     → PGRST202 "Could not find the function" 오류 → 저장 실패 토스트
+  //   수정: supabase.rpc() → supabase.from('customers').update() (REST UPDATE)
+  //     designated_therapist_id 컬럼 live DB 존재 확인 + 스키마 캐시 갱신 완료
   const saveDesignatedTherapist = async (newTherapistId: string) => {
     if (!customer) return;
     setSavingDesignatedTherapist(true);
-    const { data: rowCount, error } = await supabase.rpc('save_designated_therapist', {
-      p_customer_id: customer.id,
-      p_therapist_id: newTherapistId || null,
-    });
+    const { data: updatedRows, error } = await supabase
+      .from('customers')
+      .update({ designated_therapist_id: newTherapistId || null })
+      .eq('id', customer.id)
+      .select('id');
     setSavingDesignatedTherapist(false);
     if (error) {
       toast.error(`지정 치료사 저장 실패: ${error.message}`);
       return;
     }
     // 0-row: RLS 투명 차단(권한 부족) 또는 고객 ID 불일치
-    if (rowCount === 0) {
+    if (!updatedRows || updatedRows.length === 0) {
       toast.error('지정 치료사 저장 실패: 권한 오류 (관리자에게 문의)');
       return;
     }
@@ -2661,17 +2661,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     const { error } = await supabase.from('reservations').update(updatePayload).eq('id', editResvId);
     setSavingEditResv(false);
     if (error) { toast.error(`수정 실패: ${error.message}`); return; }
-    // T-20260524-foot-DESIG-BIDIRECT AC-2: 재진 예약 치료사 수기 변경 시 → designated_therapist_id 역동기화 (RPC)
+    // T-20260524-foot-DESIG-BIDIRECT AC-2: 재진 예약 치료사 수기 변경 시 → designated_therapist_id 역동기화 (REST UPDATE)
+    // T-20260524-foot-DESIG-SAVE-ERR: RPC → REST UPDATE 전환 (RPC 미생성 대응)
     if (
       customer &&
       editResvForm.visitType === 'returning' &&
       editResvForm.therapistId &&
       editResvForm.therapistId !== (customer.designated_therapist_id ?? '')
     ) {
-      await supabase.rpc('save_designated_therapist', {
-        p_customer_id: customer.id,
-        p_therapist_id: editResvForm.therapistId,
-      });
+      await supabase
+        .from('customers')
+        .update({ designated_therapist_id: editResvForm.therapistId })
+        .eq('id', customer.id);
       setDesignatedTherapistId(editResvForm.therapistId);
       setCustomer(prev => prev ? { ...prev, designated_therapist_id: editResvForm.therapistId } : prev);
     }
@@ -2805,13 +2806,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }).select('id').single();
     setSavingInlineResv(false);
     if (error) { toast.error(`예약 저장 실패: ${error.message}`); return; }
-    // T-20260524-foot-DESIG-BIDIRECT AC-2: 치료사 수기 선택 저장 → customers.designated_therapist_id 역동기화 (RPC)
+    // T-20260524-foot-DESIG-BIDIRECT AC-2: 치료사 수기 선택 저장 → customers.designated_therapist_id 역동기화 (REST UPDATE)
     // AC-3: visit_type = 'returning'만 (이 함수는 항상 returning이므로 조건 충족)
+    // T-20260524-foot-DESIG-SAVE-ERR: RPC → REST UPDATE 전환 (RPC 미생성 대응)
     if (inlineResvTherapistId && inlineResvTherapistId !== (customer.designated_therapist_id ?? '')) {
-      await supabase.rpc('save_designated_therapist', {
-        p_customer_id: customer.id,
-        p_therapist_id: inlineResvTherapistId,
-      });
+      await supabase
+        .from('customers')
+        .update({ designated_therapist_id: inlineResvTherapistId })
+        .eq('id', customer.id);
       setDesignatedTherapistId(inlineResvTherapistId);
       setCustomer(prev => prev ? { ...prev, designated_therapist_id: inlineResvTherapistId } : prev);
     }

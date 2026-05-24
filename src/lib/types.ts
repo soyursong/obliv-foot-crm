@@ -478,4 +478,6 @@ export interface Reservation {
   source_system?: string | null;
   /** 도파민 cue_card.id (UUID) — 큐카드 master=도파민 모델 */
   external_id?: string | null;
+  /** T-20260524-foot-THERAPIST-BISYNC: 재진 예약 지정 치료사 — customers.designated_therapist_id와 쌍방 동기화 */
+  preferred_therapist_id?: string | null;
 }

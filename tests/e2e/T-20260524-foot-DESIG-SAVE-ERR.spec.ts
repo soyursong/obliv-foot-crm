@@ -2,7 +2,10 @@
  * E2E — T-20260524-foot-DESIG-SAVE-ERR
  * 지정 치료사 저장 에러 수정 regression
  *
- * 근본 원인: customers.designated_therapist_id 컬럼 미존재 → DB 직접 적용으로 수정
+ * 근본 원인: save_designated_therapist RPC가 live DB에 미생성
+ *   → PGRST202 "Could not find function" 오류 → 저장 실패 토스트
+ * 수정: supabase.rpc() → supabase.from('customers').update() REST UPDATE 전환
+ *   (designated_therapist_id 컬럼 존재 + 스키마 캐시 갱신 확인 후 적용)
  *
  * SC-1: 2번차트 [지정 치료사] 드롭다운이 정상 렌더되고 저장 에러가 없다
  * SC-2: 드롭다운 선택 후 "저장 실패" 토스트가 아닌 "지정 치료사: {이름}" 성공 토스트
