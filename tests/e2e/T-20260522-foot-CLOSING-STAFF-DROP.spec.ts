@@ -1,10 +1,14 @@
 /**
- * E2E spec — T-20260522-foot-CLOSING-STAFF-DROP
- * 일마감 결제내역 [담당자] 드롭다운 — director 제외, 2번차트와 동일 필터 적용
+ * E2E spec — T-20260522-foot-CLOSING-STAFF-DROP (5/24 스펙 확장)
+ * 일마감 결제내역 [담당자] 드롭다운 — director+therapist 제외, 2번차트와 동일 필터 적용
  *
- * AC-1: 일마감 결제내역 [담당자] 드롭다운 옵션에서 director(원장) 제외 확인
- * AC-2: consultant / coordinator / therapist 가 정상 표시 확인 (DB 레벨)
+ * AC-1: 일마감 결제내역 [담당자] 드롭다운 옵션에서 director(원장)+therapist(치료사) 모두 제외 확인
+ * AC-2: consultant / coordinator 만 정상 표시 확인 (상담실장+데스크)
  * AC-3: CLOSING-PAY-3COL 기존 기능 미영향 (일마감 화면 정상 로드 + 3항목 컬럼 유지)
+ *
+ * 변경 이력:
+ * - 초기: director(원장)만 제외 (commit e7069ae)
+ * - 5/24 확장: therapist(치료사)도 추가 제외 (김주연 총괄 현장 명확화)
  */
 import { test, expect } from '@playwright/test';
 import { loginAndWaitForDashboard } from '../helpers';
@@ -12,18 +16,18 @@ import { loginAndWaitForDashboard } from '../helpers';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? '';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 
-test.describe('T-20260522-CLOSING-STAFF-DROP — 일마감 [담당자] 드롭 director 제외', () => {
+test.describe('T-20260522-CLOSING-STAFF-DROP — 일마감 [담당자] 드롭 director+therapist 제외', () => {
 
-  // ── AC-2: DB — consultant/coordinator/therapist active=true 존재 확인 ────────
-  test('AC-2: DB — non-director staff(consultant/coordinator/therapist) active=true 존재', async ({ request }) => {
+  // ── AC-2: DB — consultant/coordinator(상담실장+데스크) active=true 존재 확인 ────
+  test('AC-2: DB — 표시 대상(consultant/coordinator) active=true 존재', async ({ request }) => {
     if (!SUPABASE_URL || !SERVICE_KEY) {
       test.skip(true, 'SUPABASE env 미설정 — DB 검증 스킵');
       return;
     }
 
-    // director 제외 역할로 active 직원 조회
+    // 표시 대상(상담실장+데스크)만 조회
     const res = await request.get(
-      `${SUPABASE_URL}/rest/v1/staff?select=id,name,role,active&active=eq.true&role=in.(consultant,coordinator,therapist)&limit=10`,
+      `${SUPABASE_URL}/rest/v1/staff?select=id,name,role,active&active=eq.true&role=in.(consultant,coordinator)&limit=10`,
       {
         headers: {
           apikey: SERVICE_KEY,
@@ -37,11 +41,11 @@ test.describe('T-20260522-CLOSING-STAFF-DROP — 일마감 [담당자] 드롭 di
     if (Array.isArray(staff) && staff.length > 0) {
       for (const s of staff) {
         expect(s.active, `직원 ${s.name}(${s.role}) active=true 이어야 함`).toBe(true);
-        expect(['consultant', 'coordinator', 'therapist']).toContain(s.role);
+        expect(['consultant', 'coordinator']).toContain(s.role);
       }
-      console.log(`[AC-2] non-director active 직원 ${staff.length}명 확인 PASS`);
+      console.log(`[AC-2] 상담실장+데스크 active 직원 ${staff.length}명 확인 PASS`);
     } else {
-      console.log('[AC-2] non-director active 직원 없음 — 환경 데이터 부재, 코드 레벨 PASS');
+      console.log('[AC-2] 상담실장+데스크 active 직원 없음 — 환경 데이터 부재, 코드 레벨 PASS');
     }
   });
 
@@ -75,16 +79,16 @@ test.describe('T-20260522-CLOSING-STAFF-DROP — 일마감 [담당자] 드롭 di
     }
   });
 
-  // ── AC-1: 일마감 화면 진입 + [담당자] 드롭다운 director 제외 확인 ─────────────
-  test('AC-1: 일마감 결제내역 [담당자] 드롭다운 — director(원장) 옵션 없음', async ({ page, request }) => {
+  // ── AC-1: 일마감 화면 진입 + [담당자] 드롭다운 director+therapist 제외 확인 ──────
+  test('AC-1: 일마감 결제내역 [담당자] 드롭다운 — director(원장)+therapist(치료사) 옵션 없음', async ({ page, request }) => {
     if (!SUPABASE_URL || !SERVICE_KEY) {
-      test.skip(true, 'SUPABASE env 미설정 — director 이름 조회 불가');
+      test.skip(true, 'SUPABASE env 미설정 — 제외 대상 이름 조회 불가');
       return;
     }
 
-    // director 직원 이름 조회
-    const dirRes = await request.get(
-      `${SUPABASE_URL}/rest/v1/staff?select=id,name,display_name,role&role=eq.director&active=eq.true`,
+    // 제외 대상(director+therapist) 직원 이름 조회
+    const excludedRes = await request.get(
+      `${SUPABASE_URL}/rest/v1/staff?select=id,name,display_name,role&role=in.(director,therapist)&active=eq.true`,
       {
         headers: {
           apikey: SERVICE_KEY,
@@ -92,7 +96,7 @@ test.describe('T-20260522-CLOSING-STAFF-DROP — 일마감 [담당자] 드롭 di
         },
       },
     );
-    const directors = await dirRes.json();
+    const excludedStaff = await excludedRes.json();
 
     const ok = await loginAndWaitForDashboard(page);
     if (!ok) {
@@ -108,7 +112,6 @@ test.describe('T-20260522-CLOSING-STAFF-DROP — 일마감 [담당자] 드롭 di
     const paymentsTab = page.getByRole('tab', { name: /결제내역/ });
     const hasTab = await paymentsTab.count() > 0;
     if (!hasTab) {
-      // 탭이 없으면 이미 결제내역 화면이거나 다른 레이아웃
       console.log('[AC-1] 결제내역 탭 미발견 — 화면 직접 확인');
     } else {
       await expect(paymentsTab).toBeVisible({ timeout: 10000 });
@@ -116,15 +119,16 @@ test.describe('T-20260522-CLOSING-STAFF-DROP — 일마감 [담당자] 드롭 di
       await page.waitForTimeout(500);
     }
 
-    // 담당자 드롭다운(select) 찾기
-    // "전체" 옵션을 가진 select = 필터 드롭다운
+    // 담당자 드롭다운(select) 찾기 — "전체" 옵션을 가진 select = 필터 드롭다운
     const allSelects = page.locator('select');
     const selectCount = await allSelects.count();
 
     let staffDropdownFound = false;
-    let directorFoundInStaffDropdown = false;
-    const directorNames: string[] = Array.isArray(directors)
-      ? directors.map((d: { name: string; display_name?: string }) => d.display_name || d.name).filter(Boolean)
+    let excludedFoundInDropdown = false;
+
+    // 제외 대상 이름 목록 (director + therapist)
+    const excludedNames: string[] = Array.isArray(excludedStaff)
+      ? excludedStaff.map((s: { name: string; display_name?: string }) => s.display_name || s.name).filter(Boolean)
       : [];
 
     for (let i = 0; i < selectCount; i++) {
@@ -137,22 +141,23 @@ test.describe('T-20260522-CLOSING-STAFF-DROP — 일마감 [담당자] 드롭 di
 
       staffDropdownFound = true;
 
-      // director 이름이 옵션에 포함되는지 확인
-      if (directorNames.length > 0) {
-        for (const dirName of directorNames) {
-          const hasDir = options.some(o => o.trim() === dirName);
-          if (hasDir) {
-            directorFoundInStaffDropdown = true;
-            console.error(`[AC-1] FAIL: select[${i}]에서 원장 "${dirName}" 옵션 발견`);
+      // 제외 대상 이름이 옵션에 포함되는지 확인
+      if (excludedNames.length > 0) {
+        for (const exName of excludedNames) {
+          const hasExcluded = options.some(o => o.trim() === exName);
+          if (hasExcluded) {
+            excludedFoundInDropdown = true;
+            console.error(`[AC-1] FAIL: select[${i}]에서 제외 대상 "${exName}" 옵션 발견`);
           }
         }
       }
 
-      // "원장" 텍스트가 포함된 옵션도 검사
-      const hasDirectorText = options.some(o => o.includes('원장'));
-      if (hasDirectorText) {
-        directorFoundInStaffDropdown = true;
-        console.error(`[AC-1] FAIL: select[${i}]에서 "원장" 텍스트 옵션 발견:`, options.filter(o => o.includes('원장')));
+      // "원장" 또는 "치료사" 텍스트가 포함된 옵션도 검사
+      const hasExcludedText = options.some(o => o.includes('원장') || o.includes('치료사'));
+      if (hasExcludedText) {
+        excludedFoundInDropdown = true;
+        console.error(`[AC-1] FAIL: select[${i}]에서 원장/치료사 텍스트 옵션 발견:`,
+          options.filter(o => o.includes('원장') || o.includes('치료사')));
       }
 
       console.log(`[AC-1] select[${i}] 옵션:`, options.join(', '));
@@ -161,27 +166,26 @@ test.describe('T-20260522-CLOSING-STAFF-DROP — 일마감 [담당자] 드롭 di
 
     if (!staffDropdownFound) {
       console.log('[AC-1] 담당자 드롭다운(전체) 미발견 — 페이지 로딩 불완전 또는 레이아웃 변경');
-      // 화면이 로드됐는지 기본 확인
       const pageContent = await page.content();
       expect(pageContent.length, '일마감 페이지 내용이 비어있지 않아야 함').toBeGreaterThan(500);
       console.log('[AC-1] 페이지 로드 확인 PASS (담당자 드롭다운 미발견 — 데이터 없음 상태로 판단)');
       return;
     }
 
-    expect(directorFoundInStaffDropdown, '일마감 결제내역 [담당자] 드롭다운에 director(원장) 옵션이 없어야 함').toBe(false);
-    console.log('[AC-1] 일마감 결제내역 [담당자] 드롭다운 director 제외 PASS');
+    expect(excludedFoundInDropdown, '일마감 결제내역 [담당자] 드롭다운에 director(원장)+therapist(치료사) 옵션이 없어야 함').toBe(false);
+    console.log('[AC-1] 일마감 결제내역 [담당자] 드롭다운 director+therapist 제외 PASS');
   });
 
-  // ── AC-2: 일마감 화면 진입 + non-director staff 정상 표시 확인 ────────────────
-  test('AC-2: 일마감 [담당자] 드롭다운 — consultant/coordinator/therapist 정상 표시', async ({ page, request }) => {
+  // ── AC-2: 일마감 화면 진입 + 표시 대상(상담실장+데스크)만 정상 표시 확인 ─────────
+  test('AC-2: 일마감 [담당자] 드롭다운 — consultant/coordinator(상담실장+데스크)만 정상 표시', async ({ page, request }) => {
     if (!SUPABASE_URL || !SERVICE_KEY) {
       test.skip(true, 'SUPABASE env 미설정');
       return;
     }
 
-    // non-director active 직원 이름 조회
+    // 표시 대상(상담실장+데스크) active 직원 이름 조회 (therapist 제외)
     const staffRes = await request.get(
-      `${SUPABASE_URL}/rest/v1/staff?select=id,name,display_name,role&active=eq.true&role=in.(consultant,coordinator,therapist)&limit=3`,
+      `${SUPABASE_URL}/rest/v1/staff?select=id,name,display_name,role&active=eq.true&role=in.(consultant,coordinator)&limit=3`,
       {
         headers: {
           apikey: SERVICE_KEY,
