@@ -5,7 +5,7 @@ priority: P2
 status: deploy-ready
 deploy_ready: true
 deploy_ready_at: "2026-05-24 19:30 KST"
-fix_commit: pending-push
+fix_commit: 678633b
 build_status: OK
 build_time: 3.15s
 db_change: true
