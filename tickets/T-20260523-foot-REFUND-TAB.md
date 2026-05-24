@@ -3,15 +3,20 @@ ticket_id: T-20260523-foot-REFUND-TAB
 title: 2번차트 [환불내역] 탭 추가 + 탭 레이아웃 균등배치
 domain: foot
 priority: P2
-status: deploy-ready
-deploy_ready: true
-build_passed: true
+status: deployed
+qa_result: pass
+qa_grade: green
+qa_checked_at: 2026-05-24 21:00 KST
+deploy_commit: 6560d84
+bundle_hash: CustomerChartPage-f4WX0pYc
+deployed_at: 2026-05-24T16:04+09:00
+field_soak_until: 2026-05-25T16:04+09:00
 e2e_spec: tests/e2e/T-20260523-foot-REFUND-TAB.spec.ts
+e2e_skipped_reason: enospc_macbook
 db_migration: null
 regression_risk: low
 reporter: planner
 created_at: 2026-05-23
-deployed_at: null
 ---
 
 # T-20260523-foot-REFUND-TAB — 2번차트 [환불내역] 탭 추가
