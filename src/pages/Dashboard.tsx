@@ -86,6 +86,9 @@ import { CustomerHoverCard } from '@/components/CustomerHoverCard';
 import { useChart } from '@/lib/chartContext';
 // T-20260515-foot-CONTEXT-MENU-4ITEM: 진료차트 패널
 import MedicalChartPanel from '@/components/MedicalChartPanel';
+// T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 컨텍스트메뉴 + 모달
+import { ReservationContextMenu } from '@/components/ReservationContextMenu';
+import { ReservationCancelModal } from '@/components/ReservationCancelModal';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
@@ -1456,12 +1459,15 @@ function DraggableBox1Card({
   reservation,
   onSelect,
   onCheckIn,
+  onContextMenu,
 }: {
   reservation: Reservation;
   /** 카드 클릭 = 차트 조회 (체크인 X) — T-20260519-foot-FIRSTVISIT-CHECKIN AC-3 */
   onSelect?: () => void;
   /** 접수 버튼 클릭 = 체크인 생성 — T-20260519-foot-FIRSTVISIT-CHECKIN AC-1 */
   onCheckIn?: () => void;
+  /** T-20260525-foot-RESV-CANCEL-CTX: 우클릭/롱프레스 컨텍스트메뉴 */
+  onContextMenu?: (e: React.MouseEvent, reservation: Reservation) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `box1-${reservation.id}`,
@@ -1484,7 +1490,13 @@ function DraggableBox1Card({
         onSelect ? 'cursor-grab active:cursor-grabbing hover:bg-yellow-100 hover:border-yellow-500 transition' : 'cursor-default',
       )}
       onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
-      title={`${reservation.customer_name} — 드래그=시간변경 · 클릭=차트조회 · 접수버튼=체크인`}
+      onContextMenu={(e) => {
+        // T-20260525-foot-RESV-CANCEL-CTX: 우클릭/태블릿 롱프레스 컨텍스트메뉴
+        e.preventDefault();
+        e.stopPropagation();
+        onContextMenu?.(e, reservation);
+      }}
+      title={`${reservation.customer_name} — 드래그=시간변경 · 클릭=차트조회 · 접수버튼=체크인 · 우클릭=메뉴`}
       data-testid="box1-resv-card"
     >
       <span className="shrink-0 bg-yellow-200 text-yellow-800 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
@@ -1521,12 +1533,15 @@ function DraggableBox2ResvCard({
   reservation,
   onSelect,
   onCheckIn,
+  onContextMenu,
 }: {
   reservation: Reservation;
   /** 카드 클릭 = 차트 조회 (체크인 X) — T-20260515-foot-REVISIT-CLICK-AUTOCHECK AC-1 */
   onSelect?: () => void;
   /** 접수 버튼 클릭 = 체크인 생성 — T-20260515-foot-REVISIT-CLICK-AUTOCHECK AC-2 */
   onCheckIn?: () => void;
+  /** T-20260525-foot-RESV-CANCEL-CTX: 우클릭/롱프레스 컨텍스트메뉴 */
+  onContextMenu?: (e: React.MouseEvent, reservation: Reservation) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `box2r-${reservation.id}`,
@@ -1552,9 +1567,15 @@ function DraggableBox2ResvCard({
         reservation.healer_flag && 'healer-blink',
       )}
       onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
+      onContextMenu={(e) => {
+        // T-20260525-foot-RESV-CANCEL-CTX: 우클릭/태블릿 롱프레스 컨텍스트메뉴
+        e.preventDefault();
+        e.stopPropagation();
+        onContextMenu?.(e, reservation);
+      }}
       title={reservation.healer_flag
-        ? `${reservation.customer_name} — 힐러 치료 예정 · 드래그=시간변경 · 클릭=차트조회`
-        : `${reservation.customer_name} — 드래그=시간변경 · 클릭=차트조회`}
+        ? `${reservation.customer_name} — 힐러 치료 예정 · 드래그=시간변경 · 클릭=차트조회 · 우클릭=메뉴`
+        : `${reservation.customer_name} — 드래그=시간변경 · 클릭=차트조회 · 우클릭=메뉴`}
       data-testid="box2-resv-card"
     >
       <span className="truncate text-green-900">{reservation.customer_name}</span>
@@ -1593,6 +1614,7 @@ function DashboardTimeline({
   onCardContext,
   onReservationSelect,
   onReservationCheckIn,
+  onReservationContext,
   clinic,
   folded,
   onToggleFold,
@@ -1610,6 +1632,8 @@ function DashboardTimeline({
   onReservationSelect?: (r: Reservation) => void;
   /** 재진 접수 버튼 클릭 → 체크인 생성 (4경로 중 하나) — T-20260515-foot-REVISIT-CLICK-AUTOCHECK AC-2 */
   onReservationCheckIn?: (r: Reservation) => void;
+  /** T-20260525-foot-RESV-CANCEL-CTX: 예약 박스 우클릭/롱프레스 → 컨텍스트메뉴 */
+  onReservationContext?: (r: Reservation, pos: { x: number; y: number }) => void;
   /** T-20260522-foot-TIMETABLE-FOLD: 접힌 상태 (localStorage 유지) */
   folded?: boolean;
   /** T-20260522-foot-TIMETABLE-FOLD: 접기/펼치기 토글 콜백 */
@@ -2072,11 +2096,13 @@ function DashboardTimeline({
                 >
                   {newBox1.map((r) => (
                     // T-20260519-foot-FIRSTVISIT-CHECKIN AC-1/AC-3: onSelect=차트조회, onCheckIn=접수 버튼
+                    // T-20260525-foot-RESV-CANCEL-CTX: onContextMenu 추가
                     <DraggableBox1Card
                       key={`b1-${r.id}`}
                       reservation={r}
                       onSelect={onReservationSelect ? () => onReservationSelect(r) : undefined}
                       onCheckIn={onReservationCheckIn ? () => onReservationCheckIn(r) : undefined}
+                      onContextMenu={onReservationContext ? (e, resv) => onReservationContext(resv, { x: e.clientX, y: e.clientY }) : undefined}
                     />
                   ))}
                   {newBox2Ci.map((ci) => (
@@ -2105,11 +2131,13 @@ function DashboardTimeline({
                 >
                   {retBox2Resv.map((r) => (
                     // T-20260515-foot-REVISIT-CLICK-AUTOCHECK: onSelect=차트조회, onCheckIn=접수 버튼 — 이벤트 분리
+                    // T-20260525-foot-RESV-CANCEL-CTX: onContextMenu 추가
                     <DraggableBox2ResvCard
                       key={`b2r-${r.id}`}
                       reservation={r}
                       onSelect={onReservationSelect ? () => onReservationSelect(r) : undefined}
                       onCheckIn={onReservationCheckIn ? () => onReservationCheckIn(r) : undefined}
+                      onContextMenu={onReservationContext ? (e, resv) => onReservationContext(resv, { x: e.clientX, y: e.clientY }) : undefined}
                     />
                   ))}
                   {retBox2Ci.map((ci) => (
@@ -2512,6 +2540,10 @@ export default function Dashboard() {
   const [dayPayments, setDayPayments] = useState<Map<string, number>>(new Map());
   const [contextMenu, setContextMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
   const [customerMenu, setCustomerMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
+  // T-20260525-foot-RESV-CANCEL-CTX: 타임라인 예약 박스 컨텍스트메뉴 상태
+  const [resvContextMenu, setResvContextMenu] = useState<{ reservation: Reservation; pos: { x: number; y: number } } | null>(null);
+  const [dashCancelTarget, setDashCancelTarget] = useState<Reservation | null>(null);
+  const [dashCancelBusy, setDashCancelBusy] = useState(false);
   // T-20260524-foot-TIMETABLE-TIME-CONFIRM: 시간 변경 확인 대기 상태
   const [pendingTimeChange, setPendingTimeChange] = useState<{
     reservationId: string;
@@ -4525,6 +4557,54 @@ export default function Dashboard() {
     }
   };
 
+  // T-20260525-foot-RESV-CANCEL-CTX: 타임라인 예약 박스 우클릭/롱프레스 → 컨텍스트메뉴
+  // AC-1: DashboardTimeline onReservationContext 콜백 — resvContextMenu 상태 세팅
+  const handleReservationContext = useCallback((res: Reservation, pos: { x: number; y: number }) => {
+    setResvContextMenu({ reservation: res, pos });
+  }, []);
+
+  // T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 DB 실행
+  // AC-3: status→cancelled + cancel_reason/cancelled_at/cancelled_by + 감사 로그 + 낙관적 업데이트
+  const handleDashCancelConfirm = useCallback(async (reason: string) => {
+    const target = dashCancelTarget;
+    if (!target || !clinic) return;
+    setDashCancelBusy(true);
+    const { error } = await supabase
+      .from('reservations')
+      .update({
+        status: 'cancelled',
+        cancelled_at: new Date().toISOString(),
+        cancel_reason: reason,
+        cancelled_by: profile?.id ?? null,
+      })
+      .eq('id', target.id);
+    if (error) {
+      toast.error(`취소 실패: ${error.message}`);
+      setDashCancelBusy(false);
+      return;
+    }
+    // 감사 로그
+    await supabase.from('reservation_logs').insert({
+      reservation_id: target.id,
+      clinic_id: target.clinic_id,
+      action: 'cancel',
+      old_data: { status: target.status },
+      new_data: { status: 'cancelled', cancel_reason: reason },
+      changed_by: profile?.id ?? null,
+    });
+    // AC-4: 낙관적 업데이트 — 대시보드 타임라인 즉시 반영
+    setTimelineReservations((prev) =>
+      prev.map((r) =>
+        r.id === target.id
+          ? { ...r, status: 'cancelled' as const, cancelled_at: new Date().toISOString(), cancel_reason: reason, cancelled_by: profile?.id ?? null }
+          : r,
+      ),
+    );
+    setDashCancelBusy(false);
+    setDashCancelTarget(null);
+    toast.success(`${target.customer_name} 예약 취소됨`);
+  }, [dashCancelTarget, clinic, profile, setTimelineReservations]);
+
   // 미니 캘린더 클릭-외부 닫기
   useEffect(() => {
     if (!showCalendar) return;
@@ -5467,6 +5547,7 @@ export default function Dashboard() {
             onCardContext={!isPast ? handleCardContext : undefined}
             onReservationSelect={!isPast ? handleReservationSelect : undefined}
             onReservationCheckIn={!isPast ? handleReservationCheckIn : undefined}
+            onReservationContext={!isPast ? handleReservationContext : undefined}
             folded={timelineFolded}
             onToggleFold={handleToggleTimeline}
             staffMap={therapistNameMap}
@@ -5719,6 +5800,26 @@ export default function Dashboard() {
         onOpenMedicalChart={handleOpenMedicalChart}
         onNewReservation={handleNewReservation}
         onOpenPayment={handleOpenPaymentFromMenu}
+      />
+
+      {/* T-20260525-foot-RESV-CANCEL-CTX AC-1: 타임라인 예약 박스 우클릭/롱프레스 컨텍스트메뉴 */}
+      <ReservationContextMenu
+        reservation={resvContextMenu?.reservation ?? null}
+        position={resvContextMenu?.pos ?? null}
+        onClose={() => setResvContextMenu(null)}
+        onCancelReservation={(resv) => {
+          setResvContextMenu(null);
+          setDashCancelTarget(resv);
+        }}
+      />
+
+      {/* T-20260525-foot-RESV-CANCEL-CTX AC-2/AC-3: 취소사유 입력 모달 + DB 저장 */}
+      <ReservationCancelModal
+        open={dashCancelTarget !== null}
+        customerName={dashCancelTarget?.customer_name ?? ''}
+        onClose={() => { if (!dashCancelBusy) setDashCancelTarget(null); }}
+        onConfirm={handleDashCancelConfirm}
+        busy={dashCancelBusy}
       />
 
       {/* T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동 */}
