@@ -2,7 +2,7 @@
 id: T-20260522-foot-PKG-BOX-INDICATOR
 domain: foot
 priority: P2
-status: deployed
+status: done
 deploy-ready: true
 commit_sha: f7d0c56
 build_ok: true
@@ -16,8 +16,10 @@ qa_result: pass
 qa_grade: Green
 deployed_at: 2026-05-22T05:10:00+09:00
 deploy_commit: f7d0c56
-bundle_hash: Dashboard-DklynnpN.js
+bundle_hash: Dashboard-BI-ZnPLn.js
 field_soak_until: 2026-05-23T05:10:00+09:00
+field_soak_result: done
+reverify_at: 2026-05-24T13:04:00+09:00
 ---
 
 # T-20260522-foot-PKG-BOX-INDICATOR

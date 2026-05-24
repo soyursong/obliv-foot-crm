@@ -23,7 +23,7 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { BookOpen, ChevronRight, Loader2, Plus, Stethoscope, Timer, X } from 'lucide-react';

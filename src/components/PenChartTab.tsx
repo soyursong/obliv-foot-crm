@@ -54,7 +54,7 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: SignaturePad UI 제거 (하단 서명란 불필요)
 

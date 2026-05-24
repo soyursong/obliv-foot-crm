@@ -4,7 +4,7 @@ import { useLocation, useSearchParams } from 'react-router-dom';
 import { addDays, format, parseISO, startOfWeek, isSameDay } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Loader2, Plus, User, X } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';

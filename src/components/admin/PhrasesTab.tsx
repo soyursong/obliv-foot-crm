@@ -21,7 +21,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Loader2, Plus, Pencil, Trash2 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------

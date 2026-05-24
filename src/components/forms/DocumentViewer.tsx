@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { Download, Eye, FileText, Image as ImageIcon, ClipboardCheck, RefreshCw } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';

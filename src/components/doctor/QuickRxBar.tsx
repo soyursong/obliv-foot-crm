@@ -10,7 +10,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { IconRenderer } from '@/components/admin/QuickRxButtonsTab';

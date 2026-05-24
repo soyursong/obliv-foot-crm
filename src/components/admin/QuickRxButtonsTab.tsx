@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
   Loader2, Plus, Pencil, Trash2,
   Pill, Activity, Zap, Heart, Stethoscope, Thermometer, Bandage, Syringe,

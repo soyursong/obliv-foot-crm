@@ -4,7 +4,7 @@ import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
 import { ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Phone, FileText, Package, Stethoscope, Trash2, Bell, Upload } from 'lucide-react';
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
   Sheet,
   SheetContent,

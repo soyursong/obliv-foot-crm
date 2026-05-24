@@ -25,7 +25,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
   Loader2,
   CheckCircle2,

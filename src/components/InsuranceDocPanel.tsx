@@ -17,7 +17,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { FileText, FlaskConical, Trash2, Upload } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { supabase } from '@/lib/supabase';
 import type { CheckIn } from '@/lib/types';
 

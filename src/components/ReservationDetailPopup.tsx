@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from 'react';
 import { CheckinFirstInfoDialog } from '@/components/CheckinFirstInfoDialog';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
   Dialog,
   DialogContent,
