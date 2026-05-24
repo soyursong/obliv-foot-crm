@@ -78,3 +78,27 @@ migrations 불필요. `healer_flag` 컬럼(20260519000020) 기존 존재.
 - pending_healer_flag 로직(다음 예약 없을 때): 정상 동작 중 — 변경 없음 ✓
 
 ### DB 변경 없음
+
+---
+
+## supervisor QA 결과 — 2026-05-24 (v3+v4+v5 종합)
+
+**판정: NO-GO — spec_fail_regression**
+**처리 MQ**: MSG-20260522-054846-120x (planner NEW-TASK P1)
+**FIX-REQUEST 발행**: MSG-20260524-091215-nb5e → dev-foot
+
+### 통과
+- ✅ 빌드 3.19s clean
+- ✅ DB 변경 없음
+- ✅ AC-11 날짜 가드 코드 확인 (saveResvMini / saveInlineResv `> todayStr`)
+- ✅ Runtime Safety Gate — null guard 패턴 정상
+- ✅ T-20260516 main spec (10건) — page load/JS error 기반 PASS 예상
+
+### 실패 (RECHECK spec T-20260521 3케이스)
+1. **AC-1 browser** — `fbbf24`(amber-400) 체크 → v5 CSS는 `f59e0b`(amber-500 outline). `hasDualAmberBug` 기대값 false → 실제 true
+2. **AC-4 source** — `reservation_date >= today` 최소 2건 → v4에서 `> today`로 의도 변경(0건)
+3. **AC-5 source** — `86efac`(green-300), `fbbf24`(amber-400) → v5 outline 교체로 둘 다 삭제됨
+
+### 수정 요청
+`tests/e2e/T-20260521-foot-HEALER-RESV-RECHECK.spec.ts` 단언 3개소 v4/v5 실동작에 맞게 갱신.
+상세 지침: FIX-REQUEST MSG-20260524-091215-nb5e 본문 참조.
