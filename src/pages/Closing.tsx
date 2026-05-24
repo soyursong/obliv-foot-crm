@@ -1092,7 +1092,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                 ['카드 총합', totals.totalCard],
                 ['현금 총합', totals.totalCash],
                 ['이체 총합', totals.totalTransfer],
-                ['환불(차감 포함)', -totals.refundAmount],
+                ['환불', -totals.refundAmount],
               ]}
               total={totals.grossTotal}
               highlight
