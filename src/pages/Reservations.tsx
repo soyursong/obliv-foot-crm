@@ -73,6 +73,15 @@ const STATUS_LABEL: Record<Reservation['status'], string> = {
 // AC-1: 예약수정 모달 시간 선택 드롭다운 — 07:00~22:00, 30분 단위
 const EDIT_TIME_SLOTS = generateSlots('07:00', '22:00', 30);
 
+// T-20260525-foot-TIMETABLE-POST16-SLOT: 슬롯별 최대 예약 수
+// 16:00 이전: 12건 상한 (초진 6 + 재진 6), 16:00 이후: 10건 상한
+const SLOT_MAX_TOTAL = 12;
+const POST16_SLOT_MAX = 10;
+/** 시간대 기반 슬롯 최대 예약 수 반환 (T-20260525-foot-TIMETABLE-POST16-SLOT) */
+function slotMaxFor(time: string): number {
+  return parseInt(time.split(':')[0], 10) >= 16 ? POST16_SLOT_MAX : SLOT_MAX_TOTAL;
+}
+
 interface ReservationDraft {
   date: string;
   time: string;
@@ -474,11 +483,10 @@ export default function Reservations() {
     [resvByKey],
   );
 
-  // AC-1: 시간당 초진 6건 + 재진 6건 = 합 12건 상한 (하드코딩, clinic.max_per_slot 불사용)
-  const SLOT_MAX_TOTAL = 12;
+  // T-20260525-foot-TIMETABLE-POST16-SLOT: slotMaxFor(time) 적용 — 16:00 이후 10건 상한
   const isSlotFull = useCallback(
     (dateStr: string, time: string) => {
-      return slotActiveCount(dateStr, time) >= SLOT_MAX_TOTAL;
+      return slotActiveCount(dateStr, time) >= slotMaxFor(time);
     },
     [slotActiveCount],
   );
@@ -1121,7 +1129,8 @@ export default function Reservations() {
                                     'mt-auto self-end text-[10px] tabular-nums',
                                     full ? 'text-red-500 font-medium' : 'text-muted-foreground',
                                   )}>
-                                    {activeCount}/{clinic.max_per_slot}
+                                    {/* T-20260525-foot-TIMETABLE-POST16-SLOT: 16:00 이후 /10, 이전 /12 */}
+                                    {activeCount}/{slotMaxFor(time)}
                                   </span>
                                 )}
                               </div>
@@ -1147,7 +1156,7 @@ export default function Reservations() {
       <ReservationEditor
         draft={editor}
         clinicId={clinic?.id}
-        maxPerSlot={12}
+        maxPerSlot={editor ? slotMaxFor(editor.time) : SLOT_MAX_TOTAL}
         changedBy={changedBy}
         authorName={profile?.name ?? ''}
         onClose={() => setEditor(null)}

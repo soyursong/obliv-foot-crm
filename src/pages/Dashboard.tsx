@@ -2289,6 +2289,24 @@ function QuickReservationDialog({
     if (!form || !clinicId) return;
     if (!form.name.trim()) { toast.error('이름을 입력해주세요'); return; }
     setSaving(true);
+
+    // T-20260525-foot-TIMETABLE-POST16-SLOT AC-1: 16시 이후 슬롯 최대 10건 상한 체크
+    const slotHour = parseInt(form.time.split(':')[0], 10);
+    if (slotHour >= 16) {
+      const { count: slotCount } = await supabase
+        .from('reservations')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', clinicId)
+        .eq('reservation_date', form.date)
+        .eq('reservation_time', form.time + ':00')
+        .neq('status', 'cancelled');
+      if ((slotCount ?? 0) >= 10) {
+        toast.error(`이 시간대는 마감입니다 (${slotCount}/10)`);
+        setSaving(false);
+        return;
+      }
+    }
+
     const { error } = await supabase.from('reservations').insert({
       clinic_id: clinicId,
       customer_id: customerId ?? null,
