@@ -17,6 +17,10 @@
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -33,9 +37,11 @@ test('AC-1 css: healer-border-blink @keyframes — v5 outline 기반 amber-500(#
         for (const rule of Array.from(sheet.cssRules ?? [])) {
           if (rule instanceof CSSKeyframesRule && rule.name === 'healer-border-blink') {
             const text = rule.cssText;
-            // v5: outline 기반 amber-500(#f59e0b) 단색 blink — green 교번 제거됨
-            const hasOutlineAmber = text.includes('f59e0b');
+            // v5: outline 기반 amber-500 단색 blink — green 교번 제거됨
+            // 브라우저는 hex를 rgb()/rgba()로 정규화하므로 rgb 형식도 허용 (#f59e0b = rgb(245, 158, 11))
             const isOutlineBased = text.includes('outline');
+            const hasAmberColor = text.includes('f59e0b') || text.includes('245, 158, 11') || text.includes('245,158,11');
+            const hasOutlineAmber = isOutlineBased && hasAmberColor;
             return { hasOutlineAmber, isOutlineBased, text: text.slice(0, 200) };
           }
         }
