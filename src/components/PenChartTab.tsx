@@ -142,7 +142,7 @@ interface AutofillFields {
   name:        string; // 고객 성명
   birthDate:   string; // 생년월일 (하위 호환 유지 — 현재 포지션 미사용)
   chartNumber: string; // 차트번호 (환불동의서 page 1)
-  rrn:         string; // 주민번호 마스킹값 (보험차트 전용 — 예: "990101-*******")
+  rrn:         string; // 주민번호 전체 표시 (보험차트 전용 — 예: "990101-1234567") AC-8: 마스킹 제거
   // phone 제거 — T-20260523-foot-PENCHART-FORM-AUTOFILL AC: 연락처 자동채움 불필요
 }
 
@@ -173,7 +173,7 @@ const REFUND_AUTOFILL_POS_P3: Array<{ key: keyof AutofillFields; x: number; y: n
 //   성함(담당의 라인) + 주민번호(담당실장 라인) 세로 2열 배치
 const PENCHART_AUTOFILL_POS: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
   { key: 'name', x: 285, y: 23 }, // [보험차트] 성함 — 로고 우측 빈 공간 상단 (담당의 라인 정렬)
-  { key: 'rrn',  x: 285, y: 44 }, // [보험차트] 주민번호(마스킹) — 동일 박스 하단 (담당실장 라인 정렬)
+  { key: 'rrn',  x: 285, y: 44 }, // [보험차트] 주민번호(전체 표시) — 동일 박스 하단 (담당실장 라인 정렬) AC-8
 ];
 
 /**
@@ -445,9 +445,9 @@ export function PenChartTab({
   /** 차트번호 — 환불동의서 page 1 자동채움용 */
   customerChartNumber?: string;
   /**
-   * 주민번호 마스킹값 — [보험차트] 상단 자동 연동 (T-20260523-foot-PENCHART-FORM-AUTOFILL AC-8)
-   * 형식: "YYMMDD-*******" (rrn_decrypt → 앞 6자리 + 하이픈 + 7개 별표)
-   * 마스킹 정책: B-lite (뒷자리 전체 마스킹). 현장 결정 후 전체/부분 표시로 전환 가능.
+   * 주민번호 전체 표시 — [보험차트] 상단 자동 연동 (T-20260523-foot-PENCHART-FORM-AUTOFILL AC-8)
+   * 형식: "YYMMDD-1234567" (rrn_decrypt 복호화값 전체, 마스킹 없음)
+   * 2026-05-24 김주연 총괄 현장 결정: A안(전체 표시) 확정 — 보험차트 용도.
    */
   customerRrn?: string;
   /** form_submissions INSERT 성공 시 — 상담내역 탭 [내용보기] 즉시 활성화 트리거 */
