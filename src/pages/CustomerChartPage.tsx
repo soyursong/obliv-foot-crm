@@ -1284,6 +1284,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const rrnFrontRef = useRef<HTMLInputElement>(null); // T-20260511-foot-SSN-FRONT-INPUT-BUG: autoFocus 대신 ref 사용
   const rrnBackRef = useRef<HTMLInputElement>(null);
   const [rrnMasked, setRrnMasked] = useState<string | null | undefined>(undefined); // undefined=로드전, null=없음
+  // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-8: 전체 표시용 (펜차트 보험차트 자동채움 전용)
+  const [rrnFull, setRrnFull] = useState<string | null | undefined>(undefined); // undefined=로드전, null=없음
   // C22-PKG-DEDUCT: 인라인 차감 폼 (복구 — T-20260510-foot-C22-SECTION-MERGE regression fix)
   const [c22DeductForm, setC22DeductForm] = useState({
     sessionDate: format(new Date(), 'yyyy-MM-dd'),
@@ -1628,13 +1630,17 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   useEffect(() => {
     if (!customer) return;
     setRrnMasked(undefined);
+    setRrnFull(undefined);
     (async () => {
       const { data } = await supabase.rpc('rrn_decrypt', { customer_uuid: customer.id });
       if (data) {
         const s = String(data).replace(/\D/g, '');
         setRrnMasked(s.slice(0, 6) + '-*******');
+        // AC-8: 펜차트 보험차트 자동채움용 전체 표시 (마스킹 없음)
+        setRrnFull(s.slice(0, 6) + '-' + s.slice(6));
       } else {
         setRrnMasked(null);
+        setRrnFull(null);
       }
     })();
   }, [customer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1789,6 +1795,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           const { error: retryErr } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });
           if (!retryErr) {
             setRrnMasked(rrnFront + '-' + '*'.repeat(7));
+            setRrnFull(rrnFront + '-' + rrnBack); // AC-8: 전체 표시 (펜차트 자동채움용)
             setEditingRrn(false);
             setRrnFront('');
             setRrnBack('');
@@ -1806,6 +1813,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       return;
     }
     setRrnMasked(rrnFront + '-' + '*'.repeat(7));
+    setRrnFull(rrnFront + '-' + rrnBack); // AC-8: 전체 표시 (펜차트 자동채움용)
     setEditingRrn(false);
     setRrnFront('');
     setRrnBack('');
@@ -1857,6 +1865,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           }
         }
         setRrnMasked(rrnFront + '-' + '*'.repeat(7));
+        setRrnFull(rrnFront + '-' + rrnBack); // AC-8: 전체 표시 (펜차트 자동채움용)
         setEditingRrn(false);
         setRrnFront('');
         setRrnBack('');
@@ -4534,7 +4543,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   T-20260520-foot-PENCHART-VIEW-SPLIT HOTFIX2: onFormSubmissionSaved
                     → 저장 후 상담내역 탭 [내용보기] 즉시 활성화 */}
               {chartTabGroup === 'clinical' && chartTab === 'pen_chart' && (
-                // T-20260523-foot-PENCHART-FORM-AUTOFILL: customerRrn 추가 (rrnMasked = "YYMMDD-*******")
+                // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-8: customerRrn = rrnFull (전체 표시, 마스킹 제거)
                 <PenChartTab
                   customerId={customer.id}
                   clinicId={customer.clinic_id}
@@ -4543,7 +4552,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   customerPhone={customer.phone ?? undefined}
                   customerBirthDate={customer.birth_date ?? undefined}
                   customerChartNumber={customer.chart_number?.toString() ?? undefined}
-                  customerRrn={rrnMasked ?? undefined}
+                  customerRrn={rrnFull ?? undefined}
                   onFormSubmissionSaved={refreshSubmissionEntries}
                 />
               )}
