@@ -1,7 +1,7 @@
 ---
 id: T-20260524-foot-DESIG-SAVE-ERR
 title: "지정 치료사 저장 에러 수정 — RPC 미생성 → REST UPDATE 전환"
-status: deploy-ready
+status: deployed
 priority: P1
 domain: foot
 created_at: 2026-05-24
@@ -16,6 +16,13 @@ e2e_spec_exempt_reason: ""
 reporter: 김주연 총괄
 reporter_slack_id: U0ATDB587PV
 risk: "1/5 (FE only — saveDesignatedTherapist + 3 side-channel 경로)"
+qa_result: pass
+qa_grade: Yellow
+deployed_at: "2026-05-24T22:02:00+09:00"
+deploy_commit: d4a0a66
+bundle_hash: CustomerChartPage-D9WfDI1N
+field_soak_until: "2026-05-25T22:02:00+09:00"
+field_validation_slack_ts: "1779627824.401479"
 ---
 
 # T-20260524-foot-DESIG-SAVE-ERR — 지정 치료사 저장 에러 수정
