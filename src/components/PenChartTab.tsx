@@ -166,15 +166,31 @@ const REFUND_AUTOFILL_POS_P3: Array<{ key: keyof AutofillFields; x: number; y: n
   // phone/birthDate 제거 — T-20260523-foot-PENCHART-FORM-AUTOFILL
 ];
 
-// ── [보험차트] 자동채움 좌표 (기준: CANVAS_W=794, CANVAS_H=1123) ──
-// T-20260523-foot-PENCHART-FORM-AUTOFILL AC-7~8:
+// ── [보험차트] 자동채움 — 성함+주민번호 1줄 inline (AC-R6) ──
+// T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R6:
+//   성함+주민번호를 한 줄로 inline 배치 + 폰트 축소 (15px → 11px)
 //   pen_chart_form.png 2482×3510 → canvas 794×1123 (scale=0.32)
-//   위치 = Obliv Clinic 로고(x≈25-185) 우측 · 담당의(x≈530, y≈23)/담당실장(x≈530, y≈43) 좌측 공백
-//   성함(담당의 라인) + 주민번호(담당실장 라인) 세로 2열 배치
-const PENCHART_AUTOFILL_POS: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
-  { key: 'name', x: 285, y: 23 }, // [보험차트] 성함 — 로고 우측 빈 공간 상단 (담당의 라인 정렬)
-  { key: 'rrn',  x: 285, y: 44 }, // [보험차트] 주민번호(전체 표시) — 동일 박스 하단 (담당실장 라인 정렬) AC-8
-];
+//   x=190: 로고(x≈25-185) 바로 우측 — 담당의(x≈530) 까지 340px 공간 확보 (긴 이름+주민번호 안전)
+//   y=28: 담당의 라인(y≈23)~담당실장 라인(y≈44) 사이 수직 중심
+//   출력 예: "성함: 홍길동  주민번호: 990101-1234567"
+//   김주연 총괄 현장 요청 2026-05-24: "성함+주민번호 배치를 한 줄로 하고 폰트 사이즈 좀만 줄여줘"
+function drawPenChartAutofillInline(
+  ctx: CanvasRenderingContext2D,
+  fields: AutofillFields,
+) {
+  const name = fields.name;
+  const rrn  = fields.rrn;
+  if (!name && !rrn) return;
+  ctx.save();
+  ctx.fillStyle = '#6b7280'; // gray-500 — 수기 입력과 시각적 구분
+  ctx.font = 'italic 11px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+  ctx.textBaseline = 'top';
+  const parts: string[] = [];
+  if (name) parts.push(`성함: ${name}`);
+  if (rrn)  parts.push(`주민번호: ${rrn}`);
+  ctx.fillText(parts.join('  '), 190, 28);
+  ctx.restore();
+}
 
 /**
  * T-20260522-foot-PENCHART-TOOLS-V2 AC-1:
@@ -705,9 +721,8 @@ export function PenChartTab({
             drawAutofillOnCtx(ctx, autofillDataRef.current, REFUND_AUTOFILL_POS_P1);
             drawAutofillOnCtx(ctx, autofillDataRef.current, REFUND_AUTOFILL_POS_P3);
           } else if (fk === 'pen_chart') {
-            // [보험차트]: 성함 + 주민번호 앞자리(YYMMDD) — 중앙 빨간 박스 세로 스택
-            // T-20260523-foot-PENCHART-INSURANCE (스펙 정정)
-            drawAutofillOnCtx(ctx, autofillDataRef.current, PENCHART_AUTOFILL_POS);
+            // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R6: 성함+주민번호 1줄 inline + 폰트 축소
+            drawPenChartAutofillInline(ctx, autofillDataRef.current);
           }
         }
       };
