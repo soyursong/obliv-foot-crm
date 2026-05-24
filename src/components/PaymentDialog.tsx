@@ -82,6 +82,12 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
   // T-20260522-foot-PAY-INPUT-001: 카드 승인번호·TID (선택 입력)
   const [externalApprovalNo, setExternalApprovalNo] = useState('');
   const [externalTid, setExternalTid] = useState('');
+  // T-20260524-foot-PKG-LABEL-AMOUNT AC-2: 고객 활성 패키지 (단건 membership 결제 시 단가 auto-fill)
+  const [customerPackage, setCustomerPackage] = useState<{
+    package_name: string;
+    total_amount: number;
+    total_sessions: number;
+  } | null>(null);
 
   // T-20260523-foot-PKG-TMPL-LINK: clinic_id 기준으로 package_templates 로드
   useEffect(() => {
@@ -125,6 +131,8 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
       // T-20260522-foot-PAY-INPUT-001: 카드 외부 정보 초기화
       setExternalApprovalNo('');
       setExternalTid('');
+      // T-20260524-foot-PKG-LABEL-AMOUNT AC-2: 고객 패키지 초기화 후 재조회
+      setCustomerPackage(null);
       // 활성 직원 목록 로드
       supabase
         .from('staff')
@@ -134,6 +142,19 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
         .in('role', ['consultant', 'coordinator', 'director'])
         .order('name')
         .then(({ data }) => { setStaffList((data ?? []) as StaffOption[]); });
+      // T-20260524-foot-PKG-LABEL-AMOUNT AC-2: 고객 활성 패키지 조회 (단건+membership 금액 auto-fill)
+      if (checkIn.customer_id && checkIn.clinic_id) {
+        supabase
+          .from('packages')
+          .select('package_name, total_amount, total_sessions')
+          .eq('customer_id', checkIn.customer_id)
+          .eq('clinic_id', checkIn.clinic_id)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+          .then(({ data }) => setCustomerPackage(data ?? null));
+      }
     }
   }, [checkIn?.id]);
 
@@ -704,8 +725,13 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                         type="button"
                         onClick={() => {
                           if (m.value === 'membership') {
-                            // 패키지 선택 전까지 금액 비움
-                            setAmountStr('');
+                            // T-20260524-foot-PKG-LABEL-AMOUNT AC-2:
+                            // 고객 활성 패키지 회당 단가 auto-fill (총액/총회차, 수동 수정 허용)
+                            if (customerPackage && customerPackage.total_sessions > 0) {
+                              setAmountStr(String(Math.round(customerPackage.total_amount / customerPackage.total_sessions)));
+                            } else {
+                              setAmountStr('');
+                            }
                             setSelectedTemplateId(null);
                           } else {
                             // 다른 수단으로 바꾸면 패키지 선택 초기화
@@ -726,41 +752,29 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                   </div>
                 </div>
 
-                {/* T-20260522-foot-PAY-DROPDOWN-LONGRE AC-7:
-                    단건 결제 + 패키지 수단 선택 시 → 패키지 템플릿 목록 표시
-                    선택 시 purchase_amount(total_price) 자동 세팅, 수동 편집 가능 */}
+                {/* T-20260524-foot-PKG-LABEL-AMOUNT AC-2:
+                    단건 결제 + 패키지 수단 선택 시 → 고객 활성 패키지 회당 단가 표시 */}
                 {method === 'membership' && (
-                  <div className="space-y-2">
-                    <Label>패키지 선택 <span className="text-xs font-normal text-muted-foreground">(금액 자동 연동)</span></Label>
-                    {pkgTemplatesLoading ? (
-                      <div className="text-sm text-muted-foreground py-2">패키지 목록 로딩 중…</div>
-                    ) : pkgTemplates.length === 0 ? (
-                      <div className="rounded-md border border-dashed border-muted-foreground/30 px-3 py-3 text-sm text-center text-muted-foreground">
-                        등록된 패키지 템플릿이 없습니다
+                  <div className={cn(
+                    'rounded-md border px-3 py-2 text-sm',
+                    customerPackage ? 'border-teal-200 bg-teal-50/40' : 'border-dashed border-muted-foreground/30 bg-muted/10',
+                  )}>
+                    {customerPackage ? (
+                      <div className="space-y-0.5">
+                        <div className="font-medium text-teal-800">{customerPackage.package_name}</div>
+                        <div className="text-xs text-teal-600">
+                          회당 단가&nbsp;
+                          <span className="tabular-nums font-semibold">
+                            {formatAmount(Math.round(customerPackage.total_amount / customerPackage.total_sessions))}
+                          </span>
+                          <span className="ml-1 text-muted-foreground">
+                            (총액 {formatAmount(customerPackage.total_amount)} ÷ {customerPackage.total_sessions}회)
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">금액은 직접 수정 가능합니다</p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 gap-1.5 max-h-40 overflow-y-auto">
-                        {pkgTemplates.map((t) => (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => handleSelectTemplate(t.id)}
-                            className={cn(
-                              'rounded-md border px-3 py-2 text-left text-sm transition',
-                              selectedTemplateId === t.id
-                                ? 'border-teal-600 bg-teal-50 text-teal-700'
-                                : 'border-input hover:bg-muted',
-                            )}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-medium">{t.name}</span>
-                              <span className="tabular-nums text-xs text-muted-foreground">
-                                {formatAmount(t.total_price)}
-                              </span>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
+                      <p className="text-muted-foreground text-xs">보유 패키지 없음 — 금액을 직접 입력하세요</p>
                     )}
                   </div>
                 )}
@@ -771,7 +785,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                   <Input
                     value={amountStr}
                     onChange={(e) => setAmountStr(e.target.value)}
-                    placeholder={method === 'membership' ? '패키지 선택 시 자동 입력' : '0'}
+                    placeholder="0"
                     inputMode="numeric"
                     className="text-right text-lg tabular-nums"
                     autoFocus

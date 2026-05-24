@@ -10,7 +10,8 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { formatAmount, formatPhone, formatPhoneInput, parseAmount } from '@/lib/format';
-import { VISIT_TYPE_KO } from '@/lib/status';
+// T-20260524-foot-PKG-LABEL-AMOUNT AC-3: METHOD_KO 추가 import
+import { VISIT_TYPE_KO, METHOD_KO } from '@/lib/status';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -3791,7 +3792,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                               <td className={cn('px-2 py-1.5 text-right tabular-nums font-medium', p.payment_type === 'refund' && 'text-red-600')}>
                                 {p.payment_type === 'refund' ? '-' : ''}{formatAmount(p.amount)}
                               </td>
-                              <td className="px-2 py-1.5">{p.method}{p.installment > 1 ? ` ${p.installment}개월` : ''}</td>
+                              {/* T-20260524-foot-PKG-LABEL-AMOUNT AC-3 */}
+                              <td className="px-2 py-1.5">{METHOD_KO[p.method] ?? p.method}{p.installment > 1 ? ` ${p.installment}개월` : ''}</td>
                               <td className="px-2 py-1.5">
                                 <Badge variant={p.payment_type === 'refund' ? 'destructive' : 'secondary'} className="text-[10px]">
                                   {p.payment_type === 'refund' ? '환불' : '결제'}
@@ -3850,7 +3852,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                             <td className={cn('px-2 py-1.5 text-right tabular-nums font-medium', p.payment_type === 'refund' && 'text-red-600')}>
                               {p.payment_type === 'refund' ? '-' : ''}{formatAmount(p.amount)}
                             </td>
-                            <td className="px-2 py-1.5">{p.method}{p.installment > 1 ? ` ${p.installment}개월` : ''}</td>
+                            {/* T-20260524-foot-PKG-LABEL-AMOUNT AC-3 */}
+                            <td className="px-2 py-1.5">{METHOD_KO[p.method] ?? p.method}{p.installment > 1 ? ` ${p.installment}개월` : ''}</td>
                             <td className="px-2 py-1.5">
                               <Badge variant={p.payment_type === 'refund' ? 'destructive' : 'secondary'} className="text-[10px]">
                                 {p.payment_type === 'refund' ? '환불' : '결제'}
@@ -4474,7 +4477,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         <div key={p.id} className="flex items-center gap-2 rounded bg-green-50 px-2 py-1">
                           <span className="text-muted-foreground tabular-nums">{format(new Date(p.created_at), 'MM-dd HH:mm')}</span>
                           <span className="font-semibold text-green-700">{formatAmount(p.amount)}</span>
-                          <span className="text-muted-foreground">{p.method}</span>
+                          {/* T-20260524-foot-PKG-LABEL-AMOUNT AC-3 */}
+                          <span className="text-muted-foreground">{METHOD_KO[p.method] ?? p.method}</span>
                           <Badge variant="secondary" className="text-[10px] ml-auto">수납내역 연결</Badge>
                         </div>
                       ))}
@@ -4603,7 +4607,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                 <tr key={r.id} className="border-b border-muted/20 hover:bg-red-50/40 bg-red-50/20">
                                   <td className="px-2 py-1.5 tabular-nums text-muted-foreground">{format(new Date(r.created_at), 'MM-dd HH:mm')}</td>
                                   <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-red-600">-{formatAmount(r.amount)}</td>
-                                  <td className="px-2 py-1.5">{r.method}</td>
+                                  {/* T-20260524-foot-PKG-LABEL-AMOUNT AC-3 */}
+                                  <td className="px-2 py-1.5">{METHOD_KO[r.method] ?? r.method}</td>
                                   <td className="px-2 py-1.5">
                                     <Badge variant="destructive" className="text-[10px]">
                                       {r.source === 'package' ? '패키지 환불' : '단건 환불'}

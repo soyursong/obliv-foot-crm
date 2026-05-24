@@ -161,11 +161,12 @@ interface Props {
   onOpenMedicalChart?: (customerId: string) => void;
 }
 
+// T-20260524-foot-PKG-LABEL-AMOUNT AC-3: membership → '패키지' (DB value 유지)
 const METHOD_LABEL: Record<string, string> = {
   card: '카드',
   cash: '현금',
   transfer: '이체',
-  membership: '멤버십',
+  membership: '패키지',
 };
 
 // ─── 서브 컴포넌트: 방문 이력 아코디언 ──────────────────────────────────────

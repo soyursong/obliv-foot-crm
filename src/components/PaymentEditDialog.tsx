@@ -298,7 +298,8 @@ export function PaymentEditDialog({ payment, mode, onClose, onDone }: Props) {
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">결제 수단</span>
-              <span>{payment.method}</span>
+              {/* T-20260524-foot-PKG-LABEL-AMOUNT AC-3: label 표시 (membership→패키지) */}
+              <span>{METHOD_OPTIONS.find((m) => m.value === payment.method)?.label ?? payment.method}</span>
             </div>
           </div>
 
