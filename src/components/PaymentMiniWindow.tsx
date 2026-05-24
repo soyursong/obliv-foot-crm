@@ -22,8 +22,10 @@ import { toast } from '@/lib/toast';
 import {
   Check,
   ChevronRight,
+  ChevronDown,
   CreditCard,
   FileText,
+  Layers,
   Printer,
   Square,
   CheckSquare,
@@ -123,6 +125,20 @@ const METHOD_OPTIONS: { value: PayMethod; label: string }[] = [
   { value: 'transfer', label: '이체' },
   { value: 'membership', label: '패키지' },
 ];
+
+// ── 수가세트 타입 (fee_set_templates) ──────────────────────────────────────
+// T-20260525-foot-FEE-SET-TEMPLATE AC-1
+
+interface FeeSetTemplateItem {
+  service_id: string;
+  sort_order: number;
+}
+
+interface FeeSetTemplate {
+  id: string;
+  set_name: string;
+  items: FeeSetTemplateItem[];
+}
 
 // ── 선택 항목 ───────────────────────────────────────────────────────────────
 
@@ -397,6 +413,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const [deductAmount, setDeductAmount] = useState(0);
   const [hasActivePackage, setHasActivePackage] = useState(false);
 
+  // ── T-20260525-foot-FEE-SET-TEMPLATE: 수가세트 드롭다운
+  const [feeSetTemplates, setFeeSetTemplates] = useState<FeeSetTemplate[]>([]);
+  const [feeSetOpen, setFeeSetOpen] = useState(false);
+
   // ── Phase 2: 서류발행 (AC-8~10)
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
   const [selectedDocKeys, setSelectedDocKeys] = useState<Set<string>>(new Set());
@@ -475,7 +495,15 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         .in('category', ['foot-service', 'insurance'])
         .eq('active', true)
         .order('sort_order'),
-    ]).then(([svcsRes, cisRes, tplRes]) => {
+      // T-20260525-foot-FEE-SET-TEMPLATE AC-1: 수가세트 목록 로드
+      supabase
+        .from('fee_set_templates')
+        .select('id, set_name, items')
+        .eq('clinic_id', checkIn.clinic_id)
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true }),
+    ]).then(([svcsRes, cisRes, tplRes, feeSetRes]) => {
       const svcs = (svcsRes.data ?? []) as Service[];
       setServices(svcs);
 
@@ -521,6 +549,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           localStorage.removeItem(draftKey(checkIn.id));
         }
       }
+
+      // T-20260525-foot-FEE-SET-TEMPLATE AC-1: 수가세트 상태 저장
+      setFeeSetTemplates((feeSetRes.data ?? []) as FeeSetTemplate[]);
 
       // T-20260522-foot-INS-DOC-PRINT: category별 fallback 병합
       {
@@ -1455,6 +1486,81 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
             {/* Zone 2 수가 항목 (풋케어) — 항상 표시 */}
             <>
+              {/* T-20260525-foot-FEE-SET-TEMPLATE AC-1: 세트코드 드롭다운
+                  수가항목 영역 상단 — 세트 선택 시 항목 일괄 추가(append) */}
+              {feeSetTemplates.length > 0 && (
+                <div className="px-2 pt-2 pb-1 shrink-0 border-b relative" data-testid="fee-set-dropdown-container">
+                  <button
+                    type="button"
+                    onClick={() => setFeeSetOpen((v) => !v)}
+                    className={cn(
+                      'w-full flex items-center justify-between gap-1.5 px-2 py-1.5 rounded border text-xs transition-colors',
+                      feeSetOpen
+                        ? 'bg-teal-50 border-teal-400 text-teal-700'
+                        : 'border-input hover:bg-muted text-muted-foreground',
+                    )}
+                    data-testid="fee-set-dropdown-btn"
+                  >
+                    <span className="flex items-center gap-1">
+                      <Layers className="h-3 w-3 shrink-0" />
+                      세트코드
+                    </span>
+                    <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', feeSetOpen && 'rotate-180')} />
+                  </button>
+
+                  {feeSetOpen && (
+                    <div
+                      className="absolute top-full left-0 right-0 z-50 mx-2 mt-0.5 border rounded-md bg-white shadow-lg"
+                      data-testid="fee-set-dropdown-list"
+                    >
+                      {feeSetTemplates.map((tpl) => {
+                        // 세트에 포함된 서비스 목록 미리보기
+                        const previewSvcs = tpl.items
+                          .sort((a, b) => a.sort_order - b.sort_order)
+                          .map((i) => services.find((s) => s.id === i.service_id))
+                          .filter((s): s is Service => !!s);
+                        const setTotal = previewSvcs.reduce((sum, s) => sum + s.price, 0);
+
+                        return (
+                          <button
+                            key={tpl.id}
+                            type="button"
+                            className="w-full flex flex-col gap-0.5 px-3 py-2 text-xs text-left hover:bg-teal-50 border-b border-gray-50 last:border-0 transition-colors"
+                            data-testid={`fee-set-item-${tpl.id}`}
+                            onClick={() => {
+                              // AC-1: 기존 항목 유지 + 세트 항목 append (중복 시 qty+1)
+                              setSelectedItems((prev) => {
+                                const next = [...prev];
+                                previewSvcs.forEach((svc) => {
+                                  const existing = next.find((i) => i.service.id === svc.id);
+                                  if (existing) {
+                                    existing.qty += 1;
+                                  } else {
+                                    next.push({ service: svc, qty: 1 });
+                                  }
+                                });
+                                return next;
+                              });
+                              setSaved(false);
+                              setFeeSetOpen(false);
+                              toast.success(`'${tpl.set_name}' 세트 적용됨 (${previewSvcs.length}개)`);
+                            }}
+                          >
+                            <span className="font-semibold text-gray-800">{tpl.set_name}</span>
+                            <span className="text-muted-foreground truncate">
+                              {previewSvcs.map((s) => s.name).join(' · ')}
+                            </span>
+                            <span className="text-teal-700 tabular-nums font-medium">
+                              합계 {formatAmount(setTotal)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* 선택 항목 — compact 1줄
                   FEE-ITEM-SCROLL:
                     AC-1: max-h-80 mobile / sm:flex-1 desktop → 5건 노출

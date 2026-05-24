@@ -2,9 +2,10 @@
 // Ticket: T-20260502-foot-DOCTOR-TREATMENT-FLOW (Admin CRUD, 포팅: derm → foot)
 // T-20260512-foot-TREATMENT-SET: 진료세트 탭 추가
 // T-20260512-foot-QUICK-RX-BUTTON: 빠른처방 버튼 탭 + 진료 환자 목록 탭 추가
+// T-20260525-foot-FEE-SET-TEMPLATE: 수가세트 탭 추가 (결제 미니창 수가항목 세트코드)
 //
 // 탭별 접근 권한:
-//   상용구 / 처방세트 / 진료세트 / 서류템플릿 / 빠른처방: admin / manager
+//   상용구 / 처방세트 / 진료세트 / 수가세트 / 서류템플릿 / 빠른처방: admin / manager
 //   진료 환자 목록 (처방 현황): 모든 authenticated 사용자
 
 import { useAuth } from '@/lib/auth';
@@ -12,10 +13,11 @@ import PhrasesTab from '@/components/admin/PhrasesTab';
 import PrescriptionSetsTab from '@/components/admin/PrescriptionSetsTab';
 import DocumentTemplatesTab from '@/components/admin/DocumentTemplatesTab';
 import TreatmentSetsTab from '@/components/admin/TreatmentSetsTab';
+import FeeSetTemplatesTab from '@/components/admin/FeeSetTemplatesTab';
 import QuickRxButtonsTab from '@/components/admin/QuickRxButtonsTab';
 import DoctorPatientList from '@/components/doctor/DoctorPatientList';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { BookOpen, Pill, FileText, Layers, Zap, Users } from 'lucide-react';
+import { BookOpen, Pill, FileText, Layers, Zap, Users, DollarSign } from 'lucide-react';
 
 export default function DoctorTools() {
   const { profile } = useAuth();
@@ -47,6 +49,10 @@ export default function DoctorTools() {
                 <Layers className="h-3.5 w-3.5" />
                 진료세트
               </TabsTrigger>
+              <TabsTrigger value="fee_set_templates" className="gap-1.5" data-testid="tab-fee-set-templates">
+                <DollarSign className="h-3.5 w-3.5" />
+                수가세트
+              </TabsTrigger>
               <TabsTrigger value="documents" className="gap-1.5">
                 <FileText className="h-3.5 w-3.5" />
                 서류 템플릿
@@ -77,6 +83,10 @@ export default function DoctorTools() {
 
             <TabsContent value="treatment_sets">
               <TreatmentSetsTab />
+            </TabsContent>
+
+            <TabsContent value="fee_set_templates">
+              <FeeSetTemplatesTab />
             </TabsContent>
 
             <TabsContent value="documents">
