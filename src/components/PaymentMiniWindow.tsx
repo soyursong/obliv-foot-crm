@@ -116,11 +116,12 @@ const PREPAID_CODE_MAP: Record<string, string[]> = {
 // T-20260522-foot-PAY-DROPDOWN-LONGRE: 롱레 CRM 정합성 — membership 추가
 type PayMethod = 'card' | 'cash' | 'transfer' | 'membership';
 
+// T-20260522-foot-PAY-DROPDOWN-LONGRE Phase2: 라벨 멤버십→패키지 (DB value 'membership' 유지)
 const METHOD_OPTIONS: { value: PayMethod; label: string }[] = [
   { value: 'card', label: '카드' },
   { value: 'cash', label: '현금' },
   { value: 'transfer', label: '이체' },
-  { value: 'membership', label: '멤버십' },
+  { value: 'membership', label: '패키지' },
 ];
 
 // ── 선택 항목 ───────────────────────────────────────────────────────────────
