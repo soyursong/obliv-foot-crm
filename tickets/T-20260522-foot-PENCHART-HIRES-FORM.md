@@ -2,14 +2,21 @@
 id: T-20260522-foot-PENCHART-HIRES-FORM
 domain: foot
 priority: P2
-status: deploy-ready
-deploy-ready: true
-build-ok: true
+status: deployed
+qa_result: pass
+qa_grade: green
+qa_checked_at: 2026-05-24 21:00 KST
+deploy_commit: c13eee9
+bundle_hash: CustomerChartPage-f4WX0pYc
+deployed_at: 2026-05-24T16:04+09:00
+field_soak_until: 2026-05-25T16:04+09:00
+e2e_spec_exempt_reason: ef_only
+e2e_skipped_reason: enospc_macbook
 db-change: false
 spec-added: true
 rollback-sql: ""
 created: 2026-05-22
-updated: 2026-05-22
+updated: 2026-05-24
 ---
 
 # T-20260522-foot-PENCHART-HIRES-FORM — 펜차트 양식 원본 이미지 고해상도 재생성
