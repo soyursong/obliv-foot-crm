@@ -77,7 +77,7 @@ test.describe('시나리오 1 — 단건 환불 (source=payment)', () => {
 
     // payments 테이블에서 환불 레코드 구조 검증
     const res = await request.get(
-      `${SUPABASE_URL}/rest/v1/payments?select=id,amount,method,payment_type,memo,parent_payment_id&payment_type=eq.refund&limit=5`,
+      `${SUPABASE_URL}/rest/v1/payments?select=id,amount,method,payment_type,memo,linked_payment_id&payment_type=eq.refund&limit=5`,
       {
         headers: {
           apikey: SERVICE_KEY,
