@@ -1,6 +1,6 @@
 ---
 ticket_id: T-20260523-foot-KENBO-UI-MOVE
-status: deploy-ready
+status: deployed
 deploy_ready: true
 deploy_ready_at: 2026-05-23T08:45:00+09:00
 db_change: false
@@ -9,7 +9,12 @@ e2e_spec: tests/e2e/T-20260523-foot-KENBO-UI-MOVE.spec.ts
 domain: foot
 priority: P2
 deadline: 2026-05-29
-qa_result: pending
+qa_result: pass
+qa_grade: Green
+deployed_at: "2026-05-24T10:06:00+09:00"
+deploy_commit: b972fca941a85dcd9a13037752519582c5ef781a
+bundle_hash: "index-CFU8HHey.js / CheckInDetailSheet-CyWsqeNP.js"
+field_soak_until: "2026-05-25T10:06:00+09:00"
 fix_note: spec fix — S-1 strict mode(.or→.first), S-4 태블릿 viewport waitFor(#root attach+networkidle)
 ---
 
