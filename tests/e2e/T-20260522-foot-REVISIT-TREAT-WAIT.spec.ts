@@ -27,7 +27,7 @@
 
 import { test, expect } from '@playwright/test';
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8082';
 
 // ── AC-1: handleReservationCheckIn — INSERT 시 treatment_waiting 직접 세팅 확인 ─
 
