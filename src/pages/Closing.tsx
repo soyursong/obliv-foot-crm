@@ -1187,9 +1187,9 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                   className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none"
                 >
                   <option value="">전체</option>
-                  {/* T-20260522-foot-CLOSING-STAFF-DROP AC-1: 2번차트 동일 — role='director'(원장) 코드 레벨 제외 */}
+                  {/* T-20260522-foot-CLOSING-STAFF-DROP AC-1(5/24 확장): 2번차트 동일 — director(원장)+therapist(치료사) 제외, 상담실장+데스크만 */}
                   {/* T-20260522-foot-STAFF-NAME-UNIFY: display_name(구성명) fallback to name */}
-                  {staffList.filter(s => s.role !== 'director').map(s => (
+                  {staffList.filter(s => s.role !== 'director' && s.role !== 'therapist').map(s => (
                     <option key={s.id} value={s.display_name || s.name}>{s.display_name || s.name}</option>
                   ))}
                   {/* T-20260522-foot-DAILY-SETTLE-STAFF AC-3: '미배정' → '미지정' */}
