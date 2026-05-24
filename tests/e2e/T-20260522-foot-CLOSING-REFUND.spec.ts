@@ -26,7 +26,7 @@ test.describe('시나리오 1 — 단건 환불 (source=payment)', () => {
   test('AC-1: /closing 결제내역 탭 진입 — admin 환불 버튼(RotateCcw) 컬럼 존재', async ({ page }) => {
     await loginAndWaitForDashboard(page);
 
-    await page.goto('/closing');
+    await page.goto('/admin/closing');
     await page.waitForLoadState('networkidle');
 
     // 결제내역 탭 클릭
@@ -47,7 +47,7 @@ test.describe('시나리오 1 — 단건 환불 (source=payment)', () => {
   test('AC-1: 결제 행에 환불 버튼(title="환불") 렌더링 — admin 계정', async ({ page }) => {
     await loginAndWaitForDashboard(page);
 
-    await page.goto('/closing');
+    await page.goto('/admin/closing');
     await page.waitForLoadState('networkidle');
 
     // 결제내역 탭
@@ -77,7 +77,7 @@ test.describe('시나리오 1 — 단건 환불 (source=payment)', () => {
 
     // payments 테이블에서 환불 레코드 구조 검증
     const res = await request.get(
-      `${SUPABASE_URL}/rest/v1/payments?select=id,amount,method,payment_type,memo,original_payment_id&payment_type=eq.refund&limit=5`,
+      `${SUPABASE_URL}/rest/v1/payments?select=id,amount,method,payment_type,memo,parent_payment_id&payment_type=eq.refund&limit=5`,
       {
         headers: {
           apikey: SERVICE_KEY,
@@ -129,7 +129,7 @@ test.describe('시나리오 2 — 패키지 환불 (source=package)', () => {
 
     // packages 테이블 기본 구조 확인 (calc_refund_amount RPC가 참조)
     const res = await request.get(
-      `${SUPABASE_URL}/rest/v1/packages?select=id,customer_id,total_sessions,used_sessions,status&limit=3`,
+      `${SUPABASE_URL}/rest/v1/packages?select=id,customer_id,total_sessions,heated_sessions,unheated_sessions,status&limit=3`,
       {
         headers: {
           apikey: SERVICE_KEY,
@@ -144,8 +144,8 @@ test.describe('시나리오 2 — 패키지 환불 (source=package)', () => {
       const pkg = data[0];
       expect(pkg).toHaveProperty('id');
       expect(pkg).toHaveProperty('total_sessions');
-      expect(pkg).toHaveProperty('used_sessions');
-      console.log(`[AC-2] 패키지 레코드 확인: id=${pkg.id}, 총${pkg.total_sessions}회/사용${pkg.used_sessions}회`);
+      expect(pkg).toHaveProperty('heated_sessions');
+      console.log(`[AC-2] 패키지 레코드 확인: id=${pkg.id}, 총${pkg.total_sessions}회/가열${pkg.heated_sessions}회`);
     }
     console.log('[AC-2] packages 테이블 구조 PASS');
   });
@@ -223,7 +223,7 @@ test.describe('시나리오 2 — 패키지 환불 (source=package)', () => {
   test('AC-2: /closing 결제내역 탭 — 패키지 행(배지 "패키지") 존재 시 환불 버튼 확인', async ({ page }) => {
     await loginAndWaitForDashboard(page);
 
-    await page.goto('/closing');
+    await page.goto('/admin/closing');
     await page.waitForLoadState('networkidle');
 
     const paymentsTab = page.getByRole('tab', { name: /결제내역/ });
@@ -381,7 +381,7 @@ test.describe('시나리오 4 — 밸리데이션', () => {
   test('AC-4: 브라우저 — 환불 다이얼로그 사유 필드 존재 확인 (admin 로그인)', async ({ page }) => {
     await loginAndWaitForDashboard(page);
 
-    await page.goto('/closing');
+    await page.goto('/admin/closing');
     await page.waitForLoadState('networkidle');
 
     const paymentsTab = page.getByRole('tab', { name: /결제내역/ });
@@ -430,7 +430,7 @@ test.describe('시나리오 4 — 밸리데이션', () => {
   test('AC-4: 다이얼로그 — 사유 미입력 시 제출 버튼 누르면 에러 표시 (데이터 있을 때)', async ({ page }) => {
     await loginAndWaitForDashboard(page);
 
-    await page.goto('/closing');
+    await page.goto('/admin/closing');
     await page.waitForLoadState('networkidle');
 
     const paymentsTab = page.getByRole('tab', { name: /결제내역/ });
