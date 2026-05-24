@@ -2531,6 +2531,35 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     setDesignatedTherapistId(newTherapistId);
     setCustomer(prev => prev ? { ...prev, designated_therapist_id: newTherapistId || null } : prev);
     // AC-R1 (2026-05-23): 지정 치료사 변경 시 차감 폼 자동 동기화 제거 — 수기 선택 방식
+
+    // T-20260524-foot-THERAPIST-BISYNC AC-1: 2번차트 → 미래 재진 예약 순방향 동기화
+    // AC-4: newTherapistId 있을 때만 (미지정 해제 시 예약은 유지)
+    // preferred_therapist_id IS NULL인 것만 채움 (수기 우선 원칙 — 기존 지정 덮어쓰지 않음)
+    if (newTherapistId) {
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      const { error: resvErr } = await supabase
+        .from('reservations')
+        .update({ preferred_therapist_id: newTherapistId })
+        .eq('customer_id', customer.id)
+        .eq('visit_type', 'returning')
+        .eq('status', 'confirmed')
+        .gte('reservation_date', todayStr)
+        .is('preferred_therapist_id', null);
+      if (resvErr) {
+        console.warn('[BISYNC AC-1] 순방향 예약 동기화 부분 실패:', resvErr.message);
+      } else {
+        // 로컬 state 즉시 반영 (리로드 없이 UI 갱신)
+        setReservations(prev => prev.map(r =>
+          r.visit_type === 'returning' &&
+          r.status === 'confirmed' &&
+          r.reservation_date >= todayStr &&
+          !r.preferred_therapist_id
+            ? { ...r, preferred_therapist_id: newTherapistId }
+            : r
+        ));
+      }
+    }
+
     const therapistName = therapistList.find(t => t.id === newTherapistId)?.name;
     toast.success(therapistName ? `지정 치료사: ${therapistName}` : '지정 치료사 해제');
   };
