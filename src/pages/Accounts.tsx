@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Check, Copy, KeyRound, Shield, UserPlus, UserX } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';

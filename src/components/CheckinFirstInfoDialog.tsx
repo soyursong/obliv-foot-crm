@@ -11,7 +11,7 @@
  *       birth_date(YYMMDD 앞6자리)만 저장, 전체 RRN은 CustomerChartPage에서 별도 처리.
  */
 import { useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { RotateCcw } from 'lucide-react';
 import {
   Dialog,

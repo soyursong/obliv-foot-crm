@@ -13,7 +13,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { FileText, RotateCcw } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';

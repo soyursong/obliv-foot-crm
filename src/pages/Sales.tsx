@@ -40,7 +40,7 @@ import {
 } from '@/lib/salesExport';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { BarChart2, Users, Layers, UserCheck, User } from 'lucide-react';
 import { SalesDailyTab } from '@/components/sales/SalesDailyTab';
 import { SalesPatientTab } from '@/components/sales/SalesPatientTab';

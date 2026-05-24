@@ -12,7 +12,7 @@ import { useAuth } from '@/lib/auth';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
 import QuickRxBar, { isDoctor } from './QuickRxBar';
 import { STATUS_KO } from '@/lib/status';

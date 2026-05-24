@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Plus, UserCog, DoorOpen, ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, Settings, X, PowerOff, Power } from 'lucide-react';
 import { DutyRosterTab } from '@/components/DutyRosterTab';
 

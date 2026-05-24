@@ -10,7 +10,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Building2, Stethoscope, Plus, Trash2, Upload, Star, StarOff, ChevronUp, ChevronDown } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
