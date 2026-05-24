@@ -7,7 +7,9 @@ build_ok: true
 db_change: false
 spec_added: true
 e2e_spec: tests/e2e/T-20260524-foot-INS-DOC-COPAY-LINK.spec.ts
-summary: "InvoiceDialog insurance_claims draft 자동채움 + bill_detail 본인부담 열 연동"
+summary: "InvoiceDialog 급여(공단+본인) 자동채움 fix + refreshServiceItems copayment_amount + spec AC-1 갱신 + INS-UI BASE_URL fix"
+qa_result: fix_applied
+qa_grade: pending_recheck
 ---
 
 ## 개요
@@ -48,3 +50,25 @@ summary: "InvoiceDialog insurance_claims draft 자동채움 + bill_detail 본인
 ## 커밋
 
 `0e4c37b` fix(InvoiceDialog): insurance_claims draft 자동채움 + bill_detail 본인부담 열 연동
+
+## FIX-REQUEST 반영 (2026-05-24)
+
+### 수정 내역
+1. **DocumentPrintPanel.tsx L2335**: `setInsuranceCovered(claim.total_covered ?? 0)` →
+   `setInsuranceCovered((claim.total_covered ?? 0) + (claim.total_copayment ?? 0))`
+   — 급여(공단+본인) = total_covered + total_copayment. 기존엔 공단부담만 채워 급여 본인부담 누락.
+
+2. **DocumentPrintPanel.tsx ServiceChargeItem interface**: `copayment_amount?: number | null` 필드 추가
+
+3. **DocumentPrintPanel.tsx refreshServiceItems**: SELECT에 `copayment_amount` 추가 + 매핑에 `copayment_amount` 포함
+   — IssueDialog 세부내역서 본인부담 열이 '0'으로 표시되던 문제 해결.
+
+4. **T-20260524-foot-INS-DOC-COPAY-LINK.spec.ts AC-1**: 틀린 값 assert 제거 →
+   `setInsuranceCovered(` + `total_copayment` 존재 검증으로 갱신.
+
+5. **T-20260519-foot-INS-UI.spec.ts**: BASE_URL fallback `localhost:5173` → `localhost:8082` (dev 서버 포트 정합)
+
+### 빌드
+```
+✓ tsc -b + vite build 통과 (3.23s)
+```

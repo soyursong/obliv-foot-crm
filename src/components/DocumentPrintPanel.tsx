@@ -1262,6 +1262,8 @@ interface ServiceChargeItem {
   service_code: string | null;
   name: string;
   amount: number;
+  // T-20260524-foot-INS-DOC-COPAY-LINK: 급여 본인부담 — IssueDialog 세부내역서 본인부담 열용
+  copayment_amount?: number | null;
   hira_code: string | null;
   is_insurance_covered: boolean;
 }
@@ -1322,7 +1324,8 @@ function IssueDialog({
   const refreshServiceItems = useCallback(async () => {
     const { data } = await supabase
       .from('service_charges')
-      .select('id, base_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code)')
+      // T-20260524-foot-INS-DOC-COPAY-LINK: copayment_amount 추가 → IssueDialog 세부내역서 본인부담 열
+      .select('id, base_amount, copayment_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code)')
       .eq('check_in_id', checkIn.id);
     if (!data) return;
     setServiceItems(data.map((c) => {
@@ -1332,6 +1335,7 @@ function IssueDialog({
         service_code: svc?.service_code ?? null,
         name: svc?.name ?? '(알 수 없음)',
         amount: c.base_amount ?? 0,
+        copayment_amount: (c.copayment_amount as number | null) ?? null,
         hira_code: svc?.hira_code ?? null,
         is_insurance_covered: c.is_insurance_covered ?? false,
       };
@@ -2327,7 +2331,8 @@ function InvoiceDialog({
         .maybeSingle();
 
       if (claim) {
-        setInsuranceCovered(claim.total_covered ?? 0);
+        // T-20260524-foot-INS-DOC-COPAY-LINK FIX: 급여(공단+본인) = total_covered + total_copayment
+        setInsuranceCovered((claim.total_covered ?? 0) + (claim.total_copayment ?? 0));
         // 비급여: service_charges 비급여 합산
         const { data: charges } = await supabase
           .from('service_charges')
