@@ -9,7 +9,7 @@ db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: ""
-commit_sha: "e317ad5"
+commit_sha: "ccba516"
 qa_result: ""
 qa_grade: ""
 deployed_at: ""
@@ -50,6 +50,12 @@ PUSH MSG-20260523-225253-2zj9 (planner, P2→P1, 김주연 총괄 직접 보고)
    - 3페이지 refund_consent: 1588×6738×4 ≈ 42.8MB/획, 매 stroke 시작점 latency
 6. `onPointerDown`에서 `getBoundingClientRect()` 중복 호출 (getPos + strokeRectRef 각 1회)
 
+**3차 (Fix-7, 커밋 ccba516, PUSH MSG-20260524-111505-2nb0 후속):**
+7. `onPointerMove` coalesced events 루프 내 ctx 프로퍼티 반복 설정
+   - 100 coalesced events = strokeStyle/lineWidth/lineCap/lineJoin/globalAlpha 500회/획 재설정
+   - white 툴: ctx.save()/restore()를 루프 내 100이벤트×2=200회 호출
+   - highlight 툴: globalAlpha reset 루프 내 100회 호출
+
 ## 변경 내역
 
 ### Fix-1~4 (PenChartTab.tsx, 커밋 0380287)
@@ -71,6 +77,13 @@ PUSH MSG-20260523-225253-2zj9 (planner, P2→P1, 김주연 총괄 직접 보고)
 - getPos: strokeRectRef 우선 사용 → getBoundingClientRect 중복 제거 (Fix-6)
 - onPointerDown: strokeRectRef를 getPos 호출 전에 먼저 캐싱 (Fix-6)
 
+### Fix-7 (PenChartTab.tsx, 커밋 ccba516)
+- onPointerMove: activeTool별 ctx 프로퍼티(strokeStyle/lineWidth/lineCap/lineJoin/globalAlpha) 루프 전 1회 설정
+- white 툴: ctx.save()/restore() 루프 내 제거 (globalCompositeOperation 기본값 source-over 이용)
+- highlight 툴: globalAlpha = 0.20 루프 전 1회, globalAlpha = 1 루프 후 1회
+- eraser 툴: eraserSz = penSize*4 루프 전 1회 사전 계산
+- E2E spec: AC-10 4개 테스트 추가 (총 22 테스트)
+
 ## AC
 
 - AC-1: 펜 입력 지연 50ms 이하 (React 재렌더 억제 + desynchronized + GPU 레이어)
@@ -82,3 +95,8 @@ PUSH MSG-20260523-225253-2zj9 (planner, P2→P1, 김주연 총괄 직접 보고)
 - AC-7: 빌드 OK
 - AC-8: onPointerDown에서 getImageData 완전 제거 (captureUndoAsync rAF 패턴)
 - AC-9: onPointerDown getBoundingClientRect 1회로 감소 (Fix-6)
+- AC-10: onPointerMove coalesced 루프 내 ctx 프로퍼티 설정 루프 외부로 이동 (Fix-7)
+  - pen: strokeStyle/lineWidth/lineCap/lineJoin/globalAlpha → 루프 전 1회
+  - white: ctx.save()/restore() 루프 내 제거 (100이벤트×2=200회 → 0회)
+  - highlight: globalAlpha reset → 루프 후 1회
+  - eraser: penSize*4 계산(eraserSz) → 루프 전 1회
