@@ -1530,6 +1530,9 @@ function ReservationEditor({
       booking_memo: state.booking_memo?.trim() || null,
       // AC-3 FIX: 방문경로를 예약 레코드에 직접 저장 → 수정 모달 재진입 시 즉시 프리로드
       referral_source: (state.visit_type === 'new' && state.visit_route) ? state.visit_route : null,
+      // T-20260524-foot-THERAPIST-BISYNC AC-2: 재진 예약 치료사 수기 선택 → preferred_therapist_id 저장
+      // AC-3: 재진(returning)만 — 초진(new)은 지정 치료사 연동 대상 외
+      ...(state.visit_type === 'returning' ? { preferred_therapist_id: overrideTherapistId || null } : {}),
     };
 
     // 수정 전 원본 캡처 (감사 로그용)
@@ -1608,6 +1611,15 @@ function ReservationEditor({
     // T-20260515-foot-RESV-MEMO-APPEND: 입력된 예약메모 → 이력 테이블 INSERT
     if (savedId && clinicId && state.booking_memo?.trim()) {
       await insertReservationMemo(savedId, clinicId, state.booking_memo.trim(), authorName);
+    }
+
+    // T-20260524-foot-THERAPIST-BISYNC AC-2: 재진 예약 저장 시 customers.designated_therapist_id 역동기화
+    // AC-3: visit_type = 'returning'이고 치료사가 선택된 경우만 (초진 제외)
+    if (state.visit_type === 'returning' && overrideTherapistId && customerId) {
+      await supabase
+        .from('customers')
+        .update({ designated_therapist_id: overrideTherapistId })
+        .eq('id', customerId);
     }
 
     toast.success(state.existingId ? '수정됨' : '예약 등록');
