@@ -148,21 +148,31 @@ interface AutofillFields {
 // ── 환불/비급여 동의서 자동채움 좌표 (기준: CANVAS_W=794, CANVAS_H_REFUND_CONSENT=3369) ──
 // page 1 상단 환자 정보 박스 (차트번호 + 환자이름)
 // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R5: 좌표 전수 재보정 (실기기 스크린샷 증거 기반)
+// T-20260524-foot-PENCHART-FORM-AUTOFILL FIX-SUPPLEMENT: x 재보정 (MSG-20260524-111246-xbb9)
 //   refund_consent.png 2481×10524 → canvas 794×3369 (scale=0.32)
-//   PNG 픽셀 분석: "● 차트번호 :" 라벨 텍스트 = canvas y=201, 라벨 끝(코론 우측) = canvas x≈176
-//                 "● 환자이름 :" 라벨 텍스트 = canvas y=236
-//   기존 y=155/188 → 라벨(y=201/236) 위에 겹침 확인(스크린샷 110451). y 46px 상향 오류 수정.
+//   PNG 픽셀 분석 (PIL 실측):
+//     "● 차트번호 :" 라벨 텍스트 top = canvas y=200.1
+//     "● 차트번호 :" 라벨 코론 우측 끝  = canvas x≈178 (y=645 기준)
+//     "● 차트번호 :" 밑줄(underline)   = canvas y≈213, x=127~320
+//     "● 환자이름 :" 라벨 텍스트 top = canvas y=235.6
+//     "● 환자이름 :" 밑줄(underline)   = canvas y≈249, x=119~320
+//   x=190: 코론 끝(x≈178)에서 12px 여백 → 입력란 공간에 명확히 배치
+//   y=201/236: 라벨 텍스트 top에 맞춤 (textBaseline='top' → 글자 하단이 밑줄 y에 수렴)
+//   기존 x=182(4px 여백 → 코론과 붙어보임) → x=190(12px 여백)으로 교정
 const REFUND_AUTOFILL_POS_P1: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
-  { key: 'chartNumber', x: 182, y: 201 }, // page 1: ● 차트번호 : ___ (라벨 우측 빈칸, 라벨 동일 라인)
-  { key: 'name',        x: 182, y: 236 }, // page 1: ● 환자이름 : ___ (라벨 동일 라인)
+  { key: 'chartNumber', x: 190, y: 201 }, // page 1: ● 차트번호 : ___ (코론 우측 12px 여백, 라벨 동일 라인)
+  { key: 'name',        x: 190, y: 236 }, // page 1: ● 환자이름 : ___ (코론 우측 12px 여백, 라벨 동일 라인)
 ];
 
 // ── 환불동의서 P3 날짜 분리 렌더링 (AC-R5) ──
 // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R5: 날짜 "년/월/일" 분리 배치
-//   PNG 픽셀 분석: "년" at canvas x≈544, "월" at canvas x≈614, "일" at canvas x≈678
-//                 날짜 라인: canvas y≈3071
-//   기존: "2026. 5. 24." 전체를 x=440 에 배치 → "2026." 우측이 "년" 와 겹침 수정
-//   수정: 연/월/일 각각 우측 정렬로 해당 마커 바로 앞에 배치
+// T-20260524-foot-PENCHART-FORM-AUTOFILL FIX-SUPPLEMENT: 주석 좌표 실측 업데이트
+//   PIL 픽셀 정밀 분석 (MSG-20260524-111246-xbb9):
+//     "년" 좌측 끝 = canvas x≈549-556  (textAlign='right' x=537 → 12px 여백) ✓
+//     "월" 좌측 끝 = canvas x≈619-622  (textAlign='right' x=607 → 12px 여백) ✓
+//     "일" 좌측 끝 = canvas x≈687-690  (textAlign='right' x=671 → 16-19px 여백) ✓
+//     날짜 라인 top = canvas y=3069.4 → DATE_Y=3071 (textBaseline='top' 기준, 2px 하단) ✓
+//   구 "2026. 5. 24." 단일 배치(x=440) → "년" 겹침 → 연/월/일 분리 우측 정렬로 해결
 function drawRefundP3DateAutofill(
   ctx: CanvasRenderingContext2D,
   fields: AutofillFields,
@@ -179,9 +189,9 @@ function drawRefundP3DateAutofill(
   ctx.textBaseline = 'top';
   ctx.textAlign = 'right'; // 우측 정렬 — 각 마커 바로 앞에 붙임
   const DATE_Y = 3071;
-  if (year)  ctx.fillText(year,  537, DATE_Y); // "년"(x≈544) 7px 전
-  if (month) ctx.fillText(month, 607, DATE_Y); // "월"(x≈614) 7px 전
-  if (day)   ctx.fillText(day,   671, DATE_Y); // "일"(x≈678) 7px 전
+  if (year)  ctx.fillText(year,  537, DATE_Y); // "년"(좌측 x≈549) 12px 전
+  if (month) ctx.fillText(month, 607, DATE_Y); // "월"(좌측 x≈619) 12px 전
+  if (day)   ctx.fillText(day,   671, DATE_Y); // "일"(좌측 x≈688) 17px 전
   ctx.restore();
 }
 
