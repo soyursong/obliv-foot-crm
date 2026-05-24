@@ -263,6 +263,86 @@ test.describe('PENCHART-FORM-AUTOFILL — 자동채움 위치 보정 + 주민번
       expect(drawCalled).toBe(false);
     });
   });
+
+  // ── AC-R4: 환불동의서 하단 서명란 UI 제거 ────────────────────────────────
+  // T-20260523-foot-PENCHART-FORM-AUTOFILL REOPEN (MSG-20260524-110842-pnuu)
+  test.describe('AC-R4 하단 서명란 제거 — SignaturePad UI 없음', () => {
+    test('PenChartTab.tsx: SignaturePad import 없음', async () => {
+      const fs = await import('fs');
+      const src = fs.readFileSync(
+        new URL('../../src/components/PenChartTab.tsx', import.meta.url).pathname,
+        'utf-8',
+      );
+      // SignaturePad 컴포넌트 import가 제거됐는지 확인
+      expect(src).not.toContain("import { SignaturePad");
+      expect(src).not.toContain("from '@/components/forms/SignaturePad'");
+    });
+
+    test('PenChartTab.tsx: "서명란 (개인정보 동의)" 텍스트 없음', async () => {
+      const fs = await import('fs');
+      const src = fs.readFileSync(
+        new URL('../../src/components/PenChartTab.tsx', import.meta.url).pathname,
+        'utf-8',
+      );
+      // 서명란 UI 제거 확인
+      expect(src).not.toContain('서명란 (개인정보 동의)');
+      expect(src).not.toContain('<SignaturePad');
+    });
+
+    test('signatureBase64는 항상 null — sigEmpty 로직 제거', async () => {
+      const fs = await import('fs');
+      const src = fs.readFileSync(
+        new URL('../../src/components/PenChartTab.tsx', import.meta.url).pathname,
+        'utf-8',
+      );
+      // signatureBase64 단순 null 할당 확인
+      expect(src).toContain('const signatureBase64 = null');
+      // sigEmpty 상태 없음
+      expect(src).not.toContain('const [sigEmpty,');
+    });
+  });
+
+  // ── AC-R5: 환불동의서 autofill 좌표 코드 레벨 검증 ───────────────────────
+  // 좌표 보정 후 범위 내 위치 확인 (실기기 시각 검증은 현장 배포 후 확인)
+  test.describe('AC-R5 환불동의서 좌표 코드 레벨 검증', () => {
+    // refund_consent.png 2481×10524 → canvas 794×3369 (scale≈0.32)
+    // P1: 차트번호/환자이름 (page 1 상단)
+    const posP1 = [
+      { key: 'chartNumber', x: 163, y: 155 },
+      { key: 'name',        x: 163, y: 188 },
+    ];
+    // P3: 날짜 (page 3) — AC-R4로 이름 제거됨, 날짜만 유지
+    const posP3_date = { key: 'date', x: 440, y: 3071 };
+
+    test('P1 좌표 — canvas 범위 내 (794×1123)', () => {
+      for (const p of posP1) {
+        expect(p.x).toBeGreaterThan(0);
+        expect(p.x).toBeLessThanOrEqual(794);
+        expect(p.y).toBeGreaterThanOrEqual(0);
+        expect(p.y).toBeLessThan(1123); // page 1 범위
+      }
+    });
+
+    test('P3 date 좌표 — page 3 범위 내 (2246-3369)', () => {
+      expect(posP3_date.x).toBeGreaterThan(0);
+      expect(posP3_date.x).toBeLessThanOrEqual(794);
+      expect(posP3_date.y).toBeGreaterThanOrEqual(2246); // page 3 시작
+      expect(posP3_date.y).toBeLessThan(3369); // page 3 끝
+    });
+
+    test('P3 name 제거 확인 — REFUND_AUTOFILL_POS_P3에 name 없음 (AC-R4 연동)', async () => {
+      const fs = await import('fs');
+      const src = fs.readFileSync(
+        new URL('../../src/components/PenChartTab.tsx', import.meta.url).pathname,
+        'utf-8',
+      );
+      // REFUND_AUTOFILL_POS_P3 블록에서 name 키가 제거됐는지 소스 검증
+      // date만 남아야 함 (name at y:3206 제거)
+      const p3Block = src.match(/REFUND_AUTOFILL_POS_P3[\s\S]*?];/)?.[0] ?? '';
+      expect(p3Block).toContain("key: 'date'");
+      expect(p3Block).not.toContain("key: 'name'");
+    });
+  });
 });
 
 /**

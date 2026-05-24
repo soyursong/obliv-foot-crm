@@ -56,8 +56,7 @@ import { useAuth } from '@/lib/auth';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-// T-20260520-foot-PENCHART-REFUND-FORM: 서명 캡처 (pdf_overlay 공용)
-import { SignaturePad, type SignaturePadHandle } from '@/components/forms/SignaturePad';
+// T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: SignaturePad UI 제거 (하단 서명란 불필요)
 
 // ─── 상용구 데이터 ───
 // T-20260517-foot-PENCHART-FORM: 자주 사용하는 텍스트 템플릿
@@ -155,14 +154,15 @@ const REFUND_AUTOFILL_POS_P1: Array<{ key: keyof AutofillFields; x: number; y: n
   { key: 'chartNumber', x: 163, y: 155 }, // page 1: ● 차트번호 : ___ (코론 우측 시작)
   { key: 'name',        x: 163, y: 188 }, // page 1: ● 환자이름 : ___
 ];
-// page 3 [본인 동의서] 서명 섹션 (날짜 + 이름)
+// page 3 [본인 동의서] 서명 섹션 (날짜만 — 이름 제거)
 // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-3~4: 위치 보정
 //   P3 [본인 동의서] 섹션: canvas y=2866~3369 범위 PNG 분석
-//   "년 월 일" 라인: page3 local y≈205 (canvas 3071), 이름 셀: page3 local y≈340 (canvas 3206)
-//   birthDate 제거 — [본인 동의서]에는 생년월일 란 없음
+//   "년 월 일" 라인: page3 local y≈205 (canvas 3071)
+// T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: 이름 셀(x=55 y=3206) 제거
+//   현장 피드백: "하단 별도 서명란 불필요 제거" — 직원이 직접 기입하는 방식으로 통일
 const REFUND_AUTOFILL_POS_P3: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
   { key: 'date', x: 440, y: 3071 }, // [본인 동의서] "     년    월    일" — 날짜 앞 공간
-  { key: 'name', x: 55,  y: 3206 }, // [본인 동의서] "이름" 셀 내부
+  // name(x=55,y=3206) 제거 — AC-R4: 하단 서명란 이름 자동채움 불필요
   // phone/birthDate 제거 — T-20260523-foot-PENCHART-FORM-AUTOFILL
 ];
 
@@ -258,8 +258,10 @@ const isPersonalChecklistKey = (k: string) => k.startsWith('personal_checklist_'
 const getCanvasHeightForForm = (formKey: string | undefined): number => {
   if (!formKey) return CANVAS_H;
   if (isRefundConsentKey(formKey)) return CANVAS_H_REFUND_CONSENT;
-  // T-20260522-foot-PENCHART-HIRES-FORM: 어르신용 2페이지 세로 연결
+  // T-20260522-foot-PENCHART-HIRES-FORM: 개인정보 체크리스트 어르신용 2페이지 세로 연결
   if (formKey === 'personal_checklist_senior') return CANVAS_H_PC_SENIOR;
+  // T-20260524-foot-HEALTH-Q-ELDER-P2CUT: 발건강 질문지 어르신용 2페이지 세로 연결 (health_q_senior.png 2481×7016)
+  if (formKey === 'health_questionnaire_senior') return CANVAS_H_PC_SENIOR; // 2246 = 1123 * 2
   return CANVAS_H;
 };
 
@@ -527,9 +529,7 @@ export function PenChartTab({
   const undoStackRef = useRef<ImageData[]>([]);
   const UNDO_LIMIT = 10;
 
-  // T-20260519-foot-PENCHART-FORM-ADD (AC-4): pdf_overlay 전용 서명 캡처
-  const sigPadRef = useRef<SignaturePadHandle>(null);
-  const [sigEmpty, setSigEmpty] = useState(true);
+  // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: 서명 캡처 UI 제거 — signature_base64 항상 null
 
   const storagePath = `customer/${customerId}/pen-chart`;
 
@@ -558,7 +558,7 @@ export function PenChartTab({
         name:        customerName        ?? '',
         birthDate:   customerBirthDate   ?? '',
         chartNumber: customerChartNumber ?? '',
-        rrn:         customerRrn         ?? '', // 주민번호 마스킹값 — [보험차트] 전용
+        rrn:         customerRrn         ?? '', // 주민번호 전체 표시 — [보험차트] 전용 (AC-8: 마스킹 없음)
       };
     } else {
       autofillDataRef.current = null;
@@ -1155,9 +1155,8 @@ export function PenChartTab({
       const isPCL = activeDrawTemplate && isPersonalChecklistKey(activeDrawTemplate.form_key);
 
       if ((isPC || isHQ || isPCL) && activeDrawTemplate) {
-        const signatureBase64 = (isPC && !sigEmpty)
-          ? (sigPadRef.current?.toDataURL('image/png') ?? null)
-          : null;
+        // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: 서명 UI 제거 → signature_base64 항상 null
+        const signatureBase64 = null;
         const now = new Date().toISOString();
         const submissionPayload: Record<string, unknown> = {
           clinic_id:   clinicId,
@@ -1188,8 +1187,6 @@ export function PenChartTab({
 
       // V3 C-2: 토스트는 에러 시에만 표시 — 저장 성공 시 토스트 없이 목록으로 복귀
       await loadSavedCharts();
-      sigPadRef.current?.clear();
-      setSigEmpty(true);
       setPlacedItems([]);
       setSelectedIds(new Set());
       setActiveDrawTemplate(null);
@@ -1222,10 +1219,6 @@ export function PenChartTab({
 
   // ── 양식 선택 ─────────────────────────────────────────────────────────
   const handleSelectTemplate = (tpl: Template) => {
-    if (isPdfOverlayFormKey(tpl.form_key)) {
-      sigPadRef.current?.clear();
-      setSigEmpty(true);
-    }
     setActiveDrawTemplate(tpl);
     setMode('draw');
   };
@@ -1843,43 +1836,8 @@ export function PenChartTab({
           </div>
         </div>
 
-        {/* pdf_overlay 전용 서명 캡처 패드 */}
-        {activeDrawTemplate && isPdfOverlayFormKey(activeDrawTemplate.form_key) && (
-          <div className="rounded-lg border bg-white p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-teal-800">
-                서명란 (개인정보 동의)
-              </span>
-              <button
-                type="button"
-                onClick={() => { sigPadRef.current?.clear(); setSigEmpty(true); }}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition"
-              >
-                <RotateCcw className="h-3 w-3" /> 서명 지우기
-              </button>
-            </div>
-            <div
-              className={cn(
-                'rounded border overflow-hidden',
-                sigEmpty ? 'border-dashed border-gray-300' : 'border-teal-400',
-              )}
-            >
-              <SignaturePad
-                ref={sigPadRef}
-                width={460}
-                height={130}
-                penColor="#1a1a1a"
-                className="block"
-                onChange={(isEmpty) => setSigEmpty(isEmpty)}
-              />
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              {sigEmpty
-                ? '고객이 태블릿펜 또는 손가락으로 서명해주세요 (선택)'
-                : '✓ 서명 완료 — 저장 시 자동 포함됩니다'}
-            </p>
-          </div>
-        )}
+        {/* T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: 하단 별도 서명란 제거
+            현장 피드백: "하단 별도 서명란 불필요 제거" — 서명은 캔버스 위에 직접 기입하는 방식으로 통일 */}
         </div>{/* end 스크롤 콘텐츠 */}
       </div>
       </FullscreenFormWrapper>
