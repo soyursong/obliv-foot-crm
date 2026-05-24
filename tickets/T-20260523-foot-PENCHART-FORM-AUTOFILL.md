@@ -2,16 +2,16 @@
 id: T-20260523-foot-PENCHART-FORM-AUTOFILL
 domain: foot
 priority: P1
-status: deployed
+status: deploy-ready
 deploy-ready: true
 build-ok: true
 db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: ""
-commit_sha: "e86c953"
-qa_result: pass
-qa_grade: Yellow
+commit_sha: "179795c"
+qa_result: pending
+qa_grade: ""
 deployed_at: "2026-05-24T03:38:39+09:00"
 deploy_commit: "e86c953"
 bundle_hash: "CustomerChartPage-88tiC3Zn.js"
@@ -26,11 +26,14 @@ related_tickets:
   - T-20260523-foot-PENCHART-PEN-SLOW
   - T-20260522-foot-PENCHART-REFUND-AUTOFILL
 risk_verdict: GO_WARN
-risk_note: "page 1 + pen_chart 좌표는 추정값. 현장 육안 보정 필요 (supervisor QA에서 확인)."
+risk_note: "AC-R5 좌표는 코드레벨 범위 검증만. 실기기 시각 확인 현장 배포 후 필요."
 re_qa_at: "2026-05-24T07:45:00+09:00"
 re_qa_result: pass
 re_qa_bundle_hash: "CustomerChartPage-DtCQgKC8.js"
 slack_deploy_notification_ts: "1779576451.982619"
+reopen_commit_sha: "179795c"
+reopen_reason: "MSG-20260524-110842-pnuu: AC-8 A안 확정 + AC-R4 서명란 제거 + AC-R5 좌표 스펙"
+reopen_at: "2026-05-24T11:30:00+09:00"
 ---
 
 # T-20260523-foot-PENCHART-FORM-AUTOFILL
@@ -68,6 +71,12 @@ PUSH MSG-20260523-225253-2zj9 (planner, P2→P1, 김주연 총괄 직접 보고)
 - AC-4: 펜차트 양식 — 성함·생년월일 자동채움
 - AC-5: `customerChartNumber` 신규 prop — CustomerChartPage에서 chart_number 전달
 - AC-6: 빌드 OK
+
+### REOPEN 추가 AC (MSG-20260524-110842-pnuu)
+
+- AC-8: 주민번호 A안 전체 표시 확정 — `rrnFull` 상태 추가, `customerRrn=rrnFull` (commit `5798b62`)
+- AC-R4: 환불동의서 하단 서명란 제거 — SignaturePad import/UI/상태 전체 삭제, REFUND_AUTOFILL_POS_P3 name 제거 (commit `179795c`)
+- AC-R5: 환불동의서 autofill 좌표 코드레벨 스펙 — P1/P3 범위 단언 + name 제거 소스 검증 (commit `179795c`)
 
 ## 주의 (GO_WARN)
 
