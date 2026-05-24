@@ -467,6 +467,7 @@ export interface Reservation {
   status: 'confirmed' | 'checked_in' | 'cancelled' | 'noshow';
   cancelled_at: string | null;             // 취소 일시 — T-20260515-foot-RESV-CANCEL
   cancel_reason: string | null;            // 취소 사유 — T-20260515-foot-RESV-CANCEL
+  cancelled_by: string | null;             // 취소 처리 staff user_id — T-20260525-foot-RESV-CANCEL-CTX
   referral_source: string | null;
   created_by: string | null;
   created_at: string;

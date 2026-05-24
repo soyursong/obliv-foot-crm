@@ -41,6 +41,8 @@ import type { CheckIn, Reservation, Staff, VisitType } from '@/lib/types';
 import { ReservationMemoTimeline, insertReservationMemo } from '@/components/ReservationMemoTimeline';
 // T-20260516-foot-RESV-DETAIL-POPUP: 4분할 예약 상세 팝업
 import { ReservationDetailPopup } from '@/components/ReservationDetailPopup';
+// T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 모달
+import { ReservationCancelModal } from '@/components/ReservationCancelModal';
 
 // AC-5 재오픈 fix: 모듈 레벨 클립보드 백업 — 컴포넌트 remount 시에도 상태 복원
 // (navigate('/admin/reservations', { state }) + lazy/Suspense remount 케이스 대응)
@@ -141,6 +143,9 @@ export default function Reservations() {
   const [resvMedicalChartCustomerId, setResvMedicalChartCustomerId] = useState<string | null>(null);
   const [resvMiniPayTarget, setResvMiniPayTarget] = useState<CheckIn | null>(null);
   const [resvMiniPayCounter, setResvMiniPayCounter] = useState(0);
+  // T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 모달 상태
+  const [cancelTarget, setCancelTarget] = useState<Reservation | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
 
   const weekDays = useMemo(
     () => Array.from({ length: 6 }).map((_, i) => addDays(weekStart, i)), // 월~토만
@@ -705,6 +710,57 @@ export default function Reservations() {
     toast.info('체크인 후 수납이 가능합니다');
   }, []);
 
+  // T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 콜백 — CustomerQuickMenu에서 호출
+  const handleResvCancelRequest = useCallback((ci: CheckIn) => {
+    // ci는 resvAsCheckIn()으로 변환된 어댑터 → reservation_id 가 원본 Reservation.id
+    const resvId = ci.reservation_id;
+    if (!resvId) { toast.error('예약 정보를 찾을 수 없습니다'); return; }
+    const resv = rows.find((r) => r.id === resvId);
+    if (!resv) { toast.error('예약 정보를 찾을 수 없습니다'); return; }
+    if (resv.status === 'cancelled') { toast.info('이미 취소된 예약입니다'); return; }
+    setCancelTarget(resv);
+  }, [rows]);
+
+  // T-20260525-foot-RESV-CANCEL-CTX: DB 취소 실행
+  const handleResvCancelConfirm = useCallback(async (reason: string) => {
+    if (!cancelTarget || !clinic) return;
+    setCancelBusy(true);
+    const { error } = await supabase
+      .from('reservations')
+      .update({
+        status: 'cancelled',
+        cancelled_at: new Date().toISOString(),
+        cancel_reason: reason,
+        cancelled_by: changedBy,
+      })
+      .eq('id', cancelTarget.id);
+    if (error) {
+      toast.error(`취소 실패: ${error.message}`);
+      setCancelBusy(false);
+      return;
+    }
+    // 감사 로그
+    await supabase.from('reservation_logs').insert({
+      reservation_id: cancelTarget.id,
+      clinic_id: cancelTarget.clinic_id,
+      action: 'cancel',
+      old_data: { status: cancelTarget.status },
+      new_data: { status: 'cancelled', cancel_reason: reason },
+      changed_by: changedBy,
+    });
+    // 낙관적 업데이트 — rows 즉시 반영
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === cancelTarget.id
+          ? { ...r, status: 'cancelled' as const, cancelled_at: new Date().toISOString(), cancel_reason: reason, cancelled_by: changedBy }
+          : r,
+      ),
+    );
+    setCancelBusy(false);
+    setCancelTarget(null);
+    toast.success(`${cancelTarget.customer_name} 예약 취소됨`);
+  }, [cancelTarget, clinic, changedBy]);
+
   return (
     <div className="flex h-full flex-col p-6">
       <div className="mb-4 flex items-center justify-between gap-4">
@@ -1117,6 +1173,7 @@ export default function Reservations() {
       />
 
       {/* T-20260515-foot-RESV-CTX-HOVER: 예약관리 우클릭 메뉴 + hover 팝업 오버레이 */}
+      {/* T-20260525-foot-RESV-CANCEL-CTX: onCancelReservation 추가 */}
       <CustomerQuickMenu
         checkIn={resvContextMenu ? resvAsCheckIn(resvContextMenu.resv) : null}
         position={resvContextMenu?.pos ?? null}
@@ -1125,6 +1182,16 @@ export default function Reservations() {
         onOpenMedicalChart={handleResvOpenMedicalChart}
         onNewReservation={handleResvNewReservation}
         onOpenPayment={handleResvOpenPayment}
+        onCancelReservation={handleResvCancelRequest}
+      />
+
+      {/* T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 모달 */}
+      <ReservationCancelModal
+        open={cancelTarget !== null}
+        customerName={cancelTarget?.customer_name ?? ''}
+        onClose={() => { if (!cancelBusy) setCancelTarget(null); }}
+        onConfirm={handleResvCancelConfirm}
+        busy={cancelBusy}
       />
 
       {/* T-20260516-foot-CHART-OPEN-UNIFY AC-1: CustomerChartSheet 렌더 제거 → AdminLayout 단일 렌더로 통합 */}
