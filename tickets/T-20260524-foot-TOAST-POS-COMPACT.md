@@ -1,7 +1,7 @@
 ---
 id: T-20260524-foot-TOAST-POS-COMPACT
 title: "알림 팝업 위치 중앙 상단 변경 + compact 축소"
-status: deploy-ready
+status: deployed
 priority: P2
 domain: foot
 created_at: 2026-05-24
@@ -14,7 +14,14 @@ build_time: "3.17s"
 e2e_spec: ""
 e2e_spec_exempt_reason: "FE-only Toaster prop 변경. DB 변경 없음. 리스크 0/5. 빌드 clean."
 reporter: 김주연 총괄
+reporter_slack_id: U0ATDB587PV
 risk: "0/5 (FE-only)"
+qa_result: pass
+qa_grade: Green
+deployed_at: "2026-05-24T14:29:00+09:00"
+deploy_commit: bcf79e7adbbbab86530e9272cbebd77e1a293cc4
+bundle_hash: C7-h4wia
+field_soak_until: "2026-05-25T14:29:00+09:00"
 ---
 
 # T-20260524-foot-TOAST-POS-COMPACT — 알림 팝업 위치 변경 + compact
