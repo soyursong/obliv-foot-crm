@@ -48,6 +48,8 @@ export default defineConfig({
         '**/T-20260523-foot-FORM-TEMPLATE-REGEN.spec.ts',
         // T-20260523-foot-PENCHART-INSURANCE: [보험차트] 명칭 + 자동채움 위치 (소스 grep, DB 검증)
         '**/T-20260523-foot-PENCHART-INSURANCE.spec.ts',
+        // T-20260524-foot-RESV-TREAT-REFORMAT: 시술내역 5컬럼 재편성 소스 정적 검증
+        '**/T-20260524-foot-RESV-TREAT-REFORMAT.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

@@ -1173,12 +1173,14 @@ const TREAT_KO: Record<string, string> = {
 };
 
 // T-20260522-foot-RESV-TREAT-HISTORY: 시술내역 행 타입
+// T-20260524-foot-RESV-TREAT-REFORMAT AC-1: 5컬럼 — therapist_name 추가
 interface TreatHistoryRow {
   session_id: string;
   package_name: string;
   session_number: number;
   total_sessions: number;
   session_type: string;
+  therapist_name: string; // AC-1: 치료사 컬럼 추가
   session_date: string;
 }
 
@@ -1377,12 +1379,13 @@ function ReservationEditor({
       }
 
       // 2) 회차(시술) 이력 조회 — session_date 내림차순 (AC-2)
+      // T-20260524-foot-RESV-TREAT-REFORMAT AC-2: performed_by + staff:performed_by(name) JOIN 추가
       const pkgIds = pkgs.map((p) => p.id);
       const pkgMap = new Map(pkgs.map((p) => [p.id, p]));
 
       const { data: sessData } = await supabase
         .from('package_sessions')
-        .select('id, package_id, session_number, session_type, session_date')
+        .select('id, package_id, session_number, session_type, session_date, performed_by, staff:performed_by(name)')
         .in('package_id', pkgIds)
         .not('session_date', 'is', null)
         .order('session_date', { ascending: false })
@@ -1392,12 +1395,16 @@ function ReservationEditor({
 
       const rows: TreatHistoryRow[] = (sessData ?? []).map((s: Record<string, unknown>) => {
         const pkg = pkgMap.get(s.package_id as string);
+        // AC-2: staff JOIN 결과에서 치료사명 추출 (단일 객체)
+        const staffObj = s.staff as { name: string } | null;
+        const therapistName = staffObj?.name ?? '—';
         return {
           session_id: s.id as string,
           package_name: pkg?.package_name ?? '—',
           session_number: s.session_number as number,
           total_sessions: pkg?.total_sessions ?? 0,
           session_type: (s.session_type as string) || '—',
+          therapist_name: therapistName, // AC-1: 치료사명
           session_date: s.session_date as string,
         };
       });
@@ -1798,11 +1805,12 @@ function ReservationEditor({
                 </div>
               ) : (
                 <>
-                  {/* AC-2: 4컬럼 헤더 */}
-                  <div className="grid grid-cols-4 gap-1 text-[10px] font-semibold text-muted-foreground pb-0.5 border-b border-teal-100">
+                  {/* T-20260524-foot-RESV-TREAT-REFORMAT AC-1: 5컬럼 헤더 — 패키지명/회차/치료명/치료사/시술일 */}
+                  <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1.2fr] gap-1 text-[10px] font-semibold text-muted-foreground pb-0.5 border-b border-teal-100">
                     <span>패키지명</span>
                     <span>회차</span>
                     <span>치료명</span>
+                    <span>치료사</span>
                     <span>시술일</span>
                   </div>
                   {/* T-20260522-foot-RESV-TREAT-UX AC-1: 최신 1건만 기본 표시 + 더보기 */}
@@ -1810,13 +1818,15 @@ function ReservationEditor({
                     <div
                       key={row.session_id}
                       data-testid={`treat-history-row-${row.session_id}`}
-                      className="grid grid-cols-4 gap-1 items-start"
+                      className="grid grid-cols-[2fr_1fr_1fr_1fr_1.2fr] gap-1 items-start"
                     >
                       <span className="truncate" title={row.package_name}>{row.package_name}</span>
-                      {/* AC-2: 회차 빨간색+굵게 */}
+                      {/* AC-5: 회차 빨간색+굵게 유지 */}
                       <span className="tabular-nums text-red-600 font-bold">{row.session_number}/{row.total_sessions}</span>
-                      {/* AC-3: 치료명 한글 매핑 */}
+                      {/* AC-5: 치료명 한글 매핑 유지 */}
                       <span className="truncate" title={row.session_type}>{TREAT_KO[row.session_type] ?? (row.session_type || '—')}</span>
+                      {/* AC-1: 치료사 컬럼 (없으면 — fallback) */}
+                      <span className="truncate text-muted-foreground" title={row.therapist_name}>{row.therapist_name}</span>
                       <span className="tabular-nums text-muted-foreground">{row.session_date}</span>
                     </div>
                   ))}
