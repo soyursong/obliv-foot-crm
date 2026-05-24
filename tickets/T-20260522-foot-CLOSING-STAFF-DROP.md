@@ -6,7 +6,8 @@ deploy_ready: true
 scope: FE-only
 db_changed: false
 build_passed: true
-e2e_spec: false
+e2e_spec: true
+e2e_spec_path: tests/e2e/T-20260522-foot-CLOSING-STAFF-DROP.spec.ts
 summary: "일마감 결제내역 [담당자] 드롭다운을 2번차트 1구역 담당자 드롭과 동일 쿼리/필터/정렬로 통일. director 제외 필터 추가."
 ---
 
