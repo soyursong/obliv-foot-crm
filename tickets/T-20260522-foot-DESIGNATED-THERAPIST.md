@@ -5,13 +5,17 @@ priority: P1
 domain: foot
 created_at: 2026-05-22
 deadline: 2026-05-29
-deploy_ready_at: 2026-05-22
+deploy_ready_at: 2026-05-25
 deploy_ready_by: dev-foot
 build_ok: true
 spec_added: tests/e2e/T-20260522-foot-DESIGNATED-THERAPIST.spec.ts
-db_changed: true
+db_changed: false
 rollback_sql: supabase/migrations/20260522070000_designated_therapist.down.sql
-risk_level: GO_WARN (2/5)
+risk_level: GO (0/5)
+fix_request: MSG-20260523-230414-w9pn
+ac_r1_done: true
+ac_r1_commits: a5bc390,ab598af
+ac_r2_status: pending-decision
 ---
 
 # T-20260522-foot-DESIGNATED-THERAPIST — 지정 치료사 기능
@@ -89,3 +93,32 @@ risk_level: GO_WARN (2/5)
 - [ ] Vercel 프리뷰 배포 확인 (main merge 자동)
 - [ ] 현장 시뮬레이션: 지정 치료사 설정 → 차트 재진입 → 유지 확인
 - [ ] 기존 회차 차감 E2E 회귀 통과 확인
+
+---
+
+## FIX-REQUEST AC-R1 완료 (2026-05-25)
+
+**FIX-REQUEST**: MSG-20260523-230414-w9pn  
+**현장 원문**: "환자가 특정 치료사 지정하면 해당 치료사나 데스크에서 수기로 넣는거야!"
+
+### AC-R1: 차감 폼 useEffect 자동세팅 제거 ✅ DONE
+
+| 항목 | 내용 |
+|------|------|
+| 커밋 | `a5bc390` (로직 제거), `ab598af` (UI 텍스트 정정) |
+| 변경 내용 | useEffect에서 `designatedTherapistId` 의존 제거. admin/consultant 차감 폼 빈 상태로 시작 |
+| 예외 | 치료사 계정 로그인 시 `currentUserStaffId` 자동세팅 유지 (RLS 준수, AC-R3) |
+| 추가 변경 | `saveDesignatedTherapist`에서 `c22DeductForm` 동기화 라인 제거 |
+| `saveC22Deduct` 리셋 | `currentUserStaffId \|\| ''` (designated_therapist_id 참조 제거) |
+| E2E SC-4 | 반대 동작 검증으로 갱신 (차감 드롭다운 빈 상태 확인) |
+| 빌드 | ✓ 3.22s |
+| DB 변경 | 없음 |
+
+### AC-R2: 예약 자동배정 ⏳ PENDING-DECISION
+
+DECISION-REQUEST 현장 응답 대기 중. 결정 후 별도 착수.
+
+### AC-R3: 치료사 계정 본인 자동선택 ✅ 유지 (RLS)
+
+`package_sessions_therap_insert` RLS → `performed_by IS NULL OR = current_staff_id()` 강제.  
+치료사 계정 로그인 시 본인 자동 세팅은 RLS 제약 반영이므로 유지.
