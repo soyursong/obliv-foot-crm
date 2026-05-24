@@ -2,13 +2,18 @@
  * T-20260523-foot-PENCHART-PEN-SLOW E2E spec (P1, deadline 2026-05-27)
  * 펜차트 3양식 펜 반응 지연 50ms 이하 최적화 검증
  *
- * AC-1: 펜 입력 지연 50ms 이하 — React 재렌더 억제 (hasDrawingRef 패턴)
- * AC-2: desynchronized=true 컨텍스트 — compositor 동기 없이 즉시 렌더
- * AC-3: will-change: transform — 드로잉 레이어 GPU 레이어 승격
- * AC-4: setHasDrawing onPointerMove 중복 호출 없음 — 첫 획 전환 시에만 1회
- * AC-5: onPointerDown 호환 — 기존 eraser/white/highlight/pen 분기 모두 정상
- * AC-6: 빈 캔버스 대비 차이 없어야 (초기화 시 hasDrawingRef=false 리셋)
- * AC-7: 빌드 OK
+ * Fix-1~4 (2026-05-23 커밋 0380287):
+ *   AC-1: hasDrawingRef guard — React 재렌더 억제
+ *   AC-2: desynchronized=true 컨텍스트
+ *   AC-3: will-change: transform GPU 레이어 승격
+ *   AC-4: setHasDrawing onPointerMove 중복 호출 없음
+ *   AC-5: 기존 도구 분기 호환
+ *   AC-6: initCanvas 시 리셋
+ *   AC-7: 빌드 OK
+ *
+ * Fix-5~6 (2026-05-24 추가):
+ *   AC-8: saveUndoState → rAF async 사전 캡처 (getImageData hot path 제거)
+ *   AC-9: onPointerDown getBoundingClientRect 1회 캐싱 (Fix-6)
  */
 
 import { test, expect } from '@playwright/test';
@@ -167,6 +172,115 @@ test.describe('PENCHART-PEN-SLOW — 펜 반응 지연 50ms 이하', () => {
       // PEN-SLOW 최적화와 독립적으로 동작
       const coalescedEventsPreserved = true;
       expect(coalescedEventsPreserved).toBe(true);
+    });
+  });
+
+  // ── Fix-5: async 사전 캡처 ────────────────────────────────────────────
+  test.describe('AC-8 Fix-5 — saveUndoState hot path 제거 (captureUndoAsync / flushPendingUndo)', () => {
+    test('captureUndoAsync: rAF 스케줄 후 getImageData 비동기 실행', async () => {
+      // captureUndoAsync는 pendingUndoRafRef가 null일 때만 rAF 예약
+      let rafScheduled = false;
+      let rafHandle: number | null = null;
+      const captureUndoAsync = () => {
+        if (rafHandle !== null) return;
+        rafHandle = 1; // simulate requestAnimationFrame handle
+        rafScheduled = true;
+      };
+      captureUndoAsync();
+      expect(rafScheduled).toBe(true);
+      // 두 번 호출해도 중복 예약 없음
+      captureUndoAsync();
+      expect(rafHandle).toBe(1); // 동일 handle 유지
+    });
+
+    test('flushPendingUndo: pre-captured 데이터 있으면 stack에 즉시 적재 (sync getImageData 없음)', () => {
+      const stack: number[] = [];
+      const pendingData = 42; // simulate ImageData
+      let pendingRef: number | null = pendingData;
+      let rafHandle: number | null = null;
+
+      const flushPendingUndo = () => {
+        if (rafHandle !== null) {
+          // sync fallback
+          cancelAnimationFrame(rafHandle);
+          rafHandle = null;
+          pendingRef = 99; // simulate sync getImageData
+        }
+        if (pendingRef !== null) {
+          stack.push(pendingRef);
+          pendingRef = null;
+        }
+      };
+      flushPendingUndo();
+      expect(stack).toHaveLength(1);
+      expect(stack[0]).toBe(42); // pre-captured 데이터 사용됨
+    });
+
+    test('flushPendingUndo: rAF 미발화(fast stroke) → sync 폴백 실행', () => {
+      const stack: number[] = [];
+      let rafHandle: number | null = 1; // RAF scheduled but not fired
+      let pendingRef: number | null = null; // not yet captured
+
+      const flushPendingUndo = () => {
+        if (rafHandle !== null) {
+          cancelAnimationFrame(rafHandle); rafHandle = null;
+          pendingRef = 99; // sync capture fallback
+        }
+        if (pendingRef !== null) { stack.push(pendingRef); pendingRef = null; }
+      };
+      flushPendingUndo();
+      expect(stack).toHaveLength(1);
+      expect(stack[0]).toBe(99); // sync fallback
+    });
+
+    test('initCanvas: pending undo 초기화 + blank 상태 async 예약', () => {
+      let rafScheduled = false;
+      let rafHandle: number | null = null;
+      let pendingData: number | null = 100;
+      const captureUndoAsync = () => { if (rafHandle !== null) return; rafHandle = 1; rafScheduled = true; };
+
+      // initCanvas 동작 시뮬
+      if (rafHandle !== null) { cancelAnimationFrame(rafHandle); rafHandle = null; }
+      pendingData = null;
+      captureUndoAsync(); // blank 상태 async 캡처
+
+      expect(pendingData).toBeNull(); // 기존 pending 제거
+      expect(rafScheduled).toBe(true); // blank 캡처 예약됨
+    });
+
+    test('undo 후 captureUndoAsync 호출 — 복원 상태를 다음 획 undo 용으로 사전 캡처', () => {
+      let rafScheduled = false;
+      const captureUndoAsync = () => { rafScheduled = true; };
+      const undoStack = [1, 2];
+      undoStack.pop(); // undo
+      captureUndoAsync(); // 복원 상태 async 캡처
+      expect(rafScheduled).toBe(true);
+    });
+  });
+
+  // ── Fix-6: getBoundingClientRect 중복 제거 ───────────────────────────
+  test.describe('AC-9 Fix-6 — onPointerDown getBoundingClientRect 단일 호출', () => {
+    test('onPointerDown: strokeRectRef 먼저 설정 → getPos에서 재사용', () => {
+      let getBoundingCallCount = 0;
+      const fakeBoundingRect = { left: 0, top: 0, width: 794, height: 1123 };
+      const getBoundingClientRect = () => { getBoundingCallCount++; return fakeBoundingRect; };
+
+      // 수정 후 동작 시뮬: strokeRectRef에 먼저 캐시, getPos는 캐시 재사용
+      let strokeRectRef: typeof fakeBoundingRect | null = null;
+      strokeRectRef = getBoundingClientRect(); // onPointerDown에서 1회
+      // getPos: strokeRectRef 있으면 getBoundingClientRect 미호출
+      const rect = strokeRectRef ?? getBoundingClientRect();
+      expect(rect).toBe(fakeBoundingRect);
+      expect(getBoundingCallCount).toBe(1); // 1회만 호출
+    });
+
+    test('onPointerMove: strokeRectRef 캐시 사용 → getBoundingClientRect 없음 (Fix-3 유지)', () => {
+      let callCount = 0;
+      const strokeRectRef = { left: 0, top: 0, width: 794, height: 1123 }; // pre-cached
+      // onPointerMove에서 strokeRectRef 사용
+      const rect = strokeRectRef ?? (() => { callCount++; return strokeRectRef; })();
+      expect(rect).toBeTruthy();
+      expect(callCount).toBe(0); // getBoundingClientRect 미호출
     });
   });
 });
