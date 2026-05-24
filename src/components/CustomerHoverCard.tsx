@@ -44,9 +44,11 @@ interface Props {
   compact?: boolean;
   /** 우클릭 핸들러 (부모에서 주입) */
   onContextMenu?: (e: React.MouseEvent) => void;
+  /** T-20260525-foot-RSVMGMT-CHART-OPEN: 클릭 → 1·2번 차트 열림 (예약관리 진입점) */
+  onClick?: () => void;
 }
 
-export function CustomerHoverCard({ checkIn, reservationTime, compact, onContextMenu }: Props) {
+export function CustomerHoverCard({ checkIn, reservationTime, compact, onContextMenu, onClick }: Props) {
   const [visible, setVisible] = useState(false);
   const [details, setDetails] = useState<CustomerDetails | null>(null);
   const [loading, setLoading] = useState(false);
@@ -130,13 +132,20 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, onContext
       onMouseLeave={handleMouseLeave}
     >
       {/* 성함 텍스트 */}
+      {/* T-20260525-foot-RSVMGMT-CHART-OPEN: onClick 연결 시 클릭 가능 스타일 적용 */}
       <span
         className={cn(
-          'cursor-context-menu hover:underline decoration-dotted underline-offset-2',
+          'hover:underline decoration-dotted underline-offset-2',
+          onClick ? 'cursor-pointer' : 'cursor-context-menu',
           compact ? 'font-bold text-sm truncate' : 'text-base font-bold',
         )}
-        title="우클릭/롱프레스 → 고객차트·예약 · 호버 → 간단정보"
+        title={onClick ? '클릭 → 고객차트 열기 · 우클릭/롱프레스 → 메뉴 · 호버 → 간단정보' : '우클릭/롱프레스 → 고객차트·예약 · 호버 → 간단정보'}
         onContextMenu={onContextMenu}
+        onClick={(e) => {
+          if (!onClick) return;
+          e.stopPropagation();
+          onClick();
+        }}
       >
         {checkIn.customer_name?.trim() || '이름없음'}
       </span>
