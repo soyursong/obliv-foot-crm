@@ -5,8 +5,8 @@ status: deploy-ready
 deploy-ready: true
 build-passed: true
 db-change: false
-e2e-spec: false
-summary: "v5 AC-11: saveResvMini+saveInlineResv AC-8 경로 날짜 가드 추가 — 당일 예약 생성 시 pending_healer_flag 소모 금지. 빌드 OK. commit: 89778ff"
+e2e-spec: true
+summary: "spec v4/v5 정합 완료: AC-1(outline amber-500 단언), AC-4(>= today→> today), AC-5(f59e0b+outline). v5(89778ff) 코드 정상, spec outdated 수정 완료."
 ---
 
 ## T-20260516-foot-HEALER-RESV-BTN — v3+v4 FIX
