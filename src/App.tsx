@@ -82,7 +82,20 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <Toaster richColors position="top-right" />
+        {/* T-20260524-foot-TOAST-POS-COMPACT: 중앙 상단 + compact */}
+        <Toaster
+          richColors
+          position="top-center"
+          gap={8}
+          toastOptions={{
+            classNames: {
+              toast: 'py-2 px-3 gap-2 min-w-0 max-w-xs text-sm',
+              title: 'text-sm font-medium leading-tight',
+              description: 'text-xs leading-snug',
+              icon: 'w-4 h-4 shrink-0',
+            },
+          }}
+        />
         <BrowserRouter>
           <Suspense fallback={<PageLoader />}>
             <Routes>
