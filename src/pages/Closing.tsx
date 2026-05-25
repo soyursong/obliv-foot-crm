@@ -210,6 +210,11 @@ export default function Closing() {
   // 임시저장·마감 확정·재오픈·수기수정 버튼은 admin/manager만 표시
   const { profile } = useAuth();
   const isAdminOrManager = profile?.role === 'admin' || profile?.role === 'manager';
+  // T-20260525-foot-ROLE-PERM-CUSTOM AC-4: 환불 처리 — admin/manager + consultant/coordinator/therapist
+  const canRefund = isAdminOrManager
+    || profile?.role === 'consultant'
+    || profile?.role === 'coordinator'
+    || profile?.role === 'therapist';
 
   // T-20260525-foot-CLOSING-CALC-BUG AC-1: 탭 상태를 URL hash로 persist
   // 브라우저 새로고침(F5) 시 현재 탭(summary/payments) 유지
@@ -1425,7 +1430,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                         <td className="py-2 px-1 text-center">
                           <div className="flex items-center justify-center gap-1">
                             {/* T-20260522-foot-CLOSING-REFUND: 환불 버튼 — admin/manager + 이미 환불 아닌 건 + payment/package 소스만 */}
-                            {isAdminOrManager && r.payment_type !== 'refund' && (r.source === 'payment' || r.source === 'package') && (
+                            {/* T-20260525-foot-ROLE-PERM-CUSTOM AC-5: canRefund(+consultant/coordinator/therapist)로 확장 */}
+                            {canRefund && r.payment_type !== 'refund' && (r.source === 'payment' || r.source === 'package') && (
                               <button
                                 onClick={() => setRefundTarget(r)}
                                 className="text-muted-foreground hover:text-destructive transition-colors p-1"
