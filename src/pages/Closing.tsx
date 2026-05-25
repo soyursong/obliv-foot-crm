@@ -461,41 +461,98 @@ export default function Closing() {
   }, [clinic, date, qc]);
 
   // ── 합계 계산 ───────────────────────────────────────────────
+  // T-20260525-foot-CLOSING-SUM-ERR 수정:
+  //   구 코드는 manualEntries(수기결제)를 totals에서 누락 → 총합계 ≠ 결제내역 SUM.
+  //   수기결제는 enrichedRows에는 포함되어 결제내역 탭에는 정상 표시됐지만,
+  //   totals useMemo의 [payments, pkgPayments] dep array에 manualEntries 없어 grossTotal 미반영.
+  //   Fix: manualCard/Cash/Transfer를 합산, manualEntries를 dep에 추가.
+  //
+  // T-20260525-foot-CLOSING-CALC-BUG 수정:
+  //   fab1ad6(T-20260522-foot-CLOSING-REFUND)에서 refund_single_payment RPC 도입 후
+  //   SummaryCard "합계" 행에 ['환불(차감 포함)', -refundAmount]를 추가했는데,
+  //   sum() 헬퍼가 이미 환불을 차감해 totalCard/Cash/Transfer는 NET값임.
+  //   → 환불이 이중 차감되어 표시행 합계(NET + -환불) ≠ grossTotal(NET) → 금액 불일치 표시.
+  //
+  //   Fix 전략: sum() = NET (환불 차감) — reconciliation(실제 정산)용
+  //              sumGross() = GROSS (환불 미차감) — SummaryCard 표시행용
+  //   SummaryCard "합계" rows: GROSS + ['환불', -refundAmount] → 합계 = NET = grossTotal ✓
   const totals = useMemo(() => {
+    // NET sum: 환불 차감 포함 — reconciliation 및 DB 저장용
     const sum = (rows: { amount: number; method: string; payment_type: PaymentType }[], method: string) =>
       rows
         .filter(r => r.method === method)
         .reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0);
 
-    const pkgCard = sum(pkgPayments, 'card');
-    const pkgCash = sum(pkgPayments, 'cash');
+    // GROSS sum: 결제(payment)행만 — SummaryCard 표시행용 (환불 행 제외)
+    const sumGross = (rows: { amount: number; method: string; payment_type: PaymentType }[], method: string) =>
+      rows
+        .filter(r => r.method === method && r.payment_type !== 'refund')
+        .reduce((s, r) => s + r.amount, 0);
+
+    // NET (reconciliation/DB)
+    const pkgCard     = sum(pkgPayments, 'card');
+    const pkgCash     = sum(pkgPayments, 'cash');
     const pkgTransfer = sum(pkgPayments, 'transfer');
-    const singleCard = sum(payments, 'card');
-    const singleCash = sum(payments, 'cash');
-    const singleTransfer = sum(payments, 'transfer');
+    const singleCard      = sum(payments, 'card');
+    const singleCash      = sum(payments, 'cash');
+    const singleTransfer  = sum(payments, 'transfer');
     const singleMembership = sum(payments, 'membership');
 
-    const totalCard = pkgCard + singleCard;
-    const totalCash = pkgCash + singleCash;
-    const totalTransfer = pkgTransfer + singleTransfer;
+    // GROSS (display)
+    const pkgCardGross     = sumGross(pkgPayments, 'card');
+    const pkgCashGross     = sumGross(pkgPayments, 'cash');
+    const pkgTransferGross = sumGross(pkgPayments, 'transfer');
+    const singleCardGross     = sumGross(payments, 'card');
+    const singleCashGross     = sumGross(payments, 'cash');
+    const singleTransferGross = sumGross(payments, 'transfer');
 
-    const refundAmount =
-      payments.filter(r => r.payment_type === 'refund').reduce((s, r) => s + r.amount, 0) +
+    // 수기결제: manual entries는 항상 payment_type='payment' (환불 없음) — 직접 합산
+    const manualCard     = manualEntries.filter(m => m.method === 'card').reduce((s, m) => s + m.amount, 0);
+    const manualCash     = manualEntries.filter(m => m.method === 'cash').reduce((s, m) => s + m.amount, 0);
+    const manualTransfer = manualEntries.filter(m => m.method === 'transfer').reduce((s, m) => s + m.amount, 0);
+    const manualTotal    = manualCard + manualCash + manualTransfer;
+
+    // NET totals (reconciliation/DB저장)
+    const totalCard     = pkgCard + singleCard + manualCard;
+    const totalCash     = pkgCash + singleCash + manualCash;
+    const totalTransfer = pkgTransfer + singleTransfer + manualTransfer;
+
+    // GROSS totals (SummaryCard 표시용)
+    const totalCardGross     = pkgCardGross + singleCardGross + manualCard;
+    const totalCashGross     = pkgCashGross + singleCashGross + manualCash;
+    const totalTransferGross = pkgTransferGross + singleTransferGross + manualTransfer;
+
+    // 환불 합계 (절댓값)
+    const refundSingleAmount =
+      payments.filter(r => r.payment_type === 'refund').reduce((s, r) => s + r.amount, 0);
+    const refundPkgAmount =
       pkgPayments.filter(r => r.payment_type === 'refund').reduce((s, r) => s + r.amount, 0);
+    const refundAmount = refundSingleAmount + refundPkgAmount;
 
     // T-20260519-foot-PKG-REVENUE-SPLIT AC-2/AC-3:
     // grossTotal에서 singleMembership 제외.
     // 'membership' method = 전액 패키지 차감건(amount=0 마커) 또는 구형 패키지차감건
     // 패키지는 최초 구매 시점(package_payments)에 이미 집계됨 → 차감 시점에 재집계 불가
+    // grossTotal = NET (환불 차감 후, membership 제외) — reconciliation 기준점
     const grossTotal = totalCard + totalCash + totalTransfer;
 
     return {
+      // NET (reconciliation/DB)
       pkgCard, pkgCash, pkgTransfer,
       singleCard, singleCash, singleTransfer, singleMembership,
       totalCard, totalCash, totalTransfer,
-      refundAmount, grossTotal,
+      // GROSS (SummaryCard 표시)
+      pkgCardGross, pkgCashGross, pkgTransferGross,
+      singleCardGross, singleCashGross, singleTransferGross,
+      totalCardGross, totalCashGross, totalTransferGross,
+      // Manual (공통)
+      manualCard, manualCash, manualTransfer, manualTotal,
+      // 환불
+      refundAmount, refundSingleAmount, refundPkgAmount,
+      // 합계
+      grossTotal,
     };
-  }, [payments, pkgPayments]);
+  }, [payments, pkgPayments, manualEntries]);
 
   const cardDiff = actualCard - totals.totalCard;
   const cashDiff = actualCash - totals.totalCash;
@@ -699,19 +756,25 @@ export default function Closing() {
 
   // ── CSV 내보내기 (총 합계 탭) ─────────────────────────────
   // T-20260519-foot-PKG-REVENUE-SPLIT: grossTotal은 패키지차감(membership) 제외
+  // T-20260525-foot-CLOSING-CALC-BUG: GROSS 표시 + 환불 별도 행 → 행합계 = NET(grossTotal) ✓
   const exportCSV = () => {
     const rows = [
-      ['구분', '카드', '현금', '이체', '패키지차감(매출제외)', '매출합계'],
-      ['패키지구매', totals.pkgCard, totals.pkgCash, totals.pkgTransfer, 0, totals.pkgCard + totals.pkgCash + totals.pkgTransfer],
-      ['단건', totals.singleCard, totals.singleCash, totals.singleTransfer, totals.singleMembership, totals.singleCard + totals.singleCash + totals.singleTransfer],
-      ['합계(멤버십제외)', totals.totalCard, totals.totalCash, totals.totalTransfer, totals.singleMembership, totals.grossTotal],
+      ['구분', '카드(GROSS)', '현금(GROSS)', '이체(GROSS)', '패키지차감(매출제외)', '매출합계(NET)'],
+      ['패키지구매', totals.pkgCardGross, totals.pkgCashGross, totals.pkgTransferGross, 0,
+        totals.pkgCard + totals.pkgCash + totals.pkgTransfer],
+      ['단건', totals.singleCardGross, totals.singleCashGross, totals.singleTransferGross, totals.singleMembership,
+        totals.singleCard + totals.singleCash + totals.singleTransfer],
+      ['합계(멤버십제외)', totals.totalCardGross, totals.totalCashGross, totals.totalTransferGross, totals.singleMembership, totals.grossTotal],
+      ['환불(차감)', -totals.refundSingleAmount, '', '', '', -totals.refundPkgAmount],
       [],
-      ['정산', '시스템', '실제', '차이'],
+      ['정산', '시스템(NET)', '실제', '차이'],
       ['카드', totals.totalCard, actualCard, cardDiff],
       ['현금', totals.totalCash, actualCash, cashDiff],
       ['총 차이', '', '', totalDiff],
       [],
-      ['환불', totals.refundAmount],
+      ['환불합계', totals.refundAmount],
+      ['  └단건환불', totals.refundSingleAmount],
+      ['  └패키지환불', totals.refundPkgAmount],
       ['미수건수', unpaid.length],
     ];
     if (memo) rows.push([], ['메모', memo]);
@@ -883,27 +946,28 @@ ${enrichedRows.length ? `<tfoot><tr><td colspan="7">합계</td><td class="num">$
 <table>
 <thead><tr><th>구분</th><th>카드</th><th>현금</th><th>이체</th><th>패키지차감(매출제외)</th><th>매출합계</th></tr></thead>
 <tbody>
-<tr><td>패키지구매</td><td class="num">${fmt(totals.pkgCard)}</td><td class="num">${fmt(totals.pkgCash)}</td><td class="num">${fmt(totals.pkgTransfer)}</td><td class="num">0</td><td class="num">${fmt(totals.pkgCard + totals.pkgCash + totals.pkgTransfer)}</td></tr>
-<tr><td>단건</td><td class="num">${fmt(totals.singleCard)}</td><td class="num">${fmt(totals.singleCash)}</td><td class="num">${fmt(totals.singleTransfer)}</td><td class="num">${fmt(totals.singleMembership)}</td><td class="num">${fmt(totals.singleCard + totals.singleCash + totals.singleTransfer)}</td></tr>
-<tr class="total"><td>합계(멤버십제외)</td><td class="num">${fmt(totals.totalCard)}</td><td class="num">${fmt(totals.totalCash)}</td><td class="num">${fmt(totals.totalTransfer)}</td><td class="num">${fmt(totals.singleMembership)}</td><td class="num">${fmt(totals.grossTotal)}</td></tr>
+<tr><td>패키지구매</td><td class="num">${fmt(totals.pkgCardGross)}</td><td class="num">${fmt(totals.pkgCashGross)}</td><td class="num">${fmt(totals.pkgTransferGross)}</td><td class="num">0</td><td class="num">${fmt(totals.pkgCard + totals.pkgCash + totals.pkgTransfer)}</td></tr>
+<tr><td>단건</td><td class="num">${fmt(totals.singleCardGross)}</td><td class="num">${fmt(totals.singleCashGross)}</td><td class="num">${fmt(totals.singleTransferGross)}</td><td class="num">${fmt(totals.singleMembership)}</td><td class="num">${fmt(totals.singleCard + totals.singleCash + totals.singleTransfer)}</td></tr>
+${totals.refundAmount > 0 ? `<tr><td>환불 차감</td><td class="num" style="color:#b91c1c">-${fmt(totals.refundAmount)}</td><td></td><td></td><td></td><td class="num" style="color:#b91c1c">-${fmt(totals.refundAmount)}</td></tr>` : ''}
+<tr class="total"><td>합계(멤버십제외,환불차감)</td><td class="num">${fmt(totals.totalCard)}</td><td class="num">${fmt(totals.totalCash)}</td><td class="num">${fmt(totals.totalTransfer)}</td><td class="num">${fmt(totals.singleMembership)}</td><td class="num">${fmt(totals.grossTotal)}</td></tr>
 </tbody>
 </table>
 
-<h3>실제 정산</h3>
+<h3>실제 정산 (환불 차감 후 기준)</h3>
 <div class="recon">
   <div class="row">
-    <div class="lbl">카드</div>
+    <div class="lbl">카드 (환불 차감 후)</div>
     <div class="vals"><span>시스템 ${fmt(totals.totalCard)}</span><span>실제 ${fmt(actualCard)}</span></div>
     <div class="vals"><span></span><span class="diff ${cardDiff === 0 ? 'zero' : cardDiff > 0 ? 'pos' : 'neg'}">차이 ${cardDiff > 0 ? '+' : ''}${fmt(cardDiff)}</span></div>
   </div>
   <div class="row">
-    <div class="lbl">현금</div>
+    <div class="lbl">현금 (환불 차감 후)</div>
     <div class="vals"><span>시스템 ${fmt(totals.totalCash)}</span><span>실제 ${fmt(actualCash)}</span></div>
     <div class="vals"><span></span><span class="diff ${cashDiff === 0 ? 'zero' : cashDiff > 0 ? 'pos' : 'neg'}">차이 ${cashDiff > 0 ? '+' : ''}${fmt(cashDiff)}</span></div>
   </div>
 </div>
 
-${totals.refundAmount > 0 ? `<h3>환불</h3><table><tbody><tr><td>환불 차감액</td><td class="num">${fmt(totals.refundAmount)}</td></tr></tbody></table>` : ''}
+${totals.refundAmount > 0 ? `<h3>환불 내역</h3><table><tbody><tr><td>단건 환불</td><td class="num">${fmt(totals.refundSingleAmount)}</td></tr><tr><td>패키지 환불</td><td class="num">${fmt(totals.refundPkgAmount)}</td></tr><tr class="total"><td>환불 합계</td><td class="num">${fmt(totals.refundAmount)}</td></tr></tbody></table>` : ''}
 ${unpaid.length > 0 ? `<h3>미수</h3><div>결제대기 ${unpaid.length}건</div>` : ''}
 ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` : ''}
 </body></html>`;
@@ -1060,14 +1124,21 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             </Card>
           )}
 
-          {/* 요약 카드 */}
+          {/* 요약 카드
+              T-20260525-foot-CLOSING-CALC-BUG:
+              SummaryCard 행값은 GROSS(환불 미차감)로 표시.
+              "합계" 카드에 ['환불', -refundAmount] 행 추가 → 행 합계 = grossTotal(NET) ✓
+              (구 코드: NET 행값 + 별도 환불 행 → 이중 차감 = 불일치 원인) */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             <SummaryCard
               title="패키지 결제"
               rows={[
-                ['카드', totals.pkgCard],
-                ['현금', totals.pkgCash],
-                ['이체', totals.pkgTransfer],
+                ['카드', totals.pkgCardGross],
+                ['현금', totals.pkgCashGross],
+                ['이체', totals.pkgTransferGross],
+                ...(totals.refundPkgAmount > 0
+                  ? [['환불', -totals.refundPkgAmount] as [string, number]]
+                  : []),
               ]}
               total={totals.pkgCard + totals.pkgCash + totals.pkgTransfer}
             />
@@ -1077,22 +1148,45 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             <SummaryCard
               title="단건 결제"
               rows={[
-                ['카드', totals.singleCard],
-                ['현금', totals.singleCash],
-                ['이체', totals.singleTransfer],
+                ['카드', totals.singleCardGross],
+                ['현금', totals.singleCashGross],
+                ['이체', totals.singleTransferGross],
                 ...(totals.singleMembership > 0
                   ? [['패키지차감(매출제외)', totals.singleMembership] as [string, number]]
+                  : []),
+                ...(totals.refundSingleAmount > 0
+                  ? [['환불', -totals.refundSingleAmount] as [string, number]]
                   : []),
               ]}
               total={totals.singleCard + totals.singleCash + totals.singleTransfer}
             />
+            {/* T-20260525-foot-CLOSING-SUM-ERR: 수기결제가 있을 때 수기 소계 카드 추가 */}
+            {totals.manualTotal > 0 && (
+              <SummaryCard
+                title="수기결제"
+                rows={[
+                  ['카드', totals.manualCard],
+                  ['현금', totals.manualCash],
+                  ['이체', totals.manualTransfer],
+                ]}
+                total={totals.manualTotal}
+              />
+            )}
+            {/* 합계 카드: GROSS행 + 환불 차감 = NET(grossTotal)
+                행 합계 = totalCardGross + totalCashGross + totalTransferGross - refundAmount
+                        = grossTotal ✓ */}
             <SummaryCard
               title="합계 (결제수단별)"
               rows={[
-                ['카드 총합', totals.totalCard],
-                ['현금 총합', totals.totalCash],
-                ['이체 총합', totals.totalTransfer],
-                ['환불', -totals.refundAmount],
+                ['카드 총합', totals.totalCardGross],
+                ['현금 총합', totals.totalCashGross],
+                ['이체 총합', totals.totalTransferGross],
+                ...(totals.manualTotal > 0
+                  ? [['수기결제 포함', totals.manualTotal] as [string, number]]
+                  : []),
+                ...(totals.refundAmount > 0
+                  ? [['환불 차감', -totals.refundAmount] as [string, number]]
+                  : []),
               ]}
               total={totals.grossTotal}
               highlight
