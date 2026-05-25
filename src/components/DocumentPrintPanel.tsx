@@ -1376,9 +1376,11 @@ function IssueDialog({
 
     // 서비스 항목 조회 (service_charges JOIN services — T-20260507-SERVICE-CATALOG-SEED Phase 3)
     // T-20260525-foot-INS-FIELD-BIND: category_label 추가 — 상병코드 식별 후 diag_code_N 주입
+    // T-20260525-foot-DOC-AUTOBIND-REGRESS AC-2: copayment_amount 추가 — bill_detail 본인부담금 열 동기화
+    //   PRINT-FORM-BIND(3cd5c8d) 당시 초회 useEffect에 미포함되어 refreshServiceItems와 불일치 발생.
     supabase
       .from('service_charges')
-      .select('id, base_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code, category_label)')
+      .select('id, base_amount, copayment_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code, category_label)')
       .eq('check_in_id', checkIn.id)
       .then(({ data }) => {
         if (cancelled || !data) return;
@@ -1389,6 +1391,7 @@ function IssueDialog({
             service_code: (svc as { service_code?: string | null } | null)?.service_code ?? null,
             name: (svc as { name?: string } | null)?.name ?? '(알 수 없음)',
             amount: c.base_amount ?? 0,
+            copayment_amount: (c.copayment_amount as number | null) ?? null,
             hira_code: (svc as { hira_code?: string | null } | null)?.hira_code ?? null,
             is_insurance_covered: c.is_insurance_covered ?? false,
             category_label: (svc as { category_label?: string | null } | null)?.category_label ?? null,
@@ -1535,6 +1538,7 @@ function IssueDialog({
     }
 
     // bill_detail HTML 양식: 서비스 항목 rows 주입
+    // T-20260525-foot-DOC-AUTOBIND-REGRESS AC-2: copayment_amount 추가 — 급여 본인부담금 열 표시
     if (template.form_key === 'bill_detail' && serviceItems.length > 0) {
       const billItems = serviceItems.map((item) => ({
         category: item.is_insurance_covered ? '이학요법료' : '기타',
@@ -1545,6 +1549,7 @@ function IssueDialog({
         count: 1,
         days: 1,
         is_insurance_covered: item.is_insurance_covered,
+        copayment_amount: item.copayment_amount ?? undefined,
       }));
       base.items_html = buildBillDetailItemsHtml(billItems);
       const nonCoveredTotal = billItems
@@ -1562,8 +1567,11 @@ function IssueDialog({
 
     // rx_standard HTML 양식: 처방 의약품 rows 주입 (T-20260515-foot-FORM-ONELINE-RX)
     // T-20260517-foot-RX-DOSAGE-DYNAMIC: 하드코딩 → per-item 사용자 입력, 미입력 시 1/1/7 fallback
+    // T-20260525-foot-DOC-AUTOBIND-REGRESS AC-4: 상병코드(category_label='상병') 항목은 처방전 제외
+    //   PaymentMiniWindow buildCodeEnrichedValues와 동일 정책 적용.
     if (template.form_key === 'rx_standard') {
-      const rxItems = serviceItems.map((item) => ({
+      const rxServiceItems = serviceItems.filter((i) => i.category_label !== '상병');
+      const rxItems = rxServiceItems.map((item) => ({
         name: item.name,
         unit_dose: rxItemDosages[item.id]?.unit_dose || '1',
         daily_freq: rxItemDosages[item.id]?.daily_freq || '1',
