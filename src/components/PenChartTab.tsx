@@ -572,6 +572,15 @@ export function PenChartTab({
   const strokeRectRef = useRef<DOMRect | null>(null);
   // T-20260523-foot-PENCHART-PEN-SLOW Fix-4: white 도구 획 경로 — onPointerUp에서 한 번만 hit-test
   const whiteStrokePathRef = useRef<Array<{ x: number; y: number }>>([]);
+  // T-20260526-foot-PENCHART-PEN-SLOW Fix-8: mirror refs for native pointermove (React 18 scheduler bypass)
+  // React 18 concurrent mode는 pointermove를 MessageChannel tick으로 스케줄링 → 4-16ms 추가 지연.
+  // native addEventListener는 브라우저 이벤트 루프에서 동기 발화 → 지연 최소화.
+  const activeToolRef     = useRef<ActiveTool>('pen');
+  const penColorRef       = useRef('#1a1a1a');
+  const penSizeRef        = useRef<number>(DEFAULT_THICKNESS.pen);
+  const highlightColorRef = useRef('#fde047');
+  // strokeScaleRef: scaleX/scaleY를 onPointerDown에서 1회 계산 → native handler가 매 이벤트마다 재계산 생략
+  const strokeScaleRef    = useRef<{ x: number; y: number }>({ x: 1, y: 1 });
 
   // T-20260519-foot-PENCHART-FORM-ADD (FIX): Undo 10단계
   const undoStackRef = useRef<ImageData[]>([]);
@@ -582,6 +591,14 @@ export function PenChartTab({
   const pendingUndoRafRef  = useRef<number | null>(null);
 
   // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: 서명 캡처 UI 제거 — signature_base64 항상 null
+
+  // T-20260526-foot-PENCHART-PEN-SLOW Fix-8: sync state → refs every render
+  // native pointermove handler는 deps 없는 stable useCallback → state를 closure로 캡처 불가.
+  // 대신 *Ref.current 경유 → 항상 최신값 보장. state setter(setHasDrawing)는 stable이므로 생략.
+  activeToolRef.current     = activeTool;
+  penColorRef.current       = penColor;
+  penSizeRef.current        = penSize;
+  highlightColorRef.current = highlightColor;
 
   const storagePath = `customer/${customerId}/pen-chart`;
 
@@ -687,6 +704,109 @@ export function PenChartTab({
   //   bgCanvasRef (아래) — 양식 배경 이미지 전용. 지우개 미적용.
   //   canvasRef   (위)   — 드로잉 전용 (투명 배경). clearRect 지우개 → bgCanvas 노출.
   //
+  // ── T-20260526-foot-PENCHART-PEN-SLOW Fix-8: native pointermove handler ────────────────────
+  /**
+   * handleNativePointerMove — React synthetic event 대신 native addEventListener로 등록.
+   *
+   * 근거: React 18 concurrent mode는 pointermove를 "continuous" 이벤트로 분류하여
+   *       MessageChannel(scheduler) 통해 비동기 처리 → 획마다 4-16ms 추가 지연.
+   *       native addEventListener는 브라우저 이벤트 루프에서 동기 발화 → 지연 최소화.
+   *
+   * deps = [] (stable) — 모든 state는 *Ref.current 경유로 읽음.
+   * initDrawCanvas에서 canvas에 1회 등록 (initCanvas 재호출 시 remove→add로 중복 방지).
+   */
+  const handleNativePointerMove = useCallback((e: PointerEvent) => {
+    if (e.pointerType === 'touch') return;
+    const tool = activeToolRef.current;
+    if (tool === 'text' || tool === 'boilerplate-placing') return;
+    if (!drawingRef.current) return;
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = drawCtxRef.current;
+    if (!ctx) return;
+    const rect = strokeRectRef.current;
+    if (!rect) return; // onPointerDown에서 캐싱되지 않은 경우(방어)
+    const { x: scaleX, y: scaleY } = strokeScaleRef.current;
+    const toLogical = (ev: PointerEvent) => ({
+      x: (ev.clientX - rect.left) * scaleX,
+      y: (ev.clientY - rect.top)  * scaleY,
+    });
+
+    // AC-2: coalesced events — 프레임 사이 중간 좌표 모두 처리 (빠른 획 누락 방지)
+    const events: PointerEvent[] = (e as any).getCoalescedEvents?.() ?? [e];
+
+    const penColor       = penColorRef.current;
+    const penSize        = penSizeRef.current;
+    const highlightColor = highlightColorRef.current;
+
+    // Fix-7: ctx 프로퍼티를 루프 외부에서 1회 설정
+    if (tool === 'pen') {
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = penColor;
+      ctx.lineWidth   = penSize;
+      ctx.lineCap     = 'round';
+      ctx.lineJoin    = 'round';
+    } else if (tool === 'white') {
+      ctx.strokeStyle = '#ffffff';
+      ctx.globalAlpha = 1;
+      ctx.lineWidth   = penSize * 8;
+      ctx.lineCap     = 'round';
+      ctx.lineJoin    = 'round';
+    } else if (tool === 'highlight') {
+      ctx.globalAlpha = 0.20;
+      ctx.strokeStyle = highlightColor;
+      ctx.lineWidth   = penSize * 6 + 6;
+      ctx.lineCap     = 'round';
+      ctx.lineJoin    = 'round';
+    }
+    const eraserSz = tool === 'eraser' ? penSize * 4 : 0;
+
+    for (const evt of events) {
+      const pos  = toLogical(evt);
+      const last = lastPosRef.current ?? pos;
+
+      if (tool === 'eraser') {
+        // V3 AC-3: 드로잉 레이어만 clearRect → bg 보존, placedItems 미삭제
+        ctx.clearRect(pos.x - eraserSz, pos.y - eraserSz, eraserSz * 2, eraserSz * 2);
+      } else if (tool === 'white') {
+        ctx.beginPath();
+        ctx.moveTo(last.x, last.y);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+        emptyRef.current = false;
+        if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
+        // Fix-4: hit-test는 onPointerUp에서 1회만 — 포인트 누적
+        whiteStrokePathRef.current.push(pos);
+      } else if (tool === 'highlight') {
+        ctx.beginPath();
+        ctx.moveTo(last.x, last.y);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+        emptyRef.current = false;
+        if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
+      } else {
+        // 펜 — quadratic bezier 스무딩 (AC-1: 글씨 인식 개선)
+        const mid = { x: (last.x + pos.x) / 2, y: (last.y + pos.y) / 2 };
+        ctx.beginPath();
+        if (lastMidRef.current) {
+          ctx.moveTo(lastMidRef.current.x, lastMidRef.current.y);
+          ctx.quadraticCurveTo(last.x, last.y, mid.x, mid.y);
+        } else {
+          ctx.moveTo(last.x, last.y);
+          ctx.lineTo(mid.x, mid.y);
+        }
+        ctx.stroke();
+        lastMidRef.current = mid;
+        emptyRef.current   = false;
+        if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
+      }
+      lastPosRef.current = pos;
+    }
+
+    if (tool === 'highlight') ctx.globalAlpha = 1; // globalAlpha 복원
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps — stable; state via *Ref.current
+
   // T-20260522-foot-PENCHART-TOOLS-V2 AC-1 / T-20260523-foot-FORM-TEMPLATE-REGEN:
   //   bgCanvas = CANVAS_W*DRAW_DPR × canvasH*DRAW_DPR 고정 (= 1588×2246)
   //   소스 300DPI 이미지 → HQ downsample → bgCanvas. drawCanvas와 1:1 합성 보장.
@@ -791,7 +911,11 @@ export function PenChartTab({
     canvas.style.height = `${canvasH}px`;
     ctx.scale(dpr, dpr);
     // 드로잉 레이어는 투명으로 시작 — fillRect 없음
-  }, [activeDrawTemplate]);
+    // T-20260526-foot-PENCHART-PEN-SLOW Fix-8: native pointermove 등록
+    // removeEventListener 먼저 → initCanvas 재호출(초기화·양식전환) 시 중복 등록 방지
+    canvas.removeEventListener('pointermove', handleNativePointerMove);
+    canvas.addEventListener('pointermove', handleNativePointerMove, { passive: false });
+  }, [activeDrawTemplate, handleNativePointerMove]);
 
   // T-20260522-foot-PENCHART-TOOLS-V3: 도구 전환 + 해당 도구의 기본 굵기 자동 적용
   const switchTool = useCallback((tool: ActiveTool) => {
@@ -985,6 +1109,11 @@ export function PenChartTab({
     if (!canvas) return;
     // T-20260524-foot-PENCHART-PEN-SLOW Fix-6: rect 먼저 캐싱 → getPos가 재사용 (getBoundingClientRect 1회만)
     strokeRectRef.current = canvas.getBoundingClientRect();
+    // T-20260526-foot-PENCHART-PEN-SLOW Fix-8: scaleX/scaleY 캐싱 → native handler가 획 중 재계산 없이 재사용
+    strokeScaleRef.current = {
+      x: (canvas.width / DRAW_DPR) / strokeRectRef.current.width,
+      y: (canvas.height / DRAW_DPR) / strokeRectRef.current.height,
+    };
     const pos = getPos(e);
 
     // 상용구 배치 모드
@@ -1064,118 +1193,8 @@ export function PenChartTab({
     }
   };
 
-  // T-20260522-foot-PENCHART-TOOLS-V2 AC-2: getCoalescedEvents() 활용
-  // 프레임 사이 중간 포인터 위치를 모두 수집 → 빠른 펜 동작에서 획 누락 방지
-  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (e.pointerType === 'touch') return;
-    if (activeTool === 'text' || activeTool === 'boilerplate-placing') return;
-    if (!drawingRef.current) return;
-    e.preventDefault();
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    // T-20260523-foot-PENCHART-PEN-SLOW Fix-2: 캐싱된 ctx 사용 → getContext 반복 호출 제거
-    const ctx = drawCtxRef.current ?? canvas.getContext('2d');
-    if (!ctx) return;
-
-    // T-20260523-foot-PENCHART-PEN-SLOW Fix-3: strokeRectRef 캐시 사용 → getBoundingClientRect 강제 레이아웃 제거
-    // strokeRectRef는 onPointerDown에서 한 번 계산 → 획 동안 재사용
-    const rect = strokeRectRef.current ?? canvas.getBoundingClientRect();
-    // T-20260522-foot-PENCHART-TOOLS-V2 AC-1: DRAW_DPR=2 강제 (device DPR 무관)
-    const dpr = DRAW_DPR;
-    const scaleX = (canvas.width / dpr) / rect.width;
-    const scaleY = (canvas.height / dpr) / rect.height;
-    const toLogical = (ev: PointerEvent) => ({
-      x: (ev.clientX - rect.left) * scaleX,
-      y: (ev.clientY - rect.top)  * scaleY,
-    });
-
-    // AC-2: coalesced events — 중간 좌표 모두 처리
-    const events: PointerEvent[] = (e.nativeEvent as any).getCoalescedEvents?.() ?? [e.nativeEvent];
-
-    // T-20260523-foot-PENCHART-PEN-SLOW Fix-7: ctx 프로퍼티 루프 외부로 이동
-    // 획 중 penColor/penSize/highlightColor는 불변 → 루프마다 재설정 불필요
-    // white: ctx.save()/restore()를 루프에서 제거 (100이벤트×2 스택 연산→1+1)
-    if (activeTool === 'pen') {
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = penColor;
-      ctx.lineWidth = penSize;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-    } else if (activeTool === 'white') {
-      // globalCompositeOperation은 기본값이 'source-over' — save/restore 불필요
-      ctx.strokeStyle = '#ffffff';
-      ctx.globalAlpha = 1;
-      ctx.lineWidth = penSize * 8;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-    } else if (activeTool === 'highlight') {
-      ctx.globalAlpha = 0.20;
-      ctx.strokeStyle = highlightColor;
-      ctx.lineWidth = penSize * 6 + 6;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-    } else if (activeTool === 'eraser') {
-      // eraser는 clearRect — ctx 프로퍼티 불필요, sz만 사전 계산
-    }
-    const eraserSz = activeTool === 'eraser' ? penSize * 4 : 0;
-
-    for (const evt of events) {
-      const pos = toLogical(evt);
-      const last = lastPosRef.current ?? pos;
-
-      if (activeTool === 'eraser') {
-        // V3 AC-3: 드로잉 레이어만 clearRect → bg(상용구 템플릿) 보존, placedItems 미삭제
-        ctx.clearRect(pos.x - eraserSz, pos.y - eraserSz, eraserSz * 2, eraserSz * 2);
-      } else if (activeTool === 'white') {
-        // T-20260522-foot-PENCHART-TOOL-UX AC-3: 화이트 — source-over 흰색 선
-        // Fix-7: ctx 프로퍼티 루프 외부 설정 + save/restore 제거
-        ctx.beginPath();
-        ctx.moveTo(last.x, last.y);
-        ctx.lineTo(pos.x, pos.y);
-        ctx.stroke();
-        emptyRef.current = false;
-        // T-20260523-foot-PENCHART-PEN-SLOW: 첫 획 전환 시에만 setHasDrawing → React 재렌더 최소화
-        if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
-        // T-20260523-foot-PENCHART-PEN-SLOW Fix-4: placedItems hit-test를 onPointerMove에서 제거 →
-        //   onPointerMove마다 setPlacedItems(React re-render) 없음. 포인트만 누적 → onPointerUp에서 1회 처리.
-        whiteStrokePathRef.current.push(pos);
-      } else if (activeTool === 'highlight') {
-        // V3 AC-10~11: 투명도 35%→20%
-        // Fix-7: ctx 프로퍼티 루프 외부 설정
-        ctx.beginPath();
-        ctx.moveTo(last.x, last.y);
-        ctx.lineTo(pos.x, pos.y);
-        ctx.stroke();
-        emptyRef.current = false;
-        // T-20260523-foot-PENCHART-PEN-SLOW: 첫 획 전환 시에만 setHasDrawing → React 재렌더 최소화
-        if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
-      } else {
-        // T-20260522-foot-PENCHART-TOOL-UX AC-1: 펜 — quadratic bezier 스무딩 (글씨 인식 개선)
-        // midpoint bezier: 연속 획 사이를 곡선으로 연결 → 자연스러운 글씨체
-        // Fix-7: ctx 프로퍼티 루프 외부 설정
-        const mid = { x: (last.x + pos.x) / 2, y: (last.y + pos.y) / 2 };
-        ctx.beginPath();
-        if (lastMidRef.current) {
-          // 이전 midpoint에서 현재 midpoint까지 — last를 bezier 제어점으로 사용
-          ctx.moveTo(lastMidRef.current.x, lastMidRef.current.y);
-          ctx.quadraticCurveTo(last.x, last.y, mid.x, mid.y);
-        } else {
-          // 첫 세그먼트는 직선
-          ctx.moveTo(last.x, last.y);
-          ctx.lineTo(mid.x, mid.y);
-        }
-        ctx.stroke();
-        lastMidRef.current = mid; // 다음 세그먼트 시작점 = 현재 midpoint
-        emptyRef.current = false;
-        // T-20260523-foot-PENCHART-PEN-SLOW: 첫 획 전환 시에만 setHasDrawing → React 재렌더 최소화
-        if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
-      }
-      lastPosRef.current = pos;
-    }
-
-    // Fix-7 루프 후 정리: highlight globalAlpha 복원
-    if (activeTool === 'highlight') ctx.globalAlpha = 1;
-  };
+  // T-20260526-foot-PENCHART-PEN-SLOW Fix-8: onPointerMove → handleNativePointerMove로 대체
+  // (native addEventListener, initDrawCanvas에서 등록 — React synthetic prop 제거됨)
 
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!drawingRef.current) return;
@@ -1861,7 +1880,7 @@ export function PenChartTab({
                 willChange: 'transform',
               }}
               onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
+              // onPointerMove → Fix-8: native addEventListener (handleNativePointerMove, initDrawCanvas에서 등록)
               onPointerUp={onPointerUp}
               onPointerLeave={onPointerUp}
               onPointerCancel={onPointerUp}

@@ -9,7 +9,7 @@ db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: ""
-commit_sha: "ccba516"
+commit_sha: "pending-Fix-8"
 qa_result: ""
 qa_grade: ""
 deployed_at: ""
@@ -17,7 +17,7 @@ deploy_commit: ""
 bundle_hash: ""
 field_soak_until: ""
 created: 2026-05-23 23:00
-completed: 2026-05-23 23:30
+completed: 2026-05-26 00:00
 deadline: 2026-05-27
 assignee: dev-foot
 reporter_slack_id: null
@@ -84,6 +84,22 @@ PUSH MSG-20260523-225253-2zj9 (planner, P2→P1, 김주연 총괄 직접 보고)
 - eraser 툴: eraserSz = penSize*4 루프 전 1회 사전 계산
 - E2E spec: AC-10 4개 테스트 추가 (총 22 테스트)
 
+### Fix-8 (PenChartTab.tsx, 2026-05-26, PUSH MSG-20260524-111505-2nb0 재기동)
+**근본원인**: React 18 concurrent mode는 `pointermove`를 "continuous" 이벤트로 분류 →
+MessageChannel(scheduler)을 통해 비동기 처리. 획당 4-16ms 추가 지연. Fix-1~7 이후에도
+현장에서 느림 계속 보고됨 = 이 레이어가 남아있던 것.
+
+**변경:**
+- `activeToolRef`, `penColorRef`, `penSizeRef`, `highlightColorRef` mirror refs 추가
+- `strokeScaleRef`: scaleX/scaleY를 onPointerDown에서 1회 계산 → native handler 재사용
+- `handleNativePointerMove`: React synthetic → native PointerEvent 기반 useCallback(deps=[])
+  - 모든 state를 *Ref.current 경유 접근 (deps 없는 stable 함수)
+  - `(e as any).getCoalescedEvents?.() ?? [e]` (nativeEvent 래퍼 불필요)
+- `initDrawCanvas` 말미에 `removeEventListener` + `addEventListener` 등록
+  (initCanvas 재호출 시 중복 방지)
+- onPointerDown에 `strokeScaleRef.current = {x, y}` 캐싱 추가
+- 구 React synthetic `onPointerMove` 함수 삭제 + JSX prop 제거
+
 ## AC
 
 - AC-1: 펜 입력 지연 50ms 이하 (React 재렌더 억제 + desynchronized + GPU 레이어)
@@ -100,3 +116,7 @@ PUSH MSG-20260523-225253-2zj9 (planner, P2→P1, 김주연 총괄 직접 보고)
   - white: ctx.save()/restore() 루프 내 제거 (100이벤트×2=200회 → 0회)
   - highlight: globalAlpha reset → 루프 후 1회
   - eraser: penSize*4 계산(eraserSz) → 루프 전 1회
+- AC-11: native addEventListener 전환으로 React 18 MessageChannel 지연 제거 (Fix-8)
+  - `handleNativePointerMove` stable useCallback(deps=[]) — *Ref.current 경유 state 접근
+  - `initDrawCanvas`에서 canvas에 직접 등록 (remove+add 패턴, 중복 방지)
+  - `strokeScaleRef` 캐싱 → onPointerMove 내 scaleX/scaleY 재계산 제거
