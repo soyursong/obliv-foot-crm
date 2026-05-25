@@ -84,3 +84,9 @@ INFO MSG-20260523-230107-n5ht (김주연 총괄 스펙 정정):
 - 2026-05-24 00:46 KST — commit 4e27447 (명칭+위치 정정) main push
 - 2026-05-24 10:53 KST — commit 5798b62 (AC-8 주민번호 마스킹 제거) main push
 - 2026-05-24 — supervisor QA PASS + deployed (T-20260523-foot-PENCHART-FORM-AUTOFILL 배포 스트림 포함)
+- 2026-05-26 — FIX-REQUEST(MSG-20260526-081019-xz3a): spec/구현 불일치 수정
+  - 원인: 2026-05-24 현장 요청(김주연 총괄: "성함+주민번호 한 줄, 폰트 축소")으로
+    구현이 `PENCHART_AUTOFILL_POS` 세로 스택 → `drawPenChartAutofillInline` 1줄 inline으로 변경됐으나
+    spec이 추적 안 된 상태
+  - 수정: spec AC-1/AC-2·AC-5를 `drawPenChartAutofillInline` 기반으로 재작성
+  - commit 342da1d — 빌드 3.56s OK, DB변경 없음
