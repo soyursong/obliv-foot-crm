@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
@@ -251,6 +251,10 @@ export default function Closing() {
   const [staffFilter, setStaffFilter] = useState('');
   /** T-20260522-foot-CLOSING-REFUND: 환불 처리 대상 결제 행 */
   const [refundTarget, setRefundTarget] = useState<EnrichedRow | null>(null);
+
+  /** T-20260525-foot-CLOSING-NAV-BUG AC-4: 결제내역 테이블 스크롤 위치 보존 */
+  const paymentsTableRef = useRef<HTMLDivElement>(null);
+  const scrollTopRef = useRef(0);
 
   const { data: clinic } = useQuery<Clinic | null>({
     queryKey: ['clinic'],
@@ -711,6 +715,16 @@ export default function Closing() {
     if (!staffFilter) return enrichedRows;
     return enrichedRows.filter(r => (r.staff_name ?? '미지정') === staffFilter);
   }, [enrichedRows, staffFilter]);
+
+  // ── AC-4: 자동 갱신 시 결제내역 스크롤 위치 보존 ──────────────
+  // T-20260525-foot-CLOSING-NAV-BUG:
+  //   qc.invalidateQueries → 데이터 갱신 → filteredEnrichedRows 변경 →
+  //   useLayoutEffect 실행(paint 전) → scrollTop 복원 → 시각적 점프 없음
+  useLayoutEffect(() => {
+    const el = paymentsTableRef.current;
+    if (!el) return;
+    el.scrollTop = scrollTopRef.current;
+  }, [filteredEnrichedRows]);
 
   // T-20260522-foot-DAILY-SETTLE-STAFF AC-2: 담당자별 매출 집계 — 카드/현금/이체 소계 추가
   // AC-3: NULL staff_id → '미지정' 표시 (enrichedRows 기준 — 필터 무관)
@@ -1348,7 +1362,12 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
           {/* 결제내역 테이블 */}
           <Card>
             <CardContent className="p-0">
-              <div className="overflow-auto">
+              {/* T-20260525-foot-CLOSING-NAV-BUG AC-4: ref + onScroll으로 스크롤 위치 보존 */}
+              <div
+                ref={paymentsTableRef}
+                className="overflow-auto"
+                onScroll={(e) => { scrollTopRef.current = e.currentTarget.scrollTop; }}
+              >
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
                     <tr className="border-b text-xs text-muted-foreground">
