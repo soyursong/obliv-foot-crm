@@ -68,6 +68,7 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
         role="dialog"
         aria-modal="true"
         aria-label="고객차트"
+        data-testid="customer-chart-sheet"
         className="fixed right-0 top-0 z-[70] h-full w-[95vw] sm:w-[88vw] max-w-5xl bg-background shadow-lg flex flex-col outline-none animate-in slide-in-from-right duration-300"
       >
         {/* 닫기 버튼 헤더 — flex-shrink-0: 스크롤 영역 밖, 항상 visible */}
