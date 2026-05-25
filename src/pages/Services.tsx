@@ -88,7 +88,9 @@ export default function Services() {
       .from('services')
       .select('*')
       .eq('clinic_id', clinic.id)
-      .order('sort_order', { ascending: true });
+      // T-20260526-foot-SVC-CATEGORY-SORT: DB 정렬도 일치시킴 (FE sort와 동기)
+      .order('category_label', { ascending: true })
+      .order('name', { ascending: true });
     setLoading(false);
     if (error) { toast.error('서비스 목록 로딩 실패'); return; }
     setRows((data ?? []) as Service[]);
@@ -103,7 +105,7 @@ export default function Services() {
   }, [searchQuery]);
 
   // T-20260517-foot-SVC-FILTER-SEARCH: 카테고리 + 검색 AND 필터
-  // T-20260525-foot-SVC-CATEGORY-SORT: category_label 오름차순 기본 정렬 추가 (동일 카테고리 내 sort_order 유지)
+  // T-20260526-foot-SVC-CATEGORY-SORT: category_label 오름차순 → 동일 카테고리 내 name 가나다순 2차 정렬
   const filteredRows = useMemo(() => {
     const filtered = rows.filter((svc) => {
       if (!svc.active && !showInactive) return false;
@@ -117,10 +119,12 @@ export default function Services() {
       }
       return true;
     });
-    // category_label 오름차순 → 동일 카테고리 내 rows 원본 순서(sort_order) 유지
-    return [...filtered].sort((a, b) =>
-      (a.category_label ?? '').localeCompare(b.category_label ?? '', 'ko'),
-    );
+    // AC-1: category_label 오름차순 → 동일 카테고리 내 name 가나다순 2차 정렬
+    return [...filtered].sort((a, b) => {
+      const catCmp = (a.category_label ?? '').localeCompare(b.category_label ?? '', 'ko');
+      if (catCmp !== 0) return catCmp;
+      return a.name.localeCompare(b.name, 'ko');
+    });
   }, [rows, showInactive, categoryFilter, debouncedSearch]);
 
   // T-20260510-foot-SVCMENU-REVAMP: 삭제 (soft delete = active=false)
