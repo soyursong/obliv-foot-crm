@@ -186,6 +186,8 @@ export interface Service {
   service_type: 'single' | 'package_component' | 'addon';
   active: boolean;
   sort_order: number;
+  // T-20260525-foot-FEE-ITEM-REORDER AC-6: 결제 미니창 수가 항목 clinic 단위 표시 순서
+  display_order?: number;
   created_at: string;
   // 판매상품 코드 (T-20260507-foot-SERVICE-CATALOG-SEED)
   service_code?: string | null;
