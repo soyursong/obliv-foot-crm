@@ -2571,6 +2571,8 @@ export default function Dashboard() {
     newTime: string;           // HH:MM (표시용)
     visitType: VisitType;      // 'new' | 'returning'
   } | null>(null);
+  // T-20260525-foot-RESV-CHANGE-REASON: 시간 변경 모달 사유 입력값 (optional)
+  const [pendingChangeReason, setPendingChangeReason] = useState<string>('');
   // T-20260516-foot-CHART2-STATE-UNIFY: dashChartSheetId 제거 → AdminLayout ChartContext 사용
   // LOGIC-LOCK: L-004 [CHART-LOCK-009] — openChart 호출은 useChart() 경유만. 직접 ChartContext 접근 금지.
   const { openChart: ctxOpenChart, closeChart: ctxCloseChart } = useChart();
@@ -2742,10 +2744,12 @@ export default function Dashboard() {
   }, []);
 
   // T-20260515-foot-DASH-SLOT-DRAG: 예약 시간 변경 실행 (낙관적 업데이트 + 감사 로그)
+  // T-20260525-foot-RESV-CHANGE-REASON: changeReason optional 파라미터 추가
   const executeSlotDrag = useCallback(async (
     reservationId: string,
     newTimeStr: string,   // HH:MM:SS
     currentReservation: Reservation,
+    changeReason?: string,  // optional — NULL 허용
   ) => {
     const oldTime = currentReservation.reservation_time.slice(0, 5);
     const newTime = newTimeStr.slice(0, 5);
@@ -2771,6 +2775,7 @@ export default function Dashboard() {
     }
 
     // 감사 로그 (reservation_logs.action = 'reschedule')
+    // T-20260525-foot-RESV-CHANGE-REASON: change_reason 저장 (미입력=NULL, 500자 제한)
     await supabase.from('reservation_logs').insert({
       reservation_id: reservationId,
       clinic_id: currentReservation.clinic_id,
@@ -2778,6 +2783,7 @@ export default function Dashboard() {
       old_data: { date: currentReservation.reservation_date, time: oldTime },
       new_data: { date: currentReservation.reservation_date, time: newTime },
       changed_by: profile?.id ?? null,
+      change_reason: changeReason?.trim() || null,
     });
 
     // T-20260522-foot-SLOT-TIMETABLE-POPUP AC-2: 성공 토스트 제거 (시각적 반영으로 충분)
@@ -5670,9 +5676,10 @@ export default function Dashboard() {
           AC-1: 초진 시간 변경 시 confirm
           AC-2: 재진 시간 변경 시 confirm
           AC-3: 확인→executeSlotDrag 적용 / 취소→setPendingTimeChange(null) 복원
-          AC-4: 변경 전/후 시간 표시 */}
+          AC-4: 변경 전/후 시간 표시
+          T-20260525-foot-RESV-CHANGE-REASON AC-1: 변경 사유 textarea (optional) */}
       {pendingTimeChange && (
-        <Dialog open onOpenChange={(o) => { if (!o) setPendingTimeChange(null); }}>
+        <Dialog open onOpenChange={(o) => { if (!o) { setPendingTimeChange(null); setPendingChangeReason(''); } }}>
           <DialogContent className="max-w-xs" hideClose>
             <DialogHeader>
               <DialogTitle className="text-base text-center">예약시간을 변경하시겠습니까?</DialogTitle>
@@ -5693,13 +5700,23 @@ export default function Dashboard() {
               <p className="text-xs text-center text-muted-foreground">
                 {pendingTimeChange.visitType === 'new' ? '초진' : '재진'} &middot; {pendingTimeChange.reservation.customer_name ?? '고객'}
               </p>
+              {/* T-20260525-foot-RESV-CHANGE-REASON AC-1: 변경 사유 (시간 정보 아래, 확인 버튼 위) */}
+              <textarea
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
+                rows={2}
+                maxLength={500}
+                placeholder="변경 사유 (선택)"
+                value={pendingChangeReason}
+                onChange={(e) => setPendingChangeReason(e.target.value)}
+                data-testid="time-change-reason-textarea"
+              />
             </div>
             <DialogFooter className="gap-2 mt-2">
               <Button
                 variant="outline"
                 className="flex-1"
                 data-testid="time-change-cancel-btn"
-                onClick={() => setPendingTimeChange(null)}
+                onClick={() => { setPendingTimeChange(null); setPendingChangeReason(''); }}
               >
                 취소
               </Button>
@@ -5708,8 +5725,10 @@ export default function Dashboard() {
                 data-testid="time-change-confirm-btn"
                 onClick={async () => {
                   const { reservationId, newTimeStr, reservation } = pendingTimeChange;
+                  const reason = pendingChangeReason;
                   setPendingTimeChange(null);
-                  await executeSlotDrag(reservationId, newTimeStr, reservation);
+                  setPendingChangeReason('');
+                  await executeSlotDrag(reservationId, newTimeStr, reservation, reason);
                 }}
               >
                 확인
