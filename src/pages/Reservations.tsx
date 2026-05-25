@@ -974,6 +974,15 @@ export default function Reservations() {
                                     draggable={r.status === 'confirmed'}
                                     onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, r.id); }}
                                     onDragEnd={() => { setDraggedId(null); setDropTarget(null); }}
+                                    // T-20260525-foot-RESV-CANCEL-ANYDATE: 카드 전체 영역 우클릭 → 컨텍스트메뉴
+                                    // (이름 span 밖 클릭도 취소 메뉴 접근 가능 — 전일자 포함 날짜 무관 동작)
+                                    onContextMenu={(e) => {
+                                      if (r.customer_id && r.status !== 'cancelled') {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setResvContextMenu({ resv: r, pos: { x: e.clientX, y: e.clientY } });
+                                      }
+                                    }}
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       // T-20260515-foot-RESV-BOX-INTERACT: AC-4
