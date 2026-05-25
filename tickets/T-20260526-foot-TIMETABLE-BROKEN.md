@@ -2,7 +2,14 @@
 id: T-20260526-foot-TIMETABLE-BROKEN
 domain: foot
 priority: P1
-status: deploy-ready
+status: deployed
+qa_result: pass
+qa_grade: Yellow
+deployed_at: 2026-05-26T06:09:44+09:00
+deploy_commit: c23fe03f1709a87c7c169dad74ecefa746a0305e
+bundle_hash: Dc23tjcK
+field_soak_until: 2026-05-27T06:09:44+09:00
+field_validation_slack_ts: 1779743441.863929
 hotfix: true
 created: 2026-05-26 05:42
 deadline: 2026-05-26
@@ -17,7 +24,7 @@ risk_reason: "운영 핵심 기능(통합시간표) 렌더링 완전 실패. FOL
 source_msg: MSG-20260526-054038-56re
 db_migration: false
 build_passed: true
-commit_sha: TBD
+commit_sha: c23fe03f1709a87c7c169dad74ecefa746a0305e
 deploy_ready_at: 2026-05-26
 e2e_spec: tests/e2e/T-20260526-foot-TIMETABLE-BROKEN.spec.ts
 fix_summary: |
