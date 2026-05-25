@@ -1,12 +1,14 @@
 /**
  * AmountInput — 천 단위 쉼표 자동 포맷팅 래퍼
  *
- * T-20260525-foot-AMOUNT-COMMA-FMT
+ * T-20260525-foot-AMOUNT-COMMA (통합 티켓)
  *   AC-1: 숫자 입력 시 천 단위 쉼표 자동 삽입 (150000 → 150,000)
  *   AC-2: 입력 중 커서 위치 자연스럽게 유지 (쉼표 삽입으로 커서 점프 X)
  *   AC-3: 복사/붙여넣기 시 숫자 추출 후 포맷팅 정상 동작
  *   AC-4: onChange 콜백은 쉼표 제거된 순수 숫자 문자열 전달 (기존 API 무변경)
  *   AC-5: 읽기 전용(readOnly) 시에도 쉼표 포맷팅 일관 적용
+ *   AC-6: 음수(환불) 표시 시 마이너스 부호 + 쉼표 정상 표시 (-150,000)
+ *   AC-7: 0 값은 빈 문자열 반환 → placeholder 자연 표시
  *
  * 사용법:
  *   <AmountInput value={amount} onChange={v => setAmount(Number(v))} />
@@ -20,15 +22,31 @@ import { cn } from '@/lib/utils';
 
 // ─── 포맷 헬퍼 ────────────────────────────────────────────────────────────────
 
-/** 숫자 → 천 단위 쉼표 표시 문자열 (예: 150000 → "150,000") */
+/**
+ * 숫자 → 천 단위 쉼표 표시 문자열
+ *   150000  → "150,000"
+ *  -150000  → "-150,000"  (AC-6: 음수/환불 표시)
+ *   0 / ''  → ""          (AC-7: 0은 빈 문자열 → placeholder 자연 표시)
+ */
 export function formatAmountDisplay(raw: string | number | undefined | null): string {
   if (raw === '' || raw === undefined || raw === null) return '';
-  const numStr = String(raw).replace(/[^0-9]/g, '');
+  const str = String(raw);
+  // AC-6: 음수 부호 보존
+  const isNegative = str.startsWith('-');
+  const numStr = str.replace(/[^0-9]/g, '');
   if (!numStr) return '';
-  return parseInt(numStr, 10).toLocaleString('ko-KR');
+  const num = parseInt(numStr, 10);
+  // AC-7: 0 → 빈 문자열 (placeholder가 자연스럽게 표시되도록)
+  if (num === 0) return '';
+  const formatted = num.toLocaleString('ko-KR');
+  return isNegative ? `-${formatted}` : formatted;
 }
 
-/** 표시 문자열 → 순수 숫자 문자열 (쉼표 제거, 예: "150,000" → "150000") */
+/**
+ * 표시 문자열 → 순수 숫자 문자열 (쉼표 제거)
+ *   "150,000" → "150000"
+ * 입력 필드용: 마이너스는 strip (사용자가 음수 직접 입력 불가)
+ */
 export function parseAmountRaw(display: string): string {
   return display.replace(/[^0-9]/g, '');
 }
