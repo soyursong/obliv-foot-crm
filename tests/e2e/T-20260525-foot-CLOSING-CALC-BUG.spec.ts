@@ -14,6 +14,7 @@
  *               = grossTotal ✓
  */
 import { test, expect } from '@playwright/test';
+import * as fs from 'fs';
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? '';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
@@ -144,7 +145,6 @@ test.describe('T-20260525-CLOSING-CALC-BUG — 환불 이중 차감 수정', () 
 test.describe('T-20260525-CLOSING-CALC-BUG AC-1 — 탭 상태 URL hash 유지', () => {
 
   test('AC-1: Closing.tsx에 useLocation + hash 기반 탭 상태 구현 확인', () => {
-    const fs = require('fs');
     const src: string = fs.readFileSync('src/pages/Closing.tsx', 'utf-8');
 
     // useLocation import 확인
@@ -161,7 +161,6 @@ test.describe('T-20260525-CLOSING-CALC-BUG AC-1 — 탭 상태 URL hash 유지',
   });
 
   test('AC-1: Tabs onValueChange가 handleTabChange를 사용하는지 확인', () => {
-    const fs = require('fs');
     const src: string = fs.readFileSync('src/pages/Closing.tsx', 'utf-8');
 
     // Tabs 컴포넌트가 setTab 직접 호출 대신 handleTabChange 사용
@@ -173,7 +172,6 @@ test.describe('T-20260525-CLOSING-CALC-BUG AC-1 — 탭 상태 URL hash 유지',
   });
 
   test('AC-1: location.hash 변경 시 탭 동기화 useEffect 존재', () => {
-    const fs = require('fs');
     const src: string = fs.readFileSync('src/pages/Closing.tsx', 'utf-8');
 
     // hash 변경(브라우저 앞/뒤 네비게이션) 시 탭 동기화 effect
@@ -182,7 +180,6 @@ test.describe('T-20260525-CLOSING-CALC-BUG AC-1 — 탭 상태 URL hash 유지',
   });
 
   test('AC-2: Realtime 구독 — payments/pkg_payments/manual 3채널 설정 확인', () => {
-    const fs = require('fs');
     const src: string = fs.readFileSync('src/pages/Closing.tsx', 'utf-8');
 
     // Realtime channel 설정

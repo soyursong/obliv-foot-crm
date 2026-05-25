@@ -50,6 +50,10 @@ export default defineConfig({
         '**/T-20260523-foot-PENCHART-INSURANCE.spec.ts',
         // T-20260524-foot-RESV-TREAT-REFORMAT: 시술내역 5컬럼 재편성 소스 정적 검증
         '**/T-20260524-foot-RESV-TREAT-REFORMAT.spec.ts',
+        // T-20260525-foot-PENCHART-FORM-BLACK: 검정 화면 + 튕김 수정 — 폴백 UI + Dialog 단일 인스턴스
+        '**/T-20260525-foot-PENCHART-FORM-BLACK.spec.ts',
+        // T-20260525-foot-CLOSING-CALC-BUG: 일마감 합계 불일치 + 탭 hash persist — 정적 소스 검증
+        '**/T-20260525-foot-CLOSING-CALC-BUG.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
