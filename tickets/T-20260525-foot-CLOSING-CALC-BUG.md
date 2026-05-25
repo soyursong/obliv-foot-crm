@@ -2,7 +2,7 @@
 id: T-20260525-foot-CLOSING-CALC-BUG
 domain: foot
 priority: P1
-status: deploy-ready
+status: deployed
 title: 일마감 합계 금액 불일치 — 환불 이중 차감 버그
 created: 2026-05-25
 assignee: dev-foot
@@ -12,6 +12,13 @@ build-ok: true
 regression-risk: medium
 e2e-spec: tests/e2e/T-20260525-foot-CLOSING-CALC-BUG.spec.ts
 commit_sha: b8d71574c6b8b96d8e0c72f4d9de60d0b1c7e9f1
+qa_result: pass
+qa_grade: Yellow
+deployed_at: 2026-05-25T19:01:19+09:00
+deploy_commit: fd50df0359dea04dcdfa5fcf075b3012b6757999
+bundle_hash: Closing-O0jYc6nh.js
+field_soak_until: 2026-05-26T19:01:19+09:00
+field_validation_slack_ts: 1779703368.080379
 ---
 
 # T-20260525-foot-CLOSING-CALC-BUG — 일마감 합계 금액 불일치 (환불 이중 차감)
