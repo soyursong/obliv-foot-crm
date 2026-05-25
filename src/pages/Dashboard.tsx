@@ -1653,8 +1653,10 @@ function DashboardTimeline({
   const chartMap = useContext(ChartNumberMapCtx);
   // expandedSlot: 현재 펼쳐진 슬롯 (null = 모두 접힘)
   // props 변경(reservations/selfCheckIns 갱신) 시 아코디언 내용 자동 갱신 — 추가 구독 불필요
-  // T-20260523-foot-TIMETABLE-SCROLL AC-3: 오늘이면 currentSlot을 초기값으로 설정
-  const [expandedSlot, setExpandedSlot] = useState<string | null>(isToday ? currentSlot : null);
+  // T-20260526-foot-TIMETABLE-BROKEN AC-2: 자동 펼침 제거 (null 고정)
+  // 이전: isToday ? currentSlot : null → 마운트 시 현재 슬롯 자동 펼침이 JS 에러 유발
+  // 수정: 항상 null (사용자가 직접 탭을 눌러 펼칠 수 있음)
+  const [expandedSlot, setExpandedSlot] = useState<string | null>(null);
 
   // T-20260523-foot-TIMETABLE-SCROLL AC-2: 현재 시간 슬롯 자동 스크롤
   const currentSlotRef = useRef<HTMLDivElement>(null);
@@ -2013,13 +2015,19 @@ function DashboardTimeline({
 
           // T-20260522-foot-TIMETABLE-FOLD V2 AC-7: 아코디언용 예약 목록 구성
           // 초진(new) 우선, 재진(returning) 다음 — 슬롯 안의 모든 예약·체크인 합산
-          type AccordionItem = { name: string | null; visitType: VisitType; customerId: string | null };
-          const accordionItems: AccordionItem[] = [
-            ...newBox1.map((r): AccordionItem => ({ name: r.customer_name, visitType: 'new', customerId: r.customer_id })),
-            ...newBox2Ci.map((ci): AccordionItem => ({ name: ci.customer_name, visitType: 'new', customerId: ci.customer_id })),
-            ...retBox2Resv.map((r): AccordionItem => ({ name: r.customer_name, visitType: 'returning', customerId: r.customer_id })),
-            ...retBox2Ci.map((ci): AccordionItem => ({ name: ci.customer_name, visitType: 'returning', customerId: ci.customer_id })),
-          ];
+          // T-20260526-foot-TIMETABLE-BROKEN AC-2: null-safe 방어 코드 강화
+          type AccordionItem = { name: string | null; visitType: 'new' | 'returning'; customerId: string | null };
+          const accordionItems: AccordionItem[] = [];
+          try {
+            accordionItems.push(
+              ...newBox1.map((r): AccordionItem => ({ name: r?.customer_name ?? null, visitType: 'new', customerId: r?.customer_id ?? null })),
+              ...newBox2Ci.map((ci): AccordionItem => ({ name: ci?.customer_name ?? null, visitType: 'new', customerId: ci?.customer_id ?? null })),
+              ...retBox2Resv.map((r): AccordionItem => ({ name: r?.customer_name ?? null, visitType: 'returning', customerId: r?.customer_id ?? null })),
+              ...retBox2Ci.map((ci): AccordionItem => ({ name: ci?.customer_name ?? null, visitType: 'returning', customerId: ci?.customer_id ?? null })),
+            );
+          } catch {
+            // 아코디언 데이터 구성 실패 시 빈 배열로 폴백 — 시간표 렌더링은 계속
+          }
           const isExpanded = expandedSlot === slot;
 
           return (
@@ -2154,8 +2162,9 @@ function DashboardTimeline({
               {/* ── AC-7: 아코디언 패널 — 해당 슬롯 예약 명단 ──
                    isExpanded = true일 때만 렌더.
                    props(reservations/selfCheckIns) 변경 시 accordionItems 자동 재계산 → 실시간 반영.
+                   T-20260526-foot-TIMETABLE-BROKEN AC-2: 자동 펼침 제거로 마운트 시 렌더 안전화.
                    DB변경 없음 (UI 레이어만). */}
-              {isExpanded && (
+              {isExpanded && accordionItems !== undefined && (
                 <div
                   className="border-t border-teal-100 bg-teal-50/30 px-2 py-1.5"
                   data-testid={`timeline-slot-accordion-${slot}`}
@@ -2165,16 +2174,18 @@ function DashboardTimeline({
                   ) : (
                     <div className="flex flex-col gap-0.5">
                       {accordionItems.map((item, idx) => {
-                        const chartNo = item.customerId ? (chartMap.get(item.customerId) ?? null) : null;
+                        if (!item) return null;
+                        const safeVisitType = (item.visitType === 'new' || item.visitType === 'returning') ? item.visitType : 'returning';
+                        const chartNo = item.customerId ? (chartMap?.get(item.customerId) ?? null) : null;
                         return (
                           <div key={idx} className="flex items-center gap-1.5 py-0.5">
                             <Badge
                               className={cn(
-                                VISIT_TYPE_COLOR[item.visitType],
+                                VISIT_TYPE_COLOR[safeVisitType],
                                 'text-[9px] px-1 py-0 shrink-0 leading-tight',
                               )}
                             >
-                              {VISIT_TYPE_KO[item.visitType]}
+                              {VISIT_TYPE_KO[safeVisitType]}
                             </Badge>
                             <span className="text-[11px] font-medium text-gray-800 flex-1 truncate">
                               {item.name ?? '(이름 없음)'}
