@@ -9,7 +9,7 @@ db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: ""
-commit_sha: "pending-Fix-8"
+commit_sha: "fc47dce"
 qa_result: ""
 qa_grade: ""
 deployed_at: ""
