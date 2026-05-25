@@ -4671,16 +4671,21 @@ export default function Dashboard() {
   }, [timelineReservations, rows]);
 
   // 당일 예약 검색 함수 (이름 · 전화 뒷번호 4자리↑ · 차트번호)
+  // T-20260525-foot-SEARCH-PHONE-DOB: E.164 phone 정규화 — leading 0 제거 → +8210… substring 매칭
   const doTodaySearch = useCallback((q: string) => {
     if (!q.trim()) { setTodaySearchResults([]); return; }
     const qLow = q.toLowerCase().trim();
     const digits = q.replace(/\D/g, '');
+    // E.164: '01012345678' → '821012345678' 에 '01012345678' 포함 안됨
+    // → leading 0 제거한 '1012345678'로도 매칭 시도
+    const digitsNoLeadingZero = digits.startsWith('0') && digits.length >= 5 ? digits.slice(1) : null;
     const results = timelineReservations.filter((r) => {
       const name = r.customer_name?.toLowerCase() ?? '';
       const phone = r.customer_phone?.replace(/\D/g, '') ?? '';
       const chart = r.customer_id ? (todayCustomerChartMap.get(r.customer_id) ?? '') : '';
       if (name.includes(qLow)) return true;
       if (digits.length >= 4 && phone.includes(digits)) return true;
+      if (digitsNoLeadingZero && digitsNoLeadingZero.length >= 4 && phone.includes(digitsNoLeadingZero)) return true;
       if (chart.toLowerCase().includes(qLow)) return true;
       return false;
     });

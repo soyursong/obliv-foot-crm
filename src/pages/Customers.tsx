@@ -113,7 +113,25 @@ export default function Customers() {
         .range(from, to);
       if (trimmed) {
         const safe = trimmed.replace(/[%_(),.]/g, '');
-        if (safe) req = req.or(`name.ilike.%${safe}%,phone.ilike.%${safe}%,birth_date.ilike.%${safe}%,chart_number.ilike.%${safe}%`);
+        if (safe) {
+          // SEARCH-PHONE-DOB: E.164 phone 검색 정규화
+          // T-20260513-foot-PHONE-E164-SEARCH fix가 InlinePatientSearch에만 적용됨.
+          // 고객관리 페이지에도 동일 로직 추가: leading 0 제거 → +821012345678 substring 매칭
+          const digits = safe.replace(/\D/g, '');
+          // E.164 phone: leading 0 제거 → +821012345678 substring 매칭 (010… → 10…)
+          const digitsNoLeadingZero = digits.startsWith('0') && digits.length >= 5 ? digits.slice(1) : null;
+          // DOB: YYYYMMDD(8자리) 입력 → DB 저장 YYMMDD(6자리)로 변환해 추가 매칭
+          const dobYYMMDD = digits.length === 8 ? digits.slice(2) : null;
+          const orParts = [
+            `name.ilike.%${safe}%`,
+            `phone.ilike.%${safe}%`,
+            `birth_date.ilike.%${safe}%`,
+            `chart_number.ilike.%${safe}%`,
+          ];
+          if (digitsNoLeadingZero) orParts.push(`phone.ilike.%${digitsNoLeadingZero}%`);
+          if (dobYYMMDD) orParts.push(`birth_date.ilike.%${dobYYMMDD}%`);
+          req = req.or(orParts.join(','));
+        }
       }
       const { data, error, count } = await req;
       setLoading(false);
@@ -245,7 +263,7 @@ export default function Customers() {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="이름 · 전화번호 · 생년월일(YYMMDD) · 차트번호"
+            placeholder="이름 · 전화번호(010…) · 생년월일(YYMMDD/YYYYMMDD) · 차트번호"
             className="pl-9"
           />
         </div>
