@@ -77,9 +77,12 @@ export function StatusContextMenu({
   const hasTreatmentRooms = treatmentRooms.length > 0;
   const hasConsultRooms = consultationRooms.length > 0;
 
-  // 화면 경계 보정 — 서브메뉴 공간 고려해 넉넉하게
+  // T-20260525-foot-STEP-CLIP: 하단 클리핑 방지 — 메뉴 실 렌더높이 기반 동적 보정
+  // 9 플래그×28px + 12 단계×28px + 헤더/여백 ≈ 712px; max-h-[85vh]이 상한
+  const menuContentEstH = 712;
+  const menuRenderH = Math.min(menuContentEstH, Math.floor(window.innerHeight * 0.85));
   const x = Math.min(position.x, window.innerWidth - 240);
-  const y = Math.min(position.y, window.innerHeight - 580);
+  const y = Math.max(0, Math.min(position.y, window.innerHeight - menuRenderH - 8));
 
   return (
     <div
