@@ -21,13 +21,14 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { AmountInput } from '@/components/ui/AmountInput';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { STATUS_KO } from '@/lib/status';
-import { formatAmount, formatPhone, parseAmount, todaySeoulStr } from '@/lib/format';
+import { formatAmount, formatPhone, todaySeoulStr } from '@/lib/format';
 import { cn } from '@/lib/utils';
 // T-20260522-foot-CHECKIN-CONSENT-REMOVE: PreChecklist/ChecklistForm/ConsentForm 제거 (PenChart 이관 완료)
 import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
@@ -2237,10 +2238,9 @@ function SessionUseInSheetDialog({
 
           <div className="space-y-1.5">
             <Label>당일 추가금 (옵션)</Label>
-            <Input
-              value={formatAmount(surcharge)}
-              onChange={(e) => setSurcharge(parseAmount(e.target.value))}
-              inputMode="numeric"
+            <AmountInput
+              value={surcharge}
+              onChange={(raw) => setSurcharge(Number(raw) || 0)}
               placeholder="0"
             />
           </div>

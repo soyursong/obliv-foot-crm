@@ -516,6 +516,8 @@ export function PenChartTab({
   const [mode, setMode] = useState<TabMode>('list');
   /** draw 모드에서 현재 활성 양식 (pen_chart | health_questionnaire_* | refund_consent) */
   const [activeDrawTemplate, setActiveDrawTemplate] = useState<Template | null>(null);
+  // T-20260525-foot-PENCHART-FORM-BLACK AC-4: 배경 이미지 로드 실패 폴백 UI 상태
+  const [bgImgLoadError, setBgImgLoadError] = useState(false);
   // staff.id — issued_by FK (profile.id ≠ staff.id, user_id 경유 조회)
   const [staffId, setStaffId] = useState<string | null>(null);
 
@@ -728,7 +730,13 @@ export function PenChartTab({
     if (bgUrl) {
       const img = new Image();
       img.crossOrigin = 'anonymous';
+      img.onerror = () => {
+        // T-20260525-foot-PENCHART-FORM-BLACK AC-4: 이미지 로드 실패 → 흰 배경 유지 + 폴백 UI 표시
+        console.error('[PenChartTab] 배경 이미지 로드 실패, 흰 배경 fallback:', bgUrl);
+        setBgImgLoadError(true);
+      };
       img.onload = () => {
+        setBgImgLoadError(false); // 로드 성공 시 에러 상태 초기화
         // T-20260523-foot-PENCHART-PEN-SLOW Fix-1:
         //   canvas.width/height 재할당 없음 — 이미 CANVAS_W*DRAW_DPR × canvasH*DRAW_DPR 확정.
         //   ctx transform도 이미 scale(DRAW_DPR, DRAW_DPR) 적용됨 — 리셋 없이 redraw만 수행.
@@ -837,6 +845,7 @@ export function PenChartTab({
   }, []);
 
   const initCanvas = useCallback(() => {
+    setBgImgLoadError(false); // T-20260525-foot-PENCHART-FORM-BLACK AC-4: 재시도 시 에러 초기화
     initBgCanvas();
     initDrawCanvas();
     emptyRef.current = true;
@@ -1341,14 +1350,34 @@ export function PenChartTab({
   };
 
   // ─────────────────────────────────────────────────────────────────────
-  // 렌더: select 모드 (양식 선택 패널)
+  // 렌더: select + draw 모드 — 단일 FullscreenFormWrapper 공유
+  // T-20260525-foot-PENCHART-FORM-BLACKSCR 버그 수정:
+  //   select → draw 전환 시 FullscreenFormWrapper가 별도 인스턴스로 교체되면
+  //   이전 Dialog 언마운트가 onOpenChange(false) → setMode('list') 를 발화해
+  //   draw 모드 Dialog가 즉시 닫힘(튕겨나감) + 초기화 안 된 캔버스가 검정 노출.
+  //   → select / draw 양 모드를 하나의 FullscreenFormWrapper로 감싸
+  //     Dialog 인스턴스 유지 → 전환 중 Dialog 재마운트·onOpenChange 오발화 제거.
   // ─────────────────────────────────────────────────────────────────────
-  if (mode === 'select') {
+  if (mode === 'select' || mode === 'draw') {
+    const canvasH = getCanvasHeightForForm(activeDrawTemplate?.form_key);
+    const isEraser    = activeTool === 'eraser';
+    const isWhite     = activeTool === 'white';
+    const isHighlight = activeTool === 'highlight';
+    const isTextTool  = activeTool === 'text';
+    const isBoilerplatePlacing = activeTool === 'boilerplate-placing';
+    const hasSelectedItems = selectedIds.size > 0;
     return (
       <FullscreenFormWrapper
         open={true}
-        onOpenChange={(open) => { if (!open) setMode('list'); }}
+        onOpenChange={(open) => {
+          if (!open) {
+            if (mode === 'draw' && hasDrawing && !window.confirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) return;
+            setActiveDrawTemplate(null);
+            setMode('list');
+          }
+        }}
       >
+        {mode === 'select' && (
         <div className="h-full overflow-auto p-4 bg-white">
         <div className="max-w-lg mx-auto space-y-3">
         <div className="rounded-lg border bg-white p-3">
@@ -1447,33 +1476,8 @@ export function PenChartTab({
         </div>
         </div>
         </div>
-      </FullscreenFormWrapper>
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────────────
-  // 렌더: draw 모드 (캔버스 필기)
-  // ─────────────────────────────────────────────────────────────────────
-  if (mode === 'draw') {
-    const canvasH = getCanvasHeightForForm(activeDrawTemplate?.form_key);
-    const isEraser    = activeTool === 'eraser';
-    const isWhite     = activeTool === 'white';
-    const isHighlight = activeTool === 'highlight';
-    const isTextTool  = activeTool === 'text';
-    const isBoilerplatePlacing = activeTool === 'boilerplate-placing';
-    const hasSelectedItems = selectedIds.size > 0;
-
-    return (
-      <FullscreenFormWrapper
-        open={true}
-        onOpenChange={(open) => {
-          if (!open) {
-            if (hasDrawing && !window.confirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) return;
-            setActiveDrawTemplate(null);
-            setMode('list');
-          }
-        }}
-      >
+        )}
+        {mode === 'draw' && (
       <div className="flex flex-col h-full bg-white">
         {/* 툴바 */}
         <div className="flex-none border-b bg-white p-2 flex items-center gap-1.5 flex-wrap shadow-sm">
@@ -1862,6 +1866,45 @@ export function PenChartTab({
               onPointerCancel={onPointerUp}
             />
 
+            {/* T-20260525-foot-PENCHART-FORM-BLACK AC-4: 배경 이미지 로드 실패 폴백 UI */}
+            {bgImgLoadError && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'rgba(255,255,255,0.92)',
+                  zIndex: 50,
+                  gap: 12,
+                  borderRadius: 4,
+                }}
+                data-testid="penchart-bg-load-error"
+              >
+                <span style={{ fontSize: 32 }}>⚠️</span>
+                <p style={{ fontSize: 14, color: '#6b7280', textAlign: 'center', margin: 0 }}>
+                  양식 이미지를 불러올 수 없습니다.
+                </p>
+                <button
+                  style={{
+                    marginTop: 4,
+                    padding: '6px 16px',
+                    borderRadius: 6,
+                    border: '1px solid #7c3aed',
+                    background: '#ede9fe',
+                    color: '#5b21b6',
+                    fontSize: 13,
+                    cursor: 'pointer',
+                  }}
+                  onClick={initCanvas}
+                >
+                  다시 시도
+                </button>
+              </div>
+            )}
+
             {/* T-20260522-foot-PENCHART-TOOLS-V2 AC-3: 텍스트 입력 오버레이 */}
             {textInputPos && (
               <div
@@ -1957,6 +2000,7 @@ export function PenChartTab({
             현장 피드백: "하단 별도 서명란 불필요 제거" — 서명은 캔버스 위에 직접 기입하는 방식으로 통일 */}
         </div>{/* end 스크롤 콘텐츠 */}
       </div>
+        )}
       </FullscreenFormWrapper>
     );
   }

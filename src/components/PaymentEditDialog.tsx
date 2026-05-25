@@ -19,7 +19,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { AmountInput } from '@/components/ui/AmountInput';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
@@ -330,13 +330,12 @@ export function PaymentEditDialog({ payment, mode, onClose, onDone }: Props) {
 
               <div className="space-y-2">
                 <Label>금액</Label>
-                <Input
+                <AmountInput
                   data-testid="input-amount"
                   value={amountStr}
-                  onChange={(e) => setAmountStr(e.target.value)}
+                  onChange={(raw) => setAmountStr(raw)}
                   placeholder="0"
-                  inputMode="numeric"
-                  className="text-right tabular-nums text-lg"
+                  className="text-lg"
                   autoFocus
                 />
               </div>

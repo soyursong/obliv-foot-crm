@@ -5,6 +5,7 @@ import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { AmountInput } from '@/components/ui/AmountInput';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -19,7 +20,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
-import { formatAmount, formatPhone, parseAmount } from '@/lib/format';
+import { formatAmount, formatPhone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Customer, Package, PackageRemaining, PackageTemplate } from '@/lib/types';
 
@@ -529,9 +530,8 @@ function PackageTemplateDialog({
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">수가 (회당)</Label>
-                <Input value={formatAmount(heatedUnitPrice)}
-                  onChange={(e) => setHeatedUnitPrice(parseAmount(e.target.value))}
-                  inputMode="numeric" />
+                <AmountInput value={heatedUnitPrice}
+                  onChange={(raw) => setHeatedUnitPrice(Number(raw) || 0)} />
               </div>
               <div className="flex items-end pb-0.5">
                 <button
@@ -561,9 +561,8 @@ function PackageTemplateDialog({
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">수가 (회당)</Label>
-                <Input value={formatAmount(unheatedUnitPrice)}
-                  onChange={(e) => setUnheatedUnitPrice(parseAmount(e.target.value))}
-                  inputMode="numeric" />
+                <AmountInput value={unheatedUnitPrice}
+                  onChange={(raw) => setUnheatedUnitPrice(Number(raw) || 0)} />
               </div>
               <div className="flex items-end pb-0.5">
                 <button
@@ -593,9 +592,8 @@ function PackageTemplateDialog({
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">수가 (회당)</Label>
-                <Input value={formatAmount(podologeUnitPrice)}
-                  onChange={(e) => setPodologeUnitPrice(parseAmount(e.target.value))}
-                  inputMode="numeric" />
+                <AmountInput value={podologeUnitPrice}
+                  onChange={(raw) => setPodologeUnitPrice(Number(raw) || 0)} />
               </div>
             </div>
             {podologeSessions > 0 && (
@@ -631,9 +629,8 @@ function PackageTemplateDialog({
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">수가 (회당)</Label>
-                <Input value={formatAmount(ivUnitPrice)}
-                  onChange={(e) => setIvUnitPrice(parseAmount(e.target.value))}
-                  inputMode="numeric" />
+                <AmountInput value={ivUnitPrice}
+                  onChange={(raw) => setIvUnitPrice(Number(raw) || 0)} />
               </div>
             </div>
             {ivSessions > 0 && (
@@ -654,9 +651,8 @@ function PackageTemplateDialog({
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">수가 (회당)</Label>
-                <Input value={formatAmount(trialUnitPrice)}
-                  onChange={(e) => setTrialUnitPrice(parseAmount(e.target.value))}
-                  inputMode="numeric" />
+                <AmountInput value={trialUnitPrice}
+                  onChange={(raw) => setTrialUnitPrice(Number(raw) || 0)} />
               </div>
             </div>
             {trialSessions > 0 && (
@@ -679,10 +675,9 @@ function PackageTemplateDialog({
               </button>
             </div>
             {priceOverride ? (
-              <Input
-                value={formatAmount(manualPrice)}
-                onChange={(e) => setManualPrice(parseAmount(e.target.value))}
-                inputMode="numeric"
+              <AmountInput
+                value={manualPrice}
+                onChange={(raw) => setManualPrice(Number(raw) || 0)}
                 className="text-lg font-bold"
               />
             ) : (
@@ -955,9 +950,8 @@ function PackageCreateDialog({
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">수가 (회당)</Label>
-                <Input value={formatAmount(heatedUnitPrice)}
-                  onChange={(e) => setHeatedUnitPrice(parseAmount(e.target.value))}
-                  inputMode="numeric" />
+                <AmountInput value={heatedUnitPrice}
+                  onChange={(raw) => setHeatedUnitPrice(Number(raw) || 0)} />
               </div>
               <div className="flex items-end pb-0.5">
                 <button
@@ -987,9 +981,8 @@ function PackageCreateDialog({
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">수가 (회당)</Label>
-                <Input value={formatAmount(unheatedUnitPrice)}
-                  onChange={(e) => setUnheatedUnitPrice(parseAmount(e.target.value))}
-                  inputMode="numeric" />
+                <AmountInput value={unheatedUnitPrice}
+                  onChange={(raw) => setUnheatedUnitPrice(Number(raw) || 0)} />
               </div>
               <div className="flex items-end pb-0.5">
                 <button
@@ -1019,9 +1012,8 @@ function PackageCreateDialog({
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">수가 (회당)</Label>
-                <Input value={formatAmount(podologeUnitPrice)}
-                  onChange={(e) => setPodologeUnitPrice(parseAmount(e.target.value))}
-                  inputMode="numeric" />
+                <AmountInput value={podologeUnitPrice}
+                  onChange={(raw) => setPodologeUnitPrice(Number(raw) || 0)} />
               </div>
             </div>
             {podologe > 0 && podologeUnitPrice > 0 && (
@@ -1057,9 +1049,8 @@ function PackageCreateDialog({
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">수가 (회당)</Label>
-                <Input value={formatAmount(ivUnitPrice)}
-                  onChange={(e) => setIvUnitPrice(parseAmount(e.target.value))}
-                  inputMode="numeric" />
+                <AmountInput value={ivUnitPrice}
+                  onChange={(raw) => setIvUnitPrice(Number(raw) || 0)} />
               </div>
             </div>
             {iv > 0 && ivUnitPrice > 0 && (
@@ -1080,9 +1071,8 @@ function PackageCreateDialog({
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">수가 (회당)</Label>
-                <Input value={formatAmount(trialUnitPrice)}
-                  onChange={(e) => setTrialUnitPrice(parseAmount(e.target.value))}
-                  inputMode="numeric" />
+                <AmountInput value={trialUnitPrice}
+                  onChange={(raw) => setTrialUnitPrice(Number(raw) || 0)} />
               </div>
             </div>
             {trial > 0 && trialUnitPrice > 0 && (
@@ -1152,10 +1142,9 @@ function PackageCreateDialog({
               </button>
             </div>
             {priceOverride ? (
-              <Input
-                value={formatAmount(manualTotal)}
-                onChange={(e) => setManualTotal(parseAmount(e.target.value))}
-                inputMode="numeric"
+              <AmountInput
+                value={manualTotal}
+                onChange={(raw) => setManualTotal(Number(raw) || 0)}
                 className="text-lg font-bold"
               />
             ) : (
@@ -1502,7 +1491,7 @@ function PackagePaymentAdd({ packageId, customerId, clinicId, onAdded }: {
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label>금액</Label>
-              <Input value={formatAmount(amount)} onChange={(e) => setAmount(parseAmount(e.target.value))} inputMode="numeric" />
+              <AmountInput value={amount} onChange={(raw) => setAmount(Number(raw) || 0)} />
             </div>
             <div className="space-y-1.5">
               <Label>결제 수단</Label>
@@ -1589,7 +1578,7 @@ function UseSessionDialog({ open, pkg, remaining, onOpenChange, onDone }: {
           </div>
           <div className="space-y-1.5">
             <Label>당일 추가금 (옵션)</Label>
-            <Input value={formatAmount(surcharge)} onChange={(e) => setSurcharge(parseAmount(e.target.value))} inputMode="numeric" />
+            <AmountInput value={surcharge} onChange={(raw) => setSurcharge(Number(raw) || 0)} />
           </div>
           <div className="space-y-1.5">
             <Label>추가금 메모</Label>
@@ -1817,7 +1806,7 @@ function EditPackageDialog({ open, pkg, onOpenChange, onDone }: {
           </div>
           <div className="space-y-1.5">
             <Label>총 계약금</Label>
-            <Input value={formatAmount(amount)} onChange={(e) => setAmount(parseAmount(e.target.value))} inputMode="numeric" />
+            <AmountInput value={amount} onChange={(raw) => setAmount(Number(raw) || 0)} />
           </div>
           <div className="space-y-1.5">
             <Label>상태</Label>
