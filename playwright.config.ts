@@ -56,6 +56,10 @@ export default defineConfig({
         '**/T-20260525-foot-CLOSING-CALC-BUG.spec.ts',
         // T-20260525-foot-ROLE-PERM-CUSTOM: consultant messaging 권한 + 제외 3종 검증
         '**/T-20260525-foot-ROLE-PERM-CUSTOM.spec.ts',
+        // T-20260525-foot-DOC-AUTOBIND-REGRESS: 서류 자동 바인딩 회귀 — 고객정보/처방약/상병코드
+        '**/T-20260525-foot-DOC-AUTOBIND-REGRESS.spec.ts',
+        // T-20260525-foot-INS-FIELD-BIND: 보험청구서 field_map 바인딩 누락 수정
+        '**/T-20260525-foot-INS-FIELD-BIND.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
