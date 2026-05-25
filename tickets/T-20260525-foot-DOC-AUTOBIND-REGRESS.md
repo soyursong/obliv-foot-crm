@@ -1,7 +1,7 @@
 ---
 ticket_id: T-20260525-foot-DOC-AUTOBIND-REGRESS
 title: 서류 자동 바인딩 회귀 — 고객정보·처방약·상병코드 복원
-status: deploy-ready
+status: deployed
 priority: P2
 domain: foot
 created: 2026-05-25
@@ -11,6 +11,12 @@ build_ok: true
 db_change: false
 spec_file: tests/e2e/T-20260525-foot-DOC-AUTOBIND-REGRESS.spec.ts
 go_warn: 1
+qa_result: pass
+qa_grade: Yellow
+deployed_at: 2026-05-26T14:50:00+09:00
+deploy_commit: d259f93
+bundle_hash: DADVknzR
+field_soak_until: 2026-05-27T14:50:00+09:00
 ---
 
 ## 개요
