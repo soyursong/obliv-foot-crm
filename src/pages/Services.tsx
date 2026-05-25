@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { AmountInput } from '@/components/ui/AmountInput';
 import { Label } from '@/components/ui/label';
 import {
   Dialog,
@@ -15,7 +16,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
-import { formatAmount, parseAmount } from '@/lib/format';
+import { formatAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Service } from '@/lib/types';
 import {
@@ -102,8 +103,9 @@ export default function Services() {
   }, [searchQuery]);
 
   // T-20260517-foot-SVC-FILTER-SEARCH: 카테고리 + 검색 AND 필터
+  // T-20260525-foot-SVC-CATEGORY-SORT: category_label 오름차순 기본 정렬 추가 (동일 카테고리 내 sort_order 유지)
   const filteredRows = useMemo(() => {
-    return rows.filter((svc) => {
+    const filtered = rows.filter((svc) => {
       if (!svc.active && !showInactive) return false;
       if (categoryFilter !== '전체' && svc.category_label !== categoryFilter) return false;
       if (debouncedSearch) {
@@ -115,6 +117,10 @@ export default function Services() {
       }
       return true;
     });
+    // category_label 오름차순 → 동일 카테고리 내 rows 원본 순서(sort_order) 유지
+    return [...filtered].sort((a, b) =>
+      (a.category_label ?? '').localeCompare(b.category_label ?? '', 'ko'),
+    );
   }, [rows, showInactive, categoryFilter, debouncedSearch]);
 
   // T-20260510-foot-SVCMENU-REVAMP: 삭제 (soft delete = active=false)
@@ -450,21 +456,16 @@ function ServiceDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>가격</Label>
-              <Input
-                value={formatAmount(price)}
-                onChange={(e) => setPrice(parseAmount(e.target.value))}
-                inputMode="numeric"
+              <AmountInput
+                value={price}
+                onChange={(raw) => setPrice(Number(raw) || 0)}
               />
             </div>
             <div className="space-y-1.5">
               <Label>할인가 (옵션)</Label>
-              <Input
-                value={discountPrice != null ? formatAmount(discountPrice) : ''}
-                onChange={(e) => {
-                  const v = e.target.value.trim();
-                  setDiscountPrice(v ? parseAmount(v) : null);
-                }}
-                inputMode="numeric"
+              <AmountInput
+                value={discountPrice ?? ''}
+                onChange={(raw) => setDiscountPrice(raw ? Number(raw) : null)}
                 placeholder="없음"
               />
             </div>
