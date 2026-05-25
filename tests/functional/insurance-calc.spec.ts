@@ -195,4 +195,73 @@ test.describe('insurance copayment — calcCopaymentLocal', () => {
     expect(getBaseCopayRate('foreigner')).toBe(1.0);
     expect(getBaseCopayRate('unverified')).toBe(0.3);
   });
+
+  // ── AC-4 보충 5 TC (카테고리별 완전세트) ───────────────────────────────────
+
+  test('만65세 정액 — 수가 정확히 15,000원 경계 → flat 1,500원', () => {
+    // hira_score=167.79 → ROUND(167.79 * 89.4) = ROUND(15000.426) = 15,000 (≤15000)
+    const edgeService: ServiceLike = {
+      is_insurance_covered: true,
+      hira_score: 167.79,
+      copayment_rate_override: null,
+      price: 0,
+    };
+    const r = calcCopaymentLocal(edgeService, clinic, 'elderly_flat');
+    expect(r.base_amount).toBe(15000);
+    expect(r.copayment_amount).toBe(1500);
+    expect(r.insurance_covered_amount).toBe(15000 - 1500);
+  });
+
+  test('만65세 정액 구간 + copayment_rate_override — 정액제 구간에서는 override 무시', () => {
+    // base ≤ 15,000 → flat 1,500 (override 있어도 정액 분기 우선)
+    const overrideService: ServiceLike = {
+      is_insurance_covered: true,
+      hira_score: 100, // base = ROUND(100*89.4) = 8,940 (≤15000)
+      copayment_rate_override: 0.10,
+      price: 0,
+    };
+    const r = calcCopaymentLocal(overrideService, clinic, 'elderly_flat');
+    expect(r.base_amount).toBe(8940);
+    // 정액 구간: override 무시 → MIN(1500, 8940) = 1500
+    expect(r.copayment_amount).toBe(1500);
+  });
+
+  test('만6세 미만(infant) + copayment_rate_override — override가 21% 대신 적용', () => {
+    // infant 기본율 21% 대신 override=0.50 적용
+    const overrideService: ServiceLike = {
+      is_insurance_covered: true,
+      hira_score: 153.36, // base = 13,710
+      copayment_rate_override: 0.50,
+      price: 0,
+    };
+    const r = calcCopaymentLocal(overrideService, clinic, 'infant');
+    expect(r.applied_rate).toBe(0.50);
+    // copay = CEIL(13710 * 0.50 / 100) * 100 = CEIL(68.55) * 100 = 6900
+    expect(r.copayment_amount).toBe(6900);
+    expect(r.insurance_covered_amount).toBe(13710 - 6900);
+  });
+
+  test('copayment_rate_override > 1.0 → 본인부담 상한 = 수가 (클리핑)', () => {
+    // override=2.0 → 산출 코페이가 base 초과 → base로 클리핑
+    const overrideHigh: ServiceLike = {
+      is_insurance_covered: true,
+      hira_score: 153.36, // base = 13,710
+      copayment_rate_override: 2.0,
+      price: 0,
+    };
+    const r = calcCopaymentLocal(overrideHigh, clinic, 'general');
+    // CEIL(13710 * 2.0 / 100) * 100 = 27500 > 13710 → clipped to 13710
+    expect(r.copayment_amount).toBe(13710);
+    expect(r.insurance_covered_amount).toBe(0);
+    expect(r.applied_rate).toBe(2.0);
+  });
+
+  test('clinic.hira_unit_value = null → 기본값 89.4 폴백', () => {
+    // null 값은 89.4로 폴백 — general 30%와 동일 결과
+    const r = calcCopaymentLocal(consultService, { hira_unit_value: null }, 'general');
+    // base = ROUND(153.36 * 89.4) = 13710 (89.4 기본값 적용)
+    expect(r.base_amount).toBe(13710);
+    expect(r.copayment_amount).toBe(4200);
+    expect(r.insurance_covered_amount).toBe(13710 - 4200);
+  });
 });
