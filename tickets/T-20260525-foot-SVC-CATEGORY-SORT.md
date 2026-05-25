@@ -2,7 +2,7 @@
 id: T-20260525-foot-SVC-CATEGORY-SORT
 domain: foot
 priority: P2
-status: deploy-ready
+status: deployed
 deploy-ready: true
 build-passed: true
 db-change: false
@@ -11,6 +11,17 @@ summary: "서비스관리 filteredRows useMemo에 category_label 오름차순 �
 created: 2026-05-25
 risk_verdict: GO
 risk_reason: "FE-only. DB 변경 없음. filteredRows spread-sort — 원본 rows 불변. CRUD 로직 무영향."
+qa_result: pass
+qa_grade: Green
+deployed_at: "2026-05-26T00:18:05+09:00"
+deploy_commit: 5e76e49
+bundle_hash: Services-BcUAJICn
+slack_channel: C0ATE5P6JTH
+slack_thread_ts: "1779708029.550029"
+reporter: 김주연 총괄
+reporter_slack_id: U0ATDB587PV
+field_soak_until: "2026-05-27T00:18:05+09:00"
+field_validation_slack_ts: "1779722487.893889"
 ---
 
 ## T-20260525-foot-SVC-CATEGORY-SORT — 서비스관리 항목분류별 자동 정렬

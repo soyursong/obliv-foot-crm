@@ -5,28 +5,34 @@ import { test, expect } from '@playwright/test';
 import { canAccess } from '../../src/lib/permissions';
 import type { PermKey } from '../../src/lib/permissions';
 
-// ── AC-1: GAP 조사 — 유일한 GAP = messaging ──────────────────────────────────
-test('AC-1 GAP 확인: consultant 권한 매트릭스', () => {
+// ── AC-1: 3역할 전권한 확인 — 통계·매출집계 제외, 나머지 전부 허용 ────────────
+// T-20260525-foot-ROLE-PERM-CUSTOM 3차(2798917): coordinator/therapist 포함 전수 검수
+test('AC-1 3역할 전권한 확인: consultant/coordinator/therapist', () => {
   const MUST_HAVE: PermKey[] = ['dashboard', 'reservations', 'customers', 'closing', 'messaging'];
   const MUST_NOT_HAVE: PermKey[] = ['stats', 'register'];
+  const ROLES = ['consultant', 'coordinator', 'therapist'] as const;
 
-  for (const key of MUST_HAVE) {
-    expect(canAccess('consultant', key), `consultant must have: ${key}`).toBe(true);
-  }
-  for (const key of MUST_NOT_HAVE) {
-    expect(canAccess('consultant', key), `consultant must NOT have: ${key}`).toBe(false);
+  for (const role of ROLES) {
+    for (const key of MUST_HAVE) {
+      expect(canAccess(role, key), `${role} must have: ${key}`).toBe(true);
+    }
+    for (const key of MUST_NOT_HAVE) {
+      expect(canAccess(role, key), `${role} must NOT have: ${key}`).toBe(false);
+    }
   }
 });
 
-// ── AC-2: 권한 매트릭스 — messaging에 consultant 추가됨 ───────────────────────
-test('AC-2 messaging 권한: consultant/director/admin/manager 허용', () => {
+// ── AC-2: 권한 매트릭스 — messaging에 3역할(consultant/coordinator/therapist) 추가됨 ──
+// T-20260525-foot-ROLE-PERM-CUSTOM 3차(2798917): coordinator/therapist 추가
+test('AC-2 messaging 권한: consultant/coordinator/therapist/director/admin/manager 허용', () => {
   expect(canAccess('consultant', 'messaging')).toBe(true);
+  expect(canAccess('coordinator', 'messaging')).toBe(true);   // 3차 추가
+  expect(canAccess('therapist', 'messaging')).toBe(true);    // 3차 추가
   expect(canAccess('director', 'messaging')).toBe(true);
   expect(canAccess('admin', 'messaging')).toBe(true);
   expect(canAccess('manager', 'messaging')).toBe(true);
-  // 나머지 역할 제외 유지
-  expect(canAccess('therapist', 'messaging')).toBe(false);
-  expect(canAccess('coordinator', 'messaging')).toBe(false);
+  // 미허용 역할
+  expect(canAccess('part_lead', 'messaging')).toBe(false);
   expect(canAccess('staff', 'messaging')).toBe(false);
 });
 
