@@ -83,8 +83,25 @@ test.describe('T-20260523-foot-ROOM-DISABLE-TOGGLE 방 비활성화 토글', () 
     const roomNameBefore = await firstOffBtn.getAttribute('title').catch(() => '');
     console.log(`[AC-1] 클릭할 버튼 title: "${roomNameBefore}"`);
 
-    await firstOffBtn.click();
+    await firstOffBtn.click(); // 끄기▾ → date picker 팝오버 오픈
     console.log('[AC-1] 끄기 버튼 클릭 완료');
+
+    // date picker 팝오버에서 "오늘 끄기" 2차 클릭 (AC-8 도입으로 필수)
+    await page.waitForTimeout(400);
+    const todayOffBtn = page.locator('[data-date-picker] button:has-text("오늘 끄기")').first();
+    const hasTodayOffBtn = await todayOffBtn.isVisible().catch(() => false);
+    if (hasTodayOffBtn) {
+      await todayOffBtn.click();
+      console.log('[AC-1] date picker "오늘 끄기" 클릭 완료');
+    } else {
+      // date picker 없으면 페이지 전체 fallback
+      const fallbackBtn = page.locator('button:has-text("오늘 끄기")').first();
+      const hasFallback = await fallbackBtn.isVisible().catch(() => false);
+      if (hasFallback) {
+        await fallbackBtn.click();
+        console.log('[AC-1] fallback "오늘 끄기" 클릭 완료');
+      }
+    }
 
     // 낙관적 업데이트 반영 대기
     await page.waitForTimeout(1_500);
@@ -260,10 +277,19 @@ test.describe('T-20260523-foot-ROOM-DISABLE-TOGGLE 방 비활성화 토글', () 
       return;
     }
 
-    // 레이저실 비활성화
-    await laserOffBtn.click();
+    // 레이저실 비활성화 — "끄기▾" 클릭 → date picker 팝오버 → "오늘 끄기" 2차 클릭
+    await laserOffBtn.click(); // 끄기▾ → 팝오버 오픈
+    await page.waitForTimeout(400);
+    const laserTodayBtn = page.locator('[data-date-picker] button:has-text("오늘 끄기")').first();
+    const hasLaserTodayBtn = await laserTodayBtn.isVisible().catch(() => false);
+    if (hasLaserTodayBtn) {
+      await laserTodayBtn.click();
+    } else {
+      // date picker locator 재시도 — laserSlot 범위로 좁혀서 탐색
+      await laserSlot.locator('button:has-text("오늘 끄기")').first().click();
+    }
     await page.waitForTimeout(1_500);
-    console.log('[AC-7/레이저실] 비활성화 클릭 완료');
+    console.log('[AC-7/레이저실] 비활성화 클릭 완료 (date picker 2차 클릭 포함)');
 
     // AC-7: carry-over 안내 텍스트 확인
     const carryOverMsg = page.getByText('이 방은 다시 활성화할 때까지 비활성 상태가 유지됩니다').first();
@@ -319,10 +345,19 @@ test.describe('T-20260523-foot-ROOM-DISABLE-TOGGLE 방 비활성화 토글', () 
       return;
     }
 
-    // 상담실 비활성화
-    await consultOffBtn.click();
+    // 상담실 비활성화 — "끄기▾" 클릭 → date picker 팝오버 → "오늘 끄기" 2차 클릭
+    await consultOffBtn.click(); // 끄기▾ → 팝오버 오픈
+    await page.waitForTimeout(400);
+    const todayBtn = page.locator('[data-date-picker] button:has-text("오늘 끄기")').first();
+    const hasTodayBtn = await todayBtn.isVisible().catch(() => false);
+    if (hasTodayBtn) {
+      await todayBtn.click();
+    } else {
+      // "오늘 끄기" 버튼 없으면 consultSlot 내 locator로 재시도
+      await consultSlot.locator('button:has-text("오늘 끄기")').first().click();
+    }
     await page.waitForTimeout(1_500);
-    console.log('[AC-7/상담실] 비활성화 클릭 완료');
+    console.log('[AC-7/상담실] 비활성화 클릭 완료 (date picker 2차 클릭 포함)');
 
     // AC-7: daily reset 안내 텍스트 확인
     const dailyMsg = page.getByText('오늘만 비활성화됩니다').first();
