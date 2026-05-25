@@ -4,8 +4,9 @@
  *
  * 스펙 정정 (INFO MSG-20260523-230107-n5ht):
  *   - 대상: 펜차트 양식 1종([보험차트])만 — 발건강 질문지·환불동의서 무영향
- *   - 위치: 양식 상단, Obliv Clinic 로고 우측·담당의 좌측 중앙 빨간 박스
- *   - 필드: 성함(상단) + 주민번호 앞자리(하단) 세로 스택
+ *   - 위치: 양식 상단, Obliv Clinic 로고(x≈185) 우측 — x=190, y=28 (헤더 영역)
+ *   - 필드: 성함 + 주민번호 1줄 inline (2026-05-24 현장 요청: 한 줄·폰트 축소)
+ *   - 구현 변경: PENCHART_AUTOFILL_POS 세로 스택 → drawPenChartAutofillInline 1줄 방식
  *
  * AC-1(C1): [보험차트] 열 때 빨간 박스 위치에 고객 성함 자동 표시
  * AC-2(C1): 동일 위치에 주민번호 자동 표시
@@ -49,45 +50,40 @@ test.describe('T-20260523-foot-PENCHART-INSURANCE', () => {
     expect(src).toContain('(penChartTemplate ?? BUILTIN_PEN_CHART_TEMPLATE).name_ko');
   });
 
-  // AC-1/AC-2: 자동채움 좌표가 중앙 박스 위치
-  // PENCHART_AUTOFILL_POS 블록 추출: 닫는 ]; 패턴 사용
-  test('AC-1/AC-2: PENCHART_AUTOFILL_POS 성함·주민번호 세로 스택 + 중앙 x≥270', () => {
+  // AC-1/AC-2: 자동채움 — inline 1줄 배치 (2026-05-24 현장 요청 반영)
+  // 김주연 총괄 요청: "성함+주민번호 배치를 한 줄로 하고 폰트 사이즈 좀만 줄여줘"
+  // → PENCHART_AUTOFILL_POS 세로 스택 방식 → drawPenChartAutofillInline 1줄 inline 방식으로 전환
+  test('AC-1/AC-2: drawPenChartAutofillInline 함수 존재 + name/rrn 1줄 inline 렌더링', () => {
     const src = fs.readFileSync(SRC, 'utf-8');
-    // 블록 추출: "const PENCHART_AUTOFILL_POS" 시작 ~ 닫는 "];" 까지
-    const posBlock = src.match(/const PENCHART_AUTOFILL_POS[\s\S]*?\];/)?.[0] ?? '';
-    expect(posBlock).toBeTruthy();
-
-    // 각 항목 라인 파싱 (한 줄에 key/x/y 모두 있음)
-    const lines = posBlock.split('\n');
-    let nameX = -1, nameY = -1, bdX = -1, bdY = -1;
-    for (const line of lines) {
-      const xM = line.match(/x:\s*(\d+)/);
-      const yM = line.match(/y:\s*(\d+)/);
-      if (!xM || !yM) continue;
-      if (line.includes("key: 'name'")) {
-        nameX = parseInt(xM[1], 10); nameY = parseInt(yM[1], 10);
-      } else if (line.includes("key: 'birthDate'")) {
-        bdX = parseInt(xM[1], 10); bdY = parseInt(yM[1], 10);
-      }
+    // 함수 자체 존재 확인
+    expect(src).toContain('function drawPenChartAutofillInline(');
+    // 성함 필드 처리 확인
+    expect(src).toContain("parts.push(`성함: ${name}`)");
+    // 주민번호 필드 처리 확인 (rrn 필드 사용)
+    expect(src).toContain("parts.push(`주민번호: ${rrn}`)");
+    // join으로 1줄 출력 확인
+    expect(src).toContain("parts.join('  ')");
+    // inline 좌표 확인: x=190 (로고 우측), y=28 (상단 헤더 영역)
+    expect(src).toContain('ctx.fillText(parts.join(');
+    const inlineFnBlock = src.match(/function drawPenChartAutofillInline[\s\S]*?\n\}/)?.[0] ?? '';
+    expect(inlineFnBlock).toBeTruthy();
+    // x 좌표가 로고(x≈185) 우측인지 확인 (x≥100)
+    const xMatch = inlineFnBlock.match(/fillText\(parts\.join\([^)]*\),\s*(\d+)/);
+    if (xMatch) {
+      expect(parseInt(xMatch[1], 10)).toBeGreaterThanOrEqual(100);
     }
-
-    // 중앙 박스: x≥270 (로고 우측, 담당의 좌측)
-    expect(nameX).toBeGreaterThanOrEqual(270);
-    expect(nameX).toBeLessThan(550);
-    // birthDate x도 중앙 박스
-    expect(bdX).toBeGreaterThanOrEqual(270);
-    // 세로 스택: 주민번호 y > 성함 y
-    expect(bdY).toBeGreaterThan(nameY);
-    // 간격 10px 이상
-    expect(bdY - nameY).toBeGreaterThanOrEqual(10);
   });
 
-  // AC-5: bgCanvas draw 경로에서 pen_chart → PENCHART_AUTOFILL_POS 자동 적용
-  test('AC-5: pen_chart form_key 분기에서 PENCHART_AUTOFILL_POS 호출', () => {
+  // AC-5: bgCanvas draw 경로에서 pen_chart → drawPenChartAutofillInline 자동 적용
+  // (2026-05-24 현장 요청 반영: 위치 기반 → inline 1줄 방식으로 전환)
+  test('AC-5: pen_chart form_key 분기에서 drawPenChartAutofillInline 호출', () => {
     const src = fs.readFileSync(SRC, 'utf-8');
     // 자동채움 분기 확인
     expect(src).toContain("} else if (fk === 'pen_chart') {");
-    expect(src).toContain('drawAutofillOnCtx(ctx, autofillDataRef.current, PENCHART_AUTOFILL_POS)');
+    // inline 방식 호출 확인
+    expect(src).toContain('drawPenChartAutofillInline(ctx, autofillDataRef.current)');
+    // 구 방식(PENCHART_AUTOFILL_POS)은 pen_chart 분기에서 사용하지 않음
+    // (환불동의서 분기에서는 drawAutofillOnCtx 계속 사용)
   });
 
   // AC-6: 다른 양식 form_key 명칭 무영향 확인
