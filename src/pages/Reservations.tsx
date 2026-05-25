@@ -1232,6 +1232,9 @@ interface TherapistHistoryInfo {
   /** 최빈 담당 치료사 (null = 미배정) */
   primaryTherapistId: string | null;
   primaryTherapistName: string | null;
+  /** T-20260525-foot-RESV-DESIG-AUTOASSIGN AC-1: customers.designated_therapist_id */
+  designatedTherapistId: string | null;
+  designatedTherapistName: string | null;
   /** 최근 체크인 날짜 */
   lastVisitDate: string | null;
   /** 직전 치료 요약 (treatment_kind + treatment_contents 조합) */
@@ -1350,13 +1353,21 @@ function ReservationEditor({
 
     const fetchHistory = async () => {
       // 1) 최근 체크인 최대 20건 조회 (therapist_id 빈도 분석 + 최근 이력)
-      const { data: ciData } = await supabase
-        .from('check_ins')
-        .select('id, therapist_id, checked_in_at, treatment_kind, treatment_contents')
-        .eq('customer_id', customerId)
-        .neq('status', 'cancelled')
-        .order('checked_in_at', { ascending: false })
-        .limit(20);
+      // T-20260525-foot-RESV-DESIG-AUTOASSIGN AC-1: designated_therapist_id 병렬 조회
+      const [{ data: ciData }, { data: custData }] = await Promise.all([
+        supabase
+          .from('check_ins')
+          .select('id, therapist_id, checked_in_at, treatment_kind, treatment_contents')
+          .eq('customer_id', customerId)
+          .neq('status', 'cancelled')
+          .order('checked_in_at', { ascending: false })
+          .limit(20),
+        supabase
+          .from('customers')
+          .select('designated_therapist_id')
+          .eq('id', customerId)
+          .maybeSingle(),
+      ]);
 
       if (cancelled) return;
       const visits = (ciData ?? []) as Array<{
@@ -1366,6 +1377,9 @@ function ReservationEditor({
         treatment_kind: string | null;
         treatment_contents: string[] | null;
       }>;
+      // T-20260525-foot-RESV-DESIG-AUTOASSIGN AC-1: customers.designated_therapist_id
+      const designatedTherapistId =
+        (custData as { designated_therapist_id: string | null } | null)?.designated_therapist_id ?? null;
 
       // 2) 치료사 목록 조회 (아직 없으면 한 번만)
       if (therapistList.length === 0) {
@@ -1396,11 +1410,11 @@ function ReservationEditor({
         : null;
       const lastTherapistId = last?.therapist_id ?? null;
 
-      // 5) 치료사 이름 조회 (staffData 재활용)
+      // 5) 치료사 이름 조회 — designatedTherapistId 포함
       const { data: allStaff } = await supabase
         .from('staff')
         .select('id, name')
-        .in('id', [primaryTherapistId, lastTherapistId].filter((x): x is string => !!x));
+        .in('id', [primaryTherapistId, lastTherapistId, designatedTherapistId].filter((x): x is string => !!x));
 
       if (cancelled) return;
       const staffMap = new Map((allStaff ?? []).map((s: { id: string; name: string }) => [s.id, s.name]));
@@ -1408,13 +1422,16 @@ function ReservationEditor({
       const info: TherapistHistoryInfo = {
         primaryTherapistId,
         primaryTherapistName: primaryTherapistId ? (staffMap.get(primaryTherapistId) ?? null) : null,
+        // T-20260525-foot-RESV-DESIG-AUTOASSIGN AC-1
+        designatedTherapistId,
+        designatedTherapistName: designatedTherapistId ? (staffMap.get(designatedTherapistId) ?? null) : null,
         lastVisitDate,
         lastTreatmentSummary,
         lastTherapistName: lastTherapistId ? (staffMap.get(lastTherapistId) ?? null) : null,
       };
       setTherapistHistory(info);
-      // override 초기값 = 최빈 치료사
-      setOverrideTherapistId(primaryTherapistId ?? '');
+      // T-20260525-foot-RESV-DESIG-AUTOASSIGN AC-1: designated_therapist_id 우선, 없으면 최빈 치료사 fallback
+      setOverrideTherapistId(designatedTherapistId ?? primaryTherapistId ?? '');
       setTherapistHistoryLoading(false);
     };
 
@@ -1817,19 +1834,29 @@ function ReservationEditor({
                 <div className="text-muted-foreground">치료이력 조회 중…</div>
               ) : (
                 <>
-                  {/* AC-1: 담당 치료사 */}
+                  {/* T-20260525-foot-RESV-DESIG-AUTOASSIGN AC-1: designated_therapist_id 우선 표시 */}
                   <div className="flex items-center gap-2">
                     <User className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                    <span className="font-medium text-emerald-800">담당 치료사</span>
-                    {therapistHistory?.primaryTherapistName ? (
-                      <span className="text-emerald-700">
-                        {therapistHistory.primaryTherapistName}
-                        {therapistHistory.lastVisitDate && (
-                          <span className="text-muted-foreground ml-1">(최근: {therapistHistory.lastVisitDate})</span>
-                        )}
-                      </span>
+                    {therapistHistory?.designatedTherapistName ? (
+                      <>
+                        <span className="font-medium text-emerald-800">지정 치료사</span>
+                        <span className="text-emerald-700">{therapistHistory.designatedTherapistName}</span>
+                      </>
+                    ) : therapistHistory?.primaryTherapistName ? (
+                      <>
+                        <span className="font-medium text-emerald-800">담당 치료사</span>
+                        <span className="text-emerald-700">
+                          {therapistHistory.primaryTherapistName}
+                          {therapistHistory.lastVisitDate && (
+                            <span className="text-muted-foreground ml-1">(최근: {therapistHistory.lastVisitDate})</span>
+                          )}
+                        </span>
+                      </>
                     ) : (
-                      <span className="text-amber-600">담당 치료사 미배정</span>
+                      <>
+                        <span className="font-medium text-emerald-800">담당 치료사</span>
+                        <span className="text-amber-600">미배정</span>
+                      </>
                     )}
                   </div>
                   {/* AC-2: 직전 치료이력 */}
