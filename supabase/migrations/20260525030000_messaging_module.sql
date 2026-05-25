@@ -71,11 +71,17 @@ COMMENT ON FUNCTION public.moddatetime_updated_at() IS
 -- enabled = TRUE 인 클리닉에 한해 SMS 발송 로직이 동작함.
 
 CREATE TABLE IF NOT EXISTS public.clinic_messaging_capability (
-  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  clinic_id   UUID        NOT NULL UNIQUE REFERENCES public.clinics(id) ON DELETE CASCADE,
-  enabled     BOOLEAN     NOT NULL DEFAULT FALSE,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                        UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  clinic_id                 UUID        NOT NULL UNIQUE REFERENCES public.clinics(id) ON DELETE CASCADE,
+  enabled                   BOOLEAN     NOT NULL DEFAULT FALSE,
+  solapi_api_key_vault_name TEXT,
+  solapi_secret_vault_name  TEXT,
+  sender_number             TEXT,
+  send_start_hour           SMALLINT    NOT NULL DEFAULT 9  CHECK (send_start_hour BETWEEN 0 AND 23),
+  send_end_hour             SMALLINT    NOT NULL DEFAULT 21 CHECK (send_end_hour BETWEEN 0 AND 23),
+  kakao_channel_id          TEXT,
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_clinic_msg_cap_clinic_id
@@ -334,10 +340,11 @@ COMMENT ON FUNCTION public.get_vault_secret(TEXT) IS
 --               'solapi_secret_'  || LEFT(clinic_id::TEXT, 8)
 
 CREATE OR REPLACE FUNCTION public.admin_save_messaging_config(
-  p_clinic_id  UUID,
-  p_api_key    TEXT,
-  p_api_secret TEXT,
-  p_enabled    BOOLEAN DEFAULT TRUE
+  p_clinic_id     UUID,
+  p_sender_number TEXT    DEFAULT NULL,  -- NULL = 기존값 유지
+  p_enabled       BOOLEAN DEFAULT NULL,  -- NULL = 기존값 유지
+  p_api_key       TEXT    DEFAULT NULL,  -- NULL / 빈 문자열 = 기존 Vault 유지
+  p_api_secret    TEXT    DEFAULT NULL   -- NULL / 빈 문자열 = 기존 Vault 유지
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -345,61 +352,130 @@ SECURITY DEFINER
 SET search_path = public, vault
 AS $$
 DECLARE
-  v_role        TEXT;
-  v_caller_cid  UUID;
-  v_key_name    TEXT;
-  v_secret_name TEXT;
-  v_cap_id      UUID;
+  v_role               TEXT;
+  v_key_vault_name     TEXT;
+  v_secret_vault_name  TEXT;
+  v_existing_key_id    UUID;
+  v_existing_sec_id    UUID;
+  v_key_updated        BOOLEAN := FALSE;
+  v_sec_updated        BOOLEAN := FALSE;
+  v_sender_clean       TEXT;
 BEGIN
-  -- 권한 확인: admin 만 실행 가능
-  v_role       := public.get_user_role();
-  v_caller_cid := public.get_user_clinic_id();
-
-  IF v_role <> 'admin' THEN
-    RAISE EXCEPTION 'admin_save_messaging_config: 권한 없음 (role=%, required=admin)', v_role;
+  -- ── 권한 체크: admin only ─────────────────────────────────────
+  v_role := public.get_user_role();
+  IF v_role IS DISTINCT FROM 'admin' THEN
+    RAISE EXCEPTION 'admin_save_messaging_config: role=% — admin 전용 함수입니다', COALESCE(v_role, 'NULL');
   END IF;
 
-  IF v_caller_cid <> p_clinic_id THEN
-    RAISE EXCEPTION 'admin_save_messaging_config: 클리닉 불일치 (caller=%, target=%)',
-      v_caller_cid, p_clinic_id;
+  -- ── sender_number 정규화 (비숫자 제거) ───────────────────────
+  -- 하이픈·공백·플러스 등 제거해 일관된 형식으로 저장
+  v_sender_clean := CASE
+    WHEN p_sender_number IS NULL THEN NULL
+    ELSE NULLIF(REGEXP_REPLACE(TRIM(p_sender_number), '[^0-9]', '', 'g'), '')
+  END;
+
+  -- ── Vault 이름 규칙 ───────────────────────────────────────────
+  v_key_vault_name    := 'solapi_api_key_'  || LEFT(p_clinic_id::TEXT, 8);
+  v_secret_vault_name := 'solapi_secret_'   || LEFT(p_clinic_id::TEXT, 8);
+
+  -- ── API Key → Vault upsert ────────────────────────────────────
+  IF p_api_key IS NOT NULL AND LENGTH(TRIM(p_api_key)) > 0 THEN
+    SELECT id INTO v_existing_key_id
+    FROM vault.secrets
+    WHERE name = v_key_vault_name
+    LIMIT 1;
+
+    IF v_existing_key_id IS NOT NULL THEN
+      PERFORM vault.update_secret(v_existing_key_id, TRIM(p_api_key), v_key_vault_name);
+    ELSE
+      PERFORM vault.create_secret(TRIM(p_api_key), v_key_vault_name);
+    END IF;
+    v_key_updated := TRUE;
   END IF;
 
-  -- vault 키 이름 (clinic_id UUID 앞 8자리로 충돌 방지)
-  v_key_name    := 'solapi_api_key_' || LEFT(p_clinic_id::TEXT, 8);
-  v_secret_name := 'solapi_secret_'  || LEFT(p_clinic_id::TEXT, 8);
+  -- ── API Secret → Vault upsert ─────────────────────────────────
+  IF p_api_secret IS NOT NULL AND LENGTH(TRIM(p_api_secret)) > 0 THEN
+    SELECT id INTO v_existing_sec_id
+    FROM vault.secrets
+    WHERE name = v_secret_vault_name
+    LIMIT 1;
 
-  -- vault upsert: 이미 존재하면 UPDATE, 없으면 INSERT
-  -- vault.secrets 에 직접 upsert (Supabase vault extension 표준 방식)
-  INSERT INTO vault.secrets (name, secret)
-    VALUES (v_key_name, p_api_key)
-    ON CONFLICT (name) DO UPDATE SET secret = EXCLUDED.secret;
+    IF v_existing_sec_id IS NOT NULL THEN
+      PERFORM vault.update_secret(v_existing_sec_id, TRIM(p_api_secret), v_secret_vault_name);
+    ELSE
+      PERFORM vault.create_secret(TRIM(p_api_secret), v_secret_vault_name);
+    END IF;
+    v_sec_updated := TRUE;
+  END IF;
 
-  INSERT INTO vault.secrets (name, secret)
-    VALUES (v_secret_name, p_api_secret)
-    ON CONFLICT (name) DO UPDATE SET secret = EXCLUDED.secret;
+  -- ── clinic_messaging_capability upsert ───────────────────────
+  INSERT INTO public.clinic_messaging_capability (
+    clinic_id,
+    enabled,
+    sender_number,
+    solapi_api_key_vault_name,
+    solapi_secret_vault_name
+  )
+  VALUES (
+    p_clinic_id,
+    COALESCE(p_enabled, FALSE),
+    v_sender_clean,
+    CASE WHEN v_key_updated THEN v_key_vault_name ELSE NULL END,
+    CASE WHEN v_sec_updated THEN v_secret_vault_name ELSE NULL END
+  )
+  ON CONFLICT (clinic_id) DO UPDATE SET
+    -- p_enabled IS NOT NULL 일 때만 갱신 (NULL = 기존값 유지)
+    enabled = CASE
+      WHEN p_enabled IS NOT NULL THEN p_enabled
+      ELSE clinic_messaging_capability.enabled
+    END,
+    -- 정규화된 sender_number 저장
+    sender_number = CASE
+      WHEN v_sender_clean IS NOT NULL THEN v_sender_clean
+      ELSE clinic_messaging_capability.sender_number
+    END,
+    solapi_api_key_vault_name = CASE
+      WHEN v_key_updated THEN v_key_vault_name
+      ELSE clinic_messaging_capability.solapi_api_key_vault_name
+    END,
+    solapi_secret_vault_name = CASE
+      WHEN v_sec_updated THEN v_secret_vault_name
+      ELSE clinic_messaging_capability.solapi_secret_vault_name
+    END,
+    updated_at = now();
 
-  -- clinic_messaging_capability upsert
-  INSERT INTO public.clinic_messaging_capability (clinic_id, enabled)
-    VALUES (p_clinic_id, p_enabled)
-    ON CONFLICT (clinic_id) DO UPDATE
-      SET enabled    = EXCLUDED.enabled,
-          updated_at = now()
-  RETURNING id INTO v_cap_id;
+  -- 기존 sender_number에 하이픈이 있으면 정규화 (마이그레이션 실행 시 1회)
+  UPDATE public.clinic_messaging_capability
+  SET
+    sender_number = REGEXP_REPLACE(sender_number, '[^0-9]', '', 'g'),
+    updated_at    = now()
+  WHERE
+    clinic_id     = p_clinic_id
+    AND sender_number IS NOT NULL
+    AND sender_number ~ '[^0-9]';
+
+  RAISE LOG 'admin_save_messaging_config v2: clinic=% sender=% (raw=%) enabled=% key_updated=% sec_updated=%',
+    p_clinic_id, v_sender_clean, p_sender_number, p_enabled, v_key_updated, v_sec_updated;
 
   RETURN jsonb_build_object(
-    'ok',           TRUE,
-    'clinic_id',    p_clinic_id,
-    'cap_id',       v_cap_id,
-    'enabled',      p_enabled,
-    'vault_key',    v_key_name,
-    'vault_secret', v_secret_name,
-    'updated_at',   to_char(now(), 'YYYY-MM-DD HH24:MI:SS TZ')
+    'success',                 TRUE,
+    'sender_number',           v_sender_clean,
+    'enabled',                 p_enabled,
+    'vault_key_name',          v_key_vault_name,
+    'vault_sec_name',          v_secret_vault_name,
+    'vault_key_saved',         v_key_updated,
+    'vault_sec_saved',         v_sec_updated,
+    'updated_at',              to_char(now(), 'YYYY-MM-DD HH24:MI:SS TZ')
   );
 END;
 $$;
 
-COMMENT ON FUNCTION public.admin_save_messaging_config(UUID, TEXT, TEXT, BOOLEAN) IS
-  'T-20260525-foot-MESSAGING-V1: 관리자용 메시징 설정 저장 (vault + capability) — v2 final';
+COMMENT ON FUNCTION public.admin_save_messaging_config(UUID, TEXT, BOOLEAN, TEXT, TEXT) IS
+  'T-20260525-foot-MESSAGING-V1: 관리자용 메시징 설정 저장 (vault + capability) — v2 final. '
+  'admin role 전용. DB + Vault 원자적 저장. '
+  'p_api_key/p_api_secret 미입력 시 기존 Vault 값 유지. '
+  'p_enabled NULL 시 기존값 유지. '
+  'sender_number 비숫자 자동 제거 (정규화).';
 
 -- ============================================================
 -- SECTION 9: Solapi 발신번호 검증 컬럼 + validate_solapi_sender RPC
@@ -408,12 +484,12 @@ COMMENT ON FUNCTION public.admin_save_messaging_config(UUID, TEXT, TEXT, BOOLEAN
 -- clinic_messaging_capability 에 검증 상태 컬럼 추가
 ALTER TABLE public.clinic_messaging_capability
   ADD COLUMN IF NOT EXISTS solapi_validation_status     TEXT
-    CHECK (solapi_validation_status IN ('none','pending','verified','failed'))
-    DEFAULT 'none',
+    CHECK (solapi_validation_status IN ('unchecked','pending','verified','not_registered','api_unreachable'))
+    DEFAULT 'unchecked',
   ADD COLUMN IF NOT EXISTS solapi_validation_request_id TEXT;
 
 COMMENT ON COLUMN public.clinic_messaging_capability.solapi_validation_status IS
-  'none | pending | verified | failed — Solapi 발신번호 등록/검증 상태';
+  'unchecked | pending | verified | not_registered | api_unreachable — Solapi 발신번호 등록/검증 상태';
 COMMENT ON COLUMN public.clinic_messaging_capability.solapi_validation_request_id IS
   'Solapi 발신번호 검증 요청 ID (외부 폴링용)';
 
