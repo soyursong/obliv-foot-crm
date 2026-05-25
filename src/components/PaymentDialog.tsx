@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { AmountInput } from '@/components/ui/AmountInput';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
@@ -662,22 +663,18 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
               <>
                 <div className="space-y-2">
                   <Label>카드 금액</Label>
-                  <Input
+                  <AmountInput
                     value={splitCardStr}
-                    onChange={(e) => setSplitCardStr(e.target.value)}
+                    onChange={(raw) => setSplitCardStr(raw)}
                     placeholder="0"
-                    inputMode="numeric"
-                    className="text-right tabular-nums"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>현금 금액</Label>
-                  <Input
+                  <AmountInput
                     value={splitCashStr}
-                    onChange={(e) => setSplitCashStr(e.target.value)}
+                    onChange={(raw) => setSplitCashStr(raw)}
                     placeholder="0"
-                    inputMode="numeric"
-                    className="text-right tabular-nums"
                   />
                 </div>
                 {/* UX-8: 분할결제 합계 + 비율 시각화 */}
@@ -782,12 +779,11 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                 {/* 금액 */}
                 <div className="space-y-2">
                   <Label>금액</Label>
-                  <Input
+                  <AmountInput
                     value={amountStr}
-                    onChange={(e) => setAmountStr(e.target.value)}
+                    onChange={(raw) => setAmountStr(raw)}
                     placeholder="0"
-                    inputMode="numeric"
-                    className="text-right text-lg tabular-nums"
+                    className="text-lg"
                     autoFocus
                   />
                 </div>
@@ -860,22 +856,20 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
                     <Label className="text-[11px] text-muted-foreground">과세 금액</Label>
-                    <Input
+                    <AmountInput
                       value={taxableAmountStr}
-                      onChange={(e) => setTaxableAmountStr(e.target.value)}
+                      onChange={(raw) => setTaxableAmountStr(raw)}
                       placeholder="0"
-                      inputMode="numeric"
-                      className="text-right tabular-nums h-8 text-xs"
+                      className="h-8 text-xs"
                     />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[11px] text-muted-foreground">비과세(면세) 금액</Label>
-                    <Input
+                    <AmountInput
                       value={taxExemptAmountStr}
-                      onChange={(e) => setTaxExemptAmountStr(e.target.value)}
+                      onChange={(raw) => setTaxExemptAmountStr(raw)}
                       placeholder="0"
-                      inputMode="numeric"
-                      className="text-right tabular-nums h-8 text-xs"
+                      className="h-8 text-xs"
                     />
                   </div>
                 </div>

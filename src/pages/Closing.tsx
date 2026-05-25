@@ -28,6 +28,7 @@ import type { CheckIn, CheckInStatus, Clinic, Staff, VisitType } from '@/lib/typ
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { AmountInput } from '@/components/ui/AmountInput';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
@@ -1783,12 +1784,10 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>결제금액 <span className="text-destructive">*</span></Label>
-              <Input
-                type="number"
+              <AmountInput
                 placeholder="0"
                 value={amount}
-                onChange={e => setAmount(e.target.value)}
-                className="text-right tabular-nums"
+                onChange={(raw) => setAmount(raw)}
               />
             </div>
             <div className="space-y-1">
@@ -2016,10 +2015,9 @@ function ClosingRefundDialog({ open, row, clinicId, onClose, onSuccess }: Closin
           {!isPackage && (
             <div className="space-y-1">
               <Label>환불금액 <span className="text-destructive">*</span></Label>
-              <Input
-                inputMode="numeric"
+              <AmountInput
                 value={refundAmountStr}
-                onChange={e => setRefundAmountStr(e.target.value.replace(/[^\d]/g, ''))}
+                onChange={(raw) => setRefundAmountStr(raw)}
                 placeholder={String(row.amount)}
               />
               <p className="text-[11px] text-muted-foreground">최대 {formatAmount(row.amount)}</p>
@@ -2103,12 +2101,10 @@ function ReconRow({
         </span>
       </div>
       <div className="flex items-center gap-2">
-        <Input
-          type="number"
+        <AmountInput
           value={actual}
-          onChange={e => onChange(Number(e.target.value) || 0)}
+          onChange={(raw) => onChange(Number(raw) || 0)}
           disabled={disabled}
-          className="text-right tabular-nums"
         />
         <div className={
           'w-28 shrink-0 text-right text-sm tabular-nums ' +

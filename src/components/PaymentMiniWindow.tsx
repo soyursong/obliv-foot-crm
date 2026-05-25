@@ -44,6 +44,8 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { formatAmount } from '@/lib/format';
+// T-20260525-foot-AMOUNT-COMMA-FMT: 수가 인라인 편집 쉼표 포맷팅
+import { formatAmountDisplay, parseAmountRaw } from '@/components/ui/AmountInput';
 import type { CheckIn, Service } from '@/lib/types';
 import {
   FALLBACK_TEMPLATES,
@@ -1059,7 +1061,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   // ── 인라인 금액 편집 ────────────────────────────────────────────────────
   const startEditPrice = (serviceId: string, currentPrice: number) => {
     setEditingPriceId(serviceId);
-    setEditingPriceValue(String(currentPrice));
+    // T-20260525-foot-AMOUNT-COMMA-FMT AC-1: 편집 시작 시 천 단위 쉼표 포맷팅
+    setEditingPriceValue(formatAmountDisplay(currentPrice));
   };
 
   const commitEditPrice = (serviceId: string) => {
@@ -1880,7 +1883,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                         onTogglePrepaid={togglePrepaid}
                         onStartEditPrice={startEditPrice}
                         onCommitEditPrice={commitEditPrice}
-                        onEditValueChange={setEditingPriceValue}
+                        // T-20260525-foot-AMOUNT-COMMA-FMT AC-1,AC-3: 타이핑/붙여넣기 시 쉼표 자동 포맷
+                        onEditValueChange={(v) => setEditingPriceValue(formatAmountDisplay(parseAmountRaw(v)))}
                         onEscapeEdit={() => setEditingPriceId(null)}
                         onRemove={handleRemoveItem}
                         onReorder={handleReorderPricingItem}

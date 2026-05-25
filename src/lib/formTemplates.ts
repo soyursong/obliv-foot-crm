@@ -840,6 +840,12 @@ export const MARKETING_FORM_KEYS: ReadonlyArray<string> = [
 
 /**
  * 보험서류 fallback 템플릿 (DB 미세팅 시 사용)
+ *
+ * T-20260525-foot-INS-FIELD-BIND: field_map 완전성 보장
+ *   AC-1: diag_code_1/diag_name_1/diag_code_2/diag_name_2 — DOC-CODE-INSERT 동일 메커니즘
+ *   AC-2: patient_rrn(주민등록번호) + patient_address(주소) 명시 포함
+ *
+ * DB 동기화는 20260525060000_ins_claim_form_field_bind_fix.sql 참조.
  */
 export const INSURANCE_FALLBACK_TEMPLATES: FormTemplate[] = [
   {
