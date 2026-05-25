@@ -43,6 +43,7 @@ import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { AmountInput } from '@/components/ui/AmountInput';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -54,7 +55,7 @@ import {
 } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { formatAmount, parseAmount } from '@/lib/format';
+import { formatAmount } from '@/lib/format';
 import type { CheckIn } from '@/lib/types';
 import { useDutyDoctors, type DutyDoctor } from '@/hooks/useDutyRoster';
 import {
@@ -600,30 +601,47 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
       const autoValues = await loadAutoBindContext(checkIn, resolvedDoctorName);
       const isFallback = templates[0]?.id.startsWith('fallback-');
 
-      // T-20260520-foot-PRINT-FORM-BIND: bill_detail/rx_standard 항목 로딩 (배치출력용)
-      const needsItems = selectedTemplates.some(
-        (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard',
-      );
-      if (needsItems) {
-        // T-20260524-foot-INS-DOC-COPAY-LINK: copayment_amount 추가 → bill_detail 본인부담 열
-        const { data: chargeItems } = await supabase
-          .from('service_charges')
-          .select('id, base_amount, copayment_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code)')
-          .eq('check_in_id', checkIn.id);
+      // T-20260525-foot-INS-FIELD-BIND AC-3: service_charges 전건 로딩 (배치출력용)
+      // - bill_detail/rx_standard items_html 주입 (기존)
+      // - 상병코드(category_label='상병') → diag_code_N/diag_name_N 주입 (신규)
+      // T-20260524-foot-INS-DOC-COPAY-LINK: copayment_amount 포함
+      const { data: chargeItems } = await supabase
+        .from('service_charges')
+        .select('id, base_amount, copayment_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code, category_label)')
+        .eq('check_in_id', checkIn.id);
 
-        if (chargeItems && chargeItems.length > 0) {
-          const mappedItems = chargeItems.map((c) => {
-            const svc = Array.isArray(c.service) ? c.service[0] : c.service;
-            return {
-              id: c.id as string,
-              service_code: (svc as { service_code?: string | null } | null)?.service_code ?? null,
-              name: (svc as { name?: string } | null)?.name ?? '(알 수 없음)',
-              amount: (c.base_amount as number) ?? 0,
-              copayment_amount: (c.copayment_amount as number | null) ?? null,
-              hira_code: (svc as { hira_code?: string | null } | null)?.hira_code ?? null,
-              is_insurance_covered: (c.is_insurance_covered as boolean) ?? false,
-            };
+      if (chargeItems && chargeItems.length > 0) {
+        const mappedItems = chargeItems.map((c) => {
+          const svc = Array.isArray(c.service) ? c.service[0] : c.service;
+          return {
+            id: c.id as string,
+            service_code: (svc as { service_code?: string | null } | null)?.service_code ?? null,
+            name: (svc as { name?: string } | null)?.name ?? '(알 수 없음)',
+            amount: (c.base_amount as number) ?? 0,
+            copayment_amount: (c.copayment_amount as number | null) ?? null,
+            hira_code: (svc as { hira_code?: string | null } | null)?.hira_code ?? null,
+            is_insurance_covered: (c.is_insurance_covered as boolean) ?? false,
+            category_label: (svc as { category_label?: string | null } | null)?.category_label ?? null,
+          };
+        });
+
+        // T-20260525-foot-INS-FIELD-BIND AC-3: 상병코드 주입 — service_charges 상병 항목 우선
+        const diagBatchItems = mappedItems.filter((i) => i.category_label === '상병');
+        if (diagBatchItems.length > 0) {
+          delete autoValues.diag_code_1; delete autoValues.diag_name_1;
+          delete autoValues.diag_code_2; delete autoValues.diag_name_2;
+          diagBatchItems.forEach((item, idx) => {
+            const n = idx + 1;
+            autoValues[`diag_code_${n}`] = item.service_code ?? '';
+            autoValues[`diag_name_${n}`] = item.name;
           });
+        }
+
+        // T-20260520-foot-PRINT-FORM-BIND: bill_detail/rx_standard 항목 주입 (기존)
+        const needsItems = selectedTemplates.some(
+          (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard',
+        );
+        if (needsItems) {
           const billItems = mappedItems.map((item) => ({
             category: item.is_insurance_covered ? '이학요법료' : '기타',
             date: autoValues.visit_date ?? '',
@@ -652,7 +670,13 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
           autoValues.subtotal_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
           autoValues.total_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
           autoValues.subtotal_amount = autoValues.total_amount;
-        } else {
+        }
+      } else {
+        // chargeItems 없을 때: bill_detail/rx_standard 빈 rows 처리
+        const needsItems = selectedTemplates.some(
+          (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard',
+        );
+        if (needsItems) {
           autoValues.items_html = buildBillDetailItemsHtml([]);
           autoValues.rx_items_html = buildRxItemsHtml([]);
         }
@@ -1266,6 +1290,8 @@ interface ServiceChargeItem {
   copayment_amount?: number | null;
   hira_code: string | null;
   is_insurance_covered: boolean;
+  // T-20260525-foot-INS-FIELD-BIND: 상병코드 식별용 (category_label='상병')
+  category_label: string | null;
 }
 
 function IssueDialog({
@@ -1321,23 +1347,25 @@ function IssueDialog({
   const [rxItemDosages, setRxItemDosages] = useState<Record<string, { unit_dose: string; daily_freq: string; total_days: string }>>({});
 
   // T-20260513-foot-BILLING-DETAIL-EDIT: service_charges 새로고침 공통 헬퍼
+  // T-20260525-foot-INS-FIELD-BIND: category_label 추가 — 상병코드 식별용
   const refreshServiceItems = useCallback(async () => {
     const { data } = await supabase
       .from('service_charges')
       // T-20260524-foot-INS-DOC-COPAY-LINK: copayment_amount 추가 → IssueDialog 세부내역서 본인부담 열
-      .select('id, base_amount, copayment_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code)')
+      .select('id, base_amount, copayment_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code, category_label)')
       .eq('check_in_id', checkIn.id);
     if (!data) return;
     setServiceItems(data.map((c) => {
       const svc = Array.isArray(c.service) ? c.service[0] : c.service;
       return {
         id: c.id,
-        service_code: svc?.service_code ?? null,
-        name: svc?.name ?? '(알 수 없음)',
+        service_code: (svc as { service_code?: string | null } | null)?.service_code ?? null,
+        name: (svc as { name?: string } | null)?.name ?? '(알 수 없음)',
         amount: c.base_amount ?? 0,
         copayment_amount: (c.copayment_amount as number | null) ?? null,
-        hira_code: svc?.hira_code ?? null,
+        hira_code: (svc as { hira_code?: string | null } | null)?.hira_code ?? null,
         is_insurance_covered: c.is_insurance_covered ?? false,
+        category_label: (svc as { category_label?: string | null } | null)?.category_label ?? null,
       };
     }));
   }, [checkIn.id]);
@@ -1347,9 +1375,10 @@ function IssueDialog({
     let cancelled = false;
 
     // 서비스 항목 조회 (service_charges JOIN services — T-20260507-SERVICE-CATALOG-SEED Phase 3)
+    // T-20260525-foot-INS-FIELD-BIND: category_label 추가 — 상병코드 식별 후 diag_code_N 주입
     supabase
       .from('service_charges')
-      .select('id, base_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code)')
+      .select('id, base_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code, category_label)')
       .eq('check_in_id', checkIn.id)
       .then(({ data }) => {
         if (cancelled || !data) return;
@@ -1357,11 +1386,12 @@ function IssueDialog({
           const svc = Array.isArray(c.service) ? c.service[0] : c.service;
           return {
             id: c.id,
-            service_code: svc?.service_code ?? null,
-            name: svc?.name ?? '(알 수 없음)',
+            service_code: (svc as { service_code?: string | null } | null)?.service_code ?? null,
+            name: (svc as { name?: string } | null)?.name ?? '(알 수 없음)',
             amount: c.base_amount ?? 0,
-            hira_code: svc?.hira_code ?? null,
+            hira_code: (svc as { hira_code?: string | null } | null)?.hira_code ?? null,
             is_insurance_covered: c.is_insurance_covered ?? false,
+            category_label: (svc as { category_label?: string | null } | null)?.category_label ?? null,
           };
         });
         setServiceItems(items);
@@ -1543,6 +1573,22 @@ function IssueDialog({
       base.rx_items_html = buildRxItemsHtml(rxItems);
       if (!base.usage_days) base.usage_days = '7';
       if (!base.issue_no) base.issue_no = checkIn.id.slice(0, 5).toUpperCase();
+    }
+
+    // T-20260525-foot-INS-FIELD-BIND AC-3: 상병코드 주입 — service_charges 상병 항목 우선
+    // loadAutoBindContext의 medical_charts 기반 diag_code보다 service_charges가 더 신뢰성 높음
+    // PaymentMiniWindow의 buildCodeEnrichedValues와 동일 로직 (단, serviceItems는 이미 로드된 상태)
+    const diagChargeItems = serviceItems.filter((i) => i.category_label === '상병');
+    if (diagChargeItems.length > 0) {
+      // 기존 medical_charts 기반 값을 service_charges 상병 항목으로 덮어씀
+      // 먼저 기존 diag_code_N 키 초기화 (regression 방지)
+      delete base.diag_code_1; delete base.diag_name_1;
+      delete base.diag_code_2; delete base.diag_name_2;
+      diagChargeItems.forEach((item, idx) => {
+        const n = idx + 1;
+        base[`diag_code_${n}`] = item.service_code ?? '';
+        base[`diag_name_${n}`] = item.name;
+      });
     }
 
     // 등록번호/연번호 기본값 (없으면 checkIn.id 앞 8자)
@@ -1790,10 +1836,9 @@ function IssueDialog({
                             )}
                             <span className="truncate text-foreground shrink-0">{item.name}</span>
                           </div>
-                          <Input
+                          <AmountInput
                             value={editingAmountStr}
-                            onChange={(e) => setEditingAmountStr(e.target.value)}
-                            inputMode="numeric"
+                            onChange={(raw) => setEditingAmountStr(raw)}
                             placeholder="금액"
                             className="h-6 text-xs w-28 shrink-0"
                             onKeyDown={(e) => {
@@ -2425,20 +2470,18 @@ function InvoiceDialog({
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label className="text-xs">급여 (공단+본인)</Label>
-              <Input
-                value={formatAmount(insuranceCovered)}
-                onChange={(e) => setInsuranceCovered(parseAmount(e.target.value))}
-                inputMode="numeric"
+              <AmountInput
+                value={insuranceCovered}
+                onChange={(raw) => setInsuranceCovered(Number(raw) || 0)}
                 placeholder="0"
                 className="text-sm mt-1"
               />
             </div>
             <div>
               <Label className="text-xs">비급여</Label>
-              <Input
-                value={formatAmount(nonCovered)}
-                onChange={(e) => setNonCovered(parseAmount(e.target.value))}
-                inputMode="numeric"
+              <AmountInput
+                value={nonCovered}
+                onChange={(raw) => setNonCovered(Number(raw) || 0)}
                 placeholder="0"
                 className="text-sm mt-1"
               />
@@ -2447,10 +2490,9 @@ function InvoiceDialog({
 
           <div>
             <Label className="text-xs">실제 납부액 <span className="text-red-500">*</span></Label>
-            <Input
-              value={formatAmount(paidAmount)}
-              onChange={(e) => setPaidAmount(parseAmount(e.target.value))}
-              inputMode="numeric"
+            <AmountInput
+              value={paidAmount}
+              onChange={(raw) => setPaidAmount(Number(raw) || 0)}
               placeholder="0"
               className="text-sm mt-1 font-semibold"
             />
