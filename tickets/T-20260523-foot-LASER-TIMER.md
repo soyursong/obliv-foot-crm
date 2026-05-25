@@ -11,7 +11,9 @@ db_migration: null
 regression_risk: low
 reporter: 김주연 총괄 (U0ATDB587PV)
 created_at: 2026-05-23
+fix_applied_at: 2026-05-25
 deployed_at: null
+fix_request: FIX-20260525 AC-1 위치이동 — MedicalChartPanel Drawer → CustomerChartPage 2번차트 3구역 [상세] 탭 상단
 ---
 
 # T-20260523-foot-LASER-TIMER — 비가열 레이저 타이머 보강
