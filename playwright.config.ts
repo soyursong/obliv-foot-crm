@@ -54,6 +54,8 @@ export default defineConfig({
         '**/T-20260525-foot-PENCHART-FORM-BLACK.spec.ts',
         // T-20260525-foot-CLOSING-CALC-BUG: 일마감 합계 불일치 + 탭 hash persist — 정적 소스 검증
         '**/T-20260525-foot-CLOSING-CALC-BUG.spec.ts',
+        // T-20260525-foot-ROLE-PERM-CUSTOM: consultant messaging 권한 + 제외 3종 검증
+        '**/T-20260525-foot-ROLE-PERM-CUSTOM.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

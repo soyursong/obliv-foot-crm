@@ -111,8 +111,9 @@ const NAV_ITEMS: {
   // AC-6: 매출집계 미노출 유지
   { to: '/admin/sales', label: '매출집계', icon: TrendingUp, roles: ['admin', 'manager'] },
   { to: '/admin/accounts', label: '계정관리', icon: ShieldCheck, roles: ['admin'] },
-  // T-20260525-foot-MESSAGING-V1 AC-3: 메시지 설정 (admin/manager/director 전용)
-  { to: '/admin/settings', label: '메시지 설정', icon: MessageSquare, roles: ['admin', 'manager', 'director'] },
+  // T-20260525-foot-MESSAGING-V1 AC-3: 메시지 설정
+  // T-20260525-foot-ROLE-PERM-CUSTOM A안: consultant 추가 (통계·매출집계·계정관리 외 전권한)
+  { to: '/admin/settings', label: '메시지 설정', icon: MessageSquare, roles: ['admin', 'manager', 'director', 'consultant'] },
 ];
 
 export default function AdminLayout() {
