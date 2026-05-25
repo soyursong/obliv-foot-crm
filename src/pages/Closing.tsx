@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { toast } from '@/lib/toast';
@@ -204,13 +204,35 @@ function visitTypeLabel(vt: string | null): string {
 
 export default function Closing() {
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
   // T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 뷰 전용
   // 임시저장·마감 확정·재오픈·수기수정 버튼은 admin/manager만 표시
   const { profile } = useAuth();
   const isAdminOrManager = profile?.role === 'admin' || profile?.role === 'manager';
 
-  const [tab, setTab] = useState<'summary' | 'payments'>('summary');
+  // T-20260525-foot-CLOSING-CALC-BUG AC-1: 탭 상태를 URL hash로 persist
+  // 브라우저 새로고침(F5) 시 현재 탭(summary/payments) 유지
+  // hash: #payments → "payments" 탭, 그 외 → "summary" 탭 (기본값)
+  const tabFromHash = (): 'summary' | 'payments' =>
+    location.hash === '#payments' ? 'payments' : 'summary';
+  const [tab, setTab] = useState<'summary' | 'payments'>(tabFromHash);
+
+  // hash 변경 시(브라우저 앞/뒤 네비게이션) 탭 동기화
+  useEffect(() => {
+    setTab(tabFromHash());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.hash]);
+
+  // 탭 전환 핸들러: URL hash 업데이트 + 상태 반영
+  const handleTabChange = (v: string) => {
+    const next = v as 'summary' | 'payments';
+    setTab(next);
+    navigate(
+      { hash: next === 'payments' ? '#payments' : '' },
+      { replace: true },
+    );
+  };
   const [date, setDate] = useState(todayStr());
   const [actualCard, setActualCard] = useState(0);
   const [actualCash, setActualCash] = useState(0);
@@ -1016,7 +1038,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
         </div>
       </div>
 
-      <Tabs value={tab} onValueChange={v => setTab(v as 'summary' | 'payments')}>
+      <Tabs value={tab} onValueChange={handleTabChange}>
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="summary" className="flex-1 sm:flex-none">
             총 합계

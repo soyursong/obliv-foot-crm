@@ -138,3 +138,66 @@ test.describe('T-20260525-CLOSING-CALC-BUG — 환불 이중 차감 수정', () 
     expect(netTransfer).toBeGreaterThanOrEqual(0);
   });
 });
+
+// ─── AC-1: URL hash 탭 유지 (소스 정적 검증) ──────────────────────────────────
+// T-20260525-foot-CLOSING-CALC-BUG AC-1: 탭 상태 URL hash persist 소스 검증
+test.describe('T-20260525-CLOSING-CALC-BUG AC-1 — 탭 상태 URL hash 유지', () => {
+
+  test('AC-1: Closing.tsx에 useLocation + hash 기반 탭 상태 구현 확인', () => {
+    const fs = require('fs');
+    const src: string = fs.readFileSync('src/pages/Closing.tsx', 'utf-8');
+
+    // useLocation import 확인
+    expect(src).toContain('useLocation');
+
+    // hash 기반 탭 초기값 로직
+    expect(src).toContain('location.hash');
+    expect(src).toContain('#payments');
+
+    // handleTabChange에서 navigate로 hash 업데이트
+    expect(src).toContain('handleTabChange');
+    expect(src).toContain("navigate(");
+    expect(src).toContain("replace: true");
+  });
+
+  test('AC-1: Tabs onValueChange가 handleTabChange를 사용하는지 확인', () => {
+    const fs = require('fs');
+    const src: string = fs.readFileSync('src/pages/Closing.tsx', 'utf-8');
+
+    // Tabs 컴포넌트가 setTab 직접 호출 대신 handleTabChange 사용
+    const tabsLineIdx = src.indexOf('<Tabs value={tab}');
+    expect(tabsLineIdx).toBeGreaterThan(0);
+    const tabsLine = src.slice(tabsLineIdx, tabsLineIdx + 100);
+    expect(tabsLine).toContain('handleTabChange');
+    expect(tabsLine).not.toContain('setTab'); // 직접 setTab 호출 없음
+  });
+
+  test('AC-1: location.hash 변경 시 탭 동기화 useEffect 존재', () => {
+    const fs = require('fs');
+    const src: string = fs.readFileSync('src/pages/Closing.tsx', 'utf-8');
+
+    // hash 변경(브라우저 앞/뒤 네비게이션) 시 탭 동기화 effect
+    expect(src).toContain('location.hash');
+    expect(src).toContain('setTab(tabFromHash())');
+  });
+
+  test('AC-2: Realtime 구독 — payments/pkg_payments/manual 3채널 설정 확인', () => {
+    const fs = require('fs');
+    const src: string = fs.readFileSync('src/pages/Closing.tsx', 'utf-8');
+
+    // Realtime channel 설정
+    expect(src).toContain("supabase.channel(`closing-");
+    expect(src).toContain("table: 'payments'");
+    expect(src).toContain("table: 'package_payments'");
+    expect(src).toContain("table: 'closing_manual_payments'");
+
+    // invalidateQueries 콜백 — 쿼리 캐시 무효화 → 자동 refetch
+    expect(src).toContain("qc.invalidateQueries");
+    expect(src).toContain("closing-payments");
+    expect(src).toContain("closing-pkg-payments");
+    expect(src).toContain("closing-manual");
+
+    // cleanup: supabase.removeChannel
+    expect(src).toContain('supabase.removeChannel(channel)');
+  });
+});
