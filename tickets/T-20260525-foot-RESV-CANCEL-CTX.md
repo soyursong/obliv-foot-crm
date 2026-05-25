@@ -1,12 +1,21 @@
 ---
 id: T-20260525-foot-RESV-CANCEL-CTX
 domain: foot
-status: deploy-ready
+status: deployed
 deploy-ready: true
 build-passed: true
 db-change: true
 e2e-spec: true
 summary: "예약 취소 컨텍스트메뉴 경로 완료. 대시보드 우클릭+모달 연결(handleReservationContext+handleDashCancelConfirm). 예약관리 CustomerQuickMenu onCancelReservation 연결. DB: reservations.cancelled_by 마이그레이션 포함. 빌드 3.16s OK."
+qa_result: pass
+qa_grade: Yellow
+deployed_at: "2026-05-25T09:25:00+09:00"
+deploy_commit: 201e940cd09fa480179a74da5b7026c42ebbee0e
+bundle_hash: BM7F__CL
+field_soak_until: "2026-05-26T09:25:00+09:00"
+precheck_pass: true
+precheck_at: "2026-05-25T09:25:00+09:00"
+field_validation_slack_ts: "1779668842.676929"
 ---
 
 ## T-20260525-foot-RESV-CANCEL-CTX — 예약 취소 컨텍스트메뉴 경로
