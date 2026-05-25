@@ -1,13 +1,18 @@
 ---
 id: T-20260525-foot-RESV-CANCEL-ANYDATE
 domain: foot
-status: deploy-ready
+status: deployed
 deploy-ready: true
 build-passed: true
 db-change: false
 e2e-spec: true
 summary: "예약관리 전일자 취소 허용. resv-card 외부 div에 onContextMenu 추가 → 이름 span 외 영역 우클릭도 취소메뉴 접근 가능. isToday 제한 없음 코드 분석 확인. 빌드 3.30s OK."
-qa_result: pending
+qa_result: pass
+qa_grade: Yellow
+deploy_commit: 2a2d3dd
+deployed_at: 2026-05-26T05:39:00+09:00
+bundle_hash: Reservations-CAU9yxco.js
+field_soak_until: 2026-05-27T05:39:00+09:00
 ---
 
 ## T-20260525-foot-RESV-CANCEL-ANYDATE — 예약관리 전일자 예약 취소 허용
