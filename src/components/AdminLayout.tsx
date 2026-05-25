@@ -94,8 +94,8 @@ const NAV_ITEMS: {
   // T-20260520-foot-RBAC-MENU-EXPAND: consultant/coordinator/therapist 메뉴 권한 확장
   // AC-4: therapist → 패키지 신규 접근
   { to: '/admin/packages', label: '패키지', icon: Package, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
-  // AC-2: consultant/coordinator → 진료도구 신규 접근
-  { to: '/admin/doctor-tools', label: '진료 도구', icon: BookOpen, roles: ['admin', 'manager', 'consultant', 'coordinator'] },
+  // AC-2: consultant/coordinator/therapist → 진료도구 접근 (T-20260525-foot-ROLE-PERM-CUSTOM 3차: therapist 추가)
+  { to: '/admin/doctor-tools', label: '진료 도구', icon: BookOpen, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
   // AC-1: 3역할 → 서비스관리 접근 (뷰 전용; WRITE=admin만)
   { to: '/admin/services', label: '서비스관리', icon: Stethoscope, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
   // AC-1: 3역할 → 직원·공간관리 접근
@@ -112,8 +112,8 @@ const NAV_ITEMS: {
   { to: '/admin/sales', label: '매출집계', icon: TrendingUp, roles: ['admin', 'manager'] },
   { to: '/admin/accounts', label: '계정관리', icon: ShieldCheck, roles: ['admin'] },
   // T-20260525-foot-MESSAGING-V1 AC-3: 메시지 설정
-  // T-20260525-foot-ROLE-PERM-CUSTOM A안: consultant 추가 (통계·매출집계·계정관리 외 전권한)
-  { to: '/admin/settings', label: '메시지 설정', icon: MessageSquare, roles: ['admin', 'manager', 'director', 'consultant'] },
+  // T-20260525-foot-ROLE-PERM-CUSTOM 3차: 통계·매출집계·계정관리 외 전권한 → coordinator/therapist 추가
+  { to: '/admin/settings', label: '메시지 설정', icon: MessageSquare, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'] },
 ];
 
 export default function AdminLayout() {

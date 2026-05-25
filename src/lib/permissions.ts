@@ -28,7 +28,7 @@ const PERM_MATRIX: Record<PermKey, UserRole[]> = {
   closing:      ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead'],
   stats:        ['admin', 'manager', 'director', 'part_lead'],
   register:     ['admin', 'manager'],
-  messaging:    ['admin', 'manager', 'director', 'consultant'],  // T-20260525-foot-MESSAGING-V1 + T-20260525-foot-ROLE-PERM-CUSTOM
+  messaging:    ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'],  // T-20260525-foot-MESSAGING-V1 + T-20260525-foot-ROLE-PERM-CUSTOM 3차: coordinator/therapist 추가
 };
 
 export function canAccess(role: UserRole, key: PermKey): boolean {
