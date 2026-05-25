@@ -2823,3 +2823,6 @@ ref: T-20260512-foot-TREATMENT-SET
 
 | 2026-05-26 13:56 KST | supervisor | qa-fail (phase2) | T-20260523-foot-ROOM-DISABLE-TOGGLE: spec_fail_new — AC-8 날짜팝오버 2차클릭 미처리. FIX-REQUEST MSG-20260526-045632-0kyw dev-foot 발송. 7/8 pass, 시나리오6 fail |
 
+| 2026-05-26T05:20:00+09:00 | supervisor | qa-pass + deployed | T-20260525-foot-DUMMY-DATA-GEN: 5/26 초진/재진 72건 DB 확인(9슬롯×4+4), 빌드 pass, bundle HoPBsC38, GO-Yellow |
+
+| 2026-05-26T현재 | dev-foot | deploy-ready | T-20260525-foot-DOC-AUTOBIND-REGRESS (P2): 서류 자동 바인딩 회귀 수정 완료. AC-1 회귀 원인 조사 ✅(PRINT-FORM-BIND→INS-FIELD-BIND 연쇄 수정 확인, IssueDialog copayment_amount 누락 잔류 수정). AC-2 고객정보 전건 ✅(IssueDialog useEffect service_charges+copayment_amount 동기화). AC-3 상병코드 전건 ✅(6efe66e INS-FIELD-BIND 동일 범위 커버 확인). AC-4 처방전 상병코드 제외 ✅(rxServiceItems.filter category_label!=='상병'). AC-5 빌드 3.21s OK ✅. E2E spec 71TC 전통과(T-20260525-foot-DOC-AUTOBIND-REGRESS.spec.ts). DB변경: 없음. commit d56421c. supervisor QA 대기. |
