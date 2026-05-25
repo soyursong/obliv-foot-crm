@@ -2826,3 +2826,9 @@ ref: T-20260512-foot-TREATMENT-SET
 | 2026-05-26T05:20:00+09:00 | supervisor | qa-pass + deployed | T-20260525-foot-DUMMY-DATA-GEN: 5/26 초진/재진 72건 DB 확인(9슬롯×4+4), 빌드 pass, bundle HoPBsC38, GO-Yellow |
 
 | 2026-05-26T현재 | dev-foot | deploy-ready | T-20260525-foot-DOC-AUTOBIND-REGRESS (P2): 서류 자동 바인딩 회귀 수정 완료. AC-1 회귀 원인 조사 ✅(PRINT-FORM-BIND→INS-FIELD-BIND 연쇄 수정 확인, IssueDialog copayment_amount 누락 잔류 수정). AC-2 고객정보 전건 ✅(IssueDialog useEffect service_charges+copayment_amount 동기화). AC-3 상병코드 전건 ✅(6efe66e INS-FIELD-BIND 동일 범위 커버 확인). AC-4 처방전 상병코드 제외 ✅(rxServiceItems.filter category_label!=='상병'). AC-5 빌드 3.21s OK ✅. E2E spec 71TC 전통과(T-20260525-foot-DOC-AUTOBIND-REGRESS.spec.ts). DB변경: 없음. commit d56421c. supervisor QA 대기. |
+
+| 2026-05-26T05:28:27+09:00 | supervisor | qa-pass + deployed | T-20260525-foot-AMOUNT-COMMA: AmountInput 천단위 쉼표. 빌드 3.32s PASS. 단위5/5+E2E AC-4 수가입력 실브라우저 PASS. 프로덕션 bundle index-DADVknzR.js ko-KR/formatAmountDisplay 매치. GO-Green |
+
+| 2026-05-26T14:50:00+09:00 | supervisor | qa-pass + deployed | T-20260525-foot-DOC-AUTOBIND-REGRESS (P2): Yellow PASS. 빌드 3.58s OK. 서류 자동 바인딩 회귀 수정 — IssueDialog useEffect copayment_amount 추가(AC-2), rxServiceItems 상병코드 필터(AC-4), AC-3 INS-FIELD-BIND(6efe66e) 확인. Runtime Safety OK(serviceItems=useState([])). env 신규 없음. 운영 bundle index-DADVknzR.js(AMOUNT-COMMA 배포 이후 빌드, d56421c 포함). E2E 71/71 PASS(AC-1~4 전케이스). GO-Yellow. field_soak_until: 2026-05-27T14:50:00+09:00. |
+
+| 2026-05-26T05:55:00+09:00 | supervisor | qa-pass + deployed | T-20260525-foot-CLOSING-NAV-BUG (P2): Green PASS. 빌드 3.22s OK. 일마감 결제내역 탭 유지(URL hash #payments + tabFromHash lazy init) + 실시간 갱신(3채널 realtime) + 스크롤 보존(useLayoutEffect+paymentsTableRef). Runtime Safety OK(payments/pkgPayments/manualEntries=[] default, el null guard). env 신규 없음. E2E 9/11 PASS(2 auth-skip by design). Browser: 로그인 리다이렉트 정상(no white screen). commit 1635727. GO-Green. field_soak_until: 2026-05-27T05:55:00+09:00. |
