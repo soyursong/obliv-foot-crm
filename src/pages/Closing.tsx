@@ -976,7 +976,7 @@ ${enrichedRows.length ? `<tfoot><tr><td colspan="7">합계</td><td class="num">$
 <tbody>
 <tr><td>패키지구매</td><td class="num">${fmt(totals.pkgCardGross)}</td><td class="num">${fmt(totals.pkgCashGross)}</td><td class="num">${fmt(totals.pkgTransferGross)}</td><td class="num">0</td><td class="num">${fmt(totals.pkgCard + totals.pkgCash + totals.pkgTransfer)}</td></tr>
 <tr><td>단건</td><td class="num">${fmt(totals.singleCardGross)}</td><td class="num">${fmt(totals.singleCashGross)}</td><td class="num">${fmt(totals.singleTransferGross)}</td><td class="num">${fmt(totals.singleMembership)}</td><td class="num">${fmt(totals.singleCard + totals.singleCash + totals.singleTransfer)}</td></tr>
-${totals.refundAmount > 0 ? `<tr><td>환불 차감</td><td class="num" style="color:#b91c1c">-${fmt(totals.refundAmount)}</td><td></td><td></td><td></td><td class="num" style="color:#b91c1c">-${fmt(totals.refundAmount)}</td></tr>` : ''}
+${totals.refundAmount > 0 ? `<tr><td>환불</td><td class="num" style="color:#b91c1c">-${fmt(totals.refundAmount)}</td><td></td><td></td><td></td><td class="num" style="color:#b91c1c">-${fmt(totals.refundAmount)}</td></tr>` : ''}
 <tr class="total"><td>합계(멤버십제외,환불차감)</td><td class="num">${fmt(totals.totalCard)}</td><td class="num">${fmt(totals.totalCash)}</td><td class="num">${fmt(totals.totalTransfer)}</td><td class="num">${fmt(totals.singleMembership)}</td><td class="num">${fmt(totals.grossTotal)}</td></tr>
 </tbody>
 </table>
@@ -1213,7 +1213,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                   ? [['수기결제 포함', totals.manualTotal] as [string, number]]
                   : []),
                 ...(totals.refundAmount > 0
-                  ? [['환불 차감', -totals.refundAmount] as [string, number]]
+                  ? [['환불', -totals.refundAmount] as [string, number]]
                   : []),
               ]}
               total={totals.grossTotal}
