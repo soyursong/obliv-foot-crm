@@ -2,7 +2,7 @@
 id: T-20260525-foot-DUMMY-TEST-DATA-V2
 domain: foot
 priority: P1
-status: deploy-ready
+status: deployed
 deploy_ready: true
 db_change: true
 rollback_sql: scripts/rollback_testdata_20260525.mjs
@@ -15,6 +15,12 @@ assignee: dev-foot
 e2e_spec_exempt_reason: db_only
 risk_verdict: GO
 risk_reason: "INSERT only, 더미 데이터(롤백 SQL 포함). 스키마 변경 없음. V1(5/22) 전화번호 범위와 완전 분리."
+qa_result: pass
+qa_grade: Yellow
+deployed_at: 2026-05-25T09:03:37+09:00
+deploy_commit: cbbafd577a3106177ff1262daab51e13bc2ac4b6
+bundle_hash: 0dae4e625e8750be1743dede0f8bdd54
+field_soak_until: 2026-05-26T09:03:37+09:00
 ---
 
 # T-20260525-foot-DUMMY-TEST-DATA-V2 — 풋센터 CRM 5/25 현장 테스트 더미 데이터
