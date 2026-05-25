@@ -9,7 +9,7 @@ db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: ""
-commit_sha: "f0515e7"
+commit_sha: "d19596a"
 qa_result: pass
 qa_grade: Yellow
 deployed_at: "2026-05-24T03:38:39+09:00"
@@ -41,6 +41,9 @@ reopen3_at: "2026-05-24T19:30:00+09:00"
 reopen4_commit_sha: "f0515e7"
 reopen4_reason: "AC-R5 환불동의서 좌표 전수 재보정 — P1 y 46px 수정(155→201,188→236) + P3 날짜 년/월/일 분리 배치"
 reopen4_at: "2026-05-24T20:00:00+09:00"
+reopen5_commit_sha: "d19596a"
+reopen5_reason: "MSG-20260524-111246-xbb9: P1 좌표 최종 정밀 보정(y 199/234 — PIL 밑줄 y=214/249 하단 정렬) + E2E spec 갱신"
+reopen5_at: "2026-05-26T00:00:00+09:00"
 ---
 
 # T-20260523-foot-PENCHART-FORM-AUTOFILL

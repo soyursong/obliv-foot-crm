@@ -2,8 +2,8 @@
 id: T-20260523-foot-ROOM-DISABLE-TOGGLE
 domain: foot
 priority: P2
-status: deploy-ready
-deploy_ready: true
+status: in_progress
+deploy_ready: false
 deploy_ready_at: "2026-05-24 19:30 KST"
 fix_commit: 678633b
 build_status: OK
@@ -14,8 +14,10 @@ db_migration_v2: supabase/migrations/20260524020000_daily_room_status_carry_over
 db_migration_v2_down: supabase/migrations/20260524020000_daily_room_status_carry_over.down.sql
 db_migration_down: supabase/migrations/20260524010000_daily_room_status.down.sql
 e2e_spec: tests/e2e/T-20260523-foot-ROOM-DISABLE-TOGGLE.spec.ts
-qa_result: pending
-qa_grade: pending
+qa_result: fail
+qa_grade: Red
+qa_fail_phase: phase2
+qa_fail_reason: spec_fail_new
 spec_expansion: MSG-20260524-112818-6w1p
 ---
 

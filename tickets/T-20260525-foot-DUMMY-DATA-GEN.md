@@ -5,7 +5,7 @@ priority: P1
 status: deploy-ready
 deploy_ready: true
 db_change: true
-rollback_sql: scripts/rollback_dummy_20260526.mjs
+rollback_sql: scripts/rollback_dummy_20260526.sql
 spec_file: tickets/T-20260525-foot-DUMMY-DATA-GEN.md
 summary: "5/26 초진/재진 시간대별 더미 예약 데이터 72건 생성 (9슬롯 × 초진4+재진4, 2026-05-26)"
 created: 2026-05-25
@@ -112,3 +112,4 @@ node scripts/rollback_dummy_20260526.mjs
 | 2026-05-25 | 스크립트 작성 완료 (seed + rollback) |
 | 2026-05-25 | 실행 완료: customers 72건 + reservations 72건 + check_ins 36건 |
 | 2026-05-25 | AC 검증 통과 (customers 72 ✅, reservations 72 ✅) |
+| 2026-05-26 | 슬롯 수정: 더미_재진_1200_4 10:00→12:00 교정(1건 UPDATE). 모든 슬롯 8건 정합 확인. rollback_dummy_20260526.sql 정적 롤백 파일 추가. 빌드 3.35s OK. |
