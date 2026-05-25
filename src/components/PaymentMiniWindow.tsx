@@ -20,11 +20,14 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { format } from 'date-fns';
 import { toast } from '@/lib/toast';
 import {
+  ArrowDown,
+  ArrowUp,
   Check,
   ChevronRight,
   ChevronDown,
   CreditCard,
   FileText,
+  GripVertical,
   Layers,
   Printer,
   Square,
@@ -59,6 +62,23 @@ import {
   isHtmlTemplate,
 } from '@/lib/htmlFormTemplates';
 import { loadAutoBindContext } from '@/lib/autoBindContext';
+// T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 DnD 재배열 (AC-1, AC-5)
+import {
+  DndContext,
+  closestCenter,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 // ── 세금 구분 ────────────────────────────────────────────────────────────────
 
@@ -206,6 +226,8 @@ interface RxDosage {
 /**
  * T-20260517-foot-DOC-CODE-INSERT: 선택된 상병코드/처방약 코드를 fieldValues에 주입.
  * - 상병코드(category_label='상병') → diag_code_N / diag_name_N (N=1~)
+ *   적용 양식: diagnosis, diag_opinion, treat_confirm, visit_confirm, rx_standard,
+ *             ins_claim_form (T-20260525-foot-INS-FIELD-BIND AC-1) 포함 전 양식
  * - 처방약(category_label='처방약') → rx_items_html (rx_standard 전용)
  * - 상병코드는 rx_standard의 질병분류기호(diag_code_N)에도 동일 주입
  * T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item rxItemDosages 주입으로 하드코딩 1/1/7 해소
@@ -364,6 +386,178 @@ function buildPageHtml(
 // 경로 4 = 1순위 — 공유 loadAutoBindContext(@/lib/autoBindContext.ts) 사용.
 
 // ── Props ────────────────────────────────────────────────────────────────────
+
+// ── T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 정렬 행 ─────────────────────
+// useSortable hook 규칙상 별도 컴포넌트 필요. DnD + ↑↓ 버튼 복합 지원 (AC-1, AC-5).
+
+interface SortablePricingRowProps {
+  service: Service;
+  qty: number;
+  isPrepaid: boolean;
+  displayPrice: number;
+  isEditing: boolean;
+  editingPriceValue: string;
+  pricingIdx: number;
+  pricingLen: number;
+  onTogglePrepaid: (id: string) => void;
+  onStartEditPrice: (id: string, price: number) => void;
+  onCommitEditPrice: (id: string) => void;
+  onEditValueChange: (v: string) => void;
+  onEscapeEdit: () => void;
+  onRemove: (id: string) => void;
+  onReorder: (id: string, dir: 'up' | 'down') => void;
+}
+
+function SortablePricingRow({
+  service,
+  qty,
+  isPrepaid,
+  displayPrice,
+  isEditing,
+  editingPriceValue,
+  pricingIdx,
+  pricingLen,
+  onTogglePrepaid,
+  onStartEditPrice,
+  onCommitEditPrice,
+  onEditValueChange,
+  onEscapeEdit,
+  onRemove,
+  onReorder,
+}: SortablePricingRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: service.id,
+  });
+
+  const taxClass = getTaxClass(service);
+  const taxShort =
+    taxClass === '급여' ? '급여' :
+    taxClass === '비급여(과세)' ? '비급여' : '면세';
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+        zIndex: isDragging ? 10 : undefined,
+      }}
+      className={cn(
+        'flex items-center gap-1 rounded border px-1.5 py-1 text-[11px] transition-colors',
+        isPrepaid
+          ? 'bg-purple-50 border-purple-300'
+          : 'bg-white border-input',
+        isDragging && 'shadow-lg',
+      )}
+    >
+      {/* 드래그 핸들 (AC-1 DnD, AC-5 터치) */}
+      <button
+        {...attributes}
+        {...listeners}
+        className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none p-0.5"
+        title="드래그하여 순서 변경"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <GripVertical className="h-3 w-3" />
+      </button>
+      {/* 선수금 토글 (PREPAID-DEDUCT AC-2) */}
+      <button
+        onClick={() => onTogglePrepaid(service.id)}
+        className={cn(
+          'shrink-0 w-3 h-3 rounded-sm border-2 transition-colors',
+          isPrepaid
+            ? 'bg-purple-600 border-purple-600'
+            : 'border-gray-300 hover:border-purple-400',
+        )}
+        title={isPrepaid ? '선수금차감 해제' : '선수금차감 지정'}
+      />
+      {/* 코드번호 */}
+      <span className="w-9 shrink-0 text-[9px] text-muted-foreground truncate">
+        {service.service_code ?? ''}
+      </span>
+      {/* 코드명 */}
+      <span className="flex-1 font-medium truncate min-w-0">
+        {service.name}
+      </span>
+      {/* 수가 편집 (PREPAID-DEDUCT AC-4) */}
+      {isEditing ? (
+        <input
+          className="w-16 shrink-0 text-[10px] tabular-nums border rounded px-1 py-0.5 bg-white"
+          value={editingPriceValue}
+          onChange={(e) => onEditValueChange(e.target.value)}
+          onBlur={() => onCommitEditPrice(service.id)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onCommitEditPrice(service.id);
+            if (e.key === 'Escape') onEscapeEdit();
+          }}
+          autoFocus
+        />
+      ) : (
+        <button
+          className="w-16 shrink-0 text-[10px] tabular-nums text-right hover:text-purple-700 truncate"
+          onClick={() => onStartEditPrice(service.id, displayPrice)}
+          title={`클릭하여 금액 수정${qty > 1 ? ` (×${qty})` : ''}`}
+        >
+          {qty > 1
+            ? formatAmount(displayPrice * qty)
+            : formatAmount(displayPrice)}
+        </button>
+      )}
+      {/* 급여·비급여 */}
+      <span
+        className={cn(
+          'shrink-0 text-[9px] px-0.5 rounded whitespace-nowrap',
+          taxClass === '급여'
+            ? 'text-blue-700 bg-blue-50'
+            : taxClass === '비급여(과세)'
+              ? 'text-orange-700 bg-orange-50'
+              : 'text-gray-600 bg-gray-100',
+        )}
+      >
+        {taxShort}
+      </span>
+      {/* 수량 */}
+      {qty > 1 && (
+        <span className="shrink-0 text-[9px] text-teal-600 whitespace-nowrap">
+          ×{qty}
+        </span>
+      )}
+      {/* AC-1: ↑↓ 순서 변경 버튼 (항목 2건 이상, 태블릿 친화) */}
+      {pricingLen > 1 && (
+        <div className="shrink-0 flex flex-col">
+          <button
+            onClick={() => onReorder(service.id, 'up')}
+            disabled={pricingIdx === 0}
+            className="p-0 text-muted-foreground disabled:opacity-20 hover:text-teal-600 transition-colors"
+            title="위로"
+            tabIndex={-1}
+          >
+            <ArrowUp className="h-2.5 w-2.5" />
+          </button>
+          <button
+            onClick={() => onReorder(service.id, 'down')}
+            disabled={pricingIdx === pricingLen - 1}
+            className="p-0 text-muted-foreground disabled:opacity-20 hover:text-teal-600 transition-colors"
+            title="아래로"
+            tabIndex={-1}
+          >
+            <ArrowDown className="h-2.5 w-2.5" />
+          </button>
+        </div>
+      )}
+      {/* 제거 */}
+      <button
+        onClick={() => onRemove(service.id)}
+        className="shrink-0 text-muted-foreground hover:text-destructive transition-colors p-0.5"
+        title="제거"
+      >
+        <Trash2 className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
 
 interface Props {
   checkIn: CheckIn | null;
@@ -853,6 +1047,46 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     const override = customAmounts.get(item.service.id);
     return (override !== undefined ? override : item.service.price) * item.qty;
   };
+
+  // ── T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 순서 변경 ────────────────
+  // AC-2: UI 세션 내 순서만 (DB 저장 없음). AC-3: 기존 CRUD 무영향.
+  // AC-5: MouseSensor(distance:3) + TouchSensor(distance:5) — 태블릿 탭 오인식 방지.
+  const feeItemSensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(TouchSensor, { activationConstraint: { distance: 5 } }),
+  );
+
+  // ↑↓ 버튼: pricing items 내 상대 인덱스 기준 swap
+  const handleReorderPricingItem = useCallback((serviceId: string, dir: 'up' | 'down') => {
+    setSelectedItems((prev) => {
+      const pairs = prev.map((item, idx) => ({ item, idx })).filter(({ item }) => !isCodeItem(item.service));
+      const curPos = pairs.findIndex(({ item }) => item.service.id === serviceId);
+      if (dir === 'up' && curPos <= 0) return prev;
+      if (dir === 'down' && curPos >= pairs.length - 1) return prev;
+      const targetPos = dir === 'up' ? curPos - 1 : curPos + 1;
+      const next = [...prev];
+      [next[pairs[curPos].idx], next[pairs[targetPos].idx]] = [next[pairs[targetPos].idx], next[pairs[curPos].idx]];
+      return next;
+    });
+    setSaved(false);
+  }, []);
+
+  // DnD: pricing items 서브셋 내 arrayMove → selectedItems 재조합
+  const handleDragEndPricingItem = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setSelectedItems((prev) => {
+      const pairs = prev.map((item, idx) => ({ item, idx })).filter(({ item }) => !isCodeItem(item.service));
+      const activePos = pairs.findIndex(({ item }) => item.service.id === active.id);
+      const overPos = pairs.findIndex(({ item }) => item.service.id === over.id);
+      if (activePos === -1 || overPos === -1) return prev;
+      const reordered = arrayMove(pairs.map(p => p.item), activePos, overPos);
+      const next = [...prev];
+      pairs.forEach((p, i) => { next[p.idx] = reordered[i]; });
+      return next;
+    });
+    setSaved(false);
+  }, []);
 
   const pricingItems = selectedItems.filter((i) => !isCodeItem(i.service));
   const codeItems = selectedItems.filter((i) => isCodeItem(i.service));
@@ -1510,7 +1744,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
                   {feeSetOpen && (
                     <div
-                      className="absolute top-full left-0 right-0 z-50 mx-2 mt-0.5 border rounded-md bg-white shadow-lg"
+                      className="absolute top-full left-0 right-0 z-50 mx-2 mt-0.5 border rounded-md bg-white shadow-lg max-h-48 overflow-y-auto"
                       data-testid="fee-set-dropdown-list"
                     >
                       {feeSetTemplates.map((tpl) => {
@@ -1561,118 +1795,67 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                 </div>
               )}
 
-              {/* 선택 항목 — compact 1줄
+              {/* T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 — DnD + ↑↓ 순서 변경
+                  AC-1: drag handle + ↑↓ 버튼 복합 지원
+                  AC-2: UI 세션 내 순서만 (DB 저장 없음)
+                  AC-3: 기존 CRUD(선수금·금액편집·제거) 무영향
+                  AC-4: 세트코드 일괄 추가 후에도 정상 (pricingItems 재필터링)
+                  AC-5: TouchSensor distance:5 → 태블릿 탭 오인식 방지
                   FEE-ITEM-SCROLL:
-                    AC-1: max-h-80 mobile / sm:flex-1 desktop → 5건 노출
-                    AC-2: overflow-y-auto + scroll-smooth → 6건+ 스크롤
-                    AC-4: items=0 시 max-h-28 compact (빈 컨테이너 불필요 팽창 방지) */}
-              <div className={cn(
-                "overflow-y-auto p-2 min-h-0 space-y-1 scroll-smooth",
-                pricingItems.length === 0
-                  ? "max-h-28"
-                  : "max-h-80 sm:max-h-none sm:flex-1",
-              )}>
-                  <p className="text-xs font-semibold text-muted-foreground mb-1.5 px-1">
-                    수가 항목 ({pricingItems.length}건)
-                  </p>
-                  {pricingItems.length === 0 && (
-                    <p className="text-xs text-muted-foreground text-center py-4">
-                      좌측에서 코드를 선택하세요
+                    max-h-80 mobile / sm:flex-1 desktop → 5건 노출
+                    overflow-y-auto + scroll-smooth → 6건+ 스크롤
+                    items=0 시 max-h-28 compact */}
+              <DndContext
+                sensors={feeItemSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEndPricingItem}
+              >
+                <SortableContext
+                  items={pricingItems.map((i) => i.service.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className={cn(
+                    "overflow-y-auto p-2 min-h-0 space-y-1 scroll-smooth",
+                    pricingItems.length === 0
+                      ? "max-h-28"
+                      : "max-h-80 sm:max-h-none sm:flex-1",
+                  )}>
+                    <p className="text-xs font-semibold text-muted-foreground mb-1.5 px-1">
+                      수가 항목 ({pricingItems.length}건)
+                      {pricingItems.length > 1 && (
+                        <span className="text-[9px] text-muted-foreground/60 font-normal ml-1.5">
+                          드래그·↑↓ 순서 변경
+                        </span>
+                      )}
                     </p>
-                  )}
-                  {pricingItems.map(({ service, qty }) => {
-                    const isPrepaid = prepaidIds.has(service.id);
-                    const displayPrice = customAmounts.get(service.id) ?? service.price;
-                    const isEditing = editingPriceId === service.id;
-                    const taxClass = getTaxClass(service);
-                    // 급여·비급여 짧은 표기
-                    const taxShort =
-                      taxClass === '급여' ? '급여' :
-                      taxClass === '비급여(과세)' ? '비급여' : '면세';
-                    return (
-                      <div
+                    {pricingItems.length === 0 && (
+                      <p className="text-xs text-muted-foreground text-center py-4">
+                        좌측에서 코드를 선택하세요
+                      </p>
+                    )}
+                    {pricingItems.map(({ service, qty }, idx) => (
+                      <SortablePricingRow
                         key={service.id}
-                        className={cn(
-                          'flex items-center gap-1 rounded border px-1.5 py-1 text-[11px] transition-colors',
-                          isPrepaid
-                            ? 'bg-purple-50 border-purple-300'
-                            : 'bg-white border-input',
-                        )}
-                      >
-                        {/* 선수금 토글 (PREPAID-DEDUCT AC-2) */}
-                        <button
-                          onClick={() => togglePrepaid(service.id)}
-                          className={cn(
-                            'shrink-0 w-3 h-3 rounded-sm border-2 transition-colors',
-                            isPrepaid
-                              ? 'bg-purple-600 border-purple-600'
-                              : 'border-gray-300 hover:border-purple-400',
-                          )}
-                          title={isPrepaid ? '선수금차감 해제' : '선수금차감 지정'}
-                        />
-                        {/* 코드번호 — AC-2: 차트코드 열 축소(w-14→w-9) → 코드명·금액 공간 확보 */}
-                        <span className="w-9 shrink-0 text-[9px] text-muted-foreground truncate">
-                          {service.service_code ?? ''}
-                        </span>
-                        {/* 코드명 */}
-                        <span className="flex-1 font-medium truncate min-w-0">
-                          {service.name}
-                        </span>
-                        {/* 수가 — 클릭 편집 (PREPAID-DEDUCT AC-4) */}
-                        {isEditing ? (
-                          <input
-                            className="w-16 shrink-0 text-[10px] tabular-nums border rounded px-1 py-0.5 bg-white"
-                            value={editingPriceValue}
-                            onChange={(e) => setEditingPriceValue(e.target.value)}
-                            onBlur={() => commitEditPrice(service.id)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') commitEditPrice(service.id);
-                              if (e.key === 'Escape') setEditingPriceId(null);
-                            }}
-                            autoFocus
-                          />
-                        ) : (
-                          <button
-                            className="w-16 shrink-0 text-[10px] tabular-nums text-right hover:text-purple-700 truncate"
-                            onClick={() => startEditPrice(service.id, displayPrice)}
-                            title={`클릭하여 금액 수정${qty > 1 ? ` (×${qty})` : ''}`}
-                          >
-                            {qty > 1
-                              ? formatAmount(displayPrice * qty)
-                              : formatAmount(displayPrice)}
-                          </button>
-                        )}
-                        {/* 급여·비급여 */}
-                        <span
-                          className={cn(
-                            'shrink-0 text-[9px] px-0.5 rounded whitespace-nowrap',
-                            taxClass === '급여'
-                              ? 'text-blue-700 bg-blue-50'
-                              : taxClass === '비급여(과세)'
-                                ? 'text-orange-700 bg-orange-50'
-                                : 'text-gray-600 bg-gray-100',
-                          )}
-                        >
-                          {taxShort}
-                        </span>
-                        {/* 수량 */}
-                        {qty > 1 && (
-                          <span className="shrink-0 text-[9px] text-teal-600 whitespace-nowrap">
-                            ×{qty}
-                          </span>
-                        )}
-                        {/* 제거 */}
-                        <button
-                          onClick={() => handleRemoveItem(service.id)}
-                          className="shrink-0 text-muted-foreground hover:text-destructive transition-colors p-0.5"
-                          title="제거"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
+                        service={service}
+                        qty={qty}
+                        isPrepaid={prepaidIds.has(service.id)}
+                        displayPrice={customAmounts.get(service.id) ?? service.price}
+                        isEditing={editingPriceId === service.id}
+                        editingPriceValue={editingPriceValue}
+                        pricingIdx={idx}
+                        pricingLen={pricingItems.length}
+                        onTogglePrepaid={togglePrepaid}
+                        onStartEditPrice={startEditPrice}
+                        onCommitEditPrice={commitEditPrice}
+                        onEditValueChange={setEditingPriceValue}
+                        onEscapeEdit={() => setEditingPriceId(null)}
+                        onRemove={handleRemoveItem}
+                        onReorder={handleReorderPricingItem}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
 
                 {/* 세금 구분 + 합산 (수가 항목 있을 때만) */}
                 {pricingItems.length > 0 && (
@@ -1701,8 +1884,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   </div>
                 )}
 
-                {/* 액션 버튼 */}
-                <div className="px-3 pt-2 pb-3 space-y-2 shrink-0 border-t">
+                {/* 액션 버튼
+                    PMW-SCROLL-FIX: shrink-0 → shrink min-h-0 overflow-y-auto
+                    카드 정보 박스(승인번호·TID) 출현 시 action buttons 높이가 ~287px로 증가,
+                    소형 뷰포트(92vh 제약)에서 sm:overflow-hidden 부모에 수납 버튼 클리핑 발생.
+                    shrink(flex-shrink:1) + min-h-0으로 Zone2 flex-col 안에서 압축 허용,
+                    overflow-y-auto로 수납 버튼 스크롤 접근 보장. */}
+                <div className="px-3 pt-2 pb-3 space-y-2 overflow-y-auto border-t shrink min-h-0">
                   {/* [시술 저장 및 포함 금액 산정] */}
                   <Button
                     variant="outline"
