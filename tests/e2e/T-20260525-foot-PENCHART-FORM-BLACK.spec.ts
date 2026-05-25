@@ -138,6 +138,48 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
     expect(initBlock).toContain('setBgImgLoadError(false)');
   });
 
+  // ── AC-4: OOM / ctx null 방어 (T-20260525-foot-PENCHART-FORM-BLACKSCR) ────────
+  test('AC-4: initBgCanvas — getContext null 시 setBgImgLoadError(true) + console.error', () => {
+    /**
+     * 검증: 300DPI + DRAW_DPR=2 조합에서 GPU 메모리 초과로 canvas.getContext('2d')가 null을 반환하면
+     *   bgImgLoadError=true 폴백 UI를 트리거 + console.error 로깅해야 함.
+     *   → 검정 화면 대신 "양식 이미지를 불러올 수 없습니다." + 다시 시도 버튼 노출.
+     */
+    const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
+
+    const bgInitIdx = src.indexOf('const initBgCanvas = useCallback');
+    expect(bgInitIdx).toBeGreaterThan(0);
+    // 1500자 윈도우: ctx null 가드(~300) + canvasH 계산 + Fix-1 주석 + canvas.width 설정 + BLACKSCR 주석 + size check
+    const bgBlock = src.slice(bgInitIdx, bgInitIdx + 1500);
+
+    // ctx null 가드 이후 setBgImgLoadError(true) 존재
+    expect(bgBlock).toContain("if (!ctx)");
+    expect(bgBlock).toContain('setBgImgLoadError(true)');
+    // console.error 로깅
+    expect(bgBlock).toContain('console.error');
+    // bgCanvas 크기 할당 실패 방어 (canvas.width === 0)
+    expect(bgBlock).toContain('canvas.width === 0');
+  });
+
+  test('AC-4: initDrawCanvas — getContext null 시 setBgImgLoadError(true) + console.error', () => {
+    /**
+     * 검증: draw canvas 초기화 실패(GPU 메모리 한계) 시도
+     *   ctx null 가드 + canvas.width=0 가드 → setBgImgLoadError(true).
+     */
+    const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
+
+    const drawInitIdx = src.indexOf('const initDrawCanvas = useCallback');
+    expect(drawInitIdx).toBeGreaterThan(0);
+    // 1400자 윈도우: ctx null 가드 + drawCtxRef 캐싱 + canvasH 계산 + canvas.width 설정 + BLACKSCR size check
+    const drawBlock = src.slice(drawInitIdx, drawInitIdx + 1400);
+
+    expect(drawBlock).toContain("if (!ctx)");
+    expect(drawBlock).toContain('setBgImgLoadError(true)');
+    expect(drawBlock).toContain('console.error');
+    // draw canvas 크기 할당 실패 방어
+    expect(drawBlock).toContain('canvas.width === 0');
+  });
+
   // ── AC-5: 기존 기능 회귀 없음 ──────────────────────────────────────────────
   test('AC-5: 기존 양식 템플릿 상수 (BUILTIN_PEN_CHART_TEMPLATE 등) 유지', () => {
     const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');

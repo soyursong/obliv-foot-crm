@@ -822,7 +822,12 @@ export function PenChartTab({
     const canvas = bgCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    // T-20260525-foot-PENCHART-FORM-BLACKSCR AC-4: Context 초기화 실패(GPU/메모리 한계) → fallback
+    if (!ctx) {
+      console.error('[PenChartTab] bgCanvas 2D context 초기화 실패 (GPU/메모리 한계)', activeDrawTemplate?.form_key);
+      setBgImgLoadError(true); // eslint-disable-line react-hooks/exhaustive-deps
+      return;
+    }
     const canvasH = getCanvasHeightForForm(activeDrawTemplate?.form_key);
 
     // T-20260523-foot-PENCHART-PEN-SLOW Fix-1:
@@ -830,6 +835,14 @@ export function PenChartTab({
     //   img.onload 시 canvas.width 재할당(= 레이아웃 강제 재계산) 없음
     canvas.width  = CANVAS_W * DRAW_DPR;
     canvas.height = canvasH  * DRAW_DPR;
+    // T-20260525-foot-PENCHART-FORM-BLACKSCR AC-4: 대형 캔버스 할당 실패 방어
+    //   300DPI + DRAW_DPR=2 조합(최대 1588×6738) 시 GPU 메모리 초과 → 브라우저가 canvas.width=0 으로 리셋
+    //   → 이후 drawImage/fillRect가 0×0 화면에 그려짐 → 검정 화면 노출
+    if (canvas.width === 0 || canvas.height === 0) {
+      console.error('[PenChartTab] bgCanvas 크기 할당 실패 (GPU 메모리 초과 가능)', { canvasH, formKey: activeDrawTemplate?.form_key });
+      setBgImgLoadError(true); // eslint-disable-line react-hooks/exhaustive-deps
+      return;
+    }
     canvas.style.width  = `${CANVAS_W}px`;
     canvas.style.height = `${canvasH}px`;
     ctx.scale(DRAW_DPR, DRAW_DPR);
@@ -899,7 +912,12 @@ export function PenChartTab({
     if (!canvas) return;
     // T-20260523-foot-PENCHART-PEN-SLOW: desynchronized=true → compositor와 독립 업데이트 → 펜 지연 감소
     const ctx = canvas.getContext('2d', { desynchronized: true });
-    if (!ctx) return;
+    // T-20260525-foot-PENCHART-FORM-BLACKSCR AC-4: Draw context 초기화 실패 → fallback
+    if (!ctx) {
+      console.error('[PenChartTab] drawCanvas 2D context 초기화 실패 (GPU/메모리 한계)', activeDrawTemplate?.form_key);
+      setBgImgLoadError(true); // eslint-disable-line react-hooks/exhaustive-deps
+      return;
+    }
     // T-20260523-foot-PENCHART-PEN-SLOW Fix-2: ctx 캐싱 → onPointerMove마다 getContext 불필요
     drawCtxRef.current = ctx;
     const dpr = DRAW_DPR; // 강제 2x — device DPR 무관
@@ -907,6 +925,12 @@ export function PenChartTab({
 
     canvas.width = CANVAS_W * dpr;
     canvas.height = canvasH * dpr;
+    // T-20260525-foot-PENCHART-FORM-BLACKSCR AC-4: draw 레이어 캔버스 크기 할당 실패 방어
+    if (canvas.width === 0 || canvas.height === 0) {
+      console.error('[PenChartTab] drawCanvas 크기 할당 실패 (GPU 메모리 초과 가능)', { canvasH, formKey: activeDrawTemplate?.form_key });
+      setBgImgLoadError(true); // eslint-disable-line react-hooks/exhaustive-deps
+      return;
+    }
     canvas.style.width = `${CANVAS_W}px`;
     canvas.style.height = `${canvasH}px`;
     ctx.scale(dpr, dpr);
