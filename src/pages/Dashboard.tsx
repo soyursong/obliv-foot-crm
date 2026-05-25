@@ -5571,7 +5571,8 @@ export default function Dashboard() {
             onCardContext={!isPast ? handleCardContext : undefined}
             onReservationSelect={!isPast ? handleReservationSelect : undefined}
             onReservationCheckIn={!isPast ? handleReservationCheckIn : undefined}
-            onReservationContext={!isPast ? handleReservationContext : undefined}
+            // T-20260525-foot-RESV-CANCEL-ALLDATE: isPast 날짜 가드 제거 — 전체 날짜 취소 허용
+            onReservationContext={handleReservationContext}
             folded={timelineFolded}
             onToggleFold={handleToggleTimeline}
             staffMap={therapistNameMap}
