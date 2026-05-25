@@ -148,31 +148,32 @@ interface AutofillFields {
 // ── 환불/비급여 동의서 자동채움 좌표 (기준: CANVAS_W=794, CANVAS_H_REFUND_CONSENT=3369) ──
 // page 1 상단 환자 정보 박스 (차트번호 + 환자이름)
 // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R5: 좌표 전수 재보정 (실기기 스크린샷 증거 기반)
-// T-20260524-foot-PENCHART-FORM-AUTOFILL FIX-SUPPLEMENT: x 재보정 (MSG-20260524-111246-xbb9)
+// T-20260524-foot-PENCHART-FORM-AUTOFILL FIX-SUPPLEMENT: 좌표 정밀 교정 (MSG-20260524-111246-xbb9)
 //   refund_consent.png 2481×10524 → canvas 794×3369 (scale=0.32)
-//   PNG 픽셀 분석 (PIL 실측):
-//     "● 차트번호 :" 라벨 텍스트 top = canvas y=200.1
-//     "● 차트번호 :" 라벨 코론 우측 끝  = canvas x≈178 (y=645 기준)
-//     "● 차트번호 :" 밑줄(underline)   = canvas y≈213, x=127~320
-//     "● 환자이름 :" 라벨 텍스트 top = canvas y=235.6
-//     "● 환자이름 :" 밑줄(underline)   = canvas y≈249, x=119~320
+//   PIL 픽셀 정밀 분석 (full-x-range scan):
+//     "● 차트번호 :" 라벨 텍스트  = canvas y=201~213, x=98~179
+//     "● 차트번호 :" 밑줄(underline) = canvas y=214, x=127~320  ← 이전 y≈213 주석 수정
+//     "● 환자이름 :" 라벨 텍스트  = canvas y=236~248, x=98~179
+//     "● 환자이름 :" 밑줄(underline) = canvas y=249, x=119~320
 //   x=190: 코론 끝(x≈178)에서 12px 여백 → 입력란 공간에 명확히 배치
-//   y=201/236: 라벨 텍스트 top에 맞춤 (textBaseline='top' → 글자 하단이 밑줄 y에 수렴)
-//   기존 x=182(4px 여백 → 코론과 붙어보임) → x=190(12px 여백)으로 교정
+//   y=199/234: textBaseline='top', 15px font → 텍스트 하단(y+15)이 밑줄(y=214/249)에 정렬
+//     (이전 y=201/236: 텍스트 하단이 밑줄보다 2px 아래로 내려가는 미세 오차 → 보정)
+//   기존 e86c953 x=163,y=155/188 (라벨 위 46px) → AC-R5에서 x=182→190, y=201→199 순차 교정
 const REFUND_AUTOFILL_POS_P1: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
-  { key: 'chartNumber', x: 190, y: 201 }, // page 1: ● 차트번호 : ___ (코론 우측 12px 여백, 라벨 동일 라인)
-  { key: 'name',        x: 190, y: 236 }, // page 1: ● 환자이름 : ___ (코론 우측 12px 여백, 라벨 동일 라인)
+  { key: 'chartNumber', x: 190, y: 199 }, // page 1: ● 차트번호 : ___ (밑줄 y=214에 하단 정렬)
+  { key: 'name',        x: 190, y: 234 }, // page 1: ● 환자이름 : ___ (밑줄 y=249에 하단 정렬)
 ];
 
 // ── 환불동의서 P3 날짜 분리 렌더링 (AC-R5) ──
 // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R5: 날짜 "년/월/일" 분리 배치
-// T-20260524-foot-PENCHART-FORM-AUTOFILL FIX-SUPPLEMENT: 주석 좌표 실측 업데이트
-//   PIL 픽셀 정밀 분석 (MSG-20260524-111246-xbb9):
-//     "년" 좌측 끝 = canvas x≈549-556  (textAlign='right' x=537 → 12px 여백) ✓
-//     "월" 좌측 끝 = canvas x≈619-622  (textAlign='right' x=607 → 12px 여백) ✓
-//     "일" 좌측 끝 = canvas x≈687-690  (textAlign='right' x=671 → 16-19px 여백) ✓
-//     날짜 라인 top = canvas y=3069.4 → DATE_Y=3071 (textBaseline='top' 기준, 2px 하단) ✓
-//   구 "2026. 5. 24." 단일 배치(x=440) → "년" 겹침 → 연/월/일 분리 우측 정렬로 해결
+// T-20260524-foot-PENCHART-FORM-AUTOFILL FIX-SUPPLEMENT: 좌표 실측 최종 확정 (MSG-20260524-111246-xbb9)
+//   PIL full-x-range scan (PNG row 9593, canvas y=3071):
+//     "년" 글자 좌측 끝 = canvas x≈549.5  (textAlign='right' x=537 → 12.5px 여백) ✓
+//     "월" 글자 좌측 끝 = canvas x≈617.3  (textAlign='right' x=607 → 10.3px 여백) ✓
+//     "일" 글자 좌측 끝 = canvas x≈684.5  (textAlign='right' x=671 → 13.5px 여백) ✓
+//     날짜 라인 top = canvas y=3069.4 → DATE_Y=3071 (textBaseline='top' 기준, 1.6px 하단) ✓
+//   구 e86c953: "2026. 5. 24." 단일 배치(x=440) → "년" 글자 위에 겹침
+//   현재: 연/월/일 분리 우측 정렬로 해결 (각 글자 앞 10~14px 여백)
 function drawRefundP3DateAutofill(
   ctx: CanvasRenderingContext2D,
   fields: AutofillFields,
