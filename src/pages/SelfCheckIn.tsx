@@ -107,6 +107,8 @@ const T: Record<Lang, {
   reservationBanner: (time: string, type: string) => string;
   failPrefix: string;
   errorPrefix: string;
+  // T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 레이블
+  smsOptIn: string;
 }> = {
   ko: {
     selfCheckIn: '셀프 접수',
@@ -157,6 +159,7 @@ const T: Record<Lang, {
     reservationBanner: (time, type) => `오늘 예약이 있습니다: ${time} ${type}`,
     failPrefix: '접수 실패: ',
     errorPrefix: '오류가 발생했습니다: ',
+    smsOptIn: '예약 안내 문자 수신에 동의합니다 (선택)',
   },
   en: {
     selfCheckIn: 'Self Check-In',
@@ -207,6 +210,7 @@ const T: Record<Lang, {
     reservationBanner: (time, type) => `Reservation found: ${time} ${type}`,
     failPrefix: 'Failed: ',
     errorPrefix: 'Error: ',
+    smsOptIn: 'I agree to receive appointment reminders via SMS (optional)',
   },
 };
 
@@ -384,6 +388,8 @@ export default function SelfCheckIn() {
   const [submitting, setSubmitting] = useState(false);
   const [queueNumber, setQueueNumber] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  // T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 (기본 true — 동의함)
+  const [smsOptIn, setSmsOptIn] = useState(true);
 
   const t = T[lang];
 
@@ -697,6 +703,11 @@ export default function SelfCheckIn() {
 
       if (existing) {
         customerId = existing.id as string;
+        // T-20260525-foot-MESSAGING-V1 AC-5: 기존 고객 sms_opt_in 업데이트 (anon RLS 없으면 silent fail)
+        await anonClient
+          .from('customers')
+          .update({ sms_opt_in: smsOptIn })
+          .eq('id', customerId);
       } else {
         const { data: created, error: cErr } = await anonClient
           .from('customers')
@@ -705,6 +716,8 @@ export default function SelfCheckIn() {
             name: name.trim(),
             phone: phoneStored,
             visit_type: visitType === 'new' ? 'new' : 'returning',
+            // T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 저장
+            sms_opt_in: smsOptIn,
           })
           .select('id')
           .single();
@@ -1100,6 +1113,22 @@ export default function SelfCheckIn() {
               </div>
             )}
           </div>
+          {/* T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 체크박스 */}
+          <label
+            htmlFor="sms-opt-in"
+            className="flex items-start gap-3 cursor-pointer select-none"
+            style={{ color: C.muted }}
+          >
+            <input
+              id="sms-opt-in"
+              type="checkbox"
+              checked={smsOptIn}
+              onChange={(e) => setSmsOptIn(e.target.checked)}
+              className="mt-0.5 h-5 w-5 rounded accent-teal-600"
+              style={{ accentColor: C.primary }}
+            />
+            <span className="text-sm leading-relaxed">{t.smsOptIn}</span>
+          </label>
           <div className="flex gap-3">
             <button
               onClick={() => setStep('input')}

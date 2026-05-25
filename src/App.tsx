@@ -58,6 +58,8 @@ const TabletChecklistPage = lazyWithRetry(() => import('@/pages/TabletChecklistP
 const Notices = lazyWithRetry(() => import('@/pages/Notices'));
 const Sales = lazyWithRetry(() => import('@/pages/Sales'));
 const ClinicSettings = lazyWithRetry(() => import('@/pages/ClinicSettings'));
+// T-20260525-foot-MESSAGING-V1 AC-3: 메시지 설정 페이지 (admin/manager/director 전용)
+const AdminSettings = lazyWithRetry(() => import('@/pages/AdminSettings'));
 // ClinicCalendar 풀페이지는 T-20260510-foot-CALENDAR-NOTICE AC v3에 따라 우측 사이드바로 대체됨.
 // 직접 URL 접근 시 대시보드로 리다이렉트.
 
@@ -145,6 +147,8 @@ function App() {
                 {/* T-20260516-foot-CLINIC-DOC-INFO: 병원·원장 정보 설정 */}
                 {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 접근 추가 */}
                 <Route path="clinic-settings" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><ClinicSettings /></RoleGuard>} />
+                {/* T-20260525-foot-MESSAGING-V1 AC-3: 메시지 설정 — admin/manager/director 전용 */}
+                <Route path="settings" element={<RoleGuard roles={['admin', 'manager', 'director']}><AdminSettings /></RoleGuard>} />
                 {/* calendar 풀페이지 → 대시보드로 리다이렉트 (사이드바 패널로 대체) */}
                 <Route path="calendar" element={<Navigate to="/admin" replace />} />
               </Route>
