@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useNavigate, useParams } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { CalendarPlus, Camera, ChevronDown, ChevronRight, ExternalLink, FileText, Loader2, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Trash2, Upload, X } from 'lucide-react';
+import { CalendarPlus, Camera, ChevronDown, ChevronRight, ExternalLink, FileText, Loader2, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { AmountInput } from '@/components/ui/AmountInput';
 import { toast } from '@/lib/toast';
 import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation, VisitType } from '@/lib/types';
 // T-20260506-foot-CHECKLIST-AUTOUPLOAD: 업로드된 양식 조회
@@ -98,6 +99,23 @@ interface TreatmentMemoEntry {
   created_by_name: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// T-20260523-foot-LASER-TIMER (위치이동 FIX-20260525): 2번차트 3구역 상세 탭 상단 타이머
+interface TimerRecord {
+  id: string;
+  check_in_id: string;
+  duration_minutes: number;
+  started_at: string;
+  ends_at: string;
+  stopped_at: string | null;
+}
+
+function formatTimerRemaining(secs: number): string {
+  if (secs <= 0) return '00:00';
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 // T-20260506-foot-CHART-MINI-HOMEPAGE: 구매 패키지(티켓) 섹션
@@ -413,9 +431,9 @@ function ReceiptUploadSection({
             <div className="space-y-2">
               <div>
                 <label className="text-xs text-muted-foreground block mb-0.5">금액 (원)</label>
-                <Input
+                <AmountInput
                   value={amountDlg.amount}
-                  onChange={(e) => setAmountDlg((d) => ({ ...d, amount: e.target.value }))}
+                  onChange={(raw) => setAmountDlg((d) => ({ ...d, amount: raw }))}
                   placeholder="0"
                   className="text-sm"
                   autoFocus
@@ -1248,6 +1266,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [savingResvMini, setSavingResvMini] = useState(false);
   // C2-RESV-DETAIL-PANEL: 예약상세 탭
   const [resvDetailTab, setResvDetailTab] = useState<'예약' | '상담' | '치료메모'>('예약');
+  // T-20260523-foot-LASER-TIMER 위치이동 (FIX-20260525): 2번차트 3구역 [상세] 탭 상단 타이머
+  const [activeTimer, setActiveTimer] = useState<TimerRecord | null>(null);
+  const [timerRemainingSecs, setTimerRemainingSecs] = useState(0);
+  const [timerLoading, setTimerLoading] = useState(false);
+  const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const [resvDetailForm, setResvDetailForm] = useState({
     date: '', startTime: '',
     memo: '', etcMemo: '',
@@ -2240,6 +2263,94 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     // AC-8 쌍방연동 — 1번차트에 변경 알림
     localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
   };
+
+  // T-20260523-foot-LASER-TIMER 위치이동 (FIX-20260525): 2번차트 3구역 [상세] 탭 상단 타이머
+  const loadActiveTimer = useCallback(async (checkInId: string) => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any)
+        .from('timer_records')
+        .select('*')
+        .eq('check_in_id', checkInId)
+        .is('stopped_at', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      setActiveTimer(data ?? null);
+    } catch {
+      // 타이머 로드 실패는 무시 (비핵심 기능)
+    }
+  }, []);
+
+  // latestCheckIn 변경 시 활성 타이머 로드
+  useEffect(() => {
+    if (latestCheckIn?.id) {
+      loadActiveTimer(latestCheckIn.id);
+    } else {
+      setActiveTimer(null);
+    }
+  }, [latestCheckIn?.id, loadActiveTimer]);
+
+  // ends_at 기준 카운트다운 — 탭 비활성 대응 (서버시각 앵커)
+  useEffect(() => {
+    if (!activeTimer) { setTimerRemainingSecs(0); return; }
+    const tick = () => {
+      const remaining = Math.max(0, new Date(activeTimer.ends_at).getTime() - Date.now()) / 1000;
+      setTimerRemainingSecs(Math.ceil(remaining));
+    };
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [activeTimer]);
+
+  const handleStartTimer = useCallback(async (minutes: 5 | 15 | 20) => {
+    if (!latestCheckIn?.id || !customer) return;
+    setTimerLoading(true);
+    try {
+      const now = new Date();
+      const ends = new Date(now.getTime() + minutes * 60 * 1000);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from('timer_records')
+        .insert({
+          check_in_id: latestCheckIn.id,
+          clinic_id: customer.clinic_id,
+          duration_minutes: minutes,
+          started_at: now.toISOString(),
+          ends_at: ends.toISOString(),
+          created_by: profile?.email ?? null,
+        })
+        .select('*')
+        .maybeSingle();
+      if (error) throw error;
+      setActiveTimer(data);
+      toast.success(`레이저 타이머 ${minutes}분 시작`);
+    } catch (err: unknown) {
+      toast.error(`타이머 시작 실패: ${err instanceof Error ? err.message : '오류'}`);
+    } finally {
+      setTimerLoading(false);
+    }
+  }, [latestCheckIn?.id, customer, profile?.email]);
+
+  const handleStopTimer = useCallback(async () => {
+    if (!activeTimer) return;
+    setTimerLoading(true);
+    setStopConfirmOpen(false);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from('timer_records')
+        .update({ stopped_at: new Date().toISOString() })
+        .eq('id', activeTimer.id);
+      if (error) throw error;
+      setActiveTimer(null);
+      toast.info('레이저 타이머 종료');
+    } catch (err: unknown) {
+      toast.error(`타이머 종료 실패: ${err instanceof Error ? err.message : '오류'}`);
+    } finally {
+      setTimerLoading(false);
+    }
+  }, [activeTimer]);
 
   // T-20260519-foot-PRECHECKIN-CHART AC-3: 내원콜 방문 확인 기록 (check_in 없이 reservation_memo_history에 append)
   // BUG FIX: reservations는 DESC로 로드되므로 find()가 가장 먼 미래 예약을 반환.
@@ -5180,6 +5291,109 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             <div className="bg-[#d8e8f0] border-b border-gray-300 px-3 py-1 shrink-0">
               <span className="text-[11px] font-semibold text-[#1e4e6e]">상세</span>
             </div>
+
+            {/* T-20260523-foot-LASER-TIMER 위치이동 (FIX-20260525): [상세] 탭 상단 — 탭 선택 무관하게 항상 표시 */}
+            {latestCheckIn && (
+              <div
+                className={`mx-2 mt-2 mb-1 rounded-xl border p-2.5 flex flex-col gap-2 ${
+                  activeTimer
+                    ? timerRemainingSecs <= 60
+                      ? 'border-red-400 bg-red-50'
+                      : 'border-blue-300 bg-blue-50'
+                    : 'border-muted bg-muted/20'
+                }`}
+                data-testid="laser-timer-panel"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Timer className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                  <span className="text-[11px] font-semibold text-blue-700">비가열 레이저 타이머</span>
+                  {activeTimer && (
+                    <span
+                      className={`ml-auto tabular-nums font-mono text-base font-bold ${
+                        timerRemainingSecs <= 60 ? 'text-red-600' : 'text-blue-700'
+                      }`}
+                      data-testid="laser-timer-countdown"
+                    >
+                      {formatTimerRemaining(timerRemainingSecs)}
+                    </span>
+                  )}
+                </div>
+
+                {!activeTimer ? (
+                  /* 타이머 미실행 — 시작 버튼 3종 */
+                  <div className="flex gap-1.5" data-testid="laser-timer-start-buttons">
+                    {([5, 15, 20] as const).map((min) => (
+                      <button
+                        key={min}
+                        type="button"
+                        disabled={timerLoading}
+                        onClick={() => handleStartTimer(min)}
+                        className="flex-1 rounded-lg border-2 border-blue-400 bg-white text-blue-700 font-bold text-sm py-2 hover:bg-blue-50 active:bg-blue-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        data-testid={`laser-timer-btn-${min}`}
+                      >
+                        {timerLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin mx-auto" /> : `${min}분`}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  /* 타이머 실행 중 — 진행 바 + 중지 버튼 */
+                  <div className="space-y-1.5">
+                    <div className="w-full h-1.5 rounded-full bg-blue-100 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          timerRemainingSecs <= 60 ? 'bg-red-500' : 'bg-blue-500'
+                        }`}
+                        style={{
+                          width: `${Math.min(100, (timerRemainingSecs / (activeTimer.duration_minutes * 60)) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                      <span>{activeTimer.duration_minutes}분 타이머</span>
+                      <button
+                        type="button"
+                        disabled={timerLoading}
+                        onClick={() => setStopConfirmOpen(true)}
+                        className="flex items-center gap-1 rounded border border-red-300 bg-white text-red-600 text-[10px] font-medium px-2 py-0.5 hover:bg-red-50 transition-colors disabled:opacity-50"
+                        data-testid="laser-timer-stop-btn"
+                      >
+                        {timerLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : '■ 종료'}
+                      </button>
+                    </div>
+
+                    {/* 종료 확인 인라인 박스 */}
+                    {stopConfirmOpen && (
+                      <div
+                        className="mt-1 rounded-lg border border-red-300 bg-red-50 p-2 flex flex-col gap-1.5"
+                        data-testid="laser-timer-stop-confirm"
+                      >
+                        <p className="text-[11px] text-red-700 font-medium">타이머를 종료하시겠습니까?</p>
+                        <div className="flex gap-1.5 justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setStopConfirmOpen(false)}
+                            className="rounded border border-gray-300 bg-white text-gray-600 text-[10px] font-medium px-2.5 py-1 hover:bg-gray-50 transition-colors"
+                            data-testid="laser-timer-stop-cancel"
+                          >
+                            취소
+                          </button>
+                          <button
+                            type="button"
+                            disabled={timerLoading}
+                            onClick={() => { setStopConfirmOpen(false); handleStopTimer(); }}
+                            className="rounded bg-red-500 text-white text-[10px] font-semibold px-2.5 py-1 hover:bg-red-600 transition-colors disabled:opacity-50"
+                            data-testid="laser-timer-stop-confirm-btn"
+                          >
+                            {timerLoading ? <Loader2 className="h-3 w-3 animate-spin inline" /> : '종료'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* 탭 */}
             <div className="flex border-b border-gray-200">
               {(['예약', '상담', '치료메모'] as const).map((tab) => (
@@ -5966,11 +6180,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               {/* 총금액 */}
               <div>
                 <label className="text-xs font-medium text-gray-700 mb-1 block">총 금액</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
+                <AmountInput
                   value={editPkgForm.total_amount}
-                  onChange={(e) => setEditPkgForm((f) => ({ ...f, total_amount: e.target.value }))}
+                  onChange={(raw) => setEditPkgForm((f) => ({ ...f, total_amount: raw }))}
                   className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
                 />
               </div>
@@ -5995,11 +6207,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-700 mb-1 block">{label} 수가(회당)</label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
+                    <AmountInput
                       value={editPkgForm[priceKey]}
-                      onChange={(e) => setEditPkgForm((f) => ({ ...f, [priceKey]: e.target.value }))}
+                      onChange={(raw) => setEditPkgForm((f) => ({ ...f, [priceKey]: raw }))}
                       className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-teal-500"
                     />
                   </div>
@@ -6563,10 +6773,9 @@ function PackagePurchaseFromTemplateDialog({
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-gray-500">수가 (회당)</label>
-                <input
-                  value={formatAmount(heatedUnitPrice)}
-                  onChange={(e) => setHeatedUnitPrice(parseAmount(e.target.value))}
-                  inputMode="numeric"
+                <AmountInput
+                  value={heatedUnitPrice}
+                  onChange={(raw) => setHeatedUnitPrice(Number(raw) || 0)}
                   className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
               </div>
@@ -6604,10 +6813,9 @@ function PackagePurchaseFromTemplateDialog({
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-gray-500">수가 (회당)</label>
-                <input
-                  value={formatAmount(unheatedUnitPrice)}
-                  onChange={(e) => setUnheatedUnitPrice(parseAmount(e.target.value))}
-                  inputMode="numeric"
+                <AmountInput
+                  value={unheatedUnitPrice}
+                  onChange={(raw) => setUnheatedUnitPrice(Number(raw) || 0)}
                   className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
               </div>
@@ -6645,10 +6853,9 @@ function PackagePurchaseFromTemplateDialog({
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-gray-500">수가 (회당)</label>
-                <input
-                  value={formatAmount(podologeUnitPrice)}
-                  onChange={(e) => setPodologeUnitPrice(parseAmount(e.target.value))}
-                  inputMode="numeric"
+                <AmountInput
+                  value={podologeUnitPrice}
+                  onChange={(raw) => setPodologeUnitPrice(Number(raw) || 0)}
                   className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
               </div>
@@ -6690,10 +6897,9 @@ function PackagePurchaseFromTemplateDialog({
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-gray-500">수가 (회당)</label>
-                <input
-                  value={formatAmount(ivUnitPrice)}
-                  onChange={(e) => setIvUnitPrice(parseAmount(e.target.value))}
-                  inputMode="numeric"
+                <AmountInput
+                  value={ivUnitPrice}
+                  onChange={(raw) => setIvUnitPrice(Number(raw) || 0)}
                   className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
               </div>
@@ -6717,10 +6923,9 @@ function PackagePurchaseFromTemplateDialog({
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-gray-500">수가 (회당)</label>
-                <input
-                  value={formatAmount(trialUnitPrice)}
-                  onChange={(e) => setTrialUnitPrice(parseAmount(e.target.value))}
-                  inputMode="numeric"
+                <AmountInput
+                  value={trialUnitPrice}
+                  onChange={(raw) => setTrialUnitPrice(Number(raw) || 0)}
                   className="w-full h-9 rounded-md border border-gray-200 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
               </div>
@@ -6804,10 +7009,9 @@ function PackagePurchaseFromTemplateDialog({
               </button>
             </div>
             {priceOverride ? (
-              <input
-                value={formatAmount(manualTotal)}
-                onChange={(e) => setManualTotal(parseAmount(e.target.value))}
-                inputMode="numeric"
+              <AmountInput
+                value={manualTotal}
+                onChange={(raw) => setManualTotal(Number(raw) || 0)}
                 className="w-full h-10 rounded-md border border-teal-300 px-3 text-lg font-bold text-teal-700 focus:outline-none"
               />
             ) : (
@@ -7048,9 +7252,8 @@ function PackageAddonDialog({
                         수가 (회당)
                         {(selectedPkg.heated_sessions ?? 0) > 0 && <span className="ml-1 text-teal-600">기존: {formatAmount(selectedPkg.heated_unit_price ?? 0)}</span>}
                       </div>
-                      <Input value={formatAmount(heatedUnitPrice)}
-                        onChange={(e) => setHeatedUnitPrice(parseAmount(e.target.value))}
-                        inputMode="numeric" />
+                      <AmountInput value={heatedUnitPrice}
+                        onChange={(raw) => setHeatedUnitPrice(Number(raw) || 0)} />
                     </div>
                   </div>
                   {heated > 0 && (
@@ -7077,9 +7280,8 @@ function PackageAddonDialog({
                         수가 (회당)
                         {(selectedPkg.unheated_sessions ?? 0) > 0 && <span className="ml-1 text-teal-600">기존: {formatAmount(selectedPkg.unheated_unit_price ?? 0)}</span>}
                       </div>
-                      <Input value={formatAmount(unheatedUnitPrice)}
-                        onChange={(e) => setUnheatedUnitPrice(parseAmount(e.target.value))}
-                        inputMode="numeric" />
+                      <AmountInput value={unheatedUnitPrice}
+                        onChange={(raw) => setUnheatedUnitPrice(Number(raw) || 0)} />
                     </div>
                   </div>
                   {unheated > 0 && (
@@ -7121,9 +7323,8 @@ function PackageAddonDialog({
                         수가 (회당)
                         {(selectedPkg.iv_sessions ?? 0) > 0 && <span className="ml-1 text-teal-600">기존: {formatAmount(selectedPkg.iv_unit_price ?? 0)}</span>}
                       </div>
-                      <Input value={formatAmount(ivUnitPrice)}
-                        onChange={(e) => setIvUnitPrice(parseAmount(e.target.value))}
-                        inputMode="numeric" />
+                      <AmountInput value={ivUnitPrice}
+                        onChange={(raw) => setIvUnitPrice(Number(raw) || 0)} />
                     </div>
                   </div>
                   {iv > 0 && (
@@ -7150,9 +7351,8 @@ function PackageAddonDialog({
                         수가 (회당)
                         {(selectedPkg.podologe_sessions ?? 0) > 0 && <span className="ml-1 text-teal-600">기존: {formatAmount(selectedPkg.podologe_unit_price ?? 0)}</span>}
                       </div>
-                      <Input value={formatAmount(podologeUnitPrice)}
-                        onChange={(e) => setPodologeUnitPrice(parseAmount(e.target.value))}
-                        inputMode="numeric" />
+                      <AmountInput value={podologeUnitPrice}
+                        onChange={(raw) => setPodologeUnitPrice(Number(raw) || 0)} />
                     </div>
                   </div>
                   {podologe > 0 && (
@@ -7179,10 +7379,9 @@ function PackageAddonDialog({
                       </button>
                     </div>
                     {priceOverride ? (
-                      <Input
-                        value={formatAmount(manualAddAmount)}
-                        onChange={(e) => setManualAddAmount(parseAmount(e.target.value))}
-                        inputMode="numeric"
+                      <AmountInput
+                        value={manualAddAmount}
+                        onChange={(raw) => setManualAddAmount(Number(raw) || 0)}
                         className="text-lg font-bold"
                       />
                     ) : (

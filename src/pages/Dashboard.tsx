@@ -2579,8 +2579,6 @@ export default function Dashboard() {
   // T-20260515-foot-CONTEXT-MENU-4ITEM: 진료차트 패널 상태
   const [medicalChartOpen, setMedicalChartOpen] = useState(false);
   const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
-  // T-20260522-foot-LASER-TIMER: 진료차트 열릴 때 check_in_id 전달 (타이머 연동)
-  const [medicalChartCheckInId, setMedicalChartCheckInId] = useState<string | null>(null);
   const [stageStartMap, setStageStartMap] = useState<Map<string, string>>(new Map());
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
   // T-20260522-foot-PKG-BOX-INDICATOR: 잔여>0인 활성 패키지 보유 고객 ID 집합
@@ -4186,8 +4184,6 @@ export default function Dashboard() {
     setSelectedCheckIn(null);  // CheckInDetailSheet 닫기
     ctxCloseChart();           // CustomerChartSheet 닫기 (T-20260516-foot-CHART2-STATE-UNIFY)
     setMedicalChartCustomerId(ci.customer_id);
-    // T-20260522-foot-LASER-TIMER: check_in_id 전달 → 타이머 활성화
-    setMedicalChartCheckInId(ci.id);
     setMedicalChartOpen(true);
   }, [ctxCloseChart]);
 
@@ -5871,12 +5867,11 @@ export default function Dashboard() {
       {/* T-20260522-foot-LASER-TIMER: checkInId 추가 → 타이머 패널 활성화 */}
       <MedicalChartPanel
         open={medicalChartOpen}
-        onOpenChange={(v) => { if (!v) { setMedicalChartOpen(false); setMedicalChartCustomerId(null); setMedicalChartCheckInId(null); } }}
+        onOpenChange={(v) => { if (!v) { setMedicalChartOpen(false); setMedicalChartCustomerId(null); } }}
         customerId={medicalChartCustomerId}
         clinicId={clinic?.id ?? ''}
         currentUserRole={profile?.role ?? ''}
         currentUserEmail={profile?.email ?? null}
-        checkInId={medicalChartCheckInId}
       />
 
       {/* T-20260519-foot-SLOT-BATCH-EDIT: 슬롯 추가 다이얼로그 (AC-3) */}
