@@ -437,6 +437,7 @@ function SortablePricingRow({
   return (
     <div
       ref={setNodeRef}
+      data-testid={`pricing-row-${service.id}`}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
@@ -528,6 +529,7 @@ function SortablePricingRow({
       {pricingLen > 1 && (
         <div className="shrink-0 flex flex-col">
           <button
+            data-testid={`reorder-up-${service.id}`}
             onClick={() => onReorder(service.id, 'up')}
             disabled={pricingIdx === 0}
             className="p-0 text-muted-foreground disabled:opacity-20 hover:text-teal-600 transition-colors"
@@ -537,6 +539,7 @@ function SortablePricingRow({
             <ArrowUp className="h-2.5 w-2.5" />
           </button>
           <button
+            data-testid={`reorder-down-${service.id}`}
             onClick={() => onReorder(service.id, 'down')}
             disabled={pricingIdx === pricingLen - 1}
             className="p-0 text-muted-foreground disabled:opacity-20 hover:text-teal-600 transition-colors"
@@ -645,6 +648,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
   // ── persist ref
   const skipPersistRef = useRef(true);
+  // T-20260525-foot-FEE-ITEM-REORDER AC-2: display_order 데바운스 타이머
+  const orderPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── 서비스 목록 + 기존 시술 pre-load + 패키지 세션 + 양식 목록 ─────────────
   useEffect(() => {
@@ -676,7 +681,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         .select('*')
         .eq('clinic_id', checkIn.clinic_id)
         .eq('active', true)
-        .order('sort_order'),
+        // T-20260525-foot-FEE-ITEM-REORDER AC-2: display_order 기준 정렬 (persist 순서 복원)
+        .order('display_order'),
       supabase
         .from('check_in_services')
         .select('service_id, price')
@@ -721,6 +727,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           }
         }
         if (items.length > 0) {
+          // T-20260525-foot-FEE-ITEM-REORDER AC-2: 재진입 시 저장된 display_order 기준 순서 복원
+          items.sort((a, b) => (a.service.display_order ?? 0) - (b.service.display_order ?? 0));
           setSelectedItems(items);
           if (overrides.size > 0) setCustomAmounts(overrides);
           setSaved(true);
@@ -958,6 +966,28 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     localStorage.setItem(draftKey(checkIn.id), JSON.stringify(draft));
   }, [selectedItems, saved, checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── T-20260525-foot-FEE-ITEM-REORDER AC-2: display_order persist (debounce 800ms) ──
+  // 순서 변경·항목 추가/제거 시 services.display_order 업데이트 (clinic 단위, fire-and-forget)
+  // skipPersistRef: 초기 로드 중 트리거 방지 (checkIn 교체 시 true → load 완료 후 false)
+  useEffect(() => {
+    if (!checkIn || skipPersistRef.current) return;
+    const pricing = selectedItems.filter((i) => !isCodeItem(i.service));
+    if (pricing.length === 0) return;
+    if (orderPersistTimerRef.current) clearTimeout(orderPersistTimerRef.current);
+    orderPersistTimerRef.current = setTimeout(() => {
+      pricing.forEach((item, idx) => {
+        supabase
+          .from('services')
+          .update({ display_order: idx })
+          .eq('id', item.service.id)
+          .then();
+      });
+    }, 800);
+    return () => {
+      if (orderPersistTimerRef.current) clearTimeout(orderPersistTimerRef.current);
+    };
+  }, [selectedItems, checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!checkIn) return null;
 
   // ── 현재 탭의 서비스 목록 ────────────────────────────────────────────────
@@ -1049,7 +1079,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   };
 
   // ── T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 순서 변경 ────────────────
-  // AC-2: UI 세션 내 순서만 (DB 저장 없음). AC-3: 기존 CRUD 무영향.
+  // AC-2: DB persist — services.display_order (clinic 단위, useEffect debounce 800ms).
+  // AC-3: 기존 CRUD 무영향.
   // AC-5: MouseSensor(distance:3) + TouchSensor(distance:5) — 태블릿 탭 오인식 방지.
   const feeItemSensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
@@ -1797,7 +1828,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
               {/* T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 — DnD + ↑↓ 순서 변경
                   AC-1: drag handle + ↑↓ 버튼 복합 지원
-                  AC-2: UI 세션 내 순서만 (DB 저장 없음)
+                  AC-2: DB persist — services.display_order (clinic 단위, debounce 800ms, 재진입 복원)
                   AC-3: 기존 CRUD(선수금·금액편집·제거) 무영향
                   AC-4: 세트코드 일괄 추가 후에도 정상 (pricingItems 재필터링)
                   AC-5: TouchSensor distance:5 → 태블릿 탭 오인식 방지
@@ -1814,7 +1845,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   items={pricingItems.map((i) => i.service.id)}
                   strategy={verticalListSortingStrategy}
                 >
-                  <div className={cn(
+                  <div
+                    data-testid="pricing-list"
+                    className={cn(
                     "overflow-y-auto p-2 min-h-0 space-y-1 scroll-smooth",
                     pricingItems.length === 0
                       ? "max-h-28"
