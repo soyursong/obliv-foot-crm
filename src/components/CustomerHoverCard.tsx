@@ -134,6 +134,7 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, onContext
       {/* 성함 텍스트 */}
       {/* T-20260525-foot-RSVMGMT-CHART-OPEN: onClick 연결 시 클릭 가능 스타일 적용 */}
       <span
+        data-testid={onClick ? 'customer-hover-card-name-clickable' : 'customer-hover-card-name'}
         className={cn(
           'hover:underline decoration-dotted underline-offset-2',
           onClick ? 'cursor-pointer' : 'cursor-context-menu',
