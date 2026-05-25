@@ -147,8 +147,9 @@ function App() {
                 {/* T-20260516-foot-CLINIC-DOC-INFO: 병원·원장 정보 설정 */}
                 {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 접근 추가 */}
                 <Route path="clinic-settings" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><ClinicSettings /></RoleGuard>} />
-                {/* T-20260525-foot-MESSAGING-V1 AC-3: 메시지 설정 — admin/manager/director 전용 */}
-                <Route path="settings" element={<RoleGuard roles={['admin', 'manager', 'director']}><AdminSettings /></RoleGuard>} />
+                {/* T-20260525-foot-MESSAGING-V1 AC-3: 메시지 설정 */}
+                {/* T-20260525-foot-ROLE-PERM-CUSTOM 3차: 통계·매출집계·계정관리 외 전권한 → consultant/coordinator/therapist 추가 */}
+                <Route path="settings" element={<RoleGuard roles={['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist']}><AdminSettings /></RoleGuard>} />
                 {/* calendar 풀페이지 → 대시보드로 리다이렉트 (사이드바 패널로 대체) */}
                 <Route path="calendar" element={<Navigate to="/admin" replace />} />
               </Route>
