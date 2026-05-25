@@ -1200,7 +1200,7 @@ ${COMMON_STYLE}
           ☐&nbsp;임상적<br>☐&nbsp;최&nbsp;&nbsp;&nbsp;종
         </td>
         <td rowspan="2" style="background:#f0f0f0; text-align:center; width:60px; font-size:9pt;">병&nbsp;&nbsp;&nbsp;&nbsp;명</td>
-        <td rowspan="2" style="min-width:120px; font-size:9.5pt;">{{disease_name}}</td>
+        <td rowspan="2" style="min-width:120px; font-size:9.5pt;">{{diag_code_1}}<br>{{diag_code_2}}</td>
         <td style="background:#f8f8f8; text-align:center; width:80px; font-size:8.5pt; white-space:nowrap;">총&nbsp;간병기간</td>
         <td style="white-space:nowrap; font-size:8.5pt;">
           입원&nbsp;<span style="border-bottom:1px solid #000; min-width:50px; display:inline-block;">{{inpatient_start}}</span>&nbsp;~&nbsp;<span style="border-bottom:1px solid #000; min-width:50px; display:inline-block;">{{inpatient_end}}</span>

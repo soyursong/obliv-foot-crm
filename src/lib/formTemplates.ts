@@ -551,7 +551,10 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
       { key: 'patient_name',       label: '환자성명',     type: 'text',      x: 0, y: 0 },
       { key: 'patient_rrn',        label: '주민등록번호', type: 'text',      x: 0, y: 0 },
       { key: 'patient_address',    label: '주소',         type: 'text',      x: 0, y: 0 },
-      { key: 'disease_name',       label: '병명',         type: 'text',      x: 0, y: 0 },
+      // T-20260526-INS-FIELD-BIND-SPEC FIX: disease_name → diag_code_1/diag_code_2
+      // DIAG_OPINION_V2_HTML 병명 셀이 {{diag_code_1}}<br>{{diag_code_2}} 로 변경됨에 따라 field_map 동기화
+      { key: 'diag_code_1',        label: '상병코드(주)', type: 'text',      x: 0, y: 0 },
+      { key: 'diag_code_2',        label: '상병코드(부)', type: 'text',      x: 0, y: 0 },
       { key: 'inpatient_start',    label: '입원시작일',   type: 'date',      x: 0, y: 0 },
       { key: 'inpatient_end',      label: '입원종료일',   type: 'date',      x: 0, y: 0 },
       { key: 'outpatient_start',   label: '외래시작일',   type: 'date',      x: 0, y: 0 },

@@ -201,13 +201,31 @@ const ALL_AUDITED_FORM_KEYS = [
   'ins_claim_form',
 ];
 
+/**
+ * T-20260526-INS-FIELD-BIND-SPEC FIX: JPG 이미지 양식 제외 목록
+ *
+ * 이 양식들은 template_format='jpg' 스캔 이미지로, 자동채움(field_map) 없음.
+ * 설계상 field_map: [] 이 올바른 상태 — field_map 비어있음 검사 대상에서 제외.
+ * 참조: formTemplates.ts fallback-med-record-short / fallback-treat-confirm-code 등
+ */
+const JPG_ONLY_FORM_KEYS = new Set([
+  'med_record_short',    // 진료기록사본(1-5매) — 스캔 이미지
+  'med_record_long',     // 진료기록사본(6매 이상) — 스캔 이미지
+  'treat_confirm_code',  // 진료확인서(코드포함) — 스캔 이미지
+  'treat_confirm_nocode',// 진료확인서(코드불포함) — 스캔 이미지
+]);
+
 test('AC-3: 전종 field_map 비어있지 않음 (fallback + insurance)', () => {
   const allTemplates = [...FALLBACK_TEMPLATES, ...INSURANCE_FALLBACK_TEMPLATES];
 
   for (const fk of ALL_AUDITED_FORM_KEYS) {
     const tpl = allTemplates.find((t) => t.form_key === fk);
     expect(tpl, `템플릿 미등록: ${fk}`).toBeDefined();
-    expect(tpl!.field_map.length, `field_map 비어있음: ${fk}`).toBeGreaterThan(0);
+    // T-20260526-INS-FIELD-BIND-SPEC FIX: JPG 이미지 양식은 설계상 field_map: [] 허용
+    // (스캔 이미지 → 좌표 기반 자동채움 없음, JPG_ONLY_FORM_KEYS 참조)
+    if (!JPG_ONLY_FORM_KEYS.has(fk)) {
+      expect(tpl!.field_map.length, `field_map 비어있음: ${fk}`).toBeGreaterThan(0);
+    }
   }
 });
 
