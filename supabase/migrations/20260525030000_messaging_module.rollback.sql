@@ -50,8 +50,8 @@ DROP FUNCTION IF EXISTS public.keep_warm_send_notification() CASCADE;
 -- Solapi 검증 함수
 DROP FUNCTION IF EXISTS public.validate_solapi_sender(UUID) CASCADE;
 
--- 메시징 설정 저장 함수
-DROP FUNCTION IF EXISTS public.admin_save_messaging_config(UUID, TEXT, TEXT, BOOLEAN) CASCADE;
+-- 메시징 설정 저장 함수 (v2 시그니처: UUID, TEXT, BOOLEAN, TEXT, TEXT)
+DROP FUNCTION IF EXISTS public.admin_save_messaging_config(UUID, TEXT, BOOLEAN, TEXT, TEXT) CASCADE;
 
 -- vault secret 조회 함수
 DROP FUNCTION IF EXISTS public.get_vault_secret(TEXT) CASCADE;
