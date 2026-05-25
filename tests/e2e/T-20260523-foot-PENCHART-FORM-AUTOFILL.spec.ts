@@ -2,10 +2,10 @@
  * E2E spec: T-20260523-foot-PENCHART-FORM-AUTOFILL
  * 펜차트 양식 고객정보 자동 바인딩 — 환불동의서 위치 보정 + 보험차트 성함/주민번호 연동
  *
- * AC-1: 환불동의서 상단 차트번호 자동 표시 (page 1, x=163 y=155)
- * AC-2: 환불동의서 상단 고객 성함 자동 표시 (page 1, x=163 y=188)
- * AC-3: 환불동의서 하단 성명란 위치 보정 (page 3 이름 셀, x=55 y=3206)
- * AC-4: 환불동의서 하단 날짜 위치 보정 (page 3 "년 월 일" 라인, x=440 y=3071)
+ * AC-1: 환불동의서 상단 차트번호 자동 표시 (page 1, x=190 y=199 — 밑줄 y=214 하단 정렬)
+ * AC-2: 환불동의서 상단 고객 성함 자동 표시 (page 1, x=190 y=234 — 밑줄 y=249 하단 정렬)
+ * AC-3: 환불동의서 하단 성명란 — AC-R4로 자동채움 제거 (직원 직접 기입 방식)
+ * AC-4: 환불동의서 하단 날짜 위치 보정 (page 3 년/월/일 분리 우측정렬 — 537/607/671)
  * AC-5: 고객 연락처 미표시 (AutofillFields에서 phone 완전 제거)
  * AC-6: 자동 텍스트와 펜 서명 영역 겹침 없음 (page 3 서명 셀은 별도 영역)
  * AC-7: 보험차트 상단 고객 성함 자동 표시 (x=285 y=23)
@@ -14,6 +14,8 @@
  * AC-10: 고객 미선택 시 바인딩 필드 빈칸 (에러 없음)
  * AC-11: 기존 펜 드로잉·저장·불러오기 기능 무영향
  * AC-12: 빌드 성공
+ * AC-R4: 하단 서명란(개인정보 동의) UI 전체 제거
+ * AC-R5: 환불동의서 P1/P3 좌표 정밀 보정 (MSG-20260524-111246-xbb9)
  */
 
 import { test, expect } from '@playwright/test';
@@ -56,15 +58,12 @@ test.describe('PENCHART-FORM-AUTOFILL — 자동채움 위치 보정 + 주민번
       expect(Object.keys(fields)).not.toContain('phone');
     });
 
-    test('REFUND_AUTOFILL_POS_P3에 phone key 없음', () => {
-      const posP3 = [
-        { key: 'date', x: 440, y: 3071 },
-        { key: 'name', x: 55,  y: 3206 },
-      ];
-      const keys = posP3.map((p) => p.key);
-      expect(keys).not.toContain('phone');
-      expect(keys).toContain('date');
-      expect(keys).toContain('name');
+    test('drawRefundP3DateAutofill에 phone key 없음 — date만 렌더링', () => {
+      // P3: drawRefundP3DateAutofill은 date 필드만 사용 (name/phone 없음 — AC-R4)
+      const usedKeys = ['date']; // drawRefundP3DateAutofill reads: fields.date only
+      expect(usedKeys).not.toContain('phone');
+      expect(usedKeys).not.toContain('name');
+      expect(usedKeys).toContain('date');
     });
 
     test('customerPhone prop은 하위 호환 유지 (deprecated, 내부 미사용)', () => {
@@ -88,11 +87,14 @@ test.describe('PENCHART-FORM-AUTOFILL — 자동채움 위치 보정 + 주민번
   });
 
   // ── AC-1/2: 환불동의서 page 1 좌표 ───────────────────────────────────────
-  test.describe('AC-1/2 환불동의서 page 1 자동채움 (위치 보정)', () => {
-    // PNG 분석 기반: refund_consent.png 2481×10524 → canvas 794×3369 (scale=0.32)
+  test.describe('AC-1/2 환불동의서 page 1 자동채움 (위치 보정 최종)', () => {
+    // PIL full-x-range scan: refund_consent.png 2481×10524 → canvas 794×3369 (scale=0.32)
+    //   차트번호 밑줄 y=214, 환자이름 밑줄 y=249 → textBaseline='top' 15px → y=214-15=199, 249-15=234
+    //   x=190: 코론 끝(x≈178) + 12px 여백 → 입력란 시작점
+    //   구 e86c953 x=163, y=155/188 (라벨 위 46px) → 현재 x=190, y=199/234 (밑줄 하단 정렬) 교정
     const posP1 = [
-      { key: 'chartNumber', x: 163, y: 155 }, // "● 차트번호 : " 우측
-      { key: 'name',        x: 163, y: 188 }, // "● 환자이름 : " 우측
+      { key: 'chartNumber', x: 190, y: 199 }, // 차트번호 밑줄(y=214) 하단 정렬
+      { key: 'name',        x: 190, y: 234 }, // 환자이름 밑줄(y=249) 하단 정렬
     ];
 
     test('page 1 필드 2개 (차트번호 + 환자이름)', () => {
@@ -108,11 +110,19 @@ test.describe('PENCHART-FORM-AUTOFILL — 자동채움 위치 보정 + 주민번
       }
     });
 
-    test('page 1 x 좌표 — 차트번호/환자이름 라벨 우측 (>100)', () => {
+    test('page 1 x 좌표 — 코론(x≈178) 우측 + 12px 여백 (>180, ≤320 underline)', () => {
       for (const p of posP1) {
-        expect(p.x).toBeGreaterThan(100);
-        expect(p.x).toBeLessThanOrEqual(794);
+        expect(p.x).toBeGreaterThan(180); // 코론 우측
+        expect(p.x).toBeLessThanOrEqual(320); // 밑줄 끝
       }
+    });
+
+    test('chartNumber y=199 — 밑줄(y=214) 하단 정렬 (y + 15px = 214)', () => {
+      expect(posP1[0].y + 15).toBe(214); // textBaseline='top', 15px font
+    });
+
+    test('name y=234 — 밑줄(y=249) 하단 정렬 (y + 15px = 249)', () => {
+      expect(posP1[1].y + 15).toBe(249); // textBaseline='top', 15px font
     });
 
     test('chartNumber 빈 값이면 fillText 스킵', () => {
@@ -121,45 +131,59 @@ test.describe('PENCHART-FORM-AUTOFILL — 자동채움 위치 보정 + 주민번
     });
   });
 
-  // ── AC-3/4: 환불동의서 page 3 좌표 보정 ──────────────────────────────────
-  test.describe('AC-3/4 환불동의서 page 3 자동채움 (위치 보정)', () => {
-    // PNG 분석 기반: [본인 동의서] 섹션 (canvas y=2866~3369)
-    // date→ "년 월 일" 라인 앞, name→ "이름" 셀 내부
-    const posP3 = [
-      { key: 'date', x: 440, y: 3071 }, // [본인 동의서] "년 월 일" 앞 공간
-      { key: 'name', x: 55,  y: 3206 }, // [본인 동의서] "이름" 셀 내부
+  // ── AC-4: 환불동의서 page 3 날짜 분리 렌더링 ─────────────────────────────
+  test.describe('AC-4 환불동의서 page 3 날짜 분리 배치 (년/월/일 우측정렬)', () => {
+    // PIL full-x-range scan (PNG row 9593, canvas y=3071):
+    //   "년" 좌측 끝 x≈549.5 → textAlign='right' x=537 (12.5px 여백)
+    //   "월" 좌측 끝 x≈617.3 → textAlign='right' x=607 (10.3px 여백)
+    //   "일" 좌측 끝 x≈684.5 → textAlign='right' x=671 (13.5px 여백)
+    //   DATE_Y=3071 — 구 e86c953: 단일 "2026. 5. 24."을 x=440 → "년" 겹침 발생
+    //   AC-R4: name(x=55, y=3206) 제거 — 직원이 직접 이름칸 기입
+    const datePositions = [
+      { label: '년', rightX: 537 }, // "년" 글자 왼쪽 12.5px 앞
+      { label: '월', rightX: 607 }, // "월" 글자 왼쪽 10.3px 앞
+      { label: '일', rightX: 671 }, // "일" 글자 왼쪽 13.5px 앞
     ];
+    const DATE_Y = 3071;
 
-    test('page 3 필드 2개 (날짜 + 이름) — birthDate 제거', () => {
-      expect(posP3).toHaveLength(2);
-      const keys = posP3.map((p) => p.key);
-      expect(keys).not.toContain('birthDate');
+    test('날짜 3개 분리 배치 — 년/월/일 각 우측정렬 x값', () => {
+      expect(datePositions).toHaveLength(3);
+      expect(datePositions[0].rightX).toBe(537);
+      expect(datePositions[1].rightX).toBe(607);
+      expect(datePositions[2].rightX).toBe(671);
     });
 
-    test('page 3 y 좌표 — page 3 범위 (2246-3369)', () => {
-      for (const p of posP3) {
-        expect(p.y).toBeGreaterThanOrEqual(2246);
-        expect(p.y).toBeLessThanOrEqual(3369);
-      }
+    test('DATE_Y=3071 — page 3 범위 내 (2246-3369)', () => {
+      expect(DATE_Y).toBeGreaterThanOrEqual(2246);
+      expect(DATE_Y).toBeLessThan(3369);
     });
 
-    test('date y 좌표 — [본인 동의서] 년월일 라인 (>3000)', () => {
-      expect(posP3[0].y).toBeGreaterThan(3000); // 날짜가 위에 있던 2939보다 낮아야 함
+    test('날짜 파싱: "2026. 5. 24." → [year, month, day] = ["2026", "5", "24"]', () => {
+      const dateStr = '2026. 5. 24.';
+      const parts = dateStr.replace(/\./g, '').trim().split(/\s+/).filter(Boolean);
+      expect(parts).toHaveLength(3);
+      expect(parts[0]).toBe('2026');
+      expect(parts[1]).toBe('5');
+      expect(parts[2]).toBe('24');
     });
 
-    test('name y 좌표 — 이름 셀 내부 (>3100)', () => {
-      expect(posP3[1].y).toBeGreaterThan(3100); // 이름 셀이 더 낮은 위치
+    test('날짜 파싱: 빈 문자열 → parts.length < 3 → 렌더 스킵', () => {
+      const dateStr = '';
+      if (!dateStr) return; // 조기 반환
+      const parts = dateStr.replace(/\./g, '').trim().split(/\s+/).filter(Boolean);
+      expect(parts.length).toBeLessThan(3);
     });
 
-    test('page 1 + page 3 모두 호출 — initBgCanvas에서 2회 drawAutofillOnCtx', () => {
-      let callCount = 0;
-      const drawAutofillOnCtx = () => { callCount++; };
+    test('AC-4 initBgCanvas: drawAutofillOnCtx(P1) + drawRefundP3DateAutofill(P3) 호출', () => {
+      let p1Called = false;
+      let p3DateCalled = false;
       const fk = 'refund_consent';
       if (fk === 'refund_consent') {
-        drawAutofillOnCtx();  // P1
-        drawAutofillOnCtx();  // P3
+        p1Called = true;    // drawAutofillOnCtx P1
+        p3DateCalled = true; // drawRefundP3DateAutofill
       }
-      expect(callCount).toBe(2);
+      expect(p1Called).toBe(true);
+      expect(p3DateCalled).toBe(true);
     });
   });
 
@@ -302,45 +326,62 @@ test.describe('PENCHART-FORM-AUTOFILL — 자동채움 위치 보정 + 주민번
     });
   });
 
-  // ── AC-R5: 환불동의서 autofill 좌표 코드 레벨 검증 ───────────────────────
-  // 좌표 보정 후 범위 내 위치 확인 (실기기 시각 검증은 현장 배포 후 확인)
-  test.describe('AC-R5 환불동의서 좌표 코드 레벨 검증', () => {
+  // ── AC-R5: 환불동의서 autofill 좌표 코드 레벨 검증 (최종 보정) ──────────
+  // MSG-20260524-111246-xbb9: PIL full-x-range scan 기반 좌표 정밀 교정
+  test.describe('AC-R5 환불동의서 좌표 코드 레벨 검증 (최종)', () => {
     // refund_consent.png 2481×10524 → canvas 794×3369 (scale≈0.32)
-    // P1: 차트번호/환자이름 (page 1 상단)
+    // P1: 차트번호/환자이름 (page 1 상단) — 밑줄 하단 정렬
     const posP1 = [
-      { key: 'chartNumber', x: 163, y: 155 },
-      { key: 'name',        x: 163, y: 188 },
+      { key: 'chartNumber', x: 190, y: 199 }, // underline y=214, font 15px: 199+15=214
+      { key: 'name',        x: 190, y: 234 }, // underline y=249, font 15px: 234+15=249
     ];
-    // P3: 날짜 (page 3) — AC-R4로 이름 제거됨, 날짜만 유지
-    const posP3_date = { key: 'date', x: 440, y: 3071 };
+    // P3: 날짜 분리 렌더링 — drawRefundP3DateAutofill (AC-R4로 name 제거)
+    const p3DateX = { year: 537, month: 607, day: 671 };
+    const DATE_Y = 3071;
 
-    test('P1 좌표 — canvas 범위 내 (794×1123)', () => {
+    test('P1 좌표 — canvas page 1 범위 내 (y < 1123)', () => {
       for (const p of posP1) {
-        expect(p.x).toBeGreaterThan(0);
-        expect(p.x).toBeLessThanOrEqual(794);
+        expect(p.x).toBeGreaterThan(180); // 코론(x≈178) 우측
+        expect(p.x).toBeLessThanOrEqual(320); // 밑줄 끝
         expect(p.y).toBeGreaterThanOrEqual(0);
         expect(p.y).toBeLessThan(1123); // page 1 범위
       }
     });
 
-    test('P3 date 좌표 — page 3 범위 내 (2246-3369)', () => {
-      expect(posP3_date.x).toBeGreaterThan(0);
-      expect(posP3_date.x).toBeLessThanOrEqual(794);
-      expect(posP3_date.y).toBeGreaterThanOrEqual(2246); // page 3 시작
-      expect(posP3_date.y).toBeLessThan(3369); // page 3 끝
+    test('P1 y 정밀 검증 — textBaseline=top, 15px → 텍스트 하단이 밑줄에 정렬', () => {
+      expect(posP1[0].y + 15).toBe(214); // 차트번호 밑줄 y=214
+      expect(posP1[1].y + 15).toBe(249); // 환자이름 밑줄 y=249
     });
 
-    test('P3 name 제거 확인 — REFUND_AUTOFILL_POS_P3에 name 없음 (AC-R4 연동)', async () => {
+    test('P3 날짜 분리 x 좌표 — 각 글자(년/월/일) 우측정렬 기준점 검증', () => {
+      // "년" 좌측 끝 x≈549.5 → textAlign=right, x=537 (12.5px 여백)
+      expect(p3DateX.year).toBeGreaterThan(500);
+      expect(p3DateX.year).toBeLessThan(549); // "년" 왼쪽에 위치
+      // "월" 좌측 끝 x≈617.3 → x=607 (10.3px 여백)
+      expect(p3DateX.month).toBeGreaterThan(600);
+      expect(p3DateX.month).toBeLessThan(617);
+      // "일" 좌측 끝 x≈684.5 → x=671 (13.5px 여백)
+      expect(p3DateX.day).toBeGreaterThan(660);
+      expect(p3DateX.day).toBeLessThan(684);
+    });
+
+    test('P3 DATE_Y=3071 — page 3 범위 내 (2246-3369)', () => {
+      expect(DATE_Y).toBeGreaterThanOrEqual(2246); // page 3 시작
+      expect(DATE_Y).toBeLessThan(3369); // page 3 끝
+    });
+
+    test('P3 name 제거 확인 — drawRefundP3DateAutofill은 date만 렌더 (AC-R4)', async () => {
       const fs = await import('fs');
       const src = fs.readFileSync(
         new URL('../../src/components/PenChartTab.tsx', import.meta.url).pathname,
         'utf-8',
       );
-      // REFUND_AUTOFILL_POS_P3 블록에서 name 키가 제거됐는지 소스 검증
-      // date만 남아야 함 (name at y:3206 제거)
-      const p3Block = src.match(/REFUND_AUTOFILL_POS_P3[\s\S]*?];/)?.[0] ?? '';
-      expect(p3Block).toContain("key: 'date'");
-      expect(p3Block).not.toContain("key: 'name'");
+      // drawRefundP3DateAutofill 함수 내부에 name 필드 렌더링 없음
+      const fnMatch = src.match(/function drawRefundP3DateAutofill[\s\S]*?^}/m)?.[0] ?? '';
+      expect(fnMatch).toContain('fields.date');
+      expect(fnMatch).not.toContain('fields.name');
+      // REFUND_AUTOFILL_POS_P3 배열 삭제 확인 (분리 함수로 대체)
+      expect(src).not.toContain('REFUND_AUTOFILL_POS_P3');
     });
   });
 });
@@ -348,19 +389,21 @@ test.describe('PENCHART-FORM-AUTOFILL — 자동채움 위치 보정 + 주민번
 /**
  * 현장 클릭 시나리오 (수동 검증용 체크리스트):
  *
- * [시나리오1] 환불동의서 고객정보 자동 표시
+ * [시나리오1] 환불동의서 고객정보 자동 표시 (AC-R5 최종 보정 확인)
  *   1. 데스크 직원 로그인 → 고객 검색 → 차트번호 있는 고객 선택
  *   2. 임상 탭 → 펜차트 탭 → [새 차트 작성]
  *   3. [환불/비급여 동의서] 선택
  *   4. page 1 상단 확인:
- *      - "● 차트번호 : " 옆에 차트번호 자동 표시 (gray-500 italic)
- *      - "● 환자이름 : " 옆에 성함 자동 표시
+ *      - "● 차트번호 : " 우측 입력란에 차트번호 자동 표시 (gray-500 italic, 밑줄 하단 정렬)
+ *      - "● 환자이름 : " 우측 입력란에 성함 자동 표시
+ *      Expected: 구 e86c953 대비 텍스트가 라벨 위(y=155)가 아닌 입력란(y=199/234)에 위치
  *   5. page 3 스크롤 → [본인 동의서] 섹션 확인:
- *      - "년  월  일" 라인 앞에 오늘 날짜 표시 (예: 2026. 5. 24.)
- *      - "이름" 셀 내부에 성함 표시
- *      Expected: 위치 오류 수정 확인 (이전 버전 대비)
+ *      - 날짜 "2026" / "5" / "26" 이 "년" / "월" / "일" 글자 바로 앞에 각각 우측정렬로 표시
+ *      - "이름" 셀: 빈칸 (AC-R4로 자동채움 제거 — 직원이 직접 기입)
+ *      Expected: 구 e86c953 대비 "2026. 5. 24."가 단일 블록으로 "년" 위에 겹치던 문제 해소
  *   6. 연락처 미표시 확인 (AC-5)
- *   7. 펜 서명 → [저장] → list 복귀 정상
+ *   7. 하단 서명란(개인정보 동의) 영역 없음 확인 (AC-R4)
+ *   8. 펜 서명 → [저장] → list 복귀 정상
  *
  * [시나리오2] 보험차트 고객정보 자동 연동
  *   1. 주민번호 등록된 고객 선택
