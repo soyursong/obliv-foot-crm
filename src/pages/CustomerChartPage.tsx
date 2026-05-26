@@ -41,7 +41,7 @@ import { NhisLookupPanel } from '@/components/insurance/NhisLookupPanel';
 import { FORM_META } from '@/lib/formTemplates';
 // T-20260515-foot-RESV-MEMO-APPEND: 예약메모 누적 삽입 헬퍼
 import { ReservationMemoTimeline, insertReservationMemo, insertAltPinnedMemo } from '@/components/ReservationMemoTimeline';
-// T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 공유 패널 (2번차트 2구역 예약내역)
+// T-20260522-foot-RESV-HISTORY-SYNC AC-3: 예약 변경 이력 패널
 import { ReservationAuditLogPanel } from '@/components/ReservationAuditLogPanel';
 // T-20260517-foot-C2-CONSULT-DOCS: 동의서 [작성] 다이얼로그
 import { ConsentFormDialog, type FormType } from '@/components/ConsentFormDialog';
@@ -64,6 +64,18 @@ interface MessageLog {
   sent_by_name: string | null;
   memo: string | null;
   created_at: string;
+}
+
+// T-20260525-foot-MESSAGING-V1 AC-3: 자동 SMS 발송 이력 (notification_logs)
+interface NotificationLog {
+  id: string;
+  event_type: string;
+  channel: string;
+  status: 'sent' | 'failed' | 'opt_out' | 'skipped' | 'pending' | 'cancelled';
+  body_rendered: string | null;
+  sent_at: string | null;
+  created_at: string;
+  error_message: string | null;
 }
 
 interface Payment {
@@ -1538,6 +1550,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     message_type: 'sms' | 'kakao' | 'manual';
   }>({ content: '', message_type: 'manual' });
   const [savingMessage, setSavingMessage] = useState(false);
+  // T-20260525-foot-MESSAGING-V1 AC-3: 자동 SMS 발송 이력 (notification_logs)
+  const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>([]);
 
   // T-20260522-foot-ALT-BADGE: ALT 토글 상태 (S2)
   const [altStatus, setAltStatus] = useState(false);
@@ -1709,6 +1723,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         .limit(50);
       setMessageLogs((msgData ?? []) as MessageLog[]);
 
+      // T-20260525-foot-MESSAGING-V1 AC-3: 자동 SMS 발송 이력 (notification_logs)
+      const { data: nlData } = await (supabase.from('notification_logs') as any)
+        .select('id, event_type, channel, status, body_rendered, sent_at, created_at, error_message')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      setNotificationLogs((nlData ?? []) as NotificationLog[]);
+
       setLoading(false);
     })();
   }, [customerId, profile]);
@@ -1735,6 +1757,17 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       .order('sent_at', { ascending: false })
       .limit(50);
     setMessageLogs((data ?? []) as MessageLog[]);
+  }, [customerId]);
+
+  // T-20260525-foot-MESSAGING-V1 AC-3: 자동 SMS 발송 이력 새로고침
+  const refreshNotificationLogs = useCallback(async () => {
+    if (!customerId) return;
+    const { data } = await (supabase.from('notification_logs') as any)
+      .select('id, event_type, channel, status, body_rendered, sent_at, created_at, error_message')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    setNotificationLogs((data ?? []) as NotificationLog[]);
   }, [customerId]);
 
   // T-20260520-foot-PENCHART-VIEW-SPLIT: form_submissions 이미지 뷰어 핸들러
@@ -5208,11 +5241,89 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 </div>
               </div>
 
-              {/* 메시지 이력 목록 */}
+              {/* T-20260525-foot-MESSAGING-V1 AC-3: 자동 SMS 발송 이력 (notification_logs) */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5 font-semibold text-teal-700">
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    자동 SMS 발송 이력
+                    {notificationLogs.length > 0 && (
+                      <span className="ml-1 text-[10px] bg-teal-100 text-teal-700 rounded-full px-1.5 py-0.5">
+                        {notificationLogs.length}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    className="text-[10px] text-muted-foreground hover:text-foreground"
+                    onClick={refreshNotificationLogs}
+                  >
+                    새로고침
+                  </button>
+                </div>
+                {notificationLogs.length === 0 ? (
+                  <div className="py-3 text-center text-muted-foreground border border-dashed rounded text-[11px]">
+                    자동 SMS 발송 이력 없음
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {notificationLogs.map((log) => {
+                      const statusColor =
+                        log.status === 'sent' ? 'text-teal-700 bg-teal-50 border-teal-200' :
+                        log.status === 'failed' ? 'text-red-600 bg-red-50 border-red-200' :
+                        log.status === 'opt_out' ? 'text-orange-600 bg-orange-50 border-orange-200' :
+                        log.status === 'skipped' ? 'text-gray-500 bg-gray-50 border-gray-200' :
+                        'text-muted-foreground bg-muted border-border';
+                      const eventLabel: Record<string, string> = {
+                        resv_confirm:          '예약확정',
+                        resv_reminder_d1:      'D-1 리마인드',
+                        resv_reminder_morning: '당일 아침',
+                        noshow:                '노쇼 후속',
+                        test_send:             '테스트 발송',
+                      };
+                      const statusLabel: Record<string, string> = {
+                        sent:     '발송완료',
+                        failed:   '실패',
+                        opt_out:  '수신거부',
+                        skipped:  '미발송',
+                        pending:  '대기',
+                        cancelled:'취소',
+                      };
+                      return (
+                        <div key={log.id} className="rounded border border-gray-100 bg-gray-50 px-2.5 py-2 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-foreground">
+                              {eventLabel[log.event_type] || log.event_type}
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                              {log.channel.toUpperCase()}
+                            </span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${statusColor}`}>
+                              {statusLabel[log.status] || log.status}
+                            </span>
+                            <span className="ml-auto tabular-nums text-[10px] text-muted-foreground/70">
+                              {format(new Date(log.sent_at || log.created_at), 'MM-dd HH:mm')}
+                            </span>
+                          </div>
+                          {log.body_rendered && (
+                            <p className="text-[11px] text-gray-700 bg-white/70 rounded p-1.5 whitespace-pre-wrap leading-snug border border-gray-100">
+                              {log.body_rendered}
+                            </p>
+                          )}
+                          {log.error_message && (
+                            <p className="text-[10px] text-red-500">{log.error_message}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* 메시지 이력 목록 (수동 기록) */}
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center gap-1.5 font-semibold text-muted-foreground mb-2">
                   <MessageSquare className="h-3.5 w-3.5" />
-                  발송 이력
+                  수동 문자 기록
                 </div>
                 {messageLogs.length === 0 ? (
                   <div className="py-4 text-center text-muted-foreground border border-dashed rounded">
