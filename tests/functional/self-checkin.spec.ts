@@ -89,7 +89,8 @@ test.describe('Self check-in flow', () => {
 
       // 폼이 초기화되었는지 확인
       await expect(page.locator('#sc-name')).toHaveValue('');
-      await expect(page.locator('#sc-phone')).toHaveValue('');
+      // phone은 NumPad state — 포맷된 번호가 표시되지 않음을 확인
+      await expect(page.getByText(/^\d{3}-\d{4}-\d{4}$/)).not.toBeVisible();
     } else {
       // RLS 정책으로 인한 실패 -- 에러 화면 정상 표시 확인
       test.info().annotations.push({
@@ -179,12 +180,23 @@ test.describe('Self check-in flow', () => {
     await page.locator('#sc-name').fill('이름만');
     await expect(submitBtn).toBeDisabled();
 
-    // 짧은 전화번호 (10자리 미만)
-    await page.locator('#sc-phone').fill('0101234');
+    // 짧은 전화번호 (7자리) — NumPad로 입력
+    for (const d of ['0', '1', '0', '1', '2', '3', '4']) {
+      await page.getByRole('button', { name: d, exact: true }).click();
+    }
     await expect(submitBtn).toBeDisabled();
 
-    // 정상 전화번호 입력
-    await page.locator('#sc-phone').fill('01012345678');
+    // 전체 삭제 후 정상 전화번호 입력 (11자리)
+    await page.getByRole('button', { name: '전체삭제' }).click();
+    for (const d of ['0', '1', '0', '1', '2', '3', '4', '5', '6', '7', '8']) {
+      await page.getByRole('button', { name: d, exact: true }).click();
+    }
+    // phone(11자리) OK이지만 visitType 없으면 여전히 비활성
+    await expect(submitBtn).toBeDisabled();
+
+    // visitType 선택 (예약 + 재진) → 이제 canSubmit = name ✅ + phone ✅ + visitType ✅
+    await page.getByRole('button', { name: '예약하고 왔어요' }).click();
+    await page.locator('button').filter({ hasText: '재진' }).first().click();
     await expect(submitBtn).toBeEnabled();
   });
 });
