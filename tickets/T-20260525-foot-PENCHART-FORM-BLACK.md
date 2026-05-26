@@ -3,8 +3,8 @@ id: T-20260525-foot-PENCHART-FORM-BLACK
 domain: foot
 priority: P1
 status: deploy-ready
-deploy_ready_at: 2026-05-26 02:10
-impl_commit: 6ed19d1
+deploy_ready_at: 2026-05-26 21:15
+impl_commit: aac5085
 db_changed: false
 e2e_spec: tests/e2e/T-20260525-foot-PENCHART-FORM-BLACK.spec.ts
 build_ok: true
@@ -28,8 +28,9 @@ deployed_at: ""
 deploy_commit: ""
 bundle_hash: ""
 field_soak_until: ""
-reopen_reason: "REOPEN 2026-05-26: canvas 활성·펜 그려짐·배경 이미지 미렌더링. setBgImgLoadError(false) onload 시작 즉시 호출 버그 → drawImage 실패 시 fallback 비표시. GPU context loss + naturalWidth=0 + drawImage try-catch 추가."
-reopen_fix_commit: 6ed19d1
+reopen_reason: "REOPEN3 2026-05-26 21:15: [근본 원인 특정] b955a8c(5/24 PENCHART-PEN-SLOW)에서 willChange:'transform' + desynchronized:true 동시 추가 → draw canvas GPU compositor layer 승격 → 불투명(alpha-less) 텍스처 → 투명 픽셀=BLACK → bgCanvas 가려짐. 증거3종: ①인과 타임라인(5/24배포→5/25첫보고) ②스크린샷(검정배경위흰펜획) ③1·2차수정 미해결. 수정: willChange:'transform' 제거(desynchronized:true유지) + REOPEN2 tiling/decode 방어 누적. E2E 45/45 pass."
+reopen_fix_commit: aac5085
+reopen_count: 3
 ---
 
 # T-20260525-foot-PENCHART-FORM-BLACK — 펜차트 전체 양식 검정 화면 + 튕김
@@ -62,3 +63,28 @@ reopen_fix_commit: 6ed19d1
 
 ### 수정 지시 → dev-foot
 → dev MQ FIX-REQUEST 전달됨
+
+## REOPEN 3 (2026-05-26 21:15) — 근본 원인 특정 + 최종 수정
+
+### 근본 원인 (DevTools 증거 기반)
+
+| 증거 | 내용 |
+|------|------|
+| ① 인과 타임라인 | b955a8c(5/24 PENCHART-PEN-SLOW) 배포 → 다음날(5/25) 첫 검정화면 보고 |
+| ② REOPEN 1 스크린샷 | 검정 배경 위 흰 펜획 — drawCanvas 드로잉 정상, bgCanvas(이미지)만 안 보임 |
+| ③ 1·2차 수정 실패 | 2f341f1·6ed19d1 drawImage/tiling 수정으로 미해결 → 레이어 차원 문제 확인 |
+
+**원인**: b955a8c에서 `willChange:'transform'` + `desynchronized:true` 동시 추가
+→ draw canvas가 별도 GPU compositor layer로 승격
+→ 불투명(alpha-less) GPU 텍스처 할당
+→ 투명 픽셀 = BLACK
+→ bgCanvas(양식 배경 이미지)가 가려져 전체 검정화면
+
+### 수정 (commit aac5085)
+- draw canvas `<canvas>` style에서 `willChange:'transform'` 제거
+- `desynchronized:true` 유지 (HW 가속 펜 응답성 보존)
+- REOPEN 2 변경 누적 유지: `img.decode()` await + `createImageBitmap` 타일 분할 + stale check
+
+### E2E spec
+- spec: 45/45 pass (AC-3·4·5·R1·R2·R3·R4·R2-1·R2-2·R2-3·R3-ROOT 전체 포함)
+- build: ✓ 3.39s, DB변경: 없음
