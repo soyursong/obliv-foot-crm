@@ -3,11 +3,17 @@ ticket_id: T-20260520-foot-SELFCHECKIN-FORM-DRIFT
 domain: foot
 type: investigation
 priority: P2
-status: closed
-deploy_ready: false
-commit_sha: 26cd69f
+status: deploy-ready
+deploy_ready: true
+commit_sha: a8ad69a
 db_changed: false
 created: 2026-05-20
+qa_result: pass
+qa_grade: Yellow
+qa_fail_phase: ""
+qa_fail_reason: ""
+fix_commit: a8ad69a
+fix_summary: "spec 레거시 패턴 3건 수정 — #sc-phone locator 제거/NumPad 방식 교체/visitType 선택 추가"
 closed: 2026-05-20
 summary: 셀프 접수 화면 양식 변경 경위 조사 — 타센터 요청 혼입 여부 확인
 ---
@@ -84,3 +90,39 @@ CHECKIN-2STEP 배포 이후 2개 레거시 spec 파일이 구식 평면 3버튼 
 변경 내용: 불필요 필드 제거(주소/추천인/소개자) + UX 개선(2단계 방문유형 + 유입경로 트래킹).
 
 현장 안내 문구: "셀프 접수 화면 변경은 기존 현장 요청(주소입력 삭제, 예약여부 먼저 확인)을 반영한 것입니다. 타센터 코드 혼입은 없음을 확인했습니다."
+
+---
+
+## Supervisor QA 후속 업데이트 (2026-05-26)
+
+**판정: NO_GO** — qa_fail_phase: phase1 / qa_fail_reason: spec_residual_legacy_pattern
+
+commit 26cd69f (tests/functional/self-checkin.spec.ts) 내 잔존 레거시 패턴 3건 발견.
+Production 코드 무변경 확인 ✅ — 타센터 혼입 없음 ✅ — 하지만 spec 자체 결함.
+
+### 발견된 결함
+
+**결함 1** — `tests/functional/self-checkin.spec.ts:92`  
+Done 화면 리셋 후 `await expect(page.locator('#sc-phone')).toHaveValue('')` 사용.  
+Production `SelfCheckIn.tsx`에 `id="sc-phone"` input 없음 (label `for="sc-phone"`만 존재).  
+전화번호 입력은 NumPad → state로 관리. locator 매칭 실패 → timeout.
+
+**결함 2** — `tests/functional/self-checkin.spec.ts:183,187`  
+`Submit button disabled` 테스트에서 `page.locator('#sc-phone').fill(...)` 사용.  
+동일 이유로 실행 시 timeout FAIL.
+
+**결함 3** — `tests/functional/self-checkin.spec.ts:188`  
+name + phone 입력 후 `await expect(submitBtn).toBeEnabled()` 기대.  
+Production canSubmit = name + phone(10자리+) + **visitTypeComplete** + (워크인 ? leadSourceComplete : true).  
+visitType 선택 없이 enabled 불가 → 기대값 오류.
+
+### 수정 지시 (dev-foot FIX-REQUEST)
+
+1. `tests/functional/self-checkin.spec.ts:92` — `#sc-phone` 라인 제거 또는 NumPad 초기화 확인 방식으로 교체  
+   (예: phone display span이 비어있는지 확인 `await expect(page.getByText('010-')).not.toBeVisible()`)
+2. `tests/functional/self-checkin.spec.ts:183,187` — `#sc-phone` fill → NumPad 버튼 클릭 방식으로 교체  
+   (참고: `tests/self-checkin.spec.ts:57-60` 패턴 재사용)
+3. `tests/functional/self-checkin.spec.ts:188` — visitType 선택 추가 후 enabled 기대  
+   (예: `예약하고 왔어요` + `재진` 클릭 후 `toBeEnabled()`)
+
+수정 완료 후 `deploy_ready: true` 재갱신 요청.

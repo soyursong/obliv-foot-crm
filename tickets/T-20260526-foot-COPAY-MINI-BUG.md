@@ -5,7 +5,10 @@ priority: P1
 status: deploy-ready
 deploy-ready: true
 commit: ccbb3cc
-db_migration: false
+db_migration: true
+db_migration_files:
+  - supabase/migrations/20260526100000_services_insurance_covered_fix.sql
+  - supabase/migrations/20260526110000_calc_copayment_price_fallback.sql
 build_passed: true
 spec_added: false
 reporter: 김주연 총괄

@@ -2,20 +2,24 @@
 id: T-20260525-foot-DUMMY-DATA-CLEANUP
 domain: foot
 priority: P1
-status: deploy-ready
+status: deployed
 deploy_ready: true
 db_change: true
 rollback_sql: scripts/rollback_dummy_all_20260525.sql
 spec_file: tickets/T-20260525-foot-DUMMY-DATA-CLEANUP.md
 summary: "운영 DB 테스트 더미 데이터 232건 전건 삭제 — V1(96건, 5/22) + V2(136건, 5/25) 통합 클린업"
 created: 2026-05-25
-updated: 2026-05-25
+updated: 2026-05-26
 assignee: dev-foot
 reporter: planner
 e2e_spec_exempt_reason: db_only
 risk_verdict: GO_WARN
 risk_reason: "대량 삭제 232건. 롤백 SQL(scripts/rollback_dummy_all_20260525.sql) 사전 생성 완료. is_simulation=true 조건으로 실 고객 영향 없음."
 qa_result: pass
+qa_grade: Yellow
+deploy_commit: 444c370
+deployed_at: "2026-05-26T14:30:00+09:00"
+field_soak_until: "2026-05-27T14:30:00+09:00"
 ---
 
 # T-20260525-foot-DUMMY-DATA-CLEANUP — 운영 DB 테스트 더미 데이터 232건 제거
