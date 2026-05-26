@@ -7,7 +7,7 @@ deploy-ready: true
 build-passed: true
 db-change: true
 e2e-spec: true
-summary: "풋 CRM 메시징 모듈 1차 (롱레 복제) S1 완료. FIX-REQUEST 반영: SECTION1 clinic_messaging_capability 6컬럼 추가(solapi_api_key_vault_name/solapi_secret_vault_name/sender_number/send_start_hour/send_end_hour/kakao_channel_id), SECTION8 admin_save_messaging_config v2 교체(p_sender_number 파라미터+정규화+conditional UPSERT), SECTION9 solapi_validation_status CHECK 값 수정(unchecked/not_registered/api_unreachable), rollback.sql 함수 시그니처 갱신. 빌드 3.20s OK. DB변경: supabase/migrations/20260525030000_messaging_module.sql (미적용 — supervisor QA 시 적용)."
+summary: "풋 CRM 메시징 모듈 1차 (롱레 복제) S1 완료. FIX-REQUEST 3항목 반영(a06deb1 @5/25 18:21): SECTION1 clinic_messaging_capability 6컬럼 추가(solapi_api_key_vault_name/solapi_secret_vault_name/sender_number/send_start_hour/send_end_hour/kakao_channel_id), SECTION8 admin_save_messaging_config v2 교체(p_sender_number 파라미터+정규화+conditional UPSERT), SECTION9 solapi_validation_status CHECK 값 수정(unchecked/not_registered/api_unreachable), rollback.sql 함수 시그니처 갱신. 추가: 20260526220000_messaging_schema_align.sql — notification_templates(template→body, active→is_active, channel CHECK), notification_logs(provider_msg_id→solapi_message_id, body_rendered/error_code 추가, status/channel CHECK 정렬). 빌드 3.50s OK. DB변경: 2개 migration 미적용 — supervisor QA 시 적용."
 hotfix: false
 created: 2026-05-25 16:22
 deadline: 2026-05-28
@@ -21,9 +21,11 @@ risk_verdict: GO_WARN
 risk_reason: "3/5 — DB 스키마 신규 5테이블(messaging), EF 신규(send-notification), 셀프체크인 고객 데이터 쓰기 경로 변경(sms_opt_in 추가)"
 deploy_scope: S1_code_copy
 pending_scope: "S2 운영 데이터 등록(AC-4~7) — 김주연 승인 후 / S3 검증 발송(AC-11~12) — 검증 발송 GREEN 후"
-qa_result: fail
-qa_fail_phase: phase1
-qa_fail_reason: db_schema_gap
+qa_result: ""
+qa_fail_phase: ""
+qa_fail_reason: ""
+qa_fix_commit: "a06deb1"
+qa_fix_note: "FIX-REQUEST 3항목(SECTION1 컬럼+SECTION8 v2+SECTION9 CHECK) 반영 완료. 추가 schema_align migration(20260526220000) 포함. 재QA 요청."
 ---
 
 # T-20260525-foot-MESSAGING-V1 — 풋 CRM 메시징 모듈 1차 (롱레 복제)

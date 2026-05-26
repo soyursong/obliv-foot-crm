@@ -862,15 +862,30 @@ COMMENT ON TRIGGER reservations_messaging_trigger ON public.reservations IS
 -- 기존 동명 작업이 있으면 먼저 unschedule (idempotent 보장).
 -- 이후 fresh 등록 → morning/retry 는 등록 후 active=FALSE 로 비활성화.
 
--- 15-A. 기존 작업 unschedule (있을 경우에만)
-SELECT cron.unschedule(jobname)
-  FROM cron.job
- WHERE jobname IN (
-   'foot-notif-reminder-d1',
-   'foot-notif-reminder-morning',
-   'foot-notif-retry-failed',
-   'foot-ef-send-notification-keep-warm'
- );
+-- 15-A. 기존 작업 unschedule (있을 경우에만) — cron.job 직접 쿼리 권한 없음 → DO 블록으로 처리
+DO $$
+BEGIN
+  PERFORM cron.unschedule('foot-notif-reminder-d1');
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  PERFORM cron.unschedule('foot-notif-reminder-morning');
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  PERFORM cron.unschedule('foot-notif-retry-failed');
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  PERFORM cron.unschedule('foot-ef-send-notification-keep-warm');
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
 
 -- 15-B. 신규 등록
 
@@ -881,20 +896,6 @@ SELECT cron.schedule(
   $$SELECT public.notify_reminders_batch('resv_reminder_d1', FALSE)$$
 );
 
--- 당일 오전 리마인더: 매일 09:00 KST (= 00:00 UTC) — 등록 후 비활성
-SELECT cron.schedule(
-  'foot-notif-reminder-morning',
-  '0 0 * * *',
-  $$SELECT public.notify_reminders_batch('resv_reminder_morning', FALSE)$$
-);
-
--- 실패 재시도: 30분마다 — 등록 후 비활성
-SELECT cron.schedule(
-  'foot-notif-retry-failed',
-  '*/30 * * * *',
-  $$SELECT public.notify_retry_failed(FALSE)$$
-);
-
 -- Edge Function keep-warm: 5분마다 — ACTIVE
 SELECT cron.schedule(
   'foot-ef-send-notification-keep-warm',
@@ -902,13 +903,11 @@ SELECT cron.schedule(
   $$SELECT public.keep_warm_send_notification()$$
 );
 
--- 15-C. morning / retry 비활성화
-UPDATE cron.job
-   SET active = FALSE
- WHERE jobname IN (
-   'foot-notif-reminder-morning',
-   'foot-notif-retry-failed'
- );
+-- 15-C. morning / retry 는 S2 승인 후 별도 마이그레이션으로 등록
+-- (cron.job UPDATE 권한 없음 → 처음부터 등록하지 않고 S2 시점에 활성화)
+-- 등록 예정:
+--   'foot-notif-reminder-morning' — '0 0 * * *'
+--   'foot-notif-retry-failed'     — '*/30 * * * *'
 
 COMMIT;
 
