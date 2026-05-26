@@ -2,7 +2,7 @@
 id: T-20260526-foot-SVC-CATEGORY-SORT
 domain: foot
 priority: P2
-status: deploy-ready
+status: deployed
 deploy-ready: true
 build-passed: true
 db-change: true
@@ -13,6 +13,12 @@ risk_verdict: GO_WARN
 risk_reason: "DB: sort_order 컬럼 재정규화(기존 상대 순서 유지, PARTITION BY clinic_id, category_label). FE: Services.tsx 전면 교체 — filteredRows → tabItems + DnD. PaymentMiniWindow의 display_order는 무관. CRUD(softDelete/hardDelete/insert) 로직 보존."
 reporter: 김주연 총괄
 reporter_slack_id: U0ATDB587PV
+qa_result: pass
+qa_grade: Yellow
+deploy_commit: d36e2cc99be9a592b1a895c728d91460d1c56290
+deployed_at: "2026-05-27T07:49:00+09:00"
+bundle_hash: C3l5K3Ni
+field_soak_until: "2026-05-28T07:49:00+09:00"
 mq_origin: MSG-20260526-101601-9hll
 ---
 

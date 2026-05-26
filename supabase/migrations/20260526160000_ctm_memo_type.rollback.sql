@@ -1,0 +1,3 @@
+-- ROLLBACK: T-20260526-foot-VISIT-HIST-FILTER
+ALTER TABLE customer_treatment_memos
+  DROP COLUMN IF EXISTS memo_type;
