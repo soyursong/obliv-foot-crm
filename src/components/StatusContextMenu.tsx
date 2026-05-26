@@ -77,18 +77,22 @@ export function StatusContextMenu({
   const hasTreatmentRooms = treatmentRooms.length > 0;
   const hasConsultRooms = consultationRooms.length > 0;
 
-  // T-20260525-foot-STEP-CLIP: 하단 클리핑 방지 — 메뉴 실 렌더높이 기반 동적 보정
-  // 9 플래그×28px + 12 단계×28px + 헤더/여백 ≈ 712px; max-h-[85vh]이 상한
+  // T-20260525-foot-STAGE-BOTTOM-CLIP: 동적 maxHeight — top(y) 기준 남은 뷰포트 공간으로 제한
+  // 이전 fix(STEP-CLIP): max-h-[85vh](고정 85%) + 추정치 기반 y 보정
+  //   → 서브메뉴 오픈 시 실제 높이가 추정 712px 초과 → top + 85vh > 100vh 여전히 클리핑 가능
+  // 근본 수정: maxHeight = innerHeight - y - 8 → y 위치 무관하게 항상 뷰포트 내부 보장
   const menuContentEstH = 712;
   const menuRenderH = Math.min(menuContentEstH, Math.floor(window.innerHeight * 0.85));
   const x = Math.min(position.x, window.innerWidth - 240);
   const y = Math.max(0, Math.min(position.y, window.innerHeight - menuRenderH - 8));
+  // 실제 사용 가능한 높이: 클릭 지점 y에서 뷰포트 하단까지 (최소 200px 확보)
+  const maxH = Math.max(200, window.innerHeight - y - 8);
 
   return (
     <div
       ref={ref}
-      className="fixed z-50 min-w-[170px] rounded-lg border bg-white shadow-lg py-1 max-h-[85vh] overflow-y-auto"
-      style={{ top: y, left: x }}
+      className="fixed z-50 min-w-[170px] rounded-lg border bg-white shadow-lg py-1 overflow-y-auto"
+      style={{ top: y, left: x, maxHeight: maxH }}
     >
       {/* ── 상태 플래그 섹션 ─────────────────────────────────────────────────── */}
       <div className="px-2 py-0.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide border-b">
