@@ -45,7 +45,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { BookOpen, Camera, ChevronLeft, ChevronRight, ClipboardList, Edit2, FlaskConical, History, Loader2, Plus, Stethoscope, X } from 'lucide-react';
+import { BookOpen, Camera, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Edit2, FlaskConical, History, Loader2, Plus, Stethoscope, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -171,6 +171,30 @@ function chartSummary(chart: MedicalChart): string {
   return chart.diagnosis || chart.chief_complaint || chart.clinical_progress || chart.treatment_record || '기록';
 }
 
+// T-20260526-foot-VISIT-FOLD-FILTER: 특이사항 판별 기준 (dev 제안: 키워드 매칭 — 현장 확인 필요)
+// 제안 기준 ① notes 내 키워드 포함 ② 금기/과민 반응 언급 ③ 부작용 기록
+const NOTABLE_KEYWORDS = ['알러지', '주의', '특이', '금기', '과민', '부작용', '금지'];
+
+function hasTreatMemo(c: MedicalChart): boolean {
+  return !!c.treatment_record?.trim();
+}
+function hasDocMemo(c: MedicalChart): boolean {
+  return !!c.clinical_progress?.trim() || !!c.doctor_memo?.trim();
+}
+function isNotable(c: MedicalChart): boolean {
+  const text = [c.clinical_progress, c.doctor_memo, c.diagnosis, c.treatment_record]
+    .filter(Boolean).join(' ');
+  return NOTABLE_KEYWORDS.some(kw => text.includes(kw));
+}
+
+type MemoFilter = 'treat' | 'doc' | 'notable';
+
+const FILTER_OPTIONS: { key: MemoFilter; label: string; chipClass: string }[] = [
+  { key: 'treat', label: '치료메모', chipClass: 'bg-blue-600 text-white border-blue-600' },
+  { key: 'doc', label: '진료메모', chipClass: 'bg-teal-600 text-white border-teal-600' },
+  { key: 'notable', label: '⚠특이', chipClass: 'bg-amber-500 text-white border-amber-500' },
+];
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function MedicalChartPanel({
@@ -223,6 +247,10 @@ export default function MedicalChartPanel({
   const [treatImages, setTreatImages] = useState<TreatmentImage[]>([]);
   const [treatImagesLoaded, setTreatImagesLoaded] = useState(false);
   const [treatImagesLoading, setTreatImagesLoading] = useState(false);
+
+  // T-20260526-foot-VISIT-FOLD-FILTER: 아코디언 + 필터 상태
+  const [expandedChartIds, setExpandedChartIds] = useState<Set<string>>(new Set<string>());
+  const [memoFilters, setMemoFilters] = useState<Set<MemoFilter>>(new Set<MemoFilter>());
 
   // ── 데이터 로드 ──────────────────────────────────────────────────────────────
 
@@ -352,6 +380,9 @@ export default function MedicalChartPanel({
       setVisitHistLoaded(false);
       setTreatImages([]);
       setTreatImagesLoaded(false);
+      // T-20260526-foot-VISIT-FOLD-FILTER: 리셋
+      setExpandedChartIds(new Set<string>());
+      setMemoFilters(new Set<MemoFilter>());
     } else {
       setCustomer(null);
       setCharts([]);
@@ -686,6 +717,48 @@ export default function MedicalChartPanel({
   const displayCharts = charts.length > 0 ? charts : DUMMY_CHARTS;
   const isDummyMode = charts.length === 0;
 
+  // T-20260526-foot-VISIT-FOLD-FILTER: 필터 적용 (OR 로직)
+  const filteredDisplayCharts = memoFilters.size === 0
+    ? displayCharts
+    : displayCharts.filter(c => {
+        if (memoFilters.has('treat') && hasTreatMemo(c)) return true;
+        if (memoFilters.has('doc') && hasDocMemo(c)) return true;
+        if (memoFilters.has('notable') && isNotable(c)) return true;
+        return false;
+      });
+
+  const expandedCount = filteredDisplayCharts.filter(c => expandedChartIds.has(c.id)).length;
+  const allExpanded = filteredDisplayCharts.length > 0 && expandedCount === filteredDisplayCharts.length;
+
+  function expandAll() {
+    setExpandedChartIds(prev => {
+      const next = new Set(prev);
+      filteredDisplayCharts.forEach(c => next.add(c.id));
+      return next;
+    });
+  }
+  function collapseAll() {
+    setExpandedChartIds(prev => {
+      const next = new Set(prev);
+      filteredDisplayCharts.forEach(c => next.delete(c.id));
+      return next;
+    });
+  }
+  function toggleExpandChart(id: string) {
+    setExpandedChartIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function toggleFilter(f: MemoFilter) {
+    setMemoFilters(prev => {
+      const next = new Set(prev);
+      if (next.has(f)) next.delete(f); else next.add(f);
+      return next;
+    });
+  }
+
   const selectedChart = displayCharts.find(c => c.id === selectedChartId) ?? null;
   const chartsIdx = selectedChart ? displayCharts.indexOf(selectedChart) : -1;
 
@@ -748,9 +821,9 @@ export default function MedicalChartPanel({
             </div>
           ) : (
             <>
-              {/* ── 좌측: 경과 타임라인 (AC-4) ──────────────────────────────────── */}
+              {/* ── 좌측: 경과 타임라인 (AC-4 + T-20260526-foot-VISIT-FOLD-FILTER) ── */}
               <div
-                className="w-44 flex-shrink-0 border-r bg-muted/10 flex flex-col overflow-hidden"
+                className="w-56 flex-shrink-0 border-r bg-muted/10 flex flex-col overflow-hidden"
                 data-testid="medical-chart-timeline"
               >
                 {/* 새 기록 버튼 */}
@@ -770,7 +843,72 @@ export default function MedicalChartPanel({
                   </button>
                 </div>
 
-                {/* 경과 타임라인 목록 — 최신 상단 (최신순 정렬 유지) */}
+                {/* T-20260526-foot-VISIT-FOLD-FILTER: 메모 필터 + 전체 열기/접기 */}
+                <div className="flex-none px-2 pt-2 pb-2 border-b space-y-1.5">
+                  {/* 메모 종류 필터 chips */}
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="text-[9px] font-semibold text-muted-foreground shrink-0">필터</span>
+                    {FILTER_OPTIONS.map(({ key, label, chipClass }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => toggleFilter(key)}
+                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold transition-colors border ${
+                          memoFilters.has(key)
+                            ? chipClass
+                            : 'border-gray-300 text-muted-foreground hover:border-teal-400 hover:text-teal-700'
+                        }`}
+                        data-testid={`memo-filter-${key}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    {memoFilters.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setMemoFilters(new Set<MemoFilter>())}
+                        className="text-[9px] text-red-500 hover:text-red-700 underline ml-0.5"
+                        data-testid="memo-filter-clear"
+                      >
+                        전체
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 전체 열기/접기 + 카운트 */}
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[9px] text-muted-foreground tabular-nums shrink-0">
+                      {expandedCount}/{filteredDisplayCharts.length}건 펼침
+                      {memoFilters.size > 0 && (
+                        <span className="ml-0.5 text-amber-600">(전체 {displayCharts.length})</span>
+                      )}
+                    </span>
+                    <div className="flex gap-0.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={expandAll}
+                        disabled={filteredDisplayCharts.length === 0 || allExpanded}
+                        className="text-[9px] text-teal-600 hover:text-teal-800 disabled:opacity-30 border border-teal-200 rounded px-1 py-0.5 hover:bg-teal-50 transition-colors"
+                        data-testid="expand-all-btn"
+                        title="모두 펼치기"
+                      >
+                        모두펼침
+                      </button>
+                      <button
+                        type="button"
+                        onClick={collapseAll}
+                        disabled={expandedCount === 0}
+                        className="text-[9px] text-gray-600 hover:text-gray-800 disabled:opacity-30 border border-gray-200 rounded px-1 py-0.5 hover:bg-gray-50 transition-colors"
+                        data-testid="collapse-all-btn"
+                        title="모두 접기"
+                      >
+                        모두접기
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 경과 타임라인 레이블 */}
                 <div className="flex-none px-2 pt-2 pb-1">
                   <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
                     경과 타임라인
@@ -779,41 +917,127 @@ export default function MedicalChartPanel({
                     )}
                   </span>
                 </div>
+
                 <div className="flex-1 overflow-y-auto">
-                  {/* T-20260526-foot-NAV-ARROW-DUMMY: 더미 모드일 때 안내 배너 */}
+                  {/* 더미 모드 배너 */}
                   {isDummyMode && (
                     <div className="mx-2 mb-1 rounded border-2 border-yellow-400 bg-yellow-50 px-2 py-1 text-[10px] text-yellow-800 font-semibold">
                       실데이터 없음 — 더미 샘플 표시 중
                     </div>
                   )}
-                  {displayCharts.map(chart => {
+
+                  {/* 필터 결과 없음 */}
+                  {memoFilters.size > 0 && filteredDisplayCharts.length === 0 && (
+                    <div className="mx-2 mt-2 rounded border border-dashed p-3 text-[10px] text-muted-foreground text-center">
+                      해당 메모가 있는<br />방문 기록 없음
+                    </div>
+                  )}
+
+                  {/* 아코디언 엔트리 목록 */}
+                  {filteredDisplayCharts.map(chart => {
                     const isDummyEntry = chart.id.startsWith('__dummy__');
+                    const isExpanded = expandedChartIds.has(chart.id);
+                    const hasTreat = hasTreatMemo(chart);
+                    const hasDoc = hasDocMemo(chart);
+                    const notable = isNotable(chart);
                     return (
-                      <button
+                      <div
                         key={chart.id}
-                        type="button"
-                        onClick={() => selectChart(chart)}
-                        className={`w-full text-left px-3 py-2.5 hover:bg-muted transition-colors border-b border-border/40 relative ${
-                          selectedChartId === chart.id
-                            ? 'bg-teal-50 border-l-2 border-l-teal-500'
-                            : ''
-                        }`}
+                        className="border-b border-border/40"
                         style={isDummyEntry ? { outline: '2px solid #facc15', outlineOffset: '-2px' } : undefined}
                         data-testid="medical-chart-timeline-entry"
                       >
-                        <div className="text-[11px] font-semibold text-teal-700 leading-tight">
-                          {fmtDateShort(chart.visit_date)}
-                          {isDummyEntry && (
-                            <span className="ml-1 text-[9px] text-yellow-600 font-bold">더미</span>
-                          )}
+                        {/* 엔트리 헤더 */}
+                        <div className="flex items-stretch">
+                          {/* 클릭 → 센터 폼 선택 */}
+                          <button
+                            type="button"
+                            onClick={() => selectChart(chart)}
+                            className={`flex-1 text-left px-3 py-2.5 hover:bg-muted transition-colors min-w-0 ${
+                              selectedChartId === chart.id
+                                ? 'bg-teal-50 border-l-2 border-l-teal-500'
+                                : ''
+                            }`}
+                          >
+                            <div className="text-[11px] font-semibold text-teal-700 leading-tight">
+                              {fmtDateShort(chart.visit_date)}
+                              {isDummyEntry && (
+                                <span className="ml-1 text-[9px] text-yellow-600 font-bold">더미</span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground truncate mt-0.5">
+                              {chartSummary(chart)}
+                            </div>
+                            {/* 메모 종류 배지 */}
+                            <div className="flex gap-0.5 mt-0.5 flex-wrap">
+                              {hasTreat && (
+                                <span className="text-[8px] bg-blue-50 text-blue-600 border border-blue-200 rounded-full px-1 leading-4">치료</span>
+                              )}
+                              {hasDoc && (
+                                <span className="text-[8px] bg-teal-50 text-teal-600 border border-teal-200 rounded-full px-1 leading-4">진료</span>
+                              )}
+                              {notable && (
+                                <span className="text-[8px] bg-amber-50 text-amber-600 border border-amber-200 rounded-full px-1 leading-4">⚠특이</span>
+                              )}
+                            </div>
+                          </button>
+                          {/* 아코디언 토글 버튼 */}
+                          <button
+                            type="button"
+                            onClick={() => toggleExpandChart(chart.id)}
+                            className="px-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors flex items-center shrink-0"
+                            aria-label={isExpanded ? '접기' : '펼치기'}
+                            data-testid={`chart-accordion-toggle-${chart.id}`}
+                          >
+                            <ChevronDown
+                              className={`h-3 w-3 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                            />
+                          </button>
                         </div>
-                        <div className="text-[10px] text-muted-foreground truncate mt-0.5">
-                          {chartSummary(chart)}
-                        </div>
-                        {selectedChartId === chart.id && (
-                          <ChevronRight className="h-3 w-3 absolute right-1 top-1/2 -translate-y-1/2 text-teal-500" />
+
+                        {/* 아코디언 확장 콘텐츠 */}
+                        {isExpanded && (
+                          <div
+                            className="px-3 pb-2.5 pt-1.5 space-y-1.5 border-t border-border/20 bg-muted/5"
+                            data-testid={`chart-accordion-content-${chart.id}`}
+                          >
+                            {hasTreat && (
+                              <div>
+                                <span className="text-[8px] font-bold text-blue-600 uppercase tracking-wide">치료메모</span>
+                                <p className="text-[10px] text-gray-700 line-clamp-4 whitespace-pre-wrap leading-relaxed mt-0.5">
+                                  {chart.treatment_record}
+                                </p>
+                              </div>
+                            )}
+                            {chart.clinical_progress && (
+                              <div>
+                                <span className="text-[8px] font-bold text-teal-600 uppercase tracking-wide">임상경과</span>
+                                <p className="text-[10px] text-gray-700 line-clamp-4 whitespace-pre-wrap leading-relaxed mt-0.5">
+                                  {chart.clinical_progress}
+                                </p>
+                              </div>
+                            )}
+                            {isDirector && chart.doctor_memo && (
+                              <div>
+                                <span className="text-[8px] font-bold text-red-600 uppercase tracking-wide">진료메모</span>
+                                <p className="text-[10px] text-gray-700 line-clamp-4 whitespace-pre-wrap leading-relaxed mt-0.5">
+                                  {chart.doctor_memo}
+                                </p>
+                              </div>
+                            )}
+                            {notable && (
+                              <div className="mt-0.5">
+                                <span className="text-[9px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-semibold">
+                                  ⚠ 특이사항 감지
+                                </span>
+                              </div>
+                            )}
+                            {!hasTreat && !chart.clinical_progress && !(isDirector && chart.doctor_memo) && (
+                              <p className="text-[10px] text-muted-foreground italic">저장된 메모 없음</p>
+                            )}
+                          </div>
                         )}
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
