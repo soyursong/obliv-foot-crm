@@ -648,20 +648,37 @@ function TreatmentImagesSection({
       });
       streamRef.current = stream;
 
-      // FIX-AC-5 T-20260522-foot-MEDIMG-CAMERA (autofocus):
-      // flickering fix 이후 getUserMedia constraints에 focusMode 미지정 →
-      // Galaxy Tab Android WebView 기본값이 'manual'/'none'이 될 수 있음.
-      // applyConstraints({ advanced: [{ focusMode: 'continuous' }] })로 연속 AF 명시.
-      // AC-3 T-20260522-foot-CHART2-CAM-FOCUS (해상도):
-      // width: { min: 1280 } — getUserMedia에서 width/height 제거(flickering fix) 후 재협상 없이
-      // 스트림 레벨에서 최소 1280px 보장. applyConstraints는 stream 교체 없이 constraint 조정.
-      // 미지원 기기(iOS Safari 등)는 try/catch로 무시 — flickering 픽스 영향 없음.
+      // FIX T-20260526-foot-CAMERA-FOCUS-BUG (auto-focus 미작동):
+      // 이전 구현: focusMode:'continuous'를 advanced[]에만 지정
+      //   → W3C spec상 advanced 배열은 "전체 충족 가능 시에만 적용" 원칙.
+      //   → Galaxy Tab에서 조건 불일치 시 전체 set 무시 → camera가 manual 상태 유지.
+      // 수정: getCapabilities()로 기기 지원 AF 모드 확인 후 top-level constraint 적용.
+      //   top-level bare string = { ideal: ... } 동등 → 미지원 기기에서 실패 없음.
+      // 해상도: width: { min: 1280 } — flickering fix(getUserMedia width/height 제거) 이후
+      //   applyConstraints로 스트림 레벨 최소 해상도 보장. 동일 정책 유지.
+      // AC-3 T-20260522-foot-CHART2-CAM-FOCUS / AC-2 T-20260526-foot-CAMERA-FOCUS-BUG
       try {
         const videoTrack = stream.getVideoTracks()[0];
         if (videoTrack) {
+          // getCapabilities로 기기가 지원하는 focusMode 목록 확인
+          type ExtCaps = MediaTrackCapabilities & { focusMode?: string[] };
+          const caps: ExtCaps = (videoTrack.getCapabilities?.() ?? {}) as ExtCaps;
+          const supportedModes = caps.focusMode ?? [];
+          // continuous → single-shot 순서로 최적 AF 모드 선택 (AC-2: 기기 지원 최적 모드)
+          const bestMode =
+            supportedModes.includes('continuous') ? 'continuous' :
+            supportedModes.includes('single-shot') ? 'single-shot' :
+            null;
+
+          // top-level constraint로 적용 (advanced[] 단독 방식 대비 Galaxy Tab 호환성 향상)
+          const extraConstraints: Record<string, unknown> = {};
+          if (bestMode) extraConstraints['focusMode'] = bestMode;
+
           await videoTrack.applyConstraints({
             width: { min: 1280 },
-            advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
+            ...extraConstraints,
+            // advanced[]는 보조 reinforcement — top-level 적용 실패 시 재시도
+            ...(bestMode ? { advanced: [{ focusMode: bestMode } as MediaTrackConstraintSet] } : {}),
           });
         }
       } catch (_afErr) {
