@@ -632,6 +632,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
         });
 
         // T-20260525-foot-INS-FIELD-BIND AC-3: 상병코드 주입 — service_charges 상병 항목 우선
+        // T-20260526-foot-DOC-DIAG-TRUNC: 3~4건 전건 노출 — 행 가시성 플래그 함께 주입
         const diagBatchItems = mappedItems.filter((i) => i.category_label === '상병');
         if (diagBatchItems.length > 0) {
           delete autoValues.diag_code_1; delete autoValues.diag_name_1;
@@ -642,6 +643,14 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
             autoValues[`diag_name_${n}`] = item.name;
           });
         }
+        // 행 가시성 플래그 (diagBatchItems 0건이면 auto-bind 기준으로 설정)
+        const batchDiagCount = diagBatchItems.length > 0 ? diagBatchItems.length
+          : (autoValues.diag_code_2 ? 2 : autoValues.diag_code_1 ? 1 : 0);
+        autoValues['diag_row_3_style'] = batchDiagCount >= 3 ? '' : 'display:none';
+        autoValues['diag_row_4_style'] = batchDiagCount >= 4 ? '' : 'display:none';
+        const batchExtraCodes = diagBatchItems.slice(2).map((i) => i.service_code ?? '').filter(Boolean);
+        autoValues['diag_extra_codes_html'] = batchExtraCodes.length > 0
+          ? batchExtraCodes.map((c) => `<br>${c}`).join('') : '';
 
         // T-20260520-foot-PRINT-FORM-BIND: bill_detail/rx_standard 항목 주입 (기존)
         const needsItems = selectedTemplates.some(
@@ -1608,6 +1617,7 @@ function IssueDialog({
     // T-20260525-foot-INS-FIELD-BIND AC-3: 상병코드 주입 — service_charges 상병 항목 우선
     // loadAutoBindContext의 medical_charts 기반 diag_code보다 service_charges가 더 신뢰성 높음
     // PaymentMiniWindow의 buildCodeEnrichedValues와 동일 로직 (단, serviceItems는 이미 로드된 상태)
+    // T-20260526-foot-DOC-DIAG-TRUNC: 3~4건 전건 노출 — 행 가시성 플래그 함께 주입
     const diagChargeItems = serviceItems.filter((i) => i.category_label === '상병');
     if (diagChargeItems.length > 0) {
       // 기존 medical_charts 기반 값을 service_charges 상병 항목으로 덮어씀
@@ -1620,6 +1630,14 @@ function IssueDialog({
         base[`diag_name_${n}`] = item.name;
       });
     }
+    // 행 가시성 플래그 (diagChargeItems 0건이면 auto-bind 기준으로 설정)
+    const issueDiagCount = diagChargeItems.length > 0 ? diagChargeItems.length
+      : (base.diag_code_2 ? 2 : base.diag_code_1 ? 1 : 0);
+    base['diag_row_3_style'] = issueDiagCount >= 3 ? '' : 'display:none';
+    base['diag_row_4_style'] = issueDiagCount >= 4 ? '' : 'display:none';
+    const issueExtraCodes = diagChargeItems.slice(2).map((i) => i.service_code ?? '').filter(Boolean);
+    base['diag_extra_codes_html'] = issueExtraCodes.length > 0
+      ? issueExtraCodes.map((c) => `<br>${c}`).join('') : '';
 
     // 등록번호/연번호 기본값 (없으면 checkIn.id 앞 8자)
     if (!base.record_no) {

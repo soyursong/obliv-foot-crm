@@ -71,11 +71,16 @@ export interface AutoBindContext {
   /** T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors에서 매칭된 원장 상세 정보 */
   clinicDoctor?: ClinicDoctorInfo | null;
   /** T-20260520-foot-PRINT-FORM-BIND: medical_charts에서 읽은 진단 정보 */
+  /** T-20260526-foot-DOC-DIAG-TRUNC: code3/4 확장 — 최대 4건 */
   diagCodes?: {
     code1?: string;
     name1?: string;
     code2?: string;
     name2?: string;
+    code3?: string;
+    name3?: string;
+    code4?: string;
+    name4?: string;
   } | null;
   /** T-20260522-foot-INS-DOC-PRINT: 건보 등급·부담률·산정특례 */
   insuranceInfo?: InsuranceBindInfo | null;
@@ -207,10 +212,19 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     // T-20260520-foot-PRINT-FORM-BIND: 차트번호 (record_no fallback)
     record_no: ctx.customer?.chart_number ?? ctx.checkIn.customer_id?.slice(0, 8) ?? '',
     // T-20260520-foot-PRINT-FORM-BIND: 진단 코드·명칭
+    // T-20260526-foot-DOC-DIAG-TRUNC: code3/4 추가 + 행 가시성 플래그
     diag_code_1: ctx.diagCodes?.code1 ?? '',
     diag_name_1: ctx.diagCodes?.name1 ?? '',
     diag_code_2: ctx.diagCodes?.code2 ?? '',
     diag_name_2: ctx.diagCodes?.name2 ?? '',
+    diag_code_3: ctx.diagCodes?.code3 ?? '',
+    diag_name_3: ctx.diagCodes?.name3 ?? '',
+    diag_code_4: ctx.diagCodes?.code4 ?? '',
+    diag_name_4: ctx.diagCodes?.name4 ?? '',
+    diag_row_3_style: ctx.diagCodes?.code3 ? '' : 'display:none',
+    diag_row_4_style: ctx.diagCodes?.code4 ? '' : 'display:none',
+    diag_extra_codes_html: [ctx.diagCodes?.code3, ctx.diagCodes?.code4]
+      .filter(Boolean).map((c) => `<br>${c}`).join(''),
     // 하위 호환 alias
     business_reg_no: ctx.clinic?.business_no ?? '',
     // T-20260522-foot-INS-DOC-PRINT: 건보 등급·부담률·산정특례 바인딩
