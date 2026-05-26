@@ -144,7 +144,7 @@ ${COMMON_STYLE}
         <td style="white-space:nowrap;">전화번호&nbsp;&nbsp;{{patient_phone}}</td>
       </tr>
       <tr>
-        <td rowspan="3" style="background:#f8f8f8; text-align:center; vertical-align:middle; font-weight:bold; font-size:10pt; letter-spacing:2px;">병&nbsp;&nbsp;명</td>
+        <td rowspan="5" style="background:#f8f8f8; text-align:center; vertical-align:middle; font-weight:bold; font-size:10pt; letter-spacing:2px;">병&nbsp;&nbsp;명</td>
         <td style="background:#f0f0f0; text-align:center; width:100px;">상병코드</td>
         <td style="background:#f0f0f0; text-align:center;">상&nbsp;&nbsp;&nbsp;병&nbsp;&nbsp;&nbsp;명</td>
         <td style="background:#f0f0f0; text-align:center; width:70px;">특 정 기 호</td>
@@ -158,6 +158,16 @@ ${COMMON_STYLE}
         <td style="min-height:30px; padding:6px 5px;">{{diag_code_2}}</td>
         <td style="min-height:30px; padding:6px 5px;">{{diag_name_2}}</td>
         <td style="min-height:30px; padding:6px 5px;">{{diag_flag_2}}</td>
+      </tr>
+      <tr style="{{diag_row_3_style}}">
+        <td style="min-height:30px; padding:6px 5px;">{{diag_code_3}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_name_3}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_flag_3}}</td>
+      </tr>
+      <tr style="{{diag_row_4_style}}">
+        <td style="min-height:30px; padding:6px 5px;">{{diag_code_4}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_name_4}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_flag_4}}</td>
       </tr>
     </tbody>
   </table>
@@ -315,7 +325,7 @@ ${COMMON_STYLE}
   <table style="margin-top:4px;">
     <tbody>
       <tr>
-        <td rowspan="3" style="width:60px; background:#f8f8f8; text-align:center; font-weight:bold; font-size:10pt; letter-spacing:2px;">병&nbsp;&nbsp;명</td>
+        <td rowspan="5" style="width:60px; background:#f8f8f8; text-align:center; font-weight:bold; font-size:10pt; letter-spacing:2px;">병&nbsp;&nbsp;명</td>
         <td style="background:#f0f0f0; text-align:center; width:90px;">상 병 코 드</td>
         <td style="background:#f0f0f0; text-align:center;">상&nbsp;&nbsp;&nbsp;병&nbsp;&nbsp;&nbsp;명</td>
         <td style="background:#f0f0f0; text-align:center; width:70px;">특 정 기 호</td>
@@ -329,6 +339,16 @@ ${COMMON_STYLE}
         <td style="min-height:20px;">{{diag_code_2}}</td>
         <td>{{diag_name_2}}</td>
         <td>{{diag_flag_2}}</td>
+      </tr>
+      <tr style="{{diag_row_3_style}}">
+        <td style="min-height:20px;">{{diag_code_3}}</td>
+        <td>{{diag_name_3}}</td>
+        <td>{{diag_flag_3}}</td>
+      </tr>
+      <tr style="{{diag_row_4_style}}">
+        <td style="min-height:20px;">{{diag_code_4}}</td>
+        <td>{{diag_name_4}}</td>
+        <td>{{diag_flag_4}}</td>
       </tr>
     </tbody>
   </table>
@@ -474,7 +494,7 @@ ${COMMON_STYLE}
   <table style="margin-top:4px;">
     <tbody>
       <tr>
-        <td rowspan="3" style="width:60px; background:#f8f8f8; text-align:center; font-weight:bold; font-size:10pt; letter-spacing:2px;">병&nbsp;&nbsp;명</td>
+        <td rowspan="5" style="width:60px; background:#f8f8f8; text-align:center; font-weight:bold; font-size:10pt; letter-spacing:2px;">병&nbsp;&nbsp;명</td>
         <td style="background:#f0f0f0; text-align:center; width:90px;">상 병 코 드</td>
         <td style="background:#f0f0f0; text-align:center;">상&nbsp;&nbsp;&nbsp;병&nbsp;&nbsp;&nbsp;명</td>
         <td style="background:#f0f0f0; text-align:center; width:70px;">특 정 기 호</td>
@@ -488,6 +508,16 @@ ${COMMON_STYLE}
         <td>{{diag_code_2}}</td>
         <td>{{diag_name_2}}</td>
         <td>{{diag_flag_2}}</td>
+      </tr>
+      <tr style="{{diag_row_3_style}}">
+        <td>{{diag_code_3}}</td>
+        <td>{{diag_name_3}}</td>
+        <td>{{diag_flag_3}}</td>
+      </tr>
+      <tr style="{{diag_row_4_style}}">
+        <td>{{diag_code_4}}</td>
+        <td>{{diag_name_4}}</td>
+        <td>{{diag_flag_4}}</td>
       </tr>
     </tbody>
   </table>
@@ -628,7 +658,7 @@ ${COMMON_STYLE}
   <table style="margin-top:4px;">
     <tbody>
       <tr>
-        <td rowspan="3" style="width:60px; background:#f8f8f8; text-align:center; font-weight:bold; font-size:10pt; letter-spacing:2px;">상병명</td>
+        <td rowspan="5" style="width:60px; background:#f8f8f8; text-align:center; font-weight:bold; font-size:10pt; letter-spacing:2px;">상병명</td>
         <td style="background:#f0f0f0; text-align:center; width:90px;">상 병 코 드</td>
         <td style="background:#f0f0f0; text-align:center;">상&nbsp;&nbsp;&nbsp;병&nbsp;&nbsp;&nbsp;명</td>
         <td style="background:#f0f0f0; text-align:center; width:70px;">특 정 기 호</td>
@@ -642,6 +672,16 @@ ${COMMON_STYLE}
         <td style="min-height:30px; padding:6px 5px;">{{diag_code_2}}</td>
         <td style="min-height:30px; padding:6px 5px;">{{diag_name_2}}</td>
         <td style="min-height:30px; padding:6px 5px;">{{diag_flag_2}}</td>
+      </tr>
+      <tr style="{{diag_row_3_style}}">
+        <td style="min-height:30px; padding:6px 5px;">{{diag_code_3}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_name_3}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_flag_3}}</td>
+      </tr>
+      <tr style="{{diag_row_4_style}}">
+        <td style="min-height:30px; padding:6px 5px;">{{diag_code_4}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_name_4}}</td>
+        <td style="min-height:30px; padding:6px 5px;">{{diag_flag_4}}</td>
       </tr>
     </tbody>
   </table>
@@ -1193,7 +1233,7 @@ ${COMMON_STYLE}
           ☐&nbsp;임상적<br>☐&nbsp;최&nbsp;&nbsp;&nbsp;종
         </td>
         <td rowspan="2" style="background:#f0f0f0; text-align:center; width:60px; font-size:9pt;">병&nbsp;&nbsp;&nbsp;&nbsp;명</td>
-        <td rowspan="2" style="min-width:120px; font-size:9.5pt;">{{diag_code_1}}<br>{{diag_code_2}}</td>
+        <td rowspan="2" style="min-width:120px; font-size:9.5pt;">{{diag_code_1}}<br>{{diag_code_2}}{{diag_extra_codes_html}}</td>
         <td style="background:#f8f8f8; text-align:center; width:80px; font-size:8.5pt; white-space:nowrap;">총&nbsp;간병기간</td>
         <td style="white-space:nowrap; font-size:8.5pt;">
           입원&nbsp;<span style="border-bottom:1px solid #000; min-width:50px; display:inline-block;">{{inpatient_start}}</span>&nbsp;~&nbsp;<span style="border-bottom:1px solid #000; min-width:50px; display:inline-block;">{{inpatient_end}}</span>
@@ -1359,10 +1399,10 @@ const RX_STANDARD_HTML = `
   <table style="border-top:none;">
     <tbody>
       <tr>
-        <td rowspan="2" style="width:55px; background:#f8f8f8; text-align:center; font-size:8pt;">질병분류기호</td>
+        <td rowspan="4" style="width:55px; background:#f8f8f8; text-align:center; font-size:8pt;">질병분류기호</td>
         <td style="width:90px;">{{diag_code_1}}</td>
-        <td rowspan="2" style="width:65px; background:#f8f8f8; text-align:center; font-size:8pt;">처&nbsp;방<br>의료인의<br>성&nbsp;&nbsp;&nbsp;&nbsp;명</td>
-        <td rowspan="2" style="width:130px;">{{doctor_name}}</td>
+        <td rowspan="4" style="width:65px; background:#f8f8f8; text-align:center; font-size:8pt;">처&nbsp;방<br>의료인의<br>성&nbsp;&nbsp;&nbsp;&nbsp;명</td>
+        <td rowspan="4" style="width:130px;">{{doctor_name}}</td>
         <td style="width:55px; background:#f8f8f8; text-align:center;">면&nbsp;허&nbsp;종&nbsp;별</td>
         <td>의사</td>
       </tr>
@@ -1370,6 +1410,14 @@ const RX_STANDARD_HTML = `
         <td>{{diag_code_2}}</td>
         <td style="background:#f8f8f8; text-align:center;">면&nbsp;허&nbsp;번&nbsp;호</td>
         <td>{{doctor_license_no}}</td>
+      </tr>
+      <tr style="{{diag_row_3_style}}">
+        <td>{{diag_code_3}}</td>
+        <td colspan="2"></td>
+      </tr>
+      <tr style="{{diag_row_4_style}}">
+        <td>{{diag_code_4}}</td>
+        <td colspan="2"></td>
       </tr>
     </tbody>
   </table>
@@ -1698,6 +1746,16 @@ ${COMMON_STYLE}
         <td style="background:#f8f8f8; text-align:center;">부</td>
         <td>{{diag_code_2}}</td>
         <td>{{diag_name_2}}</td>
+      </tr>
+      <tr style="{{diag_row_3_style}}">
+        <td style="background:#f8f8f8; text-align:center;">부</td>
+        <td>{{diag_code_3}}</td>
+        <td>{{diag_name_3}}</td>
+      </tr>
+      <tr style="{{diag_row_4_style}}">
+        <td style="background:#f8f8f8; text-align:center;">부</td>
+        <td>{{diag_code_4}}</td>
+        <td>{{diag_name_4}}</td>
       </tr>
     </tbody>
   </table>

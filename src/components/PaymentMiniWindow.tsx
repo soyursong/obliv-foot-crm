@@ -263,12 +263,19 @@ function buildCodeEnrichedValues(
   const values = { ...base };
 
   // 상병코드 items → diag_code_N / diag_name_N
+  // T-20260526-foot-DOC-DIAG-TRUNC: 3~4건 전건 노출 — 행 가시성 플래그 함께 주입
   const diagItems = codeItems.filter((i) => (i.service.category_label ?? '') === '상병');
   diagItems.forEach((item, idx) => {
     const n = idx + 1;
     values[`diag_code_${n}`] = item.service.service_code ?? '';
     values[`diag_name_${n}`] = item.service.name;
   });
+  // 행 가시성: 코드 없는 행은 display:none으로 숨김 (AC-3 regression 방지)
+  values['diag_row_3_style'] = diagItems.length >= 3 ? '' : 'display:none';
+  values['diag_row_4_style'] = diagItems.length >= 4 ? '' : 'display:none';
+  // diag_opinion_v2 전용: 코드 3,4를 <br>로 이어붙인 extras
+  const extraCodes = diagItems.slice(2).map((i) => i.service.service_code ?? '').filter(Boolean);
+  values['diag_extra_codes_html'] = extraCodes.length > 0 ? extraCodes.map((c) => `<br>${c}`).join('') : '';
 
   // rx_standard: 처방약 → rx_items_html
   // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item 독립값, 미입력 시 1/1/7 fallback
