@@ -171,7 +171,13 @@ function buildHtmlPageHtml(
 ): string {
   const htmlTpl = getHtmlTemplate(template.form_key);
   if (!htmlTpl) return '';
-  const bound = bindHtmlTemplate(htmlTpl, fieldValues);
+  // T-20260526-foot-RX-PRINT-DUAL: rx_standard → {{rx_copy_label}} 주입 (약국보관용|환자보관용)
+  // copyLabel 미지정 시 기본값 '약국보관용' (하위 호환)
+  const boundValues =
+    template.form_key === 'rx_standard'
+      ? { ...fieldValues, rx_copy_label: copyLabel ?? '약국보관용' }
+      : fieldValues;
+  const bound = bindHtmlTemplate(htmlTpl, boundValues);
   const isLandscape = template.form_key === 'bill_detail';
   const stampUrl = getStampUrl();
   const stampOverlay = stampUrl
@@ -179,7 +185,7 @@ function buildHtmlPageHtml(
         style="position:absolute;right:52px;bottom:52px;width:88px;height:88px;opacity:0.85;pointer-events:none;"
         onerror="this.style.display='none'" />`
     : '';
-  // T-20260526-foot-RX-PRINT-DUAL: 처방전 보관용 구분 라벨 (약국보관용 / 환자보관용)
+  // T-20260526-foot-RX-PRINT-DUAL: 처방전 보관용 구분 라벨 오버레이 (상단 우측)
   const copyLabelHtml = copyLabel
     ? `<div style="position:absolute;top:10px;right:10px;background:rgba(255,255,255,0.93);border:2px solid #222;padding:4px 14px;font-size:14px;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;font-weight:700;letter-spacing:1px;z-index:10;border-radius:3px;">${copyLabel}</div>`
     : '';
