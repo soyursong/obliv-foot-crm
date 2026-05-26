@@ -18,6 +18,14 @@
  *   AC-4: timer_records 신규 테이블 사용
  *   checkInId prop 추가 (optional — 없으면 타이머 미표시)
  *
+ * T-20260526-foot-CHART-DRAWER-LAYOUT:
+ *   AC-1: 처방내역·상용구 팝업/드롭다운 → Drawer 오른쪽 패널(2-column) 전환
+ *         좌측=진료기록 폼, 우측=처방내역·상용구 콘텐츠 패널(탭 전환)
+ *   AC-2: 우측 패널 처방세트·상용구 선택 → 좌측 폼 삽입 + "편집" 버튼 → 관리 화면 이동
+ *   AC-3: 치료사차트 읽기전용 스타일 (회색 배경 + disabled + cursor-not-allowed)
+ *   AC-4: 진료차트 모든 placeholder/예시 멘트 연한 회색 처리
+ *   AC-5: 기존 기능 무영향 (MEDCHART-REVAMP 타임라인·저장·Drawer 동작 유지)
+ *
  * 이전 버전:
  *   T-20260515-foot-MEDICAL-CHART-V1 — 최초 구현 (6항목)
  *   T-20260516-foot-MEDICAL-CHART-EXPAND — 전체화면 전환 (이 버전으로 대체)
@@ -27,10 +35,11 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { BookOpen, ChevronLeft, ChevronRight, Loader2, Plus, Stethoscope, X } from 'lucide-react';
+import { BookOpen, ChevronLeft, ChevronRight, Edit2, FlaskConical, Loader2, Plus, Stethoscope, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -140,6 +149,7 @@ export default function MedicalChartPanel({
   currentUserEmail,
 }: MedicalChartPanelProps) {
   const isDirector = canViewDoctorMemo(currentUserRole);
+  const navigate = useNavigate();
 
   // ── 데이터 ──────────────────────────────────────────────────────────────────
   const [customer, setCustomer] = useState<CustomerBasic | null>(null);
@@ -155,21 +165,20 @@ export default function MedicalChartPanel({
   // ── 폼 상태 ─────────────────────────────────────────────────────────────────
   const [formDate, setFormDate] = useState('');
   const [formDx, setFormDx] = useState('');
-  const [formTx, setFormTx] = useState('');          // 치료사차트 = treatment_record
+  const [formTx, setFormTx] = useState('');          // 치료사차트 = treatment_record (읽기전용)
   const [formClinical, setFormClinical] = useState(''); // 임상경과
   const [formMemo, setFormMemo] = useState('');       // 원장 전용 메모
   const [formRx, setFormRx] = useState<PrescriptionItem[]>([]); // 처방내역
   const [saving, setSaving] = useState(false);
 
-  // ── 상용구 (임상경과 autocomplete + toggle panel) ─────────────────────────────
+  // ── 임상경과 상용구 autocomplete ───────────────────────────────────────────
   const clinicalRef = useRef<HTMLTextAreaElement>(null);
   const [phrasePopoverVisible, setPhrasePopoverVisible] = useState(false);
   const [phraseQuery, setPhraseQuery] = useState('');
-  const [phrasePanelOpen, setPhrasePanelOpen] = useState(false);
-  const [selectedPhraseIds, setSelectedPhraseIds] = useState<Set<number>>(new Set());
 
-  // ── 처방세트 다이얼로그 ────────────────────────────────────────────────────────
-  const [rxDialogOpen, setRxDialogOpen] = useState(false);
+  // ── 우측 패널 탭 (AC-1: 처방세트 / 상용구) ────────────────────────────────
+  const [rightTab, setRightTab] = useState<'rx' | 'phrase'>('rx');
+  const [selectedPhraseIds, setSelectedPhraseIds] = useState<Set<number>>(new Set());
 
   // ── 데이터 로드 ──────────────────────────────────────────────────────────────
 
@@ -287,8 +296,9 @@ export default function MedicalChartPanel({
       loadData();
       setSelectedChartId(null);
       resetForm(null);
-      setPhrasePanelOpen(false);
       setPhrasePopoverVisible(false);
+      setSelectedPhraseIds(new Set());
+      setRightTab('rx');
     } else {
       setCustomer(null);
       setCharts([]);
@@ -312,14 +322,12 @@ export default function MedicalChartPanel({
     setSelectedChartId(chart.id);
     resetForm(chart);
     setPhrasePopoverVisible(false);
-    setPhrasePanelOpen(false);
   }
 
   function selectNew() {
     setSelectedChartId(null);
     resetForm(null);
     setPhrasePopoverVisible(false);
-    setPhrasePanelOpen(false);
   }
 
   // ── 저장 ─────────────────────────────────────────────────────────────────────
@@ -450,6 +458,8 @@ export default function MedicalChartPanel({
     setTimeout(() => textarea?.focus(), 50);
   }
 
+  // ── 우측 패널 — 상용구 다중 선택 삽입 ─────────────────────────────────────
+
   function togglePhraseId(id: number) {
     setSelectedPhraseIds(prev => {
       const next = new Set(prev);
@@ -465,17 +475,23 @@ export default function MedicalChartPanel({
       .join('\n');
     if (contents) {
       setFormClinical(prev => prev ? prev + '\n' + contents : contents);
+      toast.success(`${selectedPhraseIds.size}개 상용구 삽입됨`);
     }
     setSelectedPhraseIds(new Set());
-    setPhrasePanelOpen(false);
   }
 
-  // ── 처방세트 로드 ─────────────────────────────────────────────────────────────
+  // ── 처방세트 적용 ─────────────────────────────────────────────────────────────
 
   function loadPrescriptionSet(set: PrescriptionSet) {
     setFormRx(set.items);
-    setRxDialogOpen(false);
     toast.success(`"${set.name}" 처방세트 불러왔습니다`);
+  }
+
+  // ── 관리 화면 이동 (AC-2: 편집 버튼) ─────────────────────────────────────────
+
+  function handleNavigateToAdmin() {
+    onOpenChange(false);
+    navigate('/admin/doctor-tools');
   }
 
   // ── Render ────────────────────────────────────────────────────────────────────
@@ -558,7 +574,7 @@ export default function MedicalChartPanel({
         aria-modal="true"
         aria-label="진료차트"
         className="fixed right-0 top-0 z-[90] h-full bg-background shadow-2xl flex flex-col outline-none animate-in slide-in-from-right duration-300"
-        style={{ width: 'min(95vw, 1280px)' }}
+        style={{ width: 'min(97vw, 1440px)' }}
         data-testid="medical-chart-drawer"
       >
         {/* ── 헤더 ─────────────────────────────────────────────────────────────── */}
@@ -593,7 +609,7 @@ export default function MedicalChartPanel({
           </button>
         </div>
 
-        {/* ── 본문: 좌측 타임라인 + 우측 컴팩트 폼 ────────────────────────────── */}
+        {/* ── 본문: 타임라인 | 진료폼 | 우측 콘텐츠 패널 ─────────────────────── */}
         <div className="flex-1 flex overflow-hidden">
           {loading ? (
             <div className="flex-1 flex items-center justify-center">
@@ -672,9 +688,9 @@ export default function MedicalChartPanel({
                 </div>
               </div>
 
-              {/* ── 우측: 컴팩트 폼 (AC-3) ────────────────────────────────────── */}
-              <div className="flex-1 overflow-y-auto p-5" data-testid="medical-chart-form">
-                <div className="max-w-3xl space-y-4">
+              {/* ── 중앙: 진료기록 폼 (AC-1 좌측 컬럼) ─────────────────────────── */}
+              <div className="flex-1 overflow-y-auto p-5 border-r" data-testid="medical-chart-form">
+                <div className="max-w-2xl space-y-4">
 
                   {/* 타이틀 */}
                   <div className="flex items-center gap-2 pb-1.5 border-b flex-wrap">
@@ -747,8 +763,8 @@ export default function MedicalChartPanel({
                     <Input
                       value={formDx}
                       onChange={(e) => setFormDx(e.target.value)}
-                      placeholder="진단명 (예: 내성발톱, 무좀)"
-                      className="h-9 text-sm"
+                      placeholder="진단명을 입력하세요"
+                      className="h-9 text-sm placeholder:text-gray-300"
                       data-testid="medical-chart-diagnosis"
                     />
                   </div>
@@ -771,35 +787,28 @@ export default function MedicalChartPanel({
                     </div>
                   )}
 
-                  {/* 치료사차트 — treatment_record */}
+                  {/* 치료사차트 — 읽기전용 (AC-3) */}
                   <div>
-                    <label className="block text-xs font-semibold text-muted-foreground mb-1">치료사차트</label>
+                    <div className="flex items-center gap-2 mb-1">
+                      <label className="text-xs font-semibold text-muted-foreground">치료사차트</label>
+                      <span className="text-[10px] text-muted-foreground bg-gray-100 rounded px-1.5 py-0.5">읽기전용</span>
+                    </div>
                     <Textarea
                       value={formTx}
-                      onChange={(e) => setFormTx(e.target.value)}
-                      placeholder="치료사 기록"
+                      readOnly
+                      disabled
+                      placeholder="치료사가 기록한 내용이 여기 표시됩니다"
                       rows={3}
-                      className="text-sm resize-none"
+                      className="text-sm resize-none bg-gray-50 text-gray-500 cursor-not-allowed placeholder:text-gray-300 disabled:opacity-100"
                       data-testid="medical-chart-treatment"
                     />
                   </div>
 
-                  {/* 임상경과 — 상용구 단축어 + 토글 패널 (AC-3) */}
+                  {/* 임상경과 — 상용구 단축어 (우측 패널로 이동, // autocomplete 유지) */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-xs font-semibold text-muted-foreground">임상경과</label>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-muted-foreground">//단축어 또는</span>
-                        <button
-                          type="button"
-                          onClick={() => { setPhrasePanelOpen(v => !v); setPhrasePopoverVisible(false); }}
-                          className="flex items-center gap-1 text-[11px] text-teal-600 hover:text-teal-800 border border-teal-200 rounded px-1.5 py-0.5 hover:bg-teal-50 transition-colors"
-                          data-testid="phrase-panel-toggle"
-                        >
-                          <BookOpen className="h-3 w-3" />
-                          상용구
-                        </button>
-                      </div>
+                      <span className="text-[10px] text-muted-foreground">//단축어 입력 시 자동완성</span>
                     </div>
 
                     <div className="relative">
@@ -808,13 +817,13 @@ export default function MedicalChartPanel({
                         value={formClinical}
                         onChange={handleClinicalChange}
                         onBlur={() => { setTimeout(() => setPhrasePopoverVisible(false), 200); }}
-                        placeholder="임상경과 기록 — //단축어 입력 시 자동완성 (예: //통증감소)"
-                        rows={4}
-                        className="text-sm resize-none"
+                        placeholder="임상경과를 입력하세요  예: //통증감소"
+                        rows={5}
+                        className="text-sm resize-none placeholder:text-gray-300"
                         data-testid="medical-chart-clinical"
                       />
 
-                      {/* 단축어 팝오버 */}
+                      {/* 단축어 팝오버 — // 트리거 autocomplete */}
                       {phrasePopoverVisible && filteredPhrases.length > 0 && (
                         <div
                           className="absolute left-0 top-full z-[110] mt-1 w-72 rounded-lg border bg-popover shadow-lg overflow-hidden"
@@ -845,76 +854,13 @@ export default function MedicalChartPanel({
                         </div>
                       )}
                     </div>
-
-                    {/* 토글 상용구 패널 (체크박스 다중 선택) */}
-                    {phrasePanelOpen && (
-                      <div
-                        className="mt-2 rounded-lg border bg-card p-3"
-                        data-testid="phrase-toggle-panel"
-                      >
-                        <div className="text-xs font-semibold mb-2 text-muted-foreground">
-                          상용구 선택
-                          {selectedPhraseIds.size > 0 && (
-                            <span className="text-teal-600 ml-1">({selectedPhraseIds.size}개 선택됨)</span>
-                          )}
-                        </div>
-                        <div className="space-y-0.5 max-h-52 overflow-y-auto">
-                          {phraseTemplates.length === 0 ? (
-                            <p className="text-xs text-muted-foreground text-center py-4">
-                              등록된 상용구 없음 — 어드민 설정에서 추가하세요
-                            </p>
-                          ) : (
-                            phraseTemplates.map(p => (
-                              <label
-                                key={p.id}
-                                className="flex items-start gap-2 cursor-pointer hover:bg-muted rounded px-2 py-1.5"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={selectedPhraseIds.has(p.id)}
-                                  onChange={() => togglePhraseId(p.id)}
-                                  className="mt-0.5 h-3.5 w-3.5 accent-teal-600 shrink-0"
-                                />
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1">
-                                    <span className="text-xs font-medium">{p.name}</span>
-                                    {p.shortcut_key && (
-                                      <span className="text-[10px] text-muted-foreground font-mono">//{p.shortcut_key}</span>
-                                    )}
-                                  </div>
-                                  <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
-                                    {p.content}
-                                  </p>
-                                </div>
-                              </label>
-                            ))
-                          )}
-                        </div>
-                        {selectedPhraseIds.size > 0 && (
-                          <Button
-                            size="sm"
-                            className="mt-2 w-full bg-teal-600 hover:bg-teal-700 text-white h-8 text-xs"
-                            onClick={insertSelectedPhrases}
-                          >
-                            선택한 {selectedPhraseIds.size}개 삽입
-                          </Button>
-                        )}
-                      </div>
-                    )}
                   </div>
 
-                  {/* 처방내역 — 처방세트 불러오기 (AC-3) */}
+                  {/* 처방내역 — 우측 패널에서 선택 후 이 테이블에 반영 */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-xs font-semibold text-muted-foreground">처방내역</label>
-                      <button
-                        type="button"
-                        onClick={() => setRxDialogOpen(true)}
-                        className="text-[11px] text-teal-600 hover:text-teal-800 border border-teal-200 rounded px-1.5 py-0.5 hover:bg-teal-50 transition-colors"
-                        data-testid="rx-set-load-btn"
-                      >
-                        처방세트 불러오기
-                      </button>
+                      <span className="text-[10px] text-muted-foreground">우측 패널에서 처방세트 선택</span>
                     </div>
                     {formRx.length > 0 ? (
                       <div
@@ -957,7 +903,7 @@ export default function MedicalChartPanel({
                       </div>
                     ) : (
                       <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground text-center">
-                        처방내역 없음 — "처방세트 불러오기"로 추가
+                        처방내역 없음 — 우측 패널에서 처방세트를 선택하세요
                       </div>
                     )}
                   </div>
@@ -977,9 +923,9 @@ export default function MedicalChartPanel({
                       <Textarea
                         value={formMemo}
                         onChange={(e) => setFormMemo(e.target.value)}
-                        placeholder="원장 전용 메모"
+                        placeholder="원장 전용 메모를 입력하세요"
                         rows={3}
-                        className="text-sm resize-none border-red-200 focus:border-red-400"
+                        className="text-sm resize-none border-red-200 focus:border-red-400 placeholder:text-gray-300"
                         data-testid="doctor-memo-input"
                       />
                     </div>
@@ -1013,56 +959,166 @@ export default function MedicalChartPanel({
                   </div>
                 </div>
               </div>
+
+              {/* ── 우측 콘텐츠 패널 — 처방세트 / 상용구 탭 (AC-1) ─────────────── */}
+              <div
+                className="w-72 flex-shrink-0 flex flex-col bg-muted/5"
+                data-testid="medical-chart-right-panel"
+              >
+                {/* 탭 헤더 */}
+                <div className="flex-none border-b">
+                  <div className="flex">
+                    <button
+                      type="button"
+                      onClick={() => setRightTab('rx')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-semibold transition-colors border-b-2 ${
+                        rightTab === 'rx'
+                          ? 'border-teal-500 text-teal-700 bg-background'
+                          : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30'
+                      }`}
+                      data-testid="right-panel-tab-rx"
+                    >
+                      <FlaskConical className="h-3.5 w-3.5" />
+                      처방세트
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRightTab('phrase')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-semibold transition-colors border-b-2 ${
+                        rightTab === 'phrase'
+                          ? 'border-teal-500 text-teal-700 bg-background'
+                          : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30'
+                      }`}
+                      data-testid="right-panel-tab-phrase"
+                    >
+                      <BookOpen className="h-3.5 w-3.5" />
+                      상용구
+                    </button>
+                  </div>
+                </div>
+
+                {/* 탭 콘텐츠 */}
+                <div className="flex-1 overflow-y-auto">
+
+                  {/* 처방세트 탭 */}
+                  {rightTab === 'rx' && (
+                    <div className="p-3 space-y-2" data-testid="right-panel-rx-content">
+                      {/* 편집 바로가기 (AC-2) */}
+                      <button
+                        type="button"
+                        onClick={handleNavigateToAdmin}
+                        className="w-full flex items-center justify-center gap-1.5 text-[11px] text-teal-600 hover:text-teal-800 border border-teal-200 rounded-md py-1.5 hover:bg-teal-50 transition-colors"
+                        data-testid="rx-set-edit-btn"
+                      >
+                        <Edit2 className="h-3 w-3" />
+                        처방세트 관리 화면으로
+                      </button>
+
+                      <div className="text-[10px] font-semibold text-muted-foreground px-1 pt-1">
+                        클릭하면 처방내역에 적용됩니다
+                      </div>
+
+                      {prescriptionSets.length === 0 ? (
+                        <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center mt-2">
+                          등록된 처방세트 없음<br />
+                          <span className="text-[10px]">위 버튼으로 추가하세요</span>
+                        </div>
+                      ) : (
+                        prescriptionSets.map(set => (
+                          <button
+                            key={set.id}
+                            type="button"
+                            onClick={() => loadPrescriptionSet(set)}
+                            className="w-full text-left rounded-lg border bg-card px-3 py-2.5 hover:border-teal-400 hover:bg-teal-50/30 transition-colors"
+                            data-testid="rx-set-option"
+                          >
+                            <div className="font-medium text-xs">{set.name}</div>
+                            <div className="text-[10px] text-muted-foreground mt-0.5">
+                              {set.items.slice(0, 3).map(i => i.name).join(', ')}
+                              {set.items.length > 3 ? ` 외 ${set.items.length - 3}개` : ''}
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {/* 상용구 탭 */}
+                  {rightTab === 'phrase' && (
+                    <div className="p-3 space-y-2" data-testid="right-panel-phrase-content">
+                      {/* 편집 바로가기 (AC-2) */}
+                      <button
+                        type="button"
+                        onClick={handleNavigateToAdmin}
+                        className="w-full flex items-center justify-center gap-1.5 text-[11px] text-teal-600 hover:text-teal-800 border border-teal-200 rounded-md py-1.5 hover:bg-teal-50 transition-colors"
+                        data-testid="phrase-edit-btn"
+                      >
+                        <Edit2 className="h-3 w-3" />
+                        상용구 관리 화면으로
+                      </button>
+
+                      <div className="text-[10px] font-semibold text-muted-foreground px-1 pt-1">
+                        선택 후 "삽입" — 임상경과 필드에 추가됩니다
+                        {selectedPhraseIds.size > 0 && (
+                          <span className="text-teal-600 ml-1">({selectedPhraseIds.size}개 선택됨)</span>
+                        )}
+                      </div>
+
+                      {phraseTemplates.length === 0 ? (
+                        <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center mt-2">
+                          등록된 상용구 없음<br />
+                          <span className="text-[10px]">위 버튼으로 추가하세요</span>
+                        </div>
+                      ) : (
+                        <div className="space-y-0.5">
+                          {phraseTemplates.map(p => (
+                            <label
+                              key={p.id}
+                              className="flex items-start gap-2 cursor-pointer hover:bg-muted rounded px-2 py-1.5"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedPhraseIds.has(p.id)}
+                                onChange={() => togglePhraseId(p.id)}
+                                className="mt-0.5 h-3.5 w-3.5 accent-teal-600 shrink-0"
+                              />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1">
+                                  <span className="text-xs font-medium">{p.name}</span>
+                                  {p.shortcut_key && (
+                                    <span className="text-[10px] text-muted-foreground font-mono">//{p.shortcut_key}</span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
+                                  {p.content}
+                                </p>
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* 상용구 탭 — 삽입 버튼 (선택 시만 표시) */}
+                {rightTab === 'phrase' && selectedPhraseIds.size > 0 && (
+                  <div className="flex-none p-3 border-t bg-background">
+                    <Button
+                      size="sm"
+                      className="w-full bg-teal-600 hover:bg-teal-700 text-white h-9 text-xs"
+                      onClick={insertSelectedPhrases}
+                      data-testid="phrase-insert-btn"
+                    >
+                      선택한 {selectedPhraseIds.size}개 임상경과에 삽입
+                    </Button>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>
       </div>
-
-      {/* 처방세트 다이얼로그 */}
-      {rxDialogOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setRxDialogOpen(false)}
-            aria-hidden="true"
-          />
-          <div className="relative bg-background rounded-xl shadow-2xl w-[480px] max-w-[92vw] max-h-[72vh] flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b">
-              <span className="font-semibold text-sm">처방세트 불러오기</span>
-              <button
-                type="button"
-                onClick={() => setRxDialogOpen(false)}
-                className="rounded p-1 hover:bg-muted text-muted-foreground"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="overflow-y-auto flex-1 p-4 space-y-2">
-              {prescriptionSets.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  등록된 처방세트 없음 — 어드민 설정에서 추가하세요
-                </p>
-              ) : (
-                prescriptionSets.map(set => (
-                  <button
-                    key={set.id}
-                    type="button"
-                    onClick={() => loadPrescriptionSet(set)}
-                    className="w-full text-left rounded-lg border bg-card px-4 py-3 hover:border-teal-400 hover:bg-teal-50/30 transition-colors"
-                    data-testid="rx-set-option"
-                  >
-                    <div className="font-medium text-sm">{set.name}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      {set.items.slice(0, 3).map(i => i.name).join(', ')}
-                      {set.items.length > 3 ? ` 외 ${set.items.length - 3}개` : ''}
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </>,
     document.body,
   );
