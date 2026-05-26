@@ -21,11 +21,65 @@ risk_verdict: GO_WARN
 risk_reason: "3/5 — DB 스키마 신규 5테이블(messaging), EF 신규(send-notification), 셀프체크인 고객 데이터 쓰기 경로 변경(sms_opt_in 추가)"
 deploy_scope: S1_code_copy
 pending_scope: "S2 운영 데이터 등록(AC-4~7) — 김주연 승인 후 / S3 검증 발송(AC-11~12) — 검증 발송 GREEN 후"
-qa_result: ""
-qa_fail_phase: ""
-qa_fail_reason: ""
+qa_result: "fail"
+qa_grade: "Red"
+qa_fail_phase: "phase1"
+qa_fail_reason: "rollback_sql_broken"
 qa_fix_commit: "a06deb1"
 qa_fix_note: "FIX-REQUEST 3항목(SECTION1 컬럼+SECTION8 v2+SECTION9 CHECK) 반영 완료. 추가 schema_align migration(20260526220000) 포함. 재QA 요청."
+status: "in_progress"
+deploy-ready: false
+---
+
+## QA 결과 (supervisor 재QA — 2026-05-27 commit 10f18b1)
+
+### QA 게이트 요약
+
+| # | 항목 | 결과 | 비고 |
+|---|------|------|------|
+| 1 | 빌드 | ✅ PASS | 3.44s exit 0 |
+| 2 | 기존 기능 | ✅ PASS | 신규 기능 추가. 기존 체크인→결제 동선 무영향 |
+| 3 | DB 호환 | ❌ FAIL | **rollback.sql STEP 1 cron.job 직접 쿼리 — 권한 문제** (상세 아래) |
+| 4 | 권한·RLS | ✅ WARN | AC-8 메뉴 노출 deviation (타 티켓 ROLE-PERM-CUSTOM, 페이지 가드 OK) |
+| 5 | 모바일 | ✅ PASS | hidden md:flex 사이드바 + 상단 탭 정상 |
+| 6 | env 매트릭스 | ✅ PASS | 신규 import.meta.env 없음. 기존 VITE_ 변수 활용 |
+| 7 | Runtime Safety | ✅ PASS | 배열 `?? []` 가드 전수, EF null 체크 정상 |
+| FIX-1 확인 | SECTION1 컬럼 정렬 | ✅ VERIFIED | schema_align migration(20260526220000) 정상 — body/is_active/solapi_message_id/body_rendered/error_code UI+EF 일치 |
+| FIX-2 확인 | SECTION8 v2 반영 | ✅ VERIFIED | admin_save_messaging_config FINAL v2 시그니처+본문 정상 |
+| FIX-3 확인 | SECTION9 DO블록 | ✅ VERIFIED | cron.unschedule DO$$...EXCEPTION WHEN OTHERS THEN NULL 패턴 적용 확인 |
+
+### ❌ NO-GO 사유: rollback SQL 파손
+
+**파일**: `supabase/migrations/20260525030000_messaging_module.rollback.sql` STEP 1
+
+**문제**:
+```sql
+-- STEP 1 (현재 — 파손)
+SELECT cron.unschedule(jobname)
+  FROM cron.job                              -- ← cron.job 직접 쿼리
+ WHERE jobname IN ('foot-notif-reminder-d1', ...);
+```
+
+**근거**: 동일 파일 `20260525030000_messaging_module.sql` SECTION 15-A 주석:
+> `cron.job 직접 쿼리 권한 없음 → DO 블록으로 처리`
+
+forward migration이 명시적으로 피한 패턴이 rollback에 그대로 남아 있음.  
+rollback 실행 시 STEP 1에서 permission denied → BEGIN/COMMIT 트랜잭션 전체 실패 → 롤백 불가능.
+
+**수정 방법** (1개 항목):
+```sql
+-- STEP 1 (수정 후)
+DO $$ BEGIN PERFORM cron.unschedule('foot-notif-reminder-d1'); EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN PERFORM cron.unschedule('foot-notif-reminder-morning'); EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN PERFORM cron.unschedule('foot-notif-retry-failed'); EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN PERFORM cron.unschedule('foot-ef-send-notification-keep-warm'); EXCEPTION WHEN OTHERS THEN NULL; END $$;
+```
+
+**추가 수정 권장** (2번째, non-blocking):  
+`20260525030000_messaging_module.sql` POST-DEPLOY CHECKLIST 4번 항목: 실제 등록 cron은 2개(d1, keep-warm)이나 체크리스트는 4개(morning/retry active=FALSE 포함) 언급 → 2개로 수정 또는 "morning/retry는 S2 마이그에서 별도 등록" 주석 추가
+
+수정 후 `deploy-ready: true` 재마킹 + supervisor 재QA 요청.
+
 ---
 
 # T-20260525-foot-MESSAGING-V1 — 풋 CRM 메시징 모듈 1차 (롱레 복제)
