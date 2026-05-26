@@ -2798,84 +2798,151 @@ export default function Dashboard() {
     // T-20260522-foot-SLOT-TIMETABLE-POPUP AC-2: 성공 토스트 제거 (시각적 반영으로 충분)
   }, [profile, setTimelineReservations]);
 
-  const resetGroupOrder = useCallback(async () => {
-    const defaults = [...DEFAULT_GROUP_ORDER];
-    setGroupOrder(defaults);
-    localStorage.removeItem('foot-dash-group-order');
-    // DB 레이아웃도 삭제 (admin 권한: RLS가 보호)
-    if (clinic) {
-      await supabase
-        .from('clinic_dashboard_layouts')
-        .delete()
-        .eq('clinic_id', clinic.id);
-    }
-    toast.success('기본 배치로 초기화했어요');
-  }, [clinic]);
+  // ── T-20260526-foot-LAYOUT-USER-CUSTOM: 레이아웃 저장값 적용 헬퍼 ────────────
+  // DB/personal 어디서 로드하든 동일한 검증·정규화 로직 재사용
+  const applyStoredLayout = useCallback(
+    (stored: { groupOrder?: string[]; zoomLevel?: number }) => {
+      if (Array.isArray(stored.groupOrder)) {
+        let rawOrder = stored.groupOrder;
+        // waiting_columns → 3개 분리 마이그레이션 (T-20260511)
+        if (rawOrder.includes('waiting_columns') && !rawOrder.includes('treatment_waiting_col')) {
+          const idx = rawOrder.indexOf('waiting_columns');
+          rawOrder = [
+            ...rawOrder.slice(0, idx),
+            'treatment_waiting_col',
+            'laser_waiting_col',
+            'healer_waiting_col',
+            ...rawOrder.slice(idx + 1),
+          ];
+        }
+        const valid = rawOrder.filter((id): id is KanbanGroupId =>
+          (DEFAULT_GROUP_ORDER as readonly string[]).includes(id),
+        );
+        const missing = DEFAULT_GROUP_ORDER.filter((id) => !valid.includes(id));
+        let merged = [...valid, ...missing] as KanbanGroupId[];
+        // T-20260430: 치료실 항상 레이저실보다 앞
+        const treatIdx = merged.indexOf('treatment_rooms');
+        const laserIdx = merged.indexOf('laser_rooms');
+        if (treatIdx !== -1 && laserIdx !== -1 && laserIdx < treatIdx) {
+          merged.splice(laserIdx, 1);
+          merged.splice(treatIdx, 0, 'laser_rooms');
+        }
+        // T-20260511 v2: laser_rooms 항상 마지막
+        merged = ensureLaserRoomsLast(merged);
+        setGroupOrder(merged);
+        localStorage.setItem('foot-dash-group-order', JSON.stringify(merged));
+      }
+      if (
+        typeof stored.zoomLevel === 'number' &&
+        Number.isFinite(stored.zoomLevel) &&
+        stored.zoomLevel >= 50 &&
+        stored.zoomLevel <= 150
+      ) {
+        setZoomLevel(stored.zoomLevel);
+        localStorage.setItem('foot-dash-zoom', String(stored.zoomLevel));
+      }
+    },
+    [],
+  );
 
-  // T-20260506-foot-LAYOUT-DEFAULT-SAVE: DB에서 클리닉 공유 레이아웃 로드
-  // clinic 로딩 후 1회 실행 — DB 조회 실패 시 localStorage 폴백 유지
-  useEffect(() => {
-    if (!clinic) return;
-    (async () => {
+  // T-20260526-foot-LAYOUT-USER-CUSTOM: 개인 레이아웃만 초기화 (지점 기본은 유지)
+  const resetGroupOrder = useCallback(async () => {
+    // 1) 개인 오버라이드 행 삭제 (RLS: 자기 행만)
+    if (clinic && profile) {
+      await supabase
+        .from('user_dashboard_layout_overrides')
+        .delete()
+        .eq('clinic_id', clinic.id)
+        .eq('user_id', profile.id);
+    }
+    // 2) 지점 기본 레이아웃을 다시 로드해 표시 (없으면 코드 기본값)
+    let loaded = false;
+    if (clinic) {
       try {
         const { data } = await supabase
           .from('clinic_dashboard_layouts')
           .select('layout_data')
           .eq('clinic_id', clinic.id)
           .maybeSingle();
+        if (data?.layout_data) {
+          applyStoredLayout(data.layout_data as { groupOrder?: string[]; zoomLevel?: number });
+          loaded = true;
+        }
+      } catch { /* 무시 */ }
+    }
+    if (!loaded) {
+      setGroupOrder([...DEFAULT_GROUP_ORDER]);
+      localStorage.removeItem('foot-dash-group-order');
+      setZoomLevel(100);
+      localStorage.removeItem('foot-dash-zoom');
+    }
+    toast.success('내 배치가 초기화됐어요');
+  }, [clinic, profile, applyStoredLayout]);
 
-        if (!data?.layout_data) return;
+  // T-20260526-foot-LAYOUT-USER-CUSTOM: 개인→지점 기본→코드 기본 3단계 폴백으로 레이아웃 로드
+  // clinic + profile 로딩 후 1회 실행 — 실패 시 localStorage 폴백 유지
+  useEffect(() => {
+    if (!clinic || !profile) return;
+    (async () => {
+      try {
+        // Step 1: 개인 오버라이드 조회
+        const { data: personal } = await supabase
+          .from('user_dashboard_layout_overrides')
+          .select('layout_data')
+          .eq('clinic_id', clinic.id)
+          .eq('user_id', profile.id)
+          .maybeSingle();
 
-        const stored = data.layout_data as { groupOrder?: string[]; zoomLevel?: number };
-
-        if (Array.isArray(stored.groupOrder)) {
-          let rawOrder = stored.groupOrder;
-          // T-20260511-foot-DASH-BATCH-INDIVIDUAL: DB 저장값 waiting_columns → 3개 분리 마이그레이션
-          if (rawOrder.includes('waiting_columns') && !rawOrder.includes('treatment_waiting_col')) {
-            const idx = rawOrder.indexOf('waiting_columns');
-            rawOrder = [
-              ...rawOrder.slice(0, idx),
-              'treatment_waiting_col',
-              'laser_waiting_col',
-              'healer_waiting_col',
-              ...rawOrder.slice(idx + 1),
-            ];
-          }
-          const valid = rawOrder.filter((id): id is KanbanGroupId =>
-            (DEFAULT_GROUP_ORDER as readonly string[]).includes(id),
-          );
-          const missing = DEFAULT_GROUP_ORDER.filter((id) => !valid.includes(id));
-          let merged = [...valid, ...missing] as KanbanGroupId[];
-          // T-20260430-foot-LASER-ROOM-REORDER: 치료실 항상 레이저실보다 앞
-          const treatIdx = merged.indexOf('treatment_rooms');
-          const laserIdx = merged.indexOf('laser_rooms');
-          if (treatIdx !== -1 && laserIdx !== -1 && laserIdx < treatIdx) {
-            merged.splice(laserIdx, 1);
-            merged.splice(treatIdx, 0, 'laser_rooms');
-          }
-          // T-20260511-foot-DASH-BATCH-INDIVIDUAL v2: laser_rooms 항상 마지막
-          merged = ensureLaserRoomsLast(merged);
-          setGroupOrder(merged);
-          localStorage.setItem('foot-dash-group-order', JSON.stringify(merged));
+        if (personal?.layout_data) {
+          applyStoredLayout(personal.layout_data as { groupOrder?: string[]; zoomLevel?: number });
+          return; // 개인 레이아웃 적용 완료
         }
 
-        if (
-          typeof stored.zoomLevel === 'number' &&
-          Number.isFinite(stored.zoomLevel) &&
-          stored.zoomLevel >= 50 &&
-          stored.zoomLevel <= 150
-        ) {
-          setZoomLevel(stored.zoomLevel);
-          localStorage.setItem('foot-dash-zoom', String(stored.zoomLevel));
+        // Step 2: 지점 기본 레이아웃 조회
+        const { data: clinicDefault } = await supabase
+          .from('clinic_dashboard_layouts')
+          .select('layout_data')
+          .eq('clinic_id', clinic.id)
+          .maybeSingle();
+
+        if (clinicDefault?.layout_data) {
+          applyStoredLayout(clinicDefault.layout_data as { groupOrder?: string[]; zoomLevel?: number });
+          return; // 지점 기본 레이아웃 적용 완료
         }
+
+        // Step 3: DB에 없으면 코드 기본값(localStorage lazy init에서 이미 로드됨) 유지
       } catch {
         // DB 조회 실패 — localStorage 폴백 유지 (useState lazy init에서 이미 로드됨)
       }
     })();
-  }, [clinic]);
+  }, [clinic, profile, applyStoredLayout]);
 
-  // T-20260506-foot-LAYOUT-DEFAULT-SAVE: DB에 공유 레이아웃 저장 (admin/manager)
-  const saveLayoutToDb = useCallback(
+  // T-20260526-foot-LAYOUT-USER-CUSTOM: 개인 레이아웃 저장 (모든 계정, 자기 user_id)
+  const savePersonalLayoutToDb = useCallback(
+    async (order: KanbanGroupId[], zoom: number) => {
+      if (!clinic || !profile) return;
+      const { error } = await supabase
+        .from('user_dashboard_layout_overrides')
+        .upsert(
+          {
+            clinic_id: clinic.id,
+            user_id: profile.id,
+            layout_data: { groupOrder: order, zoomLevel: zoom },
+            saved_at: new Date().toISOString(),
+          },
+          { onConflict: 'clinic_id,user_id' },
+        );
+      if (error) {
+        toast.error('내 배치 저장 실패 (로컬엔 저장됨)');
+      } else {
+        toast.success('내 배치가 저장됐어요.');
+      }
+    },
+    [clinic, profile],
+  );
+
+  // T-20260526-foot-LAYOUT-USER-CUSTOM: 지점 기본 레이아웃 저장 (admin 전용)
+  const saveClinicDefaultLayoutToDb = useCallback(
     async (order: KanbanGroupId[], zoom: number) => {
       if (!clinic || !profile) return;
       const { error } = await supabase
@@ -2890,22 +2957,22 @@ export default function Dashboard() {
           { onConflict: 'clinic_id' },
         );
       if (error) {
-        toast.error('배치 DB 저장 실패 (로컬엔 저장됨)');
+        toast.error('지점 기본 배치 저장 실패');
       } else {
-        toast.success('배치가 저장됐어요. 모든 직원에게 적용돼요.');
+        toast.success('지점 기본 배치가 저장됐어요. 전 직원에게 적용돼요.');
       }
     },
     [clinic, profile],
   );
 
-  // T-20260506-foot-LAYOUT-DEFAULT-SAVE: 편집 완료 시 DB 저장
+  // T-20260526-foot-LAYOUT-USER-CUSTOM: 편집 완료 → 개인 레이아웃 저장 (모든 로그인 계정)
   const handleLayoutEditToggle = useCallback(async () => {
-    if (isLayoutEdit && profile?.role === 'admin') {
-      // 편집 완료 → DB에 현재 레이아웃 저장
-      await saveLayoutToDb(groupOrder, zoomLevel);
+    if (isLayoutEdit && profile) {
+      // 편집 완료 → 개인 레이아웃으로 저장 (staff 포함 전 계정)
+      await savePersonalLayoutToDb(groupOrder, zoomLevel);
     }
     setIsLayoutEdit((v) => !v);
-  }, [isLayoutEdit, profile, saveLayoutToDb, groupOrder, zoomLevel]);
+  }, [isLayoutEdit, profile, savePersonalLayoutToDb, groupOrder, zoomLevel]);
 
   // T-20260510-foot-DASH-SLOT-REWORK-P0 AC4: rows 업데이트 후 pending auto-open 처리
   // 키오스크에서 셀프접수 완료 → Realtime INSERT → 리페치 후 이 useEffect가 차트 자동 열기
@@ -5379,17 +5446,29 @@ export default function Dashboard() {
             </button>
           )}
 
-          {/* 레이아웃 편집 (관리자 전용) */}
-          {profile?.role === 'admin' && (
+          {/* T-20260526-foot-LAYOUT-USER-CUSTOM: 레이아웃 편집 (모든 계정 — staff 포함) */}
+          {profile && (
             <div className="flex items-center gap-1">
               {isLayoutEdit && (
-                <button
-                  onClick={resetGroupOrder}
-                  className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-gray-600 hover:bg-gray-100 border transition"
-                  title="기본 배치로 초기화"
-                >
-                  <RotateCcw className="h-3 w-3" /> 초기화
-                </button>
+                <>
+                  <button
+                    onClick={resetGroupOrder}
+                    className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-gray-600 hover:bg-gray-100 border transition"
+                    title="내 배치를 초기화하고 지점 기본으로 복원"
+                  >
+                    <RotateCcw className="h-3 w-3" /> 초기화
+                  </button>
+                  {/* admin/manager 전용: 전 직원 기본으로 저장 */}
+                  {['admin', 'manager'].includes(profile.role) && (
+                    <button
+                      onClick={() => saveClinicDefaultLayoutToDb(groupOrder, zoomLevel)}
+                      className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-amber-700 hover:bg-amber-50 border border-amber-300 transition"
+                      title="현재 배치를 전 직원 기본으로 저장 (관리자 전용)"
+                    >
+                      <LayoutGrid className="h-3 w-3" /> 전 직원 기본
+                    </button>
+                  )}
+                </>
               )}
               <button
                 onClick={handleLayoutEditToggle}
@@ -5399,7 +5478,7 @@ export default function Dashboard() {
                     ? 'bg-teal-600 text-white border-teal-600 hover:bg-teal-700'
                     : 'text-gray-600 hover:bg-gray-100 border-gray-200',
                 )}
-                title={isLayoutEdit ? '편집 완료 (DB 저장)' : '슬롯 배치 편집 (관리자)'}
+                title={isLayoutEdit ? '편집 완료 (내 배치 저장)' : '슬롯 배치 편집'}
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
                 {isLayoutEdit ? '편집 완료' : '배치 편집'}
