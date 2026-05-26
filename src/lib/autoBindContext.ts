@@ -100,6 +100,19 @@ export function formatBirthDate(yymmdd: string | null | undefined): string {
 }
 
 /**
+ * 주민번호 하이픈 삽입
+ * "1234561234567" → "123456-1234567"
+ * 이미 하이픈 있으면 그대로 반환. 13자리 아닌 경우 그대로 반환.
+ * T-20260526-foot-DOC-FORM-REVISE AC-C1
+ */
+export function formatRrn(rrn: string | null | undefined): string {
+  if (!rrn) return '';
+  const clean = rrn.replace(/-/g, '');
+  if (clean.length === 13) return `${clean.slice(0, 6)}-${clean.slice(6)}`;
+  return rrn; // 13자리 아닌 경우 그대로
+}
+
+/**
  * birth_date(YYMMDD) → 만 나이 계산
  */
 export function calcAge(yymmdd: string | null | undefined): string {
@@ -152,7 +165,8 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
   const fullAddress = addrParts.join(' ');
 
   // T-20260520-foot-PRINT-FORM-BIND: 주민번호 마스킹 없이 그대로 (서류 출력용)
-  const patientRrn = ctx.customer?.rrn ?? '';
+  // T-20260526-foot-DOC-FORM-REVISE AC-C1: 하이픈 삽입 (123456-1234567)
+  const patientRrn = formatRrn(ctx.customer?.rrn);
 
   // T-20260520-foot-PRINT-FORM-BIND: 전화/팩스 조합 (clinic)
   const clinicPhoneFax = [
@@ -203,6 +217,23 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     insurance_grade_label: ctx.insuranceInfo?.gradeLabel ?? '',
     copay_rate:            ctx.insuranceInfo?.copayRateText ?? '',
     special_treatment_code: ctx.insuranceInfo?.specialTreatmentCode ?? '',
+    // T-20260526-foot-DOC-FORM-REVISE AC-C1: 주민번호 분리 (진료의뢰서 rrn_front/rrn_back)
+    rrn_front: patientRrn.includes('-') ? patientRrn.split('-')[0] : patientRrn.slice(0, 6),
+    rrn_back:  patientRrn.includes('-') ? (patientRrn.split('-')[1] ?? '') : patientRrn.slice(6),
+    // T-20260526-foot-DOC-FORM-REVISE AC#2: 치료기간 일수 (기본 1일, 외래 단일 방문)
+    visit_days: '1',
+    // T-20260526-foot-DOC-FORM-REVISE AC#5: 진료의뢰서 4필드 자동 바인딩
+    referral_year:    format(new Date(), 'yyyy'),
+    referral_month:   format(new Date(), 'MM'),
+    referral_day:     format(new Date(), 'dd'),
+    dept_name:        '족부의학과',
+    referring_doctor: ctx.doctor ?? '',
+    // T-20260526-foot-DOC-FORM-REVISE AC#7: 납입증명서 연도 자동 바인딩
+    year: format(new Date(), 'yyyy'),
+    // T-20260526-foot-DOC-FORM-REVISE AC-C2: 의사 성명 근방 도장 HTML (직인 이미지 or "(인)" fallback)
+    doctor_seal_html: ctx.clinicDoctor?.seal_image_url
+      ? `<img src="${ctx.clinicDoctor.seal_image_url}" style="width:52px;height:52px;opacity:0.85;vertical-align:middle;display:inline-block;" onerror="this.style.display='none'" />`
+      : '(인)',
   };
 }
 

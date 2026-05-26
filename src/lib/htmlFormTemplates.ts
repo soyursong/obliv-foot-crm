@@ -144,7 +144,7 @@ ${COMMON_STYLE}
         <td style="white-space:nowrap;">전화번호&nbsp;&nbsp;{{patient_phone}}</td>
       </tr>
       <tr>
-        <td rowspan="3" style="background:#f8f8f8; text-align:center; vertical-align:middle; font-weight:bold; font-size:10pt; letter-spacing:2px;">명&nbsp;&nbsp;명</td>
+        <td rowspan="3" style="background:#f8f8f8; text-align:center; vertical-align:middle; font-weight:bold; font-size:10pt; letter-spacing:2px;">병&nbsp;&nbsp;명</td>
         <td style="background:#f0f0f0; text-align:center; width:100px;">상병코드</td>
         <td style="background:#f0f0f0; text-align:center;">상&nbsp;&nbsp;&nbsp;병&nbsp;&nbsp;&nbsp;명</td>
         <td style="background:#f0f0f0; text-align:center; width:70px;">특 정 기 호</td>
@@ -254,7 +254,7 @@ ${COMMON_STYLE}
         <td colspan="3">제&nbsp;{{doctor_license_no}}&nbsp;호</td>
         <td style="background:#f8f8f8; text-align:right; white-space:nowrap;">의 사 성 명</td>
         <td colspan="2">{{doctor_name}}</td>
-        <td style="text-align:center;">(인)</td>
+        <td style="text-align:center; vertical-align:middle; min-width:52px; padding:2px;">{{doctor_seal_html}}</td>
       </tr>
     </tbody>
   </table>
@@ -315,7 +315,7 @@ ${COMMON_STYLE}
   <table style="margin-top:4px;">
     <tbody>
       <tr>
-        <td rowspan="3" style="width:60px; background:#f8f8f8; text-align:center; font-weight:bold; font-size:10pt; letter-spacing:2px;">명&nbsp;&nbsp;명</td>
+        <td rowspan="3" style="width:60px; background:#f8f8f8; text-align:center; font-weight:bold; font-size:10pt; letter-spacing:2px;">병&nbsp;&nbsp;명</td>
         <td style="background:#f0f0f0; text-align:center; width:90px;">상 병 코 드</td>
         <td style="background:#f0f0f0; text-align:center;">상&nbsp;&nbsp;&nbsp;병&nbsp;&nbsp;&nbsp;명</td>
         <td style="background:#f0f0f0; text-align:center; width:70px;">특 정 기 호</td>
@@ -418,7 +418,7 @@ ${COMMON_STYLE}
         <td style="background:#f8f8f8;">면 허 번 호</td>
         <td colspan="1">제&nbsp;{{doctor_license_no}}&nbsp;호</td>
         <td style="background:#f8f8f8; text-align:right; white-space:nowrap;">의 사 성 명</td>
-        <td>{{doctor_name}}&nbsp;&nbsp;(인)</td>
+        <td>{{doctor_name}}&nbsp;&nbsp;{{doctor_seal_html}}</td>
       </tr>
     </tbody>
   </table>
@@ -474,7 +474,7 @@ ${COMMON_STYLE}
   <table style="margin-top:4px;">
     <tbody>
       <tr>
-        <td rowspan="3" style="width:60px; background:#f8f8f8; text-align:center; font-weight:bold; font-size:10pt; letter-spacing:2px;">명&nbsp;&nbsp;명</td>
+        <td rowspan="3" style="width:60px; background:#f8f8f8; text-align:center; font-weight:bold; font-size:10pt; letter-spacing:2px;">병&nbsp;&nbsp;명</td>
         <td style="background:#f0f0f0; text-align:center; width:90px;">상 병 코 드</td>
         <td style="background:#f0f0f0; text-align:center;">상&nbsp;&nbsp;&nbsp;병&nbsp;&nbsp;&nbsp;명</td>
         <td style="background:#f0f0f0; text-align:center; width:70px;">특 정 기 호</td>
@@ -577,7 +577,7 @@ ${COMMON_STYLE}
         <td style="background:#f8f8f8;">면 허 번 호</td>
         <td>제&nbsp;{{doctor_license_no}}&nbsp;호</td>
         <td style="background:#f8f8f8; text-align:right; white-space:nowrap;">의 사 성 명</td>
-        <td>{{doctor_name}}&nbsp;&nbsp;(인)</td>
+        <td>{{doctor_name}}&nbsp;&nbsp;{{doctor_seal_html}}</td>
       </tr>
     </tbody>
   </table>
@@ -676,7 +676,7 @@ ${COMMON_STYLE}
     <tbody>
       <tr>
         <td style="width:60px; background:#f8f8f8; text-align:center; vertical-align:middle;">소&nbsp;&nbsp;&nbsp;견</td>
-        <td style="min-height:100px;" class="large-area">{{diagnosis_ko}}</td>
+        <td style="min-height:500px;" class="large-area">{{diagnosis_ko}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8; text-align:center;">비&nbsp;&nbsp;&nbsp;고</td>
@@ -715,7 +715,7 @@ ${COMMON_STYLE}
         <td style="background:#f8f8f8;">면 허 번 호</td>
         <td>제&nbsp;{{doctor_license_no}}&nbsp;호</td>
         <td style="background:#f8f8f8; text-align:right; white-space:nowrap;">의 사 성 명</td>
-        <td>{{doctor_name}}&nbsp;&nbsp;(인)</td>
+        <td>{{doctor_name}}&nbsp;&nbsp;{{doctor_seal_html}}</td>
       </tr>
     </tbody>
   </table>
@@ -874,15 +874,8 @@ ${COMMON_STYLE}
 const PAYMENT_CERT_HTML = `
 ${COMMON_STYLE}
 <div class="form-wrap">
-  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;">
-    <div style="flex:1;">
-      <div style="font-size:17pt; font-weight:bold; letter-spacing:4px; margin-top:6px;">진료비&nbsp;&nbsp;납입증명서(소득공제용)</div>
-    </div>
-    <div style="font-size:9pt; text-align:left; line-height:1.8; white-space:nowrap; padding-top:4px;">
-      진&nbsp;&nbsp;료&nbsp;&nbsp;과&nbsp;:&nbsp;&nbsp;&nbsp;<br>
-      작&nbsp;&nbsp;성&nbsp;&nbsp;자&nbsp;:&nbsp;&nbsp;&nbsp;<br>
-      일&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;자&nbsp;:&nbsp;20&nbsp;&nbsp;&nbsp;&nbsp;년&nbsp;&nbsp;&nbsp;&nbsp;월&nbsp;&nbsp;&nbsp;&nbsp;일
-    </div>
+  <div style="text-align:center; margin-bottom:6px;">
+    <div style="font-size:17pt; font-weight:bold; letter-spacing:4px; margin-top:6px; display:inline-block;">진료비&nbsp;&nbsp;납입증명서(소득공제용)</div>
   </div>
 
   <table style="margin-bottom:4px;">
@@ -890,8 +883,8 @@ ${COMMON_STYLE}
       <tr>
         <td style="width:70px; background:#f8f8f8;">등&nbsp;록&nbsp;번&nbsp;호</td>
         <td style="width:200px;">{{record_no}}</td>
-        <td style="width:30px; background:#f8f8f8; text-align:center;">No</td>
-        <td></td>
+        <td style="width:60px; background:#f8f8f8; text-align:center;">진&nbsp;료&nbsp;과</td>
+        <td>{{dept_name}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">수신자(수신처)</td>
@@ -1625,7 +1618,7 @@ const BILL_RECEIPT_HTML = `
         요양기관명 : <span style="font-weight:bold;">{{clinic_name}}</span>
       </div>
       <div class="br-sign-item">
-        진료의사 : {{doctor_name}} <span class="br-sign-box"></span>
+        진료의사 : {{doctor_name}}&nbsp;{{doctor_seal_html}}
       </div>
     </div>
   </div>

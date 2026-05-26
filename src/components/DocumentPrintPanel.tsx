@@ -1533,6 +1533,14 @@ function IssueDialog({
     if (clinicDoctors.length > 1 && selectedClinicDoctorId && Object.keys(clinicDoctorOverrides).length > 0) {
       Object.assign(base, clinicDoctorOverrides);
     }
+    // T-20260526-foot-DOC-FORM-REVISE AC-C2: 의사 변경(override) 후 doctor_seal_html 재동기화
+    // clinicDoctorOverrides가 doctor_seal_image를 바꿀 수 있으므로 마지막에 재계산
+    {
+      const sealImg = base.doctor_seal_image ?? '';
+      base.doctor_seal_html = sealImg
+        ? `<img src="${sealImg}" style="width:52px;height:52px;opacity:0.85;vertical-align:middle;display:inline-block;" onerror="this.style.display='none'" />`
+        : '(인)';
+    }
     if (computedTotal !== null) {
       base.total_amount = formatAmount(computedTotal);
     }
