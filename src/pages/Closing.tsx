@@ -538,11 +538,40 @@ export default function Closing() {
     const singleCashGross     = sumGross(payments, 'cash');
     const singleTransferGross = sumGross(payments, 'transfer');
 
+    // T-20260526-foot-CLOSING-PAYCOUNT: 건 수 — SummaryCard 결제수단별 건 수 표기
+    const countGross = (rows: { method: string; payment_type: PaymentType }[], method: string) =>
+      rows.filter(r => r.method === method && r.payment_type !== 'refund').length;
+    const countRefund = (rows: { payment_type: PaymentType }[]) =>
+      rows.filter(r => r.payment_type === 'refund').length;
+
+    // 패키지 결제 건 수 (GROSS: 결제만, 환불 제외)
+    const pkgCardCount     = countGross(pkgPayments, 'card');
+    const pkgCashCount     = countGross(pkgPayments, 'cash');
+    const pkgTransferCount = countGross(pkgPayments, 'transfer');
+    const pkgRefundCount   = countRefund(pkgPayments);
+
+    // 단건 결제 건 수
+    const singleCardCount     = countGross(payments, 'card');
+    const singleCashCount     = countGross(payments, 'cash');
+    const singleTransferCount = countGross(payments, 'transfer');
+    const singleRefundCount   = countRefund(payments);
+
     // 수기결제: manual entries는 항상 payment_type='payment' (환불 없음) — 직접 합산
     const manualCard     = manualEntries.filter(m => m.method === 'card').reduce((s, m) => s + m.amount, 0);
     const manualCash     = manualEntries.filter(m => m.method === 'cash').reduce((s, m) => s + m.amount, 0);
     const manualTransfer = manualEntries.filter(m => m.method === 'transfer').reduce((s, m) => s + m.amount, 0);
     const manualTotal    = manualCard + manualCash + manualTransfer;
+
+    // 수기결제 건 수
+    const manualCardCount     = manualEntries.filter(m => m.method === 'card').length;
+    const manualCashCount     = manualEntries.filter(m => m.method === 'cash').length;
+    const manualTransferCount = manualEntries.filter(m => m.method === 'transfer').length;
+
+    // 합계 건 수
+    const totalCardCount     = pkgCardCount + singleCardCount + manualCardCount;
+    const totalCashCount     = pkgCashCount + singleCashCount + manualCashCount;
+    const totalTransferCount = pkgTransferCount + singleTransferCount + manualTransferCount;
+    const totalRefundCount   = pkgRefundCount + singleRefundCount;
 
     // NET totals (reconciliation/DB저장)
     const totalCard     = pkgCard + singleCard + manualCard;
@@ -579,10 +608,15 @@ export default function Closing() {
       totalCardGross, totalCashGross, totalTransferGross,
       // Manual (공통)
       manualCard, manualCash, manualTransfer, manualTotal,
+      manualCardCount, manualCashCount, manualTransferCount,
       // 환불
       refundAmount, refundSingleAmount, refundPkgAmount,
       // 합계
       grossTotal,
+      // T-20260526-foot-CLOSING-PAYCOUNT: 건 수
+      pkgCardCount, pkgCashCount, pkgTransferCount, pkgRefundCount,
+      singleCardCount, singleCashCount, singleTransferCount, singleRefundCount,
+      totalCardCount, totalCashCount, totalTransferCount, totalRefundCount,
     };
   }, [payments, pkgPayments, manualEntries]);
 
@@ -1171,18 +1205,20 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               SummaryCard 행값은 GROSS(환불 미차감)로 표시.
               "합계" 카드에 ['환불', -refundAmount] 행 추가 → 행 합계 = grossTotal(NET) ✓
               (구 코드: NET 행값 + 별도 환불 행 → 이중 차감 = 불일치 원인) */}
+          {/* T-20260526-foot-CLOSING-PAYCOUNT: rows 3번째 인자 = 건 수 (0건도 표기) */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             <SummaryCard
               title="패키지 결제"
               rows={[
-                ['카드', totals.pkgCardGross],
-                ['현금', totals.pkgCashGross],
-                ['이체', totals.pkgTransferGross],
+                ['카드', totals.pkgCardGross, totals.pkgCardCount],
+                ['현금', totals.pkgCashGross, totals.pkgCashCount],
+                ['이체', totals.pkgTransferGross, totals.pkgTransferCount],
                 ...(totals.refundPkgAmount > 0
-                  ? [['환불', -totals.refundPkgAmount] as [string, number]]
+                  ? [['환불', -totals.refundPkgAmount, totals.pkgRefundCount] as [string, number, number]]
                   : []),
               ]}
               total={totals.pkgCard + totals.pkgCash + totals.pkgTransfer}
+              totalCount={totals.pkgCardCount + totals.pkgCashCount + totals.pkgTransferCount}
             />
             {/* T-20260519-foot-PKG-REVENUE-SPLIT AC-2/AC-3/AC-5:
                 단건 결제 합계에서 singleMembership 제외.
@@ -1190,17 +1226,18 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             <SummaryCard
               title="단건 결제"
               rows={[
-                ['카드', totals.singleCardGross],
-                ['현금', totals.singleCashGross],
-                ['이체', totals.singleTransferGross],
+                ['카드', totals.singleCardGross, totals.singleCardCount],
+                ['현금', totals.singleCashGross, totals.singleCashCount],
+                ['이체', totals.singleTransferGross, totals.singleTransferCount],
                 ...(totals.singleMembership > 0
                   ? [['패키지차감(매출제외)', totals.singleMembership] as [string, number]]
                   : []),
                 ...(totals.refundSingleAmount > 0
-                  ? [['환불', -totals.refundSingleAmount] as [string, number]]
+                  ? [['환불', -totals.refundSingleAmount, totals.singleRefundCount] as [string, number, number]]
                   : []),
               ]}
               total={totals.singleCard + totals.singleCash + totals.singleTransfer}
+              totalCount={totals.singleCardCount + totals.singleCashCount + totals.singleTransferCount}
             />
             {/* T-20260525-foot-CLOSING-SUM-ERR: 수기결제가 있을 때 수기 소계 카드 추가 */}
             {totals.manualTotal > 0 && (
@@ -1220,17 +1257,18 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             <SummaryCard
               title="합계 (결제수단별)"
               rows={[
-                ['카드 총합', totals.totalCardGross],
-                ['현금 총합', totals.totalCashGross],
-                ['이체 총합', totals.totalTransferGross],
+                ['카드 총합', totals.totalCardGross, totals.totalCardCount],
+                ['현금 총합', totals.totalCashGross, totals.totalCashCount],
+                ['이체 총합', totals.totalTransferGross, totals.totalTransferCount],
                 ...(totals.manualTotal > 0
                   ? [['수기결제 포함', totals.manualTotal] as [string, number]]
                   : []),
                 ...(totals.refundAmount > 0
-                  ? [['환불', -totals.refundAmount] as [string, number]]
+                  ? [['환불', -totals.refundAmount, totals.totalRefundCount] as [string, number, number]]
                   : []),
               ]}
               total={totals.grossTotal}
+              totalCount={totals.totalCardCount + totals.totalCashCount + totals.totalTransferCount}
               highlight
             />
           </div>
@@ -1842,15 +1880,20 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
 // 요약 카드 (총 합계 탭)
 // ──────────────────────────────────────────────────────────────
 
+// T-20260526-foot-CLOSING-PAYCOUNT: rows 3번째 요소(선택)에 건 수, totalCount 합계 행 건 수
 function SummaryCard({
   title,
   rows,
   total,
+  totalCount,
   highlight,
 }: {
   title: string;
-  rows: [string, number][];
+  /** [label, amount, count?] — count 전달 시 "N건" 표시 (0건도 표기) */
+  rows: [string, number, number?][];
   total: number;
+  /** 합계 행 건 수 (선택) */
+  totalCount?: number;
   highlight?: boolean;
 }) {
   return (
@@ -1860,10 +1903,15 @@ function SummaryCard({
       </CardHeader>
       <CardContent>
         <div className="space-y-1.5 text-sm">
-          {rows.map(([label, val]) => (
+          {rows.map(([label, val, count]) => (
             <div key={label} className="flex justify-between">
               <span className="text-muted-foreground">{label}</span>
-              <span className="tabular-nums">{formatAmount(val)}</span>
+              <span className="flex items-center gap-1.5 tabular-nums">
+                {count !== undefined && (
+                  <span className="text-xs text-muted-foreground">{count}건</span>
+                )}
+                {formatAmount(val)}
+              </span>
             </div>
           ))}
         </div>
@@ -1872,7 +1920,14 @@ function SummaryCard({
           highlight ? 'text-base text-primary' : 'text-sm',
         )}>
           <span>합계</span>
-          <span className="tabular-nums">{formatAmount(total)}</span>
+          <span className="flex items-center gap-1.5 tabular-nums">
+            {totalCount !== undefined && (
+              <span className={cn('font-normal text-muted-foreground', highlight ? 'text-sm' : 'text-xs')}>
+                {totalCount}건
+              </span>
+            )}
+            {formatAmount(total)}
+          </span>
         </div>
       </CardContent>
     </Card>
