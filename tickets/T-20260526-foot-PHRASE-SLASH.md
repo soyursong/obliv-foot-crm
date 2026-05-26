@@ -12,7 +12,13 @@ db_change: true
 build_passed: true
 spec_file: tests/e2e/T-20260526-foot-PHRASE-SLASH.spec.ts
 spec_added: true
-deploy_ready_at: "2026-05-27T08:45:00+09:00"
+deploy_ready_at: "2026-05-27T09:50:00+09:00"
+qa_result: pass
+qa_fail_phase: ""
+qa_fail_reason: ""
+qa_fail_detail: ""
+qa_checked_at: "2026-05-27T09:50:00+09:00"
+fix_detail: "loginIfNeeded waitForURL→waitForLoadState('networkidle') 1줄 교체. 테스트 0실패/3passed/5skipped."
 ---
 
 ## 요약
