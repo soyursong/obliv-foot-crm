@@ -533,6 +533,9 @@ function TreatmentImagesSection({
   const [capturedBlobs, setCapturedBlobs] = useState<{ blob: Blob; previewUrl: string }[]>([]);
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  // REOPEN #2 T-20260526-foot-CAMERA-FOCUS-BUG: 탭-투-포커스 상태
+  const [isFocusing, setIsFocusing] = useState(false);
+  const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
 
   // T-20260522-foot-MEDIMG-CAMERA: 이미지 편집/회전 상태 (AC-5)
   const [editingImg, setEditingImg] = useState<TreatImgItem | null>(null);
@@ -706,6 +709,26 @@ function TreatmentImagesSection({
 
           const finalSettings = videoTrack.getSettings?.() as (MediaTrackSettings & { focusMode?: string }) | undefined;
           console.debug('[CAMERA-FOCUS] final focusMode:', finalSettings?.focusMode);
+
+          // REOPEN #2 AC-9: 프리포커스 킥 (600ms 후) — 카메라 초기화 완료 후 single-shot 1회 트리거
+          // 스트림 열림 직후보다 0.6s 지연 후가 카메라 하드웨어 준비 완료 시점에 더 근접.
+          // single-shot 성공 → 800ms 뒤 continuous 복원 → 사용자 촬영 전 초점 수렴 완료.
+          const trackForPrefocus = videoTrack; // 클로저 캡처 (stopStream 후 stale 방지)
+          setTimeout(async () => {
+            if (!streamRef.current) return; // 카메라가 이미 닫혔으면 skip
+            try {
+              await trackForPrefocus.applyConstraints({ focusMode: 'single-shot' } as MediaTrackConstraints);
+              console.debug('[CAMERA-FOCUS] prefocus single-shot ok');
+              setTimeout(async () => {
+                try {
+                  await trackForPrefocus.applyConstraints({ focusMode: 'continuous' } as MediaTrackConstraints);
+                  console.debug('[CAMERA-FOCUS] prefocus continuous restore ok');
+                } catch { /* 미지원 — single-shot 상태 유지 */ }
+              }, 800);
+            } catch {
+              console.debug('[CAMERA-FOCUS] prefocus kick failed — camera in native AF state');
+            }
+          }, 600);
         }
       } catch (_afErr) {
         // 전체 focus 시도 실패 — 카메라는 정상 작동 (AF 미제어 상태로 fallback)
@@ -731,6 +754,43 @@ function TreatmentImagesSection({
       });
     }
   }, []); // 의존성 없음 — 생명주기 전체에서 동일 함수 참조 유지
+
+  // REOPEN #2 AC-8: 탭-투-포커스 — 화면 탭 시 single-shot AF 발화 + 시각 피드백
+  // Samsung Galaxy Tab Chrome은 focusMode API 응답이 불안정 → 사용자가 직접 트리거하는 것이
+  // 가장 신뢰도 높은 방법 (native camera app UX 동일 패턴).
+  const handleVideoTap = useCallback(async (e: React.PointerEvent<HTMLVideoElement>) => {
+    const videoTrack = streamRef.current?.getVideoTracks()[0];
+    if (!videoTrack) return;
+    // 이미 포커싱 중이면 무시
+    if (isFocusing) return;
+
+    // 탭 좌표 → 퍼센트 (포커스 링 위치용)
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100));
+    const y = Math.min(100, Math.max(0, ((e.clientY - rect.top) / rect.height) * 100));
+    setFocusPoint({ x, y });
+    setIsFocusing(true);
+
+    // single-shot → auto → continuous 순으로 시도 (tap 시점에서 즉각 focus 발화)
+    for (const mode of ['single-shot', 'auto', 'continuous'] as const) {
+      try {
+        await videoTrack.applyConstraints({ focusMode: mode } as MediaTrackConstraints);
+        console.debug('[CAMERA-FOCUS] tap-to-focus ok:', mode);
+        break;
+      } catch {
+        console.debug('[CAMERA-FOCUS] tap-to-focus failed:', mode);
+      }
+    }
+
+    // 800ms 후 continuous 복원 시도 + 링 숨김
+    setTimeout(async () => {
+      try {
+        await videoTrack.applyConstraints({ focusMode: 'continuous' } as MediaTrackConstraints);
+      } catch { /* 미지원 기기 — 현재 모드 유지 */ }
+      setIsFocusing(false);
+      setTimeout(() => setFocusPoint(null), 300);
+    }, 800);
+  }, [isFocusing]);
 
   const capturePhoto = async () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -1113,11 +1173,37 @@ function TreatmentImagesSection({
                   playsInline
                   muted
                   disablePictureInPicture
-                  className="absolute inset-0 w-full h-full object-cover"
+                  onPointerDown={handleVideoTap}
+                  className="absolute inset-0 w-full h-full object-cover cursor-pointer"
                   // FIX T-20260522-foot-MEDIMG-CAMERA: GPU 컴포지팅 레이어 고정
                   // translateZ(0) + willChange: transform → Android WebView 비디오 리페인트 분리
                   style={{ transform: 'translateZ(0)', willChange: 'transform' }}
                 />
+                {/* REOPEN #2: 탭-투-포커스 링 (노란 사각형) */}
+                {focusPoint && (
+                  <div
+                    className="absolute pointer-events-none z-20"
+                    style={{
+                      left: `${focusPoint.x}%`,
+                      top: `${focusPoint.y}%`,
+                      transform: 'translate(-50%, -50%)',
+                      width: 60,
+                      height: 60,
+                      border: `2px solid ${isFocusing ? '#facc15' : 'rgba(250,204,21,0.3)'}`,
+                      borderRadius: 3,
+                      transition: 'border-color 0.3s, opacity 0.3s',
+                      opacity: isFocusing ? 1 : 0,
+                    }}
+                  />
+                )}
+                {/* REOPEN #2: 초점 안내 문구 (하단, 촬영 없을 때만) */}
+                {capturedBlobs.length === 0 && (
+                  <div className="absolute bottom-3 left-0 right-0 text-center pointer-events-none z-10">
+                    <span className="text-white/50 text-xs">
+                      {isFocusing ? '초점 맞추는 중…' : '화면을 탭하면 초점이 맞춰집니다'}
+                    </span>
+                  </div>
+                )}
                 {/* 분류 배지 */}
                 <div className="absolute top-4 left-4 z-10">
                   <span className={`text-sm font-bold rounded-full px-3 py-1 ${cameraType === 'before' ? 'bg-blue-600 text-white' : 'bg-emerald-600 text-white'}`}>

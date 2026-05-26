@@ -1,7 +1,7 @@
 ---
 id: T-20260526-foot-CAMERA-FOCUS-BUG
 domain: foot
-priority: P0
+priority: P1
 status: deploy-ready
 deploy_ready: true
 build_ok: true
@@ -9,11 +9,11 @@ db_change: false
 spec_added: tests/e2e/T-20260526-foot-CAMERA-FOCUS-BUG.spec.ts
 regression_risk: low
 created: 2026-05-26
-deadline: 2026-05-27
+deadline: 2026-05-26
 risk_verdict: GO_WARN
-reopen_count: 1
-reopen_reason: "갤럭시탭 시크릿모드에서도 미작동 확인 → f059544 수정 자체 미작동 확정. 2회 실패(advanced[]+top-level focusMode). 신규 전략: 제약 분리+blind apply+ImageCapture."
-fix_strategy: "width/focusMode 독립 applyConstraints + blind multi-mode apply (Samsung under-report우회) + ImageCapture.takePicture() 캡처 단계"
+reopen_count: 2
+reopen_reason: "REOPEN #2 (MSG-20260526-194821-4oix): 김주연 총괄 현장 검증 실패 '하나도 수정 안 됨'. f059544(attempt2) 실패 확인. d228b96(REOPEN#1 blind multi-mode) 배포 후 미검증 상태. 추가 전략: 탭-투-포커스 UX + 프리포커스 킥 추가."
+fix_strategy: "width/focusMode 독립 + blind multi-mode(REOPEN#1) + 탭-투-포커스(pointerDown→single-shot AF발화) + 프리포커스 킥(600ms 후 single-shot→continuous) + ImageCapture.takePicture()"
 field_device_gate: "Galaxy Tab (Samsung Android tablet) 실기기 검증 필수 — 김주연 총괄 확인 후 배포"
 ---
 
@@ -159,3 +159,49 @@ AC-3(실제 초점 품질)은 E2E 자동화 범위 밖 → 현장 수동 검증 
 ### field_device_gate
 
 배포 전 현장 실기기(갤럭시탭) 검증 필수. supervisor가 배포 후 슬랙 스레드에 김주연 총괄 확인 요청할 것.
+
+---
+
+## REOPEN #2 수정 내용 — 2026-05-26T20:50+09:00 (P1 — MSG-20260526-194821-4oix)
+
+### 원인 재분석
+
+| 시도 | 결과 | 원인 |
+|------|------|------|
+| Attempt 1 (f059544) | ❌ 실패 | getCapabilities().focusMode=[] → bestMode=null → no-op |
+| REOPEN #1 (d228b96) | ⬜ 미검증 | 20:17 배포, 현장 19:47 테스트 → 아직 미확인 |
+
+**추가 전략**: 기존 blind multi-mode(d228b96) 위에 탭-투-포커스 + 프리포커스 킥 레이어 추가.
+사용자가 직접 AF를 발화할 수 있게 하여 API 응답 여부와 무관하게 초점 확보 가능.
+
+### 신규 구현 (REOPEN #2)
+
+```
+1. 탭-투-포커스 (AC-8): 카메라 프리뷰 화면 탭 → single-shot AF 발화
+   - onPointerDown → handleVideoTap → applyConstraints(single-shot→auto→continuous 시도)
+   - 시각 피드백: 노란 포커스 링(60×60px) + "초점 맞추는 중…" 텍스트
+   - 800ms 후 continuous 복원 시도
+   - 힌트 텍스트: "화면을 탭하면 초점이 맞춰집니다" (촬영 전)
+
+2. 프리포커스 킥 (AC-9): 스트림 오픈 후 600ms 자동 single-shot 트리거
+   - 카메라 초기화 완료 타이밍에 맞춰 AF 발화 → 사용자 촬영 전 초점 수렴
+   - streamRef null 체크로 카메라 닫힌 후 stale 방지
+   - 성공 시 800ms 후 continuous 복원 시도
+```
+
+### 수용기준 달성
+
+- [x] AC-R1-1: d228b96 + REOPEN #2 수정이 번들 포함 (CustomerChartPage-BJZRPkRU.js)
+- [x] AC-R1-2: console.debug '[CAMERA-FOCUS]' 진단 로그 유지 (d228b96 포함)
+- [x] AC-R1-3: Android WebView + iOS Safari graceful fallback (AC-R1-3 spec 추가)
+- [ ] AC-R1-4: 김주연 총괄 실기기(갤럭시탭) 재검증 — supervisor 배포 후
+- [x] AC-R1-5: 기존 AC-1~6 회귀 없음 (E2E 7/7 pass, REOPEN#2 5테스트 추가)
+
+### E2E spec 업데이트
+
+`tests/e2e/T-20260526-foot-CAMERA-FOCUS-BUG.spec.ts` — 14 테스트 (7 UNIT + 7 skipped)
+- AC-8 UNIT: tap-to-focus single-shot 트리거 검증
+- AC-8b UNIT: tap-to-focus fallback (single-shot fail → auto)
+- AC-9 UNIT: prefocus kick (single-shot → continuous restore)
+- AC-9b UNIT: prefocus stale 방지 (streamRef null 체크)
+- AC-R1-3: iOS Safari all-modes-fail graceful fallback
