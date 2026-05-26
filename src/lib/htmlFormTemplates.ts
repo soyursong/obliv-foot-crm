@@ -973,7 +973,7 @@ ${COMMON_STYLE}
     <tbody>
       <tr>
         <td style="border:none; padding:2px 6px 2px 0; background:none; white-space:nowrap;">병&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;원&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;장&nbsp;:</td>
-        <td style="border:none; padding:2px 0; background:none; min-width:120px;"></td>
+        <td style="border:none; padding:2px 0; background:none; min-width:120px;">{{doctor_name}}&nbsp;&nbsp;{{doctor_seal_html}}</td>
       </tr>
       <tr>
         <td style="border:none; padding:2px 6px 2px 0; background:none; white-space:nowrap;">사업자등록번호&nbsp;:</td>
@@ -987,7 +987,7 @@ ${COMMON_STYLE}
   </table>
 
   <div style="font-size:8.5pt; margin-top:14px; border-top:1px solid #999; padding-top:4px; line-height:1.8; color:#333;">
-    ※ 본 진료비는 20&nbsp;&nbsp;&nbsp;&nbsp;년&nbsp;&nbsp;&nbsp;&nbsp;월까지의 진료비 내역으로 이후 진료비에 대한 소득공제는 진료일에 발행하는 진료비 영수증으로 제출하시기 바랍니다.<br>
+    ※ 본 진료비는 {{year}}년&nbsp;{{month}}월까지의 진료비 내역으로 이후 진료비에 대한 소득공제는 진료일에 발행하는 진료비 영수증으로 제출하시기 바랍니다.<br>
     ※ 본 증명서는 상기목적 이외의 타용도로 사용할 수 없습니다.
   </div>
 </div>
