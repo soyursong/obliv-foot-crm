@@ -483,4 +483,8 @@ export interface Reservation {
   external_id?: string | null;
   /** T-20260524-foot-THERAPIST-BISYNC: 재진 예약 지정 치료사 — customers.designated_therapist_id와 쌍방 동기화 */
   preferred_therapist_id?: string | null;
+  /** T-PROGRESS-CHECKPOINT AC-3: 예약이 경과분석 체크포인트 회차에 해당하면 true */
+  progress_check_required?: boolean | null;
+  /** T-PROGRESS-CHECKPOINT AC-3: 경과분석 레이블 (예: "6회 중간 경과분석") */
+  progress_check_label?: string | null;
 }

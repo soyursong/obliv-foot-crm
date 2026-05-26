@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { addDays, format, parseISO, startOfWeek, isSameDay } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Loader2, Plus, User, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Plus, TrendingUp, User, X } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -95,6 +95,8 @@ interface ReservationDraft {
   existingId?: string;
   service_id?: string | null;
   customer_id?: string | null;
+  /** T-PROGRESS-CHECKPOINT AC-2/3: 예약에 연결할 패키지 ID */
+  linked_package_id?: string | null;
 }
 
 type ViewMode = 'week' | 'day';
@@ -118,6 +120,8 @@ export default function Reservations() {
   const [selectedDay, setSelectedDay] = useState<Date>(() => new Date());
   const [rows, setRows] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
+  // T-PROGRESS-CHECKPOINT AC-4: 경과분석 필터 토글
+  const [filterProgress, setFilterProgress] = useState(false);
   // T-20260514-foot-CHART-NO-VISIBLE: AC-2 예약관리 차트번호 컬럼 (customer_id → chart_number)
   const [resvChartMap, setResvChartMap] = useState<Map<string, string>>(new Map());
 
@@ -811,6 +815,22 @@ export default function Reservations() {
           </Button>
         </div>
         <div className="flex items-center gap-2">
+          {/* T-PROGRESS-CHECKPOINT AC-4: 경과분석 필터 토글 버튼 */}
+          <button
+            type="button"
+            data-testid="progress-filter-btn"
+            onClick={() => setFilterProgress(f => !f)}
+            className={cn(
+              'flex items-center gap-1.5 rounded-md border px-3 h-9 text-xs font-medium transition-colors',
+              filterProgress
+                ? 'border-teal-500 bg-teal-600 text-white'
+                : 'border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100',
+            )}
+          >
+            <TrendingUp className="h-3.5 w-3.5" />
+            경과분석
+            {filterProgress && <span className="ml-0.5 opacity-70">ON</span>}
+          </button>
           {/* T-20260513-foot-RESV-PLUS-PHONE-SEARCH: 페이지 상단 새 예약 버튼 — InlinePatientSearch(phone) 연결 */}
           <Button
             size="sm"
@@ -967,7 +987,8 @@ export default function Reservations() {
                             {allowed && (
                               <div className="flex h-full w-full min-w-0 flex-col gap-0.5 rounded text-left">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 → 자식 flex 아이템이 셀 너비 이하로 수축 허용 */}
 
-                                {list.map((r) => (
+                                {/* T-PROGRESS-CHECKPOINT AC-4: filterProgress 시 경과분석 대상만 표시 */}
+                                {(filterProgress ? list.filter(r => r.progress_check_required) : list).map((r) => (
                                   <div
                                     key={r.id}
                                     data-testid={`resv-card-${r.id}`}
@@ -1094,6 +1115,17 @@ export default function Reservations() {
                                         title={r.booking_memo}
                                       >
                                         📝 {r.booking_memo}
+                                      </div>
+                                    )}
+                                    {/* T-PROGRESS-CHECKPOINT AC-3/4: 경과분석 배지 */}
+                                    {r.progress_check_required && (
+                                      <div
+                                        className="inline-flex items-center gap-0.5 rounded border border-teal-300 bg-teal-100 px-1 text-[9px] font-medium text-teal-800 leading-none py-0.5 mt-0.5"
+                                        data-testid={`progress-badge-${r.id}`}
+                                        title={r.progress_check_label ?? '경과분석 필요'}
+                                      >
+                                        <TrendingUp className="h-2.5 w-2.5" />
+                                        {r.progress_check_label ?? '경과분석'}
                                       </div>
                                     )}
                                   </div>
@@ -1274,6 +1306,23 @@ interface TreatHistoryRow {
   session_date: string;
 }
 
+// T-PROGRESS-CHECKPOINT AC-2: 패키지 연결 드롭다운용 타입
+interface LinkedPackageOption {
+  id: string;
+  package_name: string;
+  package_type: string;
+  total_sessions: number;
+  used_sessions: number;  // package_sessions count(status='used')
+}
+
+// T-PROGRESS-CHECKPOINT: 경과분석 플랜 타입 (package_progress_plans 행)
+interface ProgressPlanEntry {
+  package_type: string;
+  session_milestone: number;
+  label: string;
+  is_active: boolean;
+}
+
 function ReservationEditor({
   draft,
   clinicId,
@@ -1307,6 +1356,11 @@ function ReservationEditor({
   const [treatHistoryLoading, setTreatHistoryLoading] = useState(false);
   const [treatHistoryShowAll, setTreatHistoryShowAll] = useState(false);
 
+  // T-PROGRESS-CHECKPOINT AC-2/3: 패키지 연결 + 경과분석 상태
+  const [linkedPackages, setLinkedPackages] = useState<LinkedPackageOption[]>([]);
+  const [linkedPackagesLoading, setLinkedPackagesLoading] = useState(false);
+  const [progressPlans, setProgressPlans] = useState<ProgressPlanEntry[]>([]);
+
   useEffect(() => {
     setState(draft);
     // draft 리셋 시 이력 초기화
@@ -1315,6 +1369,8 @@ function ReservationEditor({
     // T-20260522-foot-RESV-TREAT-HISTORY: 시술내역 초기화
     setTreatHistory([]);
     setTreatHistoryShowAll(false);
+    // T-PROGRESS-CHECKPOINT: 패키지 초기화
+    setLinkedPackages([]);
   }, [draft]);
 
   // AC-3 FIX: 초진 편집 모달 — referral_source가 없는 구형 예약 대응 fallback
@@ -1525,10 +1581,100 @@ function ReservationEditor({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.customer_id]);
 
+  // T-PROGRESS-CHECKPOINT AC-2: 고객의 활성 패키지 로드 (customer_id 변경 시)
+  useEffect(() => {
+    const customerId = state?.customer_id;
+    if (!customerId || !clinicId) {
+      setLinkedPackages([]);
+      return;
+    }
+
+    let cancelled = false;
+    setLinkedPackagesLoading(true);
+
+    const fetchPackages = async () => {
+      // 활성 패키지 목록
+      const { data: pkgData } = await supabase
+        .from('packages')
+        .select('id, package_name, package_type, total_sessions')
+        .eq('customer_id', customerId)
+        .eq('clinic_id', clinicId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+
+      if (cancelled) return;
+      if (!pkgData || pkgData.length === 0) {
+        setLinkedPackages([]);
+        setLinkedPackagesLoading(false);
+        return;
+      }
+
+      // 각 패키지의 사용 회차 카운트
+      const pkgIds = (pkgData as { id: string }[]).map(p => p.id);
+      const { data: sessData } = await supabase
+        .from('package_sessions')
+        .select('package_id')
+        .in('package_id', pkgIds)
+        .eq('status', 'used');
+
+      if (cancelled) return;
+
+      const usedMap = new Map<string, number>();
+      for (const s of (sessData ?? []) as { package_id: string }[]) {
+        usedMap.set(s.package_id, (usedMap.get(s.package_id) ?? 0) + 1);
+      }
+
+      const options: LinkedPackageOption[] = (pkgData as {
+        id: string; package_name: string; package_type: string; total_sessions: number;
+      }[]).map(p => ({
+        id: p.id,
+        package_name: p.package_name,
+        package_type: p.package_type,
+        total_sessions: p.total_sessions,
+        used_sessions: usedMap.get(p.id) ?? 0,
+      }));
+
+      setLinkedPackages(options);
+      setLinkedPackagesLoading(false);
+    };
+
+    fetchPackages().catch(() => {
+      if (!cancelled) setLinkedPackagesLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.customer_id, clinicId]);
+
+  // T-PROGRESS-CHECKPOINT AC-3: 경과분석 플랜 로드 (clinicId 설정 시 1회)
+  useEffect(() => {
+    if (!clinicId) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from('package_progress_plans')
+      .select('package_type, session_milestone, label, is_active')
+      .eq('clinic_id', clinicId)
+      .eq('is_active', true)
+      .then(({ data }: { data: ProgressPlanEntry[] | null }) => {
+        setProgressPlans((data ?? []) as ProgressPlanEntry[]);
+      });
+  }, [clinicId]);
+
   if (!state) return null;
 
   const update = <K extends keyof ReservationDraft>(k: K, v: ReservationDraft[K]) =>
     setState((s) => (s ? { ...s, [k]: v } : s));
+
+  // T-PROGRESS-CHECKPOINT AC-2/3: 경과분석 파생 계산
+  const selectedLinkedPkg = linkedPackages.find(p => p.id === state.linked_package_id);
+  const anticipatedSession = selectedLinkedPkg ? selectedLinkedPkg.used_sessions + 1 : null;
+  const progressCheckPlan = (anticipatedSession && selectedLinkedPkg)
+    ? progressPlans.find(
+        p => p.package_type === selectedLinkedPkg.package_type
+          && p.session_milestone === anticipatedSession
+          && p.is_active,
+      ) ?? null
+    : null;
 
   /** 인라인 검색 드롭다운에서 기존 환자 선택 */
   const handlePatientSelect = (p: PatientMatch) => {
@@ -1637,6 +1783,12 @@ function ReservationEditor({
       // T-20260524-foot-THERAPIST-BISYNC AC-2: 재진 예약 치료사 수기 선택 → preferred_therapist_id 저장
       // AC-3: 재진(returning)만 — 초진(new)은 지정 치료사 연동 대상 외
       ...(state.visit_type === 'returning' ? { preferred_therapist_id: overrideTherapistId || null } : {}),
+      // T-PROGRESS-CHECKPOINT AC-3: 경과분석 플래그 — 신규 예약 시 체크포인트 도달 여부 저장
+      // 기존 예약 수정 시에는 재계산 안 함 (null → DB default false 유지)
+      ...(!state.existingId && state.linked_package_id ? {
+        progress_check_required: !!progressCheckPlan,
+        progress_check_label: progressCheckPlan?.label ?? null,
+      } : {}),
     };
 
     // 수정 전 원본 캡처 (감사 로그용)
@@ -1726,6 +1878,10 @@ function ReservationEditor({
         .eq('id', customerId);
     }
 
+    // T-PROGRESS-CHECKPOINT AC-3: 경과분석 필요 토스트 알림
+    if (!state.existingId && progressCheckPlan) {
+      toast.info(`🔔 경과분석 필요 — ${progressCheckPlan.label}`, { duration: 6000 });
+    }
     toast.success(state.existingId ? '수정됨' : '예약 등록');
     setSubmitting(false);
     onSaved();
@@ -1967,6 +2123,69 @@ function ReservationEditor({
                     </button>
                   )}
                 </>
+              )}
+            </div>
+          )}
+
+          {/* T-PROGRESS-CHECKPOINT AC-2/3: 패키지 연결 + 경과분석 배너 (기존 고객 + 신규 예약만) */}
+          {state.customer_id && !state.existingId && (
+            <div className="space-y-2" data-testid="progress-pkg-section">
+              <div className="space-y-1.5">
+                <Label>
+                  패키지 연결{' '}
+                  <span className="text-muted-foreground font-normal text-xs">(선택 — 경과분석 자동 감지)</span>
+                </Label>
+                {linkedPackagesLoading ? (
+                  <div className="flex items-center gap-1.5 h-9 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    패키지 조회 중…
+                  </div>
+                ) : linkedPackages.length === 0 ? (
+                  <div className="h-9 flex items-center px-3 rounded-md border border-dashed border-muted-foreground/30 text-xs text-muted-foreground">
+                    활성 패키지 없음
+                  </div>
+                ) : (
+                  <select
+                    value={state.linked_package_id ?? ''}
+                    onChange={(e) => update('linked_package_id', e.target.value || null)}
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    data-testid="linked-package-select"
+                  >
+                    <option value="">— 연결 안 함 —</option>
+                    {linkedPackages.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.package_name} ({p.used_sessions}/{p.total_sessions}회 진행)
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* 예상 회차 표시 */}
+              {anticipatedSession && selectedLinkedPkg && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
+                  <span>예상 회차</span>
+                  <span className="font-mono font-bold text-teal-700">{anticipatedSession}회</span>
+                  <span className="text-muted-foreground">(완료 {selectedLinkedPkg.used_sessions}회 + 1)</span>
+                </div>
+              )}
+
+              {/* 경과분석 감지 배너 */}
+              {progressCheckPlan && (
+                <div
+                  className="flex items-start gap-2 rounded-lg border border-teal-400 bg-teal-50 px-3 py-2.5 text-xs"
+                  data-testid="progress-check-banner"
+                >
+                  <TrendingUp className="h-4 w-4 text-teal-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-teal-800">
+                      🔔 경과분석 필요 — {progressCheckPlan.label}
+                    </p>
+                    <p className="text-teal-600 mt-0.5">
+                      이 예약은 경과분석 대상입니다. 진료 차트에 경과분석지를 준비해 주세요.
+                    </p>
+                  </div>
+                </div>
               )}
             </div>
           )}
