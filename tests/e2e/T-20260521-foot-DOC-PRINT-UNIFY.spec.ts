@@ -597,9 +597,9 @@ test.describe('§10 — AC-6 도장 오버레이 presence 검증 (stamp overlay)
 
   test('stamp 오버레이 HTML — position:absolute 우하단(right:52px, bottom:52px) 배치', () => {
     const overlay = buildStampOverlay(MOCK_STAMP_URL);
-    expect(overlay).toContain('position:absolute');
-    expect(overlay).toContain('right:52px');
-    expect(overlay).toContain('bottom:52px');
+    expect(overlay).toMatch(/position:\s*absolute/);
+    expect(overlay).toMatch(/right:\s*52px/);
+    expect(overlay).toMatch(/bottom:\s*52px/);
     expect(overlay).toContain('width:88px');
     expect(overlay).toContain('height:88px');
     console.log('[AC-6] stamp position 스타일 확인 OK');
@@ -642,9 +642,9 @@ test.describe('§10 — AC-6 도장 오버레이 presence 검증 (stamp overlay)
 
     // stamp 위치 스타일 확인
     const style = await stampImg.getAttribute('style');
-    expect(style).toContain('position:absolute');
-    expect(style).toContain('right:52px');
-    expect(style).toContain('bottom:52px');
+    expect(style).toMatch(/position:\s*absolute/);
+    expect(style).toMatch(/right:\s*52px/);
+    expect(style).toMatch(/bottom:\s*52px/);
 
     console.log('[AC-6] PATH-1/2/3 HTML 양식 stamp 오버레이 렌더 OK');
   });
