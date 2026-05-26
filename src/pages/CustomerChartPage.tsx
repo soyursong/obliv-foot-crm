@@ -1316,6 +1316,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [editingMemoId, setEditingMemoId] = useState<string | null>(null);
   const [editingMemoText, setEditingMemoText] = useState('');
   const [savingEditMemo, setSavingEditMemo] = useState(false);
+  // T-20260526-foot-VISIT-HIST-FILTER: 방문이력 펼침/접기 + 메모유형 필터
+  const [visitHistAllExpanded, setVisitHistAllExpanded] = useState(false);
+  const [visitHistExpandedIds, setVisitHistExpandedIds] = useState<Set<string>>(new Set());
+  const [visitHistFilters, setVisitHistFilters] = useState<Set<string>>(new Set());
   // C21-RESIDENT-ID: 주민번호 입력/표시
   // T-20260511-foot-SSN-SAVE-BUG: 앞6자리 plain + 뒷7자리 masked (2-split input)
   const [editingRrn, setEditingRrn] = useState(false);
@@ -4107,158 +4111,318 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </div>
           )}
 
-              {/* History: 시술내역 */}
-              {chartTabGroup === 'history' && chartTab === 'treatments' && (
-            <div className="space-y-3">
-              {/* T-20260515-foot-DOC-REISSUE-BTN: 진료내역 리스트 + 서류 재발급 버튼 */}
-              <div className="rounded-lg border bg-white p-3 text-xs space-y-1">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="font-semibold text-muted-foreground">진료내역 리스트</div>
-                  <span className="text-[10px] text-muted-foreground">행별 서류 재발급 가능</span>
-                </div>
-                {checkInHistory.length === 0 && (
-                  <div className="text-muted-foreground py-2 text-center">진료 기록 없음</div>
-                )}
-                {checkInHistory.map((ci) => {
-                  const isCancelled = ci.status === 'cancelled';
-                  const dateStr = format(new Date(ci.checked_in_at), 'yyyy-MM-dd');
-                  const timeStr = format(new Date(ci.checked_in_at), 'HH:mm');
-                  const treatContent = ci.treatment_kind ?? (ci.consultation_done ? '상담' : '');
-                  // T-20260515-foot-DOC-REISSUE-BTN AC-2: 이 진료건에 발급된 서류 목록
-                  const ciSubs = submissionEntries.filter((s) => s.check_in_id === ci.id);
-                  return (
-                    <div
-                      key={ci.id}
-                      className={cn(
-                        'rounded border px-2 py-1.5 space-y-1',
-                        isCancelled && 'opacity-60',
-                      )}
-                    >
-                      {/* 상단 행: 날짜·시간·취소·시술명·재발급 버튼 */}
-                      <div className="flex items-center gap-2">
-                        <span className={cn('tabular-nums shrink-0', isCancelled && 'line-through text-muted-foreground')}>
-                          {dateStr}
-                        </span>
-                        <span className="tabular-nums shrink-0 text-muted-foreground">{timeStr}</span>
-                        {isCancelled && (
-                          <Badge variant="destructive" className="text-[9px] px-1 py-0">취소</Badge>
-                        )}
-                        <span className="flex-1 truncate">{treatContent || '—'}</span>
+              {/* History: 방문이력 (T-20260526-foot-VISIT-HIST-FILTER: 펼침/접기 + 메모유형 필터) */}
+              {chartTabGroup === 'history' && chartTab === 'treatments' && (() => {
+                // ── 특이사항 판별 키워드 (임상적으로 중요한 표기)
+                const SPECIAL_KW = ['주의', '알레르기', '부작용', '특이', '금기', '과거력', '이상반응'];
+
+                // ── 방문건별 메모 유형 계산
+                const visitsWithTypes = checkInHistory.map((ci) => {
+                  const treatDetails = (ci.treatment_memo?.details ?? '').trim();
+                  const doctorNote = (ci.doctor_note ?? '').trim();
+                  const allText = `${treatDetails} ${doctorNote}`.toLowerCase();
+                  const memoTypes = new Set<string>();
+                  if (treatDetails) memoTypes.add('치료메모');
+                  if (doctorNote) memoTypes.add('진료메모');
+                  if (SPECIAL_KW.some((kw) => allText.includes(kw))) memoTypes.add('특이사항');
+                  return { ci, memoTypes, treatDetails, doctorNote };
+                });
+
+                // ── 필터 적용 (AC-3: 복합 선택, AC-4: 전체 해제 시 복원)
+                const filtered = visitHistFilters.size === 0
+                  ? visitsWithTypes
+                  : visitsWithTypes.filter(({ memoTypes }) =>
+                      Array.from(visitHistFilters).some((f) => memoTypes.has(f))
+                    );
+
+                return (
+                  <div className="space-y-2 text-xs" data-testid="visit-history-panel">
+                    {/* ── 컨트롤 바: 전체 펼치기/접기 + 필터 칩 (AC-1, AC-2) */}
+                    <div className="flex flex-wrap items-center gap-2 pb-1">
+                      {/* 전체 펼치기/접기 토글 (AC-1) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !visitHistAllExpanded;
+                          setVisitHistAllExpanded(next);
+                          setVisitHistExpandedIds(
+                            next ? new Set(checkInHistory.map((ci) => ci.id)) : new Set(),
+                          );
+                        }}
+                        className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-2 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100 transition"
+                        data-testid="visit-hist-fold-all-btn"
+                      >
+                        {visitHistAllExpanded
+                          ? <ChevronDown className="h-3 w-3" />
+                          : <ChevronRight className="h-3 w-3" />
+                        }
+                        {visitHistAllExpanded ? '전체 접기' : '전체 펼치기'}
+                      </button>
+
+                      {/* 메모 유형 필터 칩 (AC-2, AC-3) */}
+                      {(['치료메모', '진료메모', '특이사항'] as const).map((type) => {
+                        const active = visitHistFilters.has(type);
+                        return (
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={() => {
+                              setVisitHistFilters((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(type)) next.delete(type); else next.add(type);
+                                return next;
+                              });
+                            }}
+                            className={cn(
+                              'inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition',
+                              active
+                                ? 'border-teal-500 bg-teal-500 text-white'
+                                : 'border-gray-300 bg-white text-gray-600 hover:border-teal-400 hover:text-teal-700',
+                            )}
+                            data-testid={`visit-hist-filter-${type}`}
+                          >
+                            {type}
+                          </button>
+                        );
+                      })}
+
+                      {/* 필터 전체 해제 (AC-4) */}
+                      {visitHistFilters.size > 0 && (
                         <button
-                          disabled={isCancelled}
-                          onClick={() => setDocReissueCheckIn(ci)}
-                          className={cn(
-                            'flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium transition shrink-0',
-                            isCancelled
-                              ? 'border-muted text-muted-foreground cursor-not-allowed'
-                              : 'border-teal-300 bg-teal-50 text-teal-700 hover:bg-teal-100',
-                          )}
+                          type="button"
+                          onClick={() => setVisitHistFilters(new Set())}
+                          className="text-[10px] text-muted-foreground hover:text-destructive transition"
+                          data-testid="visit-hist-filter-clear"
                         >
-                          <FileText className="h-3 w-3" />
-                          서류 재발급
+                          전체 해제
                         </button>
-                      </div>
-                      {/* 하단 행: 서류출력내용 (AC-2) */}
-                      {ciSubs.length > 0 && (
-                        <div className="flex flex-wrap gap-1 pl-1">
-                          {ciSubs.map((s, i) => {
-                            const meta = s.template_key ? FORM_META[s.template_key] : undefined;
-                            const label = meta?.description ?? s.template_key ?? '서류';
-                            return (
-                              <span
-                                key={i}
-                                className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-600"
-                                title={`발급: ${s.printed_at || s.signed_at ? format(new Date((s.printed_at ?? s.signed_at)!), 'yyyy-MM-dd HH:mm') : '-'}`}
-                              >
-                                <Printer className="h-2.5 w-2.5 shrink-0" />
-                                {label}
-                              </span>
-                            );
-                          })}
-                        </div>
+                      )}
+
+                      {/* 필터 결과 카운트 */}
+                      {visitHistFilters.size > 0 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {filtered.length}/{checkInHistory.length}건
+                        </span>
                       )}
                     </div>
-                  );
-                })}
-              </div>
 
-              {/* 원장소견 */}
-              {checkInHistory.filter((ci) => ci.doctor_note).length > 0 && (
-                <div className="rounded-lg border bg-white p-3 text-xs space-y-2">
-                  <div className="font-semibold text-muted-foreground">원장소견</div>
-                  {checkInHistory.filter((ci) => ci.doctor_note).map((ci) => (
-                    <div key={ci.id} className="rounded bg-muted/30 px-2 py-1.5">
-                      <div className="text-muted-foreground mb-0.5">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
-                      <div className="whitespace-pre-wrap">{ci.doctor_note}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* 진료종류 */}
-              {checkInHistory.filter((ci) =>
-                ci.consultation_done || ci.treatment_kind || ci.preconditioning_done || ci.pododulle_done || ci.laser_minutes != null
-              ).length > 0 && (
-                <div className="rounded-lg border bg-white p-3 text-xs space-y-2">
-                  <div className="font-semibold text-muted-foreground">진료종류</div>
-                  {checkInHistory
-                    .filter((ci) =>
-                      ci.consultation_done || ci.treatment_kind || ci.preconditioning_done || ci.pododulle_done || ci.laser_minutes != null
-                    )
-                    .map((ci) => (
-                      <div key={ci.id} className="rounded bg-muted/30 px-2 py-1.5">
-                        <div className="text-muted-foreground mb-1">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
-                          <div className="flex gap-1.5">
-                            <span className="text-muted-foreground w-12 shrink-0">상담유무</span>
-                            <span className={ci.consultation_done ? 'text-emerald-600 font-medium' : ''}>{ci.consultation_done ? '○ 상담함' : '—'}</span>
-                          </div>
-                          {ci.treatment_kind && (
-                            <div className="flex gap-1.5">
-                              <span className="text-muted-foreground w-12 shrink-0">치료종류</span>
-                              <span className="font-medium">{ci.treatment_kind}</span>
-                            </div>
-                          )}
-                          <div className="flex gap-1.5">
-                            <span className="text-muted-foreground w-12 shrink-0">프컨</span>
-                            <span className={ci.preconditioning_done ? 'text-emerald-600 font-medium' : ''}>{ci.preconditioning_done ? '○' : '—'}</span>
-                          </div>
-                          <div className="flex gap-1.5">
-                            <span className="text-muted-foreground w-12 shrink-0">포돌</span>
-                            <span className={ci.pododulle_done ? 'text-emerald-600 font-medium' : ''}>{ci.pododulle_done ? '○' : '—'}</span>
-                          </div>
-                          {ci.laser_minutes != null && (
-                            <div className="flex gap-1.5">
-                              <span className="text-muted-foreground w-12 shrink-0">레이저</span>
-                              <span>{ci.laser_minutes}분</span>
-                            </div>
-                          )}
-                        </div>
+                    {/* ── 방문이력 카드 목록 */}
+                    {filtered.length === 0 ? (
+                      <div className="rounded-lg border border-dashed py-8 text-center text-muted-foreground" data-testid="visit-hist-empty">
+                        {visitHistFilters.size > 0
+                          ? '해당 메모 유형의 방문 기록이 없습니다'
+                          : '방문 기록 없음'}
                       </div>
-                    ))}
-                </div>
-              )}
+                    ) : (
+                      <div className="space-y-1.5">
+                        {filtered.map(({ ci, memoTypes, treatDetails, doctorNote }) => {
+                          const isCancelled = ci.status === 'cancelled';
+                          const dateStr = format(new Date(ci.checked_in_at), 'yyyy-MM-dd');
+                          const timeStr = format(new Date(ci.checked_in_at), 'HH:mm');
+                          const treatContent = ci.treatment_kind ?? (ci.consultation_done ? '상담' : '');
+                          const ciSubs = submissionEntries.filter((s) => s.check_in_id === ci.id);
+                          const isExpanded = visitHistExpandedIds.has(ci.id);
+                          const hasTreatMemo = memoTypes.has('치료메모');
+                          const hasDoctorNote = memoTypes.has('진료메모');
+                          const hasSpecial = memoTypes.has('특이사항');
+                          const hasClinicDetail = ci.consultation_done || !!ci.treatment_kind
+                            || ci.preconditioning_done || ci.pododulle_done || ci.laser_minutes != null;
 
-              {/* 시술메모 */}
-              {checkInHistory.filter((ci) => ci.treatment_memo).length > 0 && (
-                <div className="rounded-lg border bg-white p-3 text-xs space-y-2">
-                  <div className="font-semibold text-muted-foreground">시술메모</div>
-                  {checkInHistory.filter((ci) => ci.treatment_memo).map((ci) => (
-                    <div key={ci.id} className="rounded bg-muted/30 px-2 py-1.5">
-                      <div className="text-muted-foreground mb-0.5">{format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}</div>
-                      <div className="whitespace-pre-wrap">
-                        {ci.treatment_memo?.details ?? JSON.stringify(ci.treatment_memo)}
+                          return (
+                            <div
+                              key={ci.id}
+                              className={cn(
+                                'rounded-lg border bg-white transition',
+                                isCancelled && 'opacity-60',
+                                hasSpecial ? 'border-amber-300' : 'border-gray-200',
+                              )}
+                              data-testid="visit-hist-card"
+                            >
+                              {/* 카드 헤더 — 클릭 시 펼침/접기 (AC-1) */}
+                              <button
+                                type="button"
+                                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/30 rounded-lg transition"
+                                onClick={() => {
+                                  setVisitHistExpandedIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(ci.id)) {
+                                      next.delete(ci.id);
+                                      // 하나라도 접으면 전체펼침 상태 해제
+                                      setVisitHistAllExpanded(false);
+                                    } else {
+                                      next.add(ci.id);
+                                    }
+                                    return next;
+                                  });
+                                }}
+                                data-testid="visit-hist-card-toggle"
+                              >
+                                {/* 방향 아이콘 */}
+                                <span className="shrink-0 text-muted-foreground">
+                                  {isExpanded
+                                    ? <ChevronDown className="h-3.5 w-3.5" />
+                                    : <ChevronRight className="h-3.5 w-3.5" />
+                                  }
+                                </span>
+
+                                {/* 날짜·시간 */}
+                                <span className={cn('tabular-nums shrink-0 font-medium', isCancelled && 'line-through text-muted-foreground')}>
+                                  {dateStr}
+                                </span>
+                                <span className="tabular-nums shrink-0 text-muted-foreground">{timeStr}</span>
+
+                                {/* 취소 배지 */}
+                                {isCancelled && (
+                                  <Badge variant="destructive" className="text-[9px] px-1 py-0">취소</Badge>
+                                )}
+
+                                {/* 시술명 */}
+                                <span className="flex-1 truncate text-gray-700">{treatContent || '—'}</span>
+
+                                {/* 메모 유형 배지 (AC-2) */}
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {hasTreatMemo && (
+                                    <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[9px] text-blue-700">치료</span>
+                                  )}
+                                  {hasDoctorNote && (
+                                    <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[9px] text-violet-700">진료</span>
+                                  )}
+                                  {hasSpecial && (
+                                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] text-amber-700 font-semibold">특이</span>
+                                  )}
+                                </div>
+
+                                {/* 서류 재발급 버튼 (AC-5: 기존 CRUD 무영향) */}
+                                <button
+                                  type="button"
+                                  disabled={isCancelled}
+                                  onClick={(e) => { e.stopPropagation(); setDocReissueCheckIn(ci); }}
+                                  className={cn(
+                                    'flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium transition shrink-0',
+                                    isCancelled
+                                      ? 'border-muted text-muted-foreground cursor-not-allowed'
+                                      : 'border-teal-300 bg-teal-50 text-teal-700 hover:bg-teal-100',
+                                  )}
+                                >
+                                  <FileText className="h-3 w-3" />
+                                  서류 재발급
+                                </button>
+                              </button>
+
+                              {/* 접힌 상태에도 서류 목록 표시 */}
+                              {!isExpanded && ciSubs.length > 0 && (
+                                <div className="flex flex-wrap gap-1 px-3 pb-2">
+                                  {ciSubs.map((s, i) => {
+                                    const meta = s.template_key ? FORM_META[s.template_key] : undefined;
+                                    const label = meta?.description ?? s.template_key ?? '서류';
+                                    return (
+                                      <span
+                                        key={i}
+                                        className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-600"
+                                      >
+                                        <Printer className="h-2.5 w-2.5 shrink-0" />
+                                        {label}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {/* 확장 영역 (AC-1: 펼침 시 상세 메모 노출) */}
+                              {isExpanded && (
+                                <div className="border-t border-gray-100 px-4 py-2.5 space-y-2.5" data-testid="visit-hist-card-detail">
+                                  {/* 진료종류 */}
+                                  {hasClinicDetail && (
+                                    <div>
+                                      <div className="text-[10px] font-semibold text-muted-foreground mb-1 uppercase tracking-wide">진료종류</div>
+                                      <div className="grid grid-cols-2 gap-x-6 gap-y-0.5">
+                                        {ci.consultation_done && (
+                                          <div className="flex gap-1.5">
+                                            <span className="text-muted-foreground w-12 shrink-0">상담유무</span>
+                                            <span className="text-emerald-600 font-medium">○ 상담함</span>
+                                          </div>
+                                        )}
+                                        {ci.treatment_kind && (
+                                          <div className="flex gap-1.5">
+                                            <span className="text-muted-foreground w-12 shrink-0">치료종류</span>
+                                            <span className="font-medium">{ci.treatment_kind}</span>
+                                          </div>
+                                        )}
+                                        {ci.preconditioning_done && (
+                                          <div className="flex gap-1.5">
+                                            <span className="text-muted-foreground w-12 shrink-0">프컨</span>
+                                            <span className="text-emerald-600 font-medium">○</span>
+                                          </div>
+                                        )}
+                                        {ci.pododulle_done && (
+                                          <div className="flex gap-1.5">
+                                            <span className="text-muted-foreground w-12 shrink-0">포돌</span>
+                                            <span className="text-emerald-600 font-medium">○</span>
+                                          </div>
+                                        )}
+                                        {ci.laser_minutes != null && (
+                                          <div className="flex gap-1.5">
+                                            <span className="text-muted-foreground w-12 shrink-0">레이저</span>
+                                            <span>{ci.laser_minutes}분</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* 치료메모 (AC-2: 치료메모=treatment_memo.details) */}
+                                  {hasTreatMemo && (
+                                    <div>
+                                      <div className="text-[10px] font-semibold text-blue-600 mb-0.5 uppercase tracking-wide">치료메모</div>
+                                      <div className="rounded bg-blue-50 border border-blue-100 px-2 py-1.5 text-gray-800 whitespace-pre-wrap">{treatDetails}</div>
+                                    </div>
+                                  )}
+
+                                  {/* 진료메모 (AC-2: 진료메모=doctor_note) */}
+                                  {hasDoctorNote && (
+                                    <div>
+                                      <div className="text-[10px] font-semibold text-violet-600 mb-0.5 uppercase tracking-wide">진료메모</div>
+                                      <div className="rounded bg-violet-50 border border-violet-100 px-2 py-1.5 text-gray-800 whitespace-pre-wrap">{doctorNote}</div>
+                                    </div>
+                                  )}
+
+                                  {/* 발급 서류 */}
+                                  {ciSubs.length > 0 && (
+                                    <div>
+                                      <div className="text-[10px] font-semibold text-muted-foreground mb-0.5 uppercase tracking-wide">발급 서류</div>
+                                      <div className="flex flex-wrap gap-1">
+                                        {ciSubs.map((s, i) => {
+                                          const meta = s.template_key ? FORM_META[s.template_key] : undefined;
+                                          const label = meta?.description ?? s.template_key ?? '서류';
+                                          return (
+                                            <span
+                                              key={i}
+                                              className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-600"
+                                              title={`발급: ${s.printed_at || s.signed_at ? format(new Date((s.printed_at ?? s.signed_at)!), 'yyyy-MM-dd HH:mm') : '-'}`}
+                                            >
+                                              <Printer className="h-2.5 w-2.5 shrink-0" />
+                                              {label}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* 내용 없는 방문 */}
+                                  {!hasClinicDetail && !hasTreatMemo && !hasDoctorNote && ciSubs.length === 0 && (
+                                    <div className="text-muted-foreground text-center py-1">상세 기록 없음</div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {checkInHistory.filter((ci) => ci.doctor_note || ci.consultation_done || ci.treatment_kind || ci.preconditioning_done || ci.pododulle_done || ci.laser_minutes != null || ci.treatment_memo).length === 0 && (
-                <div className="text-xs text-muted-foreground py-4 text-center">시술 기록 없음</div>
-              )}
-            </div>
-          )}
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* T-20260515-foot-DOC-REISSUE-BTN: 서류 재발급 모달 */}
               {docReissueCheckIn && (
