@@ -15,9 +15,11 @@ import DocumentTemplatesTab from '@/components/admin/DocumentTemplatesTab';
 import TreatmentSetsTab from '@/components/admin/TreatmentSetsTab';
 import FeeSetTemplatesTab from '@/components/admin/FeeSetTemplatesTab';
 import QuickRxButtonsTab from '@/components/admin/QuickRxButtonsTab';
+// T-20260526-foot-PROGRESS-CHECKPOINT: 경과분석 플랜 탭
+import ProgressPlansTab from '@/components/admin/ProgressPlansTab';
 import DoctorPatientList from '@/components/doctor/DoctorPatientList';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { BookOpen, Pill, FileText, Layers, Zap, Users, DollarSign } from 'lucide-react';
+import { BookOpen, Pill, FileText, Layers, Zap, Users, DollarSign, TrendingUp } from 'lucide-react';
 
 export default function DoctorTools() {
   const { profile } = useAuth();
@@ -61,6 +63,11 @@ export default function DoctorTools() {
                 <Zap className="h-3.5 w-3.5" />
                 빠른처방 버튼
               </TabsTrigger>
+              {/* T-20260526-foot-PROGRESS-CHECKPOINT */}
+              <TabsTrigger value="progress_plans" className="gap-1.5" data-testid="tab-progress-plans">
+                <TrendingUp className="h-3.5 w-3.5" />
+                경과분석 플랜
+              </TabsTrigger>
             </>
           )}
 
@@ -95,6 +102,10 @@ export default function DoctorTools() {
 
             <TabsContent value="quick_rx">
               <QuickRxButtonsTab />
+            </TabsContent>
+            {/* T-20260526-foot-PROGRESS-CHECKPOINT */}
+            <TabsContent value="progress_plans">
+              <ProgressPlansTab />
             </TabsContent>
           </>
         )}
