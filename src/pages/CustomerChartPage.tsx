@@ -5523,6 +5523,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               <div className="space-y-1.5">
                 {reservations.slice(0, 5).map((r) => (
                   <div key={r.id} className="space-y-0.5">
+                    {/* T-20260525-foot-RESV-REDCHECK-REMOVE: 빨간 체크(status badge) 제거 — 변경 사유 직접 표시로 대체 */}
                     <button
                       type="button"
                       onClick={() => {
@@ -5537,10 +5538,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           visitType: r.visit_type,
                         });
                       }}
-                      className="w-full flex items-center justify-between text-[11px] rounded hover:bg-muted/50 px-1 py-0.5 transition text-left"
+                      className="w-full flex items-center text-[11px] rounded hover:bg-muted/50 px-1 py-0.5 transition text-left"
                     >
                       <span className="text-gray-700">{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
-                      <Badge variant="secondary" className="text-[10px] px-1.5">{r.status}</Badge>
                     </button>
                     {/* T-20260515-foot-RESV-MEMO-APPEND: 예약메모 인라인 추가 (append-only) */}
                     <input
