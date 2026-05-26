@@ -230,6 +230,8 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     referring_doctor: ctx.doctor ?? '',
     // T-20260526-foot-DOC-FORM-REVISE AC#7: 납입증명서 연도 자동 바인딩
     year: format(new Date(), 'yyyy'),
+    // T-20260526-foot-DOC-FORM-7FIX AC-7⑤: 납입증명서 "본 진료비는 {{year}}년 {{month}}월까지" 날짜 자동기입
+    month: format(new Date(), 'MM'),
     // T-20260526-foot-DOC-FORM-REVISE AC-C2: 의사 성명 근방 도장 HTML (직인 이미지 or "(인)" fallback)
     doctor_seal_html: ctx.clinicDoctor?.seal_image_url
       ? `<img src="${ctx.clinicDoctor.seal_image_url}" style="width:52px;height:52px;opacity:0.85;vertical-align:middle;display:inline-block;" onerror="this.style.display='none'" />`
