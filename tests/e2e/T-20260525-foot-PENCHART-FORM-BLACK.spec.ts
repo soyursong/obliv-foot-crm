@@ -1,10 +1,18 @@
 /**
- * T-20260525-foot-PENCHART-FORM-BLACK
+ * T-20260525-foot-PENCHART-FORM-BLACK (+ REOPEN 2026-05-26)
  * 펜차트 전체 양식 검정 화면 + 튕겨나감 회귀 수정 검증
  *
  * AC-3: 검정 화면 대신 양식이 정상 렌더링됨 (흰 배경 + 양식 내용)
  * AC-4: 튕겨나감 방지 — 에러 바운더리(fallback UI) + console.error 로깅
  * AC-5: 기존 펜차트 기능 정상 동작 확인 (회귀 없음)
+ *
+ * REOPEN 2026-05-26 추가 AC:
+ *   AC-R1: form template 이미지 URL console.log 로딩 시작 로그
+ *   AC-R2: img.naturalWidth===0 decode 실패 감지 → fallback
+ *   AC-R3: ctx.isContextLost() 체크 (initBgCanvas + onload 2곳)
+ *          + contextlost 이벤트 핸들러 useEffect
+ *          + setBgImgLoadError(false) 를 drawImage 성공 후 호출 (기존: onload 시작 즉시 → 버그)
+ *   AC-R4: drawImage try-catch → 실패 시 setBgImgLoadError(true)
  *
  * 회귀 후보:
  *   - T-20260523-foot-PENCHART-FORM-AUTOFILL (ccba516): canvas 최적화 사이드이펙트
@@ -68,7 +76,8 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
 
     const initStart = src.indexOf('const initBgCanvas = useCallback');
     expect(initStart).toBeGreaterThan(0);
-    const initBlock = src.slice(initStart, initStart + 1500);
+    // REOPEN: isContextLost() 추가로 함수 길이 증가 → 2500자 윈도우 사용
+    const initBlock = src.slice(initStart, initStart + 2500);
 
     // 이미지 로드 전 흰 배경 설정
     expect(initBlock).toContain("ctx.fillStyle = '#ffffff'");
@@ -94,13 +103,34 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
     expect(oerrBlock).toContain('console.error'); // AC-4: console.error 로깅
   });
 
-  test('AC-4: img.onload에서 setBgImgLoadError(false) 초기화 (성공 시 에러 해제)', () => {
+  test('AC-4: img.onload에서 drawImage 성공 후 setBgImgLoadError(false) 호출 (버그 수정: onload 시작 즉시 false 금지)', () => {
+    /**
+     * REOPEN AC-R3 핵심 버그 수정:
+     *   기존: setBgImgLoadError(false) → onload 진입 즉시 → drawImage 실패해도 fallback 비표시 → 검정화면
+     *   수정: setBgImgLoadError(false) → drawImage try-catch 성공 블록 후에 위치
+     *
+     * 검증: img.onload 블록 시작 후 200자 이내에 setBgImgLoadError(false)가 없어야 함
+     *       (drawImage 이후인 충분히 뒤에 있어야 함)
+     */
     const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
 
     const onloadIdx = src.indexOf('img.onload = () => {');
     expect(onloadIdx).toBeGreaterThan(0);
-    const onloadBlock = src.slice(onloadIdx, onloadIdx + 200);
-    expect(onloadBlock).toContain('setBgImgLoadError(false)');
+
+    // REOPEN: isContextLost() + naturalWidth 가드 + try-catch 추가로 onload 블록 길이 증가 → 4000자 윈도우
+    const onloadFullBlock = src.slice(onloadIdx, onloadIdx + 4000);
+    expect(onloadFullBlock).toContain('setBgImgLoadError(false)');
+
+    // onload 시작 200자 이내에는 setBgImgLoadError(false) 없어야 함 (drawImage 이후로 이동됨)
+    const onloadEarlyBlock = src.slice(onloadIdx, onloadIdx + 200);
+    expect(onloadEarlyBlock).not.toContain('setBgImgLoadError(false)');
+
+    // drawImage 뒤에 setBgImgLoadError(false) 위치 확인
+    // REOPEN: try-catch 블록이 추가되어 drawImage 이후 ~573자 → 750자 윈도우
+    const drawImageIdx = src.indexOf('ctx.drawImage(img, 0, 0, CANVAS_W, canvasH);', onloadIdx);
+    expect(drawImageIdx).toBeGreaterThan(onloadIdx);
+    const afterDrawImage = src.slice(drawImageIdx, drawImageIdx + 750);
+    expect(afterDrawImage).toContain('setBgImgLoadError(false)');
   });
 
   test('AC-4: 폴백 UI — data-testid="penchart-bg-load-error" 렌더 조건 확인', () => {
@@ -178,6 +208,92 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
     expect(drawBlock).toContain('console.error');
     // draw canvas 크기 할당 실패 방어
     expect(drawBlock).toContain('canvas.width === 0');
+  });
+
+  // ── REOPEN AC-R1: 이미지 URL 로딩 시작 로그 ──────────────────────────────────
+  test('AC-R1: initBgCanvas — 배경 이미지 URL console.log 로딩 시작 로그 존재', () => {
+    /**
+     * 현장 디버깅 지원: bgUrl 로딩 시작 시 console.log로 URL + formKey + canvasPhysical 기록
+     * → 현장 DevTools에서 URL 200 OK 여부 확인 가능 (CORS/404 조기 감지)
+     */
+    const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
+
+    const bgInitIdx = src.indexOf('const initBgCanvas = useCallback');
+    expect(bgInitIdx).toBeGreaterThan(0);
+    const bgBlock = src.slice(bgInitIdx, bgInitIdx + 3500);
+
+    expect(bgBlock).toContain('배경 이미지 로딩 시작');
+    expect(bgBlock).toContain('bgUrl');
+    expect(bgBlock).toContain('canvasPhysical');
+  });
+
+  // ── REOPEN AC-R2: 이미지 디코드 검증 ─────────────────────────────────────────
+  test('AC-R2: img.onload — naturalWidth===0 decode 실패 감지 → setBgImgLoadError(true)', () => {
+    /**
+     * img.onload 발화 후에도 naturalWidth=0이면 이미지 디코드 실패.
+     * 일부 Android 브라우저에서 발생 가능 → fallback 표시.
+     */
+    const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
+
+    const onloadIdx = src.indexOf('img.onload = () => {');
+    expect(onloadIdx).toBeGreaterThan(0);
+    const onloadBlock = src.slice(onloadIdx, onloadIdx + 2500);
+
+    expect(onloadBlock).toContain('img.naturalWidth === 0');
+    expect(onloadBlock).toContain('img.naturalHeight === 0');
+  });
+
+  // ── REOPEN AC-R3: ctx.isContextLost() 체크 + contextlost 이벤트 핸들러 ────────
+  test('AC-R3: initBgCanvas — ctx.isContextLost() 체크 존재 (GPU context loss 감지)', () => {
+    /**
+     * ctx !== null이어도 GPU context loss 발생 시 모든 draw 연산이 무효화됨.
+     * ctx.isContextLost() 체크로 감지 → setBgImgLoadError(true) 폴백.
+     */
+    const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
+
+    const bgInitIdx = src.indexOf('const initBgCanvas = useCallback');
+    expect(bgInitIdx).toBeGreaterThan(0);
+    const bgBlock = src.slice(bgInitIdx, bgInitIdx + 3500);
+
+    // initBgCanvas 초기와 img.onload 내 2곳에 isContextLost() 체크 존재
+    const contextLostMatches = (bgBlock.match(/ctx\.isContextLost\(\)/g) ?? []).length;
+    expect(contextLostMatches).toBeGreaterThanOrEqual(2);
+  });
+
+  test('AC-R3: contextlost 이벤트 핸들러 useEffect 존재 — GPU context 소실 fallback + 복구', () => {
+    /**
+     * bgCanvas에 contextlost/contextrestored 이벤트 리스너를 추가.
+     * contextlost → setBgImgLoadError(true) + e.preventDefault()
+     * contextrestored → setBgImgLoadError(false) + initCanvas() 재실행
+     */
+    const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
+
+    expect(src).toContain("'contextlost'");
+    expect(src).toContain("'contextrestored'");
+    expect(src).toContain('e.preventDefault()');
+    expect(src).toContain('onContextLost');
+    expect(src).toContain('onContextRestored');
+  });
+
+  // ── REOPEN AC-R4: drawImage try-catch ─────────────────────────────────────────
+  test('AC-R4: img.onload — drawImage try-catch 존재 → 실패 시 setBgImgLoadError(true)', () => {
+    /**
+     * 300DPI 소스 이미지(최대 2481×10524)가 일부 기기 GPU 텍스처 한계를 초과 시
+     * drawImage가 exception을 throw하는 경우 catch → setBgImgLoadError(true).
+     */
+    const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
+
+    const onloadIdx = src.indexOf('img.onload = () => {');
+    expect(onloadIdx).toBeGreaterThan(0);
+    const onloadBlock = src.slice(onloadIdx, onloadIdx + 2500);
+
+    // try-catch 블록 내에 ctx.drawImage 존재
+    const tryIdx = onloadBlock.indexOf('try {');
+    expect(tryIdx).toBeGreaterThan(0);
+    const tryCatchBlock = onloadBlock.slice(tryIdx, tryIdx + 500);
+    expect(tryCatchBlock).toContain('ctx.drawImage(img, 0, 0, CANVAS_W, canvasH)');
+    expect(tryCatchBlock).toContain('catch');
+    expect(tryCatchBlock).toContain('setBgImgLoadError(true)');
   });
 
   // ── AC-5: 기존 기능 회귀 없음 ──────────────────────────────────────────────

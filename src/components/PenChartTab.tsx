@@ -828,6 +828,14 @@ export function PenChartTab({
       setBgImgLoadError(true); // eslint-disable-line react-hooks/exhaustive-deps
       return;
     }
+    // T-20260526-foot-PENCHART-FORM-BLACKSCR REOPEN AC-R3:
+    //   GPU context loss → ctx는 non-null이지만 모든 draw 연산 무효 → 검정화면 + fallback 미진입
+    //   ctx.isContextLost() 체크로 감지 → fallback 표시
+    if (ctx.isContextLost()) {
+      console.error('[PenChartTab] bgCanvas context lost (GPU 메모리 압박)', activeDrawTemplate?.form_key);
+      setBgImgLoadError(true); // eslint-disable-line react-hooks/exhaustive-deps
+      return;
+    }
     const canvasH = getCanvasHeightForForm(activeDrawTemplate?.form_key);
 
     // T-20260523-foot-PENCHART-PEN-SLOW Fix-1:
@@ -861,16 +869,37 @@ export function PenChartTab({
       bgUrl = templateImgUrl;
     }
 
+    // T-20260526-foot-PENCHART-FORM-BLACKSCR REOPEN AC-R1: 이미지 URL 로딩 시작 로그
+    console.log('[PenChartTab] 배경 이미지 로딩 시작', {
+      bgUrl,
+      formKey: activeDrawTemplate?.form_key,
+      canvasPhysical: `${canvas.width}×${canvas.height}`,
+    });
+
     if (bgUrl) {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onerror = () => {
         // T-20260525-foot-PENCHART-FORM-BLACK AC-4: 이미지 로드 실패 → 흰 배경 유지 + 폴백 UI 표시
-        console.error('[PenChartTab] 배경 이미지 로드 실패, 흰 배경 fallback:', bgUrl);
+        console.error('[PenChartTab] 배경 이미지 로드 실패(network/CORS), 흰 배경 fallback:', bgUrl);
         setBgImgLoadError(true);
       };
       img.onload = () => {
-        setBgImgLoadError(false); // 로드 성공 시 에러 상태 초기화
+        // T-20260526-foot-PENCHART-FORM-BLACKSCR REOPEN AC-R2: 이미지 디코드 검증
+        //   onload 발화 후에도 naturalWidth=0인 경우(일부 브라우저 decode 실패) → drawImage silent fail
+        if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+          console.error('[PenChartTab] 이미지 onload 후 naturalWidth=0 (decode 실패):', bgUrl);
+          setBgImgLoadError(true);
+          return;
+        }
+        // T-20260526-foot-PENCHART-FORM-BLACKSCR REOPEN AC-R3:
+        //   onload 콜백 진입 시점에 context lost 여부 재확인
+        //   (이미지 로딩 중 GPU 압박 발생 가능)
+        if (ctx.isContextLost()) {
+          console.error('[PenChartTab] img.onload 시점 context lost — drawImage 불가', bgUrl);
+          setBgImgLoadError(true);
+          return;
+        }
         // T-20260523-foot-PENCHART-PEN-SLOW Fix-1:
         //   canvas.width/height 재할당 없음 — 이미 CANVAS_W*DRAW_DPR × canvasH*DRAW_DPR 확정.
         //   ctx transform도 이미 scale(DRAW_DPR, DRAW_DPR) 적용됨 — 리셋 없이 redraw만 수행.
@@ -882,7 +911,24 @@ export function PenChartTab({
         ctx.fillRect(0, 0, CANVAS_W, canvasH);
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, CANVAS_W, canvasH);
+        // T-20260526-foot-PENCHART-FORM-BLACKSCR REOPEN AC-R4:
+        //   drawImage try-catch: 300DPI 소스(최대 2481×10524) GPU 텍스처 한계 초과 시 silent fail 방어
+        //   → 예외 발생 시 setBgImgLoadError(true) + fallback UI 표시
+        try {
+          ctx.drawImage(img, 0, 0, CANVAS_W, canvasH);
+        } catch (e) {
+          console.error('[PenChartTab] drawImage 실패 (GPU 텍스처 한계 초과 가능):', e, {
+            formKey: activeDrawTemplate?.form_key,
+            imgNatural: `${img.naturalWidth}×${img.naturalHeight}`,
+            canvasPhysical: `${canvas.width}×${canvas.height}`,
+          });
+          setBgImgLoadError(true);
+          return;
+        }
+        // T-20260526-foot-PENCHART-FORM-BLACKSCR REOPEN AC-R3:
+        //   setBgImgLoadError(false) → drawImage 성공 후에만 호출
+        //   (기존 코드: onload 진입 즉시 false 설정 → drawImage 실패 시에도 fallback 비표시 = 검정화면 버그)
+        setBgImgLoadError(false);
         // T-20260523-foot-PENCHART-FORM-AUTOFILL: positions 기반 범용 자동채움
         // bgCanvas가 CANVAS_W×canvasH 논리이므로 scaleX/scaleY=1 (CSS 좌표 그대로)
         if (autofillDataRef.current) {
@@ -1027,6 +1073,31 @@ export function PenChartTab({
       const t = setTimeout(initCanvas, 50);
       return () => clearTimeout(t);
     }
+  }, [mode, initCanvas]);
+
+  // T-20260526-foot-PENCHART-FORM-BLACKSCR REOPEN AC-R3:
+  //   bgCanvas contextlost/contextrestored 핸들러
+  //   GPU 메모리 압박으로 context가 소실되면 → fallback UI 표시
+  //   context 복구 시 → initCanvas 재실행으로 자동 복원
+  useEffect(() => {
+    const canvas = bgCanvasRef.current;
+    if (!canvas || mode !== 'draw') return;
+    const onContextLost = (e: Event) => {
+      e.preventDefault(); // 브라우저가 context 복구를 시도하도록 preventDefault 필요
+      console.error('[PenChartTab] bgCanvas contextlost 이벤트 — GPU context 소실');
+      setBgImgLoadError(true);
+    };
+    const onContextRestored = () => {
+      console.log('[PenChartTab] bgCanvas contextrestored — canvas 재초기화');
+      setBgImgLoadError(false);
+      initCanvas();
+    };
+    canvas.addEventListener('contextlost', onContextLost);
+    canvas.addEventListener('contextrestored', onContextRestored);
+    return () => {
+      canvas.removeEventListener('contextlost', onContextLost);
+      canvas.removeEventListener('contextrestored', onContextRestored);
+    };
   }, [mode, initCanvas]);
 
   // T-20260522-foot-PENCHART-PHRASE: phrase_templates 로드 (draw 진입 시 1회)
