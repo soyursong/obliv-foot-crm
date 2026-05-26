@@ -57,7 +57,7 @@ const CATEGORY_LABEL_OPTIONS = ['기본', '검사', '상병', '풋케어', '수�
 
 // T-20260526-foot-SVC-CATEGORY-SORT: 탭 목록 (전체 + 각 category_label)
 const CATEGORY_TABS = ['전체', ...CATEGORY_LABEL_OPTIONS] as const;
-type CategoryTab = (typeof CATEGORY_TABS)[number];
+type CategoryTab = typeof CATEGORY_TABS[number];
 
 // ── T-20260526-foot-SVC-CATEGORY-SORT: 정렬 가능한 서비스 행 ─────────────────
 // useSortable hook 규칙상 별도 컴포넌트 필요. DnD + ↑↓ 버튼 복합 지원 (AC-1).
@@ -71,7 +71,7 @@ interface SortableServiceRowProps {
   onEdit: (svc: Service) => void;
   onSoftDelete: (svc: Service) => void;
   onHardDelete: (svc: Service) => void;
-  showCategoryLabel: boolean;
+  showCategoryLabel: boolean; // 전체 탭에서는 항목분류 컬럼 표시
 }
 
 function SortableServiceRow({
@@ -107,6 +107,7 @@ function SortableServiceRow({
       {canReorder && (
         <td className="w-16 px-2 py-2">
           <div className="flex items-center gap-0.5">
+            {/* 드래그 핸들 — touch-none 유지 (PointerSensor 경유, 태블릿 탭 오인식 방지) */}
             <button
               {...attributes}
               {...listeners}
@@ -118,6 +119,7 @@ function SortableServiceRow({
             >
               <GripVertical className="h-4 w-4" />
             </button>
+            {/* ↑↓ 버튼 */}
             <div className="flex flex-col">
               <button
                 type="button"
@@ -141,7 +143,7 @@ function SortableServiceRow({
           </div>
         </td>
       )}
-      {/* 항목분류 — 전체 탭에서만 */}
+      {/* 항목분류 — 전체 탭에서만 표시 */}
       {showCategoryLabel && (
         <td className="px-4 py-2 text-xs text-muted-foreground">{svc.category_label ?? svc.category ?? '—'}</td>
       )}
@@ -197,7 +199,9 @@ export default function Services() {
   const [loading, setLoading] = useState(true);
   const [openCreate, setOpenCreate] = useState(false);
   const [editTarget, setEditTarget] = useState<Service | null>(null);
+  // T-20260511-foot-SVCMENU-HARDDELETE: 비활성 항목 표시 토글 (기본 숨김)
   const [showInactive, setShowInactive] = useState(false);
+  // T-20260517-foot-SVC-FILTER-SEARCH: 텍스트 검색
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   // T-20260526-foot-SVC-CATEGORY-SORT: 활성 탭
@@ -206,14 +210,14 @@ export default function Services() {
   // T-20260526-foot-SVC-CATEGORY-SORT: sort_order 저장 debounce 타이머
   const sortSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // DnD sensors (태블릿 터치 호환, AC-1)
+  // T-20260526-foot-SVC-CATEGORY-SORT: DnD sensors (태블릿 터치 호환, AC-1)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
     useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   );
 
-  // 엑셀 내보내기
+  // 엑셀 내보내기 (T-20260507-foot-SERVICE-CATALOG-SEED Phase 2)
   const exportExcel = () => {
     const data = rows.map((s) => ({
       상품코드: s.service_code ?? '',
@@ -234,7 +238,7 @@ export default function Services() {
     toast.success('엑셀 내보내기 완료');
   };
 
-  // T-20260526-foot-SVC-CATEGORY-SORT: sort_order 기준 정렬 (AC-3 재진입 시 유지)
+  // T-20260526-foot-SVC-CATEGORY-SORT: sort_order 기준 정렬 (AC-3: 재진입 시 유지)
   const fetchServices = useCallback(async () => {
     if (!clinic) return;
     setLoading(true);
@@ -244,7 +248,7 @@ export default function Services() {
       .eq('clinic_id', clinic.id)
       .order('category_label', { ascending: true })
       .order('sort_order', { ascending: true })
-      .order('name', { ascending: true });
+      .order('name', { ascending: true }); // name은 sort_order 동일값 tie-break
     setLoading(false);
     if (error) { toast.error('서비스 목록 로딩 실패'); return; }
     setRows((data ?? []) as Service[]);
@@ -252,12 +256,14 @@ export default function Services() {
 
   useEffect(() => { fetchServices(); }, [fetchServices]);
 
+  // debounce 300ms
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchQuery), 300);
     return () => clearTimeout(t);
   }, [searchQuery]);
 
   // T-20260526-foot-SVC-CATEGORY-SORT: 탭별 항목 (sort_order 기준)
+  // AC-1: 탭별 DnD/↑↓, AC-3: sort_order 재진입 유지, AC-4: 탭 간 독립
   const tabItems = useMemo(() => {
     const base = rows.filter((svc) => {
       if (!svc.active && !showInactive) return false;
@@ -272,6 +278,7 @@ export default function Services() {
       return true;
     });
     if (activeTab === '전체') {
+      // 전체 탭: category_label → sort_order → name 3단 정렬
       return [...base].sort((a, b) => {
         const catCmp = (a.category_label ?? '').localeCompare(b.category_label ?? '', 'ko');
         if (catCmp !== 0) return catCmp;
@@ -280,6 +287,7 @@ export default function Services() {
         return a.name.localeCompare(b.name, 'ko');
       });
     }
+    // 특정 탭: sort_order → name 2단 정렬
     return [...base].sort((a, b) => {
       const orderCmp = (a.sort_order ?? 999) - (b.sort_order ?? 999);
       if (orderCmp !== 0) return orderCmp;
@@ -287,10 +295,11 @@ export default function Services() {
     });
   }, [rows, activeTab, showInactive, debouncedSearch]);
 
-  // canReorder: admin + 특정 탭(전체 제외) + 검색 없음
+  // T-20260526-foot-SVC-CATEGORY-SORT: 재정렬 가능 조건
+  // AC-1: admin 전용, 특정 탭(전체 제외), 검색 없을 때
   const canReorder = isAdmin && activeTab !== '전체' && !debouncedSearch;
 
-  // sort_order DB 저장 (debounce 800ms, AC-2, AC-3)
+  // T-20260526-foot-SVC-CATEGORY-SORT: sort_order DB 저장 (debounce 800ms, AC-2, AC-3)
   const scheduleSortSave = useCallback(
     (updates: { id: string; sort_order: number }[]) => {
       if (sortSaveTimerRef.current) clearTimeout(sortSaveTimerRef.current);
@@ -310,7 +319,7 @@ export default function Services() {
     [],
   );
 
-  // DnD 끝 → 순서 변경 + DB 저장
+  // T-20260526-foot-SVC-CATEGORY-SORT: DnD 끝 → 순서 변경 + DB 저장
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       if (!canReorder) return;
@@ -344,7 +353,7 @@ export default function Services() {
     [canReorder, activeTab, showInactive, scheduleSortSave],
   );
 
-  // ↑↓ 버튼 → 순서 변경 + DB 저장
+  // T-20260526-foot-SVC-CATEGORY-SORT: ↑↓ 버튼 → 순서 변경 + DB 저장
   const handleReorderBtn = useCallback(
     (svcId: string, dir: 'up' | 'down') => {
       if (!canReorder) return;
@@ -375,6 +384,7 @@ export default function Services() {
     [canReorder, activeTab, showInactive, scheduleSortSave],
   );
 
+  // T-20260510-foot-SVCMENU-REVAMP: 삭제 (soft delete = active=false)
   const softDelete = async (svc: Service) => {
     if (!isAdmin) return;
     if (!confirm(`"${svc.name}" 항목을 삭제하시겠습니까? (비활성 처리되며 과거 기록은 보존됩니다)`)) return;
@@ -387,14 +397,18 @@ export default function Services() {
     fetchServices();
   };
 
+  // T-20260511-foot-SVCMENU-HARDDELETE: 비활성 항목 완전 삭제
   const hardDelete = async (svc: Service) => {
     if (!isAdmin || svc.active) return;
+
     const [chargesRes, cisRes, resvRes] = await Promise.all([
       supabase.from('service_charges').select('id', { count: 'exact', head: true }).eq('service_id', svc.id),
       supabase.from('check_in_services').select('id', { count: 'exact', head: true }).eq('service_id', svc.id),
       supabase.from('reservations').select('id', { count: 'exact', head: true }).eq('service_id', svc.id),
     ]);
+
     const refCount = (chargesRes.count ?? 0) + (cisRes.count ?? 0) + (resvRes.count ?? 0);
+
     if (refCount > 0) {
       toast.error(
         `"${svc.name}"은 과거 기록에서 참조 중입니다 (${refCount}건). 완전 삭제 불가 — 비활성 상태로 유지됩니다.`,
@@ -402,18 +416,21 @@ export default function Services() {
       );
       return;
     }
+
     if (!confirm(`"${svc.name}" 항목을 완전 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
+
     const { error } = await supabase
       .from('services')
       .delete()
       .eq('id', svc.id)
       .eq('active', false);
+
     if (error) { toast.error(`완전 삭제 실패: ${error.message}`); return; }
     toast.success(`"${svc.name}" 완전 삭제됨`);
     fetchServices();
   };
 
-  // 탭별 항목 수
+  // T-20260526-foot-SVC-CATEGORY-SORT: 탭별 항목 수 표시
   const tabCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const tab of CATEGORY_TABS) {
@@ -426,6 +443,7 @@ export default function Services() {
     return counts;
   }, [rows, showInactive]);
 
+  // 표 컬럼 수 계산 (canReorder 여부 + 항목분류 여부 + admin 여부)
   const colCount = (canReorder ? 1 : 0) + (activeTab === '전체' ? 1 : 0) + 4 + (isAdmin ? 1 : 0);
 
   return (
@@ -433,6 +451,7 @@ export default function Services() {
       <div className="mb-4 flex items-center justify-between gap-4">
         <h1 className="text-lg font-bold">서비스 관리</h1>
         <div className="flex items-center gap-2">
+          {/* T-20260511-foot-SVCMENU-HARDDELETE: 비활성 항목 토글 */}
           {isAdmin && (
             <Button
               variant="outline"
@@ -457,7 +476,11 @@ export default function Services() {
 
       {/* T-20260526-foot-SVC-CATEGORY-SORT: 탭 네비게이션 (기존 Select 대체) */}
       <div className="mb-3 flex items-center gap-2 flex-wrap">
-        <div role="tablist" className="flex flex-wrap gap-1" data-testid="svc-tab-nav">
+        <div
+          role="tablist"
+          className="flex flex-wrap gap-1"
+          data-testid="svc-tab-nav"
+        >
           {CATEGORY_TABS.map((tab) => (
             <button
               key={tab}
@@ -474,20 +497,18 @@ export default function Services() {
             >
               {tab}
               {tabCounts[tab] !== undefined && tabCounts[tab] > 0 && (
-                <span
-                  className={cn(
-                    'ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] leading-none',
-                    activeTab === tab
-                      ? 'bg-teal-100 text-teal-700'
-                      : 'bg-muted text-muted-foreground',
-                  )}
-                >
+                <span className={cn(
+                  'ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] leading-none',
+                  activeTab === tab ? 'bg-teal-100 text-teal-700' : 'bg-muted text-muted-foreground',
+                )}>
                   {tabCounts[tab]}
                 </span>
               )}
             </button>
           ))}
         </div>
+
+        {/* 검색 — 모든 탭에서 동작, 검색 중에는 재정렬 비활성 */}
         <div className="relative min-w-[180px] flex-1">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <Input
@@ -499,7 +520,7 @@ export default function Services() {
         </div>
       </div>
 
-      {/* 재정렬 안내 */}
+      {/* 재정렬 안내 (admin + 특정 탭 + 검색 없음) */}
       {canReorder && (
         <p className="mb-2 text-xs text-teal-600" data-testid="reorder-hint">
           드래그 또는 ↑↓ 버튼으로 순서를 바꾸면 자동 저장됩니다.
@@ -511,6 +532,7 @@ export default function Services() {
         </p>
       )}
 
+      {/* 서비스 목록 테이블 */}
       <div className="flex-1 overflow-auto rounded-lg border bg-background">
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">불러오는 중…</div>
@@ -523,9 +545,11 @@ export default function Services() {
             <table className="w-full text-sm">
               <thead className="bg-muted/60 text-xs text-muted-foreground">
                 <tr>
+                  {/* 재정렬 핸들 컬럼 */}
                   {canReorder && (
                     <th className="w-16 px-2 py-2 text-left font-medium text-[10px]">순서</th>
                   )}
+                  {/* 항목분류 — 전체 탭에서만 */}
                   {activeTab === '전체' && (
                     <th className="px-4 py-2 text-left font-medium">항목분류</th>
                   )}
@@ -558,10 +582,7 @@ export default function Services() {
                   ))}
                   {!loading && tabItems.length === 0 && (
                     <tr>
-                      <td
-                        colSpan={colCount}
-                        className="px-4 py-10 text-center text-sm text-muted-foreground"
-                      >
+                      <td colSpan={colCount} className="px-4 py-10 text-center text-sm text-muted-foreground">
                         {debouncedSearch
                           ? '검색 결과 없음'
                           : activeTab === '전체'
@@ -614,6 +635,7 @@ function ServiceDialog({
 }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('기타');
+  // T-20260510-foot-SVCMENU-REVAMP: 항목분류
   const [categoryLabel, setCategoryLabel] = useState('풋케어');
   const [serviceCode, setServiceCode] = useState('');
   const [price, setPrice] = useState(0);
@@ -657,7 +679,8 @@ function ServiceDialog({
       active,
     };
 
-    // T-20260526-foot-SVC-CATEGORY-SORT: 신규 서비스 sort_order=999 → 카테고리 탭 맨 뒤
+    // T-20260526-foot-SVC-CATEGORY-SORT: 신규 서비스 sort_order = 카테고리 내 마지막+10
+    // 간단히 999로 넣으면 해당 카테고리 탭에서 맨 뒤에 위치
     const { error } = service
       ? await supabase.from('services').update(payload).eq('id', service.id)
       : await supabase.from('services').insert({ ...payload, sort_order: 999 });
@@ -679,6 +702,7 @@ function ServiceDialog({
             <Label>시술명</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
           </div>
+          {/* T-20260510-foot-SVCMENU-REVAMP: 항목분류 + 상품코드 */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>항목분류</Label>
@@ -690,9 +714,7 @@ function ServiceDialog({
                     onClick={() => setCategoryLabel(c)}
                     className={cn(
                       'h-7 rounded-md border px-2 text-xs font-medium',
-                      categoryLabel === c
-                        ? 'border-teal-600 bg-teal-50 text-teal-700'
-                        : 'border-input hover:bg-muted',
+                      categoryLabel === c ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted',
                     )}
                   >
                     {c}
@@ -702,11 +724,7 @@ function ServiceDialog({
             </div>
             <div className="space-y-1.5">
               <Label>상품코드</Label>
-              <Input
-                value={serviceCode}
-                onChange={(e) => setServiceCode(e.target.value)}
-                placeholder="예: FC001"
-              />
+              <Input value={serviceCode} onChange={(e) => setServiceCode(e.target.value)} placeholder="예: FC001" />
             </div>
           </div>
           <div className="space-y-1.5">
@@ -718,9 +736,7 @@ function ServiceDialog({
                   onClick={() => setCategory(c)}
                   className={cn(
                     'h-8 rounded-md border px-3 text-xs font-medium',
-                    category === c
-                      ? 'border-teal-600 bg-teal-50 text-teal-700'
-                      : 'border-input hover:bg-muted',
+                    category === c ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted',
                   )}
                 >
                   {c}
@@ -739,7 +755,10 @@ function ServiceDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>가격</Label>
-              <AmountInput value={price} onChange={(raw) => setPrice(Number(raw) || 0)} />
+              <AmountInput
+                value={price}
+                onChange={(raw) => setPrice(Number(raw) || 0)}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>할인가 (옵션)</Label>
@@ -768,9 +787,7 @@ function ServiceDialog({
                   onClick={() => setVatType(v)}
                   className={cn(
                     'h-8 rounded-md border px-3 text-xs',
-                    vatType === v
-                      ? 'border-teal-600 bg-teal-50 text-teal-700'
-                      : 'border-input hover:bg-muted',
+                    vatType === v ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted',
                   )}
                 >
                   {VAT_LABEL[v]}
@@ -787,9 +804,7 @@ function ServiceDialog({
                   onClick={() => setServiceType(v)}
                   className={cn(
                     'h-8 rounded-md border px-3 text-xs',
-                    serviceType === v
-                      ? 'border-teal-600 bg-teal-50 text-teal-700'
-                      : 'border-input hover:bg-muted',
+                    serviceType === v ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted',
                   )}
                 >
                   {SERVICE_TYPE_LABEL[v]}
@@ -809,9 +824,7 @@ function ServiceDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            취소
-          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
           <Button disabled={submitting || !name.trim()} onClick={save}>
             {submitting ? '저장 중…' : '저장'}
           </Button>
