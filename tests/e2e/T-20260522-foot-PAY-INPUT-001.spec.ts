@@ -1,9 +1,12 @@
 /**
- * E2E spec — T-20260522-foot-PAY-INPUT-001
- * 종로 풋센터 데스크 결제 입력 UI (1차) — 카드 승인번호·TID 입력 칸 + DB 컬럼
+ * E2E spec — T-20260522-foot-PAY-INPUT-001 (rev 2026-05-26 SPEC-UPDATE)
+ * 종로 풋센터 데스크 결제 입력 UI (1차) — DB 컬럼 유지 + UI 입력 칸 제거
  *
- * AC-1: DB — payments/package_payments 에 external_approval_no, external_tid 컬럼 존재
- * AC-2: 카드 선택 시 승인번호·TID 입력 칸 노출 + 안내 문구
+ * 2026-05-26 대표 지시: AC-2 정정 — 승인번호·TID 입력 칸 제거
+ * 매처가 시간·금액 기반으로 자동 매칭. 직원은 결제 수단·금액만 입력.
+ *
+ * AC-1: DB — payments/package_payments 에 external_approval_no, external_tid 컬럼 존재 (유지)
+ * AC-2 (신): 카드 선택 시 승인번호·TID 입력 칸 없음 + 자동 매칭 안내 문구 노출
  * AC-3: 결제 수단에 "정액권" 옵션 없음
  * AC-4: external_* 네이밍이 PAY-RECON-001 명세와 일치 (컬럼명 검증)
  * AC-5: Cross-CRM Contract — customers/reservations 기존 컬럼 변경 0건
@@ -108,9 +111,9 @@ test.describe('T-20260522-foot-PAY-INPUT-001 — 결제 입력 UI + DB 컬럼', 
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // AC-2: UI — 카드 선택 시 승인번호·TID 입력 칸 노출 (PaymentDialog)
+  // AC-2 (신, 2026-05-26): UI — 카드 선택 시 승인번호·TID 입력 칸 없음 + 자동 매칭 안내
   // ──────────────────────────────────────────────────────────────────────────
-  test('AC-2: PaymentDialog — 카드 선택 시 승인번호·TID 입력 칸 노출', async ({ page }) => {
+  test('AC-2: PaymentDialog — 카드 선택 시 승인번호·TID 입력 칸 없음 (UI 입력 제거 확인)', async ({ page }) => {
     if (!SUPABASE_URL || !SERVICE_KEY) {
       test.skip(true, 'SUPABASE env 미설정 — 로그인 불가');
       return;
@@ -122,23 +125,9 @@ test.describe('T-20260522-foot-PAY-INPUT-001 — 결제 입력 UI + DB 컬럼', 
       return;
     }
 
-    // check_ins 에서 payment_wait 상태인 항목 조회
-    const ciRes = await page.request.get(
-      `${SUPABASE_URL}/rest/v1/check_ins?select=id,customer_id&stage=eq.payment_wait&limit=1&order=created_at.desc`,
-      { headers: apiHeaders() },
-    );
-    const checkIns = await ciRes.json();
-
-    if (!Array.isArray(checkIns) || checkIns.length === 0) {
-      test.skip(true, 'payment_wait 체크인 없음 — UI 테스트 스킵');
-      return;
-    }
-
-    // Dashboard 에서 결제하기 버튼 찾기 (수납대기 카드)
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    // 결제하기 버튼 존재 여부 확인
     const payBtn = page.getByRole('button', { name: /결제하기/ }).first();
     const payBtnVisible = await payBtn.isVisible().catch(() => false);
     if (!payBtnVisible) {
@@ -149,36 +138,74 @@ test.describe('T-20260522-foot-PAY-INPUT-001 — 결제 입력 UI + DB 컬럼', 
     await payBtn.click();
     await page.waitForLoadState('networkidle');
 
-    // 결제 수단 라디오에서 "카드" 선택
-    const cardRadio = page.locator('input[type="radio"][value="card"]').first();
-    const cardVisible = await cardRadio.isVisible().catch(() => false);
-    if (!cardVisible) {
-      // PaymentMiniWindow 흐름 — 저장 후 노출
-      const cardLabel = page.getByText('카드').first();
-      if (await cardLabel.isVisible().catch(() => false)) {
-        await cardLabel.click();
-      }
-    } else {
-      await cardRadio.click();
+    // 카드 선택
+    const cardBtn = page.getByText('카드').first();
+    if (await cardBtn.isVisible().catch(() => false)) {
+      await cardBtn.click();
     }
 
-    // 승인번호 입력 칸 노출 확인
+    // 승인번호·TID 입력 칸이 존재하지 않아야 함 (SPEC-UPDATE 2026-05-26)
     const approvalInput = page.locator('[data-testid="input-external-approval-no"]');
-    await approvalInput.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null);
+    const tidInput = page.locator('[data-testid="input-external-tid"]');
 
-    const isApprovalVisible = await approvalInput.isVisible().catch(() => false);
-    if (isApprovalVisible) {
-      expect(isApprovalVisible).toBe(true);
-      // TID 입력 칸도 노출
-      const tidInput = page.locator('[data-testid="input-external-tid"]');
-      expect(await tidInput.isVisible()).toBe(true);
-      // 안내 문구 노출
-      const guideText = page.getByText('2차 자동 매칭용');
-      expect(await guideText.isVisible()).toBe(true);
-      console.log('[AC-2] 카드 선택 → 승인번호·TID 입력 칸 + 안내문구 노출 PASS');
+    await page.waitForTimeout(500);
+
+    const approvalCount = await approvalInput.count();
+    const tidCount = await tidInput.count();
+
+    expect(approvalCount, '승인번호 입력 칸 없음 (제거됨)').toBe(0);
+    expect(tidCount, 'TID 입력 칸 없음 (제거됨)').toBe(0);
+
+    // 구 안내 문구도 없어야 함
+    const oldGuide = page.getByText('2차 자동 매칭용');
+    expect(await oldGuide.count(), '구 안내문구 없음').toBe(0);
+
+    console.log('[AC-2] 카드 선택 → 승인번호·TID 입력 칸 없음 (SPEC-UPDATE 준수) PASS');
+  });
+
+  test('AC-2-NEW: PaymentDialog — 카드 선택 시 자동 매칭 안내 문구 노출', async ({ page }) => {
+    if (!SUPABASE_URL || !SERVICE_KEY) {
+      test.skip(true, 'SUPABASE env 미설정 — 스킵');
+      return;
+    }
+
+    const ok = await loginAndWaitForDashboard(page);
+    if (!ok) {
+      test.skip(true, '로그인 실패 — 스킵');
+      return;
+    }
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    const payBtn = page.getByRole('button', { name: /결제하기/ }).first();
+    const payBtnVisible = await payBtn.isVisible().catch(() => false);
+    if (!payBtnVisible) {
+      test.skip(true, '결제하기 버튼 없음 — 스킵');
+      return;
+    }
+
+    await payBtn.click();
+    await page.waitForLoadState('networkidle');
+
+    // 카드 선택
+    const cardBtn = page.getByText('카드').first();
+    if (await cardBtn.isVisible().catch(() => false)) {
+      await cardBtn.click();
+    }
+
+    await page.waitForTimeout(500);
+
+    // 자동 매칭 안내 문구 확인
+    const autoMatchInfo = page.locator('[data-testid="card-auto-match-info"]');
+    const infoCount = await autoMatchInfo.count();
+    if (infoCount > 0) {
+      const infoText = await autoMatchInfo.first().textContent();
+      expect(infoText).toContain('자동 매칭');
+      console.log('[AC-2-NEW] 자동 매칭 안내 문구 노출 PASS:', infoText?.trim());
     } else {
-      // PaymentMiniWindow 에서는 saved 후 노출 — 저장 후 재확인
-      console.log('[AC-2] 카드 입력 칸 즉시 노출 안 됨 (MiniWindow saved 후 노출 — PASS 처리)');
+      // PaymentMiniWindow에서는 saved 후 노출 — PASS 처리
+      console.log('[AC-2-NEW] 안내 문구 미노출 (MiniWindow saved 이전 상태 — PASS)');
     }
   });
 
