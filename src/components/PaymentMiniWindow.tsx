@@ -711,9 +711,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     'income_deduction',
   );
 
-  // ── T-20260522-foot-PAY-INPUT-001: 카드 승인번호·TID (2차 reconciliation 준비)
-  const [externalApprovalNo, setExternalApprovalNo] = useState('');
-  const [externalTid, setExternalTid] = useState('');
+  // T-20260526-foot-PAY-INPUT-001-SIMPLIFY: 승인번호·TID 입력 칸 제거 (매처 자동 채움)
 
   // ── PREPAID-DEDUCT: 선수금차감 UI
   const [prepaidIds, setPrepaidIds] = useState<Set<string>>(new Set());
@@ -1497,8 +1495,6 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   ) => {
     // PAY-CASH-RECEIPT: 결제 삽입 시 cash_receipt_issued 포함
     const isCashLike = method === 'cash' || method === 'transfer';
-    // T-20260522-foot-PAY-INPUT-001: 카드 선택 시 승인번호·TID 저장 (미입력 시 null)
-    const isCard = method === 'card';
     const { error: payErr } = await supabase.from('payments').insert({
       check_in_id: checkIn.id,
       clinic_id: checkIn.clinic_id,
@@ -1512,8 +1508,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       cash_receipt_issued: isCashLike ? cashReceiptIssued : null,
       cash_receipt_type:
         isCashLike && cashReceiptIssued ? cashReceiptType : null,
-      external_approval_no: isCard && externalApprovalNo.trim() ? externalApprovalNo.trim() : null,
-      external_tid: isCard && externalTid.trim() ? externalTid.trim() : null,
+      // T-20260526-foot-PAY-INPUT-001-SIMPLIFY: 매처 자동 채움 (UI 입력 제거)
+      external_approval_no: null,
+      external_tid: null,
     });
     if (payErr) throw payErr;
 
@@ -2374,29 +2371,12 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     </div>
                   )}
 
-                  {/* T-20260522-foot-PAY-INPUT-001: 카드 승인번호·TID (선택 입력)
-                      카드 선택 시만 노출. 미입력 시 null — 2차 자동매칭 시 시간·금액으로 보완 */}
+                  {/* T-20260526-foot-PAY-INPUT-001-SIMPLIFY: 카드 자동 매칭 안내 (입력 칸 제거)
+                      대표 지시 2026-05-26 — 매처가 시간·금액 기반으로 자동 매칭 */}
                   {saved && payMethod === 'card' && (
-                    <div className="rounded border px-2.5 py-2 bg-sky-50/60 border-sky-200 space-y-1.5">
-                      <p className="text-[10px] text-sky-700 font-medium">카드 정보 <span className="font-normal text-muted-foreground">(선택 — 영수증 확인 후 입력)</span></p>
-                      <input
-                        type="text"
-                        value={externalApprovalNo}
-                        onChange={(e) => setExternalApprovalNo(e.target.value)}
-                        placeholder="승인번호 (영수증 6~12자리)"
-                        className="w-full h-8 rounded border border-input px-2 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-sky-400"
-                        data-testid="input-external-approval-no"
-                      />
-                      <input
-                        type="text"
-                        value={externalTid}
-                        onChange={(e) => setExternalTid(e.target.value)}
-                        placeholder="단말기 TID (영수증 10자리)"
-                        className="w-full h-8 rounded border border-input px-2 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-sky-400"
-                        data-testid="input-external-tid"
-                      />
-                      <p className="text-[10px] text-muted-foreground">2차 자동 매칭용 (입력 시 자동 매칭 100%, 미입력 시 시간·금액으로 자동 매칭 시도)</p>
-                    </div>
+                    <p className="text-[10px] text-muted-foreground px-1" data-testid="card-auto-match-info">
+                      결제 정보는 단말기 데이터와 시간·금액 기반으로 자동 매칭됩니다.
+                    </p>
                   )}
 
                   {/* 수납 버튼 (저장 후 표시) */}

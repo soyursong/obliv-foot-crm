@@ -80,9 +80,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
   // C2-MANAGER-PAYMENT-MAP: 결제담당 선택
   const [staffList, setStaffList] = useState<StaffOption[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
-  // T-20260522-foot-PAY-INPUT-001: 카드 승인번호·TID (선택 입력)
-  const [externalApprovalNo, setExternalApprovalNo] = useState('');
-  const [externalTid, setExternalTid] = useState('');
+  // T-20260526-foot-PAY-INPUT-001-SIMPLIFY: 승인번호·TID 입력 칸 제거 (매처 자동 채움)
   // T-20260524-foot-PKG-LABEL-AMOUNT AC-2: 고객 활성 패키지 (단건 membership 결제 시 단가 auto-fill)
   const [customerPackage, setCustomerPackage] = useState<{
     package_name: string;
@@ -129,9 +127,6 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
       setTaxExemptAmountStr('');
       // 결제담당: 체크인의 기존 consultant_id로 초기화
       setSelectedStaffId(checkIn.consultant_id ?? '');
-      // T-20260522-foot-PAY-INPUT-001: 카드 외부 정보 초기화
-      setExternalApprovalNo('');
-      setExternalTid('');
       // T-20260524-foot-PKG-LABEL-AMOUNT AC-2: 고객 패키지 초기화 후 재조회
       setCustomerPackage(null);
       // 활성 직원 목록 로드
@@ -209,9 +204,6 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
       cash_receipt_number?: string | null;
       taxable_amount?: number | null;
       tax_exempt_amount?: number | null;
-      // T-20260522-foot-PAY-INPUT-001: 카드 승인번호·TID (optional)
-      external_approval_no?: string | null;
-      external_tid?: string | null;
     }>,
   ) => {
     const payload = rows.map((r) => ({
@@ -228,8 +220,8 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
       cash_receipt_number: r.cash_receipt_number ?? null,
       taxable_amount: r.taxable_amount ?? null,
       tax_exempt_amount: r.tax_exempt_amount ?? null,
-      external_approval_no: r.external_approval_no ?? null,
-      external_tid: r.external_tid ?? null,
+      external_approval_no: null, // T-20260526-foot-PAY-INPUT-001-SIMPLIFY: 매처 자동 채움
+      external_tid: null,
     }));
     return supabase.from('payments').insert(payload);
   };
@@ -327,9 +319,9 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
           method: r.method,
           installment: r.installment,
           memo: memo || null,
-          // T-20260522-foot-PAY-INPUT-001: 카드 선택 시 승인번호·TID 저장
-          external_approval_no: r.method === 'card' && externalApprovalNo.trim() ? externalApprovalNo.trim() : null,
-          external_tid: r.method === 'card' && externalTid.trim() ? externalTid.trim() : null,
+          // T-20260526-foot-PAY-INPUT-001-SIMPLIFY: 매처 자동 채움 (UI 입력 제거)
+          external_approval_no: null,
+          external_tid: null,
         })),
       );
       if (ppErr) {
@@ -395,8 +387,6 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
           cash_receipt_number?: string | null;
           taxable_amount?: number | null;
           tax_exempt_amount?: number | null;
-          external_approval_no?: string | null;
-          external_tid?: string | null;
         }> = [];
         if (splitCard > 0) {
           rows.push({
@@ -411,9 +401,6 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
             cash_receipt_number: null,
             taxable_amount: null,
             tax_exempt_amount: null,
-            // T-20260522-foot-PAY-INPUT-001: 카드 분할행 — 승인번호·TID
-            external_approval_no: externalApprovalNo.trim() || null,
-            external_tid: externalTid.trim() || null,
           });
         }
         if (splitCash > 0) {
@@ -456,9 +443,6 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
             cash_receipt_number: method === 'cash' && cashReceiptIssued && cashReceiptNumber ? cashReceiptNumber : null,
             taxable_amount: taxable > 0 ? taxable : null,
             tax_exempt_amount: taxExempt > 0 ? taxExempt : null,
-            // T-20260522-foot-PAY-INPUT-001: 카드 선택 시 승인번호·TID 저장
-            external_approval_no: method === 'card' && externalApprovalNo.trim() ? externalApprovalNo.trim() : null,
-            external_tid: method === 'card' && externalTid.trim() ? externalTid.trim() : null,
           },
         ]);
         if (error) {
@@ -814,30 +798,13 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
               </>
             )}
 
-            {/* T-20260522-foot-PAY-INPUT-001: 카드 승인번호·TID (선택 입력)
-                카드 선택 시만 노출. 미입력 시 null — 2차 자동매칭 시 시간·금액으로 보완 */}
-            {(method === 'card' && !isSplit) || (isSplit && splitCard > 0) ? (
-              <div className="space-y-2 rounded-md border border-sky-200 p-3 bg-sky-50/60">
-                <Label className="text-xs font-medium text-sky-700">
-                  카드 정보 <span className="font-normal text-muted-foreground">(선택 — 영수증 확인 후 입력)</span>
-                </Label>
-                <Input
-                  value={externalApprovalNo}
-                  onChange={(e) => setExternalApprovalNo(e.target.value)}
-                  placeholder="승인번호 (영수증 6~12자리)"
-                  className="h-8 text-xs"
-                  data-testid="input-external-approval-no"
-                />
-                <Input
-                  value={externalTid}
-                  onChange={(e) => setExternalTid(e.target.value)}
-                  placeholder="단말기 TID (영수증 10자리)"
-                  className="h-8 text-xs"
-                  data-testid="input-external-tid"
-                />
-                <p className="text-[10px] text-muted-foreground">2차 자동 매칭용 (입력 시 자동 매칭 100%, 미입력 시 시간·금액으로 자동 매칭 시도)</p>
-              </div>
-            ) : null}
+            {/* T-20260526-foot-PAY-INPUT-001-SIMPLIFY: 카드 자동 매칭 안내 (입력 칸 제거)
+                대표 지시 2026-05-26 — 직원 입력 부담 최소화, 매처가 시간·금액으로 자동 매칭 */}
+            {((method === 'card' && !isSplit) || (isSplit && splitCard > 0)) && (
+              <p className="text-[10px] text-muted-foreground px-1" data-testid="card-auto-match-info">
+                결제 정보는 단말기 데이터와 시간·금액 기반으로 자동 매칭됩니다.
+              </p>
+            )}
 
             {/* T-20260515-foot-RECEIPT-TAX-SPLIT AC-2: 과세/비과세 분리 */}
             {paymentMode === 'single' && (
