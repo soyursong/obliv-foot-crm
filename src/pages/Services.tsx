@@ -1,6 +1,24 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, Trash2, Download, Eye, EyeOff, Search } from 'lucide-react';
+// T-20260526-foot-SVC-CATEGORY-SORT: 탭별 DnD/↑↓ 순서 변경 + DB 저장 (sort_order)
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Plus, Pencil, Trash2, Download, Eye, EyeOff, Search, GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,13 +37,6 @@ import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Service } from '@/lib/types';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 
 const VAT_LABEL: Record<Service['vat_type'], string> = {
   none: '비과세',
@@ -44,6 +55,139 @@ const CATEGORY_OPTIONS = ['레이저', '수액', '사전처치', '풋케어', '�
 // T-20260510-foot-SVCMENU-REVAMP: 항목분류 옵션
 const CATEGORY_LABEL_OPTIONS = ['기본', '검사', '상병', '풋케어', '수액', '풋화장품'];
 
+// T-20260526-foot-SVC-CATEGORY-SORT: 탭 목록 (전체 + 각 category_label)
+const CATEGORY_TABS = ['전체', ...CATEGORY_LABEL_OPTIONS] as const;
+type CategoryTab = (typeof CATEGORY_TABS)[number];
+
+// ── T-20260526-foot-SVC-CATEGORY-SORT: 정렬 가능한 서비스 행 ─────────────────
+// useSortable hook 규칙상 별도 컴포넌트 필요. DnD + ↑↓ 버튼 복합 지원 (AC-1).
+interface SortableServiceRowProps {
+  svc: Service;
+  idx: number;
+  total: number;
+  canReorder: boolean;
+  isAdmin: boolean;
+  onReorder: (id: string, dir: 'up' | 'down') => void;
+  onEdit: (svc: Service) => void;
+  onSoftDelete: (svc: Service) => void;
+  onHardDelete: (svc: Service) => void;
+  showCategoryLabel: boolean;
+}
+
+function SortableServiceRow({
+  svc,
+  idx,
+  total,
+  canReorder,
+  isAdmin,
+  onReorder,
+  onEdit,
+  onSoftDelete,
+  onHardDelete,
+  showCategoryLabel,
+}: SortableServiceRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: svc.id,
+    disabled: !canReorder,
+  });
+
+  return (
+    <tr
+      ref={setNodeRef}
+      data-testid={`svc-row-${svc.id}`}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+        zIndex: isDragging ? 10 : undefined,
+      }}
+      className={cn('border-t', !svc.active && 'opacity-50 bg-muted/30', isDragging && 'shadow-md')}
+    >
+      {/* 순서 변경 컬럼 (admin + 특정 탭 + 검색 없을 때만) */}
+      {canReorder && (
+        <td className="w-16 px-2 py-2">
+          <div className="flex items-center gap-0.5">
+            <button
+              {...attributes}
+              {...listeners}
+              type="button"
+              tabIndex={-1}
+              className="flex items-center justify-center min-w-[28px] min-h-[28px] rounded text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none"
+              title="드래그하여 순서 변경"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <GripVertical className="h-4 w-4" />
+            </button>
+            <div className="flex flex-col">
+              <button
+                type="button"
+                onClick={() => onReorder(svc.id, 'up')}
+                disabled={idx === 0}
+                className="flex items-center justify-center w-5 h-4 rounded hover:bg-muted disabled:opacity-20 disabled:cursor-not-allowed transition"
+                title="위로"
+              >
+                <ChevronUp className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onReorder(svc.id, 'down')}
+                disabled={idx === total - 1}
+                className="flex items-center justify-center w-5 h-4 rounded hover:bg-muted disabled:opacity-20 disabled:cursor-not-allowed transition"
+                title="아래로"
+              >
+                <ChevronDown className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+        </td>
+      )}
+      {/* 항목분류 — 전체 탭에서만 */}
+      {showCategoryLabel && (
+        <td className="px-4 py-2 text-xs text-muted-foreground">{svc.category_label ?? svc.category ?? '—'}</td>
+      )}
+      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{svc.service_code ?? '—'}</td>
+      <td className="px-4 py-2 font-medium">
+        {svc.name}
+        {!svc.active && (
+          <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">[비활성]</span>
+        )}
+      </td>
+      <td className="px-4 py-2 text-right tabular-nums">{formatAmount(svc.price)}</td>
+      <td className="px-4 py-2 text-xs text-muted-foreground">{VAT_LABEL[svc.vat_type]}</td>
+      {isAdmin && (
+        <td className="px-4 py-2">
+          <div className="flex items-center justify-center gap-1">
+            <button
+              onClick={() => onEdit(svc)}
+              className="rounded p-1.5 hover:bg-muted transition"
+              title="수정"
+            >
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+            {svc.active ? (
+              <button
+                onClick={() => onSoftDelete(svc)}
+                className="rounded p-1.5 hover:bg-red-50 transition"
+                title="비활성 처리"
+              >
+                <Trash2 className="h-3.5 w-3.5 text-red-500" />
+              </button>
+            ) : (
+              <button
+                onClick={() => onHardDelete(svc)}
+                className="rounded p-1.5 hover:bg-red-100 transition"
+                title="완전 삭제 (참조 없는 경우만 가능)"
+              >
+                <Trash2 className="h-3.5 w-3.5 text-red-700" />
+              </button>
+            )}
+          </div>
+        </td>
+      )}
+    </tr>
+  );
+}
+
 export default function Services() {
   const clinic = useClinic();
   const { profile } = useAuth();
@@ -53,14 +197,23 @@ export default function Services() {
   const [loading, setLoading] = useState(true);
   const [openCreate, setOpenCreate] = useState(false);
   const [editTarget, setEditTarget] = useState<Service | null>(null);
-  // T-20260511-foot-SVCMENU-HARDDELETE: 비활성 항목 표시 토글 (기본 숨김)
   const [showInactive, setShowInactive] = useState(false);
-  // T-20260517-foot-SVC-FILTER-SEARCH: 카테고리 드롭다운 필터 + 텍스트 검색
-  const [categoryFilter, setCategoryFilter] = useState('전체');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  // T-20260526-foot-SVC-CATEGORY-SORT: 활성 탭
+  const [activeTab, setActiveTab] = useState<CategoryTab>('전체');
 
-  // 엑셀 내보내기 (T-20260507-foot-SERVICE-CATALOG-SEED Phase 2)
+  // T-20260526-foot-SVC-CATEGORY-SORT: sort_order 저장 debounce 타이머
+  const sortSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // DnD sensors (태블릿 터치 호환, AC-1)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+  );
+
+  // 엑셀 내보내기
   const exportExcel = () => {
     const data = rows.map((s) => ({
       상품코드: s.service_code ?? '',
@@ -81,6 +234,7 @@ export default function Services() {
     toast.success('엑셀 내보내기 완료');
   };
 
+  // T-20260526-foot-SVC-CATEGORY-SORT: sort_order 기준 정렬 (AC-3 재진입 시 유지)
   const fetchServices = useCallback(async () => {
     if (!clinic) return;
     setLoading(true);
@@ -88,8 +242,8 @@ export default function Services() {
       .from('services')
       .select('*')
       .eq('clinic_id', clinic.id)
-      // T-20260526-foot-SVC-CATEGORY-SORT: DB 정렬도 일치시킴 (FE sort와 동기)
       .order('category_label', { ascending: true })
+      .order('sort_order', { ascending: true })
       .order('name', { ascending: true });
     setLoading(false);
     if (error) { toast.error('서비스 목록 로딩 실패'); return; }
@@ -98,18 +252,16 @@ export default function Services() {
 
   useEffect(() => { fetchServices(); }, [fetchServices]);
 
-  // debounce 300ms
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchQuery), 300);
     return () => clearTimeout(t);
   }, [searchQuery]);
 
-  // T-20260517-foot-SVC-FILTER-SEARCH: 카테고리 + 검색 AND 필터
-  // T-20260526-foot-SVC-CATEGORY-SORT: category_label 오름차순 → 동일 카테고리 내 name 가나다순 2차 정렬
-  const filteredRows = useMemo(() => {
-    const filtered = rows.filter((svc) => {
+  // T-20260526-foot-SVC-CATEGORY-SORT: 탭별 항목 (sort_order 기준)
+  const tabItems = useMemo(() => {
+    const base = rows.filter((svc) => {
       if (!svc.active && !showInactive) return false;
-      if (categoryFilter !== '전체' && svc.category_label !== categoryFilter) return false;
+      if (activeTab !== '전체' && svc.category_label !== activeTab) return false;
       if (debouncedSearch) {
         const q = debouncedSearch.toLowerCase();
         if (
@@ -119,16 +271,110 @@ export default function Services() {
       }
       return true;
     });
-    // AC-1: category_label 오름차순 → 동일 카테고리 내 name 가나다순 2차 정렬
-    return [...filtered].sort((a, b) => {
-      const catCmp = (a.category_label ?? '').localeCompare(b.category_label ?? '', 'ko');
-      if (catCmp !== 0) return catCmp;
+    if (activeTab === '전체') {
+      return [...base].sort((a, b) => {
+        const catCmp = (a.category_label ?? '').localeCompare(b.category_label ?? '', 'ko');
+        if (catCmp !== 0) return catCmp;
+        const orderCmp = (a.sort_order ?? 999) - (b.sort_order ?? 999);
+        if (orderCmp !== 0) return orderCmp;
+        return a.name.localeCompare(b.name, 'ko');
+      });
+    }
+    return [...base].sort((a, b) => {
+      const orderCmp = (a.sort_order ?? 999) - (b.sort_order ?? 999);
+      if (orderCmp !== 0) return orderCmp;
       return a.name.localeCompare(b.name, 'ko');
     });
-  }, [rows, showInactive, categoryFilter, debouncedSearch]);
+  }, [rows, activeTab, showInactive, debouncedSearch]);
 
-  // T-20260510-foot-SVCMENU-REVAMP: 삭제 (soft delete = active=false)
-  // toggleActive 제거됨 — 신구조에서는 [관리]에 수정/삭제만 노출
+  // canReorder: admin + 특정 탭(전체 제외) + 검색 없음
+  const canReorder = isAdmin && activeTab !== '전체' && !debouncedSearch;
+
+  // sort_order DB 저장 (debounce 800ms, AC-2, AC-3)
+  const scheduleSortSave = useCallback(
+    (updates: { id: string; sort_order: number }[]) => {
+      if (sortSaveTimerRef.current) clearTimeout(sortSaveTimerRef.current);
+      sortSaveTimerRef.current = setTimeout(async () => {
+        try {
+          await Promise.all(
+            updates.map(({ id, sort_order }) =>
+              supabase.from('services').update({ sort_order }).eq('id', id),
+            ),
+          );
+          toast.success('순서 저장됨', { duration: 1500 });
+        } catch {
+          toast.error('순서 저장 실패');
+        }
+      }, 800);
+    },
+    [],
+  );
+
+  // DnD 끝 → 순서 변경 + DB 저장
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      if (!canReorder) return;
+      const { active, over } = event;
+      if (!over || String(active.id) === String(over.id)) return;
+      const activeStr = String(active.id);
+      const overStr = String(over.id);
+
+      setRows((prev) => {
+        const inTab = prev
+          .filter((s) => s.category_label === activeTab && (showInactive || s.active))
+          .sort((a, b) => {
+            const o = (a.sort_order ?? 999) - (b.sort_order ?? 999);
+            return o !== 0 ? o : a.name.localeCompare(b.name, 'ko');
+          });
+        const activeIdx = inTab.findIndex((s) => s.id === activeStr);
+        const overIdx = inTab.findIndex((s) => s.id === overStr);
+        if (activeIdx === -1 || overIdx === -1) return prev;
+
+        const reordered = arrayMove(inTab, activeIdx, overIdx);
+        const updated = reordered.map((s, i) => ({ ...s, sort_order: i * 10 }));
+
+        scheduleSortSave(updated.map(({ id, sort_order }) => ({ id, sort_order })));
+
+        const others = prev.filter(
+          (s) => !(s.category_label === activeTab && (showInactive || s.active)),
+        );
+        return [...others, ...updated];
+      });
+    },
+    [canReorder, activeTab, showInactive, scheduleSortSave],
+  );
+
+  // ↑↓ 버튼 → 순서 변경 + DB 저장
+  const handleReorderBtn = useCallback(
+    (svcId: string, dir: 'up' | 'down') => {
+      if (!canReorder) return;
+
+      setRows((prev) => {
+        const inTab = prev
+          .filter((s) => s.category_label === activeTab && (showInactive || s.active))
+          .sort((a, b) => {
+            const o = (a.sort_order ?? 999) - (b.sort_order ?? 999);
+            return o !== 0 ? o : a.name.localeCompare(b.name, 'ko');
+          });
+        const idx = inTab.findIndex((s) => s.id === svcId);
+        if (dir === 'up' && idx <= 0) return prev;
+        if (dir === 'down' && idx >= inTab.length - 1) return prev;
+        const targetIdx = dir === 'up' ? idx - 1 : idx + 1;
+        const reordered = [...inTab];
+        [reordered[idx], reordered[targetIdx]] = [reordered[targetIdx], reordered[idx]];
+        const updated = reordered.map((s, i) => ({ ...s, sort_order: i * 10 }));
+
+        scheduleSortSave(updated.map(({ id, sort_order }) => ({ id, sort_order })));
+
+        const others = prev.filter(
+          (s) => !(s.category_label === activeTab && (showInactive || s.active)),
+        );
+        return [...others, ...updated];
+      });
+    },
+    [canReorder, activeTab, showInactive, scheduleSortSave],
+  );
+
   const softDelete = async (svc: Service) => {
     if (!isAdmin) return;
     if (!confirm(`"${svc.name}" 항목을 삭제하시겠습니까? (비활성 처리되며 과거 기록은 보존됩니다)`)) return;
@@ -141,20 +387,14 @@ export default function Services() {
     fetchServices();
   };
 
-  // T-20260511-foot-SVCMENU-HARDDELETE: 비활성 항목 완전 삭제
-  // 참조 체크 → 참조 없으면 hard delete, 있으면 안내
   const hardDelete = async (svc: Service) => {
     if (!isAdmin || svc.active) return;
-
-    // 3테이블 참조 체크 (service_charges, check_in_services, reservations)
     const [chargesRes, cisRes, resvRes] = await Promise.all([
       supabase.from('service_charges').select('id', { count: 'exact', head: true }).eq('service_id', svc.id),
       supabase.from('check_in_services').select('id', { count: 'exact', head: true }).eq('service_id', svc.id),
       supabase.from('reservations').select('id', { count: 'exact', head: true }).eq('service_id', svc.id),
     ]);
-
     const refCount = (chargesRes.count ?? 0) + (cisRes.count ?? 0) + (resvRes.count ?? 0);
-
     if (refCount > 0) {
       toast.error(
         `"${svc.name}"은 과거 기록에서 참조 중입니다 (${refCount}건). 완전 삭제 불가 — 비활성 상태로 유지됩니다.`,
@@ -162,26 +402,37 @@ export default function Services() {
       );
       return;
     }
-
     if (!confirm(`"${svc.name}" 항목을 완전 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
-
     const { error } = await supabase
       .from('services')
       .delete()
       .eq('id', svc.id)
-      .eq('active', false);   // 안전 가드: 활성 항목은 절대 삭제 안 됨
-
+      .eq('active', false);
     if (error) { toast.error(`완전 삭제 실패: ${error.message}`); return; }
     toast.success(`"${svc.name}" 완전 삭제됨`);
     fetchServices();
   };
+
+  // 탭별 항목 수
+  const tabCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const tab of CATEGORY_TABS) {
+      if (tab === '전체') {
+        counts['전체'] = rows.filter((s) => showInactive || s.active).length;
+      } else {
+        counts[tab] = rows.filter((s) => s.category_label === tab && (showInactive || s.active)).length;
+      }
+    }
+    return counts;
+  }, [rows, showInactive]);
+
+  const colCount = (canReorder ? 1 : 0) + (activeTab === '전체' ? 1 : 0) + 4 + (isAdmin ? 1 : 0);
 
   return (
     <div className="flex h-full flex-col p-6">
       <div className="mb-4 flex items-center justify-between gap-4">
         <h1 className="text-lg font-bold">서비스 관리</h1>
         <div className="flex items-center gap-2">
-          {/* T-20260511-foot-SVCMENU-HARDDELETE: 비활성 항목 토글 */}
           {isAdmin && (
             <Button
               variant="outline"
@@ -204,18 +455,39 @@ export default function Services() {
         </div>
       </div>
 
-      {/* T-20260517-foot-SVC-FILTER-SEARCH: 카테고리 드롭다운 + 텍스트 검색창 */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-36 shrink-0">
-            <SelectValue placeholder="카테고리" />
-          </SelectTrigger>
-          <SelectContent>
-            {['전체', '기본', '검사', '상병', '풋케어', '수액', '풋화장품'].map((c) => (
-              <SelectItem key={c} value={c}>{c}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {/* T-20260526-foot-SVC-CATEGORY-SORT: 탭 네비게이션 (기존 Select 대체) */}
+      <div className="mb-3 flex items-center gap-2 flex-wrap">
+        <div role="tablist" className="flex flex-wrap gap-1" data-testid="svc-tab-nav">
+          {CATEGORY_TABS.map((tab) => (
+            <button
+              key={tab}
+              role="tab"
+              aria-selected={activeTab === tab}
+              data-testid={`svc-tab-${tab}`}
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                'h-8 rounded-md border px-3 text-xs font-medium transition-colors',
+                activeTab === tab
+                  ? 'border-teal-600 bg-teal-50 text-teal-700'
+                  : 'border-input bg-background hover:bg-muted text-muted-foreground',
+              )}
+            >
+              {tab}
+              {tabCounts[tab] !== undefined && tabCounts[tab] > 0 && (
+                <span
+                  className={cn(
+                    'ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] leading-none',
+                    activeTab === tab
+                      ? 'bg-teal-100 text-teal-700'
+                      : 'bg-muted text-muted-foreground',
+                  )}
+                >
+                  {tabCounts[tab]}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
         <div className="relative min-w-[180px] flex-1">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <Input
@@ -227,81 +499,81 @@ export default function Services() {
         </div>
       </div>
 
-      {/* T-20260510-foot-SVCMENU-REVAMP: 항목분류/상품코드/시술명/단가/VAT/관리 6컬럼 구조 */}
+      {/* 재정렬 안내 */}
+      {canReorder && (
+        <p className="mb-2 text-xs text-teal-600" data-testid="reorder-hint">
+          드래그 또는 ↑↓ 버튼으로 순서를 바꾸면 자동 저장됩니다.
+        </p>
+      )}
+      {isAdmin && activeTab !== '전체' && debouncedSearch && (
+        <p className="mb-2 text-xs text-amber-600">
+          검색 중에는 순서 변경이 비활성화됩니다.
+        </p>
+      )}
+
       <div className="flex-1 overflow-auto rounded-lg border bg-background">
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">불러오는 중…</div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-muted/60 text-xs text-muted-foreground">
-              <tr>
-                <th className="px-4 py-2 text-left font-medium">항목분류</th>
-                <th className="px-3 py-2 text-left font-medium">상품코드</th>
-                <th className="px-4 py-2 text-left font-medium">시술명</th>
-                <th className="px-4 py-2 text-right font-medium">단가</th>
-                <th className="px-4 py-2 text-left font-medium">VAT</th>
-                {isAdmin && <th className="px-4 py-2 text-center font-medium">관리</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {/* T-20260517-foot-SVC-FILTER-SEARCH: filteredRows(카테고리+검색+showInactive) */}
-              {filteredRows.map((svc) => (
-                <tr key={svc.id} className={cn('border-t', !svc.active && 'opacity-50 bg-muted/30')}>
-                  <td className="px-4 py-2 text-xs text-muted-foreground">{svc.category_label ?? svc.category ?? '—'}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{svc.service_code ?? '—'}</td>
-                  <td className="px-4 py-2 font-medium">
-                    {svc.name}
-                    {!svc.active && (
-                      <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">[비활성]</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums">{formatAmount(svc.price)}</td>
-                  <td className="px-4 py-2 text-xs text-muted-foreground">{VAT_LABEL[svc.vat_type]}</td>
-                  {isAdmin && (
-                    <td className="px-4 py-2">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => setEditTarget(svc)}
-                          className="rounded p-1.5 hover:bg-muted transition"
-                          title="수정"
-                        >
-                          <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                        </button>
-                        {svc.active ? (
-                          /* 활성 항목: 기존 soft delete */
-                          <button
-                            onClick={() => softDelete(svc)}
-                            className="rounded p-1.5 hover:bg-red-50 transition"
-                            title="비활성 처리"
-                          >
-                            <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                          </button>
-                        ) : (
-                          /* 비활성 항목: hard delete (참조 체크 후) */
-                          <button
-                            onClick={() => hardDelete(svc)}
-                            className="rounded p-1.5 hover:bg-red-100 transition"
-                            title="완전 삭제 (참조 없는 경우만 가능)"
-                          >
-                            <Trash2 className="h-3.5 w-3.5 text-red-700" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-              {!loading && filteredRows.length === 0 && (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <table className="w-full text-sm">
+              <thead className="bg-muted/60 text-xs text-muted-foreground">
                 <tr>
-                  <td colSpan={isAdmin ? 6 : 5} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                    {categoryFilter !== '전체' || debouncedSearch
-                      ? '검색 결과 없음'
-                      : '등록된 서비스가 없습니다'}
-                  </td>
+                  {canReorder && (
+                    <th className="w-16 px-2 py-2 text-left font-medium text-[10px]">순서</th>
+                  )}
+                  {activeTab === '전체' && (
+                    <th className="px-4 py-2 text-left font-medium">항목분류</th>
+                  )}
+                  <th className="px-3 py-2 text-left font-medium">상품코드</th>
+                  <th className="px-4 py-2 text-left font-medium">시술명</th>
+                  <th className="px-4 py-2 text-right font-medium">단가</th>
+                  <th className="px-4 py-2 text-left font-medium">VAT</th>
+                  {isAdmin && <th className="px-4 py-2 text-center font-medium">관리</th>}
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <SortableContext
+                items={canReorder ? tabItems.map((s) => s.id) : []}
+                strategy={verticalListSortingStrategy}
+              >
+                <tbody>
+                  {tabItems.map((svc, idx) => (
+                    <SortableServiceRow
+                      key={svc.id}
+                      svc={svc}
+                      idx={idx}
+                      total={tabItems.length}
+                      canReorder={canReorder}
+                      isAdmin={isAdmin}
+                      onReorder={handleReorderBtn}
+                      onEdit={setEditTarget}
+                      onSoftDelete={softDelete}
+                      onHardDelete={hardDelete}
+                      showCategoryLabel={activeTab === '전체'}
+                    />
+                  ))}
+                  {!loading && tabItems.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={colCount}
+                        className="px-4 py-10 text-center text-sm text-muted-foreground"
+                      >
+                        {debouncedSearch
+                          ? '검색 결과 없음'
+                          : activeTab === '전체'
+                          ? '등록된 서비스가 없습니다'
+                          : `[${activeTab}] 탭에 등록된 서비스가 없습니다`}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </SortableContext>
+            </table>
+          </DndContext>
         )}
       </div>
 
@@ -342,7 +614,6 @@ function ServiceDialog({
 }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('기타');
-  // T-20260510-foot-SVCMENU-REVAMP: 항목분류
   const [categoryLabel, setCategoryLabel] = useState('풋케어');
   const [serviceCode, setServiceCode] = useState('');
   const [price, setPrice] = useState(0);
@@ -386,6 +657,7 @@ function ServiceDialog({
       active,
     };
 
+    // T-20260526-foot-SVC-CATEGORY-SORT: 신규 서비스 sort_order=999 → 카테고리 탭 맨 뒤
     const { error } = service
       ? await supabase.from('services').update(payload).eq('id', service.id)
       : await supabase.from('services').insert({ ...payload, sort_order: 999 });
@@ -407,7 +679,6 @@ function ServiceDialog({
             <Label>시술명</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
           </div>
-          {/* T-20260510-foot-SVCMENU-REVAMP: 항목분류 + 상품코드 */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>항목분류</Label>
@@ -419,7 +690,9 @@ function ServiceDialog({
                     onClick={() => setCategoryLabel(c)}
                     className={cn(
                       'h-7 rounded-md border px-2 text-xs font-medium',
-                      categoryLabel === c ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted',
+                      categoryLabel === c
+                        ? 'border-teal-600 bg-teal-50 text-teal-700'
+                        : 'border-input hover:bg-muted',
                     )}
                   >
                     {c}
@@ -429,7 +702,11 @@ function ServiceDialog({
             </div>
             <div className="space-y-1.5">
               <Label>상품코드</Label>
-              <Input value={serviceCode} onChange={(e) => setServiceCode(e.target.value)} placeholder="예: FC001" />
+              <Input
+                value={serviceCode}
+                onChange={(e) => setServiceCode(e.target.value)}
+                placeholder="예: FC001"
+              />
             </div>
           </div>
           <div className="space-y-1.5">
@@ -441,7 +718,9 @@ function ServiceDialog({
                   onClick={() => setCategory(c)}
                   className={cn(
                     'h-8 rounded-md border px-3 text-xs font-medium',
-                    category === c ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted',
+                    category === c
+                      ? 'border-teal-600 bg-teal-50 text-teal-700'
+                      : 'border-input hover:bg-muted',
                   )}
                 >
                   {c}
@@ -460,10 +739,7 @@ function ServiceDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>가격</Label>
-              <AmountInput
-                value={price}
-                onChange={(raw) => setPrice(Number(raw) || 0)}
-              />
+              <AmountInput value={price} onChange={(raw) => setPrice(Number(raw) || 0)} />
             </div>
             <div className="space-y-1.5">
               <Label>할인가 (옵션)</Label>
@@ -492,7 +768,9 @@ function ServiceDialog({
                   onClick={() => setVatType(v)}
                   className={cn(
                     'h-8 rounded-md border px-3 text-xs',
-                    vatType === v ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted',
+                    vatType === v
+                      ? 'border-teal-600 bg-teal-50 text-teal-700'
+                      : 'border-input hover:bg-muted',
                   )}
                 >
                   {VAT_LABEL[v]}
@@ -509,7 +787,9 @@ function ServiceDialog({
                   onClick={() => setServiceType(v)}
                   className={cn(
                     'h-8 rounded-md border px-3 text-xs',
-                    serviceType === v ? 'border-teal-600 bg-teal-50 text-teal-700' : 'border-input hover:bg-muted',
+                    serviceType === v
+                      ? 'border-teal-600 bg-teal-50 text-teal-700'
+                      : 'border-input hover:bg-muted',
                   )}
                 >
                   {SERVICE_TYPE_LABEL[v]}
@@ -529,7 +809,9 @@ function ServiceDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            취소
+          </Button>
           <Button disabled={submitting || !name.trim()} onClick={save}>
             {submitting ? '저장 중…' : '저장'}
           </Button>

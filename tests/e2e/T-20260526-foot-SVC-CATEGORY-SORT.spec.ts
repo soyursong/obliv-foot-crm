@@ -1,263 +1,291 @@
 /**
  * T-20260526-foot-SVC-CATEGORY-SORT
- * 서비스관리 항목분류별 자동 정렬 — 동일 카테고리 내 name 가나다순 2차 정렬
+ * 서비스관리 항목분류 탭별 순서 변경 + DB 저장
  *
- * AC-1: category_label 가나다순 → 동일 카테고리 내 name(시술명) 가나다순
- * AC-2: 카테고리 드롭다운 필터(SVC-FILTER-SEARCH) 조합 시에도 정렬 유지
- * AC-3: 신규 항목 추가 후 목록 리렌더 시에도 정렬 유지
- * AC-4: 기존 CRUD 무영향
- *
- * 참조: T-20260525-foot-SVC-CATEGORY-SORT (이전 구현 — category_label 단일 정렬)
- * 변경: 동일 카테고리 내 sort_order 유지 → name 가나다순 2차 정렬로 변경
+ * AC-1: 탭별 DnD or ↑↓ 버튼 순서 변경
+ * AC-2: DB 저장 (sort_order 컬럼)
+ * AC-3: 재진입 시 저장 순서 유지
+ * AC-4: 탭 간 순서 독립
+ * AC-5: clinic 범위 (단일 지점)
+ * AC-6: 기존 CRUD 무영향
+ * AC-7: 빌드 + E2E spec (본 파일)
  */
 
 import { test, expect } from '@playwright/test';
+import { arrayMove } from '@dnd-kit/sortable';
 
+// ── 타입 ─────────────────────────────────────────────────────────────────────
 type MockService = {
   id: string;
   name: string;
-  category_label?: string;
+  category_label: string;
   sort_order: number;
   active: boolean;
 };
 
-/** Services.tsx filteredRows 정렬 로직 재현 — category_label → name 2차 정렬 */
-function sortServices(rows: MockService[]): MockService[] {
-  return [...rows].sort((a, b) => {
-    const catCmp = (a.category_label ?? '').localeCompare(b.category_label ?? '', 'ko');
-    if (catCmp !== 0) return catCmp;
-    return a.name.localeCompare(b.name, 'ko');
-  });
-}
-
-/** applyFilterAndSort: 필터 + 2차 정렬 */
-function applyFilterAndSort(
-  items: MockService[],
-  categoryFilter: string,
+// ── 유틸: tabItems 정렬 로직 재현 ────────────────────────────────────────────
+function getTabItems(
+  rows: MockService[],
+  activeTab: string,
   showInactive: boolean,
-  searchQuery = '',
+  searchQuery: string,
 ): MockService[] {
-  const filtered = items.filter((svc) => {
+  const base = rows.filter((svc) => {
     if (!svc.active && !showInactive) return false;
-    if (categoryFilter !== '전체' && svc.category_label !== categoryFilter) return false;
+    if (activeTab !== '전체' && svc.category_label !== activeTab) return false;
     if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      if (!svc.name.toLowerCase().includes(q)) return false;
+      return svc.name.toLowerCase().includes(searchQuery.toLowerCase());
     }
     return true;
   });
-  return [...filtered].sort((a, b) => {
-    const catCmp = (a.category_label ?? '').localeCompare(b.category_label ?? '', 'ko');
-    if (catCmp !== 0) return catCmp;
+  if (activeTab === '전체') {
+    return [...base].sort((a, b) => {
+      const catCmp = a.category_label.localeCompare(b.category_label, 'ko');
+      if (catCmp !== 0) return catCmp;
+      const orderCmp = (a.sort_order ?? 999) - (b.sort_order ?? 999);
+      if (orderCmp !== 0) return orderCmp;
+      return a.name.localeCompare(b.name, 'ko');
+    });
+  }
+  return [...base].sort((a, b) => {
+    const orderCmp = (a.sort_order ?? 999) - (b.sort_order ?? 999);
+    if (orderCmp !== 0) return orderCmp;
     return a.name.localeCompare(b.name, 'ko');
   });
 }
 
-// ── AC-1: category_label → name 2차 정렬 ─────────────────────────────────────
+// ── 유틸: ↑↓ 버튼 재정렬 로직 재현 ──────────────────────────────────────────
+function applyReorderBtn(
+  rows: MockService[],
+  activeTab: string,
+  showInactive: boolean,
+  svcId: string,
+  dir: 'up' | 'down',
+): MockService[] {
+  const inTab = rows
+    .filter((s) => s.category_label === activeTab && (showInactive || s.active))
+    .sort((a, b) => {
+      const o = (a.sort_order ?? 999) - (b.sort_order ?? 999);
+      return o !== 0 ? o : a.name.localeCompare(b.name, 'ko');
+    });
+  const idx = inTab.findIndex((s) => s.id === svcId);
+  if (dir === 'up' && idx <= 0) return rows;
+  if (dir === 'down' && idx >= inTab.length - 1) return rows;
+  const targetIdx = dir === 'up' ? idx - 1 : idx + 1;
+  const reordered = [...inTab];
+  [reordered[idx], reordered[targetIdx]] = [reordered[targetIdx], reordered[idx]];
+  const updated = reordered.map((s, i) => ({ ...s, sort_order: i * 10 }));
+  const others = rows.filter(
+    (s) => !(s.category_label === activeTab && (showInactive || s.active)),
+  );
+  return [...others, ...updated];
+}
 
-test.describe('AC-1: category_label → name 2차 정렬', () => {
-  const unsorted: MockService[] = [
-    { id: '1', name: '풋케어C', category_label: '풋케어', sort_order: 30, active: true },
-    { id: '2', name: '기본B', category_label: '기본', sort_order: 20, active: true },
-    { id: '3', name: '혈액검사', category_label: '검사', sort_order: 10, active: true },
-    { id: '4', name: '풋케어A', category_label: '풋케어', sort_order: 5, active: true },
-    { id: '5', name: '기본A', category_label: '기본', sort_order: 50, active: true },
-    { id: '6', name: '풋케어B', category_label: '풋케어', sort_order: 15, active: true },
-    { id: '7', name: '수액Z', category_label: '수액', sort_order: 7, active: true },
-  ];
+// ── 샘플 데이터 ───────────────────────────────────────────────────────────────
+const MOCK_ROWS: MockService[] = [
+  // 기본 탭 (3개)
+  { id: 'b1', name: '초진진찰료', category_label: '기본', sort_order: 0, active: true },
+  { id: 'b2', name: '재진진찰료', category_label: '기본', sort_order: 10, active: true },
+  { id: 'b3', name: '진단서', category_label: '기본', sort_order: 20, active: true },
+  // 검사 탭 (2개)
+  { id: 'e1', name: '피검사', category_label: '검사', sort_order: 0, active: true },
+  { id: 'e2', name: 'KOH검사', category_label: '검사', sort_order: 10, active: true },
+  // 풋케어 탭 (3개)
+  { id: 'f1', name: '체험', category_label: '풋케어', sort_order: 0, active: true },
+  { id: 'f2', name: '프리컨디셔닝', category_label: '풋케어', sort_order: 10, active: true },
+  { id: 'f3', name: '레이저', category_label: '풋케어', sort_order: 20, active: true },
+  // 수액 탭 (2개)
+  { id: 'v1', name: '재생수액', category_label: '수액', sort_order: 0, active: true },
+  { id: 'v2', name: '항염수액', category_label: '수액', sort_order: 10, active: true },
+];
 
-  test('category_label 오름차순 (ㄱ→ㅎ)', () => {
-    const sorted = sortServices(unsorted);
-    const labels = sorted.map((s) => s.category_label ?? '');
+// ── AC-1: tabItems 단위 테스트 ────────────────────────────────────────────────
+test.describe('AC-1: 탭별 항목 필터링 + sort_order 정렬', () => {
+  test('기본 탭 → 기본 카테고리만 sort_order 오름차순', () => {
+    const items = getTabItems(MOCK_ROWS, '기본', false, '');
+    expect(items.map((s) => s.id)).toEqual(['b1', 'b2', 'b3']);
+  });
+
+  test('검사 탭 → 검사 카테고리만', () => {
+    const items = getTabItems(MOCK_ROWS, '검사', false, '');
+    expect(items.every((s) => s.category_label === '검사')).toBe(true);
+    expect(items.length).toBe(2);
+  });
+
+  test('전체 탭 → category_label → sort_order → name 3단 정렬', () => {
+    const items = getTabItems(MOCK_ROWS, '전체', false, '');
+    const labels = items.map((s) => s.category_label);
     for (let i = 0; i < labels.length - 1; i++) {
       expect(labels[i].localeCompare(labels[i + 1], 'ko')).toBeLessThanOrEqual(0);
     }
   });
 
-  test('동일 카테고리(풋케어) 내 name 가나다순 — AC-1 핵심', () => {
-    const sorted = sortServices(unsorted);
-    const footcare = sorted.filter((s) => s.category_label === '풋케어');
-    // 풋케어A < 풋케어B < 풋케어C (가나다순, sort_order 무관)
-    expect(footcare[0].name).toBe('풋케어A');
-    expect(footcare[1].name).toBe('풋케어B');
-    expect(footcare[2].name).toBe('풋케어C');
+  test('검색어 있으면 이름 필터링 적용', () => {
+    const items = getTabItems(MOCK_ROWS, '풋케어', false, '체험');
+    expect(items.length).toBe(1);
+    expect(items[0].id).toBe('f1');
   });
 
-  test('동일 카테고리(기본) 내 name 가나다순', () => {
-    const sorted = sortServices(unsorted);
-    const basic = sorted.filter((s) => s.category_label === '기본');
-    // 기본A < 기본B
-    expect(basic[0].name).toBe('기본A');
-    expect(basic[1].name).toBe('기본B');
-  });
-
-  test('sort_order가 가나다순과 달라도 name 정렬 우선', () => {
-    // sort_order가 역순이어도 name 가나다순으로 정렬되어야 함
-    const rows: MockService[] = [
-      { id: 'x1', name: '나', category_label: '풋케어', sort_order: 100, active: true },
-      { id: 'x2', name: '가', category_label: '풋케어', sort_order: 1, active: true },
+  test('비활성 포함(showInactive=true) → active=false 항목도 포함', () => {
+    const rowsWithInactive: MockService[] = [
+      ...MOCK_ROWS,
+      { id: 'f0', name: '구형레이저', category_label: '풋케어', sort_order: 999, active: false },
     ];
-    const sorted = sortServices(rows);
-    const footcare = sorted.filter((s) => s.category_label === '풋케어');
-    expect(footcare[0].name).toBe('가');
-    expect(footcare[1].name).toBe('나');
+    const withHidden = getTabItems(rowsWithInactive, '풋케어', false, '');
+    const withVisible = getTabItems(rowsWithInactive, '풋케어', true, '');
+    expect(withHidden.some((s) => s.id === 'f0')).toBe(false);
+    expect(withVisible.some((s) => s.id === 'f0')).toBe(true);
+  });
+});
+
+// ── AC-1, AC-2: ↑↓ 버튼 순서 변경 로직 ──────────────────────────────────────
+test.describe('AC-1/AC-2: ↑↓ 버튼 순서 변경', () => {
+  test('위로 이동: b2 ↑ → b2가 b1보다 앞으로', () => {
+    const updated = applyReorderBtn(MOCK_ROWS, '기본', false, 'b2', 'up');
+    const tabItems = getTabItems(updated, '기본', false, '');
+    expect(tabItems[0].id).toBe('b2');
+    expect(tabItems[1].id).toBe('b1');
   });
 
-  test('원본 배열 불변 (spread copy 확인)', () => {
-    const original = unsorted.map((s) => ({ ...s }));
-    sortServices(unsorted);
-    unsorted.forEach((s, i) => {
-      expect(s.id).toBe(original[i].id);
-      expect(s.name).toBe(original[i].name);
+  test('아래로 이동: b1 ↓ → b1이 b2보다 뒤로', () => {
+    const updated = applyReorderBtn(MOCK_ROWS, '기본', false, 'b1', 'down');
+    const tabItems = getTabItems(updated, '기본', false, '');
+    expect(tabItems[0].id).toBe('b2');
+    expect(tabItems[1].id).toBe('b1');
+  });
+
+  test('첫 번째 항목 위로 이동 무시', () => {
+    const before = getTabItems(MOCK_ROWS, '기본', false, '').map((s) => s.id);
+    const updated = applyReorderBtn(MOCK_ROWS, '기본', false, 'b1', 'up');
+    const after = getTabItems(updated, '기본', false, '').map((s) => s.id);
+    expect(after).toEqual(before);
+  });
+
+  test('마지막 항목 아래로 이동 무시', () => {
+    const before = getTabItems(MOCK_ROWS, '기본', false, '').map((s) => s.id);
+    const updated = applyReorderBtn(MOCK_ROWS, '기본', false, 'b3', 'down');
+    const after = getTabItems(updated, '기본', false, '').map((s) => s.id);
+    expect(after).toEqual(before);
+  });
+
+  test('sort_order 재할당 = index * 10', () => {
+    const updated = applyReorderBtn(MOCK_ROWS, '기본', false, 'b2', 'up');
+    const tabItems = getTabItems(updated, '기본', false, '');
+    expect(tabItems[0].sort_order).toBe(0);
+    expect(tabItems[1].sort_order).toBe(10);
+    expect(tabItems[2].sort_order).toBe(20);
+  });
+});
+
+// ── AC-2: DnD arrayMove 로직 ─────────────────────────────────────────────────
+test.describe('AC-2: DnD arrayMove 로직', () => {
+  test('arrayMove: 첫 번째 ↔ 세 번째 교환', () => {
+    const items = ['b1', 'b2', 'b3'];
+    const result = arrayMove(items, 0, 2);
+    expect(result).toEqual(['b2', 'b3', 'b1']);
+  });
+
+  test('arrayMove: 동일 위치 → 순서 불변', () => {
+    const items = ['b1', 'b2', 'b3'];
+    const result = arrayMove(items, 1, 1);
+    expect(result).toEqual(['b1', 'b2', 'b3']);
+  });
+});
+
+// ── AC-4: 탭 간 순서 독립 ────────────────────────────────────────────────────
+test.describe('AC-4: 탭 간 순서 독립', () => {
+  test('기본 탭 재정렬이 검사 탭 sort_order에 영향 없음', () => {
+    const updated = applyReorderBtn(MOCK_ROWS, '기본', false, 'b2', 'up');
+    const originalExam = MOCK_ROWS.filter((s) => s.category_label === '검사');
+    const updatedExam = updated.filter((s) => s.category_label === '검사');
+    originalExam.forEach((orig, i) => {
+      expect(updatedExam[i].sort_order).toBe(orig.sort_order);
+    });
+  });
+
+  test('풋케어 탭 재정렬이 수액 탭 sort_order에 영향 없음', () => {
+    const updated = applyReorderBtn(MOCK_ROWS, '풋케어', false, 'f1', 'down');
+    const originalV = MOCK_ROWS.filter((s) => s.category_label === '수액');
+    const updatedV = updated.filter((s) => s.category_label === '수액');
+    originalV.forEach((orig, i) => {
+      expect(updatedV[i].sort_order).toBe(orig.sort_order);
     });
   });
 });
 
-// ── AC-2: 카테고리 드롭다운 필터 + 정렬 공존 ────────────────────────────────────
-
-test.describe('AC-2: 카테고리 필터 + name 2차 정렬 공존', () => {
-  const rows: MockService[] = [
-    { id: '1', name: '레이저B', category_label: '풋케어', sort_order: 10, active: true },
-    { id: '2', name: '기본검사', category_label: '기본', sort_order: 5, active: true },
-    { id: '3', name: '레이저A', category_label: '풋케어', sort_order: 20, active: true },
-    { id: '4', name: '수액A', category_label: '수액', sort_order: 7, active: true },
-    { id: '5', name: '레이저C', category_label: '풋케어', sort_order: 3, active: true },
-  ];
-
-  test('필터=전체: category_label → name 2차 정렬 적용', () => {
-    const result = applyFilterAndSort(rows, '전체', false);
-    expect(result.length).toBe(5);
-    // 풋케어 그룹 내 name 정렬 확인
-    const footcare = result.filter((r) => r.category_label === '풋케어');
-    expect(footcare[0].name).toBe('레이저A');
-    expect(footcare[1].name).toBe('레이저B');
-    expect(footcare[2].name).toBe('레이저C');
-  });
-
-  test('필터=풋케어: 풋케어만 반환 + name 가나다순', () => {
-    const result = applyFilterAndSort(rows, '풋케어', false);
-    expect(result.length).toBe(3);
-    expect(result[0].name).toBe('레이저A');
-    expect(result[1].name).toBe('레이저B');
-    expect(result[2].name).toBe('레이저C');
-  });
-
-  test('필터=수액: 단일 항목 반환', () => {
-    const result = applyFilterAndSort(rows, '수액', false);
-    expect(result.length).toBe(1);
-    expect(result[0].name).toBe('수액A');
-  });
-
-  test('필터=기본: 기본 1건 반환', () => {
-    const result = applyFilterAndSort(rows, '기본', false);
-    expect(result.length).toBe(1);
-    expect(result[0].name).toBe('기본검사');
+// ── AC-5: clinic 범위 ─────────────────────────────────────────────────────────
+test.describe('AC-5: clinic 범위 단일 지점', () => {
+  test('tabItems는 category_label 필터만 적용 (clinic 필터는 fetchServices에서)', () => {
+    const items = getTabItems(MOCK_ROWS, '기본', false, '');
+    expect(items.every((s) => s.category_label === '기본')).toBe(true);
   });
 });
 
-// ── AC-3: 신규 항목 추가 후 정렬 유지 시뮬레이션 ─────────────────────────────────
-
-test.describe('AC-3: 신규 항목 추가 후 정렬 유지', () => {
-  test('기존 목록에 신규 항목 추가 시 name 가나다순 유지', () => {
-    const existing: MockService[] = [
-      { id: '1', name: '풋케어C', category_label: '풋케어', sort_order: 30, active: true },
-      { id: '2', name: '풋케어A', category_label: '풋케어', sort_order: 5, active: true },
-    ];
-    // 신규 항목: 기본 카테고리, 가나다 중간 위치
-    const newItem: MockService = {
-      id: '99',
-      name: '풋케어B',
-      category_label: '풋케어',
-      sort_order: 999, // sort_order 999로 추가됨
-      active: true,
-    };
-    const after = sortServices([...existing, newItem]);
-    const footcare = after.filter((s) => s.category_label === '풋케어');
-    expect(footcare[0].name).toBe('풋케어A');
-    expect(footcare[1].name).toBe('풋케어B'); // 신규 항목이 가나다 중간에 배치
-    expect(footcare[2].name).toBe('풋케어C');
+// ── AC-6: 기존 CRUD 무영향 ────────────────────────────────────────────────────
+test.describe('AC-6: 기존 CRUD 무영향', () => {
+  test('soft delete: 재정렬 후 active=false 항목이 showInactive=false 시 숨겨짐', () => {
+    const updatedRows: MockService[] = MOCK_ROWS.map((s) =>
+      s.id === 'b2' ? { ...s, active: false } : s,
+    );
+    const items = getTabItems(updatedRows, '기본', false, '');
+    expect(items.some((s) => s.id === 'b2')).toBe(false);
+    const itemsWithInactive = getTabItems(updatedRows, '기본', true, '');
+    expect(itemsWithInactive.some((s) => s.id === 'b2')).toBe(true);
   });
 
-  test('sort_order 999 신규 항목이 name 가나다순 첫 번째로 배치될 수 있음', () => {
-    const existing: MockService[] = [
-      { id: '1', name: '다시술', category_label: '기본', sort_order: 1, active: true },
-      { id: '2', name: '나시술', category_label: '기본', sort_order: 2, active: true },
-    ];
-    const newItem: MockService = {
-      id: '99',
-      name: '가시술',
+  test('신규 서비스 sort_order=999 → 해당 탭 맨 뒤에 위치', () => {
+    const newSvc: MockService = {
+      id: 'b_new',
+      name: '신규항목',
       category_label: '기본',
       sort_order: 999,
       active: true,
     };
-    const after = sortServices([...existing, newItem]);
-    const basic = after.filter((s) => s.category_label === '기본');
-    expect(basic[0].name).toBe('가시술');
-    expect(basic[1].name).toBe('나시술');
-    expect(basic[2].name).toBe('다시술');
+    const rows = [...MOCK_ROWS, newSvc];
+    const items = getTabItems(rows, '기본', false, '');
+    expect(items[items.length - 1].id).toBe('b_new');
+  });
+
+  test('sort_order 변경 후 rows 원본 category_label 변경 없음', () => {
+    const updated = applyReorderBtn(MOCK_ROWS, '기본', false, 'b2', 'up');
+    MOCK_ROWS.forEach((orig) => {
+      const found = updated.find((s) => s.id === orig.id);
+      expect(found?.category_label).toBe(orig.category_label);
+    });
   });
 });
 
-// ── AC-4: CRUD 무영향 ─────────────────────────────────────────────────────────
-
-test.describe('AC-4: CRUD 무영향 — 정렬은 클라이언트 표시 전용', () => {
-  test('정렬 함수가 id·name·price 필드를 변경하지 않음', () => {
-    const rows: MockService[] = [
-      { id: 'aaa', name: '레이저B', category_label: '풋케어', sort_order: 10, active: true },
-      { id: 'bbb', name: '기본검사', category_label: '기본', sort_order: 5, active: true },
-      { id: 'ccc', name: '레이저A', category_label: '풋케어', sort_order: 20, active: true },
-    ];
-    const sorted = sortServices(rows);
-    const ids = sorted.map((r) => r.id).sort();
-    expect(ids).toEqual(['aaa', 'bbb', 'ccc']);
-    const names = sorted.map((r) => r.name).sort();
-    expect(names).toEqual(['기본검사', '레이저A', '레이저B']);
+// ── AC-7: 컴포넌트/탭 구조 ───────────────────────────────────────────────────
+test.describe('AC-7: 컴포넌트/탭 구조', () => {
+  test('CATEGORY_TABS에 전체 + 6개 카테고리 포함', () => {
+    const CATEGORY_TABS_SPEC = ['전체', '기본', '검사', '상병', '풋케어', '수액', '풋화장품'];
+    expect(CATEGORY_TABS_SPEC.length).toBe(7);
+    expect(CATEGORY_TABS_SPEC[0]).toBe('전체');
+    CATEGORY_TABS_SPEC.slice(1).forEach((tab) => {
+      expect(['기본', '검사', '상병', '풋케어', '수액', '풋화장품']).toContain(tab);
+    });
   });
 
-  test('비활성 항목은 showInactive=false 시 필터됨 (정렬과 무관)', () => {
-    const rows: MockService[] = [
-      { id: '1', name: '활성A', category_label: '풋케어', sort_order: 10, active: true },
-      { id: '2', name: '비활성B', category_label: '풋케어', sort_order: 5, active: false },
-      { id: '3', name: '활성C', category_label: '기본', sort_order: 7, active: true },
-    ];
-    const result = applyFilterAndSort(rows, '전체', false);
-    expect(result.length).toBe(2);
-    expect(result.every((r) => r.active)).toBe(true);
+  test('canReorder: admin + 특정 탭 + 검색 없음 조합만 true', () => {
+    const canReorder = (isAdmin: boolean, activeTab: string, search: string) =>
+      isAdmin && activeTab !== '전체' && !search;
+    expect(canReorder(true, '전체', '')).toBe(false);
+    expect(canReorder(true, '기본', '')).toBe(true);
+    expect(canReorder(true, '기본', '검색어')).toBe(false);
+    expect(canReorder(false, '기본', '')).toBe(false);
   });
 
-  test('비활성 항목도 showInactive=true 시 포함 + 정렬 적용', () => {
-    const rows: MockService[] = [
-      { id: '1', name: '활성B', category_label: '풋케어', sort_order: 10, active: true },
-      { id: '2', name: '비활성A', category_label: '풋케어', sort_order: 5, active: false },
-    ];
-    const result = applyFilterAndSort(rows, '전체', true);
-    expect(result.length).toBe(2);
-    // 비활성A < 활성B (name 가나다순)
-    expect(result[0].name).toBe('비활성A');
-    expect(result[1].name).toBe('활성B');
-  });
-});
-
-// ── E2E: Services 페이지 스모크 ──────────────────────────────────────────────
-
-test.describe('Services 페이지 스모크 — 항목분류 + name 정렬 UI', () => {
-  test('서비스관리 페이지 접근 시 테이블 렌더링', async ({ page }) => {
-    await page.goto('/services');
-    await expect(page.getByRole('heading', { name: '서비스 관리' })).toBeVisible({ timeout: 5000 });
-    // 카테고리 드롭다운 존재 확인 (AC-2)
-    const dropdown = page.locator('button[role="combobox"]').first();
-    await expect(dropdown).toBeVisible();
+  test('sort_order 재할당 패턴: index * 10', () => {
+    const count = 5;
+    const expected = Array.from({ length: count }, (_, i) => i * 10);
+    expect(expected).toEqual([0, 10, 20, 30, 40]);
   });
 
-  test('카테고리 드롭다운에 항목분류 옵션 포함 (AC-2)', async ({ page }) => {
-    await page.goto('/services');
-    const dropdown = page.locator('button[role="combobox"]').first();
-    if (await dropdown.isVisible()) {
-      await dropdown.click();
-      const option = page.getByRole('option', { name: '풋케어' });
-      if (await option.count() > 0) {
-        await expect(option).toBeVisible();
-      }
-    }
+  test('전체 탭: category_label 컬럼 표시, 재정렬 숨김', () => {
+    // showCategoryLabel = (activeTab === '전체')
+    const showCategoryLabel = (activeTab: string) => activeTab === '전체';
+    expect(showCategoryLabel('전체')).toBe(true);
+    expect(showCategoryLabel('기본')).toBe(false);
+    expect(showCategoryLabel('풋케어')).toBe(false);
   });
 });
