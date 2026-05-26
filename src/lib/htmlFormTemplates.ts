@@ -1349,7 +1349,8 @@ const RX_STANDARD_HTML = `
       보호종별 :&nbsp;&nbsp;
     </div>
     <div style="flex:1; text-align:center;">
-      <div style="font-size:8pt; margin-bottom:2px;">(약국보관용)</div>
+      <!-- T-20260526-foot-RX-PRINT-DUAL: rx_copy_label = 약국보관용|환자보관용 (buildHtmlPageHtml 주입) -->
+      <div style="font-size:8pt; margin-bottom:2px;">({{rx_copy_label}})</div>
       <div class="rx-title">처&nbsp;&nbsp;방&nbsp;&nbsp;전</div>
     </div>
     <div style="width:72px; height:72px; border:1px solid #bbb; display:flex; align-items:center; justify-content:center; font-size:7pt; color:#999; text-align:center; flex-shrink:0;">
