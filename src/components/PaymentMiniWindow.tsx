@@ -65,11 +65,13 @@ import {
 } from '@/lib/htmlFormTemplates';
 import { loadAutoBindContext } from '@/lib/autoBindContext';
 // T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 DnD 재배열 (AC-1, AC-5)
+// REOPEN: PointerSensor 우선 → overflow-y-auto 스크롤 충돌 해소 (AC-R2, AC-R3)
 import {
   DndContext,
   closestCenter,
   MouseSensor,
   TouchSensor,
+  PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -454,16 +456,18 @@ function SortablePricingRow({
         isDragging && 'shadow-lg',
       )}
     >
-      {/* 드래그 핸들 (AC-1 DnD, AC-5 터치) */}
+      {/* 드래그 핸들 (AC-1 DnD, AC-R2 REOPEN)
+          REOPEN: min-w/h 32px 터치타깃 확장 + touch-none 유지 (PointerSensor 경유) */}
       <button
         {...attributes}
         {...listeners}
-        className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none p-0.5"
+        className="shrink-0 flex items-center justify-center min-w-[28px] min-h-[28px] text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none p-1"
         title="드래그하여 순서 변경"
         tabIndex={-1}
+        type="button"
         onClick={(e) => e.stopPropagation()}
       >
-        <GripVertical className="h-3 w-3" />
+        <GripVertical className="h-3.5 w-3.5" />
       </button>
       {/* 선수금 토글 (PREPAID-DEDUCT AC-2) */}
       <button
@@ -527,28 +531,31 @@ function SortablePricingRow({
           ×{qty}
         </span>
       )}
-      {/* AC-1: ↑↓ 순서 변경 버튼 (항목 2건 이상, 태블릿 친화) */}
+      {/* AC-1: ↑↓ 순서 변경 버튼 (항목 2건 이상, 태블릿 친화)
+          REOPEN AC-R1/AC-R3: p-0→p-1.5 + min-w/h 32px — 태블릿 터치 타깃 10px→32px 확보 */}
       {pricingLen > 1 && (
-        <div className="shrink-0 flex flex-col">
+        <div className="shrink-0 flex flex-col gap-0.5">
           <button
             data-testid={`reorder-up-${service.id}`}
-            onClick={() => onReorder(service.id, 'up')}
+            onClick={(e) => { e.stopPropagation(); onReorder(service.id, 'up'); }}
             disabled={pricingIdx === 0}
-            className="p-0 text-muted-foreground disabled:opacity-20 hover:text-teal-600 transition-colors"
+            className="flex items-center justify-center min-w-[32px] min-h-[22px] p-1.5 text-muted-foreground disabled:opacity-20 hover:text-teal-600 active:text-teal-700 transition-colors rounded"
             title="위로"
             tabIndex={-1}
+            type="button"
           >
-            <ArrowUp className="h-2.5 w-2.5" />
+            <ArrowUp className="h-3 w-3" />
           </button>
           <button
             data-testid={`reorder-down-${service.id}`}
-            onClick={() => onReorder(service.id, 'down')}
+            onClick={(e) => { e.stopPropagation(); onReorder(service.id, 'down'); }}
             disabled={pricingIdx === pricingLen - 1}
-            className="p-0 text-muted-foreground disabled:opacity-20 hover:text-teal-600 transition-colors"
+            className="flex items-center justify-center min-w-[32px] min-h-[22px] p-1.5 text-muted-foreground disabled:opacity-20 hover:text-teal-600 active:text-teal-700 transition-colors rounded"
             title="아래로"
             tabIndex={-1}
+            type="button"
           >
-            <ArrowDown className="h-2.5 w-2.5" />
+            <ArrowDown className="h-3 w-3" />
           </button>
         </div>
       )}
@@ -1084,10 +1091,14 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   // ── T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 순서 변경 ────────────────
   // AC-2: DB persist — services.display_order (clinic 단위, useEffect debounce 800ms).
   // AC-3: 기존 CRUD 무영향.
-  // AC-5: MouseSensor(distance:3) + TouchSensor(distance:5) — 태블릿 탭 오인식 방지.
+  // REOPEN AC-R2/AC-R3: PointerSensor 우선 — overflow-y-auto 스크롤 컨테이너에서
+  // TouchSensor(distance 방식)는 브라우저 scroll gesture와 경합 발생.
+  // PointerSensor(distance:3)는 Pointer Events API 경유 → 현대 태블릿 브라우저에서 안정적.
+  // TouchSensor(delay:250)를 후순위 fallback으로 유지 (구형 기기 대응).
   const feeItemSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
     useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
-    useSensor(TouchSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   );
 
   // ↑↓ 버튼: pricing items 내 상대 인덱스 기준 swap
@@ -1106,13 +1117,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   }, []);
 
   // DnD: pricing items 서브셋 내 arrayMove → selectedItems 재조합
+  // REOPEN: String() 캐스팅 — UniqueIdentifier(string|number) vs string 비교 안전성 (AC-R2)
   const handleDragEndPricingItem = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
-    if (!over || active.id === over.id) return;
+    if (!over || String(active.id) === String(over.id)) return;
+    const activeIdStr = String(active.id);
+    const overIdStr = String(over.id);
     setSelectedItems((prev) => {
       const pairs = prev.map((item, idx) => ({ item, idx })).filter(({ item }) => !isCodeItem(item.service));
-      const activePos = pairs.findIndex(({ item }) => item.service.id === active.id);
-      const overPos = pairs.findIndex(({ item }) => item.service.id === over.id);
+      const activePos = pairs.findIndex(({ item }) => item.service.id === activeIdStr);
+      const overPos = pairs.findIndex(({ item }) => item.service.id === overIdStr);
       if (activePos === -1 || overPos === -1) return prev;
       const reordered = arrayMove(pairs.map(p => p.item), activePos, overPos);
       const next = [...prev];
