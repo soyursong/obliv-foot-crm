@@ -15,7 +15,7 @@ import { test, expect } from '@playwright/test';
 // ── 헬퍼: 로그인 ───────────────────────────────────────────────────────────
 async function loginIfNeeded(page: import('@playwright/test').Page) {
   await page.goto('/');
-  await page.waitForURL(/login|\/$/, { timeout: 10_000 });
+  await page.waitForLoadState('networkidle');  // storageState redirect 완료 대기
 
   const emailInput = page.locator('input[type="email"]');
   if (await emailInput.isVisible({ timeout: 3_000 }).catch(() => false)) {
