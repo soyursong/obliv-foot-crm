@@ -884,7 +884,7 @@ export function PenChartTab({
         console.error('[PenChartTab] 배경 이미지 로드 실패(network/CORS), 흰 배경 fallback:', bgUrl);
         setBgImgLoadError(true);
       };
-      img.onload = () => {
+      img.onload = async () => {
         // T-20260526-foot-PENCHART-FORM-BLACKSCR REOPEN AC-R2: 이미지 디코드 검증
         //   onload 발화 후에도 naturalWidth=0인 경우(일부 브라우저 decode 실패) → drawImage silent fail
         if (img.naturalWidth === 0 || img.naturalHeight === 0) {
@@ -900,6 +900,24 @@ export function PenChartTab({
           setBgImgLoadError(true);
           return;
         }
+        // T-20260526-foot-PENCHART-FORM-BLACKSCR 2차 REOPEN 근본 수정:
+        //   iOS Safari img.onload는 CPU decode 완료 전 조기 발화 가능.
+        //   await img.decode() → 실제 픽셀 데이터가 GPU 업로드 가능 상태임을 보장.
+        try {
+          await img.decode();
+        } catch (decodeErr) {
+          console.error('[PenChartTab] img.decode() 실패 — fallback:', decodeErr, bgUrl);
+          setBgImgLoadError(true);
+          return;
+        }
+        // stale check: decode 대기 중 mode 전환으로 bgCanvas ref가 교체됐을 수 있음
+        if (!bgCanvasRef.current || bgCanvasRef.current !== canvas) {
+          return;
+        }
+        if (ctx.isContextLost()) {
+          setBgImgLoadError(true);
+          return;
+        }
         // T-20260523-foot-PENCHART-PEN-SLOW Fix-1:
         //   canvas.width/height 재할당 없음 — 이미 CANVAS_W*DRAW_DPR × canvasH*DRAW_DPR 확정.
         //   ctx transform도 이미 scale(DRAW_DPR, DRAW_DPR) 적용됨 — 리셋 없이 redraw만 수행.
@@ -911,13 +929,53 @@ export function PenChartTab({
         ctx.fillRect(0, 0, CANVAS_W, canvasH);
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        // T-20260526-foot-PENCHART-FORM-BLACKSCR REOPEN AC-R4:
-        //   drawImage try-catch: 300DPI 소스(최대 2481×10524) GPU 텍스처 한계 초과 시 silent fail 방어
-        //   → 예외 발생 시 setBgImgLoadError(true) + fallback UI 표시
+        // T-20260526-foot-PENCHART-FORM-BLACKSCR 2차 REOPEN 근본 수정:
+        //   iOS Safari GPU 텍스처 상한(기기별 2048~4096px) 초과 시 drawImage SILENT FAIL
+        //   — try-catch 무용: iOS Safari는 예외를 throw하지 않고 조용히 검정 픽셀 출력.
+        //   확정 초과 파일: health_q_senior.png(7016px), refund_consent.png(10524px)
+        //   잠재 초과:    pen_chart_form.png(3510px) — 구형 iPad 2048px 상한 포함
+        //
+        //   해법: createImageBitmap(img, sx, sy, sw, sh) 소스-rect 타일 분할
+        //     각 타일 ≤ MAX_TILE × MAX_TILE → CPU 메모리에서 크롭 완료 →
+        //     소형 GPU 텍스처(≤ 2048×2048)로만 업로드 → 모든 iOS 기기 통과.
+        const MAX_TILE = 2048;
+        const srcW = img.naturalWidth;
+        const srcH = img.naturalHeight;
+        // 물리 canvas 크기 스냅샷: 타일 루프 중 stale 감지용
+        const expectedPhysW = canvas.width;
+        const expectedPhysH = canvas.height;
         try {
-          ctx.drawImage(img, 0, 0, CANVAS_W, canvasH);
+          if (srcW <= MAX_TILE && srcH <= MAX_TILE) {
+            // 소형 이미지(MAX_TILE 이내): 기존 단일 drawImage
+            ctx.drawImage(img, 0, 0, CANVAS_W, canvasH);
+          } else if (typeof createImageBitmap !== 'undefined') {
+            // 대형 이미지: 타일 분할 drawImage
+            for (let tileSy = 0; tileSy < srcH; tileSy += MAX_TILE) {
+              const tileSh = Math.min(MAX_TILE, srcH - tileSy);
+              for (let tileSx = 0; tileSx < srcW; tileSx += MAX_TILE) {
+                const tileSw = Math.min(MAX_TILE, srcW - tileSx);
+                // eslint-disable-next-line no-await-in-loop
+                const bm = await createImageBitmap(img, tileSx, tileSy, tileSw, tileSh);
+                // stale check: tile await 완료 전 canvas 재초기화 여부
+                if (canvas.width !== expectedPhysW || canvas.height !== expectedPhysH) {
+                  bm.close();
+                  return;
+                }
+                if (ctx.isContextLost()) { bm.close(); setBgImgLoadError(true); return; }
+                const dx  = Math.round((tileSx / srcW) * CANVAS_W);
+                const dw  = Math.max(1, Math.round(((tileSx + tileSw) / srcW) * CANVAS_W) - dx);
+                const dy  = Math.round((tileSy / srcH) * canvasH);
+                const dh  = Math.max(1, Math.round(((tileSy + tileSh) / srcH) * canvasH) - dy);
+                ctx.drawImage(bm, 0, 0, tileSw, tileSh, dx, dy, dw, dh);
+                bm.close();
+              }
+            }
+          } else {
+            // createImageBitmap 미지원(iOS 13 이하): fallback 단일 drawImage
+            ctx.drawImage(img, 0, 0, CANVAS_W, canvasH);
+          }
         } catch (e) {
-          console.error('[PenChartTab] drawImage 실패 (GPU 텍스처 한계 초과 가능):', e, {
+          console.error('[PenChartTab] drawImage/createImageBitmap 실패:', e, {
             formKey: activeDrawTemplate?.form_key,
             imgNatural: `${img.naturalWidth}×${img.naturalHeight}`,
             canvasPhysical: `${canvas.width}×${canvas.height}`,
@@ -925,9 +983,7 @@ export function PenChartTab({
           setBgImgLoadError(true);
           return;
         }
-        // T-20260526-foot-PENCHART-FORM-BLACKSCR REOPEN AC-R3:
-        //   setBgImgLoadError(false) → drawImage 성공 후에만 호출
-        //   (기존 코드: onload 진입 즉시 false 설정 → drawImage 실패 시에도 fallback 비표시 = 검정화면 버그)
+        // setBgImgLoadError(false) → 모든 타일 draw 성공 후에만 호출
         setBgImgLoadError(false);
         // T-20260523-foot-PENCHART-FORM-AUTOFILL: positions 기반 범용 자동채움
         // bgCanvas가 CANVAS_W×canvasH 논리이므로 scaleX/scaleY=1 (CSS 좌표 그대로)
@@ -1971,8 +2027,24 @@ export function PenChartTab({
                 touchAction: 'pan-y',
                 cursor: isBoilerplatePlacing ? 'text' : isTextTool ? 'text' : isEraser ? 'cell' : isHighlight ? 'crosshair' : 'crosshair',
                 display: 'block',
-                // T-20260523-foot-PENCHART-PEN-SLOW: GPU 레이어 승격 → 펜 획 합성 지연 감소
-                willChange: 'transform',
+                // T-20260525-foot-PENCHART-FORM-BLACKSCR REOPEN 3 — 근본 수정:
+                //   willChange:'transform' 제거 — GPU compositor layer 불투명화 차단.
+                //
+                //   원인: b955a8c(PENCHART-PEN-SLOW, 5/24)에서 willChange:'transform' +
+                //         desynchronized:true 동시 추가 → draw canvas가 별도 GPU compositor
+                //         layer로 승격됨. 이 layer는 불투명(alpha-less) GPU 텍스처로 할당돼
+                //         투명 픽셀이 BLACK으로 표시됨 → bgCanvas(양식 이미지)가 가려져 검정화면.
+                //
+                //   증거:
+                //     ① b955a8c 배포(5/24) 다음날(5/25) 첫 검정화면 보고 — 인과 타임라인 일치
+                //     ② REOPEN 1 스크린샷: 검정 배경 위 흰 펜획 — drawCanvas 드로잉은 정상,
+                //        bgCanvas(이미지)만 불투명 drawCanvas에 가려져 안 보이는 것과 일치
+                //     ③ 2f341f1·6ed19d1 drawImage/tiling 수정으로 미해결 — 레이어 문제이므로
+                //        drawImage 수정으로는 고칠 수 없음
+                //
+                //   수정: willChange:'transform' 제거 → GPU compositor layer 미승격 →
+                //         drawCanvas는 parent layer 안에서 투명 합성 → bgCanvas가 정상 표시.
+                //         desynchronized:true는 유지 — HW 가속은 유지하면서 layer 승격만 차단.
               }}
               onPointerDown={onPointerDown}
               // onPointerMove → Fix-8: native addEventListener (handleNativePointerMove, initDrawCanvas에서 등록)

@@ -1,18 +1,36 @@
 /**
- * T-20260525-foot-PENCHART-FORM-BLACK (+ REOPEN 2026-05-26)
+ * T-20260525-foot-PENCHART-FORM-BLACK (+ REOPEN 2026-05-26 × 3)
  * 펜차트 전체 양식 검정 화면 + 튕겨나감 회귀 수정 검증
  *
  * AC-3: 검정 화면 대신 양식이 정상 렌더링됨 (흰 배경 + 양식 내용)
  * AC-4: 튕겨나감 방지 — 에러 바운더리(fallback UI) + console.error 로깅
  * AC-5: 기존 펜차트 기능 정상 동작 확인 (회귀 없음)
  *
- * REOPEN 2026-05-26 추가 AC:
+ * REOPEN 1 (2026-05-26 09:36) 추가 AC:
  *   AC-R1: form template 이미지 URL console.log 로딩 시작 로그
  *   AC-R2: img.naturalWidth===0 decode 실패 감지 → fallback
  *   AC-R3: ctx.isContextLost() 체크 (initBgCanvas + onload 2곳)
  *          + contextlost 이벤트 핸들러 useEffect
  *          + setBgImgLoadError(false) 를 drawImage 성공 후 호출 (기존: onload 시작 즉시 → 버그)
  *   AC-R4: drawImage try-catch → 실패 시 setBgImgLoadError(true)
+ *
+ * REOPEN 2 (2026-05-26 19:26) 추가 AC:
+ *   AC-R2-1: img.decode() await — CPU decode 완료 보장 후 drawImage
+ *   AC-R2-2: createImageBitmap 타일 분할 — iOS Safari GPU 텍스처 상한(2048px) 초과 대응
+ *   AC-R2-3: stale check — await 중 canvas 재초기화 감지
+ *
+ * REOPEN 3 (2026-05-26 REOPEN 2 근본 수정):
+ *   AC-R3-ROOT: willChange:'transform' 제거 — GPU compositor layer 불투명화가 진짜 원인
+ *
+ *   근본 원인:
+ *     b955a8c(PENCHART-PEN-SLOW, 5/24)에서 willChange:'transform' + desynchronized:true
+ *     동시 추가 → draw canvas가 별도 GPU compositor layer로 승격 → 불투명(alpha-less) GPU 텍스처
+ *     → 투명 픽셀이 BLACK으로 표시 → bgCanvas(양식 이미지)가 가려져 검정화면.
+ *
+ *   수정:
+ *     willChange:'transform' 제거 → GPU compositor layer 미승격 → drawCanvas는 parent
+ *     layer 안에서 투명 합성 → bgCanvas 정상 표시.
+ *     desynchronized:true 유지 — HW 가속(펜 반응 속도)은 유지.
  *
  * 회귀 후보:
  *   - T-20260523-foot-PENCHART-FORM-AUTOFILL (ccba516): canvas 최적화 사이드이펙트
@@ -111,26 +129,30 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
      *
      * 검증: img.onload 블록 시작 후 200자 이내에 setBgImgLoadError(false)가 없어야 함
      *       (drawImage 이후인 충분히 뒤에 있어야 함)
+     *
+     * REOPEN 2: img.onload = async () => { (await img.decode() 추가)
      */
     const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
 
-    const onloadIdx = src.indexOf('img.onload = () => {');
-    expect(onloadIdx).toBeGreaterThan(0);
+    // REOPEN 2: async onload 패턴
+    const onloadIdx = src.indexOf('img.onload = async () => {');
+    expect(onloadIdx, 'img.onload = async () => { 패턴 없음 — REOPEN 2 수정 누락').toBeGreaterThan(0);
 
-    // REOPEN: isContextLost() + naturalWidth 가드 + try-catch 추가로 onload 블록 길이 증가 → 4000자 윈도우
-    const onloadFullBlock = src.slice(onloadIdx, onloadIdx + 4000);
+    // REOPEN 2: tiling 코드로 onload 블록 길이 증가 → 6000자 윈도우
+    const onloadFullBlock = src.slice(onloadIdx, onloadIdx + 6000);
     expect(onloadFullBlock).toContain('setBgImgLoadError(false)');
 
     // onload 시작 200자 이내에는 setBgImgLoadError(false) 없어야 함 (drawImage 이후로 이동됨)
     const onloadEarlyBlock = src.slice(onloadIdx, onloadIdx + 200);
     expect(onloadEarlyBlock).not.toContain('setBgImgLoadError(false)');
 
-    // drawImage 뒤에 setBgImgLoadError(false) 위치 확인
-    // REOPEN: try-catch 블록이 추가되어 drawImage 이후 ~573자 → 750자 윈도우
-    const drawImageIdx = src.indexOf('ctx.drawImage(img, 0, 0, CANVAS_W, canvasH);', onloadIdx);
+    // drawImage 뒤에 setBgImgLoadError(false) 위치 확인 (tiling 또는 fallback 경로 이후)
+    const setBgFalseIdx = src.indexOf('setBgImgLoadError(false)', onloadIdx);
+    expect(setBgFalseIdx).toBeGreaterThan(onloadIdx);
+    // drawImage가 setBgImgLoadError(false) 보다 먼저 나와야 함
+    const drawImageIdx = src.indexOf('ctx.drawImage(img, 0, 0, CANVAS_W, canvasH)', onloadIdx);
     expect(drawImageIdx).toBeGreaterThan(onloadIdx);
-    const afterDrawImage = src.slice(drawImageIdx, drawImageIdx + 750);
-    expect(afterDrawImage).toContain('setBgImgLoadError(false)');
+    expect(drawImageIdx).toBeLessThan(setBgFalseIdx);
   });
 
   test('AC-4: 폴백 UI — data-testid="penchart-bg-load-error" 렌더 조건 확인', () => {
@@ -232,15 +254,19 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
     /**
      * img.onload 발화 후에도 naturalWidth=0이면 이미지 디코드 실패.
      * 일부 Android 브라우저에서 발생 가능 → fallback 표시.
+     * REOPEN 2: async () + await img.decode() 패턴
      */
     const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
 
-    const onloadIdx = src.indexOf('img.onload = () => {');
-    expect(onloadIdx).toBeGreaterThan(0);
+    // REOPEN 2: async onload
+    const onloadIdx = src.indexOf('img.onload = async () => {');
+    expect(onloadIdx, 'img.onload = async () => { 패턴 없음').toBeGreaterThan(0);
     const onloadBlock = src.slice(onloadIdx, onloadIdx + 2500);
 
     expect(onloadBlock).toContain('img.naturalWidth === 0');
     expect(onloadBlock).toContain('img.naturalHeight === 0');
+    // REOPEN 2: await img.decode() 존재
+    expect(onloadBlock).toContain('await img.decode()');
   });
 
   // ── REOPEN AC-R3: ctx.isContextLost() 체크 + contextlost 이벤트 핸들러 ────────
@@ -280,20 +306,70 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
     /**
      * 300DPI 소스 이미지(최대 2481×10524)가 일부 기기 GPU 텍스처 한계를 초과 시
      * drawImage가 exception을 throw하는 경우 catch → setBgImgLoadError(true).
+     * REOPEN 2: createImageBitmap 타일 분할 + catch 블록 포함
      */
     const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
 
-    const onloadIdx = src.indexOf('img.onload = () => {');
-    expect(onloadIdx).toBeGreaterThan(0);
-    const onloadBlock = src.slice(onloadIdx, onloadIdx + 2500);
+    // REOPEN 2: async onload
+    const onloadIdx = src.indexOf('img.onload = async () => {');
+    expect(onloadIdx, 'img.onload = async () => { 패턴 없음').toBeGreaterThan(0);
+    const onloadBlock = src.slice(onloadIdx, onloadIdx + 4000);
 
     // try-catch 블록 내에 ctx.drawImage 존재
     const tryIdx = onloadBlock.indexOf('try {');
     expect(tryIdx).toBeGreaterThan(0);
-    const tryCatchBlock = onloadBlock.slice(tryIdx, tryIdx + 500);
+    // 2000 → 3000: onload 블록에 decode try + draw try 2개 존재.
+    // 첫 try(decode, line ~906)에서 두 번째 try(createImageBitmap, line ~947)까지 ~2200자 거리.
+    const tryCatchBlock = onloadBlock.slice(tryIdx, tryIdx + 3000);
     expect(tryCatchBlock).toContain('ctx.drawImage(img, 0, 0, CANVAS_W, canvasH)');
     expect(tryCatchBlock).toContain('catch');
     expect(tryCatchBlock).toContain('setBgImgLoadError(true)');
+    // REOPEN 2: createImageBitmap 타일 분할 코드 존재
+    expect(tryCatchBlock).toContain('createImageBitmap');
+  });
+
+  // ── REOPEN 3 (REOPEN 2 미해결 근본 수정): willChange:'transform' 제거 ─────────
+  test('AC-R3-ROOT: draw canvas — willChange:"transform" 제거됨 (GPU compositor layer 불투명화 방지)', () => {
+    /**
+     * 근본 원인:
+     *   b955a8c(PENCHART-PEN-SLOW, 5/24)에서 willChange:'transform' + desynchronized:true 동시 추가
+     *   → draw canvas가 별도 GPU compositor layer로 승격 → 불투명(alpha-less) GPU 텍스처
+     *   → 투명 픽셀 = BLACK으로 표시 → bgCanvas(양식 이미지)가 가려져 검정화면.
+     *
+     * 수정: draw canvas style에서 willChange:'transform' 제거
+     *   → GPU compositor layer 미승격 → 투명 합성 정상 동작 → bgCanvas 표시.
+     *   desynchronized:true는 유지 — 펜 반응 HW 가속은 유지.
+     *
+     * 검증: canvasRef가 붙는 draw canvas <canvas> style에 willChange:'transform' 없어야 함
+     */
+    const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
+
+    // draw canvas (canvasRef) 렌더 블록 찾기
+    const drawCanvasIdx = src.indexOf('ref={canvasRef}');
+    expect(drawCanvasIdx, 'draw canvas ref={canvasRef} 없음').toBeGreaterThan(0);
+
+    // canvasRef 이후 300자: style 블록 내에 willChange:'transform' 없어야 함
+    const drawCanvasStyleBlock = src.slice(drawCanvasIdx, drawCanvasIdx + 600);
+    expect(drawCanvasStyleBlock, "draw canvas style에 willChange:'transform' 잔존 — 검정화면 재발 가능!")
+      .not.toContain("willChange: 'transform'");
+
+    // bgCanvasRef(배경 canvas)는 별도 — willChange 없어도 OK (check not mixed up)
+    const bgCanvasIdx = src.indexOf('ref={bgCanvasRef}');
+    expect(bgCanvasIdx, 'bg canvas ref={bgCanvasRef} 없음').toBeGreaterThan(0);
+    expect(bgCanvasIdx).not.toEqual(drawCanvasIdx);
+  });
+
+  test('AC-R3-ROOT: initDrawCanvas — desynchronized:true 유지됨 (HW 가속 펜 반응 보존)', () => {
+    /**
+     * willChange:'transform' 제거 후에도 desynchronized:true는 유지되어야 함.
+     * desynchronized:true는 GPU 텍스처 불투명화 없이 펜 반응 성능을 개선함.
+     */
+    const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
+
+    const initDrawIdx = src.indexOf('const initDrawCanvas = useCallback');
+    expect(initDrawIdx).toBeGreaterThan(0);
+    const drawInitBlock = src.slice(initDrawIdx, initDrawIdx + 300);
+    expect(drawInitBlock).toContain('desynchronized: true');
   });
 
   // ── AC-5: 기존 기능 회귀 없음 ──────────────────────────────────────────────
