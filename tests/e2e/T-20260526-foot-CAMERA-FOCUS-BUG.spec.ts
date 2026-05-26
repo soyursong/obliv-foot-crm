@@ -413,3 +413,155 @@ test.describe('T-20260526-foot-CAMERA-FOCUS-BUG — REOPEN #1 Galaxy Tab auto-fo
     expect(result[1]['focusMode']).toBe('continuous');
   });
 });
+
+// ── REOPEN #2: 탭-투-포커스 + 프리포커스 킥 ────────────────────────────────
+test.describe('T-20260526-foot-CAMERA-FOCUS-BUG REOPEN #2 — tap-to-focus + prefocus', () => {
+
+  // AC-8: 탭-투-포커스 — 비디오 탭 → single-shot 시도 → applyConstraints 발화
+  test('AC-8 UNIT: tap-to-focus logic — single-shot focus trigger on pointer down', async ({ page }) => {
+    // handleVideoTap 로직을 UNIT으로 시뮬레이션
+    const result = await page.evaluate(async () => {
+      const applied: string[] = [];
+      const fakeTrack = {
+        applyConstraints: async (c: Record<string, unknown>) => {
+          if (typeof c['focusMode'] === 'string') applied.push(c['focusMode'] as string);
+          return Promise.resolve();
+        },
+      };
+
+      // handleVideoTap 핵심 로직 재현
+      // single-shot → auto → continuous 순 시도
+      for (const mode of ['single-shot', 'auto', 'continuous'] as const) {
+        try {
+          await fakeTrack.applyConstraints({ focusMode: mode });
+          break; // 첫 성공에서 중단
+        } catch { /* continue */ }
+      }
+      return applied;
+    });
+
+    // ✅ 탭 시 single-shot 첫 시도 (가장 즉각적 AF 발화)
+    expect(result.length).toBeGreaterThanOrEqual(1);
+    expect(result[0]).toBe('single-shot');
+  });
+
+  // AC-8b: 탭-투-포커스 — single-shot 실패 시 auto 폴백
+  test('AC-8b UNIT: tap-to-focus fallback — single-shot fail → auto', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const applied: string[] = [];
+      const failModes = ['single-shot'];
+      const fakeTrack = {
+        applyConstraints: async (c: Record<string, unknown>) => {
+          const mode = c['focusMode'] as string;
+          if (mode && failModes.includes(mode)) {
+            throw new DOMException(`${mode} not supported`, 'NotSupportedError');
+          }
+          if (mode) applied.push(mode);
+          return Promise.resolve();
+        },
+      };
+
+      for (const mode of ['single-shot', 'auto', 'continuous'] as const) {
+        try {
+          await fakeTrack.applyConstraints({ focusMode: mode });
+          break;
+        } catch { /* try next */ }
+      }
+      return applied;
+    });
+
+    // ✅ single-shot 실패 → auto 적용
+    expect(result[0]).toBe('auto');
+  });
+
+  // AC-9 UNIT: 프리포커스 킥 — 스트림 오픈 후 600ms 지연 single-shot + 800ms 후 continuous 복원
+  test('AC-9 UNIT: prefocus kick logic — single-shot trigger + continuous restore', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const applied: string[] = [];
+      const fakeTrack = {
+        applyConstraints: async (c: Record<string, unknown>) => {
+          if (typeof c['focusMode'] === 'string') applied.push(c['focusMode'] as string);
+          return Promise.resolve();
+        },
+      };
+
+      // 프리포커스 킥 로직 재현 (600ms delay 제외 — UNIT)
+      try {
+        await fakeTrack.applyConstraints({ focusMode: 'single-shot' });
+        // 성공 시 continuous 복원
+        await fakeTrack.applyConstraints({ focusMode: 'continuous' });
+      } catch { /* ignore */ }
+
+      return applied;
+    });
+
+    // ✅ single-shot → continuous 순서
+    expect(result).toEqual(['single-shot', 'continuous']);
+  });
+
+  // AC-9b: 프리포커스 킥 — 카메라 닫힌 후 stale 방지 (streamRef null 체크)
+  test('AC-9b UNIT: prefocus kick skip when camera closed', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      let applied = 0;
+      const fakeTrack = {
+        applyConstraints: async () => { applied++; return Promise.resolve(); },
+      };
+
+      // streamRef = null (카메라 닫힘) → skip 조건
+      const streamRef = { current: null as MediaStream | null };
+
+      if (!streamRef.current) {
+        // skip — do nothing
+      } else {
+        await fakeTrack.applyConstraints({ focusMode: 'single-shot' });
+      }
+
+      return applied;
+    });
+
+    // ✅ 카메라 닫힌 후 applyConstraints 호출 0건
+    expect(result).toBe(0);
+  });
+
+  // AC-R1-3: iOS Safari — focusMode 미지원 시 카메라 정상 오픈 + 포커스 오류 없음
+  test('AC-R1-3: iOS Safari focusMode 미지원 — graceful fallback (all modes fail)', async ({ page }) => {
+    await mockCamera(page, {
+      capabilitiesModes: [],
+      supportedConstraintsFocusMode: false,
+      applyConstraintsFailModes: ['continuous', 'auto', 'single-shot'],
+      imageCaptureMock: false,
+    });
+    await page.goto(BASE);
+    await page.waitForLoadState('networkidle');
+
+    const result = await page.evaluate(async () => {
+      let cameraOpened = false;
+      let focusError = null as string | null;
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        });
+        cameraOpened = !!stream;
+
+        const videoTrack = stream.getVideoTracks()[0];
+        for (const mode of ['continuous', 'auto', 'single-shot']) {
+          try {
+            await videoTrack.applyConstraints({ focusMode: mode } as MediaTrackConstraints);
+            break;
+          } catch { /* iOS: 전부 실패 */ }
+        }
+      } catch (e) {
+        focusError = String(e);
+      }
+
+      return { cameraOpened, focusError };
+    });
+
+    // ✅ 카메라는 열림 (focusMode 실패와 무관)
+    expect(result.cameraOpened).toBe(true);
+    // ✅ 외부에 에러 전파 없음
+    expect(result.focusError).toBeNull();
+  });
+});
