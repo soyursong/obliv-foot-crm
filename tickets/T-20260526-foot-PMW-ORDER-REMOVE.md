@@ -11,7 +11,7 @@ build_passed: true
 db_changed: false
 db_rollback_sql: ""
 spec_file: tests/e2e/T-20260526-foot-PMW-ORDER-REMOVE.spec.ts
-commit: ""
+commit: "b39702c"
 ---
 
 ## 개요
