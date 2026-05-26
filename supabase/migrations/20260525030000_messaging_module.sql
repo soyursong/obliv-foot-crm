@@ -936,11 +936,10 @@ COMMIT;
 --        FROM cron.job
 --        WHERE jobname LIKE 'foot-%'
 --        ORDER BY jobname;
---        → 4개 행 반환
+--        → 2개 행 반환 (morning/retry 는 S2 마이그레이션에서 별도 등록)
 --        → foot-notif-reminder-d1: active=TRUE
---        → foot-notif-reminder-morning: active=FALSE
---        → foot-notif-retry-failed: active=FALSE
 --        → foot-ef-send-notification-keep-warm: active=TRUE
+--        (foot-notif-reminder-morning, foot-notif-retry-failed 는 이 마이그에서 미등록 → S2 예정)
 --
 -- [ ] 5. 트리거 등록 확인
 --        SELECT trigger_name, event_manipulation, action_timing

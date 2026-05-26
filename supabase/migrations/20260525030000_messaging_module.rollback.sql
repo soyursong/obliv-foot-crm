@@ -17,15 +17,13 @@ BEGIN;
 -- ============================================================
 -- STEP 1: pg_cron 작업 해제
 -- ============================================================
+-- 주의: cron.job 직접 쿼리 권한 없음 (forward migration SECTION 15-A 동일 사유).
+--       개별 DO 블록으로 처리. 작업이 없으면 EXCEPTION → NULL 처리.
 
-SELECT cron.unschedule(jobname)
-  FROM cron.job
- WHERE jobname IN (
-   'foot-notif-reminder-d1',
-   'foot-notif-reminder-morning',
-   'foot-notif-retry-failed',
-   'foot-ef-send-notification-keep-warm'
- );
+DO $$ BEGIN PERFORM cron.unschedule('foot-notif-reminder-d1'); EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN PERFORM cron.unschedule('foot-notif-reminder-morning'); EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN PERFORM cron.unschedule('foot-notif-retry-failed'); EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN PERFORM cron.unschedule('foot-ef-send-notification-keep-warm'); EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- STEP 2: 트리거 제거
