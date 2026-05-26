@@ -3,12 +3,15 @@ id: T-20260526-foot-DOC-FORM-7FIX
 title: "풋센터 서류 양식 7종 누락·오류 수정 — 납입증명서 병원장 정보+날짜 완결"
 domain: foot
 priority: P2
-status: in_progress
-deploy_ready: false
+status: deploy-ready
+deploy_ready: true
 build_ok: true
+build_passed: true
 db_change: false
 spec_file: tests/e2e/T-20260526-foot-DOC-FORM-7FIX.spec.ts
+spec_added: true
 commit: d23d8a7
+spec_commit: d06dc9c
 created_at: 2026-05-26
 completed_at: 2026-05-26
 hotfix: false
@@ -16,9 +19,10 @@ deadline: 2026-06-02
 reporter: 김주연 총괄
 risk_verdict: GO_WARN
 risk_reason: "2/5 — BL(주민번호 하이픈 포맷팅·도장 위치 로직 변경 — 의료서류 정확성 직결)"
-qa_result: fail
-qa_fail_reason: spec_missing
-qa_fail_phase: precheck
+qa_result: ""
+qa_fail_reason: ""
+qa_fail_phase: ""
+deploy_ready_at: "2026-05-27T09:10:00+09:00"
 related_tickets:
   - T-20260526-foot-DOC-FORM-REVISE
 ---
@@ -51,6 +55,17 @@ DOC-FORM-REVISE(8c65e8d) 후속 — 납입증명서 AC-7 잔여 2항목 완결.
 - AC-5 진료의뢰서 4필드 자동기입: ✅ (8c65e8d)
 - AC-6 진단서 병명 정정: ✅ (8c65e8d)
 - AC-7 납입증명서 전항: ✅ (8c65e8d + d23d8a7)
+
+---
+
+## 후속 업데이트 — 2026-05-27 deploy-ready 재마킹
+
+### FIX-REQUEST 이행 완료
+
+- **spec_commit**: d06dc9c — `tests/e2e/T-20260526-foot-DOC-FORM-7FIX.spec.ts` 생성 완료
+- E2E spec: 5개 시나리오 / 30+ TC (formatRrn 스펙 + bindHtmlTemplate 통합 + 납입증명서 AC-7 검증)
+- `qa_result` 초기화 → supervisor QA 재진입 요청
+- **deploy_ready_at**: 2026-05-27 09:10 KST
 
 ---
 
