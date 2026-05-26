@@ -4,6 +4,10 @@
 //   AC-1: 드롭다운 → 사이드 메뉴 클릭 형태
 //   AC-2: 리스트 행 높이/간격 축소 (컴팩트)
 //   AC-3: [서류] → [원장님] 라벨 변경
+// T-20260526-foot-PHRASE-SLASH:
+//   AC-4: 단축어(shortcut_key) 입력 필드 추가 + 중복 경고
+// T-20260526-foot-MEDCHART-SYNC:
+//   phrase_type 분리: pen_chart(펜차트) / medical_chart(진료차트) 구분 관리
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -32,24 +36,36 @@ interface PhraseTemplate {
   category: string;
   name: string;
   content: string;
+  shortcut_key: string | null;
   is_active: boolean;
   sort_order: number;
+  phrase_type: 'pen_chart' | 'medical_chart';
 }
 
 interface PhraseForm {
   category: string;
   name: string;
   content: string;
+  shortcut_key: string;
   is_active: boolean;
   sort_order: number;
+  phrase_type: 'pen_chart' | 'medical_chart';
 }
 
 const EMPTY_FORM: PhraseForm = {
   category: 'charting',
   name: '',
   content: '',
+  shortcut_key: '',
   is_active: true,
   sort_order: 0,
+  phrase_type: 'pen_chart',
+};
+
+// T-20260526-foot-MEDCHART-SYNC: 상용구 유형 라벨
+const PHRASE_TYPE_LABELS: Record<string, string> = {
+  pen_chart: '펜차트',
+  medical_chart: '진료차트',
 };
 
 // AC-3: document '서류' → '원장님'
@@ -78,7 +94,7 @@ function usePhraseTemplates() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('phrase_templates')
-        .select('id, category, name, content, is_active, sort_order')
+        .select('id, category, name, content, shortcut_key, is_active, sort_order, phrase_type')
         .order('sort_order', { ascending: true });
       if (error) throw error;
       return (data ?? []) as PhraseTemplate[];
@@ -94,8 +110,10 @@ function useUpsertPhrase() {
         category: form.category,
         name: form.name,
         content: form.content,
+        shortcut_key: form.shortcut_key.trim() || null,
         is_active: form.is_active,
         sort_order: form.sort_order,
+        phrase_type: form.phrase_type,
         updated_at: new Date().toISOString(),
       };
       if (id) {
@@ -141,6 +159,8 @@ export default function PhrasesTab() {
   const [editing, setEditing] = useState<PhraseTemplate | null>(null);
   const [form, setForm] = useState<PhraseForm>(EMPTY_FORM);
   const [filterCat, setFilterCat] = useState<string>('all');
+  // T-20260526-foot-MEDCHART-SYNC: phrase_type 필터 ('all' | 'pen_chart' | 'medical_chart')
+  const [filterPhraseType, setFilterPhraseType] = useState<string>('all');
 
   function openAdd() {
     setEditing(null);
@@ -154,8 +174,10 @@ export default function PhrasesTab() {
       category: p.category,
       name: p.name,
       content: p.content,
+      shortcut_key: p.shortcut_key ?? '',
       is_active: p.is_active,
       sort_order: p.sort_order,
+      phrase_type: p.phrase_type ?? 'pen_chart',
     });
     setOpen(true);
   }
@@ -163,6 +185,17 @@ export default function PhrasesTab() {
   async function handleSave() {
     if (!form.name.trim()) return toast.error('상용구 이름을 입력해주세요.');
     if (!form.content.trim()) return toast.error('내용을 입력해주세요.');
+    // AC-4: 단축어 중복 경고 (같은 shortcut_key가 다른 상용구에 이미 있으면 경고)
+    const trimmedKey = form.shortcut_key.trim();
+    if (trimmedKey) {
+      const dup = phrases.find(
+        (p) => p.shortcut_key === trimmedKey && p.id !== editing?.id,
+      );
+      if (dup) {
+        toast.error(`단축어 //${trimmedKey} 는 이미 "${dup.name}"에서 사용 중입니다.`);
+        return;
+      }
+    }
     await upsert.mutateAsync({ id: editing?.id, form });
     setOpen(false);
   }
@@ -172,8 +205,12 @@ export default function PhrasesTab() {
     del.mutate(id);
   }
 
-  const displayed =
-    filterCat === 'all' ? phrases : phrases.filter((p) => p.category === filterCat);
+  // T-20260526-foot-MEDCHART-SYNC: phrase_type + category 복합 필터
+  const displayed = phrases.filter((p) => {
+    const catMatch = filterCat === 'all' || p.category === filterCat;
+    const typeMatch = filterPhraseType === 'all' || (p.phrase_type ?? 'pen_chart') === filterPhraseType;
+    return catMatch && typeMatch;
+  });
 
   if (isLoading)
     return (
@@ -184,11 +221,31 @@ export default function PhrasesTab() {
 
   return (
     <div className="space-y-3">
-      {/* 헤더: 추가 버튼만 (카운트는 사이드 메뉴에 표시) */}
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-muted-foreground">
-          {filterCat === 'all' ? `전체 ${phrases.length}개` : `${CATEGORY_LABELS[filterCat] ?? filterCat} ${displayed.length}개`}
-        </span>
+      {/* 헤더: 상용구 유형 필터 + 추가 버튼 */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        {/* T-20260526-foot-MEDCHART-SYNC: phrase_type 세그먼트 필터 */}
+        <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-0.5">
+          {(['all', 'pen_chart', 'medical_chart'] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setFilterPhraseType(t)}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                filterPhraseType === t
+                  ? 'bg-background shadow-sm text-teal-700 font-semibold'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              data-testid={`phrase-type-filter-${t}`}
+            >
+              {t === 'all' ? '전체' : PHRASE_TYPE_LABELS[t]}
+              <span className="ml-1 text-[10px] text-muted-foreground">
+                {t === 'all'
+                  ? phrases.length
+                  : phrases.filter((p) => (p.phrase_type ?? 'pen_chart') === t).length}
+              </span>
+            </button>
+          ))}
+        </div>
         <Button size="sm" variant="outline" onClick={openAdd} data-testid="phrase-add-btn">
           <Plus className="h-3.5 w-3.5 mr-1" />
           상용구 추가
@@ -253,6 +310,17 @@ export default function PhrasesTab() {
                       <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">
                         {CATEGORY_LABELS[p.category] ?? p.category}
                       </Badge>
+                      {/* T-20260526-foot-MEDCHART-SYNC: phrase_type 배지 */}
+                      <Badge
+                        variant="outline"
+                        className={`text-[9px] h-4 px-1 shrink-0 ${
+                          (p.phrase_type ?? 'pen_chart') === 'medical_chart'
+                            ? 'text-emerald-700 border-emerald-200 bg-emerald-50'
+                            : 'text-blue-600 border-blue-200 bg-blue-50'
+                        }`}
+                      >
+                        {PHRASE_TYPE_LABELS[p.phrase_type ?? 'pen_chart']}
+                      </Badge>
                       <span
                         className={`text-xs font-medium truncate ${
                           !p.is_active ? 'text-muted-foreground line-through' : ''
@@ -260,6 +328,11 @@ export default function PhrasesTab() {
                       >
                         {p.name}
                       </span>
+                      {p.shortcut_key && (
+                        <Badge variant="outline" className="text-[10px] py-0 px-1 shrink-0 font-mono text-teal-600 border-teal-200">
+                          //{p.shortcut_key}
+                        </Badge>
+                      )}
                       {!p.is_active && (
                         <Badge variant="outline" className="text-[10px] py-0 shrink-0">비활성</Badge>
                       )}
@@ -302,6 +375,39 @@ export default function PhrasesTab() {
             <DialogTitle>{editing ? '상용구 수정' : '상용구 추가'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            {/* T-20260526-foot-MEDCHART-SYNC: 상용구 유형 선택 (전체 폭) */}
+            <div>
+              <Label className="text-xs font-semibold">
+                상용구 유형{' '}
+                <span className="text-muted-foreground font-normal text-[11px]">
+                  — 어디서 사용하는 상용구인지 선택
+                </span>
+              </Label>
+              <div className="mt-1 flex gap-2">
+                {(['pen_chart', 'medical_chart'] as const).map((t) => (
+                  <label key={t} className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="phrase_type"
+                      value={t}
+                      checked={form.phrase_type === t}
+                      onChange={() => setForm((f) => ({ ...f, phrase_type: t }))}
+                      className="accent-teal-600"
+                    />
+                    <span className={`text-sm px-2 py-0.5 rounded font-medium ${
+                      t === 'medical_chart'
+                        ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                        : 'text-blue-700 bg-blue-50 border border-blue-200'
+                    }`}>
+                      {PHRASE_TYPE_LABELS[t]}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {t === 'pen_chart' ? '(진료메모/서류 입력 시)' : '(진료차트 임상경과 입력 시)'}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">카테고리</Label>
@@ -336,6 +442,41 @@ export default function PhrasesTab() {
                 className="mt-1"
                 data-testid="phrase-name-input"
               />
+            </div>
+            {/* AC-4: 단축어 입력 필드 (T-20260526-foot-PHRASE-SLASH) */}
+            <div>
+              <Label className="text-xs">
+                단축어{' '}
+                <span className="text-muted-foreground font-normal">
+                  — 텍스트 입력 시 <code className="bg-muted px-0.5 rounded text-[10px]">//단축어</code> 로 자동완성
+                </span>
+              </Label>
+              <div className="mt-1 flex items-center gap-1">
+                <span className="text-sm text-muted-foreground select-none font-mono">//</span>
+                <Input
+                  value={form.shortcut_key}
+                  onChange={(e) => {
+                    // 공백 제거, 소문자 통일 (영문/숫자/한글 허용)
+                    const val = e.target.value.replace(/\s/g, '');
+                    setForm((f) => ({ ...f, shortcut_key: val }));
+                  }}
+                  placeholder="예) 족통감소"
+                  className="flex-1 font-mono"
+                  data-testid="phrase-shortcut-input"
+                />
+              </div>
+              {/* 중복 실시간 힌트 */}
+              {(() => {
+                const key = form.shortcut_key.trim();
+                if (!key) return null;
+                const dup = phrases.find((p) => p.shortcut_key === key && p.id !== editing?.id);
+                if (!dup) return null;
+                return (
+                  <p className="mt-1 text-[11px] text-destructive">
+                    ⚠️ 이미 &quot;{dup.name}&quot;에서 사용 중인 단축어입니다.
+                  </p>
+                );
+              })()}
             </div>
             <div>
               <Label className="text-xs">내용 *</Label>

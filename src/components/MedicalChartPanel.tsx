@@ -26,6 +26,12 @@
  *   AC-4: 진료차트 모든 placeholder/예시 멘트 연한 회색 처리
  *   AC-5: 기존 기능 무영향 (MEDCHART-REVAMP 타임라인·저장·Drawer 동작 유지)
  *
+ * T-20260526-foot-MEDCHART-SYNC:
+ *   AC-1: 진료차트 상용구(phrase_type='medical_chart')만 연동 — 펜차트 상용구 분리
+ *   AC-2: 치료메모 탭 — customer_treatment_memos 읽기전용 뷰어 (우측 패널)
+ *   AC-3: 진료내역 탭 — check_ins 방문 이력 읽기전용 뷰어 (우측 패널)
+ *   AC-4: 진료이미지 탭 — photos Storage 썸네일 뷰어 (우측 패널)
+ *
  * 이전 버전:
  *   T-20260515-foot-MEDICAL-CHART-V1 — 최초 구현 (6항목)
  *   T-20260516-foot-MEDICAL-CHART-EXPAND — 전체화면 전환 (이 버전으로 대체)
@@ -39,7 +45,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { BookOpen, ChevronLeft, ChevronRight, Edit2, FlaskConical, Loader2, Plus, Stethoscope, X } from 'lucide-react';
+import { BookOpen, Camera, ChevronLeft, ChevronRight, ClipboardList, Edit2, FlaskConical, History, Loader2, Plus, Stethoscope, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -98,6 +104,33 @@ interface VisitPayment {
   amount: number;
   memo: string | null;
   method: string;
+}
+
+// T-20260526-foot-MEDCHART-SYNC: 치료메모 항목
+interface TreatmentMemoEntry {
+  id: string;
+  content: string;
+  created_by_name: string | null;
+  created_at: string;
+  memo_type?: string | null;
+}
+
+// T-20260526-foot-MEDCHART-SYNC: 방문 이력 항목 (진료내역)
+interface VisitHistoryEntry {
+  id: string;
+  checked_in_at: string;
+  treatment_kind: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  treatment_memo: any | null;  // JSONB { details: string }
+  doctor_note: string | null;
+  status: string;
+}
+
+// T-20260526-foot-MEDCHART-SYNC: 진료이미지 항목
+interface TreatmentImage {
+  path: string;
+  signedUrl: string;
+  name: string;
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -176,9 +209,20 @@ export default function MedicalChartPanel({
   const [phrasePopoverVisible, setPhrasePopoverVisible] = useState(false);
   const [phraseQuery, setPhraseQuery] = useState('');
 
-  // ── 우측 패널 탭 (AC-1: 처방세트 / 상용구) ────────────────────────────────
-  const [rightTab, setRightTab] = useState<'rx' | 'phrase'>('rx');
+  // ── 우측 패널 탭 (AC-1 + MEDCHART-SYNC: 처방세트 / 상용구 / 치료메모 / 진료내역 / 진료이미지)
+  const [rightTab, setRightTab] = useState<'rx' | 'phrase' | 'treat_memo' | 'visit_hist' | 'images'>('rx');
   const [selectedPhraseIds, setSelectedPhraseIds] = useState<Set<number>>(new Set());
+
+  // T-20260526-foot-MEDCHART-SYNC: 참고 데이터 상태
+  const [treatMemos, setTreatMemos] = useState<TreatmentMemoEntry[]>([]);
+  const [treatMemosLoaded, setTreatMemosLoaded] = useState(false);
+  const [treatMemosLoading, setTreatMemosLoading] = useState(false);
+  const [visitHistory, setVisitHistory] = useState<VisitHistoryEntry[]>([]);
+  const [visitHistLoaded, setVisitHistLoaded] = useState(false);
+  const [visitHistLoading, setVisitHistLoading] = useState(false);
+  const [treatImages, setTreatImages] = useState<TreatmentImage[]>([]);
+  const [treatImagesLoaded, setTreatImagesLoaded] = useState(false);
+  const [treatImagesLoading, setTreatImagesLoading] = useState(false);
 
   // ── 데이터 로드 ──────────────────────────────────────────────────────────────
 
@@ -200,11 +244,13 @@ export default function MedicalChartPanel({
           .eq('customer_id', customerId)
           .eq('clinic_id', clinicId)
           .order('visit_date', { ascending: false }),
+        // T-20260526-foot-MEDCHART-SYNC: 진료차트 상용구(medical_chart)만 조회
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
           .from('phrase_templates')
           .select('id,category,name,content,shortcut_key,is_active')
           .eq('is_active', true)
+          .eq('phrase_type', 'medical_chart')
           .order('sort_order', { ascending: true }),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
@@ -299,6 +345,13 @@ export default function MedicalChartPanel({
       setPhrasePopoverVisible(false);
       setSelectedPhraseIds(new Set());
       setRightTab('rx');
+      // T-20260526-foot-MEDCHART-SYNC: 참고 데이터 리셋 (새 고객 열릴 때마다)
+      setTreatMemos([]);
+      setTreatMemosLoaded(false);
+      setVisitHistory([]);
+      setVisitHistLoaded(false);
+      setTreatImages([]);
+      setTreatImagesLoaded(false);
     } else {
       setCustomer(null);
       setCharts([]);
@@ -493,6 +546,84 @@ export default function MedicalChartPanel({
     onOpenChange(false);
     navigate('/admin/doctor-tools');
   }
+
+  // ── T-20260526-foot-MEDCHART-SYNC: 치료메모 lazy load ─────────────────────────
+  const loadTreatMemos = useCallback(async () => {
+    if (!customerId || treatMemosLoaded || treatMemosLoading) return;
+    setTreatMemosLoading(true);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any)
+        .from('customer_treatment_memos')
+        .select('id, content, created_by_name, created_at, memo_type')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      setTreatMemos((data as TreatmentMemoEntry[]) ?? []);
+    } catch {
+      // graceful — 테이블 없거나 오류 시 빈 배열 유지
+    } finally {
+      setTreatMemosLoaded(true);
+      setTreatMemosLoading(false);
+    }
+  }, [customerId, treatMemosLoaded, treatMemosLoading]);
+
+  // ── T-20260526-foot-MEDCHART-SYNC: 방문 이력 lazy load ────────────────────────
+  const loadVisitHistory = useCallback(async () => {
+    if (!customerId || visitHistLoaded || visitHistLoading) return;
+    setVisitHistLoading(true);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any)
+        .from('check_ins')
+        .select('id, checked_in_at, treatment_kind, treatment_memo, doctor_note, status')
+        .eq('customer_id', customerId)
+        .order('checked_in_at', { ascending: false })
+        .limit(30);
+      setVisitHistory((data as VisitHistoryEntry[]) ?? []);
+    } catch {
+      // graceful
+    } finally {
+      setVisitHistLoaded(true);
+      setVisitHistLoading(false);
+    }
+  }, [customerId, visitHistLoaded, visitHistLoading]);
+
+  // ── T-20260526-foot-MEDCHART-SYNC: 진료이미지 lazy load ───────────────────────
+  const loadTreatImages = useCallback(async () => {
+    if (!customerId || treatImagesLoaded || treatImagesLoading) return;
+    setTreatImagesLoading(true);
+    try {
+      const storagePath = `customer/${customerId}/treatment-images`;
+      const { data: files } = await supabase.storage
+        .from('photos')
+        .list(storagePath, { limit: 50, sortBy: { column: 'created_at', order: 'desc' } });
+      if (files && files.length > 0) {
+        const paths = files
+          .filter((f) => f.name && !f.name.startsWith('.'))
+          .map((f) => `${storagePath}/${f.name}`);
+        const { data: urls } = await supabase.storage.from('photos').createSignedUrls(paths, 3600);
+        setTreatImages(
+          (urls ?? [])
+            .filter((u) => u.signedUrl)
+            .map((u, i) => ({ path: paths[i], signedUrl: u.signedUrl as string, name: files[i]?.name ?? '' }))
+        );
+      }
+    } catch {
+      // graceful
+    } finally {
+      setTreatImagesLoaded(true);
+      setTreatImagesLoading(false);
+    }
+  }, [customerId, treatImagesLoaded, treatImagesLoading]);
+
+  // ── 탭 전환 시 lazy load 트리거 ────────────────────────────────────────────────
+  useEffect(() => {
+    if (rightTab === 'treat_memo') loadTreatMemos();
+    else if (rightTab === 'visit_hist') loadVisitHistory();
+    else if (rightTab === 'images') loadTreatImages();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rightTab]);
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -960,40 +1091,55 @@ export default function MedicalChartPanel({
                 </div>
               </div>
 
-              {/* ── 우측 콘텐츠 패널 — 처방세트 / 상용구 탭 (AC-1) ─────────────── */}
+              {/* ── 우측 콘텐츠 패널 — 처방세트 / 상용구 / 치료메모 / 진료내역 / 진료이미지 탭 ─ */}
               <div
                 className="w-72 flex-shrink-0 flex flex-col bg-muted/5"
                 data-testid="medical-chart-right-panel"
               >
-                {/* 탭 헤더 */}
+                {/* 탭 헤더 — 5개 아이콘+라벨 컴팩트 */}
                 <div className="flex-none border-b">
+                  {/* 상단 행: 처방세트 / 상용구 (기존) */}
+                  <div className="flex border-b border-border/30">
+                    {([
+                      { key: 'rx', icon: <FlaskConical className="h-3 w-3" />, label: '처방세트' },
+                      { key: 'phrase', icon: <BookOpen className="h-3 w-3" />, label: '상용구' },
+                    ] as const).map(({ key, icon, label }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setRightTab(key)}
+                        className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-semibold transition-colors border-b-2 ${
+                          rightTab === key
+                            ? 'border-teal-500 text-teal-700 bg-background'
+                            : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30'
+                        }`}
+                        data-testid={`right-panel-tab-${key}`}
+                      >
+                        {icon}{label}
+                      </button>
+                    ))}
+                  </div>
+                  {/* 하단 행: 치료메모 / 진료내역 / 진료이미지 (T-20260526-foot-MEDCHART-SYNC) */}
                   <div className="flex">
-                    <button
-                      type="button"
-                      onClick={() => setRightTab('rx')}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-semibold transition-colors border-b-2 ${
-                        rightTab === 'rx'
-                          ? 'border-teal-500 text-teal-700 bg-background'
-                          : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30'
-                      }`}
-                      data-testid="right-panel-tab-rx"
-                    >
-                      <FlaskConical className="h-3.5 w-3.5" />
-                      처방세트
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRightTab('phrase')}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-semibold transition-colors border-b-2 ${
-                        rightTab === 'phrase'
-                          ? 'border-teal-500 text-teal-700 bg-background'
-                          : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30'
-                      }`}
-                      data-testid="right-panel-tab-phrase"
-                    >
-                      <BookOpen className="h-3.5 w-3.5" />
-                      상용구
-                    </button>
+                    {([
+                      { key: 'treat_memo', icon: <ClipboardList className="h-3 w-3" />, label: '치료메모' },
+                      { key: 'visit_hist', icon: <History className="h-3 w-3" />, label: '진료내역' },
+                      { key: 'images', icon: <Camera className="h-3 w-3" />, label: '진료이미지' },
+                    ] as const).map(({ key, icon, label }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setRightTab(key)}
+                        className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-semibold transition-colors border-b-2 ${
+                          rightTab === key
+                            ? 'border-teal-500 text-teal-700 bg-background'
+                            : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30'
+                        }`}
+                        data-testid={`right-panel-tab-${key}`}
+                      >
+                        {icon}{label}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -1094,6 +1240,163 @@ export default function MedicalChartPanel({
                                 </p>
                               </div>
                             </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {/* ── T-20260526-foot-MEDCHART-SYNC: 치료메모 탭 ─────────────── */}
+                  {rightTab === 'treat_memo' && (
+                    <div className="p-3 space-y-2" data-testid="right-panel-treat-memo-content">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold text-muted-foreground">
+                          치료메모 이력 (읽기전용)
+                        </span>
+                        <span className="text-[9px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">
+                          2번차트 3구역
+                        </span>
+                      </div>
+                      {treatMemosLoading ? (
+                        <div className="flex justify-center py-6">
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : treatMemos.length === 0 ? (
+                        <div className="rounded-lg border border-dashed p-4 text-[11px] text-muted-foreground text-center">
+                          등록된 치료메모 없음
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {treatMemos.map((memo) => (
+                            <div
+                              key={memo.id}
+                              className="rounded border bg-blue-50/40 border-blue-100 px-2.5 py-2 space-y-1"
+                              data-testid="treat-memo-item"
+                            >
+                              <p className="text-[11px] text-gray-800 whitespace-pre-wrap leading-relaxed">{memo.content}</p>
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-[9px] text-muted-foreground">
+                                  {memo.created_by_name ?? '알 수 없음'}
+                                </span>
+                                <span className="text-[9px] text-muted-foreground tabular-nums">
+                                  {fmtDateShort(memo.created_at)}
+                                </span>
+                              </div>
+                              {memo.memo_type && (
+                                <span className="text-[9px] text-blue-600 bg-blue-100 rounded px-1 py-0.5">
+                                  {memo.memo_type}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── T-20260526-foot-MEDCHART-SYNC: 진료내역 탭 ──────────────── */}
+                  {rightTab === 'visit_hist' && (
+                    <div className="p-3 space-y-2" data-testid="right-panel-visit-hist-content">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold text-muted-foreground">
+                          방문 진료내역 (읽기전용)
+                        </span>
+                        <span className="text-[9px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">
+                          2번차트 1구역
+                        </span>
+                      </div>
+                      {visitHistLoading ? (
+                        <div className="flex justify-center py-6">
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : visitHistory.length === 0 ? (
+                        <div className="rounded-lg border border-dashed p-4 text-[11px] text-muted-foreground text-center">
+                          방문 기록 없음
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {visitHistory.map((ci) => {
+                            const treatDetails = (ci.treatment_memo?.details ?? '').trim();
+                            const hasTreat = !!treatDetails;
+                            const hasDoc = !!ci.doctor_note?.trim();
+                            const isCancelled = ci.status === 'cancelled';
+                            return (
+                              <div
+                                key={ci.id}
+                                className={`rounded border ${isCancelled ? 'opacity-50 border-gray-200' : 'border-gray-200 bg-white'}`}
+                                data-testid="visit-hist-item"
+                              >
+                                <div className="px-2.5 py-1.5">
+                                  <div className="flex items-center justify-between gap-1 mb-0.5">
+                                    <span className="text-[11px] font-semibold text-teal-700 tabular-nums">
+                                      {fmtDateShort(ci.checked_in_at)}
+                                    </span>
+                                    {isCancelled && (
+                                      <span className="text-[9px] text-red-500 bg-red-50 rounded px-1">취소</span>
+                                    )}
+                                  </div>
+                                  {ci.treatment_kind && (
+                                    <p className="text-[11px] text-gray-700 truncate">{ci.treatment_kind}</p>
+                                  )}
+                                  {hasTreat && (
+                                    <div className="mt-1">
+                                      <span className="text-[9px] font-semibold text-blue-600 uppercase tracking-wide">치료메모</span>
+                                      <p className="text-[10px] text-gray-700 line-clamp-2 whitespace-pre-wrap mt-0.5">{treatDetails}</p>
+                                    </div>
+                                  )}
+                                  {hasDoc && (
+                                    <div className="mt-1">
+                                      <span className="text-[9px] font-semibold text-violet-600 uppercase tracking-wide">진료메모</span>
+                                      <p className="text-[10px] text-gray-700 line-clamp-2 whitespace-pre-wrap mt-0.5">{ci.doctor_note}</p>
+                                    </div>
+                                  )}
+                                  {!ci.treatment_kind && !hasTreat && !hasDoc && (
+                                    <p className="text-[10px] text-muted-foreground">기록 없음</p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── T-20260526-foot-MEDCHART-SYNC: 진료이미지 탭 ─────────────── */}
+                  {rightTab === 'images' && (
+                    <div className="p-3 space-y-2" data-testid="right-panel-images-content">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold text-muted-foreground">
+                          진료이미지 (읽기전용)
+                        </span>
+                        <span className="text-[9px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">
+                          2번차트 1구역
+                        </span>
+                      </div>
+                      {treatImagesLoading ? (
+                        <div className="flex justify-center py-6">
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : treatImages.length === 0 ? (
+                        <div className="rounded-lg border border-dashed p-4 text-[11px] text-muted-foreground text-center">
+                          등록된 진료이미지 없음
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {treatImages.map((img) => (
+                            <button
+                              key={img.path}
+                              type="button"
+                              onClick={() => window.open(img.signedUrl, '_blank')}
+                              className="relative rounded overflow-hidden border border-gray-200 hover:border-teal-400 transition-colors aspect-square bg-muted"
+                              title={img.name}
+                              data-testid="treat-image-thumb"
+                            >
+                              <img
+                                src={img.signedUrl}
+                                alt={img.name}
+                                className="w-full h-full object-cover"
+                              />
+                            </button>
                           ))}
                         </div>
                       )}
