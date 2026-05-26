@@ -8,6 +8,10 @@
  *         - 진료일 / 진단명 / 치료(결제내역 연동) / 치료사차트 / 임상경과(상용구) / 진료메모(원장전용) / 처방내역(세트)
  *   AC-4: 경과 타임라인 좌측 배치 (최신 상단, 날짜 클릭 → 우측 폼 전환)
  *
+ * T-20260526-foot-PHRASE-SLASH:
+ *   AC-2/3: 임상경과 단축어 트리거 # → // 전환
+ *           (예: //족통감소 입력 시 팝오버, 선택 시 문구 대체)
+ *
  * T-20260522-foot-LASER-TIMER:
  *   AC-1: 치료메모 상단 타이머 버튼 [5분] [15분] [20분] + 카운트다운
  *   AC-2: ends_at 기준 카운트다운 (탭 비활성 대응 — 서버시각 앵커)
@@ -26,7 +30,7 @@ import { createPortal } from 'react-dom';
 import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { BookOpen, ChevronRight, Loader2, Plus, Stethoscope, X } from 'lucide-react';
+import { BookOpen, ChevronLeft, ChevronRight, Loader2, Plus, Stethoscope, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -322,6 +326,11 @@ export default function MedicalChartPanel({
 
   const handleSave = async () => {
     if (!customerId || !clinicId || !formDate) return;
+    // T-20260526-foot-NAV-ARROW-DUMMY: 더미 차트는 저장 불가
+    if (selectedChartId?.startsWith('__dummy__')) {
+      toast.error('더미 데이터는 저장할 수 없습니다 (실제 고객 데이터 없음)');
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
@@ -399,12 +408,14 @@ export default function MedicalChartPanel({
 
   // ── 임상경과 상용구 ────────────────────────────────────────────────────────────
 
+  // T-20260526-foot-PHRASE-SLASH AC-2/3: `//` 트리거 (기존 `#` 대체)
   function handleClinicalChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const value = e.target.value;
     setFormClinical(value);
     const cursor = e.target.selectionStart ?? value.length;
     const textBefore = value.substring(0, cursor);
-    const match = textBefore.match(/#(\w*)$/);
+    // `//` 입력 후 이어지는 문자를 단축어 query로 캡처
+    const match = textBefore.match(/\/\/([^\s/]*)$/);
     if (match) {
       setPhraseQuery(match[1]);
       setPhrasePopoverVisible(true);
@@ -426,7 +437,8 @@ export default function MedicalChartPanel({
     const cursor = textarea?.selectionStart ?? formClinical.length;
     const textBefore = formClinical.substring(0, cursor);
     const textAfter = formClinical.substring(cursor);
-    const match = textBefore.match(/#(\w*)$/);
+    // `//query` 패턴을 상용구 문구로 대체 (AC-3)
+    const match = textBefore.match(/\/\/([^\s/]*)$/);
     if (match) {
       const newText = textBefore.substring(0, textBefore.length - match[0].length) + phrase.content + textAfter;
       setFormClinical(newText);
@@ -470,8 +482,65 @@ export default function MedicalChartPanel({
 
   if (!open) return null;
 
-  const selectedChart = charts.find(c => c.id === selectedChartId) ?? null;
-  const chartsIdx = selectedChart ? charts.indexOf(selectedChart) : -1;
+  // T-20260526-foot-NAV-ARROW-DUMMY (AC-4): 실데이터 없을 때 노란테두리 더미 5건 표시
+  const DUMMY_CHARTS: MedicalChart[] = [
+    {
+      id: '__dummy__1', customer_id: customerId || '', clinic_id: clinicId || '',
+      visit_date: '2026-05-20', chief_complaint: null,
+      diagnosis: '내성발톱 — 더미 샘플 ①',
+      treatment_record: '레이저 시술 15분 (테스트용 데이터)',
+      materials_used: null, treatment_result: null,
+      clinical_progress: '1회차 시술 후 경과 양호 — 더미 샘플',
+      prescription_items: null, created_by: null,
+      created_at: '2026-05-20T10:00:00+09:00', updated_at: '2026-05-20T10:00:00+09:00',
+    },
+    {
+      id: '__dummy__2', customer_id: customerId || '', clinic_id: clinicId || '',
+      visit_date: '2026-05-13', chief_complaint: null,
+      diagnosis: '족저근막염 — 더미 샘플 ②',
+      treatment_record: '물리치료 20분 (테스트용 데이터)',
+      materials_used: null, treatment_result: null,
+      clinical_progress: '2회차 통증 30% 감소 — 더미 샘플',
+      prescription_items: null, created_by: null,
+      created_at: '2026-05-13T14:00:00+09:00', updated_at: '2026-05-13T14:00:00+09:00',
+    },
+    {
+      id: '__dummy__3', customer_id: customerId || '', clinic_id: clinicId || '',
+      visit_date: '2026-05-06', chief_complaint: null,
+      diagnosis: '무좀 (백선) — 더미 샘플 ③',
+      treatment_record: '레이저 + 연고 처방 (테스트용 데이터)',
+      materials_used: null, treatment_result: null,
+      clinical_progress: '진균 감소 확인 — 더미 샘플',
+      prescription_items: null, created_by: null,
+      created_at: '2026-05-06T11:00:00+09:00', updated_at: '2026-05-06T11:00:00+09:00',
+    },
+    {
+      id: '__dummy__4', customer_id: customerId || '', clinic_id: clinicId || '',
+      visit_date: '2026-04-29', chief_complaint: null,
+      diagnosis: '굳은살 제거 — 더미 샘플 ④',
+      treatment_record: '기계적 제거 10분 (테스트용 데이터)',
+      materials_used: null, treatment_result: null,
+      clinical_progress: '굳은살 80% 제거 완료 — 더미 샘플',
+      prescription_items: null, created_by: null,
+      created_at: '2026-04-29T15:00:00+09:00', updated_at: '2026-04-29T15:00:00+09:00',
+    },
+    {
+      id: '__dummy__5', customer_id: customerId || '', clinic_id: clinicId || '',
+      visit_date: '2026-04-22', chief_complaint: null,
+      diagnosis: '티눈 — 더미 샘플 ⑤',
+      treatment_record: '티눈 제거술 (테스트용 데이터)',
+      materials_used: null, treatment_result: null,
+      clinical_progress: '초진 — 티눈 확인 및 계획 수립 — 더미 샘플',
+      prescription_items: null, created_by: null,
+      created_at: '2026-04-22T09:00:00+09:00', updated_at: '2026-04-22T09:00:00+09:00',
+    },
+  ];
+  // 실데이터 없을 때만 더미 표시
+  const displayCharts = charts.length > 0 ? charts : DUMMY_CHARTS;
+  const isDummyMode = charts.length === 0;
+
+  const selectedChart = displayCharts.find(c => c.id === selectedChartId) ?? null;
+  const chartsIdx = selectedChart ? displayCharts.indexOf(selectedChart) : -1;
 
   return createPortal(
     <>
@@ -556,13 +625,23 @@ export default function MedicalChartPanel({
 
                 {/* 경과 타임라인 목록 — 최신 상단 (최신순 정렬 유지) */}
                 <div className="flex-none px-2 pt-2 pb-1">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">경과 타임라인</span>
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                    경과 타임라인
+                    {isDummyMode && (
+                      <span className="ml-1 text-yellow-600 font-bold">[더미]</span>
+                    )}
+                  </span>
                 </div>
                 <div className="flex-1 overflow-y-auto">
-                  {charts.length === 0 ? (
-                    <p className="text-xs text-muted-foreground text-center py-8 px-3">기록 없음</p>
-                  ) : (
-                    charts.map(chart => (
+                  {/* T-20260526-foot-NAV-ARROW-DUMMY: 더미 모드일 때 안내 배너 */}
+                  {isDummyMode && (
+                    <div className="mx-2 mb-1 rounded border-2 border-yellow-400 bg-yellow-50 px-2 py-1 text-[10px] text-yellow-800 font-semibold">
+                      실데이터 없음 — 더미 샘플 표시 중
+                    </div>
+                  )}
+                  {displayCharts.map(chart => {
+                    const isDummyEntry = chart.id.startsWith('__dummy__');
+                    return (
                       <button
                         key={chart.id}
                         type="button"
@@ -572,10 +651,14 @@ export default function MedicalChartPanel({
                             ? 'bg-teal-50 border-l-2 border-l-teal-500'
                             : ''
                         }`}
+                        style={isDummyEntry ? { outline: '2px solid #facc15', outlineOffset: '-2px' } : undefined}
                         data-testid="medical-chart-timeline-entry"
                       >
                         <div className="text-[11px] font-semibold text-teal-700 leading-tight">
                           {fmtDateShort(chart.visit_date)}
+                          {isDummyEntry && (
+                            <span className="ml-1 text-[9px] text-yellow-600 font-bold">더미</span>
+                          )}
                         </div>
                         <div className="text-[10px] text-muted-foreground truncate mt-0.5">
                           {chartSummary(chart)}
@@ -584,8 +667,8 @@ export default function MedicalChartPanel({
                           <ChevronRight className="h-3 w-3 absolute right-1 top-1/2 -translate-y-1/2 text-teal-500" />
                         )}
                       </button>
-                    ))
-                  )}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -594,16 +677,55 @@ export default function MedicalChartPanel({
                 <div className="max-w-3xl space-y-4">
 
                   {/* 타이틀 */}
-                  <div className="flex items-center gap-2 pb-1.5 border-b">
+                  <div className="flex items-center gap-2 pb-1.5 border-b flex-wrap">
                     <span className="text-sm font-semibold text-teal-700">
                       {selectedChartId
-                        ? `진료 기록 수정 — ${fmtDateFull(formDate)}`
+                        ? `진료 기록 ${selectedChartId.startsWith('__dummy__') ? '[더미]' : '수정'} — ${fmtDateFull(formDate)}`
                         : '새 진료 기록'}
                     </span>
+                    {/* T-20260526-foot-NAV-ARROW-DUMMY: 방문 레코드 간 좌/우 화살표 네비게이션 (AC-2/3) */}
                     {selectedChartId && chartsIdx >= 0 && (
-                      <Badge variant="outline" className="text-[10px] px-1.5">
-                        {chartsIdx + 1}/{charts.length}회차
-                      </Badge>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const prev = displayCharts[chartsIdx - 1];
+                            if (prev) selectChart(prev);
+                          }}
+                          disabled={chartsIdx <= 0}
+                          className="rounded p-0.5 hover:bg-muted disabled:opacity-30 transition-colors"
+                          aria-label="이전 기록"
+                          title="이전 방문 기록"
+                          data-testid="chart-nav-prev"
+                        >
+                          <ChevronLeft className="h-3.5 w-3.5 text-teal-600" />
+                        </button>
+                        <Badge variant="outline" className="text-[10px] px-1.5">
+                          {chartsIdx + 1}/{displayCharts.length}회차
+                        </Badge>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = displayCharts[chartsIdx + 1];
+                            if (next) selectChart(next);
+                          }}
+                          disabled={chartsIdx >= displayCharts.length - 1}
+                          className="rounded p-0.5 hover:bg-muted disabled:opacity-30 transition-colors"
+                          aria-label="다음 기록"
+                          title="다음 방문 기록"
+                          data-testid="chart-nav-next"
+                        >
+                          <ChevronRight className="h-3.5 w-3.5 text-teal-600" />
+                        </button>
+                      </div>
+                    )}
+                    {isDummyMode && selectedChartId?.startsWith('__dummy__') && (
+                      <span
+                        className="text-[10px] text-yellow-700 font-semibold px-1.5 rounded"
+                        style={{ border: '2px solid yellow' }}
+                      >
+                        더미 — 저장 불가
+                      </span>
                     )}
                   </div>
 
@@ -667,7 +789,7 @@ export default function MedicalChartPanel({
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-xs font-semibold text-muted-foreground">임상경과</label>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-muted-foreground">#단축어 또는</span>
+                        <span className="text-[10px] text-muted-foreground">//단축어 또는</span>
                         <button
                           type="button"
                           onClick={() => { setPhrasePanelOpen(v => !v); setPhrasePopoverVisible(false); }}
@@ -686,7 +808,7 @@ export default function MedicalChartPanel({
                         value={formClinical}
                         onChange={handleClinicalChange}
                         onBlur={() => { setTimeout(() => setPhrasePopoverVisible(false), 200); }}
-                        placeholder="임상경과 기록 — #단축어 입력 시 자동완성 (예: #통증감소)"
+                        placeholder="임상경과 기록 — //단축어 입력 시 자동완성 (예: //통증감소)"
                         rows={4}
                         className="text-sm resize-none"
                         data-testid="medical-chart-clinical"
@@ -711,7 +833,7 @@ export default function MedicalChartPanel({
                                   variant="secondary"
                                   className="text-[9px] shrink-0 mt-0.5 h-4 px-1 font-mono"
                                 >
-                                  #{p.shortcut_key}
+                                  //{p.shortcut_key}
                                 </Badge>
                               )}
                               <div className="min-w-0">
@@ -757,7 +879,7 @@ export default function MedicalChartPanel({
                                   <div className="flex items-center gap-1">
                                     <span className="text-xs font-medium">{p.name}</span>
                                     {p.shortcut_key && (
-                                      <span className="text-[10px] text-muted-foreground font-mono">#{p.shortcut_key}</span>
+                                      <span className="text-[10px] text-muted-foreground font-mono">//{p.shortcut_key}</span>
                                     )}
                                   </div>
                                   <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
@@ -870,13 +992,23 @@ export default function MedicalChartPanel({
                   <div className="flex gap-3 pt-2 pb-4 border-t">
                     <Button
                       size="lg"
-                      className="flex-1 bg-teal-600 hover:bg-teal-700 text-white h-12 text-base"
+                      className={`flex-1 h-12 text-base ${
+                        selectedChartId?.startsWith('__dummy__')
+                          ? 'bg-gray-300 hover:bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-teal-600 hover:bg-teal-700 text-white'
+                      }`}
                       onClick={handleSave}
                       disabled={saving || !formDate}
                       data-testid="medical-chart-save-btn"
                     >
                       {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                      {saving ? '저장 중...' : selectedChartId ? '수정 저장' : '기록 저장'}
+                      {saving
+                        ? '저장 중...'
+                        : selectedChartId?.startsWith('__dummy__')
+                          ? '더미 데이터 — 저장 불가'
+                          : selectedChartId
+                            ? '수정 저장'
+                            : '기록 저장'}
                     </Button>
                   </div>
                 </div>

@@ -3,8 +3,9 @@
 // 진료메모 + 상용구 불러오기 + 처방세트 불러오기 + 의사 컨펌 3단계 (차팅/처방/서류)
 // foot-crm 특화: consultation_notes 대신 check_ins 테이블 직접 사용
 // 초진/재진 분기(visit_type 기반), 힐러레이저 컨펌 분기 포함
+// T-20260526-foot-PHRASE-SLASH AC-5: 진료메모·서류 textarea에 // 트리거 자동완성 추가
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
@@ -51,6 +52,7 @@ interface PhraseTemplate {
   category: string;
   name: string;
   content: string;
+  shortcut_key?: string | null;
 }
 
 interface PrescriptionSet {
@@ -95,7 +97,7 @@ function useAllPhrases() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('phrase_templates')
-        .select('id, category, name, content')
+        .select('id, category, name, content, shortcut_key')
         .eq('is_active', true)
         .order('sort_order');
       if (error) throw error;
@@ -275,6 +277,11 @@ function PhrasePicker({ open, onClose, onSelect, mode }: PhrasePickerProps) {
                     {CAT_LABELS[p.category] ?? p.category}
                   </Badge>
                   <span className="text-sm font-medium">{p.name}</span>
+                  {p.shortcut_key && (
+                    <Badge variant="outline" className="text-[9px] h-4 px-1 font-mono text-teal-600 border-teal-200">
+                      //{p.shortcut_key}
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground line-clamp-2 whitespace-pre-wrap">
                   {p.content}
@@ -530,6 +537,25 @@ export default function DoctorTreatmentPanel({
   const [docContent, setDocContent] = useState<string>('');
   const [fieldsSynced, setFieldsSynced] = useState(false);
 
+  // T-20260526-foot-PHRASE-SLASH AC-5: // 트리거 자동완성 state
+  const doctorNoteRef = useRef<HTMLTextAreaElement>(null);
+  const docContentRef = useRef<HTMLTextAreaElement>(null);
+  const [noteSlashQuery, setNoteSlashQuery] = useState('');
+  const [noteSlashVisible, setNoteSlashVisible] = useState(false);
+  const [docSlashQuery, setDocSlashQuery] = useState('');
+  const [docSlashVisible, setDocSlashVisible] = useState(false);
+  const { data: allPhrases = [] } = useAllPhrases();
+  const noteFilteredPhrases = allPhrases.filter(p =>
+    !noteSlashQuery
+      ? p.shortcut_key != null
+      : (p.shortcut_key?.startsWith(noteSlashQuery) || p.name.includes(noteSlashQuery)),
+  );
+  const docFilteredPhrases = allPhrases.filter(p =>
+    !docSlashQuery
+      ? p.shortcut_key != null
+      : (p.shortcut_key?.startsWith(docSlashQuery) || p.name.includes(docSlashQuery)),
+  );
+
   // 피커 오픈 상태
   const [phrasePicker, setPhrasePicker] = useState<{ open: boolean; target: 'note' | 'doc' }>({
     open: false,
@@ -548,7 +574,7 @@ export default function DoctorTreatmentPanel({
     setFieldsSynced(true);
   }
 
-  // 상용구 삽입
+  // 상용구 삽입 (버튼 피커용)
   const handlePhraseSelect = useCallback(
     (content: string) => {
       if (phrasePicker.target === 'note') {
@@ -559,6 +585,58 @@ export default function DoctorTreatmentPanel({
     },
     [phrasePicker.target],
   );
+
+  // T-20260526-foot-PHRASE-SLASH AC-5: // 트리거 핸들러
+  function handleNoteChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const value = e.target.value;
+    setDoctorNote(value);
+    const cursor = e.target.selectionStart ?? value.length;
+    const textBefore = value.substring(0, cursor);
+    const match = textBefore.match(/\/\/([^\s/]*)$/);
+    if (match) {
+      setNoteSlashQuery(match[1]);
+      setNoteSlashVisible(true);
+    } else {
+      setNoteSlashVisible(false);
+    }
+  }
+
+  function handleDocChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const value = e.target.value;
+    setDocContent(value);
+    const cursor = e.target.selectionStart ?? value.length;
+    const textBefore = value.substring(0, cursor);
+    const match = textBefore.match(/\/\/([^\s/]*)$/);
+    if (match) {
+      setDocSlashQuery(match[1]);
+      setDocSlashVisible(true);
+    } else {
+      setDocSlashVisible(false);
+    }
+  }
+
+  function insertSlashPhrase(
+    phrase: PhraseTemplate,
+    target: 'note' | 'doc',
+  ) {
+    const isNote = target === 'note';
+    const textarea = isNote ? doctorNoteRef.current : docContentRef.current;
+    const currentText = isNote ? doctorNote : docContent;
+    const cursor = textarea?.selectionStart ?? currentText.length;
+    const textBefore = currentText.substring(0, cursor);
+    const textAfter = currentText.substring(cursor);
+    const match = textBefore.match(/\/\/([^\s/]*)$/);
+    if (match) {
+      const newText = textBefore.substring(0, textBefore.length - match[0].length) + phrase.content + textAfter;
+      if (isNote) setDoctorNote(newText); else setDocContent(newText);
+    } else {
+      const appended = currentText ? `${currentText}\n${phrase.content}` : phrase.content;
+      if (isNote) setDoctorNote(appended); else setDocContent(appended);
+    }
+    if (isNote) { setNoteSlashVisible(false); setNoteSlashQuery(''); }
+    else { setDocSlashVisible(false); setDocSlashQuery(''); }
+    setTimeout(() => textarea?.focus(), 50);
+  }
 
   // 처방세트 불러오기
   const handleRxSetSelect = useCallback((items: PrescriptionItem[]) => {
@@ -704,20 +782,50 @@ export default function DoctorTreatmentPanel({
               상용구
             </Button>
           </div>
-          <Textarea
-            value={doctorNote}
-            onChange={(e) => setDoctorNote(e.target.value)}
-            placeholder={
-              visitType === 'new'
-                ? '초진 내원. 주증상: 발톱 __. 기저질환: 없음...'
-                : visitType === 'returning'
-                ? '재진 내원. 이전 시술 경과 확인...'
-                : '체험 내원. 시술 설명 및 체험 진행...'
-            }
-            className="text-sm min-h-[140px] resize-none"
-            disabled={confirmed.doctor_confirm_charting}
-            data-testid="doctor-note-textarea"
-          />
+          <div className="relative">
+            <Textarea
+              ref={doctorNoteRef}
+              value={doctorNote}
+              onChange={handleNoteChange}
+              onBlur={() => { setTimeout(() => setNoteSlashVisible(false), 200); }}
+              placeholder={
+                visitType === 'new'
+                  ? '초진 내원. 주증상: 발톱 __. 기저질환: 없음... (//단축어 자동완성)'
+                  : visitType === 'returning'
+                  ? '재진 내원. 이전 시술 경과 확인... (//단축어 자동완성)'
+                  : '체험 내원. 시술 설명 및 체험 진행... (//단축어 자동완성)'
+              }
+              className="text-sm min-h-[140px] resize-none"
+              disabled={confirmed.doctor_confirm_charting}
+              data-testid="doctor-note-textarea"
+            />
+            {noteSlashVisible && noteFilteredPhrases.length > 0 && (
+              <div
+                className="absolute left-0 top-full z-[110] mt-1 w-72 rounded-lg border bg-popover shadow-lg overflow-hidden"
+                onMouseDown={(e) => e.preventDefault()}
+                data-testid="note-slash-popover"
+              >
+                {noteFilteredPhrases.slice(0, 8).map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => insertSlashPhrase(p, 'note')}
+                    className="w-full text-left px-3 py-2 hover:bg-muted flex items-start gap-2 border-b border-border/50 last:border-0"
+                  >
+                    {p.shortcut_key && (
+                      <span className="text-[9px] shrink-0 mt-0.5 px-1 rounded bg-secondary font-mono">
+                        //{p.shortcut_key}
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium truncate">{p.name}</div>
+                      <div className="text-[10px] text-muted-foreground line-clamp-1">{p.content}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {!confirmed.doctor_confirm_charting && (
             <div className="flex gap-2">
               <Button
@@ -896,14 +1004,44 @@ export default function DoctorTreatmentPanel({
           </div>
 
           {docExpanded && (
+            <div className="relative">
             <Textarea
+              ref={docContentRef}
               value={docContent}
-              onChange={(e) => setDocContent(e.target.value)}
-              placeholder="서류 내용 — 템플릿을 불러오거나 직접 입력하세요..."
+              onChange={handleDocChange}
+              onBlur={() => { setTimeout(() => setDocSlashVisible(false), 200); }}
+              placeholder="서류 내용 — 템플릿을 불러오거나 직접 입력하세요... (//단축어 자동완성)"
               className="text-xs min-h-[180px] resize-none font-mono"
               disabled={confirmed.doctor_confirm_document}
               data-testid="doc-content-textarea"
             />
+            {docSlashVisible && docFilteredPhrases.length > 0 && (
+              <div
+                className="absolute left-0 top-full z-[110] mt-1 w-72 rounded-lg border bg-popover shadow-lg overflow-hidden"
+                onMouseDown={(e) => e.preventDefault()}
+                data-testid="doc-slash-popover"
+              >
+                {docFilteredPhrases.slice(0, 8).map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => insertSlashPhrase(p, 'doc')}
+                    className="w-full text-left px-3 py-2 hover:bg-muted flex items-start gap-2 border-b border-border/50 last:border-0"
+                  >
+                    {p.shortcut_key && (
+                      <span className="text-[9px] shrink-0 mt-0.5 px-1 rounded bg-secondary font-mono">
+                        //{p.shortcut_key}
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium truncate">{p.name}</div>
+                      <div className="text-[10px] text-muted-foreground line-clamp-1">{p.content}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+            </div>
           )}
 
           {!confirmed.doctor_confirm_document && (
