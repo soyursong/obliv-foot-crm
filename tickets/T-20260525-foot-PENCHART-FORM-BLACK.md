@@ -4,7 +4,7 @@ domain: foot
 priority: P1
 status: deploy-ready
 deploy_ready_at: 2026-05-26 02:10
-impl_commit: pending
+impl_commit: 6ed19d1
 db_changed: false
 e2e_spec: tests/e2e/T-20260525-foot-PENCHART-FORM-BLACK.spec.ts
 build_ok: true
@@ -29,7 +29,7 @@ deploy_commit: ""
 bundle_hash: ""
 field_soak_until: ""
 reopen_reason: "REOPEN 2026-05-26: canvas 활성·펜 그려짐·배경 이미지 미렌더링. setBgImgLoadError(false) onload 시작 즉시 호출 버그 → drawImage 실패 시 fallback 비표시. GPU context loss + naturalWidth=0 + drawImage try-catch 추가."
-reopen_fix_commit: pending
+reopen_fix_commit: 6ed19d1
 ---
 
 # T-20260525-foot-PENCHART-FORM-BLACK — 펜차트 전체 양식 검정 화면 + 튕김

@@ -2,20 +2,24 @@
 id: T-20260525-foot-DUMMY-DATA-GEN
 domain: foot
 priority: P1
-status: deploy-ready
+status: deployed
 deploy_ready: true
 db_change: true
 rollback_sql: scripts/rollback_dummy_20260526.sql
 spec_file: tickets/T-20260525-foot-DUMMY-DATA-GEN.md
 summary: "5/26 초진/재진 시간대별 더미 예약 데이터 72건 생성 (9슬롯 × 초진4+재진4, 2026-05-26)"
 created: 2026-05-25
-updated: 2026-05-25
+updated: 2026-05-26
 assignee: dev-foot
 reporter: planner
 e2e_spec_exempt_reason: db_only
 risk_verdict: GO_WARN
 risk_reason: "대량 INSERT 72건. 롤백 스크립트(scripts/rollback_dummy_20260526.mjs) 준비 완료. is_simulation=true 마킹으로 실 운영 데이터와 구분."
 qa_result: pass
+qa_grade: Yellow
+deploy_commit: d9a36e5
+deployed_at: "2026-05-26T14:30:00+09:00"
+field_soak_until: "2026-05-27T14:30:00+09:00"
 ---
 
 # T-20260525-foot-DUMMY-DATA-GEN — 5/26 더미 예약 72건 생성
