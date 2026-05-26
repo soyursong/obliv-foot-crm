@@ -477,17 +477,17 @@ function SortablePricingRow({
       )}
     >
       {/* 드래그 핸들 (AC-1 DnD, AC-R2 REOPEN)
-          REOPEN: min-w/h 32px 터치타깃 확장 + touch-none 유지 (PointerSensor 경유) */}
+          T-20260526-foot-REDBOX-CODENAME-TRIM: min-w 28→20px — 코드명 표시 공간 확보 */}
       <button
         {...attributes}
         {...listeners}
-        className="shrink-0 flex items-center justify-center min-w-[28px] min-h-[28px] text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none p-1"
+        className="shrink-0 flex items-center justify-center min-w-[20px] min-h-[20px] text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none p-0.5 outline-none focus:outline-none"
         title="드래그하여 순서 변경"
         tabIndex={-1}
         type="button"
         onClick={(e) => e.stopPropagation()}
       >
-        <GripVertical className="h-3.5 w-3.5" />
+        <GripVertical className="h-3 w-3" />
       </button>
       {/* 선수금 토글 (PREPAID-DEDUCT AC-2) */}
       <button
@@ -500,12 +500,9 @@ function SortablePricingRow({
         )}
         title={isPrepaid ? '선수금차감 해제' : '선수금차감 지정'}
       />
-      {/* 코드번호 */}
-      <span className="w-9 shrink-0 text-[9px] text-muted-foreground truncate">
-        {service.service_code ?? ''}
-      </span>
-      {/* 코드명 */}
-      <span className="flex-1 font-medium truncate min-w-0">
+      {/* 코드명 — T-20260526-foot-REDBOX-CODENAME-TRIM: 코드번호 컬럼 제거(Zone1에 표시됨)
+          → flex-1 표시 공간 +40px 확보. title로 풀네임 tooltip 제공 */}
+      <span className="flex-1 font-medium truncate min-w-0" title={service.name}>
         {service.name}
       </span>
       {/* 수가 편집 (PREPAID-DEDUCT AC-4) */}
@@ -552,14 +549,15 @@ function SortablePricingRow({
         </span>
       )}
       {/* AC-1: ↑↓ 순서 변경 버튼 (항목 2건 이상, 태블릿 친화)
-          REOPEN AC-R1/AC-R3: p-0→p-1.5 + min-w/h 32px — 태블릿 터치 타깃 10px→32px 확보 */}
+          REOPEN AC-R1/AC-R3: p-0→p-1.5 + min-w/h 32px — 태블릿 터치 타깃 확보
+          T-20260526-foot-REDBOX-CODENAME-TRIM: min-w-[32px]→min-w-[24px] — 코드명 공간 확보 (+8px) */}
       {pricingLen > 1 && (
         <div className="shrink-0 flex flex-col gap-0.5">
           <button
             data-testid={`reorder-up-${service.id}`}
             onClick={(e) => { e.stopPropagation(); onReorder(service.id, 'up'); }}
             disabled={pricingIdx === 0}
-            className="flex items-center justify-center min-w-[32px] min-h-[22px] p-1.5 text-muted-foreground disabled:opacity-20 hover:text-teal-600 active:text-teal-700 transition-colors rounded"
+            className="flex items-center justify-center min-w-[24px] min-h-[22px] p-1 text-muted-foreground disabled:opacity-20 hover:text-teal-600 active:text-teal-700 transition-colors rounded"
             title="위로"
             tabIndex={-1}
             type="button"
@@ -570,7 +568,7 @@ function SortablePricingRow({
             data-testid={`reorder-down-${service.id}`}
             onClick={(e) => { e.stopPropagation(); onReorder(service.id, 'down'); }}
             disabled={pricingIdx === pricingLen - 1}
-            className="flex items-center justify-center min-w-[32px] min-h-[22px] p-1.5 text-muted-foreground disabled:opacity-20 hover:text-teal-600 active:text-teal-700 transition-colors rounded"
+            className="flex items-center justify-center min-w-[24px] min-h-[22px] p-1 text-muted-foreground disabled:opacity-20 hover:text-teal-600 active:text-teal-700 transition-colors rounded"
             title="아래로"
             tabIndex={-1}
             type="button"
@@ -1834,8 +1832,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                AC-1: 탭 조건 제거 — 상병코드·풋케어 모두 동일 세로 영역에 공존
                AC-2: 코드항목(상단) + 수가항목(하단) 통합 표시
           ─────────────────────────────────────────────────────────────────── */}
-          {/* AC-2: Zone2 폭 확장 — sm:w-52→w-60, md:w-56→w-64, lg:w-60→w-72 (너무 좁아 잘림 해소) */}
-          <div className="sm:w-60 md:w-64 lg:w-72 shrink-0 border-t sm:border-t-0 sm:border-l flex flex-col sm:min-h-0">
+          {/* AC-2: Zone2 폭 확장 — sm:w-52→w-60→w-64, md:w-56→w-64, lg:w-60→w-72
+              T-20260526-foot-REDBOX-CODENAME-TRIM: sm:w-60→w-64 (+16px) — 코드명 추가 공간 */}
+          <div className="sm:w-64 md:w-64 lg:w-72 shrink-0 border-t sm:border-t-0 sm:border-l flex flex-col sm:min-h-0">
 
             {/* Zone 2 헤더 */}
             <div className="px-3 pt-2 pb-1.5 shrink-0 border-b bg-muted/20">

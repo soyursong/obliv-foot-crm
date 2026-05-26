@@ -4,6 +4,7 @@
 // foot-crm 특화: consultation_notes 대신 check_ins 테이블 직접 사용
 // 초진/재진 분기(visit_type 기반), 힐러레이저 컨펌 분기 포함
 // T-20260526-foot-PHRASE-SLASH AC-5: 진료메모·서류 textarea에 // 트리거 자동완성 추가
+// T-20260526-foot-MEDCHART-SYNC: 펜차트 상용구(phrase_type='pen_chart')만 연동
 
 import { useState, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -93,12 +94,14 @@ const VISIT_TYPE_LABELS: Record<VisitType, string> = {
 // ---------------------------------------------------------------------------
 function useAllPhrases() {
   return useQuery({
-    queryKey: ['phrase_templates', 'all'],
+    // T-20260526-foot-MEDCHART-SYNC: pen_chart 유형만 (펜차트/진료메모 전용)
+    queryKey: ['phrase_templates', 'pen_chart'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('phrase_templates')
         .select('id, category, name, content, shortcut_key')
         .eq('is_active', true)
+        .eq('phrase_type', 'pen_chart')
         .order('sort_order');
       if (error) throw error;
       return (data ?? []) as PhraseTemplate[];
