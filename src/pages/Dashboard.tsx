@@ -2876,7 +2876,7 @@ export default function Dashboard() {
       setZoomLevel(100);
       localStorage.removeItem('foot-dash-zoom');
     }
-    toast.success('내 배치가 초기화됐어요');
+    toast.message('내 배치가 초기화됐어요');
   }, [clinic, profile, applyStoredLayout]);
 
   // T-20260526-foot-LAYOUT-USER-CUSTOM: 개인→지점 기본→코드 기본 3단계 폴백으로 레이아웃 로드
@@ -2935,7 +2935,7 @@ export default function Dashboard() {
       if (error) {
         toast.error('내 배치 저장 실패 (로컬엔 저장됨)');
       } else {
-        toast.success('내 배치가 저장됐어요.');
+        toast.message('내 배치가 저장됐어요.');
       }
     },
     [clinic, profile],
