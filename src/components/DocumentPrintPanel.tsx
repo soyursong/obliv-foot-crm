@@ -167,6 +167,7 @@ function isLaserBlockedByPackage(
 function buildHtmlPageHtml(
   template: FormTemplate,
   fieldValues: Record<string, string>,
+  copyLabel?: string,
 ): string {
   const htmlTpl = getHtmlTemplate(template.form_key);
   if (!htmlTpl) return '';
@@ -178,9 +179,14 @@ function buildHtmlPageHtml(
         style="position:absolute;right:52px;bottom:52px;width:88px;height:88px;opacity:0.85;pointer-events:none;"
         onerror="this.style.display='none'" />`
     : '';
+  // T-20260526-foot-RX-PRINT-DUAL: 처방전 보관용 구분 라벨 (약국보관용 / 환자보관용)
+  const copyLabelHtml = copyLabel
+    ? `<div style="position:absolute;top:10px;right:10px;background:rgba(255,255,255,0.93);border:2px solid #222;padding:4px 14px;font-size:14px;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;font-weight:700;letter-spacing:1px;z-index:10;border-radius:3px;">${copyLabel}</div>`
+    : '';
   return `<div class="page${isLandscape ? ' page-landscape' : ''}">
   ${bound}
   ${stampOverlay}
+  ${copyLabelHtml}
 </div>`;
 }
 
@@ -697,7 +703,15 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
           if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
         }
         if (portraitHtmlTpls.length > 0) {
-          const pages = portraitHtmlTpls.map((t) => buildHtmlPageHtml(t, autoValues));
+          // T-20260526-foot-RX-PRINT-DUAL: rx_standard → 약국보관용 + 환자보관용 2장으로 확장
+          const pages = portraitHtmlTpls.flatMap((t) =>
+            t.form_key === 'rx_standard'
+              ? [
+                  buildHtmlPageHtml(t, autoValues, '약국보관용'),
+                  buildHtmlPageHtml(t, autoValues, '환자보관용'),
+                ]
+              : [buildHtmlPageHtml(t, autoValues)],
+          );
           const w = openBatchPrintWindow(pages, `서류 일괄 출력 — ${checkIn.customer_name}`);
           if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
         }
@@ -1712,10 +1726,15 @@ function IssueDialog({
   const printJpg = useCallback(() => {
     // T-20260514-foot-FORM-CLARITY-REWORK: HTML 양식 분기
     if (template.template_format === 'html' || isHtmlTemplate(template.form_key)) {
-      const pageHtml = buildHtmlPageHtml(template, allValues);
-      // AC-5: 진료비세부산정내역(bill_detail)은 landscape 전용 창
+      // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
       const isLandscape = template.form_key === 'bill_detail';
-      const w = openBatchPrintWindow([pageHtml], `${template.name_ko} — ${checkIn.customer_name}`, isLandscape);
+      const pages = template.form_key === 'rx_standard'
+        ? [
+            buildHtmlPageHtml(template, allValues, '약국보관용'),
+            buildHtmlPageHtml(template, allValues, '환자보관용'),
+          ]
+        : [buildHtmlPageHtml(template, allValues)];
+      const w = openBatchPrintWindow(pages, `${template.name_ko} — ${checkIn.customer_name}`, isLandscape);
       if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
       return;
     }
