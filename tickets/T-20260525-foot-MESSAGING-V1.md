@@ -25,7 +25,7 @@ qa_result: ""
 qa_grade: ""
 qa_fail_phase: ""
 qa_fail_reason: ""
-qa_fix_commit: "PENDING_SHA"
+qa_fix_commit: "c2b4075"
 qa_fix_note: "FIX-REQUEST 재QA: rollback.sql STEP1 cron.job 직접쿼리→DO블록4개 수정. forward migration CHECKLIST 4번 2개→2개 행 수정. 재QA 요청."
 status: deploy-ready
 deploy-ready: true
