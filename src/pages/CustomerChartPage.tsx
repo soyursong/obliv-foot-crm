@@ -648,41 +648,67 @@ function TreatmentImagesSection({
       });
       streamRef.current = stream;
 
-      // FIX T-20260526-foot-CAMERA-FOCUS-BUG (auto-focus 미작동):
-      // 이전 구현: focusMode:'continuous'를 advanced[]에만 지정
-      //   → W3C spec상 advanced 배열은 "전체 충족 가능 시에만 적용" 원칙.
-      //   → Galaxy Tab에서 조건 불일치 시 전체 set 무시 → camera가 manual 상태 유지.
-      // 수정: getCapabilities()로 기기 지원 AF 모드 확인 후 top-level constraint 적용.
-      //   top-level bare string = { ideal: ... } 동등 → 미지원 기기에서 실패 없음.
-      // 해상도: width: { min: 1280 } — flickering fix(getUserMedia width/height 제거) 이후
-      //   applyConstraints로 스트림 레벨 최소 해상도 보장. 동일 정책 유지.
-      // AC-3 T-20260522-foot-CHART2-CAM-FOCUS / AC-2 T-20260526-foot-CAMERA-FOCUS-BUG
+      // FIX T-20260526-foot-CAMERA-FOCUS-BUG REOPEN #1 — Galaxy Tab auto-focus
+      //
+      // 실패 이력:
+      //   ❌ Attempt 1: advanced[{ focusMode:'continuous' }]
+      //      → W3C advanced[] "모두 충족 시에만 적용" 원칙 → Galaxy Tab에서 set 전체 skip
+      //   ❌ Attempt 2: getCapabilities()-gated top-level focusMode
+      //      → Galaxy Tab getCapabilities() returns focusMode:[] → bestMode=null → no-op
+      //   ❌ 공통 함정: width:{min:1280} + focusMode 를 동일 applyConstraints()에 혼합
+      //      → width OverconstrainedError → focusMode도 같이 실패 (atomic failure)
+      //
+      // 신규 전략 (AC-5,6):
+      //   1. 해상도 / focusMode 분리 — 독립 applyConstraints() 호출
+      //   2. blind multi-mode apply — Samsung getCapabilities() under-report 우회
+      //      'continuous' → 'auto' → 'single-shot' 순서로 첫 성공까지 시도
+      //   3. ImageCapture.takePicture() — 캡처 시 hardware focus cycle 대기 (capturePhoto 참고)
+      //   4. console.debug 진단 핑거프린트 — 현장 개발자 도구로 지원 여부 확인 가능
       try {
         const videoTrack = stream.getVideoTracks()[0];
         if (videoTrack) {
-          // getCapabilities로 기기가 지원하는 focusMode 목록 확인
+          // ── Layer 1: 해상도 (독립 호출 — focusMode와 완전 분리) ──────────────
+          // min 대신 ideal 사용 → OverconstrainedError 최소화 (AC-3 동일 보장)
+          try {
+            await videoTrack.applyConstraints({ width: { ideal: 1920 } });
+          } catch (_resErr) { /* canvas scale-up double-safety가 1280px 보장 */ }
+
+          // ── Layer 2: focusMode 다단계 blind apply (AC-5,6) ──────────────────
+          // Samsung Galaxy Tab Chrome은 getCapabilities().focusMode 를 under-report.
+          // capabilities 체크 결과와 무관하게 모든 후보를 순서대로 시도.
           type ExtCaps = MediaTrackCapabilities & { focusMode?: string[] };
           const caps: ExtCaps = (videoTrack.getCapabilities?.() ?? {}) as ExtCaps;
-          const supportedModes = caps.focusMode ?? [];
-          // continuous → single-shot 순서로 최적 AF 모드 선택 (AC-2: 기기 지원 최적 모드)
-          const bestMode =
-            supportedModes.includes('continuous') ? 'continuous' :
-            supportedModes.includes('single-shot') ? 'single-shot' :
-            null;
+          const reportedModes: string[] = caps.focusMode ?? [];
+          const supportedConstraints = navigator.mediaDevices.getSupportedConstraints() as Record<string, boolean>;
 
-          // top-level constraint로 적용 (advanced[] 단독 방식 대비 Galaxy Tab 호환성 향상)
-          const extraConstraints: Record<string, unknown> = {};
-          if (bestMode) extraConstraints['focusMode'] = bestMode;
+          // 진단 로그 (현장 브라우저 콘솔 / 개발자 도구로 확인)
+          console.debug('[CAMERA-FOCUS] getSupportedConstraints.focusMode:', supportedConstraints['focusMode']);
+          console.debug('[CAMERA-FOCUS] getCapabilities.focusMode:', reportedModes);
+          const initSettings = videoTrack.getSettings?.() as (MediaTrackSettings & { focusMode?: string }) | undefined;
+          console.debug('[CAMERA-FOCUS] initial focusMode:', initSettings?.focusMode);
 
-          await videoTrack.applyConstraints({
-            width: { min: 1280 },
-            ...extraConstraints,
-            // advanced[]는 보조 reinforcement — top-level 적용 실패 시 재시도
-            ...(bestMode ? { advanced: [{ focusMode: bestMode } as MediaTrackConstraintSet] } : {}),
-          });
+          // capabilities 보고 모드 우선 + 보고 없을 시 전체 blind 시도
+          const knownModes = ['continuous', 'auto', 'single-shot'];
+          const capModes = reportedModes.filter(m => knownModes.includes(m));
+          const candidates = capModes.length > 0
+            ? [...new Set([...capModes, ...knownModes])] // 보고분 우선, 나머지 blind 추가
+            : knownModes; // Galaxy Tab: 보고 없음 → 전부 blind 시도
+
+          for (const mode of candidates) {
+            try {
+              await videoTrack.applyConstraints({ focusMode: mode } as MediaTrackConstraints);
+              console.debug('[CAMERA-FOCUS] applyConstraints ok:', mode);
+              break; // 첫 성공에서 중단
+            } catch (_modeErr) {
+              console.debug('[CAMERA-FOCUS] applyConstraints failed:', mode);
+            }
+          }
+
+          const finalSettings = videoTrack.getSettings?.() as (MediaTrackSettings & { focusMode?: string }) | undefined;
+          console.debug('[CAMERA-FOCUS] final focusMode:', finalSettings?.focusMode);
         }
       } catch (_afErr) {
-        // focusMode/해상도 미지원 기기는 무시 (iOS Safari, 구형 Chrome 등)
+        // 전체 focus 시도 실패 — 카메라는 정상 작동 (AF 미제어 상태로 fallback)
       }
 
       setCameraPhase('capture');
@@ -706,14 +732,40 @@ function TreatmentImagesSection({
     }
   }, []); // 의존성 없음 — 생명주기 전체에서 동일 함수 참조 유지
 
-  const capturePhoto = () => {
+  const capturePhoto = async () => {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
+
+    // ── Strategy 1: ImageCapture.takePicture() ────────────────────────────────
+    // REOPEN #1 AC-5: Galaxy Tab에서 hardware focus cycle 완료 후 캡처 트리거.
+    // Chrome 59+, Android 7+ 지원. canvas drawImage는 현재 프레임을 즉시 캡처하므로
+    // focus 수렴 전 흐린 프레임을 잡을 수 있음 → takePicture()가 근본 해결.
+    // 반환 Blob은 JPEG/PNG(기기 네이티브 인코더 사용) — quality 옵션 불필요.
+    const videoTrack = streamRef.current?.getVideoTracks()[0];
+    if (videoTrack && 'ImageCapture' in window) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ic = new (window as any).ImageCapture(videoTrack);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const blob: Blob = await (ic as any).takePicture();
+        if (blob && blob.size > 1000) { // sanity: 유효 이미지 (empty blob 아님)
+          const previewUrl = URL.createObjectURL(blob);
+          setCapturedBlobs((prev) => [...prev, { blob, previewUrl }]);
+          return; // 성공 → canvas fallback 불필요
+        }
+      } catch (_icErr) {
+        // ImageCapture 미지원 또는 실패 → canvas fallback으로 계속
+        console.debug('[CAMERA-FOCUS] ImageCapture.takePicture() failed, fallback to canvas');
+      }
+    }
+
+    // ── Fallback: canvas drawImage ─────────────────────────────────────────────
+    // AC-3 T-20260522-foot-CHART2-CAM-FOCUS: 최소 1280px 보장
+    // applyConstraints(width:{ideal:1920})로 스트림 레벨 대응
+    // + canvas scale-up double-safety
     const naturalW = video.videoWidth || 1280;
     const naturalH = video.videoHeight || 720;
-    // AC-3 T-20260522-foot-CHART2-CAM-FOCUS: 캡처 이미지 최소 1280px 보장
-    // applyConstraints(width≥1280)로 스트림 레벨 대응 + 실패 시 canvas scale-up double-safety
     const minWidth = 1280;
     const scale = naturalW < minWidth ? minWidth / naturalW : 1;
     canvas.width = Math.round(naturalW * scale);

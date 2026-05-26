@@ -1,7 +1,7 @@
 ---
 id: T-20260526-foot-CAMERA-FOCUS-BUG
 domain: foot
-priority: P1
+priority: P0
 status: deploy-ready
 deploy_ready: true
 build_ok: true
@@ -9,8 +9,12 @@ db_change: false
 spec_added: tests/e2e/T-20260526-foot-CAMERA-FOCUS-BUG.spec.ts
 regression_risk: low
 created: 2026-05-26
-deadline: 2026-05-28
+deadline: 2026-05-27
 risk_verdict: GO_WARN
+reopen_count: 1
+reopen_reason: "갤럭시탭 시크릿모드에서도 미작동 확인 → f059544 수정 자체 미작동 확정. 2회 실패(advanced[]+top-level focusMode). 신규 전략: 제약 분리+blind apply+ImageCapture."
+fix_strategy: "width/focusMode 독립 applyConstraints + blind multi-mode apply (Samsung under-report우회) + ImageCapture.takePicture() 캡처 단계"
+field_device_gate: "Galaxy Tab (Samsung Android tablet) 실기기 검증 필수 — 김주연 총괄 확인 후 배포"
 ---
 
 # T-20260526-foot-CAMERA-FOCUS-BUG — 2번차트 진료이미지 카메라 auto-focus 미작동
@@ -87,3 +91,71 @@ await videoTrack.applyConstraints({
 ## 관련 티켓
 
 - T-20260522-foot-MEDIMG-CAMERA (사진촬영 기능 확장, P2) — 기존 기능 내 초점 버그
+
+---
+
+## Supervisor QA 후속 업데이트
+
+**2026-05-26T16:02:00+09:00 — supervisor QA PASS + deployed (Yellow)**
+
+### QA 체크리스트
+
+| 항목 | 결과 | 근거 |
+|------|------|------|
+| C5 빌드 | PASS | 3.25s, exit 0, CustomerChartPage-4J4WndYd.js |
+| C1 env 매트릭스 | PASS | VITE_SUPABASE_URL→prod bundle rxlomoozakkjesdqjtvd.supabase.co 매치 |
+| C2 E2E spec | PASS | 256줄, UNIT+AC-4 2 passed, 4 skipped(카메라 HW) |
+| C2 회귀 | PASS | 3 passed, 13 skipped, 0 failed |
+| C3 RLS/DB | N/A | db_change: false |
+| C4 Cross-CRM | N/A | db_change: false |
+| §7.5 Runtime Safety | PASS | getCapabilities?.()??{}, caps.focusMode??[], if(bestMode) 가드 |
+| Prod bundle 반영 | PASS | CustomerChartPage-Bc2EagEP.js → focusMode??[] + getCapabilities 확인 |
+| Push 상태 | 완료 | f059544 in origin/main, HEAD=origin/main |
+| 브라우저 | PASS | 로그인 페이지 정상 렌더, no white screen |
+
+### 판정
+
+**GO Yellow** — GO_WARN(기기별 focusMode 호환성)은 코드에서 graceful fallback으로 처리됨(미지원 기기 try/catch 무시).
+AC-3(실제 초점 품질)은 E2E 자동화 범위 밖 → 현장 수동 검증 필요.
+
+### Field-Soak
+
+- `field_soak_until: 2026-05-27T16:02:00+09:00`
+- 슬랙 알림: C0ATE5P6JTH `ts=1779779055.280039` (요청 스레드 broadcast)
+- 김주연 총괄 현장 확인 요청 완료
+
+---
+
+## REOPEN #1 수정 내용 — 2026-05-26T20:00+09:00 (P0)
+
+### 실패 이력 분석
+
+| 시도 | 방법 | 실패 원인 |
+|------|------|-----------|
+| Attempt 1 | `advanced[{ focusMode:'continuous' }]` | W3C spec: 조건 전체 충족 시에만 적용 → Galaxy Tab에서 set skip |
+| Attempt 2 | `getCapabilities()` gated top-level | Galaxy Tab `getCapabilities().focusMode=[]` → `bestMode=null` → no-op |
+| 공통 함정 | `width:{min:1280}` + `focusMode` 동일 호출 | width OverconstrainedError → focusMode도 atomic failure |
+
+### 신규 수정 전략
+
+```
+1. 해상도 / focusMode 독립 applyConstraints() 호출 (에러 도메인 분리)
+2. blind multi-mode apply: capabilities 보고 없어도 'continuous'→'auto'→'single-shot' 순 시도
+   → Samsung Galaxy Tab getCapabilities() under-report 우회 (AC-5 핵심)
+3. width:{min:1280} → width:{ideal:1920} 변경 (OverconstrainedError 원천 제거)
+4. ImageCapture.takePicture() — 셔터 시 hardware focus cycle 대기 후 캡처 (AC-1 강화)
+5. console.debug 진단 로그 — [CAMERA-FOCUS] 태그로 현장 브라우저 콘솔에서 확인 가능
+```
+
+### 수용기준 달성
+
+- [x] AC-1: ImageCapture.takePicture() + fallback 구현 (hardware focus cycle 대기)
+- [x] AC-2: blind multi-mode apply (getCapabilities under-report 우회)
+- [x] AC-4: 빌드 통과 + E2E spec 7건 업데이트
+- [x] AC-5: Galaxy Tab 시나리오 spec (empty capabilities → blind apply 시도 검증)
+- [x] AC-6: 모든 mode 실패 graceful fallback spec
+- [ ] AC-3/AC-7: 현장 실기기(갤럭시탭) 검증 — **supervisor QA + 배포 후 김주연 총괄 확인**
+
+### field_device_gate
+
+배포 전 현장 실기기(갤럭시탭) 검증 필수. supervisor가 배포 후 슬랙 스레드에 김주연 총괄 확인 요청할 것.
