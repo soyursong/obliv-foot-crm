@@ -47,6 +47,8 @@ import { formatAmount } from '@/lib/format';
 // T-20260525-foot-AMOUNT-COMMA-FMT: 수가 인라인 편집 쉼표 포맷팅
 import { formatAmountDisplay, parseAmountRaw } from '@/components/ui/AmountInput';
 import type { CheckIn, Service } from '@/lib/types';
+// T-20260526-foot-COPAY-MINI-BUG: 건보 등급 기반 급여 분류
+import { type InsuranceGrade, getBaseCopayRate } from '@/lib/insurance';
 import {
   FALLBACK_TEMPLATES,
   INSURANCE_FALLBACK_TEMPLATES,
@@ -88,7 +90,21 @@ import { CSS } from '@dnd-kit/utilities';
 
 type TaxClass = '비급여(과세)' | '비급여(면세)' | '급여';
 
-function getTaxClass(svc: Service): TaxClass {
+/**
+ * T-20260526-foot-COPAY-MINI-BUG AC-1:
+ * 건보 유효 등급(일반/차상위/의료급여/6세미만/65세정액) + hira_code 보유 항목 → 급여 분류.
+ * 외국인·미확인·미설정은 기존 is_insurance_covered 기준 유지 (AC-4).
+ */
+const COVERED_GRADES = new Set<InsuranceGrade>([
+  'general', 'low_income_1', 'low_income_2',
+  'medical_aid_1', 'medical_aid_2', 'infant', 'elderly_flat',
+]);
+
+function getTaxClass(svc: Service, insuranceGrade: InsuranceGrade | null = null): TaxClass {
+  // AC-1: 건보 유효 등급 + hira_code → 급여
+  if (insuranceGrade && COVERED_GRADES.has(insuranceGrade) && svc.hira_code) {
+    return '급여';
+  }
   if (svc.is_insurance_covered) return '급여';
   if (svc.vat_type === 'exclusive' || svc.vat_type === 'inclusive') return '비급여(과세)';
   return '비급여(면세)';
@@ -403,6 +419,8 @@ interface SortablePricingRowProps {
   editingPriceValue: string;
   pricingIdx: number;
   pricingLen: number;
+  /** T-20260526-foot-COPAY-MINI-BUG: 급여/비급여 분류용 건보 등급 */
+  insuranceGrade: InsuranceGrade | null;
   onTogglePrepaid: (id: string) => void;
   onStartEditPrice: (id: string, price: number) => void;
   onCommitEditPrice: (id: string) => void;
@@ -421,6 +439,7 @@ function SortablePricingRow({
   editingPriceValue,
   pricingIdx,
   pricingLen,
+  insuranceGrade,
   onTogglePrepaid,
   onStartEditPrice,
   onCommitEditPrice,
@@ -433,7 +452,8 @@ function SortablePricingRow({
     id: service.id,
   });
 
-  const taxClass = getTaxClass(service);
+  // T-20260526-foot-COPAY-MINI-BUG AC-1: 건보 등급 반영
+  const taxClass = getTaxClass(service, insuranceGrade);
   const taxShort =
     taxClass === '급여' ? '급여' :
     taxClass === '비급여(과세)' ? '비급여' : '면세';
@@ -595,6 +615,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const [payMethod, setPayMethod] = useState<PayMethod>('card');
   const [submitting, setSubmitting] = useState(false);
 
+  // T-20260526-foot-COPAY-MINI-BUG: 고객 건보 등급 (급여/비급여 분류용)
+  const [customerInsuranceGrade, setCustomerInsuranceGrade] = useState<InsuranceGrade | null>(null);
+
   // ── T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item 처방전 용량/용법/투약일수 (service.id → RxDosage)
   const [rxItemDosages, setRxItemDosages] = useState<Record<string, RxDosage>>({});
 
@@ -683,6 +706,20 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     setActivePackages([]);
     setTodayTreatments([]);
     setRxItemDosages({});
+    // T-20260526-foot-COPAY-MINI-BUG: 리셋
+    setCustomerInsuranceGrade(null);
+
+    // T-20260526-foot-COPAY-MINI-BUG AC-1: 고객 건보 등급 비동기 로드
+    if (checkIn.customer_id) {
+      supabase
+        .from('customers')
+        .select('insurance_grade')
+        .eq('id', checkIn.customer_id)
+        .maybeSingle()
+        .then(({ data }) => {
+          setCustomerInsuranceGrade((data?.insurance_grade ?? null) as InsuranceGrade | null);
+        });
+    }
 
     Promise.all([
       supabase
@@ -1148,9 +1185,20 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     급여: 0,
   };
   for (const item of pricingItems) {
-    const taxClass = getTaxClass(item.service);
+    // T-20260526-foot-COPAY-MINI-BUG AC-1: 건보 등급 반영
+    const taxClass = getTaxClass(item.service, customerInsuranceGrade);
     totalByTax[taxClass] += getItemAmount(item);
   }
+
+  // T-20260526-foot-COPAY-MINI-BUG AC-2: 급여 자부담금 산출 (건보 등급별 본인부담률)
+  const coveredTotal = totalByTax['급여'];
+  const copayRate = customerInsuranceGrade && COVERED_GRADES.has(customerInsuranceGrade)
+    ? getBaseCopayRate(customerInsuranceGrade)
+    : null;
+  // 100원 절상 — copayCalc.ts와 동일 규칙
+  const copaymentTotal = copayRate !== null && coveredTotal > 0
+    ? Math.min(Math.ceil((coveredTotal * copayRate) / 100) * 100, coveredTotal)
+    : 0;
 
   // 선수금차감 후 금액 = prepaid 제외 합산
   const calcDeductAmount = () =>
@@ -1894,6 +1942,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                         editingPriceValue={editingPriceValue}
                         pricingIdx={idx}
                         pricingLen={pricingItems.length}
+                        insuranceGrade={customerInsuranceGrade}
                         onTogglePrepaid={togglePrepaid}
                         onStartEditPrice={startEditPrice}
                         onCommitEditPrice={commitEditPrice}
@@ -1918,6 +1967,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                         <span className="tabular-nums font-medium">{formatAmount(amt)}</span>
                       </div>
                     ))}
+                    {/* T-20260526-foot-COPAY-MINI-BUG AC-2: 급여 자부담금 */}
+                    {copaymentTotal > 0 && (
+                      <div className="flex justify-between text-xs text-blue-700">
+                        <span>
+                          급여 자부담
+                          {copayRate !== null && ` (${Math.round(copayRate * 100)}%)`}
+                        </span>
+                        <span className="tabular-nums font-semibold">{formatAmount(copaymentTotal)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-sm font-bold pt-1 border-t">
                       <span>합계</span>
                       <span className="tabular-nums text-purple-700">
