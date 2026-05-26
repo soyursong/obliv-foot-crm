@@ -60,6 +60,8 @@ export default defineConfig({
         '**/T-20260525-foot-DOC-AUTOBIND-REGRESS.spec.ts',
         // T-20260525-foot-INS-FIELD-BIND: 보험청구서 field_map 바인딩 누락 수정
         '**/T-20260525-foot-INS-FIELD-BIND.spec.ts',
+        // T-20260526-foot-DOC-FORM-7FIX: 서류 7종 양식 수정 — 주민번호 하이픈/도장/병명 라벨/납입증명서
+        '**/T-20260526-foot-DOC-FORM-7FIX.spec.ts',
         // T-20260520-ins-COPAY-CALC AC-4: 본인부담 산출 순수 함수 단위테스트 (20 TC)
         '**/insurance-calc.spec.ts',
       ],
