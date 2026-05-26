@@ -1,15 +1,20 @@
 ---
 id: T-20260526-foot-DUMMY-12RX
 domain: foot
-status: deploy-ready
+status: deployed
 deploy_ready: true
 priority: P2
 created_at: 2026-05-26
 deploy_ready_at: 2026-05-26T14:00:00+09:00
+deployed_at: "2026-05-27T06:57:00+09:00"
 db_changed: true
 build_passed: N/A
 spec_added: false
 implemented_by: dev-foot
+qa_result: pass
+qa_grade: Yellow
+deploy_commit: 722ebc9
+bundle_hash: N/A (db_only)
 ---
 
 # T-20260526-foot-DUMMY-12RX: 12회+ 경과파악 테스트용 더미 환자 데이터

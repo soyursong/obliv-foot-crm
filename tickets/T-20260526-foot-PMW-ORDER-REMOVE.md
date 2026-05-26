@@ -3,7 +3,7 @@ ticket_id: T-20260526-foot-PMW-ORDER-REMOVE
 title: 결제 미니창 "순서 편집" 기능 제거
 domain: foot
 priority: P1
-status: deploy-ready
+status: deployed
 created_at: 2026-05-26
 deadline: 2026-05-27
 deploy_ready: true
@@ -12,6 +12,14 @@ db_changed: false
 db_rollback_sql: ""
 spec_file: tests/e2e/T-20260526-foot-PMW-ORDER-REMOVE.spec.ts
 commit: "b39702c"
+qa_result: pass
+qa_grade: GREEN
+qa_fail_reason: null
+qa_fail_phase: null
+deployed_at: "2026-05-27T08:00:12+09:00"
+deploy_commit: "00520dc"
+bundle_hash: "index-RjIprGOw"
+field_soak_until: "2026-05-28T08:00:12+09:00"
 ---
 
 ## 개요

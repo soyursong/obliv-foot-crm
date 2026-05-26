@@ -7,7 +7,7 @@ qa_result: pass
 qa_grade: Yellow
 deploy_ready_at: 2026-05-26T11:45:00+09:00
 deployed_at: "2026-05-26T17:30:00+09:00"
-deploy_commit: a8d1c1c
+deploy_commit: d3e5479
 bundle_hash: CxjCcVqm
 field_soak_until: "2026-05-27T17:30:00+09:00"
 db_migration: 20260526130000_service_menu_order.sql — APPLIED (supabase db query --linked)
