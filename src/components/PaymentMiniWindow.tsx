@@ -591,6 +591,90 @@ function SortablePricingRow({
   );
 }
 
+// ── T-20260526-foot-PMW-SIDE-MENU-FEAT: 서비스 메뉴 카드 정렬 행 ──────────────
+// 순서 편집 모드에서 렌더링. DnD grip + ↑↓ 버튼 복합 지원 (AC-1).
+// useSortable hook 규칙상 별도 컴포넌트 필요.
+
+interface SortableMenuCardRowProps {
+  service: Service;
+  idx: number;
+  total: number;
+  onReorder: (id: string, dir: 'up' | 'down') => void;
+}
+
+function SortableMenuCardRow({ service, idx, total, onReorder }: SortableMenuCardRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: service.id,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      data-testid={`menu-card-row-${service.id}`}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+        zIndex: isDragging ? 10 : undefined,
+      }}
+      className={cn(
+        'flex items-center gap-1.5 rounded border px-1.5 py-1.5 bg-white border-input text-xs transition-colors',
+        isDragging && 'shadow-lg',
+      )}
+    >
+      {/* 드래그 핸들 */}
+      <button
+        {...attributes}
+        {...listeners}
+        className="shrink-0 flex items-center justify-center min-w-[28px] min-h-[28px] text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none p-1"
+        title="드래그하여 순서 변경"
+        tabIndex={-1}
+        type="button"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </button>
+      {/* 서비스 정보 */}
+      <div className="flex-1 min-w-0">
+        <p className="font-medium leading-tight truncate">{service.name}</p>
+        {service.service_code && (
+          <p className="text-[9px] text-blue-500 mt-0.5 truncate">{service.service_code}</p>
+        )}
+      </div>
+      <span className="text-[9px] text-muted-foreground tabular-nums shrink-0">
+        {formatAmount(service.price)}
+      </span>
+      {/* ↑↓ 순서 버튼 (항목 2건 이상) */}
+      {total > 1 && (
+        <div className="shrink-0 flex flex-col gap-0.5">
+          <button
+            data-testid={`menu-reorder-up-${service.id}`}
+            onClick={(e) => { e.stopPropagation(); onReorder(service.id, 'up'); }}
+            disabled={idx === 0}
+            className="flex items-center justify-center min-w-[28px] min-h-[20px] p-1 text-muted-foreground disabled:opacity-20 hover:text-teal-600 active:text-teal-700 rounded transition-colors"
+            title="위로"
+            tabIndex={-1}
+            type="button"
+          >
+            <ArrowUp className="h-3 w-3" />
+          </button>
+          <button
+            data-testid={`menu-reorder-down-${service.id}`}
+            onClick={(e) => { e.stopPropagation(); onReorder(service.id, 'down'); }}
+            disabled={idx === total - 1}
+            className="flex items-center justify-center min-w-[28px] min-h-[20px] p-1 text-muted-foreground disabled:opacity-20 hover:text-teal-600 active:text-teal-700 rounded transition-colors"
+            title="아래로"
+            tabIndex={-1}
+            type="button"
+          >
+            <ArrowDown className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface Props {
   checkIn: CheckIn | null;
   onClose: () => void;
@@ -682,6 +766,15 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   const skipPersistRef = useRef(true);
   // T-20260525-foot-FEE-ITEM-REORDER AC-2: display_order 데바운스 타이머
   const orderPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // T-20260526-foot-PMW-SIDE-MENU-FEAT AC-2: 서비스 메뉴 카드 순서 persist 타이머
+  const menuOrderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // T-20260526-foot-PMW-SIDE-MENU-FEAT: 현재 탭 서비스 ID ref (DnD 핸들러 stale-closure 방지)
+  const menuTabServicesRef = useRef<string[]>([]);
+
+  // T-20260526-foot-PMW-SIDE-MENU-FEAT AC-1, AC-4: 서비스 메뉴 카드 순서 (foot_cat → serviceId[])
+  const [menuOrder, setMenuOrder] = useState<Record<string, string[]>>({});
+  // T-20260526-foot-PMW-SIDE-MENU-FEAT AC-1: 순서 편집 모드 토글
+  const [menuReorderMode, setMenuReorderMode] = useState(false);
 
   // ── 서비스 목록 + 기존 시술 pre-load + 패키지 세션 + 양식 목록 ─────────────
   useEffect(() => {
@@ -708,6 +801,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     setRxItemDosages({});
     // T-20260526-foot-COPAY-MINI-BUG: 리셋
     setCustomerInsuranceGrade(null);
+    // T-20260526-foot-PMW-SIDE-MENU-FEAT: 리셋
+    setMenuReorderMode(false);
+    setMenuOrder({});
 
     // T-20260526-foot-COPAY-MINI-BUG AC-1: 고객 건보 등급 비동기 로드
     if (checkIn.customer_id) {
@@ -749,7 +845,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
         .order('created_at', { ascending: true }),
-    ]).then(([svcsRes, cisRes, tplRes, feeSetRes]) => {
+      // T-20260526-foot-PMW-SIDE-MENU-FEAT AC-2, AC-4: 서비스 메뉴 카드 순서 로드
+      supabase
+        .from('service_menu_order')
+        .select('foot_cat, service_id, display_order')
+        .eq('clinic_id', checkIn.clinic_id)
+        .order('display_order'),
+    ]).then(([svcsRes, cisRes, tplRes, feeSetRes, menuOrderRes]) => {
       const svcs = (svcsRes.data ?? []) as Service[];
       setServices(svcs);
 
@@ -800,6 +902,19 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
       // T-20260525-foot-FEE-SET-TEMPLATE AC-1: 수가세트 상태 저장
       setFeeSetTemplates((feeSetRes.data ?? []) as FeeSetTemplate[]);
+
+      // T-20260526-foot-PMW-SIDE-MENU-FEAT AC-2, AC-4: 서비스 메뉴 카드 순서 복원
+      {
+        const rows = (menuOrderRes.data ?? []) as { foot_cat: string; service_id: string; display_order: number }[];
+        if (rows.length > 0) {
+          const orderMap: Record<string, string[]> = {};
+          for (const row of rows) {
+            if (!orderMap[row.foot_cat]) orderMap[row.foot_cat] = [];
+            orderMap[row.foot_cat].push(row.service_id);
+          }
+          setMenuOrder(orderMap);
+        }
+      }
 
       // T-20260522-foot-INS-DOC-PRINT: category별 fallback 병합
       {
@@ -1034,6 +1149,33 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     };
   }, [selectedItems, checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── T-20260526-foot-PMW-SIDE-MENU-FEAT AC-2: service_menu_order persist (debounce 800ms) ──
+  // menuOrder 변경 시 service_menu_order upsert (clinic × foot_cat 단위, fire-and-forget)
+  // AC-3: 오리진 풋 clinic_id 기준 — checkIn.clinic_id 자동 사용
+  useEffect(() => {
+    if (!checkIn || Object.keys(menuOrder).length === 0) return;
+    if (menuOrderTimerRef.current) clearTimeout(menuOrderTimerRef.current);
+    menuOrderTimerRef.current = setTimeout(() => {
+      for (const [foot_cat, ids] of Object.entries(menuOrder)) {
+        if (!ids || ids.length === 0) continue;
+        const rows = ids.map((service_id, idx) => ({
+          clinic_id: checkIn.clinic_id,
+          foot_cat,
+          service_id,
+          display_order: idx,
+          updated_at: new Date().toISOString(),
+        }));
+        supabase
+          .from('service_menu_order')
+          .upsert(rows, { onConflict: 'clinic_id,foot_cat,service_id' })
+          .then();
+      }
+    }, 800);
+    return () => {
+      if (menuOrderTimerRef.current) clearTimeout(menuOrderTimerRef.current);
+    };
+  }, [menuOrder, checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!checkIn) return null;
 
   // ── 현재 탭의 서비스 목록 ────────────────────────────────────────────────
@@ -1047,7 +1189,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     const cat = svc.category ?? '';
     return tabCategoryLabels.includes(label) || tabCategoryLabels.includes(cat);
   });
-  const tabServices =
+  const tabServicesBase =
     activeTab === '풋케어'
       ? rawTabServices.filter(
           (svc) =>
@@ -1055,6 +1197,22 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
             footcareSubLabels.includes(svc.category ?? ''),
         )
       : rawTabServices;
+
+  // T-20260526-foot-PMW-SIDE-MENU-FEAT AC-1, AC-4: 저장된 메뉴 순서 적용 (풋케어 탭 서브카테고리별)
+  const tabServices = (() => {
+    if (activeTab !== '풋케어') return tabServicesBase;
+    const savedOrder = menuOrder[footcareCat];
+    if (!savedOrder || savedOrder.length === 0) return tabServicesBase;
+    const orderMap = new Map(savedOrder.map((id, i) => [id, i]));
+    return [...tabServicesBase].sort((a, b) => {
+      const oa = orderMap.has(a.id) ? orderMap.get(a.id)! : tabServicesBase.length;
+      const ob = orderMap.has(b.id) ? orderMap.get(b.id)! : tabServicesBase.length;
+      return oa - ob;
+    });
+  })();
+
+  // T-20260526-foot-PMW-SIDE-MENU-FEAT: DnD 핸들러 stale-closure 방지 — 현재 탭 ID ref 동기화
+  menuTabServicesRef.current = tabServices.map((s) => s.id);
 
   // AC-4: 스크롤 — tabServices 전체 표시
 
@@ -1138,6 +1296,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   );
 
+  // T-20260526-foot-PMW-SIDE-MENU-FEAT: 메뉴 카드 DnD 센서 (feeItemSensors와 별도 인스턴스)
+  const menuSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+  );
+
   // ↑↓ 버튼: pricing items 내 상대 인덱스 기준 swap
   const handleReorderPricingItem = useCallback((serviceId: string, dir: 'up' | 'down') => {
     setSelectedItems((prev) => {
@@ -1172,6 +1337,38 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     });
     setSaved(false);
   }, []);
+
+  // ── T-20260526-foot-PMW-SIDE-MENU-FEAT: 서비스 메뉴 카드 순서 변경 ──────────
+  // AC-1: DnD + ↑↓ 복합 지원. AC-4: foot_cat 독립 순서.
+  // menuTabServicesRef: 현재 탭 IDs — stale-closure 방지 (렌더 시점 동기화)
+
+  const handleReorderMenuCard = useCallback((serviceId: string, dir: 'up' | 'down') => {
+    setMenuOrder((prev) => {
+      // AC-4: 저장 순서 없으면 현재 탭 순서로 초기화
+      const curIds = [...(prev[footcareCat] ?? menuTabServicesRef.current)];
+      const idx = curIds.indexOf(serviceId);
+      if (dir === 'up' && idx <= 0) return prev;
+      if (dir === 'down' && idx >= curIds.length - 1) return prev;
+      const next = [...curIds];
+      const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+      [next[idx], next[swapIdx]] = [next[swapIdx], next[idx]];
+      return { ...prev, [footcareCat]: next };
+    });
+  }, [footcareCat]);
+
+  const handleDragEndMenuCard = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || String(active.id) === String(over.id)) return;
+    const activeIdStr = String(active.id);
+    const overIdStr   = String(over.id);
+    setMenuOrder((prev) => {
+      const curIds = [...(prev[footcareCat] ?? menuTabServicesRef.current)];
+      const activeIdx = curIds.indexOf(activeIdStr);
+      const overIdx   = curIds.indexOf(overIdStr);
+      if (activeIdx === -1 || overIdx === -1) return prev;
+      return { ...prev, [footcareCat]: arrayMove(curIds, activeIdx, overIdx) };
+    });
+  }, [footcareCat]);
 
   const pricingItems = selectedItems.filter((i) => !isCodeItem(i.service));
   const codeItems = selectedItems.filter((i) => isCodeItem(i.service));
@@ -1664,6 +1861,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                 key={tab}
                 onClick={() => {
                   setActiveTab(tab);
+                  setMenuReorderMode(false);
                 }}
                 className={cn(
                   'flex-1 sm:flex-none sm:w-full px-2 sm:px-3 py-2 sm:py-3 text-sm font-medium text-center sm:text-left transition border-b-2 sm:border-b-0 sm:border-l-2 min-h-[44px]',
@@ -1679,14 +1877,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
           {/* ── 중앙: 코드 목록 / 그리드 (모바일: 고정 높이 52 / 데스크탑: flex-1) ── */}
           <div className="flex flex-col min-w-0 min-h-0 h-52 sm:h-auto sm:flex-1">
-            {/* 풋케어 탭: 서브 카테고리 버튼 */}
+            {/* 풋케어 탭: 서브 카테고리 버튼 + 순서 편집 토글
+                T-20260526-foot-PMW-SIDE-MENU-FEAT AC-1, AC-4 */}
             {activeTab === '풋케어' && (
-              <div className="flex gap-1 px-2 py-1.5 border-b shrink-0 flex-wrap">
+              <div className="flex gap-1 px-2 py-1.5 border-b shrink-0 flex-wrap items-center">
                 {FOOTCARE_CATS.map((cat) => (
                   <button
                     key={cat}
                     onClick={() => {
                       setFootcareCat(cat);
+                      setMenuReorderMode(false);
                     }}
                     className={cn(
                       'px-2 py-1 text-xs rounded border transition-colors min-h-[44px] sm:min-h-0',
@@ -1698,11 +1898,27 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     {cat}
                   </button>
                 ))}
+                {/* 순서 편집 토글 — 항목 2건 이상인 탭에서만 활성 */}
+                {tabServices.length > 1 && (
+                  <button
+                    data-testid="menu-reorder-toggle"
+                    onClick={() => setMenuReorderMode((v) => !v)}
+                    className={cn(
+                      'ml-auto px-2 py-1 text-xs rounded border transition-colors min-h-[44px] sm:min-h-0',
+                      menuReorderMode
+                        ? 'bg-amber-500 text-white border-amber-500'
+                        : 'border-input text-muted-foreground hover:bg-muted',
+                    )}
+                    type="button"
+                  >
+                    {menuReorderMode ? '완료' : '순서 편집'}
+                  </button>
+                )}
               </div>
             )}
 
-            {/* 풋케어: 4열 그리드 — AC-3(코드명/코드번호/수가 3열) + AC-4(스크롤, 페이지네이션 제거) */}
-            {activeTab === '풋케어' && (
+            {/* 풋케어: 4열 그리드 (일반 모드) — AC-3(코드명/코드번호/수가) + AC-4(스크롤) */}
+            {activeTab === '풋케어' && !menuReorderMode && (
               <div className="flex-1 overflow-y-auto p-2">
                 {tabServices.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-8">
@@ -1730,6 +1946,41 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                       </button>
                     ))}
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* 풋케어: 순서 편집 모드 — DnD + ↑↓ 리스트
+                T-20260526-foot-PMW-SIDE-MENU-FEAT AC-1, AC-5 */}
+            {activeTab === '풋케어' && menuReorderMode && (
+              <div className="flex-1 overflow-y-auto p-2">
+                {tabServices.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-8">
+                    등록된 코드가 없습니다
+                  </p>
+                ) : (
+                  <DndContext
+                    sensors={menuSensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEndMenuCard}
+                  >
+                    <SortableContext
+                      items={tabServices.map((s) => s.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-1" data-testid="menu-card-list">
+                        {tabServices.map((svc, idx) => (
+                          <SortableMenuCardRow
+                            key={svc.id}
+                            service={svc}
+                            idx={idx}
+                            total={tabServices.length}
+                            onReorder={handleReorderMenuCard}
+                          />
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
                 )}
               </div>
             )}
