@@ -2,8 +2,8 @@
 id: T-20260525-foot-MESSAGING-V1
 domain: foot
 priority: P1
-status: deploy-ready
-deploy-ready: true
+status: deployed
+deploy-ready: false
 build-passed: true
 db-change: true
 e2e-spec: true
@@ -21,14 +21,21 @@ risk_verdict: GO_WARN
 risk_reason: "3/5 — DB 스키마 신규 5테이블(messaging), EF 신규(send-notification), 셀프체크인 고객 데이터 쓰기 경로 변경(sms_opt_in 추가)"
 deploy_scope: S1_code_copy
 pending_scope: "S2 운영 데이터 등록(AC-4~7) — 김주연 승인 후 / S3 검증 발송(AC-11~12) — 검증 발송 GREEN 후"
-qa_result: ""
-qa_grade: ""
+qa_result: pass
+qa_grade: Yellow
 qa_fail_phase: ""
 qa_fail_reason: ""
 qa_fix_commit: "c2b4075"
 qa_fix_note: "FIX-REQUEST 재QA: rollback.sql STEP1 cron.job 직접쿼리→DO블록4개 수정. forward migration CHECKLIST 4번 2개→2개 행 수정. 재QA 요청."
-status: deploy-ready
-deploy-ready: true
+qa_checked_at: "2026-05-27T14:35:00+09:00"
+spec_fix_at: "2026-05-27T14:45:00+09:00"
+spec_fix_commit: "f50f1db7b1df8b898769769e30f0c75852620edc"
+deployed_at: "2026-05-27T14:35:27+09:00"
+deploy_commit: "f50f1db7b1df8b898769769e30f0c75852620edc"
+bundle_hash: "5a6e59f7c1e8a5de96f44788ea52d01d"
+field_soak_until: "2026-05-28T14:35:00+09:00"
+status: deployed
+deploy-ready: false
 ---
 
 ## QA 결과 (supervisor 재QA — 2026-05-27 commit 10f18b1)
