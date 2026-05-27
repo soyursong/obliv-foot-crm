@@ -1013,7 +1013,11 @@ export function PenChartTab({
     const canvas = canvasRef.current;
     if (!canvas) return;
     // T-20260523-foot-PENCHART-PEN-SLOW: desynchronized=true → compositor와 독립 업데이트 → 펜 지연 감소
-    const ctx = canvas.getContext('2d', { desynchronized: true });
+    // T-20260527-foot-PENCHART-FORM-BLACKSCR REOPEN4 진단:
+    //   ?penchart_no_desync URL param으로 desynchronized 비활성화 테스트 가능
+    //   (현장에서 https://obliv-foot-crm.vercel.app/...?penchart_no_desync 로 접속 시 비활성화)
+    const useDesync = !location.search.includes('penchart_no_desync');
+    const ctx = canvas.getContext('2d', { desynchronized: useDesync });
     // T-20260525-foot-PENCHART-FORM-BLACKSCR AC-4: Draw context 초기화 실패 → fallback
     if (!ctx) {
       console.error('[PenChartTab] drawCanvas 2D context 초기화 실패 (GPU/메모리 한계)', activeDrawTemplate?.form_key);
@@ -1037,6 +1041,24 @@ export function PenChartTab({
     canvas.style.height = `${canvasH}px`;
     ctx.scale(dpr, dpr);
     // 드로잉 레이어는 투명으로 시작 — fillRect 없음
+    // T-20260527-foot-PENCHART-FORM-BLACKSCR REOPEN4 진단 AC-R4-3:
+    //   drawCanvas alpha 채널 테스트 — clearRect 후 (0,0) 픽셀 alpha=0 이어야 정상.
+    //   alpha=255(불투명)이면 iOS Safari desynchronized opaque backing store 버그 확정.
+    try {
+      ctx.clearRect(0, 0, 1, 1);
+      const px = ctx.getImageData(0, 0, 1, 1);
+      if (px.data[3] !== 0) {
+        console.error(
+          '[PenChartTab DIAG-R4-3] ❌ drawCanvas alpha=불투명 확인 — pixel[3]=', px.data[3],
+          '| iOS Safari desynchronized opaque backing store 버그. useDesync=', useDesync,
+          '| 조치: ?penchart_no_desync URL param 시험 필요.'
+        );
+      } else {
+        console.log('[PenChartTab DIAG-R4-3] ✅ drawCanvas alpha=투명(정상) pixel[3]=0 | useDesync=', useDesync);
+      }
+    } catch (diagErr) {
+      console.warn('[PenChartTab DIAG-R4-3] getImageData 실패 (CORS taint?):', diagErr);
+    }
     // T-20260526-foot-PENCHART-PEN-SLOW Fix-8: native pointermove 등록
     // removeEventListener 먼저 → initCanvas 재호출(초기화·양식전환) 시 중복 등록 방지
     canvas.removeEventListener('pointermove', handleNativePointerMove);
@@ -1124,12 +1146,80 @@ export function PenChartTab({
     captureUndoAsync();
   }, [initBgCanvas, initDrawCanvas, captureUndoAsync]);
 
+  // ── REOPEN4 진단: AC-R4-4 CSS stacking context + AC-R4-5 CORS ──────────────
+  /** T-20260527-foot-PENCHART-FORM-BLACKSCR REOPEN4:
+   *  initCanvas 완료 후 자동 실행 — 현장 Safari Web Inspector에서 복사 가능한 진단 로그 출력.
+   *  AC-R4-4: drawCanvas의 모든 조상 요소 중 stacking context 생성 속성 전수 덤프.
+   *  AC-R4-5: bgCanvas.toDataURL() SecurityError = CORS taint 확인.
+   *  → 실기기에서 console 캡처 후 planner에 전달.
+   */
+  const runPenChartDiagnostics = useCallback(() => {
+    const drawCanvas = canvasRef.current;
+    const bgCanvas   = bgCanvasRef.current;
+
+    console.group('[PenChartTab DIAG] ─── REOPEN4 캔버스 진단 시작 ───');
+    console.log('[DIAG] UA:', navigator.userAgent);
+    console.log('[DIAG] 시각:', new Date().toISOString());
+    console.log('[DIAG] formKey:', activeDrawTemplate?.form_key ?? 'null');
+    console.log('[DIAG] drawCanvas:', drawCanvas?.width, '×', drawCanvas?.height,
+                '| CSS:', drawCanvas?.style.width, '×', drawCanvas?.style.height);
+    console.log('[DIAG] bgCanvas:  ', bgCanvas?.width, '×', bgCanvas?.height,
+                '| CSS:', bgCanvas?.style.width, '×', bgCanvas?.style.height);
+    console.log('[DIAG] URL params:', location.search || '(없음)');
+
+    // AC-R4-4: CSS stacking context 전수 조사
+    console.group('[DIAG-R4-4] CSS stacking context 조상 전수');
+    let el: Element | null = drawCanvas ?? null;
+    while (el && el !== document.documentElement) {
+      const cs = window.getComputedStyle(el);
+      const issues: string[] = [];
+      if (cs.opacity !== '1')                                    issues.push(`opacity:${cs.opacity}`);
+      if (cs.transform !== 'none')                               issues.push(`transform:${cs.transform.slice(0, 60)}`);
+      if (cs.willChange && cs.willChange !== 'auto')             issues.push(`will-change:${cs.willChange}`);
+      if (cs.isolation === 'isolate')                            issues.push('isolation:isolate');
+      if (cs.backdropFilter && cs.backdropFilter !== 'none')     issues.push(`backdrop-filter:${cs.backdropFilter}`);
+      if (cs.mixBlendMode && cs.mixBlendMode !== 'normal')       issues.push(`mix-blend-mode:${cs.mixBlendMode}`);
+      const animName = cs.animationName;
+      if (animName && animName !== 'none')                       issues.push(`animation:${animName}(${cs.animationPlayState},${cs.animationDuration})`);
+      if (issues.length > 0) {
+        console.warn('[R4-4]', el.tagName, (el.className || '').toString().slice(0, 60), '→', issues.join(' | '));
+      }
+      el = el.parentElement;
+    }
+    console.groupEnd();
+
+    // AC-R4-5: CORS taint — bgCanvas.toDataURL() SecurityError 여부
+    try {
+      const sample = bgCanvas?.toDataURL('image/png').slice(0, 30) ?? 'no-bgCanvas';
+      console.log('[DIAG-R4-5] ✅ bgCanvas.toDataURL() 성공 — CORS taint 없음:', sample);
+    } catch (e: unknown) {
+      const isSecError = e instanceof Error && e.name === 'SecurityError';
+      console.error('[DIAG-R4-5] ❌ bgCanvas.toDataURL()', isSecError ? 'SecurityError — CORS taint!' : '기타 오류', e);
+    }
+
+    console.groupEnd();
+  }, [activeDrawTemplate]);
+
   useEffect(() => {
     if (mode === 'draw') {
-      const t = setTimeout(initCanvas, 50);
+      // T-20260527-foot-PENCHART-FORM-BLACKSCR REOPEN4:
+      //   50ms → 200ms: Dialog 애니메이션(150ms) 완료 후에 canvas 초기화 보장.
+      //   근거:
+      //     CSS bundle 확인 → .animate-in { animation-duration: .15s } (150ms)
+      //     @keyframes enter { 0% { transform: translate3d(0,0,0) ... } }
+      //     → 0% 프레임에 transform 포함 → 애니메이션 중 GPU compositor layer 생성.
+      //     desynchronized:true drawCanvas가 이 layer 안에서 초기화되면
+      //     iOS Safari에서 opaque(alpha-less) backing store 할당 → 투명 픽셀=BLACK → 검정화면.
+      //   수정: 50ms(애니메이션 도중) → 200ms(애니메이션 완료 50ms 후) 로 연장.
+      //   진단: initCanvas + runPenChartDiagnostics 연속 실행으로 AC-R4-3/4/5 자동 덤프.
+      const t = setTimeout(() => {
+        initCanvas();
+        // 진단은 다음 rAF에서 — initCanvas 내 DOM 반영 완료 후 computed style 측정 보장
+        requestAnimationFrame(runPenChartDiagnostics);
+      }, 200);
       return () => clearTimeout(t);
     }
-  }, [mode, initCanvas]);
+  }, [mode, initCanvas, runPenChartDiagnostics]);
 
   // T-20260526-foot-PENCHART-FORM-BLACKSCR REOPEN AC-R3:
   //   bgCanvas contextlost/contextrestored 핸들러

@@ -359,17 +359,20 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
     expect(bgCanvasIdx).not.toEqual(drawCanvasIdx);
   });
 
-  test('AC-R3-ROOT: initDrawCanvas — desynchronized:true 유지됨 (HW 가속 펜 반응 보존)', () => {
+  test('AC-R3-ROOT: initDrawCanvas — desynchronized URL param 로직 포함 + getContext 호출에 desynchronized 사용', () => {
     /**
-     * willChange:'transform' 제거 후에도 desynchronized:true는 유지되어야 함.
-     * desynchronized:true는 GPU 텍스처 불투명화 없이 펜 반응 성능을 개선함.
+     * REOPEN4: desynchronized는 URL param ?penchart_no_desync 으로 제어.
+     * const useDesync = !location.search.includes('penchart_no_desync') → ctx = getContext('2d', { desynchronized: useDesync })
+     * HW 가속 유지 (기본값 true) + 현장 테스트용 비활성화 경로 추가.
      */
     const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
 
     const initDrawIdx = src.indexOf('const initDrawCanvas = useCallback');
     expect(initDrawIdx).toBeGreaterThan(0);
-    const drawInitBlock = src.slice(initDrawIdx, initDrawIdx + 300);
-    expect(drawInitBlock).toContain('desynchronized: true');
+    // 검색 범위 확장(REOPEN4 진단 코드 추가로 블록이 더 큼)
+    const drawInitBlock = src.slice(initDrawIdx, initDrawIdx + 800);
+    expect(drawInitBlock).toContain('penchart_no_desync');
+    expect(drawInitBlock).toContain('desynchronized: useDesync');
   });
 
   // ── AC-5: 기존 기능 회귀 없음 ──────────────────────────────────────────────
@@ -391,12 +394,17 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
     expect(src).toContain('isPersonalChecklistKey');
   });
 
-  test('AC-5: initCanvas useEffect — mode==="draw" 시 50ms setTimeout 유지', () => {
+  test('AC-5: initCanvas useEffect — mode==="draw" 시 200ms setTimeout (Dialog 애니메이션 완료 후 canvas 초기화)', () => {
     const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
 
-    // draw 모드 진입 시 initCanvas 지연 호출 (DOM render 후 실행 보장)
+    // REOPEN4: 50ms → 200ms 로 연장
+    //   근거: Dialog animate-in animation-duration=150ms → @keyframes enter 0%에 translate3d → GPU layer.
+    //   50ms는 애니메이션 도중 초기화 → iOS Safari opaque backing store 위험.
+    //   200ms는 애니메이션 완료(150ms) + 50ms 여유.
     expect(src).toContain("if (mode === 'draw')");
-    expect(src).toContain('setTimeout(initCanvas, 50)');
+    // initCanvas가 200ms 후에 호출되어야 함 (50ms는 아직도 사용되면 실패)
+    expect(src).not.toContain('setTimeout(initCanvas, 50)');
+    expect(src).toContain('200');   // setTimeout 200ms 포함 여부
   });
 
   // ── 회귀: AUTOFILL / FORM-TEMPLATE-REGEN ────────────────────────────────────
