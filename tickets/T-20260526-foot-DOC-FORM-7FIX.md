@@ -22,7 +22,9 @@ risk_reason: "2/5 — BL(주민번호 하이픈 포맷팅·도장 위치 로직 
 qa_result: ""
 qa_fail_reason: ""
 qa_fail_phase: ""
-deploy_ready_at: "2026-05-27T09:10:00+09:00"
+deploy_ready_at: "2026-05-27T16:15:00+09:00"
+build_verify_cmd: "npm run build:verify"
+build_verify_note: "macOS에 GNU timeout 없음 — scripts/build.sh 래퍼(57998c0) 사용. `npm run build:verify` 또는 `npm run build 2>&1 | tail -30` 직접 실행 권장."
 related_tickets:
   - T-20260526-foot-DOC-FORM-REVISE
 ---
@@ -55,6 +57,34 @@ DOC-FORM-REVISE(8c65e8d) 후속 — 납입증명서 AC-7 잔여 2항목 완결.
 - AC-5 진료의뢰서 4필드 자동기입: ✅ (8c65e8d)
 - AC-6 진단서 병명 정정: ✅ (8c65e8d)
 - AC-7 납입증명서 전항: ✅ (8c65e8d + d23d8a7)
+
+---
+
+## 후속 업데이트 — 2026-05-27 16:15 KST deploy-ready 재마킹 (FIX-REQUEST MSG-20260527-160838-p5ok)
+
+### qa_fail_reason: build_fail 해소
+
+**원인**: `timeout 60 npm run build` → macOS에 GNU `timeout` 명령어 없음 (`/bin/sh: timeout: command not found`).  
+**코드 문제 없음**: 빌드 자체는 정상 (`npm run build` → ✓ built in 3.23s, 에러 0건).
+
+**이미 적용된 해결책** (커밋 57998c0):
+- `scripts/build.sh` — GNU `timeout` → `gtimeout` → no-timeout 폴백 순서로 시도
+- `npm run build:verify` = `bash scripts/build.sh 60`
+
+**supervisor 빌드 검증 방법** (macOS):
+```bash
+# 방법 1 (권장): cross-platform 래퍼 사용
+npm run build:verify 2>&1 | tail -30
+
+# 방법 2: 직접 실행 (build은 3.23s, timeout 불필요)
+npm run build 2>&1 | tail -30
+```
+
+**빌드 결과 (dev-foot 로컬 검증 2026-05-27 16:15 KST)**:
+```
+✓ built in 3.23s
+```
+에러 0건. 모든 번들 정상 생성.
 
 ---
 
