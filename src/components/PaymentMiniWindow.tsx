@@ -519,8 +519,10 @@ function SortablePricingRow({
         title={isPrepaid ? '선수금차감 해제' : '선수금차감 지정'}
       />
       {/* 코드명 — T-20260526-foot-REDBOX-CODENAME-TRIM: 코드번호 컬럼 제거(Zone1에 표시됨)
-          → flex-1 표시 공간 +40px 확보. title로 풀네임 tooltip 제공 */}
-      <span className="flex-1 font-medium truncate min-w-0" title={service.name}>
+          → flex-1 표시 공간 +40px 확보. title로 풀네임 tooltip 제공
+          T-20260527-foot-PMW-CODENAME-TRUNC: truncate(white-space:nowrap) 제거 → break-words 줄바꿈 허용
+          Zone2가 sm=640px에서 ~118px만 남아 14자 한글 잘림 → word-wrap으로 전체 표시 */}
+      <span className="flex-1 font-medium break-words min-w-0 leading-tight" title={service.name}>
         {service.name}
       </span>
       {/* 수가 편집 (PREPAID-DEDUCT AC-4) */}
