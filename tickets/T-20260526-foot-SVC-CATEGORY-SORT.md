@@ -20,6 +20,9 @@ deployed_at: "2026-05-27T07:49:00+09:00"
 bundle_hash: C3l5K3Ni
 field_soak_until: "2026-05-28T07:49:00+09:00"
 mq_origin: MSG-20260526-101601-9hll
+fix_request: MSG-20260527-160219-nagw
+fix_applied: "2026-05-27T16:10:00+09:00"
+fix_summary: "package.json build:verify 스크립트 추가(scripts/build.sh 60 래퍼). macOS에서 timeout 미존재 문제 해결. npm run build:verify 2>&1 | tail -30 → 3.29s OK."
 ---
 
 ## T-20260526-foot-SVC-CATEGORY-SORT — 서비스관리 탭별 순서 변경 + DB 저장
