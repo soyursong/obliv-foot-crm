@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useNavigate, useParams } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { CalendarPlus, Camera, ChevronDown, ChevronRight, ExternalLink, FileText, Loader2, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Timer, Trash2, Upload, X } from 'lucide-react';
+import { CalendarPlus, Camera, ChevronDown, ChevronRight, ExternalLink, FileText, Loader2, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
 import { Badge } from '@/components/ui/badge';
@@ -49,6 +49,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 // T-20260517-foot-C2-CONSULT-DOCS AC-R1: 합본 양식 (개인정보+체크리스트 / 환불+비급여)
 import { ChecklistForm } from '@/components/forms/ChecklistForm';
 import { ConsentForm } from '@/components/forms/ConsentForm';
+// T-20260527-foot-MEDCHART-TAB-REAPPEAR: 고객차트 내 진료차트 탭 버튼 — MedicalChartPanel 직접 열기
+import MedicalChartPanel from '@/components/MedicalChartPanel';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
@@ -1376,6 +1378,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260511-foot-C2-PKG-MERGE-ADDON: 기존 패키지에 항목 추가
   const [openPackageAddon, setOpenPackageAddon] = useState(false);
   const [loading, setLoading] = useState(true);
+  // T-20260527-foot-MEDCHART-TAB-REAPPEAR: 진료차트 패널 열림 상태 (데이터 유무 무관 항상 렌더 가능)
+  const [medicalChartOpen, setMedicalChartOpen] = useState(false);
+
   // T-20260507-foot-CHART2-FULL-LAYOUT: 탭 네비게이션 (전능CRM 이중 탭)
   // T-20260522-foot-CHART2-TAB-PENCHART: 기본 탭 → 펜차트 (현장 요청)
   const [chartTab, setChartTab] = useState<string>('pen_chart');
@@ -3909,6 +3914,17 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     {label}
                   </button>
                 ))}
+                {/* T-20260527-foot-MEDCHART-TAB-REAPPEAR: 진료차트 탭 버튼 — 항상 표시, 데이터 유무 무관 */}
+                {/* AC-2: 데이터 0건이어도 탭은 항상 visible / 역할 제한 없음(원장·치료사·데스크 공통) */}
+                <button
+                  type="button"
+                  data-testid="btn-open-medical-chart"
+                  onClick={() => setMedicalChartOpen(true)}
+                  className="flex-1 justify-center min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold"
+                >
+                  <Stethoscope className="h-3.5 w-3.5" />
+                  진료차트
+                </button>
               </div>
             </div>
 
@@ -6906,6 +6922,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           onSaved={() => {
             setShowConsentFormModal(false);
           }}
+        />
+      )}
+
+      {/* T-20260527-foot-MEDCHART-TAB-REAPPEAR: 진료차트 패널 (고객차트 내 버튼 → Drawer 열기) */}
+      {medicalChartOpen && customer && (
+        <MedicalChartPanel
+          open={medicalChartOpen}
+          onOpenChange={setMedicalChartOpen}
+          customerId={customer.id}
+          clinicId={customer.clinic_id}
+          currentUserRole={profile?.role ?? ''}
+          currentUserEmail={profile?.email ?? null}
         />
       )}
     </div>
