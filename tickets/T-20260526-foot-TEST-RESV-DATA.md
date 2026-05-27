@@ -7,9 +7,9 @@ deploy_ready: true
 db_change: true
 rollback_sql: scripts/rollback_testdata_20260527.mjs
 spec_file: tickets/T-20260526-foot-TEST-RESV-DATA.md
-summary: "5/27 테스트용 동물명 초진/재진 예약 64건 — 8슬롯(11:00~18:00), 초진4+재진4/슬롯, 고객8명"
+summary: "5/27 테스트용 동물명 초진/재진 예약 64건 — 고객8명(초진4+재진4) × 8슬롯(11:00~18:00) = 64건"
 created: 2026-05-26
-updated: 2026-05-26
+updated: 2026-05-27
 reporter: planner (MSG-20260526-202058-6gb4)
 ---
 
@@ -77,3 +77,4 @@ node scripts/rollback_testdata_20260527.mjs
 |------|------|
 | 2026-05-26 | 최초 구현. queue_number 충돌(301) → 9001+ 변경 후 재실행 |
 | 2026-05-26 | DB INSERT 완료: 고객 8명, 예약 64건, 과거체크인 4건 |
+| 2026-05-27 | FIX-REQUEST(supervisor MSG-20260527-180733-8z5z): seed v2가 고객 64명(슬롯별 고유 동물) 구조로 잘못 구현됨. AC 스펙(고객 8명 × 8슬롯 = 64건)에 맞게 v3로 재작성. rollback 스크립트 주석 보완. |
