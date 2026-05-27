@@ -490,6 +490,9 @@ export default function MedicalChartPanel({
       }
 
       toast.success(selectedChartId ? '진료 기록 수정 완료' : '진료 기록 저장 완료');
+      // T-20260527-foot-MEDCHART-DATA-LOSS AC-FE: 저장 후 필터 리셋
+      // 필터 활성 상태에서 저장 시 새 차트가 필터에 미일치 → 타임라인에서 사라져 보이는 UX 버그 방지
+      setMemoFilters(new Set<MemoFilter>());
       loadData();
     } catch (err: unknown) {
       toast.error(`저장 실패: ${err instanceof Error ? err.message : '알 수 없는 오류'}`);
