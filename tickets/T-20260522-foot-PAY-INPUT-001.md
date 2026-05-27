@@ -8,16 +8,18 @@ spec_updated_at: "2026-05-26T15:10:00+09:00"
 spec_update_commit: ce90953
 spec_update_reason: "대표 ack 2026-05-26 14:43 KST — 옵션 B 통합 5/28 채택. AC-2 카드 승인번호·TID 입력 칸 제거(매처 자동 채움)."
 deploy_ready: true
-deploy_ready_at: "2026-05-23 21:40 KST"
+deploy_ready_at: "2026-05-27 16:55 KST"
 fix_commit: 6c503b3
 spec_update_commit: ce90953
+build_fix_commit: TBD
 deploy_commit: 31d78521853d86c4db0ae8c29cb3cc97ee100a1a
 deployed_at: "2026-05-24T02:52:00+09:00"
-qa_result: pass
-qa_grade: Yellow
+qa_result: pending
+qa_grade: null
 bundle_hash: D5lTJ_QI
 build_status: OK
 build_time: 3.23s
+build_workaround: "scripts/build.sh — macOS timeout fallback. timeout→gtimeout→plain npm run build 순 시도. `bash scripts/build.sh` 사용."
 field_soak_until: "2026-05-25T02:52:00+09:00"
 db_change: true
 db_migration: supabase/migrations/20260523040000_pay_external_fields.sql
