@@ -155,3 +155,86 @@ test.describe('T-20260527-CLOSE-ITEM-COUNT AC-5: 금액 집계 무변경', () =>
   });
 
 });
+
+// ─── FIX: supervisor QA 대응 — 조건부 렌더링 제거 검증 ────────────────────────
+
+test.describe('T-20260527-CLOSE-ITEM-COUNT FIX: 수기결제 항상 렌더 (supervisor 요구)', () => {
+
+  test('수기결제 카드 — manualTotal>0 조건부 렌더 제거 확인', () => {
+    const s = src();
+    // 수기결제 SummaryCard가 조건부({totals.manualTotal > 0 && ...) 없이 항상 렌더되어야 함
+    // 이전 조건 문자열이 존재하면 0건 상태에서 카드가 사라짐 → 실패
+    expect(s).not.toContain('{totals.manualTotal > 0 && (');
+    // title="수기결제" 는 여전히 존재 (항상 렌더)
+    expect(s).toContain('title="수기결제"');
+  });
+
+});
+
+// ─── VISIBLE: 브라우저 렌더링 검증 (desktop-chrome + auth 필요) ──────────────
+// supervisor QA에서 /admin/closing 접속 후 3개 텍스트 미탐지 재현 방지.
+// 실행 조건: 로컬 dev 서버(port 8082) + .auth/user.json 세션 필요.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test.describe('T-20260527-CLOSE-ITEM-COUNT VISIBLE: /admin/closing 텍스트 가시성', () => {
+
+  test('수기결제 · 합계(결제수단별) · N건 — 0건 상태에서도 가시', async ({ page }) => {
+    await page.goto('/admin/closing');
+    await page.waitForLoadState('networkidle');
+
+    // 인증 실패 시(로그인 페이지 리다이렉트) 명시적 오류
+    const currentUrl = page.url();
+    if (currentUrl.includes('/login') || currentUrl.includes('login')) {
+      throw new Error(
+        `[VISIBLE] 인증 실패 — /admin/closing 접근 시 로그인으로 리다이렉트됨.\n` +
+        `URL: ${currentUrl}\n` +
+        `auth.setup.ts 실행 여부와 .auth/user.json 확인 필요.`,
+      );
+    }
+
+    // 미래 날짜(0건 상태) 강제: 수기결제 manualTotal=0 조건에서도 카드 존재 보장
+    const dateInput = page.locator('input[type="date"]').first();
+    if (await dateInput.count() > 0) {
+      await dateInput.fill('2099-12-31');
+      await page.waitForLoadState('networkidle');
+    }
+
+    // ① "수기결제" 타이틀 — 조건 제거 후 0건 상태에서도 visible
+    await expect(page.getByText('수기결제').first()).toBeVisible({ timeout: 8_000 });
+
+    // ② "합계 (결제수단별)" 타이틀 — 항상 렌더
+    await expect(page.getByText('합계 (결제수단별)').first()).toBeVisible({ timeout: 8_000 });
+
+    // ③ "N건" 패턴 텍스트 — 0건 시 "0건", 데이터 있을 시 "N건"
+    //    패키지/단건/수기/합계 4 SummaryCard × 각 3행 → 최소 4개 이상 "N건" 존재
+    const kenLocator = page.locator('text=/^\\d+건$/');
+    const kenCount = await kenLocator.count();
+    console.log(`[VISIBLE] "N건" 패턴 개수: ${kenCount}`);
+    expect(kenCount).toBeGreaterThanOrEqual(1);
+  });
+
+  test('수기결제 카드 — 미래 날짜 0건에서 "0건" 텍스트 포함', async ({ page }) => {
+    await page.goto('/admin/closing');
+    await page.waitForLoadState('networkidle');
+
+    const currentUrl = page.url();
+    if (currentUrl.includes('/login')) {
+      test.skip(true, `인증 미설정 — 로그인 리다이렉트 (${currentUrl})`);
+      return;
+    }
+
+    // 미래 날짜로 설정 → 모든 카운트 = 0
+    const dateInput = page.locator('input[type="date"]').first();
+    if (await dateInput.count() > 0) {
+      await dateInput.fill('2099-12-31');
+      await page.waitForLoadState('networkidle');
+    }
+
+    // "0건" 텍스트가 DOM에 존재해야 함 (수기결제 카드 항상 렌더 보장 결과)
+    const zeroKen = page.locator('text=0건');
+    const zeroKenCount = await zeroKen.count();
+    console.log(`[VISIBLE] "0건" 텍스트 개수: ${zeroKenCount}`);
+    expect(zeroKenCount).toBeGreaterThanOrEqual(1);
+  });
+
+});

@@ -10,6 +10,8 @@ implemented_by: dev-foot
 build: ok
 db_change: false
 spec_added: true
+fix_applied: 2026-05-27
+fix_reason: supervisor_QA_phase2_browser_e2e_fail
 ---
 
 # T-20260527-foot-CLOSE-ITEM-COUNT — 일마감 개별 건 수 표기 (빨간 박스 구역 전체 적용)
@@ -95,3 +97,45 @@ totalCount={totals.manualCardCount + totals.manualCashCount + totals.manualTrans
 ## DB 변경
 
 없음 (순수 프론트엔드 props 연결)
+
+---
+
+## FIX — supervisor QA phase2 재작업 (2026-05-27)
+
+### 원인 분석
+
+| 실패 항목 | 원인 |
+|-----------|------|
+| 스크린샷 = 로그인 페이지 | QA 환경에서 `/admin/closing` 접근 시 인증 세션 없어 리다이렉트 |
+| "수기결제" 미탐지 | `{totals.manualTotal > 0 && (` 조건부 렌더링 → 0건 날짜에서 카드 DOM에 없음 |
+| "합계 (결제수단별)" / "건" 미탐지 | 인증 실패로 페이지 자체가 렌더되지 않음 |
+
+### 수정 내역
+
+**1. `src/pages/Closing.tsx`** — 수기결제 카드 조건부 렌더링 제거
+
+```tsx
+// 전 (0건 시 카드 미렌더)
+{totals.manualTotal > 0 && (
+  <SummaryCard title="수기결제" .../>
+)}
+
+// 후 (항상 렌더 — 0건 시 "0건" 표기)
+<SummaryCard title="수기결제" .../>
+```
+
+**2. `tests/e2e/T-20260527-foot-CLOSE-ITEM-COUNT.spec.ts`** — FIX + VISIBLE 블록 추가
+
+- `FIX` describe: `{totals.manualTotal > 0 && (` 소스 부재 검증 (정적)
+- `VISIBLE` describe: 브라우저 내비게이션 → `/admin/closing` 접근 후 3개 텍스트 가시성 검증
+  - 인증 실패 시 명시적 오류 메시지 출력
+  - 미래 날짜(2099-12-31) → 0건 상태에서 "0건" 텍스트 존재 검증
+
+### 빌드
+```
+✓ built in 3.30s
+```
+
+### 스펙 추가
+- FIX 1 spec (정적 분석) + VISIBLE 2 spec (브라우저) = +3 spec
+- 총 21 spec

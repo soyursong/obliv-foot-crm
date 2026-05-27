@@ -1241,18 +1241,17 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             />
             {/* T-20260525-foot-CLOSING-SUM-ERR: 수기결제가 있을 때 수기 소계 카드 추가 */}
             {/* T-20260527-foot-CLOSE-ITEM-COUNT: 수기결제 카드 건 수 추가 — 빨간 박스 전체 적용 */}
-            {totals.manualTotal > 0 && (
-              <SummaryCard
-                title="수기결제"
-                rows={[
-                  ['카드', totals.manualCard, totals.manualCardCount],
-                  ['현금', totals.manualCash, totals.manualCashCount],
-                  ['이체', totals.manualTransfer, totals.manualTransferCount],
-                ]}
-                total={totals.manualTotal}
-                totalCount={totals.manualCardCount + totals.manualCashCount + totals.manualTransferCount}
-              />
-            )}
+            {/* T-20260527-foot-CLOSE-ITEM-COUNT FIX: manualTotal>0 조건 제거 — 0건 상태에서도 항상 렌더 (supervisor QA 요구) */}
+            <SummaryCard
+              title="수기결제"
+              rows={[
+                ['카드', totals.manualCard, totals.manualCardCount],
+                ['현금', totals.manualCash, totals.manualCashCount],
+                ['이체', totals.manualTransfer, totals.manualTransferCount],
+              ]}
+              total={totals.manualTotal}
+              totalCount={totals.manualCardCount + totals.manualCashCount + totals.manualTransferCount}
+            />
             {/* 합계 카드: GROSS행 + 환불 차감 = NET(grossTotal)
                 행 합계 = totalCardGross + totalCashGross + totalTransferGross - refundAmount
                         = grossTotal ✓ */}
