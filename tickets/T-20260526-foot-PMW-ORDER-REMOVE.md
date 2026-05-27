@@ -20,6 +20,7 @@ deployed_at: "2026-05-27T08:00:12+09:00"
 deploy_commit: "00520dc"
 bundle_hash: "index-RjIprGOw"
 field_soak_until: "2026-05-28T08:00:12+09:00"
+field_validation_slack_ts: "1779844220.558389"
 ---
 
 ## 개요
