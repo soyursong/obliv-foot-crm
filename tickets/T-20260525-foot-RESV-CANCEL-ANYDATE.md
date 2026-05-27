@@ -1,18 +1,19 @@
 ---
 id: T-20260525-foot-RESV-CANCEL-ANYDATE
 domain: foot
-status: deployed
+status: deploy-ready
 deploy-ready: true
 build-passed: true
 db-change: false
 e2e-spec: true
-summary: "예약관리 전일자 취소 허용. resv-card 외부 div에 onContextMenu 추가 → 이름 span 외 영역 우클릭도 취소메뉴 접근 가능. isToday 제한 없음 코드 분석 확인. 빌드 3.30s OK."
+summary: "예약관리 전일자 취소 허용. resv-card 외부 div에 onContextMenu 추가 → 이름 span 외 영역 우클릭도 취소메뉴 접근 가능. isToday 제한 없음 코드 분석 확인. 빌드 3.31s OK. QA build cmd: npm run build:verify (cross-platform, scripts/build.sh wrapper)."
 qa_result: pass
 qa_grade: Yellow
 deploy_commit: 2a2d3dd
 deployed_at: 2026-05-26T05:39:00+09:00
 bundle_hash: Reservations-CAU9yxco.js
 field_soak_until: 2026-05-27T05:39:00+09:00
+qa_build_cmd: "npm run build:verify 2>&1 | tail -30"
 ---
 
 ## T-20260525-foot-RESV-CANCEL-ANYDATE — 예약관리 전일자 예약 취소 허용
@@ -79,3 +80,27 @@ onContextMenu={(e) => {
 - AC-2: 취소 모달 날짜 무관 동작
 - AC-3: 대시보드 영향 없음
 - 회귀: 예약관리 JS 에러 없음
+
+---
+
+### QA 빌드 재검증 (FIX-REQUEST MSG-20260527-161622-en44 대응)
+
+**원인**: supervisor 환경(macOS)에 GNU `timeout` 명령 없음 → `timeout 60 npm run build` 실패
+
+**이미 구현된 cross-platform 해결책**:
+- `scripts/build.sh` — GNU `timeout` → `gtimeout` → no-timeout 3단계 fallback wrapper (기존 파일)
+- `npm run build:verify` — `bash scripts/build.sh 60` 호출 (package.json에 이미 등록)
+
+**QA 올바른 빌드 명령** (supervisor Phase 1):
+```bash
+npm run build:verify 2>&1 | tail -30
+```
+(`timeout 60 npm run build 2>&1 | tail -30` 대체)
+
+**재검증 빌드 결과** (2026-05-27):
+```
+[build.sh] WARNING: timeout/gtimeout not found — running build without time limit
+✓ built in 3.31s
+```
+
+**결론**: 코드 변경 없음. `scripts/build.sh` wrapper 기존 구현 확인. QA Phase 1은 `npm run build:verify`로 재실행 가능.
