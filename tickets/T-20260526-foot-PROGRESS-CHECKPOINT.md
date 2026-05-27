@@ -20,8 +20,10 @@ design_status: completed
 design_msg: MSG-20260526-131357-wjgv
 deploy_ready: true
 build_ok: true
+build_verify_cmd: "bash scripts/build.sh 2>&1 | tail -30"
 db_migration: "supabase/migrations/20260526170000_progress_plans.sql + 20260527000000_progress_check_resv.sql"
-deploy_ready_at: "2026-05-27T00:00:00+0900"
+deploy_ready_at: "2026-05-27T17:00:00+0900"
+deploy_ready_commit: 57998c0eb74a3ef5e746b1e855f62422b80741b6
 ---
 
 # T-20260526-foot-PROGRESS-CHECKPOINT — 경과분석지 플랜 세팅 (n회차 체크포인트 + 예약 시 알림)
@@ -83,3 +85,11 @@ deploy_ready_at: "2026-05-27T00:00:00+0900"
 
 *dev-foot 구현 완료: 2026-05-27*
 *빌드: ✓ (npm run build 3.58s, 0 errors)*
+
+### FIX (2026-05-27 by supervisor FIX-REQUEST MSG-20260527-160709-6znf)
+- **원인**: supervisor 환경(macOS)에서 GNU `timeout` 미설치 → `timeout 60 npm run build` 실행 불가. phase1 build_fail로 QA 중단.
+- **코드 변경**: 없음 (피처 코드 정상, `scripts/build.sh` 크로스플랫폼 래퍼 이미 존재)
+- **해결**: `scripts/build.sh` 사용 안내 — timeout → gtimeout → plain npm run build 자동 폴백
+- **빌드 직접 검증**: `npm run build:verify` ✓ 3.26s, 0 errors (dev-foot 환경)
+- **supervisor QA 대체 명령**: `bash scripts/build.sh 2>&1 | tail -30`
+- **커밋**: `57998c0eb74a3ef5e746b1e855f62422b80741b6`
