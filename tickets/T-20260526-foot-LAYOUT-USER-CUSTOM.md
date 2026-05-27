@@ -11,7 +11,7 @@ risk_verdict: GO_WARN
 risk_reason: "DB 스키마 변경(user_dashboard_layout_overrides 신규 테이블) + RLS 정책 신설. 기존 행(user_id=NULL) 하위호환 유지."
 deploy_ready: true
 deploy_ready_at: "2026-05-27T18:15:00+0900"
-deploy_ready_commit: TBD_POST_COMMIT
+deploy_ready_commit: 2096e73
 deploy_ready_build: OK
 db_migration: "supabase/migrations/ user_dashboard_layout_overrides (신규 테이블, RLS)"
 db_rollback: "있음"
