@@ -1,25 +1,45 @@
 #!/usr/bin/env bash
 # build.sh — cross-platform build wrapper
-# Handles macOS where GNU `timeout` is not available.
+# Handles macOS EINTR/uv_cwd issue caused by timeout/gtimeout sending SIGALRM
+# to Node.js processes (libuv uv_cwd() is not signal-safe on macOS).
+#
+# FIX (2026-05-27 T-20260526-foot-LAYOUT-USER-CUSTOM FIX-3):
+#   timeout/gtimeout replaced with a pure-shell background watchdog.
+#   Watchdog sends SIGTERM only — no SIGALRM → no EINTR in uv_cwd.
+#
 # Usage: bash scripts/build.sh [timeout_seconds]
 #   timeout_seconds defaults to 120.
 #
-# Priority:
-#   1) GNU timeout  (Linux / macOS with brew coreutils)
-#   2) gtimeout     (macOS brew coreutils alternate name)
-#   3) no timeout   (plain npm run build — safe fallback)
+# DO NOT run: timeout 60 npm run build
+#   → Use this script or plain: npm run build
 
 set -euo pipefail
 
 TIMEOUT_SECS="${1:-120}"
-BUILD_CMD="npm run build"
 
-if command -v timeout &>/dev/null; then
-  exec timeout "$TIMEOUT_SECS" $BUILD_CMD
-elif command -v gtimeout &>/dev/null; then
-  exec gtimeout "$TIMEOUT_SECS" $BUILD_CMD
+# Start build in background
+npm run build &
+BUILD_PID=$!
+
+# Spawn watchdog: kill build if it exceeds timeout
+(
+  sleep "$TIMEOUT_SECS"
+  if kill -0 "$BUILD_PID" 2>/dev/null; then
+    echo "[build.sh] TIMEOUT after ${TIMEOUT_SECS}s — killing build (PID $BUILD_PID)" >&2
+    kill "$BUILD_PID" 2>/dev/null
+  fi
+) &
+WATCHDOG_PID=$!
+
+# Wait for build to complete
+if wait "$BUILD_PID"; then
+  BUILD_EXIT=0
 else
-  # No timeout utility — run directly; CI kill by job timeout if needed.
-  echo "[build.sh] WARNING: timeout/gtimeout not found — running build without time limit" >&2
-  exec $BUILD_CMD
+  BUILD_EXIT=$?
 fi
+
+# Clean up watchdog
+kill "$WATCHDOG_PID" 2>/dev/null
+wait "$WATCHDOG_PID" 2>/dev/null || true
+
+exit "$BUILD_EXIT"

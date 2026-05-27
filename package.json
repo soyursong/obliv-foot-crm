@@ -15,7 +15,7 @@
     "test:regression": "npx playwright test tests/e2e/regressions/ tests/e2e/foot-qa-r1-*.spec.ts tests/e2e/foot-qa-r2-*.spec.ts --project=desktop-chrome",
     "test:all": "npx playwright test --project=desktop-chrome",
     "ci:push": "npm run typecheck && npm run build && npm run test:critical",
-    "build:verify": "bash scripts/build.sh 60"
+    "build:verify": "bash scripts/build.sh"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",

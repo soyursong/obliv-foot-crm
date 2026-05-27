@@ -10,8 +10,8 @@ e2e_spec: tests/e2e/T-20260526-foot-LAYOUT-USER-CUSTOM.spec.ts
 risk_verdict: GO_WARN
 risk_reason: "DB 스키마 변경(user_dashboard_layout_overrides 신규 테이블) + RLS 정책 신설. 기존 행(user_id=NULL) 하위호환 유지."
 deploy_ready: true
-deploy_ready_at: "2026-05-27T16:20:00+0900"
-deploy_ready_commit: d87dc16d5538d6c93c6191a0699f224cfe4fe34d
+deploy_ready_at: "2026-05-27T18:15:00+0900"
+deploy_ready_commit: TBD_POST_COMMIT
 deploy_ready_build: OK
 db_migration: "supabase/migrations/ user_dashboard_layout_overrides (신규 테이블, RLS)"
 db_rollback: "있음"
@@ -45,3 +45,11 @@ db_rollback: "있음"
 - **빌드 직접 검증**: `npm run build` ✓ 3.22s, 0 errors (dev-foot 환경)
 - **supervisor QA 대체 명령**: `bash scripts/build.sh 2>&1 | tail -30`
 - **커밋**: `d87dc16d5538d6c93c6191a0699f224cfe4fe34d`
+
+### FIX-3 (2026-05-27 by dev-foot, FIX-REQUEST MSG-20260527-180549-jnuk)
+- **원인**: `timeout 60 npm run build` → macOS BSD `timeout`이 SIGALRM을 Node.js 프로세스에 전달 → libuv `uv_cwd()` 시스템콜이 EINTR로 인터럽트 → `EINTR: process.cwd failed` 빌드 중단. (FIX-2에서 `build.sh` 폴백 안내했으나 `timeout`이 설치된 환경에서는 여전히 `exec timeout ...` 경로 진입)
+- **수정**:
+  - `scripts/build.sh` — `timeout`/`gtimeout` exec 완전 제거. 순수 shell 백그라운드 watchdog 방식으로 교체. `npm run build &` → watchdog `sleep N && kill $BUILD_PID` → `wait $BUILD_PID`. SIGTERM만 사용, SIGALRM 없음 → EINTR 없음.
+  - `package.json build:verify` — `"bash scripts/build.sh 60"` → `"bash scripts/build.sh"` (기본 120s)
+- **빌드 직접 검증**: `bash scripts/build.sh` ✓ 3.32s, 0 errors
+- **피처 코드 변경**: 없음 (build 인프라만)
