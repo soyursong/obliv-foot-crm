@@ -34,7 +34,15 @@ test('AC-1: admin이 /admin/settings 메시지 설정 페이지에 접근 가능
 test('AC-2: AdminSettings 메시지 섹션 — 솔라피 설정 폼 렌더링', async ({ page }) => {
   await loginAndWaitForDashboard(page);
   await page.goto('/admin/settings');
-  await page.waitForTimeout(1_000);
+  await page.waitForTimeout(500);
+
+  // ⓪ 연결 설정 섹션 클릭 (기본값 1_channels → 0_connection으로 전환)
+  // AdminSettings.tsx L135: { id: '0_connection', label: '⓪ 연결 설정', adminOnly: true }
+  // AdminSettings.tsx L158: useState<Section>('1_channels') — 기본값
+  const connBtn = page.locator('button:has-text("⓪ 연결 설정"), button:has-text("연결 설정")').first();
+  await expect(connBtn).toBeVisible({ timeout: 5_000 });
+  await connBtn.click();
+  await page.waitForTimeout(500);
 
   // 발신번호 또는 API Key 입력 필드 존재 확인
   const apiKeyInput = page.locator('input[placeholder*="NCxx"], input[placeholder*="API"], input[placeholder*="키"]');
