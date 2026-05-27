@@ -13,7 +13,7 @@ field_soak_until: "2026-05-27T17:30:00+09:00"
 db_migration: |
   20260526130000_service_menu_order.sql — APPLIED
   20260527110000_service_menu_order_rls_harden.sql — APPLIED 2026-05-27 (smo_clinic_isolated 확인)
-rls_hardening_commit: TBD
+rls_hardening_commit: 86551ed
 hotfix: false
 created: 2026-05-26 10:02
 deadline: 2026-05-30
