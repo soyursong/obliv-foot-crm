@@ -1,48 +1,79 @@
 /**
- * 풋센터 CRM 더미 데이터 — 5/27 현장 테스트용
- * T-20260526-foot-TEST-RESV-DATA (P2)
+ * 풋센터 CRM 더미 데이터 — 5/27 현장 테스트용 (재생성 v2)
+ * T-20260527-foot-RESV-TESTDATA-REGEN (P1)
  *
- * 구성: 초진 4명 + 재진 4명 = 총 8명 고객
- *   - 시간대: 8슬롯 (11:00~18:00, 1시간 간격)
- *   - 슬롯당: 초진 4건 + 재진 4건 = 8건
- *   - 총 예약: 초진 32건 + 재진 32건 = 64건
- *   - 이름: 동물명 (강아지·고양이·토끼·판다 = 초진 / 사자·호랑이·코끼리·기린 = 재진)
- *   - 전화 범위: 010-0000-0301 ~ 010-0000-0308 (기존 0201~0296 충돌 방지)
+ * 구성: 8슬롯(11:00~18:00) × (초진 4건 + 재진 4건) = 64건 예약
+ *   - 슬롯마다 서로 다른 동물 이름 배정 (AC-3)
+ *   - 각 고객은 자신의 슬롯에만 예약 1건 보유
+ *   - 총 고객: 64명 (슬롯별 고유)
+ *   - 전화 패턴: +82100HH00N00 (HH=슬롯시간, N=슬롯내 순번)
  * 마킹: is_simulation=true
- * 정리: rollback_testdata_20260527.mjs 실행
+ * 정리: node scripts/rollback_testdata_20260527.mjs
  */
 
 import { createClient } from '@supabase/supabase-js';
 
-// ============================================================
-// === 확정 파라미터 ===
-// ============================================================
-const TARGET_DATE = '2026-05-27'; // 테스트 날짜 (내일)
-const PAST_DATE   = '2026-05-01'; // 재진 판별용 과거 체크인 날짜
+const TARGET_DATE = '2026-05-27';
+const PAST_DATE   = '2026-05-01';
 
-/** 8슬롯: 11:00~18:00, 1시간 간격 */
-const SLOTS = [
-  '11:00', '12:00', '13:00', '14:00',
-  '15:00', '16:00', '17:00', '18:00',
+/**
+ * 슬롯별 고유 동물 배정
+ * new[0..3] = 초진 4마리 / ret[0..3] = 재진 4마리
+ */
+const SLOT_ANIMALS = [
+  {
+    slot: '11:00',
+    new: ['강아지', '고양이', '토끼',   '판다'],
+    ret: ['사자',   '호랑이', '코끼리', '기린'],
+  },
+  {
+    slot: '12:00',
+    new: ['햄스터', '앵무새', '거북이',   '고슴도치'],
+    ret: ['여우',   '늑대',   '곰',       '원숭이'],
+  },
+  {
+    slot: '13:00',
+    new: ['다람쥐', '공작새', '독수리',   '학'],
+    ret: ['펭귄',   '북극곰', '캥거루',   '코알라'],
+  },
+  {
+    slot: '14:00',
+    new: ['오리',   '참새',   '까치',     '비둘기'],
+    ret: ['치타',   '표범',   '하이에나', '재규어'],
+  },
+  {
+    slot: '15:00',
+    new: ['돌고래', '고래',   '상어',     '바다사자'],
+    ret: ['악어',   '이구아나', '도마뱀', '카멜레온'],
+  },
+  {
+    slot: '16:00',
+    new: ['낙타',   '얼룩말', '하마',     '코뿔소'],
+    ret: ['두루미', '황새',   '왜가리',   '해오라기'],
+  },
+  {
+    slot: '17:00',
+    new: ['수달',   '밍크',   '오소리',   '족제비'],
+    ret: ['사슴',   '노루',   '고라니',   '염소'],
+  },
+  {
+    slot: '18:00',
+    new: ['문어',   '오징어', '낙지',     '꽃게'],
+    ret: ['개구리', '두꺼비', '도롱뇽',   '뱀'],
+  },
 ];
 
-/** 초진 동물 4마리 */
-const NEW_ANIMALS = [
-  { name: '강아지', phone: '+821000000301' },
-  { name: '고양이', phone: '+821000000302' },
-  { name: '토끼',   phone: '+821000000303' },
-  { name: '판다',   phone: '+821000000304' },
-];
-
-/** 재진 동물 4마리 */
-const RET_ANIMALS = [
-  { name: '사자',   phone: '+821000000305' },
-  { name: '호랑이', phone: '+821000000306' },
-  { name: '코끼리', phone: '+821000000307' },
-  { name: '기린',   phone: '+821000000308' },
-];
-// ============================================================
-// 계산: 초진 4마리 × 8슬롯 = 32건 + 재진 4마리 × 8슬롯 = 32건 = 총 64건
+/**
+ * E.164 전화번호 생성
+ * slotHour: 11~18, animalIdx: 1~8 (1~4=초진, 5~8=재진)
+ * 패턴: +8210-0HH0-0N00
+ * 예) 11시 1번 → +821001100100
+ */
+function makePhoneE164(slotHour, animalIdx) {
+  const part1 = String(slotHour).padStart(2,'0');  // 11~18
+  const part2 = String(animalIdx).padStart(2,'0'); // 01~08
+  return `+821000${part1}0${part2}0`;
+}
 
 const SUPABASE_URL = 'https://rxlomoozakkjesdqjtvd.supabase.co';
 const SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4bG9tb296YWtramVzZHFqdHZkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjU5MjIxOSwiZXhwIjoyMDkyMTY4MjE5fQ.ijD9Amz_czcICgm-eXcyXH4pAPyjoB1BruxGwtoSsHg';
@@ -51,7 +82,6 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
 
-// ─── 유틸 ───────────────────────────────────────────────────
 async function must(label, promise) {
   const { data, error } = await promise;
   if (error) {
@@ -61,24 +91,24 @@ async function must(label, promise) {
   return data;
 }
 
-// ─── 메인 ───────────────────────────────────────────────────
 async function main() {
-  console.log('🚀 더미 데이터 삽입 시작 (5/27 현장 테스트)');
+  console.log('🚀 더미 데이터 삽입 시작 (5/27 현장 테스트 v2 — 슬롯별 고유 동물)');
   console.log(`   날짜: ${TARGET_DATE}`);
-  console.log(`   슬롯: ${SLOTS.length}개 (11:00~18:00, 1시간 간격)`);
-  console.log(`   초진 동물: ${NEW_ANIMALS.map(a => a.name).join(', ')}`);
-  console.log(`   재진 동물: ${RET_ANIMALS.map(a => a.name).join(', ')}`);
-  console.log(`   예상: 초진 ${NEW_ANIMALS.length * SLOTS.length}건 + 재진 ${RET_ANIMALS.length * SLOTS.length}건 = ${(NEW_ANIMALS.length + RET_ANIMALS.length) * SLOTS.length}건`);
+  console.log(`   슬롯: ${SLOT_ANIMALS.length}개 (11:00~18:00, 1시간 간격)`);
+  console.log(`   예상: ${SLOT_ANIMALS.length}슬롯 × (초진4 + 재진4) = ${SLOT_ANIMALS.length * 8}건`);
 
-  // 클리닉 확인
+  console.log('\n── 슬롯별 동물 배정 ────────────────────────────────────');
+  for (const s of SLOT_ANIMALS) {
+    console.log(`  ${s.slot}: 초진=[${s.new.join(', ')}] / 재진=[${s.ret.join(', ')}]`);
+  }
+
   const clinic = await must('클리닉 조회',
     supabase.from('clinics').select('id').eq('slug', 'jongno-foot').single()
   );
   const clinicId = clinic.id;
-  console.log(`✅ 클리닉 ID: ${clinicId}`);
+  console.log(`\n✅ 클리닉 ID: ${clinicId}`);
 
-  // 중복 방지: 테스트 동물 이미 존재하는지 확인
-  const allAnimalNames = [...NEW_ANIMALS, ...RET_ANIMALS].map(a => a.name);
+  const allAnimalNames = SLOT_ANIMALS.flatMap(s => [...s.new, ...s.ret]);
   const { data: dupCheck } = await supabase
     .from('customers')
     .select('id,name')
@@ -91,129 +121,113 @@ async function main() {
     process.exit(1);
   }
 
-  // ─── 1단계: 고객 생성 (8명) ───────────────────────────────
-  console.log('\n── 고객 생성 (8명) ──────────────────────────────────────');
-
-  const newCustomerIds = {}; // name → id
-  for (const animal of NEW_ANIMALS) {
-    const cust = await must(`고객(초진) ${animal.name}`,
-      supabase.from('customers').insert({
-        clinic_id:      clinicId,
-        name:           animal.name,
-        phone:          animal.phone,
-        visit_type:     'new',
-        is_simulation:  true,
-        inflow_channel: 'meta_ads',
-      }).select('id').single()
-    );
-    newCustomerIds[animal.name] = cust.id;
-    console.log(`  ✔ 초진 ${animal.name} (${animal.phone}) — ID: ${cust.id.slice(0,8)}...`);
-  }
-
-  const retCustomerIds = {}; // name → id
-  for (const animal of RET_ANIMALS) {
-    const cust = await must(`고객(재진) ${animal.name}`,
-      supabase.from('customers').insert({
-        clinic_id:      clinicId,
-        name:           animal.name,
-        phone:          animal.phone,
-        visit_type:     'returning',
-        is_simulation:  true,
-        inflow_channel: 'returning',
-      }).select('id').single()
-    );
-    retCustomerIds[animal.name] = cust.id;
-    console.log(`  ✔ 재진 ${animal.name} (${animal.phone}) — ID: ${cust.id.slice(0,8)}...`);
-  }
-
-  // ─── 2단계: 재진 과거 체크인 (재진 판별 근거) ─────────────
-  console.log('\n── 재진 과거 체크인 생성 (4건) ──────────────────────────');
-  // queue_number: 9001~9004 (기존 범위와 절대 충돌 없는 고번호 사용)
-  let retSeqBase = 9000;
-  for (const animal of RET_ANIMALS) {
-    retSeqBase++;
-    const customerId = retCustomerIds[animal.name];
-    await must(`과거체크인(재진) ${animal.name}`,
-      supabase.from('check_ins').insert({
-        clinic_id:      clinicId,
-        customer_id:    customerId,
-        customer_name:  animal.name,
-        customer_phone: animal.phone,
-        visit_type:     'returning',
-        status:         'done',
-        queue_number:   retSeqBase,
-        checked_in_at:  `${PAST_DATE}T10:00:00+09:00`,
-        completed_at:   `${PAST_DATE}T11:30:00+09:00`,
-        sort_order:     retSeqBase,
-        notes:          JSON.stringify({ seed: 'testdata_20260527', past_checkin: true }),
-      })
-    );
-    console.log(`  ✔ ${animal.name} 과거 체크인 (${PAST_DATE})`);
-  }
-
-  // ─── 3단계: 예약 생성 (64건) ─────────────────────────────
-  console.log('\n── 예약 생성 (64건) ─────────────────────────────────────');
+  let totalCustomers = 0;
   let totalNew = 0;
   let totalRet = 0;
+  let totalPastCheckIn = 0;
 
-  for (const slotTime of SLOTS) {
-    console.log(`\n⏰ 슬롯 ${slotTime}`);
+  for (let si = 0; si < SLOT_ANIMALS.length; si++) {
+    const { slot, new: newAnimals, ret: retAnimals } = SLOT_ANIMALS[si];
+    const slotHour = parseInt(slot.split(':')[0], 10); // 11~18
+    console.log(`\n════ 슬롯 ${slot} ════════════════════════════════`);
 
-    // 초진 4건
-    for (const animal of NEW_ANIMALS) {
-      const customerId = newCustomerIds[animal.name];
-      await must(`예약(초진) ${animal.name} ${slotTime}`,
+    for (let ai = 0; ai < newAnimals.length; ai++) {
+      const name = newAnimals[ai];
+      const phone = makePhoneE164(slotHour, ai + 1); // 1~4
+
+      const cust = await must(`고객(초진) ${name}`,
+        supabase.from('customers').insert({
+          clinic_id:      clinicId,
+          name,
+          phone,
+          visit_type:     'new',
+          is_simulation:  true,
+          inflow_channel: 'meta_ads',
+        }).select('id').single()
+      );
+      totalCustomers++;
+
+      await must(`예약(초진) ${name} ${slot}`,
         supabase.from('reservations').insert({
           clinic_id:        clinicId,
-          customer_id:      customerId,
-          customer_name:    animal.name,
-          customer_phone:   animal.phone,
+          customer_id:      cust.id,
+          customer_name:    name,
+          customer_phone:   phone,
           reservation_date: TARGET_DATE,
-          reservation_time: slotTime,
+          reservation_time: slot,
           visit_type:       'new',
-          memo:             `더미 | 초진 ${slotTime}`,
+          memo:             `더미 | 초진 ${slot}`,
           status:           'confirmed',
         })
       );
       totalNew++;
-      process.stdout.write(`  ✔ 초진 ${animal.name} `);
+      console.log(`  ✔ 초진 ${name} (${phone})`);
     }
 
-    // 재진 4건
-    for (const animal of RET_ANIMALS) {
-      const customerId = retCustomerIds[animal.name];
-      await must(`예약(재진) ${animal.name} ${slotTime}`,
+    for (let ai = 0; ai < retAnimals.length; ai++) {
+      const name = retAnimals[ai];
+      const phone = makePhoneE164(slotHour, ai + 5); // 5~8
+
+      const cust = await must(`고객(재진) ${name}`,
+        supabase.from('customers').insert({
+          clinic_id:      clinicId,
+          name,
+          phone,
+          visit_type:     'returning',
+          is_simulation:  true,
+          inflow_channel: 'returning',
+        }).select('id').single()
+      );
+      totalCustomers++;
+
+      const queueNum = 9000 + (si * 4) + (ai + 1); // 9001~9032
+      await must(`과거체크인(재진) ${name}`,
+        supabase.from('check_ins').insert({
+          clinic_id:      clinicId,
+          customer_id:    cust.id,
+          customer_name:  name,
+          customer_phone: phone,
+          visit_type:     'returning',
+          status:         'done',
+          queue_number:   queueNum,
+          checked_in_at:  `${PAST_DATE}T10:00:00+09:00`,
+          completed_at:   `${PAST_DATE}T11:30:00+09:00`,
+          sort_order:     queueNum,
+          notes:          JSON.stringify({ seed: 'testdata_20260527_v2', past_checkin: true }),
+        })
+      );
+      totalPastCheckIn++;
+
+      await must(`예약(재진) ${name} ${slot}`,
         supabase.from('reservations').insert({
           clinic_id:        clinicId,
-          customer_id:      customerId,
-          customer_name:    animal.name,
-          customer_phone:   animal.phone,
+          customer_id:      cust.id,
+          customer_name:    name,
+          customer_phone:   phone,
           reservation_date: TARGET_DATE,
-          reservation_time: slotTime,
+          reservation_time: slot,
           visit_type:       'returning',
-          memo:             `더미 | 재진 ${slotTime}`,
+          memo:             `더미 | 재진 ${slot}`,
           status:           'confirmed',
         })
       );
       totalRet++;
-      process.stdout.write(`  ✔ 재진 ${animal.name} `);
+      console.log(`  ✔ 재진 ${name} (${phone})`);
     }
-    console.log();
   }
 
-  console.log('\n============================================================');
-  console.log(`✅ 더미 데이터 삽입 완료`);
-  console.log(`   고객: 초진 ${NEW_ANIMALS.length}명 + 재진 ${RET_ANIMALS.length}명 = ${NEW_ANIMALS.length + RET_ANIMALS.length}명`);
-  console.log(`   예약: 초진 ${totalNew}건 + 재진 ${totalRet}건 = ${totalNew + totalRet}건 (${TARGET_DATE})`);
-  console.log(`   과거체크인(재진 판별): ${RET_ANIMALS.length}건 (${PAST_DATE})`);
-  console.log('\n── 전화번호 범위 ────────────────────────────────────────');
-  console.log(`   초진: 010-0000-0301 ~ 010-0000-0304 (강아지·고양이·토끼·판다)`);
-  console.log(`   재진: 010-0000-0305 ~ 010-0000-0308 (사자·호랑이·코끼리·기린)`);
-  console.log('\n── 시간대 ──────────────────────────────────────────────');
-  console.log(`   ${SLOTS.join(' / ')}`);
+  console.log('\n════════════════════════════════════════════════════════');
+  console.log(`✅ 더미 데이터 삽입 완료 (5/27 v2 — 슬롯별 고유 동물)`);
+  console.log(`   고객: ${totalCustomers}명 (초진 ${totalNew}명 + 재진 ${totalRet}명)`);
+  console.log(`   예약: 초진 ${totalNew}건 + 재진 ${totalRet}건 = ${totalNew + totalRet}건`);
+  console.log(`   과거체크인(재진 판별): ${totalPastCheckIn}건 (${PAST_DATE})`);
+  console.log('\n── 슬롯별 배정 요약 ─────────────────────────────────────');
+  for (const s of SLOT_ANIMALS) {
+    console.log(`  ${s.slot}: 초진[${s.new.join('·')}] / 재진[${s.ret.join('·')}]`);
+  }
   console.log('\n── 정리 (테스트 후) ─────────────────────────────────────');
   console.log('   node scripts/rollback_testdata_20260527.mjs');
-  console.log('============================================================');
+  console.log('════════════════════════════════════════════════════════');
 }
 
 main().catch(e => {
