@@ -117,3 +117,4 @@ node scripts/rollback_dummy_20260526.mjs
 | 2026-05-25 | 실행 완료: customers 72건 + reservations 72건 + check_ins 36건 |
 | 2026-05-25 | AC 검증 통과 (customers 72 ✅, reservations 72 ✅) |
 | 2026-05-26 | 슬롯 수정: 더미_재진_1200_4 10:00→12:00 교정(1건 UPDATE). 모든 슬롯 8건 정합 확인. rollback_dummy_20260526.sql 정적 롤백 파일 추가. 빌드 3.35s OK. |
+| 2026-05-27 | FIX-REQUEST(MSG-20260527-155352-35gx) 처리: supervisor QA `timeout: command not found` 재현 확인. 원인: macOS에 GNU timeout 미설치. 해결: scripts/build.sh 크로스플랫폼 래퍼(timeout→gtimeout→plain npm run build 폴백) 이미 존재(PAY-INPUT-001 건에서 추가). `npm run build 2>&1 \| tail -30` 직접 실행 결과 ✓ built in 3.38s (0 errors, 3864 modules). deploy_ready: true 재확인. supervisor QA 재요청: `bash scripts/build.sh 2>&1 \| tail -30` 권장. |
