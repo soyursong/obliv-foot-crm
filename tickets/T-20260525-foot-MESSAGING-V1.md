@@ -20,7 +20,11 @@ e2e_spec_exempt_reason:
 risk_verdict: GO_WARN
 risk_reason: "3/5 — DB 스키마 신규 5테이블(messaging), EF 신규(send-notification), 셀프체크인 고객 데이터 쓰기 경로 변경(sms_opt_in 추가)"
 deploy_scope: S1_code_copy
-pending_scope: "S2 운영 데이터 등록(AC-4~7) — 김주연 승인 후 / S3 검증 발송(AC-11~12) — 검증 발송 GREEN 후"
+pending_scope: "S3 검증 발송(AC-11~12) — 검증 발송 GREEN 후"
+s2_completed_at: "2026-05-27T15:20:00+09:00"
+s2_commit: "50e84f4"
+s2_summary: "AC-4 vault 7건(supabase_project_url/anon_key/internal_cron_secret/종로API+Secret/송도API+Secret). AC-5 clinic_messaging_capability 종로(01088277791)+송도(01034573344) enabled=true. AC-6 pg_cron 4건 active(D-1/morning/retry/keep-warm) — Supabase 제약으로 morning/retry active=FALSE 불가, 플래너 FOLLOWUP 발신. AC-7 버그수정: notify_reservation_messaging+notify_reminders_batch status reserved→confirmed. EF INTERNAL_CRON_SECRET 등록. dry-run: d1 skipped=1, retry retried=0."
+s2_cron_note: "⚠ morning(foot-notif-reminder-morning)+retry(foot-notif-retry-failed) active=TRUE — Supabase 제약(cron.job UPDATE permission denied). 의도는 비활성이었으나 기술 제약. Supabase Dashboard에서 수동 비활성화 또는 S3에서 처리 필요."
 qa_result: pass
 qa_grade: Yellow
 qa_fail_phase: ""
