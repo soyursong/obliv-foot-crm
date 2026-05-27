@@ -1,9 +1,11 @@
 /**
- * 풋센터 CRM 더미 데이터 정리 — 5/27 테스트 롤백 (v2)
- * T-20260527-foot-RESV-TESTDATA-REGEN
+ * 풋센터 CRM 더미 데이터 정리 — 5/27 테스트 롤백 (v3)
+ * T-20260526-foot-TEST-RESV-DATA
  *
- * 삭제 대상: is_simulation=true 동물명 테스트 고객 64명 및 연관 레코드 전체
- * (구버전 8마리 + v2 64마리 모두 처리)
+ * 삭제 대상: is_simulation=true 동물명 테스트 고객 및 연관 레코드 전체
+ * v3(현행): 고객 8명(강아지~기린), 예약 64건
+ * v2(이전): 고객 64명(슬롯별 고유 동물) — 이미 삽입된 경우 함께 처리
+ * v1(최초): 고객 8명(강아지~기린) — v3와 동일 이름풀
  */
 
 import { createClient } from '@supabase/supabase-js';
