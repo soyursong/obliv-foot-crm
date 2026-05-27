@@ -1,8 +1,9 @@
 /**
  * dopamine-callback — 풋CRM → 도파민 Reverse 콜백 공통 Emitter
  *
- * TA3: visited (셀프QR 체크인 내원)
- * TA4: paid    (첫 패키지 결제, 1회만 발사)
+ * TA3: visited   (셀프QR 체크인 내원)
+ * TA4: paid      (첫 패키지 결제, 1회만 발사)
+ * NEW: cancelled (예약 취소 — cross_crm_data_contract.md §6, T-20260527-dopamine-RESV-CANCEL-SYNC)
  *
  * 스펙: memory/_handoff/spec_foot_dopamine_integration_20260520.md §3-2, §6-2, §7
  *
@@ -24,15 +25,29 @@
  *     "package_name": "비가열 24회"
  *   }
  *
+ * ── Body (type=cancelled) ───────────────────────────────────────
+ *   {
+ *     "type": "cancelled",
+ *     "reservation_id": "<reservations.id>"
+ *   }
+ *
  * ── Edge Secrets ────────────────────────────────────────────────
- *   DOPAMINE_CALLBACK_URL    — 도파민 수신 EF URL
+ *   DOPAMINE_CALLBACK_URL    — 도파민 수신 EF URL (visited/paid)
  *                              예: https://<dopamine-project>.supabase.co/functions/v1/foot-callback-recv
- *   DOPAMINE_CALLBACK_SECRET — X-Callback-Secret 헤더 값
+ *   DOPAMINE_CALLBACK_SECRET — X-Callback-Secret 헤더 값 (visited/paid)
+ *   DOPAMINE_CANCEL_URL      — 도파민 crm-cancel-callback EF URL (cancelled)
+ *                              예: https://<dopamine-project>.supabase.co/functions/v1/crm-cancel-callback
+ *   DOPAMINE_CANCEL_SECRET   — X-Cancel-Secret 헤더 값 (cancelled)
  *
  * ── 멱등성 ──────────────────────────────────────────────────────
  *   - dopamine_outbound_log UNIQUE(callback_type, event_id) 제약으로 중복 방지
  *   - paid: outbound_log에 external_id + callback_type='paid' + status='sent' 있으면 skip
  *   - visited: outbound_log에 event_id=check_in_id 있으면 skip
+ *   - cancelled: outbound_log에 event_id=reservation_id + callback_type='cancelled' 있으면 skip
+ *
+ * ── 재시도 정책 ─────────────────────────────────────────────────
+ *   - 5xx: 지수 백오프 3회 (1s → 2s → 4s)
+ *   - 4xx: 재시도 없음
  *
  * ── 응답 ────────────────────────────────────────────────────────
  *   200: { ok: true, applied: true }
@@ -97,11 +112,27 @@ function buildPaidPayload(
   };
 }
 
+// ── Payload builder (cancelled) ──────────────────────────────────────────
+// cross_crm_data_contract.md §6 — 예약 취소 콜백
+function buildCancelledPayload(
+  reservationId: string,
+  cueCardId: string,
+  cancelledAt: string,
+): object {
+  return {
+    source_system: 'foot',
+    event_id: reservationId,
+    cue_card_id: cueCardId,
+    cancelled_at: cancelledAt,
+  };
+}
+
 // ── HTTP POST to dopamine ────────────────────────────────────────────────
 async function httpPostToDopamine(
   url: string,
   secret: string,
   payload: object,
+  secretHeader = 'X-Callback-Secret',
 ): Promise<{ httpStatus: number; responseBody: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000); // 10s
@@ -110,7 +141,7 @@ async function httpPostToDopamine(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Callback-Secret': secret,
+        [secretHeader]: secret,
       },
       body: JSON.stringify(payload),
       signal: controller.signal,
@@ -126,6 +157,32 @@ async function httpPostToDopamine(
       responseBody: isTimeout ? 'TIMEOUT_10S' : String(err).slice(0, 500),
     };
   }
+}
+
+// ── HTTP POST with exponential backoff retry (5xx only) ─────────────────
+// MQ T-20260527-dopamine-RESV-CANCEL-SYNC: 5xx → 3회 지수 백오프, 4xx → 재시도 없음
+async function httpPostWithRetry(
+  url: string,
+  secret: string,
+  payload: object,
+  secretHeader: string,
+  maxAttempts = 3,
+): Promise<{ httpStatus: number; responseBody: string; attempts: number }> {
+  let lastResult = { httpStatus: 0, responseBody: '' };
+  let delayMs = 1000; // 1s, 2s, 4s
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    lastResult = await httpPostToDopamine(url, secret, payload, secretHeader);
+    // 2xx or 4xx → no retry
+    if (lastResult.httpStatus >= 200 && lastResult.httpStatus < 500) {
+      return { ...lastResult, attempts: attempt };
+    }
+    // 5xx / network error (0) → retry if attempts remain
+    if (attempt < maxAttempts) {
+      await new Promise((r) => setTimeout(r, delayMs));
+      delayMs *= 2;
+    }
+  }
+  return { ...lastResult, attempts: maxAttempts };
 }
 
 // ── Determine outbound log status from HTTP response ────────────────────
@@ -181,10 +238,111 @@ Deno.serve(async (req) => {
   }
 
   const callbackType = body['type'] as string | undefined;
-  if (callbackType !== 'visited' && callbackType !== 'paid') {
-    return json({ ok: false, error: 'MISSING_FIELD', detail: 'type must be "visited" or "paid"' }, 400);
+  if (callbackType !== 'visited' && callbackType !== 'paid' && callbackType !== 'cancelled') {
+    return json({ ok: false, error: 'MISSING_FIELD', detail: 'type must be "visited", "paid", or "cancelled"' }, 400);
   }
 
+  // ── cancelled path: takes reservation_id directly ─────────────────────
+  // cross_crm_data_contract.md §6 — T-20260527-dopamine-RESV-CANCEL-SYNC
+  if (callbackType === 'cancelled') {
+    const reservationId = body['reservation_id'] as string | undefined;
+    if (!reservationId) {
+      return json({ ok: false, error: 'MISSING_FIELD', detail: 'cancelled requires reservation_id' }, 400);
+    }
+
+    const adminCancelled = createClient(supabaseUrl, serviceKey);
+
+    try {
+      const { data: reservation, error: rsvErr } = await adminCancelled
+        .from('reservations')
+        .select('id, external_id, cancelled_at')
+        .eq('id', reservationId)
+        .single();
+
+      if (rsvErr || !reservation) {
+        return json({ ok: false, error: 'INTERNAL', detail: `reservation not found: ${rsvErr?.message}` }, 500);
+      }
+
+      // Only fire for reservations with external_id (= dopamine cue_card_id)
+      if (!reservation.external_id) {
+        return json({ ok: true, applied: false, reason: 'not_dopamine_source' });
+      }
+
+      const cueCardId   = reservation.external_id as string;
+      const cancelledAt = (reservation.cancelled_at as string | null) ?? new Date().toISOString();
+
+      // Idempotency: skip if already sent/pending
+      const { data: priorLog } = await adminCancelled
+        .from('dopamine_outbound_log')
+        .select('id, status')
+        .eq('callback_type', 'cancelled')
+        .eq('event_id', reservationId)
+        .in('status', ['sent', 'pending'])
+        .maybeSingle();
+
+      if (priorLog) {
+        return json({ ok: true, applied: false, reason: 'duplicate' });
+      }
+
+      const cancelPayload = buildCancelledPayload(reservationId, cueCardId, cancelledAt);
+
+      const { data: logRow, error: logInsertErr } = await adminCancelled
+        .from('dopamine_outbound_log')
+        .insert({
+          external_id: cueCardId,
+          callback_type: 'cancelled',
+          event_id: reservationId,
+          payload: cancelPayload,
+          status: 'pending',
+          attempts: 0,
+        })
+        .select('id')
+        .single();
+
+      if (logInsertErr) {
+        if (logInsertErr.code === '23505') {
+          return json({ ok: true, applied: false, reason: 'duplicate' });
+        }
+        return json({ ok: false, error: 'INTERNAL', detail: `outbound_log insert failed: ${logInsertErr.message}` }, 500);
+      }
+
+      const logId = logRow.id as string;
+
+      const cancelUrl    = Deno.env.get('DOPAMINE_CANCEL_URL') ?? '';
+      const cancelSecret = Deno.env.get('DOPAMINE_CANCEL_SECRET') ?? '';
+
+      if (!cancelUrl) {
+        await adminCancelled
+          .from('dopamine_outbound_log')
+          .update({ status: 'failed', http_status: 0, response_body: 'DOPAMINE_CANCEL_URL_NOT_SET', attempts: 1, last_attempt_at: new Date().toISOString() })
+          .eq('id', logId);
+        return json({ ok: true, applied: false, reason: 'skipped', detail: 'DOPAMINE_CANCEL_URL not configured' });
+      }
+
+      // 5xx → 지수 백오프 3회, 4xx → 재시도 없음
+      const { httpStatus, responseBody, attempts } = await httpPostWithRetry(
+        cancelUrl, cancelSecret, cancelPayload, 'X-Cancel-Secret',
+      );
+      const finalStatus = resolveLogStatus(httpStatus, responseBody);
+
+      await adminCancelled
+        .from('dopamine_outbound_log')
+        .update({ status: finalStatus, http_status: httpStatus, response_body: responseBody, attempts, last_attempt_at: new Date().toISOString() })
+        .eq('id', logId);
+
+      if (finalStatus === 'failed') {
+        return json({ ok: false, error: 'DOPAMINE_HTTP_FAILED', http_status: httpStatus, detail: responseBody.slice(0, 200) }, 502);
+      }
+
+      return json({ ok: true, applied: true, dopamine_status: finalStatus });
+
+    } catch (err) {
+      console.error('[dopamine-callback/cancelled] unexpected error:', err);
+      return json({ ok: false, error: 'INTERNAL', detail: String(err).slice(0, 500) }, 500);
+    }
+  }
+
+  // ── visited / paid path ────────────────────────────────────────────────
   const checkInId = body['check_in_id'] as string | undefined;
   if (!checkInId) {
     return json({ ok: false, error: 'MISSING_FIELD', detail: 'check_in_id required' }, 400);
