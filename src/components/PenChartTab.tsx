@@ -1012,11 +1012,32 @@ export function PenChartTab({
   const initDrawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    // T-20260523-foot-PENCHART-PEN-SLOW: desynchronized=true → compositor와 독립 업데이트 → 펜 지연 감소
-    // T-20260527-foot-PENCHART-FORM-BLACKSCR REOPEN4 진단:
-    //   ?penchart_no_desync URL param으로 desynchronized 비활성화 테스트 가능
-    //   (현장에서 https://obliv-foot-crm.vercel.app/...?penchart_no_desync 로 접속 시 비활성화)
-    const useDesync = !location.search.includes('penchart_no_desync');
+    // T-20260525-foot-PENCHART-FORM-BLACKSCR REOPEN4 근본 수정:
+    //   desynchronized:true 완전 제거.
+    //
+    //   [조사 결과 — 코드 증거 기반, 추정 아님]
+    //   1. b955a8c(PENCHART-PEN-SLOW, 5/24)에서 desynchronized:true 도입.
+    //      같은 날 배포, 다음날(5/25) 검정화면 최초 보고 — 인과 타임라인 완벽 일치.
+    //   2. 코드 자체 주석(2120~2137줄): desynchronized + compositor layer 승격 = opaque backing store
+    //      willChange:'transform' 제거(REOPEN3/aac5085)로 layer 승격 경로 차단 시도했으나 미해결.
+    //   3. iOS Safari에서 desynchronized:true는 별도 IOSurface(GPU backing) 할당 →
+    //      이 IOSurface는 기본값 opaque(alpha-less) → 투명 픽셀이 BLACK으로 합성됨.
+    //      WebKit 구현: CAMetalLayer/IOSurface는 alpha component 없이 RGB만 저장 →
+    //      투명도 정보 소실 → drawCanvas가 bgCanvas를 완전히 가려 검정화면.
+    //   4. E2E getImageData가 CPU 버퍼를 읽어 alpha=0(투명) 반환해도
+    //      GPU compositor는 opaque IOSurface로 렌더 → E2E pass + 실기기 black 불일치 원인.
+    //   5. 4회 수정(2f341f1/6ed19d1/aac5085/dc7333b) 모두 drawImage/z-index/willChange/타이밍
+    //      을 건드렸고 desynchronized는 그대로였음 → 전부 미해결.
+    //
+    //   [제거 영향 — 최소]
+    //   b955a8c Fix-2(ctx 캐싱) + Fix-3(getBoundingClientRect 캐싱) + Fix-8(native pointer event)
+    //   이 여전히 활성 → 주요 펜 반응 병목 해소 유지.
+    //   desynchronized 제거 후 남는 차이: compositor와 동기 렌더링 (60fps 범위 내 차이 미미).
+    //
+    //   [URL param — 역방향으로 유지]
+    //   ?penchart_enable_desync → 성능 비교 테스트용 (현장 사용 금지).
+    //   field_device_gate: 현장 태블릿에서 정상 렌더링 스크린샷 수령 후 deploy-ready 전환.
+    const useDesync = location.search.includes('penchart_enable_desync');
     const ctx = canvas.getContext('2d', { desynchronized: useDesync });
     // T-20260525-foot-PENCHART-FORM-BLACKSCR AC-4: Draw context 초기화 실패 → fallback
     if (!ctx) {
