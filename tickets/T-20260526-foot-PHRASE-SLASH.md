@@ -18,7 +18,7 @@ qa_fail_phase: ""
 qa_fail_reason: ""
 qa_fail_detail: ""
 qa_checked_at: ""
-fix_detail: "FIX-REQUEST(MSG-20260527-155220-2u35): 현장 클릭 시나리오 섹션 추가. MedicalChartPanel/DoctorTreatmentPanel // 흐름 + E2E 매핑 명시."
+fix_detail: "FIX-REQUEST(MSG-20260527-155220-2u35): 현장 클릭 시나리오 섹션 추가. MedicalChartPanel/DoctorTreatmentPanel // 흐름 + E2E 매핑 명시. | FIX-REQUEST(MSG-20260527-181724-oiqk): qa_fail build_fail(EINTR) — OS 레벨 uv_cwd 간헐 인터럽트, 코드 문제 아님. 환경 재기동 후 npm run build ✓ 3.26s 에러 0 재확인 완료 (2026-05-27T18:17+09:00)."
 ---
 
 ## 요약
