@@ -2,9 +2,9 @@
 id: T-20260525-foot-PENCHART-FORM-BLACK
 domain: foot
 priority: P1
-status: deployed
-deploy_ready_at: 2026-05-26 21:15
-impl_commit: aac5085
+status: qa-pending
+deploy_ready_at: null
+impl_commit: dc7333b
 db_changed: false
 e2e_spec: tests/e2e/T-20260525-foot-PENCHART-FORM-BLACK.spec.ts
 build_ok: true
@@ -24,13 +24,13 @@ qa_result: pass
 qa_grade: Yellow
 qa_fail_phase: ""
 qa_fail_reason: ""
-deployed_at: 2026-05-27T12:55+09:00
-deploy_commit: aac5085
-bundle_hash: RjIprGOw
-field_soak_until: 2026-05-28T12:55+09:00
-reopen_reason: "REOPEN3 2026-05-26 21:15: [근본 원인 특정] b955a8c(5/24 PENCHART-PEN-SLOW)에서 willChange:'transform' + desynchronized:true 동시 추가 → draw canvas GPU compositor layer 승격 → 불투명(alpha-less) 텍스처 → 투명 픽셀=BLACK → bgCanvas 가려짐. 증거3종: ①인과 타임라인(5/24배포→5/25첫보고) ②스크린샷(검정배경위흰펜획) ③1·2차수정 미해결. 수정: willChange:'transform' 제거(desynchronized:true유지) + REOPEN2 tiling/decode 방어 누적. E2E 45/45 pass."
-reopen_fix_commit: aac5085
-reopen_count: 3
+deployed_at: 2026-05-27T19:45+09:00
+deploy_commit: dc7333b
+bundle_hash: null
+field_soak_until: null
+reopen_reason: "REOPEN4 2026-05-27 19:45: [진단 계측 + 타이밍 수정] AC-R4-6 번들검증 완료(REOPEN3 코드 배포됨). CSS bundle 증거: animation-duration=150ms + @keyframes enter{0%{transform:translate3d(0,0,0)}} → 50ms(구)는 GPU layer 활성 중 canvas 초기화. 수정: 50ms→200ms(애니메이션완료후). 진단추가: ?penchart_no_desync URL param + [DIAG-R4-3] alpha테스트 + [DIAG-R4-4] CSS stacking context 전수 + [DIAG-R4-5] CORS taint. deploy-ready=false — 실기기 스크린샷 필수."
+reopen_fix_commit: dc7333b
+reopen_count: 4
 ---
 
 # T-20260525-foot-PENCHART-FORM-BLACK — 펜차트 전체 양식 검정 화면 + 튕김
