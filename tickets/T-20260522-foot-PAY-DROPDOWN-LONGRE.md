@@ -56,6 +56,36 @@ phase2_commit: 470bd0c
 | `src/components/PaymentEditDialog.tsx` | Phase2: AC-6 label 멤버십→패키지 |
 | `tests/e2e/T-20260522-foot-PAY-DROPDOWN-LONGRE.spec.ts` | Phase1: AC-5b 테스트 / Phase2: AC-6·AC-7 3 describe 6 test 추가 |
 
+## 현장 클릭 시나리오
+
+### 시나리오 A — 단건 결제 + 패키지 수단 선택 (AC-6, AC-7)
+
+1. 칸반 보드 → 결제 대기 환자 카드 → `결제` 버튼 클릭
+2. PaymentDialog 열림 → 결제수단 버튼 grid 확인: `💳 카드 / 💵 현금 / 🏦 이체 / 📦 패키지` (멤버십 텍스트 없음)
+3. `📦 패키지` 버튼 클릭
+4. 패키지 선택 섹션 표시 (텍스트 "패키지 선택" 노출)
+5. 금액 입력 필드 placeholder → `"패키지 선택 시 자동 입력"` 변경 확인
+6. 패키지 드롭다운에서 패키지 선택 → 결제 금액 자동 세팅 (total_price 반영)
+7. 금액 수동 수정 가능 (자동 세팅 후 직접 편집)
+8. `수납 완료` 클릭 → 결제 완료
+
+### 시나리오 B — 패키지 수단 선택 후 카드로 전환 (AC-7 reset)
+
+1. 결제 다이얼로그 → `📦 패키지` 클릭 → 패키지 선택 UI + placeholder 변경 확인
+2. `💳 카드` 클릭 → 패키지 선택 UI 사라짐, 금액 placeholder `"0"` 복구 확인
+3. selectedTemplateId 초기화 확인 후 카드로 수납 완료
+
+### 시나리오 C — 패키지 결제 모드에서 패키지 수단 자동 제외 (AC-8)
+
+1. PaymentDialog → `패키지 결제` 탭 클릭
+2. 결제수단 grid 확인: `💳 카드 / 💵 현금 / 🏦 이체` 3종만 표시
+3. `📦 패키지` 버튼 없음 확인 (self-reference 방지)
+
+### 시나리오 D — 결제 수정 다이얼로그 라벨 확인 (AC-6, PaymentEditDialog)
+
+1. 기존 결제 내역 → 수정 버튼 클릭 → PaymentEditDialog 열림
+2. 결제수단 목록에 `"패키지"` 표시, `"멤버십"` 없음 확인
+
 ## 기술 노트
 
 - FE-only, DB 변경 없음
