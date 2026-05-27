@@ -11,7 +11,7 @@ deploy_ready: true
 deploy_ready_at: "2026-05-27 16:55 KST"
 fix_commit: 6c503b3
 spec_update_commit: ce90953
-build_fix_commit: TBD
+build_fix_commit: c13b088
 deploy_commit: 31d78521853d86c4db0ae8c29cb3cc97ee100a1a
 deployed_at: "2026-05-24T02:52:00+09:00"
 qa_result: pending
