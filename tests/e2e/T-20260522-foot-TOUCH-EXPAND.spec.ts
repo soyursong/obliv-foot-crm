@@ -11,7 +11,7 @@
  */
 import { test, expect } from '@playwright/test';
 
-const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8082';
+const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8089';
 
 test.describe('T-20260522-foot-TOUCH-EXPAND — 터치 타겟 44px 확대', () => {
   // AC-1: Dashboard 칸반 탭 버튼 높이 검증

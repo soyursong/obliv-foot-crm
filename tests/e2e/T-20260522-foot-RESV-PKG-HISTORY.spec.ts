@@ -34,8 +34,8 @@ import { createClient } from '@supabase/supabase-js';
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
-// [F2] playwright.config baseURL: 'http://localhost:8082' 와 일치
-const APP_URL = process.env.APP_URL ?? 'http://localhost:8082';
+// [F2] playwright.config baseURL: 'http://localhost:8089' 와 일치
+const APP_URL = process.env.APP_URL ?? 'http://localhost:8089';
 
 // ─── 헬퍼 ────────────────────────────────────────────────────────────
 // [F3] desktop-chrome project는 auth.setup.ts storageState로 이미 인증됨.

@@ -23,7 +23,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8082';
+const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8089';
 
 // ── AC-1: 소스 정적 검증 ───────────────────────────────────────────────────────
 

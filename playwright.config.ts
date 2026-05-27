@@ -21,7 +21,7 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
 
   use: {
-    baseURL: 'http://localhost:8082',
+    baseURL: 'http://localhost:8089',
     screenshot: 'on',
     trace: 'retain-on-failure',
     actionTimeout: 10_000,
@@ -95,12 +95,16 @@ export default defineConfig({
 
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:8082',
-    reuseExistingServer: !process.env.CI,
+    // 전용 테스트 포트 8089: 일반 dev(8085)와 분리 → reuseExistingServer: false 가능
+    // VITE_DEV_PORT=8089 → vite.config.ts server.port 에서 읽어 8089로 기동
+    url: 'http://localhost:8089',
+    reuseExistingServer: false,
     timeout: 30_000,
     env: {
       // Vite dev 서버에 테스트 모드 플래그 전달 → src/lib/supabase.ts 에서 lock 우회
       VITE_DISABLE_AUTH_LOCK: '1',
+      // 전용 테스트 포트 — 일반 dev 서버(8085)와 충돌 방지
+      VITE_DEV_PORT: '8089',
     },
   },
 });

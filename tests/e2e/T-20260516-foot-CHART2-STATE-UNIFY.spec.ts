@@ -15,7 +15,7 @@
 
 import { test, expect } from '@playwright/test';
 
-const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8082';
+const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8089';
 
 /**
  * 시나리오 1: 4경로 순차 열기

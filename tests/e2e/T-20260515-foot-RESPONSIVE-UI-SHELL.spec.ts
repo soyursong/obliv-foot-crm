@@ -15,7 +15,7 @@
  */
 import { test, expect } from '@playwright/test';
 
-const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8082';
+const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8089';
 const RESV_URL = `${BASE}/admin/reservations`;
 
 // ── Shell-1: 모바일 시간축 Sticky ─────────────────────────────────────────────

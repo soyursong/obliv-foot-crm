@@ -16,7 +16,7 @@
 
 import { test, expect } from '@playwright/test';
 
-const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8082';
+const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8089';
 
 // 공통: 고객차트(CustomerChartSheet) 열림 확인 헬퍼
 // CustomerChartSheet: role="dialog" aria-label="고객차트" (z-[70] 패널)
