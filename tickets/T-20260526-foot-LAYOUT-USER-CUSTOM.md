@@ -10,8 +10,8 @@ e2e_spec: tests/e2e/T-20260526-foot-LAYOUT-USER-CUSTOM.spec.ts
 risk_verdict: GO_WARN
 risk_reason: "DB 스키마 변경(user_dashboard_layout_overrides 신규 테이블) + RLS 정책 신설. 기존 행(user_id=NULL) 하위호환 유지."
 deploy_ready: true
-deploy_ready_at: "2026-05-27T07:30:00+0900"
-deploy_ready_commit: 73e846102945f050d8992a17ccc3aa4c15648a18
+deploy_ready_at: "2026-05-27T16:20:00+0900"
+deploy_ready_commit: d87dc16d5538d6c93c6191a0699f224cfe4fe34d
 deploy_ready_build: OK
 db_migration: "supabase/migrations/ user_dashboard_layout_overrides (신규 테이블, RLS)"
 db_rollback: "있음"
@@ -37,3 +37,11 @@ db_rollback: "있음"
 - **수정**: `toast.success(...)` → `toast.message(...)` 2곳 (line 2879, 2938 Dashboard.tsx)
 - **커밋**: `73e846102945f050d8992a17ccc3aa4c15648a18`
 - **빌드**: OK (3.50s)
+
+### FIX-2 (2026-05-27 by supervisor FIX-REQUEST MSG-20260527-155415-qnzs)
+- **원인**: supervisor 환경(macOS)에서 GNU `timeout` 미설치 → `timeout 60 npm run build` 실행 불가. phase1 build_fail로 QA 중단.
+- **코드 변경**: 없음 (피처 코드 정상, 기존 `scripts/build.sh` 크로스플랫폼 래퍼 이미 존재)
+- **해결**: `scripts/build.sh` 사용 안내 — timeout → gtimeout → plain npm run build 자동 폴백
+- **빌드 직접 검증**: `npm run build` ✓ 3.22s, 0 errors (dev-foot 환경)
+- **supervisor QA 대체 명령**: `bash scripts/build.sh 2>&1 | tail -30`
+- **커밋**: `d87dc16d5538d6c93c6191a0699f224cfe4fe34d`
