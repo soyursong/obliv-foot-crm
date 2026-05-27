@@ -222,8 +222,9 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
 
     const drawInitIdx = src.indexOf('const initDrawCanvas = useCallback');
     expect(drawInitIdx).toBeGreaterThan(0);
-    // 1400자 윈도우: ctx null 가드 + drawCtxRef 캐싱 + canvasH 계산 + canvas.width 설정 + BLACKSCR size check
-    const drawBlock = src.slice(drawInitIdx, drawInitIdx + 1400);
+    // 2500자 윈도우: REOPEN4 근본 수정 주석이 추가되어 블록 크기 증가
+    // ctx null 가드 + drawCtxRef 캐싱 + canvasH 계산 + canvas.width 설정 + BLACKSCR size check
+    const drawBlock = src.slice(drawInitIdx, drawInitIdx + 2500);
 
     expect(drawBlock).toContain("if (!ctx)");
     expect(drawBlock).toContain('setBgImgLoadError(true)');
@@ -329,16 +330,16 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
   });
 
   // ── REOPEN 3 (REOPEN 2 미해결 근본 수정): willChange:'transform' 제거 ─────────
-  test('AC-R3-ROOT: draw canvas — willChange:"transform" 제거됨 (GPU compositor layer 불투명화 방지)', () => {
+  // ── REOPEN 4 (REOPEN 3 미해결 최종 수정): desynchronized:true 제거 ────────────
+  test('AC-R3-ROOT: draw canvas — willChange:"transform" 제거됨 + desynchronized:true 기본값 제거 (검정화면 방지)', () => {
     /**
-     * 근본 원인:
+     * 근본 원인(최종 확정):
      *   b955a8c(PENCHART-PEN-SLOW, 5/24)에서 willChange:'transform' + desynchronized:true 동시 추가
      *   → draw canvas가 별도 GPU compositor layer로 승격 → 불투명(alpha-less) GPU 텍스처
      *   → 투명 픽셀 = BLACK으로 표시 → bgCanvas(양식 이미지)가 가려져 검정화면.
      *
-     * 수정: draw canvas style에서 willChange:'transform' 제거
-     *   → GPU compositor layer 미승격 → 투명 합성 정상 동작 → bgCanvas 표시.
-     *   desynchronized:true는 유지 — 펜 반응 HW 가속은 유지.
+     *   REOPEN3 수정: willChange:'transform' 제거 → 미해결 (desync 단독으로도 opaque IOSurface 할당 가능)
+     *   REOPEN4 수정: desynchronized:true 제거 (기본값 false) → 투명 합성 정상 동작 → bgCanvas 표시.
      *
      * 검증: canvasRef가 붙는 draw canvas <canvas> style에 willChange:'transform' 없어야 함
      */
@@ -359,20 +360,39 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
     expect(bgCanvasIdx).not.toEqual(drawCanvasIdx);
   });
 
-  test('AC-R3-ROOT: initDrawCanvas — desynchronized URL param 로직 포함 + getContext 호출에 desynchronized 사용', () => {
+  test('AC-R3-ROOT REOPEN4-FINAL: initDrawCanvas — desynchronized 기본값=false, URL param ?penchart_enable_desync로만 활성화', () => {
     /**
-     * REOPEN4: desynchronized는 URL param ?penchart_no_desync 으로 제어.
-     * const useDesync = !location.search.includes('penchart_no_desync') → ctx = getContext('2d', { desynchronized: useDesync })
-     * HW 가속 유지 (기본값 true) + 현장 테스트용 비활성화 경로 추가.
+     * REOPEN4 근본 수정:
+     *   desynchronized:true 제거 → 기본값 false.
+     *   iOS Safari에서 desynchronized:true는 opaque IOSurface(GPU backing) 할당 →
+     *   drawCanvas 투명 픽셀이 BLACK으로 합성됨 → 검정화면.
+     *
+     *   근거(코드 증거):
+     *   1. b955a8c(5/24 배포) 다음날(5/25) 첫 보고 — 인과 타임라인 일치
+     *   2. willChange 제거(REOPEN3) 후에도 검정화면 지속 → desync 단독으로도 opaque backing 생성 가능
+     *   3. E2E getImageData는 CPU 버퍼 → alpha=0, GPU compositor는 opaque → E2E pass + 실기기 fail
+     *   4. 4회 수정 전부 desynchronized 건드리지 않았음
+     *
+     *   URL param ?penchart_enable_desync → 성능 비교 테스트용 (현장 사용 금지).
+     *   Fix-2(ctx 캐싱) + Fix-3(BoundingClientRect 캐싱) + Fix-8(native pointer) 여전히 활성.
      */
     const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
 
     const initDrawIdx = src.indexOf('const initDrawCanvas = useCallback');
     expect(initDrawIdx).toBeGreaterThan(0);
     // 검색 범위 확장(REOPEN4 진단 코드 추가로 블록이 더 큼)
-    const drawInitBlock = src.slice(initDrawIdx, initDrawIdx + 800);
-    expect(drawInitBlock).toContain('penchart_no_desync');
+    const drawInitBlock = src.slice(initDrawIdx, initDrawIdx + 1800);
+
+    // REOPEN4 근본 수정: penchart_enable_desync (기본값 false)
+    expect(drawInitBlock, 'penchart_enable_desync URL param 없음 — desync OFF 기본값 구현 누락')
+      .toContain('penchart_enable_desync');
     expect(drawInitBlock).toContain('desynchronized: useDesync');
+
+    // 구 penchart_no_desync(기본값 true) 로직이 useDesync 선언에 남아있지 않아야 함
+    // (console.log에 이전 param 언급은 허용 — getContext 로직에만 적용)
+    const useDesyncDecl = drawInitBlock.match(/const useDesync\s*=.*?;/s);
+    expect(useDesyncDecl?.[0] ?? '', '`const useDesync` 선언에 penchart_no_desync 잔존')
+      .not.toContain('penchart_no_desync');
   });
 
   // ── AC-5: 기존 기능 회귀 없음 ──────────────────────────────────────────────
