@@ -1,11 +1,15 @@
 ---
 id: T-20260525-foot-PENCHART-FORM-BLACK
 domain: foot
-priority: P1
-status: qa-pending
+priority: P0
+status: field-gate-pending
 deploy_ready_at: null
-impl_commit: dc7333b
+impl_commit: cf69be5
 db_changed: false
+field_device_gate: true
+field_gate_note: "현장 태블릿 정상 렌더링 스크린샷/영상 수령 후 deploy-ready 전환"
+reopen4_fix_commit: cf69be5
+reopen4_fix_summary: "desynchronized:true 제거 — iOS Safari opaque IOSurface backing store 차단"
 e2e_spec: tests/e2e/T-20260525-foot-PENCHART-FORM-BLACK.spec.ts
 build_ok: true
 hotfix: false
