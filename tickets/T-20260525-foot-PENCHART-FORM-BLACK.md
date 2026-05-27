@@ -2,7 +2,7 @@
 id: T-20260525-foot-PENCHART-FORM-BLACK
 domain: foot
 priority: P1
-status: deploy-ready
+status: deployed
 deploy_ready_at: 2026-05-26 21:15
 impl_commit: aac5085
 db_changed: false
@@ -21,13 +21,13 @@ e2e_spec_exempt_reason: null
 risk_verdict: GO_WARN
 risk_reason: "1/5 — 비즈로직(펜차트 양식 렌더링은 임상 문서 경로). 최근 PENCHART-FORM-AUTOFILL(5/24 배포) 또는 FORM-TEMPLATE-REGEN(배포) 회귀 가능성 조사 필요."
 qa_result: pass
-qa_grade: ""
+qa_grade: Yellow
 qa_fail_phase: ""
 qa_fail_reason: ""
-deployed_at: ""
-deploy_commit: ""
-bundle_hash: ""
-field_soak_until: ""
+deployed_at: 2026-05-27T12:55+09:00
+deploy_commit: aac5085
+bundle_hash: RjIprGOw
+field_soak_until: 2026-05-28T12:55+09:00
 reopen_reason: "REOPEN3 2026-05-26 21:15: [근본 원인 특정] b955a8c(5/24 PENCHART-PEN-SLOW)에서 willChange:'transform' + desynchronized:true 동시 추가 → draw canvas GPU compositor layer 승격 → 불투명(alpha-less) 텍스처 → 투명 픽셀=BLACK → bgCanvas 가려짐. 증거3종: ①인과 타임라인(5/24배포→5/25첫보고) ②스크린샷(검정배경위흰펜획) ③1·2차수정 미해결. 수정: willChange:'transform' 제거(desynchronized:true유지) + REOPEN2 tiling/decode 방어 누적. E2E 45/45 pass."
 reopen_fix_commit: aac5085
 reopen_count: 3
