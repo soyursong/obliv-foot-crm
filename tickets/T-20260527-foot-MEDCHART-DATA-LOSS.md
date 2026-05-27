@@ -4,7 +4,7 @@ domain: foot
 priority: P1
 status: deploy-ready
 deploy_ready: true
-commit_sha: ""
+commit_sha: "0133010"
 build_ok: true
 e2e_spec: tests/e2e/T-20260527-foot-MEDCHART-DATA-LOSS.spec.ts
 db_changed: true
