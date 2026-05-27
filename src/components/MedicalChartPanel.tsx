@@ -32,6 +32,12 @@
  *   AC-3: 진료내역 탭 — check_ins 방문 이력 읽기전용 뷰어 (우측 패널)
  *   AC-4: 진료이미지 탭 — photos Storage 썸네일 뷰어 (우측 패널)
  *
+ * T-20260527-foot-TREATMEMO-CHART-MERGE:
+ *   AC-1: 치료메모 뷰어(우측 패널 별도 탭) → [치료사차트] 섹션 하단에 통합
+ *   AC-2: 읽기 전용 유지
+ *   AC-3: 기존 치료사차트(treatment_record) 콘텐츠 보존
+ *   AC-4: 치료메모 없는 방문 → 서브섹션 미표시 (에러 없음)
+ *
  * 이전 버전:
  *   T-20260515-foot-MEDICAL-CHART-V1 — 최초 구현 (6항목)
  *   T-20260516-foot-MEDICAL-CHART-EXPAND — 전체화면 전환 (이 버전으로 대체)
@@ -45,7 +51,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { BookOpen, Camera, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Edit2, FlaskConical, History, Loader2, Plus, Stethoscope, X } from 'lucide-react';
+import { BookOpen, Camera, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, History, Loader2, Plus, Stethoscope, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -233,14 +239,14 @@ export default function MedicalChartPanel({
   const [phrasePopoverVisible, setPhrasePopoverVisible] = useState(false);
   const [phraseQuery, setPhraseQuery] = useState('');
 
-  // ── 우측 패널 탭 (AC-1 + MEDCHART-SYNC: 처방세트 / 상용구 / 치료메모 / 진료내역 / 진료이미지)
-  const [rightTab, setRightTab] = useState<'rx' | 'phrase' | 'treat_memo' | 'visit_hist' | 'images'>('rx');
+  // ── 우측 패널 탭 (AC-1 + MEDCHART-SYNC → TREATMEMO-CHART-MERGE: 처방세트 / 상용구 / 진료내역 / 진료이미지)
+  // T-20260527-foot-TREATMEMO-CHART-MERGE: treat_memo 탭 제거 — [치료사차트] 섹션에 통합
+  const [rightTab, setRightTab] = useState<'rx' | 'phrase' | 'visit_hist' | 'images'>('rx');
   const [selectedPhraseIds, setSelectedPhraseIds] = useState<Set<number>>(new Set());
 
   // T-20260526-foot-MEDCHART-SYNC: 참고 데이터 상태
+  // T-20260527-foot-TREATMEMO-CHART-MERGE: treatMemosLoaded/Loading 제거 (loadData 통합으로 불필요)
   const [treatMemos, setTreatMemos] = useState<TreatmentMemoEntry[]>([]);
-  const [treatMemosLoaded, setTreatMemosLoaded] = useState(false);
-  const [treatMemosLoading, setTreatMemosLoading] = useState(false);
   const [visitHistory, setVisitHistory] = useState<VisitHistoryEntry[]>([]);
   const [visitHistLoaded, setVisitHistLoaded] = useState(false);
   const [visitHistLoading, setVisitHistLoading] = useState(false);
@@ -258,7 +264,7 @@ export default function MedicalChartPanel({
     if (!customerId || !clinicId) return;
     setLoading(true);
     try {
-      const [custRes, chartsRes, phrasesRes, rxSetsRes] = await Promise.all([
+      const [custRes, chartsRes, phrasesRes, rxSetsRes, treatMemosRes] = await Promise.all([
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
           .from('customers')
@@ -286,12 +292,22 @@ export default function MedicalChartPanel({
           .select('id,name,items,is_active')
           .eq('is_active', true)
           .order('sort_order', { ascending: true }),
+        // T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모를 loadData에 통합 (드로어 오픈 시 자동 로드)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
+          .from('customer_treatment_memos')
+          .select('id, content, created_by_name, created_at, memo_type')
+          .eq('customer_id', customerId)
+          .order('created_at', { ascending: false })
+          .limit(20),
       ]);
 
       if (custRes.data) setCustomer(custRes.data as CustomerBasic);
       const rawCharts: MedicalChart[] = chartsRes.data || [];
       setPhraseTemplates(phrasesRes.data || []);
       setPrescriptionSets(rxSetsRes.data || []);
+      // T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 상태 설정
+      setTreatMemos((treatMemosRes.data as TreatmentMemoEntry[]) ?? []);
 
       // director면 chart_doctor_memos merge
       if (isDirector && rawCharts.length > 0) {
@@ -374,8 +390,8 @@ export default function MedicalChartPanel({
       setSelectedPhraseIds(new Set());
       setRightTab('rx');
       // T-20260526-foot-MEDCHART-SYNC: 참고 데이터 리셋 (새 고객 열릴 때마다)
+      // T-20260527-foot-TREATMEMO-CHART-MERGE: treatMemos는 loadData에서 자동 재로드됨
       setTreatMemos([]);
-      setTreatMemosLoaded(false);
       setVisitHistory([]);
       setVisitHistLoaded(false);
       setTreatImages([]);
@@ -581,26 +597,8 @@ export default function MedicalChartPanel({
     navigate('/admin/doctor-tools');
   }
 
-  // ── T-20260526-foot-MEDCHART-SYNC: 치료메모 lazy load ─────────────────────────
-  const loadTreatMemos = useCallback(async () => {
-    if (!customerId || treatMemosLoaded || treatMemosLoading) return;
-    setTreatMemosLoading(true);
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data } = await (supabase as any)
-        .from('customer_treatment_memos')
-        .select('id, content, created_by_name, created_at, memo_type')
-        .eq('customer_id', customerId)
-        .order('created_at', { ascending: false })
-        .limit(20);
-      setTreatMemos((data as TreatmentMemoEntry[]) ?? []);
-    } catch {
-      // graceful — 테이블 없거나 오류 시 빈 배열 유지
-    } finally {
-      setTreatMemosLoaded(true);
-      setTreatMemosLoading(false);
-    }
-  }, [customerId, treatMemosLoaded, treatMemosLoading]);
+  // T-20260527-foot-TREATMEMO-CHART-MERGE: loadTreatMemos 제거 — loadData()에 통합됨
+  // (customer_treatment_memos 쿼리가 loadData Promise.all에 포함)
 
   // ── T-20260526-foot-MEDCHART-SYNC: 방문 이력 lazy load ────────────────────────
   const loadVisitHistory = useCallback(async () => {
@@ -652,9 +650,9 @@ export default function MedicalChartPanel({
   }, [customerId, treatImagesLoaded, treatImagesLoading]);
 
   // ── 탭 전환 시 lazy load 트리거 ────────────────────────────────────────────────
+  // T-20260527-foot-TREATMEMO-CHART-MERGE: treat_memo는 loadData에서 로드 → 탭 트리거 제거
   useEffect(() => {
-    if (rightTab === 'treat_memo') loadTreatMemos();
-    else if (rightTab === 'visit_hist') loadVisitHistory();
+    if (rightTab === 'visit_hist') loadVisitHistory();
     else if (rightTab === 'images') loadTreatImages();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rightTab]);
@@ -1145,7 +1143,7 @@ export default function MedicalChartPanel({
                     </div>
                   )}
 
-                  {/* 치료사차트 — 읽기전용 (AC-3) */}
+                  {/* 치료사차트 — 읽기전용 (AC-3) + T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 통합 */}
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <label className="text-xs font-semibold text-muted-foreground">치료사차트</label>
@@ -1160,6 +1158,31 @@ export default function MedicalChartPanel({
                       className="text-sm resize-none bg-gray-50 text-gray-500 cursor-not-allowed placeholder:text-gray-300 disabled:opacity-100"
                       data-testid="medical-chart-treatment"
                     />
+                    {/* T-20260527-foot-TREATMEMO-CHART-MERGE AC-1/3/4: 치료메모 이력 통합 표시 */}
+                    {treatMemos.length > 0 && (
+                      <div className="mt-2 space-y-1.5" data-testid="treat-memo-in-chart-section">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide">치료메모 이력</span>
+                          <span className="text-[9px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">읽기전용</span>
+                        </div>
+                        {treatMemos.map((memo) => (
+                          <div
+                            key={memo.id}
+                            className="rounded border bg-blue-50/40 border-blue-100 px-2.5 py-2 space-y-1"
+                            data-testid="treat-memo-item"
+                          >
+                            <p className="text-[11px] text-gray-800 whitespace-pre-wrap leading-relaxed">{memo.content}</p>
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-[9px] text-muted-foreground">{memo.created_by_name ?? '알 수 없음'}</span>
+                              <span className="text-[9px] text-muted-foreground tabular-nums">{fmtDateShort(memo.created_at)}</span>
+                            </div>
+                            {memo.memo_type && (
+                              <span className="text-[9px] text-blue-600 bg-blue-100 rounded px-1 py-0.5">{memo.memo_type}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* 임상경과 — 상용구 단축어 (우측 패널로 이동, // autocomplete 유지) */}
@@ -1346,10 +1369,9 @@ export default function MedicalChartPanel({
                       </button>
                     ))}
                   </div>
-                  {/* 하단 행: 치료메모 / 진료내역 / 진료이미지 (T-20260526-foot-MEDCHART-SYNC) */}
+                  {/* 하단 행: 진료내역 / 진료이미지 (T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 탭 제거) */}
                   <div className="flex">
                     {([
-                      { key: 'treat_memo', icon: <ClipboardList className="h-3 w-3" />, label: '치료메모' },
                       { key: 'visit_hist', icon: <History className="h-3 w-3" />, label: '진료내역' },
                       { key: 'images', icon: <Camera className="h-3 w-3" />, label: '진료이미지' },
                     ] as const).map(({ key, icon, label }) => (
@@ -1472,53 +1494,7 @@ export default function MedicalChartPanel({
                       )}
                     </div>
                   )}
-                  {/* ── T-20260526-foot-MEDCHART-SYNC: 치료메모 탭 ─────────────── */}
-                  {rightTab === 'treat_memo' && (
-                    <div className="p-3 space-y-2" data-testid="right-panel-treat-memo-content">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-semibold text-muted-foreground">
-                          치료메모 이력 (읽기전용)
-                        </span>
-                        <span className="text-[9px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">
-                          2번차트 3구역
-                        </span>
-                      </div>
-                      {treatMemosLoading ? (
-                        <div className="flex justify-center py-6">
-                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                        </div>
-                      ) : treatMemos.length === 0 ? (
-                        <div className="rounded-lg border border-dashed p-4 text-[11px] text-muted-foreground text-center">
-                          등록된 치료메모 없음
-                        </div>
-                      ) : (
-                        <div className="space-y-1.5">
-                          {treatMemos.map((memo) => (
-                            <div
-                              key={memo.id}
-                              className="rounded border bg-blue-50/40 border-blue-100 px-2.5 py-2 space-y-1"
-                              data-testid="treat-memo-item"
-                            >
-                              <p className="text-[11px] text-gray-800 whitespace-pre-wrap leading-relaxed">{memo.content}</p>
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="text-[9px] text-muted-foreground">
-                                  {memo.created_by_name ?? '알 수 없음'}
-                                </span>
-                                <span className="text-[9px] text-muted-foreground tabular-nums">
-                                  {fmtDateShort(memo.created_at)}
-                                </span>
-                              </div>
-                              {memo.memo_type && (
-                                <span className="text-[9px] text-blue-600 bg-blue-100 rounded px-1 py-0.5">
-                                  {memo.memo_type}
-                                </span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {/* ── T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 탭 제거 — [치료사차트] 섹션에 통합 ── */}
 
                   {/* ── T-20260526-foot-MEDCHART-SYNC: 진료내역 탭 ──────────────── */}
                   {rightTab === 'visit_hist' && (
