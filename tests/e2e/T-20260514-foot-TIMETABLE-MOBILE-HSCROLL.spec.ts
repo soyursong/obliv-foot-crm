@@ -8,7 +8,7 @@
  */
 import { test, expect } from '@playwright/test';
 
-const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8082';
+const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8089';
 
 test.describe('T-20260514-foot-TIMETABLE-MOBILE-HSCROLL — 통합시간표 모바일 가로스크롤', () => {
   // ── 시나리오 1: 모바일 가로 스크롤 정상 동선 ──────────────────────────────

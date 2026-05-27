@@ -14,7 +14,7 @@
 
 import { test, expect } from '@playwright/test';
 
-const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8082';
+const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8089';
 
 // 공통: CustomerChartSheet 열림 확인 헬퍼
 async function expectChartSheetOpen(page: import('@playwright/test').Page) {

@@ -11,7 +11,7 @@
  */
 import { test, expect } from '@playwright/test';
 
-const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8082';
+const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8089';
 
 test.describe('T-20260514-foot-MOBILE-CAL-COLLAPSE — 모바일 달력 자동 접기', () => {
   // ── 시나리오 1: 모바일 정상 동선 ─────────────────────────────────────────

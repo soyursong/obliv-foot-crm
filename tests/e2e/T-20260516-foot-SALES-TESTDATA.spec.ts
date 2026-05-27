@@ -4,7 +4,7 @@
  */
 import { test, expect } from '@playwright/test';
 
-const BASE = 'http://localhost:8082';
+const BASE = 'http://localhost:8089';
 
 test.describe('SALES-TESTDATA — 5탭 QA', () => {
 

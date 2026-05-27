@@ -13,7 +13,7 @@
  */
 import { test, expect } from '@playwright/test';
 
-const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8082';
+const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8089';
 
 test.describe('T-20260516-foot-PC-CAL-COLLAPSE — PC 달력 접기', () => {
 

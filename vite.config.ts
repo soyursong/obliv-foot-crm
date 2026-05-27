@@ -32,6 +32,8 @@ export default defineConfig({
   },
   server: {
     host: "0.0.0.0",
-    port: 8082,
+    // 일반 dev: 8085 (기본값)
+    // Playwright E2E 전용: VITE_DEV_PORT=8089 (playwright.config.ts webServer.env 에서 주입)
+    port: parseInt(process.env.VITE_DEV_PORT ?? '8085'),
   },
 });
