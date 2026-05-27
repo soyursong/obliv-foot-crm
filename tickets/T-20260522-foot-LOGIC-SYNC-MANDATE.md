@@ -17,6 +17,8 @@ deployed_at: 2026-05-24T03:14:00+09:00
 deploy_commit: d0c9c521cdbe75075fa9ff304347276b95724c54
 bundle_hash: CHtNx3rj
 field_soak_until: 2026-05-25T03:14:00+09:00
+build_reverified_at: 2026-05-27T18:40:00+09:00
+build_reverify_note: "supervisor FIX-REQUEST(MSG-20260527-182856-reux) — EINTR/uv_cwd OS 환경 이슈(코드 무관). dev-foot 클린 셸에서 npm run build 통과(3.33s). 코드 변경 없음."
 ---
 
 ## 완료 내역 (Phase 1)
