@@ -4,7 +4,7 @@ domain: foot
 priority: P1
 status: deploy-ready
 deploy_ready: true
-commit_sha: "pending"
+commit_sha: "77ef677"
 build_ok: true
 e2e_spec: tests/e2e/T-20260527-foot-MEDCHART-TAB-REAPPEAR.spec.ts
 db_changed: false
