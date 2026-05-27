@@ -128,6 +128,8 @@ export default function Reservations() {
   const [editor, setEditor] = useState<ReservationDraft | null>(null);
   const [detail, setDetail] = useState<Reservation | null>(null);
   const [noshowByCustomer, setNoshowByCustomer] = useState<Record<string, number>>({});
+  // T-20260527-foot-TREATMENT-CYCLE-ALERT AC-1: 고객별 완료 치료 회차 수 (패키지 무관)
+  const [treatmentCycleMap, setTreatmentCycleMap] = useState<Map<string, number>>(new Map());
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   // T-20260515-foot-RESV-DND-SHORTCUT: 키보드 클립보드 (Ctrl+C/X/V)
@@ -289,9 +291,22 @@ export default function Reservations() {
         if (c.chart_number) chartM.set(c.id, c.chart_number);
       }
       setResvChartMap(chartM);
+
+      // T-20260527-foot-TREATMENT-CYCLE-ALERT AC-1/AC-4:
+      // 고객별 완료 치료 회차 수를 단일 RPC로 배치 집계 (N+1 방지)
+      const { data: cycleData } = await supabase.rpc('get_treatment_cycle_counts', {
+        p_clinic_id:    clinic.id,
+        p_customer_ids: customerIds,
+      });
+      const cycleM = new Map<string, number>();
+      for (const row of (cycleData ?? []) as { customer_id: string; completed_count: number }[]) {
+        cycleM.set(row.customer_id, row.completed_count);
+      }
+      setTreatmentCycleMap(cycleM);
     } else {
       setNoshowByCustomer({});
       setResvChartMap(new Map());
+      setTreatmentCycleMap(new Map());
     }
   }, [clinic, weekDays, viewMode, selectedDay]);
 
@@ -1113,6 +1128,33 @@ export default function Reservations() {
                                           노쇼 {noshowByCustomer[r.customer_id]}
                                         </Badge>
                                       ) : null}
+                                      {/* T-20260527-foot-TREATMENT-CYCLE-ALERT AC-2/AC-3:
+                                          치료 회차 배지 + 6배수 진료필요 배지 */}
+                                      {r.customer_id && r.status !== 'cancelled' && (() => {
+                                        const completed = treatmentCycleMap.get(r.customer_id) ?? 0;
+                                        const nextCycle = completed + 1;
+                                        const needsExam = nextCycle > 0 && nextCycle % 6 === 0;
+                                        return (
+                                          <>
+                                            <span
+                                              className="text-[9px] font-mono tabular-nums text-gray-400 leading-none"
+                                              data-testid={`cycle-count-${r.id}`}
+                                              title={`누적 완료 ${completed}회 · 이번 예약 ${nextCycle}회차`}
+                                            >
+                                              {nextCycle}회
+                                            </span>
+                                            {needsExam && (
+                                              <Badge
+                                                className="h-4 px-1 text-[9px] bg-purple-100 text-purple-700 border border-purple-300 hover:bg-purple-100"
+                                                data-testid={`needs-exam-badge-${r.id}`}
+                                                title={`${nextCycle}회차 — 진료 필요`}
+                                              >
+                                                진료필요
+                                              </Badge>
+                                            )}
+                                          </>
+                                        );
+                                      })()}
                                     </div>
                                     {/* RESV-SLOT-INFO: 방문유형·상태 + 전화번호 뒷4자리 */}
                                     <div className="flex min-w-0 items-center gap-1 overflow-hidden text-xs opacity-80">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 + overflow-hidden → 상태줄 셀 밖 넘침 방지 */}
