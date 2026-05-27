@@ -10,12 +10,14 @@ deadline: 2026-05-28
 completed_at: 2026-05-24
 commit_sha: bb44f1c
 build_ok: true
+build_verified_at: 2026-05-27
 db_changed: false
 spec_file: tests/e2e/T-20260522-foot-RESV-PKG-HISTORY.spec.ts
 risk: GO
 assignee: dev-foot
 source: planner MSG-20260524-194804-8wf8
 reporter: 김주연 총괄 (U0ATDB587PV)
+fix_request: MSG-20260527-183946-j649
 ---
 
 # T-20260522-foot-RESV-PKG-HISTORY
@@ -44,3 +46,34 @@ reporter: 김주연 총괄 (U0ATDB587PV)
 - 그리드 4컬럼 → 5컬럼: `grid-cols-[2fr_1fr_1fr_1fr_1.2fr]`
 - 치료사 셀: `row.therapist_name` 렌더, performed_by null → "—" fallback
 - E2E spec: S1 헤더 체크 + S4 AC-R1 치료사 컬럼 전용 시나리오 추가
+
+## 빌드 환경 이슈 (FIX-REQUEST MSG-20260527-183946-j649)
+
+### 현상
+`timeout 60 npm run build 2>&1 | tail -30` → `EINTR: process.cwd failed (uv_cwd)` 실패
+
+### 원인
+macOS/macstudio 환경에서 GNU `timeout` 명령이 SIGALRM을 사용함.
+libuv의 `uv_cwd()` (내부 `getcwd()` syscall)는 signal-safe하지 않아 EINTR로 실패.
+
+### 코드 변경 없음
+피처 코드(Reservations.tsx, E2E spec) 변경 없음. 빌드 자체는 정상:
+```
+npm run build → ✓ built in 3.23s (exit 0)
+bash scripts/build.sh → ✓ built (exit 0)  # SIGALRM 없는 watchdog 방식
+```
+
+### 올바른 빌드 명령 (supervisor QA용)
+```bash
+# ✅ 권장 (scripts/build.sh watchdog — SIGALRM 없음)
+bash scripts/build.sh 2>&1 | tail -20
+npm run build:verify 2>&1 | tail -30
+
+# ✅ 직접 실행
+npm run build 2>&1 | tail -30
+
+# ❌ macOS에서 사용 금지
+timeout 60 npm run build  # SIGALRM → uv_cwd EINTR
+```
+
+빌드 재검증: 2026-05-27 `npm run build` → 3.23s OK, 0 errors.
