@@ -20,6 +20,14 @@ bundle_hash: Dashboard-BI-ZnPLn.js
 field_soak_until: 2026-05-23T05:10:00+09:00
 field_soak_result: done
 reverify_at: 2026-05-24T13:04:00+09:00
+fix_request: MSG-20260527-184601-zjrm
+build_recheck_at: 2026-05-27T19:00:00+09:00
+build_recheck_result: pass
+build_recheck_note: >
+  EINTR 재현 없음. `npm run build` 3.56s exit 0, `timeout 60 npm run build` 3.35s exit 0.
+  원인: Node.js v25.9.0 + macOS timeout SIGALRM → libuv uv_cwd() EINTR (간헐 환경 이슈).
+  코드 변경 없음. 영구 방지책: .nvmrc(22), package.json engines(^22), vercel.json NODE_VERSION=22.
+  올바른 QA 빌드 명령: bash scripts/build.sh 또는 npm run build:verify.
 ---
 
 # T-20260522-foot-PKG-BOX-INDICATOR
