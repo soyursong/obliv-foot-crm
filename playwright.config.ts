@@ -64,6 +64,9 @@ export default defineConfig({
         '**/T-20260526-foot-DOC-FORM-7FIX.spec.ts',
         // T-20260526-foot-DOC-DIAG-TRUNC: 서류 상병코드 3~4건 전건 노출 (truncation 수정)
         '**/T-20260526-foot-DOC-DIAG-TRUNC.spec.ts',
+        // T-20260522-foot-TABLET-DUAL-LAYOUT: 태블릿 이중 레이아웃 — 순수 정적 소스 검증 (browser 불필요)
+        // desktop-chrome(auth 의존) 대신 unit 프로젝트로 이동 → auth.setup 우회
+        '**/T-20260522-foot-TABLET-DUAL-LAYOUT.spec.ts',
         // T-20260520-ins-COPAY-CALC AC-4: 본인부담 산출 순수 함수 단위테스트 (20 TC)
         '**/insurance-calc.spec.ts',
       ],

@@ -1,6 +1,6 @@
 ---
 id: T-20260522-foot-TABLET-DUAL-LAYOUT
-status: deployed
+status: deploy-ready
 deploy_ready: true
 build_ok: true
 db_migration: false
@@ -13,6 +13,9 @@ deploy_commit: ec5dfb6f09071c25e695a78e97ed9e767c51ee31
 bundle_hash: DEXomt-X
 field_soak_until: "2026-05-23T05:19:42+09:00"
 field_validation_slack_ts: "1779394877.098519"
+fix_request: MSG-20260527-184913-04r5
+fix_applied: "2026-05-27T19:20:00+09:00"
+fix_summary: "playwright.config.ts unit testMatch에 TABLET-DUAL-LAYOUT 추가 — 정적 스펙 auth.setup 의존 제거. --project=unit 17/17 pass, --project=desktop-chrome 18/18 pass(setup+17 TC). VITE_DISABLE_AUTH_LOCK=1 webServer.env 주입 확인."
 ---
 
 # T-20260522-foot-TABLET-DUAL-LAYOUT: 태블릿 가로/세로 이중 레이아웃 (Phase 1 대시보드)
