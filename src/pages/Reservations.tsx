@@ -761,16 +761,35 @@ export default function Reservations() {
       changed_by: changedBy,
     });
     // 낙관적 업데이트 — rows 즉시 반영
+    const cancelledAt = new Date().toISOString();
     setRows((prev) =>
       prev.map((r) =>
         r.id === cancelTarget.id
-          ? { ...r, status: 'cancelled' as const, cancelled_at: new Date().toISOString(), cancel_reason: reason, cancelled_by: changedBy }
+          ? { ...r, status: 'cancelled' as const, cancelled_at: cancelledAt, cancel_reason: reason, cancelled_by: changedBy }
           : r,
       ),
     );
     setCancelBusy(false);
     setCancelTarget(null);
     toast.success(`${cancelTarget.customer_name} 예약 취소됨`);
+
+    // ── T-20260527-dopamine-RESV-CANCEL-SYNC: 도파민 취소 콜백 (fire-and-forget) ──
+    // external_id 있는 예약(도파민 cue_card_id)만 전송. 콜백 실패는 non-fatal.
+    if (cancelTarget.external_id) {
+      (async () => {
+        try {
+          await supabase.functions.invoke('dopamine-callback', {
+            body: {
+              type: 'cancelled',
+              reservation_id: cancelTarget.id,
+            },
+          });
+        } catch (cbErr) {
+          // non-fatal — dopamine_outbound_log에 failed 기록이 남아 추후 재처리 가능
+          console.warn('[cancel-callback] 도파민 취소 콜백 발사 오류 (non-fatal):', cbErr);
+        }
+      })();
+    }
   }, [cancelTarget, clinic, changedBy]);
 
   return (
