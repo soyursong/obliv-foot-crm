@@ -10,7 +10,10 @@ deployed_at: "2026-05-26T17:30:00+09:00"
 deploy_commit: d3e5479
 bundle_hash: CxjCcVqm
 field_soak_until: "2026-05-27T17:30:00+09:00"
-db_migration: 20260526130000_service_menu_order.sql — APPLIED (supabase db query --linked)
+db_migration: |
+  20260526130000_service_menu_order.sql — APPLIED
+  20260527110000_service_menu_order_rls_harden.sql — APPLIED 2026-05-27 (smo_clinic_isolated 확인)
+rls_hardening_commit: TBD
 hotfix: false
 created: 2026-05-26 10:02
 deadline: 2026-05-30
@@ -146,3 +149,4 @@ testid 전건 JSX 확인: menu-reorder-toggle / menu-card-list / menu-card-row-{
 - 2026-05-26 10:02 — 티켓 생성 (planner)
 - 2026-05-26 11:45 — deploy-ready 마킹 (dev-foot)
 - 2026-05-26 17:30 — QA 완료 + deployed (supervisor)
+- 2026-05-27 — RLS hardening 실행: smo_clinic_isolated (clinic_id 격리) 적용. DB 확인 완료.
