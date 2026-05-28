@@ -707,17 +707,37 @@ export function PenChartTab({
     loadTemplates();
   }, [loadSavedCharts, loadTemplates]);
 
-  // T-20260528-foot-PENCHART-NEWWIN: 팝업 창 저장 완료 시 목록 자동 갱신
-  // BroadcastChannel('penchart-update') — 팝업이 저장 후 postMessage → 부모 창 목록 새로고침
+  // T-20260528-foot-PENCHART-POPUP: 팝업 창 저장 완료 시 목록 자동 갱신
+  // BroadcastChannel('penchart-update') + localStorage storage 이벤트 이중 폴백
+  // BroadcastChannel: Chrome/Firefox/Edge/Safari 15.4+
+  // storage event: Safari < 15.4, 구형 iPad 폴백용
   useEffect(() => {
-    if (typeof BroadcastChannel === 'undefined') return;
-    const bc = new BroadcastChannel('penchart-update');
-    bc.onmessage = (e: MessageEvent) => {
-      if (e.data?.customerId === customerId) {
-        loadSavedCharts();
+    const handleUpdate = (cId: string) => {
+      if (cId === customerId) loadSavedCharts();
+    };
+
+    // BroadcastChannel (현대 브라우저)
+    let bc: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      bc = new BroadcastChannel('penchart-update');
+      bc.onmessage = (e: MessageEvent) => handleUpdate(e.data?.customerId);
+    }
+
+    // localStorage storage 이벤트 (Safari < 15.4 폴백, 다른 탭/윈도우에서 발화)
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'penchart-update' && e.newValue) {
+        try {
+          const payload = JSON.parse(e.newValue) as { customerId: string };
+          handleUpdate(payload.customerId);
+        } catch { /* 무시 */ }
       }
     };
-    return () => bc.close();
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      bc?.close();
+      window.removeEventListener('storage', onStorage);
+    };
   }, [customerId, loadSavedCharts]);
 
   // ── 캔버스 초기화 ─────────────────────────────────────────────────────
@@ -1621,13 +1641,18 @@ export function PenChartTab({
       setActiveDrawTemplate(null);
       setMode('list');
 
-      // T-20260528-foot-PENCHART-NEWWIN: 팝업 모드 — 저장 후 부모 창 갱신 + 팝업 닫기
+      // T-20260528-foot-PENCHART-POPUP: 팝업 모드 — 저장 후 부모 창 갱신 + 팝업 닫기
       if (popupMode) {
+        // BroadcastChannel (현대 브라우저)
         try {
           const bc = new BroadcastChannel('penchart-update');
           bc.postMessage({ customerId });
           bc.close();
         } catch { /* BroadcastChannel 미지원 환경 무시 */ }
+        // localStorage storage 이벤트 폴백 (Safari < 15.4 / 구형 iPad)
+        try {
+          localStorage.setItem('penchart-update', JSON.stringify({ customerId, ts: Date.now() }));
+        } catch { /* 무시 */ }
         setTimeout(() => window.close(), 150);
       }
     } finally {
@@ -2364,7 +2389,8 @@ export function PenChartTab({
               const url = `/penchart-editor?${params.toString()}`;
               const popup = window.open(url, `penchart-${customerId}`, 'width=1200,height=900,scrollbars=yes,resizable=yes');
               if (!popup) {
-                // 팝업 차단됨 (iPad Safari 엄격 모드 등) → fullscreen modal fallback
+                // 팝업 차단됨 (iPad Safari 엄격 모드 등) → 안내 메시지 + fullscreen modal fallback
+                toast.warning('팝업이 차단되었습니다. 현재 화면에서 작성 창이 열립니다.\n(브라우저 주소창 팝업 허용 후 재시도하면 별도 창으로 열립니다.)');
                 setMode('select');
               }
             }}
