@@ -4145,7 +4145,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     const FORM_KEY_LABEL: Record<string, string> = {
                       personal_checklist_general: '개인정보+체크리스트 (일반)',
                       personal_checklist_senior:  '개인정보+체크리스트 (어르신)',
-                      pen_chart: '펜차트',
+                      pen_chart: '보험차트',
                       consent_form: '동의서',
                       receipt: '영수증',
                     };
@@ -6795,7 +6795,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <div className="space-y-3">
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
                     <span className="h-1.5 w-1.5 rounded-full bg-purple-400" />
-                    펜차트 저장 양식
+                    보험차트 저장 양식
                   </div>
                   {submissionImages.map((img, i) => (
                     <div key={i} className="rounded-lg border bg-gray-50 overflow-hidden">

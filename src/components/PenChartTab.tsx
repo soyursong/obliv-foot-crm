@@ -2376,7 +2376,7 @@ export function PenChartTab({
         <div className="flex items-center justify-between mb-3">
           <span className="flex items-center gap-1.5 font-bold text-purple-800">
             <span className="h-2 w-2 rounded-full bg-purple-500" />
-            펜차트 — 양식 작성
+            보험차트 — 양식 작성
           </span>
           <Button
             size="sm"
