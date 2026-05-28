@@ -1772,7 +1772,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
           {/* ── 중앙: 코드 목록 / 그리드 (모바일: 고정 높이 52 / 데스크탑: flex-1) ── */}
           <div className="flex flex-col min-w-0 min-h-0 h-52 sm:h-auto sm:flex-1">
-            {/* 풋케어 탭: 서브 카테고리 버튼 + 순서 편집 토글
+            {/* 풋케어 탭: 서브 카테고리 버튼 (순서 편집 토글 제거됨 — PMW-ORDER-REMOVE)
                 T-20260526-foot-PMW-SIDE-MENU-FEAT AC-1, AC-4 */}
             {activeTab === '풋케어' && (
               <div className="flex gap-1 px-2 py-1.5 border-b shrink-0 flex-wrap items-center">
