@@ -21,6 +21,8 @@ deploy_commit: "00520dc"
 bundle_hash: "index-RjIprGOw"
 field_soak_until: "2026-05-28T08:00:12+09:00"
 field_validation_slack_ts: "1779844220.558389"
+reopen_investigation: "2026-05-28"
+reopen_result: "코드·번들 이상 없음 — 오조사 완료"
 ---
 
 ## 개요
@@ -69,3 +71,37 @@ PMW-SIDEMENU-FEAT(d3e5479) 배포 직후 현장(김주연 총괄) 즉시 제거 
 ## DB 변경
 
 없음 — FE 진입점만 제거. service_menu_order 테이블/RLS 변경 없음.
+
+## REOPEN 조사 (2026-05-28)
+
+**현장 보고:** 김주연 총괄 "새로고침 후에 캡쳐한 화면이야 2번 수정사항 변경안 됨"
+
+### 코드 증거
+
+| 항목 | 결과 |
+|------|------|
+| `3c30149` origin/main 포함 여부 | ✅ 포함 (2026-05-26 20:21 KST) |
+| 이후 커밋 revert 여부 | ✅ 없음 (`dc7333b`, `6ed19d1` 모두 PenChartTab.tsx만 변경) |
+| `menuReorderMode` 소스 잔존 | ✅ 없음 (주석 1개만 — 렌더 안됨) |
+| `SortableMenuCardRow` 소스 잔존 | ✅ 없음 |
+| "순서 편집" 렌더 UI 잔존 | ✅ 없음 (line 1775는 JSX comment) |
+| production 번들 hash | `index-5fhHKeWn.js` (index-RjIprGOw 이후 갱신됨) |
+| 번들 내 "순서 편집" 텍스트 | ✅ 없음 |
+| 번들 내 `menuReorderMode` | ✅ 없음 |
+| 번들 내 `menu-reorder-toggle` | ✅ 없음 |
+
+### 결론
+
+**fix는 정상 배포됨.** production 번들에 "순서 편집" UI 없음 확인.
+
+사용자가 보고 있는 것은 수가 항목 목록(우측 Zone2)의 ↑↓ 화살표·드래그 핸들로 추정.
+이는 **T-20260525-foot-FEE-ITEM-REORDER** 별도 기능(유지 대상)이며 PMW-ORDER-REMOVE 범위 밖.
+
+- 메뉴 카드 순서 편집 ↑↓ (`menu-reorder-up/down`) → 제거됨 ✅
+- 수가 항목 ↑↓ (`reorder-up/down`) → 유지 의도 (FEE-ITEM-REORDER)
+
+### 조치
+
+- stale 주석 업데이트 (line 1775: "순서 편집 토글 제거됨 — PMW-ORDER-REMOVE" 명시)
+- 재커밋 → Vercel 재빌드 강제
+- 현장에 "수가 항목 ↑↓는 별도 기능" 안내 필요 (planner 전달)
