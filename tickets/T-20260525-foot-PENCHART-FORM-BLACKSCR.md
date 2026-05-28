@@ -39,7 +39,9 @@ repo_path: "/Users/domas/Documents/GitHub/obliv-foot-crm"
 build_cmd: "npm run build"
 e2e_cmd: "npx playwright test tests/e2e/T-20260525-foot-PENCHART-FORM-BLACK.spec.ts"
 e2e_spec_exempt_reason: null
-build_status: "PASS (3.33s) — 2026-05-27 after cf69be5 + MedicalChartPanel TS fix"
+build_status: "PASS (3.39s) — 2026-05-28 worktree cf69be5 (npm ci 후) + main repo 3.52s 재검증"
+build_cmd: "bash scripts/build.sh"
+build_cmd_note: "scripts/build.sh 2026-05-28 node_modules auto-install 추가 — git worktree 환경에서도 자동 npm ci 후 빌드. timeout 60 npm run build 금지(EINTR+tsc not found)."
 risk_verdict: GO_WARN
 risk_reason: "실기기 현장 테스트(AC-R4-1/2) 대기 중. 빌드+E2E 통과. deploy-ready 전환은 iPad 스크린샷 증빙 후."
 spec_path: tests/e2e/T-20260525-foot-PENCHART-FORM-BLACK.spec.ts
@@ -256,6 +258,40 @@ E2E:   npx playwright test tests/e2e/T-20260525-foot-PENCHART-FORM-BLACK.spec.ts
 
 **deploy-ready 전환 조건 (동일)**:
 현장 태블릿(iPad Safari)에서 양식 정상 렌더링 확인 스크린샷이 `qa_screenshots/`에 수령되면 dev-foot 즉시 마킹.
+
+### Supervisor FIX-REQUEST #3 응답 — 2026-05-28 (MSG-20260528-201807-9dz1)
+
+**수신 내용**: qa_fail_phase=phase1, qa_fail_reason=build_fail. ①worktree `cf69be5`에서 `tsc: command not found` ②AC-R4-1/2 증빙 미수령 ③E2E 재실행 요청.
+
+**근본 원인 분석**:
+- `npm run build` = `tsc -b && vite build`. `tsc`는 `node_modules/.bin/tsc`에 있음.
+- git worktree는 `node_modules`를 자동 복사하지 않음 → 워크트리 `cf69be5`에 `node_modules` 없음 → `tsc: command not found`
+- Supervisor가 `timeout 60 npm run build` 를 사용한 것도 EINTR 위험 (build.sh 주석 참고)
+
+**수정 내용**:
+- `scripts/build.sh` — `node_modules/.bin/tsc` 없으면 자동 `npm ci` 후 빌드 (워크트리 환경 대응)
+- 올바른 빌드 명령: `bash scripts/build.sh` (NOT `timeout 60 npm run build`)
+
+**검증 결과**:
+
+| 항목 | 결과 |
+|------|------|
+| 워크트리 cf69be5 npm ci | ✓ 완료 |
+| 워크트리 cf69be5 빌드 | **PASS ✓ 3.39s** — 2026-05-28 검증 |
+| 메인레포 빌드 | **PASS ✓ 3.52s** — 2026-05-28 재검증 |
+| E2E (main repo) | **45/45 PASS** — 2026-05-28 재실행 |
+| field_device_gate | **pending** — 인간 게이트 (변경 없음) |
+
+**build_cmd 업데이트**: `bash scripts/build.sh` (티켓 frontmatter 갱신 완료)
+
+**field_device_gate 현황 (변경 없음)**:
+- `field_gate_status: pending` — 인간 게이트
+- 요구 증빙: iPad Safari 정상 렌더링 스크린샷 + Console DIAG 로그 (AC-R4-1/AC-R4-2)
+- 에이전트가 실기기 스크린샷을 생성하는 것은 불가 — 현장 인간 테스트 대기 중
+- 진단 가이드: `docs/ipad-penchart-diagnostic-guide.md`
+
+**deploy-ready 전환 조건 (동일)**:
+현장 태블릿(iPad Safari)에서 양식 정상 렌더링 확인 스크린샷이 `qa_screenshots/`에 수령되면 dev-foot 즉시 deploy-ready 마킹.
 
 ### 관련 티켓
 - T-20260523-foot-PENCHART-PEN-SLOW (approved, P1) — 펜 반응 느림 (다른 증상)
