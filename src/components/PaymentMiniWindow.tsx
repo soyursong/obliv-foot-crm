@@ -20,14 +20,11 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { format } from 'date-fns';
 import { toast } from '@/lib/toast';
 import {
-  ArrowDown,
-  ArrowUp,
   Check,
   ChevronRight,
   ChevronDown,
   CreditCard,
   FileText,
-  GripVertical,
   Layers,
   Printer,
   Square,
@@ -428,6 +425,7 @@ function buildPageHtml(
 // ── T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 정렬 행 ─────────────────────
 // useSortable hook 규칙상 별도 컴포넌트 필요. DnD + ↑↓ 버튼 복합 지원 (AC-1, AC-5).
 
+// PMW-ORDER-REMOVE REOPEN1: pricingIdx, pricingLen, onReorder 제거 (↑↓ UI 전면 제거)
 interface SortablePricingRowProps {
   service: Service;
   qty: number;
@@ -435,8 +433,6 @@ interface SortablePricingRowProps {
   displayPrice: number;
   isEditing: boolean;
   editingPriceValue: string;
-  pricingIdx: number;
-  pricingLen: number;
   /** T-20260526-foot-COPAY-MINI-BUG: 급여/비급여 분류용 건보 등급 */
   insuranceGrade: InsuranceGrade | null;
   onTogglePrepaid: (id: string) => void;
@@ -445,7 +441,6 @@ interface SortablePricingRowProps {
   onEditValueChange: (v: string) => void;
   onEscapeEdit: () => void;
   onRemove: (id: string) => void;
-  onReorder: (id: string, dir: 'up' | 'down') => void;
 }
 
 function SortablePricingRow({
@@ -455,8 +450,6 @@ function SortablePricingRow({
   displayPrice,
   isEditing,
   editingPriceValue,
-  pricingIdx,
-  pricingLen,
   insuranceGrade,
   onTogglePrepaid,
   onStartEditPrice,
@@ -464,9 +457,10 @@ function SortablePricingRow({
   onEditValueChange,
   onEscapeEdit,
   onRemove,
-  onReorder,
 }: SortablePricingRowProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  // PMW-ORDER-REMOVE REOPEN1: 드래그핸들·↑↓ UI 제거. DnD 구조는 유지(useSortable hook 규칙).
+  // attributes, listeners 미사용 — 핸들 제거로 DnD 진입점 없음.
+  const { setNodeRef, transform, transition, isDragging } = useSortable({
     id: service.id,
   });
 
@@ -494,19 +488,7 @@ function SortablePricingRow({
         isDragging && 'shadow-lg',
       )}
     >
-      {/* 드래그 핸들 (AC-1 DnD, AC-R2 REOPEN)
-          T-20260526-foot-REDBOX-CODENAME-TRIM: min-w 28→20px — 코드명 표시 공간 확보 */}
-      <button
-        {...attributes}
-        {...listeners}
-        className="shrink-0 flex items-center justify-center min-w-[20px] min-h-[20px] text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none p-0.5 outline-none focus:outline-none"
-        title="드래그하여 순서 변경"
-        tabIndex={-1}
-        type="button"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <GripVertical className="h-3 w-3" />
-      </button>
+      {/* 드래그 핸들 제거 — PMW-ORDER-REMOVE REOPEN1: 수가 항목 순서 편집 UI 전면 제거 */}
       {/* 선수금 토글 (PREPAID-DEDUCT AC-2) */}
       <button
         onClick={() => onTogglePrepaid(service.id)}
@@ -568,35 +550,7 @@ function SortablePricingRow({
           ×{qty}
         </span>
       )}
-      {/* AC-1: ↑↓ 순서 변경 버튼 (항목 2건 이상, 태블릿 친화)
-          REOPEN AC-R1/AC-R3: p-0→p-1.5 + min-w/h 32px — 태블릿 터치 타깃 확보
-          T-20260526-foot-REDBOX-CODENAME-TRIM: min-w-[32px]→min-w-[24px] — 코드명 공간 확보 (+8px) */}
-      {pricingLen > 1 && (
-        <div className="shrink-0 flex flex-col gap-0.5">
-          <button
-            data-testid={`reorder-up-${service.id}`}
-            onClick={(e) => { e.stopPropagation(); onReorder(service.id, 'up'); }}
-            disabled={pricingIdx === 0}
-            className="flex items-center justify-center min-w-[24px] min-h-[22px] p-1 text-muted-foreground disabled:opacity-20 hover:text-teal-600 active:text-teal-700 transition-colors rounded"
-            title="위로"
-            tabIndex={-1}
-            type="button"
-          >
-            <ArrowUp className="h-3 w-3" />
-          </button>
-          <button
-            data-testid={`reorder-down-${service.id}`}
-            onClick={(e) => { e.stopPropagation(); onReorder(service.id, 'down'); }}
-            disabled={pricingIdx === pricingLen - 1}
-            className="flex items-center justify-center min-w-[24px] min-h-[22px] p-1 text-muted-foreground disabled:opacity-20 hover:text-teal-600 active:text-teal-700 transition-colors rounded"
-            title="아래로"
-            tabIndex={-1}
-            type="button"
-          >
-            <ArrowDown className="h-3 w-3" />
-          </button>
-        </div>
-      )}
+      {/* ↑↓ 버튼 제거 — PMW-ORDER-REMOVE REOPEN1: 수가 항목 순서 편집 UI 전면 제거 */}
       {/* 제거 */}
       <button
         onClick={() => onRemove(service.id)}
@@ -1220,20 +1174,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   );
 
-  // ↑↓ 버튼: pricing items 내 상대 인덱스 기준 swap
-  const handleReorderPricingItem = useCallback((serviceId: string, dir: 'up' | 'down') => {
-    setSelectedItems((prev) => {
-      const pairs = prev.map((item, idx) => ({ item, idx })).filter(({ item }) => !isCodeItem(item.service));
-      const curPos = pairs.findIndex(({ item }) => item.service.id === serviceId);
-      if (dir === 'up' && curPos <= 0) return prev;
-      if (dir === 'down' && curPos >= pairs.length - 1) return prev;
-      const targetPos = dir === 'up' ? curPos - 1 : curPos + 1;
-      const next = [...prev];
-      [next[pairs[curPos].idx], next[pairs[targetPos].idx]] = [next[pairs[targetPos].idx], next[pairs[curPos].idx]];
-      return next;
-    });
-    setSaved(false);
-  }, []);
+  // PMW-ORDER-REMOVE REOPEN1: handleReorderPricingItem 제거 (↑↓ UI 전면 제거)
 
   // DnD: pricing items 서브셋 내 arrayMove → selectedItems 재조합
   // REOPEN: String() 캐스팅 — UniqueIdentifier(string|number) vs string 비교 안전성 (AC-R2)
@@ -2015,18 +1956,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                   )}>
                     <p className="text-xs font-semibold text-muted-foreground mb-1.5 px-1">
                       수가 항목 ({pricingItems.length}건)
-                      {pricingItems.length > 1 && (
-                        <span className="text-[9px] text-muted-foreground/60 font-normal ml-1.5">
-                          드래그·↑↓ 순서 변경
-                        </span>
-                      )}
                     </p>
                     {pricingItems.length === 0 && (
                       <p className="text-xs text-muted-foreground text-center py-4">
                         좌측에서 코드를 선택하세요
                       </p>
                     )}
-                    {pricingItems.map(({ service, qty }, idx) => (
+                    {pricingItems.map(({ service, qty }) => (
                       <SortablePricingRow
                         key={service.id}
                         service={service}
@@ -2035,8 +1971,6 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                         displayPrice={customAmounts.get(service.id) ?? service.price}
                         isEditing={editingPriceId === service.id}
                         editingPriceValue={editingPriceValue}
-                        pricingIdx={idx}
-                        pricingLen={pricingItems.length}
                         insuranceGrade={customerInsuranceGrade}
                         onTogglePrepaid={togglePrepaid}
                         onStartEditPrice={startEditPrice}
@@ -2045,7 +1979,6 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                         onEditValueChange={(v) => setEditingPriceValue(formatAmountDisplay(parseAmountRaw(v)))}
                         onEscapeEdit={() => setEditingPriceId(null)}
                         onRemove={handleRemoveItem}
-                        onReorder={handleReorderPricingItem}
                       />
                     ))}
                   </div>
