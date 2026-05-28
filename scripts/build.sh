@@ -7,6 +7,10 @@
 #   timeout/gtimeout replaced with a pure-shell background watchdog.
 #   Watchdog sends SIGTERM only — no SIGALRM → no EINTR in uv_cwd.
 #
+# FIX (2026-05-28 T-20260525-foot-PENCHART-FORM-BLACKSCR FIX-REQUEST):
+#   Auto-install node_modules if missing (git worktree environments).
+#   tsc lives in node_modules/.bin — worktrees start without node_modules.
+#
 # Usage: bash scripts/build.sh [timeout_seconds]
 #   timeout_seconds defaults to 120.
 #
@@ -16,6 +20,16 @@
 set -euo pipefail
 
 TIMEOUT_SECS="${1:-120}"
+
+# ── dependency guard (git worktree / fresh clone) ────────────────────────────
+# node_modules/.bin/tsc is required by `npm run build`.
+# In git worktree environments node_modules is not present → auto-install.
+if [ ! -f "node_modules/.bin/tsc" ]; then
+  echo "[build.sh] node_modules/.bin/tsc not found — running npm ci ..."
+  npm ci --prefer-offline 2>&1 || npm ci
+  echo "[build.sh] npm ci complete."
+fi
+# ─────────────────────────────────────────────────────────────────────────────
 
 # Start build in background
 npm run build &
