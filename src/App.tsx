@@ -60,6 +60,8 @@ const Sales = lazyWithRetry(() => import('@/pages/Sales'));
 const ClinicSettings = lazyWithRetry(() => import('@/pages/ClinicSettings'));
 // T-20260525-foot-MESSAGING-V1 AC-3: 메시지 설정 페이지 (admin/manager/director 전용)
 const AdminSettings = lazyWithRetry(() => import('@/pages/AdminSettings'));
+// T-20260528-foot-PENCHART-NEWWIN: 펜차트 별도 팝업 편집 창
+const PenChartEditorPage = lazyWithRetry(() => import('@/pages/PenChartEditorPage'));
 // ClinicCalendar 풀페이지는 T-20260510-foot-CALENDAR-NOTICE AC v3에 따라 우측 사이드바로 대체됨.
 // 직접 URL 접근 시 대시보드로 리다이렉트.
 
@@ -109,6 +111,12 @@ function App() {
               <Route path="/chart/:customerId" element={
                 <ProtectedRoute>
                   <CustomerChartPage />
+                </ProtectedRoute>
+              } />
+              {/* T-20260528-foot-PENCHART-NEWWIN: 펜차트 별도 팝업 편집 창 */}
+              <Route path="/penchart-editor" element={
+                <ProtectedRoute>
+                  <PenChartEditorPage />
                 </ProtectedRoute>
               } />
 

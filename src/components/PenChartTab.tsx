@@ -480,6 +480,8 @@ export function PenChartTab({
   customerRrn,
   // T-20260520-foot-PENCHART-VIEW-SPLIT HOTFIX2: 상담내역 즉시 갱신
   onFormSubmissionSaved,
+  // T-20260528-foot-PENCHART-NEWWIN: 별도 팝업 창 모드 — list 없이 select→draw→저장→닫기
+  popupMode = false,
 }: {
   customerId: string;
   clinicId: string;
@@ -500,6 +502,11 @@ export function PenChartTab({
   customerRrn?: string;
   /** form_submissions INSERT 성공 시 — 상담내역 탭 [내용보기] 즉시 활성화 트리거 */
   onFormSubmissionSaved?: () => void;
+  /**
+   * T-20260528-foot-PENCHART-NEWWIN: 별도 팝업 창 모드
+   * true → list 모드 없이 select 에서 시작, 저장 후 BroadcastChannel 브로드캐스트 + window.close()
+   */
+  popupMode?: boolean;
 }) {
   const { profile } = useAuth();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -514,7 +521,8 @@ export function PenChartTab({
   /** T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 템플릿 */
   const [refundConsentTemplate, setRefundConsentTemplate] = useState<Template | null>(null);
   const [templateImgUrl, setTemplateImgUrl] = useState<string | null>(null);
-  const [mode, setMode] = useState<TabMode>('list');
+  // T-20260528-foot-PENCHART-NEWWIN: popupMode=true 시 list 건너뛰고 select 에서 시작
+  const [mode, setMode] = useState<TabMode>(popupMode ? 'select' : 'list');
   /** draw 모드에서 현재 활성 양식 (pen_chart | health_questionnaire_* | refund_consent) */
   const [activeDrawTemplate, setActiveDrawTemplate] = useState<Template | null>(null);
   // T-20260525-foot-PENCHART-FORM-BLACK AC-4: 배경 이미지 로드 실패 폴백 UI 상태
@@ -698,6 +706,19 @@ export function PenChartTab({
     loadSavedCharts();
     loadTemplates();
   }, [loadSavedCharts, loadTemplates]);
+
+  // T-20260528-foot-PENCHART-NEWWIN: 팝업 창 저장 완료 시 목록 자동 갱신
+  // BroadcastChannel('penchart-update') — 팝업이 저장 후 postMessage → 부모 창 목록 새로고침
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return;
+    const bc = new BroadcastChannel('penchart-update');
+    bc.onmessage = (e: MessageEvent) => {
+      if (e.data?.customerId === customerId) {
+        loadSavedCharts();
+      }
+    };
+    return () => bc.close();
+  }, [customerId, loadSavedCharts]);
 
   // ── 캔버스 초기화 ─────────────────────────────────────────────────────
   // 2-layer canvas 구조:
@@ -1599,6 +1620,16 @@ export function PenChartTab({
       setSelectedIds(new Set());
       setActiveDrawTemplate(null);
       setMode('list');
+
+      // T-20260528-foot-PENCHART-NEWWIN: 팝업 모드 — 저장 후 부모 창 갱신 + 팝업 닫기
+      if (popupMode) {
+        try {
+          const bc = new BroadcastChannel('penchart-update');
+          bc.postMessage({ customerId });
+          bc.close();
+        } catch { /* BroadcastChannel 미지원 환경 무시 */ }
+        setTimeout(() => window.close(), 150);
+      }
     } finally {
       setSaving(false);
     }
@@ -1655,6 +1686,8 @@ export function PenChartTab({
           if (!open) {
             if (mode === 'draw' && hasDrawing && !window.confirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) return;
             setActiveDrawTemplate(null);
+            // T-20260528-foot-PENCHART-NEWWIN: 팝업 모드에서 닫기 → 창 닫기
+            if (popupMode) { window.close(); return; }
             setMode('list');
           }
         }}
@@ -1665,10 +1698,14 @@ export function PenChartTab({
         <div className="rounded-lg border bg-white p-3">
           <div className="flex items-center gap-2 mb-3">
             <button
-              onClick={() => setMode('list')}
+              onClick={() => {
+                // T-20260528-foot-PENCHART-NEWWIN: 팝업 모드에서 뒤로가기 → 창 닫기
+                if (popupMode) { window.close(); return; }
+                setMode('list');
+              }}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
             >
-              <ChevronLeft className="h-3.5 w-3.5" /> 목록으로
+              <ChevronLeft className="h-3.5 w-3.5" /> {popupMode ? '닫기' : '목록으로'}
             </button>
             <span className="text-sm font-bold text-purple-800">양식 선택</span>
           </div>
@@ -2076,6 +2113,8 @@ export function PenChartTab({
               onClick={() => {
                 if (hasDrawing && !window.confirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) return;
                 setActiveDrawTemplate(null);
+                // T-20260528-foot-PENCHART-NEWWIN: 팝업 모드에서 취소 → 창 닫기
+                if (popupMode) { window.close(); return; }
                 setMode('list');
               }}
             >
@@ -2317,7 +2356,18 @@ export function PenChartTab({
           <Button
             size="sm"
             className="h-7 text-[11px] px-3 bg-purple-600 hover:bg-purple-700"
-            onClick={() => setMode('select')}
+            onClick={() => {
+              // T-20260528-foot-PENCHART-NEWWIN: window.open 별도 창으로 전환
+              // iPad Safari popup blocker: window.open을 click handler 안에서 동기 호출 필수
+              const params = new URLSearchParams({ customerId, clinicId });
+              if (checkInId) params.set('checkInId', checkInId);
+              const url = `/penchart-editor?${params.toString()}`;
+              const popup = window.open(url, `penchart-${customerId}`, 'width=1200,height=900,scrollbars=yes,resizable=yes');
+              if (!popup) {
+                // 팝업 차단됨 (iPad Safari 엄격 모드 등) → fullscreen modal fallback
+                setMode('select');
+              }
+            }}
           >
             <Plus className="h-3.5 w-3.5 mr-1" />
             새 차트 작성
