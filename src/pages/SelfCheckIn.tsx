@@ -94,7 +94,6 @@ const T: Record<Lang, {
   contact: string;
   done: string;
   doneMsg: (name: string) => string;
-  waitMsg: string;
   queueNumber: string;
   autoReset: (s: number) => string;
   newCheckIn: string;
@@ -168,7 +167,6 @@ const T: Record<Lang, {
     contact: '연락처',
     done: '접수 완료',
     doneMsg: (name) => `${name}님, 접수가 완료되었습니다.`,
-    waitMsg: '잠시만 기다려 주세요.',
     queueNumber: '대기번호',
     autoReset: (s) => `${s}초 후 자동으로 초기화됩니다`,
     newCheckIn: '새 접수',
@@ -240,7 +238,6 @@ const T: Record<Lang, {
     contact: 'Phone',
     done: 'Check-In Complete',
     doneMsg: (name) => `${name}, your check-in is complete.`,
-    waitMsg: 'Please wait to be called.',
     queueNumber: 'Queue Number',
     autoReset: (s) => `Auto-reset in ${s} seconds`,
     newCheckIn: 'New Check-In',
@@ -973,7 +970,11 @@ export default function SelfCheckIn() {
           }
         }
 
-        // Fallback: digits-only 비교
+        // Fallback A: digits-only 비교 (E164 정규화 포함)
+        // 원인 2 수정 (T-20260529-foot-RESV-FLAG-NOSAVE):
+        //   '+821012345678'.replace(/\D/g,'') = '821012345678' (E164 prefix)
+        //   ≠ phoneDigits '01012345678' → 폴백 실패.
+        //   normalizeToE164() 적용으로 양측 정규화 후 비교.
         if (!matchedReservationId && phoneDigits.length >= 10) {
           const { data: allResv } = await anonClient
             .from('reservations')
@@ -983,10 +984,36 @@ export default function SelfCheckIn() {
             .eq('status', 'confirmed');
           if (allResv) {
             const digitsMatch = (allResv as { id: string; customer_phone: string | null }[]).find(
-              (r) => (r.customer_phone ?? '').replace(/\D/g, '') === phoneDigits,
+              (r) => {
+                const rPhone = r.customer_phone ?? '';
+                // 1) 정규화된 E164 비교
+                const rE164 = normalizeToE164(rPhone);
+                if (rE164 && phoneE164 && rE164 === phoneE164) return true;
+                // 2) 끝자리 8자리 비교 (마지막 안전망)
+                const rDigits = rPhone.replace(/\D/g, '');
+                return rDigits.length >= 8 && rDigits.endsWith(phoneDigits.slice(-8));
+              },
             );
             if (digitsMatch) matchedReservationId = digitsMatch.id;
           }
+        }
+
+        // Fallback B: 고객명 비교 (reservationType='reserved' 전용)
+        // 원인 3 수정 (T-20260529-foot-RESV-FLAG-NOSAVE):
+        //   "예약했어요"를 명시적으로 선택했으나 전화번호 포맷 불일치로 모든 폰 폴백 실패 시
+        //   고객명으로 한 번 더 시도.
+        if (!matchedReservationId && reservationType === 'reserved' && name.trim().length >= 1) {
+          const { data: resvByName } = await anonClient
+            .from('reservations')
+            .select('id')
+            .eq('clinic_id', clinicId)
+            .eq('customer_name', name.trim())
+            .eq('reservation_date', todayDate)
+            .eq('status', 'confirmed')
+            .order('reservation_time', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          if (resvByName) matchedReservationId = (resvByName as { id: string }).id;
         }
       } catch {
         // 예약 조회 실패 → 신규 접수로 처리
@@ -1333,8 +1360,6 @@ export default function SelfCheckIn() {
             )}
             <p className="mt-6 text-lg" style={{ color: C.muted }}>
               {t.doneMsg(name.trim())}
-              <br />
-              {t.waitMsg}
             </p>
           </div>
           <p className="text-sm" style={{ color: C.gold }}>
