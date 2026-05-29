@@ -1631,6 +1631,7 @@ function DashboardTimeline({
   onCardClick,
   onCardContext,
   onReservationSelect,
+  onReservationCheckIn,
   onReservationContext,
   clinic,
   folded,
@@ -1647,7 +1648,8 @@ function DashboardTimeline({
   onCardContext?: (ci: CheckIn, e: React.MouseEvent) => void;
   /** 재진 예약 카드 클릭 → 차트 조회만 (체크인 X) — T-20260515-foot-REVISIT-CLICK-AUTOCHECK AC-1 */
   onReservationSelect?: (r: Reservation) => void;
-  // T-20260529-foot-RECEPTION-BTN-REMOVE: onReservationCheckIn prop 제거 — 접수 버튼 완전 삭제
+  /** 초진/재진 접수 버튼 클릭 → 체크인 생성 — T-20260529-foot-RRN-SETTING-CHECK 복원 */
+  onReservationCheckIn?: (r: Reservation) => void;
   /** T-20260525-foot-RESV-CANCEL-CTX: 예약 박스 우클릭/롱프레스 → 컨텍스트메뉴 */
   onReservationContext?: (r: Reservation, pos: { x: number; y: number }) => void;
   /** T-20260522-foot-TIMETABLE-FOLD: 접힌 상태 (localStorage 유지) */
@@ -2139,13 +2141,13 @@ function DashboardTimeline({
                   data-testid="timeline-slot-new"
                 >
                   {newBox1.map((r) => (
-                    // T-20260529-foot-RECEPTION-BTN-REMOVE: 접수 버튼 제거 (AC-1)
-                    // 수기 접수는 우측 상단 체크인 버튼으로만 처리 — onCheckIn prop 미전달
+                    // T-20260529-foot-RRN-SETTING-CHECK: onCheckIn 복원 — 초진 접수 시 주민번호 입력 폼 오픈
                     // T-20260525-foot-RESV-CANCEL-CTX: onContextMenu 추가
                     <DraggableBox1Card
                       key={`b1-${r.id}`}
                       reservation={r}
                       onSelect={onReservationSelect ? () => onReservationSelect(r) : undefined}
+                      onCheckIn={onReservationCheckIn ? () => onReservationCheckIn(r) : undefined}
                       onContextMenu={onReservationContext ? (e, resv) => onReservationContext(resv, { x: e.clientX, y: e.clientY }) : undefined}
                     />
                   ))}
@@ -2179,13 +2181,13 @@ function DashboardTimeline({
                   data-testid="timeline-slot-ret"
                 >
                   {retBox2Resv.map((r) => (
-                    // T-20260529-foot-RECEPTION-BTN-REMOVE: 접수 버튼 제거 (AC-2)
-                    // 수기 접수는 우측 상단 체크인 버튼으로만 처리 — onCheckIn prop 미전달
+                    // T-20260529-foot-RRN-SETTING-CHECK: onCheckIn 복원 — 재진 즉시 체크인 경로
                     // T-20260525-foot-RESV-CANCEL-CTX: onContextMenu 추가
                     <DraggableBox2ResvCard
                       key={`b2r-${r.id}`}
                       reservation={r}
                       onSelect={onReservationSelect ? () => onReservationSelect(r) : undefined}
+                      onCheckIn={onReservationCheckIn ? () => onReservationCheckIn(r) : undefined}
                       onContextMenu={onReservationContext ? (e, resv) => onReservationContext(resv, { x: e.clientX, y: e.clientY }) : undefined}
                     />
                   ))}
@@ -4723,8 +4725,27 @@ export default function Dashboard() {
     setSelectedCheckIn(newCheckIn);
   };
 
-  // T-20260529-foot-RECEPTION-BTN-REMOVE: handleReservationCheckIn 함수 제거
-  // 우측 상단 체크인 버튼 구현 시 git log에서 복원할 것 (초진 폼 다이얼로그 + 재진 즉시 체크인 분기)
+  // T-20260529-foot-RRN-SETTING-CHECK: handleReservationCheckIn 복원
+  // 초진 → CheckinFirstInfoDialog 오픈(주민번호 입력) → onCompleted → doCheckInForReservation
+  // 재진/체험 → 폼 없이 바로 doCheckInForReservation
+  const handleReservationCheckIn = async (res: Reservation) => {
+    if (!clinic) return;
+    // 프론트 중복 방지 — 이미 체크인된 예약이면 차단
+    const already = rows.find((r) => r.reservation_id === res.id && r.status !== 'cancelled');
+    if (already) {
+      toast.info(`${res.customer_name}님은 이미 체크인되어 있습니다`);
+      setSelectedCheckIn(already);
+      return;
+    }
+
+    if (res.visit_type === 'new') {
+      // 초진: 정보입력 폼 다이얼로그 → 완료 후 doCheckInForReservation
+      setFirstInfoTarget(res);
+    } else {
+      // 재진/체험: 폼 없이 바로 체크인
+      await doCheckInForReservation(res);
+    }
+  };
 
   // T-20260525-foot-RESV-CANCEL-CTX: 타임라인 예약 박스 우클릭/롱프레스 → 컨텍스트메뉴
   // AC-1: DashboardTimeline onReservationContext 콜백 — resvContextMenu 상태 세팅
@@ -5732,7 +5753,8 @@ export default function Dashboard() {
             onCardClick={!isPast ? handleCardClick : undefined}
             onCardContext={!isPast ? handleCardContext : undefined}
             onReservationSelect={!isPast ? handleReservationSelect : undefined}
-            // T-20260529-foot-RECEPTION-BTN-REMOVE: onReservationCheckIn prop 제거 — 접수 버튼 완전 삭제
+            // T-20260529-foot-RRN-SETTING-CHECK: onReservationCheckIn 복원 — 접수 버튼 + 주민번호 입력 폼
+            onReservationCheckIn={!isPast ? handleReservationCheckIn : undefined}
             // T-20260525-foot-RESV-CANCEL-ALLDATE: isPast 날짜 가드 제거 — 전체 날짜 취소 허용
             onReservationContext={handleReservationContext}
             folded={timelineFolded}
