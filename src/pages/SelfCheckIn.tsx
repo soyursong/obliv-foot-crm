@@ -107,6 +107,8 @@ const T: Record<Lang, {
   reservationBanner: (time: string, type: string) => string;
   failPrefix: string;
   errorPrefix: string;
+  // T-20260529-foot-RESV-CHECKIN-NOSAVE AC-4: 예약 중복 접수 에러 메시지
+  duplicateCheckIn: string;
   // T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 레이블
   smsOptIn: string;
   // T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: 개인정보 입력 단계
@@ -179,6 +181,7 @@ const T: Record<Lang, {
     reservationBanner: (time, type) => `오늘 예약이 있습니다: ${time} ${type}`,
     failPrefix: '접수 실패: ',
     errorPrefix: '오류가 발생했습니다: ',
+    duplicateCheckIn: '이미 접수된 예약입니다. 대기열을 확인하거나 직원에게 문의해 주세요.',
     smsOptIn: '예약 안내 문자 수신에 동의합니다 (선택)',
     // 개인정보 입력 단계
     personalInfoTitle: '개인 정보 입력',
@@ -250,6 +253,7 @@ const T: Record<Lang, {
     reservationBanner: (time, type) => `Reservation found: ${time} ${type}`,
     failPrefix: 'Failed: ',
     errorPrefix: 'Error: ',
+    duplicateCheckIn: 'Already checked in. Please check the queue or contact the front desk.',
     smsOptIn: 'I agree to receive appointment reminders via SMS (optional)',
     // Personal info step
     personalInfoTitle: 'Personal Information',
@@ -1041,7 +1045,14 @@ export default function SelfCheckIn() {
       }).select('id').single();
 
       if (ciErr) {
-        setErrorMsg(`${t.failPrefix}${ciErr.message}`);
+        // T-20260529-foot-RESV-CHECKIN-NOSAVE AC-4:
+        // 23505 = unique violation — 예약 ID 중복 (취소 후 재접수 시나리오)
+        // DB 수준은 unique_reservation_checkin 인덱스 재정의(cancelled 제외)로 해결.
+        // FE 레벨 방어: 그럼에도 충돌 시 사용자 친화적 메시지 표시.
+        const msg = ciErr.code === '23505'
+          ? t.duplicateCheckIn
+          : `${t.failPrefix}${ciErr.message}`;
+        setErrorMsg(msg);
         setStep('error');
         setSubmitting(false);
         return;
