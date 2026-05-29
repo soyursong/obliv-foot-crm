@@ -121,8 +121,9 @@ function App() {
                   <PenChartEditorPage />
                 </ProtectedRoute>
               } />
-              {/* T-20260529-foot-HEALTH-Q-MOBILE: 발건강질문지 고객 자가작성 (anon, 토큰 기반) */}
-              <Route path="/health-q/:token" element={<ThemeBrown><HealthQMobilePage /></ThemeBrown>} />
+              {/* T-20260529-foot-HEALTH-Q-MOBILE: 발건강질문지 고객 자가작성 (anon, 토큰 기반)
+                  ThemeBrown 미적용 — 자체 teal-emerald 테마 inline style 사용 */}
+              <Route path="/health-q/:token" element={<HealthQMobilePage />} />
 
               <Route
                 path="/admin"
