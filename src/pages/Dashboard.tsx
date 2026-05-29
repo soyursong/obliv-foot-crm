@@ -472,6 +472,15 @@ const DraggableCard = memo(function DraggableCard({
             {checkIn.notes?.id_check_required && (
               <Badge variant="destructive" className="h-3.5 px-0.5 text-[9px]">신분증</Badge>
             )}
+            {/* T-20260529-foot-SELFCHECKIN-FLOW-REVAMP AC-8: 주민번호 매칭 미완료 데스크 알림 */}
+            {checkIn.notes?.rrn_match_pending && (
+              <Badge
+                data-testid="rrn-match-pending-badge"
+                className="h-3.5 px-0.5 text-[9px] bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-100"
+              >
+                주번확인
+              </Badge>
+            )}
             {checkIn.priority_flag && (
               <Badge variant="destructive" className="h-3.5 px-0.5 text-[9px]">
                 {checkIn.priority_flag}
@@ -612,6 +621,15 @@ const DraggableCard = memo(function DraggableCard({
         <div className="flex items-center gap-0.5">
           {checkIn.notes?.id_check_required && (
             <Badge variant="destructive" className="h-3.5 px-0.5 text-[9px]">신분증</Badge>
+          )}
+          {/* T-20260529-foot-SELFCHECKIN-FLOW-REVAMP AC-8: 주민번호 매칭 미완료 데스크 알림 */}
+          {checkIn.notes?.rrn_match_pending && (
+            <Badge
+              data-testid="rrn-match-pending-badge"
+              className="h-3.5 px-0.5 text-[9px] bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-100"
+            >
+              주번확인
+            </Badge>
           )}
           {checkIn.priority_flag && <Badge variant="destructive" className="h-3.5 px-0.5 text-[9px]">우선</Badge>}
         </div>

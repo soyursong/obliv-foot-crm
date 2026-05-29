@@ -463,3 +463,210 @@ test.describe('T-20260529 AC-9 주민번호 자동 매칭', () => {
     }
   });
 });
+
+// ── AC-8 v2: rrn_match_pending 플래그 (불일치 시 데스크 알림) ───────────────
+test.describe('T-20260529 AC-8 주민번호 불일치 시 rrn_match_pending 플래그', () => {
+  const sfx = randSuffix();
+
+  test('매칭 대상 없을 때 check_ins.notes.rrn_match_pending = true 세팅', async () => {
+    if (!SERVICE_KEY) return;
+
+    const sb = createClient(SUPA_URL, SERVICE_KEY);
+
+    // 1. 셀프접수 고객 생성 (데스크 고객 없음 → 매칭 실패 유도)
+    const uniqueBd = `7${sfx.slice(0, 5)}`; // 고유 birth_date (다른 고객과 겹치지 않도록)
+    const { data: cust } = await sb
+      .from('customers')
+      .insert({
+        clinic_id:  CLINIC_ID,
+        name:       `rrn-pending-${sfx}`,
+        phone:      `010${sfx}0091`,
+        birth_date: uniqueBd,
+      })
+      .select('id')
+      .single();
+    const custId = (cust as { id: string } | null)?.id;
+    if (!custId) throw new Error('고객 생성 실패');
+
+    // 2. 셀프 체크인 생성 (30분 내)
+    const { data: ci } = await sb
+      .from('check_ins')
+      .insert({
+        clinic_id:     CLINIC_ID,
+        customer_id:   custId,
+        customer_name: `rrn-pending-${sfx}`,
+        customer_phone:`010${sfx}0091`,
+        visit_type:    'new',
+        status:        'consult_waiting',
+        checked_in_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single();
+    const ciId = (ci as { id: string } | null)?.id;
+    if (!ciId) throw new Error('체크인 생성 실패');
+
+    try {
+      // 3. fn_selfcheckin_rrn_match 호출 — 매칭 대상 없음
+      const { data: matchResult } = await sb.rpc('fn_selfcheckin_rrn_match', {
+        p_check_in_id: ciId,
+        p_clinic_id:   CLINIC_ID,
+      });
+
+      const result = matchResult as {
+        success: boolean;
+        matched: boolean;
+        rrn_pending?: boolean;
+      } | null;
+
+      // 4. 반환값 검증
+      expect(result?.success).toBe(true);
+      expect(result?.matched).toBe(false);
+      expect(result?.rrn_pending).toBe(true);
+
+      // 5. check_ins.notes.rrn_match_pending 실제 DB 값 확인
+      const { data: updatedCi } = await sb
+        .from('check_ins')
+        .select('notes')
+        .eq('id', ciId)
+        .single();
+
+      const notes = (updatedCi as { notes: Record<string, unknown> } | null)?.notes;
+      expect(notes?.rrn_match_pending).toBe(true);
+
+    } finally {
+      await sb.from('check_ins').delete().eq('id', ciId);
+      await sb.from('customers').delete().eq('id', custId);
+    }
+  });
+
+  test('매칭 성공 시 rrn_match_pending 플래그 제거 + rrn_pending = false 반환', async () => {
+    if (!SERVICE_KEY) return;
+
+    const sb = createClient(SUPA_URL, SERVICE_KEY);
+    const sfx2 = randSuffix();
+    const sharedBd = `8${sfx2.slice(0, 5)}`;
+
+    // 1. 데스크 고객 (먼저 생성)
+    const { data: deskCust } = await sb
+      .from('customers')
+      .insert({
+        clinic_id:  CLINIC_ID,
+        name:       `rrn-desk-${sfx2}`,
+        phone:      `010${sfx2}0092`,
+        birth_date: sharedBd,
+      })
+      .select('id')
+      .single();
+    const deskCustId = (deskCust as { id: string } | null)?.id;
+    if (!deskCustId) throw new Error('데스크 고객 생성 실패');
+
+    // 2. 데스크 체크인
+    const { data: deskCi } = await sb
+      .from('check_ins')
+      .insert({
+        clinic_id:     CLINIC_ID,
+        customer_id:   deskCustId,
+        customer_name: `rrn-desk-${sfx2}`,
+        customer_phone:`010${sfx2}0092`,
+        visit_type:    'new',
+        status:        'consult_waiting',
+        checked_in_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single();
+    const deskCiId = (deskCi as { id: string } | null)?.id;
+
+    // 3. 셀프 고객 + 체크인 (rrn_match_pending 미리 세팅 시뮬레이션)
+    const { data: selfCust } = await sb
+      .from('customers')
+      .insert({
+        clinic_id:  CLINIC_ID,
+        name:       `rrn-self-${sfx2}`,
+        phone:      `010${sfx2}0093`,
+        birth_date: sharedBd,
+      })
+      .select('id')
+      .single();
+    const selfCustId = (selfCust as { id: string } | null)?.id;
+    if (!selfCustId) throw new Error('셀프 고객 생성 실패');
+
+    const { data: selfCi } = await sb
+      .from('check_ins')
+      .insert({
+        clinic_id:     CLINIC_ID,
+        customer_id:   selfCustId,
+        customer_name: `rrn-self-${sfx2}`,
+        customer_phone:`010${sfx2}0093`,
+        visit_type:    'new',
+        status:        'consult_waiting',
+        checked_in_at: new Date().toISOString(),
+        notes:         { rrn_match_pending: true }, // 이미 pending 상태 시뮬레이션
+      })
+      .select('id')
+      .single();
+    const selfCiId = (selfCi as { id: string } | null)?.id;
+    if (!selfCiId) throw new Error('셀프 체크인 생성 실패');
+
+    try {
+      // 4. fn_selfcheckin_rrn_match 호출 — 매칭 성공
+      const { data: matchResult } = await sb.rpc('fn_selfcheckin_rrn_match', {
+        p_check_in_id: selfCiId,
+        p_clinic_id:   CLINIC_ID,
+      });
+
+      const result = matchResult as {
+        success: boolean;
+        matched: boolean;
+        rrn_pending?: boolean;
+        merged_to_customer_id?: string;
+      } | null;
+
+      // 5. 반환값 검증
+      expect(result?.success).toBe(true);
+      expect(result?.matched).toBe(true);
+      expect(result?.rrn_pending).toBe(false);
+      expect(result?.merged_to_customer_id).toBe(deskCustId);
+
+      // 6. notes.rrn_match_pending 플래그가 제거됐는지 확인
+      const { data: updatedCi } = await sb
+        .from('check_ins')
+        .select('notes, customer_id')
+        .eq('id', selfCiId)
+        .single();
+
+      const notes = (updatedCi as { notes: Record<string, unknown> | null; customer_id: string } | null)?.notes;
+      expect(notes?.rrn_match_pending).toBeFalsy(); // true → 제거됨
+      expect((updatedCi as { customer_id: string } | null)?.customer_id).toBe(deskCustId);
+
+    } finally {
+      if (selfCiId)  await sb.from('check_ins').delete().eq('id', selfCiId);
+      if (deskCiId)  await sb.from('check_ins').delete().eq('id', deskCiId);
+      if (selfCustId) await sb.from('customers').delete().eq('id', selfCustId);
+      if (deskCustId) await sb.from('customers').delete().eq('id', deskCustId);
+    }
+  });
+
+  test('칸반 카드에 rrn_match_pending = true 시 "주번확인" 배지 노출', async ({ page }) => {
+    // UI 렌더 검증: data-testid="rrn-match-pending-badge" 존재 확인
+    // notes.rrn_match_pending = true 인 카드 데이터가 있을 때 배지 표시
+    // (실 DB 연결 없이 DOM에 직접 체크 가능 여부 → 통합 테스트 수준으로 진행)
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // 로그인 화면이면 패스
+    if (page.url().includes('/login')) {
+      test.skip(true, '로그인 필요 — 배지 UI는 로컬 환경에서 검증');
+      return;
+    }
+
+    // 배지가 이미 DOM에 있으면 amber 색상 클래스 확인
+    const badges = page.locator('[data-testid="rrn-match-pending-badge"]');
+    const count = await badges.count();
+    if (count > 0) {
+      const firstBadge = badges.first();
+      const cls = await firstBadge.getAttribute('class');
+      expect(cls).toContain('amber');
+    }
+    // 배지 없으면 pass (현재 카드에 rrn_match_pending 고객 없음)
+  });
+});

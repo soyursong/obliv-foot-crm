@@ -42,6 +42,8 @@ export interface CheckInNotes {
   checklist?: Record<string, boolean>;
   /** 셀프체크인 시 초진/예약없이방문 고객에게 자동 설정 — 데스크에서 신분증 확인 후 false로 해제 */
   id_check_required?: boolean;
+  /** T-20260529-foot-SELFCHECKIN-FLOW-REVAMP AC-8: 주민번호 매칭 미완료 — 데스크 입력 대기 중 */
+  rrn_match_pending?: boolean;
   [key: string]: unknown;
 }
 
