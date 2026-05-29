@@ -1294,10 +1294,13 @@ function TimelineCheckInCard({
   checkIn,
   onClick,
   onContextMenu,
+  offHourTime,
 }: {
   checkIn: CheckIn;
   onClick?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
+  /** T-20260530-foot-WALKIN-OFFHOUR-SLOT: 영업시간 외 클램핑된 실접수 시각 ('HH:mm'). undefined = 정상 */
+  offHourTime?: string;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: checkIn.id,
@@ -1361,6 +1364,15 @@ function TimelineCheckInCard({
       {/* T-20260514-foot-CHART-NO-VISIBLE: 차트번호 상시 표시 */}
       {timelineChartNum && (
         <span className="text-[9px] font-mono text-teal-600 shrink-0">#{timelineChartNum}</span>
+      )}
+      {/* T-20260530-foot-WALKIN-OFFHOUR-SLOT: 영업시간 외 실접수 시각 배지 */}
+      {offHourTime && (
+        <span
+          className="text-[8px] bg-orange-100 text-orange-700 px-0.5 rounded shrink-0 leading-tight"
+          title={`실접수 ${offHourTime} (영업시간 외 → 슬롯 자동 배정)`}
+        >
+          {offHourTime}
+        </span>
       )}
       {/* 드래그 힌트 화살표 */}
       <span className="text-[8px] opacity-50 shrink-0 ml-0.5">↗</span>
@@ -1782,6 +1794,8 @@ function DashboardTimeline({
   // resvToSlot: module-level 함수 사용 (T-20260515-foot-DASH-SLOT-DRAG)
 
   const matchedCiIds = new Set<string>();
+  // T-20260530-foot-WALKIN-OFFHOUR-SLOT: 영업시간 외 클램핑된 워크인의 실접수 시각 (ci.id → 'HH:mm')
+  const offHourActualTimeMap = new Map<string, string>();
 
   // 예약 처리 (cancelled/noshow 제외)
   for (const r of reservations) {
@@ -1820,12 +1834,27 @@ function DashboardTimeline({
   }
 
   // 워크인 체크인 (예약 미매칭 — 예약없이 당일 접수)
+  // T-20260530-foot-WALKIN-OFFHOUR-SLOT:
+  //   AC-1: 영업시간 전 접수 → 당일 첫 슬롯으로 클램핑 (예: 08:30 → 10:00)
+  //   AC-2: 영업시간 후 접수 → 당일 마지막 슬롯으로 클램핑 (예: 20:15 → 마지막 슬롯)
+  //   AC-4: 영업시간 내 워크인 동작 무변경 (rawSlot == slot)
+  //   AC-5: clinic.open_time / close_time 기준 (slots[] 가 이미 clinic 설정 사용)
+  const firstSlot = slots[0] ?? '10:00';
+  const lastSlot = slots[slots.length - 1] ?? '20:00';
   for (const ci of selfCheckIns) {
     if (matchedCiIds.has(ci.id)) continue;
     const d = new Date(ci.checked_in_at);
     const h = d.getHours();
     const mm = d.getMinutes();
-    const slot = `${String(h).padStart(2, '0')}:${mm < 30 ? '00' : '30'}`;
+    const rawSlot = `${String(h).padStart(2, '0')}:${mm < 30 ? '00' : '30'}`;
+    const slot =
+      rawSlot < firstSlot ? firstSlot :
+      rawSlot > lastSlot  ? lastSlot  :
+      rawSlot;
+    // 클램핑 발생 시 실접수 시각 기록 → 카드 배지 표시
+    if (slot !== rawSlot) {
+      offHourActualTimeMap.set(ci.id, format(d, 'HH:mm'));
+    }
     const sd = ensure(slot);
     if (ci.visit_type === 'new') {
       sd.newBox2Ci.push(ci);
@@ -2155,6 +2184,7 @@ function DashboardTimeline({
                     <TimelineCheckInCard
                       key={`b2n-${ci.id}`}
                       checkIn={ci}
+                      offHourTime={offHourActualTimeMap.get(ci.id)}
                       onClick={onCardClick ? () => onCardClick(ci) : undefined}
                       onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
                     />
@@ -2195,6 +2225,7 @@ function DashboardTimeline({
                     <TimelineCheckInCard
                       key={`b2c-${ci.id}`}
                       checkIn={ci}
+                      offHourTime={offHourActualTimeMap.get(ci.id)}
                       onClick={onCardClick ? () => onCardClick(ci) : undefined}
                       onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
                     />
