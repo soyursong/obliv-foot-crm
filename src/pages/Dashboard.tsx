@@ -4253,13 +4253,39 @@ export default function Dashboard() {
   // 참고: handleTimelineCardClick 제거 사유(setDashChartSheetId 이중 인스턴스 충돌)는
   //       CHART2-STATE-UNIFY(f4a82af)로 AdminLayout 단일 ChartContext 통합 후 해소됨.
   //       이제 ctxOpenChart는 단일 인스턴스를 직접 호출 → 충돌 없음.
-  const handleCardClick = useCallback((ci: CheckIn) => {
+  // T-20260529-foot-CHART-OPEN-SINGLE AC-3: check-in customer_id null 방어
+  //   handleReservationSelect 와 동일 패턴 — 이름 기반 자동 조회 fallback
+  //   동일 클리닉·동일 이름 1건: ctxOpenChart + check_in customer_id 자동 연결
+  //   동명이인 N건: toast.info (고객관리 확인 유도)
+  //   미등록: toast.info (고객 미연결 안내)
+  const handleCardClick = useCallback(async (ci: CheckIn) => {
     setSelectedCheckIn(ci);
     // 2번차트 직접 오픈 — CheckInDetailSheet useEffect 간접 경로 보완
     if (ci.customer_id) {
       ctxOpenChart(ci.customer_id);
+    } else if (ci.customer_name && clinic) {
+      // customer_id 미연결 check-in → 이름 기반 자동 조회 fallback
+      const { data: matches } = await supabase
+        .from('customers')
+        .select('id, name')
+        .eq('clinic_id', clinic.id)
+        .eq('name', ci.customer_name)
+        .limit(2);
+      if (matches && matches.length === 1) {
+        const foundId = matches[0].id;
+        ctxOpenChart(foundId);
+        // 백그라운드: check_in에 customer_id 자동 연결 (다음 클릭부터 정상 경로)
+        supabase.from('check_ins').update({ customer_id: foundId }).eq('id', ci.id)
+          .then(({ error }) => { if (!error) fetchCheckIns(); });
+      } else if (matches && matches.length > 1) {
+        toast.info(`동명이인 ${matches.length}명 — 고객관리에서 직접 확인하세요`);
+      } else {
+        toast.info('고객 정보가 연결되어 있지 않습니다');
+      }
+    } else {
+      toast.info('고객 정보가 연결되어 있지 않습니다');
     }
-  }, [ctxOpenChart]);
+  }, [ctxOpenChart, clinic, fetchCheckIns]);
 
   // T-20260522-foot-DRAG-RESP-OPT: useCallback 안정화 — 호출 측 클로저 의존성 최소화
   const handleCardContext = useCallback((ci: CheckIn, e: React.MouseEvent) => {
