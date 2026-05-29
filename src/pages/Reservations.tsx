@@ -371,14 +371,16 @@ export default function Reservations() {
         const srcRow = cb.resv;
 
         // 슬롯 충돌 확인
+        // T-20260529-foot-RESV-TIME-EDIT-NOSYNC: slotMaxFor() 적용 (16:00+ 10건 상한)
         const activeInSlot = rows.filter(
           (x) =>
             x.reservation_date === target.date &&
             x.reservation_time.slice(0, 5) === target.time &&
             x.status !== 'cancelled',
         ).length;
-        if (activeInSlot >= 12) {
-          toast.error('해당 시간에 이미 예약이 있습니다');
+        const maxForTarget = slotMaxFor(target.time);
+        if (activeInSlot >= maxForTarget) {
+          toast.error(`해당 시간에 이미 예약이 있습니다 (${activeInSlot}/${maxForTarget})`);
           return;
         }
 
@@ -576,8 +578,10 @@ export default function Reservations() {
     if (r.reservation_date === newDate && r.reservation_time.slice(0, 5) === newTime) return;
 
     const activeCount = slotActiveCount(newDate, newTime);
-    if (activeCount >= 12) {
-      toast.error(`해당 시간에 이미 예약이 있습니다 (${activeCount}/12)`);
+    // T-20260529-foot-RESV-TIME-EDIT-NOSYNC: slotMaxFor() 적용 (16:00+ 슬롯 10건 상한 반영)
+    const maxForSlot = slotMaxFor(newTime);
+    if (activeCount >= maxForSlot) {
+      toast.error(`해당 시간에 이미 예약이 있습니다 (${activeCount}/${maxForSlot})`);
       return;
     }
 
@@ -1263,8 +1267,21 @@ export default function Reservations() {
         authorName={profile?.name ?? ''}
         onClose={() => setEditor(null)}
         onSaved={() => {
+          // T-20260529-foot-RESV-TIME-EDIT-NOSYNC AC-2:
+          // 낙관적 즉시 반영 — 편집 모달 닫기 전 timetable 카드 위치 즉시 업데이트
+          // fetchWeek() 완료를 기다리지 않고 사용자가 즉시 변경 결과를 확인 가능
+          if (editor?.existingId) {
+            const { existingId, date, time } = editor;
+            setRows((prev) =>
+              prev.map((r) =>
+                r.id === existingId
+                  ? { ...r, reservation_date: date, reservation_time: time }
+                  : r,
+              ),
+            );
+          }
           setEditor(null);
-          fetchWeek();
+          fetchWeek(); // DB 확인용 백그라운드 동기화
         }}
       />
 
@@ -1870,6 +1887,16 @@ function ReservationEditor({
     if (result.error) {
       toast.error(`저장 실패: ${result.error.message}`);
       setSubmitting(false);
+      return;
+    }
+
+    // T-20260529-foot-RESV-TIME-EDIT-NOSYNC AC-1:
+    // UPDATE silent failure 감지 — RLS 차단 시 result.data = null (error = null)
+    // 0-row silent block → 사용자에게 명시적 오류 알림 (false success toast 방지)
+    if (state.existingId && !result.data) {
+      toast.error('예약 변경이 적용되지 않았습니다. 권한 또는 연결 상태를 확인해 주세요.');
+      setSubmitting(false);
+      onSaved(); // DB 현재 상태를 즉시 재확인 (fetchWeek 호출)
       return;
     }
 
