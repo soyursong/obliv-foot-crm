@@ -62,6 +62,8 @@ const ClinicSettings = lazyWithRetry(() => import('@/pages/ClinicSettings'));
 const AdminSettings = lazyWithRetry(() => import('@/pages/AdminSettings'));
 // T-20260528-foot-PENCHART-NEWWIN: 펜차트 별도 팝업 편집 창
 const PenChartEditorPage = lazyWithRetry(() => import('@/pages/PenChartEditorPage'));
+// T-20260529-foot-HEALTH-Q-MOBILE: 발건강질문지 고객 모바일 자가작성 (anon)
+const HealthQMobilePage = lazyWithRetry(() => import('@/pages/HealthQMobilePage'));
 // ClinicCalendar 풀페이지는 T-20260510-foot-CALENDAR-NOTICE AC v3에 따라 우측 사이드바로 대체됨.
 // 직접 URL 접근 시 대시보드로 리다이렉트.
 
@@ -119,6 +121,8 @@ function App() {
                   <PenChartEditorPage />
                 </ProtectedRoute>
               } />
+              {/* T-20260529-foot-HEALTH-Q-MOBILE: 발건강질문지 고객 자가작성 (anon, 토큰 기반) */}
+              <Route path="/health-q/:token" element={<ThemeBrown><HealthQMobilePage /></ThemeBrown>} />
 
               <Route
                 path="/admin"

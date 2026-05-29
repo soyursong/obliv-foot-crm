@@ -56,6 +56,8 @@ import { useAuth } from '@/lib/auth';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+// T-20260529-foot-HEALTH-Q-MOBILE: 발건강질문지 모바일 자가작성 결과 패널
+import { HealthQResultsPanel } from '@/components/HealthQResultsPanel';
 // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: SignaturePad UI 제거 (하단 서명란 불필요)
 
 // ─── 상용구 데이터 ───
@@ -2480,6 +2482,17 @@ export function PenChartTab({
             </button>
           </div>
           <img src={selectedChart.url} alt="펜차트" className="w-full rounded border" />
+        </div>
+      )}
+
+      {/* T-20260529-foot-HEALTH-Q-MOBILE: 발건강질문지 모바일 자가작성 결과 + 링크 발급 */}
+      {!popupMode && (
+        <div className="rounded-lg border bg-white p-3 text-xs">
+          <HealthQResultsPanel
+            customerId={customerId}
+            clinicId={clinicId}
+            checkInId={checkInId}
+          />
         </div>
       )}
     </div>

@@ -1,0 +1,278 @@
+/**
+ * T-20260529-foot-HEALTH-Q-MOBILE
+ *
+ * HealthQResultsPanel — 직원용 발건강질문지 결과 조회 + 토큰 발급 패널
+ *
+ * AC-4: 직원 화면에서 제출 결과 조회
+ * - health_q_results 테이블 조회 (인증된 직원 전용)
+ * - fn_health_q_create_token RPC로 토큰 발급 → URL 복사
+ * - PenChartTab의 list 모드에 삽입
+ */
+
+import { useCallback, useEffect, useState } from 'react';
+import { Copy, ExternalLink, Plus, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { Button } from '@/components/ui/button';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
+import { ko } from 'date-fns/locale';
+
+// ─── 타입 ──────────────────────────────────────────────────────────────────────
+interface HQResult {
+  id:           string;
+  form_type:    string;
+  form_data:    Record<string, unknown>;
+  submitted_at: string;
+  created_at:   string;
+}
+
+interface Props {
+  customerId: string;
+  clinicId:   string;
+  checkInId?: string;
+}
+
+// ─── 레이블 맵 ────────────────────────────────────────────────────────────────
+const FORM_TYPE_LABEL: Record<string, string> = {
+  general: '발건강 질문지 (일반)',
+  senior:  '발건강 질문지 (어르신용)',
+};
+
+/** 섹션 레이블 (form_data key → 표시 이름) */
+const FIELD_LABELS: Record<string, string> = {
+  visit_purpose:         '방문 목적',
+  symptoms:              '발 관련 증상',
+  nail_locations:        '통증 발톱 부위',
+  pain_duration:         '유병 기간',
+  pain_severity:         '통증 정도',
+  medical_history:       '과거 병력',
+  prior_treatment:       '이전 발 시술',
+  prior_conditions:      '기왕증 / 이전 치료',
+  family_history:        '가족력',
+  medications:           '복용 약물',
+  has_allergy:           '알레르기',
+  allergy_types:         '알레르기 종류',
+  allergy_other:         '알레르기 상세',
+  referral_source:       '방문 경로',
+};
+
+const PAIN_SEVERITY_MAP: Record<string, string> = {
+  '1': '1 — 경미 😊',
+  '2': '2 — 불편 😐',
+  '3': '3 — 심함 😣',
+  '4': '4 — 매우 심함 😰',
+};
+
+function renderValue(key: string, val: unknown): string {
+  if (key === 'pain_severity') {
+    return PAIN_SEVERITY_MAP[String(val)] ?? String(val);
+  }
+  if (key === 'has_allergy') {
+    return val ? '있음' : '없음';
+  }
+  if (key === 'medications_none') return '';
+  if (Array.isArray(val)) return val.join(', ') || '—';
+  if (typeof val === 'boolean') return val ? '예' : '아니오';
+  return String(val || '—');
+}
+
+/** form_data 에서 표시할 필드만 추출 (빈 값 제외) */
+function extractDisplayFields(data: Record<string, unknown>) {
+  const ORDER = [
+    'visit_purpose', 'symptoms', 'nail_locations', 'pain_duration', 'pain_severity',
+    'medical_history', 'prior_treatment', 'prior_conditions', 'family_history',
+    'medications', 'has_allergy', 'allergy_types', 'allergy_other', 'referral_source',
+  ];
+  const result: Array<{ key: string; label: string; value: string }> = [];
+  for (const key of ORDER) {
+    if (!(key in data)) continue;
+    const val = data[key];
+    // 빈 값 건너뛰기
+    if (val === '' || val === null || val === undefined) continue;
+    if (Array.isArray(val) && val.length === 0) continue;
+    if (key === 'medications_none') continue; // has_allergy 로 커버
+    const rendered = renderValue(key, val);
+    if (!rendered || rendered === '—') continue;
+    result.push({ key, label: FIELD_LABELS[key] ?? key, value: rendered });
+  }
+  return result;
+}
+
+// ─── 결과 카드 ────────────────────────────────────────────────────────────────
+function ResultCard({ result }: { result: HQResult }) {
+  const [expanded, setExpanded] = useState(false);
+  const fields = extractDisplayFields(result.form_data);
+  const submittedDate = format(new Date(result.submitted_at), 'yyyy.MM.dd HH:mm', { locale: ko });
+
+  return (
+    <div className="rounded-xl border border-teal-100 bg-white overflow-hidden">
+      {/* 헤더 */}
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-teal-50/50 transition"
+      >
+        <div className="text-left">
+          <p className="text-sm font-semibold text-teal-800">
+            {FORM_TYPE_LABEL[result.form_type] ?? result.form_type}
+          </p>
+          <p className="text-xs text-gray-400 mt-0.5">제출: {submittedDate}</p>
+        </div>
+        {expanded
+          ? <ChevronUp className="h-4 w-4 text-gray-400 shrink-0" />
+          : <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />
+        }
+      </button>
+
+      {/* 내용 */}
+      {expanded && (
+        <div className="px-4 pb-4 space-y-2 border-t border-teal-50">
+          {fields.length === 0 ? (
+            <p className="text-xs text-gray-400 pt-3">입력된 항목 없음</p>
+          ) : (
+            <dl className="grid grid-cols-1 gap-1.5 pt-3">
+              {fields.map(({ key, label, value }) => (
+                <div key={key} className="flex gap-2">
+                  <dt className="text-xs font-medium text-gray-500 shrink-0 w-28">{label}</dt>
+                  <dd className="text-xs text-gray-700 flex-1">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 메인 컴포넌트 ────────────────────────────────────────────────────────────
+export function HealthQResultsPanel({ customerId, clinicId, checkInId }: Props) {
+  const [results,      setResults]      = useState<HQResult[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
+  const [formType,     setFormType]     = useState<'general' | 'senior'>('general');
+
+  // ── 결과 로드 ──────────────────────────────────────────────────────────────
+  const loadResults = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('health_q_results')
+      .select('id, form_type, form_data, submitted_at, created_at')
+      .eq('customer_id', customerId)
+      .eq('clinic_id', clinicId)
+      .order('submitted_at', { ascending: false })
+      .limit(10);
+    if (!error && data) setResults(data as HQResult[]);
+    setLoading(false);
+  }, [customerId, clinicId]);
+
+  useEffect(() => { loadResults(); }, [loadResults]);
+
+  // ── 토큰 발급 ──────────────────────────────────────────────────────────────
+  const handleCreateToken = useCallback(async () => {
+    setTokenLoading(true);
+    setGeneratedUrl(null);
+    try {
+      const { data: result, error } = await supabase.rpc('fn_health_q_create_token', {
+        p_customer_id:  customerId,
+        p_clinic_id:    clinicId,
+        p_form_type:    formType,
+        p_check_in_id:  checkInId ?? null,
+        p_expires_days: 7,
+      });
+      if (error) throw new Error(error.message);
+      const res = result as { success: boolean; token?: string; error?: string };
+      if (!res.success) throw new Error(res.error ?? '토큰 생성 실패');
+      const url = `${window.location.origin}/health-q/${res.token}`;
+      setGeneratedUrl(url);
+    } catch (e) {
+      toast.error(`링크 생성 실패: ${(e as Error).message}`);
+    } finally {
+      setTokenLoading(false);
+    }
+  }, [customerId, clinicId, formType, checkInId]);
+
+  const handleCopy = useCallback(async () => {
+    if (!generatedUrl) return;
+    try {
+      await navigator.clipboard.writeText(generatedUrl);
+      toast.success('링크 복사됨');
+    } catch {
+      toast.error('복사 실패 — 수동으로 복사해주세요');
+    }
+  }, [generatedUrl]);
+
+  // ── 렌더 ──────────────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-4">
+      {/* 헤더 */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-700">발건강질문지 자가작성</h3>
+        <Button variant="ghost" size="sm" onClick={loadResults} disabled={loading} className="h-7 px-2">
+          <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+        </Button>
+      </div>
+
+      {/* 고객 링크 발급 */}
+      <div className="rounded-xl border border-teal-100 bg-teal-50/50 p-3 space-y-3">
+        <p className="text-xs font-medium text-teal-700">고객용 링크 발급 (모바일 자가작성)</p>
+        <div className="flex gap-2">
+          {/* 양식 선택 */}
+          <select
+            value={formType}
+            onChange={(e) => setFormType(e.target.value as 'general' | 'senior')}
+            className="flex-1 rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-teal-400"
+          >
+            <option value="general">일반용</option>
+            <option value="senior">어르신용</option>
+          </select>
+          <Button
+            size="sm"
+            onClick={handleCreateToken}
+            disabled={tokenLoading}
+            className="gap-1.5 bg-teal-600 hover:bg-teal-700 text-white text-xs h-9 px-3"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            링크 생성
+          </Button>
+        </div>
+
+        {/* 생성된 URL */}
+        {generatedUrl && (
+          <div className="rounded-lg border border-teal-200 bg-white p-2.5 space-y-2">
+            <p className="text-xs text-gray-500 break-all font-mono leading-relaxed">{generatedUrl}</p>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={handleCopy} className="gap-1 h-8 px-3 text-xs flex-1 border-teal-300">
+                <Copy className="h-3 w-3" />
+                복사
+              </Button>
+              <Button size="sm" variant="outline"
+                onClick={() => window.open(generatedUrl, '_blank')}
+                className="gap-1 h-8 px-3 text-xs border-teal-300"
+              >
+                <ExternalLink className="h-3 w-3" />
+                미리보기
+              </Button>
+            </div>
+            <p className="text-[10px] text-gray-400">유효 기간 7일. 제출 후 링크는 무효화됩니다.</p>
+          </div>
+        )}
+      </div>
+
+      {/* 제출된 결과 목록 */}
+      <div className="space-y-2">
+        {loading ? (
+          <div className="text-center py-4">
+            <div className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-teal-300 border-t-teal-600" />
+          </div>
+        ) : results.length === 0 ? (
+          <p className="text-xs text-gray-400 text-center py-3">제출된 질문지가 없습니다</p>
+        ) : (
+          results.map((r) => <ResultCard key={r.id} result={r} />)
+        )}
+      </div>
+    </div>
+  );
+}
