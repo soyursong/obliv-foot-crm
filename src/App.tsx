@@ -71,6 +71,34 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
 });
 
+/**
+ * T-20260529-crm-SELFCHECKIN-FLOW-MIGRATE AC-3
+ * jongno-foot 셀프체크인 구경로 비활성화 리다이렉트 컴포넌트.
+ * React Router Navigate는 외부 URL을 지원하지 않으므로 window.location.replace 사용.
+ */
+function JongnoFootCheckinRedirect() {
+  // window.location.replace: 히스토리 스택 없이 즉시 이동 (브라우저 뒤로가기 방지)
+  if (typeof window !== 'undefined') {
+    window.location.replace('https://happy-flow-queue.pages.dev/jongno-foot');
+  }
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100dvh',
+        fontFamily: "'Pretendard', 'Apple SD Gothic Neo', sans-serif",
+        color: '#7B5130',
+        background: 'linear-gradient(to bottom, #F5EFE7, #FAF7F2)',
+        fontSize: '1rem',
+      }}
+    >
+      이동 중...
+    </div>
+  );
+}
+
 function PageLoader() {
   return (
     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -107,6 +135,13 @@ function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              {/* T-20260529-crm-SELFCHECKIN-FLOW-MIGRATE AC-3:
+                  jongno-foot 셀프체크인 → happy-flow-queue.pages.dev/jongno-foot 리다이렉트
+                  obliv-foot-crm 구경로 비활성화. 이 Route는 일반 Route 앞에 위치해야 함. */}
+              <Route
+                path="/checkin/jongno-foot"
+                element={<JongnoFootCheckinRedirect />}
+              />
               <Route path="/checkin/:clinicSlug" element={<ThemeBrown><SelfCheckIn /></ThemeBrown>} />
               <Route path="/checklist/:checkInId" element={<ThemeBrown><TabletChecklistPage /></ThemeBrown>} />
               <Route path="/waiting/:clinicSlug" element={<ThemeBrown><Waiting /></ThemeBrown>} />
