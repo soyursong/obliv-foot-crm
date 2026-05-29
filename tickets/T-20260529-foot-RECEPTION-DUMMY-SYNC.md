@@ -2,12 +2,13 @@
 id: T-20260529-foot-RECEPTION-DUMMY-SYNC
 domain: foot
 priority: P2
-status: deploy-ready
+status: deployed
 deploy_ready_at: 2026-05-29 09:15
 commit_sha: d799c9ce (obliv-foot-crm) / 8225a7e2 (happy-flow-queue)
 db_changed: true
-e2e_spec: exempt(db_only_cross_repo)
-e2e_spec_exempt_reason: DB 조작만, FE 코드 변경 없음. happy-flow-queue 접수화면은 별도 repo.
+e2e_spec: tests/e2e/T-20260529-foot-RECEPTION-DUMMY-SYNC.spec.ts
+e2e_spec_exempt_reason: null
+e2e_result: "6/6 PASS (chromium) — AC-1~5 전항목 통과, 예약 목록 화면 진입 성공(더미 데이터 표시 확인)"
 hotfix: false
 created: 2026-05-29
 deadline: 2026-05-30
@@ -15,6 +16,12 @@ slack_channel: C0ATE5P6JTH
 reporter: 김주연 총괄
 reporter_slack_id: U0ATDB587PV
 risk_verdict: GO_WARN
+qa_result: pass
+qa_grade: Yellow
+deployed_at: "2026-05-29T09:49:00+09:00"
+deploy_commit: 9910475b44fa183dd4643953620b7ef04ee3a8b5
+bundle_hash: 1c499d006d092c4bd958bf4792614158
+field_soak_until: "2026-05-30T09:49:00+09:00"
 ---
 
 # T-20260529-foot-RECEPTION-DUMMY-SYNC — 초진·재진 더미 데이터 접수화면 연동
@@ -100,3 +107,11 @@ node scripts/rollback_testdata_20260529_hfq.mjs
 ## 변경 이력
 
 - 2026-05-29 09:15: 신규 생성 + deploy-ready 마킹
+- 2026-05-29 09:49: supervisor QA PASS — qa_grade: Yellow / deployed
+  - Phase 1 빌드: timeout 60 npm run build → ✓ 3.44s (exit 0)
+  - Phase 1.5 env: VITE_SUPABASE_URL(muvcfrgmxlwtidundlre) bundle 매치 ✅
+  - Runtime null safety: src/ 변경 없음 — 신규 패턴 없음 ✅
+  - E2E: chromium 6/6 PASS (AC-1~5 전항목) — firefox/webkit Playwright 미설치(브라우저 이슈, 코드 이슈 아님)
+  - Browser: diag-browser.mjs → 예약하셨나요? 화면 렌더, 예약 목록 화면 진입 성공(더미 데이터 표시 확인)
+  - CF Pages: HFQ origin/main=9910475 최신 (자동 배포 완료), bundle_hash=1c499d006d092c4bd958bf4792614158
+  - field_soak_until: 2026-05-30T09:49:00+09:00
