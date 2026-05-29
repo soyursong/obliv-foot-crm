@@ -117,6 +117,9 @@ const T: Record<Lang, {
   addressLabel: string;
   addressPlaceholder: string;
   privacyConsentLabel: string;
+  // AC-7: 건강보험 조회 동의
+  insuranceConsentLabel: string;
+  insuranceConsentNote: string;
   personalInfoNext: string;
   personalInfoBack: string;
   // T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: QR 단계
@@ -185,6 +188,9 @@ const T: Record<Lang, {
     addressLabel: '주소',
     addressPlaceholder: '주소를 입력해주세요',
     privacyConsentLabel: '개인정보 수집·이용에 동의합니다 (필수)',
+    // AC-7: 건강보험 조회 동의
+    insuranceConsentLabel: '건강보험 자격조회에 동의합니다 (선택)',
+    insuranceConsentNote: '동의 시 건강보험 급여 적용을 위한 자격 조회가 가능합니다.',
     personalInfoNext: '다음',
     personalInfoBack: '뒤로',
     // QR 단계
@@ -253,6 +259,9 @@ const T: Record<Lang, {
     addressLabel: 'Address',
     addressPlaceholder: 'Enter your address',
     privacyConsentLabel: 'I consent to the collection of personal information (required)',
+    // AC-7: insurance consent
+    insuranceConsentLabel: 'I consent to health insurance eligibility inquiry (optional)',
+    insuranceConsentNote: 'Consent allows us to check your health insurance eligibility for coverage.',
     personalInfoNext: 'Next',
     personalInfoBack: 'Back',
     // QR step
@@ -468,6 +477,8 @@ export default function SelfCheckIn() {
   const [rrn, setRrn] = useState('');                    // YYMMDD-XXXXXXX 포맷
   const [address, setAddress] = useState('');
   const [privacyConsent, setPrivacyConsent] = useState(false);
+  // AC-7: 건강보험 조회 동의 (→ customers.hira_consent)
+  const [insuranceConsent, setInsuranceConsent] = useState(false);
   // 발건강질문지 QR 토큰
   const [healthQToken, setHealthQToken] = useState<string | null>(null);
   // QR 화면 카운트다운
@@ -534,6 +545,7 @@ export default function SelfCheckIn() {
     setRrn('');
     setAddress('');
     setPrivacyConsent(false);
+    setInsuranceConsent(false); // AC-7
     setHealthQToken(null);
     setQrCountdown(QR_SCREEN_SECONDS);
   }, []);
@@ -1069,14 +1081,26 @@ export default function SelfCheckIn() {
         // 기존 고객은 업데이트, 신규 고객은 INSERT 시 이미 포함. 중복 업데이트 허용 (멱등).
         try {
           await anonClient.rpc('fn_selfcheckin_update_personal_info', {
-            p_check_in_id:    newCheckInId,
-            p_clinic_id:      clinicId,
-            p_birth_date:     extractBirthDate(rrn) ?? null,
-            p_address:        address.trim() || null,
-            p_privacy_consent: reservationType === 'walkin' ? privacyConsent : null,
+            p_check_in_id:       newCheckInId,
+            p_clinic_id:         clinicId,
+            p_birth_date:        extractBirthDate(rrn) ?? null,
+            p_address:           address.trim() || null,
+            p_privacy_consent:   reservationType === 'walkin' ? privacyConsent : null,
+            p_insurance_consent: insuranceConsent || null, // AC-7: true 시만 전달
           });
         } catch {
           // 개인정보 저장 실패는 silent — 접수 완료 UX를 블록하지 않음
+        }
+
+        // (4.5) AC-9: 주민번호 자동 매칭 — 데스크 기입 레코드와 병합 시도
+        // 결과에 관계없이 silent (매칭 실패해도 접수 완료 UX 블록 안 함)
+        try {
+          await anonClient.rpc('fn_selfcheckin_rrn_match', {
+            p_check_in_id: newCheckInId,
+            p_clinic_id:   clinicId,
+          });
+        } catch {
+          // RRN 매칭 실패 → 무시 (접수 완료 계속 진행)
         }
 
         // (5) 발건강질문지 QR 토큰 생성
@@ -1467,6 +1491,32 @@ export default function SelfCheckIn() {
                 </span>
               </label>
             )}
+
+            {/* AC-7: 건강보험 조회 동의 — 초진 전체(예약+워크인) 표시, 선택사항 */}
+            <label
+              htmlFor="pi-insurance-consent"
+              className="flex items-start gap-3 cursor-pointer select-none rounded-xl p-4"
+              style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}
+              data-testid="pi-insurance-consent-label"
+            >
+              <input
+                id="pi-insurance-consent"
+                type="checkbox"
+                checked={insuranceConsent}
+                onChange={(e) => setInsuranceConsent(e.target.checked)}
+                className="mt-0.5 h-6 w-6 flex-shrink-0 rounded"
+                style={{ accentColor: C.primary }}
+                data-testid="pi-insurance-consent-checkbox"
+              />
+              <div>
+                <span className="block text-sm leading-relaxed font-medium" style={{ color: C.dark }}>
+                  {t.insuranceConsentLabel}
+                </span>
+                <span className="block text-xs mt-0.5 leading-relaxed" style={{ color: C.muted }}>
+                  {t.insuranceConsentNote}
+                </span>
+              </div>
+            </label>
 
             {/* 버튼 영역 */}
             <div className="flex gap-3 pt-2">
