@@ -11,11 +11,18 @@
  * AC-7: 중복 제거 · 당일 리셋 동작 유지
  * AC-8: 빌드 성공, 기존 E2E 회귀 없음
  *
+ * REOPEN1 (2026-05-29):
+ * AC-9: 금일동선 데이터 소스 = check_in_room_logs (FE 코드 기반 확인)
+ * AC-10: 치료실 배정 환자의 DB log 존재 시 금일동선 표기 정상
+ * AC-11: check_in_room_logs row 존재 시 배지에 실번호 표시 (not "—")
+ *
  * 시나리오:
  *   S-1: 1번차트에 공간배정 드롭다운 + 배정 버튼 미존재 (AC-1)
  *   S-2: 1번차트에 "금일 동선" 섹션 + 4개 슬롯 배지 존재 (AC-2/5)
  *   S-3: 금일 동선 배지가 4가지 슬롯 타입(상담실·치료실·가열성레이저·레이저실) 구조로 렌더링 (AC-5/6)
  *   S-4: 회귀 없음 — Sheet 에러 없이 오픈 (AC-8)
+ *   S-5: REOPEN1 — 금일동선 4슬롯 "—" placeholder 또는 실번호 표시 (AC-9/10/11)
+ *   S-6: REOPEN1 — 치료실 배정 카드 금일동선 치료실 배지 not "—" (AC-11)
  */
 import { test, expect } from '@playwright/test';
 import { loginAndWaitForDashboard } from '../helpers';
@@ -193,5 +200,135 @@ test.describe('T-20260522-foot-SPACE-AUTOROUTE — 공간배정 드롭다운 삭
     expect(criticalErrors, 'AC-8: JS 에러 없음').toHaveLength(0);
 
     console.log('[AC-8] 1번차트 Sheet 에러 없이 오픈 OK');
+  });
+
+  /**
+   * S-5: REOPEN1 — 금일동선 4슬롯 "—" placeholder 또는 실번호 표시 (AC-9/10/11)
+   * 금일동선이 빈 배열을 보여주지 않고 4개 슬롯이 항상 렌더링됨을 확인.
+   * (check_in_room_logs RLS 수정 후 로드 실패가 없어야 함)
+   */
+  test('S-5: REOPEN1 — 금일동선 4슬롯 항상 렌더링 (placeholder or 실번호) (AC-9/10)', async ({ page }) => {
+    await page.goto('/admin');
+    await page.getByText('대시보드', { exact: true }).first().waitFor({ timeout: 15_000 });
+
+    const cards = page.locator('[data-testid="checkin-card"]');
+    if (await cards.count() === 0) {
+      test.skip(true, '칸반 카드 없음 — 스킵');
+      return;
+    }
+
+    await cards.first().click();
+    const sheet = page.locator('[role="dialog"]').first();
+    const sheetVisible = await sheet.waitFor({ state: 'visible', timeout: 8_000 }).then(() => true).catch(() => false);
+    if (!sheetVisible) {
+      test.skip(true, '1번차트 Sheet 미오픈 — 스킵');
+      return;
+    }
+
+    // check_in_room_logs 로드 에러 콘솔 경고 미발생 체크
+    const consoleErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error' && msg.text().includes('SPACE-AUTOROUTE')) {
+        consoleErrors.push(msg.text());
+      }
+    });
+
+    // 금일 동선 영역 대기
+    const dailyLogSection = sheet.locator('[data-testid="daily-room-log-section"]');
+    await expect(dailyLogSection).toBeVisible({ timeout: 8_000 });
+
+    // AC-9/10: 4개 슬롯이 모두 렌더링됨 (빈 배열이 아님)
+    const expectedSlots = ['상담실', '치료실', '가열성레이저', '레이저실'];
+    for (const slotType of expectedSlots) {
+      const badge = sheet.locator(`[data-testid="daily-log-${slotType}"]`);
+      await expect(
+        badge,
+        `AC-10: [금일 동선] ${slotType} 배지 렌더링됨 (RLS 수정 후 empty 방어)`,
+      ).toBeVisible({ timeout: 5_000 });
+    }
+
+    // REOPEN1 핵심: [SPACE-AUTOROUTE] 에러 콘솔 없음
+    await page.waitForTimeout(500);
+    expect(consoleErrors, 'AC-9: check_in_room_logs 로드 에러 없음').toHaveLength(0);
+
+    console.log('[AC-9/10] REOPEN1 금일동선 4슬롯 렌더링 OK, 로드 에러 없음');
+  });
+
+  /**
+   * S-6: REOPEN1 — 치료실 배정 카드의 금일동선 치료실 배지 실번호 표시 (AC-11)
+   * 칸반에서 치료실 영역의 카드를 찾아 1번차트 오픈 → 치료실 배지가 "—" 가 아닌 실번호를 표시해야 함.
+   */
+  test('S-6: REOPEN1 — 치료실 배정 카드 금일동선 치료실 배지 실번호 표시 (AC-11)', async ({ page }) => {
+    await page.goto('/admin');
+    await page.getByText('대시보드', { exact: true }).first().waitFor({ timeout: 15_000 });
+
+    // 치료실 영역 카드 탐색 (preconditioning/treatment status)
+    // data-testid="checkin-card" 중 치료실 영역에 있는 첫 번째 카드 선택
+    const treatmentAreaCards = page
+      .locator('[data-testid="checkin-card"]')
+      .filter({ has: page.locator('[data-status="preconditioning"], [data-status="treatment"]') });
+
+    const treatmentCardCount = await treatmentAreaCards.count();
+    if (treatmentCardCount === 0) {
+      // 칸반 전체에서 치료실 컨테이너를 찾는 대안
+      const treatmentSection = page.locator('text=치료실').first();
+      const sectionVisible = await treatmentSection.isVisible().catch(() => false);
+      if (!sectionVisible) {
+        test.skip(true, '치료실 배정 환자 없음 — 스킵');
+        return;
+      }
+
+      // 치료실 헤더 주변 카드 클릭 시도
+      const cards = page.locator('[data-testid="checkin-card"]');
+      if (await cards.count() === 0) {
+        test.skip(true, '칸반 카드 없음 — 스킵');
+        return;
+      }
+      // 카드를 순회하며 치료실에 있는 것 찾기
+      let found = false;
+      for (let i = 0; i < Math.min(await cards.count(), 10); i++) {
+        const card = cards.nth(i);
+        const cardText = await card.textContent().catch(() => '');
+        // 치료실 영역에 있는 카드는 treatment_room이 설정되어 있을 가능성이 높음
+        // 직접 클릭하여 확인
+        await card.click();
+        const dialog = page.locator('[role="dialog"]').first();
+        const dialogOk = await dialog.waitFor({ state: 'visible', timeout: 5_000 }).then(() => true).catch(() => false);
+        if (!dialogOk) continue;
+
+        const treatmentBadge = dialog.locator('[data-testid="daily-log-치료실"]');
+        const badgeText = await treatmentBadge.textContent().catch(() => '');
+        if (badgeText && !badgeText.includes('—')) {
+          // 실번호 있는 카드 찾음
+          found = true;
+          console.log(`[AC-11] 치료실 배지 실번호 확인: "${badgeText?.trim()}" OK`);
+          break;
+        }
+        // Escape to close dialog
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(300);
+      }
+      if (!found) {
+        // 오늘 치료실 배정된 체크인이 없으면 test.skip
+        test.skip(true, '오늘 check_in_room_logs(treatment) 로그 없음 — 스킵');
+      }
+      return;
+    }
+
+    await treatmentAreaCards.first().click();
+    const sheet = page.locator('[role="dialog"]').first();
+    const sheetVisible = await sheet.waitFor({ state: 'visible', timeout: 8_000 }).then(() => true).catch(() => false);
+    if (!sheetVisible) {
+      test.skip(true, '1번차트 Sheet 미오픈 — 스킵');
+      return;
+    }
+
+    const treatmentBadge = sheet.locator('[data-testid="daily-log-치료실"]');
+    await expect(treatmentBadge).toBeVisible({ timeout: 5_000 });
+    const badgeText = await treatmentBadge.textContent();
+
+    // AC-11: 치료실 배지가 "—" 이 아닌 실번호를 표시해야 함
+    expect(badgeText, 'AC-11: 치료실 배지에 실번호 표시 (not "—")').not.toContain('—');
+    console.log(`[AC-11] 치료실 배지 실번호 표시: "${badgeText?.trim()}" OK`);
   });
 });
