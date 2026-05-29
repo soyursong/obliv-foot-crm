@@ -484,6 +484,11 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const [chartNumber, setChartNumber] = useState<string | null>(null);
   /** T-20260506-foot-CHART-LINK-SYNC: customer_id null 시 phone으로 조회된 고객 ID (2순위 식별) */
   const [resolvedCustomerId, setResolvedCustomerId] = useState<string | null>(null);
+  /** T-20260529-foot-CHART-OPEN-SINGLE: 고객 연결 UI — customer_id·phone 모두 null일 때 표시 */
+  const [linkQuery, setLinkQuery] = useState('');
+  const [linkResults, setLinkResults] = useState<{ id: string; name: string; chart_number: string | null; phone: string | null }[]>([]);
+  const [linkSearching, setLinkSearching] = useState(false);
+  const [linkSaving, setLinkSaving] = useState(false);
   /** T-20260512-foot-CUSTMGMT-AC6-AC9: customerMode에서 최근 체크인 전체 (서류발행·의사소견·접수상태 표시용) */
   const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
 
@@ -539,6 +544,10 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setChartNumber(null);
     setResolvedCustomerId(null);
     setLatestCheckIn(null);
+    // T-20260529-foot-CHART-OPEN-SINGLE: 고객 연결 UI 초기화
+    setLinkQuery('');
+    setLinkResults([]);
+    setLinkSearching(false);
     // T-20260516-foot-CHART-OPEN-UNIFY AC-5: 칸반 슬롯 간 동일 열림 방식 통일
     // 기존: visit_type === 'new' 조건 → 초진만 2번차트 자동 오픈 (상담대기/치료대기/진료대기 불일치)
     // 변경: customer_id 있으면 visit_type 무관 2번차트 자동 오픈 (김사비 방식 = 전체 통일 기준)
@@ -805,14 +814,17 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setDoctorNote(checkIn.doctor_note ?? '');
 
     // T-20260522-foot-SPACE-AUTOROUTE: 이동이력 로드 — 테이블 미존재 시 graceful skip
+    // REOPEN1 fix: RLS 정책 수정 후 정상 로드. { error } 체크 추가로 디버깅 가시성 확보.
     try {
-      const { data: logsData } = await supabase
+      const { data: logsData, error: logsErr } = await supabase
         .from('check_in_room_logs')
         .select('id, check_in_id, assigned_room, room_type, logged_at')
         .eq('check_in_id', checkIn.id)
         .order('logged_at', { ascending: true });
+      if (logsErr) console.error('[SPACE-AUTOROUTE] check_in_room_logs 로드 실패:', logsErr.message);
       setRoomLogs((logsData ?? []) as RoomLog[]);
-    } catch {
+    } catch (e) {
+      console.error('[SPACE-AUTOROUTE] check_in_room_logs 예외:', e);
       setRoomLogs([]);
     }
   }, [checkIn, customerMode]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -834,6 +846,35 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     window.addEventListener('storage', handler);
     return () => window.removeEventListener('storage', handler);
   }, [checkIn?.customer_id, resolvedCustomerId, customerMode?.customerId, load]);
+
+  // T-20260522-foot-SPACE-AUTOROUTE REOPEN1: check_in_room_logs Realtime 구독
+  // 1번차트가 열린 상태에서 환자가 다른 방으로 이동하면 금일 동선이 자동 갱신됨.
+  useEffect(() => {
+    if (!checkIn?.id || !checkIn?.clinic_id) return;
+    const checkInId = checkIn.id;
+    const channel = supabase
+      .channel(`room-logs-${checkInId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'check_in_room_logs',
+          filter: `check_in_id=eq.${checkInId}`,
+        },
+        (payload) => {
+          // Realtime filter가 check_in_id=eq.{id} 보장 — clinic_id 추가 체크 불필요
+          const newLog = payload.new as RoomLog;
+          setRoomLogs((prev) => {
+            // 중복 방지 (동일 id 방어)
+            if (prev.some((l) => l.id === newLog.id)) return prev;
+            return [...prev, newLog];
+          });
+        },
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [checkIn?.id]);
 
   // AC-7 T-20260522-foot-CHART1-TRIM: 타이머 관련 useEffect 제거 (비가열 타이머 UI 제거)
 
@@ -949,6 +990,44 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     // T-20260516-foot-CHART2-STATE-UNIFY: ChartContext openChart 사용
     openChart(data.id);
   };
+
+  // T-20260529-foot-CHART-OPEN-SINGLE: 고객 연결 UI 핸들러 ─────────────────────────
+  // customer_id·phone 모두 null인 체크인에서 이름으로 고객 검색 후 연결
+  const handleLinkSearch = async (query: string) => {
+    setLinkQuery(query);
+    if (!checkIn || query.trim().length < 1) { setLinkResults([]); return; }
+    setLinkSearching(true);
+    const { data } = await supabase
+      .from('customers')
+      .select('id, name, chart_number, phone')
+      .eq('clinic_id', checkIn.clinic_id)
+      .ilike('name', `%${query.trim()}%`)
+      .order('created_at', { ascending: false })
+      .limit(8);
+    setLinkResults((data ?? []) as { id: string; name: string; chart_number: string | null; phone: string | null }[]);
+    setLinkSearching(false);
+  };
+
+  const handleLinkCustomer = async (customerId: string) => {
+    if (!checkIn || linkSaving) return;
+    setLinkSaving(true);
+    const { error } = await supabase
+      .from('check_ins')
+      .update({ customer_id: customerId })
+      .eq('id', checkIn.id);
+    if (error) {
+      toast.error(`고객 연결 실패: ${error.message}`);
+      setLinkSaving(false);
+      return;
+    }
+    toast.success('고객 연결 완료 — 차트를 엽니다');
+    setLinkResults([]);
+    setLinkQuery('');
+    setLinkSaving(false);
+    openChart(customerId);
+    onUpdated();
+  };
+  // ──────────────────────────────────────────────────────────────────────────────
 
   // T-20260510-foot-C1-VISIT-ROUTE-MEMO: 방문경로 저장
   // T-20260511-foot-CUSTMGMT-DETAIL-SHEET: customerMode fallback 추가
@@ -1482,6 +1561,53 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   <Stethoscope className="h-4 w-4" />
                   진료차트
                 </Button>
+              )}
+            </div>
+          )}
+
+          {/* T-20260529-foot-CHART-OPEN-SINGLE: 고객 연결 UI — customer_id·phone 모두 null인 경우 */}
+          {!checkIn.customer_id && !resolvedCustomerId && !checkIn.customer_phone && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 space-y-2">
+              <p className="text-xs font-semibold text-amber-800">
+                ⚠ 고객 연결 필요 — 이름으로 검색 후 연결하세요
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="고객 이름 검색"
+                  value={linkQuery}
+                  onChange={(e) => handleLinkSearch(e.target.value)}
+                  className="flex-1 rounded border border-amber-300 px-2 py-1 text-xs focus:outline-none focus:border-teal-500"
+                  data-testid="link-customer-search-input"
+                />
+              </div>
+              {linkSearching && (
+                <p className="text-xs text-amber-600">검색 중…</p>
+              )}
+              {linkResults.length > 0 && (
+                <ul className="space-y-1">
+                  {linkResults.map((c) => (
+                    <li key={c.id} className="flex items-center justify-between gap-2 rounded border border-amber-200 bg-white px-2 py-1">
+                      <span className="text-xs truncate">
+                        <span className="font-semibold">{c.name}</span>
+                        {c.chart_number && <span className="ml-1 text-teal-600">#{c.chart_number}</span>}
+                        {c.phone && <span className="ml-1 text-muted-foreground">{c.phone.slice(-4)}</span>}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={linkSaving}
+                        onClick={() => handleLinkCustomer(c.id)}
+                        className="shrink-0 rounded bg-teal-500 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-teal-600 disabled:opacity-50 transition"
+                        data-testid="link-customer-btn"
+                      >
+                        연결
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {!linkSearching && linkQuery.trim().length > 0 && linkResults.length === 0 && (
+                <p className="text-xs text-amber-600">검색 결과 없음 — 고객관리에서 신규 등록 후 재시도</p>
               )}
             </div>
           )}
