@@ -4,7 +4,7 @@ domain: foot
 priority: P1
 status: deploy-ready
 deploy_ready_at: 2026-05-29 10:30
-commit_sha: TBD
+commit_sha: c5b69cb
 db_changed: true
 e2e_spec: exempt(db_only)
 hotfix: false
