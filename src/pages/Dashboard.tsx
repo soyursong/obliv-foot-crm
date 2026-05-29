@@ -1659,7 +1659,14 @@ function DashboardTimeline({
   /** T-20260522-foot-TIMETABLE-FOLD: 치료사별 뷰 — 직원 이름 조회 맵 */
   staffMap?: Map<string, { name: string }>;
 }) {
-  const now = new Date();
+  // T-20260529-foot-DASHBOARD-TIMETABLE-SYNC AC-2: 현재 시각 상태화 — 30초마다 자동 갱신
+  // 슬롯 전환(매 30분)·±1시간 하이라이트 자동 갱신에 필요
+  const [now, setNow] = useState<Date>(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
   const isToday = isSameDay(date, now);
   const dateStr = format(date, 'yyyy-MM-dd');
   const currentH = now.getHours();
@@ -2026,10 +2033,12 @@ function DashboardTimeline({
           const maxRows = Math.max(newCnt, retCnt, 1);
 
           const isCurrentSlot = isToday && slot === currentSlot;
-          const isPastSlot =
-            isToday &&
-            parseInt(slot.split(':')[0]) * 60 + parseInt(slot.split(':')[1]) <
-              currentH * 60 + currentM - 30;
+          // T-20260529-foot-DASHBOARD-TIMETABLE-SYNC AC-2: ±1시간 활성/비활성 존 분화
+          const slotMinutes = parseInt(slot.split(':')[0]) * 60 + parseInt(slot.split(':')[1]);
+          const currentMinutes = currentH * 60 + currentM;
+          const isPastSlot = isToday && slotMinutes < currentMinutes - 30;
+          // ±1시간 범위 외 슬롯 = 비활성 존(베이지/흐림), ±1시간 이내 = 활성 존(흰/하이라이트)
+          const isInactiveZone = isToday && Math.abs(slotMinutes - currentMinutes) > 60;
 
           // T-20260522-foot-TIMETABLE-FOLD V2 AC-7: 아코디언용 예약 목록 구성
           // 초진(new) 우선, 재진(returning) 다음 — 슬롯 안의 모든 예약·체크인 합산
@@ -2057,8 +2066,11 @@ function DashboardTimeline({
               className={cn(
                 'border-b border-gray-100',
                 isPastSlot && 'opacity-55',
+                // T-20260529-foot-DASHBOARD-TIMETABLE-SYNC AC-2: 비활성 존 베이지 배경
+                isInactiveZone && 'bg-stone-50',
               )}
               data-testid="timeline-slot-row"
+              data-active-zone={isToday && !isInactiveZone ? 'true' : undefined}
             >
               {/* ── 메인 슬롯 그리드 ── */}
               <div
@@ -2073,9 +2085,12 @@ function DashboardTimeline({
                   onClick={() => setExpandedSlot((s) => (s === slot ? null : slot))}
                   className={cn(
                     'flex flex-col items-center justify-start pt-1.5 pb-1 border-r shrink-0 sticky left-0 z-10 w-full transition-colors',
+                    // T-20260529-foot-DASHBOARD-TIMETABLE-SYNC AC-2: ±1시간 존 컬러 분화
                     isCurrentSlot
                       ? 'bg-teal-50 hover:bg-teal-100 active:bg-teal-200'
-                      : 'bg-gray-50 hover:bg-gray-100 active:bg-gray-200',
+                      : isInactiveZone
+                        ? 'bg-stone-100 hover:bg-stone-200 active:bg-stone-300'
+                        : 'bg-gray-50 hover:bg-gray-100 active:bg-gray-200',
                   )}
                   aria-expanded={isExpanded}
                   aria-label={`${slot} 슬롯 예약 명단 ${isExpanded ? '접기' : '펼치기'}`}
@@ -2114,7 +2129,12 @@ function DashboardTimeline({
                   slotId={`timeslot-new:${slot}`}
                   className={cn(
                     'px-1 pt-1 pb-0.5 border-r space-y-0.5 min-w-0',
-                    isCurrentSlot ? 'bg-teal-50/20' : newCnt > 0 ? 'bg-yellow-50/40' : '',
+                    // T-20260529-foot-DASHBOARD-TIMETABLE-SYNC AC-2: ±1시간 존 컬러 분화
+                    isCurrentSlot
+                      ? 'bg-teal-50/20'
+                      : isInactiveZone
+                        ? 'bg-stone-100/50'
+                        : newCnt > 0 ? 'bg-yellow-50/40' : '',
                   )}
                   onClick={() => onSlotClick({ date: dateStr, time: slot })}
                   title="빈 영역 클릭 → 초진 예약 추가 / 카드 드롭 → 시간 변경"
@@ -2149,7 +2169,12 @@ function DashboardTimeline({
                   slotId={`timeslot-ret:${slot}`}
                   className={cn(
                     'px-1 pt-1 pb-0.5 space-y-0.5 min-w-0',
-                    isCurrentSlot ? 'bg-teal-50/20' : retCnt > 0 ? 'bg-green-50/40' : '',
+                    // T-20260529-foot-DASHBOARD-TIMETABLE-SYNC AC-2: ±1시간 존 컬러 분화
+                    isCurrentSlot
+                      ? 'bg-teal-50/20'
+                      : isInactiveZone
+                        ? 'bg-stone-100/50'
+                        : retCnt > 0 ? 'bg-green-50/40' : '',
                   )}
                   onClick={() => onSlotClick({ date: dateStr, time: slot, visit_type: 'returning' })}
                   title="빈 영역 클릭 → 재진 예약 추가 / 카드 드롭 → 시간 변경"
@@ -3687,14 +3712,15 @@ export default function Dashboard() {
       )
       .subscribe();
 
-    // T-20260514-foot-DASH-REALTIME-FAIL AC-4: Realtime 단절 대비 60초 폴링 fallback
-    // Supabase WebSocket이 간헐적으로 끊길 경우 최대 60초 이내 자동 복구
+    // T-20260514-foot-DASH-REALTIME-FAIL AC-4: Realtime 단절 대비 폴링 fallback
+    // T-20260529-foot-DASHBOARD-TIMETABLE-SYNC AC-1: 60초 → 30초 단축 (최대 30초 이내 반영 보장)
+    // Supabase WebSocket이 간헐적으로 끊길 경우 최대 30초 이내 자동 복구
     // T-20260522-foot-TIMETABLE-FOLD V2 AC-6: 예약 변경도 폴링 커버 추가
     const pollTimer = setInterval(() => {
       fetchCheckIns();
       fetchSelfCheckIns();
-      fetchTimelineReservations(); // AC-6: reservation INSERT/UPDATE/DELETE → 3초 이내 UI 반영
-    }, 60000);
+      fetchTimelineReservations(); // AC-6 + DASHBOARD-TIMETABLE-SYNC AC-1
+    }, 30000);
 
     return () => {
       if (checkInTimer) clearTimeout(checkInTimer);
