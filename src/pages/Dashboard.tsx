@@ -4600,14 +4600,36 @@ export default function Dashboard() {
   // 조건 변경·우회·null 허용 시 모든 경로에서 차트 열람 불가.
   // 회귀 방지 spec: tests/e2e/T-20260519-foot-CHART-OPEN-GUARD.spec.ts
   // ─────────────────────────────────────────────────────────────────────────────
-  const handleReservationSelect = useCallback((res: Reservation) => {
+  const handleReservationSelect = useCallback(async (res: Reservation) => {
     if (res.customer_id) {
       ctxOpenChart(res.customer_id);
     } else {
+      // T-20260529-foot-CHART-OPEN-FAIL: customer_id 없는 예약 — 이름으로 자동 조회 fallback
+      // 원인: 예약 생성 시 고객 레코드 미연결 (고객 등록 전 예약 입력 등)
+      // 동명이인 방지: 동일 클리닉·동일 이름 1건일 때만 자동 열기
+      if (res.customer_name && clinic) {
+        const { data: matches } = await supabase
+          .from('customers')
+          .select('id, name')
+          .eq('clinic_id', clinic.id)
+          .eq('name', res.customer_name)
+          .limit(2);
+        if (matches && matches.length === 1) {
+          const foundId = matches[0].id;
+          ctxOpenChart(foundId);
+          // 백그라운드: 예약에 customer_id 자동 연결 (다음 클릭부터 정상 경로)
+          supabase.from('reservations').update({ customer_id: foundId }).eq('id', res.id)
+            .then(({ error }) => { if (!error) fetchTimelineReservations(); });
+          return;
+        } else if (matches && matches.length > 1) {
+          toast.info(`동명이인 ${matches.length}명 — 고객관리에서 직접 확인하세요`);
+          return;
+        }
+      }
       const timeStr = res.reservation_time ? res.reservation_time.slice(0, 5) : '';
-      toast.info(`${res.customer_name ?? ''} — ${timeStr} 예약 (차트 없음)`);
+      toast.info(`${res.customer_name ?? ''} — ${timeStr} 예약 (고객 미연결)`);
     }
-  }, [ctxOpenChart]);
+  }, [ctxOpenChart, clinic, fetchTimelineReservations]);
 
   // T-20260522-foot-CHECKIN-FIRST-INFO: 실제 DB INSERT 함수 (초진 폼 완료 후 또는 재진 직접 호출)
   // 초진(new) → consult_waiting, 재진(returning) → treatment_waiting
