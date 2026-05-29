@@ -4725,10 +4725,12 @@ export default function Dashboard() {
     setSelectedCheckIn(newCheckIn);
   };
 
+  // T-20260529-foot-RECEPTION-BTN-REMOVE: 접수 버튼 제거로 현재 미사용 — 복구용 보존
+  // 접수는 셀프접수 매칭 또는 우측 상단 체크인 버튼으로만 처리
   // T-20260529-foot-RRN-SETTING-CHECK: handleReservationCheckIn 복원
   // 초진 → CheckinFirstInfoDialog 오픈(주민번호 입력) → onCompleted → doCheckInForReservation
   // 재진/체험 → 폼 없이 바로 doCheckInForReservation
-  const handleReservationCheckIn = async (res: Reservation) => {
+  const _handleReservationCheckIn = async (res: Reservation) => {
     if (!clinic) return;
     // 프론트 중복 방지 — 이미 체크인된 예약이면 차단
     const already = rows.find((r) => r.reservation_id === res.id && r.status !== 'cancelled');
@@ -4746,6 +4748,7 @@ export default function Dashboard() {
       await doCheckInForReservation(res);
     }
   };
+  void _handleReservationCheckIn; // T-20260529-foot-RECEPTION-BTN-REMOVE: 접수 버튼 제거로 미사용 — 복구용 보존
 
   // T-20260525-foot-RESV-CANCEL-CTX: 타임라인 예약 박스 우클릭/롱프레스 → 컨텍스트메뉴
   // AC-1: DashboardTimeline onReservationContext 콜백 — resvContextMenu 상태 세팅
@@ -5753,8 +5756,10 @@ export default function Dashboard() {
             onCardClick={!isPast ? handleCardClick : undefined}
             onCardContext={!isPast ? handleCardContext : undefined}
             onReservationSelect={!isPast ? handleReservationSelect : undefined}
-            // T-20260529-foot-RRN-SETTING-CHECK: onReservationCheckIn 복원 — 접수 버튼 + 주민번호 입력 폼
-            onReservationCheckIn={!isPast ? handleReservationCheckIn : undefined}
+            // T-20260529-foot-RECEPTION-BTN-REMOVE: 접수 버튼 제거 (AC-1/AC-2)
+            // 접수는 셀프접수 매칭 또는 우측 상단 체크인 버튼으로만 처리
+            // onReservationCheckIn 미전달 → DraggableBox1Card/Box2ResvCard {onCheckIn && ...} 가드로 버튼 미렌더링
+            // onReservationCheckIn={!isPast ? handleReservationCheckIn : undefined}
             // T-20260525-foot-RESV-CANCEL-ALLDATE: isPast 날짜 가드 제거 — 전체 날짜 취소 허용
             onReservationContext={handleReservationContext}
             folded={timelineFolded}
