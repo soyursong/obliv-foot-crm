@@ -240,6 +240,16 @@
     min-height: var(--touch-min);
     min-width: var(--touch-min);
   }
+
+  /* ── T-20260529-foot-HEALTH-Q-MOBILE: iOS safe-area 패딩 ─────────────────────
+     viewport-fit=cover 와 함께 사용. iPhone 홈 인디케이터 위 sticky 버튼 보호.
+     env(safe-area-inset-bottom) 미지원 브라우저는 0px fallback. */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
 }
 
 /* ── T-20260522-foot-TABLET-DUAL-LAYOUT: 태블릿 터치 최적화 ──────────────────────── */
