@@ -4,7 +4,7 @@ domain: foot
 priority: P2
 status: deploy-ready
 deploy_ready_at: 2026-05-29 09:15
-commit_sha: pending-push
+commit_sha: d799c9ce (obliv-foot-crm) / 8225a7e2 (happy-flow-queue)
 db_changed: true
 e2e_spec: exempt(db_only_cross_repo)
 e2e_spec_exempt_reason: DB 조작만, FE 코드 변경 없음. happy-flow-queue 접수화면은 별도 repo.
