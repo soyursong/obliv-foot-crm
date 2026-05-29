@@ -4,7 +4,7 @@ domain: foot
 priority: P0
 status: deploy-ready
 deploy_ready_at: 2026-05-29 11:30
-commit_sha: TBD
+commit_sha: f90b371
 db_changed: true
 db_migration: supabase/migrations/20260529000050_health_q_create_token_hotfix.sql
 db_migration_note: |
