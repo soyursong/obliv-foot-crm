@@ -1295,12 +1295,15 @@ function TimelineCheckInCard({
   onClick,
   onContextMenu,
   offHourTime,
+  isWalkIn,
 }: {
   checkIn: CheckIn;
   onClick?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   /** T-20260530-foot-WALKIN-OFFHOUR-SLOT: 영업시간 외 클램핑된 실접수 시각 ('HH:mm'). undefined = 정상 */
   offHourTime?: string;
+  /** T-20260530-foot-WALKIN-TIMETABLE: 워크인(예약 없이 당일 접수) 여부 → 'W' 배지 표시 */
+  isWalkIn?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: checkIn.id,
@@ -1364,6 +1367,16 @@ function TimelineCheckInCard({
       {/* T-20260514-foot-CHART-NO-VISIBLE: 차트번호 상시 표시 */}
       {timelineChartNum && (
         <span className="text-[9px] font-mono text-teal-600 shrink-0">#{timelineChartNum}</span>
+      )}
+      {/* T-20260530-foot-WALKIN-TIMETABLE: 워크인 배지 (예약 없는 당일 접수) */}
+      {isWalkIn && (
+        <span
+          className="text-[8px] bg-violet-100 text-violet-700 px-0.5 rounded shrink-0 leading-tight font-bold"
+          title="워크인 (예약 없이 당일 접수)"
+          data-testid="walkin-badge"
+        >
+          W
+        </span>
       )}
       {/* T-20260530-foot-WALKIN-OFFHOUR-SLOT: 영업시간 외 실접수 시각 배지 */}
       {offHourTime && (
@@ -1796,6 +1809,8 @@ function DashboardTimeline({
   const matchedCiIds = new Set<string>();
   // T-20260530-foot-WALKIN-OFFHOUR-SLOT: 영업시간 외 클램핑된 워크인의 실접수 시각 (ci.id → 'HH:mm')
   const offHourActualTimeMap = new Map<string, string>();
+  // T-20260530-foot-WALKIN-TIMETABLE: 워크인 체크인 ID 집합 (예약 미매칭) → 'W' 배지 표시 기준
+  const walkInCiIdSet = new Set<string>();
 
   // 예약 처리 (cancelled/noshow 제외)
   for (const r of reservations) {
@@ -1855,6 +1870,8 @@ function DashboardTimeline({
     if (slot !== rawSlot) {
       offHourActualTimeMap.set(ci.id, format(d, 'HH:mm'));
     }
+    // T-20260530-foot-WALKIN-TIMETABLE: 워크인 등록 → 'W' 배지 기준
+    walkInCiIdSet.add(ci.id);
     const sd = ensure(slot);
     if (ci.visit_type === 'new') {
       sd.newBox2Ci.push(ci);
@@ -2184,6 +2201,7 @@ function DashboardTimeline({
                     <TimelineCheckInCard
                       key={`b2n-${ci.id}`}
                       checkIn={ci}
+                      isWalkIn={walkInCiIdSet.has(ci.id)}
                       offHourTime={offHourActualTimeMap.get(ci.id)}
                       onClick={onCardClick ? () => onCardClick(ci) : undefined}
                       onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
@@ -2225,6 +2243,7 @@ function DashboardTimeline({
                     <TimelineCheckInCard
                       key={`b2c-${ci.id}`}
                       checkIn={ci}
+                      isWalkIn={walkInCiIdSet.has(ci.id)}
                       offHourTime={offHourActualTimeMap.get(ci.id)}
                       onClick={onCardClick ? () => onCardClick(ci) : undefined}
                       onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
