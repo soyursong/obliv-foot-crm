@@ -3,24 +3,23 @@
  * 셀프체크인 페이지 — /checkin/:clinicSlug
  *
  * 인증 불필요 (anon). 태블릿/모바일 전체화면 최적화 (키오스크 모드).
- * 흐름: 성함+전화번호 입력 → 방문유형(2단계) 선택 → 유입경로(워크인만) 선택 → 접수 확인 → 접수 완료
  *
- * 키오스크 기능:
- * - 완료 화면 15초 자동 리셋 (카운트다운 표시)
- * - 입력 화면 60초 비활동 타임아웃 (자동 리셋)
- * - 전화번호 입력 시 오늘 예약 조회 + 자동 방문유형 채움
- * - 터치 최적화 숫자패드 (온스크린)
- * - 접수 완료 화면 강화 (체크마크 펄스 애니메이션, 클리닉명 표시)
- * - 초진/예약없이 방문 시 신분증 확인 필요 플래그 자동 설정
+ * T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: 초진 동선 재구성
+ *   - 신규 단계: personal_info (주민번호+주소+동의서) + qr (발건강질문지 QR)
+ *   - 초진 흐름: input → personal_info → confirm → submit → qr → done
+ *   - 재진 흐름: input → confirm → submit → done (기존 동일)
+ *   - 워크인 6필드: 성함/연락처/방문경로(유입경로)/주민번호/주소/동의서
+ *   - QR 코드: 발건강질문지 /health-q/:token (fn_selfcheckin_create_health_q_token)
+ *   - 개인정보: fn_selfcheckin_update_personal_info (SECURITY DEFINER, 30분 내 체크인)
+ *
+ * 기존 기능:
+ *   - 완료 화면 15초 자동 리셋 (카운트다운)
+ *   - 입력 화면 60초 비활동 타임아웃
+ *   - 전화번호 입력 시 오늘 예약 조회 + 자동 방문유형 채움
+ *   - 터치 최적화 숫자패드 (온스크린)
+ *   - 초진/예약없이 방문 시 신분증 확인 필요 플래그 자동 설정
  *
  * 디자인: 브라운/베이지 고급 웰니스 클리닉 테마 (T-20260428-foot-CHECKIN-UX)
- *
- * T-20260517-foot-CHECKIN-2STEP:
- *  - 방문유형 2단계: 예약여부(1단계) → 초진/재진(2단계)
- *  - 워크인 안내 팝업 → 초진으로 접수
- *  - 체험(experience) 셀프체크인 노출 제거 (TM CRM 직접 입력용)
- *  - 유입경로 2단계: 대분류(1단계) → SNS 소분류(2단계)
- *  - 소개자 이름+전화번호 입력란 제거
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
@@ -52,7 +51,8 @@ const C = {
   bannerBorder: '#C9A97A',
 } as const;
 
-type Step = 'input' | 'confirm' | 'done' | 'error';
+// T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: 신규 단계 추가
+type Step = 'input' | 'personal_info' | 'confirm' | 'qr' | 'done' | 'error';
 type Lang = 'ko' | 'en';
 
 /** 예약 여부 1단계 선택값 */
@@ -109,6 +109,23 @@ const T: Record<Lang, {
   errorPrefix: string;
   // T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 레이블
   smsOptIn: string;
+  // T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: 개인정보 입력 단계
+  personalInfoTitle: string;
+  rrnLabel: string;
+  rrnPlaceholder: string;
+  rrnNote: string;
+  addressLabel: string;
+  addressPlaceholder: string;
+  privacyConsentLabel: string;
+  personalInfoNext: string;
+  personalInfoBack: string;
+  // T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: QR 단계
+  qrTitle: string;
+  qrGuide: string;
+  qrDone: string;
+  qrAutoReset: (s: number) => string;
+  qrLoading: string;
+  qrError: string;
 }> = {
   ko: {
     selfCheckIn: '셀프 접수',
@@ -160,6 +177,23 @@ const T: Record<Lang, {
     failPrefix: '접수 실패: ',
     errorPrefix: '오류가 발생했습니다: ',
     smsOptIn: '예약 안내 문자 수신에 동의합니다 (선택)',
+    // 개인정보 입력 단계
+    personalInfoTitle: '개인 정보 입력',
+    rrnLabel: '주민번호',
+    rrnPlaceholder: 'YYMMDD-XXXXXXX',
+    rrnNote: '생년월일(앞 6자리)만 저장됩니다. 개인정보는 안전하게 보호됩니다.',
+    addressLabel: '주소',
+    addressPlaceholder: '주소를 입력해주세요',
+    privacyConsentLabel: '개인정보 수집·이용에 동의합니다 (필수)',
+    personalInfoNext: '다음',
+    personalInfoBack: '뒤로',
+    // QR 단계
+    qrTitle: '발건강 질문지 작성',
+    qrGuide: '핸드폰으로 QR을 촬영하여\n발건강 질문지를 작성해주세요',
+    qrDone: '질문지 작성 완료',
+    qrAutoReset: (s) => `${s}초 후 자동으로 다음 단계로 넘어갑니다`,
+    qrLoading: 'QR 코드 생성 중...',
+    qrError: 'QR 코드를 불러올 수 없습니다. 데스크에 문의해주세요.',
   },
   en: {
     selfCheckIn: 'Self Check-In',
@@ -211,6 +245,23 @@ const T: Record<Lang, {
     failPrefix: 'Failed: ',
     errorPrefix: 'Error: ',
     smsOptIn: 'I agree to receive appointment reminders via SMS (optional)',
+    // Personal info step
+    personalInfoTitle: 'Personal Information',
+    rrnLabel: 'ID Number',
+    rrnPlaceholder: 'YYMMDD-XXXXXXX',
+    rrnNote: 'Only birth date (first 6 digits) will be stored securely.',
+    addressLabel: 'Address',
+    addressPlaceholder: 'Enter your address',
+    privacyConsentLabel: 'I consent to the collection of personal information (required)',
+    personalInfoNext: 'Next',
+    personalInfoBack: 'Back',
+    // QR step
+    qrTitle: 'Health Questionnaire',
+    qrGuide: 'Please scan the QR code with your phone\nto fill out the health questionnaire',
+    qrDone: 'Questionnaire Complete',
+    qrAutoReset: (s) => `Auto-advance in ${s} seconds`,
+    qrLoading: 'Generating QR code...',
+    qrError: 'QR code unavailable. Please ask the front desk.',
   },
 };
 
@@ -218,11 +269,33 @@ const T: Record<Lang, {
 const DONE_RESET_SECONDS = 15;
 /** 입력 화면 비활동 타임아웃 (초) */
 const IDLE_TIMEOUT_SECONDS = 60;
+/** QR 화면 자동 전진 타임아웃 (초) — T-20260529-foot-SELFCHECKIN-FLOW-REVAMP */
+const QR_SCREEN_SECONDS = 120;
 
 // ── 공통 폰트 스타일 (Pretendard 모던 고딕 — T-20260514-foot-SELFCHECKIN-FONT) ──
 const FONT_STYLE: React.CSSProperties = {
   fontFamily: "'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif",
 };
+
+// ── T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: RRN 유틸 함수 ──────────────────
+/** RRN 입력값을 YYMMDD-XXXXXXX 포맷으로 자동 변환 */
+function formatRrn(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 13);
+  if (digits.length <= 6) return digits;
+  return `${digits.slice(0, 6)}-${digits.slice(6)}`;
+}
+/** RRN에서 생년월일(앞 6자리) 추출. 6자리 미만 → null */
+function extractBirthDate(rrnStr: string): string | null {
+  const digits = rrnStr.replace(/\D/g, '');
+  if (digits.length < 6) return null;
+  return digits.slice(0, 6);
+}
+/** RRN 뒷자리 마스킹 (YYMMDD-*******) */
+function maskRrn(rrnStr: string): string {
+  const digits = rrnStr.replace(/\D/g, '');
+  if (digits.length <= 6) return rrnStr;
+  return `${digits.slice(0, 6)}-${'*'.repeat(Math.min(7, digits.length - 6))}`;
+}
 
 // ── 숫자패드 컴포넌트 ──
 function NumPad({
@@ -391,6 +464,15 @@ export default function SelfCheckIn() {
   // T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 (기본 true — 동의함)
   const [smsOptIn, setSmsOptIn] = useState(true);
 
+  // ── T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: 개인정보 입력 상태 ──
+  const [rrn, setRrn] = useState('');                    // YYMMDD-XXXXXXX 포맷
+  const [address, setAddress] = useState('');
+  const [privacyConsent, setPrivacyConsent] = useState(false);
+  // 발건강질문지 QR 토큰
+  const [healthQToken, setHealthQToken] = useState<string | null>(null);
+  // QR 화면 카운트다운
+  const [qrCountdown, setQrCountdown] = useState(QR_SCREEN_SECONDS);
+
   const t = T[lang];
 
   // 예약 정보
@@ -448,6 +530,12 @@ export default function SelfCheckIn() {
     setErrorMsg('');
     setReservationBanner(null);
     setCountdown(DONE_RESET_SECONDS);
+    // T-20260529-foot-SELFCHECKIN-FLOW-REVAMP
+    setRrn('');
+    setAddress('');
+    setPrivacyConsent(false);
+    setHealthQToken(null);
+    setQrCountdown(QR_SCREEN_SECONDS);
   }, []);
 
   // ── 완료 화면 자동 리셋 (15초 카운트다운) ──
@@ -466,6 +554,23 @@ export default function SelfCheckIn() {
     }, 1000);
     return () => clearInterval(interval);
   }, [step, resetForm]);
+
+  // ── T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: QR 화면 자동 전진 (120초) ──
+  useEffect(() => {
+    if (step !== 'qr') return;
+    setQrCountdown(QR_SCREEN_SECONDS);
+    const interval = setInterval(() => {
+      setQrCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setStep('done');
+          return QR_SCREEN_SECONDS;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [step]);
 
   // ── 입력 화면 비활동 타임아웃 (60초) ──
   const resetIdleTimer = useCallback(() => {
@@ -517,6 +622,25 @@ export default function SelfCheckIn() {
     setPhone('');
     setReservationBanner(null);
   }, []);
+
+  // ── T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: RRN 숫자패드 핸들러 ──
+  const handleRrnDigit = useCallback((digit: string) => {
+    setRrn((prev) => {
+      const currentDigits = prev.replace(/\D/g, '');
+      if (currentDigits.length >= 13) return prev;
+      return formatRrn(currentDigits + digit);
+    });
+  }, []);
+
+  const handleRrnDelete = useCallback(() => {
+    setRrn((prev) => {
+      const currentDigits = prev.replace(/\D/g, '');
+      if (currentDigits.length === 0) return prev;
+      return formatRrn(currentDigits.slice(0, -1));
+    });
+  }, []);
+
+  const handleRrnClear = useCallback(() => setRrn(''), []);
 
   // ── 전화번호 완성 시 오늘 예약 조회 ──
   const reservationCheckedRef = useRef<string>('');
@@ -647,9 +771,20 @@ export default function SelfCheckIn() {
     visitTypeComplete &&
     (!showLeadSource || leadSourceComplete);
 
+  // ── T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: 개인정보 입력 완료 여부 ──
+  const personalInfoComplete =
+    extractBirthDate(rrn) !== null &&
+    address.trim().length >= 2 &&
+    (reservationType !== 'walkin' || privacyConsent); // 워크인만 동의서 필수
+
+  // ── T-20260529: input → personal_info(초진) 또는 confirm(재진) ──
   const handleConfirm = () => {
     if (!canSubmit) return;
-    setStep('confirm');
+    if (visitType === 'new') {
+      setStep('personal_info');
+    } else {
+      setStep('confirm');
+    }
   };
 
   const handleSubmit = async () => {
@@ -709,16 +844,25 @@ export default function SelfCheckIn() {
           .update({ sms_opt_in: smsOptIn })
           .eq('id', customerId);
       } else {
+        // T-20260529: 워크인 신규 고객 INSERT 시 birth_date, address, privacy_consent 포함
+        const newCustomerPayload: Record<string, unknown> = {
+          clinic_id: clinicId,
+          name: name.trim(),
+          phone: phoneStored,
+          visit_type: visitType === 'new' ? 'new' : 'returning',
+          // T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 저장
+          sms_opt_in: smsOptIn,
+        };
+        if (visitType === 'new') {
+          const bd = extractBirthDate(rrn);
+          if (bd) newCustomerPayload.birth_date = bd;
+          if (address.trim()) newCustomerPayload.address = address.trim();
+          if (reservationType === 'walkin') newCustomerPayload.privacy_consent = privacyConsent;
+        }
+
         const { data: created, error: cErr } = await anonClient
           .from('customers')
-          .insert({
-            clinic_id: clinicId,
-            name: name.trim(),
-            phone: phoneStored,
-            visit_type: visitType === 'new' ? 'new' : 'returning',
-            // T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 저장
-            sms_opt_in: smsOptIn,
-          })
+          .insert(newCustomerPayload)
           .select('id')
           .single();
         if (cErr) {
@@ -763,6 +907,7 @@ export default function SelfCheckIn() {
         if (existingCi) {
           const ci = existingCi as { id: string; queue_number?: number | null };
           setQueueNumber(ci.queue_number ?? null);
+          // T-20260529: 기존 체크인이 있으면 done으로 직행 (QR 재발급 없음)
           setStep('done');
           setSubmitting(false);
           return;
@@ -869,7 +1014,8 @@ export default function SelfCheckIn() {
       if (leadSourceDetail) notesParts.lead_source_detail = leadSourceDetail;
       const notesPayload = Object.keys(notesParts).length > 0 ? notesParts : null;
 
-      const { error: ciErr } = await anonClient.from('check_ins').insert({
+      // T-20260529: check_in INSERT — .select('id').single() 으로 ID 반환
+      const { data: ciInsertData, error: ciErr } = await anonClient.from('check_ins').insert({
         clinic_id: clinicId,
         customer_id: customerId,
         customer_name: name.trim(),
@@ -880,7 +1026,7 @@ export default function SelfCheckIn() {
         queue_number: queue,
         notes: notesPayload,
         reservation_id: matchedReservationId,
-      });
+      }).select('id').single();
 
       if (ciErr) {
         setErrorMsg(`${t.failPrefix}${ciErr.message}`);
@@ -888,6 +1034,8 @@ export default function SelfCheckIn() {
         setSubmitting(false);
         return;
       }
+
+      const newCheckInId = (ciInsertData as { id: string } | null)?.id ?? null;
 
       // (3) 매칭된 예약 → checked_in 상태 업데이트
       if (matchedReservationId) {
@@ -903,20 +1051,54 @@ export default function SelfCheckIn() {
       }
 
       // (3.5) TA3 — 도파민 visited 콜백 fire-and-forget
-      // 도파민 경유 예약(source_system='dopamine')인 경우에만 EF가 내부 판정 후 발사.
-      // 실패해도 체크인 완료 UX를 블록하지 않음.
       if (matchedReservationId) {
         anonClient.functions
           .invoke('checkin-visited-fire', {
             body: { reservation_id: matchedReservationId },
           })
           .catch(() => {
-            // 네트워크 오류 등 — 무시. outbound_log 재시도는 서버 측 담당.
+            // 네트워크 오류 등 — 무시
           });
       }
 
       setQueueNumber(queue);
-      setStep('done');
+
+      // ── T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: 초진 → 개인정보 업데이트 + QR 토큰 ──
+      if (visitType === 'new' && newCheckInId && clinicId) {
+        // (4) 개인정보 업데이트 (birth_date + address + privacy_consent)
+        // 기존 고객은 업데이트, 신규 고객은 INSERT 시 이미 포함. 중복 업데이트 허용 (멱등).
+        try {
+          await anonClient.rpc('fn_selfcheckin_update_personal_info', {
+            p_check_in_id:    newCheckInId,
+            p_clinic_id:      clinicId,
+            p_birth_date:     extractBirthDate(rrn) ?? null,
+            p_address:        address.trim() || null,
+            p_privacy_consent: reservationType === 'walkin' ? privacyConsent : null,
+          });
+        } catch {
+          // 개인정보 저장 실패는 silent — 접수 완료 UX를 블록하지 않음
+        }
+
+        // (5) 발건강질문지 QR 토큰 생성
+        try {
+          const { data: tokenResult } = await anonClient.rpc('fn_selfcheckin_create_health_q_token', {
+            p_check_in_id: newCheckInId,
+            p_clinic_id:   clinicId,
+          });
+          const tokenRes = tokenResult as { success: boolean; token?: string } | null;
+          if (tokenRes?.success && tokenRes.token) {
+            setHealthQToken(tokenRes.token);
+          }
+        } catch {
+          // QR 토큰 생성 실패 → QR 없이 done으로 이동
+        }
+
+        // 초진: QR 화면으로
+        setStep('qr');
+      } else {
+        // 재진: done으로
+        setStep('done');
+      }
     } catch (err) {
       setErrorMsg(`${t.errorPrefix}${(err as Error).message}`);
       setStep('error');
@@ -966,6 +1148,112 @@ export default function SelfCheckIn() {
         <div className="text-center">
           <h1 className="mb-2 text-2xl font-bold text-red-600">{t.clinicNotFound}</h1>
           <p className="text-gray-500">{t.clinicNotFoundDesc}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: QR 화면 ──
+  if (step === 'qr') {
+    const qrUrl = healthQToken
+      ? `${window.location.origin}/health-q/${healthQToken}`
+      : null;
+    const qrImageUrl = qrUrl
+      ? `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(qrUrl)}&qzone=2&margin=0&format=png`
+      : null;
+
+    return (
+      <div
+        className="flex min-h-dvh flex-col items-center justify-center px-6"
+        style={{ background: `linear-gradient(to bottom, ${C.bgFrom}, ${C.bgTo})`, ...FONT_STYLE }}
+        data-testid="qr-screen"
+      >
+        <LangToggle />
+        <div className="w-full max-w-md space-y-6 text-center">
+          {/* 클리닉명 */}
+          <p className="text-sm font-medium tracking-wide" style={{ color: C.medium }}>
+            {clinicName}
+          </p>
+
+          {/* QR 화면 제목 */}
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight" style={{ color: C.dark }}>
+              {t.qrTitle}
+            </h1>
+            {/* AC-2: QR 상단 안내 멘트 */}
+            <p
+              className="mt-3 text-base leading-relaxed"
+              style={{ color: C.medium, whiteSpace: 'pre-line' }}
+              data-testid="qr-guide-text"
+            >
+              {t.qrGuide}
+            </p>
+          </div>
+
+          {/* QR 코드 영역 — AC-1, AC-2, AC-3 */}
+          <div
+            className="mx-auto flex flex-col items-center justify-center rounded-2xl p-6 shadow-md"
+            style={{ backgroundColor: 'white', border: `2px solid ${C.border}`, width: 'fit-content' }}
+            data-testid="qr-code-container"
+          >
+            {qrImageUrl ? (
+              <img
+                src={qrImageUrl}
+                alt="발건강 질문지 QR 코드"
+                width={280}
+                height={280}
+                className="rounded-lg"
+                style={{ display: 'block' }}
+                onError={(e) => {
+                  // QR 이미지 로드 실패 시 에러 메시지 표시
+                  const target = e.currentTarget;
+                  target.style.display = 'none';
+                  const errorEl = target.nextElementSibling as HTMLElement | null;
+                  if (errorEl) errorEl.style.display = 'block';
+                }}
+                data-testid="qr-code-image"
+              />
+            ) : null}
+            {/* QR 이미지 없거나 로드 실패 시 fallback */}
+            <div
+              style={{ display: qrImageUrl ? 'none' : 'block', textAlign: 'center' }}
+              data-testid="qr-fallback"
+            >
+              <div
+                className="flex h-[280px] w-[280px] items-center justify-center rounded-lg"
+                style={{ backgroundColor: C.beige, border: `2px dashed ${C.border}` }}
+              >
+                <p className="text-sm px-4" style={{ color: C.muted }}>
+                  {t.qrError}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* 대기번호 (있는 경우) */}
+          {queueNumber != null && (
+            <div>
+              <p className="text-sm" style={{ color: C.muted }}>{t.queueNumber}</p>
+              <p className="mt-1 text-6xl font-black tabular-nums" style={{ color: C.primary }}>
+                #{queueNumber}
+              </p>
+            </div>
+          )}
+
+          {/* 자동 전진 카운트다운 */}
+          <p className="text-sm" style={{ color: C.gold }}>
+            {t.qrAutoReset(qrCountdown)}
+          </p>
+
+          {/* 질문지 작성 완료 버튼 */}
+          <button
+            onClick={() => setStep('done')}
+            className="w-full rounded-xl py-5 text-xl font-bold text-white transition active:scale-[0.99]"
+            style={{ backgroundColor: C.primary }}
+            data-testid="btn-qr-done"
+          >
+            {t.qrDone}
+          </button>
         </div>
       </div>
     );
@@ -1052,6 +1340,160 @@ export default function SelfCheckIn() {
     );
   }
 
+  // ── T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: 개인정보 입력 화면 ──
+  // 초진 고객(예약 있음/워크인)이 주민번호+주소+(동의서) 입력하는 단계
+  if (step === 'personal_info') {
+    return (
+      <div
+        className="flex min-h-dvh flex-col"
+        style={{ background: `linear-gradient(to bottom, ${C.bgFrom}, ${C.bgTo})`, ...FONT_STYLE }}
+        data-testid="personal-info-screen"
+      >
+        <LangToggle />
+
+        {/* 헤더 */}
+        <header className="px-6 pb-2 pt-10 text-center">
+          <p className="text-xs tracking-[0.2em] uppercase mb-1" style={{ color: C.gold }}>
+            OBLIV FOOT CENTER
+          </p>
+          <h1 className="text-2xl font-bold tracking-tight" style={{ color: C.dark }}>
+            {t.personalInfoTitle}
+          </h1>
+          <div className="mx-auto mt-3 h-px w-16" style={{ backgroundColor: C.gold }} />
+        </header>
+
+        <main className="flex flex-1 flex-col items-center px-6 pb-8 pt-5">
+          <div className="w-full max-w-md space-y-5">
+
+            {/* 예약 배너 (예약 있는 경우) */}
+            {reservationBanner && (
+              <div
+                className="flex items-center gap-2 rounded-xl px-4 py-3"
+                style={{ backgroundColor: C.bannerBg, border: `1.5px solid ${C.bannerBorder}` }}
+              >
+                <svg className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: C.medium }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span className="text-sm font-medium" style={{ color: C.medium }}>
+                  {t.reservationBanner(reservationBanner.time, reservationBanner.visitType)}
+                </span>
+              </div>
+            )}
+
+            {/* 주민번호 입력 — RRN NumPad */}
+            <div className="space-y-2">
+              <label className="block text-sm font-medium tracking-wide" style={{ color: C.medium }}>
+                {t.rrnLabel}
+              </label>
+              {/* 입력값 표시 (뒷자리 마스킹) */}
+              <div
+                className="flex h-14 w-full items-center rounded-xl px-4 text-lg font-mono"
+                style={{
+                  border: `1.5px solid ${rrn ? C.borderActive : C.border}`,
+                  backgroundColor: 'white',
+                }}
+                data-testid="rrn-display"
+              >
+                {rrn ? (
+                  <span style={{ color: C.dark }}>{maskRrn(rrn)}</span>
+                ) : (
+                  <span className="text-base font-sans" style={{ color: C.border }}>
+                    {t.rrnPlaceholder}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs" style={{ color: C.muted }}>{t.rrnNote}</p>
+              {/* RRN 전용 숫자패드 */}
+              <NumPad
+                onDigit={handleRrnDigit}
+                onDelete={handleRrnDelete}
+                onClear={handleRrnClear}
+                clearLabel={t.clearAll}
+              />
+            </div>
+
+            {/* 주소 입력 — 텍스트 input */}
+            <div className="space-y-1.5">
+              <label
+                htmlFor="pi-address"
+                className="block text-sm font-medium tracking-wide"
+                style={{ color: C.medium }}
+              >
+                {t.addressLabel}
+              </label>
+              <input
+                id="pi-address"
+                type="text"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder={t.addressPlaceholder}
+                className="h-14 w-full rounded-xl px-4 text-lg outline-none transition"
+                style={{
+                  border: `1.5px solid ${address.trim() ? C.borderActive : C.border}`,
+                  backgroundColor: 'white',
+                  color: C.dark,
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = C.borderActive;
+                  e.currentTarget.style.boxShadow = `0 0 0 3px ${C.borderActive}18`;
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = address.trim() ? C.borderActive : C.border;
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+                data-testid="pi-address-input"
+              />
+            </div>
+
+            {/* 개인정보 동의 — 워크인(AC-5)만 필수 표시 */}
+            {reservationType === 'walkin' && (
+              <label
+                htmlFor="pi-consent"
+                className="flex items-start gap-3 cursor-pointer select-none rounded-xl p-4"
+                style={{ backgroundColor: C.bannerBg, border: `1.5px solid ${C.bannerBorder}` }}
+                data-testid="pi-consent-label"
+              >
+                <input
+                  id="pi-consent"
+                  type="checkbox"
+                  checked={privacyConsent}
+                  onChange={(e) => setPrivacyConsent(e.target.checked)}
+                  className="mt-0.5 h-6 w-6 flex-shrink-0 rounded"
+                  style={{ accentColor: C.primary }}
+                  data-testid="pi-consent-checkbox"
+                />
+                <span className="text-sm leading-relaxed font-medium" style={{ color: C.dark }}>
+                  {t.privacyConsentLabel}
+                </span>
+              </label>
+            )}
+
+            {/* 버튼 영역 */}
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setStep('input')}
+                className="flex-none rounded-xl px-6 py-4 text-base font-medium transition active:scale-95"
+                style={{ border: `1.5px solid ${C.border}`, color: C.muted, backgroundColor: 'white' }}
+                data-testid="btn-personal-info-back"
+              >
+                {t.personalInfoBack}
+              </button>
+              <button
+                onClick={() => setStep('confirm')}
+                disabled={!personalInfoComplete}
+                className="flex-1 rounded-xl py-4 text-xl font-bold text-white transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
+                style={{ backgroundColor: personalInfoComplete ? C.primary : C.muted }}
+                data-testid="btn-personal-info-next"
+              >
+                {t.personalInfoNext}
+              </button>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   // ── 확인 ──
   if (step === 'confirm') {
     const visitLabel = visitType === 'new' ? t.visitNew : t.visitReturning;
@@ -1092,6 +1534,19 @@ export default function SelfCheckIn() {
               <span style={{ color: C.muted }}>{t.contact}</span>
               <span className="font-semibold" style={{ color: C.dark }}>{phone}</span>
             </div>
+            {/* T-20260529: 초진인 경우 주민번호(앞6자리)+주소 표시 */}
+            {visitType === 'new' && rrn && (
+              <div className="flex justify-between border-b pb-3" style={{ borderColor: C.border }}>
+                <span style={{ color: C.muted }}>{t.rrnLabel}</span>
+                <span className="font-semibold font-mono" style={{ color: C.dark }}>{maskRrn(rrn)}</span>
+              </div>
+            )}
+            {visitType === 'new' && address.trim() && (
+              <div className={`flex justify-between pb-3${reservationType !== 'walkin' ? '' : ' border-b'}`} style={{ borderColor: C.border }}>
+                <span style={{ color: C.muted }}>{t.addressLabel}</span>
+                <span className="font-semibold text-right max-w-[200px] truncate" style={{ color: C.dark }}>{address.trim()}</span>
+              </div>
+            )}
             {/* T-20260520-foot-SELFCHECKIN-LEADSRC-COND: 워크인일 때만 border-b */}
             <div
               className={`flex justify-between pb-3${reservationType === 'walkin' ? ' border-b' : ''}`}
@@ -1131,7 +1586,7 @@ export default function SelfCheckIn() {
           </label>
           <div className="flex gap-3">
             <button
-              onClick={() => setStep('input')}
+              onClick={() => visitType === 'new' ? setStep('personal_info') : setStep('input')}
               className="flex-1 rounded-xl py-4 text-lg font-medium transition active:scale-95"
               style={{ border: `1.5px solid ${C.border}`, color: C.muted, backgroundColor: 'white' }}
             >
@@ -1308,6 +1763,7 @@ export default function SelfCheckIn() {
                       backgroundColor: isActive ? C.beige : 'white',
                       boxShadow: isActive ? `0 0 0 2px ${C.primary}22` : 'none',
                     }}
+                    data-testid={rt === 'walkin' ? 'btn-walkin' : 'btn-reserved'}
                   >
                     <span
                       className="text-base font-bold leading-snug"
@@ -1474,6 +1930,7 @@ export default function SelfCheckIn() {
             disabled={!canSubmit}
             className="mt-2 h-16 w-full rounded-xl text-xl font-bold text-white transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
             style={{ backgroundColor: canSubmit ? C.primary : C.muted }}
+            data-testid="btn-checkin"
           >
             {t.checkIn}
           </button>
