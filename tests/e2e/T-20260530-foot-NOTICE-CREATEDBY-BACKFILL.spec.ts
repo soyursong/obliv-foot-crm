@@ -43,7 +43,8 @@ test.describe('T-20260530 NOTICE-CREATEDBY-BACKFILL 작성자 추적 복원', ()
     await expect(page.getByText(/저장 실패/)).toHaveCount(0);
 
     // durable gate: 목록 즉시 반영 = 저장 성공의 결정적 증거 (fetchNotices는 성공 후에만 호출)
-    await expect(page.getByText(testTitle)).toBeVisible({ timeout: 8_000 });
+    // 패널 목록 + (해당 시) 페이지 목록 양쪽 노출 가능 → .first() 로 strict-mode 명확화
+    await expect(page.getByText(testTitle).first()).toBeVisible({ timeout: 8_000 });
 
     // 폼 닫힘 (성공 경로에서만 closeForm 호출)
     await expect(page.getByText('새 공지 작성', { exact: true })).not.toBeVisible({ timeout: 5_000 });
@@ -69,7 +70,8 @@ test.describe('T-20260530 NOTICE-CREATEDBY-BACKFILL 작성자 추적 복원', ()
     await saveBtn.click();
 
     await expect(page.getByText(/저장 실패/)).toHaveCount(0);
-    await expect(page.getByText(testTitle)).toBeVisible({ timeout: 8_000 });
+    // 페이지 목록 + 좌측 패널 목록 양쪽에 노출 → .first() 로 strict-mode 명확화
+    await expect(page.getByText(testTitle).first()).toBeVisible({ timeout: 8_000 });
 
     console.log('[AC-2] 공지사항 페이지 저장 OK — created_by 매핑/fallback 무관 FK 위반 없음');
   });
