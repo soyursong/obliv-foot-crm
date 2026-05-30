@@ -27,6 +27,10 @@
  * FIX-2026-05-24 (MSG-20260524-125934-exu8):
  *   - [F7] session_type '레이저 N회' → 'heated_laser' (CHECK constraint 준수)
  *   - [F7] 세션 insert 에러 로깅 추가 (묵음 실패 방지)
+ *
+ * FIX-2026-05-31 (MSG-20260531-064903-8tt6):
+ *   - [F8] session status 'completed' → 'used' (CHECK constraint package_sessions_status_check 준수)
+ *          허용값: used|cancelled|refunded. 시술내역 RPC도 status='used'만 집계.
  */
 import { test, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
@@ -95,7 +99,9 @@ async function createTestPackageWithSessions(
     // [F7] session_type CHECK constraint 준수 — 허용값: heated_laser|unheated_laser|iv|preconditioning|podologue|trial
     session_type: 'heated_laser' as const,
     session_date: new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10),
-    status: 'completed',
+    // [F8] status CHECK constraint 준수 — 허용값: used|cancelled|refunded (default 'used').
+    //      시술내역 표시 RPC도 status='used' 세션만 집계 → 'completed'(허용값 외) → 'used'로 수정.
+    status: 'used',
   }));
   const { error: sessErr } = await sb.from('package_sessions').insert(sessions);
   if (sessErr) throw new Error(`세션 생성 실패: ${sessErr.message}`);
