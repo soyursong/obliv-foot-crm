@@ -79,4 +79,32 @@ grep 결과:
 
 ## 빌드
 
-`npm run build` ✓ 3.59s
+`npm run build` ✓ 3.59s (재검증 2026-05-31: ✓ 3.38s)
+
+## QA-FIX (2026-05-31, MSG-20260531-000903-5m4b / phase2 spec_fail_new)
+
+### 원인
+`playwright.config.ts` webServer `reuseExistingServer: false` 상태에서, 이전 테스트 세션의
+잔여 dev 서버가 포트 8089에 남아있으면 Playwright가 새 서버를 동일 포트에 기동하려다
+"http://localhost:8089 is already used" 로 webServer 기동 실패 → 전 spec 실행 불가.
+
+### 수정
+1. `playwright.config.ts`: `reuseExistingServer: false` → `!process.env.CI`
+   - 로컬: 8089에 떠있는 서버 재사용(잔여 프로세스 충돌 방지). CI: 항상 새로 기동.
+2. `scripts/free-test-port.sh` 추가 — 8089 점유 프로세스 graceful→force kill 정리.
+3. `package.json` 스크립트 추가:
+   - `test:port:free` — 포트 8089 정리만
+   - `test:e2e:clean` — 포트 정리 후 전체 E2E (`free-test-port.sh 8089 && playwright test`)
+
+### 재실행 절차
+```bash
+cd ~/Documents/GitHub/obliv-foot-crm
+# (A) 이 티켓 spec 단독 재실행 — 포트 정리 후
+bash scripts/free-test-port.sh 8089
+npx playwright test tests/e2e/T-20260528-foot-PENCHART-NEWWIN.spec.ts --project=desktop-chrome
+# (B) 또는 전체 E2E 클린 재실행
+npm run test:e2e:clean
+```
+
+### 재검증 결과 (2026-05-31)
+`T-20260528-foot-PENCHART-NEWWIN.spec.ts` → **7 passed (15.0s)** (setup 1 + AC 6)
