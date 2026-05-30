@@ -10,7 +10,7 @@ db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: null
-commit_sha: TBD
+commit_sha: 795580b
 created: 2026-05-28
 deadline: 2026-06-03
 assignee: dev-foot
