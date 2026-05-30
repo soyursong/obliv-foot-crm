@@ -8,7 +8,7 @@ qa_fail_reason: ""
 qa_fail_phase: ""
 deploy_ready: true
 deploy_ready_at: "2026-05-30T19:55:00+09:00"
-deploy_ready_commit: PENDING
+deploy_ready_commit: 88664bb
 deploy_ready_build: "PASS (vite 3.30s) — 2026-05-30 재검증"
 deploy_ready_e2e: "tests/e2e/T-20260525-foot-PMW-SCROLL-FIX.spec.ts — 5 passed / 0 skipped (desktop-chrome, 27.3s)"
 deploy_ready_db_change: "없음 (FE: Dashboard btn-pay testid 1줄 + spec 시드 로직. 시드는 beforeAll/afterAll 자가 정리)"
