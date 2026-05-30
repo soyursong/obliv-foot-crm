@@ -10,8 +10,9 @@ implemented_by: dev-foot
 build: ok
 db_change: false
 spec_added: true
-fix_applied: 2026-05-27
-fix_reason: supervisor_QA_phase2_browser_e2e_fail
+fix_applied: 2026-05-31
+fix_reason: supervisor_QA_phase1_build_fail_60s_timeout — build.sh worktree symlink fast-path (e949dae), app code unchanged
+commit_sha: e949dae
 ---
 
 # T-20260527-foot-CLOSE-ITEM-COUNT — 일마감 개별 건 수 표기 (빨간 박스 구역 전체 적용)
