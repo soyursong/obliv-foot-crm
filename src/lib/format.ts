@@ -63,6 +63,16 @@ export function todaySeoulISODate(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
 }
 
+/**
+ * 임의 타임스탬프 → 서울 기준 YYYY-MM-DD 변환 (en-CA locale trick).
+ * T-20260531-foot-CHECKIN-DASHBOARD-SYNC: checked_in_at은 UTC(timestamptz)로 저장되므로
+ * KST 오전(00:00~09:00) 체크인이 전날 UTC 날짜가 됨 → 날짜 문자열 단순 비교(startsWith) 시
+ * 당일 이벤트를 오탐 제외한다. UTC 타임스탬프를 KST 날짜로 환산할 때 이 함수를 사용.
+ */
+export function seoulISODate(input: string | number | Date): string {
+  return new Date(input).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+}
+
 /** 오늘(서울 기준) ko-KR 날짜 문자열 반환 (예: "2026. 05. 22.") */
 export function todaySeoulStr(): string {
   return new Date().toLocaleDateString('ko-KR', {
