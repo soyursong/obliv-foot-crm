@@ -105,6 +105,7 @@ interface DailyClosingRow {
   single_transfer_total: number;
   actual_card_total: number;
   actual_cash_total: number;
+  actual_transfer_total: number;
   difference: number;
   status: 'open' | 'closed';
   closed_at: string | null;
@@ -242,6 +243,7 @@ export default function Closing() {
   const [date, setDate] = useState(todayStr());
   const [actualCard, setActualCard] = useState(0);
   const [actualCash, setActualCash] = useState(0);
+  const [actualTransfer, setActualTransfer] = useState(0);
   const [memo, setMemo] = useState('');
   const [payTarget, setPayTarget] = useState<CheckIn | null>(null);
   const [showManualDialog, setShowManualDialog] = useState(false);
@@ -471,10 +473,12 @@ export default function Closing() {
     if (existing) {
       setActualCard(existing.actual_card_total ?? 0);
       setActualCash(existing.actual_cash_total ?? 0);
+      setActualTransfer(existing.actual_transfer_total ?? 0);
       setMemo(existing.memo ?? '');
     } else {
       setActualCard(0);
       setActualCash(0);
+      setActualTransfer(0);
       setMemo('');
     }
   }, [existing, date]);
@@ -624,7 +628,8 @@ export default function Closing() {
 
   const cardDiff = actualCard - totals.totalCard;
   const cashDiff = actualCash - totals.totalCash;
-  const totalDiff = cardDiff + cashDiff;
+  const transferDiff = actualTransfer - totals.totalTransfer;
+  const totalDiff = cardDiff + cashDiff + transferDiff;
   const isClosed = existing?.status === 'closed';
 
   // ── 조회 맵 ────────────────────────────────────────────────
@@ -809,6 +814,7 @@ export default function Closing() {
       single_transfer_total: totals.singleTransfer,
       actual_card_total: actualCard,
       actual_cash_total: actualCash,
+      actual_transfer_total: actualTransfer,
       difference: totalDiff,
       status: close ? 'closed' : 'open',
       closed_at: close ? new Date().toISOString() : null,
@@ -852,6 +858,7 @@ export default function Closing() {
       ['정산', '시스템(NET)', '실제', '차이'],
       ['카드', totals.totalCard, actualCard, cardDiff],
       ['현금', totals.totalCash, actualCash, cashDiff],
+      ['이체', totals.totalTransfer, actualTransfer, transferDiff],
       ['총 차이', '', '', totalDiff],
       [],
       ['환불합계', totals.refundAmount],
@@ -1046,6 +1053,11 @@ ${totals.refundAmount > 0 ? `<tr><td>환불</td><td class="num" style="color:#b9
     <div class="lbl">현금 (환불 차감 후)</div>
     <div class="vals"><span>시스템 ${fmt(totals.totalCash)}</span><span>실제 ${fmt(actualCash)}</span></div>
     <div class="vals"><span></span><span class="diff ${cashDiff === 0 ? 'zero' : cashDiff > 0 ? 'pos' : 'neg'}">차이 ${cashDiff > 0 ? '+' : ''}${fmt(cashDiff)}</span></div>
+  </div>
+  <div class="row">
+    <div class="lbl">이체 (환불 차감 후)</div>
+    <div class="vals"><span>시스템 ${fmt(totals.totalTransfer)}</span><span>실제 ${fmt(actualTransfer)}</span></div>
+    <div class="vals"><span></span><span class="diff ${transferDiff === 0 ? 'zero' : transferDiff > 0 ? 'pos' : 'neg'}">차이 ${transferDiff > 0 ? '+' : ''}${fmt(transferDiff)}</span></div>
   </div>
 </div>
 
@@ -1323,6 +1335,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <ReconRow label="카드" system={totals.totalCard} actual={actualCard} diff={cardDiff} onChange={setActualCard} disabled={isClosed} />
                 <ReconRow label="현금" system={totals.totalCash} actual={actualCash} diff={cashDiff} onChange={setActualCash} disabled={isClosed} />
+                <ReconRow label="이체" system={totals.totalTransfer} actual={actualTransfer} diff={transferDiff} onChange={setActualTransfer} disabled={isClosed} />
               </div>
               <div className="mt-3 flex items-center justify-between rounded-md bg-muted px-4 py-2 text-sm">
                 <span className="font-medium">총 차이</span>
