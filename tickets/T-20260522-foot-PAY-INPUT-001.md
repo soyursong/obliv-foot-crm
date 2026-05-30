@@ -8,7 +8,10 @@ spec_updated_at: "2026-05-26T15:10:00+09:00"
 spec_update_commit: ce90953
 spec_update_reason: "대표 ack 2026-05-26 14:43 KST — 옵션 B 통합 5/28 채택. AC-2 카드 승인번호·TID 입력 칸 제거(매처 자동 채움)."
 deploy_ready: true
-deploy_ready_at: "2026-05-30 17:35 KST"
+deploy_ready_at: "2026-05-30 17:45 KST"
+repo_path_macstudio: "~/Documents/GitHub/obliv-foot-crm"
+build_reverify3_at: "2026-05-30 17:45 KST"
+build_reverify3_reason: "supervisor FIX-REQUEST(MSG-20260530-173003) qa_fail=insufficient_verification, 원인=repo 경로 오인(~/claude-sync/work/obliv-foot-crm 미존재). 실제 repo는 macstudio ~/Documents/GitHub/obliv-foot-crm 에 존재, origin/main과 0 ahead/0 behind 완전 동기화, c13b088은 HEAD(4bd7abc)의 조상. 재검증: `npm run build` EXIT=0(3.31s), bundle index-B-YHw42_.js. grep: PaymentDialog/MiniWindow external_approval_no·external_tid = null(매처 자동채움, 입력칸 제거 v2 일치). e2e: tests/e2e/T-20260522-foot-PAY-INPUT-001.spec.ts 실행. foot 코드 변경 불필요."
 build_reverify2_at: "2026-05-30 17:35 KST"
 build_reverify2_reason: "supervisor FIX-REQUEST(MSG-20260530-171934) — MSG-20260530-171301의 중복(171934는 171301보다 먼저 발생, 17:25 전역 npm-cli.js 인라인 패치 적용 전 큐잉됨). 재검증: 표준 명령 `timeout 60 npm run build` EXIT=0 (3.32s), `bash scripts/build.sh` EXIT=0 (3.40s). 전역 npm-cli.js는 self-contained 인라인 패치 상태 유지(외부 tm-flow require 없음). foot 코드 변경 불필요."
 fix_commit: 6c503b3
@@ -20,9 +23,11 @@ deploy_commit: 31d78521853d86c4db0ae8c29cb3cc97ee100a1a
 deployed_at: "2026-05-24T02:52:00+09:00"
 qa_result: pending
 qa_grade: null
-bundle_hash: D5lTJ_QI
+bundle_hash: B-YHw42_
+bundle_hash_note: "index-B-YHw42_.js (2026-05-30 17:45 재빌드). 이전 D5lTJ_QI는 후속 CLOSING-PAYMETHOD-FILTER 커밋으로 공유 index 번들 해시 시프트됨 — PAY-INPUT 코드 변경 아님."
+e2e_result: "9 passed (25.0s) — AC-1~5 전체 PASS, 2026-05-30 17:45 macstudio ~/Documents/GitHub/obliv-foot-crm 실행"
 build_status: OK
-build_time: 3.46s
+build_time: 3.31s
 build_workaround: "scripts/build.sh — macOS timeout fallback. timeout→gtimeout→plain npm run build 순 시도. `bash scripts/build.sh` 사용."
 field_soak_until: "2026-05-25T02:52:00+09:00"
 db_change: true
@@ -97,12 +102,16 @@ tests/e2e/T-20260522-foot-PAY-INPUT-001.spec.ts   (신규, v2 업데이트)
 | G3 | 결제 화면 별도 컴포넌트 — 기존 화면 import 금지 | ✅ |
 | G4 | redpay API 호출 코드 절대 미포함 | ✅ |
 
-## supervisor QA 체크포인트
+## supervisor QA 체크포인트 (v2 — 2026-05-26 SPEC-UPDATE 반영)
 
-1. `payments` 테이블 `external_approval_no`, `external_tid` 컬럼 존재 확인
-2. `package_payments` 동일 컬럼 확인
-3. PaymentDialog — 카드 라디오 선택 시 승인번호·TID 입력란 노출
-4. PaymentMiniWindow — 카드 저장 후 승인번호·TID 후입력 노출
-5. 정액권 라디오 옵션 비노출 확인
-6. 분할결제 (카드+현금) 저장 → `payments` 2행 INSERT 확인
-7. 빌드 3.22s OK
+> **repo 경로(macstudio): `~/Documents/GitHub/obliv-foot-crm`** (※ `~/claude-sync/work/`에 없음)
+> origin/main과 0 ahead/0 behind 완전 동기화. c13b088은 HEAD의 조상.
+
+1. `payments` 테이블 `external_approval_no`, `external_tid` 컬럼 존재 → e2e AC-1 PASS
+2. `package_payments` 동일 컬럼 → e2e AC-1 PASS
+3. PaymentDialog — 카드 선택 시 승인번호·TID 입력 칸 **없음** + 자동 매칭 안내 문구 노출 → e2e AC-2 / AC-2-NEW PASS (v2: 입력칸 제거, 매처 자동채움)
+4. PaymentMiniWindow — external_* = null 저장 (입력 칸 제거, 매처 자동채움) → grep 확인 (PaymentMiniWindow.tsx:1340-1341)
+5. 정액권 라디오 옵션 비노출 → e2e AC-3 PASS
+6. external_* nullable text + Cross-CRM customers 컬럼 무변경 → e2e AC-4 / AC-5 PASS
+7. 빌드 `npm run build` EXIT=0 (3.31s), bundle index-B-YHw42_.js
+8. e2e 전체: **9 passed (25.0s)** — `npx playwright test tests/e2e/T-20260522-foot-PAY-INPUT-001.spec.ts`
