@@ -36,7 +36,6 @@ import {
 import { NavLink, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
-import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -60,7 +59,6 @@ const WEEK_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 
 export default function CalendarNoticePanel() {
   const clinic = useClinic();
-  const { profile } = useAuth();
   const navigate = useNavigate();
 
   // ── 캘린더 상태 ──────────────────────────────────────────────────────────
@@ -170,7 +168,7 @@ export default function CalendarNoticePanel() {
         title: formTitle.trim(),
         content: formContent.trim() || null,
         is_pinned: formPinned,
-        created_by: profile?.id ?? null,
+        created_by: null,  // T-20260530-foot-DASHBOARD-NOTICE-SAVE-FAIL: FK notices_created_by_fkey→staff(id). profile.id=auth.uid()≠staff.id라 위반. nullable 설계(on delete set null)로 null 고정 (5/17 Notices.tsx 패치 미반영분 동기화)
       });
       if (error) toast.error('저장 실패: ' + error.message);
       else { toast.success('공지가 등록되었습니다'); closeForm(); fetchNotices(); }
