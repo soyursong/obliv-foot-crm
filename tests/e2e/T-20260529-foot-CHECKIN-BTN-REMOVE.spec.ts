@@ -90,6 +90,11 @@ test.describe('T-20260529 CHECKIN-BTN-REMOVE — 초진/재진 접수 버튼 제
   // 렌더(지점 미존재 안내 포함)를 확인한다.
   test('AC-4: /checkin/:clinicSlug 셀프접수 라우트 정상 접근 가능', async ({ page }) => {
     await page.goto('/checkin/e2e-route-check');
+    // 라우트가 /checkin/ 하위로 settle 될 때까지 대기.
+    // SelfCheckIn 은 lazyWithRetry 로 로드되어 청크 첫 컴파일 시 1회 reload 가능 →
+    // 스냅샷 page.url() 직독 대신 waitForURL 재시도로 transient 상태를 흡수한다.
+    // catch-all('*') → /admin 리다이렉트면 여기서 타임아웃(=명확한 실패 신호).
+    await page.waitForURL(/\/checkin\//, { timeout: 15_000 });
     // SelfCheckIn 컴포넌트가 렌더됨 — catch-all('/admin')로 튕기지 않음
     await expect(
       page
