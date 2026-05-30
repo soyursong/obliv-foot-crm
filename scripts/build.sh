@@ -35,9 +35,27 @@ fi
 npm run build &
 BUILD_PID=$!
 
-# Spawn watchdog: kill build if it exceeds timeout
+# Spawn watchdog: kill build if it exceeds timeout.
+#
+# FIX (2026-05-30 T-20260529-foot-CHART-OPEN-FAIL FIX-REQUEST):
+#   The previous watchdog blocked in a single long `sleep $TIMEOUT_SECS`.
+#   That `sleep` child INHERITS this script's stdout/stderr. On an early
+#   (successful) build, cleanup `kill $WATCHDOG_PID` only killed the subshell
+#   wrapper — the `sleep` child was orphaned and kept the inherited fds (incl.
+#   any captured pipe, e.g. `build.sh 2>&1 | tail`) open for the FULL timeout.
+#   Consumers never saw EOF, so a build that finished in ~11s *appeared* to
+#   hang for 120s → external timeouts reported a false build_fail.
+#
+#   Fix: poll in 1s increments and self-exit the instant the build process is
+#   gone. The watchdog terminates cleanly on its own (no SIGTERM needed → no
+#   "Terminated" job-control notice on the captured stream), and its short
+#   `sleep 1` child can never hold a pipe open for more than ~1s.
 (
-  sleep "$TIMEOUT_SECS"
+  for (( elapsed = 0; elapsed < TIMEOUT_SECS; elapsed++ )); do
+    sleep 1
+    kill -0 "$BUILD_PID" 2>/dev/null || exit 0   # build finished → clean exit
+  done
+  # Timed out: build still running.
   if kill -0 "$BUILD_PID" 2>/dev/null; then
     echo "[build.sh] TIMEOUT after ${TIMEOUT_SECS}s — killing build (PID $BUILD_PID)" >&2
     kill "$BUILD_PID" 2>/dev/null
@@ -52,8 +70,7 @@ else
   BUILD_EXIT=$?
 fi
 
-# Clean up watchdog
-kill "$WATCHDOG_PID" 2>/dev/null
+# Watchdog self-exits within ~1s of the build finishing — just reap it.
 wait "$WATCHDOG_PID" 2>/dev/null || true
 
 exit "$BUILD_EXIT"
