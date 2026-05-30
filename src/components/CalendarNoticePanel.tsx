@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,6 +61,23 @@ const WEEK_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 export default function CalendarNoticePanel() {
   const clinic = useClinic();
   const navigate = useNavigate();
+  const { profile } = useAuth();
+
+  // ── 작성자 staff.id 역조회 (T-20260530-foot-NOTICE-CREATEDBY-BACKFILL) ─────
+  // created_by FK → staff(id). profile.id(=auth.uid())는 staff.user_id 경유 매핑.
+  // 매핑 실패(staff 미존재) 시 null 유지 → FK nullable(on delete set null) 설계라 저장은 성공.
+  const [creatorStaffId, setCreatorStaffId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!profile?.id || !clinic?.id) { setCreatorStaffId(null); return; }
+    supabase
+      .from('staff')
+      .select('id')
+      .eq('user_id', profile.id)
+      .eq('clinic_id', clinic.id)
+      .eq('active', true)
+      .maybeSingle()
+      .then(({ data }) => setCreatorStaffId((data as { id: string } | null)?.id ?? null));
+  }, [profile?.id, clinic?.id]);
 
   // ── 캘린더 상태 ──────────────────────────────────────────────────────────
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
@@ -168,7 +186,7 @@ export default function CalendarNoticePanel() {
         title: formTitle.trim(),
         content: formContent.trim() || null,
         is_pinned: formPinned,
-        created_by: null,  // T-20260530-foot-DASHBOARD-NOTICE-SAVE-FAIL: FK notices_created_by_fkey→staff(id). profile.id=auth.uid()≠staff.id라 위반. nullable 설계(on delete set null)로 null 고정 (5/17 Notices.tsx 패치 미반영분 동기화)
+        created_by: creatorStaffId,  // T-20260530-foot-NOTICE-CREATEDBY-BACKFILL: staff.user_id 역조회 매핑. 미매핑 시 null fallback (FK nullable·on delete set null)
       });
       if (error) toast.error('저장 실패: ' + error.message);
       else { toast.success('공지가 등록되었습니다'); closeForm(); fetchNotices(); }

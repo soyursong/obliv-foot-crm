@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { Bell, Pencil, Pin, Plus, Trash2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,8 +30,25 @@ interface Notice {
 
 export default function Notices() {
   const clinic = useClinic();
+  const { profile } = useAuth();
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // ── 작성자 staff.id 역조회 (T-20260530-foot-NOTICE-CREATEDBY-BACKFILL) ─────
+  // created_by FK → staff(id). profile.id(=auth.uid())는 staff.user_id 경유 매핑.
+  // 매핑 실패(staff 미존재) 시 null 유지 → FK nullable(on delete set null)이라 저장 성공.
+  const [creatorStaffId, setCreatorStaffId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!profile?.id || !clinic?.id) { setCreatorStaffId(null); return; }
+    supabase
+      .from('staff')
+      .select('id')
+      .eq('user_id', profile.id)
+      .eq('clinic_id', clinic.id)
+      .eq('active', true)
+      .maybeSingle()
+      .then(({ data }) => setCreatorStaffId((data as { id: string } | null)?.id ?? null));
+  }, [profile?.id, clinic?.id]);
 
   // 편집 폼 상태
   const [editingId, setEditingId] = useState<string | 'new' | null>(null);
@@ -99,7 +117,7 @@ export default function Notices() {
         title: formTitle.trim(),
         content: formContent.trim() || null,
         is_pinned: formPinned,
-        created_by: null,  // T-20260517-foot-NOTICE-VIOLATION-BLOCK: staff.id≠auth.uid() FK 불일치, nullable 설계로 null 전달
+        created_by: creatorStaffId,  // T-20260530-foot-NOTICE-CREATEDBY-BACKFILL: staff.user_id 역조회 매핑. 미매핑 시 null fallback (FK nullable·on delete set null)
       }).select().single();
       if (error) { toast.error('저장 실패: ' + error.message); }
       else {
