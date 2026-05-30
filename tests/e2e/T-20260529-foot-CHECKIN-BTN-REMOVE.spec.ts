@@ -83,14 +83,22 @@ test.describe('T-20260529 CHECKIN-BTN-REMOVE — 초진/재진 접수 버튼 제
 
   // ── AC-4: 셀프접수 라우트 정상 접근 ─────────────────────────────────────────────
 
-  test('AC-4: /checkin 라우트(셀프접수) 정상 접근 가능', async ({ page }) => {
-    await page.goto('/checkin');
-    // 셀프접수 화면 키 요소 확인
+  // 셀프접수 라우트는 /checkin/:clinicSlug (App.tsx). bare /checkin 라우트는 존재하지
+  // 않으며 catch-all('*') → /admin 으로 튕긴다(이전 spec 실패 원인). 유효 slug인
+  // jongno-foot 은 외부 큐(happy-flow-queue)로 마이그레이션되어 외부 리다이렉트되므로,
+  // 라우트 해석(=catch-all로 안 튕김)만 검증하기 위해 임의 slug 로 SelfCheckIn 컴포넌트
+  // 렌더(지점 미존재 안내 포함)를 확인한다.
+  test('AC-4: /checkin/:clinicSlug 셀프접수 라우트 정상 접근 가능', async ({ page }) => {
+    await page.goto('/checkin/e2e-route-check');
+    // SelfCheckIn 컴포넌트가 렌더됨 — catch-all('/admin')로 튕기지 않음
     await expect(
-      page.getByText(/접수|체크인|이름|연락처/i).first()
+      page
+        .getByText(/셀프 접수|self check-in|지점을 찾을 수 없습니다|clinic not found|접수|이름|연락처/i)
+        .first()
     ).toBeVisible({ timeout: 15_000 });
-    // 404 or error 없음 확인
+    // 라우트가 /checkin/ 하위로 유지되고 /admin 으로 리다이렉트되지 않음
     const url = page.url();
-    expect(url).toContain('/checkin');
+    expect(url).toContain('/checkin/');
+    expect(url).not.toContain('/admin');
   });
 });
