@@ -12,7 +12,11 @@ interface SwitchProps {
   className?: string;
   id?: string;
   name?: string;
+  'aria-label'?: string;
 }
+
+// data-* 패스스루: E2E testid(data-testid) 등 부가 속성을 underlying DOM으로 전달.
+type DataAttrs = { [key: `data-${string}`]: string | undefined };
 
 function Switch({
   checked,
@@ -22,7 +26,8 @@ function Switch({
   className,
   id,
   name,
-}: SwitchProps) {
+  ...rest
+}: SwitchProps & DataAttrs) {
   return (
     <BaseSwitch.Root
       id={id}
@@ -31,6 +36,7 @@ function Switch({
       defaultChecked={defaultChecked}
       onCheckedChange={(c) => onCheckedChange?.(c)}
       disabled={disabled}
+      {...rest}
       className={cn(
         'peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent',
         'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
