@@ -23,11 +23,49 @@ TIMEOUT_SECS="${1:-120}"
 
 # ── dependency guard (git worktree / fresh clone) ────────────────────────────
 # node_modules/.bin/tsc is required by `npm run build`.
-# In git worktree environments node_modules is not present → auto-install.
+# In git worktree environments node_modules is not present.
+#
+# FIX (2026-05-31 T-20260527-foot-CLOSE-ITEM-COUNT FIX-REQUEST):
+#   Supervisor QA runs in ephemeral git worktrees (isolation: worktree) where
+#   node_modules is absent. The old guard ran `npm ci --prefer-offline || npm ci`;
+#   when prefer-offline missed (cold/partial cache) the `|| npm ci` fallback did
+#   a FULL network install of 530 packages (391MB) → blew past the supervisor's
+#   60s external timeout → false build_fail.
+#
+#   Fast-path: a linked worktree shares the SAME object store as the primary
+#   checkout. `git rev-parse --git-common-dir` resolves to the primary repo's
+#   .git even from inside a worktree; its parent is the primary checkout root.
+#   When that checkout already has node_modules AND its package-lock.json is
+#   identical (same deps), we symlink it — near-instant, no install at all.
+#   Lock mismatch (feature branch changed deps) → fall back to npm ci.
 if [ ! -f "node_modules/.bin/tsc" ]; then
-  echo "[build.sh] node_modules/.bin/tsc not found — running npm ci ..."
-  npm ci --prefer-offline 2>&1 || npm ci
-  echo "[build.sh] npm ci complete."
+  echo "[build.sh] node_modules/.bin/tsc not found — resolving dependencies ..."
+  DEP_START=$(date +%s)
+
+  # Worktree fast-path: reuse the primary checkout's node_modules via symlink.
+  GIT_COMMON_DIR="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+  if [ -n "$GIT_COMMON_DIR" ]; then
+    # --git-common-dir may be relative; resolve to an absolute path first.
+    PRIMARY_ROOT="$(cd "$(dirname "$GIT_COMMON_DIR")" 2>/dev/null && pwd || true)"
+    if [ -n "$PRIMARY_ROOT" ] && [ "$PRIMARY_ROOT" != "$(pwd)" ] \
+       && [ -f "$PRIMARY_ROOT/node_modules/.bin/tsc" ] \
+       && [ -f "$PRIMARY_ROOT/package-lock.json" ] \
+       && cmp -s package-lock.json "$PRIMARY_ROOT/package-lock.json"; then
+      echo "[build.sh] linking node_modules from primary worktree: $PRIMARY_ROOT"
+      ln -s "$PRIMARY_ROOT/node_modules" node_modules
+    fi
+  fi
+
+  # Still missing (no usable primary / lock mismatch) → install.
+  # prefer-offline + no audit/fund keeps a warm-cache install ~2-3s; the plain
+  # `npm ci` last-resort only runs if prefer-offline genuinely fails.
+  if [ ! -f "node_modules/.bin/tsc" ]; then
+    echo "[build.sh] running npm ci (prefer-offline) ..."
+    npm ci --prefer-offline --no-audit --no-fund --loglevel=error \
+      || npm ci --no-audit --no-fund
+  fi
+
+  echo "[build.sh] dependency setup complete in $(( $(date +%s) - DEP_START ))s."
 fi
 # ─────────────────────────────────────────────────────────────────────────────
 
