@@ -70,7 +70,7 @@ import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
-import { formatAmount, maskPhoneTail } from '@/lib/format';
+import { formatAmount, maskPhoneTail, seoulISODate } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
@@ -3723,8 +3723,18 @@ export default function Dashboard() {
           const oldRow = payload.old as CheckInRealtimeRow;
           const id = newRow?.id ?? oldRow?.id;
           if (id && recentlyUpdated.current.has(id)) return;
-          const checkedAt = newRow?.checked_in_at;
-          if (checkedAt && !checkedAt.startsWith(dateStr)) return;
+          // T-20260531-foot-CHECKIN-DASHBOARD-SYNC: checked_in_at은 UTC(timestamptz)로 저장됨.
+          // KST 오전(00:00~09:00) 셀프접수는 checked_in_at의 UTC 날짜가 전날이 되어
+          // 기존 `checked_in_at.startsWith(dateStr)` 가드가 당일 realtime 이벤트(상담대기/치료대기 INSERT)를
+          // 오탐 제외 → 대시보드 미반영·토스트 누락(현장 보고 07:47 KST = 22:47Z 전날 케이스).
+          // created_date(트리거가 KST로 산출하는 date 컬럼)를 우선 비교하고,
+          // 누락 시 checked_in_at을 KST로 환산해 당일 여부를 판정한다.
+          const checkedAt = newRow?.checked_in_at ?? oldRow?.checked_in_at;
+          const rowSeoulDate =
+            (newRow?.created_date as string | undefined) ??
+            (oldRow?.created_date as string | undefined) ??
+            (checkedAt ? seoulISODate(checkedAt) : undefined);
+          if (rowSeoulDate && rowSeoulDate !== dateStr) return;
           // T-20260510-foot-DASH-SLOT-REWORK-P0 AC4: 초진 셀프접수 감지 → 차트 자동 열림
           // 키오스크(anon)가 consult_waiting으로 직행 INSERT 시 CRM 대시보드 자동 오픈
           if (
