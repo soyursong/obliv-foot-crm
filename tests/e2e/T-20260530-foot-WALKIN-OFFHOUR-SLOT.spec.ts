@@ -95,11 +95,16 @@ test.describe('T-20260530 WALKIN-OFFHOUR-SLOT — 슬롯 클램핑 로직 유닛
     expect(result).toBe('19:30');
   });
 
-  test('AC-5: 토요일 단축운영(10:00~17:00) 기준도 정확히 클램핑', () => {
-    const satSlots = generateSlots('10:00', '17:00', 30); // 10:00~16:30
-    // 영업시간 후 접수 → 마지막 슬롯 16:30
-    expect(clampSlot('17:00', satSlots)).toBe('16:30');
-    expect(clampSlot('18:00', satSlots)).toBe('16:30');
+  test('AC-5: 토요일 단축운영(10:00~18:00) 기준도 정확히 클램핑', () => {
+    // T-20260530-foot-WALKIN-OFFHOUR-SLOT PUSH 반영:
+    //   토요일 운영시간 10:00~18:00 (현장 확인 2026-05-30 08:42 KST)
+    //   DB weekend_close_time = '18:30' → 마지막 슬롯 18:00
+    const satSlots = generateSlots('10:00', '18:30', 30); // 10:00~18:00
+    // 영업시간 후 접수(18:30 이후) → 마지막 슬롯 18:00
+    expect(clampSlot('18:30', satSlots)).toBe('18:00');
+    expect(clampSlot('19:00', satSlots)).toBe('18:00');
+    // 정각 18:00 접수 → 슬롯 내 → 클램핑 없음
+    expect(clampSlot('18:00', satSlots)).toBe('18:00');
     // 영업시간 전 접수 → 첫 슬롯 10:00
     expect(clampSlot('09:00', satSlots)).toBe('10:00');
   });
