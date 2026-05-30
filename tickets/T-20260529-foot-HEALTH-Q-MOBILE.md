@@ -3,7 +3,13 @@ id: T-20260529-foot-HEALTH-Q-MOBILE
 domain: foot
 priority: P0
 status: deploy-ready
-deploy_ready_at: 2026-05-29 11:30
+deploy_ready_at: 2026-05-30 18:25
+deploy_ready_reverified_at: 2026-05-30 18:25
+deploy_ready_reverify_note: |
+  supervisor FIX-REQUEST(MSG-20260530-181956) build_fail 재검증.
+  원인: supervisor가 잘못된 경로(/Users/domas/claude-sync)에서 npm run build 실행 → package.json 없음.
+  실제 repo: ~/Documents/GitHub/obliv-foot-crm (main, origin/main 동기화 완료).
+  npm run build PASS (✓ built in 3.70s). 코드 변경 없음.
 commit_sha: f90b371
 db_changed: true
 db_migration: supabase/migrations/20260529000050_health_q_create_token_hotfix.sql
@@ -13,8 +19,8 @@ db_migration_note: |
   hotfix migration: CREATE OR REPLACE fn_health_q_create_token + SELECT pg_notify('pgrst','reload schema') 포함.
   DB 함수 시그니처: fn_health_q_create_token(p_customer_id uuid, p_clinic_id uuid, p_form_type text, p_check_in_id uuid, p_expires_days int) — FE 파라미터와 100% 일치.
   migration history 20260529000050 applied 마킹 완료.
-e2e_spec: tests/e2e/T-20260529-foot-HEALTH-Q-MOBILE.spec.ts
-e2e_spec_exempt_reason: "hotfix migration only — FE 코드 변경 없음. 기존 spec 회귀만 해당."
+e2e_spec_exempt: true
+e2e_spec_exempt_reason: "hotfix migration only — FE 코드 변경 없음. 신규 spec 미해당. 기존 HEALTH-Q 회귀 spec(PEN/ELDER-P2CUT)으로 커버."
 e2e_result: "REST API 직접 호출 검증 완료: POST /rest/v1/rpc/fn_health_q_create_token → {error:unauthorized} (schema cache error 아님)"
 hotfix: true
 created: 2026-05-29
