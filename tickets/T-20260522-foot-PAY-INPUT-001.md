@@ -2,23 +2,25 @@
 id: T-20260522-foot-PAY-INPUT-001
 domain: foot
 priority: P1
-status: deployed
+status: deploy-ready
 spec_version: v2
 spec_updated_at: "2026-05-26T15:10:00+09:00"
 spec_update_commit: ce90953
 spec_update_reason: "대표 ack 2026-05-26 14:43 KST — 옵션 B 통합 5/28 채택. AC-2 카드 승인번호·TID 입력 칸 제거(매처 자동 채움)."
 deploy_ready: true
-deploy_ready_at: "2026-05-27 16:55 KST"
+deploy_ready_at: "2026-05-30 17:25 KST"
 fix_commit: 6c503b3
 spec_update_commit: ce90953
 build_fix_commit: c13b088
+build_reverify_at: "2026-05-30 17:25 KST"
+build_reverify_reason: "supervisor FIX-REQUEST(MSG-20260530-171301) build_fail=false-negative. 원인은 코드 아님 — 전역 npm-cli.js가 삭제된 tm-flow/scripts/patch-cwd.cjs를 require해 `npm` 전역 깨짐(MODULE_NOT_FOUND). EINTR 패치를 npm-cli.js에 self-contained 인라인으로 교체 → 복구. 빌드 EXIT=0, build.sh 3.46s, plain npm run build 2/2 PASS."
 deploy_commit: 31d78521853d86c4db0ae8c29cb3cc97ee100a1a
 deployed_at: "2026-05-24T02:52:00+09:00"
 qa_result: pending
 qa_grade: null
 bundle_hash: D5lTJ_QI
 build_status: OK
-build_time: 3.23s
+build_time: 3.46s
 build_workaround: "scripts/build.sh — macOS timeout fallback. timeout→gtimeout→plain npm run build 순 시도. `bash scripts/build.sh` 사용."
 field_soak_until: "2026-05-25T02:52:00+09:00"
 db_change: true
