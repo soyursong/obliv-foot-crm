@@ -1,109 +1,131 @@
 ---
-ticket_id: T-20260526-foot-PMW-ORDER-REMOVE
-title: 결제 미니창 "순서 편집" 기능 제거
+id: T-20260526-foot-PMW-ORDER-REMOVE
 domain: foot
 priority: P1
-status: deploy-ready
-created_at: 2026-05-26
+status: deployed
+hotfix: false
+created: 2026-05-26 19:30
 deadline: 2026-05-27
-deploy_ready: true
-build_passed: true
-db_changed: false
-db_rollback_sql: ""
-spec_file: tests/e2e/T-20260526-foot-PMW-ORDER-REMOVE.spec.ts
-commit: "ed8865d"
-qa_result: null
+slack_channel: C0ATE5P6JTH
+slack_thread_ts: 1779772660.843369
+reporter: 김주연 총괄
+reporter_slack_id: U0ATDB587PV
+attachments:
+  - id: F0B5QEJL7UP
+    name: 20260526_191742.png
+    mimetype: image/png
+    url: https://files.slack.com/files-pri/T0ALX8VKANL-F0B5QEJL7UP/20260526_191742.png
+e2e_spec_exempt_reason: "REOPEN1 수정: FE 순수 UI 제거. 드래그핸들·↑↓ 버튼 삭제. 런타임 로직 변경 없음."
+risk_verdict: GO
+risk_reason: "FE 전용 UI 제거. DB/외부서비스/대량데이터 변경 없음(0/5)."
+source_msg: MSG-20260526-192239-daf7
+related_ticket: T-20260526-foot-PMW-SIDEMENU-FEAT
+reopen1_fix_commit: ed8865d
+reopen1_fix_at: 2026-05-28 14:55 KST
+reopen1_root_cause: "FEE-ITEM-REORDER(수가항목↑↓) UI가 수가항목패널에 잔존. PMW-ORDER-REMOVE 탭 제거(b39702c)와 별개로 수가항목 재배열 드래그핸들·↑↓버튼이 보임 → 현장 '여전히 화살표 있음' 인식"
+reopen1_fix_scope: "SortablePricingRow: GripVertical+ArrowUp+ArrowDown 제거, handleReorderPricingItem 제거, 힌트텍스트 제거"
+deploy-ready: true
+deploy_ready_commit: ed8865d
+deploy_ready_build: OK
+deploy_ready_db_changed: false
+deploy_ready_spec: tests/e2e/T-20260526-foot-PMW-ORDER-REMOVE.spec.ts
+deploy_ready_at: 2026-05-28 14:55 KST
+qa_result: pending
 qa_grade: null
 qa_fail_reason: null
 qa_fail_phase: null
-reopen1_commit: "ed8865d"
-reopen1_scope: "FEE-ITEM-REORDER ↑↓·드래그핸들 UI 전면 제거 (REOPEN1)"
-deployed_at: "2026-05-27T08:00:12+09:00"
-deploy_commit: "00520dc"
-bundle_hash: "index-RjIprGOw"
-field_soak_until: "2026-05-28T08:00:12+09:00"
-field_validation_slack_ts: "1779844220.558389"
-reopen_investigation: "2026-05-28"
-reopen_result: "코드·번들 이상 없음 — 오조사 완료"
+deployed_at: 2026-05-27 08:15 KST
+deployed_commit: b39702c
+reopen1_reopened_at: 2026-05-28 09:51 KST
+push_acked: MSG-20260527-111134-6d6j (stale — already deployed at push time)
 ---
 
-## 개요
+# T-20260526-foot-PMW-ORDER-REMOVE — 결제 미니창 "순서 편집" 기능 제거
 
-PMW-SIDEMENU-FEAT(d3e5479) 배포 직후 현장(김주연 총괄) 즉시 제거 요청.
-순서 편집 모드 진입 시 빨간 테두리(red box) + 코드명 잘림(C5900...) 문제로
-"그냥 제거해줘" 지시.
+## 배경
 
-## 수용 기준
+김주연 총괄(풋센터): **"순서 배치 기능 때문이면 그냥 제거해줘"**
 
-- **AC-1** ✅ "순서 편집" 탭 완전 제거 — 기본/시술내역/수액/화장품 탭만 유지
-- **AC-2** ✅ 드래그 핸들·↑↓ 화살표·빨간 테두리·삭제 아이콘 전부 제거
-- **AC-3** ✅ 코드명 잘림 해소 — 순서 편집 UI 제거로 자연 해결
-- **AC-4** ✅ DB service_menu_order 로직 유지 — FE 진입점만 제거
-  (menuOrder state, menuOrderTimerRef, DB 로드/persist useEffect 모두 보존)
-- **AC-5** ✅ npm run build 성공
+T-20260526-foot-PMW-SIDEMENU-FEAT (commit d3e5479) 배포 직후 현장에서 즉시 제거 요청.
 
-## 변경 내용
+### 문제 상황
+- 순서 편집 모드 진입 시 **빨간 테두리(red box)** 표시
+- 수가 코드명이 잘림 (예: C5900... → 전체 코드 미표시)
+- 드래그 핸들·↑↓ 화살표·삭제 아이콘이 row 공간을 차지 → 코드명 표시 영역 부족
 
-### PaymentMiniWindow.tsx
-- `SortableMenuCardRow` 컴포넌트(interface + function) 완전 제거
-- `menuReorderMode` state 제거
-- `menuTabServicesRef` ref 제거 (핸들러 stale-closure 방지용, 핸들러 제거로 불필요)
-- `menuSensors` useSensors 인스턴스 제거
-- `handleReorderMenuCard` useCallback 제거
-- `handleDragEndMenuCard` useCallback 제거
-- `menuTabServicesRef.current` 렌더 동기화 라인 제거
-- 탭 클릭·서브카테고리 클릭 핸들러에서 `setMenuReorderMode(false)` 제거
-- "순서 편집" 토글 버튼 JSX 제거
-- 순서 편집 모드 DnD 리스트 JSX 블록 제거
-- 풋케어 그리드 조건 `!menuReorderMode &&` 제거 (항상 표시)
+### 현장 판단
+수정이 아닌 **기능 전체 제거** 요청. 순서 편집이 불필요하므로 관련 UI를 전부 걷어내라는 지시.
 
-### 유지된 것 (AC-4)
-- `menuOrder` state
-- `menuOrderTimerRef`
-- DB `service_menu_order` 로드 (`Promise.all` 4번째 쿼리)
-- DB `service_menu_order` persist useEffect
-- `tabServices` 정렬 로직 (저장된 순서 적용)
+## 수용 기준 (AC)
 
-## 빌드 결과
+### AC-1: 순서 편집 탭 제거
+- PaymentMiniWindow의 "순서 편집" 탭 완전 제거
+- 기존 탭(기본/시술내역/수액/화장품 등)만 유지
 
-```
-✓ built in 3.28s
-```
+### AC-2: 순서 편집 관련 UI 전부 제거
+- 드래그 핸들 (grab handle) 제거
+- ↑↓ 화살표 버튼 제거
+- 순서 편집 모드의 빨간 테두리(red border) 제거
+- 삭제 아이콘(순서 편집 모드 전용) 제거
 
-## DB 변경
+### AC-3: 수가 항목 코드명 잘림 해소
+- 순서 편집 UI 제거 시 코드명 표시 영역이 자연 회복되는지 확인
+- 잘림 현상이 여전하면 추가 CSS 조정
 
-없음 — FE 진입점만 제거. service_menu_order 테이블/RLS 변경 없음.
+### AC-4: DB 백엔드 유지
+- `service_menu_order` 관련 DB 로직(테이블/컬럼/RPC)은 제거하지 않음
+- FE에서 순서 편집 진입점만 완전 제거
 
-## REOPEN 조사 (2026-05-28)
+### AC-5: 빌드 에러 없음
+- `npm run build` 성공
 
-**현장 보고:** 김주연 총괄 "새로고침 후에 캡쳐한 화면이야 2번 수정사항 변경안 됨"
+## 리스크 5항목
 
-### 코드 증거
+| # | 항목 | 판정 | 사유 |
+|---|------|------|------|
+| 1 | DB 스키마 변경 | ✅ 없음 | FE 제거만. DB는 유지 |
+| 2 | 외부 서비스 의존 | ✅ 없음 | |
+| 3 | 비즈니스 로직 변경 | ✅ 무위험 | 편집 UI 제거 = 기능 축소(안전) |
+| 4 | 대량 데이터 변경 | ✅ 없음 | |
+| 5 | 신규 npm 패키지 | ✅ 없음 | |
 
-| 항목 | 결과 |
-|------|------|
-| `3c30149` origin/main 포함 여부 | ✅ 포함 (2026-05-26 20:21 KST) |
-| 이후 커밋 revert 여부 | ✅ 없음 (`dc7333b`, `6ed19d1` 모두 PenChartTab.tsx만 변경) |
-| `menuReorderMode` 소스 잔존 | ✅ 없음 (주석 1개만 — 렌더 안됨) |
-| `SortableMenuCardRow` 소스 잔존 | ✅ 없음 |
-| "순서 편집" 렌더 UI 잔존 | ✅ 없음 (line 1775는 JSX comment) |
-| production 번들 hash | `index-5fhHKeWn.js` (index-RjIprGOw 이후 갱신됨) |
-| 번들 내 "순서 편집" 텍스트 | ✅ 없음 |
-| 번들 내 `menuReorderMode` | ✅ 없음 |
-| 번들 내 `menu-reorder-toggle` | ✅ 없음 |
+**판정: GO (0/5)**
 
-### 결론
+## 현장 클릭 시나리오 (E2E 변환 가이드)
 
-**fix는 정상 배포됨.** production 번들에 "순서 편집" UI 없음 확인.
+### 시나리오 1: 순서 편집 탭 미노출 확인
+1. 로그인 → 대시보드
+2. 고객 카드 우클릭 → 수납(결제) 선택
+3. 결제 미니창(PaymentMiniWindow) 열림
+4. 좌측 수가항목 그리드 상단 탭 목록 확인
+5. **"순서 편집" 탭이 없음** 확인
+6. 기본/시술내역/수액/화장품 탭만 존재 확인
 
-사용자가 보고 있는 것은 수가 항목 목록(우측 Zone2)의 ↑↓ 화살표·드래그 핸들로 추정.
-이는 **T-20260525-foot-FEE-ITEM-REORDER** 별도 기능(유지 대상)이며 PMW-ORDER-REMOVE 범위 밖.
+### 시나리오 2: 드래그 핸들·화살표·빨간 테두리 미노출 확인
+1. 시나리오 1 상태에서
+2. 수가 항목 그리드의 각 row 확인
+3. **드래그 핸들(☰), ↑↓ 화살표, 삭제 아이콘이 없음** 확인
+4. 빨간 테두리(red box)가 표시되지 않음 확인
 
-- 메뉴 카드 순서 편집 ↑↓ (`menu-reorder-up/down`) → 제거됨 ✅
-- 수가 항목 ↑↓ (`reorder-up/down`) → 유지 의도 (FEE-ITEM-REORDER)
+### 시나리오 3: 코드명 표시 정상 확인
+1. 시나리오 1 상태에서
+2. 수가 항목 그리드에서 코드명이 잘리는 항목 확인
+3. C5900002, C5900003 등 코드명이 **전체 표시**되는지 확인
+4. 잘림(...)이 없음 확인
 
-### 조치
+### 시나리오 4: 엣지 케이스
+1. 수가 항목이 0건일 때 → 빈 그리드 정상 표시
+2. 수가 항목 20건+ → 스크롤 정상 동작 + 코드명 잘림 없음
 
-- stale 주석 업데이트 (line 1775: "순서 편집 토글 제거됨 — PMW-ORDER-REMOVE" 명시)
-- 재커밋 → Vercel 재빌드 강제
-- 현장에 "수가 항목 ↑↓는 별도 기능" 안내 필요 (planner 전달)
+## 비고
+- **관련 배포**: T-20260526-foot-PMW-SIDEMENU-FEAT (commit d3e5479, DB migration 20260526130000_service_menu_order.sql APPLIED)
+- 방금 배포한 기능의 현장 즉시 롤백 요청 — P1 처리
+- 첨부: F0B5QEJL7UP (빨간박스 + 코드명 잘림 캡처)
+
+## 변경 이력
+- 2026-05-30 18:33: supervisor FIX-REQUEST(MSG-20260530-183131-9ea1, phase1 insufficient_verification) 재검증. 회신 MSG-20260530-183352-qn2u. 근본원인=경로 오인(직전 MSG-182658 동일 재발) — supervisor 기대 경로 `/Users/domas/claude-sync/work/obliv-foot-crm`는 실재 심링크(→Documents/GitHub/obliv-foot-crm)·ed8865d 보유. 아티팩트 제공: build ✓3.44s(ed8865d..HEAD src 0변경), bundle hash(Dashboard sha256:0ee0007d6f9fa581 / Reservations sha256:bef1a051491d37b5), 변경=PMW.tsx 단일·잔존호출0·caller 무영향·DB변경 없음. deploy_ready_commit=ed8865d 유지.
+- 2026-05-28 15:31: REOPEN1 status 정합(deployed→deploy-ready). conductor KICK(MSG-20260528-152549-lcpz) 계기. 09:53 FIX-REQUEST MQ(MSG-095246-gfzb) dev-foot 미착 확인. 커밋 ed8865d 실재. supervisor QA-REQUEST P1(MSG-20260528-152926-j0p7) 발행.
+- 2026-05-28 14:55: REOPEN1 fix 완료. commit ed8865d. SortablePricingRow ↑↓·GripVertical·힌트텍스트 전면 제거.
+- 2026-05-28 09:51: REOPEN1. 김주연 총괄 "새로고침 후 2번 수정사항 변경안 됨". deployed→reopened.
+- 2026-05-27 08:15: 최초 배포 (b39702c). Vercel auto-deploy.
+- 2026-05-26 19:30: 신규 생성 (MSG-20260526-192239-daf7). PMW-SIDEMENU-FEAT 배포 직후 현장 제거 요청.
