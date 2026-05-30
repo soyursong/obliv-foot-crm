@@ -8,7 +8,9 @@ spec_updated_at: "2026-05-26T15:10:00+09:00"
 spec_update_commit: ce90953
 spec_update_reason: "대표 ack 2026-05-26 14:43 KST — 옵션 B 통합 5/28 채택. AC-2 카드 승인번호·TID 입력 칸 제거(매처 자동 채움)."
 deploy_ready: true
-deploy_ready_at: "2026-05-30 17:25 KST"
+deploy_ready_at: "2026-05-30 17:35 KST"
+build_reverify2_at: "2026-05-30 17:35 KST"
+build_reverify2_reason: "supervisor FIX-REQUEST(MSG-20260530-171934) — MSG-20260530-171301의 중복(171934는 171301보다 먼저 발생, 17:25 전역 npm-cli.js 인라인 패치 적용 전 큐잉됨). 재검증: 표준 명령 `timeout 60 npm run build` EXIT=0 (3.32s), `bash scripts/build.sh` EXIT=0 (3.40s). 전역 npm-cli.js는 self-contained 인라인 패치 상태 유지(외부 tm-flow require 없음). foot 코드 변경 불필요."
 fix_commit: 6c503b3
 spec_update_commit: ce90953
 build_fix_commit: c13b088
