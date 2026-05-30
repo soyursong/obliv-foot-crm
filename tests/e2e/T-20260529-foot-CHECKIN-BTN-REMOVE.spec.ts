@@ -22,13 +22,13 @@ test.describe('T-20260529 CHECKIN-BTN-REMOVE — 초진/재진 접수 버튼 제
     await page.goto('/admin');
     await page.getByText('대시보드', { exact: true }).first().waitFor({ timeout: 15_000 });
 
-    // 초진 슬롯 존재 확인
+    // 초진 슬롯은 generateSlots(open~close, fallback 10:00~20:00)로 데이터 유무와
+    // 무관하게 항상 렌더된다. 단 타임라인은 예약/체크인 비동기 로드 후 마운트되므로
+    // 슬롯 셀이 DOM에 attach 될 때까지 대기한다 (이 대기 누락이 기존 skip 의 원인).
     const newSlots = page.locator('[data-testid="timeline-slot-new"]');
+    await newSlots.first().waitFor({ state: 'attached', timeout: 15_000 });
     const slotCount = await newSlots.count();
-    if (slotCount === 0) {
-      test.skip(true, '초진 슬롯 없음 — 환경 스킵');
-      return;
-    }
+    expect(slotCount).toBeGreaterThan(0);
 
     // 초진 슬롯 내부 전체 텍스트에 "접수" 버튼 없음 검증
     const receptionsInNewSlots = newSlots.getByRole('button', { name: '접수' });
@@ -42,13 +42,11 @@ test.describe('T-20260529 CHECKIN-BTN-REMOVE — 초진/재진 접수 버튼 제
     await page.goto('/admin');
     await page.getByText('대시보드', { exact: true }).first().waitFor({ timeout: 15_000 });
 
-    // 재진 슬롯 존재 확인
+    // 재진 슬롯도 항상 렌더되나 비동기 마운트 → attach 대기 후 검증 (skip 제거).
     const retSlots = page.locator('[data-testid="timeline-slot-ret"]');
+    await retSlots.first().waitFor({ state: 'attached', timeout: 15_000 });
     const slotCount = await retSlots.count();
-    if (slotCount === 0) {
-      test.skip(true, '재진 슬롯 없음 — 환경 스킵');
-      return;
-    }
+    expect(slotCount).toBeGreaterThan(0);
 
     // 재진 슬롯 내부 전체 텍스트에 "접수" 버튼 없음 검증
     const receptionsInRetSlots = retSlots.getByRole('button', { name: '접수' });
