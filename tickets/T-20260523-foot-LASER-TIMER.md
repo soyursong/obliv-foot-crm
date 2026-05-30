@@ -11,9 +11,9 @@ db_migration: null
 regression_risk: low
 reporter: 김주연 총괄 (U0ATDB587PV)
 created_at: 2026-05-23
-fix_applied_at: 2026-05-25
+fix_applied_at: 2026-05-31
 deployed_at: null
-fix_request: FIX-20260525 AC-1 위치이동 — MedicalChartPanel Drawer → CustomerChartPage 2번차트 3구역 [상세] 탭 상단
+fix_request: FIX-20260531 phase2 browser_diag_fail(MSG-20260531-065613-nab0) — 진단 결과 코드 결함 아님(인증 미수행 diag). 인증 browser-diag 헬퍼 추가
 ---
 
 # T-20260523-foot-LASER-TIMER — 비가열 레이저 타이머 보강
@@ -94,3 +94,33 @@ PR-20260522-183034-auto-3ef53 (6h+ stale → ESCALATE) 접수 → 당일 구현 
 - DB 변경 없음 (기존 timer_records 테이블 재사용)
 - 기존 `laser-timer-blink` CSS 호환 유지
 - `TimerAlertCtx` 의미 변경 없음 (amber only — 구독하던 컴포넌트 없음, 신규 추가)
+
+## FIX-20260531 — phase2 browser_diag_fail 대응 (MSG-20260531-065613-nab0)
+
+### 진단: 코드 결함 아님 — 인증 미수행 진단 artifact
+
+- supervisor 첨부 스크린샷(`foot_laser_timer_dashboard_20260531_065551.png`)이 **로그인 화면**.
+  `/admin` 은 `ProtectedRoute`(인증 게이트) 뒤 → 세션 없이 진입 시 `<Navigate to="/login">` 로
+  리다이렉트되어 "대시보드" 텍스트가 영구 미노출. 곧 phase2 diag 가 인증 세션 없이 `/admin` 직행.
+- 동일 사고 3회차: T-20260529-foot-CHECKIN-BTN-REMOVE(5/30), T-20260522-foot-PKG-BOX-INDICATOR(5/31).
+
+### 검증 증거
+
+- `npm run build` ✓ 3.25s (error 0)
+- E2E `tests/e2e/T-20260523-foot-LASER-TIMER.spec.ts` — **6/6 PASS** (auth.setup + S-0~S-4, skip 0)
+- **인증 browser-diag (운영 번들 대상) PASS**: `node --env-file=.env scripts/browser_diag_admin.mjs`
+  → `https://obliv-foot-crm.vercel.app/admin` 에서 "대시보드" 렌더 확인(스크린샷 첨부). 기능/배포 정상.
+
+### 추가 산출 (재발 방지)
+
+- `scripts/browser_diag_admin.mjs` — Supabase SDK 로그인 → localStorage 세션 주입 → `/admin` 진입 →
+  "대시보드" 가시성 확인 + 스크린샷. supervisor 가 `/admin` 게이트 기능 진단 시 인증 전제를
+  결정적으로 충족시켜 false browser_diag_fail 차단. TARGET_URL/DIAG_PATH/EXPECT_TEXT 로 범용 사용.
+
+### 권고
+
+- `/admin` 게이트 기능의 phase2 browser_diag 는 **인증 세션 주입 후** 수행 필수
+  (storageState `.auth/user.json` 또는 본 스크립트 또는 UI 로그인 test@medibuilder.com / TestPass2026!).
+- selector 는 사이드바 nav 라벨 "대시보드"(active) 또는 E2E data-testid 사용 권장.
+
+- 코드/DB 변경 없음 (진단 + QA 헬퍼 스크립트 추가만). deploy-ready 유지.
