@@ -5,6 +5,7 @@ priority: P2
 status: deploy-ready
 deploy-ready: true
 created: 2026-05-30
+updated: 2026-05-30
 deadline: 2026-06-03
 implemented-by: dev-foot
 reviewed-by: ~
@@ -29,7 +30,7 @@ spec-file: tests/e2e/T-20260530-foot-WALKIN-OFFHOUR-SLOT.spec.ts
 | AC-2 | 영업시간 후 워크인 → 당일 마지막 타임슬롯 자동 배정 | ✅ rawSlot > lastSlot → lastSlot 클램핑 |
 | AC-3 | 워크인 건 누락 방지 (시간표+접수목록 양쪩 표시) | ✅ 클램핑으로 시간표 미표시 해소. 칸반은 기존부터 표시 |
 | AC-4 | 영업시간 내 워크인 기존 동작 무변경 | ✅ rawSlot == slot인 경우 분기 없음 |
-| AC-5 | 오픈/마감 시간 clinic settings 기준 (하드코딩 금지) | ✅ slots[] 배열이 clinic.open_time/close_time 기반 |
+| AC-5 | 오픈/마감 시간 clinic settings 기준 (하드코딩 금지) | ✅ slots[] 배열이 clinic.open_time/close_time 기반. 일요일=토요일 동일(2026-05-30 김주연 총괄) |
 
 ---
 
@@ -68,6 +69,9 @@ if (slot !== rawSlot) offHourActualTimeMap.set(ci.id, format(d, 'HH:mm'));
 - E2E spec: `tests/e2e/T-20260530-foot-WALKIN-OFFHOUR-SLOT.spec.ts`
   - 슬롯 클램핑 로직 유닛 검증 (AC-1/2/4/5) — 순수함수 10개 케이스
   - E2E 렌더링 회귀 검증 (AC-3/4) — 통합시간표 슬롯 존재 확인
+  - **AC-5 시나리오 4**: 일요일 08:30 워크인 → 10:00 첫 타임슬롯 배정 확인
+  - **AC-5 시나리오 5**: 일요일 18:30 워크인 → 18:00 마지막 타임슬롯 배정 확인
+  - **AC-5 시나리오 4+5**: 일요일 슬롯 배열 = 토요일 동일 검증
 
 ## DB 변경
 없음 (FE only)

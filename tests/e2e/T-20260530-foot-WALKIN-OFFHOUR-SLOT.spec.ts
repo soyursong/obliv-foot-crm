@@ -109,6 +109,37 @@ test.describe('T-20260530 WALKIN-OFFHOUR-SLOT — 슬롯 클램핑 로직 유닛
     expect(clampSlot('09:00', satSlots)).toBe('10:00');
   });
 
+  // ── AC-5 시나리오 4·5: 일요일 = 토요일 동일 (2026-05-30 김주연 총괄) ──────────
+
+  test('AC-5 시나리오 4: 일요일 08:30 워크인 → 첫 타임슬롯(10:00) 배정', () => {
+    // 일요일 운영시간 10:00~18:00 (DB weekend_close_time = '18:30')
+    const sunSlots = generateSlots('10:00', '18:30', 30);
+    // 영업시간 전 접수 → 첫 슬롯 10:00
+    expect(clampSlot('08:30', sunSlots)).toBe('10:00');
+    expect(clampSlot('09:59', sunSlots)).toBe('10:00');
+  });
+
+  test('AC-5 시나리오 5: 일요일 18:30 워크인 → 마지막 타임슬롯(18:00) 배정', () => {
+    // 일요일 운영시간 10:00~18:00 (DB weekend_close_time = '18:30')
+    const sunSlots = generateSlots('10:00', '18:30', 30);
+    // 마지막 슬롯 18:00 확인
+    expect(sunSlots[sunSlots.length - 1]).toBe('18:00');
+    // 영업시간 후 접수 → 마지막 슬롯 18:00
+    expect(clampSlot('18:30', sunSlots)).toBe('18:00');
+    expect(clampSlot('20:00', sunSlots)).toBe('18:00');
+  });
+
+  test('AC-5 시나리오 4+5: 일요일 슬롯 배열 = 토요일과 동일 (10:00~18:00, 17개)', () => {
+    const satSlots = generateSlots('10:00', '18:30', 30);
+    const sunSlots = generateSlots('10:00', '18:30', 30);
+    // 토요일·일요일 슬롯 배열이 동일해야 함
+    expect(sunSlots).toEqual(satSlots);
+    // 17슬롯: 10:00, 10:30, ..., 18:00
+    expect(sunSlots.length).toBe(17);
+    expect(sunSlots[0]).toBe('10:00');
+    expect(sunSlots[sunSlots.length - 1]).toBe('18:00');
+  });
+
   test('AC-5: 사용자 정의 오픈시간(09:00) 기준 클램핑', () => {
     const earlySlots = generateSlots('09:00', '19:00', 30);
     // 09:00보다 이른 접수 → 09:00
