@@ -29,7 +29,7 @@ const service = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-const TEST_DATE = '2099-11-15'; // 미래 날짜 — 기존 데이터와 충돌 없음
+const TEST_DATE = '2099-11-18'; // 미래 평일(수) — 주간판은 월~토만 렌더하므로 일요일 회피
 const INIT_TIME  = '10:00';
 const NEW_TIME   = '14:00';
 
@@ -60,7 +60,7 @@ test.describe('T-20260529-foot-RESV-TIME-EDIT-NOSYNC — 예약 시간 변경 �
       .insert({
         clinic_id: clinicId,
         name: `E2E토끼_${suffix}`,
-        phone: `+8210999${suffix}`,
+        phone: `+821099${suffix}`,
         visit_type: 'new',
       })
       .select('id')
@@ -75,7 +75,7 @@ test.describe('T-20260529-foot-RESV-TIME-EDIT-NOSYNC — 예약 시간 변경 �
         clinic_id: clinicId,
         customer_id: newCustomerId,
         customer_name: `E2E토끼_${suffix}`,
-        customer_phone: `+8210999${suffix}`,
+        customer_phone: `+821099${suffix}`,
         reservation_date: TEST_DATE,
         reservation_time: `${INIT_TIME}:00`,
         visit_type: 'new',
@@ -93,7 +93,7 @@ test.describe('T-20260529-foot-RESV-TIME-EDIT-NOSYNC — 예약 시간 변경 �
       .insert({
         clinic_id: clinicId,
         name: `E2E사과_${suffix}`,
-        phone: `+8210888${suffix}`,
+        phone: `+821088${suffix}`,
         visit_type: 'returning',
       })
       .select('id')
@@ -108,7 +108,7 @@ test.describe('T-20260529-foot-RESV-TIME-EDIT-NOSYNC — 예약 시간 변경 �
         clinic_id: clinicId,
         customer_id: retCustomerId,
         customer_name: `E2E사과_${suffix}`,
-        customer_phone: `+8210888${suffix}`,
+        customer_phone: `+821088${suffix}`,
         reservation_date: TEST_DATE,
         reservation_time: '11:00:00',
         visit_type: 'returning',
