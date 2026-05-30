@@ -8,39 +8,36 @@
  * AC-2: 기존 취소 흐름(사유 입력 → cancelled_at/cancel_reason/cancelled_by) 동일 적용
  *       - ReservationCancelModal 날짜 무관 동작
  * AC-3: 대시보드 영향 없음 (Dashboard.tsx !isPast 조건 불변)
+ *
+ * ─ FIX (MSG-20260531 / qa_fail phase2 spec_fail_new) ───────────────────────────
+ *   기존 spec이 localhost:5173 하드코딩 BASE_URL + 커스텀 UI 로그인을 사용해
+ *   storageState(8089 origin) 세션을 못 받아 전부 /auth 로 리다이렉트되어 실패.
+ *   → 표준 패턴으로 통일: 상대경로 + helpers.loginAndWaitForDashboard (storageState 재사용).
+ *   → 대시보드 라우트는 /admin(index)이므로 /admin/dashboard(존재X, /admin 리다이렉트) 대신 /admin 사용.
  */
 import { test, expect } from '@playwright/test';
-
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
-
-async function loginIfNeeded(page: import('@playwright/test').Page) {
-  const loginInput = page.getByPlaceholder('이메일');
-  if (await loginInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-    await loginInput.fill(process.env.TEST_EMAIL ?? 'test@test.com');
-    await page.getByPlaceholder('비밀번호').fill(process.env.TEST_PASSWORD ?? 'testpass');
-    await page.getByRole('button', { name: '로그인' }).click();
-    await page.waitForURL(/\/(admin|dashboard|$)/, { timeout: 10000 });
-  }
-}
+import { loginAndWaitForDashboard } from '../helpers';
 
 test.describe('T-20260525-foot-RESV-CANCEL-ANYDATE', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(BASE_URL);
-    await loginIfNeeded(page);
+    // storageState(desktop-chrome project)로 인증 → /admin 진입. 미인증이면 UI 로그인 폴백.
+    const ok = await loginAndWaitForDashboard(page);
+    expect(ok, '대시보드 로그인 실패 — storageState/auth.setup 확인').toBeTruthy();
   });
 
   // ── AC-1: 예약관리 카드 전체 영역 우클릭 → CustomerQuickMenu 표시 ──────────────
   test('AC-1: 예약관리 카드 전체 영역(이름 외) 우클릭 시 컨텍스트메뉴가 표시된다', async ({ page }) => {
-    await page.goto(`${BASE_URL}/admin/reservations`);
+    await page.goto('/admin/reservations');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(500);
+
+    await expect(page).toHaveURL(/reservations/);
 
     // 모든 resv-card 찾기 (날짜 무관)
     const cards = page.locator('[data-testid^="resv-card-"]');
     const cardCount = await cards.count();
     if (cardCount === 0) {
       console.log('[SKIP] 예약 카드 없음 — 페이지 URL 검증으로 대체');
-      await expect(page).toHaveURL(/reservations/);
       return;
     }
 
@@ -74,7 +71,7 @@ test.describe('T-20260525-foot-RESV-CANCEL-ANYDATE', () => {
       await expect(quickMenuCancelBtn).not.toBeVisible({ timeout: 2000 });
     } else {
       // cancelled/noshow 카드이거나 customer_id 없는 카드 — 에러 없음만 확인
-      const errors = await page.evaluate(() => window.__playwright_errors ?? []);
+      const errors = await page.evaluate(() => (window as unknown as { __playwright_errors?: unknown[] }).__playwright_errors ?? []);
       expect(errors).toHaveLength(0);
     }
 
@@ -83,23 +80,17 @@ test.describe('T-20260525-foot-RESV-CANCEL-ANYDATE', () => {
 
   // ── AC-1: 이전 주 이동 후 취소 접근 가능 확인 ────────────────────────────────
   test('AC-1: 다른 주(이전 주)로 이동 후에도 취소 컨텍스트메뉴가 동작한다', async ({ page }) => {
-    await page.goto(`${BASE_URL}/admin/reservations`);
+    const jsErrors: string[] = [];
+    page.on('pageerror', (err) => jsErrors.push(err.message));
+
+    await page.goto('/admin/reservations');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(500);
 
-    // 이전 주로 이동
-    const prevBtn = page.getByRole('button').filter({ has: page.locator('svg') }).first();
-    // ChevronLeft 버튼 (이전 주/일)
-    const chevronLeft = page.locator('button').filter({ hasText: '' }).nth(0);
-
-    // 이전 주 버튼 클릭 (nav 영역의 첫 chevron)
-    const navButtons = page.locator('[data-testid="resv-time-col-header"]').first();
-    // 실제 이전 주 이동: 페이지 상단 좌우 화살표 버튼 사용
-    // (text=ChevronLeft icon — 직접 role=button + svg 조합)
+    // 이전 주/일 버튼 찾기 (aria-label/title 우선, 없으면 첫 svg 버튼)
     const allButtons = page.getByRole('button');
     const buttonCount = await allButtons.count();
 
-    // 이전 주 버튼 찾기 시도
     let navigated = false;
     for (let i = 0; i < Math.min(buttonCount, 10); i++) {
       const btn = allButtons.nth(i);
@@ -113,7 +104,6 @@ test.describe('T-20260525-foot-RESV-CANCEL-ANYDATE', () => {
     }
 
     if (!navigated) {
-      // ChevronLeft SVG를 가진 버튼 찾기
       const chevronBtns = page.locator('button:has(svg)');
       const chevronCount = await chevronBtns.count();
       if (chevronCount > 0) {
@@ -132,6 +122,10 @@ test.describe('T-20260525-foot-RESV-CANCEL-ANYDATE', () => {
     if (cardCount === 0) {
       // 이전 주 예약 없음 — 페이지 정상 상태만 확인
       console.log('[INFO] 이전 주 예약 카드 없음 — 날짜 이동 성공, 예약 0건');
+      const criticalErrors = jsErrors.filter(
+        (e) => !e.includes('ResizeObserver') && !e.includes('Non-Error'),
+      );
+      expect(criticalErrors).toHaveLength(0);
       await expect(page).toHaveURL(/reservations/);
       return;
     }
@@ -141,9 +135,6 @@ test.describe('T-20260525-foot-RESV-CANCEL-ANYDATE', () => {
     await firstCard.click({ button: 'right' });
     await page.waitForTimeout(300);
 
-    // 에러 없이 컨텍스트메뉴 표시 또는 닫힘 상태 — JS 에러 없음 확인
-    const jsErrors: string[] = [];
-    page.on('pageerror', (err) => jsErrors.push(err.message));
     const criticalErrors = jsErrors.filter(
       (e) => !e.includes('ResizeObserver') && !e.includes('Non-Error'),
     );
@@ -155,9 +146,11 @@ test.describe('T-20260525-foot-RESV-CANCEL-ANYDATE', () => {
 
   // ── AC-2: 취소 모달 날짜 무관 동작 검증 ─────────────────────────────────────
   test('AC-2: CustomerQuickMenu 취소 클릭 시 ReservationCancelModal이 올바르게 열린다', async ({ page }) => {
-    await page.goto(`${BASE_URL}/admin/reservations`);
+    await page.goto('/admin/reservations');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(500);
+
+    await expect(page).toHaveURL(/reservations/);
 
     // confirmed 상태 예약 카드 찾기
     const cards = page.locator('[data-testid^="resv-card-"]');
@@ -213,18 +206,19 @@ test.describe('T-20260525-foot-RESV-CANCEL-ANYDATE', () => {
 
   // ── AC-3: 대시보드 !isPast 조건 불변 확인 ─────────────────────────────────────
   test('AC-3: 대시보드 타임라인 !isPast 조건이 여전히 동작한다 (Dashboard 영향 없음)', async ({ page }) => {
-    await page.goto(`${BASE_URL}/admin/dashboard`);
+    const jsErrors: string[] = [];
+    page.on('pageerror', (err) => jsErrors.push(err.message));
+
+    // 대시보드는 /admin(index) 라우트 — /admin/dashboard 는 존재하지 않고 /admin 으로 리다이렉트됨
+    await page.goto('/admin');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(500);
 
-    // 대시보드 페이지 정상 로딩 확인
-    await expect(page).toHaveURL(/dashboard/);
+    // 대시보드 페이지 정상 로딩 확인 (/admin 유지 + 대시보드 텍스트)
+    await expect(page).toHaveURL(/\/admin/);
+    await expect(page.getByText('대시보드', { exact: true }).first()).toBeVisible({ timeout: 10000 });
 
     // JS 에러 없음
-    const jsErrors: string[] = [];
-    page.on('pageerror', (err) => jsErrors.push(err.message));
-    await page.waitForTimeout(500);
-
     const criticalErrors = jsErrors.filter(
       (e) => !e.includes('ResizeObserver') && !e.includes('Non-Error promise rejection'),
     );
@@ -236,7 +230,7 @@ test.describe('T-20260525-foot-RESV-CANCEL-ANYDATE', () => {
     const jsErrors: string[] = [];
     page.on('pageerror', (err) => jsErrors.push(err.message));
 
-    await page.goto(`${BASE_URL}/admin/reservations`);
+    await page.goto('/admin/reservations');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 

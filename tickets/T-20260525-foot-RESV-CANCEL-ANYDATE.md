@@ -6,14 +6,16 @@ deploy-ready: true
 build-passed: true
 db-change: false
 e2e-spec: true
-summary: "예약관리 전일자 취소 허용. resv-card 외부 div에 onContextMenu 추가 → 이름 span 외 영역 우클릭도 취소메뉴 접근 가능. isToday 제한 없음 코드 분석 확인. 빌드 3.31s OK. QA build cmd: npm run build:verify (cross-platform, scripts/build.sh wrapper)."
-qa_result: pass
+e2e_spec_added: true
+summary: "예약관리 전일자 취소 허용. resv-card 외부 div에 onContextMenu 추가 → 이름 span 외 영역 우클릭도 취소메뉴 접근 가능. isToday 제한 없음 코드 분석 확인. 빌드 3.33s OK. E2E spec auth 표준화(localhost:5173→storageState/helpers, /admin/dashboard→/admin) FIX 후 5/5 PASS. QA build cmd: npm run build:verify (cross-platform, scripts/build.sh wrapper)."
+qa_result: pending
 qa_grade: Yellow
 deploy_commit: 2a2d3dd
 deployed_at: 2026-05-26T05:39:00+09:00
 bundle_hash: Reservations-CAU9yxco.js
 field_soak_until: 2026-05-27T05:39:00+09:00
 qa_build_cmd: "npm run build:verify 2>&1 | tail -30"
+qa_fail_history: "MSG-20260531-044143-v77i phase2 spec_fail_new (E2E /auth 리다이렉트 4 fail) → spec auth 표준화로 해소"
 ---
 
 ## T-20260525-foot-RESV-CANCEL-ANYDATE — 예약관리 전일자 예약 취소 허용
@@ -104,3 +106,33 @@ npm run build:verify 2>&1 | tail -30
 ```
 
 **결론**: 코드 변경 없음. `scripts/build.sh` wrapper 기존 구현 확인. QA Phase 1은 `npm run build:verify`로 재실행 가능.
+
+---
+
+### E2E spec 인증 FIX (FIX-REQUEST MSG-20260531-044143-v77i 대응)
+
+**qa_fail**: phase2 / spec_fail_new — Playwright 4 fail / 1 skip / 1 pass. 전 실패가 `/auth` 리다이렉트로 URL 검증 실패 (`Expected /reservations/ but Received http://localhost:5173/auth`).
+
+**Root cause (spec only — 프로덕션 코드 무관)**:
+1. spec이 `BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173'` 하드코딩 → config `baseURL=http://localhost:8089` 와 origin 불일치. storageState(`.auth/user.json`)는 8089 origin localStorage 기준이라 5173에서 세션 미인식 → `/auth` 리다이렉트.
+2. 커스텀 `loginIfNeeded`(getByPlaceholder('이메일') + test@test.com/testpass)는 실제 인증 불가 — 표준 storageState 패턴(`tests/helpers.loginAndWaitForDashboard`) 미사용.
+3. AC-3가 `/admin/dashboard`로 이동 후 `toHaveURL(/dashboard/)` 검증 → 실제 대시보드는 `/admin` index 라우트(App.tsx:171). `/admin/dashboard`는 `*` → `/admin` 리다이렉트라 URL 검증 영구 실패.
+
+**수정** (`tests/e2e/T-20260525-foot-RESV-CANCEL-ANYDATE.spec.ts`):
+- `BASE_URL`/`loginIfNeeded` 제거 → `import { loginAndWaitForDashboard } from '../helpers'` 사용 (storageState 재사용, desktop-chrome project의 `dependencies: ['setup']` + `storageState: AUTH_FILE` 경유).
+- 모든 `page.goto` 절대 URL → 상대경로 (`/admin/reservations`, `/admin`) — config baseURL(8089) 적용.
+- AC-3: `/admin/dashboard` → `/admin`, `toHaveURL(/dashboard/)` → `toHaveURL(/\/admin/)` + 대시보드 텍스트 visible 검증.
+
+**재실행 결과** (2026-05-31, `npx playwright test ...--project=desktop-chrome`):
+```
+[setup] authenticate ✓ (962ms)
+AC-1: 카드 전체 영역 우클릭 ✓ (4.7s)
+AC-1: 이전 주 이동 후 취소 ✓ (5.2s)
+AC-2: ReservationCancelModal ✓ (5.6s)
+AC-3: 대시보드 영향 없음 ✓ (3.2s)
+회귀: JS 에러 없음 ✓ (4.3s)
+6 passed (36.6s)
+```
+빌드 `npm run build:verify` ✓ built in 3.33s.
+
+**결론**: 프로덕션 코드 무변경(spec-only fix). status deploy-ready / qa_result pending 재갱신, supervisor 재QA 요청.
