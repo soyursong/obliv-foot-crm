@@ -25,13 +25,14 @@ export function DialogContent({
   children,
   hideClose,
   size = 'default',
+  ...rest
 }: {
   className?: string;
   children?: React.ReactNode;
   hideClose?: boolean;
   /** 'fullscreen' — fixed inset-0, 배경 overlay + 전체화면 팝업 (태블릿 펜차트 등) */
   size?: 'default' | 'fullscreen';
-}) {
+} & { [key: `data-${string}`]: string | undefined }) {
   const isFullscreen = size === 'fullscreen';
   return (
     <BaseDialog.Portal>
@@ -47,6 +48,7 @@ export function DialogContent({
           !isFullscreen && 'data-[open]:zoom-in-95 data-[closed]:zoom-out-95',
           className,
         )}
+        {...rest}
       >
         {children}
         {!hideClose && (
