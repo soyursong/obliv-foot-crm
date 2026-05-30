@@ -54,13 +54,14 @@ test.describe('T-20260530-CLOSING-TRANSFER-ROW — 일마감 실제정산 이체
   test('AC-1/AC-2/AC-3: 실제정산 카드/현금/이체 3행 + 이체 입력 시 총 차이 반영', async ({ page }) => {
     await loginAndWaitForDashboard(page);
 
-    await page.goto('/closing');
+    // 일마감 라우트는 /admin/closing (catch-all이 /closing → /admin 리다이렉트하므로 명시)
+    await page.goto('/admin/closing');
     await page.waitForLoadState('networkidle');
 
-    // 마감 정산 탭 (기본 탭일 수 있으나 명시 클릭)
-    const closingTab = page.getByRole('tab', { name: /마감\s*정산/ });
-    if (await closingTab.count() > 0) {
-      await closingTab.first().click();
+    // "총 합계" 탭이 기본이나 명시 선택 (실제 정산 카드는 summary 탭 내부)
+    const summaryTab = page.getByRole('tab', { name: /총\s*합계/ });
+    if (await summaryTab.count() > 0) {
+      await summaryTab.first().click();
     }
 
     // "실제 정산" 카드 영역 진입 확인
@@ -86,7 +87,7 @@ test.describe('T-20260530-CLOSING-TRANSFER-ROW — 일마감 실제정산 이체
     }
     // actual_transfer_total > 0 인 마감 레코드가 있으면 복원 대상 존재 확인
     const res = await request.get(
-      `${SUPABASE_URL}/rest/v1/daily_closings?select=id,date,actual_transfer_total&order=date.desc&limit=5`,
+      `${SUPABASE_URL}/rest/v1/daily_closings?select=id,close_date,actual_transfer_total&order=close_date.desc&limit=5`,
       {
         headers: {
           apikey: SERVICE_KEY,
