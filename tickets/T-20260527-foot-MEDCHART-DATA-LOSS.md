@@ -75,6 +75,26 @@ setMemoFilters(new Set<MemoFilter>());
 - [x] 빌드 통과 (✓ built in 3.41s)
 - [x] E2E spec 4개 (AC-1~4)
 
+## 현장 클릭 시나리오 (E2E 변환 가이드)
+
+> supervisor FIX-REQUEST(MSG-20260530-183659, scenario_missing) 대응. E2E: `tests/e2e/T-20260527-foot-MEDCHART-DATA-LOSS.spec.ts` (AC-1~3 변환 완료).
+
+### 시나리오 1: 저장 → 새로고침 → 데이터 유지 (핵심 재발 검증)
+1. coordinator 계정(예: marissong@oblivseoul.kr)으로 로그인
+2. 고객 진료차트 진입 → 임상경과/진료메모 입력 후 **저장**
+3. 저장 직후 **타임라인에 방금 입력한 차트가 즉시 표시**되는지 확인 (필터 리셋 동작)
+4. 브라우저 **새로고침** → 저장한 차트가 그대로 유지(유실 없음) 확인
+
+### 시나리오 2: 필터 활성 상태 저장 (FE 루트코즈 #2 검증)
+1. 방문이력 필터(VISIT-FOLD-FILTER)를 특정 조건으로 활성화
+2. 그 상태에서 새 진료메모 입력 후 저장
+3. 저장 성공 후 **필터가 자동 초기화**되어 새 차트가 숨지 않고 보이는지 확인
+
+### 시나리오 3: coordinator RLS 비차단 (DB 루트코즈 #1 검증)
+1. clinic_id 보정 대상이었던 coordinator 계정으로 로그인
+2. 기존 진료차트 목록(36건대)이 **0건이 아니라 정상 조회**되는지 확인
+3. 신규 저장·조회 모두 RLS 차단 없이 동작 확인
+
 ## 재발 방지 권고
 - coordinator/therapist 신규 계정 생성 시 clinic_id 배정 절차 필수화
 - 현재까지 3건 동일 패턴 반복 → user_profiles INSERT trigger 검토 필요 (P2)
