@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { getClinic } from '@/lib/clinic';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { Button } from '@/components/ui/button';
@@ -178,11 +179,15 @@ export default function CalendarNoticePanel() {
   };
 
   const handleSave = async () => {
-    if (!clinic || !formTitle.trim()) { toast.error('제목을 입력해주세요'); return; }
+    if (!formTitle.trim()) { toast.error('제목을 입력해주세요'); return; }
+    // T-20260530-foot-NOTICE-CREATEDBY-BACKFILL (phase2 fix): Notices 페이지와 동일 레이스 방어.
+    //   훅 상태가 아직 로드 전이면 getClinic()(모듈 캐시·await) 로 on-demand 확정.
+    const activeClinic = clinic ?? await getClinic().catch(() => null);
+    if (!activeClinic) { toast.error('클리닉 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.'); return; }
     setSaving(true);
     if (editingId === 'new') {
       const { error } = await supabase.from('notices').insert({
-        clinic_id: clinic.id,
+        clinic_id: activeClinic.id,
         title: formTitle.trim(),
         content: formContent.trim() || null,
         is_pinned: formPinned,

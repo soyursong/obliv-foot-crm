@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { Bell, Pencil, Pin, Plus, Trash2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { getClinic } from '@/lib/clinic';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { Button } from '@/components/ui/button';
@@ -107,13 +108,18 @@ export default function Notices() {
 
   const handleSave = async () => {
     if (!formTitle.trim()) { toast.error('제목을 입력해주세요'); return; }
-    if (!clinic) { toast.error('클리닉 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.'); return; }
+    // T-20260530-foot-NOTICE-CREATEDBY-BACKFILL (phase2 fix): /admin/notices 직접 진입·새로고침 시
+    //   page.goto 가 모듈 캐시(getClinic)를 리셋 → useClinic 훅 비동기 로드 완료 전 저장 클릭하면
+    //   clinic=null 조기 return 으로 INSERT 자체가 안 일어나는 레이스가 있었다(현장: 빠른 저장 시 무반응).
+    //   훅 상태가 아직 비어 있으면 getClinic()(모듈 캐시·await) 로 on-demand 확정해 레이스 제거.
+    const activeClinic = clinic ?? await getClinic().catch(() => null);
+    if (!activeClinic) { toast.error('클리닉 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.'); return; }
     setSaving(true);
     if (editingId === 'new') {
       // T-20260516-foot-NOTICE-SAVE-FAIL: INSERT 후 반환값 사용해 로컬 state 즉시 업데이트
       // (SELECT RLS 정책 수정 전 임시 우회 — DB 마이그레이션 20260519000030 적용 후 완전 해결)
       const { data: inserted, error } = await supabase.from('notices').insert({
-        clinic_id: clinic.id,
+        clinic_id: activeClinic.id,
         title: formTitle.trim(),
         content: formContent.trim() || null,
         is_pinned: formPinned,
