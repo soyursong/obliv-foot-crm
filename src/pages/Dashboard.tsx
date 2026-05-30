@@ -5388,7 +5388,9 @@ export default function Dashboard() {
                     </div>
                   )}
                   {/* T-20260515-foot-PAYMENT-MINI-WINDOW AC-1: [결제하기] → 미니창 */}
+                  {/* T-20260525-foot-PMW-SCROLL-FIX: E2E 진입점 testid (수납대기 결제하기) */}
                   <button
+                    data-testid="btn-pay"
                     onClick={(e) => { e.stopPropagation(); setMiniPayTarget(ci); }}
                     className="mt-0.5 w-full rounded bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-100 transition flex items-center justify-center gap-0.5"
                   >

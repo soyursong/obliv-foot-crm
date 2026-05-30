@@ -7,11 +7,11 @@ qa_result: pending
 qa_fail_reason: ""
 qa_fail_phase: ""
 deploy_ready: true
-deploy_ready_at: "2026-05-30T17:30:00+09:00"
-deploy_ready_commit: 154cb5d
-deploy_ready_build: "PASS (vite 3.45s, total 11s) — re-verified 2026-05-30, phase1 build_fail은 false-negative(환경 timeout)"
-deploy_ready_e2e: tests/e2e/T-20260525-foot-PMW-SCROLL-FIX.spec.ts
-deploy_ready_db_change: "없음 (FE CSS only)"
+deploy_ready_at: "2026-05-30T19:55:00+09:00"
+deploy_ready_commit: PENDING
+deploy_ready_build: "PASS (vite 3.30s) — 2026-05-30 재검증"
+deploy_ready_e2e: "tests/e2e/T-20260525-foot-PMW-SCROLL-FIX.spec.ts — 5 passed / 0 skipped (desktop-chrome, 27.3s)"
+deploy_ready_db_change: "없음 (FE: Dashboard btn-pay testid 1줄 + spec 시드 로직. 시드는 beforeAll/afterAll 자가 정리)"
 fix_detail: "FIX-REQUEST(scenario_missing) 해소 — 현장 클릭 시나리오 섹션 추가. AC-1 세트코드 드롭다운 max-h-48/AC-2 action buttons shrink+min-h-0+overflow-y-auto 구현 코드(32982b8) 확인 완료."
 build_status: "PASS (3.33s)"
 db_change: false
@@ -148,3 +148,25 @@ promotion_reason: "카드 결제 수납 처리 자체 불가 (운영 차단)"
 
 **원인 추정: macstudio 멀티 에이전트 동시 실행으로 인한 리소스 경합 → 11s 빌드가 60s timeout 초과.**
 **권고: supervisor 빌드 검증 timeout 60s → 180s 상향 또는 warm 캐시 후 측정.**
+
+## FIX-REQUEST 처리 (2026-05-30, MSG-20260530-194556-hanb, phase2 insufficient_verification)
+
+**문제: AC-2/3/4/5 가 `수납대기 환자 없음` 조건으로 전부 test.skip → 실검증 0건 (2 passed / 3 skipped).**
+
+근본 원인 2가지:
+1. `[data-testid="btn-pay"]` 가 소스에 **존재하지 않음** — 수납대기 카드 [결제하기] 버튼(Dashboard.tsx)에
+   testid 미부여라, 수납대기 환자가 있어도 spec 진입점을 못 찾음.
+2. 수납대기(`payment_waiting`) 상태 + 저장된 수가 항목 테스트 데이터 부재.
+
+조치:
+- **Dashboard.tsx**: 수납대기 [결제하기] 버튼에 `data-testid="btn-pay"` 추가 (1줄, 동작 변경 없음).
+- **spec 자가 시드**: `beforeAll` 에서 payment_waiting check_in + check_in_service(유효 service_id)를
+  직접 시드 → PaymentMiniWindow init 로직(line ~734)이 saved=true 트리거 → btn-settle 노출.
+  `afterAll` 에서 전화번호(`+821099998801`, is_simulation=true) 기준 정확 삭제(실환자 보호).
+- **AC-2 강화**: 카드 결제 선택 → `card-auto-match-info` 박스 출현 후 btn-settle 의 boundingBox height>0
+  까지 확인(클리핑되면 잡히지 않음). AC-3: action buttons 컨테이너를
+  `overflow-y-auto border-t shrink min-h-0` 조합으로 직접 타겟(조상 오매칭 제거).
+
+**재검증: `npx playwright test T-20260525-foot-PMW-SCROLL-FIX.spec.ts --project=desktop-chrome`
+→ 5 passed / 0 skipped (27.3s). 시드 잔여물 0건(afterAll 정리 확인). build PASS (vite 3.30s).**
+DB 스키마 변경 없음 — 시드는 테스트 런타임 자가 생성/정리.
