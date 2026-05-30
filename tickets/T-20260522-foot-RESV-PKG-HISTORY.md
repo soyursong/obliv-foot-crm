@@ -7,17 +7,17 @@ priority: P2
 domain: foot
 created_at: 2026-05-22
 deadline: 2026-05-28
-completed_at: 2026-05-24
-commit_sha: bb44f1c
+completed_at: 2026-05-31
+commit_sha: be5c89b
 build_ok: true
-build_verified_at: 2026-05-27
+build_verified_at: 2026-05-31
 db_changed: false
 spec_file: tests/e2e/T-20260522-foot-RESV-PKG-HISTORY.spec.ts
 risk: GO
 assignee: dev-foot
 source: planner MSG-20260524-194804-8wf8
 reporter: 김주연 총괄 (U0ATDB587PV)
-fix_request: MSG-20260527-183946-j649
+fix_request: MSG-20260531-064903-8tt6
 ---
 
 # T-20260522-foot-RESV-PKG-HISTORY
