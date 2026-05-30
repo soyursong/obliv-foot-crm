@@ -1,0 +1,3 @@
+-- ROLLBACK: T-20260530-foot-CLOSING-TRANSFER-ROW
+ALTER TABLE daily_closings
+  DROP COLUMN IF EXISTS actual_transfer_total;
