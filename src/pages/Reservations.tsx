@@ -111,6 +111,11 @@ export default function Reservations() {
   const changedBy = profile?.id ?? null;
   const clinic = useClinic();
   const navStateConsumed = useRef(false);
+  // T-20260527-foot-TREATMENT-CYCLE-ALERT AC-4: 마운트 자동로드 중복 방지.
+  // StrictMode 이중 마운트(dev) / 동일 파라미터 재렌더 시 fetchWeek 중복 실행 → RPC N+1 차단.
+  const lastAutoFetchKeyRef = useRef<string | null>(null);
+  // 자기 noshow 자동 UPDATE가 realtime 자기-트리거로 fetchWeek 재호출하는 것을 막는 suppress 윈도우.
+  const selfWriteUntilRef = useRef(0);
   // T-20260515-foot-RESV-BOX-INTERACT: AC-4 단일클릭/더블클릭 300ms 디바운스 타이머
   const clickTimerRef = useRef<{ resvId: string; timerId: ReturnType<typeof setTimeout> } | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
@@ -254,6 +259,8 @@ export default function Reservations() {
       (r) => r.status === 'confirmed' && r.reservation_date < today,
     );
     if (pastConfirmed.length > 0) {
+      // 자기 쓰기 → realtime 자기-트리거 억제 (AC-4: 단일 배치 로딩 보장)
+      selfWriteUntilRef.current = Date.now() + 2500;
       await supabase
         .from('reservations')
         .update({ status: 'noshow' })
@@ -310,9 +317,22 @@ export default function Reservations() {
     }
   }, [clinic, weekDays, viewMode, selectedDay]);
 
+  // 마운트/주간전환 자동로드. StrictMode 이중 마운트 + 동일 파라미터 재렌더 시
+  // fetchWeek 중복 실행을 key 기준으로 차단 (AC-4: get_treatment_cycle_counts 단일 호출).
+  // 명시적 fetchWeek() 호출(저장/드래그/realtime 후)은 이 dedup 영향을 받지 않는다.
   useEffect(() => {
+    if (!clinic) return;
+    const startStr = viewMode === 'week'
+      ? format(weekDays[0], 'yyyy-MM-dd')
+      : format(selectedDay, 'yyyy-MM-dd');
+    const endStr = viewMode === 'week'
+      ? format(weekDays[weekDays.length - 1], 'yyyy-MM-dd')
+      : startStr;
+    const key = `${clinic.id}|${viewMode}|${startStr}|${endStr}`;
+    if (lastAutoFetchKeyRef.current === key) return;
+    lastAutoFetchKeyRef.current = key;
     fetchWeek();
-  }, [fetchWeek]);
+  }, [clinic, viewMode, weekDays, selectedDay, fetchWeek]);
 
   // Realtime
   useEffect(() => {
@@ -322,7 +342,11 @@ export default function Reservations() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'reservations', filter: `clinic_id=eq.${clinic.id}` },
-        () => fetchWeek(),
+        () => {
+          // 자기 noshow 자동 UPDATE로 인한 자기-트리거 refetch 억제 (AC-4)
+          if (Date.now() < selfWriteUntilRef.current) return;
+          fetchWeek();
+        },
       )
       .subscribe();
     return () => {
