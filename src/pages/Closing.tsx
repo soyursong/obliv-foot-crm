@@ -249,6 +249,8 @@ export default function Closing() {
   const [manualEditTarget, setManualEditTarget] = useState<ManualPaymentRow | null>(null);
   /** C2-MANAGER-PAYMENT-MAP: 결제내역 담당자 필터 */
   const [staffFilter, setStaffFilter] = useState('');
+  /** T-20260530-foot-CLOSING-PAYMETHOD-FILTER: 결제내역 결제수단 필터 ('' = 전체) */
+  const [methodFilter, setMethodFilter] = useState('');
   /** T-20260522-foot-CLOSING-REFUND: 환불 처리 대상 결제 행 */
   const [refundTarget, setRefundTarget] = useState<EnrichedRow | null>(null);
 
@@ -745,10 +747,14 @@ export default function Closing() {
 
   // C2-MANAGER-PAYMENT-MAP: 담당자 필터 적용
   // T-20260522-foot-DAILY-SETTLE-STAFF AC-3: NULL → '미지정' 통일
+  // T-20260530-foot-CLOSING-PAYMETHOD-FILTER: 담당자 + 결제수단 AND 결합
   const filteredEnrichedRows = useMemo<EnrichedRow[]>(() => {
-    if (!staffFilter) return enrichedRows;
-    return enrichedRows.filter(r => (r.staff_name ?? '미지정') === staffFilter);
-  }, [enrichedRows, staffFilter]);
+    if (!staffFilter && !methodFilter) return enrichedRows;
+    return enrichedRows.filter(r =>
+      (!staffFilter || (r.staff_name ?? '미지정') === staffFilter) &&
+      (!methodFilter || r.method === methodFilter)
+    );
+  }, [enrichedRows, staffFilter, methodFilter]);
 
   // ── AC-4: 자동 갱신 시 결제내역 스크롤 위치 보존 ──────────────
   // T-20260525-foot-CLOSING-NAV-BUG:
@@ -1373,6 +1379,27 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                 {staffFilter && (
                   <button
                     onClick={() => setStaffFilter('')}
+                    className="text-xs text-muted-foreground hover:text-foreground px-1"
+                    title="필터 초기화"
+                  >✕</button>
+                )}
+              </div>
+              {/* T-20260530-foot-CLOSING-PAYMETHOD-FILTER: 결제수단 필터 드롭다운 */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground shrink-0">결제수단</span>
+                <select
+                  value={methodFilter}
+                  onChange={e => setMethodFilter(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none"
+                >
+                  <option value="">전체</option>
+                  {(['card', 'cash', 'transfer', 'membership'] as const).map(m => (
+                    <option key={m} value={m}>{METHOD_KO[m]}</option>
+                  ))}
+                </select>
+                {methodFilter && (
+                  <button
+                    onClick={() => setMethodFilter('')}
                     className="text-xs text-muted-foreground hover:text-foreground px-1"
                     title="필터 초기화"
                   >✕</button>
