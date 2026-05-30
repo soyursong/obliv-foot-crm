@@ -234,6 +234,7 @@ export default function Accounts() {
 
   const saveEdit = async () => {
     if (!editUser) return;
+    const roleChanged = editRole !== editUser.role;
     setSaving(true);
     const { error } = await supabase
       .from('user_profiles')
@@ -241,7 +242,11 @@ export default function Accounts() {
       .eq('id', editUser.id);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
-    toast.success('수정됨');
+    if (roleChanged) {
+      toast.success('역할이 변경되었습니다. 해당 직원은 재로그인(또는 새로고침) 후 권한이 적용됩니다.');
+    } else {
+      toast.success('수정됨');
+    }
     setEditUser(null);
     fetchUsers();
   };
