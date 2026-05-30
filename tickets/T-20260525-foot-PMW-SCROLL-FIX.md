@@ -7,9 +7,9 @@ qa_result: pending
 qa_fail_reason: ""
 qa_fail_phase: ""
 deploy_ready: true
-deploy_ready_at: "2026-05-27T20:00:00+09:00"
-deploy_ready_commit: 32982b8
-deploy_ready_build: "PASS (3.33s)"
+deploy_ready_at: "2026-05-30T17:30:00+09:00"
+deploy_ready_commit: 154cb5d
+deploy_ready_build: "PASS (vite 3.45s, total 11s) — re-verified 2026-05-30, phase1 build_fail은 false-negative(환경 timeout)"
 deploy_ready_e2e: tests/e2e/T-20260525-foot-PMW-SCROLL-FIX.spec.ts
 deploy_ready_db_change: "없음 (FE CSS only)"
 fix_detail: "FIX-REQUEST(scenario_missing) 해소 — 현장 클릭 시나리오 섹션 추가. AC-1 세트코드 드롭다운 max-h-48/AC-2 action buttons shrink+min-h-0+overflow-y-auto 구현 코드(32982b8) 확인 완료."
@@ -127,3 +127,24 @@ promotion_reason: "카드 결제 수납 처리 자체 불가 (운영 차단)"
   - 공간 부족 시 action buttons가 압축되고 overflow-y-auto로 스크롤 발생
 - Fix 2: 세트코드 드롭다운 list div — `max-h-48 overflow-y-auto` 추가 (line 1936)
 - 구현 포함 커밋: `32982b8` (feat(foot): T-20260525-foot-FEE-ITEM-REORDER)
+
+## FIX-REQUEST 처리 (2026-05-30, MSG-20260530-171027-khmh)
+
+**supervisor phase1 build_fail (TIMEOUT after 60s) → false-negative 확정.**
+
+빌드 재검증 결과 (cwd: `/Users/domas/Documents/GitHub/obliv-foot-crm`, HEAD `154cb5d` == origin/main):
+
+| 시나리오 | 명령 | 결과 |
+|----------|------|------|
+| warm | `timeout 180 npm run build` | EXIT=0, 11s (vite 3.45s) |
+| cold-tsc (tsbuildinfo 삭제) | `npm run build` | EXIT=0, 11s (vite 3.65s) |
+| full-cold (`npm ci` 후 tsbuildinfo 삭제) | `npm ci` 6s + `npm run build` | EXIT=0, 빌드 11s (vite 3.38s) |
+
+- install 훅(preinstall/postinstall/prepare) 없음 → hang 위험 없음.
+- 최악(fresh checkout) 합산 ≈ 17s. 60s 근처 아님.
+- 직전 T-20260529-foot-CHART-OPEN-SINGLE 과 동일한 60s build timeout false-negative 패턴.
+- AC 코드 HEAD 실존 확인: 세트코드 드롭다운 list `max-h-48 overflow-y-auto`(line 1879),
+  action buttons div `overflow-y-auto border-t shrink min-h-0`(line 2030, shrink-0 미존재).
+
+**원인 추정: macstudio 멀티 에이전트 동시 실행으로 인한 리소스 경합 → 11s 빌드가 60s timeout 초과.**
+**권고: supervisor 빌드 검증 timeout 60s → 180s 상향 또는 warm 캐시 후 측정.**
