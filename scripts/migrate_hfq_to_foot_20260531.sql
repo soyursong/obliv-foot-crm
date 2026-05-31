@@ -1,0 +1,83 @@
+-- ============================================================================
+-- T-20260531-data-JONGNOFOOT-MIGRATE-HFQ-TO-FOOT  ·  AC-7 이관 SQL (실수치 한정)
+-- ============================================================================
+-- ⚠️ 설계 산출물 — 미실행(NOT EXECUTED). READ-ONLY 단계 deliverable.
+--    실행 조건(불변 게이트): supervisor 단독 GO → 대표 confirm(행별 육안) → INSERT.
+--    AC-8 = ✅ 양 dev 합의 CLOSED. 본 SQL은 그 다음 게이트 검토용.
+--
+-- source DB : muvcfrgmxlwtidundlre (HFQ, clinic_id e49b687f-1533-43e9-9814-f5d9d64ba97f)
+-- target DB : rxlomoozakkjesdqjtvd (foot, clinic_id 74967aea-a60b-4da3-a0e7-9c997a930bc8)
+-- batch tag : memo LIKE '%[HFQ2FOOT-20260531]%'  (롤백 식별자, AC-5)
+--
+-- ▶ cross-DB 직접 INSERT…SELECT 불가(서로 다른 Supabase project) → 값을 인라인 VALUES로 박제.
+--   실행 시 target(foot) DB 에서만 INSERT. HFQ 원본 무변경(AC-6).
+--
+-- ============================================================================
+-- 🚨🚨 SHOWSTOPPER — 실데이터 14건의 데이터 성격 (dev-foot AC-7 분석, 2026-05-31)
+-- ============================================================================
+-- AC-8은 `testdata_20260529_hfq` 태그 80건(시드 더미)을 제외했다. 그러나 남은
+-- "untagged 실데이터 14"를 행별 검수하니 **사실상 전부 QA/테스트 자가접수 데이터**다:
+--
+--   [매핑 5건 → foot 기존 row 성격]
+--     까치(…99990003)  → foot "[TEST-D1] 테스트환자03" memo:"개원일 테스트 더미…삭제"  = TEST
+--     빨강(…99990201)  → foot "빨강" memo:"테스트더미"                                  = TEST (test-pattern phone)
+--     잣 (…99060083)   → foot "잣"  is_simulation=TRUE                                  = SIMULATION
+--     머루(…99060089)  → foot "머루" is_simulation=TRUE                                 = SIMULATION
+--     김민경(…43160981)→ foot "김민경" memo:null is_simulation=false                    = ⭕ 유일 실가능
+--
+--   [신규 9건 → 전부 가명·테스트패턴, gender/birth/memo/created_by 전부 NULL]
+--     까치(…99991111)·까치2(…99991111)  test-pattern phone, 1초 내 중복생성
+--     김와사비 ×3(…56688566/…99786634/…66442622)  동일가명 다전화 = 단말 반복 QA
+--     로오즈 ×2(…54757585/…65566658)
+--     오구리(…66845621)·춘향이(…55459722)
+--
+--   [check_ins 13건] 전부 status='waiting', reservation_id=NULL, queue#=1·1000·연번 1~10
+--     = 실 진료동선 0(상담/시술/완료 없음). self-checkin 화면 QA 흔적.
+--
+-- ▶ 결론(dev-foot 권고): **prod foot 로 이관할 genuine 신규 환자 ≈ 0건.**
+--   유일 후보 김민경은 이미 foot 에 존재(매핑) → 신규 INSERT 불요.
+--   나머지 13건은 가명/시뮬/test-pattern → INSERT 시 prod 오염(AC-8이 막던 사고의 1-layer 심화).
+-- ▶ 권고 판정: **blanket migration = NO-GO.** 대표 행별 confirm 으로 genuine 행만 선별.
+--   현재 증거상 genuine 선별 결과 = 0행일 가능성 높음 → 그 경우 본 티켓 INSERT 0 종결.
+--
+-- 아래 INSERT 는 "만약 대표가 특정 행을 genuine 으로 지정"할 때를 위한 준비 템플릿이며,
+-- 파일 말미 ROLLBACK 으로 기본 무효화되어 그대로 실행해도 0행도 commit 되지 않는다.
+-- ============================================================================
+
+BEGIN;
+
+-- ── 1) customers 신규 INSERT 후보 (9건) ──────────────────────────────────────
+-- ⚠️ 전 행 테스트성. 대표가 genuine 으로 지정한 행만 주석 해제 후 실행.
+-- 컬럼: clinic_id, name, phone(E.164 정규화), visit_type, created_at, memo(batch tag)
+-- INSERT INTO customers (clinic_id, name, phone, visit_type, created_at, memo) VALUES
+--   ('74967aea-a60b-4da3-a0e7-9c997a930bc8','까치','+821099991111','new','2026-05-29 07:08:47.824028+00','HFQ self-checkin 이관 [HFQ2FOOT-20260531] src=57ac7170'),
+--   ('74967aea-a60b-4da3-a0e7-9c997a930bc8','까치2','+821099991111','new','2026-05-29 07:08:48.101328+00','HFQ self-checkin 이관 [HFQ2FOOT-20260531] src=9c8a722c'),
+--   ('74967aea-a60b-4da3-a0e7-9c997a930bc8','김와사비','+821056688566','new','2026-05-29 07:30:58.529804+00','HFQ self-checkin 이관 [HFQ2FOOT-20260531] src=b0bc7f33'),
+--   ('74967aea-a60b-4da3-a0e7-9c997a930bc8','김와사비','+821099786634','new','2026-05-29 23:32:56.076019+00','HFQ self-checkin 이관 [HFQ2FOOT-20260531] src=35477a81'),
+--   ('74967aea-a60b-4da3-a0e7-9c997a930bc8','로오즈','+821054757585','new','2026-05-30 06:51:40.387375+00','HFQ self-checkin 이관 [HFQ2FOOT-20260531] src=d7179740'),
+--   ('74967aea-a60b-4da3-a0e7-9c997a930bc8','로오즈','+821065566658','new','2026-05-30 06:52:54.065749+00','HFQ self-checkin 이관 [HFQ2FOOT-20260531] src=1b9d2e19'),
+--   ('74967aea-a60b-4da3-a0e7-9c997a930bc8','오구리','+821066845621','new','2026-05-30 08:07:49.974738+00','HFQ self-checkin 이관 [HFQ2FOOT-20260531] src=c04e4bb0'),
+--   ('74967aea-a60b-4da3-a0e7-9c997a930bc8','춘향이','+821055459722','new','2026-05-30 08:18:56.575896+00','HFQ self-checkin 이관 [HFQ2FOOT-20260531] src=b86ac71a'),
+--   ('74967aea-a60b-4da3-a0e7-9c997a930bc8','김와사비','+821066442622','new','2026-05-30 11:46:17.58863+00','HFQ self-checkin 이관 [HFQ2FOOT-20260531] src=13e4288f');
+
+-- ── 2) customers 매핑(INSERT 아님 · 참조용) ──────────────────────────────────
+-- HFQ src_id           → foot customer_id (이미 존재, INSERT 금지)
+--   23ed1db0(까치)      → 9e7a833e [TEST-D1] 테스트환자03      (TEST)
+--   c88e2250(김민경)    → 83ab4fe1 김민경                       (⭕ 실가능)
+--   c756d84c(잣)        → 89cdf72a 잣  is_simulation=true        (SIM)
+--   b892d072(머루)      → cf2e12ad 머루 is_simulation=true        (SIM)
+--   7e9df6f8(빨강)      → 5177d86f 빨강 memo:테스트더미           (TEST)
+
+-- ── 3) check_ins 13건 remap (AC-2 무손실) ────────────────────────────────────
+-- 전 건 reservation_id=NULL(실 예약 0) → 단독 체크인으로 보존. customer_id 는
+-- 위 1)신규 INSERT 후 반환 id 또는 2)매핑 id 로 치환. clinic_id=74967aea.
+-- ⚠️ 대표가 genuine customers 0행 지정 시 → 참조 customer 없음 → check_ins 이관도 0.
+-- (실행 템플릿은 customers 확정 후 src_id→new_id 매핑이 정해져야 작성 가능 → 2-pass.)
+-- 13 src check_in ids:
+--   501fad01,8ecbb2ca,dd817ae0,104fcfdc,999b97fb,54515a07,99b57a26,
+--   ecc06691,772fee43,d7bf3087,64b6bc77,525d8dee,55a17608
+
+-- ── 기본 무효화: 본 파일 단독 실행 시 0행 commit 방지 ──
+ROLLBACK;   -- 대표 confirm + supervisor GO 후 genuine 행 선별 시에만 COMMIT 로 교체.
+
+-- reservations: 이관 0건 (HFQ 80건 전부 testdata 더미 → AC-8 폐기 확정). INSERT 없음.
