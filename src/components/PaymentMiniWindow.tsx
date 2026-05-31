@@ -40,7 +40,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { formatAmount } from '@/lib/format';
+import { formatAmount, todaySeoulISODate } from '@/lib/format';
 // T-20260525-foot-AMOUNT-COMMA-FMT: 수가 인라인 편집 쉼표 포맷팅
 import { formatAmountDisplay, parseAmountRaw } from '@/components/ui/AmountInput';
 import type { CheckIn, Service } from '@/lib/types';
@@ -875,7 +875,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   // ── BILLING-3ZONE: Zone 3 데이터 로드 (AC-4 구매패키지 + AC-5 금일 시술내역) ───
   const loadZone3Data = useCallback(async (ci: CheckIn) => {
     if (!ci.customer_id) return;
-    const today = format(new Date(), 'yyyy-MM-dd');
+    // T-20260531-foot-DASHBOARD-KST-FILTER: checked_in_at은 UTC(timestamptz). KST 기준
+    // 날짜 + '+09:00' 바운드로 비교해야 KST 오전 체크인 누락을 방지한다.
+    const today = todaySeoulISODate();
 
     const [pkgRes, ciRes] = await Promise.all([
       // AC-4: 활성 패키지 목록 (T-20260519-foot-BILLING-ITEM-PRICE: 항목별 수가 필드 추가)
@@ -890,8 +892,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         .select('id')
         .eq('customer_id', ci.customer_id)
         .eq('clinic_id', ci.clinic_id)
-        .gte('checked_in_at', `${today}T00:00:00`)
-        .lte('checked_in_at', `${today}T23:59:59`),
+        .gte('checked_in_at', `${today}T00:00:00+09:00`)
+        .lte('checked_in_at', `${today}T23:59:59+09:00`),
     ]);
 
     // AC-4: 잔여 회차 계산 (사용된 세션 카운트)

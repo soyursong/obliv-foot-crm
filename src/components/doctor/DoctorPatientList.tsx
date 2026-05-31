@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
+import { todaySeoulISODate } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
 import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
@@ -72,7 +73,11 @@ function useTodayPatients(clinicId: string | null) {
     enabled: !!clinicId,
     queryFn: async () => {
       if (!clinicId) return [];
-      const today = format(new Date(), 'yyyy-MM-dd');
+      // T-20260531-foot-DASHBOARD-KST-FILTER: checked_in_at은 UTC(timestamptz)로 저장.
+      // 기존 today = format(new Date(),...) (브라우저 로컬) + 타임존 suffix 없는 bound 비교는
+      // Postgres가 naive 문자열을 UTC로 해석 → KST 오전(00:00~09:00) 체크인(전날 UTC)이
+      // 당일 범위 밖으로 제외됨(빨강 체크인 누락). KST 기준 날짜 + '+09:00' 바운드로 교정.
+      const today = todaySeoulISODate();
       // T-20260517-foot-HEALER-MEMO-DISPLAY: reservation:reservation_id join → booking_memo
       const { data, error } = await supabase
         .from('check_ins')
@@ -80,8 +85,8 @@ function useTodayPatients(clinicId: string | null) {
           'id, customer_name, visit_type, status, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, reservation:reservation_id(booking_memo)',
         )
         .eq('clinic_id', clinicId)
-        .gte('checked_in_at', `${today}T00:00:00`)
-        .lte('checked_in_at', `${today}T23:59:59`)
+        .gte('checked_in_at', `${today}T00:00:00+09:00`)
+        .lte('checked_in_at', `${today}T23:59:59+09:00`)
         .neq('status', 'cancelled')
         .order('checked_in_at', { ascending: true });
       if (error) throw error;
