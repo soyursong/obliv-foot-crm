@@ -1852,22 +1852,28 @@ function DashboardTimeline({
   // T-20260530-foot-WALKIN-OFFHOUR-SLOT:
   //   AC-1: 영업시간 전 접수 → 당일 첫 슬롯으로 클램핑 (예: 08:30 → 10:00)
   //   AC-2: 영업시간 후 접수 → 당일 마지막 슬롯으로 클램핑 (예: 20:15 → 마지막 슬롯)
-  //   AC-4: 영업시간 내 워크인 동작 무변경 (rawSlot == slot)
+  //   AC-4: 일요일 워크인 → 클램핑/이동/오류 없이 접수 시각 그대로 slot 매핑 (pass-through)
+  //         현장 결정 2026-06-01 (김주연 총괄): 일요일 셀프접수는 CRM 테스트 용도로
+  //         해당 시각 그대로 배정. A안(월요일 이동)·B안(오류) 모두 기각.
+  //         평일/토 오프아워 이동 로직(AC-1/2)을 일요일에는 적용하지 않는다.
   //   AC-5: clinic.open_time / close_time 기준 (slots[] 가 이미 clinic 설정 사용)
   const firstSlot = slots[0] ?? '10:00';
   const lastSlot = slots[slots.length - 1] ?? '20:00';
+  const isSunday = date.getDay() === 0; // 0=일요일 → 오프아워 클램핑 예외(pass-through)
   for (const ci of selfCheckIns) {
     if (matchedCiIds.has(ci.id)) continue;
     const d = new Date(ci.checked_in_at);
     const h = d.getHours();
     const mm = d.getMinutes();
     const rawSlot = `${String(h).padStart(2, '0')}:${mm < 30 ? '00' : '30'}`;
-    const slot =
-      rawSlot < firstSlot ? firstSlot :
-      rawSlot > lastSlot  ? lastSlot  :
-      rawSlot;
-    // 클램핑 발생 시 실접수 시각 기록 → 카드 배지 표시
-    if (slot !== rawSlot) {
+    // AC-4(일요일): pass-through — rawSlot 그대로. 평일/토(AC-1/2): 오프아워 클램핑.
+    const slot = isSunday
+      ? rawSlot
+      : rawSlot < firstSlot ? firstSlot :
+        rawSlot > lastSlot  ? lastSlot  :
+        rawSlot;
+    // 클램핑 발생 시(평일/토 한정) 실접수 시각 기록 → 카드 배지 표시. 일요일은 클램핑 없음.
+    if (!isSunday && slot !== rawSlot) {
       offHourActualTimeMap.set(ci.id, format(d, 'HH:mm'));
     }
     // T-20260530-foot-WALKIN-TIMETABLE: 워크인 등록 → 'W' 배지 기준
@@ -1879,6 +1885,14 @@ function DashboardTimeline({
       sd.retBox2Ci.push(ci);
     }
   }
+
+  // T-20260530-foot-WALKIN-OFFHOUR-SLOT AC-4: 일요일 pass-through 렌더 슬롯 보정
+  // 타임라인은 slots[] 에 존재하는 슬롯만 렌더한다. 일요일 워크인이 운영시간 범위
+  // (clinic 설정 기반 slots) 밖 시각으로 접수된 경우에도 "그 시각 그대로" 표시되도록
+  // slotMap 에 쌓인 실데이터 슬롯을 합쳐 정렬한다. 평일/토는 slots 그대로(무변경).
+  const renderSlots = isSunday
+    ? Array.from(new Set([...slots, ...Object.keys(slotMap)])).sort()
+    : slots;
 
   // T-20260522-foot-TIMETABLE-FOLD: 접힌 상태 — 세로 스트립만 표시 (토글 버튼 + 라벨)
   if (folded) {
@@ -2067,7 +2081,7 @@ function DashboardTimeline({
             재진
           </div>
         </div>
-        {slots.map((slot) => {
+        {renderSlots.map((slot) => {
           const sd = slotMap[slot];
           const newBox1 = sd?.newBox1 ?? [];
           const newBox2Ci = sd?.newBox2Ci ?? [];

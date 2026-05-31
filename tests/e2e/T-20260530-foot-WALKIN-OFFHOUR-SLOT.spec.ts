@@ -5,7 +5,10 @@
  * AC-1: 영업시간 전 워크인 → 당일 첫 타임슬롯 자동 배정 (예: 08:30 접수 → 10:00 슬롯)
  * AC-2: 영업시간 후 워크인 → 당일 마지막 타임슬롯 자동 배정 (예: 20:15 접수 → 마지막 슬롯)
  * AC-3: 워크인 건 누락 방지 (시간표+접수목록 양쪽 표시)
- * AC-4: 영업시간 내 워크인 기존 동작 무변경 (회귀 방지)
+ * AC-4: [reopened 2026-06-01, 김주연 총괄] 일요일 워크인 → 이동/오류 없이 접수 시각
+ *        그대로 배정 (pass-through). 평일/토 오프아워 클램핑(AC-1/2) 미적용.
+ *        A안(월요일 첫 슬롯 이동)·B안(오류 처리) 모두 기각. CRM 테스트 용도.
+ *        (구 AC-4 "영업시간 내 무변경"은 clampSlot AC-4 유닛 케이스로 유지)
  * AC-5: 오픈/마감 시간 clinic settings 기준 (하드코딩 금지)
  *
  * 테스트 전략: DashboardTimeline 컴포넌트의 슬롯 클램핑 로직을 unit-level로 검증.
@@ -109,37 +112,6 @@ test.describe('T-20260530 WALKIN-OFFHOUR-SLOT — 슬롯 클램핑 로직 유닛
     expect(clampSlot('09:00', satSlots)).toBe('10:00');
   });
 
-  // ── AC-5 시나리오 4·5: 일요일 = 토요일 동일 (2026-05-30 김주연 총괄) ──────────
-
-  test('AC-5 시나리오 4: 일요일 08:30 워크인 → 첫 타임슬롯(10:00) 배정', () => {
-    // 일요일 운영시간 10:00~18:00 (DB weekend_close_time = '18:30')
-    const sunSlots = generateSlots('10:00', '18:30', 30);
-    // 영업시간 전 접수 → 첫 슬롯 10:00
-    expect(clampSlot('08:30', sunSlots)).toBe('10:00');
-    expect(clampSlot('09:59', sunSlots)).toBe('10:00');
-  });
-
-  test('AC-5 시나리오 5: 일요일 18:30 워크인 → 마지막 타임슬롯(18:00) 배정', () => {
-    // 일요일 운영시간 10:00~18:00 (DB weekend_close_time = '18:30')
-    const sunSlots = generateSlots('10:00', '18:30', 30);
-    // 마지막 슬롯 18:00 확인
-    expect(sunSlots[sunSlots.length - 1]).toBe('18:00');
-    // 영업시간 후 접수 → 마지막 슬롯 18:00
-    expect(clampSlot('18:30', sunSlots)).toBe('18:00');
-    expect(clampSlot('20:00', sunSlots)).toBe('18:00');
-  });
-
-  test('AC-5 시나리오 4+5: 일요일 슬롯 배열 = 토요일과 동일 (10:00~18:00, 17개)', () => {
-    const satSlots = generateSlots('10:00', '18:30', 30);
-    const sunSlots = generateSlots('10:00', '18:30', 30);
-    // 토요일·일요일 슬롯 배열이 동일해야 함
-    expect(sunSlots).toEqual(satSlots);
-    // 17슬롯: 10:00, 10:30, ..., 18:00
-    expect(sunSlots.length).toBe(17);
-    expect(sunSlots[0]).toBe('10:00');
-    expect(sunSlots[sunSlots.length - 1]).toBe('18:00');
-  });
-
   test('AC-5: 사용자 정의 오픈시간(09:00) 기준 클램핑', () => {
     const earlySlots = generateSlots('09:00', '19:00', 30);
     // 09:00보다 이른 접수 → 09:00
@@ -158,6 +130,55 @@ test.describe('T-20260530 WALKIN-OFFHOUR-SLOT — 슬롯 클램핑 로직 유닛
     const raw = '14:00';
     const clamped = clampSlot(raw, slots);
     expect(clamped).toBe(raw); // 클램핑 없음 = 배지 미표시
+  });
+});
+
+// ── AC-4 (reopened): 일요일 워크인 pass-through ───────────────────────────────
+// 현장 결정 2026-06-01 (김주연 총괄): 일요일 셀프접수는 이동/오류 없이 접수 시각
+// 그대로 배정. Dashboard.tsx 워크인 루프의 `isSunday ? rawSlot : clamp(...)` 분기 미러.
+
+/** Dashboard.tsx 워크인 slot 매핑 로직 미러 (요일 분기 포함) */
+function walkInSlot(rawSlot: string, slots: string[], isSunday: boolean): string {
+  if (isSunday) return rawSlot; // pass-through: 클램핑 없음
+  return clampSlot(rawSlot, slots);
+}
+
+test.describe('T-20260530 WALKIN-OFFHOUR-SLOT — AC-4 일요일 pass-through 로직 검증', () => {
+  // 일요일도 slots[] 자체는 clinic 설정 기반으로 생성되지만, 워크인은 클램핑하지 않는다.
+  const sunSlots = generateSlots('10:00', '18:30', 30); // 10:00~18:00
+
+  test('시나리오4: 일요일 14:00 워크인 → 14:00 그대로 (이동·오류 없음)', () => {
+    expect(walkInSlot('14:00', sunSlots, /* isSunday */ true)).toBe('14:00');
+  });
+
+  test('시나리오4: 일요일 운영시간 전(08:30) 워크인 → 08:30 그대로 (월요일/첫슬롯 이동 없음)', () => {
+    // A안(월요일 첫 슬롯 이동)·평일 클램핑(→10:00) 모두 미적용 — 그 시각 그대로
+    const result = walkInSlot('08:30', sunSlots, true);
+    expect(result).toBe('08:30');
+    expect(result).not.toBe('10:00'); // 평일 클램핑 결과와 달라야 함
+  });
+
+  test('시나리오4: 일요일 운영시간 후(20:00) 워크인 → 20:00 그대로 (마지막슬롯 이동 없음)', () => {
+    const result = walkInSlot('20:00', sunSlots, true);
+    expect(result).toBe('20:00');
+    expect(result).not.toBe('18:00'); // 토/주말 클램핑 결과와 달라야 함
+  });
+
+  test('AC-4 무파괴: 같은 시각이라도 평일(isSunday=false)은 기존 클램핑 유지', () => {
+    const wkSlots = generateSlots('10:00', '20:30', 30);
+    // 평일 08:30 → 10:00 클램핑 (AC-1 무변경)
+    expect(walkInSlot('08:30', wkSlots, false)).toBe('10:00');
+    // 평일 21:00 → 20:00 클램핑 (AC-2 무변경)
+    expect(walkInSlot('21:00', wkSlots, false)).toBe('20:00');
+    // 평일 14:00 → 14:00 (영업시간 내 무변경)
+    expect(walkInSlot('14:00', wkSlots, false)).toBe('14:00');
+  });
+
+  test('AC-4: 일요일 pass-through는 오프아워 배지 미대상 (rawSlot === slot)', () => {
+    // 일요일은 클램핑이 없으므로 rawSlot === slot → offHourActualTimeMap 미기록
+    for (const raw of ['08:30', '14:00', '20:00']) {
+      expect(walkInSlot(raw, sunSlots, true)).toBe(raw);
+    }
   });
 });
 
