@@ -11,6 +11,7 @@
  *   ④ 수동 발송 (미구현 stub)
  *   ⑤ 발송 이력
  *   ⑥ 수신거부 명단
+ *   ⑦ 셀프접수 QR 다운로드 (admin/manager — foot-native, T-20260531-foot-...-SELFCHECKIN-QR-DOWNLOAD)
  *
  * 롱레(happy-flow-queue) AdminSettings.tsx 0% 변경 복제 — foot-crm 패턴 적응:
  *   - AdminLayout 제거 (router Outlet 패턴)
@@ -45,8 +46,9 @@ import {
 } from '@/components/ui/select';
 import {
   MessageSquare, Settings, ChevronRight, Loader2, AlertCircle,
-  CheckCircle2, Phone, Send, History, Ban, Zap,
+  CheckCircle2, Phone, Send, History, Ban, Zap, QrCode, Download,
 } from 'lucide-react';
+import type { Clinic } from '@/lib/types';
 
 // ── 타입 정의 ─────────────────────────────────────────────────────────────────
 
@@ -100,7 +102,7 @@ interface NotificationOptOut {
   reason: string | null;
 }
 
-type Section = '0_connection' | '1_channels' | '2_rules' | '3_templates' | '4_manual' | '5_history' | '6_optout';
+type Section = '0_connection' | '1_channels' | '2_rules' | '3_templates' | '4_manual' | '5_history' | '6_optout' | '7_selfcheckin_qr';
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   resv_confirm:          'T01 예약 확정',
@@ -131,7 +133,7 @@ const DEFAULT_TEMPLATES: Record<string, string> = {
   noshow:                '[오블리브 {지점명}] {고객명}님, 오늘 {시간} 방문이 확인되지 않았습니다.\n재예약 도와드릴게요: {지점전화번호}',
 };
 
-const SECTIONS: { id: Section; label: string; icon: React.ReactNode; adminOnly?: boolean }[] = [
+const SECTIONS: { id: Section; label: string; icon: React.ReactNode; adminOnly?: boolean; mgrPlus?: boolean }[] = [
   { id: '0_connection', label: '⓪ 연결 설정',     icon: <Settings className="h-4 w-4" />,      adminOnly: true },
   { id: '1_channels',   label: '① 채널 가능 여부', icon: <Zap className="h-4 w-4" /> },
   { id: '2_rules',      label: '② 자동 발송 규칙', icon: <MessageSquare className="h-4 w-4" /> },
@@ -139,6 +141,7 @@ const SECTIONS: { id: Section; label: string; icon: React.ReactNode; adminOnly?:
   { id: '4_manual',     label: '④ 수동 발송',      icon: <Send className="h-4 w-4" /> },
   { id: '5_history',    label: '⑤ 발송 이력',      icon: <History className="h-4 w-4" /> },
   { id: '6_optout',     label: '⑥ 수신거부 명단',  icon: <Ban className="h-4 w-4" /> },
+  { id: '7_selfcheckin_qr', label: '⑦ 셀프접수 QR 다운로드', icon: <QrCode className="h-4 w-4" />, mgrPlus: true },
 ];
 
 function extractErrorMsg(err: unknown): string {
@@ -162,8 +165,9 @@ export default function AdminSettings() {
   const [logs, setLogs]               = useState<NotificationLog[]>([]);
   const [optOuts, setOptOuts]         = useState<NotificationOptOut[]>([]);
 
-  const role    = profile?.role ?? '';
-  const isAdmin = role === 'admin';
+  const role      = profile?.role ?? '';
+  const isAdmin   = role === 'admin';
+  const isManager = role === 'manager';
 
   // ── 권한 가드 ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -228,7 +232,9 @@ export default function AdminSettings() {
     );
   }
 
-  const visibleSections = SECTIONS.filter((s) => !s.adminOnly || isAdmin);
+  const visibleSections = SECTIONS.filter(
+    (s) => (!s.adminOnly || isAdmin) && (!s.mgrPlus || isAdmin || isManager),
+  );
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -308,6 +314,9 @@ export default function AdminSettings() {
               optOuts={optOuts}
               onRefresh={() => loadOptOuts(clinic.id)}
             />
+          )}
+          {activeSection === '7_selfcheckin_qr' && (isAdmin || isManager) && (
+            <SectionSelfCheckinQR clinic={clinic} />
           )}
         </div>
       </div>
@@ -1071,6 +1080,188 @@ function SectionOptOut({ clinicId, optOuts, onRefresh }: {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ⑦ 셀프접수 QR 다운로드 (T-20260531-foot-JONGNOFOOT-SELFCHECKIN-QR-DOWNLOAD)
+//   - foot-native: clinic.slug(jongno-foot) 기반 셀프접수 URL을 가리키는 QR 발급.
+//   - QR 생성: SelfCheckIn.tsx 와 동일한 foot 기존 패턴(api.qrserver.com) 재사용.
+//   - HFQ 코드/DB 런타임 참조 0. footCrmClient 미신설.
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** object URL/외부 URL 이미지를 비동기 로드 */
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('QR 이미지 로드 실패'));
+    img.src = src;
+  });
+}
+
+/** Blob → 파일 다운로드 트리거 */
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function SectionSelfCheckinQR({ clinic }: { clinic: Clinic }) {
+  const [busy, setBusy] = useState<'qr' | 'poster' | null>(null);
+
+  // foot 셀프접수 URL — App.tsx 의 /checkin/:clinicSlug 라우트(jongno-foot). HFQ 도메인 아님.
+  const checkinUrl = `${window.location.origin}/checkin/${clinic.slug}`;
+  // foot 기존 QR 생성 패턴(SelfCheckIn.tsx) 재사용 — 신규 npm 도입 없음.
+  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(checkinUrl)}&qzone=2&margin=0&format=png`;
+
+  // QR PNG 원본을 fetch → 동일 출처 object URL 로 변환(canvas taint 방지 + 다운로드 재사용)
+  const fetchQrBlob = useCallback(async (): Promise<Blob> => {
+    const res = await fetch(qrImageUrl);
+    if (!res.ok) throw new Error(`QR 생성 응답 오류 (${res.status})`);
+    return res.blob();
+  }, [qrImageUrl]);
+
+  const handleDownloadQr = async () => {
+    setBusy('qr');
+    try {
+      const blob = await fetchQrBlob();
+      triggerBlobDownload(blob, `셀프접수QR_${clinic.slug}.png`);
+      toast.success('QR 이미지를 다운로드했습니다.');
+    } catch (err) {
+      toast.error(`다운로드 실패: ${extractErrorMsg(err)}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleDownloadPoster = async () => {
+    setBusy('poster');
+    try {
+      const blob = await fetchQrBlob();
+      const objUrl = URL.createObjectURL(blob);
+      let qrImg: HTMLImageElement;
+      try {
+        qrImg = await loadImage(objUrl); // object URL = 동일 출처 → canvas taint 없음
+      } finally {
+        URL.revokeObjectURL(objUrl);
+      }
+
+      const W = 1080, H = 1527; // A4 비율 포스터
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('이 브라우저는 포스터 생성을 지원하지 않습니다.');
+
+      // 배경 (크림)
+      ctx.fillStyle = '#FDF8F2';
+      ctx.fillRect(0, 0, W, H);
+      // 상단 밴드 (브라운)
+      ctx.fillStyle = '#5C3D1E';
+      ctx.fillRect(0, 0, W, 250);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#FDF8F2';
+      ctx.font = 'bold 66px sans-serif';
+      ctx.fillText(clinic.name, W / 2, 130);
+      ctx.font = '42px sans-serif';
+      ctx.fillText('셀프 접수', W / 2, 200);
+      // 안내 문구
+      ctx.fillStyle = '#3D2B1A';
+      ctx.font = 'bold 58px sans-serif';
+      ctx.fillText('QR을 촬영해 접수해주세요', W / 2, 440);
+      ctx.fillStyle = '#7B5130';
+      ctx.font = '36px sans-serif';
+      ctx.fillText('휴대폰 카메라로 아래 코드를 비추면', W / 2, 520);
+      ctx.fillText('접수 화면으로 이동합니다', W / 2, 572);
+      // QR 흰 카드
+      const qrSize = 600;
+      const qx = (W - qrSize) / 2;
+      const qy = 670;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(qx - 44, qy - 44, qrSize + 88, qrSize + 88);
+      ctx.drawImage(qrImg, qx, qy, qrSize, qrSize);
+      // 하단 URL
+      ctx.fillStyle = '#8B7355';
+      ctx.font = '30px sans-serif';
+      ctx.fillText(checkinUrl, W / 2, qy + qrSize + 130);
+
+      const posterBlob: Blob = await new Promise((resolve, reject) =>
+        canvas.toBlob(
+          (b) => (b ? resolve(b) : reject(new Error('포스터 생성 실패'))),
+          'image/png',
+        ),
+      );
+      triggerBlobDownload(posterBlob, `셀프접수포스터_${clinic.slug}.png`);
+      toast.success('포스터를 다운로드했습니다.');
+    } catch (err) {
+      toast.error(`포스터 생성 실패: ${extractErrorMsg(err)}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="max-w-xl space-y-6" data-testid="selfcheckin-qr-section">
+      <div>
+        <h2 className="text-lg font-semibold">⑦ 셀프접수 QR 다운로드</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          데스크에 비치할 셀프접수 QR을 발급합니다. 고객이 QR을 촬영하면 이 지점의 셀프접수 화면으로 진입합니다.
+        </p>
+      </div>
+
+      <div className="rounded-lg border p-4 space-y-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="rounded-lg border bg-white p-3">
+            <img
+              src={qrImageUrl}
+              alt="셀프접수 QR 코드"
+              width={240}
+              height={240}
+              className="block"
+              data-testid="selfcheckin-qr-preview"
+            />
+          </div>
+          <code className="text-xs text-muted-foreground break-all text-center" data-testid="selfcheckin-qr-url">
+            {checkinUrl}
+          </code>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button
+            onClick={handleDownloadQr}
+            disabled={busy !== null}
+            className="flex-1"
+            data-testid="selfcheckin-qr-download-btn"
+          >
+            {busy === 'qr' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
+            QR 이미지 다운로드
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleDownloadPoster}
+            disabled={busy !== null}
+            className="flex-1"
+            data-testid="selfcheckin-poster-download-btn"
+          >
+            {busy === 'poster' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
+            포스터 다운로드
+          </Button>
+        </div>
+
+        <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>
+            인쇄 후 데스크에 비치하세요. 기존에 인쇄해 둔 QR이 있다면, 이 코드로 교체해야 셀프접수가 정상 동작합니다.
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
