@@ -70,6 +70,8 @@ export default defineConfig({
         '**/T-20260601-foot-DOC-SEAL-NULL-FALLBACK.spec.ts',
         // T-20260601-foot-DOC-SEAL-2DOCS: 도장 잔존 누락 2건 — 진료의뢰서·의무기록사본 placeholder 추가
         '**/T-20260601-foot-DOC-SEAL-2DOCS.spec.ts',
+        // T-20260601-foot-DOC-SEAL2-RXQR: field-soak 잔여 — 단일/미리보기 경로 도장 fallback 정렬(getStampUrl)
+        '**/T-20260601-foot-DOC-SEAL2-RXQR.spec.ts',
         // T-20260601-foot-RX-QR-LABEL: 처방전 우측 상단 보관용 라벨 제거 + QR 가림 해소
         '**/T-20260601-foot-RX-QR-LABEL.spec.ts',
         // T-20260526-foot-RX-PRINT-DUAL: 처방전 2장 출력 (순수 함수 — page 미사용 → unit 편입).
