@@ -301,17 +301,14 @@ function buildCodeEnrichedValues(
 function buildHtmlPageDiv(
   template: FormTemplate,
   fieldValues: Record<string, string>,
-  copyLabel?: string,
+  _copyLabel?: string,
 ): string {
   const htmlTpl = getHtmlTemplate(template.form_key);
   if (!htmlTpl) return '';
-  // T-20260526-foot-RX-PRINT-DUAL: rx_standard → {{rx_copy_label}} 주입 (약국보관용|환자보관용)
-  // copyLabel 미지정 시 기본값 '약국보관용' (하위 호환)
-  const boundValues =
-    template.form_key === 'rx_standard'
-      ? { ...fieldValues, rx_copy_label: copyLabel ?? '약국보관용' }
-      : fieldValues;
-  const bound = bindHtmlTemplate(htmlTpl, boundValues);
+  // T-20260601-foot-RX-QR-LABEL: PATH-4(결제창 영수증 미니창)도 동일하게 보관용 라벨 완전 제거(①).
+  //   {{rx_copy_label}} 중앙 라벨 + 우측 상단 오버레이 박스 폐기 → QR quiet zone 확보.
+  //   2장 출력·QR 자동삽입 유지. _copyLabel은 향후 ②(라벨 이동) 대비 시그니처만 보존(현재 미사용).
+  const bound = bindHtmlTemplate(htmlTpl, fieldValues);
   const isLandscape = template.form_key === 'bill_detail';
   // T-20260601-foot-DOC-PRINT-8FIX REOPEN AC-1: PATH-4(PaymentMiniWindow) 우하단 고정 도장 오버레이 제거.
   //   8FIX(5c54a27)는 PATH-1(DocumentPrintPanel.buildHtmlPageHtml)의 레거시 오버레이만 제거했고
@@ -319,11 +316,8 @@ function buildHtmlPageDiv(
   //   우하단에 찍히는 "재발 동일함"의 근본 원인(제3의 출력 경로). HTML 양식 직인은
   //   {{doctor_seal_html}}(autoBindContext, 의사/대표자 성명 근방 inline)로 일원화한다.
   //   (이미지 양식 buildPageHtml의 좌표 도장은 8FIX 범위 밖이므로 존치 — DocumentPrintPanel과 동일.)
-  // T-20260526-foot-RX-PRINT-DUAL: 처방전 보관용 구분 라벨 오버레이 (상단 우측)
-  const copyLabelHtml = copyLabel
-    ? `<div style="position:absolute;top:10px;right:10px;background:rgba(255,255,255,0.93);border:2px solid #222;padding:4px 14px;font-size:14px;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;font-weight:700;letter-spacing:1px;z-index:10;border-radius:3px;">${copyLabel}</div>`
-    : '';
-  return `<div class="page${isLandscape ? ' page-landscape' : ''}">${bound}${copyLabelHtml}</div>`;
+  // T-20260601-foot-RX-QR-LABEL: 우측 상단 보관용 오버레이 박스 제거 (QR 가림 해소, AC-1·AC-2).
+  return `<div class="page${isLandscape ? ' page-landscape' : ''}">${bound}</div>`;
 }
 
 /** iframe 인쇄 — 단 하나의 OS 프린트 다이얼로그만 노출 */
