@@ -23,22 +23,32 @@
  *      칸반과 함께 스크롤(빈공간 종속), 가로 sticky 해제.
  *    · 데이터·집계·메모·초재진 회차·전체/지정콜 로직은 그대로 보존(위치/표현만 변경).
  *    · 접기/펼치기(닫기/열기) 토글로 칸반 작업 시야 방해 제어(빈공간 점유 최소화).
+ *
+ * T-20260601-foot-DASH-HSCROLL-CHART-LOC — 대시보드 UX 3종 (본 티켓이 POPUP-RELOC 일부 supersede):
+ *  #1 가로스크롤 sticky: 팝업 root를 absolute → position:fixed (뷰포트 좌하단 고정).
+ *     가로 스크롤해도 화면에서 사라지지 않음(POPUP-RELOC의 "칸반과 함께 스크롤" AC supersede).
+ *  #2 고객 이름 클릭 → 진료차트: 행의 고객 이름 클릭 시 onOpenChart(CHART-OPEN-SINGLE 패턴) 호출.
+ *     기존 행 클릭=지정콜 토글과 충돌 없게 클릭영역 분리(이름=차트, 별도 지정콜 버튼=호출).
+ *  #3 성함 옆 현재 위치: 배정 슬롯 이름(getAssignedSlotName)을 성함 옆 배지로 표시.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp } from 'lucide-react';
+import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { CheckIn } from '@/lib/types';
+import { getAssignedSlotName } from '@/lib/checkin-slot';
 
 interface DoctorCallListBarProps {
   /** Dashboard의 당일·해당지점 check_ins rows */
   checkIns: CheckIn[];
   /** 메모 저장 후 부모 rows 갱신 트리거 */
   onRefresh?: () => void;
+  /** T-20260601-foot-DASH-HSCROLL-CHART-LOC #2: 고객 이름 클릭 → 진료차트 (CHART-OPEN-SINGLE 패턴) */
+  onOpenChart?: (ci: CheckIn) => void;
 }
 
-export default function DoctorCallListBar({ checkIns, onRefresh }: DoctorCallListBarProps) {
+export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: DoctorCallListBarProps) {
   // 1) 활성(보라/진료필요) — 콜 대상. 접수순(checked_in_at) 정렬.
   const activeList = useMemo(
     () =>
@@ -115,12 +125,14 @@ export default function DoctorCallListBar({ checkIns, onRefresh }: DoctorCallLis
   if (displayList.length === 0) return null;
 
   return (
-    // POPUP-RELOC) 슬롯 빈공간 플로팅 팝업 — 칸반 스크롤 컨테이너 내부 absolute 배치(부모에서 positioning).
-    //   가로 sticky 해제 + 칸반과 함께 스크롤(OPEN-Q A). 토글로 접기/펼치기.
+    // T-20260601-foot-DASH-HSCROLL-CHART-LOC #1) 진료콜 명단 팝업 — position:fixed (뷰포트 좌하단 고정).
+    //   가로/세로 스크롤해도 화면 좌하단에 고정되어 사라지지 않음(POPUP-RELOC의 칸반 종속 스크롤 supersede).
+    //   z-40: 칸반 카드(z-30)보다 위, 모달(z-50+)보다 아래.
     <div
       data-testid="doctor-call-list"
       data-collapsed={String(collapsed)}
-      className="absolute bottom-4 left-4 z-30 w-[min(30rem,calc(100%-2rem))] overflow-hidden rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm"
+      data-position-mode="fixed"
+      className="fixed bottom-4 left-4 z-40 w-[min(30rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm"
     >
       {/* 헤더 + 접기/펼치기 + 전체콜/지정콜 액션 */}
       <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-red-200 bg-red-50/80">
@@ -206,6 +218,7 @@ export default function DoctorCallListBar({ checkIns, onRefresh }: DoctorCallLis
                 setAllCall(false);
                 setSelectedId((cur) => (cur === ci.id ? null : ci.id));
               }}
+              onOpenChart={onOpenChart}
               onRefresh={onRefresh}
             />
           );
@@ -223,12 +236,16 @@ interface DoctorCallRowProps {
   /** 진료완료(핑크) = 비활성 — dimmed + "진료완료" 배지, 콜 대상 제외 */
   inactive?: boolean;
   onSelect: () => void;
+  /** T-20260601-foot-DASH-HSCROLL-CHART-LOC #2: 고객 이름 클릭 → 진료차트 */
+  onOpenChart?: (ci: CheckIn) => void;
   onRefresh?: () => void;
 }
 
-function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onSelect, onRefresh }: DoctorCallRowProps) {
+function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onSelect, onOpenChart, onRefresh }: DoctorCallRowProps) {
   const isReturning = checkIn.visit_type === 'returning';
   const isExperience = checkIn.visit_type === 'experience';
+  // T-20260601-foot-DASH-HSCROLL-CHART-LOC #3: 성함 옆 현재 배정 슬롯 이름
+  const slotName = getAssignedSlotName(checkIn);
 
   // 3) 진료 전달사항 메모
   const [editing, setEditing] = useState(false);
@@ -296,23 +313,52 @@ function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onS
             : 'border-red-200 bg-white hover:border-red-300',
       )}
     >
-      {/* 헤더: 고객명 + 배지 + 지정콜 버튼 */}
+      {/* 헤더: 고객명(클릭→진료차트) + 위치배지 + 배지 + 지정콜/호출표시 */}
+      {/* T-20260601-foot-DASH-HSCROLL-CHART-LOC #2: 이름=차트, 지정콜=별도 버튼(클릭영역 분리) */}
       <div className="flex items-center justify-between gap-1">
-        <button
-          onClick={onSelect}
-          disabled={inactive}
-          data-testid="doctor-call-select"
-          className={cn(
-            'flex items-center gap-1.5 min-w-0 flex-1 text-left',
-            inactive && 'cursor-default',
-          )}
-          title={inactive ? '진료완료 — 비활성' : '지정콜 — 클릭하여 호출 중 표시'}
-        >
-          <span className={cn('font-semibold text-sm truncate', inactive ? 'text-gray-500' : 'text-gray-900')}>
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <button
+            onClick={() => onOpenChart?.(checkIn)}
+            disabled={!onOpenChart}
+            data-testid="doctor-call-name"
+            className={cn(
+              'font-semibold text-sm truncate text-left',
+              inactive ? 'text-gray-500' : 'text-gray-900',
+              onOpenChart ? 'hover:underline decoration-dotted underline-offset-2 cursor-pointer' : 'cursor-default',
+            )}
+            title={onOpenChart ? '클릭 → 진료차트 열기' : undefined}
+          >
             {checkIn.customer_name}
-          </span>
+          </button>
+          {/* #3 현재 배정 슬롯 이름 */}
+          {slotName && (
+            <span
+              data-testid="doctor-call-location"
+              className="inline-flex items-center gap-0.5 shrink-0 text-[10px] font-medium text-teal-700 bg-teal-50 border border-teal-100 rounded px-1 py-px whitespace-nowrap"
+              title={`현재 위치: ${slotName}`}
+            >
+              <MapPin className="h-2.5 w-2.5" />
+              {slotName}
+            </span>
+          )}
           {visitBadge}
-        </button>
+          {/* 지정콜 토글 — 이름 클릭(차트)과 분리된 별도 버튼 */}
+          {!inactive && (
+            <button
+              onClick={onSelect}
+              data-testid="doctor-call-select"
+              className={cn(
+                'shrink-0 inline-flex items-center justify-center rounded min-w-[28px] min-h-[28px] border transition-colors',
+                highlighted
+                  ? 'bg-red-600 text-white border-red-600'
+                  : 'bg-white text-red-600 border-red-200 hover:bg-red-50',
+              )}
+              title="지정콜 — 클릭하여 호출 중 표시"
+            >
+              <Phone className="h-3 w-3" />
+            </button>
+          )}
+        </div>
         {inactive ? (
           <span
             className="flex items-center gap-0.5 text-[10px] font-bold text-gray-500 bg-gray-200 rounded px-1 py-px whitespace-nowrap"
