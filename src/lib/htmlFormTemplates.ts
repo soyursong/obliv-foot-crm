@@ -1115,7 +1115,7 @@ ${COMMON_STYLE}
         <tr>
           <td style="border:none; padding:2px 8px 2px 0; background:none; white-space:nowrap; font-size:9.5pt;">의&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;사&nbsp;:</td>
           <td style="border:none; border-bottom:1px solid #000; padding:2px 4px; background:none; font-size:9.5pt;">{{doctor_name}}</td>
-          <td style="border:none; padding:2px 0 2px 24px; background:none; white-space:nowrap; font-size:9.5pt;">(날인)</td>
+          <td style="border:none; padding:2px 0 2px 24px; background:none; white-space:nowrap; font-size:9.5pt;">{{doctor_seal_html}}</td>
           <td style="border:none; padding:2px 4px; background:none;"></td>
         </tr>
       </tbody>
@@ -1189,7 +1189,7 @@ ${COMMON_STYLE}
       <tr>
         <td style="background:#f8f8f8; white-space:nowrap;">주치의&nbsp;서명</td>
         <td>{{doctor_name}}</td>
-        <td style="background:#f8f8f8; text-align:center;">(인)</td>
+        <td style="background:#f8f8f8; text-align:center;">{{doctor_seal_html}}</td>
       </tr>
     </tbody>
   </table>
