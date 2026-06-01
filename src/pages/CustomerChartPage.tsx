@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useNavigate, useParams } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { CalendarPlus, Camera, ChevronDown, ChevronRight, ExternalLink, FileText, Loader2, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
+import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, Loader2, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
 import { Badge } from '@/components/ui/badge';
@@ -532,6 +532,15 @@ function TreatmentImagesSection({
   const [uploading, setUploading] = useState(false);
   const [uploadType, setUploadType] = useState<TreatImgType>('photo');
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+  // T-20260601-foot-CHART-IMG-VIEWER-UX 이슈1: 최초 1회만 최신 날짜 자동 펼침 (재렌더 시 재펼침 방지)
+  const didAutoExpandRef = useRef(false);
+
+  // T-20260601-foot-CHART-IMG-VIEWER-UX 이슈2: 라이트박스 모달 (좌우 넘김)
+  const [lightbox, setLightbox] = useState<{ items: TreatImgItem[]; index: number } | null>(null);
+  // T-20260601-foot-CHART-IMG-VIEWER-UX 이슈3: 선택 다운로드 모드
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [downloading, setDownloading] = useState(false);
 
   // T-20260522-foot-IMGDROP-REMOVE: 수동 업로드 분류 다이얼로그 (AC-2)
   const [uploadTypeDialogOpen, setUploadTypeDialogOpen] = useState(false);
@@ -587,14 +596,22 @@ function TreatmentImagesSection({
     const valid = withMeta.filter((i) => i.signedUrl);
     setItems(valid);
     onUrlsLoaded(valid.map((i) => i.signedUrl));
-    // 최신 날짜 자동 펼치기
-    if (valid.length > 0) {
-      const newestDate = valid.reduce((a, b) => (a.dateStr > b.dateStr ? a : b)).dateStr;
-      setExpandedDates((prev) => new Set([...prev, newestDate]));
-    }
+    // T-20260601-foot-CHART-IMG-VIEWER-UX 이슈1: 자동 펼침 로직을 load()에서 제거.
+    // (load는 재렌더/업로드/삭제마다 재실행되어, 여기서 펼치면 접어도 다시 펼쳐지는 버그)
+    // → 최초 1회 자동 펼침은 아래 별도 effect(didAutoExpandRef)에서 처리.
   }, [storagePath, onUrlsLoaded]);
 
   useEffect(() => { load(); }, [load]);
+
+  // T-20260601-foot-CHART-IMG-VIEWER-UX 이슈1 (AC-1):
+  // 진입 시 가장 최근 날짜 그룹만 1회 펼침, 나머지 접힘. 이후 토글은 사용자 제어.
+  useEffect(() => {
+    if (didAutoExpandRef.current) return;
+    if (items.length === 0) return;
+    const newestDate = items.reduce((a, b) => (a.dateStr > b.dateStr ? a : b)).dateStr;
+    setExpandedDates(new Set([newestDate]));
+    didAutoExpandRef.current = true;
+  }, [items]);
 
   // 일자별 그룹핑 (최신순)
   const grouped = useMemo(() => {
@@ -638,6 +655,103 @@ function TreatmentImagesSection({
       if (next.has(d)) next.delete(d); else next.add(d);
       return next;
     });
+
+  // ── T-20260601-foot-CHART-IMG-VIEWER-UX 이슈2/3: 라이트박스 + 다운로드 ──
+
+  const openLightbox = (groupItems: TreatImgItem[], img: TreatImgItem) => {
+    const idx = groupItems.findIndex((i) => i.path === img.path);
+    setLightbox({ items: groupItems, index: idx < 0 ? 0 : idx });
+  };
+
+  const lightboxStep = useCallback((delta: number) => {
+    setLightbox((lb) => {
+      if (!lb) return lb;
+      const next = lb.index + delta;
+      if (next < 0 || next >= lb.items.length) return lb; // 경계: 멈춤(순환 안 함)
+      return { ...lb, index: next };
+    });
+  }, []);
+
+  // 키보드 ←/→/Esc (AC-2)
+  // capture 단계 + stopPropagation: Esc가 라이트박스만 닫고 부모 차트 시트(Radix Dialog)까지
+  // 닫는 것을 막는다. (라이트박스는 시트 위에 떠 있는 자식 모달)
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') { e.stopPropagation(); lightboxStep(1); }
+      else if (e.key === 'ArrowLeft') { e.stopPropagation(); lightboxStep(-1); }
+      else if (e.key === 'Escape') { e.stopPropagation(); setLightbox(null); }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [lightbox, lightboxStep]);
+
+  // signedUrl 만료(1h) 대비 재발급 후 blob fetch (AC-5)
+  const fetchBlobWithRefresh = async (img: TreatImgItem): Promise<Blob | null> => {
+    try {
+      let res = await fetch(img.signedUrl);
+      if (!res.ok) {
+        const { data } = await supabase.storage.from('photos').createSignedUrl(img.path, 3600);
+        if (data?.signedUrl) res = await fetch(data.signedUrl);
+      }
+      if (!res.ok) return null;
+      return await res.blob();
+    } catch {
+      return null;
+    }
+  };
+
+  const triggerDownload = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  // 다건 순차 다운로드. 파일명 = 일자_순번_분류.ext (충돌 회피)
+  const downloadImages = async (imgs: TreatImgItem[]) => {
+    if (imgs.length === 0 || downloading) return;
+    setDownloading(true);
+    let ok = 0;
+    try {
+      for (let i = 0; i < imgs.length; i++) {
+        const img = imgs[i];
+        const blob = await fetchBlobWithRefresh(img);
+        if (!blob) continue;
+        const ext = img.name.split('.').pop() ?? 'jpg';
+        const fname = `${img.dateStr}_${String(i + 1).padStart(2, '0')}_${img.imgType}.${ext}`;
+        triggerDownload(blob, fname);
+        ok++;
+        if (imgs.length > 1) await new Promise((r) => setTimeout(r, 350)); // 브라우저 연속 다운로드 차단 회피
+      }
+    } finally {
+      setDownloading(false);
+    }
+    if (ok === 0) toast.error('다운로드 실패 (이미지를 불러오지 못했습니다)');
+    else toast.success(`${ok}장 다운로드 완료`);
+  };
+
+  const toggleSelect = (path: string) =>
+    setSelectedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path); else next.add(path);
+      return next;
+    });
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedPaths(new Set());
+  };
+
+  const downloadSelected = async () => {
+    const sel = items.filter((i) => selectedPaths.has(i.path));
+    await downloadImages(sel);
+    exitSelectMode();
+  };
 
   // ── T-20260522-foot-MEDIMG-CAMERA: 카메라 함수 ───────────────────────────
 
@@ -957,6 +1071,38 @@ function TreatmentImagesSection({
       <div className="flex items-center justify-between rounded border border-teal-200 bg-teal-50 px-2.5 py-1.5">
         <span className="text-xs text-teal-800 font-medium">일자별 이미지 이력</span>
         <div className="flex items-center gap-1.5">
+          {/* T-20260601-foot-CHART-IMG-VIEWER-UX 이슈3: 선택 다운로드 모드 (AC-3) */}
+          {items.length > 0 && (
+            selectMode ? (
+              <>
+                <button
+                  type="button"
+                  onClick={downloadSelected}
+                  disabled={downloading || selectedPaths.size === 0}
+                  className="inline-flex items-center gap-1 text-xs border border-teal-400 rounded px-2 py-0.5 bg-teal-600 text-white hover:bg-teal-700 transition disabled:opacity-50"
+                >
+                  {downloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                  선택 다운로드 ({selectedPaths.size})
+                </button>
+                <button
+                  type="button"
+                  onClick={exitSelectMode}
+                  className="inline-flex items-center text-xs border border-gray-300 rounded px-2 py-0.5 bg-white text-gray-600 hover:bg-gray-100 transition"
+                >
+                  취소
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSelectMode(true)}
+                className="inline-flex items-center gap-1 text-xs border border-teal-200 rounded px-2 py-0.5 bg-white text-teal-700 hover:bg-teal-100 transition"
+              >
+                <Check className="h-3 w-3" />
+                선택
+              </button>
+            )
+          )}
           {/* T-20260522-foot-IMGDROP-REMOVE: 드롭다운 제거 → 업로드 클릭 시 분류 다이얼로그 (AC-1, AC-2) */}
           <input
             ref={fileInputRef}
@@ -1024,8 +1170,23 @@ function TreatmentImagesSection({
                 </button>
 
                 {/* 사진 그리드 */}
-                {expanded && (
+                {expanded && (() => {
+                  // T-20260601-foot-CHART-IMG-VIEWER-UX 이슈2: 라이트박스 넘김 순서 = 화면 표시 순서(전→후→기타)
+                  const orderedItems = [...beforeItems, ...afterItems, ...photoItems];
+                  return (
                   <div className="p-2 space-y-2 bg-white">
+                    {/* T-20260601-foot-CHART-IMG-VIEWER-UX 이슈3: 그룹 전체 다운로드 (AC-3) */}
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => downloadImages(orderedItems)}
+                        disabled={downloading}
+                        className="inline-flex items-center gap-1 text-[11px] border border-teal-200 rounded px-2 py-0.5 bg-white text-teal-700 hover:bg-teal-100 transition disabled:opacity-50"
+                      >
+                        {downloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                        전체 다운로드 ({orderedItems.length})
+                      </button>
+                    </div>
                     {([['before', beforeItems], ['after', afterItems], ['photo', photoItems]] as Array<[TreatImgType, TreatImgItem[]]>).map(
                       ([type, typeItems]) =>
                         typeItems.length > 0 && (
@@ -1034,23 +1195,47 @@ function TreatmentImagesSection({
                               {TYPE_LABEL[type]}
                             </div>
                             <div className="grid grid-cols-3 gap-1">
-                              {typeItems.map((img) => (
+                              {typeItems.map((img) => {
+                                const selected = selectedPaths.has(img.path);
+                                return (
                                 <div key={img.path} className="relative group aspect-square">
                                   <img
                                     src={img.signedUrl}
                                     alt={img.name}
-                                    className="w-full h-full object-cover rounded border cursor-pointer"
-                                    onClick={() => window.open(img.signedUrl, '_blank')}
+                                    data-testid="treat-img-thumb"
+                                    className={cn(
+                                      'w-full h-full object-cover rounded border cursor-pointer',
+                                      selectMode && selected && 'ring-2 ring-teal-500',
+                                    )}
+                                    onClick={() => {
+                                      // T-20260601-foot-CHART-IMG-VIEWER-UX: 선택 모드면 토글, 아니면 라이트박스 (이슈2/3)
+                                      if (selectMode) toggleSelect(img.path);
+                                      else openLightbox(orderedItems, img);
+                                    }}
                                   />
+                                  {/* T-20260601-foot-CHART-IMG-VIEWER-UX 이슈3: 선택 체크박스 */}
+                                  {selectMode && (
+                                    <div
+                                      className={cn(
+                                        'absolute top-0.5 left-0.5 h-5 w-5 flex items-center justify-center rounded border shadow pointer-events-none',
+                                        selected ? 'bg-teal-600 border-teal-600 text-white' : 'bg-white/80 border-gray-300',
+                                      )}
+                                    >
+                                      {selected && <Check className="h-3 w-3" />}
+                                    </div>
+                                  )}
                                   {/* 삭제 버튼 */}
+                                  {!selectMode && (
                                   <button
-                                    onClick={() => remove(img)}
+                                    onClick={(e) => { e.stopPropagation(); remove(img); }}
                                     className="absolute top-0.5 right-0.5 hidden group-hover:flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white shadow"
                                     title="삭제"
                                   >
                                     <Trash2 className="h-2.5 w-2.5" />
                                   </button>
+                                  )}
                                   {/* T-20260522-foot-MEDIMG-CAMERA: 회전 편집 버튼 (AC-5) */}
+                                  {!selectMode && (
                                   <button
                                     onClick={(e) => { e.stopPropagation(); openEdit(img); }}
                                     className="absolute bottom-0.5 right-0.5 hidden group-hover:flex h-5 w-5 items-center justify-center rounded-full bg-teal-600 text-white shadow"
@@ -1058,14 +1243,17 @@ function TreatmentImagesSection({
                                   >
                                     <RotateCw className="h-2.5 w-2.5" />
                                   </button>
+                                  )}
                                 </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         ),
                     )}
                   </div>
-                )}
+                  );
+                })()}
               </div>
             );
           })}
@@ -1327,6 +1515,80 @@ function TreatmentImagesSection({
           </div>
         </div>
       )}
+
+      {/* ── T-20260601-foot-CHART-IMG-VIEWER-UX 이슈2: 라이트박스 모달 (좌우 넘김, AC-2) ── */}
+      {lightbox && lightbox.items[lightbox.index] && (() => {
+        const cur = lightbox.items[lightbox.index];
+        const atFirst = lightbox.index === 0;
+        const atLast = lightbox.index === lightbox.items.length - 1;
+        return (
+          <div
+            className="fixed inset-0 z-[210] flex flex-col bg-black/90"
+            role="dialog"
+            aria-modal="true"
+            data-testid="img-lightbox"
+            onClick={() => setLightbox(null)}
+          >
+            {/* 상단 바: 인덱스 + 닫기 */}
+            <div className="flex items-center justify-between px-4 py-3 text-white" onClick={(e) => e.stopPropagation()}>
+              <span className="text-sm font-medium" data-testid="lightbox-index">
+                {lightbox.index + 1} / {lightbox.items.length}
+                <span className="ml-2 text-white/60">{cur.dateStr} · {TYPE_LABEL[cur.imgType]}</span>
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => downloadImages([cur])}
+                  disabled={downloading}
+                  className="inline-flex items-center gap-1 text-sm rounded px-3 py-1.5 bg-teal-600 hover:bg-teal-700 transition disabled:opacity-50"
+                  title="이 이미지 다운로드"
+                >
+                  {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                  다운로드
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLightbox(null)}
+                  className="inline-flex items-center justify-center h-9 w-9 rounded-full bg-white/10 hover:bg-white/20 transition"
+                  title="닫기"
+                  data-testid="lightbox-close"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* 본문: 이미지 + 좌우 화살표 */}
+            <div className="relative flex-1 flex items-center justify-center overflow-hidden" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => lightboxStep(-1)}
+                disabled={atFirst}
+                data-testid="lightbox-prev"
+                className="absolute left-3 z-10 flex items-center justify-center h-12 w-12 rounded-full bg-white/10 text-white hover:bg-white/25 transition disabled:opacity-20 disabled:cursor-not-allowed"
+                title="이전 (←)"
+              >
+                <ChevronLeft className="h-7 w-7" />
+              </button>
+              <img
+                src={cur.signedUrl}
+                alt={cur.name}
+                className="max-h-full max-w-full object-contain select-none"
+              />
+              <button
+                type="button"
+                onClick={() => lightboxStep(1)}
+                disabled={atLast}
+                data-testid="lightbox-next"
+                className="absolute right-3 z-10 flex items-center justify-center h-12 w-12 rounded-full bg-white/10 text-white hover:bg-white/25 transition disabled:opacity-20 disabled:cursor-not-allowed"
+                title="다음 (→)"
+              >
+                <ChevronRight className="h-7 w-7" />
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
