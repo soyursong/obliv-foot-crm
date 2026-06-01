@@ -5,7 +5,7 @@ priority: P1
 status: deploy-ready
 deploy-ready: true
 created: 2026-06-01
-updated: 2026-06-01
+updated: 2026-06-01 (e2e-reverify 7/7 PASS — env false-negative 반증)
 deadline: 2026-06-03
 implemented-by: dev-foot
 reviewed-by: ~
@@ -19,6 +19,7 @@ db-migration: supabase/migrations/20260601150000_save_room_assignments_atomic_rp
 repo-path: ~/Documents/GitHub/obliv-foot-crm (github.com/soyursong/obliv-foot-crm, branch main)
 build-cmd: bash scripts/build.sh 180  (cwd=repo-root, NOT ~/claude-sync/...)
 build-reverify: 2026-06-01 — exit 0 PASS (tsc -b && vite build, ✓ built in 3.36s)
+e2e-reverify: 2026-06-01 — 7/7 PASS (1 setup + 6 desktop-chrome, 53.2s). webServer 자동기동(8089, free-test-port→npm run dev) 정상. 직전 supervisor NO-GO는 env false-negative(localhost:8089 미기동 → auth.setup ERR_CONNECTION_REFUSED)로 코드 무관. 포트 자동정리 fix cb5ff70 적용 후 재실행 clean. 코드 unchanged(026eda9).
 ---
 
 # T-20260601-foot-SPACE-ASSIGN-RESET-REGRESS
