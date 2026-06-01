@@ -186,6 +186,36 @@ test.describe('시나리오 1: 공통 도장 위치 재발 (AC-1) — 레거시 
     expect(src).toMatch(/T-20260601-foot-DOC-PRINT-8FIX REOPEN AC-1/);
   });
 
+  // REOPEN2 (planner FIX-REQUEST #2 — 출력경로 전수 sweep): PATH-4 HTML 경로 외에도
+  //   이미지(좌표 오버레이) 양식 경로 + 미리보기 JSX에 동일 우하단 도장 오버레이가 잔존했음.
+  //   활성 13종은 전부 HTML이라 이 경로는 미도달 레거시지만, "1곳만 수정" 재발 클래스를
+  //   근본 차단하기 위해 양 파일의 전 출력경로에서 우하단 도장 오버레이를 전수 소거.
+  test('AC-1 REOPEN2: 양 파일 전 출력경로 — 우하단 도장 오버레이(코드) 전수 소거', () => {
+    for (const [label, file] of [['PaymentMiniWindow', PAY_MINI_SRC], ['DocumentPrintPanel', DOC_PANEL_SRC]] as const) {
+      const src = fs.readFileSync(file, 'utf-8');
+      // 코드 라인의 우하단 고정 도장 좌표/변수/주입이 전부 사라져야 함 (주석은 영향 없음)
+      expect(src, `${label} stampHtml 변수 잔존`).not.toMatch(/const\s+stampHtml\s*=/);
+      expect(src, `${label} \${stampHtml} 주입 잔존`).not.toMatch(/\$\{stampHtml\}/);
+      expect(src, `${label} \${stampOverlay} 주입 잔존`).not.toMatch(/\$\{stampOverlay\}/);
+      expect(src, `${label} 우하단 고정 도장 좌표 잔존`).not.toMatch(/position:absolute;right:52px;bottom:52px/);
+      // 도장 URL 호출 자체가 양식 출력/미리보기 경로에서 제거됨 (import 포함)
+      expect(src, `${label} getStampUrl 참조 잔존`).not.toContain('getStampUrl');
+    }
+  });
+
+  test('AC-1 REOPEN2: DocumentPrintPanel — 우하단 도장 미리보기 JSX 제거', () => {
+    const src = fs.readFileSync(DOC_PANEL_SRC, 'utf-8');
+    expect(src).not.toContain('도장 오버레이 미리보기');
+    expect(src).not.toMatch(/bottom-10 right-10/);
+  });
+
+  test('AC-1 REOPEN2: 영수증(bill_receipt) 렌더 — 우하단 도장 마크업 없이 doctor_seal_html 일원화', () => {
+    const html = getHtmlTemplate('bill_receipt')!;
+    const rendered = bindHtmlTemplate(html, FULL_BIND);
+    expect(rendered).not.toMatch(/right:52px;bottom:52px/);
+    expect(rendered).not.toContain('{{doctor_seal_html}}');
+  });
+
   test('AC-1: 진료확인서·소견서·처방전·보험청구서 — {{doctor_seal_html}}가 의사/대표자 성명 근방', () => {
     for (const formKey of ['treat_confirm', 'diag_opinion', 'rx_standard', 'ins_claim_form']) {
       const html = getHtmlTemplate(formKey);
