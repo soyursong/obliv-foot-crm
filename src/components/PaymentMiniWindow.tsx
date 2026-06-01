@@ -336,7 +336,14 @@ function printViaIframe(html: string): void {
   doc.write(html);
   doc.close();
 
+  // T-20260601-foot-PAY-PRINT-DOUBLE-POPUP: 인쇄 다이얼로그 2회 발생 버그 수정.
+  //   원인 = doPrint가 (1)이미지 로드 완료 onLoad와 (2)4초 fallback setTimeout 양쪽에서
+  //   호출되어 단일 출력 클릭에 contentWindow.print()가 2회 실행 → OS 인쇄창 2회 노출.
+  //   idempotency 가드(printed)로 최초 1회만 실제 print 트리거하도록 교정. 출력 내용·레이아웃 무변경.
+  let printed = false;
   const doPrint = () => {
+    if (printed) return;
+    printed = true;
     try {
       iframe.contentWindow?.print();
     } catch {
