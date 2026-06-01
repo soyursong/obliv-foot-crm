@@ -1,14 +1,11 @@
 /**
- * T-20260601-foot-DOCTOR-CALL-LIST — 대시보드 하단 '원장님 진료콜 명단' 위젯
+ * T-20260601-foot-DOCTOR-CALL-LIST — '원장님 진료콜 명단' 위젯
  *
  * 요구사항 6개:
  *  1) status_flag='purple'(진료필요/보라) 당일 check_ins 자동 리스트업 (수기 명단 제거)
  *  2) 초진/재진 배지 + 재진이면 N회차 표기 (누적 내원 횟수)
  *  3) 진료 전달사항 메모 입력·저장 (check_ins.doctor_call_memo — 방문동선 메모와 용도 분리)
  *  4) 원장님 전체콜/지정콜 (OPEN-Q 기본 구현안 A: 표시/선택형 — 행 선택 시 "호출 중" 하이라이트)
- *  5) 가로 스크롤 sticky — 대시보드 가로 스크롤 시에도 명단 영역이 viewport 하단 고정
- *     (이 컴포넌트는 가로 스크롤 컨테이너 *밖*에 배치되어 가로 스크롤의 영향을 받지 않음)
- *  6) 하단 빨간박스 위치 — 대시보드 하단 (첨부 20260601_124211.png)
  *
  * AC-7: 당일·해당 지점(clinic) 범위. checkIns는 이미 Dashboard.fetchCheckIns에서
  *       clinic_id + 당일로 필터된 rows이므로 추가 지점/날짜 필터 불필요.
@@ -18,9 +15,17 @@
  *  - 활성(purple/진료필요)은 상단, 비활성(pink/진료완료)은 하단 정렬.
  *  - 비활성 행은 흐림 + "진료완료" 배지로 활성 콜대상과 시각 구분. 전체콜/지정콜 대상에서 제외.
  *  - 다시 보라(purple)로 되돌리면 활성으로 복귀(상단 이동) — 필터 재계산으로 자동 처리.
+ *
+ * T-20260601-foot-DOCTOR-CALL-POPUP-RELOC — 하단 고정 → 슬롯 빈공간 팝업 전환:
+ *  - 기존: 대시보드 하단 sticky bottom bar (viewport 하단 항상 가림 → 현장 불편).
+ *  - 변경: 칸반 슬롯 빈공간(스크린샷 빨간박스)에 떠있는 플로팅 팝업 패널.
+ *    · OPEN-Q (A) 빈공간 인라인 팝업으로 구현 — 칸반 스크롤 컨테이너 내부 absolute 배치 →
+ *      칸반과 함께 스크롤(빈공간 종속), 가로 sticky 해제.
+ *    · 데이터·집계·메모·초재진 회차·전체/지정콜 로직은 그대로 보존(위치/표현만 변경).
+ *    · 접기/펼치기(닫기/열기) 토글로 칸반 작업 시야 방해 제어(빈공간 점유 최소화).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Stethoscope, Phone, Check, X, Pencil } from 'lucide-react';
+import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -69,6 +74,10 @@ export default function DoctorCallListBar({ checkIns, onRefresh }: DoctorCallLis
     if (activeList.length === 0) setAllCall(false);
   }, [activeList.length]);
 
+  // POPUP-RELOC AC-4) 접기/펼치기 토글 — 빈공간 점유로 칸반 작업 방해 방지.
+  //   접힘: 헤더 바만 표시(명단 본문 숨김) → 칸반 빈공간 확보.
+  const [collapsed, setCollapsed] = useState(false);
+
   // 2) 재진 N회차 — 누적 내원(진료) 횟수 산출 (활성·비활성 모두 표기)
   const [visitCounts, setVisitCounts] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -106,14 +115,15 @@ export default function DoctorCallListBar({ checkIns, onRefresh }: DoctorCallLis
   if (displayList.length === 0) return null;
 
   return (
-    // 5) sticky — 가로 스크롤 컨테이너 밖, flex-col root의 shrink-0 자식 → viewport 하단 고정.
-    //    가로 스크롤 시 명단은 따라오지 않고 항상 화면에 보임.
+    // POPUP-RELOC) 슬롯 빈공간 플로팅 팝업 — 칸반 스크롤 컨테이너 내부 absolute 배치(부모에서 positioning).
+    //   가로 sticky 해제 + 칸반과 함께 스크롤(OPEN-Q A). 토글로 접기/펼치기.
     <div
       data-testid="doctor-call-list"
-      className="shrink-0 border-t-2 border-red-300 bg-red-50/60"
+      data-collapsed={String(collapsed)}
+      className="absolute bottom-4 left-4 z-30 w-[min(30rem,calc(100%-2rem))] overflow-hidden rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm"
     >
-      {/* 헤더 + 전체콜/지정콜 액션 */}
-      <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-red-200">
+      {/* 헤더 + 접기/펼치기 + 전체콜/지정콜 액션 */}
+      <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-red-200 bg-red-50/80">
         <div className="flex items-center gap-1.5">
           <Stethoscope className="h-4 w-4 text-red-600" />
           <span className="text-sm font-semibold text-red-800">원장님 진료콜 명단</span>
@@ -131,24 +141,26 @@ export default function DoctorCallListBar({ checkIns, onRefresh }: DoctorCallLis
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <button
-            data-testid="doctor-call-all"
-            disabled={activeList.length === 0}
-            onClick={() => {
-              setAllCall((v) => !v);
-              setSelectedId(null);
-            }}
-            className={cn(
-              'flex items-center gap-1 text-xs font-medium rounded-md px-2.5 py-1 min-h-[36px] border transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
-              allCall
-                ? 'bg-red-600 text-white border-red-600'
-                : 'bg-white text-red-700 border-red-300 hover:bg-red-100',
-            )}
-          >
-            <Phone className="h-3.5 w-3.5" />
-            전체콜
-          </button>
-          {(allCall || selectedId) && (
+          {!collapsed && (
+            <button
+              data-testid="doctor-call-all"
+              disabled={activeList.length === 0}
+              onClick={() => {
+                setAllCall((v) => !v);
+                setSelectedId(null);
+              }}
+              className={cn(
+                'flex items-center gap-1 text-xs font-medium rounded-md px-2.5 py-1 min-h-[36px] border transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
+                allCall
+                  ? 'bg-red-600 text-white border-red-600'
+                  : 'bg-white text-red-700 border-red-300 hover:bg-red-100',
+              )}
+            >
+              <Phone className="h-3.5 w-3.5" />
+              전체콜
+            </button>
+          )}
+          {!collapsed && (allCall || selectedId) && (
             <button
               data-testid="doctor-call-clear"
               onClick={() => {
@@ -162,12 +174,23 @@ export default function DoctorCallListBar({ checkIns, onRefresh }: DoctorCallLis
               해제
             </button>
           )}
+          {/* POPUP-RELOC AC-4) 접기/펼치기 토글 */}
+          <button
+            data-testid="doctor-call-toggle"
+            aria-expanded={!collapsed}
+            onClick={() => setCollapsed((v) => !v)}
+            className="flex items-center justify-center text-red-700 rounded-md px-1.5 py-1 min-h-[36px] min-w-[36px] border border-red-300 bg-white hover:bg-red-100"
+            title={collapsed ? '명단 펼치기' : '명단 접기'}
+          >
+            {collapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
         </div>
       </div>
 
-      {/* 명단 — 가로로 카드 나열 (가로 스크롤 가능, 영역 자체는 고정).
+      {/* 명단 — 가로로 카드 나열 (팝업 내부 가로 스크롤). 접힘 시 숨김(빈공간 확보).
           활성(진료필요) 상단 → 비활성(진료완료) 하단 정렬 (displayList). */}
-      <div className="flex gap-2 overflow-x-auto px-3 py-2" data-testid="doctor-call-rows">
+      {!collapsed && (
+      <div className="flex gap-2 overflow-x-auto px-3 py-2 max-h-[42vh]" data-testid="doctor-call-rows">
         {displayList.map((ci) => {
           const inactive = ci.status_flag === 'pink'; // 진료완료 = 비활성
           return (
@@ -188,6 +211,7 @@ export default function DoctorCallListBar({ checkIns, onRefresh }: DoctorCallLis
           );
         })}
       </div>
+      )}
     </div>
   );
 }

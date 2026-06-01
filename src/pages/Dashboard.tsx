@@ -5850,7 +5850,9 @@ export default function Dashboard() {
       {/* T-20260514-foot-TIMETABLE-MOBILE-HSCROLL:
           mobile → min-w-[15rem] shrink-0: 240px 최소폭 보장 → 외부 컨테이너 overflow 강제 (가로 스크롤 트리거)
           desktop → md:flex-1 md:min-w-0 md:shrink: 원래 flex-1 min-w-0 동작 복원 */}
-      <div className="min-w-[15rem] shrink-0 md:flex-1 md:min-w-0 md:shrink overflow-auto p-3">
+      {/* T-20260601-foot-DOCTOR-CALL-POPUP-RELOC: relative — 진료콜 명단 플로팅 팝업의 positioning 기준.
+          팝업은 이 칸반 스크롤 컨테이너 내부 absolute(bottom-left)로 떠서 빈 슬롯 영역을 점유(OPEN-Q A). */}
+      <div className="relative min-w-[15rem] shrink-0 md:flex-1 md:min-w-0 md:shrink overflow-auto p-3">
         {loading && rows.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             불러오는 중…
@@ -5920,12 +5922,14 @@ export default function Dashboard() {
             )}
           </div>
         ) : null}
+        {/* T-20260601-foot-DOCTOR-CALL-POPUP-RELOC: '원장님 진료콜 명단'을 하단 고정 바에서
+            칸반 슬롯 빈공간 플로팅 팝업으로 전환(스크린샷 빨간박스). 칸반 스크롤 컨테이너 내부
+            absolute(bottom-left) 배치 → 빈 슬롯 영역 점유 + 칸반과 함께 스크롤(OPEN-Q A).
+            데이터·집계·메모·초재진 회차 로직은 DOCTOR-CALL-LIST 그대로 보존, 위치/표현만 변경. */}
+        <DoctorCallListBar checkIns={rows} onRefresh={fetchCheckIns} />
       </div>
       {/* flex flex-1 overflow-hidden wrapper 닫기 */}
       </div>
-      {/* T-20260601-foot-DOCTOR-CALL-LIST: 대시보드 하단 '원장님 진료콜 명단' (보라/진료필요 자동 집계)
-          가로 스크롤 컨테이너(dashboard-content-scroll) 밖에 배치 → 가로 스크롤 시에도 viewport 하단 고정(sticky) */}
-      <DoctorCallListBar checkIns={rows} onRefresh={fetchCheckIns} />
       {/* T-20260522-foot-SLOT-SNAP-FIX: snapToCursorModifier — S Pen 터치 포인트에 ghost 정렬 */}
       <DragOverlay modifiers={[snapToCursorModifier]}>
         {dragging && <DraggableCard checkIn={dragging} compact />}
