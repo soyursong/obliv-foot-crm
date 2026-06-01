@@ -66,6 +66,8 @@ export default defineConfig({
         '**/T-20260526-foot-DOC-DIAG-TRUNC.spec.ts',
         // T-20260601-foot-DOC-PRINT-8FIX: 서류 출력 8영역 — 도장 재발/성별·연령 주민번호 산출/처방전 QR·팩스/비급여·공단부담금
         '**/T-20260601-foot-DOC-PRINT-8FIX.spec.ts',
+        // T-20260601-foot-DOC-SEAL-NULL-FALLBACK: DB seal_image_url null 회귀 — 로컬자산 fallback 복구
+        '**/T-20260601-foot-DOC-SEAL-NULL-FALLBACK.spec.ts',
         // T-20260522-foot-TABLET-DUAL-LAYOUT: 태블릿 이중 레이아웃 — 순수 정적 소스 검증 (browser 불필요)
         // desktop-chrome(auth 의존) 대신 unit 프로젝트로 이동 → auth.setup 우회
         '**/T-20260522-foot-TABLET-DUAL-LAYOUT.spec.ts',
