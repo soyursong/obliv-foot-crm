@@ -301,14 +301,19 @@ function buildCodeEnrichedValues(
 function buildHtmlPageDiv(
   template: FormTemplate,
   fieldValues: Record<string, string>,
-  _copyLabel?: string,
+  copyLabel?: string,
 ): string {
   const htmlTpl = getHtmlTemplate(template.form_key);
   if (!htmlTpl) return '';
-  // T-20260601-foot-RX-QR-LABEL: PATH-4(결제창 영수증 미니창)도 동일하게 보관용 라벨 완전 제거(①).
-  //   {{rx_copy_label}} 중앙 라벨 + 우측 상단 오버레이 박스 폐기 → QR quiet zone 확보.
-  //   2장 출력·QR 자동삽입 유지. _copyLabel은 향후 ②(라벨 이동) 대비 시그니처만 보존(현재 미사용).
-  const bound = bindHtmlTemplate(htmlTpl, fieldValues);
+  // T-20260601-foot-RX-QR-LABEL (현장 확정 스코프, MSG-20260601-180722-8kgj / 181005-tdlp):
+  //   PATH-4(결제창 영수증 미니창)도 PATH-1과 대칭. 제거 대상은 우측 상단 absolute 오버레이 박스뿐.
+  //   중앙 상단 {{rx_copy_label}}(약국보관용/환자보관용) 구분 라벨은 2장 출력 식별 표식으로 보존
+  //   (현장 "중앙 상단 라벨 절대 제거하지 말 것"). 2장 출력·QR 자동삽입 무파괴.
+  const boundValues =
+    template.form_key === 'rx_standard'
+      ? { ...fieldValues, rx_copy_label: copyLabel ?? '약국보관용' }
+      : fieldValues;
+  const bound = bindHtmlTemplate(htmlTpl, boundValues);
   const isLandscape = template.form_key === 'bill_detail';
   // T-20260601-foot-DOC-PRINT-8FIX REOPEN AC-1: PATH-4(PaymentMiniWindow) 우하단 고정 도장 오버레이 제거.
   //   8FIX(5c54a27)는 PATH-1(DocumentPrintPanel.buildHtmlPageHtml)의 레거시 오버레이만 제거했고
