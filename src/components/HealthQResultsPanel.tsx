@@ -40,21 +40,34 @@ const FORM_TYPE_LABEL: Record<string, string> = {
 };
 
 /** 섹션 레이블 (form_data key → 표시 이름) */
+// T-20260601-foot-HEALTHQ-SELF-RESTRUCTURE: 신규 동의서 key 추가 + 구 key 후방호환 유지(AC-6)
 const FIELD_LABELS: Record<string, string> = {
-  visit_purpose:         '방문 목적',
-  symptoms:              '발 관련 증상',
-  nail_locations:        '통증 발톱 부위',
-  pain_duration:         '유병 기간',
-  pain_severity:         '통증 정도',
-  medical_history:       '과거 병력',
-  prior_treatment:       '이전 발 시술',
-  prior_conditions:      '기왕증 / 이전 치료',
-  family_history:        '가족력',
-  medications:           '복용 약물',
-  has_allergy:           '알레르기',
-  allergy_types:         '알레르기 종류',
-  allergy_other:         '알레르기 상세',
-  referral_source:       '방문 경로',
+  // 1번 발 관련 증상
+  symptoms:               '발 관련 증상',
+  symptoms_other:         '발 관련 증상 (기타)',
+  // 2번 발 건강 관련 경험 (신규)
+  nail_treatment_history: '문제성 발톱 치료',
+  nail_treatment_methods: '치료 방법',
+  symptom_onset:          '증상 시작 시점',
+  family_history_type:    '가족력',
+  foot_pain_level:        '발 통증 여부',
+  // 3번 나의 건강상태
+  medical_history:        '나의 건강상태',
+  medical_history_other:  '건강상태 (기타)',
+  // 부가 (방문목적/복용약물/알레르기/방문경로)
+  visit_purpose:          '방문 목적',
+  medications:            '복용 약물',
+  has_allergy:            '알레르기',
+  allergy_types:          '알레르기 종류',
+  allergy_other:          '알레르기 상세',
+  referral_source:        '방문 경로',
+  // ── 후방호환 (구 제출분) ──
+  nail_locations:         '통증 발톱 부위',
+  pain_duration:          '유병 기간',
+  pain_severity:          '통증 정도',
+  prior_treatment:        '이전 발 시술',
+  prior_conditions:       '기왕증 / 이전 치료',
+  family_history:         '가족력 (서술)',
 };
 
 const PAIN_SEVERITY_MAP: Record<string, string> = {
@@ -71,7 +84,7 @@ function renderValue(key: string, val: unknown): string {
   if (key === 'has_allergy') {
     return val ? '있음' : '없음';
   }
-  if (key === 'medications_none') return '';
+  if (key === 'medications_none' || key === 'medical_history_none') return '';
   if (Array.isArray(val)) return val.join(', ') || '—';
   if (typeof val === 'boolean') return val ? '예' : '아니오';
   return String(val || '—');
@@ -80,9 +93,13 @@ function renderValue(key: string, val: unknown): string {
 /** form_data 에서 표시할 필드만 추출 (빈 값 제외) */
 function extractDisplayFields(data: Record<string, unknown>) {
   const ORDER = [
-    'visit_purpose', 'symptoms', 'nail_locations', 'pain_duration', 'pain_severity',
-    'medical_history', 'prior_treatment', 'prior_conditions', 'family_history',
-    'medications', 'has_allergy', 'allergy_types', 'allergy_other', 'referral_source',
+    // 신규 동의서 순서
+    'symptoms', 'symptoms_other',
+    'nail_treatment_history', 'nail_treatment_methods', 'symptom_onset', 'family_history_type', 'foot_pain_level',
+    'medical_history', 'medical_history_other',
+    'visit_purpose', 'medications', 'has_allergy', 'allergy_types', 'allergy_other', 'referral_source',
+    // 후방호환 (구 제출분 key)
+    'nail_locations', 'pain_duration', 'pain_severity', 'prior_treatment', 'prior_conditions', 'family_history',
   ];
   const result: Array<{ key: string; label: string; value: string }> = [];
   for (const key of ORDER) {
