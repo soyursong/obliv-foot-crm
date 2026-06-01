@@ -618,31 +618,67 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
 
   // AC-1 T-20260515: 마지막 저장된 스냅샷 로드 (날짜 무관)
   // T-20260523-foot-SPACE-DASH-SYNC 정정 2026-05-24: MAX(created_at) 기준 (saved_at 프록시, 전날 하드코딩 금지)
-  const { data: assignments = [] } = useQuery<RoomAssignmentRow[]>({
-    queryKey: ['room_assignments_latest', clinic.id],
+  // T-20260601-foot-SPACE-ASSIGN-RESET-REGRESS (회귀 복구):
+  //   기존 "MAX(created_at) 날짜의 row만 로드"는 당일(today) 부분 저장이 1건이라도 생기면
+  //   그 부분 스냅샷이 직전 풀 스냅샷 carry-over를 통째로 가려 "리셋"처럼 보이는 결함이 있었다.
+  //   → baseline(today 이전 최신 날짜의 풀 스냅샷) + today(부분) 를 room_name 기준 머지한다.
+  //     today 행이 있으면 해당 방은 today 우선, 없으면 baseline carry-over 유지.
+  //   데이터 무손실: 어떤 행도 삭제/변경하지 않고 읽기 머지만 수행.
+  const { data: assignmentBundle } = useQuery<{
+    rows: RoomAssignmentRow[];
+    hasToday: boolean;
+    baselineDate: string | null;
+  }>({
+    queryKey: ['room_assignments_latest', clinic.id, todayStr],
     queryFn: async () => {
-      const { data: maxRow } = await supabase
-        .from('room_assignments')
-        .select('date, created_at')
-        .eq('clinic_id', clinic.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (!maxRow) return [];
-
-      const { data, error } = await supabase
+      // 1) 당일(today) 행
+      const { data: todayRows, error: todayErr } = await supabase
         .from('room_assignments')
         .select('*')
         .eq('clinic_id', clinic.id)
-        .eq('date', maxRow.date);
+        .eq('date', todayStr);
+      if (todayErr) throw todayErr;
 
-      if (error) throw error;
-      return (data ?? []) as RoomAssignmentRow[];
+      // 2) baseline: today 이전 가장 최근 날짜의 스냅샷 (풀 carry-over 기준)
+      const { data: priorMax } = await supabase
+        .from('room_assignments')
+        .select('date')
+        .eq('clinic_id', clinic.id)
+        .lt('date', todayStr)
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      let baselineRows: RoomAssignmentRow[] = [];
+      if (priorMax?.date) {
+        const { data, error } = await supabase
+          .from('room_assignments')
+          .select('*')
+          .eq('clinic_id', clinic.id)
+          .eq('date', priorMax.date);
+        if (error) throw error;
+        baselineRows = (data ?? []) as RoomAssignmentRow[];
+      }
+
+      // 3) 머지: baseline 먼저 깔고 today 로 덮어쓰기 (room_name 기준, today 우선)
+      const byRoom = new Map<string, RoomAssignmentRow>();
+      for (const r of baselineRows) byRoom.set(r.room_name, r);
+      for (const r of (todayRows ?? []) as RoomAssignmentRow[]) byRoom.set(r.room_name, r);
+
+      return {
+        rows: Array.from(byRoom.values()),
+        hasToday: (todayRows ?? []).length > 0,
+        baselineDate: priorMax?.date ?? null,
+      };
     },
   });
 
-  const lastSavedDate = assignments[0]?.date ?? null;
+  const assignments = useMemo(() => assignmentBundle?.rows ?? [], [assignmentBundle]);
+
+  // "마지막 저장" 라벨: 당일 저장이 있으면 today, 없으면 carry-over 기준 baseline 날짜
+  const lastSavedDate = assignmentBundle
+    ? (assignmentBundle.hasToday ? todayStr : assignmentBundle.baselineDate)
+    : null;
 
   const weekStartStr = format(weekDays[0], 'yyyy-MM-dd');
   const weekEndStr = format(weekDays[5], 'yyyy-MM-dd');

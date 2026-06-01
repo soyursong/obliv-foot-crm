@@ -3160,39 +3160,52 @@ export default function Dashboard() {
     if (!clinic) return;
     // T-20260522-foot-PERF-TUNING OPT-5: select('*') → 필요 컬럼만 (페이로드 축소)
     // T-20260523-foot-SPACE-DASH-SYNC AC-1,2,3 (정정 2026-05-24): 당일 배정 없으면 마지막 저장 carry-over
+    // T-20260601-foot-SPACE-ASSIGN-RESET-REGRESS (회귀 복구):
+    //   기존 로직은 "당일(today) 행이 1건이라도 있으면 today 행만 사용"이라, 슬롯에서 한 방만
+    //   바꿔도(부분 today INSERT) 나머지 방의 풀 carry-over가 통째로 사라져 "리셋"처럼 보였다.
+    //   → baseline(today 이전 최신 날짜 스냅샷) + today 를 room_name 기준 머지(today 우선)한다.
     const { data: todayData } = await supabase
       .from('room_assignments')
       .select('id, clinic_id, date, room_name, room_type, staff_id, staff_name')
       .eq('clinic_id', clinic.id)
       .eq('date', dateStr);
-    if (todayData && todayData.length > 0) {
-      setAssignments(todayData as RoomAssignment[]);
-      setAssignCarryOver(null); // 당일 데이터 → carry-over 아님
-      return;
-    }
-    // 당일 배정 없음 → 가장 최근 저장된 배정 fallback.
-    // "전날" 하드코딩 금지 — MAX(created_at) 기준 최신 레코드 조회 (saved_at 프록시).
-    // 예: 월요일 저장 → 화·수 미저장 → 수요일 대시보드에 월요일 저장 데이터 표시
-    const { data: maxRow } = await supabase
+
+    // baseline: today 이전 가장 최근 날짜의 스냅샷
+    const { data: priorMax } = await supabase
       .from('room_assignments')
-      .select('date, created_at')
+      .select('date')
       .eq('clinic_id', clinic.id)
-      .order('created_at', { ascending: false })
+      .lt('date', dateStr)
+      .order('date', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (!maxRow) {
+
+    let baselineData: RoomAssignment[] = [];
+    if (priorMax?.date) {
+      const { data: lastData } = await supabase
+        .from('room_assignments')
+        .select('id, clinic_id, date, room_name, room_type, staff_id, staff_name')
+        .eq('clinic_id', clinic.id)
+        .eq('date', priorMax.date);
+      baselineData = (lastData ?? []) as RoomAssignment[];
+    }
+
+    const today = (todayData ?? []) as RoomAssignment[];
+    if (today.length === 0 && baselineData.length === 0) {
       setAssignments([]);
       setAssignCarryOver(null);
       return;
     }
-    const { data: lastData } = await supabase
-      .from('room_assignments')
-      .select('id, clinic_id, date, room_name, room_type, staff_id, staff_name')
-      .eq('clinic_id', clinic.id)
-      .eq('date', maxRow.date);
-    setAssignments((lastData ?? []) as RoomAssignment[]);
-    // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-A1: carry-over 인디케이터 — 마지막 저장 날짜 표시
-    setAssignCarryOver(maxRow.date);
+
+    // 머지: baseline 먼저 깔고 today 로 덮어쓰기 (room_name 기준, today 우선)
+    const byRoom = new Map<string, RoomAssignment>();
+    for (const r of baselineData) byRoom.set(r.room_name, r);
+    for (const r of today) byRoom.set(r.room_name, r);
+    setAssignments(Array.from(byRoom.values()));
+
+    // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-A1: carry-over 인디케이터.
+    //   당일 저장이 전혀 없을 때만 "carry-over 표시 중" 인디케이터 노출 (기존 의미 유지).
+    setAssignCarryOver(today.length > 0 ? null : (priorMax?.date ?? null));
   }, [clinic, dateStr]);
 
   // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-B1 + T-20260523-foot-ROOM-DISABLE-TOGGLE AC-3:
