@@ -180,9 +180,10 @@ test.describe('T-20260601 DOCTOR-CALL-LIST — 원장님 진료콜 자동명단'
       return;
     }
 
-    // POPUP-RELOC: 위젯은 position:absolute(플로팅 팝업)로 렌더 — 더 이상 하단 고정 바가 아니다.
+    // POPUP-RELOC: 위젯은 플로팅 오버레이 팝업(positioned)로 렌더 — 더 이상 하단 고정 바가 아니다.
+    //   position 종류는 후속 정정됨(RIGHT-FIX: fixed 우측 고정). 여기선 static 아님만 회귀 가드.
     const position = await list.evaluate((el) => getComputedStyle(el).position);
-    expect(position).toBe('absolute');
+    expect(['fixed', 'absolute', 'sticky']).toContain(position);
 
     await expect(list).toBeVisible();
   });
