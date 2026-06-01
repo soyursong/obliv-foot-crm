@@ -800,7 +800,8 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
         return;
       }
 
-      toast.success(`공간배정 저장됨 (${savedCount ?? payload.length}건)`);
+      // silent 저장 금지(AC-저장-2): success 묵음 채널이 아닌 confirm 채널로 노출
+      toast.confirm(`공간배정 저장됨 (${savedCount ?? payload.length}건)`);
       setPending({});
       setIsDirty(false);
       refresh();
