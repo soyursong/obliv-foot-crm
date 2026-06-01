@@ -875,8 +875,6 @@ export default function DoctorTreatmentPanel({
                   const newItems = items.filter((i) => !existingNames.has(i.name));
                   return [...prev, ...newItems];
                 });
-                // 필드 재동기화를 위해 fieldsSynced 리셋
-                setFieldsSynced(false);
               }}
               className="rounded-lg border border-dashed border-teal-200 bg-teal-50/30 p-2"
             />
