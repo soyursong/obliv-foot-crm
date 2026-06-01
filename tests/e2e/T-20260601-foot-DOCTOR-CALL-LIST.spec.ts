@@ -156,8 +156,12 @@ test.describe('T-20260601 DOCTOR-CALL-LIST — 원장님 진료콜 자동명단'
     expect(result).toEqual(['x']); // 당일·지점 보라 1건만
   });
 
-  // ── 시나리오3 / AC-6: sticky — 가로 스크롤 컨테이너 밖 배치(렌더 스모크) ────────────
-  test('AC-6: 명단 위젯이 가로 스크롤 영역 밖, flex-col root 직계 자식으로 렌더된다', async ({ page }) => {
+  // ── 시나리오3 / AC-6: [SUPERSEDED by T-20260601-foot-DOCTOR-CALL-POPUP-RELOC] ──────────
+  //   원래 AC-6은 '하단 고정 sticky bar(가로 스크롤 컨테이너 밖)'를 검증했으나,
+  //   POPUP-RELOC 티켓(OPEN-Q A)으로 '칸반 슬롯 빈공간 플로팅 팝업'으로 전환되며 무효화됨.
+  //   새 기대치: 위젯은 칸반 스크롤 컨테이너 *내부*에 absolute 로 떠서 빈공간을 점유한다.
+  //   (상세 배치/토글 검증은 T-20260601-foot-DOCTOR-CALL-POPUP-RELOC.spec.ts 에서 수행)
+  test('AC-6(개정): 명단이 하단 고정 바가 아닌 절대배치 플로팅 팝업으로 렌더된다', async ({ page }) => {
     const ok = await loginAndWaitForDashboard(page);
     if (!ok) {
       test.skip(true, '로그인 실패 — 스킵');
@@ -176,20 +180,10 @@ test.describe('T-20260601 DOCTOR-CALL-LIST — 원장님 진료콜 자동명단'
       return;
     }
 
-    // 위젯은 dashboard-root 의 직계(혹은 근접) 자식이어야 하며,
-    // 가로 스크롤 컨테이너(overflow-x:auto 영역) 안에 중첩되면 안 된다.
-    const isOutsideHScroll = await list.evaluate((el) => {
-      let cur = el.parentElement;
-      while (cur && !cur.matches('[data-testid="dashboard-root"]')) {
-        const ox = getComputedStyle(cur).overflowX;
-        if (ox === 'auto' || ox === 'scroll') return false; // 가로 스크롤 컨테이너 내부 = 실패
-        cur = cur.parentElement;
-      }
-      return cur != null; // dashboard-root 까지 도달 = 스크롤 영역 밖
-    });
-    expect(isOutsideHScroll).toBe(true);
+    // POPUP-RELOC: 위젯은 position:absolute(플로팅 팝업)로 렌더 — 더 이상 하단 고정 바가 아니다.
+    const position = await list.evaluate((el) => getComputedStyle(el).position);
+    expect(position).toBe('absolute');
 
-    // shrink-0 으로 viewport 하단 고정 — 위젯이 화면에 보인다
     await expect(list).toBeVisible();
   });
 
