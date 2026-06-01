@@ -54,25 +54,16 @@ function toggle<T>(arr: T[], val: T): T[] {
 }
 
 // ── 설문 항목 정의 ───────────────────────────────────────────────────────────────
-// 발건강질문지 일반/어르신 공통 항목 (오블리브_발톱_발건강_질문지 기반)
-
-const VISIT_PURPOSE_OPTIONS = [
-  '발톱 관련 시술',
-  '굳은살/티눈 제거',
-  '무좀 치료',
-  '발 건조/각질 관리',
-  '발 냄새 관리',
-  '기타',
-];
+// 발건강질문지 5섹션 최종 확정본 (MSG-175815-mlsv)
 
 // ── 1번 발 관련 증상 (다중) — 현장 확정 순서·텍스트 그대로 ──────────────────────
 const SYMPTOM_OPTIONS = [
   '발톱 변색 및 변형',
-  '내성발톱',
+  '내성발톱(파고드는 발톱)',
   '발가락 통증',
   '발냄새',
-  '발 건조 및 각질',
-  '발땀 많음',
+  '발건조 및 각질',
+  '발 땀 많음',
   '가려움증',
   '발톱 끝 부서짐',
   '울퉁불퉁한 발톱',
@@ -96,100 +87,66 @@ const FOOT_PAIN_LEVEL_OPTIONS = [
   { value: '매우 심함', emoji: '😰' },
 ];
 
-// (구) 발톱 통증 부위·기간·정도 / 이전 발 시술 선택지 — 신규 동의서 2번 "발 건강 관련 경험"으로 대체되어
-// 모바일 폼에서 제거됨. 구 제출분은 HealthQData 필드(nail_locations/pain_duration/pain_severity/prior_treatment)와
-// staff HealthQResultsPanel 후방호환 ORDER로 계속 렌더된다.
-
-// ── 3번 나의 건강상태 (다중) — OQ1 최종 목록 확정 전 interim (현장 제시 부분목록) ──
+// ── 3번 나의 건강 상태 (다중) — OQ1 해소 최종 11항(없음 토글 별도) ──────────────
 const MEDICAL_HISTORY_OPTIONS = [
-  '당뇨', '고혈압', '간질환', '고지혈증', '심장질환', '자가면역질환', '기타',
+  '당뇨', '고혈압', '간질환', '고지혈증', '심장질환', '자가면역질환',
+  '갑상선질환', '우울증·공황장애', '위장장애·역류성식도염', '기타',
 ];
 
+// ── 4번 현재 복용 중인 약 (다중) — 현장 확정(없음 토글 별도) ──────────────────────
 const MEDICATION_OPTIONS = [
-  '항응고제(혈액희석제)',
-  '항생제',
-  '스테로이드',
-  '혈압약',
-  '당뇨약',
-  '아스피린',
-  '기타',
+  '당뇨약', '혈압약', '콜레스테롤약', '정신과약', '협심증약', '항암제', '기타약물',
 ];
 
-const ALLERGY_OPTIONS = ['마취제', '항생제', '소독제', '금속', '약물', '기타'];
+// ── 5번 치료 및 내원 계획 (3문 단일선택) 🆕 ─────────────────────────────────────
+const TREATMENT_START_OPTIONS = ['즉시', '1주일 이내', '한 달 이내', '계획없음'];
+const VISIT_FREQUENCY_OPTIONS = ['주 1회', '2주에 한 번', '월 1회', '정기 내원 어려움'];
+const INSURANCE_OPTIONS = ['예', '아니오'];
 
-const REFERRAL_OPTIONS = [
-  '네이버 검색',
-  '지인 소개',
-  'SNS/인스타',
-  '블로그/카페',
-  'TV/언론',
-  '기타',
-];
-
-// ── 데이터 타입 ─────────────────────────────────────────────────────────────────
+// ── 데이터 타입 (5섹션 최종 확정본) ───────────────────────────────────────────────
 interface HealthQData {
-  // 방문 목적
-  visit_purpose:        string[];
-  visit_purpose_other:  string;
   // 1번 발 관련 증상
-  symptoms:             string[];
-  symptoms_other:       string;
+  symptoms:               string[];
+  symptoms_other:         string;
   // 2번 발 건강 관련 경험
   nail_treatment_history: string;   // '없음' | '있음'
   nail_treatment_methods: string[]; // 있음일 때 치료방법
   symptom_onset:          string;
   family_history_type:    string;
   foot_pain_level:        string;
-  // (구) 발톱 통증 부위·기간·정도 — 후방호환
-  nail_locations:       string[];
-  pain_duration:        string;
-  pain_severity:        string;
-  // 3번 나의 건강상태 (구 과거 병력)
-  medical_history:      string[];
-  medical_history_none: boolean;
-  medical_history_other: string;
-  // 이전 치료 경험
-  prior_treatment:      string[];
-  prior_conditions:     string; // 기왕증 자유서술
-  family_history:       string;
-  // 현재 복용 약물
-  medications:          string[];
-  medications_other:    string;
-  medications_none:     boolean;
-  // 알레르기
-  has_allergy:          boolean;
-  allergy_types:        string[];
-  allergy_other:        string;
-  // 방문 경로
-  referral_source:      string;
+  // 3번 나의 건강 상태 (과거병력 포함)
+  medical_history:        string[];
+  medical_history_none:   boolean;
+  medical_history_other:  string;
+  // 4번 현재 복용 중인 약
+  medications:            string[];
+  medications_other:      string;
+  medications_none:       boolean;
+  // 5번 치료 및 내원 계획
+  treatment_start_timing: string;
+  visit_frequency:        string;
+  has_private_insurance:  string;   // '예' | '아니오'
+  insurance_company:      string;
 }
 
 const emptyData = (): HealthQData => ({
-  visit_purpose:         [],
-  visit_purpose_other:   '',
-  symptoms:              [],
-  symptoms_other:        '',
+  symptoms:               [],
+  symptoms_other:         '',
   nail_treatment_history: '',
   nail_treatment_methods: [],
   symptom_onset:          '',
   family_history_type:    '',
   foot_pain_level:        '',
-  nail_locations:        [],
-  pain_duration:         '',
-  pain_severity:         '',
-  medical_history:       [],
-  medical_history_none:  false,
-  medical_history_other: '',
-  prior_treatment:       [],
-  prior_conditions:      '',
-  family_history:        '',
-  medications:           [],
-  medications_other:     '',
-  medications_none:      false,
-  has_allergy:           false,
-  allergy_types:         [],
-  allergy_other:         '',
-  referral_source:       '',
+  medical_history:        [],
+  medical_history_none:   false,
+  medical_history_other:  '',
+  medications:            [],
+  medications_other:      '',
+  medications_none:       false,
+  treatment_start_timing: '',
+  visit_frequency:        '',
+  has_private_insurance:  '',
+  insurance_company:      '',
 });
 
 type PageStep = 'loading' | 'error' | 'form' | 'submitting' | 'done' | 'already_used';
@@ -623,10 +580,10 @@ export default function HealthQMobilePage() {
           </div>
         </section>
 
-        {/* ── 3번 나의 건강상태 (다중) — OQ1 최종 목록 확정 전 interim ──────────── */}
+        {/* ── 3번 나의 건강 상태 (다중) — OQ1 해소 최종 11항 ───────────────────── */}
         <section className="space-y-4 rounded-2xl p-4"
           style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-          <SectionHeader num={3} title="나의 건강상태" sub="해당 항목 모두 선택해주세요" />
+          <SectionHeader num={3} title="나의 건강 상태" sub="과거병력 포함 — 해당 항목 모두 선택해주세요" />
           <div className="flex flex-wrap gap-2">
             <BigBtn
               active={d.medical_history_none}
@@ -661,38 +618,18 @@ export default function HealthQMobilePage() {
           )}
         </section>
 
-        {/* ── 4번 방문 목적 (OQ2 제거여부 확정 전 유지) ────────────────────────── */}
+        {/* ── 4번 현재 복용 중인 약 (다중) — 현장 확정 ─────────────────────────── */}
         <section className="space-y-4 rounded-2xl p-4"
           style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-          <SectionHeader num={4} title="방문 목적" sub="해당 항목 모두 선택해주세요" />
-          <div className="flex flex-wrap gap-2">
-            {VISIT_PURPOSE_OPTIONS.map((opt) => (
-              <BigBtn key={opt}
-                active={d.visit_purpose.includes(opt)}
-                onClick={() => set('visit_purpose', toggle(d.visit_purpose, opt))}
-                color="teal"
-              >
-                {opt}
-              </BigBtn>
-            ))}
-          </div>
-          {d.visit_purpose.includes('기타') && (
-            <input type="text" value={d.visit_purpose_other}
-              onChange={(e) => set('visit_purpose_other', e.target.value)}
-              placeholder="기타 목적 직접 입력"
-              className="w-full rounded-xl border px-4 py-3 text-base outline-none"
-              style={{ borderColor: C.border, color: C.dark, minHeight: 44 }} />
-          )}
-        </section>
-
-        {/* ── 5번 현재 복용 약물 (OQ2 제거여부 확정 전 유지) ───────────────────── */}
-        <section className="space-y-4 rounded-2xl p-4"
-          style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-          <SectionHeader num={5} title="현재 복용 약물" />
+          <SectionHeader num={4} title="현재 복용 중인 약" sub="해당 항목 모두 선택해주세요" />
           <div className="flex flex-wrap gap-2">
             <BigBtn
               active={d.medications_none}
-              onClick={() => set('medications_none', !d.medications_none)}
+              onClick={() => {
+                const next = !d.medications_none;
+                set('medications_none', next);
+                if (next) { set('medications', []); set('medications_other', ''); }
+              }}
               color="emerald"
             >
               없음
@@ -710,7 +647,7 @@ export default function HealthQMobilePage() {
               </BigBtn>
             ))}
           </div>
-          {d.medications.includes('기타') && !d.medications_none && (
+          {d.medications.includes('기타약물') && !d.medications_none && (
             <input type="text" value={d.medications_other}
               onChange={(e) => set('medications_other', e.target.value)}
               placeholder="약물명 직접 입력"
@@ -719,66 +656,69 @@ export default function HealthQMobilePage() {
           )}
         </section>
 
-        {/* ── 6번 알레르기 (OQ2 제거여부 확정 전 유지) ─────────────────────────── */}
-        <section className="space-y-4 rounded-2xl p-4"
+        {/* ── 5번 치료 및 내원 계획 (3문 단일선택) 🆕 ──────────────────────────── */}
+        <section className="space-y-5 rounded-2xl p-4"
           style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-          <SectionHeader num={6} title="알레르기" />
-          <div className="grid grid-cols-2 gap-2">
-            <BigBtn active={!d.has_allergy} onClick={() => set('has_allergy', false)} color="emerald" full>
-              없음
-            </BigBtn>
-            <BigBtn active={d.has_allergy} onClick={() => set('has_allergy', true)} danger full>
-              있음
-            </BigBtn>
-          </div>
-          {d.has_allergy && (
-            <>
-              <div className="flex flex-wrap gap-2">
-                {ALLERGY_OPTIONS.map((opt) => (
-                  <BigBtn key={opt}
-                    active={d.allergy_types.includes(opt)}
-                    onClick={() => set('allergy_types', toggle(d.allergy_types, opt))}
-                    danger
-                  >
-                    {opt}
-                  </BigBtn>
-                ))}
-              </div>
-              <textarea value={d.allergy_other}
-                onChange={(e) => set('allergy_other', e.target.value)}
-                placeholder="알레르기 내역 상세 (선택)"
-                rows={2}
-                className="w-full rounded-xl border px-4 py-3 text-base outline-none resize-none"
-                style={{ borderColor: '#FCA5A5', color: C.dark }} />
-            </>
-          )}
-        </section>
+          <SectionHeader num={5} title="치료 및 내원 계획" sub="각 항목에서 하나씩 선택해주세요" />
 
-        {/* ── 7번 방문 경로 (OQ2 제거여부 확정 전 유지) ────────────────────────── */}
-        <section className="space-y-4 rounded-2xl p-4"
-          style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-          <SectionHeader num={7} title="방문 경로 (선택)" />
-          <div className="flex flex-wrap gap-2">
-            {REFERRAL_OPTIONS.map((opt) => (
-              <BigBtn key={opt}
-                active={d.referral_source === opt}
-                onClick={() => set('referral_source', d.referral_source === opt ? '' : opt)}
-                color="teal"
-              >
-                {opt}
-              </BigBtn>
-            ))}
+          {/* Q1 치료 시작 가능한 시기 */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium" style={{ color: C.dark }}>치료 시작 가능한 시기</p>
+            <div className="flex flex-wrap gap-2">
+              {TREATMENT_START_OPTIONS.map((opt) => (
+                <BigBtn key={opt}
+                  active={d.treatment_start_timing === opt}
+                  onClick={() => set('treatment_start_timing', d.treatment_start_timing === opt ? '' : opt)}
+                  color="teal"
+                >
+                  {opt}
+                </BigBtn>
+              ))}
+            </div>
+          </div>
+
+          {/* Q2 내원 가능 주기 */}
+          <div className="space-y-2 pt-1 border-t" style={{ borderColor: C.border }}>
+            <p className="text-sm font-medium pt-2" style={{ color: C.dark }}>치료를 위해 내원 가능 주기</p>
+            <div className="flex flex-wrap gap-2">
+              {VISIT_FREQUENCY_OPTIONS.map((opt) => (
+                <BigBtn key={opt}
+                  active={d.visit_frequency === opt}
+                  onClick={() => set('visit_frequency', d.visit_frequency === opt ? '' : opt)}
+                  color="teal"
+                >
+                  {opt}
+                </BigBtn>
+              ))}
+            </div>
+          </div>
+
+          {/* Q3 실비보험 */}
+          <div className="space-y-2 pt-1 border-t" style={{ borderColor: C.border }}>
+            <p className="text-sm font-medium pt-2" style={{ color: C.dark }}>실비보험을 보유하고 계신가요?</p>
+            <div className="grid grid-cols-2 gap-2">
+              {INSURANCE_OPTIONS.map((opt) => (
+                <BigBtn key={opt} full
+                  active={d.has_private_insurance === opt}
+                  onClick={() => {
+                    set('has_private_insurance', d.has_private_insurance === opt ? '' : opt);
+                    if (opt !== '예') set('insurance_company', '');
+                  }}
+                  color="teal"
+                >
+                  {opt}
+                </BigBtn>
+              ))}
+            </div>
+            {d.has_private_insurance === '예' && (
+              <input type="text" value={d.insurance_company}
+                onChange={(e) => set('insurance_company', e.target.value)}
+                placeholder="보험사명 직접 입력 (예: ○○화재)"
+                className="w-full rounded-xl border px-4 py-3 text-base outline-none"
+                style={{ borderColor: C.border, color: C.dark, minHeight: 44 }} />
+            )}
           </div>
         </section>
-
-        {/*
-          [OQ2 / 신규 동선 대체] 아래 구(舊) 섹션은 2번 "발 건강 관련 경험"이 대체.
-          중복 질문 방지를 위해 화면에서 숨김 — 데이터 모델·후방호환은 유지(과거 제출분 staff 패널 정상 렌더).
-          OQ2(기존섹션 제거여부)/OQ3(치료방법 선택방식) 현장확정 시 최종 처리.
-            · 구 ③ 발톱 통증 부위·기간·정도 (nail_locations/pain_duration/pain_severity)
-            · 구 ④ 기왕증(prior_conditions)·가족력 자유서술(family_history) → 2번 가족력으로 대체
-            · 구 ⑤ 이전 발 시술 경험 (prior_treatment) → 2번 문제성 발톱 치료로 대체
-        */}
 
         <p className="text-center text-xs pb-4" style={{ color: C.mutedText }}>
           모든 정보는 진료 목적으로만 사용됩니다
