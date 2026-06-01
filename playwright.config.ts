@@ -68,6 +68,11 @@ export default defineConfig({
         '**/T-20260601-foot-DOC-PRINT-8FIX.spec.ts',
         // T-20260601-foot-DOC-SEAL-NULL-FALLBACK: DB seal_image_url null 회귀 — 로컬자산 fallback 복구
         '**/T-20260601-foot-DOC-SEAL-NULL-FALLBACK.spec.ts',
+        // T-20260601-foot-RX-QR-LABEL: 처방전 우측 상단 보관용 라벨 제거 + QR 가림 해소
+        '**/T-20260601-foot-RX-QR-LABEL.spec.ts',
+        // T-20260526-foot-RX-PRINT-DUAL: 처방전 2장 출력 (순수 함수 — page 미사용 → unit 편입).
+        //   RX-QR-LABEL이 보관용 라벨을 superseded(완전 제거) → 라벨 단언은 "제거됨" 회귀 가드로 전환.
+        '**/T-20260526-foot-RX-PRINT-DUAL.spec.ts',
         // T-20260522-foot-TABLET-DUAL-LAYOUT: 태블릿 이중 레이아웃 — 순수 정적 소스 검증 (browser 불필요)
         // desktop-chrome(auth 의존) 대신 unit 프로젝트로 이동 → auth.setup 우회
         '**/T-20260522-foot-TABLET-DUAL-LAYOUT.spec.ts',

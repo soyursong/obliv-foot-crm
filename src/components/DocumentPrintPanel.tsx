@@ -166,29 +166,25 @@ function isLaserBlockedByPackage(
 function buildHtmlPageHtml(
   template: FormTemplate,
   fieldValues: Record<string, string>,
-  copyLabel?: string,
+  _copyLabel?: string,
 ): string {
   const htmlTpl = getHtmlTemplate(template.form_key);
   if (!htmlTpl) return '';
-  // T-20260526-foot-RX-PRINT-DUAL: rx_standard → {{rx_copy_label}} 주입 (약국보관용|환자보관용)
-  // copyLabel 미지정 시 기본값 '약국보관용' (하위 호환)
-  const boundValues =
-    template.form_key === 'rx_standard'
-      ? { ...fieldValues, rx_copy_label: copyLabel ?? '약국보관용' }
-      : fieldValues;
-  const bound = bindHtmlTemplate(htmlTpl, boundValues);
+  // T-20260601-foot-RX-QR-LABEL: 처방전 보관용 라벨(약국/환자) 완전 제거(①). RX-DUAL이 주입하던
+  //   {{rx_copy_label}} 중앙 라벨 + 우측 상단 오버레이 박스를 모두 폐기 → QR quiet zone 확보.
+  //   2장 출력(RX-DUAL)·QR 자동삽입(8FIX)은 유지, 라벨 텍스트만 제거. _copyLabel은 향후
+  //   ②(겹치지 않는 위치로 라벨 이동) 선택지 대비 호출부 시그니처만 보존(현재 미사용).
+  const bound = bindHtmlTemplate(htmlTpl, fieldValues);
   const isLandscape = template.form_key === 'bill_detail';
   // T-20260601-foot-DOC-PRINT-8FIX AC-1: 우하단 고정 도장 오버레이 제거.
   //   직전 7FIX는 {{doctor_seal_html}}(의사 성명 근방)만 추가하고 이 레거시 오버레이를
   //   존치 → 현장 출력에 도장이 여전히 우하단에 찍히는 "재발"의 근본 원인.
   //   직인은 각 양식 {{doctor_seal_html}}(의사/대표자 성명 근방)로 일원화한다.
-  // T-20260526-foot-RX-PRINT-DUAL: 처방전 보관용 구분 라벨 오버레이 (상단 우측)
-  const copyLabelHtml = copyLabel
-    ? `<div style="position:absolute;top:10px;right:10px;background:rgba(255,255,255,0.93);border:2px solid #222;padding:4px 14px;font-size:14px;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;font-weight:700;letter-spacing:1px;z-index:10;border-radius:3px;">${copyLabel}</div>`
-    : '';
+  // T-20260601-foot-RX-QR-LABEL: 우측 상단 보관용 오버레이 박스(top:10px;right:10px) 제거.
+  //   RX-DUAL이 추가한 absolute 오버레이가 8FIX의 우측 상단 QR(72px 셀)을 가리던 주범 → 삭제로
+  //   QR 단독 영역(quiet zone) 확보. (AC-1·AC-2)
   return `<div class="page${isLandscape ? ' page-landscape' : ''}">
   ${bound}
-  ${copyLabelHtml}
 </div>`;
 }
 

@@ -1349,8 +1349,7 @@ const RX_STANDARD_HTML = `
       보호종별 :&nbsp;&nbsp;
     </div>
     <div style="flex:1; text-align:center;">
-      <!-- T-20260526-foot-RX-PRINT-DUAL: rx_copy_label = 약국보관용|환자보관용 (buildHtmlPageHtml 주입) -->
-      <div style="font-size:8pt; margin-bottom:2px;">({{rx_copy_label}})</div>
+      <!-- T-20260601-foot-RX-QR-LABEL: RX-DUAL 중앙 구분 라벨 div 완전 삭제(①) → 제목만 잔존. -->
       <div class="rx-title">처&nbsp;&nbsp;방&nbsp;&nbsp;전</div>
     </div>
     <!-- T-20260601-foot-DOC-PRINT-8FIX AC-3④: QR 자리 텍스트 삭제 + 처방전마다 QR 자동 삽입 -->
