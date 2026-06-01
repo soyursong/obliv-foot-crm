@@ -26,13 +26,16 @@ import { test, expect } from '@playwright/test';
 import { loginAndWaitForDashboard } from '../helpers';
 
 test.describe('T-20260601 DOCTOR-CALL-LIST — 원장님 진료콜 자동명단', () => {
-  // ── 시나리오1 / AC-1·AC-2: 보라(purple) 자동 리스트업 + 상태전환 시 제거 ──────────
-  test('AC-1/AC-2: status_flag=purple 만 명단에 집계되고, 핑크(진료완료) 전환 시 제거된다', async ({ page }) => {
+  // ── 시나리오1 / AC-1·AC-2: 보라(purple) 자동 리스트업 (활성) ───────────────────────
+  //    ※ AC-2 는 T-20260601-foot-CALLLIST-DONE-INACTIVE 로 대체됨:
+  //       핑크(진료완료)는 명단에서 '제거'가 아니라 '비활성(완료) 잔존'.
+  //       따라서 여기서는 '활성(콜대상) 집계'만 검증하고, 핑크 잔존/정렬은 후속 spec에서 검증.
+  test('AC-1: status_flag=purple(활성) 만 콜대상 명단에 접수순 집계된다', async ({ page }) => {
     await page.goto('/');
     const result = await page.evaluate(() => {
-      // DoctorCallListBar.purpleList 와 동일: status_flag === 'purple' 필터 + checked_in_at 정렬
+      // DoctorCallListBar.activeList 와 동일: status_flag === 'purple' 필터 + checked_in_at 정렬
       type Row = { id: string; status_flag: string | null; checked_in_at: string };
-      const filterPurple = (rows: Row[]) =>
+      const activeList = (rows: Row[]) =>
         rows
           .filter((ci) => ci.status_flag === 'purple')
           .sort((a, b) => a.checked_in_at.localeCompare(b.checked_in_at))
@@ -44,19 +47,19 @@ test.describe('T-20260601 DOCTOR-CALL-LIST — 원장님 진료콜 자동명단'
         { id: 'c', status_flag: 'purple', checked_in_at: '2026-06-01T00:30:00+00:00' },
         { id: 'd', status_flag: 'pink', checked_in_at: '2026-06-01T00:10:00+00:00' },
       ];
-      const listed = filterPurple(before);
+      const active = activeList(before);
 
-      // a 를 핑크(진료완료)로 전환 → 명단에서 사라져야 함 (AC-2)
+      // a 를 핑크(진료완료)로 전환 → 활성 명단에서는 빠진다(콜대상 아님). (핑크 잔존은 후속 spec)
       const after = before.map((r) => (r.id === 'a' ? { ...r, status_flag: 'pink' } : r));
-      const afterListed = filterPurple(after);
+      const afterActive = activeList(after);
 
-      return { listed, afterListed };
+      return { active, afterActive };
     });
 
-    // 보라만 집계 + 접수순(checked_in_at) 정렬 → c(00:30) before a(02:00)
-    expect(result.listed).toEqual(['c', 'a']);
-    // a 핑크 전환 후 명단에서 제거, 나머지 보라(c)만 유지
-    expect(result.afterListed).toEqual(['c']);
+    // 보라만 활성 집계 + 접수순 정렬 → c(00:30) before a(02:00). white/pink 제외.
+    expect(result.active).toEqual(['c', 'a']);
+    // a 핑크 전환 후 활성 명단에서 제외, 보라(c)만 활성 유지
+    expect(result.afterActive).toEqual(['c']);
   });
 
   // ── 시나리오1 보강 / AC-3: 초진/재진 배지 + 재진 N회차 ─────────────────────────────
