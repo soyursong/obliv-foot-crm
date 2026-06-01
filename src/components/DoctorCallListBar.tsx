@@ -33,6 +33,15 @@
  *  #2 고객 이름 클릭 → 진료차트: 행의 고객 이름 클릭 시 onOpenChart(CHART-OPEN-SINGLE 패턴) 호출.
  *     기존 행 클릭=지정콜 토글과 충돌 없게 클릭영역 분리(이름=차트, 별도 지정콜 버튼=호출). [정상 배포 유지]
  *  #3 성함 옆 현재 위치: 배정 슬롯 이름(getAssignedSlotName)을 성함 옆 배지로 표시. [정상 배포 유지]
+ *
+ * T-20260601-foot-DASH-POPUP-RIGHT-FIX — 위치 재정정 (db62b1a scroll-bound 대체):
+ *  - 현장 재요청(김주연 총괄): "아니 우측! 대시보드 슬롯 칸 하단에 넣어달라고, 가로스크롤 이동하면 같이 따라가게."
+ *  - db62b1a의 absolute scroll-bound(슬롯과 함께 이동 → 스크롤 시 화면에서 사라짐) 해석을 폐기하고,
+ *    "가로스크롤해도 항상 보이게 따라온다" 의도로 재해석 → position:fixed 뷰포트 우하단 고정으로 정정.
+ *  - absolute bottom-4 right-4 z-30 (슬롯 종속) → fixed bottom-4 right-4 z-40 (뷰포트 우하단 고정).
+ *    · AC-1 우측(우하단) fixed 고정(좌하단 아님). AC-2 가로스크롤해도 우측 유지·안 사라짐.
+ *    · z-40: 칸반 카드(z-30)보다 위, 모달(z-50+)보다 아래. width calc 기준 100% → 100vw(fixed=뷰포트 기준).
+ *  - AC-3 무파괴: 이름클릭→차트, 슬롯 위치배지, 지정콜/전체콜, 메모 등 기능 로직 일체 불변(위치만 변경).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
@@ -128,16 +137,15 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
   if (displayList.length === 0) return null;
 
   return (
-    // T-20260601-foot-DASH-HSCROLL-CHART-LOC #1 (REOPEN 정정) 진료콜 명단 팝업 —
-    //   우측 칸반(슬롯) 스크롤 컨테이너 내부 *우측 하단* absolute 배치 (fixed 폐기).
-    //   부모(Dashboard 칸반 컬럼)가 position:relative + overflow-auto → 이 absolute 자식은
-    //   슬롯 칸에 종속되어 가로스크롤 시 콘텐츠와 함께 이동(뷰포트 고정 아님).
-    //   right-4: 현장 요청대로 우측 정렬. z-30: 칸반 카드와 동급(DOM 후순위 → 카드 위에 페인트).
+    // T-20260601-foot-DASH-POPUP-RIGHT-FIX 진료콜 명단 팝업 —
+    //   뷰포트 *우측 하단* position:fixed 고정 (db62b1a의 absolute scroll-bound 폐기).
+    //   가로스크롤해도 화면 우측에 항상 붙어 따라옴(안 사라짐). 좌하단 아님.
+    //   right-4: 현장 요청대로 우측. z-40: 칸반 카드(z-30) 위, 모달(z-50+) 아래.
     <div
       data-testid="doctor-call-list"
       data-collapsed={String(collapsed)}
-      data-position-mode="scroll-bound"
-      className="absolute bottom-4 right-4 z-30 w-[min(30rem,calc(100%-2rem))] overflow-hidden rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm"
+      data-position-mode="fixed"
+      className="fixed bottom-4 right-4 z-40 w-[min(30rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm"
     >
       {/* 헤더 + 접기/펼치기 + 전체콜/지정콜 액션 */}
       <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-red-200 bg-red-50/80">
