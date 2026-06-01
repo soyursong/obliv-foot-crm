@@ -3240,7 +3240,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   ];
   // T-20260513-foot-C21-TAB-RESTRUCTURE-C: pen_chart + messages 구현 완료
   // T-20260522-foot-REFUND-HIST-TAB: 환불내역 탭 추가
-  const IMPLEMENTED_CLINICAL = ['checklist', 'progress', 'documents', 'payments', 'test_result', 'pen_chart'];
+  // T-20260601-foot-CHART-TAB-MUNJIN-DEDUP: 'checklist'(문진) 탭 진입점 제거에 맞춰 orphan 항목 정리.
+  //   checklist 렌더 로직(L3972~)은 보존(OQ), chartTab은 더 이상 'checklist'에 도달하지 않음.
+  const IMPLEMENTED_CLINICAL = ['progress', 'documents', 'payments', 'test_result', 'pen_chart'];
   const IMPLEMENTED_HISTORY  = ['consultations', 'packages', 'treatments', 'images', 'messages', 'refunds'];
 
   const handleClinicalTab = (key: string) => { setChartTab(key); setChartTabGroup('clinical'); };
