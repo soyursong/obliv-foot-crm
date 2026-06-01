@@ -1552,12 +1552,18 @@ function IssueDialog({
       Object.assign(base, clinicDoctorOverrides);
     }
     // T-20260526-foot-DOC-FORM-REVISE AC-C2: 의사 변경(override) 후 doctor_seal_html 재동기화
-    // clinicDoctorOverrides가 doctor_seal_image를 바꿀 수 있으므로 마지막에 재계산
-    {
-      const sealImg = base.doctor_seal_image ?? '';
-      base.doctor_seal_html = sealImg
-        ? `<img src="${sealImg}" style="width:52px;height:52px;opacity:0.85;vertical-align:middle;display:inline-block;" onerror="this.style.display='none'" />`
-        : '(인)';
+    // clinicDoctorOverrides가 doctor_seal_image를 바꿀 수 있으므로 마지막에 재계산.
+    // T-20260601-foot-DOC-SEAL2-RXQR AC-1·AC-2: 단일/미리보기 출력 경로(allValues)의 도장 누락 회귀 수정.
+    //   기존 버그: override 유무와 무관하게 항상 doctor_seal_html 을 doctor_seal_image(DB seal_image_url)
+    //   기준으로 덮어써, DB null(현재 상태)이면 텍스트 직인으로 만들어 버림 → autoBindContext가 넣어둔
+    //   SEAL-NULL-FALLBACK(DB seal_image_url → 로컬자산 → 텍스트 직인 3단, autoBindContext.ts L308-313)을 파괴.
+    //   배치 경로(autoValues)는 autoValues.doctor_seal_html 을 그대로 써 도장이미지가 나오는데, 단일/미리보기
+    //   경로만 이 덮어쓰기로 텍스트가 되어 진료의뢰서·의무기록사본발급신청서(ad1dd0d placeholder 추가분)에서 누락.
+    //   → 실제 override 도장이미지가 있을 때만 그 이미지로 갱신하고, 없으면 autoValues.doctor_seal_html
+    //   (이미 3단 fallback 적용됨)을 보존한다. 로컬자산 도장 함수를 이 파일에서 직접 호출하지 않음(8FIX
+    //   REOPEN2 가드: DocumentPrintPanel은 우하단 오버레이 부활 방지를 위해 해당 함수 비참조 유지).
+    if (base.doctor_seal_image) {
+      base.doctor_seal_html = `<img src="${base.doctor_seal_image}" style="width:52px;height:52px;opacity:0.85;vertical-align:middle;display:inline-block;" onerror="this.style.display='none'" />`;
     }
     if (computedTotal !== null) {
       base.total_amount = formatAmount(computedTotal);
