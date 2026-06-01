@@ -10,9 +10,11 @@ deadline: 2026-06-03
 implemented-by: dev-foot
 reviewed-by: ~
 build-ok: true
-db-change: false
+db-change: true
 spec-file: tests/e2e/T-20260601-foot-SPACE-ASSIGN-RESET-REGRESS.spec.ts
-commit: ad8493a
+commit: 1049f7e
+reopen: 2026-06-01 (저장 경로 회귀 — 원자적 RPC로 근본 수정)
+db-migration: supabase/migrations/20260601150000_save_room_assignments_atomic_rpc.sql (적용완료, additive)
 ---
 
 # T-20260601-foot-SPACE-ASSIGN-RESET-REGRESS
