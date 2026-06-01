@@ -40,6 +40,7 @@ import {
   EyeOff,
   GripVertical,
   LayoutGrid,
+  MapPin,
   Minus,
   MoreVertical,
   Plus,
@@ -83,6 +84,8 @@ import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import { StatusContextMenu } from '@/components/StatusContextMenu';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import { CustomerHoverCard } from '@/components/CustomerHoverCard';
+// T-20260601-foot-DASH-HSCROLL-CHART-LOC #3: 성함 옆 현재 배정 슬롯 이름
+import { getAssignedSlotName } from '@/lib/checkin-slot';
 // T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동
 import { useChart } from '@/lib/chartContext';
 // T-20260515-foot-CONTEXT-MENU-4ITEM: 진료차트 패널
@@ -357,6 +360,9 @@ const DraggableCard = memo(function DraggableCard({
     ? STATUS_FLAG_CARD_BG[checkIn.status_flag]
     : '';
 
+  // T-20260601-foot-DASH-HSCROLL-CHART-LOC #3: 성함 옆 현재 배정 슬롯 이름
+  const slotName = getAssignedSlotName(checkIn);
+
   if (compact) {
     return (
       <div
@@ -400,6 +406,17 @@ const DraggableCard = memo(function DraggableCard({
                 cardHandlers?.onNameContext(checkIn, e);
               }}
             />
+            {/* T-20260601-foot-DASH-HSCROLL-CHART-LOC #3: 성함 옆 현재 배정 슬롯 이름 */}
+            {slotName && (
+              <span
+                data-testid="card-location-badge"
+                className="inline-flex items-center gap-0.5 shrink-0 text-[9px] font-medium text-teal-700 bg-teal-50 border border-teal-100 rounded px-1 py-px whitespace-nowrap"
+                title={`현재 위치: ${slotName}`}
+              >
+                <MapPin className="h-2 w-2" />
+                {slotName}
+              </span>
+            )}
             {/* T-20260514-foot-CHART-NO-VISIBLE: AC-1 차트번호 상시 표시 */}
             {chartNum && (
               <span className="text-[10px] font-mono text-teal-600 shrink-0">#{chartNum}</span>
@@ -568,6 +585,17 @@ const DraggableCard = memo(function DraggableCard({
               cardHandlers?.onNameContext(checkIn, e);
             }}
           />
+          {/* T-20260601-foot-DASH-HSCROLL-CHART-LOC #3: 성함 옆 현재 배정 슬롯 이름 */}
+          {slotName && (
+            <span
+              data-testid="card-location-badge"
+              className="inline-flex items-center gap-0.5 shrink-0 text-[10px] font-medium text-teal-700 bg-teal-50 border border-teal-100 rounded px-1 py-px whitespace-nowrap"
+              title={`현재 위치: ${slotName}`}
+            >
+              <MapPin className="h-2.5 w-2.5" />
+              {slotName}
+            </span>
+          )}
           {/* T-20260514-foot-CHART-NO-VISIBLE: AC-1 차트번호 상시 표시 */}
           {chartNum && (
             <span className="text-[10px] font-mono text-teal-600 shrink-0">#{chartNum}</span>
@@ -4377,6 +4405,37 @@ export default function Dashboard() {
     }
   }, [ctxOpenChart, clinic, fetchCheckIns]);
 
+  // T-20260601-foot-DASH-HSCROLL-CHART-LOC #2: 진료콜 명단 팝업 이름 클릭 → 진료차트.
+  //   CHART-OPEN-SINGLE 패턴(handleCardClick의 차트 진입 로직) 재사용 — customer_id 직접 오픈,
+  //   미연결 시 동일 클리닉·동일 이름 1건 자동 조회 fallback. setSelectedCheckIn은 하지 않음
+  //   (팝업에서는 상세 시트가 아니라 진료차트만 즉시 열림 — AC-2 "클릭 1회").
+  const handleOpenChartFromList = useCallback(async (ci: CheckIn) => {
+    if (ci.customer_id) {
+      ctxOpenChart(ci.customer_id);
+      return;
+    }
+    if (ci.customer_name && clinic) {
+      const { data: matches } = await supabase
+        .from('customers')
+        .select('id, name')
+        .eq('clinic_id', clinic.id)
+        .eq('name', ci.customer_name)
+        .limit(2);
+      if (matches && matches.length === 1) {
+        const foundId = matches[0].id;
+        ctxOpenChart(foundId);
+        supabase.from('check_ins').update({ customer_id: foundId }).eq('id', ci.id)
+          .then(({ error }) => { if (!error) fetchCheckIns(); });
+      } else if (matches && matches.length > 1) {
+        toast.info(`동명이인 ${matches.length}명 — 고객관리에서 직접 확인하세요`);
+      } else {
+        toast.info('고객 정보가 연결되어 있지 않습니다');
+      }
+    } else {
+      toast.info('고객 정보가 연결되어 있지 않습니다');
+    }
+  }, [ctxOpenChart, clinic, fetchCheckIns]);
+
   // T-20260522-foot-DRAG-RESP-OPT: useCallback 안정화 — 호출 측 클로저 의존성 최소화
   const handleCardContext = useCallback((ci: CheckIn, e: React.MouseEvent) => {
     setContextMenu({ checkIn: ci, pos: { x: e.clientX, y: e.clientY } });
@@ -5935,11 +5994,12 @@ export default function Dashboard() {
             )}
           </div>
         ) : null}
-        {/* T-20260601-foot-DOCTOR-CALL-POPUP-RELOC: '원장님 진료콜 명단'을 하단 고정 바에서
-            칸반 슬롯 빈공간 플로팅 팝업으로 전환(스크린샷 빨간박스). 칸반 스크롤 컨테이너 내부
-            absolute(bottom-left) 배치 → 빈 슬롯 영역 점유 + 칸반과 함께 스크롤(OPEN-Q A).
-            데이터·집계·메모·초재진 회차 로직은 DOCTOR-CALL-LIST 그대로 보존, 위치/표현만 변경. */}
-        <DoctorCallListBar checkIns={rows} onRefresh={fetchCheckIns} />
+        {/* T-20260601-foot-DOCTOR-CALL-POPUP-RELOC: '원장님 진료콜 명단' 플로팅 팝업.
+            T-20260601-foot-DASH-HSCROLL-CHART-LOC #1로 supersede: 팝업 root가 position:fixed
+            (뷰포트 좌하단 고정)로 전환됨 → 가로 스크롤해도 화면에서 사라지지 않음(칸반 종속 스크롤 해제).
+            #2: onOpenChart=고객 이름 클릭 시 진료차트(CHART-OPEN-SINGLE 패턴) 즉시 열기.
+            데이터·집계·메모·초재진 회차 로직은 DOCTOR-CALL-LIST 그대로 보존. */}
+        <DoctorCallListBar checkIns={rows} onRefresh={fetchCheckIns} onOpenChart={handleOpenChartFromList} />
       </div>
       {/* flex flex-1 overflow-hidden wrapper 닫기 */}
       </div>
