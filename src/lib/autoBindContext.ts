@@ -159,6 +159,40 @@ export function parseIcdFromText(text: string | null | undefined): { code: strin
   return { code: '', name: text.trim() };
 }
 
+/**
+ * T-20260601-foot-DOC-PRINT-8FIX (AC-2①/AC-5①②/AC-6①②):
+ *   서류의 성별·연령이 "연동 안 됨" 재발 근본원인 = customers.gender / birth_date 컬럼이
+ *   비어있는 고객이 다수(현장은 주민번호만 입력). 기존 바인딩은 두 컬럼만 참조 → 공란 출력.
+ *   → 주민번호(복호화본)에서 성별·생년월일을 직접 산출하는 fallback을 추가한다.
+ *
+ * 주민번호 13자리 YYMMDD-GXXXXXX 규칙:
+ *   7번째 자리(뒷자리 첫 숫자) = 성별 + 세기
+ *     1·2 → 1900년대,  3·4 → 2000년대,  5·6 → 1900년대(외국인),
+ *     7·8 → 2000년대(외국인),  9·0 → 1800년대
+ *     홀수(1,3,5,7,9) = 남(M),  짝수(2,4,6,8,0) = 여(F)
+ */
+function rrnDigits(rrn: string | null | undefined): string | null {
+  if (!rrn) return null;
+  const clean = rrn.replace(/[^0-9]/g, '');
+  return clean.length === 13 ? clean : null;
+}
+
+/** 주민번호 → 'M' | 'F' | null */
+export function deriveGenderFromRrn(rrn: string | null | undefined): 'M' | 'F' | null {
+  const d = rrnDigits(rrn);
+  if (!d) return null;
+  const g = parseInt(d[6], 10);
+  if (Number.isNaN(g) || g === 0) return g === 0 ? 'F' : null; // 0 → 1800년대 여
+  return g % 2 === 1 ? 'M' : 'F';
+}
+
+/** 주민번호 → birth_date(YYMMDD 6자리). formatBirthDate/calcAge가 세기를 자체 추정. */
+export function deriveBirthYYMMDDFromRrn(rrn: string | null | undefined): string | null {
+  const d = rrnDigits(rrn);
+  if (!d) return null;
+  return d.slice(0, 6);
+}
+
 export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string> {
   const today = format(new Date(), 'yyyy-MM-dd');
   const visitDate = ctx.checkIn.checked_in_at
@@ -179,15 +213,26 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     ctx.clinic?.fax ? 'FAX ' + formatPhone(ctx.clinic.fax) : '',
   ].filter(Boolean).join(' / ');
 
+  // T-20260601-foot-DOC-PRINT-8FIX: 성별·연령 — 컬럼 우선, 없으면 주민번호 산출 fallback
+  const effGender = ctx.customer?.gender ?? deriveGenderFromRrn(ctx.customer?.rrn);
+  const effBirthYYMMDD = ctx.customer?.birth_date ?? deriveBirthYYMMDDFromRrn(ctx.customer?.rrn);
+
+  // T-20260601-foot-DOC-PRINT-8FIX AC-3④: 처방전 QR — record_no + 발행일 식별값 (api.qrserver 재사용, 신규 의존 없음)
+  // QR 정의는 RX-PRINT-DUAL 범위 재사용 (OPEN-Q3: 검증 URL 확정 시 data payload 교체).
+  const rxRecordNo = ctx.customer?.chart_number ?? ctx.checkIn.customer_id?.slice(0, 8) ?? '';
+  const rxQrData = `RX|${rxRecordNo}|${today}`;
+  const rxQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&qzone=1&margin=0&format=png&data=${encodeURIComponent(rxQrData)}`;
+
   return {
     patient_name: ctx.customer?.name ?? ctx.checkIn.customer_name ?? '',
     patient_phone: formatPhone(ctx.customer?.phone ?? ctx.checkIn.customer_phone),
     patient_rrn: patientRrn,
     patient_address: fullAddress,
     // T-20260520-foot-PRINT-FORM-BIND: 신규 바인딩 필드
-    patient_gender: formatGenderCheckbox(ctx.customer?.gender),
-    patient_birthdate: formatBirthDate(ctx.customer?.birth_date),
-    patient_age: calcAge(ctx.customer?.birth_date),
+    // T-20260601-foot-DOC-PRINT-8FIX: 컬럼 공란 시 주민번호 산출본 사용
+    patient_gender: formatGenderCheckbox(effGender),
+    patient_birthdate: formatBirthDate(effBirthYYMMDD),
+    patient_age: calcAge(effBirthYYMMDD),
     visit_date: visitDate,
     doctor_name: ctx.doctor ?? '',
     total_amount: ctx.payments ? formatAmount(ctx.payments.total) : '',
@@ -209,6 +254,9 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     clinic_nhis_code: ctx.clinic?.nhis_code ?? '',
     clinic_code: ctx.clinic?.nhis_code ?? '',    // rx_standard {{clinic_code}} alias
     clinic_fax: ctx.clinic?.fax ? formatPhone(ctx.clinic.fax) : '',
+    // T-20260601-foot-DOC-PRINT-8FIX AC-3①: 처방전 전화칸 옆 팩스 중복 제거용 — 팩스 없는 순수 전화번호.
+    // clinic_phone(=전화/FAX 조합)은 "전화 및 팩스" 라벨 양식 전용 유지.
+    clinic_phone_only: ctx.clinic?.phone ? formatPhone(ctx.clinic.phone) : '',
     // T-20260520-foot-PRINT-FORM-BIND: 차트번호 (record_no fallback)
     record_no: ctx.customer?.chart_number ?? ctx.checkIn.customer_id?.slice(0, 8) ?? '',
     // T-20260520-foot-PRINT-FORM-BIND: 진단 코드·명칭
@@ -242,6 +290,12 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     referral_day:     format(new Date(), 'dd'),
     dept_name:        '족부의학과',
     referring_doctor: ctx.doctor ?? '',
+    // T-20260601-foot-DOC-PRINT-8FIX AC-7: 진료의뢰서 "의뢰병원" 자동 기입 (의뢰 주체 = 본원)
+    referral_to_hospital: ctx.clinic?.name ?? '오블리브 풋센터 종로',
+    // T-20260601-foot-DOC-PRINT-8FIX AC-3②: 처방전 사용기간 "교부일로부터 ( 3 ) 일간" 통일 기본값
+    usage_days: '3',
+    // T-20260601-foot-DOC-PRINT-8FIX AC-3④: 처방전 QR 자동 삽입 (_html 접미사 → 이스케이프 생략)
+    rx_qr_html: `<img src="${rxQrUrl}" alt="처방전 QR" style="width:72px;height:72px;display:block;" onerror="this.style.display='none'" />`,
     // T-20260526-foot-DOC-FORM-REVISE AC#7: 납입증명서 연도 자동 바인딩
     year: format(new Date(), 'yyyy'),
     // T-20260526-foot-DOC-FORM-7FIX AC-7⑤: 납입증명서 "본 진료비는 {{year}}년 {{month}}월까지" 날짜 자동기입

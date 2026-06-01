@@ -284,11 +284,8 @@ function buildCodeEnrichedValues(
       daily_freq: rxItemDosages?.[i.service.id]?.daily_freq || '1',
       total_days: rxItemDosages?.[i.service.id]?.total_days || '7',
     })));
-    // usage_days: 첫 번째 처방약의 투약일수 사용 (복수 항목 시 첫 항목 기준)
-    const firstRx = rxItems[0];
-    if (!values.usage_days) {
-      values.usage_days = (firstRx ? rxItemDosages?.[firstRx.service.id]?.total_days : undefined) || '7';
-    }
+    // T-20260601-foot-DOC-PRINT-8FIX AC-3②: 사용기간 기본 3일 통일 (총투약일수 연동 제거)
+    if (!values.usage_days) values.usage_days = '3';
     if (!values.issue_no) values.issue_no = '';
   }
 
