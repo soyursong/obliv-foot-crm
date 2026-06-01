@@ -73,9 +73,31 @@ async function openTreatmentRxTab(page: Page, customerName: string): Promise<voi
     .first();
   await card.waitFor({ state: 'visible', timeout: 15_000 });
   await card.click();
+
+  // ── QA-FIX(phase2): Dashboard.handleCardClick 은 진료 패널(CheckInDetailSheet, z-50)과
+  //    함께 2번차트(CustomerChartSheet, z-70)를 동시에 연다. 2번차트가 진료 패널 위를 덮어
+  //    그 로딩 오버레이("차트 불러오는 중…")가 처방 탭 클릭 포인터를 가로막아 timeout 발생.
+  //    → 진료 패널을 조작하기 전에 2번차트를 ESC 로 닫고(닫힘 완료까지 대기) 오버레이를 제거한다.
+  //    CustomerChartSheet 의 ESC 핸들러는 document capture 단계 + stopPropagation 이고,
+  //    CheckInDetailSheet(Radix Sheet)의 ESC 는 bubble 단계 → capture 가 먼저 stopPropagation
+  //    하므로 ESC 는 2번차트만 닫고 진료 패널은 유지된다. (닫기 버튼은 CustomerChartPage 헤더에
+  //    가려 actionable 하지 않으므로 사용하지 않음)
+  const chartSheet = page.getByTestId('customer-chart-sheet');
+  try {
+    await chartSheet.waitFor({ state: 'visible', timeout: 5_000 });
+  } catch {
+    // 미연결 고객 등 2번차트가 안 열린 케이스 — 무시하고 진행
+  }
+  if (await chartSheet.count()) {
+    await page.keyboard.press('Escape');
+    await expect(chartSheet).toBeHidden({ timeout: 10_000 });
+  }
+
   // 진료 패널 마운트 (status=examination)
   await expect(page.getByTestId('doctor-treatment-panel')).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId('doctor-tab-prescription').click();
+  const rxTab = page.getByTestId('doctor-tab-prescription');
+  await rxTab.scrollIntoViewIfNeeded();
+  await rxTab.click();
   await expect(page.getByTestId('quick-rx-bar')).toBeVisible({ timeout: 10_000 });
 }
 
