@@ -774,20 +774,22 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
     try {
       const today = todayStr; // const todayStr = format(new Date(), 'yyyy-MM-dd') — 컴포넌트 스코프
 
-      // 머지된 effective 세트 전체를 payload 로 구성 (배정된 방만)
-      const payload = rooms
-        .map(room => {
-          const staffId = getEffectiveStaffId(room.name);
-          if (!staffId) return null;
-          const staff = staffList.find(s => s.id === staffId);
-          return {
-            room_name: room.name,
-            room_type: room.room_type,
-            staff_id: staffId,
-            staff_name: staff?.name ?? null,
-          };
-        })
-        .filter((x): x is NonNullable<typeof x> => x !== null);
+      // 머지된 effective 세트 전체를 payload 로 구성 (배정/미배정 방 모두 포함)
+      // T-20260601-foot-SPACE-ASSIGN-RESET-REGRESS (REOPEN-3, 근본 수정):
+      //   기존엔 미배정(staffId 빈값) 방을 payload 에서 제외(return null)했다. 그 결과 today 스냅샷에
+      //   해당 방 row 가 아예 없어 → 읽기 머지가 baseline(전날) carry-over 로 되살려 "리셋"처럼 보였다.
+      //   → 미배정 방도 staff_id:'' 로 명시 포함하여 today 에 "명시적 미배정" row 를 남긴다.
+      //     이후 읽기 머지에서 today row 존재 → baseline carry-over 차단.
+      const payload = rooms.map(room => {
+        const staffId = getEffectiveStaffId(room.name);
+        const staff = staffId ? staffList.find(s => s.id === staffId) : null;
+        return {
+          room_name: room.name,
+          room_type: room.room_type,
+          staff_id: staffId || '', // '' = 명시적 미배정 (RPC 에서 NULL staff_id 로 INSERT)
+          staff_name: staff?.name ?? null,
+        };
+      });
 
       const { data: savedCount, error } = await supabase.rpc('save_room_assignments', {
         p_clinic_id: clinic.id,

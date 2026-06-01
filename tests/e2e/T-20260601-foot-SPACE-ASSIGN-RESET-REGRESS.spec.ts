@@ -218,4 +218,52 @@ test.describe('T-20260601-foot-SPACE-ASSIGN-RESET-REGRESS 공간배정 carry-ove
     expect(after).toBe(target);
     console.log('[S5] 저장값 유지 OK — 새로고침해도 리셋되지 않음');
   });
+
+  // ===========================================================
+  // S6 (REOPEN-3, AC-미배정-1): 배정→미배정(빈값) 저장 → 새로고침 후에도 미배정 유지
+  //   근본 회귀: 미배정 방이 today 스냅샷에서 제외돼 baseline(전날) carry-over 로 되살아남(=리셋).
+  //   수정: handleSave 가 미배정 방도 staff_id:'' 로 포함 + RPC 가 null staff row 를 INSERT
+  //         → today 에 명시적 미배정 row 존재 → carry-over 차단.
+  // ===========================================================
+  test('S6: 방을 미배정으로 변경·저장 → 새로고침해도 미배정 유지 (carry-over 되살림 없음)', async ({ page }) => {
+    const ok = await gotoSpaceAssign(page);
+    if (!ok) { test.skip(true, '공간 배정 탭 미발견'); return; }
+    await page.waitForTimeout(1_000);
+
+    // 현재 배정된(값 있는) 첫 드롭다운을 찾는다
+    const selects = page.locator('select');
+    const n = await selects.count();
+    let targetIdx = -1;
+    for (let i = 0; i < n; i++) {
+      const v = await selects.nth(i).inputValue().catch(() => '');
+      if (v && v.trim() !== '') { targetIdx = i; break; }
+    }
+    if (targetIdx === -1) {
+      test.skip(true, '배정된 방이 없어 미배정 전환 검증 불가');
+      return;
+    }
+
+    const sel = selects.nth(targetIdx);
+    // 미배정(빈 값) 옵션이 있는지 확인 후 선택
+    const hasEmptyOption = (await sel.locator('option[value=""]').count()) > 0;
+    if (!hasEmptyOption) { test.skip(true, '미배정(빈값) 옵션 미발견'); return; }
+    await sel.selectOption('');
+    await page.waitForTimeout(300);
+    expect(await sel.inputValue()).toBe('');
+
+    // 저장
+    const saveBtn = page.getByRole('button', { name: /^저장/ }).first();
+    await saveBtn.click();
+    await expect(page.getByText(/공간배정 저장됨/).first()).toBeVisible({ timeout: 8_000 });
+    console.log(`[S6] ${targetIdx}번 방 미배정 전환 저장 완료`);
+
+    // 새로고침/재진입 → 해당 방이 여전히 미배정(빈값)이어야 한다 (carry-over 로 되살아나면 실패)
+    const ok2 = await gotoSpaceAssign(page);
+    expect(ok2).toBe(true);
+    await page.waitForTimeout(1_000);
+    const afterVal = await page.locator('select').nth(targetIdx).inputValue();
+    console.log(`[S6] 새로고침 후 ${targetIdx}번 방 값: "${afterVal}" (기대: "")`);
+    expect(afterVal).toBe('');
+    console.log('[S6] 미배정 유지 OK — baseline carry-over 되살림 없음');
+  });
 });
