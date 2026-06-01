@@ -283,9 +283,7 @@ ${COMMON_STYLE}
       <div class="stamp-box">원부대조필<br>인</div>
     </div>
   </div>
-  <div style="text-align:center; font-size:8pt; margin-bottom:4px; color:#555;">
-    ☐ 상병 및 향후치료의견 미표시
-  </div>
+  <!-- T-20260601-foot-DOC-PRINT-8FIX AC-5③: 상단 진단 비표시 안내 문구 제거됨 -->
 
   <table>
     <tbody>
@@ -299,10 +297,8 @@ ${COMMON_STYLE}
         <td style="background:#f8f8f8;">연 번 호</td>
         <td>{{visit_no}}</td>
         <td style="background:#f8f8f8;">성별</td>
-        <td>
-          ☐ 여성&nbsp;&nbsp;
-          <span style="font-weight:bold;">☑ 남성</span>
-        </td>
+        <!-- T-20260601-foot-DOC-PRINT-8FIX AC-5①: 성별 하드코딩 → 주민번호 산출 바인딩 -->
+        <td>{{patient_gender}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">주&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;소</td>
@@ -470,7 +466,8 @@ ${COMMON_STYLE}
         <td style="background:#f8f8f8;">연 번 호</td>
         <td>{{visit_no}}</td>
         <td style="background:#f8f8f8; white-space:nowrap; font-size:8pt;">성별</td>
-        <td>☐ 여&nbsp;&nbsp;☑ 남</td>
+        <!-- T-20260601-foot-DOC-PRINT-8FIX AC-6①: 성별 하드코딩 → 주민번호 산출 바인딩 -->
+        <td>{{patient_gender}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">주&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;소</td>
@@ -649,8 +646,10 @@ ${COMMON_STYLE}
       </tr>
       <tr>
         <td style="background:#f8f8f8;">환자의 주소</td>
-        <td colspan="2">{{patient_address}}</td>
-        <td style="white-space:nowrap;">환자전화&nbsp;{{patient_phone}}</td>
+        <td>{{patient_address}}</td>
+        <!-- T-20260601-foot-DOC-PRINT-8FIX AC-2②③: 라벨/값 분리(타 서류 양식 통일) + 라벨 "환자 연락처" -->
+        <td style="background:#f8f8f8; white-space:nowrap;">환자 연락처</td>
+        <td>{{patient_phone}}</td>
       </tr>
     </tbody>
   </table>
@@ -902,7 +901,8 @@ ${COMMON_STYLE}
         <td>{{clinic_name}}</td>
         <td style="width:60px; background:#f8f8f8; text-align:center;">대 표 자</td>
         <td style="width:120px;">{{doctor_name}}</td>
-        <td style="width:30px; text-align:center;">[인]</td>
+        <!-- T-20260601-foot-DOC-PRINT-8FIX AC-1: 대표자 성명 근방 직인 -->
+        <td style="width:52px; text-align:center;">{{doctor_seal_html}}</td>
       </tr>
     </tbody>
   </table>
@@ -1291,7 +1291,7 @@ ${COMMON_STYLE}
     </div>
     <div style="text-align:right;">
       <div style="font-size:9.5pt; letter-spacing:2px;">{{issue_date}}</div>
-      <div style="font-size:9.5pt; margin-top:4px;">담당의사&nbsp;:&nbsp;{{doctor_name}}&nbsp;&nbsp;(인)</div>
+      <div style="font-size:9.5pt; margin-top:4px;">담당의사&nbsp;:&nbsp;{{doctor_name}}&nbsp;&nbsp;{{doctor_seal_html}}</div>
     </div>
   </div>
 </div>
@@ -1353,8 +1353,9 @@ const RX_STANDARD_HTML = `
       <div style="font-size:8pt; margin-bottom:2px;">({{rx_copy_label}})</div>
       <div class="rx-title">처&nbsp;&nbsp;방&nbsp;&nbsp;전</div>
     </div>
-    <div style="width:72px; height:72px; border:1px solid #bbb; display:flex; align-items:center; justify-content:center; font-size:7pt; color:#999; text-align:center; flex-shrink:0;">
-      처방전<br>QR코드
+    <!-- T-20260601-foot-DOC-PRINT-8FIX AC-3④: QR 자리 텍스트 삭제 + 처방전마다 QR 자동 삽입 -->
+    <div style="width:72px; height:72px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+      {{rx_qr_html}}
     </div>
   </div>
 
@@ -1379,7 +1380,8 @@ const RX_STANDARD_HTML = `
         <td style="width:55px; background:#f8f8f8; text-align:center;">성&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;명</td>
         <td style="width:160px;">{{patient_name}}</td>
         <td style="background:#f8f8f8; text-align:center;">전&nbsp;화&nbsp;번&nbsp;호</td>
-        <td>{{clinic_phone}}</td>
+        <!-- T-20260601-foot-DOC-PRINT-8FIX AC-3①: 전화칸에는 순수 전화번호만(팩스 중복 제거). 팩스는 아래 전용칸. -->
+        <td>{{clinic_phone_only}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8; text-align:center;">주&nbsp;민&nbsp;번&nbsp;호</td>
@@ -1403,7 +1405,8 @@ const RX_STANDARD_HTML = `
         <td rowspan="4" style="width:55px; background:#f8f8f8; text-align:center; font-size:8pt;">질병분류기호</td>
         <td style="width:90px;">{{diag_code_1}}</td>
         <td rowspan="4" style="width:65px; background:#f8f8f8; text-align:center; font-size:8pt;">처&nbsp;방<br>의료인의<br>성&nbsp;&nbsp;&nbsp;&nbsp;명</td>
-        <td rowspan="4" style="width:130px;">{{doctor_name}}</td>
+        <!-- T-20260601-foot-DOC-PRINT-8FIX AC-1: 도장 우하단 고정 제거 → 처방의료인 성명 근방 직인 -->
+        <td rowspan="4" style="width:130px;">{{doctor_name}}&nbsp;&nbsp;{{doctor_seal_html}}</td>
         <td style="width:55px; background:#f8f8f8; text-align:center;">면&nbsp;허&nbsp;종&nbsp;별</td>
         <td>의사</td>
       </tr>
@@ -1806,7 +1809,8 @@ ${COMMON_STYLE}
       </tr>
       <tr>
         <td style="border:none; padding:2px 6px 2px 0; background:none; white-space:nowrap;">담&nbsp;&nbsp;당&nbsp;&nbsp;의&nbsp;&nbsp;사&nbsp;&nbsp;:&nbsp;</td>
-        <td style="border:none; padding:2px 0; background:none;">{{doctor_name}}</td>
+        <!-- T-20260601-foot-DOC-PRINT-8FIX AC-1: 담당의사 성명 근방 직인 -->
+        <td style="border:none; padding:2px 0; background:none;">{{doctor_name}}&nbsp;&nbsp;{{doctor_seal_html}}</td>
       </tr>
     </tbody>
   </table>
@@ -1957,7 +1961,8 @@ export function buildRxItemsHtml(
     name: item.name,
     unit_dose: item.unit_dose ?? '',
     daily_freq: item.daily_freq ?? '',
-    total_days: item.total_days ?? '',
+    // T-20260601-foot-DOC-PRINT-8FIX AC-3③: 총투약일수 자동연동 제거 — 칸(헤더) 유지, 값은 항상 공란(수기 기입).
+    total_days: '',
     method: item.method ?? '',
   }));
   while (rows.length < TOTAL_ROWS) {

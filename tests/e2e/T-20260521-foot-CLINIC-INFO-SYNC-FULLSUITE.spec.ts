@@ -259,12 +259,14 @@ test.describe('AC-FULLSUITE-6 — PUSH P0 대응: clinic_phone field_map 전종 
    * HTML 템플릿에 {{clinic_phone}}이 있는 양식은 field_map에도 clinic_phone이 있어야 함.
    * (auto-bind 동작은 AUTO_BIND_KEYS로 보장되지만, 수기입력 UI 노출도 필요)
    */
+  // T-20260601-foot-DOC-PRINT-8FIX AC-3①: rx_standard 전화칸은 팩스 중복 제거를 위해
+  //   {{clinic_phone}}(전화/팩스 조합) → {{clinic_phone_only}}(순수 전화)로 변경됨.
+  //   따라서 rx_standard는 본 {{clinic_phone}} 검증 목록에서 제외하고 아래 전용 검증으로 대체.
   const FORMS_WITH_CLINIC_PHONE = [
     'diag_opinion',
     'diagnosis',
     'treat_confirm',
     'visit_confirm',
-    'rx_standard',
     'referral_letter',
     'diag_opinion_v2',
   ];
@@ -282,6 +284,12 @@ test.describe('AC-FULLSUITE-6 — PUSH P0 대응: clinic_phone field_map 전종 
       expect(hasClinicPhone).toBe(true);
     });
   }
+
+  // T-20260601-foot-DOC-PRINT-8FIX AC-3①: rx_standard 전용 — 전화칸은 clinic_phone_only(순수 전화)
+  test('rx_standard: HTML 템플릿 전화칸에 {{clinic_phone_only}} 사용 (팩스 중복 제거)', () => {
+    const tmpl = getHtmlTemplate('rx_standard')!;
+    expect(tmpl).toContain('{{clinic_phone_only}}');
+  });
 });
 
 // ─── AC-FULLSUITE-7: rx_standard clinic_fax field_map 검증 ───────────────

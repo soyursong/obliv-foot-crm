@@ -179,19 +179,16 @@ function buildHtmlPageHtml(
       : fieldValues;
   const bound = bindHtmlTemplate(htmlTpl, boundValues);
   const isLandscape = template.form_key === 'bill_detail';
-  const stampUrl = getStampUrl();
-  const stampOverlay = stampUrl
-    ? `<img src="${stampUrl}" alt="원내 도장"
-        style="position:absolute;right:52px;bottom:52px;width:88px;height:88px;opacity:0.85;pointer-events:none;"
-        onerror="this.style.display='none'" />`
-    : '';
+  // T-20260601-foot-DOC-PRINT-8FIX AC-1: 우하단 고정 도장 오버레이 제거.
+  //   직전 7FIX는 {{doctor_seal_html}}(의사 성명 근방)만 추가하고 이 레거시 오버레이를
+  //   존치 → 현장 출력에 도장이 여전히 우하단에 찍히는 "재발"의 근본 원인.
+  //   직인은 각 양식 {{doctor_seal_html}}(의사/대표자 성명 근방)로 일원화한다.
   // T-20260526-foot-RX-PRINT-DUAL: 처방전 보관용 구분 라벨 오버레이 (상단 우측)
   const copyLabelHtml = copyLabel
     ? `<div style="position:absolute;top:10px;right:10px;background:rgba(255,255,255,0.93);border:2px solid #222;padding:4px 14px;font-size:14px;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;font-weight:700;letter-spacing:1px;z-index:10;border-radius:3px;">${copyLabel}</div>`
     : '';
   return `<div class="page${isLandscape ? ' page-landscape' : ''}">
   ${bound}
-  ${stampOverlay}
   ${copyLabelHtml}
 </div>`;
 }
@@ -494,15 +491,14 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
       };
 
       // 출력
-      // AC-6: stamp 오버레이 복구 — DOC-PRINT-UNIFY 리팩토링 중 탈락된 stamp 렌더링 재삽입
+      // T-20260601-foot-DOC-PRINT-8FIX AC-1: 영수증 재발급 경로의 레거시 우하단 도장 오버레이 제거.
+      //   직전 7FIX는 buildHtmlPageHtml 경로만 보고 이 재발급 경로의 오버레이를 존치 →
+      //   현장에서 영수증 재발급 시 도장이 여전히 우하단에 찍히는 "재발"의 또 다른 원인이었음.
+      //   직인은 bill_receipt 양식 내 {{doctor_seal_html}}(진료의사 성명 근방)로 일원화.
       const htmlTpl = getHtmlTemplate('bill_receipt');
       if (htmlTpl) {
         const bound = bindHtmlTemplate(htmlTpl, bindValues);
-        const stampUrl = getStampUrl();
-        const stampOverlay = stampUrl
-          ? `<img src="${stampUrl}" alt="원내 도장" style="position:absolute;right:52px;bottom:52px;width:88px;height:88px;opacity:0.85;pointer-events:none;" onerror="this.style.display='none'" />`
-          : '';
-        const pageHtml = `<div class="page">${bound}${stampOverlay}</div>`;
+        const pageHtml = `<div class="page">${bound}</div>`;
         const w = openBatchPrintWindow([pageHtml], `진료비 영수증 재발급 — ${checkIn.customer_name}`);
         if (!w) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
       }
@@ -1616,7 +1612,8 @@ function IssueDialog({
         method: '',
       }));
       base.rx_items_html = buildRxItemsHtml(rxItems);
-      if (!base.usage_days) base.usage_days = '7';
+      // T-20260601-foot-DOC-PRINT-8FIX AC-3②: 사용기간 기본 3일 통일
+      if (!base.usage_days) base.usage_days = '3';
       if (!base.issue_no) base.issue_no = checkIn.id.slice(0, 5).toUpperCase();
     }
 
