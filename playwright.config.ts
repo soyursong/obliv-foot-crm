@@ -101,7 +101,13 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: 'npm run dev',
+    // 기동 전 8089 포트의 죽은 잔여 프로세스를 먼저 정리한 뒤 dev 서버를 띄운다.
+    //   배경: 직전 run의 zombie vite가 8089를 점유하면(소켓은 열렸지만 응답 없음) Playwright가
+    //         auth.setup `page.goto('/login')` 단계에서 net::ERR_CONNECTION_REFUSED 로 실패.
+    //   reuseExistingServer=true 일 때 정상 서버가 이미 떠 있으면 Playwright가 url 헬스체크 후
+    //   이 command 자체를 실행하지 않으므로, free-test-port 는 launch 가 필요한 경우(=죽은/없는
+    //   서버)에만 동작 → 정상 재사용 서버를 죽이지 않는다.
+    command: 'bash scripts/free-test-port.sh 8089 && npm run dev',
     // 전용 테스트 포트 8089: 일반 dev(8085)와 분리
     // VITE_DEV_PORT=8089 → vite.config.ts server.port 에서 읽어 8089로 기동
     // reuseExistingServer: 로컬에선 이미 8089에 떠있는 서버를 재사용(잔여 프로세스로 인한
