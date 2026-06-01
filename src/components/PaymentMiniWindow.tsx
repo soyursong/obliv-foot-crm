@@ -51,7 +51,6 @@ import {
   INSURANCE_FALLBACK_TEMPLATES,
   FORM_META,
   getTemplateImageUrl,
-  getStampUrl,
   type FormTemplate,
   type FieldMapEntry,
 } from '@/lib/formTemplates';
@@ -374,8 +373,6 @@ function buildPageHtml(
   fieldValues: Record<string, string>,
   imgUrl: string,
 ): string {
-  const stampUrl = getStampUrl();
-
   const overlayHtml =
     template.field_map.length > 0
       ? template.field_map
@@ -403,16 +400,13 @@ function buildPageHtml(
            ⚠ 좌표 미설정 — 원본 양식만 표시됩니다.
          </div>`;
 
-  const stampHtml = stampUrl
-    ? `<img src="${stampUrl}" alt="원내 도장"
-        style="position:absolute;right:52px;bottom:52px;width:88px;height:88px;opacity:0.85;pointer-events:none;"
-        onerror="this.style.display='none'" />`
-    : '';
-
+  // T-20260601-foot-DOC-PRINT-8FIX REOPEN2 AC-1: 이미지(좌표 오버레이) 양식 경로의 우하단 고정
+  //   도장 오버레이도 제거 — 직인은 doctor_seal_html로 일원화. 활성 13종은 전부 HTML이라
+  //   이 경로에 도달하지 않는 레거시지만, bottom:52px 오버레이 클래스를 전 출력경로에서
+  //   전수 소거(planner FIX-REQUEST #2)해 "1곳만 수정" 재발 클래스를 근본 차단.
   return `<div class="page">
   <img src="${imgUrl}" alt="${template.name_ko}" />
   ${overlayHtml}
-  ${stampHtml}
 </div>`;
 }
 

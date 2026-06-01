@@ -63,7 +63,6 @@ import {
   FALLBACK_TEMPLATES,
   INSURANCE_FALLBACK_TEMPLATES,
   FORM_META,
-  getStampUrl,
   getTemplateImageUrl,
   type FieldMapEntry,
   type FormSubmission,
@@ -209,8 +208,6 @@ function buildPageHtml(
     return buildHtmlPageHtml(template, fieldValues);
   }
 
-  const stampUrl = getStampUrl();
-
   const overlayHtml =
     template.field_map.length > 0
       ? template.field_map
@@ -238,16 +235,12 @@ function buildPageHtml(
            ⚠ 좌표 미설정 — 원본 양식만 표시됩니다.
          </div>`;
 
-  const stampHtml = stampUrl
-    ? `<img src="${stampUrl}" alt="원내 도장"
-        style="position:absolute;right:52px;bottom:52px;width:88px;height:88px;opacity:0.85;pointer-events:none;"
-        onerror="this.style.display='none'" />`
-    : '';
-
+  // T-20260601-foot-DOC-PRINT-8FIX REOPEN2 AC-1: 이미지(좌표 오버레이) 양식 경로의 우하단 고정
+  //   도장 오버레이 제거 — 직인은 doctor_seal_html로 일원화. (HTML 양식은 위에서 분기되어
+  //   여기 도달하지 않음. bottom:52px 오버레이 클래스를 전 출력경로에서 전수 소거 — planner #2.)
   return `<div class="page">
   <img src="${imgUrl}" alt="${template.name_ko}" />
   ${overlayHtml}
-  ${stampHtml}
 </div>`;
 }
 
@@ -2322,7 +2315,6 @@ function PreviewDialog({
 
   // 기존 PNG/JPG 이미지 오버레이 방식
   const imgUrl = getTemplateImageUrl(template.form_key);
-  const stampUrl = getStampUrl();
   const hasCoords = template.field_map.length > 0;
 
   if (!imgUrl) return null;
@@ -2365,17 +2357,8 @@ function PreviewDialog({
               );
             })}
 
-          {/* 도장 오버레이 미리보기 */}
-          {stampUrl && (
-            <img
-              src={stampUrl}
-              alt="원내 도장"
-              className="absolute bottom-10 right-10 w-20 h-20 opacity-80 pointer-events-none"
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = 'none';
-              }}
-            />
-          )}
+          {/* T-20260601-foot-DOC-PRINT-8FIX REOPEN2 AC-1: 우하단 고정 도장 미리보기 제거
+              (직인은 doctor_seal_html로 일원화 — 레거시 이미지 양식 미리보기 경로) */}
 
           {!hasCoords && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/5">
