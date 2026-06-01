@@ -52,11 +52,25 @@ const C = {
 } as const;
 
 // T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: 신규 단계 추가
-type Step = 'input' | 'personal_info' | 'confirm' | 'qr' | 'done' | 'error';
+// T-20260601-foot-SELFLOGIN-RESV-LIST-QR: 'select-reservation' 추가 (예약자 목록 선택)
+type Step = 'input' | 'select-reservation' | 'personal_info' | 'confirm' | 'qr' | 'done' | 'error';
 type Lang = 'ko' | 'en';
 
 /** 예약 여부 1단계 선택값 */
 type ReservationType = 'reserved' | 'walkin';
+
+/**
+ * T-20260601-foot-SELFLOGIN-RESV-LIST-QR
+ * 화면에 표시되는 마스킹된 예약 항목 (anon 공개 라우트 — 마스킹값만 보관)
+ */
+interface MaskedReservation {
+  reservation_id: string;
+  customer_id: string | null;
+  masked_name: string;   // 예: "김*현"
+  masked_phone: string;  // 예: "02*9"
+  reservation_time: string; // "HH:MM"
+  visit_type: VisitType;
+}
 
 const T: Record<Lang, {
   selfCheckIn: string;
@@ -130,6 +144,17 @@ const T: Record<Lang, {
   qrAutoReset: (s: number) => string;
   qrLoading: string;
   qrError: string;
+  // T-20260601-foot-SELFLOGIN-RESV-LIST-QR: 예약자 목록 선택 동선
+  selectReservationTitle: string;
+  selectReservationGuide: string;
+  openReservationList: string;
+  reservationListLoading: string;
+  noReservationTitle: string;
+  noReservationDesc: string;
+  backToPhoneCheckin: string;
+  reservationListBack: string;
+  // OQ1(가정 A): 셀프접수 페이지 URL QR
+  scanToPhoneCaption: string;
 }> = {
   ko: {
     selfCheckIn: '셀프 접수',
@@ -201,6 +226,16 @@ const T: Record<Lang, {
     qrAutoReset: (s) => `${s}초 후 자동으로 다음 단계로 넘어갑니다`,
     qrLoading: 'QR 코드 생성 중...',
     qrError: 'QR 코드를 불러올 수 없습니다. 데스크에 문의해주세요.',
+    // T-20260601-foot-SELFLOGIN-RESV-LIST-QR
+    selectReservationTitle: '예약자 명단',
+    selectReservationGuide: '본인 성함을 선택해주세요',
+    openReservationList: '예약자 명단에서 찾기',
+    reservationListLoading: '예약자 명단을 불러오는 중...',
+    noReservationTitle: '오늘 예약자 명단에 없습니다',
+    noReservationDesc: '데스크에 문의하시거나\n전화번호로 직접 접수해주세요.',
+    backToPhoneCheckin: '전화번호로 접수하기',
+    reservationListBack: '← 돌아가기',
+    scanToPhoneCaption: 'QR을 스캔해 휴대폰으로 접수할 수 있어요',
   },
   en: {
     selfCheckIn: 'Self Check-In',
@@ -272,6 +307,16 @@ const T: Record<Lang, {
     qrAutoReset: (s) => `Auto-advance in ${s} seconds`,
     qrLoading: 'Generating QR code...',
     qrError: 'QR code unavailable. Please ask the front desk.',
+    // T-20260601-foot-SELFLOGIN-RESV-LIST-QR
+    selectReservationTitle: 'Reservation List',
+    selectReservationGuide: 'Please select your name',
+    openReservationList: 'Find me in the reservation list',
+    reservationListLoading: 'Loading reservation list...',
+    noReservationTitle: 'Not found in today’s reservations',
+    noReservationDesc: 'Please ask the front desk\nor check in with your phone number.',
+    backToPhoneCheckin: 'Check in by phone number',
+    reservationListBack: '← Back',
+    scanToPhoneCaption: 'Scan the QR to check in on your phone',
   },
 };
 
@@ -305,6 +350,25 @@ function maskRrn(rrnStr: string): string {
   const digits = rrnStr.replace(/\D/g, '');
   if (digits.length <= 6) return rrnStr;
   return `${digits.slice(0, 6)}-${'*'.repeat(Math.min(7, digits.length - 6))}`;
+}
+
+// ── T-20260601-foot-SELFLOGIN-RESV-LIST-QR: 예약자 목록 마스킹 유틸 (롱레 동일) ──
+/** 이름 마스킹: 두 번째 글자부터 * (예: 김도현→김*현, 박소→박*) */
+function maskName(name: string): string {
+  if (!name) return '';
+  if (name.length === 1) return name;
+  if (name.length === 2) return name[0] + '*';
+  return name[0] + '*'.repeat(name.length - 2) + name[name.length - 1];
+}
+
+/**
+ * 전화번호 마스킹: 끝 4자리 중 앞 2자리 마스킹 → "0*{끝2자리}"
+ * 예: 010-1234-5609 → 0*09 (현장 예시 "02*9" 기준 — 롱레 maskPhone 통일)
+ */
+function maskPhone(phone: string): string {
+  const digits = phone.replace(/[^0-9]/g, '');
+  if (digits.length < 2) return '0*';
+  return '0*' + digits.slice(-2);
 }
 
 // ── 숫자패드 컴포넌트 ──
@@ -485,6 +549,13 @@ export default function SelfCheckIn() {
   // QR 화면 카운트다운
   const [qrCountdown, setQrCountdown] = useState(QR_SCREEN_SECONDS);
 
+  // ── T-20260601-foot-SELFLOGIN-RESV-LIST-QR: 예약자 목록 선택 동선 ──
+  // 화면 표시용 마스킹 목록 (PII 가드: 마스킹값만 state 보관)
+  const [maskedReservations, setMaskedReservations] = useState<MaskedReservation[]>([]);
+  const [reservationListLoading, setReservationListLoading] = useState(false);
+  // 비마스킹 원본은 ref 에만 보관 (React state/DOM 노출 금지) — 선택 시에만 1건 꺼내 사용
+  const rawReservationsRef = useRef<Map<string, { name: string; phone: string }>>(new Map());
+
   const t = T[lang];
 
   // 예약 정보
@@ -549,6 +620,10 @@ export default function SelfCheckIn() {
     setInsuranceConsent(false); // AC-7
     setHealthQToken(null);
     setQrCountdown(QR_SCREEN_SECONDS);
+    // T-20260601-foot-SELFLOGIN-RESV-LIST-QR
+    setMaskedReservations([]);
+    setReservationListLoading(false);
+    rawReservationsRef.current.clear();
   }, []);
 
   // ── 완료 화면 자동 리셋 (15초 카운트다운) ──
@@ -789,6 +864,97 @@ export default function SelfCheckIn() {
     extractBirthDate(rrn) !== null &&
     address.trim().length >= 2 &&
     (reservationType !== 'walkin' || privacyConsent); // 워크인만 동의서 필수
+
+  // ── T-20260601-foot-SELFLOGIN-RESV-LIST-QR: 오늘 예약자 목록 로드 ──
+  // "예약하고 왔어요" + 초진/재진 선택 후 호출 → 마스킹 목록 화면으로 전환.
+  const handleLoadReservations = useCallback(async () => {
+    if (!clinicId) return;
+    setReservationListLoading(true);
+    rawReservationsRef.current.clear();
+    setStep('select-reservation');
+    try {
+      const today = new Date(
+        new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }),
+      )
+        .toISOString()
+        .slice(0, 10);
+      const { data, error } = await anonClient.rpc('fn_selfcheckin_today_reservations', {
+        p_clinic_id: clinicId,
+        p_date: today,
+      });
+      if (error) throw error;
+
+      const rows = (data || []) as Array<{
+        id: string;
+        customer_id: string | null;
+        customer_name: string | null;
+        customer_phone: string | null;
+        reservation_time: string;
+        visit_type: string;
+      }>;
+
+      // PII 가드: 수신 즉시 마스킹 변환. 원본 name/phone 은 ref 에만 저장.
+      const masked: MaskedReservation[] = rows.map((r) => {
+        const rawName = r.customer_name ?? '';
+        const rawPhone = r.customer_phone ?? '';
+        rawReservationsRef.current.set(r.id, { name: rawName, phone: rawPhone });
+        return {
+          reservation_id: r.id,
+          customer_id: r.customer_id,
+          masked_name: maskName(rawName),
+          masked_phone: maskPhone(rawPhone),
+          reservation_time: String(r.reservation_time).slice(0, 5),
+          visit_type: (r.visit_type as VisitType) ?? 'returning',
+        };
+      });
+
+      setMaskedReservations(masked);
+    } catch {
+      // 목록 로드 실패 → 빈 목록(폴백 안내) 표시. 콘솔에 PII 미노출.
+      setMaskedReservations([]);
+    } finally {
+      setReservationListLoading(false);
+    }
+  }, [clinicId]);
+
+  // ── T-20260601-foot-SELFLOGIN-RESV-LIST-QR: 예약자 항목 선택 → 고객정보 자동 로드 ──
+  // 선택 시점에만 ref 에서 본인 1건의 원본 name/phone 을 꺼내 폼 state 에 주입.
+  const handleSelectReservation = useCallback(
+    (item: MaskedReservation) => {
+      const raw = rawReservationsRef.current.get(item.reservation_id);
+      const rawName = raw?.name ?? '';
+      const rawPhone = raw?.phone ?? '';
+
+      // 전화번호 표시 정규화: E164(+8210…) → 010… 후 하이픈 포맷
+      let digits = rawPhone.replace(/\D/g, '');
+      if (digits.length === 12 && digits.startsWith('82')) digits = '0' + digits.slice(2);
+      const displayPhone = formatPhone(digits);
+
+      setName(rawName);
+      setPhone(displayPhone);
+      setReservationType('reserved');
+      const vt: VisitType = item.visit_type === 'new' ? 'new' : item.visit_type === 'experience' ? 'experience' : 'returning';
+      setVisitType(vt);
+      // 예약 경로 → 유입경로 미수집
+      setLeadSource(null);
+      setLeadSourceDetail(null);
+      // 예약 배너 표시 (선택 항목 정보)
+      setReservationBanner({
+        time: item.reservation_time,
+        visitType: vt === 'new' ? t.visitNew : vt === 'returning' ? t.visitReturning : '',
+      });
+      // 전화 자동조회 useEffect 재트리거 방지 (이미 채워진 번호)
+      reservationCheckedRef.current = digits;
+
+      // 초진 → 개인정보 입력 / 재진·체험 → 바로 확인
+      if (vt === 'new') {
+        setStep('personal_info');
+      } else {
+        setStep('confirm');
+      }
+    },
+    [formatPhone, t],
+  );
 
   // ── T-20260529: input → personal_info(초진) 또는 confirm(재진) ──
   const handleConfirm = () => {
@@ -1211,6 +1377,100 @@ export default function SelfCheckIn() {
           <h1 className="mb-2 text-2xl font-bold text-red-600">{t.clinicNotFound}</h1>
           <p className="text-gray-500">{t.clinicNotFoundDesc}</p>
         </div>
+      </div>
+    );
+  }
+
+  // ── T-20260601-foot-SELFLOGIN-RESV-LIST-QR: 예약자 목록 선택 화면 ──
+  if (step === 'select-reservation') {
+    return (
+      <div
+        className="flex min-h-dvh flex-col items-center px-6"
+        style={{ background: `linear-gradient(to bottom, ${C.bgFrom}, ${C.bgTo})`, ...FONT_STYLE }}
+        data-testid="select-reservation-screen"
+      >
+        <LangToggle />
+        {/* 헤더 */}
+        <header className="px-6 pb-2 pt-10 text-center">
+          <p className="text-xs tracking-[0.2em] uppercase mb-1" style={{ color: C.gold }}>
+            OBLIV FOOT CENTER
+          </p>
+          <h1 className="text-2xl font-bold tracking-tight" style={{ color: C.dark }}>
+            {t.selectReservationTitle}
+          </h1>
+          <p className="mt-1 text-sm tracking-wide" style={{ color: C.muted }}>{clinicName}</p>
+          <div className="mx-auto mt-3 h-px w-16" style={{ backgroundColor: C.gold }} />
+        </header>
+
+        <main className="flex w-full flex-1 flex-col items-center px-2 pb-8 pt-3">
+          <div className="w-full max-w-md space-y-4">
+            {reservationListLoading ? (
+              <p className="py-12 text-center text-base" style={{ color: C.muted }} data-testid="reservation-list-loading">
+                {t.reservationListLoading}
+              </p>
+            ) : maskedReservations.length === 0 ? (
+              /* 시나리오 3: 오늘 예약 없음 — 폴백 안내 */
+              <div className="space-y-5 py-8 text-center" data-testid="reservation-list-empty">
+                <h2 className="text-lg font-bold" style={{ color: C.dark }}>{t.noReservationTitle}</h2>
+                <p className="text-base leading-relaxed" style={{ color: C.muted, whiteSpace: 'pre-line' }}>
+                  {t.noReservationDesc}
+                </p>
+                <div className="flex flex-col gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setStep('input')}
+                    className="h-14 w-full rounded-xl text-lg font-bold text-white transition active:scale-[0.99]"
+                    style={{ backgroundColor: C.primary }}
+                    data-testid="btn-back-to-phone-checkin"
+                  >
+                    {t.backToPhoneCheckin}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="text-center text-sm font-medium" style={{ color: C.medium }}>
+                  {t.selectReservationGuide}
+                </p>
+                <div className="max-h-[60vh] space-y-2 overflow-y-auto" data-testid="reservation-list">
+                  {maskedReservations.map((item) => (
+                    <button
+                      key={item.reservation_id}
+                      type="button"
+                      onClick={() => handleSelectReservation(item)}
+                      className="flex min-h-[68px] w-full items-center justify-between rounded-xl px-5 py-4 text-left transition active:scale-[0.99]"
+                      style={{ border: `1.5px solid ${C.border}`, backgroundColor: 'white' }}
+                      data-testid="reservation-item"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg font-bold" style={{ color: C.dark }}>
+                          {item.masked_name}
+                        </span>
+                        <span className="text-base" style={{ color: C.muted }}>
+                          {item.masked_phone}
+                        </span>
+                      </div>
+                      <span className="shrink-0 text-base font-semibold tabular-nums" style={{ color: C.medium }}>
+                        {item.reservation_time}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* 돌아가기 — 전화번호 접수 폴백 동선 진입점 */}
+            <button
+              type="button"
+              onClick={() => setStep('input')}
+              className="mt-2 w-full rounded-xl py-4 text-base font-medium transition active:scale-95"
+              style={{ border: `1.5px solid ${C.border}`, color: C.muted, backgroundColor: 'white' }}
+              data-testid="btn-reservation-list-back"
+            >
+              {t.reservationListBack}
+            </button>
+          </div>
+        </main>
       </div>
     );
   }
@@ -1910,6 +2170,22 @@ export default function SelfCheckIn() {
                     </button>
                   );
                 })}
+
+                {/* T-20260601-foot-SELFLOGIN-RESV-LIST-QR: 예약자 명단에서 본인 찾기 (전화 타이핑 대체 동선) */}
+                <button
+                  type="button"
+                  onClick={handleLoadReservations}
+                  className="mt-2 flex min-h-[60px] w-full items-center justify-center gap-2 rounded-xl px-4 py-4 text-center transition active:scale-[0.99]"
+                  style={{ backgroundColor: C.beige, border: `1.5px solid ${C.primary}` }}
+                  data-testid="btn-open-reservation-list"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: C.primary }}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h7" />
+                  </svg>
+                  <span className="text-base font-bold" style={{ color: C.primary }}>
+                    {t.openReservationList}
+                  </span>
+                </button>
               </div>
             )}
 
@@ -2020,6 +2296,24 @@ export default function SelfCheckIn() {
           >
             {t.checkIn}
           </button>
+
+          {/*
+            T-20260601-foot-SELFLOGIN-RESV-LIST-QR — OQ1(가정 A): 셀프접수 페이지 URL QR.
+            데스크/입구에 부착·표시하거나 고객이 본인 휴대폰으로 스캔해 접수하도록 현재 페이지 URL 을 인코딩.
+            OQ1 확정(A/B) 전 잠정 구현 — 확정 시 위치/노출 조정. health-q QR 와 동일하게 외부 이미지 API 재사용(신규 npm 없음).
+          */}
+          <div className="flex flex-col items-center gap-2 pt-4" data-testid="selfcheckin-url-qr">
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(window.location.href)}&qzone=2&margin=0&format=png`}
+              alt="셀프접수 페이지 QR 코드"
+              width={120}
+              height={120}
+              className="rounded-lg"
+              style={{ border: `1.5px solid ${C.border}`, backgroundColor: 'white' }}
+              data-testid="selfcheckin-url-qr-image"
+            />
+            <p className="text-xs" style={{ color: C.muted }}>{t.scanToPhoneCaption}</p>
+          </div>
         </div>
       </main>
     </div>
