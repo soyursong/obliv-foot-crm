@@ -117,8 +117,11 @@ test.describe('T-20260601 DASH-HSCROLL-CHART-LOC — 대시보드 UX 3종', () =
     expect(model.afterSelect.selected).toBe('ci1');
   });
 
-  // ── 시나리오1 / AC-1 (렌더, REOPEN 정정): 팝업이 슬롯 칸에 종속 → 가로스크롤 시 함께 이동 ──
-  test('AC-1(렌더): 진료콜 명단 팝업이 슬롯 칸 내부 absolute(우측 하단) — 가로스크롤 시 콘텐츠와 함께 이동(뷰포트 고정 아님)', async ({ page }) => {
+  // ── 시나리오1 / AC-1 (렌더): SUPERSEDED by T-20260601-foot-DASH-POPUP-RIGHT-FIX ──────────
+  //   본 티켓(db62b1a)은 absolute scroll-bound 거동이었으나, 현장 재요청으로
+  //   T-20260601-foot-DASH-POPUP-RIGHT-FIX에서 position:fixed 우측 고정(스크롤해도 안 사라짐)으로 정정됨.
+  //   → 가로스크롤 거동 단언은 신규 티켓 spec(...DASH-POPUP-RIGHT-FIX.spec.ts)로 이관. 여기선 우측 위치만 스모크.
+  test('AC-1(렌더, superseded): 진료콜 명단 팝업 우측 표시 (가로스크롤 거동은 POPUP-RIGHT-FIX spec로 이관)', async ({ page }) => {
     const ok = await loginAndWaitForDashboard(page);
     if (!ok) { test.skip(true, '로그인 실패 — 스킵'); return; }
     await page.goto('/admin');
@@ -130,34 +133,12 @@ test.describe('T-20260601 DASH-HSCROLL-CHART-LOC — 대시보드 UX 3종', () =
       test.skip(true, '보라(진료필요) 당일 체크인 없음 — 위젯 미표시 환경 스킵');
       return;
     }
-
-    // 포지션 정정 확인: fixed(뷰포트 고정) 폐기 → absolute(슬롯 칸 종속)
-    expect(await list.evaluate((el) => getComputedStyle(el).position)).toBe('absolute');
-    expect(await list.evaluate((el) => el.getAttribute('data-position-mode'))).toBe('scroll-bound');
     await expect(list).toBeVisible();
-    const before = await list.boundingBox();
-
-    // 우측 칸반(슬롯) 스크롤 컨테이너를 가로로 스크롤
-    const scroll = page.locator('[data-testid="kanban-scroll"]');
-    const delta = (await scroll.count()) > 0
-      ? await scroll.first().evaluate((el) => {
-          const canScroll = el.scrollWidth - el.clientWidth;
-          const d = Math.min(120, canScroll);
-          el.scrollLeft = d;
-          return d;
-        })
-      : 0;
-    if (delta < 8) {
-      test.skip(true, '칸반 가로 스크롤 여백 없음 — 환경 스킵');
-      return;
-    }
-    await page.waitForTimeout(300);
-
-    // 핵심: 슬롯 칸에 종속되어 콘텐츠와 함께 이동 → 팝업 x가 스크롤량(delta)만큼 좌측으로 따라감.
-    //       (뷰포트 fixed였다면 x 변화 ~0이어야 하므로, 이동했다는 것은 종속 스크롤이 맞다는 증거)
-    const after = await list.boundingBox();
-    if (before && after) {
-      expect(before.x - after.x).toBeGreaterThan(delta - 12); // 콘텐츠와 함께 좌측 이동
+    // 우측 정렬만 확인(좌하단 아님). fixed/스크롤 거동 상세는 POPUP-RIGHT-FIX spec 책임.
+    const vw = await page.evaluate(() => window.innerWidth);
+    const box = await list.boundingBox();
+    if (box) {
+      expect(box.x).toBeGreaterThan(vw / 2); // 화면 우측
     }
   });
 
