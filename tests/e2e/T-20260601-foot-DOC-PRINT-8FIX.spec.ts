@@ -44,6 +44,8 @@ const SRC_ROOT = path.join(__dirname, '../../src');
 const AUTOBIND_SRC = path.join(SRC_ROOT, 'lib/autoBindContext.ts');
 const FORM_TEMPLATES_SRC = path.join(SRC_ROOT, 'lib/htmlFormTemplates.ts');
 const DOC_PANEL_SRC = path.join(SRC_ROOT, 'components/DocumentPrintPanel.tsx');
+// T-20260601-foot-DOC-PRINT-8FIX REOPEN: 제3의 출력 경로 PATH-4(결제 미니창)
+const PAY_MINI_SRC = path.join(SRC_ROOT, 'components/PaymentMiniWindow.tsx');
 
 // ─── 인라인 순수 함수 (autoBindContext.ts 의존성 격리, 실구현과 동일 스펙) ──────────
 
@@ -165,6 +167,23 @@ test.describe('시나리오 1: 공통 도장 위치 재발 (AC-1) — 레거시 
   test('AC-1: DocumentPrintPanel — 8FIX 근본원인 주석 마커 존재', () => {
     const src = fs.readFileSync(DOC_PANEL_SRC, 'utf-8');
     expect(src).toContain('T-20260601-foot-DOC-PRINT-8FIX');
+  });
+
+  // REOPEN (김주연 총괄 "수정 안 됨 동일함"): 8FIX(5c54a27)가 PATH-1(DocumentPrintPanel)만
+  //   고치고 제3의 출력 경로 PATH-4(PaymentMiniWindow.buildHtmlPageDiv) 복제본의 동일 오버레이를
+  //   누락 → 결제창 영수증/처방전 출력에 도장 우하단 재발. 회귀 가드 추가.
+  test('AC-1 REOPEN: PaymentMiniWindow(PATH-4) — buildHtmlPageDiv의 ${stampOverlay} 우하단 오버레이 전면 제거됨', () => {
+    const src = fs.readFileSync(PAY_MINI_SRC, 'utf-8');
+    // buildHtmlPageDiv 본문(HTML 양식 경로) 추출 후 그 안에 stampOverlay 변수/주입이 없어야 함
+    const fn = src.slice(src.indexOf('function buildHtmlPageDiv'), src.indexOf('function printViaIframe'));
+    expect(fn, 'PATH-4 HTML 경로 stampOverlay 변수 잔존').not.toMatch(/const\s+stampOverlay\s*=/);
+    expect(fn, 'PATH-4 HTML 경로 ${stampOverlay} 주입 잔존').not.toMatch(/\$\{stampOverlay\}/);
+    expect(fn, 'PATH-4 HTML 경로 우하단 좌표 도장 잔존').not.toMatch(/right:52px;bottom:52px/);
+  });
+
+  test('AC-1 REOPEN: PaymentMiniWindow(PATH-4) — REOPEN 근본원인 주석 마커 존재', () => {
+    const src = fs.readFileSync(PAY_MINI_SRC, 'utf-8');
+    expect(src).toMatch(/T-20260601-foot-DOC-PRINT-8FIX REOPEN AC-1/);
   });
 
   test('AC-1: 진료확인서·소견서·처방전·보험청구서 — {{doctor_seal_html}}가 의사/대표자 성명 근방', () => {

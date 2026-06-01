@@ -314,15 +314,17 @@ function buildHtmlPageDiv(
       : fieldValues;
   const bound = bindHtmlTemplate(htmlTpl, boundValues);
   const isLandscape = template.form_key === 'bill_detail';
-  const stampUrl = getStampUrl();
-  const stampOverlay = stampUrl
-    ? `<img src="${stampUrl}" alt="원내 도장" style="position:absolute;right:52px;bottom:52px;width:88px;height:88px;opacity:0.85;pointer-events:none;" onerror="this.style.display='none'" />`
-    : '';
+  // T-20260601-foot-DOC-PRINT-8FIX REOPEN AC-1: PATH-4(PaymentMiniWindow) 우하단 고정 도장 오버레이 제거.
+  //   8FIX(5c54a27)는 PATH-1(DocumentPrintPanel.buildHtmlPageHtml)의 레거시 오버레이만 제거했고
+  //   이 PATH-4 복제본의 동일 오버레이를 누락 → 결제창 영수증/처방전 출력에 도장이 여전히
+  //   우하단에 찍히는 "재발 동일함"의 근본 원인(제3의 출력 경로). HTML 양식 직인은
+  //   {{doctor_seal_html}}(autoBindContext, 의사/대표자 성명 근방 inline)로 일원화한다.
+  //   (이미지 양식 buildPageHtml의 좌표 도장은 8FIX 범위 밖이므로 존치 — DocumentPrintPanel과 동일.)
   // T-20260526-foot-RX-PRINT-DUAL: 처방전 보관용 구분 라벨 오버레이 (상단 우측)
   const copyLabelHtml = copyLabel
     ? `<div style="position:absolute;top:10px;right:10px;background:rgba(255,255,255,0.93);border:2px solid #222;padding:4px 14px;font-size:14px;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;font-weight:700;letter-spacing:1px;z-index:10;border-radius:3px;">${copyLabel}</div>`
     : '';
-  return `<div class="page${isLandscape ? ' page-landscape' : ''}">${bound}${stampOverlay}${copyLabelHtml}</div>`;
+  return `<div class="page${isLandscape ? ' page-landscape' : ''}">${bound}${copyLabelHtml}</div>`;
 }
 
 /** iframe 인쇄 — 단 하나의 OS 프린트 다이얼로그만 노출 */
