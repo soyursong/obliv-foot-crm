@@ -12,8 +12,9 @@ reviewed-by: ~
 build-ok: true
 db-change: true
 spec-file: tests/e2e/T-20260601-foot-SPACE-ASSIGN-RESET-REGRESS.spec.ts
-commit: 1049f7e
-reopen: 2026-06-01 (저장 경로 회귀 — 원자적 RPC로 근본 수정)
+commit: 0612a54
+reopen: 2026-06-01 (저장 경로 회귀 — 원자적 RPC로 근본 수정 / 2차: 저장 성공 토스트 silent 회귀 복구)
+reopen-fix-2: 2026-06-01 — TOAST-CLEANUP Proxy 가 toast.success 묵음 → 저장 토스트 미노출 = S4/S5 fail. toast.confirm(묵음 제외) 채널 추가로 복구. E2E 6/6 PASS.
 db-migration: supabase/migrations/20260601150000_save_room_assignments_atomic_rpc.sql (적용완료, additive)
 repo-path: ~/Documents/GitHub/obliv-foot-crm (github.com/soyursong/obliv-foot-crm, branch main)
 build-cmd: bash scripts/build.sh 180  (cwd=repo-root, NOT ~/claude-sync/...)
