@@ -60,6 +60,23 @@ test.describe('T-20260601-CHART-TAB-MUNJIN-DEDUP S1: 문진 탭 제거', () => {
     // 데이터 통합 전까지 checklistEntries 로직은 유지 (진입점만 제거)
     expect(s).toContain('checklistEntries');
     expect(s).toContain("from('checklists')");
+    // checklist 탭 콘텐츠 렌더 가드도 보존 (OQ: 데이터/렌더 로직 보존)
+    expect(s).toContain("chartTab === 'checklist'");
+  });
+
+  test('FE-2(변경2): IMPLEMENTED_CLINICAL 에서 checklist orphan 항목이 제거됐다', () => {
+    const s = chartPage();
+    // IMPLEMENTED_CLINICAL 배열 본문만 추출 (콘텐츠 블록의 checklist 참조와 분리)
+    const m = s.match(/const IMPLEMENTED_CLINICAL = \[([\s\S]*?)\];/);
+    expect(m).not.toBeNull();
+    const body = m![1];
+    expect(body).not.toContain("'checklist'");
+    // 나머지 구현 탭은 보존 (회귀)
+    expect(body).toContain("'pen_chart'");
+    expect(body).toContain("'progress'");
+    expect(body).toContain("'documents'");
+    expect(body).toContain("'payments'");
+    expect(body).toContain("'test_result'");
   });
 });
 
