@@ -15,6 +15,9 @@ spec-file: tests/e2e/T-20260601-foot-SPACE-ASSIGN-RESET-REGRESS.spec.ts
 commit: 1049f7e
 reopen: 2026-06-01 (저장 경로 회귀 — 원자적 RPC로 근본 수정)
 db-migration: supabase/migrations/20260601150000_save_room_assignments_atomic_rpc.sql (적용완료, additive)
+repo-path: ~/Documents/GitHub/obliv-foot-crm (github.com/soyursong/obliv-foot-crm, branch main)
+build-cmd: bash scripts/build.sh 180  (cwd=repo-root, NOT ~/claude-sync/...)
+build-reverify: 2026-06-01 — exit 0 PASS (tsc -b && vite build, ✓ built in 3.36s)
 ---
 
 # T-20260601-foot-SPACE-ASSIGN-RESET-REGRESS
