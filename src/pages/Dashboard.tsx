@@ -77,6 +77,7 @@ import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatie
 import { NewCheckInDialog } from '@/components/NewCheckInDialog';
 import { CheckinFirstInfoDialog } from '@/components/CheckinFirstInfoDialog';
 import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
+import DoctorCallListBar from '@/components/DoctorCallListBar';
 import { PaymentDialog } from '@/components/PaymentDialog';
 import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import { StatusContextMenu } from '@/components/StatusContextMenu';
@@ -5922,6 +5923,9 @@ export default function Dashboard() {
       </div>
       {/* flex flex-1 overflow-hidden wrapper 닫기 */}
       </div>
+      {/* T-20260601-foot-DOCTOR-CALL-LIST: 대시보드 하단 '원장님 진료콜 명단' (보라/진료필요 자동 집계)
+          가로 스크롤 컨테이너(dashboard-content-scroll) 밖에 배치 → 가로 스크롤 시에도 viewport 하단 고정(sticky) */}
+      <DoctorCallListBar checkIns={rows} onRefresh={fetchCheckIns} />
       {/* T-20260522-foot-SLOT-SNAP-FIX: snapToCursorModifier — S Pen 터치 포인트에 ghost 정렬 */}
       <DragOverlay modifiers={[snapToCursorModifier]}>
         {dragging && <DraggableCard checkIn={dragging} compact />}

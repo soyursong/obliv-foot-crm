@@ -1,0 +1,3 @@
+-- ROLLBACK: T-20260601-foot-DOCTOR-CALL-LIST
+ALTER TABLE check_ins
+  DROP COLUMN IF EXISTS doctor_call_memo;
