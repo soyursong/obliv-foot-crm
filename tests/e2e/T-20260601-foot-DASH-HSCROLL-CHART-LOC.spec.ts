@@ -1,8 +1,9 @@
 /**
  * T-20260601-foot-DASH-HSCROLL-CHART-LOC — 풋 대시보드 UX 3종
  *
- *  #1 가로스크롤 sticky  → '원장님 진료콜 명단' 팝업이 position:fixed(뷰포트 좌하단)로 고정.
- *                          가로 스크롤해도 화면에서 사라지지 않음.
+ *  #1 위치/가로스크롤 (REOPEN 정정) → '원장님 진료콜 명단' 팝업이 우측 칸반(슬롯) 스크롤 컨테이너
+ *                          내부 우측 하단에 absolute로 배치(position:fixed 폐기). 슬롯 칸에 종속되어
+ *                          가로스크롤 시 콘텐츠와 함께 이동(뷰포트 고정 아님).
  *  #2 고객 이름 클릭→차트 → 진료콜 명단 팝업 행의 고객 이름 클릭 시 진료차트(고객차트) 즉시 열림.
  *                          기존 지정콜 토글과 클릭영역 분리(이름=차트, 별도 Phone 버튼=지정콜).
  *  #3 성함 옆 현재 위치   → 배정 슬롯 이름(check_in room name/label)을 성함 옆 배지로 표시.
@@ -116,8 +117,8 @@ test.describe('T-20260601 DASH-HSCROLL-CHART-LOC — 대시보드 UX 3종', () =
     expect(model.afterSelect.selected).toBe('ci1');
   });
 
-  // ── 시나리오1 / AC-1 (렌더): 팝업 position:fixed → 가로 스크롤해도 화면 좌하단 고정 ──────
-  test('AC-1(렌더): 진료콜 명단 팝업이 fixed로 고정 — 가로 스크롤 후에도 사라지지 않음', async ({ page }) => {
+  // ── 시나리오1 / AC-1 (렌더, REOPEN 정정): 팝업이 슬롯 칸에 종속 → 가로스크롤 시 함께 이동 ──
+  test('AC-1(렌더): 진료콜 명단 팝업이 슬롯 칸 내부 absolute(우측 하단) — 가로스크롤 시 콘텐츠와 함께 이동(뷰포트 고정 아님)', async ({ page }) => {
     const ok = await loginAndWaitForDashboard(page);
     if (!ok) { test.skip(true, '로그인 실패 — 스킵'); return; }
     await page.goto('/admin');
@@ -130,23 +131,33 @@ test.describe('T-20260601 DASH-HSCROLL-CHART-LOC — 대시보드 UX 3종', () =
       return;
     }
 
-    // fixed 포지션 확인
-    expect(await list.evaluate((el) => getComputedStyle(el).position)).toBe('fixed');
+    // 포지션 정정 확인: fixed(뷰포트 고정) 폐기 → absolute(슬롯 칸 종속)
+    expect(await list.evaluate((el) => getComputedStyle(el).position)).toBe('absolute');
+    expect(await list.evaluate((el) => el.getAttribute('data-position-mode'))).toBe('scroll-bound');
     await expect(list).toBeVisible();
     const before = await list.boundingBox();
 
-    // 칸반 영역 가로 스크롤
-    const scroll = page.locator('[data-testid="dashboard-content-scroll"]');
-    if ((await scroll.count()) > 0) {
-      await scroll.first().evaluate((el) => { el.scrollLeft = el.scrollWidth; });
-      await page.waitForTimeout(300);
+    // 우측 칸반(슬롯) 스크롤 컨테이너를 가로로 스크롤
+    const scroll = page.locator('[data-testid="kanban-scroll"]');
+    const delta = (await scroll.count()) > 0
+      ? await scroll.first().evaluate((el) => {
+          const canScroll = el.scrollWidth - el.clientWidth;
+          const d = Math.min(120, canScroll);
+          el.scrollLeft = d;
+          return d;
+        })
+      : 0;
+    if (delta < 8) {
+      test.skip(true, '칸반 가로 스크롤 여백 없음 — 환경 스킵');
+      return;
     }
+    await page.waitForTimeout(300);
 
-    // 가로 스크롤 후에도 팝업이 보이고, 좌측 위치가 유지된다(뷰포트 고정).
-    await expect(list).toBeVisible();
+    // 핵심: 슬롯 칸에 종속되어 콘텐츠와 함께 이동 → 팝업 x가 스크롤량(delta)만큼 좌측으로 따라감.
+    //       (뷰포트 fixed였다면 x 변화 ~0이어야 하므로, 이동했다는 것은 종속 스크롤이 맞다는 증거)
     const after = await list.boundingBox();
     if (before && after) {
-      expect(Math.abs(after.x - before.x)).toBeLessThan(4); // 가로 스크롤에 끌려가지 않음
+      expect(before.x - after.x).toBeGreaterThan(delta - 12); // 콘텐츠와 함께 좌측 이동
     }
   });
 
