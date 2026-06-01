@@ -18,12 +18,17 @@ import QuickRxButtonsTab from '@/components/admin/QuickRxButtonsTab';
 // T-20260526-foot-PROGRESS-CHECKPOINT: 경과분석 플랜 탭
 import ProgressPlansTab from '@/components/admin/ProgressPlansTab';
 import DoctorPatientList from '@/components/doctor/DoctorPatientList';
+// T-20260601-foot-DOCTOR-CALL-PUSH-DASH: 진료부 통합 대시보드(호출 알람+처방+차팅+진료완료)
+import DoctorCallDashboard from '@/components/doctor/DoctorCallDashboard';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { BookOpen, Pill, FileText, Layers, Zap, Users, DollarSign, TrendingUp } from 'lucide-react';
+import { BookOpen, Pill, FileText, Layers, Zap, Users, DollarSign, TrendingUp, Stethoscope } from 'lucide-react';
 
 export default function DoctorTools() {
   const { profile } = useAuth();
   const isAdminOrManager = profile?.role === 'admin' || profile?.role === 'manager';
+  // 의사(director)는 진료부 통합 대시보드를 기본 화면으로 — 상시 켜놓는 단일 창 동선.
+  const defaultTab =
+    profile?.role === 'director' ? 'call_dashboard' : isAdminOrManager ? 'phrases' : 'patient_list';
 
   return (
     <div className="h-full overflow-auto p-4 md:p-6 space-y-4 max-w-5xl">
@@ -34,8 +39,13 @@ export default function DoctorTools() {
         </p>
       </div>
 
-      <Tabs defaultValue={isAdminOrManager ? 'phrases' : 'patient_list'} className="w-full">
+      <Tabs defaultValue={defaultTab} className="w-full">
         <TabsList className="mb-4 flex-wrap h-auto gap-1">
+          {/* 진료부 통합 대시보드 — 전체 공개 (T-20260601-foot-DOCTOR-CALL-PUSH-DASH) */}
+          <TabsTrigger value="call_dashboard" className="gap-1.5" data-testid="tab-call-dashboard">
+            <Stethoscope className="h-3.5 w-3.5" />
+            진료 알림판
+          </TabsTrigger>
           {/* 어드민/매니저 전용 탭 */}
           {isAdminOrManager && (
             <>
@@ -109,6 +119,10 @@ export default function DoctorTools() {
             </TabsContent>
           </>
         )}
+
+        <TabsContent value="call_dashboard">
+          <DoctorCallDashboard />
+        </TabsContent>
 
         <TabsContent value="patient_list">
           <DoctorPatientList />

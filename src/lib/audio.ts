@@ -35,3 +35,23 @@ export function playOvertimeAlert(): void {
     /* noop */
   }
 }
+
+// 진료 호출 알림음 (#DOCTOR-CALL-PUSH-DASH). 더블 비프로 일반 체크인/오버타임과 청각 구분.
+let doctorCallAudio: HTMLAudioElement | null = null;
+
+export function playDoctorCallAlert(): void {
+  try {
+    if (!doctorCallAudio) {
+      doctorCallAudio = new Audio(`data:audio/wav;base64,${BEEP_B64}`);
+      doctorCallAudio.volume = 0.7;
+    }
+    doctorCallAudio.currentTime = 0;
+    void doctorCallAudio.play().catch(() => {});
+    setTimeout(() => {
+      doctorCallAudio!.currentTime = 0;
+      void doctorCallAudio!.play().catch(() => {});
+    }, 220);
+  } catch {
+    /* noop */
+  }
+}
