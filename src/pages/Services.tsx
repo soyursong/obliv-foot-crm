@@ -53,7 +53,12 @@ const SERVICE_TYPE_LABEL: Record<Service['service_type'], string> = {
 const CATEGORY_OPTIONS = ['레이저', '수액', '사전처치', '풋케어', '상담', '검사', '풋화장품', '기타'];
 
 // T-20260510-foot-SVCMENU-REVAMP: 항목분류 옵션
-const CATEGORY_LABEL_OPTIONS = ['기본', '검사', '상병', '풋케어', '수액', '풋화장품'];
+// T-20260601-foot-SVC-PRESCRIPTION-CATEGORY: '처방약' 독립 카테고리 신설.
+//   처방약 서비스는 이미 DB에 category_label='처방약'(16건)으로 분류돼 있으나
+//   본 옵션 배열에 누락되어 탭/필터가 렌더되지 않고 '전체' 탭에서만 노출되던 상태.
+//   여기에 '처방약'을 추가하면 (1) 카테고리 탭 자동 생성 (CATEGORY_TABS),
+//   (2) ServiceDialog 항목분류 버튼 자동 추가 — 데이터 변경 없이 노출 복구.
+const CATEGORY_LABEL_OPTIONS = ['기본', '검사', '상병', '처방약', '풋케어', '수액', '풋화장품'];
 
 // T-20260526-foot-SVC-CATEGORY-SORT: 탭 목록 (전체 + 각 category_label)
 const CATEGORY_TABS = ['전체', ...CATEGORY_LABEL_OPTIONS] as const;
