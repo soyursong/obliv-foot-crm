@@ -585,9 +585,19 @@ export default function MedicalChartPanel({
 
   // ── 처방세트 적용 ─────────────────────────────────────────────────────────────
 
+  // T-20260601-foot-RX-SET-ACCUMULATE:
+  //   (1) 누적(append) — 기존 처방 목록을 유지한 채 세트 약을 추가 (replace 금지)
+  //   (2) 세트=폴더 — set.items(다중 약 묶음) 전체를 일괄 추가 (첫 항목만 X)
+  //   (3) 중복 정책 — 기본값: 중복 행 그대로 누적 추가(현장이 직접 삭제)
+  //   각 항목은 얕은 복제하여 세트 원본 객체와 참조 공유 방지(JSONB 저장 안전성)
   function loadPrescriptionSet(set: PrescriptionSet) {
-    setFormRx(set.items);
-    toast.success(`"${set.name}" 처방세트 불러왔습니다`);
+    const items = set.items ?? [];
+    if (items.length === 0) {
+      toast.warning(`"${set.name}" 처방세트에 항목이 없어요`);
+      return;
+    }
+    setFormRx(prev => [...prev, ...items.map(it => ({ ...it }))]);
+    toast.success(`"${set.name}" 처방세트 ${items.length}개 항목 추가됨`);
   }
 
   // ── 관리 화면 이동 (AC-2: 편집 버튼) ─────────────────────────────────────────
