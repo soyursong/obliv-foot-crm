@@ -3221,9 +3221,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260510-foot-C21-TAB-CLEANUP: 마크류/스마트서베이/면담기록지/예약내역/통화내역/소개자가족 삭제
   // T-20260513-foot-C21-TAB-RESTRUCTURE-A: 상단6+하단5 재배치, 서류발행 상단 이동
   // T-20260522-foot-CHART2-TAB-PENCHART: 펜차트 → 첫 번째 위치 (기본 탭과 일치)
+  // T-20260601-foot-CHART-TAB-MUNJIN-DEDUP: [문진] 탭 진입점 제거(데이터/테이블은 보존, 화면 노출만 제거).
+  //   진료차트 탭을 펜차트 바로 옆(구 문진 자리)으로 이동 → 결과: [펜차트][진료차트][검사결과]...
   const CLINICAL_TABS = [
     { key: 'pen_chart',   label: '펜차트' },
-    { key: 'checklist',   label: '문진' },
     { key: 'test_result', label: '검사결과' },
     { key: 'progress',    label: '경과내역' },
     { key: 'documents',   label: '서류발행' },
@@ -3900,31 +3901,35 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             <div data-testid="chart-tab-clinical" className="border-t-2 border-gray-300 shrink-0">
               <div className="flex bg-[#d8e8f0]">
                 {CLINICAL_TABS.map(({ key, label }) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => handleClinicalTab(key)}
-                    className={cn(
-                      'flex-1 justify-center min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center',
-                      chartTabGroup === 'clinical' && chartTab === key
-                        ? 'bg-white text-teal-700 font-semibold shadow-sm'
-                        : 'text-[#334e65] hover:bg-white/60',
+                  <Fragment key={key}>
+                    <button
+                      type="button"
+                      onClick={() => handleClinicalTab(key)}
+                      className={cn(
+                        'flex-1 justify-center min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center',
+                        chartTabGroup === 'clinical' && chartTab === key
+                          ? 'bg-white text-teal-700 font-semibold shadow-sm'
+                          : 'text-[#334e65] hover:bg-white/60',
+                      )}
+                    >
+                      {label}
+                    </button>
+                    {/* T-20260601-foot-CHART-TAB-MUNJIN-DEDUP: 진료차트 탭을 펜차트 바로 옆(구 문진 자리)으로 이동 */}
+                    {/* T-20260527-foot-MEDCHART-TAB-REAPPEAR: 진료차트 탭 버튼 — 항상 표시, 데이터 유무 무관 */}
+                    {/* AC-2: 데이터 0건이어도 탭은 항상 visible / 역할 제한 없음(원장·치료사·데스크 공통) */}
+                    {key === 'pen_chart' && (
+                      <button
+                        type="button"
+                        data-testid="btn-open-medical-chart"
+                        onClick={() => setMedicalChartOpen(true)}
+                        className="flex-1 justify-center min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold"
+                      >
+                        <Stethoscope className="h-3.5 w-3.5" />
+                        진료차트
+                      </button>
                     )}
-                  >
-                    {label}
-                  </button>
+                  </Fragment>
                 ))}
-                {/* T-20260527-foot-MEDCHART-TAB-REAPPEAR: 진료차트 탭 버튼 — 항상 표시, 데이터 유무 무관 */}
-                {/* AC-2: 데이터 0건이어도 탭은 항상 visible / 역할 제한 없음(원장·치료사·데스크 공통) */}
-                <button
-                  type="button"
-                  data-testid="btn-open-medical-chart"
-                  onClick={() => setMedicalChartOpen(true)}
-                  className="flex-1 justify-center min-h-[44px] text-[11px] font-medium border-r border-gray-300 whitespace-nowrap transition flex items-center gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold"
-                >
-                  <Stethoscope className="h-3.5 w-3.5" />
-                  진료차트
-                </button>
               </div>
             </div>
 
