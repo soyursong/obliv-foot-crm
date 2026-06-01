@@ -21,6 +21,7 @@ import {
   getBaseCopayRate,
   type InsuranceGrade,
 } from '@/lib/insurance';
+import { getStampUrl } from '@/lib/formTemplates';
 
 // ─── 타입 ───────────────────────────────────────────────────────────────────
 
@@ -301,9 +302,15 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     // T-20260526-foot-DOC-FORM-7FIX AC-7⑤: 납입증명서 "본 진료비는 {{year}}년 {{month}}월까지" 날짜 자동기입
     month: format(new Date(), 'MM'),
     // T-20260526-foot-DOC-FORM-REVISE AC-C2: 의사 성명 근방 도장 HTML (직인 이미지 or "(인)" fallback)
-    doctor_seal_html: ctx.clinicDoctor?.seal_image_url
-      ? `<img src="${ctx.clinicDoctor.seal_image_url}" style="width:52px;height:52px;opacity:0.85;vertical-align:middle;display:inline-block;" onerror="this.style.display='none'" />`
-      : '(인)',
+    // T-20260601-foot-DOC-SEAL-NULL-FALLBACK AC-1: DB seal_image_url null 회귀 복구.
+    //   1순위 DB clinicDoctor.seal_image_url → 2순위 로컬자산 getStampUrl()(jongno-foot-stamp.png)
+    //   → 3순위 텍스트 "(인)". 우하단 stampOverlay 부활 금지(8FIX/REOPEN2 제거분 유지, 위치는 의사성명 근방).
+    doctor_seal_html: (() => {
+      const sealUrl = ctx.clinicDoctor?.seal_image_url || getStampUrl();
+      return sealUrl
+        ? `<img src="${sealUrl}" style="width:52px;height:52px;opacity:0.85;vertical-align:middle;display:inline-block;" onerror="this.style.display='none'" />`
+        : '(인)';
+    })(),
   };
 }
 
