@@ -24,22 +24,23 @@ const anonClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-// ── 컬러 토큰 (teal-emerald 풋센터 테마) ────────────────────────────────────────
+// ── 컬러 토큰 (브라운/베이지 — SelfCheckIn 톤앤매너 통일) ────────────────────────
+// T-20260601-foot-HEALTHQ-SELF-RESTRUCTURE: teal-emerald → 셀프체크인 브라운/베이지 팔레트로 통일
 const C = {
-  bgFrom:       '#F0FDF9',
-  bgTo:         '#ECFDF5',
-  dark:         '#134E4A',
-  primary:      '#0F766E',
-  medium:       '#0D9488',
-  muted:        '#5EEAD4',
-  mutedText:    '#6B7280',
-  border:       '#99F6E4',
-  borderActive: '#0D9488',
-  light:        '#F0FDFA',
-  cream:        '#FFFFFF',
-  gold:         '#10B981',
-  bannerBg:     '#ECFDF5',
-  bannerBorder: '#6EE7B7',
+  bgFrom:       '#F5EFE7',
+  bgTo:         '#FAF7F2',
+  dark:         '#3D2B1A',
+  primary:      '#5C3D1E',
+  medium:       '#7B5130',
+  muted:        '#8B7355',
+  mutedText:    '#8B7355',
+  border:       '#D4C5B2',
+  borderActive: '#7B5130',
+  light:        '#F5EFE7',
+  cream:        '#FDF8F2',
+  gold:         '#C9A97A',
+  bannerBg:     '#FDF5E4',
+  bannerBorder: '#C9A97A',
   error:        '#DC2626',
 } as const;
 
@@ -64,42 +65,44 @@ const VISIT_PURPOSE_OPTIONS = [
   '기타',
 ];
 
+// ── 1번 발 관련 증상 (다중) — 현장 확정 순서·텍스트 그대로 ──────────────────────
 const SYMPTOM_OPTIONS = [
+  '발톱 변색 및 변형',
   '내성발톱',
-  '무지외반증',
-  '굳은살/티눈',
-  '무좀/진균감염',
+  '발가락 통증',
   '발냄새',
-  '발 건조/각질',
-  '당뇨발/혈액순환',
-  '발목 통증',
-  '발바닥 통증',
+  '발 건조 및 각질',
+  '발땀 많음',
+  '가려움증',
+  '발톱 끝 부서짐',
+  '울퉁불퉁한 발톱',
   '기타',
 ];
 
-const NAIL_ROWS = [
-  ['엄지(좌)', '검지(좌)', '중지(좌)', '약지(좌)', '소지(좌)'],
-  ['엄지(우)', '검지(우)', '중지(우)', '약지(우)', '소지(우)'],
+// ── 2번 발 건강 관련 경험 (4문) — 현장 확정 ────────────────────────────────────
+// Q1 문제성 발톱 치료: 없음 / 있음 → 치료방법
+const NAIL_TREATMENT_HISTORY_OPTIONS = ['없음', '있음'];
+// 치료방법 (OQ3 — 선택방식 현장확정 전 다중선택 가정)
+const NAIL_TREATMENT_METHOD_OPTIONS = ['먹는 약', '바르는 약', '레이저'];
+// Q2 증상 시작 시점
+const SYMPTOM_ONSET_OPTIONS = ['6개월 이내', '1~3년', '3~5년', '10년 이상'];
+// Q3 가족력
+const FAMILY_HISTORY_TYPE_OPTIONS = ['발톱무좀', '내성발톱', '둘 다', '모름 / 없음'];
+// Q4 발 통증 여부
+const FOOT_PAIN_LEVEL_OPTIONS = [
+  { value: '경미',     emoji: '😊' },
+  { value: '불편',     emoji: '😐' },
+  { value: '심함',     emoji: '😣' },
+  { value: '매우 심함', emoji: '😰' },
 ];
 
-const PAIN_DURATION_OPTIONS = [
-  '1개월 미만',
-  '1~3개월',
-  '3~6개월',
-  '6개월~1년',
-  '1년 이상',
-];
+// (구) 발톱 통증 부위·기간·정도 / 이전 발 시술 선택지 — 신규 동의서 2번 "발 건강 관련 경험"으로 대체되어
+// 모바일 폼에서 제거됨. 구 제출분은 HealthQData 필드(nail_locations/pain_duration/pain_severity/prior_treatment)와
+// staff HealthQResultsPanel 후방호환 ORDER로 계속 렌더된다.
 
-const PAIN_SEVERITY_OPTIONS = [
-  { value: '1', label: '경미', emoji: '😊' },
-  { value: '2', label: '불편', emoji: '😐' },
-  { value: '3', label: '심함', emoji: '😣' },
-  { value: '4', label: '매우 심함', emoji: '😰' },
-];
-
+// ── 3번 나의 건강상태 (다중) — OQ1 최종 목록 확정 전 interim (현장 제시 부분목록) ──
 const MEDICAL_HISTORY_OPTIONS = [
-  '당뇨', '고혈압', '심장질환', '혈관질환', '면역질환',
-  '신장질환', '간질환', '골다공증', '기타',
+  '당뇨', '고혈압', '간질환', '고지혈증', '심장질환', '자가면역질환', '기타',
 ];
 
 const MEDICATION_OPTIONS = [
@@ -113,14 +116,6 @@ const MEDICATION_OPTIONS = [
 ];
 
 const ALLERGY_OPTIONS = ['마취제', '항생제', '소독제', '금속', '약물', '기타'];
-
-const PRIOR_TREATMENT_OPTIONS = [
-  '발톱 매식술',
-  '내성발톱 절제술',
-  '레이저 시술',
-  '굳은살 제거 시술',
-  '없음',
-];
 
 const REFERRAL_OPTIONS = [
   '네이버 검색',
@@ -136,15 +131,22 @@ interface HealthQData {
   // 방문 목적
   visit_purpose:        string[];
   visit_purpose_other:  string;
-  // 증상
+  // 1번 발 관련 증상
   symptoms:             string[];
   symptoms_other:       string;
-  // 발톱 통증 부위·기간·정도
+  // 2번 발 건강 관련 경험
+  nail_treatment_history: string;   // '없음' | '있음'
+  nail_treatment_methods: string[]; // 있음일 때 치료방법
+  symptom_onset:          string;
+  family_history_type:    string;
+  foot_pain_level:        string;
+  // (구) 발톱 통증 부위·기간·정도 — 후방호환
   nail_locations:       string[];
   pain_duration:        string;
   pain_severity:        string;
-  // 과거 병력
+  // 3번 나의 건강상태 (구 과거 병력)
   medical_history:      string[];
+  medical_history_none: boolean;
   medical_history_other: string;
   // 이전 치료 경험
   prior_treatment:      string[];
@@ -167,10 +169,16 @@ const emptyData = (): HealthQData => ({
   visit_purpose_other:   '',
   symptoms:              [],
   symptoms_other:        '',
+  nail_treatment_history: '',
+  nail_treatment_methods: [],
+  symptom_onset:          '',
+  family_history_type:    '',
+  foot_pain_level:        '',
   nail_locations:        [],
   pain_duration:         '',
   pain_severity:         '',
   medical_history:       [],
+  medical_history_none:  false,
   medical_history_other: '',
   prior_treatment:       [],
   prior_conditions:      '',
@@ -207,11 +215,12 @@ function BigBtn({
   full?: boolean;
   className?: string;
 }) {
+  // 브라운/베이지 팔레트 통일 (teal/emerald → 브라운). 경고(amber)·위험(rose/danger)은 의미 보존
   const scheme = danger
     ? { on: 'border-red-500 bg-red-50 text-red-700', off: 'border-gray-200 bg-white text-gray-700' }
     : {
-        teal:    { on: 'border-teal-600 bg-teal-50 text-teal-800',    off: 'border-gray-200 bg-white text-gray-700' },
-        emerald: { on: 'border-emerald-600 bg-emerald-50 text-emerald-800', off: 'border-gray-200 bg-white text-gray-700' },
+        teal:    { on: 'border-[#7B5130] bg-[#F5EFE7] text-[#5C3D1E]', off: 'border-gray-200 bg-white text-gray-700' },
+        emerald: { on: 'border-[#7B5130] bg-[#FDF5E4] text-[#5C3D1E]', off: 'border-gray-200 bg-white text-gray-700' },
         amber:   { on: 'border-amber-500 bg-amber-50 text-amber-800', off: 'border-gray-200 bg-white text-gray-700' },
         rose:    { on: 'border-rose-500 bg-rose-50 text-rose-700',    off: 'border-gray-200 bg-white text-gray-700' },
       }[color];
@@ -235,7 +244,7 @@ function BigBtn({
 // ── 섹션 헤더 ──────────────────────────────────────────────────────────────────
 function SectionHeader({ num, title, sub }: { num: number; title: string; sub?: string }) {
   return (
-    <div className="flex items-start gap-3 pb-2 border-b border-teal-100">
+    <div className="flex items-start gap-3 pb-2 border-b" style={{ borderColor: C.border }}>
       <span
         className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold text-white shrink-0"
         style={{ backgroundColor: C.primary }}
@@ -494,34 +503,10 @@ export default function HealthQMobilePage() {
       {/* ── 폼 본문 ──────────────────────────────────────────────────────────── */}
       <main className="max-w-lg mx-auto px-4 py-5 space-y-5 pb-36">
 
-        {/* ① 방문 목적 */}
+        {/* ── 1번 발 관련 증상 (현장 확정) ─────────────────────────────────────── */}
         <section className="space-y-4 rounded-2xl p-4"
           style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-          <SectionHeader num={1} title="방문 목적" sub="해당 항목 모두 선택해주세요" />
-          <div className="flex flex-wrap gap-2">
-            {VISIT_PURPOSE_OPTIONS.map((opt) => (
-              <BigBtn key={opt}
-                active={d.visit_purpose.includes(opt)}
-                onClick={() => set('visit_purpose', toggle(d.visit_purpose, opt))}
-                color="teal"
-              >
-                {opt}
-              </BigBtn>
-            ))}
-          </div>
-          {d.visit_purpose.includes('기타') && (
-            <input type="text" value={d.visit_purpose_other}
-              onChange={(e) => set('visit_purpose_other', e.target.value)}
-              placeholder="기타 목적 직접 입력"
-              className="w-full rounded-xl border px-4 py-3 text-base outline-none"
-              style={{ borderColor: C.border, color: C.dark, minHeight: 44 }} />
-          )}
-        </section>
-
-        {/* ② 발 관련 증상 */}
-        <section className="space-y-4 rounded-2xl p-4"
-          style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-          <SectionHeader num={2} title="발 관련 증상" sub="해당 항목 모두 선택해주세요" />
+          <SectionHeader num={1} title="발 관련 증상" sub="해당 항목 모두 선택해주세요" />
           <div className="flex flex-wrap gap-2">
             {SYMPTOM_OPTIONS.map((opt) => (
               <BigBtn key={opt}
@@ -542,41 +527,54 @@ export default function HealthQMobilePage() {
           )}
         </section>
 
-        {/* ③ 발톱 통증 부위·기간·정도 */}
-        <section className="space-y-4 rounded-2xl p-4"
+        {/* ── 2번 발 건강 관련 경험 (현장 확정 — 4문) ──────────────────────────── */}
+        <section className="space-y-5 rounded-2xl p-4"
           style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-          <SectionHeader num={3} title="발톱 통증 부위·기간·정도" />
+          <SectionHeader num={2} title="발 건강 관련 경험" sub="각 항목에서 하나씩 선택해주세요" />
 
-          {/* 부위: 5열 그리드 × 2행 (좌/우) */}
+          {/* Q1 문제성 발톱 치료 경험 */}
           <div className="space-y-2">
-            <p className="text-xs font-medium" style={{ color: C.mutedText }}>통증 발톱 (해당 항목 선택)</p>
-            {NAIL_ROWS.map((row, ri) => (
-              <div key={ri} className="grid grid-cols-5 gap-1.5">
-                {row.map((nail) => (
-                  <button key={nail} type="button"
-                    onClick={() => set('nail_locations', toggle(d.nail_locations, nail))}
-                    className={cn(
-                      'min-h-[44px] rounded-xl border-2 py-1 text-xs font-medium transition active:scale-95',
-                      d.nail_locations.includes(nail)
-                        ? 'border-teal-600 bg-teal-50 text-teal-700'
-                        : 'border-gray-200 bg-white text-gray-600',
-                    )}
-                  >
-                    {nail}
-                  </button>
-                ))}
+            <p className="text-sm font-medium" style={{ color: C.dark }}>문제성 발톱 치료 경험</p>
+            <div className="grid grid-cols-2 gap-2">
+              {NAIL_TREATMENT_HISTORY_OPTIONS.map((opt) => (
+                <BigBtn key={opt} full
+                  active={d.nail_treatment_history === opt}
+                  onClick={() => {
+                    set('nail_treatment_history', d.nail_treatment_history === opt ? '' : opt);
+                    if (opt !== '있음') set('nail_treatment_methods', []);
+                  }}
+                  color="teal"
+                >
+                  {opt}
+                </BigBtn>
+              ))}
+            </div>
+            {d.nail_treatment_history === '있음' && (
+              <div className="space-y-2 pt-1">
+                <p className="text-xs font-medium" style={{ color: C.mutedText }}>치료 방법 (해당 항목 선택)</p>
+                <div className="flex flex-wrap gap-2">
+                  {NAIL_TREATMENT_METHOD_OPTIONS.map((opt) => (
+                    <BigBtn key={opt}
+                      active={d.nail_treatment_methods.includes(opt)}
+                      onClick={() => set('nail_treatment_methods', toggle(d.nail_treatment_methods, opt))}
+                      color="teal"
+                    >
+                      {opt}
+                    </BigBtn>
+                  ))}
+                </div>
               </div>
-            ))}
+            )}
           </div>
 
-          {/* 기간 */}
-          <div className="space-y-2">
-            <p className="text-xs font-medium" style={{ color: C.mutedText }}>유병 기간</p>
+          {/* Q2 증상 시작 시점 */}
+          <div className="space-y-2 pt-1 border-t" style={{ borderColor: C.border }}>
+            <p className="text-sm font-medium pt-2" style={{ color: C.dark }}>증상 시작 시점</p>
             <div className="flex flex-wrap gap-2">
-              {PAIN_DURATION_OPTIONS.map((opt) => (
+              {SYMPTOM_ONSET_OPTIONS.map((opt) => (
                 <BigBtn key={opt}
-                  active={d.pain_duration === opt}
-                  onClick={() => set('pain_duration', d.pain_duration === opt ? '' : opt)}
+                  active={d.symptom_onset === opt}
+                  onClick={() => set('symptom_onset', d.symptom_onset === opt ? '' : opt)}
                   color="teal"
                 >
                   {opt}
@@ -585,97 +583,112 @@ export default function HealthQMobilePage() {
             </div>
           </div>
 
-          {/* 정도 */}
-          <div className="space-y-2">
-            <p className="text-xs font-medium" style={{ color: C.mutedText }}>통증 정도</p>
-            <div className="grid grid-cols-4 gap-2">
-              {PAIN_SEVERITY_OPTIONS.map((opt) => (
-                <button key={opt.value} type="button"
-                  onClick={() => set('pain_severity', d.pain_severity === opt.value ? '' : opt.value)}
-                  className={cn(
-                    'min-h-[56px] rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition active:scale-95',
-                    d.pain_severity === opt.value
-                      ? 'border-teal-600 bg-teal-50'
-                      : 'border-gray-200 bg-white',
-                  )}
+          {/* Q3 가족력 */}
+          <div className="space-y-2 pt-1 border-t" style={{ borderColor: C.border }}>
+            <p className="text-sm font-medium pt-2" style={{ color: C.dark }}>가족력</p>
+            <div className="flex flex-wrap gap-2">
+              {FAMILY_HISTORY_TYPE_OPTIONS.map((opt) => (
+                <BigBtn key={opt}
+                  active={d.family_history_type === opt}
+                  onClick={() => set('family_history_type', d.family_history_type === opt ? '' : opt)}
+                  color="teal"
                 >
-                  <span className="text-xl">{opt.emoji}</span>
-                  <span className={cn('text-xs font-medium',
-                    d.pain_severity === opt.value ? 'text-teal-700' : 'text-gray-600'
-                  )}>{opt.label}</span>
-                </button>
+                  {opt}
+                </BigBtn>
               ))}
+            </div>
+          </div>
+
+          {/* Q4 발 통증 여부 */}
+          <div className="space-y-2 pt-1 border-t" style={{ borderColor: C.border }}>
+            <p className="text-sm font-medium pt-2" style={{ color: C.dark }}>발 통증 여부</p>
+            <div className="grid grid-cols-4 gap-2">
+              {FOOT_PAIN_LEVEL_OPTIONS.map((opt) => {
+                const on = d.foot_pain_level === opt.value;
+                return (
+                  <button key={opt.value} type="button"
+                    onClick={() => set('foot_pain_level', on ? '' : opt.value)}
+                    className={cn(
+                      'min-h-[56px] rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition active:scale-95',
+                      on ? 'border-[#7B5130] bg-[#F5EFE7]' : 'border-gray-200 bg-white',
+                    )}
+                  >
+                    <span className="text-xl">{opt.emoji}</span>
+                    <span className="text-xs font-medium"
+                      style={{ color: on ? C.primary : '#6B7280' }}>{opt.value}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </section>
 
-        {/* ④ 과거 병력 */}
+        {/* ── 3번 나의 건강상태 (다중) — OQ1 최종 목록 확정 전 interim ──────────── */}
         <section className="space-y-4 rounded-2xl p-4"
           style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-          <SectionHeader num={4} title="과거 병력 · 만성질환"
-            sub="해당 항목 모두 선택해주세요" />
+          <SectionHeader num={3} title="나의 건강상태" sub="해당 항목 모두 선택해주세요" />
           <div className="flex flex-wrap gap-2">
+            <BigBtn
+              active={d.medical_history_none}
+              onClick={() => {
+                const next = !d.medical_history_none;
+                set('medical_history_none', next);
+                if (next) { set('medical_history', []); set('medical_history_other', ''); }
+              }}
+              color="emerald"
+            >
+              없음
+            </BigBtn>
             {MEDICAL_HISTORY_OPTIONS.map((opt) => (
               <BigBtn key={opt}
-                active={d.medical_history.includes(opt)}
-                onClick={() => set('medical_history', toggle(d.medical_history, opt))}
+                active={d.medical_history.includes(opt) && !d.medical_history_none}
+                onClick={() => {
+                  set('medical_history_none', false);
+                  set('medical_history', toggle(d.medical_history, opt));
+                }}
                 color="amber"
               >
                 {opt}
               </BigBtn>
             ))}
           </div>
-          {d.medical_history.includes('기타') && (
+          {d.medical_history.includes('기타') && !d.medical_history_none && (
             <input type="text" value={d.medical_history_other}
               onChange={(e) => set('medical_history_other', e.target.value)}
-              placeholder="기타 병력 직접 입력"
+              placeholder="기타 건강상태 직접 입력"
               className="w-full rounded-xl border px-4 py-3 text-base outline-none"
               style={{ borderColor: C.border, color: C.dark, minHeight: 44 }} />
           )}
-          {/* 기왕증 */}
-          <div className="pt-2 border-t space-y-2" style={{ borderColor: C.border }}>
-            <p className="text-xs font-medium" style={{ color: C.mutedText }}>기왕증 / 이전 치료 경험 (자유 서술)</p>
-            <textarea value={d.prior_conditions}
-              onChange={(e) => set('prior_conditions', e.target.value)}
-              placeholder="이전 발 관련 치료나 수술이 있으면 적어주세요 (없으면 생략)"
-              rows={2}
-              className="w-full rounded-xl border px-4 py-3 text-base outline-none resize-none"
-              style={{ borderColor: C.border, color: C.dark }} />
-          </div>
-          {/* 가족력 */}
-          <div className="space-y-2">
-            <p className="text-xs font-medium" style={{ color: C.mutedText }}>가족력</p>
-            <textarea value={d.family_history}
-              onChange={(e) => set('family_history', e.target.value)}
-              placeholder="가족 중 당뇨, 혈관질환, 발 관련 질환이 있으면 적어주세요 (없으면 생략)"
-              rows={2}
-              className="w-full rounded-xl border px-4 py-3 text-base outline-none resize-none"
-              style={{ borderColor: C.border, color: C.dark }} />
-          </div>
         </section>
 
-        {/* ⑤ 이전 발 시술 경험 */}
+        {/* ── 4번 방문 목적 (OQ2 제거여부 확정 전 유지) ────────────────────────── */}
         <section className="space-y-4 rounded-2xl p-4"
           style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-          <SectionHeader num={5} title="이전 발 시술 경험"
-            sub="받아보셨던 시술이 있으면 선택해주세요" />
+          <SectionHeader num={4} title="방문 목적" sub="해당 항목 모두 선택해주세요" />
           <div className="flex flex-wrap gap-2">
-            {PRIOR_TREATMENT_OPTIONS.map((opt) => (
+            {VISIT_PURPOSE_OPTIONS.map((opt) => (
               <BigBtn key={opt}
-                active={d.prior_treatment.includes(opt)}
-                onClick={() => set('prior_treatment', toggle(d.prior_treatment, opt))}
+                active={d.visit_purpose.includes(opt)}
+                onClick={() => set('visit_purpose', toggle(d.visit_purpose, opt))}
                 color="teal"
               >
                 {opt}
               </BigBtn>
             ))}
           </div>
+          {d.visit_purpose.includes('기타') && (
+            <input type="text" value={d.visit_purpose_other}
+              onChange={(e) => set('visit_purpose_other', e.target.value)}
+              placeholder="기타 목적 직접 입력"
+              className="w-full rounded-xl border px-4 py-3 text-base outline-none"
+              style={{ borderColor: C.border, color: C.dark, minHeight: 44 }} />
+          )}
         </section>
 
-        {/* ⑥ 현재 복용 약물 */}
+        {/* ── 5번 현재 복용 약물 (OQ2 제거여부 확정 전 유지) ───────────────────── */}
         <section className="space-y-4 rounded-2xl p-4"
           style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-          <SectionHeader num={6} title="현재 복용 약물" />
+          <SectionHeader num={5} title="현재 복용 약물" />
           <div className="flex flex-wrap gap-2">
             <BigBtn
               active={d.medications_none}
@@ -706,10 +719,10 @@ export default function HealthQMobilePage() {
           )}
         </section>
 
-        {/* ⑦ 알레르기 */}
+        {/* ── 6번 알레르기 (OQ2 제거여부 확정 전 유지) ─────────────────────────── */}
         <section className="space-y-4 rounded-2xl p-4"
           style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-          <SectionHeader num={7} title="알레르기" />
+          <SectionHeader num={6} title="알레르기" />
           <div className="grid grid-cols-2 gap-2">
             <BigBtn active={!d.has_allergy} onClick={() => set('has_allergy', false)} color="emerald" full>
               없음
@@ -741,10 +754,10 @@ export default function HealthQMobilePage() {
           )}
         </section>
 
-        {/* ⑧ 방문 경로 */}
+        {/* ── 7번 방문 경로 (OQ2 제거여부 확정 전 유지) ────────────────────────── */}
         <section className="space-y-4 rounded-2xl p-4"
           style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
-          <SectionHeader num={8} title="방문 경로 (선택)" />
+          <SectionHeader num={7} title="방문 경로 (선택)" />
           <div className="flex flex-wrap gap-2">
             {REFERRAL_OPTIONS.map((opt) => (
               <BigBtn key={opt}
@@ -757,6 +770,15 @@ export default function HealthQMobilePage() {
             ))}
           </div>
         </section>
+
+        {/*
+          [OQ2 / 신규 동선 대체] 아래 구(舊) 섹션은 2번 "발 건강 관련 경험"이 대체.
+          중복 질문 방지를 위해 화면에서 숨김 — 데이터 모델·후방호환은 유지(과거 제출분 staff 패널 정상 렌더).
+          OQ2(기존섹션 제거여부)/OQ3(치료방법 선택방식) 현장확정 시 최종 처리.
+            · 구 ③ 발톱 통증 부위·기간·정도 (nail_locations/pain_duration/pain_severity)
+            · 구 ④ 기왕증(prior_conditions)·가족력 자유서술(family_history) → 2번 가족력으로 대체
+            · 구 ⑤ 이전 발 시술 경험 (prior_treatment) → 2번 문제성 발톱 치료로 대체
+        */}
 
         <p className="text-center text-xs pb-4" style={{ color: C.mutedText }}>
           모든 정보는 진료 목적으로만 사용됩니다
