@@ -24,12 +24,15 @@
  *    · 데이터·집계·메모·초재진 회차·전체/지정콜 로직은 그대로 보존(위치/표현만 변경).
  *    · 접기/펼치기(닫기/열기) 토글로 칸반 작업 시야 방해 제어(빈공간 점유 최소화).
  *
- * T-20260601-foot-DASH-HSCROLL-CHART-LOC — 대시보드 UX 3종 (본 티켓이 POPUP-RELOC 일부 supersede):
- *  #1 가로스크롤 sticky: 팝업 root를 absolute → position:fixed (뷰포트 좌하단 고정).
- *     가로 스크롤해도 화면에서 사라지지 않음(POPUP-RELOC의 "칸반과 함께 스크롤" AC supersede).
+ * T-20260601-foot-DASH-HSCROLL-CHART-LOC — 대시보드 UX 3종:
+ *  #1 위치/스크롤 (REOPEN 정정): 진료콜 명단을 우측 칸반(슬롯) 스크롤 컨테이너 내부 *우측 하단*에 배치.
+ *     → position:fixed(뷰포트 고정) 폐기. absolute로 슬롯 칸에 종속 → 가로스크롤 시 슬롯과 함께 이동.
+ *     (현장 김주연 총괄: "우측! 슬롯 있는 칸 하단에. 가로스크롤 이동하면 같이 따라가게")
+ *     · 72314ef의 fixed 좌하단 거동 폐기, POPUP-RELOC의 "칸반과 함께 스크롤" AC로 복귀(좌→우 하단).
+ *     · 세로스크롤 거동(sticky 항상 보임 vs 칸 맨 하단)은 현장 확인 중 → 추후 TICKET-UPDATE 반영(현재 보류).
  *  #2 고객 이름 클릭 → 진료차트: 행의 고객 이름 클릭 시 onOpenChart(CHART-OPEN-SINGLE 패턴) 호출.
- *     기존 행 클릭=지정콜 토글과 충돌 없게 클릭영역 분리(이름=차트, 별도 지정콜 버튼=호출).
- *  #3 성함 옆 현재 위치: 배정 슬롯 이름(getAssignedSlotName)을 성함 옆 배지로 표시.
+ *     기존 행 클릭=지정콜 토글과 충돌 없게 클릭영역 분리(이름=차트, 별도 지정콜 버튼=호출). [정상 배포 유지]
+ *  #3 성함 옆 현재 위치: 배정 슬롯 이름(getAssignedSlotName)을 성함 옆 배지로 표시. [정상 배포 유지]
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
@@ -125,14 +128,16 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
   if (displayList.length === 0) return null;
 
   return (
-    // T-20260601-foot-DASH-HSCROLL-CHART-LOC #1) 진료콜 명단 팝업 — position:fixed (뷰포트 좌하단 고정).
-    //   가로/세로 스크롤해도 화면 좌하단에 고정되어 사라지지 않음(POPUP-RELOC의 칸반 종속 스크롤 supersede).
-    //   z-40: 칸반 카드(z-30)보다 위, 모달(z-50+)보다 아래.
+    // T-20260601-foot-DASH-HSCROLL-CHART-LOC #1 (REOPEN 정정) 진료콜 명단 팝업 —
+    //   우측 칸반(슬롯) 스크롤 컨테이너 내부 *우측 하단* absolute 배치 (fixed 폐기).
+    //   부모(Dashboard 칸반 컬럼)가 position:relative + overflow-auto → 이 absolute 자식은
+    //   슬롯 칸에 종속되어 가로스크롤 시 콘텐츠와 함께 이동(뷰포트 고정 아님).
+    //   right-4: 현장 요청대로 우측 정렬. z-30: 칸반 카드와 동급(DOM 후순위 → 카드 위에 페인트).
     <div
       data-testid="doctor-call-list"
       data-collapsed={String(collapsed)}
-      data-position-mode="fixed"
-      className="fixed bottom-4 left-4 z-40 w-[min(30rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm"
+      data-position-mode="scroll-bound"
+      className="absolute bottom-4 right-4 z-30 w-[min(30rem,calc(100%-2rem))] overflow-hidden rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm"
     >
       {/* 헤더 + 접기/펼치기 + 전체콜/지정콜 액션 */}
       <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-red-200 bg-red-50/80">

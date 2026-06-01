@@ -5922,9 +5922,10 @@ export default function Dashboard() {
       {/* T-20260514-foot-TIMETABLE-MOBILE-HSCROLL:
           mobile → min-w-[15rem] shrink-0: 240px 최소폭 보장 → 외부 컨테이너 overflow 강제 (가로 스크롤 트리거)
           desktop → md:flex-1 md:min-w-0 md:shrink: 원래 flex-1 min-w-0 동작 복원 */}
-      {/* T-20260601-foot-DOCTOR-CALL-POPUP-RELOC: relative — 진료콜 명단 플로팅 팝업의 positioning 기준.
-          팝업은 이 칸반 스크롤 컨테이너 내부 absolute(bottom-left)로 떠서 빈 슬롯 영역을 점유(OPEN-Q A). */}
-      <div className="relative min-w-[15rem] shrink-0 md:flex-1 md:min-w-0 md:shrink overflow-auto p-3">
+      {/* T-20260601-foot-DOCTOR-CALL-POPUP-RELOC / DASH-HSCROLL-CHART-LOC #1:
+          relative + overflow-auto — 진료콜 명단 팝업의 positioning 기준 & 가로스크롤 컨테이너.
+          팝업은 이 칸반 스크롤 컨테이너 내부 absolute(우측 하단)로 배치되어 슬롯 칸에 종속 → 가로스크롤 시 함께 이동. */}
+      <div data-testid="kanban-scroll" className="relative min-w-[15rem] shrink-0 md:flex-1 md:min-w-0 md:shrink overflow-auto p-3">
         {loading && rows.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             불러오는 중…
@@ -5994,9 +5995,10 @@ export default function Dashboard() {
             )}
           </div>
         ) : null}
-        {/* T-20260601-foot-DOCTOR-CALL-POPUP-RELOC: '원장님 진료콜 명단' 플로팅 팝업.
-            T-20260601-foot-DASH-HSCROLL-CHART-LOC #1로 supersede: 팝업 root가 position:fixed
-            (뷰포트 좌하단 고정)로 전환됨 → 가로 스크롤해도 화면에서 사라지지 않음(칸반 종속 스크롤 해제).
+        {/* T-20260601-foot-DOCTOR-CALL-POPUP-RELOC: '원장님 진료콜 명단' 팝업.
+            T-20260601-foot-DASH-HSCROLL-CHART-LOC #1 (REOPEN 정정): 팝업 root가 이 칸반 컬럼
+            (position:relative + overflow-auto) 내부 absolute 우측 하단으로 배치됨 → 슬롯 칸에
+            종속되어 가로스크롤 시 콘텐츠와 함께 이동(뷰포트 fixed 폐기).
             #2: onOpenChart=고객 이름 클릭 시 진료차트(CHART-OPEN-SINGLE 패턴) 즉시 열기.
             데이터·집계·메모·초재진 회차 로직은 DOCTOR-CALL-LIST 그대로 보존. */}
         <DoctorCallListBar checkIns={rows} onRefresh={fetchCheckIns} onOpenChart={handleOpenChartFromList} />
