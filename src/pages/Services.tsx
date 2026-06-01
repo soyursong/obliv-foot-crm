@@ -59,6 +59,11 @@ const CATEGORY_LABEL_OPTIONS = ['기본', '검사', '상병', '풋케어', '수�
 const CATEGORY_TABS = ['전체', ...CATEGORY_LABEL_OPTIONS] as const;
 type CategoryTab = typeof CATEGORY_TABS[number];
 
+// T-20260601-foot-SVC-COSMETIC-LABEL-BACKFILL: 탭 분류 기준값.
+// category_label 미설정(NULL) 레거시 row 는 category 값으로 fallback 하여 탭에 분류한다.
+// (데이터 정규화로 대부분 category_label 채워지나, 향후 NULL 유입 방어 + 일반화)
+const effectiveCategoryLabel = (svc: Service): string => svc.category_label ?? svc.category ?? '';
+
 // ── T-20260526-foot-SVC-CATEGORY-SORT: 정렬 가능한 서비스 행 ─────────────────
 // useSortable hook 규칙상 별도 컴포넌트 필요. DnD + ↑↓ 버튼 복합 지원 (AC-1).
 interface SortableServiceRowProps {
@@ -267,7 +272,7 @@ export default function Services() {
   const tabItems = useMemo(() => {
     const base = rows.filter((svc) => {
       if (!svc.active && !showInactive) return false;
-      if (activeTab !== '전체' && svc.category_label !== activeTab) return false;
+      if (activeTab !== '전체' && effectiveCategoryLabel(svc) !== activeTab) return false;
       if (debouncedSearch) {
         const q = debouncedSearch.toLowerCase();
         if (
@@ -280,7 +285,7 @@ export default function Services() {
     if (activeTab === '전체') {
       // 전체 탭: category_label → sort_order → name 3단 정렬
       return [...base].sort((a, b) => {
-        const catCmp = (a.category_label ?? '').localeCompare(b.category_label ?? '', 'ko');
+        const catCmp = effectiveCategoryLabel(a).localeCompare(effectiveCategoryLabel(b), 'ko');
         if (catCmp !== 0) return catCmp;
         const orderCmp = (a.sort_order ?? 999) - (b.sort_order ?? 999);
         if (orderCmp !== 0) return orderCmp;
@@ -330,7 +335,7 @@ export default function Services() {
 
       setRows((prev) => {
         const inTab = prev
-          .filter((s) => s.category_label === activeTab && (showInactive || s.active))
+          .filter((s) => effectiveCategoryLabel(s) === activeTab && (showInactive || s.active))
           .sort((a, b) => {
             const o = (a.sort_order ?? 999) - (b.sort_order ?? 999);
             return o !== 0 ? o : a.name.localeCompare(b.name, 'ko');
@@ -345,7 +350,7 @@ export default function Services() {
         scheduleSortSave(updated.map(({ id, sort_order }) => ({ id, sort_order })));
 
         const others = prev.filter(
-          (s) => !(s.category_label === activeTab && (showInactive || s.active)),
+          (s) => !(effectiveCategoryLabel(s) === activeTab && (showInactive || s.active)),
         );
         return [...others, ...updated];
       });
@@ -360,7 +365,7 @@ export default function Services() {
 
       setRows((prev) => {
         const inTab = prev
-          .filter((s) => s.category_label === activeTab && (showInactive || s.active))
+          .filter((s) => effectiveCategoryLabel(s) === activeTab && (showInactive || s.active))
           .sort((a, b) => {
             const o = (a.sort_order ?? 999) - (b.sort_order ?? 999);
             return o !== 0 ? o : a.name.localeCompare(b.name, 'ko');
@@ -376,7 +381,7 @@ export default function Services() {
         scheduleSortSave(updated.map(({ id, sort_order }) => ({ id, sort_order })));
 
         const others = prev.filter(
-          (s) => !(s.category_label === activeTab && (showInactive || s.active)),
+          (s) => !(effectiveCategoryLabel(s) === activeTab && (showInactive || s.active)),
         );
         return [...others, ...updated];
       });
@@ -437,7 +442,7 @@ export default function Services() {
       if (tab === '전체') {
         counts['전체'] = rows.filter((s) => showInactive || s.active).length;
       } else {
-        counts[tab] = rows.filter((s) => s.category_label === tab && (showInactive || s.active)).length;
+        counts[tab] = rows.filter((s) => effectiveCategoryLabel(s) === tab && (showInactive || s.active)).length;
       }
     }
     return counts;
