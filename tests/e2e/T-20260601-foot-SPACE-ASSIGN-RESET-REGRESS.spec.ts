@@ -149,4 +149,73 @@ test.describe('T-20260601-foot-SPACE-ASSIGN-RESET-REGRESS 공간배정 carry-ove
     expect(critical.length).toBe(0);
     console.log(`[S3] room_assignments 크리티컬 콘솔 에러 0건 OK (총 ${errors.length}건)`);
   });
+
+  // ===========================================================
+  // S4 (REOPEN, AC-저장-2): 저장 클릭 → 성공 토스트 노출 (silent 금지)
+  //   원자적 save_room_assignments RPC 경로. 권한/오류 시 실패 토스트, 정상 시 성공 토스트.
+  // ===========================================================
+  test('S4: 저장 클릭 시 성공/실패 토스트가 반드시 노출됨 (silent 저장 금지)', async ({ page }) => {
+    const ok = await gotoSpaceAssign(page);
+    if (!ok) { test.skip(true, '공간 배정 탭 미발견'); return; }
+    await page.waitForTimeout(1_000);
+
+    const saveBtn = page.getByRole('button', { name: /^저장/ }).first();
+    if (!(await saveBtn.isVisible().catch(() => false))) {
+      test.skip(true, '저장 버튼 미발견');
+      return;
+    }
+    await saveBtn.click();
+
+    // 성공("저장됨") 또는 실패("저장 실패") 토스트 중 하나는 반드시 떠야 한다 (silent 금지)
+    const toast = page.getByText(/공간배정 저장됨|저장 실패/);
+    await expect(toast.first()).toBeVisible({ timeout: 8_000 });
+    const txt = await toast.first().innerText();
+    console.log(`[S4] 저장 토스트 노출 OK: "${txt}"`);
+    // 정상 환경(admin 로그인)에서는 성공 토스트여야 함
+    expect(txt).toContain('저장됨');
+  });
+
+  // ===========================================================
+  // S5 (REOPEN, AC-저장-1): 슬롯 변경 → 저장 → 새로고침 → 저장값 유지 (리셋 X)
+  //   원자적 RPC 저장으로 부분 실패에 의한 today 소실(=리셋)이 발생하지 않음을 가드.
+  // ===========================================================
+  test('S5: 슬롯 변경 후 저장 → 새로고침 시 변경값 유지 (리셋되지 않음)', async ({ page }) => {
+    const ok = await gotoSpaceAssign(page);
+    if (!ok) { test.skip(true, '공간 배정 탭 미발견'); return; }
+    await page.waitForTimeout(1_000);
+
+    // 첫 번째 방 드롭다운에서 현재값과 다른 옵션으로 변경
+    const firstSelect = page.locator('select').first();
+    if (!(await firstSelect.isVisible().catch(() => false))) {
+      test.skip(true, '배정 드롭다운 미발견');
+      return;
+    }
+    const options = await firstSelect.locator('option').all();
+    if (options.length < 2) { test.skip(true, '선택 가능한 직원 옵션 부족'); return; }
+
+    const before = await firstSelect.inputValue();
+    let target = '';
+    for (const o of options) {
+      const v = await o.getAttribute('value');
+      if (v && v.trim() !== '' && v !== before) { target = v; break; }
+    }
+    if (!target) { test.skip(true, '변경 가능한 다른 직원 옵션 없음'); return; }
+
+    await firstSelect.selectOption(target);
+    await page.waitForTimeout(300);
+
+    const saveBtn = page.getByRole('button', { name: /^저장/ }).first();
+    await saveBtn.click();
+    await expect(page.getByText(/공간배정 저장됨/).first()).toBeVisible({ timeout: 8_000 });
+    console.log(`[S5] 변경(${before} → ${target}) 저장 완료`);
+
+    // 새로고침/재진입 → 변경값이 유지되어야 함 (리셋되어 before 로 돌아가면 실패)
+    const ok2 = await gotoSpaceAssign(page);
+    expect(ok2).toBe(true);
+    await page.waitForTimeout(1_000);
+    const after = await page.locator('select').first().inputValue();
+    console.log(`[S5] 새로고침 후 첫 방 값: ${after} (기대: ${target})`);
+    expect(after).toBe(target);
+    console.log('[S5] 저장값 유지 OK — 새로고침해도 리셋되지 않음');
+  });
 });

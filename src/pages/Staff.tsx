@@ -762,52 +762,53 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
   };
 
   // AC-3 T-20260515: [저장] 버튼 — 오늘 날짜로 전체 스냅샷 저장
+  // T-20260601-foot-SPACE-ASSIGN-RESET-REGRESS (REOPEN, 회귀 근본 수정):
+  //   기존: 비원자적 DELETE → INSERT. DELETE 성공 후 INSERT 가 (네트워크/일시 오류로) 실패하면
+  //         today 행이 통째로 비워진 채 남아 → 재진입 시 직전날 carry-over 만 표시 = "리셋" 회귀.
+  //         또한 DELETE 가 RLS 로 0-row silent(error null) 가능 → 반만 적용/혼란.
+  //   수정: save_room_assignments RPC 단일 트랜잭션으로 DELETE+INSERT 원자 처리.
+  //         INSERT 실패 시 DELETE 롤백 → today 보존(데이터 무손실). 권한/오류는 RPC 가 명시적
+  //         에러로 반환 → 아래에서 항상 실패 토스트 노출 (silent 금지, AC-저장-2).
   const handleSave = async () => {
     setSaving(true);
-    const today = todayStr; // const todayStr = format(new Date(), 'yyyy-MM-dd') — 컴포넌트 스코프
+    try {
+      const today = todayStr; // const todayStr = format(new Date(), 'yyyy-MM-dd') — 컴포넌트 스코프
 
-    const { error: delErr } = await supabase
-      .from('room_assignments')
-      .delete()
-      .eq('clinic_id', clinic.id)
-      .eq('date', today);
+      // 머지된 effective 세트 전체를 payload 로 구성 (배정된 방만)
+      const payload = rooms
+        .map(room => {
+          const staffId = getEffectiveStaffId(room.name);
+          if (!staffId) return null;
+          const staff = staffList.find(s => s.id === staffId);
+          return {
+            room_name: room.name,
+            room_type: room.room_type,
+            staff_id: staffId,
+            staff_name: staff?.name ?? null,
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null);
 
-    if (delErr) {
-      toast.error(`저장 실패: ${delErr.message}`);
-      setSaving(false);
-      return;
-    }
+      const { data: savedCount, error } = await supabase.rpc('save_room_assignments', {
+        p_clinic_id: clinic.id,
+        p_date: today,
+        p_assignments: payload,
+      });
 
-    const inserts = rooms
-      .map(room => {
-        const staffId = getEffectiveStaffId(room.name);
-        if (!staffId) return null;
-        const staff = staffList.find(s => s.id === staffId);
-        return {
-          clinic_id: clinic.id,
-          date: today,
-          room_name: room.name,
-          room_type: room.room_type,
-          staff_id: staffId,
-          staff_name: staff?.name ?? null,
-        };
-      })
-      .filter((x): x is NonNullable<typeof x> => x !== null);
-
-    if (inserts.length > 0) {
-      const { error: insErr } = await supabase.from('room_assignments').insert(inserts);
-      if (insErr) {
-        toast.error(`저장 실패: ${insErr.message}`);
-        setSaving(false);
+      if (error) {
+        toast.error(`저장 실패: ${error.message}`);
         return;
       }
-    }
 
-    toast.success(`공간배정 저장됨 (${inserts.length}건)`);
-    setPending({});
-    setIsDirty(false);
-    setSaving(false);
-    refresh();
+      toast.success(`공간배정 저장됨 (${savedCount ?? payload.length}건)`);
+      setPending({});
+      setIsDirty(false);
+      refresh();
+    } catch (e) {
+      toast.error(`저장 실패: ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
