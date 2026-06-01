@@ -51,17 +51,23 @@ const FIELD_LABELS: Record<string, string> = {
   symptom_onset:          '증상 시작 시점',
   family_history_type:    '가족력',
   foot_pain_level:        '발 통증 여부',
-  // 3번 나의 건강상태
-  medical_history:        '나의 건강상태',
+  // 3번 나의 건강 상태
+  medical_history:        '나의 건강 상태',
   medical_history_other:  '건강상태 (기타)',
-  // 부가 (방문목적/복용약물/알레르기/방문경로)
+  // 4번 현재 복용 중인 약
+  medications:            '복용 중인 약',
+  medications_other:      '복용약물 (기타)',
+  // 5번 치료 및 내원 계획
+  treatment_start_timing: '치료 시작 시기',
+  visit_frequency:        '내원 가능 주기',
+  has_private_insurance:  '실비보험',
+  insurance_company:      '보험사',
+  // ── 후방호환 (구 제출분) ──
   visit_purpose:          '방문 목적',
-  medications:            '복용 약물',
   has_allergy:            '알레르기',
   allergy_types:          '알레르기 종류',
   allergy_other:          '알레르기 상세',
   referral_source:        '방문 경로',
-  // ── 후방호환 (구 제출분) ──
   nail_locations:         '통증 발톱 부위',
   pain_duration:          '유병 기간',
   pain_severity:          '통증 정도',
@@ -93,12 +99,14 @@ function renderValue(key: string, val: unknown): string {
 /** form_data 에서 표시할 필드만 추출 (빈 값 제외) */
 function extractDisplayFields(data: Record<string, unknown>) {
   const ORDER = [
-    // 신규 동의서 순서
+    // 5섹션 최종 확정본 순서
     'symptoms', 'symptoms_other',
     'nail_treatment_history', 'nail_treatment_methods', 'symptom_onset', 'family_history_type', 'foot_pain_level',
     'medical_history', 'medical_history_other',
-    'visit_purpose', 'medications', 'has_allergy', 'allergy_types', 'allergy_other', 'referral_source',
-    // 후방호환 (구 제출분 key)
+    'medications', 'medications_other',
+    'treatment_start_timing', 'visit_frequency', 'has_private_insurance', 'insurance_company',
+    // 후방호환 (구 제출분 key — 제거된 방문목적/알레르기/방문경로 + 구 통증·시술)
+    'visit_purpose', 'has_allergy', 'allergy_types', 'allergy_other', 'referral_source',
     'nail_locations', 'pain_duration', 'pain_severity', 'prior_treatment', 'prior_conditions', 'family_history',
   ];
   const result: Array<{ key: string; label: string; value: string }> = [];
