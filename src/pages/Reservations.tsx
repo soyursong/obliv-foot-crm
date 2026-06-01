@@ -719,6 +719,7 @@ export default function Reservations() {
     assigned_counselor_id: null,
     treatment_category: null,
     treatment_contents: null,
+    doctor_call_memo: null,
   }), [clinic?.id]);
 
   // T-20260515-foot-RESV-CTX-HOVER: 핸들러

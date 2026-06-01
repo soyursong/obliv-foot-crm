@@ -1,0 +1,310 @@
+/**
+ * T-20260601-foot-DOCTOR-CALL-LIST — 대시보드 하단 '원장님 진료콜 명단' 위젯
+ *
+ * 요구사항 6개:
+ *  1) status_flag='purple'(진료필요/보라) 당일 check_ins 자동 리스트업 (수기 명단 제거)
+ *  2) 초진/재진 배지 + 재진이면 N회차 표기 (누적 내원 횟수)
+ *  3) 진료 전달사항 메모 입력·저장 (check_ins.doctor_call_memo — 방문동선 메모와 용도 분리)
+ *  4) 원장님 전체콜/지정콜 (OPEN-Q 기본 구현안 A: 표시/선택형 — 행 선택 시 "호출 중" 하이라이트)
+ *  5) 가로 스크롤 sticky — 대시보드 가로 스크롤 시에도 명단 영역이 viewport 하단 고정
+ *     (이 컴포넌트는 가로 스크롤 컨테이너 *밖*에 배치되어 가로 스크롤의 영향을 받지 않음)
+ *  6) 하단 빨간박스 위치 — 대시보드 하단 (첨부 20260601_124211.png)
+ *
+ * AC-7: 당일·해당 지점(clinic) 범위. checkIns는 이미 Dashboard.fetchCheckIns에서
+ *       clinic_id + 당일로 필터된 rows이므로 추가 지점/날짜 필터 불필요.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Stethoscope, Phone, Check, X, Pencil } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
+import type { CheckIn } from '@/lib/types';
+
+interface DoctorCallListBarProps {
+  /** Dashboard의 당일·해당지점 check_ins rows */
+  checkIns: CheckIn[];
+  /** 메모 저장 후 부모 rows 갱신 트리거 */
+  onRefresh?: () => void;
+}
+
+export default function DoctorCallListBar({ checkIns, onRefresh }: DoctorCallListBarProps) {
+  // 1) 보라(진료필요) 자동 리스트업 — 접수순(checked_in_at) 정렬
+  const purpleList = useMemo(
+    () =>
+      checkIns
+        .filter((ci) => ci.status_flag === 'purple')
+        .sort((a, b) => a.checked_in_at.localeCompare(b.checked_in_at)),
+    [checkIns],
+  );
+
+  // 4) 지정콜 — 선택된 행 (호출 중 하이라이트). 명단에서 사라지면 자동 해제.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (selectedId && !purpleList.some((ci) => ci.id === selectedId)) {
+      setSelectedId(null);
+    }
+  }, [purpleList, selectedId]);
+
+  // 4) 전체콜 — 전체 명단 호출 모드 (모든 행 강조)
+  const [allCall, setAllCall] = useState(false);
+  useEffect(() => {
+    if (purpleList.length === 0) setAllCall(false);
+  }, [purpleList.length]);
+
+  // 2) 재진 N회차 — 누적 내원(진료) 횟수 산출
+  const [visitCounts, setVisitCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const custIds = Array.from(
+      new Set(
+        purpleList
+          .filter((ci) => ci.visit_type === 'returning' && ci.customer_id)
+          .map((ci) => ci.customer_id as string),
+      ),
+    );
+    if (custIds.length === 0) {
+      setVisitCounts({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      // 누적 내원 = 해당 고객의 전체 check_ins 건수 (오늘 포함). N회차 표기용.
+      const { data, error } = await supabase
+        .from('check_ins')
+        .select('customer_id')
+        .in('customer_id', custIds);
+      if (cancelled || error || !data) return;
+      const counts: Record<string, number> = {};
+      for (const row of data as { customer_id: string | null }[]) {
+        if (!row.customer_id) continue;
+        counts[row.customer_id] = (counts[row.customer_id] ?? 0) + 1;
+      }
+      setVisitCounts(counts);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [purpleList]);
+
+  if (purpleList.length === 0) return null;
+
+  return (
+    // 5) sticky — 가로 스크롤 컨테이너 밖, flex-col root의 shrink-0 자식 → viewport 하단 고정.
+    //    가로 스크롤 시 명단은 따라오지 않고 항상 화면에 보임.
+    <div
+      data-testid="doctor-call-list"
+      className="shrink-0 border-t-2 border-red-300 bg-red-50/60"
+    >
+      {/* 헤더 + 전체콜/지정콜 액션 */}
+      <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-red-200">
+        <div className="flex items-center gap-1.5">
+          <Stethoscope className="h-4 w-4 text-red-600" />
+          <span className="text-sm font-semibold text-red-800">원장님 진료콜 명단</span>
+          <span className="text-xs text-red-600 bg-red-100 rounded-full px-1.5 py-px font-medium">
+            {purpleList.length}명
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            data-testid="doctor-call-all"
+            onClick={() => {
+              setAllCall((v) => !v);
+              setSelectedId(null);
+            }}
+            className={cn(
+              'flex items-center gap-1 text-xs font-medium rounded-md px-2.5 py-1 min-h-[36px] border transition-colors',
+              allCall
+                ? 'bg-red-600 text-white border-red-600'
+                : 'bg-white text-red-700 border-red-300 hover:bg-red-100',
+            )}
+          >
+            <Phone className="h-3.5 w-3.5" />
+            전체콜
+          </button>
+          {(allCall || selectedId) && (
+            <button
+              data-testid="doctor-call-clear"
+              onClick={() => {
+                setAllCall(false);
+                setSelectedId(null);
+              }}
+              className="flex items-center gap-1 text-xs text-gray-500 rounded-md px-2 py-1 min-h-[36px] border border-gray-200 bg-white hover:bg-gray-50"
+              title="호출 해제"
+            >
+              <X className="h-3.5 w-3.5" />
+              해제
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 명단 — 가로로 카드 나열 (가로 스크롤 가능, 영역 자체는 고정) */}
+      <div className="flex gap-2 overflow-x-auto px-3 py-2" data-testid="doctor-call-rows">
+        {purpleList.map((ci) => (
+          <DoctorCallRow
+            key={ci.id}
+            checkIn={ci}
+            visitCount={ci.customer_id ? visitCounts[ci.customer_id] : undefined}
+            highlighted={allCall || selectedId === ci.id}
+            onSelect={() => {
+              // 지정콜 — 토글
+              setAllCall(false);
+              setSelectedId((cur) => (cur === ci.id ? null : ci.id));
+            }}
+            onRefresh={onRefresh}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+interface DoctorCallRowProps {
+  checkIn: CheckIn;
+  visitCount?: number;
+  highlighted: boolean;
+  onSelect: () => void;
+  onRefresh?: () => void;
+}
+
+function DoctorCallRow({ checkIn, visitCount, highlighted, onSelect, onRefresh }: DoctorCallRowProps) {
+  const isReturning = checkIn.visit_type === 'returning';
+  const isExperience = checkIn.visit_type === 'experience';
+
+  // 3) 진료 전달사항 메모
+  const [editing, setEditing] = useState(false);
+  const [memoDraft, setMemoDraft] = useState(checkIn.doctor_call_memo ?? '');
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // DB값이 외부에서 갱신되면 (편집 중이 아닐 때) draft 동기화
+  useEffect(() => {
+    if (!editing) setMemoDraft(checkIn.doctor_call_memo ?? '');
+  }, [checkIn.doctor_call_memo, editing]);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  const saveMemo = useCallback(async () => {
+    const next = memoDraft.trim() === '' ? null : memoDraft.trim();
+    if (next === (checkIn.doctor_call_memo ?? null)) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase
+      .from('check_ins')
+      .update({ doctor_call_memo: next })
+      .eq('id', checkIn.id);
+    setSaving(false);
+    if (error) {
+      toast.error('진료 전달사항 저장 실패');
+      return;
+    }
+    setEditing(false);
+    toast.success('진료 전달사항 저장됨');
+    onRefresh?.();
+  }, [memoDraft, checkIn.doctor_call_memo, checkIn.id, onRefresh]);
+
+  const visitBadge = isReturning ? (
+    <span className="bg-green-100 text-green-800 text-[10px] px-1 py-px rounded font-medium whitespace-nowrap">
+      재진{typeof visitCount === 'number' && visitCount > 0 ? ` ${visitCount}회차` : ''}
+    </span>
+  ) : isExperience ? (
+    <span className="bg-purple-100 text-purple-800 text-[10px] px-1 py-px rounded font-medium whitespace-nowrap">
+      체험
+    </span>
+  ) : (
+    <span className="bg-blue-100 text-blue-800 text-[10px] px-1 py-px rounded font-medium whitespace-nowrap">
+      초진
+    </span>
+  );
+
+  return (
+    <div
+      data-testid="doctor-call-row"
+      data-checkin-id={checkIn.id}
+      data-highlighted={String(highlighted)}
+      className={cn(
+        'shrink-0 w-56 rounded-lg border bg-white p-2 transition-all',
+        highlighted
+          ? 'border-red-500 ring-2 ring-red-400 shadow-md bg-red-50'
+          : 'border-red-200 hover:border-red-300',
+      )}
+    >
+      {/* 헤더: 고객명 + 배지 + 지정콜 버튼 */}
+      <div className="flex items-center justify-between gap-1">
+        <button
+          onClick={onSelect}
+          data-testid="doctor-call-select"
+          className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
+          title="지정콜 — 클릭하여 호출 중 표시"
+        >
+          <span className="font-semibold text-sm text-gray-900 truncate">{checkIn.customer_name}</span>
+          {visitBadge}
+        </button>
+        {highlighted && (
+          <span className="flex items-center gap-0.5 text-[10px] font-bold text-red-600 whitespace-nowrap" data-testid="doctor-call-calling">
+            <Phone className="h-3 w-3 animate-pulse" />
+            호출 중
+          </span>
+        )}
+      </div>
+
+      {/* 진료 전달사항 메모 */}
+      <div className="mt-1.5">
+        {editing ? (
+          <div className="flex flex-col gap-1">
+            <textarea
+              ref={inputRef}
+              value={memoDraft}
+              onChange={(e) => setMemoDraft(e.target.value)}
+              maxLength={500}
+              rows={2}
+              placeholder="진료 전달사항 입력"
+              data-testid="doctor-call-memo-input"
+              className="w-full rounded border border-input bg-background px-2 py-1 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-red-400 resize-none"
+            />
+            <div className="flex justify-end gap-1">
+              <button
+                onClick={() => {
+                  setMemoDraft(checkIn.doctor_call_memo ?? '');
+                  setEditing(false);
+                }}
+                className="text-[11px] text-gray-500 px-1.5 py-0.5 rounded hover:bg-gray-100"
+              >
+                취소
+              </button>
+              <button
+                onClick={saveMemo}
+                disabled={saving}
+                data-testid="doctor-call-memo-save"
+                className="flex items-center gap-0.5 text-[11px] text-white bg-red-600 px-1.5 py-0.5 rounded hover:bg-red-700 disabled:opacity-50"
+              >
+                <Check className="h-3 w-3" />
+                저장
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setEditing(true)}
+            data-testid="doctor-call-memo-display"
+            className="w-full text-left flex items-start gap-1 group"
+            title="진료 전달사항 입력/수정"
+          >
+            <span
+              className={cn(
+                'text-xs flex-1 break-words',
+                checkIn.doctor_call_memo ? 'text-gray-700' : 'text-gray-400 italic',
+              )}
+            >
+              {checkIn.doctor_call_memo || '진료 전달사항 +'}
+            </span>
+            <Pencil className="h-3 w-3 text-gray-300 group-hover:text-red-500 shrink-0 mt-0.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

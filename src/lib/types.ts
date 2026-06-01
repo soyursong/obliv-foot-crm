@@ -343,6 +343,9 @@ export interface CheckIn {
   assigned_counselor_id: string | null;
   treatment_category: string | null;
   treatment_contents: string[] | null;
+  /** 원장님 진료콜 명단 진료 전달사항 전용 메모 — T-20260601-foot-DOCTOR-CALL-LIST
+   *  방문동선 메모(treatment_memo/notes)와 용도 분리 */
+  doctor_call_memo: string | null;
 }
 
 export interface Package {
