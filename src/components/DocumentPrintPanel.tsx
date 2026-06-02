@@ -64,6 +64,7 @@ import {
   INSURANCE_FALLBACK_TEMPLATES,
   FORM_META,
   getTemplateImageUrl,
+  canAccessFormTemplate,
   type FieldMapEntry,
   type FormSubmission,
   type FormTemplate,
@@ -423,11 +424,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
   }, [load]);
 
   // ── 권한 체크 ──
+  // T-20260602-foot-PENCHART-REQROLE-PRINT-OMIT: canAccess 단일 소스를 formTemplates.canAccessFormTemplate로 통일.
+  //   pen_chart는 therapist/staff도 인쇄 가능(임상차트). DB required_role 변경 없이 표시 조건만 보강.
   const userRole = profile?.role ?? '';
-  const canAccess = (tpl: FormTemplate) => {
-    const allowed = tpl.required_role?.split('|') ?? [];
-    return allowed.includes(userRole);
-  };
+  const canAccess = (tpl: FormTemplate) => canAccessFormTemplate(tpl, userRole);
 
   // ── 분류 ──
   const defaultTemplates = templates.filter(
