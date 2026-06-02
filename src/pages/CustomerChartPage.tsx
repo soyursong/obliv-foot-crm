@@ -11,7 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { formatAmount, formatPhone, formatPhoneInput, parseAmount } from '@/lib/format';
 // T-20260524-foot-PKG-LABEL-AMOUNT AC-3: METHOD_KO 추가 import
-import { VISIT_TYPE_KO, METHOD_KO } from '@/lib/status';
+import { VISIT_TYPE_KO, METHOD_KO, STATUS_KO } from '@/lib/status';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -1593,6 +1593,28 @@ function TreatmentImagesSection({
   );
 }
 
+// T-20260602-foot-SLOT-DWELL-TIME (B안): fn_check_in_slot_dwell RPC 반환 행
+interface SlotDwellSeg {
+  check_in_id: string;
+  seq: number;
+  status: string;
+  entered_at: string;
+  exited_at: string;
+  duration_seconds: number;
+  is_current: boolean;
+}
+
+// 체류시간(초) → "1시간 23분" / "12분 5초" / "45초" 한글 포맷 (천단위·Asia/Seoul UX 일관)
+function formatDwell(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}시간 ${m}분`;
+  if (m > 0) return `${m}분 ${sec}초`;
+  return `${sec}초`;
+}
+
 // T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 내에서 prop으로 주입 가능 (MemoryRouter 불필요)
 export default function CustomerChartPage({ customerId: propCustomerId }: { customerId?: string } = {}) {
   const params = useParams<{ customerId: string }>();
@@ -1612,6 +1634,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [checkInHistory, setCheckInHistory] = useState<CheckIn[]>([]);
   const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
+  // T-20260602-foot-SLOT-DWELL-TIME (B안): 방문건별 슬롯 체류시간 이력 (fn_check_in_slot_dwell)
+  const [slotDwell, setSlotDwell] = useState<SlotDwellSeg[]>([]);
+  const [slotDwellLoading, setSlotDwellLoading] = useState(false);
+  const [slotDwellLoaded, setSlotDwellLoaded] = useState(false);
   // T-20260515-foot-DOC-REISSUE-BTN: 서류 재발급 모달 대상 체크인
   const [docReissueCheckIn, setDocReissueCheckIn] = useState<CheckIn | null>(null);
   const [prescriptions, setPrescriptions] = useState<PrescriptionRow[]>([]);
@@ -1946,6 +1972,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       const ciHistory = (ciHistRes.data ?? []) as CheckIn[];
       setCheckInHistory(ciHistory);
       setLatestCheckIn(ciHistory[0] ?? null);
+      // T-20260602-foot-SLOT-DWELL-TIME (B안): 방문이력 갱신 시 체류시간 재로딩 트리거
+      setSlotDwellLoaded(false);
+      setSlotDwell([]);
 
       const checkInIds = ciHistory.map((ci: CheckIn) => ci.id);
       setChecklistEntries((clRes.data ?? []) as { id: string; completed_at: string | null; started_at: string; checklist_data: Record<string, unknown> }[]);
@@ -3384,6 +3413,29 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     // designated_therapist_id 컬럼 및 표시는 유지, UI 자동세팅만 제거
   }, [currentUserStaffId, therapistList]);
 
+  // T-20260602-foot-SLOT-DWELL-TIME (B안): 체류시간 탭 진입 시 lazy 로딩 (방문건별 슬롯 체류 인터벌)
+  useEffect(() => {
+    if (chartTabGroup !== 'history' || chartTab !== 'slot_dwell') return;
+    if (slotDwellLoaded || slotDwellLoading) return;
+    const ids = checkInHistory.map((ci) => ci.id);
+    if (ids.length === 0) { setSlotDwellLoaded(true); return; }
+    let cancelled = false;
+    (async () => {
+      setSlotDwellLoading(true);
+      const { data, error } = await supabase.rpc('fn_check_in_slot_dwell', { p_check_in_ids: ids });
+      if (cancelled) return;
+      if (error) {
+        toast.error('체류시간 조회 실패: ' + error.message);
+        setSlotDwell([]);
+      } else {
+        setSlotDwell((data ?? []) as SlotDwellSeg[]);
+      }
+      setSlotDwellLoaded(true);
+      setSlotDwellLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [chartTabGroup, chartTab, slotDwellLoaded, slotDwellLoading, checkInHistory]);
+
   // T-20260515-foot-INLINE-RESV: 빈 슬롯 클릭 시 예약 등록
   // T-20260524-foot-THERAPIST-BISYNC AC-2: 치료사 선택 시 preferred_therapist_id 저장 + designated_therapist_id 역동기화
   const saveInlineResv = async (time: string) => {
@@ -3499,13 +3551,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     { key: 'images',        label: '진료이미지' },
     { key: 'messages',      label: '메시지' },
     { key: 'refunds',       label: '환불내역' },
+    { key: 'slot_dwell',    label: '체류시간' },
   ];
   // T-20260513-foot-C21-TAB-RESTRUCTURE-C: pen_chart + messages 구현 완료
   // T-20260522-foot-REFUND-HIST-TAB: 환불내역 탭 추가
   // T-20260601-foot-CHART-TAB-MUNJIN-DEDUP: 'checklist'(문진) 탭 진입점 제거에 맞춰 orphan 항목 정리.
   //   checklist 렌더 로직(L3972~)은 보존(OQ), chartTab은 더 이상 'checklist'에 도달하지 않음.
   const IMPLEMENTED_CLINICAL = ['progress', 'documents', 'payments', 'test_result', 'pen_chart'];
-  const IMPLEMENTED_HISTORY  = ['consultations', 'packages', 'treatments', 'images', 'messages', 'refunds'];
+  const IMPLEMENTED_HISTORY  = ['consultations', 'packages', 'treatments', 'images', 'messages', 'refunds', 'slot_dwell'];
 
   const handleClinicalTab = (key: string) => { setChartTab(key); setChartTabGroup('clinical'); };
   const handleHistoryTab  = (key: string) => { setChartTab(key); setChartTabGroup('history'); };
@@ -5464,6 +5517,97 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         </div>
                       )}
                     </div>
+                  </div>
+                );
+              })()}
+
+              {/* History: 체류시간 — T-20260602-foot-SLOT-DWELL-TIME (B안) */}
+              {chartTabGroup === 'history' && chartTab === 'slot_dwell' && (() => {
+                if (slotDwellLoading) {
+                  return (
+                    <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" /> 체류시간 불러오는 중…
+                    </div>
+                  );
+                }
+                // 방문건별로 세그먼트 그룹화 (checkInHistory 순서 = 최신순)
+                const byCheckIn = new Map<string, SlotDwellSeg[]>();
+                for (const seg of slotDwell) {
+                  const arr = byCheckIn.get(seg.check_in_id) ?? [];
+                  arr.push(seg);
+                  byCheckIn.set(seg.check_in_id, arr);
+                }
+                const visits = checkInHistory.filter((ci) => byCheckIn.has(ci.id));
+                if (visits.length === 0) {
+                  return (
+                    <div className="py-8 text-center text-sm text-muted-foreground border border-dashed rounded-lg">
+                      슬롯 체류시간 기록 없음
+                    </div>
+                  );
+                }
+                return (
+                  <div className="space-y-3" data-testid="slot-dwell-panel">
+                    <div className="text-[11px] text-muted-foreground">
+                      방문건별 각 슬롯(상담실·치료실 등)에 머문 시간입니다. 슬롯 이동 시각(전이 로그) 기준 산출.
+                    </div>
+                    {visits.map((ci) => {
+                      const segs = (byCheckIn.get(ci.id) ?? []).slice().sort((a, b) => a.seq - b.seq);
+                      // 슬롯(상태)별 누적 집계
+                      const agg = new Map<string, number>();
+                      for (const s of segs) agg.set(s.status, (agg.get(s.status) ?? 0) + s.duration_seconds);
+                      const totalSec = segs.reduce((sum, s) => sum + s.duration_seconds, 0);
+                      return (
+                        <div key={ci.id} className="rounded-lg border bg-white p-3 text-xs" data-testid="slot-dwell-visit">
+                          <div className="flex items-center gap-1.5 font-bold text-teal-700 mb-2">
+                            <Timer className="h-3.5 w-3.5" />
+                            {format(new Date(ci.checked_in_at), 'yyyy-MM-dd HH:mm')}
+                            <span className="ml-auto text-[10px] font-medium text-muted-foreground">
+                              총 원내 체류 {formatDwell(totalSec)}
+                            </span>
+                          </div>
+                          {/* 슬롯별 누적 체류시간 */}
+                          <table className="w-full border-collapse">
+                            <thead>
+                              <tr className="bg-muted/30 text-muted-foreground">
+                                <th className="text-left px-2 py-1.5 font-medium border-b">슬롯</th>
+                                <th className="text-right px-2 py-1.5 font-medium border-b">체류시간</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {Array.from(agg.entries()).map(([status, sec]) => (
+                                <tr key={status} className="border-b border-muted/20">
+                                  <td className="px-2 py-1.5">{STATUS_KO[status as keyof typeof STATUS_KO] ?? status}</td>
+                                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-teal-700">{formatDwell(sec)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {/* 시간순 동선 (현재 슬롯은 진행중 표시) */}
+                          {segs.length > 1 && (
+                            <div className="mt-2 pt-2 border-t border-muted/30">
+                              <div className="text-[10px] text-muted-foreground mb-1">시간순 동선</div>
+                              <div className="flex flex-wrap gap-1">
+                                {segs.map((s) => (
+                                  <span
+                                    key={s.seq}
+                                    className={cn(
+                                      'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] border',
+                                      s.is_current
+                                        ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-semibold'
+                                        : 'border-gray-200 bg-gray-50 text-gray-600',
+                                    )}
+                                  >
+                                    {STATUS_KO[s.status as keyof typeof STATUS_KO] ?? s.status}
+                                    <span className="tabular-nums">{formatDwell(s.duration_seconds)}</span>
+                                    {s.is_current && <span className="text-emerald-600">(진행중)</span>}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })()}
