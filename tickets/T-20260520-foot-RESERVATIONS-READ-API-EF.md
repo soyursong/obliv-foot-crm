@@ -71,7 +71,7 @@ field_soak_until: 2026-05-22T12:52:15+09:00
       "visit_type": "new",
       "memo": null,
       "clinic_id": "<UUID>",
-      "clinic_slug": "foot-jongno",
+      "clinic_slug": "jongno-foot",
       "customer": { "id": "<UUID>", "name": "홍길동", "phone": "+82102345678" },
       "created_at": "2026-05-25T05:30:00+00:00"
     }
