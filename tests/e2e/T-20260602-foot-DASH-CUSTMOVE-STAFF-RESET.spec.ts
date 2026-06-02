@@ -18,7 +18,9 @@
  */
 import { test, expect } from '@playwright/test';
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
+// 기본은 빈 문자열 → page.goto가 playwright.config baseURL(8089, webServer 자동기동)로 해석.
+// PLAYWRIGHT_BASE_URL 지정 시 절대 URL 우선. (이전 5173 하드코딩 폴백은 webServer(8089)와 불일치하여 제거.)
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? '';
 
 async function loginIfNeeded(page: import('@playwright/test').Page) {
   const loginInput = page.getByPlaceholder('이메일');
@@ -85,3 +87,48 @@ test.describe('T-20260602-foot-DASH-CUSTMOVE-STAFF-RESET', () => {
     await toaster.count();
   });
 });
+
+// 모바일/태블릿 레이아웃 회귀 (FIX-REQUEST 항목②) — 풋 CRM은 태블릿 1차 타깃(큰 버튼).
+// tablet 전용 playwright 프로젝트는 공개 페이지(무인증)만 매칭하므로, 인증 storageState를 쓰는
+// desktop-chrome 프로젝트 안에서 viewport만 좁혀 대시보드 핵심 영역 렌더 + 스크린샷을 검증한다.
+for (const vp of [
+  { label: '태블릿 세로 768x1024', width: 768, height: 1024 },
+  { label: '모바일 390x844', width: 390, height: 844 },
+]) {
+  test.describe(`DASH-CUSTMOVE-STAFF-RESET 모바일/태블릿 레이아웃 — ${vp.label}`, () => {
+    test.use({ viewport: { width: vp.width, height: vp.height } });
+
+    test(`대시보드 핵심 영역(타임라인·칸반) 정상 렌더 + 스크린샷`, async ({ page }, testInfo) => {
+      await page.goto(`${BASE_URL}/dashboard`);
+      await loginIfNeeded(page);
+
+      // 레이아웃 루트는 DOM에 존재해야 한다(라우트 진입 성공). 단 dashboard-root는
+      // h-full flex 래퍼라 md 브레이크포인트(768) 경계에서 Playwright visibility 휴리스틱이
+      // hidden으로 판정할 수 있어(자식 콘텐츠는 정상 렌더), "보임" 게이트는 실제 UI 크롬에 둔다.
+      await page.getByTestId('dashboard-root').waitFor({ state: 'attached', timeout: 10000 });
+
+      // 좁은 뷰포트에서도 대시보드 크롬(필터 탭)과 칸반 콘텐츠가 렌더되어야 한다(레이아웃 붕괴 X).
+      await expect(page.getByRole('tab', { name: '전체' })).toBeVisible({ timeout: 8000 });
+      await expect(page.getByTestId('kanban-scroll')).toBeVisible({ timeout: 5000 });
+
+      // 통합 시간표는 T-20260522-foot-TABLET-DUAL-LAYOUT에 의해 portrait(태블릿 세로/모바일)에서
+      // 차트 영역 최대화를 위해 "자동 접힘"한다(useOrientation). 따라서 좁은 뷰포트의 정상 상태는
+      // (a) 펼친 상태면 timeline-time-col 노출, (b) 접힌 상태면 "시간표 펼치기" 토글 노출 둘 중 하나.
+      // 둘 중 하나가 보이면 = 타임라인 영역이 레이아웃 붕괴 없이 정상(graceful fold) 렌더된 것.
+      // (접힌 토글은 [writing-mode:vertical-lr] 세로 스트립이라 실클릭 actionability가 불안정 →
+      //  강제 펼침 대신 접힘/펼침 상태 노출만 단언. 펼침 동작 자체는 데스크톱 spec이 커버.)
+      const timeCol = page.getByTestId('timeline-time-col');
+      const expandBtn = page.getByRole('button', { name: '시간표 펼치기' });
+      const timeColVisible = await timeCol.isVisible().catch(() => false);
+      if (timeColVisible) {
+        await expect(timeCol).toBeVisible();
+      } else {
+        await expect(expandBtn).toBeVisible({ timeout: 5000 });
+      }
+
+      // 증거 스크린샷 첨부
+      const shot = await page.screenshot({ fullPage: false });
+      await testInfo.attach(`dashboard-${vp.width}x${vp.height}`, { body: shot, contentType: 'image/png' });
+    });
+  });
+}
