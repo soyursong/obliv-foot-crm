@@ -70,7 +70,9 @@ test.describe('T-20260602 HEALTHQ-CONTENT-ADD 자가작성표 항목 추가', ()
     const painBlock = exp.locator('div').filter({ has: page.getByText('발 통증 여부', { exact: true }) }).last();
 
     // "없음" 선택지 노출
-    const none = painBlock.getByRole('button', { name: '없음', exact: true });
+    // T-20260602-foot-HEALTHQ-PAIN-NONE-LAYOUT: '없음'이 이모지+텍스트 2-span 버튼(통증단계와
+    // 동일 그리드 셀)으로 통일 → name exact 매칭 불가, hasText 필터로 변경.
+    const none = painBlock.getByRole('button').filter({ hasText: '없음' }).first();
     await expect(none).toBeVisible();
 
     // 선택 → 활성(브라운/베이지 하이라이트) 표시
@@ -136,7 +138,8 @@ test.describe('T-20260602 HEALTHQ-CONTENT-ADD 자가작성표 항목 추가', ()
 
     const exp = page.locator('section').filter({ hasText: '발 건강 관련 경험' });
     const painBlock = exp.locator('div').filter({ has: page.getByText('발 통증 여부', { exact: true }) }).last();
-    await painBlock.getByRole('button', { name: '없음', exact: true }).click();
+    // PAIN-NONE-LAYOUT: '없음' 이모지+텍스트 2-span 버튼 → hasText 필터
+    await painBlock.getByRole('button').filter({ hasText: '없음' }).first().click();
 
     const health = page.locator('section').filter({ hasText: '나의 건강 상태' });
     await health.getByRole('button', { name: '임신중 또는 임신준비중', exact: true }).click();
