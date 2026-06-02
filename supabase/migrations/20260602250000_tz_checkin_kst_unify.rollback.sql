@@ -21,7 +21,7 @@ BEGIN
   SELECT COALESCE(MAX(queue_number), 0) + 1 INTO v_next
   FROM check_ins
   WHERE clinic_id = p_clinic_id
-    AND checked_in_at::date = v_date;
+    AND checked_in_at::date = v_date;  -- tz-exempt: 롤백 파일 — 의도적 pre-KST 정의 복원(긴급 회귀 대비용, 활성 정의 아님)
   RETURN v_next;
 END;
 $$;
@@ -57,7 +57,7 @@ BEGIN
     SELECT COALESCE(MAX(queue_number), 0) + 1 INTO v_qn
     FROM check_ins
     WHERE clinic_id = p_clinic_id
-      AND checked_in_at::DATE = v_date::DATE;
+      AND checked_in_at::DATE = v_date::DATE;  -- tz-exempt: 롤백 파일 — 의도적 pre-KST 정의 복원(활성 정의 아님)
     INSERT INTO check_ins (
       clinic_id, customer_id, reservation_id, customer_name, customer_phone,
       visit_type, status, queue_number
@@ -91,7 +91,7 @@ BEGIN
   SELECT ra.staff_id INTO v_best_id
   FROM room_assignments ra
   WHERE ra.clinic_id = p_clinic_id
-    AND ra.date = p_date::DATE
+    AND ra.date = p_date::DATE  -- tz-exempt: ra.date DATE 컬럼 + 파라미터 캐스트(타임존 무관) / 롤백 파일
     AND ra.room_type = 'consultation'
     AND ra.staff_id IS NOT NULL
   ORDER BY (
@@ -99,7 +99,7 @@ BEGIN
     WHERE ci.clinic_id = p_clinic_id
       AND ci.consultant_id = ra.staff_id
       AND ci.status IN ('consult_waiting', 'consultation')
-      AND ci.checked_in_at::DATE = p_date::DATE
+      AND ci.checked_in_at::DATE = p_date::DATE  -- tz-exempt: 롤백 파일 — 의도적 pre-KST 정의 복원(활성 정의 아님)
   ) ASC
   LIMIT 1;
   RETURN v_best_id;
@@ -126,7 +126,7 @@ DECLARE
   v_phone_digits    TEXT    := NULLIF(regexp_replace(COALESCE(p_customer_payload->>'phone',''), '[^0-9]', '', 'g'), '');
   v_visit_type      TEXT    := COALESCE(NULLIF(p_customer_payload->>'visit_type', ''), 'new');
   v_sms_opt_in      BOOLEAN := COALESCE((p_customer_payload->>'sms_opt_in')::boolean, true);
-  v_birth_date      DATE    := NULLIF(p_customer_payload->>'birth_date', '')::date;
+  v_birth_date      DATE    := NULLIF(p_customer_payload->>'birth_date', '')::date;  -- tz-exempt: 생년월일 입력 파싱 캐스트(타임존 무관) / 롤백 파일
   v_address         TEXT    := NULLIF(p_customer_payload->>'address', '');
   v_privacy_consent BOOLEAN := NULLIF(p_customer_payload->>'privacy_consent', '')::boolean;
   v_notes           JSONB   := p_customer_payload->'notes';
@@ -213,7 +213,7 @@ BEGIN
   SELECT COALESCE(MAX(queue_number), 0) + 1 INTO v_queue
     FROM check_ins
    WHERE clinic_id = p_clinic_id
-     AND checked_in_at::date = v_today;
+     AND checked_in_at::date = v_today;  -- tz-exempt: 롤백 파일 — 의도적 pre-KST 정의 복원(활성 정의 아님)
 
   BEGIN
     INSERT INTO check_ins (

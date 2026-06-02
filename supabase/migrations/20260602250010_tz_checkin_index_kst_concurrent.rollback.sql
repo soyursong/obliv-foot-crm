@@ -6,7 +6,7 @@
 DROP INDEX IF EXISTS idx_check_ins_clinic_date_utc;
 
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_check_ins_clinic_date_utc
-  ON check_ins (clinic_id, (checked_in_at::date));
+  ON check_ins (clinic_id, (checked_in_at::date));  -- tz-exempt: 롤백 파일 — 의도적 구 UTC-date 인덱스 환원(활성 정의 아님)
 
 DROP INDEX IF EXISTS idx_check_ins_clinic_date;
 
