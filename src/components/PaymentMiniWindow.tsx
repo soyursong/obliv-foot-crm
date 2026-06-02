@@ -40,6 +40,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+import { promoteVisitTypeToReturning } from '@/lib/visitType';
 import { formatAmount, todaySeoulISODate } from '@/lib/format';
 // T-20260525-foot-AMOUNT-COMMA-FMT: 수가 인라인 편집 쉼표 포맷팅
 import { formatAmountDisplay, parseAmountRaw } from '@/components/ui/AmountInput';
@@ -1358,6 +1359,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     if (trErr) {
       console.warn('status_transitions insert failed:', trErr.message);
     }
+    // T-20260602-foot-VISITTYPE-RETURNING-AUTOSET: 완료 시 visit_type 자동 승격 (best-effort)
+    await promoteVisitTypeToReturning(checkIn.customer_id);
   };
 
   // ── [수납] — PAY-SLOT-MOVE: [수납] 클릭 시만 done 이동 ─────────────────────

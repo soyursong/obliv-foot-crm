@@ -14,6 +14,7 @@ import { AmountInput } from '@/components/ui/AmountInput';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
+import { promoteVisitTypeToReturning } from '@/lib/visitType';
 import { formatAmount, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { InsuranceCopaymentPanel } from '@/components/insurance/InsuranceCopaymentPanel';
@@ -475,6 +476,8 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
         from_status: checkIn.status,
         to_status: 'done',
       });
+      // T-20260602-foot-VISITTYPE-RETURNING-AUTOSET: 완료 시 visit_type 자동 승격 (best-effort)
+      await promoteVisitTypeToReturning(checkIn.customer_id);
     } else if (['consultation', 'consult_waiting'].includes(checkIn.status)) {
       await supabase
         .from('check_ins')

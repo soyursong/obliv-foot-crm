@@ -95,6 +95,7 @@ import { ReservationContextMenu } from '@/components/ReservationContextMenu';
 import { ReservationCancelModal } from '@/components/ReservationCancelModal';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
+import { promoteVisitTypeToReturning } from '@/lib/visitType';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
 import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Clinic, Reservation, Room, RoomFieldKey, Staff, StatusFlag, VisitType } from '@/lib/types';
 // T-20260522-foot-TABLET-DUAL-LAYOUT: orientation 훅
@@ -4355,6 +4356,8 @@ export default function Dashboard() {
         if (err) toast.error(`세션 소진 실패: ${err}`);
         // T-20260522-foot-SLOT-TOAST-REMOVE AC-1: 슬롯 이동 성공 토스트 제거
       }
+      // T-20260602-foot-VISITTYPE-RETURNING-AUTOSET: 완료 시 visit_type 자동 승격 (best-effort)
+      if (newStatus === 'done') await promoteVisitTypeToReturning(row.customer_id);
     }
   };
 
@@ -4537,6 +4540,8 @@ export default function Dashboard() {
       if (err) toast.error(`세션 소진 실패: ${err}`);
       // T-20260522-foot-SLOT-TOAST-REMOVE AC-1: 슬롯 이동 성공 토스트 제거
     }
+    // T-20260602-foot-VISITTYPE-RETURNING-AUTOSET: 완료 시 visit_type 자동 승격 (best-effort)
+    if (newStatus === 'done') await promoteVisitTypeToReturning(ci.customer_id);
     // T-20260522-foot-SLOT-TIMETABLE-POPUP AC-2 / T-20260522-foot-SLOT-TOAST-REMOVE AC-1: 성공 토스트 제거
   };
 
