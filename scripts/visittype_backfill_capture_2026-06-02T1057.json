@@ -1,0 +1,457 @@
+{
+  "ticket": "T-20260602-foot-VISITTYPE-RETURNING-AUTOSET",
+  "captured_at": "2026-06-02T10:57:26.147Z",
+  "affected_count": 75,
+  "targets": [
+    {
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "chart_number": "F-0177",
+      "name": "김민경",
+      "done_count": 8
+    },
+    {
+      "customer_id": "16434582-50cf-46c6-81f7-13d1c959a25e",
+      "chart_number": "F-0188",
+      "name": "박민석",
+      "done_count": 5
+    },
+    {
+      "customer_id": "ae5d8c16-84fd-4a35-a97a-c947727b9184",
+      "chart_number": "TC-0002",
+      "name": "테스트_김환자",
+      "done_count": 4
+    },
+    {
+      "customer_id": "b0cb1738-ac4d-4bf5-8055-9a68a7d69d54",
+      "chart_number": "F-0159",
+      "name": "테스트123",
+      "done_count": 2
+    },
+    {
+      "customer_id": "124a2149-d723-4cdc-a3f3-6c7c2ce4044c",
+      "chart_number": "F-0173",
+      "name": "테스트012",
+      "done_count": 2
+    },
+    {
+      "customer_id": "8b1342df-2a1e-4d87-9338-83c64a2dfeb8",
+      "chart_number": "F-0176",
+      "name": "중간점검",
+      "done_count": 2
+    },
+    {
+      "customer_id": "7cc1b76c-3f10-48d6-be6a-8ed1cd00b9a4",
+      "chart_number": "F-0799",
+      "name": "최다혜",
+      "done_count": 2
+    },
+    {
+      "customer_id": "17b4bd8e-63e0-487e-a318-caac67fc1e52",
+      "chart_number": "F-0003",
+      "name": "김일번",
+      "done_count": 1
+    },
+    {
+      "customer_id": "2e8b6192-1863-4fa2-855f-c3c840fee867",
+      "chart_number": "F-0007",
+      "name": "김팔번",
+      "done_count": 1
+    },
+    {
+      "customer_id": "747286b0-045d-472d-ad87-3d49c42c40b5",
+      "chart_number": "F-0008",
+      "name": "김이번",
+      "done_count": 1
+    },
+    {
+      "customer_id": "2be865ff-6a9d-4666-892c-1cfd2d971199",
+      "chart_number": "F-0087",
+      "name": "김사비",
+      "done_count": 1
+    },
+    {
+      "customer_id": "166e830a-9936-4d9e-925a-784f3fde13c3",
+      "chart_number": "F-0111",
+      "name": "[TEST-D1] 테스트환자02",
+      "done_count": 1
+    },
+    {
+      "customer_id": "f7174790-64fe-46de-a71d-d43ce0f367a4",
+      "chart_number": "F-0126",
+      "name": "[TEST-D1] 테스트환자17",
+      "done_count": 1
+    },
+    {
+      "customer_id": "e7fc304c-ccf0-423b-befd-f062e9d1fd03",
+      "chart_number": "F-0150",
+      "name": "테스트환자21",
+      "done_count": 1
+    },
+    {
+      "customer_id": "39604bce-215a-4c10-9b88-91eba69127cc",
+      "chart_number": "F-0153",
+      "name": "珏성우",
+      "done_count": 1
+    },
+    {
+      "customer_id": "56fb0aaa-6443-46cc-8df3-cfa90770da1e",
+      "chart_number": "F-0154",
+      "name": "김창재",
+      "done_count": 1
+    },
+    {
+      "customer_id": "054948a2-fc42-483b-bc98-2ad1a5727395",
+      "chart_number": "F-0155",
+      "name": "양종필",
+      "done_count": 1
+    },
+    {
+      "customer_id": "a1ea6800-0b4a-49fc-ab45-cf9c501b02b5",
+      "chart_number": "F-0156",
+      "name": "이영현",
+      "done_count": 1
+    },
+    {
+      "customer_id": "9580f713-fec1-4f3c-8082-fd0a6766b7ce",
+      "chart_number": "F-0157",
+      "name": "이정연",
+      "done_count": 1
+    },
+    {
+      "customer_id": "be764bbd-a35c-4d99-8a24-a85628e63790",
+      "chart_number": "F-0158",
+      "name": "허다교",
+      "done_count": 1
+    },
+    {
+      "customer_id": "1e867904-8f08-4212-9b2d-bbe652f74374",
+      "chart_number": "F-0174",
+      "name": "빈혜린(원내촬영)",
+      "done_count": 1
+    },
+    {
+      "customer_id": "830a1a84-b47a-49b7-9426-054f97dc80f8",
+      "chart_number": "F-0187",
+      "name": "류복화",
+      "done_count": 1
+    },
+    {
+      "customer_id": "d1d9414d-a891-46f7-8621-0923fab29872",
+      "chart_number": "F-0189",
+      "name": "초진환자1",
+      "done_count": 1
+    },
+    {
+      "customer_id": "dfe317c6-ea54-4977-b1f6-9c239a09980c",
+      "chart_number": "F-0190",
+      "name": "초진환자2",
+      "done_count": 1
+    },
+    {
+      "customer_id": "69199539-9f9a-42dc-a87c-9fb27344fc91",
+      "chart_number": "F-0191",
+      "name": "초진환자3",
+      "done_count": 1
+    },
+    {
+      "customer_id": "97439e28-d6c4-4f55-8890-cad25a506c41",
+      "chart_number": "F-0192",
+      "name": "초진환자4",
+      "done_count": 1
+    },
+    {
+      "customer_id": "ddeebd0e-cab9-48e4-b2d9-687ac6418728",
+      "chart_number": "F-0354",
+      "name": "조선미",
+      "done_count": 1
+    },
+    {
+      "customer_id": "822111bc-2cd9-4b83-8bfb-6fa78c61bc7a",
+      "chart_number": "F-0358",
+      "name": "신정훈(테스트)",
+      "done_count": 1
+    },
+    {
+      "customer_id": "282f43b7-3e8f-492b-8064-db0fe2fc1f2d",
+      "chart_number": "F-0359",
+      "name": "김테스트",
+      "done_count": 1
+    },
+    {
+      "customer_id": "fcdcd44f-51f0-4dd0-87f9-9e6b2fd90f5b",
+      "chart_number": "F-0360",
+      "name": "김승현",
+      "done_count": 1
+    },
+    {
+      "customer_id": "40ae55e7-bea1-4f5a-81e7-c3504e15a66e",
+      "chart_number": "F-0361",
+      "name": "테스트_패키지환불1",
+      "done_count": 1
+    },
+    {
+      "customer_id": "e31fedca-df82-4fbd-aeb3-3bb093cadc7a",
+      "chart_number": "F-0380",
+      "name": "더미_초진_1100_1",
+      "done_count": 1
+    },
+    {
+      "customer_id": "864432ee-63ff-4556-a51a-6c3ca6b49002",
+      "chart_number": "F-0381",
+      "name": "더미_초진_1100_2",
+      "done_count": 1
+    },
+    {
+      "customer_id": "dcae0f2e-5597-44bf-994b-87766182eae8",
+      "chart_number": "F-0382",
+      "name": "더미_초진_1100_3",
+      "done_count": 1
+    },
+    {
+      "customer_id": "bb413c68-d603-4980-a314-3a0dbab07690",
+      "chart_number": "F-0383",
+      "name": "더미_초진_1100_4",
+      "done_count": 1
+    },
+    {
+      "customer_id": "fd9935d0-0e57-4784-ba8e-b8189f6c2ebe",
+      "chart_number": "F-0388",
+      "name": "더미_초진_1200_1",
+      "done_count": 1
+    },
+    {
+      "customer_id": "87368405-c48d-4f9b-b258-523d90ee0a72",
+      "chart_number": "F-0389",
+      "name": "더미_초진_1200_2",
+      "done_count": 1
+    },
+    {
+      "customer_id": "1affb64e-74e1-486a-aa46-b26fd9c55a54",
+      "chart_number": "F-0390",
+      "name": "더미_초진_1200_3",
+      "done_count": 1
+    },
+    {
+      "customer_id": "55130441-aaa6-4c0c-af6d-f75bd6e610f0",
+      "chart_number": "F-0391",
+      "name": "더미_초진_1200_4",
+      "done_count": 1
+    },
+    {
+      "customer_id": "ee7746d9-a987-476a-bfe9-d908c1529864",
+      "chart_number": "F-0396",
+      "name": "더미_초진_1300_1",
+      "done_count": 1
+    },
+    {
+      "customer_id": "6e7a6419-7142-4d79-8157-e14f74efb5ed",
+      "chart_number": "F-0398",
+      "name": "더미_초진_1300_3",
+      "done_count": 1
+    },
+    {
+      "customer_id": "74157f53-9b03-4eb6-bb73-fb6ddfacc8a5",
+      "chart_number": "F-0399",
+      "name": "더미_초진_1300_4",
+      "done_count": 1
+    },
+    {
+      "customer_id": "43de5404-b05f-4198-bb41-cf1e21aace67",
+      "chart_number": "F-0404",
+      "name": "더미_초진_1400_1",
+      "done_count": 1
+    },
+    {
+      "customer_id": "a3a29aa8-b555-4a62-a500-9cc82c803fa9",
+      "chart_number": "F-0405",
+      "name": "더미_초진_1400_2",
+      "done_count": 1
+    },
+    {
+      "customer_id": "60428147-2543-4cb8-844b-7c795aff5092",
+      "chart_number": "F-0406",
+      "name": "더미_초진_1400_3",
+      "done_count": 1
+    },
+    {
+      "customer_id": "20edf1fd-55fa-4d31-93ec-06e2e3b15301",
+      "chart_number": "F-0407",
+      "name": "더미_초진_1400_4",
+      "done_count": 1
+    },
+    {
+      "customer_id": "6dafbef9-d32a-43f5-8879-c9d36c100eec",
+      "chart_number": "F-0412",
+      "name": "더미_초진_1500_1",
+      "done_count": 1
+    },
+    {
+      "customer_id": "6fb1cc50-7ffb-4ebd-b7fe-aad8a8b969f9",
+      "chart_number": "F-0413",
+      "name": "더미_초진_1500_2",
+      "done_count": 1
+    },
+    {
+      "customer_id": "adb1491a-c2a8-4a1b-a51e-fc317e6328b9",
+      "chart_number": "F-0415",
+      "name": "더미_초진_1500_4",
+      "done_count": 1
+    },
+    {
+      "customer_id": "e4e4dc7e-afe3-43b2-9654-4cbfa290746f",
+      "chart_number": "F-0455",
+      "name": "손효욱",
+      "done_count": 1
+    },
+    {
+      "customer_id": "1c9aa30f-0843-4c28-bfe5-d1e610051a35",
+      "chart_number": "F-0456",
+      "name": "왕지현",
+      "done_count": 1
+    },
+    {
+      "customer_id": "ad1b935f-9989-435d-89e7-66938b3fd348",
+      "chart_number": "F-0521",
+      "name": "김나영",
+      "done_count": 1
+    },
+    {
+      "customer_id": "2ffae296-c999-402e-9332-ae748c352e6b",
+      "chart_number": "F-0563",
+      "name": "낙타",
+      "done_count": 1
+    },
+    {
+      "customer_id": "ac1b22a6-3529-4d31-a4ae-444367c2f72f",
+      "chart_number": "F-0670",
+      "name": "장예지",
+      "done_count": 1
+    },
+    {
+      "customer_id": "6d6803a3-8d78-4fdb-a64f-aa2b577fa10c",
+      "chart_number": "F-0671",
+      "name": "얼룩말",
+      "done_count": 1
+    },
+    {
+      "customer_id": "e7909a30-e70e-4072-beba-b29c7b97bdb3",
+      "chart_number": "F-0672",
+      "name": "알파카",
+      "done_count": 1
+    },
+    {
+      "customer_id": "be8879f0-5c0e-4327-aa64-eba72e261d16",
+      "chart_number": "F-0673",
+      "name": "라마",
+      "done_count": 1
+    },
+    {
+      "customer_id": "c896ad6d-07eb-4c56-b8eb-4c938b17d67c",
+      "chart_number": "F-0674",
+      "name": "고릴라",
+      "done_count": 1
+    },
+    {
+      "customer_id": "c25b0267-2eda-48bc-b812-8d9e2a97f635",
+      "chart_number": "F-0675",
+      "name": "침팬지",
+      "done_count": 1
+    },
+    {
+      "customer_id": "552e85c6-97b4-423b-9ce1-c4821937f9af",
+      "chart_number": "F-0676",
+      "name": "오랑우탄",
+      "done_count": 1
+    },
+    {
+      "customer_id": "09405e19-b2d0-45d1-9752-41aac867332e",
+      "chart_number": "F-0677",
+      "name": "이구아나",
+      "done_count": 1
+    },
+    {
+      "customer_id": "d4b878c6-3b29-4e5a-ac1a-fb4462dde2ea",
+      "chart_number": "F-0678",
+      "name": "도마뱀",
+      "done_count": 1
+    },
+    {
+      "customer_id": "da7f545a-0218-4f53-a259-d1aa88ff12d7",
+      "chart_number": "F-0679",
+      "name": "뱀",
+      "done_count": 1
+    },
+    {
+      "customer_id": "d081061d-9f59-4ee5-88b2-7b5f57900c6d",
+      "chart_number": "F-0680",
+      "name": "개구리",
+      "done_count": 1
+    },
+    {
+      "customer_id": "3fe02a59-b2b1-4abc-8e54-d78a1cec8ad2",
+      "chart_number": "F-0681",
+      "name": "두꺼비",
+      "done_count": 1
+    },
+    {
+      "customer_id": "9b287979-f491-4d31-98de-0abb5076c217",
+      "chart_number": "F-0682",
+      "name": "거북이",
+      "done_count": 1
+    },
+    {
+      "customer_id": "7fa5dff1-85c0-4f60-88a1-103fca36fdd5",
+      "chart_number": "F-0800",
+      "name": "김규리",
+      "done_count": 1
+    },
+    {
+      "customer_id": "69cde043-84a9-4482-a8aa-d4a6cf8a3340",
+      "chart_number": "F-0811",
+      "name": "당근",
+      "done_count": 1
+    },
+    {
+      "customer_id": "53661ce0-5d3a-4da6-8459-121c36860d45",
+      "chart_number": "F-0897",
+      "name": "김승현",
+      "done_count": 1
+    },
+    {
+      "customer_id": "045b75cb-21f7-40ff-bb3c-0ae30c717b20",
+      "chart_number": "F-0898",
+      "name": "사자",
+      "done_count": 1
+    },
+    {
+      "customer_id": "396441aa-3867-4a0a-9eb1-304ad7553b86",
+      "chart_number": "F-0899",
+      "name": "호랑이",
+      "done_count": 1
+    },
+    {
+      "customer_id": "2bc93c01-75ef-4c40-aa41-5c9d3bbc1184",
+      "chart_number": "F-0929",
+      "name": "코알라",
+      "done_count": 1
+    },
+    {
+      "customer_id": "83dfc352-ae4d-43a6-9240-258a8845040a",
+      "chart_number": "F-0966",
+      "name": "테스트0602",
+      "done_count": 1
+    },
+    {
+      "customer_id": "d6ac526e-1323-48ea-ab6b-27eb5821753e",
+      "chart_number": "F-0980",
+      "name": "desk-979151",
+      "done_count": 1
+    },
+    {
+      "customer_id": "8dc15419-5b44-4603-8589-513271fc5f8f",
+      "chart_number": "F-0992",
+      "name": "김유리",
+      "done_count": 1
+    }
+  ]
+}
