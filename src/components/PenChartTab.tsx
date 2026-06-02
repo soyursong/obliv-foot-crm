@@ -546,6 +546,14 @@ export function PenChartTab({
   const [saving, setSaving] = useState(false);
   const [hasDrawing, setHasDrawing] = useState(false);
   const [selectedChart, setSelectedChart] = useState<SavedChart | null>(null);
+  // T-20260602-foot-PENCHART-LOCK-PANZOOM: 차트 고정/잠금 토글 (빨간X).
+  //   ON  → 캔버스 touchAction:'none' + 스크롤 컨테이너 overflow:hidden
+  //         → 펜/형광펜 드로잉 시 네이티브 pan/zoom·스크롤 완전 차단, 획만 기입 (AC-1·2)
+  //   OFF → 기존 동작 (touchAction:'pan-y' + overflow-auto) 유지 → pan/scroll 정상 (AC-3)
+  //   규명: 기존 코드에 고정 토글·pan/zoom lib 부재. 유일한 pan/zoom 출처는
+  //         캔버스 touchAction:'pan-y'(b9cd022 SCROLL-BLOCK) + 래퍼 overflow 스크롤.
+  //         → lock state를 게이팅 조건으로 신규 연결.
+  const [chartLocked, setChartLocked] = useState(false);
 
   // 상용구 상태
   const [pendingBoilerplate, setPendingBoilerplate] = useState<string>('');
@@ -2155,6 +2163,26 @@ export function PenChartTab({
           </div>
 
           <div className="ml-auto flex gap-1.5">
+            {/* T-20260602-foot-PENCHART-LOCK-PANZOOM: 차트 고정/잠금 토글 (빨간X) —
+                ON 시 캔버스 touchAction:'none' + 컨테이너 overflow:hidden 게이팅으로
+                펜/형광펜 드로잉 중 pan/zoom·스크롤 완전 차단 (AC-1·2·4) */}
+            <button
+              onClick={() => setChartLocked((v) => !v)}
+              aria-pressed={chartLocked}
+              data-testid="penchart-lock-toggle"
+              data-locked={chartLocked ? 'true' : 'false'}
+              className={cn(
+                'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
+                chartLocked
+                  ? 'bg-red-600 border-red-700 text-white font-semibold shadow-sm'
+                  : 'bg-white border-red-300 text-red-600 hover:bg-red-50',
+              )}
+              title={chartLocked
+                ? '차트 고정됨 — 펜/형광펜 드로잉 중 차트가 움직이지 않습니다. 클릭하여 고정 해제'
+                : '차트 고정 — 클릭하면 차트가 고정되어 드로잉 중 pan/zoom이 차단됩니다'}
+            >
+              <X className="h-3.5 w-3.5" /> {chartLocked ? '고정됨' : '고정'}
+            </button>
             {/* Undo */}
             <button
               onClick={handleUndo}
@@ -2197,11 +2225,12 @@ export function PenChartTab({
           </div>
         </div>
 
-        {/* 스크롤 콘텐츠 */}
-        <div className="flex-1 overflow-auto p-4 space-y-4">
+        {/* 스크롤 콘텐츠 — T-20260602-foot-PENCHART-LOCK-PANZOOM:
+            고정 ON 시 overflow:hidden 으로 세로 pan/스크롤 차단 (AC-1) */}
+        <div className={cn('flex-1 p-4 space-y-4', chartLocked ? 'overflow-hidden' : 'overflow-auto')}>
 
-        {/* 캔버스 — 2-layer 스택 */}
-        <div className="rounded-lg border bg-white p-2 overflow-x-auto">
+        {/* 캔버스 — 2-layer 스택 (고정 ON 시 가로 pan 차단) */}
+        <div className={cn('rounded-lg border bg-white p-2', chartLocked ? 'overflow-x-hidden' : 'overflow-x-auto')}>
           <div className="text-[10px] text-muted-foreground mb-1">
             {activeDrawTemplate
               ? `양식: ${activeDrawTemplate.name_ko}`
@@ -2238,7 +2267,11 @@ export function PenChartTab({
                 top: 0,
                 left: 0,
                 maxWidth: '100%',
-                touchAction: 'pan-y',
+                // T-20260602-foot-PENCHART-LOCK-PANZOOM (AC-1·2): 고정 ON → 'none'
+                //   → 캔버스 위 모든 제스처(pan/zoom/pinch/스크롤)를 브라우저가 처리하지 않고
+                //     전부 pointer 핸들러로 전달 → 펜/형광펜 획만 기입, 차트 안 움직임.
+                //   OFF → 'pan-y' (기존 동작: touch 세로 스크롤 허용, AC-3 회귀 없음).
+                touchAction: chartLocked ? 'none' : 'pan-y',
                 cursor: isBoilerplatePlacing ? 'text' : isTextTool ? 'text' : isEraser ? 'cell' : isHighlight ? 'crosshair' : 'crosshair',
                 display: 'block',
                 // T-20260525-foot-PENCHART-FORM-BLACKSCR REOPEN 3 — 근본 수정:
