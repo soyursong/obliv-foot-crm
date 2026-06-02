@@ -59,7 +59,7 @@ BEGIN
   SELECT COALESCE(MAX(queue_number), 0) + 1 INTO v_next
   FROM check_ins
   WHERE clinic_id = p_clinic_id
-    AND kst_date(checked_in_at) = v_date;   -- TZ-FIX: checked_in_at::date(UTC) → KST
+    AND kst_date(checked_in_at) = v_date;   -- TZ-FIX: checked_in_at::date(UTC) → KST (좌변 KST 통일 완료)
   RETURN v_next;
 END;
 $$;
@@ -101,7 +101,7 @@ BEGIN
     SELECT COALESCE(MAX(queue_number), 0) + 1 INTO v_qn
     FROM check_ins
     WHERE clinic_id = p_clinic_id
-      AND kst_date(checked_in_at) = v_date::DATE;   -- TZ-FIX: checked_in_at::DATE(UTC) → KST
+      AND kst_date(checked_in_at) = v_date::DATE;   -- tz-exempt: 좌변 kst_date()로 KST 통일; v_date::DATE 는 파라미터(DATE) 캐스트로 timestamp 버킷팅 아님
 
     INSERT INTO check_ins (
       clinic_id, customer_id, reservation_id, customer_name, customer_phone,
@@ -139,7 +139,7 @@ BEGIN
   SELECT ra.staff_id INTO v_best_id
   FROM room_assignments ra
   WHERE ra.clinic_id = p_clinic_id
-    AND ra.date = p_date::DATE
+    AND ra.date = p_date::DATE   -- tz-exempt: ra.date 는 DATE 컬럼(시간성분 없음), p_date 파라미터 캐스트 — 타임존 무관
     AND ra.room_type = 'consultation'
     AND ra.staff_id IS NOT NULL
   ORDER BY (
@@ -147,7 +147,7 @@ BEGIN
     WHERE ci.clinic_id = p_clinic_id
       AND ci.consultant_id = ra.staff_id
       AND ci.status IN ('consult_waiting', 'consultation')
-      AND kst_date(ci.checked_in_at) = p_date::DATE   -- TZ-FIX: checked_in_at::DATE(UTC) → KST
+      AND kst_date(ci.checked_in_at) = p_date::DATE   -- tz-exempt: 좌변 kst_date()로 KST 통일; p_date::DATE 는 파라미터 캐스트로 timestamp 버킷팅 아님
   ) ASC
   LIMIT 1;
 
@@ -176,7 +176,7 @@ DECLARE
   v_phone_digits    TEXT    := NULLIF(regexp_replace(COALESCE(p_customer_payload->>'phone',''), '[^0-9]', '', 'g'), '');
   v_visit_type      TEXT    := COALESCE(NULLIF(p_customer_payload->>'visit_type', ''), 'new');
   v_sms_opt_in      BOOLEAN := COALESCE((p_customer_payload->>'sms_opt_in')::boolean, true);
-  v_birth_date      DATE    := NULLIF(p_customer_payload->>'birth_date', '')::date;
+  v_birth_date      DATE    := NULLIF(p_customer_payload->>'birth_date', '')::date;  -- tz-exempt: 생년월일 입력 문자열 파싱 캐스트 — 일일경계/timestamp 버킷팅 무관
   v_address         TEXT    := NULLIF(p_customer_payload->>'address', '');
   v_privacy_consent BOOLEAN := NULLIF(p_customer_payload->>'privacy_consent', '')::boolean;
   v_notes           JSONB   := p_customer_payload->'notes';

@@ -34,4 +34,4 @@ ALTER INDEX idx_check_ins_clinic_date_kst RENAME TO idx_check_ins_clinic_date;
 
 COMMENT ON INDEX idx_check_ins_clinic_date IS
   'T-20260602-foot-TZ-AUDIT-FIX: (clinic_id, kst_date(checked_in_at)) — KST 일일경계 쿼리 커버.'
-  ' 구 (checked_in_at::date)(UTC) 표현식에서 교체.';
+  ' 구 (checked_in_at::date)(UTC) 표현식에서 교체.';  -- tz-exempt: COMMENT 문자열 내 구 표현식 언급(문서), 실행 인덱스는 kst_date()
