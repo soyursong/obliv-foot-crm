@@ -92,8 +92,8 @@ test.describe('AC-3: paid 콜백 payload 스펙 §6-2 준수', () => {
     expect(efContent).toMatch(/source_system.*['"]foot['"]/);
   });
 
-  test('payload에 clinic_slug: "foot-jongno" 이 포함된다', () => {
-    expect(efContent).toMatch(/clinic_slug.*['"]foot-jongno['"]/);
+  test('payload에 clinic_slug: "jongno-foot" 이 포함된다', () => {
+    expect(efContent).toMatch(/clinic_slug.*['"]jongno-foot['"]/);
   });
 
   test('payload에 type 필드가 포함된다', () => {

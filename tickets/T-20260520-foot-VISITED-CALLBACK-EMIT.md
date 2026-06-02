@@ -27,7 +27,7 @@ completed_at: 2026-05-20
 - source_system ≠ 'dopamine' → not_dopamine_source 스킵
 - dopamine_outbound_log 멱등 INSERT (pending→sent/failed/duplicate)
 - DOPAMINE_CALLBACK_URL 미설정 시 graceful skip
-- §6-2 payload 준수 (type='visited', source_system='foot', clinic_slug='foot-jongno')
+- §6-2 payload 준수 (type='visited', source_system='foot', clinic_slug='jongno-foot')
 
 ### `src/pages/SelfCheckIn.tsx`
 - check_ins INSERT 완료 후 matchedReservationId 있을 때 checkin-visited-fire invoke

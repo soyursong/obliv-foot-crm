@@ -18,7 +18,7 @@
  *   {
  *     "source_system": "dopamine",
  *     "external_id": "<cue_card_id UUID>",
- *     "clinic_slug": "foot-jongno",         ← 필수 (DB 조회용)
+ *     "clinic_slug": "jongno-foot",         ← 필수 (DB 조회용)
  *     "customer": {
  *       "phone_e164": "+82102345...",
  *       "name": "홍길동",
