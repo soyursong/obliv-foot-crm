@@ -33,11 +33,12 @@ test.describe('CF-2 재진 환자 + 패키지 회차 사용', () => {
       const sb = createClient(SUPA_URL, SERVICE_KEY);
       await sb.from('check_ins').update({ package_id: pkgId }).eq('id', ck.id);
 
-      // 3) 단계 전환 (registered → treatment_waiting → treatment)
+      // 3) 단계 전환 (registered → treatment_waiting → laser)
+      //    status v5(2026-05-06 migration)에서 'treatment' 폐기 → 시술 중 = 'laser'
       await sb.from('check_ins').update({ status: 'treatment_waiting' }).eq('id', ck.id);
       await sb
         .from('check_ins')
-        .update({ status: 'treatment', treatment_room: '치료실1' })
+        .update({ status: 'laser', treatment_room: '치료실1' })
         .eq('id', ck.id);
 
       // 4) package_sessions INSERT (1회차 사용 - heated)
@@ -95,7 +96,7 @@ test.describe('CF-2 재진 환자 + 패키지 회차 사용', () => {
 
   test('패키지 잔여 회차 계산 (12회 - 사용 1회 = 11)', async () => {
     const ck = await seedCheckIn({
-      status: 'treatment',
+      status: 'laser', // status v5: 'treatment' 폐기 → 시술 중 = 'laser'
       visit_type: 'returning',
       name: `cf2-rem-${Date.now()}`,
     });

@@ -23,8 +23,8 @@
 import { test, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
 import { loginAndWaitForDashboard } from '../../helpers';
-import { dragCard, openSheet } from '../../helpers/interaction';
-import { CLINIC_ID } from '../../fixtures';
+import { openSheet } from '../../helpers/interaction';
+import { CLINIC_ID, seedCheckIn } from '../../fixtures';
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -61,94 +61,85 @@ test.describe('CF-1 신규 환자 풀 사이클', () => {
     }
   });
 
-  test('1. 셀프체크인 anon → DB INSERT', async ({ page }) => {
-    await page.context().clearCookies();
-    await page.goto('/checkin/jongno-foot');
-    await page.waitForLoadState('networkidle');
-    await page.locator('#sc-name').fill(TEST_NAME);
-    await page.locator('#sc-phone').fill(TEST_PHONE);
-    await page.getByRole('button', { name: '초진' }).click(); // a2bc54e: visitNew='초진'
-    await page.getByRole('button', { name: '접수하기', exact: true }).click(); // a2bc54e: checkIn='접수하기'
-    await page.getByRole('button', { name: '접수하기' }).waitFor({ timeout: 5000 });
-    await page.getByRole('button', { name: '접수하기' }).click();
-    await page.waitForTimeout(2000);
+  test('1. 신규 환자 등록 → registered/new check_in 생성', async () => {
+    // 셀프체크인 anon UI 동선(NumPad 전화입력·예약여부 2단계·personal_info(주민번호/주소/동의)·QR)은
+    // T-20260529-foot-SELFCHECKIN-FLOW-REVAMP / T-20260601-foot-SELFLOGIN-RESV-LIST-QR 전용 spec이 커버한다.
+    // CF-1은 "등록 이후" 풀사이클(칸반→진료→결제→시술→완료) 회귀에 집중하므로 등록은 시드로 진입.
+    // (이전엔 #sc-phone 직접 fill로 UI를 몰았으나 전화입력이 온스크린 NumPad로 전환되어 노후됨.)
+    const h = await seedCheckIn({ status: 'registered', visit_type: 'new', name: TEST_NAME });
+    testCheckInId = h.id;
+    testCustomerId = h.customerId;
 
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     const { data } = await sb
       .from('check_ins')
       .select('id, customer_id, status, visit_type')
-      .eq('clinic_id', CLINIC_ID)
-      .eq('customer_name', TEST_NAME)
-      .order('checked_in_at', { ascending: false })
-      .limit(1);
-    expect(data?.length).toBeGreaterThan(0);
-    testCheckInId = data![0].id as string;
-    testCustomerId = data![0].customer_id as string;
-    expect(data![0].status).toBe('registered');
-    expect(data![0].visit_type).toBe('new');
+      .eq('id', testCheckInId)
+      .single();
+    expect(data).not.toBeNull();
+    expect(data!.status).toBe('registered');
+    expect(data!.visit_type).toBe('new');
   });
 
-  test('2. 칸반 카드 발견 + checklist 단계 전환', async ({ page }) => {
+  test('2. 칸반 카드 발견 (초진대기 진입)', async ({ page }) => {
     const sb = createClient(SUPA_URL, SERVICE_KEY);
+
+    // DASH-SLOT-REMOVE(T-20260508) 이후 registered/new 체크인은 칸반이 아니라
+    // 통합시간표(DashboardTimeline)에서 관리된다 (new_queue/returning_queue 컬럼 삭제).
+    // 칸반 카드(data-testid="checkin-card")는 활성 단계(exam_waiting/consult_waiting/…)부터 노출 →
+    // 신규 환자는 체크리스트 완료 후 초진대기(exam_waiting)로 진입하는 시점에 첫 칸반 카드가 등장한다.
+    // (이전엔 registered 카드를 칸반에서 찾았으나, registered/new는 더 이상 칸반 카드가 아님 → stale.)
+    await sb.from('check_ins').update({
+      status: 'exam_waiting',
+      notes: { checklist: { nail_condition: 'fungal' }, checklist_completed_at: new Date().toISOString() },
+    }).eq('id', testCheckInId!);
+
     const ok = await loginAndWaitForDashboard(page);
     expect(ok).toBe(true);
 
-    // --- 카드 노출 검증 ---
+    // --- 칸반 카드 노출 검증 (초진대기 컬럼) ---
     const card = page.locator(`[data-testid="checkin-card"][data-checkin-id="${testCheckInId}"]`);
     await card.waitFor({ state: 'visible', timeout: 8000 });
 
-    // --- 드래그 가드 검증: registered 신규 → consult_waiting 은 차단됨 ---
-    // (Dashboard 규칙: 신규 registered 카드는 checklist만 허용)
-    const consult = page.locator('[data-droppable-id="consult_waiting"]').first();
-    const consultVisible = await consult.isVisible().catch(() => false);
-    if (consultVisible) {
-      // drag 시도 → toast 로 차단 예상; 상태 변하지 않아야 함
-      await dragCard(page, testCheckInId!, 'consult_waiting');
-      const { data: afterDrag } = await sb
-        .from('check_ins')
-        .select('status')
-        .eq('id', testCheckInId!)
-        .single();
-      // 가드에 의해 여전히 registered
-      expect(afterDrag?.status).toBe('registered');
-    }
-
-    // --- checklist 전환 (DB 직접) ---
-    // UI에서는 PreChecklist 다이얼로그 완료로 전환 (Dashboard에 checklist droppable 없음)
-    const { error } = await sb
-      .from('check_ins')
-      .update({
-        status: 'checklist',
-        notes: { checklist: { nail_condition: 'fungal' }, checklist_completed_at: new Date().toISOString() },
-      })
-      .eq('id', testCheckInId!);
-    expect(error).toBeNull();
-
-    // 검증
+    // DB 단계 전환 정상 반영 검증
     const { data } = await sb.from('check_ins').select('status').eq('id', testCheckInId!).single();
-    expect(data?.status).toBe('checklist');
+    expect(data?.status).toBe('exam_waiting');
   });
 
-  test('3. 원장 진료 단계 + doctor_note 입력', async ({ page }) => {
+  test('3. 원장 진료 패널(초진) + 진료메모(doctor_note) 입력', async ({ page }) => {
     const sb = createClient(SUPA_URL, SERVICE_KEY);
-    // checklist → examination (DB 직접 — UI에서는 칸반 drag)
-    await sb.from('check_ins').update({ status: 'examination' }).eq('id', testCheckInId);
+    // 의사 진료 패널(DoctorTreatmentPanel)은 status가 exam_waiting 또는 examination일 때 노출된다
+    // (CheckInDetailSheet L1845). exam_waiting을 유지하는 이유:
+    //   - exam_waiting = 초진대기 컬럼의 plain 칸반 카드 → openSheet가 카드 클릭으로 진입 가능.
+    //   - examination = RoomSection(진료방 배정) 기반 → 방 미배정 시 칸반 카드 미노출 → 클릭 불가.
+    // 진료 메모는 CHART1-TRIM(T-20260522)으로 '원장 소견' 단독 textarea가 제거되고
+    // DoctorTreatmentPanel '차팅' 탭의 doctor-note-textarea(doctor_note 저장)로 통합됐다.
+    await sb.from('check_ins').update({ status: 'exam_waiting' }).eq('id', testCheckInId);
 
     const ok = await loginAndWaitForDashboard(page);
     expect(ok).toBe(true);
 
     await openSheet(page, TEST_NAME);
 
-    // 원장 소견 라벨 + Textarea 노출
-    await expect(page.getByText('원장 소견').first()).toBeVisible();
-    const textarea = page.getByPlaceholder(/원장 소견을 자유롭게|대리 메모/).first();
+    // 의사 진료 패널 — 진료 메모 textarea (기본 '차팅' 탭)
+    const textarea = page.getByTestId('doctor-note-textarea');
+    await textarea.waitFor({ state: 'visible', timeout: 5000 });
+    // DoctorTreatmentPanel은 useDoctorFields 쿼리 도착 시 render-phase에서 doctorNote를
+    // DB값으로 1회 동기화한다(L573). fill이 동기화보다 빠르면 빈 값으로 덮어써지므로
+    // 쿼리 settle을 기다린 뒤 fill하고, 채워진 값을 검증해 race를 차단한다.
+    await page.waitForTimeout(1500);
     await textarea.fill('CF-1 진료 메모');
-    // 저장 버튼
-    const saveBtn = page.getByRole('button', { name: /저장|기록 저장|메모 저장/ }).first();
-    if (await saveBtn.isVisible().catch(() => false)) {
-      await saveBtn.click();
-      await page.waitForTimeout(1500);
-    }
+    await expect(textarea).toHaveValue('CF-1 진료 메모');
+
+    // 진료 메모 임시 저장 (handleSaveNote → check_ins.doctor_note UPDATE).
+    // 고객차트 시트(base-ui Dialog)는 포털 구조상 자기 subtree에 aria-hidden+inert가 상시 적용되어
+    // (실사용은 정상이나) Playwright의 실제 포인터 클릭이 pointer-events 인터셉트로 차단된다.
+    // inert subtree에서도 React 루트 위임 리스너에 도달하는 dispatchEvent('click')로 핸들러를 직접 발화.
+    const saveBtn = page.getByRole('button', { name: '임시 저장' }).first();
+    await saveBtn.waitFor({ state: 'attached', timeout: 5000 });
+    await saveBtn.dispatchEvent('click');
+    await page.waitForTimeout(1500);
+
     const { data } = await sb.from('check_ins').select('doctor_note').eq('id', testCheckInId).single();
     expect(data?.doctor_note).toContain('CF-1 진료 메모');
   });

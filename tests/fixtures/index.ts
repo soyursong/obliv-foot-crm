@@ -63,6 +63,9 @@ export async function seedCheckIn(opts: {
       status: opts.status ?? 'registered',
       queue_number: 990 + (ts % 10),
       package_id: opts.package_id,
+      // 실제 체크인은 항상 checked_in_at 보유. 대시보드 카드 쿼리가
+      // checked_in_at 오늘범위(gte/lte)로 필터하므로 미설정 시 카드가 안 뜬다.
+      checked_in_at: new Date().toISOString(),
       notes: MARKER,
     })
     .select('id')
