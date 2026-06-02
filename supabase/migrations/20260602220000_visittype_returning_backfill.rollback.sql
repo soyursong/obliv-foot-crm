@@ -1,0 +1,21 @@
+-- ROLLBACK: T-20260602-foot-VISITTYPE-RETURNING-AUTOSET 트랙1 백필 역전환
+--
+-- ⚠️ 주의: 본 백필은 'new'→'returning' 단방향이며, 백필 이전부터 정상 'returning'이던
+--   고객과 백필로 전환된 고객을 visit_type만으로는 구분할 수 없다.
+--   따라서 무조건 returning→new 역전환은 정상 재진 고객까지 오염시킨다.
+--
+-- 안전한 롤백: 적용 전 dry-run(scripts/visittype_returning_backfill_dryrun.sql)으로
+--   캡처해 둔 "변경 대상 customer_id 목록"으로만 역전환할 것.
+--   아래 :captured_ids 를 dry-run 결과 id 배열로 치환해 실행한다.
+--
+-- 예시(캡처 id 목록 기반):
+--   UPDATE public.customers
+--   SET visit_type = 'new'
+--   WHERE id = ANY(ARRAY['<id1>','<id2>', ...]::uuid[])
+--     AND visit_type = 'returning';
+--
+-- ticket: T-20260602-foot-VISITTYPE-RETURNING-AUTOSET
+-- author: dev-foot / 2026-06-02
+
+-- (캡처 id 목록 없이 일괄 역전환은 금지 — 정상 재진 고객 오염)
+SELECT 'ROLLBACK requires captured customer_id list — see dry-run output' AS notice;
