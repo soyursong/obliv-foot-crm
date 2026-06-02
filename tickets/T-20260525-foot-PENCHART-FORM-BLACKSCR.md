@@ -12,8 +12,11 @@ reporter_slack_id: U0ATDB587PV
 slack_channel: C0ATE5P6JTH
 slack_thread_ts: "1779776516.131349"
 source_msg: MSG-20260525-58744369
-reopen_count: 4
-reopen_reason: "REOPEN4 2026-05-27 19:25 — REOPEN3 fix(aac5085, willChange 제거) 배포 후에도 현장 미해결. 3회 연속 코드 추정 수정 전부 실패. E2E 45/45 pass이나 실기기 검정화면 재현 불가. 추정 수정 금지 — 실기기 DevTools 로그 수집 필수."
+reopen_count: 5
+reopen_reason: "REOPEN5 2026-06-02 — 현장 신규 단서: 관리자 정상 / 직원 검정화면(동일 환경 추정). RLS/role 데이터 로드 가설 제기. dev-foot 진단 결과 RLS 가설 코드·prod 데이터 양 레벨에서 DISPROVEN(아래 REOPEN5 진단). 코드 수정 BLOCK, 동일기기 계정격리 현장테스트로 ESCALATE."
+reopen5_at: "2026-06-02T12:00:14+09:00"
+reopen5_verdict: "RLS_HYPOTHESIS_DISPROVEN — penchart 리소스 어디에도 role-gate 없음(코드+prod 확인). 잔존 원인=REOPEN4 device/GPU 축. account 상관은 device 상관 오인 가능성 큼."
+reopen_count_prev4_reason: "REOPEN4 2026-05-27 19:25 — REOPEN3 fix(aac5085, willChange 제거) 배포 후에도 현장 미해결. 3회 연속 코드 추정 수정 전부 실패. E2E 45/45 pass이나 실기기 검정화면 재현 불가. 추정 수정 금지 — 실기기 DevTools 로그 수집 필수."
 reopen_at: "2026-05-27T19:25:07+09:00"
 reopen3_reason: "REOPEN3 2026-05-26 21:15 — willChange:'transform' 제거(aac5085). E2E 45/45 pass. 배포 후 미해결."
 reopen3_at: "2026-05-26T21:02:00+09:00"
@@ -48,6 +51,8 @@ spec_path: tests/e2e/T-20260525-foot-PENCHART-FORM-BLACK.spec.ts
 db_changed: false
 field_gate_status: pending
 field_gate_required: "iPad Safari 정상 렌더링 스크린샷 + Console DIAG 로그 (AC-R4-1/AC-R4-2)"
+reopen5_field_gate_required: "★동일 물리 iPad에서 관리자+직원 계정 연속 재현(계정 vs 기기 변수 격리). 6셀 매트릭스 — AC-R5-1/R5-5."
+reopen5_diag_script: "scripts/diag_penchart_blackscr_r5.mjs (read-only, prod 검증 완료)"
 diagnostic_guide: "docs/ipad-penchart-diagnostic-guide.md"
 qa_screenshots_dir: "memory/_handoff/qa_screenshots/"
 ---
@@ -298,3 +303,51 @@ E2E:   npx playwright test tests/e2e/T-20260525-foot-PENCHART-FORM-BLACK.spec.ts
 - T-20260523-foot-PENCHART-FORM-AUTOFILL (approved, P1) — 양식 고객정보 바인딩 (다른 스코프)
 - T-20260522-foot-PENCHART-ERASER-CLARITY (deploy-ready) — 지우개 배경 삭제 (다른 증상)
 - T-20260523-foot-FORM-TEMPLATE-REGEN (approved, REOPEN) — 양식 매핑 오류 회귀 (관련 가능)
+
+---
+
+## REOPEN5 진단 (2026-06-02, dev-foot) — RLS/role 가설 검증 [READ-ONLY, 코드수정 0]
+
+> planner REOPEN5: "관리자 정상 / 직원 검정화면" 신규 단서 → RLS/role 데이터 로드 가설.
+> 지시: 추정 코드수정 금지·진단 선행. → 아래는 코드 + prod 데이터 read-only 진단 결과.
+
+### 결론: **RLS/role 가설 DISPROVEN (코드 + prod 데이터 양 레벨)**
+
+펜차트가 사용하는 모든 리소스가 role과 무관하게 동일 로드됨을 확인. 직원 한정 검정화면을 만들 수 있는 role 기반 메커니즘이 레포·prod 데이터 어디에도 없음.
+
+### AC-R5-2 — form_templates / phrase fetch RLS 차단 여부 (DISPROVEN)
+
+| 리소스 | SELECT 정책 | role-gate? | prod 실측 |
+|--------|-------------|-----------|-----------|
+| 펜차트 배경 이미지 | **정적 public 파일** `/forms/pen_chart_form.png` (RLS 무관) | ✗ 없음 | prod `form_templates.pen_chart.template_path = /forms/pen_chart_form.png` (is_static=true) — 드리프트 없음 |
+| `form_templates` SELECT | `is_approved_user()` (승인 여부, role 무관) | ✗ role 아님 | 빈 응답이어도 FE가 `BUILTIN_PEN_CHART_TEMPLATE`(정적)로 폴백 → 검정화면 불가 |
+| `phrase_templates` SELECT | `USING (true)` (인증 전원) | ✗ 없음 | prod **41건** 존재 (is_active) — 데이터 부재 아님 |
+| `photos` storage (저장차트·서명URL) | `authenticated` 전체 | ✗ 없음 | role 무관 signed URL 발급 |
+
+→ `migrations/20260517000060_penchart_template_seed.sql`, `20260422000000…:45`(form_templates_read), `20260504_doctor_treatment_flow_up.sql:89`(phrase USING true), `20260420000003_storage_buckets.sql:22`(photos authenticated) 교차 확인.
+
+### AC-R5-3 — 입력/펜/상용구 핸들러 role 분기·권한가드 (없음)
+
+- `PenChartTab.tsx`: `useAuth().profile`은 **staff.id 조회(line 619)에만** 사용. `staffId`는 저장 payload의 **옵셔널 `issued_by`(line 1624)** 로만 쓰임 — null이어도 드로잉/저장 정상.
+- `onPointerDown`(line 1408/2226) 드로잉 핸들러, `initBgCanvas`(line 864) 캔버스 init **모두 role/permission/staffId 가드 없음**. `disabled`는 `saving` 1곳뿐.
+- `required_role` 컬럼은 **`DocumentPrintPanel.tsx:428`(서류출력 목록 노출)에서만** 소비 — 펜차트 편집 캔버스와 무관.
+
+### AC-R5-1 잔여 / 왜 device 축이 유력한가
+
+- prod `user_profiles`: role='staff' 계정 **정확히 1개**(approved·active=true), therapist 11, coordinator(approved=false) 2. 어떤 계정이든 위 4리소스는 동일 로드.
+- 데이터 계층이 role-불변이므로 "관리자 OK / 직원 검정"의 **통제되지 않은 변수 = 기기(iPad)**. 직원과 관리자가 **서로 다른 iPad**를 썼을 가능성(REOPEN4 GPU/IOSurface 축)이 가장 강함. cf69be5(desync 제거)가 특정 기기에서 불충분할 수 있음.
+
+### 결정적 다음 단계 (현장, dev 불가) — BLOCK + ESCALATE
+
+**동일 물리 iPad 1대에서 관리자·직원 계정을 연속 로그인하여 같은 펜차트 양식을 back-to-back 재현** (계정 vs 기기 변수 격리):
+- 검정화면이 **계정**을 따라감(같은 iPad, 관리자 OK·직원 검정) → 진짜 계정/세션 축. 직원 JWT로 RLS-enforced 재현 필요(service_role은 RLS 우회라 불가 — 직원 자격증명 필요).
+- 검정화면이 **기기**를 따라감(두 계정 모두 iPad-B 검정·iPad-A 정상) → REOPEN4 device/GPU 확정. cf69be5 하드닝 방향.
+
+→ AC-R5-1/R5-5는 직원 실계정 + 물리 iPad 필요 → dev-foot 실행 불가. **코드 수정은 이 격리 결과 확보 전까지 BLOCK**(지금 고치면 planner가 금지한 추정 수정과 동일).
+
+### 부수 발견 (별도 티켓 후보, 이 버그 아님)
+
+`form_templates.pen_chart.required_role = 'admin|manager|coordinator|director'` — **therapist·staff 미포함**. RLS는 강제 안 하나 `DocumentPrintPanel`이 이 값으로 **서류출력 목록을 필터** → therapist/staff는 [보험차트] 인쇄 목록에서 누락될 수 있음. (검정화면과 무관, 인쇄 UX 누락. planner 분리 검토 권고.)
+
+### 산출물
+- `scripts/diag_penchart_blackscr_r5.mjs` — read-only prod 진단 스크립트 (재실행 가능, 쓰기 0)
