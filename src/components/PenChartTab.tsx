@@ -1261,8 +1261,45 @@ export function PenChartTab({
       console.error('[DIAG-R4-5] ❌ bgCanvas.toDataURL()', isSecError ? 'SecurityError — CORS taint!' : '기타 오류', e);
     }
 
+    // ── REOPEN5 진단 계측 (측정 선행, 추정 수정 아님) ─────────────────────
+    //   AC-R5-7 window.open 세션 전달 / AC-R5-1 role 매트릭스 / AC-R5-2 fetch 상태
+    //   현장 별도 창에서 이 한 번의 로그로 가설 3개를 동시에 갈림질한다.
+    console.group('[DIAG-R5] REOPEN5 — window.open/role/fetch 측정');
+    // AC-R5-7: popup 컨텍스트 + opener 존재 여부
+    console.log('[DIAG-R5-7] popupMode=', popupMode,
+                '| window.opener=', window.opener ? '있음(별도창 정상)' : '없음',
+                '| origin=', window.location.origin);
+    // 템플릿/상용구 fetch 결과 (fallback 여부로 RLS/fetch 실패 식별)
+    console.log('[DIAG-R5-2] penChartTemplate=',
+                penChartTemplate ? (penChartTemplate.id === BUILTIN_PEN_CHART_TEMPLATE.id ? 'BUILTIN(fetch실패/빈값)' : `DB(${penChartTemplate.id})`) : 'null(미로드)',
+                '| phraseTemplates 로드수=', phraseTemplates.length, '| loaded=', phraseTemplatesLoaded);
+    // AC-R5-7 + AC-R5-1: 세션 전달 + role 확인 (비동기 — 별도 그룹)
+    void (async () => {
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const hasSession = !!sess?.session?.access_token;
+        console.log('[DIAG-R5-7] auth.getSession() →', hasSession ? '✅ 세션 전달됨(새 창에 토큰 존재)' : '❌ 세션 없음(미전달!)',
+                    '| user=', sess?.session?.user?.id ?? '(없음)');
+        const uid = sess?.session?.user?.id;
+        if (uid) {
+          const { data: prof, error: profErr } = await supabase
+            .from('user_profiles').select('role, active').eq('id', uid).maybeSingle();
+          console.log('[DIAG-R5-1] user_profiles.role=', prof?.role ?? '(조회실패)',
+                      '| active=', prof?.active, profErr ? `| err=${profErr.message}` : '');
+        }
+        // AC-R5-2: form_templates / phrase_templates 직접 fetch 상태코드 재현
+        const ftRes = await supabase.from('form_templates').select('id', { count: 'exact', head: true });
+        const phRes = await supabase.from('phrase_templates').select('id', { count: 'exact', head: true });
+        console.log('[DIAG-R5-2] form_templates fetch:', ftRes.error ? `❌ ${ftRes.error.code}/${ftRes.error.message}` : `✅ count=${ftRes.count}`);
+        console.log('[DIAG-R5-2] phrase_templates fetch:', phRes.error ? `❌ ${phRes.error.code}/${phRes.error.message}` : `✅ count=${phRes.count}`);
+      } catch (e) {
+        console.error('[DIAG-R5] 비동기 측정 실패:', e);
+      }
+    })();
     console.groupEnd();
-  }, [activeDrawTemplate]);
+
+    console.groupEnd();
+  }, [activeDrawTemplate, popupMode, penChartTemplate, phraseTemplates, phraseTemplatesLoaded]);
 
   useEffect(() => {
     if (mode === 'draw') {
