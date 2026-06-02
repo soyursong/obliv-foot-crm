@@ -1019,9 +1019,13 @@ export default function SelfCheckIn() {
       if (existing) {
         customerId = existing.id as string;
         // T-20260525-foot-MESSAGING-V1 AC-5: 기존 고객 sms_opt_in 업데이트 (anon RLS 없으면 silent fail)
+        // T-20260602-foot-CONSENT-TIMESTAMP-COLS: 동의(true) 시 시각 병기, 미동의(false) 시 NULL
         await anonClient
           .from('customers')
-          .update({ sms_opt_in: smsOptIn })
+          .update({
+            sms_opt_in: smsOptIn,
+            sms_opt_in_at: smsOptIn ? new Date().toISOString() : null,
+          })
           .eq('id', customerId);
       } else {
         // T-20260529: 워크인 신규 고객 INSERT 시 birth_date, address, privacy_consent 포함
@@ -1032,12 +1036,18 @@ export default function SelfCheckIn() {
           visit_type: visitType === 'new' ? 'new' : 'returning',
           // T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 저장
           sms_opt_in: smsOptIn,
+          // T-20260602-foot-CONSENT-TIMESTAMP-COLS: 동의(true) 시 시각 병기, 미동의(false) 시 NULL
+          sms_opt_in_at: smsOptIn ? new Date().toISOString() : null,
         };
         if (visitType === 'new') {
           const bd = extractBirthDate(rrn);
           if (bd) newCustomerPayload.birth_date = bd;
           if (address.trim()) newCustomerPayload.address = address.trim();
-          if (reservationType === 'walkin') newCustomerPayload.privacy_consent = privacyConsent;
+          if (reservationType === 'walkin') {
+            newCustomerPayload.privacy_consent = privacyConsent;
+            // T-20260602-foot-CONSENT-TIMESTAMP-COLS: 동의(true) 시 시각 병기, 미동의(false) 시 NULL
+            newCustomerPayload.privacy_consent_at = privacyConsent ? new Date().toISOString() : null;
+          }
         }
 
         const { data: created, error: cErr } = await anonClient

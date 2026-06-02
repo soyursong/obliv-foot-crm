@@ -156,6 +156,9 @@ export interface Customer {
   assigned_staff_role?: '데스크' | '상담실장' | null; // 담당자 구분 (레거시)
   assigned_staff_id?: string | null;    // 담당 직원 FK (C2-STAFF-DROPDOWN)
   privacy_consent?: boolean | null;     // 개인정보 수집·이용 동의
+  privacy_consent_at?: string | null;   // 개인정보 동의 일시 (T-20260602-foot-CONSENT-TIMESTAMP-COLS)
+  sms_opt_in?: boolean | null;          // 예약문자 수신 동의 (선택)
+  sms_opt_in_at?: string | null;        // 예약문자 수신 동의 일시 (T-20260602-foot-CONSENT-TIMESTAMP-COLS)
   sms_reject?: boolean | null;          // 문자수신거부
   marketing_reject?: boolean | null;    // 광고성 문자 수신 미동의
   // C2 tickets
