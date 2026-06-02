@@ -4,6 +4,13 @@
       "NODE_VERSION": "22"
     }
   },
+  "redirects": [
+    {
+      "source": "/checkin/jongno-foot",
+      "destination": "https://foot-checkin.pages.dev/jongno-foot",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ],

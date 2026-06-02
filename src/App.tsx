@@ -111,7 +111,13 @@ function App() {
                   jongno-foot 셀프접수를 obliv-foot-crm 자기 도메인에 정상 복귀.
                   PURGE(L1) 후속 — HFQ 리다이렉트 제거. /checkin/jongno-foot 은
                   일반 :clinicSlug 라우트로 떨어져 풋 CRM 네이티브 SelfCheckIn 렌더.
-                  (HFQ 코드/DB 비참조 — LOCKDOWN dev_ops_policy v2.5 §1-1) */}
+                  (HFQ 코드/DB 비참조 — LOCKDOWN dev_ops_policy v2.5 §1-1)
+                  ⚠️ T-20260602-foot-CHECKIN-STALE-COPY-CONSOLIDATE: CF-CUTOVER 로 jongno-foot
+                  canonical 이 foot-checkin.pages.dev(soyursong/foot-checkin)로 이전됨. 본 native
+                  SelfCheckIn 은 YESNO-FLOW/VISITTYPE-REMOVE 미반영 stale 사본이 되어
+                  PROD 에서는 vercel.json 의 308 edge redirect 로 /checkin/jongno-foot →
+                  canonical 단일화됨(이 SPA 라우트까지 도달 안 함). 로컬/타 클리닉 slug 는 그대로
+                  native 렌더 — :clinicSlug 제네릭 라우트는 보존. */}
               <Route path="/checkin/:clinicSlug" element={<ThemeBrown><SelfCheckIn /></ThemeBrown>} />
               <Route path="/checklist/:checkInId" element={<ThemeBrown><TabletChecklistPage /></ThemeBrown>} />
               <Route path="/waiting/:clinicSlug" element={<ThemeBrown><Waiting /></ThemeBrown>} />
