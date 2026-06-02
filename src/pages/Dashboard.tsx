@@ -4001,6 +4001,26 @@ export default function Dashboard() {
     if (card) setDragging(card);
   }, []);
 
+  // T-20260602-foot-DASH-CUSTMOVE-STAFF-RESET AC-4:
+  // PostgREST .update()는 RLS USING/WITH CHECK로 막혀도 error 없이 0행 성공(204 No Content)을 반환한다.
+  // → 직원(비-admin) 계정에서 이동이 "저장된 듯" 보이다가 새로고침/Realtime 시 원위치로 silent 리셋되던 근본 증상.
+  // .select('id')로 실제 영향 행을 확인해, 0행이면 권한 거부로 간주하고 loud 토스트 + 로컬 롤백한다 (silent 금지).
+  const saveCheckInMove = async (
+    id: string,
+    patch: Record<string, unknown>,
+  ): Promise<{ ok: boolean; message?: string }> => {
+    const { data, error } = await supabase
+      .from('check_ins')
+      .update(patch)
+      .eq('id', id)
+      .select('id');
+    if (error) return { ok: false, message: `이동 실패: ${error.message}` };
+    if (!data || data.length === 0) {
+      return { ok: false, message: '권한이 없어 이동이 저장되지 않았습니다' };
+    }
+    return { ok: true };
+  };
+
   const handleDragEnd = async (e: DragEndEvent) => {
     setDragging(null);
     const target = e.over?.id as string | undefined;
@@ -4114,10 +4134,10 @@ export default function Dashboard() {
         else if (roomType === 'treatment') patch.therapist_id = roomAssignment.staff_id;
       }
 
-      const { error } = await supabase.from('check_ins').update(patch).eq('id', row.id);
-      if (error) {
+      const res = await saveCheckInMove(row.id, patch);
+      if (!res.ok) {
         setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
-        toast.error(`이동 실패: ${error.message}`);
+        toast.error(res.message ?? '이동 실패');
         return;
       }
       if (row.status !== newStatus) {
@@ -4154,13 +4174,10 @@ export default function Dashboard() {
           r.id === row.id ? { ...r, status: 'registered' as CheckInStatus, visit_type: targetVisitType } : r,
         );
       });
-      const { error } = await supabase
-        .from('check_ins')
-        .update({ status: 'registered', visit_type: targetVisitType })
-        .eq('id', row.id);
-      if (error) {
+      const res = await saveCheckInMove(row.id, { status: 'registered', visit_type: targetVisitType });
+      if (!res.ok) {
         setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
-        toast.error(`이동 실패: ${error.message}`);
+        toast.error(res.message ?? '이동 실패');
         return;
       }
       if (row.status !== 'registered') {
@@ -4183,13 +4200,10 @@ export default function Dashboard() {
           r.id === row.id ? { ...r, status: 'laser_waiting' as CheckInStatus, laser_room: null } : r,
         );
       });
-      const { error } = await supabase
-        .from('check_ins')
-        .update({ status: 'laser_waiting', laser_room: null })
-        .eq('id', row.id);
-      if (error) {
+      const res = await saveCheckInMove(row.id, { status: 'laser_waiting', laser_room: null });
+      if (!res.ok) {
         setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
-        toast.error(`이동 실패: ${error.message}`);
+        toast.error(res.message ?? '이동 실패');
         return;
       }
       const now = new Date().toISOString();
@@ -4211,13 +4225,10 @@ export default function Dashboard() {
           r.id === row.id ? { ...r, status: 'healer_waiting' as CheckInStatus } : r,
         );
       });
-      const { error } = await supabase
-        .from('check_ins')
-        .update({ status: 'healer_waiting' })
-        .eq('id', row.id);
-      if (error) {
+      const res = await saveCheckInMove(row.id, { status: 'healer_waiting' });
+      if (!res.ok) {
         setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
-        toast.error(`이동 실패: ${error.message}`);
+        toast.error(res.message ?? '이동 실패');
         return;
       }
       const now = new Date().toISOString();
@@ -4237,13 +4248,10 @@ export default function Dashboard() {
         prevRow = curr.find((r) => r.id === row.id);
         return curr.map((r) => (r.id === row.id ? { ...r, notes: updatedNotes } : r));
       });
-      const { error } = await supabase
-        .from('check_ins')
-        .update({ notes: updatedNotes })
-        .eq('id', row.id);
-      if (error) {
+      const res = await saveCheckInMove(row.id, { notes: updatedNotes });
+      if (!res.ok) {
         setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
-        toast.error(`이동 실패: ${error.message}`);
+        toast.error(res.message ?? '이동 실패');
         return;
       }
     } else if (target === 'consultation') {
@@ -4257,13 +4265,10 @@ export default function Dashboard() {
           r.id === row.id ? { ...r, status: 'consultation' as CheckInStatus, consultation_room: null } : r,
         );
       });
-      const { error: consultErr } = await supabase
-        .from('check_ins')
-        .update({ status: 'consultation', consultation_room: null })
-        .eq('id', row.id);
-      if (consultErr) {
+      const res = await saveCheckInMove(row.id, { status: 'consultation', consultation_room: null });
+      if (!res.ok) {
         setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
-        toast.error(`이동 실패: ${consultErr.message}`);
+        toast.error(res.message ?? '이동 실패');
         return;
       }
       if (row.status !== 'consultation') {
@@ -4291,10 +4296,10 @@ export default function Dashboard() {
       if (!row.called_at && row.status !== 'registered') {
         patch.called_at = new Date().toISOString();
       }
-      const { error } = await supabase.from('check_ins').update(patch).eq('id', row.id);
-      if (error) {
+      const res = await saveCheckInMove(row.id, patch);
+      if (!res.ok) {
         setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
-        toast.error(`이동 실패: ${error.message}`);
+        toast.error(res.message ?? '이동 실패');
         return;
       }
       if (row.status !== 'registered') {
@@ -4324,10 +4329,10 @@ export default function Dashboard() {
         patch.called_at = new Date().toISOString();
       }
 
-      const { error } = await supabase.from('check_ins').update(patch).eq('id', row.id);
-      if (error) {
+      const res = await saveCheckInMove(row.id, patch);
+      if (!res.ok) {
         setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
-        toast.error(`이동 실패: ${error.message}`);
+        toast.error(res.message ?? '이동 실패');
         return;
       }
       {
