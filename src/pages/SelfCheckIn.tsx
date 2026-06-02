@@ -1232,8 +1232,14 @@ export default function SelfCheckIn() {
         customer_name: name.trim(),
         customer_phone: phoneStored,
         visit_type: visitType,
-        // 재진→치료대기 직행 / 초진→상담대기 직행
-        status: visitType === 'returning' ? 'treatment_waiting' : 'consult_waiting',
+        // T-20260602-foot-CHECKIN-RECEIVING-SLOT:
+        //   재진→치료대기 직행 / 초진→[접수중](발건강질문지 작성 중) / 그 외(예약없이방문)→상담대기 직행
+        //   초진은 설문 저장(fn_health_q_submit) 시 receiving→consult_waiting 자동 전이.
+        status: visitType === 'returning'
+          ? 'treatment_waiting'
+          : visitType === 'new'
+            ? 'receiving'
+            : 'consult_waiting',
         queue_number: queue,
         notes: notesPayload,
         reservation_id: matchedReservationId,

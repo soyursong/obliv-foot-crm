@@ -18,6 +18,7 @@ export type StatusFlag =
 
 export type CheckInStatus =
   | 'registered'
+  | 'receiving'         // 접수중 — 셀프접수 후 발건강질문지 작성 중(미저장). 저장 시 consult_waiting (T-20260602-foot-CHECKIN-RECEIVING-SLOT)
   | 'consult_waiting'
   | 'consultation'
   | 'exam_waiting'

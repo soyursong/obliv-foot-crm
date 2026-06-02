@@ -208,6 +208,13 @@ const customCollision: CollisionDetection = (args) => {
 // T-20260511-foot-DASH-BATCH-INDIVIDUAL: waiting_columns → 3개 독립 그룹 ID로 분리
 // (치료대기·레이저대기·힐러대기 각각 배치편집 모드에서 개별 이동 가능)
 // T-20260511-foot-DASH-BATCH-INDIVIDUAL v2: laser_rooms 는 항상 마지막 — 드래그로 뒤에 위치하면 자동 교정
+// T-20260602-foot-CHECKIN-RECEIVING-SLOT AC-5: receiving_col 은 항상 맨 앞.
+// 저장된 순서에 없으면 맨 앞에 주입, 있으면 맨 앞으로 끌어올림.
+function ensureReceivingFirst(order: KanbanGroupId[]): KanbanGroupId[] {
+  const rest = order.filter((id) => id !== 'receiving_col');
+  return ['receiving_col', ...rest] as KanbanGroupId[];
+}
+
 function ensureLaserRoomsLast(order: KanbanGroupId[]): KanbanGroupId[] {
   const lrIdx = order.indexOf('laser_rooms');
   if (lrIdx === -1 || lrIdx === order.length - 1) return order;
@@ -218,6 +225,8 @@ function ensureLaserRoomsLast(order: KanbanGroupId[]): KanbanGroupId[] {
 }
 
 const DEFAULT_GROUP_ORDER = [
+  // T-20260602-foot-CHECKIN-RECEIVING-SLOT AC-5: [접수중]은 항상 맨 앞 (ensureReceivingFirst로 강제)
+  'receiving_col',
   'exam_section',
   'consult_waiting_col',
   'consult_rooms',
@@ -232,6 +241,7 @@ const DEFAULT_GROUP_ORDER = [
 type KanbanGroupId = (typeof DEFAULT_GROUP_ORDER)[number];
 
 const KANBAN_GROUP_LABELS: Record<KanbanGroupId, string> = {
+  receiving_col: '접수중',
   exam_section: '진료',
   consult_waiting_col: '상담대기',
   consult_rooms: '상담실',
@@ -2843,6 +2853,7 @@ export default function Dashboard() {
         }
         // T-20260511-foot-DASH-BATCH-INDIVIDUAL v2: laser_rooms 는 항상 마지막
         merged = ensureLaserRoomsLast(merged);
+        merged = ensureReceivingFirst(merged); // AC-5: 접수중 항상 맨 앞
         return merged;
       }
     } catch {}
@@ -2884,6 +2895,7 @@ export default function Dashboard() {
       // T-20260511-foot-DASH-BATCH-INDIVIDUAL v2: laser_rooms 는 항상 마지막
       // 드래그 결과로 laser_rooms 뒤에 항목이 생기면 laser_rooms 앞으로 자동 교정
       next = ensureLaserRoomsLast(next);
+      next = ensureReceivingFirst(next); // AC-5: 접수중 항상 맨 앞
       localStorage.setItem('foot-dash-group-order', JSON.stringify(next));
       return next;
     });
@@ -2966,6 +2978,7 @@ export default function Dashboard() {
         }
         // T-20260511 v2: laser_rooms 항상 마지막
         merged = ensureLaserRoomsLast(merged);
+        merged = ensureReceivingFirst(merged); // AC-5: 접수중 항상 맨 앞
         setGroupOrder(merged);
         localStorage.setItem('foot-dash-group-order', JSON.stringify(merged));
       }
@@ -5160,6 +5173,40 @@ export default function Dashboard() {
   // → 초진/재진 고객은 통합시간표(DashboardTimeline)에서 관리
   const renderKanbanGroup = useCallback((gid: KanbanGroupId): React.ReactNode => {
     switch (gid) {
+      // T-20260602-foot-CHECKIN-RECEIVING-SLOT:
+      //   셀프접수 후 발건강질문지 작성 중(미저장) 고객이 머무는 [접수중] 슬롯.
+      //   설문 저장(fn_health_q_submit) 시 자동으로 receiving→consult_waiting 전이되어
+      //   [상담대기]로 이동(AC-2). 직원 수동 드래그 이동도 가능(AC-6, else 분기 처리).
+      case 'receiving_col':
+        return (
+          <div key="receiving_col" className="w-44 shrink-0">
+            <DroppableColumn
+              id="receiving"
+              label="접수중"
+              count={(byStatus['receiving'] ?? []).length}
+              className="h-full"
+              highlight="text-slate-700"
+            >
+              {(byStatus['receiving'] ?? []).map((ci, idx, arr) => (
+                <div key={ci.id} className="relative group">
+                  <DraggableCard
+                    checkIn={ci}
+                    compact
+                    stageStart={getStageStart(ci)}
+                    packageLabel={getPkgLabel(ci)}
+                    onClick={() => handleCardClick(ci)}
+                    onContextMenu={(e) => handleCardContext(ci, e)}
+                  />
+                  <div className="absolute right-0 top-0 flex flex-col opacity-0 group-hover:opacity-100 transition">
+                    {idx > 0 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'up'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowUp className="h-3 w-3" /></button>}
+                    {idx < arr.length - 1 && <button onClick={(e) => { e.stopPropagation(); swapSortOrder(arr, idx, 'down'); }} className="p-0.5 rounded hover:bg-gray-200"><ArrowDown className="h-3 w-3" /></button>}
+                  </div>
+                  {idx === 0 && arr.length > 1 && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-full" />}
+                </div>
+              ))}
+            </DroppableColumn>
+          </div>
+        );
       case 'exam_section':
         return (
           <div key="exam_section" className="w-52 shrink-0 flex flex-col gap-2">

@@ -2,6 +2,7 @@ import type { CheckInStatus, StaffRole, StatusFlag, UserRole, VisitType } from '
 
 export const STATUS_KO: Record<CheckInStatus, string> = {
   registered: '접수',
+  receiving: '접수중',
   consult_waiting: '상담대기',
   consultation: '상담',
   exam_waiting: '진료대기',
@@ -61,6 +62,7 @@ export const VISIT_TYPE_KO: Record<VisitType, string> = {
 /** 상태별 배지 색상 (Tailwind classes) — 대기실·일일이력 등 공통 사용 */
 export const STATUS_COLOR: Record<CheckInStatus, string> = {
   registered: 'bg-gray-100 text-gray-700',
+  receiving: 'bg-slate-100 text-slate-700',
   consult_waiting: 'bg-indigo-100 text-indigo-800',
   consultation: 'bg-indigo-500 text-white',
   exam_waiting: 'bg-blue-100 text-blue-800',
