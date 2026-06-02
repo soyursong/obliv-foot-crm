@@ -48,7 +48,7 @@ import { format } from 'date-fns';
 import {
   BookOpen, ClipboardList, Download, Eraser, Highlighter, Pencil, Plus, RotateCcw,
   Save, Trash2, Type, X, ChevronLeft, FileText, Undo2, TextCursorInput, Paintbrush,
-  GripVertical, CheckSquare,
+  GripVertical, CheckSquare, Move,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
@@ -265,7 +265,10 @@ const HIGHLIGHT_COLORS = [
 // T-20260522-foot-PENCHART-TOOLS-V3: 도구 모드 통합 타입
 // white: 배경색(흰색) 덮어쓰기 도구 — source-over white fill (지우개와 달리 bg도 덮음)
 // boilerplate-placing: 상용구 삽입 대기 (캔버스 클릭 시 상용구 배치)
-type ActiveTool = 'pen' | 'eraser' | 'white' | 'text' | 'highlight' | 'boilerplate-placing';
+// T-20260602-foot-PHRASE-PEN-PASSTHROUGH: select — 선택/이동 모드.
+//   이 모드에서만 placedItem 오버레이가 interactive(pointerEvents auto) → 드래그·선택·삭제.
+//   드로잉 도구(pen/eraser/white/highlight)에서는 오버레이 passthrough → 상용구 위 직접 필기.
+type ActiveTool = 'pen' | 'eraser' | 'white' | 'text' | 'highlight' | 'boilerplate-placing' | 'select';
 
 // T-20260522-foot-PENCHART-TOOLS-V3: 도구별 기본 굵기
 const DEFAULT_THICKNESS: Record<ActiveTool, number> = {
@@ -275,6 +278,7 @@ const DEFAULT_THICKNESS: Record<ActiveTool, number> = {
   text:                 2,
   highlight:            2,
   'boilerplate-placing': 1.5,
+  select:               1.5, // 드로잉 안 함 — Record 완전성용
 };
 
 // T-20260522-foot-PENCHART-TOOLS-V3: 배치된 텍스트/상용구 객체 (드래그·삭제·다중선택용)
@@ -348,11 +352,14 @@ function FullscreenFormWrapper({
  * 드래그 이동 + 삭제 + Shift+클릭 다중선택 지원.
  */
 function PlacedItemOverlay({
-  item, isSelected, approxH, onSelect, onMove, onDelete,
+  item, isSelected, approxH, interactive, onSelect, onMove, onDelete,
 }: {
   item: PlacedItem;
   isSelected: boolean;
   approxH: number;
+  // T-20260602-foot-PHRASE-PEN-PASSTHROUGH: 선택/이동 모드일 때만 true.
+  // false(드로잉 도구 활성)면 wrapper pointerEvents:'none' → pointerdown이 캔버스로 통과해 상용구 위 직접 필기 가능.
+  interactive: boolean;
   onSelect: (id: string, multi: boolean) => void;
   onMove: (id: string, dx: number, dy: number) => void;
   onDelete: (id: string) => void;
@@ -396,20 +403,25 @@ function PlacedItemOverlay({
         top: item.y,
         minWidth: 60,
         minHeight: approxH,
-        cursor: 'grab',
+        cursor: interactive ? 'grab' : 'default',
         userSelect: 'none',
         zIndex: 20,
-        border: isSelected ? '1.5px dashed #7c3aed' : '1px dashed transparent',
+        border: interactive && isSelected ? '1.5px dashed #7c3aed' : '1px dashed transparent',
         borderRadius: 4,
         padding: '2px 4px',
-        background: isSelected ? 'rgba(124,58,237,0.04)' : 'transparent',
+        background: interactive && isSelected ? 'rgba(124,58,237,0.04)' : 'transparent',
         boxSizing: 'border-box',
         touchAction: 'none',
+        // T-20260602-foot-PHRASE-PEN-PASSTHROUGH 핵심 수정:
+        // 드로잉 도구 활성(interactive=false) 시 'none' → pointerdown이 wrapper에 흡수되지 않고
+        // 아래 드로잉 캔버스로 통과 → 상용구 bbox 위에서도 펜/형광펜 직접 기입.
+        // 선택/이동 모드(interactive=true)에서만 'auto' 복귀 → 드래그·선택·삭제 정상.
+        pointerEvents: interactive ? 'auto' : 'none',
       }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
+      onPointerDown={interactive ? handlePointerDown : undefined}
+      onPointerMove={interactive ? handlePointerMove : undefined}
+      onPointerUp={interactive ? handlePointerUp : undefined}
+      onPointerCancel={interactive ? handlePointerUp : undefined}
     >
       {/* テキスト内容 — 実際にはcanvas描画と同じフォント */}
       <div
@@ -424,8 +436,8 @@ function PlacedItemOverlay({
       >
         {item.text}
       </div>
-      {/* 아이템 우상단 — 삭제 버튼 (선택 시 표시) */}
-      {isSelected && (
+      {/* 아이템 우상단 — 삭제 버튼 (선택/이동 모드 + 선택 시 표시) */}
+      {interactive && isSelected && (
         <button
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
@@ -452,8 +464,8 @@ function PlacedItemOverlay({
           ×
         </button>
       )}
-      {/* 드래그 핸들 힌트 (선택 시 표시) */}
-      {isSelected && (
+      {/* 드래그 핸들 힌트 (선택/이동 모드 + 선택 시 표시) */}
+      {interactive && isSelected && (
         <div style={{
           position: 'absolute',
           top: -10,
@@ -769,7 +781,8 @@ export function PenChartTab({
   const handleNativePointerMove = useCallback((e: PointerEvent) => {
     if (e.pointerType === 'touch') return;
     const tool = activeToolRef.current;
-    if (tool === 'text' || tool === 'boilerplate-placing') return;
+    // T-20260602-foot-PHRASE-PEN-PASSTHROUGH: select(선택/이동) 모드는 드로잉 안 함
+    if (tool === 'text' || tool === 'boilerplate-placing' || tool === 'select') return;
     if (!drawingRef.current) return;
     e.preventDefault();
     const canvas = canvasRef.current;
@@ -1453,6 +1466,8 @@ export function PenChartTab({
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     // touch → 스크롤 전용 (draw 건너뜀)
     if (e.pointerType === 'touch') return;
+    // T-20260602-foot-PHRASE-PEN-PASSTHROUGH: select(선택/이동) 모드는 캔버스 빈 영역 탭에도 드로잉 안 함
+    if (activeTool === 'select') return;
     e.preventDefault();
     e.stopPropagation();
     const canvas = canvasRef.current;
@@ -1750,6 +1765,8 @@ export function PenChartTab({
     const isHighlight = activeTool === 'highlight';
     const isTextTool  = activeTool === 'text';
     const isBoilerplatePlacing = activeTool === 'boilerplate-placing';
+    // T-20260602-foot-PHRASE-PEN-PASSTHROUGH: 선택/이동 모드 — placedItem 오버레이만 interactive
+    const isSelectTool = activeTool === 'select';
     const hasSelectedItems = selectedIds.size > 0;
     return (
       <FullscreenFormWrapper
@@ -1948,6 +1965,23 @@ export function PenChartTab({
             <span>형광펜</span>
           </button>
 
+          {/* T-20260602-foot-PHRASE-PEN-PASSTHROUGH: 선택/이동 — 상용구·텍스트 드래그/선택/삭제.
+              이 모드에서만 오버레이 interactive. 드로잉 도구에서는 오버레이 passthrough → 상용구 위 직접 필기. */}
+          <button
+            onClick={() => switchTool(isSelectTool ? 'pen' : 'select')}
+            className={cn(
+              'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
+              isSelectTool
+                ? 'bg-emerald-100 border-emerald-400 text-emerald-700'
+                : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
+            )}
+            title="선택/이동 — 배치된 상용구·텍스트를 드래그·선택·삭제 (드로잉 도구에서는 상용구 위에 바로 필기됩니다)"
+          >
+            <Move className="h-3.5 w-3.5" />
+            <span>선택/이동</span>
+            {isSelectTool && <span className="ml-0.5 text-emerald-600 animate-pulse">●</span>}
+          </button>
+
           {/* 형광펜 색상 선택 (형광펜 모드일 때만 표시) */}
           {isHighlight && (
             <div className="flex items-center gap-1 pl-1 border-l border-gray-200">
@@ -2086,8 +2120,8 @@ export function PenChartTab({
             </div>
           )}
 
-          {/* V3: 배치된 아이템 다중선택 삭제 */}
-          {hasSelectedItems && (
+          {/* V3: 배치된 아이템 다중선택 삭제 — T-20260602-foot-PHRASE-PEN-PASSTHROUGH: 선택/이동 모드에서만 노출 */}
+          {isSelectTool && hasSelectedItems && (
             <div className="flex items-center gap-1 px-2 py-1 rounded bg-red-50 border border-red-300 text-[11px] text-red-700">
               <CheckSquare className="h-3 w-3" />
               <span>{selectedIds.size}개 선택됨</span>
@@ -2403,6 +2437,7 @@ export function PenChartTab({
                   item={item}
                   isSelected={isSelected}
                   approxH={approxH}
+                  interactive={isSelectTool}
                   onSelect={(id, multi) => {
                     setSelectedIds((prev) => {
                       const next = new Set(prev);
