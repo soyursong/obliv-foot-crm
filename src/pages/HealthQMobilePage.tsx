@@ -88,9 +88,10 @@ const FOOT_PAIN_LEVEL_OPTIONS = [
 ];
 
 // ── 3번 나의 건강 상태 (다중) — OQ1 해소 최종 11항(없음 토글 별도) ──────────────
+// T-20260602-foot-HEALTHQ-CONTENT-ADD: '임신중 또는 임신준비중' 선택지 추가
 const MEDICAL_HISTORY_OPTIONS = [
   '당뇨', '고혈압', '간질환', '고지혈증', '심장질환', '자가면역질환',
-  '갑상선질환', '우울증·공황장애', '위장장애·역류성식도염', '기타',
+  '갑상선질환', '우울증·공황장애', '위장장애·역류성식도염', '임신중 또는 임신준비중', '기타',
 ];
 
 // ── 4번 현재 복용 중인 약 (다중) — 현장 확정(없음 토글 별도) ──────────────────────
@@ -559,6 +560,14 @@ export default function HealthQMobilePage() {
           {/* Q4 발 통증 여부 */}
           <div className="space-y-2 pt-1 border-t" style={{ borderColor: C.border }}>
             <p className="text-sm font-medium pt-2" style={{ color: C.dark }}>발 통증 여부</p>
+            {/* T-20260602-foot-HEALTHQ-CONTENT-ADD: '없음' 선택지 추가 (단일선택 — 통증단계와 상호배타) */}
+            <BigBtn full
+              active={d.foot_pain_level === '없음'}
+              onClick={() => set('foot_pain_level', d.foot_pain_level === '없음' ? '' : '없음')}
+              color="emerald"
+            >
+              없음
+            </BigBtn>
             <div className="grid grid-cols-4 gap-2">
               {FOOT_PAIN_LEVEL_OPTIONS.map((opt) => {
                 const on = d.foot_pain_level === opt.value;
