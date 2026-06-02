@@ -123,7 +123,10 @@ test.describe('T-20260601 HEALTHQ-SELF-RESTRUCTURE 자가작성 폼 톤앤매너
     await expect(oral).toHaveClass(/bg-\[#F5EFE7\]/);
     await expect(laser).toHaveClass(/bg-\[#F5EFE7\]/);
 
-    await exp.getByRole('button', { name: '없음', exact: true }).click();
+    // T-20260602-foot-HEALTHQ-CONTENT-ADD: 발 통증 여부에도 '없음'이 추가되어
+    // 섹션 내 '없음'이 2개 → Q1(문제성 발톱 치료 경험) 블록으로 스코프
+    const nailTreat = exp.locator('div').filter({ has: page.getByText('문제성 발톱 치료 경험', { exact: true }) }).last();
+    await nailTreat.getByRole('button', { name: '없음', exact: true }).click();
     await expect(exp.getByRole('button', { name: '먹는 약' })).toHaveCount(0);
   });
 
