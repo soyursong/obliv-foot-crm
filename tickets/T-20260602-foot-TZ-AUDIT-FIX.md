@@ -6,7 +6,7 @@ domain: foot
 priority: P2
 status: deploy-ready
 qa_result: pass
-deploy_commit: PENDING
+deploy_commit: 14f7edd
 deployed_at: null
 bundle_hash: null
 e2e_spec_exempt_reason: db_only
