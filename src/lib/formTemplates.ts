@@ -62,6 +62,30 @@ export interface FormTemplate {
   sort_order: number;
 }
 
+/**
+ * T-20260602-foot-PENCHART-REQROLE-PRINT-OMIT
+ * 펜차트([보험차트])는 시술을 직접 수행하는 임상 role(therapist/staff)이 인쇄해야 하나,
+ * DB form_templates.required_role('admin|manager|coordinator|director')에 미포함 →
+ * DocumentPrintPanel 인쇄목록에서 해당 계정 로그인 시 누락(비활성 표시).
+ * DB(required_role) 변경 없이 코드 측 표시 조건만 보강한다. pen_chart 한정이므로
+ * 진료비영수증·보험청구 등 financial/insurance 양식 노출에는 영향 없음(회귀 차단).
+ */
+export const PENCHART_EXTRA_PRINT_ROLES = ['therapist', 'staff'] as const;
+
+/**
+ * 인쇄목록 양식 접근 권한 판정 (DocumentPrintPanel canAccess 단일 소스).
+ * 1) required_role 에 명시된 role 은 그대로 허용.
+ * 2) pen_chart 양식에 한해 therapist/staff 추가 허용(위 주석 참조).
+ */
+export function canAccessFormTemplate(tpl: FormTemplate, userRole: string): boolean {
+  const allowed = tpl.required_role?.split('|') ?? [];
+  if (allowed.includes(userRole)) return true;
+  if (tpl.form_key === 'pen_chart' && (PENCHART_EXTRA_PRINT_ROLES as readonly string[]).includes(userRole)) {
+    return true;
+  }
+  return false;
+}
+
 export interface FormSubmission {
   id: string;
   clinic_id: string;
