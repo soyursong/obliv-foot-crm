@@ -175,7 +175,7 @@ Deno.serve(async (req) => {
     // ── AC-2: outbound_log INSERT (pending) ───────────────────────────────────
     const visitedPayload = {
       source_system: 'foot',
-      clinic_slug: 'foot-jongno',
+      clinic_slug: 'jongno-foot',
       external_id: externalId,
       type: 'visited',
       event_id: checkInId,

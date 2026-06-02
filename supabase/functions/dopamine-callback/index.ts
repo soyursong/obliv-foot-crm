@@ -77,7 +77,7 @@ function buildVisitedPayload(
 ): object {
   return {
     source_system: 'foot',
-    clinic_slug: 'foot-jongno',
+    clinic_slug: 'jongno-foot',
     external_id: externalId,
     type: 'visited',
     event_id: checkInId,
@@ -97,7 +97,7 @@ function buildPaidPayload(
 ): object {
   return {
     source_system: 'foot',
-    clinic_slug: 'foot-jongno',
+    clinic_slug: 'jongno-foot',
     external_id: externalId,
     type: 'paid',
     event_id: packageId,
