@@ -26,6 +26,7 @@ import { useParams } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 import type { VisitType } from '@/lib/types';
 import { normalizeToE164 } from '@/lib/phone';
+import { todaySeoulISODate } from '@/lib/format';
 
 // 셀프체크인 전용 Supabase 클라이언트 (anon, 세션 없음)
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -745,7 +746,9 @@ export default function SelfCheckIn() {
     reservationCheckedRef.current = digits;
 
     const phoneE164 = normalizeToE164(phone);
-    const today = new Date().toISOString().slice(0, 10);
+    // KST '오늘' — toISOString()은 UTC 기준이라 00:00~08:59 KST에 전날을 반환하는 버그.
+    // 중앙 헬퍼(en-CA + Asia/Seoul)로 통일 (T-20260602-foot-RESVLIST-CRM-SYNC-EMPTY).
+    const today = todaySeoulISODate();
 
     (async () => {
       try {
@@ -873,11 +876,9 @@ export default function SelfCheckIn() {
     rawReservationsRef.current.clear();
     setStep('select-reservation');
     try {
-      const today = new Date(
-        new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }),
-      )
-        .toISOString()
-        .slice(0, 10);
+      // KST '오늘' — 중앙 헬퍼(en-CA + Asia/Seoul). 기존 toISOString()은 UTC 기준이라
+      // 00:00~08:59 KST 새벽 접수 시 전날을 조회해 빈 목록을 유발했음.
+      const today = todaySeoulISODate();
       const { data, error } = await anonClient.rpc('fn_selfcheckin_today_reservations', {
         p_clinic_id: clinicId,
         p_date: today,
@@ -1066,7 +1067,8 @@ export default function SelfCheckIn() {
       }
 
       // ── T-20260506-foot-SELFCHECKIN-MERGE: 예약 merge 로직 ────────────────
-      const todayDate = new Date().toISOString().slice(0, 10);
+      // KST '오늘' — toISOString()(UTC)은 +09:00 범위와 조합 시 새벽에 전날 범위를 만들어 오매칭.
+      const todayDate = todaySeoulISODate();
       const todayStart = `${todayDate}T00:00:00+09:00`;
       const todayEnd = `${todayDate}T23:59:59+09:00`;
 
