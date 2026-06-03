@@ -82,6 +82,8 @@ export default defineConfig({
         '**/T-20260522-foot-TABLET-DUAL-LAYOUT.spec.ts',
         // T-20260520-ins-COPAY-CALC AC-4: 본인부담 산출 순수 함수 단위테스트 (20 TC)
         '**/insurance-calc.spec.ts',
+        // T-20260602-multi-CALLBACK-EF-4-NEW: 도파민 콜백 outbox 정적 검증 (마이그레이션/EF/롤백 파일 단언, browser 불필요)
+        '**/T-20260602-multi-CALLBACK-EF-4-NEW.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
