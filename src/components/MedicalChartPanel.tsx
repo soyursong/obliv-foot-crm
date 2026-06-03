@@ -305,6 +305,10 @@ export default function MedicalChartPanel({
   const [pendingRxItems, setPendingRxItems] = useState<PrescriptionItem[]>([]);
   const [ackedContraIds, setAckedContraIds] = useState<Set<string>>(new Set());
   const [gateChecking, setGateChecking] = useState(false);
+  // T-20260603-foot-RX-CHART-ENHANCE FIX(MSG-20260603-190947): 금기증 조회 실패 시
+  //   "우회불가" 보장을 위해 처방 적재를 차단하고 별도 오류 게이트를 띄운다.
+  //   사용자가 재시도하거나 명시적 override(관리자 확인 + 감사 로그)를 누르기 전에는 commitRxItems 호출 금지.
+  const [gateError, setGateError] = useState<{ items: PrescriptionItem[]; successMsg?: string; codeIds: string[] } | null>(null);
 
   // ── 임상경과 상용구 autocomplete ───────────────────────────────────────────
   const clinicalRef = useRef<HTMLTextAreaElement>(null);
@@ -703,10 +707,18 @@ export default function MedicalChartPanel({
     setGateChecking(true);
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data } = await (supabase as any)
+      const { data, error } = await (supabase as any)
         .from('prescription_contraindications')
         .select('id,prescription_code_id,contraindication_text,severity')
         .in('prescription_code_id', codeIds);
+      // FIX(MSG-20260603-190947): Supabase 는 HTTP 오류(예: 500)에 throw 하지 않고 error 를 반환.
+      //   error 를 명시 검사하지 않으면 data=null → contras=[] → "금기 없음" 오인 적재(우회로).
+      //   → error 존재 시 catch 와 동일하게 차단 게이트로 전환.
+      if (error) {
+        setGateError({ items, successMsg, codeIds });
+        toast.error('금기증 조회 실패 — 처방 추가가 차단되었습니다. 재시도하거나 관리자 확인 후 진행하세요.');
+        return;
+      }
       const contras = (data as Contraindication[]) ?? [];
       if (contras.length === 0) {
         commitRxItems(items, successMsg);
@@ -717,12 +729,45 @@ export default function MedicalChartPanel({
       setPendingRxItems(items);
       setAckedContraIds(new Set());
     } catch {
-      // 금기 조회 실패 시 안전을 위해 적재하되 경고 (조회 장애로 처방을 막지는 않음)
-      toast.warning('금기증 조회 실패 — 수동 확인 요망');
-      commitRxItems(items, successMsg);
+      // FIX(MSG-20260603-190947): 금기증 조회 실패 = 안전을 보장할 수 없는 상태.
+      //   AC-2 "우회불가" 원칙상 자동 적재 금지. 처방 추가를 차단하고 오류 게이트를 띄운다.
+      //   사용자가 재시도 또는 명시적 override(관리자 확인 + 감사 로그)를 선택해야만 진행 가능.
+      setGateError({ items, successMsg, codeIds });
+      toast.error('금기증 조회 실패 — 처방 추가가 차단되었습니다. 재시도하거나 관리자 확인 후 진행하세요.');
     } finally {
       setGateChecking(false);
     }
+  }
+
+  // FIX(MSG-20260603-190947): 조회 실패 게이트 — 재시도(조회 재실행).
+  function retryGateError() {
+    const e = gateError;
+    if (!e) return;
+    setGateError(null);
+    void addRxItems(e.items, e.successMsg);
+  }
+
+  // FIX(MSG-20260603-190947): 조회 실패 게이트 — 명시적 override(관리자 확인).
+  //   금기증을 확인하지 못한 채 강제 적재하므로 감사 로그를 남기고 사용자의 명시 클릭이 있을 때만 실행.
+  function overrideGateError() {
+    const e = gateError;
+    if (!e) return;
+    // 감사 로그 — 조회 장애 상황에서의 강제 처방 추가 추적용
+    console.warn('[RX-CONTRA-GATE][OVERRIDE] 금기증 조회 실패 상태에서 관리자 강제 처방 추가', {
+      ticket: 'T-20260603-foot-RX-CHART-ENHANCE',
+      codeIds: e.codeIds,
+      itemCount: e.items.length,
+      at: new Date().toISOString(),
+    });
+    const { items, successMsg } = e;
+    setGateError(null);
+    commitRxItems(items, successMsg);
+  }
+
+  // FIX(MSG-20260603-190947): 조회 실패 게이트 — 취소(적재 안 함).
+  function cancelGateError() {
+    setGateError(null);
+    toast.info('처방 추가를 취소했습니다');
   }
 
   // 실제 처방 적재 (게이트 통과 후). 누적(append) 정책 유지.
@@ -2043,6 +2088,58 @@ export default function MedicalChartPanel({
                 data-testid="rx-contra-confirm"
               >
                 확인하고 처방 추가
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* T-20260603-foot-RX-CHART-ENHANCE FIX(MSG-20260603-190947): 금기증 조회 실패 게이트.
+          조회 장애 시 자동 적재 금지(우회불가). 재시도 / 관리자 확인 후 강제 추가(override+로그) / 취소만 허용. */}
+      {gateError && (
+        <div
+          className="fixed inset-0 z-[121] flex items-center justify-center bg-black/50 p-4"
+          data-testid="rx-contra-gate-error"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-md rounded-xl bg-white shadow-2xl overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border-b border-amber-100">
+              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+              <div className="font-semibold text-sm text-amber-700">금기증 조회 실패</div>
+            </div>
+            <div className="px-4 py-3 space-y-2">
+              <p className="text-xs text-muted-foreground">
+                금기증 정보를 불러오지 못해 안전 확인을 완료할 수 없습니다. 처방 추가가 차단되었습니다.
+                네트워크 상태를 확인 후 <strong>재시도</strong>하거나, 책임자 확인 하에 강제로 추가할 수 있습니다.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 px-4 py-3 border-t bg-muted/20">
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1 h-9 text-xs"
+                onClick={cancelGateError}
+                data-testid="rx-contra-error-cancel"
+              >
+                처방 취소
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1 h-9 text-xs bg-teal-600 hover:bg-teal-700 text-white"
+                onClick={retryGateError}
+                data-testid="rx-contra-error-retry"
+              >
+                재시도
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full h-9 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
+                onClick={overrideGateError}
+                data-testid="rx-contra-error-override"
+              >
+                관리자 확인 후 강제 추가
               </Button>
             </div>
           </div>
