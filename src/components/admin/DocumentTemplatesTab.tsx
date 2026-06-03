@@ -39,6 +39,9 @@ interface DocumentTemplate {
   content: string;
   is_active: boolean;
   sort_order: number;
+  // #2(FOLLOWUP2): 2단계 카테고리(예: 레이저진단서 > 위장장애). nullable, NULL=미분류.
+  category: string | null;
+  subcategory: string | null;
 }
 
 interface DocForm {
@@ -47,6 +50,8 @@ interface DocForm {
   content: string;
   is_active: boolean;
   sort_order: number;
+  category: string;
+  subcategory: string;
 }
 
 const EMPTY_FORM: DocForm = {
@@ -55,7 +60,12 @@ const EMPTY_FORM: DocForm = {
   content: '',
   is_active: true,
   sort_order: 0,
+  category: '',
+  subcategory: '',
 };
+
+// #2(FOLLOWUP2): 카테고리 미지정 라벨(spec groupByCategory 계약과 동일)
+const UNCATEGORIZED = '미분류';
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   diagnosis: '진단서',
@@ -74,7 +84,7 @@ function useDocumentTemplates() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('document_templates')
-        .select('id, document_type, name, content, is_active, sort_order')
+        .select('id, document_type, name, content, is_active, sort_order, category, subcategory')
         .order('sort_order', { ascending: true });
       if (error) throw error;
       return (data ?? []) as DocumentTemplate[];
@@ -92,6 +102,9 @@ function useUpsertDoc() {
         content: form.content,
         is_active: form.is_active,
         sort_order: form.sort_order,
+        // #2(FOLLOWUP2): 2단계 카테고리. 빈 문자열은 NULL(미분류)로 저장.
+        category: form.category.trim() === '' ? null : form.category.trim(),
+        subcategory: form.subcategory.trim() === '' ? null : form.subcategory.trim(),
         updated_at: new Date().toISOString(),
       };
       if (id) {
@@ -155,6 +168,8 @@ export default function DocumentTemplatesTab() {
       content: t.content,
       is_active: t.is_active,
       sort_order: t.sort_order,
+      category: t.category ?? '',
+      subcategory: t.subcategory ?? '',
     });
     setOpen(true);
   }
@@ -173,6 +188,41 @@ export default function DocumentTemplatesTab() {
 
   const displayed =
     filterType === 'all' ? templates : templates.filter((t) => t.document_type === filterType);
+
+  // #2(FOLLOWUP2): category > subcategory 2단계 그룹핑 (미분류는 맨 끝).
+  //   spec groupByCategory 계약과 동일 규칙 — null/'' = 미분류.
+  const grouped = (() => {
+    const map = new Map<string, Map<string, DocumentTemplate[]>>();
+    for (const t of displayed) {
+      const c = t.category?.trim() ? t.category.trim() : UNCATEGORIZED;
+      const s = t.subcategory?.trim() ? t.subcategory.trim() : UNCATEGORIZED;
+      if (!map.has(c)) map.set(c, new Map());
+      const sub = map.get(c)!;
+      if (!sub.has(s)) sub.set(s, []);
+      sub.get(s)!.push(t);
+    }
+    const sortKo = (a: string, b: string) => {
+      if (a === UNCATEGORIZED) return 1;
+      if (b === UNCATEGORIZED) return -1;
+      return a.localeCompare(b, 'ko');
+    };
+    return Array.from(map.keys())
+      .sort(sortKo)
+      .map((c) => ({
+        category: c,
+        subs: Array.from(map.get(c)!.keys())
+          .sort(sortKo)
+          .map((s) => ({ subcategory: s, items: map.get(c)!.get(s)! })),
+      }));
+  })();
+
+  // 카테고리/하위 카테고리 입력 자동완성 후보 (기존 라벨 재사용 — 오타 분기 방지)
+  const categoryNames = Array.from(
+    new Set(templates.map((t) => t.category?.trim()).filter((x): x is string => !!x)),
+  ).sort((a, b) => a.localeCompare(b, 'ko'));
+  const subcategoryNames = Array.from(
+    new Set(templates.map((t) => t.subcategory?.trim()).filter((x): x is string => !!x)),
+  ).sort((a, b) => a.localeCompare(b, 'ko'));
 
   if (isLoading)
     return (
@@ -214,55 +264,85 @@ export default function DocumentTemplatesTab() {
           등록된 서류 템플릿이 없습니다.
         </div>
       ) : (
-        <div className="space-y-2" data-testid="doc-template-list">
-          {displayed.map((t) => (
-            <div
-              key={t.id}
-              className="rounded-lg border bg-card px-4 py-3"
-              data-testid="doc-template-item"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
-                      {DOC_TYPE_LABELS[t.document_type] ?? t.document_type}
-                    </Badge>
-                    <span className={`text-sm font-medium truncate ${!t.is_active ? 'text-muted-foreground line-through' : ''}`}>
-                      {t.name}
-                    </span>
-                    {!t.is_active && (
-                      <Badge variant="outline" className="text-[10px] py-0">비활성</Badge>
+        <div className="space-y-4" data-testid="doc-template-list">
+          {/* #2(FOLLOWUP2): category > subcategory 2단계 위계 그룹 렌더 */}
+          {grouped.map((g) => (
+            <div key={g.category} data-testid="doc-template-category-group">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span
+                  className="text-xs font-semibold text-foreground"
+                  data-testid="doc-template-category-name"
+                >
+                  {g.category}
+                </span>
+                <span className="h-px flex-1 bg-border" />
+              </div>
+              <div className="space-y-3 pl-2">
+                {g.subs.map((sub) => (
+                  <div key={sub.subcategory} data-testid="doc-template-subcategory-group">
+                    {sub.subcategory !== UNCATEGORIZED && (
+                      <div
+                        className="text-[11px] font-medium text-muted-foreground mb-1"
+                        data-testid="doc-template-subcategory-name"
+                      >
+                        └ {sub.subcategory}
+                      </div>
                     )}
+                    <div className="space-y-2">
+                      {sub.items.map((t) => (
+                        <div
+                          key={t.id}
+                          className="rounded-lg border bg-card px-4 py-3"
+                          data-testid="doc-template-item"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                                  {DOC_TYPE_LABELS[t.document_type] ?? t.document_type}
+                                </Badge>
+                                <span className={`text-sm font-medium truncate ${!t.is_active ? 'text-muted-foreground line-through' : ''}`}>
+                                  {t.name}
+                                </span>
+                                {!t.is_active && (
+                                  <Badge variant="outline" className="text-[10px] py-0">비활성</Badge>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground line-clamp-2 whitespace-pre-wrap font-mono bg-muted/30 rounded px-2 py-1">
+                                {t.content.slice(0, 120)}{t.content.length > 120 ? '...' : ''}
+                              </p>
+                              <p className="text-[10px] text-muted-foreground mt-1">
+                                변수: &#123;patient_name&#125;, &#123;birth_date&#125;, &#123;visit_date&#125;, &#123;clinic_name&#125;, &#123;doctor_name&#125;
+                              </p>
+                            </div>
+                            {canEdit && (
+                              <div className="flex items-center gap-1 shrink-0">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={() => openEdit(t)}
+                                  data-testid="doc-template-edit-btn"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-destructive hover:text-destructive"
+                                  onClick={() => handleDelete(t.id, t.name)}
+                                  disabled={del.isPending}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <p className="text-xs text-muted-foreground line-clamp-2 whitespace-pre-wrap font-mono bg-muted/30 rounded px-2 py-1">
-                    {t.content.slice(0, 120)}{t.content.length > 120 ? '...' : ''}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground mt-1">
-                    변수: &#123;patient_name&#125;, &#123;birth_date&#125;, &#123;visit_date&#125;, &#123;clinic_name&#125;, &#123;doctor_name&#125;
-                  </p>
-                </div>
-                {canEdit && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => openEdit(t)}
-                      data-testid="doc-template-edit-btn"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive hover:text-destructive"
-                      onClick={() => handleDelete(t.id, t.name)}
-                      disabled={del.isPending}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                )}
+                ))}
               </div>
             </div>
           ))}
@@ -302,6 +382,46 @@ export default function DocumentTemplatesTab() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+            {/* #2(FOLLOWUP2): 2단계 카테고리 (예: 레이저진단서 > 위장장애). 비우면 미분류. */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">
+                  카테고리 <span className="text-muted-foreground">(1단계, 선택)</span>
+                </Label>
+                <Input
+                  value={form.category}
+                  onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                  placeholder="예) 레이저진단서"
+                  className="mt-1"
+                  list="doc-category-suggestions"
+                  data-testid="doc-template-category-input"
+                />
+                <datalist id="doc-category-suggestions">
+                  {categoryNames.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
+              </div>
+              <div>
+                <Label className="text-xs">
+                  하위 카테고리 <span className="text-muted-foreground">(2단계, 선택)</span>
+                </Label>
+                <Input
+                  value={form.subcategory}
+                  onChange={(e) => setForm((f) => ({ ...f, subcategory: e.target.value }))}
+                  placeholder="예) 위장장애"
+                  className="mt-1"
+                  list="doc-subcategory-suggestions"
+                  data-testid="doc-template-subcategory-input"
+                  disabled={form.category.trim() === ''}
+                />
+                <datalist id="doc-subcategory-suggestions">
+                  {subcategoryNames.map((s) => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
               </div>
             </div>
             <div>

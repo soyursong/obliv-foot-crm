@@ -1,6 +1,6 @@
 /**
  * E2E spec — T-20260603-foot-RX-CHART-FOLLOWUP2
- * 풋센터 처방·차트 모듈 실사용 후속 피드백 8건 (문지은 대표원장).
+ * 풋센터 처방·차트 모듈 실사용 후속 피드백 10건 (문지은 대표원장, 정형 relay 흡수).
  *
  * 본 spec은 in-page 순수 로직 시뮬레이션 패턴(기존 RX-* spec과 동일) — 구현 정본과
  * 동일한 규칙을 모사해 회귀를 잡는다. 항목 단위 독립 검증.
@@ -11,6 +11,7 @@
  *   #1 처방세트 폴더 위계(parent_id 트리) + sort_order 정렬 + 투여경로 필터
  *   #2 서류템플릿 2단계 카테고리(category > subcategory) 그룹핑
  *   #5 금기증 성분명(ingredient) 매칭 — 같은 성분의 다른 상품 약도 금기 노출
+ *   #8-2 처방세트 관리 권한 — 의사(director)/총괄(manager)/관리자(admin)급만 (양방향)
  */
 import { test, expect } from '@playwright/test';
 
@@ -193,5 +194,46 @@ test.describe('#5 금기증 성분명 매칭', () => {
     ];
     expect(matchContraindications(codeA, contras).map((c) => c.id)).toEqual(['k2']);
     expect(matchContraindications(codeB, contras).length).toBe(0); // 성분 정보 없으면 A 전용
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// #8-2 — 처방세트 관리 권한: 의사(director)/총괄(manager)/관리자(admin)급만 CRUD
+//   정본 = PrescriptionSetsTab.RX_SET_MANAGE_ROLES (QuickRxBar.DOCTOR_ROLES 동일 집합).
+//   양방향: 허용 role 은 canEdit=true(등록/수정/삭제 노출), 비허용 role 은 canEdit=false(차단).
+// ═══════════════════════════════════════════════════════════════════════════
+
+const RX_SET_MANAGE_ROLES = ['director', 'manager', 'admin'];
+
+/** 정본: 처방세트 관리(CRUD) 가능 여부 — role 기반 */
+function canManageRxSet(role: string | null | undefined): boolean {
+  return !!role && RX_SET_MANAGE_ROLES.includes(role);
+}
+
+test.describe('#8-2 처방세트 관리 권한 (의사/총괄/관리자급)', () => {
+  test('허용 role(director/manager/admin)은 관리 가능', () => {
+    expect(canManageRxSet('director')).toBe(true); // 의사(대표원장) — 이번에 추가된 핵심
+    expect(canManageRxSet('manager')).toBe(true);
+    expect(canManageRxSet('admin')).toBe(true);
+  });
+
+  test('비허용 role(직원·치료사·상담 등)은 관리 차단 — 조회만', () => {
+    expect(canManageRxSet('staff')).toBe(false);
+    expect(canManageRxSet('therapist')).toBe(false);
+    expect(canManageRxSet('technician')).toBe(false);
+    expect(canManageRxSet('consultant')).toBe(false);
+    expect(canManageRxSet('coordinator')).toBe(false);
+    expect(canManageRxSet('part_lead')).toBe(false);
+  });
+
+  test('role 미상(null/undefined)은 차단(fail-closed)', () => {
+    expect(canManageRxSet(null)).toBe(false);
+    expect(canManageRxSet(undefined)).toBe(false);
+    expect(canManageRxSet('')).toBe(false);
+  });
+
+  test('회귀 가드: director(의사) 누락 버그 재발 방지', () => {
+    // 이전 정책(admin/manager 전용)에서 director 가 빠져 대표원장이 막혔던 버그.
+    expect(canManageRxSet('director')).toBe(true);
   });
 });
