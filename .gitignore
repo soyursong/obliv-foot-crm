@@ -35,3 +35,6 @@ bus.jsonl
 .claudeignore
 supabase/.temp/
 *.tsbuildinfo
+
+# dedupe dry-run 산출물 (PII 포함 — git 커밋 금지)
+scripts/out/
