@@ -12,6 +12,8 @@
 
 import { useAuth } from '@/lib/auth';
 import PhrasesTab from '@/components/admin/PhrasesTab';
+// T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구(진단명+임상경과+처방 묶음) 등록 탭
+import SuperPhrasesTab from '@/components/admin/SuperPhrasesTab';
 import PrescriptionSetsTab from '@/components/admin/PrescriptionSetsTab';
 import DocumentTemplatesTab from '@/components/admin/DocumentTemplatesTab';
 import TreatmentSetsTab from '@/components/admin/TreatmentSetsTab';
@@ -25,7 +27,7 @@ import DoctorPatientList from '@/components/doctor/DoctorPatientList';
 // T-20260601-foot-DOCTOR-CALL-PUSH-DASH: 진료부 통합 대시보드(호출 알람+처방+차팅+진료완료)
 import DoctorCallDashboard from '@/components/doctor/DoctorCallDashboard';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { BookOpen, Pill, FileText, Layers, Zap, Users, DollarSign, TrendingUp, Stethoscope, ShieldAlert } from 'lucide-react';
+import { BookOpen, Pill, FileText, Layers, Zap, Users, DollarSign, TrendingUp, Stethoscope, ShieldAlert, Sparkles } from 'lucide-react';
 
 export default function DoctorTools() {
   const { profile } = useAuth();
@@ -62,6 +64,11 @@ export default function DoctorTools() {
               <TabsTrigger value="phrases" className="gap-1.5">
                 <BookOpen className="h-3.5 w-3.5" />
                 상용구
+              </TabsTrigger>
+              {/* T-20260603-foot-RX-SUPER-PHRASE */}
+              <TabsTrigger value="super_phrases" className="gap-1.5" data-testid="tab-super-phrases">
+                <Sparkles className="h-3.5 w-3.5" />
+                슈퍼상용구
               </TabsTrigger>
               <TabsTrigger value="prescriptions" className="gap-1.5">
                 <Pill className="h-3.5 w-3.5" />
@@ -110,6 +117,11 @@ export default function DoctorTools() {
           <>
             <TabsContent value="phrases">
               <PhrasesTab />
+            </TabsContent>
+
+            {/* T-20260603-foot-RX-SUPER-PHRASE */}
+            <TabsContent value="super_phrases">
+              <SuperPhrasesTab />
             </TabsContent>
 
             <TabsContent value="prescriptions">
