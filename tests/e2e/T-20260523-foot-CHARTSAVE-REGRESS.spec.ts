@@ -11,8 +11,13 @@
  * 클리닉:   74967aea-a60b-4da3-a0e7-9c997a930bc8 (오블리브의원 서울 오리진점)
  */
 
+// 본 스펙은 브라우저 없는 DB 통합 회귀(service role 쿼리)다.
+// vitest 미설치 환경에서 Playwright 러너가 전체 suite collection 시 크래시하던 문제 해소를 위해
+// @playwright/test API로 통일(describe→test.describe, it→test). 동일 assertion·커버리지 유지.
 import { createClient } from '@supabase/supabase-js';
-import { describe, it, expect, beforeAll } from 'vitest';
+import { test, expect } from '@playwright/test';
+const describe = test.describe;
+const it = test;
 
 const SUPABASE_URL = 'https://rxlomoozakkjesdqjtvd.supabase.co';
 const SERVICE_KEY  =

@@ -19,6 +19,10 @@
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+// ESM 스코프(__dirname 미정의) 대응 — 레포 표준 shim
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DIST_DIR = path.resolve(__dirname, '../../../dist');
 const INDEX_HTML = path.join(DIST_DIR, 'index.html');

@@ -16,14 +16,28 @@ function sfx() {
 }
 
 // 초진 personal_info 단계 진입 헬퍼
+// 현재 셀프접수(FLOW-REVAMP/2STEP) 실제 동선:
+//   성함(#sc-name input) → 전화(NumPad 클릭, 입력칸 아님) →
+//   방문유형 1단계 '예약하고 왔어요'(btn-reserved) → 2단계 '초진' →
+//   접수하기(btn-checkin) → 초진은 personal_info 단계 진입.
 async function gotoPersonalInfo(page: import('@playwright/test').Page, name: string, phone: string) {
   await page.context().clearCookies();
   await page.goto('/checkin/jongno-foot');
   await page.waitForLoadState('networkidle');
+
+  // 성함은 input, 전화번호는 NumPad(최대 11자리)로 입력
   await page.locator('#sc-name').fill(name);
-  await page.locator('#sc-phone').fill(phone);
+  const phoneDigits = phone.replace(/\D/g, '').slice(0, 11);
+  for (const d of phoneDigits) {
+    await page.getByRole('button', { name: d, exact: true }).first().click();
+  }
+
+  // 방문유형: 예약 → 초진(new)
+  await page.locator('[data-testid="btn-reserved"]').click();
   await page.getByRole('button', { name: '초진' }).click();
-  await page.getByRole('button', { name: '접수하기', exact: true }).click();
+
+  // 접수하기 → personal_info 단계
+  await page.locator('[data-testid="btn-checkin"]').click();
   await page.waitForTimeout(1000);
 }
 
