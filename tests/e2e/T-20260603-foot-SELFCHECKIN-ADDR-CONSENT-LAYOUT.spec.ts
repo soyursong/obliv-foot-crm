@@ -68,16 +68,23 @@ test.describe('T-20260603 AC-2 동의서 항목별 정렬', () => {
     const detail = page.locator('[data-testid="pi-consent-detail"]');
     await expect(detail).toBeVisible({ timeout: 6000 });
 
-    // 개인정보 섹션 — 제목 + 3개 항목 그대로
+    // 개인정보 섹션 — 제목 + 3개 항목 그대로 (성함 통일)
     await expect(detail.getByText('개인정보 수집·이용 동의 (필수)')).toBeVisible();
-    await expect(detail.getByText('수집항목 : 이름, 주민등록번호, 연락처, 주소 등 기본 정보')).toBeVisible();
+    await expect(detail.getByText('수집항목 : 성함, 주민등록번호, 연락처, 주소 등 기본 정보')).toBeVisible();
     await expect(detail.getByText('수집목적 : 진료를 위한 정보 수집')).toBeVisible();
 
-    // 건강보험 섹션 — 제목 + 항목
+    // 건강보험 섹션 — 제목 + 항목 (성함 통일)
     await expect(detail.getByText('건강보험 조회에 동의합니다 (필수)')).toBeVisible();
+    await expect(
+      detail.getByText('수집항목 : 성함, 주민등록번호(또는 생년월일), 건강보험 자격정보(가입 여부, 보험종류, 자격상태 등)')
+    ).toBeVisible();
     await expect(
       detail.getByText('수집목적 : 건강보험 자격 확인, 보험 적용 진료비 산정 및 청구, 보험 급여 적정성 확인')
     ).toBeVisible();
+
+    // 성함 통일 — 동의서 본문에 '이름'·'성명' 라벨 부재
+    await expect(detail.getByText(/수집항목 : 이름/)).toHaveCount(0);
+    await expect(detail.getByText(/수집항목 : 성명/)).toHaveCount(0);
 
     // 항목별 줄바꿈 정렬 — li 요소가 6개(개인정보 3 + 건보 3)
     await expect(detail.locator('li')).toHaveCount(6);
