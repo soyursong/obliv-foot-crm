@@ -10,9 +10,10 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Copy, ExternalLink, Plus, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { Copy, ExternalLink, Plus, RefreshCw, ChevronDown, ChevronUp, QrCode } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
+import { QrViewModal } from '@/components/QrViewModal';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -178,6 +179,8 @@ export function HealthQResultsPanel({ customerId, clinicId, checkInId }: Props) 
   const [tokenLoading, setTokenLoading] = useState(false);
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
   const [formType,     setFormType]     = useState<'general' | 'senior'>('general');
+  // T-20260603-foot-HEALTHQ-SELFLINK-QR-VIEW: 발급된 링크 QR 모달 (데스크 즉시 응대)
+  const [qrOpen,       setQrOpen]       = useState(false);
 
   // ── 결과 로드 ──────────────────────────────────────────────────────────────
   const loadResults = useCallback(async () => {
@@ -280,11 +283,31 @@ export function HealthQResultsPanel({ customerId, clinicId, checkInId }: Props) 
                 <ExternalLink className="h-3 w-3" />
                 미리보기
               </Button>
+              {/* T-20260603-foot-HEALTHQ-SELFLINK-QR-VIEW: 발급 링크 QR — 고객이 QR 놓친 경우 데스크 화면 스캔 응대 */}
+              <Button size="sm" variant="outline"
+                onClick={() => setQrOpen(true)}
+                className="gap-1 h-8 px-3 text-xs border-teal-300"
+                data-testid="healthq-qr-view-btn"
+              >
+                <QrCode className="h-3 w-3" />
+                QR 보기
+              </Button>
             </div>
             <p className="text-[10px] text-gray-400">유효 기간 7일. 제출 후 링크는 무효화됩니다.</p>
           </div>
         )}
       </div>
+
+      {/* QR 모달 — 공통 QrViewModal 재사용 (CHART2-QR-REOPEN 과 동일 컴포넌트) */}
+      {generatedUrl && (
+        <QrViewModal
+          open={qrOpen}
+          onOpenChange={setQrOpen}
+          url={generatedUrl}
+          title="발건강질문지 자가작성 링크"
+          caption="고객 휴대폰으로 이 QR을 스캔하면 자가작성 화면이 열립니다."
+        />
+      )}
 
       {/* 제출된 결과 목록 */}
       <div className="space-y-2">
