@@ -155,6 +155,7 @@ const T: Record<Lang, {
   qrTitle: string;
   qrGuide: string;
   qrDone: string;
+  qrBack: string;
   qrAutoReset: (s: number) => string;
   qrLoading: string;
   qrError: string;
@@ -255,8 +256,9 @@ const T: Record<Lang, {
     // QR 단계
     qrTitle: '발건강 질문지 작성',
     qrGuide: '핸드폰으로 QR을 촬영하여\n발건강 질문지를 작성해주세요',
-    qrDone: '질문지 작성 완료',
-    qrAutoReset: (s) => `${s}초 후 자동으로 다음 단계로 넘어갑니다`,
+    qrDone: '정상접수(QR 스캔 완료)',
+    qrBack: '이전 단계로 돌아가기',
+    qrAutoReset: (s) => `${s}초 후 자동으로 처음 화면으로 돌아갑니다`,
     qrLoading: 'QR 코드 생성 중...',
     qrError: 'QR 코드를 불러올 수 없습니다. 데스크에 문의해주세요.',
     // T-20260601-foot-SELFLOGIN-RESV-LIST-QR
@@ -355,8 +357,9 @@ const T: Record<Lang, {
     // QR step
     qrTitle: 'Health Questionnaire',
     qrGuide: 'Please scan the QR code with your phone\nto fill out the health questionnaire',
-    qrDone: 'Questionnaire Complete',
-    qrAutoReset: (s) => `Auto-advance in ${s} seconds`,
+    qrDone: 'Check-in Complete (QR scanned)',
+    qrBack: 'Back to previous step',
+    qrAutoReset: (s) => `Returning to the start screen in ${s} seconds`,
     qrLoading: 'Generating QR code...',
     qrError: 'QR code unavailable. Please ask the front desk.',
     // T-20260601-foot-SELFLOGIN-RESV-LIST-QR
@@ -376,8 +379,8 @@ const T: Record<Lang, {
 const DONE_RESET_SECONDS = 15;
 /** 입력 화면 비활동 타임아웃 (초) */
 const IDLE_TIMEOUT_SECONDS = 60;
-/** QR 화면 자동 전진 타임아웃 (초) — T-20260529-foot-SELFCHECKIN-FLOW-REVAMP */
-const QR_SCREEN_SECONDS = 120;
+/** QR 화면 자동 타임아웃 (초) — T-20260603-foot-SELFCHECKIN-RETURN-CONSENT-QR-4FIX: 120→180, 종료 시 초기 화면 복귀 */
+const QR_SCREEN_SECONDS = 180;
 
 // ── 공통 폰트 스타일 (Pretendard 모던 고딕 — T-20260514-foot-SELFCHECKIN-FONT) ──
 const FONT_STYLE: React.CSSProperties = {
@@ -587,8 +590,9 @@ export default function SelfCheckIn() {
   const [submitting, setSubmitting] = useState(false);
   const [queueNumber, setQueueNumber] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
-  // T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 (기본 true — 동의함)
-  const [smsOptIn, setSmsOptIn] = useState(true);
+  // T-20260603-foot-SELFCHECKIN-RETURN-CONSENT-QR-4FIX AC2: SMS 수신동의는 '선택' 동의 →
+  //   다크패턴 방지 위해 기본 미체크(false). 사용자가 직접 체크해야 함.
+  const [smsOptIn, setSmsOptIn] = useState(false);
 
   // ── T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: 개인정보 입력 상태 ──
   const [rrn, setRrn] = useState('');                    // YYMMDD-XXXXXXX 포맷
@@ -596,9 +600,12 @@ export default function SelfCheckIn() {
   // T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-1: 우편번호 + 상세주소
   const [postalCode, setPostalCode] = useState('');
   const [addressDetail, setAddressDetail] = useState('');
-  const [privacyConsent, setPrivacyConsent] = useState(false);
+  // T-20260603-foot-SELFCHECKIN-RETURN-CONSENT-QR-4FIX AC2: 개인정보 동의 기본 체크(true).
+  //   boolean 저장·필수성·privacy_consent_at 기록 로직 불변, 초기값만 true.
+  const [privacyConsent, setPrivacyConsent] = useState(true);
   // AC-7: 건강보험 조회 동의 (→ customers.hira_consent)
-  const [insuranceConsent, setInsuranceConsent] = useState(false);
+  // T-20260603 AC2: 건강보험 동의 기본 체크(true). 기록 로직 불변.
+  const [insuranceConsent, setInsuranceConsent] = useState(true);
   // 발건강질문지 QR 토큰
   const [healthQToken, setHealthQToken] = useState<string | null>(null);
   // QR 화면 카운트다운
@@ -671,8 +678,11 @@ export default function SelfCheckIn() {
     // T-20260529-foot-SELFCHECKIN-FLOW-REVAMP
     setRrn('');
     setAddress('');
-    setPrivacyConsent(false);
-    setInsuranceConsent(false); // AC-7
+    // T-20260603-foot-SELFCHECKIN-RETURN-CONSENT-QR-4FIX AC2: 동의 기본값 재설정
+    //   필수 동의(개인정보/건강보험)는 기본 체크(true), 선택 동의(SMS)는 기본 미체크(false).
+    setPrivacyConsent(true);
+    setInsuranceConsent(true); // AC-7
+    setSmsOptIn(false);
     setHealthQToken(null);
     setQrCountdown(QR_SCREEN_SECONDS);
     // T-20260601-foot-SELFLOGIN-RESV-LIST-QR
@@ -698,7 +708,8 @@ export default function SelfCheckIn() {
     return () => clearInterval(interval);
   }, [step, resetForm]);
 
-  // ── T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: QR 화면 자동 전진 (120초) ──
+  // ── T-20260603-foot-SELFCHECKIN-RETURN-CONSENT-QR-4FIX: QR 화면 자동 타임아웃 (180초 → 초기 화면 복귀) ──
+  // 기존: 120초 후 done 으로 전진. 변경: 180초 후 셀프접수 초기 화면으로 자동 복귀(resetForm).
   useEffect(() => {
     if (step !== 'qr') return;
     setQrCountdown(QR_SCREEN_SECONDS);
@@ -706,14 +717,14 @@ export default function SelfCheckIn() {
       setQrCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(interval);
-          setStep('done');
+          resetForm();
           return QR_SCREEN_SECONDS;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [step]);
+  }, [step, resetForm]);
 
   // ── 입력 화면 비활동 타임아웃 (60초) ──
   const resetIdleTimer = useCallback(() => {
@@ -1674,7 +1685,7 @@ export default function SelfCheckIn() {
             {t.qrAutoReset(qrCountdown)}
           </p>
 
-          {/* 질문지 작성 완료 버튼 */}
+          {/* 정상접수(QR 스캔 완료) 버튼 — T-20260603 항목4 */}
           <button
             onClick={() => setStep('done')}
             className="w-full rounded-xl py-5 text-xl font-bold text-white transition active:scale-[0.99]"
@@ -1682,6 +1693,17 @@ export default function SelfCheckIn() {
             data-testid="btn-qr-done"
           >
             {t.qrDone}
+          </button>
+
+          {/* 이전 단계로 돌아가기 버튼 — T-20260603 항목4: 정상접수 버튼 아래.
+              setStep('confirm') 시 QR 타이머 useEffect cleanup 으로 카운트다운 자동 중단. */}
+          <button
+            onClick={() => setStep('confirm')}
+            className="w-full rounded-xl py-4 text-base font-medium transition active:scale-95"
+            style={{ border: `1.5px solid ${C.border}`, color: C.muted, backgroundColor: 'white' }}
+            data-testid="btn-qr-back"
+          >
+            {t.qrBack}
           </button>
         </div>
       </div>
@@ -2112,7 +2134,9 @@ export default function SelfCheckIn() {
             )}
           </div>
           {/* T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 체크박스
-              T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-3: 라벨 정리 + 하단 부가 안내 */}
+              T-20260603-foot-SELFCHECKIN-RETURN-CONSENT-QR-4FIX AC3: 예약 안내 문자 중복 제거 —
+              체크박스 라벨(t.smsOptIn)이 이미 '예약 안내 문자 수신 동의'를 안내하므로,
+              동일 내용을 반복하던 하단 부가 안내(smsOptInNote)를 제거하여 1회만 노출. */}
           <div className="space-y-1">
             <label
               htmlFor="sms-opt-in"
@@ -2129,9 +2153,6 @@ export default function SelfCheckIn() {
               />
               <span className="text-sm leading-relaxed">{t.smsOptIn}</span>
             </label>
-            <p className="pl-8 text-xs leading-relaxed" style={{ color: C.muted }} data-testid="sms-opt-in-note">
-              {t.smsOptInNote}
-            </p>
           </div>
           <div className="flex gap-3">
             <button

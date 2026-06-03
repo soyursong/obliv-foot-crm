@@ -271,8 +271,8 @@ test.describe('T-20260529 AC-7 건강보험 동의 체크박스', () => {
     const insuranceCheckbox = page.locator('[data-testid="pi-insurance-consent-checkbox"]');
     await expect(insuranceCheckbox).toBeVisible({ timeout: 6000 });
 
-    // 기본값 unchecked
-    await expect(insuranceCheckbox).not.toBeChecked();
+    // T-20260603-RETURN-CONSENT-QR-4FIX AC2: 건강보험 동의 기본 체크(true)로 변경됨
+    await expect(insuranceCheckbox).toBeChecked();
   });
 
   test('건강보험 동의 체크박스 체크/언체크 동작', async ({ page }) => {

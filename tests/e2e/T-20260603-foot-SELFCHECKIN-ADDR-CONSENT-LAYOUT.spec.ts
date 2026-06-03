@@ -118,11 +118,10 @@ test.describe('T-20260603 AC-3 문자수신 부가문구', () => {
     await page.locator('[data-testid="pi-address-input"]').fill('서울특별시 중구');
     await page.locator('[data-testid="btn-personal-info-next"]').click();
 
-    // confirm 단계 — 문자수신 라벨 + 부가 안내
+    // confirm 단계 — 문자수신 라벨 표시
     await expect(page.getByText('예약 안내 등 문자 수신에 동의합니다 (선택)')).toBeVisible({ timeout: 6000 });
-    const note = page.locator('[data-testid="sms-opt-in-note"]');
-    await expect(note).toBeVisible();
-    await expect(note).toHaveText('수신에 동의하지 않으실 경우 예약일자 자동 안내 문자를 받지 못할 수 있습니다');
+    // T-20260603-RETURN-CONSENT-QR-4FIX AC3: 예약 안내 문자 중복 부가 안내(sms-opt-in-note) 제거됨
+    await expect(page.locator('[data-testid="sms-opt-in-note"]')).toHaveCount(0);
 
     // sms 미체크해도 접수하기(제출) 버튼 활성 — (선택) 유지
     const smsBox = page.locator('#sms-opt-in');
@@ -144,10 +143,11 @@ test.describe('T-20260603 AC-4 동의 체크박스 회귀', () => {
     }
     await page.locator('[data-testid="pi-address-input"]').fill('서울특별시 강남구');
 
+    // T-20260603-RETURN-CONSENT-QR-4FIX AC2: 건강보험 동의 기본 체크(true)
     const ins = page.locator('[data-testid="pi-insurance-consent-checkbox"]');
-    await expect(ins).not.toBeChecked();
-    await ins.check();
     await expect(ins).toBeChecked();
+    await ins.uncheck();
+    await expect(ins).not.toBeChecked();
 
     // 미체크/체크 무관 다음 버튼 활성 (선택 필드 불변)
     await expect(page.locator('[data-testid="btn-personal-info-next"]')).toBeEnabled();
