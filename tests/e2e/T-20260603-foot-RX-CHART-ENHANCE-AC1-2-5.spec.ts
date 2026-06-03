@@ -1,5 +1,6 @@
 /**
- * E2E spec — T-20260603-foot-RX-MODULE-8REQ (처방·차트 모듈 의사 피드백 8건 배치)
+ * E2E spec — T-20260603-foot-RX-CHART-ENHANCE (AC-1/AC-2/AC-5 분)
+ *   (구 T-20260603-foot-RX-MODULE-8REQ — superseded·RX-CHART-ENHANCE로 흡수. 정본 경로로 이관됨)
  *
  * 본 spec 범위 = 이번 세션 완성분(UI 와이어링 + DB additive 마이그 적용 후):
  *   - #1 / AC-1: 처방세트 폴더링 — prescription_sets.folder 로 그룹핑(폴더 헤더 + 건수 배지)
@@ -64,7 +65,7 @@ async function openChartRxTab(page: Page, customerId: string): Promise<void> {
   await expect(page.getByTestId('right-panel-rx-content')).toBeVisible({ timeout: 10_000 });
 }
 
-test.describe('T-20260603 RX-MODULE-8REQ — 폴더링(AC-1) · 금기게이트(AC-2) · 마스터검색(AC-5)', () => {
+test.describe('T-20260603 RX-CHART-ENHANCE — 폴더링(AC-1) · 금기게이트(AC-2) · 마스터검색(AC-5)', () => {
   test.beforeAll(async () => {
     if (!SERVICE_KEY) return;
     admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
