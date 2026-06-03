@@ -479,6 +479,14 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   // T-20260511-foot-C1-SAVE-DIRTY-AUTOSAVE: isDirty 패턴 + 자동저장 인디케이터
   const [isDirty, setIsDirty] = useState(false);
   const [showAutoSaved, setShowAutoSaved] = useState(false);
+  // T-20260603-foot-CHART-UNSAVED-GUARD AC-2: 미저장 메모 보호 — 닫기 확인 다이얼로그
+  // dirtyRef: 시트 하위 input/textarea(예약·상담·치료·고객·기타메모 등)에 사용자 입력이
+  //   한 번이라도 발생했는지 추적하는 proxy(미저장 여부). 상위 저장(메모/고객메모/기타메모/방문경로)
+  //   성공 시 false로 리셋. 자식 컴포넌트(예약메모 타임라인·의사 진료 패널)의 자체 저장은
+  //   hook할 수 없으므로 안전측으로 동작 — 그쪽만 작성했다면 닫기 시 confirm가 한 번 더 뜬다.
+  // 미입력(non-dirty) 상태면 confirm 없이 즉시 닫힘 → 불필요한 마찰 방지.
+  const dirtyRef = useRef(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   // T-20260522-foot-CHECKIN-CONSENT-REMOVE: checklistOpen/tabletChecklistOpen/tabletConsentOpen 제거
   /** 고객 차트번호 (T-20260504-foot-CHART-UI-BADGE) */
   const [chartNumber, setChartNumber] = useState<string | null>(null);
@@ -544,6 +552,9 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setChartNumber(null);
     setResolvedCustomerId(null);
     setLatestCheckIn(null);
+    // T-20260603-foot-CHART-UNSAVED-GUARD AC-2: 고객/체크인 전환 시 dirty·확인창 리셋
+    dirtyRef.current = false;
+    setShowCloseConfirm(false);
     // T-20260529-foot-CHART-OPEN-SINGLE: 고객 연결 UI 초기화
     setLinkQuery('');
     setLinkResults([]);
@@ -926,6 +937,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     }
     toast.success('메모 저장됨');
     setIsDirty(false);
+    dirtyRef.current = false; // T-20260603-foot-CHART-UNSAVED-GUARD AC-2
     onUpdated();
   };
 
@@ -1035,6 +1047,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     const customerId = checkIn?.customer_id ?? resolvedCustomerId ?? customerMode?.customerId;
     if (!customerId) return;
     await supabase.from('customers').update({ visit_route: val || null }).eq('id', customerId);
+    dirtyRef.current = false; // T-20260603-foot-CHART-UNSAVED-GUARD AC-2: 자동저장 완료 → dirty 해제
     // AC-8 쌍방연동 — 2번차트에 변경 알림
     localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId, ts: Date.now() }));
   };
@@ -1052,6 +1065,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setSavingCustomerMemo(false);
     if (error) { toast.error('고객메모 저장 실패'); return; }
     toast.success('고객메모 저장됨');
+    dirtyRef.current = false; // T-20260603-foot-CHART-UNSAVED-GUARD AC-2
     // AC-8 쌍방연동 — 2번차트에 변경 알림
     const customerId2 = checkIn?.customer_id ?? customerMode?.customerId;
     if (customerId2) localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customerId2, ts: Date.now() }));
@@ -1069,6 +1083,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setSavingEtcMemo(false);
     if (error) { toast.error('기타메모 저장 실패'); return; }
     toast.success('기타메모 저장됨');
+    dirtyRef.current = false; // T-20260603-foot-CHART-UNSAVED-GUARD AC-2
     localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId, ts: Date.now() }));
   };
 
@@ -1076,11 +1091,53 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     .filter((p) => p.payment_type === 'payment')
     .reduce((s, p) => s + p.amount, 0);
 
+  // ── T-20260603-foot-CHART-UNSAVED-GUARD AC-2: 미저장 메모 보호 ──
+  // 시트 콘텐츠 하위 input/textarea의 input 이벤트(버블)로 사용자 입력 발생을 감지.
+  // (React setState 기반 값 변경은 DOM input 이벤트를 발화하지 않음 — 실제 사용자 타이핑만 dirty 처리)
+  const markDirty = () => { dirtyRef.current = true; };
+  // 닫기 요청(백드롭/ESC/X/onOpenChange=false) — dirty면 확인, 아니면 즉시 닫기.
+  const requestClose = () => {
+    if (dirtyRef.current) {
+      setShowCloseConfirm(true);
+    } else {
+      onClose();
+    }
+  };
+  // 닫기 확인 다이얼로그 — 두 렌더 분기(고객관리 모드 / 체크인 모드)에서 공통 사용.
+  const closeConfirmDialog = (
+    <Dialog open={showCloseConfirm} onOpenChange={(o) => { if (!o) setShowCloseConfirm(false); }}>
+      <DialogContent className="max-w-sm" hideClose data-testid="checkin-close-confirm">
+        <DialogHeader>
+          <DialogTitle>작성 중인 내용이 있습니다</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          저장하지 않은 메모 내용이 사라질 수 있습니다. 닫으시겠습니까?
+        </p>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            data-testid="checkin-close-cancel"
+            onClick={() => setShowCloseConfirm(false)}
+          >
+            취소(계속 작성)
+          </Button>
+          <Button
+            variant="destructive"
+            data-testid="checkin-close-confirm-btn"
+            onClick={() => { setShowCloseConfirm(false); dirtyRef.current = false; onClose(); }}
+          >
+            저장하지 않고 닫기
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
   // ── T-20260511-foot-CUSTMGMT-DETAIL-SHEET: customer_id 기반 뷰 (체크인 없는 고객관리 모드) ──
   if (!checkIn && customerMode) {
     const effectiveChartNumber = chartNumber ?? customerMode.chartNumber;
     return (
-      <Sheet open={true} onOpenChange={(o) => !o && onClose()}>
+      <Sheet open={true} onOpenChange={(o) => { if (!o) requestClose(); }}>
         <SheetContent className="w-[400px] sm:w-[440px] max-h-screen overflow-y-auto">
           <SheetHeader>
             <div className="flex items-center justify-between gap-2">
@@ -1099,7 +1156,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             </div>
           </SheetHeader>
 
-          <div className="mt-4 space-y-4">
+          {/* T-20260603-foot-CHART-UNSAVED-GUARD AC-2: 하위 메모 입력 dirty 추적 */}
+          <div className="mt-4 space-y-4" onInput={markDirty}>
             {/* 차트번호 */}
             {effectiveChartNumber && (
               <div className="text-sm font-semibold text-teal-700">{effectiveChartNumber}</div>
@@ -1371,6 +1429,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             }}
           />
           {/* T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout으로 이동 */}
+          {/* T-20260603-foot-CHART-UNSAVED-GUARD AC-2: 닫기 확인 다이얼로그 */}
+          {closeConfirmDialog}
         </SheetContent>
       </Sheet>
     );
@@ -1427,7 +1487,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   };
 
   return (
-    <Sheet open={!!checkIn} onOpenChange={(o) => !o && onClose()}>
+    <Sheet open={!!checkIn} onOpenChange={(o) => { if (!o) requestClose(); }}>
       <SheetContent className="w-[400px] sm:w-[440px] max-h-screen overflow-y-auto">
         <SheetHeader>
           <div className="flex items-center justify-between gap-2">
@@ -1459,7 +1519,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           </div>
         </SheetHeader>
 
-        <div className="mt-4 space-y-4">
+        {/* T-20260603-foot-CHART-UNSAVED-GUARD AC-2: 하위 메모 입력 dirty 추적 */}
+        <div className="mt-4 space-y-4" onInput={markDirty}>
           {/* 기본 정보 — 방문유형·상태 배지는 성함 옆으로 이동 (T-20260506 항목1) / 우선순위·신분증만 표시 */}
           {(checkIn.priority_flag || checkIn.notes?.id_check_required) && (
             <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -2038,6 +2099,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           }}
         />
         {/* T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout으로 이동 */}
+        {/* T-20260603-foot-CHART-UNSAVED-GUARD AC-2: 닫기 확인 다이얼로그 */}
+        {closeConfirmDialog}
       </SheetContent>
     </Sheet>
   );

@@ -13,12 +13,23 @@
  *   → 외부 dialog context 완전 독립, 모든 진입 경로 안정적 동작
  * - ESC 키, 백드롭 클릭 닫기 지원
  * - zLevel=1 대응: z-[60](백드롭) / z-[70](패널)
+ *
+ * T-20260603-foot-CHART-UNSAVED-GUARD (AC-1): 차팅 중 미저장 데이터 손실 방어
+ * - 차트 내부에서 한 번이라도 사용자 입력(input 이벤트)이 발생한 dirty 상태면,
+ *   백드롭 클릭 / ESC 시 즉시 닫지 않고 확인 다이얼로그("작성 중인 내용이 있습니다...")를 띄운다.
+ * - 입력이 없던(non-dirty) 상태면 기존처럼 즉시 닫힘 — 불필요한 마찰/기존 ESC-닫기 플로우 보존.
+ * - 메신저 확인 후 복귀 클릭이 백드롭에 닿아도 작성 중 내용이 사라지지 않음.
+ * - 명시적 닫기 버튼(X)은 의도적 닫기이므로 즉시 닫힘 유지.
+ * - dirty 판정은 패널 하위 input/textarea의 input 이벤트로 추적
+ *   (사용자 입력만 발화 — React setState 기반 값 변경은 DOM input 이벤트를 발화하지 않음).
  */
 // T-20260516-foot-CHART2-STATE-UNIFY: MemoryRouter 제거 — RR6.30 nested Router 금지
 // CustomerChartPage에 customerId prop 직접 주입으로 대체
-import { useEffect, useRef, Suspense, lazy } from 'react';
+import { useEffect, useRef, useState, Suspense, lazy } from 'react';
 import { createPortal } from 'react-dom';
 import { ChartSheetCloseCtx } from '@/lib/chartSheetContext';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 
 const CustomerChartPage = lazy(() => import('@/pages/CustomerChartPage'));
 
@@ -29,14 +40,34 @@ interface Props {
 
 export function CustomerChartSheet({ customerId, onClose }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // T-20260603-foot-CHART-UNSAVED-GUARD AC-1: 닫기 전 확인 다이얼로그
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  // ESC 핸들러(capture)가 항상 최신 상태를 읽도록 ref 동기화
+  const showConfirmRef = useRef(false);
+  showConfirmRef.current = showCloseConfirm;
+  // 차트 내부에서 사용자 입력이 한 번이라도 발생했는지 (미저장 여부 proxy)
+  const dirtyRef = useRef(false);
 
-  // ESC 키 핸들러
+  // 차트 재오픈(customerId 변경) 시 dirty/확인창 리셋
+  useEffect(() => {
+    dirtyRef.current = false;
+    setShowCloseConfirm(false);
+  }, [customerId]);
+
+  // ESC 키 핸들러 — dirty 가드 적용 (AC-1)
   useEffect(() => {
     if (!customerId) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // 확인 다이얼로그가 떠 있으면 base-ui가 자체 ESC(취소)를 처리하도록 통과
+        if (showConfirmRef.current) return;
         e.stopPropagation();
-        onClose();
+        // dirty 아니면 즉시 닫힘(기존 동작 보존), dirty면 확인 노출
+        if (dirtyRef.current) {
+          setShowCloseConfirm(true);
+        } else {
+          onClose();
+        }
       }
     };
     document.addEventListener('keydown', handler, true);
@@ -52,13 +83,23 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
 
   if (!customerId) return null;
 
+  // 백드롭/요청 닫기 — dirty면 확인, 아니면 즉시 닫기
+  const requestClose = () => {
+    if (dirtyRef.current) {
+      setShowCloseConfirm(true);
+    } else {
+      onClose();
+    }
+  };
+
   // LOGIC-LOCK: L-004 [CHART-LOCK-006] — createPortal 제거 금지. AdminLayout 외부에서 중복 마운트 절대 금지.
   return createPortal(
     <>
-      {/* 백드롭 */}
+      {/* 백드롭 — T-20260603-foot-CHART-UNSAVED-GUARD AC-1: dirty 시 확인 경유 */}
       <div
         className="fixed inset-0 z-[60] bg-black/40"
-        onClick={onClose}
+        onClick={requestClose}
+        data-testid="chart-backdrop"
         aria-hidden="true"
       />
       {/* 슬라이드 패널 — flex-col: 닫기 버튼(고정) + 콘텐츠(스크롤) 분리 */}
@@ -69,6 +110,8 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
         aria-modal="true"
         aria-label="고객차트"
         data-testid="customer-chart-sheet"
+        // T-20260603-foot-CHART-UNSAVED-GUARD AC-1: 하위 입력 이벤트로 dirty 추적
+        onInput={() => { dirtyRef.current = true; }}
         className="fixed right-0 top-0 z-[70] h-full w-[95vw] sm:w-[88vw] max-w-5xl bg-background shadow-lg flex flex-col outline-none animate-in slide-in-from-right duration-300"
       >
         {/* 닫기 버튼 헤더 — flex-shrink-0: 스크롤 영역 밖, 항상 visible */}
@@ -101,6 +144,34 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
           </ChartSheetCloseCtx.Provider>
         </div>
       </div>
+
+      {/* T-20260603-foot-CHART-UNSAVED-GUARD AC-1: 닫기 확인 다이얼로그 (z-[80]/[90] — 차트 위) */}
+      <Dialog open={showCloseConfirm} onOpenChange={(o) => { if (!o) setShowCloseConfirm(false); }}>
+        <DialogContent className="max-w-sm" hideClose data-testid="chart-close-confirm">
+          <DialogHeader>
+            <DialogTitle>작성 중인 내용이 있습니다</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            저장하지 않은 작성 내용이 사라질 수 있습니다. 닫으시겠습니까?
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              data-testid="chart-close-cancel"
+              onClick={() => setShowCloseConfirm(false)}
+            >
+              취소(계속 작성)
+            </Button>
+            <Button
+              variant="destructive"
+              data-testid="chart-close-confirm-btn"
+              onClick={() => { setShowCloseConfirm(false); onClose(); }}
+            >
+              닫기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>,
     document.body,
   );
