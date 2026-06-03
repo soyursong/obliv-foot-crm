@@ -51,7 +51,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { AlertTriangle, BookOpen, Camera, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, History, Loader2, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
+import { AlertTriangle, BookOpen, Camera, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, History, Loader2, Pin, PinOff, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -177,6 +177,20 @@ interface SpecialNoteEntry {
   created_by: string | null;
   created_by_name: string | null;
   created_at: string;
+  // T-20260603-foot-RX-CHART-FOLLOWUP2 #10: 핀 고정(맨위로). 클리닉 공용 표식.
+  is_pinned?: boolean | null;
+  pinned_at?: string | null;
+}
+
+// T-20260603-foot-RX-CHART-FOLLOWUP2 #10: 핀 우선 정렬 (고정 먼저, 그룹 내 최신순).
+//   서버 정렬과 동일 규칙을 클라이언트에서도 보장 (낙관적 업데이트 후 재정렬).
+function sortSpecialNotes(notes: SpecialNoteEntry[]): SpecialNoteEntry[] {
+  return [...notes].sort((a, b) => {
+    const ap = a.is_pinned ? 1 : 0;
+    const bp = b.is_pinned ? 1 : 0;
+    if (ap !== bp) return bp - ap; // 고정 우선
+    return (b.created_at || '').localeCompare(a.created_at || ''); // 최신순
+  });
 }
 
 // T-20260526-foot-MEDCHART-SYNC: 방문 이력 항목 (진료내역)
@@ -412,9 +426,10 @@ export default function MedicalChartPanel({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
           .from('customer_special_notes')
-          .select('id,content,created_by,created_by_name,created_at')
+          .select('id,content,created_by,created_by_name,created_at,is_pinned,pinned_at')
           .eq('customer_id', customerId)
           .eq('clinic_id', clinicId)
+          .order('is_pinned', { ascending: false }) // #10 고정 우선
           .order('created_at', { ascending: false }),
       ]);
 
@@ -432,7 +447,8 @@ export default function MedicalChartPanel({
       // T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 상태 설정
       setTreatMemos((treatMemosRes.data as TreatmentMemoEntry[]) ?? []);
       // T-20260603-foot-CHART-SPECIAL-NOTE: 특이사항 공용 누적칸 (조회 실패 시 빈 목록 — 레거시 무영향)
-      setSpecialNotes((specialNotesRes?.data as SpecialNoteEntry[]) ?? []);
+      // #10: 핀 우선 재정렬 보장 (is_pinned 컬럼 미적용 환경에서도 안전 — undefined→0)
+      setSpecialNotes(sortSpecialNotes((specialNotesRes?.data as SpecialNoteEntry[]) ?? []));
       // T-20260603-foot-CHART-UIUX-ENHANCE AC-13: 기록자 이메일→이름 매핑 구성
       {
         const nameMap: Record<string, string> = {};
@@ -1129,14 +1145,42 @@ export default function MedicalChartPanel({
         .select('id,content,created_by,created_by_name,created_at')
         .single();
       if (error) throw error;
-      // 누적 보존: 기존 목록 위에 신규 항목만 prepend (최신순)
-      setSpecialNotes(prev => [data as SpecialNoteEntry, ...prev]);
+      // 누적 보존: 기존 목록 위에 신규 항목 추가 후 핀 우선 재정렬
+      setSpecialNotes(prev => sortSpecialNotes([data as SpecialNoteEntry, ...prev]));
       setSpecialNoteInput('');
       toast.success('특이사항이 추가되었습니다');
     } catch {
       toast.error('특이사항 추가 실패 — 잠시 후 다시 시도해주세요');
     } finally {
       setSpecialNoteSaving(false);
+    }
+  }
+
+  // T-20260603-foot-RX-CHART-FOLLOWUP2 #10: 특이사항 핀 토글(맨위로 고정).
+  //   클리닉 공용 표식 — 타인 작성 항목도 고정 가능. set_special_note_pin RPC 로 컬럼 단위 변경.
+  const [pinningId, setPinningId] = useState<string | null>(null);
+  async function toggleSpecialNotePin(note: SpecialNoteEntry) {
+    const next = !note.is_pinned;
+    setPinningId(note.id);
+    // 낙관적 업데이트 (즉시 재정렬)
+    setSpecialNotes(prev =>
+      sortSpecialNotes(prev.map(n => (n.id === note.id ? { ...n, is_pinned: next } : n))),
+    );
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any).rpc('set_special_note_pin', {
+        p_note_id: note.id,
+        p_pinned: next,
+      });
+      if (error) throw error;
+    } catch {
+      // 실패 시 롤백
+      setSpecialNotes(prev =>
+        sortSpecialNotes(prev.map(n => (n.id === note.id ? { ...n, is_pinned: note.is_pinned } : n))),
+      );
+      toast.error('고정 상태 변경 실패 — 잠시 후 다시 시도해주세요');
+    } finally {
+      setPinningId(null);
     }
   }
 
@@ -1263,12 +1307,32 @@ export default function MedicalChartPanel({
                           specialNotes.map(note => (
                             <div
                               key={note.id}
-                              className="rounded border border-amber-200 bg-white px-1.5 py-1"
+                              className={`rounded border px-1.5 py-1 ${note.is_pinned ? 'border-amber-400 bg-amber-100/70 ring-1 ring-amber-300' : 'border-amber-200 bg-white'}`}
                               data-testid="special-note-item"
+                              data-pinned={note.is_pinned ? 'true' : 'false'}
                             >
-                              <p className="text-[10px] text-gray-800 whitespace-pre-wrap leading-snug break-words">
-                                {note.content}
-                              </p>
+                              <div className="flex items-start justify-between gap-1">
+                                <p className="text-[10px] text-gray-800 whitespace-pre-wrap leading-snug break-words flex-1">
+                                  {note.content}
+                                </p>
+                                {/* #10: 핀 고정 토글 (맨위로) */}
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSpecialNotePin(note)}
+                                  disabled={pinningId === note.id}
+                                  className={`shrink-0 -mr-0.5 -mt-0.5 rounded p-0.5 transition-colors disabled:opacity-40 ${note.is_pinned ? 'text-amber-700 hover:text-amber-900' : 'text-gray-300 hover:text-amber-600'}`}
+                                  title={note.is_pinned ? '고정 해제' : '맨위로 고정'}
+                                  aria-label={note.is_pinned ? '고정 해제' : '맨위로 고정'}
+                                  aria-pressed={!!note.is_pinned}
+                                  data-testid="special-note-pin-btn"
+                                >
+                                  {pinningId === note.id
+                                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                                    : note.is_pinned
+                                      ? <Pin className="h-3 w-3 fill-current" />
+                                      : <PinOff className="h-3 w-3" />}
+                                </button>
+                              </div>
                               <div className="flex items-center justify-between gap-1 mt-0.5 text-[8px] text-muted-foreground">
                                 <span className="truncate" data-testid="special-note-recorder">
                                   {note.created_by_name || recorderName(note.created_by) || '기록자 미상'}
