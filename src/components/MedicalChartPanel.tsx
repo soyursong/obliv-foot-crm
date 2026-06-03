@@ -57,6 +57,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
 import { formatAmount, formatPhone } from '@/lib/format';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 
@@ -205,17 +206,23 @@ function hasTreatMemo(c: MedicalChart): boolean {
 function hasDocMemo(c: MedicalChart): boolean {
   return !!c.clinical_progress?.trim() || !!c.doctor_memo?.trim();
 }
+// T-20260603-foot-CHART-UIUX-ENHANCE AC-12④: 처방 타임라인 필터
+function hasRx(c: MedicalChart): boolean {
+  return Array.isArray(c.prescription_items) && c.prescription_items.length > 0;
+}
 function isNotable(c: MedicalChart): boolean {
   const text = [c.clinical_progress, c.doctor_memo, c.diagnosis, c.treatment_record]
     .filter(Boolean).join(' ');
   return NOTABLE_KEYWORDS.some(kw => text.includes(kw));
 }
 
-type MemoFilter = 'treat' | 'doc' | 'notable';
+// T-20260603-foot-CHART-UIUX-ENHANCE AC-12: 처방(rx) 필터 추가 (②치료메모 ③진료메모 ④처방 ⑤특이 독립 on/off)
+type MemoFilter = 'treat' | 'doc' | 'rx' | 'notable';
 
 const FILTER_OPTIONS: { key: MemoFilter; label: string; chipClass: string }[] = [
   { key: 'treat', label: '치료메모', chipClass: 'bg-blue-600 text-white border-blue-600' },
   { key: 'doc', label: '진료메모', chipClass: 'bg-teal-600 text-white border-teal-600' },
+  { key: 'rx', label: '처방', chipClass: 'bg-violet-600 text-white border-violet-600' },
   { key: 'notable', label: '⚠특이', chipClass: 'bg-amber-500 text-white border-amber-500' },
 ];
 
@@ -231,11 +238,16 @@ export default function MedicalChartPanel({
 }: MedicalChartPanelProps) {
   const isDirector = canViewDoctorMemo(currentUserRole);
   const navigate = useNavigate();
+  const { profile } = useAuth();
+  // AC-9: 현재 로그인 의사 표시명 (이름 > 이메일 > 폴백)
+  const currentUserName = profile?.name ?? currentUserEmail ?? '알 수 없음';
 
   // ── 데이터 ──────────────────────────────────────────────────────────────────
   const [customer, setCustomer] = useState<CustomerBasic | null>(null);
   const [charts, setCharts] = useState<MedicalChart[]>([]);
   const [loading, setLoading] = useState(false);
+  // AC-13: 기록자(의사) 이메일 → 표시명 매핑 (user_profiles)
+  const [staffNameMap, setStaffNameMap] = useState<Record<string, string>>({});
   const [phraseTemplates, setPhraseTemplates] = useState<PhraseTemplate[]>([]);
   const [prescriptionSets, setPrescriptionSets] = useState<PrescriptionSet[]>([]);
   const [visitPayments, setVisitPayments] = useState<VisitPayment[]>([]);
@@ -282,7 +294,7 @@ export default function MedicalChartPanel({
     if (!customerId || !clinicId) return;
     setLoading(true);
     try {
-      const [custRes, chartsRes, phrasesRes, rxSetsRes, treatMemosRes] = await Promise.all([
+      const [custRes, chartsRes, phrasesRes, rxSetsRes, treatMemosRes, staffRes] = await Promise.all([
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
           .from('customers')
@@ -318,6 +330,12 @@ export default function MedicalChartPanel({
           .eq('customer_id', customerId)
           .order('created_at', { ascending: false })
           .limit(20),
+        // T-20260603-foot-CHART-UIUX-ENHANCE AC-13: 기록자 이메일→표시명 매핑용 스태프 조회
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
+          .from('user_profiles')
+          .select('email,name')
+          .eq('clinic_id', clinicId),
       ]);
 
       if (custRes.data) setCustomer(custRes.data as CustomerBasic);
@@ -326,6 +344,14 @@ export default function MedicalChartPanel({
       setPrescriptionSets(rxSetsRes.data || []);
       // T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 상태 설정
       setTreatMemos((treatMemosRes.data as TreatmentMemoEntry[]) ?? []);
+      // T-20260603-foot-CHART-UIUX-ENHANCE AC-13: 기록자 이메일→이름 매핑 구성
+      {
+        const nameMap: Record<string, string> = {};
+        ((staffRes?.data as { email: string | null; name: string | null }[]) ?? []).forEach(s => {
+          if (s.email && s.name) nameMap[s.email] = s.name;
+        });
+        setStaffNameMap(nameMap);
+      }
 
       // director면 chart_doctor_memos merge
       if (isDirector && rawCharts.length > 0) {
@@ -768,6 +794,7 @@ export default function MedicalChartPanel({
     : displayCharts.filter(c => {
         if (memoFilters.has('treat') && hasTreatMemo(c)) return true;
         if (memoFilters.has('doc') && hasDocMemo(c)) return true;
+        if (memoFilters.has('rx') && hasRx(c)) return true;
         if (memoFilters.has('notable') && isNotable(c)) return true;
         return false;
       });
@@ -806,6 +833,12 @@ export default function MedicalChartPanel({
 
   const selectedChart = displayCharts.find(c => c.id === selectedChartId) ?? null;
   const chartsIdx = selectedChart ? displayCharts.indexOf(selectedChart) : -1;
+
+  // AC-13: created_by(이메일) → 표시명 변환. 매핑 없으면 이메일 로컬파트 폴백.
+  function recorderName(createdBy: string | null | undefined): string | null {
+    if (!createdBy) return null;
+    return staffNameMap[createdBy] ?? createdBy.split('@')[0] ?? createdBy;
+  }
 
   return createPortal(
     <>
@@ -848,14 +881,25 @@ export default function MedicalChartPanel({
               </div>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            aria-label="닫기"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {/* AC-9: 현재 로그인 의사 상시 표시 */}
+            <span
+              className="flex items-center gap-1 rounded-full bg-teal-50 border border-teal-200 px-2.5 py-1 text-xs font-semibold text-teal-700"
+              data-testid="current-doctor-name"
+              title="현재 로그인 의사"
+            >
+              <Stethoscope className="h-3.5 w-3.5" />
+              {currentUserName}
+            </span>
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              aria-label="닫기"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         {/* ── 본문: 타임라인 | 진료폼 | 우측 콘텐츠 패널 ─────────────────────── */}
@@ -984,7 +1028,9 @@ export default function MedicalChartPanel({
                     const isExpanded = expandedChartIds.has(chart.id);
                     const hasTreat = hasTreatMemo(chart);
                     const hasDoc = hasDocMemo(chart);
+                    const hasRxItems = hasRx(chart);
                     const notable = isNotable(chart);
+                    const recorder = recorderName(chart.created_by);
                     return (
                       <div
                         key={chart.id}
@@ -1021,10 +1067,19 @@ export default function MedicalChartPanel({
                               {hasDoc && (
                                 <span className="text-[8px] bg-teal-50 text-teal-600 border border-teal-200 rounded-full px-1 leading-4">진료</span>
                               )}
+                              {hasRxItems && (
+                                <span className="text-[8px] bg-violet-50 text-violet-600 border border-violet-200 rounded-full px-1 leading-4">처방</span>
+                              )}
                               {notable && (
                                 <span className="text-[8px] bg-amber-50 text-amber-600 border border-amber-200 rounded-full px-1 leading-4">⚠특이</span>
                               )}
                             </div>
+                            {/* AC-13: 기록자(의사) 표시 */}
+                            {recorder && (
+                              <div className="text-[9px] text-muted-foreground mt-0.5 truncate" data-testid="timeline-recorder">
+                                기록자 {recorder}
+                              </div>
+                            )}
                           </button>
                           {/* 아코디언 토글 버튼 */}
                           <button
@@ -1070,6 +1125,15 @@ export default function MedicalChartPanel({
                                 </p>
                               </div>
                             )}
+                            {/* AC-12④: 처방 타임라인 — 처방 항목 요약 */}
+                            {hasRxItems && (
+                              <div>
+                                <span className="text-[8px] font-bold text-violet-600 uppercase tracking-wide">처방</span>
+                                <p className="text-[10px] text-gray-700 line-clamp-3 leading-relaxed mt-0.5">
+                                  {(chart.prescription_items ?? []).map(rx => rx.name).filter(Boolean).join(', ')}
+                                </p>
+                              </div>
+                            )}
                             {notable && (
                               <div className="mt-0.5">
                                 <span className="text-[9px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-semibold">
@@ -1090,7 +1154,8 @@ export default function MedicalChartPanel({
 
               {/* ── 중앙: 진료기록 폼 (AC-1 좌측 컬럼) ─────────────────────────── */}
               <div className="flex-1 overflow-y-auto p-5 border-r" data-testid="medical-chart-form">
-                <div className="max-w-2xl space-y-4">
+                {/* AC-6: 불필요 여백 제거 — 폼 가로 폭 확대(max-w-2xl→max-w-5xl) */}
+                <div className="max-w-5xl space-y-4">
 
                   {/* 타이틀 */}
                   <div className="flex items-center gap-2 pb-1.5 border-b flex-wrap">
@@ -1141,6 +1206,16 @@ export default function MedicalChartPanel({
                         style={{ border: '2px solid yellow' }}
                       >
                         더미 — 저장 불가
+                      </span>
+                    )}
+                    {/* AC-13: 선택 차트 기록자(의사) 표시 */}
+                    {selectedChart && !selectedChartId?.startsWith('__dummy__') && recorderName(selectedChart.created_by) && (
+                      <span
+                        className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground"
+                        data-testid="chart-recorder"
+                      >
+                        <Stethoscope className="h-3 w-3 text-teal-600" />
+                        기록자 <span className="font-semibold text-teal-700">{recorderName(selectedChart.created_by)}</span>
                       </span>
                     )}
                   </div>
@@ -1198,8 +1273,8 @@ export default function MedicalChartPanel({
                       readOnly
                       disabled
                       placeholder="치료사가 기록한 내용이 여기 표시됩니다"
-                      rows={3}
-                      className="text-sm resize-none bg-gray-50 text-gray-500 cursor-not-allowed placeholder:text-gray-300 disabled:opacity-100"
+                      rows={7}
+                      className="text-sm resize-none bg-gray-50 text-gray-500 cursor-not-allowed placeholder:text-gray-300 disabled:opacity-100 min-h-[8rem]"
                       data-testid="medical-chart-treatment"
                     />
                     {/* T-20260527-foot-TREATMEMO-CHART-MERGE AC-1/3/4: 치료메모 이력 통합 표시 */}
@@ -1243,8 +1318,8 @@ export default function MedicalChartPanel({
                         onChange={handleClinicalChange}
                         onBlur={() => { setTimeout(() => setPhrasePopoverVisible(false), 200); }}
                         placeholder="임상경과를 입력하세요  예: //통증감소"
-                        rows={5}
-                        className="text-sm resize-none placeholder:text-gray-300"
+                        rows={13}
+                        className="text-sm resize-y placeholder:text-gray-300 min-h-[16rem]"
                         data-testid="medical-chart-clinical"
                       />
 
@@ -1369,16 +1444,16 @@ export default function MedicalChartPanel({
                     )}
                   </div>
 
-                  {/* 진료메모 — 원장 전용 미노출 (AC-3) */}
+                  {/* 진료메모 — 원장 전용 미노출 (AC-3)
+                      T-20260603-foot-CHART-UIUX-ENHANCE AC-10: 빨간 박스 제거 → 타 카테고리와 동일 스타일 통일.
+                      원장 전용 구분은 회색 배지로만 유지 (이질적 색상 제거). */}
                   {isDirector ? (
-                    <div
-                      className="rounded-xl border border-red-100 bg-red-50/30 p-3 space-y-1.5"
-                      data-testid="doctor-memo-section"
-                    >
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <label className="text-xs font-semibold text-red-700">진료메모 (원장 전용)</label>
+                    <div data-testid="doctor-memo-section">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <label className="text-xs font-semibold text-muted-foreground">진료메모</label>
+                        <span className="text-[10px] text-muted-foreground bg-gray-100 rounded px-1.5 py-0.5">원장 전용</span>
                         <span className="text-[10px] text-muted-foreground">
-                          이 내용은 타 스태프에게 노출되지 않습니다
+                          타 스태프에게 노출되지 않습니다
                         </span>
                       </div>
                       <Textarea
@@ -1386,7 +1461,7 @@ export default function MedicalChartPanel({
                         onChange={(e) => setFormMemo(e.target.value)}
                         placeholder="원장 전용 메모를 입력하세요"
                         rows={3}
-                        className="text-sm resize-none border-red-200 focus:border-red-400 placeholder:text-gray-300"
+                        className="text-sm resize-none placeholder:text-gray-300"
                         data-testid="doctor-memo-input"
                       />
                     </div>
