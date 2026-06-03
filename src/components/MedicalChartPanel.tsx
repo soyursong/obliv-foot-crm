@@ -112,6 +112,24 @@ interface VisitPayment {
   method: string;
 }
 
+// T-20260603-foot-RX-CHART-ENHANCE AC-3: 약 종류(투여경로) 색상 구분.
+// PrescriptionItem.route(경구/외용/주사 등) → 색상 도트 매핑. 미매칭은 회색.
+// (약품 마스터 classification 연동 전까지 route를 종류 프록시로 사용)
+const RX_ROUTE_STYLE: Record<string, { dot: string; label: string }> = {
+  경구: { dot: 'bg-teal-500', label: '경구' },
+  내복: { dot: 'bg-teal-500', label: '내복' },
+  외용: { dot: 'bg-amber-500', label: '외용' },
+  도포: { dot: 'bg-amber-500', label: '도포' },
+  주사: { dot: 'bg-rose-500', label: '주사' },
+  주사제: { dot: 'bg-rose-500', label: '주사' },
+  점안: { dot: 'bg-sky-500', label: '점안' },
+  흡입: { dot: 'bg-violet-500', label: '흡입' },
+};
+function rxRouteStyle(route: string | undefined | null): { dot: string; label: string } {
+  const key = (route ?? '').trim();
+  return RX_ROUTE_STYLE[key] ?? { dot: 'bg-gray-400', label: key || '기타' };
+}
+
 // T-20260526-foot-MEDCHART-SYNC: 치료메모 항목
 interface TreatmentMemoEntry {
   id: string;
@@ -598,6 +616,22 @@ export default function MedicalChartPanel({
     }
     setFormRx(prev => [...prev, ...items.map(it => ({ ...it }))]);
     toast.success(`"${set.name}" 처방세트 ${items.length}개 항목 추가됨`);
+  }
+
+  // T-20260603-foot-RX-CHART-ENHANCE AC-4: 처방내역 행별 횟수·일수 직접 조정.
+  //   frequency/days 는 PrescriptionItem 에 이미 분리 필드로 존재 → 순수 FE 인라인 편집
+  //   (DB 모델/데이터 이관 불요). 다른 항목은 불변 유지.
+  function updateRxItem(idx: number, field: 'frequency' | 'days', value: string) {
+    setFormRx(prev =>
+      prev.map((it, i) => {
+        if (i !== idx) return it;
+        if (field === 'days') {
+          const n = value === '' ? 0 : Math.max(0, Number(value) || 0);
+          return { ...it, days: n };
+        }
+        return { ...it, frequency: value };
+      }),
+    );
   }
 
   // ── 관리 화면 이동 (AC-2: 편집 버튼) ─────────────────────────────────────────
@@ -1258,37 +1292,73 @@ export default function MedicalChartPanel({
                         className="rounded-lg border bg-card overflow-hidden"
                         data-testid="prescription-items-table"
                       >
+                        {/* AC-4: 약이름(용량 포함) | 횟수 | 일수 3컬럼 분리 + 행별 직접 조정.
+                            AC-3: 약 종류(투여경로) 색상 도트. */}
                         <table className="w-full text-xs">
                           <thead className="bg-muted/40">
                             <tr>
-                              <th className="text-left px-3 py-1.5 font-medium">약품·시술</th>
-                              <th className="text-left px-2 py-1.5 font-medium hidden sm:table-cell">용량</th>
-                              <th className="text-left px-2 py-1.5 font-medium hidden sm:table-cell">경로</th>
-                              <th className="text-left px-2 py-1.5 font-medium">횟수/일수</th>
+                              <th className="text-left px-3 py-1.5 font-medium">약이름 (용량)</th>
+                              <th className="text-left px-2 py-1.5 font-medium w-24">횟수</th>
+                              <th className="text-left px-2 py-1.5 font-medium w-16">일수</th>
                               <th className="py-1.5 w-6" />
                             </tr>
                           </thead>
                           <tbody>
-                            {formRx.map((item, idx) => (
-                              <tr key={idx} className="border-t border-border/50">
-                                <td className="px-3 py-1.5 font-medium">{item.name}</td>
-                                <td className="px-2 py-1.5 text-muted-foreground hidden sm:table-cell">{item.dosage}</td>
-                                <td className="px-2 py-1.5 text-muted-foreground hidden sm:table-cell">{item.route}</td>
-                                <td className="px-2 py-1.5 text-muted-foreground">
-                                  {item.frequency} / {item.days}일
-                                </td>
-                                <td className="py-1.5 pr-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => setFormRx(prev => prev.filter((_, i) => i !== idx))}
-                                    className="h-5 w-5 rounded text-destructive hover:bg-destructive/10 flex items-center justify-center"
-                                    aria-label="처방 항목 삭제"
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
+                            {formRx.map((item, idx) => {
+                              const rs = rxRouteStyle(item.route);
+                              return (
+                                <tr
+                                  key={idx}
+                                  className="border-t border-border/50"
+                                  data-testid={`prescription-row-${idx}`}
+                                >
+                                  <td className="px-3 py-1.5">
+                                    <div className="flex items-center gap-1.5">
+                                      <span
+                                        className={`inline-block h-2 w-2 rounded-full flex-shrink-0 ${rs.dot}`}
+                                        title={rs.label}
+                                        aria-label={`투여경로 ${rs.label}`}
+                                        data-testid={`rx-route-dot-${idx}`}
+                                      />
+                                      <span className="font-medium">{item.name}</span>
+                                      {item.dosage ? (
+                                        <span className="text-muted-foreground">· {item.dosage}</span>
+                                      ) : null}
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-1 align-middle">
+                                    <Input
+                                      value={item.frequency}
+                                      onChange={(e) => updateRxItem(idx, 'frequency', e.target.value)}
+                                      className="h-7 text-xs px-2"
+                                      placeholder="1일 3회"
+                                      data-testid={`rx-frequency-${idx}`}
+                                    />
+                                  </td>
+                                  <td className="px-2 py-1 align-middle">
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      value={item.days}
+                                      onChange={(e) => updateRxItem(idx, 'days', e.target.value)}
+                                      className="h-7 text-xs px-2 w-14"
+                                      placeholder="일수"
+                                      data-testid={`rx-days-${idx}`}
+                                    />
+                                  </td>
+                                  <td className="py-1.5 pr-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setFormRx(prev => prev.filter((_, i) => i !== idx))}
+                                      className="h-5 w-5 rounded text-destructive hover:bg-destructive/10 flex items-center justify-center"
+                                      aria-label="처방 항목 삭제"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
