@@ -7,7 +7,7 @@
  *       활성(purple) 상단, 처리완료(pink)는 흐리게 잔존(화면 이탈 후 복귀해도 유지 — DB 파생).
  *   - 신규 호출 수신 시 소리 + 브라우저 알림(useDoctorCallNotifier). 음소거 토글(localStorage 영속).
  *   - 진료 완료(completed_at) 환자 당일 목록.
- *   - 각 행: 차팅(→ openChart 2번차트 서랍) · 처방(QuickRxBar 인라인) 진입.
+ *   - 각 행: 차팅(→ 진료차트 MedicalChartPanel 직접 오픈, FOLLOWUP3 C-1) · 처방(QuickRxBar 인라인) 진입.
  *
  * 데이터 모델: 풋 CRM의 진료 호출 = check_ins.status_flag (별도 doctor_call 테이블 없음).
  *   기존 발신/상태머신/집계 로직은 변경하지 않고 표시만 추가(회귀 0).
@@ -34,8 +34,12 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-// LOGIC-LOCK: L-004 [CHART-LOCK-011] — 차팅 진입은 useChart() openChart() 단일 게이트웨이(2번차트 서랍). 직접 접근 금지.
-import { useChart } from '@/lib/chartContext';
+// T-20260603-foot-RX-CHART-FOLLOWUP3 C-1 (문지은 대표원장, 현장 승인): 진료알림판 차팅 진입은
+//   '진료차트'(MedicalChartPanel)를 직접 열어야 함. FOLLOWUP2 #6에서 useChart().openChart()(2번차트
+//   서랍=펜차트/기본차트)로 라우팅했으나, 현장이 기대한 것은 진단/경과/처방을 보는 '진료차트'였음.
+//   → Dashboard.tsx handleOpenMedicalChart 패턴 재사용(로컬 MedicalChartPanel 렌더). 2번차트 서랍 게이트웨이
+//   (CHART-LOCK-011)는 다른 진입점에 그대로 유지되며, 본 화면만 진료차트 직접 오픈으로 정정.
+import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { todaySeoulISODate } from '@/lib/format';
@@ -90,10 +94,15 @@ export default function DoctorCallDashboard() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
   const doctorMode = isDoctor(profile?.role ?? '');
-  // #6: 차팅 클릭 → 진료차트를 2번차트 서랍(우측 슬라이드)으로 정확히 오픈.
-  //   기존 navigate(`/chart/:id`) 전체 페이지 전환 = 잘못된 라우팅(대시보드 컨텍스트 소실) 버그였음.
-  //   앱 전역 표준 진입점 openChart(customer_id) 재사용 → 정확 연결 + 서랍 UX(AC-6-1/AC-6-2).
-  const { openChart } = useChart();
+  // T-20260603-foot-RX-CHART-FOLLOWUP3 C-1: 차팅 클릭 → '진료차트'(MedicalChartPanel) 직접 오픈.
+  //   FOLLOWUP2 #6은 2번차트 서랍(펜차트=기본차트)으로 열려 현장 의도(진단/경과/처방 진료차트)와 어긋났음.
+  //   Dashboard 패턴 재사용 — 로컬 상태로 MedicalChartPanel 단독 오픈.
+  const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
+  const [medicalChartOpen, setMedicalChartOpen] = useState(false);
+  const openTreatmentChart = (customerId: string) => {
+    setMedicalChartCustomerId(customerId);
+    setMedicalChartOpen(true);
+  };
 
   const { data: rows = [], isLoading, refetch } = useDoctorCallFeed(clinicId);
 
@@ -252,7 +261,7 @@ export default function DoctorCallDashboard() {
                 key={callKey(ci)}
                 checkIn={ci}
                 doctorMode={doctorMode}
-                onOpenChart={openChart}
+                onOpenChart={openTreatmentChart}
                 onRefresh={() => void refetch()}
               />
             ))}
@@ -280,13 +289,28 @@ export default function DoctorCallDashboard() {
                 key={ci.id}
                 checkIn={ci}
                 doctorMode={doctorMode}
-                onOpenChart={openChart}
+                onOpenChart={openTreatmentChart}
                 onRefresh={() => void refetch()}
               />
             ))}
           </ul>
         )}
       </section>
+
+      {/* T-20260603-foot-RX-CHART-FOLLOWUP3 C-1: 진료차트(MedicalChartPanel) — 차팅 클릭 시 직접 오픈 */}
+      <MedicalChartPanel
+        open={medicalChartOpen}
+        onOpenChange={(v) => {
+          if (!v) {
+            setMedicalChartOpen(false);
+            setMedicalChartCustomerId(null);
+          }
+        }}
+        customerId={medicalChartCustomerId}
+        clinicId={clinicId ?? ''}
+        currentUserRole={profile?.role ?? ''}
+        currentUserEmail={profile?.email ?? null}
+      />
     </div>
   );
 }
