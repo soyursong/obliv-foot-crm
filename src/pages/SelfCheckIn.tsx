@@ -400,12 +400,9 @@ function extractBirthDate(rrnStr: string): string | null {
   if (digits.length < 6) return null;
   return digits.slice(0, 6);
 }
-/** RRN 뒷자리 마스킹 (YYMMDD-*******) */
-function maskRrn(rrnStr: string): string {
-  const digits = rrnStr.replace(/\D/g, '');
-  if (digits.length <= 6) return rrnStr;
-  return `${digits.slice(0, 6)}-${'*'.repeat(Math.min(7, digits.length - 6))}`;
-}
+// T-20260603-foot-SELFCHECKIN-RRN-UNMASK: 셀프접수 본인 입력 화면 주민번호 전체 표시로 변경.
+// 기존 maskRrn(YYMMDD-*******) 로컬 함수는 호출처 2곳(입력 실시간/최종확인) 제거로 미사용 → 삭제.
+// (다른 RRN 마스킹은 edge function maskRrnInRaw — 별개 함수, 영향 없음)
 
 // ── T-20260601-foot-SELFLOGIN-RESV-LIST-QR: 예약자 목록 마스킹 유틸 (롱레 동일) ──
 /** 이름 마스킹: 두 번째 글자부터 * (예: 김도현→김*현, 박소→박*) */
@@ -1844,7 +1841,7 @@ export default function SelfCheckIn() {
                 data-testid="rrn-display"
               >
                 {rrn ? (
-                  <span style={{ color: C.dark }}>{maskRrn(rrn)}</span>
+                  <span style={{ color: C.dark }}>{rrn}</span>
                 ) : (
                   <span className="text-base font-sans" style={{ color: C.border }}>
                     {t.rrnPlaceholder}
@@ -2101,7 +2098,7 @@ export default function SelfCheckIn() {
             {visitType === 'new' && rrn && (
               <div className="flex justify-between border-b pb-3" style={{ borderColor: C.border }}>
                 <span style={{ color: C.muted }}>{t.rrnLabel}</span>
-                <span className="font-semibold font-mono" style={{ color: C.dark }}>{maskRrn(rrn)}</span>
+                <span className="font-semibold font-mono" style={{ color: C.dark }}>{rrn}</span>
               </div>
             )}
             {visitType === 'new' && address.trim() && (
