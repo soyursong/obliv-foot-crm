@@ -1,0 +1,35 @@
+{
+  "ticket": "T-20260603-foot-DASH-NAME-STALE-SYNC",
+  "operation": "backfill --apply (one-time, customer_name stale sync)",
+  "applied_at": "2026-06-03T12:54:00.000Z",
+  "applied_by": "agent-fdd-dev-foot",
+  "approval": "planner MSG-20260603-215409-ki4v (gated --apply 승인)",
+  "data_scope_note": "TEST/DUMMY DATA ONLY. production 실데이터 유입 시점부터 blanket backfill 금지 (RES-NAME-MISMATCH-WARN 권위 유지). 본 --apply 는 테스트데이터 한정 예외.",
+  "placeholder_guard": "c.name !~ '^초진환자[0-9]*$' — 스냅샷 실명을 placeholder 로 오염시키지 않도록 제외 (버그1/AC-1 보호)",
+  "result": {
+    "check_ins_updated": 11,
+    "reservations_updated": 14,
+    "placeholder_protected_check_ins": 1,
+    "post_stale_check_ins_excl_placeholder": 0,
+    "post_stale_reservations_excl_placeholder": 0
+  },
+  "verification": {
+    "kim_taeng": {
+      "check_in_id": "c70e9d0e-c47f-43f4-8e10-2041a3556e23",
+      "customer_id": "e6003d81-d0fd-4571-9bed-5156d196a539",
+      "snapshot_before": "김댕댕",
+      "current_name": "김땡땡",
+      "snapshot_after": "김땡땡",
+      "match": true,
+      "ac": "AC-2/AC-3 충족 — 대시보드 고객박스 = 김땡땡 일치"
+    },
+    "bug1_placeholder": {
+      "check_in_id": "f0805c8f-82ef-46f3-b9e5-3361f8d9692d",
+      "customer_id": "d1d9414d-a891-46f7-8621-0923fab29872",
+      "snapshot": "고양이",
+      "current_name": "초진환자1",
+      "protected": true,
+      "note": "옵션 B(체크인 f0805c8f → 별도 '고양이' 고객 재링크) 후보. 현장 김주연 총괄 최종확인 대기(responder 별도 문의). dev 는 실행 준비만, 미실행."
+    }
+  }
+}
