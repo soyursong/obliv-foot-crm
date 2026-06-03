@@ -184,10 +184,10 @@ export function CheckinFirstInfoDialog({ reservation, open, onOpenChange, onComp
 
         <div className="space-y-4 py-1">
 
-          {/* ── 이름 / 전화번호 (프리필, 읽기전용) ── */}
+          {/* ── 성함 / 전화번호 (프리필, 읽기전용) ── */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">이름</Label>
+              <Label className="text-xs">성함</Label>
               <Input
                 value={name}
                 readOnly
