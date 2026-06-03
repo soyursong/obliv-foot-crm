@@ -85,7 +85,7 @@ const FAMILY_HISTORY_TYPE_OPTIONS = ['발톱무좀', '내성발톱', '둘 다', 
 const FOOT_PAIN_LEVEL_OPTIONS = [
   { value: '없음',     emoji: '🙂' },
   { value: '경미',     emoji: '😐' },
-  { value: '불편',     emoji: '😐' },
+  { value: '불편',     emoji: '😮‍💨' },
   { value: '심함',     emoji: '😣' },
   { value: '매우 심함', emoji: '😰' },
 ];
