@@ -19,11 +19,13 @@ import FeeSetTemplatesTab from '@/components/admin/FeeSetTemplatesTab';
 import QuickRxButtonsTab from '@/components/admin/QuickRxButtonsTab';
 // T-20260526-foot-PROGRESS-CHECKPOINT: 경과분석 플랜 탭
 import ProgressPlansTab from '@/components/admin/ProgressPlansTab';
+// T-20260603-foot-RX-CONTRAINDICATION-ADMIN: 약품별 금기증 등록 탭 (admin 한정)
+import ContraindicationsTab from '@/components/admin/ContraindicationsTab';
 import DoctorPatientList from '@/components/doctor/DoctorPatientList';
 // T-20260601-foot-DOCTOR-CALL-PUSH-DASH: 진료부 통합 대시보드(호출 알람+처방+차팅+진료완료)
 import DoctorCallDashboard from '@/components/doctor/DoctorCallDashboard';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { BookOpen, Pill, FileText, Layers, Zap, Users, DollarSign, TrendingUp, Stethoscope } from 'lucide-react';
+import { BookOpen, Pill, FileText, Layers, Zap, Users, DollarSign, TrendingUp, Stethoscope, ShieldAlert } from 'lucide-react';
 
 export default function DoctorTools() {
   const { profile } = useAuth();
@@ -32,6 +34,8 @@ export default function DoctorTools() {
   const hasDocToolAccess = ['admin', 'manager', 'consultant', 'coordinator', 'therapist'].includes(
     profile?.role ?? '',
   );
+  // T-20260603-foot-RX-CONTRAINDICATION-ADMIN: 금기증 관리는 admin 한정 노출 (admin-write RLS와 일치).
+  const isAdmin = profile?.role === 'admin';
   // 의사(director)는 진료부 통합 대시보드를 기본 화면으로 — 상시 켜놓는 단일 창 동선.
   const defaultTab =
     profile?.role === 'director' ? 'call_dashboard' : hasDocToolAccess ? 'phrases' : 'patient_list';
@@ -87,6 +91,14 @@ export default function DoctorTools() {
             </>
           )}
 
+          {/* T-20260603-foot-RX-CONTRAINDICATION-ADMIN: 금기증 관리 — admin 한정 노출 */}
+          {isAdmin && (
+            <TabsTrigger value="contraindications" className="gap-1.5" data-testid="tab-contraindications">
+              <ShieldAlert className="h-3.5 w-3.5" />
+              금기증 관리
+            </TabsTrigger>
+          )}
+
           {/* 전체 공개 탭 */}
           <TabsTrigger value="patient_list" className="gap-1.5" data-testid="tab-patient-list">
             <Users className="h-3.5 w-3.5" />
@@ -124,6 +136,13 @@ export default function DoctorTools() {
               <ProgressPlansTab />
             </TabsContent>
           </>
+        )}
+
+        {/* T-20260603-foot-RX-CONTRAINDICATION-ADMIN: 금기증 관리 (admin 한정) */}
+        {isAdmin && (
+          <TabsContent value="contraindications">
+            <ContraindicationsTab />
+          </TabsContent>
         )}
 
         <TabsContent value="call_dashboard">
