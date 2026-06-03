@@ -11,6 +11,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -151,6 +152,10 @@ function useDeletePhrase() {
 // Component
 // ---------------------------------------------------------------------------
 export default function PhrasesTab() {
+  // T-20260603-foot-RX-PERMMENU-PARITY: 직원(consultant/coordinator/therapist)은 탭 열람 가능하나 읽기 전용.
+  // CRUD는 admin/manager 전용 (Services·Staff write-guard 패턴).
+  const { profile } = useAuth();
+  const canEdit = profile?.role === 'admin' || profile?.role === 'manager';
   const { data: phrases = [], isLoading } = usePhraseTemplates();
   const upsert = useUpsertPhrase();
   const del = useDeletePhrase();
@@ -246,10 +251,12 @@ export default function PhrasesTab() {
             </button>
           ))}
         </div>
-        <Button size="sm" variant="outline" onClick={openAdd} data-testid="phrase-add-btn">
-          <Plus className="h-3.5 w-3.5 mr-1" />
-          상용구 추가
-        </Button>
+        {canEdit && (
+          <Button size="sm" variant="outline" onClick={openAdd} data-testid="phrase-add-btn">
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            상용구 추가
+          </Button>
+        )}
       </div>
 
       {/* AC-1: 사이드 메뉴 + 리스트 2-컬럼 레이아웃 */}
@@ -341,26 +348,28 @@ export default function PhrasesTab() {
                       {p.content}
                     </p>
                   </div>
-                  <div className="flex items-center gap-0.5 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={() => openEdit(p)}
-                      data-testid="phrase-edit-btn"
-                    >
-                      <Pencil className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 text-destructive hover:text-destructive"
-                      onClick={() => handleDelete(p.id, p.name)}
-                      disabled={del.isPending}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
+                  {canEdit && (
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => openEdit(p)}
+                        data-testid="phrase-edit-btn"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-destructive hover:text-destructive"
+                        onClick={() => handleDelete(p.id, p.name)}
+                        disabled={del.isPending}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

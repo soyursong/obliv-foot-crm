@@ -4,6 +4,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -167,6 +168,9 @@ function useDeleteQuickRxButton() {
 // Component
 // ---------------------------------------------------------------------------
 export default function QuickRxButtonsTab() {
+  // T-20260603-foot-RX-PERMMENU-PARITY: 직원은 읽기 전용, CRUD는 admin/manager 전용.
+  const { profile } = useAuth();
+  const canEdit = profile?.role === 'admin' || profile?.role === 'manager';
   const { data: buttons = [], isLoading } = useQuickRxButtons();
   const { data: sets = [] } = useActivePrescriptionSets();
   const upsert = useUpsertQuickRxButton();
@@ -223,10 +227,12 @@ export default function QuickRxButtonsTab() {
             치료사가 환자 차트나 리스트에서 한 번에 처방을 입력할 수 있는 버튼입니다.
           </p>
         </div>
-        <Button size="sm" variant="outline" onClick={openAdd} data-testid="quick-rx-btn-add">
-          <Plus className="h-3.5 w-3.5 mr-1" />
-          버튼 추가
-        </Button>
+        {canEdit && (
+          <Button size="sm" variant="outline" onClick={openAdd} data-testid="quick-rx-btn-add">
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            버튼 추가
+          </Button>
+        )}
       </div>
 
       {/* 미리보기 (현재 등록된 버튼들 시각적 프리뷰) */}
@@ -288,20 +294,22 @@ export default function QuickRxButtonsTab() {
               </div>
 
               {/* 액션 */}
-              <div className="flex items-center gap-1 shrink-0">
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(btn)}>
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-destructive hover:text-destructive"
-                  onClick={() => handleDelete(btn.id, btn.name)}
-                  disabled={del.isPending}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
+              {canEdit && (
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(btn)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-destructive hover:text-destructive"
+                    onClick={() => handleDelete(btn.id, btn.name)}
+                    disabled={del.isPending}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
             </div>
           ))}
         </div>

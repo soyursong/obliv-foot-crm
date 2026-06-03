@@ -4,6 +4,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -128,6 +129,9 @@ function useDeleteDoc() {
 // Component
 // ---------------------------------------------------------------------------
 export default function DocumentTemplatesTab() {
+  // T-20260603-foot-RX-PERMMENU-PARITY: 직원은 읽기 전용, CRUD는 admin/manager 전용.
+  const { profile } = useAuth();
+  const canEdit = profile?.role === 'admin' || profile?.role === 'manager';
   const { data: templates = [], isLoading } = useDocumentTemplates();
   const upsert = useUpsertDoc();
   const del = useDeleteDoc();
@@ -195,10 +199,12 @@ export default function DocumentTemplatesTab() {
           </Select>
           <span className="text-xs text-muted-foreground">{displayed.length}개</span>
         </div>
-        <Button size="sm" variant="outline" onClick={openAdd} data-testid="doc-template-add-btn">
-          <Plus className="h-3.5 w-3.5 mr-1" />
-          서류 템플릿 추가
-        </Button>
+        {canEdit && (
+          <Button size="sm" variant="outline" onClick={openAdd} data-testid="doc-template-add-btn">
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            서류 템플릿 추가
+          </Button>
+        )}
       </div>
 
       {/* 목록 */}
@@ -235,26 +241,28 @@ export default function DocumentTemplatesTab() {
                     변수: &#123;patient_name&#125;, &#123;birth_date&#125;, &#123;visit_date&#125;, &#123;clinic_name&#125;, &#123;doctor_name&#125;
                   </p>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => openEdit(t)}
-                    data-testid="doc-template-edit-btn"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-destructive hover:text-destructive"
-                    onClick={() => handleDelete(t.id, t.name)}
-                    disabled={del.isPending}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+                {canEdit && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => openEdit(t)}
+                      data-testid="doc-template-edit-btn"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-destructive hover:text-destructive"
+                      onClick={() => handleDelete(t.id, t.name)}
+                      disabled={del.isPending}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           ))}

@@ -4,9 +4,11 @@
 // T-20260512-foot-QUICK-RX-BUTTON: 빠른처방 버튼 탭 + 진료 환자 목록 탭 추가
 // T-20260525-foot-FEE-SET-TEMPLATE: 수가세트 탭 추가 (결제 미니창 수가항목 세트코드)
 //
-// 탭별 접근 권한:
-//   상용구 / 처방세트 / 진료세트 / 수가세트 / 서류템플릿 / 빠른처방: admin / manager
-//   진료 환자 목록 (처방 현황): 모든 authenticated 사용자
+// 탭별 접근 권한 (T-20260603-foot-RX-PERMMENU-PARITY):
+//   진료도구 탭 노출: admin / manager / consultant / coordinator / therapist (NAV 권한과 일치)
+//     → 직원(consultant/coordinator/therapist)은 탭 열람 가능, 단 각 탭 CRUD는 admin/manager 전용 (탭 컴포넌트 내부 write-guard)
+//   진료 환자 목록 (처방 현황) / 진료 알림판: 모든 authenticated 사용자
+//   의사(director): 진료 알림판 기본 — 진료도구 관리 탭은 비노출(기존 설계 유지)
 
 import { useAuth } from '@/lib/auth';
 import PhrasesTab from '@/components/admin/PhrasesTab';
@@ -25,10 +27,14 @@ import { BookOpen, Pill, FileText, Layers, Zap, Users, DollarSign, TrendingUp, S
 
 export default function DoctorTools() {
   const { profile } = useAuth();
-  const isAdminOrManager = profile?.role === 'admin' || profile?.role === 'manager';
+  // 진료도구 탭 노출 권한 — NAV_ITEMS(RBAC-MENU-EXPAND/ROLE-PERM-CUSTOM)와 일치시켜
+  // 메뉴 진입 가능 직원이 탭 0개를 보던 불일치 버그 해소. CRUD 가드는 각 탭 컴포넌트 내부 책임.
+  const hasDocToolAccess = ['admin', 'manager', 'consultant', 'coordinator', 'therapist'].includes(
+    profile?.role ?? '',
+  );
   // 의사(director)는 진료부 통합 대시보드를 기본 화면으로 — 상시 켜놓는 단일 창 동선.
   const defaultTab =
-    profile?.role === 'director' ? 'call_dashboard' : isAdminOrManager ? 'phrases' : 'patient_list';
+    profile?.role === 'director' ? 'call_dashboard' : hasDocToolAccess ? 'phrases' : 'patient_list';
 
   return (
     <div className="h-full overflow-auto p-4 md:p-6 space-y-4 max-w-5xl">
@@ -46,8 +52,8 @@ export default function DoctorTools() {
             <Stethoscope className="h-3.5 w-3.5" />
             진료 알림판
           </TabsTrigger>
-          {/* 어드민/매니저 전용 탭 */}
-          {isAdminOrManager && (
+          {/* 진료도구 관리 탭 — admin/manager/consultant/coordinator/therapist 노출 (직원은 읽기 전용) */}
+          {hasDocToolAccess && (
             <>
               <TabsTrigger value="phrases" className="gap-1.5">
                 <BookOpen className="h-3.5 w-3.5" />
@@ -88,7 +94,7 @@ export default function DoctorTools() {
           </TabsTrigger>
         </TabsList>
 
-        {isAdminOrManager && (
+        {hasDocToolAccess && (
           <>
             <TabsContent value="phrases">
               <PhrasesTab />
