@@ -553,8 +553,10 @@ function EditCustomerDialog({
     if (!customer) return;
     setSubmitting(true);
     const newName = name.trim();
-    // T-20260603-foot-CUSTNAME-CASCADE-DASH: 이름 변경 여부 (카스케이드 트리거)
-    const nameChanged = newName !== (customer.name ?? '').trim();
+    // 고객명 변경 시 reservations/check_ins.customer_name 스냅샷 카스케이드는
+    // DB 트리거(T-20260603-foot-DASH-NAME-STALE-SYNC, 옵션A, AFTER UPDATE OF name
+    // ON customers)가 SSOT로 담당. 앱레벨 중복 카스케이드는 이중 쓰기·false-error
+    // 토스트 유발로 제거됨(T-20260603-foot-CUSTNAME-CASCADE-DASH CANCELLATION).
     const { error } = await supabase
       .from('customers')
       .update({
@@ -578,23 +580,6 @@ function EditCustomerDialog({
       setSubmitting(false);
       toast.error(`수정 실패: ${error.message}`);
       return;
-    }
-    // T-20260603-foot-CUSTNAME-CASCADE-DASH: 이름 변경 시 비정규화 컬럼 카스케이드
-    // (reservations.customer_name / check_ins.customer_name → 대시보드 예약·체크인 카드 표기명).
-    // AC-2 부분 실패 격리: customers 업데이트는 이미 성공 → 카스케이드 실패해도 성공 처리하되 별도 경고 토스트.
-    if (nameChanged) {
-      const [resvRes, ciRes] = await Promise.all([
-        supabase.from('reservations').update({ customer_name: newName }).eq('customer_id', customer.id),
-        supabase.from('check_ins').update({ customer_name: newName }).eq('customer_id', customer.id),
-      ]);
-      const cascadeErr = resvRes.error || ciRes.error;
-      if (cascadeErr) {
-        setSubmitting(false);
-        toast.success('고객 정보는 저장되었습니다');
-        toast.error(`이름 동기화 일부 실패: ${cascadeErr.message} — 새로고침 후에도 예약/체크인 카드에 구명이 보이면 관리자에게 문의하세요.`);
-        onUpdated();
-        return;
-      }
     }
     setSubmitting(false);
     toast.success('수정 완료');
