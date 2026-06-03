@@ -72,7 +72,7 @@ import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
-import { formatAmount, maskPhoneTail, seoulISODate } from '@/lib/format';
+import { formatAmount, maskPhoneTail, seoulISODate, cardDisplayName } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
@@ -1387,7 +1387,7 @@ function TimelineCheckInCard({
         'flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-semibold w-full shadow-sm cursor-grab active:cursor-grabbing transition opacity-50',
         box2Cls,
       )}
-      title={`${checkIn.customer_name} — 드래그=다음단계 이동 · 클릭=상세`}
+      title={`${cardDisplayName(checkIn)} — 드래그=다음단계 이동 · 클릭=상세`}
       data-testid="timeline-checkin-card"
       onClick={(e) => {
         e.stopPropagation();
@@ -1404,7 +1404,7 @@ function TimelineCheckInCard({
           초
         </span>
       )}
-      <span className={cn('truncate', visitType === 'returning' ? 'text-green-900' : 'text-yellow-900')}>{checkIn.customer_name}</span>
+      <span className={cn('truncate', visitType === 'returning' ? 'text-green-900' : 'text-yellow-900')}>{cardDisplayName(checkIn)}</span>
       {/* T-20260514-foot-CHART-NO-VISIBLE: 차트번호 상시 표시 */}
       {timelineChartNum && (
         <span className="text-[9px] font-mono text-teal-600 shrink-0">#{timelineChartNum}</span>
@@ -1482,9 +1482,9 @@ function Box2ReservationCard({
         onClick ? 'cursor-pointer hover:bg-green-100 hover:border-green-400 transition' : 'cursor-default',
       )}
       onClick={(e) => { e.stopPropagation(); onClick?.(); }}
-      title={`${reservation.customer_name} — 클릭하여 체크인 및 차트 열기`}
+      title={`${cardDisplayName(reservation)} — 클릭하여 체크인 및 차트 열기`}
     >
-      <span className="truncate text-green-900">{reservation.customer_name}</span>
+      <span className="truncate text-green-900">{cardDisplayName(reservation)}</span>
       {/* T-20260514-foot-CHART-NO-VISIBLE: 차트번호 상시 표시 */}
       {resvChartNum && (
         <span className="text-[9px] font-mono text-green-700 shrink-0">#{resvChartNum}</span>
@@ -1580,11 +1580,11 @@ function DraggableBox1Card({
         e.stopPropagation();
         onContextMenu?.(e, reservation);
       }}
-      title={`${reservation.customer_name} — 드래그=시간변경 · 클릭=차트조회 · 우클릭=메뉴`}
+      title={`${cardDisplayName(reservation)} — 드래그=시간변경 · 클릭=차트조회 · 우클릭=메뉴`}
       data-testid="box1-resv-card"
     >
       <span className="shrink-0 bg-yellow-200 text-yellow-800 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
-      <span className="truncate text-yellow-900 font-semibold">{reservation.customer_name}</span>
+      <span className="truncate text-yellow-900 font-semibold">{cardDisplayName(reservation)}</span>
       <span className="shrink-0 text-yellow-700 font-mono text-[9px]">{tail}</span>
       {/* T-20260519-foot-FIRSTVISIT-CHECKIN AC-1: 접수 버튼 — DnD와 분리 위해 onPointerDown stopPropagation */}
       {onCheckIn && (
@@ -1658,11 +1658,11 @@ function DraggableBox2ResvCard({
         onContextMenu?.(e, reservation);
       }}
       title={reservation.healer_flag
-        ? `${reservation.customer_name} — 힐러 치료 예정 · 드래그=시간변경 · 클릭=차트조회 · 우클릭=메뉴`
-        : `${reservation.customer_name} — 드래그=시간변경 · 클릭=차트조회 · 우클릭=메뉴`}
+        ? `${cardDisplayName(reservation)} — 힐러 치료 예정 · 드래그=시간변경 · 클릭=차트조회 · 우클릭=메뉴`
+        : `${cardDisplayName(reservation)} — 드래그=시간변경 · 클릭=차트조회 · 우클릭=메뉴`}
       data-testid="box2-resv-card"
     >
-      <span className="truncate text-green-900">{reservation.customer_name}</span>
+      <span className="truncate text-green-900">{cardDisplayName(reservation)}</span>
       {/* T-20260516-foot-HEALER-RESV-BTN AC-10: 힐러 배지 표시 */}
       {reservation.healer_flag && (
         <span className="shrink-0 text-[8px] font-bold text-yellow-700 bg-yellow-100 border border-yellow-300 rounded px-0.5 leading-tight">힐</span>
@@ -2144,7 +2144,7 @@ function DashboardTimeline({
                               {format(new Date(ci.checked_in_at), 'HH:mm')}
                             </span>
                             <span className="text-[11px] font-medium flex-1 truncate text-gray-800">
-                              {ci.customer_name}
+                              {cardDisplayName(ci)}
                             </span>
                             <Badge className={cn(VISIT_TYPE_COLOR[ci.visit_type], 'text-[9px] px-1 py-0 shrink-0 leading-tight')}>
                               {VISIT_TYPE_KO[ci.visit_type]}
@@ -2208,10 +2208,10 @@ function DashboardTimeline({
           const accordionItems: AccordionItem[] = [];
           try {
             accordionItems.push(
-              ...newBox1.map((r): AccordionItem => ({ name: r?.customer_name ?? null, visitType: 'new', customerId: r?.customer_id ?? null })),
-              ...newBox2Ci.map((ci): AccordionItem => ({ name: ci?.customer_name ?? null, visitType: 'new', customerId: ci?.customer_id ?? null })),
-              ...retBox2Resv.map((r): AccordionItem => ({ name: r?.customer_name ?? null, visitType: 'returning', customerId: r?.customer_id ?? null })),
-              ...retBox2Ci.map((ci): AccordionItem => ({ name: ci?.customer_name ?? null, visitType: 'returning', customerId: ci?.customer_id ?? null })),
+              ...newBox1.map((r): AccordionItem => ({ name: r ? cardDisplayName(r) : null, visitType: 'new', customerId: r?.customer_id ?? null })),
+              ...newBox2Ci.map((ci): AccordionItem => ({ name: ci ? cardDisplayName(ci) : null, visitType: 'new', customerId: ci?.customer_id ?? null })),
+              ...retBox2Resv.map((r): AccordionItem => ({ name: r ? cardDisplayName(r) : null, visitType: 'returning', customerId: r?.customer_id ?? null })),
+              ...retBox2Ci.map((ci): AccordionItem => ({ name: ci ? cardDisplayName(ci) : null, visitType: 'returning', customerId: ci?.customer_id ?? null })),
             );
           } catch {
             // 아코디언 데이터 구성 실패 시 빈 배열로 폴백 — 시간표 렌더링은 계속
@@ -3472,7 +3472,8 @@ export default function Dashboard() {
     const end = `${dateStr}T23:59:59+09:00`;
     const { data, error } = await supabase
       .from('check_ins')
-      .select('*')
+      // T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed → 카드 표기명 현재화
+      .select('*, customers(name)')
       .eq('clinic_id', clinic.id)
       .gte('checked_in_at', start)
       .lte('checked_in_at', end)
@@ -3626,7 +3627,8 @@ export default function Dashboard() {
     if (!clinic) return;
     const { data } = await supabase
       .from('reservations')
-      .select('*')
+      // T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed → 카드 표기명 현재화
+      .select('*, customers(name)')
       .eq('clinic_id', clinic.id)
       .eq('reservation_date', dateStr)
       .neq('status', 'cancelled')
@@ -3645,7 +3647,8 @@ export default function Dashboard() {
     // 취소/완료 제외한 모든 활성 상태를 포함해야 타임라인 슬롯 매칭이 정상 동작.
     const { data } = await supabase
       .from('check_ins')
-      .select('*')
+      // T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed → 카드 표기명 현재화
+      .select('*, customers(name)')
       .eq('clinic_id', clinic.id)
       .not('status', 'in', '("cancelled","done")')
       .in('visit_type', ['new', 'returning', 'experience'])
@@ -5135,7 +5138,9 @@ export default function Dashboard() {
     // → leading 0 제거한 '1012345678'로도 매칭 시도
     const digitsNoLeadingZero = digits.startsWith('0') && digits.length >= 5 ? digits.slice(1) : null;
     const results = timelineReservations.filter((r) => {
-      const name = r.customer_name?.toLowerCase() ?? '';
+      // T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: 표기명(현재 이름)도 검색 대상에 포함 →
+      // 개명 후 "보이는 새 이름으로 검색 불가" 혼란 방지. denorm 이름 매칭은 그대로 유지(호환).
+      const name = `${r.customers?.name ?? ''} ${r.customer_name ?? ''}`.toLowerCase();
       const phone = r.customer_phone?.replace(/\D/g, '') ?? '';
       const chart = r.customer_id ? (todayCustomerChartMap.get(r.customer_id) ?? '') : '';
       if (name.includes(qLow)) return true;
@@ -5963,7 +5968,7 @@ export default function Dashboard() {
                           className="w-full flex items-center justify-between rounded px-3 py-2 text-sm hover:bg-teal-50 transition text-left"
                         >
                           <div className="flex flex-col gap-0.5">
-                            <span className="font-medium">{r.customer_name ?? '—'}</span>
+                            <span className="font-medium">{cardDisplayName(r) || '—'}</span>
                             <span className="text-[10px] text-muted-foreground">
                               {r.reservation_time?.slice(0, 5)}
                               {' · '}
