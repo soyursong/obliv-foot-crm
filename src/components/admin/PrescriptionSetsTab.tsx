@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
-import { Loader2, Plus, Pencil, Trash2, X } from 'lucide-react';
+import { Loader2, Plus, Pencil, Trash2, X, Folder } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,6 +30,23 @@ export interface PrescriptionItem {
   frequency: string;
   days: number;
   notes: string;
+  // T-20260603-foot-RX-CHART-ENHANCE AC-5: prescription_codes 마스터 연결 (nullable, additive).
+  //   자유텍스트 수기입력은 null 유지(레거시 무중단). AC-2 금기증 게이트는 이 id 기준으로만 매칭.
+  prescription_code_id?: string | null;
+  classification?: string | null; // AC-3 색상매핑 프록시 (prescription_codes.classification 스냅샷)
+}
+
+// T-20260603-foot-RX-CHART-ENHANCE AC-5: prescription_codes.classification → 투여경로(route) 프록시 매핑.
+//   route 는 AC-3 색상 도트의 기존 키이므로, 마스터 선택 시 classification 에서 route 를 파생해 채운다.
+export function classificationToRoute(classification: string | null | undefined): string {
+  const c = (classification ?? '').trim();
+  if (!c) return '';
+  if (c.includes('내복') || c.includes('경구')) return '경구';
+  if (c.includes('외용') || c.includes('도포')) return '외용';
+  if (c.includes('주사') || c.includes('점적') || c.includes('정맥') || c.includes('근육') || c.includes('피하')) return '주사';
+  if (c.includes('점안')) return '점안';
+  if (c.includes('흡입')) return '흡입';
+  return ''; // 처치료 등 미매칭 → 기타(회색)
 }
 
 interface PrescriptionSet {
@@ -38,6 +55,7 @@ interface PrescriptionSet {
   items: PrescriptionItem[];
   is_active: boolean;
   sort_order: number;
+  folder?: string | null; // AC-1 폴더명 (nullable)
 }
 
 interface SetForm {
@@ -45,6 +63,7 @@ interface SetForm {
   items: PrescriptionItem[];
   is_active: boolean;
   sort_order: number;
+  folder: string; // AC-1 폴더명 ('' = 미분류)
 }
 
 const EMPTY_ITEM: PrescriptionItem = {
@@ -61,6 +80,7 @@ const EMPTY_FORM: SetForm = {
   items: [{ ...EMPTY_ITEM }],
   is_active: true,
   sort_order: 0,
+  folder: '',
 };
 
 // ---------------------------------------------------------------------------
@@ -72,7 +92,7 @@ function usePrescriptionSets() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('prescription_sets')
-        .select('id, name, items, is_active, sort_order')
+        .select('id, name, items, is_active, sort_order, folder')
         .order('sort_order', { ascending: true });
       if (error) throw error;
       return (data ?? []) as PrescriptionSet[];
@@ -89,6 +109,7 @@ function useUpsertSet() {
         items: form.items as unknown as Record<string, unknown>[],
         is_active: form.is_active,
         sort_order: form.sort_order,
+        folder: form.folder.trim() === '' ? null : form.folder.trim(), // AC-1
         updated_at: new Date().toISOString(),
       };
       if (id) {
@@ -231,6 +252,7 @@ export default function PrescriptionSetsTab() {
       items: s.items.length > 0 ? s.items : [{ ...EMPTY_ITEM }],
       is_active: s.is_active,
       sort_order: s.sort_order,
+      folder: s.folder ?? '',
     });
     setOpen(true);
   }
@@ -263,6 +285,27 @@ export default function PrescriptionSetsTab() {
     del.mutate(id);
   }
 
+  // AC-1: 폴더별 그룹핑 (미분류는 맨 끝). 폴더 내부는 기존 sort_order 순서 유지.
+  const NO_FOLDER = '미분류';
+  const grouped = (() => {
+    const map = new Map<string, PrescriptionSet[]>();
+    for (const s of sets) {
+      const key = s.folder?.trim() ? s.folder.trim() : NO_FOLDER;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(s);
+    }
+    // 폴더명 가나다순, 미분류 맨 끝
+    const keys = Array.from(map.keys()).sort((a, b) => {
+      if (a === NO_FOLDER) return 1;
+      if (b === NO_FOLDER) return -1;
+      return a.localeCompare(b, 'ko');
+    });
+    return keys.map((k) => ({ folder: k, items: map.get(k)! }));
+  })();
+  const folderNames = Array.from(
+    new Set(sets.map((s) => s.folder?.trim()).filter((x): x is string => !!x)),
+  ).sort((a, b) => a.localeCompare(b, 'ko'));
+
   if (isLoading)
     return (
       <div className="flex justify-center py-12">
@@ -287,8 +330,19 @@ export default function PrescriptionSetsTab() {
           등록된 처방세트가 없습니다.
         </div>
       ) : (
-        <div className="space-y-2" data-testid="rx-set-list">
-          {sets.map((s) => (
+        <div className="space-y-4" data-testid="rx-set-list">
+          {grouped.map((g) => (
+            <div key={g.folder} data-testid="rx-set-folder-group">
+              {/* AC-1: 폴더 헤더 */}
+              <div className="flex items-center gap-1.5 mb-1.5 px-1">
+                <Folder className="h-3.5 w-3.5 text-teal-600" />
+                <span className="text-xs font-semibold text-foreground" data-testid="rx-set-folder-name">
+                  {g.folder}
+                </span>
+                <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{g.items.length}</Badge>
+              </div>
+              <div className="space-y-2 pl-1">
+          {g.items.map((s) => (
             <div
               key={s.id}
               className="rounded-lg border bg-card px-4 py-3"
@@ -344,6 +398,9 @@ export default function PrescriptionSetsTab() {
               )}
             </div>
           ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -354,7 +411,7 @@ export default function PrescriptionSetsTab() {
             <DialogTitle>{editing ? '처방세트 수정' : '처방세트 추가'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               <div className="col-span-2">
                 <Label className="text-xs">처방세트 이름 *</Label>
                 <Input
@@ -364,6 +421,23 @@ export default function PrescriptionSetsTab() {
                   className="mt-1"
                   data-testid="rx-set-name-input"
                 />
+              </div>
+              {/* AC-1: 폴더(분류) — 같은 이름끼리 묶임. 비우면 미분류. */}
+              <div>
+                <Label className="text-xs">폴더 (분류)</Label>
+                <Input
+                  value={form.folder}
+                  onChange={(e) => setForm((f) => ({ ...f, folder: e.target.value }))}
+                  placeholder="예) 무좀"
+                  className="mt-1"
+                  list="rx-folder-suggestions"
+                  data-testid="rx-set-folder-input"
+                />
+                <datalist id="rx-folder-suggestions">
+                  {folderNames.map((fn) => (
+                    <option key={fn} value={fn} />
+                  ))}
+                </datalist>
               </div>
               <div>
                 <Label className="text-xs">정렬 순서</Label>
