@@ -4463,6 +4463,27 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  // T-20260603-foot-RES-NAME-MISMATCH-WARN: 예약명↔차트 고객명 불일치 비차단 경고 (defense-in-depth)
+  //   DASH-SLOT-CHART-MISMAP 후속 권고 #4. customer_id가 SET이어도 phone-dedup(placeholder
+  //   '+821000000000'/0000 등)으로 타 고객에 오연결될 수 있음 → 차트 오픈은 막지 않고(비차단)
+  //   예약/체크인 표기명과 실제 열린 차트 고객명이 다르면 경고 토스트로 오연결을 조기 발견한다.
+  //   ※ 동명이인 가드(T-20260529 이름-fallback)와는 무관 — 완화 금지. customer_id SET 경로에만 적용.
+  //   ※ 비차단: 조회 실패/이름 누락 시 침묵, await 하지 않음(차트 오픈을 절대 지연·차단하지 않음).
+  const warnIfNameMismatch = useCallback(async (customerId: string, displayedName?: string | null) => {
+    const shown = displayedName?.trim();
+    if (!shown) return; // 표기명 없으면 비교 불가 — false-warn/노이즈 회피
+    const { data, error } = await supabase
+      .from('customers')
+      .select('name')
+      .eq('id', customerId)
+      .maybeSingle();
+    if (error || !data) return; // 조회 실패 시 침묵 — 비차단 보장
+    const chartName = (data.name ?? '').trim();
+    if (chartName && chartName !== shown) {
+      toast.warning(`예약명(${shown})과 차트 고객명(${chartName})이 다릅니다. 고객 오연결 여부를 확인하세요.`);
+    }
+  }, []);
+
   // T-20260518-foot-SELFCHECKIN-TESTDATA5 D-Day 재오픈 수정:
   // 문제: setSelectedCheckIn(ci)만 호출 → CheckInDetailSheet useEffect 간접 경로에만 의존
   //       현장 재현: Dashboard 칸반 클릭 시 1번차트·2번차트 둘 다 미오픈
@@ -4481,6 +4502,8 @@ export default function Dashboard() {
     // 2번차트 직접 오픈 — CheckInDetailSheet useEffect 간접 경로 보완
     if (ci.customer_id) {
       ctxOpenChart(ci.customer_id);
+      // T-20260603-foot-RES-NAME-MISMATCH-WARN: 비차단 불일치 경고 (오픈 차단 X, await X)
+      void warnIfNameMismatch(ci.customer_id, ci.customer_name);
     } else if (ci.customer_name && clinic) {
       // customer_id 미연결 check-in → 이름 기반 자동 조회 fallback
       const { data: matches } = await supabase
@@ -4503,7 +4526,7 @@ export default function Dashboard() {
     } else {
       toast.info('고객 정보가 연결되어 있지 않습니다');
     }
-  }, [ctxOpenChart, clinic, fetchCheckIns]);
+  }, [ctxOpenChart, clinic, fetchCheckIns, warnIfNameMismatch]);
 
   // T-20260601-foot-DASH-HSCROLL-CHART-LOC #2: 진료콜 명단 팝업 이름 클릭 → 진료차트.
   //   CHART-OPEN-SINGLE 패턴(handleCardClick의 차트 진입 로직) 재사용 — customer_id 직접 오픈,
@@ -4880,6 +4903,8 @@ export default function Dashboard() {
   const handleReservationSelect = useCallback(async (res: Reservation) => {
     if (res.customer_id) {
       ctxOpenChart(res.customer_id);
+      // T-20260603-foot-RES-NAME-MISMATCH-WARN: 비차단 불일치 경고 (오픈 차단 X, await X)
+      void warnIfNameMismatch(res.customer_id, res.customer_name);
     } else {
       // T-20260529-foot-CHART-OPEN-FAIL: customer_id 없는 예약 — 이름으로 자동 조회 fallback
       // 원인: 예약 생성 시 고객 레코드 미연결 (고객 등록 전 예약 입력 등)
@@ -4906,7 +4931,7 @@ export default function Dashboard() {
       const timeStr = res.reservation_time ? res.reservation_time.slice(0, 5) : '';
       toast.info(`${res.customer_name ?? ''} — ${timeStr} 예약 (고객 미연결)`);
     }
-  }, [ctxOpenChart, clinic, fetchTimelineReservations]);
+  }, [ctxOpenChart, clinic, fetchTimelineReservations, warnIfNameMismatch]);
 
   // T-20260522-foot-CHECKIN-FIRST-INFO: 실제 DB INSERT 함수 (초진 폼 완료 후 또는 재진 직접 호출)
   // 초진(new) → consult_waiting, 재진(returning) → treatment_waiting
