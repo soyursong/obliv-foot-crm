@@ -1707,7 +1707,7 @@ export default function MedicalChartPanel({
                         처방세트 관리 화면으로
                       </button>
 
-                      {/* T-20260603-foot-RX-MODULE-8REQ #5/AC-5-1: 약품 마스터(prescription_codes) 검색 →
+                      {/* T-20260603-foot-RX-CHART-ENHANCE AC-5 (구 RX-MODULE-8REQ #5/AC-5-1): 약품 마스터(prescription_codes) 검색 →
                           단건 처방내역 추가. 내부 마스터 대상(외부연동 없음). code_source='custom'(자체·카피약) 우선 노출. */}
                       <div className="rounded-lg border bg-card p-2 space-y-1.5" data-testid="rx-search-box">
                         <div className="relative">
@@ -1976,7 +1976,7 @@ export default function MedicalChartPanel({
         </div>
       </div>
 
-      {/* T-20260603-foot-RX-MODULE-8REQ #2/AC-2: 약품 금기증 확인 게이트.
+      {/* T-20260603-foot-RX-CHART-ENHANCE AC-2 (구 RX-MODULE-8REQ #2/AC-2): 약품 금기증 확인 게이트.
           prescription_code_id 매칭 금기증 보유 약 추가 시 전체 항목 체크 후에만 진행(우회불가). 의료안전 직결. */}
       {gateContras.length > 0 && (
         <div
