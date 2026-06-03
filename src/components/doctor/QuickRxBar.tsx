@@ -174,7 +174,9 @@ export default function QuickRxBar({
     : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100';
 
   return (
-    <div className={cn('space-y-1.5', className)}>
+    // #4(FOLLOWUP2): 빠른처방 버튼 바 가시성 하드닝 — 자체 stacking context(relative + isolate)로
+    //   부모 transform/opacity 컨텍스트에 묻혀 깔리는 경우 방어. 정확 재현 화면은 현장 스크린샷 확인 중.
+    <div className={cn('relative isolate space-y-1.5', className)}>
       {/* 라벨 */}
       {!compact && (
         <div className="flex items-center gap-2">

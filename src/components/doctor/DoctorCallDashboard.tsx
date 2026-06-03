@@ -7,14 +7,13 @@
  *       활성(purple) 상단, 처리완료(pink)는 흐리게 잔존(화면 이탈 후 복귀해도 유지 — DB 파생).
  *   - 신규 호출 수신 시 소리 + 브라우저 알림(useDoctorCallNotifier). 음소거 토글(localStorage 영속).
  *   - 진료 완료(completed_at) 환자 당일 목록.
- *   - 각 행: 차팅(→ /chart/:customerId) · 처방(QuickRxBar 인라인) 진입.
+ *   - 각 행: 차팅(→ openChart 2번차트 서랍) · 처방(QuickRxBar 인라인) 진입.
  *
  * 데이터 모델: 풋 CRM의 진료 호출 = check_ins.status_flag (별도 doctor_call 테이블 없음).
  *   기존 발신/상태머신/집계 로직은 변경하지 않고 표시만 추가(회귀 0).
  * 실시간: check_ins postgres_changes 구독 → refetch (3초 내 반영, AC-1).
  */
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Stethoscope,
@@ -35,6 +34,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
+// LOGIC-LOCK: L-004 [CHART-LOCK-011] — 차팅 진입은 useChart() openChart() 단일 게이트웨이(2번차트 서랍). 직접 접근 금지.
+import { useChart } from '@/lib/chartContext';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { todaySeoulISODate } from '@/lib/format';
@@ -89,7 +90,10 @@ export default function DoctorCallDashboard() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
   const doctorMode = isDoctor(profile?.role ?? '');
-  const navigate = useNavigate();
+  // #6: 차팅 클릭 → 진료차트를 2번차트 서랍(우측 슬라이드)으로 정확히 오픈.
+  //   기존 navigate(`/chart/:id`) 전체 페이지 전환 = 잘못된 라우팅(대시보드 컨텍스트 소실) 버그였음.
+  //   앱 전역 표준 진입점 openChart(customer_id) 재사용 → 정확 연결 + 서랍 UX(AC-6-1/AC-6-2).
+  const { openChart } = useChart();
 
   const { data: rows = [], isLoading, refetch } = useDoctorCallFeed(clinicId);
 
@@ -248,7 +252,7 @@ export default function DoctorCallDashboard() {
                 key={callKey(ci)}
                 checkIn={ci}
                 doctorMode={doctorMode}
-                onOpenChart={(id) => navigate(`/chart/${id}`)}
+                onOpenChart={openChart}
                 onRefresh={() => void refetch()}
               />
             ))}
@@ -276,7 +280,7 @@ export default function DoctorCallDashboard() {
                 key={ci.id}
                 checkIn={ci}
                 doctorMode={doctorMode}
-                onOpenChart={(id) => navigate(`/chart/${id}`)}
+                onOpenChart={openChart}
                 onRefresh={() => void refetch()}
               />
             ))}
