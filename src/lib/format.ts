@@ -49,6 +49,22 @@ export function formatPhoneInput(value: string): string {
   return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
 }
 
+/**
+ * T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: 카드/목록 표기명 결정 헬퍼.
+ * 고객관리에서 개명 시 reservations/check_ins의 denormalized customer_name은 stale →
+ * customers(name) embed 조인 결과(현재 이름)를 우선 표기, customer_id 미연결(unlink) 또는
+ * 조인 미수행 시 denormalized customer_name으로 fallback. 무백필·무회귀(읽기 경로 한정).
+ * ※ 표기 전용. RES-NAME-MISMATCH-WARN/동명이인 가드는 denormalized customer_name 기준 유지 —
+ *    그 비교 로직 인자(row.customer_name)에는 절대 관여하지 않는다.
+ */
+export function cardDisplayName(
+  row: { customers?: { name: string | null } | null; customer_name: string | null },
+): string {
+  const current = row.customers?.name?.trim();
+  if (current) return current;
+  return row.customer_name ?? '';
+}
+
 export function maskPhoneTail(phone: string | null | undefined): string {
   if (!phone) return '';
   const digits = phone.replace(/\D/g, '');

@@ -351,6 +351,10 @@ export interface CheckIn {
   /** 원장님 진료콜 명단 진료 전달사항 전용 메모 — T-20260601-foot-DOCTOR-CALL-LIST
    *  방문동선 메모(treatment_memo/notes)와 용도 분리 */
   doctor_call_memo: string | null;
+  /** T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed 조인 결과.
+   *  카드 표기명을 customers 현재 이름 우선 렌더하기 위한 비영속 파생 필드.
+   *  customer_id 미연결(unlink) 시 null → denormalized customer_name fallback. */
+  customers?: { name: string | null } | null;
 }
 
 export interface Package {
@@ -497,4 +501,8 @@ export interface Reservation {
   progress_check_required?: boolean | null;
   /** T-PROGRESS-CHECKPOINT AC-3: 경과분석 레이블 (예: "6회 중간 경과분석") */
   progress_check_label?: string | null;
+  /** T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed 조인 결과.
+   *  카드 표기명을 customers 현재 이름 우선 렌더하기 위한 비영속 파생 필드.
+   *  customer_id 미연결(unlink) 시 null → denormalized customer_name fallback. */
+  customers?: { name: string | null } | null;
 }
