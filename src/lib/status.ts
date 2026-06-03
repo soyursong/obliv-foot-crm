@@ -134,7 +134,7 @@ export function roleLabel(role: string): string {
 
 /** 9가지 상태 플래그 목록 (메뉴 표시 순서) */
 export const STATUS_FLAGS: StatusFlag[] = [
-  'white', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'dark_gray',
+  'white', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'brown', 'dark_gray',
 ];
 
 /** 플래그 한글 메뉴명 */
@@ -147,6 +147,7 @@ export const STATUS_FLAG_LABEL: Record<StatusFlag, string> = {
   blue:      'CP(치료실)',
   purple:    '진료필요',
   pink:      '진료완료',
+  brown:     '후상담',
   dark_gray: '수납완료',
 };
 
@@ -160,6 +161,7 @@ export const STATUS_FLAG_DOT: Record<StatusFlag, string> = {
   blue:      'bg-blue-500',
   purple:    'bg-purple-500',
   pink:      'bg-pink-400',
+  brown:     'bg-amber-800',
   dark_gray: 'bg-gray-600',
 };
 
@@ -173,6 +175,7 @@ export const STATUS_FLAG_CARD_BG: Record<StatusFlag, string> = {
   blue:      'bg-blue-50 border-blue-300',
   purple:    'bg-purple-50 border-purple-300',
   pink:      'bg-pink-50 border-pink-300',
+  brown:     'bg-amber-50 border-amber-800',
   dark_gray: 'bg-gray-200 border-gray-400',
 };
 
