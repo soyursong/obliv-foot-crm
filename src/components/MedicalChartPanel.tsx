@@ -51,7 +51,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { AlertTriangle, BookOpen, Camera, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, History, Loader2, Plus, Search, Stethoscope, X } from 'lucide-react';
+import { AlertTriangle, BookOpen, Camera, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, History, Loader2, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -61,6 +61,8 @@ import { useAuth } from '@/lib/auth';
 import { formatAmount, formatPhone } from '@/lib/format';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import { classificationToRoute } from '@/components/admin/PrescriptionSetsTab';
+// T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구 적용(진단명+임상경과+처방 일괄 라우팅)
+import type { SuperPhrase } from '@/components/admin/SuperPhrasesTab';
 
 // ── 타입 ─────────────────────────────────────────────────────────────────────
 
@@ -278,6 +280,8 @@ export default function MedicalChartPanel({
   const [staffNameMap, setStaffNameMap] = useState<Record<string, string>>({});
   const [phraseTemplates, setPhraseTemplates] = useState<PhraseTemplate[]>([]);
   const [prescriptionSets, setPrescriptionSets] = useState<PrescriptionSet[]>([]);
+  // T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구 목록
+  const [superPhrases, setSuperPhrases] = useState<SuperPhrase[]>([]);
   const [visitPayments, setVisitPayments] = useState<VisitPayment[]>([]);
 
   // ── 선택 차트 (null = 새 기록 모드) ──────────────────────────────────────────
@@ -317,7 +321,7 @@ export default function MedicalChartPanel({
 
   // ── 우측 패널 탭 (AC-1 + MEDCHART-SYNC → TREATMEMO-CHART-MERGE: 처방세트 / 상용구 / 진료내역 / 진료이미지)
   // T-20260527-foot-TREATMEMO-CHART-MERGE: treat_memo 탭 제거 — [치료사차트] 섹션에 통합
-  const [rightTab, setRightTab] = useState<'rx' | 'phrase' | 'visit_hist' | 'images'>('rx');
+  const [rightTab, setRightTab] = useState<'rx' | 'phrase' | 'super' | 'visit_hist' | 'images'>('rx');
   const [selectedPhraseIds, setSelectedPhraseIds] = useState<Set<number>>(new Set());
 
   // T-20260526-foot-MEDCHART-SYNC: 참고 데이터 상태
@@ -340,7 +344,7 @@ export default function MedicalChartPanel({
     if (!customerId || !clinicId) return;
     setLoading(true);
     try {
-      const [custRes, chartsRes, phrasesRes, rxSetsRes, treatMemosRes, staffRes] = await Promise.all([
+      const [custRes, chartsRes, phrasesRes, rxSetsRes, treatMemosRes, staffRes, superRes] = await Promise.all([
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
           .from('customers')
@@ -382,12 +386,26 @@ export default function MedicalChartPanel({
           .from('user_profiles')
           .select('email,name')
           .eq('clinic_id', clinicId),
+        // T-20260603-foot-RX-SUPER-PHRASE: 활성 슈퍼상용구 조회 (진단명+임상경과+처방 묶음)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
+          .from('super_phrases')
+          .select('id,name,diagnosis,clinical_progress,rx_items,is_active,sort_order')
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true }),
       ]);
 
       if (custRes.data) setCustomer(custRes.data as CustomerBasic);
       const rawCharts: MedicalChart[] = chartsRes.data || [];
       setPhraseTemplates(phrasesRes.data || []);
       setPrescriptionSets(rxSetsRes.data || []);
+      // T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구 — rx_items null 방어. 조회 실패 시 빈 목록(레거시 무영향).
+      setSuperPhrases(
+        ((superRes?.data as SuperPhrase[] | null) ?? []).map((s) => ({
+          ...s,
+          rx_items: (s.rx_items ?? []) as PrescriptionItem[],
+        })),
+      );
       // T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 상태 설정
       setTreatMemos((treatMemosRes.data as TreatmentMemoEntry[]) ?? []);
       // T-20260603-foot-CHART-UIUX-ENHANCE AC-13: 기록자 이메일→이름 매핑 구성
@@ -671,6 +689,44 @@ export default function MedicalChartPanel({
       toast.success(`${selectedPhraseIds.size}개 상용구 삽입됨`);
     }
     setSelectedPhraseIds(new Set());
+  }
+
+  // ── 슈퍼상용구 적용 (T-20260603-foot-RX-SUPER-PHRASE) ────────────────────────
+  //   진단명·임상경과·처방내역 3슬롯을 각 영역에 일괄 라우팅. 빈 슬롯은 스킵(Q2).
+  //   적용 시맨틱(Q1 dev 기본안):
+  //     - 진단명   = 비었으면 채우고, 값 있으면 줄바꿈 누적
+  //     - 임상경과 = 누적(append, 기존 상용구 삽입과 동일 패턴)
+  //     - 처방내역 = addRxItems() 동일 진입점 재사용 → 누적 + 금기증 게이트 자동 상속
+  function applySuperPhrase(sp: SuperPhrase) {
+    const applied: string[] = [];
+
+    const dx = (sp.diagnosis ?? '').trim();
+    if (dx) {
+      setFormDx(prev => (prev.trim() ? `${prev}\n${dx}` : dx));
+      applied.push('진단명');
+    }
+
+    const clinical = (sp.clinical_progress ?? '').trim();
+    if (clinical) {
+      setFormClinical(prev => (prev ? `${prev}\n${clinical}` : clinical));
+      applied.push('임상경과');
+    }
+
+    const items = (sp.rx_items ?? []).filter(it => (it.name ?? '').trim() !== '');
+    if (items.length > 0) {
+      // 처방은 addRxItems 경유 — 금기증 게이트 상속. 게이트가 뜨면 처방 적재는 그쪽에서 토스트.
+      addRxItems(items.map(it => ({ ...it })), `"${sp.name}" 처방 ${items.length}개 항목 추가됨`);
+      applied.push(`처방 ${items.length}개`);
+    }
+
+    if (applied.length === 0) {
+      toast.warning(`"${sp.name}" 슈퍼상용구에 적용할 내용이 없어요`);
+      return;
+    }
+    // 진단명·임상경과 적용 알림(처방은 addRxItems 가 별도 토스트). 처방만 있는 경우 중복 토스트 방지.
+    if (applied.some(a => a === '진단명' || a === '임상경과')) {
+      toast.success(`"${sp.name}" 적용됨 — ${applied.join(' · ')}`);
+    }
   }
 
   // ── 처방세트 적용 ─────────────────────────────────────────────────────────────
@@ -1691,11 +1747,12 @@ export default function MedicalChartPanel({
               >
                 {/* 탭 헤더 — 5개 아이콘+라벨 컴팩트 */}
                 <div className="flex-none border-b">
-                  {/* 상단 행: 처방세트 / 상용구 (기존) */}
+                  {/* 상단 행: 처방세트 / 상용구 / 슈퍼상용구 (T-20260603-foot-RX-SUPER-PHRASE) */}
                   <div className="flex border-b border-border/30">
                     {([
                       { key: 'rx', icon: <FlaskConical className="h-3 w-3" />, label: '처방세트' },
                       { key: 'phrase', icon: <BookOpen className="h-3 w-3" />, label: '상용구' },
+                      { key: 'super', icon: <Sparkles className="h-3 w-3" />, label: '슈퍼상용구' },
                     ] as const).map(({ key, icon, label }) => (
                       <button
                         key={key}
@@ -1889,6 +1946,60 @@ export default function MedicalChartPanel({
                       )}
                     </div>
                   )}
+                  {/* 슈퍼상용구 탭 (T-20260603-foot-RX-SUPER-PHRASE) — 클릭 시 진단명/임상경과/처방 일괄 적용 */}
+                  {rightTab === 'super' && (
+                    <div className="p-3 space-y-2" data-testid="right-panel-super-content">
+                      {/* 편집 바로가기 */}
+                      <button
+                        type="button"
+                        onClick={handleNavigateToAdmin}
+                        className="w-full flex items-center justify-center gap-1.5 text-[11px] text-teal-600 hover:text-teal-800 border border-teal-200 rounded-md py-1.5 hover:bg-teal-50 transition-colors"
+                        data-testid="super-phrase-edit-btn"
+                      >
+                        <Edit2 className="h-3 w-3" />
+                        슈퍼상용구 관리 화면으로
+                      </button>
+
+                      <div className="text-[10px] font-semibold text-muted-foreground px-1 pt-1">
+                        클릭하면 진단명·임상경과·처방내역에 일괄 적용됩니다
+                      </div>
+
+                      {superPhrases.length === 0 ? (
+                        <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center mt-2">
+                          등록된 슈퍼상용구 없음<br />
+                          <span className="text-[10px]">위 버튼으로 추가하세요</span>
+                        </div>
+                      ) : (
+                        superPhrases.map(sp => (
+                          <button
+                            key={sp.id}
+                            type="button"
+                            onClick={() => applySuperPhrase(sp)}
+                            disabled={gateChecking}
+                            className="w-full text-left rounded-lg border bg-card px-3 py-2.5 hover:border-teal-400 hover:bg-teal-50/30 transition-colors disabled:opacity-50"
+                            data-testid="super-phrase-option"
+                          >
+                            <div className="flex items-center gap-1.5 font-medium text-xs">
+                              <Sparkles className="h-3 w-3 text-teal-600 shrink-0" />
+                              {sp.name}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground mt-1 space-y-0.5">
+                              {sp.diagnosis && <div className="truncate"><span className="text-foreground">진단</span> {sp.diagnosis}</div>}
+                              {sp.clinical_progress && <div className="truncate"><span className="text-foreground">경과</span> {sp.clinical_progress}</div>}
+                              {sp.rx_items.length > 0 && (
+                                <div className="truncate">
+                                  <span className="text-foreground">처방 {sp.rx_items.length}개</span>{' '}
+                                  {sp.rx_items.slice(0, 2).map(i => i.name).join(', ')}
+                                  {sp.rx_items.length > 2 ? ' 외' : ''}
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+
                   {/* ── T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 탭 제거 — [치료사차트] 섹션에 통합 ── */}
 
                   {/* ── T-20260526-foot-MEDCHART-SYNC: 진료내역 탭 ──────────────── */}
