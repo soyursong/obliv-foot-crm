@@ -125,6 +125,8 @@ const T: Record<Lang, {
   duplicateCheckIn: string;
   // T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 레이블
   smsOptIn: string;
+  // T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-3: SMS 수신동의 부가 안내
+  smsOptInNote: string;
   // T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: 개인정보 입력 단계
   personalInfoTitle: string;
   rrnLabel: string;
@@ -132,10 +134,21 @@ const T: Record<Lang, {
   rrnNote: string;
   addressLabel: string;
   addressPlaceholder: string;
+  // T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-1: 우편번호 검색 + 상세주소
+  postcodeSearchBtn: string;
+  postcodeLabel: string;
+  postcodePlaceholder: string;
+  addressDetailLabel: string;
+  addressDetailPlaceholder: string;
   privacyConsentLabel: string;
   // AC-7: 건강보험 조회 동의
   insuranceConsentLabel: string;
   insuranceConsentNote: string;
+  // T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-2: 동의서 본문 항목별 정렬
+  consentPrivacyTitle: string;
+  consentPrivacyItems: string[];
+  consentHiraTitle: string;
+  consentHiraItems: string[];
   personalInfoNext: string;
   personalInfoBack: string;
   // T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: QR 단계
@@ -206,7 +219,8 @@ const T: Record<Lang, {
     failPrefix: '접수 실패: ',
     errorPrefix: '오류가 발생했습니다: ',
     duplicateCheckIn: '이미 접수된 예약입니다. 대기열을 확인하거나 직원에게 문의해 주세요.',
-    smsOptIn: '예약 안내 문자 수신에 동의합니다 (선택)',
+    smsOptIn: '예약 안내 등 문자 수신에 동의합니다 (선택)',
+    smsOptInNote: '수신에 동의하지 않으실 경우 예약일자 자동 안내 문자를 받지 못할 수 있습니다',
     // 개인정보 입력 단계
     personalInfoTitle: '개인 정보 입력',
     rrnLabel: '주민번호',
@@ -214,10 +228,28 @@ const T: Record<Lang, {
     rrnNote: '생년월일(앞 6자리)만 저장됩니다. 개인정보는 안전하게 보호됩니다.',
     addressLabel: '주소',
     addressPlaceholder: '주소를 입력해주세요',
+    postcodeSearchBtn: '우편번호 검색',
+    postcodeLabel: '우편번호',
+    postcodePlaceholder: '우편번호 검색을 눌러주세요',
+    addressDetailLabel: '상세주소',
+    addressDetailPlaceholder: '상세주소 (동·호수·건물명 등)',
     privacyConsentLabel: '개인정보 수집·이용에 동의합니다 (필수)',
     // AC-7: 건강보험 조회 동의
     insuranceConsentLabel: '건강보험 자격조회에 동의합니다 (선택)',
     insuranceConsentNote: '동의 시 건강보험 급여 적용을 위한 자격 조회가 가능합니다.',
+    // T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-2: 동의서 본문 항목별 정렬
+    consentPrivacyTitle: '개인정보 수집·이용 동의 (필수)',
+    consentPrivacyItems: [
+      '수집항목 : 이름, 주민등록번호, 연락처, 주소 등 기본 정보',
+      '수집목적 : 진료를 위한 정보 수집',
+      '보유기간 : 관련 법령에 따른 보관 기간 동안 보유',
+    ],
+    consentHiraTitle: '건강보험 조회에 동의합니다 (필수)',
+    consentHiraItems: [
+      '수집항목 : 성명, 주민등록번호(또는 생년월일), 건강보험 자격정보(가입 여부, 보험종류, 자격상태 등)',
+      '수집목적 : 건강보험 자격 확인, 보험 적용 진료비 산정 및 청구, 보험 급여 적정성 확인',
+      '보유기간 : 관련 법령에 따른 보관 기간 동안 보유',
+    ],
     personalInfoNext: '다음',
     personalInfoBack: '뒤로',
     // QR 단계
@@ -287,7 +319,8 @@ const T: Record<Lang, {
     failPrefix: 'Failed: ',
     errorPrefix: 'Error: ',
     duplicateCheckIn: 'Already checked in. Please check the queue or contact the front desk.',
-    smsOptIn: 'I agree to receive appointment reminders via SMS (optional)',
+    smsOptIn: 'I agree to receive appointment and other SMS notifications (optional)',
+    smsOptInNote: 'If you do not consent, you may not receive automated appointment reminder messages.',
     // Personal info step
     personalInfoTitle: 'Personal Information',
     rrnLabel: 'ID Number',
@@ -295,10 +328,28 @@ const T: Record<Lang, {
     rrnNote: 'Only birth date (first 6 digits) will be stored securely.',
     addressLabel: 'Address',
     addressPlaceholder: 'Enter your address',
+    postcodeSearchBtn: 'Search Postcode',
+    postcodeLabel: 'Postcode',
+    postcodePlaceholder: 'Tap "Search Postcode"',
+    addressDetailLabel: 'Address Detail',
+    addressDetailPlaceholder: 'Detail (unit, floor, building, etc.)',
     privacyConsentLabel: 'I consent to the collection of personal information (required)',
     // AC-7: insurance consent
     insuranceConsentLabel: 'I consent to health insurance eligibility inquiry (optional)',
     insuranceConsentNote: 'Consent allows us to check your health insurance eligibility for coverage.',
+    // T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-2: itemized consent body
+    consentPrivacyTitle: 'Consent to Collection and Use of Personal Information (Required)',
+    consentPrivacyItems: [
+      'Items collected: name, resident registration number, contact, address and other basic information',
+      'Purpose: collection of information for medical treatment',
+      'Retention: retained for the period required by relevant laws',
+    ],
+    consentHiraTitle: 'I consent to health insurance inquiry (Required)',
+    consentHiraItems: [
+      'Items collected: name, resident registration number (or birth date), health insurance eligibility information (enrollment status, insurance type, eligibility status, etc.)',
+      'Purpose: verify health insurance eligibility, calculate and claim covered treatment costs, confirm benefit adequacy',
+      'Retention: retained for the period required by relevant laws',
+    ],
     personalInfoNext: 'Next',
     personalInfoBack: 'Back',
     // QR step
@@ -542,6 +593,9 @@ export default function SelfCheckIn() {
   // ── T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: 개인정보 입력 상태 ──
   const [rrn, setRrn] = useState('');                    // YYMMDD-XXXXXXX 포맷
   const [address, setAddress] = useState('');
+  // T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-1: 우편번호 + 상세주소
+  const [postalCode, setPostalCode] = useState('');
+  const [addressDetail, setAddressDetail] = useState('');
   const [privacyConsent, setPrivacyConsent] = useState(false);
   // AC-7: 건강보험 조회 동의 (→ customers.hira_consent)
   const [insuranceConsent, setInsuranceConsent] = useState(false);
@@ -868,6 +922,30 @@ export default function SelfCheckIn() {
     address.trim().length >= 2 &&
     (reservationType !== 'walkin' || privacyConsent); // 워크인만 동의서 필수
 
+  // ── T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-1: 우편번호 검색(다음/카카오 postcode) ──
+  // CustomerChartPage.openKakaoPostcode 패턴 재사용. 선택 시 우편번호+기본주소 자동기입.
+  // 상세주소는 사용자가 별도 입력. 저장은 접수 제출 시(handleSubmit) customers 컬럼으로.
+  const openAddressSearch = () => {
+    const runPostcode = () => {
+      // @ts-expect-error Kakao/Daum Postcode global
+      new window.daum.Postcode({
+        oncomplete: (data: { zonecode: string; address: string }) => {
+          setPostalCode(data.zonecode || '');
+          setAddress(data.address || '');
+        },
+      }).open();
+    };
+    // @ts-expect-error Kakao/Daum Postcode global
+    if (!window.daum?.Postcode) {
+      const script = document.createElement('script');
+      script.src = '//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js';
+      script.onload = () => runPostcode();
+      document.head.appendChild(script);
+    } else {
+      runPostcode();
+    }
+  };
+
   // ── T-20260601-foot-SELFLOGIN-RESV-LIST-QR: 오늘 예약자 목록 로드 ──
   // "예약하고 왔어요" + 초진/재진 선택 후 호출 → 마스킹 목록 화면으로 전환.
   const handleLoadReservations = useCallback(async () => {
@@ -1020,12 +1098,20 @@ export default function SelfCheckIn() {
         customerId = existing.id as string;
         // T-20260525-foot-MESSAGING-V1 AC-5: 기존 고객 sms_opt_in 업데이트 (anon RLS 없으면 silent fail)
         // T-20260602-foot-CONSENT-TIMESTAMP-COLS: 동의(true) 시 시각 병기, 미동의(false) 시 NULL
+        const existingUpdate: Record<string, unknown> = {
+          sms_opt_in: smsOptIn,
+          sms_opt_in_at: smsOptIn ? new Date().toISOString() : null,
+        };
+        // T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-1: 초진 기존 고객 주소 갱신 → 2번차트 연동
+        // 빈 값으로 기존 주소를 덮어쓰지 않도록 입력값이 있을 때만 병합.
+        if (visitType === 'new') {
+          if (address.trim()) existingUpdate.address = address.trim();
+          if (postalCode.trim()) existingUpdate.postal_code = postalCode.trim();
+          if (addressDetail.trim()) existingUpdate.address_detail = addressDetail.trim();
+        }
         await anonClient
           .from('customers')
-          .update({
-            sms_opt_in: smsOptIn,
-            sms_opt_in_at: smsOptIn ? new Date().toISOString() : null,
-          })
+          .update(existingUpdate)
           .eq('id', customerId);
       } else {
         // T-20260529: 워크인 신규 고객 INSERT 시 birth_date, address, privacy_consent 포함
@@ -1043,6 +1129,9 @@ export default function SelfCheckIn() {
           const bd = extractBirthDate(rrn);
           if (bd) newCustomerPayload.birth_date = bd;
           if (address.trim()) newCustomerPayload.address = address.trim();
+          // T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-1: 우편번호 + 상세주소 → 2번차트 연동
+          if (postalCode.trim()) newCustomerPayload.postal_code = postalCode.trim();
+          if (addressDetail.trim()) newCustomerPayload.address_detail = addressDetail.trim();
           if (reservationType === 'walkin') {
             newCustomerPayload.privacy_consent = privacyConsent;
             // T-20260602-foot-CONSENT-TIMESTAMP-COLS: 동의(true) 시 시각 병기, 미동의(false) 시 NULL
@@ -1750,7 +1839,8 @@ export default function SelfCheckIn() {
               />
             </div>
 
-            {/* 주소 입력 — 텍스트 input */}
+            {/* 주소 입력 — T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-1:
+                우편번호 검색(자동기입) + 기본주소 + 상세주소칸 */}
             <div className="space-y-1.5">
               <label
                 htmlFor="pi-address"
@@ -1759,6 +1849,35 @@ export default function SelfCheckIn() {
               >
                 {t.addressLabel}
               </label>
+
+              {/* 우편번호 행: [우편번호 표시] [검색 버튼] */}
+              <div className="flex gap-2">
+                <div
+                  className="flex h-14 flex-1 items-center rounded-xl px-4 text-lg"
+                  style={{
+                    border: `1.5px solid ${postalCode.trim() ? C.borderActive : C.border}`,
+                    backgroundColor: 'white',
+                  }}
+                  data-testid="pi-postal-code"
+                >
+                  {postalCode.trim() ? (
+                    <span style={{ color: C.dark }}>{postalCode}</span>
+                  ) : (
+                    <span className="text-base" style={{ color: C.border }}>{t.postcodePlaceholder}</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={openAddressSearch}
+                  className="flex-none rounded-xl px-5 text-base font-medium text-white transition active:scale-95"
+                  style={{ backgroundColor: C.primary }}
+                  data-testid="pi-postcode-search"
+                >
+                  {t.postcodeSearchBtn}
+                </button>
+              </div>
+
+              {/* 기본주소 (우편번호 검색 시 자동기입, 직접 입력도 가능) */}
               <input
                 id="pi-address"
                 type="text"
@@ -1780,6 +1899,31 @@ export default function SelfCheckIn() {
                   e.currentTarget.style.boxShadow = 'none';
                 }}
                 data-testid="pi-address-input"
+              />
+
+              {/* 상세주소 — 기본주소와 분리된 입력칸 (동·호수 등) */}
+              <input
+                id="pi-address-detail"
+                type="text"
+                value={addressDetail}
+                onChange={(e) => setAddressDetail(e.target.value)}
+                placeholder={t.addressDetailPlaceholder}
+                aria-label={t.addressDetailLabel}
+                className="h-14 w-full rounded-xl px-4 text-lg outline-none transition"
+                style={{
+                  border: `1.5px solid ${addressDetail.trim() ? C.borderActive : C.border}`,
+                  backgroundColor: 'white',
+                  color: C.dark,
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = C.borderActive;
+                  e.currentTarget.style.boxShadow = `0 0 0 3px ${C.borderActive}18`;
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = addressDetail.trim() ? C.borderActive : C.border;
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+                data-testid="pi-address-detail-input"
               />
             </div>
 
@@ -1831,6 +1975,39 @@ export default function SelfCheckIn() {
                 </span>
               </div>
             </label>
+
+            {/* T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-2:
+                동의서 본문 — '쭉 연결' 대신 항목별(수집항목/수집목적/보유기간) 줄바꿈 정렬 */}
+            <div
+              className="rounded-xl p-4 space-y-3"
+              style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}
+              data-testid="pi-consent-detail"
+            >
+              <div className="space-y-1">
+                <p className="text-sm font-semibold" style={{ color: C.dark }}>
+                  {t.consentPrivacyTitle}
+                </p>
+                <ul className="space-y-0.5">
+                  {t.consentPrivacyItems.map((line, i) => (
+                    <li key={`priv-${i}`} className="text-xs leading-relaxed" style={{ color: C.muted }}>
+                      - {line}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-semibold" style={{ color: C.dark }}>
+                  {t.consentHiraTitle}
+                </p>
+                <ul className="space-y-0.5">
+                  {t.consentHiraItems.map((line, i) => (
+                    <li key={`hira-${i}`} className="text-xs leading-relaxed" style={{ color: C.muted }}>
+                      - {line}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
 
             {/* 버튼 영역 */}
             <div className="flex gap-3 pt-2">
@@ -1908,7 +2085,9 @@ export default function SelfCheckIn() {
             {visitType === 'new' && address.trim() && (
               <div className={`flex justify-between pb-3${reservationType !== 'walkin' ? '' : ' border-b'}`} style={{ borderColor: C.border }}>
                 <span style={{ color: C.muted }}>{t.addressLabel}</span>
-                <span className="font-semibold text-right max-w-[200px] truncate" style={{ color: C.dark }}>{address.trim()}</span>
+                <span className="font-semibold text-right max-w-[200px] truncate" style={{ color: C.dark }}>
+                  {[postalCode.trim() ? `(${postalCode.trim()})` : '', address.trim(), addressDetail.trim()].filter(Boolean).join(' ')}
+                </span>
               </div>
             )}
             {/* T-20260520-foot-SELFCHECKIN-LEADSRC-COND: 워크인일 때만 border-b */}
@@ -1932,22 +2111,28 @@ export default function SelfCheckIn() {
               </div>
             )}
           </div>
-          {/* T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 체크박스 */}
-          <label
-            htmlFor="sms-opt-in"
-            className="flex items-start gap-3 cursor-pointer select-none"
-            style={{ color: C.muted }}
-          >
-            <input
-              id="sms-opt-in"
-              type="checkbox"
-              checked={smsOptIn}
-              onChange={(e) => setSmsOptIn(e.target.checked)}
-              className="mt-0.5 h-5 w-5 rounded accent-teal-600"
-              style={{ accentColor: C.primary }}
-            />
-            <span className="text-sm leading-relaxed">{t.smsOptIn}</span>
-          </label>
+          {/* T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 체크박스
+              T-20260603-foot-SELFCHECKIN-ADDR-CONSENT-LAYOUT AC-3: 라벨 정리 + 하단 부가 안내 */}
+          <div className="space-y-1">
+            <label
+              htmlFor="sms-opt-in"
+              className="flex items-start gap-3 cursor-pointer select-none"
+              style={{ color: C.muted }}
+            >
+              <input
+                id="sms-opt-in"
+                type="checkbox"
+                checked={smsOptIn}
+                onChange={(e) => setSmsOptIn(e.target.checked)}
+                className="mt-0.5 h-5 w-5 rounded accent-teal-600"
+                style={{ accentColor: C.primary }}
+              />
+              <span className="text-sm leading-relaxed">{t.smsOptIn}</span>
+            </label>
+            <p className="pl-8 text-xs leading-relaxed" style={{ color: C.muted }} data-testid="sms-opt-in-note">
+              {t.smsOptInNote}
+            </p>
+          </div>
           <div className="flex gap-3">
             <button
               onClick={() => visitType === 'new' ? setStep('personal_info') : setStep('input')}
