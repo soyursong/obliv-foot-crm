@@ -51,7 +51,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { BookOpen, Camera, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, History, Loader2, Plus, Stethoscope, X } from 'lucide-react';
+import { AlertTriangle, BookOpen, Camera, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, History, Loader2, Plus, Search, Stethoscope, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -60,6 +60,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { formatAmount, formatPhone } from '@/lib/format';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
+import { classificationToRoute } from '@/components/admin/PrescriptionSetsTab';
 
 // ── 타입 ─────────────────────────────────────────────────────────────────────
 
@@ -104,6 +105,25 @@ interface PrescriptionSet {
   name: string;
   items: PrescriptionItem[];
   is_active: boolean;
+  folder?: string | null; // AC-1 폴더명 (nullable)
+}
+
+// T-20260603-foot-RX-CHART-ENHANCE AC-5: 약품 마스터(prescription_codes) 검색 결과
+interface RxCodeResult {
+  id: string;
+  name_ko: string;
+  claim_code: string;
+  classification: string | null;
+  code_source: string; // 'official' | 'custom'
+  price_krw: number | null;
+}
+
+// T-20260603-foot-RX-CHART-ENHANCE AC-2: 금기증
+interface Contraindication {
+  id: string;
+  prescription_code_id: string;
+  contraindication_text: string;
+  severity: string | null;
 }
 
 interface VisitPayment {
@@ -129,6 +149,14 @@ const RX_ROUTE_STYLE: Record<string, { dot: string; label: string }> = {
 function rxRouteStyle(route: string | undefined | null): { dot: string; label: string } {
   const key = (route ?? '').trim();
   return RX_ROUTE_STYLE[key] ?? { dot: 'bg-gray-400', label: key || '기타' };
+}
+// AC-5/AC-3: classification 확보 시 그것을 우선 색상 프록시로 사용(점진 전환). 미보유 시 기존 route 도트 유지.
+function rxItemStyle(item: PrescriptionItem): { dot: string; label: string } {
+  if (item.classification) {
+    const mapped = classificationToRoute(item.classification);
+    if (mapped) return rxRouteStyle(mapped);
+  }
+  return rxRouteStyle(item.route);
 }
 
 // T-20260526-foot-MEDCHART-SYNC: 치료메모 항목
@@ -264,6 +292,20 @@ export default function MedicalChartPanel({
   const [formRx, setFormRx] = useState<PrescriptionItem[]>([]); // 처방내역
   const [saving, setSaving] = useState(false);
 
+  // T-20260603-foot-RX-CHART-ENHANCE AC-5: 약품 마스터 검색
+  const [rxSearchQuery, setRxSearchQuery] = useState('');
+  const [rxSearchResults, setRxSearchResults] = useState<RxCodeResult[]>([]);
+  const [rxSearching, setRxSearching] = useState(false);
+
+  // T-20260603-foot-RX-CHART-ENHANCE AC-2: 금기증 확인 게이트
+  //   처방 추가 시 prescription_code_id 매칭 금기증이 있으면 모달로 확인 강제.
+  //   pendingRxItems = 확인 통과 시 적재할 항목들. gateContras = 표시할 금기 목록.
+  //   ackedContraIds = 사용자가 체크한 금기 id 집합(전부 체크해야 진행 가능 — 우회불가).
+  const [gateContras, setGateContras] = useState<Contraindication[]>([]);
+  const [pendingRxItems, setPendingRxItems] = useState<PrescriptionItem[]>([]);
+  const [ackedContraIds, setAckedContraIds] = useState<Set<string>>(new Set());
+  const [gateChecking, setGateChecking] = useState(false);
+
   // ── 임상경과 상용구 autocomplete ───────────────────────────────────────────
   const clinicalRef = useRef<HTMLTextAreaElement>(null);
   const [phrasePopoverVisible, setPhrasePopoverVisible] = useState(false);
@@ -319,7 +361,7 @@ export default function MedicalChartPanel({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
           .from('prescription_sets')
-          .select('id,name,items,is_active')
+          .select('id,name,items,is_active,folder')
           .eq('is_active', true)
           .order('sort_order', { ascending: true }),
         // T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모를 loadData에 통합 (드로어 오픈 시 자동 로드)
@@ -640,8 +682,109 @@ export default function MedicalChartPanel({
       toast.warning(`"${set.name}" 처방세트에 항목이 없어요`);
       return;
     }
+    // AC-2 게이트 경유 — 세트 내 prescription_code_id 보유 약 중 금기증 등록분이 있으면 확인 강제.
+    addRxItems(items.map(it => ({ ...it })), `"${set.name}" 처방세트 ${items.length}개 항목 추가됨`);
+  }
+
+  // T-20260603-foot-RX-CHART-ENHANCE AC-2: 처방 추가 단일 진입점 — 금기증 게이트.
+  //   추가 대상 중 prescription_code_id 가 있는 약에 대해 금기증을 조회.
+  //   - 금기 없음 → 즉시 적재
+  //   - 금기 있음 → 확인 모달 오픈(pendingRxItems 보관). 사용자가 전체 체크 후 확인해야 적재.
+  //   ※ 텍스트 약명매칭 금지 — prescription_code_id 기준만. (오탐 차단 / 의료안전)
+  async function addRxItems(items: PrescriptionItem[], successMsg?: string) {
+    const codeIds = Array.from(
+      new Set(items.map(i => i.prescription_code_id).filter((x): x is string => !!x)),
+    );
+    if (codeIds.length === 0) {
+      // FK 미보유(자유텍스트) → 게이트 제외(허용)
+      commitRxItems(items, successMsg);
+      return;
+    }
+    setGateChecking(true);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any)
+        .from('prescription_contraindications')
+        .select('id,prescription_code_id,contraindication_text,severity')
+        .in('prescription_code_id', codeIds);
+      const contras = (data as Contraindication[]) ?? [];
+      if (contras.length === 0) {
+        commitRxItems(items, successMsg);
+        return;
+      }
+      // 금기증 존재 → 확인 모달 게이트
+      setGateContras(contras);
+      setPendingRxItems(items);
+      setAckedContraIds(new Set());
+    } catch {
+      // 금기 조회 실패 시 안전을 위해 적재하되 경고 (조회 장애로 처방을 막지는 않음)
+      toast.warning('금기증 조회 실패 — 수동 확인 요망');
+      commitRxItems(items, successMsg);
+    } finally {
+      setGateChecking(false);
+    }
+  }
+
+  // 실제 처방 적재 (게이트 통과 후). 누적(append) 정책 유지.
+  function commitRxItems(items: PrescriptionItem[], successMsg?: string) {
     setFormRx(prev => [...prev, ...items.map(it => ({ ...it }))]);
-    toast.success(`"${set.name}" 처방세트 ${items.length}개 항목 추가됨`);
+    if (successMsg) toast.success(successMsg);
+  }
+
+  // AC-2 게이트 확인 — 전체 금기 항목 체크 시에만 적재 (우회불가).
+  function confirmGate() {
+    if (gateContras.some(c => !ackedContraIds.has(c.id))) return; // 방어 (버튼 disabled 이중화)
+    const items = pendingRxItems;
+    setGateContras([]);
+    setPendingRxItems([]);
+    setAckedContraIds(new Set());
+    commitRxItems(items, `처방 ${items.length}개 항목 추가됨 (금기 확인 완료)`);
+  }
+  function cancelGate() {
+    setGateContras([]);
+    setPendingRxItems([]);
+    setAckedContraIds(new Set());
+    toast.info('처방 추가를 취소했습니다');
+  }
+
+  // T-20260603-foot-RX-CHART-ENHANCE AC-5: 약품 마스터(prescription_codes) 검색.
+  const searchRxCodes = useCallback(async (q: string) => {
+    const query = q.trim();
+    if (query.length < 1) {
+      setRxSearchResults([]);
+      return;
+    }
+    setRxSearching(true);
+    try {
+      const esc = query.replace(/[%,]/g, ' ');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any)
+        .from('prescription_codes')
+        .select('id,name_ko,claim_code,classification,code_source,price_krw')
+        .or(`name_ko.ilike.%${esc}%,claim_code.ilike.%${esc}%`)
+        .order('code_source', { ascending: false }) // custom(카피약) 우선 노출
+        .limit(20);
+      setRxSearchResults((data as RxCodeResult[]) ?? []);
+    } catch {
+      setRxSearchResults([]);
+    } finally {
+      setRxSearching(false);
+    }
+  }, []);
+
+  // AC-5: 검색결과 약 1건을 처방내역에 추가 (name·route·classification·code_id 자동채움 → 게이트 경유)
+  function addRxFromCode(code: RxCodeResult) {
+    const item: PrescriptionItem = {
+      name: code.name_ko,
+      dosage: '',
+      route: classificationToRoute(code.classification),
+      classification: code.classification ?? null,
+      prescription_code_id: code.id,
+      frequency: '1일 3회',
+      days: 3,
+      notes: '',
+    };
+    addRxItems([item], `"${code.name_ko}" 추가됨`);
   }
 
   // T-20260603-foot-RX-CHART-ENHANCE AC-4: 처방내역 행별 횟수·일수 직접 조정.
@@ -1380,7 +1523,7 @@ export default function MedicalChartPanel({
                           </thead>
                           <tbody>
                             {formRx.map((item, idx) => {
-                              const rs = rxRouteStyle(item.route);
+                              const rs = rxItemStyle(item);
                               return (
                                 <tr
                                   key={idx}
@@ -1564,6 +1707,57 @@ export default function MedicalChartPanel({
                         처방세트 관리 화면으로
                       </button>
 
+                      {/* T-20260603-foot-RX-MODULE-8REQ #5/AC-5-1: 약품 마스터(prescription_codes) 검색 →
+                          단건 처방내역 추가. 내부 마스터 대상(외부연동 없음). code_source='custom'(자체·카피약) 우선 노출. */}
+                      <div className="rounded-lg border bg-card p-2 space-y-1.5" data-testid="rx-search-box">
+                        <div className="relative">
+                          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                          <Input
+                            value={rxSearchQuery}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setRxSearchQuery(v);
+                              searchRxCodes(v);
+                            }}
+                            placeholder="약품명·보험코드 검색"
+                            className="h-8 text-xs pl-7"
+                            data-testid="rx-search-input"
+                          />
+                          {rxSearching && (
+                            <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                          )}
+                        </div>
+                        {rxSearchQuery.trim() !== '' && (
+                          <div className="max-h-48 overflow-y-auto space-y-0.5" data-testid="rx-search-results">
+                            {rxSearchResults.length === 0 && !rxSearching ? (
+                              <div className="text-[10px] text-muted-foreground text-center py-2">검색 결과 없음</div>
+                            ) : (
+                              rxSearchResults.map((code) => (
+                                <button
+                                  key={code.id}
+                                  type="button"
+                                  onClick={() => addRxFromCode(code)}
+                                  disabled={gateChecking}
+                                  className="w-full text-left rounded-md px-2 py-1.5 hover:bg-teal-50/60 border border-transparent hover:border-teal-200 transition-colors disabled:opacity-50"
+                                  data-testid="rx-search-result-item"
+                                >
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs font-medium truncate flex-1">{code.name_ko}</span>
+                                    {code.code_source === 'custom' && (
+                                      <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0">자체</Badge>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+                                    <span className="font-mono">{code.claim_code}</span>
+                                    {code.classification && <span>· {code.classification}</span>}
+                                  </div>
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+
                       <div className="text-[10px] font-semibold text-muted-foreground px-1 pt-1">
                         클릭하면 처방내역에 적용됩니다
                       </div>
@@ -1579,7 +1773,8 @@ export default function MedicalChartPanel({
                             key={set.id}
                             type="button"
                             onClick={() => loadPrescriptionSet(set)}
-                            className="w-full text-left rounded-lg border bg-card px-3 py-2.5 hover:border-teal-400 hover:bg-teal-50/30 transition-colors"
+                            disabled={gateChecking}
+                            className="w-full text-left rounded-lg border bg-card px-3 py-2.5 hover:border-teal-400 hover:bg-teal-50/30 transition-colors disabled:opacity-50"
                             data-testid="rx-set-option"
                           >
                             <div className="font-medium text-xs">{set.name}</div>
@@ -1780,6 +1975,79 @@ export default function MedicalChartPanel({
           )}
         </div>
       </div>
+
+      {/* T-20260603-foot-RX-MODULE-8REQ #2/AC-2: 약품 금기증 확인 게이트.
+          prescription_code_id 매칭 금기증 보유 약 추가 시 전체 항목 체크 후에만 진행(우회불가). 의료안전 직결. */}
+      {gateContras.length > 0 && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4"
+          data-testid="rx-contra-gate"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-md rounded-xl bg-white shadow-2xl overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border-b border-red-100">
+              <AlertTriangle className="h-5 w-5 text-red-600 shrink-0" />
+              <div className="font-semibold text-sm text-red-700">금기증 확인이 필요합니다</div>
+            </div>
+            <div className="px-4 py-3 space-y-2 max-h-[50vh] overflow-y-auto">
+              <p className="text-xs text-muted-foreground">
+                추가하려는 처방 약품에 등록된 금기증이 있습니다. 각 항목을 확인하고 체크해야 처방을 추가할 수 있습니다.
+              </p>
+              {gateContras.map((c) => (
+                <label
+                  key={c.id}
+                  className="flex items-start gap-2 cursor-pointer rounded-lg border p-2 hover:bg-muted/40"
+                  data-testid="rx-contra-item"
+                >
+                  <input
+                    type="checkbox"
+                    checked={ackedContraIds.has(c.id)}
+                    onChange={() =>
+                      setAckedContraIds((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(c.id)) next.delete(c.id);
+                        else next.add(c.id);
+                        return next;
+                      })
+                    }
+                    className="mt-0.5 h-4 w-4 accent-red-600 shrink-0"
+                    data-testid="rx-contra-ack"
+                  />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      {c.severity && (
+                        <Badge variant="destructive" className="text-[9px] h-4 px-1 shrink-0">{c.severity}</Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-foreground">{c.contraindication_text}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-2 px-4 py-3 border-t bg-muted/20">
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1 h-9 text-xs"
+                onClick={cancelGate}
+                data-testid="rx-contra-cancel"
+              >
+                처방 취소
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1 h-9 text-xs bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+                disabled={gateContras.some((c) => !ackedContraIds.has(c.id))}
+                onClick={confirmGate}
+                data-testid="rx-contra-confirm"
+              >
+                확인하고 처방 추가
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </>,
     document.body,
   );
