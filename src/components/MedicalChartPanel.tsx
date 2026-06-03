@@ -170,6 +170,15 @@ interface TreatmentMemoEntry {
   memo_type?: string | null;
 }
 
+// T-20260603-foot-CHART-SPECIAL-NOTE: 특이사항 공용 누적칸 항목 (환자 단위, 날짜 분기 없음)
+interface SpecialNoteEntry {
+  id: string;
+  content: string;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+}
+
 // T-20260526-foot-MEDCHART-SYNC: 방문 이력 항목 (진료내역)
 interface VisitHistoryEntry {
   id: string;
@@ -334,6 +343,12 @@ export default function MedicalChartPanel({
   const [treatImagesLoaded, setTreatImagesLoaded] = useState(false);
   const [treatImagesLoading, setTreatImagesLoading] = useState(false);
 
+  // T-20260603-foot-CHART-SPECIAL-NOTE: 특이사항 공용 누적칸 (좌측 타임라인 ⑤)
+  const [specialNotes, setSpecialNotes] = useState<SpecialNoteEntry[]>([]);
+  const [specialNoteInput, setSpecialNoteInput] = useState('');
+  const [specialNoteSaving, setSpecialNoteSaving] = useState(false);
+  const [specialNoteOpen, setSpecialNoteOpen] = useState(true);
+
   // T-20260526-foot-VISIT-FOLD-FILTER: 아코디언 + 필터 상태
   const [expandedChartIds, setExpandedChartIds] = useState<Set<string>>(new Set<string>());
   const [memoFilters, setMemoFilters] = useState<Set<MemoFilter>>(new Set<MemoFilter>());
@@ -344,7 +359,7 @@ export default function MedicalChartPanel({
     if (!customerId || !clinicId) return;
     setLoading(true);
     try {
-      const [custRes, chartsRes, phrasesRes, rxSetsRes, treatMemosRes, staffRes, superRes] = await Promise.all([
+      const [custRes, chartsRes, phrasesRes, rxSetsRes, treatMemosRes, staffRes, superRes, specialNotesRes] = await Promise.all([
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
           .from('customers')
@@ -393,6 +408,14 @@ export default function MedicalChartPanel({
           .select('id,name,diagnosis,clinical_progress,rx_items,is_active,sort_order')
           .eq('is_active', true)
           .order('sort_order', { ascending: true }),
+        // T-20260603-foot-CHART-SPECIAL-NOTE: 특이사항 공용 누적칸 (환자 단위, 최신순)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
+          .from('customer_special_notes')
+          .select('id,content,created_by,created_by_name,created_at')
+          .eq('customer_id', customerId)
+          .eq('clinic_id', clinicId)
+          .order('created_at', { ascending: false }),
       ]);
 
       if (custRes.data) setCustomer(custRes.data as CustomerBasic);
@@ -408,6 +431,8 @@ export default function MedicalChartPanel({
       );
       // T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 상태 설정
       setTreatMemos((treatMemosRes.data as TreatmentMemoEntry[]) ?? []);
+      // T-20260603-foot-CHART-SPECIAL-NOTE: 특이사항 공용 누적칸 (조회 실패 시 빈 목록 — 레거시 무영향)
+      setSpecialNotes((specialNotesRes?.data as SpecialNoteEntry[]) ?? []);
       // T-20260603-foot-CHART-UIUX-ENHANCE AC-13: 기록자 이메일→이름 매핑 구성
       {
         const nameMap: Record<string, string> = {};
@@ -1084,6 +1109,37 @@ export default function MedicalChartPanel({
     return staffNameMap[createdBy] ?? createdBy.split('@')[0] ?? createdBy;
   }
 
+  // T-20260603-foot-CHART-SPECIAL-NOTE AC-2: 특이사항 1줄 누적 추가 (기존 항목 변경 X)
+  async function addSpecialNote() {
+    const content = specialNoteInput.trim();
+    if (!content) return;
+    if (!customerId || !clinicId) { toast.error('고객 정보가 없습니다'); return; }
+    setSpecialNoteSaving(true);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from('customer_special_notes')
+        .insert({
+          customer_id: customerId,
+          clinic_id: clinicId,
+          content,
+          created_by: currentUserEmail,
+          created_by_name: currentUserName,
+        })
+        .select('id,content,created_by,created_by_name,created_at')
+        .single();
+      if (error) throw error;
+      // 누적 보존: 기존 목록 위에 신규 항목만 prepend (최신순)
+      setSpecialNotes(prev => [data as SpecialNoteEntry, ...prev]);
+      setSpecialNoteInput('');
+      toast.success('특이사항이 추가되었습니다');
+    } catch {
+      toast.error('특이사항 추가 실패 — 잠시 후 다시 시도해주세요');
+    } finally {
+      setSpecialNoteSaving(false);
+    }
+  }
+
   return createPortal(
     <>
       {/* 백드롭 — 클릭 시 닫힘 (AC-2 Drawer 외부 클릭 닫힘) */}
@@ -1174,6 +1230,89 @@ export default function MedicalChartPanel({
                     <Plus className="h-3.5 w-3.5" />
                     새 기록
                   </button>
+                </div>
+
+                {/* T-20260603-foot-CHART-SPECIAL-NOTE: ⑤ 특이사항 공용 누적칸 (환자 단위, 날짜 분기 없음) */}
+                <div className="flex-none border-b bg-amber-50/40" data-testid="special-note-section">
+                  <button
+                    type="button"
+                    onClick={() => setSpecialNoteOpen(o => !o)}
+                    className="w-full flex items-center justify-between gap-1 px-2 py-1.5 hover:bg-amber-50 transition-colors"
+                    data-testid="special-note-toggle"
+                    aria-expanded={specialNoteOpen}
+                  >
+                    <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-700 uppercase tracking-wide">
+                      <AlertTriangle className="h-3 w-3" />
+                      특이사항
+                      {specialNotes.length > 0 && (
+                        <span className="text-[9px] text-amber-600 tabular-nums">({specialNotes.length})</span>
+                      )}
+                    </span>
+                    <ChevronDown
+                      className={`h-3 w-3 text-amber-600 transition-transform duration-200 ${specialNoteOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+
+                  {specialNoteOpen && (
+                    <div className="px-2 pb-2 space-y-1.5">
+                      {/* 누적 항목 목록 (최신순, 기존 항목 불변 — read-only 표시) */}
+                      <div className="max-h-40 overflow-y-auto space-y-1" data-testid="special-note-list">
+                        {specialNotes.length === 0 ? (
+                          <p className="text-[10px] text-muted-foreground italic py-1">등록된 특이사항 없음</p>
+                        ) : (
+                          specialNotes.map(note => (
+                            <div
+                              key={note.id}
+                              className="rounded border border-amber-200 bg-white px-1.5 py-1"
+                              data-testid="special-note-item"
+                            >
+                              <p className="text-[10px] text-gray-800 whitespace-pre-wrap leading-snug break-words">
+                                {note.content}
+                              </p>
+                              <div className="flex items-center justify-between gap-1 mt-0.5 text-[8px] text-muted-foreground">
+                                <span className="truncate" data-testid="special-note-recorder">
+                                  {note.created_by_name || recorderName(note.created_by) || '기록자 미상'}
+                                </span>
+                                <span className="shrink-0 tabular-nums">
+                                  {(() => {
+                                    try { return format(new Date(note.created_at), 'yy.MM.dd HH:mm'); }
+                                    catch { return ''; }
+                                  })()}
+                                </span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {/* 1줄 추가 입력 (누적 append — 기존 항목 변경 안 됨) */}
+                      <div className="flex items-end gap-1">
+                        <Textarea
+                          value={specialNoteInput}
+                          onChange={e => setSpecialNoteInput(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              if (!specialNoteSaving) addSpecialNote();
+                            }
+                          }}
+                          placeholder="특이사항 입력 후 추가"
+                          rows={1}
+                          className="min-h-[32px] text-[10px] resize-none bg-white placeholder:text-gray-400"
+                          data-testid="special-note-input"
+                        />
+                        <button
+                          type="button"
+                          onClick={addSpecialNote}
+                          disabled={specialNoteSaving || !specialNoteInput.trim()}
+                          className="shrink-0 rounded-md bg-amber-600 px-2 py-1.5 text-[10px] font-semibold text-white hover:bg-amber-700 disabled:opacity-40 transition-colors"
+                          data-testid="special-note-add-btn"
+                        >
+                          {specialNoteSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : '추가'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* T-20260526-foot-VISIT-FOLD-FILTER: 메모 필터 + 전체 열기/접기 */}
