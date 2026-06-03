@@ -20,6 +20,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
 import { Loader2, Plus, Pencil, Trash2, X, Folder } from 'lucide-react';
+import RxCountInput from '@/components/admin/RxCountInput';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,6 +36,10 @@ export interface PrescriptionItem {
   //   자유텍스트 수기입력은 null 유지(레거시 무중단). AC-2 금기증 게이트는 이 id 기준으로만 매칭.
   prescription_code_id?: string | null;
   classification?: string | null; // AC-3 색상매핑 프록시 (prescription_codes.classification 스냅샷)
+  // T-20260603-foot-RX-CHART-FOLLOWUP3 C-2-5 (#9-1 현장확정): 처방 횟수 = 숫자만(예: 3).
+  //   "회"는 값에 포함하지 않고 필드 배경(suffix)에서만 표기. 기존 frequency('1일 3회' 자유텍스트=용법)는
+  //   분해하지 않고 별도 횟수칸 신설(additive·nullable, JSONB라 마이그 불요).
+  count?: number | null;
 }
 
 // T-20260603-foot-RX-CHART-ENHANCE AC-5: prescription_codes.classification → 투여경로(route) 프록시 매핑.
@@ -150,7 +155,7 @@ function useDeleteSet() {
 interface ItemRowProps {
   item: PrescriptionItem;
   idx: number;
-  onChange: (idx: number, field: keyof PrescriptionItem, val: string | number) => void;
+  onChange: (idx: number, field: keyof PrescriptionItem, val: string | number | null) => void;
   onRemove: (idx: number) => void;
   canRemove: boolean;
 }
@@ -176,7 +181,7 @@ function ItemRow({ item, idx, onChange, onRemove, canRemove }: ItemRowProps) {
           className="h-7 text-xs mt-0.5"
         />
       </div>
-      <div className="col-span-2">
+      <div className="col-span-1">
         <Label className="text-[10px]">투여경로</Label>
         <Input
           value={item.route}
@@ -186,12 +191,20 @@ function ItemRow({ item, idx, onChange, onRemove, canRemove }: ItemRowProps) {
         />
       </div>
       <div className="col-span-2">
-        <Label className="text-[10px]">횟수</Label>
+        <Label className="text-[10px]">용법</Label>
         <Input
           value={item.frequency}
           onChange={(e) => onChange(idx, 'frequency', e.target.value)}
           placeholder="1일 2회"
           className="h-7 text-xs mt-0.5"
+        />
+      </div>
+      {/* T-20260603-foot-RX-CHART-FOLLOWUP3 C-2-5: 횟수 = 숫자만, "회"는 배경 suffix */}
+      <div className="col-span-1">
+        <Label className="text-[10px]">횟수</Label>
+        <RxCountInput
+          value={item.count ?? null}
+          onChange={(v) => onChange(idx, 'count', v)}
         />
       </div>
       <div className="col-span-1">
@@ -265,7 +278,7 @@ export default function PrescriptionSetsTab() {
     setOpen(true);
   }
 
-  function handleItemChange(idx: number, field: keyof PrescriptionItem, val: string | number) {
+  function handleItemChange(idx: number, field: keyof PrescriptionItem, val: string | number | null) {
     setForm((f) => {
       const items = [...f.items];
       items[idx] = { ...items[idx], [field]: val };
@@ -400,6 +413,7 @@ export default function PrescriptionSetsTab() {
                       {item.dosage && <span>{item.dosage}</span>}
                       <span>{item.route}</span>
                       <span>{item.frequency}</span>
+                      {item.count != null && <span>{item.count}회</span>}
                       <span>{item.days}일</span>
                     </div>
                   ))}

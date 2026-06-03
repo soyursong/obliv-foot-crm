@@ -23,9 +23,17 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { toast } from '@/lib/toast';
 import { Loader2, Plus, Pencil, Trash2, X, Sparkles, Stethoscope, FileText, FlaskConical } from 'lucide-react';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
+import RxCountInput from '@/components/admin/RxCountInput';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -53,7 +61,8 @@ const EMPTY_ITEM: PrescriptionItem = {
   name: '',
   dosage: '',
   route: '경구',
-  frequency: '1일 3회',
+  frequency: '1일 3회', // 용법(free-text)
+  count: null,          // 횟수(숫자만) — FOLLOWUP3 C-2-5
   days: 3,
   notes: '',
 };
@@ -133,12 +142,99 @@ function useDeleteSuper() {
 }
 
 // ---------------------------------------------------------------------------
+// C-2 연동 소스 (FOLLOWUP3): 진단명 마스터 / 임상경과 상용구 / 처방세트
+// ---------------------------------------------------------------------------
+
+// AC-2-1: 등록된(=차트에 입력된 이력 + 기존 슈퍼상용구) 진단명 distinct 목록 → datalist 자동노출.
+//   별도 진단명 마스터 테이블이 없으므로 medical_charts.diagnosis 이력 + super_phrases.diagnosis 를 출처로 사용.
+function useRegisteredDiagnoses(clinicId: string | null) {
+  return useQuery({
+    queryKey: ['registered_diagnoses', clinicId],
+    queryFn: async () => {
+      const set = new Set<string>();
+      // 진료차트 이력의 진단명
+      let q = supabase
+        .from('medical_charts')
+        .select('diagnosis')
+        .not('diagnosis', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(500);
+      if (clinicId) q = q.eq('clinic_id', clinicId);
+      const { data: charts } = await q;
+      (charts ?? []).forEach((r: { diagnosis: string | null }) => {
+        const d = (r.diagnosis ?? '').trim();
+        if (d) set.add(d);
+      });
+      // 기존 슈퍼상용구의 진단명
+      const { data: sp } = await supabase
+        .from('super_phrases')
+        .select('diagnosis')
+        .not('diagnosis', 'is', null);
+      (sp ?? []).forEach((r: { diagnosis: string | null }) => {
+        const d = (r.diagnosis ?? '').trim();
+        if (d) set.add(d);
+      });
+      return Array.from(set).sort((a, b) => a.localeCompare(b, 'ko'));
+    },
+  });
+}
+
+interface MedicalPhrase {
+  id: number;
+  name: string;
+  content: string;
+}
+
+// AC-2-2: 진료차트 상용구(phrase_templates, phrase_type='medical_chart') → 임상경과 슬롯 채우기.
+function useMedicalPhrases() {
+  return useQuery({
+    queryKey: ['medical_chart_phrases'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('phrase_templates')
+        .select('id, name, content, is_active, phrase_type, sort_order')
+        .eq('phrase_type', 'medical_chart')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
+      if (error) throw error;
+      return (data ?? []).map((d) => ({ id: d.id, name: d.name, content: d.content })) as MedicalPhrase[];
+    },
+  });
+}
+
+interface RxSetLite {
+  id: number;
+  name: string;
+  items: PrescriptionItem[];
+}
+
+// AC-2-3: 처방세트(prescription_sets) → 처방내역 슬롯으로 항목 불러오기.
+function useRxSetsLite() {
+  return useQuery({
+    queryKey: ['rx_sets_lite'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('prescription_sets')
+        .select('id, name, items, is_active, sort_order')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
+      if (error) throw error;
+      return (data ?? []).map((d) => ({
+        id: d.id,
+        name: d.name,
+        items: (d.items ?? []) as PrescriptionItem[],
+      })) as RxSetLite[];
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Sub-component: 처방 항목 편집 행 (PrescriptionSetsTab.ItemRow 동형)
 // ---------------------------------------------------------------------------
 interface ItemRowProps {
   item: PrescriptionItem;
   idx: number;
-  onChange: (idx: number, field: keyof PrescriptionItem, val: string | number) => void;
+  onChange: (idx: number, field: keyof PrescriptionItem, val: string | number | null) => void;
   onRemove: (idx: number) => void;
 }
 
@@ -163,7 +259,7 @@ function ItemRow({ item, idx, onChange, onRemove }: ItemRowProps) {
           className="h-7 text-xs mt-0.5"
         />
       </div>
-      <div className="col-span-2">
+      <div className="col-span-1">
         <Label className="text-[10px]">투여경로</Label>
         <Input
           value={item.route}
@@ -173,12 +269,19 @@ function ItemRow({ item, idx, onChange, onRemove }: ItemRowProps) {
         />
       </div>
       <div className="col-span-2">
-        <Label className="text-[10px]">횟수</Label>
+        <Label className="text-[10px]">용법</Label>
         <Input
           value={item.frequency}
           onChange={(e) => onChange(idx, 'frequency', e.target.value)}
           placeholder="1일 2회"
           className="h-7 text-xs mt-0.5"
+        />
+      </div>
+      <div className="col-span-1">
+        <Label className="text-[10px]">횟수</Label>
+        <RxCountInput
+          value={item.count ?? null}
+          onChange={(v) => onChange(idx, 'count', v)}
         />
       </div>
       <div className="col-span-1">
@@ -220,9 +323,15 @@ function ItemRow({ item, idx, onChange, onRemove }: ItemRowProps) {
 export default function SuperPhrasesTab() {
   const { profile } = useAuth();
   const canEdit = profile?.role === 'admin' || profile?.role === 'manager';
+  const clinicId = (profile as { clinic_id?: string } | null)?.clinic_id ?? null;
   const { data: phrases = [], isLoading, isError } = useSuperPhrases();
   const upsert = useUpsertSuper();
   const del = useDeleteSuper();
+
+  // C-2 연동 소스 (FOLLOWUP3)
+  const { data: diagnoses = [] } = useRegisteredDiagnoses(clinicId);   // AC-2-1
+  const { data: medicalPhrases = [] } = useMedicalPhrases();           // AC-2-2
+  const { data: rxSets = [] } = useRxSetsLite();                       // AC-2-3
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<SuperPhrase | null>(null);
@@ -247,7 +356,7 @@ export default function SuperPhrasesTab() {
     setOpen(true);
   }
 
-  function handleItemChange(idx: number, field: keyof PrescriptionItem, val: string | number) {
+  function handleItemChange(idx: number, field: keyof PrescriptionItem, val: string | number | null) {
     setForm((f) => {
       const items = [...f.rx_items];
       items[idx] = { ...items[idx], [field]: val };
@@ -257,6 +366,34 @@ export default function SuperPhrasesTab() {
 
   function addItem() {
     setForm((f) => ({ ...f, rx_items: [...f.rx_items, { ...EMPTY_ITEM }] }));
+  }
+
+  // AC-2-2: 진료차트 상용구(phrase_templates) 적용 — 선택 시 임상경과에 내용 채움(기존 텍스트 있으면 줄바꿈 후 append).
+  function applyMedicalPhrase(id: string) {
+    const p = medicalPhrases.find((m) => String(m.id) === id);
+    if (!p) return;
+    setForm((f) => {
+      const prev = (f.clinical_progress ?? '').trim();
+      const next = prev ? `${prev}\n${p.content}` : p.content;
+      return { ...f, clinical_progress: next };
+    });
+  }
+
+  // AC-2-3: 처방세트(prescription_sets) 불러오기 — 선택 시 세트 항목을 처방내역에 추가(빈 행 제거 후 append).
+  function loadRxSet(id: string) {
+    const s = rxSets.find((r) => String(r.id) === id);
+    if (!s) return;
+    const incoming = (s.items ?? []).map((i) => ({ ...EMPTY_ITEM, ...i }));
+    if (incoming.length === 0) {
+      toast.error('선택한 처방세트에 항목이 없습니다.');
+      return;
+    }
+    setForm((f) => {
+      // 사용자가 추가했지만 약품명이 빈 행은 정리하고 세트 항목을 이어붙임
+      const kept = f.rx_items.filter((i) => (i.name ?? '').trim() !== '');
+      return { ...f, rx_items: [...kept, ...incoming] };
+    });
+    toast.success(`"${s.name}" 처방세트 ${incoming.length}개 항목을 불러왔습니다.`);
   }
 
   function removeItem(idx: number) {
@@ -417,21 +554,48 @@ export default function SuperPhrasesTab() {
             <div>
               <Label className="text-xs flex items-center gap-1">
                 <Stethoscope className="h-3 w-3" /> 진단명 <span className="text-muted-foreground font-normal">(선택)</span>
+                {diagnoses.length > 0 && (
+                  <span className="text-[10px] text-teal-600 font-normal">· 등록된 진단명 {diagnoses.length}개 자동완성</span>
+                )}
               </Label>
+              {/* AC-2-1: 등록된 진단명 마스터(차트 이력+기존 슈퍼상용구) datalist 자동노출 */}
               <Input
                 value={form.diagnosis}
                 onChange={(e) => setForm((f) => ({ ...f, diagnosis: e.target.value }))}
                 placeholder="예) 발톱무좀(조갑백선)"
                 className="mt-1"
+                list="super-phrase-diagnosis-options"
                 data-testid="super-phrase-diagnosis-input"
               />
+              <datalist id="super-phrase-diagnosis-options">
+                {diagnoses.map((d) => (
+                  <option key={d} value={d} />
+                ))}
+              </datalist>
             </div>
 
             {/* 임상경과 슬롯 */}
             <div>
-              <Label className="text-xs flex items-center gap-1">
-                <FileText className="h-3 w-3" /> 임상경과 <span className="text-muted-foreground font-normal">(선택)</span>
-              </Label>
+              <div className="flex items-center justify-between mb-1">
+                <Label className="text-xs flex items-center gap-1">
+                  <FileText className="h-3 w-3" /> 임상경과 <span className="text-muted-foreground font-normal">(선택)</span>
+                </Label>
+                {/* AC-2-2: 진료차트 상용구 적용 — 선택 시 임상경과에 내용 채움 */}
+                {medicalPhrases.length > 0 && (
+                  <Select value="" onValueChange={applyMedicalPhrase}>
+                    <SelectTrigger className="h-7 w-[180px] text-[11px]" data-testid="super-phrase-clinical-template-trigger">
+                      <SelectValue placeholder="상용구 불러오기" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {medicalPhrases.map((m) => (
+                        <SelectItem key={m.id} value={String(m.id)} className="text-xs">
+                          {m.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
               <Textarea
                 value={form.clinical_progress}
                 onChange={(e) => setForm((f) => ({ ...f, clinical_progress: e.target.value }))}
@@ -447,10 +611,27 @@ export default function SuperPhrasesTab() {
                 <Label className="text-xs flex items-center gap-1">
                   <FlaskConical className="h-3 w-3" /> 처방내역 ({form.rx_items.length}개) <span className="text-muted-foreground font-normal">(선택)</span>
                 </Label>
-                <Button size="sm" variant="ghost" onClick={addItem} className="h-6 text-xs" data-testid="super-phrase-add-rx-btn">
-                  <Plus className="h-3 w-3 mr-1" />
-                  처방 항목 추가
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  {/* AC-2-3: 처방세트(처방리스트) 불러오기 — 선택 시 세트 항목을 처방내역에 추가 */}
+                  {rxSets.length > 0 && (
+                    <Select value="" onValueChange={loadRxSet}>
+                      <SelectTrigger className="h-6 w-[150px] text-[11px]" data-testid="super-phrase-rxset-trigger">
+                        <SelectValue placeholder="처방세트 불러오기" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {rxSets.map((r) => (
+                          <SelectItem key={r.id} value={String(r.id)} className="text-xs">
+                            {r.name} ({(r.items ?? []).length})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={addItem} className="h-6 text-xs" data-testid="super-phrase-add-rx-btn">
+                    <Plus className="h-3 w-3 mr-1" />
+                    처방 항목 추가
+                  </Button>
+                </div>
               </div>
               {form.rx_items.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-3 text-[11px] text-muted-foreground text-center">
