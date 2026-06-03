@@ -48,7 +48,7 @@ import { format } from 'date-fns';
 import {
   BookOpen, ClipboardList, Download, Eraser, Highlighter, Pencil, Plus, RotateCcw,
   Save, Trash2, Type, X, ChevronLeft, FileText, Undo2, TextCursorInput, Paintbrush,
-  GripVertical, CheckSquare, Move,
+  CheckSquare, Move,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
@@ -464,19 +464,41 @@ function PlacedItemOverlay({
           ×
         </button>
       )}
-      {/* 드래그 핸들 힌트 (선택/이동 모드 + 선택 시 표시) */}
-      {interactive && isSelected && (
-        <div style={{
+      {/* T-20260603-foot-PHRASE-MOVE-RESTORE (AC-2·AC-4):
+          항상 보이는 인터랙티브 이동 그립 핸들.
+          - 본문(wrapper)은 드로잉 모드에서 pointerEvents:'none'(펜 passthrough, AC-3 무회귀) 유지하되,
+            이 핸들만 pointerEvents:'auto' → CSS상 부모 none이어도 자식 auto는 이벤트 수신 →
+            어느 도구(펜/형광펜/지우개/화이트)에서든 핸들 드래그로 1단계 상용구 이동(AC-4).
+          - parent PHRASE-PEN-PASSTHROUGH의 '선택/이동 도구 명시 전환' 요구를 제거 → 회귀 복구.
+          - 핸들 자체가 발견 가능한 이동 진입점(AC-2). 별도 버튼 탐색 불필요. */}
+      <div
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        title="드래그하여 상용구 이동 (탭: 선택)"
+        style={{
           position: 'absolute',
-          top: -10,
-          left: -2,
-          color: '#7c3aed',
-          fontSize: 9,
-          pointerEvents: 'none',
-        }}>
-          <GripVertical style={{ width: 10, height: 10 }} />
-        </div>
-      )}
+          top: -9,
+          left: -9,
+          width: 22,
+          height: 22,
+          borderRadius: '50%',
+          background: isSelected ? '#7c3aed' : '#0d9488', // 선택 시 보라, 기본 teal-600 (풋 팔레트)
+          color: '#fff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'grab',
+          // 핵심: wrapper가 'none'이어도 이 핸들만 'auto' → 드로잉 모드에서도 1단계 이동 가능
+          pointerEvents: 'auto',
+          touchAction: 'none',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
+          zIndex: 31,
+        }}
+      >
+        <Move style={{ width: 12, height: 12 }} />
+      </div>
     </div>
   );
 }
@@ -1440,6 +1462,9 @@ export function PenChartTab({
     setHasDrawing(true);
     switchTool('pen');
     setPendingBoilerplate('');
+    // T-20260603-foot-PHRASE-MOVE-RESTORE (B안·AC-2): 배치 직후 방금 놓은 상용구를 자동 선택
+    // → 이동 그립이 보라색으로 강조돼 "여기를 잡아 옮길 수 있다"는 affordance를 즉시 노출.
+    setSelectedIds(new Set([newItem.id]));
   };
 
   // T-20260522-foot-PENCHART-TOOLS-V3 AC-7~9: 텍스트 도구 — placedItems에 추가 (드래그·삭제 지원)
