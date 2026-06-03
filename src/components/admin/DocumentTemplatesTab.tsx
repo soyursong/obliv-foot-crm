@@ -50,7 +50,6 @@ interface DocForm {
   content: string;
   is_active: boolean;
   sort_order: number;
-  category: string;
   subcategory: string;
 }
 
@@ -60,11 +59,10 @@ const EMPTY_FORM: DocForm = {
   content: '',
   is_active: true,
   sort_order: 0,
-  category: '',
   subcategory: '',
 };
 
-// #2(FOLLOWUP2): 카테고리 미지정 라벨(spec groupByCategory 계약과 동일)
+// FOLLOWUP3 C-3: 하위분류 미지정 라벨.
 const UNCATEGORIZED = '미분류';
 
 const DOC_TYPE_LABELS: Record<string, string> = {
@@ -96,14 +94,15 @@ function useUpsertDoc() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, form }: { id?: number; form: DocForm }) => {
+      // FOLLOWUP3 C-3: 위계 = '서류이름(name) > 하위분류(subcategory)' 단일 2단.
+      //   레거시 `category` 컬럼은 더 이상 입력받지 않음 → payload에서 제외하여
+      //   기존 행의 값을 보존(파괴적 백필/드롭 없음, 신규 INSERT는 DB default=NULL).
       const payload = {
         document_type: form.document_type,
         name: form.name,
         content: form.content,
         is_active: form.is_active,
         sort_order: form.sort_order,
-        // #2(FOLLOWUP2): 2단계 카테고리. 빈 문자열은 NULL(미분류)로 저장.
-        category: form.category.trim() === '' ? null : form.category.trim(),
         subcategory: form.subcategory.trim() === '' ? null : form.subcategory.trim(),
         updated_at: new Date().toISOString(),
       };
@@ -139,6 +138,85 @@ function useDeleteDoc() {
 }
 
 // ---------------------------------------------------------------------------
+// FOLLOWUP3 C-3: 하위분류 콤보박스 — 기존 하위분류 드롭다운 선택 + 신규 직접 입력.
+//   현장 의도: '서류이름 > 하위분류 드롭다운으로 선택'. 후보가 없거나 '직접 입력'을
+//   고르면 자유 입력으로 전환, 후보가 있으면 다시 목록 선택으로 돌아갈 수 있음.
+// ---------------------------------------------------------------------------
+const SUBCAT_NONE = '__none__';
+const SUBCAT_CUSTOM = '__custom__';
+
+function SubcategoryField({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+}) {
+  // 초기값이 후보에 없는 비어있지 않은 값이면 자유 입력 모드로 진입.
+  const [custom, setCustom] = useState<boolean>(
+    () => value.trim() !== '' && !options.includes(value.trim()),
+  );
+
+  if (custom || options.length === 0) {
+    return (
+      <div className="mt-1 flex items-center gap-1">
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="예) 위장장애"
+          data-testid="doc-template-subcategory-input"
+          autoFocus={custom}
+        />
+        {options.length > 0 && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="shrink-0 text-[11px]"
+            onClick={() => {
+              setCustom(false);
+              onChange('');
+            }}
+            data-testid="doc-template-subcategory-tolist"
+          >
+            목록선택
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <Select
+      value={value.trim() === '' ? SUBCAT_NONE : value}
+      onValueChange={(v) => {
+        if (v === SUBCAT_CUSTOM) {
+          setCustom(true);
+          onChange('');
+        } else if (v === SUBCAT_NONE) {
+          onChange('');
+        } else {
+          onChange(v);
+        }
+      }}
+    >
+      <SelectTrigger className="mt-1" data-testid="doc-template-subcategory-select">
+        <SelectValue placeholder="하위분류 선택" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={SUBCAT_NONE}>미지정</SelectItem>
+        {options.map((s) => (
+          <SelectItem key={s} value={s}>{s}</SelectItem>
+        ))}
+        <SelectItem value={SUBCAT_CUSTOM}>+ 새 하위분류 직접 입력…</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 export default function DocumentTemplatesTab() {
@@ -168,7 +246,6 @@ export default function DocumentTemplatesTab() {
       content: t.content,
       is_active: t.is_active,
       sort_order: t.sort_order,
-      category: t.category ?? '',
       subcategory: t.subcategory ?? '',
     });
     setOpen(true);
@@ -189,12 +266,12 @@ export default function DocumentTemplatesTab() {
   const displayed =
     filterType === 'all' ? templates : templates.filter((t) => t.document_type === filterType);
 
-  // #2(FOLLOWUP2): category > subcategory 2단계 그룹핑 (미분류는 맨 끝).
-  //   spec groupByCategory 계약과 동일 규칙 — null/'' = 미분류.
+  // FOLLOWUP3 C-3: '서류이름(name) > 하위분류(subcategory)' 단일 2단 위계 그룹핑.
+  //   1단계 키 = name(서류이름이 곧 카테고리1). 2단계 = subcategory. 하위 미지정은 맨 끝.
   const grouped = (() => {
     const map = new Map<string, Map<string, DocumentTemplate[]>>();
     for (const t of displayed) {
-      const c = t.category?.trim() ? t.category.trim() : UNCATEGORIZED;
+      const c = t.name?.trim() ? t.name.trim() : UNCATEGORIZED;
       const s = t.subcategory?.trim() ? t.subcategory.trim() : UNCATEGORIZED;
       if (!map.has(c)) map.set(c, new Map());
       const sub = map.get(c)!;
@@ -216,10 +293,7 @@ export default function DocumentTemplatesTab() {
       }));
   })();
 
-  // 카테고리/하위 카테고리 입력 자동완성 후보 (기존 라벨 재사용 — 오타 분기 방지)
-  const categoryNames = Array.from(
-    new Set(templates.map((t) => t.category?.trim()).filter((x): x is string => !!x)),
-  ).sort((a, b) => a.localeCompare(b, 'ko'));
+  // 하위분류 드롭다운 후보 (기존 라벨 재사용 — 오타 분기 방지)
   const subcategoryNames = Array.from(
     new Set(templates.map((t) => t.subcategory?.trim()).filter((x): x is string => !!x)),
   ).sort((a, b) => a.localeCompare(b, 'ko'));
@@ -356,9 +430,10 @@ export default function DocumentTemplatesTab() {
             <DialogTitle>{editing ? '서류 템플릿 수정' : '서류 템플릿 추가'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            {/* FOLLOWUP3 C-3: 위계 = '서류이름 > 하위분류' 단일 2단(중복 카테고리 제거). */}
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2">
-                <Label className="text-xs">서류 이름 *</Label>
+                <Label className="text-xs">서류 이름 * <span className="text-muted-foreground">(카테고리1)</span></Label>
                 <Input
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -384,45 +459,16 @@ export default function DocumentTemplatesTab() {
                 </Select>
               </div>
             </div>
-            {/* #2(FOLLOWUP2): 2단계 카테고리 (예: 레이저진단서 > 위장장애). 비우면 미분류. */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">
-                  카테고리 <span className="text-muted-foreground">(1단계, 선택)</span>
-                </Label>
-                <Input
-                  value={form.category}
-                  onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-                  placeholder="예) 레이저진단서"
-                  className="mt-1"
-                  list="doc-category-suggestions"
-                  data-testid="doc-template-category-input"
-                />
-                <datalist id="doc-category-suggestions">
-                  {categoryNames.map((c) => (
-                    <option key={c} value={c} />
-                  ))}
-                </datalist>
-              </div>
-              <div>
-                <Label className="text-xs">
-                  하위 카테고리 <span className="text-muted-foreground">(2단계, 선택)</span>
-                </Label>
-                <Input
-                  value={form.subcategory}
-                  onChange={(e) => setForm((f) => ({ ...f, subcategory: e.target.value }))}
-                  placeholder="예) 위장장애"
-                  className="mt-1"
-                  list="doc-subcategory-suggestions"
-                  data-testid="doc-template-subcategory-input"
-                  disabled={form.category.trim() === ''}
-                />
-                <datalist id="doc-subcategory-suggestions">
-                  {subcategoryNames.map((s) => (
-                    <option key={s} value={s} />
-                  ))}
-                </datalist>
-              </div>
+            <div>
+              <Label className="text-xs">
+                하위분류 <span className="text-muted-foreground">(선택, 드롭다운)</span>
+              </Label>
+              <SubcategoryField
+                key={`${open}-${editing?.id ?? 'new'}`}
+                value={form.subcategory}
+                options={subcategoryNames}
+                onChange={(v) => setForm((f) => ({ ...f, subcategory: v }))}
+              />
             </div>
             <div>
               <Label className="text-xs">
