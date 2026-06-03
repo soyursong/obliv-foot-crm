@@ -232,9 +232,13 @@ function ItemRow({ item, idx, onChange, onRemove, canRemove }: ItemRowProps) {
 // Component
 // ---------------------------------------------------------------------------
 export default function PrescriptionSetsTab() {
-  // T-20260603-foot-RX-PERMMENU-PARITY: 직원은 읽기 전용, CRUD는 admin/manager 전용.
+  // T-20260603-foot-RX-PERMMENU-PARITY: 직원은 읽기 전용, CRUD는 권한 보유 role만.
+  // T-20260603-foot-RX-CHART-FOLLOWUP2 #8-2(문지은 대표원장): 처방세트 관리(등록/수정/삭제)
+  //   권한 = 의사(director)/총괄(manager)/관리자(admin)급. director 누락 → 대표원장 본인이
+  //   처방세트를 관리하지 못하던 갭 해소. QuickRxBar 의 DOCTOR_ROLES 와 동일 집합.
+  const RX_SET_MANAGE_ROLES = ['director', 'manager', 'admin'] as const;
   const { profile } = useAuth();
-  const canEdit = profile?.role === 'admin' || profile?.role === 'manager';
+  const canEdit = !!profile?.role && (RX_SET_MANAGE_ROLES as readonly string[]).includes(profile.role);
   const { data: sets = [], isLoading } = usePrescriptionSets();
   const upsert = useUpsertSet();
   const del = useDeleteSet();
