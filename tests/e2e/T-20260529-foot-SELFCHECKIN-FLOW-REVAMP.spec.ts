@@ -20,6 +20,45 @@ function randSuffix() {
   return String(Date.now()).slice(-6);
 }
 
+// ── 현재 셀프접수 입력 동선 헬퍼 ──────────────────────────────────────────────
+// 전화는 NumPad(버튼 클릭) 입력, 방문구분은 2단계(예약 여부 → 초진/재진), 워크인은
+// 모달 확인 + 유입경로 선택을 거친다. (구 동선 #sc-phone.fill / 초진 직접클릭은 폐기됨)
+type PWPage = import('@playwright/test').Page;
+
+async function fillPhoneNumPad(page: PWPage, phone: string) {
+  for (const d of phone.replace(/\D/g, '').slice(0, 11)) {
+    await page.getByRole('button', { name: d, exact: true }).first().click();
+  }
+}
+
+// 예약(reserved) → 초진/재진 → 접수.
+//   '초진'(new) → personal_info, '재진'(returning) → confirm 직행
+async function enterReserved(page: PWPage, name: string, phone: string, visit: '초진' | '재진') {
+  await page.context().clearCookies();
+  await page.goto('/checkin/jongno-foot');
+  await page.waitForLoadState('networkidle');
+  await page.locator('#sc-name').fill(name);
+  await fillPhoneNumPad(page, phone);
+  await page.locator('[data-testid="btn-reserved"]').click();
+  await page.getByRole('button', { name: visit }).click();
+  await page.locator('[data-testid="btn-checkin"]').click();
+  await page.waitForTimeout(1000);
+}
+
+// 워크인(walkin) → 모달 확인 → 유입경로(검색, 비-SNS) → 접수 → personal_info
+async function enterWalkin(page: PWPage, name: string, phone: string) {
+  await page.context().clearCookies();
+  await page.goto('/checkin/jongno-foot');
+  await page.waitForLoadState('networkidle');
+  await page.locator('#sc-name').fill(name);
+  await fillPhoneNumPad(page, phone);
+  await page.locator('[data-testid="btn-walkin"]').click();
+  await page.getByRole('button', { name: '확인 후 접수하기' }).click();
+  await page.getByRole('button', { name: '검색', exact: true }).click();
+  await page.locator('[data-testid="btn-checkin"]').click();
+  await page.waitForTimeout(1000);
+}
+
 // ── AC-1/2: 초진 흐름 — personal_info 단계 ───────────────────────────────────
 test.describe('T-20260529 초진 personal_info 단계', () => {
   const sfx = randSuffix();
@@ -27,31 +66,14 @@ test.describe('T-20260529 초진 personal_info 단계', () => {
   const TEST_PHONE = `010${sfx}0001`;
 
   test('초진 → personal_info 단계 진입', async ({ page }) => {
-    await page.context().clearCookies();
-    await page.goto('/checkin/jongno-foot');
-    await page.waitForLoadState('networkidle');
+    await enterReserved(page, TEST_NAME, TEST_PHONE, '초진');
 
-    // 이름 + 전화 + 초진
-    await page.locator('#sc-name').fill(TEST_NAME);
-    await page.locator('#sc-phone').fill(TEST_PHONE);
-    await page.getByRole('button', { name: '초진' }).click();
-    await page.getByRole('button', { name: '접수하기', exact: true }).click();
-
-    // personal_info 단계 진입 확인 — 주민번호 안내 텍스트 또는 주소 입력 존재
-    await expect(
-      page.getByText(/주민번호|생년월일|주소/i).first()
-    ).toBeVisible({ timeout: 6000 });
+    // personal_info 단계 진입 확인 — 주소 입력칸 존재
+    await expect(page.locator('[data-testid="pi-address-input"]')).toBeVisible({ timeout: 6000 });
   });
 
   test('주민번호 NumPad 입력 → 마스킹 표시', async ({ page }) => {
-    await page.context().clearCookies();
-    await page.goto('/checkin/jongno-foot');
-    await page.waitForLoadState('networkidle');
-
-    await page.locator('#sc-name').fill(`pi-mask-${sfx}`);
-    await page.locator('#sc-phone').fill(`010${sfx}0002`);
-    await page.getByRole('button', { name: '초진' }).click();
-    await page.getByRole('button', { name: '접수하기', exact: true }).click();
+    await enterReserved(page, `pi-mask-${sfx}`, `010${sfx}0002`, '초진');
 
     // NumPad: 숫자 버튼 클릭으로 6자리 입력
     for (const digit of ['9', '0', '0', '1', '0', '1']) {
@@ -62,26 +84,17 @@ test.describe('T-20260529 초진 personal_info 단계', () => {
   });
 
   test('주민번호 + 주소 입력 → 다음 버튼 활성', async ({ page }) => {
-    await page.context().clearCookies();
-    await page.goto('/checkin/jongno-foot');
-    await page.waitForLoadState('networkidle');
-
-    await page.locator('#sc-name').fill(`pi-next-${sfx}`);
-    await page.locator('#sc-phone').fill(`010${sfx}0003`);
-    await page.getByRole('button', { name: '초진' }).click();
-    await page.getByRole('button', { name: '접수하기', exact: true }).click();
+    await enterReserved(page, `pi-next-${sfx}`, `010${sfx}0003`, '초진');
 
     // 주민번호 6자리 이상 입력
     for (const d of ['8', '5', '0', '3', '0', '5']) {
       await page.getByRole('button', { name: d, exact: true }).first().click();
     }
-    // 주소 입력 (input type="text" 또는 textarea)
-    const addressInput = page.locator('input[placeholder*="주소"], input[placeholder*="예: 서울"]').first();
-    await addressInput.fill('서울시 종로구');
+    // 주소 입력
+    await page.locator('[data-testid="pi-address-input"]').fill('서울시 종로구');
 
     // 다음 버튼 활성화 확인
-    const nextBtn = page.getByRole('button', { name: /다음|확인|입력완료/i });
-    await expect(nextBtn).toBeEnabled({ timeout: 3000 });
+    await expect(page.locator('[data-testid="btn-personal-info-next"]')).toBeEnabled({ timeout: 3000 });
   });
 });
 
@@ -90,21 +103,7 @@ test.describe('T-20260529 워크인 개인정보동의 단계', () => {
   const sfx = randSuffix();
 
   test('워크인 → personal_info 단계에 동의서 체크박스 존재', async ({ page }) => {
-    await page.context().clearCookies();
-    await page.goto('/checkin/jongno-foot');
-    await page.waitForLoadState('networkidle');
-
-    await page.locator('#sc-name').fill(`walkin-consent-${sfx}`);
-    await page.locator('#sc-phone').fill(`010${sfx}0011`);
-
-    // 워크인 버튼 (data-testid="btn-walkin" 또는 텍스트)
-    const walkinBtn = page.locator('[data-testid="btn-walkin"]');
-    if (await walkinBtn.count() > 0) {
-      await walkinBtn.click();
-    } else {
-      await page.getByRole('button', { name: /예약 없이|워크인/i }).click();
-    }
-    await page.getByRole('button', { name: '접수하기', exact: true }).click();
+    await enterWalkin(page, `walkin-consent-${sfx}`, `010${sfx}0011`);
 
     // personal_info 단계 — 동의서 체크박스 존재
     await expect(
@@ -129,46 +128,33 @@ test.describe('T-20260529 QR 화면 렌더링', () => {
   });
 
   test('초진 전 흐름 완료 → QR 화면 진입 확인', async ({ page }) => {
-    await page.context().clearCookies();
-    await page.goto('/checkin/jongno-foot');
-    await page.waitForLoadState('networkidle');
-
-    await page.locator('#sc-name').fill(TEST_NAME);
-    await page.locator('#sc-phone').fill(TEST_PHONE);
-    await page.getByRole('button', { name: '초진' }).click();
-    await page.getByRole('button', { name: '접수하기', exact: true }).click();
-
-    // personal_info 단계 대기
-    await page.waitForTimeout(1500);
+    await enterReserved(page, TEST_NAME, TEST_PHONE, '초진');
 
     // 주민번호 6자리
     for (const d of ['0', '1', '0', '1', '0', '1']) {
       await page.getByRole('button', { name: d, exact: true }).first().click();
     }
     // 주소
-    const addressInput = page.locator('input[placeholder*="주소"], input[placeholder*="예: 서울"]').first();
-    await addressInput.fill('서울시 중구');
+    await page.locator('[data-testid="pi-address-input"]').fill('서울시 중구');
 
     // 다음
-    await page.getByRole('button', { name: /다음|확인/i }).click();
+    await page.locator('[data-testid="btn-personal-info-next"]').click();
 
     // confirm 단계 → 접수하기
     await page.getByRole('button', { name: '접수하기' }).waitFor({ timeout: 5000 });
     await page.getByRole('button', { name: '접수하기' }).click();
 
-    // QR 화면 또는 완료 화면 대기 (네트워크 지연 고려)
-    await page.waitForTimeout(3000);
-
-    // QR 화면 data-testid 또는 완료 화면 확인
+    // QR 화면 또는 완료 화면 대기 — QR 토큰 생성/제출은 서버 의존이라 폴링으로 견고화
     const qrScreen = page.locator('[data-testid="qr-screen"]');
-    const doneScreen = page.locator('[data-testid="done-screen"], :text("접수가 완료")');
+    const doneMsg = page.getByText('접수가 완료되었습니다');
+    await expect(async () => {
+      const qrV = await qrScreen.isVisible().catch(() => false);
+      const doneV = await doneMsg.isVisible().catch(() => false);
+      // QR 또는 완료 화면 중 하나는 떠야 함 (QR 토큰 생성 실패 시 done으로 폴백)
+      expect(qrV || doneV).toBe(true);
+    }).toPass({ timeout: 15000 });
 
     const qrVisible = await qrScreen.isVisible().catch(() => false);
-    const doneVisible = await doneScreen.isVisible().catch(() => false);
-
-    // QR 또는 완료 화면 중 하나는 떠야 함 (QR 토큰 생성 실패 시 done으로 폴백)
-    expect(qrVisible || doneVisible).toBe(true);
-
     if (qrVisible) {
       // QR 화면 핵심 요소 확인
       await expect(page.locator('[data-testid="qr-guide-text"]')).toBeVisible({ timeout: 3000 });
@@ -190,22 +176,13 @@ test.describe('T-20260529 QR 화면 렌더링', () => {
   });
 
   test('QR 화면 "질문지 작성 완료" 버튼 → done 전환', async ({ page }) => {
-    await page.context().clearCookies();
-    await page.goto('/checkin/jongno-foot');
-    await page.waitForLoadState('networkidle');
-
-    await page.locator('#sc-name').fill(`${TEST_NAME}-b`);
-    await page.locator('#sc-phone').fill(`010${sfx}0022`);
-    await page.getByRole('button', { name: '초진' }).click();
-    await page.getByRole('button', { name: '접수하기', exact: true }).click();
-    await page.waitForTimeout(1000);
+    await enterReserved(page, `${TEST_NAME}-b`, `010${sfx}0022`, '초진');
 
     for (const d of ['9', '9', '0', '1', '0', '1']) {
       await page.getByRole('button', { name: d, exact: true }).first().click();
     }
-    const addressInput = page.locator('input[placeholder*="주소"], input[placeholder*="예: 서울"]').first();
-    await addressInput.fill('경기도 고양시');
-    await page.getByRole('button', { name: /다음|확인/i }).click();
+    await page.locator('[data-testid="pi-address-input"]').fill('경기도 고양시');
+    await page.locator('[data-testid="btn-personal-info-next"]').click();
     await page.getByRole('button', { name: '접수하기' }).waitFor({ timeout: 5000 });
     await page.getByRole('button', { name: '접수하기' }).click();
     await page.waitForTimeout(3000);
@@ -227,20 +204,10 @@ test.describe('T-20260529 재진 흐름 — personal_info 스킵', () => {
   const sfx = randSuffix();
 
   test('재진 → confirm 단계 직접 진입 (personal_info 없음)', async ({ page }) => {
-    await page.context().clearCookies();
-    await page.goto('/checkin/jongno-foot');
-    await page.waitForLoadState('networkidle');
+    await enterReserved(page, `revisit-skip-${sfx}`, `010${sfx}0031`, '재진');
 
-    await page.locator('#sc-name').fill(`revisit-skip-${sfx}`);
-    await page.locator('#sc-phone').fill(`010${sfx}0031`);
-    await page.getByRole('button', { name: '재진' }).click();
-    await page.getByRole('button', { name: '접수하기', exact: true }).click();
-
-    // confirm 화면으로 바로 가야 함 — 주민번호 NumPad가 없어야 함
-    await page.waitForTimeout(1500);
-    const rrnNumpad = page.locator('[data-testid="rrn-numpad"], :text(/주민번호/)').first();
-    // 재진은 personal_info 없이 confirm으로 이동하므로 주민번호 입력 없어야 함
-    await expect(rrnNumpad).not.toBeVisible();
+    // 재진은 personal_info(주소 입력칸)를 거치지 않고 confirm 직행
+    await expect(page.locator('[data-testid="pi-address-input"]')).toHaveCount(0);
 
     // confirm 화면의 접수하기 버튼 존재 확인
     await expect(
@@ -254,18 +221,7 @@ test.describe('T-20260529 AC-7 건강보험 동의 체크박스', () => {
   const sfx = randSuffix();
 
   test('personal_info 화면에 건강보험 동의 체크박스가 존재한다', async ({ page }) => {
-    await page.context().clearCookies();
-    await page.goto('/checkin/jongno-foot');
-    await page.waitForLoadState('networkidle');
-
-    // 초진 접수 입력
-    await page.locator('#sc-name').fill(`ins-consent-${sfx}`);
-    await page.locator('#sc-phone').fill(`010${sfx}0041`);
-    await page.getByRole('button', { name: '초진' }).click();
-    await page.getByRole('button', { name: '접수하기', exact: true }).click();
-
-    // personal_info 단계 대기
-    await page.waitForTimeout(1000);
+    await enterReserved(page, `ins-consent-${sfx}`, `010${sfx}0041`, '초진');
 
     // 건강보험 동의 체크박스 존재 확인 (data-testid)
     const insuranceCheckbox = page.locator('[data-testid="pi-insurance-consent-checkbox"]');
@@ -276,15 +232,7 @@ test.describe('T-20260529 AC-7 건강보험 동의 체크박스', () => {
   });
 
   test('건강보험 동의 체크박스 체크/언체크 동작', async ({ page }) => {
-    await page.context().clearCookies();
-    await page.goto('/checkin/jongno-foot');
-    await page.waitForLoadState('networkidle');
-
-    await page.locator('#sc-name').fill(`ins-toggle-${sfx}`);
-    await page.locator('#sc-phone').fill(`010${sfx}0042`);
-    await page.getByRole('button', { name: '초진' }).click();
-    await page.getByRole('button', { name: '접수하기', exact: true }).click();
-    await page.waitForTimeout(1000);
+    await enterReserved(page, `ins-toggle-${sfx}`, `010${sfx}0042`, '초진');
 
     const insuranceCheckbox = page.locator('[data-testid="pi-insurance-consent-checkbox"]');
     await expect(insuranceCheckbox).toBeVisible({ timeout: 6000 });
@@ -299,15 +247,7 @@ test.describe('T-20260529 AC-7 건강보험 동의 체크박스', () => {
   });
 
   test('건강보험 동의 체크해도 다음 버튼 활성 조건 변화 없음 (선택 필드)', async ({ page }) => {
-    await page.context().clearCookies();
-    await page.goto('/checkin/jongno-foot');
-    await page.waitForLoadState('networkidle');
-
-    await page.locator('#sc-name').fill(`ins-optional-${sfx}`);
-    await page.locator('#sc-phone').fill(`010${sfx}0043`);
-    await page.getByRole('button', { name: '초진' }).click();
-    await page.getByRole('button', { name: '접수하기', exact: true }).click();
-    await page.waitForTimeout(1000);
+    await enterReserved(page, `ins-optional-${sfx}`, `010${sfx}0043`, '초진');
 
     // 주민번호 6자리 + 주소 입력 (필수 조건 충족)
     for (const d of ['9', '0', '0', '1', '0', '1']) {
