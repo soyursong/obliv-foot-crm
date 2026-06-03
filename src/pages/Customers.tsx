@@ -552,10 +552,13 @@ function EditCustomerDialog({
   const save = async () => {
     if (!customer) return;
     setSubmitting(true);
+    const newName = name.trim();
+    // T-20260603-foot-CUSTNAME-CASCADE-DASH: 이름 변경 여부 (카스케이드 트리거)
+    const nameChanged = newName !== (customer.name ?? '').trim();
     const { error } = await supabase
       .from('customers')
       .update({
-        name: name.trim(),
+        name: newName,
         // phone 유지 (읽기전용 표시이지만 기존값 보존)
         birth_date: birthDate.trim() || null,
         // chart_number: 자동 부여 후 변경 불가 (T-20260505-foot-CHART-NUMBER-AUTO)
@@ -571,11 +574,29 @@ function EditCustomerDialog({
         postal_code: postalCode.trim() || null,
       })
       .eq('id', customer.id);
-    setSubmitting(false);
     if (error) {
+      setSubmitting(false);
       toast.error(`수정 실패: ${error.message}`);
       return;
     }
+    // T-20260603-foot-CUSTNAME-CASCADE-DASH: 이름 변경 시 비정규화 컬럼 카스케이드
+    // (reservations.customer_name / check_ins.customer_name → 대시보드 예약·체크인 카드 표기명).
+    // AC-2 부분 실패 격리: customers 업데이트는 이미 성공 → 카스케이드 실패해도 성공 처리하되 별도 경고 토스트.
+    if (nameChanged) {
+      const [resvRes, ciRes] = await Promise.all([
+        supabase.from('reservations').update({ customer_name: newName }).eq('customer_id', customer.id),
+        supabase.from('check_ins').update({ customer_name: newName }).eq('customer_id', customer.id),
+      ]);
+      const cascadeErr = resvRes.error || ciRes.error;
+      if (cascadeErr) {
+        setSubmitting(false);
+        toast.success('고객 정보는 저장되었습니다');
+        toast.error(`이름 동기화 일부 실패: ${cascadeErr.message} — 새로고침 후에도 예약/체크인 카드에 구명이 보이면 관리자에게 문의하세요.`);
+        onUpdated();
+        return;
+      }
+    }
+    setSubmitting(false);
     toast.success('수정 완료');
     onUpdated();
   };
