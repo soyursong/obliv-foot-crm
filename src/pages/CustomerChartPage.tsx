@@ -1638,6 +1638,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [slotDwell, setSlotDwell] = useState<SlotDwellSeg[]>([]);
   const [slotDwellLoading, setSlotDwellLoading] = useState(false);
   const [slotDwellLoaded, setSlotDwellLoaded] = useState(false);
+  // T-20260603-foot-SLOT-DWELL-LIVE-TICK: 진행중(is_current) 세그먼트 경과시간 실시간 카운트용 now 틱
+  const [slotDwellNowMs, setSlotDwellNowMs] = useState(() => Date.now());
   // T-20260515-foot-DOC-REISSUE-BTN: 서류 재발급 모달 대상 체크인
   const [docReissueCheckIn, setDocReissueCheckIn] = useState<CheckIn | null>(null);
   const [prescriptions, setPrescriptions] = useState<PrescriptionRow[]>([]);
@@ -3435,6 +3437,15 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     })();
     return () => { cancelled = true; };
   }, [chartTabGroup, chartTab, slotDwellLoaded, slotDwellLoading, checkInHistory]);
+
+  // T-20260603-foot-SLOT-DWELL-LIVE-TICK: slot_dwell 탭 활성 시 1초마다 now 갱신 → 진행중 세그먼트 라이브 카운트.
+  // 탭 이탈/언마운트 시 clearInterval (AC-4: 메모리 누수·백그라운드 타이머 잔존 방지)
+  useEffect(() => {
+    if (chartTabGroup !== 'history' || chartTab !== 'slot_dwell') return;
+    setSlotDwellNowMs(Date.now());
+    const id = setInterval(() => setSlotDwellNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [chartTabGroup, chartTab]);
 
   // T-20260515-foot-INLINE-RESV: 빈 슬롯 클릭 시 예약 등록
   // T-20260524-foot-THERAPIST-BISYNC AC-2: 치료사 선택 시 preferred_therapist_id 저장 + designated_therapist_id 역동기화
@@ -5552,10 +5563,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     </div>
                     {visits.map((ci) => {
                       const segs = (byCheckIn.get(ci.id) ?? []).slice().sort((a, b) => a.seq - b.seq);
-                      // 슬롯(상태)별 누적 집계
+                      // T-20260603-foot-SLOT-DWELL-LIVE-TICK: 진행중(is_current) 세그먼트는 now 기준 라이브 경과,
+                      // 완료(is_current=false)는 RPC 스냅샷 duration_seconds 그대로 (AC-3 불변)
+                      const effSec = (s: SlotDwellSeg) =>
+                        s.is_current
+                          ? Math.max(0, (slotDwellNowMs - new Date(s.entered_at).getTime()) / 1000)
+                          : s.duration_seconds;
+                      // 슬롯(상태)별 누적 집계 (AC-1: 진행중 포함 시 라이브)
                       const agg = new Map<string, number>();
-                      for (const s of segs) agg.set(s.status, (agg.get(s.status) ?? 0) + s.duration_seconds);
-                      const totalSec = segs.reduce((sum, s) => sum + s.duration_seconds, 0);
+                      for (const s of segs) agg.set(s.status, (agg.get(s.status) ?? 0) + effSec(s));
+                      const totalSec = segs.reduce((sum, s) => sum + effSec(s), 0);
                       return (
                         <div key={ci.id} className="rounded-lg border bg-white p-3 text-xs" data-testid="slot-dwell-visit">
                           <div className="flex items-center gap-1.5 font-bold text-teal-700 mb-2">
@@ -5598,7 +5615,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                     )}
                                   >
                                     {STATUS_KO[s.status as keyof typeof STATUS_KO] ?? s.status}
-                                    <span className="tabular-nums">{formatDwell(s.duration_seconds)}</span>
+                                    <span className="tabular-nums">{formatDwell(effSec(s))}</span>
                                     {s.is_current && <span className="text-emerald-600">(진행중)</span>}
                                   </span>
                                 ))}
