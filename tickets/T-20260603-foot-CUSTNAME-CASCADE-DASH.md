@@ -6,7 +6,7 @@ domain: foot
 priority: P1
 status: deploy-ready
 qa_result: pending
-deploy_commit: PENDING
+deploy_commit: 9219b61
 deployed_at: null
 bundle_hash: null
 e2e_spec: tests/e2e/T-20260603-foot-CUSTNAME-CASCADE-DASH.spec.ts
