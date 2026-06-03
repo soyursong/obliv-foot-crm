@@ -281,6 +281,13 @@ const DEFAULT_THICKNESS: Record<ActiveTool, number> = {
   select:               1.5, // 드로잉 안 함 — Record 완전성용
 };
 
+// ── T-20260603-foot-PHRASE-MULTISELECT: 상용구 복수 선택 결합 정책 (한 곳에 모음) ──
+// 결합 순서 = 클릭(선택) 순서 / 구분자 = 줄바꿈('\n') (planner 확정 #1·#2).
+// 현장 confirm 병행 중 — reversible UX 디폴트. 뒤집을 때 이 두 상수/헬퍼만 수정.
+const PHRASE_JOIN_SEPARATOR = '\n';
+const combineBoilerplate = (contents: string[]): string =>
+  contents.join(PHRASE_JOIN_SEPARATOR);
+
 // T-20260522-foot-PENCHART-TOOLS-V3: 배치된 텍스트/상용구 객체 (드래그·삭제·다중선택용)
 interface PlacedItem {
   id: string;
@@ -600,6 +607,8 @@ export function PenChartTab({
   const [phraseTemplatesLoaded, setPhraseTemplatesLoaded] = useState(false);
   const [showPhrasePanel, setShowPhrasePanel] = useState(false);
   const [phraseCategory, setPhraseCategory] = useState<string>('charting');
+  // T-20260603-foot-PHRASE-MULTISELECT: 누적 토글 복수 선택 — 클릭(선택) 순서 보존을 위해 배열 사용.
+  const [selectedPhraseIds, setSelectedPhraseIds] = useState<number[]>([]);
 
   // T-20260522-foot-PENCHART-TOOLS-V2 AC-3: 텍스트 도구 상태
   const [textInputPos, setTextInputPos] = useState<{
@@ -1236,6 +1245,7 @@ export function PenChartTab({
     setPendingBoilerplate('');
 
     setShowPhrasePanel(false);
+    setSelectedPhraseIds([]); // T-20260603-foot-PHRASE-MULTISELECT: 차트 초기화 시 선택 비움
     setTextInputPos(null);
     setTextInputValue('');
     setPlacedItems([]);
@@ -1768,6 +1778,27 @@ export function PenChartTab({
     // V3 C-2: 안내 토스트 제거 (인라인 배지로 대체)
   };
 
+  // ── T-20260603-foot-PHRASE-MULTISELECT: 복수 선택 토글/확정/초기화 ──────
+  // AC-1: 항목 클릭 = 누적 토글(패널 유지). 같은 항목 재클릭 시 해제.
+  const togglePhraseSelect = (id: number) => {
+    setSelectedPhraseIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+  // AC-3·AC-5: 선택분을 클릭 순서대로 결합 → 단일 PlacedItem 배치 모드 진입.
+  //   1개만 선택 시 combineBoilerplate가 그 1개 content를 그대로 반환 → 종전 단일 동선과 동일 결과(GUARD).
+  const confirmPhraseSelection = () => {
+    if (selectedPhraseIds.length === 0) return; // AC-4: 선택 0개 무동작
+    const contents = selectedPhraseIds
+      .map((id) => phraseTemplates.find((p) => p.id === id)?.content)
+      .filter((c): c is string => typeof c === 'string');
+    if (contents.length === 0) return;
+    handleBoilerplateSelect(combineBoilerplate(contents));
+    setSelectedPhraseIds([]); // 배치 모드 진입 후 선택 초기화
+  };
+  // AC-4: 선택 초기화(취소) — 패널은 유지.
+  const clearPhraseSelection = () => setSelectedPhraseIds([]);
+
   // ── 양식 선택 ─────────────────────────────────────────────────────────
   const handleSelectTemplate = (tpl: Template) => {
     setActiveDrawTemplate(tpl);
@@ -2108,23 +2139,69 @@ export function PenChartTab({
                     ) : (
                       phraseTemplates
                         .filter((p) => p.category === phraseCategory)
-                        .map((phrase) => (
-                          <button
-                            key={phrase.id}
-                            onClick={() => {
-                              handleBoilerplateSelect(phrase.content);
-                              setShowPhrasePanel(false);
-                            }}
-                            className="w-full text-left px-2.5 py-1.5 text-[11px] hover:bg-teal-50 border-b border-gray-100 last:border-0 transition"
-                            data-testid={`phrase-item-${phrase.id}`}
-                          >
-                            <div className="font-medium text-gray-800 truncate">{phrase.name}</div>
-                            <div className="text-gray-400 mt-0.5 text-[10px] truncate">
-                              {phrase.content.split('\n')[0]}
-                            </div>
-                          </button>
-                        ))
+                        .map((phrase) => {
+                          // T-20260603-foot-PHRASE-MULTISELECT: 누적 토글 선택. 선택 순번(1-based) 표시.
+                          const order = selectedPhraseIds.indexOf(phrase.id);
+                          const isSelected = order !== -1;
+                          return (
+                            <button
+                              key={phrase.id}
+                              onClick={() => togglePhraseSelect(phrase.id)}
+                              className={cn(
+                                'w-full text-left px-2.5 py-1.5 text-[11px] border-b border-gray-100 last:border-0 transition flex items-start gap-1.5',
+                                isSelected ? 'bg-teal-100 hover:bg-teal-100' : 'hover:bg-teal-50',
+                              )}
+                              data-testid={`phrase-item-${phrase.id}`}
+                              data-selected={isSelected}
+                              aria-pressed={isSelected}
+                            >
+                              {/* 선택 체크 + 순번 배지 (AC-1·AC-2) */}
+                              <span
+                                className={cn(
+                                  'flex-shrink-0 mt-0.5 h-4 w-4 rounded flex items-center justify-center text-[9px] font-semibold tabular-nums border transition',
+                                  isSelected
+                                    ? 'bg-teal-500 border-teal-500 text-white'
+                                    : 'border-gray-300 text-transparent',
+                                )}
+                                data-testid={`phrase-check-${phrase.id}`}
+                              >
+                                {isSelected ? order + 1 : ''}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block font-medium text-gray-800 truncate">{phrase.name}</span>
+                                <span className="block text-gray-400 mt-0.5 text-[10px] truncate">
+                                  {phrase.content.split('\n')[0]}
+                                </span>
+                              </span>
+                            </button>
+                          );
+                        })
                     )}
+                  </div>
+                </div>
+
+                {/* T-20260603-foot-PHRASE-MULTISELECT: 선택 푸터 — 삽입(확정)/취소 (AC-3·AC-4) */}
+                <div className="flex items-center justify-between gap-2 px-2 py-1.5 bg-gray-50 border-t" data-testid="phrase-select-footer">
+                  <span className="text-[10px] text-muted-foreground tabular-nums" data-testid="phrase-select-count">
+                    {selectedPhraseIds.length}개 선택
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={clearPhraseSelection}
+                      disabled={selectedPhraseIds.length === 0}
+                      className="px-2 py-1 rounded text-[11px] border border-gray-200 text-muted-foreground hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      data-testid="phrase-clear-btn"
+                    >
+                      선택 취소
+                    </button>
+                    <button
+                      onClick={confirmPhraseSelection}
+                      disabled={selectedPhraseIds.length === 0}
+                      className="px-2.5 py-1 rounded text-[11px] font-semibold bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      data-testid="phrase-insert-btn"
+                    >
+                      삽입
+                    </button>
                   </div>
                 </div>
               </div>
