@@ -82,7 +82,7 @@ export default function DoctorTools() {
                 <DollarSign className="h-3.5 w-3.5" />
                 수가세트
               </TabsTrigger>
-              <TabsTrigger value="documents" className="gap-1.5">
+              <TabsTrigger value="documents" className="gap-1.5" data-testid="tab-documents">
                 <FileText className="h-3.5 w-3.5" />
                 서류 템플릿
               </TabsTrigger>
