@@ -36,6 +36,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Crosshair,
   CreditCard,
   EyeOff,
   GripVertical,
@@ -1726,6 +1727,8 @@ function DashboardTimeline({
 }) {
   // T-20260529-foot-DASHBOARD-TIMETABLE-SYNC AC-2: 현재 시각 상태화 — 30초마다 자동 갱신
   // 슬롯 전환(매 30분)·±1시간 하이라이트 자동 갱신에 필요
+  // T-20260603-foot-TIMETABLE-NOW-AUTOSCROLL AC-2: 이 30초 틱(≤60초)이 라이브 시간 마커
+  //   위치도 함께 구동한다(별도 인터벌 불필요). AC-4: 언마운트 시 clearInterval 로 정리.
   const [now, setNow] = useState<Date>(() => new Date());
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 30_000);
@@ -1748,13 +1751,13 @@ function DashboardTimeline({
   // 수정: 항상 null (사용자가 직접 탭을 눌러 펼칠 수 있음)
   const [expandedSlot, setExpandedSlot] = useState<string | null>(null);
 
-  // T-20260523-foot-TIMETABLE-SCROLL AC-2: 현재 시간 슬롯 자동 스크롤
+  // T-20260523-foot-TIMETABLE-SCROLL AC-2: 현재 시간 슬롯 자동 스크롤 타깃 ref
   const currentSlotRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (isToday) {
-      currentSlotRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  }, [currentSlot, isToday]);
+  // T-20260603-foot-TIMETABLE-NOW-AUTOSCROLL: 세로 스크롤 컨테이너 ref (영업시간 외 클램핑용)
+  const innerScrollRef = useRef<HTMLDivElement>(null);
+  // T-20260603-foot-TIMETABLE-NOW-AUTOSCROLL AC-1: 진입 시 1회만 자동 스크롤 (이후 사용자 스크롤 보존)
+  const didInitialScrollRef = useRef(false);
+  // scrollToNow 실제 정의는 renderSlots 산출 이후 (renderSlots 의존)
 
   // ── T-20260522-foot-TIMETABLE-FOLD: 치료사별 뷰 상태 ──────────────────────────
 
@@ -1934,6 +1937,41 @@ function DashboardTimeline({
     ? Array.from(new Set([...slots, ...Object.keys(slotMap)])).sort()
     : slots;
 
+  // ── T-20260603-foot-TIMETABLE-NOW-AUTOSCROLL ─────────────────────────────────
+  // AC-1/AC-3: 현재 시각으로 스크롤. 현재 슬롯 행이 있으면 뷰포트 중앙으로,
+  // 영업시간 외 등 그리드 범위 밖이면 가장 가까운 가장자리(첫/마지막 행)로 클램핑.
+  const toMin = (s: string) => parseInt(s.slice(0, 2)) * 60 + parseInt(s.slice(3, 5));
+  const scrollToNow = useCallback(() => {
+    if (!isToday) return;
+    // 1순위: 현재 슬롯 행 (정확한 시각 위치)
+    if (currentSlotRef.current) {
+      currentSlotRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    // 폴백: 현재 슬롯 행이 없음(영업시간 외) → 첫/마지막 행으로 클램핑 (깨지지 않음)
+    const container = innerScrollRef.current;
+    if (!container || renderSlots.length === 0) return;
+    const rows = container.querySelectorAll<HTMLElement>('[data-testid="timeline-slot-row"]');
+    if (rows.length === 0) return;
+    const nowMin = currentH * 60 + currentM;
+    if (nowMin <= toMin(renderSlots[0])) {
+      rows[0].scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      rows[rows.length - 1].scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [isToday, renderSlots, currentH, currentM]);
+
+  // AC-1: 진입 시 1회 자동 스크롤. 슬롯 전환(30분)마다 재스크롤하지 않음(사용자 스크롤 보존).
+  //       다른 날짜로 이동 후 오늘로 복귀 시 플래그 리셋 → 재진입 시 다시 1회 스크롤.
+  useEffect(() => {
+    if (!isToday) { didInitialScrollRef.current = false; return; }
+    if (didInitialScrollRef.current) return;
+    didInitialScrollRef.current = true;
+    // 레이아웃/페인트 안정 후 스크롤 (슬롯 행 DOM 보장)
+    const raf = requestAnimationFrame(() => scrollToNow());
+    return () => cancelAnimationFrame(raf);
+  }, [isToday, scrollToNow]);
+
   // T-20260522-foot-TIMETABLE-FOLD: 접힌 상태 — 세로 스트립만 표시 (토글 버튼 + 라벨)
   if (folded) {
     return (
@@ -1968,15 +2006,31 @@ function DashboardTimeline({
         <span className="flex items-center gap-1">
           <Clock className="h-3 w-3" /> 통합 시간표
         </span>
-        <button
-          type="button"
-          onClick={onToggleFold}
-          className="rounded p-0.5 hover:bg-teal-100 text-gray-400 hover:text-teal-700 transition"
-          title="시간표 접기"
-          aria-label="시간표 접기"
-        >
-          <ChevronLeft className="h-3.5 w-3.5" />
-        </button>
+        <span className="flex items-center gap-0.5">
+          {/* T-20260603-foot-TIMETABLE-NOW-AUTOSCROLL AC-3: 지금 시간으로 이동 (오늘·시간표 뷰에서만) */}
+          {isToday && viewMode === 'time' && (
+            <button
+              type="button"
+              onClick={scrollToNow}
+              className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-semibold text-teal-700 hover:bg-teal-100 active:bg-teal-200 transition"
+              title="현재 시각으로 이동"
+              aria-label="현재 시각으로 이동"
+              data-testid="timeline-now-jump"
+            >
+              <Crosshair className="h-3 w-3" />
+              지금
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onToggleFold}
+            className="rounded p-0.5 hover:bg-teal-100 text-gray-400 hover:text-teal-700 transition"
+            title="시간표 접기"
+            aria-label="시간표 접기"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </button>
+        </span>
       </div>
       {/* T-20260522-foot-TIMETABLE-FOLD: 뷰 모드 탭 (시간표 | 치료사별) */}
       <div className="flex shrink-0 border-b bg-white">
@@ -2015,6 +2069,7 @@ function DashboardTimeline({
             md:overflow-x-hidden → PC에서 원래 동작
           T-20260522-foot-TIMETABLE-SCROLL: portrait 세로 스크롤 — data-testid로 CSS max-height 바인딩 */}
       <div
+        ref={innerScrollRef}
         data-testid="timeline-inner-scroll"
         className="flex-1 min-h-0 overflow-y-auto [overflow-x:clip] md:overflow-x-hidden"
       >
@@ -2140,6 +2195,12 @@ function DashboardTimeline({
           // ±1시간 범위 외 슬롯 = 비활성 존(베이지/흐림), ±1시간 이내 = 활성 존(흰/하이라이트)
           const isInactiveZone = isToday && Math.abs(slotMinutes - currentMinutes) > 60;
 
+          // T-20260603-foot-TIMETABLE-NOW-AUTOSCROLL AC-2: 현재 슬롯 내 분 위치 비율 → 라이브 마커 top%
+          const slotInterval = clinic?.slot_interval ?? 30;
+          const nowFraction = isCurrentSlot
+            ? Math.min(1, Math.max(0, (currentMinutes - slotMinutes) / slotInterval))
+            : 0;
+
           // T-20260522-foot-TIMETABLE-FOLD V2 AC-7: 아코디언용 예약 목록 구성
           // 초진(new) 우선, 재진(returning) 다음 — 슬롯 안의 모든 예약·체크인 합산
           // T-20260526-foot-TIMETABLE-BROKEN AC-2: null-safe 방어 코드 강화
@@ -2165,6 +2226,8 @@ function DashboardTimeline({
               ref={isCurrentSlot ? currentSlotRef : undefined}
               className={cn(
                 'border-b border-gray-100',
+                // T-20260603-foot-TIMETABLE-NOW-AUTOSCROLL AC-2: 라이브 마커 absolute 기준점
+                isCurrentSlot && 'relative',
                 isPastSlot && 'opacity-55',
                 // T-20260529-foot-DASHBOARD-TIMETABLE-SYNC AC-2: 비활성 존 베이지 배경
                 isInactiveZone && 'bg-stone-50',
@@ -2172,6 +2235,22 @@ function DashboardTimeline({
               data-testid="timeline-slot-row"
               data-active-zone={isToday && !isInactiveZone ? 'true' : undefined}
             >
+              {/* T-20260603-foot-TIMETABLE-NOW-AUTOSCROLL AC-2: 라이브 시간 마커 (가로 표시줄)
+                   현재 슬롯 행 안에서 분 비율(nowFraction)만큼 내려 그린다. pointer-events-none
+                   으로 하위 클릭/드래그 방해 없음. z-30 으로 sticky 시간열(z-20)·헤더(z-10) 위. */}
+              {isCurrentSlot && (
+                <div
+                  aria-hidden="true"
+                  data-testid="timeline-now-marker"
+                  className="pointer-events-none absolute inset-x-0 z-30 flex items-center -translate-y-1/2"
+                  style={{ top: `${nowFraction * 100}%` }}
+                >
+                  <div className="h-[2px] flex-1 bg-rose-500/80" />
+                  <span className="absolute left-10 -top-2 rounded bg-rose-500 px-1 py-0.5 text-[8px] font-bold leading-none text-white tabular-nums shadow-sm">
+                    {String(currentH).padStart(2, '0')}:{String(currentM).padStart(2, '0')}
+                  </span>
+                </div>
+              )}
               {/* ── 메인 슬롯 그리드 ── */}
               <div
                 className="grid grid-cols-[2.5rem_1fr_1fr]"
