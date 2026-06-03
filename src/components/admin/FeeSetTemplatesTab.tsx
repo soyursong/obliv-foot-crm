@@ -307,6 +307,9 @@ const EMPTY_FORM: FormState = {
 };
 
 export default function FeeSetTemplatesTab() {
+  // T-20260603-foot-RX-PERMMENU-PARITY: 직원은 읽기 전용, CRUD는 admin/manager 전용.
+  const { profile } = useAuth();
+  const canEdit = profile?.role === 'admin' || profile?.role === 'manager';
   const clinicId = useClinicId();
   const { data: templates = [], isLoading } = useFeeSetTemplates(clinicId);
   const { data: services = [] } = useServices(clinicId);
@@ -381,15 +384,17 @@ export default function FeeSetTemplatesTab() {
             {templates.length}개 세트 · 결제 미니창에서 [세트코드]로 수가항목 일괄 추가
           </p>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={openAdd}
-          data-testid="fee-set-add-btn"
-        >
-          <Plus className="h-3.5 w-3.5 mr-1" />
-          수가세트 추가
-        </Button>
+        {canEdit && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={openAdd}
+            data-testid="fee-set-add-btn"
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            수가세트 추가
+          </Button>
+        )}
       </div>
 
       {/* 목록 */}
@@ -435,27 +440,29 @@ export default function FeeSetTemplatesTab() {
                       ({resolvedItems.length}개 · {formatAmount(totalPrice)})
                     </span>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => openEdit(t)}
-                      data-testid="fee-set-edit-btn"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive hover:text-destructive"
-                      onClick={() => handleDelete(t.id, t.set_name)}
-                      disabled={del.isPending}
-                      data-testid="fee-set-delete-btn"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
+                  {canEdit && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => openEdit(t)}
+                        data-testid="fee-set-edit-btn"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive"
+                        onClick={() => handleDelete(t.id, t.set_name)}
+                        disabled={del.isPending}
+                        data-testid="fee-set-delete-btn"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {/* 수가항목 목록 */}

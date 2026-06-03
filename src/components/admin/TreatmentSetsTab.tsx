@@ -9,6 +9,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -414,6 +415,9 @@ function ServiceSearchRow({
 // ---------------------------------------------------------------------------
 
 export default function TreatmentSetsTab() {
+  // T-20260603-foot-RX-PERMMENU-PARITY: 직원은 읽기 전용, CRUD는 admin/manager 전용.
+  const { profile } = useAuth();
+  const canEdit = profile?.role === 'admin' || profile?.role === 'manager';
   const { data: sets = [], isLoading } = useTreatmentSets();
   // clinicId는 첫 번째 세트에서 가져오거나 상수 사용
   const clinicId = sets[0]?.clinic_id ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8';
@@ -520,15 +524,17 @@ export default function TreatmentSetsTab() {
             {sets.length}개 세트 · 진료비 산정 시 [세트 불러오기]로 코드 자동 입력
           </p>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={openAdd}
-          data-testid="treatment-set-add-btn"
-        >
-          <Plus className="h-3.5 w-3.5 mr-1" />
-          진료세트 추가
-        </Button>
+        {canEdit && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={openAdd}
+            data-testid="treatment-set-add-btn"
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            진료세트 추가
+          </Button>
+        )}
       </div>
 
       {/* 목록 */}
@@ -566,35 +572,37 @@ export default function TreatmentSetsTab() {
                       </Badge>
                     )}
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      title="복제"
-                      onClick={() => openClone(s)}
-                      disabled={upsert.isPending}
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => openEdit(s)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive hover:text-destructive"
-                      onClick={() => handleDelete(s.id, s.name)}
-                      disabled={del.isPending}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
+                  {canEdit && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        title="복제"
+                        onClick={() => openClone(s)}
+                        disabled={upsert.isPending}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => openEdit(s)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive"
+                        onClick={() => handleDelete(s.id, s.name)}
+                        disabled={del.isPending}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {/* 코드 요약 */}

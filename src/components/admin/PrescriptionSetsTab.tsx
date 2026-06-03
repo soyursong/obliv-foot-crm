@@ -4,6 +4,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -231,6 +232,9 @@ function ItemRow({ item, idx, onChange, onRemove, canRemove }: ItemRowProps) {
 // Component
 // ---------------------------------------------------------------------------
 export default function PrescriptionSetsTab() {
+  // T-20260603-foot-RX-PERMMENU-PARITY: 직원은 읽기 전용, CRUD는 admin/manager 전용.
+  const { profile } = useAuth();
+  const canEdit = profile?.role === 'admin' || profile?.role === 'manager';
   const { data: sets = [], isLoading } = usePrescriptionSets();
   const upsert = useUpsertSet();
   const del = useDeleteSet();
@@ -318,10 +322,12 @@ export default function PrescriptionSetsTab() {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">{sets.length}개 처방세트</span>
-        <Button size="sm" variant="outline" onClick={openAdd} data-testid="rx-set-add-btn">
-          <Plus className="h-3.5 w-3.5 mr-1" />
-          처방세트 추가
-        </Button>
+        {canEdit && (
+          <Button size="sm" variant="outline" onClick={openAdd} data-testid="rx-set-add-btn">
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            처방세트 추가
+          </Button>
+        )}
       </div>
 
       {/* 목록 */}
@@ -360,25 +366,27 @@ export default function PrescriptionSetsTab() {
                     {s.items.length}개 항목
                   </Badge>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => openEdit(s)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-destructive hover:text-destructive"
-                    onClick={() => handleDelete(s.id, s.name)}
-                    disabled={del.isPending}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+                {canEdit && (
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => openEdit(s)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-destructive hover:text-destructive"
+                      onClick={() => handleDelete(s.id, s.name)}
+                      disabled={del.isPending}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
               </div>
               {s.items.length > 0 && (
                 <div className="space-y-1">
