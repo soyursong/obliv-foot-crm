@@ -83,8 +83,8 @@ const FAMILY_HISTORY_TYPE_OPTIONS = ['발톱무좀', '내성발톱', '둘 다', 
 // T-20260602-foot-HEALTHQ-PAIN-NONE-LAYOUT: '없음'(통증 0단계)을 통증 4단계와
 // 동일 박스로 한 그리드에 나란히 — 첫 칸 배치. 저장값은 기존과 동일한 string '없음'.
 const FOOT_PAIN_LEVEL_OPTIONS = [
-  { value: '없음',     emoji: '😊' },
-  { value: '경미',     emoji: '😄' },
+  { value: '없음',     emoji: '🙂' },
+  { value: '경미',     emoji: '😣' },
   { value: '불편',     emoji: '😐' },
   { value: '심함',     emoji: '😣' },
   { value: '매우 심함', emoji: '😰' },
