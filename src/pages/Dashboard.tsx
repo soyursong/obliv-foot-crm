@@ -4528,13 +4528,25 @@ export default function Dashboard() {
     }
   }, [ctxOpenChart, clinic, fetchCheckIns, warnIfNameMismatch]);
 
-  // T-20260601-foot-DASH-HSCROLL-CHART-LOC #2: 진료콜 명단 팝업 이름 클릭 → 진료차트.
-  //   CHART-OPEN-SINGLE 패턴(handleCardClick의 차트 진입 로직) 재사용 — customer_id 직접 오픈,
-  //   미연결 시 동일 클리닉·동일 이름 1건 자동 조회 fallback. setSelectedCheckIn은 하지 않음
-  //   (팝업에서는 상세 시트가 아니라 진료차트만 즉시 열림 — AC-2 "클릭 1회").
+  // T-20260603-foot-DOCTOR-CALL-DEFAULT-MEDTAB: 진료알림판(진료콜 명단 팝업) 이름 클릭 시
+  //   기본 진입을 '기본차트'(2번차트 서랍=펜차트) → '진료차트'(MedicalChartPanel)로 정정.
+  //   기존 구현은 ctxOpenChart(기본차트 서랍)로 열려 #2 주석의 의도("이름 클릭 → 진료차트 즉시 열기")와
+  //   실제 동작이 어긋났음. 원장이 진료알림판에서 기대하는 첫 화면은 진단/경과/처방을 보는 '진료차트'이므로,
+  //   DoctorCallDashboard FOLLOWUP3 C-1과 동일하게 MedicalChartPanel을 직접 연다.
+  //   ※ 본 경로(진료알림판)에 한정. 고객관리·체크인 상세·카드 클릭 등 다른 진입점의 기본차트 서랍
+  //     기본탭(펜차트)은 ctxOpenChart 그대로 유지되어 회귀 없음.
+  //   customer_id 미연결 시 동일 클리닉·동일 이름 1건 자동 조회 fallback + check_in 연결은 그대로 보존.
+  const openMedicalChartById = useCallback((customerId: string) => {
+    // 경쟁 시트 닫고 진료차트 단독 표시 (handleOpenMedicalChart와 동일 패턴 — CHART-ROUTE-FIX AC-1)
+    setSelectedCheckIn(null);
+    ctxCloseChart();
+    setMedicalChartCustomerId(customerId);
+    setMedicalChartOpen(true);
+  }, [ctxCloseChart]);
+
   const handleOpenChartFromList = useCallback(async (ci: CheckIn) => {
     if (ci.customer_id) {
-      ctxOpenChart(ci.customer_id);
+      openMedicalChartById(ci.customer_id);
       return;
     }
     if (ci.customer_name && clinic) {
@@ -4546,7 +4558,7 @@ export default function Dashboard() {
         .limit(2);
       if (matches && matches.length === 1) {
         const foundId = matches[0].id;
-        ctxOpenChart(foundId);
+        openMedicalChartById(foundId);
         supabase.from('check_ins').update({ customer_id: foundId }).eq('id', ci.id)
           .then(({ error }) => { if (!error) fetchCheckIns(); });
       } else if (matches && matches.length > 1) {
@@ -4557,7 +4569,7 @@ export default function Dashboard() {
     } else {
       toast.info('고객 정보가 연결되어 있지 않습니다');
     }
-  }, [ctxOpenChart, clinic, fetchCheckIns]);
+  }, [openMedicalChartById, clinic, fetchCheckIns]);
 
   // T-20260522-foot-DRAG-RESP-OPT: useCallback 안정화 — 호출 측 클로저 의존성 최소화
   const handleCardContext = useCallback((ci: CheckIn, e: React.MouseEvent) => {
@@ -6160,7 +6172,8 @@ export default function Dashboard() {
             T-20260601-foot-DASH-HSCROLL-CHART-LOC #1 (REOPEN 정정): 팝업 root가 이 칸반 컬럼
             (position:relative + overflow-auto) 내부 absolute 우측 하단으로 배치됨 → 슬롯 칸에
             종속되어 가로스크롤 시 콘텐츠와 함께 이동(뷰포트 fixed 폐기).
-            #2: onOpenChart=고객 이름 클릭 시 진료차트(CHART-OPEN-SINGLE 패턴) 즉시 열기.
+            #2: onOpenChart=고객 이름 클릭 시 진료차트(MedicalChartPanel) 직접 오픈.
+            T-20260603-foot-DOCTOR-CALL-DEFAULT-MEDTAB: 기본차트 서랍이 아닌 진료차트가 기본 진입.
             데이터·집계·메모·초재진 회차 로직은 DOCTOR-CALL-LIST 그대로 보존. */}
         <DoctorCallListBar checkIns={rows} onRefresh={fetchCheckIns} onOpenChart={handleOpenChartFromList} />
       </div>
