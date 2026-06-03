@@ -1,6 +1,6 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- lazy<T> 자체가 ComponentType<any> 상한을 요구
-import { lazy, Suspense, type ComponentType, type LazyExoticComponent, type ReactNode } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { lazy, Suspense, useEffect, type ComponentType, type LazyExoticComponent, type ReactNode } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { AuthProvider } from '@/lib/auth';
@@ -84,6 +84,41 @@ function ThemeBrown({ children }: { children: ReactNode }) {
   return <div className="theme-brown">{children}</div>;
 }
 
+/**
+ * T-20260603-foot-CHECKIN-OLDURL-DEPRECATE: 구 셀프접수 URL 안전망 회수.
+ * jongno-foot canonical 은 foot-checkin.pages.dev 로 단일 이전됨(6/2 CF-CUTOVER, 6/3 현장 정착).
+ * PROD 1차 차단은 vercel.json 308 edge redirect 가 담당하지만, edge 우회/SPA client-side
+ * 진입 시에도 stale native SelfCheckIn 으로 신규 접수가 생성되지 않도록 SPA 레벨에서도
+ * canonical 로 강제 리다이렉트(방어심화). 비-deprecated slug 는 기존 native 렌더 보존(로컬/타 클리닉).
+ */
+const DEPRECATED_CHECKIN_CANONICAL: Record<string, string> = {
+  'jongno-foot': 'https://foot-checkin.pages.dev/jongno-foot',
+};
+
+function CheckinRoute() {
+  const { clinicSlug } = useParams();
+  const canonical = clinicSlug ? DEPRECATED_CHECKIN_CANONICAL[clinicSlug] : undefined;
+  useEffect(() => {
+    if (canonical) window.location.replace(canonical);
+  }, [canonical]);
+  if (canonical) {
+    return (
+      <div className="theme-brown flex h-full min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
+        <p className="text-base font-medium">셀프접수 주소가 변경되었습니다.</p>
+        <p className="text-sm text-muted-foreground">자동으로 새 접수 화면으로 이동합니다…</p>
+        <a href={canonical} className="text-sm underline">
+          이동되지 않으면 여기를 눌러주세요
+        </a>
+      </div>
+    );
+  }
+  return (
+    <ThemeBrown>
+      <SelfCheckIn />
+    </ThemeBrown>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -117,8 +152,10 @@ function App() {
                   SelfCheckIn 은 YESNO-FLOW/VISITTYPE-REMOVE 미반영 stale 사본이 되어
                   PROD 에서는 vercel.json 의 308 edge redirect 로 /checkin/jongno-foot →
                   canonical 단일화됨(이 SPA 라우트까지 도달 안 함). 로컬/타 클리닉 slug 는 그대로
-                  native 렌더 — :clinicSlug 제네릭 라우트는 보존. */}
-              <Route path="/checkin/:clinicSlug" element={<ThemeBrown><SelfCheckIn /></ThemeBrown>} />
+                  native 렌더 — :clinicSlug 제네릭 라우트는 보존.
+                  ⚠️ T-20260603-foot-CHECKIN-OLDURL-DEPRECATE: 안전망 회수 — deprecated slug
+                  (jongno-foot)는 CheckinRoute 에서 canonical 로 강제 리다이렉트(방어심화). */}
+              <Route path="/checkin/:clinicSlug" element={<CheckinRoute />} />
               <Route path="/checklist/:checkInId" element={<ThemeBrown><TabletChecklistPage /></ThemeBrown>} />
               <Route path="/waiting/:clinicSlug" element={<ThemeBrown><Waiting /></ThemeBrown>} />
               <Route path="/chart/:customerId" element={
