@@ -14,6 +14,7 @@ export type StatusFlag =
   | 'blue'      // CP(치료실) — 치료 중 이슈
   | 'purple'    // 진료필요 — 원장님 진료콜
   | 'pink'      // 진료완료 — 원장님 진료+약처방 완료
+  | 'brown'     // 후상담 — 진료완료 후 상담 (T-20260603-foot-STATUSFLAG-BROWN)
   | 'dark_gray';// 수납완료 — 수납 후 귀가
 
 export type CheckInStatus =
