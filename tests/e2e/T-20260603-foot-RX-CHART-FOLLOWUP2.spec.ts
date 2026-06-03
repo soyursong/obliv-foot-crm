@@ -237,3 +237,54 @@ test.describe('#8-2 처방세트 관리 권한 (의사/총괄/관리자급)', ()
     expect(canManageRxSet('director')).toBe(true);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// #10 — 특이사항 핀 고정(맨위로): is_pinned 우선 정렬 + 그룹 내 최신순
+//   정본 = MedicalChartPanel.sortSpecialNotes (고정 우선, 같은 그룹 내 created_at desc).
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface SpecialNote { id: string; content: string; created_at: string; is_pinned?: boolean | null }
+
+/** 정본: 핀 우선 정렬 (고정 먼저 → 그룹 내 최신순) */
+function sortSpecialNotes(notes: SpecialNote[]): SpecialNote[] {
+  return [...notes].sort((a, b) => {
+    const ap = a.is_pinned ? 1 : 0;
+    const bp = b.is_pinned ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+    return (b.created_at || '').localeCompare(a.created_at || '');
+  });
+}
+
+test.describe('#10 특이사항 핀 고정', () => {
+  const base: SpecialNote[] = [
+    { id: 'n1', content: '가장 오래됨', created_at: '2026-06-01T09:00:00Z' },
+    { id: 'n2', content: '중간',       created_at: '2026-06-02T09:00:00Z' },
+    { id: 'n3', content: '최신',       created_at: '2026-06-03T09:00:00Z' },
+  ];
+
+  test('미고정 상태 — 최신순 정렬', () => {
+    expect(sortSpecialNotes(base).map((n) => n.id)).toEqual(['n3', 'n2', 'n1']);
+  });
+
+  test('오래된 항목 핀 → 맨 위로 이동', () => {
+    const pinned = base.map((n) => (n.id === 'n1' ? { ...n, is_pinned: true } : n));
+    expect(sortSpecialNotes(pinned).map((n) => n.id)).toEqual(['n1', 'n3', 'n2']);
+  });
+
+  test('복수 핀 — 핀 그룹 내에서도 최신순', () => {
+    const pinned = base.map((n) => (n.id === 'n1' || n.id === 'n2' ? { ...n, is_pinned: true } : n));
+    // 고정 그룹(n2>n1) → 비고정(n3)
+    expect(sortSpecialNotes(pinned).map((n) => n.id)).toEqual(['n2', 'n1', 'n3']);
+  });
+
+  test('is_pinned undefined 안전(컬럼 미적용 환경) — 최신순 유지', () => {
+    const noFlag: SpecialNote[] = base.map((n) => ({ ...n, is_pinned: undefined }));
+    expect(sortSpecialNotes(noFlag).map((n) => n.id)).toEqual(['n3', 'n2', 'n1']);
+  });
+
+  test('핀 토글 멱등 — 해제 시 다시 최신순', () => {
+    const pinned = base.map((n) => (n.id === 'n1' ? { ...n, is_pinned: true } : n));
+    const unpinned = pinned.map((n) => (n.id === 'n1' ? { ...n, is_pinned: false } : n));
+    expect(sortSpecialNotes(unpinned).map((n) => n.id)).toEqual(['n3', 'n2', 'n1']);
+  });
+});
