@@ -974,13 +974,21 @@ export default function MedicalChartPanel({
   // T-20260603-foot-RX-CHART-ENHANCE AC-4: 처방내역 행별 횟수·일수 직접 조정.
   //   frequency/days 는 PrescriptionItem 에 이미 분리 필드로 존재 → 순수 FE 인라인 편집
   //   (DB 모델/데이터 이관 불요). 다른 항목은 불변 유지.
-  function updateRxItem(idx: number, field: 'frequency' | 'days', value: string) {
+  // T-20260604-foot-RX-DRUGINFO-DOSAGE AC-3: dosage(용량) 인라인 편집 추가.
+  //   외부 약정보 자동조회(AC-2)는 신뢰 가능한 무료 공개 API 부재(AC-1 조사 결론)로 보류 →
+  //   "등록할 때 넣든지"(현장 요청) 수동입력 fallback. dosage 는 PrescriptionItem 기존 필드 +
+  //   prescription_items JSONB 영속이라 마이그 불요. 단건 약 검색 추가 시 dosage='' 갭을 점입력으로 메움.
+  //   처방세트 등록 dosage 는 종전대로 로드 시 자동 노출(PrescriptionSetsTab ItemRow).
+  function updateRxItem(idx: number, field: 'frequency' | 'days' | 'dosage', value: string) {
     setFormRx(prev =>
       prev.map((it, i) => {
         if (i !== idx) return it;
         if (field === 'days') {
           const n = value === '' ? 0 : Math.max(0, Number(value) || 0);
           return { ...it, days: n };
+        }
+        if (field === 'dosage') {
+          return { ...it, dosage: value };
         }
         return { ...it, frequency: value };
       }),
@@ -1904,9 +1912,16 @@ export default function MedicalChartPanel({
                                         data-testid={`rx-route-dot-${idx}`}
                                       />
                                       <span className="font-medium">{item.name}</span>
-                                      {item.dosage ? (
-                                        <span className="text-muted-foreground">· {item.dosage}</span>
-                                      ) : null}
+                                      {/* T-20260604-foot-RX-DRUGINFO-DOSAGE AC-3: 용량 인라인 수동입력
+                                          (외부 자동조회 불가 → 등록/처방 시 직접 입력 fallback). */}
+                                      <Input
+                                        value={item.dosage}
+                                        onChange={(e) => updateRxItem(idx, 'dosage', e.target.value)}
+                                        className="h-6 text-xs px-1.5 w-24 text-muted-foreground"
+                                        placeholder="용량"
+                                        aria-label="용량"
+                                        data-testid={`rx-dosage-${idx}`}
+                                      />
                                     </div>
                                   </td>
                                   <td className="px-2 py-1 align-middle">
