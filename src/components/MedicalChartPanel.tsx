@@ -367,6 +367,11 @@ export default function MedicalChartPanel({
   const [specialNoteInput, setSpecialNoteInput] = useState('');
   const [specialNoteSaving, setSpecialNoteSaving] = useState(false);
   const [specialNoteOpen, setSpecialNoteOpen] = useState(true);
+  // T-20260603-foot-RX-CHART-FOLLOWUP2 #10: 특이사항 핀 토글 진행상태.
+  //   ⚠ Rules of Hooks: 반드시 `if (!open) return null` 조기반환(아래) 이전에 선언해야 함.
+  //   (T-20260604-foot-RX-CHART-PERSIST-BUG: 조기반환 이후 useState가 있어 open 토글 시
+  //    "Rendered more hooks" 크래시로 진료차트 진입 불가 → 본 위치로 상향 이동.)
+  const [pinningId, setPinningId] = useState<string | null>(null);
 
   // T-20260526-foot-VISIT-FOLD-FILTER: 아코디언 + 필터 상태
   const [expandedChartIds, setExpandedChartIds] = useState<Set<string>>(new Set<string>());
@@ -1214,7 +1219,7 @@ export default function MedicalChartPanel({
 
   // T-20260603-foot-RX-CHART-FOLLOWUP2 #10: 특이사항 핀 토글(맨위로 고정).
   //   클리닉 공용 표식 — 타인 작성 항목도 고정 가능. set_special_note_pin RPC 로 컬럼 단위 변경.
-  const [pinningId, setPinningId] = useState<string | null>(null);
+  //   (pinningId useState 는 Rules of Hooks 준수 위해 조기반환 이전 상단으로 이동 — PERSIST-BUG.)
   async function toggleSpecialNotePin(note: SpecialNoteEntry) {
     const next = !note.is_pinned;
     setPinningId(note.id);
