@@ -61,6 +61,7 @@ import { useAuth } from '@/lib/auth';
 import { formatAmount, formatPhone } from '@/lib/format';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import { classificationToRoute } from '@/components/admin/PrescriptionSetsTab';
+import RxCountInput from '@/components/admin/RxCountInput';
 // T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구 적용(진단명+임상경과+처방 일괄 라우팅)
 import type { SuperPhrase } from '@/components/admin/SuperPhrasesTab';
 
@@ -306,6 +307,10 @@ export default function MedicalChartPanel({
   // T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구 목록
   const [superPhrases, setSuperPhrases] = useState<SuperPhrase[]>([]);
   const [visitPayments, setVisitPayments] = useState<VisitPayment[]>([]);
+  // T-20260603-foot-MEDCHART-SUPERPHRASE-EXT 2-1: 진단명 자동완성 — 등록된 진단명(차트 이력 + 슈퍼상용구) distinct.
+  //   별도 diagnoses 마스터 테이블 부재 → medical_charts.diagnosis 이력 + super_phrases.diagnosis 를 출처로 사용
+  //   (SuperPhrasesTab.useRegisteredDiagnoses 와 동일 출처·정책).
+  const [registeredDiagnoses, setRegisteredDiagnoses] = useState<string[]>([]);
 
   // ── 선택 차트 (null = 새 기록 모드) ──────────────────────────────────────────
   const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
@@ -554,6 +559,43 @@ export default function MedicalChartPanel({
       setSelectedChartId(null);
     }
   }, [open, customerId, loadData, resetForm]);
+
+  // T-20260603-foot-MEDCHART-SUPERPHRASE-EXT 2-1: 등록된 진단명 자동완성 목록 로드.
+  //   클리닉 단위 distinct(차트 이력 최근 500 + 활성 슈퍼상용구). 조회 실패 시 빈 목록(자동완성만 미노출, 입력 무영향).
+  useEffect(() => {
+    if (!open || !clinicId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const set = new Set<string>();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: charts } = await (supabase as any)
+          .from('medical_charts')
+          .select('diagnosis')
+          .eq('clinic_id', clinicId)
+          .not('diagnosis', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(500);
+        ((charts as { diagnosis: string | null }[] | null) ?? []).forEach((r) => {
+          const d = (r.diagnosis ?? '').trim();
+          if (d) set.add(d);
+        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: sp } = await (supabase as any)
+          .from('super_phrases')
+          .select('diagnosis')
+          .not('diagnosis', 'is', null);
+        ((sp as { diagnosis: string | null }[] | null) ?? []).forEach((r) => {
+          const d = (r.diagnosis ?? '').trim();
+          if (d) set.add(d);
+        });
+        if (!cancelled) setRegisteredDiagnoses(Array.from(set).sort((a, b) => a.localeCompare(b, 'ko')));
+      } catch {
+        if (!cancelled) setRegisteredDiagnoses([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, clinicId]);
 
   // ESC 키 닫기
   useEffect(() => {
@@ -943,6 +985,12 @@ export default function MedicalChartPanel({
         return { ...it, frequency: value };
       }),
     );
+  }
+
+  // T-20260603-foot-MEDCHART-SUPERPHRASE-EXT 2-5: 횟수 = 숫자만 저장(예: 3), "회"는 RxCountInput 배경 suffix.
+  //   빈칸=null(미입력). 용법(frequency='1일 3회' 자유텍스트)과 별개 필드(분해 아님).
+  function updateRxCount(idx: number, v: number | null) {
+    setFormRx(prev => prev.map((it, i) => (i === idx ? { ...it, count: v } : it)));
   }
 
   // ── 관리 화면 이동 (AC-2: 편집 버튼) ─────────────────────────────────────────
@@ -1679,16 +1727,27 @@ export default function MedicalChartPanel({
                     />
                   </div>
 
-                  {/* 진단명 */}
+                  {/* 진단명 — T-20260603-foot-MEDCHART-SUPERPHRASE-EXT 2-1: 등록 진단명 드롭다운 자동완성 */}
                   <div>
-                    <label className="block text-xs font-semibold text-muted-foreground mb-1">진단명</label>
+                    <label className="block text-xs font-semibold text-muted-foreground mb-1">
+                      진단명
+                      {registeredDiagnoses.length > 0 && (
+                        <span className="ml-1 text-[10px] text-teal-600 font-normal">· 등록된 진단명 {registeredDiagnoses.length}개 자동완성</span>
+                      )}
+                    </label>
                     <Input
                       value={formDx}
                       onChange={(e) => setFormDx(e.target.value)}
                       placeholder="진단명을 입력하세요"
                       className="h-9 text-sm placeholder:text-gray-300"
+                      list="medchart-diagnosis-options"
                       data-testid="medical-chart-diagnosis"
                     />
+                    <datalist id="medchart-diagnosis-options">
+                      {registeredDiagnoses.map((d) => (
+                        <option key={d} value={d} />
+                      ))}
+                    </datalist>
                   </div>
 
                   {/* 치료·시술 — 결제내역 자동 연동 (readonly) */}
@@ -1814,13 +1873,15 @@ export default function MedicalChartPanel({
                         className="rounded-lg border bg-card overflow-hidden"
                         data-testid="prescription-items-table"
                       >
-                        {/* AC-4: 약이름(용량 포함) | 횟수 | 일수 3컬럼 분리 + 행별 직접 조정.
-                            AC-3: 약 종류(투여경로) 색상 도트. */}
+                        {/* AC-4: 약이름(용량 포함) | 용법 | 횟수 | 일수 컬럼 분리 + 행별 직접 조정.
+                            AC-3: 약 종류(투여경로) 색상 도트.
+                            MEDCHART-SUPERPHRASE-EXT 2-5: 횟수 = 숫자만 입력 + 배경 '회'(RxCountInput), 용법과 별도 칸. */}
                         <table className="w-full text-xs">
                           <thead className="bg-muted/40">
                             <tr>
                               <th className="text-left px-3 py-1.5 font-medium">약이름 (용량)</th>
-                              <th className="text-left px-2 py-1.5 font-medium w-24">횟수</th>
+                              <th className="text-left px-2 py-1.5 font-medium w-24">용법</th>
+                              <th className="text-left px-2 py-1.5 font-medium w-20">횟수</th>
                               <th className="text-left px-2 py-1.5 font-medium w-16">일수</th>
                               <th className="py-1.5 w-6" />
                             </tr>
@@ -1855,6 +1916,14 @@ export default function MedicalChartPanel({
                                       className="h-7 text-xs px-2"
                                       placeholder="1일 3회"
                                       data-testid={`rx-frequency-${idx}`}
+                                    />
+                                  </td>
+                                  {/* MEDCHART-SUPERPHRASE-EXT 2-5: 횟수 = 숫자만 + 배경 '회' */}
+                                  <td className="px-2 py-1 align-middle">
+                                    <RxCountInput
+                                      value={item.count ?? null}
+                                      onChange={(v) => updateRxCount(idx, v)}
+                                      className="w-16"
                                     />
                                   </td>
                                   <td className="px-2 py-1 align-middle">

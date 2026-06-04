@@ -43,7 +43,7 @@ test.describe('T-20260526-foot-MEDCHART-SYNC', () => {
   // ── S1: 상용구 관리 — 진료차트 유형 상용구 등록 ───────────────────────────
   test('S1: 상용구 관리에서 phrase_type 필터 및 진료차트 상용구 등록 가능', async ({ page }) => {
     await page.goto(`/admin/doctor-tools`);
-    await page.getByRole('tab', { name: /상용구/ }).click();
+    await page.getByRole('tab', { name: '상용구', exact: true }).click();
 
     // phrase_type 필터 탭 존재 확인
     await expect(page.getByTestId('phrase-type-filter-all')).toBeVisible();
@@ -162,7 +162,7 @@ test.describe('T-20260526-foot-MEDCHART-SYNC', () => {
   // ── S6: PhrasesTab — 유형별 카운트 표시 ────────────────────────────────────
   test('S6: PhrasesTab phrase_type 필터 전환 시 카운트 변경', async ({ page }) => {
     await page.goto(`/admin/doctor-tools`);
-    await page.getByRole('tab', { name: /상용구/ }).click();
+    await page.getByRole('tab', { name: '상용구', exact: true }).click();
 
     // 전체 카운트 확인
     await page.getByTestId('phrase-type-filter-all').click();
