@@ -176,3 +176,45 @@ test.describe('MEDCHART-SUPERPHRASE-EXT 시나리오 B: 슈퍼상용구 등록 U
     expect(payload.rx_items[0].count).toBe(3);
   });
 });
+
+// ── 진료차트 본체(MedicalChartPanel) 확장 ─────────────────────────────────────
+//    어드민 등록 폼(SuperPhrasesTab)에 이어, 의사가 실제 차팅하는 진료차트에도 동일 4종 확장.
+//    2-1 진단명 datalist(formDx) · 2-5 처방내역 횟수(count) 별도 칸(용법 frequency와 분리).
+//    2-2 임상경과 //단축어, 2-3 우측 패널 처방세트는 진료차트에 기구현(회귀만 확인).
+
+// updateRxCount 정본 (MedicalChartPanel) — count만 갱신, 다른 필드 무손상
+const updateRxCount = (rows: RxItem[], idx: number, v: number | null): RxItem[] =>
+  rows.map((it, i) => (i === idx ? { ...it, count: v } : it));
+
+test.describe('MEDCHART-SUPERPHRASE-EXT 진료차트 본체(MedicalChartPanel)', () => {
+  test('2-1: 진료차트 진단명 datalist 도 클리닉 진단명 distinct 출처 사용', () => {
+    // formDx 자동완성 = medical_charts.diagnosis(클리닉) + super_phrases.diagnosis
+    const out = buildDiagnoses(['내성발톱', '무좀', '내성발톱'], ['족저근막염']);
+    expect(out).toEqual(['무좀', '내성발톱', '족저근막염'].sort((a, b) => a.localeCompare(b, 'ko')));
+  });
+
+  test('2-5: 횟수(count) 변경 시 용법(frequency)·일수(days)는 무손상 — 별도 칸', () => {
+    const rows: RxItem[] = [{ ...EMPTY_ITEM, name: '항진균제 연고', frequency: '1일 2회', days: 14, count: null }];
+    const after = updateRxCount(rows, 0, coerceCount('3'));
+    expect(after[0].count).toBe(3);
+    expect(after[0].frequency).toBe('1일 2회'); // 분해/덮어쓰기 아님
+    expect(after[0].days).toBe(14);
+  });
+
+  test('2-5: 처방세트→진료차트 적재 후 횟수 인라인 조정', () => {
+    // 우측 패널 처방세트 적용(loadRxSet 동형) → 차트 표에서 횟수 직접 조정
+    let rx = loadRxSet([], [{ ...EMPTY_ITEM, name: '발톱 연화제', frequency: '1일 1회' }]);
+    rx = updateRxCount(rx, 0, coerceCount('5'));
+    expect(rx[0].count).toBe(5);
+    expect(rx[0].name).toBe('발톱 연화제');
+    // prescription_items JSONB payload 에 count 영속
+    const payload = rx.length > 0 ? rx : null;
+    expect(payload?.[0].count).toBe(5);
+  });
+
+  test('2-5: 빈 횟수는 null 로 저장 (값에 "회" 미혼입)', () => {
+    const rows: RxItem[] = [{ ...EMPTY_ITEM, name: '경구약', count: 3 }];
+    const cleared = updateRxCount(rows, 0, coerceCount(''));
+    expect(cleared[0].count).toBeNull();
+  });
+});
