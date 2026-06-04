@@ -75,10 +75,22 @@ function SelectContent({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <BaseSelect.Portal>
-      <BaseSelect.Positioner sideOffset={4}>
+      {/* T-20260603-foot-RX-CHART-FOLLOWUP3 C-4: 처방세트 등 Select 드롭다운 정상화.
+          - alignItemWithTrigger=false → 팝업이 트리거 위에 겹쳐 정렬되는 기본동작 해제
+            (Dialog 내부/화면 가장자리에서 드롭다운이 어긋나 보이는 "이상함" 증상 근본 수정)
+          - side/align/collisionPadding 고정 → 항상 트리거 바로 아래에서 예측가능하게 열림
+          - min-w=anchor-width → 트리거 너비에 맞춤 / max-h=available-height → 목록 길어도 잘림 없이 스크롤 */}
+      <BaseSelect.Positioner
+        side="bottom"
+        align="start"
+        sideOffset={4}
+        collisionPadding={8}
+        alignItemWithTrigger={false}
+        className="z-50"
+      >
         <BaseSelect.Popup
           className={cn(
-            'z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md',
+            'z-50 min-w-[max(8rem,var(--anchor-width))] max-w-[var(--available-width)] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md',
             'data-[open]:animate-in data-[closed]:animate-out',
             'data-[open]:fade-in-0 data-[closed]:fade-out-0',
             'data-[open]:zoom-in-95 data-[closed]:zoom-out-95',
@@ -86,7 +98,7 @@ function SelectContent({
           )}
           {...props}
         >
-          <BaseSelect.List className="p-1">
+          <BaseSelect.List className="max-h-[min(var(--available-height),20rem)] overflow-y-auto p-1">
             {children}
           </BaseSelect.List>
         </BaseSelect.Popup>
