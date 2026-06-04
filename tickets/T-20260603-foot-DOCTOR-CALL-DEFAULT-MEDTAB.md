@@ -13,6 +13,10 @@ build-ok: true
 db-change: false
 spec-file: tests/e2e/T-20260603-foot-DOCTOR-CALL-DEFAULT-MEDTAB.spec.ts
 commit: d2ea1e1
+cancelled: true
+cancelled_by: MSG-20260603-235100-u3be
+cancelled_note: "중복 티켓(planner CANCELLATION). 동일 작업을 FOLLOWUP3 C-1(AC-1-1/1-2)로 귀속. 단 구현/배포는 본 티켓명으로 이미 완료(commit d2ea1e1, deploy-ready)되어 코드 보존 — FOLLOWUP3 ac_status.C-1이 정본 추적."
+superseded_by: T-20260603-foot-RX-CHART-FOLLOWUP3
 repo-path: ~/Documents/GitHub/obliv-foot-crm (github.com/soyursong/obliv-foot-crm, branch main)
 ---
 

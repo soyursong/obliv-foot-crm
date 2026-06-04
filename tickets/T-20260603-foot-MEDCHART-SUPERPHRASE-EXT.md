@@ -17,6 +17,10 @@ db_changed: false
 e2e_spec_exempt_reason: null
 related: [T-20260603-foot-RX-CHART-FOLLOWUP3, T-20260603-foot-RX-SUPER-PHRASE, T-20260526-foot-MEDCHART-SYNC]
 source_msg: MSG-20260603-234922-qvi1
+cancelled: true
+cancelled_by: MSG-20260603-235100-0m0l
+cancelled_note: "중복 티켓(planner CANCELLATION). 동일 작업을 FOLLOWUP3 C-2(AC-2-1~2-5)로 귀속. 단 구현/배포는 본 티켓명으로 이미 완료(commits 26b8c42, 279131a, deploy-ready)되어 코드 보존 — FOLLOWUP3 ac_status.C-2가 정본 추적. 2-4(약용량 외부조회)는 별도 RX-DRUGINFO-DOSAGE."
+superseded_by: T-20260603-foot-RX-CHART-FOLLOWUP3
 ---
 
 # T-20260603-foot-MEDCHART-SUPERPHRASE-EXT — 진료차트 슈퍼상용구 등록 UX 확장 4종
