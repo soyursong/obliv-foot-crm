@@ -15,7 +15,10 @@ reopen_reason: "배포 후 현장 미동작 — status='completed' CHECK constra
 reopen_fixed_at: 2026-05-21
 hotfix2_commit: 61a2b52
 hotfix2_reason: "onFormSubmissionSaved callback — 펜차트 저장 후 상담내역 [내용보기] 즉시 활성화 (페이지 새로고침 불필요)"
-deadline: 2026-05-22
+deadline: 2026-06-05
+reopen_count: 4
+hotfix4_reason: "REOPEN4 root cause = 펜차트 [별도 창] 팝업 저장 시 penchart-update 신호를 부모가 미구독 → submissionEntries 미갱신 → [내용보기] 버튼 새로고침 전까지 비활성. 부모 CustomerChartPage에 BroadcastChannel+storage 구독 추가. 뷰어(read) 자체는 실클릭 검증 PASS(group2/group3 이미지 렌더) — signed URL 만료 후보는 클릭 시점 재발급으로 반증."
+hotfix4_evidence: "evidence/REOPEN4/05_final.png (실클릭 발건강 질문지 뷰어 렌더), 02_consult_tab.png"
 ---
 
 # T-20260520-foot-PENCHART-VIEW-SPLIT

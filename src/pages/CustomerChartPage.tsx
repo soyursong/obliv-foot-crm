@@ -2201,6 +2201,40 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     return () => window.removeEventListener('storage', handler);
   }, [customer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // T-20260520-foot-PENCHART-VIEW-SPLIT REOPEN4:
+  // 펜차트를 [별도 창](window.open '/penchart-editor')에서 저장하면 PenChartTab(popup)이
+  // BroadcastChannel('penchart-update') + localStorage('penchart-update') 신호를 쏘지만,
+  // 부모(이 차트 창)는 그 신호를 구독하지 않아 submissionEntries 가 갱신되지 않았음.
+  // → 저장(form_submissions INSERT)은 성공했는데 상담내역 탭 [내용보기] 버튼이
+  //    페이지 새로고침 전까지 비활성으로 남아 "저장했는데 안 뜬다" 반복 호소의 근인.
+  //    팝업 저장 신호를 받아 submissionEntries 를 즉시 재조회한다 (in-tab 저장은
+  //    onFormSubmissionSaved=refreshSubmissionEntries 로 이미 처리됨 / HOTFIX2).
+  useEffect(() => {
+    if (!customer) return;
+    const cid = customer.id;
+    const onUpdate = (changedId?: string) => {
+      if (changedId && changedId !== cid) return;
+      void refreshSubmissionEntries();
+    };
+    // 1) BroadcastChannel (현대 브라우저)
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel('penchart-update');
+      bc.onmessage = (ev) => onUpdate((ev.data as { customerId?: string } | null)?.customerId);
+    } catch { /* BroadcastChannel 미지원 무시 */ }
+    // 2) localStorage storage 이벤트 폴백 (Safari < 15.4 / 구형 iPad)
+    const storageHandler = (e: StorageEvent) => {
+      if (e.key !== 'penchart-update' || !e.newValue) return;
+      try { onUpdate((JSON.parse(e.newValue) as { customerId?: string }).customerId); }
+      catch { onUpdate(); }
+    };
+    window.addEventListener('storage', storageHandler);
+    return () => {
+      try { bc?.close(); } catch { /* 무시 */ }
+      window.removeEventListener('storage', storageHandler);
+    };
+  }, [customer?.id, refreshSubmissionEntries]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // T-20260507-foot-CHART2-INSURANCE-FIELDS: 주소지 저장
   // T-20260510-foot-C21-SAVE-UNIFY: 우편번호+주소 동시 저장 (저장버튼 단일화)
   // T-20260510-foot-ADDRESS-DETAIL-FIX: address_detail 동시 저장
