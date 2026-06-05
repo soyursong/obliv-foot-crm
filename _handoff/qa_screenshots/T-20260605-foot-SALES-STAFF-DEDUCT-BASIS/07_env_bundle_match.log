@@ -1,0 +1,31 @@
+=== env matrix bundle matching evidence ===
+-- import.meta.env.* referenced in src: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
+-- prod project ref (rxlomoozakkjesdqjtvd) inlined into bundle (count of files containing it):
+dist/assets/SelfCheckIn-B6DfXSaS.js
+dist/assets/Accounts-C1P8aol1.js
+dist/assets/HealthQMobilePage-DlqpSu9-.js
+dist/assets/Closing-BILWxQuD.js
+dist/assets/Waiting-DR45MmpM.js
+dist/assets/NhisLookupPanel-CrAbLkOo.js
+dist/assets/TabletChecklistPage-DUIZch9n.js
+dist/assets/index-CItksGma.js
+-- ANON key (jwt header eyJhbG) inlined? files:
+dist/assets/SelfCheckIn-B6DfXSaS.js
+dist/assets/Accounts-C1P8aol1.js
+dist/assets/HealthQMobilePage-DlqpSu9-.js
+dist/assets/Closing-BILWxQuD.js
+dist/assets/Waiting-DR45MmpM.js
+dist/assets/NhisLookupPanel-CrAbLkOo.js
+dist/assets/TabletChecklistPage-DUIZch9n.js
+dist/assets/index-CItksGma.js
+anon key fragment (48ch): ***REMOVED-LEAKED-SERVICE-KEY***eyJpc3MiOiJ
+-- bundle files containing this exact anon-key fragment:
+dist/assets/SelfCheckIn-B6DfXSaS.js
+dist/assets/Accounts-C1P8aol1.js
+dist/assets/HealthQMobilePage-DlqpSu9-.js
+dist/assets/Closing-BILWxQuD.js
+dist/assets/Waiting-DR45MmpM.js
+dist/assets/NhisLookupPanel-CrAbLkOo.js
+dist/assets/TabletChecklistPage-DUIZch9n.js
+dist/assets/index-CItksGma.js
+-- RESULT: 8 file(s) — .env anon key == bundle anon key ✓

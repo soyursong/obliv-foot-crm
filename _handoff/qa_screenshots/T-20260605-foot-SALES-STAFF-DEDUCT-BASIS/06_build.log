@@ -1,0 +1,106 @@
+
+> obliv-foot-crm@0.1.0 build
+> tsc -b && vite build
+
+vite v5.4.21 building for production...
+transforming...
+✓ 3877 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                           1.23 kB │ gzip:   0.62 kB
+dist/assets/geist-cyrillic-wght-normal-CHSlOQsW.woff2    14.69 kB
+dist/assets/geist-latin-ext-wght-normal-DMtmJ5ZE.woff2   15.31 kB
+dist/assets/jongno-foot-stamp-BAUI8xQv.png               16.08 kB
+dist/assets/diag_opinion-wtDVI19D.png                    27.66 kB
+dist/assets/geist-latin-wght-normal-Dm3htQBi.woff2       28.40 kB
+dist/assets/_도수센터_동의서-DpH0CDxQ.png                       31.62 kB
+dist/assets/visit_confirm-BocJJLX5.png                   34.85 kB
+dist/assets/표준처방코드-Bb2BZyOg.xlsx                         35.08 kB
+dist/assets/소견서-bYiKIhaq.jpg                             44.23 kB
+dist/assets/통원확인서-Dfq1f4Ea.jpg                           53.61 kB
+dist/assets/진단서-Ppr2XvGv.jpg                             55.81 kB
+dist/assets/treat_confirm-D__WFWtZ.png                   57.35 kB
+dist/assets/treat_confirm_filled_ref-DxbPjQJq.png        67.60 kB
+dist/assets/diagnosis-CuGmNkvA.png                       79.79 kB
+dist/assets/_도수센터_모델 계약서_1-DMxcVvRr.png                  83.36 kB
+dist/assets/bill_detail-B401IxZT.png                     95.72 kB
+dist/assets/진료확인서-DufrsywK.jpg                          116.43 kB
+dist/assets/_도수센터_줄차트-BYqoi-Yq.png                      138.39 kB
+dist/assets/진료비내역서-CLsPqKyF.pdf                         147.90 kB
+dist/assets/_도수센터_모델계약서_2-jFYmlz3W.png                  153.27 kB
+dist/assets/rx_standard-mAeM-AcL.jpg                    178.29 kB
+dist/assets/pen_chart_form-Fb5H82vZ.png                 238.78 kB
+dist/assets/bill_receipt-DE-qd0EE.jpg                   277.97 kB
+dist/assets/_도수센터_비급여 설명확인서-CYj-goHZ.png                328.84 kB
+dist/assets/_도수센터_체험단 초상권동의서-DEup2L6B.png               372.92 kB
+dist/assets/_도수센터_초진차트-C8QObHy0.png                     546.21 kB
+dist/assets/_도수센터_성장호르몬 설문지-B27BSX4Q.png                594.76 kB
+dist/assets/_도수센터_미성년자 시술 동의서-BgHO7b-s.png              844.21 kB
+dist/assets/_도수센터_도수치료 동의서-D-vzrQuM.png                 959.40 kB
+dist/assets/index-zrjETIpL.css                          107.85 kB │ gzip:  17.77 kB
+dist/assets/useControlled-DZ1wW0T_.js                     0.23 kB │ gzip:   0.21 kB
+dist/assets/phone-CdiAQznY.js                             0.24 kB │ gzip:   0.17 kB
+dist/assets/visitType-D5X2DXfO.js                         0.33 kB │ gzip:   0.23 kB
+dist/assets/elapsed-BtHnHGAS.js                           0.40 kB │ gzip:   0.27 kB
+dist/assets/schedule-r3QdrFKf.js                          0.44 kB │ gzip:   0.33 kB
+dist/assets/checkin-slot-D4Ya50MY.js                      0.49 kB │ gzip:   0.22 kB
+dist/assets/badge-CNHXkIFu.js                             0.54 kB │ gzip:   0.34 kB
+dist/assets/card-yHkBPG4I.js                              0.82 kB │ gzip:   0.33 kB
+dist/assets/insurance-FY7t6clY.js                         1.02 kB │ gzip:   0.69 kB
+dist/assets/AmountInput-B8RLNets.js                       1.03 kB │ gzip:   0.63 kB
+dist/assets/audio-D3e-Dxn1.js                             1.22 kB │ gzip:   0.48 kB
+dist/assets/sheet-BpbH_eR1.js                             1.26 kB │ gzip:   0.62 kB
+dist/assets/useInsurance-C9MxcZ7L.js                      1.52 kB │ gzip:   0.69 kB
+dist/assets/SignaturePad-BBFpkxaG.js                      1.88 kB │ gzip:   0.92 kB
+dist/assets/PenChartEditorPage-p4P40BSH.js                1.91 kB │ gzip:   1.15 kB
+dist/assets/Login-zDcJz0X1.js                             2.10 kB │ gzip:   1.15 kB
+dist/assets/ReservationAuditLogPanel-DUQ1EIXa.js          2.38 kB │ gzip:   1.19 kB
+dist/assets/useLabelableId-C5_hOznH.js                    2.52 kB │ gzip:   1.17 kB
+dist/assets/status-DmzzMV8g.js                            2.59 kB │ gzip:   1.15 kB
+dist/assets/DirectionContext-BPRgPyA6.js                  2.92 kB │ gzip:   1.30 kB
+dist/assets/Register-V5i9lfUj.js                          3.45 kB │ gzip:   1.54 kB
+dist/assets/separator-C2Eg_DEB.js                         4.19 kB │ gzip:   1.95 kB
+dist/assets/switch-BldgHUTx.js                            4.36 kB │ gzip:   2.12 kB
+dist/assets/Notices-DYLZd8YN.js                           6.46 kB │ gzip:   2.45 kB
+dist/assets/PaymentEditDialog-CtLeSyqU.js                 7.82 kB │ gzip:   2.80 kB
+dist/assets/Waiting-DR45MmpM.js                           8.73 kB │ gzip:   3.33 kB
+dist/assets/QuickRxBar-Tv1HBYhm.js                       11.02 kB │ gzip:   3.94 kB
+dist/assets/ClinicSettings-BaEISD7C.js                   11.28 kB │ gzip:   3.72 kB
+dist/assets/Stats-xv2faCIH.js                            12.45 kB │ gzip:   3.68 kB
+dist/assets/tabs-CGIJ-mVI.js                             12.52 kB │ gzip:   4.90 kB
+dist/assets/Accounts-C1P8aol1.js                         13.05 kB │ gzip:   4.64 kB
+dist/assets/Services-YfLyG4Mv.js                         15.62 kB │ gzip:   5.72 kB
+dist/assets/HealthQMobilePage-DlqpSu9-.js                17.14 kB │ gzip:   5.49 kB
+dist/assets/TreatmentTable-B8pVdMqA.js                   19.73 kB │ gzip:   5.54 kB
+dist/assets/DailyHistory-ekt6HQjW.js                     20.09 kB │ gzip:   5.26 kB
+dist/assets/TabletChecklistPage-DUIZch9n.js              20.62 kB │ gzip:   6.38 kB
+dist/assets/Customers-BP3CVL3L.js                        21.18 kB │ gzip:   6.85 kB
+dist/assets/PaymentDialog-oRtMBCil.js                    23.77 kB │ gzip:   7.37 kB
+dist/assets/Staff-DMasR-5C.js                            27.65 kB │ gzip:   8.41 kB
+dist/assets/AdminSettings-CHOkU1sl.js                    28.55 kB │ gzip:   8.94 kB
+dist/assets/vendor-dates-nYMnHa0D.js                     29.61 kB │ gzip:   8.45 kB
+dist/assets/vendor-query-BwUETxSX.js                     42.05 kB │ gzip:  12.72 kB
+dist/assets/Sales-BjIRWffJ.js                            46.69 kB │ gzip:  11.80 kB
+dist/assets/select-CoqLVuJW.js                           47.17 kB │ gzip:  17.41 kB
+dist/assets/Packages-CAU8mqgl.js                         47.70 kB │ gzip:  10.78 kB
+dist/assets/SelfCheckIn-B6DfXSaS.js                      48.61 kB │ gzip:  12.78 kB
+dist/assets/vendor-dnd-CKmvGhkb.js                       49.51 kB │ gzip:  16.39 kB
+dist/assets/vendor-icons-BI-O_sLG.js                     49.85 kB │ gzip:   9.28 kB
+dist/assets/ReservationCancelModal-DC8O4NGo.js           52.33 kB │ gzip:  16.69 kB
+dist/assets/PenChartTab-DqUv3FN2.js                      52.90 kB │ gzip:  17.91 kB
+dist/assets/NhisLookupPanel-CrAbLkOo.js                  54.32 kB │ gzip:  16.58 kB
+dist/assets/Reservations-CgX_z-q8.js                     57.51 kB │ gzip:  16.99 kB
+dist/assets/MedicalChartPanel-BJecABBa.js                61.70 kB │ gzip:  16.56 kB
+dist/assets/Closing-BILWxQuD.js                          62.10 kB │ gzip:  17.48 kB
+dist/assets/CheckInDetailSheet-vt0v6us7.js               72.28 kB │ gzip:  18.67 kB
+dist/assets/DoctorTools-DglTqTue.js                     100.81 kB │ gzip:  24.15 kB
+dist/assets/ReservationMemoTimeline-bNNLUaTo.js         104.86 kB │ gzip:  20.75 kB
+dist/assets/Dashboard-Dyysshl1.js                       133.40 kB │ gzip:  36.47 kB
+dist/assets/index-CItksGma.js                           168.06 kB │ gzip:  53.28 kB
+dist/assets/vendor-react-DLcVYwUy.js                    186.69 kB │ gzip:  61.79 kB
+dist/assets/vendor-supabase-D3Pb_Qvf.js                 196.92 kB │ gzip:  51.71 kB
+dist/assets/CustomerChartPage-0Res7_k7.js               254.74 kB │ gzip:  61.47 kB
+dist/assets/xlsx-DrgRuPKf.js                            282.77 kB │ gzip:  94.12 kB
+dist/assets/vendor-charts-C9VZGJdI.js                   380.00 kB │ gzip: 111.32 kB
+dist/assets/vendor-pdf-D4iDn8R1.js                      529.45 kB │ gzip: 210.25 kB
+✓ built in 3.48s

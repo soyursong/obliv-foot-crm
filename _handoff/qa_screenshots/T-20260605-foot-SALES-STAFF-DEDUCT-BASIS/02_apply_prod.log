@@ -1,0 +1,33 @@
+✅ DB 연결 (mode=apply)  2026-06-05T06:46:07.771Z
+
+── DRY-RUN PREVIEW (status=used 회차차감 by session_type) ──
+┌─────────┬──────────────────┬─────────────┬───────────┐
+│ (index) │ session_type     │ zero_before │ will_fill │
+├─────────┼──────────────────┼─────────────┼───────────┤
+│ 0       │ 'heated_laser'   │ '7'         │ '7'       │
+│ 1       │ 'iv'             │ '1'         │ '1'       │
+│ 2       │ 'podologue'      │ '5'         │ '4'       │
+│ 3       │ 'trial'          │ '4'         │ '4'       │
+│ 4       │ 'unheated_laser' │ '44'        │ '42'      │
+└─────────┴──────────────────┴─────────────┴───────────┘
+▶ zero_before 합계 = 61건,  will_fill 합계 = 58건  (기대: will_fill=58)
+▶ 트리거 trg_fill_session_unit_price 존재: NO
+
+── APPLY: 트리거 + backfill ──
+▶ backfill UPDATE rowCount = 58  (기대: 58)
+✅ COMMIT 완료
+
+── POST-APPLY 검증 ──
+┌─────────┬──────────────────┬─────────────┬───────────┐
+│ (index) │ session_type     │ zero_before │ will_fill │
+├─────────┼──────────────────┼─────────────┼───────────┤
+│ 0       │ 'heated_laser'   │ '0'         │ '0'       │
+│ 1       │ 'iv'             │ '0'         │ '0'       │
+│ 2       │ 'podologue'      │ '1'         │ '0'       │
+│ 3       │ 'trial'          │ '0'         │ '0'       │
+│ 4       │ 'unheated_laser' │ '2'         │ '0'       │
+└─────────┴──────────────────┴─────────────┴───────────┘
+▶ 잔존 zero(NULL/0) = 3건  (기대: 3건 = 소스단가 0 구형 패키지)
+▶ 담당치료사별 차감기준 매출 합계(전체 used 스냅샷): { deduct_basis_total: '21150000', priced_used: '91' }
+
+🟢 done.
