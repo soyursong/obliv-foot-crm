@@ -20,7 +20,8 @@ import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 
 // ─── 타입 ──────────────────────────────────────────────────────────────────────
-interface HQResult {
+// T-20260602-foot-CHART2-HEALTHQ-VIEWER: 2번차트 상담내역 [내용보기]에서 재사용 위해 export
+export interface HQResult {
   id:           string;
   form_type:    string;
   form_data:    Record<string, unknown>;
@@ -145,8 +146,9 @@ function extractDisplayFields(data: Record<string, unknown>) {
 }
 
 // ─── 결과 카드 ────────────────────────────────────────────────────────────────
-function ResultCard({ result }: { result: HQResult }) {
-  const [expanded, setExpanded] = useState(false);
+// T-20260602-foot-CHART2-HEALTHQ-VIEWER: defaultExpanded — 상담내역 뷰어에서는 펼친 상태로 표시
+export function ResultCard({ result, defaultExpanded = false }: { result: HQResult; defaultExpanded?: boolean }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const fields = extractDisplayFields(result.form_data);
   const submittedDate = format(new Date(result.submitted_at), 'yyyy.MM.dd HH:mm', { locale: ko });
 
