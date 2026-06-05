@@ -378,9 +378,9 @@ export default function SuperPhrasesTab() {
     });
   }
 
-  function addItem() {
-    setForm((f) => ({ ...f, rx_items: [...f.rx_items, { ...EMPTY_ITEM }] }));
-  }
+  // T-20260606-foot-SUPER-PHRASE-CHART-LINK-FIX AC-5: 슈퍼상용구에서 '처방 항목 추가'(addItem) 기능 제거.
+  //   정책 — 처방 항목은 '처방세트'에서만 관리. 슈퍼상용구의 처방내역은 '처방세트 불러오기'(loadRxSet)로만 채운다.
+  //   (ad-hoc 빈 처방행 추가 경로 폐지 → addItem 삭제)
 
   // AC-2-2: 진료차트 상용구(phrase_templates) 적용 — 선택 시 임상경과에 내용 채움(기존 텍스트 있으면 줄바꿈 후 append).
   function applyMedicalPhrase(id: string) {
@@ -660,15 +660,12 @@ export default function SuperPhrasesTab() {
                       </SelectContent>
                     </Select>
                   )}
-                  <Button size="sm" variant="ghost" onClick={addItem} className="h-6 text-xs" data-testid="super-phrase-add-rx-btn">
-                    <Plus className="h-3 w-3 mr-1" />
-                    처방 항목 추가
-                  </Button>
+                  {/* AC-5: 'ad-hoc 처방 항목 추가' 버튼 제거 — 처방내역은 위 '처방세트 불러오기'로만 채움(처방항목은 처방세트에서만 관리) */}
                 </div>
               </div>
               {form.rx_items.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-3 text-[11px] text-muted-foreground text-center">
-                  처방내역 없음 — 필요 시 "처방 항목 추가"
+                  처방내역 없음 — 필요 시 위 "처방세트 불러오기"로 추가
                 </div>
               ) : (
                 <div className="space-y-2">

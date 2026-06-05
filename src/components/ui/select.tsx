@@ -80,17 +80,21 @@ function SelectContent({
             (Dialog 내부/화면 가장자리에서 드롭다운이 어긋나 보이는 "이상함" 증상 근본 수정)
           - side/align/collisionPadding 고정 → 항상 트리거 바로 아래에서 예측가능하게 열림
           - min-w=anchor-width → 트리거 너비에 맞춤 / max-h=available-height → 목록 길어도 잘림 없이 스크롤 */}
+      {/* T-20260606-foot-SUPER-PHRASE-CHART-LINK-FIX AC-4 (드롭다운 뒤로열림 근본 수정):
+          기존 z-50 은 Dialog(z-[90])·Sheet/CustomerChartSheet(z-[70]) 내부에서 열리면 그 뒤로 깔려
+          '상용구 불러오기' 등 Select 드롭다운이 가려져 선택 불가였음(임상경과·빠른처방·처방세트 전 화면 공통).
+          → 공통 컴포넌트 단일 수정으로 z-[200] 격상(// 슈퍼상용구 팝오버와 동일 레이어). 화면별 z-index 땜질 제거. */}
       <BaseSelect.Positioner
         side="bottom"
         align="start"
         sideOffset={4}
         collisionPadding={8}
         alignItemWithTrigger={false}
-        className="z-50"
+        className="z-[200]"
       >
         <BaseSelect.Popup
           className={cn(
-            'z-50 min-w-[max(8rem,var(--anchor-width))] max-w-[var(--available-width)] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md',
+            'z-[200] min-w-[max(8rem,var(--anchor-width))] max-w-[var(--available-width)] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md',
             'data-[open]:animate-in data-[closed]:animate-out',
             'data-[open]:fade-in-0 data-[closed]:fade-out-0',
             'data-[open]:zoom-in-95 data-[closed]:zoom-out-95',

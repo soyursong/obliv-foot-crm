@@ -14,7 +14,7 @@ import { ko } from 'date-fns/locale';
 import { todaySeoulISODate } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
-import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
+import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import QuickRxBar, { isDoctor } from './QuickRxBar';
 import { STATUS_KO } from '@/lib/status';
 import type { CheckInStatus } from '@/lib/types';
@@ -65,11 +65,31 @@ function PrescriptionStatusBadge({ status }: { status: PatientRow['prescription_
 }
 
 // ---------------------------------------------------------------------------
+// 날짜 유틸 — T-20260606-foot-RX-PATIENT-LIST-DATENAV
+//   KST(Asia/Seoul) 캘린더 날짜 기준 전/후 이동. 정오(UTC) 기준으로 더해 DST/경계 드리프트 방지.
+// ---------------------------------------------------------------------------
+function shiftISODate(iso: string, deltaDays: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const base = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  base.setUTCDate(base.getUTCDate() + deltaDays);
+  return base.toISOString().slice(0, 10);
+}
+
+/** 'YYYY-MM-DD' → 'M월 d일 (EEE)' (캘린더 날짜만, 타임존 무관) */
+function formatISOToKoLabel(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return format(new Date(y, m - 1, d), 'M월 d일 (EEE)', { locale: ko });
+}
+
+// ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
-function useTodayPatients(clinicId: string | null) {
+// T-20260606-foot-RX-PATIENT-LIST-DATENAV: 조회 날짜를 파라미터화(기본=오늘 KST).
+//   ※ '해당 의사' 귀속 필터는 미적용 — check_ins 에 doctor 귀속 컬럼(doctor_id 등)이 없어
+//     로그인 의사 기준 분기 불가. 임의 매핑 신설 금지(planner 선결) → 클리닉 단위 일자 조회 유지.
+function usePatientsByDate(clinicId: string | null, dateISO: string) {
   return useQuery({
-    queryKey: ['quick_rx_patient_list', clinicId],
+    queryKey: ['quick_rx_patient_list', clinicId, dateISO],
     enabled: !!clinicId,
     queryFn: async () => {
       if (!clinicId) return [];
@@ -77,7 +97,7 @@ function useTodayPatients(clinicId: string | null) {
       // 기존 today = format(new Date(),...) (브라우저 로컬) + 타임존 suffix 없는 bound 비교는
       // Postgres가 naive 문자열을 UTC로 해석 → KST 오전(00:00~09:00) 체크인(전날 UTC)이
       // 당일 범위 밖으로 제외됨(빨강 체크인 누락). KST 기준 날짜 + '+09:00' 바운드로 교정.
-      const today = todaySeoulISODate();
+      const day = dateISO;
       // T-20260517-foot-HEALER-MEMO-DISPLAY: reservation:reservation_id join → booking_memo
       const { data, error } = await supabase
         .from('check_ins')
@@ -85,8 +105,8 @@ function useTodayPatients(clinicId: string | null) {
           'id, customer_name, visit_type, status, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, reservation:reservation_id(booking_memo)',
         )
         .eq('clinic_id', clinicId)
-        .gte('checked_in_at', `${today}T00:00:00+09:00`)
-        .lte('checked_in_at', `${today}T23:59:59+09:00`)
+        .gte('checked_in_at', `${day}T00:00:00+09:00`)
+        .lte('checked_in_at', `${day}T23:59:59+09:00`)
         .neq('status', 'cancelled')
         .order('checked_in_at', { ascending: true });
       if (error) throw error;
@@ -294,7 +314,12 @@ export default function DoctorPatientList() {
   const clinicId = profile?.clinic_id ?? null;
   const doctorMode = isDoctor(profile?.role ?? '');
 
-  const { data: patients = [], isLoading, refetch } = useTodayPatients(clinicId);
+  // T-20260606-foot-RX-PATIENT-LIST-DATENAV AC-1: 기본 조회 날짜 = 오늘(KST). AC-2: < > 로 전/후 이동.
+  const todayISO = todaySeoulISODate();
+  const [selectedDate, setSelectedDate] = useState<string>(todayISO);
+  const isToday = selectedDate === todayISO;
+
+  const { data: patients = [], isLoading, refetch } = usePatientsByDate(clinicId, selectedDate);
 
   // 필터 상태
   const [filter, setFilter] = useState<'all' | 'pending' | 'none'>('all');
@@ -312,13 +337,50 @@ export default function DoctorPatientList() {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium">오늘 진료 환자 목록</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {format(new Date(), 'M월 d일 (EEE)', { locale: ko })} · {patients.length}명 접수
-            {pendingCount > 0 && (
-              <span className="ml-2 text-amber-600 font-medium">⚠ 임시처방 {pendingCount}명 대기 중</span>
+          <p className="text-sm font-medium">진료 환자 목록</p>
+          {/* T-20260606-foot-RX-PATIENT-LIST-DATENAV AC-1/AC-2: 날짜 헤더 + < > 전/후 이동 + 접수 인원 */}
+          <div className="flex items-center gap-1 mt-1">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 shrink-0"
+              onClick={() => setSelectedDate((d) => shiftISODate(d, -1))}
+              aria-label="전날"
+              data-testid="patient-list-prev-day"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="text-xs text-muted-foreground min-w-[150px] text-center" data-testid="patient-list-date-header">
+              <span className="font-medium text-foreground">{formatISOToKoLabel(selectedDate)}</span>
+              {isToday && <span className="ml-1 text-teal-600 font-medium">· 오늘</span>}
+              <span className="mx-1">·</span>
+              <span>{patients.length}명 접수</span>
+              {pendingCount > 0 && (
+                <span className="ml-1.5 text-amber-600 font-medium">⚠ 임시처방 {pendingCount}명</span>
+              )}
+            </div>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 shrink-0"
+              onClick={() => setSelectedDate((d) => shiftISODate(d, 1))}
+              aria-label="다음날"
+              data-testid="patient-list-next-day"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            {!isToday && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px] px-2 ml-1"
+                onClick={() => setSelectedDate(todayISO)}
+                data-testid="patient-list-today-btn"
+              >
+                오늘
+              </Button>
             )}
-          </p>
+          </div>
         </div>
         <div className="flex items-center gap-1.5">
           {/* 역할 배지 */}
@@ -363,7 +425,9 @@ export default function DoctorPatientList() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          {filter === 'all' ? '오늘 접수된 환자가 없습니다.' : '해당 조건의 환자가 없습니다.'}
+          {filter === 'all'
+            ? `${isToday ? '오늘' : formatISOToKoLabel(selectedDate)} 접수된 환자가 없습니다.`
+            : '해당 조건의 환자가 없습니다.'}
         </div>
       ) : (
         <div className="space-y-2" data-testid="patient-list">
