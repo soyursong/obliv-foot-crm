@@ -237,7 +237,10 @@ export default function CalendarNoticePanel() {
         <div className="flex items-center gap-2">
           <CalendarDays className="h-4 w-4 text-teal-600" />
           <span className="text-sm font-semibold">
-            {format(selectedDate ?? new Date(), 'M월 d일 (E)', { locale: ko })}
+            {/* T-20260606-foot-CALENDAR-COLLAPSE-PARENS: 접힘 상태 라벨 괄호 제거.
+                'M월 d일 (E)'(→"6월 6일 (토)") 의 리터럴 괄호를 빼 "6월 6일 토" 로 표기.
+                펼침 상태 선택날짜 표시(아래)는 AC-2에 따라 괄호 유지(변경 금지). */}
+            {format(selectedDate ?? new Date(), 'M월 d일 E', { locale: ko })}
           </span>
         </div>
         <ChevronDown className="h-4 w-4 text-muted-foreground" />
