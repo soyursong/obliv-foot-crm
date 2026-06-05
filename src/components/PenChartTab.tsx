@@ -48,7 +48,7 @@ import { format } from 'date-fns';
 import {
   BookOpen, ClipboardList, Download, Eraser, Highlighter, Pencil, Plus, RotateCcw,
   Save, Trash2, Type, X, ChevronLeft, FileText, Undo2, TextCursorInput, Paintbrush,
-  CheckSquare, Move,
+  CheckSquare, Move, Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
@@ -283,10 +283,13 @@ const DEFAULT_THICKNESS: Record<ActiveTool, number> = {
 
 // ── T-20260603-foot-PHRASE-MULTISELECT: 상용구 복수 선택 결합 정책 (한 곳에 모음) ──
 // 결합 순서 = 클릭(선택) 순서 / 구분자 = 줄바꿈('\n') (planner 확정 #1·#2).
-// 현장 confirm 병행 중 — reversible UX 디폴트. 뒤집을 때 이 두 상수/헬퍼만 수정.
-const PHRASE_JOIN_SEPARATOR = '\n';
-const combineBoilerplate = (contents: string[]): string =>
-  contents.join(PHRASE_JOIN_SEPARATOR);
+// [DEACTIVATED — T-20260605-foot-RX-PHRASE-INSERT-UX Q1] 문지은 대표원장 요청으로
+//   동선을 '단건 즉시삽입(인라인 ✓)'으로 전환. 결합 헬퍼/상수는 제거하지 않고 비활성 보존.
+//   현장이 복수결합을 재요청하면 이 블록 + selectedPhraseIds 상태 + 핸들러 3종 + 푸터를
+//   주석 해제해 복원한다.
+// const PHRASE_JOIN_SEPARATOR = '\n';
+// const combineBoilerplate = (contents: string[]): string =>
+//   contents.join(PHRASE_JOIN_SEPARATOR);
 
 // T-20260522-foot-PENCHART-TOOLS-V3: 배치된 텍스트/상용구 객체 (드래그·삭제·다중선택용)
 interface PlacedItem {
@@ -607,8 +610,11 @@ export function PenChartTab({
   const [phraseTemplatesLoaded, setPhraseTemplatesLoaded] = useState(false);
   const [showPhrasePanel, setShowPhrasePanel] = useState(false);
   const [phraseCategory, setPhraseCategory] = useState<string>('charting');
-  // T-20260603-foot-PHRASE-MULTISELECT: 누적 토글 복수 선택 — 클릭(선택) 순서 보존을 위해 배열 사용.
-  const [selectedPhraseIds, setSelectedPhraseIds] = useState<number[]>([]);
+  // [DEACTIVATED — T-20260605-foot-RX-PHRASE-INSERT-UX Q1] 복수 선택 배열. 복원 시 주석 해제.
+  // const [selectedPhraseIds, setSelectedPhraseIds] = useState<number[]>([]);
+  // T-20260605-foot-RX-PHRASE-INSERT-UX (AC-2): 행 클릭 시 그 행에만 인라인 ✓ 노출 (한 번에 한 행).
+  //   null = 노출 없음 / number = 해당 phrase.id 행에 ✓ 노출. 같은 행 재클릭 = 닫힘.
+  const [revealedPhraseId, setRevealedPhraseId] = useState<number | null>(null);
 
   // T-20260522-foot-PENCHART-TOOLS-V2 AC-3: 텍스트 도구 상태
   const [textInputPos, setTextInputPos] = useState<{
@@ -1245,7 +1251,7 @@ export function PenChartTab({
     setPendingBoilerplate('');
 
     setShowPhrasePanel(false);
-    setSelectedPhraseIds([]); // T-20260603-foot-PHRASE-MULTISELECT: 차트 초기화 시 선택 비움
+    setRevealedPhraseId(null); // T-20260605-foot-RX-PHRASE-INSERT-UX: 차트 초기화 시 인라인 ✓ 비움
     setTextInputPos(null);
     setTextInputValue('');
     setPlacedItems([]);
@@ -1778,26 +1784,37 @@ export function PenChartTab({
     // V3 C-2: 안내 토스트 제거 (인라인 배지로 대체)
   };
 
-  // ── T-20260603-foot-PHRASE-MULTISELECT: 복수 선택 토글/확정/초기화 ──────
-  // AC-1: 항목 클릭 = 누적 토글(패널 유지). 같은 항목 재클릭 시 해제.
-  const togglePhraseSelect = (id: number) => {
-    setSelectedPhraseIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
+  // ── [DEACTIVATED — T-20260605-foot-RX-PHRASE-INSERT-UX Q1] 복수 선택 토글/확정/초기화 ──
+  //   복원 시 아래 3종 핸들러 + selectedPhraseIds 상태 + combineBoilerplate 헬퍼를 함께 주석 해제.
+  // const togglePhraseSelect = (id: number) => {
+  //   setSelectedPhraseIds((prev) =>
+  //     prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+  //   );
+  // };
+  // const confirmPhraseSelection = () => {
+  //   if (selectedPhraseIds.length === 0) return;
+  //   const contents = selectedPhraseIds
+  //     .map((id) => phraseTemplates.find((p) => p.id === id)?.content)
+  //     .filter((c): c is string => typeof c === 'string');
+  //   if (contents.length === 0) return;
+  //   handleBoilerplateSelect(combineBoilerplate(contents));
+  //   setSelectedPhraseIds([]);
+  // };
+  // const clearPhraseSelection = () => setSelectedPhraseIds([]);
+
+  // ── T-20260605-foot-RX-PHRASE-INSERT-UX: 단건 즉시삽입 동선 ──────────────
+  // AC-2: 행 클릭 → 그 행에만 인라인 ✓ 노출(한 번에 한 행). 같은 행 재클릭 = 닫힘.
+  const revealPhraseInsert = (id: number) => {
+    setRevealedPhraseId((prev) => (prev === id ? null : id));
   };
-  // AC-3·AC-5: 선택분을 클릭 순서대로 결합 → 단일 PlacedItem 배치 모드 진입.
-  //   1개만 선택 시 combineBoilerplate가 그 1개 content를 그대로 반환 → 종전 단일 동선과 동일 결과(GUARD).
-  const confirmPhraseSelection = () => {
-    if (selectedPhraseIds.length === 0) return; // AC-4: 선택 0개 무동작
-    const contents = selectedPhraseIds
-      .map((id) => phraseTemplates.find((p) => p.id === id)?.content)
-      .filter((c): c is string => typeof c === 'string');
-    if (contents.length === 0) return;
-    handleBoilerplateSelect(combineBoilerplate(contents));
-    setSelectedPhraseIds([]); // 배치 모드 진입 후 선택 초기화
+  // AC-3: ✓ 클릭 → 즉시 삽입. handleBoilerplateSelect로 boilerplate-placing 진입(GUARD: placeBoilerplate 불변).
+  //   기존 단건 동선과 동일하게 단일 content를 그대로 pendingBoilerplate로 전달.
+  const insertPhraseImmediate = (id: number) => {
+    const content = phraseTemplates.find((p) => p.id === id)?.content;
+    if (typeof content !== 'string') return; // 방어: content 없으면 무동작
+    handleBoilerplateSelect(content);
+    setRevealedPhraseId(null);
   };
-  // AC-4: 선택 초기화(취소) — 패널은 유지.
-  const clearPhraseSelection = () => setSelectedPhraseIds([]);
 
   // ── 양식 선택 ─────────────────────────────────────────────────────────
   const handleSelectTemplate = (tpl: Template) => {
@@ -2061,7 +2078,7 @@ export function PenChartTab({
             <button
               onClick={() => {
                 setShowPhrasePanel(!showPhrasePanel);
-            
+                setRevealedPhraseId(null); // 패널 토글 시 인라인 ✓ 초기화
                 setTextInputPos(null);
               }}
               className={cn(
@@ -2086,7 +2103,7 @@ export function PenChartTab({
                 {/* T-20260522-foot-PENCHART-TOOL-UX AC-6: 패널 헤더 중복 라벨 제거 (버튼에 이미 "상용구" 표시됨) */}
                 <div className="flex items-center justify-end px-2 py-1 bg-teal-50 border-b">
                   <button
-                    onClick={() => setShowPhrasePanel(false)}
+                    onClick={() => { setShowPhrasePanel(false); setRevealedPhraseId(null); }}
                     className="text-teal-500 hover:text-teal-700"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -2109,7 +2126,7 @@ export function PenChartTab({
                       return (
                         <button
                           key={key}
-                          onClick={() => setPhraseCategory(key)}
+                          onClick={() => { setPhraseCategory(key); setRevealedPhraseId(null); }}
                           className={cn(
                             'flex flex-col items-center gap-0.5 px-1 py-2 text-center border-b border-gray-100 last:border-0 transition',
                             phraseCategory === key
@@ -2140,70 +2157,59 @@ export function PenChartTab({
                       phraseTemplates
                         .filter((p) => p.category === phraseCategory)
                         .map((phrase) => {
-                          // T-20260603-foot-PHRASE-MULTISELECT: 누적 토글 선택. 선택 순번(1-based) 표시.
-                          const order = selectedPhraseIds.indexOf(phrase.id);
-                          const isSelected = order !== -1;
+                          // T-20260605-foot-RX-PHRASE-INSERT-UX: 행 클릭 → 인라인 ✓ 노출(한 행). ✓ 클릭 = 즉시삽입.
+                          const isRevealed = revealedPhraseId === phrase.id;
                           return (
-                            <button
+                            <div
                               key={phrase.id}
-                              onClick={() => togglePhraseSelect(phrase.id)}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => revealPhraseInsert(phrase.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  revealPhraseInsert(phrase.id);
+                                }
+                              }}
                               className={cn(
-                                'w-full text-left px-2.5 py-1.5 text-[11px] border-b border-gray-100 last:border-0 transition flex items-start gap-1.5',
-                                isSelected ? 'bg-teal-100 hover:bg-teal-100' : 'hover:bg-teal-50',
+                                'w-full cursor-pointer text-left px-2.5 py-1.5 text-[11px] border-b border-gray-100 last:border-0 transition flex items-center gap-1.5 focus:outline-none focus:bg-teal-50',
+                                isRevealed ? 'bg-teal-50 hover:bg-teal-50' : 'hover:bg-teal-50',
                               )}
                               data-testid={`phrase-item-${phrase.id}`}
-                              data-selected={isSelected}
-                              aria-pressed={isSelected}
+                              data-revealed={isRevealed}
+                              aria-expanded={isRevealed}
                             >
-                              {/* 선택 체크 + 순번 배지 (AC-1·AC-2) */}
-                              <span
-                                className={cn(
-                                  'flex-shrink-0 mt-0.5 h-4 w-4 rounded flex items-center justify-center text-[9px] font-semibold tabular-nums border transition',
-                                  isSelected
-                                    ? 'bg-teal-500 border-teal-500 text-white'
-                                    : 'border-gray-300 text-transparent',
-                                )}
-                                data-testid={`phrase-check-${phrase.id}`}
-                              >
-                                {isSelected ? order + 1 : ''}
-                              </span>
+                              {/* AC-2·AC-3·AC-5: 인라인 ✓ 삽입 버튼 — 행 클릭 시 좌측 노출, 클릭=즉시삽입 */}
+                              {isRevealed && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation(); // 행 토글로 전파 방지 (재클릭=닫힘 방지)
+                                    insertPhraseImmediate(phrase.id);
+                                  }}
+                                  className="flex-shrink-0 h-5 w-5 rounded-full flex items-center justify-center bg-teal-500 text-white hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-300 transition"
+                                  data-testid={`phrase-insert-${phrase.id}`}
+                                  aria-label={`${phrase.name} 삽입`}
+                                  title="삽입"
+                                >
+                                  <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                                </button>
+                              )}
                               <span className="min-w-0 flex-1">
                                 <span className="block font-medium text-gray-800 truncate">{phrase.name}</span>
                                 <span className="block text-gray-400 mt-0.5 text-[10px] truncate">
                                   {phrase.content.split('\n')[0]}
                                 </span>
                               </span>
-                            </button>
+                            </div>
                           );
                         })
                     )}
                   </div>
                 </div>
 
-                {/* T-20260603-foot-PHRASE-MULTISELECT: 선택 푸터 — 삽입(확정)/취소 (AC-3·AC-4) */}
-                <div className="flex items-center justify-between gap-2 px-2 py-1.5 bg-gray-50 border-t" data-testid="phrase-select-footer">
-                  <span className="text-[10px] text-muted-foreground tabular-nums" data-testid="phrase-select-count">
-                    {selectedPhraseIds.length}개 선택
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={clearPhraseSelection}
-                      disabled={selectedPhraseIds.length === 0}
-                      className="px-2 py-1 rounded text-[11px] border border-gray-200 text-muted-foreground hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                      data-testid="phrase-clear-btn"
-                    >
-                      선택 취소
-                    </button>
-                    <button
-                      onClick={confirmPhraseSelection}
-                      disabled={selectedPhraseIds.length === 0}
-                      className="px-2.5 py-1 rounded text-[11px] font-semibold bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                      data-testid="phrase-insert-btn"
-                    >
-                      삽입
-                    </button>
-                  </div>
-                </div>
+                {/* [AC-1 — T-20260605-foot-RX-PHRASE-INSERT-UX] 체크박스 복수선택 푸터(삽입/취소) 제거.
+                    단건 즉시삽입 동선으로 전환 — 행 클릭 → 인라인 ✓ → 즉시삽입. */}
               </div>
             )}
           </div>
