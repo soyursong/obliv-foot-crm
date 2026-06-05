@@ -37,8 +37,9 @@ test.describe('T-20260605-foot-SALES-TAB-RENAME-THERAPIST 담당치료사별 표
     await expect(page.getByRole('tab', { name: '담당직원별' })).toHaveCount(0);
 
     // 클릭 시 정상 활성 (탭 value 'staff' 비변경 → 콘텐츠 토글 렌더)
+    // Base UI Tabs는 data-state 대신 aria-selected="true"로 활성 표기 (data-state 속성 없음)
     await therapistTab.click();
-    await expect(therapistTab).toHaveAttribute('data-state', 'active');
+    await expect(therapistTab).toHaveAttribute('aria-selected', 'true');
     await expect(page.locator('[data-testid="sales-staff-basis-toggle"]')).toBeVisible({
       timeout: 10_000,
     });
