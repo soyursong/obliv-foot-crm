@@ -767,6 +767,19 @@ export default function MedicalChartPanel({
     );
   }).slice(0, 8);
 
+  // T-20260606-foot-SUPER-PHRASE-CHART-LINK-FIX (AC-2): `//` 트리거에 슈퍼상용구 연결.
+  //   기존 `//` 팝오버는 phraseTemplates(일반 상용구)에만 바인딩 → 슈퍼상용구 "연결 안 됨" 재신고.
+  //   루트코즈: 핸들러 미연결(데이터 무관). super_phrases 소스를 동일 팝오버에 합류시킨다.
+  //   빈 query 면 전체(상위 6) 노출, query 있으면 이름/진단/경과 부분일치.
+  const filteredSuperPhrases = superPhrases.filter(sp => {
+    if (!phraseQuery) return true;
+    return (
+      sp.name.includes(phraseQuery) ||
+      (sp.diagnosis ?? '').includes(phraseQuery) ||
+      (sp.clinical_progress ?? '').includes(phraseQuery)
+    );
+  }).slice(0, 6);
+
   function insertPhrase(phrase: PhraseTemplate) {
     // T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-4 GUARD): null/빈 상용구 방어 — 빈 내용은 무시.
     if (!phrase || !(phrase.content ?? '').trim()) return;
@@ -784,6 +797,24 @@ export default function MedicalChartPanel({
     }
     setPhrasePopoverVisible(false);
     setPhraseQuery('');
+    setTimeout(() => textarea?.focus(), 50);
+  }
+
+  // T-20260606-foot-SUPER-PHRASE-CHART-LINK-FIX (AC-2): `//` 팝오버에서 슈퍼상용구 선택 시.
+  //   1) 커서 앞 `//query` 토큰 제거(트리거 텍스트 정리) → 2) applySuperPhrase 로 일괄 적용.
+  //   setFormClinical 은 둘 다 함수형 업데이트라 (토큰제거 → 경과 append) 순서가 안전하게 합성됨.
+  function applySuperPhraseFromSlash(sp: SuperPhrase) {
+    const textarea = clinicalRef.current;
+    const cursor = textarea?.selectionStart ?? formClinical.length;
+    setFormClinical(prev => {
+      const before = prev.substring(0, cursor);
+      const after = prev.substring(cursor);
+      const m = before.match(/\/\/([^\s/]*)$/);
+      return m ? before.substring(0, before.length - m[0].length) + after : prev;
+    });
+    setPhrasePopoverVisible(false);
+    setPhraseQuery('');
+    applySuperPhrase(sp); // 진단명·임상경과(누적)·처방(게이트) 일괄 라우팅
     setTimeout(() => textarea?.focus(), 50);
   }
 
@@ -1865,36 +1896,82 @@ export default function MedicalChartPanel({
                         data-testid="medical-chart-clinical"
                       />
 
-                      {/* 단축어 팝오버 — // 트리거 autocomplete */}
-                      {phrasePopoverVisible && filteredPhrases.length > 0 && (
-                        <div
-                          className="absolute left-0 top-full z-[110] mt-1 w-72 rounded-lg border bg-popover shadow-lg overflow-hidden"
-                          onMouseDown={(e) => e.preventDefault()}
-                          data-testid="phrase-autocomplete-popover"
-                        >
-                          {filteredPhrases.map(p => (
-                            <button
-                              key={p.id}
-                              type="button"
-                              onClick={() => insertPhrase(p)}
-                              className="w-full text-left px-3 py-2 hover:bg-muted flex items-start gap-2 border-b border-border/50 last:border-0"
-                            >
-                              {p.shortcut_key && (
-                                <Badge
-                                  variant="secondary"
-                                  className="text-[9px] shrink-0 mt-0.5 h-4 px-1 font-mono"
-                                >
-                                  //{p.shortcut_key}
-                                </Badge>
-                              )}
-                              <div className="min-w-0">
-                                <div className="text-xs font-medium truncate">{p.name}</div>
-                                <div className="text-[10px] text-muted-foreground line-clamp-1">{p.content}</div>
+                      {/* 단축어 팝오버 — // 트리거 autocomplete
+                          T-20260606-foot-SUPER-PHRASE-CHART-LINK-FIX:
+                          AC-1: drawer(z-90) 내부 absolute 라 상위 stacking 에 갇혀 "뒤로 열림" → document.body 로 portal +
+                                position:fixed + z-[200] 으로 항상 최상위 렌더(클리핑/뒤로깔림 제거).
+                          AC-2: 슈퍼상용구 + 일반 상용구 합류 노출. 후보 0건이어도 팝오버는 열되 빈 상태 안내(하드 게이팅 금지). */}
+                      {phrasePopoverVisible && (() => {
+                        const rect = clinicalRef.current?.getBoundingClientRect();
+                        if (!rect) return null;
+                        const POPOVER_MAX = 300;
+                        const spaceBelow = window.innerHeight - rect.bottom;
+                        const top = spaceBelow > POPOVER_MAX
+                          ? rect.bottom + 4
+                          : Math.max(8, rect.top - POPOVER_MAX - 4);
+                        const left = Math.min(rect.left, window.innerWidth - 304);
+                        const hasAny = filteredSuperPhrases.length > 0 || filteredPhrases.length > 0;
+                        return createPortal(
+                          <div
+                            style={{ position: 'fixed', top, left, width: 288, maxHeight: POPOVER_MAX }}
+                            className="z-[200] overflow-y-auto rounded-lg border bg-popover shadow-xl"
+                            onMouseDown={(e) => e.preventDefault()}
+                            data-testid="phrase-autocomplete-popover"
+                          >
+                            {!hasAny ? (
+                              <div className="px-3 py-3 text-[11px] text-muted-foreground text-center" data-testid="phrase-autocomplete-empty">
+                                일치하는 상용구·슈퍼상용구 없음
                               </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                            ) : (
+                              <>
+                                {/* 슈퍼상용구 (진단·경과·처방 일괄 적용) */}
+                                {filteredSuperPhrases.map(sp => (
+                                  <button
+                                    key={`sp-${sp.id}`}
+                                    type="button"
+                                    onClick={() => applySuperPhraseFromSlash(sp)}
+                                    disabled={gateChecking}
+                                    className="w-full text-left px-3 py-2 hover:bg-teal-50 flex items-start gap-2 border-b border-border/50 disabled:opacity-50"
+                                    data-testid="phrase-autocomplete-super-option"
+                                  >
+                                    <Sparkles className="h-3 w-3 text-teal-600 shrink-0 mt-0.5" />
+                                    <div className="min-w-0">
+                                      <div className="text-xs font-medium truncate">{sp.name}</div>
+                                      <div className="text-[10px] text-muted-foreground line-clamp-1">
+                                        {[sp.diagnosis, sp.clinical_progress].filter(Boolean).join(' · ') || `처방 ${sp.rx_items.length}개`}
+                                      </div>
+                                    </div>
+                                  </button>
+                                ))}
+                                {/* 일반 상용구 (임상경과 텍스트 삽입) */}
+                                {filteredPhrases.map(p => (
+                                  <button
+                                    key={`p-${p.id}`}
+                                    type="button"
+                                    onClick={() => insertPhrase(p)}
+                                    className="w-full text-left px-3 py-2 hover:bg-muted flex items-start gap-2 border-b border-border/50 last:border-0"
+                                    data-testid="phrase-autocomplete-option"
+                                  >
+                                    {p.shortcut_key && (
+                                      <Badge
+                                        variant="secondary"
+                                        className="text-[9px] shrink-0 mt-0.5 h-4 px-1 font-mono"
+                                      >
+                                        //{p.shortcut_key}
+                                      </Badge>
+                                    )}
+                                    <div className="min-w-0">
+                                      <div className="text-xs font-medium truncate">{p.name}</div>
+                                      <div className="text-[10px] text-muted-foreground line-clamp-1">{p.content}</div>
+                                    </div>
+                                  </button>
+                                ))}
+                              </>
+                            )}
+                          </div>,
+                          document.body
+                        );
+                      })()}
                     </div>
                   </div>
 
