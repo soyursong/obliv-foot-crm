@@ -42,7 +42,7 @@ test.describe('T-20260516-foot-PC-CAL-COLLAPSE — PC 달력 접기', () => {
     await expect(toggle).toHaveAttribute('aria-label', '달력 접기');
   });
 
-  test('AC-2: 토글 클릭 → 달력 접힘, 날짜 바 strip 표시', async ({ page }) => {
+  test('AC-2: 토글 클릭 → 달력 접힘, 펼치기 버튼 strip 표시', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(BASE + '/admin', { waitUntil: 'networkidle' });
 
@@ -53,9 +53,9 @@ test.describe('T-20260516-foot-PC-CAL-COLLAPSE — PC 달력 접기', () => {
     const pcBar = page.getByTestId('pc-cal-bar');
     await expect(pcBar).toBeVisible();
 
-    // 날짜 텍스트 포함 ("월", "일" 포함)
-    await expect(pcBar).toContainText('월');
-    await expect(pcBar).toContainText('일');
+    // T-20260606-foot-CALENDAR-COLLAPSE-ROTATE (Option B):
+    //   회전되던 세로 날짜 텍스트는 제거됨 → strip 에는 펼치기 버튼만 노출
+    await expect(page.getByTestId('pc-cal-expand')).toBeVisible();
 
     // AC-7: 공지 영역도 접혀 있음 (notice content 안 보임)
     await expect(page.locator('[data-testid="pc-cal-toggle"]')).not.toBeVisible();
