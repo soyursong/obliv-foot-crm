@@ -12,7 +12,9 @@ e2e_spec_exempt_reason: null
 qa_result: pass
 deploy_commit: a16193f
 created: 2026-06-05
-commit: a16193f
+commit: 1e4959b
+ac6_commit: 1e4959b
+ac6_qa: pending
 ---
 
 # T-20260605-foot-RX-PHRASE-INSERT-UX — 펜차트 상용구 인라인 ✓ 즉시삽입 전환
