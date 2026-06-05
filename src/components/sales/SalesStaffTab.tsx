@@ -1,6 +1,6 @@
 /**
  * T-20260515-foot-SALES-TAB-STAFF
- * 매출집계 탭5 — 담당직원별 정산
+ * 매출집계 탭5 — 담당치료사별 정산 (구 담당직원별, T-20260605 표기 정비)
  *
  * AC-1: check_ins.therapist_id / technician_id 기준 그룹
  * AC-2: 시술 건수 + 실적 금액 + 환불 차감액
@@ -451,7 +451,7 @@ export function SalesStaffTab({ filter }: Props) {
           data-testid="sales-staff-empty"
           className="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed bg-muted/30 py-16 text-center"
         >
-          <span className="text-sm text-muted-foreground">해당 기간에 담당직원 데이터가 없습니다</span>
+          <span className="text-sm text-muted-foreground">해당 기간에 담당치료사 데이터가 없습니다</span>
           <span className="text-xs text-muted-foreground">
             수납에 치료사/장비명이 연결되지 않은 경우 표시되지 않습니다
           </span>

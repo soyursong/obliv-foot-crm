@@ -7,7 +7,7 @@
  *   환자별(patient)  — T-20260515-foot-SALES-TAB-PATIENT 구현 예정
  *   시술별(treatment)— T-20260515-foot-SALES-TAB-TREATMENT 구현 예정
  *   담당실장별(doctor) — T-20260515-foot-SALES-TAB-DOCTOR / T-20260522-foot-SETTLE-STAFF-LABEL
- *   담당직원별(staff)— T-20260515-foot-SALES-TAB-STAFF 구현 예정
+ *   담당치료사별(staff)— T-20260515-foot-SALES-TAB-STAFF / T-20260605 표기 정비(구 담당직원별)
  *
  * 이 파일은 COMMON-DB 범위: 탭 셸 + 공통 필터 + 엑셀 다운로드 공통 레이어.
  * 개별 탭 콘텐츠는 후속 티켓에서 채워진다.
@@ -54,7 +54,7 @@ const SALES_TABS = [
   { value: 'patient',   label: '환자별',     icon: Users },
   { value: 'treatment', label: '시술별',     icon: Layers },
   { value: 'doctor',    label: '담당실장별', icon: UserCheck },
-  { value: 'staff',     label: '담당직원별', icon: User },
+  { value: 'staff',     label: '담당치료사별', icon: User },
 ] as const;
 
 type SalesTabValue = (typeof SALES_TABS)[number]['value'];
@@ -142,7 +142,7 @@ export default function Sales() {
             <SalesDoctorTab filter={filter} />
           </TabsContent>
 
-          {/* 담당직원별 — T-20260515-foot-SALES-TAB-STAFF */}
+          {/* 담당치료사별 — T-20260515-foot-SALES-TAB-STAFF */}
           <TabsContent value="staff">
             <SalesStaffTab filter={filter} />
           </TabsContent>
@@ -280,7 +280,7 @@ async function fetchSalesRawRows(
       '시술코드': svcCode,
       '시술/상품명': svcName,
       '담당의사': '',
-      '담당직원': ci?.therapist?.name ?? ci?.consultant?.name ?? '',
+      '담당치료사': ci?.therapist?.name ?? ci?.consultant?.name ?? '',
       '세금속성': p.tax_type ?? '',
       '총발생금액': p.amount,
       '급여 본부금': 0,
@@ -317,7 +317,7 @@ async function fetchSalesRawRows(
       '시술코드': 'PKG',
       '시술/상품명': p.packages?.name ?? '패키지',
       '담당의사': '',
-      '담당직원': '',
+      '담당치료사': '',
       '세금속성': p.tax_type ?? '',
       '총발생금액': p.amount,
       '급여 본부금': 0,
