@@ -5,21 +5,22 @@
  *
  * 원인: CalendarNoticePanel PC 접힘(pc-cal-bar) 상태의 세로 날짜 strip 이
  *   writing-mode:vertical-rl + transform:rotate(180deg) 로 구현됨.
- *   한글(CJK)은 vertical-rl 만으로 세로 정상 표기되므로 rotate(180deg)가 글씨를 통째로 뒤집음.
- * 수정: rotate(180deg) 제거 + text-orientation:upright (숫자·괄호까지 똑바로).
+ *   한글(CJK)은 vertical-rl 만으로 세로 표기되나 rotate(180deg)가 글씨를 통째로 뒤집음.
+ * 수정(Option B): w-10(2.5rem) 폭이 좁아 세로 날짜 표시 실익이 없으므로
+ *   날짜 span(pc-cal-date-vertical) 자체를 제거하고 펼치기 버튼(pc-cal-expand)만 남김.
  *
- * AC-1: 달력 접힘 후 세로 날짜 strip 텍스트가 회전(rotate(180))/뒤집힘 없이 정상 방향 유지.
+ * AC-1: 달력 접힘 후 회전 텍스트(pc-cal-date-vertical)가 더 이상 존재하지 않음.
+ *       접힘 strip(pc-cal-bar)에는 펼치기 버튼만 노출.
  *       펼치기(expand) 회귀 — 다시 펼쳐도 미니캘린더 요일/날짜 정상 렌더.
  *
- * 검증 방식: 실브라우저(desktop-chrome, PC 1280px) — getComputedStyle(transform)에
- *   180° 회전 행렬(matrix(-1, 0, 0, -1, ...))이 없음을 단언. writing-mode 는 정상 표기로 허용.
+ * 검증 방식: 실브라우저(desktop-chrome, PC 1280px).
  */
 import { test, expect } from '@playwright/test';
 
 const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8089';
 
 test.describe('T-20260606-foot-CALENDAR-COLLAPSE-ROTATE — 달력 접기 글씨 회전 버그', () => {
-  test('AC-1: PC 달력 접으면 세로 날짜 strip 이 180° 회전(뒤집힘) 없이 정상 방향', async ({ page }) => {
+  test('AC-1: PC 달력 접으면 회전 날짜 텍스트가 제거되고 펼치기 버튼만 노출', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(BASE + '/admin', { waitUntil: 'networkidle' });
 
@@ -34,25 +35,11 @@ test.describe('T-20260606-foot-CALENDAR-COLLAPSE-ROTATE — 달력 접기 글씨
     const bar = page.getByTestId('pc-cal-bar');
     await expect(bar).toBeVisible();
 
-    // 세로 날짜 텍스트 — 날짜/요일 포함
-    const dateStrip = page.getByTestId('pc-cal-date-vertical');
-    await expect(dateStrip).toBeVisible();
-    await expect(dateStrip).toContainText('월');
-    await expect(dateStrip).toContainText('일');
+    // 핵심 단언(Option B): 회전되던 세로 날짜 텍스트가 더 이상 존재하지 않음
+    await expect(page.getByTestId('pc-cal-date-vertical')).toHaveCount(0);
 
-    // 핵심 단언: transform 에 180° 회전 행렬이 없어야 함.
-    //   rotate(180deg) === matrix(-1, 0, 0, -1, 0, 0). 정상 방향이면 'none' 또는 비회전 행렬.
-    const transform = await dateStrip.evaluate(
-      (el) => getComputedStyle(el).transform,
-    );
-    expect(transform).not.toContain('matrix(-1, 0, 0, -1');
-    expect(transform.toLowerCase()).not.toContain('rotate(180');
-
-    // writing-mode 는 세로 표기(vertical-rl)로 유지 — 회전 없이 위→아래로 읽힘
-    const writingMode = await dateStrip.evaluate(
-      (el) => getComputedStyle(el).writingMode,
-    );
-    expect(writingMode).toMatch(/vertical/);
+    // 접힘 strip 에는 펼치기 버튼만 노출
+    await expect(page.getByTestId('pc-cal-expand')).toBeVisible();
   });
 
   test('AC-1(회귀): 펼치기 → 미니캘린더 요일 헤더 정상 방향 렌더', async ({ page }) => {

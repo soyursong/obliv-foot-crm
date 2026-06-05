@@ -252,7 +252,10 @@ export default function CalendarNoticePanel() {
         data-testid="pc-cal-bar"
         className="w-10 shrink-0 border-r bg-white flex flex-col items-center gap-2 py-2"
       >
-        {/* 펼치기 버튼 */}
+        {/* 펼치기 버튼 — T-20260606-foot-CALENDAR-COLLAPSE-ROTATE (Option B)
+            이전: 세로 날짜 span(writing-mode:vertical-rl + rotate(180deg)) 이 PC 뷰에서
+            "6월 6일 (토)" 텍스트를 90°/180° 회전 표시. w-10(2.5rem) 폭이 좁아 세로 날짜
+            표시 실익이 없으므로 span 자체를 제거하고 펼치기 버튼만 남김. */}
         <button
           data-testid="pc-cal-expand"
           onClick={() => setPcCollapsed(false)}
@@ -261,17 +264,6 @@ export default function CalendarNoticePanel() {
         >
           <ChevronRight className="h-4 w-4 text-teal-600" />
         </button>
-        {/* 날짜 세로 표기 — T-20260606-foot-CALENDAR-COLLAPSE-ROTATE
-            (이전: writing-mode:vertical-rl + transform:rotate(180deg) → 한글/숫자가 위아래로 뒤집혀 보임.
-             CJK는 vertical-rl 만으로 세로 정상 표기되므로 rotate 제거. text-orientation:upright 로
-             숫자·괄호까지 똑바로 세워 '정상 방향' 유지.) */}
-        <span
-          data-testid="pc-cal-date-vertical"
-          className="text-[10px] font-semibold text-teal-700 select-none"
-          style={{ writingMode: 'vertical-rl', textOrientation: 'upright' }}
-        >
-          {format(selectedDate ?? new Date(), 'M월 d일 (E)', { locale: ko })}
-        </span>
       </aside>
     );
   }
