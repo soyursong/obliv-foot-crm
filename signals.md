@@ -3182,3 +3182,5 @@ ref: T-20260512-foot-TREATMENT-SET
 | 2026-06-05 | dev-foot | db-verified | T-20260605-foot-SALES-STAFF-DEDUCT-BASIS: prod migration 적용 확인(트리거 enabled + backfill 58건). 차감기준 매출 21,150,000원(0원 아님). E2E 8 pass. env-bundle match. db_gate:passed, deploy-ready. supervisor 최종 re-QA 요청 |
 
 | 2026-06-05 21:00 | dev-foot | deploy-ready | T-20260605-foot-HANDOVER-BOARD: 직원 근무 캘린더(파트별 인수인계) 신규. 월/주/일 3뷰+파트필터(전체/상담실장/코디/치료사)+메모+체크리스트 영속. build OK. DB변경: 있음(handover_notes/handover_checklist_items 신규 migration+rollback, supervisor DB게이트 미적용). E2E 4시나리오. commit 42614e3 |
+
+| 2026-06-05 20:40 | dev-foot | deploy-ready | T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG: 진료차트 상용구/슈퍼상용구 불러오기 회귀 수정. 근본원인=MedicalChartPanel.loadData phrase_templates .eq(phrase_type,medical_chart) 단일필터(MEDCHART-SYNC 회귀, prod pen33/med1). super_phrases는 정상·0건(cda2c8d 회귀 아님). 필터완화+빈/에러구분+GUARD. E2E 12 pass, 인접 51 pass. build OK. DB변경: 없음. commit 4b0d568 |
