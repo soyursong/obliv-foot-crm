@@ -10,6 +10,8 @@
 //   진료 환자 목록 (처방 현황) / 진료 알림판: 모든 authenticated 사용자
 //   의사(director): 진료 알림판 기본 — 진료도구 관리 탭은 비노출(기존 설계 유지)
 
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import PhrasesTab from '@/components/admin/PhrasesTab';
 // T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구(진단명+임상경과+처방 묶음) 등록 탭
@@ -42,6 +44,28 @@ export default function DoctorTools() {
   const defaultTab =
     profile?.role === 'director' ? 'call_dashboard' : hasDocToolAccess ? 'phrases' : 'patient_list';
 
+  // T-20260606-foot-RX-PANEL-UX-5FIX AC-5: 진료차트 우측 패널 '관리 화면으로' 진입 시
+  //   ?tab= 쿼리로 해당 탭 pre-select (예: 슈퍼상용구 → ?tab=super_phrases). 권한 없는 탭은 무시.
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  // 현재 사용자가 실제 볼 수 있는 탭만 허용 — 권한 없는 탭 요청 시 빈 화면 방지(defaultTab fallback).
+  const accessibleTabs = [
+    'call_dashboard',
+    'patient_list',
+    ...(hasDocToolAccess
+      ? ['phrases', 'super_phrases', 'prescriptions', 'treatment_sets', 'fee_set_templates', 'documents', 'quick_rx', 'progress_plans']
+      : []),
+    ...(isAdmin ? ['contraindications'] : []),
+  ];
+  const tabAllowed = !!requestedTab && accessibleTabs.includes(requestedTab);
+  const [activeTab, setActiveTab] = useState(tabAllowed ? (requestedTab as string) : defaultTab);
+
+  // URL ?tab= 변경(네비게이션 재진입) 시 활성 탭 동기화.
+  useEffect(() => {
+    if (tabAllowed) setActiveTab(requestedTab as string);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedTab]);
+
   return (
     <div className="h-full overflow-auto p-4 md:p-6 space-y-4 max-w-5xl">
       <div>
@@ -51,7 +75,7 @@ export default function DoctorTools() {
         </p>
       </div>
 
-      <Tabs defaultValue={defaultTab} className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="mb-4 flex-wrap h-auto gap-1">
           {/* 진료부 통합 대시보드 — 전체 공개 (T-20260601-foot-DOCTOR-CALL-PUSH-DASH) */}
           <TabsTrigger value="call_dashboard" className="gap-1.5" data-testid="tab-call-dashboard">
