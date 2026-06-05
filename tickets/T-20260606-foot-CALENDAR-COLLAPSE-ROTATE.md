@@ -11,7 +11,7 @@ e2e-spec: tests/e2e/T-20260606-foot-CALENDAR-COLLAPSE-ROTATE.spec.ts
 e2e_spec_exempt_reason: null
 qa_result: pass
 created: 2026-06-06
-commit: pending
+commit: 8096b4e
 component_note: "planner 추정(진료환자목록 DATENAV 달력)과 다름 — 실제 원인은 대시보드 좌측 사이드바 CalendarNoticePanel PC 접힘(pc-cal-bar) 세로 날짜 strip. 재현으로 확정."
 ---
 
