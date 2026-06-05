@@ -44,6 +44,7 @@ import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import type { VisitType } from '@/lib/types';
 import QuickRxBar, { isDoctor } from './QuickRxBar';
 import { useAuth } from '@/lib/auth';
+import { checkRxRoleGate, rxRoleGateMessage } from '@/lib/prescriptionGate';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -643,13 +644,19 @@ export default function DoctorTreatmentPanel({
 
   // 처방세트 불러오기
   const handleRxSetSelect = useCallback((items: PrescriptionItem[]) => {
+    // #8-1b(role 게이트): 부원장은 prescription_code_id 없는 자유텍스트 약 포함 세트 적용 차단. fail-closed.
+    const roleGate = checkRxRoleGate(profile?.role, items);
+    if (!roleGate.allowed) {
+      toast.error(rxRoleGateMessage(roleGate.blockedNames));
+      return;
+    }
     setRxItems((prev) => {
       const existingNames = new Set(prev.map((i) => i.name));
       const newItems = items.filter((i) => !existingNames.has(i.name));
       return [...prev, ...newItems];
     });
     toast.success('처방세트가 추가됐어요.');
-  }, []);
+  }, [profile?.role]);
 
   // 서류 템플릿 불러오기
   const handleDocTemplateSelect = useCallback((content: string) => {
@@ -667,6 +674,12 @@ export default function DoctorTreatmentPanel({
 
   // 처방 저장
   async function handleSaveRx() {
+    // #8-1b(fail-closed): 부원장은 자유텍스트 약이 섞인 처방을 영속화할 수 없음(타인 입력 pending 포함 방어).
+    const roleGate = checkRxRoleGate(profile?.role, rxItems);
+    if (!roleGate.allowed) {
+      toast.error(rxRoleGateMessage(roleGate.blockedNames));
+      return;
+    }
     await save.mutateAsync({ prescription_items: rxItems });
     toast.success('처방이 저장됐어요.');
   }
@@ -687,6 +700,12 @@ export default function DoctorTreatmentPanel({
         doctor_confirmed_at: now,
       });
     } else if (type === 'prescription') {
+      // #8-1b(fail-closed): 부원장은 자유텍스트 약이 섞인 처방을 확정할 수 없음(code 기반만 확정 가능).
+      const roleGate = checkRxRoleGate(profile?.role, rxItems);
+      if (!roleGate.allowed) {
+        toast.error(rxRoleGateMessage(roleGate.blockedNames));
+        return;
+      }
       // T-20260512-foot-QUICK-RX-BUTTON: prescription_status도 'confirmed'로 동기화
       await save.mutateAsync({
         prescription_items: rxItems,
@@ -868,6 +887,7 @@ export default function DoctorTreatmentPanel({
           {!confirmed.doctor_confirm_prescription && (
             <QuickRxBar
               doctorMode={doctorMode}
+              role={profile?.role ?? ''}
               onSelectItems={(items) => {
                 // 콜백 모드: 처방 목록에 추가 (DB는 부모가 저장)
                 setRxItems((prev) => {
