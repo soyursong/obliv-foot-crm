@@ -42,7 +42,10 @@ test.describe('T-20260605-foot-SALES-TAB-RENAME-THERAPIST 담당치료사별 표
     await expect(page.locator('[data-testid="sales-staff-basis-toggle"]')).toBeVisible({
       timeout: 10_000,
     });
-    console.log('[RENAME] S1 탭 라벨 담당치료사별 OK');
+
+    // AC-LABEL 시나리오2: 탭 활성 후 페이지 내 소제목 등에도 구 '담당직원별' 미잔존
+    await expect(page.getByText('담당직원별')).toHaveCount(0);
+    console.log('[RENAME] S1 탭 라벨 담당치료사별 OK (소제목 잔존 0 확인)');
   });
 
   // ── S2. 엑셀 export 헤더 '담당치료사' 정비 ────────────────────────────────
