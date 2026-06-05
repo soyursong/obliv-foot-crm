@@ -24,7 +24,8 @@ const TODAY = format(new Date(), 'yyyy-MM-dd');
 
 async function gotoHandover(page: Page) {
   await page.goto(HANDOVER_URL);
-  await expect(page.getByRole('heading', { name: '인수인계' })).toBeVisible({ timeout: 15_000 });
+  // 현장 명칭 "직원 근무 캘린더" (원장 듀티 로스터와 분리된 독립 메뉴)
+  await expect(page.getByRole('heading', { name: '직원 근무 캘린더' })).toBeVisible({ timeout: 15_000 });
 }
 
 test.describe('T-20260605-foot-HANDOVER-BOARD 인수인계 게시판', () => {

@@ -361,7 +361,8 @@ export default function Handover() {
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-white/80 px-4 py-3">
         <div className="flex items-center gap-2">
           <ClipboardCheck className="h-4 w-4 text-teal-600" />
-          <h1 className="text-base font-semibold">인수인계</h1>
+          <h1 className="text-base font-semibold">직원 근무 캘린더</h1>
+          <span className="hidden text-xs text-muted-foreground sm:inline">· 파트별 인수인계</span>
         </div>
         <Button size="sm" onClick={openNew} className="gap-1" data-testid="handover-new-btn">
           <Plus className="h-3.5 w-3.5" /> 인수인계 작성
