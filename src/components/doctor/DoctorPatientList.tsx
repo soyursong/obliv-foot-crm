@@ -173,10 +173,12 @@ function VisitTypeBadge({ type }: { type: PatientRow['visit_type'] }) {
 function PatientRow({
   row,
   doctorMode,
+  role,
   onRefresh,
 }: {
   row: PatientRow;
   doctorMode: boolean;
+  role: string;
   onRefresh: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -265,6 +267,7 @@ function PatientRow({
         <div className="border-t px-3 py-2.5 bg-white rounded-b-lg">
           <QuickRxBar
             doctorMode={doctorMode}
+            role={role}
             checkInId={row.id}
             onApplied={onRefresh}
             compact
@@ -436,6 +439,7 @@ export default function DoctorPatientList() {
               key={row.id}
               row={row}
               doctorMode={doctorMode}
+              role={profile?.role ?? ''}
               onRefresh={() => refetch()}
             />
           ))}

@@ -15,6 +15,7 @@ import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { IconRenderer } from '@/components/admin/QuickRxButtonsTab';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
+import { checkRxRoleGate, rxRoleGateMessage } from '@/lib/prescriptionGate';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -101,6 +102,13 @@ export interface QuickRxBarProps {
   /** 의사 여부 — true면 '확정', false면 '임시' */
   doctorMode: boolean;
 
+  /**
+   * #8-1b(role 게이트): 현재 사용자 role.
+   * 부원장(vice_director)은 prescription_code_id 없는 자유텍스트 처방세트 적용 차단.
+   * 미지정 시 게이트 비적용(종전 동작 보존).
+   */
+  role?: string;
+
   // ── 모드 A: 콜백 모드 (DoctorTreatmentPanel 내부) ──
   /** items 콜백 제공 시 DB 직접 저장 안 함 */
   onSelectItems?: (items: PrescriptionItem[]) => void;
@@ -120,6 +128,7 @@ export interface QuickRxBarProps {
 // ---------------------------------------------------------------------------
 export default function QuickRxBar({
   doctorMode,
+  role,
   onSelectItems,
   checkInId,
   onApplied,
@@ -146,6 +155,14 @@ export default function QuickRxBar({
     const items = btn.prescription_sets?.items ?? [];
     if (items.length === 0) {
       toast.warning(`"${btn.name}" 처방세트에 항목이 없어요.`);
+      return;
+    }
+
+    // #8-1b(role 게이트): 부원장은 prescription_code_id 없는 자유텍스트 약이 섞인 빠른처방 세트 적용 차단.
+    //   official 499 코드만으로 구성된 세트는 통과. fail-closed.
+    const roleGate = checkRxRoleGate(role, items);
+    if (!roleGate.allowed) {
+      toast.error(rxRoleGateMessage(roleGate.blockedNames));
       return;
     }
 

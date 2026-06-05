@@ -58,6 +58,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
+import { checkRxRoleGate, rxRoleGateMessage } from '@/lib/prescriptionGate';
 import { formatAmount, formatPhone } from '@/lib/format';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import { classificationToRoute } from '@/components/admin/PrescriptionSetsTab';
@@ -966,6 +967,13 @@ export default function MedicalChartPanel({
   //   - 금기 있음 → 확인 모달 오픈(pendingRxItems 보관). 사용자가 전체 체크 후 확인해야 적재.
   //   ※ 텍스트 약명매칭 금지 — prescription_code_id 기준만. (오탐 차단 / 의료안전)
   async function addRxItems(items: PrescriptionItem[], successMsg?: string) {
+    // #8-1b(role 게이트): 부원장(vice_director)은 prescription_code_id 없는 자유텍스트 처방 추가 금지.
+    //   official 499 코드(addRxFromCode)는 항상 code_id 보유 → 통과. fail-closed: code_id 없으면 차단.
+    const roleGate = checkRxRoleGate(currentUserRole, items);
+    if (!roleGate.allowed) {
+      toast.error(rxRoleGateMessage(roleGate.blockedNames));
+      return;
+    }
     const codeIds = Array.from(
       new Set(items.map(i => i.prescription_code_id).filter((x): x is string => !!x)),
     );

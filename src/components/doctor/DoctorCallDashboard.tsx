@@ -261,6 +261,7 @@ export default function DoctorCallDashboard() {
                 key={callKey(ci)}
                 checkIn={ci}
                 doctorMode={doctorMode}
+                role={profile?.role ?? ''}
                 onOpenChart={openTreatmentChart}
                 onRefresh={() => void refetch()}
               />
@@ -289,6 +290,7 @@ export default function DoctorCallDashboard() {
                 key={ci.id}
                 checkIn={ci}
                 doctorMode={doctorMode}
+                role={profile?.role ?? ''}
                 onOpenChart={openTreatmentChart}
                 onRefresh={() => void refetch()}
               />
@@ -319,11 +321,13 @@ export default function DoctorCallDashboard() {
 function CallFeedRow({
   checkIn,
   doctorMode,
+  role,
   onOpenChart,
   onRefresh,
 }: {
   checkIn: CheckIn;
   doctorMode: boolean;
+  role: string;
   onOpenChart: (customerId: string) => void;
   onRefresh: () => void;
 }) {
@@ -404,7 +408,7 @@ function CallFeedRow({
 
       {showRx && (
         <div className="mt-1.5 ml-6 rounded-lg border bg-white p-2">
-          <QuickRxBar doctorMode={doctorMode} checkInId={checkIn.id} onApplied={onRefresh} compact />
+          <QuickRxBar doctorMode={doctorMode} role={role} checkInId={checkIn.id} onApplied={onRefresh} compact />
         </div>
       )}
     </li>
@@ -415,11 +419,13 @@ function CallFeedRow({
 function CompletedRow({
   checkIn,
   doctorMode,
+  role,
   onOpenChart,
   onRefresh,
 }: {
   checkIn: CheckIn;
   doctorMode: boolean;
+  role: string;
   onOpenChart: (customerId: string) => void;
   onRefresh: () => void;
 }) {
@@ -460,7 +466,7 @@ function CompletedRow({
       </div>
       {showRx && (
         <div className="mt-1.5 rounded-lg border bg-white p-2">
-          <QuickRxBar doctorMode={doctorMode} checkInId={checkIn.id} onApplied={onRefresh} compact />
+          <QuickRxBar doctorMode={doctorMode} role={role} checkInId={checkIn.id} onApplied={onRefresh} compact />
         </div>
       )}
     </li>
