@@ -6,6 +6,8 @@ import { ko } from 'date-fns/locale';
 import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, Loader2, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
+// T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성 발건강질문지(health_q_results) 상담내역 [내용보기] 렌더
+import { ResultCard, type HQResult } from '@/components/HealthQResultsPanel';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -1653,6 +1655,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     signed_at?: string | null;
     field_data?: Record<string, unknown> | null;
   }[]>([]);
+  // T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성 발건강질문지 결과 (health_q_results)
+  // 자가작성은 form_submissions가 아닌 health_q_results 에 저장되므로 별도 로드 →
+  // 상담내역 그룹3 [내용보기] 활성화 + 다이얼로그 구조화 렌더에 사용
+  const [healthQResults, setHealthQResults] = useState<HQResult[]>([]);
   // T-20260520-foot-PENCHART-VIEW-SPLIT: 이미지 뷰어 상태
   const [submissionImages, setSubmissionImages] = useState<{ url: string; date: string; label: string }[]>([]);
   const [submissionImagesLoading, setSubmissionImagesLoading] = useState(false);
@@ -1905,7 +1911,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       const [
         staffAllRes,
         pkgRes, visitRes, payRes, pkgPayRes, resvRes, ciHistRes,
-        clRes, subRes,
+        clRes, subRes, hqRes,
       ] = await Promise.all([
         // C2-STAFF-DROPDOWN: 담당자(consultant/coordinator/director) + 치료사 1쿼리 통합
         // T-20260523-foot-PKG-DEDUCT-THERAPIST bugfix: display_name 컬럼 미존재 → 쿼리 400 에러 → 치료사 드롭다운 비어있음
@@ -1924,6 +1930,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           .not('completed_at', 'is', null).order('completed_at', { ascending: false }).limit(10),
         supabase.from('form_submissions').select('check_in_id, printed_at, signed_at, field_data, form_templates!template_id(form_key)')
           .eq('customer_id', customerId).order('printed_at', { ascending: false, nullsFirst: false }).limit(30),
+        // T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성 발건강질문지 (clinic 스코프 — RLS도 동일 강제)
+        supabase.from('health_q_results').select('id, form_type, form_data, submitted_at, created_at')
+          .eq('customer_id', customerId).eq('clinic_id', clinicId).order('submitted_at', { ascending: false }).limit(10),
       ]);
 
       // staff 분기: role별 분류
@@ -1993,6 +2002,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           field_data: (s.field_data as Record<string, unknown> | null) ?? null,
         }))
       );
+      // T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성 발건강질문지 결과 적재
+      setHealthQResults((hqRes.data ?? []) as HQResult[]);
 
       if (checkInIds.length > 0) {
         const [rxRes, consentRes] = await Promise.all([
@@ -5357,18 +5368,28 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   <span className="h-2 w-2 rounded-full bg-teal-500" />
                   발건강 질문지
                 </div>
+                {/* T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성(health_q_results)도
+                    [내용보기] 활성화 대상에 포함. 기존엔 펜차트(form_submissions)만 인식해
+                    자가작성 제출 고객은 버튼이 영구 비활성이었음(근본원인). */}
                 {(() => {
-                  const hasHQ = submissionEntries.some((s) => s.template_key?.startsWith('health_questionnaire_'));
+                  const hasPenHQ = submissionEntries.some((s) => s.template_key?.startsWith('health_questionnaire_'));
+                  const hasSelfHQ = healthQResults.length > 0;
+                  const hasHQ = hasPenHQ || hasSelfHQ;
                   const dateStr = (() => {
                     if (!hasHQ) return null;
-                    const newest = submissionEntries.filter((s) => s.template_key?.startsWith('health_questionnaire_'))[0];
-                    const d = newest?.printed_at ?? newest?.signed_at;
+                    const penNewest = submissionEntries.filter((s) => s.template_key?.startsWith('health_questionnaire_'))[0];
+                    const penDate = penNewest?.printed_at ?? penNewest?.signed_at ?? null;
+                    const selfDate = healthQResults[0]?.submitted_at ?? null;
+                    // 둘 중 최신
+                    const d = [penDate, selfDate].filter(Boolean).sort().reverse()[0];
                     return d ? format(new Date(d), 'MM-dd') : null;
                   })();
                   return (
                     <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${hasHQ ? 'bg-teal-50' : 'bg-gray-50'}`}>
                       <span className={hasHQ ? 'text-teal-600' : 'text-gray-300'}>{hasHQ ? '✓' : '○'}</span>
-                      <span className={hasHQ ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>발건강 질문지 (일반 / 어르신용)</span>
+                      <span className={hasHQ ? 'text-teal-700 font-medium' : 'text-muted-foreground'}>
+                        발건강 질문지 (일반 / 어르신용){hasSelfHQ && !hasPenHQ ? ' · 자가작성' : ''}
+                      </span>
                       {hasHQ && dateStr && <span className="ml-auto text-muted-foreground text-[10px]">{dateStr}</span>}
                     </div>
                   );
@@ -5383,12 +5404,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   <button
                     type="button"
                     onClick={() => {
-                      const hasHQ = submissionEntries.some((s) => s.template_key?.startsWith('health_questionnaire_'));
+                      const hasHQ = submissionEntries.some((s) => s.template_key?.startsWith('health_questionnaire_')) || healthQResults.length > 0;
                       if (!hasHQ) return;
+                      // 펜차트 PNG(form_submissions)가 있으면 함께 로드, 없으면 빈 배열 → 자가작성만 표시
                       void openSubmissionViewer(3, customer.id);
                       setViewDocGroup(3);
                     }}
-                    disabled={!submissionEntries.some((s) => s.template_key?.startsWith('health_questionnaire_'))}
+                    disabled={!submissionEntries.some((s) => s.template_key?.startsWith('health_questionnaire_')) && healthQResults.length === 0}
                     className="flex-1 rounded border border-gray-200 bg-white py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
                   >내용보기</button>
                 </div>
@@ -7336,9 +7358,23 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 </>
               )}
               {/* T-20260520-foot-PENCHART-VIEW-SPLIT: 그룹3 — 발건강 질문지 (health_questionnaire_*) */}
+              {/* T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성(health_q_results) 구조화 결과 렌더 추가.
+                  근본원인 — 자가작성은 PNG(form_submissions)가 아니라 health_q_results 에 저장되므로
+                  기존 PNG 전용 뷰어에서는 항상 '없음'으로 떴음. 펜차트 PNG와 자가작성을 함께 표시. */}
               {viewDocGroup === 3 && (
                 <>
-                  {!submissionImagesLoading && submissionImages.length === 0 && (
+                  {healthQResults.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+                        <span className="h-1.5 w-1.5 rounded-full bg-teal-400" />
+                        자가작성 제출 ({healthQResults.length}건)
+                      </div>
+                      {healthQResults.map((r) => (
+                        <ResultCard key={r.id} result={r} defaultExpanded={healthQResults.length === 1} />
+                      ))}
+                    </div>
+                  )}
+                  {!submissionImagesLoading && submissionImages.length === 0 && healthQResults.length === 0 && (
                     <p className="text-muted-foreground text-center py-4">저장된 발건강 질문지가 없습니다</p>
                   )}
                 </>
