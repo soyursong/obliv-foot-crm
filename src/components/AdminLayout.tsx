@@ -22,6 +22,7 @@ import {
   Stethoscope,
   BookOpen,
   Table2,
+  ClipboardCheck,
   ChevronLeft,
   ChevronRight,
   TrendingUp,
@@ -109,6 +110,8 @@ const NAV_ITEMS: {
   // AC-1: 3역할 → 일마감 접근 (뷰 전용; WRITE=admin/manager만)
   { to: '/admin/closing', label: '일마감', icon: Receipt, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
   { to: '/admin/history', label: '일일 이력', icon: ClipboardList },
+  // T-20260605-foot-HANDOVER-BOARD AC-5: 인수인계 — 전 직원 노출 (roles 미지정)
+  { to: '/admin/handover', label: '인수인계', icon: ClipboardCheck },
   // AC-6: 통계 미노출 유지 (consultant/coordinator/therapist 제외)
   { to: '/admin/stats', label: '통계', icon: BarChart3, roles: ['admin', 'manager', 'part_lead'] },
   // AC-6: 매출집계 미노출 유지
