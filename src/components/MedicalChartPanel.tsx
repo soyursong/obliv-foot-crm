@@ -51,7 +51,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, History, Loader2, Pin, PinOff, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
+import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, Folder, FolderOpen, History, Loader2, Pin, PinOff, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -306,6 +306,8 @@ export default function MedicalChartPanel({
   const [staffNameMap, setStaffNameMap] = useState<Record<string, string>>({});
   const [phraseTemplates, setPhraseTemplates] = useState<PhraseTemplate[]>([]);
   const [prescriptionSets, setPrescriptionSets] = useState<PrescriptionSet[]>([]);
+  // T-20260605-foot-RX-SET-EXPLORER-TREE: 처방세트 탭 폴더 트리 — 접힌 폴더 추적(기본 전체 펼침)
+  const [collapsedRxFolders, setCollapsedRxFolders] = useState<Set<string>>(new Set<string>());
   // T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구 목록
   const [superPhrases, setSuperPhrases] = useState<SuperPhrase[]>([]);
   // T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-2 빈 vs 에러 구분): 조회 자체가 실패(RLS/스키마)했는지 추적.
@@ -2178,27 +2180,85 @@ export default function MedicalChartPanel({
                       </div>
 
                       {prescriptionSets.length === 0 ? (
-                        <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center mt-2">
+                        <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center mt-2" data-testid="rx-set-empty">
                           등록된 처방세트 없음<br />
                           <span className="text-[10px]">위 버튼으로 추가하세요</span>
                         </div>
                       ) : (
-                        prescriptionSets.map(set => (
-                          <button
-                            key={set.id}
-                            type="button"
-                            onClick={() => loadPrescriptionSet(set)}
-                            disabled={gateChecking}
-                            className="w-full text-left rounded-lg border bg-card px-3 py-2.5 hover:border-teal-400 hover:bg-teal-50/30 transition-colors disabled:opacity-50"
-                            data-testid="rx-set-option"
-                          >
-                            <div className="font-medium text-xs">{set.name}</div>
-                            <div className="text-[10px] text-muted-foreground mt-0.5">
-                              {set.items.slice(0, 3).map(i => i.name).join(', ')}
-                              {set.items.length > 3 ? ` 외 ${set.items.length - 3}개` : ''}
-                            </div>
-                          </button>
-                        ))
+                        // T-20260605-foot-RX-SET-EXPLORER-TREE: folder→set 2단 탐색기 트리.
+                        //   PrescriptionSetsTab(관리화면) 그룹핑과 동일 규칙: 폴더 가나다순, '미분류' 맨 끝, 폴더 내부는 로드 순서(sort_order) 유지.
+                        //   leaf 클릭 = loadPrescriptionSet(set) 그대로 보존(적용 로직 변경 없음).
+                        (() => {
+                          const NO_FOLDER = '미분류';
+                          const map = new Map<string, PrescriptionSet[]>();
+                          for (const s of prescriptionSets) {
+                            const key = s.folder?.trim() ? s.folder.trim() : NO_FOLDER;
+                            if (!map.has(key)) map.set(key, []);
+                            map.get(key)!.push(s);
+                          }
+                          const keys = Array.from(map.keys()).sort((a, b) => {
+                            if (a === NO_FOLDER) return 1;
+                            if (b === NO_FOLDER) return -1;
+                            return a.localeCompare(b, 'ko');
+                          });
+                          return keys.map((folderName) => {
+                            const items = map.get(folderName)!;
+                            const collapsed = collapsedRxFolders.has(folderName);
+                            return (
+                              <div key={folderName} data-testid="rx-set-folder-node" className="space-y-1">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setCollapsedRxFolders((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(folderName)) next.delete(folderName);
+                                      else next.add(folderName);
+                                      return next;
+                                    })
+                                  }
+                                  className="w-full flex items-center gap-1.5 px-1 py-1.5 rounded-md hover:bg-teal-50/60 transition-colors"
+                                  data-testid="rx-set-folder-toggle"
+                                  aria-expanded={!collapsed}
+                                >
+                                  {collapsed ? (
+                                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                  ) : (
+                                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                  )}
+                                  {collapsed ? (
+                                    <Folder className="h-3.5 w-3.5 text-teal-600 shrink-0" />
+                                  ) : (
+                                    <FolderOpen className="h-3.5 w-3.5 text-teal-600 shrink-0" />
+                                  )}
+                                  <span className="text-xs font-semibold text-foreground truncate flex-1 text-left" data-testid="rx-set-folder-name">
+                                    {folderName}
+                                  </span>
+                                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">{items.length}</Badge>
+                                </button>
+                                {!collapsed && (
+                                  <div className="space-y-1 pl-3 border-l border-teal-100 ml-2">
+                                    {items.map((set) => (
+                                      <button
+                                        key={set.id}
+                                        type="button"
+                                        onClick={() => loadPrescriptionSet(set)}
+                                        disabled={gateChecking}
+                                        className="w-full text-left rounded-lg border bg-card px-3 py-2.5 hover:border-teal-400 hover:bg-teal-50/30 transition-colors disabled:opacity-50"
+                                        data-testid="rx-set-option"
+                                      >
+                                        <div className="font-medium text-xs">{set.name}</div>
+                                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                                          {set.items.slice(0, 3).map(i => i.name).join(', ')}
+                                          {set.items.length > 3 ? ` 외 ${set.items.length - 3}개` : ''}
+                                        </div>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          });
+                        })()
                       )}
                     </div>
                   )}
