@@ -51,7 +51,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { AlertTriangle, BookOpen, Camera, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, History, Loader2, Pin, PinOff, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
+import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, History, Loader2, Pin, PinOff, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -356,7 +356,9 @@ export default function MedicalChartPanel({
   // ── 우측 패널 탭 (AC-1 + MEDCHART-SYNC → TREATMEMO-CHART-MERGE: 처방세트 / 상용구 / 진료내역 / 진료이미지)
   // T-20260527-foot-TREATMEMO-CHART-MERGE: treat_memo 탭 제거 — [치료사차트] 섹션에 통합
   const [rightTab, setRightTab] = useState<'rx' | 'phrase' | 'super' | 'visit_hist' | 'images'>('rx');
-  const [selectedPhraseIds, setSelectedPhraseIds] = useState<Set<number>>(new Set());
+  // T-20260605-foot-RX-PHRASE-CLICK-INSERT: 체크박스 다중선택 → 클릭 시 ✓ 즉시삽입 단일화.
+  //   행 클릭 → 그 행만 ✓ 버튼 노출(단일 활성), ✓ 클릭 → 즉시 삽입. (펜차트 PHRASE-MULTISELECT 와 별개 패널)
+  const [clickedPhraseId, setClickedPhraseId] = useState<number | null>(null);
 
   // T-20260526-foot-MEDCHART-SYNC: 참고 데이터 상태
   // T-20260527-foot-TREATMEMO-CHART-MERGE: treatMemosLoaded/Loading 제거 (loadData 통합으로 불필요)
@@ -570,7 +572,7 @@ export default function MedicalChartPanel({
       setSelectedChartId(null);
       resetForm(null);
       setPhrasePopoverVisible(false);
-      setSelectedPhraseIds(new Set());
+      setClickedPhraseId(null);
       setRightTab('rx');
       // T-20260526-foot-MEDCHART-SYNC: 참고 데이터 리셋 (새 고객 열릴 때마다)
       // T-20260527-foot-TREATMEMO-CHART-MERGE: treatMemos는 loadData에서 자동 재로드됨
@@ -783,34 +785,17 @@ export default function MedicalChartPanel({
     setTimeout(() => textarea?.focus(), 50);
   }
 
-  // ── 우측 패널 — 상용구 다중 선택 삽입 ─────────────────────────────────────
+  // ── 우측 패널 — 상용구 클릭 → ✓ 즉시삽입 (T-20260605-foot-RX-PHRASE-CLICK-INSERT) ──
+  //   행 클릭 시 단일 활성(같은 행 재클릭=닫기). ✓ 클릭 → insertPhrase(p) 재활용(누적/대체 시맨틱 동일).
 
-  function togglePhraseId(id: number) {
-    setSelectedPhraseIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+  function togglePhraseRow(id: number) {
+    setClickedPhraseId(prev => (prev === id ? null : id));
   }
 
-  function insertSelectedPhrases() {
-    // T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-4 GUARD): 선택 없음/내용 없음 방어.
-    if (selectedPhraseIds.size === 0) {
-      toast.warning('삽입할 상용구를 선택해주세요');
-      return;
-    }
-    const contents = phraseTemplates
-      .filter(p => selectedPhraseIds.has(p.id))
-      .map(p => (p.content ?? '').trim())
-      .filter(c => c !== '')
-      .join('\n');
-    if (contents) {
-      setFormClinical(prev => prev ? prev + '\n' + contents : contents);
-      toast.success(`${selectedPhraseIds.size}개 상용구 삽입됨`);
-    } else {
-      toast.warning('선택한 상용구에 삽입할 내용이 없어요');
-    }
-    setSelectedPhraseIds(new Set());
+  function confirmInsertPhrase(p: PhraseTemplate) {
+    // ✓ 버튼 — 단일 행 즉시 삽입. 기존 insertPhrase 핸들러 재활용(빈/대체 GUARD 포함).
+    insertPhrase(p);
+    setClickedPhraseId(null);
   }
 
   // ── 슈퍼상용구 적용 (T-20260603-foot-RX-SUPER-PHRASE) ────────────────────────
@@ -2233,10 +2218,7 @@ export default function MedicalChartPanel({
                       </button>
 
                       <div className="text-[10px] font-semibold text-muted-foreground px-1 pt-1">
-                        선택 후 "삽입" — 임상경과 필드에 추가됩니다
-                        {selectedPhraseIds.size > 0 && (
-                          <span className="text-teal-600 ml-1">({selectedPhraseIds.size}개 선택됨)</span>
-                        )}
+                        항목을 누르면 ✓ 버튼이 나타납니다 — 눌러서 임상경과에 삽입
                       </div>
 
                       {/* T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-2): 조회 실패(에러) ≠ 0건(빈) 구분 안내 */}
@@ -2252,18 +2234,33 @@ export default function MedicalChartPanel({
                         </div>
                       ) : (
                         <div className="space-y-0.5">
-                          {phraseTemplates.map(p => (
-                            <label
+                          {phraseTemplates.map(p => {
+                            const active = clickedPhraseId === p.id;
+                            return (
+                            <div
                               key={p.id}
-                              className="flex items-start gap-2 cursor-pointer hover:bg-muted rounded px-2 py-1.5"
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => togglePhraseRow(p.id)}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePhraseRow(p.id); } }}
+                              className={`flex items-start gap-2 cursor-pointer rounded px-2 py-1.5 transition-colors ${active ? 'bg-teal-50' : 'hover:bg-muted'}`}
                               data-testid="phrase-option"
+                              data-active={active ? 'true' : 'false'}
                             >
-                              <input
-                                type="checkbox"
-                                checked={selectedPhraseIds.has(p.id)}
-                                onChange={() => togglePhraseId(p.id)}
-                                className="mt-0.5 h-3.5 w-3.5 accent-teal-600 shrink-0"
-                              />
+                              {/* AC-2/AC-3: 행 클릭 시 노출되는 ✓ 즉시삽입 버튼 (활성 행만) */}
+                              {active ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); confirmInsertPhrase(p); }}
+                                  className="mt-0.5 flex h-4 w-4 items-center justify-center rounded bg-teal-600 text-white shrink-0 hover:bg-teal-700"
+                                  data-testid="phrase-insert-check"
+                                  aria-label={`${p.name} 삽입`}
+                                >
+                                  <Check className="h-3 w-3" />
+                                </button>
+                              ) : (
+                                <span className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                              )}
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1">
                                   <span className="text-xs font-medium">{p.name}</span>
@@ -2285,8 +2282,9 @@ export default function MedicalChartPanel({
                                   {p.content}
                                 </p>
                               </div>
-                            </label>
-                          ))}
+                            </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -2463,20 +2461,7 @@ export default function MedicalChartPanel({
                     </div>
                   )}
                 </div>
-
-                {/* 상용구 탭 — 삽입 버튼 (선택 시만 표시) */}
-                {rightTab === 'phrase' && selectedPhraseIds.size > 0 && (
-                  <div className="flex-none p-3 border-t bg-background">
-                    <Button
-                      size="sm"
-                      className="w-full bg-teal-600 hover:bg-teal-700 text-white h-9 text-xs"
-                      onClick={insertSelectedPhrases}
-                      data-testid="phrase-insert-btn"
-                    >
-                      선택한 {selectedPhraseIds.size}개 임상경과에 삽입
-                    </Button>
-                  </div>
-                )}
+                {/* T-20260605-foot-RX-PHRASE-CLICK-INSERT: 하단 일괄 '삽입' 버튼 제거 — 행 내 ✓ 즉시삽입으로 단일화 */}
               </div>
             </>
           )}
