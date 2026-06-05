@@ -306,8 +306,11 @@ export default function MedicalChartPanel({
   const [staffNameMap, setStaffNameMap] = useState<Record<string, string>>({});
   const [phraseTemplates, setPhraseTemplates] = useState<PhraseTemplate[]>([]);
   const [prescriptionSets, setPrescriptionSets] = useState<PrescriptionSet[]>([]);
-  // T-20260605-foot-RX-SET-EXPLORER-TREE: 처방세트 탭 폴더 트리 — 접힌 폴더 추적(기본 전체 펼침)
+  // T-20260605-foot-RX-SET-EXPLORER-TREE: 처방세트 탭 폴더 트리 — 접힌 폴더 추적.
+  // T-20260606-foot-RX-PANEL-UX-5FIX AC-2: 기본 전체 접힘으로 변경(문지은 원장 요청).
+  //   데이터 로드 후 1회만 전체 폴더명을 collapsed 집합에 적재(rxFoldersInitRef 가드) — 이후 사용자 토글 보존.
   const [collapsedRxFolders, setCollapsedRxFolders] = useState<Set<string>>(new Set<string>());
+  const rxFoldersInitRef = useRef(false);
   // T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구 목록
   const [superPhrases, setSuperPhrases] = useState<SuperPhrase[]>([]);
   // T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-2 빈 vs 에러 구분): 조회 자체가 실패(RLS/스키마)했는지 추적.
@@ -361,6 +364,9 @@ export default function MedicalChartPanel({
   // T-20260605-foot-RX-PHRASE-CLICK-INSERT: 체크박스 다중선택 → 클릭 시 ✓ 즉시삽입 단일화.
   //   행 클릭 → 그 행만 ✓ 버튼 노출(단일 활성), ✓ 클릭 → 즉시 삽입. (펜차트 PHRASE-MULTISELECT 와 별개 패널)
   const [clickedPhraseId, setClickedPhraseId] = useState<number | null>(null);
+  // T-20260606-foot-RX-PANEL-UX-5FIX AC-3: 상용구 탭을 진료차트/펜차트 그룹으로 분리.
+  //   펜차트 상용구는 항상 기본 접힘(원장 동선은 진료차트 위주, 펜차트는 보조).
+  const [penPhraseCollapsed, setPenPhraseCollapsed] = useState(true);
 
   // T-20260526-foot-MEDCHART-SYNC: 참고 데이터 상태
   // T-20260527-foot-TREATMEMO-CHART-MERGE: treatMemosLoaded/Loading 제거 (loadData 통합으로 불필요)
@@ -640,6 +646,29 @@ export default function MedicalChartPanel({
     return () => document.removeEventListener('keydown', handler, true);
   }, [open, onOpenChange]);
 
+  // T-20260606-foot-RX-PANEL-UX-5FIX AC-2: 처방세트 폴더 기본 전체 접힘.
+  //   처방세트 로드 후 1회만 전체 폴더명을 collapsed 집합으로 초기화(rxFoldersInitRef 가드).
+  //   이후 사용자가 펼친 폴더는 보존(재초기화 안 함). Drawer 재오픈 시 ref 리셋(아래 open=false 처리).
+  useEffect(() => {
+    if (rxFoldersInitRef.current) return;
+    if (prescriptionSets.length === 0) return;
+    const NO_FOLDER = '미분류';
+    const names = new Set<string>();
+    for (const s of prescriptionSets) {
+      names.add(s.folder?.trim() ? s.folder.trim() : NO_FOLDER);
+    }
+    setCollapsedRxFolders(names);
+    rxFoldersInitRef.current = true;
+  }, [prescriptionSets]);
+
+  // Drawer 닫힐 때 폴더 접힘 초기화 플래그 리셋 → 다음 오픈 시 다시 전체 접힘으로 시작.
+  useEffect(() => {
+    if (!open) {
+      rxFoldersInitRef.current = false;
+      setPenPhraseCollapsed(true);
+    }
+  }, [open]);
+
   // ── 타임라인 선택 ────────────────────────────────────────────────────────────
 
   function selectChart(chart: MedicalChart) {
@@ -829,6 +858,49 @@ export default function MedicalChartPanel({
     // ✓ 버튼 — 단일 행 즉시 삽입. 기존 insertPhrase 핸들러 재활용(빈/대체 GUARD 포함).
     insertPhrase(p);
     setClickedPhraseId(null);
+  }
+
+  // T-20260606-foot-RX-PANEL-UX-5FIX AC-4: 상용구 행 — 왼쪽 체크박스 제거 + 우측 끝 ✓ 비방해 토글.
+  //   행 클릭 → 단일 활성(togglePhraseRow). 활성 행만 우측 끝에 ✓ 노출 → 눌러 임상경과에 삽입.
+  //   placeholder span(좌측 고정폭) 제거로 텍스트가 왼쪽 정렬되며, ✓ 는 우측 끝에서만 등장(레이아웃 비방해).
+  function renderPhraseRow(p: PhraseTemplate) {
+    const active = clickedPhraseId === p.id;
+    return (
+      <div
+        key={p.id}
+        role="button"
+        tabIndex={0}
+        onClick={() => togglePhraseRow(p.id)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePhraseRow(p.id); } }}
+        className={`flex items-start gap-2 cursor-pointer rounded px-2 py-1.5 transition-colors ${active ? 'bg-teal-50' : 'hover:bg-muted'}`}
+        data-testid="phrase-option"
+        data-active={active ? 'true' : 'false'}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1">
+            <span className="text-xs font-medium">{p.name}</span>
+            {p.shortcut_key && (
+              <span className="text-[10px] text-muted-foreground font-mono">//{p.shortcut_key}</span>
+            )}
+          </div>
+          <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
+            {p.content}
+          </p>
+        </div>
+        {/* AC-4: ✓ 즉시삽입 버튼 — 우측 끝, 활성 행만 노출(비방해) */}
+        {active && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); confirmInsertPhrase(p); }}
+            className="mt-0.5 flex h-5 w-5 items-center justify-center rounded bg-teal-600 text-white shrink-0 hover:bg-teal-700"
+            data-testid="phrase-insert-check"
+            aria-label={`${p.name} 삽입`}
+          >
+            <Check className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+    );
   }
 
   // ── 슈퍼상용구 적용 (T-20260603-foot-RX-SUPER-PHRASE) ────────────────────────
@@ -1062,9 +1134,11 @@ export default function MedicalChartPanel({
 
   // ── 관리 화면 이동 (AC-2: 편집 버튼) ─────────────────────────────────────────
 
-  function handleNavigateToAdmin() {
+  // T-20260606-foot-RX-PANEL-UX-5FIX AC-5: 관리화면 진입 시 해당 탭 pre-select.
+  //   각 우측 패널 버튼이 대응 탭(?tab=)을 넘겨 DoctorTools가 그 탭으로 바로 열림(기존: 메인 세팅화면만).
+  function handleNavigateToAdmin(tab?: 'super_phrases' | 'phrases' | 'prescriptions') {
     onOpenChange(false);
-    navigate('/admin/doctor-tools');
+    navigate(tab ? `/admin/doctor-tools?tab=${tab}` : '/admin/doctor-tools');
   }
 
   // T-20260527-foot-TREATMEMO-CHART-MERGE: loadTreatMemos 제거 — loadData()에 통합됨
@@ -2190,10 +2264,10 @@ export default function MedicalChartPanel({
                   {/* 처방세트 탭 */}
                   {rightTab === 'rx' && (
                     <div className="p-3 space-y-2" data-testid="right-panel-rx-content">
-                      {/* 편집 바로가기 (AC-2) */}
+                      {/* 편집 바로가기 (AC-2) — RX-PANEL-UX-5FIX AC-5: 처방세트 탭 pre-select */}
                       <button
                         type="button"
-                        onClick={handleNavigateToAdmin}
+                        onClick={() => handleNavigateToAdmin('prescriptions')}
                         className="w-full flex items-center justify-center gap-1.5 text-[11px] text-teal-600 hover:text-teal-800 border border-teal-200 rounded-md py-1.5 hover:bg-teal-50 transition-colors"
                         data-testid="rx-set-edit-btn"
                       >
@@ -2346,7 +2420,7 @@ export default function MedicalChartPanel({
                       {/* 편집 바로가기 (AC-2) */}
                       <button
                         type="button"
-                        onClick={handleNavigateToAdmin}
+                        onClick={() => handleNavigateToAdmin('phrases')}
                         className="w-full flex items-center justify-center gap-1.5 text-[11px] text-teal-600 hover:text-teal-800 border border-teal-200 rounded-md py-1.5 hover:bg-teal-50 transition-colors"
                         data-testid="phrase-edit-btn"
                       >
@@ -2355,7 +2429,7 @@ export default function MedicalChartPanel({
                       </button>
 
                       <div className="text-[10px] font-semibold text-muted-foreground px-1 pt-1">
-                        항목을 누르면 ✓ 버튼이 나타납니다 — 눌러서 임상경과에 삽입
+                        항목을 누르면 우측에 ✓ 버튼이 나타납니다 — 눌러서 임상경과에 삽입
                       </div>
 
                       {/* T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-2): 조회 실패(에러) ≠ 0건(빈) 구분 안내 */}
@@ -2370,59 +2444,56 @@ export default function MedicalChartPanel({
                           <span className="text-[10px]">위 버튼으로 추가하세요</span>
                         </div>
                       ) : (
-                        <div className="space-y-0.5">
-                          {phraseTemplates.map(p => {
-                            const active = clickedPhraseId === p.id;
-                            return (
-                            <div
-                              key={p.id}
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => togglePhraseRow(p.id)}
-                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePhraseRow(p.id); } }}
-                              className={`flex items-start gap-2 cursor-pointer rounded px-2 py-1.5 transition-colors ${active ? 'bg-teal-50' : 'hover:bg-muted'}`}
-                              data-testid="phrase-option"
-                              data-active={active ? 'true' : 'false'}
-                            >
-                              {/* AC-2/AC-3: 행 클릭 시 노출되는 ✓ 즉시삽입 버튼 (활성 행만) */}
-                              {active ? (
+                        // T-20260606-foot-RX-PANEL-UX-5FIX AC-3: 진료차트/펜차트 그룹 분리.
+                        //   진료차트 상용구는 항상 펼침(원장 기본 동선), 펜차트는 접이식 헤더(기본 접힘).
+                        (() => {
+                          const medicalPhrases = phraseTemplates.filter(p => p.phrase_type === 'medical_chart');
+                          const penPhrases = phraseTemplates.filter(p => p.phrase_type !== 'medical_chart');
+                          return (
+                            <div className="space-y-2">
+                              {/* 진료차트 상용구 (항상 펼침) */}
+                              <div data-testid="phrase-group-medical">
+                                <div className="flex items-center gap-1 px-1 pb-1">
+                                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 rounded px-1.5 py-0.5">진료차트</span>
+                                  <span className="text-[10px] text-muted-foreground">{medicalPhrases.length}</span>
+                                </div>
+                                {medicalPhrases.length === 0 ? (
+                                  <p className="text-[10px] text-muted-foreground px-2 py-1.5">진료차트 상용구 없음</p>
+                                ) : (
+                                  <div className="space-y-0.5">
+                                    {medicalPhrases.map(renderPhraseRow)}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* 펜차트 상용구 (AC-3: 항상 기본 접힘) */}
+                              <div data-testid="phrase-group-pen" className="border-t pt-2">
                                 <button
                                   type="button"
-                                  onClick={(e) => { e.stopPropagation(); confirmInsertPhrase(p); }}
-                                  className="mt-0.5 flex h-4 w-4 items-center justify-center rounded bg-teal-600 text-white shrink-0 hover:bg-teal-700"
-                                  data-testid="phrase-insert-check"
-                                  aria-label={`${p.name} 삽입`}
+                                  onClick={() => setPenPhraseCollapsed(c => !c)}
+                                  className="w-full flex items-center gap-1.5 px-1 py-1 rounded-md hover:bg-muted/50 transition-colors"
+                                  data-testid="phrase-group-pen-toggle"
+                                  aria-expanded={!penPhraseCollapsed}
                                 >
-                                  <Check className="h-3 w-3" />
+                                  {penPhraseCollapsed
+                                    ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                    : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                                  <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 rounded px-1.5 py-0.5">펜차트</span>
+                                  <span className="text-[10px] text-muted-foreground">{penPhrases.length}</span>
                                 </button>
-                              ) : (
-                                <span className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                              )}
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1">
-                                  <span className="text-xs font-medium">{p.name}</span>
-                                  {/* 유형 배지 — 진료차트/펜차트 구분 (LOAD-BUG 필터완화로 두 유형 혼재 노출) */}
-                                  <span
-                                    className={`text-[9px] px-1 rounded shrink-0 ${
-                                      p.phrase_type === 'medical_chart'
-                                        ? 'text-emerald-700 bg-emerald-50'
-                                        : 'text-blue-600 bg-blue-50'
-                                    }`}
-                                  >
-                                    {p.phrase_type === 'medical_chart' ? '진료차트' : '펜차트'}
-                                  </span>
-                                  {p.shortcut_key && (
-                                    <span className="text-[10px] text-muted-foreground font-mono">//{p.shortcut_key}</span>
-                                  )}
-                                </div>
-                                <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
-                                  {p.content}
-                                </p>
+                                {!penPhraseCollapsed && (
+                                  penPhrases.length === 0 ? (
+                                    <p className="text-[10px] text-muted-foreground px-2 py-1.5">펜차트 상용구 없음</p>
+                                  ) : (
+                                    <div className="space-y-0.5 mt-1">
+                                      {penPhrases.map(renderPhraseRow)}
+                                    </div>
+                                  )
+                                )}
                               </div>
                             </div>
-                            );
-                          })}
-                        </div>
+                          );
+                        })()
                       )}
                     </div>
                   )}
@@ -2432,7 +2503,7 @@ export default function MedicalChartPanel({
                       {/* 편집 바로가기 */}
                       <button
                         type="button"
-                        onClick={handleNavigateToAdmin}
+                        onClick={() => handleNavigateToAdmin('super_phrases')}
                         className="w-full flex items-center justify-center gap-1.5 text-[11px] text-teal-600 hover:text-teal-800 border border-teal-200 rounded-md py-1.5 hover:bg-teal-50 transition-colors"
                         data-testid="super-phrase-edit-btn"
                       >
