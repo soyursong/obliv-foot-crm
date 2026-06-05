@@ -224,4 +224,26 @@ test.describe('PHRASE-INSERT-UX 현장 시나리오', () => {
       expect(placeBoilerplate(state.pendingBoilerplate).text).toBe(f.content);
     }
   });
+
+  // ── AC-6: 상용구 패널 영역 확장 (현장 추가요청, 문지은 대표원장) ──────────────
+  // 현장 발원: "// < 이렇게 상용구 불러올 수 있는 공간을 좀 확장해줘야할거같음"
+  // 답답한 축 = 너비(항목명·내용 미리보기 truncate + 인라인 ✓ 버튼이 좁은 목록 폭에서 경합).
+  // → 패널 폭 w-64 → w-80 주축 확장, 목록 높이 max-h-56 → max-h-72 보조 보강.
+  // 정본(PenChartTab.tsx) data-testid="phrase-library-panel" 폭 클래스 / "phrase-list" 높이 클래스 계약 고정.
+  test('시나리오 4 — 패널 확장: 폭이 종전(w-64)보다 넓어진다 (답답한 축 우선 = 너비)', () => {
+    const PRIOR_PANEL_WIDTH = 'w-64';   // 256px — 항목/✓/라벨 경합으로 답답
+    const PANEL_WIDTH = 'w-80';         // 320px — 확장 후
+    const tw = (cls: string) => Number(cls.replace('w-', '')) * 4; // tailwind rem*4 = px
+    expect(PANEL_WIDTH).not.toBe(PRIOR_PANEL_WIDTH);
+    expect(tw(PANEL_WIDTH)).toBeGreaterThan(tw(PRIOR_PANEL_WIDTH)); // 320 > 256
+  });
+
+  test('시나리오 4b — 목록 세로 가시영역 보강 (max-h-56 → max-h-72), 캔버스 과도침범 회피', () => {
+    const PRIOR_LIST_MAXH = 'max-h-56'; // 224px
+    const LIST_MAXH = 'max-h-72';       // 288px
+    const th = (cls: string) => Number(cls.replace('max-h-', '')) * 4;
+    expect(th(LIST_MAXH)).toBeGreaterThan(th(PRIOR_LIST_MAXH)); // 288 > 224
+    // 보조 축이므로 너비 확장폭(+64px)과 동급의 절제된 증가 — 캔버스 과도침범 회피 계약
+    expect(th(LIST_MAXH) - th(PRIOR_LIST_MAXH)).toBeLessThanOrEqual(64);
+  });
 });

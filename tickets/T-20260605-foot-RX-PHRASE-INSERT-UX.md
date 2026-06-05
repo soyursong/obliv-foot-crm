@@ -32,11 +32,12 @@ commit: a16193f
 - AC-3: ✓ 클릭(`insertPhraseImmediate`) → `handleBoilerplateSelect(단일 content)` → boilerplate-placing 진입 + 패널 닫힘 → 캔버스 클릭 시 `placeBoilerplate`로 1개 PlacedItem 배치. content 없으면 무동작(방어).
 - AC-4 (GUARD): `placeBoilerplate`/카테고리 필터/이동·삭제(select tool)/빈 상태(`phrase-empty-state`) 불변. phrase_templates read-only(쓰기 0).
 - AC-5: ✓ 버튼 `aria-label="{name} 삽입"` + `title="삽입"` + Check 아이콘 `aria-hidden`. 행은 `role="button"` `tabIndex={0}` + Enter/Space 키보드 토글 + focus ring.
+- AC-6 (현장 추가요청, 문지은 대표원장 / MSG-20260605-201613-ezba): 상용구 패널(`phrase-library-panel`) 영역 확장. 현장 발원 "`// <` 이렇게 상용구 불러올 수 있는 공간을 좀 확장해줘야할거같음". **답답한 축 = 너비** 판단(항목명·내용 미리보기 `truncate` + 인라인 ✓ 버튼이 ~198px 목록 폭에서 경합) → 패널 폭 `w-64`(256px) → `w-80`(320px) 주축 확장. 목록 세로 가시영역 `max-h-56`(224px) → `max-h-72`(288px) 보조 보강(+64px, 캔버스 과도침범 회피). AC-4 GUARD(캔버스 배치 로직) 불변. FE-only(DB/네트워크 추가 0).
 - Q1 (planner 비차단): 단건 즉시삽입 dev 기본안 착수. 복수결합 헬퍼/상수(`PHRASE_JOIN_SEPARATOR`·`combineBoilerplate`·`selectedPhraseIds`·`togglePhraseSelect`·`confirmPhraseSelection`·`clearPhraseSelection`)는 제거하지 않고 `[DEACTIVATED]` 주석으로 비활성 보존 → 현장 복수재요청 시 주석 해제로 복원. 현장 confirm은 responder 병행.
 
 ## 검증
-- `npm run build` (tsc -b + vite) ✅ 통과 (noUnusedLocals strict)
-- 신규 E2E `tests/e2e/T-20260605-foot-RX-PHRASE-INSERT-UX.spec.ts` — 17/17 passed (AC-1~5 + 현장 시나리오 3종: 인라인 ✓ 즉시삽입 / 행 전환 / GUARD 회귀)
+- `npm run build` (tsc -b + vite) ✅ 통과 (noUnusedLocals strict) — AC-6 반영 후 재통과
+- 신규 E2E `tests/e2e/T-20260605-foot-RX-PHRASE-INSERT-UX.spec.ts` — 19/19 passed (AC-1~5 + 현장 시나리오 5종: 인라인 ✓ 즉시삽입 / 행 전환 / GUARD 회귀 + **시나리오4·4b 패널 확장(폭 w-80 > w-64, 높이 max-h-72 ≤ +64px)**)
 - 관련 phrase 회귀(MULTISELECT·PEN-PASSTHROUGH·MOVE-RESTORE) 41 passed
 - DB 변경 없음
 

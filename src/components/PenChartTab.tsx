@@ -2097,7 +2097,10 @@ export function PenChartTab({
 
             {showPhrasePanel && (
               <div
-                className="absolute top-8 left-0 z-20 w-64 rounded-lg border bg-white shadow-lg overflow-hidden"
+                /* T-20260605-foot-RX-PHRASE-INSERT-UX AC-6: 패널 영역 확장(현장 추가요청, 문지은 대표원장).
+                   답답한 축 = 너비(항목명·내용 미리보기 truncate + 인라인 ✓ 버튼이 좁은 목록 폭에서 경합).
+                   w-64(256px) → w-80(320px)로 목록 가독폭 확보. 캔버스 좌상단 오버레이라 과도 침범 회피. */
+                className="absolute top-8 left-0 z-20 w-80 rounded-lg border bg-white shadow-lg overflow-hidden"
                 data-testid="phrase-library-panel"
               >
                 {/* T-20260522-foot-PENCHART-TOOL-UX AC-6: 패널 헤더 중복 라벨 제거 (버튼에 이미 "상용구" 표시됨) */}
@@ -2143,7 +2146,8 @@ export function PenChartTab({
                   </div>
 
                   {/* 우: 상용구 목록 */}
-                  <div className="flex-1 min-w-0 max-h-56 overflow-y-auto" data-testid="phrase-list">
+                  {/* AC-6: 목록 세로 가시영역 소폭 보강 max-h-56(224px) → max-h-72(288px). 캔버스 과도 침범 회피 위해 너비 주축, 높이는 보조. */}
+                  <div className="flex-1 min-w-0 max-h-72 overflow-y-auto" data-testid="phrase-list">
                     {phraseTemplates.filter((p) => p.category === phraseCategory).length === 0 ? (
                       <div
                         className="flex flex-col items-center justify-center py-6 text-[11px] text-muted-foreground"
