@@ -19,6 +19,7 @@ import {
   ChevronRight,
   UserCheck,
   AlertCircle,
+  UploadCloud,
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
@@ -26,6 +27,7 @@ import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { DutyRosterImportDialog } from '@/components/DutyRosterImportDialog';
 import type { Clinic, Staff } from '@/lib/types';
 
 // ─── 타입 ───────────────────────────────────────────────────────────────────
@@ -75,6 +77,7 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
   const [weekStart, setWeekStart] = useState<Date>(() =>
     startOfWeek(new Date(), { weekStartsOn: 1 }),
   );
+  const [importOpen, setImportOpen] = useState(false);
 
   // 월~토 6일
   const weekDays = useMemo(
@@ -311,6 +314,17 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
               전주 복사
             </Button>
           )}
+          {canEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="duty-import-btn"
+              onClick={() => setImportOpen(true)}
+            >
+              <UploadCloud className="mr-1 h-4 w-4" />
+              구글시트 불러오기
+            </Button>
+          )}
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span
               className={`inline-block h-3 w-3 rounded border ${ROSTER_TYPE_COLOR.regular}`}
@@ -417,6 +431,15 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
         <p className="text-xs text-muted-foreground">
           💡 셀 클릭: <strong>없음 → 근무 → 파트근무 → 없음</strong> 순으로 토글됩니다.
         </p>
+      )}
+
+      {canEdit && (
+        <DutyRosterImportDialog
+          clinic={clinic}
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          onImported={refresh}
+        />
       )}
     </div>
   );
