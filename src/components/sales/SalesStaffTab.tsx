@@ -470,7 +470,7 @@ export function SalesStaffTab({ filter }: Props) {
         <table className="w-full border-collapse">
           <thead className="sticky top-0 z-10 bg-muted/70">
             <tr>
-              {['직원명', '역할', '시술 건수', '지정환자수', '실적 금액', '환불 차감액', '순 실적'].map((h) => (
+              {['치료사/장비명', '역할', '시술 건수', '지정환자수', '실적 금액', '환불 차감액', '순 실적'].map((h) => (
                 <th
                   key={h}
                   className="whitespace-nowrap border-b px-3 py-2 text-left font-medium text-muted-foreground"
