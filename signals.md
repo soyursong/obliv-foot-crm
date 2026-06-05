@@ -3185,3 +3185,5 @@ ref: T-20260512-foot-TREATMENT-SET
 | 2026-06-05 21:00 | dev-foot | deploy-ready | T-20260605-foot-HANDOVER-BOARD: 직원 근무 캘린더(파트별 인수인계) 신규. 월/주/일 3뷰+파트필터(전체/상담실장/코디/치료사)+메모+체크리스트 영속. build OK. DB변경: 있음(handover_notes/handover_checklist_items 신규 migration+rollback, supervisor DB게이트 미적용). E2E 4시나리오. commit 42614e3 |
 
 | 2026-06-05 20:40 | dev-foot | deploy-ready | T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG: 진료차트 상용구/슈퍼상용구 불러오기 회귀 수정. 근본원인=MedicalChartPanel.loadData phrase_templates .eq(phrase_type,medical_chart) 단일필터(MEDCHART-SYNC 회귀, prod pen33/med1). super_phrases는 정상·0건(cda2c8d 회귀 아님). 필터완화+빈/에러구분+GUARD. E2E 12 pass, 인접 51 pass. build OK. DB변경: 없음. commit 4b0d568 |
+
+| 2026-06-05 21:40 | dev-foot | deploy-ready | T-20260605-foot-HANDOVER-DBFIX: supervisor FIX-REQUEST(phase1 insufficient_verification) 보완. 운영 브라우저 UI로 AC-3(메모+체크리스트 저장)+AC-4(전체리로드 후 재진입 영속) 재현 — admin·비admin coordinator 양쪽 모두 PASS, schema-cache 에러 0. 증빙: evidence/handover-dbfix/(스크린샷 10+영상 2+README, supervisor 직접 재현 스크립트 evidence_handover_ui_prod.mjs/_coordinator.mjs). 계정 test@medibuilder.com(admin)+임시 coordinator. 검증데이터 전부 정리(실데이터 0건). DB변경: 없음(스크립트/증빙만). supervisor 재QA 요청 |
