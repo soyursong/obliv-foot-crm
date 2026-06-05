@@ -21,7 +21,7 @@ export const SALES_EXCEL_HEADERS = [
   '시술코드',           // I: procedure_code (서비스 카테고리)
   '시술/상품명',         // J: procedure_name
   '담당의사',           // K: doctor_name
-  '담당직원',           // L: staff_name
+  '담당치료사',         // L: staff_name (T-20260605 귀속주체=치료사 표기 정비)
   '세금속성',           // M: tax_type
   '총발생금액',         // N: total_amount
   '급여 본부금',        // O: copay_amount
@@ -52,7 +52,7 @@ export interface SalesExcelRow {
   '시술코드': string;
   '시술/상품명': string;
   '담당의사': string;
-  '담당직원': string;
+  '담당치료사': string;
   '세금속성': string;             // 과세_비급여 | 면세_비급여 | 급여 | 선수금
   '총발생금액': number;
   '급여 본부금': number;
