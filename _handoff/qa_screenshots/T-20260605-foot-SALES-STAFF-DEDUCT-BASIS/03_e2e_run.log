@@ -1,0 +1,30 @@
+◇ injected env (5) from .env // tip: ⌘ enable debugging { debug: true }
+◇ injected env (1) from .env.test // tip: ⌘ override existing { override: true }
+
+Running 8 tests using 1 worker
+
+◇ injected env (0) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+◇ injected env (0) from .env.test // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+[auth.setup] SDK login OK — user: test@medibuilder.com
+[auth.setup] Session injection confirmed — Dashboard loaded
+[auth.setup] storageState saved → /Users/domas/Documents/GitHub/obliv-foot-crm/.auth/user.json
+  ✓  1 [setup] › tests/auth.setup.ts:28:1 › authenticate (977ms)
+◇ injected env (0) from .env // tip: ⌘ suppress logs { quiet: true }
+◇ injected env (0) from .env.test // tip: ⌘ suppress logs { quiet: true }
+[DEDUCT-BASIS] 토글 렌더 OK — 기본 차감기준 view=data
+  ✓  2 [desktop-chrome] › tests/e2e/T-20260605-foot-SALES-STAFF-DEDUCT-BASIS.spec.ts:77:3 › T-20260605-foot-SALES-STAFF-DEDUCT-BASIS 담당직원별 차감기준 전환 › 담당직원별 탭 → 귀속 기준 토글 렌더 + 기본값 차감기준 (1.9s)
+[DEDUCT-BASIS] 차감기준 컬럼/합계 OK
+  ✓  3 [desktop-chrome] › tests/e2e/T-20260605-foot-SALES-STAFF-DEDUCT-BASIS.spec.ts:87:3 › T-20260605-foot-SALES-STAFF-DEDUCT-BASIS 담당직원별 차감기준 전환 › 차감기준 view: 치료사·차감건수·차감매출 컬럼 + 합계행 (1.9s)
+[DEDUCT-BASIS] 수납기준 비파괴 OK — view=empty
+  ✓  4 [desktop-chrome] › tests/e2e/T-20260605-foot-SALES-STAFF-DEDUCT-BASIS.spec.ts:108:3 › T-20260605-foot-SALES-STAFF-DEDUCT-BASIS 담당직원별 차감기준 전환 › 수납기준 토글 → 기존 직원별 테이블(역할/순실적) 유지 (2.1s)
+[DEDUCT-BASIS] 차감기준 복귀 OK — view=data
+  ✓  5 [desktop-chrome] › tests/e2e/T-20260605-foot-SALES-STAFF-DEDUCT-BASIS.spec.ts:125:3 › T-20260605-foot-SALES-STAFF-DEDUCT-BASIS 담당직원별 차감기준 전환 › 수납 → 차감 토글 복귀 정상 (2.0s)
+[DEDUCT-BASIS] 프리셋 후 토글 유지 OK
+  ✓  6 [desktop-chrome] › tests/e2e/T-20260605-foot-SALES-STAFF-DEDUCT-BASIS.spec.ts:137:3 › T-20260605-foot-SALES-STAFF-DEDUCT-BASIS 담당직원별 차감기준 전환 › 프리셋(이번달) 후 탭/토글 유지 + 렌더 (2.0s)
+[DEDUCT-BASIS] 검색 필터 OK
+  ✓  7 [desktop-chrome] › tests/e2e/T-20260605-foot-SALES-STAFF-DEDUCT-BASIS.spec.ts:151:3 › T-20260605-foot-SALES-STAFF-DEDUCT-BASIS 담당직원별 차감기준 전환 › 검색바 없는 이름 → 차감기준 0행/empty (2.5s)
+[DEDUCT-BASIS] 차감기준 합계 매출 = "2,300,000원" (parsed=2300000)
+  ✓  8 [desktop-chrome] › tests/e2e/T-20260605-foot-SALES-STAFF-DEDUCT-BASIS.spec.ts:174:3 › T-20260605-foot-SALES-STAFF-DEDUCT-BASIS 담당직원별 차감기준 전환 › 차감기준 매출이 0원 아님 (backfill 스냅샷 회귀) + 스크린샷 (1.9s)
+
+  8 passed (27.6s)
+EXIT=0

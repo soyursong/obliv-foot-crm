@@ -1,0 +1,16 @@
+✅ DB 연결 (mode=dry-run)  2026-06-05T06:45:54.457Z
+
+── DRY-RUN PREVIEW (status=used 회차차감 by session_type) ──
+┌─────────┬──────────────────┬─────────────┬───────────┐
+│ (index) │ session_type     │ zero_before │ will_fill │
+├─────────┼──────────────────┼─────────────┼───────────┤
+│ 0       │ 'heated_laser'   │ '7'         │ '7'       │
+│ 1       │ 'iv'             │ '1'         │ '1'       │
+│ 2       │ 'podologue'      │ '5'         │ '4'       │
+│ 3       │ 'trial'          │ '4'         │ '4'       │
+│ 4       │ 'unheated_laser' │ '44'        │ '42'      │
+└─────────┴──────────────────┴─────────────┴───────────┘
+▶ zero_before 합계 = 61건,  will_fill 합계 = 58건  (기대: will_fill=58)
+▶ 트리거 trg_fill_session_unit_price 존재: NO
+
+🟡 dry-run 종료 (변경 없음).
