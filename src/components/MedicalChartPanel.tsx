@@ -101,6 +101,8 @@ interface PhraseTemplate {
   content: string;
   shortcut_key: string | null;
   is_active: boolean;
+  // T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG: 유형 배지·정렬용. 레거시 행은 pen_chart 로 간주.
+  phrase_type?: 'pen_chart' | 'medical_chart';
 }
 
 interface PrescriptionSet {
@@ -306,6 +308,10 @@ export default function MedicalChartPanel({
   const [prescriptionSets, setPrescriptionSets] = useState<PrescriptionSet[]>([]);
   // T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구 목록
   const [superPhrases, setSuperPhrases] = useState<SuperPhrase[]>([]);
+  // T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-2 빈 vs 에러 구분): 조회 자체가 실패(RLS/스키마)했는지 추적.
+  //   Promise.all 은 supabase 응답을 reject 하지 않고 {data:null,error} 로 resolve → 에러가 빈 목록으로 swallow 되던 문제.
+  const [phraseLoadError, setPhraseLoadError] = useState(false);
+  const [superLoadError, setSuperLoadError] = useState(false);
   const [visitPayments, setVisitPayments] = useState<VisitPayment[]>([]);
   // T-20260603-foot-MEDCHART-SUPERPHRASE-EXT 2-1: 진단명 자동완성 — 등록된 진단명(차트 이력 + 슈퍼상용구) distinct.
   //   별도 diagnoses 마스터 테이블 부재 → medical_charts.diagnosis 이력 + super_phrases.diagnosis 를 출처로 사용
@@ -397,13 +403,16 @@ export default function MedicalChartPanel({
           .eq('customer_id', customerId)
           .eq('clinic_id', clinicId)
           .order('visit_date', { ascending: false }),
-        // T-20260526-foot-MEDCHART-SYNC: 진료차트 상용구(medical_chart)만 조회
+        // T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (회귀수정): 진료차트 우측 '상용구' 탭 로딩 갭.
+        //   기존 T-20260526-foot-MEDCHART-SYNC 가 .eq(phrase_type,'medical_chart') 단일 필터라
+        //   현장 상용구 대부분(prod: pen_chart 33 / medical_chart 1)이 0건 노출 → 의사 입장 "불러오기 안됨/미표시".
+        //   6/5 SUPER-PHRASE-LOAD-FIX(SuperPhrasesTab)와 동일 루트코즈이나 본 진료차트 패널엔 미전파였음.
+        //   필터 완화: 활성 상용구 전체 노출(유형 무관) + phrase_type 보존(배지/정렬용).
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
           .from('phrase_templates')
-          .select('id,category,name,content,shortcut_key,is_active')
+          .select('id,category,name,content,shortcut_key,is_active,phrase_type,sort_order')
           .eq('is_active', true)
-          .eq('phrase_type', 'medical_chart')
           .order('sort_order', { ascending: true }),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
@@ -445,9 +454,24 @@ export default function MedicalChartPanel({
 
       if (custRes.data) setCustomer(custRes.data as CustomerBasic);
       const rawCharts: MedicalChart[] = chartsRes.data || [];
-      setPhraseTemplates(phrasesRes.data || []);
+      // T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG: 상용구 — 유형 무관 전체 노출 + 진료차트 우선 안정정렬.
+      //   레거시 행(phrase_type null)은 pen_chart 로 간주. AC-2: 조회 실패(error)와 빈 목록을 구분.
+      setPhraseLoadError(!!phrasesRes?.error);
+      {
+        const rows = ((phrasesRes?.data as PhraseTemplate[] | null) ?? []).map((p) => ({
+          ...p,
+          phrase_type: (p.phrase_type ?? 'pen_chart') as 'pen_chart' | 'medical_chart',
+        }));
+        // 안정 정렬: 진료차트 유형 우선, 동일 유형 내 기존 sort_order 순서 유지
+        rows.sort((a, b) =>
+          a.phrase_type === b.phrase_type ? 0 : a.phrase_type === 'medical_chart' ? -1 : 1,
+        );
+        setPhraseTemplates(rows);
+      }
       setPrescriptionSets(rxSetsRes.data || []);
       // T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구 — rx_items null 방어. 조회 실패 시 빈 목록(레거시 무영향).
+      // T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-2): 조회 실패(error)와 0건(빈)을 구분해 패널에서 다른 안내.
+      setSuperLoadError(!!superRes?.error);
       setSuperPhrases(
         ((superRes?.data as SuperPhrase[] | null) ?? []).map((s) => ({
           ...s,
@@ -740,6 +764,8 @@ export default function MedicalChartPanel({
   }).slice(0, 8);
 
   function insertPhrase(phrase: PhraseTemplate) {
+    // T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-4 GUARD): null/빈 상용구 방어 — 빈 내용은 무시.
+    if (!phrase || !(phrase.content ?? '').trim()) return;
     const textarea = clinicalRef.current;
     const cursor = textarea?.selectionStart ?? formClinical.length;
     const textBefore = formClinical.substring(0, cursor);
@@ -768,13 +794,21 @@ export default function MedicalChartPanel({
   }
 
   function insertSelectedPhrases() {
+    // T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-4 GUARD): 선택 없음/내용 없음 방어.
+    if (selectedPhraseIds.size === 0) {
+      toast.warning('삽입할 상용구를 선택해주세요');
+      return;
+    }
     const contents = phraseTemplates
       .filter(p => selectedPhraseIds.has(p.id))
-      .map(p => p.content)
+      .map(p => (p.content ?? '').trim())
+      .filter(c => c !== '')
       .join('\n');
     if (contents) {
       setFormClinical(prev => prev ? prev + '\n' + contents : contents);
       toast.success(`${selectedPhraseIds.size}개 상용구 삽입됨`);
+    } else {
+      toast.warning('선택한 상용구에 삽입할 내용이 없어요');
     }
     setSelectedPhraseIds(new Set());
   }
@@ -786,6 +820,8 @@ export default function MedicalChartPanel({
   //     - 임상경과 = 누적(append, 기존 상용구 삽입과 동일 패턴)
   //     - 처방내역 = addRxItems() 동일 진입점 재사용 → 누적 + 금기증 게이트 자동 상속
   function applySuperPhrase(sp: SuperPhrase) {
+    // T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-4 GUARD): null/손상 슈퍼상용구 방어 — 무반응 대신 안전 종료.
+    if (!sp) return;
     const applied: string[] = [];
 
     const dx = (sp.diagnosis ?? '').trim();
@@ -2203,8 +2239,14 @@ export default function MedicalChartPanel({
                         )}
                       </div>
 
-                      {phraseTemplates.length === 0 ? (
-                        <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center mt-2">
+                      {/* T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-2): 조회 실패(에러) ≠ 0건(빈) 구분 안내 */}
+                      {phraseLoadError ? (
+                        <div className="rounded-lg border border-dashed border-red-200 bg-red-50/40 p-4 text-xs text-red-600 text-center mt-2" data-testid="phrase-load-error">
+                          상용구를 불러오지 못했습니다<br />
+                          <span className="text-[10px]">잠시 후 다시 시도하거나 관리자에게 문의하세요</span>
+                        </div>
+                      ) : phraseTemplates.length === 0 ? (
+                        <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center mt-2" data-testid="phrase-empty">
                           등록된 상용구 없음<br />
                           <span className="text-[10px]">위 버튼으로 추가하세요</span>
                         </div>
@@ -2214,6 +2256,7 @@ export default function MedicalChartPanel({
                             <label
                               key={p.id}
                               className="flex items-start gap-2 cursor-pointer hover:bg-muted rounded px-2 py-1.5"
+                              data-testid="phrase-option"
                             >
                               <input
                                 type="checkbox"
@@ -2224,6 +2267,16 @@ export default function MedicalChartPanel({
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1">
                                   <span className="text-xs font-medium">{p.name}</span>
+                                  {/* 유형 배지 — 진료차트/펜차트 구분 (LOAD-BUG 필터완화로 두 유형 혼재 노출) */}
+                                  <span
+                                    className={`text-[9px] px-1 rounded shrink-0 ${
+                                      p.phrase_type === 'medical_chart'
+                                        ? 'text-emerald-700 bg-emerald-50'
+                                        : 'text-blue-600 bg-blue-50'
+                                    }`}
+                                  >
+                                    {p.phrase_type === 'medical_chart' ? '진료차트' : '펜차트'}
+                                  </span>
                                   {p.shortcut_key && (
                                     <span className="text-[10px] text-muted-foreground font-mono">//{p.shortcut_key}</span>
                                   )}
@@ -2256,8 +2309,14 @@ export default function MedicalChartPanel({
                         클릭하면 진단명·임상경과·처방내역에 일괄 적용됩니다
                       </div>
 
-                      {superPhrases.length === 0 ? (
-                        <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center mt-2">
+                      {/* T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-2): 조회 실패(에러) ≠ 0건(빈) 구분 안내 */}
+                      {superLoadError ? (
+                        <div className="rounded-lg border border-dashed border-red-200 bg-red-50/40 p-4 text-xs text-red-600 text-center mt-2" data-testid="super-phrase-load-error">
+                          슈퍼상용구를 불러오지 못했습니다<br />
+                          <span className="text-[10px]">잠시 후 다시 시도하거나 관리자에게 문의하세요</span>
+                        </div>
+                      ) : superPhrases.length === 0 ? (
+                        <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center mt-2" data-testid="super-phrase-empty">
                           등록된 슈퍼상용구 없음<br />
                           <span className="text-[10px]">위 버튼으로 추가하세요</span>
                         </div>
