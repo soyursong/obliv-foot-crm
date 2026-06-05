@@ -261,10 +261,14 @@ export default function CalendarNoticePanel() {
         >
           <ChevronRight className="h-4 w-4 text-teal-600" />
         </button>
-        {/* 날짜 세로 표기 */}
+        {/* 날짜 세로 표기 — T-20260606-foot-CALENDAR-COLLAPSE-ROTATE
+            (이전: writing-mode:vertical-rl + transform:rotate(180deg) → 한글/숫자가 위아래로 뒤집혀 보임.
+             CJK는 vertical-rl 만으로 세로 정상 표기되므로 rotate 제거. text-orientation:upright 로
+             숫자·괄호까지 똑바로 세워 '정상 방향' 유지.) */}
         <span
+          data-testid="pc-cal-date-vertical"
           className="text-[10px] font-semibold text-teal-700 select-none"
-          style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+          style={{ writingMode: 'vertical-rl', textOrientation: 'upright' }}
         >
           {format(selectedDate ?? new Date(), 'M월 d일 (E)', { locale: ko })}
         </span>
