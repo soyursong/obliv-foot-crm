@@ -13,6 +13,15 @@
  * AC-6: 빌드 성공 + 회귀 없음
  * AC-7 (신규): 상담내역 탭에 "개인정보/체크리스트" 그룹1 섹션 미표시
  *              (CHECKLIST-REMOVE soft-delete 상담내역 탭 연동 완료)
+ *
+ * REOPEN4 ROOT CAUSE (read/freshness path):
+ *   펜차트를 [별도 창](window.open '/penchart-editor')에서 저장하면 PenChartTab(popup)이
+ *   BroadcastChannel('penchart-update') + localStorage('penchart-update') 신호를 쏘지만,
+ *   부모 차트 창이 그 신호를 구독하지 않아 submissionEntries 미갱신 → form_submissions
+ *   INSERT 는 성공인데 상담내역 [내용보기] 버튼이 새로고침 전까지 비활성 → "안 뜬다" 반복.
+ *   수정: 부모(CustomerChartPage)가 penchart-update 신호 수신 시 refreshSubmissionEntries 호출.
+ *   ※ 뷰어(read) 자체는 정상 — openSubmissionViewer 가 클릭 시점에 createSignedUrl 재발급(1h)
+ *     하므로 signed URL 만료 무관. 실클릭 검증으로 group2/group3 이미지 렌더 PASS 확인.
  */
 
 import { test, expect } from '@playwright/test';
@@ -64,6 +73,31 @@ test.describe('PENCHART-VIEW-SPLIT: 상담내역 탭 읽기 전용 뷰어', () =
   test('AC-5b: 그룹3 발건강 질문지 섹션 존재 — 빌드 성공으로 검증', async ({ page }) => {
     const response = await page.goto('/');
     expect(response?.status()).toBeLessThan(400);
+  });
+
+  // REOPEN4: 펜차트 [별도 창] 저장 신호(penchart-update) 부모 구독 — 회귀 락 (정적 코드 검증)
+  // 이 리스너가 없으면 팝업 저장 후 [내용보기] 버튼이 새로고침 전까지 비활성 → 재발.
+  test('REOPEN4: 부모가 penchart-update 신호 구독 → submissionEntries 재조회', () => {
+    const chartPath = path.join(__dirname, '../../src/pages/CustomerChartPage.tsx');
+    const content = fs.readFileSync(chartPath, 'utf8');
+    // BroadcastChannel + storage 폴백 둘 다 구독
+    expect(content).toContain("new BroadcastChannel('penchart-update')");
+    expect(content).toContain("e.key !== 'penchart-update'");
+    // 신호 수신 → submissionEntries 재조회 호출
+    expect(content).toContain('refreshSubmissionEntries');
+    // 팝업 측 신호 발사부(PenChartTab)도 유지되는지 확인
+    const penPath = path.join(__dirname, '../../src/components/PenChartTab.tsx');
+    const pen = fs.readFileSync(penPath, 'utf8');
+    expect(pen).toContain("BroadcastChannel('penchart-update')");
+  });
+
+  // REOPEN4: 뷰어 read path — 클릭 시점 signed URL 재발급(만료 무관) 회귀 락
+  test('REOPEN4: openSubmissionViewer 가 클릭 시점에 createSignedUrl 재발급', () => {
+    const chartPath = path.join(__dirname, '../../src/pages/CustomerChartPage.tsx');
+    const content = fs.readFileSync(chartPath, 'utf8');
+    // 저장 시점 URL 재사용이 아니라 클릭 핸들러 내부에서 createSignedUrl 호출
+    expect(content).toContain("from('photos').createSignedUrl(path, 3600)");
+    expect(content).toContain('openSubmissionViewer');
   });
 });
 
