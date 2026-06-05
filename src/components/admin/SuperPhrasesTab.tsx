@@ -183,21 +183,35 @@ interface MedicalPhrase {
   id: number;
   name: string;
   content: string;
+  phrase_type: 'pen_chart' | 'medical_chart';
 }
 
-// AC-2-2: 진료차트 상용구(phrase_templates, phrase_type='medical_chart') → 임상경과 슬롯 채우기.
+// AC-2-2: 상용구(phrase_templates) → 임상경과 슬롯 채우기.
+// 회귀수정 T-20260605-foot-SUPER-PHRASE-LOAD-FIX (AC-1):
+//   기존엔 phrase_type='medical_chart' 단일 필터라, 현장 상용구 대부분(pen_chart 33/34)이 0건 노출 →
+//   드롭다운이 미렌더되어 "불러오기 안먹음"으로 보였다. 필터를 완화해 활성 상용구 전체를 노출하고,
+//   유형(진료차트/펜차트)은 항목 옆 배지로 구분한다. 임상경과 맥락에 가까운 진료차트를 위로 정렬.
 function useMedicalPhrases() {
   return useQuery({
-    queryKey: ['medical_chart_phrases'],
+    queryKey: ['super_clinical_phrases_all'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('phrase_templates')
         .select('id, name, content, is_active, phrase_type, sort_order')
-        .eq('phrase_type', 'medical_chart')
         .eq('is_active', true)
         .order('sort_order', { ascending: true });
       if (error) throw error;
-      return (data ?? []).map((d) => ({ id: d.id, name: d.name, content: d.content })) as MedicalPhrase[];
+      const rows = (data ?? []).map((d) => ({
+        id: d.id,
+        name: d.name,
+        content: d.content,
+        phrase_type: (d.phrase_type ?? 'pen_chart') as 'pen_chart' | 'medical_chart',
+      })) as MedicalPhrase[];
+      // 안정 정렬: 진료차트 우선, 동일 유형 내에서는 sort_order 순서 유지
+      rows.sort((a, b) =>
+        a.phrase_type === b.phrase_type ? 0 : a.phrase_type === 'medical_chart' ? -1 : 1,
+      );
+      return rows;
     },
   });
 }
@@ -580,8 +594,9 @@ export default function SuperPhrasesTab() {
                 <Label className="text-xs flex items-center gap-1">
                   <FileText className="h-3 w-3" /> 임상경과 <span className="text-muted-foreground font-normal">(선택)</span>
                 </Label>
-                {/* AC-2-2: 진료차트 상용구 적용 — 선택 시 임상경과에 내용 채움 */}
-                {medicalPhrases.length > 0 && (
+                {/* AC-2-2 (+LOAD-FIX AC-1/AC-2): 상용구 불러오기 — 활성 상용구 전체 노출.
+                    0건이어도 드롭다운을 숨기지 않고 비활성 안내로 유지(미사라짐). */}
+                {medicalPhrases.length > 0 ? (
                   <Select value="" onValueChange={applyMedicalPhrase}>
                     <SelectTrigger className="h-7 w-[180px] text-[11px]" data-testid="super-phrase-clinical-template-trigger">
                       <SelectValue placeholder="상용구 불러오기" />
@@ -589,11 +604,29 @@ export default function SuperPhrasesTab() {
                     <SelectContent>
                       {medicalPhrases.map((m) => (
                         <SelectItem key={m.id} value={String(m.id)} className="text-xs">
-                          {m.name}
+                          <span className="flex items-center gap-1.5">
+                            <span>{m.name}</span>
+                            <span
+                              className={`text-[9px] px-1 rounded shrink-0 ${
+                                m.phrase_type === 'medical_chart'
+                                  ? 'text-emerald-700 bg-emerald-50'
+                                  : 'text-blue-600 bg-blue-50'
+                              }`}
+                            >
+                              {m.phrase_type === 'medical_chart' ? '진료차트' : '펜차트'}
+                            </span>
+                          </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                ) : (
+                  <span
+                    className="h-7 inline-flex items-center rounded-md border border-dashed px-2 text-[11px] text-muted-foreground"
+                    data-testid="super-phrase-clinical-template-empty"
+                  >
+                    불러올 상용구 없음
+                  </span>
                 )}
               </div>
               <Textarea
