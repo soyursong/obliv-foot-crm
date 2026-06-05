@@ -56,6 +56,8 @@ const DoctorTools = lazyWithRetry(() => import('@/pages/DoctorTools'));
 const TreatmentTable = lazyWithRetry(() => import('@/pages/TreatmentTable'));
 const TabletChecklistPage = lazyWithRetry(() => import('@/pages/TabletChecklistPage'));
 const Notices = lazyWithRetry(() => import('@/pages/Notices'));
+// T-20260605-foot-HANDOVER-BOARD: 파트별 인수인계 게시판(캘린더) — 전 직원 작성/조회
+const Handover = lazyWithRetry(() => import('@/pages/Handover'));
 const Sales = lazyWithRetry(() => import('@/pages/Sales'));
 const ClinicSettings = lazyWithRetry(() => import('@/pages/ClinicSettings'));
 // T-20260525-foot-MESSAGING-V1 AC-3: 메시지 설정 페이지 (admin/manager/director 전용)
@@ -203,6 +205,8 @@ function App() {
                 <Route path="doctor-tools" element={<RoleGuard roles={['admin', 'manager', 'director', 'therapist', 'technician', 'part_lead', 'consultant', 'coordinator']}><DoctorTools /></RoleGuard>} />
                 <Route path="treatment-table" element={<TreatmentTable />} />
                 <Route path="notices" element={<Notices />} />
+                {/* T-20260605-foot-HANDOVER-BOARD AC-5: 전 직원 작성/조회 — RoleGuard 없음 */}
+                <Route path="handover" element={<Handover />} />
                 {/* T-20260515-foot-SALES-COMMON-DB: 매출집계 — AC-6 미노출 유지 */}
                 <Route path="sales" element={<RoleGuard roles={['admin', 'manager']}><Sales /></RoleGuard>} />
                 {/* T-20260516-foot-CLINIC-DOC-INFO: 병원·원장 정보 설정 */}
