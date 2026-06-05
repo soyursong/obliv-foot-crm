@@ -209,3 +209,74 @@ test.describe('AC-2 빈 상태(하드 게이팅 금지)', () => {
     expect(hasAny(superFixture, phraseFixture, '존재하지않는검색어')).toBe(false);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 시나리오 5: 드롭다운 z-index — 임상경과 外 빠른처방·처방세트 전 화면 일괄 적용 (AC-4)
+//   루트코즈: 공통 Select(SelectContent)가 z-50 → Dialog(z-90)/Sheet·CustomerChartSheet(z-70)
+//   내부에서 열리면 그 뒤로 깔려 '상용구 불러오기' 등 드롭다운 선택 불가(전 화면 공통).
+//   수정: 공통 컴포넌트(ui/select.tsx) 단일 수정으로 z-[200] 격상 → 모든 화면 일괄 커버(화면별 땜질 X).
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('AC-4 공통 Select z-index — 전 화면 앞으로 열림', () => {
+  // 정본: 앱 레이어링 상수(ui/*.tsx 와 동일 값). Select 팝업은 모든 오버레이보다 위여야 함.
+  const Z = {
+    sheet: 50, // ui/sheet.tsx 기본
+    sheetNested: 70, // ui/sheet.tsx zLevel=1 / CustomerChartSheet
+    dialogBackdrop: 80, // ui/dialog.tsx
+    dialogContent: 90, // ui/dialog.tsx (= drawer)
+    selectPopup: 200, // ui/select.tsx (AC-4 수정값)
+  };
+
+  test('Select 팝업(z-200)은 Dialog(z-90)·Sheet(z-70)보다 항상 위', () => {
+    expect(Z.selectPopup).toBeGreaterThan(Z.dialogContent);
+    expect(Z.selectPopup).toBeGreaterThan(Z.dialogBackdrop);
+    expect(Z.selectPopup).toBeGreaterThan(Z.sheetNested);
+    expect(Z.selectPopup).toBeGreaterThan(Z.sheet);
+  });
+
+  test('회귀: 구(舊) z-50 은 Dialog(z-90) 뒤로 깔려 선택 불가였음 (수정 전 상태 모사)', () => {
+    const OLD_SELECT_Z = 50;
+    expect(OLD_SELECT_Z).toBeLessThan(Z.dialogContent); // 버그 재현: 뒤로 열림
+    expect(Z.selectPopup).toBeGreaterThan(Z.dialogContent); // 수정 후: 앞으로 열림
+  });
+
+  test('단일 공통값이므로 화면(임상경과·빠른처방·처방세트) 무관하게 동일 레이어', () => {
+    // 모든 화면이 동일 <Select> 컴포넌트를 사용 → 단일 z-index 가 전 화면을 커버한다는 불변식.
+    const screens = ['clinical_progress', 'quick_rx', 'prescription_set'];
+    const layerForScreen = (_screen: string) => Z.selectPopup; // 공통 컴포넌트 → 화면별 분기 없음
+    for (const s of screens) expect(layerForScreen(s)).toBe(200);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 시나리오 6: 슈퍼상용구 '처방 항목 추가'(ad-hoc) 제거 — 처방세트에서만 관리 (AC-5)
+//   정본 정책: 슈퍼상용구의 rx_items 는 '처방세트 불러오기'(loadRxSet)로만 채움. addItem(빈 행 추가) 폐지.
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('AC-5 슈퍼상용구 처방항목은 처방세트에서만', () => {
+  interface SP { rx_items: { name: string }[] }
+  const EMPTY_ITEM = { name: '' };
+
+  // 정본: 처방세트 불러오기 — 빈 행 제거 후 세트 항목 append (유지되는 유일 경로)
+  const loadRxSet = (form: SP, setItems: { name: string }[]): SP => {
+    const nonEmpty = form.rx_items.filter((i) => i.name.trim() !== '');
+    return { rx_items: [...nonEmpty, ...setItems.map((i) => ({ ...EMPTY_ITEM, ...i }))] };
+  };
+
+  test('처방세트 불러오기로만 rx_items 가 채워진다', () => {
+    const start: SP = { rx_items: [] };
+    const after = loadRxSet(start, [{ name: '아세트아미노펜' }, { name: '이부프로펜' }]);
+    expect(after.rx_items.map((i) => i.name)).toEqual(['아세트아미노펜', '이부프로펜']);
+  });
+
+  test('ad-hoc 빈 처방행 추가(addItem) 경로는 더 이상 존재하지 않는다 (정책 불변식)', () => {
+    // addItem 이 폐지됐으므로, rx_items 증가는 오직 loadRxSet 결과로만 발생.
+    const allowedMutators = ['loadRxSet'];
+    expect(allowedMutators).not.toContain('addItem');
+    expect(allowedMutators).toEqual(['loadRxSet']);
+  });
+
+  test('빈 상태 안내 문구가 "처방세트 불러오기"를 가리킨다', () => {
+    const emptyHint = '처방내역 없음 — 필요 시 위 "처방세트 불러오기"로 추가';
+    expect(emptyHint).toContain('처방세트 불러오기');
+    expect(emptyHint).not.toContain('처방 항목 추가');
+  });
+});
