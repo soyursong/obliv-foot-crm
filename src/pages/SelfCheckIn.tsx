@@ -26,7 +26,7 @@ import { useParams } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 import type { VisitType } from '@/lib/types';
 import { normalizeToE164 } from '@/lib/phone';
-import { todaySeoulISODate } from '@/lib/format';
+import { todaySeoulISODate, nowSeoulHHMM } from '@/lib/format';
 
 // 셀프체크인 전용 Supabase 클라이언트 (anon, 세션 없음)
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -168,6 +168,7 @@ const T: Record<Lang, {
   noReservationDesc: string;
   backToPhoneCheckin: string;
   reservationListBack: string;
+  reservationNowBadge: string;
   // OQ1(가정 A): 셀프접수 페이지 URL QR
   scanToPhoneCaption: string;
 }> = {
@@ -270,6 +271,7 @@ const T: Record<Lang, {
     noReservationDesc: '데스크에 문의하시거나\n전화번호로 직접 접수해주세요.',
     backToPhoneCheckin: '전화번호로 접수하기',
     reservationListBack: '← 돌아가기',
+    reservationNowBadge: '지금',
     scanToPhoneCaption: 'QR을 스캔해 휴대폰으로 접수할 수 있어요',
   },
   en: {
@@ -371,6 +373,7 @@ const T: Record<Lang, {
     noReservationDesc: 'Please ask the front desk\nor check in with your phone number.',
     backToPhoneCheckin: 'Check in by phone number',
     reservationListBack: '← Back',
+    reservationNowBadge: 'Now',
     scanToPhoneCaption: 'Scan the QR to check in on your phone',
   },
 };
@@ -614,6 +617,15 @@ export default function SelfCheckIn() {
   const [reservationListLoading, setReservationListLoading] = useState(false);
   // 비마스킹 원본은 ref 에만 보관 (React state/DOM 노출 금지) — 선택 시에만 1건 꺼내 사용
   const rawReservationsRef = useRef<Map<string, { name: string; phone: string }>>(new Map());
+
+  // T-20260606-foot-DASH-REALTIME-ORDER-AUTOSCROLL AC-2: 현재 시각대 자동 스크롤 선노출
+  // 명단 스크롤 컨테이너 + 항목별 ref. 진입/갱신 시 "현재 시각 이후 가장 가까운 예약"으로 스크롤.
+  const reservationListRef = useRef<HTMLDivElement>(null);
+  const reservationItemRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  // 동일 명단 시그니처에는 1회만 자동 스크롤 → 사용자 수동 스크롤 점유 시 강제 점프 회피.
+  const autoScrolledSigRef = useRef<string>('');
+  // 자동 스크롤 대상(현재 시각대) 항목 — 시각적 선노출 하이라이트용.
+  const [nowTargetId, setNowTargetId] = useState<string | null>(null);
 
   const t = T[lang];
 
@@ -995,7 +1007,14 @@ export default function SelfCheckIn() {
         };
       });
 
-      setMaskedReservations(masked);
+      // T-20260606-foot-DASH-REALTIME-ORDER-AUTOSCROLL AC-1: 예약시간 오름차순 고정.
+      // RPC가 ORDER BY reservation_time ASC 로 정렬하지만, 어떤 경로로든(향후 부분 갱신·
+      // append 포함) 순서가 흔들려도 명단은 항상 전체 재정렬 후 렌더한다. (append 금지)
+      const sorted = [...masked].sort((a, b) =>
+        a.reservation_time.localeCompare(b.reservation_time),
+      );
+
+      setMaskedReservations(sorted);
     } catch {
       // 목록 로드 실패 → 빈 목록(폴백 안내) 표시. 콘솔에 PII 미노출.
       setMaskedReservations([]);
@@ -1003,6 +1022,41 @@ export default function SelfCheckIn() {
       setReservationListLoading(false);
     }
   }, [clinicId]);
+
+  // ── T-20260606-foot-DASH-REALTIME-ORDER-AUTOSCROLL AC-2: 현재 시각대 자동 스크롤 선노출 ──
+  // 트리거: 예약자 명단 진입 시 AND 명단 갱신(재정렬) 후.
+  // 대상: 현재 시각 이후 가장 가까운 예약 항목(없으면 마지막). viewport 상단에 오도록 scrollIntoView.
+  // 가드: 동일 명단 시그니처에는 1회만 점프 → 사용자가 수동 스크롤 중일 때 강제 점프 회피.
+  useEffect(() => {
+    if (step !== 'select-reservation') {
+      // 화면 이탈 시 시그니처 리셋 → 재진입 시 다시 1회 자동 스크롤.
+      autoScrolledSigRef.current = '';
+      return;
+    }
+    if (maskedReservations.length === 0) {
+      setNowTargetId(null);
+      return;
+    }
+
+    // 현재 시각(KST) 이후 가장 가까운 예약 → 없으면 마지막 항목.
+    const nowHHMM = nowSeoulHHMM();
+    const target =
+      maskedReservations.find((r) => r.reservation_time >= nowHHMM) ??
+      maskedReservations[maskedReservations.length - 1];
+    setNowTargetId(target.reservation_id);
+
+    // 명단 내용(순서/구성)이 바뀌었을 때만 자동 스크롤 1회 — 수동 스크롤 점유 회피.
+    const sig = maskedReservations.map((r) => `${r.reservation_id}:${r.reservation_time}`).join('|');
+    if (autoScrolledSigRef.current === sig) return;
+    autoScrolledSigRef.current = sig;
+
+    // 렌더 직후 DOM ref 확정 보장.
+    const raf = requestAnimationFrame(() => {
+      const el = reservationItemRefs.current.get(target.reservation_id);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [step, maskedReservations]);
 
   // ── T-20260601-foot-SELFLOGIN-RESV-LIST-QR: 예약자 항목 선택 → 고객정보 자동 로드 ──
   // 선택 시점에만 ref 에서 본인 1건의 원본 name/phone 을 꺼내 폼 state 에 주입.
@@ -1547,29 +1601,57 @@ export default function SelfCheckIn() {
                 <p className="text-center text-sm font-medium" style={{ color: C.medium }}>
                   {t.selectReservationGuide}
                 </p>
-                <div className="max-h-[60vh] space-y-2 overflow-y-auto" data-testid="reservation-list">
-                  {maskedReservations.map((item) => (
-                    <button
-                      key={item.reservation_id}
-                      type="button"
-                      onClick={() => handleSelectReservation(item)}
-                      className="flex min-h-[68px] w-full items-center justify-between rounded-xl px-5 py-4 text-left transition active:scale-[0.99]"
-                      style={{ border: `1.5px solid ${C.border}`, backgroundColor: 'white' }}
-                      data-testid="reservation-item"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-lg font-bold" style={{ color: C.dark }}>
-                          {item.masked_name}
+                <div
+                  ref={reservationListRef}
+                  className="max-h-[60vh] space-y-2 overflow-y-auto"
+                  data-testid="reservation-list"
+                >
+                  {maskedReservations.map((item) => {
+                    // T-20260606-foot-DASH-REALTIME-ORDER-AUTOSCROLL AC-2:
+                    // 현재 시각대(자동 스크롤 대상) 항목 시각적 선노출 하이라이트.
+                    const isNow = item.reservation_id === nowTargetId;
+                    return (
+                      <button
+                        key={item.reservation_id}
+                        ref={(el) => {
+                          if (el) reservationItemRefs.current.set(item.reservation_id, el);
+                          else reservationItemRefs.current.delete(item.reservation_id);
+                        }}
+                        type="button"
+                        onClick={() => handleSelectReservation(item)}
+                        className="flex min-h-[68px] w-full items-center justify-between rounded-xl px-5 py-4 text-left transition active:scale-[0.99]"
+                        style={{
+                          border: `1.5px solid ${isNow ? C.primary : C.border}`,
+                          backgroundColor: isNow ? `${C.primary}0D` : 'white',
+                        }}
+                        data-testid="reservation-item"
+                        data-now={isNow ? 'true' : undefined}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg font-bold" style={{ color: C.dark }}>
+                            {item.masked_name}
+                          </span>
+                          <span className="text-base" style={{ color: C.muted }}>
+                            {item.masked_phone}
+                          </span>
+                        </div>
+                        <span className="flex shrink-0 items-center gap-2">
+                          {isNow && (
+                            <span
+                              className="rounded-full px-2 py-0.5 text-xs font-bold text-white"
+                              style={{ backgroundColor: C.primary }}
+                              data-testid="reservation-now-badge"
+                            >
+                              {t.reservationNowBadge}
+                            </span>
+                          )}
+                          <span className="text-base font-semibold tabular-nums" style={{ color: C.medium }}>
+                            {item.reservation_time}
+                          </span>
                         </span>
-                        <span className="text-base" style={{ color: C.muted }}>
-                          {item.masked_phone}
-                        </span>
-                      </div>
-                      <span className="shrink-0 text-base font-semibold tabular-nums" style={{ color: C.medium }}>
-                        {item.reservation_time}
-                      </span>
-                    </button>
-                  ))}
+                      </button>
+                    );
+                  })}
                 </div>
               </>
             )}
