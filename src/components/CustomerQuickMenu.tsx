@@ -2,10 +2,11 @@
  * CustomerQuickMenu — 대시보드 고객 카드 이름 우클릭/롱프레스 메뉴
  * T-20260515-foot-CONTEXT-MENU-4ITEM: 4항목 확장
  * T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 항목 추가 (5항목)
- * 순서: 고객차트 → 진료차트 → 예약하기 → 수납 → 예약 취소
+ * T-20260606-foot-CTXMENU-SMS-SEND: [문자] 항목 추가 (수납 다음, 예약취소 위) — admin/manager 한정
+ * 순서: 고객차트 → 진료차트 → 예약하기 → 수납 → 문자 → 예약 취소
  */
 import { useEffect, useRef } from 'react';
-import { Ban, BookOpen, CalendarPlus, CreditCard, Stethoscope } from 'lucide-react';
+import { Ban, BookOpen, CalendarPlus, CreditCard, MessageSquare, Stethoscope } from 'lucide-react';
 import type { CheckIn } from '@/lib/types';
 
 interface Props {
@@ -18,6 +19,8 @@ interface Props {
   onOpenPayment: (checkIn: CheckIn) => void;
   /** T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 콜백 — 제공 시만 메뉴 항목 표시 */
   onCancelReservation?: (checkIn: CheckIn) => void;
+  /** T-20260606-foot-CTXMENU-SMS-SEND: 문자 발송 콜백 — 제공 시(admin/manager)만 메뉴 항목 표시 */
+  onSendSms?: (checkIn: CheckIn) => void;
 }
 
 export function CustomerQuickMenu({
@@ -29,6 +32,7 @@ export function CustomerQuickMenu({
   onNewReservation,
   onOpenPayment,
   onCancelReservation,
+  onSendSms,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -50,9 +54,10 @@ export function CustomerQuickMenu({
 
   if (!position || !checkIn) return null;
 
-  // 화면 경계 보정 — 5항목 높이 고려 (예약 취소 추가)
+  // 화면 경계 보정 — 항목 수에 따른 높이 고려 (문자/예약취소 가변)
+  const itemCount = 4 + (onSendSms ? 1 : 0) + (onCancelReservation && checkIn.reservation_id ? 1 : 0);
   const x = Math.min(position.x, window.innerWidth - 190);
-  const y = Math.min(position.y, window.innerHeight - 240);
+  const y = Math.min(position.y, window.innerHeight - (60 + itemCount * 44));
 
   return (
     <div
@@ -113,7 +118,22 @@ export function CustomerQuickMenu({
         수납
       </button>
 
-      {/* 5. 예약 취소 — T-20260525-foot-RESV-CANCEL-CTX: 예약 연결 고객에게만 표시 */}
+      {/* 5. 문자 — T-20260606-foot-CTXMENU-SMS-SEND: admin/manager(onSendSms 제공 시)만 노출 */}
+      {onSendSms && (
+        <button
+          data-testid="quick-menu-sms-btn"
+          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-teal-50 transition text-left"
+          onClick={() => {
+            onSendSms(checkIn);
+            onClose();
+          }}
+        >
+          <MessageSquare className="h-4 w-4 text-teal-600 shrink-0" />
+          문자
+        </button>
+      )}
+
+      {/* 6. 예약 취소 — T-20260525-foot-RESV-CANCEL-CTX: 예약 연결 고객에게만 표시 */}
       {onCancelReservation && checkIn.reservation_id && (
         <>
           <div className="border-t my-0.5" />

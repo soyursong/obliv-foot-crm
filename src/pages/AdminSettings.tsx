@@ -109,6 +109,8 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   resv_reminder_d1:      'T02 D-1 리마인드',
   resv_reminder_morning: 'T03 당일 아침',
   noshow:                'T04 노쇼 후속',
+  manual_send:           '수동 발송',   // T-20260606-foot-CTXMENU-SMS-SEND: 대시보드 우클릭 1:1 발송
+  test_send:             '연결 테스트',
 };
 
 const EVENT_TYPE_DESC: Record<string, string> = {
