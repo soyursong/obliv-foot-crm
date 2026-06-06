@@ -12,19 +12,22 @@
  *   3. 6/6 환불/비급여 동의서(794×3369 논리 → DRAW_DPR=2 = 1588×6738 물리, 대형 캔버스)에서
  *      desync 제거로 인한 합성 latency 회귀 = "선 끊김·거침·느림". 타임라인 정합.
  *
- * ── 수정(기기별 조건부 desync 복원) ──────────────────────────────────────────
- *   opaque IOSurface 검정화면 버그는 **iOS WebKit 전용**(cf69be5 §3 코드증거).
- *   iOS = 전 브라우저 WebKit 강제 → iOS 전체 desync OFF 유지(검정화면 비재발 보장).
- *   Android/데스크톱(Galaxy Tab 포함) = 해당 버그 無 → desync ON 복원(저지연 펜).
- *   override 우선순위: ?penchart_no_desync(긴급 강제OFF) > ?penchart_enable_desync(강제ON) > 기기기본.
+ * ── REOPEN6 정책 전환 (planner FIX-REQUEST, T-20260525-BLACKSCR) ───────────────
+ *   f9696ff는 "검정화면=iOS WebKit 전용" 전제로 기기별 조건부 desync(Android=ON)를 복원했으나,
+ *   6/6 17:10 김주연 총괄 갤럭시탭(Android Chrome)에서 검정화면 재발 → 그 전제가 실기기로 반증됨.
+ *   ∴ 결정: 검정화면(P0 운영중단) > 펜 latency(P1). 양립 불가 → **desync=OFF 전 기기 통일**.
+ *   Android=ON 분기(isIOS 판별) 제거. Galaxy Tab 저지연은 desync 비의존 hot-path
+ *   (PEN-SLOW Fix-2 ctx캐싱 / Fix-3 rect캐싱 / Fix-8 native pointermove + coalesced)로만 확보하고,
+ *   추가 저지연은 desync 비의존 별도 후속 티켓으로 분리(후순위).
+ *   override: ?penchart_no_desync(강제OFF·기본동일) > ?penchart_enable_desync(테스트 강제ON) > 기본 OFF.
  *
  * AC-1: 환불/비급여 동의서 캔버스 마운트 + 펜 입력 hot-path(native pointermove, coalesced) 보존.
- * AC-2: 기기별 조건부 desync — iOS=false(검정화면 안전), non-iOS=true(저지연).
+ * AC-2: desync=OFF 전 기기 통일 — isIOS 기기 분기 제거 + useDesync 기본값 false.
  * AC-3: 긴급 폴백 킬스위치(?penchart_no_desync) → 강제 OFF 경로 존재.
  * AC-4: 회귀 비파괴 — PEN-SLOW Fix-2/3/8 + 자동채움 + DRAW_DPR=2 유지.
  *
- * ⚠️ 실기기 필기 정밀도/latency 최종 확인은 field-soak(현장 Galaxy Tab)로 닫는다.
- *    Playwright 코드증거(구조 검증)는 회귀 차단 게이트 역할.
+ * ⚠️ Galaxy Tab 저지연(desync 비의존)은 별도 후속 티켓으로 닫는다.
+ *    Playwright 코드증거(구조 검증)는 검정화면 재발 차단 게이트 역할.
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
@@ -33,8 +36,8 @@ const SRC = 'src/components/PenChartTab.tsx';
 
 test.describe('T-20260606-foot-PENCHART-REFUND-PEN-MISS', () => {
 
-  // ── AC-2 핵심: 기기별 조건부 desync 복원 ─────────────────────────────────────
-  test('AC-2: initDrawCanvas — isIOS 판별로 desync 게이트 (iOS=OFF 검정화면 안전, non-iOS=ON 저지연)', () => {
+  // ── AC-2 핵심: REOPEN6 desync=OFF 전 기기 통일 ──────────────────────────────
+  test('AC-2: initDrawCanvas — isIOS 기기 분기 제거 + useDesync 기본값 false (검정화면 안전 우선)', () => {
     const src: string = fs.readFileSync(SRC, 'utf-8');
 
     const initDrawIdx = src.indexOf('const initDrawCanvas = useCallback');
@@ -42,15 +45,14 @@ test.describe('T-20260606-foot-PENCHART-REFUND-PEN-MISS', () => {
     // 주석 블록이 크므로 충분한 윈도우 사용
     const block = src.slice(initDrawIdx, initDrawIdx + 4000);
 
-    // iOS 판별 존재 (iPad/iPhone/iPod + iPadOS 13+ MacIntel 위장 대응)
-    expect(block).toContain('const isIOS');
-    expect(block).toContain('/iPad|iPhone|iPod/');
-    expect(block).toContain('maxTouchPoints');
+    // REOPEN6: 기기별 분기(isIOS/Android=ON) 완전 제거 — 검정화면 재도입축 차단
+    expect(block, 'isIOS 기기 분기 잔존 — Android=ON 검정화면 재발 위험').not.toContain('const isIOS');
 
-    // useDesync = (override) ... : !isIOS — 기기기본 iOS=false, 그 외=true
+    // useDesync 기본 분기는 false (override 없으면 desync 비활성)
     const useDesyncDecl = block.match(/const useDesync\s*=.*?;/s);
     expect(useDesyncDecl?.[0] ?? '', 'useDesync 선언 없음').not.toEqual('');
-    expect(useDesyncDecl?.[0] ?? '').toContain('!isIOS');
+    expect(useDesyncDecl?.[0] ?? '', '기기 분기(isIOS) 잔존').not.toContain('isIOS');
+    expect(useDesyncDecl?.[0] ?? '', 'useDesync 기본값 false 아님').toMatch(/:\s*false\s*;/);
 
     // getContext에 useDesync 전달
     expect(block).toContain('desynchronized: useDesync');
@@ -106,17 +108,18 @@ test.describe('T-20260606-foot-PENCHART-REFUND-PEN-MISS', () => {
     expect(src).toContain('drawRefundP3DateAutofill');
   });
 
-  // ── 안전 가드: iOS 검정화면 수정 비파괴 (cf69be5 보존) ────────────────────────
-  test('SAFETY: iOS 경로는 여전히 desync=false — 검정화면(REOPEN4) 비재발 보장', () => {
+  // ── 안전 가드: 전 기기 검정화면 비재발 보장 (REOPEN6) ─────────────────────────
+  test('SAFETY: override 없으면 전 기기 desync=false — 검정화면(iOS+Android) 비재발 보장', () => {
     const src: string = fs.readFileSync(SRC, 'utf-8');
 
     const initDrawIdx = src.indexOf('const initDrawCanvas = useCallback');
     const block = src.slice(initDrawIdx, initDrawIdx + 4000);
     const useDesyncDecl = (block.match(/const useDesync\s*=.*?;/s)?.[0]) ?? '';
 
-    // 기기기본 분기는 !isIOS — 즉 isIOS=true → false (override 없을 때).
-    // 강제 ON(penchart_enable_desync)은 명시적 테스트 경로로만 iOS desync 허용(현장 사용 금지).
-    expect(useDesyncDecl).toContain('!isIOS');
+    // 기본 분기는 false — 기기 판별 없이 전 기기 OFF (iOS+Android 검정화면 안전).
+    // 강제 ON(penchart_enable_desync)은 명시적 테스트 경로로만 허용(현장 사용 금지).
+    expect(useDesyncDecl, '기기 분기(isIOS) 잔존 — Android 검정화면 위험').not.toContain('isIOS');
+    expect(useDesyncDecl, '기본값 false 아님 — 검정화면 안전 미보장').toMatch(/:\s*false\s*;/);
     // willChange:'transform' 잔존 금지 (REOPEN3 보존)
     const drawCanvasIdx = src.indexOf('ref={canvasRef}');
     const styleBlock = src.slice(drawCanvasIdx, drawCanvasIdx + 600);
