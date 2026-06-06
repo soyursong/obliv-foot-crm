@@ -35,3 +35,14 @@ component_note: "뷰어 특정=치료 테이블(src/pages/TreatmentTable.tsx, /a
 - E2E 2 시나리오: 시나리오1(비-어드민 차단, 정적 RoleGuard/NAV 양방향 검증 4건) / 시나리오2(어드민 정상접근, 브라우저 5건). 전건 pass.
 
 build OK(3.51s). db_change=false. commit ff141bd → main(Vercel auto).
+
+## QA 재검증 (FIX-REQUEST MSG-20260606-130457-24ne, phase2 insufficient_verification 대응)
+원인: spec `BASE_URL` 기본값이 5173(이 레포 dev 포트 8089와 불일치)이라 시나리오2(브라우저)가 webServer 자동기동 환경에서 ERR_CONNECTION_REFUSED로 미실행. → 기본값 8089로 정렬.
+
+1) **E2E 전건 pass** — `npx playwright test T-20260606-...spec.ts`: **8 passed (22.5s)**
+   - 시나리오1(정적 RoleGuard/NAV 검증) 3건 pass
+   - 시나리오2(어드민 브라우저: 직접URL 비리다이렉트·테이블 렌더·메뉴 노출·콘솔무에러) 4건 pass + auth setup 1건
+2) **배포 URL 브라우저 시뮬레이션** (https://obliv-foot-crm.vercel.app):
+   - shot1: 미로그인 → /admin/treatment-table 접근 시 **/login 으로 차단** (비-어드민 차단 실증)
+   - shot2: admin 세션 → /admin/treatment-table **치료 현황 테이블 정상 렌더**(치료사 뷰 탭·CSV·사이드바 메뉴 노출)
+   - 스크린샷: `_handoff/qa_screenshots/T-20260606-foot-THERAPIST-EVAL-VIEWER-ADMIN/{shot1_anon_blocked,shot2_admin_treatment_table}.png`
