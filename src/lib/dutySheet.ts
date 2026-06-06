@@ -1,18 +1,25 @@
 /**
  * dutySheet — 구글시트 근무 캘린더 직접 read (T-20260606-foot-HANDOVER-TODAY-ATTENDEES REV-1)
  *
- * "오늘 출근 명단"의 데이터 소스. 기존 옵션 A(duty_roster import)를 폐기하고
+ * "오늘 출근 명단"의 데이터 소스. 옵션 A(duty_roster import)를 폐기하고
  * 구글시트(gid=341864863 오리진점 상담&코디 등)를 런타임에 직접 read 한다.
  *
- * 시트 구조(실측 2026-06-06, gviz CSV):
- *   - 월별 주간 블록 캘린더. 행 흐름:
- *       [월 헤더]   "" "2026" "6월" ...
- *       [요일 헤더] "" "월" "화" "수" "목" "금" "토" "일"
- *       [날짜 행]   "" "1" "2" "3" "4" "5" "6" "7"
- *       [이름 행들] "" "김주연" ...   ← 날짜 열에 이름 있으면 그날 출근
- *       (다음 날짜 행 또는 다음 월 헤더 전까지 같은 블록)
- *   - "오늘" 열에 들어있는 이름 = 출근자. 빈 칸 = 휴무. (셀 존재 = 출근, AC-3)
- *   - 휴진/휴무/총괄 등 라벨 토큰은 사람 이름이 아니므로 제외.
+ * ⭐ 파서 = T-20260606-foot-DUTY-IMPORT-SHEET-FORMAT(commit 2001c73, CANCELLED)에서
+ *   검증 완료된 주(week) 단위 블록 파서(`extractCandidates`)를 **그대로 이식**한 것.
+ *   재작성 아님 — 파싱 룰은 실측 검증 끝남(실측 CSV 8블록·5/13~7/4·6-30→7-01
+ *   월 롤오버·특수토큰 휴진/전직원/총괄 pass). import 다이얼로그(duty_roster write)
+ *   경로는 가져오지 않고 **파싱 룰만** 추출. (planner MSG-20260606-113250 지시)
+ *
+ * 시트 구조(실측 2026-06-06, gviz CSV) — 주 단위 캘린더 블록:
+ *       [연/월/팀 헤더] "" "2026" "6월" "상담&코디" ...
+ *       [요일 헤더]     "" "월" "화" "수" "목" "금" "토" "일"
+ *       [날짜 행]       "" "29" "30" "1" "2" "3" "4" "5"   ← day≥3개 = 날짜 행
+ *       [이름 행들]     "" "김주연" ...                     ← 칼럼별 세로로 출근자 나열
+ *       (다음 날짜 행 / 헤더 / 끝까지 같은 블록)
+ *   - 칼럼→실날짜 변환 시 **월 롤오버**: 일자가 직전보다 작아지면 다음 달(12월→연도+1).
+ *     예: 29,30,1,2 → 6/29,6/30,7/1,7/2.
+ *   - "오늘"(KST) 칼럼에 이름 있으면 출근, 비면 휴무(셀 존재 = 출근, AC-3).
+ *   - 특수 토큰: 휴진/휴무/오프 = skip · 전직원 = 그날 활성 staff 전체 · 총괄 = 김주연(Q5).
  *
  * CORS: docs.google.com gviz CSV 는 Access-Control-Allow-Origin 미제공 → 브라우저
  *   직접 fetch 차단. Edge Function `duty-sheet-read` 프록시 경유로 raw CSV 수신.
@@ -25,19 +32,20 @@ import { supabase } from './supabase';
 /** 상담&코디 시트 gid(오리진점). 치료팀 별도 탭 gid 확인 시 배열에 추가. */
 export const DUTY_SHEET_GIDS = ['341864863'];
 
-/** 이름이 아닌 라벨/오프 토큰 — 출근자에서 제외 */
-const NON_NAME_TOKENS = new Set([
-  '휴진',
-  '휴무',
-  '오프',
-  'off',
-  'OFF',
-  '총괄', // 시프트 구분 라벨(특정 월 블록) — 사람 이름 아님
-  '전직원',
-  '전 직원',
-  '-',
-  '·',
-]);
+// ─── 특수 토큰 (2001c73 검증 룰과 동일) ──────────────────────────────────────
+/** 그날 휴무/placeholder 토큰 — 출근자 아님 → skip */
+const REST_TOKENS = new Set(['휴진', '휴무', '오프', 'off', 'OFF', '-', '·', '–', '—']);
+/** "전직원" = 그날 활성 staff 전체로 확장 (allStaffNames 로 처리) */
+const ALL_STAFF_TOKEN = '전직원';
+/** "총괄" = 김주연 1:1 (Q5 확정) */
+const SUPERVISOR_TOKEN = '총괄';
+const SUPERVISOR_NAME = '김주연';
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+// ─── CSV → 2D 그리드 ─────────────────────────────────────────────────────────
 
 /** 한 줄 CSV 파싱 (gviz 따옴표 감싼 셀 + 콤마/escaped quote 처리) */
 function parseCsvLine(line: string): string[] {
@@ -78,72 +86,186 @@ function parseCsv(csv: string): string[][] {
     .map(parseCsvLine);
 }
 
-/** 셀이 1~31 의 순수 정수(날짜)인지 */
-function asDayNumber(cell: string): number | null {
-  const t = cell.trim();
-  if (!/^\d{1,2}$/.test(t)) return null;
-  const n = Number(t);
+// ─── 주 단위 캘린더 블록 파싱 (2001c73 extractCandidates 이식) ────────────────
+
+interface DutyCandidate {
+  /** 시트 셀 원문(이름 또는 특수 토큰) */
+  name: string;
+  /** 칼럼→실날짜(월 롤오버 적용) ISO 'YYYY-MM-DD' */
+  date: string | null;
+  /** 컨텍스트 팀 라벨(헤더에서 인식) */
+  team: string;
+}
+
+/** 셀이 1~31 일(day) 숫자면 그 값, 아니면 null */
+function dayNumberOf(cell: string): number | null {
+  const s = (cell ?? '').toString().trim();
+  if (!/^\d{1,2}$/.test(s)) return null;
+  const n = parseInt(s, 10);
   return n >= 1 && n <= 31 ? n : null;
 }
 
-/** 행이 "날짜 행"인지: 1~31 정수 셀이 3개 이상 */
-function isDateRow(cells: string[]): boolean {
-  return cells.filter((c) => asDayNumber(c) !== null).length >= 3;
+/** 한 행의 day 칼럼들 [{col, day}] (날짜 행 판별 + 칼럼→일자 매핑용) */
+function dayColumnsOf(row: string[]): Array<{ col: number; day: number }> {
+  const out: Array<{ col: number; day: number }> = [];
+  row.forEach((cell, ci) => {
+    const d = dayNumberOf(cell);
+    if (d != null) out.push({ col: ci, day: d });
+  });
+  return out;
 }
 
-/** 행이 월 헤더인지: "N월" 셀 포함 → month 반환(없으면 null) */
-function monthOfHeaderRow(cells: string[]): number | null {
-  for (const c of cells) {
-    const m = c.trim().match(/^(\d{1,2})월$/);
-    if (m) {
-      const mm = Number(m[1]);
-      if (mm >= 1 && mm <= 12) return mm;
+/** 연/월/팀 헤더 행 인식 (예: 2026 · 5월 · 팀명). 'N월' 셀이 있으면 헤더로 본다. */
+function parseMonthHeader(
+  row: string[],
+): { year?: number; month?: number; team?: string } | null {
+  let month: number | undefined;
+  let year: number | undefined;
+  let team: string | undefined;
+  for (const cellRaw of row) {
+    const cell = (cellRaw ?? '').toString().trim();
+    if (!cell) continue;
+    const mm = cell.match(/^(\d{1,2})\s*월$/); // "5월" (요일 '월' 단독은 digit 없어 불매칭)
+    if (mm) {
+      month = parseInt(mm[1], 10);
+      continue;
+    }
+    const ym = cell.match(/^(20\d{2})$/); // "2026"
+    if (ym) {
+      year = parseInt(ym[1], 10);
+      continue;
+    }
+    // 그 외 텍스트(요일 단일 글자·순수 숫자 제외) = 팀 라벨 후보(최장 셀)
+    if (!/^[월화수목금토일]$/.test(cell) && !/^\d+$/.test(cell)) {
+      if (!team || cell.length > team.length) team = cell;
     }
   }
-  return null;
+  if (month == null) return null;
+  return { year, month, team };
 }
 
 /**
- * CSV(주간 블록 캘린더)에서 특정 (month, day)의 출근자 이름 목록을 추출.
- * year 는 시트에 월 헤더만 있고 연도 경계가 드물어 month 기준으로 매칭한다.
- * 순수 함수 — 단위 테스트 가능.
+ * 날짜 행의 day 칼럼들을 실제 ISO 날짜로 변환. 월 롤오버 처리:
+ * 일자가 직전보다 작아지면 다음 달(12월 넘으면 연도+1). 예: 29,30,1,2 → 6월29,30 / 7월1,2
  */
-export function parseDutyAttendees(csv: string, month: number, day: number): string[] {
-  const rows = parseCsv(csv);
-  let currentMonth: number | null = null;
-  const names: string[] = [];
+function resolveRowDates(
+  dayCols: Array<{ col: number; day: number }>,
+  startYear: number,
+  startMonth: number,
+): { colDate: Map<number, string>; endYear: number; endMonth: number } {
+  let y = startYear;
+  let m = startMonth;
+  let prev = 0;
+  const colDate = new Map<number, string>();
+  for (const { col, day } of dayCols) {
+    if (prev && day < prev) {
+      m += 1;
+      if (m > 12) {
+        m = 1;
+        y += 1;
+      }
+    }
+    colDate.set(col, `${y}-${pad2(m)}-${pad2(day)}`);
+    prev = day;
+  }
+  return { colDate, endYear: y, endMonth: m };
+}
 
-  for (let r = 0; r < rows.length; r++) {
-    const cells = rows[r];
+/**
+ * 주 단위 캘린더 블록 그리드 → 후보 추출. (2001c73 검증 로직 이식)
+ *  1) 연/월 헤더로 컨텍스트(년·월·팀) 갱신
+ *  2) day ≥3개 행 = 날짜 행 → 칼럼별 일자 확정(월 롤오버)
+ *  3) 날짜 행 아래 ~ 다음 날짜행/헤더/끝까지 → 칼럼별 비셀 = 출근자(셀값=직원명)
+ */
+function extractCandidates(grid: string[][]): { candidates: DutyCandidate[]; blocks: number } {
+  const now = new Date();
+  let ctxYear = now.getFullYear();
+  let ctxMonth = now.getMonth() + 1; // 헤더 없을 때만 쓰이는 fallback
+  let team = '';
+  const candidates: DutyCandidate[] = [];
+  let blocks = 0;
 
-    // 월 헤더 갱신
-    const hm = monthOfHeaderRow(cells);
-    if (hm !== null) {
-      currentMonth = hm;
+  let i = 0;
+  while (i < grid.length) {
+    const row = grid[i] ?? [];
+
+    // 1) 연/월/팀 헤더
+    const hdr = parseMonthHeader(row);
+    if (hdr) {
+      if (hdr.year != null) ctxYear = hdr.year;
+      if (hdr.month != null) ctxMonth = hdr.month;
+      if (hdr.team) team = hdr.team; // 팀 셀 없는 헤더는 직전 팀 유지
+      i += 1;
       continue;
     }
 
-    // 날짜 행 + 대상 월 → 오늘 열을 찾는다
-    if (isDateRow(cells) && currentMonth === month) {
-      const targetCol = cells.findIndex((c) => asDayNumber(c) === day);
-      if (targetCol === -1) continue; // 이 블록엔 오늘 날짜 없음
+    // 2) 날짜 행 (day ≥ 3)
+    const dayCols = dayColumnsOf(row);
+    if (dayCols.length >= 3) {
+      blocks += 1;
+      const { colDate, endYear, endMonth } = resolveRowDates(dayCols, ctxYear, ctxMonth);
 
-      // 다음 행부터 이름 수집 (다음 날짜 행/월 헤더 전까지)
-      for (let rr = r + 1; rr < rows.length; rr++) {
-        const nameCells = rows[rr];
-        if (isDateRow(nameCells)) break;
-        if (monthOfHeaderRow(nameCells) !== null) break;
-        const raw = (nameCells[targetCol] ?? '').trim();
-        if (!raw) continue;
-        if (NON_NAME_TOKENS.has(raw)) continue;
-        if (!names.includes(raw)) names.push(raw);
+      // 3) 출근자 스캔: 다음 날짜행/헤더/끝까지 칼럼별 비셀 수집
+      let j = i + 1;
+      for (; j < grid.length; j++) {
+        const arow = grid[j] ?? [];
+        if (parseMonthHeader(arow)) break;
+        if (dayColumnsOf(arow).length >= 3) break;
+        for (const [col, date] of colDate) {
+          const raw = (arow[col] ?? '').toString().trim();
+          if (!raw) continue;
+          if (REST_TOKENS.has(raw)) continue;
+          candidates.push({ name: raw, date, team });
+        }
       }
-      break; // 대상 블록 1개만
+
+      ctxYear = endYear; // 롤오버 결과를 다음 블록 컨텍스트로 승계
+      ctxMonth = endMonth;
+      i = j;
+      continue;
     }
+
+    i += 1;
   }
 
-  return names;
+  return { candidates, blocks };
 }
+
+/**
+ * CSV(주간 블록 캘린더)에서 특정 날짜(todayIso 'YYYY-MM-DD')의 출근자 이름 목록을 추출.
+ * 순수 함수 — 단위 테스트 가능. 월 롤오버·특수 토큰(전직원/총괄/휴진)을 2001c73 룰대로 처리.
+ *
+ * @param allStaffNames "전직원" 토큰 확장용 활성 직원 이름 목록(없으면 전직원 토큰은 무시).
+ */
+export function parseDutyAttendees(
+  csv: string,
+  todayIso: string,
+  allStaffNames: string[] = [],
+): string[] {
+  const grid = parseCsv(csv);
+  const { candidates } = extractCandidates(grid);
+
+  const out: string[] = [];
+  const push = (n: string) => {
+    const t = (n ?? '').trim();
+    if (t && !out.includes(t)) out.push(t);
+  };
+
+  for (const c of candidates) {
+    if (c.date !== todayIso) continue;
+    // 특수 토큰 확장 (2001c73 buildPreview 와 동일 룰)
+    if (c.name === ALL_STAFF_TOKEN) {
+      for (const s of allStaffNames) push(s);
+    } else if (c.name === SUPERVISOR_TOKEN) {
+      push(SUPERVISOR_NAME);
+    } else {
+      push(c.name);
+    }
+  }
+  return out;
+}
+
+// ─── Edge Function 프록시 read ───────────────────────────────────────────────
 
 /** Edge Function 프록시로 한 시트(gid) raw CSV 수신 */
 async function fetchSheetCsv(gid: string): Promise<string> {
@@ -162,18 +284,20 @@ async function fetchSheetCsv(gid: string): Promise<string> {
  * 오늘(KST) 출근자 이름 목록. todayIso = 'YYYY-MM-DD'(KST).
  * 여러 gid(상담&코디 / 치료팀 등)를 모두 read 해 합친다(중복 제거).
  * 시트 장애/포맷 변경 시 graceful — throw 하지 않고 가능한 범위만 반환.
+ *
+ * @param allStaffNames "전직원" 토큰 확장용 활성 직원 이름 목록.
  */
 export async function fetchTodayAttendeeNames(
   todayIso: string,
   gids: string[] = DUTY_SHEET_GIDS,
+  allStaffNames: string[] = [],
 ): Promise<string[]> {
-  const [, mm, dd] = todayIso.split('-').map((x) => Number(x));
-  if (!mm || !dd) return [];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(todayIso ?? '')) return [];
 
   const results = await Promise.allSettled(
     gids.map(async (gid) => {
       const csv = await fetchSheetCsv(gid);
-      return parseDutyAttendees(csv, mm, dd);
+      return parseDutyAttendees(csv, todayIso, allStaffNames);
     }),
   );
 

@@ -23,6 +23,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { format } from 'date-fns';
 import { loginAndWaitForDashboard } from '../helpers';
+import { parseDutyAttendees } from '../../src/lib/dutySheet';
 
 const HANDOVER_URL = '/admin/handover';
 const TODAY = format(new Date(), 'yyyy-MM-dd');
@@ -148,5 +149,61 @@ test.describe('T-20260606-foot-HANDOVER-TODAY-ATTENDEES (REV-1) 구글시트 금
     await page.getByTestId('handover-new-btn').click();
     await expect(page.getByTestId('handover-dialog')).toBeVisible({ timeout: 8_000 });
     console.log('[ATTENDEES] S4 기존 인수인계 무회귀 OK');
+  });
+});
+
+/**
+ * REV-1 파서 단위 검증 — 2001c73(DUTY-IMPORT-SHEET-FORMAT, CANCELLED)의 검증 완료된
+ * 주블록 파서가 read 경로(lib/dutySheet)로 손실 없이 이식됐는지 가드한다.
+ * 앞선 89a0631 REV-1 은 파서를 재작성하며 ① 월 롤오버 ② 전직원 확장 ③ 총괄→김주연
+ * 룰을 누락했음 → planner MSG-20260606-113250 지시로 이식 + 본 가드 추가.
+ *
+ * 실측 기준(2001c73 검증): 6-30→7-01 롤오버 · 휴진 skip · 전직원=전 활성직원 · 총괄=김주연.
+ */
+test.describe('T-20260606-foot-HANDOVER-TODAY-ATTENDEES (REV-1) 파서 룰 이식 가드(2001c73)', () => {
+  // 6월말~7월초 주 블록: 날짜행 "29 30 1 2 3" → 칼럼 1·2 는 7/1·7/2 로 롤오버돼야 함.
+  const ROLLOVER_CSV = [
+    '"","2026","6월","상담&코디","",""',
+    '"","월","화","수","목","금"',
+    '"","29","30","1","2","3"',
+    '"","김주연","박민지","엄경은","김수린","휴진"',
+    '"","휴진","총괄","전직원","",""',
+  ].join('\n');
+
+  test('U1 월 롤오버 — 6월 헤더 블록의 "1"열이 6/1 이 아니라 7/1 로 매핑', () => {
+    // 7/1 컬럼(엄경은) + 그 아래 "전직원"(전 직원 확장) 행
+    const staff = ['김주연', '박민지', '엄경은', '김수린', '이서연'];
+    const jul1 = parseDutyAttendees(ROLLOVER_CSV, '2026-07-01', staff);
+    // 엄경은 + 전직원 토큰 → 전 활성직원 전체. (순서 무관, 집합 비교)
+    expect(new Set(jul1)).toEqual(new Set(['엄경은', ...staff]));
+    // 6/1 로는 잡히면 안 됨(롤오버 누락 회귀 가드)
+    const jun1 = parseDutyAttendees(ROLLOVER_CSV, '2026-06-01', staff);
+    expect(jun1).not.toContain('엄경은');
+    console.log('[ATTENDEES] U1 월 롤오버 6→7 매핑 OK');
+  });
+
+  test('U2 특수토큰 — 휴진=skip / 총괄=김주연 / 전직원=전 활성직원', () => {
+    const staff = ['김주연', '박민지', '엄경은'];
+    // 6/29 컬럼: 이름행1 "김주연"(출근) · 이름행2 "휴진"(skip) → 휴진은 명단에서 제외
+    const jun29 = parseDutyAttendees(ROLLOVER_CSV, '2026-06-29', staff);
+    expect(jun29).toEqual(['김주연']);
+    expect(jun29).not.toContain('휴진');
+
+    // 6/30 컬럼: 이름행1 "박민지" · 이름행2 "총괄" → 총괄은 김주연으로 치환
+    const jun30 = parseDutyAttendees(ROLLOVER_CSV, '2026-06-30', staff);
+    expect(jun30).toContain('박민지'); // 일반 이름
+    expect(jun30).toContain('김주연'); // 총괄 → 김주연
+    expect(jun30).not.toContain('총괄'); // 토큰 노출 금지
+
+    // 7/3 컬럼(롤오버): 이름행1 "휴진"(skip)뿐 → 빈 결과
+    const jul3 = parseDutyAttendees(ROLLOVER_CSV, '2026-07-03', staff);
+    expect(jul3).toHaveLength(0);
+    console.log('[ATTENDEES] U2 휴진/총괄/전직원 토큰 룰 OK');
+  });
+
+  test('U3 빈 시트/포맷 깨짐 → 빈 배열 graceful(throw 안 함)', () => {
+    expect(parseDutyAttendees('', '2026-06-06')).toEqual([]);
+    expect(parseDutyAttendees('garbage,not,a,calendar', '2026-06-06')).toEqual([]);
+    console.log('[ATTENDEES] U3 빈/깨진 시트 graceful OK');
   });
 });
