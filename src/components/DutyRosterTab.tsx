@@ -1,10 +1,12 @@
 /**
  * DutyRosterTab — 근무캘린더(듀티 로스터) 관리 탭
  * T-20260502-foot-DUTY-ROSTER
+ * T-20260606-foot-DUTY-ROSTER-ALLSTAFF — 렌더 대상 director-only → 전 활성 직원 확장
  *
- * - 주간 달력: 행 = 원장님, 열 = 날짜(월~토)
- * - 셀 클릭: 없음 → 근무 → 파트근무 → 없음 (3단 토글)
- * - 오늘 당일 근무원장님 배너 (커서 0회 확인)
+ * - 주간 달력: 행 = 전 활성 직원(원장 먼저 → 직원, role 표기), 열 = 날짜(월~토)
+ * - 셀 클릭: 없음 → 근무 → 파트근무 → 없음 (3단 토글). doctor_id에 직원 staff.id 적재.
+ * - 오늘 당일 근무원장님 배너 = director-only GUARD 유지 (서류 자동 세팅 파생)
+ * - 구글시트 불러오기 = 전 직원 매칭(부모 import 경로 재사용)
  * - admin/manager 전용 (읽기는 전체)
  */
 
@@ -28,6 +30,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DutyRosterImportDialog } from '@/components/DutyRosterImportDialog';
+import { STAFF_ROLE_LABEL, STAFF_ROLE_ORDER } from '@/lib/status';
 import type { Clinic, Staff } from '@/lib/types';
 
 // ─── 타입 ───────────────────────────────────────────────────────────────────
@@ -89,22 +92,36 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
   const weekEndStr = format(weekDays[5], 'yyyy-MM-dd');
   const today = todayStr();
 
-  // ── 원장님 목록 (active director)
-  const { data: directors = [] } = useQuery<Staff[]>({
-    queryKey: ['staff_directors', clinic.id],
+  // ── 근무 캘린더 대상 직원 (T-20260606-foot-DUTY-ROSTER-ALLSTAFF: 전 활성 직원)
+  //    Q1 기본안 = active=true 전 직원. import dialog 매칭 범위와 동일(AC-3 정합).
+  //    정렬: role 우선순위(원장 먼저 → 직원) → 이름 (AC-5 가독성).
+  const { data: rosterStaff = [] } = useQuery<Staff[]>({
+    queryKey: ['staff_active_roster', clinic.id],
     staleTime: 120_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('staff')
         .select('*')
         .eq('clinic_id', clinic.id)
-        .eq('role', 'director')
         .eq('active', true)
         .order('name');
       if (error) throw error;
-      return (data ?? []) as Staff[];
+      const rows = (data ?? []) as Staff[];
+      const roleIdx = (r: Staff) => {
+        const i = STAFF_ROLE_ORDER.indexOf(r.role);
+        return i === -1 ? STAFF_ROLE_ORDER.length : i;
+      };
+      return [...rows].sort(
+        (a, b) => roleIdx(a) - roleIdx(b) || a.name.localeCompare(b.name, 'ko'),
+      );
     },
   });
+
+  // ── 원장 파생 목록 (AC-4 GUARD: "오늘 근무 원장님" 배너는 director-only 유지)
+  const directors = useMemo(
+    () => rosterStaff.filter((s) => s.role === 'director'),
+    [rosterStaff],
+  );
 
   // ── 이번 주 duty_roster
   const rosterQueryKey = ['duty_roster_week', clinic.id, weekStartStr];
@@ -339,17 +356,17 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
       </div>
 
       {/* ── 근무 그리드 ── */}
-      {directors.length === 0 ? (
+      {rosterStaff.length === 0 ? (
         <div className="rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
-          등록된 원장님이 없습니다. 직원 탭에서 원장님(director)을 추가하세요.
+          등록된 직원이 없습니다. 직원 탭에서 직원을 추가하세요.
         </div>
       ) : (
         <div className="overflow-auto rounded-lg border bg-background">
-          <table className="w-full border-collapse text-sm">
+          <table className="w-full border-collapse text-sm" data-testid="duty-roster-grid">
             <thead className="sticky top-0 z-10 bg-muted/70">
               <tr>
-                <th className="w-28 border-b border-r px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground">
-                  원장님
+                <th className="w-36 border-b border-r px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground">
+                  직원
                 </th>
                 {weekDays.map((d) => {
                   const ds = format(d, 'yyyy-MM-dd');
@@ -374,10 +391,18 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
               </tr>
             </thead>
             <tbody>
-              {directors.map((doctor) => (
+              {rosterStaff.map((doctor) => (
                 <tr key={doctor.id}>
                   <td className="border-b border-r px-3 py-2 text-sm font-medium whitespace-nowrap">
-                    {doctor.name}
+                    <div className="flex items-center gap-1.5">
+                      <span>{doctor.display_name || doctor.name}</span>
+                      <Badge
+                        variant="outline"
+                        className="shrink-0 px-1.5 py-0 text-[10px] font-normal text-muted-foreground"
+                      >
+                        {STAFF_ROLE_LABEL[doctor.role] ?? doctor.role}
+                      </Badge>
+                    </div>
                   </td>
                   {weekDays.map((d) => {
                     const ds = format(d, 'yyyy-MM-dd');
