@@ -41,6 +41,7 @@ import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
 import { todaySeoulISODate } from '@/lib/format';
 import { STAFF_ROLE_LABEL, STAFF_ROLE_ORDER, staffRoleCardClass } from '@/lib/status';
+import { fetchTodayAttendeeNames } from '@/lib/dutySheet';
 import type { Staff } from '@/lib/types';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
@@ -81,11 +82,14 @@ export default function Handover() {
   const [notes, setNotes] = useState<HandoverNote[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // ── 금일 출근자 (T-20260606-foot-HANDOVER-TODAY-ATTENDEES, 옵션 A) ─────────────
-  //   duty_roster READ-only 집계. roster_type ∈ {regular, part} = 출근, resigned 제외.
-  //   "오늘" = KST 당일(todaySeoulISODate, AC-3). 전 활성 직원 대상 + role 병기(Q2).
+  // ── 금일 출근자 (T-20260606-foot-HANDOVER-TODAY-ATTENDEES, REV-1) ──────────────
+  //   데이터 소스 = 구글시트 근무 캘린더 직접 read (Edge Function `duty-sheet-read`
+  //   프록시 → gviz CSV → 블록 캘린더 파싱, lib/dutySheet.ts). duty_roster import 폐기.
+  //   "오늘" = KST 당일(todaySeoulISODate, AC-3). 시트엔 역할이 없으므로 추출한 이름을
+  //   CRM staff.role 과 매핑해 칩 색을 칠한다(NAMECARD-ROLECOLOR 결합점).
+  //   role 미매칭(시트엔 있으나 CRM staff 없음) → role=null → 중립 fallback 색.
   const [todayAttendees, setTodayAttendees] = useState<
-    { id: string; name: string; role: Staff['role']; roster_type: string }[]
+    { id: string; name: string; role: Staff['role'] | null }[]
   >([]);
   const [attendeesLoading, setAttendeesLoading] = useState(true);
 
@@ -93,43 +97,49 @@ export default function Handover() {
     if (!clinic) return;
     setAttendeesLoading(true);
     const todayKst = todaySeoulISODate(); // YYYY-MM-DD (KST)
-    const [{ data: rosterData }, { data: staffData }] = await Promise.all([
-      supabase
-        .from('duty_roster')
-        .select('doctor_id, roster_type')
-        .eq('clinic_id', clinic.id)
-        .eq('date', todayKst)
-        .neq('roster_type', 'resigned'), // 출근 판정: regular/part만(퇴사 제외, AC-1/Q1)
-      supabase
-        .from('staff')
-        .select('id, name, display_name, role, active')
-        .eq('clinic_id', clinic.id)
-        .eq('active', true),
-    ]);
-    const staffById = new Map(
-      (staffData ?? []).map((s) => [s.id, s as Staff]),
-    );
-    const roleIdx = (r: Staff['role']) => {
-      const i = STAFF_ROLE_ORDER.indexOf(r);
-      return i === -1 ? STAFF_ROLE_ORDER.length : i;
-    };
-    const rows = (rosterData ?? [])
-      .map((r) => {
-        const s = staffById.get(r.doctor_id);
-        if (!s) return null; // 비활성/삭제 직원 방어
-        return {
-          id: s.id,
-          name: s.display_name || s.name,
-          role: s.role,
-          roster_type: r.roster_type as string,
-        };
-      })
-      .filter((x): x is NonNullable<typeof x> => !!x)
-      // 동일 직원 중복 등록 방어(같은 날 2행) — 첫 행만
-      .filter((x, i, arr) => arr.findIndex((y) => y.id === x.id) === i)
-      .sort((a, b) => roleIdx(a.role) - roleIdx(b.role) || a.name.localeCompare(b.name, 'ko'));
-    setTodayAttendees(rows);
-    setAttendeesLoading(false);
+    try {
+      const [names, { data: staffData }] = await Promise.all([
+        // 시트 직접 read — 시트 장애/포맷 변경 시 graceful([] 반환, throw 안 함)
+        fetchTodayAttendeeNames(todayKst).catch((e) => {
+          console.warn('[handover] 출근 명단 시트 read 실패:', e);
+          return [] as string[];
+        }),
+        supabase
+          .from('staff')
+          .select('id, name, display_name, role, active')
+          .eq('clinic_id', clinic.id)
+          .eq('active', true),
+      ]);
+
+      // 이름 → CRM staff.role 매핑 (name / display_name 모두 키로, 공백 제거)
+      const norm = (s: string) => s.replace(/\s+/g, '');
+      const roleByName = new Map<string, Staff['role']>();
+      (staffData ?? []).forEach((s) => {
+        const staff = s as Staff;
+        if (staff.name) roleByName.set(norm(staff.name), staff.role);
+        if (staff.display_name) roleByName.set(norm(staff.display_name), staff.role);
+      });
+
+      const roleIdx = (r: Staff['role'] | null) => {
+        if (!r) return STAFF_ROLE_ORDER.length + 1; // 미매칭은 맨 뒤
+        const i = STAFF_ROLE_ORDER.indexOf(r);
+        return i === -1 ? STAFF_ROLE_ORDER.length : i;
+      };
+
+      const rows = names
+        .map((name) => ({
+          id: `sheet-${name}`,
+          name,
+          role: roleByName.get(norm(name)) ?? null,
+        }))
+        .sort(
+          (a, b) =>
+            roleIdx(a.role) - roleIdx(b.role) || a.name.localeCompare(b.name, 'ko'),
+        );
+      setTodayAttendees(rows);
+    } finally {
+      setAttendeesLoading(false);
+    }
   }, [clinic]);
 
   useEffect(() => {
@@ -463,13 +473,15 @@ export default function Handover() {
               <span
                 key={a.id}
                 data-testid="handover-attendee-chip"
-                data-role={a.role}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 shadow-sm ${staffRoleCardClass(a.role)}`}
+                data-role={a.role ?? ''}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 shadow-sm ${staffRoleCardClass(a.role ?? '')}`}
               >
                 <span className="text-sm font-semibold">{a.name}</span>
-                <span className="text-[11px] font-medium opacity-70">
-                  {STAFF_ROLE_LABEL[a.role] ?? a.role}
-                </span>
+                {a.role && (
+                  <span className="text-[11px] font-medium opacity-70">
+                    {STAFF_ROLE_LABEL[a.role] ?? a.role}
+                  </span>
+                )}
               </span>
             ))}
           </div>
