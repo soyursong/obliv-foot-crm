@@ -89,6 +89,17 @@ export function seoulISODate(input: string | number | Date): string {
   return new Date(input).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
 }
 
+/**
+ * 현재 시각(서울 기준) "HH:MM" 문자열 반환 (예: "14:05").
+ * T-20260606-foot-DASH-REALTIME-ORDER-AUTOSCROLL: 셀프접수 예약자 명단에서
+ * "현재 시각 이후 가장 가까운 예약" 자동 스크롤 대상 산정에 사용.
+ */
+export function nowSeoulHHMM(): string {
+  return new Date().toLocaleTimeString('en-GB', {
+    timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+}
+
 /** 오늘(서울 기준) ko-KR 날짜 문자열 반환 (예: "2026. 05. 22.") */
 export function todaySeoulStr(): string {
   return new Date().toLocaleDateString('ko-KR', {
