@@ -1,20 +1,28 @@
 ---
 id: T-20260606-foot-PENCHART-PHRASE-INSERT-FIX
 domain: foot
-status: resolved-by-duplicate
+status: deploy-ready
 priority: P1
 deploy-ready: true
 build-ok: true
 db-change: false
 regression-risk: low
-e2e-spec: tests/e2e/T-20260606-foot-RX-PHRASE-TOUCH-INSERT-FIX.spec.ts
-e2e_spec_exempt_reason: "동일 RC·동일 코드패스 — 별건 spec 신규 불필요. 공유 RC를 sister spec 13케이스가 이미 커버."
+e2e-spec: tests/e2e/T-20260606-foot-PENCHART-PHRASE-INSERT-FIX.spec.ts
 qa_result: pending
 deploy_commit: 18befa6
 created: 2026-06-06
 slack_thread_ts: "1780731431.455099"
-resolved_by: T-20260606-foot-RX-PHRASE-TOUCH-INSERT-FIX (commit 18befa6)
+resolved_by: T-20260606-foot-RX-PHRASE-TOUCH-INSERT-FIX (commit 18befa6) — AC-1만. AC-2는 본 티켓 별도 fix.
 ---
+
+> **재디스패치(planner P2) 처리 — AC-2 갭 추가 해소:**
+> AC-1(손가락 탭 touch guard)은 18befa6으로 이미 main 반영·검증됨. 그러나 planner가 요구한
+> **AC-2(빈 content 가시 피드백)는 미해소 상태였음**. read-only 재규명 결과:
+> `insertPhraseImmediate`의 `typeof content !== 'string'` 가드가 **빈 문자열('')을 통과**시켜
+> `pendingBoilerplate=''`로 boilerplate-placing 모드에 진입 → 캔버스 탭 시 onPointerDown L1637
+> `pendingBoilerplate` falsy 체크에서 배치가 조용히 스킵되고 **펜 드로잉 경로로 떨어짐**(무피드백+낙서).
+> → AC-2 fix: `content.trim() === ''`까지 차단하고 `toast.warning`으로 원인 가시화(모드 미진입). phrase-agnostic.
+> E2E: 본 티켓 전용 spec 9케이스(빈/공백/null/undefined → toast, 정상만 enter-placing) 전수 통과.
 
 # T-20260606-foot-PENCHART-PHRASE-INSERT-FIX — 펜차트 상용구 ✓ 선택 후 미삽입
 

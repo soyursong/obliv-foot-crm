@@ -1947,7 +1947,16 @@ export function PenChartTab({
   //   기존 단건 동선과 동일하게 단일 content를 그대로 pendingBoilerplate로 전달.
   const insertPhraseImmediate = (id: number) => {
     const content = phraseTemplates.find((p) => p.id === id)?.content;
-    if (typeof content !== 'string') return; // 방어: content 없으면 무동작
+    // AC-2 (T-20260606-foot-PENCHART-PHRASE-INSERT-FIX): content 누락/빈값이면 가시 피드백 후 무동작.
+    //   빈 문자열('')·공백전용은 typeof 'string' 가드를 통과해 boilerplate-placing 모드로 진입하지만,
+    //   onPointerDown(L1637)의 `pendingBoilerplate` falsy 체크에서 placeBoilerplate가 조용히 스킵되고
+    //   그대로 펜 드로잉 경로로 떨어짐 → 사용자는 "✓ 했는데 왜 안 되지(+캔버스에 낙서)" 상태.
+    //   → 모드 진입 전에 차단하고 토스트로 원인(상용구 내용 비어있음)을 가시화. phrase-agnostic.
+    if (typeof content !== 'string' || content.trim() === '') {
+      toast.warning('이 상용구에 내용이 없습니다. 상용구 관리에서 내용을 입력해 주세요.');
+      setRevealedPhraseId(null);
+      return;
+    }
     handleBoilerplateSelect(content);
     setRevealedPhraseId(null);
   };
