@@ -17,6 +17,8 @@ import PhrasesTab from '@/components/admin/PhrasesTab';
 // T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구(진단명+임상경과+처방 묶음) 등록 탭
 import SuperPhrasesTab from '@/components/admin/SuperPhrasesTab';
 import PrescriptionSetsTab from '@/components/admin/PrescriptionSetsTab';
+// T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-1): 상병명(진단명) 관리 탭
+import DiagnosisNamesTab from '@/components/admin/DiagnosisNamesTab';
 import DocumentTemplatesTab from '@/components/admin/DocumentTemplatesTab';
 import TreatmentSetsTab from '@/components/admin/TreatmentSetsTab';
 import FeeSetTemplatesTab from '@/components/admin/FeeSetTemplatesTab';
@@ -29,7 +31,7 @@ import DoctorPatientList from '@/components/doctor/DoctorPatientList';
 // T-20260601-foot-DOCTOR-CALL-PUSH-DASH: 진료부 통합 대시보드(호출 알람+처방+차팅+진료완료)
 import DoctorCallDashboard from '@/components/doctor/DoctorCallDashboard';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { BookOpen, Pill, FileText, Layers, Zap, Users, DollarSign, TrendingUp, Stethoscope, ShieldAlert, Sparkles } from 'lucide-react';
+import { BookOpen, Pill, FileText, Layers, Zap, Users, DollarSign, TrendingUp, Stethoscope, ShieldAlert, Sparkles, ClipboardList } from 'lucide-react';
 
 export default function DoctorTools() {
   const { profile } = useAuth();
@@ -53,7 +55,7 @@ export default function DoctorTools() {
     'call_dashboard',
     'patient_list',
     ...(hasDocToolAccess
-      ? ['phrases', 'super_phrases', 'prescriptions', 'treatment_sets', 'fee_set_templates', 'documents', 'quick_rx', 'progress_plans']
+      ? ['phrases', 'super_phrases', 'prescriptions', 'diagnosis_names', 'treatment_sets', 'fee_set_templates', 'documents', 'quick_rx', 'progress_plans']
       : []),
     ...(isAdmin ? ['contraindications'] : []),
   ];
@@ -97,6 +99,11 @@ export default function DoctorTools() {
               <TabsTrigger value="prescriptions" className="gap-1.5">
                 <Pill className="h-3.5 w-3.5" />
                 처방세트
+              </TabsTrigger>
+              {/* T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-1) */}
+              <TabsTrigger value="diagnosis_names" className="gap-1.5" data-testid="tab-diagnosis-names">
+                <ClipboardList className="h-3.5 w-3.5" />
+                상병명 관리
               </TabsTrigger>
               <TabsTrigger value="treatment_sets" className="gap-1.5" data-testid="tab-treatment-sets">
                 <Layers className="h-3.5 w-3.5" />
@@ -150,6 +157,11 @@ export default function DoctorTools() {
 
             <TabsContent value="prescriptions">
               <PrescriptionSetsTab />
+            </TabsContent>
+
+            {/* T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-1) */}
+            <TabsContent value="diagnosis_names">
+              <DiagnosisNamesTab />
             </TabsContent>
 
             <TabsContent value="treatment_sets">
