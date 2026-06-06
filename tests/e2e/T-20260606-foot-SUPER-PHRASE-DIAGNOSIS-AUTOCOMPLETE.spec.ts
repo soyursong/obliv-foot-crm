@@ -196,3 +196,44 @@ test.describe('AC-3 마스터 분포 안전성', () => {
     expect(activeMasters).toHaveLength(6);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 시나리오 4: 진료차트 본체(MedicalChartPanel) 자동완성 회귀
+//   T-20260606-foot-MEDCHART-DIAGNOSIS-AUTOCOMPLETE-FIX
+//   원티켓(bfe1e2b)은 SuperPhrasesTab 만 교체 → 실제 진료차트 입력 화면(MedicalChartPanel
+//   lines 612~654 useEffect) 의 자동완성 소스가 미교체로 남아 medical_charts 이력이 계속 떴다.
+//   MedicalChartPanel 의 옵션 합성 로직은 buildDiagnoses 와 동일 정책으로 이식됨.
+//   datalist <option value={name} label={code? `${name}  (${code})`:undefined}/> 규칙도 동일.
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('진료차트(MedicalChartPanel) 진단명 자동완성 핫픽스', () => {
+  // 진료차트에서 과거 자유입력된 비표준 이력(medical_charts.diagnosis)을 모사 — 소스에서 제외돼야 함
+  const stalePastInputs: SuperRow[] = [{ diagnosis: '발통ㅇ' }, { diagnosis: '무좀(오타)' }];
+
+  test('AC-1: medical_charts 자유입력 비표준 이력은 자동완성에 미노출', () => {
+    // medical_charts.diagnosis 소스 자체가 제거됨 → 표준 마스터/보조 super_phrases 만 합성.
+    const opts = buildDiagnoses(servicesFixture, []);
+    const names = opts.map((o) => o.name);
+    expect(names).not.toContain('발통ㅇ');
+    expect(names).not.toContain('무좀(오타)');
+    // stalePastInputs 가 super_phrases 가 아닌 medical_charts 출처였다면 어디에도 못 들어옴
+    expect(stalePastInputs.every((s) => !names.includes(s.diagnosis ?? ''))).toBe(true);
+  });
+
+  test('AC-2: services 상병 마스터(category_label=상병, active)가 정상 노출', () => {
+    const opts = buildDiagnoses(servicesFixture, []);
+    const names = opts.map((o) => o.name);
+    expect(names).toContain('내향성 손발톱');
+    expect(names).toContain('손발톱백선');
+    expect(names).not.toContain('굳은살'); // active=false 제외
+    expect(names).not.toContain('풋케어 베이직'); // category_label!=상병 제외
+  });
+
+  test('AC-3: service_code 있으면 datalist label 에 코드 동반(value 는 상병명만)', () => {
+    const opts = buildDiagnoses(servicesFixture, []);
+    const nail = opts.find((o) => o.name === '내향성 손발톱')!;
+    expect(nail.code).toBe('L600');
+    expect(optionLabel(nail)).toBe('내향성 손발톱  (L600)');
+    // 저장값(option value)은 코드 없는 순수 상병명 — 진단명 텍스트 오염 없음
+    expect(nail.name).toBe('내향성 손발톱');
+  });
+});
