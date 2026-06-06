@@ -10,12 +10,20 @@
  *   AC-1b 전체 나열: 영업시간 전체 슬롯을 범위 제한 없이 모두 나열(필터 없음).
  *   AC-2 현재시각 선노출: 현재 시각(KST) 이후 가장 가까운 항목(없으면 마지막)에 "지금" 배지 + 자동 스크롤 대상.
  *
- * 결정론: fn_selfcheckin_today_reservations RPC 를 route mock 으로 가로채 공유 DB 비의존.
+ * 결정론: 클리닉 조회 + fn_selfcheckin_today_reservations RPC 를 route mock 으로 가로채 공유 DB 비의존.
  * AC-2 의 "지금" 대상은 테스트 실행 시각에 따라 달라지므로, 브라우저 KST now 를 읽어 동일 로직으로 기대값 계산.
+ *
+ * FIX(2026-06-06, qa_fail spec_fail_new/click-timeout): 기존 spec 은 RPC 만 mock 했으나
+ * SelfCheckIn 진입 시 from('clinics').select('id,name').eq('slug',…).maybeSingle() 이 선행한다.
+ * 맥스튜디오/CI 의 실 Supabase 차단 시 이 조회가 끝나지 않아 loading=true 로 고정 → input 화면
+ * (btn-reserved)이 영영 렌더되지 않아 첫 click 에서 타임아웃했다. 클리닉 조회도 mock 해 결정적으로 진입.
  */
 import { test, expect, Route } from '@playwright/test';
 
 const RPC_GLOB = '**/rest/v1/rpc/fn_selfcheckin_today_reservations*';
+// 클리닉 조회 mock — maybeSingle() 은 단일 객체(application/vnd.pgrst.object+json)를 기대.
+const CLINIC_GLOB = '**/rest/v1/clinics*';
+const CLINIC_ROW = { id: 'clinic-jongno-foot', name: '오블리브 종로 풋센터' };
 
 // 의도적으로 시간 역순/뒤섞인 순서로 반환 — 클라이언트가 오름차순 재정렬해야 함.
 // (reporter 재현: 10:00 이 15:00 뒤에 append 되던 케이스 포함)
@@ -32,10 +40,22 @@ async function mockReservations(route: Route, rows: unknown[]) {
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(rows) });
 }
 
-async function openList(page: import('@playwright/test').Page) {
+// 클리닉 조회 + RPC 를 mock 한 뒤 SelfCheckIn 진입 → input 화면 렌더 대기 → 예약자 명단까지 도달.
+async function openList(page: import('@playwright/test').Page, rows: unknown[] = ROWS) {
+  // route 는 goto 이전에 등록해야 첫 요청부터 가로챈다.
+  await page.route(CLINIC_GLOB, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(CLINIC_ROW) }),
+  );
+  await page.route(RPC_GLOB, (route) => mockReservations(route, rows));
+
   await page.context().clearCookies();
-  await page.goto('/checkin/jongno-foot');
-  await page.waitForLoadState('networkidle');
+  // slug 는 비-deprecated 값을 사용해야 native SelfCheckIn 이 렌더된다.
+  // ('jongno-foot' 은 App.tsx CheckinRoute 에서 foot-checkin.pages.dev 로 강제 리다이렉트 — 별도 repo).
+  // 클리닉 조회는 mock 이므로 slug 값 자체는 데이터에 영향 없음.
+  await page.goto('/checkin/e2e-foot');
+  // loading=false → input 화면. btn-reserved 가시화로 클리닉 조회 완료를 결정적으로 확인.
+  await expect(page.locator('[data-testid="btn-reserved"]')).toBeVisible({ timeout: 10000 });
+
   await page.locator('[data-testid="btn-reserved"]').click();
   await page.getByRole('button', { name: '재진' }).click();
   await page.locator('[data-testid="btn-open-reservation-list"]').click();
@@ -44,7 +64,6 @@ async function openList(page: import('@playwright/test').Page) {
 
 test.describe('T-20260606 명단 정렬 고정 + 현재시각 자동 스크롤', () => {
   test('AC-1: RPC 반환 순서가 뒤섞여도 예약시간 오름차순으로 렌더', async ({ page }) => {
-    await page.route(RPC_GLOB, (route) => mockReservations(route, ROWS));
     await openList(page);
 
     const items = page.locator('[data-testid="reservation-item"]');
@@ -57,7 +76,6 @@ test.describe('T-20260606 명단 정렬 고정 + 현재시각 자동 스크롤',
   });
 
   test('AC-2: 현재 시각 이후 가장 가까운 항목(없으면 마지막)에 "지금" 배지 1개', async ({ page }) => {
-    await page.route(RPC_GLOB, (route) => mockReservations(route, ROWS));
     await openList(page);
 
     // 배지는 항상 정확히 1개 (자동 스크롤 대상 = 현재시각대 항목)
@@ -77,7 +95,6 @@ test.describe('T-20260606 명단 정렬 고정 + 현재시각 자동 스크롤',
   });
 
   test('AC-1b: 전체 명단 나열 (범위 제한 없이 모든 슬롯 노출)', async ({ page }) => {
-    await page.route(RPC_GLOB, (route) => mockReservations(route, ROWS));
     await openList(page);
     // 09:30 ~ 23:30 전 구간이 잘리지 않고 모두 렌더되어야 함 (±N시간 범위 필터 없음)
     await expect(page.locator('[data-testid="reservation-item"]')).toHaveCount(ROWS.length);
