@@ -1138,7 +1138,30 @@ export function PenChartTab({
     //   [URL param — 역방향으로 유지]
     //   ?penchart_enable_desync → 성능 비교 테스트용 (현장 사용 금지).
     //   field_device_gate: 현장 태블릿에서 정상 렌더링 스크린샷 수령 후 deploy-ready 전환.
-    const useDesync = location.search.includes('penchart_enable_desync');
+    //
+    //   ── T-20260606-foot-PENCHART-REFUND-PEN-MISS: 기기별 조건부 desync 복원 ──
+    //   [근거 — 코드증거 인과체인]
+    //   1. b955a8c(5/24 PEN-SLOW)가 desynchronized:true로 Galaxy Tab(Android Chrome) 펜 저지연 확보.
+    //   2. cf69be5(5/27 BLACKSCR REOPEN4)가 iOS Safari opaque IOSurface 검정화면을 잡으려
+    //      desynchronized를 **전 기기 일괄 OFF** → 그 부작용으로 Android 저지연 경로까지 소실.
+    //   3. 6/6 김주연 총괄 신고 "환불/비급여 동의서(3페이지 1588×6738 대형 캔버스) 펜 선 끊김·거침·느림"
+    //      = Android에서 desync 제거로 인한 latency 회귀. 인과 타임라인 정합.
+    //   [안전성]
+    //   opaque IOSurface 검정화면 버그는 **iOS WebKit 전용**(cf69be5 §3 코드증거).
+    //   iOS는 모든 브라우저가 WebKit 강제 → iOS 전체에서 desync OFF 유지(검정화면 비재발 보장).
+    //   Android/데스크톱은 해당 버그 無 → desync ON 복원(저지연 펜).
+    //   [override 우선순위] ?penchart_no_desync(긴급 강제OFF) > ?penchart_enable_desync(강제ON) > 기기기본
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+    const isIOS =
+      /iPad|iPhone|iPod/.test(ua) ||
+      // iPadOS 13+ 는 데스크톱 UA(MacIntel)로 위장 → maxTouchPoints로 판별
+      (typeof navigator !== 'undefined' &&
+        navigator.platform === 'MacIntel' &&
+        (navigator.maxTouchPoints || 0) > 1);
+    const _search = (typeof location !== 'undefined' && location.search) || '';
+    const _forceOff = _search.includes('penchart_no_desync');      // 긴급 폴백: 강제 OFF
+    const _forceOn = _search.includes('penchart_enable_desync');   // 강제 ON (테스트)
+    const useDesync = _forceOff ? false : _forceOn ? true : !isIOS; // 기기기본: iOS=OFF, 그 외=ON
     const ctx = canvas.getContext('2d', { desynchronized: useDesync });
     // T-20260525-foot-PENCHART-FORM-BLACKSCR AC-4: Draw context 초기화 실패 → fallback
     if (!ctx) {
