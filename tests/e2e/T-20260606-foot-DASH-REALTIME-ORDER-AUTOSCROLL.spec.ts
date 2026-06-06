@@ -17,8 +17,17 @@
  * SelfCheckIn 진입 시 from('clinics').select('id,name').eq('slug',…).maybeSingle() 이 선행한다.
  * 맥스튜디오/CI 의 실 Supabase 차단 시 이 조회가 끝나지 않아 loading=true 로 고정 → input 화면
  * (btn-reserved)이 영영 렌더되지 않아 첫 click 에서 타임아웃했다. 클리닉 조회도 mock 해 결정적으로 진입.
+ *
+ * FIX2(2026-06-06, supervisor click-timeout 재현): 결정성 추가 강화.
+ *   (a) 셀렉터 의존 제거 — 재진 클릭이 라벨 텍스트(getByRole name='재진', desc 텍스트 포함 substring)
+ *       에 의존하던 부분을 안정 data-testid(btn-visit-returning)로 교체.
+ *   (b) 공개 라우트(/checkin)는 인증 세션 불필요 → storageState 를 비워 auth.setup(실 Supabase 로그인)
+ *       성공 여부와 무관하게 동작. RPC + clinics route mock 만으로 완전 DB 비의존.
  */
 import { test, expect, Route } from '@playwright/test';
+
+// /checkin 은 anon 공개 라우트 — 로그인 세션 불필요. 빈 storageState 로 auth 의존 제거.
+test.use({ storageState: { cookies: [], origins: [] } });
 
 const RPC_GLOB = '**/rest/v1/rpc/fn_selfcheckin_today_reservations*';
 // 클리닉 조회 mock — maybeSingle() 은 단일 객체(application/vnd.pgrst.object+json)를 기대.
@@ -57,7 +66,8 @@ async function openList(page: import('@playwright/test').Page, rows: unknown[] =
   await expect(page.locator('[data-testid="btn-reserved"]')).toBeVisible({ timeout: 10000 });
 
   await page.locator('[data-testid="btn-reserved"]').click();
-  await page.getByRole('button', { name: '재진' }).click();
+  // 재진 선택 — 안정 data-testid (라벨/desc 텍스트 비의존).
+  await page.locator('[data-testid="btn-visit-returning"]').click();
   await page.locator('[data-testid="btn-open-reservation-list"]').click();
   await expect(page.locator('[data-testid="select-reservation-screen"]')).toBeVisible({ timeout: 6000 });
 }

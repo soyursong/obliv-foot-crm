@@ -2447,6 +2447,9 @@ export default function SelfCheckIn() {
                         backgroundColor: isActive ? C.beige : 'white',
                         boxShadow: isActive ? `0 0 0 2px ${C.primary}22` : 'none',
                       }}
+                      // T-20260606-foot-DASH-REALTIME-ORDER-AUTOSCROLL FIX: 안정 셀렉터 부여.
+                      // E2E 가 라벨 텍스트(getByRole name)에 의존하지 않도록 초진/재진에 data-testid.
+                      data-testid={c.value === 'new' ? 'btn-visit-new' : 'btn-visit-returning'}
                     >
                       <div>
                         <span
