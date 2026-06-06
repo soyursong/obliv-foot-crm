@@ -50,6 +50,21 @@ interface SeedIds {
 let seed: SeedIds | null = null;
 let admin: SupabaseClient | null = null;
 
+/**
+ * 처방세트 폴더 펼치기 (T-20260606-foot-RX-PANEL-UX-5FIX AC-2 대응).
+ *   6/6 신규 UX: 처방세트 폴더는 Drawer 오픈 시 '기본 전체 접힘' → 접힌 폴더 안의
+ *   rx-set-option 버튼은 렌더되지 않음(미마운트). 본 spec 의 seed 세트는 folder 미지정
+ *   → '미분류' 폴더에 귀속되므로, 옵션 클릭 전 해당 폴더를 펼쳐야 한다.
+ *   toggle 의 aria-expanded='false'(접힘) 일 때만 클릭하여 멱등 보장.
+ */
+async function expandRxFolder(page: Page, folderName: string): Promise<void> {
+  const toggle = page.getByTestId('rx-set-folder-toggle').filter({ hasText: folderName }).first();
+  await toggle.waitFor({ state: 'visible', timeout: 10_000 });
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') {
+    await toggle.click();
+  }
+}
+
 /** 진료차트 Drawer 오픈 — /chart/:id 진입 후 진료차트 버튼 클릭 → drawer visible */
 async function openMedicalChart(page: Page, customerId: string): Promise<void> {
   await page.goto(`/chart/${customerId}`);
@@ -61,6 +76,8 @@ async function openMedicalChart(page: Page, customerId: string): Promise<void> {
   // 우측 패널 '처방세트' 탭 활성 (기본 rightTab='rx')
   await page.getByTestId('right-panel-tab-rx').click();
   await expect(page.getByTestId('right-panel-rx-content')).toBeVisible({ timeout: 10_000 });
+  // 6/6 신규 UX 대응: seed 세트(folder 미지정 → '미분류')가 담긴 폴더를 펼쳐 옵션 노출.
+  await expandRxFolder(page, '미분류');
 }
 
 /** 처방세트 옵션 버튼(이름으로 특정) 클릭 */
