@@ -63,20 +63,19 @@ interface PreviewRow {
   reason: string;
 }
 
-// ─── 매핑 규칙 (시트 샘플 확정 후 보정 대상 — 격리) ───────────────────────────
-
-/** 셀 마크 텍스트 → roster_type. 미스매치 시 비어있지 않으면 regular 추정. */
-const MARK_MAP: Array<{ test: RegExp; type: RosterType }> = [
-  { test: /^(파트|part|p)$/i, type: 'part' },
-  { test: /(퇴사|resign|반차|오프|off|휴무|x)/i, type: 'resigned' },
-  { test: /(근무|출근|regular|정상|o|●|◯|○|v|✓|√|1)/i, type: 'regular' },
-];
-
-function markToRosterType(rawMark: string): RosterType {
-  const m = rawMark.trim();
-  for (const { test, type } of MARK_MAP) if (test.test(m)) return type;
-  return 'regular'; // 비어있지 않은 미지의 마크는 근무로 추정
-}
+// ─── 매핑 규칙 (실측 시트 확정 — T-DUTY-IMPORT-SHEET-FORMAT) ───────────────────
+//
+// ⚠️ 실측 시트는 "행=직원/열=날짜" flat 매트릭스가 아니라 **주(week) 단위 캘린더 블록**.
+//    셀 시맨틱: 셀에 직원명이 있으면 출근 / 비면 휴무. O/X 마킹 없음(마크=이름 존재 자체).
+//    → 매칭된 직원은 전부 'regular'(근무).
+//
+//   구조 예:
+//     ,2026,5월,오리진점 상담팀 & 코디팀   ← 연/월/팀 헤더
+//     ,월,화,수,목,금,토,일               ← 요일 헤더
+//     ,18,19,20,21,22,23,24               ← 날짜 행 (요일 칼럼별 일자)
+//     ,총괄,김수린,…                      ← 날짜 행 아래로 칼럼별 출근자 세로 나열
+//
+//   특수 토큰: 휴진=휴무 skip · 전직원=그날 활성 staff 전체 · 총괄=김주연(Q5) · 이름 trim.
 
 const ROSTER_TYPE_LABEL: Record<RosterType, string> = {
   regular: '근무',
@@ -84,103 +83,150 @@ const ROSTER_TYPE_LABEL: Record<RosterType, string> = {
   resigned: '퇴사/오프',
 };
 
-// ─── 날짜 파싱 (격리) ─────────────────────────────────────────────────────────
+/** 그날 휴무/placeholder 토큰 — 출근자 아님 → skip */
+const REST_TOKENS = new Set(['휴진', '휴무', '오프', 'off', 'OFF', '-', '·', '–', '—']);
+/** "전직원" = 그날 활성 staff 전체로 확장 (buildPreview에서 staffList로 처리) */
+const ALL_STAFF_TOKEN = '전직원';
+/** "총괄" = 김주연 1:1 (Q5 확정) */
+const SUPERVISOR_TOKEN = '총괄';
+const SUPERVISOR_NAME = '김주연';
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-/** Excel serial 또는 다양한 텍스트 날짜 → ISO yyyy-MM-dd | null */
-function parseSheetDate(raw: string, fallbackYear: number): string | null {
-  const s = (raw ?? '').toString().trim();
-  if (!s) return null;
-
-  // yyyy-mm-dd / yyyy.mm.dd / yyyy/mm/dd
-  let m = s.match(/^(\d{4})[.\-/]\s*(\d{1,2})[.\-/]\s*(\d{1,2})/);
-  if (m) return `${m[1]}-${pad2(+m[2])}-${pad2(+m[3])}`;
-
-  // m월 d일
-  m = s.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일?/);
-  if (m) return `${fallbackYear}-${pad2(+m[1])}-${pad2(+m[2])}`;
-
-  // m/d or m-d or m.d (연도 없음 → fallbackYear)
-  m = s.match(/^(\d{1,2})[.\-/](\d{1,2})$/);
-  if (m) return `${fallbackYear}-${pad2(+m[1])}-${pad2(+m[2])}`;
-
-  // Excel serial (순수 숫자) — 1900 date system
-  if (/^\d+(\.\d+)?$/.test(s)) {
-    const serial = parseFloat(s);
-    if (serial > 59 && serial < 60000) {
-      const ms = Date.UTC(1899, 11, 30) + serial * 86400000;
-      const d = new Date(ms);
-      return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
-    }
-  }
-  return null;
-}
-
-// ─── 그리드 파싱 (캘린더형: 행=직원, 열=날짜) ─────────────────────────────────
+// ─── 주 단위 캘린더 블록 파싱 (격리) ──────────────────────────────────────────
 
 interface Candidate {
   sheetName: string;
   date: string | null;
   rawMark: string;
+  team: string;
+}
+
+/** 셀이 1~31 일(day) 숫자면 그 값, 아니면 null */
+function dayNumberOf(cell: string): number | null {
+  const s = (cell ?? '').toString().trim();
+  if (!/^\d{1,2}$/.test(s)) return null;
+  const n = parseInt(s, 10);
+  return n >= 1 && n <= 31 ? n : null;
+}
+
+/** 한 행의 day 칼럼들 [{col, day}] (날짜 행 판별 + 칼럼→일자 매핑용) */
+function dayColumnsOf(row: string[]): Array<{ col: number; day: number }> {
+  const out: Array<{ col: number; day: number }> = [];
+  row.forEach((cell, ci) => {
+    const d = dayNumberOf(cell);
+    if (d != null) out.push({ col: ci, day: d });
+  });
+  return out;
+}
+
+/** 연/월/팀 헤더 행 인식 (예: 2026 · 5월 · 팀명). 'N월' 셀이 있으면 헤더로 본다. */
+function parseMonthHeader(
+  row: string[],
+): { year?: number; month?: number; team?: string } | null {
+  let month: number | undefined;
+  let year: number | undefined;
+  let team: string | undefined;
+  for (const cellRaw of row) {
+    const cell = (cellRaw ?? '').toString().trim();
+    if (!cell) continue;
+    const mm = cell.match(/^(\d{1,2})\s*월$/); // "5월" (요일 '월' 단독은 digit 없어 불매칭)
+    if (mm) { month = parseInt(mm[1], 10); continue; }
+    const ym = cell.match(/^(20\d{2})$/); // "2026"
+    if (ym) { year = parseInt(ym[1], 10); continue; }
+    // 그 외 텍스트(요일 단일 글자·순수 숫자 제외) = 팀 라벨 후보(최장 셀)
+    if (!/^[월화수목금토일]$/.test(cell) && !/^\d+$/.test(cell)) {
+      if (!team || cell.length > team.length) team = cell;
+    }
+  }
+  if (month == null) return null;
+  return { year, month, team };
 }
 
 /**
- * 2D 그리드 → 후보 추출.
- *  1) 날짜로 파싱되는 셀이 가장 많은 행 = 헤더(날짜) 행. 해당 열 = 날짜 열.
- *  2) 헤더 아래 각 행의 첫 텍스트 셀 = 직원명. 직원명 × 날짜열 셀에 마크 있으면 후보.
+ * 날짜 행의 day 칼럼들을 실제 ISO 날짜로 변환. 월 롤오버 처리:
+ * 일자가 직전보다 작아지면 다음 달(12월 넘으면 연도+1). 예: 29,30,1,2 → 6월29,30 / 7월1,2
  */
-function extractCandidates(grid: string[][]): { candidates: Candidate[]; headerFound: boolean } {
-  const fallbackYear = new Date().getFullYear();
-
-  // 1) 헤더 행 탐색
-  let headerRow = -1;
-  let dateCols: Array<{ col: number; date: string }> = [];
-  let bestCount = 0;
-  grid.forEach((row, ri) => {
-    const cols: Array<{ col: number; date: string }> = [];
-    row.forEach((cell, ci) => {
-      const iso = parseSheetDate(cell, fallbackYear);
-      if (iso) cols.push({ col: ci, date: iso });
-    });
-    if (cols.length > bestCount) {
-      bestCount = cols.length;
-      headerRow = ri;
-      dateCols = cols;
+function resolveRowDates(
+  dayCols: Array<{ col: number; day: number }>,
+  startYear: number,
+  startMonth: number,
+): { colDate: Map<number, string>; endYear: number; endMonth: number } {
+  let y = startYear;
+  let m = startMonth;
+  let prev = 0;
+  const colDate = new Map<number, string>();
+  for (const { col, day } of dayCols) {
+    if (prev && day < prev) {
+      m += 1;
+      if (m > 12) { m = 1; y += 1; }
     }
-  });
-
-  if (headerRow < 0 || dateCols.length < 1) {
-    return { candidates: [], headerFound: false };
+    colDate.set(col, `${y}-${pad2(m)}-${pad2(day)}`);
+    prev = day;
   }
+  return { colDate, endYear: y, endMonth: m };
+}
 
-  // 2) 직원명 열 = 날짜열이 아닌 첫 비어있지 않은 열 (대개 0). 데이터 행 순회
-  const dateColSet = new Set(dateCols.map((d) => d.col));
+/**
+ * 주 단위 캘린더 블록 그리드 → 후보 추출.
+ *  1) 연/월 헤더로 컨텍스트(년·월·팀) 갱신
+ *  2) day ≥3개 행 = 날짜 행 → 칼럼별 일자 확정(월 롤오버)
+ *  3) 날짜 행 아래 ~ 다음 날짜행/헤더/끝까지 → 칼럼별 비셀 = 출근자(셀값=직원명)
+ */
+function extractCandidates(grid: string[][]): { candidates: Candidate[]; blocks: number } {
+  const now = new Date();
+  let ctxYear = now.getFullYear();
+  let ctxMonth = now.getMonth() + 1; // 헤더 없을 때만 쓰이는 fallback
+  let team = '';
   const candidates: Candidate[] = [];
+  let blocks = 0;
 
-  for (let ri = headerRow + 1; ri < grid.length; ri++) {
-    const row = grid[ri];
-    if (!row || row.every((c) => !c || !c.toString().trim())) continue;
+  let i = 0;
+  while (i < grid.length) {
+    const row = grid[i] ?? [];
 
-    // 직원명 = 날짜열이 아닌 첫 비어있지 않은 셀
-    let sheetName = '';
-    for (let ci = 0; ci < row.length; ci++) {
-      if (dateColSet.has(ci)) continue;
-      const v = (row[ci] ?? '').toString().trim();
-      if (v) { sheetName = v; break; }
+    // 1) 연/월/팀 헤더
+    const hdr = parseMonthHeader(row);
+    if (hdr) {
+      if (hdr.year != null) ctxYear = hdr.year;
+      if (hdr.month != null) ctxMonth = hdr.month;
+      if (hdr.team) team = hdr.team; // 팀 셀 없는 헤더는 직전 팀 유지
+      i += 1;
+      continue;
     }
-    if (!sheetName) continue;
 
-    for (const { col, date } of dateCols) {
-      const rawMark = (row[col] ?? '').toString().trim();
-      if (!rawMark) continue;
-      candidates.push({ sheetName, date, rawMark });
+    // 2) 날짜 행 (day ≥ 3)
+    const dayCols = dayColumnsOf(row);
+    if (dayCols.length >= 3) {
+      blocks += 1;
+      const { colDate, endYear, endMonth } = resolveRowDates(dayCols, ctxYear, ctxMonth);
+
+      // 3) 출근자 스캔: 다음 날짜행/헤더/끝까지 칼럼별 비셀 수집
+      let j = i + 1;
+      for (; j < grid.length; j++) {
+        const arow = grid[j] ?? [];
+        if (parseMonthHeader(arow)) break;
+        if (dayColumnsOf(arow).length >= 3) break;
+        for (const [col, date] of colDate) {
+          const raw = (arow[col] ?? '').toString().trim();
+          if (!raw) continue;
+          if (REST_TOKENS.has(raw)) continue;
+          candidates.push({ sheetName: raw, date, rawMark: raw, team });
+        }
+      }
+
+      ctxYear = endYear; // 롤오버 결과를 다음 블록 컨텍스트로 승계
+      ctxMonth = endMonth;
+      i = j;
+      continue;
     }
+
+    i += 1;
   }
 
-  return { candidates, headerFound: true };
+  return { candidates, blocks };
 }
 
 /** 파일 ArrayBuffer → 첫 시트 → 2D 그리드 */
@@ -256,18 +302,33 @@ export function DutyRosterImportDialog({
   }
 
   async function buildPreview(grid: string[][]) {
-    const { candidates, headerFound } = extractCandidates(grid);
-    if (!headerFound) {
-      toast.error('날짜 헤더 행을 인식하지 못했습니다. 달력형(행=직원, 열=날짜) 시트인지 확인하세요.');
+    const { candidates, blocks } = extractCandidates(grid);
+    if (blocks === 0) {
+      toast.error('주 단위 근무 캘린더(요일 헤더+날짜 행) 구조를 인식하지 못했습니다. 시트 형식을 확인하세요.');
       return;
     }
-    if (candidates.length === 0) {
-      toast.error('가져올 근무 데이터를 찾지 못했습니다.');
+
+    // 특수 토큰 확장: 전직원 → 그날 활성 staff 전체 / 총괄 → 김주연(Q5)
+    const expanded: Candidate[] = [];
+    for (const c of candidates) {
+      if (c.sheetName === ALL_STAFF_TOKEN) {
+        for (const s of staffList) {
+          expanded.push({ sheetName: s.name, date: c.date, rawMark: ALL_STAFF_TOKEN, team: c.team });
+        }
+      } else if (c.sheetName === SUPERVISOR_TOKEN) {
+        expanded.push({ ...c, sheetName: SUPERVISOR_NAME, rawMark: SUPERVISOR_TOKEN });
+      } else {
+        expanded.push(c);
+      }
+    }
+
+    if (expanded.length === 0) {
+      toast.error('가져올 출근 데이터를 찾지 못했습니다.');
       return;
     }
 
     // 후보가 커버하는 날짜 범위의 기존 duty_roster 조회 (중복 차단용)
-    const dates = candidates.map((c) => c.date).filter((d): d is string => !!d);
+    const dates = expanded.map((c) => c.date).filter((d): d is string => !!d);
     const minDate = dates.reduce((a, b) => (a < b ? a : b));
     const maxDate = dates.reduce((a, b) => (a > b ? a : b));
     const { data: existingRows } = await supabase
@@ -281,9 +342,10 @@ export function DutyRosterImportDialog({
     );
 
     const batchKeys = new Set<string>();
-    const preview: PreviewRow[] = candidates.map((c) => {
+    const preview: PreviewRow[] = expanded.map((c) => {
       const staff = matchStaff(c.sheetName);
-      const rosterType = markToRosterType(c.rawMark);
+      // 셀=이름 존재 → 매칭된 직원은 전부 근무(regular)
+      const rosterType: RosterType = 'regular';
 
       let status: RowStatus = 'valid';
       let reason = '';
@@ -316,12 +378,10 @@ export function DutyRosterImportDialog({
     });
 
     setRows(preview);
-    // T-20260606-foot-DUTY-ROSTER-ALLSTAFF: 그리드가 전 활성 직원을 렌더하므로
-    // 비원장 직원도 근무표에 정상 표시됨. 더 이상 director 한정 경고 불필요.
-    const nonDirector = preview.filter((r) => r.staff && r.staff.role !== 'director').length;
+    const unmatched = preview.filter((r) => r.status === 'error' && !r.staff).length;
     setParseNote(
-      nonDirector > 0
-        ? `비원장 직원 ${nonDirector}건 포함 — 근무표 그리드에 원장님·직원 모두 표시됩니다.`
+      unmatched > 0
+        ? `직원 매칭 실패 ${unmatched}건 — 시트 표기 이름과 직원 등록명을 확인하세요(매칭 실패 행은 삽입에서 제외).`
         : '',
     );
   }
@@ -406,8 +466,9 @@ export function DutyRosterImportDialog({
             구글시트 근무 스케줄 불러오기
           </DialogTitle>
           <DialogDescription>
-            구글시트를 .xlsx/.csv 로 내려받아 업로드하거나 셀을 복사해 붙여넣으세요. 달력형(행=직원,
-            열=날짜) 시트를 인식합니다. 미리보기 확인 후 <strong>삽입 확정</strong>을 눌러야 저장됩니다.
+            구글시트를 .xlsx/.csv 로 내려받아 업로드하거나 셀을 복사해 붙여넣으세요. 주 단위 근무
+            캘린더(연/월·요일 헤더 + 날짜 행 아래 출근자 명단)를 인식합니다. 셀에 이름이 있으면 출근,
+            비면 휴무로 처리합니다. 미리보기 확인 후 <strong>삽입 확정</strong>을 눌러야 저장됩니다.
           </DialogDescription>
         </DialogHeader>
 
@@ -507,7 +568,9 @@ export function DutyRosterImportDialog({
                       <td className="border-b px-2 py-1 whitespace-nowrap">{r.date ?? '—'}</td>
                       <td className="border-b px-2 py-1 whitespace-nowrap">
                         {ROSTER_TYPE_LABEL[r.rosterType]}
-                        <span className="ml-1 text-[10px] text-muted-foreground">({r.rawMark})</span>
+                        {r.rawMark !== r.sheetName && (
+                          <span className="ml-1 text-[10px] text-muted-foreground">({r.rawMark})</span>
+                        )}
                       </td>
                       <td className="border-b px-2 py-1 whitespace-nowrap text-xs">
                         {r.status === 'valid' && (
