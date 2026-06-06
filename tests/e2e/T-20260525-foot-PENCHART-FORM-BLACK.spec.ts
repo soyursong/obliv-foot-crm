@@ -77,8 +77,11 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
     expect(wrapperStart, 'select/draw 공유 FullscreenFormWrapper 시작 조건 없음').toBeGreaterThan(0);
 
     // 단일 FullscreenFormWrapper 블록 내에 mode==='select' 분기와 mode==='draw' 분기 공존
-    // 실측: select(+300)~draw(+5583) 포함하도록 6000자 윈도우 사용
-    const block = src.slice(wrapperStart, wrapperStart + 6000);
+    // 블록 경계를 닫는 태그로 동적 산정 (고정 char 윈도우는 분기 사이 코드 추가 시 깨짐 —
+    //  cf. T-20260606-REFUND-PEN-MISS 기기별 조건부 desync 추가로 draw 분기가 +6030 으로 밀림)
+    const wrapperEnd = src.indexOf('</FullscreenFormWrapper>', wrapperStart);
+    expect(wrapperEnd, '닫는 </FullscreenFormWrapper> 태그 없음').toBeGreaterThan(wrapperStart);
+    const block = src.slice(wrapperStart, wrapperEnd);
     expect(block).toContain("{mode === 'select' &&");
     expect(block).toContain("{mode === 'draw' &&");
     expect(block).toContain('FullscreenFormWrapper');
