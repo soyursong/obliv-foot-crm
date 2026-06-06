@@ -145,36 +145,55 @@ function useDeleteSuper() {
 // C-2 연동 소스 (FOLLOWUP3): 진단명 마스터 / 임상경과 상용구 / 처방세트
 // ---------------------------------------------------------------------------
 
-// AC-2-1: 등록된(=차트에 입력된 이력 + 기존 슈퍼상용구) 진단명 distinct 목록 → datalist 자동노출.
-//   별도 진단명 마스터 테이블이 없으므로 medical_charts.diagnosis 이력 + super_phrases.diagnosis 를 출처로 사용.
+// 진단명 자동완성 옵션 (표준 상병 마스터 1순위 + 슈퍼상용구 이력 보조)
+interface DiagnosisOption {
+  name: string;        // 표준 상병명 (datalist value = 입력/저장값)
+  code: string | null; // 상병코드(services.service_code) — 표시 보조 (AC-2)
+}
+
+// AC-1 (T-20260606-foot-SUPER-PHRASE-DIAGNOSIS-AUTOCOMPLETE):
+//   진단명 자동완성 소스를 '표준 상병 마스터'로 교체.
+//   기존 medical_charts.diagnosis(진료차트 자유입력 이력)은 오타·비표준 진단명이 섞여 노출되던 원인 → 제거.
+//   1순위: services 테이블 category_label='상병' 의 표준 상병명(name) + 상병코드(service_code).
+//          (AC-3 read-only 사전 확인: 해당 마스터 8건 채워짐 → 완전 교체해도 자동완성 텅 빔 회귀 없음.
+//           code 컬럼은 없고 service_code 컬럼에 ICD 코드(L600·B351 등)가 채워져 있어 AC-2 표시는 service_code 사용.
+//           active=false 상병은 마스터에서 숨김 처리된 것으로 보아 active=true 만 노출.)
+//   보조: 기존 슈퍼상용구의 진단명(super_phrases.diagnosis)은 표준 마스터에 없는 것만 뒤에 합류(중복 제거).
 function useRegisteredDiagnoses(clinicId: string | null) {
   return useQuery({
     queryKey: ['registered_diagnoses', clinicId],
     queryFn: async () => {
-      const set = new Set<string>();
-      // 진료차트 이력의 진단명
-      let q = supabase
-        .from('medical_charts')
-        .select('diagnosis')
-        .not('diagnosis', 'is', null)
-        .order('created_at', { ascending: false })
-        .limit(500);
-      if (clinicId) q = q.eq('clinic_id', clinicId);
-      const { data: charts } = await q;
-      (charts ?? []).forEach((r: { diagnosis: string | null }) => {
-        const d = (r.diagnosis ?? '').trim();
-        if (d) set.add(d);
+      const options: DiagnosisOption[] = [];
+      const seen = new Set<string>();
+      // 1순위: 표준 상병 마스터 (services category_label='상병', 활성만)
+      let mq = supabase
+        .from('services')
+        .select('name, service_code, display_order, sort_order')
+        .eq('category_label', '상병')
+        .eq('active', true)
+        .order('display_order', { ascending: true });
+      if (clinicId) mq = mq.eq('clinic_id', clinicId);
+      const { data: masters } = await mq;
+      (masters ?? []).forEach((r: { name: string | null; service_code: string | null }) => {
+        const n = (r.name ?? '').trim();
+        if (n && !seen.has(n)) {
+          seen.add(n);
+          options.push({ name: n, code: (r.service_code ?? '').trim() || null });
+        }
       });
-      // 기존 슈퍼상용구의 진단명
+      // 보조: 기존 슈퍼상용구의 진단명 (표준 마스터에 없는 것만)
       const { data: sp } = await supabase
         .from('super_phrases')
         .select('diagnosis')
         .not('diagnosis', 'is', null);
       (sp ?? []).forEach((r: { diagnosis: string | null }) => {
         const d = (r.diagnosis ?? '').trim();
-        if (d) set.add(d);
+        if (d && !seen.has(d)) {
+          seen.add(d);
+          options.push({ name: d, code: null });
+        }
       });
-      return Array.from(set).sort((a, b) => a.localeCompare(b, 'ko'));
+      return options;
     },
   });
 }
@@ -569,21 +588,22 @@ export default function SuperPhrasesTab() {
               <Label className="text-xs flex items-center gap-1">
                 <Stethoscope className="h-3 w-3" /> 진단명 <span className="text-muted-foreground font-normal">(선택)</span>
                 {diagnoses.length > 0 && (
-                  <span className="text-[10px] text-teal-600 font-normal">· 등록된 진단명 {diagnoses.length}개 자동완성</span>
+                  <span className="text-[10px] text-teal-600 font-normal">· 표준 상병명 {diagnoses.length}개 자동완성</span>
                 )}
               </Label>
-              {/* AC-2-1: 등록된 진단명 마스터(차트 이력+기존 슈퍼상용구) datalist 자동노출 */}
+              {/* AC-1: 표준 상병 마스터(services category_label='상병') 1순위 + 슈퍼상용구 이력 보조 → datalist 자동노출.
+                  AC-2: 상병코드(service_code)가 있으면 label 로 동반 표시(예: '내향성 손발톱  L600') — 선택값은 표준 상병명만 저장. */}
               <Input
                 value={form.diagnosis}
                 onChange={(e) => setForm((f) => ({ ...f, diagnosis: e.target.value }))}
-                placeholder="예) 발톱무좀(조갑백선)"
+                placeholder="예) 손발톱백선"
                 className="mt-1"
                 list="super-phrase-diagnosis-options"
                 data-testid="super-phrase-diagnosis-input"
               />
               <datalist id="super-phrase-diagnosis-options">
                 {diagnoses.map((d) => (
-                  <option key={d} value={d} />
+                  <option key={d.name} value={d.name} label={d.code ? `${d.name}  (${d.code})` : undefined} />
                 ))}
               </datalist>
             </div>
