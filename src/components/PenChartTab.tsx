@@ -648,6 +648,14 @@ export function PenChartTab({
   const highlightColorRef = useRef('#fde047');
   // strokeScaleRef: scaleX/scaleY를 onPointerDown에서 1회 계산 → native handler가 매 이벤트마다 재계산 생략
   const strokeScaleRef    = useRef<{ x: number; y: number }>({ x: 1, y: 1 });
+  // ── T-20260606-foot-PENCHART-REFUND-PEN-MISS: 스크롤로 인한 strokeRect 캐시 stale 방지 ──────────
+  //   [루트코즈 — 코드증거] strokeRectRef는 onPointerDown(획 시작) 1회만 getBoundingClientRect 캐싱.
+  //   환불/비급여 동의서(3p, 1588×6738)는 overflow-auto 스크롤 컨테이너 + touchAction:'pan-y'(unlocked).
+  //   펜 획 중/직후 컨테이너가 세로로 스크롤되면 캔버스 viewport rect.top 이 이동 → 캐시는 스크롤 전 값 →
+  //   toLogical 의 (clientY - staleRect.top) 가 어긋나 "스크롤 직후 첫 획 오프셋/미등록"(현장 "펜 안먹음").
+  //   [수정] scroll 리스너는 dirty 플래그만 세팅(레이아웃 read 0). 다음 pointermove(프레임)에서 dirty면
+  //   rect/scale 을 1회만 재측정 → hot-path 비용 0(scroll 발생 후에만), pan-y 스크롤(AC-3) 비파괴.
+  const strokeRectDirtyRef = useRef(false);
 
   // ── T-20260606-foot-PENCHART-REFUND-LATENCY: 실기기 펜 지연 프로파일러 ──────────
   //   목적: Galaxy Tab 대형 캔버스(1588×6738) 펜 latency의 "실제 병목"을 실기기에서 계측.
@@ -816,6 +824,18 @@ export function PenChartTab({
     };
   }, [customerId, loadSavedCharts]);
 
+  // ── T-20260606-foot-PENCHART-REFUND-PEN-MISS: 스크롤 → strokeRect 캐시 무효화 ──────────────────
+  //   capture:true 로 window 에 등록하면 어떤 조상 스크롤 컨테이너(overflow-auto)의 scroll 도 캡처 단계에서 수신.
+  //   드로잉 중(drawingRef)일 때만 dirty 표시 — 핸들러는 boolean 1개만 세팅(레이아웃 read 0) → scroll jank 없음.
+  //   실제 rect 재측정은 다음 pointermove 에서 1회만(hot-path 비용 0). passive:true → 스크롤 성능 비파괴(AC-3).
+  useEffect(() => {
+    const onScroll = () => {
+      if (drawingRef.current) strokeRectDirtyRef.current = true;
+    };
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    return () => window.removeEventListener('scroll', onScroll, { capture: true } as EventListenerOptions);
+  }, []);
+
   // ── 캔버스 초기화 ─────────────────────────────────────────────────────
   // 2-layer canvas 구조:
   //   bgCanvasRef (아래) — 양식 배경 이미지 전용. 지우개 미적용.
@@ -843,6 +863,17 @@ export function PenChartTab({
     if (!canvas) return;
     const ctx = drawCtxRef.current;
     if (!ctx) return;
+    // T-20260606-foot-PENCHART-REFUND-PEN-MISS: 스크롤로 캔버스 위치가 변동(dirty)했으면 rect/scale 1회 재측정.
+    //   scroll 핸들러는 플래그만 세팅 → 실제 getBoundingClientRect 비용은 "스크롤 후 첫 이동"에서만 발생(hot-path 비용 0).
+    if (strokeRectDirtyRef.current) {
+      const fresh = canvas.getBoundingClientRect();
+      strokeRectRef.current = fresh;
+      strokeScaleRef.current = {
+        x: (canvas.width / DRAW_DPR) / fresh.width,
+        y: (canvas.height / DRAW_DPR) / fresh.height,
+      };
+      strokeRectDirtyRef.current = false;
+    }
     const rect = strokeRectRef.current;
     if (!rect) return; // onPointerDown에서 캐싱되지 않은 경우(방어)
     const { x: scaleX, y: scaleY } = strokeScaleRef.current;
@@ -1593,6 +1624,8 @@ export function PenChartTab({
     if (!canvas) return;
     // T-20260524-foot-PENCHART-PEN-SLOW Fix-6: rect 먼저 캐싱 → getPos가 재사용 (getBoundingClientRect 1회만)
     strokeRectRef.current = canvas.getBoundingClientRect();
+    // T-20260606-foot-PENCHART-REFUND-PEN-MISS: 방금 측정한 fresh rect 이므로 dirty 해제(직전 스크롤 잔여 플래그 제거)
+    strokeRectDirtyRef.current = false;
     // T-20260526-foot-PENCHART-PEN-SLOW Fix-8: scaleX/scaleY 캐싱 → native handler가 획 중 재계산 없이 재사용
     strokeScaleRef.current = {
       x: (canvas.width / DRAW_DPR) / strokeRectRef.current.width,

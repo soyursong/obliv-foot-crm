@@ -108,6 +108,55 @@ test.describe('T-20260606-foot-PENCHART-REFUND-PEN-MISS', () => {
     expect(src).toContain('drawRefundP3DateAutofill');
   });
 
+  // ── OFFSET 축 (재오픈 NEW-TASK MSG-20260606-150440): 스크롤 stale-rect → 오프셋/미등록 수정 ──
+  //   루트코즈: strokeRectRef는 onPointerDown 1회 캐싱 → 3p 대형 폼(1588×6738) overflow-auto +
+  //   touchAction:'pan-y' 환경서 획 중/직후 스크롤 시 캐시 rect.top stale → toLogical Y 오프셋.
+  //   수정: scroll 리스너가 dirty 플래그 세팅(레이아웃 read 0) → 다음 pointermove에서 rect/scale 1회 재측정.
+  //   실기기 펜 정밀도는 Playwright 한계 → 구조 검증(코드 인과체인 보존)으로 게이트, 실필기는 field-soak.
+  test('PEN-MISS AC-2: 스크롤 시 strokeRect 캐시 무효화(dirty) 경로 존재', () => {
+    const src: string = fs.readFileSync(SRC, 'utf-8');
+
+    // dirty 플래그 ref 선언
+    expect(src, 'strokeRectDirtyRef 선언 없음').toContain('strokeRectDirtyRef');
+
+    // window scroll 리스너(capture) — 어떤 조상 overflow 컨테이너 스크롤도 캡처
+    expect(src).toMatch(/addEventListener\(\s*'scroll'/);
+    // 드로잉 중일 때만 dirty 세팅 (스크롤 핸들러는 레이아웃 read 없이 boolean 만)
+    expect(src).toContain('if (drawingRef.current) strokeRectDirtyRef.current = true');
+  });
+
+  test('PEN-MISS AC-1: dirty 시 native pointermove hot-path가 rect/scale 1회 재측정', () => {
+    const src: string = fs.readFileSync(SRC, 'utf-8');
+
+    const fnIdx = src.indexOf('const handleNativePointerMove');
+    expect(fnIdx, 'handleNativePointerMove 없음').toBeGreaterThan(0);
+    const block = src.slice(fnIdx, fnIdx + 4500);
+
+    // hot-path에서 dirty 분기로 rect 재측정 (스크롤 후에만, 매 move 아님)
+    expect(block, 'dirty 분기 없음').toContain('if (strokeRectDirtyRef.current)');
+    expect(block, 'rect 재측정 없음').toContain('canvas.getBoundingClientRect()');
+    // 재측정 후 dirty 해제
+    expect(block).toContain('strokeRectDirtyRef.current = false');
+  });
+
+  test('PEN-MISS AC-3: onPointerDown fresh rect 캐싱 시 dirty 해제(스크롤 잔여 플래그 제거)', () => {
+    const src: string = fs.readFileSync(SRC, 'utf-8');
+
+    const fnIdx = src.indexOf('const onPointerDown =');
+    expect(fnIdx).toBeGreaterThan(0);
+    const block = src.slice(fnIdx, fnIdx + 1200);
+
+    // onPointerDown에서 rect 캐싱 직후 dirty 해제 → 갓 측정한 rect를 곧바로 stale 처리하지 않음
+    expect(block).toContain('strokeRectRef.current = canvas.getBoundingClientRect()');
+    expect(block).toContain('strokeRectDirtyRef.current = false');
+  });
+
+  test('PEN-MISS AC-3: pan-y 스크롤(AC-3) 비파괴 — scroll 리스너 passive 등록', () => {
+    const src: string = fs.readFileSync(SRC, 'utf-8');
+    // passive:true → 스크롤 성능 저하/scroll-block 회귀 없음
+    expect(src).toMatch(/addEventListener\(\s*'scroll',[\s\S]{0,80}passive:\s*true/);
+  });
+
   // ── 안전 가드: 전 기기 검정화면 비재발 보장 (REOPEN6) ─────────────────────────
   test('SAFETY: override 없으면 전 기기 desync=false — 검정화면(iOS+Android) 비재발 보장', () => {
     const src: string = fs.readFileSync(SRC, 'utf-8');
