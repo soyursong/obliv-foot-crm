@@ -1963,8 +1963,12 @@ export function buildRxItemsHtml(
     name: item.name,
     unit_dose: item.unit_dose ?? '',
     daily_freq: item.daily_freq ?? '',
-    // T-20260601-foot-DOC-PRINT-8FIX AC-3③: 총투약일수 자동연동 제거 — 칸(헤더) 유지, 값은 항상 공란(수기 기입).
-    total_days: '',
+    // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5: 처방 입력의 총투약일수를 출력물에 표기.
+    //   8FIX AC-3③("값은 항상 공란")의 목적은 "시술데이터 기반 자동연동" 제거였으나,
+    //   RX-DOSAGE-DYNAMIC 입력칸으로 명시 입력된 값까지 무조건 폐기해 현장 "입력해도 미표기" 발생.
+    //   → 자동연동은 부활시키지 않되(호출부가 빈값 전달 시 공란 유지=수기 기입), 호출부가 전달한
+    //     명시 입력값은 그대로 표기한다.
+    total_days: item.total_days ?? '',
     method: item.method ?? '',
   }));
   while (rows.length < TOTAL_ROWS) {

@@ -76,7 +76,7 @@ import {
   getHtmlTemplate,
   isHtmlTemplate,
 } from '@/lib/htmlFormTemplates';
-import { loadAutoBindContext } from '@/lib/autoBindContext';
+import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext';
 
 // ─── 타입 ───
 
@@ -668,7 +668,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
             name: item.name,
             unit_dose: '1',
             daily_freq: '1',
-            total_days: '7',
+            // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5: 배치 경로는 per-item 입력 없음 → 공란(수기 기입).
+            total_days: '',
             method: '',
           }));
           autoValues.rx_items_html = buildRxItemsHtml(rxItems);
@@ -680,6 +681,20 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
           autoValues.subtotal_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
           autoValues.total_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
           autoValues.subtotal_amount = autoValues.total_amount;
+          // T-20260606-foot-DOC-FIELD-MISSING-3 AC-1/3: 진료비계산서/보험청구서 비급여·공단부담금 보강.
+          //   비급여 라이브 합계가 subtotal_noncovered/total_noncovered에만 들어가고 템플릿이 읽는
+          //   {{non_covered}}/{{insurance_covered}}/{{copayment}}에는 안 들어가던 키 불일치 누락 해소.
+          const liveCopay = mappedItems
+            .filter((i) => i.is_insurance_covered)
+            .reduce((s, i) => s + (i.copayment_amount ?? 0), 0);
+          const liveInsCovered = mappedItems
+            .filter((i) => i.is_insurance_covered)
+            .reduce((s, i) => s + (i.amount - (i.copayment_amount ?? 0)), 0);
+          applyBillingFallback(autoValues, {
+            insuranceCovered: liveInsCovered,
+            copayment: liveCopay,
+            nonCovered: nonCoveredTotal,
+          });
         }
       } else {
         // chargeItems 없을 때: bill_detail/rx_standard 빈 rows 처리
@@ -1607,7 +1622,8 @@ function IssueDialog({
         name: item.name,
         unit_dose: rxItemDosages[item.id]?.unit_dose || '1',
         daily_freq: rxItemDosages[item.id]?.daily_freq || '1',
-        total_days: rxItemDosages[item.id]?.total_days || '7',
+        // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5: 입력값 그대로 표기, 미입력 시 공란(수기 기입).
+        total_days: rxItemDosages[item.id]?.total_days || '',
         method: '',
       }));
       base.rx_items_html = buildRxItemsHtml(rxItems);
@@ -1640,6 +1656,27 @@ function IssueDialog({
     const issueExtraCodes = diagChargeItems.slice(2).map((i) => i.service_code ?? '').filter(Boolean);
     base['diag_extra_codes_html'] = issueExtraCodes.length > 0
       ? issueExtraCodes.map((c) => `<br>${c}`).join('') : '';
+
+    // T-20260606-foot-DOC-FIELD-MISSING-3 AC-1/2/3: 보험청구서·진료비계산서 금액 보강.
+    //   bill_receipt {{non_covered}} / ins_claim_form {{insurance_covered}}·{{copayment}}·{{non_covered}}
+    //   은 autobind(service_charges) 직결인데, 단건 발행 화면의 serviceItems(편집 후 포함)와 어긋나
+    //   비어 보이는 경우를 폴백 보강한다. autobind 값이 이미 있으면 보존(덮어쓰지 않음).
+    if (serviceItems.length > 0) {
+      const liveNon = serviceItems
+        .filter((i) => !i.is_insurance_covered)
+        .reduce((s, i) => s + i.amount, 0);
+      const liveCopay = serviceItems
+        .filter((i) => i.is_insurance_covered)
+        .reduce((s, i) => s + (i.copayment_amount ?? 0), 0);
+      const liveIns = serviceItems
+        .filter((i) => i.is_insurance_covered)
+        .reduce((s, i) => s + (i.amount - (i.copayment_amount ?? 0)), 0);
+      applyBillingFallback(base, {
+        insuranceCovered: liveIns,
+        copayment: liveCopay,
+        nonCovered: liveNon,
+      });
+    }
 
     // 등록번호/연번호 기본값 (없으면 checkIn.id 앞 8자)
     if (!base.record_no) {

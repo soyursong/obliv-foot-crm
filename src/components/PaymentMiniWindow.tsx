@@ -62,7 +62,7 @@ import {
   getHtmlTemplate,
   isHtmlTemplate,
 } from '@/lib/htmlFormTemplates';
-import { loadAutoBindContext } from '@/lib/autoBindContext';
+import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext';
 // T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 DnD 재배열 (AC-1, AC-5)
 // REOPEN: PointerSensor 우선 → overflow-y-auto 스크롤 충돌 해소 (AC-R2, AC-R3)
 import {
@@ -256,6 +256,8 @@ function buildCodeEnrichedValues(
   codeItems: SelectedItem[],
   formKey: string,
   rxItemDosages?: Record<string, RxDosage>,
+  // T-20260606-foot-DOC-FIELD-MISSING-3 AC-4: 처방전 "제 N호" 채번용 check_in id
+  checkInId?: string,
 ): Record<string, string> {
   const values = { ...base };
 
@@ -282,11 +284,17 @@ function buildCodeEnrichedValues(
       name: i.service.name,
       unit_dose: rxItemDosages?.[i.service.id]?.unit_dose || '1',
       daily_freq: rxItemDosages?.[i.service.id]?.daily_freq || '1',
-      total_days: rxItemDosages?.[i.service.id]?.total_days || '7',
+      // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5: 입력값 그대로 표기, 미입력 시 공란(수기 기입).
+      //   기존 '7' 강제 폴백은 입력값을 묻어 "입력해도 미표기"의 일부 원인이었다.
+      total_days: rxItemDosages?.[i.service.id]?.total_days || '',
     })));
     // T-20260601-foot-DOC-PRINT-8FIX AC-3②: 사용기간 기본 3일 통일 (총투약일수 연동 제거)
     if (!values.usage_days) values.usage_days = '3';
-    if (!values.issue_no) values.issue_no = '';
+    // T-20260606-foot-DOC-FIELD-MISSING-3 AC-4: 처방전 "제 N호" 채움.
+    //   기존 '' 강제로 PATH-4(결제창) 발행 시 교부번호 란이 비었다(현장 "제 N호 미기입").
+    //   DocumentPrintPanel(PATH-1)과 동일 산출(checkIn.id 선두 5자)로 통일해 일관 표기.
+    //   ※ N의 정식 채번 기준(누적회차/일자발번/발행대장)은 planner DECISION 대기 — 확정 시 교체.
+    if (!values.issue_no && checkInId) values.issue_no = checkInId.slice(0, 5).toUpperCase();
   }
 
   return values;
@@ -1457,6 +1465,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // 경로 4 = 1순위 — DocumentPrintPanel과 동일한 25+ 필드 바인딩 사용.
       const autoValues = await loadAutoBindContext(checkIn);
 
+      // T-20260606-foot-DOC-FIELD-MISSING-3 AC-1/2/3: 보험청구서·진료비계산서 금액 라이브 보강.
+      //   결제창(PATH-4) 단독 발행 시 service_charges 미기록 → autobind이 0/빈값 반환 →
+      //   공단부담금/본인부담금/비급여 "미표기". 화면 실 산출값으로 폴백(autobind 값 있으면 보존).
+      //   공단부담금 = 급여합계 − 본인부담금, 비급여 = 비급여(과세)+비급여(면세).
+      applyBillingFallback(autoValues, {
+        insuranceCovered: Math.max(0, coveredTotal - copaymentTotal),
+        copayment: copaymentTotal,
+        nonCovered: (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
+      });
+
       // bill_detail items_html 주입 (결제 전 in-memory 데이터 사용)
       if (selected.some((t) => t.form_key === 'bill_detail') && pricingItems.length > 0) {
         const billItems = pricingItems.map(({ service, qty }) => {
@@ -1487,7 +1505,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         tmplList.flatMap((t) => {
           // T-20260517-foot-DOC-CODE-INSERT: 상병코드/처방약 주입
           // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item rxItemDosages 전달
-          const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages);
+          const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, checkIn.id);
           // HTML 양식 우선 (template_format='html' 또는 HTML_TEMPLATE_MAP에 등록된 키)
           if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
             // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
@@ -1531,7 +1549,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           check_in_id: checkIn.id,
           customer_id: checkIn.customer_id ?? null,
           issued_by: staffId,
-          field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages),
+          field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, checkIn.id),
           status: 'printed' as const,
           printed_at: now,
         }));
@@ -1570,6 +1588,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
       // T-20260521-foot-DOC-PRINT-UNIFY PUSH: loadAutoBindContext (경로 4 = 1순위 통일 바인딩)
       const autoValues = await loadAutoBindContext(checkIn);
 
+      // T-20260606-foot-DOC-FIELD-MISSING-3 AC-1/2/3: 보험청구서·진료비계산서 금액 라이브 보강.
+      //   결제창(PATH-4) 단독 발행 시 service_charges 미기록 → autobind이 0/빈값 반환 →
+      //   공단부담금/본인부담금/비급여 "미표기". 화면 실 산출값으로 폴백(autobind 값 있으면 보존).
+      //   공단부담금 = 급여합계 − 본인부담금, 비급여 = 비급여(과세)+비급여(면세).
+      applyBillingFallback(autoValues, {
+        insuranceCovered: Math.max(0, coveredTotal - copaymentTotal),
+        copayment: copaymentTotal,
+        nonCovered: (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
+      });
+
       // bill_detail items_html 주입 (결제 전 in-memory 데이터 사용)
       if (selected.some((t) => t.form_key === 'bill_detail') && pricingItems.length > 0) {
         const billItems = pricingItems.map(({ service, qty }) => {
@@ -1598,7 +1626,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         const portraitSel  = selected.filter((t) => t.form_key !== 'bill_detail');
         const buildPages2 = (tmplList: typeof selected) =>
           tmplList.flatMap((t) => {
-            const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages);
+            const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, checkIn.id);
             if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
               // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
               if (t.form_key === 'rx_standard') {
@@ -1632,7 +1660,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           check_in_id: checkIn.id,
           customer_id: checkIn.customer_id ?? null,
           issued_by: staffId,
-          field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages),
+          field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, checkIn.id),
           status: 'printed' as const,
           printed_at: now,
         }));
