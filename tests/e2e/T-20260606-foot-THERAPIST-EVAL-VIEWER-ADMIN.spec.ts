@@ -25,7 +25,9 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
+// playwright.config.ts 의 baseURL/webServer 포트(8089)와 정렬. (이전 5173 기본값은
+// 이 레포 dev 포트와 불일치해 webServer 자동기동 환경에서 ERR_CONNECTION_REFUSED 발생)
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8089';
 
 async function loginIfNeeded(page: import('@playwright/test').Page) {
   const loginInput = page.getByPlaceholder('이메일');
