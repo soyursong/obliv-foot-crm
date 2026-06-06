@@ -449,7 +449,24 @@ export async function loadAutoBindContext(
       .maybeSingle();
     if (chartRow?.diagnosis) {
       const parsed = parseIcdFromText(chartRow.diagnosis);
-      diagCodes = { code1: parsed.code, name1: parsed.name };
+      // T-20260606-foot-DX-MGMT-OVERHAUL Stage 4 [D]: 출력에 상병코드 동반 표시.
+      //   폴더 picker(DiagnosisFolderPicker)는 저장값을 "순수 상병명"만 기록(텍스트 오염 방지)
+      //   → parseIcdFromText 는 코드를 못 뽑음(code='') → 출력에 코드 누락. 이를 보강:
+      //   상병명으로 services(category_label='상병') 마스터를 역조회해 service_code 를 채운다.
+      //   (clinic 스코프·등록 상병만 — 타 환자 차트 이력 비참조, 보안 불변식 유지.)
+      let code1 = parsed.code;
+      if (!code1 && parsed.name) {
+        const { data: dxMaster } = await supabase
+          .from('services')
+          .select('service_code')
+          .eq('clinic_id', checkIn.clinic_id)
+          .eq('category_label', '상병')
+          .eq('name', parsed.name)
+          .limit(1)
+          .maybeSingle();
+        if (dxMaster?.service_code) code1 = dxMaster.service_code;
+      }
+      diagCodes = { code1, name1: parsed.name };
     }
   }
 
