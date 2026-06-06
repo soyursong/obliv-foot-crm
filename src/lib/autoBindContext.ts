@@ -315,6 +315,43 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
 }
 
 /**
+ * T-20260606-foot-DOC-FIELD-MISSING-3 AC-1/2/3:
+ * 보험청구서·진료비계산서 금액 필드(공단부담금/본인부담금/비급여) 라이브 보강.
+ *
+ * 배경: autobind은 service_charges / insurance_receipts 테이블에서 금액을 읽는다.
+ *   그러나 결제창(PATH-4) 단독 발행 등 service_charges 미기록 경로에서는 autobind이
+ *   0/빈값을 반환 → 보험청구서/진료비계산서에 공단부담금·비급여가 "미표기"된다.
+ *   현장 결제·시술 화면에는 이미 실 산출값이 존재하므로 이를 폴백 주입한다.
+ *
+ * 정책:
+ *   - 이미 billing 산출값(service_charges)이 들어있으면 그대로 보존 (덮어쓰지 않음).
+ *     → AC-1 "billing 산출값 그대로 표기" 충족, 임의 변경 금지.
+ *   - autobind 값이 비어있거나 0인 경우에만 라이브 산출값으로 보강.
+ *   - 라이브 값도 0 이하이면 보강 생략 (정상 0 처리 — 임의 누락 금지).
+ *
+ * @param values autobind 결과 (in-place 수정)
+ * @param live   라이브 산출값(원 단위 number). 미지정/0 이하 필드는 건너뜀.
+ */
+export function applyBillingFallback(
+  values: Record<string, string>,
+  live: { insuranceCovered?: number; copayment?: number; nonCovered?: number },
+): void {
+  const isBlankOrZero = (v: string | undefined): boolean => {
+    if (v == null || v === '') return true;
+    const n = Number(v.replace(/[^0-9.-]/g, ''));
+    return !Number.isFinite(n) || n === 0;
+  };
+  const fill = (key: string, amount: number | undefined) => {
+    if (amount != null && amount > 0 && isBlankOrZero(values[key])) {
+      values[key] = formatAmount(amount);
+    }
+  };
+  fill('insurance_covered', live.insuranceCovered);
+  fill('copayment', live.copayment);
+  fill('non_covered', live.nonCovered);
+}
+
+/**
  * DB에서 자동 바인딩 데이터를 일괄 로드
  *
  * 경로 1 (DocumentPrintPanel) + 경로 4 (PaymentMiniWindow) 공용.
