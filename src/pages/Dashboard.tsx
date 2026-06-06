@@ -4550,49 +4550,101 @@ export default function Dashboard() {
     }
   }, []);
 
-  // T-20260518-foot-SELFCHECKIN-TESTDATA5 D-Day 재오픈 수정:
-  // 문제: setSelectedCheckIn(ci)만 호출 → CheckInDetailSheet useEffect 간접 경로에만 의존
-  //       현장 재현: Dashboard 칸반 클릭 시 1번차트·2번차트 둘 다 미오픈
-  // 비교: Customers는 openChart(c.id) 직접 호출로 정상 동작
-  // 수정: ctxOpenChart(ci.customer_id) 직접 추가 (Customers 패턴 통일)
-  // 참고: handleTimelineCardClick 제거 사유(setDashChartSheetId 이중 인스턴스 충돌)는
-  //       CHART2-STATE-UNIFY(f4a82af)로 AdminLayout 단일 ChartContext 통합 후 해소됨.
-  //       이제 ctxOpenChart는 단일 인스턴스를 직접 호출 → 충돌 없음.
-  // T-20260529-foot-CHART-OPEN-SINGLE AC-3: check-in customer_id null 방어
-  //   handleReservationSelect 와 동일 패턴 — 이름 기반 자동 조회 fallback
-  //   동일 클리닉·동일 이름 1건: ctxOpenChart + check_in customer_id 자동 연결
-  //   동명이인 N건: toast.info (고객관리 확인 유도)
-  //   미등록: toast.info (고객 미연결 안내)
-  const handleCardClick = useCallback(async (ci: CheckIn) => {
-    setSelectedCheckIn(ci);
-    // 2번차트 직접 오픈 — CheckInDetailSheet useEffect 간접 경로 보완
-    if (ci.customer_id) {
-      ctxOpenChart(ci.customer_id);
+  // ════════════════════════════════════════════════════════════════════════════
+  // CRITICAL: 차트오픈 단일 진입점 — openChartFor (DO NOT bypass)
+  // T-20260606-foot-CHART-OPEN-ENTRYPOINT-UNIFY (부모 RCA: DASH-FIRSTVISIT-CHART-RECUR-RCA §개선안3)
+  //
+  // 왜 단일 엔트리인가:
+  //   차트오픈은 칸반 / 통합시간표(타임라인) / 아코디언 명단 여러 뷰에서 트리거된다. 과거엔 각 뷰가
+  //   ctxOpenChart primitive 만 공유한 채 "customer_id-or-이름 fallback" 코어를 각자 복제·각자 onClick
+  //   배선했다. 한 뷰만 게이팅(!isPast 등)/조건 추가로 죽어도 다른 뷰가 멀쩡하면 안전망이 안 터져
+  //   "한 뷰는 배선·다른 뷰는 dead"가 6번 재발했다(부모 RCA). → 모든 뷰 핸들러가 이 단일 엔트리 하나만
+  //   호출하게 통합해 결함 클래스 자체를 제거한다.
+  //
+  // 불변식(INVARIANT — 변경 시 회귀 6차 재발):
+  //   1. 차트오픈은 read-only → isPast(자정 stale 등)로 절대 막지 않는다. mutation(context/드래그)만 가드.
+  //   2. 뷰 핸들러(handleCardClick/handleReservationSelect/handleNameChartOpen)는 직접 ctxOpenChart 를
+  //      호출하지 않는다 — 반드시 openChartFor 를 통해 연다 (caller 드리프트 방지).
+  //   3. 입력 다형성: 칸반 카드(CheckIn) / 타임라인 예약(Reservation) / 명단 이름(customer_id|null + name).
+  // 회귀 게이트: tests/e2e/chart-open-gate/CHART-OPEN-GATE.spec.ts (G1~G6, 머지차단)
+  //             tests/e2e/T-20260606-foot-CHART-OPEN-ENTRYPOINT-UNIFY.spec.ts (드리프트 스캐너)
+  // ════════════════════════════════════════════════════════════════════════════
+  type ChartOpenTarget =
+    | { kind: 'checkin'; checkIn: CheckIn }
+    | { kind: 'reservation'; reservation: Reservation }
+    | { kind: 'name'; customerId: string | null; name?: string | null };
+
+  const openChartFor = useCallback(async (target: ChartOpenTarget) => {
+    // 0) 입력 정규화 — 어떤 뷰에서 왔든 (customerId, name, 링크백 후처리)로 환원
+    let customerId: string | null;
+    let name: string | null;
+    if (target.kind === 'checkin') {
+      const ci = target.checkIn;
+      // 칸반 카드: 2번차트 직접 오픈 + CheckInDetailSheet useEffect 간접 경로 보완 (항상 선행)
+      setSelectedCheckIn(ci);
+      customerId = ci.customer_id;
+      name = ci.customer_name ?? null;
+    } else if (target.kind === 'reservation') {
+      customerId = target.reservation.customer_id;
+      name = target.reservation.customer_name ?? null;
+    } else {
+      customerId = target.customerId;
+      name = target.name ?? null;
+    }
+
+    // 1) customer_id 직결 — 1·2번 차트 열림의 실제 트리거 (read-only, isPast 무관)
+    if (customerId) {
+      ctxOpenChart(customerId);
       // T-20260603-foot-RES-NAME-MISMATCH-WARN: 비차단 불일치 경고 (오픈 차단 X, await X)
-      void warnIfNameMismatch(ci.customer_id, ci.customer_name);
-    } else if (ci.customer_name && clinic) {
-      // customer_id 미연결 check-in → 이름 기반 자동 조회 fallback
+      void warnIfNameMismatch(customerId, name);
+      return;
+    }
+
+    // 2) customer_id 미연결 → 동일 클리닉·동명 1건 자동 조회 fallback (동명이인 오픈 방지)
+    //   T-20260529-foot-CHART-OPEN-{SINGLE,FAIL} + DASH-FIRSTVISIT-CHART-RECUR-RCA(P0-C) 통합
+    if (name && clinic) {
       const { data: matches } = await supabase
         .from('customers')
         .select('id, name')
         .eq('clinic_id', clinic.id)
-        .eq('name', ci.customer_name)
+        .eq('name', name)
         .limit(2);
       if (matches && matches.length === 1) {
         const foundId = matches[0].id;
         ctxOpenChart(foundId);
-        // 백그라운드: check_in에 customer_id 자동 연결 (다음 클릭부터 정상 경로)
-        supabase.from('check_ins').update({ customer_id: foundId }).eq('id', ci.id)
-          .then(({ error }) => { if (!error) fetchCheckIns(); });
-      } else if (matches && matches.length > 1) {
-        toast.info(`동명이인 ${matches.length}명 — 고객관리에서 직접 확인하세요`);
-      } else {
-        toast.info('고객 정보가 연결되어 있지 않습니다');
+        // 백그라운드 링크백: 다음 클릭부터 정상(customer_id 직결) 경로
+        if (target.kind === 'checkin') {
+          supabase.from('check_ins').update({ customer_id: foundId }).eq('id', target.checkIn.id)
+            .then(({ error }) => { if (!error) fetchCheckIns(); });
+        } else if (target.kind === 'reservation') {
+          supabase.from('reservations').update({ customer_id: foundId }).eq('id', target.reservation.id)
+            .then(({ error }) => { if (!error) fetchTimelineReservations(); });
+        }
+        return;
       }
+      if (matches && matches.length > 1) {
+        toast.info(`동명이인 ${matches.length}명 — 고객관리에서 직접 확인하세요`);
+        return;
+      }
+    }
+
+    // 3) 미등록/이름없음 — 뷰별 안내 토스트 (기존 메시지 보존)
+    if (target.kind === 'reservation') {
+      const r = target.reservation;
+      const timeStr = r.reservation_time ? r.reservation_time.slice(0, 5) : '';
+      toast.info(`${r.customer_name ?? ''} — ${timeStr} 예약 (고객 미연결)`);
+    } else if (target.kind === 'name') {
+      toast.info(`${name ?? ''} — 고객 미연결 (고객관리에서 등록 후 차트 열람)`);
     } else {
       toast.info('고객 정보가 연결되어 있지 않습니다');
     }
-  }, [ctxOpenChart, clinic, fetchCheckIns, warnIfNameMismatch]);
+  }, [ctxOpenChart, clinic, fetchCheckIns, fetchTimelineReservations, warnIfNameMismatch]);
+
+  // 칸반 카드 클릭 진입점 — 단일 엔트리 openChartFor 위임 (직접 ctxOpenChart 호출 금지: INVARIANT #2)
+  const handleCardClick = useCallback(
+    (ci: CheckIn) => openChartFor({ kind: 'checkin', checkIn: ci }),
+    [openChartFor],
+  );
 
   // T-20260603-foot-DOCTOR-CALL-DEFAULT-MEDTAB: 진료알림판(진료콜 명단 팝업) 이름 클릭 시
   //   기본 진입을 '기본차트'(2번차트 서랍=펜차트) → '진료차트'(MedicalChartPanel)로 정정.
@@ -4971,77 +5023,30 @@ export default function Dashboard() {
   // T-20260515-foot-REVISIT-CLICK-AUTOCHECK AC-1: 슬롯 카드 클릭 = 차트 조회만 (체크인 X)
   // 수기 체크인은 우측 상단 체크인 버튼으로 처리 예정 (T-20260529-foot-RECEPTION-BTN-REMOVE)
   // ─────────────────────────────────────────────────────────────────────────────
-  // CRITICAL: DO NOT MODIFY — Chart Open Guard
-  // T-20260519-foot-CHART-OPEN-GUARD: handleReservationSelect 는
-  // DraggableBox1Card/DraggableBox2ResvCard onSelect 의 구현체.
-  // ctxOpenChart(res.customer_id) 호출이 1·2번 차트 열림의 실제 트리거.
-  // 조건 변경·우회·null 허용 시 모든 경로에서 차트 열람 불가.
-  // 회귀 방지 spec: tests/e2e/T-20260519-foot-CHART-OPEN-GUARD.spec.ts
+  // CRITICAL: DO NOT bypass — Chart Open Guard
+  // T-20260519-foot-CHART-OPEN-GUARD + T-20260606-foot-CHART-OPEN-ENTRYPOINT-UNIFY:
+  //   handleReservationSelect 는 DraggableBox1Card/DraggableBox2ResvCard onSelect 의 구현체이며
+  //   타임라인 차트 열림의 실제 트리거다. customer_id 직결 + 이름 fallback 코어는 단일 진입점
+  //   openChartFor 로 흡수됐다. 이 래퍼는 단지 위임만 한다 — 직접 ctxOpenChart 호출/조건 추가 금지
+  //   (caller 드리프트 = 6차 재발 근원). 코어를 고치려면 openChartFor 한 곳에서.
+  // 회귀 방지 spec: T-20260519-foot-CHART-OPEN-GUARD.spec.ts /
+  //                chart-open-gate/CHART-OPEN-GATE.spec.ts (G2~G4)
   // ─────────────────────────────────────────────────────────────────────────────
-  const handleReservationSelect = useCallback(async (res: Reservation) => {
-    if (res.customer_id) {
-      ctxOpenChart(res.customer_id);
-      // T-20260603-foot-RES-NAME-MISMATCH-WARN: 비차단 불일치 경고 (오픈 차단 X, await X)
-      void warnIfNameMismatch(res.customer_id, res.customer_name);
-    } else {
-      // T-20260529-foot-CHART-OPEN-FAIL: customer_id 없는 예약 — 이름으로 자동 조회 fallback
-      // 원인: 예약 생성 시 고객 레코드 미연결 (고객 등록 전 예약 입력 등)
-      // 동명이인 방지: 동일 클리닉·동일 이름 1건일 때만 자동 열기
-      if (res.customer_name && clinic) {
-        const { data: matches } = await supabase
-          .from('customers')
-          .select('id, name')
-          .eq('clinic_id', clinic.id)
-          .eq('name', res.customer_name)
-          .limit(2);
-        if (matches && matches.length === 1) {
-          const foundId = matches[0].id;
-          ctxOpenChart(foundId);
-          // 백그라운드: 예약에 customer_id 자동 연결 (다음 클릭부터 정상 경로)
-          supabase.from('reservations').update({ customer_id: foundId }).eq('id', res.id)
-            .then(({ error }) => { if (!error) fetchTimelineReservations(); });
-          return;
-        } else if (matches && matches.length > 1) {
-          toast.info(`동명이인 ${matches.length}명 — 고객관리에서 직접 확인하세요`);
-          return;
-        }
-      }
-      const timeStr = res.reservation_time ? res.reservation_time.slice(0, 5) : '';
-      toast.info(`${res.customer_name ?? ''} — ${timeStr} 예약 (고객 미연결)`);
-    }
-  }, [ctxOpenChart, clinic, fetchTimelineReservations, warnIfNameMismatch]);
+  const handleReservationSelect = useCallback(
+    (res: Reservation) => openChartFor({ kind: 'reservation', reservation: res }),
+    [openChartFor],
+  );
 
-  // T-20260606-foot-DASH-FIRSTVISIT-CHART-RECUR-RCA (P0-C 하드닝, field-soak):
+  // T-20260606-foot-DASH-FIRSTVISIT-CHART-RECUR-RCA (P0-C 하드닝, field-soak) →
+  //   T-20260606-foot-CHART-OPEN-ENTRYPOINT-UNIFY 로 단일 진입점 흡수:
   //   통합시간표 슬롯 아코디언 '예약 명단' 이름 클릭 → 차트 열기 핸들러.
-  //   1차 핫픽스(onNameOpen 을 ctxOpenChart 직결)는 customer_id 직결이라, 체크인 전 초진처럼
-  //   고객 미등록(customer_id=null) 명단은 canOpen=false → 여전히 무반응(silent fail)이었다.
-  //   handleReservationSelect 와 동일한 customer_id-or-이름 fallback 로 신규 초진도 열리게 한다.
-  //   (handleReservationSelect 는 CHART-OPEN-GUARD DO-NOT-MODIFY 라 별도 핸들러로 로직만 미러링.)
-  const handleNameChartOpen = useCallback(async (customerId: string | null, name?: string | null) => {
-    if (customerId) {
-      ctxOpenChart(customerId);
-      void warnIfNameMismatch(customerId, name ?? null);
-      return;
-    }
-    // customer_id 미연결 — 동일 클리닉·동명 1건일 때만 자동 열기 (동명이인 오픈 방지)
-    if (name && clinic) {
-      const { data: matches } = await supabase
-        .from('customers')
-        .select('id, name')
-        .eq('clinic_id', clinic.id)
-        .eq('name', name)
-        .limit(2);
-      if (matches && matches.length === 1) {
-        ctxOpenChart(matches[0].id);
-        return;
-      }
-      if (matches && matches.length > 1) {
-        toast.info(`동명이인 ${matches.length}명 — 고객관리에서 직접 확인하세요`);
-        return;
-      }
-    }
-    toast.info(`${name ?? ''} — 고객 미연결 (고객관리에서 등록 후 차트 열람)`);
-  }, [ctxOpenChart, clinic, warnIfNameMismatch]);
+  //   customer_id 직결 + 동명 1건 이름 fallback 코어는 openChartFor 가 일괄 처리 (체크인 전
+  //   초진처럼 customer_id=null 명단도 이름 fallback 으로 열림). 이 래퍼는 위임만 — 직접 ctxOpenChart 금지.
+  const handleNameChartOpen = useCallback(
+    (customerId: string | null, name?: string | null) =>
+      openChartFor({ kind: 'name', customerId, name }),
+    [openChartFor],
+  );
 
   // T-20260522-foot-CHECKIN-FIRST-INFO: 실제 DB INSERT 함수 (초진 폼 완료 후 또는 재진 직접 호출)
   // 초진(new) → consult_waiting, 재진(returning) → treatment_waiting
