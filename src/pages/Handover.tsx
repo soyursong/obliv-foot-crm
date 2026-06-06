@@ -34,10 +34,14 @@ import {
   Pencil,
   Plus,
   Trash2,
+  UserCheck,
   X,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
+import { todaySeoulISODate } from '@/lib/format';
+import { STAFF_ROLE_LABEL, STAFF_ROLE_ORDER } from '@/lib/status';
+import type { Staff } from '@/lib/types';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { Button } from '@/components/ui/button';
@@ -76,6 +80,61 @@ export default function Handover() {
 
   const [notes, setNotes] = useState<HandoverNote[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // ── 금일 출근자 (T-20260606-foot-HANDOVER-TODAY-ATTENDEES, 옵션 A) ─────────────
+  //   duty_roster READ-only 집계. roster_type ∈ {regular, part} = 출근, resigned 제외.
+  //   "오늘" = KST 당일(todaySeoulISODate, AC-3). 전 활성 직원 대상 + role 병기(Q2).
+  const [todayAttendees, setTodayAttendees] = useState<
+    { id: string; name: string; role: Staff['role']; roster_type: string }[]
+  >([]);
+  const [attendeesLoading, setAttendeesLoading] = useState(true);
+
+  const fetchTodayAttendees = useCallback(async () => {
+    if (!clinic) return;
+    setAttendeesLoading(true);
+    const todayKst = todaySeoulISODate(); // YYYY-MM-DD (KST)
+    const [{ data: rosterData }, { data: staffData }] = await Promise.all([
+      supabase
+        .from('duty_roster')
+        .select('doctor_id, roster_type')
+        .eq('clinic_id', clinic.id)
+        .eq('date', todayKst)
+        .neq('roster_type', 'resigned'), // 출근 판정: regular/part만(퇴사 제외, AC-1/Q1)
+      supabase
+        .from('staff')
+        .select('id, name, display_name, role, active')
+        .eq('clinic_id', clinic.id)
+        .eq('active', true),
+    ]);
+    const staffById = new Map(
+      (staffData ?? []).map((s) => [s.id, s as Staff]),
+    );
+    const roleIdx = (r: Staff['role']) => {
+      const i = STAFF_ROLE_ORDER.indexOf(r);
+      return i === -1 ? STAFF_ROLE_ORDER.length : i;
+    };
+    const rows = (rosterData ?? [])
+      .map((r) => {
+        const s = staffById.get(r.doctor_id);
+        if (!s) return null; // 비활성/삭제 직원 방어
+        return {
+          id: s.id,
+          name: s.display_name || s.name,
+          role: s.role,
+          roster_type: r.roster_type as string,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => !!x)
+      // 동일 직원 중복 등록 방어(같은 날 2행) — 첫 행만
+      .filter((x, i, arr) => arr.findIndex((y) => y.id === x.id) === i)
+      .sort((a, b) => roleIdx(a.role) - roleIdx(b.role) || a.name.localeCompare(b.name, 'ko'));
+    setTodayAttendees(rows);
+    setAttendeesLoading(false);
+  }, [clinic]);
+
+  useEffect(() => {
+    fetchTodayAttendees();
+  }, [fetchTodayAttendees]);
 
   // 작성/수정 다이얼로그
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -367,6 +426,43 @@ export default function Handover() {
         <Button size="sm" onClick={openNew} className="gap-1" data-testid="handover-new-btn">
           <Plus className="h-3.5 w-3.5" /> 인수인계 작성
         </Button>
+      </div>
+
+      {/* ── 금일 출근자 배너 (T-20260606-foot-HANDOVER-TODAY-ATTENDEES) ── */}
+      <div
+        className="shrink-0 border-b bg-teal-50/60 px-4 py-2.5"
+        data-testid="handover-today-attendees"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 text-sm font-semibold text-teal-800">
+            <UserCheck className="h-4 w-4" />
+            <span data-testid="handover-attendees-count">
+              오늘 출근 {attendeesLoading ? '…' : `${todayAttendees.length}명`}
+            </span>
+          </div>
+          {!attendeesLoading && (
+            todayAttendees.length === 0 ? (
+              <span className="text-xs text-muted-foreground" data-testid="handover-attendees-empty">
+                오늘 등록된 출근자가 없습니다
+              </span>
+            ) : (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {todayAttendees.map((a) => (
+                  <span
+                    key={a.id}
+                    data-testid="handover-attendee-chip"
+                    className="inline-flex items-center gap-1 rounded-full border border-teal-300 bg-white px-2.5 py-0.5 text-xs font-medium text-teal-800 shadow-sm"
+                  >
+                    {a.name}
+                    <span className="text-[10px] font-normal text-teal-500">
+                      {STAFF_ROLE_LABEL[a.role] ?? a.role}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            )
+          )}
+        </div>
       </div>
 
       {/* 컨트롤 바: 뷰 토글 + 네비 + 파트 필터 */}
