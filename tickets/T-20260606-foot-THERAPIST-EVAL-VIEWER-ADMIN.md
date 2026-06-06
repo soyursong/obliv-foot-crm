@@ -11,7 +11,7 @@ e2e-spec: tests/e2e/T-20260606-foot-THERAPIST-EVAL-VIEWER-ADMIN.spec.ts
 e2e_spec_exempt_reason: null
 qa_result: pass
 created: 2026-06-06
-commit: ff141bd
+commit: 5d414c6
 component_note: "뷰어 특정=치료 테이블(src/pages/TreatmentTable.tsx, /admin/treatment-table, 치료사 뷰 포함). thread 추정 후보(SALES-TAB-RENAME-THERAPIST·SALES-STAFF-DEDUCT-BASIS)는 매출 정산 화면이라 '치료 들어가고 나오는 시간/어떤 치료' 의도와 불일치 → 실제 코드로 치료 테이블 확정."
 ---
 
