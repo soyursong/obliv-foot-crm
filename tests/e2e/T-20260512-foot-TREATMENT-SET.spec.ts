@@ -17,7 +17,7 @@ test.describe('T-20260512-foot-TREATMENT-SET v2 — 코드 검색/선택 드롭�
     if (!ok) test.skip(true, 'Login failed');
 
     // 진료 도구 > 진료세트 탭으로 이동
-    await page.goto('/admin/doctor-tools');
+    await page.goto('/admin/clinic-management');
     try {
       await page.getByTestId('tab-treatment-sets').waitFor({ timeout: 10_000 });
     } catch {

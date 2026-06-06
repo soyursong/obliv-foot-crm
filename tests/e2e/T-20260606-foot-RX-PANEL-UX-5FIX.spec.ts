@@ -6,8 +6,9 @@
  *   AC-2: 처방세트 폴더 기본 접힘 (기존: 펼침) — 데이터 로드 후 전체 폴더 접힘으로 시작.
  *   AC-3: 상용구 탭 진료차트/펜차트 그룹 분리 + 펜차트 그룹 항상 기본 접힘.
  *   AC-4: 상용구 행 왼쪽 체크박스 제거 → 활성 행 우측 끝 ✓ 비방해 토글.
- *   AC-5: '슈퍼상용구 관리 화면으로' 클릭 → /admin/doctor-tools?tab=super_phrases 로
+ *   AC-5: '슈퍼상용구 관리 화면으로' 클릭 → /admin/clinic-management?tab=super_phrases 로
  *         슈퍼상용구 탭 pre-select 진입 (기존: 기본/메인 탭).
+ *         (T-20260606-foot-RXTOOL-INJURY-MENU-SPLIT: 관리 도구가 진료도구 → 진료관리로 이전됨)
  *
  * 범위 밖:
  *   AC-1 (약품 검색을 어드민 등록 약품으로만 제한)은 "어드민이 처방용으로 등록/활성화한 약품"
@@ -186,7 +187,8 @@ test.describe('T-20260606 RX-PANEL-UX-5FIX — 진료차트 우측 패널 UX', (
     await page.getByTestId('super-phrase-edit-btn').click();
 
     // URL ?tab=super_phrases 진입
-    await expect(page).toHaveURL(/\/admin\/doctor-tools\?tab=super_phrases/, { timeout: 10_000 });
+    // T-20260606-foot-RXTOOL-INJURY-MENU-SPLIT: 관리 도구가 진료도구 → 진료관리(clinic-management)로 이전됨.
+    await expect(page).toHaveURL(/\/admin\/clinic-management\?tab=super_phrases/, { timeout: 10_000 });
     // 슈퍼상용구 탭이 active(pre-select) 상태 — Radix Tabs data-state
     await expect(page.getByTestId('tab-super-phrases')).toHaveAttribute('data-state', 'active', { timeout: 10_000 });
   });
