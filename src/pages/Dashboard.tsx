@@ -5836,7 +5836,7 @@ export default function Dashboard() {
       {/* T-20260522-foot-TABLET-DUAL-LAYOUT: data-dashboard-header — CSS 터치 타겟 타겟팅용 */}
       <div className="flex shrink-0 items-center justify-between gap-4 px-4 py-2 border-b bg-white/80" data-dashboard-header>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon-sm" onClick={() => { dateUserPinnedRef.current = true; setDate((d) => subDays(d, 1)); }}>
+          <Button variant="outline" size="icon-sm" data-testid="dash-date-prev" onClick={() => { dateUserPinnedRef.current = true; setDate((d) => subDays(d, 1)); }}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           {/* 날짜 클릭 → 미니 캘린더 팝업 */}
@@ -5862,11 +5862,11 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-          <Button variant="outline" size="icon-sm" onClick={() => { dateUserPinnedRef.current = true; setDate((d) => addDays(d, 1)); }}>
+          <Button variant="outline" size="icon-sm" data-testid="dash-date-next" onClick={() => { dateUserPinnedRef.current = true; setDate((d) => addDays(d, 1)); }}>
             <ChevronRight className="h-4 w-4" />
           </Button>
           {!isToday && (
-            <Button variant="ghost" size="sm" onClick={() => { dateUserPinnedRef.current = false; setDate(new Date()); }}>
+            <Button variant="ghost" size="sm" data-testid="dash-date-today" onClick={() => { dateUserPinnedRef.current = false; setDate(new Date()); }}>
               오늘로
             </Button>
           )}

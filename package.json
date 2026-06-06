@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "test:critical": "npx playwright test tests/e2e/critical-flow/ --project=desktop-chrome",
+    "test:chart-gate": "npx playwright test tests/e2e/chart-open-gate/ --project=desktop-chrome",
     "test:e2e": "npx playwright test tests/e2e/ --project=desktop-chrome",
     "test:port:free": "bash scripts/free-test-port.sh 8089",
     "test:e2e:clean": "bash scripts/free-test-port.sh 8089 && npx playwright test --project=desktop-chrome",
