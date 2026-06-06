@@ -363,41 +363,49 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
     expect(bgCanvasIdx).not.toEqual(drawCanvasIdx);
   });
 
-  test('AC-R3-ROOT REOPEN4-FINAL: initDrawCanvas — iOS는 desync=false 유지(검정화면 안전), 기기별 조건부 복원 (T-20260606-REFUND-PEN-MISS)', () => {
+  test('AC-R3-ROOT REOPEN6-FINAL: initDrawCanvas — desync=OFF 전 기기 통일 (검정화면 안전 우선, Android 분기 제거)', () => {
     /**
-     * REOPEN4 근본 수정(보존):
-     *   iOS Safari에서 desynchronized:true는 opaque IOSurface(GPU backing) 할당 →
-     *   drawCanvas 투명 픽셀이 BLACK으로 합성됨 → 검정화면.
-     *   ∴ iOS 경로는 반드시 desync=false 여야 한다 (검정화면 비재발 보장).
+     * REOPEN6 결정 (planner FIX-REQUEST, T-20260525-PENCHART-FORM-BLACKSCR):
+     *   f9696ff(6/6 15:40)가 "검정화면은 iOS WebKit 전용"이라는 전제로 기기별 조건부 desync를
+     *   복원(iOS=OFF / Android=ON)했다. 그러나 6/6 17:10 김주연 총괄 갤럭시탭(Android Chrome)에서
+     *   검정화면 재발 신고 → "iOS 전용" 전제가 실기기로 **반증**됨.
+     *   opaque/alpha-less backing store 검정화면은 Android GPU 합성 경로에서도 재현된다.
      *
-     * T-20260606-foot-PENCHART-REFUND-PEN-MISS 갱신:
-     *   cf69be5가 desync 를 전 기기 일괄 OFF 하면서 Android(Galaxy Tab) 저지연 펜 경로까지 소실 →
-     *   환불/비급여 동의서 대형 캔버스 펜 latency 회귀. opaque IOSurface 버그는 iOS WebKit 전용이므로
-     *   **기기별 조건부**로 복원: iOS=OFF(안전), non-iOS=ON(저지연).
+     *   결정: 검정화면(P0 운영중단) > 펜 latency(P1). 양립 불가 → desync=OFF 전 기기 통일.
+     *   ∴ isIOS 기기 판별 분기는 제거되어야 하고, useDesync 기본값은 false 여야 한다.
+     *   Galaxy Tab 저지연은 desync 비의존 경로(별도 후속 티켓)로 분리.
      *
-     *   검증 핵심: iOS 판별이 존재하고, useDesync 결정이 !isIOS 를 통해 iOS=false 를 보장.
-     *   ?penchart_no_desync 긴급 강제OFF / ?penchart_enable_desync 강제ON override 유지.
+     *   검증 핵심:
+     *   (1) isIOS 기기별 분기가 **존재하지 않음** (Android=ON 재도입축 제거 확인).
+     *   (2) useDesync 기본값이 false (강제ON override 없이는 절대 desync 활성 안 됨).
+     *   (3) ?penchart_no_desync 킬스위치 / ?penchart_enable_desync 테스트 override 유지.
      */
     const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
 
     const initDrawIdx = src.indexOf('const initDrawCanvas = useCallback');
     expect(initDrawIdx).toBeGreaterThan(0);
-    // 기기별 조건부 주석 블록이 커서 윈도우 확대
     const drawInitBlock = src.slice(initDrawIdx, initDrawIdx + 4000);
 
     // override param 유지
     expect(drawInitBlock, 'penchart_enable_desync URL param 없음')
       .toContain('penchart_enable_desync');
-    // 긴급 폴백 킬스위치
+    // 긴급 폴백 킬스위치 유지
     expect(drawInitBlock, 'penchart_no_desync 긴급 강제OFF 킬스위치 없음')
       .toContain('penchart_no_desync');
     expect(drawInitBlock).toContain('desynchronized: useDesync');
 
-    // iOS 판별 + iOS=false 보장 (검정화면 안전 가드)
-    expect(drawInitBlock, 'isIOS 판별 없음 — 기기별 조건부 desync 미구현').toContain('const isIOS');
+    // REOPEN6: 기기별 조건부 분기(isIOS/Android=ON) 완전 제거 — 검정화면 재도입축 차단
+    expect(drawInitBlock, 'isIOS 기기 분기 잔존 — Android=ON 검정화면 재발 위험')
+      .not.toContain('const isIOS');
+
+    // useDesync 기본값 = false (override 없으면 desync 비활성, 검정화면 비재발 보장)
     const useDesyncDecl = drawInitBlock.match(/const useDesync\s*=.*?;/s);
-    expect(useDesyncDecl?.[0] ?? '', 'useDesync 결정에 !isIOS 가드 없음 — iOS 검정화면 재발 위험')
-      .toContain('!isIOS');
+    expect(useDesyncDecl?.[0] ?? '', 'useDesync 선언 없음').not.toBe('');
+    expect(useDesyncDecl?.[0] ?? '', 'useDesync 결정에 !isIOS 등 기기 분기 잔존')
+      .not.toContain('isIOS');
+    // 기본 분기(_forceOn 도 _forceOff 도 아닐 때)가 false 로 끝나야 함
+    expect(useDesyncDecl?.[0] ?? '', 'useDesync 기본값이 false 가 아님 — 검정화면 안전 미보장')
+      .toMatch(/:\s*false\s*;/);
   });
 
   // ── AC-5: 기존 기능 회귀 없음 ──────────────────────────────────────────────
