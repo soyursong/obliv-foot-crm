@@ -428,41 +428,50 @@ export default function Handover() {
         </Button>
       </div>
 
-      {/* ── 금일 출근자 배너 (T-20260606-foot-HANDOVER-TODAY-ATTENDEES) ── */}
+      {/* ── 금일 출근자 명단 배너 (T-20260606-foot-HANDOVER-TODAY-ATTENDEES) ──
+          명단(list)이 화면 주체: 출근한 직원명을 한눈에. 인원수는 헤더 보조 표기.
+          (김주연 총괄 확정 2026-06-06: "출근 인원수가 아니라 출근한 명단이 필요") */}
       <div
-        className="shrink-0 border-b bg-teal-50/60 px-4 py-2.5"
+        className="shrink-0 border-b bg-teal-50/60 px-4 py-3"
         data-testid="handover-today-attendees"
       >
-        <div className="flex flex-wrap items-center gap-2">
+        {/* 헤더: 제목 = 명단, 인원수는 옆에 작은 보조 카운트 */}
+        <div className="mb-2 flex items-center gap-2">
           <div className="flex items-center gap-1.5 text-sm font-semibold text-teal-800">
             <UserCheck className="h-4 w-4" />
-            <span data-testid="handover-attendees-count">
-              오늘 출근 {attendeesLoading ? '…' : `${todayAttendees.length}명`}
-            </span>
+            <span>오늘 출근 명단</span>
           </div>
-          {!attendeesLoading && (
-            todayAttendees.length === 0 ? (
-              <span className="text-xs text-muted-foreground" data-testid="handover-attendees-empty">
-                오늘 등록된 출근자가 없습니다
-              </span>
-            ) : (
-              <div className="flex flex-wrap items-center gap-1.5">
-                {todayAttendees.map((a) => (
-                  <span
-                    key={a.id}
-                    data-testid="handover-attendee-chip"
-                    className="inline-flex items-center gap-1 rounded-full border border-teal-300 bg-white px-2.5 py-0.5 text-xs font-medium text-teal-800 shadow-sm"
-                  >
-                    {a.name}
-                    <span className="text-[10px] font-normal text-teal-500">
-                      {STAFF_ROLE_LABEL[a.role] ?? a.role}
-                    </span>
-                  </span>
-                ))}
-              </div>
-            )
-          )}
+          <span
+            className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-600"
+            data-testid="handover-attendees-count"
+          >
+            {attendeesLoading ? '…' : `${todayAttendees.length}명`}
+          </span>
         </div>
+
+        {/* 본문: 직원 명단 (화면 주체) */}
+        {attendeesLoading ? (
+          <span className="text-sm text-muted-foreground">불러오는 중…</span>
+        ) : todayAttendees.length === 0 ? (
+          <span className="text-sm text-muted-foreground" data-testid="handover-attendees-empty">
+            오늘 등록된 출근자가 없습니다
+          </span>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            {todayAttendees.map((a) => (
+              <span
+                key={a.id}
+                data-testid="handover-attendee-chip"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-teal-300 bg-white px-3 py-1.5 shadow-sm"
+              >
+                <span className="text-sm font-semibold text-teal-900">{a.name}</span>
+                <span className="text-[11px] font-medium text-teal-500">
+                  {STAFF_ROLE_LABEL[a.role] ?? a.role}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 컨트롤 바: 뷰 토글 + 네비 + 파트 필터 */}
