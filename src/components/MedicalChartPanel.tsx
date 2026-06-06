@@ -63,6 +63,8 @@ import { formatAmount, formatPhone } from '@/lib/format';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import { classificationToRoute } from '@/components/admin/PrescriptionSetsTab';
 import RxCountInput from '@/components/admin/RxCountInput';
+// T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2/AC-3): 상병명 폴더 탐색 선택기(자동완성 폐지)
+import DiagnosisFolderPicker from '@/components/medical/DiagnosisFolderPicker';
 // T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구 적용(진단명+임상경과+처방 일괄 라우팅)
 import type { SuperPhrase } from '@/components/admin/SuperPhrasesTab';
 
@@ -319,13 +321,9 @@ export default function MedicalChartPanel({
   const [phraseLoadError, setPhraseLoadError] = useState(false);
   const [superLoadError, setSuperLoadError] = useState(false);
   const [visitPayments, setVisitPayments] = useState<VisitPayment[]>([]);
-  // T-20260606-foot-SUPER-PHRASE-DIAGNOSIS-AUTOCOMPLETE-HOTFIX:
-  //   진단명 자동완성 소스를 '표준 상병 마스터(services category_label='상병', active)' 로 교체.
-  //   기존 medical_charts.diagnosis(자유입력 비표준 이력)는 오타·비표준 진단명 노출 원인 → 제거.
-  //   보조: super_phrases.diagnosis 는 표준 마스터에 없는 것만 뒤에 합류(중복 제거).
-  //   datalist label 로 상병코드(service_code) 동반 표시(저장값은 순수 상병명).
-  //   (SuperPhrasesTab.useRegisteredDiagnoses 와 동일 출처·정책 — bfe1e2b 와 정합)
-  const [registeredDiagnoses, setRegisteredDiagnoses] = useState<Array<{ name: string; code: string | null }>>([]);
+  // T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2 [B]): 진단명 입력은 자동완성/이력 datalist 폐지 →
+  //   DiagnosisFolderPicker(폴더 탐색 + 원장별 즐겨찾기) 선택전용으로 전환. 별도 상태 불요(picker 자체조회).
+  //   저장값은 순수 상병명(formDx) — medical_charts.diagnosis 저장경로 무변경.
 
   // ── 선택 차트 (null = 새 기록 모드) ──────────────────────────────────────────
   const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
@@ -603,55 +601,9 @@ export default function MedicalChartPanel({
     }
   }, [open, customerId, loadData, resetForm]);
 
-  // T-20260606-foot-SUPER-PHRASE-DIAGNOSIS-AUTOCOMPLETE-HOTFIX (bfe1e2b 핫픽스):
-  //   진단명 자동완성 소스를 '표준 상병 마스터(services category_label='상병', active)' 로 교체.
-  //   기존 medical_charts.diagnosis(자유입력 이력)는 오타·비표준 진단명 노출 원인 → 완전 제거.
-  //   1순위: services 표준 상병명(name) + 상병코드(service_code). active=true 만 노출(display_order asc).
-  //   보조: super_phrases.diagnosis 는 표준 마스터에 없는 것만 합류(중복 제거).
-  //   조회 실패 시 빈 목록(자동완성만 미노출, 입력 무영향).
-  useEffect(() => {
-    if (!open || !clinicId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const options: Array<{ name: string; code: string | null }> = [];
-        const seen = new Set<string>();
-        // 1순위: 표준 상병 마스터
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: masters } = await (supabase as any)
-          .from('services')
-          .select('name, service_code, display_order, sort_order')
-          .eq('clinic_id', clinicId)
-          .eq('category_label', '상병')
-          .eq('active', true)
-          .order('display_order', { ascending: true });
-        ((masters as { name: string | null; service_code: string | null }[] | null) ?? []).forEach((r) => {
-          const n = (r.name ?? '').trim();
-          if (n && !seen.has(n)) {
-            seen.add(n);
-            options.push({ name: n, code: (r.service_code ?? '').trim() || null });
-          }
-        });
-        // 보조: 슈퍼상용구의 진단명 (표준 마스터에 없는 것만)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: sp } = await (supabase as any)
-          .from('super_phrases')
-          .select('diagnosis')
-          .not('diagnosis', 'is', null);
-        ((sp as { diagnosis: string | null }[] | null) ?? []).forEach((r) => {
-          const d = (r.diagnosis ?? '').trim();
-          if (d && !seen.has(d)) {
-            seen.add(d);
-            options.push({ name: d, code: null });
-          }
-        });
-        if (!cancelled) setRegisteredDiagnoses(options);
-      } catch {
-        if (!cancelled) setRegisteredDiagnoses([]);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [open, clinicId]);
+  // T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2 [B]): 진단명 자동완성/이력 datalist 로더 제거.
+  //   상병 후보는 DiagnosisFolderPicker 가 자체적으로 services(category_label='상병') 단일정본만
+  //   조회·폴더탐색·즐겨찾기. super_phrases.diagnosis 보조소스 폐지(자유이력 노출경로 구조적 종결).
 
   // ESC 키 닫기
   useEffect(() => {
@@ -1892,29 +1844,20 @@ export default function MedicalChartPanel({
                     />
                   </div>
 
-                  {/* 진단명 — T-20260606-foot-SUPER-PHRASE-DIAGNOSIS-AUTOCOMPLETE-HOTFIX:
-                      표준 상병 마스터(services category_label='상병') 1순위 + 슈퍼상용구 이력 보조 → datalist 자동노출.
-                      상병코드(service_code)가 있으면 label 로 동반 표시(예: '내향성 손발톱  (L600)') — 선택값은 표준 상병명만 저장. */}
+                  {/* 진단명 — T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2 [B] + AC-3 [C]):
+                      자동완성/이력 datalist 폐지 → 폴더 탐색 드롭다운(등록 상병만 선택) + 원장별 즐겨찾기.
+                      넓게/오른쪽 아래로 확장. 저장값=순수 상병명(formDx), medical_charts.diagnosis 저장경로 무변경. */}
                   <div>
                     <label className="block text-xs font-semibold text-muted-foreground mb-1">
                       진단명
-                      {registeredDiagnoses.length > 0 && (
-                        <span className="ml-1 text-[10px] text-teal-600 font-normal">· 표준 상병명 {registeredDiagnoses.length}개 자동완성</span>
-                      )}
+                      <span className="ml-1 text-[10px] text-teal-600 font-normal">· 등록 상병명 폴더 선택</span>
                     </label>
-                    <Input
+                    <DiagnosisFolderPicker
                       value={formDx}
-                      onChange={(e) => setFormDx(e.target.value)}
-                      placeholder="진단명을 입력하세요"
-                      className="h-9 text-sm placeholder:text-gray-300"
-                      list="medchart-diagnosis-options"
+                      onChange={setFormDx}
+                      clinicId={clinicId}
                       data-testid="medical-chart-diagnosis"
                     />
-                    <datalist id="medchart-diagnosis-options">
-                      {registeredDiagnoses.map((d) => (
-                        <option key={d.name} value={d.name} label={d.code ? `${d.name}  (${d.code})` : undefined} />
-                      ))}
-                    </datalist>
                   </div>
 
                   {/* 치료·시술 — 결제내역 자동 연동 (readonly) */}
