@@ -23,6 +23,14 @@ const NO_FOLDER = '미분류';
 const DX_MASTER_KEY = 'diagnosis_picker_master';
 const FAV_KEY = 'diagnosis_picker_fav';
 
+// T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-1 (문지은 대표원장):
+//   "상병명과 코드는 항상 같이 따라다니는 세트. 하나만 출력하지마."
+//   선택 시 저장값을 "코드 상병명" 으로 동반(코드 공란이면 이름 단독 폴백). medical_charts.diagnosis(text) 무스키마변경.
+function fmtDx(row: { name: string; service_code: string | null }): string {
+  const code = (row.service_code ?? '').trim();
+  return code ? `${code} ${row.name}` : row.name;
+}
+
 function useDxMaster(clinicId: string | null) {
   return useQuery({
     queryKey: [DX_MASTER_KEY, clinicId],
@@ -76,10 +84,11 @@ interface Props {
   onChange: (name: string) => void;
   clinicId: string | null;
   className?: string;
+  disabled?: boolean; // T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-4: 차트 읽기전용 모드 비활성
   'data-testid'?: string;
 }
 
-export default function DiagnosisFolderPicker({ value, onChange, clinicId, className, ...rest }: Props) {
+export default function DiagnosisFolderPicker({ value, onChange, clinicId, className, disabled, ...rest }: Props) {
   const { profile } = useAuth();
   const staffId = profile?.id ?? null;
   const qc = useQueryClient();
@@ -139,8 +148,9 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
     });
   }
 
-  function select(name: string) {
-    onChange(name);
+  function select(row: DxRow) {
+    // AC-1: 상병명+코드 동반 저장("코드 상병명"). 이름 단독 출력 금지.
+    onChange(fmtDx(row));
     setOpen(false);
     setQuery('');
   }
@@ -172,15 +182,16 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
       {/* 트리거 — 읽기전용 표시 + 드롭다운 토글 (자유 타이핑 없음) */}
       <button
         type="button"
+        disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className={`flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 text-sm ${className ?? ''}`}
+        className={`flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 disabled:opacity-100 ${className ?? ''}`}
         data-testid={rest['data-testid']}
       >
         <span className={value ? 'text-foreground' : 'text-gray-300'}>
           {value || '상병명을 선택하세요'}
         </span>
         <span className="flex items-center gap-1">
-          {value && (
+          {value && !disabled && (
             <X
               className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive"
               onClick={(e) => { e.stopPropagation(); onChange(''); }}
@@ -191,7 +202,7 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
       </button>
 
       {/* 폴더 탐색 패널 — 넓게, 왼쪽 정렬로 오른쪽 아래 방향 확장 */}
-      {open && (
+      {open && !disabled && (
         <div
           className="absolute left-0 top-full z-50 mt-1 w-[min(560px,92vw)] max-h-[60vh] overflow-hidden rounded-lg border bg-popover shadow-lg flex flex-col"
           data-testid="dx-picker-panel"
@@ -281,13 +292,13 @@ function DxItemRow({
 }: {
   row: DxRow;
   isFav: boolean;
-  onSelect: (name: string) => void;
+  onSelect: (row: DxRow) => void;
   onToggleFav: (serviceId: string, e: React.MouseEvent) => void;
 }) {
   return (
     <button
       type="button"
-      onClick={() => onSelect(row.name)}
+      onClick={() => onSelect(row)}
       className="flex w-full items-center justify-between gap-2 rounded px-3 py-1.5 text-left hover:bg-accent"
       data-testid="dx-picker-item"
     >

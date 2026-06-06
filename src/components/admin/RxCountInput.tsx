@@ -9,9 +9,10 @@ interface RxCountInputProps {
   value: number | null;
   onChange: (v: number | null) => void;
   className?: string;
+  disabled?: boolean; // T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-4: 차트 읽기전용 모드
 }
 
-export default function RxCountInput({ value, onChange, className }: RxCountInputProps) {
+export default function RxCountInput({ value, onChange, className, disabled }: RxCountInputProps) {
   return (
     <div className="relative">
       <Input
@@ -20,6 +21,7 @@ export default function RxCountInput({ value, onChange, className }: RxCountInpu
         min={0}
         step={1}
         value={value ?? ''}
+        disabled={disabled}
         onChange={(e) => {
           const raw = e.target.value.trim();
           if (raw === '') return onChange(null);
@@ -27,7 +29,7 @@ export default function RxCountInput({ value, onChange, className }: RxCountInpu
           onChange(Number.isFinite(n) ? n : null);
         }}
         placeholder="3"
-        className={`h-7 text-xs mt-0.5 pr-6 ${className ?? ''}`}
+        className={`h-7 text-xs mt-0.5 pr-6 disabled:opacity-100 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed ${className ?? ''}`}
         data-testid="rx-count-input"
       />
       {/* "회" 배경 suffix — 값에는 미포함, 표시만 */}
