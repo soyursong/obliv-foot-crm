@@ -222,9 +222,9 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
 
     const drawInitIdx = src.indexOf('const initDrawCanvas = useCallback');
     expect(drawInitIdx).toBeGreaterThan(0);
-    // 2500자 윈도우: REOPEN4 근본 수정 주석이 추가되어 블록 크기 증가
+    // 4500자 윈도우: REOPEN4 + T-20260606-REFUND-PEN-MISS 기기별 조건부 desync 주석 추가로 블록 확대
     // ctx null 가드 + drawCtxRef 캐싱 + canvasH 계산 + canvas.width 설정 + BLACKSCR size check
-    const drawBlock = src.slice(drawInitIdx, drawInitIdx + 2500);
+    const drawBlock = src.slice(drawInitIdx, drawInitIdx + 4500);
 
     expect(drawBlock).toContain("if (!ctx)");
     expect(drawBlock).toContain('setBgImgLoadError(true)');
@@ -360,39 +360,41 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
     expect(bgCanvasIdx).not.toEqual(drawCanvasIdx);
   });
 
-  test('AC-R3-ROOT REOPEN4-FINAL: initDrawCanvas — desynchronized 기본값=false, URL param ?penchart_enable_desync로만 활성화', () => {
+  test('AC-R3-ROOT REOPEN4-FINAL: initDrawCanvas — iOS는 desync=false 유지(검정화면 안전), 기기별 조건부 복원 (T-20260606-REFUND-PEN-MISS)', () => {
     /**
-     * REOPEN4 근본 수정:
-     *   desynchronized:true 제거 → 기본값 false.
+     * REOPEN4 근본 수정(보존):
      *   iOS Safari에서 desynchronized:true는 opaque IOSurface(GPU backing) 할당 →
      *   drawCanvas 투명 픽셀이 BLACK으로 합성됨 → 검정화면.
+     *   ∴ iOS 경로는 반드시 desync=false 여야 한다 (검정화면 비재발 보장).
      *
-     *   근거(코드 증거):
-     *   1. b955a8c(5/24 배포) 다음날(5/25) 첫 보고 — 인과 타임라인 일치
-     *   2. willChange 제거(REOPEN3) 후에도 검정화면 지속 → desync 단독으로도 opaque backing 생성 가능
-     *   3. E2E getImageData는 CPU 버퍼 → alpha=0, GPU compositor는 opaque → E2E pass + 실기기 fail
-     *   4. 4회 수정 전부 desynchronized 건드리지 않았음
+     * T-20260606-foot-PENCHART-REFUND-PEN-MISS 갱신:
+     *   cf69be5가 desync 를 전 기기 일괄 OFF 하면서 Android(Galaxy Tab) 저지연 펜 경로까지 소실 →
+     *   환불/비급여 동의서 대형 캔버스 펜 latency 회귀. opaque IOSurface 버그는 iOS WebKit 전용이므로
+     *   **기기별 조건부**로 복원: iOS=OFF(안전), non-iOS=ON(저지연).
      *
-     *   URL param ?penchart_enable_desync → 성능 비교 테스트용 (현장 사용 금지).
-     *   Fix-2(ctx 캐싱) + Fix-3(BoundingClientRect 캐싱) + Fix-8(native pointer) 여전히 활성.
+     *   검증 핵심: iOS 판별이 존재하고, useDesync 결정이 !isIOS 를 통해 iOS=false 를 보장.
+     *   ?penchart_no_desync 긴급 강제OFF / ?penchart_enable_desync 강제ON override 유지.
      */
     const src: string = fs.readFileSync('src/components/PenChartTab.tsx', 'utf-8');
 
     const initDrawIdx = src.indexOf('const initDrawCanvas = useCallback');
     expect(initDrawIdx).toBeGreaterThan(0);
-    // 검색 범위 확장(REOPEN4 진단 코드 추가로 블록이 더 큼)
-    const drawInitBlock = src.slice(initDrawIdx, initDrawIdx + 1800);
+    // 기기별 조건부 주석 블록이 커서 윈도우 확대
+    const drawInitBlock = src.slice(initDrawIdx, initDrawIdx + 4000);
 
-    // REOPEN4 근본 수정: penchart_enable_desync (기본값 false)
-    expect(drawInitBlock, 'penchart_enable_desync URL param 없음 — desync OFF 기본값 구현 누락')
+    // override param 유지
+    expect(drawInitBlock, 'penchart_enable_desync URL param 없음')
       .toContain('penchart_enable_desync');
+    // 긴급 폴백 킬스위치
+    expect(drawInitBlock, 'penchart_no_desync 긴급 강제OFF 킬스위치 없음')
+      .toContain('penchart_no_desync');
     expect(drawInitBlock).toContain('desynchronized: useDesync');
 
-    // 구 penchart_no_desync(기본값 true) 로직이 useDesync 선언에 남아있지 않아야 함
-    // (console.log에 이전 param 언급은 허용 — getContext 로직에만 적용)
+    // iOS 판별 + iOS=false 보장 (검정화면 안전 가드)
+    expect(drawInitBlock, 'isIOS 판별 없음 — 기기별 조건부 desync 미구현').toContain('const isIOS');
     const useDesyncDecl = drawInitBlock.match(/const useDesync\s*=.*?;/s);
-    expect(useDesyncDecl?.[0] ?? '', '`const useDesync` 선언에 penchart_no_desync 잔존')
-      .not.toContain('penchart_no_desync');
+    expect(useDesyncDecl?.[0] ?? '', 'useDesync 결정에 !isIOS 가드 없음 — iOS 검정화면 재발 위험')
+      .toContain('!isIOS');
   });
 
   // ── AC-5: 기존 기능 회귀 없음 ──────────────────────────────────────────────
