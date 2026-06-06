@@ -319,10 +319,13 @@ export default function MedicalChartPanel({
   const [phraseLoadError, setPhraseLoadError] = useState(false);
   const [superLoadError, setSuperLoadError] = useState(false);
   const [visitPayments, setVisitPayments] = useState<VisitPayment[]>([]);
-  // T-20260603-foot-MEDCHART-SUPERPHRASE-EXT 2-1: 진단명 자동완성 — 등록된 진단명(차트 이력 + 슈퍼상용구) distinct.
-  //   별도 diagnoses 마스터 테이블 부재 → medical_charts.diagnosis 이력 + super_phrases.diagnosis 를 출처로 사용
-  //   (SuperPhrasesTab.useRegisteredDiagnoses 와 동일 출처·정책).
-  const [registeredDiagnoses, setRegisteredDiagnoses] = useState<string[]>([]);
+  // T-20260606-foot-SUPER-PHRASE-DIAGNOSIS-AUTOCOMPLETE-HOTFIX:
+  //   진단명 자동완성 소스를 '표준 상병 마스터(services category_label='상병', active)' 로 교체.
+  //   기존 medical_charts.diagnosis(자유입력 비표준 이력)는 오타·비표준 진단명 노출 원인 → 제거.
+  //   보조: super_phrases.diagnosis 는 표준 마스터에 없는 것만 뒤에 합류(중복 제거).
+  //   datalist label 로 상병코드(service_code) 동반 표시(저장값은 순수 상병명).
+  //   (SuperPhrasesTab.useRegisteredDiagnoses 와 동일 출처·정책 — bfe1e2b 와 정합)
+  const [registeredDiagnoses, setRegisteredDiagnoses] = useState<Array<{ name: string; code: string | null }>>([]);
 
   // ── 선택 차트 (null = 새 기록 모드) ──────────────────────────────────────────
   const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
@@ -600,26 +603,36 @@ export default function MedicalChartPanel({
     }
   }, [open, customerId, loadData, resetForm]);
 
-  // T-20260603-foot-MEDCHART-SUPERPHRASE-EXT 2-1: 등록된 진단명 자동완성 목록 로드.
-  //   클리닉 단위 distinct(차트 이력 최근 500 + 활성 슈퍼상용구). 조회 실패 시 빈 목록(자동완성만 미노출, 입력 무영향).
+  // T-20260606-foot-SUPER-PHRASE-DIAGNOSIS-AUTOCOMPLETE-HOTFIX (bfe1e2b 핫픽스):
+  //   진단명 자동완성 소스를 '표준 상병 마스터(services category_label='상병', active)' 로 교체.
+  //   기존 medical_charts.diagnosis(자유입력 이력)는 오타·비표준 진단명 노출 원인 → 완전 제거.
+  //   1순위: services 표준 상병명(name) + 상병코드(service_code). active=true 만 노출(display_order asc).
+  //   보조: super_phrases.diagnosis 는 표준 마스터에 없는 것만 합류(중복 제거).
+  //   조회 실패 시 빈 목록(자동완성만 미노출, 입력 무영향).
   useEffect(() => {
     if (!open || !clinicId) return;
     let cancelled = false;
     (async () => {
       try {
-        const set = new Set<string>();
+        const options: Array<{ name: string; code: string | null }> = [];
+        const seen = new Set<string>();
+        // 1순위: 표준 상병 마스터
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: charts } = await (supabase as any)
-          .from('medical_charts')
-          .select('diagnosis')
+        const { data: masters } = await (supabase as any)
+          .from('services')
+          .select('name, service_code, display_order, sort_order')
           .eq('clinic_id', clinicId)
-          .not('diagnosis', 'is', null)
-          .order('created_at', { ascending: false })
-          .limit(500);
-        ((charts as { diagnosis: string | null }[] | null) ?? []).forEach((r) => {
-          const d = (r.diagnosis ?? '').trim();
-          if (d) set.add(d);
+          .eq('category_label', '상병')
+          .eq('active', true)
+          .order('display_order', { ascending: true });
+        ((masters as { name: string | null; service_code: string | null }[] | null) ?? []).forEach((r) => {
+          const n = (r.name ?? '').trim();
+          if (n && !seen.has(n)) {
+            seen.add(n);
+            options.push({ name: n, code: (r.service_code ?? '').trim() || null });
+          }
         });
+        // 보조: 슈퍼상용구의 진단명 (표준 마스터에 없는 것만)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: sp } = await (supabase as any)
           .from('super_phrases')
@@ -627,9 +640,12 @@ export default function MedicalChartPanel({
           .not('diagnosis', 'is', null);
         ((sp as { diagnosis: string | null }[] | null) ?? []).forEach((r) => {
           const d = (r.diagnosis ?? '').trim();
-          if (d) set.add(d);
+          if (d && !seen.has(d)) {
+            seen.add(d);
+            options.push({ name: d, code: null });
+          }
         });
-        if (!cancelled) setRegisteredDiagnoses(Array.from(set).sort((a, b) => a.localeCompare(b, 'ko')));
+        if (!cancelled) setRegisteredDiagnoses(options);
       } catch {
         if (!cancelled) setRegisteredDiagnoses([]);
       }
@@ -1876,12 +1892,14 @@ export default function MedicalChartPanel({
                     />
                   </div>
 
-                  {/* 진단명 — T-20260603-foot-MEDCHART-SUPERPHRASE-EXT 2-1: 등록 진단명 드롭다운 자동완성 */}
+                  {/* 진단명 — T-20260606-foot-SUPER-PHRASE-DIAGNOSIS-AUTOCOMPLETE-HOTFIX:
+                      표준 상병 마스터(services category_label='상병') 1순위 + 슈퍼상용구 이력 보조 → datalist 자동노출.
+                      상병코드(service_code)가 있으면 label 로 동반 표시(예: '내향성 손발톱  (L600)') — 선택값은 표준 상병명만 저장. */}
                   <div>
                     <label className="block text-xs font-semibold text-muted-foreground mb-1">
                       진단명
                       {registeredDiagnoses.length > 0 && (
-                        <span className="ml-1 text-[10px] text-teal-600 font-normal">· 등록된 진단명 {registeredDiagnoses.length}개 자동완성</span>
+                        <span className="ml-1 text-[10px] text-teal-600 font-normal">· 표준 상병명 {registeredDiagnoses.length}개 자동완성</span>
                       )}
                     </label>
                     <Input
@@ -1894,7 +1912,7 @@ export default function MedicalChartPanel({
                     />
                     <datalist id="medchart-diagnosis-options">
                       {registeredDiagnoses.map((d) => (
-                        <option key={d} value={d} />
+                        <option key={d.name} value={d.name} label={d.code ? `${d.name}  (${d.code})` : undefined} />
                       ))}
                     </datalist>
                   </div>
