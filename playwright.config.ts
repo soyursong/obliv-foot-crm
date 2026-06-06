@@ -84,6 +84,8 @@ export default defineConfig({
         '**/insurance-calc.spec.ts',
         // T-20260602-multi-CALLBACK-EF-4-NEW: 도파민 콜백 outbox 정적 검증 (마이그레이션/EF/롤백 파일 단언, browser 불필요)
         '**/T-20260602-multi-CALLBACK-EF-4-NEW.spec.ts',
+        // T-20260606-foot-AUTOCOMPLETE-CROSS-PATIENT-AUDIT: 자동완성 cross-patient 누설 분류 불변식 (page 미사용 순수 로직)
+        '**/T-20260606-foot-AUTOCOMPLETE-CROSS-PATIENT-AUDIT.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

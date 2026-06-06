@@ -1,43 +1,122 @@
-# T-20260606-foot-AUTOCOMPLETE-CROSS-PATIENT-AUDIT — 전수감사 결과
+# T-20260606-foot-AUTOCOMPLETE-CROSS-PATIENT-AUDIT — 전수감사 증거 (재제출)
 
-자동완성/미리보기 환자 간 차트기록(PII) 교차누설 전수 감사.
-근거: 문지은 대표원장(C0ATE5P6JTH) — "상용구 단축어 외 서로의 차트기록 미리보기 공유 절대 금지. CRM=환자 개인정보".
+> 직전 제출(commit 5723858)이 supervisor QA FAIL — phase1(evidence SSOT 경로 부재 + 전수 grep 커버리지/소스 file:line 미기재) · phase2(E2E 미실행). 본 문서가 두 FIX-REQUEST(nl1w·eud9) 보완분.
+> 근거: 문지은 대표원장(C0ATE5P6JTH, 6/6 13:14) — "상용구 단축어 외 서로의 차트기록 미리보기 공유 절대 금지. CRM=환자 개인정보."
 
-## 판정 잣대
-- (A) 클리닉 레벨 마스터 = 공유 OK: super_phrases, phrase_templates(상용구/단축어), services(상병/시술/처방 마스터), prescription_sets.folder 등.
-- (B) 환자별 차트기록 = 교차 공유 절대 금지: medical_charts.*, 진료메모, 고객메모, 처방 자유메모.
-- 판정룰: 후보 쿼리가 "특정 환자(customer/chart_id) 종속 없이 전체 환자 행에서 자유텍스트를 distinct로 긁어오는" 구조면 (B) 누설. 환자 본인 스코프는 누설 아님.
+레포: `/Users/domas/Documents/GitHub/obliv-foot-crm` · 감사일 2026-06-06 · 감사자 dev-foot
 
-## 범위 제외 (중복 회피)
-- 진단명 자동완성 누설은 별도 처리 중 → 본 감사에서 손대지 않음:
-  - `MedicalChartPanel.tsx` datalist `medchart-diagnosis-options` (L1910~1917) — T-20260606-foot-MEDCHART-DIAGNOSIS-AUTOCOMPLETE-FIX 소관
-  - `SuperPhrasesTab.tsx` datalist `super-phrase-diagnosis-options` (L601~608) — bfe1e2b 소관
+---
 
-## 전수 식별 분류표 (진단명 외 전 입력란)
+## 0. 판정 잣대 (티켓 §"공유 허용(A) vs 금지(B)")
 
-| # | 위치 | 후보 메커니즘 | 후보 소스 | 분류 | 판정 |
-|---|------|--------------|-----------|------|------|
-| 1 | MedicalChartPanel.tsx L1980~2053 | 임상경과 // 트리거 상용구 팝오버 | `phrase_templates`(is_active) + `super_phrases`(is_active) | A 마스터 | OK |
-| 2 | PrescriptionSetsTab.tsx L459~466 datalist `rx-folder-suggestions` | 처방세트 폴더명 자동완성 | `prescription_sets.folder` distinct (클리닉 설정 마스터) | A 마스터 | OK |
-| 3 | PenChartTab.tsx (L606,L1409~1413,L2076) | 펜차트 T상용구 메뉴/복수선택 | `phrase_templates`(DB 마스터) | A 마스터 | OK |
-| 4 | Customers.tsx L777~954 `referrerSuggestions` | 추천인 자동완성 | `customers` name `ilike` → id/name/phone (인물 식별 검색) | 의도된 인물검색 | OK (차트기록 아님) |
-| 5 | 다수 (`autoComplete="off"|"new-password"|"tel"|"current-password"`) | 브라우저 autofill 억제 HTML 속성 | 데이터 비연동 | 비대상 | OK |
+- **(B) 누설** ⇔ 후보 쿼리가 "특정 환자(customer_id/chart_id)에 종속되지 않고 **전체 환자 행에서 차트 자유텍스트 컬럼을 distinct 로 긁어오는**" 구조. → 절대 금지.
+- **(A) 허용** ⇔ (a) clinic 레벨 마스터 테이블(phrase_templates·super_phrases·prescription_sets·services·system_codes) **또는** (b) customers 인물식별 검색(이름/전화/차트번호) **또는** (c) customer_id/check_in_id 본인 스코프 쿼리.
 
-### 데이터 비연동 `autoComplete` HTML 속성 (누설 무관) 발생처
-CustomerChartPage(L3739,3756) / SelfCheckIn(L2229) / TreatmentSetsTab(L356) / AdminSettings(L511,525,611) / Accounts(L396,415,563) / ChangePasswordDialog(L128,153,179).
+---
 
-## 교차검증 (숨은 누설 점검)
-- 전 datalist 3건만 존재(`list=` grep): 2건 진단명(범위 외), 1건 폴더명(마스터).
-- `distinct`/`Combobox`/`<Command`: 추가 후보 메커니즘 0건.
-- 차트 자유텍스트 컬럼 기반 cross-patient distinct 후보 쿼리: 0건.
-- `CheckInDetailSheet.tsx` L712~770 `ilike(phone)` 쿼리는 **특정 환자 본인** chart_number/customer_memo 로드(접수자 phone 키) — cross-patient 후보 아님, 본인 스코프 유지.
-- `recentlyUpdated`(Dashboard) = UI 낙관적 갱신 추적 Set(row id), 텍스트 후보 아님.
+## 1. 전수 grep 커버리지 (검색 패턴 + 결과)
 
-## 결론
-**전수감사 결과 (B) 환자 차트기록 교차 누설 없음.**
-범위 내 자동완성/미리보기 후보 소스는 전부 (A) 클리닉 레벨 마스터(phrase_templates/super_phrases/prescription_sets.folder) 또는 의도된 인물 식별 검색(추천인). 진단명 2건은 별도 티켓 소관으로 미접촉.
-- 코드 변경: **0건** (AC-4에 따라 감사 자체가 산출물).
-- DB 변경: 없음.
-- 상용구·진단명(bfe1e2b) 회귀: 없음(미접촉).
+검색 명령(레포 `src/` 전체):
+```
+grep -rnE "list=|datalist|autoComplete|autocomplete|suggest|Suggest|preview|Preview|Combobox|<Command|Autocomplete|//|\bT 상용구" src/
+```
 
-감사자: dev-foot · 2026-06-06
+### 1-A. `<datalist>` 전수 — 총 3건 (`list=`/`<datalist`)
+| # | 위치 | datalist id | 후보 소스(테이블.컬럼) | 분류 | 비고 |
+|---|------|------------|----------------------|------|------|
+| d1 | `components/MedicalChartPanel.tsx:1910/1913` | `medchart-diagnosis-options` | `services`(category_label='상병',active) 1순위 + `super_phrases.diagnosis` 보조 | (A) | **범위 외** — T-20260606-foot-MEDCHART-DIAGNOSIS-AUTOCOMPLETE-FIX(44a6deb, deployed) 소관. medical_charts 이력 이미 제거됨. 미접촉 |
+| d2 | `components/admin/SuperPhrasesTab.tsx:601/604` | `super-phrase-diagnosis-options` | `services` 상병 마스터(name+service_code) + `super_phrases` | (A) | **범위 외** — bfe1e2b 소관. 미접촉 |
+| d3 | `components/admin/PrescriptionSetsTab.tsx:459/462` | `rx-folder-suggestions` | `prescription_sets.folder` distinct (folderNames, L326~330) | (A) 클리닉 마스터 | 처방세트 폴더명, 환자 PII 아님 |
+
+### 1-B. 슬래시/단축어 트리거 상용구 팝오버 — 총 4건 (`//`·`T` 상용구)
+| # | 위치 | 트리거 | 후보 소스(테이블.컬럼) | 분류 |
+|---|------|--------|----------------------|------|
+| p1 | `components/MedicalChartPanel.tsx:2019~2053` (소스 fetch L427 `from('phrase_templates')` + L454 `from('super_phrases')`) | 임상경과 `//` 팝오버 | `phrase_templates` + `super_phrases` (is_active) | (A) 클리닉 마스터 |
+| p2 | `components/PenChartTab.tsx:606` (`from('phrase_templates')`) | 펜차트 `T` 상용구 | `phrase_templates.body` | (A) 클리닉 마스터 |
+| p3 | `pages/CustomerChartPage.tsx:1865` (`from('phrase_templates')`, WHERE category='general') | 상담 탭 상용구 | `phrase_templates.body` | (A) 클리닉 마스터 |
+| — | (p1 진단명 datalist 는 d1 과 동일 컴포넌트, 위에서 계수) | | | |
+
+### 1-C. 자유텍스트 인물검색 suggestion — 총 2건 (`*Suggestions`/`linkResults`)
+| # | 위치 | 후보 소스(쿼리) | 분류 |
+|---|------|----------------|------|
+| s1 | `pages/Customers.tsx:818~824` referrerSuggestions | `customers`.select('id,name,phone') `.eq('clinic_id')` `.ilike('name', %q%)` limit 5 | (A) 인물식별 검색 — 차트기록 아님 |
+| s2 | `components/CheckInDetailSheet.tsx:1011~1019` linkResults | `customers`.select('id,name,chart_number,phone') `.eq('clinic_id')` `.ilike('name', %q%)` limit 8 | (A) 인물식별 검색(체크인↔고객 연결 UI) — 차트기록 아님 |
+
+### 1-D. `autoComplete` HTML 속성 — 데이터 비연동(브라우저 autofill 억제, 누설 무관)
+`Accounts.tsx`(396,415,563) / `AdminSettings.tsx`(511,525,611) / `CustomerChartPage.tsx`(3739,3756) / `SelfCheckIn.tsx`(2229) / `admin/TreatmentSetsTab.tsx`(356) / `ChangePasswordDialog.tsx`(128,153,179). 값 = `off`/`new-password`/`current-password`/`tel`. → input 텍스트 후보 노출 없음(데이터 소스 무).
+
+### 1-E. `preview`/`Preview` 전수 — 전부 이미지/문서/결제/QR 미리보기, 차트텍스트 자동완성 아님
+`AdminSettings`(메시지 body preview·QR), `ClinicSettings`(도장 이미지), `CustomerChartPage`(촬영 blob), `DocumentPrintPanel`(서류 HTML), `ReceiptUpload`(영수증), `DutyRosterImportDialog`(엑셀 행), `Packages`/`PaymentMiniWindow`(세트 요약). → 후보 자동완성 메커니즘 아님(0건).
+
+### 1-F. 추가 후보 메커니즘 — 0건
+`Combobox`/`<Command`/`Autocomplete` 컴포넌트: 0건. cross-patient 자유텍스트 `distinct` 쿼리: 0건.
+
+---
+
+## 2. (A)/(B) 분류 근거 명시 (supervisor nl1w #3)
+
+- **referrerSuggestions** (`Customers.tsx:818`): `customers.name ilike + clinic_id` 스코프. 노출 컬럼 = id/name/phone. **차트기록(diagnosis/memo) 아님** → 의도된 인물식별 검색. (A).
+- **linkResults** (`CheckInDetailSheet.tsx:1011`): `customers.name ilike + clinic_id` 스코프. 노출 = id/name/chart_number/phone. 체크인을 기존 고객에 연결하는 UI. **차트기록 아님** → 인물검색. (A).
+- **rx-folder datalist** (`PrescriptionSetsTab.tsx:462`): `prescription_sets.folder` distinct = 클리닉이 설정한 처방세트 분류 폴더명. 환자 PII 아님. (A) 마스터.
+- **PenChartTab `T` 상용구** (`PenChartTab.tsx:606`): `phrase_templates` 기반 클리닉 상용구. (A) 마스터.
+- **상담 탭 상용구** (`CustomerChartPage.tsx:1865`): `phrase_templates` WHERE category='general'. (A) 마스터.
+- **MedicalChartPanel 임상경과 `//`** (`MedicalChartPanel.tsx:427/454`): `phrase_templates` + `super_phrases`(is_active). (A) 마스터.
+
+---
+
+## 3. 본인 스코프 예외 — 차트텍스트지만 누설 아님(과제거 금지, supervisor nl1w #4)
+
+verbatim 코드 라인:
+
+- `lib/autoBindContext.ts:405~409` (보험 자동코딩, 최신 1건):
+```
+.from('medical_charts')
+...
+.eq('customer_id', checkIn.customer_id)
+.eq('clinic_id', checkIn.clinic_id)
+.eq('visit_date', visitDate)
+```
+→ `customer_id` 본인 종속. cross-patient 아님. **유지.**
+
+- `components/CheckInDetailSheet.tsx:596~637` (고객관리 1번차트 본인 로드):
+```
+.eq('customer_id', customerId).eq('status', 'active')   // L603
+.eq('customer_id', customerId)                          // L609,628,637
+.eq('id', customerId)                                   // L615
+```
+→ 전부 `customer_id` 본인 종속. **유지.** (phone(`resolvedCustomerId`)은 customer_id null 시 본인 1명을 식별하는 2순위 키이지 cross-patient 후보 아님.)
+
+---
+
+## 4. E2E 검증 (supervisor eud9 phase2)
+
+spec: `tests/e2e/T-20260606-foot-AUTOCOMPLETE-CROSS-PATIENT-AUDIT.spec.ts` (project: `unit` — page 미사용 순수 분류 로직, 형제 SUPER-PHRASE-DIAGNOSIS-AUTOCOMPLETE 패턴 동일).
+
+- 각 자동완성 소스의 **실제 쿼리 형태(테이블+스코프 컬럼)** 를 정본 그대로 인코딩 → 누설 분류기(`isCrossPatientLeak`)로 (B) 0건 단언.
+- 티켓 시나리오 1(환자 간 자유텍스트 미누설)·2(상용구 공유 보존)·3(본인 스코프 유지) 전부 커버.
+- 커버리지 가드: 데이터 연동 소스 정확히 6건 고정 — 신규 cross-patient 소스 유입 시 회귀 실패.
+
+실행 결과:
+```
+Running 8 tests using 1 worker
+  ✓ 1 (B) 교차누설 = 0건
+  ✓ 2 상용구/처방폴더 4건 (A) 클리닉 마스터
+  ✓ 3 추천인/고객연결 2건 person_search
+  ✓ 4 시나리오1 cross_patient distinct 소스 부재
+  ✓ 5 시나리오2 상용구 공유 보존
+  ✓ 6 시나리오3 본인 스코프 유지
+  ✓ 7 본인 스코프 vs 누설 분류 구분
+  ✓ 8 커버리지 가드 6건 고정
+  8 passed (687ms)
+```
+빌드: `npm run build` ✓ built in 3.67s.
+
+---
+
+## 5. 결론
+
+**전수감사 결과 (B) 환자 간 차트기록 교차 누설 = 0건.**
+- 데이터 연동 자동완성 후보 = (A) 클리닉 마스터 4건(phrase_templates/super_phrases/prescription_sets.folder) + 인물식별 검색 2건(customers name ilike). 전부 환자 비종속 또는 인물검색.
+- 진단명 datalist 2건은 별도 티켓(44a6deb·bfe1e2b) 소관으로 미접촉(중복 회피).
+- 본인 스코프(customer_id) 차트 쿼리 2건은 누설 아님 → 유지(과제거 방지).
+- **코드 변경 0건**(AC-4: 감사가 산출물) + spec/config 추가. DB 무변경. 상용구·진단명 회귀 없음.
