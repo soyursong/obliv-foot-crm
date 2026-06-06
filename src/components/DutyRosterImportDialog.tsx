@@ -19,8 +19,8 @@
  *
  * ⚠️ 매핑 규칙(컬럼 인식·근무유형 마크)은 현장 시트 샘플(Q1) 확정 전 groundwork.
  *    MARK_MAP / parseSheetDate / 그리드 인식부만 샘플 확보 후 보정한다(격리됨).
- * ⚠️ Q4(원장님 한정 vs 전 직원): 본 import는 전 활성 직원과 매칭하고 role을 미리보기에 표기.
- *    현 근무표 그리드는 director만 렌더 → 비원장 행은 데이터로만 적재됨(미리보기 경고로 고지).
+ * ✅ Q4 확정(T-20260606-foot-DUTY-ROSTER-ALLSTAFF): 근무표 그리드가 전 활성 직원을 렌더하므로
+ *    본 import가 매칭한 비원장 직원도 그리드에 정상 표시된다(데이터-그리드 정합).
  */
 
 import { useMemo, useRef, useState } from 'react';
@@ -316,10 +316,12 @@ export function DutyRosterImportDialog({
     });
 
     setRows(preview);
+    // T-20260606-foot-DUTY-ROSTER-ALLSTAFF: 그리드가 전 활성 직원을 렌더하므로
+    // 비원장 직원도 근무표에 정상 표시됨. 더 이상 director 한정 경고 불필요.
     const nonDirector = preview.filter((r) => r.staff && r.staff.role !== 'director').length;
     setParseNote(
       nonDirector > 0
-        ? `⚠️ 비원장 직원 ${nonDirector}건 포함 — 현재 근무표 그리드는 원장님(director)만 표시합니다. 표시 범위는 현장 확인 후 보정 예정.`
+        ? `비원장 직원 ${nonDirector}건 포함 — 근무표 그리드에 원장님·직원 모두 표시됩니다.`
         : '',
     );
   }
