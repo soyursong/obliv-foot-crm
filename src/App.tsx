@@ -203,7 +203,8 @@ function App() {
                 {/* T-20260512-foot-QUICK-RX-BUTTON: 치료사/원장도 진료환자목록 탭 접근 가능 */}
                 {/* T-20260520-foot-RBAC-MENU-EXPAND AC-2: consultant/coordinator 진료도구 접근 추가 */}
                 <Route path="doctor-tools" element={<RoleGuard roles={['admin', 'manager', 'director', 'therapist', 'technician', 'part_lead', 'consultant', 'coordinator']}><DoctorTools /></RoleGuard>} />
-                <Route path="treatment-table" element={<TreatmentTable />} />
+                {/* T-20260606-foot-THERAPIST-EVAL-VIEWER-ADMIN: 치료사 평가 근거 데이터 → 어드민(원장/관리자)만. 직접 URL 차단(라우트 가드) + 메뉴 숨김(AdminLayout) 이중. Sales와 동일 게이트 */}
+                <Route path="treatment-table" element={<RoleGuard roles={['admin', 'manager']}><TreatmentTable /></RoleGuard>} />
                 <Route path="notices" element={<Notices />} />
                 {/* T-20260605-foot-HANDOVER-BOARD AC-5: 전 직원 작성/조회 — RoleGuard 없음 */}
                 <Route path="handover" element={<Handover />} />
