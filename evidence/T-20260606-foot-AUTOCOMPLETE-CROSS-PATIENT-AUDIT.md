@@ -96,20 +96,40 @@ spec: `tests/e2e/T-20260606-foot-AUTOCOMPLETE-CROSS-PATIENT-AUDIT.spec.ts` (proj
 - 티켓 시나리오 1(환자 간 자유텍스트 미누설)·2(상용구 공유 보존)·3(본인 스코프 유지) 전부 커버.
 - 커버리지 가드: 데이터 연동 소스 정확히 6건 고정 — 신규 cross-patient 소스 유입 시 회귀 실패.
 
-실행 결과:
+실행 결과 (실측 로그 `_handoff/qa_screenshots/T-20260606-foot-AUTOCOMPLETE-CROSS-PATIENT-AUDIT/e2e_unit_run.log`):
 ```
+npx playwright test --project=unit T-20260606-foot-AUTOCOMPLETE-CROSS-PATIENT-AUDIT.spec.ts --reporter=list
 Running 8 tests using 1 worker
-  ✓ 1 (B) 교차누설 = 0건
-  ✓ 2 상용구/처방폴더 4건 (A) 클리닉 마스터
-  ✓ 3 추천인/고객연결 2건 person_search
-  ✓ 4 시나리오1 cross_patient distinct 소스 부재
-  ✓ 5 시나리오2 상용구 공유 보존
-  ✓ 6 시나리오3 본인 스코프 유지
-  ✓ 7 본인 스코프 vs 누설 분류 구분
-  ✓ 8 커버리지 가드 6건 고정
-  8 passed (687ms)
+  ✓ 1 [unit] …:64 AC-1/AC-2 데이터 연동 자동완성 소스 6건 중 (B) 교차누설 = 0건 (2ms)
+  ✓ 2 [unit] …:70 상용구/처방폴더 4건은 (A) 클리닉 마스터 (3ms)
+  ✓ 3 [unit] …:79 추천인/고객연결 2건은 person_search (2ms)
+  ✓ 4 [unit] …:95 시나리오1 cross_patient distinct 소스 부재 (0ms)
+  ✓ 5 [unit] …:111 시나리오2 상용구 공유 보존 (1ms)
+  ✓ 6 [unit] …:122 시나리오3 본인 스코프 유지 (0ms)
+  ✓ 7 [unit] …:129 본인 스코프 vs 누설 분류 구분 (0ms)
+  ✓ 8 [unit] …:141 커버리지 가드 6건 고정 (0ms)
+  8 passed (1.0s)
 ```
-빌드: `npm run build` ✓ built in 3.67s.
+빌드: `npm run build` ✓.
+
+---
+
+## 4-B. 배포 URL 브라우저 시뮬 1회 (supervisor eud9 phase2 — prod 실증)
+
+스크립트: `scripts/qa_shot_autocomplete_audit.mjs` · 대상 `https://obliv-foot-crm.vercel.app` · 실행로그 `_handoff/qa_screenshots/T-…AUDIT/browser_sim_run.log` · 결과 JSON `browser_sim_result.json`.
+
+| shot | 시나리오 | 최종 URL / 관측 | 결과 | 스크린샷 |
+|------|----------|-----------------|------|----------|
+| shot1 | 미로그인 `/admin/customers` 직접 접근 | `→ /login` 리다이렉트 (감사 빌드 auth 게이트) | ✓ blocked | `shot1_anon_blocked.png` |
+| shot2 | admin 세션 주입 후 `/admin/customers` | `/admin/customers` 고객 목록 렌더 (감사 빌드 라이브) | ✓ on /customers | `shot2_admin_customers.png` |
+| shot3 | 고객 검색창 "김" 입력 → 자동완성/필터 결과 | 노출 컬럼 = **이름·전화번호·생년월일·차트번호·방문·최종방문·결제액·고객메모** (전부 인물식별 메타). 진단명/임상경과/진료메모 등 **차트 자유텍스트 미리보기 0건** | ✓ no chart-text leak | `shot3_customer_search_person.png` |
+
+`browser_sim_result.json`:
+```json
+{"shot1_anon_blocked":true,"shot2_admin_customers":true,"shot3_typed":true,"shot3_no_chart_text_leak":true}
+```
+
+→ 배포본에서도 **고객 검색 자동완성 = (A) customers 인물식별 검색**(이름/전화/차트번호)이며, 환자 간 차트기록(진단·임상경과·메모) 미리보기 (B) 노출은 0건임을 시각 실증. (shot3 의 '고객메모' 컬럼은 customers 레벨 메모(예: 패키지 태그)로 medical_charts 차트 자유텍스트가 아니며, 자동완성 후보 미리보기 메커니즘도 아님.)
 
 ---
 
