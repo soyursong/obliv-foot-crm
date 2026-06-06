@@ -6,8 +6,12 @@
  * 데이터 소스: 옵션 A — duty_roster READ-only 집계(roster_type ∈ {regular,part} = 출근,
  *              resigned 제외). "오늘" = KST 당일(todaySeoulISODate).
  *
+ * UI 원칙(김주연 총괄 확정 2026-06-06): 명단(list)이 화면 주체 — 출근한 직원명을
+ *   한눈에 보여주고, 인원수(N명)는 헤더 보조 카운트로 병기. ("출근 인원수가 아니라
+ *   출근한 명단이 필요한거야")
+ *
  * 커버 시나리오:
- *   S1. 배너 노출 + "오늘 출근 N명" 카운트와 칩 개수 일치 (AC-1/AC-2)
+ *   S1. 배너 노출 + "오늘 출근 명단" 제목 + 보조 카운트(N명)와 칩(명단) 개수 일치 (AC-1/AC-2)
  *   S2. 빈 상태/카운트 graceful (0명 시 빈 문구 + "0명") (AC-4)
  *   S3. 기존 인수인계 캘린더 3뷰·작성 패널 무회귀 (AC-5)
  *
@@ -33,16 +37,19 @@ test.describe('T-20260606-foot-HANDOVER-TODAY-ATTENDEES 금일 출근자 배너'
     if (!ok) test.skip(true, 'Dashboard not loaded — auth 실패');
   });
 
-  // ── S1. 배너 노출 + 카운트/칩 정합 (AC-1/AC-2) ──────────────────────────────
-  test('S1 금일 출근자 배너 노출 + "오늘 출근 N명" 카운트와 칩 개수 일치', async ({ page }) => {
+  // ── S1. 배너 노출 + 명단 제목 + 카운트/칩 정합 (AC-1/AC-2) ──────────────────
+  test('S1 금일 출근자 명단 배너 노출 + 보조 카운트(N명)와 칩(명단) 개수 일치', async ({ page }) => {
     await gotoHandover(page);
 
     const banner = page.getByTestId('handover-today-attendees');
     await expect(banner).toBeVisible({ timeout: 10_000 });
 
-    // 카운트 텍스트가 "오늘 출근 N명" 형식(로딩 '…' 해소 후)으로 안정화될 때까지 대기
+    // 명단이 화면 주체임을 보장: "오늘 출근 명단" 제목이 보여야 한다
+    await expect(banner.getByText('오늘 출근 명단')).toBeVisible({ timeout: 10_000 });
+
+    // 인원수는 보조 카운트("N명")로 병기 — 로딩 '…' 해소 후 안정화될 때까지 대기
     const countEl = page.getByTestId('handover-attendees-count');
-    await expect(countEl).toHaveText(/오늘 출근 \d+명/, { timeout: 10_000 });
+    await expect(countEl).toHaveText(/^\d+명$/, { timeout: 10_000 });
 
     // 헤더의 N 추출
     const text = (await countEl.innerText()).trim();
@@ -64,7 +71,7 @@ test.describe('T-20260606-foot-HANDOVER-TODAY-ATTENDEES 금일 출근자 배너'
   test('S2 출근자 0명 시 빈 문구 + "0명", 에러 없이 렌더', async ({ page }) => {
     await gotoHandover(page);
     const countEl = page.getByTestId('handover-attendees-count');
-    await expect(countEl).toHaveText(/오늘 출근 \d+명/, { timeout: 10_000 });
+    await expect(countEl).toHaveText(/^\d+명$/, { timeout: 10_000 });
 
     const n = Number((await countEl.innerText()).match(/(\d+)명/)?.[1] ?? '-1');
     if (n === 0) {
