@@ -1523,7 +1523,9 @@ export function PenChartTab({
   // ── 포인터 이벤트 ────────────────────────────────────────────────────
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     // touch → 스크롤 전용 (draw 건너뜀)
-    if (e.pointerType === 'touch') return;
+    // T-20260606-foot-RX-PHRASE-TOUCH-INSERT-FIX: 단, boilerplate-placing 모드에선 iPad 손가락 탭도
+    // 상용구 배치 진입 허용 (a16193f touch guard가 placing 체크 앞에 있어 손가락 탭 전면 차단되던 회귀 수정)
+    if (e.pointerType === 'touch' && activeTool !== 'boilerplate-placing') return;
     // T-20260602-foot-PHRASE-PEN-PASSTHROUGH: select(선택/이동) 모드는 캔버스 빈 영역 탭에도 드로잉 안 함
     if (activeTool === 'select') return;
     e.preventDefault();
