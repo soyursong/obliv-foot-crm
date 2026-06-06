@@ -1699,6 +1699,7 @@ function DashboardTimeline({
   onReservationSelect,
   onReservationCheckIn,
   onReservationContext,
+  onNameOpen,
   clinic,
   folded,
   onToggleFold,
@@ -1718,6 +1719,10 @@ function DashboardTimeline({
   onReservationCheckIn?: (r: Reservation) => void;
   /** T-20260525-foot-RESV-CANCEL-CTX: 예약 박스 우클릭/롱프레스 → 컨텍스트메뉴 */
   onReservationContext?: (r: Reservation, pos: { x: number; y: number }) => void;
+  /** T-20260606-foot-DASH-FIRSTVISIT-CHART-RECUR-RCA (P0-C): 슬롯 명단 펼침(아코디언)
+   *  이름 클릭 → 진료차트 열기. 기존엔 onClick 부재로 항상 silent fail이던 surface 복구.
+   *  customer_id 연결된 항목에만 활성. */
+  onNameOpen?: (customerId: string) => void;
   /** T-20260522-foot-TIMETABLE-FOLD: 접힌 상태 (localStorage 유지) */
   folded?: boolean;
   /** T-20260522-foot-TIMETABLE-FOLD: 접기/펼치기 토글 콜백 */
@@ -2403,8 +2408,23 @@ function DashboardTimeline({
                         if (!item) return null;
                         const safeVisitType = (item.visitType === 'new' || item.visitType === 'returning') ? item.visitType : 'returning';
                         const chartNo = item.customerId ? (chartMap?.get(item.customerId) ?? null) : null;
+                        // T-20260606-foot-DASH-FIRSTVISIT-CHART-RECUR-RCA (P0-C):
+                        //   customer_id 연결된 명단 항목은 클릭 시 진료차트 열림. 이전엔 onClick 부재로 항상 무반응.
+                        const canOpen = Boolean(item.customerId && onNameOpen);
                         return (
-                          <div key={idx} className="flex items-center gap-1.5 py-0.5">
+                          <div
+                            key={idx}
+                            role={canOpen ? 'button' : undefined}
+                            tabIndex={canOpen ? 0 : undefined}
+                            onClick={canOpen ? () => onNameOpen!(item.customerId!) : undefined}
+                            onKeyDown={canOpen ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNameOpen!(item.customerId!); } } : undefined}
+                            className={cn(
+                              'flex items-center gap-1.5 py-0.5 rounded',
+                              canOpen && 'cursor-pointer hover:bg-teal-100/60 active:bg-teal-200/60 transition-colors',
+                            )}
+                            data-testid="timeline-accordion-name"
+                            data-can-open={canOpen ? 'true' : undefined}
+                          >
                             <Badge
                               className={cn(
                                 VISIT_TYPE_COLOR[safeVisitType],
@@ -2762,6 +2782,21 @@ export default function Dashboard() {
   const { profile } = useAuth();
   const clinic = useClinic();
   const [date, setDate] = useState<Date>(() => new Date());
+  // T-20260606-foot-DASH-FIRSTVISIT-CHART-RECUR-RCA (P0-A 근본 하드닝):
+  //   24/7 접수 태블릿이 자정을 넘기면 마운트 시점 new Date()로 잡힌 date가 '어제'로 stale 고정된다.
+  //   → isPast=true → 타임라인 카드 onClick이 undefined로 묶여 초진 차트 클릭이 무반응
+  //     (에러·빈화면 없는 silent fail). 매일 아침 재현되는 recurring 근본 원인.
+  //   사용자가 날짜를 수동 변경(이전/다음/캘린더)하지 않은 '오늘 추적' 모드에서만
+  //   자정 경계에서 date를 오늘로 자동 롤오버한다(의도적으로 고른 과거/미래 날짜는 존중).
+  const dateUserPinnedRef = useRef(false);
+  useEffect(() => {
+    const rollover = setInterval(() => {
+      if (dateUserPinnedRef.current) return;
+      const today = new Date();
+      setDate((d) => (isSameDay(d, today) ? d : today));
+    }, 60_000);
+    return () => clearInterval(rollover);
+  }, []);
   const [tab, setTab] = useState<TabKey>('all');
   const [rows, setRows] = useState<CheckIn[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -5764,7 +5799,7 @@ export default function Dashboard() {
       {/* T-20260522-foot-TABLET-DUAL-LAYOUT: data-dashboard-header — CSS 터치 타겟 타겟팅용 */}
       <div className="flex shrink-0 items-center justify-between gap-4 px-4 py-2 border-b bg-white/80" data-dashboard-header>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon-sm" onClick={() => setDate((d) => subDays(d, 1))}>
+          <Button variant="outline" size="icon-sm" onClick={() => { dateUserPinnedRef.current = true; setDate((d) => subDays(d, 1)); }}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           {/* 날짜 클릭 → 미니 캘린더 팝업 */}
@@ -5783,18 +5818,18 @@ export default function Dashboard() {
               <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50">
                 <MiniCalendar
                   selected={date}
-                  onSelect={(d) => { setDate(d); setShowCalendar(false); }}
+                  onSelect={(d) => { dateUserPinnedRef.current = true; setDate(d); setShowCalendar(false); }}
                   month={calendarMonth}
                   onMonthChange={setCalendarMonth}
                 />
               </div>
             )}
           </div>
-          <Button variant="outline" size="icon-sm" onClick={() => setDate((d) => addDays(d, 1))}>
+          <Button variant="outline" size="icon-sm" onClick={() => { dateUserPinnedRef.current = true; setDate((d) => addDays(d, 1)); }}>
             <ChevronRight className="h-4 w-4" />
           </Button>
           {!isToday && (
-            <Button variant="ghost" size="sm" onClick={() => setDate(new Date())}>
+            <Button variant="ghost" size="sm" onClick={() => { dateUserPinnedRef.current = false; setDate(new Date()); }}>
               오늘로
             </Button>
           )}
@@ -6080,9 +6115,15 @@ export default function Dashboard() {
             reservations={enrichedTimelineReservations}
             selfCheckIns={selfCheckIns}
             onSlotClick={handleQuickSlotClick}
-            onCardClick={!isPast ? handleCardClick : undefined}
+            // T-20260606-foot-DASH-FIRSTVISIT-CHART-RECUR-RCA (P0-A):
+            //   차트 열기(handleCardClick/handleReservationSelect)는 read-only이므로 isPast로 막지 않는다.
+            //   기존 `!isPast ? ... : undefined` 게이트는 stale date(자정 넘긴 태블릿)에서 onClick을
+            //   undefined로 만들어 초진 차트 클릭이 무반응(silent fail)이 되던 근본 라인.
+            //   칸반은 이미 무조건 전달(read-only 일관). mutation(드래그 등)은 핸들러 자체 isPast 가드로 보호됨.
+            onCardClick={handleCardClick}
             onCardContext={!isPast ? handleCardContext : undefined}
-            onReservationSelect={!isPast ? handleReservationSelect : undefined}
+            onReservationSelect={handleReservationSelect}
+            onNameOpen={ctxOpenChart}
             // T-20260529-foot-RECEPTION-BTN-REMOVE: 접수 버튼 제거 (AC-1/AC-2)
             // 접수는 셀프접수 매칭 또는 우측 상단 체크인 버튼으로만 처리
             // onReservationCheckIn 미전달 → DraggableBox1Card/Box2ResvCard {onCheckIn && ...} 가드로 버튼 미렌더링
