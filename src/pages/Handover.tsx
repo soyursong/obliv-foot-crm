@@ -98,27 +98,34 @@ export default function Handover() {
     setAttendeesLoading(true);
     const todayKst = todaySeoulISODate(); // YYYY-MM-DD (KST)
     try {
-      const [names, { data: staffData }] = await Promise.all([
-        // 시트 직접 read — 시트 장애/포맷 변경 시 graceful([] 반환, throw 안 함)
-        fetchTodayAttendeeNames(todayKst).catch((e) => {
-          console.warn('[handover] 출근 명단 시트 read 실패:', e);
-          return [] as string[];
-        }),
-        supabase
-          .from('staff')
-          .select('id, name, display_name, role, active')
-          .eq('clinic_id', clinic.id)
-          .eq('active', true),
-      ]);
+      // 활성 직원 먼저 조회 — 시트 "전직원" 토큰 확장(2001c73 룰)에 직원 이름 목록 필요.
+      const { data: staffData } = await supabase
+        .from('staff')
+        .select('id, name, display_name, role, active')
+        .eq('clinic_id', clinic.id)
+        .eq('active', true);
 
       // 이름 → CRM staff.role 매핑 (name / display_name 모두 키로, 공백 제거)
       const norm = (s: string) => s.replace(/\s+/g, '');
       const roleByName = new Map<string, Staff['role']>();
+      const allStaffNames: string[] = [];
       (staffData ?? []).forEach((s) => {
         const staff = s as Staff;
-        if (staff.name) roleByName.set(norm(staff.name), staff.role);
+        if (staff.name) {
+          roleByName.set(norm(staff.name), staff.role);
+          allStaffNames.push(staff.name);
+        }
         if (staff.display_name) roleByName.set(norm(staff.display_name), staff.role);
       });
+
+      // 시트 직접 read — 시트 장애/포맷 변경 시 graceful([] 반환, throw 안 함)
+      // allStaffNames 전달 → 시트 "전직원" 토큰을 그날 활성 직원 전체로 확장.
+      const names = await fetchTodayAttendeeNames(todayKst, undefined, allStaffNames).catch(
+        (e) => {
+          console.warn('[handover] 출근 명단 시트 read 실패:', e);
+          return [] as string[];
+        },
+      );
 
       const roleIdx = (r: Staff['role'] | null) => {
         if (!r) return STAFF_ROLE_ORDER.length + 1; // 미매칭은 맨 뒤
