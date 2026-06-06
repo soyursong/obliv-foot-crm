@@ -287,6 +287,46 @@ const FILTER_OPTIONS: { key: MemoFilter; label: string; chipClass: string }[] = 
   { key: 'notable', label: '⚠특이', chipClass: 'bg-amber-500 text-white border-amber-500' },
 ];
 
+// T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-3 (문지은 대표원장):
+//   임상경과 `//` 트리거 드롭다운을 textarea 전체 하단이 아닌 '커서(caret) 바로 아래'에 렌더.
+//   mirror-div 기법: textarea 박스를 동일 스타일로 복제하고 caret 직전까지의 텍스트 폭/높이로 caret 픽셀 좌표 산출.
+//   반환 top 은 caret 라인 '아래'(viewport 기준), left 는 caret 가로 위치. 실패 시 호출측 폴백.
+function getTextareaCaretRect(
+  ta: HTMLTextAreaElement,
+  caretIndex: number,
+): { top: number; left: number; lineHeight: number } {
+  const style = window.getComputedStyle(ta);
+  const div = document.createElement('div');
+  const copyProps = [
+    'boxSizing', 'overflowX', 'overflowY',
+    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+    'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+    'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize', 'fontSizeAdjust',
+    'lineHeight', 'fontFamily', 'textAlign', 'textTransform', 'textIndent',
+    'letterSpacing', 'wordSpacing', 'tabSize',
+  ] as const;
+  div.style.position = 'absolute';
+  div.style.visibility = 'hidden';
+  div.style.whiteSpace = 'pre-wrap';
+  div.style.wordWrap = 'break-word';
+  div.style.top = '0';
+  div.style.left = '0';
+  div.style.width = `${ta.offsetWidth}px`;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  copyProps.forEach((p) => { (div.style as any)[p] = (style as any)[p]; });
+  div.textContent = ta.value.substring(0, caretIndex);
+  const span = document.createElement('span');
+  span.textContent = ta.value.substring(caretIndex) || '.';
+  div.appendChild(span);
+  document.body.appendChild(div);
+  const taRect = ta.getBoundingClientRect();
+  const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2 || 18;
+  const top = taRect.top + span.offsetTop - ta.scrollTop + lineHeight;
+  const left = taRect.left + span.offsetLeft - ta.scrollLeft;
+  document.body.removeChild(div);
+  return { top, left, lineHeight };
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function MedicalChartPanel({
@@ -337,6 +377,9 @@ export default function MedicalChartPanel({
   const [formClinical, setFormClinical] = useState(''); // 임상경과
   const [formMemo, setFormMemo] = useState('');       // 원장 전용 메모
   const [formRx, setFormRx] = useState<PrescriptionItem[]>([]); // 처방내역
+  // T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-4 (문지은 대표원장): 저장/수정 모드 토글(실수 방지).
+  //   신규 작성 = 항상 편집 가능. 저장된 차트 = 진입 시 읽기전용 → [수정] 클릭해야 편집모드 진입.
+  const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // T-20260603-foot-RX-CHART-ENHANCE AC-5: 약품 마스터 검색
@@ -583,6 +626,7 @@ export default function MedicalChartPanel({
       loadData();
       setSelectedChartId(null);
       resetForm(null);
+      setEditMode(true); // AC-4: 새 고객 열림 = 신규 작성 모드(편집 가능)
       setPhrasePopoverVisible(false);
       setClickedPhraseId(null);
       setRightTab('rx');
@@ -646,12 +690,14 @@ export default function MedicalChartPanel({
     setSelectedChartId(chart.id);
     resetForm(chart);
     setPhrasePopoverVisible(false);
+    setEditMode(false); // AC-4: 저장된 차트 진입 시 읽기전용
   }
 
   function selectNew() {
     setSelectedChartId(null);
     resetForm(null);
     setPhrasePopoverVisible(false);
+    setEditMode(true); // AC-4: 신규 작성은 즉시 편집 가능
   }
 
   // ── 저장 ─────────────────────────────────────────────────────────────────────
@@ -735,6 +781,7 @@ export default function MedicalChartPanel({
       // T-20260527-foot-MEDCHART-DATA-LOSS AC-FE: 저장 후 필터 리셋
       // 필터 활성 상태에서 저장 시 새 차트가 필터에 미일치 → 타임라인에서 사라져 보이는 UX 버그 방지
       setMemoFilters(new Set<MemoFilter>());
+      setEditMode(false); // AC-4: 저장 완료 → 읽기전용 전환(연속 실수 차단)
       loadData();
     } catch (err: unknown) {
       toast.error(`저장 실패: ${err instanceof Error ? err.message : '알 수 없는 오류'}`);
@@ -939,6 +986,11 @@ export default function MedicalChartPanel({
   //   - 금기 있음 → 확인 모달 오픈(pendingRxItems 보관). 사용자가 전체 체크 후 확인해야 적재.
   //   ※ 텍스트 약명매칭 금지 — prescription_code_id 기준만. (오탐 차단 / 의료안전)
   async function addRxItems(items: PrescriptionItem[], successMsg?: string) {
+    // T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-4: 읽기전용(저장된 차트·미편집) 상태에선 처방 적재 차단.
+    if (isReadOnly) {
+      toast.error('[수정] 버튼을 눌러 편집 모드로 전환한 뒤 처방을 추가하세요');
+      return;
+    }
     // #8-1b(role 게이트): 부원장(vice_director)은 prescription_code_id 없는 자유텍스트 처방 추가 금지.
     //   official 499 코드(addRxFromCode)는 항상 code_id 보유 → 통과. fail-closed: code_id 없으면 차단.
     const roleGate = checkRxRoleGate(currentUserRole, items);
@@ -1288,6 +1340,9 @@ export default function MedicalChartPanel({
   }
 
   const selectedChart = displayCharts.find(c => c.id === selectedChartId) ?? null;
+  // T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-4: 저장된 차트(선택됨)는 편집모드 진입 전까지 읽기전용.
+  //   신규 작성(selectedChartId=null)은 항상 편집 가능. 더미도 selectedChartId 보유 → 읽기전용(저장 자체 불가).
+  const isReadOnly = !!selectedChartId && !editMode;
   const chartsIdx = selectedChart ? displayCharts.indexOf(selectedChart) : -1;
 
   // AC-13: created_by(이메일) → 표시명 변환. 매핑 없으면 이메일 로컬파트 폴백.
@@ -1827,16 +1882,8 @@ export default function MedicalChartPanel({
                         더미 — 저장 불가
                       </span>
                     )}
-                    {/* AC-13 + T-20260606-foot-MEDCHART-RECORDER-NAME AC-5: 선택 차트 기록자 — DB 스냅샷 우선, 폴백 동적 */}
-                    {selectedChart && !selectedChartId?.startsWith('__dummy__') && (selectedChart.created_by_name || recorderName(selectedChart.created_by)) && (
-                      <span
-                        className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground"
-                        data-testid="chart-recorder"
-                      >
-                        <Stethoscope className="h-3 w-3 text-teal-600" />
-                        기록자 <span className="font-semibold text-teal-700">{selectedChart.created_by_name || recorderName(selectedChart.created_by)}</span>
-                      </span>
-                    )}
+                    {/* T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-2: 기록자(작성자) 표시는 상단 '로그인 계정 인디케이터'
+                        오인을 피해 본문 하단 서명 위치로 이동(아래 진료메모 다음 서명 블록 참조). 상단 미표시. */}
                   </div>
 
                   {/* 진료일 */}
@@ -1846,7 +1893,8 @@ export default function MedicalChartPanel({
                       type="date"
                       value={formDate}
                       onChange={(e) => { setFormDate(e.target.value); loadVisitPayments(e.target.value); }}
-                      className="h-9 text-sm max-w-[180px]"
+                      disabled={isReadOnly}
+                      className="h-9 text-sm max-w-[180px] disabled:opacity-100 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
                       data-testid="medical-chart-date"
                     />
                   </div>
@@ -1863,6 +1911,7 @@ export default function MedicalChartPanel({
                       value={formDx}
                       onChange={setFormDx}
                       clinicId={clinicId}
+                      disabled={isReadOnly}
                       data-testid="medical-chart-diagnosis"
                     />
                   </div>
@@ -1940,9 +1989,10 @@ export default function MedicalChartPanel({
                         value={formClinical}
                         onChange={handleClinicalChange}
                         onBlur={() => { setTimeout(() => setPhrasePopoverVisible(false), 200); }}
+                        readOnly={isReadOnly}
                         placeholder="임상경과를 입력하세요  예: //통증감소"
                         rows={13}
-                        className="text-sm resize-y placeholder:text-gray-300 min-h-[16rem]"
+                        className={`text-sm resize-y placeholder:text-gray-300 min-h-[16rem] ${isReadOnly ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
                         data-testid="medical-chart-clinical"
                       />
 
@@ -1952,14 +2002,29 @@ export default function MedicalChartPanel({
                                 position:fixed + z-[200] 으로 항상 최상위 렌더(클리핑/뒤로깔림 제거).
                           AC-2: 슈퍼상용구 + 일반 상용구 합류 노출. 후보 0건이어도 팝오버는 열되 빈 상태 안내(하드 게이팅 금지). */}
                       {phrasePopoverVisible && (() => {
-                        const rect = clinicalRef.current?.getBoundingClientRect();
-                        if (!rect) return null;
+                        const ta = clinicalRef.current;
+                        if (!ta) return null;
                         const POPOVER_MAX = 300;
-                        const spaceBelow = window.innerHeight - rect.bottom;
+                        const POPOVER_W = 288;
+                        // AC-3: 커서(caret) 좌표 기준 렌더 (textarea 전체 하단 X). 계산 실패 시 textarea rect 폴백.
+                        let anchorTop: number;
+                        let anchorLeft: number;
+                        let lineH = 18;
+                        try {
+                          const caret = getTextareaCaretRect(ta, ta.selectionStart ?? ta.value.length);
+                          anchorTop = caret.top;
+                          anchorLeft = caret.left;
+                          lineH = caret.lineHeight;
+                        } catch {
+                          const rect = ta.getBoundingClientRect();
+                          anchorTop = rect.bottom;
+                          anchorLeft = rect.left;
+                        }
+                        const spaceBelow = window.innerHeight - anchorTop;
                         const top = spaceBelow > POPOVER_MAX
-                          ? rect.bottom + 4
-                          : Math.max(8, rect.top - POPOVER_MAX - 4);
-                        const left = Math.min(rect.left, window.innerWidth - 304);
+                          ? anchorTop + 4
+                          : Math.max(8, anchorTop - lineH - POPOVER_MAX - 4);
+                        const left = Math.min(Math.max(8, anchorLeft), window.innerWidth - POPOVER_W - 8);
                         const hasAny = filteredSuperPhrases.length > 0 || filteredPhrases.length > 0;
                         return createPortal(
                           <div
@@ -2072,7 +2137,8 @@ export default function MedicalChartPanel({
                                       <Input
                                         value={item.dosage}
                                         onChange={(e) => updateRxItem(idx, 'dosage', e.target.value)}
-                                        className="h-6 text-xs px-1.5 w-24 text-muted-foreground"
+                                        disabled={isReadOnly}
+                                        className="h-6 text-xs px-1.5 w-24 text-muted-foreground disabled:opacity-100 disabled:bg-gray-50 disabled:cursor-not-allowed"
                                         placeholder="용량"
                                         aria-label="용량"
                                         data-testid={`rx-dosage-${idx}`}
@@ -2083,7 +2149,8 @@ export default function MedicalChartPanel({
                                     <Input
                                       value={item.frequency}
                                       onChange={(e) => updateRxItem(idx, 'frequency', e.target.value)}
-                                      className="h-7 text-xs px-2"
+                                      disabled={isReadOnly}
+                                      className="h-7 text-xs px-2 disabled:opacity-100 disabled:bg-gray-50 disabled:cursor-not-allowed"
                                       placeholder="1일 3회"
                                       data-testid={`rx-frequency-${idx}`}
                                     />
@@ -2093,6 +2160,7 @@ export default function MedicalChartPanel({
                                     <RxCountInput
                                       value={item.count ?? null}
                                       onChange={(v) => updateRxCount(idx, v)}
+                                      disabled={isReadOnly}
                                       className="w-16"
                                     />
                                   </td>
@@ -2102,20 +2170,23 @@ export default function MedicalChartPanel({
                                       min={0}
                                       value={item.days}
                                       onChange={(e) => updateRxItem(idx, 'days', e.target.value)}
-                                      className="h-7 text-xs px-2 w-14"
+                                      disabled={isReadOnly}
+                                      className="h-7 text-xs px-2 w-14 disabled:opacity-100 disabled:bg-gray-50 disabled:cursor-not-allowed"
                                       placeholder="일수"
                                       data-testid={`rx-days-${idx}`}
                                     />
                                   </td>
                                   <td className="py-1.5 pr-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => setFormRx(prev => prev.filter((_, i) => i !== idx))}
-                                      className="h-5 w-5 rounded text-destructive hover:bg-destructive/10 flex items-center justify-center"
-                                      aria-label="처방 항목 삭제"
-                                    >
-                                      <X className="h-3 w-3" />
-                                    </button>
+                                    {!isReadOnly && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setFormRx(prev => prev.filter((_, i) => i !== idx))}
+                                        className="h-5 w-5 rounded text-destructive hover:bg-destructive/10 flex items-center justify-center"
+                                        aria-label="처방 항목 삭제"
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </button>
+                                    )}
                                   </td>
                                 </tr>
                               );
@@ -2145,9 +2216,10 @@ export default function MedicalChartPanel({
                       <Textarea
                         value={formMemo}
                         onChange={(e) => setFormMemo(e.target.value)}
+                        readOnly={isReadOnly}
                         placeholder="원장 전용 메모를 입력하세요"
                         rows={3}
-                        className="text-sm resize-none placeholder:text-gray-300"
+                        className={`text-sm resize-none placeholder:text-gray-300 ${isReadOnly ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
                         data-testid="doctor-memo-input"
                       />
                     </div>
@@ -2156,28 +2228,54 @@ export default function MedicalChartPanel({
                     null
                   )}
 
-                  {/* 저장 버튼 */}
+                  {/* T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-2: 작성자 서명 — 기록 본문 말미.
+                      상단 로그인 계정 인디케이터와 구분되는 '서명' 스타일(우측 정렬, 점선 구분, 작성: {이름}). */}
+                  {selectedChart && !selectedChartId?.startsWith('__dummy__') && (selectedChart.created_by_name || recorderName(selectedChart.created_by)) && (
+                    <div className="flex justify-end" data-testid="chart-recorder">
+                      <span className="inline-flex items-center gap-1.5 border-t border-dashed border-gray-300 pt-1.5 text-xs text-muted-foreground italic">
+                        <Stethoscope className="h-3 w-3 text-teal-600" />
+                        작성{' '}
+                        <span className="font-semibold not-italic text-teal-700">
+                          {selectedChart.created_by_name || recorderName(selectedChart.created_by)}
+                        </span>
+                      </span>
+                    </div>
+                  )}
+
+                  {/* 저장/수정 버튼 — AC-4: 저장된 차트는 [수정]으로 편집모드 진입 후에만 저장 가능(실수 방지) */}
                   <div className="flex gap-3 pt-2 pb-4 border-t">
-                    <Button
-                      size="lg"
-                      className={`flex-1 h-12 text-base ${
-                        selectedChartId?.startsWith('__dummy__')
-                          ? 'bg-gray-300 hover:bg-gray-300 text-gray-500 cursor-not-allowed'
-                          : 'bg-teal-600 hover:bg-teal-700 text-white'
-                      }`}
-                      onClick={handleSave}
-                      disabled={saving || !formDate}
-                      data-testid="medical-chart-save-btn"
-                    >
-                      {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                      {saving
-                        ? '저장 중...'
-                        : selectedChartId?.startsWith('__dummy__')
-                          ? '더미 데이터 — 저장 불가'
-                          : selectedChartId
-                            ? '수정 저장'
-                            : '기록 저장'}
-                    </Button>
+                    {isReadOnly && !selectedChartId?.startsWith('__dummy__') ? (
+                      <Button
+                        size="lg"
+                        className="flex-1 h-12 text-base bg-amber-500 hover:bg-amber-600 text-white"
+                        onClick={() => setEditMode(true)}
+                        data-testid="medical-chart-edit-btn"
+                      >
+                        <Edit2 className="h-4 w-4 mr-2" />
+                        수정
+                      </Button>
+                    ) : (
+                      <Button
+                        size="lg"
+                        className={`flex-1 h-12 text-base ${
+                          selectedChartId?.startsWith('__dummy__')
+                            ? 'bg-gray-300 hover:bg-gray-300 text-gray-500 cursor-not-allowed'
+                            : 'bg-teal-600 hover:bg-teal-700 text-white'
+                        }`}
+                        onClick={handleSave}
+                        disabled={saving || !formDate}
+                        data-testid="medical-chart-save-btn"
+                      >
+                        {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                        {saving
+                          ? '저장 중...'
+                          : selectedChartId?.startsWith('__dummy__')
+                            ? '더미 데이터 — 저장 불가'
+                            : selectedChartId
+                              ? '수정 저장'
+                              : '기록 저장'}
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>

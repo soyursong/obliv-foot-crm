@@ -105,10 +105,11 @@ test.describe('T-20260603-CHART-UIUX-ENHANCE — 진료차트 UI/UX 개선', () 
     }
     // 첫 엔트리 선택
     await entries.first().locator('button').first().click();
-    // 기록자 표기는 created_by가 있을 때만 렌더 → 존재 시 의미 검증, 없으면 통과
+    // 기록자(작성자) 표기는 created_by가 있을 때만 렌더 → 존재 시 가시성 검증, 없으면 통과.
+    // T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-2: 상단 인디케이터 → 본문 하단 '작성 {이름}' 서명으로 이동.
     const recorder = page.locator('[data-testid="chart-recorder"]');
     if ((await recorder.count()) > 0) {
-      await expect(recorder.first()).toContainText('기록자');
+      await expect(recorder.first()).toContainText('작성');
     }
   });
 });
