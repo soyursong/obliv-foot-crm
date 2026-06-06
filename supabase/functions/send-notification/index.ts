@@ -169,8 +169,10 @@ async function getVaultSecret(vaultName: string): Promise<string | null> {
   return (data as string | null) ?? null;
 }
 
-// ── admin JWT 검증 → admin user id 반환 (失敗 시 null) ────────────
-async function verifyAdminJwt(jwt: string): Promise<string | null> {
+// ── JWT 검증 → 허용 role이면 user id 반환 (실패 시 null) ─────────
+// T-20260606-foot-CTXMENU-SMS-SEND: manual_send 는 admin/manager 허용해야 하므로
+// 단일 admin 고정 대신 허용 role 집합을 받는 형태로 일반화.
+async function verifyRoleJwt(jwt: string, allowedRoles: string[]): Promise<string | null> {
   try {
     const { data: { user }, error } = await supabase.auth.getUser(jwt);
     if (error || !user) return null;
@@ -181,7 +183,8 @@ async function verifyAdminJwt(jwt: string): Promise<string | null> {
       .eq("id", user.id)
       .maybeSingle();
 
-    return (profile as { role?: string } | null)?.role === "admin" ? user.id : null;
+    const role = (profile as { role?: string } | null)?.role ?? "";
+    return allowedRoles.includes(role) ? user.id : null;
   } catch {
     return null;
   }
@@ -214,7 +217,8 @@ Deno.serve(async (req: Request) => {
   const isCronCall    = INTERNAL_CRON_SECRET !== "" && cronSecret === INTERNAL_CRON_SECRET;
   const isAdminAction = Boolean(bodyJson._action);
 
-  // admin UI 액션은 user JWT도 허용 (admin role 검증)
+  // admin UI 액션은 user JWT도 허용 (role 검증)
+  // T-20260606-foot-CTXMENU-SMS-SEND: manual_send 는 admin/manager 허용, 그 외 액션은 admin 한정 유지.
   let adminUserId: string | null = null;
   if (isAdminAction && !isServiceRole && !isCronCall) {
     if (!authHeader.startsWith("Bearer ")) {
@@ -223,10 +227,12 @@ Deno.serve(async (req: Request) => {
       });
     }
     const jwt = authHeader.slice("Bearer ".length);
-    adminUserId = await verifyAdminJwt(jwt);
+    const actionName = String(bodyJson._action);
+    const allowedRoles = actionName === "manual_send" ? ["admin", "manager"] : ["admin"];
+    adminUserId = await verifyRoleJwt(jwt, allowedRoles);
     if (!adminUserId) {
-      console.warn("[send-notification] admin JWT 검증 실패");
-      return new Response(JSON.stringify({ error: "Unauthorized: admin role required" }), {
+      console.warn(`[send-notification] JWT 검증 실패 action=${actionName} allowed=${allowedRoles.join("/")}`);
+      return new Response(JSON.stringify({ error: `Unauthorized: ${allowedRoles.join("/")} role required` }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
@@ -346,6 +352,124 @@ Deno.serve(async (req: Request) => {
           message: result.success
             ? "전송 완료"
             : (result.errorMessage ?? "발송 실패"),
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ── manual_send 액션 (T-20260606-foot-CTXMENU-SMS-SEND) ─────
+    // 대시보드 고객 우클릭 [문자] → 템플릿 선택·자유편집 후 수동 1:1 발송.
+    // 입력: { _action:'manual_send', clinic_id, customer_id, recipient_phone, body, source? }
+    // body 는 FE에서 {고객명} 치환·편집 완료된 최종본 → EF는 재렌더하지 않고 그대로 발송.
+    // 인증: admin/manager (위 auth 블록에서 검증됨). 업무시간 제약은 의도적 미적용(현장이 명시 발송).
+    if (action === "manual_send") {
+      const clinic_id       = String(bodyJson.clinic_id ?? "");
+      const customer_id     = bodyJson.customer_id ? String(bodyJson.customer_id) : null;
+      const recipient_phone = String(bodyJson.recipient_phone ?? "").replace(/[^0-9]/g, "");
+      const sendBody        = String(bodyJson.body ?? "").trim();
+      const source          = String(bodyJson.source ?? "manual_dashboard");
+
+      if (!clinic_id || !recipient_phone || !sendBody) {
+        return new Response(
+          JSON.stringify({ success: false, message: "clinic_id, recipient_phone, body 필수" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // capability 조회 + 발신/화이트리스트 가드 (자동발송과 동일 정책)
+      const { data: mcap, error: mcapErr } = await supabase
+        .from("clinic_messaging_capability")
+        .select("enabled, solapi_api_key_vault_name, solapi_secret_vault_name, sender_number, solapi_validation_status")
+        .eq("clinic_id", clinic_id)
+        .maybeSingle();
+
+      if (mcapErr || !mcap) {
+        return new Response(
+          JSON.stringify({ success: false, message: "연결 설정 정보를 찾을 수 없습니다" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const mc = mcap as {
+        enabled: boolean;
+        solapi_api_key_vault_name: string | null;
+        solapi_secret_vault_name: string | null;
+        sender_number: string | null;
+        solapi_validation_status: string | null;
+      };
+
+      if (!mc.enabled || !mc.solapi_api_key_vault_name || !mc.solapi_secret_vault_name || !mc.sender_number) {
+        return new Response(
+          JSON.stringify({ success: false, message: "문자 발송 설정이 완료되지 않았습니다 (연결/발신번호 미설정). 메시지 설정에서 먼저 저장하세요." }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      if (mc.solapi_validation_status === "not_registered") {
+        return new Response(
+          JSON.stringify({ success: false, message: "발신번호가 SOLAPI 화이트리스트에 미등록되어 발송할 수 없습니다." }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // 수신거부(opt_out) 가드
+      const { data: mOpt } = await supabase
+        .from("notification_opt_outs")
+        .select("id")
+        .eq("clinic_id", clinic_id)
+        .eq("phone", recipient_phone)
+        .maybeSingle();
+      if (mOpt) {
+        await supabase.from("notification_logs").insert({
+          clinic_id, customer_id, reservation_id: null,
+          event_type: "manual_send", channel: "sms",
+          recipient_phone, body_rendered: sendBody, status: "opt_out",
+          error_message: `${source}: opt_out`, sent_at: null,
+        });
+        return new Response(
+          JSON.stringify({ success: false, message: "수신거부 고객입니다 — 발송이 차단되었습니다." }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Vault 시크릿 조회 + 발송
+      const mApiKey    = await getVaultSecret(mc.solapi_api_key_vault_name);
+      const mApiSecret = await getVaultSecret(mc.solapi_secret_vault_name);
+      if (!mApiKey || !mApiSecret) {
+        return new Response(
+          JSON.stringify({ success: false, message: "Vault 시크릿을 찾을 수 없습니다. API Key/Secret을 다시 저장하세요." }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const mResult = await sendSolapi({
+        apiKey: mApiKey,
+        apiSecret: mApiSecret,
+        senderNumber: mc.sender_number,
+        recipientPhone: recipient_phone,
+        body: sendBody,
+      });
+
+      console.log(`[send-notification] manual_send by=${adminUserId} clinic=${clinic_id} cust=${customer_id} result=`, mResult);
+
+      // 발송 이력 적재 (AC-7) — event_type='manual_send', source 는 error_message 프리픽스로 추적
+      await supabase.from("notification_logs").insert({
+        clinic_id,
+        customer_id,
+        reservation_id: null,
+        event_type: "manual_send",
+        channel: getChannel(sendBody).toLowerCase(),
+        recipient_phone,
+        body_rendered: sendBody,
+        status: mResult.success ? "sent" : "failed",
+        solapi_message_id: mResult.success ? (mResult.messageId ?? null) : null,
+        error_message: mResult.success ? `${source}` : `${source}: ${mResult.errorMessage ?? "발송 실패"}`,
+        sent_at: mResult.success ? new Date().toISOString() : null,
+      });
+
+      return new Response(
+        JSON.stringify({
+          success: mResult.success,
+          message: mResult.success ? "문자 발송 완료" : (mResult.errorMessage ?? "발송 실패"),
+          channel: getChannel(sendBody),
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );

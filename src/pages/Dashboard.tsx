@@ -84,6 +84,8 @@ import { PaymentDialog } from '@/components/PaymentDialog';
 import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import { StatusContextMenu } from '@/components/StatusContextMenu';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
+import SendSmsDialog from '@/components/SendSmsDialog';
+import { canAccess } from '@/lib/permissions';
 import { CustomerHoverCard } from '@/components/CustomerHoverCard';
 // T-20260601-foot-DASH-HSCROLL-CHART-LOC #3: 성함 옆 현재 배정 슬롯 이름
 import { getAssignedSlotName } from '@/lib/checkin-slot';
@@ -2835,6 +2837,8 @@ export default function Dashboard() {
   const [dayPayments, setDayPayments] = useState<Map<string, number>>(new Map());
   const [contextMenu, setContextMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
   const [customerMenu, setCustomerMenu] = useState<{ checkIn: CheckIn; pos: { x: number; y: number } } | null>(null);
+  // T-20260606-foot-CTXMENU-SMS-SEND: 우클릭 [문자] 수동 발송 대상
+  const [smsTarget, setSmsTarget] = useState<CheckIn | null>(null);
   // T-20260525-foot-RESV-CANCEL-CTX: 타임라인 예약 박스 컨텍스트메뉴 상태
   const [resvContextMenu, setResvContextMenu] = useState<{ reservation: Reservation; pos: { x: number; y: number } } | null>(null);
   const [dashCancelTarget, setDashCancelTarget] = useState<Reservation | null>(null);
@@ -6462,6 +6466,20 @@ export default function Dashboard() {
         onOpenMedicalChart={handleOpenMedicalChart}
         onNewReservation={handleNewReservation}
         onOpenPayment={handleOpenPaymentFromMenu}
+        /* T-20260606-foot-CTXMENU-SMS-SEND: admin/manager 한정 노출(미허용 시 onSendSms 미전달 → 항목 숨김) */
+        onSendSms={
+          canAccess(profile?.role ?? '', 'manual_sms_send')
+            ? (ci) => setSmsTarget(ci)
+            : undefined
+        }
+      />
+
+      {/* T-20260606-foot-CTXMENU-SMS-SEND: 수동 1:1 문자 발송 모달 */}
+      <SendSmsDialog
+        open={smsTarget !== null}
+        onOpenChange={(v) => { if (!v) setSmsTarget(null); }}
+        checkIn={smsTarget}
+        clinicId={clinic?.id ?? ''}
       />
 
       {/* T-20260525-foot-RESV-CANCEL-CTX AC-1: 타임라인 예약 박스 우클릭/롱프레스 컨텍스트메뉴 */}
