@@ -22,7 +22,7 @@ import { test, expect } from '@playwright/test';
 import { loginAndWaitForDashboard } from '../helpers';
 
 const GOTO_TAB = async (page: Parameters<typeof loginAndWaitForDashboard>[0]) => {
-  await page.goto('/admin/doctor-tools');
+  await page.goto('/admin/clinic-management');
   try {
     await page.getByTestId('tab-progress-plans').waitFor({ timeout: 12_000 });
   } catch {

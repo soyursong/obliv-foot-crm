@@ -1111,10 +1111,12 @@ export default function MedicalChartPanel({
   // ── 관리 화면 이동 (AC-2: 편집 버튼) ─────────────────────────────────────────
 
   // T-20260606-foot-RX-PANEL-UX-5FIX AC-5: 관리화면 진입 시 해당 탭 pre-select.
-  //   각 우측 패널 버튼이 대응 탭(?tab=)을 넘겨 DoctorTools가 그 탭으로 바로 열림(기존: 메인 세팅화면만).
+  //   각 우측 패널 버튼이 대응 탭(?tab=)을 넘겨 진료관리(ClinicManagement)가 그 탭으로 바로 열림.
+  // T-20260606-foot-RXTOOL-INJURY-MENU-SPLIT: 어드민성 관리 도구가 진료 도구 → '진료관리'로 분리됨에 따라
+  //   진입 경로를 /admin/doctor-tools → /admin/clinic-management 로 이전(관리 도구 위치 단일화).
   function handleNavigateToAdmin(tab?: 'super_phrases' | 'phrases' | 'prescriptions') {
     onOpenChange(false);
-    navigate(tab ? `/admin/doctor-tools?tab=${tab}` : '/admin/doctor-tools');
+    navigate(tab ? `/admin/clinic-management?tab=${tab}` : '/admin/clinic-management');
   }
 
   // T-20260527-foot-TREATMEMO-CHART-MERGE: loadTreatMemos 제거 — loadData()에 통합됨

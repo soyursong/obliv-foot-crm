@@ -22,7 +22,8 @@ const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 const PICKER = 'src/components/medical/DiagnosisFolderPicker.tsx';
 const TAB = 'src/components/admin/DiagnosisNamesTab.tsx';
 const CHART = 'src/components/MedicalChartPanel.tsx';
-const TOOLS = 'src/pages/DoctorTools.tsx';
+// T-20260606-foot-RXTOOL-INJURY-MENU-SPLIT (AC-2): 상병명 관리 탭이 진료도구 → 진료관리(ClinicManagement)로 이전됨.
+const TOOLS = 'src/pages/ClinicManagement.tsx';
 const MIG = 'supabase/migrations/20260606160000_diagnosis_folder_and_favorites.sql';
 const MIG_RB = 'supabase/migrations/20260606160000_diagnosis_folder_and_favorites.rollback.sql';
 
@@ -39,7 +40,7 @@ test('AC-0: 상병 후보 소스는 services category_label=상병 단일 SSOT (
 });
 
 // ── AC-1 [A]: 상병명 관리 탭 등록 + 처방세트 패턴(폴더 그룹핑) 재사용 ──
-test('AC-1: DoctorTools 에 상병명 관리 탭(diagnosis_names) 등록', () => {
+test('AC-1: 진료관리(ClinicManagement)에 상병명 관리 탭(diagnosis_names) 등록', () => {
   const t = read(TOOLS);
   expect(t).toContain('DiagnosisNamesTab');
   expect(t).toContain('value="diagnosis_names"');

@@ -9,7 +9,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('C-3 서류템플릿 단일 위계 렌더', () => {
   test('등록 다이얼로그 = 서류이름 + 하위분류(드롭다운), 중복 카테고리 입력 제거', async ({ page }) => {
-    await page.goto('/admin/doctor-tools');
+    await page.goto('/admin/clinic-management');
     // 서류 템플릿 탭으로 이동
     const docTab = page.getByTestId('tab-documents');
     await docTab.waitFor({ timeout: 10_000 });

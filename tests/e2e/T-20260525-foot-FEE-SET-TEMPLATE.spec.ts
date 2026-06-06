@@ -15,7 +15,7 @@ import { loginAndWaitForDashboard } from '../helpers';
 // ---------------------------------------------------------------------------
 
 async function goToFeeSetTab(page: import('@playwright/test').Page) {
-  await page.goto('/admin/doctor-tools');
+  await page.goto('/admin/clinic-management');
   try {
     await page.getByTestId('tab-fee-set-templates').waitFor({ timeout: 10_000 });
   } catch {
@@ -127,7 +127,7 @@ test.describe('T-20260525-foot-FEE-SET-TEMPLATE — AC-4: 진료도구 탭 구�
   });
 
   test('AC-4a: 진료 도구 > 수가세트 탭 존재 + 클릭 가능', async ({ page }) => {
-    await page.goto('/admin/doctor-tools');
+    await page.goto('/admin/clinic-management');
     await expect(page.getByTestId('tab-fee-set-templates')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('tab-fee-set-templates').click();
 
@@ -137,7 +137,7 @@ test.describe('T-20260525-foot-FEE-SET-TEMPLATE — AC-4: 진료도구 탭 구�
   });
 
   test('AC-4b: 기존 진료세트 탭 정상 작동 (regression)', async ({ page }) => {
-    await page.goto('/admin/doctor-tools');
+    await page.goto('/admin/clinic-management');
     await expect(page.getByTestId('tab-treatment-sets')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('tab-treatment-sets').click();
     await expect(page.getByTestId('treatment-set-add-btn')).toBeVisible({ timeout: 5_000 });

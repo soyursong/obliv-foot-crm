@@ -53,6 +53,8 @@ const CustomerChartPage = lazyWithRetry(() => import('@/pages/CustomerChartPage'
 const DailyHistory = lazyWithRetry(() => import('@/pages/DailyHistory'));
 const Services = lazyWithRetry(() => import('@/pages/Services'));
 const DoctorTools = lazyWithRetry(() => import('@/pages/DoctorTools'));
+// T-20260606-foot-RXTOOL-INJURY-MENU-SPLIT: 진료관리 — 어드민성 진료 도구 모음 (admin/manager/director 전용)
+const ClinicManagement = lazyWithRetry(() => import('@/pages/ClinicManagement'));
 const TreatmentTable = lazyWithRetry(() => import('@/pages/TreatmentTable'));
 const TabletChecklistPage = lazyWithRetry(() => import('@/pages/TabletChecklistPage'));
 const Notices = lazyWithRetry(() => import('@/pages/Notices'));
@@ -200,6 +202,10 @@ function App() {
                 <Route path="accounts" element={<RoleGuard roles={['admin']}><Accounts /></RoleGuard>} />
                 {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 서비스관리 접근 (뷰 전용) */}
                 <Route path="services" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><Services /></RoleGuard>} />
+                {/* T-20260606-foot-RXTOOL-INJURY-MENU-SPLIT (AC-3): 진료관리 — 어드민성 진료 도구 모음.
+                    admin/manager만 어드민 관리 의도이나 director(원장)는 진료차트 '관리 화면으로' 진입 연속성 위해 포함.
+                    consultant(부원장)/coordinator/therapist 직접 URL 접근 차단(메뉴 비노출 + 라우트 가드 이중). */}
+                <Route path="clinic-management" element={<RoleGuard roles={['admin', 'manager', 'director']}><ClinicManagement /></RoleGuard>} />
                 {/* T-20260512-foot-QUICK-RX-BUTTON: 치료사/원장도 진료환자목록 탭 접근 가능 */}
                 {/* T-20260520-foot-RBAC-MENU-EXPAND AC-2: consultant/coordinator 진료도구 접근 추가 */}
                 <Route path="doctor-tools" element={<RoleGuard roles={['admin', 'manager', 'director', 'therapist', 'technician', 'part_lead', 'consultant', 'coordinator']}><DoctorTools /></RoleGuard>} />

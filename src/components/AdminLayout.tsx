@@ -99,6 +99,10 @@ const NAV_ITEMS: {
   { to: '/admin/doctor-tools', label: '진료 도구', icon: BookOpen, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
   // AC-1: 3역할 → 서비스관리 접근 (뷰 전용; WRITE=admin만)
   { to: '/admin/services', label: '서비스관리', icon: Stethoscope, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
+  // T-20260606-foot-RXTOOL-INJURY-MENU-SPLIT (AC-2/AC-3): 진료관리 — 서비스관리 바로 아래.
+  //   어드민성 진료 도구(상용구·처방세트·상병명·진료세트 등) 모음. admin/manager/director 전용
+  //   (부원장 consultant/coordinator/therapist 비노출 — 라우트 가드 App.tsx와 이중).
+  { to: '/admin/clinic-management', label: '진료관리', icon: ClipboardList, roles: ['admin', 'manager', 'director'] },
   // T-20260525-foot-MESSAGING-V1 AC-S1: 메시지 설정 — 서비스관리 바로 아래 (현장 요청: 김주연 총괄)
   // T-20260525-foot-ROLE-PERM-CUSTOM 3차: 통계·매출집계·계정관리 외 전권한 → coordinator/therapist 추가
   { to: '/admin/settings', label: '메시지 설정', icon: MessageSquare, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'] },
