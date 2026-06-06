@@ -83,6 +83,8 @@ interface MedicalChart {
   clinical_progress: string | null; // NEW: 임상경과
   prescription_items: PrescriptionItem[] | null; // NEW: 처방내역
   created_by: string | null;
+  // T-20260606-foot-MEDCHART-RECORDER-NAME AC-4: 기록 시점 의사 표시명 스냅샷(DB 영구). NULL=레거시/미매칭→폴백.
+  created_by_name?: string | null;
   created_at: string;
   updated_at: string;
   // doctor_memo: chart_doctor_memos에서 merge (director/admin 전용)
@@ -675,6 +677,8 @@ export default function MedicalChartPanel({
         clinical_progress: formClinical.trim() || null,
         prescription_items: formRx.length > 0 ? (formRx as unknown as Record<string, unknown>[]) : null,
         created_by: currentUserEmail,
+        // T-20260606-foot-MEDCHART-RECORDER-NAME AC-3: 기록자 표시명 영구 저장(currentUserName=L302 재사용).
+        created_by_name: currentUserName,
         updated_at: new Date().toISOString(),
       };
 
@@ -1644,7 +1648,8 @@ export default function MedicalChartPanel({
                     const hasDoc = hasDocMemo(chart);
                     const hasRxItems = hasRx(chart);
                     const notable = isNotable(chart);
-                    const recorder = recorderName(chart.created_by);
+                    // T-20260606-foot-MEDCHART-RECORDER-NAME AC-5: DB 영구 스냅샷 우선, 없으면 동적 폴백.
+                    const recorder = chart.created_by_name || recorderName(chart.created_by);
                     return (
                       <div
                         key={chart.id}
@@ -1822,14 +1827,14 @@ export default function MedicalChartPanel({
                         더미 — 저장 불가
                       </span>
                     )}
-                    {/* AC-13: 선택 차트 기록자(의사) 표시 */}
-                    {selectedChart && !selectedChartId?.startsWith('__dummy__') && recorderName(selectedChart.created_by) && (
+                    {/* AC-13 + T-20260606-foot-MEDCHART-RECORDER-NAME AC-5: 선택 차트 기록자 — DB 스냅샷 우선, 폴백 동적 */}
+                    {selectedChart && !selectedChartId?.startsWith('__dummy__') && (selectedChart.created_by_name || recorderName(selectedChart.created_by)) && (
                       <span
                         className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground"
                         data-testid="chart-recorder"
                       >
                         <Stethoscope className="h-3 w-3 text-teal-600" />
-                        기록자 <span className="font-semibold text-teal-700">{recorderName(selectedChart.created_by)}</span>
+                        기록자 <span className="font-semibold text-teal-700">{selectedChart.created_by_name || recorderName(selectedChart.created_by)}</span>
                       </span>
                     )}
                   </div>
