@@ -649,6 +649,23 @@ export function PenChartTab({
   // strokeScaleRef: scaleX/scaleY를 onPointerDown에서 1회 계산 → native handler가 매 이벤트마다 재계산 생략
   const strokeScaleRef    = useRef<{ x: number; y: number }>({ x: 1, y: 1 });
 
+  // ── T-20260606-foot-PENCHART-REFUND-LATENCY: 실기기 펜 지연 프로파일러 ──────────
+  //   목적: Galaxy Tab 대형 캔버스(1588×6738) 펜 latency의 "실제 병목"을 실기기에서 계측.
+  //         (planner 지시 "추정 단정 금지 / 프로파일링 선행" — 두 가설을 데이터로 가른다)
+  //         · coalesce 손실 가설 → coalescedPerMove(획당 평균 coalesced 수) / inputHz 로 식별
+  //         · 전체 6738px redraw 비용 가설 → avgDrawMs(stroke() 래스터 시간) / maxFrameGapMs(jank) 로 식별
+  //   게이트: ?penchart_perf URL param 있을 때만 활성 (prod hot-path 오버헤드 0 — enabled=false 단일 분기).
+  //   출력: 획 종료(onPointerUp) 시 console.log('[PenChartTab PERF] {...}') 1줄 → 현장 DevTools 캡처.
+  const perfRef = useRef<{
+    enabled: boolean;
+    strokeStart: number;
+    moves: number;
+    coalescedTotal: number;
+    drawTimeTotal: number;
+    maxFrameGap: number;
+    lastMoveTs: number;
+  }>({ enabled: false, strokeStart: 0, moves: 0, coalescedTotal: 0, drawTimeTotal: 0, maxFrameGap: 0, lastMoveTs: 0 });
+
   // T-20260519-foot-PENCHART-FORM-ADD (FIX): Undo 10단계
   const undoStackRef = useRef<ImageData[]>([]);
   const UNDO_LIMIT = 10;
@@ -837,6 +854,21 @@ export function PenChartTab({
     // AC-2: coalesced events — 프레임 사이 중간 좌표 모두 처리 (빠른 획 누락 방지)
     const events: PointerEvent[] = (e as any).getCoalescedEvents?.() ?? [e];
 
+    // T-20260606-foot-PENCHART-REFUND-LATENCY: 프로파일러 계측 (게이트 OFF면 분기 1회로 무시)
+    const perf = perfRef.current;
+    let _perfT0 = 0;
+    if (perf.enabled) {
+      const nowTs = performance.now();
+      if (perf.lastMoveTs > 0) {
+        const gap = nowTs - perf.lastMoveTs;
+        if (gap > perf.maxFrameGap) perf.maxFrameGap = gap; // 프레임 간격(jank/redraw 비용 지표)
+      }
+      perf.lastMoveTs = nowTs;
+      perf.moves += 1;
+      perf.coalescedTotal += events.length; // 획당 coalesced 수(coalesce 손실 지표)
+      _perfT0 = nowTs;
+    }
+
     const penColor       = penColorRef.current;
     const penSize        = penSizeRef.current;
     const highlightColor = highlightColorRef.current;
@@ -863,49 +895,74 @@ export function PenChartTab({
     }
     const eraserSz = tool === 'eraser' ? penSize * 4 : 0;
 
-    for (const evt of events) {
-      const pos  = toLogical(evt);
-      const last = lastPosRef.current ?? pos;
-
-      if (tool === 'eraser') {
-        // V3 AC-3: 드로잉 레이어만 clearRect → bg 보존, placedItems 미삭제
-        ctx.clearRect(pos.x - eraserSz, pos.y - eraserSz, eraserSz * 2, eraserSz * 2);
-      } else if (tool === 'white') {
-        ctx.beginPath();
-        ctx.moveTo(last.x, last.y);
-        ctx.lineTo(pos.x, pos.y);
-        ctx.stroke();
-        emptyRef.current = false;
-        if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
-        // Fix-4: hit-test는 onPointerUp에서 1회만 — 포인트 누적
-        whiteStrokePathRef.current.push(pos);
-      } else if (tool === 'highlight') {
-        ctx.beginPath();
-        ctx.moveTo(last.x, last.y);
-        ctx.lineTo(pos.x, pos.y);
-        ctx.stroke();
-        emptyRef.current = false;
-        if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
-      } else {
-        // 펜 — quadratic bezier 스무딩 (AC-1: 글씨 인식 개선)
-        const mid = { x: (last.x + pos.x) / 2, y: (last.y + pos.y) / 2 };
-        ctx.beginPath();
-        if (lastMidRef.current) {
-          ctx.moveTo(lastMidRef.current.x, lastMidRef.current.y);
-          ctx.quadraticCurveTo(last.x, last.y, mid.x, mid.y);
+    if (tool === 'pen') {
+      // ── T-20260606-foot-PENCHART-REFUND-LATENCY (desync 비의존 저지연 핵심) ──────────
+      //   기존: coalesced 점마다 beginPath()+stroke() 개별 호출 → N개 점 = N회 stroke flush.
+      //   대형 캔버스(1588×6738, ~42MB backing)에서 stroke flush 1회당 래스터/합성 비용이 커
+      //   N배로 누적되어 "선 끊김·거침·느림" 체감 latency 유발(desync OFF로 합성 동기화 시 가중).
+      //   개선: pointermove 1회의 coalesced 점들을 **단일 path 로 누적 후 stroke() 1회**.
+      //   → flush 횟수 N→1, quadratic 스무딩 기하는 동일(연속 path 라 조인트는 오히려 더 매끈).
+      //   desync 미사용·레이어 승격 없음 → 검정화면(P0) 비재발 보장 + 픽셀 동일.
+      ctx.beginPath();
+      let drewSomething = false;
+      for (const evt of events) {
+        const pos  = toLogical(evt);
+        const last = lastPosRef.current ?? pos;
+        const mid  = { x: (last.x + pos.x) / 2, y: (last.y + pos.y) / 2 };
+        if (!drewSomething) {
+          if (lastMidRef.current) {
+            ctx.moveTo(lastMidRef.current.x, lastMidRef.current.y);
+            ctx.quadraticCurveTo(last.x, last.y, mid.x, mid.y);
+          } else {
+            ctx.moveTo(last.x, last.y);
+            ctx.lineTo(mid.x, mid.y);
+          }
+          drewSomething = true;
         } else {
-          ctx.moveTo(last.x, last.y);
-          ctx.lineTo(mid.x, mid.y);
+          // 연속 path — 현재점이 직전 mid 이므로 moveTo 없이 곡선 이어붙임
+          ctx.quadraticCurveTo(last.x, last.y, mid.x, mid.y);
         }
-        ctx.stroke();
         lastMidRef.current = mid;
-        emptyRef.current   = false;
+        lastPosRef.current = pos;
+      }
+      if (drewSomething) {
+        ctx.stroke();
+        emptyRef.current = false;
         if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
       }
-      lastPosRef.current = pos;
+    } else {
+      // eraser / white / highlight — 점별 처리(기존 동작 유지; pen 외 도구는 latency 비대상)
+      for (const evt of events) {
+        const pos  = toLogical(evt);
+        const last = lastPosRef.current ?? pos;
+
+        if (tool === 'eraser') {
+          // V3 AC-3: 드로잉 레이어만 clearRect → bg 보존, placedItems 미삭제
+          ctx.clearRect(pos.x - eraserSz, pos.y - eraserSz, eraserSz * 2, eraserSz * 2);
+        } else if (tool === 'white') {
+          ctx.beginPath();
+          ctx.moveTo(last.x, last.y);
+          ctx.lineTo(pos.x, pos.y);
+          ctx.stroke();
+          emptyRef.current = false;
+          if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
+          // Fix-4: hit-test는 onPointerUp에서 1회만 — 포인트 누적
+          whiteStrokePathRef.current.push(pos);
+        } else if (tool === 'highlight') {
+          ctx.beginPath();
+          ctx.moveTo(last.x, last.y);
+          ctx.lineTo(pos.x, pos.y);
+          ctx.stroke();
+          emptyRef.current = false;
+          if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
+        }
+        lastPosRef.current = pos;
+      }
     }
 
     if (tool === 'highlight') ctx.globalAlpha = 1; // globalAlpha 복원
+
+    if (perf.enabled) perf.drawTimeTotal += performance.now() - _perfT0; // stroke 래스터 시간(redraw 비용 지표)
   }, []); // eslint-disable-line react-hooks/exhaustive-deps — stable; state via *Ref.current
 
   // T-20260522-foot-PENCHART-TOOLS-V2 AC-1 / T-20260523-foot-FORM-TEMPLATE-REGEN:
@@ -1156,6 +1213,8 @@ export function PenChartTab({
     const _forceOff = _search.includes('penchart_no_desync');      // 긴급 폴백: 강제 OFF (기본과 동일, 현장 킬스위치 호환)
     const _forceOn = _search.includes('penchart_enable_desync');   // 강제 ON (성능 비교 테스트 전용, 현장 사용 금지)
     const useDesync = _forceOff ? false : _forceOn ? true : false; // 기본: 전 기기 OFF — 검정화면 비재발 보장
+    // T-20260606-foot-PENCHART-REFUND-LATENCY: 실기기 펜 지연 프로파일러 게이트
+    perfRef.current.enabled = _search.includes('penchart_perf');
     const ctx = canvas.getContext('2d', { desynchronized: useDesync });
     // T-20260525-foot-PENCHART-FORM-BLACKSCR AC-4: Draw context 초기화 실패 → fallback
     if (!ctx) {
@@ -1567,6 +1626,12 @@ export function PenChartTab({
     canvas.setPointerCapture(e.pointerId);
     drawingRef.current = true;
     lastPosRef.current = { x: pos.x, y: pos.y };
+    // T-20260606-foot-PENCHART-REFUND-LATENCY: 획 단위 프로파일러 누적값 리셋
+    if (perfRef.current.enabled) {
+      const p = perfRef.current;
+      p.strokeStart = performance.now();
+      p.moves = 0; p.coalescedTotal = 0; p.drawTimeTotal = 0; p.maxFrameGap = 0; p.lastMoveTs = 0;
+    }
     // strokeRectRef는 위에서 이미 캐싱됨 (Fix-6) — 중복 호출 제거
     // T-20260523-foot-PENCHART-PEN-SLOW Fix-2: 캐싱된 ctx 사용
     const ctx = drawCtxRef.current ?? canvas.getContext('2d');
@@ -1649,6 +1714,25 @@ export function PenChartTab({
 
     const canvas = canvasRef.current;
     if (canvas && canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+
+    // ── T-20260606-foot-PENCHART-REFUND-LATENCY: 획 종료 프로파일러 요약(게이트 ON 시) ──────
+    //   현장(김주연 총괄) Galaxy Tab DevTools에서 한 획마다 1줄 캡처 → 병목 가설 판정 근거.
+    const perf = perfRef.current;
+    if (perf.enabled && perf.moves > 0) {
+      const dur = performance.now() - perf.strokeStart;
+      console.log('[PenChartTab PERF]', JSON.stringify({
+        formKey:          activeDrawTemplate?.form_key ?? null,
+        canvas:           `${canvas?.width ?? 0}x${canvas?.height ?? 0}`,
+        strokeMs:         Math.round(dur),
+        moves:            perf.moves,
+        coalescedTotal:   perf.coalescedTotal,
+        coalescedPerMove: +(perf.coalescedTotal / perf.moves).toFixed(2),  // ↓낮고 빠른획=coalesce 손실 의심
+        avgDrawMs:        +(perf.drawTimeTotal / perf.moves).toFixed(3),   // ↑높으면 stroke 래스터(redraw) 비용
+        maxFrameGapMs:    +perf.maxFrameGap.toFixed(1),                    // ↑크면 프레임 드랍(jank)
+        inputPtsPerSec:   dur > 0 ? +((perf.coalescedTotal / dur) * 1000).toFixed(0) : 0,
+      }));
+    }
+
     // T-20260524-foot-PENCHART-PEN-SLOW Fix-5: 획 종료 후 rAF에서 undo 상태 사전 캡처
     // → 다음 onPointerDown 시 getImageData 없음 (hot path 완전 제거)
     captureUndoAsync();
