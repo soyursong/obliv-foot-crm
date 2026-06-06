@@ -94,11 +94,42 @@ test.describe('T-20260606 DASH-FIRSTVISIT-CHART-RECUR — 시나리오1: 정적 
 
   test('AC-C1: 아코디언 명단 이름에 onNameOpen 클릭 경로가 존재', () => {
     const src = readDash();
-    // prop 정의 + 바인딩 + 클릭 핸들러
+    // prop 정의 + 바인딩 + 클릭 핸들러 (field-soak 하드닝: ctxOpenChart 직결 → handleNameChartOpen)
     expect(src).toContain('onNameOpen');
-    expect(src).toContain('onNameOpen={ctxOpenChart}');
-    expect(src).toMatch(/onClick=\{canOpen \? \(\) => onNameOpen!\(item\.customerId!\) : undefined\}/);
+    expect(src).toContain('onNameOpen={handleNameChartOpen}');
+    expect(src).toMatch(/onClick=\{canOpen \? \(\) => onNameOpen!\(item\.customerId, item\.name\) : undefined\}/);
     expect(src).toContain('data-testid="timeline-accordion-name"');
+    // 회귀 차단: 1차 핫픽스의 customer_id 직결(ctxOpenChart)로 되돌아가면 신규 초진 무반응 재발
+    expect(src).not.toContain('onNameOpen={ctxOpenChart}');
+  });
+
+  // ── field-soak P0 하드닝 (6/6 통합시간표 '체크인 전 초진 명단' 클릭 무반응) ──
+  // 현장 확정: 날짜 정상(6/6) → P0-A(stale date) 배제 → 통합시간표 아코디언 명단 경로.
+  // 잔존 갭: 체크인 전 초진은 customer_id 미연결이 흔한데 canOpen=Boolean(customerId)였다 →
+  //          신규 초진 명단은 onClick 미부착 → 여전히 silent fail. 이름 fallback 으로 닫는다.
+  test('AC-C2: 아코디언 명단이 customer_id 없어도(이름만 있으면) 클릭 활성', () => {
+    const src = readDash();
+    // canOpen 이 customerId OR name 으로 확장(이름만 있는 신규 초진도 클릭 가능)
+    expect(src).toMatch(/const canOpen = Boolean\(\(item\.customerId \|\| item\.name\) && onNameOpen\)/);
+    // 1차 핫픽스의 customer_id-only 게이트로 회귀하면 신규 초진 무반응 재발
+    expect(src).not.toContain('const canOpen = Boolean(item.customerId && onNameOpen)');
+  });
+
+  test('AC-C3: handleNameChartOpen 이 customer_id 없을 때 이름 fallback 으로 차트 열기', () => {
+    const src = readDash();
+    // 핸들러 존재 + customer_id 우선 직결
+    expect(src).toMatch(/const handleNameChartOpen = useCallback\(async \(customerId: string \| null, name\?: string \| null\)/);
+    expect(src).toMatch(/if \(customerId\) \{\s*ctxOpenChart\(customerId\)/);
+    // customer_id 없을 때: 동일 클리닉·동명 customers 조회 후 1건이면 자동 열기(handleReservationSelect 미러)
+    expect(src).toMatch(/\.eq\('clinic_id', clinic\.id\)/);
+    expect(src).toMatch(/matches\.length === 1[\s\S]{0,80}ctxOpenChart\(matches\[0\]\.id\)/);
+    // 동명이인 다건은 자동 열기 금지(오픈 방지) + 안내 토스트
+    expect(src).toMatch(/동명이인 \$\{matches\.length\}명/);
+  });
+
+  test('AC-C4: prop 타입이 customerId null + name 옵션을 수용(초진 미연결 경로 보장)', () => {
+    const src = readDash();
+    expect(src).toMatch(/onNameOpen\?: \(customerId: string \| null, name\?: string \| null\) => void;/);
   });
 
   test('AC-GUARD: handleDragEnd 가 isPast 가드 유지(읽기전용 보호 무회귀)', () => {

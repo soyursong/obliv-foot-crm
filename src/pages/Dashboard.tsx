@@ -1721,8 +1721,10 @@ function DashboardTimeline({
   onReservationContext?: (r: Reservation, pos: { x: number; y: number }) => void;
   /** T-20260606-foot-DASH-FIRSTVISIT-CHART-RECUR-RCA (P0-C): 슬롯 명단 펼침(아코디언)
    *  이름 클릭 → 진료차트 열기. 기존엔 onClick 부재로 항상 silent fail이던 surface 복구.
-   *  customer_id 연결된 항목에만 활성. */
-  onNameOpen?: (customerId: string) => void;
+   *  P0-C 하드닝(field-soak): 체크인 전 초진은 customer_id 미연결(고객 등록 전 예약)이 흔하다.
+   *  customer_id 없으면 이름 fallback(handleReservationSelect 동일 로직)으로 차트를 연다 →
+   *  신규 초진 명단 클릭 무반응(silent fail) 재발 차단. customerId=null + name 도 활성. */
+  onNameOpen?: (customerId: string | null, name?: string | null) => void;
   /** T-20260522-foot-TIMETABLE-FOLD: 접힌 상태 (localStorage 유지) */
   folded?: boolean;
   /** T-20260522-foot-TIMETABLE-FOLD: 접기/펼치기 토글 콜백 */
@@ -2408,16 +2410,19 @@ function DashboardTimeline({
                         if (!item) return null;
                         const safeVisitType = (item.visitType === 'new' || item.visitType === 'returning') ? item.visitType : 'returning';
                         const chartNo = item.customerId ? (chartMap?.get(item.customerId) ?? null) : null;
-                        // T-20260606-foot-DASH-FIRSTVISIT-CHART-RECUR-RCA (P0-C):
-                        //   customer_id 연결된 명단 항목은 클릭 시 진료차트 열림. 이전엔 onClick 부재로 항상 무반응.
-                        const canOpen = Boolean(item.customerId && onNameOpen);
+                        // T-20260606-foot-DASH-FIRSTVISIT-CHART-RECUR-RCA (P0-C 하드닝, field-soak):
+                        //   명단 항목 클릭 → 진료차트 열림. 이전엔 onClick 부재로 항상 무반응.
+                        //   1차 핫픽스는 customer_id 연결 항목에만 활성이라, 고객 미등록 초진(customer_id=null)
+                        //   명단은 여전히 무반응이었다. → 이름만 있어도 활성화하고, customer_id 없으면
+                        //   onNameOpen 핸들러가 이름 fallback(동일 클리닉·동명 1건 자동 열기)으로 처리한다.
+                        const canOpen = Boolean((item.customerId || item.name) && onNameOpen);
                         return (
                           <div
                             key={idx}
                             role={canOpen ? 'button' : undefined}
                             tabIndex={canOpen ? 0 : undefined}
-                            onClick={canOpen ? () => onNameOpen!(item.customerId!) : undefined}
-                            onKeyDown={canOpen ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNameOpen!(item.customerId!); } } : undefined}
+                            onClick={canOpen ? () => onNameOpen!(item.customerId, item.name) : undefined}
+                            onKeyDown={canOpen ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNameOpen!(item.customerId, item.name); } } : undefined}
                             className={cn(
                               'flex items-center gap-1.5 py-0.5 rounded',
                               canOpen && 'cursor-pointer hover:bg-teal-100/60 active:bg-teal-200/60 transition-colors',
@@ -4983,6 +4988,38 @@ export default function Dashboard() {
     }
   }, [ctxOpenChart, clinic, fetchTimelineReservations, warnIfNameMismatch]);
 
+  // T-20260606-foot-DASH-FIRSTVISIT-CHART-RECUR-RCA (P0-C 하드닝, field-soak):
+  //   통합시간표 슬롯 아코디언 '예약 명단' 이름 클릭 → 차트 열기 핸들러.
+  //   1차 핫픽스(onNameOpen 을 ctxOpenChart 직결)는 customer_id 직결이라, 체크인 전 초진처럼
+  //   고객 미등록(customer_id=null) 명단은 canOpen=false → 여전히 무반응(silent fail)이었다.
+  //   handleReservationSelect 와 동일한 customer_id-or-이름 fallback 로 신규 초진도 열리게 한다.
+  //   (handleReservationSelect 는 CHART-OPEN-GUARD DO-NOT-MODIFY 라 별도 핸들러로 로직만 미러링.)
+  const handleNameChartOpen = useCallback(async (customerId: string | null, name?: string | null) => {
+    if (customerId) {
+      ctxOpenChart(customerId);
+      void warnIfNameMismatch(customerId, name ?? null);
+      return;
+    }
+    // customer_id 미연결 — 동일 클리닉·동명 1건일 때만 자동 열기 (동명이인 오픈 방지)
+    if (name && clinic) {
+      const { data: matches } = await supabase
+        .from('customers')
+        .select('id, name')
+        .eq('clinic_id', clinic.id)
+        .eq('name', name)
+        .limit(2);
+      if (matches && matches.length === 1) {
+        ctxOpenChart(matches[0].id);
+        return;
+      }
+      if (matches && matches.length > 1) {
+        toast.info(`동명이인 ${matches.length}명 — 고객관리에서 직접 확인하세요`);
+        return;
+      }
+    }
+    toast.info(`${name ?? ''} — 고객 미연결 (고객관리에서 등록 후 차트 열람)`);
+  }, [ctxOpenChart, clinic, warnIfNameMismatch]);
+
   // T-20260522-foot-CHECKIN-FIRST-INFO: 실제 DB INSERT 함수 (초진 폼 완료 후 또는 재진 직접 호출)
   // 초진(new) → consult_waiting, 재진(returning) → treatment_waiting
   const doCheckInForReservation = async (res: Reservation) => {
@@ -6123,7 +6160,7 @@ export default function Dashboard() {
             onCardClick={handleCardClick}
             onCardContext={!isPast ? handleCardContext : undefined}
             onReservationSelect={handleReservationSelect}
-            onNameOpen={ctxOpenChart}
+            onNameOpen={handleNameChartOpen}
             // T-20260529-foot-RECEPTION-BTN-REMOVE: 접수 버튼 제거 (AC-1/AC-2)
             // 접수는 셀프접수 매칭 또는 우측 상단 체크인 버튼으로만 처리
             // onReservationCheckIn 미전달 → DraggableBox1Card/Box2ResvCard {onCheckIn && ...} 가드로 버튼 미렌더링
