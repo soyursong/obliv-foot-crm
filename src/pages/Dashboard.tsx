@@ -3819,22 +3819,41 @@ export default function Dashboard() {
     // assignments에 당일(dateStr) 레코드가 없을 경우 전날 carry-over 데이터가 담길 수 있으므로
     // date === dateStr 조건을 추가해 오늘 레코드만 existing으로 인식.
     const existing = assignments.find((a) => a.room_name === roomName && a.room_type === roomType && a.date === dateStr);
-    if (!staffId) {
-      if (existing) {
-        await supabase.from('room_assignments').delete().eq('id', existing.id);
-      }
-    } else if (existing) {
-      await supabase.from('room_assignments').update({ staff_id: staffId, staff_name: staffName }).eq('id', existing.id);
+    // T-20260606-foot-DASH-STAFFASSIGN-RESET-FIX (근본 수정):
+    //   기존: 미배정(!staffId) 시 today row 를 delete() → today 스냅샷에 구멍 →
+    //         다음 fetchAssignments 의 baseline(전날) carry-over 머지가 그 방을 되살림 = "리셋".
+    //         (Staff.tsx handleSave 는 이미 save_room_assignments RPC + 미배정 명시 row 로 차단했으나
+    //          Dashboard 의 비원자 DELETE 경로가 잔존했다.)
+    //   수정: 절대 DELETE 하지 않는다. 미배정도 "명시적 미배정"(staff_id=null) row 로 남긴다.
+    //         - existing(today row) 있으면 → UPDATE (staffId null 이면 명시적 미배정으로 보존)
+    //         - 없으면 → INSERT (staffId null 이면 명시적 미배정 row 생성 → carry-over 차단)
+    //         today row 가 항상 존재 → 읽기 머지(baseline+today, today 우선)가 carry-over 를 차단.
+    //   권한 주의: save_room_assignments RPC(옵션A)는 is_admin_or_manager() 전용이라
+    //         room_assignments_staff_update(staff/part_lead UPDATE) 경로를 깨뜨린다. 따라서
+    //         per-row UPDATE/INSERT(옵션B 확장)로 전 역할 호환 + 데이터 보존을 유지한다.
+    //   AC-5: silent 금지 — 성공/실패 토스트 노출(특히 staff 의 RLS silent 0-row 를 error 로 포착).
+    let error: { message: string } | null = null;
+    if (existing) {
+      ({ error } = await supabase
+        .from('room_assignments')
+        .update({ staff_id: staffId, staff_name: staffName })
+        .eq('id', existing.id));
     } else {
-      await supabase.from('room_assignments').insert({
+      ({ error } = await supabase.from('room_assignments').insert({
         clinic_id: clinic.id,
         date: dateStr,
         room_name: roomName,
         room_type: roomType,
         staff_id: staffId,
         staff_name: staffName,
-      });
+      }));
     }
+    if (error) {
+      toast.error(`공간 배정 저장 실패: ${error.message}`);
+      return;
+    }
+    // AC-5 silent 금지: toast.success 는 묵음(noop)이므로 묵음 제외 채널 toast.confirm 사용.
+    toast.confirm(staffId ? `${staffName ?? ''} 배정 저장됨` : '미배정 저장됨');
     fetchAssignments();
   }, [clinic, assignments, dateStr, fetchAssignments]);
 
