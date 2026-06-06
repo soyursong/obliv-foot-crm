@@ -40,7 +40,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
 import { todaySeoulISODate } from '@/lib/format';
-import { STAFF_ROLE_LABEL, STAFF_ROLE_ORDER } from '@/lib/status';
+import { STAFF_ROLE_LABEL, STAFF_ROLE_ORDER, staffRoleCardClass } from '@/lib/status';
 import type { Staff } from '@/lib/types';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
@@ -459,13 +459,15 @@ export default function Handover() {
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             {todayAttendees.map((a) => (
+              // 칩 배경을 역할별로 분기 (T-20260606-foot-HANDOVER-NAMECARD-ROLECOLOR)
               <span
                 key={a.id}
                 data-testid="handover-attendee-chip"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-teal-300 bg-white px-3 py-1.5 shadow-sm"
+                data-role={a.role}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 shadow-sm ${staffRoleCardClass(a.role)}`}
               >
-                <span className="text-sm font-semibold text-teal-900">{a.name}</span>
-                <span className="text-[11px] font-medium text-teal-500">
+                <span className="text-sm font-semibold">{a.name}</span>
+                <span className="text-[11px] font-medium opacity-70">
                   {STAFF_ROLE_LABEL[a.role] ?? a.role}
                 </span>
               </span>

@@ -111,6 +111,24 @@ export const STAFF_ROLE_ORDER: StaffRole[] = [
   'technician',
 ];
 
+/**
+ * 직원 역할별 이름 칩 색상 (bg + text + border) — T-20260606-foot-HANDOVER-NAMECARD-ROLECOLOR.
+ * 인수인계 "오늘 출근 명단" 칩 배경을 역할별로 구분한다.
+ * handover.ts PART_BADGE_CLASS 패턴 그대로 정적 매핑(JIT purge 안전, 동적 클래스 금지).
+ *   상담(consultant) → 하늘 / 코디(coordinator) → 노랑 / 치료(therapist) → 초록
+ *   그 외 역할(director·technician 등) → 중립 fallback.
+ */
+export const STAFF_ROLE_CARD_CLASS: Record<string, string> = {
+  consultant: 'bg-sky-100 text-sky-800 border-sky-300',
+  coordinator: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+  therapist: 'bg-green-100 text-green-800 border-green-300',
+};
+
+/** 역할별 이름 칩 클래스 조회 (미매칭 역할 → 중립색 fallback) */
+export function staffRoleCardClass(role: string): string {
+  return STAFF_ROLE_CARD_CLASS[role] ?? 'bg-slate-100 text-slate-700 border-slate-300';
+}
+
 /** 계정 역할 한글 라벨 (user_profiles role — StaffRole 상위집합) */
 export const USER_ROLE_LABEL: Record<UserRole, string> = {
   admin: '관리자',
