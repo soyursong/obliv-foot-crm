@@ -106,7 +106,8 @@ const NAV_ITEMS: {
   { to: '/admin/staff', label: '직원·공간', icon: UserCog, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
   // AC-1: 3역할 → 병원·원장 정보 접근 (뷰 전용)
   { to: '/admin/clinic-settings', label: '병원·원장 정보', icon: Building2, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
-  { to: '/admin/treatment-table', label: '치료 테이블', icon: Table2 },
+  // T-20260606-foot-THERAPIST-EVAL-VIEWER-ADMIN: 치료사 평가 근거 데이터 → 어드민(원장/관리자)만 노출 + 라우트 가드(App.tsx) 이중
+  { to: '/admin/treatment-table', label: '치료 테이블', icon: Table2, roles: ['admin', 'manager'] },
   // AC-1: 3역할 → 일마감 접근 (뷰 전용; WRITE=admin/manager만)
   { to: '/admin/closing', label: '일마감', icon: Receipt, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
   { to: '/admin/history', label: '일일 이력', icon: ClipboardList },
