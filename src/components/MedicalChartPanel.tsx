@@ -51,7 +51,9 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, Folder, FolderOpen, FolderTree, History, Loader2, Pill, Pin, PinOff, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
+import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, Folder, FolderOpen, FolderTree, History, Loader2, MessageSquare, Pill, Pin, PinOff, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
+// T-20260607-foot-MEDCHART-CONSULT-DRAWER: 진료차트에서 상담기록 빠른 조회 서랍
+import ConsultRecordDrawer from '@/components/ConsultRecordDrawer';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -99,6 +101,8 @@ interface CustomerBasic {
   phone: string;
   birth_date: string | null;
   chart_number: string | null;
+  // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 초진(new) 강조 배지용
+  visit_type: 'new' | 'returning' | null;
 }
 
 interface PhraseTemplate {
@@ -349,6 +353,8 @@ export default function MedicalChartPanel({
   const [customer, setCustomer] = useState<CustomerBasic | null>(null);
   const [charts, setCharts] = useState<MedicalChart[]>([]);
   const [loading, setLoading] = useState(false);
+  // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 상담기록 서랍 오픈 상태
+  const [consultDrawerOpen, setConsultDrawerOpen] = useState(false);
   // AC-13: 기록자(의사) 이메일 → 표시명 매핑 (user_profiles)
   const [staffNameMap, setStaffNameMap] = useState<Record<string, string>>({});
   const [phraseTemplates, setPhraseTemplates] = useState<PhraseTemplate[]>([]);
@@ -452,7 +458,7 @@ export default function MedicalChartPanel({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
           .from('customers')
-          .select('id,name,phone,birth_date,chart_number')
+          .select('id,name,phone,birth_date,chart_number,visit_type')
           .eq('id', customerId)
           .maybeSingle(),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -642,7 +648,10 @@ export default function MedicalChartPanel({
       // T-20260526-foot-VISIT-FOLD-FILTER: 리셋
       setExpandedChartIds(new Set<string>());
       setMemoFilters(new Set<MemoFilter>());
+      // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 새 고객 열림 시 상담기록 서랍 닫힘 상태로 시작
+      setConsultDrawerOpen(false);
     } else {
+      setConsultDrawerOpen(false);
       setCustomer(null);
       setCharts([]);
       setSelectedChartId(null);
@@ -1472,6 +1481,36 @@ export default function MedicalChartPanel({
             )}
           </div>
           <div className="flex items-center gap-2">
+            {/* T-20260607-foot-MEDCHART-CONSULT-DRAWER: 상담기록 빠른 조회 버튼.
+                초진(visit_type='new')이면 강조 배지 — 초진 동선에서 상담기록 확인이 특히 중요(문지은 원장). */}
+            {(() => {
+              const isNew = customer?.visit_type === 'new';
+              return (
+                <button
+                  type="button"
+                  onClick={() => setConsultDrawerOpen(true)}
+                  data-testid="consult-record-open-btn"
+                  data-new-patient={isNew ? 'true' : 'false'}
+                  title={isNew ? '초진 — 상담기록 확인' : '상담기록 조회'}
+                  className={`relative flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                    isNew
+                      ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
+                      : 'bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground'
+                  }`}
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  상담기록
+                  {isNew && (
+                    <span
+                      className="ml-0.5 rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold text-white"
+                      data-testid="consult-record-new-badge"
+                    >
+                      초진
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
             {/* AC-9: 현재 로그인 의사 상시 표시 */}
             <span
               className="flex items-center gap-1 rounded-full bg-teal-50 border border-teal-200 px-2.5 py-1 text-xs font-semibold text-teal-700"
@@ -2912,6 +2951,14 @@ export default function MedicalChartPanel({
           </div>
         </div>
       )}
+
+      {/* T-20260607-foot-MEDCHART-CONSULT-DRAWER: 상담기록 서랍 — 진료차트(z-90) 위 겹침(z-110).
+          닫으면 진료차트 그대로 복귀(작성 중 내용 유지 — 단순 표시 토글, 진료차트 재마운트/재조회 없음). */}
+      <ConsultRecordDrawer
+        customerId={customerId}
+        open={consultDrawerOpen}
+        onClose={() => setConsultDrawerOpen(false)}
+      />
     </>,
     document.body,
   );
