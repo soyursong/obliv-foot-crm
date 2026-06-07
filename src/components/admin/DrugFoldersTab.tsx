@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/lib/toast';
 import {
+  Check,
   ChevronDown,
   ChevronRight,
   Folder,
@@ -69,6 +70,9 @@ export default function DrugFoldersTab() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [newRootName, setNewRootName] = useState('');
   const [drugQuery, setDrugQuery] = useState('');
+  // 인라인 이름 변경(rename) — 형제 탭(DiagnosisNamesTab/PrescriptionSetsTab)과 동일 UX.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
 
   const tree = buildFolderTree(folders);
   const drugsByFolder = new Map<string, FolderDrug[]>();
@@ -131,12 +135,30 @@ export default function DrugFoldersTab() {
     }
   }
 
-  async function handleRename(id: string, current: string) {
-    const name = window.prompt('폴더 이름 변경', current);
-    if (!name?.trim() || name.trim() === current) return;
+  function startRename(node: DrugFolderNode) {
+    if (!canEdit) return;
+    setEditingId(node.id);
+    setEditValue(node.name);
+  }
+
+  function cancelRename() {
+    setEditingId(null);
+    setEditValue('');
+  }
+
+  async function submitRename(node: DrugFolderNode) {
+    const next = editValue.trim();
+    if (!next) return toast.error('폴더 이름을 입력하세요.'); // 빈이름 차단
+    if (next === node.name) return cancelRename(); // 변경 없음
+    // 같은 부모 아래 동일 이름 차단(형제 중복 방지). FK·소속 약품은 건드리지 않고 name 만 UPDATE.
+    const dup = folders.some(
+      (f) => f.id !== node.id && f.parent_id === node.parent_id && f.name.trim() === next,
+    );
+    if (dup) return toast.error('같은 위치에 같은 이름의 폴더가 이미 있어요.');
     try {
-      await updateFolder.mutateAsync({ id, name });
+      await updateFolder.mutateAsync({ id: node.id, name: next });
       toast.success('폴더 이름이 변경됐어요.');
+      cancelRename();
     } catch (e) {
       toast.error(`이름 변경 실패: ${(e as Error).message}`);
     }
@@ -185,49 +207,101 @@ export default function DrugFoldersTab() {
     const isCollapsed = collapsed.has(node.id);
     const folderDrugs = drugsByFolder.get(node.id) ?? [];
     const isSelected = selectedFolderId === node.id;
+    const isEditing = editingId === node.id;
     return (
       <div key={node.id} data-testid="drug-folder-admin-node">
-        <div
-          className={`flex items-center gap-1 rounded-md px-1 py-1 ${isSelected ? 'bg-teal-50 border border-teal-300' : 'hover:bg-muted/50 border border-transparent'}`}
-          style={{ marginLeft: `${node.depth * 14}px` }}
-        >
-          <button
-            type="button"
-            onClick={() => toggleFolder(node.id)}
-            className="shrink-0 text-muted-foreground"
-            data-testid="drug-folder-admin-toggle"
-            aria-expanded={!isCollapsed}
+        {isEditing ? (
+          /* 인라인 편집 모드 — Enter 저장 / Esc 취소 / ✓✕ */
+          <div
+            className="flex items-center gap-1 rounded-md px-1 py-1 bg-teal-50 ring-1 ring-teal-300"
+            style={{ marginLeft: `${node.depth * 14}px` }}
+            data-testid="drug-folder-admin-node-editing"
           >
-            {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedFolderId(node.id)}
-            className="flex items-center gap-1.5 flex-1 text-left"
-            data-testid="drug-folder-admin-select"
+            <Folder className="h-3.5 w-3.5 text-teal-600 shrink-0" />
+            <Input
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              autoFocus
+              onFocus={(e) => e.currentTarget.select()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void submitRename(node);
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  cancelRename();
+                }
+              }}
+              className="h-7 text-xs px-1.5 flex-1 min-w-0"
+              data-testid="drug-folder-rename-input"
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-teal-600 hover:text-teal-700 shrink-0"
+              title="저장"
+              onClick={() => void submitRename(node)}
+              disabled={updateFolder.isPending}
+              data-testid="drug-folder-rename-save"
+            >
+              {updateFolder.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground shrink-0"
+              title="취소"
+              onClick={cancelRename}
+              disabled={updateFolder.isPending}
+              data-testid="drug-folder-rename-cancel"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ) : (
+          <div
+            className={`flex items-center gap-1 rounded-md px-1 py-1 ${isSelected ? 'bg-teal-50 border border-teal-300' : 'hover:bg-muted/50 border border-transparent'}`}
+            style={{ marginLeft: `${node.depth * 14}px` }}
           >
-            {isCollapsed ? (
-              <Folder className="h-3.5 w-3.5 text-teal-600 shrink-0" />
-            ) : (
-              <FolderOpen className="h-3.5 w-3.5 text-teal-600 shrink-0" />
+            <button
+              type="button"
+              onClick={() => toggleFolder(node.id)}
+              className="shrink-0 text-muted-foreground"
+              data-testid="drug-folder-admin-toggle"
+              aria-expanded={!isCollapsed}
+            >
+              {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedFolderId(node.id)}
+              onDoubleClick={() => startRename(node)}
+              className="flex items-center gap-1.5 flex-1 text-left"
+              data-testid="drug-folder-admin-select"
+            >
+              {isCollapsed ? (
+                <Folder className="h-3.5 w-3.5 text-teal-600 shrink-0" />
+              ) : (
+                <FolderOpen className="h-3.5 w-3.5 text-teal-600 shrink-0" />
+              )}
+              <span className="text-xs font-medium truncate">{node.name}</span>
+              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{folderDrugs.length}</Badge>
+            </button>
+            {canEdit && (
+              <div className="flex items-center gap-0.5 shrink-0">
+                <Button variant="ghost" size="icon" className="h-6 w-6" title="하위 폴더 추가" onClick={() => handleAddChild(node.id)}>
+                  <FolderPlus className="h-3 w-3" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-6 w-6" title="이름 변경" onClick={() => startRename(node)} data-testid="drug-folder-rename-start">
+                  <Pencil className="h-3 w-3" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" title="삭제" onClick={() => handleDeleteFolder(node)}>
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
             )}
-            <span className="text-xs font-medium truncate">{node.name}</span>
-            <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{folderDrugs.length}</Badge>
-          </button>
-          {canEdit && (
-            <div className="flex items-center gap-0.5 shrink-0">
-              <Button variant="ghost" size="icon" className="h-6 w-6" title="하위 폴더 추가" onClick={() => handleAddChild(node.id)}>
-                <FolderPlus className="h-3 w-3" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-6 w-6" title="이름 변경" onClick={() => handleRename(node.id, node.name)}>
-                <Pencil className="h-3 w-3" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" title="삭제" onClick={() => handleDeleteFolder(node)}>
-                <Trash2 className="h-3 w-3" />
-              </Button>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
         {!isCollapsed && node.children.length > 0 && (
           <div className="mt-0.5 space-y-0.5">{node.children.map(renderNode)}</div>
         )}
