@@ -67,49 +67,24 @@ export default function ClinicManagement() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="mb-4 flex-wrap h-auto gap-1">
-          <TabsTrigger value="phrases" className="gap-1.5">
-            <BookOpen className="h-3.5 w-3.5" />
-            상용구
-          </TabsTrigger>
-          <TabsTrigger value="super_phrases" className="gap-1.5" data-testid="tab-super-phrases">
-            <Sparkles className="h-3.5 w-3.5" />
-            슈퍼상용구
-          </TabsTrigger>
-          {/* 현장용어 "묶음처방"(이름+약 묶음) = 코드 prescription_sets. 기존 testid/라우트 호환 위해 value=prescriptions 유지. */}
-          <TabsTrigger value="prescriptions" className="gap-1.5">
-            <Pill className="h-3.5 w-3.5" />
-            처방세트
-          </TabsTrigger>
-          {/* T-20260606-foot-RX-SET-REDESIGN AC-R2: 약품 폴더(개별 약품 분류 트리). 묶음처방과 별개 축. */}
-          <TabsTrigger value="drug_folders" className="gap-1.5" data-testid="tab-drug-folders">
-            <FolderTree className="h-3.5 w-3.5" />
-            약품 폴더
-          </TabsTrigger>
+        {/* 진료관리 도구 3행 재배치 — T-20260607-foot-DXTOOL-MENU-REORG (문지은 대표원장 C0ATE5P6JTH)
+            "다음 줄"=시각 행 분리. flex-wrap 자연 줄바꿈에 의존하지 않고 basis-full 빈 div 로 행 경계를 명시 강제. */}
+        <TabsList className="mb-4 flex w-full flex-wrap h-auto gap-1">
+          {/* ── 행 1: 상병명 관리 · 처방세트 · 빠른처방 · 금기증 관리 ── */}
           {/* AC-1: 상병명 관리 — services.category_label='상병' 단일 SSOT (서비스관리와 동기화) */}
           <TabsTrigger value="diagnosis_names" className="gap-1.5" data-testid="tab-diagnosis-names">
             <ClipboardList className="h-3.5 w-3.5" />
             상병명 관리
           </TabsTrigger>
-          <TabsTrigger value="treatment_sets" className="gap-1.5" data-testid="tab-treatment-sets">
-            <Layers className="h-3.5 w-3.5" />
-            진료세트
-          </TabsTrigger>
-          <TabsTrigger value="fee_set_templates" className="gap-1.5" data-testid="tab-fee-set-templates">
-            <DollarSign className="h-3.5 w-3.5" />
-            수가세트
-          </TabsTrigger>
-          <TabsTrigger value="documents" className="gap-1.5" data-testid="tab-documents">
-            <FileText className="h-3.5 w-3.5" />
-            서류 템플릿
+          {/* Stage B: 기존 '약품 폴더'(drug_folders, 개별 약품 분류 트리) 라벨 → '처방세트'.
+              value=drug_folders / data-testid=tab-drug-folders 보존(라우트·E2E 호환). */}
+          <TabsTrigger value="drug_folders" className="gap-1.5" data-testid="tab-drug-folders">
+            <FolderTree className="h-3.5 w-3.5" />
+            처방세트
           </TabsTrigger>
           <TabsTrigger value="quick_rx" className="gap-1.5" data-testid="tab-quick-rx">
             <Zap className="h-3.5 w-3.5" />
             빠른처방 버튼
-          </TabsTrigger>
-          <TabsTrigger value="progress_plans" className="gap-1.5" data-testid="tab-progress-plans">
-            <TrendingUp className="h-3.5 w-3.5" />
-            경과분석 플랜
           </TabsTrigger>
           {/* 금기증 관리 — admin 한정 노출 (admin-write RLS와 일치) */}
           {isAdmin && (
@@ -118,43 +93,93 @@ export default function ClinicManagement() {
               금기증 관리
             </TabsTrigger>
           )}
+
+          {/* 행 경계 1→2 (flex-wrap 강제 줄바꿈) */}
+          <div className="basis-full h-0" aria-hidden="true" />
+
+          {/* ── 행 2: 상용구 · 슈퍼상용구 · 서류 템플릿 ── */}
+          <TabsTrigger value="phrases" className="gap-1.5">
+            <BookOpen className="h-3.5 w-3.5" />
+            상용구
+          </TabsTrigger>
+          <TabsTrigger value="super_phrases" className="gap-1.5" data-testid="tab-super-phrases">
+            <Sparkles className="h-3.5 w-3.5" />
+            슈퍼상용구
+          </TabsTrigger>
+          <TabsTrigger value="documents" className="gap-1.5" data-testid="tab-documents">
+            <FileText className="h-3.5 w-3.5" />
+            서류 템플릿
+          </TabsTrigger>
+
+          {/* 행 경계 2→3 */}
+          <div className="basis-full h-0" aria-hidden="true" />
+
+          {/* ── 행 3: 진료세트 · 수가세트 · 경과분석 플랜 ── */}
+          <TabsTrigger value="treatment_sets" className="gap-1.5" data-testid="tab-treatment-sets">
+            <Layers className="h-3.5 w-3.5" />
+            진료세트
+          </TabsTrigger>
+          <TabsTrigger value="fee_set_templates" className="gap-1.5" data-testid="tab-fee-set-templates">
+            <DollarSign className="h-3.5 w-3.5" />
+            수가세트
+          </TabsTrigger>
+          <TabsTrigger value="progress_plans" className="gap-1.5" data-testid="tab-progress-plans">
+            <TrendingUp className="h-3.5 w-3.5" />
+            경과분석 플랜
+          </TabsTrigger>
+
+          {/* 행 경계 3→전환기 */}
+          <div className="basis-full h-0" aria-hidden="true" />
+
+          {/* ── (전환기) 묶음처방 = 기존 prescription_sets 탭(value=prescriptions).
+              drug_folders 가 '처방세트'로 리네임되며 라벨이 충돌 → 코드 도메인어 '묶음처방'으로 분리 표기.
+              Stage C(DB 이관, supervisor 게이트) 확정 후 본 탭 제거 예정. value=prescriptions 유지(?tab 호환). */}
+          <TabsTrigger value="prescriptions" className="gap-1.5" data-testid="tab-prescription-sets-legacy">
+            <Pill className="h-3.5 w-3.5" />
+            묶음처방
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="phrases">
-          <PhrasesTab />
-        </TabsContent>
-        <TabsContent value="super_phrases">
-          <SuperPhrasesTab />
-        </TabsContent>
-        <TabsContent value="prescriptions">
-          <PrescriptionSetsTab />
+        {/* 패널 순서는 TabsList 행 순서와 맞춤(value 매칭이라 기능엔 무영향). */}
+        {/* 행 1 */}
+        <TabsContent value="diagnosis_names">
+          <DiagnosisNamesTab />
         </TabsContent>
         <TabsContent value="drug_folders">
           <DrugFoldersTab />
         </TabsContent>
-        <TabsContent value="diagnosis_names">
-          <DiagnosisNamesTab />
-        </TabsContent>
-        <TabsContent value="treatment_sets">
-          <TreatmentSetsTab />
-        </TabsContent>
-        <TabsContent value="fee_set_templates">
-          <FeeSetTemplatesTab />
-        </TabsContent>
-        <TabsContent value="documents">
-          <DocumentTemplatesTab />
-        </TabsContent>
         <TabsContent value="quick_rx">
           <QuickRxButtonsTab />
-        </TabsContent>
-        <TabsContent value="progress_plans">
-          <ProgressPlansTab />
         </TabsContent>
         {isAdmin && (
           <TabsContent value="contraindications">
             <ContraindicationsTab />
           </TabsContent>
         )}
+        {/* 행 2 */}
+        <TabsContent value="phrases">
+          <PhrasesTab />
+        </TabsContent>
+        <TabsContent value="super_phrases">
+          <SuperPhrasesTab />
+        </TabsContent>
+        <TabsContent value="documents">
+          <DocumentTemplatesTab />
+        </TabsContent>
+        {/* 행 3 */}
+        <TabsContent value="treatment_sets">
+          <TreatmentSetsTab />
+        </TabsContent>
+        <TabsContent value="fee_set_templates">
+          <FeeSetTemplatesTab />
+        </TabsContent>
+        <TabsContent value="progress_plans">
+          <ProgressPlansTab />
+        </TabsContent>
+        {/* (전환기) 묶음처방 — Stage C 후 제거 예정 */}
+        <TabsContent value="prescriptions">
+          <PrescriptionSetsTab />
+        </TabsContent>
       </Tabs>
     </div>
   );
