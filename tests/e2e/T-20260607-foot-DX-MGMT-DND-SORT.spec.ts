@@ -60,7 +60,9 @@ test('AC-2a: 폴더 내 항목 순서 변경 핸들러', () => {
 test('AC-2b: 폴더 자체 순서 변경 핸들러 + 폴더 sortable id', () => {
   const src = read(TAB);
   expect(src).toContain('handleFolderDragEnd');
-  expect(src).toContain('SortableDxFolder');
+  // T-20260607-foot-DXMGMT-LEFT-FOLDER-FIX: 2패널 전환으로 SortableDxFolder → SortableFolderNode 리네임.
+  //   폴더 sortable 컴포넌트는 좌측 폴더트리 노드로 보존(DnD 기능 동일).
+  expect(src).toContain('SortableFolderNode');
   // 폴더 sortable id 네임스페이스 (항목 id 와 충돌 방지)
   expect(src).toContain('`folder:${folder}`');
 });
