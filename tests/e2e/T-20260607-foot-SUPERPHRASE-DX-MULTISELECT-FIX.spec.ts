@@ -228,3 +228,50 @@ test.describe('AC-3 임상경과 // 단축어 자동완성', () => {
     expect(filterSupers(supers, cap.query)).toHaveLength(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-3a (MSG-20260607-210836-r0ww 흡수): 임상경과 textarea 네이티브 약이름 자동완성 제거 회귀 잠금.
+//   근본원인 — 임상경과 textarea 에 autoComplete 미지정 → 브라우저 입력이력(과거 입력한 약이름 등)
+//   네이티브 드롭다운이 `//` 키스트로크/방향키를 가로채 상용구 단축어 팝오버를 무력화.
+//   수정 — 해당 textarea 한정으로 autoComplete="off"(+ autoCorrect/spellCheck off). 처방/약품 입력란은 별 컴포넌트라 보존.
+//   소스 정본을 직접 검증(정적 회귀 잠금) — 속성이 빠지면 즉시 fail.
+// ─────────────────────────────────────────────────────────────────────────────
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const __dir = dirname(fileURLToPath(import.meta.url));
+const panelSrc = readFileSync(
+  resolve(__dir, '../../src/components/MedicalChartPanel.tsx'),
+  'utf-8',
+);
+
+test.describe('AC-3a 임상경과 네이티브 약이름 자동완성 미발현 (회귀 잠금)', () => {
+  // 임상경과 textarea 블록만 슬라이스 — data-testid="medical-chart-clinical" 를 포함한 Textarea 요소.
+  const clinicalBlock = (() => {
+    const anchor = panelSrc.indexOf('data-testid="medical-chart-clinical"');
+    expect(anchor).toBeGreaterThan(-1);
+    // 앵커 앞뒤 윈도(같은 Textarea 요소 속성 범위 커버 — 뒤쪽에 주석+신규 속성이 길어 넉넉히 확보)
+    return panelSrc.slice(Math.max(0, anchor - 800), anchor + 1400);
+  })();
+
+  test('임상경과 textarea 에 autoComplete="off" 가 지정됨 (약이름 트리거 제거)', () => {
+    expect(clinicalBlock).toMatch(/autoComplete="off"/);
+  });
+
+  test('보조 자동완성/교정도 차단 (autoCorrect / autoCapitalize / spellCheck off)', () => {
+    expect(clinicalBlock).toMatch(/autoCorrect="off"/);
+    expect(clinicalBlock).toMatch(/autoCapitalize="off"/);
+    expect(clinicalBlock).toMatch(/spellCheck=\{false\}/);
+  });
+
+  test('패스워드매니저/1Password 입력가로채기도 무시 (data-1p-ignore / data-lpignore)', () => {
+    expect(clinicalBlock).toMatch(/data-1p-ignore/);
+    expect(clinicalBlock).toMatch(/data-lpignore="true"/);
+  });
+
+  test('약이름 datalist 가 임상경과 textarea 에 바인딩되지 않음 (list 속성 부재)', () => {
+    // 임상경과 textarea 블록에는 list= 바인딩이 없어야 함(약이름/처방 datalist 비연결).
+    expect(clinicalBlock).not.toMatch(/list="/);
+  });
+});
