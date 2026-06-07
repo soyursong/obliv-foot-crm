@@ -317,7 +317,7 @@ function RxSetPicker({ open, onClose, onSelect }: RxSetPickerProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Pill className="h-4 w-4" />
-            처방세트 불러오기
+            묶음처방 불러오기
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-2 max-h-[60vh] overflow-y-auto">
@@ -326,7 +326,7 @@ function RxSetPicker({ open, onClose, onSelect }: RxSetPickerProps) {
               <Loader2 className="animate-spin text-muted-foreground h-5 w-5" />
             </div>
           ) : sets.length === 0 ? (
-            <p className="text-sm text-center text-muted-foreground py-8">처방세트가 없습니다.</p>
+            <p className="text-sm text-center text-muted-foreground py-8">묶음처방이 없습니다.</p>
           ) : (
             sets.map((s) => (
               <button
@@ -435,7 +435,7 @@ function PrescriptionView({
   if (items.length === 0) {
     return (
       <p className="text-xs text-muted-foreground text-center py-4">
-        처방 항목이 없습니다. 처방세트를 불러오세요.
+        처방 항목이 없습니다. 묶음처방을 불러오세요.
       </p>
     );
   }
@@ -943,7 +943,7 @@ export default function DoctorTreatmentPanel({
               data-testid="rx-set-load-btn"
             >
               <Pill className="h-3 w-3" />
-              처방세트
+              묶음처방
             </Button>
           </div>
 

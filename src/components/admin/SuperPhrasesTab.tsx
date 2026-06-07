@@ -615,7 +615,7 @@ export default function SuperPhrasesTab() {
                   {rxSets.length > 0 && (
                     <Select value="" onValueChange={loadRxSet}>
                       <SelectTrigger className="h-6 w-[150px] text-[11px]" data-testid="super-phrase-rxset-trigger">
-                        <SelectValue placeholder="처방세트 불러오기" />
+                        <SelectValue placeholder="묶음처방 불러오기" />
                       </SelectTrigger>
                       <SelectContent>
                         {rxSets.map((r) => (
@@ -631,7 +631,7 @@ export default function SuperPhrasesTab() {
               </div>
               {form.rx_items.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-3 text-[11px] text-muted-foreground text-center">
-                  처방내역 없음 — 필요 시 위 "처방세트 불러오기"로 추가
+                  처방내역 없음 — 필요 시 위 "묶음처방 불러오기"로 추가
                 </div>
               ) : (
                 <div className="space-y-2">
