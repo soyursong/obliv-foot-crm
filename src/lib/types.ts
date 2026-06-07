@@ -390,6 +390,9 @@ export interface Package {
   // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
   trial_sessions?: number;
   trial_unit_price?: number;
+  // T-20260608-foot-PKG-REBORN-ITEM: Re:Born 6번째 항목
+  reborn_sessions?: number;
+  reborn_unit_price?: number;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -402,6 +405,7 @@ export interface PackageRemaining {
   preconditioning: number;
   podologe?: number;  // packages.podologe_sessions 참조 (컬럼명 오타 유지)
   trial?: number;     // T-20260522-foot-PKG-TRIAL: 체험권 잔여 회차
+  reborn?: number;    // T-20260608-foot-PKG-REBORN-ITEM: Re:Born 잔여 회차
   total_used: number;
   total_remaining: number;
 }
