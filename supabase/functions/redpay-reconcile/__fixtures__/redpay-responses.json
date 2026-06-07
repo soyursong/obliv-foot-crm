@@ -1,0 +1,243 @@
+{
+  "_comment": "T-20260520-crm-PAY-RECON-001 M0.4 — Redpay API mock 응답 픽스처",
+  "_schema_verified": "2026-05-21 Step2 실호출로 실제 응답 구조 확인. envelope 구조 업데이트.",
+  "_real_response_structure": {
+    "success": true,
+    "message": "OK",
+    "data": {
+      "partner": { "name": "메디빌더" },
+      "request": { "from": "YYYY-MM-DD", "to": "YYYY-MM-DD", "business_no": "...", "status": "", "tid": "", "merchant_id": "", "merchant_name": "", "search": "" },
+      "pagination": { "page": 1, "limit": 5, "total": 433, "total_page": 87 },
+      "items": [{ "trxid": "...", "status": "Y|N|M|X", "amount": 0, "approved_at": "YYYY-MM-DD HH:MM:SS", "cancelled_at": "0000-00-00 00:00:00", "approval_no": "...", "order_no": "...", "root_trxid": "", "tid": "...", "pg_name": "PG", "pg_type": "P1", "payment_method": "단말기", "merchant": { "id": "...", "name": "...", "member_id": "...", "member_name": "...", "tel": "..." } }]
+    }
+  },
+
+  "single_approval": {
+    "_desc": "정상 승인 1건 (status=Y, approval_no 있음)",
+    "response": {
+      "success": true,
+      "message": "OK",
+      "data": {
+        "partner": { "name": "메디빌더" },
+        "request": { "from": "2026-05-20", "to": "2026-05-21", "business_no": "4572300938", "status": "", "tid": "", "merchant_id": "", "merchant_name": "", "search": "" },
+        "pagination": { "page": 1, "limit": 5, "total": 1, "total_page": 1 },
+        "items": [
+          {
+            "trxid":          "TRX-20260520-001",
+            "status":         "Y",
+            "status_name":    "승인",
+            "amount":         50000,
+            "approval_no":    "APR-20260520-001",
+            "root_trxid":     "",
+            "tid":            "2074000004",
+            "approved_at":    "2026-05-20 10:00:00",
+            "cancelled_at":   "0000-00-00 00:00:00",
+            "order_no":       "KSNET_2074000004_TRX-20260520-001",
+            "pg_name":        "PG",
+            "pg_type":        "P1",
+            "payment_method": "단말기",
+            "merchant":       { "id": "1777000001", "name": "오블리브송도점-롱래스팅", "member_id": "1777000001", "member_name": "박영진", "tel": "032-851-9119" }
+          }
+        ]
+      }
+    },
+    "_legacy_transactions": [
+      {
+        "trxid":       "TRX-20260520-001",
+        "status":      "Y",
+        "amount":      50000,
+        "approval_no": "APR-20260520-001",
+        "root_trxid":  null,
+        "tid":         "TID-001",
+        "approved_at": "2026-05-20T10:00:00.000Z",
+        "business_no": "123-45-67890",
+        "card_no":     "1234-****-****-5678",
+        "card_company": "신한카드"
+      }
+    ]
+  },
+
+  "cancelled": {
+    "_desc": "취소 거래 1건 (status=N, root_trxid=원거래)",
+    "response": {
+      "success": true,
+      "message": "OK",
+      "data": {
+        "partner": { "name": "메디빌더" },
+        "request": { "from": "2026-05-20", "to": "2026-05-21", "business_no": "4572300938", "status": "", "tid": "", "merchant_id": "", "merchant_name": "", "search": "" },
+        "pagination": { "page": 1, "limit": 5, "total": 1, "total_page": 1 },
+        "items": [
+          {
+            "trxid":          "TRX-20260520-002",
+            "status":         "N",
+            "status_name":    "취소",
+            "amount":         50000,
+            "approval_no":    "APR-20260520-002",
+            "root_trxid":     "TRX-20260520-001",
+            "tid":            "2074000004",
+            "approved_at":    "2026-05-20 11:00:00",
+            "cancelled_at":   "2026-05-20 11:00:00",
+            "order_no":       "KSNET_2074000004_TRX-20260520-002",
+            "pg_name":        "PG",
+            "pg_type":        "P1",
+            "payment_method": "단말기",
+            "merchant":       { "id": "1777000001", "name": "오블리브송도점-롱래스팅", "member_id": "1777000001", "member_name": "박영진", "tel": "032-851-9119" }
+          }
+        ]
+      }
+    }
+  },
+
+  "partial_cancel": {
+    "_desc": "부분 취소 (status=M)",
+    "response": {
+      "success": true,
+      "message": "OK",
+      "data": {
+        "partner": { "name": "메디빌더" },
+        "request": { "from": "2026-05-20", "to": "2026-05-21", "business_no": "4572300938", "status": "", "tid": "", "merchant_id": "", "merchant_name": "", "search": "" },
+        "pagination": { "page": 1, "limit": 5, "total": 1, "total_page": 1 },
+        "items": [
+          {
+            "trxid":          "TRX-20260520-003",
+            "status":         "M",
+            "status_name":    "부분취소",
+            "amount":         20000,
+            "approval_no":    "APR-20260520-003",
+            "root_trxid":     "TRX-20260520-001",
+            "tid":            "2074000004",
+            "approved_at":    "2026-05-20 12:00:00",
+            "cancelled_at":   "2026-05-20 12:00:00",
+            "order_no":       "KSNET_2074000004_TRX-20260520-003",
+            "pg_name":        "PG",
+            "pg_type":        "P1",
+            "payment_method": "단말기",
+            "merchant":       { "id": "1777000001", "name": "오블리브송도점-롱래스팅", "member_id": "1777000001", "member_name": "박영진", "tel": "032-851-9119" }
+          }
+        ]
+      }
+    }
+  },
+
+  "error_trx": {
+    "_desc": "오류 거래 (status=X)",
+    "response": {
+      "success": true,
+      "message": "OK",
+      "data": {
+        "pagination": { "page": 1, "limit": 5, "total": 1, "total_page": 1 },
+        "items": [
+          {
+            "trxid":       "TRX-20260520-004",
+            "status":      "X",
+            "status_name": "오류",
+            "amount":      30000,
+            "approval_no": null,
+            "root_trxid":  "TRX-20260520-001",
+            "tid":         "2074000004",
+            "approved_at": "2026-05-20 13:00:00",
+            "cancelled_at": "0000-00-00 00:00:00"
+          }
+        ]
+      }
+    }
+  },
+
+  "multi_page_page1": {
+    "_desc": "페이지네이션 테스트 — 페이지1 (page=1, total_page=2)",
+    "response": {
+      "success": true,
+      "message": "OK",
+      "data": {
+        "pagination": { "page": 1, "limit": 500, "total": 600, "total_page": 2 },
+        "items": "__GENERATED_500_ITEMS__"
+      }
+    }
+  },
+
+  "multi_page_page2": {
+    "_desc": "페이지네이션 테스트 — 페이지2 (page=2, total_page=2, 마지막 페이지)",
+    "response": {
+      "success": true,
+      "message": "OK",
+      "data": {
+        "pagination": { "page": 2, "limit": 500, "total": 600, "total_page": 2 },
+        "items": "__GENERATED_100_ITEMS__"
+      }
+    }
+  },
+
+  "empty_result": {
+    "_desc": "조회 결과 없음",
+    "response": {
+      "success": true,
+      "message": "OK",
+      "data": {
+        "pagination": { "page": 1, "limit": 5, "total": 0, "total_page": 0 },
+        "items": []
+      }
+    }
+  },
+
+  "api_401": {
+    "_desc": "인증 실패 (401)",
+    "response": {
+      "success":  false,
+      "message":  "Unauthorized — Invalid API Key",
+      "data":     null
+    }
+  },
+
+  "api_400_date_format": {
+    "_desc": "날짜 포맷 오류 (400) — from/to ISO8601 사용 시 발생",
+    "response": {
+      "success":  false,
+      "message":  "from/to 날짜 형식은 YYYY-MM-DD 이어야 합니다.",
+      "data":     []
+    }
+  },
+
+  "api_500": {
+    "_desc": "서버 오류 (500) — exp backoff x3 테스트용",
+    "response": {
+      "success":  false,
+      "message":  "Internal Server Error",
+      "data":     null
+    }
+  },
+
+  "refund_bundle": {
+    "_desc": "환불 묶음 케이스 — 원거래(Y) + 취소(N) root_trxid 연결",
+    "response": {
+      "success": true,
+      "message": "OK",
+      "data": {
+        "pagination": { "page": 1, "limit": 5, "total": 2, "total_page": 1 },
+        "items": [
+          {
+            "trxid":          "TRX-BUNDLE-ORIG",
+            "status":         "Y",
+            "status_name":    "승인",
+            "amount":         80000,
+            "approval_no":    "APR-BUNDLE-001",
+            "root_trxid":     "",
+            "tid":            "2074000004",
+            "approved_at":    "2026-05-19 14:00:00",
+            "cancelled_at":   "0000-00-00 00:00:00"
+          },
+          {
+            "trxid":          "TRX-BUNDLE-CANCEL",
+            "status":         "N",
+            "status_name":    "취소",
+            "amount":         80000,
+            "approval_no":    "APR-BUNDLE-002",
+            "root_trxid":     "TRX-BUNDLE-ORIG",
+            "tid":            "2074000004",
+            "approved_at":    "2026-05-19 15:00:00",
+            "cancelled_at":   "2026-05-19 15:00:00"
+          }
+        ]
+      }
+    }
+  }
+}
