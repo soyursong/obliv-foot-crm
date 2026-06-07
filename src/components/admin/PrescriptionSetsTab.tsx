@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
-import { Loader2, Plus, Pencil, Trash2, X, Folder } from 'lucide-react';
+import { Loader2, Plus, Pencil, Trash2, X, Folder, Check } from 'lucide-react';
 import RxCountInput from '@/components/admin/RxCountInput';
 
 // ---------------------------------------------------------------------------
@@ -149,6 +149,27 @@ function useDeleteSet() {
   });
 }
 
+// T-20260607-foot-FOLDER-RENAME-INLINE (AC-B): 묶음처방(처방세트) 폴더명 인라인 변경.
+//   폴더 = prescription_sets.folder 문자열값(별도 분류 테이블 없음) → 같은 폴더값 행 일괄 UPDATE.
+//   기존 컬럼 UPDATE only(db_change=false). 빈값/중복 검증은 호출부에서 선행. AC-A(상병명)와 동일 UX.
+function useRenameSetFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ oldName, newName }: { oldName: string; newName: string }) => {
+      const { error } = await supabase
+        .from('prescription_sets')
+        .update({ folder: newName, updated_at: new Date().toISOString() })
+        .eq('folder', oldName);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['prescription_sets'] });
+      toast.success('폴더 이름을 바꿨어요.');
+    },
+    onError: (e: Error) => toast.error(`폴더 이름 변경 실패: ${e.message}`),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Sub-component: 처방 항목 편집 행
 // ---------------------------------------------------------------------------
@@ -255,6 +276,10 @@ export default function PrescriptionSetsTab() {
   const { data: sets = [], isLoading } = usePrescriptionSets();
   const upsert = useUpsertSet();
   const del = useDeleteSet();
+  // T-20260607-foot-FOLDER-RENAME-INLINE (AC-B): 폴더명 인라인 변경 (AC-A 상병명과 동일 UX).
+  const renameFolder = useRenameSetFolder();
+  const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<PrescriptionSet | null>(null);
@@ -304,6 +329,31 @@ export default function PrescriptionSetsTab() {
   function handleDelete(id: number, name: string) {
     if (!confirm(`"${name}" 처방세트를 삭제하시겠어요?`)) return;
     del.mutate(id);
+  }
+
+  // T-20260607-foot-FOLDER-RENAME-INLINE (AC-B): 폴더명 인라인 변경 핸들러 (AC-A와 동일 로직)
+  function startRenameFolder(folder: string) {
+    if (!canEdit || folder === NO_FOLDER) return; // 권한 없음/미분류(합성 폴더)는 변경 불가
+    setRenamingFolder(folder);
+    setRenameValue(folder);
+  }
+  function cancelRenameFolder() {
+    setRenamingFolder(null);
+    setRenameValue('');
+  }
+  async function submitRenameFolder() {
+    if (!renamingFolder) return;
+    const oldName = renamingFolder;
+    const next = renameValue.trim();
+    if (!next) return toast.error('폴더 이름을 입력해주세요.'); // 빈값 검증
+    if (next === oldName) return cancelRenameFolder(); // 변경 없음
+    if (next === NO_FOLDER) return toast.error(`"${NO_FOLDER}"는 폴더 이름으로 쓸 수 없어요.`);
+    // 중복 검증 — 다른 폴더와 동일 이름 금지(미분류/자기자신 제외)
+    if (folderNames.some((f) => f !== oldName && f === next)) {
+      return toast.error('이미 있는 폴더 이름이에요.');
+    }
+    await renameFolder.mutateAsync({ oldName, newName: next });
+    cancelRenameFolder();
   }
 
   // AC-1: 폴더별 그룹핑 (미분류는 맨 끝). 폴더 내부는 기존 sort_order 순서 유지.
@@ -364,14 +414,88 @@ export default function PrescriptionSetsTab() {
         <div className="space-y-4" data-testid="rx-set-list">
           {grouped.map((g) => (
             <div key={g.folder} data-testid="rx-set-folder-group">
-              {/* AC-1: 폴더 헤더 */}
-              <div className="flex items-center gap-1.5 mb-1.5 px-1">
-                <Folder className="h-3.5 w-3.5 text-teal-600" />
-                <span className="text-xs font-semibold text-foreground" data-testid="rx-set-folder-name">
-                  {g.folder}
-                </span>
-                <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{g.items.length}</Badge>
-              </div>
+              {/* AC-1: 폴더 헤더 / T-20260607 AC-B: 더블클릭·우클릭·연필버튼 → 인라인 이름 변경 */}
+              {renamingFolder === g.folder ? (
+                <div
+                  className="flex items-center gap-1 mb-1.5 px-1"
+                  data-testid="rx-set-folder-header"
+                  data-renaming="true"
+                >
+                  <Folder className="h-3.5 w-3.5 text-teal-600 shrink-0" />
+                  <Input
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    autoFocus
+                    onFocus={(e) => e.currentTarget.select()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        submitRenameFolder();
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        cancelRenameFolder();
+                      }
+                    }}
+                    className="h-7 text-xs px-1.5 max-w-[220px]"
+                    data-testid="rx-set-folder-rename-input"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-teal-600 hover:text-teal-700"
+                    onClick={submitRenameFolder}
+                    disabled={renameFolder.isPending}
+                    title="저장"
+                    data-testid="rx-set-folder-rename-save"
+                  >
+                    {renameFolder.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Check className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground"
+                    onClick={cancelRenameFolder}
+                    disabled={renameFolder.isPending}
+                    title="취소"
+                    data-testid="rx-set-folder-rename-cancel"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  className="group flex items-center gap-1.5 mb-1.5 px-1"
+                  data-testid="rx-set-folder-header"
+                  onDoubleClick={() => canEdit && g.folder !== NO_FOLDER && startRenameFolder(g.folder)}
+                  onContextMenu={(e) => {
+                    if (!canEdit || g.folder === NO_FOLDER) return;
+                    e.preventDefault();
+                    startRenameFolder(g.folder);
+                  }}
+                >
+                  <Folder className="h-3.5 w-3.5 text-teal-600" />
+                  <span className="text-xs font-semibold text-foreground select-none" data-testid="rx-set-folder-name">
+                    {g.folder}
+                  </span>
+                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{g.items.length}</Badge>
+                  {canEdit && g.folder !== NO_FOLDER && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground/50 hover:text-teal-600 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                      onClick={() => startRenameFolder(g.folder)}
+                      title="폴더 이름 바꾸기"
+                      data-testid="rx-set-folder-rename-btn"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              )}
               <div className="space-y-2 pl-1">
           {g.items.map((s) => (
             <div

@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
-import { Loader2, Plus, Pencil, Trash2, Folder, GripVertical } from 'lucide-react';
+import { Loader2, Plus, Pencil, Trash2, Folder, GripVertical, Check, X } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -168,6 +168,30 @@ function useDeleteDx() {
   });
 }
 
+// T-20260607-foot-FOLDER-RENAME-INLINE (AC-A): 좌측 폴더트리 폴더명 인라인 변경.
+//   폴더 = services.diagnosis_folder 문자열값(별도 분류 테이블 없음) → 같은 폴더값 행 일괄 UPDATE.
+//   기존 컬럼 UPDATE only(db_change=false). 빈값/중복 검증은 호출부(submitRenameFolder)에서 선행.
+function useRenameDxFolder(clinicId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ oldName, newName }: { oldName: string; newName: string }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from('services')
+        .update({ diagnosis_folder: newName })
+        .eq('clinic_id', clinicId)
+        .eq('category_label', '상병')
+        .eq('diagnosis_folder', oldName);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['diagnosis_master'] });
+      toast.success('폴더 이름을 바꿨어요.');
+    },
+    onError: (e: Error) => toast.error(`폴더 이름 변경 실패: ${e.message}`),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // T-20260607-foot-DX-MGMT-DND-SORT: 정렬 가능한 항목 행 / 폴더 블록
 //   useSortable hook 규칙상 별도 컴포넌트 필요. Services.tsx SortableServiceRow 패턴 미러.
@@ -253,15 +277,94 @@ interface SortableFolderNodeProps {
   count: number;
   selected: boolean;
   canReorder: boolean;
+  // T-20260607-foot-FOLDER-RENAME-INLINE (AC-A)
+  canRename: boolean;
+  isRenaming: boolean;
+  renameValue: string;
+  renamePending: boolean;
   onSelect: (folder: string) => void;
+  onStartRename: (folder: string) => void;
+  onRenameChange: (v: string) => void;
+  onRenameSubmit: () => void;
+  onRenameCancel: () => void;
 }
 
-function SortableFolderNode({ folder, count, selected, canReorder, onSelect }: SortableFolderNodeProps) {
+function SortableFolderNode({
+  folder,
+  count,
+  selected,
+  canReorder,
+  canRename,
+  isRenaming,
+  renameValue,
+  renamePending,
+  onSelect,
+  onStartRename,
+  onRenameChange,
+  onRenameSubmit,
+  onRenameCancel,
+}: SortableFolderNodeProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: `folder:${folder}`,
-    disabled: !canReorder,
+    // 인라인 편집 중에는 드래그 비활성 (입력 제스처 충돌 방지)
+    disabled: !canReorder || isRenaming,
   });
 
+  // ── 인라인 편집 모드 ──
+  if (isRenaming) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={{ transition }}
+        className="flex items-center gap-1 rounded-md px-2 py-1.5 bg-teal-50 ring-1 ring-teal-300"
+        data-testid="dx-folder-node"
+        data-renaming="true"
+      >
+        <Folder className="h-3.5 w-3.5 shrink-0 text-teal-600" />
+        <Input
+          value={renameValue}
+          onChange={(e) => onRenameChange(e.target.value)}
+          autoFocus
+          onFocus={(e) => e.currentTarget.select()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              onRenameSubmit();
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              onRenameCancel();
+            }
+          }}
+          className="h-7 text-xs px-1.5 flex-1 min-w-0"
+          data-testid="dx-folder-rename-input"
+        />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-teal-600 hover:text-teal-700 shrink-0"
+          onClick={onRenameSubmit}
+          disabled={renamePending}
+          title="저장"
+          data-testid="dx-folder-rename-save"
+        >
+          {renamePending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground shrink-0"
+          onClick={onRenameCancel}
+          disabled={renamePending}
+          title="취소"
+          data-testid="dx-folder-rename-cancel"
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    );
+  }
+
+  // ── 일반(선택/드래그) 모드 ──
   return (
     <div
       ref={setNodeRef}
@@ -271,18 +374,29 @@ function SortableFolderNode({ folder, count, selected, canReorder, onSelect }: S
         opacity: isDragging ? 0.5 : 1,
         zIndex: isDragging ? 20 : undefined,
       }}
-      className={`flex items-center gap-1.5 rounded-md px-2 py-2 cursor-pointer select-none ${
+      className={`group flex items-center gap-1.5 rounded-md px-2 py-2 cursor-pointer select-none ${
         selected ? 'bg-teal-50 text-teal-900 ring-1 ring-teal-200' : 'hover:bg-muted/60'
       } ${isDragging ? 'shadow-md bg-background' : ''}`}
       data-testid="dx-folder-node"
       data-selected={selected ? 'true' : 'false'}
       onClick={() => onSelect(folder)}
+      // AC-A: 더블클릭 → 이름 바꾸기 (권한 보유 + 미분류 제외)
+      onDoubleClick={() => canRename && onStartRename(folder)}
+      // AC-A: 우클릭 → 이름 바꾸기 (브라우저 컨텍스트메뉴 대체)
+      onContextMenu={(e) => {
+        if (!canRename) return;
+        e.preventDefault();
+        onStartRename(folder);
+      }}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           onSelect(folder);
+        } else if (e.key === 'F2' && canRename) {
+          e.preventDefault();
+          onStartRename(folder);
         }
       }}
     >
@@ -306,6 +420,22 @@ function SortableFolderNode({ folder, count, selected, canReorder, onSelect }: S
         {folder}
       </span>
       <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">{count}</Badge>
+      {/* AC-A: 이름 바꾸기 버튼(태블릿 큰 버튼 UX — 더블클릭/우클릭 외 명시적 진입점) */}
+      {canRename && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 shrink-0 text-muted-foreground/50 hover:text-teal-600 opacity-0 group-hover:opacity-100 focus:opacity-100"
+          onClick={(e) => {
+            e.stopPropagation();
+            onStartRename(folder);
+          }}
+          title="폴더 이름 바꾸기"
+          data-testid="dx-folder-rename-btn"
+        >
+          <Pencil className="h-3 w-3" />
+        </Button>
+      )}
     </div>
   );
 }
@@ -322,6 +452,12 @@ export default function DiagnosisNamesTab() {
   const { data: queryItems = [], isLoading } = useDiagnoses(clinicId);
   const upsert = useUpsertDx(clinicId);
   const del = useDeleteDx();
+  // T-20260607-foot-FOLDER-RENAME-INLINE (AC-A): 폴더명 인라인 변경.
+  //   권한 = 항목 CRUD 가드(canEdit, director/manager/admin)와 동일 — 폴더 rename은 CRUD급 작업이며,
+  //   피드백 출처 대표원장(director)을 잠그지 않기 위해 admin/manager에 director 포함.
+  const renameDxFolder = useRenameDxFolder(clinicId);
+  const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   // T-20260607: 로컬 정렬 상태 (낙관적 reorder). query 데이터(CRUD invalidate) 시 재동기화.
   const [items, setItems] = useState<Diagnosis[]>([]);
@@ -375,6 +511,32 @@ export default function DiagnosisNamesTab() {
   function handleDelete(id: string, name: string) {
     if (!confirm(`"${name}" 상병명을 삭제하시겠어요?`)) return;
     del.mutate(id);
+  }
+
+  // T-20260607-foot-FOLDER-RENAME-INLINE (AC-A): 폴더명 인라인 변경 핸들러
+  function startRenameFolder(folder: string) {
+    if (!canEdit || folder === NO_FOLDER) return; // 권한 없음/미분류(합성 폴더)는 변경 불가
+    setRenamingFolder(folder);
+    setRenameValue(folder);
+  }
+  function cancelRenameFolder() {
+    setRenamingFolder(null);
+    setRenameValue('');
+  }
+  async function submitRenameFolder() {
+    if (!renamingFolder) return;
+    const oldName = renamingFolder;
+    const next = renameValue.trim();
+    if (!next) return toast.error('폴더 이름을 입력해주세요.'); // 빈값 검증
+    if (next === oldName) return cancelRenameFolder(); // 변경 없음
+    if (next === NO_FOLDER) return toast.error(`"${NO_FOLDER}"는 폴더 이름으로 쓸 수 없어요.`);
+    // 중복 검증 — 다른 폴더와 동일한 이름 금지(미분류/자기자신 제외)
+    if (folderOrder.some((f) => f !== NO_FOLDER && f !== oldName && f === next)) {
+      return toast.error('이미 있는 폴더 이름이에요.');
+    }
+    await renameDxFolder.mutateAsync({ oldName, newName: next });
+    setSelectedFolder(next); // 변경된 폴더로 선택 유지
+    cancelRenameFolder();
   }
 
   // 폴더별 그룹핑 — folder 순서는 sort_order 블록 순(드래그 반영), 동률 시 미분류 말미.
@@ -543,7 +705,15 @@ export default function DiagnosisNamesTab() {
                       count={(itemsByFolder.get(folder) ?? []).length}
                       selected={selectedFolder === folder}
                       canReorder={canReorder}
+                      canRename={canEdit && folder !== NO_FOLDER}
+                      isRenaming={renamingFolder === folder}
+                      renameValue={renameValue}
+                      renamePending={renameDxFolder.isPending}
                       onSelect={setSelectedFolder}
+                      onStartRename={startRenameFolder}
+                      onRenameChange={setRenameValue}
+                      onRenameSubmit={submitRenameFolder}
+                      onRenameCancel={cancelRenameFolder}
                     />
                   ))}
                 </div>
