@@ -1699,14 +1699,20 @@ export default function MedicalChartPanel({
                   </div>
                 </div>
 
-                {/* 경과 타임라인 레이블 */}
+                {/* 경과 타임라인 레이블 (T-20260608-foot-MEDCHART-PANEL-CLARITY AC-1: 우측 '방문 진료내역'과 구분되는 설명) */}
                 <div className="flex-none px-2 pt-2 pb-1">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                  <span
+                    className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide"
+                    title="진료차트 회차별 경과 기록(최신 상단). 항목을 클릭하면 우측 폼에서 편집합니다. ↔ 우측 '방문 진료내역'은 방문(체크인) 단위 읽기전용 뷰입니다."
+                  >
                     경과 타임라인
                     {isDummyMode && (
                       <span className="ml-1 text-yellow-600 font-bold">[더미]</span>
                     )}
                   </span>
+                  <p className="text-[9px] font-normal normal-case text-muted-foreground/70 mt-0.5 leading-tight">
+                    진료차트 회차별 경과 · 클릭하면 우측 폼에서 편집
+                  </p>
                 </div>
 
                 <div className="flex-1 overflow-y-auto">
@@ -2656,14 +2662,21 @@ export default function MedicalChartPanel({
                   {/* ── T-20260526-foot-MEDCHART-SYNC: 진료내역 탭 ──────────────── */}
                   {rightTab === 'visit_hist' && (
                     <div className="p-3 space-y-2" data-testid="right-panel-visit-hist-content">
+                      {/* T-20260608-foot-MEDCHART-PANEL-CLARITY AC-1: 좌측 '경과 타임라인'과 구분되는 설명 */}
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-semibold text-muted-foreground">
+                        <span
+                          className="text-[10px] font-semibold text-muted-foreground"
+                          title="방문(체크인) 단위 진료 기록을 읽기전용으로 보여줍니다. ↔ 좌측 '경과 타임라인'은 진료차트 회차 기록(편집 가능)입니다."
+                        >
                           방문 진료내역 (읽기전용)
                         </span>
                         <span className="text-[9px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">
                           2번차트 1구역
                         </span>
                       </div>
+                      <p className="text-[9px] text-muted-foreground/70 leading-tight -mt-1">
+                        방문(체크인)별 진료 기록 · 편집 불가
+                      </p>
                       {visitHistLoading ? (
                         <div className="flex justify-center py-6">
                           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />

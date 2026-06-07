@@ -205,6 +205,18 @@ export default function ConsultRecordTab({ customerId }: Props) {
     });
   }
 
+  // T-20260608-foot-MEDCHART-PANEL-CLARITY AC-2: "다 싹 접어서 날짜만 보기 → 원하는 것만 펼치기"
+  // 대표원장 멘탈모델 직접 지원하는 전체 접기/펼치기 affordance.
+  const allCollapsed =
+    groups.length > 0 && groups.every((g) => collapsedDates.has(g.key));
+
+  function collapseAllDates() {
+    setCollapsedDates(new Set(groups.map((g) => g.key)));
+  }
+  function expandAllDates() {
+    setCollapsedDates(new Set());
+  }
+
   if (!customerId) {
     return (
       <div
@@ -241,9 +253,29 @@ export default function ConsultRecordTab({ customerId }: Props) {
               {sortAsc ? '오래된순' : '최신순'}
             </button>
           )}
-          <span className="text-[9px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">
-            날짜 그룹
-          </span>
+          {/* T-20260608-foot-MEDCHART-PANEL-CLARITY AC-2: '날짜 그룹' 정적 배지 → 전체 접기/펼치기 토글.
+              한 번 누르면 모두 접혀 날짜 헤더만 남고, 원하는 날짜만 펼쳐 볼 수 있게 affordance 명시. */}
+          {groups.length > 0 && (
+            <button
+              type="button"
+              onClick={() => (allCollapsed ? expandAllDates() : collapseAllDates())}
+              className="flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5 text-[9px] font-semibold text-foreground hover:bg-muted active:scale-95 transition"
+              data-testid="consult-collapse-all-toggle"
+              aria-label={allCollapsed ? '모든 날짜 펼치기' : '모두 접어 날짜만 보기'}
+              title={
+                allCollapsed
+                  ? '모두 펼치기'
+                  : '모두 접어 날짜만 보기 — 원하는 날짜만 눌러서 펼쳐 보세요'
+              }
+            >
+              {allCollapsed ? (
+                <ChevronDown className="h-3 w-3" />
+              ) : (
+                <ChevronRight className="h-3 w-3" />
+              )}
+              {allCollapsed ? '모두 펼치기' : '날짜만 보기'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -265,13 +297,16 @@ export default function ConsultRecordTab({ customerId }: Props) {
             const collapsed = collapsedDates.has(g.key);
             return (
               <div key={g.key} data-testid="consult-date-group">
-                {/* T-FIRSTVISIT-CHARTLIST-UX(2): 날짜 그룹 헤더 (클릭 → 접기/펼치기) */}
+                {/* T-FIRSTVISIT-CHARTLIST-UX(2): 날짜 그룹 헤더 (클릭 → 접기/펼치기)
+                    T-20260608-foot-MEDCHART-PANEL-CLARITY AC-2: chevron 의미 명시 (title/aria-label) */}
                 <button
                   type="button"
                   onClick={() => toggleDate(g.key)}
                   className="flex w-full items-center justify-between gap-2 rounded-md bg-muted/50 px-2 py-1 text-left hover:bg-muted transition"
                   data-testid="consult-date-group-header"
                   aria-expanded={!collapsed}
+                  aria-label={`${g.label} ${collapsed ? '펼치기' : '접기'}`}
+                  title={collapsed ? '클릭하면 이 날짜 기록 펼치기' : '클릭하면 접어서 날짜만 보기'}
                 >
                   <span className="flex items-center gap-1.5">
                     {collapsed ? (
