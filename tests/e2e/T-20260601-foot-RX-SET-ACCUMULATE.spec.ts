@@ -177,8 +177,10 @@ test.describe('T-20260601 RX-SET-ACCUMULATE — 처방세트 누적 + 세트 일
     const saveBtn = page.getByTestId('medical-chart-save-btn');
     await expect(saveBtn).toBeEnabled();
     await saveBtn.click();
-    // 저장 완료 대기 (saving 해제)
-    await expect(saveBtn).toBeEnabled({ timeout: 15_000 });
+    // 저장 완료 대기 — 설계상 저장 성공 시 읽기전용 전환(연속 실수 차단)으로
+    // 저장 버튼(medical-chart-save-btn)이 [수정] 버튼(medical-chart-edit-btn)으로 교체된다.
+    // (구버전 spec은 저장 버튼 재활성화를 대기했으나 현행 설계에선 버튼이 DOM에서 사라짐 → element not found)
+    await expect(page.getByTestId('medical-chart-edit-btn')).toBeVisible({ timeout: 15_000 });
 
     // 새로고침 → 진료차트 재오픈 → 폼은 NEW 로 리셋되므로(설계),
     // 좌측 경과 타임라인에서 방금 저장한 차트 엔트리를 클릭해 폼에 로드
