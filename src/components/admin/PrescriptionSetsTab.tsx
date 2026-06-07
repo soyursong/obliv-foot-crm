@@ -336,6 +336,14 @@ export default function PrescriptionSetsTab() {
 
   return (
     <div className="space-y-4">
+      {/* T-20260606-foot-RX-SET-REDESIGN AC-R6 용어 매핑(코드 식별자 ↔ 현장용어):
+            이 화면의 "처방세트"(코드 prescription_sets) = 현장용어 "묶음처방"(이름+약 묶음 프리셋).
+            개별 약품을 분류하는 "약품 폴더"(prescription_folders)는 별도 탭(DrugFoldersTab). */}
+      <div className="rounded-md border border-teal-100 bg-teal-50/40 px-3 py-2 text-[11px] text-muted-foreground">
+        이 화면은 <span className="font-semibold text-teal-700">묶음처방</span>(이름 + 약 묶음, 빠른처방 프리셋) 관리입니다.
+        개별 약품을 폴더로 분류하려면 <span className="font-medium">약품 폴더</span> 탭을 이용하세요.
+      </div>
+
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">{sets.length}개 처방세트</span>

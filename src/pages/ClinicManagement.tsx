@@ -14,6 +14,8 @@ import { useAuth } from '@/lib/auth';
 import PhrasesTab from '@/components/admin/PhrasesTab';
 import SuperPhrasesTab from '@/components/admin/SuperPhrasesTab';
 import PrescriptionSetsTab from '@/components/admin/PrescriptionSetsTab';
+// T-20260606-foot-RX-SET-REDESIGN AC-R2: 약품 폴더 관리(개별 약품 분류 트리). 묶음처방(prescription_sets)과 별개.
+import DrugFoldersTab from '@/components/admin/DrugFoldersTab';
 // AC-1: 상병명(진단명) 관리 — services.category_label='상병' 단일 SSOT 참조(서비스관리와 동기화)
 import DiagnosisNamesTab from '@/components/admin/DiagnosisNamesTab';
 import DocumentTemplatesTab from '@/components/admin/DocumentTemplatesTab';
@@ -23,7 +25,7 @@ import QuickRxButtonsTab from '@/components/admin/QuickRxButtonsTab';
 import ProgressPlansTab from '@/components/admin/ProgressPlansTab';
 import ContraindicationsTab from '@/components/admin/ContraindicationsTab';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { BookOpen, Pill, FileText, Layers, Zap, DollarSign, TrendingUp, ShieldAlert, Sparkles, ClipboardList } from 'lucide-react';
+import { BookOpen, Pill, FileText, Layers, Zap, DollarSign, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree } from 'lucide-react';
 
 export default function ClinicManagement() {
   const { profile } = useAuth();
@@ -38,6 +40,7 @@ export default function ClinicManagement() {
     'phrases',
     'super_phrases',
     'prescriptions',
+    'drug_folders',
     'diagnosis_names',
     'treatment_sets',
     'fee_set_templates',
@@ -73,9 +76,15 @@ export default function ClinicManagement() {
             <Sparkles className="h-3.5 w-3.5" />
             슈퍼상용구
           </TabsTrigger>
+          {/* 현장용어 "묶음처방"(이름+약 묶음) = 코드 prescription_sets. 기존 testid/라우트 호환 위해 value=prescriptions 유지. */}
           <TabsTrigger value="prescriptions" className="gap-1.5">
             <Pill className="h-3.5 w-3.5" />
             처방세트
+          </TabsTrigger>
+          {/* T-20260606-foot-RX-SET-REDESIGN AC-R2: 약품 폴더(개별 약품 분류 트리). 묶음처방과 별개 축. */}
+          <TabsTrigger value="drug_folders" className="gap-1.5" data-testid="tab-drug-folders">
+            <FolderTree className="h-3.5 w-3.5" />
+            약품 폴더
           </TabsTrigger>
           {/* AC-1: 상병명 관리 — services.category_label='상병' 단일 SSOT (서비스관리와 동기화) */}
           <TabsTrigger value="diagnosis_names" className="gap-1.5" data-testid="tab-diagnosis-names">
@@ -119,6 +128,9 @@ export default function ClinicManagement() {
         </TabsContent>
         <TabsContent value="prescriptions">
           <PrescriptionSetsTab />
+        </TabsContent>
+        <TabsContent value="drug_folders">
+          <DrugFoldersTab />
         </TabsContent>
         <TabsContent value="diagnosis_names">
           <DiagnosisNamesTab />
