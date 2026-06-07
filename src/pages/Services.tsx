@@ -492,7 +492,8 @@ export default function Services() {
                 : 'border-transparent text-muted-foreground hover:text-foreground',
             )}
           >
-            서비스 관리
+            {/* T-20260607-foot-SERVICES-NAV-RESTRUCTURE (AC-2): 페이지 레벨 탭 라벨 '서비스 목록' 정합. */}
+            서비스 목록
           </button>
           {canViewClinicMgmt && (
             <button
