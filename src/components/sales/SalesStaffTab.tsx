@@ -81,6 +81,7 @@ interface DeductSessionRow {
     iv_unit_price: number | null;
     podologe_unit_price: number | null;
     trial_unit_price: number | null;
+    reborn_unit_price: number | null;
   } | null;
   performer: { id: string; name: string } | null;
 }
@@ -110,6 +111,8 @@ function currentUnitPrice(row: DeductSessionRow): number {
       return pkg.podologe_unit_price ?? snap;
     case 'trial':
       return pkg.trial_unit_price ?? snap;
+    case 'reborn':
+      return pkg.reborn_unit_price ?? snap;
     // preconditioning 등 대응 컬럼 없는 타입은 스냅샷 fallback
     default:
       return snap;
@@ -159,7 +162,7 @@ export function SalesStaffTab({ filter }: Props) {
           packages!inner(
             clinic_id,
             heated_unit_price, unheated_unit_price, iv_unit_price,
-            podologe_unit_price, trial_unit_price
+            podologe_unit_price, trial_unit_price, reborn_unit_price
           ),
           performer:staff!performed_by(id, name)
         `)
