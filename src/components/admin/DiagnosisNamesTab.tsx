@@ -3,8 +3,11 @@
 //   처방세트(PrescriptionSetsTab) 동일 구조 — 원내 사용 상병명을 등록·폴더 분류.
 //   상병 정본 = services.category_label='상병' 단일 SSOT (두번째 마스터 신설 금지, AC-0 RESOLVED).
 //   폴더 = services.diagnosis_folder (additive, supervisor SQL게이트). 진료차트는 이 마스터만 선택.
+// Ticket: T-20260607-foot-DX-MGMT-DND-SORT (정렬 입력 UX 교체)
+//   순서 정렬 = 숫자 입력 폐지(AC-5) → grab handle 드래그앤드롭(AC-1/2). admin 전용(AC-3).
+//   기존 sort_order 컬럼 UPDATE only — 신규 스키마 없음(AC-4). DnD = @dnd-kit 기존 패턴 재사용(Services.tsx 미러).
 
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
@@ -21,7 +24,24 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
-import { Loader2, Plus, Pencil, Trash2, Folder } from 'lucide-react';
+import { Loader2, Plus, Pencil, Trash2, Folder, GripVertical } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 // ---------------------------------------------------------------------------
 // Types — 상병 = services 행 (category_label='상병')
@@ -40,7 +60,7 @@ interface DxForm {
   service_code: string;
   diagnosis_folder: string; // '' = 미분류
   active: boolean;
-  sort_order: number;
+  sort_order: number; // T-20260607: 폼 UI에선 비노출 — 신규=말미, 수정=기존값 보존(AC-5)
 }
 
 const EMPTY_FORM: DxForm = {
@@ -51,8 +71,12 @@ const EMPTY_FORM: DxForm = {
   sort_order: 0,
 };
 
-// 상병 관리 권한 = 처방세트와 동일 (의사/총괄/관리자)
+const NO_FOLDER = '미분류';
+
+// 상병 관리(CRUD) 권한 = 처방세트와 동일 (의사/총괄/관리자)
 const DX_MANAGE_ROLES = ['director', 'manager', 'admin'] as const;
+// T-20260607-foot-DX-MGMT-DND-SORT (AC-3): 순서 드래그는 admin 전용 (CRUD보다 좁게 가드)
+const DX_REORDER_ROLE = 'admin' as const;
 
 // ---------------------------------------------------------------------------
 // Hooks
@@ -145,23 +169,172 @@ function useDeleteDx() {
 }
 
 // ---------------------------------------------------------------------------
+// T-20260607-foot-DX-MGMT-DND-SORT: 정렬 가능한 항목 행 / 폴더 블록
+//   useSortable hook 규칙상 별도 컴포넌트 필요. Services.tsx SortableServiceRow 패턴 미러.
+// ---------------------------------------------------------------------------
+interface SortableDxItemProps {
+  d: Diagnosis;
+  canReorder: boolean;
+  canEdit: boolean;
+  delPending: boolean;
+  onEdit: (d: Diagnosis) => void;
+  onDelete: (id: string, name: string) => void;
+}
+
+function SortableDxItem({ d, canReorder, canEdit, delPending, onEdit, onDelete }: SortableDxItemProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: d.id,
+    disabled: !canReorder,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+        zIndex: isDragging ? 10 : undefined,
+      }}
+      className={`rounded-lg border bg-card px-4 py-2.5 flex items-center justify-between ${isDragging ? 'shadow-md' : ''}`}
+      data-testid="dx-item"
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        {/* 드래그 핸들 — admin 전용, touch-none(태블릿 탭 오인식 방지) */}
+        {canReorder && (
+          <button
+            {...attributes}
+            {...listeners}
+            type="button"
+            tabIndex={-1}
+            className="flex items-center justify-center min-w-[28px] min-h-[28px] -ml-1 rounded text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none shrink-0"
+            title="드래그하여 순서 변경"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="dx-item-handle"
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        )}
+        <span className={`text-sm font-medium truncate ${!d.active ? 'text-muted-foreground line-through' : ''}`}>
+          {d.name}
+        </span>
+        {d.service_code && (
+          <Badge variant="outline" className="text-[10px] py-0 font-mono">{d.service_code}</Badge>
+        )}
+        {!d.active && (
+          <Badge variant="outline" className="text-[10px] py-0">비활성</Badge>
+        )}
+      </div>
+      {canEdit && (
+        <div className="flex items-center gap-1 shrink-0">
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(d)}>
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-destructive hover:text-destructive"
+            onClick={() => onDelete(d.id, d.name)}
+            disabled={delPending}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface SortableDxFolderProps {
+  folder: string;
+  count: number;
+  canReorder: boolean;
+  children: React.ReactNode;
+}
+
+function SortableDxFolder({ folder, count, canReorder, children }: SortableDxFolderProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: `folder:${folder}`,
+    disabled: !canReorder,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        zIndex: isDragging ? 20 : undefined,
+      }}
+      className={isDragging ? 'rounded-lg shadow-md bg-background' : ''}
+      data-testid="dx-folder-group"
+    >
+      <div className="flex items-center gap-1.5 mb-1.5 px-1">
+        {/* 폴더 드래그 핸들 — admin 전용 */}
+        {canReorder && (
+          <button
+            {...attributes}
+            {...listeners}
+            type="button"
+            tabIndex={-1}
+            className="flex items-center justify-center min-w-[24px] min-h-[24px] rounded text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none shrink-0"
+            title="드래그하여 폴더 순서 변경"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="dx-folder-handle"
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        )}
+        <Folder className="h-3.5 w-3.5 text-teal-600" />
+        <span className="text-xs font-semibold text-foreground" data-testid="dx-folder-name">
+          {folder}
+        </span>
+        <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{count}</Badge>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 export default function DiagnosisNamesTab() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
   const canEdit = !!profile?.role && (DX_MANAGE_ROLES as readonly string[]).includes(profile.role);
-  const { data: items = [], isLoading } = useDiagnoses(clinicId);
+  // AC-3: 순서 드래그는 admin 전용
+  const canReorder = profile?.role === DX_REORDER_ROLE;
+  const { data: queryItems = [], isLoading } = useDiagnoses(clinicId);
   const upsert = useUpsertDx(clinicId);
   const del = useDeleteDx();
+
+  // T-20260607: 로컬 정렬 상태 (낙관적 reorder). query 데이터(CRUD invalidate) 시 재동기화.
+  const [items, setItems] = useState<Diagnosis[]>([]);
+  useEffect(() => {
+    setItems(queryItems);
+  }, [queryItems]);
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Diagnosis | null>(null);
   const [form, setForm] = useState<DxForm>(EMPTY_FORM);
 
+  // T-20260607: DnD sensors (태블릿 터치 호환) — Services.tsx 동일 설정
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+  );
+
+  function nextSortOrder() {
+    return items.length === 0 ? 0 : Math.max(...items.map((d) => d.sort_order ?? 0)) + 10;
+  }
+
   function openAdd() {
     setEditing(null);
-    setForm({ ...EMPTY_FORM });
+    // AC-5: 정렬 숫자입력 폐지 → 신규 항목은 말미(sort_order = max+10)로 자동 배치
+    setForm({ ...EMPTY_FORM, sort_order: nextSortOrder() });
     setOpen(true);
   }
 
@@ -172,7 +345,7 @@ export default function DiagnosisNamesTab() {
       service_code: d.service_code ?? '',
       diagnosis_folder: d.diagnosis_folder ?? '',
       active: d.active,
-      sort_order: d.sort_order,
+      sort_order: d.sort_order, // 기존값 보존 (수정 시 순서 변동 없음)
     });
     setOpen(true);
   }
@@ -188,25 +361,103 @@ export default function DiagnosisNamesTab() {
     del.mutate(id);
   }
 
-  // 폴더별 그룹핑 (미분류 맨 끝) — PrescriptionSetsTab 패턴 미러
-  const NO_FOLDER = '미분류';
-  const grouped = (() => {
+  // 폴더별 그룹핑 — folder 순서는 sort_order 블록 순(드래그 반영), 동률 시 미분류 말미.
+  const { folderOrder, itemsByFolder } = useMemo(() => {
     const map = new Map<string, Diagnosis[]>();
     for (const d of items) {
       const key = d.diagnosis_folder?.trim() ? d.diagnosis_folder.trim() : NO_FOLDER;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(d);
     }
-    const keys = Array.from(map.keys()).sort((a, b) => {
+    // items는 sort_order asc 정렬 — 폴더 내 항목 순서는 삽입 순서로 유지.
+    const folderMin = new Map<string, number>();
+    for (const [k, arr] of map) {
+      folderMin.set(k, Math.min(...arr.map((x) => x.sort_order ?? 999)));
+    }
+    const order = Array.from(map.keys()).sort((a, b) => {
+      const ma = folderMin.get(a)!;
+      const mb = folderMin.get(b)!;
+      if (ma !== mb) return ma - mb;
       if (a === NO_FOLDER) return 1;
       if (b === NO_FOLDER) return -1;
       return a.localeCompare(b, 'ko');
     });
-    return keys.map((k) => ({ folder: k, items: map.get(k)! }));
-  })();
-  const folderNames = Array.from(
-    new Set(items.map((d) => d.diagnosis_folder?.trim()).filter((x): x is string => !!x)),
-  ).sort((a, b) => a.localeCompare(b, 'ko'));
+    return { folderOrder: order, itemsByFolder: map };
+  }, [items]);
+
+  const folderNames = useMemo(
+    () =>
+      Array.from(
+        new Set(items.map((d) => d.diagnosis_folder?.trim()).filter((x): x is string => !!x)),
+      ).sort((a, b) => a.localeCompare(b, 'ko')),
+    [items],
+  );
+
+  // T-20260607 (AC-4): 전역 sort_order 재계산 → 낙관적 반영 + 변경분만 DB UPDATE.
+  //   폴더는 연속 블록으로 인코딩(블록 순=폴더 순). 신규 스키마 없이 기존 컬럼만 갱신.
+  const savingRef = useRef(false);
+  async function applyReorder(fOrder: string[], byFolder: Map<string, Diagnosis[]>) {
+    const snapshot = items; // 실패 시 롤백용
+    const flat: Diagnosis[] = [];
+    let g = 0;
+    for (const f of fOrder) {
+      for (const it of byFolder.get(f) ?? []) {
+        flat.push({ ...it, sort_order: g * 10 });
+        g += 1;
+      }
+    }
+    // 변경된 행만 추출
+    const prevById = new Map(snapshot.map((d) => [d.id, d.sort_order]));
+    const updates = flat
+      .filter((d) => prevById.get(d.id) !== d.sort_order)
+      .map(({ id, sort_order }) => ({ id, sort_order }));
+    if (updates.length === 0) return;
+
+    setItems(flat); // 낙관적 반영
+    savingRef.current = true;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sb = supabase as any;
+      await Promise.all(
+        updates.map(({ id, sort_order }) => sb.from('services').update({ sort_order }).eq('id', id)),
+      );
+      toast.success('순서가 저장됐어요.', { duration: 1500 });
+    } catch (e) {
+      setItems(snapshot); // AC-4: 저장 실패 시 직전 순서로 롤백
+      toast.error(`순서 저장 실패 — 되돌렸어요. ${(e as Error)?.message ?? ''}`.trim());
+    } finally {
+      savingRef.current = false;
+    }
+  }
+
+  // 항목 드래그 (폴더 내 순서 변경, AC-2a)
+  function handleItemDragEnd(folder: string, e: DragEndEvent) {
+    if (!canReorder) return;
+    const { active, over } = e;
+    if (!over || String(active.id) === String(over.id)) return;
+    const arr = itemsByFolder.get(folder) ?? [];
+    const oldIdx = arr.findIndex((x) => x.id === String(active.id));
+    const newIdx = arr.findIndex((x) => x.id === String(over.id));
+    if (oldIdx === -1 || newIdx === -1) return;
+    const newArr = arrayMove(arr, oldIdx, newIdx);
+    const byFolder = new Map(itemsByFolder);
+    byFolder.set(folder, newArr);
+    applyReorder(folderOrder, byFolder);
+  }
+
+  // 폴더 드래그 (폴더 자체 순서 변경, AC-2b)
+  function handleFolderDragEnd(e: DragEndEvent) {
+    if (!canReorder) return;
+    const { active, over } = e;
+    if (!over || String(active.id) === String(over.id)) return;
+    const activeFolder = String(active.id).replace(/^folder:/, '');
+    const overFolder = String(over.id).replace(/^folder:/, '');
+    const oldIdx = folderOrder.indexOf(activeFolder);
+    const newIdx = folderOrder.indexOf(overFolder);
+    if (oldIdx === -1 || newIdx === -1) return;
+    const newOrder = arrayMove(folderOrder, oldIdx, newIdx);
+    applyReorder(newOrder, itemsByFolder);
+  }
 
   if (isLoading)
     return (
@@ -230,6 +481,7 @@ export default function DiagnosisNamesTab() {
 
       <p className="text-[11px] text-muted-foreground">
         진료차트 진단명은 여기 등록된 상병명만 선택할 수 있습니다. 폴더로 그룹화해 관리하세요.
+        {canReorder && ' 왼쪽 손잡이를 끌어 순서를 바꿀 수 있어요.'}
       </p>
 
       {/* 목록 */}
@@ -238,56 +490,53 @@ export default function DiagnosisNamesTab() {
           등록된 상병명이 없습니다.
         </div>
       ) : (
-        <div className="space-y-4" data-testid="dx-list">
-          {grouped.map((g) => (
-            <div key={g.folder} data-testid="dx-folder-group">
-              <div className="flex items-center gap-1.5 mb-1.5 px-1">
-                <Folder className="h-3.5 w-3.5 text-teal-600" />
-                <span className="text-xs font-semibold text-foreground" data-testid="dx-folder-name">
-                  {g.folder}
-                </span>
-                <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{g.items.length}</Badge>
-              </div>
-              <div className="space-y-1.5 pl-1">
-                {g.items.map((d) => (
-                  <div
-                    key={d.id}
-                    className="rounded-lg border bg-card px-4 py-2.5 flex items-center justify-between"
-                    data-testid="dx-item"
+        // 폴더 레벨 DnD (AC-2b)
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFolderDragEnd}>
+          <SortableContext
+            items={canReorder ? folderOrder.map((f) => `folder:${f}`) : []}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-4" data-testid="dx-list">
+              {folderOrder.map((folder) => {
+                const fItems = itemsByFolder.get(folder) ?? [];
+                return (
+                  <SortableDxFolder
+                    key={folder}
+                    folder={folder}
+                    count={fItems.length}
+                    canReorder={canReorder}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className={`text-sm font-medium truncate ${!d.active ? 'text-muted-foreground line-through' : ''}`}>
-                        {d.name}
-                      </span>
-                      {d.service_code && (
-                        <Badge variant="outline" className="text-[10px] py-0 font-mono">{d.service_code}</Badge>
-                      )}
-                      {!d.active && (
-                        <Badge variant="outline" className="text-[10px] py-0">비활성</Badge>
-                      )}
-                    </div>
-                    {canEdit && (
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(d)}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive hover:text-destructive"
-                          onClick={() => handleDelete(d.id, d.name)}
-                          disabled={del.isPending}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+                    {/* 항목 레벨 DnD (AC-2a) — 폴더 내부 독립 컨텍스트 */}
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={(e) => handleItemDragEnd(folder, e)}
+                    >
+                      <SortableContext
+                        items={canReorder ? fItems.map((d) => d.id) : []}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <div className="space-y-1.5 pl-1">
+                          {fItems.map((d) => (
+                            <SortableDxItem
+                              key={d.id}
+                              d={d}
+                              canReorder={canReorder}
+                              canEdit={canEdit}
+                              delPending={del.isPending}
+                              onEdit={openEdit}
+                              onDelete={handleDelete}
+                            />
+                          ))}
+                        </div>
+                      </SortableContext>
+                    </DndContext>
+                  </SortableDxFolder>
+                );
+              })}
             </div>
-          ))}
-        </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       {/* 추가/편집 다이얼로그 */}
@@ -297,7 +546,8 @@ export default function DiagnosisNamesTab() {
             <DialogTitle>{editing ? '상병명 수정' : '상병명 추가'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-4 gap-3">
+            {/* AC-5: sort_order 숫자입력 폐지 — 순서는 목록에서 드래그로 변경 */}
+            <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2">
                 <Label className="text-xs">상병명 *</Label>
                 <Input
@@ -316,16 +566,6 @@ export default function DiagnosisNamesTab() {
                   placeholder="예) M79.3"
                   className="mt-1 font-mono"
                   data-testid="dx-code-input"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">정렬 순서</Label>
-                <Input
-                  type="number"
-                  value={form.sort_order}
-                  onChange={(e) => setForm((f) => ({ ...f, sort_order: Number(e.target.value) }))}
-                  className="mt-1"
-                  min={0}
                 />
               </div>
             </div>
