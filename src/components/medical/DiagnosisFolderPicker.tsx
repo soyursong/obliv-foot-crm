@@ -1,16 +1,23 @@
-// DiagnosisFolderPicker — 진료차트 상병명 폴더 탐색 선택기
+// DiagnosisFolderPicker — 진료차트 상병명 폴더 탐색 선택기 (다중·주/부 지정)
 // Ticket: T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2 [B] + AC-3 [C], 문지은 대표원장 C0ATE5P6JTH)
 //   [B] 자동완성/이력 리스트업 전면 폐지 → 폴더 탐색 드롭다운(폴더 클릭→하위 상병 목록).
 //       드롭다운 넓게/오른쪽 아래로 확장. 등록(services category_label='상병')된 상병만 선택.
 //   [C] 원장별 즐겨찾기(doctor_diagnosis_favorites, auth.uid() 격리) → 패널 상단 빠른선택.
-//   저장값은 순수 상병명(name) — medical_charts.diagnosis 저장경로 무변경.
+//
+// Ticket: T-20260607-foot-SUPERPHRASE-DX-MULTISELECT-FIX (문지은 대표원장 C0ATE5P6JTH)
+//   AC-1 주/부상병 지정: 선택 순서 기반 — 맨 앞(index 0)=주상병, 나머지=부상병.
+//                        칩의 [주상병] 버튼으로 해당 상병을 맨 앞으로 승격(주상병 재지정).
+//   AC-2 진단명 다중(중복) 선택: 폴더 항목 클릭 시 기존 선택을 대체하지 않고 누적(append).
+//                        동일 상병 중복 추가 허용(현장이 직접 삭제). 패널은 닫지 않아 연속 추가 가능.
+//   저장값은 medical_charts.diagnosis(text) 무스키마변경 — 선택 상병을 줄바꿈(\n)으로 직렬화.
+//     줄 순서 = 주/부 순서. (applySuperPhrase 의 기존 `\n` 누적 포맷과 호환)
 //   새 의존성 없음(Popover 미보유) — 커스텀 절대배치 패널 + click-outside.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
-import { ChevronDown, Folder, FolderOpen, Star, X, Search } from 'lucide-react';
+import { ChevronDown, Folder, FolderOpen, Star, X, Search, Plus } from 'lucide-react';
 
 interface DxRow {
   id: string;
@@ -29,6 +36,46 @@ const FAV_KEY = 'diagnosis_picker_fav';
 function fmtDx(row: { name: string; service_code: string | null }): string {
   const code = (row.service_code ?? '').trim();
   return code ? `${code} ${row.name}` : row.name;
+}
+
+// ── T-20260607-foot-SUPERPHRASE-DX-MULTISELECT-FIX: 순수 직렬화 헬퍼 (테스트 정본) ──
+//   diagnosis(text) ↔ 선택 상병 목록 변환. 줄 순서 = 주/부 순서(index 0 = 주상병).
+export function parseDxEntries(value: string): string[] {
+  if (!value) return [];
+  return value
+    .split('\n')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+export function serializeDxEntries(entries: string[]): string {
+  return entries.join('\n');
+}
+
+// AC-2: 중복 허용 누적. 빈 라벨은 무시(GUARD).
+export function addDxEntry(entries: string[], label: string): string[] {
+  const v = (label ?? '').trim();
+  if (!v) return entries;
+  return [...entries, v];
+}
+
+export function removeDxEntry(entries: string[], idx: number): string[] {
+  if (idx < 0 || idx >= entries.length) return entries;
+  return entries.filter((_, i) => i !== idx);
+}
+
+// AC-1: 주상병 재지정 — 해당 항목을 맨 앞으로 이동(나머지 상대순서 보존).
+export function makeDxPrimary(entries: string[], idx: number): string[] {
+  if (idx <= 0 || idx >= entries.length) return entries; // 0(이미 주) 또는 범위밖 → 무변경
+  const next = [...entries];
+  const [moved] = next.splice(idx, 1);
+  next.unshift(moved);
+  return next;
+}
+
+// 순서 기반 주/부 판정. index 0 = 주상병.
+export function isDxPrimary(idx: number): boolean {
+  return idx === 0;
 }
 
 function useDxMaster(clinicId: string | null) {
@@ -100,6 +147,9 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
   const rootRef = useRef<HTMLDivElement>(null);
 
+  // T-20260607: 선택된 상병 목록(다중·순서=주/부). value(text) 의 단일 정본.
+  const entries = useMemo(() => parseDxEntries(value), [value]);
+
   // click-outside 닫기
   useEffect(() => {
     if (!open) return;
@@ -148,10 +198,22 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
     });
   }
 
+  // AC-2: 항목 선택 = 누적(append, 중복 허용). 패널은 닫지 않음(연속 추가).
   function select(row: DxRow) {
-    // AC-1: 상병명+코드 동반 저장("코드 상병명"). 이름 단독 출력 금지.
-    onChange(fmtDx(row));
-    setOpen(false);
+    onChange(serializeDxEntries(addDxEntry(entries, fmtDx(row))));
+    // 패널 유지 — 다른 상병 추가가능. 검색어는 보존(같은 폴더 연속 추가 편의).
+  }
+
+  function handleRemove(idx: number) {
+    onChange(serializeDxEntries(removeDxEntry(entries, idx)));
+  }
+
+  function handleMakePrimary(idx: number) {
+    onChange(serializeDxEntries(makeDxPrimary(entries, idx)));
+  }
+
+  function clearAll() {
+    onChange('');
     setQuery('');
   }
 
@@ -177,9 +239,68 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
     ? new Set(grouped.map((g) => g.folder))
     : openFolders;
 
+  // 트리거 요약 라벨 — 주상병 우선 노출 + 추가건수.
+  const triggerLabel =
+    entries.length === 0
+      ? '상병명을 선택하세요 (다중 선택)'
+      : entries.length === 1
+        ? entries[0]
+        : `${entries[0]} 외 ${entries.length - 1}건`;
+
   return (
     <div ref={rootRef} className="relative">
-      {/* 트리거 — 읽기전용 표시 + 드롭다운 토글 (자유 타이핑 없음) */}
+      {/* 선택된 상병 칩 — 주/부 배지 + 주상병 재지정 + 삭제 (AC-1/AC-2) */}
+      {entries.length > 0 && (
+        <div className="mb-1.5 flex flex-wrap gap-1.5" data-testid="dx-selected-chips">
+          {entries.map((label, idx) => {
+            const primary = isDxPrimary(idx);
+            return (
+              <span
+                key={`${idx}-${label}`}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs ${
+                  primary ? 'border-teal-300 bg-teal-50' : 'border-input bg-muted/40'
+                }`}
+                data-testid="dx-chip"
+                data-primary={primary ? 'true' : 'false'}
+              >
+                <span
+                  className={`shrink-0 rounded px-1 text-[10px] font-semibold ${
+                    primary ? 'bg-teal-600 text-white' : 'bg-gray-300 text-gray-700'
+                  }`}
+                  data-testid="dx-chip-badge"
+                >
+                  {primary ? '주' : '부'}
+                </span>
+                <span className="truncate max-w-[180px]">{label}</span>
+                {!primary && !disabled && (
+                  <button
+                    type="button"
+                    onClick={() => handleMakePrimary(idx)}
+                    className="shrink-0 rounded px-1 text-[10px] text-teal-700 hover:bg-teal-100"
+                    title="주상병으로 지정"
+                    data-testid="dx-chip-make-primary"
+                  >
+                    주상병
+                  </button>
+                )}
+                {!disabled && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemove(idx)}
+                    className="shrink-0 text-muted-foreground hover:text-destructive"
+                    aria-label={`${label} 삭제`}
+                    data-testid="dx-chip-remove"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 트리거 — 등록 상병만 폴더에서 선택(자유 타이핑 없음). 다중 선택 누적. */}
       <button
         type="button"
         disabled={disabled}
@@ -187,14 +308,18 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
         className={`flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 disabled:opacity-100 ${className ?? ''}`}
         data-testid={rest['data-testid']}
       >
-        <span className={value ? 'text-foreground' : 'text-gray-300'}>
-          {value || '상병명을 선택하세요'}
+        <span className="flex items-center gap-1.5 min-w-0">
+          <Plus className="h-3.5 w-3.5 shrink-0 text-teal-600" />
+          <span className={`truncate ${entries.length ? 'text-foreground' : 'text-gray-300'}`}>
+            {triggerLabel}
+          </span>
         </span>
         <span className="flex items-center gap-1">
-          {value && !disabled && (
+          {entries.length > 0 && !disabled && (
             <X
               className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive"
-              onClick={(e) => { e.stopPropagation(); onChange(''); }}
+              onClick={(e) => { e.stopPropagation(); clearAll(); }}
+              aria-label="전체 삭제"
             />
           )}
           <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -214,7 +339,7 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="상병명·코드 검색 (등록된 상병만)"
+              placeholder="상병명·코드 검색 (등록된 상병만) — 클릭 시 누적 추가"
               className="w-full bg-transparent text-sm outline-none placeholder:text-gray-300"
               data-testid="dx-picker-search"
             />
@@ -278,6 +403,23 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
               })
             )}
           </div>
+
+          {/* 푸터 — 완료(패널 닫기). 다중 추가 후 명시적 종료. */}
+          {entries.length > 0 && (
+            <div className="border-t px-3 py-1.5 flex items-center justify-between">
+              <span className="text-[10px] text-muted-foreground">
+                선택 {entries.length}건 · 맨 위=주상병
+              </span>
+              <button
+                type="button"
+                onClick={() => { setOpen(false); setQuery(''); }}
+                className="rounded bg-teal-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-teal-700"
+                data-testid="dx-picker-done"
+              >
+                완료
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
