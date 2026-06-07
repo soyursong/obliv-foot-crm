@@ -51,7 +51,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, Folder, FolderOpen, History, Loader2, Pin, PinOff, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
+import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, Folder, FolderOpen, FolderTree, History, Loader2, Pill, Pin, PinOff, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -62,6 +62,8 @@ import { checkRxRoleGate, rxRoleGateMessage } from '@/lib/prescriptionGate';
 import { formatAmount, formatPhone } from '@/lib/format';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import { classificationToRoute } from '@/components/admin/PrescriptionSetsTab';
+// T-20260606-foot-RX-SET-REDESIGN AC-R3/R5: 약품 폴더 탐색기(개별 약품 트리). 묶음처방(set)과 별개 축.
+import DrugFolderTree, { type DrugPick } from '@/components/doctor/DrugFolderTree';
 import RxCountInput from '@/components/admin/RxCountInput';
 // T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2/AC-3): 상병명 폴더 탐색 선택기(자동완성 폐지)
 import DiagnosisFolderPicker from '@/components/medical/DiagnosisFolderPicker';
@@ -1132,6 +1134,24 @@ export default function MedicalChartPanel({
       notes: '',
     };
     addRxItems([item], `"${code.name_ko}" 추가됨`);
+  }
+
+  // T-20260606-foot-RX-SET-REDESIGN AC-R3/R5: 약품 폴더 탐색기에서 약 1건 이상을 처방내역에 추가.
+  //   addRxFromCode 와 동일 변환(classification→route, code_id 보존) → addRxItems 단일 진입점(금기 게이트 상속).
+  function addRxFromCodes(codes: DrugPick[]) {
+    if (codes.length === 0) return;
+    const items: PrescriptionItem[] = codes.map((c) => ({
+      name: c.name_ko,
+      dosage: '',
+      route: classificationToRoute(c.classification),
+      classification: c.classification ?? null,
+      prescription_code_id: c.id,
+      frequency: '1일 3회',
+      days: 3,
+      notes: '',
+    }));
+    const msg = items.length === 1 ? `"${items[0].name}" 추가됨` : `약품 ${items.length}개 추가됨`;
+    void addRxItems(items, msg);
   }
 
   // T-20260603-foot-RX-CHART-ENHANCE AC-4: 처방내역 행별 횟수·일수 직접 조정.
@@ -2402,6 +2422,24 @@ export default function MedicalChartPanel({
 
                       <div className="text-[10px] font-semibold text-muted-foreground px-1 pt-1">
                         클릭하면 처방내역에 적용됩니다
+                      </div>
+
+                      {/* T-20260606-foot-RX-SET-REDESIGN AC-R3/R5/R6 — 현장용어 3분할(코드 식별자 매핑):
+                            · (위) 약품 검색 = 현장 "처방세트" = 전체 약 카탈로그 ............ prescription_codes
+                            · 약품 폴더      = 약 분류/탐색 트리(개별 약품 단위) ............ prescription_folders
+                            · 묶음처방       = 이름+약 묶음 프리셋(폴더와 별개 직교 축) ..... prescription_sets */}
+
+                      {/* 약품 폴더 (AC-R3: 개별 약품 분류 탐색기 / AC-R5: 단일·다중 추가) */}
+                      <div className="flex items-center gap-1.5 px-1 pt-2" data-testid="drug-folder-section-header">
+                        <FolderTree className="h-3.5 w-3.5 text-teal-600" />
+                        <span className="text-[11px] font-semibold text-foreground">약품 폴더</span>
+                      </div>
+                      <DrugFolderTree onAdd={addRxFromCodes} disabled={gateChecking} />
+
+                      {/* 묶음처방 (AC-R4: 이름+약 묶음 프리셋 = 코드 prescription_sets) */}
+                      <div className="flex items-center gap-1.5 px-1 pt-2" data-testid="rx-set-section-header">
+                        <Pill className="h-3.5 w-3.5 text-teal-600" />
+                        <span className="text-[11px] font-semibold text-foreground">묶음처방</span>
                       </div>
 
                       {prescriptionSets.length === 0 ? (
