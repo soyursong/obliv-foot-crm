@@ -1,5 +1,7 @@
 // T-20260526-foot-SVC-CATEGORY-SORT: 탭별 DnD/↑↓ 순서 변경 + DB 저장 (sort_order)
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+// T-20260607-foot-NAV-SVCMGMT-SUBTAB-RENAME: 진료관리(ClinicManagement)를 서비스관리 화면 내
+//   top-level 서브탭으로 편입. lazy 로드로 services 청크 비대화 방지(ClinicManagement 는 10+ 탭 컴포넌트 의존).
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Pencil, Trash2, Download, Eye, EyeOff, Search, GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -37,6 +39,14 @@ import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Service } from '@/lib/types';
+
+// T-20260607-foot-NAV-SVCMGMT-SUBTAB-RENAME: 진료관리 서브탭 — 기존 /admin/clinic-management 페이지 재사용(이동만).
+const ClinicManagementPanel = lazy(() => import('@/pages/ClinicManagement'));
+
+// AC-4 핵심: 진료관리 서브탭은 admin/manager/director 한정 노출/렌더.
+// services 페이지 roles=[admin,manager,consultant,coordinator,therapist] 보다 좁음 →
+// consultant/coordinator/therapist 권한 회귀 금지(서브탭 비노출 + 렌더 가드). App.tsx clinic-management RoleGuard 이중가드 보존.
+const CLINIC_MGMT_ROLES = ['admin', 'manager', 'director'] as const;
 
 const VAT_LABEL: Record<Service['vat_type'], string> = {
   none: '비과세',
@@ -204,6 +214,13 @@ export default function Services() {
   const clinic = useClinic();
   const { profile } = useAuth();
   const isAdmin = profile?.role === 'admin';
+
+  // T-20260607-foot-NAV-SVCMGMT-SUBTAB-RENAME: top-level 서브탭 (서비스 관리 / 진료관리)
+  // AC-4: 진료관리 서브탭은 admin/manager/director 한정. (CLINIC_MGMT_ROLES)
+  const canViewClinicMgmt = !!profile?.role && (CLINIC_MGMT_ROLES as readonly string[]).includes(profile.role);
+  const [topTab, setTopTab] = useState<'services' | 'clinic'>('services');
+  // 권한 박탈/역할 변경 등으로 가시성을 잃은 경우 서비스 탭으로 강제 복귀(렌더 가드 보강).
+  const effectiveTopTab: 'services' | 'clinic' = topTab === 'clinic' && canViewClinicMgmt ? 'clinic' : 'services';
 
   const [rows, setRows] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
@@ -457,7 +474,71 @@ export default function Services() {
   const colCount = (canReorder ? 1 : 0) + (activeTab === '전체' ? 1 : 0) + 4 + (isAdmin ? 1 : 0);
 
   return (
-    <div className="flex h-full flex-col p-6">
+    <div className="flex h-full flex-col">
+      {/* T-20260607-foot-NAV-SVCMGMT-SUBTAB-RENAME: top-level 서브탭 (서비스 관리 / 진료관리).
+          진료관리는 admin/manager/director 한정 노출(AC-4). */}
+      <div className="shrink-0 border-b px-6 pt-4">
+        <div role="tablist" className="flex gap-1" data-testid="svc-top-tab-nav">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={effectiveTopTab === 'services'}
+            data-testid="svc-top-tab-services"
+            onClick={() => setTopTab('services')}
+            className={cn(
+              'h-9 rounded-t-md border-b-2 px-4 text-sm font-semibold transition-colors',
+              effectiveTopTab === 'services'
+                ? 'border-teal-600 text-teal-700'
+                : 'border-transparent text-muted-foreground hover:text-foreground',
+            )}
+          >
+            서비스 관리
+          </button>
+          {canViewClinicMgmt && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={effectiveTopTab === 'clinic'}
+              data-testid="svc-top-tab-clinic"
+              onClick={() => setTopTab('clinic')}
+              className={cn(
+                'h-9 rounded-t-md border-b-2 px-4 text-sm font-semibold transition-colors',
+                effectiveTopTab === 'clinic'
+                  ? 'border-teal-600 text-teal-700'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              진료관리
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 진료관리 서브탭 — 기존 ClinicManagement 페이지 재사용(이동만). 가시성 + 렌더 이중 가드(AC-4). */}
+      {effectiveTopTab === 'clinic' && canViewClinicMgmt ? (
+        <div className="flex-1 min-h-0 overflow-hidden" data-testid="svc-clinic-panel">
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                불러오는 중…
+              </div>
+            }
+          >
+            <ClinicManagementPanel />
+          </Suspense>
+        </div>
+      ) : (
+        // 함수 호출(컴포넌트 경계 X)로 인라인 렌더 — 상태는 Services 본체에 유지되어 리마운트/상태소실 없음.
+        renderServiceCatalog()
+      )}
+    </div>
+  );
+
+  // ── 서비스 목록 패널 (기존 서비스 관리 화면) ──────────────────────────────
+  // 클로저로 기존 상태/핸들러를 그대로 사용. (서브탭 편입에 따른 래핑만, 로직 무변경)
+  function renderServiceCatalog() {
+    return (
+    <div className="flex flex-1 flex-col min-h-0 p-6">
       <div className="mb-4 flex items-center justify-between gap-4">
         <h1 className="text-lg font-bold">서비스 관리</h1>
         <div className="flex items-center gap-2">
@@ -627,7 +708,8 @@ export default function Services() {
         </>
       )}
     </div>
-  );
+    );
+  }
 }
 
 function ServiceDialog({
