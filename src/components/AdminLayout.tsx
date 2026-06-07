@@ -96,13 +96,13 @@ const NAV_ITEMS: {
   // AC-4: therapist → 패키지 신규 접근
   { to: '/admin/packages', label: '패키지', icon: Package, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
   // AC-2: consultant/coordinator/therapist → 진료도구 접근 (T-20260525-foot-ROLE-PERM-CUSTOM 3차: therapist 추가)
-  { to: '/admin/doctor-tools', label: '진료 도구', icon: BookOpen, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
+  // T-20260607-foot-NAV-SVCMGMT-SUBTAB-RENAME (AC-2): 라벨 '진료 도구' → '진료 대시보드' (route/icon/roles 불변)
+  { to: '/admin/doctor-tools', label: '진료 대시보드', icon: BookOpen, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
   // AC-1: 3역할 → 서비스관리 접근 (뷰 전용; WRITE=admin만)
+  // T-20260607-foot-NAV-SVCMGMT-SUBTAB-RENAME (AC-1): 진료관리(/admin/clinic-management) top-level 메뉴 제거 →
+  //   서비스관리 화면 내 서브탭으로 편입(Services.tsx). 라우트/페이지·기능은 유지(이동만).
+  //   진료관리 서브탭은 Services.tsx 내부에서 admin/manager/director 한정 노출 + App.tsx RoleGuard 이중가드 보존.
   { to: '/admin/services', label: '서비스관리', icon: Stethoscope, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
-  // T-20260606-foot-RXTOOL-INJURY-MENU-SPLIT (AC-2/AC-3): 진료관리 — 서비스관리 바로 아래.
-  //   어드민성 진료 도구(상용구·처방세트·상병명·진료세트 등) 모음. admin/manager/director 전용
-  //   (부원장 consultant/coordinator/therapist 비노출 — 라우트 가드 App.tsx와 이중).
-  { to: '/admin/clinic-management', label: '진료관리', icon: ClipboardList, roles: ['admin', 'manager', 'director'] },
   // T-20260525-foot-MESSAGING-V1 AC-S1: 메시지 설정 — 서비스관리 바로 아래 (현장 요청: 김주연 총괄)
   // T-20260525-foot-ROLE-PERM-CUSTOM 3차: 통계·매출집계·계정관리 외 전권한 → coordinator/therapist 추가
   { to: '/admin/settings', label: '메시지 설정', icon: MessageSquare, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'] },
