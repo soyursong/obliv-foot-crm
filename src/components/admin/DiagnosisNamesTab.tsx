@@ -245,14 +245,18 @@ function SortableDxItem({ d, canReorder, canEdit, delPending, onEdit, onDelete }
   );
 }
 
-interface SortableDxFolderProps {
+// T-20260607-foot-DXMGMT-LEFT-FOLDER-FIX (AC-1/3): 좌측 폴더트리 노드.
+//   2패널 전환 — 세로 스택 폴더 헤더 → 좌측 패널의 클릭 가능한 폴더 노드(선택 시 우측에 상병 목록).
+//   폴더 순서 DnD(admin) 보존(AC-4): 기존 handleFolderDragEnd/applyReorder 그대로 재사용.
+interface SortableFolderNodeProps {
   folder: string;
   count: number;
+  selected: boolean;
   canReorder: boolean;
-  children: React.ReactNode;
+  onSelect: (folder: string) => void;
 }
 
-function SortableDxFolder({ folder, count, canReorder, children }: SortableDxFolderProps) {
+function SortableFolderNode({ folder, count, selected, canReorder, onSelect }: SortableFolderNodeProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: `folder:${folder}`,
     disabled: !canReorder,
@@ -267,32 +271,41 @@ function SortableDxFolder({ folder, count, canReorder, children }: SortableDxFol
         opacity: isDragging ? 0.5 : 1,
         zIndex: isDragging ? 20 : undefined,
       }}
-      className={isDragging ? 'rounded-lg shadow-md bg-background' : ''}
-      data-testid="dx-folder-group"
+      className={`flex items-center gap-1.5 rounded-md px-2 py-2 cursor-pointer select-none ${
+        selected ? 'bg-teal-50 text-teal-900 ring-1 ring-teal-200' : 'hover:bg-muted/60'
+      } ${isDragging ? 'shadow-md bg-background' : ''}`}
+      data-testid="dx-folder-node"
+      data-selected={selected ? 'true' : 'false'}
+      onClick={() => onSelect(folder)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(folder);
+        }
+      }}
     >
-      <div className="flex items-center gap-1.5 mb-1.5 px-1">
-        {/* 폴더 드래그 핸들 — admin 전용 */}
-        {canReorder && (
-          <button
-            {...attributes}
-            {...listeners}
-            type="button"
-            tabIndex={-1}
-            className="flex items-center justify-center min-w-[24px] min-h-[24px] rounded text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none shrink-0"
-            title="드래그하여 폴더 순서 변경"
-            onClick={(e) => e.stopPropagation()}
-            data-testid="dx-folder-handle"
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
-        )}
-        <Folder className="h-3.5 w-3.5 text-teal-600" />
-        <span className="text-xs font-semibold text-foreground" data-testid="dx-folder-name">
-          {folder}
-        </span>
-        <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{count}</Badge>
-      </div>
-      {children}
+      {/* 폴더 드래그 핸들 — admin 전용 */}
+      {canReorder && (
+        <button
+          {...attributes}
+          {...listeners}
+          type="button"
+          tabIndex={-1}
+          className="flex items-center justify-center min-w-[24px] min-h-[24px] -ml-1 rounded text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none shrink-0"
+          title="드래그하여 폴더 순서 변경"
+          onClick={(e) => e.stopPropagation()}
+          data-testid="dx-folder-handle"
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      )}
+      <Folder className={`h-3.5 w-3.5 shrink-0 ${selected ? 'text-teal-600' : 'text-teal-600/70'}`} />
+      <span className="text-xs font-semibold truncate flex-1" data-testid="dx-folder-name">
+        {folder}
+      </span>
+      <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">{count}</Badge>
     </div>
   );
 }
@@ -319,6 +332,9 @@ export default function DiagnosisNamesTab() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Diagnosis | null>(null);
   const [form, setForm] = useState<DxForm>(EMPTY_FORM);
+
+  // T-20260607-foot-DXMGMT-LEFT-FOLDER-FIX (AC-1): 좌측 폴더트리에서 선택된 폴더.
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
 
   // T-20260607: DnD sensors (태블릿 터치 호환) — Services.tsx 동일 설정
   const sensors = useSensors(
@@ -384,6 +400,17 @@ export default function DiagnosisNamesTab() {
     });
     return { folderOrder: order, itemsByFolder: map };
   }, [items]);
+
+  // AC-1: 선택 폴더를 항상 유효하게 유지 — 미선택/삭제된 폴더면 첫 폴더로 자동 선택.
+  useEffect(() => {
+    if (folderOrder.length === 0) {
+      if (selectedFolder !== null) setSelectedFolder(null);
+      return;
+    }
+    if (selectedFolder === null || !folderOrder.includes(selectedFolder)) {
+      setSelectedFolder(folderOrder[0]);
+    }
+  }, [folderOrder, selectedFolder]);
 
   const folderNames = useMemo(
     () =>
@@ -484,39 +511,83 @@ export default function DiagnosisNamesTab() {
         {canReorder && ' 왼쪽 손잡이를 끌어 순서를 바꿀 수 있어요.'}
       </p>
 
-      {/* 목록 */}
-      {items.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          등록된 상병명이 없습니다.
-        </div>
-      ) : (
-        // 폴더 레벨 DnD (AC-2b)
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFolderDragEnd}>
-          <SortableContext
-            items={canReorder ? folderOrder.map((f) => `folder:${f}`) : []}
-            strategy={verticalListSortingStrategy}
-          >
-            <div className="space-y-4" data-testid="dx-list">
-              {folderOrder.map((folder) => {
-                const fItems = itemsByFolder.get(folder) ?? [];
-                return (
-                  <SortableDxFolder
-                    key={folder}
-                    folder={folder}
-                    count={fItems.length}
-                    canReorder={canReorder}
-                  >
-                    {/* 항목 레벨 DnD (AC-2a) — 폴더 내부 독립 컨텍스트 */}
+      {/* 2패널 (AC-3): 좌 = 폴더트리 / 우 = 선택 폴더의 상병 목록.
+          AC-2: 폴더 0건이어도 좌측 패널 컨테이너는 항상 표시(빈 상태 안내). */}
+      <div className="grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)] gap-4 items-start">
+        {/* ── 좌측: 폴더트리 (AC-1) ── */}
+        <aside
+          className="rounded-lg border bg-muted/20 p-2 md:max-h-[70vh] md:overflow-y-auto"
+          data-testid="dx-folder-tree"
+        >
+          <div className="px-1 pb-1.5 text-[11px] font-semibold text-muted-foreground">폴더</div>
+          {folderOrder.length === 0 ? (
+            // AC-2: 빈 상태에서도 패널은 유지, "폴더 없음" 안내
+            <div
+              className="rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground"
+              data-testid="dx-folder-empty"
+            >
+              폴더 없음
+            </div>
+          ) : (
+            // 폴더 레벨 DnD (AC-4 회귀 보존) — 좌측 패널 안에서 폴더 순서 변경
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFolderDragEnd}>
+              <SortableContext
+                items={canReorder ? folderOrder.map((f) => `folder:${f}`) : []}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-0.5" data-testid="dx-folder-list">
+                  {folderOrder.map((folder) => (
+                    <SortableFolderNode
+                      key={folder}
+                      folder={folder}
+                      count={(itemsByFolder.get(folder) ?? []).length}
+                      selected={selectedFolder === folder}
+                      canReorder={canReorder}
+                      onSelect={setSelectedFolder}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          )}
+        </aside>
+
+        {/* ── 우측: 선택 폴더의 상병 목록 ── */}
+        <div className="min-w-0" data-testid="dx-list">
+          {items.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+              등록된 상병명이 없습니다.
+            </div>
+          ) : selectedFolder === null ? (
+            <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+              왼쪽에서 폴더를 선택하세요.
+            </div>
+          ) : (
+            (() => {
+              const fItems = itemsByFolder.get(selectedFolder) ?? [];
+              return (
+                <div className="space-y-2" data-testid="dx-folder-items">
+                  <div className="flex items-center gap-1.5 px-1">
+                    <Folder className="h-3.5 w-3.5 text-teal-600" />
+                    <span className="text-xs font-semibold text-foreground">{selectedFolder}</span>
+                    <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{fItems.length}</Badge>
+                  </div>
+                  {fItems.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-center text-xs text-muted-foreground">
+                      이 폴더에 등록된 상병명이 없습니다.
+                    </div>
+                  ) : (
+                    // 항목 레벨 DnD (AC-4 회귀 보존) — 폴더 내 순서 변경
                     <DndContext
                       sensors={sensors}
                       collisionDetection={closestCenter}
-                      onDragEnd={(e) => handleItemDragEnd(folder, e)}
+                      onDragEnd={(e) => handleItemDragEnd(selectedFolder, e)}
                     >
                       <SortableContext
                         items={canReorder ? fItems.map((d) => d.id) : []}
                         strategy={verticalListSortingStrategy}
                       >
-                        <div className="space-y-1.5 pl-1">
+                        <div className="space-y-1.5">
                           {fItems.map((d) => (
                             <SortableDxItem
                               key={d.id}
@@ -531,13 +602,13 @@ export default function DiagnosisNamesTab() {
                         </div>
                       </SortableContext>
                     </DndContext>
-                  </SortableDxFolder>
-                );
-              })}
-            </div>
-          </SortableContext>
-        </DndContext>
-      )}
+                  )}
+                </div>
+              );
+            })()
+          )}
+        </div>
+      </div>
 
       {/* 추가/편집 다이얼로그 */}
       <Dialog open={open} onOpenChange={setOpen}>
