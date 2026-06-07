@@ -34,6 +34,24 @@ export interface NoshowReturningRow {
   returning_rate: number;  // 0~100
 }
 
+// ─── T-20260607-foot-THERAPIST-STATS: 치료사 기준 통계 ───
+export interface TherapistSummaryRow {
+  therapist_id: string;
+  name: string;
+  treatment_count: number;             // 치료시간 산출 가능 건수
+  avg_treatment_minutes: number | null; // 평균 치료시간(분). 데이터 없으면 null
+  experience_total: number;            // 체험 내원 건수
+  experience_converted: number;        // 패키지 결제 전환 건수
+  conversion_rate: number | null;      // 0~100. experience_total=0 이면 null
+}
+
+export interface TherapistServiceRow {
+  therapist_id: string;
+  name: string;
+  service_name: string;
+  cnt: number;
+}
+
 export type StatsRangePreset = 'today' | 'week' | 'month' | 'custom';
 
 /** 한국시간 기준 기간 계산. ISO yyyy-MM-dd 반환. */
@@ -126,6 +144,34 @@ export async function fetchNoshowReturning(
   });
   if (error) throw error;
   return (data ?? []) as NoshowReturningRow[];
+}
+
+export async function fetchTherapistSummary(
+  clinicId: string,
+  from: string,
+  to: string,
+): Promise<TherapistSummaryRow[]> {
+  const { data, error } = await supabase.rpc('foot_stats_therapist_summary', {
+    p_clinic_id: clinicId,
+    p_from: from,
+    p_to: to,
+  });
+  if (error) throw error;
+  return (data ?? []) as TherapistSummaryRow[];
+}
+
+export async function fetchTherapistServices(
+  clinicId: string,
+  from: string,
+  to: string,
+): Promise<TherapistServiceRow[]> {
+  const { data, error } = await supabase.rpc('foot_stats_therapist_services', {
+    p_clinic_id: clinicId,
+    p_from: from,
+    p_to: to,
+  });
+  if (error) throw error;
+  return (data ?? []) as TherapistServiceRow[];
 }
 
 /** 카테고리 코드 → 한국어 표시 */

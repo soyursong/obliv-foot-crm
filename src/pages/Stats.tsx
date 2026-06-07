@@ -5,17 +5,29 @@ import {
   fetchConsultantPerf,
   fetchNoshowReturning,
   fetchRevenue,
+  fetchTherapistSummary,
+  fetchTherapistServices,
   resolveRange,
   type CategoryRow,
   type ConsultantRow,
   type NoshowReturningRow,
   type RevenueRow,
+  type TherapistSummaryRow,
+  type TherapistServiceRow,
   type StatsRangePreset,
 } from '@/lib/stats';
 import RevenueSection from '@/components/stats/RevenueSection';
 import CategorySection from '@/components/stats/CategorySection';
 import ConsultantSection from '@/components/stats/ConsultantSection';
 import NoshowReturningSection from '@/components/stats/NoshowReturningSection';
+import TherapistStatsSection from '@/components/stats/TherapistStatsSection';
+
+type StatsTab = 'revenue' | 'therapist';
+
+const TABS: { key: StatsTab; label: string }[] = [
+  { key: 'revenue',   label: '매출 통계' },
+  { key: 'therapist', label: '치료사 통계' },
+];
 
 const PRESETS: { key: StatsRangePreset; label: string }[] = [
   { key: 'today', label: '오늘' },
@@ -26,6 +38,7 @@ const PRESETS: { key: StatsRangePreset; label: string }[] = [
 
 export default function Stats() {
   const clinic = useClinic();
+  const [tab, setTab] = useState<StatsTab>('revenue');
   const [preset, setPreset] = useState<StatsRangePreset>('month');
   const [customFrom, setCustomFrom] = useState<string>('');
   const [customTo, setCustomTo]     = useState<string>('');
@@ -34,6 +47,8 @@ export default function Stats() {
   const [categories, setCategories]                 = useState<CategoryRow[]>([]);
   const [consultants, setConsultants]               = useState<ConsultantRow[]>([]);
   const [noshowReturning, setNoshowReturning]       = useState<NoshowReturningRow[]>([]);
+  const [therapistSummary, setTherapistSummary]     = useState<TherapistSummaryRow[]>([]);
+  const [therapistServices, setTherapistServices]   = useState<TherapistServiceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
 
@@ -48,17 +63,27 @@ export default function Stats() {
       setLoading(true);
       setError(null);
       try {
-        const [rev, cat, cons, nsr] = await Promise.all([
-          fetchRevenue(clinic.id, from, to),
-          fetchCategoryRevenue(clinic.id, from, to),
-          fetchConsultantPerf(clinic.id, from, to),
-          fetchNoshowReturning(clinic.id, from, to),
-        ]);
-        if (aborted) return;
-        setRevenue(rev);
-        setCategories(cat);
-        setConsultants(cons);
-        setNoshowReturning(nsr);
+        if (tab === 'revenue') {
+          const [rev, cat, cons, nsr] = await Promise.all([
+            fetchRevenue(clinic.id, from, to),
+            fetchCategoryRevenue(clinic.id, from, to),
+            fetchConsultantPerf(clinic.id, from, to),
+            fetchNoshowReturning(clinic.id, from, to),
+          ]);
+          if (aborted) return;
+          setRevenue(rev);
+          setCategories(cat);
+          setConsultants(cons);
+          setNoshowReturning(nsr);
+        } else {
+          const [summary, services] = await Promise.all([
+            fetchTherapistSummary(clinic.id, from, to),
+            fetchTherapistServices(clinic.id, from, to),
+          ]);
+          if (aborted) return;
+          setTherapistSummary(summary);
+          setTherapistServices(services);
+        }
       } catch (e) {
         if (aborted) return;
         const msg = e instanceof Error ? e.message : '통계 불러오기 실패';
@@ -71,7 +96,7 @@ export default function Stats() {
     return () => {
       aborted = true;
     };
-  }, [clinic, preset, customFrom, customTo]);
+  }, [clinic, tab, preset, customFrom, customTo]);
 
   const { from: rangeFrom, to: rangeTo } = clinic
     ? resolveRange(preset, customFrom, customTo)
@@ -87,6 +112,22 @@ export default function Stats() {
               기간: {rangeFrom} ~ {rangeTo}
             </p>
           )}
+          <div className="mt-3 flex rounded-md border overflow-hidden w-fit">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                data-testid={`stats-tab-${t.key}`}
+                className={
+                  tab === t.key
+                    ? 'bg-teal-600 text-white px-4 py-1.5 text-xs font-semibold'
+                    : 'text-muted-foreground hover:bg-muted px-4 py-1.5 text-xs font-medium transition'
+                }
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -132,10 +173,20 @@ export default function Stats() {
         </div>
       )}
 
-      <RevenueSection rows={revenue} loading={loading} />
-      <CategorySection rows={categories} loading={loading} />
-      <ConsultantSection rows={consultants} loading={loading} />
-      <NoshowReturningSection rows={noshowReturning} loading={loading} />
+      {tab === 'revenue' ? (
+        <>
+          <RevenueSection rows={revenue} loading={loading} />
+          <CategorySection rows={categories} loading={loading} />
+          <ConsultantSection rows={consultants} loading={loading} />
+          <NoshowReturningSection rows={noshowReturning} loading={loading} />
+        </>
+      ) : (
+        <TherapistStatsSection
+          summary={therapistSummary}
+          services={therapistServices}
+          loading={loading}
+        />
+      )}
     </div>
   );
 }
