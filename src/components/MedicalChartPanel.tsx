@@ -1845,6 +1845,18 @@ export default function MedicalChartPanel({
                             {!hasTreat && !chart.clinical_progress && !(isDirector && chart.doctor_memo) && (
                               <p className="text-[10px] text-muted-foreground italic">저장된 메모 없음</p>
                             )}
+                            {/* T-20260607-foot-PROGRESS-TIMELINE-AUTHOR: 경과 펼침 상세에도 작성 의사 표시
+                                (read-only, 8-A created_by_name 우선·recorderName 폴백 재사용 — L1734 recorder 변수).
+                                과거 무작성자(created_by NULL) 레코드는 recorder=null → 미렌더(빈값 처리). */}
+                            {recorder && (
+                              <div
+                                className="mt-1 pt-1 border-t border-border/20 flex items-center gap-1 text-[9px] text-muted-foreground"
+                                data-testid="timeline-expanded-recorder"
+                              >
+                                <Stethoscope className="h-3 w-3 text-teal-600 shrink-0" />
+                                작성 <span className="font-semibold text-teal-700">{recorder}</span>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
