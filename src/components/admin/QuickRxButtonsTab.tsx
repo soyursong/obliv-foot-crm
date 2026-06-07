@@ -35,13 +35,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+// T-20260607-foot-RXQUICK-SET-FOLDER-NAV: 처방세트 선택을 진료차트와 동일한 folder→set 트리로 통일.
+import PrescriptionSetTreePicker from '@/components/prescription/PrescriptionSetTreePicker';
 import { toast } from '@/lib/toast';
 import {
   Loader2, Plus, Pencil, Trash2, GripVertical,
@@ -96,6 +91,7 @@ interface PrescriptionSet {
   id: number;
   name: string;
   is_active: boolean;
+  folder?: string | null; // T-20260607-foot-RXQUICK-SET-FOLDER-NAV: folder→set 트리 picker 그룹핑
 }
 
 interface QuickRxButton {
@@ -147,7 +143,7 @@ function useActivePrescriptionSets() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('prescription_sets')
-        .select('id, name, is_active')
+        .select('id, name, is_active, folder')
         .eq('is_active', true)
         .order('sort_order');
       if (error) throw error;
@@ -511,28 +507,29 @@ export default function QuickRxButtonsTab() {
               </div>
             </div>
 
-            {/* 처방세트 선택 */}
+            {/* 처방세트 선택 — T-20260607-foot-RXQUICK-SET-FOLDER-NAV:
+                  flat <Select> → 진료차트와 동일한 folder→set 2단 트리 picker(+검색)로 통일.
+                  AC-1 폴더 펼침/접기, AC-2 세트명 부분일치 검색, AC-3 기존 연결값 하이라이트 유지. */}
             <div>
               <Label className="text-xs">연결할 처방세트 *</Label>
-              <Select
-                value={form.prescription_set_id?.toString() ?? ''}
-                onValueChange={(v) => setForm((f) => ({ ...f, prescription_set_id: Number(v) }))}
-              >
-                <SelectTrigger className="mt-1" data-testid="quick-rx-set-select">
-                  <SelectValue placeholder="처방세트 선택..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {sets.map((s) => (
-                    <SelectItem key={s.id} value={s.id.toString()}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {sets.length === 0 && (
+              {sets.length === 0 ? (
                 <p className="text-[11px] text-amber-600 mt-1">
                   ⚠ 처방세트를 먼저 등록하세요 (처방세트 탭)
                 </p>
+              ) : (
+                <div
+                  className="mt-1 max-h-72 overflow-y-auto rounded-lg border p-2"
+                  data-testid="quick-rx-set-tree"
+                >
+                  <PrescriptionSetTreePicker
+                    sets={sets}
+                    selectedId={form.prescription_set_id}
+                    onSelect={(s) => setForm((f) => ({ ...f, prescription_set_id: s.id }))}
+                    searchable
+                    searchPlaceholder="처방세트 이름 검색..."
+                    testIdPrefix="quick-rx-set"
+                  />
+                </div>
               )}
             </div>
 

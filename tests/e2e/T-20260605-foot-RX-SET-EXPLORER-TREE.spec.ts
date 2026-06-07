@@ -129,7 +129,10 @@ test.describe('T-20260605 RX-SET-EXPLORER-TREE — 처방세트 폴더 트리', 
   });
 
   // ── 시나리오 1: 폴더 펼침/접기 → leaf 적용 ─────────────────────────────────────
-  test('S1: 폴더 노드 렌더 → 접기(leaf 숨김)/펼치기(leaf 노출) → leaf 클릭 적용', async ({ page }) => {
+  //   주의: T-20260606-foot-RX-PANEL-UX-5FIX AC-2 이후 폴더는 "기본 전체 접힘".
+  //   → 기본 상태에서 leaf 숨김. 폴더 토글로 펼친 뒤 leaf 노출/적용.
+  //   T-20260607-foot-RXQUICK-SET-FOLDER-NAV: 공용 <PrescriptionSetTreePicker> 추출 후에도 동일 동작 회귀 가드.
+  test('S1: 폴더 노드 렌더 → 기본 접힘 → 펼치기(leaf 노출)/접기(숨김) → leaf 클릭 적용', async ({ page }) => {
     await openMedicalChart(page, seed!.customerId);
 
     // 폴더 노드 + 미분류 노드 렌더 확인
@@ -137,16 +140,19 @@ test.describe('T-20260605 RX-SET-EXPLORER-TREE — 처방세트 폴더 트리', 
     await expect(folderNode(page, FOLDER_B)).toBeVisible();
     await expect(folderNode(page, '미분류')).toBeVisible();
 
-    // 기본 펼침 → leaf 노출
-    await expect(rxSetOption(page, SET_A_NAME)).toBeVisible();
+    // 기본 접힘(RX-PANEL-UX-5FIX) → leaf 숨김
+    await expect(rxSetOption(page, SET_A_NAME)).toBeHidden();
 
-    // 폴더 A 토글 클릭 → 접힘 → leaf 숨김
+    // 폴더 A 토글 클릭 → 펼침 → leaf 노출
+    await folderNode(page, FOLDER_A).getByTestId('rx-set-folder-toggle').click();
+    await expect(rxSetOption(page, SET_A_NAME)).toBeVisible();
+    // 다른 폴더(B)는 여전히 접힘 → leaf 숨김(폴더별 독립 토글)
+    await expect(rxSetOption(page, SET_B_NAME)).toBeHidden();
+
+    // 재클릭 → 접힘 → leaf 다시 숨김
     await folderNode(page, FOLDER_A).getByTestId('rx-set-folder-toggle').click();
     await expect(rxSetOption(page, SET_A_NAME)).toBeHidden();
-    // 다른 폴더(B) leaf 는 영향 없음
-    await expect(rxSetOption(page, SET_B_NAME)).toBeVisible();
-
-    // 재클릭 → 펼침 → leaf 다시 노출
+    // 다시 펼침 → leaf 노출
     await folderNode(page, FOLDER_A).getByTestId('rx-set-folder-toggle').click();
     await expect(rxSetOption(page, SET_A_NAME)).toBeVisible();
 
@@ -156,7 +162,8 @@ test.describe('T-20260605 RX-SET-EXPLORER-TREE — 처방세트 폴더 트리', 
     await expect(rxRows(page)).toHaveCount(1);
     await expect(page.getByTestId('prescription-items-table')).toContainText(A_DRUG);
 
-    // 다른 폴더 leaf 클릭 → 누적(기존 ACCUMULATE 동작 보존)
+    // 다른 폴더 펼친 뒤 leaf 클릭 → 누적(기존 ACCUMULATE 동작 보존)
+    await folderNode(page, FOLDER_B).getByTestId('rx-set-folder-toggle').click();
     await rxSetOption(page, SET_B_NAME).click();
     await expect(rxRows(page)).toHaveCount(2);
     await expect(page.getByTestId('prescription-items-table')).toContainText(B_DRUG);
@@ -166,8 +173,10 @@ test.describe('T-20260605 RX-SET-EXPLORER-TREE — 처방세트 폴더 트리', 
   test('S2: 미분류 노드 leaf 적용 + 빈상태(전체 비활성) 회귀', async ({ page }) => {
     await openMedicalChart(page, seed!.customerId);
 
-    // folder=null 세트가 '미분류' 노드 아래 렌더 + 정상 적용
+    // folder=null 세트가 '미분류' 노드 아래 렌더 — 기본 접힘 → 폴더 펼친 뒤 적용
     await expect(folderNode(page, '미분류')).toBeVisible({ timeout: 10_000 });
+    await expect(rxSetOption(page, SET_C_NAME)).toBeHidden();
+    await folderNode(page, '미분류').getByTestId('rx-set-folder-toggle').click();
     await expect(rxSetOption(page, SET_C_NAME)).toBeVisible();
     await rxSetOption(page, SET_C_NAME).click();
     await expect(page.getByTestId('prescription-items-table')).toBeVisible({ timeout: 5_000 });
