@@ -13,6 +13,7 @@ import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
+import { searchPrescribableDrugs, findSameIngredientRegistered } from '@/lib/prescribableDrugs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -37,6 +38,7 @@ interface RxCode {
   claim_code: string | null;
   classification: string | null;
   code_source: string | null;
+  ingredient_code: string | null; // AC-2 성분 중복 비교 키
 }
 
 interface Contraindication {
@@ -55,13 +57,22 @@ interface ContraForm {
 
 const EMPTY_FORM: ContraForm = { contraindication_text: '', severity: '' };
 
-// severity 자유등급 (nullable). SQL 코멘트 컨벤션 계승: '주의'|'경고'|'금기'
-const SEVERITY_OPTIONS = ['', '주의', '경고', '금기'] as const;
+// AC-3 심각도 입력 단순화 — 드롭다운 제거 → 버튼식 토글, '주의' / '금기' 2값만.
+//   같은 버튼 재클릭 시 해제(미지정=null, 컬럼 nullable). FE 한정 — 마이그(레거시 '경고' 리매핑)는
+//   supervisor dry-run 게이트 후 별도 apply(planner MSG-211523-vwhi §3).
+const SEVERITY_LEVELS = ['주의', '금기'] as const;
 
+// 표시 스타일 — 레거시 '경고' 데이터(마이그 전)도 안전 표시되도록 유지.
 const SEVERITY_STYLE: Record<string, string> = {
   주의: 'text-amber-700 border-amber-200 bg-amber-50',
   경고: 'text-orange-700 border-orange-200 bg-orange-50',
   금기: 'text-red-700 border-red-200 bg-red-50',
+};
+
+// 선택(토글) 버튼 활성 스타일
+const SEVERITY_ACTIVE_STYLE: Record<string, string> = {
+  주의: 'bg-amber-500 text-white border-amber-500 hover:bg-amber-500',
+  금기: 'bg-red-500 text-white border-red-500 hover:bg-red-500',
 };
 
 // ---------------------------------------------------------------------------
@@ -123,6 +134,17 @@ function useUpsertContra(codeId: string | null) {
   });
 }
 
+// AC-2 선택 약과 동일 성분(ingredient_code)이며 이미 금기증이 등록된 '다른' 약 목록.
+//   비어있으면 성분 중복 경고 불요. ingredient_code 비교(대체키, exact-match).
+function useSameIngredientRegistered(drug: RxCode | null) {
+  return useQuery({
+    queryKey: ['rx_same_ingredient_contra', drug?.id, drug?.ingredient_code],
+    enabled: !!drug && !!(drug.ingredient_code ?? '').trim(),
+    queryFn: async () =>
+      findSameIngredientRegistered({ id: drug!.id, ingredient_code: drug!.ingredient_code }),
+  });
+}
+
 function useDeleteContra(codeId: string | null) {
   const qc = useQueryClient();
   return useMutation({
@@ -166,7 +188,14 @@ export default function ContraindicationsTab() {
   const upsert = useUpsertContra(selected?.id ?? null);
   const del = useDeleteContra(selected?.id ?? null);
 
-  // 약품 마스터 검색 (prescription_codes) — name_ko / claim_code ilike. custom 우선.
+  // AC-2 성분 중복 — 선택 약과 동일 성분이며 이미 금기증이 등록된 다른 약 목록
+  const { data: sameIngredientDrugs = [] } = useSameIngredientRegistered(selected);
+  const hasIngredientDup = sameIngredientDrugs.length > 0;
+  // 성분 중복 경고 팝업(계속/취소)
+  const [dupWarnOpen, setDupWarnOpen] = useState(false);
+
+  // AC-1 약품 검색 — '처방세트 등록 약'으로 출처 제한(prescribableDrugs 단일 캡슐화 경유).
+  //   기존 prescription_codes 전체 검색 → 처방세트 등록 약 교집합으로 좁힘(현장 요구: 처방세트 외 약 차단).
   const runSearch = useCallback(async (q: string) => {
     const query = q.trim();
     if (query.length < 1) {
@@ -175,15 +204,8 @@ export default function ContraindicationsTab() {
     }
     setSearching(true);
     try {
-      const esc = query.replace(/[%,]/g, ' ');
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data } = await (supabase as any)
-        .from('prescription_codes')
-        .select('id,name_ko,claim_code,classification,code_source')
-        .or(`name_ko.ilike.%${esc}%,claim_code.ilike.%${esc}%`)
-        .order('code_source', { ascending: false }) // custom(카피약) 우선
-        .limit(20);
-      setSearchResults((data as RxCode[]) ?? []);
+      const rows = await searchPrescribableDrugs(query);
+      setSearchResults(rows as RxCode[]);
     } catch {
       setSearchResults([]);
     } finally {
@@ -197,10 +219,20 @@ export default function ContraindicationsTab() {
     setSearchQuery('');
   }
 
-  function openAdd() {
+  // 실제 등록 폼 진입
+  function proceedToAdd() {
     setEditing(null);
     setForm(EMPTY_FORM);
     setOpen(true);
+  }
+
+  // AC-2: 성분 중복이면 경고 팝업 먼저(계속/취소), 아니면 바로 등록 폼.
+  function openAdd() {
+    if (hasIngredientDup) {
+      setDupWarnOpen(true);
+      return;
+    }
+    proceedToAdd();
   }
 
   function openEdit(c: Contraindication) {
@@ -317,6 +349,23 @@ export default function ContraindicationsTab() {
             </button>
           </div>
 
+          {/* AC-2 성분 중복 경고 배너 — 동일 성분 약에 이미 금기증 등록됨 */}
+          {hasIngredientDup && (
+            <div
+              className="flex items-start gap-2 border-b bg-amber-50 px-3 py-2 text-xs text-amber-800"
+              data-testid="contra-ingredient-dup-banner"
+            >
+              <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+              <div>
+                <strong>성분명 중복 안내</strong> — 동일 성분의 다른 약(
+                <span className="font-medium">
+                  {sameIngredientDrugs.map((d) => d.name_ko).join(', ')}
+                </span>
+                )에 이미 금기증이 등록돼 있습니다. 중복 등록 전 확인하세요.
+              </div>
+            </div>
+          )}
+
           {/* 등록 버튼 */}
           <div className="flex items-center justify-between px-3 py-2 border-b">
             <span className="text-xs text-muted-foreground">
@@ -413,19 +462,28 @@ export default function ContraindicationsTab() {
                 심각도{' '}
                 <span className="text-muted-foreground font-normal text-[11px]">— 선택 (미지정 가능)</span>
               </Label>
-              {/* Dialog 내부 portal 충돌 방지 — native select */}
-              <select
-                value={form.severity}
-                onChange={(e) => setForm((f) => ({ ...f, severity: e.target.value }))}
-                className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                data-testid="contra-severity-select"
-              >
-                {SEVERITY_OPTIONS.map((s) => (
-                  <option key={s || 'none'} value={s}>
-                    {s || '미지정'}
-                  </option>
-                ))}
-              </select>
+              {/* AC-3 드롭다운 제거 → 버튼 토글 (주의 / 금기 2값). 같은 버튼 재클릭 = 해제(미지정). */}
+              <div className="mt-1 flex gap-2" data-testid="contra-severity-toggle">
+                {SEVERITY_LEVELS.map((s) => {
+                  const active = form.severity === s;
+                  return (
+                    <Button
+                      key={s}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setForm((f) => ({ ...f, severity: f.severity === s ? '' : s }))
+                      }
+                      aria-pressed={active}
+                      className={`flex-1 ${active ? SEVERITY_ACTIVE_STYLE[s] : ''}`}
+                      data-testid={`contra-severity-btn-${s}`}
+                    >
+                      {s}
+                    </Button>
+                  );
+                })}
+              </div>
             </div>
             <div>
               <Label className="text-xs">금기증 내용 *</Label>
@@ -446,6 +504,48 @@ export default function ContraindicationsTab() {
             <Button onClick={handleSave} disabled={upsert.isPending} data-testid="contra-save-btn">
               {upsert.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
               저장
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* AC-2 성분 중복 경고 팝업 (계속/취소) */}
+      <Dialog open={dupWarnOpen} onOpenChange={setDupWarnOpen}>
+        <DialogContent className="max-w-md" data-testid="contra-ingredient-dup-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <ShieldAlert className="h-5 w-5" />
+              성분명 중복 경고
+            </DialogTitle>
+          </DialogHeader>
+          <div className="text-sm text-foreground space-y-2">
+            <p>
+              선택한 <strong>{selected?.name_ko}</strong>와(과) 동일 성분의 다른 약에 이미 금기증이
+              등록돼 있습니다.
+            </p>
+            <div className="rounded-md border bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              {sameIngredientDrugs.map((d) => d.name_ko).join(', ')}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              중복 등록이 의도된 것이 아니라면 취소하세요. 계속하면 이 약에 금기증을 추가합니다.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDupWarnOpen(false)}
+              data-testid="contra-dup-cancel-btn"
+            >
+              취소
+            </Button>
+            <Button
+              onClick={() => {
+                setDupWarnOpen(false);
+                proceedToAdd();
+              }}
+              data-testid="contra-dup-continue-btn"
+            >
+              계속
             </Button>
           </DialogFooter>
         </DialogContent>
