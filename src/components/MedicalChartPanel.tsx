@@ -2021,6 +2021,16 @@ export default function MedicalChartPanel({
                         rows={13}
                         className={`text-sm resize-y placeholder:text-gray-300 min-h-[16rem] ${isReadOnly ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
                         data-testid="medical-chart-clinical"
+                        // T-20260607-foot-SUPERPHRASE-DX-MULTISELECT-FIX AC-3a (MSG-20260607-210836-r0ww 흡수):
+                        //   임상경과에서 `//` 입력 시 브라우저 네이티브 입력이력(약이름 등) 자동완성이 떠
+                        //   `//` 상용구 단축어 팝오버(T-20260526-foot-PHRASE-SLASH)를 가로채는 원인.
+                        //   이 textarea 한정으로 네이티브 자동완성을 끔(약이름 트리거 제거). 처방/약품 입력란은 별 컴포넌트라 보존.
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        data-1p-ignore
+                        data-lpignore="true"
                       />
 
                       {/* 단축어 팝오버 — // 트리거 autocomplete
