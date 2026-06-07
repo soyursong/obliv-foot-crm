@@ -46,21 +46,40 @@ import { toast } from '@/lib/toast';
 import {
   Loader2, Plus, Pencil, Trash2, GripVertical,
   Pill, Activity, Zap, Heart, Stethoscope, Thermometer, Bandage, Syringe,
+  Tablets, FlaskConical, FlaskRound, Droplet, Droplets, Beaker, BriefcaseMedical, TestTube,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // 아이콘 옵션
+//   ICON_OPTIONS = 렌더용 전체 레지스트리(IconRenderer가 저장값 → 컴포넌트 해석).
+//     기존 저장값(비-약 아이콘 포함)이 깨지지 않도록 절대 항목을 제거하지 않는다(AC-2 회귀 금지).
+//   T-20260607-foot-RXQUICK-ICON-DRUGFILTER:
+//     `drug: true`로 약·처방 관련만 큐레이션 → 추가/편집 picker는 DRUG_ICON_OPTIONS 서브셋만 노출(AC-1).
+//     약 서브셋 10종(AC-3, 8개+ 확보): 알약/정제/캡슐대용 주사·물약·시럽·점안·수액·조제·약상자·검체.
 // ---------------------------------------------------------------------------
 export const ICON_OPTIONS = [
-  { value: 'pill',        label: '알약',    Icon: Pill },
-  { value: 'activity',    label: '활동',    Icon: Activity },
-  { value: 'zap',         label: '번개',    Icon: Zap },
-  { value: 'heart',       label: '하트',    Icon: Heart },
-  { value: 'stethoscope', label: '청진기',  Icon: Stethoscope },
-  { value: 'thermometer', label: '체온계',  Icon: Thermometer },
-  { value: 'bandage',     label: '붕대',    Icon: Bandage },
-  { value: 'syringe',     label: '주사',    Icon: Syringe },
+  // ── 약·처방 관련(picker 노출 서브셋) ──────────────────────────────
+  { value: 'pill',              label: '알약',    Icon: Pill,             drug: true },
+  { value: 'tablets',           label: '정제',    Icon: Tablets,          drug: true },
+  { value: 'syringe',           label: '주사',    Icon: Syringe,          drug: true },
+  { value: 'flask-conical',     label: '물약',    Icon: FlaskConical,     drug: true },
+  { value: 'flask-round',       label: '시럽',    Icon: FlaskRound,       drug: true },
+  { value: 'droplet',           label: '점안액',  Icon: Droplet,          drug: true },
+  { value: 'droplets',          label: '수액',    Icon: Droplets,         drug: true },
+  { value: 'beaker',            label: '조제',    Icon: Beaker,           drug: true },
+  { value: 'briefcase-medical', label: '약상자',  Icon: BriefcaseMedical, drug: true },
+  { value: 'test-tube',         label: '검체',    Icon: TestTube,         drug: true },
+  // ── 레거시 비-약 아이콘 — picker 비노출, 기존 저장값 렌더 호환 유지(제거 금지) ──
+  { value: 'activity',    label: '활동',    Icon: Activity,    drug: false },
+  { value: 'zap',         label: '번개',    Icon: Zap,         drug: false },
+  { value: 'heart',       label: '하트',    Icon: Heart,       drug: false },
+  { value: 'stethoscope', label: '청진기',  Icon: Stethoscope, drug: false },
+  { value: 'thermometer', label: '체온계',  Icon: Thermometer, drug: false },
+  { value: 'bandage',     label: '붕대',    Icon: Bandage,     drug: false },
 ] as const;
+
+// 추가/편집 picker 노출 후보 — 약 관련 서브셋만(AC-1). 저장 식별자·컬럼은 불변.
+export const DRUG_ICON_OPTIONS = ICON_OPTIONS.filter((o) => o.drug);
 
 export type QuickRxIcon = typeof ICON_OPTIONS[number]['value'];
 
@@ -472,9 +491,9 @@ export default function QuickRxButtonsTab() {
 
             {/* 아이콘 선택 */}
             <div>
-              <Label className="text-xs">아이콘</Label>
-              <div className="grid grid-cols-4 gap-2 mt-1">
-                {ICON_OPTIONS.map(({ value, label, Icon }) => (
+              <Label className="text-xs">아이콘 <span className="text-muted-foreground">(약·처방 관련)</span></Label>
+              <div className="grid grid-cols-4 gap-2 mt-1" data-testid="quick-rx-icon-picker">
+                {DRUG_ICON_OPTIONS.map(({ value, label, Icon }) => (
                   <button
                     key={value}
                     type="button"
