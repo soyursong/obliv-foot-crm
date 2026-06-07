@@ -51,9 +51,9 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, Folder, FolderOpen, FolderTree, History, Loader2, MessageSquare, Pill, Pin, PinOff, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
-// T-20260607-foot-MEDCHART-CONSULT-DRAWER: 진료차트에서 상담기록 빠른 조회 서랍
-import ConsultRecordDrawer from '@/components/ConsultRecordDrawer';
+import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, Folder, FolderOpen, FolderTree, History, Loader2, Pill, Pin, PinOff, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
+// T-20260607-foot-MEDCHART-CONSULT-DRAWER: 진료차트 우측 "📋 상담" 탭 (A안 — 서랍에서 탭으로 이식)
+import ConsultRecordTab from '@/components/ConsultRecordTab';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -353,8 +353,6 @@ export default function MedicalChartPanel({
   const [customer, setCustomer] = useState<CustomerBasic | null>(null);
   const [charts, setCharts] = useState<MedicalChart[]>([]);
   const [loading, setLoading] = useState(false);
-  // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 상담기록 서랍 오픈 상태
-  const [consultDrawerOpen, setConsultDrawerOpen] = useState(false);
   // AC-13: 기록자(의사) 이메일 → 표시명 매핑 (user_profiles)
   const [staffNameMap, setStaffNameMap] = useState<Record<string, string>>({});
   const [phraseTemplates, setPhraseTemplates] = useState<PhraseTemplate[]>([]);
@@ -415,7 +413,8 @@ export default function MedicalChartPanel({
 
   // ── 우측 패널 탭 (AC-1 + MEDCHART-SYNC → TREATMEMO-CHART-MERGE: 처방세트 / 상용구 / 진료내역 / 진료이미지)
   // T-20260527-foot-TREATMEMO-CHART-MERGE: treat_memo 탭 제거 — [치료사차트] 섹션에 통합
-  const [rightTab, setRightTab] = useState<'rx' | 'phrase' | 'super' | 'visit_hist' | 'images'>('rx');
+  // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 'consult' 탭(📋 상담) 추가
+  const [rightTab, setRightTab] = useState<'rx' | 'phrase' | 'super' | 'visit_hist' | 'images' | 'consult'>('rx');
   // T-20260605-foot-RX-PHRASE-CLICK-INSERT: 체크박스 다중선택 → 클릭 시 ✓ 즉시삽입 단일화.
   //   행 클릭 → 그 행만 ✓ 버튼 노출(단일 활성), ✓ 클릭 → 즉시 삽입. (펜차트 PHRASE-MULTISELECT 와 별개 패널)
   const [clickedPhraseId, setClickedPhraseId] = useState<number | null>(null);
@@ -648,10 +647,7 @@ export default function MedicalChartPanel({
       // T-20260526-foot-VISIT-FOLD-FILTER: 리셋
       setExpandedChartIds(new Set<string>());
       setMemoFilters(new Set<MemoFilter>());
-      // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 새 고객 열림 시 상담기록 서랍 닫힘 상태로 시작
-      setConsultDrawerOpen(false);
     } else {
-      setConsultDrawerOpen(false);
       setCustomer(null);
       setCharts([]);
       setSelectedChartId(null);
@@ -1481,36 +1477,8 @@ export default function MedicalChartPanel({
             )}
           </div>
           <div className="flex items-center gap-2">
-            {/* T-20260607-foot-MEDCHART-CONSULT-DRAWER: 상담기록 빠른 조회 버튼.
-                초진(visit_type='new')이면 강조 배지 — 초진 동선에서 상담기록 확인이 특히 중요(문지은 원장). */}
-            {(() => {
-              const isNew = customer?.visit_type === 'new';
-              return (
-                <button
-                  type="button"
-                  onClick={() => setConsultDrawerOpen(true)}
-                  data-testid="consult-record-open-btn"
-                  data-new-patient={isNew ? 'true' : 'false'}
-                  title={isNew ? '초진 — 상담기록 확인' : '상담기록 조회'}
-                  className={`relative flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
-                    isNew
-                      ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
-                      : 'bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground'
-                  }`}
-                >
-                  <MessageSquare className="h-3.5 w-3.5" />
-                  상담기록
-                  {isNew && (
-                    <span
-                      className="ml-0.5 rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold text-white"
-                      data-testid="consult-record-new-badge"
-                    >
-                      초진
-                    </span>
-                  )}
-                </button>
-              );
-            })()}
+            {/* T-20260607-foot-MEDCHART-CONSULT-DRAWER (A안): 상담기록 진입은 우측 "📋 상담" 탭으로 이식.
+                기존 헤더 빠른조회 버튼/서랍 제거 — 진료폼 입력 유지하며 탭으로 전환 조회. */}
             {/* AC-9: 현재 로그인 의사 상시 표시 */}
             <span
               className="flex items-center gap-1 rounded-full bg-teal-50 border border-teal-200 px-2.5 py-1 text-xs font-semibold text-teal-700"
@@ -2368,11 +2336,14 @@ export default function MedicalChartPanel({
                       </button>
                     ))}
                   </div>
-                  {/* 하단 행: 진료내역 / 진료이미지 (T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 탭 제거) */}
+                  {/* 하단 행: 진료내역 / 진료이미지 / 📋 상담
+                      (T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 탭 제거,
+                       T-20260607-foot-MEDCHART-CONSULT-DRAWER: 📋 상담 탭 추가 — A안) */}
                   <div className="flex">
                     {([
                       { key: 'visit_hist', icon: <History className="h-3 w-3" />, label: '진료내역' },
                       { key: 'images', icon: <Camera className="h-3 w-3" />, label: '진료이미지' },
+                      { key: 'consult', icon: <span className="text-[11px] leading-none">📋</span>, label: '상담' },
                     ] as const).map(({ key, icon, label }) => (
                       <button
                         key={key}
@@ -2819,6 +2790,12 @@ export default function MedicalChartPanel({
                       )}
                     </div>
                   )}
+
+                  {/* ── T-20260607-foot-MEDCHART-CONSULT-DRAWER: 📋 상담 탭 (A안 — 서랍에서 이식) ─────
+                      check_ins 상담단계 기록 읽기전용. 탭 전환만으로 좌측 진료폼 입력은 유지된다. */}
+                  {rightTab === 'consult' && (
+                    <ConsultRecordTab customerId={customerId} />
+                  )}
                 </div>
                 {/* T-20260605-foot-RX-PHRASE-CLICK-INSERT: 하단 일괄 '삽입' 버튼 제거 — 행 내 ✓ 즉시삽입으로 단일화 */}
               </div>
@@ -2952,13 +2929,6 @@ export default function MedicalChartPanel({
         </div>
       )}
 
-      {/* T-20260607-foot-MEDCHART-CONSULT-DRAWER: 상담기록 서랍 — 진료차트(z-90) 위 겹침(z-110).
-          닫으면 진료차트 그대로 복귀(작성 중 내용 유지 — 단순 표시 토글, 진료차트 재마운트/재조회 없음). */}
-      <ConsultRecordDrawer
-        customerId={customerId}
-        open={consultDrawerOpen}
-        onClose={() => setConsultDrawerOpen(false)}
-      />
     </>,
     document.body,
   );
