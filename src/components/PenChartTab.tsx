@@ -647,13 +647,10 @@ export function PenChartTab({
   const hasDrawingRef = useRef(false);
   // T-20260523-foot-PENCHART-PEN-SLOW Fix-2: draw canvas ctx 캐싱 — onPointerMove마다 getContext 제거
   const drawCtxRef = useRef<CanvasRenderingContext2D | null>(null);
-  // ── T-20260606-foot-PENCHART-REFUND-LATENCY REOPEN#1: draw(overlay) 캔버스 DPR 단일소스 ──────
-  //   기본 = DRAW_DPR(2). ?penchart_lite + 환불동의서일 때만 1로 낮춰 draw 비트맵 4× 축소
-  //   (1588×6738 ~42MB → 794×3369 ~10.7MB) → 래스터/합성/입력드랍(거침·뚝뚝·선빠짐) 동시 완화 후보.
-  //   ★initDrawCanvas가 캔버스를 사이즈한 그 DPR을 그대로 좌표 스케일에 쓰도록 단일 ref로 고정 →
-  //    getPos/onPointerDown/handleNativePointerMove 3개 지점이 항상 동일값 사용(좌표 어긋남 버그 차단).
-  //   bgCanvas/저장은 DRAW_DPR(2) 유지 — save 시 drawImage(canvas,0,0,bgW,bgH)로 업스케일 합성
-  //   (양식 화질 2x 유지, 잉크만 업스케일). 기본 경로·타 양식·iPad 무변경(AC-3). desync 무관(BLACK 안전).
+  // ── draw(overlay) 캔버스 DPR 단일소스 — REOPEN#2(필기불능 P0 회귀 복구)에서 항상 DRAW_DPR(2) 고정 ──────
+  //   getPos/onPointerDown/handleNativePointerMove 3개 좌표 스케일 지점이 이 단일 ref 를 사용 → 좌표 어긋남 차단.
+  //   REOPEN#1의 ?penchart_lite(1x) 레버는 필기불능 회귀(43c2c9a field-soak FAIL)로 제거 → 값은 항상 DRAW_DPR.
+  //   ref 구조는 유지(좌표 사이트 무변경, 수술 리스크 0). bgCanvas/저장도 DRAW_DPR(2) 유지(업스케일 합성).
   const drawDprRef = useRef<number>(DRAW_DPR);
   // T-20260523-foot-PENCHART-PEN-SLOW Fix-3: getBoundingClientRect 캐싱 — 획 동안 재사용, onPointerMove마다 강제 레이아웃 제거
   const strokeRectRef = useRef<DOMRect | null>(null);
@@ -1311,10 +1308,11 @@ export function PenChartTab({
     }
     // T-20260523-foot-PENCHART-PEN-SLOW Fix-2: ctx 캐싱 → onPointerMove마다 getContext 불필요
     drawCtxRef.current = ctx;
-    // ── REOPEN#1: draw(overlay) DPR 결정 — 기본 2x, ?penchart_lite + 환불동의서일 때만 1x(비트맵 4× 축소) ──
-    //   이 dpr 을 drawDprRef 에 고정 → 좌표 스케일 3개 지점이 동일값 사용(어긋남 0). bgCanvas/save 는 DRAW_DPR(2).
-    const _liteOverlay = _search.includes('penchart_lite') && isRefundConsentKey(activeDrawTemplate?.form_key ?? '');
-    const dpr = _liteOverlay ? 1 : DRAW_DPR; // 강제 2x(기본) — device DPR 무관 / lite=1x(opt-in 비트맵 축소)
+    // ── REOPEN#2 (필기불능 P0 회귀 복구): ?penchart_lite draw-DPR 레버 제거 → 좌표 파이프라인을 e003641 검증 상태(DRAW_DPR 2x 고정)로 복원.
+    //   [근인] field-soak FAIL(43c2c9a, Galaxy Tab "안써지고"=필기불능). 기본 펜 경로엔 회귀 없음(43c2c9a 빈배열 가드는 strict-safe).
+    //   e003641 이후 펜 좌표 파이프라인을 구조적으로 바꾼 유일 변경 = lite 레버(dpr 1/2 분기 + drawDprRef 간접화)이자 유일 필드-활성화 변수(?penchart_lite).
+    //   운영 차단(서명 불가) 최소화 최우선 → 실험 레버 제거가 1차 운영 복구. drawDprRef 는 항상 DRAW_DPR(2) → 5개 좌표 사이트 무변경(수술 리스크 0).
+    const dpr = DRAW_DPR; // 강제 2x 고정 — device DPR 무관 (lite 1x 레버 제거: REOPEN#2)
     drawDprRef.current = dpr;
     const canvasH = getCanvasHeightForForm(activeDrawTemplate?.form_key);
 
