@@ -9,7 +9,7 @@
 // 정책(RX-CHART-ENHANCE AC-2 계승): 등록단위 = prescription_code_id 기준만.
 //   텍스트 약명매칭 금지(오탐 차단·의료안전). 약품 검색→선택 후에만 등록 가능.
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
@@ -176,6 +176,8 @@ export default function ContraindicationsTab() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<RxCode[]>([]);
   const [searching, setSearching] = useState(false);
+  // T-20260608-foot-RXSET-MGMT-DRUG-SEARCH AC-5: 처방세트관리 드롭다운 검색과 동일 패턴(250ms 디바운스) 재사용.
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 선택 약품
   const [selected, setSelected] = useState<RxCode | null>(null);
 
@@ -221,6 +223,31 @@ export default function ContraindicationsTab() {
     } finally {
       setSearching(false);
     }
+  }, []);
+
+  // T-20260608-foot-RXSET-MGMT-DRUG-SEARCH AC-5: 금기증관리 약품검색도 처방세트관리(PrescriptionSetsTab)와
+  //   동일한 드롭다운 검색 패턴/UX를 재사용 — 타이핑 → 250ms 디바운스 → 검색 → 결과 드롭다운.
+  //   ⚠️ 검색 '출처'는 그대로 유지: '처방세트 등록 약'(searchPrescribableDrugs)으로 제한.
+  //      세트 미등록 약(orphan) 차단은 T-20260607-foot-CONTRAINDICATION-MGMT AC-1(문지은 대표원장)
+  //      확정 요구이며 deployed 테스트로 가드됨 → 전체 마스터로 바꾸면 그 요구·테스트를 뒤집으므로 변경 금지.
+  //      (AC-5 의 '자연 연결' = 세트관리 약 검색이 살아나 세트에 약이 채워지면 이 제한 검색에도 실데이터가 흐름)
+  const scheduleSearch = useCallback((q: string) => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    const query = q.trim();
+    if (query.length < 1) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true); // 디바운스 대기 중에도 즉시 로더 표시(처방세트관리 패턴 동일)
+    searchDebounceRef.current = setTimeout(() => {
+      void runSearch(query);
+    }, 250);
+  }, [runSearch]);
+
+  // 언마운트 시 디바운스 타이머 정리
+  useEffect(() => () => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
   }, []);
 
   function handleSelectDrug(code: RxCode) {
@@ -296,7 +323,7 @@ export default function ContraindicationsTab() {
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
-              void runSearch(e.target.value);
+              scheduleSearch(e.target.value);
             }}
             placeholder="예) 록소프로펜, 항생제, 청구코드…"
             className="pl-8"
