@@ -129,7 +129,9 @@ test('TA2-9: clinic_slug 필수 필드 + DB 조회 로직 포함', () => {
   expect(src).toContain('clinic_slug required');
   // clinics 테이블 DB 조회
   expect(src).toContain("'clinics'");
-  expect(src).toContain('.eq(\'slug\', clinicSlug)');
+  // SLUG-UNIFY: dual-key 정규화 후 조회 (구키 'foot-jongno' → 신키 'jongno-foot')
+  expect(src).toContain('.eq(\'slug\', lookupSlug)');
+  expect(src).toContain('normalizeSlug(clinicSlug)');
   // clinicRow 변수 사용
   expect(src).toContain('clinicRow');
 });

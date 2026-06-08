@@ -70,6 +70,17 @@ function isE164(phone: string): boolean {
   return /^\+[1-9]\d{6,14}$/.test(phone);
 }
 
+// ── Cross-CRM slug 통일 (dual-key transition window, ~2026-06-15 구키 제거) ──────
+//   도파민 신키 'jongno-foot' ↔ 구키 'foot-jongno' 1주 전환기 양쪽 수용.
+//   입력 slug는 구키→신키 정규화 후 clinics.slug DB 조회 (in-flight 구키 메시지 보호).
+//   paired: T-20260602-dopamine-CLINIC-SLUG-UNIFY
+const SLUG_ALIAS: Record<string, string> = {
+  'foot-jongno': 'jongno-foot',
+};
+function normalizeSlug(slug: string): string {
+  return SLUG_ALIAS[slug] ?? slug;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   // CORS preflight
@@ -154,10 +165,12 @@ Deno.serve(async (req) => {
   try {
     // ── 결함 3 강화: clinic_slug → clinics.id DB 조회 ─────────────────────────
     // v2: FOOT_CLINIC_ID env var 의존 제거 — DB에서 직접 slug→id 매핑
+    // dual-key: 구키('foot-jongno') 수신 시 신키('jongno-foot')로 정규화 후 조회
+    const lookupSlug = normalizeSlug(clinicSlug);
     const { data: clinicRow, error: clinicLookupErr } = await admin
       .from('clinics')
       .select('id')
-      .eq('slug', clinicSlug)
+      .eq('slug', lookupSlug)
       .maybeSingle();
 
     if (clinicLookupErr) {

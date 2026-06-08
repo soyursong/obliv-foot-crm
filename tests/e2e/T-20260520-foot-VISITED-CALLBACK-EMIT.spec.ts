@@ -72,7 +72,9 @@ test('TA3-5: visited payload 스펙 §6-2 준수', () => {
   const src = fs.readFileSync(EF_PATH, 'utf-8');
   expect(src).toContain("type: 'visited'");
   expect(src).toContain("source_system: 'foot'");
-  expect(src).toContain("clinic_slug: 'foot-jongno'");
+  // SLUG-UNIFY: canonical 신키 상수로 emit (FOOT_CLINIC_SLUG = 'jongno-foot')
+  expect(src).toContain('clinic_slug: FOOT_CLINIC_SLUG');
+  expect(src).toContain("const FOOT_CLINIC_SLUG = normalizeSlug('foot-jongno')");
   expect(src).toContain('external_id');
   expect(src).toContain('checkin_method');
   expect(src).toContain("'self_qr'");
