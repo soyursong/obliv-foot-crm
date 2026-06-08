@@ -35,6 +35,7 @@ export interface FolderDrug {
   claim_code: string;
   classification: string | null;
   code_source: string; // 'official' | 'custom'
+  manufacturer: string | null; // DRUGINFO-MANUFACTURER: 제약사(제조사). custom 코드는 NULL 가능 → 표기 생략.
 }
 
 // ---------------------------------------------------------------------------
@@ -88,7 +89,7 @@ export function useFolderDrugs() {
       const { data, error } = await supabase
         .from('prescription_code_folders')
         .select(
-          'prescription_code_id, folder_id, sort_order, prescription_codes(name_ko,claim_code,classification,code_source)',
+          'prescription_code_id, folder_id, sort_order, prescription_codes(name_ko,claim_code,classification,code_source,manufacturer)',
         )
         .order('sort_order', { ascending: true });
       if (error) throw error;
@@ -102,6 +103,7 @@ export function useFolderDrugs() {
           claim_code: string;
           classification: string | null;
           code_source: string;
+          manufacturer: string | null;
         } | null;
       };
       return ((data ?? []) as unknown as Row[])
@@ -114,6 +116,7 @@ export function useFolderDrugs() {
           claim_code: r.prescription_codes!.claim_code,
           classification: r.prescription_codes!.classification,
           code_source: r.prescription_codes!.code_source,
+          manufacturer: r.prescription_codes!.manufacturer ?? null,
         }));
     },
     staleTime: 30_000,

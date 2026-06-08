@@ -22,6 +22,7 @@ export interface PrescribableDrug {
   classification: string | null;
   code_source: string | null;
   ingredient_code: string | null; // AC-2 성분 중복 비교 키(대체키). prescription_codes 보유.
+  manufacturer: string | null; // DRUGINFO-MANUFACTURER: 제약사(제조사) — 패널/검색 노출용. custom 코드는 NULL 가능.
 }
 
 /**
@@ -60,7 +61,7 @@ export async function searchPrescribableDrugs(query: string): Promise<Prescribab
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('prescription_codes')
-    .select('id,name_ko,claim_code,classification,code_source,ingredient_code')
+    .select('id,name_ko,claim_code,classification,code_source,ingredient_code,manufacturer')
     .in('id', Array.from(ids)) // 출처 제한(AND 결합)
     .or(`name_ko.ilike.%${esc}%,claim_code.ilike.%${esc}%`)
     .order('code_source', { ascending: false }) // custom 우선

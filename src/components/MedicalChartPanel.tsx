@@ -135,6 +135,7 @@ interface RxCodeResult {
   classification: string | null;
   code_source: string; // 'official' | 'custom'
   price_krw: number | null;
+  manufacturer: string | null; // DRUGINFO-MANUFACTURER: 제약사(제조사). custom 코드는 NULL 가능 → 표기 생략.
 }
 
 // T-20260603-foot-RX-CHART-ENHANCE AC-2: 금기증
@@ -1238,7 +1239,7 @@ export default function MedicalChartPanel({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data } = await (supabase as any)
         .from('prescription_codes')
-        .select('id,name_ko,claim_code,classification,code_source,price_krw')
+        .select('id,name_ko,claim_code,classification,code_source,price_krw,manufacturer')
         .or(`name_ko.ilike.%${esc}%,claim_code.ilike.%${esc}%`)
         .order('code_source', { ascending: false }) // custom(카피약) 우선 노출
         .limit(20);
@@ -2653,6 +2654,10 @@ export default function MedicalChartPanel({
                                   <div className="text-[10px] text-muted-foreground flex items-center gap-1.5">
                                     <span className="font-mono">{code.claim_code}</span>
                                     {code.classification && <span>· {code.classification}</span>}
+                                    {/* DRUGINFO-MANUFACTURER: 제약사(제조사). NULL/빈값(custom)은 표기 생략 — 레이아웃 보존 */}
+                                    {code.manufacturer && code.manufacturer.trim() !== '' && (
+                                      <span data-testid="rx-search-result-manufacturer" className="truncate">· {code.manufacturer}</span>
+                                    )}
                                   </div>
                                 </button>
                               ))
