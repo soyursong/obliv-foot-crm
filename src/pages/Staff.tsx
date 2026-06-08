@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
@@ -624,53 +624,64 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
   //   → baseline(today 이전 최신 날짜의 풀 스냅샷) + today(부분) 를 room_name 기준 머지한다.
   //     today 행이 있으면 해당 방은 today 우선, 없으면 baseline carry-over 유지.
   //   데이터 무손실: 어떤 행도 삭제/변경하지 않고 읽기 머지만 수행.
+  // T-20260608-foot-SPACE-RESET-RECUR4 (Option 2): baseline+today 머지 로직을 추출.
+  //   읽기 쿼리(assignmentBundle)와 저장 직전 live 재조회(handleSave)가 동일 함수를 공유 →
+  //   로직 drift 방지 + 저장이 항상 "현재 DB live 값" 위에 pending 델타만 얹도록 보장.
+  const fetchEffectiveAssignments = useCallback(async (): Promise<{
+    byRoom: Map<string, RoomAssignmentRow>;
+    rows: RoomAssignmentRow[];
+    hasToday: boolean;
+    baselineDate: string | null;
+  }> => {
+    // 1) 당일(today) 행
+    const { data: todayRows, error: todayErr } = await supabase
+      .from('room_assignments')
+      .select('*')
+      .eq('clinic_id', clinic.id)
+      .eq('date', todayStr);
+    if (todayErr) throw todayErr;
+
+    // 2) baseline: today 이전 가장 최근 날짜의 스냅샷 (풀 carry-over 기준)
+    const { data: priorMax } = await supabase
+      .from('room_assignments')
+      .select('date')
+      .eq('clinic_id', clinic.id)
+      .lt('date', todayStr)
+      .order('date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let baselineRows: RoomAssignmentRow[] = [];
+    if (priorMax?.date) {
+      const { data, error } = await supabase
+        .from('room_assignments')
+        .select('*')
+        .eq('clinic_id', clinic.id)
+        .eq('date', priorMax.date);
+      if (error) throw error;
+      baselineRows = (data ?? []) as RoomAssignmentRow[];
+    }
+
+    // 3) 머지: baseline 먼저 깔고 today 로 덮어쓰기 (room_name 기준, today 우선)
+    const byRoom = new Map<string, RoomAssignmentRow>();
+    for (const r of baselineRows) byRoom.set(r.room_name, r);
+    for (const r of (todayRows ?? []) as RoomAssignmentRow[]) byRoom.set(r.room_name, r);
+
+    return {
+      byRoom,
+      rows: Array.from(byRoom.values()),
+      hasToday: (todayRows ?? []).length > 0,
+      baselineDate: priorMax?.date ?? null,
+    };
+  }, [clinic.id, todayStr]);
+
   const { data: assignmentBundle } = useQuery<{
     rows: RoomAssignmentRow[];
     hasToday: boolean;
     baselineDate: string | null;
   }>({
     queryKey: ['room_assignments_latest', clinic.id, todayStr],
-    queryFn: async () => {
-      // 1) 당일(today) 행
-      const { data: todayRows, error: todayErr } = await supabase
-        .from('room_assignments')
-        .select('*')
-        .eq('clinic_id', clinic.id)
-        .eq('date', todayStr);
-      if (todayErr) throw todayErr;
-
-      // 2) baseline: today 이전 가장 최근 날짜의 스냅샷 (풀 carry-over 기준)
-      const { data: priorMax } = await supabase
-        .from('room_assignments')
-        .select('date')
-        .eq('clinic_id', clinic.id)
-        .lt('date', todayStr)
-        .order('date', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      let baselineRows: RoomAssignmentRow[] = [];
-      if (priorMax?.date) {
-        const { data, error } = await supabase
-          .from('room_assignments')
-          .select('*')
-          .eq('clinic_id', clinic.id)
-          .eq('date', priorMax.date);
-        if (error) throw error;
-        baselineRows = (data ?? []) as RoomAssignmentRow[];
-      }
-
-      // 3) 머지: baseline 먼저 깔고 today 로 덮어쓰기 (room_name 기준, today 우선)
-      const byRoom = new Map<string, RoomAssignmentRow>();
-      for (const r of baselineRows) byRoom.set(r.room_name, r);
-      for (const r of (todayRows ?? []) as RoomAssignmentRow[]) byRoom.set(r.room_name, r);
-
-      return {
-        rows: Array.from(byRoom.values()),
-        hasToday: (todayRows ?? []).length > 0,
-        baselineDate: priorMax?.date ?? null,
-      };
-    },
+    queryFn: fetchEffectiveAssignments,
   });
 
   const assignments = useMemo(() => assignmentBundle?.rows ?? [], [assignmentBundle]);
@@ -727,25 +738,34 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
   };
 
   const handleWeekAssign = async (room: Room, dayStr: string, staffId: string) => {
-    const key = `${dayStr}_${room.name}`;
-    const existing = weekAssignMap[key];
     const staff = staffId ? staffList.find((s) => s.id === staffId) : null;
 
-    // T-20260606-foot-DASH-STAFFASSIGN-RESET-FIX (REOPEN, 주간뷰 잔존 DELETE 경로 제거):
-    //   기존: 미배정(!staffId) 선택 시 해당 (date,room) row 를 delete() 했다. 그 날짜가
-    //         today 면 daily/Dashboard 읽기 머지의 today 스냅샷에 구멍이 생겨 baseline(전날)
-    //         carry-over 가 그 방을 되살림 = "저장해도 리셋". (Dashboard handleStaffAssign /
-    //         Staff handleSave RPC 는 이미 미배정 명시 row 로 차단했으나 주간뷰만 잔존했다.)
-    //   수정: 절대 DELETE 하지 않는다. 미배정도 staff_id=null "명시적 미배정" row 로 보존한다.
-    //         - existing 있으면 → UPDATE(null)  - 없으면 → INSERT(null)
-    //         today row 가 항상 존재 → 읽기 머지(baseline+today, today 우선)가 carry-over 차단.
+    // T-20260606-foot-DASH-STAFFASSIGN-RESET-FIX (REOPEN): 주간뷰 잔존 DELETE 경로 제거 — 미배정도
+    //   staff_id=null "명시적 미배정" row 로 보존(절대 DELETE 안 함) → 읽기 머지 carry-over 차단.
+    // T-20260608-foot-SPACE-RESET-RECUR4 (B1-c, handleSave 와 동일 "stale 불신" 패턴):
+    //   기존: stale weekAssignMap[key] 로 existing 판정 → UPDATE(id) vs INSERT 분기. 클라 번들이
+    //   stale 하면 (a) 실제 존재 row 를 모르고 INSERT → UNIQUE(clinic_id,date,room_name) 위반 에러,
+    //   (b) race 로 잘못된 id 갱신 위험.
+    //   수정: write 직전 해당 (date,room_name) 셀을 live 재조회하여 UPDATE/INSERT 판정.
+    //   upsert 를 안 쓰는 이유: staff/part_lead 는 room_assignments_staff_update(UPDATE)만 있고
+    //   INSERT 권한 없음 → upsert(INSERT..ON CONFLICT)의 INSERT WITH CHECK 가 기존 row 갱신마저
+    //   막아 옵션B(전 역할 호환) 회귀. 따라서 역할분리(UPDATE/INSERT)를 보존하되 stale 만 제거한다.
     //   silent 금지: 실패 시 toast.error 노출(특히 staff RLS silent 0-row 포착).
     const newStaffId = staffId || null;
     const newStaffName = staff?.name ?? null;
+    const { data: liveCell, error: cellErr } = await supabase
+      .from('room_assignments')
+      .select('id')
+      .eq('clinic_id', clinic.id)
+      .eq('date', dayStr)
+      .eq('room_name', room.name)
+      .maybeSingle();
+    if (cellErr) { toast.error(`주간 배정 조회 실패: ${cellErr.message}`); return; }
+
     let error: { message: string } | null = null;
-    if (existing) {
+    if (liveCell?.id) {
       ({ error } = await supabase.from('room_assignments')
-        .update({ staff_id: newStaffId, staff_name: newStaffName }).eq('id', existing.id));
+        .update({ staff_id: newStaffId, staff_name: newStaffName }).eq('id', liveCell.id));
     } else {
       ({ error } = await supabase.from('room_assignments').insert({
         clinic_id: clinic.id, date: dayStr, room_name: room.name, room_type: room.room_type,
@@ -789,14 +809,26 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
     try {
       const today = todayStr; // const todayStr = format(new Date(), 'yyyy-MM-dd') — 컴포넌트 스코프
 
+      // T-20260608-foot-SPACE-RESET-RECUR4 (Option 2, 4차 재발 근본 수정 · B1-a/B1-b):
+      //   확정 근본원인: 기존 payload 는 컴포넌트 로드시점 stale 번들(getEffectiveStaffId →
+      //   assignmentByRoom)로 구성됐다. 그 사이 Dashboard handleStaffAssign / 타화면이 다른 방
+      //   (treatment/laser/consultation/가열성레이저)에 배정을 넣어도, Staff탭 full-save 는 그 방을
+      //   자기 stale 번들 기준 '' 로 보내 RPC 가 null 로 blind-overwrite → "저장해도 리셋"(4차).
+      //   수정: 저장 클릭 시점에 live today 스냅샷(baseline+today 머지)을 재조회하여,
+      //     - 사용자가 이번 세션에 건드린 방(pending 키 존재) → pending 값 사용
+      //       (빈값 '' = 의도적 미배정도 그대로 반영 → unassign 정상 동작, B1-b)
+      //     - 안 건드린 방 → 방금 읽은 live DB 값 보존 (stale 번들 금지 → blind-overwrite 제거, B1-a)
+      //   race 윈도우를 "컴포넌트 로드 ~ 저장"에서 "live 재조회 ~ RPC write 직전"으로 최소화.
+      const live = await fetchEffectiveAssignments();
+
       // 머지된 effective 세트 전체를 payload 로 구성 (배정/미배정 방 모두 포함)
-      // T-20260601-foot-SPACE-ASSIGN-RESET-REGRESS (REOPEN-3, 근본 수정):
-      //   기존엔 미배정(staffId 빈값) 방을 payload 에서 제외(return null)했다. 그 결과 today 스냅샷에
-      //   해당 방 row 가 아예 없어 → 읽기 머지가 baseline(전날) carry-over 로 되살려 "리셋"처럼 보였다.
-      //   → 미배정 방도 staff_id:'' 로 명시 포함하여 today 에 "명시적 미배정" row 를 남긴다.
-      //     이후 읽기 머지에서 today row 존재 → baseline carry-over 차단.
+      // T-20260601-foot-SPACE-ASSIGN-RESET-REGRESS (REOPEN-3): 미배정 방도 staff_id:'' 로 명시 포함하여
+      //   today 에 "명시적 미배정" row 를 남긴다 → 읽기 머지에서 today row 존재 → baseline carry-over 차단.
       const payload = rooms.map(room => {
-        const staffId = getEffectiveStaffId(room.name);
+        // pending 키가 있으면(빈값 '' 의도적 미배정 포함) 사용자 의도 우선, 없으면 live DB 값 보존.
+        const staffId = (room.name in pending)
+          ? pending[room.name]
+          : (live.byRoom.get(room.name)?.staff_id ?? '');
         const staff = staffId ? staffList.find(s => s.id === staffId) : null;
         return {
           room_name: room.name,
