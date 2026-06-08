@@ -1,6 +1,7 @@
 // T-20260520-crm-MESSAGING-SMS-V1 — Edge Function: send-notification
 // T-20260521-crm-SMS-SENDER-SAVE  — admin UI 액션 핸들러 추가 (test_sms)
 // T-20260523-crm-MESSAGING-SLA-OPT — AC-1: keep_warm 액션 / AC-2: logNotification UPDATE 경로 보강
+// T-20260608-foot-SMS-EF-DEPLOY-VERIFY — manual_send 핸들러 운영 재배포 검증 (deploy marker 2026-06-08)
 //
 // 호출 방법:
 //   1. Database Webhook: reservations INSERT → 자동 POST (service_role)
