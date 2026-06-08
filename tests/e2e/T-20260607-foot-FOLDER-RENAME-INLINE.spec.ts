@@ -44,28 +44,31 @@ test('AC-A2: Enter 저장 / Escape 취소 키보드 핸들', () => {
   expect(src).toContain("e.key === 'Escape'");
 });
 
-test('AC-A3: 빈값·중복·미분류 검증', () => {
+test('AC-A3: 빈값·형제중복 검증 (미분류 버킷은 rename 비대상)', () => {
   const src = read(DX);
   expect(src).toContain('폴더 이름을 입력해주세요.'); // 빈값
-  expect(src).toContain('이미 있는 폴더 이름이에요.'); // 중복
-  // 미분류(합성 폴더)는 변경 불가
-  expect(src).toContain("folder === NO_FOLDER");
+  expect(src).toContain('같은 위치에 같은 이름의 폴더가 이미 있어요.'); // 형제 중복
+  // 미분류는 합성 버킷(UnassignedBucket) — rename 진입점 자체 없음
+  expect(src).toContain('UnassignedBucket');
 });
 
-test('AC-A4: services.diagnosis_folder 같은 값 행 일괄 UPDATE (db_change=false)', () => {
+// ⚠️ DXRX-MGMT-2PANEL: 폴더 모델 TEXT → 엔티티(diagnosis_folders). rename =
+//   useRenameDxFolder(같은 TEXT값 일괄 UPDATE) → useUpdateDiagnosisFolder(name 컬럼 UPDATE).
+//   소속 항목 FK(services.diagnosis_folder_id)는 불변(폴더 id 그대로).
+test('AC-A4: diagnosis_folders.name UPDATE (엔티티 rename, 소속 항목 FK 불변)', () => {
   const src = read(DX);
-  expect(src).toContain('useRenameDxFolder');
-  expect(src).toContain("update({ diagnosis_folder: newName })");
-  expect(src).toContain(".eq('diagnosis_folder', oldName)");
-  expect(src).toContain(".eq('category_label', '상병')");
-  // 신규 스키마/컬럼 추가가 아님 — 기존 컬럼 UPDATE only
+  expect(src).toContain('useUpdateDiagnosisFolder');
+  expect(src).toContain('updateFolder.mutateAsync({ id: node.id, name: next })');
+  // 신규 스키마/컬럼 추가가 아님 — 기존 엔티티 name UPDATE only
   expect(src).not.toMatch(/alter\s+table/i);
 });
 
-test('AC-A5: 권한 가드(canEdit) + 변경 후 선택 폴더 유지', () => {
+test('AC-A5: 권한 가드(canManage) + 진입점(더블클릭·우클릭·연필버튼)', () => {
   const src = read(DX);
-  expect(src).toContain('canRename={canEdit && folder !== NO_FOLDER}');
-  expect(src).toContain('setSelectedFolder(next)');
+  expect(src).toContain('canManage');
+  expect(src).toContain('onDoubleClick');
+  expect(src).toContain('onContextMenu');
+  expect(src).toContain('dx-folder-rename-btn');
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
