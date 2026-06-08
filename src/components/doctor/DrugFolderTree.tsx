@@ -179,6 +179,10 @@ export default function DrugFolderTree({ onAdd, disabled = false }: DrugFolderTr
                     <div className="text-[10px] text-muted-foreground flex items-center gap-1.5">
                       <span className="font-mono">{d.claim_code}</span>
                       {d.classification && <span>· {d.classification}</span>}
+                      {/* DRUGINFO-MANUFACTURER: 제약사(제조사). NULL/빈값(custom)은 표기 생략 — 레이아웃 보존 */}
+                      {d.manufacturer && d.manufacturer.trim() !== '' && (
+                        <span data-testid="drug-folder-item-manufacturer" className="truncate">· {d.manufacturer}</span>
+                      )}
                     </div>
                   </button>
                 </div>
