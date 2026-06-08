@@ -1628,6 +1628,8 @@ function UseSessionDialog({ open, pkg, remaining, onOpenChange, onDone }: {
     setSubmitting(true);
     const { count } = await supabase.from('package_sessions').select('*', { count: 'exact', head: true }).eq('package_id', pkg.id);
     const nextNumber = (count ?? 0) + 1;
+    // T-20260609-foot-PKGSESS-CHECKIN-LINK: 패키지관리 화면 차감은 특정 내원(check_in) 컨텍스트가 없음
+    //   → check_in_id 미기록(NULL). 통계 RPC 는 (고객+KST일자+치료사) 근사 fallback 으로 집계.
     const { error } = await supabase.from('package_sessions').insert({
       package_id: pkg.id, session_number: nextNumber, session_type: sessionType,
       surcharge, surcharge_memo: surchargeMemo.trim() || null, status: 'used',

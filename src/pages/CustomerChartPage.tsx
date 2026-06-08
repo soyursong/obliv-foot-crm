@@ -11,7 +11,7 @@ import { ResultCard, type HQResult } from '@/components/HealthQResultsPanel';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { formatAmount, formatPhone, formatPhoneInput, parseAmount } from '@/lib/format';
+import { formatAmount, formatPhone, formatPhoneInput, parseAmount, seoulISODate } from '@/lib/format';
 // T-20260524-foot-PKG-LABEL-AMOUNT AC-3: METHOD_KO 추가 import
 import { VISIT_TYPE_KO, METHOD_KO, STATUS_KO } from '@/lib/status';
 import { cn } from '@/lib/utils';
@@ -2741,6 +2741,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       session_date: sessionDlgForm.sessionDate,
       performed_by: sessionDlgForm.therapistId,
       status: 'used',
+      // T-20260609-foot-PKGSESS-CHECKIN-LINK (AC2): 차감일 == 최근 내원일(KST)일 때만 귀속(통계 정확매칭), 아니면 NULL 근사
+      check_in_id:
+        latestCheckIn?.checked_in_at &&
+        seoulISODate(latestCheckIn.checked_in_at) === sessionDlgForm.sessionDate
+          ? latestCheckIn.id
+          : null,
     });
     setSavingSession(false);
     if (error) { toast.error(`저장 실패: ${error.message}`); return; }
@@ -3345,6 +3351,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       session_date: c22DeductForm.sessionDate,
       performed_by: c22DeductForm.therapistId,
       status: 'used',
+      // T-20260609-foot-PKGSESS-CHECKIN-LINK (AC2): 차감일 == 최근 내원일(KST)일 때만 귀속, 아니면 NULL 근사
+      check_in_id:
+        latestCheckIn?.checked_in_at &&
+        seoulISODate(latestCheckIn.checked_in_at) === c22DeductForm.sessionDate
+          ? latestCheckIn.id
+          : null,
     });
     setSavingC22Deduct(false);
     if (error) { toast.error(`차감 실패: ${error.message}`); return; }
@@ -3481,6 +3493,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       session_date: c22DeductForm.sessionDate,
       performed_by: c22DeductForm.therapistId,
       status: 'used',
+      // T-20260609-foot-PKGSESS-CHECKIN-LINK (AC2): 힐러 예약 후 차감 — 차감일 == 최근 내원일(KST)일 때 귀속
+      check_in_id:
+        latestCheckIn?.checked_in_at &&
+        seoulISODate(latestCheckIn.checked_in_at) === c22DeductForm.sessionDate
+          ? latestCheckIn.id
+          : null,
     });
     if (deductError) {
       setSavingHealerDeduct(false);
