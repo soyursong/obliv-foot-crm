@@ -674,6 +674,24 @@ export function PenChartTab({
     lastMoveTs: number;
   }>({ enabled: false, strokeStart: 0, moves: 0, coalescedTotal: 0, drawTimeTotal: 0, maxFrameGap: 0, lastMoveTs: 0 });
 
+  // ── T-20260606-foot-PENCHART-REFUND-LATENCY REOPEN#1: 현장 캡처형 on-screen 프로파일러 ──────────
+  //   [REOPEN#1 메타-루트코즈] 직전 라운드(e003641: coalesced 단일path + dirty-rect)가 field-soak FAIL.
+  //   FAIL의 메타 원인 = 프로파일러가 ?penchart_perf + DevTools 콘솔 전용 → 김주연 총괄이 Galaxy Tab
+  //   에서 콘솔 캡처 불가 → 실병목 데이터 없이 추정(coalesce/redraw 단정)으로 배포 → 빗나감.
+  //   [수정] 같은 ?penchart_perf 게이트로 화면 우상단 배지를 렌더 → 총괄이 몇 획 긋고 "스크린샷 한 장"
+  //   으로 avgDrawMs(래스터/redraw 비용) vs maxFrameGapMs(jank/합성stall) vs coalescedPerMove(coalesce 손실)
+  //   을 가른다. prod(파라미터 없음)에는 perfDisplay=null 유지 → 배지 미렌더(오버헤드 0). 좌표/화질/desync 무변경.
+  const [perfDisplay, setPerfDisplay] = useState<null | {
+    formKey: string | null; canvas: string; strokeMs: number; moves: number;
+    coalescedPerMove: number; avgDrawMs: number; maxFrameGapMs: number; inputPtsPerSec: number;
+    wFrameGap: number; wAvgDraw: number; wMinCoa: number; wStrokeMs: number; strokes: number;
+    verdict: string;
+  }>(null);
+  //   세션 누적 worst (단일 스크린샷이 최악 케이스를 담도록) — 양식 진입(initDrawCanvas)에서 리셋.
+  const perfWorstRef = useRef<{ frameGap: number; avgDraw: number; minCoa: number; strokeMs: number; strokes: number }>(
+    { frameGap: 0, avgDraw: 0, minCoa: Infinity, strokeMs: 0, strokes: 0 },
+  );
+
   // T-20260519-foot-PENCHART-FORM-ADD (FIX): Undo 10단계
   const undoStackRef = useRef<ImageData[]>([]);
   const UNDO_LIMIT = 10;
@@ -1246,6 +1264,11 @@ export function PenChartTab({
     const useDesync = _forceOff ? false : _forceOn ? true : false; // 기본: 전 기기 OFF — 검정화면 비재발 보장
     // T-20260606-foot-PENCHART-REFUND-LATENCY: 실기기 펜 지연 프로파일러 게이트
     perfRef.current.enabled = _search.includes('penchart_perf');
+    // REOPEN#1: 양식 진입마다 세션 worst 리셋 → 배지가 "현재 양식"의 최악 케이스만 누적.
+    if (perfRef.current.enabled) {
+      perfWorstRef.current = { frameGap: 0, avgDraw: 0, minCoa: Infinity, strokeMs: 0, strokes: 0 };
+      setPerfDisplay(null);
+    }
     const ctx = canvas.getContext('2d', { desynchronized: useDesync });
     // T-20260525-foot-PENCHART-FORM-BLACKSCR AC-4: Draw context 초기화 실패 → fallback
     if (!ctx) {
@@ -1753,17 +1776,47 @@ export function PenChartTab({
     const perf = perfRef.current;
     if (perf.enabled && perf.moves > 0) {
       const dur = performance.now() - perf.strokeStart;
+      const strokeMs         = Math.round(dur);
+      const coalescedPerMove = +(perf.coalescedTotal / perf.moves).toFixed(2);  // ↓낮고 빠른획=coalesce 손실 의심
+      const avgDrawMs        = +(perf.drawTimeTotal / perf.moves).toFixed(3);   // ↑높으면 stroke 래스터(redraw) 비용
+      const maxFrameGapMs    = +perf.maxFrameGap.toFixed(1);                    // ↑크면 프레임 드랍(jank)
+      const inputPtsPerSec   = dur > 0 ? +((perf.coalescedTotal / dur) * 1000).toFixed(0) : 0;
       console.log('[PenChartTab PERF]', JSON.stringify({
         formKey:          activeDrawTemplate?.form_key ?? null,
         canvas:           `${canvas?.width ?? 0}x${canvas?.height ?? 0}`,
-        strokeMs:         Math.round(dur),
+        strokeMs,
         moves:            perf.moves,
         coalescedTotal:   perf.coalescedTotal,
-        coalescedPerMove: +(perf.coalescedTotal / perf.moves).toFixed(2),  // ↓낮고 빠른획=coalesce 손실 의심
-        avgDrawMs:        +(perf.drawTimeTotal / perf.moves).toFixed(3),   // ↑높으면 stroke 래스터(redraw) 비용
-        maxFrameGapMs:    +perf.maxFrameGap.toFixed(1),                    // ↑크면 프레임 드랍(jank)
-        inputPtsPerSec:   dur > 0 ? +((perf.coalescedTotal / dur) * 1000).toFixed(0) : 0,
+        coalescedPerMove,
+        avgDrawMs,
+        maxFrameGapMs,
+        inputPtsPerSec,
       }));
+      // ── REOPEN#1: 세션 worst 누적 + 화면 배지 갱신(현장 스크린샷 1장으로 병목 판정) ──
+      const w = perfWorstRef.current;
+      w.strokes += 1;
+      if (maxFrameGapMs > w.frameGap)     w.frameGap = maxFrameGapMs;
+      if (avgDrawMs     > w.avgDraw)      w.avgDraw  = avgDrawMs;
+      if (coalescedPerMove < w.minCoa)    w.minCoa   = coalescedPerMove;
+      if (strokeMs      > w.strokeMs)     w.strokeMs = strokeMs;
+      // 병목 판정 휴리스틱(현장 가독용 — 데이터로 환원, 단정 아님):
+      //   avgDraw≥5ms 우세 → CPU 래스터/대형 비트맵(redraw)  | frameGap≥40ms 우세 → 합성/프레임 jank
+      //   둘 다 낮은데 coalesce/move≤1.1 → 입력 샘플링(coalesce) 손실
+      let verdict = '판정대기(획 더 필요)';
+      if (w.strokes >= 1) {
+        if (w.avgDraw >= 5 && w.avgDraw >= w.frameGap / 10) verdict = 'REDRAW 우세 → 비트맵 축소 후보';
+        else if (w.frameGap >= 40)                          verdict = 'JANK 우세 → 합성/프레임 후보';
+        else if (w.minCoa <= 1.1 && inputPtsPerSec < 90)    verdict = 'COALESCE 손실 후보';
+        else                                                verdict = '경미 — 추가 표본 필요';
+      }
+      setPerfDisplay({
+        formKey: activeDrawTemplate?.form_key ?? null,
+        canvas: `${canvas?.width ?? 0}x${canvas?.height ?? 0}`,
+        strokeMs, moves: perf.moves, coalescedPerMove, avgDrawMs, maxFrameGapMs, inputPtsPerSec,
+        wFrameGap: +w.frameGap.toFixed(1), wAvgDraw: +w.avgDraw.toFixed(2),
+        wMinCoa: w.minCoa === Infinity ? 0 : +w.minCoa.toFixed(2), wStrokeMs: w.strokeMs, strokes: w.strokes,
+        verdict,
+      });
     }
 
     // T-20260524-foot-PENCHART-PEN-SLOW Fix-5: 획 종료 후 rAF에서 undo 상태 사전 캡처
@@ -2588,6 +2641,36 @@ export function PenChartTab({
               onPointerLeave={onPointerUp}
               onPointerCancel={onPointerUp}
             />
+
+            {/* ── T-20260606-foot-PENCHART-REFUND-LATENCY REOPEN#1: 현장 캡처형 펜 성능 배지 ──
+                ?penchart_perf 게이트일 때만(perfDisplay≠null) 렌더. 화면 우상단 고정 → Galaxy Tab에서
+                몇 획 긋고 "스크린샷 1장"으로 실병목 판정. prod(파라미터 없음)엔 미렌더(오버헤드 0). */}
+            {perfDisplay && (
+              <div
+                data-testid="penchart-perf-badge"
+                style={{
+                  position: 'fixed', top: 8, right: 8, zIndex: 9999,
+                  background: 'rgba(15,23,42,0.92)', color: '#e2e8f0',
+                  font: '11px/1.45 ui-monospace, Menlo, monospace',
+                  padding: '8px 10px', borderRadius: 8, maxWidth: 230,
+                  pointerEvents: 'none', whiteSpace: 'pre',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+                }}
+              >
+{`PEN PERF · ${perfDisplay.formKey ?? '-'}
+canvas ${perfDisplay.canvas}
+strokeMs ${perfDisplay.strokeMs}  moves ${perfDisplay.moves}
+coa/move ${perfDisplay.coalescedPerMove}  pts/s ${perfDisplay.inputPtsPerSec}
+avgDrawMs ${perfDisplay.avgDrawMs}  (redraw)
+frameGap  ${perfDisplay.maxFrameGapMs}ms (jank)
+── worst (${perfDisplay.strokes}획) ──
+avgDraw ${perfDisplay.wAvgDraw}  gap ${perfDisplay.wFrameGap}ms
+minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
+                <div style={{ marginTop: 4, color: '#fcd34d', fontWeight: 600, whiteSpace: 'normal' }}>
+                  {perfDisplay.verdict}
+                </div>
+              </div>
+            )}
 
             {/* T-20260525-foot-PENCHART-FORM-BLACK AC-4: 배경 이미지 로드 실패 폴백 UI */}
             {bgImgLoadError && (
