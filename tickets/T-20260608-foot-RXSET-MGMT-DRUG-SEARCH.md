@@ -10,6 +10,7 @@ db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: null
+commit_sha: 5dbde89
 created: 2026-06-08
 assignee: dev-foot
 reporter: 문지은 대표원장
