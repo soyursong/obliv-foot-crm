@@ -74,7 +74,7 @@ const chartTreatmentGist = (c: Chart, summaryText: string): string => {
   return parts.join('  ·  ');
 };
 
-// ── 박수진 시드 환자 모사 데이터(seed_chart_park_sujin_20260608.mjs 와 동일 구조) ──
+// ── QA_김타임라인 시드 환자 모사 데이터(seed_chart_park_sujin_20260608.mjs 와 동일 구조) ──
 const charts: Chart[] = [
   { id: 'c6', visit_date: '2026-06-02', diagnosis: '조갑백선 호전, 무지외반증', chief_complaint: null, clinical_progress: '6회차. 비가열 레이저 25분.', treatment_record: '비가열 레이저 25분. 홈케어 교육.', doctor_memo: '[원장] 발톱 70% 정상화.', prescription_items: [{ name: '히알루론산 풋크림' }] },
   { id: 'c5', visit_date: '2026-05-20', diagnosis: '조갑백선', chief_complaint: null, clinical_progress: '5회차. 포도듈 부착 후 비가열 20분.', treatment_record: '포도듈 부착, 비가열 레이저 20분.', doctor_memo: '[원장] 신생 발톱 성장 양호.', prescription_items: null },
