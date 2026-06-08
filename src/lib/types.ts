@@ -429,6 +429,9 @@ export interface PackageTemplate {
   // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
   trial_sessions: number;
   trial_unit_price: number;
+  // T-20260608-foot-PKG-REBORN-TEMPLATE-MGMT: Re:Born 6번째 항목
+  reborn_sessions: number;
+  reborn_unit_price: number;
   total_price: number;
   price_override: boolean;
   memo: string | null;
