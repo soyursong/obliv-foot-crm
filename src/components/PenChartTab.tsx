@@ -585,6 +585,16 @@ export function PenChartTab({
   const [activeDrawTemplate, setActiveDrawTemplate] = useState<Template | null>(null);
   // T-20260525-foot-PENCHART-FORM-BLACK AC-4: 배경 이미지 로드 실패 폴백 UI 상태
   const [bgImgLoadError, setBgImgLoadError] = useState(false);
+  // T-20260608-foot-PENCHART-REFUND-FORMIMG AC-2: 배경 이미지 실패 "단계 코드"를 화면 노출.
+  //   "양식 이미지를 불러올 수 없습니다."는 8개 서로 다른 실패 지점(ctx null/lost, canvas alloc 0,
+  //   network onerror, naturalWidth=0, decode throw, drawImage throw)이 합쳐진 단일 UI라 콘솔 없이는
+  //   원인 식별 불가. Galaxy Tab은 DevTools 콘솔 캡처 불가(LATENCY 메타-루트코즈) → 스크린샷 1장으로
+  //   실패 stage를 가르도록 화면에 코드를 노출(b5a7979 펜 성능 배지와 동일 전략). 단정 금지·진단 우선.
+  const [bgImgErrorReason, setBgImgErrorReason] = useState<string | null>(null);
+  // T-20260608-foot-PENCHART-REFUND-FORMIMG AC-1: network onerror 시 cache-bust 자동 1회 재시도.
+  //   Android WebView가 동일 URL을 crossOrigin 없이 먼저 캐시했다가 crossOrigin='anonymous' 재요청 시
+  //   비-CORS 캐시 응답을 읽어 onerror(캐시 오염) + 일시 네트워크 블립을 즉시 자동 회복. 양식 진입마다 리셋.
+  const bgImgRetryRef = useRef(0);
   // staff.id — issued_by FK (profile.id ≠ staff.id, user_id 경유 조회)
   const [staffId, setStaffId] = useState<string | null>(null);
 
@@ -1060,6 +1070,7 @@ export function PenChartTab({
     // T-20260525-foot-PENCHART-FORM-BLACKSCR AC-4: Context 초기화 실패(GPU/메모리 한계) → fallback
     if (!ctx) {
       console.error('[PenChartTab] bgCanvas 2D context 초기화 실패 (GPU/메모리 한계)', activeDrawTemplate?.form_key);
+      setBgImgErrorReason(`E1 ctx-null · ${activeDrawTemplate?.form_key ?? '-'}`); // eslint-disable-line react-hooks/exhaustive-deps
       setBgImgLoadError(true); // eslint-disable-line react-hooks/exhaustive-deps
       return;
     }
@@ -1068,6 +1079,7 @@ export function PenChartTab({
     //   ctx.isContextLost() 체크로 감지 → fallback 표시
     if (ctx.isContextLost()) {
       console.error('[PenChartTab] bgCanvas context lost (GPU 메모리 압박)', activeDrawTemplate?.form_key);
+      setBgImgErrorReason(`E2 ctx-lost(init) · ${activeDrawTemplate?.form_key ?? '-'}`); // eslint-disable-line react-hooks/exhaustive-deps
       setBgImgLoadError(true); // eslint-disable-line react-hooks/exhaustive-deps
       return;
     }
@@ -1083,6 +1095,7 @@ export function PenChartTab({
     //   → 이후 drawImage/fillRect가 0×0 화면에 그려짐 → 검정 화면 노출
     if (canvas.width === 0 || canvas.height === 0) {
       console.error('[PenChartTab] bgCanvas 크기 할당 실패 (GPU 메모리 초과 가능)', { canvasH, formKey: activeDrawTemplate?.form_key });
+      setBgImgErrorReason(`E3 canvas-alloc-0 ${CANVAS_W * DRAW_DPR}×${canvasH * DRAW_DPR} · ${activeDrawTemplate?.form_key ?? '-'}`); // eslint-disable-line react-hooks/exhaustive-deps
       setBgImgLoadError(true); // eslint-disable-line react-hooks/exhaustive-deps
       return;
     }
@@ -1112,18 +1125,27 @@ export function PenChartTab({
     });
 
     if (bgUrl) {
+      // T-20260608-foot-PENCHART-REFUND-FORMIMG AC-2: bgUrl 출처 식별용 짧은 꼬리(전체 URL은 PHI/길이 노출 방지).
+      const urlTail = bgUrl.length > 28 ? `…${bgUrl.slice(-28)}` : bgUrl;
       const img = new Image();
       img.crossOrigin = 'anonymous';
+      // T-20260608-foot-PENCHART-REFUND-FORMIMG AC-1: network/CORS onerror → cache-bust 1회 자동 재시도.
+      //   Android WebView crossOrigin 캐시 오염(비-CORS 캐시 응답 재사용) + 일시 네트워크 블립을 즉시 회복.
+      //   재시도는 src에 ?cb= 쿼리만 덧붙여 캐시 우회(동일 오리진 정적 자산엔 무해, 서명 URL엔 영향 없음).
+      //   ※ 핸들러 본문은 BLACK spec(onerror+300자 윈도우)이 console.error+setBgImgLoadError(true)를
+      //     확인하므로, 재시도 분기를 한 줄로 압축해 두 호출이 윈도우 안에 남도록 유지(AC-3 비파괴).
       img.onerror = () => {
-        // T-20260525-foot-PENCHART-FORM-BLACK AC-4: 이미지 로드 실패 → 흰 배경 유지 + 폴백 UI 표시
+        if (bgImgRetryRef.current++ < 1) { img.src = `${bgUrl}${bgUrl.includes('?') ? '&' : '?'}cb=${Date.now()}`; return; }
         console.error('[PenChartTab] 배경 이미지 로드 실패(network/CORS), 흰 배경 fallback:', bgUrl);
         setBgImgLoadError(true);
+        setBgImgErrorReason(`E4 net/CORS onerror (재시도 ${bgImgRetryRef.current - 1}회) · ${urlTail}`);
       };
       img.onload = async () => {
         // T-20260526-foot-PENCHART-FORM-BLACKSCR REOPEN AC-R2: 이미지 디코드 검증
         //   onload 발화 후에도 naturalWidth=0인 경우(일부 브라우저 decode 실패) → drawImage silent fail
         if (img.naturalWidth === 0 || img.naturalHeight === 0) {
           console.error('[PenChartTab] 이미지 onload 후 naturalWidth=0 (decode 실패):', bgUrl);
+          setBgImgErrorReason(`E5 naturalWidth=0 (decode 실패) · ${urlTail}`);
           setBgImgLoadError(true);
           return;
         }
@@ -1132,6 +1154,7 @@ export function PenChartTab({
         //   (이미지 로딩 중 GPU 압박 발생 가능)
         if (ctx.isContextLost()) {
           console.error('[PenChartTab] img.onload 시점 context lost — drawImage 불가', bgUrl);
+          setBgImgErrorReason(`E6 ctx-lost(onload) · ${activeDrawTemplate?.form_key ?? '-'}`);
           setBgImgLoadError(true);
           return;
         }
@@ -1142,6 +1165,7 @@ export function PenChartTab({
           await img.decode();
         } catch (decodeErr) {
           console.error('[PenChartTab] img.decode() 실패 — fallback:', decodeErr, bgUrl);
+          setBgImgErrorReason(`E7 decode() throw (메모리/대형이미지 ${img.naturalWidth}×${img.naturalHeight}) · ${urlTail}`);
           setBgImgLoadError(true);
           return;
         }
@@ -1150,6 +1174,7 @@ export function PenChartTab({
           return;
         }
         if (ctx.isContextLost()) {
+          setBgImgErrorReason(`E6 ctx-lost(post-decode) · ${activeDrawTemplate?.form_key ?? '-'}`);
           setBgImgLoadError(true);
           return;
         }
@@ -1196,7 +1221,7 @@ export function PenChartTab({
                   bm.close();
                   return;
                 }
-                if (ctx.isContextLost()) { bm.close(); setBgImgLoadError(true); return; }
+                if (ctx.isContextLost()) { bm.close(); setBgImgErrorReason(`E6 ctx-lost(tile) · ${activeDrawTemplate?.form_key ?? '-'}`); setBgImgLoadError(true); return; }
                 const dx  = Math.round((tileSx / srcW) * CANVAS_W);
                 const dw  = Math.max(1, Math.round(((tileSx + tileSw) / srcW) * CANVAS_W) - dx);
                 const dy  = Math.round((tileSy / srcH) * canvasH);
@@ -1215,6 +1240,7 @@ export function PenChartTab({
             imgNatural: `${img.naturalWidth}×${img.naturalHeight}`,
             canvasPhysical: `${canvas.width}×${canvas.height}`,
           });
+          setBgImgErrorReason(`E8 drawImage throw (src ${img.naturalWidth}×${img.naturalHeight} → ${canvas.width}×${canvas.height}) · ${activeDrawTemplate?.form_key ?? '-'}`);
           setBgImgLoadError(true);
           return;
         }
@@ -1303,6 +1329,7 @@ export function PenChartTab({
     // T-20260525-foot-PENCHART-FORM-BLACKSCR AC-4: Draw context 초기화 실패 → fallback
     if (!ctx) {
       console.error('[PenChartTab] drawCanvas 2D context 초기화 실패 (GPU/메모리 한계)', activeDrawTemplate?.form_key);
+      setBgImgErrorReason(`E1d draw-ctx-null · ${activeDrawTemplate?.form_key ?? '-'}`); // eslint-disable-line react-hooks/exhaustive-deps
       setBgImgLoadError(true); // eslint-disable-line react-hooks/exhaustive-deps
       return;
     }
@@ -1321,6 +1348,7 @@ export function PenChartTab({
     // T-20260525-foot-PENCHART-FORM-BLACKSCR AC-4: draw 레이어 캔버스 크기 할당 실패 방어
     if (canvas.width === 0 || canvas.height === 0) {
       console.error('[PenChartTab] drawCanvas 크기 할당 실패 (GPU 메모리 초과 가능)', { canvasH, formKey: activeDrawTemplate?.form_key });
+      setBgImgErrorReason(`E3d draw-canvas-alloc-0 ${CANVAS_W * dpr}×${canvasH * dpr} · ${activeDrawTemplate?.form_key ?? '-'}`); // eslint-disable-line react-hooks/exhaustive-deps
       setBgImgLoadError(true); // eslint-disable-line react-hooks/exhaustive-deps
       return;
     }
@@ -1406,6 +1434,8 @@ export function PenChartTab({
 
   const initCanvas = useCallback(() => {
     setBgImgLoadError(false); // T-20260525-foot-PENCHART-FORM-BLACK AC-4: 재시도 시 에러 초기화
+    setBgImgErrorReason(null);   // T-20260608-foot-PENCHART-REFUND-FORMIMG: 재시도/양식 진입 시 단계코드 리셋
+    bgImgRetryRef.current = 0;    // T-20260608-foot-PENCHART-REFUND-FORMIMG: cache-bust 재시도 카운터 리셋
     initBgCanvas();
     initDrawCanvas();
     emptyRef.current = true;
@@ -1556,6 +1586,7 @@ export function PenChartTab({
     const onContextLost = (e: Event) => {
       e.preventDefault(); // 브라우저가 context 복구를 시도하도록 preventDefault 필요
       console.error('[PenChartTab] bgCanvas contextlost 이벤트 — GPU context 소실');
+      setBgImgErrorReason(`E9 contextlost 이벤트 (GPU 소실) · ${activeDrawTemplate?.form_key ?? '-'}`);
       setBgImgLoadError(true);
     };
     const onContextRestored = () => {
@@ -2730,6 +2761,26 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
                 <p style={{ fontSize: 14, color: '#6b7280', textAlign: 'center', margin: 0 }}>
                   양식 이미지를 불러올 수 없습니다.
                 </p>
+                {/* T-20260608-foot-PENCHART-REFUND-FORMIMG AC-2: 실패 단계 코드 화면 노출 —
+                    Galaxy Tab은 DevTools 콘솔 캡처 불가(LATENCY 메타-루트코즈) → 스크린샷 1장으로
+                    8개 실패 stage(E1~E9) 중 실제 원인을 가른다. b5a7979 펜 성능 배지와 동일 전략. */}
+                {bgImgErrorReason && (
+                  <code
+                    data-testid="penchart-bg-error-reason"
+                    style={{
+                      fontSize: 11,
+                      lineHeight: 1.4,
+                      color: '#9ca3af',
+                      fontFamily: 'ui-monospace, Menlo, monospace',
+                      textAlign: 'center',
+                      maxWidth: 320,
+                      wordBreak: 'break-all',
+                      margin: 0,
+                    }}
+                  >
+                    {bgImgErrorReason}
+                  </code>
+                )}
                 <button
                   style={{
                     marginTop: 4,
