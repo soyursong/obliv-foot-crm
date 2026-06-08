@@ -125,3 +125,26 @@ export function saveMute(muted: boolean): void {
     /* noop */
   }
 }
+
+// ─── 앱레벨 알림 on/off 영속 (localStorage) ──────────────────────────────────
+// T-20260609-foot-DOCTOR-CALL-ALARM-TOGGLE-OFF (문지은 대표원장: "알람을 끌 수가 없다").
+//   브라우저 권한이 granted여도, 앱이 OS 배너/토스트를 띄울지 사용자가 직접 끌 수 있어야 함.
+//   (JS로 Notification 권한 자체를 revoke할 수 없는 한계 → 앱레벨 게이트로 해결.)
+//   기본값 ON. '0'이면 OFF, 그 외(미설정 포함)는 ON.
+const NOTIFY_KEY = 'foot.doctorCall.notifyEnabled';
+
+export function loadNotifyEnabled(): boolean {
+  try {
+    return localStorage.getItem(NOTIFY_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+export function saveNotifyEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(NOTIFY_KEY, enabled ? '1' : '0');
+  } catch {
+    /* noop */
+  }
+}

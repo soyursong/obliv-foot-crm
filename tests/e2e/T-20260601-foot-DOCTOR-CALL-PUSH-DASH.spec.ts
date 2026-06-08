@@ -32,6 +32,7 @@ import {
   formatElapsed,
   treatmentLabel,
   buildCallNotification,
+  loadNotifyEnabled,
 } from '../../src/lib/doctor-call-notify';
 import { loginAndWaitForDashboard } from '../helpers';
 
@@ -138,6 +139,13 @@ test.describe('T-20260601 DOCTOR-CALL-PUSH-DASH — 순수 로직 박제', () =>
     const n2 = buildCallNotification(ci({ customer_name: '이영희' }), null);
     expect(n2.body).toBe('대기 · 시술 미지정');
   });
+
+  // ── T-20260609 ALARM-TOGGLE-OFF: 앱레벨 알림 on/off 기본값 ──────────────────
+  // 문지은 대표원장: "알람을 켤 순 있는데 끌 수가 없다." → 앱레벨 토글 도입(영속).
+  // localStorage 미설정(node 환경 = storage 없음)일 때 기본 ON 이어야 함(폴백 안전).
+  test('AC2: loadNotifyEnabled 기본값 ON', () => {
+    expect(loadNotifyEnabled()).toBe(true);
+  });
 });
 
 // ── 렌더 스모크 (데이터/인증 없으면 graceful skip) ───────────────────────────
@@ -161,6 +169,39 @@ test.describe('T-20260601 DOCTOR-CALL-PUSH-DASH — 통합 대시보드 렌더',
     await expect(page.locator('[data-testid="doctor-call-feed"]')).toBeVisible();
     await expect(page.locator('[data-testid="doctor-completed-section"]')).toBeVisible();
     // AC-2: 음소거 토글 존재
-    await expect(page.locator('[data-testid="doctor-call-mute-toggle"]')).toBeVisible();
+    const muteToggle = page.locator('[data-testid="doctor-call-mute-toggle"]');
+    await expect(muteToggle).toBeVisible();
+    // T-20260609 AC1: 소리 토글은 행동 레이블('소리 켜기'/'소리 끄기') — 상태 레이블('소리 켜짐') 아님(끌 수 있게).
+    await expect(muteToggle).toHaveText(/소리 (켜기|끄기)/);
+  });
+
+  // T-20260609 ALARM-TOGGLE-OFF (문지은 대표원장): 알림을 끌 수 있어야 함.
+  test('T-20260609 AC2: 권한 결정 후 앱레벨 알림 on/off 토글이 동선에 존재(끌 수 있음)', async ({
+    page,
+    context,
+  }) => {
+    // 브라우저 알림 권한을 granted로 부여 → "끌 수 없던" granted 케이스를 재현.
+    await context.grantPermissions(['notifications']);
+    const ok = await loginAndWaitForDashboard(page);
+    if (!ok) {
+      test.skip(true, '로그인 실패 — 스킵');
+      return;
+    }
+    await page.goto('/admin/doctor-tools');
+    const tab = page.locator('[data-testid="tab-call-dashboard"]');
+    if ((await tab.count()) === 0) {
+      test.skip(true, '진료 알림판 탭 미표시(권한/환경) — 스킵');
+      return;
+    }
+    await tab.click();
+    await expect(page.locator('[data-testid="doctor-call-dashboard"]')).toBeVisible();
+    const notifyToggle = page.locator('[data-testid="doctor-call-notify-toggle"]');
+    // granted 환경 → 토글 노출 + '알림 끄기' 액션 가능(이전엔 비클릭 span '알림 켜짐'뿐이었음).
+    await expect(notifyToggle).toBeVisible();
+    await expect(notifyToggle).toHaveText(/알림 (켜기|끄기)/);
+    const before = await notifyToggle.textContent();
+    await notifyToggle.click();
+    // 클릭 시 레이블이 반전(켜기↔끄기) — 실제로 끄고 켜는 동선이 닫힘.
+    await expect(notifyToggle).not.toHaveText(before ?? '');
   });
 });

@@ -42,6 +42,12 @@ export function currentNotifyPermission(): NotificationPermission | 'unsupported
 interface Options {
   /** 음소거 — true면 소리만 끔(화면 알림은 유지) */
   muted: boolean;
+  /**
+   * 앱레벨 알림 on/off (T-20260609-foot-DOCTOR-CALL-ALARM-TOGGLE-OFF).
+   * false면 OS 배너/토스트 알림을 띄우지 않음(브라우저 권한 granted여도). 소리는 muted로 별도 제어.
+   * 기본 true.
+   */
+  notifyEnabled?: boolean;
   /** false면 감지/알림 비활성 */
   enabled?: boolean;
 }
@@ -49,11 +55,16 @@ interface Options {
 /**
  * @param activeCalls status_flag='purple' 인 활성 호출 목록 (부모가 memoize 권장)
  */
-export function useDoctorCallNotifier(activeCalls: CheckIn[], { muted, enabled = true }: Options): void {
+export function useDoctorCallNotifier(
+  activeCalls: CheckIn[],
+  { muted, notifyEnabled = true, enabled = true }: Options,
+): void {
   const seenRef = useRef<Set<string>>(new Set());
   const initializedRef = useRef(false);
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
+  const notifyEnabledRef = useRef(notifyEnabled);
+  notifyEnabledRef.current = notifyEnabled;
 
   useEffect(() => {
     if (!enabled) return;
@@ -77,6 +88,9 @@ export function useDoctorCallNotifier(activeCalls: CheckIn[], { muted, enabled =
 
     // 소리: 신규 호출 묶음당 1회 (음소거 시 생략)
     if (!mutedRef.current) playDoctorCallAlert();
+
+    // 앱레벨 알림 OFF → OS 배너/토스트 모두 생략 (소리만 별도). seen은 이미 갱신됨 → 켜도 백로그 폭주 없음.
+    if (!notifyEnabledRef.current) return;
 
     // 화면 알림: 신규 호출별 OS 배너 / 폴백 토스트
     for (const ci of newOnes) {
