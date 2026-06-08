@@ -343,6 +343,10 @@ function TemplateManageSheet({
                 {(t.trial_sessions ?? 0) > 0 && (
                   <div>체험권 {t.trial_sessions}회 · {formatAmount(t.trial_unit_price ?? 0)}</div>
                 )}
+                {/* T-20260608-foot-PKG-REBORN-TEMPLATE-MGMT: Re:Born 6번째 항목 */}
+                {(t.reborn_sessions ?? 0) > 0 && (
+                  <div>Re:Born {t.reborn_sessions}회 · {formatAmount(t.reborn_unit_price ?? 0)}</div>
+                )}
               </div>
               <div className="mt-1.5 font-medium text-teal-700">
                 총 {formatAmount(t.total_price)}
@@ -410,6 +414,9 @@ function PackageTemplateDialog({
   // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
   const [trialSessions, setTrialSessions] = useState(0);
   const [trialUnitPrice, setTrialUnitPrice] = useState(0);
+  // T-20260608-foot-PKG-REBORN-TEMPLATE-MGMT: Re:Born 6번째 항목
+  const [rebornSessions, setRebornSessions] = useState(0);
+  const [rebornUnitPrice, setRebornUnitPrice] = useState(0);
   // 총금액
   const [priceOverride, setPriceOverride] = useState(false);
   const [manualPrice, setManualPrice] = useState(0);
@@ -424,8 +431,9 @@ function PackageTemplateDialog({
       unheatedSessions * unheatedUnitPrice +
       podologeSessions * podologeUnitPrice +
       ivSessions * ivUnitPrice +
-      trialSessions * trialUnitPrice,
-    [heatedSessions, heatedUnitPrice, unheatedSessions, unheatedUnitPrice, podologeSessions, podologeUnitPrice, ivSessions, ivUnitPrice, trialSessions, trialUnitPrice],
+      trialSessions * trialUnitPrice +
+      rebornSessions * rebornUnitPrice,
+    [heatedSessions, heatedUnitPrice, unheatedSessions, unheatedUnitPrice, podologeSessions, podologeUnitPrice, ivSessions, ivUnitPrice, trialSessions, trialUnitPrice, rebornSessions, rebornUnitPrice],
   );
 
   const finalPrice = priceOverride ? manualPrice : computedTotal;
@@ -447,6 +455,8 @@ function PackageTemplateDialog({
       setIvUnitPrice(template.iv_unit_price);
       setTrialSessions(template.trial_sessions ?? 0);
       setTrialUnitPrice(template.trial_unit_price ?? 0);
+      setRebornSessions(template.reborn_sessions ?? 0);
+      setRebornUnitPrice(template.reborn_unit_price ?? 0);
       setPriceOverride(template.price_override);
       setManualPrice(template.total_price);
       setMemo(template.memo ?? '');
@@ -458,6 +468,7 @@ function PackageTemplateDialog({
       setPodologeSessions(0); setPodologeUnitPrice(0);
       setIvCompany(''); setIvSessions(0); setIvUnitPrice(0);
       setTrialSessions(0); setTrialUnitPrice(0);
+      setRebornSessions(0); setRebornUnitPrice(0);
       setPriceOverride(false); setManualPrice(0);
       setMemo(''); setSortOrder(0);
     }
@@ -488,6 +499,9 @@ function PackageTemplateDialog({
       // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
       trial_sessions: trialSessions,
       trial_unit_price: trialUnitPrice,
+      // T-20260608-foot-PKG-REBORN-TEMPLATE-MGMT: Re:Born 6번째 항목
+      reborn_sessions: rebornSessions,
+      reborn_unit_price: rebornUnitPrice,
       total_price: finalPrice,
       price_override: priceOverride,
       memo: memo.trim() || null,
@@ -662,6 +676,28 @@ function PackageTemplateDialog({
             )}
           </div>
 
+          {/* T-20260608-foot-PKG-REBORN-TEMPLATE-MGMT: Re:Born 6번째 항목 */}
+          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+            <div className="text-xs font-semibold text-muted-foreground">Re:Born</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">회수</Label>
+                <Input type="number" min={0} value={rebornSessions}
+                  onChange={(e) => setRebornSessions(Math.max(0, Number(e.target.value) || 0))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">수가 (회당)</Label>
+                <AmountInput value={rebornUnitPrice}
+                  onChange={(raw) => setRebornUnitPrice(Number(raw) || 0)} />
+              </div>
+            </div>
+            {rebornSessions > 0 && (
+              <div className="text-xs text-muted-foreground text-right">
+                소계: {formatAmount(rebornSessions * rebornUnitPrice)}
+              </div>
+            )}
+          </div>
+
           {/* 총금액 */}
           <div className="rounded-lg border border-teal-200 bg-teal-50/40 p-3 space-y-2">
             <div className="flex items-center justify-between">
@@ -753,6 +789,9 @@ function PackageCreateDialog({
   // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
   const [trial, setTrial] = useState(0);
   const [trialUnitPrice, setTrialUnitPrice] = useState(0);
+  // T-20260608-foot-PKG-REBORN-TEMPLATE-MGMT: Re:Born 6번째 항목
+  const [reborn, setReborn] = useState(0);
+  const [rebornUnitPrice, setRebornUnitPrice] = useState(0);
 
   // 총금액
   const [priceOverride, setPriceOverride] = useState(false);
@@ -767,8 +806,9 @@ function PackageCreateDialog({
       unheated * unheatedUnitPrice +
       podologe * podologeUnitPrice +
       iv * ivUnitPrice +
-      trial * trialUnitPrice,
-    [heated, heatedUnitPrice, unheated, unheatedUnitPrice, podologe, podologeUnitPrice, iv, ivUnitPrice, trial, trialUnitPrice],
+      trial * trialUnitPrice +
+      reborn * rebornUnitPrice,
+    [heated, heatedUnitPrice, unheated, unheatedUnitPrice, podologe, podologeUnitPrice, iv, ivUnitPrice, trial, trialUnitPrice, reborn, rebornUnitPrice],
   );
   const finalTotal = priceOverride ? manualTotal : computedTotal;
 
@@ -797,6 +837,7 @@ function PackageCreateDialog({
           setIv(first.iv_sessions); setIvUnitPrice(first.iv_unit_price);
           setIvCompany(first.iv_company ?? '');
           setTrial(first.trial_sessions ?? 0); setTrialUnitPrice(first.trial_unit_price ?? 0);
+          setReborn(first.reborn_sessions ?? 0); setRebornUnitPrice(first.reborn_unit_price ?? 0);
           setPriceOverride(false);
           setMemo(first.memo ?? '');
         }
@@ -813,6 +854,7 @@ function PackageCreateDialog({
     setPodologe(0); setPodologeUnitPrice(0);
     setIv(0); setIvUnitPrice(0); setIvCompany('');
     setTrial(0); setTrialUnitPrice(0);
+    setReborn(0); setRebornUnitPrice(0);
     setPriceOverride(false); setManualTotal(0); setMemo('');
   }, [open]);
 
@@ -837,6 +879,8 @@ function PackageCreateDialog({
     setIvCompany(tmpl.iv_company ?? '');
     setTrial(tmpl.trial_sessions ?? 0);
     setTrialUnitPrice(tmpl.trial_unit_price ?? 0);
+    setReborn(tmpl.reborn_sessions ?? 0);
+    setRebornUnitPrice(tmpl.reborn_unit_price ?? 0);
     setPriceOverride(false);
     setMemo(tmpl.memo ?? '');
   };
@@ -849,13 +893,14 @@ function PackageCreateDialog({
     setPodologe(0); setPodologeUnitPrice(0);
     setIv(0); setIvUnitPrice(0); setIvCompany('');
     setTrial(0); setTrialUnitPrice(0);
+    setReborn(0); setRebornUnitPrice(0);
     setPriceOverride(false); setManualTotal(0); setMemo('');
   };
 
   const submit = async () => {
     if (!clinicId) return;
     if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
-    if (heated + unheated + podologe + iv + trial === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
+    if (heated + unheated + podologe + iv + trial + reborn === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
     setSubmitting(true);
     const { error } = await supabase.from('package_templates').insert({
       clinic_id: clinicId,
@@ -874,6 +919,9 @@ function PackageCreateDialog({
       // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
       trial_sessions: trial,
       trial_unit_price: trialUnitPrice,
+      // T-20260608-foot-PKG-REBORN-TEMPLATE-MGMT: Re:Born 6번째 항목
+      reborn_sessions: reborn,
+      reborn_unit_price: rebornUnitPrice,
       total_price: finalTotal,
       price_override: priceOverride,
       memo: memo.trim() || null,
@@ -1082,6 +1130,28 @@ function PackageCreateDialog({
             )}
           </div>
 
+          {/* T-20260608-foot-PKG-REBORN-TEMPLATE-MGMT: Re:Born 6번째 항목 */}
+          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+            <div className="text-xs font-semibold text-muted-foreground">Re:Born</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">회수</Label>
+                <Input type="number" min={0} value={reborn}
+                  onChange={(e) => setReborn(Math.max(0, Number(e.target.value) || 0))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">수가 (회당)</Label>
+                <AmountInput value={rebornUnitPrice}
+                  onChange={(raw) => setRebornUnitPrice(Number(raw) || 0)} />
+              </div>
+            </div>
+            {reborn > 0 && rebornUnitPrice > 0 && (
+              <div className="text-xs text-muted-foreground text-right">
+                소계: {formatAmount(reborn * rebornUnitPrice)}
+              </div>
+            )}
+          </div>
+
           {/* T-20260511-foot-PKG-DYNAMIC-TABLE: 기입된 항목만 표시하는 동적 요약 표 */}
           {(() => {
             const previewRows = [
@@ -1099,6 +1169,9 @@ function PackageCreateDialog({
                 : null,
               trial > 0 || trialUnitPrice > 0
                 ? { label: '체험권', count: trial, unitPrice: trialUnitPrice, subtotal: trial * trialUnitPrice }
+                : null,
+              reborn > 0 || rebornUnitPrice > 0
+                ? { label: 'Re:Born', count: reborn, unitPrice: rebornUnitPrice, subtotal: reborn * rebornUnitPrice }
                 : null,
             ].filter(Boolean) as { label: string; count: number; unitPrice: number; subtotal: number }[];
             if (previewRows.length === 0) return null;
@@ -1169,7 +1242,7 @@ function PackageCreateDialog({
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>취소</Button>
           <Button
             size="sm"
-            disabled={submitting || (heated + unheated + podologe + iv === 0)}
+            disabled={submitting || (heated + unheated + podologe + iv + reborn === 0)}
             onClick={submit}
           >
             {submitting ? '저장 중…' : '템플릿 추가 후 생성'}
@@ -1258,6 +1331,12 @@ function PackageDetailSheet({
             <div className="rounded bg-muted/40 px-2.5 py-1.5 text-xs">
               포돌로게 {pkg.podologe_sessions}회 (별도 관리)
               {pkg.iv_company && <span className="ml-2 text-muted-foreground">· 수액: {pkg.iv_company}</span>}
+            </div>
+          )}
+          {/* T-20260608-foot-PKG-REBORN-TEMPLATE-MGMT: Re:Born 회차 현황 */}
+          {(pkg.reborn_sessions ?? 0) > 0 && (
+            <div className="rounded bg-muted/40 px-2.5 py-1.5 text-xs">
+              Re:Born {(pkg.reborn_sessions ?? 0) - (remaining?.reborn ?? (pkg.reborn_sessions ?? 0))}/{pkg.reborn_sessions}회 사용
             </div>
           )}
 
