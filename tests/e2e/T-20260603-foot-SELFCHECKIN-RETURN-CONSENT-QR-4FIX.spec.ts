@@ -51,7 +51,9 @@ test.describe('T-20260603-4FIX AC2 동의 기본 체크', () => {
     await expect(ins).toBeChecked();
   });
 
-  test('confirm 화면 — 예약 안내 문자(sms) 동의는 기본 미체크(false)', async ({ page }) => {
+  // T-20260608-foot-RESV-INTAKE-REGRESSION-BATCH AC-4 가 4FIX AC2(sms 기본 미체크)를 SUPERSEDE.
+  //   현장(김주연 총괄) 지시로 sms 선택동의도 기본 체크(true)로 전환됨.
+  test('confirm 화면 — 예약 안내 문자(sms) 동의는 기본 체크(true) [AC-4 supersede]', async ({ page }) => {
     await gotoNewPersonalInfo(page, `sms-def-${s}`, `010${s}0012`);
 
     // 주민번호 6자리 + 주소 입력 → 다음
@@ -61,10 +63,10 @@ test.describe('T-20260603-4FIX AC2 동의 기본 체크', () => {
     await page.locator('[data-testid="pi-address-input"]').fill('서울특별시 종로구');
     await page.locator('[data-testid="btn-personal-info-next"]').click();
 
-    // confirm 단계 — sms 체크박스 기본 미체크
+    // confirm 단계 — sms 체크박스 기본 체크 (AC-4)
     const smsBox = page.locator('#sms-opt-in');
     await expect(smsBox).toBeVisible({ timeout: 6000 });
-    await expect(smsBox).not.toBeChecked();
+    await expect(smsBox).toBeChecked();
   });
 });
 
@@ -72,7 +74,9 @@ test.describe('T-20260603-4FIX AC2 동의 기본 체크', () => {
 test.describe('T-20260603-4FIX AC3 문자 중복 제거', () => {
   const s = sfx();
 
-  test('confirm 화면 — sms 부가 안내(중복) 제거 + 동의 라벨 1회만 노출', async ({ page }) => {
+  // T-20260608-foot-RESV-INTAKE-REGRESSION-BATCH AC-5 가 4FIX AC3(부가 안내 제거)를 SUPERSEDE.
+  //   현장 지시로 미동의 영향 안내문구를 신규 정문안으로 복원. 라벨도 '예약 안내 문자...' 로 정렬.
+  test('confirm 화면 — sms 라벨 1회 + 미동의 안내문구 노출 [AC-5 supersede]', async ({ page }) => {
     await gotoNewPersonalInfo(page, `dup-${s}`, `010${s}0013`);
 
     for (const d of ['9', '0', '0', '1', '0', '1']) {
@@ -81,13 +85,15 @@ test.describe('T-20260603-4FIX AC3 문자 중복 제거', () => {
     await page.locator('[data-testid="pi-address-input"]').fill('서울특별시 중구');
     await page.locator('[data-testid="btn-personal-info-next"]').click();
 
-    // 동의 라벨 1회만 노출
-    const label = page.getByText('예약 안내 등 문자 수신에 동의합니다 (선택)');
+    // 동의 라벨 1회만 노출 (현장 정렬 문안)
+    const label = page.getByText('예약 안내 문자 수신에 동의합니다 (선택)');
     await expect(label).toBeVisible({ timeout: 6000 });
     await expect(label).toHaveCount(1);
 
-    // 중복 부가 안내(sms-opt-in-note) 제거 확인
-    await expect(page.locator('[data-testid="sms-opt-in-note"]')).toHaveCount(0);
+    // AC-5: 미동의 영향 안내문구 노출 + 정확 문안
+    const note = page.locator('[data-testid="sms-opt-in-note"]');
+    await expect(note).toHaveCount(1);
+    await expect(note).toHaveText('미동의 시 예약 안내 문자, 홈케어 방법 등 자동 발송 대상에서 제외될 수 있습니다');
   });
 });
 

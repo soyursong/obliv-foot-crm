@@ -221,8 +221,9 @@ const T: Record<Lang, {
     failPrefix: '접수 실패: ',
     errorPrefix: '오류가 발생했습니다: ',
     duplicateCheckIn: '이미 접수된 예약입니다. 대기열을 확인하거나 직원에게 문의해 주세요.',
-    smsOptIn: '예약 안내 등 문자 수신에 동의합니다 (선택)',
-    smsOptInNote: '수신에 동의하지 않으실 경우 예약일자 자동 안내 문자를 받지 못할 수 있습니다',
+    smsOptIn: '예약 안내 문자 수신에 동의합니다 (선택)',
+    // T-20260608-foot-RESV-INTAKE-REGRESSION-BATCH AC-5: 미동의 영향 안내 문구(현장 지정 정문안)
+    smsOptInNote: '미동의 시 예약 안내 문자, 홈케어 방법 등 자동 발송 대상에서 제외될 수 있습니다',
     // 개인정보 입력 단계
     personalInfoTitle: '개인 정보 입력',
     rrnLabel: '주민번호',
@@ -324,7 +325,7 @@ const T: Record<Lang, {
     errorPrefix: 'Error: ',
     duplicateCheckIn: 'Already checked in. Please check the queue or contact the front desk.',
     smsOptIn: 'I agree to receive appointment and other SMS notifications (optional)',
-    smsOptInNote: 'If you do not consent, you may not receive automated appointment reminder messages.',
+    smsOptInNote: 'If you do not consent, you may be excluded from automated messages such as appointment reminders and home-care guides.',
     // Personal info step
     personalInfoTitle: 'Personal Information',
     rrnLabel: 'ID Number',
@@ -590,9 +591,10 @@ export default function SelfCheckIn() {
   const [submitting, setSubmitting] = useState(false);
   const [queueNumber, setQueueNumber] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
-  // T-20260603-foot-SELFCHECKIN-RETURN-CONSENT-QR-4FIX AC2: SMS 수신동의는 '선택' 동의 →
-  //   다크패턴 방지 위해 기본 미체크(false). 사용자가 직접 체크해야 함.
-  const [smsOptIn, setSmsOptIn] = useState(false);
+  // T-20260603-foot-SELFCHECKIN-RETURN-CONSENT-QR-4FIX AC2: SMS 수신동의는 '선택' 동의(기본 미체크였음).
+  // T-20260608-foot-RESV-INTAKE-REGRESSION-BATCH AC-4: 현장(김주연 총괄) 지시로 기본 체크(true) 전환.
+  //   예약 안내 문자 수신을 기본 동의로 노출 — 미동의 시 AC-5 안내문구로 영향 고지.
+  const [smsOptIn, setSmsOptIn] = useState(true);
 
   // ── T-20260529-foot-SELFCHECKIN-FLOW-REVAMP: 개인정보 입력 상태 ──
   const [rrn, setRrn] = useState('');                    // YYMMDD-XXXXXXX 포맷
@@ -687,11 +689,12 @@ export default function SelfCheckIn() {
     // T-20260529-foot-SELFCHECKIN-FLOW-REVAMP
     setRrn('');
     setAddress('');
-    // T-20260603-foot-SELFCHECKIN-RETURN-CONSENT-QR-4FIX AC2: 동의 기본값 재설정
-    //   필수 동의(개인정보/건강보험)는 기본 체크(true), 선택 동의(SMS)는 기본 미체크(false).
+    // T-20260603-foot-SELFCHECKIN-RETURN-CONSENT-QR-4FIX AC2: 동의 기본값 재설정.
+    //   필수 동의(개인정보/건강보험)는 기본 체크(true).
+    // T-20260608-foot-RESV-INTAKE-REGRESSION-BATCH AC-4: SMS 선택동의도 기본 체크(true)로 통일.
     setPrivacyConsent(true);
     setInsuranceConsent(true); // AC-7
-    setSmsOptIn(false);
+    setSmsOptIn(true);
     setHealthQToken(null);
     setQrCountdown(QR_SCREEN_SECONDS);
     // T-20260601-foot-SELFLOGIN-RESV-LIST-QR
@@ -2213,9 +2216,8 @@ export default function SelfCheckIn() {
             )}
           </div>
           {/* T-20260525-foot-MESSAGING-V1 AC-5: SMS 수신동의 체크박스
-              T-20260603-foot-SELFCHECKIN-RETURN-CONSENT-QR-4FIX AC3: 예약 안내 문자 중복 제거 —
-              체크박스 라벨(t.smsOptIn)이 이미 '예약 안내 문자 수신 동의'를 안내하므로,
-              동일 내용을 반복하던 하단 부가 안내(smsOptInNote)를 제거하여 1회만 노출. */}
+              T-20260608-foot-RESV-INTAKE-REGRESSION-BATCH AC-5: 체크박스 하단에 미동의 영향 안내문구
+              (현장 지정 정문안) 재노출. 4FIX 에서 제거했던 보조문구를 현장 요청으로 신규 문안으로 복원. */}
           <div className="space-y-1">
             <label
               htmlFor="sms-opt-in"
@@ -2232,6 +2234,10 @@ export default function SelfCheckIn() {
               />
               <span className="text-sm leading-relaxed">{t.smsOptIn}</span>
             </label>
+            {/* AC-5: 미동의 시 영향 안내 — 회색 보조문구, 체크박스 라벨 들여쓰기에 맞춤 */}
+            <p className="text-xs leading-relaxed pl-8" style={{ color: C.muted }} data-testid="sms-opt-in-note">
+              {t.smsOptInNote}
+            </p>
           </div>
           <div className="flex gap-3">
             <button
