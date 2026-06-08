@@ -339,6 +339,32 @@ const getCanvasHeightForForm = (formKey: string | undefined): number => {
   return CANVAS_H;
 };
 
+/**
+ * T-20260608-foot-PENCHART-FORM-LOAD-FAIL AC-4: 실패 단계코드(E1~E9) → 현장용 사유 힌트.
+ *   현장(김주연 총괄 Galaxy Tab)은 'E4 net/CORS onerror …' 기술코드를 해석할 수 없다.
+ *   → 코드를 (a) 일시적(transient: 재시도로 복구 가능) / (b) 영구(구조적: 반복 시 관리자 문의)로 분류하고
+ *     무엇을 해야 하는지 한국어 한 줄로 안내한다. 기술코드(bgImgErrorReason)는 스크린샷 진단용으로 별도 유지.
+ *
+ *   분류 근거(과거 BLACK/BLACKSCR 티켓 루트코즈 기반):
+ *     transient — GPU 소실/메모리 압박/네트워크 블립: E2 ctx-lost(init) · E3 canvas-alloc-0 ·
+ *                 E4 net/CORS · E6 ctx-lost(onload/post-decode/tile) · E9 contextlost 이벤트.
+ *                 → 재시도 버튼 또는 양식 재진입으로 회복되는 경우가 많음.
+ *     permanent  — ctx 생성 불가/decode 실패/drawImage 실패: E1 ctx-null · E1d draw-ctx-null ·
+ *                 E3d draw-canvas-alloc-0 · E5 naturalWidth=0 · E7 decode() throw · E8 drawImage throw.
+ *                 → 기기/이미지 자체 한계 가능 → 반복 시 관리자 에스컬레이션 필요.
+ */
+const TRANSIENT_BG_ERROR_CODES = ['E2', 'E3', 'E4', 'E6', 'E9'];
+function classifyBgImgError(reason: string | null): { transient: boolean; hint: string } {
+  // reason 예: 'E4 net/CORS onerror (재시도 1회) · …xxxxx'. 선두 토큰이 단계코드.
+  const code = (reason ?? '').split(' ')[0];
+  const transient = TRANSIENT_BG_ERROR_CODES.includes(code);
+  // 주의: 아래 hint 문구·이 파일 주석에는 버튼 라벨 문자열(재시도 버튼의 라벨)을 그대로 넣지 않는다 —
+  //   BLACK spec 이 그 라벨의 첫 매치를 버튼으로 가정(indexOf)하므로, 첫 매치 위치를 흐트러뜨리지 않기 위함.
+  return transient
+    ? { transient: true,  hint: '일시적인 오류일 수 있어요. 아래 버튼을 눌러 다시 불러와 주세요. 반복되면 잠시 후 다시 열거나 관리자에게 알려주세요.' }
+    : { transient: false, hint: '이미지를 표시할 수 없는 상태예요. 아래 버튼으로 재시도해도 반복되면 관리자에게 문의해주세요.' };
+}
+
 
 
 // ─── FullscreenFormWrapper ─────────────────────────────────────────────────
@@ -1129,13 +1155,15 @@ export function PenChartTab({
       const urlTail = bgUrl.length > 28 ? `…${bgUrl.slice(-28)}` : bgUrl;
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      // T-20260608-foot-PENCHART-REFUND-FORMIMG AC-1: network/CORS onerror → cache-bust 1회 자동 재시도.
+      // T-20260608-foot-PENCHART-REFUND-FORMIMG AC-1 / T-20260608-foot-PENCHART-FORM-LOAD-FAIL AC-2:
+      //   network/CORS onerror → cache-bust 자동 재시도. FORM-LOAD-FAIL 에서 1회 → 2회로 상향
+      //   (현장 갤럭시탭 일시 네트워크 블립이 1회 재시도로 안 잡히는 재발 정황 → 마진 +1회).
       //   Android WebView crossOrigin 캐시 오염(비-CORS 캐시 응답 재사용) + 일시 네트워크 블립을 즉시 회복.
       //   재시도는 src에 ?cb= 쿼리만 덧붙여 캐시 우회(동일 오리진 정적 자산엔 무해, 서명 URL엔 영향 없음).
-      //   ※ 핸들러 본문은 BLACK spec(onerror+300자 윈도우)이 console.error+setBgImgLoadError(true)를
-      //     확인하므로, 재시도 분기를 한 줄로 압축해 두 호출이 윈도우 안에 남도록 유지(AC-3 비파괴).
+      //   backoff(setTimeout)는 미적용 — onerror+300자 윈도우(BLACK/REFUND-FORMIMG spec)에
+      //     console.error+setBgImgLoadError(true)+cb=+img.src= 가 남도록 한 줄 압축 유지(AC-3 비파괴).
       img.onerror = () => {
-        if (bgImgRetryRef.current++ < 1) { img.src = `${bgUrl}${bgUrl.includes('?') ? '&' : '?'}cb=${Date.now()}`; return; }
+        if (bgImgRetryRef.current++ < 2) { img.src = `${bgUrl}${bgUrl.includes('?') ? '&' : '?'}cb=${Date.now()}`; return; }
         console.error('[PenChartTab] 배경 이미지 로드 실패(network/CORS), 흰 배경 fallback:', bgUrl);
         setBgImgLoadError(true);
         setBgImgErrorReason(`E4 net/CORS onerror (재시도 ${bgImgRetryRef.current - 1}회) · ${urlTail}`);
@@ -2761,6 +2789,21 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
                 <p style={{ fontSize: 14, color: '#6b7280', textAlign: 'center', margin: 0 }}>
                   양식 이미지를 불러올 수 없습니다.
                 </p>
+                {/* T-20260608-foot-PENCHART-FORM-LOAD-FAIL AC-4: 현장용 사유 힌트 —
+                    기술코드(E1~E9)는 현장이 해석 불가 → 양식명 + 일시적/영구 분류 + 행동 안내를
+                    사람이 읽을 한 줄로 노출. 작업 막힌 현장이 "재시도 vs 관리자 문의"를 즉시 판단. */}
+                {(() => {
+                  const { hint } = classifyBgImgError(bgImgErrorReason);
+                  const formName = activeDrawTemplate?.name_ko;
+                  return (
+                    <p
+                      data-testid="penchart-bg-error-hint"
+                      style={{ fontSize: 13, color: '#4b5563', textAlign: 'center', maxWidth: 320, lineHeight: 1.5, margin: 0 }}
+                    >
+                      {formName ? `${formName} — ` : ''}{hint}
+                    </p>
+                  );
+                })()}
                 {/* T-20260608-foot-PENCHART-REFUND-FORMIMG AC-2: 실패 단계 코드 화면 노출 —
                     Galaxy Tab은 DevTools 콘솔 캡처 불가(LATENCY 메타-루트코즈) → 스크린샷 1장으로
                     8개 실패 stage(E1~E9) 중 실제 원인을 가른다. b5a7979 펜 성능 배지와 동일 전략. */}
