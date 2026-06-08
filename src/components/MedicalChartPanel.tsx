@@ -1804,12 +1804,6 @@ export default function MedicalChartPanel({
                       <span className="ml-1 text-yellow-600 font-bold">[더미]</span>
                     )}
                   </span>
-                  <p className="text-[9px] font-normal normal-case text-muted-foreground/70 mt-0.5 leading-tight">
-                    진료메모·치료메모·처방 시간순 · 클릭하면 우측 폼에서 편집
-                  </p>
-                  <p className="text-[9px] font-normal normal-case text-muted-foreground/60 mt-0.5 leading-tight">
-                    💬 상담기록은 우측 <span className="font-semibold text-muted-foreground/80">📋 상담</span> 탭에서 확인
-                  </p>
                 </div>
 
                 <div className="flex-1 overflow-y-auto">
