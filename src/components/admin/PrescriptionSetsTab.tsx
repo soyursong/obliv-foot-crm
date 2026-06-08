@@ -2,7 +2,7 @@
 // Ticket: T-20260502-foot-DOCTOR-TREATMENT-FLOW (Sub 3, 포팅: derm → foot)
 // 어드민에서 처방세트 CRUD — 의사가 진료 시 처방 목록을 한 번에 불러옴
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
-import { Loader2, Plus, Pencil, Trash2, X, Folder, Check } from 'lucide-react';
+import { Loader2, Plus, Pencil, Trash2, X, Folder, Check, Search, Link2 } from 'lucide-react';
 import RxCountInput from '@/components/admin/RxCountInput';
 
 // ---------------------------------------------------------------------------
@@ -53,6 +53,36 @@ export function classificationToRoute(classification: string | null | undefined)
   if (c.includes('점안')) return '점안';
   if (c.includes('흡입')) return '흡입';
   return ''; // 처치료 등 미매칭 → 기타(회색)
+}
+
+// T-20260608-foot-RXSET-MGMT-DRUG-SEARCH: 약품 마스터(prescription_codes) 검색 결과.
+//   세트관리에서 약을 담을 때 쓰는 전체 카탈로그 검색 타입. (MedicalChartPanel RxCodeResult 와 동형)
+interface RxCodeResult {
+  id: string;
+  name_ko: string;
+  claim_code: string | null;
+  classification: string | null;
+  code_source: string | null;
+}
+
+// T-20260608-foot-RXSET-MGMT-DRUG-SEARCH (AC-1/STEP1 그라운딩 — FE 검색UI 미연결 해소):
+//   처방세트(묶음처방) 관리에서 약을 담을 때 검색하는 출처는 '전체 약품 마스터(prescription_codes)'.
+//   ⚠️ prescribableDrugs.searchPrescribableDrugs 는 출처를 '처방세트 등록 약'으로 제한 →
+//      세트관리에서 쓰면 0건 순환(빈 세트에 약을 담아야 하는데 출처가 비어있음)이므로 사용 금지.
+//   MedicalChartPanel.searchRxCodes 와 동일 쿼리(name_ko/claim_code ilike, custom 우선) — 패턴 재사용.
+async function searchRxMaster(query: string): Promise<RxCodeResult[]> {
+  const q = query.trim();
+  if (q.length < 1) return [];
+  const esc = q.replace(/[%,]/g, ' ');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('prescription_codes')
+    .select('id,name_ko,claim_code,classification,code_source')
+    .or(`name_ko.ilike.%${esc}%,claim_code.ilike.%${esc}%`)
+    .order('code_source', { ascending: false }) // custom(자체·카피약) 우선 노출
+    .limit(20);
+  if (error) throw error;
+  return (data as RxCodeResult[]) ?? [];
 }
 
 interface PrescriptionSet {
@@ -177,21 +207,125 @@ interface ItemRowProps {
   item: PrescriptionItem;
   idx: number;
   onChange: (idx: number, field: keyof PrescriptionItem, val: string | number | null) => void;
+  onSelectDrug: (idx: number, code: RxCodeResult) => void;
   onRemove: (idx: number) => void;
   canRemove: boolean;
 }
 
-function ItemRow({ item, idx, onChange, onRemove, canRemove }: ItemRowProps) {
+function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: ItemRowProps) {
+  // T-20260608-foot-RXSET-MGMT-DRUG-SEARCH: 약품명 필드를 마스터 검색 드롭다운으로.
+  //   타이핑 → 디바운스 250ms → searchRxMaster → 결과 드롭다운. 선택 시 부모가 code_id/route/classification 자동채움.
+  //   자유텍스트 수기입력도 그대로 허용(레거시 무중단): 선택 안 하면 prescription_code_id=null 유지.
+  const [open, setOpen] = useState(false);
+  const [results, setResults] = useState<RxCodeResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const linked = item.prescription_code_id != null && `${item.prescription_code_id}`.trim() !== '';
+
+  // 바깥 클릭 시 드롭다운 닫기
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [open]);
+
+  function runSearch(q: string) {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const query = q.trim();
+    if (query.length < 1) {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        setResults(await searchRxMaster(query));
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+  }
+
+  function handleNameChange(v: string) {
+    onChange(idx, 'name', v); // 부모가 수기변경 시 code 연결 해제 처리
+    setOpen(true);
+    runSearch(v);
+  }
+
+  function handleSelect(code: RxCodeResult) {
+    onSelectDrug(idx, code);
+    setOpen(false);
+    setResults([]);
+  }
+
   return (
     <div className="grid grid-cols-12 gap-1.5 items-end border rounded-lg p-2.5 bg-muted/30">
       <div className="col-span-3">
-        <Label className="text-[10px]">약품/시술명 *</Label>
-        <Input
-          value={item.name}
-          onChange={(e) => onChange(idx, 'name', e.target.value)}
-          placeholder="항진균제 연고"
-          className="h-7 text-xs mt-0.5"
-        />
+        <Label className="text-[10px] flex items-center gap-1">
+          약품/시술명 *
+          {linked && (
+            <span className="inline-flex items-center gap-0.5 text-[9px] text-teal-600" title="약품 마스터에 연결됨">
+              <Link2 className="h-2.5 w-2.5" />연결됨
+            </span>
+          )}
+        </Label>
+        <div className="relative mt-0.5" ref={boxRef}>
+          <Search className="absolute left-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+          <Input
+            value={item.name}
+            onChange={(e) => handleNameChange(e.target.value)}
+            onFocus={() => { if (item.name.trim()) { setOpen(true); runSearch(item.name); } }}
+            placeholder="약품명·보험코드 검색"
+            className="h-7 text-xs pl-6"
+            data-testid="rx-set-item-name-input"
+            autoComplete="off"
+          />
+          {open && item.name.trim().length >= 1 && (
+            <div
+              className="absolute z-50 left-0 right-0 top-full mt-1 max-h-56 overflow-y-auto rounded-md border bg-popover shadow-md"
+              data-testid="rx-set-drug-search-dropdown"
+            >
+              {searching ? (
+                <div className="flex items-center gap-1.5 px-2.5 py-2 text-[11px] text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" /> 검색 중…
+                </div>
+              ) : results.length === 0 ? (
+                <div className="px-2.5 py-3 text-[11px] text-muted-foreground text-center" data-testid="rx-set-drug-search-empty">
+                  검색 결과가 없습니다.
+                  <span className="block text-[10px] mt-0.5 text-muted-foreground/70">입력한 이름 그대로 수기 등록됩니다.</span>
+                </div>
+              ) : (
+                results.map((code) => (
+                  <button
+                    key={code.id}
+                    type="button"
+                    onClick={() => handleSelect(code)}
+                    className="w-full text-left px-2.5 py-1.5 hover:bg-accent border-b last:border-b-0"
+                    data-testid="rx-set-drug-search-option"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-medium text-foreground">{code.name_ko}</span>
+                      {code.code_source === 'custom' && (
+                        <Badge variant="secondary" className="text-[9px] h-3.5 px-1">자체</Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                      {code.claim_code && <span className="font-mono">{code.claim_code}</span>}
+                      {code.classification && <span>· {code.classification}</span>}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </div>
       <div className="col-span-2">
         <Label className="text-[10px]">용량</Label>
@@ -306,7 +440,32 @@ export default function PrescriptionSetsTab() {
   function handleItemChange(idx: number, field: keyof PrescriptionItem, val: string | number | null) {
     setForm((f) => {
       const items = [...f.items];
-      items[idx] = { ...items[idx], [field]: val };
+      const next = { ...items[idx], [field]: val };
+      // T-20260608-foot-RXSET-MGMT-DRUG-SEARCH: 약품명을 수기로 바꾸면 마스터 연결 해제.
+      //   (잘못된 prescription_code_id/classification 잔존 방지 — 다시 검색·선택해야 재연결)
+      if (field === 'name') {
+        next.prescription_code_id = null;
+        next.classification = null;
+      }
+      items[idx] = next;
+      return { ...f, items };
+    });
+  }
+
+  // T-20260608-foot-RXSET-MGMT-DRUG-SEARCH (AC-2): 검색 결과 약 1건 선택 → 세트 항목에 채움.
+  //   name·route(classification 파생)·classification·prescription_code_id 자동채움.
+  //   route 는 파생값이 비면 기존 값 유지(기타 분류 약 보호). dosage/frequency/days 등 사용자 입력은 보존.
+  function handleSelectDrug(idx: number, code: RxCodeResult) {
+    setForm((f) => {
+      const items = [...f.items];
+      const derivedRoute = classificationToRoute(code.classification);
+      items[idx] = {
+        ...items[idx],
+        name: code.name_ko,
+        route: derivedRoute || items[idx].route,
+        classification: code.classification ?? null,
+        prescription_code_id: code.id,
+      };
       return { ...f, items };
     });
   }
@@ -625,6 +784,7 @@ export default function PrescriptionSetsTab() {
                     item={item}
                     idx={idx}
                     onChange={handleItemChange}
+                    onSelectDrug={handleSelectDrug}
                     onRemove={removeItem}
                     canRemove={form.items.length > 1}
                   />
