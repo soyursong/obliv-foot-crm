@@ -17,7 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
-import { ChevronDown, Folder, FolderOpen, Star, X, Search, Plus } from 'lucide-react';
+import { ChevronDown, Folder, FolderOpen, Star, X, Search, Plus, Boxes } from 'lucide-react';
 
 interface DxRow {
   id: string;
@@ -29,6 +29,20 @@ interface DxRow {
 const NO_FOLDER = '미분류';
 const DX_MASTER_KEY = 'diagnosis_picker_master';
 const FAV_KEY = 'diagnosis_picker_fav';
+// T-20260608-foot-DX-BUNDLE-SET (AC-2): 묶음상병 세트 — 진료차트 일괄 적용 소스.
+const DX_SET_KEY = 'diagnosis_picker_sets';
+
+// 묶음상병 세트(진료차트 적용용). is_active 만, 항목 service_id + 주/부 + 순서.
+interface DxSetItem {
+  service_id: string;
+  diagnosis_type: 'primary' | 'secondary';
+  sort_order: number;
+}
+interface DxSet {
+  id: string;
+  name: string;
+  items: DxSetItem[];
+}
 
 // T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-1 (문지은 대표원장):
 //   "상병명과 코드는 항상 같이 따라다니는 세트. 하나만 출력하지마."
@@ -126,6 +140,34 @@ function useFavorites(staffId: string | null) {
   });
 }
 
+// T-20260608-foot-DX-BUNDLE-SET (AC-2): 묶음상병 세트 목록(진료차트 일괄 적용).
+//   테이블 미적용(마이그 미게이트) 환경에서도 graceful(빈 목록 → 섹션 미노출).
+function useDxSets(clinicId: string | null) {
+  return useQuery({
+    queryKey: [DX_SET_KEY, clinicId],
+    enabled: !!clinicId,
+    queryFn: async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sb = supabase as any;
+      const { data, error } = await sb
+        .from('diagnosis_sets')
+        .select('id, name, is_active, sort_order, diagnosis_set_items(service_id, diagnosis_type, sort_order)')
+        .eq('clinic_id', clinicId)
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
+      if (error) return [] as DxSet[];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return ((data ?? []) as any[]).map((s) => ({
+        id: s.id,
+        name: s.name,
+        items: ((s.diagnosis_set_items ?? []) as DxSetItem[])
+          .slice()
+          .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
+      })) as DxSet[];
+    },
+  });
+}
+
 interface Props {
   value: string;
   onChange: (name: string) => void;
@@ -141,11 +183,22 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
   const qc = useQueryClient();
   const { data: master = [] } = useDxMaster(clinicId);
   const { data: favIds = new Set<string>() } = useFavorites(staffId);
+  // T-20260608-foot-DX-BUNDLE-SET (AC-2): 묶음상병 세트(일괄 적용)
+  const { data: dxSets = [] } = useDxSets(clinicId);
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
+  // 묶음상병 섹션 접힘 상태(기본 펼침)
+  const [setsOpen, setSetsOpen] = useState(true);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  // service_id → master row 빠른 조회 (묶음상병 적용 시 라벨 변환)
+  const masterById = useMemo(() => {
+    const m = new Map<string, DxRow>();
+    for (const r of master) m.set(r.id, r);
+    return m;
+  }, [master]);
 
   // T-20260607: 선택된 상병 목록(다중·순서=주/부). value(text) 의 단일 정본.
   const entries = useMemo(() => parseDxEntries(value), [value]);
@@ -202,6 +255,28 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
   function select(row: DxRow) {
     onChange(serializeDxEntries(addDxEntry(entries, fmtDx(row))));
     // 패널 유지 — 다른 상병 추가가능. 검색어는 보존(같은 폴더 연속 추가 편의).
+  }
+
+  // AC-2: 묶음상병 일괄 적용 — 세트의 상병들을 현재 선택에 누적(append, 기존 단건 입력경로 무변경).
+  //   순서: 주상병(primary) 먼저 → 부상병, 각 그룹 내 sort_order. 삭제된 상병(master 부재)은 건너뜀.
+  function applySet(set: DxSet) {
+    const ordered = [...set.items].sort((a, b) => {
+      const pa = a.diagnosis_type === 'primary' ? 0 : 1;
+      const pb = b.diagnosis_type === 'primary' ? 0 : 1;
+      if (pa !== pb) return pa - pb;
+      return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+    });
+    let next = entries;
+    let applied = 0;
+    for (const it of ordered) {
+      const row = masterById.get(it.service_id);
+      if (!row) continue;
+      next = addDxEntry(next, fmtDx(row));
+      applied += 1;
+    }
+    if (applied === 0) return;
+    onChange(serializeDxEntries(next));
+    // 패널 유지 — 추가 세트/단건 선택 연속 가능.
   }
 
   function handleRemove(idx: number) {
@@ -346,6 +421,45 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
           </div>
 
           <div className="overflow-y-auto">
+            {/* T-20260608-foot-DX-BUNDLE-SET (AC-2): 묶음상병 — 세트 선택 시 상병 일괄 적용(누적).
+                검색어 없을 때만 노출(검색은 단건 상병 탐색에 집중). 세트 없으면 섹션 자체 미노출. */}
+            {!query.trim() && dxSets.length > 0 && (
+              <div className="border-b px-2 py-1.5" data-testid="dx-picker-sets">
+                <button
+                  type="button"
+                  onClick={() => setSetsOpen((o) => !o)}
+                  className="flex w-full items-center gap-1.5 px-1 py-1"
+                  data-testid="dx-picker-sets-toggle"
+                >
+                  <Boxes className="h-3.5 w-3.5 text-teal-600" />
+                  <span className="text-[11px] font-semibold text-muted-foreground">묶음상병</span>
+                  <span className="text-[10px] text-muted-foreground">{dxSets.length}</span>
+                  <ChevronDown
+                    className={`ml-auto h-3.5 w-3.5 text-muted-foreground transition-transform ${setsOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                {setsOpen && (
+                  <div className="space-y-0.5 pt-0.5">
+                    {dxSets.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => applySet(s)}
+                        className="flex w-full items-center justify-between gap-2 rounded px-3 py-1.5 text-left hover:bg-accent"
+                        data-testid="dx-picker-set-item"
+                      >
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <Plus className="h-3 w-3 shrink-0 text-teal-600" />
+                          <span className="truncate text-sm">{s.name}</span>
+                        </span>
+                        <span className="shrink-0 text-[10px] text-muted-foreground">상병 {s.items.length}개</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* 즐겨찾기 — 원장별 빠른선택 */}
             {!query.trim() && favRows.length > 0 && (
               <div className="border-b px-2 py-1.5">

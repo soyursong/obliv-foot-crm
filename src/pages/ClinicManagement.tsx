@@ -18,6 +18,8 @@ import PrescriptionSetsTab from '@/components/admin/PrescriptionSetsTab';
 import DrugFoldersTab from '@/components/admin/DrugFoldersTab';
 // AC-1: 상병명(진단명) 관리 — services.category_label='상병' 단일 SSOT 참조(서비스관리와 동기화)
 import DiagnosisNamesTab from '@/components/admin/DiagnosisNamesTab';
+// T-20260608-foot-DX-BUNDLE-SET (AC-1): 묶음상병(여러 상병을 한 세트로 묶어 진료차트 일괄 적용) 관리
+import DiagnosisSetsTab from '@/components/admin/DiagnosisSetsTab';
 import DocumentTemplatesTab from '@/components/admin/DocumentTemplatesTab';
 import TreatmentSetsTab from '@/components/admin/TreatmentSetsTab';
 import FeeSetTemplatesTab from '@/components/admin/FeeSetTemplatesTab';
@@ -25,7 +27,7 @@ import QuickRxButtonsTab from '@/components/admin/QuickRxButtonsTab';
 import ProgressPlansTab from '@/components/admin/ProgressPlansTab';
 import ContraindicationsTab from '@/components/admin/ContraindicationsTab';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { BookOpen, Pill, FileText, Layers, Zap, DollarSign, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree } from 'lucide-react';
+import { BookOpen, Pill, FileText, Layers, Zap, DollarSign, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes } from 'lucide-react';
 
 export default function ClinicManagement() {
   const { profile } = useAuth();
@@ -42,6 +44,7 @@ export default function ClinicManagement() {
     'prescriptions',
     'drug_folders',
     'diagnosis_names',
+    'diagnosis_sets',
     'treatment_sets',
     'fee_set_templates',
     'documents',
@@ -75,6 +78,11 @@ export default function ClinicManagement() {
           <TabsTrigger value="diagnosis_names" className="gap-1.5" data-testid="tab-diagnosis-names">
             <ClipboardList className="h-3.5 w-3.5" />
             상병명 관리
+          </TabsTrigger>
+          {/* T-20260608-foot-DX-BUNDLE-SET (AC-1): 묶음상병 — 여러 상병을 한 세트로 묶어 진료차트 일괄 적용 */}
+          <TabsTrigger value="diagnosis_sets" className="gap-1.5" data-testid="tab-diagnosis-sets">
+            <Boxes className="h-3.5 w-3.5" />
+            묶음상병
           </TabsTrigger>
           {/* Stage B: 기존 '약품 폴더'(drug_folders, 개별 약품 분류 트리) 라벨 → '처방세트'.
               value=drug_folders / data-testid=tab-drug-folders 보존(라우트·E2E 호환). */}
@@ -144,6 +152,9 @@ export default function ClinicManagement() {
         {/* 행 1 */}
         <TabsContent value="diagnosis_names">
           <DiagnosisNamesTab />
+        </TabsContent>
+        <TabsContent value="diagnosis_sets">
+          <DiagnosisSetsTab />
         </TabsContent>
         <TabsContent value="drug_folders">
           <DrugFoldersTab />
