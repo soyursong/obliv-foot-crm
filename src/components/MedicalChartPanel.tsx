@@ -317,39 +317,59 @@ const FILTER_OPTIONS: { key: MemoFilter; label: string; chipClass: string }[] = 
 // T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-3 (문지은 대표원장):
 //   임상경과 `//` 트리거 드롭다운을 textarea 전체 하단이 아닌 '커서(caret) 바로 아래'에 렌더.
 //   mirror-div 기법: textarea 박스를 동일 스타일로 복제하고 caret 직전까지의 텍스트 폭/높이로 caret 픽셀 좌표 산출.
-//   반환 top 은 caret 라인 '아래'(viewport 기준), left 는 caret 가로 위치. 실패 시 호출측 폴백.
+//
+// T-20260609-foot-PHRASE-SLASH-DROPDOWN-POS (3차 재발 — 문지은 원장 "아직도 이상한 데서 열림"):
+//   기존 mirror 의 좌표 어긋남 근본원인 3개를 모두 교정한다.
+//   (1) wrap 폭 불일치(가장 큰 주범): div width=offsetWidth(border-box)는 세로 스크롤바 폭을 반영 못해
+//       textarea 실제 텍스트 폭(clientWidth - paddingL - paddingR)보다 넓다 → 줄바꿈 위치가 어긋나
+//       여러 줄/긴 경과에서 caret 라인(top)이 통째로 빗나갔다.
+//       → 미러를 content-box + '내부 콘텐츠 폭(clientWidth-padding)'으로 구성해 wrap 을 정확히 일치시킴.
+//   (2) border 오프셋 누락: span.offsetTop/Left 는 div padding-edge 기준이라 textarea border 두께만큼 어긋남.
+//       → taRect(border-box) + borderTop/Left 를 더해 viewport 좌표로 정합.
+//   (3) +lineHeight 중복: 라인 '윗변'을 반환하고 '아래로 띄우기'는 호출측이 lineHeight 를 더해 처리(중복 제거).
+//   반환 top = caret 라인의 '윗변'(viewport 기준), left = caret 가로 위치. 실패 시 호출측 폴백.
 function getTextareaCaretRect(
   ta: HTMLTextAreaElement,
   caretIndex: number,
 ): { top: number; left: number; lineHeight: number } {
   const style = window.getComputedStyle(ta);
   const div = document.createElement('div');
+  // boxSizing/border 는 직접 지정(아래) — 폭은 콘텐츠 폭으로 강제하므로 복제 대상에서 제외.
   const copyProps = [
-    'boxSizing', 'overflowX', 'overflowY',
-    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
     'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
     'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize', 'fontSizeAdjust',
     'lineHeight', 'fontFamily', 'textAlign', 'textTransform', 'textIndent',
-    'letterSpacing', 'wordSpacing', 'tabSize',
+    'letterSpacing', 'wordSpacing', 'tabSize', 'direction',
   ] as const;
   div.style.position = 'absolute';
   div.style.visibility = 'hidden';
   div.style.whiteSpace = 'pre-wrap';
   div.style.wordWrap = 'break-word';
+  div.style.overflowWrap = 'break-word';
   div.style.top = '0';
-  div.style.left = '0';
-  div.style.width = `${ta.offsetWidth}px`;
+  div.style.left = '-9999px';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   copyProps.forEach((p) => { (div.style as any)[p] = (style as any)[p]; });
+  // 핵심 (1): wrap 폭 = textarea 내부 콘텐츠 폭 = clientWidth - paddingL - paddingR.
+  //   clientWidth 는 border 와 세로 스크롤바를 제외하므로 스크롤바가 떠도 정확히 일치한다.
+  const padLeft = parseFloat(style.paddingLeft) || 0;
+  const padRight = parseFloat(style.paddingRight) || 0;
+  const contentWidth = Math.max(0, ta.clientWidth - padLeft - padRight);
+  div.style.boxSizing = 'content-box';
+  div.style.width = `${contentWidth}px`;
   div.textContent = ta.value.substring(0, caretIndex);
   const span = document.createElement('span');
   span.textContent = ta.value.substring(caretIndex) || '.';
   div.appendChild(span);
   document.body.appendChild(div);
   const taRect = ta.getBoundingClientRect();
+  const borderTop = parseFloat(style.borderTopWidth) || 0;
+  const borderLeft = parseFloat(style.borderLeftWidth) || 0;
   const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2 || 18;
-  const top = taRect.top + span.offsetTop - ta.scrollTop + lineHeight;
-  const left = taRect.left + span.offsetLeft - ta.scrollLeft;
+  // span.offsetTop/Left 는 div padding-edge 기준(=paddingTop/Left 포함). textarea 화면좌표 =
+  //   border-box top + borderTop + offsetTop - scrollTop (라인 윗변).
+  const top = taRect.top + borderTop + span.offsetTop - ta.scrollTop;
+  const left = taRect.left + borderLeft + span.offsetLeft - ta.scrollLeft;
   document.body.removeChild(div);
   return { top, left, lineHeight };
 }
@@ -436,6 +456,19 @@ export default function MedicalChartPanel({
   const clinicalRef = useRef<HTMLTextAreaElement>(null);
   const [phrasePopoverVisible, setPhrasePopoverVisible] = useState(false);
   const [phraseQuery, setPhraseQuery] = useState('');
+  // T-20260609-foot-PHRASE-SLASH-DROPDOWN-POS (3): caret 좌표는 1회 계산이라 textarea/drawer 스크롤·리사이즈 시 stale.
+  //   팝오버가 열린 동안 scroll(capture=textarea 내부 스크롤 포함)·resize 를 구독해 강제 재렌더 → caret 추종.
+  const [, bumpPhraseReposition] = useState(0);
+  useEffect(() => {
+    if (!phrasePopoverVisible) return;
+    const onReposition = () => bumpPhraseReposition((n) => n + 1);
+    window.addEventListener('scroll', onReposition, true);
+    window.addEventListener('resize', onReposition);
+    return () => {
+      window.removeEventListener('scroll', onReposition, true);
+      window.removeEventListener('resize', onReposition);
+    };
+  }, [phrasePopoverVisible]);
 
   // ── 우측 패널 탭 (AC-1 + MEDCHART-SYNC → TREATMEMO-CHART-MERGE: 처방세트 / 상용구 / 진료내역 / 진료이미지)
   // T-20260527-foot-TREATMEMO-CHART-MERGE: treat_memo 탭 제거 — [치료사차트] 섹션에 통합
@@ -2121,24 +2154,32 @@ export default function MedicalChartPanel({
                         if (!ta) return null;
                         const POPOVER_MAX = 300;
                         const POPOVER_W = 288;
-                        // AC-3: 커서(caret) 좌표 기준 렌더 (textarea 전체 하단 X). 계산 실패 시 textarea rect 폴백.
-                        let anchorTop: number;
+                        // AC-1: 커서(caret) '라인 윗변' 좌표 기준 렌더 (textarea 전체 하단 X). 실패 시 textarea rect 폴백.
+                        //   getTextareaCaretRect 반환 top = caret 라인 윗변(viewport). 아래로 띄우기는 여기서 lineH 를 더한다.
+                        const taRect = ta.getBoundingClientRect();
+                        let lineTop: number;
                         let anchorLeft: number;
                         let lineH = 18;
                         try {
                           const caret = getTextareaCaretRect(ta, ta.selectionStart ?? ta.value.length);
-                          anchorTop = caret.top;
+                          lineTop = caret.top;
                           anchorLeft = caret.left;
                           lineH = caret.lineHeight;
                         } catch {
-                          const rect = ta.getBoundingClientRect();
-                          anchorTop = rect.bottom;
-                          anchorLeft = rect.left;
+                          lineTop = taRect.bottom - 18;
+                          anchorLeft = taRect.left;
                         }
-                        const spaceBelow = window.innerHeight - anchorTop;
+                        // T-20260609 폴백 가드: caret 이 스크롤로 textarea 가시영역 밖이면 경계로 클램프
+                        //   (화면 0,0/엉뚱영역 금지 — AC-1). 최소 textarea 내부 라인 위치를 보장.
+                        if (lineTop < taRect.top - lineH || lineTop > taRect.bottom + lineH) {
+                          lineTop = Math.min(Math.max(lineTop, taRect.top), Math.max(taRect.top, taRect.bottom - lineH));
+                          anchorLeft = taRect.left + 8;
+                        }
+                        const lineBottom = lineTop + lineH;
+                        const spaceBelow = window.innerHeight - lineBottom;
                         const top = spaceBelow > POPOVER_MAX
-                          ? anchorTop + 4
-                          : Math.max(8, anchorTop - lineH - POPOVER_MAX - 4);
+                          ? lineBottom + 4
+                          : Math.max(8, lineTop - POPOVER_MAX - 4);
                         const left = Math.min(Math.max(8, anchorLeft), window.innerWidth - POPOVER_W - 8);
                         const hasAny = filteredSuperPhrases.length > 0 || filteredPhrases.length > 0;
                         return createPortal(

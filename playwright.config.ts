@@ -86,6 +86,8 @@ export default defineConfig({
         '**/T-20260602-multi-CALLBACK-EF-4-NEW.spec.ts',
         // T-20260606-foot-AUTOCOMPLETE-CROSS-PATIENT-AUDIT: 자동완성 cross-patient 누설 분류 불변식 (page 미사용 순수 로직)
         '**/T-20260606-foot-AUTOCOMPLETE-CROSS-PATIENT-AUDIT.spec.ts',
+        // T-20260609-foot-PHRASE-SLASH-DROPDOWN-POS: 임상경과 `//` 드롭다운 caret 좌표/wrap 폭 정합 (정본 로직 + page.setContent 실DOM, auth 불요)
+        '**/T-20260609-foot-PHRASE-SLASH-DROPDOWN-POS.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
