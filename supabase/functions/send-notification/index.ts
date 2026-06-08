@@ -114,6 +114,19 @@ function getChannel(body: string): "SMS" | "LMS" {
   return byteLen <= 90 ? "SMS" : "LMS";
 }
 
+// ── 수신/발신번호 국내 형식 정규화 (T-20260608-foot-RESV-AUTO-SMS-NOFIRE) ──
+// Cross-CRM 계약상 customers.phone 은 E.164(+8210…)로 저장되나, Solapi 국내 발송은
+// 국내 형식(010…)을 요구한다. E.164(+82/82/0082 prefix)를 그대로 보내면 Solapi가
+// statusCode 3058 "전송경로 없음"을 반환(200 수락이나 통신사 미배달)하여
+// DB는 'sent'인데 폰엔 미수신되는 무음 실패가 발생. → 발송 경계에서 국내 형식으로 정규화.
+function toDomesticKR(raw: string): string {
+  let d = (raw ?? "").replace(/[^0-9]/g, "");   // +82 10-1234-5678 → 821012345678
+  if (d.startsWith("0082")) d = d.slice(4);     // 0082… 국제접속 prefix 제거 → 1012345678
+  if (d.startsWith("82")) d = d.slice(2);       // 821012345678 → 1012345678 (KR 국가코드 제거)
+  if (d && !d.startsWith("0")) d = "0" + d;     // 국내 형식 leading-0 복원 → 01012345678
+  return d;
+}
+
 // ── Solapi SMS 발송 헬퍼 ─────────────────────────────────────────
 async function sendSolapi(params: {
   apiKey:       string;
@@ -133,8 +146,8 @@ async function sendSolapi(params: {
 
   const solapiPayload = {
     message: {
-      to:   recipientPhone.replace(/[^0-9]/g, ""),
-      from: senderNumber.replace(/[^0-9]/g, ""),
+      to:   toDomesticKR(recipientPhone),
+      from: toDomesticKR(senderNumber),
       text: body,
       type: msgType,
     }
