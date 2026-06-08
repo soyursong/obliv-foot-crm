@@ -35,7 +35,16 @@ test.describe('T-20260603-CHART-SPECIAL-NOTE — 특이사항 공용 누적칸',
     if (!ok) test.skip(true, '로그인 실패');
   });
 
-  // AC-2: 좌측 타임라인 ⑤ 특이사항 칸이 렌더된다
+  // 패널이 접혀있으면 펼침 (T-20260609 AC-2: 내용 없으면 접힘 디폴트)
+  async function ensureExpanded(page: import('@playwright/test').Page) {
+    const input = page.locator('[data-testid="special-note-input"]');
+    if (!(await input.isVisible().catch(() => false))) {
+      await page.locator('[data-testid="special-note-toggle"]').click();
+      await input.waitFor({ timeout: 5_000 }).catch(() => {});
+    }
+  }
+
+  // AC-2: 좌측 타임라인 ⑤ 특이사항 칸이 렌더된다 (T-20260609: 섹션·토글은 항상, 입력은 펼침 후)
   test('AC-2: 특이사항 칸(섹션) 렌더', async ({ page }) => {
     if (!(await openMedicalChart(page))) {
       test.skip(true, '진료차트 Drawer 미열림 — 스킵');
@@ -43,18 +52,21 @@ test.describe('T-20260603-CHART-SPECIAL-NOTE — 특이사항 공용 누적칸',
     }
     const section = page.locator('[data-testid="special-note-section"]');
     await expect(section).toBeVisible();
-    // 토글·입력·추가버튼 존재
+    // 토글은 접힘/펼침 무관 항상 노출
     await expect(page.locator('[data-testid="special-note-toggle"]')).toBeVisible();
+    // 펼친 뒤 입력·저장버튼 존재
+    await ensureExpanded(page);
     await expect(page.locator('[data-testid="special-note-input"]')).toBeVisible();
     await expect(page.locator('[data-testid="special-note-add-btn"]')).toBeVisible();
   });
 
-  // AC-2: 빈 입력이면 추가 버튼 비활성 (불필요한 빈 항목 누적 방지)
-  test('AC-2: 빈 입력 시 추가 버튼 비활성', async ({ page }) => {
+  // AC-2: 빈 입력이면 저장 버튼 비활성 (불필요한 빈 항목 누적 방지)
+  test('AC-2: 빈 입력 시 저장 버튼 비활성', async ({ page }) => {
     if (!(await openMedicalChart(page))) {
       test.skip(true, '진료차트 Drawer 미열림 — 스킵');
       return;
     }
+    await ensureExpanded(page);
     const addBtn = page.locator('[data-testid="special-note-add-btn"]');
     await expect(addBtn).toBeDisabled();
   });
@@ -65,6 +77,7 @@ test.describe('T-20260603-CHART-SPECIAL-NOTE — 특이사항 공용 누적칸',
       test.skip(true, '진료차트 Drawer 미열림 — 스킵');
       return;
     }
+    await ensureExpanded(page);
     const list = page.locator('[data-testid="special-note-list"]');
     const before = await list.locator('[data-testid="special-note-item"]').count();
 

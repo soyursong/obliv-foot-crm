@@ -525,7 +525,11 @@ export default function MedicalChartPanel({
   const [specialNotes, setSpecialNotes] = useState<SpecialNoteEntry[]>([]);
   const [specialNoteInput, setSpecialNoteInput] = useState('');
   const [specialNoteSaving, setSpecialNoteSaving] = useState(false);
-  const [specialNoteOpen, setSpecialNoteOpen] = useState(true);
+  // T-20260609-foot-SPECIALNOTE-MEMO-UX AC-2: 접힘/펼침 디폴트 — 내용 없으면 접힘, 있으면 펼침.
+  //   초기값 false(접힘). 데이터 로드 후 콘텐츠 유무로 자동 결정(아래 loadData).
+  //   사용자가 직접 토글하면 specialNoteManualRef 로 자동결정 무력화(의도 존중).
+  const [specialNoteOpen, setSpecialNoteOpen] = useState(false);
+  const specialNoteManualRef = useRef(false);
   // T-20260603-foot-RX-CHART-FOLLOWUP2 #10: 특이사항 핀 토글 진행상태.
   //   ⚠ Rules of Hooks: 반드시 `if (!open) return null` 조기반환(아래) 이전에 선언해야 함.
   //   (T-20260604-foot-RX-CHART-PERSIST-BUG: 조기반환 이후 useState가 있어 open 토글 시
@@ -635,7 +639,12 @@ export default function MedicalChartPanel({
       setTreatMemos((treatMemosRes.data as TreatmentMemoEntry[]) ?? []);
       // T-20260603-foot-CHART-SPECIAL-NOTE: 특이사항 공용 누적칸 (조회 실패 시 빈 목록 — 레거시 무영향)
       // #10: 핀 우선 재정렬 보장 (is_pinned 컬럼 미적용 환경에서도 안전 — undefined→0)
-      setSpecialNotes(sortSpecialNotes((specialNotesRes?.data as SpecialNoteEntry[]) ?? []));
+      {
+        const sortedNotes = sortSpecialNotes((specialNotesRes?.data as SpecialNoteEntry[]) ?? []);
+        setSpecialNotes(sortedNotes);
+        // T-20260609-foot-SPECIALNOTE-MEMO-UX AC-2: 사용자가 토글 안 했으면 콘텐츠 유무로 자동 펼침/접힘
+        if (!specialNoteManualRef.current) setSpecialNoteOpen(sortedNotes.length > 0);
+      }
       // T-20260603-foot-CHART-UIUX-ENHANCE AC-13: 기록자 이메일→이름 매핑 구성
       {
         const nameMap: Record<string, string> = {};
@@ -741,6 +750,8 @@ export default function MedicalChartPanel({
       // T-20260526-foot-VISIT-FOLD-FILTER: 리셋
       setExpandedChartIds(new Set<string>());
       setMemoFilters(new Set<MemoFilter>());
+      // T-20260609-foot-SPECIALNOTE-MEMO-UX AC-2: 새 고객 열림마다 자동 펼침/접힘 재적용(수동 토글 플래그 리셋)
+      specialNoteManualRef.current = false;
     } else {
       setCustomer(null);
       setCharts([]);
@@ -1623,51 +1634,58 @@ export default function MedicalChartPanel({
                   </button>
                 </div>
 
-                {/* T-20260603-foot-CHART-SPECIAL-NOTE: ⑤ 특이사항 공용 누적칸 (환자 단위, 날짜 분기 없음) */}
-                <div className="flex-none border-b bg-amber-50/40" data-testid="special-note-section">
+                {/* T-20260603-foot-CHART-SPECIAL-NOTE: ⑤ 특이사항 공용 누적칸 (환자 단위, 날짜 분기 없음)
+                    T-20260609-foot-SPECIALNOTE-MEMO-UX: 메모판 UX 재설계 (저장 로직·스키마 무변경, FE presentation only)
+                      AC-2 접힘/펼침 디폴트(내용 유무) · AC-3 메모판 박스 강조 · AC-4 본문 좌측정렬+우상단 메타 1줄 · AC-1 통합 텍스트박스 */}
+                <div
+                  className="flex-none m-2 rounded-xl border-2 border-amber-300 bg-amber-50/80 shadow-md ring-1 ring-amber-100 overflow-hidden"
+                  data-testid="special-note-section"
+                >
                   <button
                     type="button"
-                    onClick={() => setSpecialNoteOpen(o => !o)}
-                    className="w-full flex items-center justify-between gap-1 px-2 py-1.5 hover:bg-amber-50 transition-colors"
+                    onClick={() => { specialNoteManualRef.current = true; setSpecialNoteOpen(o => !o); }}
+                    className="w-full flex items-center justify-between gap-1 px-2.5 py-2 bg-amber-100/70 hover:bg-amber-100 transition-colors"
                     data-testid="special-note-toggle"
                     aria-expanded={specialNoteOpen}
                   >
-                    <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-700 uppercase tracking-wide">
-                      <AlertTriangle className="h-3 w-3" />
-                      특이사항
+                    <span className="flex items-center gap-1 text-[11px] font-bold text-amber-800 tracking-wide">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      특이사항 메모판
                       {specialNotes.length > 0 && (
                         <span className="text-[9px] text-amber-600 tabular-nums">({specialNotes.length})</span>
                       )}
                     </span>
                     <ChevronDown
-                      className={`h-3 w-3 text-amber-600 transition-transform duration-200 ${specialNoteOpen ? 'rotate-180' : ''}`}
+                      className={`h-3.5 w-3.5 text-amber-600 transition-transform duration-200 ${specialNoteOpen ? 'rotate-180' : ''}`}
                     />
                   </button>
 
                   {specialNoteOpen && (
-                    <div className="px-2 pb-2 space-y-1.5">
+                    <div className="px-2 pb-2 pt-1.5 space-y-1.5">
                       {/* 누적 항목 목록 (최신순, 기존 항목 불변 — read-only 표시) */}
-                      <div className="max-h-40 overflow-y-auto space-y-1" data-testid="special-note-list">
+                      <div className="max-h-44 overflow-y-auto space-y-1.5" data-testid="special-note-list">
                         {specialNotes.length === 0 ? (
-                          <p className="text-[10px] text-muted-foreground italic py-1">등록된 특이사항 없음</p>
+                          <p className="text-[10px] text-amber-700/50 italic py-1 text-center">아직 메모가 없습니다</p>
                         ) : (
-                          specialNotes.map(note => (
+                          specialNotes.map(note => {
+                            const recorder = note.created_by_name || recorderName(note.created_by) || '미상';
+                            let metaDate = '';
+                            try { metaDate = format(new Date(note.created_at), 'yy.MM.dd'); } catch { metaDate = ''; }
+                            return (
                             <div
                               key={note.id}
-                              className={`rounded border px-1.5 py-1 ${note.is_pinned ? 'border-amber-400 bg-amber-100/70 ring-1 ring-amber-300' : 'border-amber-200 bg-white'}`}
+                              className={`rounded-md border px-2 py-1.5 ${note.is_pinned ? 'border-amber-400 bg-amber-100/70 ring-1 ring-amber-300' : 'border-amber-200 bg-white'}`}
                               data-testid="special-note-item"
                               data-pinned={note.is_pinned ? 'true' : 'false'}
                             >
-                              <div className="flex items-start justify-between gap-1">
-                                <p className="text-[10px] text-gray-800 whitespace-pre-wrap leading-snug break-words flex-1">
-                                  {note.content}
-                                </p>
+                              {/* AC-4: 우상단 메타 1줄 (흐린 작은 글씨 'YY.MM.DD 작성자성명') + 핀 토글 */}
+                              <div className="flex items-center justify-between gap-1">
                                 {/* #10: 핀 고정 토글 (맨위로) */}
                                 <button
                                   type="button"
                                   onClick={() => toggleSpecialNotePin(note)}
                                   disabled={pinningId === note.id}
-                                  className={`shrink-0 -mr-0.5 -mt-0.5 rounded p-0.5 transition-colors disabled:opacity-40 ${note.is_pinned ? 'text-amber-700 hover:text-amber-900' : 'text-gray-300 hover:text-amber-600'}`}
+                                  className={`shrink-0 -ml-0.5 rounded p-0.5 transition-colors disabled:opacity-40 ${note.is_pinned ? 'text-amber-700 hover:text-amber-900' : 'text-gray-300 hover:text-amber-600'}`}
                                   title={note.is_pinned ? '고정 해제' : '맨위로 고정'}
                                   aria-label={note.is_pinned ? '고정 해제' : '맨위로 고정'}
                                   aria-pressed={!!note.is_pinned}
@@ -1679,25 +1697,26 @@ export default function MedicalChartPanel({
                                       ? <Pin className="h-3 w-3 fill-current" />
                                       : <PinOff className="h-3 w-3" />}
                                 </button>
-                              </div>
-                              <div className="flex items-center justify-between gap-1 mt-0.5 text-[8px] text-muted-foreground">
-                                <span className="truncate" data-testid="special-note-recorder">
-                                  {note.created_by_name || recorderName(note.created_by) || '미상'}
-                                </span>
-                                <span className="shrink-0 tabular-nums">
-                                  {(() => {
-                                    try { return format(new Date(note.created_at), 'yy.MM.dd HH:mm'); }
-                                    catch { return ''; }
-                                  })()}
+                                <span
+                                  className="shrink-0 text-[8px] leading-tight text-amber-800/45 tabular-nums text-right"
+                                  data-testid="special-note-meta"
+                                  title={(() => { try { return format(new Date(note.created_at), 'yyyy.MM.dd HH:mm'); } catch { return ''; } })()}
+                                >
+                                  {metaDate} <span data-testid="special-note-recorder">{recorder}</span>
                                 </span>
                               </div>
+                              {/* 본문 — 왼쪽 정렬 */}
+                              <p className="text-left text-[11px] text-gray-800 whitespace-pre-wrap leading-snug break-words mt-0.5">
+                                {note.content}
+                              </p>
                             </div>
-                          ))
+                            );
+                          })
                         )}
                       </div>
 
-                      {/* 1줄 추가 입력 (누적 append — 기존 항목 변경 안 됨) */}
-                      <div className="flex items-end gap-1">
+                      {/* AC-1: 통합 텍스트박스 (모달·단계 없이 패널 내 바로 작성). 누적 append — 기존 항목 변경 안 됨 */}
+                      <div className="relative rounded-md border border-amber-200 bg-white focus-within:border-amber-400 focus-within:ring-1 focus-within:ring-amber-300 transition-colors">
                         <Textarea
                           value={specialNoteInput}
                           onChange={e => setSpecialNoteInput(e.target.value)}
@@ -1707,19 +1726,21 @@ export default function MedicalChartPanel({
                               if (!specialNoteSaving) addSpecialNote();
                             }
                           }}
-                          placeholder="특이사항 입력 후 추가"
-                          rows={1}
-                          className="min-h-[32px] text-[10px] resize-none bg-white placeholder:text-gray-400"
+                          placeholder="여기에 특이사항을 적으세요 · Enter로 저장"
+                          rows={2}
+                          className="min-h-[44px] text-[11px] resize-none border-0 bg-transparent shadow-none px-2 py-1.5 pr-8 leading-snug focus-visible:ring-0 placeholder:text-amber-700/30"
                           data-testid="special-note-input"
                         />
                         <button
                           type="button"
                           onClick={addSpecialNote}
                           disabled={specialNoteSaving || !specialNoteInput.trim()}
-                          className="shrink-0 rounded-md bg-amber-600 px-2 py-1.5 text-[10px] font-semibold text-white hover:bg-amber-700 disabled:opacity-40 transition-colors"
+                          className="absolute right-1.5 bottom-1.5 shrink-0 rounded-md p-1 text-amber-600 hover:bg-amber-100 hover:text-amber-800 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                          title="저장 (Enter)"
+                          aria-label="특이사항 저장"
                           data-testid="special-note-add-btn"
                         >
-                          {specialNoteSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : '추가'}
+                          {specialNoteSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                         </button>
                       </div>
                     </div>
