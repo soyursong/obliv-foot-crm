@@ -73,11 +73,34 @@ export interface FormTemplate {
 export const PENCHART_EXTRA_PRINT_ROLES = ['therapist', 'staff'] as const;
 
 /**
+ * T-20260608-foot-DOCPANEL-ALLROLE-PRINT
+ * 정책 확정(김주연 총괄): 아래 5종 서류는 역할 제한 없이 모든 계정에서 인쇄 가능.
+ * 현장 P1 — coordinator(데스크/코디) 계정으로 1번/2번 차트 진입 시 required_role
+ * (admin|manager 등)에 미포함되어 서류 발행 패널에서 누락되던 문제 해소.
+ * PENCHART 패턴(T-20260602) 동일 — DB form_templates.required_role 변경 없이
+ * 코드측 canAccess 판정만 보강(db_changed=false). form_key 한정이므로 그 외
+ * 양식(med_record 등)의 required_role 정책에는 영향 없음(회귀 차단).
+ *   소견서 diag_opinion · 처방전 prescription · 진단서 diagnosis ·
+ *   진료비납입증명서 payment_cert · 진료의뢰서 referral_letter
+ */
+export const ALL_ROLE_PRINT_FORM_KEYS = [
+  'diag_opinion',
+  'prescription',
+  'diagnosis',
+  'payment_cert',
+  'referral_letter',
+] as const;
+
+/**
  * 인쇄목록 양식 접근 권한 판정 (DocumentPrintPanel canAccess 단일 소스).
- * 1) required_role 에 명시된 role 은 그대로 허용.
- * 2) pen_chart 양식에 한해 therapist/staff 추가 허용(위 주석 참조).
+ * 1) ALL_ROLE_PRINT_FORM_KEYS 5종은 role 무관 전체 허용(위 주석 참조).
+ * 2) required_role 에 명시된 role 은 그대로 허용.
+ * 3) pen_chart 양식에 한해 therapist/staff 추가 허용.
  */
 export function canAccessFormTemplate(tpl: FormTemplate, userRole: string): boolean {
+  if ((ALL_ROLE_PRINT_FORM_KEYS as readonly string[]).includes(tpl.form_key)) {
+    return true;
+  }
   const allowed = tpl.required_role?.split('|') ?? [];
   if (allowed.includes(userRole)) return true;
   if (tpl.form_key === 'pen_chart' && (PENCHART_EXTRA_PRINT_ROLES as readonly string[]).includes(userRole)) {
