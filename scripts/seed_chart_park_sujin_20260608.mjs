@@ -1,12 +1,14 @@
 /**
- * 풋센터 CRM — 더미 환자 '박수진' 진료차트 시드
+ * 풋센터 CRM — 더미 환자 'QA_김타임라인' 진료차트 시드
  * T-20260608-foot-MEDCHART-TIMELINE-FILTER AC-7
  *
  * 목적: 원장님(문지은)이 진료차트 좌측 '진료 경과 타임라인'의 필터/가독성을
  *      실제 데이터로 직접 확인할 수 있도록, 진료메모/치료메모/처방이 풍부한
- *      더미 환자 1명을 생성한다. (현장 지정 환자명 = 박수진)
+ *      더미 환자 1명을 생성한다.
+ *      ※ 환자명은 dev 가 생성한 '명확한 QA 마킹 이름'(QA_ 접두) — 실데이터 환자와
+ *        화면에서 혼동되지 않도록 일부러 비현실적 이름을 부여(정정 19:46 반영).
  *
- * 대상: 박수진 (신규 생성, is_simulation=true → 통계/실데이터 분리)
+ * 대상: QA_김타임라인 (신규 생성, is_simulation=true → 통계/실데이터 분리)
  * AC-7 요건:
  *   - 진료메모(chart_doctor_memos) 3건+   → 5건
  *   - 치료메모(medical_charts.treatment_record) 3건+ → 5건
@@ -28,7 +30,7 @@ const SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhY
 const sb = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
 const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // 오블리브 (문지은 원장 소속 클리닉)
-const CUSTOMER_NAME = '박수진';
+const CUSTOMER_NAME = 'QA_김타임라인';   // 명확한 QA 마킹 이름(실데이터 혼동 방지)
 const PHONE = '+821055557788';
 const DOCTOR_NAME = '문지은';          // created_by_name 스냅샷(타임라인 기록자 표시)
 const TODAY = '2026-06-08';
@@ -43,7 +45,7 @@ function pastTs(daysAgo, hour = 11, min = 0) {
 }
 
 async function run() {
-  console.log('=== 박수진 진료차트 시드 (T-20260608-foot-MEDCHART-TIMELINE-FILTER AC-7) ===\n');
+  console.log('=== QA_김타임라인 진료차트 시드 (T-20260608-foot-MEDCHART-TIMELINE-FILTER AC-7) ===\n');
 
   // ── 0. 멱등성 가드 ──────────────────────────────────────────
   const { data: dup } = await sb
@@ -70,9 +72,9 @@ async function run() {
       is_simulation:  true,
       gender:         'F',
       birth_date:     '1991-07-14',
-      chart_number:   'TS-0608',
+      chart_number:   'QA-TL01',
       inflow_channel: '네이버검색',
-      customer_memo:  '[TEST-SEED] T-20260608-foot-MEDCHART-TIMELINE-FILTER AC-7 좌측 타임라인 가독성 검증용 더미 환자.',
+      customer_memo:  '[TEST-SEED][QA] T-20260608-foot-MEDCHART-TIMELINE-FILTER AC-7 좌측 진료 경과 타임라인 가독성/필터 검증용 더미 환자. dev 생성, is_simulation.',
       treatment_note: '양발 무지외반증 + 발톱 무좀(좌무지). 비가열 레이저 중심 12회 패키지 진행 중.',
     })
     .select('id')
@@ -201,7 +203,7 @@ async function run() {
   console.log('  치료메모 3건+: ✓ (6건)');
   console.log('  처방 2건+:     ✓ (3건)');
   console.log('\n🔖 롤백: node scripts/rollback_chart_park_sujin_20260608.mjs');
-  console.log('→ responder 회신: "박수진 환자 준비 완료" (원장님 좌측 타임라인 직접 확인)');
+  console.log('→ responder 회신: "QA_김타임라인 환자 준비 완료" (원장님 좌측 타임라인 직접 확인)');
 }
 
 run().catch(e => {

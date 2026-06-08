@@ -1,10 +1,10 @@
 /**
- * 롤백 — 박수진 더미 환자 진료차트 제거
+ * 롤백 — QA_김타임라인 더미 환자 진료차트 제거
  * T-20260608-foot-MEDCHART-TIMELINE-FILTER AC-7
  *
- * seed_chart_park_sujin_20260608.mjs 가 생성한 is_simulation 환자 '박수진'과
+ * seed_chart_park_sujin_20260608.mjs 가 생성한 is_simulation 환자 'QA_김타임라인'과
  * 그에 연결된 medical_charts / chart_doctor_memos 를 모두 삭제한다.
- * 대상은 is_simulation=true + name='박수진' 으로 한정 → 실데이터 무영향.
+ * 대상은 is_simulation=true + chart_number='QA-TL01' 으로 한정(이름 변경에 견고) → 실데이터 무영향.
  */
 import { createClient } from '@supabase/supabase-js';
 
@@ -14,15 +14,15 @@ const SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhY
 const sb = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
 const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
-const CUSTOMER_NAME = '박수진';
+const SEED_CHART_NUMBER = 'QA-TL01';
 
 async function run() {
-  console.log('=== 박수진 더미 환자 롤백 ===\n');
+  console.log('=== QA_김타임라인 더미 환자 롤백 ===\n');
   const { data: custs, error: cErr } = await sb
     .from('customers')
     .select('id, name, is_simulation')
     .eq('clinic_id', CLINIC_ID)
-    .eq('name', CUSTOMER_NAME)
+    .eq('chart_number', SEED_CHART_NUMBER)
     .eq('is_simulation', true);
   if (cErr) throw new Error(`고객 조회 실패: ${cErr.message}`);
   if (!custs || custs.length === 0) {
