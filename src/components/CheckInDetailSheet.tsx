@@ -28,7 +28,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { STATUS_KO } from '@/lib/status';
-import { formatAmount, formatPhone, todaySeoulStr } from '@/lib/format';
+import { formatAmount, formatPhone, todaySeoulStr, todaySeoulISODate, seoulISODate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 // T-20260522-foot-CHECKIN-CONSENT-REMOVE: PreChecklist/ChecklistForm/ConsentForm 제거 (PenChart 이관 완료)
 import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
@@ -1422,6 +1422,14 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             pkg={sessionUsePkg}
             remaining={sessionUseRemaining}
             defaultSessionType={sessionUseType}
+            /* T-20260609-foot-PKGSESS-CHECKIN-LINK: customerMode 차감은 session_date 기본값=오늘(KST).
+               최근 내원이 '오늘'일 때만 귀속(과거 내원 오매칭 방지) — 아니면 NULL 근사 fallback. */
+            checkInId={
+              latestCheckIn?.checked_in_at &&
+              seoulISODate(latestCheckIn.checked_in_at) === todaySeoulISODate()
+                ? latestCheckIn.id
+                : null
+            }
             onOpenChange={setSessionUseOpen}
             onDone={() => {
               setSessionUseOpen(false);
@@ -2067,6 +2075,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           pkg={sessionUsePkg}
           remaining={sessionUseRemaining}
           defaultSessionType={sessionUseType}
+          /* T-20260609-foot-PKGSESS-CHECKIN-LINK: 활성 내원 슬롯(checkIn) 차감 → 해당 내원 귀속 */
+          checkInId={checkIn?.id ?? null}
           onOpenChange={setSessionUseOpen}
           onDone={() => {
             setSessionUseOpen(false);
@@ -2317,6 +2327,7 @@ function SessionUseInSheetDialog({
   pkg,
   remaining,
   defaultSessionType,
+  checkInId,
   onOpenChange,
   onDone,
 }: {
@@ -2324,6 +2335,8 @@ function SessionUseInSheetDialog({
   pkg: PackageType | null;
   remaining: PackageRemaining | null;
   defaultSessionType: SessionType;
+  // T-20260609-foot-PKGSESS-CHECKIN-LINK: 차감 귀속 내원 식별자(치료사 통계 정밀화). 없으면 NULL(근사 fallback).
+  checkInId?: string | null;
   onOpenChange: (o: boolean) => void;
   onDone: () => void;
 }) {
@@ -2367,6 +2380,8 @@ function SessionUseInSheetDialog({
       surcharge: surcharge || 0,
       surcharge_memo: surchargeMemo.trim() || null,
       status: 'used',
+      // T-20260609-foot-PKGSESS-CHECKIN-LINK (AC2): 현재 내원 귀속 → 통계 정확매칭
+      check_in_id: checkInId ?? null,
     });
 
     setSubmitting(false);
