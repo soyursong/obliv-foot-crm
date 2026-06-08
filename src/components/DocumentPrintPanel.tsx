@@ -77,6 +77,17 @@ import {
   isHtmlTemplate,
 } from '@/lib/htmlFormTemplates';
 import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext';
+// T-20260608-foot-DOC-PATH12-SYNC: PATH-4(PaymentMiniWindow) 빌링 로직 1:1 재사용 (4경로 통일).
+//   service_charges 가 비어있는 경로(= PMW 수기조정만 있고 보험 copay 미산출)에서 check_in_services
+//   기반으로 PMW 와 동일한 빌링 폴백을 적용한다. (무파괴: service_charges 존재 시 기존 동작 불변.)
+import {
+  type FootBillingItem,
+  computeFootBilling,
+  loadFootBillingItems,
+  loadCustomerInsuranceGrade,
+  buildFootBillDetailItems,
+} from '@/lib/footBilling';
+import type { InsuranceGrade } from '@/lib/insurance';
 
 // ─── 타입 ───
 
@@ -483,6 +494,13 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
         total_amount: formatAmount(totalAmt),
       };
 
+      // T-20260608-foot-DOC-PATH12-SYNC: service_charges 미기록 경로 → PMW(PATH-4)와 동일하게
+      //   check_in_services 기반 비급여/공단부담금 폴백 (autobind 값 있으면 보존). bill_receipt {{non_covered}}.
+      if (serviceItems.length === 0 && footBillingItems.length > 0) {
+        const fb = computeFootBilling(footBillingItems, customerInsuranceGrade);
+        applyBillingFallback(bindValues, fb.liveBillingValues);
+      }
+
       // 출력
       // T-20260601-foot-DOC-PRINT-8FIX AC-1: 영수증 재발급 경로의 레거시 우하단 도장 오버레이 제거.
       //   직전 7FIX는 buildHtmlPageHtml 경로만 보고 이 재발급 경로의 오버레이를 존치 →
@@ -696,8 +714,29 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
             nonCovered: nonCoveredTotal,
           });
         }
+      } else if (footBillingItems.length > 0) {
+        // T-20260608-foot-DOC-PATH12-SYNC: service_charges 미기록 경로 → PMW(PATH-4)와 동일하게
+        //   check_in_services(수기조정 반영분) 기반으로 빌링·항목 폴백. (PMW handleDocPrint L1468~1498 1:1)
+        const fb = computeFootBilling(footBillingItems, customerInsuranceGrade);
+        applyBillingFallback(autoValues, fb.liveBillingValues);
+        const needsItems = selectedTemplates.some(
+          (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard',
+        );
+        if (needsItems) {
+          const billItems = buildFootBillDetailItems(fb.pricingItems, autoValues.visit_date ?? '');
+          autoValues.items_html = buildBillDetailItemsHtml(billItems);
+          autoValues.rx_items_html = buildRxItemsHtml([]);
+          if (fb.grandTotal > 0) {
+            autoValues.total_amount = formatAmount(fb.grandTotal);
+            autoValues.subtotal_amount = formatAmount(fb.grandTotal);
+          }
+          if (fb.nonCoveredTotal > 0) {
+            autoValues.subtotal_noncovered = fb.nonCoveredTotal.toLocaleString('ko-KR');
+            autoValues.total_noncovered = fb.nonCoveredTotal.toLocaleString('ko-KR');
+          }
+        }
       } else {
-        // chargeItems 없을 때: bill_detail/rx_standard 빈 rows 처리
+        // chargeItems·check_in_services 모두 없을 때: bill_detail/rx_standard 빈 rows 처리
         const needsItems = selectedTemplates.some(
           (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard',
         );
@@ -1367,6 +1406,10 @@ function IssueDialog({
   const [clinicDoctorOverrides, setClinicDoctorOverrides] = useState<Record<string, string>>({});
   // Phase 3: 서비스 항목 (진료 코드 참조)
   const [serviceItems, setServiceItems] = useState<ServiceChargeItem[]>([]);
+  // T-20260608-foot-DOC-PATH12-SYNC: PMW(PATH-4) 빌링 폴백 소스 — check_in_services 기반.
+  //   service_charges 가 비어있는 경로에서만 사용(무파괴). 건보 등급은 copay 산출용.
+  const [footBillingItems, setFootBillingItems] = useState<FootBillingItem[]>([]);
+  const [customerInsuranceGrade, setCustomerInsuranceGrade] = useState<InsuranceGrade | null>(null);
   // E2E 통합 — 비급여 서비스 직접 추가 (T-20260507-foot-PATIENT-FLOW-E2E)
   const [addServiceOpen, setAddServiceOpen] = useState(false);
   const [allServices, setAllServices] = useState<{ id: string; name: string; service_code: string | null; price: number; category: string }[]>([]);
@@ -1486,9 +1529,20 @@ function IssueDialog({
       if (!cancelled) setAutoValues(vals);
     });
 
+    // T-20260608-foot-DOC-PATH12-SYNC: PMW 수기조정 소스(check_in_services) + 건보 등급 로드 →
+    //   service_charges 가 비었을 때 PATH-4 와 동일한 빌링 폴백에 사용.
+    loadFootBillingItems(checkIn.id, checkIn.clinic_id).then((items) => {
+      if (!cancelled) setFootBillingItems(items);
+    });
+    loadCustomerInsuranceGrade(checkIn.customer_id).then((grade) => {
+      if (!cancelled) setCustomerInsuranceGrade(grade);
+    });
+
     return () => {
       cancelled = true;
       setServiceItems([]);
+      setFootBillingItems([]);
+      setCustomerInsuranceGrade(null);
       setAllServices([]);
       setAddServiceOpen(false);
     };
@@ -1584,6 +1638,13 @@ function IssueDialog({
       base.total_amount = formatAmount(computedTotal);
     }
 
+    // T-20260608-foot-DOC-PATH12-SYNC: service_charges(serviceItems) 미기록 경로의 폴백 빌링.
+    //   PMW(PATH-4)와 동일하게 check_in_services(수기조정 반영분)로 산출. serviceItems 가 있으면
+    //   기존 동작을 그대로 두고(무파괴), 비었을 때만 이 폴백을 쓴다.
+    const footFb = (serviceItems.length === 0 && footBillingItems.length > 0)
+      ? computeFootBilling(footBillingItems, customerInsuranceGrade)
+      : null;
+
     // bill_detail HTML 양식: 서비스 항목 rows 주입
     // T-20260525-foot-DOC-AUTOBIND-REGRESS AC-2: copayment_amount 추가 — 급여 본인부담금 열 표시
     if (template.form_key === 'bill_detail' && serviceItems.length > 0) {
@@ -1605,6 +1666,16 @@ function IssueDialog({
       base.subtotal_amount = base.total_amount;
       base.subtotal_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
       base.total_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
+    } else if (template.form_key === 'bill_detail' && footFb) {
+      // T-20260608-foot-DOC-PATH12-SYNC: check_in_services 폴백 (PMW handleDocPrint L1479~1497 1:1)
+      const billItems = buildFootBillDetailItems(footFb.pricingItems, base.visit_date ?? '');
+      base.items_html = buildBillDetailItemsHtml(billItems);
+      if (computedTotal === null && footFb.grandTotal > 0) {
+        base.total_amount = formatAmount(footFb.grandTotal);
+      }
+      base.subtotal_amount = base.total_amount;
+      base.subtotal_noncovered = footFb.nonCoveredTotal.toLocaleString('ko-KR');
+      base.total_noncovered = footFb.nonCoveredTotal.toLocaleString('ko-KR');
     } else if (template.form_key === 'bill_detail') {
       base.items_html = buildBillDetailItemsHtml([]);
       base.subtotal_amount = base.total_amount;
@@ -1676,6 +1747,10 @@ function IssueDialog({
         copayment: liveCopay,
         nonCovered: liveNon,
       });
+    } else if (footFb) {
+      // T-20260608-foot-DOC-PATH12-SYNC: service_charges 미기록 → check_in_services 폴백.
+      //   PMW(PATH-4) applyBillingFallback 호출(L1472~1475)과 동일 정의. autobind 값이 있으면 보존.
+      applyBillingFallback(base, footFb.liveBillingValues);
     }
 
     // 등록번호/연번호 기본값 (없으면 checkIn.id 앞 8자)
@@ -1687,7 +1762,7 @@ function IssueDialog({
     }
 
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages]);
 
   const editableFields = useMemo(() => {
     if (template.field_map.length > 0) return template.field_map;
