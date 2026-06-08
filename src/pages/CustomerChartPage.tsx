@@ -345,11 +345,28 @@ function ReceiptUploadSection({
 }) {
   const [images, setImages] = useState<StorageImageItem[]>([]);
   const [uploading, setUploading] = useState(false);
+  // T-20260608-foot-RECEIPT-PKG-PAYCLASS: 결제 종류(단건/패키지) + 대상 패키지 추가
+  //   - 활성 패키지 있으면 자동으로 'package' 디폴트(자동감지) + 수동 오버라이드 가능(혼합)
+  //   - kind='package' 시 package_payments INSERT (PKG-REVENUE-SPLIT 경로 재사용)
   const [amountDlg, setAmountDlg] = useState<{
     open: boolean; amount: string; method: 'card' | 'cash' | 'transfer';
-  }>({ open: false, amount: '', method: 'cash' });
+    kind: 'single' | 'package'; packageId: string;
+  }>({ open: false, amount: '', method: 'cash', kind: 'single', packageId: '' });
+  // 활성 패키지 목록 (영수증 결제 라우팅 대상)
+  const [activePkgs, setActivePkgs] = useState<{ id: string; name: string }[]>([]);
 
   const storagePath = `customer/${customerId}/receipt`;
+
+  // T-20260608-foot-RECEIPT-PKG-PAYCLASS: 고객 활성 패키지 조회 (영수증 결제 라우팅용)
+  const loadActivePkgs = useCallback(async () => {
+    const { data } = await supabase
+      .from('packages')
+      .select('id, package_name')
+      .eq('customer_id', customerId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false });
+    setActivePkgs((data ?? []).map((p: { id: string; package_name: string }) => ({ id: p.id, name: p.package_name })));
+  }, [customerId]);
 
   const load = useCallback(async () => {
     const { data: files } = await supabase.storage.from('photos').list(storagePath, {
@@ -369,7 +386,7 @@ function ReceiptUploadSection({
     setImages(withUrls.filter((i) => i.signedUrl));
   }, [storagePath]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); loadActivePkgs(); }, [load, loadActivePkgs]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -384,8 +401,22 @@ function ReceiptUploadSection({
     setUploading(false);
     e.target.value = '';
     await load();
-    // 매출 연동 다이얼로그 열기
-    setAmountDlg({ open: true, amount: '', method: 'cash' });
+    // T-20260608-foot-RECEIPT-PKG-PAYCLASS: 최신 활성 패키지 재조회 후 자동감지 디폴트 결정
+    await loadActivePkgs();
+    const { data: pkgRows } = await supabase
+      .from('packages')
+      .select('id, package_name')
+      .eq('customer_id', customerId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false });
+    const pkgs = (pkgRows ?? []).map((p: { id: string; package_name: string }) => ({ id: p.id, name: p.package_name }));
+    setActivePkgs(pkgs);
+    // 매출 연동 다이얼로그 열기 — 활성 패키지 있으면 '패키지'로 자동감지(최신 1건 프리셀렉트)
+    setAmountDlg({
+      open: true, amount: '', method: 'cash',
+      kind: pkgs.length > 0 ? 'package' : 'single',
+      packageId: pkgs.length > 0 ? pkgs[0].id : '',
+    });
   };
 
   const remove = async (img: StorageImageItem) => {
@@ -397,6 +428,39 @@ function ReceiptUploadSection({
   const handlePaymentConfirm = async () => {
     const amt = parseAmount(amountDlg.amount);
     if (amt <= 0) { toast.error('금액을 입력하세요'); return; }
+
+    // ── T-20260608-foot-RECEIPT-PKG-PAYCLASS ───────────────────────────
+    // 패키지 결제 분류: kind='package' + 대상 패키지 선택 시 package_payments로 라우팅.
+    // PKG-REVENUE-SPLIT(2026-05-19 확립) 경로 재사용 — 일마감 "패키지 결제" 정상 집계.
+    // 새 경로 신설 금지: PackagePaymentAdd(Packages.tsx)와 동일한 INSERT + paid_amount 재집계.
+    if (amountDlg.kind === 'package') {
+      if (!amountDlg.packageId) { toast.error('결제할 패키지를 선택하세요'); return; }
+      const { error: ppErr } = await supabase.from('package_payments').insert({
+        clinic_id: clinicId,
+        package_id: amountDlg.packageId,
+        customer_id: customerId,
+        amount: amt,
+        method: amountDlg.method,
+        installment: amountDlg.method === 'card' ? 0 : 0,
+        payment_type: 'payment',
+        memo: '영수증 업로드',
+      });
+      if (ppErr) { toast.error(`패키지 결제 기록 실패: ${ppErr.message}`); return; }
+      // PackagePaymentAdd 동일 로직: package_payments 합계 → packages.paid_amount 재집계
+      const { data: sum } = await supabase
+        .from('package_payments')
+        .select('amount, payment_type')
+        .eq('package_id', amountDlg.packageId);
+      const total = (sum ?? []).reduce(
+        (s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0);
+      await supabase.from('packages').update({ paid_amount: total }).eq('id', amountDlg.packageId);
+      setAmountDlg((d) => ({ ...d, open: false }));
+      toast.success('패키지 결제로 기록');
+      onPaymentCreated();
+      return;
+    }
+
+    // ── 단건 결제(활성 패키지 無 또는 수동 단건 오버라이드) — 기존 경로 회귀가드 ──
     const { error } = await supabase.from('payments').insert({
       customer_id: customerId,
       clinic_id: clinicId,
@@ -457,6 +521,59 @@ function ReceiptUploadSection({
             <div className="font-semibold text-sm">영수증 매출 연동</div>
             <p className="text-xs text-muted-foreground">결제 금액을 입력하면 일일 매출에 자동 반영됩니다.</p>
             <div className="space-y-2">
+              {/* T-20260608-foot-RECEIPT-PKG-PAYCLASS: 결제 종류(단건/패키지) — 활성 패키지 있을 때만 노출 */}
+              {activePkgs.length > 0 && (
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-0.5">결제 종류</label>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      data-testid="receipt-kind-package"
+                      onClick={() => setAmountDlg((d) => ({ ...d, kind: 'package', packageId: d.packageId || activePkgs[0].id }))}
+                      className={cn(
+                        'flex-1 py-1 text-xs rounded border transition',
+                        amountDlg.kind === 'package'
+                          ? 'bg-teal-600 text-white border-teal-600'
+                          : 'bg-white border-gray-200 hover:bg-gray-50',
+                      )}
+                    >
+                      패키지 결제
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="receipt-kind-single"
+                      onClick={() => setAmountDlg((d) => ({ ...d, kind: 'single' }))}
+                      className={cn(
+                        'flex-1 py-1 text-xs rounded border transition',
+                        amountDlg.kind === 'single'
+                          ? 'bg-teal-600 text-white border-teal-600'
+                          : 'bg-white border-gray-200 hover:bg-gray-50',
+                      )}
+                    >
+                      단건 결제
+                    </button>
+                  </div>
+                  {/* 패키지 선택: 2개 이상이면 드롭다운, 1개면 라벨 */}
+                  {amountDlg.kind === 'package' && (
+                    activePkgs.length > 1 ? (
+                      <select
+                        data-testid="receipt-package-select"
+                        value={amountDlg.packageId}
+                        onChange={(e) => setAmountDlg((d) => ({ ...d, packageId: e.target.value }))}
+                        className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs"
+                      >
+                        {activePkgs.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="mt-1 rounded bg-teal-50 px-2 py-1 text-[11px] text-teal-800 truncate">
+                        {activePkgs[0].name}
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
               <div>
                 <label className="text-xs text-muted-foreground block mb-0.5">금액 (원)</label>
                 <AmountInput
