@@ -2122,6 +2122,118 @@ export default function MedicalChartPanel({
                     />
                   </div>
 
+                  {/* 처방내역 — T-20260609-foot-MEDCHART-NOTES-2COL AC-2: 진단명 아래로 이동.
+                      우측 패널에서 선택 후 이 테이블에 반영 */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-muted-foreground">처방내역</label>
+                      <span className="text-[10px] text-muted-foreground">우측 패널에서 처방세트 선택</span>
+                    </div>
+                    {formRx.length > 0 ? (
+                      <div
+                        className="rounded-lg border bg-card overflow-hidden"
+                        data-testid="prescription-items-table"
+                      >
+                        {/* AC-4: 약이름(용량 포함) | 용법 | 횟수 | 일수 컬럼 분리 + 행별 직접 조정.
+                            AC-3: 약 종류(투여경로) 색상 도트.
+                            MEDCHART-SUPERPHRASE-EXT 2-5: 횟수 = 숫자만 입력 + 배경 '회'(RxCountInput), 용법과 별도 칸. */}
+                        <table className="w-full text-xs">
+                          <thead className="bg-muted/40">
+                            <tr>
+                              <th className="text-left px-3 py-1.5 font-medium">약이름 (용량)</th>
+                              <th className="text-left px-2 py-1.5 font-medium w-24">용법</th>
+                              <th className="text-left px-2 py-1.5 font-medium w-20">횟수</th>
+                              <th className="text-left px-2 py-1.5 font-medium w-16">일수</th>
+                              <th className="py-1.5 w-6" />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {formRx.map((item, idx) => {
+                              const rs = rxItemStyle(item);
+                              return (
+                                <tr
+                                  key={idx}
+                                  className="border-t border-border/50"
+                                  data-testid={`prescription-row-${idx}`}
+                                >
+                                  <td className="px-3 py-1.5">
+                                    <div className="flex items-center gap-1.5">
+                                      <span
+                                        className={`inline-block h-2 w-2 rounded-full flex-shrink-0 ${rs.dot}`}
+                                        title={rs.label}
+                                        aria-label={`투여경로 ${rs.label}`}
+                                        data-testid={`rx-route-dot-${idx}`}
+                                      />
+                                      <span className="font-medium">{item.name}</span>
+                                      {/* T-20260604-foot-RX-DRUGINFO-DOSAGE AC-3: 용량 인라인 수동입력
+                                          (외부 자동조회 불가 → 등록/처방 시 직접 입력 fallback). */}
+                                      <Input
+                                        value={item.dosage}
+                                        onChange={(e) => updateRxItem(idx, 'dosage', e.target.value)}
+                                        disabled={isReadOnly}
+                                        className="h-6 text-xs px-1.5 w-24 text-muted-foreground disabled:opacity-100 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                                        placeholder="용량"
+                                        aria-label="용량"
+                                        data-testid={`rx-dosage-${idx}`}
+                                      />
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-1 align-middle">
+                                    <Input
+                                      value={item.frequency}
+                                      onChange={(e) => updateRxItem(idx, 'frequency', e.target.value)}
+                                      disabled={isReadOnly}
+                                      className="h-7 text-xs px-2 disabled:opacity-100 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                                      placeholder="1일 3회"
+                                      data-testid={`rx-frequency-${idx}`}
+                                    />
+                                  </td>
+                                  {/* MEDCHART-SUPERPHRASE-EXT 2-5: 횟수 = 숫자만 + 배경 '회' */}
+                                  <td className="px-2 py-1 align-middle">
+                                    <RxCountInput
+                                      value={item.count ?? null}
+                                      onChange={(v) => updateRxCount(idx, v)}
+                                      disabled={isReadOnly}
+                                      className="w-16"
+                                    />
+                                  </td>
+                                  <td className="px-2 py-1 align-middle">
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      value={item.days}
+                                      onChange={(e) => updateRxItem(idx, 'days', e.target.value)}
+                                      disabled={isReadOnly}
+                                      className="h-7 text-xs px-2 w-14 disabled:opacity-100 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                                      placeholder="일수"
+                                      data-testid={`rx-days-${idx}`}
+                                    />
+                                  </td>
+                                  <td className="py-1.5 pr-1">
+                                    {!isReadOnly && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setFormRx(prev => prev.filter((_, i) => i !== idx))}
+                                        className="h-5 w-5 rounded text-destructive hover:bg-destructive/10 flex items-center justify-center"
+                                        aria-label="처방 항목 삭제"
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground text-center">
+                        처방내역 없음 — 우측 패널에서 처방세트를 선택하세요
+                      </div>
+                    )}
+                  </div>
+
                   {/* 치료·시술 — 결제내역 자동 연동 (readonly)
                       T-20260608-foot-CHART-LAYOUT-SHIFT AC-1: 별도 fetch(loadVisitPayments) in-flight 동안
                       동일 높이 skeleton으로 자리를 미리 점유 → 결과 도착 시 pop-in 점프 제거. */}
@@ -2195,8 +2307,11 @@ export default function MedicalChartPanel({
                     )}
                   </div>
 
-                  {/* 임상경과 — 상용구 단축어 (우측 패널로 이동, // autocomplete 유지) */}
-                  <div>
+                  {/* T-20260609-foot-MEDCHART-NOTES-2COL AC-1: 임상경과(좌·너비4) · 진료메모(우·너비1)
+                      좌우 4:1 동시 노출(탭전환 X). 비원장은 진료메모 미표시 → 임상경과가 전폭. */}
+                  <div className="flex flex-col sm:flex-row gap-3 items-stretch" data-testid="notes-2col-row">
+                  {/* 임상경과 (좌, flex-4) — 상용구 단축어 (우측 패널로 이동, // autocomplete 유지) */}
+                  <div className="sm:flex-[4] min-w-0">
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-xs font-semibold text-muted-foreground">임상경과</label>
                       <span className="text-[10px] text-muted-foreground">//단축어 입력 시 자동완성</span>
@@ -2327,143 +2442,30 @@ export default function MedicalChartPanel({
                     </div>
                   </div>
 
-                  {/* 처방내역 — 우측 패널에서 선택 후 이 테이블에 반영 */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-semibold text-muted-foreground">처방내역</label>
-                      <span className="text-[10px] text-muted-foreground">우측 패널에서 처방세트 선택</span>
-                    </div>
-                    {formRx.length > 0 ? (
-                      <div
-                        className="rounded-lg border bg-card overflow-hidden"
-                        data-testid="prescription-items-table"
-                      >
-                        {/* AC-4: 약이름(용량 포함) | 용법 | 횟수 | 일수 컬럼 분리 + 행별 직접 조정.
-                            AC-3: 약 종류(투여경로) 색상 도트.
-                            MEDCHART-SUPERPHRASE-EXT 2-5: 횟수 = 숫자만 입력 + 배경 '회'(RxCountInput), 용법과 별도 칸. */}
-                        <table className="w-full text-xs">
-                          <thead className="bg-muted/40">
-                            <tr>
-                              <th className="text-left px-3 py-1.5 font-medium">약이름 (용량)</th>
-                              <th className="text-left px-2 py-1.5 font-medium w-24">용법</th>
-                              <th className="text-left px-2 py-1.5 font-medium w-20">횟수</th>
-                              <th className="text-left px-2 py-1.5 font-medium w-16">일수</th>
-                              <th className="py-1.5 w-6" />
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {formRx.map((item, idx) => {
-                              const rs = rxItemStyle(item);
-                              return (
-                                <tr
-                                  key={idx}
-                                  className="border-t border-border/50"
-                                  data-testid={`prescription-row-${idx}`}
-                                >
-                                  <td className="px-3 py-1.5">
-                                    <div className="flex items-center gap-1.5">
-                                      <span
-                                        className={`inline-block h-2 w-2 rounded-full flex-shrink-0 ${rs.dot}`}
-                                        title={rs.label}
-                                        aria-label={`투여경로 ${rs.label}`}
-                                        data-testid={`rx-route-dot-${idx}`}
-                                      />
-                                      <span className="font-medium">{item.name}</span>
-                                      {/* T-20260604-foot-RX-DRUGINFO-DOSAGE AC-3: 용량 인라인 수동입력
-                                          (외부 자동조회 불가 → 등록/처방 시 직접 입력 fallback). */}
-                                      <Input
-                                        value={item.dosage}
-                                        onChange={(e) => updateRxItem(idx, 'dosage', e.target.value)}
-                                        disabled={isReadOnly}
-                                        className="h-6 text-xs px-1.5 w-24 text-muted-foreground disabled:opacity-100 disabled:bg-gray-50 disabled:cursor-not-allowed"
-                                        placeholder="용량"
-                                        aria-label="용량"
-                                        data-testid={`rx-dosage-${idx}`}
-                                      />
-                                    </div>
-                                  </td>
-                                  <td className="px-2 py-1 align-middle">
-                                    <Input
-                                      value={item.frequency}
-                                      onChange={(e) => updateRxItem(idx, 'frequency', e.target.value)}
-                                      disabled={isReadOnly}
-                                      className="h-7 text-xs px-2 disabled:opacity-100 disabled:bg-gray-50 disabled:cursor-not-allowed"
-                                      placeholder="1일 3회"
-                                      data-testid={`rx-frequency-${idx}`}
-                                    />
-                                  </td>
-                                  {/* MEDCHART-SUPERPHRASE-EXT 2-5: 횟수 = 숫자만 + 배경 '회' */}
-                                  <td className="px-2 py-1 align-middle">
-                                    <RxCountInput
-                                      value={item.count ?? null}
-                                      onChange={(v) => updateRxCount(idx, v)}
-                                      disabled={isReadOnly}
-                                      className="w-16"
-                                    />
-                                  </td>
-                                  <td className="px-2 py-1 align-middle">
-                                    <Input
-                                      type="number"
-                                      min={0}
-                                      value={item.days}
-                                      onChange={(e) => updateRxItem(idx, 'days', e.target.value)}
-                                      disabled={isReadOnly}
-                                      className="h-7 text-xs px-2 w-14 disabled:opacity-100 disabled:bg-gray-50 disabled:cursor-not-allowed"
-                                      placeholder="일수"
-                                      data-testid={`rx-days-${idx}`}
-                                    />
-                                  </td>
-                                  <td className="py-1.5 pr-1">
-                                    {!isReadOnly && (
-                                      <button
-                                        type="button"
-                                        onClick={() => setFormRx(prev => prev.filter((_, i) => i !== idx))}
-                                        className="h-5 w-5 rounded text-destructive hover:bg-destructive/10 flex items-center justify-center"
-                                        aria-label="처방 항목 삭제"
-                                      >
-                                        <X className="h-3 w-3" />
-                                      </button>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground text-center">
-                        처방내역 없음 — 우측 패널에서 처방세트를 선택하세요
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 진료메모 — 원장 전용 미노출 (AC-3)
-                      T-20260603-foot-CHART-UIUX-ENHANCE AC-10: 빨간 박스 제거 → 타 카테고리와 동일 스타일 통일.
-                      원장 전용 구분은 회색 배지로만 유지 (이질적 색상 제거). */}
+                  {/* 진료메모 (우, flex-1) — T-20260609-foot-MEDCHART-NOTES-2COL AC-1.
+                      원장 전용 미노출 (AC-3). 비원장은 미렌더 → 임상경과가 전폭 차지.
+                      저장경로(formMemo→doctor_memo) 무변경, 배치만 우측 컬럼으로 이동. */}
                   {isDirector ? (
-                    <div data-testid="doctor-memo-section">
+                    <div className="sm:flex-[1] min-w-0 flex flex-col" data-testid="doctor-memo-section">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <label className="text-xs font-semibold text-muted-foreground">진료메모</label>
                         <span className="text-[10px] text-muted-foreground bg-gray-100 rounded px-1.5 py-0.5">원장 전용</span>
-                        <span className="text-[10px] text-muted-foreground">
-                          타 스태프에게 노출되지 않습니다
-                        </span>
                       </div>
                       <Textarea
                         value={formMemo}
                         onChange={(e) => setFormMemo(e.target.value)}
                         readOnly={isReadOnly}
-                        placeholder="원장 전용 메모를 입력하세요"
-                        rows={3}
-                        className={`text-sm resize-none placeholder:text-gray-300 ${isReadOnly ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+                        placeholder="원장 전용 메모 — 타 스태프 미노출"
+                        className={`flex-1 text-sm resize-y placeholder:text-gray-300 min-h-[16rem] ${isReadOnly ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
                         data-testid="doctor-memo-input"
                       />
                     </div>
                   ) : (
-                    /* 비원장: 필드 자체 미표시 (AC-4 시나리오 4) */
+                    /* 비원장: 진료메모 필드 미표시 (AC-4 시나리오 4) → 임상경과가 전폭 */
                     null
                   )}
+                  {/* /임상경과·진료메모 4:1 wrapper */}
+                  </div>
 
                   {/* T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-2: 작성자 서명 — 기록 본문 말미.
                       상단 로그인 계정 인디케이터와 구분되는 '서명' 스타일(우측 정렬, 점선 구분, 작성: {이름}). */}
