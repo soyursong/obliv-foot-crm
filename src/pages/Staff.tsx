@@ -729,23 +729,30 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
   const handleWeekAssign = async (room: Room, dayStr: string, staffId: string) => {
     const key = `${dayStr}_${room.name}`;
     const existing = weekAssignMap[key];
-    const staff = staffList.find((s) => s.id === staffId);
+    const staff = staffId ? staffList.find((s) => s.id === staffId) : null;
 
-    if (!staffId) {
-      if (existing) {
-        await supabase.from('room_assignments').delete().eq('id', existing.id);
-        refresh();
-      }
-      return;
-    }
+    // T-20260606-foot-DASH-STAFFASSIGN-RESET-FIX (REOPEN, 주간뷰 잔존 DELETE 경로 제거):
+    //   기존: 미배정(!staffId) 선택 시 해당 (date,room) row 를 delete() 했다. 그 날짜가
+    //         today 면 daily/Dashboard 읽기 머지의 today 스냅샷에 구멍이 생겨 baseline(전날)
+    //         carry-over 가 그 방을 되살림 = "저장해도 리셋". (Dashboard handleStaffAssign /
+    //         Staff handleSave RPC 는 이미 미배정 명시 row 로 차단했으나 주간뷰만 잔존했다.)
+    //   수정: 절대 DELETE 하지 않는다. 미배정도 staff_id=null "명시적 미배정" row 로 보존한다.
+    //         - existing 있으면 → UPDATE(null)  - 없으면 → INSERT(null)
+    //         today row 가 항상 존재 → 읽기 머지(baseline+today, today 우선)가 carry-over 차단.
+    //   silent 금지: 실패 시 toast.error 노출(특히 staff RLS silent 0-row 포착).
+    const newStaffId = staffId || null;
+    const newStaffName = staff?.name ?? null;
+    let error: { message: string } | null = null;
     if (existing) {
-      await supabase.from('room_assignments').update({ staff_id: staffId, staff_name: staff?.name ?? null }).eq('id', existing.id);
+      ({ error } = await supabase.from('room_assignments')
+        .update({ staff_id: newStaffId, staff_name: newStaffName }).eq('id', existing.id));
     } else {
-      await supabase.from('room_assignments').insert({
+      ({ error } = await supabase.from('room_assignments').insert({
         clinic_id: clinic.id, date: dayStr, room_name: room.name, room_type: room.room_type,
-        staff_id: staffId, staff_name: staff?.name ?? null,
-      });
+        staff_id: newStaffId, staff_name: newStaffName,
+      }));
     }
+    if (error) { toast.error(`주간 배정 저장 실패: ${error.message}`); return; }
     refresh();
   };
 
@@ -770,6 +777,14 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
   //         INSERT 실패 시 DELETE 롤백 → today 보존(데이터 무손실). 권한/오류는 RPC 가 명시적
   //         에러로 반환 → 아래에서 항상 실패 토스트 노출 (silent 금지, AC-저장-2).
   const handleSave = async () => {
+    // T-20260606-foot-DASH-STAFFASSIGN-RESET-FIX (REOPEN, 전체 wipe race 가드):
+    //   rooms(active rooms) 미로드 상태에서 저장하면 payload=[] → RPC 의 DELETE 가 today 전체를
+    //   지우고 INSERT 0건 → today 스냅샷 소멸 → 읽기 머지가 baseline carry-over 로 되살려 "리셋".
+    //   rooms 가 비었으면 저장을 막아 데이터 무손실 보장.
+    if (rooms.length === 0) {
+      toast.error('공간 목록 로딩 중입니다. 잠시 후 다시 저장해 주세요.');
+      return;
+    }
     setSaving(true);
     try {
       const today = todayStr; // const todayStr = format(new Date(), 'yyyy-MM-dd') — 컴포넌트 스코프
