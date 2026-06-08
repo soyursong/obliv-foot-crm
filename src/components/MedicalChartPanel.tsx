@@ -371,6 +371,11 @@ export default function MedicalChartPanel({
   const [phraseLoadError, setPhraseLoadError] = useState(false);
   const [superLoadError, setSuperLoadError] = useState(false);
   const [visitPayments, setVisitPayments] = useState<VisitPayment[]>([]);
+  // T-20260608-foot-CHART-LAYOUT-SHIFT AC-0/AC-1: '치료·시술(결제 자동연동)' 섹션은 loadVisitPayments()가
+  //   메인 loading 게이트 밖에서(=resetForm에서 await 없이) 별도 로드된다. 스피너가 사라진 뒤 늦게 resolve되며
+  //   섹션이 진단명↔치료사차트 사이에 뒤늦게 삽입 → 임상경과/치료사차트를 아래로 밀어내는 CLS 주범.
+  //   in-flight 동안 동일 높이 skeleton으로 자리를 미리 점유해 pop-in 점프 제거.
+  const [visitPaymentsLoading, setVisitPaymentsLoading] = useState(false);
   // T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2 [B]): 진단명 입력은 자동완성/이력 datalist 폐지 →
   //   DiagnosisFolderPicker(폴더 탐색 + 원장별 즐겨찾기) 선택전용으로 전환. 별도 상태 불요(picker 자체조회).
   //   저장값은 순수 상병명(formDx) — medical_charts.diagnosis 저장경로 무변경.
@@ -582,7 +587,9 @@ export default function MedicalChartPanel({
   }, [customerId, clinicId, isDirector]);
 
   const loadVisitPayments = useCallback(async (date: string) => {
-    if (!customerId || !date) { setVisitPayments([]); return; }
+    if (!customerId || !date) { setVisitPayments([]); setVisitPaymentsLoading(false); return; }
+    // T-20260608-foot-CHART-LAYOUT-SHIFT AC-1: in-flight 표시 → 섹션 자리 미리 점유(skeleton).
+    setVisitPaymentsLoading(true);
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: checkIns } = await (supabase as any)
@@ -602,6 +609,9 @@ export default function MedicalChartPanel({
       setVisitPayments(pmts || []);
     } catch {
       setVisitPayments([]);
+    } finally {
+      // early-return(if !checkIns) 포함 모든 경로에서 로딩 해제 (finally 보장)
+      setVisitPaymentsLoading(false);
     }
   }, [customerId]);
 
@@ -1874,7 +1884,9 @@ export default function MedicalChartPanel({
               </div>
 
               {/* ── 중앙: 진료기록 폼 (AC-1 좌측 컬럼) ─────────────────────────── */}
-              <div className="flex-1 overflow-y-auto p-5 border-r" data-testid="medical-chart-form">
+              {/* T-20260608-foot-CHART-LAYOUT-SHIFT AC-3: overflow-anchor:auto 명시 — 처방내역 입력 행
+                  추가/삭제 시 브라우저가 보이는 콘텐츠 기준으로 스크롤 위치를 앵커링해 급점프 최소화. */}
+              <div className="flex-1 overflow-y-auto p-5 border-r [overflow-anchor:auto]" data-testid="medical-chart-form">
                 {/* AC-6: 불필요 여백 제거 — 폼 가로 폭 확대(max-w-2xl→max-w-5xl) */}
                 <div className="max-w-5xl space-y-4">
 
@@ -1963,21 +1975,34 @@ export default function MedicalChartPanel({
                     />
                   </div>
 
-                  {/* 치료·시술 — 결제내역 자동 연동 (readonly) */}
-                  {visitPayments.length > 0 && (
-                    <div>
+                  {/* 치료·시술 — 결제내역 자동 연동 (readonly)
+                      T-20260608-foot-CHART-LAYOUT-SHIFT AC-1: 별도 fetch(loadVisitPayments) in-flight 동안
+                      동일 높이 skeleton으로 자리를 미리 점유 → 결과 도착 시 pop-in 점프 제거. */}
+                  {(visitPaymentsLoading || visitPayments.length > 0) && (
+                    <div data-testid="visit-payments-block">
                       <label className="block text-xs font-semibold text-muted-foreground mb-1">
                         치료·시술{' '}
                         <span className="font-normal text-teal-600">(결제내역 자동 연동)</span>
                       </label>
-                      <div className="rounded-lg border bg-muted/20 px-3 py-2 space-y-1">
-                        {visitPayments.map(pmt => (
-                          <div key={pmt.id} className="flex items-center justify-between text-xs">
-                            <span className="text-muted-foreground">{pmt.memo || '결제 항목'}</span>
-                            <span className="font-medium">{formatAmount(pmt.amount)}원</span>
-                          </div>
-                        ))}
-                      </div>
+                      {visitPaymentsLoading ? (
+                        <div
+                          className="rounded-lg border bg-muted/20 px-3 py-2 space-y-1.5 min-h-[2.75rem] animate-pulse"
+                          data-testid="visit-payments-skeleton"
+                          aria-busy="true"
+                        >
+                          <div className="h-3.5 w-2/3 rounded bg-muted" />
+                          <div className="h-3.5 w-1/2 rounded bg-muted" />
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border bg-muted/20 px-3 py-2 space-y-1">
+                          {visitPayments.map(pmt => (
+                            <div key={pmt.id} className="flex items-center justify-between text-xs">
+                              <span className="text-muted-foreground">{pmt.memo || '결제 항목'}</span>
+                              <span className="font-medium">{formatAmount(pmt.amount)}원</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 

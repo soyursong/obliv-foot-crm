@@ -81,10 +81,19 @@ function dateKey(s: string): string {
   }
 }
 
+// T-20260608-foot-FIRSTVISIT-MEMO-EMPTYSTATE AC-0/AC-2 (분기 B — 데이터 연결 버그):
+//   AC-0 진단(scripts/_diag_firstvisit_memo_20260608.mjs, 초진 158건 전수, READ-ONLY):
+//     · notes.text(비어있지않음) 보유 = 0건 — 본 탭이 읽던 단일 키가 사실상 비어있음.
+//     · 그런데 notes.memo 에 실제 초진 상담 메모가 존재("초진 상담. 무지외반증 … 패키지 12회권 계약.")
+//       → notesText()가 .text 만 읽어 숨겨짐(= "데이터 있는데 미표시"). 활성 쓰기경로 없음(레거시/임포트).
+//   조치: 읽기 경로 확장 — text 우선, 비면 memo 폴백. 쓰기/스키마 무변경, 타 기능 무영향.
 function notesText(notes: unknown): string {
   if (!notes || typeof notes !== 'object') return '';
-  const t = (notes as { text?: unknown }).text;
-  return typeof t === 'string' ? t.trim() : '';
+  const n = notes as { text?: unknown; memo?: unknown };
+  const t = typeof n.text === 'string' ? n.text.trim() : '';
+  if (t) return t;
+  const m = typeof n.memo === 'string' ? n.memo.trim() : '';
+  return m;
 }
 
 function treatmentSummary(r: ConsultRecord): string {
@@ -407,8 +416,14 @@ export default function ConsultRecordTab({ customerId }: Props) {
                           ) : (
                             !tx &&
                             !consultant && (
-                              <p className="mt-1.5 text-[10px] italic text-muted-foreground">
-                                기록 메모 없음
+                              // T-20260608-foot-FIRSTVISIT-MEMO-EMPTYSTATE AC-1 (분기 A — 실제 빈 데이터):
+                              //   "기록 메모 없음"은 시스템 오류로 오해될 만큼 모호 → 이 방문에 상담 메모가
+                              //   입력되지 않았음을 명확히. (메모는 check_ins.notes.text/memo에 저장; 미입력 시 공란)
+                              <p
+                                className="mt-1.5 text-[10px] italic text-muted-foreground"
+                                data-testid="consult-record-no-memo"
+                              >
+                                입력된 상담 메모 없음
                               </p>
                             )
                           )}
