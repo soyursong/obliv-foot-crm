@@ -11,11 +11,20 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/lib/toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Ban, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { IconRenderer } from '@/components/admin/QuickRxButtonsTab';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import { checkRxRoleGate, rxRoleGateMessage } from '@/lib/prescriptionGate';
+import {
+  checkRxInClinic,
+  rxInClinicMessage,
+  rxInClinicShortLabel,
+} from '@/lib/inClinicRxGate';
+import { captureRxSnapshot, buildUndoPatch, type RxSnapshot } from '@/lib/rxUndo';
+
+/** 빠른처방 원내 잔류 게이트 차단 시 mutation 이 던지는 에러 코드 */
+const IN_CLINIC_GATE_CODE = 'IN_CLINIC_GATE';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,8 +67,19 @@ function useQuickRxButtonsBar() {
   });
 }
 
+/** 처방 관련 react-query 캐시 무효화(적용·되돌리기 공통) */
+function invalidateRxQueries(qc: ReturnType<typeof useQueryClient>, checkInId: string) {
+  qc.invalidateQueries({ queryKey: ['doctor_fields', checkInId] });
+  qc.invalidateQueries({ queryKey: ['quick_rx_patient_list'] });
+  qc.invalidateQueries({ queryKey: ['doctor_call_dashboard'] });
+}
+
 // ---------------------------------------------------------------------------
 // Hook — DB에 처방 직접 저장 (standalone 모드)
+//   T-20260609-foot-QUICKRX-INCLINIC-GATE:
+//     적용 직전 DB 최신값을 단일 read 로 가져와 (1) 원내 잔류 게이트 재검증(race-safe)
+//     + (2) 되돌리기(undo) 스냅샷 확보. 차단 시 IN_CLINIC_GATE 코드로 throw.
+//     성공 시 적용 전 스냅샷을 반환 → 호출부가 '되돌리기' 토스트 액션으로 사용.
 // ---------------------------------------------------------------------------
 function useApplyQuickRx(checkInId: string | undefined) {
   const qc = useQueryClient();
@@ -70,8 +90,31 @@ function useApplyQuickRx(checkInId: string | undefined) {
     }: {
       items: PrescriptionItem[];
       doctorMode: boolean;
-    }) => {
+    }): Promise<RxSnapshot> => {
       if (!checkInId) throw new Error('checkInId 없음');
+
+      // 1) 적용 전 현재 상태 + undo 스냅샷 단일 조회
+      const { data: cur, error: readErr } = await supabase
+        .from('check_ins')
+        .select(
+          'status, checked_in_at, prescription_items, prescription_status, doctor_confirm_prescription, doctor_confirmed_at',
+        )
+        .eq('id', checkInId)
+        .single();
+      if (readErr) throw readErr;
+
+      // 2) 원내 잔류 게이트 — DB 최신값 기준(낙관적 UI/탭 경합 방어, race-safe)
+      const gate = checkRxInClinic(cur as { status?: string; checked_in_at?: string | null });
+      if (!gate.allowed) {
+        const err = new Error(rxInClinicMessage(gate.reason)) as Error & { code?: string };
+        err.code = IN_CLINIC_GATE_CODE;
+        throw err;
+      }
+
+      // 3) 되돌리기 스냅샷 보존(적용 전 4개 필드 그대로) — rxUndo 단일 출처
+      const snapshot = captureRxSnapshot(cur as Record<string, unknown>);
+
+      // 4) 적용
       const now = new Date().toISOString();
       const patch: Record<string, unknown> = {
         prescription_items: items as unknown as Record<string, unknown>[],
@@ -83,15 +126,36 @@ function useApplyQuickRx(checkInId: string | undefined) {
       }
       const { error } = await supabase.from('check_ins').update(patch).eq('id', checkInId);
       if (error) throw error;
+
+      return snapshot;
     },
-    onSuccess: (_, { doctorMode }) => {
-      if (checkInId) {
-        qc.invalidateQueries({ queryKey: ['doctor_fields', checkInId] });
-        qc.invalidateQueries({ queryKey: ['quick_rx_patient_list'] });
-      }
-      toast.success(doctorMode ? '처방이 확정됐어요.' : '임시 처방이 입력됐어요. 원장 확인 필요.');
+    onSuccess: () => {
+      if (checkInId) invalidateRxQueries(qc, checkInId);
+      // 성공/실패 토스트(되돌리기 액션 포함)는 호출부 handleClick 에서 단일 처리.
     },
-    onError: (e: Error) => toast.error(`처방 입력 실패: ${e.message}`),
+    // onError 토스트는 handleClick 에서 사유별(게이트/일반)로 분기 처리.
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Hook — 빠른처방 되돌리기(undo)
+//   방금 적용 전 스냅샷(4개 필드)을 그대로 write-back → 원복.
+//   덮어쓰기(overwrite)이므로 이중적용·유령행 없음(단일 check_ins 행, INSERT 없음).
+// ---------------------------------------------------------------------------
+function useUndoQuickRx(checkInId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (snapshot: RxSnapshot) => {
+      if (!checkInId) throw new Error('checkInId 없음');
+      const { error } = await supabase
+        .from('check_ins')
+        .update(buildUndoPatch(snapshot) as unknown as Record<string, unknown>)
+        .eq('id', checkInId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      if (checkInId) invalidateRxQueries(qc, checkInId);
+    },
   });
 }
 
@@ -118,6 +182,16 @@ export interface QuickRxBarProps {
   /** DB 저장 완료 후 콜백 */
   onApplied?: () => void;
 
+  /**
+   * T-20260609-foot-QUICKRX-INCLINIC-GATE: 원내 잔류 게이트 컨텍스트(모드 B 전용).
+   * 제공 시 클릭 전 UI 단계에서 비잔류(전날/미래/귀가/취소) 환자면 버튼 대신 차단 패널을 렌더.
+   * 미제공이어도 적용 시점 DB 재검증 게이트가 동작하므로 안전(이중 방어).
+   */
+  checkInStatus?: string | null;
+  checkedInAt?: string | null;
+  /** 차단 안내에서 '차트 열기' 진입 동선(제공 시 액션 버튼 노출). */
+  onOpenChart?: () => void;
+
   className?: string;
   /** 컴팩트 모드 (리스트 행 내 사용 시) */
   compact?: boolean;
@@ -132,17 +206,58 @@ export default function QuickRxBar({
   onSelectItems,
   checkInId,
   onApplied,
+  checkInStatus,
+  checkedInAt,
+  onOpenChart,
   className,
   compact = false,
 }: QuickRxBarProps) {
   const { data: buttons = [], isLoading } = useQuickRxButtonsBar();
   const applyMut = useApplyQuickRx(checkInId);
+  const undoMut = useUndoQuickRx(checkInId);
+
+  // T-20260609-foot-QUICKRX-INCLINIC-GATE: 모드 B + 게이트 컨텍스트 제공 시 클릭 전 차단 판정.
+  //   checkedInAt 이 주어졌을 때만 UI 선검증(미제공 시 적용 시점 DB 게이트로 방어).
+  const isDirectMode = !onSelectItems && !!checkInId;
+  const hasGateContext = isDirectMode && checkedInAt !== undefined && checkedInAt !== null;
+  const uiGate = hasGateContext
+    ? checkRxInClinic({ status: checkInStatus, checked_in_at: checkedInAt })
+    : null;
+  const blockedByUiGate = !!uiGate && !uiGate.allowed;
 
   if (isLoading) {
     return (
       <div className={cn('flex items-center gap-1.5', className)}>
         <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
         <span className="text-xs text-muted-foreground">처방 버튼 로딩 중…</span>
+      </div>
+    );
+  }
+
+  // 원내 비잔류(전날/미래/귀가/취소) — 버튼 대신 차단 패널 + 차트 진입 동선 (AC1~4)
+  if (blockedByUiGate && uiGate) {
+    return (
+      <div
+        className={cn('rounded-lg border border-amber-300 bg-amber-50/70 px-3 py-2.5', className)}
+        data-testid="quick-rx-blocked"
+        data-block-reason={uiGate.reason ?? ''}
+      >
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-800">
+          <Ban className="h-3.5 w-3.5" />
+          {rxInClinicShortLabel(uiGate.reason)}
+        </div>
+        <p className="mt-1 text-[11px] text-amber-700">{rxInClinicMessage(uiGate.reason)}</p>
+        {onOpenChart && (
+          <button
+            type="button"
+            onClick={onOpenChart}
+            data-testid="quick-rx-open-chart"
+            className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-amber-400 bg-white px-2 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-100"
+          >
+            <FileText className="h-3 w-3" />
+            차트 열기
+          </button>
+        )}
       </div>
     );
   }
@@ -167,17 +282,52 @@ export default function QuickRxBar({
     }
 
     if (onSelectItems) {
-      // 모드 A: 콜백만 호출, DB 저장은 부모가 담당
+      // 모드 A: 콜백만 호출, DB 저장은 부모가 담당 (차트 동선 — 원내 잔류 게이트 미적용)
       onSelectItems(items);
       toast.success(
         doctorMode
           ? `"${btn.name}" 처방이 입력됐어요. 처방 컨펌 버튼으로 확정하세요.`
           : `"${btn.name}" 임시 처방이 입력됐어요.`,
       );
-    } else if (checkInId) {
-      // 모드 B: DB에 직접 저장
-      await applyMut.mutateAsync({ items, doctorMode });
+      return;
+    }
+
+    if (!checkInId) return;
+
+    // 모드 B: DB에 직접 저장 — 적용 시점 원내 잔류 게이트 재검증 + 되돌리기 스냅샷
+    try {
+      const snapshot = await applyMut.mutateAsync({ items, doctorMode });
       onApplied?.();
+      // 되돌리기(undo) 토스트 — toast.confirm 은 묵음 제외 채널(현장 반드시 확인).
+      toast.confirm(
+        doctorMode ? `"${btn.name}" 처방이 확정됐어요.` : `"${btn.name}" 임시 처방이 입력됐어요.`,
+        {
+          duration: 8000,
+          action: {
+            label: '되돌리기',
+            onClick: () => {
+              void undoMut
+                .mutateAsync(snapshot)
+                .then(() => {
+                  onApplied?.();
+                  toast.confirm('빠른처방을 되돌렸어요.');
+                })
+                .catch((e: Error) => toast.error(`되돌리기 실패: ${e.message}`));
+            },
+          },
+        },
+      );
+    } catch (e) {
+      const err = e as Error & { code?: string };
+      if (err.code === IN_CLINIC_GATE_CODE) {
+        // 원내 비잔류 차단 — 안내 + 차트 진입 동선
+        toast.error(
+          err.message,
+          onOpenChart ? { action: { label: '차트 열기', onClick: onOpenChart } } : undefined,
+        );
+      } else {
+        toast.error(`처방 입력 실패: ${err.message}`);
+      }
     }
   }
 
@@ -220,7 +370,7 @@ export default function QuickRxBar({
             key={btn.id}
             type="button"
             onClick={() => handleClick(btn)}
-            disabled={applyMut.isPending}
+            disabled={applyMut.isPending || undoMut.isPending}
             className={cn(btnBase, confirmedStyle, 'shrink-0')}
             data-testid={`quick-rx-btn-${btn.name}`}
           >

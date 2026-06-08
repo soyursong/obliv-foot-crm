@@ -408,7 +408,16 @@ function CallFeedRow({
 
       {showRx && (
         <div className="mt-1.5 ml-6 rounded-lg border bg-white p-2">
-          <QuickRxBar doctorMode={doctorMode} role={role} checkInId={checkIn.id} onApplied={onRefresh} compact />
+          <QuickRxBar
+            doctorMode={doctorMode}
+            role={role}
+            checkInId={checkIn.id}
+            onApplied={onRefresh}
+            checkInStatus={checkIn.status}
+            checkedInAt={checkIn.checked_in_at}
+            onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id)}
+            compact
+          />
         </div>
       )}
     </li>
@@ -466,7 +475,16 @@ function CompletedRow({
       </div>
       {showRx && (
         <div className="mt-1.5 rounded-lg border bg-white p-2">
-          <QuickRxBar doctorMode={doctorMode} role={role} checkInId={checkIn.id} onApplied={onRefresh} compact />
+          <QuickRxBar
+            doctorMode={doctorMode}
+            role={role}
+            checkInId={checkIn.id}
+            onApplied={onRefresh}
+            checkInStatus={checkIn.status}
+            checkedInAt={checkIn.checked_in_at}
+            onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id)}
+            compact
+          />
         </div>
       )}
     </li>
