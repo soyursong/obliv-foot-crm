@@ -265,6 +265,25 @@ function chartSummary(chart: MedicalChart): string {
   return chart.diagnosis || chart.chief_complaint || chart.clinical_progress || chart.treatment_record || '기록';
 }
 
+// T-20260608-foot-MEDCHART-TIMELINE-FILTER AC-6: 경과 타임라인 '한눈에' 한 줄 요약.
+//   "이 환자가 어떻게 치료받았는지"를 접힌 상태에서도 즉시 읽히게 — 치료/임상경과 첫 줄 + 처방 핵심을 압축.
+//   summaryText(=상단 진단/주소 줄)와 중복되면 치료 텍스트는 생략하고 처방만 노출(가독성 우선).
+function chartTreatmentGist(chart: MedicalChart, summaryText: string): string {
+  const parts: string[] = [];
+  const treatRaw = (chart.treatment_record?.trim() || chart.clinical_progress?.trim() || '');
+  const treatFirst = treatRaw.split('\n')[0].trim();
+  if (treatFirst && treatFirst !== summaryText) {
+    parts.push(treatFirst.length > 44 ? `${treatFirst.slice(0, 44)}…` : treatFirst);
+  }
+  const rxNames = (Array.isArray(chart.prescription_items) ? chart.prescription_items : [])
+    .map(rx => rx?.name)
+    .filter((n): n is string => !!n && !!n.trim());
+  if (rxNames.length > 0) {
+    parts.push(`💊 ${rxNames.slice(0, 2).join(', ')}${rxNames.length > 2 ? ` 외 ${rxNames.length - 2}` : ''}`);
+  }
+  return parts.join('  ·  ');
+}
+
 // T-20260526-foot-VISIT-FOLD-FILTER: 특이사항 판별 기준 (dev 제안: 키워드 매칭 — 현장 확인 필요)
 // 제안 기준 ① notes 내 키워드 포함 ② 금기/과민 반응 언급 ③ 부작용 기록
 const NOTABLE_KEYWORDS = ['알러지', '주의', '특이', '금기', '과민', '부작용', '금지'];
@@ -1709,19 +1728,24 @@ export default function MedicalChartPanel({
                   </div>
                 </div>
 
-                {/* 경과 타임라인 레이블 (T-20260608-foot-MEDCHART-PANEL-CLARITY AC-1: 우측 '방문 진료내역'과 구분되는 설명) */}
+                {/* 경과 타임라인 레이블 (T-20260608-foot-MEDCHART-PANEL-CLARITY AC-1 + TIMELINE-FILTER AC-5:
+                    좌=진료 전용 / 상담=우측 역할을 헤더로 한눈에 구분. "좌·우가 뭐가 다른지 모르겠다" 해소) */}
                 <div className="flex-none px-2 pt-2 pb-1">
                   <span
-                    className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide"
-                    title="진료차트 회차별 경과 기록(최신 상단). 항목을 클릭하면 우측 폼에서 편집합니다. ↔ 우측 '방문 진료내역'은 방문(체크인) 단위 읽기전용 뷰입니다."
+                    className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-700 uppercase tracking-wide"
+                    title="이 패널은 '진료 경과'만 시간순으로 모읍니다 — 진료메모·치료메모·처방. 항목을 클릭하면 우측 폼에서 편집합니다. ▸ 상담기록은 우측 '📋 상담' 탭에 있습니다. ▸ 우측 '방문 진료내역'은 방문(체크인) 단위 읽기전용 뷰입니다."
                   >
-                    경과 타임라인
+                    <Stethoscope className="h-3 w-3" />
+                    진료 경과 타임라인
                     {isDummyMode && (
                       <span className="ml-1 text-yellow-600 font-bold">[더미]</span>
                     )}
                   </span>
                   <p className="text-[9px] font-normal normal-case text-muted-foreground/70 mt-0.5 leading-tight">
-                    진료차트 회차별 경과 · 클릭하면 우측 폼에서 편집
+                    진료메모·치료메모·처방 시간순 · 클릭하면 우측 폼에서 편집
+                  </p>
+                  <p className="text-[9px] font-normal normal-case text-muted-foreground/60 mt-0.5 leading-tight">
+                    💬 상담기록은 우측 <span className="font-semibold text-muted-foreground/80">📋 상담</span> 탭에서 확인
                   </p>
                 </div>
 
@@ -1775,9 +1799,18 @@ export default function MedicalChartPanel({
                                 <span className="ml-1 text-[9px] text-yellow-600 font-bold">더미</span>
                               )}
                             </div>
-                            <div className="text-[10px] text-muted-foreground truncate mt-0.5">
+                            <div className="text-[10px] font-medium text-foreground/80 truncate mt-0.5">
                               {chartSummary(chart)}
                             </div>
+                            {/* T-20260608-foot-MEDCHART-TIMELINE-FILTER AC-6: '어떻게 치료받았는지' 한 줄 — 치료/임상경과 + 처방 압축 */}
+                            {(() => {
+                              const gist = chartTreatmentGist(chart, chartSummary(chart));
+                              return gist ? (
+                                <div className="text-[9px] text-muted-foreground truncate mt-0.5" data-testid="timeline-treatment-gist">
+                                  {gist}
+                                </div>
+                              ) : null;
+                            })()}
                             {/* 메모 종류 배지 */}
                             <div className="flex gap-0.5 mt-0.5 flex-wrap">
                               {hasTreat && (
