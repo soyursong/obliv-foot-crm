@@ -187,6 +187,17 @@ function computeRemainingFromSessionRows(
   return pkgs.map((p) => {
     const used = usedMap.get(p.id) ?? {};
     const totalUsed = Object.values(used).reduce((a, b) => a + b, 0);
+    // T-20260608-foot-ACTIVE-PKG-NOTFOUND-DEDUCT-FAIL: total_remaining을 개별 회차 컬럼 합 기준으로 산출.
+    // (이전: stale할 수 있는 저장 컬럼 total_sessions에 의존 → 편집/추가로 reborn 등 신규 항목이 들어와도
+    //  total_sessions가 동기화 안 되면 total_remaining=0 → "활성 패키지 없음" 오안내 + 차감 차단 회귀)
+    const totalAvailable =
+      (p.heated_sessions          ?? 0) +
+      (p.unheated_sessions        ?? 0) +
+      (p.iv_sessions              ?? 0) +
+      (p.preconditioning_sessions ?? 0) +
+      (p.podologe_sessions        ?? 0) +
+      (p.trial_sessions           ?? 0) +
+      (p.reborn_sessions          ?? 0);
     return {
       heated:          (p.heated_sessions          ?? 0) - (used['heated_laser']    ?? 0),
       unheated:        (p.unheated_sessions        ?? 0) - (used['unheated_laser']  ?? 0),
@@ -196,7 +207,7 @@ function computeRemainingFromSessionRows(
       trial:           (p.trial_sessions           ?? 0) - (used['trial']           ?? 0),
       reborn:          (p.reborn_sessions          ?? 0) - (used['reborn']          ?? 0),
       total_used:      totalUsed,
-      total_remaining: Math.max(0, (p.total_sessions ?? 0) - totalUsed),
+      total_remaining: Math.max(0, totalAvailable - totalUsed),
     };
   });
 }
@@ -2616,20 +2627,29 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const saveEditPkg = async () => {
     if (!editPkgDlg || !customer) return;
     setSavingEditPkg(true);
+    const editHeated = parseInt(editPkgForm.heated_sessions) || 0;
+    const editUnheated = parseInt(editPkgForm.unheated_sessions) || 0;
+    const editPodologe = parseInt(editPkgForm.podologe_sessions) || 0;
+    const editIv = parseInt(editPkgForm.iv_sessions) || 0;
+    const editTrial = parseInt(editPkgForm.trial_sessions) || 0;
+    const editReborn = parseInt(editPkgForm.reborn_sessions) || 0;
     const updates = {
       package_name: editPkgForm.package_name.trim() || editPkgDlg.package_name,
       total_amount: parseAmount(editPkgForm.total_amount),
-      heated_sessions: parseInt(editPkgForm.heated_sessions) || 0,
+      // T-20260608-foot-ACTIVE-PKG-NOTFOUND-DEDUCT-FAIL: 편집 시 total_sessions를 개별 회차 합으로 재계산.
+      // (이전: 개별 컬럼만 갱신하고 total_sessions 미갱신 → 잔여 집계·표시 드리프트 → 활성 패키지 오판정)
+      total_sessions: editHeated + editUnheated + editPodologe + editIv + editTrial + editReborn,
+      heated_sessions: editHeated,
       heated_unit_price: parseAmount(editPkgForm.heated_unit_price),
-      unheated_sessions: parseInt(editPkgForm.unheated_sessions) || 0,
+      unheated_sessions: editUnheated,
       unheated_unit_price: parseAmount(editPkgForm.unheated_unit_price),
-      podologe_sessions: parseInt(editPkgForm.podologe_sessions) || 0,
+      podologe_sessions: editPodologe,
       podologe_unit_price: parseAmount(editPkgForm.podologe_unit_price),
-      iv_sessions: parseInt(editPkgForm.iv_sessions) || 0,
+      iv_sessions: editIv,
       iv_unit_price: parseAmount(editPkgForm.iv_unit_price),
-      trial_sessions: parseInt(editPkgForm.trial_sessions) || 0,
+      trial_sessions: editTrial,
       trial_unit_price: parseAmount(editPkgForm.trial_unit_price),
-      reborn_sessions: parseInt(editPkgForm.reborn_sessions) || 0,
+      reborn_sessions: editReborn,
       reborn_unit_price: parseAmount(editPkgForm.reborn_unit_price),
     };
     const { error } = await supabase.from('packages').update(updates).eq('id', editPkgDlg.id);
