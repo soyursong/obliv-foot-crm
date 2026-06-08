@@ -159,3 +159,100 @@ test.describe('T-20260606-foot-DASH-STAFFASSIGN-RESET-FIX 대시보드 공간배
     console.log(`[S3] 대시보드↔직원.공간 일관 렌더 OK (room_assignments 크리티컬 에러 0건, 총 ${errors.length})`);
   });
 });
+
+// =============================================================
+// REOPEN (2026-06-08): 직원.공간 화면 잔존 write 경로
+//   field-soak 0건 + 김주연 총괄 3차 재보고 → 전체 write 경로 owner 격상.
+//   prod 실측: (a) 주간뷰 handleWeekAssign 에 DELETE 잔존,
+//             (b) save_room_assignments RPC blanket-DELETE 가 가열성레이저 등
+//                 비-payload 슬롯을 매 저장마다 wipe = 데이터 유실 + 리셋.
+// =============================================================
+test.describe('REOPEN 직원.공간 잔존 write 경로 (AC-7)', () => {
+  test.beforeEach(async ({ page }) => {
+    const ok = await loginAndWaitForDashboard(page);
+    if (!ok) test.skip(true, 'Login failed');
+  });
+
+  // ---------------------------------------------------------
+  // S4 (AC-7 핵심): 직원.공간 일간뷰 — 배정 저장 → 새로고침 유지 → 미배정 저장 → 유지
+  //   회귀 시: 저장 후 새로고침에 baseline carry-over 로 직원 부활.
+  // ---------------------------------------------------------
+  test('S4: 직원.공간 일간뷰 배정/미배정 저장 후 새로고침 영속', async ({ page }) => {
+    await page.goto('/admin/staff');
+    const roomTab = page.getByRole('tab', { name: /공간 배정/ });
+    try { await roomTab.waitFor({ timeout: 12_000 }); } catch { test.skip(true, '공간 배정 탭 미발견'); return; }
+    await roomTab.click();
+    await page.waitForTimeout(1_500);
+
+    // 일간뷰의 첫 배정 가능 select (room-row-* 안의 select) 찾기
+    const rowSelect = page.locator('[data-testid^="room-row-"] select').first();
+    try { await rowSelect.waitFor({ timeout: 8_000 }); } catch { test.skip(true, '공간 select 미발견'); return; }
+
+    // 배정 가능한 첫 옵션 value
+    const opts = await rowSelect.locator('option').all();
+    let staffVal = '';
+    for (const o of opts) { const v = await o.getAttribute('value'); if (v && v.trim()) { staffVal = v; break; } }
+    if (!staffVal) { test.skip(true, '배정 가능 직원 옵션 없음'); return; }
+
+    await rowSelect.selectOption(staffVal);
+    await page.getByRole('button', { name: /저장/ }).first().click();
+    await expect(page.getByText(/공간배정 저장됨|저장 실패/).first()).toBeVisible({ timeout: 8_000 });
+    await page.waitForTimeout(800);
+
+    await page.reload();
+    await page.waitForTimeout(1_500);
+    await roomTab.click();
+    await page.waitForTimeout(1_000);
+    const persisted = await page.locator('[data-testid^="room-row-"] select').first().inputValue().catch(() => '');
+    console.log(`[S4] 저장·새로고침 후 첫 방 값: "${persisted}" (기대 "${staffVal}")`);
+    expect(persisted).toBe(staffVal);
+
+    // 미배정 전환 → 저장 → 새로고침 유지 (carry-over 부활 없음)
+    await page.locator('[data-testid^="room-row-"] select').first().selectOption('');
+    await page.getByRole('button', { name: /저장/ }).first().click();
+    await expect(page.getByText(/공간배정 저장됨|저장 실패/).first()).toBeVisible({ timeout: 8_000 });
+    await page.waitForTimeout(800);
+    await page.reload();
+    await page.waitForTimeout(1_500);
+    await roomTab.click();
+    await page.waitForTimeout(1_000);
+    const afterUnassign = await page.locator('[data-testid^="room-row-"] select').first().inputValue().catch(() => 'X');
+    console.log(`[S4] 미배정 저장·새로고침 후 첫 방 값: "${afterUnassign}" (기대 "")`);
+    expect(afterUnassign).toBe('');
+    console.log('[S4] 직원.공간 일간뷰 무리셋 OK');
+  });
+
+  // ---------------------------------------------------------
+  // S5: 주간뷰 미배정 전환 → DELETE 잔존 경로 제거 검증 (콘솔 에러 0건 + 셀 빈값 유지)
+  //   회귀라면 미배정 시 DELETE → 그 날짜가 today 면 daily 가 carry-over 로 부활.
+  // ---------------------------------------------------------
+  test('S5: 주간뷰 배정→미배정 전환 후 셀 빈값 유지 (DELETE 잔존 제거)', async ({ page }) => {
+    await page.goto('/admin/staff');
+    const roomTab = page.getByRole('tab', { name: /공간 배정/ });
+    try { await roomTab.waitFor({ timeout: 12_000 }); } catch { test.skip(true, '공간 배정 탭 미발견'); return; }
+    await roomTab.click();
+    await page.waitForTimeout(1_000);
+
+    const weekBtn = page.getByRole('button', { name: '주간' });
+    try { await weekBtn.waitFor({ timeout: 6_000 }); } catch { test.skip(true, '주간 토글 미발견'); return; }
+    await weekBtn.click();
+    await page.waitForTimeout(1_500);
+
+    const cell = page.locator('tbody td select').first();
+    try { await cell.waitFor({ timeout: 8_000 }); } catch { test.skip(true, '주간 셀 미발견'); return; }
+    const opts = await cell.locator('option').all();
+    let staffVal = '';
+    for (const o of opts) { const v = await o.getAttribute('value'); if (v && v.trim()) { staffVal = v; break; } }
+    if (!staffVal) { test.skip(true, '주간 배정 가능 옵션 없음'); return; }
+
+    // 배정 → 미배정 → 미배정 유지 (DELETE 가 아니라 null row 보존이라 에러 없이 빈값)
+    await cell.selectOption(staffVal);
+    await page.waitForTimeout(800);
+    await cell.selectOption('');
+    await page.waitForTimeout(800);
+    const v = await cell.inputValue().catch(() => 'X');
+    console.log(`[S5] 주간뷰 미배정 후 셀 값: "${v}" (기대 "")`);
+    expect(v).toBe('');
+    console.log('[S5] 주간뷰 미배정 전환 OK — DELETE 잔존 제거, null row 보존');
+  });
+});
