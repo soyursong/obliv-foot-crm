@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useNavigate, useParams } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, Loader2, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
+import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, ExternalLink, FileText, Loader2, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
 // T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성 발건강질문지(health_q_results) 상담내역 [내용보기] 렌더
@@ -672,6 +672,9 @@ function TreatmentImagesSection({
   const [selectMode, setSelectMode] = useState(false);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
+  // T-20260609-foot-MEDIMG-COMPARE-GRID: 멀티셀렉트 → 적응형 비교 그리드 오버레이 (read-only)
+  // 선택 인프라(selectMode/selectedPaths) 재사용, 신규 npm 0. null=닫힘.
+  const [compareItems, setCompareItems] = useState<TreatImgItem[] | null>(null);
 
   // T-20260522-foot-IMGDROP-REMOVE: 수동 업로드 분류 다이얼로그 (AC-2)
   const [uploadTypeDialogOpen, setUploadTypeDialogOpen] = useState(false);
@@ -882,6 +885,21 @@ function TreatmentImagesSection({
     const sel = items.filter((i) => selectedPaths.has(i.path));
     await downloadImages(sel);
     exitSelectMode();
+  };
+
+  // T-20260609-foot-MEDIMG-COMPARE-GRID (AC-1): 선택 2~4장 → 비교 오버레이.
+  // 시간순(asc) 정렬 후 동시각이면 before→after→photo 순. 4장 초과는 버튼 단계에서 차단.
+  const openCompare = () => {
+    const sel = items
+      .filter((i) => selectedPaths.has(i.path))
+      .sort((a, b) => {
+        if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+        const order: Record<TreatImgType, number> = { before: 0, after: 1, photo: 2 };
+        return order[a.imgType] - order[b.imgType];
+      })
+      .slice(0, 4);
+    if (sel.length < 2) return;
+    setCompareItems(sel);
   };
 
   // ── T-20260522-foot-MEDIMG-CAMERA: 카메라 함수 ───────────────────────────
@@ -1206,6 +1224,22 @@ function TreatmentImagesSection({
           {items.length > 0 && (
             selectMode ? (
               <>
+                {/* T-20260609-foot-MEDIMG-COMPARE-GRID (AC-1): 2~4장 선택 시 비교 활성, 4장 초과 차단 */}
+                <button
+                  type="button"
+                  onClick={openCompare}
+                  disabled={selectedPaths.size < 2 || selectedPaths.size > 4}
+                  data-testid="compare-btn"
+                  title={
+                    selectedPaths.size < 2 ? '2장 이상 선택하세요'
+                    : selectedPaths.size > 4 ? '비교는 최대 4장까지'
+                    : '선택 이미지 비교'
+                  }
+                  className="inline-flex items-center gap-1 text-xs border border-teal-400 rounded px-2 py-0.5 bg-white text-teal-700 hover:bg-teal-100 transition disabled:opacity-50"
+                >
+                  <Columns2 className="h-3 w-3" />
+                  비교 ({selectedPaths.size})
+                </button>
                 <button
                   type="button"
                   onClick={downloadSelected}
@@ -1720,6 +1754,62 @@ function TreatmentImagesSection({
           </div>
         );
       })()}
+
+      {/* ── T-20260609-foot-MEDIMG-COMPARE-GRID (AC-1~AC-4): 적응형 비교 그리드 오버레이 ── */}
+      {/* read-only: 편집/삭제/이동 없음. 닫기 시 선택 상태(selectMode/selectedPaths) 보존(AC-3). */}
+      {compareItems && compareItems.length >= 2 && (
+        <div
+          className="fixed inset-0 z-[210] flex flex-col bg-black/90"
+          role="dialog"
+          aria-modal="true"
+          data-testid="img-compare"
+          onClick={() => setCompareItems(null)}
+        >
+          {/* 상단 바: 제목 + 닫기 */}
+          <div className="flex items-center justify-between px-4 py-3 text-white" onClick={(e) => e.stopPropagation()}>
+            <span className="text-sm font-medium flex items-center gap-1.5">
+              <Columns2 className="h-4 w-4" />
+              이미지 비교 ({compareItems.length}장)
+            </span>
+            <button
+              type="button"
+              onClick={() => setCompareItems(null)}
+              className="inline-flex items-center justify-center h-9 w-9 rounded-full bg-white/10 hover:bg-white/20 transition"
+              title="닫기"
+              data-testid="compare-close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* 본문: 적응형 그리드 (2장=1×2, 3~4장=2×2) */}
+          <div
+            className="flex-1 grid grid-cols-2 gap-2 p-3 pt-0 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {compareItems.map((img) => (
+              <div
+                key={img.path}
+                data-testid="compare-cell"
+                className="relative flex flex-col items-center justify-center min-h-0 rounded-lg border border-white/15 bg-black/40 overflow-hidden"
+              >
+                <img
+                  src={img.signedUrl}
+                  alt={img.name}
+                  className="flex-1 min-h-0 max-w-full object-contain select-none"
+                />
+                {/* AC-2: 각 셀 하단 라벨 — 날짜 · 분류(메모 데이터 부재 → 분류로 식별) */}
+                <div className="w-full px-2 py-1 text-center text-xs text-white bg-black/60 flex items-center justify-center gap-1.5">
+                  <span className="font-medium">{img.dateStr}</span>
+                  <span className={cn('rounded px-1.5 py-0.5 text-[10px]', TYPE_COLOR[img.imgType])}>
+                    {TYPE_LABEL[img.imgType]}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
