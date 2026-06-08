@@ -161,6 +161,18 @@ test.describe('회귀: 입력/저장 동선(state→컬럼) 무영향', () => {
     expect(row.clinical_progress).not.toBe(row.doctor_memo);
   });
 
+  // (CANCELLATION reconcile MSG-20260609-030830-vuaz) 폐기된 NOTES-2COL spec 고유 엣지 흡수:
+  // 한쪽 컬럼만 입력해도 반대쪽 빈 값이 누락 없이 보존되는지 가드.
+  test('한쪽만 입력해도 다른 쪽 빈 값 보존(누락 없음)', () => {
+    const onlyClinical = buildSavePayload({ formClinical: '경과 양호', formMemo: '', formRx: [] });
+    expect(onlyClinical.clinical_progress).toBe('경과 양호');
+    expect(onlyClinical.doctor_memo).toBe('');
+
+    const onlyMemo = buildSavePayload({ formClinical: '', formMemo: '내부 메모', formRx: [] });
+    expect(onlyMemo.clinical_progress).toBe('');
+    expect(onlyMemo.doctor_memo).toBe('내부 메모');
+  });
+
   test('재배치(반응형 축 변동)는 저장 payload 에 무영향', () => {
     const form: ChartForm = { formClinical: 'A', formMemo: 'B', formRx: ['C'] };
     // 어떤 뷰포트에서 작성하든 저장 매핑은 동일
