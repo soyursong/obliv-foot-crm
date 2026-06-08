@@ -114,6 +114,26 @@ function useDiagnoses(clinicId: string | null) {
   });
 }
 
+// T-20260608-foot-DXMGMT-EDIT-SAVE-BUG (AC-0/1/2):
+//   근본원인 — dev/운영 DB에 services.diagnosis_folder 컬럼 미적용(42703). useDiagnoses(read)는
+//   폴백을 가져 목록은 정상 로드되나, useUpsertDx(write)는 payload에 항상 diagnosis_folder 를 실어
+//   UPDATE/INSERT 가 42703 으로 전부 실패 → 상병 수정·신규등록 모두 막힘.
+//   대표원장이 본 "상병명 자리에 폴더명/DB에러"는 컬럼 부재 토스트(...diagnosis_folder...)의 인지였음.
+//   ⟶ read 와 동일하게 write 도 deploy-tolerant: 42703 시 폴더 컬럼 제외 1회 재시도(저장 무결).
+//      폴더값 보존 활성화는 마이그(20260606160000/20260607200000) supervisor 게이트 적용 후 자동.
+//      name=상병명 / diagnosis_folder=폴더값(or null) 컬럼 정합은 insert·update 동일 payload 로 유지(AC-1).
+function isMissingFolderColumn(e: unknown): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const err = e as any;
+  // 42703 = PG "column does not exist"(read select 시) / PGRST204 = PostgREST 스키마캐시 미존재(write 시).
+  return (
+    !!err &&
+    (err.code === '42703' ||
+      err.code === 'PGRST204' ||
+      /diagnosis_folder/i.test(err.message ?? ''))
+  );
+}
+
 function useUpsertDx(clinicId: string | null) {
   const qc = useQueryClient();
   return useMutation({
@@ -127,22 +147,31 @@ function useUpsertDx(clinicId: string | null) {
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sb = supabase as any;
-      if (id) {
-        const { error } = await sb.from('services').update(payload).eq('id', id);
-        if (error) throw error;
-      } else {
-        // 신규 상병 = services 행. category/category_label='상병', 단가 0 (진단코드, 비매출).
-        const { error } = await sb.from('services').insert({
-          ...payload,
-          clinic_id: clinicId,
-          category: '상병',
-          category_label: '상병',
-          price: 0,
-          vat_type: 'none',
-          service_type: 'single',
-        });
-        if (error) throw error;
+
+      // 신규=insert / 수정=update 단일 실행기 — 폴더 포함/제외 두 payload 형태를 동일 경로로 처리.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const run = (p: Record<string, any>) =>
+        id
+          ? sb.from('services').update(p).eq('id', id)
+          : sb.from('services').insert({
+              // 신규 상병 = services 행. category/category_label='상병', 단가 0 (진단코드, 비매출).
+              ...p,
+              clinic_id: clinicId,
+              category: '상병',
+              category_label: '상병',
+              price: 0,
+              vat_type: 'none',
+              service_type: 'single',
+            });
+
+      let { error } = await run(payload);
+      if (error && isMissingFolderColumn(error)) {
+        // 폴더 컬럼 미적용 환경 → 폴더 제외 재시도 (read 폴백과 동일 시맨틱, 저장은 무결 보장)
+        const { diagnosis_folder: _omitFolder, ...noFolder } = payload;
+        void _omitFolder;
+        ({ error } = await run(noFolder));
       }
+      if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['diagnosis_master'] });
