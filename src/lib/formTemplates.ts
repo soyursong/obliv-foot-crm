@@ -80,12 +80,20 @@ export const PENCHART_EXTRA_PRINT_ROLES = ['therapist', 'staff'] as const;
  * PENCHART 패턴(T-20260602) 동일 — DB form_templates.required_role 변경 없이
  * 코드측 canAccess 판정만 보강(db_changed=false). form_key 한정이므로 그 외
  * 양식(med_record 등)의 required_role 정책에는 영향 없음(회귀 차단).
- *   소견서 diag_opinion · 처방전 prescription · 진단서 diagnosis ·
+ *   소견서 diag_opinion · 처방전 rx_standard · 진단서 diagnosis ·
  *   진료비납입증명서 payment_cert · 진료의뢰서 referral_letter
+ *
+ * ⚠️ AC-0 진단(2026-06-08, _diag_docpanel_allrole): 운영 DB form_templates 의
+ * 활성 "처방전"은 form_key='rx_standard'(name_ko='처방전(표준처방전)') 이다.
+ * fallback 키 'prescription' 은 DB 미존재 → 직전 보강(bef9a98)이 처방전만 누락,
+ * coordinator 에게 계속 비활성 노출됨. 운영 실키 'rx_standard' 추가로 해소.
+ * fallback 'prescription' 은 DB 빈 환경 방어용으로 유지(무해).
+ * (소견서 보험청구용 diag_opinion_v2 는 명세 5종 범위 외 → 미포함, 회귀 차단.)
  */
 export const ALL_ROLE_PRINT_FORM_KEYS = [
   'diag_opinion',
-  'prescription',
+  'prescription',  // fallback 데이터 호환(DB 빈 환경)
+  'rx_standard',   // 운영 DB 실제 처방전 form_key (AC-0 진단 근거)
   'diagnosis',
   'payment_cert',
   'referral_letter',

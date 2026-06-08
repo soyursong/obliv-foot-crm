@@ -40,6 +40,26 @@ const targetTemplates = TARGET_KEYS.map((k) => {
   return tpl;
 });
 
+// ⚠️ AC-0 진단(2026-06-08) 회귀 가드 — 운영 DB form_templates 실제 행 시뮬레이션.
+//   운영 활성 "처방전"은 form_key='rx_standard'(NOT 'prescription'). DB 빈 환경이 아니면
+//   line 432-434 에서 DB 행이 fallback 을 대체 → canAccess 는 'rx_standard' 로 판정된다.
+//   직전 보강(bef9a98)은 fallback 키 'prescription' 만 추가해 처방전이 coordinator 에게
+//   계속 비활성 노출됨. 본 spec 이 운영 실키를 막아 재발을 차단한다.
+const PROD_RX_STANDARD: FormTemplate = {
+  id: 'tpl-prod-rx-standard',
+  clinic_id: FOOT_CLINIC_ID,
+  category: 'foot-service',
+  form_key: 'rx_standard',
+  name_ko: '처방전(표준처방전)',
+  template_path: '',
+  template_format: 'jpg',
+  field_map: [],
+  requires_signature: false,
+  required_role: 'admin|manager|director', // 운영 DB 실제 값(coordinator 미포함)
+  active: true,
+  sort_order: 20,
+};
+
 // 회귀 검증용 — 5종 외 양식(의무기록사본발급신청서). coordinator 는 required_role 정책 그대로.
 const medRecordReq: FormTemplate = {
   id: 'tpl-med-record-request',
@@ -76,7 +96,18 @@ test('AC-1: 보강 상수 ALL_ROLE_PRINT_FORM_KEYS 에 5종 모두 포함', () =
   for (const k of TARGET_KEYS) {
     expect([...ALL_ROLE_PRINT_FORM_KEYS]).toContain(k);
   }
-  expect(ALL_ROLE_PRINT_FORM_KEYS.length).toBe(5);
+  // AC-0 진단 후: 운영 DB 처방전 실키 'rx_standard' 도 포함되어야 함(fallback 'prescription' 과 병행).
+  expect([...ALL_ROLE_PRINT_FORM_KEYS]).toContain('rx_standard');
+});
+
+// ── AC-1b: 운영 DB 실키 회귀 가드 — 처방전(rx_standard) coordinator 접근 ──────
+test('AC-1b: [운영DB 회귀가드] 처방전 form_key=rx_standard 는 coordinator 접근 허용', () => {
+  // 직전 보강이 놓친 핵심 케이스. DB 시드가 fallback 을 대체하는 운영 환경 재현.
+  expect(canAccessFormTemplate(PROD_RX_STANDARD, 'coordinator'),
+    '처방전(rx_standard) coordinator 비활성 — AC-0 근본원인 재발').toBe(true);
+  for (const role of ['staff', 'therapist', 'consultant']) {
+    expect(canAccessFormTemplate(PROD_RX_STANDARD, role), `${role} 처방전(rx_standard) 누락`).toBe(true);
+  }
 });
 
 // ── AC-2: 모든 비-admin role 에서 5종 노출 ──────────────────────────────────
