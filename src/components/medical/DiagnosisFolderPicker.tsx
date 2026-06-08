@@ -41,6 +41,7 @@ interface DxSetItem {
 interface DxSet {
   id: string;
   name: string;
+  is_favorite: boolean; // T-20260609-foot-DX-BUNDLE-REFINE AC-3: 즐찾 세트 섹션 최상단 우선
   items: DxSetItem[];
 }
 
@@ -142,6 +143,8 @@ function useFavorites(staffId: string | null) {
 
 // T-20260608-foot-DX-BUNDLE-SET (AC-2): 묶음상병 세트 목록(진료차트 일괄 적용).
 //   테이블 미적용(마이그 미게이트) 환경에서도 graceful(빈 목록 → 섹션 미노출).
+// T-20260609-foot-DX-BUNDLE-REFINE (AC-3): 즐겨찾기(is_favorite) 우선 정렬 + deploy-tolerant.
+//   정렬: is_favorite DESC → sort_order ASC → name ASC. is_favorite 컬럼 미적용 시 폴백.
 function useDxSets(clinicId: string | null) {
   return useQuery({
     queryKey: [DX_SET_KEY, clinicId],
@@ -149,21 +152,38 @@ function useDxSets(clinicId: string | null) {
     queryFn: async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sb = supabase as any;
-      const { data, error } = await sb
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const normalize = (rows: any[], hasFav: boolean): DxSet[] =>
+        rows
+          .map((s) => ({
+            id: s.id,
+            name: s.name,
+            is_favorite: hasFav ? !!s.is_favorite : false,
+            sort_order: (s.sort_order as number) ?? 0,
+            items: ((s.diagnosis_set_items ?? []) as DxSetItem[])
+              .slice()
+              .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
+          }))
+          .sort((a, b) => {
+            if (a.is_favorite !== b.is_favorite) return a.is_favorite ? -1 : 1;
+            if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+            return a.name.localeCompare(b.name, 'ko');
+          })
+          .map(({ id, name, is_favorite, items }) => ({ id, name, is_favorite, items }));
+      const withFav = await sb
+        .from('diagnosis_sets')
+        .select('id, name, is_active, is_favorite, sort_order, diagnosis_set_items(service_id, diagnosis_type, sort_order)')
+        .eq('clinic_id', clinicId)
+        .eq('is_active', true);
+      if (!withFav.error) return normalize((withFav.data ?? []) as unknown[], true);
+      // 폴백: is_favorite 컬럼 미적용(마이그 미게이트)
+      const fb = await sb
         .from('diagnosis_sets')
         .select('id, name, is_active, sort_order, diagnosis_set_items(service_id, diagnosis_type, sort_order)')
         .eq('clinic_id', clinicId)
-        .eq('is_active', true)
-        .order('sort_order', { ascending: true });
-      if (error) return [] as DxSet[];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return ((data ?? []) as any[]).map((s) => ({
-        id: s.id,
-        name: s.name,
-        items: ((s.diagnosis_set_items ?? []) as DxSetItem[])
-          .slice()
-          .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
-      })) as DxSet[];
+        .eq('is_active', true);
+      if (fb.error) return [] as DxSet[];
+      return normalize((fb.data ?? []) as unknown[], false);
     },
   });
 }
@@ -447,9 +467,13 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
                         onClick={() => applySet(s)}
                         className="flex w-full items-center justify-between gap-2 rounded px-3 py-1.5 text-left hover:bg-accent"
                         data-testid="dx-picker-set-item"
+                        data-fav={s.is_favorite ? 'true' : 'false'}
                       >
                         <span className="flex items-center gap-1.5 min-w-0">
                           <Plus className="h-3 w-3 shrink-0 text-teal-600" />
+                          {s.is_favorite && (
+                            <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-400" data-testid="dx-picker-set-fav" />
+                          )}
                           <span className="truncate text-sm">{s.name}</span>
                         </span>
                         <span className="shrink-0 text-[10px] text-muted-foreground">상병 {s.items.length}개</span>
