@@ -47,6 +47,8 @@ import { getAssignedSlotName } from '@/lib/checkin-slot';
 import {
   loadMute,
   saveMute,
+  loadNotifyEnabled,
+  saveNotifyEnabled,
   getCallTime,
   callKey,
   elapsedMinutes,
@@ -128,6 +130,18 @@ export default function DoctorCallDashboard() {
       toast.warning('알림 권한이 거부됨 — 화면 토스트로 대신 알려드려요.');
   };
 
+  // 앱레벨 알림 on/off (localStorage 영속, T-20260609 ALARM-TOGGLE-OFF).
+  //   브라우저 권한이 granted여도 앱이 푸시/토스트를 안 띄우게 직접 끌 수 있음.
+  const [notifyEnabled, setNotifyEnabled] = useState<boolean>(() => loadNotifyEnabled());
+  const toggleNotify = () => {
+    setNotifyEnabled((on) => {
+      const next = !on;
+      saveNotifyEnabled(next);
+      toast.confirm(next ? '진료 호출 알림을 켰어요.' : '진료 호출 알림을 껐어요.');
+      return next;
+    });
+  };
+
   // 실시간 구독 — 호출 발생/변경 즉시 refetch (3초 내 반영)
   useEffect(() => {
     if (!clinicId) return;
@@ -173,8 +187,8 @@ export default function DoctorCallDashboard() {
     [rows],
   );
 
-  // 소리 + 브라우저 알림 (신규 호출 감지)
-  useDoctorCallNotifier(activeCalls, { muted });
+  // 소리 + 브라우저 알림 (신규 호출 감지). 앱레벨 알림 OFF면 OS배너/토스트 생략(소리는 muted 별도).
+  useDoctorCallNotifier(activeCalls, { muted, notifyEnabled });
 
   const feed = useMemo(() => [...activeCalls, ...doneCalls], [activeCalls, doneCalls]);
 
@@ -203,12 +217,13 @@ export default function DoctorCallDashboard() {
                 ? 'border-gray-300 bg-gray-100 text-gray-600'
                 : 'border-teal-300 bg-teal-50 text-teal-700',
             )}
-            title={muted ? '음소거 해제' : '음소거'}
+            title={muted ? '소리 켜기' : '소리 끄기'}
           >
             {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-            {muted ? '음소거' : '소리 켜짐'}
+            {muted ? '소리 켜기' : '소리 끄기'}
           </button>
-          {perm !== 'granted' && perm !== 'unsupported' && (
+          {/* 브라우저 알림 권한이 default(미요청)일 때만 권한 요청 버튼 */}
+          {perm === 'default' && (
             <button
               type="button"
               onClick={askPermission}
@@ -220,14 +235,25 @@ export default function DoctorCallDashboard() {
               알림 켜기
             </button>
           )}
-          {perm === 'granted' && (
-            <span
-              className="flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 min-h-[40px]"
-              data-testid="doctor-call-notify-granted"
+          {/* 권한 결정됨(granted/denied) → 앱레벨 알림 on/off 토글(영속).
+              T-20260609 ALARM-TOGGLE-OFF: granted여도 앱 푸시를 직접 끌 수 있어야 함. */}
+          {perm !== 'default' && perm !== 'unsupported' && (
+            <button
+              type="button"
+              onClick={toggleNotify}
+              data-testid="doctor-call-notify-toggle"
+              aria-pressed={!notifyEnabled}
+              title={notifyEnabled ? '진료 호출 알림 끄기' : '진료 호출 알림 켜기'}
+              className={cn(
+                'flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium min-h-[40px] transition-colors',
+                notifyEnabled
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                  : 'border-gray-300 bg-gray-100 text-gray-600 hover:bg-gray-200',
+              )}
             >
-              <Bell className="h-4 w-4" />
-              알림 켜짐
-            </span>
+              {notifyEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+              {notifyEnabled ? '알림 끄기' : '알림 켜기'}
+            </button>
           )}
         </div>
       </div>
