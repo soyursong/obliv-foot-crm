@@ -265,7 +265,14 @@ export default function DrugFoldersTab() {
           >
             <button
               type="button"
-              onClick={() => toggleFolder(node.id)}
+              // DRUGFOLDER-COUNT-EMPTY: 펼침 화살표(chevron)는 "폴더 열기" 어포던스로 인식됨 →
+              //   토글만 하고 폴더를 선택하지 않으면 우측 "약 목록" 패널이 안 떠서
+              //   "숫자(배지)는 뜨는데 눌러보면 약이 안 뜸" 증상이 됨. 토글과 동시에 선택까지 수행해
+              //   어느 버튼을 눌러도 담긴 약이 우측 목록으로 보이도록 보장(AC2).
+              onClick={() => {
+                toggleFolder(node.id);
+                setSelectedFolderId(node.id);
+              }}
               className="shrink-0 text-muted-foreground"
               data-testid="drug-folder-admin-toggle"
               aria-expanded={!isCollapsed}
