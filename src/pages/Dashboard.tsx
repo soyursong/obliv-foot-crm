@@ -75,6 +75,7 @@ import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, STATUS_FLAG_C
 import { formatAmount, maskPhoneTail, seoulISODate, cardDisplayName } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
+import { nextSlotSortOrder as computeNextSlotSortOrder, compareSlotFifo } from '@/lib/slotOrder';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import { NewCheckInDialog } from '@/components/NewCheckInDialog';
 import { CheckinFirstInfoDialog } from '@/components/CheckinFirstInfoDialog';
@@ -4134,7 +4135,9 @@ export default function Dashboard() {
       (map[r.status] ??= []).push(r);
     }
     for (const key of Object.keys(map)) {
-      map[key].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+      // T-20260608-foot-SLOT-MOVE-FIFO-ORDER: 슬롯 내부 정렬 = 이동 순서(FIFO)
+      // sort_order(이동 시 목적 슬롯 max+1) → checked_in_at → id (compareSlotFifo)
+      map[key].sort(compareSlotFifo);
     }
     return map;
   }, [filtered]);
@@ -4179,6 +4182,15 @@ export default function Dashboard() {
     }
     return { ok: true };
   };
+
+  // T-20260608-foot-SLOT-MOVE-FIFO-ORDER: 슬롯→슬롯 이동 시 이동 순서(FIFO) 보장
+  // 슬롯 내부 정렬키(byStatus → sort_order)는 그대로 두되, 다른 슬롯으로 넘어온 카드의 sort_order를
+  // 목적 슬롯 내 현재 최대값 + 1 로 설정해 "맨 뒤(가장 늦게 도착)"로 배치한다.
+  // → 먼저 넘어온 사람은 항상 위, 늦게 넘어온 사람이 먼저 치료 들어가는 순번 역전이 발생하지 않는다.
+  // sort_order 는 check_ins.sort_order(int4) 컬럼을 그대로 사용(FE-only, DB 변경 없음).
+  // 수동 ↑↓ 재정렬(swapSortOrder)도 동일 정렬키를 쓰므로 그대로 동작한다.
+  const nextSlotSortOrder = (destStatus: string, excludeId?: string): number =>
+    computeNextSlotSortOrder(rows, destStatus, excludeId);
 
   const handleDragEnd = async (e: DragEndEvent) => {
     setDragging(null);
@@ -4256,6 +4268,9 @@ export default function Dashboard() {
 
       if (row.status === newStatus && row[roomField] === roomName) return;
 
+      // T-20260608-foot-SLOT-MOVE-FIFO-ORDER: 다른 슬롯(status)로 넘어올 때만 FIFO 정렬키 산출(맨 뒤)
+      const moveOrder = row.status !== newStatus ? nextSlotSortOrder(newStatus, row.id) : null;
+
       markRecentlyUpdated(row.id);
       // #25 경합 방지: 함수형 업데이트 + 직전 row 스냅샷
       let prevRow: CheckIn | undefined;
@@ -4269,6 +4284,7 @@ export default function Dashboard() {
           if (roomType !== 'laser' && roomType !== 'heated_laser') updated.laser_room = null;
           if (roomType !== 'consultation') updated.consultation_room = null;
           if (roomType !== 'examination') updated.examination_room = null;
+          if (moveOrder !== null) updated.sort_order = moveOrder;
           return updated;
         });
       });
@@ -4286,6 +4302,8 @@ export default function Dashboard() {
       if (!row.called_at && row.status === 'registered') {
         patch.called_at = new Date().toISOString();
       }
+      // T-20260608-foot-SLOT-MOVE-FIFO-ORDER: 산출한 FIFO 정렬키를 DB에도 반영
+      if (moveOrder !== null) patch.sort_order = moveOrder;
 
       const roomAssignment = assignments.find((a) => a.room_name === roomName);
       if (roomAssignment?.staff_id) {
@@ -4325,15 +4343,17 @@ export default function Dashboard() {
       // 재진 대기열로 이동 → status = registered + visit_type 변경 (양방향 자유 이동)
       const targetVisitType: VisitType = 'returning';
       if (row.status === 'registered' && row.visit_type === targetVisitType) return;
+      // T-20260608-foot-SLOT-MOVE-FIFO-ORDER: 재진 대기열 맨 뒤(FIFO)
+      const moveOrder = nextSlotSortOrder('registered', row.id);
       markRecentlyUpdated(row.id);
       let prevRow: CheckIn | undefined;
       setRows((curr) => {
         prevRow = curr.find((r) => r.id === row.id);
         return curr.map((r) =>
-          r.id === row.id ? { ...r, status: 'registered' as CheckInStatus, visit_type: targetVisitType } : r,
+          r.id === row.id ? { ...r, status: 'registered' as CheckInStatus, visit_type: targetVisitType, sort_order: moveOrder } : r,
         );
       });
-      const res = await saveCheckInMove(row.id, { status: 'registered', visit_type: targetVisitType });
+      const res = await saveCheckInMove(row.id, { status: 'registered', visit_type: targetVisitType, sort_order: moveOrder });
       if (!res.ok) {
         setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
         toast.error(res.message ?? '이동 실패');
@@ -4351,15 +4371,17 @@ export default function Dashboard() {
       }
     } else if (target === 'laser_waiting') {
       if (row.status === 'laser_waiting') return;
+      // T-20260608-foot-SLOT-MOVE-FIFO-ORDER: 레이저 대기열 맨 뒤(FIFO)
+      const moveOrder = nextSlotSortOrder('laser_waiting', row.id);
       markRecentlyUpdated(row.id);
       let prevRow: CheckIn | undefined;
       setRows((curr) => {
         prevRow = curr.find((r) => r.id === row.id);
         return curr.map((r) =>
-          r.id === row.id ? { ...r, status: 'laser_waiting' as CheckInStatus, laser_room: null } : r,
+          r.id === row.id ? { ...r, status: 'laser_waiting' as CheckInStatus, laser_room: null, sort_order: moveOrder } : r,
         );
       });
-      const res = await saveCheckInMove(row.id, { status: 'laser_waiting', laser_room: null });
+      const res = await saveCheckInMove(row.id, { status: 'laser_waiting', laser_room: null, sort_order: moveOrder });
       if (!res.ok) {
         setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
         toast.error(res.message ?? '이동 실패');
@@ -4376,15 +4398,17 @@ export default function Dashboard() {
     } else if (target === 'healer_waiting') {
       // T-20260502-foot-HEALER-WAIT-SLOT
       if (row.status === 'healer_waiting') return;
+      // T-20260608-foot-SLOT-MOVE-FIFO-ORDER: 힐러 대기열 맨 뒤(FIFO)
+      const moveOrder = nextSlotSortOrder('healer_waiting', row.id);
       markRecentlyUpdated(row.id);
       let prevRow: CheckIn | undefined;
       setRows((curr) => {
         prevRow = curr.find((r) => r.id === row.id);
         return curr.map((r) =>
-          r.id === row.id ? { ...r, status: 'healer_waiting' as CheckInStatus } : r,
+          r.id === row.id ? { ...r, status: 'healer_waiting' as CheckInStatus, sort_order: moveOrder } : r,
         );
       });
-      const res = await saveCheckInMove(row.id, { status: 'healer_waiting' });
+      const res = await saveCheckInMove(row.id, { status: 'healer_waiting', sort_order: moveOrder });
       if (!res.ok) {
         setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
         toast.error(res.message ?? '이동 실패');
@@ -4416,15 +4440,17 @@ export default function Dashboard() {
     } else if (target === 'consultation') {
       // T-20260516-foot-CONSULT-KANBAN-MISS: 상담 칸 드롭 시 consultation_room 초기화
       if (row.status === 'consultation' && !row.consultation_room) return;
+      // T-20260608-foot-SLOT-MOVE-FIFO-ORDER: 다른 슬롯에서 넘어올 때만 상담 대기열 맨 뒤(FIFO)
+      const moveOrder = row.status !== 'consultation' ? nextSlotSortOrder('consultation', row.id) : null;
       markRecentlyUpdated(row.id);
       let prevRow: CheckIn | undefined;
       setRows((curr) => {
         prevRow = curr.find((r) => r.id === row.id);
         return curr.map((r) =>
-          r.id === row.id ? { ...r, status: 'consultation' as CheckInStatus, consultation_room: null } : r,
+          r.id === row.id ? { ...r, status: 'consultation' as CheckInStatus, consultation_room: null, ...(moveOrder !== null ? { sort_order: moveOrder } : {}) } : r,
         );
       });
-      const res = await saveCheckInMove(row.id, { status: 'consultation', consultation_room: null });
+      const res = await saveCheckInMove(row.id, { status: 'consultation', consultation_room: null, ...(moveOrder !== null ? { sort_order: moveOrder } : {}) });
       if (!res.ok) {
         setRows((curr) => curr.map((r) => (r.id === row.id && prevRow ? prevRow : r)));
         toast.error(res.message ?? '이동 실패');
@@ -4443,15 +4469,17 @@ export default function Dashboard() {
     } else if (target === 'registered') {
       // 초진 대기열로 이동 → status = registered + visit_type = new (양방향 자유 이동)
       if (row.status === 'registered' && row.visit_type === 'new') return;
+      // T-20260608-foot-SLOT-MOVE-FIFO-ORDER: 초진 대기열 맨 뒤(FIFO)
+      const moveOrder = nextSlotSortOrder('registered', row.id);
       markRecentlyUpdated(row.id);
       let prevRow: CheckIn | undefined;
       setRows((curr) => {
         prevRow = curr.find((r) => r.id === row.id);
         return curr.map((r) =>
-          r.id === row.id ? { ...r, status: 'registered' as CheckInStatus, visit_type: 'new' as VisitType } : r,
+          r.id === row.id ? { ...r, status: 'registered' as CheckInStatus, visit_type: 'new' as VisitType, sort_order: moveOrder } : r,
         );
       });
-      const patch: Record<string, unknown> = { status: 'registered', visit_type: 'new' };
+      const patch: Record<string, unknown> = { status: 'registered', visit_type: 'new', sort_order: moveOrder };
       if (!row.called_at && row.status !== 'registered') {
         patch.called_at = new Date().toISOString();
       }
@@ -4475,14 +4503,16 @@ export default function Dashboard() {
       const newStatus = target as CheckInStatus;
       if (row.status === newStatus) return;
 
+      // T-20260608-foot-SLOT-MOVE-FIFO-ORDER: 목적 슬롯 맨 뒤(FIFO)
+      const moveOrder = nextSlotSortOrder(newStatus, row.id);
       markRecentlyUpdated(row.id);
       let prevRow: CheckIn | undefined;
       setRows((curr) => {
         prevRow = curr.find((r) => r.id === row.id);
-        return curr.map((r) => (r.id === row.id ? { ...r, status: newStatus } : r));
+        return curr.map((r) => (r.id === row.id ? { ...r, status: newStatus, sort_order: moveOrder } : r));
       });
 
-      const patch: Record<string, unknown> = { status: newStatus };
+      const patch: Record<string, unknown> = { status: newStatus, sort_order: moveOrder };
       if (newStatus === 'done') patch.completed_at = new Date().toISOString();
       if (!row.called_at && row.status === 'registered') {
         patch.called_at = new Date().toISOString();
