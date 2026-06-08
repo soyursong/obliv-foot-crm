@@ -262,7 +262,11 @@ function fmtDateFull(dateStr: string): string {
 }
 
 function chartSummary(chart: MedicalChart): string {
-  return chart.diagnosis || chart.chief_complaint || chart.clinical_progress || chart.treatment_record || '기록';
+  // T-20260609-foot-MEDCHART-TIMELINE-COMPACT AC-4 (문지은 대표원장):
+  //   경과타임라인 카드에서 상병명(diagnosis) 표시 생략 — "상병명 호전" 등 상병명 라벨 노출 제거.
+  //   원인 조사: "호전" 문자열은 코드 어디에도 없음 → 시스템 자동 생성 레이블 아님, medical_charts.diagnosis 데이터(시드/입력) 값.
+  //   ※ 데이터 삭제 아님: diagnosis 데이터는 보존(진료 폼·DiagnosisFolderPicker 무영향), 타임라인 표시에서만 숨김.
+  return chart.chief_complaint || chart.clinical_progress || chart.treatment_record || '기록';
 }
 
 // T-20260608-foot-MEDCHART-TIMELINE-FILTER AC-6: 경과 타임라인 '한눈에' 한 줄 요약.
@@ -1652,7 +1656,7 @@ export default function MedicalChartPanel({
                               </div>
                               <div className="flex items-center justify-between gap-1 mt-0.5 text-[8px] text-muted-foreground">
                                 <span className="truncate" data-testid="special-note-recorder">
-                                  {note.created_by_name || recorderName(note.created_by) || '기록자 미상'}
+                                  {note.created_by_name || recorderName(note.created_by) || '미상'}
                                 </span>
                                 <span className="shrink-0 tabular-nums">
                                   {(() => {
@@ -1826,12 +1830,39 @@ export default function MedicalChartPanel({
                                 : ''
                             }`}
                           >
-                            <div className="text-[11px] font-semibold text-teal-700 leading-tight">
-                              {fmtDateShort(chart.visit_date)}
+                            {/* T-20260609-foot-MEDCHART-TIMELINE-COMPACT AC-1/AC-2 (문지은 대표원장):
+                                부가정보(날짜·작성자성명·유형badge)를 상단 '한 줄'에 모으고 메모 텍스트만 아래로.
+                                "기록자" 단어 제거 — 성명만(created_by_name/recorderName 데이터 보존).
+                                기존 날짜/요약/gist/배지/기록자 5줄 분산 → 메타 1줄 + 텍스트로 컴팩트. */}
+                            <div className="flex items-center gap-1.5 leading-tight">
+                              <span className="text-[11px] font-semibold text-teal-700 shrink-0">
+                                {fmtDateShort(chart.visit_date)}
+                              </span>
                               {isDummyEntry && (
-                                <span className="ml-1 text-[9px] text-yellow-600 font-bold">더미</span>
+                                <span className="text-[9px] text-yellow-600 font-bold shrink-0">더미</span>
                               )}
+                              {recorder && (
+                                <span className="text-[9px] text-muted-foreground truncate min-w-0" data-testid="timeline-recorder">
+                                  {recorder}
+                                </span>
+                              )}
+                              {/* 유형 메타 — 상단 1줄 우측 정렬(AC-2 부가정보 통합) */}
+                              <span className="flex gap-0.5 ml-auto shrink-0">
+                                {hasTreat && (
+                                  <span className="text-[8px] bg-blue-50 text-blue-600 border border-blue-200 rounded-full px-1 leading-4">치료</span>
+                                )}
+                                {hasDoc && (
+                                  <span className="text-[8px] bg-teal-50 text-teal-600 border border-teal-200 rounded-full px-1 leading-4">진료</span>
+                                )}
+                                {hasRxItems && (
+                                  <span className="text-[8px] bg-violet-50 text-violet-600 border border-violet-200 rounded-full px-1 leading-4">처방</span>
+                                )}
+                                {notable && (
+                                  <span className="text-[8px] bg-amber-50 text-amber-600 border border-amber-200 rounded-full px-1 leading-4">⚠특이</span>
+                                )}
+                              </span>
                             </div>
+                            {/* 메모 텍스트 내용만 아래로 (AC-2 "텍스트만 아래", 메타 다줄 분산 제거) */}
                             <div className="text-[10px] font-medium text-foreground/80 truncate mt-0.5">
                               {chartSummary(chart)}
                             </div>
@@ -1844,27 +1875,6 @@ export default function MedicalChartPanel({
                                 </div>
                               ) : null;
                             })()}
-                            {/* 메모 종류 배지 */}
-                            <div className="flex gap-0.5 mt-0.5 flex-wrap">
-                              {hasTreat && (
-                                <span className="text-[8px] bg-blue-50 text-blue-600 border border-blue-200 rounded-full px-1 leading-4">치료</span>
-                              )}
-                              {hasDoc && (
-                                <span className="text-[8px] bg-teal-50 text-teal-600 border border-teal-200 rounded-full px-1 leading-4">진료</span>
-                              )}
-                              {hasRxItems && (
-                                <span className="text-[8px] bg-violet-50 text-violet-600 border border-violet-200 rounded-full px-1 leading-4">처방</span>
-                              )}
-                              {notable && (
-                                <span className="text-[8px] bg-amber-50 text-amber-600 border border-amber-200 rounded-full px-1 leading-4">⚠특이</span>
-                              )}
-                            </div>
-                            {/* AC-13: 기록자(의사) 표시 */}
-                            {recorder && (
-                              <div className="text-[9px] text-muted-foreground mt-0.5 truncate" data-testid="timeline-recorder">
-                                기록자 {recorder}
-                              </div>
-                            )}
                           </button>
                           {/* 아코디언 토글 버튼 */}
                           <button
@@ -1910,13 +1920,20 @@ export default function MedicalChartPanel({
                                 </p>
                               </div>
                             )}
-                            {/* AC-12④: 처방 타임라인 — 처방 항목 요약 */}
+                            {/* T-20260609-foot-MEDCHART-TIMELINE-COMPACT AC-3 (문지은 대표원장):
+                                처방 = 약명 + 용량만 주르륵. 처방일시·코드·route·frequency·days 등 메타 숨김. */}
                             {hasRxItems && (
                               <div>
                                 <span className="text-[8px] font-bold text-violet-600 uppercase tracking-wide">처방</span>
-                                <p className="text-[10px] text-gray-700 line-clamp-3 leading-relaxed mt-0.5">
-                                  {(chart.prescription_items ?? []).map(rx => rx.name).filter(Boolean).join(', ')}
-                                </p>
+                                <ul className="text-[10px] text-gray-700 leading-relaxed mt-0.5 space-y-0.5">
+                                  {(chart.prescription_items ?? [])
+                                    .filter(rx => rx?.name?.trim())
+                                    .map((rx, i) => (
+                                      <li key={i} className="truncate" data-testid="timeline-rx-item">
+                                        {rx.name}{rx.dosage?.trim() ? ` ${rx.dosage.trim()}` : ''}
+                                      </li>
+                                    ))}
+                                </ul>
                               </div>
                             )}
                             {notable && (
@@ -1937,8 +1954,9 @@ export default function MedicalChartPanel({
                                 className="mt-1 pt-1 border-t border-border/20 flex items-center gap-1 text-[9px] text-muted-foreground"
                                 data-testid="timeline-expanded-recorder"
                               >
+                                {/* T-20260609-foot-MEDCHART-TIMELINE-COMPACT AC-1: "작성/기록자" 단어 제거 — 성명만(아이콘이 작성자 표식 역할) */}
                                 <Stethoscope className="h-3 w-3 text-teal-600 shrink-0" />
-                                작성 <span className="font-semibold text-teal-700">{recorder}</span>
+                                <span className="font-semibold text-teal-700">{recorder}</span>
                               </div>
                             )}
                           </div>
