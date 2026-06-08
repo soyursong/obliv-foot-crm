@@ -51,3 +51,25 @@ diagnosis_folders 테이블             : 미존재
 ## 리스크 / 블로커
 - 블로커 없음. 백필 0건 + additive only + ON DELETE SET NULL(상병 항목 보존).
 - 주의: RLS write 는 인증사용자 허용(앱레이어 admin gate) — prescription_folders(20260607180000)와 동일 채택 패턴. 컬럼레벨 role gate 한계 동일.
+
+## 적용 결과 (D3 GATE-RESULT GO 수신 후 실행, 2026-06-08)
+
+- 게이트: supervisor GATE-RESULT GO (MSG-20260608-123811-4yz1)
+- 실행: dev-foot 직접 실행 `node scripts/apply_20260607200000_diagnosis_folders_fk.mjs` (dev DB `rxlomoozakkjesdqjtvd`)
+- 적용 순서 준수: ① 본문 마이그 적용 → ② backfill STEP1(dry-run NOTICE)만 실행
+
+### DDL 실행 로그
+```
+✅ DB 연결 성공
+✅ 마이그 본문 적용 완료 (DDL + RLS + 정책)
+✅ services 폴더 컬럼: [ 'diagnosis_folder', 'diagnosis_folder_id' ]
+✅ RLS 정책: diagnosis_folders_read_all, diagnosis_folders_write_auth
+  [backfill NOTICE] [DRY-RUN] 생성될 distinct 폴더 수 = 0, 매핑될 상병 행 수 = 0
+✅ backfill STEP1 dry-run 완료 (변경 없음 — 백필 대상 0건 기대)
+🎉 D3 적용 완료. FE 2패널 착수 가능.
+```
+
+### 판정
+- STEP1 dry-run = **0건 / 0건** → GO 조건상 STEP2 실행·supervisor 재확인 **불필요**.
+- diagnosis_folders 테이블 생성 확인 / services.diagnosis_folder·diagnosis_folder_id 컬럼 공존 확인 / RLS 2정책 확인.
+- 데이터 무손실(additive only), 백필 0건. FE 2패널 착수 가능.
