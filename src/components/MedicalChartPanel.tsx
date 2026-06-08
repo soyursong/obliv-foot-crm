@@ -261,31 +261,49 @@ function fmtDateFull(dateStr: string): string {
   }
 }
 
-function chartSummary(chart: MedicalChart): string {
-  // T-20260609-foot-MEDCHART-TIMELINE-COMPACT AC-4 (문지은 대표원장):
-  //   경과타임라인 카드에서 상병명(diagnosis) 표시 생략 — "상병명 호전" 등 상병명 라벨 노출 제거.
-  //   원인 조사: "호전" 문자열은 코드 어디에도 없음 → 시스템 자동 생성 레이블 아님, medical_charts.diagnosis 데이터(시드/입력) 값.
-  //   ※ 데이터 삭제 아님: diagnosis 데이터는 보존(진료 폼·DiagnosisFolderPicker 무영향), 타임라인 표시에서만 숨김.
-  return chart.chief_complaint || chart.clinical_progress || chart.treatment_record || '기록';
+// ── T-20260609-foot-TIMELINE-FILTER-PREVIEW-FIX (문지은 대표원장 field-soak) ──────────────
+//   접힌 카드 미리보기를 '선택 필터 유형' 기준으로 구성한다. 이전엔 chartSummary(주증상/상병명 우선)
+//   + chartTreatmentGist(치료 위주)가 필터와 무관하게 항상 같은 텍스트를 그려, 칩을 눌러도 미리보기가
+//   안 바뀌니 "필터가 동작 안 한다(AC-3)"로 체감되고, 무필터에서도 치료메모 위주로만 보였다(AC-4).
+//   - AC-2 상병명(diagnosis)·주증상(chief_complaint)은 4개 필터 유형(치료/진료/처방/특이) 어디에도
+//          매핑되지 않으므로 미리보기 소스에서 제외 → 상병명 라벨 카드 비노출.
+//   - AC-3 미리보기가 필터 토글에 즉시 반응 → '필터 동작' 체감 복구(칩 핸들러 toggleFilter 자체는 무회귀).
+//   - AC-4 무필터=전체 유형 활성 → 치료메모만 고정 해소.
+//   - AC-5 필터선택=선택 유형만, 다중선택은 누적(중복적용).
+function firstLine(s: string | null | undefined): string {
+  return (s ?? '').split('\n')[0].trim();
 }
-
-// T-20260608-foot-MEDCHART-TIMELINE-FILTER AC-6: 경과 타임라인 '한눈에' 한 줄 요약.
-//   "이 환자가 어떻게 치료받았는지"를 접힌 상태에서도 즉시 읽히게 — 치료/임상경과 첫 줄 + 처방 핵심을 압축.
-//   summaryText(=상단 진단/주소 줄)와 중복되면 치료 텍스트는 생략하고 처방만 노출(가독성 우선).
-function chartTreatmentGist(chart: MedicalChart, summaryText: string): string {
-  const parts: string[] = [];
-  const treatRaw = (chart.treatment_record?.trim() || chart.clinical_progress?.trim() || '');
-  const treatFirst = treatRaw.split('\n')[0].trim();
-  if (treatFirst && treatFirst !== summaryText) {
-    parts.push(treatFirst.length > 44 ? `${treatFirst.slice(0, 44)}…` : treatFirst);
+function clipText(s: string, n = 44): string {
+  return s.length > n ? `${s.slice(0, n)}…` : s;
+}
+// 유형 활성 판정: 무필터=전체 활성 / 필터선택=선택 유형만 활성
+function isTypeActive(filters: Set<MemoFilter>, f: MemoFilter): boolean {
+  return filters.size === 0 || filters.has(f);
+}
+// 접힌 카드 미리보기 세그먼트 (유형 순서: 치료 → 진료(임상경과) → 처방 → 특이).
+//   진료메모(doc) 미리보기는 임상경과(clinical_progress)만 노출 — doctor_memo 는 권한 게이트라 미리보기 비노출 유지.
+function chartPreviewSegments(chart: MedicalChart, filters: Set<MemoFilter>): string[] {
+  const segs: string[] = [];
+  if (isTypeActive(filters, 'treat') && hasTreatMemo(chart)) {
+    const t = clipText(firstLine(chart.treatment_record));
+    if (t) segs.push(t);
   }
-  const rxNames = (Array.isArray(chart.prescription_items) ? chart.prescription_items : [])
-    .map(rx => rx?.name)
-    .filter((n): n is string => !!n && !!n.trim());
-  if (rxNames.length > 0) {
-    parts.push(`💊 ${rxNames.slice(0, 2).join(', ')}${rxNames.length > 2 ? ` 외 ${rxNames.length - 2}` : ''}`);
+  if (isTypeActive(filters, 'doc')) {
+    const d = clipText(firstLine(chart.clinical_progress));
+    if (d) segs.push(d);
   }
-  return parts.join('  ·  ');
+  if (isTypeActive(filters, 'rx') && hasRx(chart)) {
+    const rxNames = (Array.isArray(chart.prescription_items) ? chart.prescription_items : [])
+      .map(rx => rx?.name)
+      .filter((n): n is string => !!n && !!n.trim());
+    if (rxNames.length > 0) {
+      segs.push(`💊 ${rxNames.slice(0, 2).join(', ')}${rxNames.length > 2 ? ` 외 ${rxNames.length - 2}` : ''}`);
+    }
+  }
+  if (isTypeActive(filters, 'notable') && isNotable(chart)) {
+    segs.push('⚠ 특이사항');
+  }
+  return segs;
 }
 
 // T-20260526-foot-VISIT-FOLD-FILTER: 특이사항 판별 기준 (dev 제안: 키워드 매칭 — 현장 확인 필요)
@@ -1833,21 +1851,26 @@ export default function MedicalChartPanel({
                             {/* T-20260609-foot-MEDCHART-TIMELINE-COMPACT AC-1/AC-2 (문지은 대표원장):
                                 부가정보(날짜·작성자성명·유형badge)를 상단 '한 줄'에 모으고 메모 텍스트만 아래로.
                                 "기록자" 단어 제거 — 성명만(created_by_name/recorderName 데이터 보존).
-                                기존 날짜/요약/gist/배지/기록자 5줄 분산 → 메타 1줄 + 텍스트로 컴팩트. */}
+                                T-20260609-foot-TIMELINE-FILTER-PREVIEW-FIX AC-1(잔여 마감):
+                                날짜+성명을 좌측 그룹(min-w-0 flex-1)으로 묶어 같은 줄 정렬을 보장하고,
+                                성명이 배지에 밀려 0폭으로 깨지지 않게 함(성명 제거 X). 유형 배지는 우측 고정. */}
                             <div className="flex items-center gap-1.5 leading-tight">
-                              <span className="text-[11px] font-semibold text-teal-700 shrink-0">
-                                {fmtDateShort(chart.visit_date)}
-                              </span>
-                              {isDummyEntry && (
-                                <span className="text-[9px] text-yellow-600 font-bold shrink-0">더미</span>
-                              )}
-                              {recorder && (
-                                <span className="text-[9px] text-muted-foreground truncate min-w-0" data-testid="timeline-recorder">
-                                  {recorder}
+                              {/* 좌측 그룹: 날짜 + (더미) + 성명 — 같은 줄, 성명은 여기서만 truncate */}
+                              <span className="flex items-center gap-1.5 min-w-0 flex-1">
+                                <span className="text-[11px] font-semibold text-teal-700 shrink-0">
+                                  {fmtDateShort(chart.visit_date)}
                                 </span>
-                              )}
-                              {/* 유형 메타 — 상단 1줄 우측 정렬(AC-2 부가정보 통합) */}
-                              <span className="flex gap-0.5 ml-auto shrink-0">
+                                {isDummyEntry && (
+                                  <span className="text-[9px] text-yellow-600 font-bold shrink-0">더미</span>
+                                )}
+                                {recorder && (
+                                  <span className="text-[9px] text-muted-foreground truncate min-w-0" data-testid="timeline-recorder">
+                                    {recorder}
+                                  </span>
+                                )}
+                              </span>
+                              {/* 유형 메타 — 상단 1줄 우측 고정(AC-2 부가정보 통합) */}
+                              <span className="flex gap-0.5 shrink-0">
                                 {hasTreat && (
                                   <span className="text-[8px] bg-blue-50 text-blue-600 border border-blue-200 rounded-full px-1 leading-4">치료</span>
                                 )}
@@ -1862,18 +1885,18 @@ export default function MedicalChartPanel({
                                 )}
                               </span>
                             </div>
-                            {/* 메모 텍스트 내용만 아래로 (AC-2 "텍스트만 아래", 메타 다줄 분산 제거) */}
-                            <div className="text-[10px] font-medium text-foreground/80 truncate mt-0.5">
-                              {chartSummary(chart)}
-                            </div>
-                            {/* T-20260608-foot-MEDCHART-TIMELINE-FILTER AC-6: '어떻게 치료받았는지' 한 줄 — 치료/임상경과 + 처방 압축 */}
+                            {/* T-20260609-foot-TIMELINE-FILTER-PREVIEW-FIX (AC-2/3/4/5):
+                                미리보기는 선택 필터 유형 기준으로 구성. 무필터=전체 유형 누적, 필터선택=선택 유형만(다중=누적).
+                                상병명(diagnosis)/주증상(chief_complaint)은 미리보기 소스에서 제외 → 상병명 라벨 비노출. */}
                             {(() => {
-                              const gist = chartTreatmentGist(chart, chartSummary(chart));
-                              return gist ? (
-                                <div className="text-[9px] text-muted-foreground truncate mt-0.5" data-testid="timeline-treatment-gist">
-                                  {gist}
+                              const segs = chartPreviewSegments(chart, memoFilters);
+                              return (
+                                <div className="text-[10px] font-medium text-foreground/80 truncate mt-0.5" data-testid="timeline-preview">
+                                  {segs.length > 0
+                                    ? segs.join('  ·  ')
+                                    : <span className="text-muted-foreground/60 italic font-normal">표시할 메모 없음</span>}
                                 </div>
-                              ) : null;
+                              );
                             })()}
                           </button>
                           {/* 아코디언 토글 버튼 */}
@@ -1896,7 +1919,10 @@ export default function MedicalChartPanel({
                             className="px-3 pb-2.5 pt-1.5 space-y-1.5 border-t border-border/20 bg-muted/5"
                             data-testid={`chart-accordion-content-${chart.id}`}
                           >
-                            {hasTreat && (
+                            {/* T-20260609-foot-TIMELINE-FILTER-PREVIEW-FIX AC-6 (AC-5와 일관):
+                                펼친 상세 섹션도 활성 필터 유형만 노출 — 무필터=전체, 필터선택=선택 유형만(다중=누적).
+                                작성자(recorder) 메타는 PROGRESS-TIMELINE-AUTHOR 보존 위해 필터와 무관하게 항상 표시. */}
+                            {hasTreat && isTypeActive(memoFilters, 'treat') && (
                               <div>
                                 <span className="text-[8px] font-bold text-blue-600 uppercase tracking-wide">치료메모</span>
                                 <p className="text-[10px] text-gray-700 line-clamp-4 whitespace-pre-wrap leading-relaxed mt-0.5">
@@ -1904,7 +1930,7 @@ export default function MedicalChartPanel({
                                 </p>
                               </div>
                             )}
-                            {chart.clinical_progress && (
+                            {chart.clinical_progress && isTypeActive(memoFilters, 'doc') && (
                               <div>
                                 <span className="text-[8px] font-bold text-teal-600 uppercase tracking-wide">임상경과</span>
                                 <p className="text-[10px] text-gray-700 line-clamp-4 whitespace-pre-wrap leading-relaxed mt-0.5">
@@ -1912,7 +1938,7 @@ export default function MedicalChartPanel({
                                 </p>
                               </div>
                             )}
-                            {isDirector && chart.doctor_memo && (
+                            {isDirector && chart.doctor_memo && isTypeActive(memoFilters, 'doc') && (
                               <div>
                                 <span className="text-[8px] font-bold text-red-600 uppercase tracking-wide">진료메모</span>
                                 <p className="text-[10px] text-gray-700 line-clamp-4 whitespace-pre-wrap leading-relaxed mt-0.5">
@@ -1922,7 +1948,7 @@ export default function MedicalChartPanel({
                             )}
                             {/* T-20260609-foot-MEDCHART-TIMELINE-COMPACT AC-3 (문지은 대표원장):
                                 처방 = 약명 + 용량만 주르륵. 처방일시·코드·route·frequency·days 등 메타 숨김. */}
-                            {hasRxItems && (
+                            {hasRxItems && isTypeActive(memoFilters, 'rx') && (
                               <div>
                                 <span className="text-[8px] font-bold text-violet-600 uppercase tracking-wide">처방</span>
                                 <ul className="text-[10px] text-gray-700 leading-relaxed mt-0.5 space-y-0.5">
@@ -1936,15 +1962,21 @@ export default function MedicalChartPanel({
                                 </ul>
                               </div>
                             )}
-                            {notable && (
+                            {notable && isTypeActive(memoFilters, 'notable') && (
                               <div className="mt-0.5">
                                 <span className="text-[9px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-semibold">
                                   ⚠ 특이사항 감지
                                 </span>
                               </div>
                             )}
-                            {!hasTreat && !chart.clinical_progress && !(isDirector && chart.doctor_memo) && (
-                              <p className="text-[10px] text-muted-foreground italic">저장된 메모 없음</p>
+                            {!(hasTreat && isTypeActive(memoFilters, 'treat'))
+                              && !(chart.clinical_progress && isTypeActive(memoFilters, 'doc'))
+                              && !(isDirector && chart.doctor_memo && isTypeActive(memoFilters, 'doc'))
+                              && !(hasRxItems && isTypeActive(memoFilters, 'rx'))
+                              && !(notable && isTypeActive(memoFilters, 'notable')) && (
+                              <p className="text-[10px] text-muted-foreground italic">
+                                {memoFilters.size > 0 ? '선택한 유형의 메모 없음' : '저장된 메모 없음'}
+                              </p>
                             )}
                             {/* T-20260607-foot-PROGRESS-TIMELINE-AUTHOR: 경과 펼침 상세에도 작성 의사 표시
                                 (read-only, 8-A created_by_name 우선·recorderName 폴백 재사용 — L1734 recorder 변수).
