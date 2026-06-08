@@ -45,11 +45,15 @@ export interface TherapistSummaryRow {
   conversion_rate: number | null;      // 0~100. experience_total=0 이면 null
 }
 
+// T-20260607-foot-THERAPIST-STATS-V2: 자유텍스트 service_name → 4종 분류(treatment_type)
+// cnt=차감건수(분포), linked_count=시간산출 매칭건수, avg_minutes=시술별 평균소요시간(linked, null 가능)
 export interface TherapistServiceRow {
   therapist_id: string;
   name: string;
-  service_name: string;
-  cnt: number;
+  treatment_type: string;        // 비가열 / 가열 / 포돌로게 / Re:Born
+  cnt: number;                   // 차감 건수
+  linked_count: number;          // 시간 산출된 매칭 건수
+  avg_minutes: number | null;    // 시술별 평균 소요시간(분). 매칭 없으면 null
 }
 
 export type StatsRangePreset = 'today' | 'week' | 'month' | 'custom';

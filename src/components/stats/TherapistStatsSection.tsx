@@ -104,37 +104,54 @@ export default function TherapistStatsSection({ summary, services, loading }: Pr
         </Card>
       </section>
 
-      {/* ── 지표2: 시술 종류 분포 ── */}
+      {/* ── 지표2: 시술 종류 분포 (4종) + 시술별 평균 소요시간 ── */}
       <section className="flex flex-col gap-3" data-testid="therapist-metric-services">
-        <h2 className="text-sm font-semibold text-muted-foreground">2. 치료사별 시술 종류 분포</h2>
+        <h2 className="text-sm font-semibold text-muted-foreground">
+          2. 치료사별 시술 분포 · 시술별 평균 소요시간
+        </h2>
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">치료사별 시술명·건수</CardTitle>
+            <CardTitle className="text-sm">치료사 × 시술 4종 [비가열/가열/포돌로게/Re:Born]</CardTitle>
           </CardHeader>
           <CardContent>
             {loading || servicesByTherapist.length === 0 ? (
               <EmptyOrLoading loading={loading} />
             ) : (
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-5">
                 {servicesByTherapist.map((t) => {
                   const total = t.rows.reduce((s, r) => s + r.cnt, 0);
                   return (
-                    <div key={t.name} className="border-b last:border-0 pb-3 last:pb-0">
+                    <div key={t.name} className="border-b last:border-0 pb-4 last:pb-0">
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-medium text-sm">{t.name}</span>
                         <span className="text-xs text-muted-foreground">총 {total}건</span>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        {t.rows.map((r) => (
-                          <span
-                            key={r.service_name}
-                            className="inline-flex items-center gap-1 rounded-full bg-teal-50 text-teal-700 px-2.5 py-1 text-xs"
-                          >
-                            {r.service_name}
-                            <span className="font-semibold tabular-nums">{r.cnt}</span>
-                          </span>
-                        ))}
-                      </div>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b text-left text-xs text-muted-foreground">
+                            <th className="pb-1.5 font-medium">시술</th>
+                            <th className="pb-1.5 font-medium text-right">건수</th>
+                            <th className="pb-1.5 font-medium text-right">평균 소요시간</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {t.rows.map((r) => (
+                            <tr key={r.treatment_type} className="border-b last:border-0">
+                              <td className="py-1.5">
+                                <span className="inline-flex items-center rounded-full bg-teal-50 text-teal-700 px-2 py-0.5 text-xs">
+                                  {r.treatment_type}
+                                </span>
+                              </td>
+                              <td className="py-1.5 text-right tabular-nums font-semibold">{r.cnt}</td>
+                              <td className="py-1.5 text-right tabular-nums">
+                                {r.avg_minutes != null
+                                  ? `${r.avg_minutes.toFixed(1)}분`
+                                  : <span className="text-muted-foreground">-</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   );
                 })}
