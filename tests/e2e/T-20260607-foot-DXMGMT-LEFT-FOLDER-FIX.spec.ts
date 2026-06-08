@@ -1,24 +1,12 @@
 /**
- * E2E spec — T-20260607-foot-DXMGMT-LEFT-FOLDER-FIX
+ * E2E spec — T-20260607-foot-DXMGMT-LEFT-FOLDER-FIX  (구조 갱신: DXRX-MGMT-2PANEL)
  *
- * 문지은 대표원장(6/7, C0ATE5P6JTH): "상병명관리에 좌측에 폴더구조 안뜸".
- *   상병명관리(DiagnosisNamesTab)를 2패널(좌:폴더트리 / 우:상병목록)로 전환해
- *   좌측 폴더트리 패널이 정상 렌더되도록 회귀 수정.
+ * 원 의도: 상병명관리 좌측 폴더트리 패널이 정상 렌더(2패널)되도록 회귀 수정.
  *
- * 관련: T-20260607-foot-DX-MGMT-DND-SORT(deployed, DnD 정렬) ·
- *       T-20260607-foot-DXRX-MGMT-2PANEL(DB additive FK 마이그).
- *
- * 본 spec 은 2패널 구조 불변식(좌측 폴더트리 패널 상존·빈 상태 안내·선택→우측 목록·
- *   기존 DnD 회귀 보존)을 정본 그대로 인코딩해 회귀를 가드한다(데이터/로그인 비의존, 소스 정적 검증).
- *   현장 클릭 시나리오 2종(티켓 본문)을 구조 단언으로 변환.
- *
- * ── 도달 경로(현행, NAV-SVCMGMT-SUBTAB-RENAME 이후) ──────────────────────────
- *   상병명관리 화면은 top-level 메뉴가 아니라 다음 경로로 도달한다:
- *     사이드바 '서비스관리'(/admin/services)
- *       → 페이지내 '진료관리' 서브탭 (data-testid="svc-top-tab-clinic")
- *         → '상병명 관리' 탭 (data-testid="tab-diagnosis-names") → DiagnosisNamesTab
- *   (직접 라우트 /admin/clinic-management?tab=diagnosis_names 도 동등하게 도달)
- *   ※ 과거 top-level '진료관리' 메뉴는 f3c12ba 에서 제거됨. AC-5 가 이 도달성을 회귀 가드한다.
+ * ⚠️ DXRX-MGMT-2PANEL 개편으로 폴더 모델이 TEXT(services.diagnosis_folder) → 엔티티
+ *   (diagnosis_folders + services.diagnosis_folder_id FK)로 바뀌었다. 좌측 2패널·빈 상태·선택→우측
+ *   필터·DnD 라는 보존 가능한 불변식은 새 구조 식별자로 가드한다(선택=selectedKey, 트리=엔티티).
+ *   AC-5 도달경로(서비스관리→진료관리 서브탭→상병명 관리 탭)는 변동 없이 유지.
  */
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -31,86 +19,72 @@ const TAB = 'src/components/admin/DiagnosisNamesTab.tsx';
 const SERVICES = 'src/pages/Services.tsx';
 const CLINIC_MGMT = 'src/pages/ClinicManagement.tsx';
 
-// ── AC-1: 좌측 폴더트리 패널 + 클릭 가능한 폴더 노드 ──
-test('AC-1: 좌측 폴더트리 패널(dx-folder-tree)과 폴더 노드(dx-folder-node) 렌더', () => {
+// ── AC-1: 좌측 폴더 패널 + 클릭 가능한 폴더 노드 ──
+test('AC-1: 좌측 폴더 패널(dx-folder-tree)·폴더 노드(dx-folder-node) 렌더 + 선택', () => {
   const src = read(TAB);
   expect(src).toContain('dx-folder-tree');
   expect(src).toContain('dx-folder-node');
-  // 폴더 선택 상태 + 핸들러
-  expect(src).toContain('selectedFolder');
-  expect(src).toContain('setSelectedFolder');
-  // 폴더 노드 클릭 → 선택
+  // 폴더 선택 상태(엔티티 키) + 핸들러
+  expect(src).toContain('selectedKey');
+  expect(src).toContain('setSelectedKey');
   expect(src).toContain('onSelect');
 });
 
-// ── AC-2: 폴더 0건이어도 좌측 패널 컨테이너 상존 + 빈 상태 안내 ──
-test('AC-2: 빈 폴더 상태에서도 패널 유지 + "폴더 없음" 안내(렌더 실패와 0건 구분)', () => {
+// ── AC-2: 폴더 0건이어도 좌측 패널 상존 + 빈 상태 안내 ──
+test('AC-2: 빈 폴더 상태에서도 패널 유지 + "폴더 없음" 안내', () => {
   const src = read(TAB);
   expect(src).toContain('dx-folder-empty');
   expect(src).toContain('폴더 없음');
-  // 빈 분기는 folderOrder.length === 0 으로 판정(데이터 0건 ≠ 렌더 실패)
-  expect(src).toContain('folderOrder.length === 0');
+  // 빈 분기 = 트리 루트 0건 판정(렌더 실패 ≠ 0건)
+  expect(src).toContain('rootNodes.length === 0');
 });
 
-// ── AC-3: 2패널 레이아웃(좌:폴더 / 우:상병 목록) + 좌측 폭·스크롤 ──
-test('AC-3: 2패널 grid 레이아웃 + 좌측 고정폭·스크롤', () => {
+// ── AC-3: 2패널 grid 레이아웃 + 좌측 고정폭·스크롤 + 우측 선택 폴더 목록 ──
+test('AC-3: 2패널 grid + 좌측 고정폭·스크롤 + 우측 필터 목록', () => {
   const src = read(TAB);
-  // 좌측 고정폭 + 우측 가변(min 0) 2컬럼 그리드
-  expect(src).toContain('md:grid-cols-[220px_minmax(0,1fr)]');
-  // 좌측 패널 스크롤(긴 폴더 목록)
+  expect(src).toContain('md:grid-cols-[240px_minmax(0,1fr)]');
   expect(src).toContain('overflow-y-auto');
-  // 우측 = 선택 폴더의 상병 목록
   expect(src).toContain('dx-folder-items');
-  expect(src).toContain("itemsByFolder.get(selectedFolder)");
+  // 우측 = 선택 폴더 소속 항목(엔티티 FK 필터)
+  expect(src).toContain('visibleItems');
 });
 
-// ── AC-4: 기존 DnD 정렬(DX-MGMT-DND-SORT) 회귀 없음 ──
-test('AC-4: 폴더/항목 DnD 핸들러·@dnd-kit 보존 (DND-SORT 회귀 가드)', () => {
+// ── AC-4: DnD 보존(@dnd-kit) — 신규 라이브러리 미도입 ──
+test('AC-4: @dnd-kit 크로스패널 DnD 보존 + 신규 라이브러리 금지', () => {
   const src = read(TAB);
-  // 신규 경쟁 라이브러리 도입 금지
   expect(src).toContain("from '@dnd-kit/core'");
   expect(src).not.toContain('react-beautiful-dnd');
   expect(src).not.toContain('@hello-pangea/dnd');
-  // 폴더/항목 양쪽 드래그 핸들러 보존
-  expect(src).toContain('handleFolderDragEnd');
-  expect(src).toContain('handleItemDragEnd');
-  expect(src).toContain('applyReorder');
-  // 핸들 + grab 커서 보존
-  expect(src).toContain('dx-folder-handle');
+  // 항목 드래그(배치) 핸들러 + 핸들 + grab 커서
+  expect(src).toContain('handleDragEnd');
   expect(src).toContain('dx-item-handle');
   expect(src).toContain('cursor-grab');
   expect(src).toContain('touch-none');
-  // admin 전용 reorder 게이트 보존(AC-3 of DND-SORT)
-  expect(src).toContain('canReorder');
+  // 관리권한 게이트
+  expect(src).toContain('canManage');
 });
 
-// ── 시나리오 1(정상 동선): 폴더 선택 → 우측 목록 ──
-test('시나리오1: 선택 폴더 무효 시 첫 폴더 자동 선택(선택 항상 유효)', () => {
+// ── 시나리오 1: 선택 폴더 무효화 시 미분류로 환원(선택 항상 유효) ──
+test('시나리오1: 삭제된 폴더 선택 시 미분류로 환원(선택 항상 유효)', () => {
   const src = read(TAB);
-  expect(src).toContain('folderOrder.includes(selectedFolder)');
-  expect(src).toContain('setSelectedFolder(folderOrder[0])');
+  expect(src).toContain('!folders.some((f) => f.id === selectedKey)');
+  expect(src).toContain('setSelectedKey(UNASSIGNED)');
 });
 
-// ── 시나리오 2(빈 폴더): 선택 폴더에 항목 0건이어도 우측 영역 유지 ──
+// ── 시나리오 2: 선택 폴더 항목 0건일 때 우측 빈 상태 안내 ──
 test('시나리오2: 선택 폴더 항목 0건일 때 우측 빈 상태 안내', () => {
   const src = read(TAB);
-  expect(src).toContain('이 폴더에 등록된 상병명이 없습니다');
+  expect(src).toContain('이 폴더에 분류된 상병명이 없습니다');
 });
 
-// ── AC-5: 상병명관리 도달 경로(reachability) 회귀 가드 ──
-//   브라우저 QA 실패(browser_diag_fail/phase2) 원인 = NAV-SVCMGMT-SUBTAB-RENAME 으로
-//   top-level '진료관리' 메뉴가 제거되고 '서비스관리 > 진료관리 서브탭' 으로 이동한 것.
-//   도달 경로 testid 체인을 정적으로 가드해 향후 nav 드리프트로 화면이 고립되는 회귀를 막는다.
+// ── AC-5: 상병명관리 도달 경로(reachability) 회귀 가드 (변동 없음) ──
 test('AC-5: 도달 경로(서비스관리 → 진료관리 서브탭 → 상병명 관리 탭) testid 체인 보존', () => {
   const services = read(SERVICES);
-  // 서비스관리 페이지내 '진료관리' 서브탭 (admin/manager/director 한정)
   expect(services).toContain('svc-top-tab-clinic');
   expect(services).toContain('진료관리');
-  // 진료관리 서브탭 패널은 ClinicManagement 를 재사용
   expect(services).toContain("import('@/pages/ClinicManagement')");
 
   const clinic = read(CLINIC_MGMT);
-  // 진료관리 화면내 '상병명 관리' 탭 → DiagnosisNamesTab 렌더
   expect(clinic).toContain('tab-diagnosis-names');
   expect(clinic).toContain('value="diagnosis_names"');
   expect(clinic).toContain('<DiagnosisNamesTab');
