@@ -41,7 +41,7 @@ import { supabase } from '@/lib/supabase';
 import { getClinic } from '@/lib/clinic';
 import { todaySeoulISODate } from '@/lib/format';
 import { STAFF_ROLE_LABEL, STAFF_ROLE_ORDER, staffRoleCardClass } from '@/lib/status';
-import { fetchTodayAttendeeNames } from '@/lib/dutySheet';
+import { fetchAttendeesByDate } from '@/lib/dutySheet';
 import type { Staff } from '@/lib/types';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
@@ -82,21 +82,20 @@ export default function Handover() {
   const [notes, setNotes] = useState<HandoverNote[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // ── 금일 출근자 (T-20260606-foot-HANDOVER-TODAY-ATTENDEES, REV-1) ──────────────
+  // ── 출근자 명단 (T-20260606-…-TODAY-ATTENDEES → T-20260608-…-ATTENDEE-LAYOUT) ──
   //   데이터 소스 = 구글시트 근무 캘린더 직접 read (Edge Function `duty-sheet-read`
   //   프록시 → gviz CSV → 블록 캘린더 파싱, lib/dutySheet.ts). duty_roster import 폐기.
-  //   "오늘" = KST 당일(todaySeoulISODate, AC-3). 시트엔 역할이 없으므로 추출한 이름을
-  //   CRM staff.role 과 매핑해 칩 색을 칠한다(NAMECARD-ROLECOLOR 결합점).
-  //   role 미매칭(시트엔 있으나 CRM staff 없음) → role=null → 중립 fallback 색.
-  const [todayAttendees, setTodayAttendees] = useState<
-    { id: string; name: string; role: Staff['role'] | null }[]
-  >([]);
+  //   [LAYOUT 개선] 상단 배너 단독 나열 → ❶ 캘린더 셀 내 표시(A안) ❷ 선택일 하단 명단(B안).
+  //   시트 CSV는 gid당 1회 fetch 후 날짜별 맵(attendeesByDate)으로 두 동선이 공유(AC-0).
+  //   시트엔 역할이 없으므로 추출한 이름을 CRM staff.role 과 매핑해 칩 색을 칠한다
+  //   (NAMECARD-ROLECOLOR 결합점). role 미매칭 → role=null → 중립 fallback 색.
+  const [attendeesByDate, setAttendeesByDate] = useState<Record<string, string[]>>({});
+  const [roleByName, setRoleByName] = useState<Map<string, Staff['role']>>(new Map());
   const [attendeesLoading, setAttendeesLoading] = useState(true);
 
-  const fetchTodayAttendees = useCallback(async () => {
+  const fetchAttendees = useCallback(async () => {
     if (!clinic) return;
     setAttendeesLoading(true);
-    const todayKst = todaySeoulISODate(); // YYYY-MM-DD (KST)
     try {
       // 활성 직원 먼저 조회 — 시트 "전직원" 토큰 확장(2001c73 룰)에 직원 이름 목록 필요.
       const { data: staffData } = await supabase
@@ -107,51 +106,68 @@ export default function Handover() {
 
       // 이름 → CRM staff.role 매핑 (name / display_name 모두 키로, 공백 제거)
       const norm = (s: string) => s.replace(/\s+/g, '');
-      const roleByName = new Map<string, Staff['role']>();
+      const rmap = new Map<string, Staff['role']>();
       const allStaffNames: string[] = [];
       (staffData ?? []).forEach((s) => {
         const staff = s as Staff;
         if (staff.name) {
-          roleByName.set(norm(staff.name), staff.role);
+          rmap.set(norm(staff.name), staff.role);
           allStaffNames.push(staff.name);
         }
-        if (staff.display_name) roleByName.set(norm(staff.display_name), staff.role);
+        if (staff.display_name) rmap.set(norm(staff.display_name), staff.role);
       });
 
-      // 시트 직접 read — 시트 장애/포맷 변경 시 graceful([] 반환, throw 안 함)
-      // allStaffNames 전달 → 시트 "전직원" 토큰을 그날 활성 직원 전체로 확장.
-      const names = await fetchTodayAttendeeNames(todayKst, undefined, allStaffNames).catch(
-        (e) => {
-          console.warn('[handover] 출근 명단 시트 read 실패:', e);
-          return [] as string[];
-        },
-      );
+      // 시트 직접 read — 날짜별 맵(gid당 CSV 1회 fetch). 장애/포맷 변경 시 graceful({}).
+      const byDate = await fetchAttendeesByDate(undefined, allStaffNames).catch((e) => {
+        console.warn('[handover] 출근 명단 시트 read 실패:', e);
+        return {} as Record<string, string[]>;
+      });
 
-      const roleIdx = (r: Staff['role'] | null) => {
-        if (!r) return STAFF_ROLE_ORDER.length + 1; // 미매칭은 맨 뒤
-        const i = STAFF_ROLE_ORDER.indexOf(r);
-        return i === -1 ? STAFF_ROLE_ORDER.length : i;
-      };
-
-      const rows = names
-        .map((name) => ({
-          id: `sheet-${name}`,
-          name,
-          role: roleByName.get(norm(name)) ?? null,
-        }))
-        .sort(
-          (a, b) =>
-            roleIdx(a.role) - roleIdx(b.role) || a.name.localeCompare(b.name, 'ko'),
-        );
-      setTodayAttendees(rows);
+      setRoleByName(rmap);
+      setAttendeesByDate(byDate);
     } finally {
       setAttendeesLoading(false);
     }
   }, [clinic]);
 
   useEffect(() => {
-    fetchTodayAttendees();
-  }, [fetchTodayAttendees]);
+    fetchAttendees();
+  }, [fetchAttendees]);
+
+  // 역할 정렬 인덱스 (미매칭은 맨 뒤)
+  const roleIdx = useCallback((r: Staff['role'] | null) => {
+    if (!r) return STAFF_ROLE_ORDER.length + 1;
+    const i = STAFF_ROLE_ORDER.indexOf(r);
+    return i === -1 ? STAFF_ROLE_ORDER.length : i;
+  }, []);
+
+  // 날짜별 출근자 이름 맵 (역할→이름순 정렬). A안(셀)·B안(선택일 하단) 공유.
+  const namesByDate = useMemo(() => {
+    const norm = (s: string) => s.replace(/\s+/g, '');
+    const out: Record<string, string[]> = {};
+    for (const [date, names] of Object.entries(attendeesByDate)) {
+      out[date] = [...names].sort(
+        (a, b) =>
+          roleIdx(roleByName.get(norm(a)) ?? null) - roleIdx(roleByName.get(norm(b)) ?? null) ||
+          a.localeCompare(b, 'ko'),
+      );
+    }
+    return out;
+  }, [attendeesByDate, roleByName, roleIdx]);
+
+  // 선택일 출근자 (역할 포함 — 칩 색상용). B안 하단 명단에서 사용.
+  const selectedAttendees = useMemo(() => {
+    const norm = (s: string) => s.replace(/\s+/g, '');
+    const names = namesByDate[fmtDate(selectedDate)] ?? [];
+    return names.map((name) => ({
+      id: `sheet-${name}`,
+      name,
+      role: roleByName.get(norm(name)) ?? null,
+    }));
+  }, [namesByDate, roleByName, selectedDate]);
+
+  // 오늘 출근 인원(상단 슬림 요약용)
+  const todayCount = (namesByDate[todaySeoulISODate()] ?? []).length;
 
   // 작성/수정 다이얼로그
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -445,54 +461,29 @@ export default function Handover() {
         </Button>
       </div>
 
-      {/* ── 금일 출근자 명단 배너 (T-20260606-foot-HANDOVER-TODAY-ATTENDEES) ──
-          명단(list)이 화면 주체: 출근한 직원명을 한눈에. 인원수는 헤더 보조 표기.
-          (김주연 총괄 확정 2026-06-06: "출근 인원수가 아니라 출근한 명단이 필요") */}
+      {/* ── 출근자 슬림 요약 배너 (T-20260608-foot-HANDOVER-ATTENDEE-LAYOUT, A안) ──
+          개선 전: 상단에 오늘 출근자 전체를 칩으로 나열(가독성·동선 불편).
+          개선 후: 명단은 캘린더 셀(A안)·선택일 하단(B안)으로 분산. 상단은 슬림 요약만
+          유지(같은 명단을 상단·셀 양쪽 풀 중복 나열 금지, AC-A1). */}
       <div
-        className="shrink-0 border-b bg-teal-50/60 px-4 py-3"
+        className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-teal-50/60 px-4 py-2"
         data-testid="handover-today-attendees"
       >
-        {/* 헤더: 제목 = 명단, 인원수는 옆에 작은 보조 카운트 */}
-        <div className="mb-2 flex items-center gap-2">
-          <div className="flex items-center gap-1.5 text-sm font-semibold text-teal-800">
-            <UserCheck className="h-4 w-4" />
-            <span>오늘 출근 명단</span>
-          </div>
-          <span
-            className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-600"
-            data-testid="handover-attendees-count"
-          >
-            {attendeesLoading ? '…' : `${todayAttendees.length}명`}
-          </span>
+        <div className="flex items-center gap-1.5 text-sm font-semibold text-teal-800">
+          <UserCheck className="h-4 w-4" />
+          <span>오늘 출근</span>
         </div>
-
-        {/* 본문: 직원 명단 (화면 주체) */}
-        {attendeesLoading ? (
-          <span className="text-sm text-muted-foreground">불러오는 중…</span>
-        ) : todayAttendees.length === 0 ? (
-          <span className="text-sm text-muted-foreground" data-testid="handover-attendees-empty">
-            오늘 등록된 출근자가 없습니다
-          </span>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            {todayAttendees.map((a) => (
-              // 칩 배경을 역할별로 분기 (T-20260606-foot-HANDOVER-NAMECARD-ROLECOLOR)
-              <span
-                key={a.id}
-                data-testid="handover-attendee-chip"
-                data-role={a.role ?? ''}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 shadow-sm ${staffRoleCardClass(a.role ?? '')}`}
-              >
-                <span className="text-sm font-semibold">{a.name}</span>
-                {a.role && (
-                  <span className="text-[11px] font-medium opacity-70">
-                    {STAFF_ROLE_LABEL[a.role] ?? a.role}
-                  </span>
-                )}
-              </span>
-            ))}
-          </div>
-        )}
+        <span
+          className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-600"
+          data-testid="handover-attendees-count"
+        >
+          {attendeesLoading ? '…' : `${todayCount}명`}
+        </span>
+        <span className="text-xs text-muted-foreground" data-testid="handover-attendees-hint">
+          {attendeesLoading
+            ? '명단 불러오는 중…'
+            : '캘린더 날짜 셀과 아래 선택일 명단에서 출근자를 확인하세요'}
+        </span>
       </div>
 
       {/* 컨트롤 바: 뷰 토글 + 네비 + 파트 필터 */}
@@ -571,6 +562,7 @@ export default function Handover() {
               anchor={anchor}
               selectedDate={selectedDate}
               countByDate={countByDate}
+              namesByDate={namesByDate}
               onSelect={selectDate}
             />
           )}
@@ -579,6 +571,7 @@ export default function Handover() {
               anchor={anchor}
               selectedDate={selectedDate}
               countByDate={countByDate}
+              namesByDate={namesByDate}
               onSelect={selectDate}
             />
           )}
@@ -679,6 +672,50 @@ export default function Handover() {
                   </div>
                 </div>
               ))
+            )}
+          </div>
+
+          {/* ── 선택일 출근자 명단 (T-20260608-foot-HANDOVER-ATTENDEE-LAYOUT, B안) ──
+              날짜 클릭 → 인수인계 목록 아래에 그날 출근자를 펼침. 데이터 없는 날=빈 문구. */}
+          <div className="mt-4 border-t pt-3" data-testid="handover-selected-attendees">
+            <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-teal-800">
+              <UserCheck className="h-4 w-4" />
+              <span>{format(selectedDate, 'M월 d일 (EEE)', { locale: ko })} 출근자</span>
+              <span
+                className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-600"
+                data-testid="handover-selected-attendees-count"
+              >
+                {attendeesLoading ? '…' : `${selectedAttendees.length}명`}
+              </span>
+            </div>
+            {attendeesLoading ? (
+              <span className="text-sm text-muted-foreground">불러오는 중…</span>
+            ) : selectedAttendees.length === 0 ? (
+              <span
+                className="text-sm text-muted-foreground"
+                data-testid="handover-selected-attendees-empty"
+              >
+                출근자 없음
+              </span>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                {selectedAttendees.map((a) => (
+                  // 칩 배경을 역할별로 분기 (T-20260606-foot-HANDOVER-NAMECARD-ROLECOLOR)
+                  <span
+                    key={a.id}
+                    data-testid="handover-selected-attendee-chip"
+                    data-role={a.role ?? ''}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 shadow-sm ${staffRoleCardClass(a.role ?? '')}`}
+                  >
+                    <span className="text-sm font-semibold">{a.name}</span>
+                    {a.role && (
+                      <span className="text-[11px] font-medium opacity-70">
+                        {STAFF_ROLE_LABEL[a.role] ?? a.role}
+                      </span>
+                    )}
+                  </span>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -790,16 +827,55 @@ export default function Handover() {
   );
 }
 
+// ── 셀 내 출근자 (A안, AC-A3 오버플로) ────────────────────────────────────────
+// 좁은 캘린더 셀에 그날 출근자를 표시. 상위 max명 + "+N" 으로 레이아웃 무붕괴.
+function CellAttendees({
+  names,
+  max,
+  dateKey,
+}: {
+  names: string[];
+  max: number;
+  dateKey: string;
+}) {
+  if (!names || names.length === 0) return null;
+  const shown = names.slice(0, max);
+  const rest = names.length - shown.length;
+  return (
+    <div
+      className="mt-1 flex w-full flex-col items-stretch gap-0.5 overflow-hidden"
+      data-testid={`handover-cell-attendees-${dateKey}`}
+    >
+      {shown.map((nm) => (
+        <span
+          key={nm}
+          className="truncate rounded bg-teal-50 px-1 text-[9px] font-medium leading-tight text-teal-700"
+          title={nm}
+        >
+          {nm}
+        </span>
+      ))}
+      {rest > 0 && (
+        <span className="px-1 text-[9px] font-medium leading-tight text-muted-foreground">
+          +{rest}
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ── 월별 그리드 ──────────────────────────────────────────────────────────────
 function MonthGrid({
   anchor,
   selectedDate,
   countByDate,
+  namesByDate,
   onSelect,
 }: {
   anchor: Date;
   selectedDate: Date;
   countByDate: Record<string, number>;
+  namesByDate: Record<string, string[]>;
   onSelect: (d: Date) => void;
 }) {
   const gridStart = startOfWeek(startOfMonth(anchor), { weekStartsOn: 0 });
@@ -859,6 +935,7 @@ function MonthGrid({
                   {count}
                 </span>
               )}
+              <CellAttendees names={namesByDate[key] ?? []} max={3} dateKey={key} />
             </button>
           );
         })}
@@ -872,11 +949,13 @@ function WeekStrip({
   anchor,
   selectedDate,
   countByDate,
+  namesByDate,
   onSelect,
 }: {
   anchor: Date;
   selectedDate: Date;
   countByDate: Record<string, number>;
+  namesByDate: Record<string, string[]>;
   onSelect: (d: Date) => void;
 }) {
   const start = startOfWeek(anchor, { weekStartsOn: 0 });
@@ -922,6 +1001,7 @@ function WeekStrip({
                 {count}
               </span>
             )}
+            <CellAttendees names={namesByDate[key] ?? []} max={4} dateKey={key} />
           </button>
         );
       })}

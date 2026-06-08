@@ -82,39 +82,36 @@ test.describe('T-20260606-foot-HANDOVER-TODAY-ATTENDEES (REV-1) 구글시트 금
     if (!ok) test.skip(true, 'Dashboard not loaded — auth 실패');
   });
 
-  // ── S1. 시트 오늘 열 이름 → 명단 + 카운트 정합 (AC-1/AC-2) ───────────────────
-  test('S1 시트 오늘 출근자 → 명단 칩 노출 + 보조 카운트(N명) 일치', async ({ page }) => {
+  // ⚠️ NOTE (2026-06-08): 상단 배너의 "오늘 출근자 풀 명단" 표시는
+  //   T-20260608-foot-HANDOVER-ATTENDEE-LAYOUT 으로 **supersede** 됨.
+  //   명단은 ❶ 캘린더 셀(A안) ❷ 선택일 하단 명단(B안)으로 이동, 상단은 슬림 카운트만 유지.
+  //   따라서 본 스펙은 "오늘 출근 카운트 + graceful + 무회귀"의 데이터 소스 가드로 축소하고,
+  //   명단 노출 자체의 정합 검증은 ATTENDEE-LAYOUT 스펙이 담당한다.
+
+  // ── S1. 시트 오늘 열 이름 → 슬림 카운트(N명) 정합 (AC-1/AC-2 → 카운트 가드) ──
+  test('S1 시트 오늘 출근자 → 상단 슬림 카운트(N명) 일치', async ({ page }) => {
     const names = ['김주연', '김수린', '엄경은'];
     await mockDutySheet(page, names);
     await gotoHandover(page);
 
     const banner = page.getByTestId('handover-today-attendees');
     await expect(banner).toBeVisible({ timeout: 10_000 });
-    await expect(banner.getByText('오늘 출근 명단')).toBeVisible({ timeout: 10_000 });
+    await expect(banner.getByText('오늘 출근')).toBeVisible({ timeout: 10_000 });
 
     const countEl = page.getByTestId('handover-attendees-count');
     await expect(countEl).toHaveText(/^\d+명$/, { timeout: 10_000 });
     const n = Number((await countEl.innerText()).match(/(\d+)명/)?.[1] ?? 'NaN');
     expect(n).toBe(names.length);
-
-    const chipCount = await page.getByTestId('handover-attendee-chip').count();
-    expect(chipCount).toBe(n);
-    // 주입한 이름이 실제로 칩에 보이는지(명단 주체)
-    for (const nm of names) {
-      await expect(banner.getByTestId('handover-attendee-chip').filter({ hasText: nm })).toHaveCount(1);
-    }
-    console.log(`[ATTENDEES] S1 시트 ${n}명 명단 정합 OK`);
+    console.log(`[ATTENDEES] S1 시트 ${n}명 상단 카운트 정합 OK`);
   });
 
-  // ── S2. 시트 오늘 열 비어있음 → 빈 상태 graceful (AC-4) ──────────────────────
-  test('S2 시트 오늘 열 비어있음(휴진일) → 빈 문구 + "0명"', async ({ page }) => {
+  // ── S2. 시트 오늘 열 비어있음 → "0명" graceful (AC-4) ───────────────────────
+  test('S2 시트 오늘 열 비어있음(휴진일) → 상단 "0명"', async ({ page }) => {
     await mockDutySheet(page, []); // 오늘 열에 이름 없음
     await gotoHandover(page);
 
     const countEl = page.getByTestId('handover-attendees-count');
     await expect(countEl).toHaveText('0명', { timeout: 10_000 });
-    await expect(page.getByTestId('handover-attendees-empty')).toBeVisible();
-    await expect(page.getByTestId('handover-attendee-chip')).toHaveCount(0);
     console.log('[ATTENDEES] S2 빈 상태 graceful OK');
   });
 
@@ -127,7 +124,6 @@ test.describe('T-20260606-foot-HANDOVER-TODAY-ATTENDEES (REV-1) 구글시트 금
     await expect(page.getByTestId('handover-today-attendees')).toBeVisible({ timeout: 10_000 });
     const countEl = page.getByTestId('handover-attendees-count');
     await expect(countEl).toHaveText('0명', { timeout: 10_000 });
-    await expect(page.getByTestId('handover-attendees-empty')).toBeVisible();
     // 인수인계 캘린더 무회귀
     await expect(page.getByTestId('handover-view-month')).toHaveAttribute('aria-selected', 'true');
     console.log('[ATTENDEES] S3 read 실패 graceful + 무회귀 OK');
