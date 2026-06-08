@@ -15,7 +15,8 @@ import { Loader2, Ban, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { IconRenderer } from '@/components/admin/QuickRxButtonsTab';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
-import { checkRxRoleGate, rxRoleGateMessage } from '@/lib/prescriptionGate';
+import { checkRxRoleGate, rxRoleGateMessage, rxInsuranceGateMessage, rxInsuranceOverrideConfirm } from '@/lib/prescriptionGate';
+import { evaluateRxInsuranceGate } from '@/lib/prescribableDrugs';
 import {
   checkRxInClinic,
   rxInClinicMessage,
@@ -279,6 +280,25 @@ export default function QuickRxBar({
     if (!roleGate.allowed) {
       toast.error(rxRoleGateMessage(roleGate.blockedNames));
       return;
+    }
+
+    // 급여여부 게이트(DECISION 2-B): 급여중지/삭제/기준변경 약은 경고+차단(관리자 해제 가능).
+    //   Phase1 = FE 게이트(fail-open). TODO(Phase1.5): 서버측 강제(RPC/trigger) 하드닝 후보.
+    const insGate = await evaluateRxInsuranceGate(role, items);
+    if (!insGate.allowed) {
+      if (!insGate.overridable) {
+        toast.error(rxInsuranceGateMessage(insGate.blocked));
+        return;
+      }
+      if (!window.confirm(rxInsuranceOverrideConfirm(insGate.blocked))) {
+        toast.info('빠른처방을 취소했어요.');
+        return;
+      }
+      console.warn('[RX-INSURANCE-GATE][OVERRIDE] 관리자 급여상태 해제 빠른처방', {
+        ticket: 'T-20260609-foot-DRUG-INSURANCE-GATE',
+        blocked: insGate.blocked,
+        at: new Date().toISOString(),
+      });
     }
 
     if (onSelectItems) {

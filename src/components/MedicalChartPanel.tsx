@@ -60,7 +60,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { checkRxRoleGate, rxRoleGateMessage } from '@/lib/prescriptionGate';
+import { checkRxRoleGate, rxRoleGateMessage, rxInsuranceGateMessage, rxInsuranceOverrideConfirm } from '@/lib/prescriptionGate';
+import { evaluateRxInsuranceGate } from '@/lib/prescribableDrugs';
 import { formatAmount, formatPhone } from '@/lib/format';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import { classificationToRoute } from '@/components/admin/PrescriptionSetsTab';
@@ -1109,6 +1110,24 @@ export default function MedicalChartPanel({
     if (!roleGate.allowed) {
       toast.error(rxRoleGateMessage(roleGate.blockedNames));
       return;
+    }
+    // 급여여부 게이트(DECISION 2-B): 급여중지/삭제/기준변경 약은 경고+차단(관리자 해제 가능).
+    //   Phase1 = FE 게이트(fail-open). TODO(Phase1.5): 서버측 강제(medical_charts UPDATE trigger/RPC) 하드닝 후보.
+    const insGate = await evaluateRxInsuranceGate(currentUserRole, items);
+    if (!insGate.allowed) {
+      if (!insGate.overridable) {
+        toast.error(rxInsuranceGateMessage(insGate.blocked));
+        return;
+      }
+      if (!window.confirm(rxInsuranceOverrideConfirm(insGate.blocked))) {
+        toast.info('처방 추가를 취소했어요.');
+        return;
+      }
+      console.warn('[RX-INSURANCE-GATE][OVERRIDE] 관리자 급여상태 해제 처방 추가', {
+        ticket: 'T-20260609-foot-DRUG-INSURANCE-GATE',
+        blocked: insGate.blocked,
+        at: new Date().toISOString(),
+      });
     }
     const codeIds = Array.from(
       new Set(items.map(i => i.prescription_code_id).filter((x): x is string => !!x)),
