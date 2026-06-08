@@ -270,6 +270,8 @@ function PatientRow({
             role={role}
             checkInId={row.id}
             onApplied={onRefresh}
+            checkInStatus={row.status}
+            checkedInAt={row.checked_in_at}
             compact
           />
           {hasPendingRx && (
