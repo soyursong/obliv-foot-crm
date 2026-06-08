@@ -87,6 +87,29 @@ test.describe('T-20260606-foot-PENCHART-REFUND-LATENCY', () => {
     expect(src).toContain('perf.enabled');
   });
 
+  // ── REOPEN#1(측정 선행): 현장 캡처형 on-screen 프로파일러 배지 ───────────────────
+  //   FAIL 메타-루트코즈: 프로파일러가 DevTools 콘솔 전용 → 총괄이 Galaxy Tab에서 캡처 불가.
+  //   수정: 같은 ?penchart_perf 게이트로 화면 배지 렌더 → 스크린샷 1장으로 병목 판정.
+  test('REOPEN#1: on-screen 펜 성능 배지 — perfDisplay 게이트 + 병목 판정 3지표 + verdict', () => {
+    const src: string = fs.readFileSync(SRC, 'utf-8');
+
+    // perfDisplay state + worst 누적 ref
+    expect(src, 'perfDisplay state 없음').toContain('const [perfDisplay, setPerfDisplay] = useState');
+    expect(src, '세션 worst 누적 ref(perfWorstRef) 없음').toContain('const perfWorstRef = useRef');
+
+    // 배지 JSX — testid + 게이트(perfDisplay 조건부 렌더) + 가설 3지표 표기
+    expect(src, "배지 testid 없음").toContain("data-testid=\"penchart-perf-badge\"");
+    expect(src, '배지 게이트(perfDisplay 조건부) 없음').toMatch(/\{perfDisplay && \(/);
+    expect(src, '배지에 redraw 지표(avgDrawMs) 표기 없음').toContain('avgDrawMs ${perfDisplay.avgDrawMs}');
+    expect(src, '배지에 jank 지표(frameGap) 표기 없음').toContain('frameGap  ${perfDisplay.maxFrameGapMs}');
+    expect(src, '배지에 coalesce 지표(coa/move) 표기 없음').toContain('coa/move ${perfDisplay.coalescedPerMove}');
+    expect(src, '배지 병목 verdict 없음').toContain('perfDisplay.verdict');
+
+    // onPointerUp 에서 배지 상태 갱신(콘솔 전용 → 화면 동시 출력)
+    expect(src, 'setPerfDisplay 갱신 없음').toContain('setPerfDisplay({');
+    expect(src, '양식 진입 worst 리셋 없음').toContain('perfWorstRef.current = { frameGap: 0');
+  });
+
   // ── AC-2(최우선 안전): 검정화면 비재발 — desync 미사용 불변식 ──────────────────
   test('AC-2: initDrawCanvas — useDesync 기본 false + isIOS 기기분기 없음 + desync=OFF 통일 유지', () => {
     const src: string = fs.readFileSync(SRC, 'utf-8');
