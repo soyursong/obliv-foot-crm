@@ -43,3 +43,35 @@ deadline: 2026-06-11
 ## DB 변경
 없음 (db_changed=false). DocumentPrintPanel canAccess 단일 소스 코드측 판정만 보강.
 불가피한 form_templates UPDATE 미사용 → 롤백 SQL 불필요.
+
+---
+
+## REOPEN (2026-06-08 FIX-REQUEST / 김주연 총괄 13:26 재보고)
+> 데스크/코디 포함 전체역할 5종 모두 여전히 disabled. 경로 = 1번/2번 차트 → 진료내역 → 서류 재발행.
+
+### 진단 결과 (AC-6, 추정 단정 금지 — 로그/번들/DB 증거 기반)
+- **진단1 (컴포넌트 특정)**: "진료내역 → 서류 재발행" = `docReissueCheckIn` 모달
+  (CustomerChartPage.tsx:5025-5055)이며, 내부에서 `DocumentPrintPanel`(line 5047)을 그대로 렌더.
+  1번차트(CheckInDetailSheet.tsx:1402/2037)도 동일 컴포넌트. **별도 role 가드 없음** —
+  전 경로가 canAccessFormTemplate 단일 소스 공유. → PATH-3 자체 가드 가설 기각.
+- **진단2 (번들 반영)**: 운영 Vercel 라이브 번들 해시 대조 — formTemplates 공유 청크
+  `assets/ReservationMemoTimeline-Bwd4dRMJ.js` 에
+  `de=["diag_opinion","prescription","rx_standard","diagnosis","payment_cert","referral_letter"]`
+  + canAccess(`je`) 정상 포함 확인. **261bf95 배포 반영 확정** → 코드/배포 무결.
+- **진단3 (5종 form_key 전수 대조)**: 운영 DB(rxlomoozakkjesdqjtvd) form_templates read-only 재조회 —
+  5종 실제 form_key = diag_opinion / rx_standard / diagnosis / payment_cert / referral_letter,
+  **전부 코드 de[] 와 일치**(처방전 rx_standard 포함, 불일치 0).
+
+### 결론
+코드·DB·배포번들 모두 5종 전체역할 허용이 무결. 특히 admin/manager 는 required_role 로
+**원래부터** 접근 가능 → "admin 포함 전체역할 disabled" 는 현 배포 코드로 설명 불가.
+→ 가장 유력 원인 = **현장 태블릿 stale 번들/캐시**(13:09 배포 → 13:26 보고. SPA 기존 세션이
+배포 전 lazy 청크를 메모리 유지, 하드리로드 전까지 신규 canAccess 미적용).
+**운영 코드 추가수정 불필요**(추정 코드변경 회피). 현장 하드리프레시 후 역할별 재검증 필요.
+
+### REOPEN 산출 (test-only, db_changed=false, 운영코드 무변경)
+- E2E 하드닝: 시나리오4 추가 — 운영 DB 실제 5종 행 PATH-3 시뮬레이션.
+  AC-5(비특권 전체역할 활성화) · AC-5(admin/manager/director 회귀) · AC-6(form_key 전수 일치).
+  → 12 passed (기존 9 + 신규 3). tsc 0. L-006 회귀 15 passed(DOC-REISSUE-SYNC/PENCHART-REQROLE).
+- 현장 재안내 요청 → planner FOLLOWUP: 태블릿 앱 완전 종료 후 재진입(또는 하드리프레시),
+  coordinator·admin 각각 5종 활성화 per-role 결과 회신 요청.
