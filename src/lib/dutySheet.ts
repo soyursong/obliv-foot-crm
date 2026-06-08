@@ -265,6 +265,42 @@ export function parseDutyAttendees(
   return out;
 }
 
+/**
+ * CSV(주간 블록 캘린더)에서 **날짜별 출근자 맵**(Record<'YYYY-MM-DD', 이름[]>)을 한 번에 추출.
+ * parseDutyAttendees 가 특정 1일만 반환하는 것과 달리, 시트 전 구간을 1회 파싱해 모든
+ * 날짜를 채운다 → A안(캘린더 셀)/B안(선택일 하단)이 같은 맵을 공유(날짜당 재파싱·재fetch 없음).
+ * 특수 토큰(전직원/총괄/휴진) 확장 룰은 parseDutyAttendees 와 동일.
+ *
+ * @param allStaffNames "전직원" 토큰 확장용 활성 직원 이름 목록.
+ */
+export function parseDutyAttendeesByDate(
+  csv: string,
+  allStaffNames: string[] = [],
+): Record<string, string[]> {
+  const grid = parseCsv(csv);
+  const { candidates } = extractCandidates(grid);
+
+  const map: Record<string, string[]> = {};
+  const push = (date: string, n: string) => {
+    const t = (n ?? '').trim();
+    if (!t) return;
+    const arr = map[date] ?? (map[date] = []);
+    if (!arr.includes(t)) arr.push(t);
+  };
+
+  for (const c of candidates) {
+    if (!c.date) continue;
+    if (c.name === ALL_STAFF_TOKEN) {
+      for (const s of allStaffNames) push(c.date, s);
+    } else if (c.name === SUPERVISOR_TOKEN) {
+      push(c.date, SUPERVISOR_NAME);
+    } else {
+      push(c.date, c.name);
+    }
+  }
+  return map;
+}
+
 // ─── Edge Function 프록시 read ───────────────────────────────────────────────
 
 /** Edge Function 프록시로 한 시트(gid) raw CSV 수신 */
@@ -310,6 +346,37 @@ export async function fetchTodayAttendeeNames(
     } else {
       // 일부 시트 실패는 무시(graceful) — 콘솔 경고만
       console.warn('[dutySheet] 시트 read 실패:', res.reason);
+    }
+  }
+  return merged;
+}
+
+/**
+ * 모든 시트(gid)에서 **날짜별 출근자 맵**을 수신·병합. gid당 CSV **1회만 fetch**
+ * (N개 날짜 조회 시 날짜마다 재호출하던 fetchTodayAttendeeNames 반복을 대체 — AC-0).
+ * 시트 장애/포맷 변경 시 graceful — 실패한 gid는 무시하고 가능한 범위만 반환.
+ *
+ * @param allStaffNames "전직원" 토큰 확장용 활성 직원 이름 목록.
+ */
+export async function fetchAttendeesByDate(
+  gids: string[] = DUTY_SHEET_GIDS,
+  allStaffNames: string[] = [],
+): Promise<Record<string, string[]>> {
+  const results = await Promise.allSettled(
+    gids.map(async (gid) =>
+      parseDutyAttendeesByDate(await fetchSheetCsv(gid), allStaffNames),
+    ),
+  );
+
+  const merged: Record<string, string[]> = {};
+  for (const res of results) {
+    if (res.status !== 'fulfilled') {
+      console.warn('[dutySheet] 시트 read 실패:', res.reason);
+      continue;
+    }
+    for (const [date, names] of Object.entries(res.value)) {
+      const arr = merged[date] ?? (merged[date] = []);
+      for (const n of names) if (!arr.includes(n)) arr.push(n);
     }
   }
   return merged;
