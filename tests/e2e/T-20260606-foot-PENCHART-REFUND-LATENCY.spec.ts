@@ -110,6 +110,41 @@ test.describe('T-20260606-foot-PENCHART-REFUND-LATENCY', () => {
     expect(src, '양식 진입 worst 리셋 없음').toContain('perfWorstRef.current = { frameGap: 0');
   });
 
+  // ── REOPEN#1: opt-in ?penchart_lite — draw 비트맵 4× 축소 레버 + 좌표 단일소스 정합 ──────
+  //   기본 동작 무변경(default DRAW_DPR=2). lite=환불동의서 한정 1x. 좌표 3개 지점이 drawDprRef 단일소스
+  //   사용 → 좌표 어긋남 차단. bgCanvas/save 는 DRAW_DPR 유지(업스케일 합성).
+  test('REOPEN#1: ?penchart_lite overlay DPR 축소 레버 + drawDprRef 단일소스 좌표 정합', () => {
+    const src: string = fs.readFileSync(SRC, 'utf-8');
+
+    // 단일소스 ref 선언 + 기본값 DRAW_DPR
+    expect(src, 'drawDprRef 단일소스 없음').toContain('const drawDprRef = useRef<number>(DRAW_DPR)');
+
+    // initDrawCanvas: lite 게이트(환불동의서 한정) + dpr 결정 + ref 고정
+    expect(src, '?penchart_lite 게이트 없음').toContain("_search.includes('penchart_lite')");
+    expect(src, 'lite 게이트 환불동의서 한정 아님').toMatch(/penchart_lite'\) && isRefundConsentKey/);
+    expect(src, 'lite=1x / 기본 DRAW_DPR 분기 없음').toContain('_liteOverlay ? 1 : DRAW_DPR');
+    expect(src, 'overlay DPR 단일소스 고정(drawDprRef.current = dpr) 없음').toContain('drawDprRef.current = dpr');
+
+    // 좌표 스케일 3개 지점이 drawDprRef.current 사용(어긋남 차단) — DRAW_DPR 하드코딩 잔존 금지
+    const fnIdx = src.indexOf('const handleNativePointerMove = useCallback');
+    const fnEnd = src.indexOf('}, []); // eslint-disable-line', fnIdx);
+    const moveFn = src.slice(fnIdx, fnEnd);
+    expect(moveFn, 'handleNativePointerMove 좌표 스케일 단일소스 미사용').toContain('canvas.width / drawDprRef.current');
+    expect(moveFn, 'handleNativePointerMove 에 DRAW_DPR 하드코딩 좌표 잔존').not.toContain('canvas.width / DRAW_DPR');
+
+    const getPosIdx = src.indexOf('const getPos = (e: React.PointerEvent');
+    const getPosFn = src.slice(getPosIdx, getPosIdx + 600);
+    expect(getPosFn, 'getPos 가 drawDprRef 단일소스 미사용').toContain('const dpr = drawDprRef.current');
+
+    const downIdx = src.indexOf('const onPointerDown = (e: React.PointerEvent');
+    const downFn = src.slice(downIdx, downIdx + 1400);
+    expect(downFn, 'onPointerDown 좌표 스케일 단일소스 미사용').toContain('canvas.width / drawDprRef.current');
+
+    // bgCanvas/save 는 DRAW_DPR(2) 유지 — 양식 화질 비파괴(업스케일 합성 경로 보존)
+    expect(src, 'save 업스케일 합성(draw→bg 크기) 경로 변형됨').toContain('tCtx.drawImage(canvas, 0, 0, bgCanvas.width, bgCanvas.height)');
+    expect(src, 'bgCanvas DRAW_DPR 사이징 변형됨').toContain('canvas.width  = CANVAS_W * DRAW_DPR');
+  });
+
   // ── AC-2(최우선 안전): 검정화면 비재발 — desync 미사용 불변식 ──────────────────
   test('AC-2: initDrawCanvas — useDesync 기본 false + isIOS 기기분기 없음 + desync=OFF 통일 유지', () => {
     const src: string = fs.readFileSync(SRC, 'utf-8');
