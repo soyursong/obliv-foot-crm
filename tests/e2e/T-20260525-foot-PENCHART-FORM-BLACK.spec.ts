@@ -204,8 +204,9 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
 
     const bgInitIdx = src.indexOf('const initBgCanvas = useCallback');
     expect(bgInitIdx).toBeGreaterThan(0);
-    // 1500자 윈도우: ctx null 가드(~300) + canvasH 계산 + Fix-1 주석 + canvas.width 설정 + BLACKSCR 주석 + size check
-    const bgBlock = src.slice(bgInitIdx, bgInitIdx + 1500);
+    // 1500→2100자 윈도우: ctx null 가드(~300) + canvasH 계산 + Fix-1 주석 + canvas.width 설정 + BLACKSCR 주석 + size check
+    //   (T-20260608-foot-PENCHART-REFUND-FORMIMG: 각 가드에 setBgImgErrorReason 진단 줄 추가 → canvas.width===0 가 ~1713 으로 밀림)
+    const bgBlock = src.slice(bgInitIdx, bgInitIdx + 2100);
 
     // ctx null 가드 이후 setBgImgLoadError(true) 존재
     expect(bgBlock).toContain("if (!ctx)");
@@ -225,9 +226,10 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
 
     const drawInitIdx = src.indexOf('const initDrawCanvas = useCallback');
     expect(drawInitIdx).toBeGreaterThan(0);
-    // 4500자 윈도우: REOPEN4 + T-20260606-REFUND-PEN-MISS 기기별 조건부 desync 주석 추가로 블록 확대
+    // 4500→4900자 윈도우: REOPEN4 + T-20260606-REFUND-PEN-MISS 기기별 조건부 desync 주석 추가로 블록 확대
+    //   (T-20260608-foot-PENCHART-REFUND-FORMIMG: 각 가드에 setBgImgErrorReason 진단 줄 추가 → canvas.width===0 가 ~4561 로 밀림)
     // ctx null 가드 + drawCtxRef 캐싱 + canvasH 계산 + canvas.width 설정 + BLACKSCR size check
-    const drawBlock = src.slice(drawInitIdx, drawInitIdx + 4500);
+    const drawBlock = src.slice(drawInitIdx, drawInitIdx + 4900);
 
     expect(drawBlock).toContain("if (!ctx)");
     expect(drawBlock).toContain('setBgImgLoadError(true)');
