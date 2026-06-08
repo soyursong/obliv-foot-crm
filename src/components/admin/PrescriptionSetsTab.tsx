@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
-import { Loader2, Plus, Pencil, Trash2, X, Folder, Check, Search, Link2 } from 'lucide-react';
+import { Loader2, Plus, Pencil, Trash2, X, Folder, Check, Search, Link2, MoreVertical } from 'lucide-react';
 import RxCountInput from '@/components/admin/RxCountInput';
 
 // ---------------------------------------------------------------------------
@@ -397,6 +397,83 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
 }
 
 // ---------------------------------------------------------------------------
+// RxSetKebabMenu — T-20260609-foot-RXSET-DELETE-KEBAB-GUARD
+//   삭제 직접노출 제거 → 우측상단 ⋮(MoreVertical) 케밥. 메뉴엔 "삭제" 단일 옵션만.
+//   (스펙 변경 MSG-…-dj5p, 문지은 대표원장: "수정은 무의미하지 폴더는 드래그로 바꾸지 않아?"
+//    → '수정' 진입점 제거. 폴더이동은 별건 T-20260609-foot-RXSET-FOLDER-DND.)
+//   신규 npm 패키지(@radix-ui/*) 대신 경량 인라인 popover(클릭 토글 + 바깥클릭/ESC 닫힘).
+//   삭제는 destructive 톤. 실제 del 은 부모의 확인 다이얼로그에서만 실행.
+// ---------------------------------------------------------------------------
+function RxSetKebabMenu({
+  onDelete,
+  deleteDisabled,
+}: {
+  onDelete: () => void;
+  deleteDisabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // 바깥클릭/ESC 닫힘 — 열렸을 때만 document 리스너 부착(카드 다수여도 1개만 활성).
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent | TouchEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('touchstart', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('touchstart', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7"
+        onClick={() => setOpen((v) => !v)}
+        title="더보기"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        data-testid="rx-set-kebab-btn"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </Button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-8 z-30 min-w-[128px] overflow-hidden rounded-md border bg-popover py-1 text-popover-foreground shadow-md"
+          data-testid="rx-set-kebab-menu"
+        >
+          {/* 삭제 단일 옵션 (수정 옵션 없음 — 스펙 변경 dj5p) */}
+          <button
+            type="button"
+            role="menuitem"
+            disabled={deleteDisabled}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => {
+              setOpen(false);
+              onDelete();
+            }}
+            data-testid="rx-set-action-delete"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> 삭제
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 export default function PrescriptionSetsTab() {
@@ -418,6 +495,8 @@ export default function PrescriptionSetsTab() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<PrescriptionSet | null>(null);
   const [form, setForm] = useState<SetForm>(EMPTY_FORM);
+  // T-20260609-foot-RXSET-DELETE-KEBAB-GUARD: 삭제 확인 다이얼로그 대상(네이티브 confirm 대체).
+  const [deleteTarget, setDeleteTarget] = useState<PrescriptionSet | null>(null);
 
   function openAdd() {
     setEditing(null);
@@ -425,17 +504,9 @@ export default function PrescriptionSetsTab() {
     setOpen(true);
   }
 
-  function openEdit(s: PrescriptionSet) {
-    setEditing(s);
-    setForm({
-      name: s.name,
-      items: s.items.length > 0 ? s.items : [{ ...EMPTY_ITEM }],
-      is_active: s.is_active,
-      sort_order: s.sort_order,
-      folder: s.folder ?? '',
-    });
-    setOpen(true);
-  }
+  // T-20260609-foot-RXSET-DELETE-KEBAB-GUARD (스펙변경 dj5p): 세트 편집 진입점 제거.
+  //   현장: "수정은 무의미하지 폴더는 드래그로 바꾸지 않아?" → openEdit(편집 모달) 제거.
+  //   편집 인프라(editing 상태·upsert {id} 분기)는 잔존하나 UI 진입점은 추가(openAdd)만.
 
   function handleItemChange(idx: number, field: keyof PrescriptionItem, val: string | number | null) {
     setForm((f) => {
@@ -485,9 +556,11 @@ export default function PrescriptionSetsTab() {
     setOpen(false);
   }
 
-  function handleDelete(id: number, name: string) {
-    if (!confirm(`"${name}" 처방세트를 삭제하시겠어요?`)) return;
-    del.mutate(id);
+  // T-20260609-foot-RXSET-DELETE-KEBAB-GUARD: 네이티브 confirm() 제거.
+  //   케밥 "삭제" → 확인 다이얼로그(setDeleteTarget). 실제 del 은 다이얼로그 [삭제]에서만 실행.
+  function confirmDelete() {
+    if (!deleteTarget) return;
+    del.mutate(deleteTarget.id, { onSettled: () => setDeleteTarget(null) });
   }
 
   // T-20260607-foot-FOLDER-RENAME-INLINE (AC-B): 폴더명 인라인 변경 핸들러 (AC-A와 동일 로직)
@@ -675,25 +748,11 @@ export default function PrescriptionSetsTab() {
                   </Badge>
                 </div>
                 {canEdit && (
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => openEdit(s)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive hover:text-destructive"
-                      onClick={() => handleDelete(s.id, s.name)}
-                      disabled={del.isPending}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
+                  // T-20260609-foot-RXSET-DELETE-KEBAB-GUARD: 삭제 직접노출 제거 → 우측상단 ⋮ 케밥(삭제 단일).
+                  <RxSetKebabMenu
+                    onDelete={() => setDeleteTarget(s)}
+                    deleteDisabled={del.isPending}
+                  />
                 )}
               </div>
               {s.items.length > 0 && (
@@ -805,6 +864,30 @@ export default function PrescriptionSetsTab() {
             <Button onClick={handleSave} disabled={upsert.isPending} data-testid="rx-set-save-btn">
               {upsert.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
               저장
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* T-20260609-foot-RXSET-DELETE-KEBAB-GUARD: 삭제 확인 다이얼로그 (네이티브 confirm 대체) */}
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent className="max-w-sm" data-testid="rx-set-delete-dialog">
+          <DialogHeader>
+            <DialogTitle>처방세트 삭제</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            처방세트 &lsquo;{deleteTarget?.name}&rsquo;을 삭제할까요? 이 작업은 되돌릴 수 없어요.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>취소</Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={del.isPending}
+              data-testid="rx-set-delete-confirm-btn"
+            >
+              {del.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+              삭제
             </Button>
           </DialogFooter>
         </DialogContent>
