@@ -137,8 +137,11 @@ test.describe('T-20260526-VISIT-FOLD-FILTER — 방문이력 열기/접기 + 메
     await expect(treatFilter).toBeVisible();
     // 진료메모 필터 chip 표시 확인
     await expect(page.locator('[data-testid="memo-filter-doc"]')).toBeVisible();
-    // 특이사항 필터 chip 표시 확인
-    await expect(page.locator('[data-testid="memo-filter-notable"]')).toBeVisible();
+    // T-20260609-foot-TIMELINE-FILTER-PREVIEW-FIX AC-10: '특이사항' 필터 chip 제거됨
+    //   (특이사항은 좌측 상단 고정 '특이사항' 섹션으로 일원화 — 필터 칩에서 빠짐)
+    await expect(page.locator('[data-testid="memo-filter-notable"]')).toHaveCount(0);
+    // 특이사항 누적 섹션(상단 고정)은 상시 존재
+    await expect(page.locator('[data-testid="special-note-section"]')).toBeVisible();
 
     // 치료메모 필터 클릭
     await treatFilter.click();

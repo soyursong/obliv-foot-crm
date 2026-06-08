@@ -300,9 +300,7 @@ function chartPreviewSegments(chart: MedicalChart, filters: Set<MemoFilter>): st
       segs.push(`💊 ${rxNames.slice(0, 2).join(', ')}${rxNames.length > 2 ? ` 외 ${rxNames.length - 2}` : ''}`);
     }
   }
-  if (isTypeActive(filters, 'notable') && isNotable(chart)) {
-    segs.push('⚠ 특이사항');
-  }
+  // AC-10: 특이(notable)는 미리보기 세그먼트에서 제외 — 특이사항은 좌측 상단 고정 카드로 일원화.
   return segs;
 }
 
@@ -327,14 +325,24 @@ function isNotable(c: MedicalChart): boolean {
 }
 
 // T-20260603-foot-CHART-UIUX-ENHANCE AC-12: 처방(rx) 필터 추가 (②치료메모 ③진료메모 ④처방 ⑤특이 독립 on/off)
+//   'notable'(특이)은 MemoFilter 유형 유지(이력 필터 로직 호환)하되, AC-10 이후 칩에서는 비노출(특이사항은 상단 고정 카드로 일원화).
 type MemoFilter = 'treat' | 'doc' | 'rx' | 'notable';
 
+// T-20260609-foot-TIMELINE-FILTER-PREVIEW-FIX AC-8/AC-9/AC-10 (문지은 대표원장):
+//   AC-8 칩 레이블 단축('치료메모'→'치료','진료메모'→'진료','처방' 유지) + 유형별 색상.
+//   AC-9 닷 색상과 통일하는 단일 팔레트(TYPE_DOT_CLASS) — 치료=blue / 진료=emerald(green) / 처방=amber.
+//   AC-10 '특이' 칩 제거 — FILTER_OPTIONS 에서 notable 항목 삭제(특이사항은 좌측 상단 고정 카드로 일원화).
 const FILTER_OPTIONS: { key: MemoFilter; label: string; chipClass: string }[] = [
-  { key: 'treat', label: '치료메모', chipClass: 'bg-blue-600 text-white border-blue-600' },
-  { key: 'doc', label: '진료메모', chipClass: 'bg-teal-600 text-white border-teal-600' },
-  { key: 'rx', label: '처방', chipClass: 'bg-violet-600 text-white border-violet-600' },
-  { key: 'notable', label: '⚠특이', chipClass: 'bg-amber-500 text-white border-amber-500' },
+  { key: 'treat', label: '치료', chipClass: 'bg-blue-600 text-white border-blue-600' },
+  { key: 'doc', label: '진료', chipClass: 'bg-emerald-600 text-white border-emerald-600' },
+  { key: 'rx', label: '처방', chipClass: 'bg-amber-600 text-white border-amber-600' },
 ];
+// AC-9 유형 닷 색상(칩 색과 통일된 동일 hue) — 부재 유형은 transparent 로 컬럼 폭만 유지.
+const TYPE_DOT_CLASS: Record<'treat' | 'doc' | 'rx', string> = {
+  treat: 'bg-blue-500',
+  doc: 'bg-emerald-500',
+  rx: 'bg-amber-500',
+};
 
 // T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-3 (문지은 대표원장):
 //   임상경과 `//` 트리거 드롭다운을 textarea 전체 하단이 아닌 '커서(caret) 바로 아래'에 렌더.
@@ -1855,6 +1863,26 @@ export default function MedicalChartPanel({
                                 날짜+성명을 좌측 그룹(min-w-0 flex-1)으로 묶어 같은 줄 정렬을 보장하고,
                                 성명이 배지에 밀려 0폭으로 깨지지 않게 함(성명 제거 X). 유형 배지는 우측 고정. */}
                             <div className="flex items-center gap-1.5 leading-tight">
+                              {/* T-20260609-foot-TIMELINE-FILTER-PREVIEW-FIX AC-9: 유형 컬러 닷 — 좌측 고정 컬럼.
+                                  치료=파랑 / 진료=초록(emerald) / 처방=amber, 각 유형은 고정 슬롯(x)을 점유하고
+                                  부재 유형은 transparent 닷으로 컬럼 폭만 유지 → 스크롤 시 같은 색이 같은 열에 정렬. */}
+                              <span className="flex items-center gap-1 shrink-0" data-testid="timeline-type-dots">
+                                <span
+                                  className={`h-1.5 w-1.5 rounded-full ${hasTreat ? TYPE_DOT_CLASS.treat : 'bg-transparent'}`}
+                                  data-type="treat"
+                                  title={hasTreat ? '치료메모' : undefined}
+                                />
+                                <span
+                                  className={`h-1.5 w-1.5 rounded-full ${hasDoc ? TYPE_DOT_CLASS.doc : 'bg-transparent'}`}
+                                  data-type="doc"
+                                  title={hasDoc ? '진료메모' : undefined}
+                                />
+                                <span
+                                  className={`h-1.5 w-1.5 rounded-full ${hasRxItems ? TYPE_DOT_CLASS.rx : 'bg-transparent'}`}
+                                  data-type="rx"
+                                  title={hasRxItems ? '처방' : undefined}
+                                />
+                              </span>
                               {/* 좌측 그룹: 날짜 + (더미) + 성명 — 같은 줄, 성명은 여기서만 truncate */}
                               <span className="flex items-center gap-1.5 min-w-0 flex-1">
                                 <span className="text-[11px] font-semibold text-teal-700 shrink-0">
@@ -1869,21 +1897,8 @@ export default function MedicalChartPanel({
                                   </span>
                                 )}
                               </span>
-                              {/* 유형 메타 — 상단 1줄 우측 고정(AC-2 부가정보 통합) */}
-                              <span className="flex gap-0.5 shrink-0">
-                                {hasTreat && (
-                                  <span className="text-[8px] bg-blue-50 text-blue-600 border border-blue-200 rounded-full px-1 leading-4">치료</span>
-                                )}
-                                {hasDoc && (
-                                  <span className="text-[8px] bg-teal-50 text-teal-600 border border-teal-200 rounded-full px-1 leading-4">진료</span>
-                                )}
-                                {hasRxItems && (
-                                  <span className="text-[8px] bg-violet-50 text-violet-600 border border-violet-200 rounded-full px-1 leading-4">처방</span>
-                                )}
-                                {notable && (
-                                  <span className="text-[8px] bg-amber-50 text-amber-600 border border-amber-200 rounded-full px-1 leading-4">⚠특이</span>
-                                )}
-                              </span>
+                              {/* AC-10: 특이사항은 좌측 상단 고정 '특이사항' 섹션으로 일원화 — 접힌 항목엔 특이 badge/닷 비노출.
+                                  키워드 감지(isNotable) 안전 신호는 펼침 상세의 '⚠ 특이사항 감지' 로만 detail-on-demand 표시. */}
                             </div>
                             {/* T-20260609-foot-TIMELINE-FILTER-PREVIEW-FIX (AC-2/3/4/5):
                                 미리보기는 선택 필터 유형 기준으로 구성. 무필터=전체 유형 누적, 필터선택=선택 유형만(다중=누적).
@@ -1962,7 +1977,8 @@ export default function MedicalChartPanel({
                                 </ul>
                               </div>
                             )}
-                            {notable && isTypeActive(memoFilters, 'notable') && (
+                            {/* AC-10: 키워드 감지 안전 신호는 펼침 상세에서 필터와 무관하게 항상 노출(detail-on-demand). */}
+                            {notable && (
                               <div className="mt-0.5">
                                 <span className="text-[9px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-semibold">
                                   ⚠ 특이사항 감지
@@ -1973,7 +1989,7 @@ export default function MedicalChartPanel({
                               && !(chart.clinical_progress && isTypeActive(memoFilters, 'doc'))
                               && !(isDirector && chart.doctor_memo && isTypeActive(memoFilters, 'doc'))
                               && !(hasRxItems && isTypeActive(memoFilters, 'rx'))
-                              && !(notable && isTypeActive(memoFilters, 'notable')) && (
+                              && !notable && (
                               <p className="text-[10px] text-muted-foreground italic">
                                 {memoFilters.size > 0 ? '선택한 유형의 메모 없음' : '저장된 메모 없음'}
                               </p>
