@@ -45,6 +45,18 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: CORS_HEADERS });
 }
 
+// ── Cross-CRM slug 통일 (dual-key transition window, ~2026-06-15 구키 제거) ──────
+//   도파민 신키 'jongno-foot' ↔ 구키 'foot-jongno' 1주 전환기 양쪽 수용.
+//   visited 콜백 payload는 canonical 신키(FOOT_CLINIC_SLUG)로 emit.
+//   paired: T-20260602-dopamine-CLINIC-SLUG-UNIFY
+const SLUG_ALIAS: Record<string, string> = {
+  'foot-jongno': 'jongno-foot',
+};
+function normalizeSlug(slug: string): string {
+  return SLUG_ALIAS[slug] ?? slug;
+}
+const FOOT_CLINIC_SLUG = normalizeSlug('foot-jongno'); // → 'jongno-foot' (canonical)
+
 // ── HTTP POST to dopamine ────────────────────────────────────────────────────
 async function httpPostToDopamine(
   url: string,
@@ -175,7 +187,7 @@ Deno.serve(async (req) => {
     // ── AC-2: outbound_log INSERT (pending) ───────────────────────────────────
     const visitedPayload = {
       source_system: 'foot',
-      clinic_slug: 'jongno-foot',
+      clinic_slug: FOOT_CLINIC_SLUG,
       external_id: externalId,
       type: 'visited',
       event_id: checkInId,

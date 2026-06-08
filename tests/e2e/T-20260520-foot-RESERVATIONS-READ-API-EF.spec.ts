@@ -77,7 +77,9 @@ test('TD2-5: clinic_slug → clinics.id DB 조회 + 미매칭 빈 결과', () =>
   const src = fs.readFileSync(EF_PATH, 'utf-8');
   // clinics 테이블 조회
   expect(src).toContain("'clinics'");
-  expect(src).toContain('.eq(\'slug\', clinicSlug)');
+  // SLUG-UNIFY: dual-key 정규화 후 조회 (구키 'foot-jongno' → 신키 'jongno-foot')
+  expect(src).toContain('.eq(\'slug\', lookupSlug)');
+  expect(src).toContain('normalizeSlug(clinicSlug)');
   // clinicIdFilter 할당
   expect(src).toContain('clinicIdFilter');
   // 미매칭 시 빈 배열 반환 (에러 아님)
