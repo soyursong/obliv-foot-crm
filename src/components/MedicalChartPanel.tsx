@@ -92,10 +92,33 @@ interface MedicalChart {
   created_by: string | null;
   // T-20260606-foot-MEDCHART-RECORDER-NAME AC-4: 기록 시점 의사 표시명 스냅샷(DB 영구). NULL=레거시/미매칭→폴백.
   created_by_name?: string | null;
+  // T-20260608-foot-MEDCHART-SIGN-AUDIT (Phase 2): 진료의 귀속(의료법). 레거시 행은 전부 NULL.
+  //   signing_doctor_id = clinic_doctors.id. name/seal_url = 저장시점 스냅샷(출력 표기·의사 레코드 변경 무관 보존).
+  signing_doctor_id?: string | null;
+  signing_doctor_name?: string | null;
+  signing_doctor_seal_url?: string | null;
   created_at: string;
   updated_at: string;
   // doctor_memo: chart_doctor_memos에서 merge (director/admin 전용)
   doctor_memo?: string | null;
+}
+
+// T-20260608-foot-MEDCHART-SIGN-AUDIT (Phase 2): 진료의 선택지(활성 clinic_doctors)
+interface ClinicDoctorOption {
+  id: string;
+  name: string;
+  seal_image_url: string | null;
+  is_default: boolean;
+}
+
+// T-20260608-foot-MEDCHART-SIGN-AUDIT (Phase 2): 진료의 변경이력 1행(AC-P2-3 차트 단위 조회)
+interface SignerAuditEntry {
+  id: string;
+  old_doctor_name: string | null;
+  new_doctor_name: string | null;
+  changed_by_name: string | null;
+  changed_by: string | null;
+  changed_at: string;
 }
 
 interface CustomerBasic {
@@ -461,6 +484,15 @@ export default function MedicalChartPanel({
   const [formClinical, setFormClinical] = useState(''); // 임상경과
   const [formMemo, setFormMemo] = useState('');       // 원장 전용 메모
   const [formRx, setFormRx] = useState<PrescriptionItem[]>([]); // 처방내역
+  // T-20260608-foot-MEDCHART-SIGN-AUDIT (Phase 2): 진료의 귀속(의료법). 선택지=활성 clinic_doctors.
+  //   formSigningDoctorId = 현재 폼에서 선택된 진료의(저장 시 NOT NULL 강제 — 신규/수정행).
+  const [clinicDoctors, setClinicDoctors] = useState<ClinicDoctorOption[]>([]);
+  const [formSigningDoctorId, setFormSigningDoctorId] = useState<string>('');
+  // AC-P2-3: 선택된(저장된) 차트의 진료의 변경이력
+  const [signerAudit, setSignerAudit] = useState<SignerAuditEntry[]>([]);
+  const [signerAuditOpen, setSignerAuditOpen] = useState(false);
+  // 저장 후 동일 차트의 변경이력을 재조회하기 위한 refresh 토큰.
+  const [signerAuditRefresh, setSignerAuditRefresh] = useState(0);
   // T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-4 (문지은 대표원장): 저장/수정 모드 토글(실수 방지).
   //   신규 작성 = 항상 편집 가능. 저장된 차트 = 진입 시 읽기전용 → [수정] 클릭해야 편집모드 진입.
   const [editMode, setEditMode] = useState(false);
@@ -548,7 +580,7 @@ export default function MedicalChartPanel({
     if (!customerId || !clinicId) return;
     setLoading(true);
     try {
-      const [custRes, chartsRes, phrasesRes, rxSetsRes, treatMemosRes, staffRes, superRes, specialNotesRes] = await Promise.all([
+      const [custRes, chartsRes, phrasesRes, rxSetsRes, treatMemosRes, staffRes, superRes, specialNotesRes, clinicDoctorsRes] = await Promise.all([
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
           .from('customers')
@@ -609,6 +641,16 @@ export default function MedicalChartPanel({
           .eq('clinic_id', clinicId)
           .order('is_pinned', { ascending: false }) // #10 고정 우선
           .order('created_at', { ascending: false }),
+        // T-20260608-foot-MEDCHART-SIGN-AUDIT (Phase 2): 진료의 선택지 = 활성 clinic_doctors (AC-P2-2).
+        //   clinicId(=clinic UUID 문자열)로 필터. autoBindContext/ClinicSettings와 동일 패턴.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
+          .from('clinic_doctors')
+          .select('id,name,seal_image_url,is_default')
+          .eq('clinic_id', clinicId)
+          .eq('active', true)
+          .order('sort_order', { ascending: true })
+          .order('created_at', { ascending: true }),
       ]);
 
       if (custRes.data) setCustomer(custRes.data as CustomerBasic);
@@ -655,6 +697,8 @@ export default function MedicalChartPanel({
         });
         setStaffNameMap(nameMap);
       }
+      // T-20260608-foot-MEDCHART-SIGN-AUDIT (Phase 2): 진료의 선택지 적재(조회 실패 시 빈 목록 — 레거시 무영향).
+      setClinicDoctors((clinicDoctorsRes?.data as ClinicDoctorOption[]) ?? []);
 
       // director면 chart_doctor_memos merge
       if (isDirector && rawCharts.length > 0) {
@@ -719,6 +763,8 @@ export default function MedicalChartPanel({
       setFormClinical(chart.clinical_progress || '');
       setFormMemo(chart.doctor_memo || '');
       setFormRx(chart.prescription_items || []);
+      // T-20260608-foot-MEDCHART-SIGN-AUDIT (Phase 2): 저장된 차트의 진료의 복원(레거시는 ''→재선택 필요).
+      setFormSigningDoctorId(chart.signing_doctor_id ?? '');
       loadVisitPayments(chart.visit_date);
     } else {
       setFormDate(today);
@@ -727,9 +773,57 @@ export default function MedicalChartPanel({
       setFormClinical('');
       setFormMemo('');
       setFormRx([]);
+      // 신규 작성: 진료의 미선택 — 아래 자동기본값 effect가 의사 계정이면 본인으로 채움(AC-P2-1).
+      setFormSigningDoctorId('');
       loadVisitPayments(today);
     }
   }, [loadVisitPayments]);
+
+  // T-20260608-foot-MEDCHART-SIGN-AUDIT AC-P2-1 (자동 기본값): 신규 작성 + 진료의 미선택일 때,
+  //   로그인 계정이 의사(director/admin role) 이고 이름이 일치하는 활성 의사가 있으면 본인 자동 선택.
+  //   의사 계정이 아니거나 매칭 없으면 미선택 유지 → 드롭다운에서 수동 선택(AC-P2-2).
+  useEffect(() => {
+    if (selectedChartId) return;          // 저장된 차트는 복원값 유지
+    if (formSigningDoctorId) return;      // 이미 선택됨
+    if (clinicDoctors.length === 0) return;
+    if (!isDirector) return;              // 의사 role 아니면 자동값 없음
+    const mine = clinicDoctors.find((d) => d.name === currentUserName);
+    if (mine) setFormSigningDoctorId(mine.id);
+  }, [selectedChartId, formSigningDoctorId, clinicDoctors, isDirector, currentUserName]);
+
+  // T-20260608-foot-MEDCHART-SIGN-AUDIT AC-P2-3: 선택된(저장된) 차트의 진료의 변경이력 로드(차트 단위 조회).
+  useEffect(() => {
+    if (!selectedChartId || selectedChartId.startsWith('__dummy__')) {
+      setSignerAudit([]);
+      setSignerAuditOpen(false);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any)
+        .from('medical_chart_signer_audit')
+        .select('id,old_doctor_name,new_doctor_name,changed_by,changed_by_name,changed_at')
+        .eq('medical_chart_id', selectedChartId)
+        .order('changed_at', { ascending: false });
+      if (alive) setSignerAudit((data as SignerAuditEntry[]) ?? []);
+    })();
+    return () => { alive = false; };
+  }, [selectedChartId, signerAuditRefresh]);
+
+  // T-20260608-foot-MEDCHART-SIGN-AUDIT AC-P2-5: 선택 차트의 진료의 직인 storage path → signed URL(출력 표기용).
+  //   직인 없으면 빈값 → 이름 텍스트로 표기(현장 "이름 정도면 충분"). 'documents' 버킷(autoBindContext와 동일).
+  const [sealSignedUrl, setSealSignedUrl] = useState<string>('');
+  const selectedSealPath = charts.find((c) => c.id === selectedChartId)?.signing_doctor_seal_url ?? null;
+  useEffect(() => {
+    if (!selectedSealPath) { setSealSignedUrl(''); return; }
+    let alive = true;
+    (async () => {
+      const { data } = await supabase.storage.from('documents').createSignedUrl(selectedSealPath, 3600);
+      if (alive) setSealSignedUrl(data?.signedUrl ?? '');
+    })();
+    return () => { alive = false; };
+  }, [selectedSealPath]);
 
   // ── 열림/닫힘 lifecycle ───────────────────────────────────────────────────────
 
@@ -823,6 +917,21 @@ export default function MedicalChartPanel({
       toast.error('더미 데이터는 저장할 수 없습니다 (실제 고객 데이터 없음)');
       return;
     }
+    // T-20260608-foot-MEDCHART-SIGN-AUDIT AC-P2-6 (FE 강제, 의료법): 진료의 없이 저장 차단.
+    //   DB 트리거가 최종 방어선이나, 사용자 안내를 위해 FE에서 먼저 막는다(시나리오 2).
+    if (!formSigningDoctorId) {
+      toast.error('진료의가 필요합니다 — 담당 의사를 선택해주세요');
+      return;
+    }
+    const selectedDoctor = clinicDoctors.find((d) => d.id === formSigningDoctorId) ?? null;
+    if (!selectedDoctor) {
+      toast.error('선택한 진료의 정보를 찾을 수 없습니다 — 다시 선택해주세요');
+      return;
+    }
+    // 변경이력(AC-P2-3)용 — 수정 전 진료의 스냅샷.
+    const prevChart = charts.find((c) => c.id === selectedChartId) ?? null;
+    const prevDoctorId = prevChart?.signing_doctor_id ?? null;
+    const prevDoctorName = prevChart?.signing_doctor_name ?? null;
     setSaving(true);
     try {
       const payload = {
@@ -839,6 +948,11 @@ export default function MedicalChartPanel({
         created_by: currentUserEmail,
         // T-20260606-foot-MEDCHART-RECORDER-NAME AC-3: 기록자 표시명 영구 저장(currentUserName=L302 재사용).
         created_by_name: currentUserName,
+        // T-20260608-foot-MEDCHART-SIGN-AUDIT AC-P2-4/5: 진료의 귀속 + 저장시점 스냅샷(이름·직인 path).
+        //   스냅샷은 의사 레코드 변경/삭제와 무관하게 출력 표기를 보존하기 위함.
+        signing_doctor_id: formSigningDoctorId,
+        signing_doctor_name: selectedDoctor.name,
+        signing_doctor_seal_url: selectedDoctor.seal_image_url ?? null,
         updated_at: new Date().toISOString(),
       };
 
@@ -860,6 +974,22 @@ export default function MedicalChartPanel({
         if (error) throw error;
         chartId = data?.id ?? null;
         if (chartId) setSelectedChartId(chartId);
+      }
+
+      // T-20260608-foot-MEDCHART-SIGN-AUDIT AC-P2-3: 진료의 귀속이 신규 지정/변경된 경우에만 변경이력 append.
+      //   (신규 차트 최초 지정 = old NULL → new, 수정 시 의사 변경 = old → new). append-only(덮어쓰기 금지).
+      if (chartId && prevDoctorId !== formSigningDoctorId) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any).from('medical_chart_signer_audit').insert({
+          medical_chart_id: chartId,
+          clinic_id: clinicId,
+          old_doctor_id: prevDoctorId,
+          old_doctor_name: prevDoctorName,
+          new_doctor_id: formSigningDoctorId,
+          new_doctor_name: selectedDoctor.name,
+          changed_by: currentUserEmail,
+          changed_by_name: currentUserName,
+        });
       }
 
       // director면 doctor_memo upsert (chart_doctor_memos)
@@ -896,6 +1026,7 @@ export default function MedicalChartPanel({
       // 필터 활성 상태에서 저장 시 새 차트가 필터에 미일치 → 타임라인에서 사라져 보이는 UX 버그 방지
       setMemoFilters(new Set<MemoFilter>());
       setEditMode(false); // AC-4: 저장 완료 → 읽기전용 전환(연속 실수 차단)
+      setSignerAuditRefresh((n) => n + 1); // AC-P2-3: 변경이력 패널 재조회
       loadData();
     } catch (err: unknown) {
       toast.error(`저장 실패: ${err instanceof Error ? err.message : '알 수 없는 오류'}`);
@@ -2125,6 +2256,46 @@ export default function MedicalChartPanel({
                     />
                   </div>
 
+                  {/* 담당 의사 (진료의) — T-20260608-foot-MEDCHART-SIGN-AUDIT (Phase 2, 의료법) AC-P2-1/2:
+                      로그인 계정이 의사면 자동 본인 + 드롭다운 수동 변경(스탭 포함) 가능. 신규/수정행 필수. */}
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground mb-1">
+                      담당 의사
+                      <span className="ml-1 text-[10px] text-rose-500 font-normal">· 진료기록 필수 (의료법)</span>
+                    </label>
+                    <select
+                      value={formSigningDoctorId}
+                      onChange={(e) => setFormSigningDoctorId(e.target.value)}
+                      disabled={isReadOnly}
+                      className={`h-10 text-sm w-full max-w-[280px] rounded-md border px-3 bg-background ${
+                        isReadOnly
+                          ? 'opacity-100 bg-gray-50 text-gray-500 cursor-not-allowed'
+                          : !formSigningDoctorId
+                            ? 'border-rose-300 focus:border-rose-400'
+                            : 'border-input'
+                      }`}
+                      data-testid="medical-chart-signing-doctor"
+                      aria-label="담당 의사(진료의)"
+                    >
+                      <option value="">의사를 선택하세요</option>
+                      {clinicDoctors.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                    {!isReadOnly && !formSigningDoctorId && (
+                      <p className="mt-1 text-[11px] text-rose-500" data-testid="signing-doctor-warning">
+                        진료의를 선택해야 저장할 수 있습니다.
+                      </p>
+                    )}
+                    {clinicDoctors.length === 0 && (
+                      <p className="mt-1 text-[11px] text-amber-600">
+                        등록된 의사가 없습니다 — 설정 &gt; 병원·원장 정보에서 의사를 먼저 등록하세요.
+                      </p>
+                    )}
+                  </div>
+
                   {/* 진단명 — T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2 [B] + AC-3 [C]):
                       자동완성/이력 datalist 폐지 → 폴더 탐색 드롭다운(등록 상병만 선택) + 원장별 즐겨찾기.
                       넓게/오른쪽 아래로 확장. 저장값=순수 상병명(formDx), medical_charts.diagnosis 저장경로 무변경. */}
@@ -2489,15 +2660,70 @@ export default function MedicalChartPanel({
 
                   {/* T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-2: 작성자 서명 — 기록 본문 말미.
                       상단 로그인 계정 인디케이터와 구분되는 '서명' 스타일(우측 정렬, 점선 구분, 작성: {이름}). */}
-                  {selectedChart && !selectedChartId?.startsWith('__dummy__') && (selectedChart.created_by_name || recorderName(selectedChart.created_by)) && (
-                    <div className="flex justify-end" data-testid="chart-recorder">
-                      <span className="inline-flex items-center gap-1.5 border-t border-dashed border-gray-300 pt-1.5 text-xs text-muted-foreground italic">
-                        <Stethoscope className="h-3 w-3 text-teal-600" />
-                        작성{' '}
-                        <span className="font-semibold not-italic text-teal-700">
-                          {selectedChart.created_by_name || recorderName(selectedChart.created_by)}
+                  {selectedChart && !selectedChartId?.startsWith('__dummy__') && (
+                    <div className="flex flex-col items-end gap-1.5 border-t border-dashed border-gray-300 pt-2" data-testid="chart-signature-block">
+                      {/* T-20260608-foot-MEDCHART-SIGN-AUDIT AC-P2-5: 진료의 직인(있으면) 또는 이름 자동 표기.
+                          저장된 signing_doctor_name 기준(출력시 임의 선택 의사 아님). 레거시(미보유) 행은 라벨 표기. */}
+                      {selectedChart.signing_doctor_name ? (
+                        <span className="inline-flex items-center gap-2 text-xs text-muted-foreground" data-testid="chart-signing-doctor">
+                          진료의{' '}
+                          <span className="font-semibold not-italic text-teal-700 text-sm">
+                            {selectedChart.signing_doctor_name}
+                          </span>
+                          {sealSignedUrl ? (
+                            <img
+                              src={sealSignedUrl}
+                              alt="진료의 직인"
+                              className="h-9 w-9 object-contain opacity-90"
+                              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                              data-testid="chart-signing-doctor-seal"
+                            />
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground border border-dashed rounded px-1 py-0.5">(인)</span>
+                          )}
                         </span>
-                      </span>
+                      ) : (
+                        <span className="text-[11px] text-amber-600 italic" data-testid="chart-signing-doctor-legacy">
+                          진료의 미보유 (레거시 기록)
+                        </span>
+                      )}
+                      {/* 작성자(기록자) — 진료의와 구별되는 보조 표기 */}
+                      {(selectedChart.created_by_name || recorderName(selectedChart.created_by)) && (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground italic" data-testid="chart-recorder">
+                          <Stethoscope className="h-3 w-3 text-teal-600" />
+                          작성{' '}
+                          <span className="font-semibold not-italic text-teal-700">
+                            {selectedChart.created_by_name || recorderName(selectedChart.created_by)}
+                          </span>
+                        </span>
+                      )}
+                      {/* AC-P2-3: 진료의 변경이력(차트 단위 조회). append-only — 덮어쓰기 금지. */}
+                      {signerAudit.length > 0 && (
+                        <div className="w-full max-w-md text-right">
+                          <button
+                            type="button"
+                            onClick={() => setSignerAuditOpen((v) => !v)}
+                            className="text-[11px] text-muted-foreground hover:text-teal-700 underline decoration-dotted"
+                            data-testid="signer-audit-toggle"
+                          >
+                            진료의 변경이력 {signerAudit.length}건 {signerAuditOpen ? '접기' : '보기'}
+                          </button>
+                          {signerAuditOpen && (
+                            <ul className="mt-1 space-y-1 text-left rounded-md border bg-gray-50 p-2" data-testid="signer-audit-list">
+                              {signerAudit.map((a) => (
+                                <li key={a.id} className="text-[11px] text-muted-foreground">
+                                  <span className="font-mono">{fmtDateShort(a.changed_at)}</span>{' · '}
+                                  <span className="text-gray-600">{a.old_doctor_name ?? '(없음)'}</span>
+                                  {' → '}
+                                  <span className="font-semibold text-teal-700">{a.new_doctor_name ?? '(없음)'}</span>
+                                  {' · '}
+                                  <span>{a.changed_by_name ?? a.changed_by ?? '?'}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
