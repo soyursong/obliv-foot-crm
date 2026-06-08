@@ -136,12 +136,13 @@ export default function ClinicManagement() {
             경과분석 플랜
           </TabsTrigger>
 
-          {/* 행 경계 3→전환기 */}
+          {/* 행 경계 3→묶음처방 */}
           <div className="basis-full h-0" aria-hidden="true" />
 
-          {/* ── (전환기) 묶음처방 = 기존 prescription_sets 탭(value=prescriptions).
-              drug_folders 가 '처방세트'로 리네임되며 라벨이 충돌 → 코드 도메인어 '묶음처방'으로 분리 표기.
-              Stage C(DB 이관, supervisor 게이트) 확정 후 본 탭 제거 예정. value=prescriptions 유지(?tab 호환). */}
+          {/* ── 묶음처방 = prescription_sets 탭(value=prescriptions). 영구 보존(별도 유지) — 2026-06-08 문지은 대표원장 최종결정.
+              여러 약 조합 단축키·상용구형 처방 묶음(posology 보유). '처방세트'(drug_folders 폴더기능)와 직교한 별개 기능.
+              ※ Stage C 그라운딩 결론: prescription_sets→folder 이관 없음(키공간 SERIAL≠UUID·posology 슬롯 부재·묶음의미 파괴).
+              data-testid=tab-prescription-sets-legacy 보존(라우트·E2E 호환). value=prescriptions 유지(?tab 호환). */}
           <TabsTrigger value="prescriptions" className="gap-1.5" data-testid="tab-prescription-sets-legacy">
             <Pill className="h-3.5 w-3.5" />
             묶음처방
@@ -187,7 +188,7 @@ export default function ClinicManagement() {
         <TabsContent value="progress_plans">
           <ProgressPlansTab />
         </TabsContent>
-        {/* (전환기) 묶음처방 — Stage C 후 제거 예정 */}
+        {/* 묶음처방 (prescription_sets) — 영구 보존(별도 유지). '처방세트'(drug_folders)와 별개 기능. */}
         <TabsContent value="prescriptions">
           <PrescriptionSetsTab />
         </TabsContent>
