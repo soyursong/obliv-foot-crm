@@ -200,6 +200,29 @@ function useRenameSetFolder() {
   });
 }
 
+// T-20260609-foot-RXSET-FOLDER-DND: 세트 카드를 다른 폴더로 드래그&드롭 → 귀속 폴더 변경.
+//   폴더 = prescription_sets.folder 단일 문자열 컬럼(별도 분류테이블 없음) →
+//   이동 = 대상 세트 row 1건의 folder 값을 대상 폴더명으로 UPDATE(.eq('id', setId)).
+//   미분류 드롭 = folder null. 기존 컬럼 UPDATE only(db_change=false). useRenameSetFolder 동형.
+//   (문지은 대표원장: "폴더는 드래그로 바로 바꿀수있지 않아?" — KEBAB-GUARD '수정' 제거의 전제 기능)
+function useMoveSetFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ setId, folder }: { setId: number; folder: string | null }) => {
+      const { error } = await supabase
+        .from('prescription_sets')
+        .update({ folder, updated_at: new Date().toISOString() })
+        .eq('id', setId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['prescription_sets'] });
+      toast.success('폴더를 옮겼어요.');
+    },
+    onError: (e: Error) => toast.error(`폴더 이동 실패: ${e.message}`),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Sub-component: 처방 항목 편집 행
 // ---------------------------------------------------------------------------
@@ -491,6 +514,10 @@ export default function PrescriptionSetsTab() {
   const renameFolder = useRenameSetFolder();
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  // T-20260609-foot-RXSET-FOLDER-DND: 드래그 중인 세트 id + 드롭 하이라이트 폴더키.
+  const moveFolder = useMoveSetFolder();
+  const [draggingSetId, setDraggingSetId] = useState<number | null>(null);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<PrescriptionSet | null>(null);
@@ -588,6 +615,28 @@ export default function PrescriptionSetsTab() {
     cancelRenameFolder();
   }
 
+  // T-20260609-foot-RXSET-FOLDER-DND: 세트 카드 드래그&드롭 → 폴더 이동.
+  //   대상 폴더키가 NO_FOLDER(합성 '미분류')면 folder=null. 현재폴더 재드롭은 no-op.
+  function handleSetDragStart(setId: number) {
+    if (!canEdit) return;
+    setDraggingSetId(setId);
+  }
+  function handleSetDragEnd() {
+    setDraggingSetId(null);
+    setDragOverFolder(null);
+  }
+  function handleDropToFolder(targetFolderKey: string) {
+    const setId = draggingSetId;
+    setDraggingSetId(null);
+    setDragOverFolder(null);
+    if (!canEdit || setId == null) return;
+    const set = sets.find((s) => s.id === setId);
+    if (!set) return;
+    const currentKey = set.folder?.trim() ? set.folder.trim() : NO_FOLDER;
+    if (currentKey === targetFolderKey) return; // 같은 폴더 재드롭 = no-op
+    moveFolder.mutate({ setId, folder: targetFolderKey === NO_FOLDER ? null : targetFolderKey });
+  }
+
   // AC-1: 폴더별 그룹핑 (미분류는 맨 끝). 폴더 내부는 기존 sort_order 순서 유지.
   const NO_FOLDER = '미분류';
   const grouped = (() => {
@@ -645,7 +694,31 @@ export default function PrescriptionSetsTab() {
       ) : (
         <div className="space-y-4" data-testid="rx-set-list">
           {grouped.map((g) => (
-            <div key={g.folder} data-testid="rx-set-folder-group">
+            <div
+              key={g.folder}
+              data-testid="rx-set-folder-group"
+              // T-20260609-foot-RXSET-FOLDER-DND: 폴더 그룹 = 드롭존. 드래그 오버 시 ring 하이라이트.
+              className={
+                draggingSetId != null && dragOverFolder === g.folder
+                  ? 'rounded-lg ring-2 ring-teal-400 ring-offset-2 transition-shadow'
+                  : 'rounded-lg transition-shadow'
+              }
+              onDragOver={(e) => {
+                if (!canEdit || draggingSetId == null) return;
+                e.preventDefault(); // 드롭 허용
+                if (dragOverFolder !== g.folder) setDragOverFolder(g.folder);
+              }}
+              onDragLeave={(e) => {
+                // 자식으로의 이동은 무시(컨테이너 밖으로 나갈 때만 해제)
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setDragOverFolder((cur) => (cur === g.folder ? null : cur));
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                handleDropToFolder(g.folder);
+              }}
+            >
               {/* AC-1: 폴더 헤더 / T-20260607 AC-B: 더블클릭·우클릭·연필버튼 → 인라인 이름 변경 */}
               {renamingFolder === g.folder ? (
                 <div
@@ -732,7 +805,18 @@ export default function PrescriptionSetsTab() {
           {g.items.map((s) => (
             <div
               key={s.id}
-              className="rounded-lg border bg-card px-4 py-3"
+              // T-20260609-foot-RXSET-FOLDER-DND: 권한 보유 시 카드를 다른 폴더로 드래그 이동.
+              draggable={canEdit}
+              onDragStart={(e) => {
+                if (!canEdit) return;
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', String(s.id));
+                handleSetDragStart(s.id);
+              }}
+              onDragEnd={handleSetDragEnd}
+              className={`rounded-lg border bg-card px-4 py-3 ${
+                canEdit ? 'cursor-grab active:cursor-grabbing' : ''
+              } ${draggingSetId === s.id ? 'opacity-50' : ''}`}
               data-testid="rx-set-item"
             >
               <div className="flex items-center justify-between mb-2">
@@ -777,6 +861,32 @@ export default function PrescriptionSetsTab() {
               </div>
             </div>
           ))}
+          {/* T-20260609-foot-RXSET-FOLDER-DND: 모든 세트가 폴더에 속해 '미분류' 그룹이 없는 경우,
+              드래그 중에만 '미분류' 드롭존을 노출해 폴더 해제(folder=null) 경로를 보장. */}
+          {draggingSetId != null && !grouped.some((g) => g.folder === NO_FOLDER) && (
+            <div
+              data-testid="rx-set-unfiled-dropzone"
+              className={`rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground transition-colors ${
+                dragOverFolder === NO_FOLDER ? 'ring-2 ring-teal-400 bg-teal-50/40' : ''
+              }`}
+              onDragOver={(e) => {
+                if (!canEdit || draggingSetId == null) return;
+                e.preventDefault();
+                if (dragOverFolder !== NO_FOLDER) setDragOverFolder(NO_FOLDER);
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setDragOverFolder((cur) => (cur === NO_FOLDER ? null : cur));
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                handleDropToFolder(NO_FOLDER);
+              }}
+            >
+              여기에 놓으면 <span className="font-medium text-teal-700">{NO_FOLDER}</span>로 이동돼요.
+            </div>
+          )}
         </div>
       )}
 
