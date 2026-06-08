@@ -166,6 +166,18 @@ const REFUND_AUTOFILL_POS_P1: Array<{ key: keyof AutofillFields; x: number; y: n
   { key: 'name',        x: 190, y: 234 }, // page 1: ● 환자이름 : ___ (밑줄 y=249에 하단 정렬)
 ];
 
+// ── 환불동의서 P3 [본인 동의서] 하단 성명란 자동바인딩 ──
+// T-20260608-foot-CONSENT-NAME-AUTOLOAD: 179795c(2026-05-24 AC-R4)가 하단 SignaturePad UI를
+//   정리하면서 name(x=55 y=3206) 자동채움 항목을 동반 제거 → 하단 본인동의서 성명 미표시 회귀.
+//   현장(김주연 총괄 6/8 15:17): "맨 하단 본인동의서 이름"은 자동으로 채워져야 함
+//   (T-20260523-foot-PENCHART-FORM-AUTOFILL AC-3 동작 복원).
+//   날짜(x=440 라인 → 현재 drawRefundP3DateAutofill 년/월/일 분리)는 별도 함수로 정상 동작 중 → 미변경.
+//   복구는 bgCanvas 텍스트 레이어 합성으로만 (drawAutofillOnCtx 재사용). refund_consent 캔버스
+//   desync 옵션과 무관 → BLACKSCR(P0 검정화면) 리스크 없음.
+const REFUND_AUTOFILL_POS_P3: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
+  { key: 'name', x: 55, y: 3206 }, // [본인 동의서] 하단 "이름" 셀 내부 (page-3 범위 2246~3369 내)
+];
+
 // ── 환불동의서 P3 날짜 분리 렌더링 (AC-R5) ──
 // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R5: 날짜 "년/월/일" 분리 배치
 // T-20260524-foot-PENCHART-FORM-AUTOFILL FIX-SUPPLEMENT: 좌표 실측 최종 확정 (MSG-20260524-111246-xbb9)
@@ -1220,6 +1232,8 @@ export function PenChartTab({
             // AC-R5: P1 좌표 재보정 + P3 날짜 년/월/일 분리 우측정렬
             drawAutofillOnCtx(ctx, autofillDataRef.current, REFUND_AUTOFILL_POS_P1);
             drawRefundP3DateAutofill(ctx, autofillDataRef.current);
+            // T-20260608-foot-CONSENT-NAME-AUTOLOAD: 179795c 회귀 복구 — 하단 본인동의서 성명란(x=55 y=3206)
+            drawAutofillOnCtx(ctx, autofillDataRef.current, REFUND_AUTOFILL_POS_P3);
           } else if (fk === 'pen_chart') {
             // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R6: 성함+주민번호 1줄 inline + 폰트 축소
             drawPenChartAutofillInline(ctx, autofillDataRef.current);

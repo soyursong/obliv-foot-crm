@@ -4,7 +4,8 @@
  *
  * AC-1: 환불동의서 상단 차트번호 자동 표시 (page 1, x=190 y=199 — 밑줄 y=214 하단 정렬)
  * AC-2: 환불동의서 상단 고객 성함 자동 표시 (page 1, x=190 y=234 — 밑줄 y=249 하단 정렬)
- * AC-3: 환불동의서 하단 성명란 — AC-R4로 자동채움 제거 (직원 직접 기입 방식)
+ * AC-3: 환불동의서 하단 본인동의서 성명란 자동 표시 (page 3, x=55 y=3206)
+ *        — AC-R4로 일시 제거됐다가 T-20260608-foot-CONSENT-NAME-AUTOLOAD에서 회귀 복구
  * AC-4: 환불동의서 하단 날짜 위치 보정 (page 3 년/월/일 분리 우측정렬 — 537/607/671)
  * AC-5: 고객 연락처 미표시 (AutofillFields에서 phone 완전 제거)
  * AC-6: 자동 텍스트와 펜 서명 영역 겹침 없음 (page 3 서명 셀은 별도 영역)
@@ -370,18 +371,65 @@ test.describe('PENCHART-FORM-AUTOFILL — 자동채움 위치 보정 + 주민번
       expect(DATE_Y).toBeLessThan(3369); // page 3 끝
     });
 
-    test('P3 name 제거 확인 — drawRefundP3DateAutofill은 date만 렌더 (AC-R4)', async () => {
+    test('drawRefundP3DateAutofill은 date만 렌더 — 날짜 함수에 name 미혼입', async () => {
       const fs = await import('fs');
       const src = fs.readFileSync(
         new URL('../../src/components/PenChartTab.tsx', import.meta.url).pathname,
         'utf-8',
       );
-      // drawRefundP3DateAutofill 함수 내부에 name 필드 렌더링 없음
+      // 날짜 분리 함수는 여전히 date만 사용 (이름은 별도 POS 배열 + drawAutofillOnCtx로 합성)
       const fnMatch = src.match(/function drawRefundP3DateAutofill[\s\S]*?^}/m)?.[0] ?? '';
       expect(fnMatch).toContain('fields.date');
       expect(fnMatch).not.toContain('fields.name');
-      // REFUND_AUTOFILL_POS_P3 배열 삭제 확인 (분리 함수로 대체)
-      expect(src).not.toContain('REFUND_AUTOFILL_POS_P3');
+    });
+  });
+
+  // ── CONSENT-NAME-AUTOLOAD: P3 하단 본인동의서 성명란 자동바인딩 복구 (회귀) ──
+  // T-20260608-foot-CONSENT-NAME-AUTOLOAD (MSG-20260608-153310-om74)
+  // 179795c(AC-R4)가 SignaturePad UI 정리 시 name(x=55 y=3206) 동반 제거 → 회귀.
+  // 현장(김주연 총괄 6/8): "맨 하단 본인동의서 이름" 자동 채움 복원 요청.
+  test.describe('CONSENT-NAME-AUTOLOAD 하단 성명란(x=55 y=3206) 자동바인딩 복구', () => {
+    test('REFUND_AUTOFILL_POS_P3 배열 복구 + name x=55 y=3206', async () => {
+      const fs = await import('fs');
+      const src = fs.readFileSync(
+        new URL('../../src/components/PenChartTab.tsx', import.meta.url).pathname,
+        'utf-8',
+      );
+      expect(src).toContain('REFUND_AUTOFILL_POS_P3');
+      // 배열에 name(x=55 y=3206) 항목 존재 — 공백 변형 허용
+      const arrMatch = src.match(/REFUND_AUTOFILL_POS_P3[\s\S]*?\];/)?.[0] ?? '';
+      expect(arrMatch).toMatch(/key:\s*'name'/);
+      expect(arrMatch).toMatch(/x:\s*55/);
+      expect(arrMatch).toMatch(/y:\s*3206/);
+    });
+
+    test('렌더 합성부에서 P3 배열을 drawAutofillOnCtx로 합성', async () => {
+      const fs = await import('fs');
+      const src = fs.readFileSync(
+        new URL('../../src/components/PenChartTab.tsx', import.meta.url).pathname,
+        'utf-8',
+      );
+      // 텍스트 레이어(bgCanvas) 합성 경로로만 복구 — desync 무관
+      expect(src).toMatch(/drawAutofillOnCtx\(ctx,\s*autofillDataRef\.current,\s*REFUND_AUTOFILL_POS_P3\)/);
+    });
+
+    test('x=55 y=3206 — page-3 범위(2246~3369) 내', () => {
+      const NAME_Y = 3206;
+      const NAME_X = 55;
+      expect(NAME_Y).toBeGreaterThanOrEqual(2246);
+      expect(NAME_Y).toBeLessThan(3369);
+      expect(NAME_X).toBeGreaterThan(0);
+    });
+
+    test('forbidden_approach 비파괴 — SignaturePad 재도입 없음 (BLACKSCR P0 안전)', async () => {
+      const fs = await import('fs');
+      const src = fs.readFileSync(
+        new URL('../../src/components/PenChartTab.tsx', import.meta.url).pathname,
+        'utf-8',
+      );
+      // 캔버스 직접 서명 방식 유지 — SignaturePad UI 미복원
+      expect(src).not.toContain("import { SignaturePad");
+      expect(src).not.toContain('<SignaturePad');
     });
   });
 });
