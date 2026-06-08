@@ -44,7 +44,8 @@ import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import type { VisitType } from '@/lib/types';
 import QuickRxBar, { isDoctor } from './QuickRxBar';
 import { useAuth } from '@/lib/auth';
-import { checkRxRoleGate, rxRoleGateMessage } from '@/lib/prescriptionGate';
+import { checkRxRoleGate, rxRoleGateMessage, rxInsuranceGateMessage, rxInsuranceOverrideConfirm } from '@/lib/prescriptionGate';
+import { evaluateRxInsuranceGate } from '@/lib/prescribableDrugs';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -643,12 +644,30 @@ export default function DoctorTreatmentPanel({
   }
 
   // 처방세트 불러오기
-  const handleRxSetSelect = useCallback((items: PrescriptionItem[]) => {
+  const handleRxSetSelect = useCallback(async (items: PrescriptionItem[]) => {
     // #8-1b(role 게이트): 부원장은 prescription_code_id 없는 자유텍스트 약 포함 세트 적용 차단. fail-closed.
     const roleGate = checkRxRoleGate(profile?.role, items);
     if (!roleGate.allowed) {
       toast.error(rxRoleGateMessage(roleGate.blockedNames));
       return;
+    }
+    // 급여여부 게이트(DECISION 2-B): 급여중지/삭제/기준변경 약은 경고+차단(관리자 해제 가능).
+    //   Phase1 = FE 게이트(fail-open). TODO(Phase1.5): 서버측 강제(RPC/trigger) 하드닝 후보.
+    const insGate = await evaluateRxInsuranceGate(profile?.role, items);
+    if (!insGate.allowed) {
+      if (!insGate.overridable) {
+        toast.error(rxInsuranceGateMessage(insGate.blocked));
+        return;
+      }
+      if (!window.confirm(rxInsuranceOverrideConfirm(insGate.blocked))) {
+        toast.info('처방세트 추가를 취소했어요.');
+        return;
+      }
+      console.warn('[RX-INSURANCE-GATE][OVERRIDE] 관리자 급여상태 해제 처방세트 추가', {
+        ticket: 'T-20260609-foot-DRUG-INSURANCE-GATE',
+        blocked: insGate.blocked,
+        at: new Date().toISOString(),
+      });
     }
     setRxItems((prev) => {
       const existingNames = new Set(prev.map((i) => i.name));

@@ -26,13 +26,17 @@ import FeeSetTemplatesTab from '@/components/admin/FeeSetTemplatesTab';
 import QuickRxButtonsTab from '@/components/admin/QuickRxButtonsTab';
 import ProgressPlansTab from '@/components/admin/ProgressPlansTab';
 import ContraindicationsTab from '@/components/admin/ContraindicationsTab';
+// T-20260609-foot-DRUG-INSURANCE-GATE Phase1: 약품별 급여여부(보험상태) 관리 — 처방 게이트(checkRxInsuranceGate) 소스
+import InsuranceStatusTab from '@/components/admin/InsuranceStatusTab';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { BookOpen, Pill, FileText, Layers, Zap, DollarSign, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes } from 'lucide-react';
+import { BookOpen, Pill, FileText, Layers, Zap, DollarSign, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes, BadgeCheck } from 'lucide-react';
 
 export default function ClinicManagement() {
   const { profile } = useAuth();
   // 페이지 접근은 RoleGuard(admin/manager/director)가 1차 보장. 여기서는 금기증(admin 한정)만 추가 게이팅.
   const isAdmin = profile?.role === 'admin';
+  // 급여여부 관리(InsuranceStatusTab) — admin/manager write(RLS is_admin_or_manager 일치).
+  const canManageInsurance = profile?.role === 'admin' || profile?.role === 'manager';
 
   // 진료차트 우측 패널 '관리 화면으로' 진입 시 ?tab= 쿼리로 해당 탭 pre-select.
   //   (T-20260606-foot-RX-PANEL-UX-5FIX AC-5 동선 — 메뉴 분리 후 진입 경로를 clinic-management 로 이전)
@@ -51,6 +55,7 @@ export default function ClinicManagement() {
     'quick_rx',
     'progress_plans',
     ...(isAdmin ? ['contraindications'] : []),
+    ...(canManageInsurance ? ['insurance_status'] : []),
   ];
   const tabAllowed = !!requestedTab && accessibleTabs.includes(requestedTab);
   const [activeTab, setActiveTab] = useState(tabAllowed ? (requestedTab as string) : 'phrases');
@@ -99,6 +104,13 @@ export default function ClinicManagement() {
             <TabsTrigger value="contraindications" className="gap-1.5" data-testid="tab-contraindications">
               <ShieldAlert className="h-3.5 w-3.5" />
               금기증 관리
+            </TabsTrigger>
+          )}
+          {/* 급여여부 관리 — admin/manager 노출 (T-20260609-foot-DRUG-INSURANCE-GATE Phase1) */}
+          {canManageInsurance && (
+            <TabsTrigger value="insurance_status" className="gap-1.5" data-testid="tab-insurance-status">
+              <BadgeCheck className="h-3.5 w-3.5" />
+              급여여부 관리
             </TabsTrigger>
           )}
 
@@ -166,6 +178,11 @@ export default function ClinicManagement() {
         {isAdmin && (
           <TabsContent value="contraindications">
             <ContraindicationsTab />
+          </TabsContent>
+        )}
+        {canManageInsurance && (
+          <TabsContent value="insurance_status">
+            <InsuranceStatusTab />
           </TabsContent>
         )}
         {/* 행 2 */}

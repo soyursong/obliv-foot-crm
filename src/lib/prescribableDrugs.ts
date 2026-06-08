@@ -13,6 +13,7 @@
 //   (자유텍스트 수기항목은 prescription_code_id=null → 마스터 약이 아니므로 자연 제외)
 
 import { supabase } from '@/lib/supabase';
+import { checkRxInsuranceGate, type RxInsuranceGateResult } from '@/lib/prescriptionGate';
 
 export interface PrescribableDrug {
   id: string;
@@ -104,4 +105,66 @@ export async function findSameIngredientRegistered(
     ((contras ?? []) as { prescription_code_id: string }[]).map((c) => `${c.prescription_code_id}`),
   );
   return sibList.filter((s) => registered.has(s.id));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 급여여부(보험상태) 게이트 — async 조회+평가 (T-20260609-foot-DRUG-INSURANCE-GATE Phase1)
+//   순수 판정은 prescriptionGate.checkRxInsuranceGate. 여기선 prescription_code_id 로 상태 조회 후 위임.
+//   ※ 약 출처(처방세트)와 무관하게 prescription_codes.id 직접 조회 — 게이트는 코드 보유 약 전부 대상.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** prescription_code_id → insurance_status 매핑 조회 (Phase1 source 무관, 상태값만). */
+export async function fetchInsuranceStatuses(
+  codeIds: string[],
+): Promise<Map<string, string | null>> {
+  const ids = Array.from(new Set((codeIds ?? []).filter((x) => !!x && `${x}`.trim() !== '')));
+  const map = new Map<string, string | null>();
+  if (ids.length === 0) return map;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('prescription_codes')
+    .select('id,insurance_status')
+    .in('id', ids);
+  if (error) throw error;
+  for (const row of (data ?? []) as { id: string; insurance_status: string | null }[]) {
+    map.set(`${row.id}`, row.insurance_status ?? null);
+  }
+  return map;
+}
+
+/**
+ * 급여여부 게이트 평가 — 코드 보유 약의 insurance_status 를 조회해 차단상태를 판정(순수 게이트에 위임).
+ *
+ * fail-open(degrade): 조회 실패 시 통과(allowed=true, blocked=[]) — Phase1 점진 적용 정책(planner LOCK).
+ *   급여여부는 billing 편의 게이트(안전성 게이트 아님)이므로 조회 장애가 처방을 막지 않는다.
+ *   (대비: 금기증 게이트(AC-2)는 의료안전 직결이라 fail-closed.)
+ *
+ * @param role  현재 사용자 role (관리자 해제 override 가능 여부 판정용)
+ * @param items 처방 항목(prescription_code_id 보유분만 게이트 대상)
+ */
+export async function evaluateRxInsuranceGate(
+  role: string | null | undefined,
+  items: { name?: string; prescription_code_id?: string | null }[],
+): Promise<RxInsuranceGateResult> {
+  const list = items ?? [];
+  const codeIds = list
+    .map((i) => i.prescription_code_id)
+    .filter((x): x is string => !!x && `${x}`.trim() !== '');
+  // 코드 없는(자유텍스트) 처방만이면 게이트 대상 없음 → 통과.
+  if (codeIds.length === 0) return { allowed: true, overridable: false, blocked: [] };
+  try {
+    const statusMap = await fetchInsuranceStatuses(codeIds);
+    const withStatus = list.map((it) => ({
+      ...it,
+      insurance_status: it.prescription_code_id
+        ? statusMap.get(`${it.prescription_code_id}`) ?? null
+        : null,
+    }));
+    return checkRxInsuranceGate(role, withStatus);
+  } catch {
+    // fail-open(degrade) — Phase1: 조회 장애가 처방을 막지 않음.
+    //   TODO(Phase1.5 하드닝): 서버측 강제(medical_charts UPDATE trigger/RPC)로 FE-only 우회 차단.
+    console.warn('[RX-INSURANCE-GATE] insurance_status 조회 실패 — fail-open 통과', { codeIds });
+    return { allowed: true, overridable: false, blocked: [] };
+  }
 }
