@@ -115,13 +115,16 @@ function useDiagnoses(clinicId: string | null) {
 }
 
 // T-20260608-foot-DXMGMT-EDIT-SAVE-BUG (AC-0/1/2):
-//   근본원인 — dev/운영 DB에 services.diagnosis_folder 컬럼 미적용(42703). useDiagnoses(read)는
-//   폴백을 가져 목록은 정상 로드되나, useUpsertDx(write)는 payload에 항상 diagnosis_folder 를 실어
-//   UPDATE/INSERT 가 42703 으로 전부 실패 → 상병 수정·신규등록 모두 막힘.
-//   대표원장이 본 "상병명 자리에 폴더명/DB에러"는 컬럼 부재 토스트(...diagnosis_folder...)의 인지였음.
-//   ⟶ read 와 동일하게 write 도 deploy-tolerant: 42703 시 폴더 컬럼 제외 1회 재시도(저장 무결).
-//      폴더값 보존 활성화는 마이그(20260606160000/20260607200000) supervisor 게이트 적용 후 자동.
-//      name=상병명 / diagnosis_folder=폴더값(or null) 컬럼 정합은 insert·update 동일 payload 로 유지(AC-1).
+//   현장 보고(문지은 대표원장 6/8): 상병명 "수정" 저장 시 DB 에러로 저장 불가
+//   ("상병명 자리에 폴더명" = 컬럼 부재 토스트 "...diagnosis_folder..." 텍스트의 인지).
+//   AC-0 1차 실측(6/8 12:31): services.diagnosis_folder 컬럼 미적용(read 42703 / write PGRST204) →
+//     useDiagnoses(read)는 폴백으로 목록 로드되나, useUpsertDx(write)는 payload에 항상
+//     diagnosis_folder 를 실어 UPDATE/INSERT 전부 실패 → 상병 수정·신규등록 차단.
+//   AC-0 재실측(6/8, supervisor 마이그 게이트 적용 후): 컬럼 적용 확인 — services 상병행에 대해
+//     SELECT + UPDATE({name, diagnosis_folder}) roundtrip 정상 통과(에러 없음) → 저장 결함 해소.
+//     name=상병명 / diagnosis_folder=폴더값(or null) 컬럼 정합도 정상(오배치 버그 없음, AC-1 충족).
+//   ⟶ 아래 deploy-tolerant 재시도는 컬럼 미적용 환경(미게이트 dev/롤백) 대비 forward/backward-compat
+//      안전망으로 유지. 컬럼 존재 시 1차 run()이 성공하므로 재시도 미발동 — 무해.
 function isMissingFolderColumn(e: unknown): boolean {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const err = e as any;

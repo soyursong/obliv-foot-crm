@@ -3,16 +3,18 @@
  *
  * 문지은 대표원장(6/8): "상병명관리에서 상병명 수정하면 DB 에러나고 저장 안 됨".
  *
- * 근본원인(AC-0, dev DB 실측 2026-06-08):
+ * 근본원인(AC-0 1차 실측 2026-06-08 12:31):
  *   services.diagnosis_folder 컬럼이 DB에 미적용(read: 42703 / write: PGRST204).
  *   useDiagnoses(read)는 폴백을 가져 목록은 정상 로드되나, useUpsertDx(write)는 payload에
  *   항상 diagnosis_folder 를 실어 UPDATE/INSERT 가 전부 실패 → 상병 수정·신규등록 모두 막힘.
  *   (name=상병명 / diagnosis_folder=폴더값 매핑 자체는 정상 — 컬럼 부재가 진짜 원인)
  *
+ * AC-0 재실측(2026-06-08, supervisor 마이그 게이트 적용 후):
+ *   컬럼 적용 확인 — 상병행 SELECT + UPDATE({name, diagnosis_folder}) roundtrip 정상 통과 → 저장 결함 해소.
+ *
  * 수정: read 와 동일하게 write 도 deploy-tolerant —
  *   폴더 컬럼 부재(42703/PGRST204/message에 diagnosis_folder) 시 폴더 컬럼을 제외하고 1회 재시도해
- *   저장을 무결 보장한다. 폴더값 보존 활성화는 마이그(20260606160000/20260607200000)
- *   supervisor 게이트 적용 후 자동(forward-compatible).
+ *   저장을 무결 보장한다. 컬럼 적용 후엔 1차 run() 성공으로 재시도 미발동(forward/backward-compat 안전망).
  *
  * 본 spec 은 deploy-tolerant write 불변식을 정본 소스로 정적 가드한다(데이터/로그인 비의존).
  */
