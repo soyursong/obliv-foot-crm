@@ -26,6 +26,7 @@ const ROOT = process.cwd();
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
 const RX = 'src/components/admin/PrescriptionSetsTab.tsx';
+const CONTRA = 'src/components/admin/ContraindicationsTab.tsx';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC1: 드롭다운 검색 — 전체 약품 마스터(prescription_codes) 직접 검색
@@ -108,9 +109,42 @@ test('AC4-1: 검색 결과 0건 명확한 빈 상태 + 수기 등록 안내', ()
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AC5 (현장 추가요청 MSG-...-ww5k): 금기증관리 약품검색 — 처방세트관리와 동일 드롭다운 검색 패턴/UX 재사용
+//   ★ 핵심 결정: '동일 패턴/UX 재사용'은 드롭다운 검색 UX(타이핑→디바운스→결과 드롭다운→선택) 재사용을 의미.
+//     검색 '출처'는 그대로 '처방세트 등록 약'(searchPrescribableDrugs) 제한 유지 —
+//     세트 미등록 약(orphan) 차단은 T-20260607-foot-CONTRAINDICATION-MGMT AC-1(문지은 대표원장) 확정 요구.
+//     전체 마스터로 바꾸면 그 요구·deployed 테스트를 뒤집으므로 변경하지 않는다.
+//     ('자연 연결' = 세트관리 약 검색이 살아나면 이 제한 검색에도 실데이터가 흐름)
+// ─────────────────────────────────────────────────────────────────────────────
+test('AC5-1: 금기증관리도 드롭다운 검색 패턴 재사용 — 디바운스(250ms setTimeout) 적용', () => {
+  const src = read(CONTRA);
+  expect(src).toContain('setTimeout');
+  expect(src).toContain('250');
+  expect(src).toContain('searchDebounceRef');
+  // 검색 입력/결과 드롭다운 testid 유지(처방세트관리와 동일 검색 UX 흐름)
+  expect(src).toContain('contra-drug-search-input');
+  expect(src).toContain('contra-drug-result-item');
+});
+
+test('AC5-2: 검색 출처 제한(처방세트 등록 약) 보존 — orphan 차단(T-20260607 AC-1) 미변경', () => {
+  const src = read(CONTRA);
+  // 금기증관리는 전체 마스터가 아닌 '처방세트 등록 약'만 노출(현장 확정 요구) → 소스 함수·import 유지.
+  expect(src).toContain('searchPrescribableDrugs');
+  expect(src).toMatch(/from\s+['"]@\/lib\/prescribableDrugs['"]/);
+});
+
+test('AC5-3: 결과 드롭다운 + 빈 상태 두 갈래 유지 — 무한 빈 드롭다운 방지', () => {
+  const src = read(CONTRA);
+  expect(src).toContain('contra-drug-results');
+  expect(src).toContain('contra-drug-no-source'); // 처방세트에 약 0건
+  expect(src).toContain('contra-drug-no-match');  // 검색어 매칭 없음
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 무DB 가드 — 본 변경은 FE only, 스키마 변경 없음
 // ─────────────────────────────────────────────────────────────────────────────
 test('GUARD: 스키마 변경(ALTER TABLE) 없음 — 순수 FE 검색UI 연결', () => {
   const src = read(RX);
   expect(src).not.toMatch(/alter\s+table/i);
+  expect(read(CONTRA)).not.toMatch(/alter\s+table/i);
 });
