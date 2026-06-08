@@ -2,6 +2,7 @@
 // T-20260521-crm-SMS-SENDER-SAVE  — admin UI 액션 핸들러 추가 (test_sms)
 // T-20260523-crm-MESSAGING-SLA-OPT — AC-1: keep_warm 액션 / AC-2: logNotification UPDATE 경로 보강
 // T-20260608-foot-SMS-EF-DEPLOY-VERIFY — manual_send 핸들러 운영 재배포 검증 (deploy marker 2026-06-08)
+// T-20260608-foot-SMS-CTXMENU-ALLROLE — manual_send allowedRoles 전직원(8역할) 확대 → FE permissions.ts manual_sms_send 와 role 패리티(AC-5)
 //
 // 호출 방법:
 //   1. Database Webhook: reservations INSERT → 자동 POST (service_role)
@@ -37,6 +38,13 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const INTERNAL_CRON_SECRET     = Deno.env.get("INTERNAL_CRON_SECRET") ?? "";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+// T-20260608-foot-SMS-CTXMENU-ALLROLE (AC-5): manual_send(대시보드 우클릭 [문자] 수동 1:1 발송)
+// 허용 역할 = FE src/lib/permissions.ts ALL_STAFF_ROLES / PERM_MATRIX.manual_sms_send 와 동일 집합(전직원 8역할).
+// Deno EF는 src import 불가 → 동일 배열 명시 복제(SSOT는 permissions.ts, 변경 시 양쪽 동기화 필수).
+const MANUAL_SEND_ALLOWED_ROLES = [
+  "admin", "manager", "director", "consultant", "coordinator", "therapist", "part_lead", "staff",
+];
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -219,7 +227,7 @@ Deno.serve(async (req: Request) => {
   const isAdminAction = Boolean(bodyJson._action);
 
   // admin UI 액션은 user JWT도 허용 (role 검증)
-  // T-20260606-foot-CTXMENU-SMS-SEND: manual_send 는 admin/manager 허용, 그 외 액션은 admin 한정 유지.
+  // T-20260606-foot-CTXMENU-SMS-SEND → T-20260608-foot-SMS-CTXMENU-ALLROLE: manual_send 는 전직원(8역할) 허용, 그 외 액션은 admin 한정 유지.
   let adminUserId: string | null = null;
   if (isAdminAction && !isServiceRole && !isCronCall) {
     if (!authHeader.startsWith("Bearer ")) {
@@ -229,7 +237,7 @@ Deno.serve(async (req: Request) => {
     }
     const jwt = authHeader.slice("Bearer ".length);
     const actionName = String(bodyJson._action);
-    const allowedRoles = actionName === "manual_send" ? ["admin", "manager"] : ["admin"];
+    const allowedRoles = actionName === "manual_send" ? MANUAL_SEND_ALLOWED_ROLES : ["admin"];
     adminUserId = await verifyRoleJwt(jwt, allowedRoles);
     if (!adminUserId) {
       console.warn(`[send-notification] JWT 검증 실패 action=${actionName} allowed=${allowedRoles.join("/")}`);
