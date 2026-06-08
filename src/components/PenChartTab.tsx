@@ -677,10 +677,11 @@ export function PenChartTab({
     strokeStart: number;
     moves: number;
     coalescedTotal: number;
+    emptyCoa: number;        // getCoalescedEvents()가 빈 배열 반환한 move 수(선빠짐 직접원인 지표)
     drawTimeTotal: number;
     maxFrameGap: number;
     lastMoveTs: number;
-  }>({ enabled: false, strokeStart: 0, moves: 0, coalescedTotal: 0, drawTimeTotal: 0, maxFrameGap: 0, lastMoveTs: 0 });
+  }>({ enabled: false, strokeStart: 0, moves: 0, coalescedTotal: 0, emptyCoa: 0, drawTimeTotal: 0, maxFrameGap: 0, lastMoveTs: 0 });
 
   // ── T-20260606-foot-PENCHART-REFUND-LATENCY REOPEN#1: 현장 캡처형 on-screen 프로파일러 ──────────
   //   [REOPEN#1 메타-루트코즈] 직전 라운드(e003641: coalesced 단일path + dirty-rect)가 field-soak FAIL.
@@ -909,7 +910,16 @@ export function PenChartTab({
     });
 
     // AC-2: coalesced events — 프레임 사이 중간 좌표 모두 처리 (빠른 획 누락 방지)
-    const events: PointerEvent[] = (e as any).getCoalescedEvents?.() ?? [e];
+    // ── T-20260606-foot-PENCHART-REFUND-LATENCY REOPEN#1 (선빠짐 stroke-dropout 근인 수정) ──
+    //   [근인] Android WebView(Galaxy Tab)에서 getCoalescedEvents()가 **빈 배열 `[]`** 을 반환하는
+    //   알려진 quirk가 있다. 기존 `?? [e]` 는 null/undefined만 잡고 **빈 배열은 통과**시켜
+    //   events.length===0 → 아래 for 루프 미실행 → 그 pointermove의 점이 통째로 드랍 → **선빠짐**.
+    //   (e003641의 단일-path coalesce 루프 도입 후, 빈 배열 move마다 획이 끊겨 증상 악화.)
+    //   [수정] 빈 배열이면 원본 이벤트 [e]로 복원 → 샘플 손실 0. iOS/정상 WebView는 길이>0이라 무변경(무회귀).
+    //   desync 무관·레이어 무변경 → 검정화면(P0) 비재발. AC-2 안전.
+    const _coa = (e as any).getCoalescedEvents?.() as PointerEvent[] | undefined;
+    const _coaEmpty = !!_coa && _coa.length === 0; // 빈 배열 quirk 발생 여부(프로파일 지표)
+    const events: PointerEvent[] = (_coa && _coa.length > 0) ? _coa : [e];
 
     // T-20260606-foot-PENCHART-REFUND-LATENCY: 프로파일러 계측 (게이트 OFF면 분기 1회로 무시)
     const perf = perfRef.current;
@@ -923,6 +933,7 @@ export function PenChartTab({
       perf.lastMoveTs = nowTs;
       perf.moves += 1;
       perf.coalescedTotal += events.length; // 획당 coalesced 수(coalesce 손실 지표)
+      if (_coaEmpty) perf.emptyCoa += 1;     // 빈 coalesced 배열(선빠짐 직접원인) 발생 횟수
       _perfT0 = nowTs;
     }
 
@@ -1698,7 +1709,7 @@ export function PenChartTab({
     if (perfRef.current.enabled) {
       const p = perfRef.current;
       p.strokeStart = performance.now();
-      p.moves = 0; p.coalescedTotal = 0; p.drawTimeTotal = 0; p.maxFrameGap = 0; p.lastMoveTs = 0;
+      p.moves = 0; p.coalescedTotal = 0; p.emptyCoa = 0; p.drawTimeTotal = 0; p.maxFrameGap = 0; p.lastMoveTs = 0;
     }
     // strokeRectRef는 위에서 이미 캐싱됨 (Fix-6) — 중복 호출 제거
     // T-20260523-foot-PENCHART-PEN-SLOW Fix-2: 캐싱된 ctx 사용
@@ -1800,6 +1811,7 @@ export function PenChartTab({
         moves:            perf.moves,
         coalescedTotal:   perf.coalescedTotal,
         coalescedPerMove,
+        emptyCoa:         perf.emptyCoa, // >0 이면 빈 coalesced 배열 quirk 발생(=선빠짐 직접원인, REOPEN#1 가드로 복원됨)
         avgDrawMs,
         maxFrameGapMs,
         inputPtsPerSec,
@@ -1816,7 +1828,8 @@ export function PenChartTab({
       //   둘 다 낮은데 coalesce/move≤1.1 → 입력 샘플링(coalesce) 손실
       let verdict = '판정대기(획 더 필요)';
       if (w.strokes >= 1) {
-        if (w.avgDraw >= 5 && w.avgDraw >= w.frameGap / 10) verdict = 'REDRAW 우세 → 비트맵 축소 후보';
+        if (perf.emptyCoa > 0)                              verdict = `EMPTY-COALESCE quirk(${perf.emptyCoa}) → 선빠짐 근인 확정·가드 복원됨`;
+        else if (w.avgDraw >= 5 && w.avgDraw >= w.frameGap / 10) verdict = 'REDRAW 우세 → 비트맵 축소 후보';
         else if (w.frameGap >= 40)                          verdict = 'JANK 우세 → 합성/프레임 후보';
         else if (w.minCoa <= 1.1 && inputPtsPerSec < 90)    verdict = 'COALESCE 손실 후보';
         else                                                verdict = '경미 — 추가 표본 필요';

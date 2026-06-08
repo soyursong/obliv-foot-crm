@@ -183,6 +183,22 @@ test.describe('T-20260606-foot-PENCHART-REFUND-LATENCY', () => {
     expect(src).toContain('const DRAW_DPR = 2');
   });
 
+  // ── AC-1 REOPEN#1: 빈 coalesced 배열(Android WebView quirk) 가드 — 선빠짐 근인 ──────
+  test('AC-1 REOPEN#1: getCoalescedEvents() 빈 배열을 [e]로 복원 (선빠짐 stroke-dropout 차단)', () => {
+    const src: string = fs.readFileSync(SRC, 'utf-8');
+
+    const fnIdx = src.indexOf('const handleNativePointerMove = useCallback');
+    const fnEnd = src.indexOf('}, []); // eslint-disable-line', fnIdx);
+    const fn = src.slice(fnIdx, fnEnd);
+
+    // 기존 `?? [e]` 단독(빈 배열 미차단)이 아니라, 길이>0 가드를 거쳐야 함
+    expect(fn, '빈 coalesced 배열 가드 없음 — `?? [e]`는 [] 통과시켜 선빠짐 유발').toContain('_coa.length > 0');
+    // 빈 배열이면 원본 이벤트 [e]로 복원
+    expect(fn).toMatch(/events:\s*PointerEvent\[\]\s*=\s*\(_coa\s*&&\s*_coa\.length\s*>\s*0\)\s*\?\s*_coa\s*:\s*\[e\]/);
+    // 빈 배열 발생을 프로파일러가 계측(emptyCoa) — field-soak 실측 확정 경로
+    expect(fn, 'emptyCoa 계측 누락 — 빈 배열 quirk 실측 불가').toContain('perf.emptyCoa += 1');
+  });
+
   // ── AC-3: 회귀 비파괴 — AUTOFILL / PEN-SLOW Fix / 펜 외 도구 ────────────────────
   test('AC-3: REFUND-AUTOFILL + PEN-SLOW Fix(2/3/5/8) + eraser/white/highlight 도구 비파괴', () => {
     const src: string = fs.readFileSync(SRC, 'utf-8');
