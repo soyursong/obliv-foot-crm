@@ -139,7 +139,8 @@ export function computeFootBilling(
  */
 export async function loadFootBillingItems(
   checkInId: string,
-  clinicId: string,
+  // clinic 스코프는 check_in_id 가 단일 클리닉에 종속되어 현재 미사용 — 호출부 시그니처 호환 위해 유지.
+  _clinicId?: string,
 ): Promise<FootBillingItem[]> {
   const { data: cis } = await supabase
     .from('check_in_services')
