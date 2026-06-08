@@ -369,6 +369,14 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
   }, [checkIn.package_id]);
   const [receiptReissuePrinting, setReceiptReissuePrinting] = useState(false);
 
+  // T-20260608-foot-DOC-REISSUE-SYNC: 부모 발행 경로(영수증 재발급 PATH-3 / 일괄출력)도 IssueDialog(단건)와
+  //   동일하게 PMW(PATH-4) 빌링 폴백을 적용하기 위한 소스. service_charges 미기록 시에만 check_in_services
+  //   기반으로 폴백(무파괴 — service_charges 존재 시 기존 동작 불변). 이전 세션이 참조만 추가하고 부모 스코프에
+  //   상태를 선언하지 않아 빌드가 깨졌던 것을 복원.
+  const [serviceItems, setServiceItems] = useState<ServiceChargeItem[]>([]);
+  const [footBillingItems, setFootBillingItems] = useState<FootBillingItem[]>([]);
+  const [customerInsuranceGrade, setCustomerInsuranceGrade] = useState<InsuranceGrade | null>(null);
+
   // 방문일 기준 근무원장님 목록 (T-20260502-foot-DUTY-ROSTER)
   const visitDate = checkIn.checked_in_at
     ? format(new Date(checkIn.checked_in_at), 'yyyy-MM-dd')
@@ -428,7 +436,35 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
     setSubmissions((subRes.data ?? []) as FormSubmission[]);
     setInvoiceDocs((invRes.data ?? []) as InvoiceDoc[]);
     setPaymentItems((payRes.data ?? []) as PaymentItem[]);
-  }, [checkIn.id, checkIn.clinic_id]);
+
+    // T-20260608-foot-DOC-REISSUE-SYNC: 부모 발행 경로(영수증 재발급/일괄출력)의 빌링 폴백 소스 로드.
+    //   serviceItems = service_charges 존재 여부 게이트(있으면 폴백 미발동 = 무파괴).
+    //   footBillingItems/customerInsuranceGrade = service_charges 비었을 때 PMW(PATH-4)와 동일 산출용.
+    const { data: scData } = await supabase
+      .from('service_charges')
+      .select('id, base_amount, copayment_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code, category_label)')
+      .eq('check_in_id', checkIn.id);
+    setServiceItems((scData ?? []).map((c) => {
+      const svc = Array.isArray(c.service) ? c.service[0] : c.service;
+      return {
+        id: c.id as string,
+        service_code: (svc as { service_code?: string | null } | null)?.service_code ?? null,
+        name: (svc as { name?: string } | null)?.name ?? '(알 수 없음)',
+        amount: (c.base_amount as number) ?? 0,
+        copayment_amount: (c.copayment_amount as number | null) ?? null,
+        hira_code: (svc as { hira_code?: string | null } | null)?.hira_code ?? null,
+        is_insurance_covered: (c.is_insurance_covered as boolean) ?? false,
+        category_label: (svc as { category_label?: string | null } | null)?.category_label ?? null,
+      };
+    }));
+
+    const [fbItems, grade] = await Promise.all([
+      loadFootBillingItems(checkIn.id, checkIn.clinic_id),
+      loadCustomerInsuranceGrade(checkIn.customer_id),
+    ]);
+    setFootBillingItems(fbItems);
+    setCustomerInsuranceGrade(grade);
+  }, [checkIn.id, checkIn.clinic_id, checkIn.customer_id]);
 
   useEffect(() => {
     load();
