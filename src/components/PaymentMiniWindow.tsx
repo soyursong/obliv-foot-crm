@@ -63,6 +63,9 @@ import {
   isHtmlTemplate,
 } from '@/lib/htmlFormTemplates';
 import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext';
+// T-20260608-foot-DOC-PATH12-SYNC: 세금/급여 분류·코드항목 판별을 4경로 공유 SSOT(footBilling)로 일원화.
+//   (PMW 로컬 정의 → 공유 모듈 이전. DocumentPrintPanel(PATH-1/2/3)이 동일 로직 재사용 → 드리프트 차단.)
+import { type TaxClass, COVERED_GRADES, getTaxClass, isCodeItem } from '@/lib/footBilling';
 // T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 DnD 재배열 (AC-1, AC-5)
 // REOPEN: PointerSensor 우선 → overflow-y-auto 스크롤 충돌 해소 (AC-R2, AC-R3)
 import {
@@ -85,27 +88,8 @@ import { CSS } from '@dnd-kit/utilities';
 
 // ── 세금 구분 ────────────────────────────────────────────────────────────────
 
-type TaxClass = '비급여(과세)' | '비급여(면세)' | '급여';
-
-/**
- * T-20260526-foot-COPAY-MINI-BUG AC-1:
- * 건보 유효 등급(일반/차상위/의료급여/6세미만/65세정액) + hira_code 보유 항목 → 급여 분류.
- * 외국인·미확인·미설정은 기존 is_insurance_covered 기준 유지 (AC-4).
- */
-const COVERED_GRADES = new Set<InsuranceGrade>([
-  'general', 'low_income_1', 'low_income_2',
-  'medical_aid_1', 'medical_aid_2', 'infant', 'elderly_flat',
-]);
-
-function getTaxClass(svc: Service, insuranceGrade: InsuranceGrade | null = null): TaxClass {
-  // AC-1: 건보 유효 등급 + hira_code → 급여
-  if (insuranceGrade && COVERED_GRADES.has(insuranceGrade) && svc.hira_code) {
-    return '급여';
-  }
-  if (svc.is_insurance_covered) return '급여';
-  if (svc.vat_type === 'exclusive' || svc.vat_type === 'inclusive') return '비급여(과세)';
-  return '비급여(면세)';
-}
+// T-20260608-foot-DOC-PATH12-SYNC: TaxClass / COVERED_GRADES / getTaxClass 는
+//   @/lib/footBilling 로 이전(4경로 공유 SSOT). 동작 1:1 동일.
 
 // ── 탭 + 카테고리 매핑 ──────────────────────────────────────────────────────
 // T-20260517-foot-PAYMENT-MENU-REVAMP: 탭 3종 재구성
@@ -133,11 +117,7 @@ const FOOTCARE_CAT_LABELS: Record<FootCatType, string[]> = {
 
 // AC-4: 스크롤 리스트 — 페이지네이션 제거
 
-// 서비스 항목이 "코드 전용" (상병코드·처방약)인지 여부
-function isCodeItem(svc: Service): boolean {
-  const label = svc.category_label ?? '';
-  return label === '상병' || label === '처방약';
-}
+// isCodeItem 은 @/lib/footBilling 로 이전 (T-20260608-foot-DOC-PATH12-SYNC, 동작 1:1 동일).
 
 // ── 선수금차감 2-tier 자동 매칭 ──────────────────────────────────────────────
 // T-20260517-foot-PREPAID-DEDUCT AC-3 확정 기준
