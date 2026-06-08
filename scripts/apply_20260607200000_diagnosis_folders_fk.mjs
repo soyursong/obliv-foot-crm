@@ -47,9 +47,15 @@ try {
 
   const sql = fs.readFileSync('supabase/migrations/20260607200000_diagnosis_folders_fk.sql', 'utf8');
 
+  // 정책 재생성 충돌 방지: 본문 적용 전 가드 DROP을 autocommit(트랜잭션 밖)에서 수행.
+  //  테이블 부재 시 DROP POLICY IF EXISTS 는 "relation does not exist" 로 throw 하므로
+  //  트랜잭션 안에서 실행하면 txn 이 abort 된다 → 반드시 BEGIN 이전 autocommit 에서 개별 실행.
+  for (const stmt of POLICY_GUARD.split(';').map(s => s.trim()).filter(Boolean)) {
+    try { await client.query(stmt); }
+    catch (e) { console.log('  [guard skip]', e.message); /* 테이블/정책 아직 없음 — 무시 */ }
+  }
+
   await client.query('BEGIN');
-  // 정책 재생성 충돌 방지: 본문 적용 전 가드 DROP (테이블 부재 시 graceful — 본문에서 생성).
-  try { await client.query(POLICY_GUARD); } catch { /* 테이블 아직 없음 — 무시 */ }
   await client.query(sql);
   await client.query('COMMIT');
   console.log('✅ 마이그 본문 적용 완료 (DDL + RLS + 정책)');
