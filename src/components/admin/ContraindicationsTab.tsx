@@ -13,7 +13,7 @@ import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
-import { searchPrescribableDrugs, findSameIngredientRegistered } from '@/lib/prescribableDrugs';
+import { searchPrescribableDrugs, findSameIngredientRegistered, getPrescribableCodeIds } from '@/lib/prescribableDrugs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -184,6 +184,16 @@ export default function ContraindicationsTab() {
   const [editing, setEditing] = useState<Contraindication | null>(null);
   const [form, setForm] = useState<ContraForm>(EMPTY_FORM);
 
+  // T-20260608-foot-RXSET-CONTRA-DRUG-LOAD: 약품검색이 처방세트 등록 약으로만 출처 제한되므로,
+  //   처방세트에 약이 0건이면 무엇을 검색해도 결과가 비어 "DB연결 안됨"처럼 보임(실제는 출처 빈 상태).
+  //   → 검색가능 약 존재 여부를 미리 조회해 빈 결과 시 원인을 명확히 안내(AC-2 빈 상태 정합).
+  const { data: prescribableIds } = useQuery({
+    queryKey: ['prescribable_code_ids'],
+    queryFn: getPrescribableCodeIds,
+    staleTime: 60_000,
+  });
+  const hasPrescribableSource: boolean | null = prescribableIds ? prescribableIds.size > 0 : null;
+
   const { data: contras = [], isLoading } = useContraindications(selected?.id ?? null);
   const upsert = useUpsertContra(selected?.id ?? null);
   const del = useDeleteContra(selected?.id ?? null);
@@ -318,6 +328,28 @@ export default function ContraindicationsTab() {
               </button>
             ))}
           </div>
+        )}
+        {/* T-20260608-foot-RXSET-CONTRA-DRUG-LOAD: 빈 결과 원인 구분 안내(무한 빈 드롭다운 방지) */}
+        {searchQuery.trim().length >= 1 && !searching && searchResults.length === 0 && (
+          hasPrescribableSource === false ? (
+            <div
+              className="rounded-md border border-amber-200 bg-amber-50/60 px-2.5 py-2 text-[11px] text-amber-800 flex items-start gap-1.5"
+              data-testid="contra-drug-no-source"
+            >
+              <ShieldAlert className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <span>
+                처방세트에 등록된 약이 없어 검색할 수 없어요. <strong>진료도구 &gt; 처방세트 관리</strong>에서
+                약을 먼저 등록하면 여기서 검색·선택할 수 있습니다.
+              </span>
+            </div>
+          ) : (
+            <div
+              className="rounded-md border border-border/50 bg-muted/20 px-2.5 py-2 text-[11px] text-muted-foreground"
+              data-testid="contra-drug-no-match"
+            >
+              ‘{searchQuery.trim()}’ 검색 결과가 없어요. (처방세트에 등록된 약만 검색됩니다)
+            </div>
+          )
         )}
       </div>
 

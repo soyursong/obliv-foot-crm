@@ -211,11 +211,12 @@ export default function PhrasesTab() {
   }
 
   // T-20260526-foot-MEDCHART-SYNC: phrase_type + category 복합 필터
-  const displayed = phrases.filter((p) => {
-    const catMatch = filterCat === 'all' || p.category === filterCat;
-    const typeMatch = filterPhraseType === 'all' || (p.phrase_type ?? 'pen_chart') === filterPhraseType;
-    return catMatch && typeMatch;
-  });
+  // T-20260608-foot-PHRASE-PEN-MED-SPLIT: phrase_type 활성 시 좌측 카테고리 카운트도 용도별로 산출
+  //   (펜차트/진료차트 분리는 phrase_type 컬럼으로 이미 존재 — 무DB. 좌측 사이드 카운트만 type 미반영 버그였음)
+  const typeFiltered = phrases.filter(
+    (p) => filterPhraseType === 'all' || (p.phrase_type ?? 'pen_chart') === filterPhraseType,
+  );
+  const displayed = typeFiltered.filter((p) => filterCat === 'all' || p.category === filterCat);
 
   if (isLoading)
     return (
@@ -267,7 +268,11 @@ export default function PhrasesTab() {
           data-testid="phrase-category-sidebar"
         >
           {SIDE_MENU_CATS.map(({ key, label }) => {
-            const count = key === 'all' ? phrases.length : phrases.filter((p) => p.category === key).length;
+            // T-20260608-foot-PHRASE-PEN-MED-SPLIT: 활성 phrase_type 기준 카운트(펜차트/진료차트 분리 정합)
+            const count =
+              key === 'all'
+                ? typeFiltered.length
+                : typeFiltered.filter((p) => p.category === key).length;
             const isActive = filterCat === key;
             return (
               <button
