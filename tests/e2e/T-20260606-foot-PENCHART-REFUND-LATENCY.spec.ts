@@ -70,12 +70,11 @@ test.describe('T-20260606-foot-PENCHART-REFUND-LATENCY', () => {
   });
 
   // ── AC-1(측정 선행): 실기기 펜 지연 프로파일러 게이트 ──────────────────────────
-  test('AC-1: ?penchart_perf 프로파일러 — 게이트 + 획 종료 PERF 로그(병목 판정 지표)', () => {
+  test('AC-1: 프로파일러 — 획 종료 PERF 로그(병목 판정 지표) + enabled 분기 가드', () => {
     const src: string = fs.readFileSync(SRC, 'utf-8');
 
-    // perfRef 선언 + URL 게이트
+    // perfRef 선언
     expect(src, 'perfRef 프로파일러 ref 없음').toContain('const perfRef = useRef');
-    expect(src, '?penchart_perf 게이트 없음').toContain("_search.includes('penchart_perf')");
 
     // 획 종료 PERF 요약 로그 + 가설 판정 지표 3종
     expect(src, 'PERF 요약 로그 없음').toContain('[PenChartTab PERF]');
@@ -83,8 +82,31 @@ test.describe('T-20260606-foot-PENCHART-REFUND-LATENCY', () => {
     expect(src, 'redraw 비용 지표(avgDrawMs) 없음').toContain('avgDrawMs');
     expect(src, 'jank 지표(maxFrameGapMs) 없음').toContain('maxFrameGapMs');
 
-    // 게이트 OFF 시 prod hot-path 오버헤드 0 — enabled 분기로 가드
+    // hot-path 비용은 enabled 분기로 가드(계측 OFF 경로 보존)
     expect(src).toContain('perf.enabled');
+  });
+
+  // ── REOPEN#3 (계측-우선·blind-fix 차단): 프로파일러 기본 ON ───────────────────
+  //   메타-RC: 3회 연속 soak FAIL의 근인 = ?penchart_perf 게이트 뒤에 숨은 배지 + 현장에 "파라미터
+  //   없이 검증" 요청 → 배지 미표시 → emptyCoa 실측 0건 → 추정 반복수정. 수정: 기본 ON, ?penchart_perf=off
+  //   옵트아웃. 현장이 아무 양식이나 몇 획 → 배지 자동 노출 → 스크린샷 1장으로 EMPTY-COALESCE confirm/refute.
+  test('REOPEN#3: 프로파일러 기본 ON(파라미터 불요) + penchart_perf=off 옵트아웃 + emptyCoa 계측·localStorage 영속화', () => {
+    const src: string = fs.readFileSync(SRC, 'utf-8');
+
+    // enabled 기본 ON (=off 일 때만 비활성). 더 이상 _search.includes('penchart_perf') 양성게이트 아님.
+    expect(src, '프로파일러 기본 ON(=off 옵트아웃) 게이트 없음').toContain('!/penchart_perf=off/.test(_search)');
+    expect(src, "구 양성게이트(_search.includes('penchart_perf'))가 남아있음").not.toContain("perfRef.current.enabled = _search.includes('penchart_perf')");
+
+    // emptyCoa(빈 coalesced 배열 = 선빠짐 직접지표) 계측 + 배지/로그 표기 유지
+    expect(src, 'emptyCoa 카운터 없음').toContain('perf.emptyCoa += 1');
+    expect(src, 'emptyCoa PERF 로그 표기 없음').toContain('emptyCoa:');
+
+    // 스크린샷 실패 대비 회수 채널 — localStorage 영속화
+    expect(src, 'localStorage 회수 채널 없음').toContain("localStorage.setItem('penchart_perf_last'");
+    expect(src, 'localStorage 영속에 emptyCoa 포함 안 됨').toMatch(/penchart_perf_last[\s\S]{0,400}emptyCoa/);
+
+    // 안전: draw-path(empty-coalesce 가드)는 무변경 — 회귀 다발 hot-path 비접촉 재확인
+    expect(src, 'empty-coalesce 가드 변형됨(회귀 위험)').toContain('(_coa && _coa.length > 0) ? _coa : [e]');
   });
 
   // ── REOPEN#1(측정 선행): 현장 캡처형 on-screen 프로파일러 배지 ───────────────────

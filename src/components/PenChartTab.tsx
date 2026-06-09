@@ -1346,8 +1346,17 @@ export function PenChartTab({
     const _forceOff = _search.includes('penchart_no_desync');      // 긴급 폴백: 강제 OFF (기본과 동일, 현장 킬스위치 호환)
     const _forceOn = _search.includes('penchart_enable_desync');   // 강제 ON (성능 비교 테스트 전용, 현장 사용 금지)
     const useDesync = _forceOff ? false : _forceOn ? true : false; // 기본: 전 기기 OFF — 검정화면 비재발 보장
-    // T-20260606-foot-PENCHART-REFUND-LATENCY: 실기기 펜 지연 프로파일러 게이트
-    perfRef.current.enabled = _search.includes('penchart_perf');
+    // ── T-20260606-foot-PENCHART-REFUND-LATENCY REOPEN#3: 프로파일러 기본 ON (계측-우선, blind-fix 차단) ──
+    //   [메타-RC] 3회 연속 soak FAIL(e003641 거침→43c2c9a 필기불능→49e79f6 미개선)의 근인은 draw-path가
+    //   아니라 *관측 불가*다. 프로파일러가 ?penchart_perf 게이트 뒤에 숨어 있었고, REOPEN#2에서 현장(김주연
+    //   총괄)에 "URL 파라미터 없이 순수 prod 재검증"을 요청 → 배지가 단 한 번도 표시되지 않음 → emptyCoa
+    //   실측 0건 → 매 라운드 추정 기반 블라인드 수정 → 빗나감의 반복.
+    //   [수정] 기본 ON. 현장이 아무 양식(일반 펜차트/발건강 질문지/환불동의서)이나 몇 획 긋는 순간 우상단
+    //   배지에 emptyCoa·avgDraw·frameGap·coa/move 가 per-form 으로 노출 → "스크린샷 1장"으로 EMPTY-COALESCE
+    //   verdict 를 confirm/refute. "모든 양식 끊김" 신호(전역 vs 대형캔버스 특이성)도 양식별 배지 비교로 판별.
+    //   배지는 pointerEvents:none·첫 획 이후에만 표시 → 드로잉 비간섭(AC-3), desync 무관(AC-2 검정화면 비재발).
+    //   옵트아웃: ?penchart_perf=off (운영 부담 시 현장 킬스위치). RC 확정 후 게이트 복원 예정(임시 진단빌드).
+    perfRef.current.enabled = !/penchart_perf=off/.test(_search);
     // REOPEN#1: 양식 진입마다 세션 worst 리셋 → 배지가 "현재 양식"의 최악 케이스만 누적.
     if (perfRef.current.enabled) {
       perfWorstRef.current = { frameGap: 0, avgDraw: 0, minCoa: Infinity, strokeMs: 0, strokes: 0 };
@@ -1913,6 +1922,17 @@ export function PenChartTab({
         wMinCoa: w.minCoa === Infinity ? 0 : +w.minCoa.toFixed(2), wStrokeMs: w.strokeMs, strokes: w.strokes,
         verdict,
       });
+      // ── REOPEN#3: 배지 스크린샷 실패 대비 회수 채널 — 마지막 획 요약을 localStorage 에 영속화. ──
+      //   현장 스크린샷이 1차 채널, 이건 DevTools/원격 접근 시 백업 회수용(emptyCoa quirk 실측 보존). DB 무변경.
+      try {
+        localStorage.setItem('penchart_perf_last', JSON.stringify({
+          at: new Date().toISOString(),
+          formKey: activeDrawTemplate?.form_key ?? null,
+          canvas: `${canvas?.width ?? 0}x${canvas?.height ?? 0}`,
+          strokeMs, moves: perf.moves, coalescedPerMove, emptyCoa: perf.emptyCoa,
+          avgDrawMs, maxFrameGapMs, inputPtsPerSec, verdict,
+        }));
+      } catch { /* storage 비가용(시크릿/쿼터) 무시 */ }
     }
 
     // T-20260524-foot-PENCHART-PEN-SLOW Fix-5: 획 종료 후 rAF에서 undo 상태 사전 캡처
@@ -2738,9 +2758,10 @@ export function PenChartTab({
               onPointerCancel={onPointerUp}
             />
 
-            {/* ── T-20260606-foot-PENCHART-REFUND-LATENCY REOPEN#1: 현장 캡처형 펜 성능 배지 ──
-                ?penchart_perf 게이트일 때만(perfDisplay≠null) 렌더. 화면 우상단 고정 → Galaxy Tab에서
-                몇 획 긋고 "스크린샷 1장"으로 실병목 판정. prod(파라미터 없음)엔 미렌더(오버헤드 0). */}
+            {/* ── T-20260606-foot-PENCHART-REFUND-LATENCY 현장 캡처형 펜 성능 배지 ──
+                REOPEN#3: 기본 ON(첫 획 후 perfDisplay≠null이면 렌더). 화면 우상단 고정 → 현장이 양식별로
+                몇 획 긋고 "스크린샷 1장"으로 emptyCoa/avgDraw/frameGap 실병목 판정. pointerEvents:none(드로잉
+                비간섭). 옵트아웃 ?penchart_perf=off. RC 확정 후 게이트 복원 예정. */}
             {perfDisplay && (
               <div
                 data-testid="penchart-perf-badge"
