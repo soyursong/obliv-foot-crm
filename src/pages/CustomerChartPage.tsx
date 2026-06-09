@@ -34,7 +34,7 @@ import { Chart2InsuranceCalcPanel } from '@/components/insurance/Chart2Insurance
 import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드 닫기 (window.close 대체)
-import { useChartSheetClose } from '@/lib/chartSheetContext';
+import { useChartSheetClose, useRegisterChartSave } from '@/lib/chartSheetContext';
 // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 패널
 import { PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 // T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
@@ -2600,22 +2600,25 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
   // T-20260510-foot-C21-SAVE-UNIFY: 고객정보 패널 통합 저장
   // T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: isAutoSave=true 시 토스트 생략 (인디케이터만)
-  const handleInfoPanelSave = async () => {
-    if (!customer) return;
+  // T-20260609-foot-CHART2-SAVE-CLOSE-BTN: Promise<boolean> 반환 — "저장 후 닫기"가
+  //   성공(true)/실패(false)을 판단해 닫을지 결정. 기존 호출부(버튼/자동저장)는 반환값 무시 → 동작 무변경.
+  const handleInfoPanelSave = async (): Promise<boolean> => {
+    if (!customer) return false;
     setSavingInfoPanel(true);
+    let allOk = true; // DB 저장 단계 중 하나라도 실패하면 false → "저장 후 닫기" 미닫힘
     try {
       // 1) 주민번호 — 암호화 RPC 별도 처리 (T-20260511-foot-SSN-SAVE-BUG: split input 사용)
       // T-20260522-foot-SSN-SESSION-KILL: 저장 전 세션 체크 + 에러 코드별 분기
       // T-20260522-foot-CUST-REG-LOGOUT: 401 시 refreshSession() 후 1회 재시도 추가
       if (editingRrn) {
         const digits = (rrnFront + rrnBack).replace(/\D/g, '');
-        if (digits.length !== 13) { toast.error('주민번호 13자리를 입력해주세요'); return; }
+        if (digits.length !== 13) { toast.error('주민번호 13자리를 입력해주세요'); return false; }
 
         // AC-4: 저장 전 세션 유효성 확인 — JWT 만료 선제 처리
         const { data: { session: rrnSess } } = await supabase.auth.getSession();
         if (!rrnSess) {
           toast.error('세션이 만료되었습니다. 페이지를 새로고침하고 다시 시도해주세요.');
-          return;
+          return false;
         }
 
         const isAuthErr = (err: { code?: string; status?: number; message?: string }) =>
@@ -2630,16 +2633,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               const { error: retryErr } = await supabase.rpc('rrn_encrypt', { customer_uuid: customer.id, plain_rrn: digits });
               if (retryErr) {
                 toast.error(`주민번호 저장 실패: ${retryErr.message}`);
-                return;
+                return false;
               }
               // 재시도 성공 — 아래 setRrnMasked 블록으로 fall-through
             } else {
               toast.error('세션이 만료되었습니다. 페이지를 새로고침하고 다시 시도해주세요.');
-              return;
+              return false;
             }
           } else {
             toast.error(`주민번호 저장 실패: ${error.message}`);
-            return;
+            return false;
           }
         }
         setRrnMasked(rrnFront + '-' + '*'.repeat(7));
@@ -2658,10 +2661,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       patch.referral_name = referralNameText.trim() || null;
       if (editingPhone) {
         const digits = phoneText.replace(/\D/g, '');
-        if (digits.length === 0) { toast.error('번호를 입력해주세요'); return; }
+        if (digits.length === 0) { toast.error('번호를 입력해주세요'); return false; }
         if (digits.length !== 11 || !digits.startsWith('010')) {
           toast.error('010으로 시작하는 11자리 번호를 입력해주세요 (예: 010-1234-5678)');
-          return;
+          return false;
         }
         patch.phone = `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
       }
@@ -2670,6 +2673,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         if (error) {
           console.error('[C21-SAVE-REGRESS] 다른 필드 저장 실패 (address 저장은 계속 진행):', error.message);
           toast.error(`저장 실패: ${error.message}`);
+          allOk = false; // T-20260609-CHART2-SAVE-CLOSE-BTN: 실패 시 "저장 후 닫기" 미닫힘
           // return 제거 — address 저장 블록은 다른 필드 저장 결과와 독립 (T-20260516-foot-C21-SAVE-REGRESS AC-3)
         } else {
           setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
@@ -2691,16 +2695,19 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         if (addrErr) {
           console.error('[C21-SAVE-REGRESS] address 저장 실패 (다른 필드는 정상 저장됨):', addrErr.message);
           toast.error(`주소 저장 실패: ${addrErr.message}`);
+          allOk = false; // T-20260609-CHART2-SAVE-CLOSE-BTN
         } else {
           setCustomer((prev) => prev ? { ...prev, address: p_address, address_detail: p_address_detail, postal_code: p_postal_code } : prev);
         }
       } catch (addrEx) {
         console.error('[C21-SAVE-REGRESS] address 예외 (다른 필드는 정상 저장됨):', addrEx);
+        allOk = false; // T-20260609-CHART2-SAVE-CLOSE-BTN
       }
       // 4) 모든 편집 상태 닫기 + isDirty 리셋
       // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: setEditingEmail/setEditingPassport/setEditingAddress 제거
       setEditingPhone(false);
       setIsDirty(false);
+      return allOk; // T-20260609-CHART2-SAVE-CLOSE-BTN: 정상 완료 — 성공 여부 반환
     } finally {
       setSavingInfoPanel(false);
     }
@@ -2709,6 +2716,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: stale closure 방지용 ref (항상 최신 함수 참조)
   const handleInfoPanelSaveRef = useRef(handleInfoPanelSave);
   handleInfoPanelSaveRef.current = handleInfoPanelSave;
+
+  // T-20260609-foot-CHART2-SAVE-CLOSE-BTN: Sheet "저장 후 닫기" 버튼에 본문 저장 핸들러 등록
+  //   (동일 핸들러 재사용 — 신규 저장 경로 없음). Sheet 모드 아니면 no-op.
+  useRegisterChartSave(handleInfoPanelSave);
 
   // T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: isDirty=true 시 60초 자동저장 (현장 확정: 30→60초, 김주연 5/11 16:14)
   useEffect(() => {
