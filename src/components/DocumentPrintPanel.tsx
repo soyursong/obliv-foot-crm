@@ -520,21 +520,44 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
     setReceiptReissuePrinting(true);
     try {
       const selected = paymentItems.filter((p) => selectedPaymentIds.has(p.id));
-      const totalAmt = selected.reduce((sum, p) => sum + (p.amount ?? 0), 0);
+      const paymentsTotal = selected.reduce((sum, p) => sum + (p.amount ?? 0), 0);
 
       const autoValues = await loadAutoBindContext(checkIn);
       const billReceiptTpl = templates.find((t) => t.form_key === 'bill_receipt');
 
-      const bindValues: Record<string, string> = {
-        ...autoValues,
-        total_amount: formatAmount(totalAmt),
-      };
+      const bindValues: Record<string, string> = { ...autoValues };
 
-      // T-20260608-foot-DOC-PATH12-SYNC: service_charges 미기록 경로 → PMW(PATH-4)와 동일하게
-      //   check_in_services 기반 비급여/공단부담금 폴백 (autobind 값 있으면 보존). bill_receipt {{non_covered}}.
-      if (serviceItems.length === 0 && footBillingItems.length > 0) {
-        const fb = computeFootBilling(footBillingItems, customerInsuranceGrade);
-        applyBillingFallback(bindValues, fb.liveBillingValues);
+      // T-20260609-foot-RECEIPT-LASER-MISSING: 진료비 영수증(PATH-3 재발급) 합산을 결제분류(payments 단건 /
+      //   package_payments 패키지)와 무관하게 '전체 진료 항목' 기준으로 수렴.
+      //   회귀원: 기존엔 total_amount = 선택 payments 합산(= 실 결제액)만 박았다. RECEIPT-PKG-PAYCLASS(713cf54)
+      //   이후 패키지 결제로 처리된 레이저는 payments 가 아닌 package_payments 에 들어가 결제 체크박스/합산에서
+      //   빠짐 → 영수증 합계·소계·비급여에서 레이저가 누락되고 "실 결제 금액만" 표기되던 현장 보고와 정확히 일치.
+      //   해소: PATH-4(PaymentMiniWindow)와 동일 SSOT(check_in_services→computeFootBilling.grandTotal)로 통일.
+      //   레이저는 실제 수행 시술이라 check_in_services 에 항상 row 존재 → 결제 방식과 무관하게 전체 진료비 표기되고
+      //   PATH-3/PATH-4 출력본이 일치(L-006 AC-3). bill_receipt 는 항목 리스트가 아닌 집계(소계/총계) 양식이므로
+      //   total/insurance_covered/copayment/non_covered 를 전체 항목 기준으로 함께 맞춰 영수증 내부 정합도 유지(AC-1/4).
+      //   무파괴: 진료 항목(check_in_services/service_charges) 미기록 구(舊) 데이터는 기존 동작(선택 결제 합산)으로 폴백.
+      const fb = footBillingItems.length > 0
+        ? computeFootBilling(footBillingItems, customerInsuranceGrade)
+        : null;
+      const treatmentTotal = fb
+        ? fb.grandTotal
+        : serviceItems.length > 0
+          ? serviceItems.reduce((s, it) => s + (it.amount ?? 0), 0)
+          : 0;
+
+      if (treatmentTotal > 0) {
+        bindValues.total_amount = formatAmount(treatmentTotal);
+        bindValues.subtotal_amount = formatAmount(treatmentTotal);
+        if (fb) {
+          // 소계 급여/비급여 분해도 PATH-4와 동일하게 전체 항목 기준(레이저 포함)으로 맞춤.
+          bindValues.insurance_covered = formatAmount(fb.liveBillingValues.insuranceCovered);
+          bindValues.copayment = formatAmount(fb.liveBillingValues.copayment);
+          bindValues.non_covered = formatAmount(fb.liveBillingValues.nonCovered);
+        }
+      } else {
+        // 진료 항목 미기록(구 데이터) — 기존 동작 보존: 선택한 결제 건 합산.
+        bindValues.total_amount = formatAmount(paymentsTotal);
       }
 
       // 출력
