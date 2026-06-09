@@ -63,6 +63,7 @@ import { useAuth } from '@/lib/auth';
 import { checkRxRoleGate, rxRoleGateMessage, rxInsuranceGateMessage, rxInsuranceOverrideConfirm } from '@/lib/prescriptionGate';
 import { evaluateRxInsuranceGate } from '@/lib/prescribableDrugs';
 import { formatAmount, formatPhone, todaySeoulISODate } from '@/lib/format';
+import { cn } from '@/lib/utils';
 // T-20260609-foot-DOCCALL-DOCTOR-ACK AC8: 환자차트에도 ✋ 표시(대기 pulse / 확인 후 파란 고정).
 import { DoctorAckBadge } from '@/components/doctor/DoctorAck';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
@@ -272,6 +273,13 @@ export interface MedicalChartPanelProps {
   //   제공 시 clinical 헤더에 '본 차트 열기' 버튼 노출. 호출부가 variant를 'full'로 전환(같은 패널 인스턴스·
   //   같은 customerId 유지 → 폼 상태·작성 중 임상경과 보존, AC-6 2단 레이아웃 그대로 재진입).
   onOpenFull?: () => void;
+  // T-20260609-foot-DOCDASH-CHART-UX item1: clinical 미니멀 뷰를 Drawer(portal) 대신 호출부에 인라인 임베드.
+  //   embed=true + variant='clinical' → 백드롭/슬라이드아웃 없이 호출부 DOM 흐름에 인라인(아코디언) 렌더.
+  //   진료대시보드 행 바로 아래 펼침용. 저장 로직/NOT NULL 강제/같은날 append 전부 기존 그대로 재사용.
+  embed?: boolean;
+  // T-20260609-foot-DOCDASH-CHART-UX item1 (AC1-1): 저장 성공 직후 호출(인라인 아코디언 접기용).
+  //   저장 로직 자체는 무변경 — 성공 후 presentation 콜백만 추가.
+  onSaved?: () => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -451,6 +459,8 @@ export default function MedicalChartPanel({
   currentUserEmail,
   variant = 'full',
   onOpenFull,
+  embed = false,
+  onSaved,
 }: MedicalChartPanelProps) {
   const isDirector = canViewDoctorMemo(currentUserRole);
   const navigate = useNavigate();
@@ -1118,6 +1128,8 @@ export default function MedicalChartPanel({
       setEditMode(false); // AC-4: 저장 완료 → 읽기전용 전환(연속 실수 차단)
       setSignerAuditRefresh((n) => n + 1); // AC-P2-3: 변경이력 패널 재조회
       loadData();
+      // T-20260609-foot-DOCDASH-CHART-UX item1 (AC1-1): 저장 성공 → 인라인 아코디언 접기(presentation only).
+      onSaved?.();
     } catch (err: unknown) {
       toast.error(`저장 실패: ${err instanceof Error ? err.message : '알 수 없는 오류'}`);
     } finally {
@@ -1786,6 +1798,173 @@ export default function MedicalChartPanel({
     }
   }
 
+  // T-20260609-foot-DOCDASH-CHART-UX item1: clinical 미니멀 본문 — Drawer/인라인(embed) 양쪽에서 재사용.
+  //   embed=true(진료대시보드 행 아래 인라인): textarea 2~3줄(min-h 4.5rem)·컴팩트 버튼, 풀높이 flex 미사용.
+  //   embed=false(기존 Drawer): rows 14·min-h 18rem 등 기존 레이아웃 그대로.
+  //   상태/핸들러(formClinical·handleClinicalChange·handleSave·formSigningDoctorId·clinicDoctors)는 전부 기존 재사용.
+  //   저장 로직(같은날 append·진료의 NOT NULL 강제 AC-P2-6)은 무변경.
+  const clinicalMiniBody = loading ? (
+    <div className={cn('flex items-center justify-center', embed ? 'py-12' : 'flex-1')}>
+      <Loader2 className="h-8 w-8 animate-spin text-teal-400" />
+    </div>
+  ) : (
+    <div
+      className={cn('flex flex-col', embed ? '' : 'flex-1 overflow-y-auto')}
+      data-testid="medical-chart-clinical-mini"
+    >
+      <div className={cn('space-y-4', embed ? 'p-4' : 'flex-1 p-5')}>
+        {/* 컨텍스트 안내 — 오늘 차트 이어쓰기 / 신규 */}
+        <p className="text-[11px] text-muted-foreground" data-testid="clinical-mini-context">
+          {selectedChartId
+            ? `${fmtDateShort(formDate)} 진료차트의 임상경과를 이어서 작성합니다.`
+            : embed
+              ? '오늘 새 임상경과를 작성합니다.'
+              : '오늘 새 임상경과를 작성합니다. 전체 차트는 헤더의 “본 차트 열기”로 진입하세요.'}
+        </p>
+
+        {/* 담당 의사 (저장 필수 — 의료법, 기존 검증 동일 재사용) */}
+        <div>
+          <label className="block text-xs font-semibold text-muted-foreground mb-1">
+            담당 의사
+            <span className="ml-1 text-[10px] text-rose-500 font-normal">· 진료기록 필수 (의료법)</span>
+          </label>
+          <select
+            value={formSigningDoctorId}
+            onChange={(e) => setFormSigningDoctorId(e.target.value)}
+            disabled={isReadOnly}
+            className={`h-10 text-sm w-full max-w-[280px] rounded-md border px-3 bg-background ${
+              !formSigningDoctorId ? 'border-rose-300 focus:border-rose-400' : 'border-input'
+            }`}
+            data-testid="clinical-mini-signing-doctor"
+            aria-label="담당 의사(진료의)"
+          >
+            <option value="">의사를 선택하세요</option>
+            {clinicDoctors.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+          {!formSigningDoctorId && (
+            <p className="mt-1 text-[11px] text-rose-500" data-testid="clinical-mini-doctor-warning">
+              진료의를 선택해야 저장할 수 있습니다.
+            </p>
+          )}
+        </div>
+
+        {/* 임상경과 — 기존 textarea 핸들러/// 자동완성 재사용. embed는 2~3줄로 컴팩트. */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs font-semibold text-muted-foreground">임상경과</label>
+            <span className="text-[10px] text-muted-foreground">//단축어 입력 시 자동완성</span>
+          </div>
+          <div className="relative">
+            <Textarea
+              ref={clinicalRef}
+              value={formClinical}
+              onChange={handleClinicalChange}
+              onBlur={() => { setTimeout(() => setPhrasePopoverVisible(false), 200); }}
+              readOnly={isReadOnly}
+              placeholder="임상경과를 입력하세요  예: //통증감소"
+              rows={embed ? 3 : 14}
+              className={cn(
+                'text-sm resize-y placeholder:text-gray-300',
+                embed ? 'min-h-[4.5rem]' : 'min-h-[18rem]',
+              )}
+              data-testid="clinical-mini-textarea"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-1p-ignore
+              data-lpignore="true"
+            />
+            {/* 미니멀 // 자동완성 — 기존 데이터·핸들러 재사용, 위치는 textarea 하단 고정(간소) */}
+            {phrasePopoverVisible && (filteredSuperPhrases.length > 0 || filteredPhrases.length > 0) && (
+              <div
+                className="absolute left-0 right-0 top-full mt-1 z-[200] max-h-72 overflow-y-auto rounded-lg border bg-popover shadow-xl"
+                onMouseDown={(e) => e.preventDefault()}
+                data-testid="clinical-mini-phrase-popover"
+              >
+                {filteredSuperPhrases.map((sp) => (
+                  <button
+                    key={`sp-${sp.id}`}
+                    type="button"
+                    onClick={() => applySuperPhraseFromSlash(sp)}
+                    disabled={gateChecking}
+                    className="w-full text-left px-3 py-2 hover:bg-teal-50 flex items-start gap-2 border-b border-border/50 disabled:opacity-50"
+                    data-testid="clinical-mini-super-option"
+                  >
+                    <Sparkles className="h-3 w-3 text-teal-600 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium truncate">{sp.name}</div>
+                      <div className="text-[10px] text-muted-foreground line-clamp-1">
+                        {[sp.diagnosis, sp.clinical_progress].filter(Boolean).join(' · ') || `처방 ${sp.rx_items.length}개`}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+                {filteredPhrases.map((p) => (
+                  <button
+                    key={`p-${p.id}`}
+                    type="button"
+                    onClick={() => insertPhrase(p)}
+                    className="w-full text-left px-3 py-2 hover:bg-muted flex items-start gap-2 border-b border-border/50 last:border-0"
+                    data-testid="clinical-mini-phrase-option"
+                  >
+                    {p.shortcut_key && (
+                      <Badge variant="secondary" className="text-[9px] shrink-0 mt-0.5 h-4 px-1 font-mono">
+                        //{p.shortcut_key}
+                      </Badge>
+                    )}
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium truncate">{p.name}</div>
+                      <div className="text-[10px] text-muted-foreground line-clamp-1">{p.content}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 저장 / 닫기 — handleSave 그대로 재사용(AC1-3) */}
+      <div className={cn('flex gap-3', embed ? 'px-4 pb-4' : 'flex-none px-5 py-4 border-t bg-background')}>
+        <Button
+          size={embed ? 'default' : 'lg'}
+          variant="outline"
+          className={embed ? 'h-10' : 'h-12 text-base'}
+          onClick={() => onOpenChange(false)}
+          data-testid="clinical-mini-close-btn"
+        >
+          닫기
+        </Button>
+        <Button
+          size={embed ? 'default' : 'lg'}
+          className={cn('flex-1 bg-teal-600 hover:bg-teal-700 text-white', embed ? 'h-10' : 'h-12 text-base')}
+          onClick={handleSave}
+          disabled={saving || !formDate}
+          data-testid="clinical-mini-save-btn"
+        >
+          {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+          {saving ? '저장 중...' : '임상경과 저장'}
+        </Button>
+      </div>
+    </div>
+  );
+
+  // T-20260609-foot-DOCDASH-CHART-UX item1 (AC1-1): embed clinical → 인라인(아코디언) 렌더.
+  //   portal/백드롭/슬라이드아웃 Drawer 미사용 — 호출부(진료대시보드 행) DOM 흐름에 그대로 펼침.
+  if (embed && variant === 'clinical') {
+    return (
+      <div
+        className="rounded-lg border border-teal-200 bg-teal-50/20"
+        data-testid="medical-chart-clinical-inline"
+      >
+        {clinicalMiniBody}
+      </div>
+    );
+  }
+
   return createPortal(
     <>
       {/* 백드롭 — 클릭 시 닫힘 (AC-2 Drawer 외부 클릭 닫힘) */}
@@ -1878,146 +2057,7 @@ export default function MedicalChartPanel({
               상태/핸들러(formClinical·handleClinicalChange·handleSave·formSigningDoctorId·clinicDoctors)는
               전부 기존 것 재사용 — 신규 저장경로 없음. */}
           {variant === 'clinical' ? (
-            loading ? (
-              <div className="flex-1 flex items-center justify-center">
-                <Loader2 className="h-10 w-10 animate-spin text-teal-400" />
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col overflow-y-auto" data-testid="medical-chart-clinical-mini">
-                <div className="flex-1 p-5 space-y-4">
-                  {/* 컨텍스트 안내 — 오늘 차트 이어쓰기 / 신규 */}
-                  <p className="text-[11px] text-muted-foreground" data-testid="clinical-mini-context">
-                    {selectedChartId
-                      ? `${fmtDateShort(formDate)} 진료차트의 임상경과를 이어서 작성합니다.`
-                      : '오늘 새 임상경과를 작성합니다. 전체 차트는 헤더의 “본 차트 열기”로 진입하세요.'}
-                  </p>
-
-                  {/* 담당 의사 (저장 필수 — 의료법, 기존 검증 동일 재사용) */}
-                  <div>
-                    <label className="block text-xs font-semibold text-muted-foreground mb-1">
-                      담당 의사
-                      <span className="ml-1 text-[10px] text-rose-500 font-normal">· 진료기록 필수 (의료법)</span>
-                    </label>
-                    <select
-                      value={formSigningDoctorId}
-                      onChange={(e) => setFormSigningDoctorId(e.target.value)}
-                      disabled={isReadOnly}
-                      className={`h-10 text-sm w-full max-w-[280px] rounded-md border px-3 bg-background ${
-                        !formSigningDoctorId ? 'border-rose-300 focus:border-rose-400' : 'border-input'
-                      }`}
-                      data-testid="clinical-mini-signing-doctor"
-                      aria-label="담당 의사(진료의)"
-                    >
-                      <option value="">의사를 선택하세요</option>
-                      {clinicDoctors.map((d) => (
-                        <option key={d.id} value={d.id}>{d.name}</option>
-                      ))}
-                    </select>
-                    {!formSigningDoctorId && (
-                      <p className="mt-1 text-[11px] text-rose-500" data-testid="clinical-mini-doctor-warning">
-                        진료의를 선택해야 저장할 수 있습니다.
-                      </p>
-                    )}
-                  </div>
-
-                  {/* 임상경과 — 기존 textarea 핸들러/// 자동완성 재사용 */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-semibold text-muted-foreground">임상경과</label>
-                      <span className="text-[10px] text-muted-foreground">//단축어 입력 시 자동완성</span>
-                    </div>
-                    <div className="relative">
-                      <Textarea
-                        ref={clinicalRef}
-                        value={formClinical}
-                        onChange={handleClinicalChange}
-                        onBlur={() => { setTimeout(() => setPhrasePopoverVisible(false), 200); }}
-                        readOnly={isReadOnly}
-                        placeholder="임상경과를 입력하세요  예: //통증감소"
-                        rows={14}
-                        className="text-sm resize-y placeholder:text-gray-300 min-h-[18rem]"
-                        data-testid="clinical-mini-textarea"
-                        autoComplete="off"
-                        autoCorrect="off"
-                        autoCapitalize="off"
-                        spellCheck={false}
-                        data-1p-ignore
-                        data-lpignore="true"
-                      />
-                      {/* 미니멀 // 자동완성 — 기존 데이터·핸들러 재사용, 위치는 textarea 하단 고정(간소) */}
-                      {phrasePopoverVisible && (filteredSuperPhrases.length > 0 || filteredPhrases.length > 0) && (
-                        <div
-                          className="absolute left-0 right-0 top-full mt-1 z-[200] max-h-72 overflow-y-auto rounded-lg border bg-popover shadow-xl"
-                          onMouseDown={(e) => e.preventDefault()}
-                          data-testid="clinical-mini-phrase-popover"
-                        >
-                          {filteredSuperPhrases.map((sp) => (
-                            <button
-                              key={`sp-${sp.id}`}
-                              type="button"
-                              onClick={() => applySuperPhraseFromSlash(sp)}
-                              disabled={gateChecking}
-                              className="w-full text-left px-3 py-2 hover:bg-teal-50 flex items-start gap-2 border-b border-border/50 disabled:opacity-50"
-                              data-testid="clinical-mini-super-option"
-                            >
-                              <Sparkles className="h-3 w-3 text-teal-600 shrink-0 mt-0.5" />
-                              <div className="min-w-0">
-                                <div className="text-xs font-medium truncate">{sp.name}</div>
-                                <div className="text-[10px] text-muted-foreground line-clamp-1">
-                                  {[sp.diagnosis, sp.clinical_progress].filter(Boolean).join(' · ') || `처방 ${sp.rx_items.length}개`}
-                                </div>
-                              </div>
-                            </button>
-                          ))}
-                          {filteredPhrases.map((p) => (
-                            <button
-                              key={`p-${p.id}`}
-                              type="button"
-                              onClick={() => insertPhrase(p)}
-                              className="w-full text-left px-3 py-2 hover:bg-muted flex items-start gap-2 border-b border-border/50 last:border-0"
-                              data-testid="clinical-mini-phrase-option"
-                            >
-                              {p.shortcut_key && (
-                                <Badge variant="secondary" className="text-[9px] shrink-0 mt-0.5 h-4 px-1 font-mono">
-                                  //{p.shortcut_key}
-                                </Badge>
-                              )}
-                              <div className="min-w-0">
-                                <div className="text-xs font-medium truncate">{p.name}</div>
-                                <div className="text-[10px] text-muted-foreground line-clamp-1">{p.content}</div>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 저장 / 닫기 — handleSave 그대로 재사용(AC-1) */}
-                <div className="flex-none flex gap-3 px-5 py-4 border-t bg-background">
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    className="h-12 text-base"
-                    onClick={() => onOpenChange(false)}
-                    data-testid="clinical-mini-close-btn"
-                  >
-                    닫기
-                  </Button>
-                  <Button
-                    size="lg"
-                    className="flex-1 h-12 text-base bg-teal-600 hover:bg-teal-700 text-white"
-                    onClick={handleSave}
-                    disabled={saving || !formDate}
-                    data-testid="clinical-mini-save-btn"
-                  >
-                    {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                    {saving ? '저장 중...' : '임상경과 저장'}
-                  </Button>
-                </div>
-              </div>
-            )
+            clinicalMiniBody
           ) : loading ? (
             <div className="flex-1 flex items-center justify-center">
               <Loader2 className="h-10 w-10 animate-spin text-teal-400" />
@@ -2345,26 +2385,27 @@ export default function MedicalChartPanel({
                             {/* T-20260609-foot-TIMELINE-FILTER-PREVIEW-FIX AC-6 (AC-5와 일관):
                                 펼친 상세 섹션도 활성 필터 유형만 노출 — 무필터=전체, 필터선택=선택 유형만(다중=누적).
                                 작성자(recorder) 메타는 PROGRESS-TIMELINE-AUTHOR 보존 위해 필터와 무관하게 항상 표시. */}
+                            {/* T-20260609-foot-CHART-LEFTCOL-MINIMAL AC-1/AC-2 (문지은 대표원장 후속, policy_superseded):
+                                좌측 단 잔존 섹션 텍스트 라벨('치료메모'·'임상경과'·'진료메모') 제거 → 유형색
+                                border-left 세로줄(2px)로만 구분(텍스트 없이 식별). 메모 본문 내용은 보존(AC-5).
+                                색 매핑은 상단 유형 닷(TYPE_DOT_CLASS)과 동일 계열: 치료=blue·임상경과=teal·진료메모=red. */}
                             {hasTreat && isTypeActive(memoFilters, 'treat') && (
-                              <div>
-                                <span className="text-[8px] font-bold text-blue-600 uppercase tracking-wide">치료메모</span>
-                                <p className="text-[10px] text-gray-700 line-clamp-4 whitespace-pre-wrap leading-relaxed mt-0.5">
+                              <div className="border-l-2 border-blue-400 pl-2">
+                                <p className="text-[10px] text-gray-700 line-clamp-4 whitespace-pre-wrap leading-relaxed">
                                   {chart.treatment_record}
                                 </p>
                               </div>
                             )}
                             {chart.clinical_progress && isTypeActive(memoFilters, 'doc') && (
-                              <div>
-                                <span className="text-[8px] font-bold text-teal-600 uppercase tracking-wide">임상경과</span>
-                                <p className="text-[10px] text-gray-700 line-clamp-4 whitespace-pre-wrap leading-relaxed mt-0.5">
+                              <div className="border-l-2 border-teal-400 pl-2">
+                                <p className="text-[10px] text-gray-700 line-clamp-4 whitespace-pre-wrap leading-relaxed">
                                   {chart.clinical_progress}
                                 </p>
                               </div>
                             )}
                             {isDirector && chart.doctor_memo && isTypeActive(memoFilters, 'doc') && (
-                              <div>
-                                <span className="text-[8px] font-bold text-red-600 uppercase tracking-wide">진료메모</span>
-                                <p className="text-[10px] text-gray-700 line-clamp-4 whitespace-pre-wrap leading-relaxed mt-0.5">
+                              <div className="border-l-2 border-red-400 pl-2">
+                                <p className="text-[10px] text-gray-700 line-clamp-4 whitespace-pre-wrap leading-relaxed">
                                   {chart.doctor_memo}
                                 </p>
                               </div>
@@ -2525,8 +2566,14 @@ export default function MedicalChartPanel({
                   </div>
 
                   {/* 담당 의사 (진료의) — T-20260608-foot-MEDCHART-SIGN-AUDIT (Phase 2, 의료법) AC-P2-1/2:
-                      로그인 계정이 의사면 자동 본인 + 드롭다운 수동 변경(스탭 포함) 가능. 신규/수정행 필수. */}
-                  <div>
+                      로그인 계정이 의사면 자동 본인 + 드롭다운 수동 변경(스탭 포함) 가능. 신규/수정행 필수.
+                      ⚠️ T-20260609-foot-DOCDASH-CHART-UX item5 (AC5-2, presentation-only dedup): 진료의가 좌측단에서
+                      두 번(상단 선택 입력 + 하단 서명블록) 표시되던 중복 제거. 저장된 차트 읽기전용 보기에선 하단
+                      서명블록(chart-signing-doctor)이 진료의 이름+직인을 canonical로 보여주므로 상단 선택 입력은 숨김.
+                      신규/수정(editMode)/더미 차트는 그대로 노출 → formSigningDoctorId 선택·NOT NULL 강제·변경이력
+                      ·직인 귀속 로직(SIGN-AUDIT Phase2) 일절 변경 없음. */}
+                  {!(isReadOnly && selectedChart && !selectedChartId?.startsWith('__dummy__')) && (
+                  <div data-testid="signing-doctor-select-block">
                     <label className="block text-xs font-semibold text-muted-foreground mb-1">
                       담당 의사
                       <span className="ml-1 text-[10px] text-rose-500 font-normal">· 진료기록 필수 (의료법)</span>
@@ -2563,6 +2610,7 @@ export default function MedicalChartPanel({
                       </p>
                     )}
                   </div>
+                  )}
 
                   {/* 진단명 — T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2 [B] + AC-3 [C]):
                       자동완성/이력 datalist 폐지 → 폴더 탐색 드롭다운(등록 상병만 선택) + 원장별 즐겨찾기.
@@ -2769,10 +2817,11 @@ export default function MedicalChartPanel({
                   {/* T-20260609-foot-MEDCHART-NOTES-2COL AC-1: 임상경과(좌·너비4) · 진료메모(우·너비1)
                       좌우 4:1 동시 노출(탭전환 X). 비원장은 진료메모 미표시 → 임상경과가 전폭. */}
                   <div className="flex flex-col sm:flex-row gap-3 items-stretch" data-testid="notes-2col-row">
-                  {/* 임상경과 (좌, flex-4) — 상용구 단축어 (우측 패널로 이동, // autocomplete 유지) */}
-                  <div className="sm:flex-[4] min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-semibold text-muted-foreground">임상경과</label>
+                  {/* 임상경과 (좌, flex-4) — 상용구 단축어 (우측 패널로 이동, // autocomplete 유지)
+                      T-20260609-foot-DOCDASH-CHART-UX item5 (AC5-1): 섹션 헤더 라벨('임상경과') 텍스트 태그 완전 제거.
+                      좌측 굵은 세로줄(border-l-2 border-gray-300)로 미니멀 구분 — 텍스트는 placeholder/내용으로 식별. */}
+                  <div className="sm:flex-[4] min-w-0 border-l-2 border-gray-300 pl-3">
+                    <div className="flex items-center justify-end mb-1">
                       <span className="text-[10px] text-muted-foreground">//단축어 입력 시 자동완성</span>
                     </div>
 
@@ -2903,11 +2952,12 @@ export default function MedicalChartPanel({
 
                   {/* 진료메모 (우, flex-1) — T-20260609-foot-MEDCHART-NOTES-2COL AC-1.
                       원장 전용 미노출 (AC-3). 비원장은 미렌더 → 임상경과가 전폭 차지.
-                      저장경로(formMemo→doctor_memo) 무변경, 배치만 우측 컬럼으로 이동. */}
+                      저장경로(formMemo→doctor_memo) 무변경, 배치만 우측 컬럼으로 이동.
+                      T-20260609-foot-DOCDASH-CHART-UX item5 (AC5-1): 섹션 헤더 라벨('진료메모') 텍스트 태그 완전 제거.
+                      좌측 굵은 세로줄(border-l-2 border-gray-300)로 미니멀 구분 — 원장전용 표식만 유지. */}
                   {isDirector ? (
-                    <div className="sm:flex-[1] min-w-0 flex flex-col" data-testid="doctor-memo-section">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <label className="text-xs font-semibold text-muted-foreground">진료메모</label>
+                    <div className="sm:flex-[1] min-w-0 flex flex-col border-l-2 border-gray-300 pl-3" data-testid="doctor-memo-section">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap justify-end">
                         <span className="text-[10px] text-muted-foreground bg-gray-100 rounded px-1.5 py-0.5">원장 전용</span>
                       </div>
                       <Textarea
@@ -2955,16 +3005,24 @@ export default function MedicalChartPanel({
                           진료의 미보유 (레거시 기록)
                         </span>
                       )}
-                      {/* 작성자(기록자) — 진료의와 구별되는 보조 표기 */}
-                      {(selectedChart.created_by_name || recorderName(selectedChart.created_by)) && (
-                        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground italic" data-testid="chart-recorder">
-                          <Stethoscope className="h-3 w-3 text-teal-600" />
-                          작성{' '}
-                          <span className="font-semibold not-italic text-teal-700">
-                            {selectedChart.created_by_name || recorderName(selectedChart.created_by)}
+                      {/* 작성자(기록자) — 진료의와 구별되는 보조 표기.
+                          T-20260609-foot-CHART-LEFTCOL-MINIMAL AC-3 (진료의 이름 중복 제거): 본인이 본인 차트를
+                          작성한 경우 created_by_name === signing_doctor_name 이라 같은 이름이 '진료의'·'작성'
+                          두 줄로 중복 노출됐다. 작성자명이 진료의명과 같으면 작성 줄을 숨겨 이름 1회만 표기
+                          (진료의 줄이 canonical). 다르면(스탭 대리작성 등) 보조 표기 보존 → 작성자 정보 손실 없음. */}
+                      {(() => {
+                        const recName = selectedChart.created_by_name || recorderName(selectedChart.created_by);
+                        if (!recName || recName === selectedChart.signing_doctor_name) return null;
+                        return (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground italic" data-testid="chart-recorder">
+                            <Stethoscope className="h-3 w-3 text-teal-600" />
+                            작성{' '}
+                            <span className="font-semibold not-italic text-teal-700">
+                              {recName}
+                            </span>
                           </span>
-                        </span>
-                      )}
+                        );
+                      })()}
                       {/* AC-P2-3: 진료의 변경이력(차트 단위 조회). append-only — 덮어쓰기 금지. */}
                       {signerAudit.length > 0 && (
                         <div className="w-full max-w-md text-right">
