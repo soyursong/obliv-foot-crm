@@ -1,8 +1,10 @@
-// RxCountInput — 처방 횟수 입력 (숫자만 + "회" 배경 suffix)
+// RxCountInput — 처방 횟수 입력 (숫자만 + "회" 외부 suffix 라벨)
 // Ticket: T-20260603-foot-RX-CHART-FOLLOWUP3 C-2-5 (#9-1 현장확정, 문지은 대표원장)
-//   - 입력값에는 숫자만 저장(예: 3). "회"는 값에 포함하지 않고 필드 우측 배경(suffix)에만 표기.
+//   - 입력값에는 숫자만 저장(예: 3). "회"는 값에 포함하지 않고 표시 라벨로만 사용.
 //   - 빈칸이면 null(미입력). 음수/소수 방지(정수 0 이상).
 //   - 기존 frequency('1일 3회' 자유텍스트=용법)는 분해하지 않고 별도 칸으로 신설.
+// T-20260609-foot-DRUG-DOSAGE-UI-FIX AC8-1: "회" 라벨을 입력 박스 안(배경 overlay)에서
+//   박스 바깥(우측 suffix)으로 이동. 박스 안에는 숫자만. 저장값/스키마 불변(AC8-3).
 import { Input } from '@/components/ui/input';
 
 interface RxCountInputProps {
@@ -14,7 +16,7 @@ interface RxCountInputProps {
 
 export default function RxCountInput({ value, onChange, className, disabled }: RxCountInputProps) {
   return (
-    <div className="relative">
+    <div className={`flex items-center gap-1 ${className ?? ''}`}>
       <Input
         type="number"
         inputMode="numeric"
@@ -29,11 +31,14 @@ export default function RxCountInput({ value, onChange, className, disabled }: R
           onChange(Number.isFinite(n) ? n : null);
         }}
         placeholder="3"
-        className={`h-7 text-xs mt-0.5 pr-6 disabled:opacity-100 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed ${className ?? ''}`}
+        className="h-7 text-xs mt-0.5 flex-1 min-w-0 text-center disabled:opacity-100 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
         data-testid="rx-count-input"
       />
-      {/* "회" 배경 suffix — 값에는 미포함, 표시만 */}
-      <span className="pointer-events-none absolute right-2 top-1/2 mt-[2px] -translate-y-1/2 text-[10px] text-muted-foreground">
+      {/* "회" 라벨 — 입력 박스 바깥(suffix). 값에는 미포함, 표시 전용 */}
+      <span
+        className="pointer-events-none flex-shrink-0 text-[10px] text-muted-foreground"
+        data-testid="rx-count-suffix"
+      >
         회
       </span>
     </div>
