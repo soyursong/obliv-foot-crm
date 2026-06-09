@@ -179,16 +179,27 @@ const REFUND_AUTOFILL_POS_P1: Array<{ key: keyof AutofillFields; x: number; y: n
 //   [RC — PIL 픽셀 정밀 분석, 추정 아님] refund_consent.png 2481×10524 → canvas 794×3369 (scale=0.32).
 //   [본인 동의서] 표(2칸: 이름 | 서명):
 //     · 표 좌측 경계 = canvas x=96 (img 300), 중앙 칸막이 x=397, 우측 경계 x=697
-//     · "이름" 칸 밑줄(underline) = canvas y=3242, x=130~364 (중심 x≈247)
+//     · "이름" 칸 밑줄(underline) = canvas y=3242, x=130~364 (중심 x≈247, 가용폭 234px)
 //     · "서명" 칸 밑줄          = canvas y=3242, x=430~664
 //   직전 T-20260608 재추가 좌표 x=55 는 표 좌측 경계(96)보다 *왼쪽* = 표 바깥 페이지 여백 →
 //   이름이 셀 밖 좌측으로 이탈 렌더(현장 "이름 위치 틀어짐" RC). y=3206 도 밑줄(3242)보다 36px 위 부유.
-//   [수정] x: 55→145 (밑줄 좌단 130 + 15px 여백 = 칸 내부 시작, textAlign 기본 left),
-//          y: 3206→3224 (textBaseline='top' 15px → 하단≈3239 가 밑줄 y=3242 바로 위 정렬, 수기란 위 안착).
-//   긴이름 안전: 밑줄 우단 364까지 가용폭 219px(≈14자) — 오버플로우/서명칸(x≥430) 겹침 없음.
-const REFUND_AUTOFILL_POS_P3: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
-  { key: 'name', x: 145, y: 3224 }, // [본인 동의서] "이름" 칸 밑줄(y=3242, x=130~364) 위 안착
-];
+//   T-20260609-foot-REFUND-NAME-AUTOFILL-POSITION 1차 안착: x 55→145(칸 내부), y 3206→3224(밑줄 위).
+//
+// T-20260609-foot-CONSENT-NAME-CENTER-FONT: 위 안착 좌표 *증분* — 칸 중앙정렬 + 폰트 확대 + 또렷한 정자체.
+//   (스크린샷 evidence 164600_F0B924NEZK5_IMG_8233.jpg: 하단 성명 칸 "최수빈"이 좌측·작게 표시 → 김주연 총괄 6/9 요청)
+//   ⓐ textAlign left→center: 칸 중심 x=247 기준 중앙정렬 (밑줄 130~364 중앙).
+//   ⓑ fontSize 15→26 확대 (크고 또렷). ⓒ italic 제거 → 양식 정자체와 어울리는 또렷한 글씨.
+//   좌표 되돌림 아님: 동일 셀 기하(밑줄 130~364, y=3242)를 그대로 쓰되 시작점만 좌단→중심으로 이동.
+//   밑줄 침범 방지: textBaseline='alphabetic' + baselineY=3238 (밑줄 3242의 4px 위) → 폰트 커져도 위로만 자람.
+//   AC-3 긴이름 클램프: measureText 폭이 가용폭(MAX_W=226=234−여백8) 초과 시 폰트 비례 축소(최소 MIN=14px)
+//     → 좌우 오버플로우/서명칸(x≥430)·중앙 칸막이(x=397) 침범 방지.
+const REFUND_P3_NAME = {
+  centerX: 247,       // 이름 칸 밑줄 중심 (130~364)
+  baselineY: 3238,    // 밑줄 y=3242 의 4px 위 (alphabetic baseline)
+  maxWidth: 226,      // 가용폭 = 밑줄폭 234 − 좌우 4px 여백
+  baseFontSize: 26,   // 확대 기준 (구 15px → 크고 또렷)
+  minFontSize: 14,    // 긴이름 클램프 하한
+};
 
 // ── 환불동의서 P3 날짜 분리 렌더링 (AC-R5) ──
 // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R5: 날짜 "년/월/일" 분리 배치
@@ -219,6 +230,40 @@ function drawRefundP3DateAutofill(
   if (year)  ctx.fillText(year,  537, DATE_Y); // "년"(좌측 x≈549) 12px 전
   if (month) ctx.fillText(month, 607, DATE_Y); // "월"(좌측 x≈619) 12px 전
   if (day)   ctx.fillText(day,   671, DATE_Y); // "일"(좌측 x≈688) 17px 전
+  ctx.restore();
+}
+
+// ── 환불동의서 P3 [본인 동의서] 하단 성명란 — 중앙정렬 + 확대 (T-20260609-foot-CONSENT-NAME-CENTER-FONT) ──
+// 직전 T-20260609-foot-REFUND-NAME-AUTOFILL-POSITION 의 밑줄 위 안착을 유지한 증분 변경.
+//   ⓐ 칸 중심(x=247) 기준 중앙정렬 ⓑ 폰트 26px 확대 ⓒ italic 제거(또렷한 정자체).
+//   textBaseline='alphabetic' + baselineY=3238 → 폰트가 커져도 위로만 자라 밑줄(3242) 침범 없음.
+//   AC-3 긴이름(≤14자) 클램프: 측정폭이 가용폭(226px) 초과 시 폰트 비례 축소(최소 14px) →
+//     좌우 오버플로우/서명칸(x≥430)·중앙 칸막이(397) 침범 방지.
+//   Canvas 논리좌표 합성(scale 무관) + DRAW_DPR=2 강제 → iPad(DPR2.0)/갤탭 일관 (AC-4).
+function drawRefundP3NameAutofill(
+  ctx: CanvasRenderingContext2D,
+  fields: AutofillFields,
+) {
+  const name = fields.name;
+  if (!name) return;
+  ctx.save();
+  ctx.fillStyle = '#6b7280'; // gray-500 — 수기 입력과 시각적 구분 유지
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  const fontOf = (px: number) =>
+    `${px}px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif`; // italic 제거 → 또렷한 정자체
+  // AC-3 폰트 클램프: 가용폭 초과 시 비례 축소
+  let fontSize = REFUND_P3_NAME.baseFontSize;
+  ctx.font = fontOf(fontSize);
+  const w = ctx.measureText(name).width;
+  if (w > REFUND_P3_NAME.maxWidth) {
+    fontSize = Math.max(
+      REFUND_P3_NAME.minFontSize,
+      Math.floor(fontSize * (REFUND_P3_NAME.maxWidth / w)),
+    );
+    ctx.font = fontOf(fontSize);
+  }
+  ctx.fillText(name, REFUND_P3_NAME.centerX, REFUND_P3_NAME.baselineY);
   ctx.restore();
 }
 
@@ -1301,8 +1346,9 @@ export function PenChartTab({
             // AC-R5: P1 좌표 재보정 + P3 날짜 년/월/일 분리 우측정렬
             drawAutofillOnCtx(ctx, autofillDataRef.current, REFUND_AUTOFILL_POS_P1);
             drawRefundP3DateAutofill(ctx, autofillDataRef.current);
-            // T-20260608-foot-CONSENT-NAME-AUTOLOAD: 179795c 회귀 복구 — 하단 본인동의서 성명란(x=55 y=3206)
-            drawAutofillOnCtx(ctx, autofillDataRef.current, REFUND_AUTOFILL_POS_P3);
+            // T-20260608-foot-CONSENT-NAME-AUTOLOAD: 하단 본인동의서 성명란 복구.
+            // T-20260609-foot-CONSENT-NAME-CENTER-FONT: 중앙정렬+확대+또렷 정자체 전용 렌더로 교체.
+            drawRefundP3NameAutofill(ctx, autofillDataRef.current);
           } else if (fk === 'pen_chart') {
             // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R6: 성함+주민번호 1줄 inline + 폰트 축소
             drawPenChartAutofillInline(ctx, autofillDataRef.current);
