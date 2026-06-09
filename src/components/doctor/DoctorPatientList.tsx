@@ -17,6 +17,7 @@ import { toast } from '@/lib/toast';
 import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import QuickRxBar, { isDoctor, RxConfirmedSummary } from './QuickRxBar';
 import { STATUS_KO, isInClinic } from '@/lib/status';
+import { useChart } from '@/lib/chartContext';
 import type { CheckInStatus } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -24,6 +25,8 @@ import type { CheckInStatus } from '@/lib/types';
 // ---------------------------------------------------------------------------
 interface PatientRow {
   id: string;
+  /** T-20260609-foot-DOCPATIENTLIST-RXCANCEL-DISCHARGE-GATE: 귀가 차단 시 차트 진입(useChart.openChart). */
+  customer_id: string | null;
   customer_name: string;
   visit_type: 'new' | 'returning' | 'experience';
   status: CheckInStatus;
@@ -163,7 +166,7 @@ function usePatientsByDate(clinicId: string | null, dateISO: string) {
       const { data, error } = await supabase
         .from('check_ins')
         .select(
-          'id, customer_name, visit_type, status, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, reservation:reservation_id(booking_memo)',
+          'id, customer_id, customer_name, visit_type, status, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, reservation:reservation_id(booking_memo)',
         )
         .eq('clinic_id', clinicId)
         .gte('checked_in_at', `${day}T00:00:00+09:00`)
@@ -239,11 +242,14 @@ function PatientRow({
   doctorMode,
   role,
   onRefresh,
+  onOpenChart,
 }: {
   row: PatientRow;
   doctorMode: boolean;
   role: string;
   onRefresh: () => void;
+  /** T-20260609-foot-DOCPATIENTLIST-RXCANCEL-DISCHARGE-GATE: 귀가 차단 시 차트 진입 동선. */
+  onOpenChart?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const confirm = useConfirmPrescription();
@@ -375,6 +381,11 @@ function PatientRow({
               doctorMode={doctorMode}
               onCancelled={onRefresh}
               label="처방 내용"
+              /* T-20260609-foot-DOCPATIENTLIST-RXCANCEL-DISCHARGE-GATE:
+                 귀가(원내 비잔류) 환자 처방취소 차단(inClinicRxGate SSOT) + 차트 진입 동선. */
+              checkInStatus={row.status}
+              checkedInAt={row.checked_in_at}
+              onOpenChart={onOpenChart}
             />
             {row.doctor_confirmed_at && (
               <span className="ml-auto shrink-0 text-[11px] text-green-600">
@@ -395,6 +406,8 @@ export default function DoctorPatientList() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
   const doctorMode = isDoctor(profile?.role ?? '');
+  // LOGIC-LOCK: L-004 — 차트 접근은 useChart() 경유만. 귀가 환자 처방취소 차단 시 '차트에서 수정' 진입.
+  const { openChart } = useChart();
 
   // T-20260606-foot-RX-PATIENT-LIST-DATENAV AC-1: 기본 조회 날짜 = 오늘(KST). AC-2: < > 로 전/후 이동.
   const todayISO = todaySeoulISODate();
@@ -568,6 +581,7 @@ export default function DoctorPatientList() {
               doctorMode={doctorMode}
               role={profile?.role ?? ''}
               onRefresh={() => refetch()}
+              onOpenChart={row.customer_id ? () => openChart(row.customer_id as string) : undefined}
             />
           ))}
         </div>
