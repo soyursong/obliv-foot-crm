@@ -106,3 +106,15 @@ test('AC-3: 기존 malformed 코드 자동수정/backfill 경로 부재(audit-on
   expect(src).not.toContain('backfill');
   expect(src).not.toContain('migrateServiceCode');
 });
+
+// ── 브라우저 렌더 가드(경로 SSOT): "상병명 관리" 탭은 /admin 루트(대시보드)가 아니라
+//    /admin/clinic-management(진료관리, role admin/manager/director) 내부 탭이다.
+//    QA 진단이 잘못된 경로(/admin)를 보고 실패하는 false-negative 재발 방지용 — 정확한 경로를 코드로 못박는다.
+test('브라우저: 상병명 관리 탭은 /admin/clinic-management 에서 렌더(/admin 루트 아님)', async ({ page }) => {
+  await page.goto('/admin/clinic-management?tab=diagnosis_names');
+  const tab = page.getByTestId('tab-diagnosis-names');
+  await expect(tab).toBeVisible({ timeout: 15000 });
+  await expect(tab).toContainText('상병명 관리');
+  // DiagnosisNamesTab 본문(폴더/상병 2패널)까지 마운트 확인
+  await expect(page.getByText('상병명 추가')).toBeVisible();
+});
