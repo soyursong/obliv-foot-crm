@@ -4410,6 +4410,17 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   </tr>
                 )}
 
+                {/* T-20260609-foot-SELFCHECKIN-LEADSRC-UI-VISITPATH: 방문경로 소분류(유입경로) 표시
+                    셀프접수 워크인 동선에서 자동 저장됨. read-only 표시 (값 있을 때만). */}
+                {customer.visit_route_detail && (
+                  <tr>
+                    <td className={LC}>유입경로</td>
+                    <td className={VC} colSpan={3} data-testid="chart-visit-route-detail">
+                      {customer.visit_route_detail}
+                    </td>
+                  </tr>
+                )}
+
                 {/* ⑫ 예약메모 삭제됨 — AC-6: 예약메모는 2번차트 1구역(예약내역 패널)에서만 표시 (T-20260512-foot-RESV-MGMT-OVERHAUL) */}
 
                 {/* ⑬ 예약메모 — T-20260516-foot-C2Z1-MEMO-SYNC(정본): reservation_memo_history append-only 연동 */}
