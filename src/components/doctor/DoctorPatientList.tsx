@@ -18,6 +18,7 @@ import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, Chev
 import QuickRxBar, { isDoctor, RxConfirmedSummary } from './QuickRxBar';
 import { STATUS_KO, isInClinic } from '@/lib/status';
 import { useChart } from '@/lib/chartContext';
+import { formatRxConfirmedSummary } from '@/lib/rxTooltip';
 import type { CheckInStatus } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -43,6 +44,9 @@ interface PatientRow {
   treatment_category: string | null;
   treatment_contents: string[] | null;
   treatment_kind: string | null;
+  /** T-20260609-foot-DOCPATIENTLIST-DATEMODE-HISTORY: 이력 모드 히러레이저 ✅/❌ 배지.
+   *  check_ins 기존 컬럼(20260504_doctor_treatment_flow, BOOLEAN NOT NULL DEFAULT false) — SELECT 확장만. */
+  healer_laser_confirm: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +154,49 @@ function PrescriptionStatusBadge({
 }
 
 // ---------------------------------------------------------------------------
+// 이력 모드 처방 한 줄 — T-20260609-foot-DOCPATIENTLIST-DATEMODE-HISTORY (AC-2)
+//   포맷은 DOCDASH-LABEL-RX-REFINE 정본(formatRxConfirmedSummary, '{name} {freq} *' 나열)을 재사용.
+//   prescription_items 는 JSONB(빠른처방 {name,frequency,days} | 정식 {medication_name,dosage,...})
+//   → name/frequency 를 방어적으로 흡수(prescriptionSummary 와 동일 키 매핑)해 정본 포맷에 투입.
+//   처방 없으면 '처방없음'(AC-2). 토큰 세부(1/3/2) 정형은 RX-TOKEN-FORMAT(blocked) 별도 축 — 미선반영.
+// ---------------------------------------------------------------------------
+function prescriptionOneLine(items: unknown): string {
+  if (!Array.isArray(items) || items.length === 0) return '처방없음';
+  const normalized = items.map((raw) => {
+    const it = raw as {
+      name?: string;
+      medication_name?: string;
+      frequency?: string;
+      dosage?: string | null;
+    };
+    return {
+      name: it.name ?? it.medication_name ?? null,
+      frequency: it.frequency ?? it.dosage ?? null,
+    };
+  });
+  const out = formatRxConfirmedSummary(normalized).trim();
+  return out || '처방없음';
+}
+
+// ---------------------------------------------------------------------------
+// 히러레이저 배지 — T-20260609-foot-DOCPATIENTLIST-DATEMODE-HISTORY (AC-2)
+//   healer_laser_confirm(Boolean) → '레이저 ✅' / '레이저 ❌'. 이력 모드 전용 read-only 표기.
+// ---------------------------------------------------------------------------
+function HealerLaserBadge({ confirmed }: { confirmed: boolean }) {
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+        confirmed ? 'bg-teal-100 text-teal-700' : 'bg-gray-100 text-gray-500'
+      }`}
+      data-testid="healer-laser-badge"
+      title={confirmed ? '히러레이저 컨펌됨' : '히러레이저 미확인'}
+    >
+      레이저 {confirmed ? '✅' : '❌'}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 날짜 유틸 — T-20260606-foot-RX-PATIENT-LIST-DATENAV
 //   KST(Asia/Seoul) 캘린더 날짜 기준 전/후 이동. 정오(UTC) 기준으로 더해 DST/경계 드리프트 방지.
 // ---------------------------------------------------------------------------
@@ -188,7 +235,8 @@ function usePatientsByDate(clinicId: string | null, dateISO: string) {
         .from('check_ins')
         .select(
           // T-20260609-foot-PASTVISIT-TREATMENT-VIEW: treatment_* 추가(기존 컬럼, SELECT 확장만 — AC-5)
-          'id, customer_id, customer_name, visit_type, status, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, treatment_category, treatment_contents, treatment_kind, reservation:reservation_id(booking_memo)',
+          // T-20260609-foot-DOCPATIENTLIST-DATEMODE-HISTORY: healer_laser_confirm 추가(기존 컬럼, SELECT 확장만 — AC-3)
+          'id, customer_id, customer_name, visit_type, status, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, treatment_category, treatment_contents, treatment_kind, healer_laser_confirm, reservation:reservation_id(booking_memo)',
         )
         .eq('clinic_id', clinicId)
         .gte('checked_in_at', `${day}T00:00:00+09:00`)
@@ -283,20 +331,35 @@ function PatientRow({
   const isConfirmed = row.prescription_status === 'confirmed';
 
   // ---------------------------------------------------------------------------
-  // T-20260609-foot-PASTVISIT-TREATMENT-VIEW (A안): 과거 날짜 행 = read-only.
-  //   '상태' 컬럼 숨김(AC-4) + '받은 치료' 요약 표시(AC-2/3). 처방/편집 액션·펼치기 토글 비노출.
-  //   처방배지(처방전 O/X)는 그날의 사실 기록이므로 read-only 정보로 유지.
+  // T-20260609-foot-DOCPATIENTLIST-DATEMODE-HISTORY (AC-1/2): 어제 이전 날짜 = 이력 모드(read-only).
+  //   PASTVISIT-TREATMENT-VIEW 의 isPast read-only 모드를 누적 확장(분기 기준=DATENAV 날짜 state 재사용).
+  //   - '상태' 컬럼 숨김 + 처방 확정/취소 버튼 전부 숨김(read-only) → RXCANCEL-GATE 를 포섭(별개 축).
+  //   - 이름+초진/재진(visit_type), 처방 내용 한 줄(formatRxConfirmedSummary 재사용), 처방전 O/X 배지 유지.
+  //   - 치료 종류: treatment_kind 텍스트(없으면 '받은 치료' 요약으로 폴백 — PASTVISIT 값 보존).
+  //   - 히러레이저: healer_laser_confirm → ✅/❌ 배지.
+  //   - 행 클릭: 해당 환자 진료차트 열람(onOpenChart=useChart.openChart, LOGIC-LOCK L-004 단일 게이트웨이 호출만).
   // ---------------------------------------------------------------------------
   if (isPast) {
-    const summary = treatmentSummary(row);
+    const rxLine = prescriptionOneLine(row.prescription_items);
+    const hasRx = rxLine !== '처방없음';
+    const kind = (row.treatment_kind ?? '').trim();
+    const received = treatmentSummary(row); // PASTVISIT 정본 — treatment_kind 결측 시 폴백
+    const treatmentText = kind || received || '—';
     return (
-      <div className="rounded-lg border border-border bg-card transition" data-testid="patient-row">
-        <div className="grid grid-cols-[1.75rem_3rem_5rem_5.5rem_minmax(0,1fr)] items-center gap-2 px-3 py-2.5">
+      <button
+        type="button"
+        onClick={onOpenChart}
+        disabled={!onOpenChart}
+        className="w-full rounded-lg border border-border bg-card text-left transition hover:bg-accent/40 disabled:cursor-default disabled:hover:bg-card"
+        data-testid="patient-row"
+        data-mode="history"
+      >
+        <div className="grid grid-cols-[1.75rem_3rem_5rem_5.5rem_minmax(0,1fr)_auto_auto] items-center gap-2 px-3 py-2.5">
           {/* 번호 */}
           <span className="text-xs font-mono text-muted-foreground text-center">
             {row.queue_number ?? '—'}
           </span>
-          {/* 방문유형 배지 */}
+          {/* 방문유형 배지 (초진/재진) */}
           <div className="flex justify-center">
             <VisitTypeBadge type={row.visit_type} />
           </div>
@@ -308,29 +371,30 @@ function PatientRow({
           >
             {row.customer_name}
           </span>
-          {/* 처방 상태 배지 — 과거 기록(read-only) */}
+          {/* 처방 상태 배지 (처방전 O/X) — 그날의 사실 기록(read-only) */}
           <div className="flex justify-center">
             <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
           </div>
-          {/* 받은 치료 요약 (AC-2/3) */}
-          {summary ? (
-            <span
-              className="text-[12px] text-emerald-700 font-medium truncate"
-              title={summary}
-              data-testid="treatment-received"
-            >
-              {summary}
-            </span>
-          ) : (
-            <span
-              className="text-[12px] text-muted-foreground/70 truncate"
-              data-testid="treatment-received"
-            >
-              치료내역 없음
-            </span>
-          )}
+          {/* 처방 내용 한 줄 — 없으면 '처방없음' (AC-2) */}
+          <span
+            className={`text-[12px] truncate ${hasRx ? 'text-foreground' : 'text-muted-foreground/70'}`}
+            title={rxLine}
+            data-testid="rx-oneline"
+          >
+            {rxLine}
+          </span>
+          {/* 치료 종류 (treatment_kind, 폴백=받은 치료) */}
+          <span
+            className="text-[12px] text-emerald-700 font-medium truncate max-w-[8rem]"
+            title={treatmentText}
+            data-testid="treatment-kind"
+          >
+            {treatmentText}
+          </span>
+          {/* 히러레이저 ✅/❌ 배지 */}
+          <HealerLaserBadge confirmed={row.healer_laser_confirm} />
         </div>
-      </div>
+      </button>
     );
   }
 
