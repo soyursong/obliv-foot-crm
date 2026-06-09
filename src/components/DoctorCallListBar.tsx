@@ -61,6 +61,16 @@
  *        top 앵커여야 "아래로 자연 확장"(현장 문구) 그대로 동작. 가로 위치(우측 right-4)는 보존
  *        (DASH-POPUP-RIGHT-FIX의 '우측 고정' AC 유지, 세로 앵커만 정정).
  *  ※ HEALER-POSITION fix(힐러 inclusion·위치배지)는 레이아웃 변경 후에도 회귀 없이 유지(AC-4).
+ *
+ * T-20260609-foot-CALLLIST-VERTICAL-FULLNAME — 세로 나열 + 성함 전체 + max-h 세로 스크롤 (NAME-VERTICAL-LAYOUT 보정):
+ *  현장 김주연 총괄: "성함 절대 잘리면 안 됨 + 가로 말고 세로 나열, 인원 늘면 세로로 자연 확장, 한눈에."
+ *  NAME-VERTICAL-LAYOUT은 max-h를 완전히 제거(height auto, 내부 스크롤 X)했으나, 패널이 fixed top-4라
+ *  인원이 많으면 컨테이너가 뷰포트 하단 밖으로 밀려 *잘리고 스크롤도 불가*한 잠재 결함이 있었다.
+ *  AC-1) 행 컨테이너에 max-h(뷰포트 잔여) + overflow-y-auto 재도입 → max-h 초과 시 내부 세로 스크롤
+ *        (가로 스크롤 없음·flex-col 세로 스택 유지). NAME-VERTICAL-LAYOUT의 "no max-h/no scroll" 결정을 대체.
+ *  AC-2) 성함 전체 표시(truncate 부재·whitespace-normal·break-words) + 카드 풀폭(w-full) 유지(회귀 없음).
+ *  AC-3) 4명 정도는 max-h 안에 들어가 스크롤 없이 한눈에. 그 이상이면 내부 세로 스크롤(off-screen 잘림 방지).
+ *  AC-4) 지정/전체콜·이름클릭→차트·힐러/위치/재진 배지·pink 비활성·메모 저장/조회 전부 불변(레이아웃 클래스 외 미접촉).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
@@ -172,9 +182,9 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
     // T-20260601-foot-DASH-POPUP-RIGHT-FIX 진료콜 명단 팝업 — 뷰포트 우측 position:fixed 고정.
     //   가로스크롤해도 화면 우측에 항상 붙어 따라옴(안 사라짐). right-4: 현장 요청대로 우측.
     //   z-40: 칸반 카드(z-30) 위, 모달(z-50+) 아래.
-    // T-20260609-foot-CALLLIST-NAME-VERTICAL-LAYOUT req3: 세로 앵커 bottom-4 → top-4.
-    //   인원 증가 시 컨테이너가 아래로 자연 확장되도록(현장 문구) 상단 고정.
-    //   max-h 제거 → height auto. 내부 스크롤 없이 한눈에. (가로 우측 위치는 보존)
+    // T-20260609-foot-CALLLIST-NAME-VERTICAL-LAYOUT req3 + VERTICAL-FULLNAME: 세로 앵커 top-4 유지.
+    //   상단 고정이라 인원 증가 시 아래로 자연 확장. 단, 무한 확장으로 뷰포트 하단 밖 잘림을 막기 위해
+    //   행 컨테이너에 max-h(뷰포트 잔여)+overflow-y-auto 재도입 → 초과분은 내부 세로 스크롤. (가로 우측 보존)
     <div
       data-testid="doctor-call-list"
       data-collapsed={String(collapsed)}
@@ -246,12 +256,14 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
         </div>
       </div>
 
-      {/* 명단 — T-20260609-foot-CALLLIST-NAME-VERTICAL-LAYOUT req2·3:
-          세로 나열(flex-col, 위→아래 스택). 가로 스크롤(overflow-x-auto)·고정 높이(max-h) 제거 →
-          인원 늘수록 height auto 로 아래로 자연 확장(내부 스크롤 없이 한눈에). 접힘 시 숨김.
-          활성(진료필요) 상단 → 비활성(진료완료) 하단 정렬 (displayList). */}
+      {/* 명단 — T-20260609-foot-CALLLIST-VERTICAL-FULLNAME AC-1 (NAME-VERTICAL-LAYOUT 보정):
+          세로 나열(flex-col, 위→아래 스택). 가로 스크롤(overflow-x-auto) 없음 — 가로 잘림 X.
+          max-h-[calc(100vh-6rem)] + overflow-y-auto 재도입: 인원이 적으면(≈4명) 한도 안에 들어가
+          스크롤 없이 한눈에(AC-3), 한도 초과 시 내부 세로 스크롤 → fixed top-4 패널이 뷰포트 하단
+          밖으로 밀려 잘리는 결함 차단. 접힘 시 숨김.
+          활성(진료필요) 상단 → 비활성(진료완료) 하단 정렬 (displayList) 보존. */}
       {!collapsed && (
-      <div className="flex flex-col gap-2 px-3 py-2" data-testid="doctor-call-rows">
+      <div className="flex flex-col gap-2 px-3 py-2 max-h-[calc(100vh-6rem)] overflow-y-auto" data-testid="doctor-call-rows">
         {displayList.map((ci) => {
           const inactive = ci.status_flag === 'pink'; // 진료완료 = 비활성
           return (
