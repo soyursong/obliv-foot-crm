@@ -72,7 +72,7 @@ import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
-import { formatAmount, maskPhoneTail, seoulISODate, cardDisplayName } from '@/lib/format';
+import { formatAmount, maskPhoneTail, seoulISODate, cardDisplayName, phoneTailSuffix } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 import { nextSlotSortOrder as computeNextSlotSortOrder, compareSlotFifo } from '@/lib/slotOrder';
@@ -1636,6 +1636,10 @@ function DraggableBox2ResvCard({
   });
   const resvChartMap = useContext(ChartNumberMapCtx);
   const resvChartNum = reservation.customer_id ? resvChartMap.get(reservation.customer_id) : undefined;
+  // T-20260609-foot-RESV-PATIENT-PHONE-SUFFIX: 재진 예약 카드 서브라벨도 초진(DraggableBox1Card)과
+  // 동일하게 핸드폰 뒷4자리 표기로 통일. CHART-NO-VISIBLE(#차트번호) 뱃지는 별도 식별자로 유지(회귀 금지).
+  // 결측/4자리 미만 → suffix 미렌더(빈 suffix 금지) → #차트번호 뱃지가 fallback 식별자 역할.
+  const resvPhoneTail = phoneTailSuffix(reservation.customer_phone);
   return (
     <div
       ref={setNodeRef}
@@ -1666,6 +1670,10 @@ function DraggableBox2ResvCard({
       data-testid="box2-resv-card"
     >
       <span className="truncate text-green-900">{cardDisplayName(reservation)}</span>
+      {/* T-20260609-foot-RESV-PATIENT-PHONE-SUFFIX: 핸드폰 뒷4자리 (초진 카드와 동일 포맷·통일) */}
+      {resvPhoneTail && (
+        <span data-testid="resv-phone-suffix" className="shrink-0 text-green-700 font-mono text-[9px]">{resvPhoneTail}</span>
+      )}
       {/* T-20260516-foot-HEALER-RESV-BTN AC-10: 힐러 배지 표시 */}
       {reservation.healer_flag && (
         <span className="shrink-0 text-[8px] font-bold text-yellow-700 bg-yellow-100 border border-yellow-300 rounded px-0.5 leading-tight">힐</span>
