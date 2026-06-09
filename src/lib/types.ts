@@ -351,6 +351,10 @@ export interface CheckIn {
   /** 원장님 진료콜 명단 진료 전달사항 전용 메모 — T-20260601-foot-DOCTOR-CALL-LIST
    *  방문동선 메모(treatment_memo/notes)와 용도 분리 */
   doctor_call_memo: string | null;
+  /** 진료호출 의사 ✋확인(손 들기) 시각 — T-20260609-foot-DOCCALL-DOCTOR-ACK.
+   *  의사가 호출을 인지/확인했다는 표시 신호. NULL=미확인, 값 있으면 '의사 확인됨'.
+   *  진료완료(completed_at) 상태머신과 별개 신호(귀속/완료 로직 무관). */
+  doctor_ack_at: string | null;
   /** T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed 조인 결과.
    *  카드 표기명을 customers 현재 이름 우선 렌더하기 위한 비영속 파생 필드.
    *  customer_id 미연결(unlink) 시 null → denormalized customer_name fallback. */

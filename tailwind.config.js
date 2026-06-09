@@ -54,6 +54,17 @@ export default {
       minWidth: {
         touch: "44px",
       },
+      // T-20260609-foot-DOCCALL-DOCTOR-ACK AC8: 손 들기(✋) 대기 pulse.
+      //   opacity 0.4→1→0.4, 주기 1.5s, ease-in-out, 무한. ack 후엔 미적용(파란색 고정).
+      keyframes: {
+        "pulse-hand": {
+          "0%, 100%": { opacity: "0.4" },
+          "50%": { opacity: "1" },
+        },
+      },
+      animation: {
+        "pulse-hand": "pulse-hand 1.5s ease-in-out infinite",
+      },
     },
   },
   plugins: [require("tailwindcss-animate")],

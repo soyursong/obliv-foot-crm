@@ -62,7 +62,9 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { checkRxRoleGate, rxRoleGateMessage, rxInsuranceGateMessage, rxInsuranceOverrideConfirm } from '@/lib/prescriptionGate';
 import { evaluateRxInsuranceGate } from '@/lib/prescribableDrugs';
-import { formatAmount, formatPhone } from '@/lib/format';
+import { formatAmount, formatPhone, todaySeoulISODate } from '@/lib/format';
+// T-20260609-foot-DOCCALL-DOCTOR-ACK AC8: 환자차트에도 ✋ 표시(대기 pulse / 확인 후 파란 고정).
+import { DoctorAckBadge } from '@/components/doctor/DoctorAck';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import { classificationToRoute } from '@/components/admin/PrescriptionSetsTab';
 // T-20260606-foot-RX-SET-REDESIGN AC-R3/R5: 약품 폴더 탐색기(개별 약품 트리). 묶음처방(set)과 별개 축.
@@ -455,6 +457,56 @@ export default function MedicalChartPanel({
   const { profile } = useAuth();
   // AC-9: 현재 로그인 의사 표시명 (이름 > 이메일 > 폴백)
   const currentUserName = profile?.name ?? currentUserEmail ?? '알 수 없음';
+
+  // T-20260609-foot-DOCCALL-DOCTOR-ACK AC8: 당일 진료호출(status_flag purple/pink)의 의사 ✋확인 상태.
+  //   환자차트는 customerId 기준이라 check_in 컨텍스트가 없으므로, 당일 KST 진료호출 1건을 자체 조회.
+  //   ack 됨 → 파란 "의사 확인됨" 고정, 활성 호출(purple) 미확인 → pulse "확인 대기". 표시 전용(write 없음).
+  //   Realtime: 해당 고객 check_ins 변경 즉시 재조회(새로고침 없이 반영).
+  const [docAck, setDocAck] = useState<{ ackAt: string | null; hasActiveCall: boolean }>({
+    ackAt: null,
+    hasActiveCall: false,
+  });
+  useEffect(() => {
+    if (!open || !customerId || !clinicId) {
+      setDocAck({ ackAt: null, hasActiveCall: false });
+      return;
+    }
+    let cancelled = false;
+    const today = todaySeoulISODate();
+    const fetchAck = async () => {
+      const { data, error } = await supabase
+        .from('check_ins')
+        .select('doctor_ack_at, status_flag, checked_in_at')
+        .eq('customer_id', customerId)
+        .eq('clinic_id', clinicId)
+        .gte('checked_in_at', `${today}T00:00:00+09:00`)
+        .lte('checked_in_at', `${today}T23:59:59+09:00`)
+        .in('status_flag', ['purple', 'pink'])
+        .order('checked_in_at', { ascending: false })
+        .limit(1);
+      if (cancelled || error) return;
+      const row = (data ?? [])[0] as { doctor_ack_at: string | null; status_flag: string | null } | undefined;
+      setDocAck({
+        ackAt: row?.doctor_ack_at ?? null,
+        hasActiveCall: row?.status_flag === 'purple',
+      });
+    };
+    void fetchAck();
+    const channel = supabase
+      .channel(`medchart_doc_ack_${customerId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'check_ins', filter: `customer_id=eq.${customerId}` },
+        () => {
+          void fetchAck();
+        },
+      )
+      .subscribe();
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [open, customerId, clinicId]);
 
   // ── 데이터 ──────────────────────────────────────────────────────────────────
   const [customer, setCustomer] = useState<CustomerBasic | null>(null);
@@ -1779,6 +1831,8 @@ export default function MedicalChartPanel({
                       : customer.birth_date}
                   </span>
                 )}
+                {/* T-20260609-foot-DOCCALL-DOCTOR-ACK AC8: 환자차트 ✋ 표시 — 확인됨 파란 고정 / 활성호출 미확인 pulse 대기. */}
+                <DoctorAckBadge ackAt={docAck.ackAt} showPending={docAck.hasActiveCall} />
               </div>
             )}
           </div>
