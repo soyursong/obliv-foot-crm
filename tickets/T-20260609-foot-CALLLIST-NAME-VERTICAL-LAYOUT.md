@@ -12,7 +12,7 @@ deploy-ready: true
 build-ok: true
 regression-risk: low
 e2e-spec: tests/e2e/T-20260609-foot-CALLLIST-NAME-VERTICAL-LAYOUT.spec.ts
-commit_sha: PENDING
+commit_sha: 396167b
 spec_file: tests/e2e/T-20260609-foot-CALLLIST-NAME-VERTICAL-LAYOUT.spec.ts
 ---
 
