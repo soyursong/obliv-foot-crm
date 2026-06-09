@@ -94,13 +94,17 @@ const T: Record<Lang, {
   leadSNS: string;
   leadSearch: string;
   leadReferral: string;
-  leadPartnership: string;
-  leadOther: string;
+  leadPartnerEtc: string;
   leadSNSSubTitle: string;
   leadInstagram: string;
   leadFacebook: string;
-  leadYoutube: string;
+  leadTiktokYoutube: string;
   leadBlogCafe: string;
+  leadSearchSubTitle: string;
+  leadNaver: string;
+  leadGoogle: string;
+  leadReferralNameTitle: string;
+  leadReferralNamePlaceholder: string;
   checkIn: string;
   confirm: string;
   edit: string;
@@ -193,13 +197,17 @@ const T: Record<Lang, {
     leadSNS: 'SNS',
     leadSearch: '검색',
     leadReferral: '지인소개',
-    leadPartnership: '제휴',
-    leadOther: '기타',
+    leadPartnerEtc: '제휴·기타',
     leadSNSSubTitle: 'SNS 채널 선택',
     leadInstagram: '인스타그램',
     leadFacebook: '페이스북',
-    leadYoutube: '유튜브',
-    leadBlogCafe: '블로그/카페',
+    leadTiktokYoutube: '틱톡·유튜브',
+    leadBlogCafe: '블로그·카페',
+    leadSearchSubTitle: '검색 채널 선택',
+    leadNaver: '네이버',
+    leadGoogle: '구글',
+    leadReferralNameTitle: '소개자 성함',
+    leadReferralNamePlaceholder: '예: 홍길동',
     checkIn: '접수하기',
     confirm: '접수하기',
     edit: '수정',
@@ -296,13 +304,17 @@ const T: Record<Lang, {
     leadSNS: 'SNS',
     leadSearch: 'Search',
     leadReferral: 'Friend / Family',
-    leadPartnership: 'Partnership',
-    leadOther: 'Other',
+    leadPartnerEtc: 'Partnership / Other',
     leadSNSSubTitle: 'Select SNS channel',
     leadInstagram: 'Instagram',
     leadFacebook: 'Facebook',
-    leadYoutube: 'YouTube',
+    leadTiktokYoutube: 'TikTok / YouTube',
     leadBlogCafe: 'Blog / Cafe',
+    leadSearchSubTitle: 'Select search channel',
+    leadNaver: 'Naver',
+    leadGoogle: 'Google',
+    leadReferralNameTitle: 'Referrer name',
+    leadReferralNamePlaceholder: 'e.g. Hong Gil-dong',
     checkIn: 'Check In',
     confirm: 'Confirm',
     edit: 'Edit',
@@ -585,8 +597,14 @@ export default function SelfCheckIn() {
   const [walkInConfirmed, setWalkInConfirmed] = useState(false);
 
   // ── 유입경로 2단계 (T-20260517-foot-CHECKIN-2STEP) ──
+  // T-20260609-foot-SELFCHECKIN-LEADSRC-UI-VISITPATH: 4대그룹 2×2 (sns/search/referral/partner_etc)
+  //   - sns:    instagram | facebook | tiktok_youtube | blog_cafe
+  //   - search: naver | google
+  //   - referral: 성함 텍스트(referralName)
+  //   - partner_etc: 추가 입력 없음
   const [leadSource, setLeadSource] = useState<string | null>(null);
   const [leadSourceDetail, setLeadSourceDetail] = useState<string | null>(null);
+  const [referralName, setReferralName] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
   const [queueNumber, setQueueNumber] = useState<number | null>(null);
@@ -890,6 +908,7 @@ export default function SelfCheckIn() {
       // T-20260520-foot-SELFCHECKIN-LEADSRC-COND: 예약 경로는 leadSource 미수집
       setLeadSource(null);
       setLeadSourceDetail(null);
+      setReferralName('');
     }
   }, []);
 
@@ -905,18 +924,15 @@ export default function SelfCheckIn() {
     setReservationType(null); // 선택 취소
     setLeadSource(null);
     setLeadSourceDetail(null);
+    setReferralName('');
   }, []);
 
-  // ── 유입경로 대분류 선택 ──
+  // ── 유입경로 대분류 선택 (T-20260609 4대그룹) ──
+  // 대분류 변경 시 하위 입력(소분류/성함) 초기화. sns·search는 소분류 선택 대기.
   const handleLeadSourceSelect = useCallback((source: string) => {
     setLeadSource(source);
-    if (source !== 'sns') {
-      // SNS 외 → 즉시 완료 (소분류 없음)
-      setLeadSourceDetail(null);
-    } else {
-      // SNS → 소분류 선택 대기 (detail 초기화)
-      setLeadSourceDetail(null);
-    }
+    setLeadSourceDetail(null);
+    setReferralName('');
   }, []);
 
   // ── 제출 가능 여부 ──
@@ -927,8 +943,37 @@ export default function SelfCheckIn() {
     (reservationType === 'reserved' && (visitType === 'new' || visitType === 'returning')) ||
     (reservationType === 'walkin' && walkInConfirmed);
 
+  // 유입경로 완성 판정 (T-20260609):
+  //   sns/search → 소분류 선택 필요. referral → 성함 선택(빈값 허용, AC-3). partner_etc → 즉시 완료.
   const leadSourceComplete =
-    leadSource !== null && (leadSource !== 'sns' || leadSourceDetail !== null);
+    leadSource !== null &&
+    ((leadSource !== 'sns' && leadSource !== 'search') || leadSourceDetail !== null);
+
+  // 고객차트 방문경로 소분류 매핑 (T-20260609 수정2, 코드 기준 확정 enum)
+  //   값: SNS_인스타그램 / SNS_페이스북 / SNS_틱톡유튜브 / SNS_블로그카페
+  //       검색_네이버 / 검색_구글 / 지인소개_{성함}(또는 지인소개) / 제휴기타
+  //   visit_route_detail 은 자유 TEXT(CHECK 미적용) — 성함 인라인 + enum 확장 자유.
+  const visitRouteDetail = (() => {
+    if (leadSource === 'sns') {
+      const m: Record<string, string> = {
+        instagram: 'SNS_인스타그램',
+        facebook: 'SNS_페이스북',
+        tiktok_youtube: 'SNS_틱톡유튜브',
+        blog_cafe: 'SNS_블로그카페',
+      };
+      return leadSourceDetail ? m[leadSourceDetail] ?? null : null;
+    }
+    if (leadSource === 'search') {
+      const m: Record<string, string> = { naver: '검색_네이버', google: '검색_구글' };
+      return leadSourceDetail ? m[leadSourceDetail] ?? null : null;
+    }
+    if (leadSource === 'referral') {
+      const nm = referralName.trim();
+      return nm ? `지인소개_${nm}` : '지인소개';
+    }
+    if (leadSource === 'partner_etc') return '제휴기타';
+    return null;
+  })();
 
   // T-20260520-foot-SELFCHECKIN-LEADSRC-COND: 워크인만 유입경로 수집
   const showLeadSource = reservationType === 'walkin';
@@ -1387,6 +1432,9 @@ export default function SelfCheckIn() {
       if (reservationType === 'walkin') notesParts.walk_in = true;
       if (leadSource) notesParts.lead_source = leadSource;
       if (leadSourceDetail) notesParts.lead_source_detail = leadSourceDetail;
+      // T-20260609: 지인소개 성함 + 매핑된 차트 소분류도 notes 에 흔적 남김(감사·추적용)
+      if (leadSource === 'referral' && referralName.trim()) notesParts.referral_name = referralName.trim();
+      if (visitRouteDetail) notesParts.visit_route_detail = visitRouteDetail;
       const notesPayload = Object.keys(notesParts).length > 0 ? notesParts : null;
 
       // T-20260529: check_in INSERT — .select('id').single() 으로 ID 반환
@@ -1463,6 +1511,9 @@ export default function SelfCheckIn() {
             p_address:           address.trim() || null,
             p_privacy_consent:   reservationType === 'walkin' ? privacyConsent : null,
             p_insurance_consent: insuranceConsent || null, // AC-7: true 시만 전달
+            // T-20260609 수정2: 워크인 동선만 방문경로 대분류(워크인)+소분류(유입경로) 전달
+            p_visit_route:        reservationType === 'walkin' ? '워크인' : null,
+            p_visit_route_detail: reservationType === 'walkin' ? visitRouteDetail : null,
           });
         } catch {
           // 개인정보 저장 실패는 silent — 접수 완료 UX를 블록하지 않음
@@ -2151,14 +2202,15 @@ export default function SelfCheckIn() {
       sns: t.leadSNS,
       search: t.leadSearch,
       referral: t.leadReferral,
-      partnership: t.leadPartnership,
-      other: t.leadOther,
+      partner_etc: t.leadPartnerEtc,
     };
     const leadDetailLabel: Record<string, string> = {
       instagram: t.leadInstagram,
       facebook: t.leadFacebook,
-      youtube: t.leadYoutube,
+      tiktok_youtube: t.leadTiktokYoutube,
       blog_cafe: t.leadBlogCafe,
+      naver: t.leadNaver,
+      google: t.leadGoogle,
     };
     return (
       <div
@@ -2215,6 +2267,7 @@ export default function SelfCheckIn() {
                 <span className="font-semibold" style={{ color: C.dark }}>
                   {leadSource ? leadSourceLabel[leadSource] ?? leadSource : '-'}
                   {leadSourceDetail ? ` / ${leadDetailLabel[leadSourceDetail] ?? leadSourceDetail}` : ''}
+                  {leadSource === 'referral' && referralName.trim() ? ` / ${referralName.trim()}` : ''}
                 </span>
               </div>
             )}
@@ -2520,34 +2573,34 @@ export default function SelfCheckIn() {
             )}
           </div>
 
-          {/* 유입경로 — 워크인만 표시 (T-20260520-foot-SELFCHECKIN-LEADSRC-COND) */}
+          {/* 유입경로 — 워크인만 표시 (T-20260520-foot-SELFCHECKIN-LEADSRC-COND)
+              T-20260609-foot-SELFCHECKIN-LEADSRC-UI-VISITPATH: 4대그룹 2×2 그리드 + 그룹별 소분류/성함 입력 */}
           {showLeadSource && (
             <div className="space-y-3">
               <span className="block text-sm font-medium tracking-wide" style={{ color: C.medium }}>
                 {t.leadSourceTitle}
               </span>
 
-              {/* 1단계: 대분류 5종 */}
-              <div className="grid grid-cols-3 gap-2">
+              {/* 1단계: 대분류 4그룹 2×2 */}
+              <div className="grid grid-cols-2 gap-2" data-testid="leadsource-groups">
                 {([
                   { value: 'sns', label: t.leadSNS },
                   { value: 'search', label: t.leadSearch },
                   { value: 'referral', label: t.leadReferral },
-                  { value: 'partnership', label: t.leadPartnership },
-                  { value: 'other', label: t.leadOther },
+                  { value: 'partner_etc', label: t.leadPartnerEtc },
                 ]).map((src) => {
                   const isActive = leadSource === src.value;
                   return (
                     <button
                       key={src.value}
                       type="button"
+                      data-testid={`leadsource-${src.value}`}
                       onClick={() => handleLeadSourceSelect(src.value)}
                       className="flex h-14 items-center justify-center rounded-xl px-2 text-center transition active:scale-[0.99]"
                       style={{
                         border: `1.5px solid ${isActive ? C.primary : C.border}`,
                         backgroundColor: isActive ? C.beige : 'white',
                         boxShadow: isActive ? `0 0 0 2px ${C.primary}22` : 'none',
-                        gridColumn: src.value === 'other' ? 'span 1' : undefined,
                       }}
                     >
                       <span
@@ -2561,9 +2614,9 @@ export default function SelfCheckIn() {
                 })}
               </div>
 
-              {/* 2단계: SNS 소분류 (SNS 선택 시만 표시) */}
+              {/* 2단계-A: SNS 소분류 (인스타/페북/틱톡유튜브/블로그카페) */}
               {leadSource === 'sns' && (
-                <div className="space-y-2 pt-1">
+                <div className="space-y-2 pt-1" data-testid="leadsource-sns-detail">
                   <span className="block text-xs font-medium tracking-wide" style={{ color: C.gold }}>
                     {t.leadSNSSubTitle}
                   </span>
@@ -2571,7 +2624,7 @@ export default function SelfCheckIn() {
                     {([
                       { value: 'instagram', label: t.leadInstagram },
                       { value: 'facebook', label: t.leadFacebook },
-                      { value: 'youtube', label: t.leadYoutube },
+                      { value: 'tiktok_youtube', label: t.leadTiktokYoutube },
                       { value: 'blog_cafe', label: t.leadBlogCafe },
                     ]).map((detail) => {
                       const isActive = leadSourceDetail === detail.value;
@@ -2579,6 +2632,7 @@ export default function SelfCheckIn() {
                         <button
                           key={detail.value}
                           type="button"
+                          data-testid={`leaddetail-${detail.value}`}
                           onClick={() => setLeadSourceDetail(detail.value)}
                           className="flex h-14 items-center justify-center rounded-xl px-3 text-center transition active:scale-[0.99]"
                           style={{
@@ -2597,6 +2651,62 @@ export default function SelfCheckIn() {
                       );
                     })}
                   </div>
+                </div>
+              )}
+
+              {/* 2단계-B: 검색 소분류 (네이버/구글) */}
+              {leadSource === 'search' && (
+                <div className="space-y-2 pt-1" data-testid="leadsource-search-detail">
+                  <span className="block text-xs font-medium tracking-wide" style={{ color: C.gold }}>
+                    {t.leadSearchSubTitle}
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { value: 'naver', label: t.leadNaver },
+                      { value: 'google', label: t.leadGoogle },
+                    ]).map((detail) => {
+                      const isActive = leadSourceDetail === detail.value;
+                      return (
+                        <button
+                          key={detail.value}
+                          type="button"
+                          data-testid={`leaddetail-${detail.value}`}
+                          onClick={() => setLeadSourceDetail(detail.value)}
+                          className="flex h-14 items-center justify-center rounded-xl px-3 text-center transition active:scale-[0.99]"
+                          style={{
+                            border: `1.5px solid ${isActive ? C.primary : C.border}`,
+                            backgroundColor: isActive ? C.beige : 'white',
+                            boxShadow: isActive ? `0 0 0 2px ${C.primary}22` : 'none',
+                          }}
+                        >
+                          <span
+                            className="text-sm font-bold"
+                            style={{ color: isActive ? C.dark : C.muted }}
+                          >
+                            {detail.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* 2단계-C: 지인소개 성함 입력칸 (선택 — 빈값 허용 AC-3) */}
+              {leadSource === 'referral' && (
+                <div className="space-y-2 pt-1" data-testid="leadsource-referral-name">
+                  <span className="block text-xs font-medium tracking-wide" style={{ color: C.gold }}>
+                    {t.leadReferralNameTitle}
+                  </span>
+                  <input
+                    type="text"
+                    value={referralName}
+                    onChange={(e) => setReferralName(e.target.value)}
+                    placeholder={t.leadReferralNamePlaceholder}
+                    data-testid="leadsource-referral-name-input"
+                    className="h-14 w-full rounded-xl px-4 text-base font-medium outline-none transition"
+                    style={{ border: `1.5px solid ${C.border}`, backgroundColor: 'white', color: C.dark }}
+                  />
                 </div>
               )}
             </div>

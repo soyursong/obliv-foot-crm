@@ -19,11 +19,7 @@ test.describe('T-20260520 셀프접수 유입경로 조건부 표시', () => {
     await page.locator('button').filter({ hasText: '초진' }).first().click();
 
     // 유입경로 버튼 미표시 확인
-    await expect(page.getByRole('button', { name: 'SNS' })).not.toBeVisible();
-    await expect(page.getByRole('button', { name: '검색' })).not.toBeVisible();
-    await expect(page.getByRole('button', { name: '지인소개' })).not.toBeVisible();
-    await expect(page.getByRole('button', { name: '제휴' })).not.toBeVisible();
-    await expect(page.getByRole('button', { name: '기타' })).not.toBeVisible();
+    await expect(page.getByTestId('leadsource-groups')).not.toBeVisible();
 
     await page.screenshot({
       path: 'test-results/screenshots/leadsrc-cond-reserved-new.png',
@@ -62,12 +58,11 @@ test.describe('T-20260520 셀프접수 유입경로 조건부 표시', () => {
     // 팝업 확인 후 접수하기 클릭
     await page.getByRole('button', { name: '확인 후 접수하기' }).click();
 
-    // 유입경로 섹션 표시 확인
-    await expect(page.getByRole('button', { name: 'SNS' })).toBeVisible({ timeout: 2_000 });
-    await expect(page.getByRole('button', { name: '검색' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '지인소개' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '제휴' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '기타' })).toBeVisible();
+    // 유입경로 섹션 표시 확인 (T-20260609: 4대그룹 — SNS/검색/지인소개/제휴·기타)
+    await expect(page.getByTestId('leadsource-sns')).toBeVisible({ timeout: 2_000 });
+    await expect(page.getByTestId('leadsource-search')).toBeVisible();
+    await expect(page.getByTestId('leadsource-referral')).toBeVisible();
+    await expect(page.getByTestId('leadsource-partner_etc')).toBeVisible();
 
     await page.screenshot({
       path: 'test-results/screenshots/leadsrc-cond-walkin-shown.png',
@@ -121,8 +116,10 @@ test.describe('T-20260520 셀프접수 유입경로 조건부 표시', () => {
     const submitBtn = page.getByRole('button', { name: '접수하기' });
     await expect(submitBtn).toBeDisabled();
 
-    // leadSource 선택 → 활성화
-    await page.getByRole('button', { name: '검색' }).click();
+    // leadSource 선택 → 활성화 (T-20260609: 검색은 소분류 선택까지 필요)
+    await page.getByTestId('leadsource-search').click();
+    await expect(submitBtn).toBeDisabled(); // 검색 대분류만 → 아직 미완성
+    await page.getByTestId('leaddetail-naver').click();
     await expect(submitBtn).toBeEnabled();
   });
 });
