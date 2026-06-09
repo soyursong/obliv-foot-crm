@@ -60,7 +60,7 @@ import {
   requestNotifyPermission,
   currentNotifyPermission,
 } from '@/hooks/useDoctorCallNotifier';
-import QuickRxBar, { isDoctor } from './QuickRxBar';
+import QuickRxBar, { isDoctor, RxCancelButton } from './QuickRxBar';
 import type { CheckIn } from '@/lib/types';
 
 const CALL_SELECT =
@@ -443,10 +443,14 @@ function CallFeedRow({
           {showRx ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
         </button>
         {checkIn.prescription_status === 'confirmed' && (
-          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-green-700">
-            <CheckCircle2 className="h-3 w-3" />
-            처방확정
-          </span>
+          <>
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-green-700">
+              <CheckCircle2 className="h-3 w-3" />
+              처방확정
+            </span>
+            {/* T-20260609-foot-QUICKRX-HOVER-TOOLTIP-CANCEL ②: 확정 후 취소(rxUndo 재노출, 권한=DOCTOR_ROLES) */}
+            <RxCancelButton checkInId={checkIn.id} doctorMode={doctorMode} onCancelled={onRefresh} />
+          </>
         )}
       </div>
 
@@ -491,10 +495,14 @@ function CompletedRow({
         <span className="text-xs text-muted-foreground">{treatmentLabel(checkIn)}</span>
         <div className="ml-auto flex items-center gap-1.5">
           {checkIn.prescription_status === 'confirmed' ? (
-            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-green-700">
-              <CheckCircle2 className="h-3 w-3" />
-              처방확정
-            </span>
+            <>
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-green-700">
+                <CheckCircle2 className="h-3 w-3" />
+                처방확정
+              </span>
+              {/* T-20260609-foot-QUICKRX-HOVER-TOOLTIP-CANCEL ②: 확정 후 취소(rxUndo 재노출, 권한=DOCTOR_ROLES) */}
+              <RxCancelButton checkInId={checkIn.id} doctorMode={doctorMode} onCancelled={onRefresh} />
+            </>
           ) : (
             <span className="text-[10px] text-muted-foreground">처방 없음</span>
           )}
