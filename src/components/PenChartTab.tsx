@@ -189,19 +189,31 @@ const REFUND_AUTOFILL_POS_P1: Array<{ key: keyof AutofillFields; x: number; y: n
 //   (스크린샷 evidence 164600_F0B924NEZK5_IMG_8233.jpg: 하단 성명 칸 "최수빈"이 좌측·작게 표시 → 김주연 총괄 6/9 요청)
 //   [reconciliation 종결 6/9] IMG_8233 "최수빈" 성명 칸 = refund_consent P3 본인동의서 칸(이 함수 단일 슬롯).
 //     guardian_info(법정대리인)는 서명블록 전용 — 캔버스 오버레이 자동채움 텍스트 아님 → 별개 상수 불요.
-//   [정밀 코드 스펙 — planner MSG-20260609-165224 정본]
-//   ⓐ textAlign center: 칸 중심 x=247 기준 중앙정렬 (밑줄 130~364 중앙).
-//   ⓑ font 'bold 28px' (크고 또렷). ⓒ fillStyle '#1a1a1a' (수기와 구분 + 진하게). ⓓ italic 제거 정자체.
-//   ⓔ textBaseline='top' + topY=3214 → +28px(폰트) → 하단≈3242(밑줄) 안착 (밑줄 침범 없이 위로만).
-//   좌표 되돌림 아님: 동일 셀 기하(밑줄 130~364, y=3242) 내 정렬·폰트만 변경 (AC-5 칸 경계 내 중앙기준).
-//   AC-3 긴이름 클램프: measureText 폭이 가용폭(MAX_W=226=234−여백8) 초과 시 폰트 비례 축소(최소 MIN=14px)
+//   [정밀 코드 스펙 — planner MSG-20260609-165224 정본 → MSG-20260610-084913 증분]
+//   ⓐ textAlign center: 칸 중심 x=247 기준 중앙정렬 (밑줄 130~364 중앙). [불변]
+//   ⓑ font 'bold 56px' (직전 28 → 2배 확대). ⓒ fillStyle '#1a1a1a' (수기와 구분 + 진하게). ⓓ italic 제거 정자체.
+//   ⓔ textBaseline='top' + topY=3154 → 셀(상단 3123 / 밑줄 3241, 높이 118) 세로 중앙(상/하 여백 31px).
+//     PIL 측정(refund_consent.png 1588x6736, scale=2.0):
+//       canvas y=3099.5 = 표 외곽 상단, y=3123 = 라벨/입력 구분선 = cellTop,
+//       y=3241 = 밑줄(cellBottom), y=3247 = 표 외곽 하단.
+//       세로 칸막이 canvas x=96 / 396.5 / 697.5 → 성명칸 중심 x=246.25 ≈ 기존 247.
+//   좌표 되돌림 아님: 동일 셀 기하 내 세로 위치(아래쏠림→중앙)·폰트크기(28→56)만 변경.
+//     가로(centerX=247, textAlign='center') 불변 → 3e0216b 회귀 없음.
+//   AC-3 긴이름 클램프(2x 재산정): measureText 폭이 가용폭(MAX_W=226=234−여백8) 초과 시
+//     폰트 비례 축소(최소 MIN=28px = 직전 14의 2배). 축소 시 topY 동적 재계산으로 세로중앙 유지.
 //     → 좌우 오버플로우/서명칸(x≥430)·중앙 칸막이(x=397) 침범 방지.
+//   [현재 상수 노출 — 동일 슬롯 5번째 미세조정 재요청 시 dev 수렴 비용 절감용]
+//     centerX=247 / topY=3154 / cellTop=3123 / cellBottom=3241 / cellHeight=118
+//     baseFontSize=56 / minFontSize=28 / maxWidth=226
 const REFUND_P3_NAME = {
-  centerX: 247,       // 이름 칸 밑줄 중심 (130~364)
-  topY: 3214,         // textBaseline='top' 기준; +28px(폰트) → 하단≈3242(밑줄) 안착
-  maxWidth: 226,      // 가용폭 = 밑줄폭 234 − 좌우 4px 여백
-  baseFontSize: 28,   // bold 28px (정밀 코드 스펙)
-  minFontSize: 14,    // 긴이름 클램프 하한
+  centerX: 247,       // 이름 칸 밑줄 중심 (130~364) — 불변 (3e0216b 가로중앙)
+  cellTop: 3123,      // PIL 측정: 표 라벨/입력 구분선 = 입력 칸 상단
+  cellBottom: 3241,   // PIL 측정: 밑줄 (= 입력 칸 하단)
+  // topY는 fontSize 기반 동적 계산: cellTop + (cellHeight - fontSize) / 2
+  // base 56px 기준: 3123 + (118 - 56)/2 = 3154 → 상/하 여백 각 31px
+  maxWidth: 226,      // 가용폭 = 밑줄폭 234 − 좌우 4px 여백 (보수)
+  baseFontSize: 56,   // bold 56px (직전 28의 2배 — T-VCENTER-2X)
+  minFontSize: 28,    // 긴이름 클램프 하한 (직전 14의 2배)
 };
 
 // ── 환불동의서 P3 날짜 분리 렌더링 (AC-R5) ──
@@ -236,14 +248,18 @@ function drawRefundP3DateAutofill(
   ctx.restore();
 }
 
-// ── 환불동의서 P3 [본인 동의서] 하단 성명란 — 중앙정렬 + 확대 + bold (T-20260609-foot-CONSENT-NAME-CENTER-FONT) ──
-// 직전 T-20260609-foot-REFUND-NAME-AUTOFILL-POSITION 의 밑줄 위 안착을 유지한 증분 변경.
-//   [정밀 코드 스펙 — planner MSG-20260609-165224 정본]
-//   ⓐ 칸 중심(x=247) 기준 중앙정렬 ⓑ 'bold 28px' 확대 ⓒ fillStyle '#1a1a1a' (진하게) ⓓ italic 제거(또렷한 정자체).
-//   textBaseline='top' + topY=3214 → +28px(폰트) → 하단≈3242(밑줄) 안착, 폰트가 커져도 위로만 자라 밑줄 침범 없음.
-//   AC-3 긴이름(≤14자) 클램프: 측정폭이 가용폭(226px) 초과 시 폰트 비례 축소(최소 14px) →
+// ── 환불동의서 P3 [본인 동의서] 하단 성명란 — 세로중앙 + 2배확대 (T-20260610-foot-CONSENT-NAME-VCENTER-2X) ──
+// 직전 T-20260609-foot-CONSENT-NAME-CENTER-FONT(3e0216b: 가로중앙 + bold 28px) 의 증분.
+//   [정밀 코드 스펙 — planner MSG-20260610-084913 정본]
+//   ⓐ 칸 중심(x=247) 기준 가로중앙(textAlign='center') [3e0216b 불변]
+//   ⓑ 'bold 56px' (직전 28의 2배) ⓒ fillStyle '#1a1a1a' ⓓ italic 제거.
+//   ⓔ 세로중앙: textBaseline='top' + topY = cellTop + (cellHeight - fontSize)/2
+//      → base 56px 기준 topY=3154, 상/하 여백 각 31px 균등 (PIL 측정 cellTop=3123, cellBottom=3241).
+//      직전 topY=3214(밑줄 하단 안착) → 새 topY=3154 (위로 60px) = "아래쏠림" 해소.
+//   AC-3 긴이름(≤14자) 클램프 2x 재산정: 측정폭이 가용폭(226px) 초과 시 폰트 비례 축소(최소 28px).
+//     클램프 발생 시 topY 동적 재계산으로 세로중앙 유지 (작은 폰트도 셀 중앙) →
 //     좌우 오버플로우/서명칸(x≥430)·중앙 칸막이(397) 침범 방지 (AC-5 칸 경계 내 중앙기준).
-//   Canvas 논리좌표 합성(scale 무관) + DRAW_DPR=2 강제 → iPad(DPR2.0)/갤탭 일관 (AC-4).
+//   Canvas 논리좌표 합성(scale 무관) + DRAW_DPR=2 강제 → iPad(DPR2.0)/갤탭 일관 (AC-5).
 function drawRefundP3NameAutofill(
   ctx: CanvasRenderingContext2D,
   fields: AutofillFields,
@@ -251,12 +267,12 @@ function drawRefundP3NameAutofill(
   const name = fields.name;
   if (!name) return;
   ctx.save();
-  ctx.fillStyle = '#1a1a1a'; // near-black — 진하고 또렷 (현장 "작게/흐림" 보고 반영)
-  ctx.textAlign = 'center';
+  ctx.fillStyle = '#1a1a1a'; // near-black — 진하고 또렷
+  ctx.textAlign = 'center'; // 가로중앙 [3e0216b 불변]
   ctx.textBaseline = 'top';
   const fontOf = (px: number) =>
-    `bold ${px}px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif`; // bold + italic 제거 → 또렷한 정자체
-  // AC-3 폰트 클램프: 가용폭 초과 시 비례 축소
+    `bold ${px}px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif`; // bold + italic 제거
+  // AC-3 폰트 클램프 (2x 기준 재산정): 가용폭 초과 시 비례 축소
   let fontSize = REFUND_P3_NAME.baseFontSize;
   ctx.font = fontOf(fontSize);
   const w = ctx.measureText(name).width;
@@ -267,7 +283,10 @@ function drawRefundP3NameAutofill(
     );
     ctx.font = fontOf(fontSize);
   }
-  ctx.fillText(name, REFUND_P3_NAME.centerX, REFUND_P3_NAME.topY);
+  // AC-1 세로중앙: 클램프로 fontSize 줄어도 셀 중앙 유지 (동적 topY)
+  const cellHeight = REFUND_P3_NAME.cellBottom - REFUND_P3_NAME.cellTop; // 118
+  const topY = REFUND_P3_NAME.cellTop + (cellHeight - fontSize) / 2;
+  ctx.fillText(name, REFUND_P3_NAME.centerX, topY);
   ctx.restore();
 }
 
