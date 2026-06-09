@@ -61,12 +61,13 @@ import {
   currentNotifyPermission,
 } from '@/hooks/useDoctorCallNotifier';
 import QuickRxBar, { isDoctor, RxCancelButton } from './QuickRxBar';
+import { DoctorAckButton, DoctorAckBadge } from './DoctorAck';
 import type { CheckIn } from '@/lib/types';
 
 const CALL_SELECT =
   'id, customer_id, customer_name, visit_type, status, status_flag, status_flag_history, ' +
   'checked_in_at, completed_at, treatment_kind, treatment_category, prescription_status, ' +
-  'doctor_call_memo, queue_number, consultation_room, treatment_room, laser_room, examination_room';
+  'doctor_call_memo, doctor_ack_at, queue_number, consultation_room, treatment_room, laser_room, examination_room';
 
 function useDoctorCallFeed(clinicId: string | null) {
   return useQuery({
@@ -399,6 +400,14 @@ function CallFeedRow({
         )}
         {/* 시술명 */}
         <span className="text-xs text-muted-foreground">{treatmentLabel(checkIn)}</span>
+        {/* T-20260609-foot-DOCCALL-DOCTOR-ACK: 의사 ✋확인(손 들기) — 의사만 버튼, ack 후 파란 배지(직원도 조회).
+            미확인+비의사는 미노출(조회만). 활성/완료 호출 모두 노출(완료 환자도 ack 표시 조회 가능). */}
+        <DoctorAckButton
+          checkInId={checkIn.id}
+          ackAt={checkIn.doctor_ack_at}
+          doctorMode={doctorMode}
+          onAcked={onRefresh}
+        />
         {/* 경과시간 */}
         <span className="ml-auto inline-flex items-center gap-0.5 text-[11px] text-muted-foreground">
           <Clock className="h-3 w-3" />
@@ -495,6 +504,8 @@ function CompletedRow({
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-semibold">{checkIn.customer_name}</span>
         <VisitBadge visitType={checkIn.visit_type} />
+        {/* T-20260609-foot-DOCCALL-DOCTOR-ACK: 진료완료 환자도 의사 확인 이력 조회(표시 전용). */}
+        <DoctorAckBadge ackAt={checkIn.doctor_ack_at} />
         <span className="text-xs text-muted-foreground">{treatmentLabel(checkIn)}</span>
         <div className="ml-auto flex items-center gap-1.5">
           {checkIn.prescription_status === 'confirmed' ? (

@@ -79,6 +79,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { CheckIn } from '@/lib/types';
 import { getCurrentLocationLabel } from '@/lib/checkin-slot';
+import { DoctorAckBadge } from '@/components/doctor/DoctorAck';
 
 interface DoctorCallListBarProps {
   /** Dashboard의 당일·해당지점 check_ins rows */
@@ -421,6 +422,10 @@ function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onS
             </span>
           )}
           {visitBadge}
+          {/* T-20260609-foot-DOCCALL-DOCTOR-ACK AC3: 호출 직원 화면에 '의사 확인됨' 상태 조회(표시 전용).
+              checkIns는 Dashboard fetchCheckIns(check_ins Realtime 구독)에서 갱신 → 새로고침 없이 즉시 반영.
+              직원은 조회만(확인 버튼 없음 — 시나리오2 권한 게이트는 ack 버튼이 DoctorCallDashboard에만 존재). */}
+          <DoctorAckBadge ackAt={checkIn.doctor_ack_at} className="shrink-0" />
           {/* 지정콜 토글 — 이름 클릭(차트)과 분리된 별도 버튼 */}
           {!inactive && (
             <button
