@@ -71,6 +71,19 @@ export function maskPhoneTail(phone: string | null | undefined): string {
   return digits.slice(-4);
 }
 
+/**
+ * T-20260609-foot-RESV-PATIENT-PHONE-SUFFIX: 예약/대기 카드 서브라벨용 핸드폰 뒷4자리.
+ * E.164(+82...) / 010... / 01012345678 모든 포맷에서 마지막 4자리 숫자를 파생(presentation only).
+ * E.164의 +82 prefix는 국가번호일 뿐 끝 4자리는 동일하므로 단순 숫자 추출 후 slice(-4)면 정확.
+ * 4자리 미만(결측/이상치)이면 null 반환 → 호출부가 빈 suffix 대신 차트번호/성함 fallback 처리.
+ * cross_crm_data_contract: phone E.164 저장 규약 무위반(저장값 미변경, 표시 파생만).
+ */
+export function phoneTailSuffix(phone: string | null | undefined): string | null {
+  const digits = (phone ?? '').replace(/\D/g, '');
+  if (digits.length < 4) return null;
+  return digits.slice(-4);
+}
+
 // [SYNC: G-007] 오늘(서울 기준) 날짜 유틸 — CheckInDetailSheet.tsx 로컬 정의에서 중앙화
 // T-20260522-foot-LOGIC-SYNC-MANDATE Phase 2
 
