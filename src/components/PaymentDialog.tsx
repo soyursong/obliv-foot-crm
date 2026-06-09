@@ -14,6 +14,8 @@ import { AmountInput } from '@/components/ui/AmountInput';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
+import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
 import { formatAmount, parseAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -58,6 +60,7 @@ const INSTALLMENT_OPTIONS = [
 ];
 
 export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) {
+  const { profile } = useAuth();
   const [paymentMode, setPaymentMode] = useState<PaymentMode>(initialMode ?? 'single');
   // T-20260523-foot-PKG-TMPL-LINK: 하드코딩 PACKAGE_PRESETS → package_templates DB 연동
   const [pkgTemplates, setPkgTemplates] = useState<PackageTemplate[]>([]);
@@ -476,6 +479,20 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
         from_status: checkIn.status,
         to_status: 'done',
       });
+      // T-20260609-foot-DASH-COMPLETE-PAYFLAG-SYNC: 수납완료 = status_flag 'dark_gray'(회색) 자동전환.
+      //   AUTO-DONE(f2d803d)이 status='done'(칸반 완료 이동)만 갱신하고 status_flag는 안 건드려
+      //   수납완료(회색) 플래그가 누락됐던 동기화 결함 수복. PAYMENT-MINI-WINDOW AC-11 의도된 양방향 동선.
+      //   status_flag 전이는 applyStatusFlagTransition(SSOT)에 위임 — 병렬 2nd write 신설 금지.
+      //   best-effort: 결제·status='done'은 이미 커밋됨 → 플래그 실패가 결제 흐름을 롤백하지 않음.
+      try {
+        await applyStatusFlagTransition(checkIn, 'dark_gray', {
+          id: profile?.id ?? null,
+          name: profile?.name ?? null,
+          role: profile?.role ?? null,
+        });
+      } catch (flagErr) {
+        console.error('status_flag dark_gray 전이 실패(결제는 정상 완료):', flagErr);
+      }
       // T-20260602-foot-VISITTYPE-RETURNING-AUTOSET: 완료 시 visit_type 자동 승격 (best-effort)
       await promoteVisitTypeToReturning(checkIn.customer_id);
     } else if (['consultation', 'consult_waiting'].includes(checkIn.status)) {
