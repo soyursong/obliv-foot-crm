@@ -40,6 +40,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
+import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
 import { formatAmount, todaySeoulISODate } from '@/lib/format';
 // T-20260525-foot-AMOUNT-COMMA-FMT: 수가 인라인 편집 쉼표 포맷팅
@@ -563,6 +565,7 @@ interface Props {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Props) {
+  const { profile } = useAuth();
   // ── Tab + Grid
   const [activeTab, setActiveTab] = useState<TabLabel>('풋케어');
   const [footcareCat, setFootcareCat] = useState<FootCatType>('기본(진찰료)');
@@ -1346,6 +1349,18 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     });
     if (trErr) {
       console.warn('status_transitions insert failed:', trErr.message);
+    }
+    // T-20260609-foot-DASH-COMPLETE-PAYFLAG-SYNC: 수납([수납]) 완료 = 완료 슬롯 이동 →
+    //   status_flag 'dark_gray'(수납완료/회색) 자동전환. 결제·status='done'은 이미 커밋됨 →
+    //   플래그 실패가 결제 흐름을 롤백하지 않음(best-effort). SSOT applyStatusFlagTransition 경유.
+    try {
+      await applyStatusFlagTransition(checkIn, 'dark_gray', {
+        id: profile?.id ?? null,
+        name: profile?.name ?? null,
+        role: profile?.role ?? null,
+      });
+    } catch (flagErr) {
+      console.error('status_flag dark_gray 전이 실패(결제는 정상 완료):', flagErr);
     }
     // T-20260602-foot-VISITTYPE-RETURNING-AUTOSET: 완료 시 visit_type 자동 승격 (best-effort)
     await promoteVisitTypeToReturning(checkIn.customer_id);
