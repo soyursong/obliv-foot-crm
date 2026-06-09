@@ -6,13 +6,14 @@
 //
 // 동작:
 //   - 다단계 폴더 트리(펼침/접힘). 폴더 노드 안에 분류된 약품 표시.
-//   - 약품 클릭 = 단건 처방내역 추가(onAdd([code])).
-//   - 체크박스 다중선택 → '선택 추가' = 여러 약 일괄 추가(AC-R5 "단일 약품 여러 개 직접 추가").
+//   - 약품명 클릭 = 단건 처방내역 추가(onAdd([code])).
+//   - T-20260609-foot-RXSET-ITEM-ARROW-INSERT: 각 약품 항목 좌측 `<`(ChevronLeft) compact 버튼
+//     클릭 = 즉시 단건 처방내역 삽입(onAdd([code]) 재사용). 기존 체크박스 다중선택+'선택 추가'
+//     bulk UI는 제거 — 1클릭 즉시삽입으로 단순화. (묶음처방 다중약 일괄삽입은 별 컴포넌트가 유지)
 
 import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Folder, FolderOpen, Loader2, Plus } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Folder, FolderOpen, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
   useDrugFolders,
@@ -41,7 +42,6 @@ export default function DrugFolderTree({ onAdd, disabled = false }: DrugFolderTr
   const { data: drugs = [], isLoading: drugsLoading } = useFolderDrugs();
 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [selected, setSelected] = useState<Map<string, DrugPick>>(new Map());
 
   const tree = useMemo(() => buildFolderTree(folders), [folders]);
   const drugsByFolder = useMemo(() => {
@@ -62,24 +62,9 @@ export default function DrugFolderTree({ onAdd, disabled = false }: DrugFolderTr
     });
   }
 
-  function toggleSelect(d: FolderDrug) {
-    setSelected((prev) => {
-      const next = new Map(prev);
-      if (next.has(d.prescription_code_id)) next.delete(d.prescription_code_id);
-      else
-        next.set(d.prescription_code_id, {
-          id: d.prescription_code_id,
-          name_ko: d.name_ko,
-          classification: d.classification,
-        });
-      return next;
-    });
-  }
-
-  function addSelected() {
-    if (selected.size === 0) return;
-    onAdd(Array.from(selected.values()));
-    setSelected(new Map());
+  // T-20260609-foot-RXSET-ITEM-ARROW-INSERT: 단건 즉시삽입 — 기존 onAdd([단건]) 로직 재사용.
+  function addOne(d: FolderDrug) {
+    onAdd([{ id: d.prescription_code_id, name_ko: d.name_ko, classification: d.classification }]);
   }
 
   if (foldersLoading || drugsLoading) {
@@ -142,31 +127,32 @@ export default function DrugFolderTree({ onAdd, disabled = false }: DrugFolderTr
             {node.children.map(renderNode)}
             {/* 이 폴더의 약품들 */}
             {folderDrugs.map((d) => {
-              const isSel = selected.has(d.prescription_code_id);
               return (
                 <div
                   key={d.prescription_code_id}
                   className={cn(
-                    // DRUGINFO-TRUNCATE-FIX AC5-3: 약품명 줄바꿈 시 체크박스 상단정렬(items-start) — 행 높이 자동확장
+                    // DRUGINFO-TRUNCATE-FIX AC5-3: 약품명 줄바꿈 시 좌측 버튼 상단정렬(items-start) — 행 높이 자동확장
                     'flex items-start gap-1.5 rounded-md border px-2 py-1.5 transition-colors',
-                    isSel ? 'border-teal-400 bg-teal-50/50' : 'border-transparent hover:border-teal-200 hover:bg-teal-50/30',
+                    'border-transparent hover:border-teal-200 hover:bg-teal-50/30',
                   )}
                   data-testid="drug-folder-item"
                 >
-                  <input
-                    type="checkbox"
-                    checked={isSel}
-                    onChange={() => toggleSelect(d)}
-                    disabled={disabled}
-                    className="h-3.5 w-3.5 accent-teal-600 shrink-0"
-                    data-testid="drug-folder-item-check"
-                    aria-label={`${d.name_ko} 선택`}
-                  />
+                  {/* T-20260609-foot-RXSET-ITEM-ARROW-INSERT: 좌측 `<`(ChevronLeft) compact 즉시삽입 버튼.
+                      클릭 시 기존 onAdd([단건]) 삽입 로직 재사용 → 즉시 좌측 처방내역 삽입.
+                      PHRASE-CHECKBOX-ARROW 톤 일관(ChevronLeft, compact w-5(≤w-6), 좌측 여백). */}
                   <button
                     type="button"
-                    onClick={() =>
-                      onAdd([{ id: d.prescription_code_id, name_ko: d.name_ko, classification: d.classification }])
-                    }
+                    onClick={() => addOne(d)}
+                    disabled={disabled}
+                    className="mt-0.5 flex h-5 w-5 items-center justify-center rounded bg-teal-600 text-white shrink-0 hover:bg-teal-700 disabled:opacity-50"
+                    data-testid="drug-folder-item-arrow"
+                    aria-label={`${d.name_ko} 처방내역에 삽입`}
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => addOne(d)}
                     disabled={disabled}
                     className="flex-1 text-left disabled:opacity-50"
                     data-testid="drug-folder-item-add"
@@ -203,21 +189,6 @@ export default function DrugFolderTree({ onAdd, disabled = false }: DrugFolderTr
 
   return (
     <div className="space-y-1" data-testid="drug-folder-tree">
-      {selected.size > 0 && (
-        <div className="flex items-center justify-between gap-2 rounded-md border border-teal-300 bg-teal-50 px-2 py-1.5">
-          <span className="text-[11px] font-medium text-teal-800">{selected.size}개 선택됨</span>
-          <Button
-            size="sm"
-            className="h-6 text-[11px] bg-teal-600 hover:bg-teal-700 gap-1"
-            onClick={addSelected}
-            disabled={disabled}
-            data-testid="drug-folder-add-selected"
-          >
-            <Plus className="h-3 w-3" />
-            선택 추가
-          </Button>
-        </div>
-      )}
       {tree.map(renderNode)}
     </div>
   );
