@@ -135,7 +135,7 @@ test.describe('T-20260526-foot-MEDCHART-SYNC', () => {
         // 진료내역 탭 클릭
         await page.getByTestId('right-panel-tab-visit_hist').click();
         await expect(page.getByTestId('right-panel-visit-hist-content')).toBeVisible();
-        await expect(page.getByText(/방문 진료내역|2번차트 1구역/)).toBeVisible();
+        await expect(page.getByText(/방문이력|2번차트 1구역/)).toBeVisible();
       }
     }
   });
