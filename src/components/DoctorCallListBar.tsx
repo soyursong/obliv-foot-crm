@@ -50,6 +50,17 @@
  *         (status 단계 인식)로 교체. status는 realtime fetchCheckIns로 갱신되므로 stale 제거.
  *  item3) 치료대기↔방배정 오표시 수정: 대기 단계(치료대기 등)는 단계 라벨만 표시(방 미표시).
  *         ※ dedup: SLOT-CHART-MISMAP(카드클릭→customer_id 차트오픈)과 다른 축 → 본 티켓에서 수정.
+ *
+ * T-20260609-foot-CALLLIST-NAME-VERTICAL-LAYOUT — 명단 레이아웃 개선 3건 (현장 김주연 총괄):
+ *  req1) 성함 잘림 제거: 이름 표시 요소 truncate → whitespace-normal + break-words.
+ *        긴 이름도 전체 표시(잘림/말줄임 금지). 세로 카드(w-full)로 가로 여유 ↑ → 대개 한 줄.
+ *  req2) 가로 스크롤 → 세로 나열: 행 컨테이너 flex(가로 overflow-x-auto) → flex flex-col(위→아래 스택).
+ *  req3) 고정/제한 높이 제거: max-h-[42vh] + overflow 제거 → height auto. 인원 늘수록 컨테이너가
+ *        아래로 자연 확장(내부 스크롤 없이 한눈에). 이를 위해 팝업 앵커를 우하단(bottom-4) →
+ *        우상단(top-4)으로 변경: bottom 앵커는 height 증가 시 위로 자라 뷰포트 상단서 잘림 →
+ *        top 앵커여야 "아래로 자연 확장"(현장 문구) 그대로 동작. 가로 위치(우측 right-4)는 보존
+ *        (DASH-POPUP-RIGHT-FIX의 '우측 고정' AC 유지, 세로 앵커만 정정).
+ *  ※ HEALER-POSITION fix(힐러 inclusion·위치배지)는 레이아웃 변경 후에도 회귀 없이 유지(AC-4).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
@@ -158,15 +169,17 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
   if (displayList.length === 0) return null;
 
   return (
-    // T-20260601-foot-DASH-POPUP-RIGHT-FIX 진료콜 명단 팝업 —
-    //   뷰포트 *우측 하단* position:fixed 고정 (db62b1a의 absolute scroll-bound 폐기).
-    //   가로스크롤해도 화면 우측에 항상 붙어 따라옴(안 사라짐). 좌하단 아님.
-    //   right-4: 현장 요청대로 우측. z-40: 칸반 카드(z-30) 위, 모달(z-50+) 아래.
+    // T-20260601-foot-DASH-POPUP-RIGHT-FIX 진료콜 명단 팝업 — 뷰포트 우측 position:fixed 고정.
+    //   가로스크롤해도 화면 우측에 항상 붙어 따라옴(안 사라짐). right-4: 현장 요청대로 우측.
+    //   z-40: 칸반 카드(z-30) 위, 모달(z-50+) 아래.
+    // T-20260609-foot-CALLLIST-NAME-VERTICAL-LAYOUT req3: 세로 앵커 bottom-4 → top-4.
+    //   인원 증가 시 컨테이너가 아래로 자연 확장되도록(현장 문구) 상단 고정.
+    //   max-h 제거 → height auto. 내부 스크롤 없이 한눈에. (가로 우측 위치는 보존)
     <div
       data-testid="doctor-call-list"
       data-collapsed={String(collapsed)}
       data-position-mode="fixed"
-      className="fixed bottom-4 right-4 z-40 w-[min(30rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm"
+      className="fixed top-4 right-4 z-40 w-[min(30rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm"
     >
       {/* 헤더 + 접기/펼치기 + 전체콜/지정콜 액션 */}
       <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-red-200 bg-red-50/80">
@@ -233,10 +246,12 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
         </div>
       </div>
 
-      {/* 명단 — 가로로 카드 나열 (팝업 내부 가로 스크롤). 접힘 시 숨김(빈공간 확보).
+      {/* 명단 — T-20260609-foot-CALLLIST-NAME-VERTICAL-LAYOUT req2·3:
+          세로 나열(flex-col, 위→아래 스택). 가로 스크롤(overflow-x-auto)·고정 높이(max-h) 제거 →
+          인원 늘수록 height auto 로 아래로 자연 확장(내부 스크롤 없이 한눈에). 접힘 시 숨김.
           활성(진료필요) 상단 → 비활성(진료완료) 하단 정렬 (displayList). */}
       {!collapsed && (
-      <div className="flex gap-2 overflow-x-auto px-3 py-2 max-h-[42vh]" data-testid="doctor-call-rows">
+      <div className="flex flex-col gap-2 px-3 py-2" data-testid="doctor-call-rows">
         {displayList.map((ci) => {
           const inactive = ci.status_flag === 'pink'; // 진료완료 = 비활성
           return (
@@ -343,7 +358,8 @@ function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onS
       data-highlighted={String(highlighted)}
       data-inactive={String(inactive)}
       className={cn(
-        'shrink-0 w-56 rounded-lg border p-2 transition-all',
+        // VERTICAL-LAYOUT req2: 세로 나열 → 카드는 패널 폭 가득(w-full). (구 가로배치 shrink-0 w-56 폐기)
+        'w-full rounded-lg border p-2 transition-all',
         // CALLLIST-DONE-INACTIVE) 진료완료 = 비활성 (흐림 + 회색조), 콜 대상 활성과 시각 구분
         inactive
           ? 'border-gray-200 bg-gray-50 opacity-60'
@@ -354,14 +370,16 @@ function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onS
     >
       {/* 헤더: 고객명(클릭→진료차트) + 위치배지 + 배지 + 지정콜/호출표시 */}
       {/* T-20260601-foot-DASH-HSCROLL-CHART-LOC #2: 이름=차트, 지정콜=별도 버튼(클릭영역 분리) */}
-      <div className="flex items-center justify-between gap-1">
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+      <div className="flex items-start justify-between gap-1">
+        <div className="flex items-start flex-wrap gap-1.5 min-w-0 flex-1">
           <button
             onClick={() => onOpenChart?.(checkIn)}
             disabled={!onOpenChart}
             data-testid="doctor-call-name"
             className={cn(
-              'font-semibold text-sm truncate text-left',
+              // VERTICAL-LAYOUT req1: 성함 잘림 제거 — truncate → whitespace-normal + break-words.
+              //   긴 이름도 전체 표시(말줄임 금지). min-w-0 로 flex 내 줄바꿈 허용.
+              'font-semibold text-sm whitespace-normal break-words text-left min-w-0',
               inactive ? 'text-gray-500' : 'text-gray-900',
               onOpenChart ? 'hover:underline decoration-dotted underline-offset-2 cursor-pointer' : 'cursor-default',
             )}
