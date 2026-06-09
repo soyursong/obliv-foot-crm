@@ -172,6 +172,86 @@ export default function Reservations() {
     [weekStart],
   );
 
+  // ── T-20260609-foot-RESV-LIVE-AUTOSCROLL ─────────────────────────────────────
+  // 대시보드 통합시간표(T-20260603-foot-TIMETABLE-NOW-AUTOSCROLL)의 현재시각 auto-scroll
+  // 로직을 예약관리 타임테이블에 그대로 이식. 신규 메커니즘 없이 동일 패턴 재사용:
+  //   now 30초 틱 + isToday 가드 + 진입 시 1회 scrollIntoView('center') + 가장자리 클램핑 폴백.
+  // 대시보드는 30분 고정 라운딩이나, 예약 그리드는 clinic.slot_interval 단위 행이므로
+  // 동일 패턴을 slot_interval 내림으로 일반화(ref 타깃·scrollIntoView·클램핑 구조는 동일).
+  const [now, setNow] = useState<Date>(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // tbody 시간 행 소스 — JSX와 단일화 (그리드 행 시각 목록)
+  const gridSlots = useMemo(
+    () =>
+      clinic
+        ? generateSlots(
+            clinic.open_time,
+            // day view: 선택일 close_time / week view: clinic.close_time(평일 최대)
+            viewMode === 'day' ? closeTimeFor(selectedDay, clinic) : clinic.close_time,
+            clinic.slot_interval,
+          )
+        : [],
+    [clinic, viewMode, selectedDay],
+  );
+
+  // 현재 시각 슬롯 ('HH:mm', slot_interval 단위 내림) — 행 ref 타깃 키
+  const currentH = now.getHours();
+  const currentM = now.getMinutes();
+  const slotInterval = clinic?.slot_interval ?? 30;
+  const flooredM = Math.floor(currentM / slotInterval) * slotInterval;
+  const currentSlot = `${String(currentH).padStart(2, '0')}:${String(flooredM).padStart(2, '0')}`;
+
+  // AC-5: 오늘이 현재 뷰에 보일 때만 자동 스크롤 (day=선택일이 오늘 / week=이번 주가 오늘 포함)
+  const isTodayInView =
+    viewMode === 'day'
+      ? isSameDay(selectedDay, now)
+      : weekDays.some((d) => isSameDay(d, now));
+
+  // 세로 스크롤 컨테이너 ref + 현재 슬롯 행 ref + 진입 1회 플래그
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const currentSlotRef = useRef<HTMLTableRowElement>(null);
+  const didInitialScrollRef = useRef(false);
+
+  // 테이블(시간 행)이 실제 DOM에 렌더되는 조건 — 로딩 스켈레톤이 사라진 뒤에만 스크롤 가능
+  const gridReady = !!clinic && !(loading && rows.length === 0);
+
+  // AC-1/AC-2: 현재 시각 행을 뷰포트 중앙으로. 행이 없으면(영업시간 외) 첫/마지막 행 클램핑.
+  const toMin = (s: string) => parseInt(s.slice(0, 2), 10) * 60 + parseInt(s.slice(3, 5), 10);
+  const scrollToNow = useCallback(() => {
+    if (!isTodayInView) return;
+    // 1순위: 현재 슬롯 행 (정확한 시각 위치)
+    if (currentSlotRef.current) {
+      currentSlotRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    // 폴백: 현재 슬롯 행 없음(영업시간 외) → 첫/마지막 행으로 클램핑
+    const container = scrollContainerRef.current;
+    if (!container || gridSlots.length === 0) return;
+    const slotRows = container.querySelectorAll<HTMLElement>('[data-testid="resv-slot-row"]');
+    if (slotRows.length === 0) return;
+    const nowMin = currentH * 60 + currentM;
+    if (nowMin <= toMin(gridSlots[0])) {
+      slotRows[0].scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      slotRows[slotRows.length - 1].scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [isTodayInView, gridSlots, currentH, currentM]);
+
+  // AC-1/AC-4: 진입(또는 오늘 포함 뷰로 복귀·로딩 완료) 시 1회만 자동 스크롤. 이후 사용자 스크롤 보존.
+  //            오늘이 뷰에서 벗어나면 플래그 리셋 → 복귀 시 다시 1회 스크롤(대시보드와 동일 UX).
+  useEffect(() => {
+    if (!isTodayInView) { didInitialScrollRef.current = false; return; }
+    if (!gridReady) return; // 시간 행 DOM 준비 전이면 대기 (로딩 완료 시 재실행)
+    if (didInitialScrollRef.current) return;
+    didInitialScrollRef.current = true;
+    const raf = requestAnimationFrame(() => scrollToNow());
+    return () => cancelAnimationFrame(raf);
+  }, [isTodayInView, gridReady, scrollToNow]);
+
   // 대시보드 예약하기 바로가기 → location.state.openReservationFor 처리
   useEffect(() => {
     if (navStateConsumed.current) return;
@@ -958,7 +1038,8 @@ export default function Reservations() {
         </div>
       )}
 
-      <div className="flex-1 overflow-auto rounded-lg border bg-background">
+      {/* T-20260609-foot-RESV-LIVE-AUTOSCROLL: 세로 스크롤 컨테이너 ref (현재시각 자동 스크롤 대상) */}
+      <div ref={scrollContainerRef} data-testid="resv-timetable-scroll" className="flex-1 overflow-auto rounded-lg border bg-background">
         {loading && rows.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             불러오는 중…
@@ -990,15 +1071,17 @@ export default function Reservations() {
             </thead>
             <tbody>
               {clinic &&
-                generateSlots(
-                  clinic.open_time,
-                  // day view: 선택된 날짜의 close_time 사용 (토요일=18:30, 평일=20:30)
-                  // week view: clinic.close_time(평일 최대) 기준으로 그리드 행 생성, 토요일 열은 allowed=false로 그레이아웃
-                  viewMode === 'day' ? closeTimeFor(selectedDay, clinic) : clinic.close_time,
-                  clinic.slot_interval,
-                ).map(
+                /* T-20260609-foot-RESV-LIVE-AUTOSCROLL: 인라인 generateSlots → gridSlots 단일 소스 사용
+                   (day view: 선택일 close_time / week view: clinic.close_time = 평일 최대, 토요일 열은 allowed=false로 그레이아웃) */
+                gridSlots.map(
                   (time) => (
-                    <tr key={time}>
+                    <tr
+                      key={time}
+                      // T-20260609-foot-RESV-LIVE-AUTOSCROLL: 현재 슬롯 행 ref + 클램핑 폴백용 testid
+                      ref={time === currentSlot ? currentSlotRef : undefined}
+                      data-testid="resv-slot-row"
+                      data-slot-time={time}
+                    >
                       {/* T-20260515-foot-RESPONSIVE-UI-SHELL Shell-1: 시간축 sticky left-0 */}
                       <td
                         data-testid="resv-time-col-cell"
