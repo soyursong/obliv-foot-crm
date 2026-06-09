@@ -274,17 +274,20 @@ function PatientRow({
           <VisitTypeBadge type={row.visit_type} />
         </div>
 
-        {/* ④ 이름 — 고정 너비(글자수 변동 무관), 초과 시 truncate */}
+        {/* ④ 이름 — 고정 너비(글자수 변동 무관), 초과 시 truncate.
+            T-20260609-foot-DOCDASH-LABEL-RX-REFINE item4: 셀 내 가로 중앙정렬(text-center).
+            grid items-center(세로 중앙)는 기존 유지 — 컬럼 정의 보존, alignment만 보정. */}
         <span
-          className="text-sm font-semibold truncate"
+          className="text-sm font-semibold truncate text-center"
           title={row.customer_name}
           data-testid="patient-name"
         >
           {row.customer_name}
         </span>
 
-        {/* ③ 처방 상태 배지 — 이름 오른쪽 + hover 처방내용 툴팁 */}
-        <div className="flex justify-start">
+        {/* ③ 처방 상태 배지 — 이름 오른쪽 + hover 처방내용 툴팁.
+            item4: justify-start → justify-center (이름과 같이 가로 중앙정렬). */}
+        <div className="flex justify-center">
           <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
         </div>
 
@@ -371,6 +374,7 @@ function PatientRow({
               items={row.prescription_items}
               doctorMode={doctorMode}
               onCancelled={onRefresh}
+              label="처방 내용"
             />
             {row.doctor_confirmed_at && (
               <span className="ml-auto shrink-0 text-[11px] text-green-600">
@@ -400,14 +404,17 @@ export default function DoctorPatientList() {
   const { data: patients = [], isLoading, refetch } = usePatientsByDate(clinicId, selectedDate);
 
   // 필터 상태
-  const [filter, setFilter] = useState<'all' | 'pending' | 'none'>('all');
+  // T-20260609-foot-DOCDASH-LABEL-RX-REFINE item6: '처방없음'(none) → '처방나감'(confirmed)으로 교정.
+  //   reporter 의도 = "처방전 있는(처방이 나간) 환자만" 필터 → prescription_status === 'confirmed'.
+  const [filter, setFilter] = useState<'all' | 'pending' | 'confirmed'>('all');
 
   // T-20260609 ①: 정렬 옵션 — 시간순(접수시간) / 이름순(가나다). 기본=시간순.
   const [sortBy, setSortBy] = useState<'time' | 'name'>('time');
 
   const filtered = patients.filter((p) => {
     if (filter === 'pending') return p.prescription_status === 'pending';
-    if (filter === 'none') return p.prescription_status === 'none';
+    // item6: '처방나감' = 처방전 있는(확정·나간) 환자만 노출. (술어 방향 교정: none → confirmed)
+    if (filter === 'confirmed') return p.prescription_status === 'confirmed';
     return true;
   });
 
@@ -425,6 +432,8 @@ export default function DoctorPatientList() {
   });
 
   const pendingCount = patients.filter((p) => p.prescription_status === 'pending').length;
+  // item6: '처방나감'(처방 확정·발행된) 환자 수 — 필터 탭 카운트.
+  const confirmedCount = patients.filter((p) => p.prescription_status === 'confirmed').length;
 
   return (
     <div className="space-y-4">
@@ -496,7 +505,8 @@ export default function DoctorPatientList() {
           {[
             { key: 'all' as const, label: `전체 (${patients.length})` },
             { key: 'pending' as const, label: `임시 (${pendingCount})` },
-            { key: 'none' as const, label: '처방 없음' },
+            // item6: '처방 없음' → '처방나감'(처방전 있는 환자 필터). 라벨·술어 동시 교정.
+            { key: 'confirmed' as const, label: `처방나감 (${confirmedCount})` },
           ].map(({ key, label }) => (
             <button
               key={key}

@@ -23,7 +23,8 @@ export default function DoctorTools() {
   return (
     <div className="h-full overflow-auto p-4 md:p-6 space-y-4 max-w-5xl">
       <div>
-        <h1 className="text-lg font-bold">진료 도구</h1>
+        {/* T-20260609-foot-DOCDASH-LABEL-RX-REFINE item1: 헤더 라벨 오기 교정('진료 도구'→'진료대시보드') */}
+        <h1 className="text-lg font-bold">진료대시보드</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
           진료 알림판과 진료 환자 목록을 확인합니다.
         </p>
