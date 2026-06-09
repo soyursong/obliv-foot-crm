@@ -99,10 +99,15 @@ export default function DoctorCallDashboard() {
   // T-20260603-foot-RX-CHART-FOLLOWUP3 C-1: 차팅 클릭 → '진료차트'(MedicalChartPanel) 직접 오픈.
   //   FOLLOWUP2 #6은 2번차트 서랍(펜차트=기본차트)으로 열려 현장 의도(진단/경과/처방 진료차트)와 어긋났음.
   //   Dashboard 패턴 재사용 — 로컬 상태로 MedicalChartPanel 단독 오픈.
+  // T-20260609-foot-CHARTBTN-MINIMAL-COURSE-DRAWER (진입점 분기, AC-1/2/3):
+  //   '차팅' 버튼 → 미니멀 임상경과(variant='clinical'), '차트 열기' 버튼 → 전체 진료차트(variant='full').
+  //   둘 다 같은 MedicalChartPanel·같은 medical_charts 소스(AC-3) — variant 상태로 모드만 분기.
   const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
   const [medicalChartOpen, setMedicalChartOpen] = useState(false);
-  const openTreatmentChart = (customerId: string) => {
+  const [medicalChartVariant, setMedicalChartVariant] = useState<'full' | 'clinical'>('clinical');
+  const openTreatmentChart = (customerId: string, variant: 'full' | 'clinical' = 'clinical') => {
     setMedicalChartCustomerId(customerId);
+    setMedicalChartVariant(variant);
     setMedicalChartOpen(true);
   };
 
@@ -338,6 +343,7 @@ export default function DoctorCallDashboard() {
         clinicId={clinicId ?? ''}
         currentUserRole={profile?.role ?? ''}
         currentUserEmail={profile?.email ?? null}
+        variant={medicalChartVariant}
       />
     </div>
   );
@@ -354,7 +360,7 @@ function CallFeedRow({
   checkIn: CheckIn;
   doctorMode: boolean;
   role: string;
-  onOpenChart: (customerId: string) => void;
+  onOpenChart: (customerId: string, variant?: 'full' | 'clinical') => void;
   onRefresh: () => void;
 }) {
   const inactive = checkIn.status_flag === 'pink';
@@ -402,17 +408,29 @@ function CallFeedRow({
         <p className="mt-1 pl-6 text-xs text-gray-600">📋 {checkIn.doctor_call_memo}</p>
       )}
 
-      {/* 액션 — 차팅 / 처방 */}
+      {/* 액션 — 차팅(미니멀 임상경과) / 차트 열기(전체 Drawer) / 처방 */}
       <div className="mt-1.5 flex items-center gap-1.5 pl-6">
         <button
           type="button"
-          onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id)}
+          onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'clinical')}
           disabled={!checkIn.customer_id}
           data-testid="doctor-call-chart-btn"
           className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+          title="임상경과만 빠르게 입력"
         >
           <FileText className="h-3 w-3" />
           차팅
+        </button>
+        <button
+          type="button"
+          onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+          disabled={!checkIn.customer_id}
+          data-testid="doctor-call-fullchart-btn"
+          className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+          title="전체 진료차트 열기 (서랍)"
+        >
+          <Stethoscope className="h-3 w-3" />
+          차트 열기
         </button>
         <button
           type="button"
@@ -441,7 +459,7 @@ function CallFeedRow({
             onApplied={onRefresh}
             checkInStatus={checkIn.status}
             checkedInAt={checkIn.checked_in_at}
-            onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id)}
+            onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
             compact
           />
         </div>
@@ -461,7 +479,7 @@ function CompletedRow({
   checkIn: CheckIn;
   doctorMode: boolean;
   role: string;
-  onOpenChart: (customerId: string) => void;
+  onOpenChart: (customerId: string, variant?: 'full' | 'clinical') => void;
   onRefresh: () => void;
 }) {
   const [showRx, setShowRx] = useState(false);
@@ -482,12 +500,25 @@ function CompletedRow({
           )}
           <button
             type="button"
-            onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id)}
+            onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'clinical')}
             disabled={!checkIn.customer_id}
+            data-testid="doctor-completed-chart-btn"
             className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            title="임상경과만 빠르게 입력"
           >
             <FileText className="h-3 w-3" />
             차팅
+          </button>
+          <button
+            type="button"
+            onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+            disabled={!checkIn.customer_id}
+            data-testid="doctor-completed-fullchart-btn"
+            className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+            title="전체 진료차트 열기 (서랍)"
+          >
+            <Stethoscope className="h-3 w-3" />
+            차트 열기
           </button>
           <button
             type="button"
@@ -508,7 +539,7 @@ function CompletedRow({
             onApplied={onRefresh}
             checkInStatus={checkIn.status}
             checkedInAt={checkIn.checked_in_at}
-            onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id)}
+            onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
             compact
           />
         </div>
