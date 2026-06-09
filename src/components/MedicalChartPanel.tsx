@@ -555,6 +555,9 @@ export default function MedicalChartPanel({
   // T-20260606-foot-RX-PANEL-UX-5FIX AC-3: 상용구 탭을 진료차트/펜차트 그룹으로 분리.
   //   펜차트 상용구는 항상 기본 접힘(원장 동선은 진료차트 위주, 펜차트는 보조).
   const [penPhraseCollapsed, setPenPhraseCollapsed] = useState(true);
+  // T-20260609-foot-PHRASE-CHECKBOX-ARROW AC6-2/6-3: 우측 콘텐츠 패널(상용구·처방세트 등)을
+  //   왼쪽 여백의 `<` 화살표로 접어 좌측으로 슬라이드(공간 절약). 다시 누르면 펼침.
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
 
   // T-20260526-foot-MEDCHART-SYNC: 참고 데이터 상태
   // T-20260527-foot-TREATMEMO-CHART-MERGE: treatMemosLoaded/Loading 제거 (loadData 통합으로 불필요)
@@ -584,6 +587,9 @@ export default function MedicalChartPanel({
   // T-20260526-foot-VISIT-FOLD-FILTER: 아코디언 + 필터 상태
   const [expandedChartIds, setExpandedChartIds] = useState<Set<string>>(new Set<string>());
   const [memoFilters, setMemoFilters] = useState<Set<MemoFilter>>(new Set<MemoFilter>());
+  // T-20260609-foot-MEDCHART-SOAK-REFINE AC3-4: 타임라인 묶음처방(다항목) 펼침 토글 상태(차트별).
+  //   기본 접힘 — 묶음처방은 버튼 토글로 펼쳐 각 항목 줄바꿈 표시(공간 효율).
+  const [expandedRxCharts, setExpandedRxCharts] = useState<Set<string>>(new Set<string>());
 
   // ── 데이터 로드 ──────────────────────────────────────────────────────────────
 
@@ -1644,6 +1650,14 @@ export default function MedicalChartPanel({
       return next;
     });
   }
+  // T-20260609-foot-MEDCHART-SOAK-REFINE AC3-4: 묶음처방 펼침 토글(차트별).
+  function toggleRxBundle(id: string) {
+    setExpandedRxCharts(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
   function toggleFilter(f: MemoFilter) {
     setMemoFilters(prev => {
       const next = new Set(prev);
@@ -2324,21 +2338,47 @@ export default function MedicalChartPanel({
                               </div>
                             )}
                             {/* T-20260609-foot-MEDCHART-TIMELINE-COMPACT AC-3 (문지은 대표원장):
-                                처방 = 약명 + 용량만 주르륵. 처방일시·코드·route·frequency·days 등 메타 숨김. */}
-                            {hasRxItems && isTypeActive(memoFilters, 'rx') && (
-                              <div>
-                                <span className="text-[8px] font-bold text-violet-600 uppercase tracking-wide">처방</span>
-                                <ul className="text-[10px] text-gray-700 leading-relaxed mt-0.5 space-y-0.5">
-                                  {(chart.prescription_items ?? [])
-                                    .filter(rx => rx?.name?.trim())
-                                    .map((rx, i) => (
-                                      <li key={i} className="truncate" data-testid="timeline-rx-item">
+                                처방 = 약명 + 용량만 주르륵. 처방일시·코드·route·frequency·days 등 메타 숨김.
+                                T-20260609-foot-MEDCHART-SOAK-REFINE AC3-3: "처방" 텍스트 헤더 → 검은색 미니멀 알약 아이콘.
+                                AC3-4: 항목마다 줄바꿈(말줄임 제거). 묶음처방(4건+)은 버튼 토글로 펼침/접기(공간 효율). */}
+                            {hasRxItems && isTypeActive(memoFilters, 'rx') && (() => {
+                              const rxList = (chart.prescription_items ?? []).filter(rx => rx?.name?.trim());
+                              const isBundle = rxList.length > 3;
+                              const rxOpen = expandedRxCharts.has(chart.id);
+                              const shown = isBundle && !rxOpen ? rxList.slice(0, 2) : rxList;
+                              return (
+                                <div data-testid="timeline-rx-section">
+                                  {/* AC3-3: 검은색 미니멀 알약 아이콘 (텍스트 라벨 대체) */}
+                                  <div className="flex items-center gap-1">
+                                    <Pill className="h-3 w-3 text-gray-900 shrink-0" aria-label="처방" data-testid="timeline-rx-pill-icon" />
+                                    {isBundle && (
+                                      <span className="text-[9px] text-gray-500">묶음처방 {rxList.length}건</span>
+                                    )}
+                                  </div>
+                                  {/* AC3-4: 항목마다 줄바꿈 (truncate 제거 → break-words) */}
+                                  <ul className="text-[10px] text-gray-700 leading-relaxed mt-0.5 space-y-0.5">
+                                    {shown.map((rx, i) => (
+                                      <li key={i} className="break-words" data-testid="timeline-rx-item">
                                         {rx.name}{rx.dosage?.trim() ? ` ${rx.dosage.trim()}` : ''}
                                       </li>
                                     ))}
-                                </ul>
-                              </div>
-                            )}
+                                  </ul>
+                                  {/* AC3-4: 묶음처방 펼침/접기 토글 버튼 */}
+                                  {isBundle && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); toggleRxBundle(chart.id); }}
+                                      className="mt-0.5 inline-flex items-center gap-0.5 text-[9px] text-violet-600 hover:text-violet-800 transition-colors"
+                                      data-testid="timeline-rx-bundle-toggle"
+                                      aria-expanded={rxOpen}
+                                    >
+                                      {rxOpen ? '접기' : `+${rxList.length - 2}건 더보기`}
+                                      <ChevronDown className={`h-2.5 w-2.5 transition-transform ${rxOpen ? 'rotate-180' : ''}`} />
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })()}
                             {/* AC-10: 키워드 감지 안전 신호는 펼침 상세에서 필터와 무관하게 항상 노출(detail-on-demand). */}
                             {notable && (
                               <div className="mt-0.5">
@@ -2961,11 +3001,31 @@ export default function MedicalChartPanel({
                 </div>
               </div>
 
-              {/* ── 우측 콘텐츠 패널 — 처방세트 / 상용구 / 치료메모 / 진료내역 / 진료이미지 탭 ─ */}
+              {/* ── 우측 콘텐츠 패널 — 처방세트 / 상용구 / 치료메모 / 진료내역 / 진료이미지 탭 ─
+                  T-20260609-foot-PHRASE-CHECKBOX-ARROW AC6-2/6-3: 왼쪽 여백 `<` 화살표 토글 →
+                  패널을 좌측으로 접어(슬라이드) 공간 절약. 접힘 시 얇은 스트립(>)만 남아 재펼침. */}
               <div
-                className="w-72 flex-shrink-0 flex flex-col bg-muted/5"
+                className={`flex-shrink-0 flex flex-col bg-muted/5 relative transition-[width] duration-200 ease-in-out overflow-hidden ${rightPanelCollapsed ? 'w-7' : 'w-72'}`}
                 data-testid="medical-chart-right-panel"
+                data-collapsed={rightPanelCollapsed ? 'true' : 'false'}
               >
+                {/* 접기/펼치기 화살표 — 패널 가장 왼쪽 여백, 미니멀 */}
+                <button
+                  type="button"
+                  onClick={() => setRightPanelCollapsed(c => !c)}
+                  className="absolute left-0 top-0 bottom-0 z-10 w-7 flex items-start justify-center pt-2 text-muted-foreground hover:text-teal-700 hover:bg-muted/40 border-r border-border/30 transition-colors"
+                  data-testid="right-panel-collapse-toggle"
+                  aria-expanded={!rightPanelCollapsed}
+                  aria-label={rightPanelCollapsed ? '패널 펼치기' : '패널 접기'}
+                  title={rightPanelCollapsed ? '패널 펼치기' : '패널 접기'}
+                >
+                  {rightPanelCollapsed
+                    ? <ChevronRight className="h-4 w-4" />
+                    : <ChevronLeft className="h-4 w-4" />}
+                </button>
+
+                {/* 패널 본문 — 접힘 시 숨김(화살표만 노출) */}
+                <div className={`flex flex-col min-h-0 flex-1 pl-7 ${rightPanelCollapsed ? 'hidden' : ''}`}>
                 {/* 탭 헤더 — 5개 아이콘+라벨 컴팩트 */}
                 <div className="flex-none border-b">
                   {/* 상단 행: 처방세트 / 상용구 / 슈퍼상용구 (T-20260603-foot-RX-SUPER-PHRASE) */}
@@ -3411,6 +3471,7 @@ export default function MedicalChartPanel({
                   )}
                 </div>
                 {/* T-20260605-foot-RX-PHRASE-CLICK-INSERT: 하단 일괄 '삽입' 버튼 제거 — 행 내 ✓ 즉시삽입으로 단일화 */}
+                </div>{/* /패널 본문 (PHRASE-CHECKBOX-ARROW AC6-3 접힘 래퍼) */}
               </div>
             </>
           )}
