@@ -38,6 +38,27 @@ interface PatientRow {
   doctor_confirm_prescription: boolean;
   /** T-20260517-foot-HEALER-MEMO-DISPLAY: 예약메모 (reservations.booking_memo join) */
   booking_memo: string | null;
+  /** T-20260609-foot-PASTVISIT-TREATMENT-VIEW: 과거 내원 '받은 치료' 요약(read-only).
+   *  treatment_* 는 check_ins 기존 컬럼(T-20260504-foot-TREATMENT-SIMPLIFY) — SELECT 확장만. */
+  treatment_category: string | null;
+  treatment_contents: string[] | null;
+  treatment_kind: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// 받은 치료 요약 — T-20260609-foot-PASTVISIT-TREATMENT-VIEW (AC-2/3)
+//   category · (contents 우선, 없으면 kind). 예: "발톱무좀 · 가열레이저, 수액".
+//   전부 비면 null → 호출부에서 '치료내역 없음' 표기. [object Object]·undefined 노출 방지.
+// ---------------------------------------------------------------------------
+function treatmentSummary(row: Pick<PatientRow, 'treatment_category' | 'treatment_contents' | 'treatment_kind'>): string | null {
+  const category = (row.treatment_category ?? '').trim();
+  const contents = Array.isArray(row.treatment_contents)
+    ? row.treatment_contents.filter((c): c is string => typeof c === 'string' && c.trim() !== '').map((c) => c.trim())
+    : [];
+  const kind = (row.treatment_kind ?? '').trim();
+  const detail = contents.length > 0 ? contents.join(', ') : kind;
+  const parts = [category, detail].filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +187,8 @@ function usePatientsByDate(clinicId: string | null, dateISO: string) {
       const { data, error } = await supabase
         .from('check_ins')
         .select(
-          'id, customer_id, customer_name, visit_type, status, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, reservation:reservation_id(booking_memo)',
+          // T-20260609-foot-PASTVISIT-TREATMENT-VIEW: treatment_* 추가(기존 컬럼, SELECT 확장만 — AC-5)
+          'id, customer_id, customer_name, visit_type, status, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, treatment_category, treatment_contents, treatment_kind, reservation:reservation_id(booking_memo)',
         )
         .eq('clinic_id', clinicId)
         .gte('checked_in_at', `${day}T00:00:00+09:00`)
@@ -243,6 +265,7 @@ function PatientRow({
   role,
   onRefresh,
   onOpenChart,
+  isPast = false,
 }: {
   row: PatientRow;
   doctorMode: boolean;
@@ -250,12 +273,66 @@ function PatientRow({
   onRefresh: () => void;
   /** T-20260609-foot-DOCPATIENTLIST-RXCANCEL-DISCHARGE-GATE: 귀가 차단 시 차트 진입 동선. */
   onOpenChart?: () => void;
+  /** T-20260609-foot-PASTVISIT-TREATMENT-VIEW: 과거 날짜(어제 이전) read-only '받은 치료' 모드. */
+  isPast?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const confirm = useConfirmPrescription();
 
   const hasPendingRx = row.prescription_status === 'pending';
   const isConfirmed = row.prescription_status === 'confirmed';
+
+  // ---------------------------------------------------------------------------
+  // T-20260609-foot-PASTVISIT-TREATMENT-VIEW (A안): 과거 날짜 행 = read-only.
+  //   '상태' 컬럼 숨김(AC-4) + '받은 치료' 요약 표시(AC-2/3). 처방/편집 액션·펼치기 토글 비노출.
+  //   처방배지(처방전 O/X)는 그날의 사실 기록이므로 read-only 정보로 유지.
+  // ---------------------------------------------------------------------------
+  if (isPast) {
+    const summary = treatmentSummary(row);
+    return (
+      <div className="rounded-lg border border-border bg-card transition" data-testid="patient-row">
+        <div className="grid grid-cols-[1.75rem_3rem_5rem_5.5rem_minmax(0,1fr)] items-center gap-2 px-3 py-2.5">
+          {/* 번호 */}
+          <span className="text-xs font-mono text-muted-foreground text-center">
+            {row.queue_number ?? '—'}
+          </span>
+          {/* 방문유형 배지 */}
+          <div className="flex justify-center">
+            <VisitTypeBadge type={row.visit_type} />
+          </div>
+          {/* 이름 */}
+          <span
+            className="text-sm font-semibold truncate text-center"
+            title={row.customer_name}
+            data-testid="patient-name"
+          >
+            {row.customer_name}
+          </span>
+          {/* 처방 상태 배지 — 과거 기록(read-only) */}
+          <div className="flex justify-center">
+            <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
+          </div>
+          {/* 받은 치료 요약 (AC-2/3) */}
+          {summary ? (
+            <span
+              className="text-[12px] text-emerald-700 font-medium truncate"
+              title={summary}
+              data-testid="treatment-received"
+            >
+              {summary}
+            </span>
+          ) : (
+            <span
+              className="text-[12px] text-muted-foreground/70 truncate"
+              data-testid="treatment-received"
+            >
+              치료내역 없음
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -413,6 +490,9 @@ export default function DoctorPatientList() {
   const todayISO = todaySeoulISODate();
   const [selectedDate, setSelectedDate] = useState<string>(todayISO);
   const isToday = selectedDate === todayISO;
+  // T-20260609-foot-PASTVISIT-TREATMENT-VIEW: 어제 이전 = 과거(read-only '받은 치료' 모드).
+  //   ISO 'YYYY-MM-DD' 사전식 비교 = 캘린더 비교(타임존 무관). 미래(다음날) 조회는 과거 아님 → 현행 유지.
+  const isPast = selectedDate < todayISO;
 
   const { data: patients = [], isLoading, refetch } = usePatientsByDate(clinicId, selectedDate);
 
@@ -582,6 +662,7 @@ export default function DoctorPatientList() {
               role={profile?.role ?? ''}
               onRefresh={() => refetch()}
               onOpenChart={row.customer_id ? () => openChart(row.customer_id as string) : undefined}
+              isPast={isPast}
             />
           ))}
         </div>
