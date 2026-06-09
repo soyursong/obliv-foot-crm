@@ -5,7 +5,7 @@
 // 치료사: 원장 구두 지시 듣고 → 해당 환자 행 버튼 클릭 → 임시 처방 입력
 // 원장  : 직접 버튼 클릭 → 바로 확정 / 또는 임시 처방 확인 후 확정 버튼
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
 import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import QuickRxBar, { isDoctor } from './QuickRxBar';
-import { STATUS_KO } from '@/lib/status';
+import { STATUS_KO, isInClinic } from '@/lib/status';
 import type { CheckInStatus } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -38,28 +38,89 @@ interface PatientRow {
 }
 
 // ---------------------------------------------------------------------------
-// 처방 상태 배지
+// 처방 내용 요약 — hover 툴팁용 (T-20260609 ③)
+//   prescription_items 는 unknown(JSONB). 빠른처방 저장 shape {name, frequency, days}
+//   또는 정식 처방 shape {medication_name, dosage, duration_days} 를 방어적으로 흡수.
 // ---------------------------------------------------------------------------
-function PrescriptionStatusBadge({ status }: { status: PatientRow['prescription_status'] }) {
+function prescriptionSummary(items: unknown): string | null {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const parts = items
+    .map((raw) => {
+      const it = raw as {
+        name?: string;
+        medication_name?: string;
+        frequency?: string;
+        dosage?: string | null;
+        days?: number;
+        duration_days?: number | null;
+      };
+      const name = it.name ?? it.medication_name;
+      if (!name) return null;
+      const freq = it.frequency ?? it.dosage ?? '';
+      const days = it.days ?? it.duration_days ?? null;
+      const tail = [freq, days != null ? `${days}일` : ''].filter(Boolean).join(' ');
+      return tail ? `${name} (${tail})` : name;
+    })
+    .filter((s): s is string => !!s);
+  return parts.length > 0 ? parts.join(', ') : null;
+}
+
+// ---------------------------------------------------------------------------
+// 처방 상태 배지 — T-20260609 ③: '처방전 O'/'처방전 X' 표기 + hover 처방내용 툴팁
+// ---------------------------------------------------------------------------
+function PrescriptionStatusBadge({
+  status,
+  items,
+}: {
+  status: PatientRow['prescription_status'];
+  items: unknown;
+}) {
+  const summary = prescriptionSummary(items);
+  let badge: ReactNode;
   if (status === 'confirmed') {
-    return (
+    badge = (
       <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
         <CheckCircle2 className="h-2.5 w-2.5" />
-        확정
+        처방전 O
       </span>
     );
-  }
-  if (status === 'pending') {
-    return (
+  } else if (status === 'pending') {
+    badge = (
       <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
         <Clock className="h-2.5 w-2.5" />
         임시
       </span>
     );
+  } else {
+    badge = (
+      <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500">
+        처방전 X
+      </span>
+    );
+  }
+
+  // hover 툴팁: 처방 내용이 있을 때만(확정/임시). 없으면 native title="처방 없음".
+  if (!summary) {
+    return (
+      <span data-testid="prescription-badge" title="처방 없음">
+        {badge}
+      </span>
+    );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500">
-      처방 없음
+    <span
+      className="group relative inline-flex"
+      data-testid="prescription-badge"
+      title={summary}
+    >
+      {badge}
+      <span
+        role="tooltip"
+        data-testid="rx-tooltip"
+        className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-max max-w-[240px] rounded-md border border-border bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md group-hover:block"
+      >
+        {summary}
+      </span>
     </span>
   );
 }
@@ -161,7 +222,10 @@ function VisitTypeBadge({ type }: { type: PatientRow['visit_type'] }) {
   };
   const { label, cls } = map[type] ?? { label: type, cls: 'bg-gray-100 text-gray-600' };
   return (
-    <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
+    <span
+      className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium text-center ${cls}`}
+      data-testid="visit-type-badge"
+    >
       {label}
     </span>
   );
@@ -194,37 +258,52 @@ function PatientRow({
       }`}
       data-testid="patient-row"
     >
-      {/* 기본 행 */}
-      <div className="flex items-center gap-3 px-3 py-2.5">
+      {/*
+        기본 행 — T-20260609 ⑤: flex → grid 고정 열 레이아웃.
+        열 순서: 번호 / 방문배지(②이름왼쪽) / 이름(④고정폭) / 처방배지(③이름오른쪽) / 상태 / 메모 / 액션
+        모든 행이 동일 grid-template → 큐번호·배지·이름·처방·시간 항목이 행마다 동일 x위치(스크롤 무관).
+      */}
+      <div className="grid grid-cols-[1.75rem_3rem_5rem_5.5rem_3.75rem_minmax(0,1fr)_auto] items-center gap-2 px-3 py-2.5">
         {/* 번호 */}
-        <span className="text-xs font-mono text-muted-foreground w-5 shrink-0">
+        <span className="text-xs font-mono text-muted-foreground text-center">
           {row.queue_number ?? '—'}
         </span>
 
-        {/* 이름 + 방문유형 */}
-        <div className="flex items-center gap-2 min-w-[100px] shrink-0">
-          <span className="text-sm font-semibold">{row.customer_name}</span>
+        {/* ② 방문유형 배지 — 이름 왼쪽(행 첫 식별 위치) */}
+        <div className="flex justify-center">
           <VisitTypeBadge type={row.visit_type} />
         </div>
 
+        {/* ④ 이름 — 고정 너비(글자수 변동 무관), 초과 시 truncate */}
+        <span
+          className="text-sm font-semibold truncate"
+          title={row.customer_name}
+          data-testid="patient-name"
+        >
+          {row.customer_name}
+        </span>
+
+        {/* ③ 처방 상태 배지 — 이름 오른쪽 + hover 처방내용 툴팁 */}
+        <div className="flex justify-start">
+          <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
+        </div>
+
         {/* 상태 */}
-        <span className="text-[11px] text-muted-foreground shrink-0 hidden sm:block">
+        <span className="text-[11px] text-muted-foreground truncate">
           {STATUS_KO[row.status] ?? row.status}
         </span>
 
         {/* 예약메모 — T-20260517-foot-HEALER-MEMO-DISPLAY AC-1~4 */}
         <span
-          className="text-[11px] text-muted-foreground truncate hidden sm:block max-w-[160px]"
+          className="text-[11px] text-muted-foreground truncate"
           title={row.booking_memo ?? undefined}
           data-testid="booking-memo"
         >
           {row.booking_memo || '—'}
         </span>
 
-        {/* 처방 상태 */}
-        <div className="flex items-center gap-1.5 ml-auto shrink-0">
-          <PrescriptionStatusBadge status={row.prescription_status} />
-
+        {/* 액션 — 확정 버튼 / 대기 알림 / 펼치기 토글 */}
+        <div className="flex items-center gap-1.5 justify-end">
           {/* 임시 처방이고 의사인 경우 → 확정 버튼 */}
           {hasPendingRx && doctorMode && (
             <Button
@@ -329,10 +408,26 @@ export default function DoctorPatientList() {
   // 필터 상태
   const [filter, setFilter] = useState<'all' | 'pending' | 'none'>('all');
 
+  // T-20260609 ①: 정렬 옵션 — 시간순(접수시간) / 이름순(가나다). 기본=시간순.
+  const [sortBy, setSortBy] = useState<'time' | 'name'>('time');
+
   const filtered = patients.filter((p) => {
     if (filter === 'pending') return p.prescription_status === 'pending';
     if (filter === 'none') return p.prescription_status === 'none';
     return true;
+  });
+
+  // T-20260609 ①: 원내(in-clinic) 환자 최우선 상단 그룹핑(정렬 옵션 무관) →
+  //   그룹 내에서 시간순/이름순. 날짜 조회 로직(DATENAV)과 독립한 "목록 내 정렬".
+  const sorted = [...filtered].sort((a, b) => {
+    const aIn = isInClinic(a.status) ? 0 : 1;
+    const bIn = isInClinic(b.status) ? 0 : 1;
+    if (aIn !== bIn) return aIn - bIn; // 원내 그룹 항상 상단
+    if (sortBy === 'name') return a.customer_name.localeCompare(b.customer_name, 'ko');
+    // 시간순(접수시간 오름차순). checked_in_at 은 ISO 문자열 → 사전식 비교로 시간순 동일.
+    if (a.checked_in_at < b.checked_in_at) return -1;
+    if (a.checked_in_at > b.checked_in_at) return 1;
+    return 0;
   });
 
   const pendingCount = patients.filter((p) => p.prescription_status === 'pending').length;
@@ -401,26 +496,52 @@ export default function DoctorPatientList() {
         </div>
       </div>
 
-      {/* 필터 탭 */}
-      <div className="flex gap-1">
-        {[
-          { key: 'all' as const, label: `전체 (${patients.length})` },
-          { key: 'pending' as const, label: `임시 (${pendingCount})` },
-          { key: 'none' as const, label: '처방 없음' },
-        ].map(({ key, label }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setFilter(key)}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
-              filter === key
-                ? 'bg-teal-600 text-white'
-                : 'bg-muted text-muted-foreground hover:bg-muted/80'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+      {/* 필터 탭 + 정렬 토글 (T-20260609 ①) */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex gap-1">
+          {[
+            { key: 'all' as const, label: `전체 (${patients.length})` },
+            { key: 'pending' as const, label: `임시 (${pendingCount})` },
+            { key: 'none' as const, label: '처방 없음' },
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setFilter(key)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                filter === key
+                  ? 'bg-teal-600 text-white'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* 정렬 셀렉터 — 원내 우선 그룹은 정렬 옵션과 무관하게 항상 상단 유지 */}
+        <div className="flex items-center gap-1 shrink-0" data-testid="patient-sort-toggle">
+          <span className="text-[11px] text-muted-foreground mr-0.5">정렬</span>
+          {[
+            { key: 'time' as const, label: '시간순' },
+            { key: 'name' as const, label: '이름순' },
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setSortBy(key)}
+              data-testid={`sort-by-${key}`}
+              aria-pressed={sortBy === key}
+              className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
+                sortBy === key
+                  ? 'bg-teal-600 text-white'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 목록 */}
@@ -428,7 +549,7 @@ export default function DoctorPatientList() {
         <div className="flex justify-center py-12">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
-      ) : filtered.length === 0 ? (
+      ) : sorted.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
           {filter === 'all'
             ? `${isToday ? '오늘' : formatISOToKoLabel(selectedDate)} 접수된 환자가 없습니다.`
@@ -436,7 +557,7 @@ export default function DoctorPatientList() {
         </div>
       ) : (
         <div className="space-y-2" data-testid="patient-list">
-          {filtered.map((row) => (
+          {sorted.map((row) => (
             <PatientRow
               key={row.id}
               row={row}
