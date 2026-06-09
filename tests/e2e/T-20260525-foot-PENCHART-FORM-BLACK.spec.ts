@@ -226,10 +226,11 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
 
     const drawInitIdx = src.indexOf('const initDrawCanvas = useCallback');
     expect(drawInitIdx).toBeGreaterThan(0);
-    // 4500→4900자 윈도우: REOPEN4 + T-20260606-REFUND-PEN-MISS 기기별 조건부 desync 주석 추가로 블록 확대
-    //   (T-20260608-foot-PENCHART-REFUND-FORMIMG: 각 가드에 setBgImgErrorReason 진단 줄 추가 → canvas.width===0 가 ~4561 로 밀림)
+    // 4500→4900→5600자 윈도우: 블록 주석 누적 확대로 canvas.width===0 위치가 밀림(테스트 유지보수 패턴).
+    //   (T-20260606-REFUND-PEN-MISS 기기별 desync 주석 / FORMIMG 진단 줄 / REOPEN#3 프로파일러 기본-ON
+    //    메타-RC 주석 추가 → canvas.width===0 가 ~5293 로 밀림. 가드 로직 자체는 무변경.)
     // ctx null 가드 + drawCtxRef 캐싱 + canvasH 계산 + canvas.width 설정 + BLACKSCR size check
-    const drawBlock = src.slice(drawInitIdx, drawInitIdx + 4900);
+    const drawBlock = src.slice(drawInitIdx, drawInitIdx + 5600);
 
     expect(drawBlock).toContain("if (!ctx)");
     expect(drawBlock).toContain('setBgImgLoadError(true)');
