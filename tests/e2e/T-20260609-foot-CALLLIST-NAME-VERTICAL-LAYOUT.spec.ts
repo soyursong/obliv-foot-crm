@@ -101,14 +101,10 @@ test.describe('T-20260609 CALLLIST-NAME-VERTICAL-LAYOUT — 성함 전체표시 
       expect(b1.y).toBeGreaterThan(b0.y + b0.height - 1); // 아래로 누적
       expect(Math.abs(b1.x - b0.x)).toBeLessThan(4);       // 같은 x(세로 정렬)
     }
-    // 행 컨테이너에 세로 내부 스크롤이 발생하지 않음(scrollHeight ≈ clientHeight, height auto)
-    const noInnerScroll = await page
-      .locator('[data-testid="doctor-call-rows"]')
-      .evaluate((el) => {
-        const e = el as HTMLElement;
-        return e.scrollHeight - e.clientHeight <= 1; // 내부 스크롤 없음
-      });
-    expect(noInnerScroll).toBe(true);
+    // ※ SUPERSEDED by T-20260609-foot-CALLLIST-VERTICAL-FULLNAME:
+    //   본 티켓은 max-h 제거(내부 스크롤 X)였으나, FULLNAME 티켓이 max-h+overflow-y-auto를 재도입해
+    //   "초과 시 내부 세로 스크롤"로 정정(fixed 패널 off-screen 잘림 차단). 따라서 "내부 스크롤 없음"
+    //   단언은 폐기. 본 시나리오의 실질 계약(세로 누적·동일 x)만 위에서 검증한다.
   });
 
   test('AC-3b: 외곽 팝업이 우상단(top) 앵커 fixed — 가로 위치(우측)는 보존', async ({ page }) => {
@@ -124,7 +120,9 @@ test.describe('T-20260609 CALLLIST-NAME-VERTICAL-LAYOUT — 성함 전체표시 
     expect(cls).toContain('top-4');     // req3: 아래로 자연 확장 위한 상단 앵커
     expect(cls).toContain('right-4');   // 가로 우측 위치 보존
     expect(cls).not.toContain('bottom-4');
-    expect(cls).not.toContain('max-h-'); // 고정/제한 높이 제거
+    // ※ SUPERSEDED by VERTICAL-FULLNAME: 외곽 패널은 여전히 max-h 미보유(height auto),
+    //   max-h는 *행 컨테이너(doctor-call-rows)* 로 이동됨 → 외곽 패널 클래스에는 max-h 없음(유지).
+    expect(cls).not.toContain('max-h-');
     expect(await list.getAttribute('data-position-mode')).toBe('fixed');
   });
 
