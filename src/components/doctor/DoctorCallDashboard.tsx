@@ -62,6 +62,7 @@ import {
 } from '@/hooks/useDoctorCallNotifier';
 import QuickRxBar, { isDoctor, RxCancelButton } from './QuickRxBar';
 import { DoctorAckButton, DoctorAckBadge } from './DoctorAck';
+import { applyStatusFlagTransition, type FlagTransitionActor } from '@/lib/statusFlagTransition';
 import type { CheckIn } from '@/lib/types';
 
 const CALL_SELECT =
@@ -97,6 +98,11 @@ export default function DoctorCallDashboard() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
   const doctorMode = isDoctor(profile?.role ?? '');
+  // T-20260610-foot-TREATMENT-COMPLETE-BTN: 진료완료 처리자 기록(의료 추적) — 의사/직원 공통.
+  const actor: FlagTransitionActor = useMemo(
+    () => ({ id: profile?.id ?? null, name: profile?.name ?? null, role: profile?.role ?? null }),
+    [profile?.id, profile?.name, profile?.role],
+  );
   // T-20260603-foot-RX-CHART-FOLLOWUP3 C-1: 차팅 클릭 → '진료차트'(MedicalChartPanel) 직접 오픈.
   //   FOLLOWUP2 #6은 2번차트 서랍(펜차트=기본차트)으로 열려 현장 의도(진단/경과/처방 진료차트)와 어긋났음.
   //   Dashboard 패턴 재사용 — 로컬 상태로 MedicalChartPanel 단독 오픈.
@@ -296,6 +302,7 @@ export default function DoctorCallDashboard() {
                 role={profile?.role ?? ''}
                 clinicId={clinicId ?? ''}
                 currentUserEmail={profile?.email ?? null}
+                actor={actor}
                 onOpenChart={openTreatmentChart}
                 onRefresh={() => void refetch()}
               />
@@ -364,6 +371,7 @@ function CallFeedRow({
   role,
   clinicId,
   currentUserEmail,
+  actor,
   onOpenChart,
   onRefresh,
 }: {
@@ -372,6 +380,7 @@ function CallFeedRow({
   role: string;
   clinicId: string;
   currentUserEmail: string | null;
+  actor: FlagTransitionActor;
   onOpenChart: (customerId: string, variant?: 'full' | 'clinical') => void;
   onRefresh: () => void;
 }) {
@@ -476,6 +485,10 @@ function CallFeedRow({
             {/* T-20260609-foot-QUICKRX-HOVER-TOOLTIP-CANCEL ②: 확정 후 취소(rxUndo 재노출, 권한=DOCTOR_ROLES) */}
             <RxCancelButton checkInId={checkIn.id} doctorMode={doctorMode} onCancelled={onRefresh} />
           </>
+        )}
+        {/* T-20260610-foot-TREATMENT-COMPLETE-BTN: 활성 호출(purple)에만 진료완료 버튼. 의사/직원 공통(권한 개방). */}
+        {!inactive && (
+          <TreatmentCompleteButton checkIn={checkIn} actor={actor} onCompleted={onRefresh} />
         )}
       </div>
 
@@ -625,6 +638,51 @@ function CompletedRow({
         </div>
       )}
     </li>
+  );
+}
+
+// ─── 진료완료 버튼 ───────────────────────────────────────────────────────────
+// T-20260610-foot-TREATMENT-COMPLETE-BTN (문지은 대표원장, B안):
+//   진료호출(purple) 환자를 의사/직원 누구나 '진료완료' 처리 → status_flag purple→pink 전이로
+//   활성 명단(진료필요)에서 제거. status_flag 전이는 applyStatusFlagTransition(SSOT)에 위임 —
+//   병렬 2nd write 신설 금지. 처리자(id/이름/역할)는 history 엔트리에 적재(의료 추적).
+//   ⚠️ doctor_ack_at(✋확인=진료 시작)과 별개 — 이 버튼은 ack 컬럼을 만지지 않는다(종료 신호).
+function TreatmentCompleteButton({
+  checkIn,
+  actor,
+  onCompleted,
+}: {
+  checkIn: CheckIn;
+  actor: FlagTransitionActor;
+  onCompleted: () => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const handleComplete = async () => {
+    if (pending) return;
+    setPending(true);
+    try {
+      await applyStatusFlagTransition(checkIn, 'pink', actor);
+      onCompleted();
+      toast.confirm('진료완료 처리했어요. 활성 호출 명단에서 빠졌어요.');
+    } catch (e) {
+      toast.error(`진료완료 처리 실패: ${(e as Error).message}`);
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={handleComplete}
+      disabled={pending}
+      data-testid="doctor-call-complete-btn"
+      aria-label="진료완료 처리"
+      className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100 active:scale-95 disabled:opacity-50"
+      title="이 환자 진료를 완료 처리해요 (활성 호출 명단에서 제거)"
+    >
+      {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+      진료완료
+    </button>
   );
 }
 

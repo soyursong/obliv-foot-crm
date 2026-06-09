@@ -343,7 +343,16 @@ export interface CheckIn {
   prescription_status: 'none' | 'pending' | 'confirmed';
   /** 상태 플래그 — T-20260502-foot-STATUS-COLOR-FLAG */
   status_flag: StatusFlag | null;
-  status_flag_history: Array<{ flag: StatusFlag | null; changed_at: string; changed_by: string | null }> | null;
+  /** 상태 플래그 변경 감사 이력 (JSONB append-only).
+   *  T-20260610-foot-TREATMENT-COMPLETE-BTN: changed_by_name/changed_by_role 추가(additive) —
+   *  진료완료(purple→pink) 처리자(의사/직원 + 이름) 의료 추적. 기존 엔트리는 두 필드 미존재(undefined). */
+  status_flag_history: Array<{
+    flag: StatusFlag | null;
+    changed_at: string;
+    changed_by: string | null;
+    changed_by_name?: string | null;
+    changed_by_role?: string | null;
+  }> | null;
   /** 진료 기록 간소화 — T-20260504-foot-TREATMENT-SIMPLIFY */
   assigned_counselor_id: string | null;
   treatment_category: string | null;
