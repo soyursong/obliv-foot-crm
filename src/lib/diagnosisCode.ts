@@ -20,7 +20,7 @@ export function normalizeServiceCode(raw: string | null | undefined): string {
 export function validateServiceCode(raw: string | null | undefined): string | null {
   const v = normalizeServiceCode(raw);
   if (!v) return null; // 빈 코드 통과
-  if (!KCD8_RE.test(v)) return '상병코드 형식이 올바르지 않아요. 예) M79.3';
+  if (!KCD8_RE.test(v)) return 'KCD 코드 형식이 올바르지 않아요 (예: M72.2)';
   return null;
 }
 

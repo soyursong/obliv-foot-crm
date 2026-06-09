@@ -51,7 +51,7 @@ test('시나리오3 형식차단: 비정형 코드는 에러 문구 반환', () 
   for (const bad of ['ABC', '123', 'M7', 'M790', 'M79.', 'M79.12345', '79.3', 'M-79', 'M79 3']) {
     const err = validateServiceCode(bad);
     expect(err).not.toBeNull();
-    expect(err).toContain('형식');
+    expect(err).toContain('KCD 코드 형식이 올바르지 않아요');
   }
 });
 
