@@ -69,13 +69,24 @@ interface DoctorCallListBarProps {
 }
 
 export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: DoctorCallListBarProps) {
-  // 1) 활성(콜 대상) — 보라(purple/진료필요) + 노랑(yellow/힐러). 접수순(checked_in_at) 정렬.
-  //    T-20260609-foot-CALLLIST-HEALER-POSITION item1: 힐러(원장 시술)도 콜 대상이므로 포함.
-  //    힐러=yellow(foot_logic_sync_registry G-002). 힐러→다른 상태 전환 시 필터 재계산으로 자동 제거.
+  // 1) 활성(콜 대상) — 보라(purple/진료필요) + 노랑(yellow/HL) + 힐러대기 단계(status='healer_waiting').
+  //    T-20260609-foot-CALLLIST-HEALER-POSITION item1 + REOPEN(11:42) FIX-SPEC:
+  //    힐러(원장 시술)도 콜 대상이므로 포함. 단, 힐러 신호는 두 갈래다 —
+  //      (a) status_flag='yellow' (HL 플래그 / 힐러예약 자동 HL, foot_logic_sync_registry G-002)
+  //      (b) status='healer_waiting' (힐러대기 컬럼으로 카드 이동 — 현장 주 동선. status_flag는 미변경)
+  //    eb7142f는 (a)만 봐서 (b) 힐러대기 환자(status_flag≠yellow)를 전혀 못 잡아 명단 누락 →
+  //    현장 "힐러대기 이동해도 안뜸"의 근본원인. status==='healer_waiting' OR 조건 추가로 해소.
+  //    (라이브 DB 실측: yellow는 정확히 'yellow' 문자열 저장 확인 — (a) 경로는 기존에도 정상.)
+  //    힐러→다른 상태/단계 전환 시 필터 재계산으로 자동 제거(AC-2 보존).
   const activeList = useMemo(
     () =>
       checkIns
-        .filter((ci) => ci.status_flag === 'purple' || ci.status_flag === 'yellow')
+        .filter(
+          (ci) =>
+            ci.status_flag === 'purple' ||
+            ci.status_flag === 'yellow' ||
+            ci.status === 'healer_waiting',
+        )
         .sort((a, b) => a.checked_in_at.localeCompare(b.checked_in_at)),
     [checkIns],
   );
@@ -267,8 +278,9 @@ interface DoctorCallRowProps {
 function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onSelect, onOpenChart, onRefresh }: DoctorCallRowProps) {
   const isReturning = checkIn.visit_type === 'returning';
   const isExperience = checkIn.visit_type === 'experience';
-  // T-20260609-foot-CALLLIST-HEALER-POSITION item1: 힐러(yellow) 구분 배지
-  const isHealer = checkIn.status_flag === 'yellow';
+  // T-20260609-foot-CALLLIST-HEALER-POSITION item1 + REOPEN FIX-SPEC: 힐러 구분 배지.
+  //   힐러 신호 두 갈래 모두 [힐러] 배지: status_flag='yellow'(HL) OR status='healer_waiting'(힐러대기 단계).
+  const isHealer = checkIn.status_flag === 'yellow' || checkIn.status === 'healer_waiting';
   // T-20260609-foot-CALLLIST-HEALER-POSITION item2·3: 성함 옆 현재 위치(단계 인식).
   //   기존 getAssignedSlotName(방 이름) → getCurrentLocationLabel(단계 라벨, 대기 단계는 방 미표시).
   //   치료대기 환자가 '방배정'으로 잘못 표시되던 오표시 제거 + status 파생으로 실시간 갱신.

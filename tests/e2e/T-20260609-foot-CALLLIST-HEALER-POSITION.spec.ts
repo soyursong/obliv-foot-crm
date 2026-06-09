@@ -29,54 +29,67 @@ import { loginAndWaitForDashboard } from '../helpers';
 
 test.describe('T-20260609 CALLLIST-HEALER-POSITION — 힐러 포함 + 현재 위치', () => {
   // ── 시나리오1 / AC-1·AC-2·AC-3: 힐러(yellow) 포함 + 배지 + 이탈 ───────────────────
-  test('AC-1/AC-2: activeList inclusion 이 purple + yellow(힐러) 를 콜대상으로 집계, 힐러→타상태 시 이탈', async ({ page }) => {
+  test('AC-1/AC-2: activeList inclusion 이 purple + yellow(HL) + healer_waiting(힐러대기 단계) 를 콜대상으로 집계, 이탈', async ({ page }) => {
     await page.goto('/');
     const result = await page.evaluate(() => {
-      // DoctorCallListBar.activeList 와 동일: status_flag in (purple, yellow) + checked_in_at 정렬
-      type Row = { id: string; status_flag: string | null; checked_in_at: string };
+      // DoctorCallListBar.activeList 와 동일 (REOPEN 11:42 FIX-SPEC):
+      //   status_flag in (purple, yellow) OR status === 'healer_waiting' + checked_in_at 정렬
+      type Row = { id: string; status_flag: string | null; status: string; checked_in_at: string };
       const activeList = (rows: Row[]) =>
         rows
-          .filter((ci) => ci.status_flag === 'purple' || ci.status_flag === 'yellow')
+          .filter(
+            (ci) =>
+              ci.status_flag === 'purple' ||
+              ci.status_flag === 'yellow' ||
+              ci.status === 'healer_waiting',
+          )
           .sort((a, b) => a.checked_in_at.localeCompare(b.checked_in_at))
           .map((ci) => ci.id);
 
       const before: Row[] = [
-        { id: 'h', status_flag: 'yellow', checked_in_at: '2026-06-09T02:00:00+00:00' },  // 힐러
-        { id: 'p', status_flag: 'purple', checked_in_at: '2026-06-09T01:00:00+00:00' },  // 진료필요
-        { id: 'w', status_flag: 'white', checked_in_at: '2026-06-09T00:30:00+00:00' },   // 제외
-        { id: 'k', status_flag: 'pink', checked_in_at: '2026-06-09T00:10:00+00:00' },     // 완료(비활성)
+        // 힐러대기 컬럼 이동(현장 주 동선): status='healer_waiting', status_flag는 미변경(null)
+        { id: 'hw', status_flag: null, status: 'healer_waiting', checked_in_at: '2026-06-09T02:30:00+00:00' },
+        { id: 'h', status_flag: 'yellow', status: 'payment_waiting', checked_in_at: '2026-06-09T02:00:00+00:00' },  // HL 플래그
+        { id: 'p', status_flag: 'purple', status: 'exam_waiting', checked_in_at: '2026-06-09T01:00:00+00:00' },  // 진료필요
+        { id: 'w', status_flag: 'white', status: 'consult_waiting', checked_in_at: '2026-06-09T00:30:00+00:00' },   // 제외
+        { id: 'k', status_flag: 'pink', status: 'done', checked_in_at: '2026-06-09T00:10:00+00:00' },     // 완료(비활성)
       ];
       const active = activeList(before);
 
-      // 힐러(h)를 핑크(진료완료)로 전환 → 활성 콜대상에서 빠진다(AC-2 이탈)
+      // 힐러대기(hw)를 다른 단계(치료실)로 이동 → status_flag도 null이면 명단에서 제거(AC-2 이탈)
+      const hwAfterMove = activeList(
+        before.map((r) => (r.id === 'hw' ? { ...r, status: 'preconditioning' } : r)),
+      );
+      // HL(h)를 핑크(진료완료)로 전환 + payment_waiting 유지 → 활성 콜대상에서 빠진다(AC-2 이탈)
       const afterDone = activeList(before.map((r) => (r.id === 'h' ? { ...r, status_flag: 'pink' } : r)));
-      // 힐러(h)를 white 로 전환 → 명단에서 완전 제거
-      const afterWhite = activeList(before.map((r) => (r.id === 'h' ? { ...r, status_flag: 'white' } : r)));
 
-      return { active, afterDone, afterWhite };
+      return { active, hwAfterMove, afterDone };
     });
 
-    // 보라+힐러 모두 집계, 접수순(p 01:00 → h 02:00). white/pink 제외.
-    expect(result.active).toEqual(['p', 'h']);
-    // 힐러→완료(pink) 전환 시 활성에서 이탈, 보라(p)만 남음
-    expect(result.afterDone).toEqual(['p']);
-    // 힐러→white 시 명단 제거, 보라(p)만 남음
-    expect(result.afterWhite).toEqual(['p']);
+    // 보라+HL+힐러대기 모두 집계, 접수순(p 01:00 → h 02:00 → hw 02:30). white/pink-done 제외.
+    expect(result.active).toEqual(['p', 'h', 'hw']);
+    // 힐러대기→치료실 이동(status_flag null) 시 명단에서 제거, 나머지(p,h)만 남음
+    expect(result.hwAfterMove).toEqual(['p', 'h']);
+    // HL→완료(pink) 전환 시 활성에서 이탈, p + 힐러대기(hw)만 남음
+    expect(result.afterDone).toEqual(['p', 'hw']);
   });
 
-  test('AC-3: 힐러(yellow) 행만 [힐러] 배지 노출 — 진료필요(보라)와 시각 구분', async ({ page }) => {
+  test('AC-3: 힐러(yellow/healer_waiting) 행만 [힐러] 배지 노출 — 진료필요(보라)와 시각 구분', async ({ page }) => {
     await page.goto('/');
     const result = await page.evaluate(() => {
-      // DoctorCallRow: const isHealer = checkIn.status_flag === 'yellow';
-      const isHealer = (flag: string | null) => flag === 'yellow';
+      // DoctorCallRow: isHealer = status_flag === 'yellow' || status === 'healer_waiting'
+      const isHealer = (flag: string | null, status: string) =>
+        flag === 'yellow' || status === 'healer_waiting';
       return {
-        healer: isHealer('yellow'),
-        purple: isHealer('purple'),
-        pink: isHealer('pink'),
+        healerFlag: isHealer('yellow', 'payment_waiting'),     // HL 플래그
+        healerStage: isHealer(null, 'healer_waiting'),          // 힐러대기 단계(플래그 없음)
+        purple: isHealer('purple', 'exam_waiting'),
+        pink: isHealer('pink', 'done'),
       };
     });
-    expect(result.healer).toBe(true);  // 힐러 배지 표시
-    expect(result.purple).toBe(false); // 진료필요는 힐러 배지 없음(구분)
+    expect(result.healerFlag).toBe(true);   // HL 플래그 → 힐러 배지
+    expect(result.healerStage).toBe(true);  // 힐러대기 단계 → 힐러 배지
+    expect(result.purple).toBe(false);      // 진료필요는 힐러 배지 없음(구분)
     expect(result.pink).toBe(false);
   });
 
