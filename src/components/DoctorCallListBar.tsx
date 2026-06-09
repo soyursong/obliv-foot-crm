@@ -42,6 +42,14 @@
  *    · AC-1 우측(우하단) fixed 고정(좌하단 아님). AC-2 가로스크롤해도 우측 유지·안 사라짐.
  *    · z-40: 칸반 카드(z-30)보다 위, 모달(z-50+)보다 아래. width calc 기준 100% → 100vw(fixed=뷰포트 기준).
  *  - AC-3 무파괴: 이름클릭→차트, 슬롯 위치배지, 지정콜/전체콜, 메모 등 기능 로직 일체 불변(위치만 변경).
+ *
+ * T-20260609-foot-CALLLIST-HEALER-POSITION — 힐러 포함 + 현재 위치 실시간/오표시 수정:
+ *  item1) inclusion 조건 확장: 보라(purple/진료필요) 단독 → 보라 OR 힐러(yellow). 힐러도 원장 시술
+ *         대상이므로 콜 명단에 표시. 행에 [힐러] 노랑 배지로 진료필요와 시각 구분.
+ *  item2) 현재 위치 실시간 반영: 위치 배지를 getAssignedSlotName(방 이름) → getCurrentLocationLabel
+ *         (status 단계 인식)로 교체. status는 realtime fetchCheckIns로 갱신되므로 stale 제거.
+ *  item3) 치료대기↔방배정 오표시 수정: 대기 단계(치료대기 등)는 단계 라벨만 표시(방 미표시).
+ *         ※ dedup: SLOT-CHART-MISMAP(카드클릭→customer_id 차트오픈)과 다른 축 → 본 티켓에서 수정.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
@@ -49,7 +57,7 @@ import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { CheckIn } from '@/lib/types';
-import { getAssignedSlotName } from '@/lib/checkin-slot';
+import { getCurrentLocationLabel } from '@/lib/checkin-slot';
 
 interface DoctorCallListBarProps {
   /** Dashboard의 당일·해당지점 check_ins rows */
@@ -61,11 +69,13 @@ interface DoctorCallListBarProps {
 }
 
 export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: DoctorCallListBarProps) {
-  // 1) 활성(보라/진료필요) — 콜 대상. 접수순(checked_in_at) 정렬.
+  // 1) 활성(콜 대상) — 보라(purple/진료필요) + 노랑(yellow/힐러). 접수순(checked_in_at) 정렬.
+  //    T-20260609-foot-CALLLIST-HEALER-POSITION item1: 힐러(원장 시술)도 콜 대상이므로 포함.
+  //    힐러=yellow(foot_logic_sync_registry G-002). 힐러→다른 상태 전환 시 필터 재계산으로 자동 제거.
   const activeList = useMemo(
     () =>
       checkIns
-        .filter((ci) => ci.status_flag === 'purple')
+        .filter((ci) => ci.status_flag === 'purple' || ci.status_flag === 'yellow')
         .sort((a, b) => a.checked_in_at.localeCompare(b.checked_in_at)),
     [checkIns],
   );
@@ -257,8 +267,12 @@ interface DoctorCallRowProps {
 function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onSelect, onOpenChart, onRefresh }: DoctorCallRowProps) {
   const isReturning = checkIn.visit_type === 'returning';
   const isExperience = checkIn.visit_type === 'experience';
-  // T-20260601-foot-DASH-HSCROLL-CHART-LOC #3: 성함 옆 현재 배정 슬롯 이름
-  const slotName = getAssignedSlotName(checkIn);
+  // T-20260609-foot-CALLLIST-HEALER-POSITION item1: 힐러(yellow) 구분 배지
+  const isHealer = checkIn.status_flag === 'yellow';
+  // T-20260609-foot-CALLLIST-HEALER-POSITION item2·3: 성함 옆 현재 위치(단계 인식).
+  //   기존 getAssignedSlotName(방 이름) → getCurrentLocationLabel(단계 라벨, 대기 단계는 방 미표시).
+  //   치료대기 환자가 '방배정'으로 잘못 표시되던 오표시 제거 + status 파생으로 실시간 갱신.
+  const locationLabel = getCurrentLocationLabel(checkIn);
 
   // 3) 진료 전달사항 메모
   const [editing, setEditing] = useState(false);
@@ -343,15 +357,25 @@ function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onS
           >
             {checkIn.customer_name}
           </button>
-          {/* #3 현재 배정 슬롯 이름 */}
-          {slotName && (
+          {/* item2·3 현재 위치(단계 인식). 항상 표시 — status 변경 시 실시간 갱신.
+              치료대기 등 대기 단계는 단계 라벨만(방배정 오표시 없음). */}
+          <span
+            data-testid="doctor-call-location"
+            data-checkin-status={checkIn.status}
+            className="inline-flex items-center gap-0.5 shrink-0 text-[10px] font-medium text-teal-700 bg-teal-50 border border-teal-100 rounded px-1 py-px whitespace-nowrap"
+            title={`현재 위치: ${locationLabel}`}
+          >
+            <MapPin className="h-2.5 w-2.5" />
+            {locationLabel}
+          </span>
+          {/* item1 힐러(yellow) 구분 배지 — 진료필요(보라)와 시각 구분 */}
+          {isHealer && (
             <span
-              data-testid="doctor-call-location"
-              className="inline-flex items-center gap-0.5 shrink-0 text-[10px] font-medium text-teal-700 bg-teal-50 border border-teal-100 rounded px-1 py-px whitespace-nowrap"
-              title={`현재 위치: ${slotName}`}
+              data-testid="doctor-call-healer-badge"
+              className="shrink-0 bg-yellow-100 text-yellow-800 border border-yellow-300 text-[10px] px-1 py-px rounded font-medium whitespace-nowrap"
+              title="힐러 — 원장님 시술 대상"
             >
-              <MapPin className="h-2.5 w-2.5" />
-              {slotName}
+              힐러
             </span>
           )}
           {visitBadge}
