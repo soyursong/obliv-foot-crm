@@ -20,7 +20,7 @@
  *   APPLY=1 node scripts/T-20260609-foot-TRIAL-REVENUE-ZERO_backfill_apply.mjs # 집행
  */
 import { createClient } from '@supabase/supabase-js';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 const APPLY = process.env.APPLY === '1';
 const env = Object.fromEntries(
@@ -80,6 +80,33 @@ if (!APPLY) {
   console.log('\n⚠ DRY-RUN 종료 — 실제 집행하려면 APPLY=1 (supervisor 게이트 승인 후).');
   process.exit(0);
 }
+
+// ── capture-before-write: 집행 직전 실제 pre-state 를 롤백 SQL 로 박제 ──────────
+// supervisor 게이트 정책: APPLY 직전 무손실 롤백 SQL 자동 생성(집행/롤백 간 상태 어긋남 방지).
+const cisById = new Map(cis.map((c) => [c.id, c]));
+const rb = [];
+rb.push('-- ============================================================================');
+rb.push('-- T-20260609-foot-TRIAL-REVENUE-ZERO — BACKFILL ROLLBACK SQL (capture-before-write)');
+rb.push(`-- 생성: ${new Date().toISOString()} (APPLY=1 집행 직전 자동 캡처)`);
+rb.push('-- 사용: 문제 발생 시 supabase SQL editor 에서 BEGIN; ... COMMIT; 실행. 멱등 가드 포함.');
+rb.push('-- ============================================================================');
+rb.push('BEGIN;');
+for (const a of A) {
+  rb.push(`-- [A] pay ${a.id} : amount→0, tax→'선수금', cis is_package_session 원복`);
+  rb.push(`UPDATE payments SET amount = 0, tax_type = '선수금' WHERE id = '${a.id}' AND amount = ${a.price} AND tax_type IS NULL;`);
+  for (const cid of (trialCisIds.get(a.ciId) ?? [])) {
+    const orig = cisById.get(cid)?.is_package_session;
+    rb.push(`UPDATE check_in_services SET is_package_session = ${orig === true ? 'true' : orig === false ? 'false' : 'NULL'} WHERE id = '${cid}';`);
+  }
+}
+for (const b of B) {
+  rb.push(`-- [B] pay ${b.id} : tax→'선수금' (amount ${b.amount} 유지)`);
+  rb.push(`UPDATE payments SET tax_type = '선수금' WHERE id = '${b.id}' AND tax_type IS NULL AND amount = ${b.amount};`);
+}
+rb.push('COMMIT;');
+const rbPath = new URL('../rollback/T-20260609-foot-TRIAL-REVENUE-ZERO_rollback.sql', import.meta.url);
+writeFileSync(rbPath, rb.join('\n') + '\n', 'utf8');
+console.log(`✓ 롤백 SQL 박제(집행 직전): rollback/T-20260609-foot-TRIAL-REVENUE-ZERO_rollback.sql\n`);
 
 // ── LIVE 집행 ────────────────────────────────────────────────────────────────
 let aOk = 0, bOk = 0, cisOk = 0;
