@@ -45,7 +45,7 @@
  * Props: open / onOpenChange / customerId / clinicId / currentUserRole / currentUserEmail
  *   — 기존 caller 변경 없음. checkInId 신규 (optional)
  */
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
@@ -625,6 +625,16 @@ export default function MedicalChartPanel({
   // T-20260527-foot-TREATMEMO-CHART-MERGE: treatMemosLoaded/Loading 제거 (loadData 통합으로 불필요)
   const [treatMemos, setTreatMemos] = useState<TreatmentMemoEntry[]>([]);
   const [visitHistory, setVisitHistory] = useState<VisitHistoryEntry[]>([]);
+  // T-20260609-foot-VISITLOG-EMPTYROW-HIDE: 렌더 전용 필터 — 진료종류·치료메모·진료메모가 모두 빈
+  // 방문(체크인) 행은 표시하지 않는다. 원본 visitHistory(쿼리/정렬/그룹핑)는 무변경.
+  const visibleVisitHistory = useMemo(
+    () =>
+      visitHistory.filter((ci) => {
+        const treatDetails = (ci.treatment_memo?.details ?? '').trim();
+        return !!ci.treatment_kind || !!treatDetails || !!ci.doctor_note?.trim();
+      }),
+    [visitHistory],
+  );
   const [visitHistLoaded, setVisitHistLoaded] = useState(false);
   const [visitHistLoading, setVisitHistLoading] = useState(false);
   const [treatImages, setTreatImages] = useState<TreatmentImage[]>([]);
@@ -3459,13 +3469,16 @@ export default function MedicalChartPanel({
                         <div className="flex justify-center py-6">
                           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                         </div>
-                      ) : visitHistory.length === 0 ? (
-                        <div className="rounded-lg border border-dashed p-4 text-[11px] text-muted-foreground text-center">
-                          방문 기록 없음
+                      ) : visibleVisitHistory.length === 0 ? (
+                        <div
+                          className="rounded-lg border border-dashed p-4 text-[11px] text-muted-foreground text-center"
+                          data-testid="visit-hist-empty"
+                        >
+                          이전 방문 기록이 없어요
                         </div>
                       ) : (
                         <div className="space-y-1.5">
-                          {visitHistory.map((ci) => {
+                          {visibleVisitHistory.map((ci) => {
                             const treatDetails = (ci.treatment_memo?.details ?? '').trim();
                             const hasTreat = !!treatDetails;
                             const hasDoc = !!ci.doctor_note?.trim();
@@ -3500,9 +3513,7 @@ export default function MedicalChartPanel({
                                       <p className="text-[10px] text-gray-700 line-clamp-2 whitespace-pre-wrap mt-0.5">{ci.doctor_note}</p>
                                     </div>
                                   )}
-                                  {!ci.treatment_kind && !hasTreat && !hasDoc && (
-                                    <p className="text-[10px] text-muted-foreground">기록 없음</p>
-                                  )}
+                                  {/* T-20260609-foot-VISITLOG-EMPTYROW-HIDE: 빈 행은 visibleVisitHistory 단계에서 제외되어 여기 도달 불가 */}
                                 </div>
                               </div>
                             );
