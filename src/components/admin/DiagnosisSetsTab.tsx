@@ -51,6 +51,8 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { toast } from '@/lib/toast';
 import { Loader2, Plus, Pencil, Trash2, X, Star, GripVertical } from 'lucide-react';
+import { useDiagnosisFolders } from '@/lib/diagnosisFolders';
+import DxFolderMultiSelect from './DxFolderMultiSelect';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -59,6 +61,7 @@ interface DxMasterRow {
   id: string;
   name: string;
   service_code: string | null;
+  diagnosis_folder_id: string | null; // AC-4: 폴더트리 picker 그룹핑용 (NULL=미분류)
 }
 
 interface DiagnosisSetItem {
@@ -102,7 +105,7 @@ function compareSets(a: DiagnosisSet, b: DiagnosisSet): number {
 // Hooks
 // ---------------------------------------------------------------------------
 // 상병 마스터(services category_label='상병') — DiagnosisNamesTab 와 동일 소스(active만).
-// AC-1: 폴더 그룹핑 폐지 — diagnosis_folder 미조회(플랫 name 정렬).
+// T-...-NEST-BUNDLE-FOLDER AC-4: 폴더트리 picker 복원 → diagnosis_folder_id 재조회(deploy-tolerant).
 function useDxMaster(clinicId: string | null) {
   return useQuery({
     queryKey: ['dx_set_master', clinicId],
@@ -110,15 +113,26 @@ function useDxMaster(clinicId: string | null) {
     queryFn: async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sb = supabase as any;
-      const { data, error } = await sb
+      const withFolder = await sb
         .from('services')
-        .select('id, name, service_code')
+        .select('id, name, service_code, diagnosis_folder_id')
         .eq('clinic_id', clinicId)
         .eq('category_label', '상병')
         .eq('active', true)
         .order('name', { ascending: true });
-      if (error) throw error;
-      return (data ?? []) as DxMasterRow[];
+      if (withFolder.error) {
+        // diagnosis_folder_id 컬럼 미적용(42703) 환경 — 폴더 없는 플랫 목록으로 폴백.
+        const fb = await sb
+          .from('services')
+          .select('id, name, service_code')
+          .eq('clinic_id', clinicId)
+          .eq('category_label', '상병')
+          .eq('active', true)
+          .order('name', { ascending: true });
+        if (fb.error) throw fb.error;
+        return ((fb.data ?? []) as DxMasterRow[]).map((r) => ({ ...r, diagnosis_folder_id: null }));
+      }
+      return (withFolder.data ?? []) as DxMasterRow[];
     },
   });
 }
@@ -385,6 +399,7 @@ export default function DiagnosisSetsTab() {
 
   const qc = useQueryClient();
   const { data: master = [] } = useDxMaster(clinicId);
+  const { data: folders = [] } = useDiagnosisFolders(clinicId); // AC-4 폴더트리 picker
   const { data: sets = [], isLoading } = useDiagnosisSets(clinicId);
   const upsert = useUpsertSet(clinicId);
   const del = useDeleteSet();
@@ -393,6 +408,7 @@ export default function DiagnosisSetsTab() {
   const [editing, setEditing] = useState<DiagnosisSet | null>(null);
   const [form, setForm] = useState<SetForm>(EMPTY_FORM);
   const [favPendingId, setFavPendingId] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false); // AC-4 상병 추가 폴더트리 picker 토글
 
   // AC-4: DnD 정렬용 로컬 미러(낙관적 반영). 쿼리 데이터로 동기화.
   const [items, setItems] = useState<DiagnosisSet[]>([]);
@@ -424,6 +440,7 @@ export default function DiagnosisSetsTab() {
   function openAdd() {
     setEditing(null);
     setForm({ ...EMPTY_FORM, items: [] });
+    setPickerOpen(false);
     setOpen(true);
   }
 
@@ -432,42 +449,49 @@ export default function DiagnosisSetsTab() {
     setForm({
       name: s.name,
       is_active: s.is_active,
-      items: s.items.map((it) => ({ ...it })),
+      // AC-6: 저장된 순서(sort_order)대로 index0=주, 나머지=부 재정규화(과거 수동지정분 정합).
+      items: withAutoTypes(s.items.map((it) => ({ ...it }))),
     });
+    setPickerOpen(false);
     setOpen(true);
   }
 
-  // 항목 추가 — 첫 항목은 주상병(primary), 이후는 부상병(secondary) 기본.
-  function addItem(serviceId: string) {
-    if (!serviceId) return;
+  // AC-6: 묶음 상병의 주/부는 "선택(배열) 순서"로 자동 결정 — index0=주상병(primary), 나머지=부상병.
+  //   별도 주/부 지정 UI 없음(field_confirm MSG-m2th). sort_order=index 동기화.
+  function withAutoTypes(arr: DiagnosisSetItem[]): DiagnosisSetItem[] {
+    return arr.map((it, i) => ({
+      ...it,
+      diagnosis_type: i === 0 ? 'primary' : 'secondary',
+      sort_order: i,
+    }));
+  }
+
+  // AC-4: picker 다중선택 일괄 추가 — 선택 순서 보존, 중복 제외. 추가 후 주/부 자동 재지정(AC-6).
+  function addItems(orderedIds: string[]) {
     setForm((f) => {
-      if (f.items.some((it) => it.service_id === serviceId)) {
+      const existing = new Set(f.items.map((it) => it.service_id));
+      const additions = orderedIds
+        .filter((id) => !existing.has(id))
+        .map((id) => ({ service_id: id, diagnosis_type: 'secondary' as const, sort_order: 0 }));
+      if (additions.length === 0) {
         toast.error('이미 추가된 상병이에요.');
         return f;
       }
-      const type: 'primary' | 'secondary' = f.items.length === 0 ? 'primary' : 'secondary';
-      return {
-        ...f,
-        items: [...f.items, { service_id: serviceId, diagnosis_type: type, sort_order: f.items.length }],
-      };
+      return { ...f, items: withAutoTypes([...f.items, ...additions]) };
     });
+    setPickerOpen(false);
   }
 
   function removeItem(idx: number) {
-    setForm((f) => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
-  }
-
-  function setItemType(idx: number, type: 'primary' | 'secondary') {
-    setForm((f) => {
-      const itemsNext = f.items.map((it, i) => ({ ...it, diagnosis_type: i === idx ? type : it.diagnosis_type }));
-      return { ...f, items: itemsNext };
-    });
+    // 제거 후 주/부 자동 재지정 — 첫 항목 제거 시 다음 항목이 주상병으로 승격(AC-6).
+    setForm((f) => ({ ...f, items: withAutoTypes(f.items.filter((_, i) => i !== idx)) }));
   }
 
   async function handleSave() {
     if (!form.name.trim()) return toast.error('묶음상병 이름을 입력해주세요.');
     if (form.items.length === 0) return toast.error('상병을 한 개 이상 추가해주세요.');
-    await upsert.mutateAsync({ id: editing?.id, form });
+    // AC-6: 저장 직전 주/부 최종 재정규화(순서 SSOT). upsert 가 sort_order=index 로 차트 정렬 일관 유지.
+    await upsert.mutateAsync({ id: editing?.id, form: { ...form, items: withAutoTypes(form.items) } });
     setOpen(false);
   }
 
@@ -622,77 +646,66 @@ export default function DiagnosisSetsTab() {
               />
             </div>
 
-            {/* 상병 추가 — AC-1: 폴더 optgroup 폐지 → 이름순 플랫 목록에서 선택 */}
+            {/* 상병 추가 — AC-4: 상병명관리 동일 (중첩)폴더트리 picker + 다중선택 일괄추가 */}
             <div>
               <Label className="text-xs">상병 추가</Label>
-              <select
-                value=""
-                onChange={(e) => {
-                  addItem(e.target.value);
-                  e.currentTarget.value = '';
-                }}
-                className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                data-testid="dx-set-add-item-select"
-                disabled={master.length === 0}
-              >
-                <option value="" disabled>
-                  {master.length === 0 ? '등록된 상병명이 없습니다 — 상병명 관리에서 먼저 등록' : '상병 선택…'}
-                </option>
-                {master.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {fmtDx(r, r.id)}
-                  </option>
-                ))}
-              </select>
+              {pickerOpen ? (
+                <div className="mt-1">
+                  <DxFolderMultiSelect
+                    folders={folders}
+                    diagnoses={master}
+                    addedIds={new Set(form.items.map((it) => it.service_id))}
+                    onConfirm={addItems}
+                    onCancel={() => setPickerOpen(false)}
+                  />
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-1 w-full justify-start gap-2"
+                  onClick={() => setPickerOpen(true)}
+                  disabled={master.length === 0}
+                  data-testid="dx-set-open-picker"
+                >
+                  <Plus className="h-4 w-4" />
+                  {master.length === 0 ? '등록된 상병명이 없습니다 — 상병명 관리에서 먼저 등록' : '폴더에서 상병 선택…'}
+                </Button>
+              )}
             </div>
 
-            {/* 묶음에 포함된 상병 목록 */}
+            {/* 묶음에 포함된 상병 목록 — AC-6: 첫 항목=주상병, 나머지=부상병 자동(순서 기반, 별도 지정 UI 없음) */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <Label className="text-xs">묶음 상병 ({form.items.length}개)</Label>
-                <span className="text-[10px] text-muted-foreground">주상병 1 + 부상병 다수</span>
+                <span className="text-[10px] text-muted-foreground">맨 위 = 주상병 · 나머지 = 부상병(자동)</span>
               </div>
               {form.items.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
-                  위에서 상병을 추가하세요.
+                  위 “폴더에서 상병 선택”으로 상병을 추가하세요.
                 </div>
               ) : (
                 <div className="space-y-1.5" data-testid="dx-set-item-rows">
                   {form.items.map((it, idx) => {
                     const row = masterById.get(it.service_id);
+                    const primary = idx === 0; // AC-6: 순서 기반 주/부
                     return (
                       <div
                         key={`${it.service_id}-${idx}`}
                         className="flex items-center gap-2 border rounded-lg px-3 py-2 bg-muted/30"
                         data-testid="dx-set-item-row"
                       >
+                        {/* 읽기전용 주/부 배지(자동) — 토글 UI 제거(field_confirm MSG-m2th) */}
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold shrink-0 ${
+                            primary ? 'bg-teal-600 text-white' : 'bg-gray-300 text-gray-700'
+                          }`}
+                          data-testid="dx-set-item-type-badge"
+                          data-type={primary ? 'primary' : 'secondary'}
+                        >
+                          {primary ? '주' : '부'}
+                        </span>
                         <span className="text-sm flex-1 min-w-0 truncate">{fmtDx(row, it.service_id)}</span>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => setItemType(idx, 'primary')}
-                            className={`rounded px-2 py-0.5 text-[11px] font-semibold ${
-                              it.diagnosis_type === 'primary'
-                                ? 'bg-teal-600 text-white'
-                                : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-                            }`}
-                            data-testid="dx-set-item-type-primary"
-                          >
-                            주상병
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setItemType(idx, 'secondary')}
-                            className={`rounded px-2 py-0.5 text-[11px] font-semibold ${
-                              it.diagnosis_type === 'secondary'
-                                ? 'bg-gray-500 text-white'
-                                : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-                            }`}
-                            data-testid="dx-set-item-type-secondary"
-                          >
-                            부상병
-                          </button>
-                        </div>
                         <Button
                           variant="ghost"
                           size="icon"

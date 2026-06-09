@@ -42,7 +42,7 @@ test('AC-2: 빈 폴더 상태에서도 패널 유지 + "폴더 없음" 안내', 
 // ── AC-3: 2패널 grid 레이아웃 + 좌측 고정폭·스크롤 + 우측 선택 폴더 목록 ──
 test('AC-3: 2패널 grid + 좌측 고정폭·스크롤 + 우측 필터 목록', () => {
   const src = read(TAB);
-  expect(src).toContain('md:grid-cols-[240px_minmax(0,1fr)]');
+  expect(src).toContain('md:grid-cols-[280px_minmax(0,1fr)]'); // NEST-BUNDLE-FOLDER AC-1: 240→280px(폴더명 잘림 해소)
   expect(src).toContain('overflow-y-auto');
   expect(src).toContain('dx-folder-items');
   // 우측 = 선택 폴더 소속 항목(엔티티 FK 필터)
@@ -68,7 +68,7 @@ test('AC-4: @dnd-kit 크로스패널 DnD 보존 + 신규 라이브러리 금지'
 test('시나리오1: 삭제된 폴더 선택 시 미분류로 환원(선택 항상 유효)', () => {
   const src = read(TAB);
   expect(src).toContain('!folders.some((f) => f.id === selectedKey)');
-  expect(src).toContain('setSelectedKey(UNASSIGNED)');
+  expect(src).toContain('setSelectedKey(ALL_KEY)'); // NEST-BUNDLE-FOLDER AC-3: 미분류→전체목록 노드
 });
 
 // ── 시나리오 2: 선택 폴더 항목 0건일 때 우측 빈 상태 안내 ──
