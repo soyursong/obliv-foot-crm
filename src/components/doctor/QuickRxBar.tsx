@@ -8,10 +8,12 @@
 // 의사(director/admin/manager) 클릭 → prescription_status='confirmed' + doctor_confirm_prescription=true
 // 치료사/기타 클릭 → prescription_status='pending' (임시)
 
+import { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/lib/toast';
-import { Loader2, Ban, FileText } from 'lucide-react';
+import { Loader2, Ban, FileText, Undo2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { IconRenderer } from '@/components/admin/QuickRxButtonsTab';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
@@ -23,6 +25,7 @@ import {
   rxInClinicShortLabel,
 } from '@/lib/inClinicRxGate';
 import { captureRxSnapshot, buildUndoPatch, type RxSnapshot } from '@/lib/rxUndo';
+import { rxItemTooltipLine } from '@/lib/rxTooltip';
 
 /** 빠른처방 원내 잔류 게이트 차단 시 mutation 이 던지는 에러 코드 */
 const IN_CLINIC_GATE_CODE = 'IN_CLINIC_GATE';
@@ -47,6 +50,96 @@ interface QuickRxButtonRow {
 const DOCTOR_ROLES = ['director', 'admin', 'manager'] as const;
 export function isDoctor(role: string): boolean {
   return (DOCTOR_ROLES as readonly string[]).includes(role);
+}
+
+// ---------------------------------------------------------------------------
+// QuickRxButton — 빠른처방 버튼 1개 + hover 약정보 툴팁(portal·무DB)
+//   툴팁 포맷은 src/lib/rxTooltip(순수 함수)에 위임. items 배열 map(다중 약).
+//   버튼 바는 overflow-x-auto 스크롤 컨테이너 → CSS 절대배치 툴팁이 클리핑됨.
+//   → createPortal + position:fixed(getBoundingClientRect 기준)로 클리핑 회피(신규 패키지 0).
+// ---------------------------------------------------------------------------
+function QuickRxButton({
+  btn,
+  disabled,
+  loading,
+  compact,
+  className,
+  onClick,
+}: {
+  btn: QuickRxButtonRow;
+  disabled: boolean;
+  loading: boolean;
+  compact: boolean;
+  className: string;
+  onClick: () => void;
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const items = btn.prescription_sets?.items ?? [];
+  const hasItems = items.length > 0;
+
+  function showTooltip() {
+    const el = ref.current;
+    if (!el || !hasItems) return;
+    const r = el.getBoundingClientRect();
+    const TOOLTIP_W = 240;
+    // 우측 화면 이탈 방지 클램프 + 8px 여백.
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - TOOLTIP_W - 8));
+    setPos({ top: r.bottom + 6, left });
+  }
+  function hideTooltip() {
+    setPos(null);
+  }
+
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        onClick={onClick}
+        onMouseEnter={showTooltip}
+        onMouseLeave={hideTooltip}
+        onFocus={showTooltip}
+        onBlur={hideTooltip}
+        disabled={disabled}
+        className={className}
+        data-testid={`quick-rx-btn-${btn.name}`}
+        aria-label={`빠른처방 ${btn.name}`}
+      >
+        {loading ? (
+          <Loader2 className={compact ? 'h-3 w-3 animate-spin' : 'h-3.5 w-3.5 animate-spin'} />
+        ) : (
+          <IconRenderer icon={btn.icon} className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+        )}
+        {btn.name}
+      </button>
+
+      {pos &&
+        hasItems &&
+        createPortal(
+          <div
+            role="tooltip"
+            data-testid={`quick-rx-tooltip-${btn.name}`}
+            style={{ position: 'fixed', top: pos.top, left: pos.left, width: 240, zIndex: 9999 }}
+            className="pointer-events-none rounded-md border border-border bg-popover px-2.5 py-2 text-popover-foreground shadow-lg"
+          >
+            <p className="mb-1 text-[11px] font-semibold text-teal-700">{btn.name}</p>
+            <ul className="space-y-1">
+              {items.map((item, idx) => {
+                const { name, meta } = rxItemTooltipLine(item);
+                return (
+                  <li key={idx} className="text-[11px] leading-tight">
+                    <span className="font-medium text-foreground">{name}</span>
+                    {meta && <span className="block text-[10px] text-muted-foreground">{meta}</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>,
+          document.body,
+        )}
+    </>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -386,26 +479,97 @@ export default function QuickRxBar({
         data-testid="quick-rx-bar"
       >
         {buttons.map((btn) => (
-          <button
+          <QuickRxButton
             key={btn.id}
-            type="button"
-            onClick={() => handleClick(btn)}
+            btn={btn}
             disabled={applyMut.isPending || undoMut.isPending}
+            loading={applyMut.isPending}
+            compact={compact}
             className={cn(btnBase, confirmedStyle, 'shrink-0')}
-            data-testid={`quick-rx-btn-${btn.name}`}
-          >
-            {applyMut.isPending ? (
-              <Loader2 className={compact ? 'h-3 w-3 animate-spin' : 'h-3.5 w-3.5 animate-spin'} />
-            ) : (
-              <IconRenderer
-                icon={btn.icon}
-                className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'}
-              />
-            )}
-            {btn.name}
-          </button>
+            onClick={() => handleClick(btn)}
+          />
         ))}
       </div>
     </div>
+  );
+}
+
+// ===========================================================================
+// RxCancelButton — 의사 확정(prescription_status='confirmed') 후 '취소' 버튼
+//   T-20260609-foot-QUICKRX-HOVER-TOOLTIP-CANCEL ②
+//
+//   기존 빠른처방 '되돌리기'는 적용 직후 토스트 액션으로만 노출 → 토스트가 사라지면(휘발)
+//   더는 되돌릴 수 없었다. 확정 이후에도 상시 되돌릴 수 있도록 rxUndo 메커니즘을 '취소' 버튼으로
+//   재노출한다(토스트 비의존).
+//
+//   취소 = 빠른처방 적용 전(clean) 상태로 원복. rxUndo 의 captureRxSnapshot/buildUndoPatch 를
+//   단일 출처로 재사용 → 4개 처방필드만 원복(차팅/문서 확정 등 인접 필드 불간섭, INSERT 없음).
+//   성공 시 invalidateRxQueries 로 적용/되돌리기 공통 캐시 무효화(정합).
+//   권한 = DOCTOR_ROLES(doctorMode). 비의사에게는 렌더 안 함.
+// ===========================================================================
+function useCancelConfirmedRx(checkInId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!checkInId) throw new Error('checkInId 없음');
+      // 적용 전(clean) 스냅샷 = captureRxSnapshot(undefined) → none/false/null 정규화. rxUndo 단일 출처.
+      const patch = buildUndoPatch(captureRxSnapshot(undefined));
+      const { error } = await supabase
+        .from('check_ins')
+        .update(patch as unknown as Record<string, unknown>)
+        .eq('id', checkInId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      if (checkInId) invalidateRxQueries(qc, checkInId);
+    },
+  });
+}
+
+export function RxCancelButton({
+  checkInId,
+  doctorMode,
+  onCancelled,
+  className,
+}: {
+  checkInId: string | undefined;
+  /** DOCTOR_ROLES 여부 — false면 렌더 안 함(권한 게이트). */
+  doctorMode: boolean;
+  onCancelled?: () => void;
+  className?: string;
+}) {
+  const cancelMut = useCancelConfirmedRx(checkInId);
+
+  if (!doctorMode || !checkInId) return null;
+
+  function handleCancel() {
+    // 데이터 소실 방지 — 명시적 확인. 취소 시 입력된 처방 내용이 함께 비워짐.
+    if (!window.confirm('확정된 처방을 취소할까요?\n입력된 처방 내용이 삭제되고 처방 없음 상태로 돌아갑니다.')) {
+      return;
+    }
+    void cancelMut
+      .mutateAsync()
+      .then(() => {
+        onCancelled?.();
+        toast.confirm('처방 확정을 취소했어요.');
+      })
+      .catch((e: Error) => toast.error(`처방 취소 실패: ${e.message}`));
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCancel}
+      disabled={cancelMut.isPending}
+      data-testid="quick-rx-cancel-btn"
+      className={cn(
+        'inline-flex items-center gap-0.5 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-medium text-rose-700 transition hover:bg-rose-100 active:scale-95 disabled:opacity-50',
+        className,
+      )}
+      title="확정된 처방을 취소(되돌리기)"
+    >
+      {cancelMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Undo2 className="h-3 w-3" />}
+      취소
+    </button>
   );
 }

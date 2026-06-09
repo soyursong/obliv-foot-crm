@@ -15,7 +15,7 @@ import { todaySeoulISODate } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
 import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
-import QuickRxBar, { isDoctor } from './QuickRxBar';
+import QuickRxBar, { isDoctor, RxCancelButton } from './QuickRxBar';
 import { STATUS_KO, isInClinic } from '@/lib/status';
 import type { CheckInStatus } from '@/lib/types';
 
@@ -372,6 +372,13 @@ function PatientRow({
                 {format(new Date(row.doctor_confirmed_at), 'HH:mm', { locale: ko })}
               </span>
             )}
+            {/* T-20260609-foot-QUICKRX-HOVER-TOOLTIP-CANCEL ②: 확정 후 취소(rxUndo 재노출, 권한=DOCTOR_ROLES) */}
+            <RxCancelButton
+              checkInId={row.id}
+              doctorMode={doctorMode}
+              onCancelled={onRefresh}
+              className={row.doctor_confirmed_at ? 'ml-1.5' : 'ml-auto'}
+            />
           </div>
           {Array.isArray(row.prescription_items) && row.prescription_items.length > 0 && (
             <div className="space-y-0.5">
