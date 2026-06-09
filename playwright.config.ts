@@ -92,6 +92,8 @@ export default defineConfig({
         '**/T-20260609-foot-DRUGINFO-MANUFACTURER.spec.ts',
         // T-20260609-foot-RECEIPT-LASER-MISSING: 진료비 영수증 합산 = 진료 항목 SSOT(computeFootBilling.grandTotal) — 레이저 포함, 결제분류 무관 (순수 함수 + 소스 가드, auth 불요)
         '**/T-20260609-foot-RECEIPT-LASER-MISSING.spec.ts',
+        // T-20260609-foot-DOCDASH-LABEL-RX-REFINE: 진료대시보드 헤더/처방 내용 라벨/약 한 줄/중앙정렬/처방나감 필터 (순수 로직 모사 + 소스 정적 가드, auth 불요)
+        '**/T-20260609-foot-DOCDASH-LABEL-RX-REFINE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

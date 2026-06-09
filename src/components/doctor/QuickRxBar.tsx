@@ -537,6 +537,7 @@ export function RxConfirmedSummary({
   doctorMode,
   onCancelled,
   className,
+  label = '처방완료',
 }: {
   checkInId: string | undefined;
   /** 확정된 처방 약물(JSONB) — 약물리스트 검은글씨 나열용. 배열 아니면 빈 줄. */
@@ -545,6 +546,12 @@ export function RxConfirmedSummary({
   doctorMode: boolean;
   onCancelled?: () => void;
   className?: string;
+  /**
+   * T-20260609-foot-DOCDASH-LABEL-RX-REFINE item2: 라벨 텍스트 주입(기본 '처방완료').
+   * 진료환자목록(환자 창)에서는 '처방 내용'으로 표기. 취소 동선·저장 로직은 불변(라벨만 교체).
+   * DoctorCallDashboard 등 다른 소비처는 기본값 유지 → 무회귀.
+   */
+  label?: string;
 }) {
   const cancelMut = useCancelConfirmedRx(checkInId);
   const list = Array.isArray(items) ? (items as Parameters<typeof formatRxConfirmedSummary>[0]) : null;
@@ -575,7 +582,7 @@ export function RxConfirmedSummary({
         onClick={handleDoneClick}
         disabled={cancelMut.isPending || !cancellable}
         data-testid="rx-confirmed-done"
-        title={cancellable ? '재클릭 시 처방 확정을 취소합니다' : '처방완료'}
+        title={cancellable ? '재클릭 시 처방 확정을 취소합니다' : label}
         className={cn(
           'inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-green-700',
           cancellable && 'cursor-pointer hover:text-rose-600',
@@ -588,7 +595,7 @@ export function RxConfirmedSummary({
         ) : (
           <CheckCircle2 className="h-3 w-3" />
         )}
-        처방완료
+        {label}
       </button>
       {summary && (
         <span
