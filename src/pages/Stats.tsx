@@ -8,6 +8,7 @@ import {
   fetchTherapistSummary,
   fetchTherapistServices,
   resolveRange,
+  describeStatsError,
   type CategoryRow,
   type ConsultantRow,
   type NoshowReturningRow,
@@ -86,8 +87,9 @@ export default function Stats() {
         }
       } catch (e) {
         if (aborted) return;
-        const msg = e instanceof Error ? e.message : '통계 불러오기 실패';
-        setError(msg);
+        // AC-3: raw 원인(PostgREST code/message/hint)을 콘솔에 통째로 + 배너에 1줄로.
+        console.error('[Stats] 통계 로드 실패', { tab, from, to, error: e });
+        setError(describeStatsError(e));
       } finally {
         if (!aborted) setLoading(false);
       }

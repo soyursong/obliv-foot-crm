@@ -58,6 +58,27 @@ export interface TherapistServiceRow {
 
 export type StatsRangePreset = 'today' | 'week' | 'month' | 'custom';
 
+/**
+ * T-20260609-foot-THERAPIST-STATS-LOAD-FAIL (AC-3): 통계 로드 에러 가시성 보강.
+ * supabase-js 의 PostgrestError 는 Error 인스턴스가 아니라 plain object 라서
+ * `e instanceof Error` 분기에서 누락 → 현장은 generic '통계 불러오기 실패'만 보고
+ * 원인(HTTP/PostgREST code·message·hint)을 못 봤다. 이 헬퍼로 raw 원인을 사람이
+ * 읽을 수 있는 1줄로 환원하고, 콘솔에는 원본 객체를 통째로 남긴다.
+ */
+export function describeStatsError(e: unknown): string {
+  // PostgrestError 형태: { message, code, details, hint }
+  if (e && typeof e === 'object') {
+    const pg = e as { message?: unknown; code?: unknown; details?: unknown; hint?: unknown };
+    const parts: string[] = [];
+    if (typeof pg.message === 'string' && pg.message) parts.push(pg.message);
+    if (typeof pg.code === 'string' && pg.code) parts.push(`code=${pg.code}`);
+    if (typeof pg.hint === 'string' && pg.hint) parts.push(`hint=${pg.hint}`);
+    if (parts.length) return parts.join(' · ');
+  }
+  if (e instanceof Error && e.message) return e.message;
+  return '통계 불러오기 실패';
+}
+
 /** 한국시간 기준 기간 계산. ISO yyyy-MM-dd 반환. */
 export function resolveRange(
   preset: StatsRangePreset,
