@@ -72,6 +72,11 @@ import {
   useAssignDiagnosisToFolder,
   type DiagnosisFolderNode,
 } from '@/lib/diagnosisFolders';
+import {
+  normalizeServiceCode,
+  validateServiceCode,
+  isDuplicateDiagnosisName,
+} from '@/lib/diagnosisCode';
 
 // ---------------------------------------------------------------------------
 // Types — 상병 = services 행 (category_label='상병')
@@ -143,7 +148,8 @@ function useUpsertDx(clinicId: string | null) {
     mutationFn: async ({ id, form }: { id?: string; form: DxForm }) => {
       const payload = {
         name: form.name.trim(),
-        service_code: form.service_code.trim() || null,
+        // AC-1: trim + 소문자→대문자 정규화 후 저장(빈 코드는 null 유지).
+        service_code: normalizeServiceCode(form.service_code) || null,
         active: form.active,
         sort_order: form.sort_order,
       };
@@ -520,6 +526,9 @@ export default function DiagnosisNamesTab() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Diagnosis | null>(null);
   const [form, setForm] = useState<DxForm>(EMPTY_FORM);
+  // 인라인 검증 에러 (AC-1 상병코드 형식 / AC-2 같은 폴더 중복)
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
 
   // 좌측 선택(폴더 id 또는 UNASSIGNED). 기본 = 미분류.
   const [selectedKey, setSelectedKey] = useState<string>(UNASSIGNED);
@@ -578,15 +587,35 @@ export default function DiagnosisNamesTab() {
   function openAdd() {
     setEditing(null);
     setForm({ ...EMPTY_FORM, sort_order: nextSortOrder() });
+    setCodeError(null);
+    setNameError(null);
     setOpen(true);
   }
   function openEdit(d: Diagnosis) {
     setEditing(d);
     setForm({ name: d.name, service_code: d.service_code ?? '', active: d.active, sort_order: d.sort_order });
+    setCodeError(null);
+    setNameError(null);
     setOpen(true);
   }
   async function handleSave() {
-    if (!form.name.trim()) return toast.error('상병명을 입력해주세요.');
+    const name = form.name.trim();
+    if (!name) {
+      setNameError('상병명을 입력해주세요.');
+      return toast.error('상병명을 입력해주세요.');
+    }
+    // AC-1: 상병코드 KCD-8 형식 검증(빈 코드는 통과). 위반 시 인라인 에러 + 저장 차단.
+    const codeErr = validateServiceCode(form.service_code);
+    if (codeErr) {
+      setCodeError(codeErr);
+      return;
+    }
+    // AC-2: 같은 폴더(미분류 포함) 내 상병명 중복 차단. 신규=미분류(NULL), 수정=기존 폴더 유지.
+    const targetFolder = editing ? (editing.diagnosis_folder_id ?? null) : null;
+    if (isDuplicateDiagnosisName(items, name, targetFolder, editing?.id)) {
+      setNameError('이미 등록된 상병명이에요.');
+      return;
+    }
     await upsert.mutateAsync({ id: editing?.id, form });
     setOpen(false);
   }
@@ -883,21 +912,38 @@ export default function DiagnosisNamesTab() {
                   <Label className="text-xs">상병명 *</Label>
                   <Input
                     value={form.name}
-                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setForm((f) => ({ ...f, name: v }));
+                      if (nameError) setNameError(null);
+                    }}
                     placeholder="예) 족저근막염"
-                    className="mt-1"
+                    aria-invalid={!!nameError}
+                    className={`mt-1 ${nameError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
                     data-testid="dx-name-input"
                   />
+                  {nameError && (
+                    <p className="mt-1 text-[11px] text-destructive" data-testid="dx-name-error">{nameError}</p>
+                  )}
                 </div>
                 <div>
                   <Label className="text-xs">상병코드</Label>
                   <Input
                     value={form.service_code}
-                    onChange={(e) => setForm((f) => ({ ...f, service_code: e.target.value }))}
+                    onChange={(e) => {
+                      // AC-1: 입력 즉시 대문자 정규화(소문자자동변환) + 인라인 형식 검증.
+                      const v = e.target.value.toUpperCase();
+                      setForm((f) => ({ ...f, service_code: v }));
+                      setCodeError(validateServiceCode(v));
+                    }}
                     placeholder="예) M79.3"
-                    className="mt-1 font-mono"
+                    aria-invalid={!!codeError}
+                    className={`mt-1 font-mono ${codeError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
                     data-testid="dx-code-input"
                   />
+                  {codeError && (
+                    <p className="mt-1 text-[11px] text-destructive" data-testid="dx-code-error">{codeError}</p>
+                  )}
                 </div>
               </div>
               {/* AC-2: 폴더(분류) 입력 필드 제거 — 등록 후 좌측 폴더로 드래그앤드롭 배치. */}
@@ -913,7 +959,7 @@ export default function DiagnosisNamesTab() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setOpen(false)}>취소</Button>
-              <Button onClick={handleSave} disabled={upsert.isPending} data-testid="dx-save-btn">
+              <Button onClick={handleSave} disabled={upsert.isPending || !!codeError} data-testid="dx-save-btn">
                 {upsert.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
                 저장
               </Button>
