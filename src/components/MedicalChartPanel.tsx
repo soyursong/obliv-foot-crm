@@ -51,7 +51,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FlaskConical, FolderTree, History, Loader2, Pill, Pin, PinOff, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
+import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FileText, FlaskConical, FolderTree, History, Loader2, Pill, Pin, PinOff, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
 // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 진료차트 우측 "📋 상담" 탭 (A안 — 서랍에서 탭으로 이식)
 import ConsultRecordTab from '@/components/ConsultRecordTab';
 import { Button } from '@/components/ui/button';
@@ -266,6 +266,10 @@ export interface MedicalChartPanelProps {
   //   'clinical'   = 차팅 버튼용 미니멀 뷰. 임상경과 입력 + 담당의사 + 저장만 노출(타임라인/처방/진료메모 제외).
   //                  저장은 동일 handleSave 재사용(신규 저장경로 없음·AC-1), 같은 medical_charts 소스(AC-3).
   variant?: 'full' | 'clinical';
+  // T-20260609-foot-MEDDASH-MINIMAL-TABLE AC-5: clinical 미니멀 drawer 안에서 전체 진료차트로 승격하는 진입점.
+  //   제공 시 clinical 헤더에 '본 차트 열기' 버튼 노출. 호출부가 variant를 'full'로 전환(같은 패널 인스턴스·
+  //   같은 customerId 유지 → 폼 상태·작성 중 임상경과 보존, AC-6 2단 레이아웃 그대로 재진입).
+  onOpenFull?: () => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -444,6 +448,7 @@ export default function MedicalChartPanel({
   currentUserRole,
   currentUserEmail,
   variant = 'full',
+  onOpenFull,
 }: MedicalChartPanelProps) {
   const isDirector = canViewDoctorMemo(currentUserRole);
   const navigate = useNavigate();
@@ -1775,6 +1780,21 @@ export default function MedicalChartPanel({
               <Stethoscope className="h-3.5 w-3.5" />
               {currentUserName}
             </span>
+            {/* T-20260609-foot-MEDDASH-MINIMAL-TABLE AC-5: clinical 미니멀 drawer → 전체 진료차트 승격.
+                같은 customerId·같은 패널 인스턴스 유지(variant만 전환) → 작성 중 임상경과 보존,
+                AC-6 2단 레이아웃 그대로 재진입(full 경로 무변경). */}
+            {variant === 'clinical' && onOpenFull && (
+              <button
+                type="button"
+                onClick={onOpenFull}
+                data-testid="clinical-open-full-btn"
+                className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
+                title="전체 진료차트(타임라인·진단·치료·처방·진료메모) 열기"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                본 차트 열기
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onOpenChange(false)}
@@ -1804,7 +1824,7 @@ export default function MedicalChartPanel({
                   <p className="text-[11px] text-muted-foreground" data-testid="clinical-mini-context">
                     {selectedChartId
                       ? `${fmtDateShort(formDate)} 진료차트의 임상경과를 이어서 작성합니다.`
-                      : '오늘 새 임상경과를 작성합니다. 전체 차트는 헤더의 “차트 열기”로 진입하세요.'}
+                      : '오늘 새 임상경과를 작성합니다. 전체 차트는 헤더의 “본 차트 열기”로 진입하세요.'}
                   </p>
 
                   {/* 담당 의사 (저장 필수 — 의료법, 기존 검증 동일 재사용) */}

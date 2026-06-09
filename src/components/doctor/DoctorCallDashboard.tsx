@@ -344,6 +344,9 @@ export default function DoctorCallDashboard() {
         currentUserRole={profile?.role ?? ''}
         currentUserEmail={profile?.email ?? null}
         variant={medicalChartVariant}
+        // T-20260609-foot-MEDDASH-MINIMAL-TABLE AC-5: clinical 미니멀 drawer 내 '본 차트 열기' →
+        //   같은 환자/같은 패널 인스턴스 유지하며 variant만 'full' 전환(작성 중 임상경과 보존, AC-6 2단 레이아웃 그대로).
+        onOpenFull={() => setMedicalChartVariant('full')}
       />
     </div>
   );
