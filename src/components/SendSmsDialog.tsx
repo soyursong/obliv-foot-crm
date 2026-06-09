@@ -227,12 +227,14 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
                 {byteLen}byte · {channelLabel}
               </span>
             </div>
+            {/* T-20260609-foot-MSG-TEMPLATE-MMS Part C(AC10): 본문 입력 영역 약 2배 확장
+                — 약도·약국 안내 등 장문 입력 시 스크롤 없이 한눈에. rows 5→10 + min-h 보강. */}
             <Textarea
               data-testid="sms-body-textarea"
               value={body}
               onChange={(e) => { setBody(e.target.value); setConfirmStep(false); }}
-              rows={5}
-              className="resize-none text-sm"
+              rows={10}
+              className="resize-y text-sm min-h-[220px]"
             />
           </div>
         )}
