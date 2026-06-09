@@ -13,7 +13,7 @@ import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/lib/toast';
-import { Loader2, Ban, FileText, Undo2 } from 'lucide-react';
+import { Loader2, Ban, FileText, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { IconRenderer } from '@/components/admin/QuickRxButtonsTab';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
@@ -25,7 +25,7 @@ import {
   rxInClinicShortLabel,
 } from '@/lib/inClinicRxGate';
 import { captureRxSnapshot, buildUndoPatch, type RxSnapshot } from '@/lib/rxUndo';
-import { rxItemTooltipLine } from '@/lib/rxTooltip';
+import { rxItemTooltipLine, formatRxConfirmedSummary } from '@/lib/rxTooltip';
 
 /** 빠른처방 원내 잔류 게이트 차단 시 mutation 이 던지는 에러 코드 */
 const IN_CLINIC_GATE_CODE = 'IN_CLINIC_GATE';
@@ -444,14 +444,12 @@ export default function QuickRxBar({
     }
   }
 
-  // 버튼 크기 결정
-  const btnBase = compact
-    ? 'flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-[11px] font-medium transition active:scale-95'
-    : 'flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition active:scale-95 min-h-[36px]';
-
-  const confirmedStyle = doctorMode
-    ? 'border-teal-400 bg-teal-50 text-teal-800 hover:bg-teal-100'
-    : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100';
+  // 목록형 항목 스타일 — T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-1:
+  //   선택지 = 우측 드롭다운(목록형, 버튼 아님). 파란글씨 / 흰배경 / 테두리 없음.
+  //   가로 버튼더미(border+teal/amber bg)에서 세로 목록(blue text · bg-white · border 0)으로 재-presentation.
+  const listItemBase = compact
+    ? 'flex w-full items-center gap-1.5 rounded-md border-0 bg-white px-2.5 py-1.5 text-left text-[11px] font-medium text-blue-600 transition hover:bg-blue-50 active:scale-[0.99] disabled:opacity-50'
+    : 'flex w-full items-center gap-2 rounded-md border-0 bg-white px-3 py-2 text-left text-sm font-medium text-blue-600 transition hover:bg-blue-50 active:scale-[0.99] min-h-[36px] disabled:opacity-50';
 
   return (
     // #4(FOLLOWUP2): 빠른처방 버튼 바 가시성 하드닝 — 자체 stacking context(relative + isolate)로
@@ -473,10 +471,12 @@ export default function QuickRxBar({
         </div>
       )}
 
-      {/* 버튼 바 (가로 스크롤) */}
+      {/* 선택지 드롭다운 목록 — AC-1: 우측 정렬 세로 목록(목록형). 항목 클릭 = 확정. */}
       <div
-        className="flex gap-2 overflow-x-auto pb-1 -mx-0.5 px-0.5"
+        className="ml-auto flex w-full max-w-[15rem] flex-col gap-0.5"
         data-testid="quick-rx-bar"
+        role="listbox"
+        aria-label="빠른처방 선택지"
       >
         {buttons.map((btn) => (
           <QuickRxButton
@@ -485,7 +485,7 @@ export default function QuickRxBar({
             disabled={applyMut.isPending || undoMut.isPending}
             loading={applyMut.isPending}
             compact={compact}
-            className={cn(btnBase, confirmedStyle, 'shrink-0')}
+            className={cn(listItemBase)}
             onClick={() => handleClick(btn)}
           />
         ))}
@@ -495,17 +495,14 @@ export default function QuickRxBar({
 }
 
 // ===========================================================================
-// RxCancelButton — 의사 확정(prescription_status='confirmed') 후 '취소' 버튼
-//   T-20260609-foot-QUICKRX-HOVER-TOOLTIP-CANCEL ②
-//
-//   기존 빠른처방 '되돌리기'는 적용 직후 토스트 액션으로만 노출 → 토스트가 사라지면(휘발)
-//   더는 되돌릴 수 없었다. 확정 이후에도 상시 되돌릴 수 있도록 rxUndo 메커니즘을 '취소' 버튼으로
-//   재노출한다(토스트 비의존).
+// useCancelConfirmedRx — 의사 확정(prescription_status='confirmed') 후 처방 취소(원복)
+//   T-20260609-foot-QUICKRX-HOVER-TOOLTIP-CANCEL ② → -DROPDOWN-LIST-REDESIGN AC-4 에서
+//   "처방완료" 재클릭 동선(RxConfirmedSummary)이 단일 소비자.
 //
 //   취소 = 빠른처방 적용 전(clean) 상태로 원복. rxUndo 의 captureRxSnapshot/buildUndoPatch 를
 //   단일 출처로 재사용 → 4개 처방필드만 원복(차팅/문서 확정 등 인접 필드 불간섭, INSERT 없음).
 //   성공 시 invalidateRxQueries 로 적용/되돌리기 공통 캐시 무효화(정합).
-//   권한 = DOCTOR_ROLES(doctorMode). 비의사에게는 렌더 안 함.
+//   ⚠️ AC-6 guard: 본 훅 내부로직·rxUndo·invalidateRxQueries 3쿼리 변경금지.
 // ===========================================================================
 function useCancelConfirmedRx(checkInId: string | undefined) {
   const qc = useQueryClient();
@@ -526,27 +523,39 @@ function useCancelConfirmedRx(checkInId: string | undefined) {
   });
 }
 
-export function RxCancelButton({
+// ---------------------------------------------------------------------------
+// RxConfirmedSummary — 확정 상태 표시 + 재클릭 취소 (T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN)
+//   AC-2: "처방완료" 라벨 + 옆에 약물리스트(검은글씨, items 배열 전체 다중약).
+//   AC-4: 별도 '취소' 버튼 폐지 → "처방완료" 재클릭 → "취소하시겠습니까?" 팝업 →
+//         useCancelConfirmedRx(=rxUndo clean 원복) + invalidateRxQueries(훅 내부, 변경금지).
+//   AC-5: 취소 권한 = DOCTOR_ROLES(doctorMode). 비의사면 표시만(클릭 무효), checkInId 없으면 표시만.
+//   취소 내부로직(useCancelConfirmedRx/rxUndo/invalidateRxQueries)은 그대로 재사용 — 변경 없음.
+// ---------------------------------------------------------------------------
+export function RxConfirmedSummary({
   checkInId,
+  items,
   doctorMode,
   onCancelled,
   className,
 }: {
   checkInId: string | undefined;
-  /** DOCTOR_ROLES 여부 — false면 렌더 안 함(권한 게이트). */
+  /** 확정된 처방 약물(JSONB) — 약물리스트 검은글씨 나열용. 배열 아니면 빈 줄. */
+  items: unknown;
+  /** DOCTOR_ROLES 여부 — false면 클릭(취소) 무효, 표시만(AC-5 권한 가드). */
   doctorMode: boolean;
   onCancelled?: () => void;
   className?: string;
 }) {
   const cancelMut = useCancelConfirmedRx(checkInId);
+  const list = Array.isArray(items) ? (items as Parameters<typeof formatRxConfirmedSummary>[0]) : null;
+  const summary = formatRxConfirmedSummary(list);
+  // AC-5: 의사 + checkInId 있을 때만 취소 가능. 그 외엔 표시 전용.
+  const cancellable = doctorMode && !!checkInId;
 
-  if (!doctorMode || !checkInId) return null;
-
-  function handleCancel() {
-    // 데이터 소실 방지 — 명시적 확인. 취소 시 입력된 처방 내용이 함께 비워짐.
-    if (!window.confirm('확정된 처방을 취소할까요?\n입력된 처방 내용이 삭제되고 처방 없음 상태로 돌아갑니다.')) {
-      return;
-    }
+  function handleDoneClick() {
+    if (!cancellable || cancelMut.isPending) return;
+    // AC-4: "처방완료" 재클릭 → 취소 확인 팝업 → clean 원복.
+    if (!window.confirm('취소하시겠습니까?')) return;
     void cancelMut
       .mutateAsync()
       .then(() => {
@@ -557,19 +566,39 @@ export function RxCancelButton({
   }
 
   return (
-    <button
-      type="button"
-      onClick={handleCancel}
-      disabled={cancelMut.isPending}
-      data-testid="quick-rx-cancel-btn"
-      className={cn(
-        'inline-flex items-center gap-0.5 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-medium text-rose-700 transition hover:bg-rose-100 active:scale-95 disabled:opacity-50',
-        className,
-      )}
-      title="확정된 처방을 취소(되돌리기)"
+    <div
+      className={cn('flex min-w-0 items-center gap-1.5', className)}
+      data-testid="rx-confirmed-summary"
     >
-      {cancelMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Undo2 className="h-3 w-3" />}
-      취소
-    </button>
+      <button
+        type="button"
+        onClick={handleDoneClick}
+        disabled={cancelMut.isPending || !cancellable}
+        data-testid="rx-confirmed-done"
+        title={cancellable ? '재클릭 시 처방 확정을 취소합니다' : '처방완료'}
+        className={cn(
+          'inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-green-700',
+          cancellable && 'cursor-pointer hover:text-rose-600',
+          !cancellable && 'cursor-default',
+          'disabled:opacity-60',
+        )}
+      >
+        {cancelMut.isPending ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <CheckCircle2 className="h-3 w-3" />
+        )}
+        처방완료
+      </button>
+      {summary && (
+        <span
+          className="truncate text-[11px] text-foreground"
+          data-testid="rx-confirmed-drugs"
+          title={summary}
+        >
+          {summary}
+        </span>
+      )}
+    </div>
   );
 }
