@@ -127,31 +127,108 @@ function toDomesticKR(raw: string): string {
   return d;
 }
 
-// ── Solapi SMS 발송 헬퍼 ─────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// T-20260609-foot-MSG-TEMPLATE-MMS Part B: MMS(이미지 첨부) 발송 경로
+// ──────────────────────────────────────────────────────────────────
+// 발송 분기: image_path(=message-images 버킷 storage 경로)가 있으면 MMS, 없으면 종전 SMS/LMS.
+// MMS는 solapi 2-step: ① /storage/v4/files 로 이미지 업로드 → fileId, ② /messages/v4/send 에 imageId 포함.
+// ⚠ solapi 계정에 MMS 발신상품이 활성화돼야 동작(미활성 시 graceful 실패+안내). 단가 SMS/LMS와 상이.
+// ⚠ image_path 가 없으면 이 경로를 타지 않으므로 기존 SMS/LMS 발송은 100% 무영향(하위호환).
+
+// solapi MMS 규격 가드 (FE 가드와 동일 기준 — 서버측 최종 방어선)
+const MMS_MAX_BYTES = 300 * 1024;   // solapi 권장 ≤ 200KB. 약간의 여유(300KB)까지 허용하되 FE는 200KB로 안내.
+const MMS_ALLOWED_EXT = [".jpg", ".jpeg"];
+
+// message-images 버킷에서 이미지 download → 규격 검증 → base64
+async function loadMmsImage(
+  imagePath: string,
+): Promise<{ base64: string; name: string } | { error: string }> {
+  try {
+    const { data, error } = await supabase.storage.from("message-images").download(imagePath);
+    if (error || !data) {
+      return { error: `MMS 이미지를 찾을 수 없습니다: ${error?.message ?? "not found"}` };
+    }
+    const buf = new Uint8Array(await data.arrayBuffer());
+    if (buf.byteLength === 0) return { error: "MMS 이미지가 비어 있습니다." };
+    if (buf.byteLength > MMS_MAX_BYTES) {
+      return { error: `MMS 이미지 용량 초과(${Math.round(buf.byteLength / 1024)}KB). 200KB 이하 JPG만 발송 가능합니다.` };
+    }
+    const lower = imagePath.toLowerCase();
+    const looksJpg = MMS_ALLOWED_EXT.some((e) => lower.endsWith(e))
+      || data.type === "image/jpeg" || data.type === "image/jpg";
+    if (!looksJpg) return { error: "MMS는 JPG 이미지만 발송할 수 있습니다." };
+
+    // Uint8Array → base64 (청크 단위로 안전 변환; spread는 대용량서 스택 초과 위험)
+    let binary = "";
+    const CHUNK = 0x8000;
+    for (let i = 0; i < buf.length; i += CHUNK) {
+      binary += String.fromCharCode(...buf.subarray(i, i + CHUNK));
+    }
+    const base64 = btoa(binary);
+    const name = imagePath.split("/").pop() ?? "message.jpg";
+    return { base64, name };
+  } catch (e) {
+    return { error: `MMS 이미지 처리 오류: ${String(e)}` };
+  }
+}
+
+// solapi storage 업로드 → fileId
+async function uploadSolapiFile(params: {
+  apiKey: string; apiSecret: string; base64: string; name: string;
+}): Promise<{ fileId: string | null; errorMessage: string | null }> {
+  const { apiKey, apiSecret, base64, name } = params;
+  const date      = new Date().toISOString();
+  const salt      = crypto.randomUUID().replace(/-/g, "");
+  const signature = await hmacSha256(`${date}${salt}`, apiSecret);
+  const authHdr   = `HMAC-SHA256 apiKey=${apiKey}, date=${date}, salt=${salt}, signature=${signature}`;
+  try {
+    const res = await fetch("https://api.solapi.com/storage/v4/files", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": authHdr },
+      body: JSON.stringify({ file: base64, name, type: "MMS" }),
+    });
+    const body = await res.json();
+    console.log("[send-notification] Solapi file upload:", res.status, JSON.stringify(body)?.slice(0, 300));
+    if (res.ok && body?.fileId) return { fileId: body.fileId, errorMessage: null };
+    return { fileId: null, errorMessage: body?.errorMessage ?? JSON.stringify(body) };
+  } catch (e) {
+    return { fileId: null, errorMessage: `network error: ${String(e)}` };
+  }
+}
+
+// ── Solapi SMS/LMS/MMS 발송 헬퍼 ─────────────────────────────────
+// imageId 가 주어지면 MMS, subject 는 MMS 제목(선택). 없으면 종전 SMS/LMS.
 async function sendSolapi(params: {
   apiKey:       string;
   apiSecret:    string;
   senderNumber: string;
   recipientPhone: string;
   body:         string;
+  imageId?:     string | null;
+  subject?:     string | null;
 }): Promise<{ success: boolean; messageId: string | null; errorMessage: string | null }> {
-  const { apiKey, apiSecret, senderNumber, recipientPhone, body } = params;
+  const { apiKey, apiSecret, senderNumber, recipientPhone, body, imageId, subject } = params;
 
-  const msgType    = getChannel(body) === "SMS" ? "SMS" : "LMS";
+  const isMms      = Boolean(imageId);
+  const msgType    = isMms ? "MMS" : (getChannel(body) === "SMS" ? "SMS" : "LMS");
   const date       = new Date().toISOString();
   const salt       = crypto.randomUUID().replace(/-/g, "");
   const sigPlain   = `${date}${salt}`;
   const signature  = await hmacSha256(sigPlain, apiSecret);
   const authHdr    = `HMAC-SHA256 apiKey=${apiKey}, date=${date}, salt=${salt}, signature=${signature}`;
 
-  const solapiPayload = {
-    message: {
-      to:   toDomesticKR(recipientPhone),
-      from: toDomesticKR(senderNumber),
-      text: body,
-      type: msgType,
-    }
+  const message: Record<string, unknown> = {
+    to:   toDomesticKR(recipientPhone),
+    from: toDomesticKR(senderNumber),
+    text: body,
+    type: msgType,
   };
+  if (isMms) {
+    message.imageId = imageId;
+    // MMS subject(제목) 40byte 제한 — 초과 시 안전 절단
+    const subj = (subject ?? "").trim();
+    if (subj) message.subject = subj.slice(0, 38);
+  }
 
   try {
     const res = await fetch("https://api.solapi.com/messages/v4/send", {
@@ -160,7 +237,7 @@ async function sendSolapi(params: {
         "Content-Type":  "application/json",
         "Authorization": authHdr,
       },
-      body: JSON.stringify(solapiPayload),
+      body: JSON.stringify({ message }),
     });
 
     const resBody = await res.json();
@@ -179,6 +256,40 @@ async function sendSolapi(params: {
   } catch (e) {
     return { success: false, messageId: null, errorMessage: `network error: ${String(e)}` };
   }
+}
+
+// ── 이미지 첨부 여부에 따라 MMS/SMS-LMS 자동 분기 발송 ────────────
+// imagePath 가 있으면: download → solapi 업로드 → MMS 발송. 실패 시 graceful 에러 반환(SMS 강등 안 함 — 의도된 이미지 누락 방지).
+async function sendWithOptionalImage(params: {
+  apiKey:       string;
+  apiSecret:    string;
+  senderNumber: string;
+  recipientPhone: string;
+  body:         string;
+  imagePath?:   string | null;
+  subject?:     string | null;
+}): Promise<{ success: boolean; messageId: string | null; errorMessage: string | null; channel: "sms" | "lms" | "mms" }> {
+  const { imagePath } = params;
+  if (imagePath) {
+    const img = await loadMmsImage(imagePath);
+    if ("error" in img) {
+      return { success: false, messageId: null, errorMessage: img.error, channel: "mms" };
+    }
+    const up = await uploadSolapiFile({
+      apiKey: params.apiKey, apiSecret: params.apiSecret, base64: img.base64, name: img.name,
+    });
+    if (!up.fileId) {
+      return {
+        success: false, messageId: null,
+        errorMessage: `MMS 이미지 업로드 실패(solapi MMS 상품 활성 여부 확인): ${up.errorMessage ?? "unknown"}`,
+        channel: "mms",
+      };
+    }
+    const r = await sendSolapi({ ...params, imageId: up.fileId });
+    return { ...r, channel: "mms" };
+  }
+  const r = await sendSolapi(params);
+  return { ...r, channel: getChannel(params.body).toLowerCase() as "sms" | "lms" };
 }
 
 // ── Vault 시크릿 조회 헬퍼 (RPC 경로: service_role env 호환성 회피) ──
@@ -390,11 +501,22 @@ Deno.serve(async (req: Request) => {
       const recipient_phone = String(bodyJson.recipient_phone ?? "").replace(/[^0-9]/g, "");
       const sendBody        = String(bodyJson.body ?? "").trim();
       const source          = String(bodyJson.source ?? "manual_dashboard");
+      // T-20260609-foot-MSG-TEMPLATE-MMS Part B: 이미지 첨부(MMS) — message-images 버킷 storage 경로.
+      // 값이 있으면 MMS, 없으면 종전 SMS/LMS (하위호환). 경로 1st 세그먼트=clinic_id (버킷 RLS와 동일 규칙).
+      const imagePath       = bodyJson.image_path ? String(bodyJson.image_path).trim() : null;
 
       if (!clinic_id || !recipient_phone || !sendBody) {
         return new Response(
           JSON.stringify({ success: false, message: "clinic_id, recipient_phone, body 필수" }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // 이미지 경로 격리 가드: 경로 1st 세그먼트가 요청 clinic_id 와 일치해야 함(타지점 이미지 첨부 차단).
+      if (imagePath && imagePath.split("/")[0] !== clinic_id) {
+        return new Response(
+          JSON.stringify({ success: false, message: "이미지 접근 권한이 없습니다(지점 불일치)." }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
@@ -462,23 +584,31 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      const mResult = await sendSolapi({
+      // 이미지 첨부 시 MMS, 없으면 종전 SMS/LMS (T-20260609-foot-MSG-TEMPLATE-MMS Part B).
+      // MMS 제목(subject)은 본문 첫 줄을 사용(없으면 안내 기본값).
+      const mSubject = imagePath
+        ? (sendBody.split("\n")[0].trim() || "[오블리브] 안내")
+        : null;
+      const mResult = await sendWithOptionalImage({
         apiKey: mApiKey,
         apiSecret: mApiSecret,
         senderNumber: mc.sender_number,
         recipientPhone: recipient_phone,
         body: sendBody,
+        imagePath,
+        subject: mSubject,
       });
 
-      console.log(`[send-notification] manual_send by=${adminUserId} clinic=${clinic_id} cust=${customer_id} result=`, mResult);
+      console.log(`[send-notification] manual_send by=${adminUserId} clinic=${clinic_id} cust=${customer_id} mms=${Boolean(imagePath)} result=`, mResult);
 
-      // 발송 이력 적재 (AC-7) — event_type='manual_send', source 는 error_message 프리픽스로 추적
+      // 발송 이력 적재 (AC-7) — event_type='manual_send', source 는 error_message 프리픽스로 추적.
+      // channel: 이미지 첨부 시 'mms', 아니면 sms/lms (sendWithOptionalImage 가 판정).
       await supabase.from("notification_logs").insert({
         clinic_id,
         customer_id,
         reservation_id: null,
         event_type: "manual_send",
-        channel: getChannel(sendBody).toLowerCase(),
+        channel: mResult.channel,
         recipient_phone,
         body_rendered: sendBody,
         status: mResult.success ? "sent" : "failed",
@@ -491,7 +621,7 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({
           success: mResult.success,
           message: mResult.success ? "문자 발송 완료" : (mResult.errorMessage ?? "발송 실패"),
-          channel: getChannel(sendBody),
+          channel: mResult.channel.toUpperCase(),
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -679,14 +809,31 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── 단계 6: 템플릿 조회 + 변수 치환 ─────────────────────────
-  const { data: tmpl } = await supabase
-    .from("notification_templates")
-    .select("body, channel")
-    .eq("clinic_id", clinic_id)
-    .eq("event_type", event_type)
-    .eq("is_active", true)
-    .order("channel")
-    .maybeSingle();
+  // image_path 포함 조회 — 마이그레이션 미적용(컬럼 부재) 환경에선 컬럼 없이 폴백(자동발송 회귀 차단).
+  let tmpl: { body: string; channel?: string; image_path?: string | null } | null = null;
+  {
+    const withImg = await supabase
+      .from("notification_templates")
+      .select("body, channel, image_path")
+      .eq("clinic_id", clinic_id)
+      .eq("event_type", event_type)
+      .eq("is_active", true)
+      .order("channel")
+      .maybeSingle();
+    if (!withImg.error) {
+      tmpl = withImg.data as typeof tmpl;
+    } else {
+      const base = await supabase
+        .from("notification_templates")
+        .select("body, channel")
+        .eq("clinic_id", clinic_id)
+        .eq("event_type", event_type)
+        .eq("is_active", true)
+        .order("channel")
+        .maybeSingle();
+      tmpl = base.data as typeof tmpl;
+    }
+  }
 
   if (!tmpl) {
     console.warn(`[send-notification] SKIP: no template for event=${event_type} clinic=${clinic_id}`);
@@ -752,15 +899,21 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // ── 단계 8: Solapi SMS/LMS API 호출 ─────────────────────────
-  const channel = getChannel(bodyRendered);
-  const result  = await sendSolapi({
+  // ── 단계 8: Solapi 발송 (템플릿 image_path 있으면 MMS, 없으면 SMS/LMS) ──
+  // T-20260609-foot-MSG-TEMPLATE-MMS Part B: 템플릿에 약도/약국지도 이미지가 첨부돼 있으면 MMS 전환.
+  const tmplImagePath = (tmpl as { image_path?: string | null }).image_path ?? null;
+  // 경로 격리 가드(자동발송도 동일): 1st 세그먼트=clinic_id 아니면 이미지 무시하고 텍스트만 발송.
+  const safeImagePath = (tmplImagePath && tmplImagePath.split("/")[0] === clinic_id) ? tmplImagePath : null;
+  const result  = await sendWithOptionalImage({
     apiKey,
     apiSecret,
     senderNumber,
     recipientPhone,
     body: bodyRendered,
+    imagePath: safeImagePath,
+    subject: safeImagePath ? (bodyRendered.split("\n")[0].trim() || "[오블리브] 안내") : null,
   });
+  const channel = result.channel.toUpperCase();
 
   const sendStatus: "sent" | "failed" = result.success ? "sent" : "failed";
 
@@ -772,10 +925,11 @@ Deno.serve(async (req: Request) => {
     body_rendered:   bodyRendered,
     solapi_message_id: result.messageId,
     error_message:   result.errorMessage,
+    channel:         result.channel,
     retry_log_id,
   });
 
-  console.log(`[send-notification] DONE event=${event_type} status=${sendStatus} msgId=${result.messageId}`);
+  console.log(`[send-notification] DONE event=${event_type} status=${sendStatus} channel=${result.channel} msgId=${result.messageId}`);
 
   return new Response(
     JSON.stringify({ status: sendStatus, message_id: result.messageId, channel }),
@@ -795,6 +949,7 @@ async function logNotification(params: {
   solapi_message_id?: string | null;
   error_code?:        string | null;
   error_message?:     string | null;
+  channel?:           string;
   retry_log_id?:      string;
 }) {
   const {
@@ -802,6 +957,7 @@ async function logNotification(params: {
     recipient_phone, status, body_rendered,
     solapi_message_id, error_code, error_message, retry_log_id,
   } = params;
+  const channel = params.channel ?? "sms";
 
   try {
     if (retry_log_id) {
@@ -830,7 +986,7 @@ async function logNotification(params: {
           customer_id,
           reservation_id,
           event_type,
-          channel: "sms",
+          channel,
           recipient_phone,
           body_rendered,
           status,
