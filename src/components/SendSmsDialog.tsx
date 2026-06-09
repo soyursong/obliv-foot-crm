@@ -1,17 +1,25 @@
 /**
  * SendSmsDialog — 대시보드 고객 우클릭 [문자] → 템플릿 선택·간략수정 후 수동 1:1 발송
  * T-20260606-foot-CTXMENU-SMS-SEND
+ * T-20260609-foot-SMS-CTXMENU-VAR-SUBST — 괄호 변수 5종 전부 자동 치환
  *
  * 흐름:
  *  - 오픈 시 해당 지점(clinic_id) notification_templates 목록 로드 (메시지 설정 ③ 템플릿 관리 재사용)
- *  - 템플릿 선택 → 본문의 {고객명} 을 해당 고객 실제 성함으로 자동 치환 (§6 확정 2)
- *  - textarea 자유 편집 (이번 1회 발송만, 원본 템플릿 불변 — AC-3)
+ *    + 치환 변수 컨텍스트(지점명·지점전화번호·고객 다음/최근 예약 날짜·시간) 동시 로드
+ *  - 템플릿 선택 → 본문의 5개 괄호 변수를 자동 치환 (자동발송 send-notification EF 와 동일 포맷/규칙)
+ *      {고객명} → customers.name (기존)
+ *      {지점명} → clinics.name
+ *      {지점전화번호} → clinic_messaging_capability.sender_number (발신번호)
+ *      {날짜} → 다음(없으면 최근) 예약 날짜 (예약 일시. 발송시각 아님 — 김주연 총괄 확정)
+ *      {시간} → 다음(없으면 최근) 예약 시간
+ *    예약 없는 고객: {날짜}/{시간} → "(예약 없음)" 으로 채우되 편집 가능 유지
+ *  - textarea 자유 편집 (이번 1회 발송만, 원본 템플릿 불변 — AC-3 / 부모 '간략 수정' 동선 유지)
  *  - 상단에 고객 성함 + 전화번호 자동 표시 (오발송 방지 — §6 확정 2)
  *  - phone 없으면 발송 비활성 + "연락처 미등록" (AC-4)
  *  - 템플릿 0개면 안내 + 비활성 (AC-2)
  *  - "발송" → 확인 단계 1회(오발송 가드) → send-notification EF (_action:'manual_send', source:'manual_dashboard') 호출 (AC-5/AC-6c)
  *  - 결과 토스트 + messages 이력은 EF가 notification_logs 적재 (AC-7)
- *  - 발송 권한 = admin/manager (호출부 게이트, EF에서 재검증)
+ *  - 발송 권한 = 전직원 8역할 (호출부 게이트, EF에서 재검증)
  */
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, MessageSquare, Phone, User } from 'lucide-react';
@@ -54,13 +62,91 @@ const EVENT_LABELS: Record<string, string> = {
   manual_send: '수동 발송',
 };
 
-/** {고객명} 자동 치환 (§6 확정 2). 그 외 변수는 staff 가 직접 편집. */
-function renderName(body: string, customerName: string): string {
-  return body.replace(/\{고객명\}/g, customerName ?? '');
+/** 예약 없는 고객의 {날짜}/{시간} placeholder — 편집 가능 상태로 채워둠 (AC-3) */
+const NO_RESV_PLACEHOLDER = '(예약 없음)';
+
+/** 치환 변수 컨텍스트 — 자동발송 send-notification EF 의 renderTemplate vars 와 동일 키. */
+interface SubstVars {
+  고객명: string;
+  지점명: string;
+  지점전화번호: string;
+  날짜: string;
+  시간: string;
+}
+
+/**
+ * 템플릿 본문의 5개 괄호 변수를 전부 치환 (AC-1).
+ * 자동발송 서버 경로(send-notification renderTemplate)와 동일하게 `{키}` 전역 치환.
+ */
+function renderTemplate(body: string, vars: SubstVars): string {
+  let rendered = body;
+  for (const [key, value] of Object.entries(vars)) {
+    rendered = rendered.split(`{${key}}`).join(value ?? '');
+  }
+  return rendered;
 }
 
 function digitsOnly(s: string | null | undefined): string {
   return (s ?? '').replace(/[^0-9]/g, '');
+}
+
+/**
+ * 예약 날짜 포맷 — 자동발송 서버와 동일 결과("6월 9일")를 TZ 영향 없이 생성.
+ * 서버: new Date(reservation_date).toLocaleDateString("ko-KR", { month:"long", day:"numeric" }).
+ * reservation_date 는 'YYYY-MM-DD' 문자열 → 구성요소 직접 파싱(브라우저/서버 TZ 차이 회피).
+ */
+function formatResvDate(reservationDate: string | null | undefined): string {
+  if (!reservationDate) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(reservationDate);
+  if (!m) return '';
+  return `${Number(m[2])}월 ${Number(m[3])}일`;
+}
+
+/** 예약 시간 포맷 — 서버와 동일하게 'HH:MM:SS' → 'HH:MM' */
+function formatResvTime(reservationTime: string | null | undefined): string {
+  return (reservationTime ?? '').slice(0, 5);
+}
+
+/** 오늘 날짜(KST) 'YYYY-MM-DD' */
+function todayKST(): string {
+  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
+}
+
+/**
+ * 고객의 다음(없으면 가장 최근) 예약 1건 조회 — 취소/노쇼 제외 (티켓 §3).
+ * 1순위: 오늘 이후(>=) 예약 중 가장 가까운 미래.
+ * 2순위: 그런 예약이 없으면 가장 최근 과거 예약.
+ */
+async function loadCustomerResv(
+  clinicId: string,
+  customerId: string,
+): Promise<{ reservation_date?: string; reservation_time?: string } | null> {
+  const today = todayKST();
+  // 1순위: 다음 예약 (오늘 포함 미래, date asc / time asc)
+  const { data: upcoming } = await (supabase.from('reservations') as any)
+    .select('reservation_date, reservation_time')
+    .eq('clinic_id', clinicId)
+    .eq('customer_id', customerId)
+    .not('status', 'in', '(cancelled,noshow)')
+    .gte('reservation_date', today)
+    .order('reservation_date', { ascending: true })
+    .order('reservation_time', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (upcoming) return upcoming as { reservation_date?: string; reservation_time?: string };
+
+  // 2순위: 가장 최근 과거 예약 (date desc / time desc)
+  const { data: recent } = await (supabase.from('reservations') as any)
+    .select('reservation_date, reservation_time')
+    .eq('clinic_id', clinicId)
+    .eq('customer_id', customerId)
+    .not('status', 'in', '(cancelled,noshow)')
+    .order('reservation_date', { ascending: false })
+    .order('reservation_time', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (recent as { reservation_date?: string; reservation_time?: string } | null) ?? null;
 }
 
 export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }: Props) {
@@ -70,47 +156,88 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
   const [confirmStep, setConfirmStep] = useState(false);
+  // 치환 변수 컨텍스트 (지점명·지점전화번호·예약 날짜/시간) — 템플릿과 동시 로드
+  const [vars, setVars] = useState<SubstVars>({
+    고객명: '',
+    지점명: '',
+    지점전화번호: '',
+    날짜: '',
+    시간: '',
+  });
 
   const customerName = checkIn?.customer_name ?? '';
   const phone = checkIn?.customer_phone ?? null;
   const hasPhone = digitsOnly(phone).length > 0;
 
-  // 오픈/고객 변경 시 상태 리셋 + 템플릿 로드
+  // 오픈/고객 변경 시 상태 리셋 + 템플릿 + 치환 변수 컨텍스트 동시 로드
   useEffect(() => {
     if (!open || !clinicId) return;
     setSelectedId('');
     setBody('');
     setConfirmStep(false);
     setLoading(true);
+    const custId = checkIn?.customer_id ?? null;
     let cancelled = false;
     (async () => {
-      const { data } = await (supabase.from('notification_templates') as any)
-        .select('id, event_type, channel, body, is_active')
-        .eq('clinic_id', clinicId)
-        .order('event_type');
+      // 템플릿 + 지점 정보 + 발신번호 + 고객 다음/최근 예약을 병렬 조회
+      const [tmplRes, clinicRes, capRes, resvRes] = await Promise.all([
+        (supabase.from('notification_templates') as any)
+          .select('id, event_type, channel, body, is_active')
+          .eq('clinic_id', clinicId)
+          .order('event_type'),
+        (supabase.from('clinics') as any)
+          .select('name')
+          .eq('id', clinicId)
+          .maybeSingle(),
+        (supabase.from('clinic_messaging_capability') as any)
+          .select('sender_number')
+          .eq('clinic_id', clinicId)
+          .maybeSingle(),
+        // 다음(없으면 최근) 예약: 취소/노쇼 제외. 가장 가까운 미래 우선, 없으면 가장 최근 과거.
+        custId
+          ? loadCustomerResv(clinicId, custId)
+          : Promise.resolve(null),
+      ]);
       if (cancelled) return;
+
       // 사용자 정의(custom) 템플릿의 is_active=false 는 soft-delete(삭제 처리) → 발송 선택에서 제외.
       // reserved 자동발송 템플릿은 is_active=false 여도 수동 발송 선택은 허용(자동발송 off 의미).
       //   (T-20260609-foot-MSG-TEMPLATE-CRUD AC-3)
-      const rows = ((data as TemplateRow[]) ?? [])
+      const rows = (((tmplRes as any)?.data as TemplateRow[]) ?? [])
         .filter((t) => t.is_active !== false || isReservedEventType(t.event_type))
         .sort((a, b) => Number(b.is_active) - Number(a.is_active));
       setTemplates(rows);
+
+      const clinicName = ((clinicRes as any)?.data as { name?: string } | null)?.name ?? '';
+      const senderNumber =
+        ((capRes as any)?.data as { sender_number?: string | null } | null)?.sender_number ?? '';
+      const resv = resvRes as { reservation_date?: string; reservation_time?: string } | null;
+      const dateStr = formatResvDate(resv?.reservation_date);
+      const timeStr = formatResvTime(resv?.reservation_time);
+
+      setVars({
+        고객명: checkIn?.customer_name ?? '',
+        지점명: clinicName,
+        지점전화번호: senderNumber,
+        // 예약 없는 고객: placeholder 로 채우되 편집 가능 유지 (AC-3)
+        날짜: dateStr || NO_RESV_PLACEHOLDER,
+        시간: timeStr || NO_RESV_PLACEHOLDER,
+      });
       setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [open, clinicId, checkIn?.id]);
+  }, [open, clinicId, checkIn?.id, checkIn?.customer_id, checkIn?.customer_name]);
 
   const handleSelect = useCallback(
     (id: string) => {
       setSelectedId(id);
       setConfirmStep(false);
       const tmpl = templates.find((t) => t.id === id);
-      if (tmpl) setBody(renderName(tmpl.body, customerName));
+      if (tmpl) setBody(renderTemplate(tmpl.body, vars));
     },
-    [templates, customerName],
+    [templates, vars],
   );
 
   const byteLen = new TextEncoder().encode(body).length;
