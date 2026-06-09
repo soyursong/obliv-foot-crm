@@ -2928,16 +2928,27 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     loadAndOpen();
   };
 
-  // T-20260510-foot-CONSENT-SINGLE-SELECT: 개인정보동의 단일선택 — 선택 시 나머지 두 개 false
-  const selectConsentField = async (selected: 'privacy_consent' | 'sms_reject' | 'marketing_reject') => {
+  // T-20260609-foot-CHART-CONSENT-ALIGN-SMS: 셀프접수 정합 — 개인정보수집/건강보험조회/문자수신 독립 토글
+  // (구 selectConsentField 단일선택 폐기. sms_reject/marketing_reject 기존 데이터는 보존, 차트에서 더 이상 쓰지 않음.)
+  const togglePrivacyConsent = async () => {
     if (!customer) return;
     setIsDirty(true);
-    const patch = {
-      privacy_consent: selected === 'privacy_consent',
-      sms_reject: selected === 'sms_reject',
-      marketing_reject: selected === 'marketing_reject',
-    };
-    await saveCustomerField(patch);
+    const newVal = !(customer.privacy_consent ?? false);
+    await saveCustomerField({
+      privacy_consent: newVal,
+      privacy_consent_at: newVal ? new Date().toISOString() : null,
+    });
+  };
+
+  // 문자수신(opt-in, 긍정형). polarity: sms_opt_in=false/null → 자동발송 제외(send-notification Edge Fn 필터).
+  const toggleSmsOptIn = async () => {
+    if (!customer) return;
+    setIsDirty(true);
+    const newVal = !(customer.sms_opt_in ?? false);
+    await saveCustomerField({
+      sms_opt_in: newVal,
+      sms_opt_in_at: newVal ? new Date().toISOString() : null,
+    });
   };
 
   // C2-HIRA-CONSENT: 건보 조회 동의 토글
@@ -4040,39 +4051,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   </td>
                 </tr>
 
-                {/* ②-b 건강보험 조회 동의 — C2-HIRA-CONSENT */}
+                {/* ②-b 건강보험 조회 — C2-HIRA-CONSENT.
+                    T-20260609-foot-CHART-CONSENT-ALIGN-SMS AC-3: 동의 Y/N 토글은 위 '개인정보 동의' 섹션(건강보험조회)으로 통합(SSOT 단일화).
+                    이 행은 NHIS 조회 버튼만 유지(이중 노출 방지). 조회 버튼은 hira_consent=true일 때만 활성. */}
                 <tr>
-                  <td className={LC}>건보 조회동의</td>
+                  <td className={LC}>건보 조회</td>
                   <td className={VC} colSpan={3}>
                     <div className="flex items-center gap-3">
-                      {/* Y/N 선택 버튼 */}
-                      {(['Y', 'N'] as const).map((opt) => {
-                        const isY = opt === 'Y';
-                        const selected = isY ? (customer.hira_consent ?? false) : !(customer.hira_consent ?? false);
-                        return (
-                          <button
-                            key={opt}
-                            type="button"
-                            onClick={() => { if (isY !== (customer.hira_consent ?? false)) toggleHiraConsent(); }}
-                            disabled={savingHira}
-                            className={cn(
-                              'inline-flex items-center gap-1 rounded border px-3 py-0.5 text-[11px] font-semibold transition',
-                              selected
-                                ? isY ? 'border-teal-500 bg-teal-100 text-teal-800' : 'border-gray-400 bg-gray-100 text-gray-600'
-                                : 'border-gray-300 bg-white text-gray-400 hover:border-gray-400',
-                            )}
-                          >
-                            <span className={cn(
-                              'h-2.5 w-2.5 rounded-full border-2 flex items-center justify-center',
-                              selected ? (isY ? 'border-teal-600' : 'border-gray-500') : 'border-gray-300',
-                            )}>
-                              {selected && <span className={cn('h-1.5 w-1.5 rounded-full', isY ? 'bg-teal-600' : 'bg-gray-500')} />}
-                            </span>
-                            {opt}
-                          </button>
-                        );
-                      })}
-                      {/* 조회 버튼 — Y일 때만 활성 */}
+                      {/* 조회 버튼 — 건강보험조회 동의(hira_consent) Y일 때만 활성 */}
                       <button
                         type="button"
                         onClick={() => window.open('https://medicare.nhis.or.kr/portal/refer/selectReferInq.do', '_blank')}
@@ -4182,29 +4168,30 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       </div>
                     )}
                   </td>
-                  <td className={cn(LC, 'w-auto')}>개인정보동의</td>
+                  <td className={cn(LC, 'w-auto')}>개인정보 동의</td>
                   <td className={VC}>
-                    <div className="flex items-center gap-2 flex-wrap">
+                    {/* T-20260609-foot-CHART-CONSENT-ALIGN-SMS: 셀프접수 동의항목 정합 — 독립 체크박스 3개 */}
+                    <div className="flex items-center gap-2 flex-wrap" data-testid="chart-consent-section">
                       {([
-                        { label: '동의', field: 'privacy_consent' as const, checked: customer.privacy_consent ?? false },
-                        { label: '문자수신거부', field: 'sms_reject' as const, checked: customer.sms_reject ?? false },
-                        { label: '광고미동의', field: 'marketing_reject' as const, checked: customer.marketing_reject ?? false },
-                      ]).map(({ label, field, checked }) => (
+                        { label: '개인정보수집', checked: customer.privacy_consent ?? false, onToggle: togglePrivacyConsent, saving: savingField },
+                        { label: '건강보험조회', checked: customer.hira_consent ?? false, onToggle: toggleHiraConsent, saving: savingHira },
+                        { label: '문자수신', checked: customer.sms_opt_in ?? false, onToggle: toggleSmsOptIn, saving: savingField },
+                      ]).map(({ label, checked, onToggle, saving }) => (
                         <button
-                          key={field}
+                          key={label}
                           type="button"
-                          onClick={() => selectConsentField(field)}
-                          disabled={savingField}
-                          className="flex items-center gap-1 hover:opacity-80 active:scale-95 transition"
-                          title="선택 (셋 중 하나만 선택됩니다)"
+                          onClick={onToggle}
+                          disabled={saving}
+                          className="flex items-center gap-1 hover:opacity-80 active:scale-95 transition disabled:opacity-50"
+                          title="클릭하여 동의/미동의 전환 (각 항목 독립 선택 · 셀프접수 결과 반영)"
                         >
                           <span className={cn(
-                            'h-3 w-3 border rounded-full flex items-center justify-center transition-colors',
-                            checked ? 'bg-blue-600 border-blue-600' : 'border-gray-400 bg-white',
+                            'h-3 w-3 border rounded flex items-center justify-center transition-colors',
+                            checked ? 'bg-teal-600 border-teal-600' : 'border-gray-400 bg-white',
                           )}>
-                            {checked && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                            {checked && <Check className="h-2 w-2 text-white" strokeWidth={3.5} />}
                           </span>
-                          <span className={cn('text-[11px]', checked ? 'font-medium text-blue-700' : 'text-gray-600')}>{label}</span>
+                          <span className={cn('text-[11px]', checked ? 'font-medium text-teal-700' : 'text-gray-600')}>{label}</span>
                         </button>
                       ))}
                     </div>

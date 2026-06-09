@@ -742,17 +742,22 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  // ── 수신자 전화번호 확인 ───────────────────────────────────────
+  // ── 수신자 전화번호 확인 + 문자수신(opt-in) 필터 ─────────────────
+  // T-20260609-foot-CHART-CONSENT-ALIGN-SMS AC-4: 문자수신 거부(sms_opt_in=false) 고객은
+  // recipient_phone이 payload로 직접 전달된 경우에도 자동발송에서 제외한다.
+  // (기존엔 phone이 없을 때만 opt-in을 조회 → phone 동봉 호출(예: 재시도)이 필터를 우회하던 갭.)
   let recipientPhone = rawPhone ?? null;
-  if (!recipientPhone) {
+  if (customer_id) {
     const { data: cust } = await supabase
       .from("customers")
       .select("phone, sms_opt_in")
       .eq("id", customer_id)
       .maybeSingle();
-    recipientPhone = (cust as { phone?: string } | null)?.phone ?? null;
+    if (!recipientPhone) {
+      recipientPhone = (cust as { phone?: string } | null)?.phone ?? null;
+    }
 
-    // ── 단계 4: sms_opt_in 체크 ─────────────────────────────────
+    // ── 단계 4: sms_opt_in 체크 — 거부(false) 시 자동발송 제외 ─────────
     if (cust && (cust as { sms_opt_in?: boolean }).sms_opt_in === false) {
       console.log(`[send-notification] SKIP: sms_opt_in=false customer=${customer_id}`);
       await logNotification({ clinic_id, customer_id, reservation_id, event_type,
