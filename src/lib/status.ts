@@ -93,6 +93,32 @@ export const CALLED_STATUSES: CheckInStatus[] = [
   'laser',
 ];
 
+/**
+ * 원내(in-clinic) 상태 집합 — T-20260609-foot-DOCPATIENTLIST-SORT-LAYOUT ①.
+ * "현재 물리적으로 원내에 체류 중인 환자" = 종료상태(done 완료/귀가, cancelled 취소,
+ * checklist deprecated) 를 제외한 모든 진행 상태. 접수~수납대기까지는 원내 체류로 간주.
+ * ※ CheckInStatus enum 실값 read-only 확인 후 정의(checked_in/in_progress 등 미존재).
+ */
+export const IN_CLINIC_STATUSES: CheckInStatus[] = [
+  'registered',
+  'receiving',
+  'consult_waiting',
+  'consultation',
+  'exam_waiting',
+  'examination',
+  'treatment_waiting',
+  'preconditioning',
+  'laser_waiting',
+  'healer_waiting',
+  'laser',
+  'payment_waiting',
+];
+
+/** status 가 원내(in-clinic) 체류 상태인지 여부 */
+export function isInClinic(status: CheckInStatus): boolean {
+  return IN_CLINIC_STATUSES.includes(status);
+}
+
 /** 직원 직책 한글 라벨 (staff 테이블 role) */
 export const STAFF_ROLE_LABEL: Record<StaffRole, string> = {
   director: '원장',
