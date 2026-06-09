@@ -801,6 +801,37 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
   const [saving, setSaving]         = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // ── T-20260609-foot-ADMINTEMPLATE-PREVIEW-BRANCHNAME ──
+  // 미리보기 {지점명}/{지점전화번호} 치환을 하드코딩이 아닌 실제 값으로.
+  // 발송 EF(send-notification)·SMS 모달과 동일 소스로 통일(정합):
+  //   {지점명}       → clinics.name
+  //   {지점전화번호} → clinic_messaging_capability.sender_number (발신번호)
+  // 읽기 전용 SELECT. 조회 전/실패 시 빈 문자열 → previewBody 가 원본 토큰 유지(고정값 금지).
+  const [clinicName, setClinicName]   = useState('');
+  const [clinicPhone, setClinicPhone] = useState('');
+  useEffect(() => {
+    if (!clinicId) return;
+    let cancelled = false;
+    (async () => {
+      const [clinicRes, capRes] = await Promise.all([
+        (supabase.from('clinics') as any)
+          .select('name')
+          .eq('id', clinicId)
+          .maybeSingle(),
+        (supabase.from('clinic_messaging_capability') as any)
+          .select('sender_number')
+          .eq('clinic_id', clinicId)
+          .maybeSingle(),
+      ]);
+      if (cancelled) return;
+      setClinicName(((clinicRes as any)?.data as { name?: string } | null)?.name ?? '');
+      setClinicPhone(
+        ((capRes as any)?.data as { sender_number?: string | null } | null)?.sender_number ?? '',
+      );
+    })();
+    return () => { cancelled = true; };
+  }, [clinicId]);
+
   // ── T-20260609-foot-MSG-TEMPLATE-MMS Part B: 이미지(약도/약국지도) 첨부 상태 ──
   // editImagePath: 기존 저장된 경로(없으면 null). editImageFile: 새로 고른 파일(아직 업로드 전).
   // editImagePreview: 미리보기 URL(기존=signed, 신규=objectURL). 둘 다 없으면 첨부 없음.
@@ -995,8 +1026,9 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
       .replace(/{고객명}/g, '홍길동')
       .replace(/{날짜}/g, '2026-05-26')
       .replace(/{시간}/g, '14:30')
-      .replace(/{지점명}/g, '풋센터종로')
-      .replace(/{지점전화번호}/g, '010-8827-7791');
+      // 실제 지점 값 치환(발송 EF와 동일 소스). 조회 전/실패 시 원본 토큰 유지 — 고정값 금지.
+      .replace(/{지점명}/g, (m) => clinicName || m)
+      .replace(/{지점전화번호}/g, (m) => clinicPhone || m);
 
   const byteLen = (s: string) => new TextEncoder().encode(s).length;
   const dialogTitle = isCustom
@@ -1154,7 +1186,7 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">미리보기</label>
-              <pre className="text-xs bg-muted/30 rounded p-3 whitespace-pre-wrap">{previewBody(editBody)}</pre>
+              <pre data-testid="tmpl-preview" className="text-xs bg-muted/30 rounded p-3 whitespace-pre-wrap">{previewBody(editBody)}</pre>
             </div>
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setEditTarget(null)}>취소</Button>
