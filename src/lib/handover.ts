@@ -70,4 +70,24 @@ export function partBadgeClass(code: string): string {
   return PART_BADGE_CLASS[code] ?? 'bg-slate-100 text-slate-700';
 }
 
+/**
+ * 파트 박스(인수인계 카드 섹션 컨테이너) tailwind 클래스 (bg + border).
+ * T-20260609-foot-HANDOVER-PARTBOX-COLOR: 배지(PART_BADGE_CLASS)에만 색이 있고
+ *   박스 섹션엔 색이 없어(흰 배경) 김주연 총괄 지적 → 박스에도 파트 색 적용.
+ * 색값 SSOT 재사용(신규 색 도입 금지): partColor/PART_BADGE_CLASS 와 동일 색계열
+ *   (consultant_lead=rose / coordinator=amber / therapist=teal / 공통=indigo).
+ * 박스는 배지보다 연한 톤(bg-*-50/border-*-200)으로 글자 가독성 유지.
+ * 정적 매핑(literal class)이라 Tailwind JIT purge 안전.
+ */
+export const PART_BOX_CLASS: Record<string, string> = {
+  '공통': 'bg-indigo-50 border-indigo-200',
+  consultant_lead: 'bg-rose-50 border-rose-200',
+  coordinator: 'bg-amber-50 border-amber-200',
+  therapist: 'bg-teal-50 border-teal-200',
+};
+
+export function partBoxClass(code: string): string {
+  return PART_BOX_CLASS[code] ?? 'bg-white border-slate-200';
+}
+
 export type CalendarView = 'month' | 'week' | 'day';
