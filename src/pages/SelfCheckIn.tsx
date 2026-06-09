@@ -2091,10 +2091,13 @@ export default function SelfCheckIn() {
                 <p className="text-sm font-semibold" style={{ color: C.dark }}>
                   {t.consentPrivacyTitle}
                 </p>
-                <ul className="space-y-0.5">
+                {/* T-20260608 round-2.5: 항목별 줄분리 시각 강화 — bullet(•) 마커 + flex(분리 보장).
+                    각 li는 block-flow flex item으로 세로 누적 → 한 줄 합산 렌더 원천 차단. 문구 텍스트 불변. */}
+                <ul className="space-y-1">
                   {t.consentPrivacyItems.map((line, i) => (
-                    <li key={`priv-${i}`} className="text-xs leading-relaxed" style={{ color: C.muted }}>
-                      - {line}
+                    <li key={`priv-${i}`} className="flex gap-1.5 text-xs leading-relaxed" style={{ color: C.muted }}>
+                      <span aria-hidden="true" className="select-none">•</span>
+                      <span className="flex-1">{line}</span>
                     </li>
                   ))}
                 </ul>
@@ -2103,10 +2106,11 @@ export default function SelfCheckIn() {
                 <p className="text-sm font-semibold" style={{ color: C.dark }}>
                   {t.consentHiraTitle}
                 </p>
-                <ul className="space-y-0.5">
+                <ul className="space-y-1">
                   {t.consentHiraItems.map((line, i) => (
-                    <li key={`hira-${i}`} className="text-xs leading-relaxed" style={{ color: C.muted }}>
-                      - {line}
+                    <li key={`hira-${i}`} className="flex gap-1.5 text-xs leading-relaxed" style={{ color: C.muted }}>
+                      <span aria-hidden="true" className="select-none">•</span>
+                      <span className="flex-1">{line}</span>
                     </li>
                   ))}
                 </ul>
