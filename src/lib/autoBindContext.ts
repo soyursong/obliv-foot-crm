@@ -334,7 +334,7 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
  */
 export function applyBillingFallback(
   values: Record<string, string>,
-  live: { insuranceCovered?: number; copayment?: number; nonCovered?: number },
+  live: { insuranceCovered?: number; copayment?: number; nonCovered?: number; total?: number },
 ): void {
   const isBlankOrZero = (v: string | undefined): boolean => {
     if (v == null || v === '') return true;
@@ -349,6 +349,15 @@ export function applyBillingFallback(
   fill('insurance_covered', live.insuranceCovered);
   fill('copayment', live.copayment);
   fill('non_covered', live.nonCovered);
+  // T-20260609-foot-PAY-DOCPRINT-FEE-MISSING AC-1/2/3: 진료비 총액 라이브 보강.
+  //   total_amount/subtotal_amount는 autobind이 payments 테이블(payTotal)에서 읽는다.
+  //   payments는 executeAutoDone(수납) 후에만 기록 → 수납 클릭 전 서류 출력 시 0/빈값 →
+  //   영수증·진료비계산서·납입증명서 등에 진료비가 "누락"(0)된 채 출력되는 버그.
+  //   화면 산출 진료비(수납 예정액 = deductMode?deductAmount:grandTotal, 즉 payments.amount와 동일)로
+  //   폴백. autobind 값(수납 후 payTotal)이 있으면 보존 → 수납 전/후 출력본 금액 동일(AC-3 회귀 방지).
+  //   ⚠ 실제 수납/결제 금액 산정 로직 불변 — 출력 데이터 소스만 '수납 완료 상태' 의존에서 분리.
+  fill('total_amount', live.total);
+  fill('subtotal_amount', live.total);
 }
 
 /**
