@@ -530,6 +530,13 @@ function useCancelConfirmedRx(checkInId: string | undefined) {
 //         useCancelConfirmedRx(=rxUndo clean 원복) + invalidateRxQueries(훅 내부, 변경금지).
 //   AC-5: 취소 권한 = DOCTOR_ROLES(doctorMode). 비의사면 표시만(클릭 무효), checkInId 없으면 표시만.
 //   취소 내부로직(useCancelConfirmedRx/rxUndo/invalidateRxQueries)은 그대로 재사용 — 변경 없음.
+//
+//   T-20260609-foot-DOCPATIENTLIST-RXCANCEL-DISCHARGE-GATE:
+//     진료환자목록에서 귀가(원내 비잔류) 환자의 처방취소(재클릭 동선) 차단 → 차트에서 수정 유도.
+//     귀가 판정은 별도 신설 없이 inClinicRxGate(checkRxInClinic) SSOT 그대로 재사용
+//     (QUICKRX-INCLINIC-GATE 932a0d7 = status==='done' 귀가 + 전날/미래/취소 비잔류, 불일치 0).
+//     게이트 컨텍스트(checkedInAt)가 주어진 소비처(DoctorPatientList)에서만 게이팅 →
+//     컨텍스트 미제공 소비처(DoctorCallDashboard)는 종전 동작 보존(무회귀).
 // ---------------------------------------------------------------------------
 export function RxConfirmedSummary({
   checkInId,
@@ -538,6 +545,9 @@ export function RxConfirmedSummary({
   onCancelled,
   className,
   label = '처방완료',
+  checkInStatus,
+  checkedInAt,
+  onOpenChart,
 }: {
   checkInId: string | undefined;
   /** 확정된 처방 약물(JSONB) — 약물리스트 검은글씨 나열용. 배열 아니면 빈 줄. */
@@ -552,15 +562,43 @@ export function RxConfirmedSummary({
    * DoctorCallDashboard 등 다른 소비처는 기본값 유지 → 무회귀.
    */
   label?: string;
+  /**
+   * T-20260609-foot-DOCPATIENTLIST-RXCANCEL-DISCHARGE-GATE: 귀가 게이트 컨텍스트.
+   * 둘 다(특히 checkedInAt) 주어졌을 때만 게이팅 — 귀가/전날/미래/취소 환자는 취소 차단 + 차트 안내.
+   * 미제공 시 게이트 비적용(종전 동작 보존, 무회귀).
+   */
+  checkInStatus?: string | null;
+  checkedInAt?: string | null;
+  /** 차단 시 '차트 열기' 진입 동선(제공 시 인라인 버튼 + 안내 토스트 액션 노출). */
+  onOpenChart?: () => void;
 }) {
   const cancelMut = useCancelConfirmedRx(checkInId);
   const list = Array.isArray(items) ? (items as Parameters<typeof formatRxConfirmedSummary>[0]) : null;
   const summary = formatRxConfirmedSummary(list);
-  // AC-5: 의사 + checkInId 있을 때만 취소 가능. 그 외엔 표시 전용.
-  const cancellable = doctorMode && !!checkInId;
+
+  // 귀가 게이트 — checkedInAt 제공 시에만 판정(SSOT 재사용). 비잔류면 취소 차단.
+  const hasGateContext = checkedInAt !== undefined && checkedInAt !== null;
+  const gate = hasGateContext
+    ? checkRxInClinic({ status: checkInStatus, checked_in_at: checkedInAt })
+    : null;
+  const blockedByGate = !!gate && !gate.allowed;
+
+  // AC-5(권한) + 귀가 차단: 의사 + checkInId + 게이트 미차단일 때만 실제 취소.
+  const cancellable = doctorMode && !!checkInId && !blockedByGate;
+  // 클릭 자체는 게이트 차단 시에도 살림(거부 + 안내 토스트). 표시 전용(비의사·차단없음)만 비활성.
+  const interactive = cancellable || blockedByGate;
 
   function handleDoneClick() {
-    if (!cancellable || cancelMut.isPending) return;
+    if (cancelMut.isPending) return;
+    // 귀가(원내 비잔류) — 취소 거부 + "차트에서 수정" 안내 + 차트 진입 동선.
+    if (blockedByGate && gate) {
+      toast.error(
+        rxInClinicMessage(gate.reason),
+        onOpenChart ? { action: { label: '차트 열기', onClick: onOpenChart } } : undefined,
+      );
+      return;
+    }
+    if (!cancellable) return;
     // AC-4: "처방완료" 재클릭 → 취소 확인 팝업 → clean 원복.
     if (!window.confirm('취소하시겠습니까?')) return;
     void cancelMut
@@ -576,17 +614,26 @@ export function RxConfirmedSummary({
     <div
       className={cn('flex min-w-0 items-center gap-1.5', className)}
       data-testid="rx-confirmed-summary"
+      data-rx-cancel-blocked={blockedByGate ? 'true' : undefined}
+      data-block-reason={blockedByGate ? gate?.reason ?? '' : undefined}
     >
       <button
         type="button"
         onClick={handleDoneClick}
-        disabled={cancelMut.isPending || !cancellable}
+        disabled={cancelMut.isPending || !interactive}
         data-testid="rx-confirmed-done"
-        title={cancellable ? '재클릭 시 처방 확정을 취소합니다' : label}
+        title={
+          blockedByGate
+            ? '귀가 환자는 차트에서 수정하세요'
+            : cancellable
+              ? '재클릭 시 처방 확정을 취소합니다'
+              : label
+        }
         className={cn(
           'inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-green-700',
           cancellable && 'cursor-pointer hover:text-rose-600',
-          !cancellable && 'cursor-default',
+          blockedByGate && 'cursor-help',
+          !interactive && 'cursor-default',
           'disabled:opacity-60',
         )}
       >
@@ -605,6 +652,19 @@ export function RxConfirmedSummary({
         >
           {summary}
         </span>
+      )}
+      {/* 귀가 차단 — 차트 진입 동선(AC2). onOpenChart 제공 시 인라인 노출. */}
+      {blockedByGate && onOpenChart && (
+        <button
+          type="button"
+          onClick={onOpenChart}
+          data-testid="rx-cancel-open-chart"
+          title="귀가 환자는 차트에서 수정하세요"
+          className="inline-flex shrink-0 items-center gap-0.5 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 hover:bg-amber-100"
+        >
+          <FileText className="h-2.5 w-2.5" />
+          차트에서 수정
+        </button>
       )}
     </div>
   );
