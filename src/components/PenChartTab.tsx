@@ -174,8 +174,20 @@ const REFUND_AUTOFILL_POS_P1: Array<{ key: keyof AutofillFields; x: number; y: n
 //   날짜(x=440 라인 → 현재 drawRefundP3DateAutofill 년/월/일 분리)는 별도 함수로 정상 동작 중 → 미변경.
 //   복구는 bgCanvas 텍스트 레이어 합성으로만 (drawAutofillOnCtx 재사용). refund_consent 캔버스
 //   desync 옵션과 무관 → BLACKSCR(P0 검정화면) 리스크 없음.
+//
+// T-20260609-foot-REFUND-NAME-AUTOFILL-POSITION: 좌표 좌측 이탈 RC 수정 (김주연 총괄 6/9 보고).
+//   [RC — PIL 픽셀 정밀 분석, 추정 아님] refund_consent.png 2481×10524 → canvas 794×3369 (scale=0.32).
+//   [본인 동의서] 표(2칸: 이름 | 서명):
+//     · 표 좌측 경계 = canvas x=96 (img 300), 중앙 칸막이 x=397, 우측 경계 x=697
+//     · "이름" 칸 밑줄(underline) = canvas y=3242, x=130~364 (중심 x≈247)
+//     · "서명" 칸 밑줄          = canvas y=3242, x=430~664
+//   직전 T-20260608 재추가 좌표 x=55 는 표 좌측 경계(96)보다 *왼쪽* = 표 바깥 페이지 여백 →
+//   이름이 셀 밖 좌측으로 이탈 렌더(현장 "이름 위치 틀어짐" RC). y=3206 도 밑줄(3242)보다 36px 위 부유.
+//   [수정] x: 55→145 (밑줄 좌단 130 + 15px 여백 = 칸 내부 시작, textAlign 기본 left),
+//          y: 3206→3224 (textBaseline='top' 15px → 하단≈3239 가 밑줄 y=3242 바로 위 정렬, 수기란 위 안착).
+//   긴이름 안전: 밑줄 우단 364까지 가용폭 219px(≈14자) — 오버플로우/서명칸(x≥430) 겹침 없음.
 const REFUND_AUTOFILL_POS_P3: Array<{ key: keyof AutofillFields; x: number; y: number }> = [
-  { key: 'name', x: 55, y: 3206 }, // [본인 동의서] 하단 "이름" 셀 내부 (page-3 범위 2246~3369 내)
+  { key: 'name', x: 145, y: 3224 }, // [본인 동의서] "이름" 칸 밑줄(y=3242, x=130~364) 위 안착
 ];
 
 // ── 환불동의서 P3 날짜 분리 렌더링 (AC-R5) ──
