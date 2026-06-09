@@ -47,9 +47,14 @@ import {
 import {
   MessageSquare, Settings, ChevronRight, Loader2, AlertCircle,
   CheckCircle2, Phone, Send, History, Ban, Zap, QrCode, Download,
+  ImagePlus, X,
 } from 'lucide-react';
 import type { Clinic } from '@/lib/types';
 import { RESERVED_EVENT_TYPES } from '@/lib/notificationEventTypes';
+import {
+  MMS_ACCEPT, validateMmsImage, checkMmsResolution,
+  uploadMmsImage, signedMmsImageUrl, removeMmsImage,
+} from '@/lib/mmsImage';
 
 // ── 타입 정의 ─────────────────────────────────────────────────────────────────
 
@@ -77,6 +82,9 @@ interface NotificationTemplate {
   channel: 'sms' | 'lms' | 'alimtalk';
   body: string;
   is_active: boolean;
+  // T-20260609-foot-MSG-TEMPLATE-MMS Part B: 첨부 이미지(약도/약국지도) storage 경로(message-images 버킷).
+  // NULL=SMS/LMS, 값 있으면 발송 시 MMS 전환. (마이그레이션 적용 전이면 undefined)
+  image_path?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -793,6 +801,47 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
   const [saving, setSaving]         = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // ── T-20260609-foot-MSG-TEMPLATE-MMS Part B: 이미지(약도/약국지도) 첨부 상태 ──
+  // editImagePath: 기존 저장된 경로(없으면 null). editImageFile: 새로 고른 파일(아직 업로드 전).
+  // editImagePreview: 미리보기 URL(기존=signed, 신규=objectURL). 둘 다 없으면 첨부 없음.
+  const [editImagePath, setEditImagePath]       = useState<string | null>(null);
+  const [editImageFile, setEditImageFile]       = useState<File | null>(null);
+  const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
+  const [imageTouched, setImageTouched]         = useState(false); // 이미지에 손을 댔는지(추가/제거) — DB 페이로드 포함 여부 판정
+
+  // 편집 다이얼로그 진입 시 기존 이미지 미리보기 로드
+  const loadEditImagePreview = useCallback(async (path: string | null | undefined) => {
+    setEditImageFile(null);
+    setImageTouched(false);
+    if (path) {
+      setEditImagePath(path);
+      const url = await signedMmsImageUrl(path);
+      setEditImagePreview(url);
+    } else {
+      setEditImagePath(null);
+      setEditImagePreview(null);
+    }
+  }, []);
+
+  const handlePickImage = async (file: File | null) => {
+    if (!file) return;
+    const err = validateMmsImage(file);
+    if (err) { toast.error(err); return; }
+    const warn = await checkMmsResolution(file);
+    if (warn) toast.error(warn); // 경고만 — 첨부는 허용
+    setEditImageFile(file);
+    setEditImagePreview(URL.createObjectURL(file));
+    setImageTouched(true);
+  };
+
+  const handleRemoveImage = () => {
+    setEditImageFile(null);
+    setEditImagePreview(null);
+    // 기존 저장 이미지를 제거하는 경우에도 image_path=null 로 비워야 하므로 touched 표시.
+    setImageTouched(true);
+    setEditImagePath((prev) => prev); // keep ref for cleanup at save
+  };
+
   const eventTypes = RESERVED_EVENT_TYPES;
   const getTemplate = (et: string) => templates.find((t) => t.event_type === et && t.channel === 'sms');
   // 사용자 정의 = reserved 4종이 아닌 모든 sms 템플릿.
@@ -809,21 +858,23 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
   const openEdit = (tmpl: NotificationTemplate | null, et: string) => {
     setIsCustom(false);
     setEditTitle('');
-    if (tmpl) { setEditTarget(tmpl); setEditBody(tmpl.body); }
+    if (tmpl) { setEditTarget(tmpl); setEditBody(tmpl.body); void loadEditImagePreview(tmpl.image_path); }
     else {
       setEditTarget({ id: '', clinic_id: clinicId, event_type: et, channel: 'sms', body: DEFAULT_TEMPLATES[et] ?? '', is_active: false, created_at: '', updated_at: '' });
       setEditBody(DEFAULT_TEMPLATES[et] ?? '');
+      void loadEditImagePreview(null);
     }
   };
 
   // 사용자 정의 템플릿 추가/수정
   const openCustom = (tmpl: NotificationTemplate | null) => {
     setIsCustom(true);
-    if (tmpl) { setEditTarget(tmpl); setEditTitle(tmpl.event_type); setEditBody(tmpl.body); }
+    if (tmpl) { setEditTarget(tmpl); setEditTitle(tmpl.event_type); setEditBody(tmpl.body); void loadEditImagePreview(tmpl.image_path); }
     else {
       setEditTarget({ id: '', clinic_id: clinicId, event_type: '', channel: 'sms', body: '', is_active: true, created_at: '', updated_at: '' });
       setEditTitle('');
       setEditBody('');
+      void loadEditImagePreview(null);
     }
   };
 
@@ -844,10 +895,28 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
 
     setSaving(true);
     try {
+      // ── 이미지 처리 (AC-5/AC-8) ──────────────────────────────────
+      // imageTouched 일 때만 image_path 를 DB 페이로드에 포함한다.
+      //   - 새 파일 선택 → 업로드 후 새 경로
+      //   - 제거 → null
+      // ⚠ 텍스트만 다루는 경우(imageTouched=false)엔 image_path 키 자체를 넣지 않는다.
+      //   (마이그레이션 적용 전 image_path 컬럼이 없어도 기존 템플릿 CRUD 회귀 없음 — AC-11)
+      const prevImagePath = editImagePath;
+      let nextImagePath: string | null | undefined = undefined; // undefined = 손대지 않음
+      if (imageTouched) {
+        if (editImageFile) {
+          nextImagePath = await uploadMmsImage(editImageFile, clinicId, 'template');
+        } else {
+          nextImagePath = null; // 제거
+        }
+      }
+      const includeImage = nextImagePath !== undefined;
+
       if (editTarget.id) {
         // 수정 — custom 은 이름(event_type)도 변경 가능
         const patch: Record<string, unknown> = { body: editBody };
         if (isCustom) patch.event_type = editTitle.trim();
+        if (includeImage) patch.image_path = nextImagePath;
         const { data, error } = await (supabase.from('notification_templates') as any)
           .update(patch)
           .eq('id', editTarget.id)
@@ -862,17 +931,25 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
           (t) => t.event_type === event_type && t.channel === editTarget.channel && t.is_active === false,
         );
         if (hidden) {
+          const patch: Record<string, unknown> = { body: editBody, is_active: true };
+          if (includeImage) patch.image_path = nextImagePath;
           const { data, error } = await (supabase.from('notification_templates') as any)
-            .update({ body: editBody, is_active: true })
+            .update(patch)
             .eq('id', hidden.id)
             .select('id');
           if (error) throw error;
           if (!data || (data as any[]).length === 0) throw new Error('저장 권한 없음 — 역할을 확인하세요');
         } else {
+          const insertRow: Record<string, unknown> = { clinic_id: clinicId, event_type, channel: editTarget.channel, body: editBody, is_active: editTarget.is_active };
+          if (includeImage) insertRow.image_path = nextImagePath;
           const { error } = await (supabase.from('notification_templates') as any)
-            .insert({ clinic_id: clinicId, event_type, channel: editTarget.channel, body: editBody, is_active: editTarget.is_active });
+            .insert(insertRow);
           if (error) throw error;
         }
+      }
+      // 저장 성공 후 교체/제거된 기존 이미지 best-effort 정리
+      if (imageTouched && prevImagePath && prevImagePath !== nextImagePath) {
+        void removeMmsImage(prevImagePath);
       }
       onRefresh();
       setEditTarget(null);
@@ -981,7 +1058,14 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
           customTemplates.map((tmpl) => (
             <div key={tmpl.id} data-testid="custom-tmpl-row" className="rounded-lg border p-4 space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <span className="font-medium text-sm truncate">{tmpl.event_type}</span>
+                <span className="font-medium text-sm truncate flex items-center gap-1.5">
+                  {tmpl.event_type}
+                  {tmpl.image_path && (
+                    <Badge data-testid="custom-tmpl-mms-badge" variant="secondary" className="gap-1 text-[10px]">
+                      <ImagePlus className="h-3 w-3" /> MMS
+                    </Badge>
+                  )}
+                </span>
                 <div className="flex gap-2 shrink-0">
                   <Button size="sm" variant="outline" data-testid="custom-tmpl-edit-btn" onClick={() => openCustom(tmpl)}>수정</Button>
                   <Button
@@ -1026,6 +1110,46 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
               <Textarea data-testid="tmpl-body-input" value={editBody} onChange={(e) => setEditBody(e.target.value)} rows={5} className="font-mono text-sm" />
               <p className="text-xs text-muted-foreground">
                 {byteLen(editBody)}byte{byteLen(editBody) > 90 ? ' — LMS로 발송됩니다' : ' (SMS)'}
+              </p>
+            </div>
+            {/* T-20260609-foot-MSG-TEMPLATE-MMS Part B(AC-5/AC-8): 이미지 첨부 → MMS 발송 */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">이미지 첨부 (선택 — 약도·약국지도)</label>
+              {editImagePreview ? (
+                <div data-testid="tmpl-image-preview" className="relative inline-block">
+                  <img
+                    src={editImagePreview}
+                    alt="첨부 이미지 미리보기"
+                    className="max-h-40 rounded border object-contain"
+                  />
+                  <button
+                    type="button"
+                    data-testid="tmpl-image-remove-btn"
+                    onClick={handleRemoveImage}
+                    className="absolute -right-2 -top-2 rounded-full bg-red-600 p-1 text-white shadow hover:bg-red-700"
+                    aria-label="이미지 제거"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <label
+                  data-testid="tmpl-image-pick-label"
+                  className="flex w-fit cursor-pointer items-center gap-2 rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground hover:bg-muted/40"
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  이미지 선택 (JPG, 200KB 이하)
+                  <input
+                    type="file"
+                    data-testid="tmpl-image-input"
+                    accept={MMS_ACCEPT}
+                    className="hidden"
+                    onChange={(e) => { void handlePickImage(e.target.files?.[0] ?? null); e.target.value = ''; }}
+                  />
+                </label>
+              )}
+              <p className="text-xs text-muted-foreground">
+                이미지를 첨부하면 <b>MMS</b>로 발송됩니다. (JPG · 200KB 이하 · 권장 1500×1440px 이하)
               </p>
             </div>
             <div className="space-y-2">

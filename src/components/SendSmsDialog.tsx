@@ -22,10 +22,14 @@
  *  - 발송 권한 = 전직원 8역할 (호출부 게이트, EF에서 재검증)
  */
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, MessageSquare, Phone, User } from 'lucide-react';
+import { AlertTriangle, ImagePlus, MessageSquare, Phone, User, X } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { supabase } from '@/lib/supabase';
 import { isReservedEventType } from '@/lib/notificationEventTypes';
+import {
+  MMS_ACCEPT, validateMmsImage, checkMmsResolution,
+  uploadMmsImage, signedMmsImageUrl,
+} from '@/lib/mmsImage';
 import {
   Dialog,
   DialogContent,
@@ -44,6 +48,8 @@ interface TemplateRow {
   channel: string;
   body: string;
   is_active: boolean;
+  // T-20260609-foot-MSG-TEMPLATE-MMS Part B: 템플릿 첨부 이미지(있으면 선택 시 자동 첨부 → MMS)
+  image_path?: string | null;
 }
 
 interface Props {
@@ -88,6 +94,24 @@ function renderTemplate(body: string, vars: SubstVars): string {
 
 function digitsOnly(s: string | null | undefined): string {
   return (s ?? '').replace(/[^0-9]/g, '');
+}
+
+/**
+ * 템플릿 로드 — image_path 포함. 마이그레이션 미적용(컬럼 부재) 환경에선 컬럼 없이 폴백.
+ * (Vercel 자동배포가 마이그레이션보다 앞설 수 있으므로 수동발송 회귀 차단 — AC-11)
+ */
+async function loadTemplatesResilient(clinicId: string): Promise<TemplateRow[]> {
+  const withImg = await (supabase.from('notification_templates') as any)
+    .select('id, event_type, channel, body, is_active, image_path')
+    .eq('clinic_id', clinicId)
+    .order('event_type');
+  if (!withImg.error) return (withImg.data as TemplateRow[]) ?? [];
+  // image_path 컬럼 부재 등 → 폴백
+  const base = await (supabase.from('notification_templates') as any)
+    .select('id, event_type, channel, body, is_active')
+    .eq('clinic_id', clinicId)
+    .order('event_type');
+  return (base.data as TemplateRow[]) ?? [];
 }
 
 /**
@@ -156,6 +180,12 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
   const [confirmStep, setConfirmStep] = useState(false);
+  // ── T-20260609-foot-MSG-TEMPLATE-MMS Part B(AC-6): 이미지 첨부(MMS) ──
+  // imagePath: 이미 업로드된 경로(템플릿 첨부 이미지). imageFile: 즉석 첨부(아직 업로드 전).
+  // 둘 중 하나라도 있으면 MMS 발송. preview 로 표시.
+  const [imagePath, setImagePath]     = useState<string | null>(null);
+  const [imageFile, setImageFile]     = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   // 치환 변수 컨텍스트 (지점명·지점전화번호·예약 날짜/시간) — 템플릿과 동시 로드
   const [vars, setVars] = useState<SubstVars>({
     고객명: '',
@@ -175,16 +205,16 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
     setSelectedId('');
     setBody('');
     setConfirmStep(false);
+    setImagePath(null);
+    setImageFile(null);
+    setImagePreview(null);
     setLoading(true);
     const custId = checkIn?.customer_id ?? null;
     let cancelled = false;
     (async () => {
       // 템플릿 + 지점 정보 + 발신번호 + 고객 다음/최근 예약을 병렬 조회
-      const [tmplRes, clinicRes, capRes, resvRes] = await Promise.all([
-        (supabase.from('notification_templates') as any)
-          .select('id, event_type, channel, body, is_active')
-          .eq('clinic_id', clinicId)
-          .order('event_type'),
+      const [tmplRows, clinicRes, capRes, resvRes] = await Promise.all([
+        loadTemplatesResilient(clinicId),
         (supabase.from('clinics') as any)
           .select('name')
           .eq('id', clinicId)
@@ -203,7 +233,7 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
       // 사용자 정의(custom) 템플릿의 is_active=false 는 soft-delete(삭제 처리) → 발송 선택에서 제외.
       // reserved 자동발송 템플릿은 is_active=false 여도 수동 발송 선택은 허용(자동발송 off 의미).
       //   (T-20260609-foot-MSG-TEMPLATE-CRUD AC-3)
-      const rows = (((tmplRes as any)?.data as TemplateRow[]) ?? [])
+      const rows = (tmplRows ?? [])
         .filter((t) => t.is_active !== false || isReservedEventType(t.event_type))
         .sort((a, b) => Number(b.is_active) - Number(a.is_active));
       setTemplates(rows);
@@ -236,12 +266,40 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
       setConfirmStep(false);
       const tmpl = templates.find((t) => t.id === id);
       if (tmpl) setBody(renderTemplate(tmpl.body, vars));
+      // 즉석 첨부 파일은 유지하되, 템플릿 자체 첨부 이미지가 있으면 자동 첨부(즉석 파일 없을 때만).
+      if (tmpl?.image_path && !imageFile) {
+        setImagePath(tmpl.image_path);
+        void signedMmsImageUrl(tmpl.image_path).then((url) => setImagePreview(url));
+      } else if (!imageFile) {
+        setImagePath(null);
+        setImagePreview(null);
+      }
     },
-    [templates, vars],
+    [templates, vars, imageFile],
   );
 
+  const handlePickImage = useCallback(async (file: File | null) => {
+    if (!file) return;
+    const err = validateMmsImage(file);
+    if (err) { toast.error(err); return; }
+    const warn = await checkMmsResolution(file);
+    if (warn) toast.error(warn); // 경고만 — 첨부 허용
+    setImageFile(file);
+    setImagePath(null); // 발송 시 업로드 → 경로 확정
+    setImagePreview(URL.createObjectURL(file));
+    setConfirmStep(false);
+  }, []);
+
+  const handleRemoveImage = useCallback(() => {
+    setImageFile(null);
+    setImagePath(null);
+    setImagePreview(null);
+    setConfirmStep(false);
+  }, []);
+
+  const hasImage = Boolean(imageFile || imagePath);
   const byteLen = new TextEncoder().encode(body).length;
-  const channelLabel = byteLen <= 90 ? 'SMS' : 'LMS';
+  const channelLabel = hasImage ? 'MMS' : (byteLen <= 90 ? 'SMS' : 'LMS');
 
   const canSend =
     hasPhone && body.trim().length > 0 && selectedId !== '' && !sending && templates.length > 0;
@@ -250,6 +308,19 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
     if (!checkIn || !canSend) return;
     setSending(true);
     try {
+      // 즉석 첨부 파일이면 발송 직전 업로드 → 경로 확정. 템플릿 첨부 이미지는 기존 경로 그대로.
+      let finalImagePath = imagePath;
+      if (imageFile) {
+        try {
+          finalImagePath = await uploadMmsImage(imageFile, clinicId, 'manual');
+        } catch (e) {
+          toast.error(`이미지 업로드 실패: ${String(e)}`);
+          setSending(false);
+          setConfirmStep(false);
+          return;
+        }
+      }
+
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -261,6 +332,8 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
           recipient_phone: phone,
           body: body.trim(),
           source: 'manual_dashboard',
+          // image_path 는 첨부가 있을 때만 전달(없으면 키 생략 → 종전 SMS/LMS 무영향, AC-11)
+          ...(finalImagePath ? { image_path: finalImagePath } : {}),
         },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
@@ -282,7 +355,7 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
     } finally {
       setSending(false);
     }
-  }, [checkIn, canSend, clinicId, phone, body, onOpenChange]);
+  }, [checkIn, canSend, clinicId, phone, body, imageFile, imagePath, onOpenChange]);
 
   if (!checkIn) return null;
 
@@ -366,6 +439,43 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
               rows={10}
               className="resize-y text-sm min-h-[220px]"
             />
+
+            {/* T-20260609-foot-MSG-TEMPLATE-MMS Part B(AC-6): 이미지 첨부 → MMS */}
+            <div className="space-y-1.5 pt-1">
+              {imagePreview ? (
+                <div data-testid="sms-image-preview" className="relative inline-block">
+                  <img
+                    src={imagePreview}
+                    alt="첨부 이미지 미리보기"
+                    className="max-h-32 rounded border object-contain"
+                  />
+                  <button
+                    type="button"
+                    data-testid="sms-image-remove-btn"
+                    onClick={handleRemoveImage}
+                    className="absolute -right-2 -top-2 rounded-full bg-red-600 p-1 text-white shadow hover:bg-red-700"
+                    aria-label="이미지 제거"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <label
+                  data-testid="sms-image-pick-label"
+                  className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-md border border-dashed px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50"
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  이미지 첨부 (JPG · 200KB 이하 → MMS)
+                  <input
+                    type="file"
+                    data-testid="sms-image-input"
+                    accept={MMS_ACCEPT}
+                    className="hidden"
+                    onChange={(e) => { void handlePickImage(e.target.files?.[0] ?? null); e.target.value = ''; }}
+                  />
+                </label>
+              )}
+            </div>
           </div>
         )}
 
