@@ -1,21 +1,20 @@
 /**
- * ⚠ SUPERSEDED by T-20260609-foot-RECEIPT-PKG-ALWAYS (혼합안 → 무조건 패키지).
- *   본 spec의 전제(단건/패키지 토글 = receipt-kind-*, 패키지 없을 때 단건 fallback)는
- *   reporter(김주연 총괄) 지시로 무효화됨. 두 시나리오 모두 test.skip 처리(역사 보존).
- *   현행 검증은 T-20260609-foot-RECEIPT-PKG-ALWAYS.spec.ts 참조.
+ * E2E spec — T-20260609-foot-RECEIPT-PKG-ALWAYS
+ * 영수증 업로드 = 항상 패키지 결제 (혼합안 supersede → 무조건 package_payments)
  *
- * E2E spec — T-20260608-foot-RECEIPT-PKG-PAYCLASS
- * 패키지 결제 영수증 업로드가 단건 결제로 오분류되는 버그 수정
+ * 스펙 변경 (선행 T-20260608-foot-RECEIPT-PKG-PAYCLASS commit 713cf54 → 본건):
+ *   - 변경1: 활성 패키지 자동감지 + 단건/패키지 토글 제거 → 영수증 업로드 = 항상 package_payments INSERT.
+ *            귀속 패키지 없으면 가드 차단(단건 fallback 금지). reporter(김주연 총괄) 명시 재정의.
+ *   - 변경2: 결제일(date) 입력 추가. Closing은 created_at 기준 일자 집계 →
+ *            과거 결제일 선택 시 created_at을 해당일(정오 KST)로 세팅 → 다중 영수증 날짜별 분리 집계.
+ *            (package_payments에 paid_at 전용 컬럼 부재. created_at이 결제일 컬럼 역할 + settable → 스키마 변경 불필요.)
  *
- * 근본원인: ReceiptUploadSection.handlePaymentConfirm 이 항상 payments(단건) INSERT.
- * 수정(혼합안): 활성 패키지 있으면 '패키지 결제' 자동감지 디폴트 + 수동 단건 오버라이드.
- *   - kind='package' → package_payments INSERT (PKG-REVENUE-SPLIT 경로 재사용) → 일마감 패키지 집계
- *   - kind='single'  → payments INSERT (기존 단건 경로 회귀가드)
- *
- * 시나리오 1 (AC-1/AC-3): 활성 패키지 고객 → 영수증 업로드 → 패키지 자동감지 → 저장
- *                          → package_payments row 생성, payments 미생성 검증
- * 시나리오 2 (AC-2/AC-4): 패키지 없는 고객 → 영수증 업로드 → 결제종류 셀렉터 미노출
- *                          → 저장 → payments(단건) row 생성, package_payments 미생성 검증 (회귀가드)
+ * 시나리오 1 (AC-1/AC-2): 활성 패키지 고객 → 영수증 업로드 → 토글 미노출 → 저장
+ *                          → package_payments 생성, payments 미생성.
+ * 시나리오 2 (변경1 가드): 패키지 없는 고객 → 영수증 업로드 → 가드 노출 + 등록 비활성
+ *                          → package_payments·payments 모두 미생성 (단건 fallback 안 함).
+ * 시나리오 3 (AC-3): 다중 영수증 날짜별 귀속 — 과거 결제일 영수증 = 해당일, 오늘 영수증 = 오늘
+ *                    → 각 package_payments.created_at 의 KST 일자가 결제일과 일치.
  */
 import { test, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
@@ -29,6 +28,14 @@ function sb() {
   return createClient(SUPA_URL, SERVICE_KEY);
 }
 
+/** 임의 타임스탬프 → 서울 기준 YYYY-MM-DD (Closing 일자 집계 기준과 동일 로직) */
+function seoulDate(input: string | number | Date): string {
+  return new Date(input).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+}
+function todaySeoul(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+}
+
 /** 1x1 투명 PNG (영수증 이미지 대체) */
 const PNG_1X1 = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
@@ -37,7 +44,7 @@ const PNG_1X1 = Buffer.from(
 
 async function seedCustomer(suffix: string) {
   const client = sb();
-  const name = `receipt-pkg-test-${suffix}-${Date.now()}`;
+  const name = `receipt-always-test-${suffix}-${Date.now()}`;
   const phone = `010${String(Date.now()).slice(-8)}`;
   const { data: customer, error } = await client
     .from('customers')
@@ -65,7 +72,7 @@ async function seedActivePackage(customerId: string, pkgName: string) {
       shot_upgrade: false,
       af_upgrade: false,
       upgrade_surcharge: 0,
-      total_amount: 1000000,
+      total_amount: 3000000,
       paid_amount: 0,
       status: 'active',
       contract_date: new Date().toISOString().slice(0, 10),
@@ -102,7 +109,6 @@ async function ensureLoggedIn(page: import('@playwright/test').Page): Promise<bo
 
 /** 결제영수증 섹션에 이미지 업로드 → 매출 연동 다이얼로그 오픈 */
 async function uploadReceiptAndOpenDialog(page: import('@playwright/test').Page): Promise<boolean> {
-  // 결제영수증 섹션의 hidden file input (accept=image/*, multiple)
   const fileInput = page.locator('input[type="file"][accept="image/*"][multiple]');
   if (await fileInput.count() === 0) return false;
   await fileInput.first().setInputFiles({
@@ -110,18 +116,17 @@ async function uploadReceiptAndOpenDialog(page: import('@playwright/test').Page)
     mimeType: 'image/png',
     buffer: PNG_1X1,
   });
-  // 매출 연동 다이얼로그 대기
   const dlg = page.getByText('영수증 매출 연동');
   return await dlg.isVisible({ timeout: 8000 }).catch(() => false);
 }
 
 // ─────────────────────────────────────────────────────────────────
-// 시나리오 1: 패키지 영수증 정상 분류 (AC-1/AC-3)
+// 시나리오 1: 영수증 업로드 = 무조건 패키지 결제 (AC-1/AC-2)
 // ─────────────────────────────────────────────────────────────────
-test.skip('AC-1/AC-3: 활성 패키지 고객의 영수증 업로드는 package_payments로 분류된다 [SUPERSEDED by ALWAYS]', async ({ page }) => {
-  const customer = await seedCustomer('s1-pkg');
+test('AC-1/AC-2: 영수증 업로드는 항상 package_payments로 분류되고 단건/패키지 토글이 없다', async ({ page }) => {
+  const customer = await seedCustomer('s1-always');
   const pkg = await seedActivePackage(customer.id, 'Re:Born 10회');
-  const AMOUNT = 350000;
+  const AMOUNT = 1600000;
 
   try {
     if (!(await ensureLoggedIn(page))) { test.skip(true, 'auth 미설정 — skip'); return; }
@@ -134,24 +139,21 @@ test.skip('AC-1/AC-3: 활성 패키지 고객의 영수증 업로드는 package_
       return;
     }
 
-    // 활성 패키지 있으므로 '결제 종류' 셀렉터 노출 + '패키지 결제' 자동감지(디폴트)
-    const kindPackage = page.locator('[data-testid="receipt-kind-package"]');
-    await expect(kindPackage).toBeVisible({ timeout: 3000 });
-    // 패키지명 라벨 또는 셀렉트 노출 확인
+    // AC-2: 단건/패키지 토글 제거 — 토글 버튼 부재
+    expect(await page.locator('[data-testid="receipt-kind-package"]').count()).toBe(0);
+    expect(await page.locator('[data-testid="receipt-kind-single"]').count()).toBe(0);
+    // 패키지 라벨 노출 (단일 패키지)
     await expect(page.getByText('Re:Born 10회')).toBeVisible({ timeout: 3000 });
 
-    // 금액 입력 (다이얼로그 스코프 내 text input)
     const amountInput = page.locator('input[inputmode="numeric"]').last();
     await amountInput.fill(String(AMOUNT));
+    await page.locator('[data-testid="receipt-payment-submit"]').click();
 
-    // 등록
-    await page.getByRole('button', { name: '등록' }).click();
-
-    // ── DB 검증: package_payments에 기록, payments에는 없음 ──
+    // AC-1: package_payments 생성
     await expect.poll(async () => {
       const { data } = await sb()
         .from('package_payments')
-        .select('id, amount, package_id, memo')
+        .select('id')
         .eq('customer_id', customer.id);
       return data?.length ?? 0;
     }, { timeout: 8000 }).toBeGreaterThan(0);
@@ -164,23 +166,22 @@ test.skip('AC-1/AC-3: 활성 패키지 고객의 영수증 업로드는 package_
     expect(pp![0].package_id).toBe(pkg.id);
     expect(pp![0].payment_type).toBe('payment');
 
-    // AC-3: 단건(payments) 미생성 — 이중집계 없음
+    // 단건(payments) 미생성 — 이중집계/오분류 없음
     const { data: single } = await sb()
       .from('payments')
       .select('id')
       .eq('customer_id', customer.id);
     expect(single?.length ?? 0).toBe(0);
   } finally {
-    await cleanupByName('receipt-pkg-test-s1-pkg');
+    await cleanupByName('receipt-always-test-s1-always');
   }
 });
 
 // ─────────────────────────────────────────────────────────────────
-// 시나리오 2: 단건 영수증 회귀가드 (AC-2/AC-4)
+// 시나리오 2: 패키지 없으면 가드 차단 (변경1 엣지 — 단건 fallback 금지)
 // ─────────────────────────────────────────────────────────────────
-test.skip('AC-2/AC-4: 패키지 없는 고객의 영수증 업로드는 payments(단건) 유지된다 [SUPERSEDED by ALWAYS]', async ({ page }) => {
-  const customer = await seedCustomer('s2-single');
-  const AMOUNT = 120000;
+test('변경1 가드: 활성 패키지 없는 고객은 영수증 매출 등록이 차단된다(단건 fallback 안 함)', async ({ page }) => {
+  const customer = await seedCustomer('s2-guard');
 
   try {
     if (!(await ensureLoggedIn(page))) { test.skip(true, 'auth 미설정 — skip'); return; }
@@ -193,36 +194,75 @@ test.skip('AC-2/AC-4: 패키지 없는 고객의 영수증 업로드는 payments
       return;
     }
 
-    // 활성 패키지 없으므로 '결제 종류' 셀렉터 미노출 (단건 단일 경로)
-    const kindPackage = page.locator('[data-testid="receipt-kind-package"]');
-    expect(await kindPackage.count()).toBe(0);
+    // 가드 안내 노출 + 등록 버튼 비활성
+    await expect(page.locator('[data-testid="receipt-no-package-guard"]')).toBeVisible({ timeout: 3000 });
+    await expect(page.locator('[data-testid="receipt-payment-submit"]')).toBeDisabled();
 
-    const amountInput = page.locator('input[inputmode="numeric"]').last();
-    await amountInput.fill(String(AMOUNT));
-    await page.getByRole('button', { name: '등록' }).click();
-
-    // ── DB 검증: payments(단건) 기록, package_payments 미생성 ──
-    await expect.poll(async () => {
-      const { data } = await sb()
-        .from('payments')
-        .select('id, amount')
-        .eq('customer_id', customer.id);
-      return data?.length ?? 0;
-    }, { timeout: 8000 }).toBeGreaterThan(0);
-
-    const { data: single } = await sb()
-      .from('payments')
-      .select('amount, memo')
-      .eq('customer_id', customer.id);
-    expect(single![0].amount).toBe(AMOUNT);
-    expect(single![0].memo).toBe('영수증 업로드');
-
+    // 비활성이므로 클릭해도 아무 결제도 기록되지 않음 (단건 fallback 금지)
     const { data: pp } = await sb()
       .from('package_payments')
       .select('id')
       .eq('customer_id', customer.id);
     expect(pp?.length ?? 0).toBe(0);
+    const { data: single } = await sb()
+      .from('payments')
+      .select('id')
+      .eq('customer_id', customer.id);
+    expect(single?.length ?? 0).toBe(0);
   } finally {
-    await cleanupByName('receipt-pkg-test-s2-single');
+    await cleanupByName('receipt-always-test-s2-guard');
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// 시나리오 3: 다중 영수증 결제일별 귀속 (AC-3)
+// ─────────────────────────────────────────────────────────────────
+test('AC-3: 과거 결제일 영수증은 결제일 기준으로 created_at이 귀속된다', async ({ page }) => {
+  const customer = await seedCustomer('s3-date');
+  const pkg = await seedActivePackage(customer.id, 'Re:Born 10회');
+  const AMOUNT_PAST = 1200000;
+
+  // D-2 (이틀 전) 결제일 — 오늘과 분명히 다른 날짜
+  const pastDate = seoulDate(Date.now() - 2 * 24 * 60 * 60 * 1000);
+
+  try {
+    if (!(await ensureLoggedIn(page))) { test.skip(true, 'auth 미설정 — skip'); return; }
+
+    await page.goto(`${BASE_URL}/chart/${customer.id}`);
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    if (!(await uploadReceiptAndOpenDialog(page))) {
+      test.skip(true, '영수증 업로드/다이얼로그 진입 불가 (storage/렌더) — skip');
+      return;
+    }
+
+    // 결제일을 과거(D-2)로 변경
+    const dateInput = page.locator('[data-testid="receipt-payment-date"]');
+    await expect(dateInput).toBeVisible({ timeout: 3000 });
+    await dateInput.fill(pastDate);
+
+    const amountInput = page.locator('input[inputmode="numeric"]').last();
+    await amountInput.fill(String(AMOUNT_PAST));
+    await page.locator('[data-testid="receipt-payment-submit"]').click();
+
+    // created_at 의 KST 일자가 결제일(D-2)과 일치 — 오늘로 몰리지 않음
+    await expect.poll(async () => {
+      const { data } = await sb()
+        .from('package_payments')
+        .select('id')
+        .eq('customer_id', customer.id);
+      return data?.length ?? 0;
+    }, { timeout: 8000 }).toBeGreaterThan(0);
+
+    const { data: pp } = await sb()
+      .from('package_payments')
+      .select('amount, created_at')
+      .eq('customer_id', customer.id);
+    expect(pp![0].amount).toBe(AMOUNT_PAST);
+    expect(seoulDate(pp![0].created_at)).toBe(pastDate);
+    expect(seoulDate(pp![0].created_at)).not.toBe(todaySeoul());
+    expect(pkg.id).toBeTruthy(); // 가드: 패키지 시드 확인
+  } finally {
+    await cleanupByName('receipt-always-test-s3-date');
   }
 });

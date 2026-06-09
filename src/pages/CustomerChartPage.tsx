@@ -11,7 +11,7 @@ import { ResultCard, type HQResult } from '@/components/HealthQResultsPanel';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { formatAmount, formatPhone, formatPhoneInput, parseAmount, seoulISODate } from '@/lib/format';
+import { formatAmount, formatPhone, formatPhoneInput, parseAmount, seoulISODate, todaySeoulISODate } from '@/lib/format';
 // T-20260524-foot-PKG-LABEL-AMOUNT AC-3: METHOD_KO 추가 import
 import { VISIT_TYPE_KO, METHOD_KO, STATUS_KO } from '@/lib/status';
 import { cn } from '@/lib/utils';
@@ -345,13 +345,14 @@ function ReceiptUploadSection({
 }) {
   const [images, setImages] = useState<StorageImageItem[]>([]);
   const [uploading, setUploading] = useState(false);
-  // T-20260608-foot-RECEIPT-PKG-PAYCLASS: 결제 종류(단건/패키지) + 대상 패키지 추가
-  //   - 활성 패키지 있으면 자동으로 'package' 디폴트(자동감지) + 수동 오버라이드 가능(혼합)
-  //   - kind='package' 시 package_payments INSERT (PKG-REVENUE-SPLIT 경로 재사용)
+  // T-20260609-foot-RECEIPT-PKG-ALWAYS: 영수증 업로드 = 항상 패키지 결제 (혼합안 supersede)
+  //   - 단건/패키지 토글 제거 + 활성 패키지 자동감지 제거 → 항상 package_payments INSERT
+  //   - 활성 패키지 없으면 가드 차단(단건 fallback 금지) — "패키지 먼저 생성" 전제
+  //   - paymentDate: 결제일 — Closing이 created_at 기준 일자 집계하므로 과거일 선택 시 created_at 세팅
   const [amountDlg, setAmountDlg] = useState<{
     open: boolean; amount: string; method: 'card' | 'cash' | 'transfer';
-    kind: 'single' | 'package'; packageId: string;
-  }>({ open: false, amount: '', method: 'cash', kind: 'single', packageId: '' });
+    packageId: string; paymentDate: string;
+  }>({ open: false, amount: '', method: 'cash', packageId: '', paymentDate: todaySeoulISODate() });
   // 활성 패키지 목록 (영수증 결제 라우팅 대상)
   const [activePkgs, setActivePkgs] = useState<{ id: string; name: string }[]>([]);
 
@@ -401,7 +402,7 @@ function ReceiptUploadSection({
     setUploading(false);
     e.target.value = '';
     await load();
-    // T-20260608-foot-RECEIPT-PKG-PAYCLASS: 최신 활성 패키지 재조회 후 자동감지 디폴트 결정
+    // T-20260609-foot-RECEIPT-PKG-ALWAYS: 최신 활성 패키지 재조회 (귀속 대상 프리셀렉트)
     await loadActivePkgs();
     const { data: pkgRows } = await supabase
       .from('packages')
@@ -411,11 +412,12 @@ function ReceiptUploadSection({
       .order('created_at', { ascending: false });
     const pkgs = (pkgRows ?? []).map((p: { id: string; package_name: string }) => ({ id: p.id, name: p.package_name }));
     setActivePkgs(pkgs);
-    // 매출 연동 다이얼로그 열기 — 활성 패키지 있으면 '패키지'로 자동감지(최신 1건 프리셀렉트)
+    // 매출 연동 다이얼로그 열기 — 영수증 업로드 = 항상 패키지 결제. 최신 패키지 1건 프리셀렉트.
+    // 활성 패키지 없으면 다이얼로그 내 가드로 차단(등록 비활성), 단건 fallback 안 함.
     setAmountDlg({
       open: true, amount: '', method: 'cash',
-      kind: pkgs.length > 0 ? 'package' : 'single',
       packageId: pkgs.length > 0 ? pkgs[0].id : '',
+      paymentDate: todaySeoulISODate(),
     });
   };
 
@@ -429,50 +431,46 @@ function ReceiptUploadSection({
     const amt = parseAmount(amountDlg.amount);
     if (amt <= 0) { toast.error('금액을 입력하세요'); return; }
 
-    // ── T-20260608-foot-RECEIPT-PKG-PAYCLASS ───────────────────────────
-    // 패키지 결제 분류: kind='package' + 대상 패키지 선택 시 package_payments로 라우팅.
-    // PKG-REVENUE-SPLIT(2026-05-19 확립) 경로 재사용 — 일마감 "패키지 결제" 정상 집계.
-    // 새 경로 신설 금지: PackagePaymentAdd(Packages.tsx)와 동일한 INSERT + paid_amount 재집계.
-    if (amountDlg.kind === 'package') {
-      if (!amountDlg.packageId) { toast.error('결제할 패키지를 선택하세요'); return; }
-      const { error: ppErr } = await supabase.from('package_payments').insert({
-        clinic_id: clinicId,
-        package_id: amountDlg.packageId,
-        customer_id: customerId,
-        amount: amt,
-        method: amountDlg.method,
-        installment: amountDlg.method === 'card' ? 0 : 0,
-        payment_type: 'payment',
-        memo: '영수증 업로드',
-      });
-      if (ppErr) { toast.error(`패키지 결제 기록 실패: ${ppErr.message}`); return; }
-      // PackagePaymentAdd 동일 로직: package_payments 합계 → packages.paid_amount 재집계
-      const { data: sum } = await supabase
-        .from('package_payments')
-        .select('amount, payment_type')
-        .eq('package_id', amountDlg.packageId);
-      const total = (sum ?? []).reduce(
-        (s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0);
-      await supabase.from('packages').update({ paid_amount: total }).eq('id', amountDlg.packageId);
-      setAmountDlg((d) => ({ ...d, open: false }));
-      toast.success('패키지 결제로 기록');
-      onPaymentCreated();
+    // ── T-20260609-foot-RECEIPT-PKG-ALWAYS (AC-1·AC-2) ─────────────────
+    // 영수증 업로드 = 항상 package_payments INSERT. 단건 fallback 금지(자동감지·토글 제거).
+    // 활성 패키지 없으면 가드 차단 — "패키지 먼저 생성" 전제(reporter 김주연 총괄).
+    if (activePkgs.length === 0) {
+      toast.error('결제할 패키지가 없습니다. 패키지를 먼저 생성한 뒤 등록하세요.');
       return;
     }
+    if (!amountDlg.packageId) { toast.error('결제할 패키지를 선택하세요'); return; }
 
-    // ── 단건 결제(활성 패키지 無 또는 수동 단건 오버라이드) — 기존 경로 회귀가드 ──
-    const { error } = await supabase.from('payments').insert({
-      customer_id: customerId,
+    // 결제일 귀속(AC-3): Closing은 created_at 기준 일자 집계.
+    // 오늘 결제(=업로드일)면 now() 그대로(정확 타임스탬프), 과거 결제일이면 해당일 정오(KST)로 created_at 세팅.
+    // → 다중 영수증 날짜별 분리 집계(D1 영수증=D1 일마감, D2 영수증=D2 일마감).
+    const createdAtOverride =
+      amountDlg.paymentDate && amountDlg.paymentDate !== todaySeoulISODate()
+        ? `${amountDlg.paymentDate}T12:00:00+09:00`
+        : undefined;
+
+    // PKG-REVENUE-SPLIT(2026-05-19 확립) 경로 재사용 — 새 경로 신설 금지(AC-5).
+    const { error: ppErr } = await supabase.from('package_payments').insert({
       clinic_id: clinicId,
-      check_in_id: null,
+      package_id: amountDlg.packageId,
+      customer_id: customerId,
       amount: amt,
       method: amountDlg.method,
       installment: 0,
       payment_type: 'payment',
       memo: '영수증 업로드',
+      ...(createdAtOverride ? { created_at: createdAtOverride } : {}),
     });
-    if (error) { toast.error(`결제 기록 실패: ${error.message}`); return; }
+    if (ppErr) { toast.error(`패키지 결제 기록 실패: ${ppErr.message}`); return; }
+    // PackagePaymentAdd 동일 로직: package_payments 합계 → packages.paid_amount 재집계
+    const { data: sum } = await supabase
+      .from('package_payments')
+      .select('amount, payment_type')
+      .eq('package_id', amountDlg.packageId);
+    const total = (sum ?? []).reduce(
+      (s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0);
+    await supabase.from('packages').update({ paid_amount: total }).eq('id', amountDlg.packageId);
     setAmountDlg((d) => ({ ...d, open: false }));
+    toast.success('패키지 결제로 기록');
     onPaymentCreated();
   };
 
@@ -521,56 +519,37 @@ function ReceiptUploadSection({
             <div className="font-semibold text-sm">영수증 매출 연동</div>
             <p className="text-xs text-muted-foreground">결제 금액을 입력하면 일일 매출에 자동 반영됩니다.</p>
             <div className="space-y-2">
-              {/* T-20260608-foot-RECEIPT-PKG-PAYCLASS: 결제 종류(단건/패키지) — 활성 패키지 있을 때만 노출 */}
-              {activePkgs.length > 0 && (
+              {/* T-20260609-foot-RECEIPT-PKG-ALWAYS: 영수증 업로드 = 항상 패키지 결제 (토글 제거) */}
+              {activePkgs.length === 0 ? (
+                /* 활성 패키지 없음 — 가드 차단(단건 fallback 금지) */
+                <div
+                  data-testid="receipt-no-package-guard"
+                  className="rounded border border-amber-200 bg-amber-50 px-2 py-2 text-[11px] leading-relaxed text-amber-800"
+                >
+                  결제할 패키지가 없습니다. <b>패키지를 먼저 생성</b>한 뒤 영수증을 등록하세요.
+                </div>
+              ) : (
                 <div>
-                  <label className="text-xs text-muted-foreground block mb-0.5">결제 종류</label>
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      data-testid="receipt-kind-package"
-                      onClick={() => setAmountDlg((d) => ({ ...d, kind: 'package', packageId: d.packageId || activePkgs[0].id }))}
-                      className={cn(
-                        'flex-1 py-1 text-xs rounded border transition',
-                        amountDlg.kind === 'package'
-                          ? 'bg-teal-600 text-white border-teal-600'
-                          : 'bg-white border-gray-200 hover:bg-gray-50',
-                      )}
+                  <label className="text-xs text-muted-foreground block mb-0.5">패키지 결제</label>
+                  {/* 패키지 선택: 2개 이상이면 드롭다운(귀속 명시), 1개면 라벨 */}
+                  {activePkgs.length > 1 ? (
+                    <select
+                      data-testid="receipt-package-select"
+                      value={amountDlg.packageId}
+                      onChange={(e) => setAmountDlg((d) => ({ ...d, packageId: e.target.value }))}
+                      className="w-full rounded border border-gray-200 px-2 py-1 text-xs"
                     >
-                      패키지 결제
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="receipt-kind-single"
-                      onClick={() => setAmountDlg((d) => ({ ...d, kind: 'single' }))}
-                      className={cn(
-                        'flex-1 py-1 text-xs rounded border transition',
-                        amountDlg.kind === 'single'
-                          ? 'bg-teal-600 text-white border-teal-600'
-                          : 'bg-white border-gray-200 hover:bg-gray-50',
-                      )}
+                      {activePkgs.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div
+                      data-testid="receipt-package-label"
+                      className="rounded bg-teal-50 px-2 py-1 text-[11px] text-teal-800 truncate"
                     >
-                      단건 결제
-                    </button>
-                  </div>
-                  {/* 패키지 선택: 2개 이상이면 드롭다운, 1개면 라벨 */}
-                  {amountDlg.kind === 'package' && (
-                    activePkgs.length > 1 ? (
-                      <select
-                        data-testid="receipt-package-select"
-                        value={amountDlg.packageId}
-                        onChange={(e) => setAmountDlg((d) => ({ ...d, packageId: e.target.value }))}
-                        className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs"
-                      >
-                        {activePkgs.map((p) => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <div className="mt-1 rounded bg-teal-50 px-2 py-1 text-[11px] text-teal-800 truncate">
-                        {activePkgs[0].name}
-                      </div>
-                    )
+                      {activePkgs[0].name}
+                    </div>
                   )}
                 </div>
               )}
@@ -583,6 +562,19 @@ function ReceiptUploadSection({
                   className="text-sm"
                   autoFocus
                 />
+              </div>
+              {/* T-20260609-foot-RECEIPT-PKG-ALWAYS 변경2: 결제일 — 매출은 결제일 기준 일마감에 반영 */}
+              <div>
+                <label className="text-xs text-muted-foreground block mb-0.5">결제일</label>
+                <Input
+                  type="date"
+                  data-testid="receipt-payment-date"
+                  value={amountDlg.paymentDate}
+                  max={todaySeoulISODate()}
+                  onChange={(e) => setAmountDlg((d) => ({ ...d, paymentDate: e.target.value }))}
+                  className="text-sm"
+                />
+                <p className="text-[10px] text-muted-foreground/70 mt-0.5">매출은 결제일 기준 일마감에 반영됩니다.</p>
               </div>
               <div>
                 <label className="text-xs text-muted-foreground block mb-0.5">결제수단</label>
@@ -618,6 +610,8 @@ function ReceiptUploadSection({
                 size="sm"
                 className="flex-1 bg-teal-600 hover:bg-teal-700"
                 onClick={handlePaymentConfirm}
+                disabled={activePkgs.length === 0}
+                data-testid="receipt-payment-submit"
               >
                 등록
               </Button>
