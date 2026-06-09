@@ -196,10 +196,21 @@ export async function loadCustomerInsuranceGrade(
 
 /**
  * bill_detail(진료비세부산정내역) items_html 입력행 빌드 — PMW L1480~1492 와 1:1 동일.
+ *
+ * T-20260609-foot-DOCFORM-3FIX 이슈1 [버그]: 본인부담금/공단부담금 per-item 컬럼 공란.
+ *   computeFootBilling 이 집계 copaymentTotal(본인부담금 총액)은 산출하나, 이 빌더가 per-item
+ *   본인/공단 분리값을 누락 → service_charges 폴백 경로(check_in_services)에서 급여 항목의
+ *   본인부담금/공단부담금이 '0'으로 비어 출력됨. (= "데이터는 보험계산에 존재·렌더 바인딩 누락" 패턴,
+ *   DOC-FIELD-MISSING-3 와 동일.)
+ *   → copayInfo 전달 시 집계 copaymentTotal 을 급여 항목별로 비례 배분(최대잔차 보정)해 per-item
+ *     copayment_amount 를 채운다. 컬럼 합계가 copaymentTotal 과 정확히 일치하므로 진료비계산서
+ *     {{copayment}} 와 정합(AC-2). 급여 분류는 computeFootBilling 과 동일 기준(getTaxClass).
+ *   copayInfo 미전달 시 기존 동작 보존(무파괴).
  */
 export function buildFootBillDetailItems(
   pricingItems: FootBillingItem[],
   visitDate: string,
+  copayInfo?: { insuranceGrade: InsuranceGrade | null; copaymentTotal: number },
 ): Array<{
   category: string;
   date: string;
@@ -209,15 +220,58 @@ export function buildFootBillDetailItems(
   count: number;
   days: number;
   is_insurance_covered: boolean;
+  copayment_amount?: number;
 }> {
-  return pricingItems.map(({ service, qty, unitPrice }) => ({
-    category: service.is_insurance_covered ? '이학요법료' : '기타',
-    date: visitDate,
-    code: service.service_code ?? '',
-    name: service.name,
-    amount: unitPrice,
-    count: qty,
-    days: 1,
-    is_insurance_covered: service.is_insurance_covered ?? false,
-  }));
+  const grade = copayInfo?.insuranceGrade ?? null;
+  // 급여 분류 — copayInfo 있으면 computeFootBilling 과 동일 기준(getTaxClass), 없으면 기존 동작
+  const isCovered = (item: FootBillingItem): boolean =>
+    copayInfo
+      ? getTaxClass(item.service, grade) === '급여'
+      : (item.service.is_insurance_covered ?? false);
+
+  // per-item 본인부담금 배분: 집계 copaymentTotal 을 급여 항목 금액 비례로 나누되,
+  // 합계가 copaymentTotal 과 정확히 일치하도록 소수부(잔차)를 큰 순서로 1원씩 보정.
+  const perItemCopay = new Map<number, number>();
+  if (copayInfo && copayInfo.copaymentTotal > 0) {
+    const covered = pricingItems
+      .map((it, i) => ({ i, amt: it.unitPrice * it.qty }))
+      .filter((x) => isCovered(pricingItems[x.i]) && x.amt > 0);
+    const coveredSum = covered.reduce((s, x) => s + x.amt, 0);
+    if (coveredSum > 0) {
+      let allocated = 0;
+      const fracs: Array<{ i: number; frac: number; cap: number }> = [];
+      for (const x of covered) {
+        const raw = (copayInfo.copaymentTotal * x.amt) / coveredSum;
+        const floor = Math.min(Math.floor(raw), x.amt);
+        perItemCopay.set(x.i, floor);
+        allocated += floor;
+        fracs.push({ i: x.i, frac: raw - Math.floor(raw), cap: x.amt - floor });
+      }
+      let remainder = copayInfo.copaymentTotal - allocated;
+      fracs.sort((a, b) => b.frac - a.frac);
+      for (const f of fracs) {
+        if (remainder <= 0) break;
+        const add = Math.min(remainder, f.cap);
+        perItemCopay.set(f.i, (perItemCopay.get(f.i) ?? 0) + add);
+        remainder -= add;
+      }
+    }
+  }
+
+  return pricingItems.map(({ service, qty, unitPrice }, idx) => {
+    const covered = isCovered(pricingItems[idx]);
+    return {
+      category: covered ? '이학요법료' : '기타',
+      date: visitDate,
+      code: service.service_code ?? '',
+      name: service.name,
+      amount: unitPrice,
+      count: qty,
+      days: 1,
+      is_insurance_covered: covered,
+      // copayInfo 있을 때만 per-item 본인부담금 주입(없으면 미설정=기존 동작).
+      // 급여 항목은 copay 0(예: 의료급여 1종)이라도 0 명시 → 공단부담금=전액 정상 산출.
+      copayment_amount: covered && copayInfo ? (perItemCopay.get(idx) ?? 0) : undefined,
+    };
+  });
 }
