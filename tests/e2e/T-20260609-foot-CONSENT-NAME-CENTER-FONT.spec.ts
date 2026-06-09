@@ -1,7 +1,9 @@
 /**
  * E2E spec: T-20260609-foot-CONSENT-NAME-CENTER-FONT
  * 환불/비급여 동의서 하단 [본인 동의서] "이름" 칸 자동삽입 성명을
- *   ⓐ 칸 가로 중앙정렬(좌측정렬 → center) ⓑ 폰트 확대(15→26px) ⓒ 또렷한 정자체(italic 제거).
+ *   ⓐ 칸 가로 중앙정렬(좌측정렬 → center) ⓑ 폰트 확대 + bold(15 → bold 28px)
+ *   ⓒ 또렷한 정자체(italic 제거) ⓓ fillStyle '#1a1a1a' (진하게).
+ *   [정밀 코드 스펙 — planner MSG-20260609-165224 정본 반영]
  *
  * 보고: 김주연 총괄 6/9 — evidence ~/file_inbox/20260609/164600_F0B924NEZK5_IMG_8233.jpg
  *   하단 성명 칸 "최수빈"이 좌측·작게 표시 → 칸 중앙에 크고 또렷하게.
@@ -15,11 +17,12 @@
  *
  * AC:
  *   AC-1: 중앙정렬 — textAlign='center', 기준점 centerX=247 (칸 밑줄 중심)
- *   AC-2: 폰트 확대 — baseFontSize=26 (구 15px보다 큼) + italic 제거(또렷한 정자체)
+ *   AC-2: 폰트 확대+bold — baseFontSize=28 'bold' (구 15px보다 큼) + fillStyle '#1a1a1a' + italic 제거
  *   AC-3: 긴 이름(≤14자) 클램프 — 측정폭이 가용폭(maxWidth=226) 초과 시 폰트 비례 축소(최소 14px),
  *         좌우 오버플로우/서명칸(x≥430)·중앙 칸막이(397) 침범 방지
  *   AC-4: iPad/갤탭 일관 — Canvas 논리좌표 합성 + DRAW_DPR=2, 런타임 DPR 미참조
- *   AC-5: 직전 안착 회귀 금지 — 동일 셀(밑줄 130~364, y=3242) 기하 유지, 밑줄 침범 없음
+ *   AC-5: 직전 안착 회귀 금지 — 동일 셀(밑줄 130~364, y=3242) 기하 유지; textBaseline='top'
+ *         topY=3214 → +28px(폰트) → 하단≈3242(밑줄) 안착, 밑줄 침범 없음
  */
 
 import { test, expect } from '@playwright/test';
@@ -73,21 +76,28 @@ test.describe('CONSENT-NAME-CENTER-FONT — 하단 본인동의서 성명 중앙
     ); // 247 = (130+364)/2
   });
 
-  // ── AC-2: 폰트 확대 + 또렷한 정자체 ──────────────────────────────────────
-  test('AC-2: baseFontSize=26 (구 15px보다 확대)', () => {
+  // ── AC-2: 폰트 확대 + bold + 진한 색 + 또렷한 정자체 ─────────────────────
+  test('AC-2: baseFontSize=28 (구 15px보다 확대 — 정밀 코드 스펙)', () => {
     const block = nameConstBlock(readSrc());
     const m = block.match(/baseFontSize:\s*(\d+)/);
     expect(m).not.toBeNull();
     const px = Number(m![1]);
     expect(px).toBeGreaterThan(15); // 구 drawAutofillOnCtx 15px 대비 확대
-    expect(px).toBe(26);
+    expect(px).toBe(28);
+  });
+
+  test('AC-2: bold + fillStyle #1a1a1a (진하고 또렷)', () => {
+    const fn = nameFnBlock(readSrc());
+    // fontOf 헬퍼가 'bold {px}px ...' 로 시작 (bold weight)
+    expect(fn).toMatch(/`bold \$\{px\}px "Malgun Gothic"/);
+    // 진한 글자색 — 정밀 스펙 #1a1a1a (구 gray-500 #6b7280 대비 진함)
+    expect(fn).toMatch(/ctx\.fillStyle\s*=\s*'#1a1a1a'/);
+    expect(fn).not.toMatch(/#6b7280/);
   });
 
   test('AC-2: 또렷한 정자체 — 폰트 문자열에 italic 키워드 없음', () => {
     const fn = nameFnBlock(readSrc());
-    // fontOf 헬퍼의 실제 폰트 문자열이 italic 슬랜트 없이 "{px}px ..." 로 시작 (정자체)
-    expect(fn).toMatch(/`\$\{px\}px "Malgun Gothic"/);
-    // 폰트 빌드 문자열 자체에는 italic 슬랜트 미포함 (구 drawAutofillOnCtx 의 `italic ${...}px` 와 대비)
+    // 폰트 빌드 문자열에 italic 슬랜트 미포함 (구 drawAutofillOnCtx 의 `italic ${...}px` 와 대비)
     expect(fn).not.toMatch(/`italic /);
     expect(fn).not.toMatch(/italic \$\{/);
   });
@@ -128,14 +138,16 @@ test.describe('CONSENT-NAME-CENTER-FONT — 하단 본인동의서 성명 중앙
   });
 
   // ── AC-5: 직전 안착 회귀 금지 ────────────────────────────────────────────
-  test('AC-5: baselineY=3238 — 밑줄(3242) 바로 위 (확대해도 밑줄 침범 없음)', () => {
+  test('AC-5: topY=3214 + 28px → 하단≈3242(밑줄) 안착 (밑줄 침범 없음)', () => {
     const block = nameConstBlock(readSrc());
-    const baselineY = Number(block.match(/baselineY:\s*(\d+)/)![1]); // 3238
-    expect(baselineY).toBeLessThanOrEqual(NAME_CELL.underlineY);     // ≤ 3242
-    expect(NAME_CELL.underlineY - baselineY).toBeLessThanOrEqual(6); // 떠보임 없음
-    // alphabetic baseline → 텍스트는 baseline 위로 그려짐 → 폰트 커져도 위로만 자람(밑줄 비침범)
+    const topY = Number(block.match(/topY:\s*(\d+)/)![1]);          // 3214
+    const fontSize = Number(block.match(/baseFontSize:\s*(\d+)/)![1]); // 28
+    // top baseline → 텍스트 상단=topY, 하단=topY+fontSize. 하단이 밑줄(3242) 근처에 안착.
+    const bottom = topY + fontSize;
+    expect(bottom).toBeLessThanOrEqual(NAME_CELL.underlineY);        // ≤ 3242, 밑줄 비침범
+    expect(NAME_CELL.underlineY - bottom).toBeLessThanOrEqual(6);    // 밑줄에 바짝 안착(떠보임 없음)
     const fn = nameFnBlock(readSrc());
-    expect(fn).toMatch(/ctx\.textBaseline\s*=\s*'alphabetic'/);
+    expect(fn).toMatch(/ctx\.textBaseline\s*=\s*'top'/);
   });
 
   test('AC-5: 동일 셀 기하 유지 — 옛 좌측이탈(x=55) / 부유(y=3206) 재발 없음', () => {

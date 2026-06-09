@@ -187,17 +187,20 @@ const REFUND_AUTOFILL_POS_P1: Array<{ key: keyof AutofillFields; x: number; y: n
 //
 // T-20260609-foot-CONSENT-NAME-CENTER-FONT: 위 안착 좌표 *증분* — 칸 중앙정렬 + 폰트 확대 + 또렷한 정자체.
 //   (스크린샷 evidence 164600_F0B924NEZK5_IMG_8233.jpg: 하단 성명 칸 "최수빈"이 좌측·작게 표시 → 김주연 총괄 6/9 요청)
-//   ⓐ textAlign left→center: 칸 중심 x=247 기준 중앙정렬 (밑줄 130~364 중앙).
-//   ⓑ fontSize 15→26 확대 (크고 또렷). ⓒ italic 제거 → 양식 정자체와 어울리는 또렷한 글씨.
-//   좌표 되돌림 아님: 동일 셀 기하(밑줄 130~364, y=3242)를 그대로 쓰되 시작점만 좌단→중심으로 이동.
-//   밑줄 침범 방지: textBaseline='alphabetic' + baselineY=3238 (밑줄 3242의 4px 위) → 폰트 커져도 위로만 자람.
+//   [reconciliation 종결 6/9] IMG_8233 "최수빈" 성명 칸 = refund_consent P3 본인동의서 칸(이 함수 단일 슬롯).
+//     guardian_info(법정대리인)는 서명블록 전용 — 캔버스 오버레이 자동채움 텍스트 아님 → 별개 상수 불요.
+//   [정밀 코드 스펙 — planner MSG-20260609-165224 정본]
+//   ⓐ textAlign center: 칸 중심 x=247 기준 중앙정렬 (밑줄 130~364 중앙).
+//   ⓑ font 'bold 28px' (크고 또렷). ⓒ fillStyle '#1a1a1a' (수기와 구분 + 진하게). ⓓ italic 제거 정자체.
+//   ⓔ textBaseline='top' + topY=3214 → +28px(폰트) → 하단≈3242(밑줄) 안착 (밑줄 침범 없이 위로만).
+//   좌표 되돌림 아님: 동일 셀 기하(밑줄 130~364, y=3242) 내 정렬·폰트만 변경 (AC-5 칸 경계 내 중앙기준).
 //   AC-3 긴이름 클램프: measureText 폭이 가용폭(MAX_W=226=234−여백8) 초과 시 폰트 비례 축소(최소 MIN=14px)
 //     → 좌우 오버플로우/서명칸(x≥430)·중앙 칸막이(x=397) 침범 방지.
 const REFUND_P3_NAME = {
   centerX: 247,       // 이름 칸 밑줄 중심 (130~364)
-  baselineY: 3238,    // 밑줄 y=3242 의 4px 위 (alphabetic baseline)
+  topY: 3214,         // textBaseline='top' 기준; +28px(폰트) → 하단≈3242(밑줄) 안착
   maxWidth: 226,      // 가용폭 = 밑줄폭 234 − 좌우 4px 여백
-  baseFontSize: 26,   // 확대 기준 (구 15px → 크고 또렷)
+  baseFontSize: 28,   // bold 28px (정밀 코드 스펙)
   minFontSize: 14,    // 긴이름 클램프 하한
 };
 
@@ -233,12 +236,13 @@ function drawRefundP3DateAutofill(
   ctx.restore();
 }
 
-// ── 환불동의서 P3 [본인 동의서] 하단 성명란 — 중앙정렬 + 확대 (T-20260609-foot-CONSENT-NAME-CENTER-FONT) ──
+// ── 환불동의서 P3 [본인 동의서] 하단 성명란 — 중앙정렬 + 확대 + bold (T-20260609-foot-CONSENT-NAME-CENTER-FONT) ──
 // 직전 T-20260609-foot-REFUND-NAME-AUTOFILL-POSITION 의 밑줄 위 안착을 유지한 증분 변경.
-//   ⓐ 칸 중심(x=247) 기준 중앙정렬 ⓑ 폰트 26px 확대 ⓒ italic 제거(또렷한 정자체).
-//   textBaseline='alphabetic' + baselineY=3238 → 폰트가 커져도 위로만 자라 밑줄(3242) 침범 없음.
+//   [정밀 코드 스펙 — planner MSG-20260609-165224 정본]
+//   ⓐ 칸 중심(x=247) 기준 중앙정렬 ⓑ 'bold 28px' 확대 ⓒ fillStyle '#1a1a1a' (진하게) ⓓ italic 제거(또렷한 정자체).
+//   textBaseline='top' + topY=3214 → +28px(폰트) → 하단≈3242(밑줄) 안착, 폰트가 커져도 위로만 자라 밑줄 침범 없음.
 //   AC-3 긴이름(≤14자) 클램프: 측정폭이 가용폭(226px) 초과 시 폰트 비례 축소(최소 14px) →
-//     좌우 오버플로우/서명칸(x≥430)·중앙 칸막이(397) 침범 방지.
+//     좌우 오버플로우/서명칸(x≥430)·중앙 칸막이(397) 침범 방지 (AC-5 칸 경계 내 중앙기준).
 //   Canvas 논리좌표 합성(scale 무관) + DRAW_DPR=2 강제 → iPad(DPR2.0)/갤탭 일관 (AC-4).
 function drawRefundP3NameAutofill(
   ctx: CanvasRenderingContext2D,
@@ -247,11 +251,11 @@ function drawRefundP3NameAutofill(
   const name = fields.name;
   if (!name) return;
   ctx.save();
-  ctx.fillStyle = '#6b7280'; // gray-500 — 수기 입력과 시각적 구분 유지
+  ctx.fillStyle = '#1a1a1a'; // near-black — 진하고 또렷 (현장 "작게/흐림" 보고 반영)
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
+  ctx.textBaseline = 'top';
   const fontOf = (px: number) =>
-    `${px}px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif`; // italic 제거 → 또렷한 정자체
+    `bold ${px}px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif`; // bold + italic 제거 → 또렷한 정자체
   // AC-3 폰트 클램프: 가용폭 초과 시 비례 축소
   let fontSize = REFUND_P3_NAME.baseFontSize;
   ctx.font = fontOf(fontSize);
@@ -263,7 +267,7 @@ function drawRefundP3NameAutofill(
     );
     ctx.font = fontOf(fontSize);
   }
-  ctx.fillText(name, REFUND_P3_NAME.centerX, REFUND_P3_NAME.baselineY);
+  ctx.fillText(name, REFUND_P3_NAME.centerX, REFUND_P3_NAME.topY);
   ctx.restore();
 }
 

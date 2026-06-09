@@ -4,9 +4,10 @@
  *
  * AC-1: 환불동의서 상단 차트번호 자동 표시 (page 1, x=190 y=199 — 밑줄 y=214 하단 정렬)
  * AC-2: 환불동의서 상단 고객 성함 자동 표시 (page 1, x=190 y=234 — 밑줄 y=249 하단 정렬)
- * AC-3: 환불동의서 하단 본인동의서 성명란 자동 표시 (page 3, x=145 y=3224)
+ * AC-3: 환불동의서 하단 본인동의서 성명란 자동 표시 (page 3, 중앙정렬 centerX=247 topY=3214)
  *        — AC-R4로 일시 제거 → T-20260608-CONSENT-NAME-AUTOLOAD 복구(x=55 y=3206) →
- *          T-20260609-REFUND-NAME-AUTOFILL-POSITION 좌측이탈 교정(x=145 y=3224)
+ *          T-20260609-REFUND-NAME-AUTOFILL-POSITION 좌측이탈 교정(x=145) →
+ *          T-20260609-CONSENT-NAME-CENTER-FONT 중앙정렬+bold28px(전용 drawRefundP3NameAutofill, centerX=247)
  * AC-4: 환불동의서 하단 날짜 위치 보정 (page 3 년/월/일 분리 우측정렬 — 537/607/671)
  * AC-5: 고객 연락처 미표시 (AutofillFields에서 phone 완전 제거)
  * AC-6: 자동 텍스트와 펜 서명 영역 겹침 없음 (page 3 서명 셀은 별도 영역)
@@ -389,42 +390,45 @@ test.describe('PENCHART-FORM-AUTOFILL — 자동채움 위치 보정 + 주민번
   // T-20260608-foot-CONSENT-NAME-AUTOLOAD (MSG-20260608-153310-om74)
   // 179795c(AC-R4)가 SignaturePad UI 정리 시 name(x=55 y=3206) 동반 제거 → 회귀.
   // 현장(김주연 총괄 6/8): "맨 하단 본인동의서 이름" 자동 채움 복원 요청.
-  // T-20260609-foot-REFUND-NAME-AUTOFILL-POSITION: 좌표 좌측 이탈 RC 수정으로 x=55→145, y=3206→3224 교정.
-  //   (상세 단언은 T-20260609-foot-REFUND-NAME-AUTOFILL-POSITION.spec.ts 참조)
-  test.describe('CONSENT-NAME-AUTOLOAD 하단 성명란 자동바인딩 복구 (좌표 T-20260609 교정 반영)', () => {
-    test('REFUND_AUTOFILL_POS_P3 배열 복구 + name 좌표 교정값(x=145 y=3224)', async () => {
+  // T-20260609-foot-REFUND-NAME-AUTOFILL-POSITION: 좌표 좌측 이탈 RC 수정으로 x=55→145(좌단) 교정.
+  // T-20260609-foot-CONSENT-NAME-CENTER-FONT (planner MSG-20260609-165224 정밀 코드 스펙):
+  //   POS 배열(drawAutofillOnCtx) → 전용 drawRefundP3NameAutofill 로 분리, 좌단(x=145) → 중앙(centerX=247).
+  //   (상세 단언은 T-20260609-foot-CONSENT-NAME-CENTER-FONT.spec.ts 참조 — 본 블록은 회귀 가드만 유지)
+  test.describe('CONSENT-NAME-AUTOLOAD 하단 성명란 자동바인딩 복구 (CENTER-FONT 정밀스펙 반영)', () => {
+    test('전용 drawRefundP3NameAutofill 로 P3 성명 합성 + centerX=247 중앙정렬', async () => {
       const fs = await import('fs');
       const src = fs.readFileSync(
         new URL('../../src/components/PenChartTab.tsx', import.meta.url).pathname,
         'utf-8',
       );
-      expect(src).toContain('REFUND_AUTOFILL_POS_P3');
-      // 배열에 name(x=145 y=3224) 항목 존재 — 공백 변형 허용
-      const arrMatch = src.match(/REFUND_AUTOFILL_POS_P3[\s\S]*?\];/)?.[0] ?? '';
-      expect(arrMatch).toMatch(/key:\s*'name'/);
-      expect(arrMatch).toMatch(/x:\s*145/);
-      expect(arrMatch).toMatch(/y:\s*3224/);
-      // 옛 좌측-이탈 좌표(x=55) 재발 방지
-      expect(arrMatch).not.toMatch(/x:\s*55\b/);
+      // 전용 함수 존재 + fields.name 사용
+      const fn = src.match(/function drawRefundP3NameAutofill[\s\S]*?\n}/)?.[0] ?? '';
+      expect(fn).toContain('fields.name');
+      expect(fn).toMatch(/ctx\.textAlign\s*=\s*'center'/);
+      // 칸 중심 좌표 247 (옛 좌단 145 / 좌측이탈 55 재발 금지)
+      const block = src.match(/const REFUND_P3_NAME\s*=\s*\{[\s\S]*?\};/)?.[0] ?? '';
+      expect(block).toMatch(/centerX:\s*247/);
+      expect(block).not.toMatch(/\b55\b/);
     });
 
-    test('렌더 합성부에서 P3 배열을 drawAutofillOnCtx로 합성', async () => {
+    test('렌더 합성부에서 전용 drawRefundP3NameAutofill 호출', async () => {
       const fs = await import('fs');
       const src = fs.readFileSync(
         new URL('../../src/components/PenChartTab.tsx', import.meta.url).pathname,
         'utf-8',
       );
-      // 텍스트 레이어(bgCanvas) 합성 경로로만 복구 — desync 무관
-      expect(src).toMatch(/drawAutofillOnCtx\(ctx,\s*autofillDataRef\.current,\s*REFUND_AUTOFILL_POS_P3\)/);
+      // 텍스트 레이어(bgCanvas) 합성 경로 — desync 무관
+      expect(src).toMatch(/drawRefundP3NameAutofill\(ctx,\s*autofillDataRef\.current\)/);
     });
 
-    test('x=145 y=3224 — page-3 범위(2246~3369) 내 + 표 좌측경계(96) 안쪽', () => {
-      const NAME_Y = 3224;
-      const NAME_X = 145;
-      expect(NAME_Y).toBeGreaterThanOrEqual(2246);
-      expect(NAME_Y).toBeLessThan(3369);
-      // 표 좌측 경계(canvas x=96) 안쪽 — 옛 x=55(여백 이탈) RC 차단
-      expect(NAME_X).toBeGreaterThan(96);
+    test('centerX=247 — page-3 범위(2246~3369) 내 + 표 좌측경계(96) 안쪽 + 칸막이(397) 미침범', () => {
+      const NAME_TOP_Y = 3214;
+      const NAME_CENTER_X = 247;
+      expect(NAME_TOP_Y).toBeGreaterThanOrEqual(2246);
+      expect(NAME_TOP_Y).toBeLessThan(3369);
+      // 표 좌측 경계(96) 안쪽 + 중앙 칸막이(397) 미침범
+      expect(NAME_CENTER_X).toBeGreaterThan(96);
+      expect(NAME_CENTER_X).toBeLessThan(397);
     });
 
     test('forbidden_approach 비파괴 — SignaturePad 재도입 없음 (BLACKSCR P0 안전)', async () => {
