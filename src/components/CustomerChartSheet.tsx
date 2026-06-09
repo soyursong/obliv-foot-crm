@@ -27,9 +27,11 @@
 // CustomerChartPage에 customerId prop 직접 주입으로 대체
 import { useEffect, useRef, useState, Suspense, lazy } from 'react';
 import { createPortal } from 'react-dom';
-import { ChartSheetCloseCtx } from '@/lib/chartSheetContext';
+import { Loader2 } from 'lucide-react';
+import { ChartSheetCloseCtx, ChartSheetSaveRegistryCtx, type ChartSaveFn } from '@/lib/chartSheetContext';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { toast } from '@/lib/toast';
 
 const CustomerChartPage = lazy(() => import('@/pages/CustomerChartPage'));
 
@@ -47,12 +49,39 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
   showConfirmRef.current = showCloseConfirm;
   // 차트 내부에서 사용자 입력이 한 번이라도 발생했는지 (미저장 여부 proxy)
   const dirtyRef = useRef(false);
+  // T-20260609-foot-CHART2-SAVE-CLOSE-BTN: 본문 저장 핸들러 등록 채널 + "저장 후 닫기" 진행 상태
+  const saveFnRef = useRef<ChartSaveFn | null>(null);
+  const [savingClose, setSavingClose] = useState(false);
 
   // 차트 재오픈(customerId 변경) 시 dirty/확인창 리셋
   useEffect(() => {
     dirtyRef.current = false;
     setShowCloseConfirm(false);
+    setSavingClose(false);
   }, [customerId]);
+
+  // T-20260609-foot-CHART2-SAVE-CLOSE-BTN AC-2/AC-3: 저장 후 닫기
+  //  - 본문 저장 버튼과 동일한 핸들러(handleInfoPanelSave) 호출 → 성공 시 닫기, 실패 시 유지(내용 보존)
+  //  - 저장 중 중복 클릭 방지(savingClose 가드 + 버튼 disabled)
+  const handleSaveAndClose = async () => {
+    if (savingClose) return; // AC-3: 더블클릭 중복 저장 방지
+    setSavingClose(true);
+    try {
+      const fn = saveFnRef.current;
+      // 등록된 저장 핸들러가 없으면(이론상 미마운트) 저장할 본문 없음 → 그대로 닫기
+      const ok = fn ? await fn() : true;
+      if (ok) {
+        setShowCloseConfirm(false);
+        onClose();
+      }
+      // ok === false: 다이얼로그 유지. 저장 핸들러가 이미 구체 에러 toast를 띄움(내용 보존).
+    } catch (e) {
+      console.error('[CHART2-SAVE-CLOSE] 저장 중 예외:', e);
+      toast.error('저장 중 오류가 발생했습니다. 다시 시도해주세요.');
+    } finally {
+      setSavingClose(false);
+    }
+  };
 
   // ESC 키 핸들러 — dirty 가드 적용 (AC-1)
   useEffect(() => {
@@ -130,6 +159,8 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
 
         {/* 콘텐츠 스크롤 영역 */}
         <div className="flex-grow overflow-y-auto">
+          {/* T-20260609-foot-CHART2-SAVE-CLOSE-BTN: 본문 저장 핸들러 등록 채널 제공 */}
+          <ChartSheetSaveRegistryCtx.Provider value={saveFnRef}>
           <ChartSheetCloseCtx.Provider value={onClose}>
             <Suspense
               fallback={
@@ -142,6 +173,7 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
               <CustomerChartPage customerId={customerId} />
             </Suspense>
           </ChartSheetCloseCtx.Provider>
+          </ChartSheetSaveRegistryCtx.Provider>
         </div>
       </div>
 
@@ -152,12 +184,14 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
             <DialogTitle>작성 중인 내용이 있습니다</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            저장하지 않은 작성 내용이 사라질 수 있습니다. 닫으시겠습니까?
+            저장하지 않은 작성 내용이 사라질 수 있습니다. 저장 후 닫으시겠습니까?
           </p>
-          <DialogFooter>
+          {/* T-20260609-foot-CHART2-SAVE-CLOSE-BTN: 3선택지 — 저장 후 닫기(primary) / 저장하지 않고 닫기 / 취소 */}
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button
               variant="outline"
               data-testid="chart-close-cancel"
+              disabled={savingClose}
               onClick={() => setShowCloseConfirm(false)}
             >
               취소(계속 작성)
@@ -165,9 +199,20 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
             <Button
               variant="destructive"
               data-testid="chart-close-confirm-btn"
+              disabled={savingClose}
               onClick={() => { setShowCloseConfirm(false); onClose(); }}
             >
-              닫기
+              저장하지 않고 닫기
+            </Button>
+            <Button
+              variant="default"
+              data-testid="chart-save-close-btn"
+              disabled={savingClose}
+              onClick={handleSaveAndClose}
+              className="bg-teal-600 hover:bg-teal-700"
+            >
+              {savingClose && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {savingClose ? '저장 중…' : '저장 후 닫기'}
             </Button>
           </DialogFooter>
         </DialogContent>
