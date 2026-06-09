@@ -14,6 +14,11 @@
  *   - 적용 경로 역전 해소: deductMode에서 잔액은 실제 결제수단(card/cash/transfer) 사용
  *   - is_package_session=true 마킹: 선수금차감 항목은 패키지 세션으로 DB 기록
  *   - 전액 패키지 차감(잔액=0)만 method='membership' 사용 (payment 레코드 확인용)
+ * T-20260609-foot-TRIAL-REVENUE-ZERO   체험권(trial) 선수금차감 제외 — 항상 단건 매출 (A안)
+ *   - 체험권은 단일회차 즉시결제 상품: 선수금차감(prepaid deduct) 대상에서 영구 제외
+ *   - is_package_session=false · 실금액 · tax_type≠선수금 으로 기록 → 매출 증발 방지
+ *   - 다회차 4종(가열/비가열/포돌로게/수액) 차감제외 동작은 무영향(AC-4 보존)
+ *   - 결정: 김주연 총괄(U0ATDB587PV) 2026-06-10T06:47 KST
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
@@ -131,6 +136,13 @@ const PREPAID_CODE_MAP: Record<string, string[]> = {
   포돌로게: ['BC1300MB08'],
 };
 // 수액은 코드가 없으므로 category 기반 매칭
+
+// ── 체험권(trial) 판별 ───────────────────────────────────────────────────────
+// T-20260609-foot-TRIAL-REVENUE-ZERO (A안): 체험권은 단일회차 즉시결제 상품으로
+// 선수금차감(prepaid deduct) 대상에서 항상 제외 → 매출 증발/오분류 방지.
+// 진단 시그니처(check_in_services.service_name /체험/)와 동일 기준 사용.
+export const isTrialService = (svc: { name?: string | null } | null | undefined): boolean =>
+  /체험/.test(svc?.name ?? '');
 
 // ── 결제수단 ────────────────────────────────────────────────────────────────
 
@@ -950,6 +962,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     const autoIds = new Set<string>();
     for (const svcItem of services) {
       if (isCodeItem(svcItem)) continue; // 상병코드·처방약 제외
+      // T-20260609-foot-TRIAL-REVENUE-ZERO: 체험권은 선수금차감 자동매칭 제외
+      if (isTrialService(svcItem)) continue;
       for (const st of todaySessionTypes) {
         // 1차: keyword 포함 확인
         const matchedKw = PREPAID_KEYWORDS.find((kw) => st.includes(kw));
@@ -1121,6 +1135,12 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
 
   // ── 선수금 보라색 토글 ───────────────────────────────────────────────────
   const togglePrepaid = (serviceId: string) => {
+    // T-20260609-foot-TRIAL-REVENUE-ZERO: 체험권은 선수금차감 불가 — 토글 차단
+    const svc = selectedItems.find((i) => i.service.id === serviceId)?.service;
+    if (isTrialService(svc)) {
+      toast.info('체험권은 선수금차감 대상이 아닙니다 — 단건 매출로 기록됩니다');
+      return;
+    }
     setPrepaidIds((prev) => {
       const next = new Set(prev);
       if (next.has(serviceId)) next.delete(serviceId);
@@ -1217,9 +1237,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     : 0;
 
   // 선수금차감 후 금액 = prepaid 제외 합산
+  // T-20260609-foot-TRIAL-REVENUE-ZERO: 체험권은 prepaid로 분류돼도 항상 청구금액에 산입
+  //   (선수금차감 제외 → amount=0 증발 방지). 다회차 4종 차감제외는 그대로 유지.
   const calcDeductAmount = () =>
     pricingItems
-      .filter((item) => !prepaidIds.has(item.service.id))
+      .filter((item) => !prepaidIds.has(item.service.id) || isTrialService(item.service))
       .reduce((s, item) => s + getItemAmount(item), 0);
 
   // ── 공통 check_in_services 저장 ──────────────────────────────────────────
@@ -1248,7 +1270,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           : service.price;
       // T-20260519-foot-PKG-REVENUE-SPLIT AC-1:
       // 선수금차감 모드에서 보라색(prepaid) 항목 = 패키지 세션으로 마킹
-      const isPkgSession = isDeductMode && prepaidIds.has(service.id);
+      // T-20260609-foot-TRIAL-REVENUE-ZERO: 체험권은 절대 패키지 세션으로 마킹하지 않음
+      //   → is_package_session=false 보장 → Closing 매출 제외에 안 걸림 + 영수증 패키지 항목 실금액 노출(AC-5)
+      const isPkgSession =
+        isDeductMode && prepaidIds.has(service.id) && !isTrialService(service);
       return Array.from({ length: qty }, () => ({
         check_in_id: checkIn.id,
         service_id: service.id,
@@ -1292,6 +1317,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     }
     if (pricingItems.length === 0) {
       toast.error('시술 코드를 선택해주세요');
+      return;
+    }
+    // T-20260609-foot-TRIAL-REVENUE-ZERO: 체험권을 제외한 실제 선수금차감 대상이 없으면
+    //   (예: 체험권 단독 방문) 선수금차감 모드로 진입하지 않고 전액 단건 매출로 저장.
+    //   → tax_type=null·amount=실금액·is_package_session=false 보장 → 매출 증발 방지.
+    const hasRealPrepaid = pricingItems.some(
+      (i) => prepaidIds.has(i.service.id) && !isTrialService(i.service),
+    );
+    if (!hasRealPrepaid) {
+      await handleSaveFull();
       return;
     }
     // T-20260519-foot-PKG-REVENUE-SPLIT: 선수금차감 모드에서 prepaid 항목 is_package_session=true 마킹
