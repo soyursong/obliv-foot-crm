@@ -1,13 +1,17 @@
 /**
- * E2E spec — T-20260609-foot-MEDCHART-SOAK-REFINE (AC3-3 + AC3-4, 문지은 대표원장)
- * 경과타임라인 처방내역 표기 정정 (본 batch 범위 = AC3-3/AC3-4).
+ * E2E spec — T-20260609-foot-MEDCHART-SOAK-REFINE (문지은 대표원장 field-soak)
+ * 진료차트 특이사항 패널 + 경과타임라인 정정.
  *
- * 범위 (planner MSG-20260609-181542-jn4m 명시):
+ * 1차 batch (4892f9b, planner MSG-20260609-181542-jn4m):
  *   AC3-3 처방내역 = 검은색 미니멀 알약(Pill) 아이콘으로 표기("처방" 텍스트 헤더 대체).
  *   AC3-4 처방내역 항목마다 줄바꿈(말줄임 제거). 묶음처방(4건+)은 버튼 토글로 펼침/접기.
  *
- * ※ AC3-1(펼침/접기 라벨), AC3-2(헤더→컬러바), item1(특이사항), item2(필터 날짜보존)은
- *   본 batch 범위 외(planner 지시) — 이 spec 에서 검증하지 않음.
+ * 2차 batch (본 변경, planner MSG-20260609-180615-bp4j item1·item2 — 1차 미포함분 수렴):
+ *   item1 특이사항 패널: 이모지/"메모판" 제거, 박스 강조 제거(배경 녹임), 빈상태 텍스트 제거,
+ *          버튼형 입력 → 줄(inline) 입력.
+ *   item2 타임라인 필터: '처방/치료/진료' 필터 시 방문 날짜행 보존(소거 금지), 내용만 미표기.
+ *
+ * ※ AC3-1(펼침/접기 라벨, 이미 정상)·AC3-2(헤더→컬러바, planner out-of-scope)는 미검증.
  *
  * 처방 있는 저장 차트 의존 → 데이터 부재 시 graceful skip.
  */
@@ -108,5 +112,113 @@ test.describe('T-20260609-MEDCHART-SOAK-REFINE — 타임라인 처방 표기 AC
       return;
     }
     test.skip(true, '묶음처방(4건+) 엔트리 없음 — 스킵');
+  });
+});
+
+test.describe('T-20260609-MEDCHART-SOAK-REFINE — item1 특이사항 패널 chrome 제거', () => {
+  test.beforeEach(async ({ page }) => {
+    const ok = await loginAndWaitForDashboard(page);
+    if (!ok) test.skip(true, '로그인 실패');
+  });
+
+  // ── AC1-1/1-2: 헤더에 이모지 없고 라벨이 "특이사항"(="메모판" 단어 제거) ──
+  test('AC1-1/1-2: 특이사항 헤더 라벨이 "특이사항"이고 "메모판" 단어가 없다', async ({ page }) => {
+    if (!(await openMedicalChart(page))) {
+      test.skip(true, '진료차트 Drawer 미열림 — 스킵');
+      return;
+    }
+    const toggle = page.locator('[data-testid="special-note-toggle"]');
+    await expect(toggle.first()).toBeVisible();
+    const label = (await toggle.first().innerText()).trim();
+    expect(label).toContain('특이사항');
+    expect(label).not.toContain('메모판');
+  });
+
+  // ── AC1-5: 빈상태 텍스트("메모가 없습니다") 제거 — 패널 어디에도 노출되지 않음 ──
+  test('AC1-5: "메모가 없습니다" 빈상태 텍스트가 노출되지 않는다', async ({ page }) => {
+    if (!(await openMedicalChart(page))) {
+      test.skip(true, '진료차트 Drawer 미열림 — 스킵');
+      return;
+    }
+    // 섹션 펼치기 (접혀 있으면)
+    const toggle = page.locator('[data-testid="special-note-toggle"]');
+    if ((await toggle.count()) > 0) {
+      const expanded = await toggle.first().getAttribute('aria-expanded');
+      if (expanded !== 'true') await toggle.first().click();
+      await page.waitForTimeout(150);
+    }
+    await expect(page.getByText('메모가 없습니다')).toHaveCount(0);
+  });
+
+  // ── AC1-6: 줄(inline) 입력 — 입력 필드는 있고 별도 저장 버튼(+버튼)은 제거됨 ──
+  test('AC1-6: 줄 입력 필드는 있고 버튼형 저장(+) 버튼은 없다', async ({ page }) => {
+    if (!(await openMedicalChart(page))) {
+      test.skip(true, '진료차트 Drawer 미열림 — 스킵');
+      return;
+    }
+    const toggle = page.locator('[data-testid="special-note-toggle"]');
+    if ((await toggle.count()) > 0) {
+      const expanded = await toggle.first().getAttribute('aria-expanded');
+      if (expanded !== 'true') await toggle.first().click();
+      await page.waitForTimeout(150);
+    }
+    await expect(page.locator('[data-testid="special-note-input"]').first()).toBeVisible();
+    // 버튼형 입력 제거 — 별도 저장 버튼 없음
+    await expect(page.locator('[data-testid="special-note-add-btn"]')).toHaveCount(0);
+  });
+});
+
+test.describe('T-20260609-MEDCHART-SOAK-REFINE — item2 타임라인 필터 날짜행 보존', () => {
+  test.beforeEach(async ({ page }) => {
+    const ok = await loginAndWaitForDashboard(page);
+    if (!ok) test.skip(true, '로그인 실패');
+  });
+
+  // ── AC2-1/2-2: '처방' 필터 토글 후에도 방문 날짜행(엔트리)이 사라지지 않는다 ──
+  test('AC2-1: 처방 필터 토글 후에도 타임라인 엔트리 수가 줄지 않는다(날짜행 보존)', async ({ page }) => {
+    if (!(await openMedicalChart(page))) {
+      test.skip(true, '진료차트 Drawer 미열림 — 스킵');
+      return;
+    }
+    const entries = page.locator('[data-testid="medical-chart-timeline-entry"]');
+    const before = await entries.count();
+    if (before === 0) {
+      test.skip(true, '타임라인 엔트리 없음 — 스킵');
+      return;
+    }
+    const rxFilter = page.locator('[data-testid="memo-filter-rx"]');
+    if ((await rxFilter.count()) === 0) {
+      test.skip(true, '처방 필터 칩 없음 — 스킵');
+      return;
+    }
+    await rxFilter.first().click();
+    await page.waitForTimeout(200);
+    const after = await entries.count();
+    // 날짜행(방문) 보존 — 필터로 행이 사라지면 FAIL
+    expect(after).toBe(before);
+    // "필터 결과 없음" 식 빈상태(행 소거)도 노출되지 않아야 함
+    await expect(page.getByText('방문 기록 없음')).toHaveCount(0);
+  });
+
+  // ── AC2-2: 치료 필터에서도 동일 — 날짜행 보존 ──
+  test('AC2-2: 치료 필터 토글 후에도 엔트리 수가 보존된다', async ({ page }) => {
+    if (!(await openMedicalChart(page))) {
+      test.skip(true, '진료차트 Drawer 미열림 — 스킵');
+      return;
+    }
+    const entries = page.locator('[data-testid="medical-chart-timeline-entry"]');
+    const before = await entries.count();
+    if (before === 0) {
+      test.skip(true, '타임라인 엔트리 없음 — 스킵');
+      return;
+    }
+    const treatFilter = page.locator('[data-testid="memo-filter-treat"]');
+    if ((await treatFilter.count()) === 0) {
+      test.skip(true, '치료 필터 칩 없음 — 스킵');
+      return;
+    }
+    await treatFilter.first().click();
+    await page.waitForTimeout(200);
+    expect(await entries.count()).toBe(before);
   });
 });
