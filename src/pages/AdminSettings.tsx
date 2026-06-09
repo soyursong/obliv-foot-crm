@@ -70,13 +70,18 @@ interface MessagingCapability {
 interface NotificationTemplate {
   id: string;
   clinic_id: string;
-  event_type: 'resv_confirm' | 'resv_reminder_d1' | 'resv_reminder_morning' | 'noshow';
+  // 예약 자동발송용 4종 reserved slug + 사용자 정의 템플릿(이름이 곧 event_type) → string 으로 일반화.
+  // (T-20260609-foot-MSG-TEMPLATE-MMS Part A: 사용자 정의 템플릿 CRUD)
+  event_type: string;
   channel: 'sms' | 'lms' | 'alimtalk';
   body: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
 }
+
+// 예약 자동발송 규칙(②)에 묶인 예약(reserved) event_type — 삭제 불가, 본문만 수정.
+const RESERVED_EVENT_TYPES = ['resv_confirm', 'resv_reminder_d1', 'resv_reminder_morning', 'noshow'] as const;
 
 interface NotificationLog {
   id: string;
@@ -778,44 +783,110 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
   templates: NotificationTemplate[];
   onRefresh: () => void;
 }) {
+  // editTarget.id === ''  → 신규(reserved 등록 또는 custom 추가)
+  // isCustom → 사용자 정의 템플릿(이름=event_type 편집 가능, 삭제 가능)
   const [editTarget, setEditTarget] = useState<NotificationTemplate | null>(null);
+  const [editTitle, setEditTitle]   = useState('');   // custom 템플릿 이름(event_type)
   const [editBody, setEditBody]     = useState('');
+  const [isCustom, setIsCustom]     = useState(false);
   const [saving, setSaving]         = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const eventTypes = ['resv_confirm', 'resv_reminder_d1', 'resv_reminder_morning', 'noshow'] as const;
+  const eventTypes = RESERVED_EVENT_TYPES;
   const getTemplate = (et: string) => templates.find((t) => t.event_type === et && t.channel === 'sms');
+  // 사용자 정의 = reserved 4종이 아닌 모든 sms 템플릿
+  const customTemplates = templates
+    .filter((t) => !RESERVED_EVENT_TYPES.includes(t.event_type as typeof RESERVED_EVENT_TYPES[number]) && t.channel === 'sms')
+    .sort((a, b) => a.event_type.localeCompare(b.event_type, 'ko'));
 
+  // reserved 템플릿 수정/등록
   const openEdit = (tmpl: NotificationTemplate | null, et: string) => {
+    setIsCustom(false);
+    setEditTitle('');
     if (tmpl) { setEditTarget(tmpl); setEditBody(tmpl.body); }
     else {
-      setEditTarget({ id: '', clinic_id: clinicId, event_type: et as NotificationTemplate['event_type'], channel: 'sms', body: DEFAULT_TEMPLATES[et] ?? '', is_active: false, created_at: '', updated_at: '' });
+      setEditTarget({ id: '', clinic_id: clinicId, event_type: et, channel: 'sms', body: DEFAULT_TEMPLATES[et] ?? '', is_active: false, created_at: '', updated_at: '' });
       setEditBody(DEFAULT_TEMPLATES[et] ?? '');
+    }
+  };
+
+  // 사용자 정의 템플릿 추가/수정
+  const openCustom = (tmpl: NotificationTemplate | null) => {
+    setIsCustom(true);
+    if (tmpl) { setEditTarget(tmpl); setEditTitle(tmpl.event_type); setEditBody(tmpl.body); }
+    else {
+      setEditTarget({ id: '', clinic_id: clinicId, event_type: '', channel: 'sms', body: '', is_active: true, created_at: '', updated_at: '' });
+      setEditTitle('');
+      setEditBody('');
     }
   };
 
   const handleSave = async () => {
     if (!editTarget) return;
+
+    // 사용자 정의: 이름 검증
+    if (isCustom) {
+      const title = editTitle.trim();
+      if (!title) { toast.error('템플릿 이름을 입력하세요.'); return; }
+      if ((RESERVED_EVENT_TYPES as readonly string[]).includes(title)) {
+        toast.error('예약된 시스템 이름은 사용할 수 없습니다. 다른 이름을 입력하세요.');
+        return;
+      }
+      if (title.length > 40) { toast.error('템플릿 이름은 40자 이내로 입력하세요.'); return; }
+    }
+    if (!editBody.trim()) { toast.error('본문을 입력하세요.'); return; }
+
     setSaving(true);
     try {
       if (editTarget.id) {
+        // 수정 — custom 은 이름(event_type)도 변경 가능
+        const patch: Record<string, unknown> = { body: editBody };
+        if (isCustom) patch.event_type = editTitle.trim();
         const { data, error } = await (supabase.from('notification_templates') as any)
-          .update({ body: editBody })
+          .update(patch)
           .eq('id', editTarget.id)
           .select('id');
         if (error) throw error;
-        if (!data || (data as any[]).length === 0) throw new Error('저장 권한 없음');
+        if (!data || (data as any[]).length === 0) throw new Error('저장 권한 없음 — 역할을 확인하세요');
       } else {
+        // 신규 — reserved 는 슬러그, custom 은 입력 이름을 event_type 으로 저장
+        const event_type = isCustom ? editTitle.trim() : editTarget.event_type;
         const { error } = await (supabase.from('notification_templates') as any)
-          .insert({ clinic_id: clinicId, event_type: editTarget.event_type, channel: editTarget.channel, body: editBody, is_active: editTarget.is_active });
+          .insert({ clinic_id: clinicId, event_type, channel: editTarget.channel, body: editBody, is_active: editTarget.is_active });
         if (error) throw error;
       }
       onRefresh();
       setEditTarget(null);
       toast.success('템플릿이 저장되었습니다.');
     } catch (err) {
-      toast.error(`저장 실패: ${extractErrorMsg(err)}`);
+      const msg = extractErrorMsg(err);
+      // UNIQUE(clinic_id,event_type,channel) 충돌 → 친절 메시지
+      if (/duplicate|unique|uq_notif_tmpl/i.test(msg)) {
+        toast.error('같은 이름의 템플릿이 이미 있습니다. 다른 이름을 사용하세요.');
+      } else {
+        toast.error(`저장 실패: ${msg}`);
+      }
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async (tmpl: NotificationTemplate) => {
+    if (!window.confirm(`'${tmpl.event_type}' 템플릿을 삭제할까요? 되돌릴 수 없습니다.`)) return;
+    setDeletingId(tmpl.id);
+    try {
+      const { data, error } = await (supabase.from('notification_templates') as any)
+        .delete()
+        .eq('id', tmpl.id)
+        .select('id');
+      if (error) throw error;
+      if (!data || (data as any[]).length === 0) throw new Error('삭제 권한 없음 — 역할을 확인하세요');
+      onRefresh();
+      toast.success('템플릿이 삭제되었습니다.');
+    } catch (err) {
+      toast.error(`삭제 실패: ${extractErrorMsg(err)}`);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -828,6 +899,9 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
       .replace(/{지점전화번호}/g, '010-8827-7791');
 
   const byteLen = (s: string) => new TextEncoder().encode(s).length;
+  const dialogTitle = isCustom
+    ? (editTarget?.id ? '사용자 정의 템플릿 수정' : '새 사용자 정의 템플릿')
+    : `${editTarget ? (EVENT_TYPE_LABELS[editTarget.event_type] ?? editTarget.event_type) : ''} 템플릿 수정`;
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -837,7 +911,10 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
           치환 변수: {'{고객명} {날짜} {시간} {지점명} {지점전화번호}'}
         </p>
       </div>
+
+      {/* 예약 자동발송 템플릿 (reserved 4종) */}
       <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-muted-foreground">예약 자동발송 템플릿</h3>
         {eventTypes.map((et) => {
           const tmpl = getTemplate(et);
           return (
@@ -857,15 +934,73 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
           );
         })}
       </div>
+
+      {/* 사용자 정의 템플릿 (추가/수정/삭제) */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-muted-foreground">사용자 정의 템플릿</h3>
+          <Button
+            size="sm"
+            data-testid="custom-tmpl-add-btn"
+            onClick={() => openCustom(null)}
+          >
+            ＋ 새 템플릿 추가
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          대시보드 우클릭 [문자] 발송 시 선택할 수 있는 자유 템플릿입니다. (약도 안내, 주차 안내 등)
+        </p>
+        {customTemplates.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+            사용자 정의 템플릿이 없습니다. [＋ 새 템플릿 추가]로 만들 수 있습니다.
+          </div>
+        ) : (
+          customTemplates.map((tmpl) => (
+            <div key={tmpl.id} data-testid="custom-tmpl-row" className="rounded-lg border p-4 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-sm truncate">{tmpl.event_type}</span>
+                <div className="flex gap-2 shrink-0">
+                  <Button size="sm" variant="outline" data-testid="custom-tmpl-edit-btn" onClick={() => openCustom(tmpl)}>수정</Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    data-testid="custom-tmpl-delete-btn"
+                    className="text-red-600 hover:bg-red-50"
+                    disabled={deletingId === tmpl.id}
+                    onClick={() => handleDelete(tmpl)}
+                  >
+                    {deletingId === tmpl.id ? <Loader2 className="h-4 w-4 animate-spin" /> : '삭제'}
+                  </Button>
+                </div>
+              </div>
+              <pre className="text-xs text-muted-foreground whitespace-pre-wrap bg-muted/30 rounded p-2">{tmpl.body}</pre>
+              <p className="text-xs text-muted-foreground">{byteLen(tmpl.body)}byte {byteLen(tmpl.body) > 90 ? '→ LMS 발송' : '(SMS)'}</p>
+            </div>
+          ))
+        )}
+      </div>
+
       <Dialog open={!!editTarget} onOpenChange={(v) => { if (!v) setEditTarget(null); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editTarget ? EVENT_TYPE_LABELS[editTarget.event_type] : ''} 템플릿 수정</DialogTitle>
+            <DialogTitle>{dialogTitle}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {isCustom && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">템플릿 이름</label>
+                <Input
+                  data-testid="custom-tmpl-title-input"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder="예: 약도 안내"
+                  maxLength={40}
+                />
+              </div>
+            )}
             <div className="space-y-2">
               <label className="text-sm font-medium">본문</label>
-              <Textarea value={editBody} onChange={(e) => setEditBody(e.target.value)} rows={5} className="font-mono text-sm" />
+              <Textarea data-testid="tmpl-body-input" value={editBody} onChange={(e) => setEditBody(e.target.value)} rows={5} className="font-mono text-sm" />
               <p className="text-xs text-muted-foreground">
                 {byteLen(editBody)}byte{byteLen(editBody) > 90 ? ' — LMS로 발송됩니다' : ' (SMS)'}
               </p>
@@ -876,7 +1011,7 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
             </div>
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setEditTarget(null)}>취소</Button>
-              <Button onClick={handleSave} disabled={saving}>
+              <Button data-testid="tmpl-save-btn" onClick={handleSave} disabled={saving}>
                 {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                 저장
               </Button>
