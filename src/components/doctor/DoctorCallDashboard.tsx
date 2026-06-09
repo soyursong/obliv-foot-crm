@@ -294,6 +294,8 @@ export default function DoctorCallDashboard() {
                 checkIn={ci}
                 doctorMode={doctorMode}
                 role={profile?.role ?? ''}
+                clinicId={clinicId ?? ''}
+                currentUserEmail={profile?.email ?? null}
                 onOpenChart={openTreatmentChart}
                 onRefresh={() => void refetch()}
               />
@@ -323,6 +325,8 @@ export default function DoctorCallDashboard() {
                 checkIn={ci}
                 doctorMode={doctorMode}
                 role={profile?.role ?? ''}
+                clinicId={clinicId ?? ''}
+                currentUserEmail={profile?.email ?? null}
                 onOpenChart={openTreatmentChart}
                 onRefresh={() => void refetch()}
               />
@@ -358,12 +362,16 @@ function CallFeedRow({
   checkIn,
   doctorMode,
   role,
+  clinicId,
+  currentUserEmail,
   onOpenChart,
   onRefresh,
 }: {
   checkIn: CheckIn;
   doctorMode: boolean;
   role: string;
+  clinicId: string;
+  currentUserEmail: string | null;
   onOpenChart: (customerId: string, variant?: 'full' | 'clinical') => void;
   onRefresh: () => void;
 }) {
@@ -371,6 +379,8 @@ function CallFeedRow({
   const slotName = getAssignedSlotName(checkIn);
   const elapsed = formatElapsed(elapsedMinutes(getCallTime(checkIn)));
   const [showRx, setShowRx] = useState(false);
+  // T-20260609-foot-DOCDASH-CHART-UX item1 (AC1-1): '임상경과' = 행 바로 아래 인라인(아코디언) 펼침.
+  const [showClinical, setShowClinical] = useState(false);
 
   return (
     <li
@@ -420,18 +430,21 @@ function CallFeedRow({
         <p className="mt-1 pl-6 text-xs text-gray-600">📋 {checkIn.doctor_call_memo}</p>
       )}
 
-      {/* 액션 — 차팅(미니멀 임상경과) / 차트 열기(전체 Drawer) / 처방 */}
+      {/* 액션 — 임상경과(인라인 아코디언) / 진료차트(전체 Drawer) / 처방
+          T-20260609-foot-DOCDASH-CHART-UX item1: AC1-1 차팅 서랍 → 행 아래 인라인. AC1-4 라벨 '차팅'→'임상경과', '차트 열기'→'진료차트'. */}
       <div className="mt-1.5 flex items-center gap-1.5 pl-6">
         <button
           type="button"
-          onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'clinical')}
+          onClick={() => setShowClinical((v) => !v)}
           disabled={!checkIn.customer_id}
+          aria-expanded={showClinical}
           data-testid="doctor-call-chart-btn"
           className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-          title="임상경과만 빠르게 입력"
+          title="임상경과를 이 줄 바로 아래에서 빠르게 입력"
         >
           <FileText className="h-3 w-3" />
-          차팅
+          임상경과
+          {showClinical ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
         </button>
         <button
           type="button"
@@ -442,7 +455,7 @@ function CallFeedRow({
           title="전체 진료차트 열기 (서랍)"
         >
           <Stethoscope className="h-3 w-3" />
-          차트 열기
+          진료차트
         </button>
         <button
           type="button"
@@ -480,6 +493,25 @@ function CallFeedRow({
           />
         </div>
       )}
+
+      {/* T-20260609-foot-DOCDASH-CHART-UX item1 (AC1-1/2): 임상경과 인라인 아코디언 — 행 바로 아래 펼침.
+          서랍/별도 패널 아님. MedicalChartPanel embed clinical 재사용(저장 로직·진료의 NOT NULL 강제 동일).
+          저장 완료(onSaved) 또는 다시 '임상경과' 클릭 시 접힘. */}
+      {showClinical && checkIn.customer_id && (
+        <div className="mt-1.5 ml-6" data-testid="doctor-call-chart-inline">
+          <MedicalChartPanel
+            embed
+            open
+            variant="clinical"
+            customerId={checkIn.customer_id}
+            clinicId={clinicId}
+            currentUserRole={role}
+            currentUserEmail={currentUserEmail}
+            onOpenChange={(v) => { if (!v) setShowClinical(false); }}
+            onSaved={() => setShowClinical(false)}
+          />
+        </div>
+      )}
     </li>
   );
 }
@@ -489,16 +521,22 @@ function CompletedRow({
   checkIn,
   doctorMode,
   role,
+  clinicId,
+  currentUserEmail,
   onOpenChart,
   onRefresh,
 }: {
   checkIn: CheckIn;
   doctorMode: boolean;
   role: string;
+  clinicId: string;
+  currentUserEmail: string | null;
   onOpenChart: (customerId: string, variant?: 'full' | 'clinical') => void;
   onRefresh: () => void;
 }) {
   const [showRx, setShowRx] = useState(false);
+  // T-20260609-foot-DOCDASH-CHART-UX item1 (AC1-1): '임상경과' = 행 바로 아래 인라인(아코디언) 펼침.
+  const [showClinical, setShowClinical] = useState(false);
   return (
     <li className="px-3 py-2.5" data-testid="doctor-completed-row" data-checkin-id={checkIn.id}>
       <div className="flex flex-wrap items-center gap-2">
@@ -520,16 +558,19 @@ function CompletedRow({
           ) : (
             <span className="text-[10px] text-muted-foreground">처방 없음</span>
           )}
+          {/* T-20260609-foot-DOCDASH-CHART-UX item1: AC1-1 인라인 아코디언 + AC1-4 라벨 '차팅'→'임상경과', '차트 열기'→'진료차트'. */}
           <button
             type="button"
-            onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'clinical')}
+            onClick={() => setShowClinical((v) => !v)}
             disabled={!checkIn.customer_id}
+            aria-expanded={showClinical}
             data-testid="doctor-completed-chart-btn"
             className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-            title="임상경과만 빠르게 입력"
+            title="임상경과를 이 줄 바로 아래에서 빠르게 입력"
           >
             <FileText className="h-3 w-3" />
-            차팅
+            임상경과
+            {showClinical ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
           </button>
           <button
             type="button"
@@ -540,7 +581,7 @@ function CompletedRow({
             title="전체 진료차트 열기 (서랍)"
           >
             <Stethoscope className="h-3 w-3" />
-            차트 열기
+            진료차트
           </button>
           <button
             type="button"
@@ -563,6 +604,23 @@ function CompletedRow({
             checkedInAt={checkIn.checked_in_at}
             onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
             compact
+          />
+        </div>
+      )}
+      {/* T-20260609-foot-DOCDASH-CHART-UX item1 (AC1-1): 진료완료 환자도 '임상경과' = 행 바로 아래 인라인(아코디언) 펼침.
+          활성 콜 행과 동일하게 MedicalChartPanel embed clinical 재사용. */}
+      {showClinical && checkIn.customer_id && (
+        <div className="mt-1.5" data-testid="doctor-completed-chart-inline">
+          <MedicalChartPanel
+            embed
+            open
+            variant="clinical"
+            customerId={checkIn.customer_id}
+            clinicId={clinicId}
+            currentUserRole={role}
+            currentUserEmail={currentUserEmail}
+            onOpenChange={(v) => { if (!v) setShowClinical(false); }}
+            onSaved={() => setShowClinical(false)}
           />
         </div>
       )}
