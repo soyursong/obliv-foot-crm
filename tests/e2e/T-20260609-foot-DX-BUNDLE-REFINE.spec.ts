@@ -168,6 +168,6 @@ test('회귀: 관리 권한 = director/manager/admin 보존 + items replace 저�
   const src = read(TAB);
   expect(src).toContain("['director', 'manager', 'admin']");
   expect(src).toContain("from('diagnosis_set_items')");
-  expect(src).toContain('data-testid="dx-set-item-type-primary"');
-  expect(src).toContain('data-testid="dx-set-item-type-secondary"');
+  // T-...-NEST-BUNDLE-FOLDER AC-6: 수동 주/부 토글 → 순서기반 자동 배지(읽기전용)로 교체.
+  expect(src).toContain('data-testid="dx-set-item-type-badge"');
 });

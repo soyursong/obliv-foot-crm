@@ -99,9 +99,12 @@ interface DxForm {
 
 const EMPTY_FORM: DxForm = { name: '', service_code: '', active: true, sort_order: 0 };
 
-const NO_FOLDER = '미분류';
-// 좌측 "미분류" 버킷의 droppable/select 키 (uuid 와 충돌 없는 sentinel)
-const UNASSIGNED = '__unassigned__';
+// T-20260609-foot-DXMGMT-NEST-BUNDLE-FOLDER AC-3:
+//   좌측 첫 노드 = "미분류" → "전체목록" 으로 격상. 클릭 시 폴더 소속 무관 전체 상병 노출.
+//   드롭 시맨틱은 보존(전체목록으로 끌어다 놓으면 폴더 배정 해제 = 미분류 환원).
+const ALL_LABEL = '전체목록';
+// 좌측 "전체목록" 노드의 droppable/select 키 (uuid 와 충돌 없는 sentinel)
+const ALL_KEY = '__all__';
 
 // 상병 관리(CRUD)·폴더 관리·배치 권한 = 관리권한 role.
 //   현장 "어드민만 관리"의 코드 매핑 — 피드백 출처 대표원장(director)을 잠그지 않도록
@@ -266,9 +269,9 @@ function DraggableDxItem({ d, canManage, delPending, onEdit, onDelete }: Draggab
 }
 
 // ---------------------------------------------------------------------------
-// 좌측: "미분류" 버킷 — drop 가능(폴더 배정 해제) + 선택(미분류 항목 필터)
+// 좌측: "전체목록" 노드 (AC-3) — 클릭 시 전체 상병 노출. drop 가능(폴더 배정 해제 = 미분류 환원).
 // ---------------------------------------------------------------------------
-function UnassignedBucket({
+function AllItemsBucket({
   count,
   selected,
   onSelect,
@@ -277,7 +280,7 @@ function UnassignedBucket({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: UNASSIGNED });
+  const { setNodeRef, isOver } = useDroppable({ id: ALL_KEY });
   return (
     <div
       ref={setNodeRef}
@@ -285,7 +288,7 @@ function UnassignedBucket({
         selected ? 'bg-teal-50 text-teal-900 ring-1 ring-teal-200 border-teal-200' : 'border-transparent hover:bg-muted/60'
       } ${isOver ? 'ring-2 ring-teal-400 bg-teal-50' : ''}`}
       data-testid="dx-folder-node"
-      data-folder-id={UNASSIGNED}
+      data-folder-id={ALL_KEY}
       data-selected={selected ? 'true' : 'false'}
       onClick={onSelect}
       role="button"
@@ -298,8 +301,9 @@ function UnassignedBucket({
       }}
     >
       <Inbox className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      <span className="text-xs font-semibold truncate flex-1" data-testid="dx-folder-name">{NO_FOLDER}</span>
-      <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">{count}</Badge>
+      {/* AC-1: 폴더명 표시폭 확대(text-[13px]) · AC-2: 건수 괄호 인라인 텍스트 */}
+      <span className="text-[13px] font-semibold truncate flex-1" data-testid="dx-folder-name">{ALL_LABEL}</span>
+      <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums" data-testid="dx-folder-count">({count})</span>
     </div>
   );
 }
@@ -434,8 +438,9 @@ function FolderNode(props: FolderNodeProps) {
         ) : (
           <Folder className="h-3.5 w-3.5 shrink-0 text-teal-600/70" />
         )}
-        <span className="text-xs font-semibold truncate flex-1" data-testid="dx-folder-name">{node.name}</span>
-        <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">{count}</Badge>
+        {/* AC-1: 폴더명 표시폭 확대(text-[13px], 패널 280px) · AC-2: 건수 괄호 인라인 텍스트(버튼형 배지 제거) */}
+        <span className="text-[13px] font-semibold truncate flex-1" data-testid="dx-folder-name">{node.name}</span>
+        <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums" data-testid="dx-folder-count">({count})</span>
         {canManage && (
           <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
             {/* 순서 ▲▼ — 형제 내 sort_order 교체 (AC-3) */}
@@ -530,8 +535,8 @@ export default function DiagnosisNamesTab() {
   const [codeError, setCodeError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
 
-  // 좌측 선택(폴더 id 또는 UNASSIGNED). 기본 = 미분류.
-  const [selectedKey, setSelectedKey] = useState<string>(UNASSIGNED);
+  // 좌측 선택(폴더 id 또는 ALL_KEY). 기본 = 미분류.
+  const [selectedKey, setSelectedKey] = useState<string>(ALL_KEY);
   // 폴더 인라인 rename
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -549,28 +554,26 @@ export default function DiagnosisNamesTab() {
 
   const tree = useMemo(() => buildDiagnosisFolderTree(folders), [folders]);
 
-  // 폴더별 항목 수 + 미분류 수
-  const { countByFolder, unassignedCount } = useMemo(() => {
+  // 폴더별 항목 수 (좌측 트리 괄호 건수). 전체목록 건수는 items.length 직접 사용.
+  const countByFolder = useMemo(() => {
     const map = new Map<string, number>();
-    let un = 0;
     for (const d of items) {
       if (d.diagnosis_folder_id) map.set(d.diagnosis_folder_id, (map.get(d.diagnosis_folder_id) ?? 0) + 1);
-      else un += 1;
     }
-    return { countByFolder: map, unassignedCount: un };
+    return map;
   }, [items]);
 
   const countOf = (folderId: string) => countByFolder.get(folderId) ?? 0;
 
   // 선택 폴더 키가 유효한지 보정(삭제된 폴더 → 미분류로 환원)
   useEffect(() => {
-    if (selectedKey === UNASSIGNED) return;
-    if (!folders.some((f) => f.id === selectedKey)) setSelectedKey(UNASSIGNED);
+    if (selectedKey === ALL_KEY) return;
+    if (!folders.some((f) => f.id === selectedKey)) setSelectedKey(ALL_KEY);
   }, [folders, selectedKey]);
 
-  // 우측 목록 — 선택된 폴더 소속 항목 (AC-5)
+  // 우측 목록 — 선택 폴더 소속 항목. AC-3: 전체목록(ALL_KEY) 선택 시 폴더 소속 무관 전체 노출.
   const visibleItems = useMemo(() => {
-    if (selectedKey === UNASSIGNED) return items.filter((d) => !d.diagnosis_folder_id);
+    if (selectedKey === ALL_KEY) return items;
     return items.filter((d) => d.diagnosis_folder_id === selectedKey);
   }, [items, selectedKey]);
 
@@ -692,7 +695,7 @@ export default function DiagnosisNamesTab() {
     if (!window.confirm(`"${node.name}" 폴더를 삭제할까요?${warn}`)) return;
     try {
       await deleteFolder.mutateAsync(node.id);
-      if (selectedKey === node.id) setSelectedKey(UNASSIGNED);
+      if (selectedKey === node.id) setSelectedKey(ALL_KEY);
       toast.success('폴더가 삭제됐어요.');
     } catch (e) {
       toast.error(`삭제 실패: ${(e as Error).message}`);
@@ -738,15 +741,18 @@ export default function DiagnosisNamesTab() {
     if (!over || !canManage) return;
     const serviceId = String(active.id);
     const overKey = String(over.id);
-    const targetFolderId = overKey === UNASSIGNED ? null : overKey;
+    const targetFolderId = overKey === ALL_KEY ? null : overKey;
     const item = items.find((d) => d.id === serviceId);
     if (!item) return;
     if ((item.diagnosis_folder_id ?? null) === targetFolderId) return; // 변화 없음
-    const targetName = targetFolderId ? folders.find((f) => f.id === targetFolderId)?.name ?? '폴더' : NO_FOLDER;
+    // AC-3: 전체목록(null) 드롭 = 폴더 분류 해제. 폴더 드롭 = 해당 폴더로 이동.
+    const okMsg = targetFolderId
+      ? `"${item.name}" → ${folders.find((f) => f.id === targetFolderId)?.name ?? '폴더'}`
+      : `"${item.name}" 폴더 분류 해제`;
     assign.mutate(
       { service_id: serviceId, folder_id: targetFolderId },
       {
-        onSuccess: () => toast.success(`"${item.name}" → ${targetName}`, { duration: 1500 }),
+        onSuccess: () => toast.success(okMsg, { duration: 1500 }),
         onError: (err: Error) => toast.error(`이동 실패: ${err.message}`),
       },
     );
@@ -785,8 +791,8 @@ export default function DiagnosisNamesTab() {
           {!canManage && ' (읽기 전용 — 폴더 관리 권한이 없습니다.)'}
         </p>
 
-        {/* 2패널 (AC-1): 좌 = 폴더관리 / 우 = 상병항목 */}
-        <div className="grid grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] gap-4 items-start">
+        {/* 2패널: 좌 = 폴더관리 / 우 = 상병항목. AC-1: 좌측 폴더 패널 240→280px(폴더명 잘림 해소) */}
+        <div className="grid grid-cols-1 md:grid-cols-[280px_minmax(0,1fr)] gap-4 items-start">
           {/* ── 좌측: 폴더관리 ── */}
           <aside
             className="rounded-lg border bg-muted/20 p-2 md:max-h-[72vh] md:overflow-y-auto space-y-2"
@@ -816,11 +822,11 @@ export default function DiagnosisNamesTab() {
               </div>
             )}
 
-            {/* 미분류 버킷 (AC-4) — 항상 표시, drop 가능 */}
-            <UnassignedBucket
-              count={unassignedCount}
-              selected={selectedKey === UNASSIGNED}
-              onSelect={() => setSelectedKey(UNASSIGNED)}
+            {/* 전체목록 노드 (AC-3) — 항상 최상단, 전체 상병 노출 + drop 시 분류 해제. 건수=전체 */}
+            <AllItemsBucket
+              count={items.length}
+              selected={selectedKey === ALL_KEY}
+              onSelect={() => setSelectedKey(ALL_KEY)}
             />
 
             {/* 폴더 트리 */}
@@ -864,13 +870,13 @@ export default function DiagnosisNamesTab() {
           {/* ── 우측: 선택 폴더의 상병 목록 (AC-5) ── */}
           <div className="min-w-0" data-testid="dx-list">
             <div className="flex items-center gap-1.5 px-1 mb-2">
-              {selectedKey === UNASSIGNED ? (
+              {selectedKey === ALL_KEY ? (
                 <Inbox className="h-3.5 w-3.5 text-muted-foreground" />
               ) : (
                 <FolderOpen className="h-3.5 w-3.5 text-teal-600" />
               )}
               <span className="text-xs font-semibold text-foreground">
-                {selectedKey === UNASSIGNED ? NO_FOLDER : selectedFolder?.name ?? '폴더'}
+                {selectedKey === ALL_KEY ? ALL_LABEL : selectedFolder?.name ?? '폴더'}
               </span>
               <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{visibleItems.length}</Badge>
             </div>
@@ -879,9 +885,9 @@ export default function DiagnosisNamesTab() {
               <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
                 {items.length === 0
                   ? '등록된 상병명이 없습니다.'
-                  : selectedKey === UNASSIGNED
-                    ? '미분류 상병명이 없습니다.'
-                    : '이 폴더에 분류된 상병명이 없습니다. 오른쪽 상병을 끌어다 놓으세요.'}
+                  : selectedKey === ALL_KEY
+                    ? '등록된 상병명이 없습니다.'
+                    : '이 폴더에 분류된 상병명이 없습니다. 전체목록에서 상병을 끌어다 놓으세요.'}
               </div>
             ) : (
               <div className="space-y-1.5" data-testid="dx-folder-items">

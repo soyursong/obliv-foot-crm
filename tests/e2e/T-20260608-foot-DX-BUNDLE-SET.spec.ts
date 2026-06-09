@@ -71,13 +71,12 @@ test('AC-1: 세트 item = 상병 마스터(services 상병정본)에서 선택, 
   const src = read(TAB);
   // 상병 마스터 소스 = services category_label='상병' (단일 SSOT, 두번째 마스터 신설 아님)
   expect(src).toContain("category_label', '상병'");
-  // 마스터에서 선택 추가
-  expect(src).toContain('data-testid="dx-set-add-item-select"');
+  // 마스터에서 선택 추가 — T-...-NEST-BUNDLE-FOLDER AC-4 로 select → 폴더트리 picker 교체.
+  expect(src).toContain('data-testid="dx-set-open-picker"');
   expect(src).toContain('data-testid="dx-set-item-row"');
   expect(src).toContain('data-testid="dx-set-item-remove"');
-  // 주/부 지정
-  expect(src).toContain('data-testid="dx-set-item-type-primary"');
-  expect(src).toContain('data-testid="dx-set-item-type-secondary"');
+  // 주/부 지정 — AC-6 로 수동토글 제거, 순서기반 자동 배지로 교체(읽기전용).
+  expect(src).toContain('data-testid="dx-set-item-type-badge"');
   // 정규화 자식테이블 replace 저장(전체 삭제 후 재삽입)
   expect(src).toContain("from('diagnosis_set_items')");
   expect(src).toContain("from('diagnosis_sets')");
