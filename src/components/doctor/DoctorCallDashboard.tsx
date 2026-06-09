@@ -60,14 +60,14 @@ import {
   requestNotifyPermission,
   currentNotifyPermission,
 } from '@/hooks/useDoctorCallNotifier';
-import QuickRxBar, { isDoctor, RxCancelButton } from './QuickRxBar';
+import QuickRxBar, { isDoctor, RxConfirmedSummary } from './QuickRxBar';
 import { DoctorAckButton, DoctorAckBadge } from './DoctorAck';
 import { applyStatusFlagTransition, type FlagTransitionActor } from '@/lib/statusFlagTransition';
 import type { CheckIn } from '@/lib/types';
 
 const CALL_SELECT =
   'id, customer_id, customer_name, visit_type, status, status_flag, status_flag_history, ' +
-  'checked_in_at, completed_at, treatment_kind, treatment_category, prescription_status, ' +
+  'checked_in_at, completed_at, treatment_kind, treatment_category, prescription_status, prescription_items, ' +
   'doctor_call_memo, doctor_ack_at, queue_number, consultation_room, treatment_room, laser_room, examination_room';
 
 function useDoctorCallFeed(clinicId: string | null) {
@@ -476,15 +476,14 @@ function CallFeedRow({
           처방
           {showRx ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
         </button>
+        {/* T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-2/4: "처방완료"+약물리스트, 재클릭→취소 팝업. */}
         {checkIn.prescription_status === 'confirmed' && (
-          <>
-            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-green-700">
-              <CheckCircle2 className="h-3 w-3" />
-              처방확정
-            </span>
-            {/* T-20260609-foot-QUICKRX-HOVER-TOOLTIP-CANCEL ②: 확정 후 취소(rxUndo 재노출, 권한=DOCTOR_ROLES) */}
-            <RxCancelButton checkInId={checkIn.id} doctorMode={doctorMode} onCancelled={onRefresh} />
-          </>
+          <RxConfirmedSummary
+            checkInId={checkIn.id}
+            items={checkIn.prescription_items}
+            doctorMode={doctorMode}
+            onCancelled={onRefresh}
+          />
         )}
         {/* T-20260610-foot-TREATMENT-COMPLETE-BTN: 활성 호출(purple)에만 진료완료 버튼. 의사/직원 공통(권한 개방). */}
         {!inactive && (
@@ -559,15 +558,14 @@ function CompletedRow({
         <DoctorAckBadge ackAt={checkIn.doctor_ack_at} />
         <span className="text-xs text-muted-foreground">{treatmentLabel(checkIn)}</span>
         <div className="ml-auto flex items-center gap-1.5">
+          {/* T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-2/4: "처방완료"+약물리스트, 재클릭→취소 팝업. */}
           {checkIn.prescription_status === 'confirmed' ? (
-            <>
-              <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-green-700">
-                <CheckCircle2 className="h-3 w-3" />
-                처방확정
-              </span>
-              {/* T-20260609-foot-QUICKRX-HOVER-TOOLTIP-CANCEL ②: 확정 후 취소(rxUndo 재노출, 권한=DOCTOR_ROLES) */}
-              <RxCancelButton checkInId={checkIn.id} doctorMode={doctorMode} onCancelled={onRefresh} />
-            </>
+            <RxConfirmedSummary
+              checkInId={checkIn.id}
+              items={checkIn.prescription_items}
+              doctorMode={doctorMode}
+              onCancelled={onRefresh}
+            />
           ) : (
             <span className="text-[10px] text-muted-foreground">처방 없음</span>
           )}

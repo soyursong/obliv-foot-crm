@@ -15,7 +15,7 @@ import { todaySeoulISODate } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
 import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
-import QuickRxBar, { isDoctor, RxCancelButton } from './QuickRxBar';
+import QuickRxBar, { isDoctor, RxConfirmedSummary } from './QuickRxBar';
 import { STATUS_KO, isInClinic } from '@/lib/status';
 import type { CheckInStatus } from '@/lib/types';
 
@@ -361,36 +361,23 @@ function PatientRow({
         </div>
       )}
 
-      {/* 확정된 경우 처방 내용 요약 */}
+      {/* 확정된 경우 — T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-2/4:
+          "처방완료" + 약물리스트(검은글씨, 다중약 전체). 재클릭 → 취소 확인 팝업(별도 취소버튼 폐지). */}
       {expanded && isConfirmed && (
         <div className="border-t px-3 py-2.5 bg-green-50/60 rounded-b-lg">
-          <div className="flex items-center gap-1.5 text-[11px] text-green-700 font-medium mb-1">
-            <CheckCircle2 className="h-3 w-3" />
-            처방 확정 완료
+          <div className="flex items-center gap-1.5">
+            <RxConfirmedSummary
+              checkInId={row.id}
+              items={row.prescription_items}
+              doctorMode={doctorMode}
+              onCancelled={onRefresh}
+            />
             {row.doctor_confirmed_at && (
-              <span className="ml-auto text-green-600 font-normal">
+              <span className="ml-auto shrink-0 text-[11px] text-green-600">
                 {format(new Date(row.doctor_confirmed_at), 'HH:mm', { locale: ko })}
               </span>
             )}
-            {/* T-20260609-foot-QUICKRX-HOVER-TOOLTIP-CANCEL ②: 확정 후 취소(rxUndo 재노출, 권한=DOCTOR_ROLES) */}
-            <RxCancelButton
-              checkInId={row.id}
-              doctorMode={doctorMode}
-              onCancelled={onRefresh}
-              className={row.doctor_confirmed_at ? 'ml-1.5' : 'ml-auto'}
-            />
           </div>
-          {Array.isArray(row.prescription_items) && row.prescription_items.length > 0 && (
-            <div className="space-y-0.5">
-              {(row.prescription_items as Array<{ name: string; frequency: string; days: number }>)
-                .slice(0, 3)
-                .map((item, idx) => (
-                  <p key={idx} className="text-[10px] text-muted-foreground">
-                    {item.name} — {item.frequency} {item.days}일
-                  </p>
-                ))}
-            </div>
-          )}
         </div>
       )}
     </div>

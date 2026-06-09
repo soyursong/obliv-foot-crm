@@ -41,3 +41,24 @@ export function rxItemsTooltipLines(
   if (!Array.isArray(items)) return [];
   return items.map((it) => rxItemTooltipLine(it));
 }
+
+// ---------------------------------------------------------------------------
+// 확정(처방완료) 인라인 요약 — T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-2
+//   "이름 아래 처방완료 + 옆에 약물리스트 검은글씨 나열" 의 약물리스트 한 줄 포맷.
+//   포맷: `{name} {frequency} * {name} {frequency} *` (다중 약 모두, items 배열 기준).
+//   - frequency 결측 시 `{name} *` (댕글링 공백 없음).
+//   - 단일 약 가정 금지 — items 배열 전체를 map (QUICKRX-MULTI-DRUG 정합).
+//   - 순수 함수(렌더만, 부수효과 없음).
+// ---------------------------------------------------------------------------
+export function formatRxConfirmedSummary(
+  items: RxTooltipItemLike[] | null | undefined,
+): string {
+  if (!Array.isArray(items)) return '';
+  return items
+    .map((it) => {
+      const name = (it?.name ?? '').trim() || '(이름 미입력)';
+      const freq = (it?.frequency ?? '').trim();
+      return freq ? `${name} ${freq} *` : `${name} *`;
+    })
+    .join(' ');
+}
