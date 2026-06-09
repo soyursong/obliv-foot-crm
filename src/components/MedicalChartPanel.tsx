@@ -1668,15 +1668,12 @@ export default function MedicalChartPanel({
   const isDummyMode = charts.length === 0;
 
   // T-20260526-foot-VISIT-FOLD-FILTER: 필터 적용 (OR 로직)
-  const filteredDisplayCharts = memoFilters.size === 0
-    ? displayCharts
-    : displayCharts.filter(c => {
-        if (memoFilters.has('treat') && hasTreatMemo(c)) return true;
-        if (memoFilters.has('doc') && hasDocMemo(c)) return true;
-        if (memoFilters.has('rx') && hasRx(c)) return true;
-        if (memoFilters.has('notable') && isNotable(c)) return true;
-        return false;
-      });
+  // T-20260609-foot-MEDCHART-SOAK-REFINE item2 (문지은 대표원장 field-soak 버그):
+  //   필터(처방/치료/진료)는 방문 '날짜행'을 절대 지우지 않는다 — 날짜는 항상 표기 유지하고
+  //   내용(미리보기 segment·펼침 상세)만 활성 유형에 맞춰 미표기한다.
+  //   (preview는 chartPreviewSegments, 펼침 상세는 isTypeActive 가 이미 유형별로 표시/미표시 처리)
+  //   이전 동작: 필터 시 매칭 없는 방문행 전체가 사라짐 = 버그. 이제 행은 보존, 내용만 가린다.
+  const filteredDisplayCharts = displayCharts;
 
   const expandedCount = filteredDisplayCharts.filter(c => expandedChartIds.has(c.id)).length;
   const allExpanded = filteredDisplayCharts.length > 0 && expandedCount === filteredDisplayCharts.length;
@@ -2050,57 +2047,58 @@ export default function MedicalChartPanel({
                 </div>
 
                 {/* T-20260603-foot-CHART-SPECIAL-NOTE: ⑤ 특이사항 공용 누적칸 (환자 단위, 날짜 분기 없음)
-                    T-20260609-foot-SPECIALNOTE-MEMO-UX: 메모판 UX 재설계 (저장 로직·스키마 무변경, FE presentation only)
-                      AC-2 접힘/펼침 디폴트(내용 유무) · AC-3 메모판 박스 강조 · AC-4 본문 좌측정렬+우상단 메타 1줄 · AC-1 통합 텍스트박스 */}
-                <div
-                  className="flex-none m-2 rounded-xl border-2 border-amber-300 bg-amber-50/80 shadow-md ring-1 ring-amber-100 overflow-hidden"
-                  data-testid="special-note-section"
-                >
+                    T-20260609-foot-SPECIALNOTE-MEMO-UX: 메모판 UX (저장 로직·스키마 무변경, FE presentation only)
+                    T-20260609-foot-MEDCHART-SOAK-REFINE item1 (문지은 대표원장 field-soak — 부분 revert/policy_superseded):
+                      AC1-1 이모지 제거 · AC1-2 "특이사항" 단일화+다른 섹션과 헤더 스타일 통일
+                      · AC1-3 포스트잇/박스 강조 제거→배경에 녹임(내용 有일 때만 검은 볼드 강조)
+                      · AC1-4 미리보기 글씨 제거 · AC1-5 빈상태 텍스트 제거(비면 아무것도 안 보임)
+                      · AC1-6 버튼형 입력→줄(inline) 입력 (밑줄, Enter 저장) */}
+                <div className="flex-none mx-2 mt-2" data-testid="special-note-section">
+                  {/* AC1-2: 헤더 스타일을 '진료 경과 타임라인' 라벨과 동일 규격으로 통일(text-[10px] font-semibold uppercase tracking-wide).
+                      AC1-1 이모지 없음. AC1-3 내용 有일 때만 글씨색 강조(gray-900), 없으면 배경에 녹은 muted. */}
                   <button
                     type="button"
                     onClick={() => { specialNoteManualRef.current = true; setSpecialNoteOpen(o => !o); }}
-                    className="w-full flex items-center justify-between gap-1 px-2.5 py-2 bg-amber-100/70 hover:bg-amber-100 transition-colors"
+                    className="w-full flex items-center justify-between gap-1 py-1 hover:opacity-80 transition-opacity"
                     data-testid="special-note-toggle"
                     aria-expanded={specialNoteOpen}
                   >
-                    <span className="flex items-center gap-1 text-[11px] font-bold text-amber-800 tracking-wide">
-                      <AlertTriangle className="h-3.5 w-3.5" />
-                      특이사항 메모판
+                    <span className={`flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide ${specialNotes.length > 0 ? 'text-gray-900' : 'text-muted-foreground'}`}>
+                      특이사항
                       {specialNotes.length > 0 && (
-                        <span className="text-[9px] text-amber-600 tabular-nums">({specialNotes.length})</span>
+                        <span className="text-[9px] tabular-nums font-bold">({specialNotes.length})</span>
                       )}
                     </span>
                     <ChevronDown
-                      className={`h-3.5 w-3.5 text-amber-600 transition-transform duration-200 ${specialNoteOpen ? 'rotate-180' : ''}`}
+                      className={`h-3 w-3 text-muted-foreground transition-transform duration-200 ${specialNoteOpen ? 'rotate-180' : ''}`}
                     />
                   </button>
 
                   {specialNoteOpen && (
-                    <div className="px-2 pb-2 pt-1.5 space-y-1.5">
-                      {/* 누적 항목 목록 (최신순, 기존 항목 불변 — read-only 표시) */}
-                      <div className="max-h-44 overflow-y-auto space-y-1.5" data-testid="special-note-list">
-                        {specialNotes.length === 0 ? (
-                          <p className="text-[10px] text-amber-700/50 italic py-1 text-center">아직 메모가 없습니다</p>
-                        ) : (
-                          specialNotes.map(note => {
+                    <div className="pb-1 space-y-1">
+                      {/* AC1-5: 빈상태 텍스트 제거 — 내용 있을 때만 목록 렌더, 비면 아무것도 안 보임.
+                          AC1-3: 박스/배경 강조 제거 → 왼쪽 얇은 컬러바 + 검은 볼드 본문으로만 시각 구분(배경 녹임). */}
+                      {specialNotes.length > 0 && (
+                        <div className="max-h-44 overflow-y-auto space-y-1" data-testid="special-note-list">
+                          {specialNotes.map(note => {
                             const recorder = note.created_by_name || recorderName(note.created_by) || '미상';
                             let metaDate = '';
                             try { metaDate = format(new Date(note.created_at), 'yy.MM.dd'); } catch { metaDate = ''; }
                             return (
                             <div
                               key={note.id}
-                              className={`rounded-md border px-2 py-1.5 ${note.is_pinned ? 'border-amber-400 bg-amber-100/70 ring-1 ring-amber-300' : 'border-amber-200 bg-white'}`}
+                              className={`border-l-2 pl-2 py-0.5 ${note.is_pinned ? 'border-gray-900' : 'border-gray-200'}`}
                               data-testid="special-note-item"
                               data-pinned={note.is_pinned ? 'true' : 'false'}
                             >
-                              {/* AC-4: 우상단 메타 1줄 (흐린 작은 글씨 'YY.MM.DD 작성자성명') + 핀 토글 */}
+                              {/* 우상단 메타 1줄 (흐린 작은 글씨 'YY.MM.DD 작성자성명') + 핀 토글 */}
                               <div className="flex items-center justify-between gap-1">
                                 {/* #10: 핀 고정 토글 (맨위로) */}
                                 <button
                                   type="button"
                                   onClick={() => toggleSpecialNotePin(note)}
                                   disabled={pinningId === note.id}
-                                  className={`shrink-0 -ml-0.5 rounded p-0.5 transition-colors disabled:opacity-40 ${note.is_pinned ? 'text-amber-700 hover:text-amber-900' : 'text-gray-300 hover:text-amber-600'}`}
+                                  className={`shrink-0 -ml-0.5 rounded p-0.5 transition-colors disabled:opacity-40 ${note.is_pinned ? 'text-gray-900 hover:text-black' : 'text-gray-300 hover:text-gray-600'}`}
                                   title={note.is_pinned ? '고정 해제' : '맨위로 고정'}
                                   aria-label={note.is_pinned ? '고정 해제' : '맨위로 고정'}
                                   aria-pressed={!!note.is_pinned}
@@ -2113,51 +2111,38 @@ export default function MedicalChartPanel({
                                       : <PinOff className="h-3 w-3" />}
                                 </button>
                                 <span
-                                  className="shrink-0 text-[8px] leading-tight text-amber-800/45 tabular-nums text-right"
+                                  className="shrink-0 text-[8px] leading-tight text-muted-foreground/60 tabular-nums text-right"
                                   data-testid="special-note-meta"
                                   title={(() => { try { return format(new Date(note.created_at), 'yyyy.MM.dd HH:mm'); } catch { return ''; } })()}
                                 >
                                   {metaDate} <span data-testid="special-note-recorder">{recorder}</span>
                                 </span>
                               </div>
-                              {/* 본문 — 왼쪽 정렬 */}
-                              <p className="text-left text-[11px] text-gray-800 whitespace-pre-wrap leading-snug break-words mt-0.5">
+                              {/* AC1-3: 본문 — 내용 강조(검은 볼드 글씨), 왼쪽 정렬 */}
+                              <p className="text-left text-[11px] font-semibold text-gray-900 whitespace-pre-wrap leading-snug break-words mt-0.5">
                                 {note.content}
                               </p>
                             </div>
                             );
-                          })
-                        )}
-                      </div>
+                          })}
+                        </div>
+                      )}
 
-                      {/* AC-1: 통합 텍스트박스 (모달·단계 없이 패널 내 바로 작성). 누적 append — 기존 항목 변경 안 됨 */}
-                      <div className="relative rounded-md border border-amber-200 bg-white focus-within:border-amber-400 focus-within:ring-1 focus-within:ring-amber-300 transition-colors">
-                        <Textarea
-                          value={specialNoteInput}
-                          onChange={e => setSpecialNoteInput(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault();
-                              if (!specialNoteSaving) addSpecialNote();
-                            }
-                          }}
-                          placeholder="여기에 특이사항을 적으세요 · Enter로 저장"
-                          rows={2}
-                          className="min-h-[44px] text-[11px] resize-none border-0 bg-transparent shadow-none px-2 py-1.5 pr-8 leading-snug focus-visible:ring-0 placeholder:text-amber-700/30"
-                          data-testid="special-note-input"
-                        />
-                        <button
-                          type="button"
-                          onClick={addSpecialNote}
-                          disabled={specialNoteSaving || !specialNoteInput.trim()}
-                          className="absolute right-1.5 bottom-1.5 shrink-0 rounded-md p-1 text-amber-600 hover:bg-amber-100 hover:text-amber-800 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                          title="저장 (Enter)"
-                          aria-label="특이사항 저장"
-                          data-testid="special-note-add-btn"
-                        >
-                          {specialNoteSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                        </button>
-                      </div>
+                      {/* AC1-6: 줄(inline) 입력 — 버튼/박스 없이 한 줄에 직접 입력, Enter 저장. 밑줄 스타일로 배경에 녹임. */}
+                      <Input
+                        value={specialNoteInput}
+                        onChange={e => setSpecialNoteInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && !(e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                            e.preventDefault();
+                            if (!specialNoteSaving && specialNoteInput.trim()) addSpecialNote();
+                          }
+                        }}
+                        placeholder="특이사항 입력 후 Enter"
+                        disabled={specialNoteSaving}
+                        className="h-7 text-[11px] border-0 border-b border-gray-200 rounded-none bg-transparent px-1 shadow-none focus-visible:ring-0 focus-visible:border-gray-900 placeholder:text-muted-foreground/40"
+                        data-testid="special-note-input"
+                      />
                     </div>
                   )}
                 </div>
@@ -2198,9 +2183,6 @@ export default function MedicalChartPanel({
                   <div className="flex items-center justify-between gap-1">
                     <span className="text-[9px] text-muted-foreground tabular-nums shrink-0">
                       {expandedCount}/{filteredDisplayCharts.length}건 펼침
-                      {memoFilters.size > 0 && (
-                        <span className="ml-0.5 text-amber-600">(전체 {displayCharts.length})</span>
-                      )}
                     </span>
                     <div className="flex gap-0.5 shrink-0">
                       <button
@@ -2250,12 +2232,8 @@ export default function MedicalChartPanel({
                     </div>
                   )}
 
-                  {/* 필터 결과 없음 */}
-                  {memoFilters.size > 0 && filteredDisplayCharts.length === 0 && (
-                    <div className="mx-2 mt-2 rounded border border-dashed p-3 text-[10px] text-muted-foreground text-center">
-                      해당 메모가 있는<br />방문 기록 없음
-                    </div>
-                  )}
+                  {/* T-20260609-foot-MEDCHART-SOAK-REFINE item2: 필터로 행을 지우지 않으므로
+                      '필터 결과 없음' 빈 상태(날짜행 소거) 제거 — 방문 날짜행은 항상 보존, 내용만 가린다. */}
 
                   {/* 아코디언 엔트리 목록 */}
                   {filteredDisplayCharts.map(chart => {
