@@ -147,7 +147,8 @@ export default function DrugFolderTree({ onAdd, disabled = false }: DrugFolderTr
                 <div
                   key={d.prescription_code_id}
                   className={cn(
-                    'flex items-center gap-1.5 rounded-md border px-2 py-1.5 transition-colors',
+                    // DRUGINFO-TRUNCATE-FIX AC5-3: 약품명 줄바꿈 시 체크박스 상단정렬(items-start) — 행 높이 자동확장
+                    'flex items-start gap-1.5 rounded-md border px-2 py-1.5 transition-colors',
                     isSel ? 'border-teal-400 bg-teal-50/50' : 'border-transparent hover:border-teal-200 hover:bg-teal-50/30',
                   )}
                   data-testid="drug-folder-item"
@@ -170,18 +171,21 @@ export default function DrugFolderTree({ onAdd, disabled = false }: DrugFolderTr
                     className="flex-1 text-left disabled:opacity-50"
                     data-testid="drug-folder-item-add"
                   >
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-medium truncate flex-1">{d.name_ko}</span>
+                    {/* T-20260609-foot-DRUGINFO-TRUNCATE-FIX AC5-1/5-2: 약품명 말줄임(...) 제거 →
+                        줄바꿈(break-words)으로 전체표시. 행 높이 자동확장 허용(AC5-3). */}
+                    <div className="flex items-start gap-1.5">
+                      <span className="text-xs font-medium break-words flex-1 min-w-0">{d.name_ko}</span>
                       {d.code_source === 'custom' && (
-                        <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0">자체</Badge>
+                        <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0 mt-0.5">자체</Badge>
                       )}
                     </div>
-                    <div className="text-[10px] text-muted-foreground flex items-center gap-1.5">
-                      <span className="font-mono">{d.claim_code}</span>
-                      {d.classification && <span>· {d.classification}</span>}
+                    {/* AC5-2: 약정보 메타(코드·분류·제조사)도 가로 잘림 없이 줄바꿈 흐름. */}
+                    <div className="text-[10px] text-muted-foreground flex flex-wrap items-center gap-x-1.5">
+                      <span className="font-mono break-all">{d.claim_code}</span>
+                      {d.classification && <span className="break-words">· {d.classification}</span>}
                       {/* DRUGINFO-MANUFACTURER: 제약사(제조사). NULL/빈값(custom)은 표기 생략 — 레이아웃 보존 */}
                       {d.manufacturer && d.manufacturer.trim() !== '' && (
-                        <span data-testid="drug-folder-item-manufacturer" className="truncate">· {d.manufacturer}</span>
+                        <span data-testid="drug-folder-item-manufacturer" className="break-words">· {d.manufacturer}</span>
                       )}
                     </div>
                   </button>
