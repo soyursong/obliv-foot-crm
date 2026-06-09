@@ -4513,7 +4513,11 @@ export default function Dashboard() {
       let prevRow: CheckIn | undefined;
       setRows((curr) => {
         prevRow = curr.find((r) => r.id === row.id);
-        return curr.map((r) => (r.id === row.id ? { ...r, status: newStatus, sort_order: moveOrder } : r));
+        // T-20260609-foot-DASH-COMPLETE-PAYFLAG-SYNC: '완료' 이동 시 수납완료(dark_gray) 플래그를
+        //   낙관적으로 함께 set → 카드 즉시 회색 리렌더. 비-완료 컬럼 이동에는 미발화(가드).
+        return curr.map((r) => (r.id === row.id
+          ? { ...r, status: newStatus, sort_order: moveOrder, ...(newStatus === 'done' ? { status_flag: 'dark_gray' as StatusFlag } : {}) }
+          : r));
       });
 
       const patch: Record<string, unknown> = { status: newStatus, sort_order: moveOrder };
@@ -4547,6 +4551,20 @@ export default function Dashboard() {
         const err = await autoDeductSession(row.id, row.package_id);
         if (err) toast.error(`세션 소진 실패: ${err}`);
         // T-20260522-foot-SLOT-TOAST-REMOVE AC-1: 슬롯 이동 성공 토스트 제거
+      }
+      // T-20260609-foot-DASH-COMPLETE-PAYFLAG-SYNC: '완료' 이동 시 수납완료(dark_gray) 플래그 영속화.
+      //   status_flag 전이는 SSOT applyStatusFlagTransition 경유(병렬 2nd write 금지) — DB write +
+      //   감사 이력 append. 표시 플래그 한정(결제/수납 데이터 무변경). 실패해도 상태 이동은 유지.
+      if (newStatus === 'done') {
+        try {
+          await applyStatusFlagTransition(row, 'dark_gray', {
+            id: profile?.id ?? null,
+            name: profile?.name ?? null,
+            role: profile?.role ?? null,
+          });
+        } catch (e) {
+          toast.error(`수납완료 플래그 동기화 실패: ${(e as Error).message}`);
+        }
       }
       // T-20260602-foot-VISITTYPE-RETURNING-AUTOSET: 완료 시 visit_type 자동 승격 (best-effort)
       if (newStatus === 'done') await promoteVisitTypeToReturning(row.customer_id);
@@ -4788,7 +4806,11 @@ export default function Dashboard() {
     let prevRow: CheckIn | undefined;
     setRows((curr) => {
       prevRow = curr.find((r) => r.id === ci.id);
-      return curr.map((r) => (r.id === ci.id ? { ...r, status: newStatus } : r));
+      // T-20260609-foot-DASH-COMPLETE-PAYFLAG-SYNC: '완료'로 변경 시 수납완료(dark_gray) 낙관적 동기화
+      //   → 즉시 회색 리렌더. 비-완료 상태 변경에는 미발화(가드).
+      return curr.map((r) => (r.id === ci.id
+        ? { ...r, status: newStatus, ...(newStatus === 'done' ? { status_flag: 'dark_gray' as StatusFlag } : {}) }
+        : r));
     });
     const patch: Record<string, unknown> = { status: newStatus };
     if (newStatus === 'done') patch.completed_at = new Date().toISOString();
@@ -4818,6 +4840,19 @@ export default function Dashboard() {
       const err = await autoDeductSession(ci.id, ci.package_id);
       if (err) toast.error(`세션 소진 실패: ${err}`);
       // T-20260522-foot-SLOT-TOAST-REMOVE AC-1: 슬롯 이동 성공 토스트 제거
+    }
+    // T-20260609-foot-DASH-COMPLETE-PAYFLAG-SYNC: '완료'로 변경 시 수납완료(dark_gray) 플래그 영속화
+    //   (SSOT applyStatusFlagTransition 경유 — DB write + 감사 이력). 표시 한정, 결제 데이터 무변경.
+    if (newStatus === 'done') {
+      try {
+        await applyStatusFlagTransition(ci, 'dark_gray', {
+          id: profile?.id ?? null,
+          name: profile?.name ?? null,
+          role: profile?.role ?? null,
+        });
+      } catch (e) {
+        toast.error(`수납완료 플래그 동기화 실패: ${(e as Error).message}`);
+      }
     }
     // T-20260602-foot-VISITTYPE-RETURNING-AUTOSET: 완료 시 visit_type 자동 승격 (best-effort)
     if (newStatus === 'done') await promoteVisitTypeToReturning(ci.customer_id);
