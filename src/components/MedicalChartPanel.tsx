@@ -2214,7 +2214,7 @@ export default function MedicalChartPanel({
                 <div className="flex-none px-2 pt-2 pb-1">
                   <span
                     className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-700 uppercase tracking-wide"
-                    title="이 패널은 '진료 경과'만 시간순으로 모읍니다 — 진료메모·치료메모·처방. 항목을 클릭하면 우측 폼에서 편집합니다. ▸ 상담기록은 우측 '📋 상담' 탭에 있습니다. ▸ 우측 '방문 진료내역'은 방문(체크인) 단위 읽기전용 뷰입니다."
+                    title="이 패널은 '진료 경과'만 시간순으로 모읍니다 — 진료메모·치료메모·처방. 항목을 클릭하면 우측 폼에서 편집합니다. ▸ 상담기록은 우측 '📋 상담' 탭에 있습니다. ▸ 우측 '방문이력'은 방문(체크인) 단위 읽기전용 뷰입니다."
                   >
                     <Stethoscope className="h-3 w-3" />
                     진료 경과 타임라인
@@ -3388,7 +3388,7 @@ export default function MedicalChartPanel({
                           className="text-[10px] font-semibold text-muted-foreground"
                           title="방문(체크인) 단위 진료 기록을 읽기전용으로 보여줍니다. ↔ 좌측 '경과 타임라인'은 진료차트 회차 기록(편집 가능)입니다."
                         >
-                          방문 진료내역 (읽기전용)
+                          방문이력 (읽기전용)
                         </span>
                         <span className="text-[9px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">
                           2번차트 1구역
