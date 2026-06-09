@@ -657,6 +657,9 @@ export function PenChartTab({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // T-20260522-foot-PENCHART-ERASER-CLARITY: 배경 레이어 (양식 이미지 전용 — 지우개 미적용)
   const bgCanvasRef = useRef<HTMLCanvasElement>(null);
+  // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #2: draw 모드 스크롤 컨테이너 — 상용구 즉시삽입 시
+  //   현재 보이는 영역 상단에 배치하기 위한 viewport 앵커 계산용.
+  const drawScrollRef = useRef<HTMLDivElement>(null);
   // T-20260522-foot-PENCHART-REFUND-AUTOFILL: 환불동의서 자동채움 데이터 (initCanvas 내 img.onload 에서 읽음)
   const autofillDataRef = useRef<AutofillFields | null>(null);
   const [savedCharts, setSavedCharts] = useState<SavedChart[]>([]);
@@ -693,20 +696,19 @@ export function PenChartTab({
   const [activeTool, setActiveTool] = useState<ActiveTool>('pen');
   // T-20260522-foot-PENCHART-TOOLS-V2 AC-5: 형광펜 색상
   const [highlightColor, setHighlightColor] = useState('#fde047');
+  // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #3: 형광펜 농도(투명도) 가변 — 기본 0.20 유지(TOOLS-V3 동일).
+  //   서브패널 슬라이더로 0.10~0.35 조절. 세션 유지(차트 진입 동안), 저장포맷 무관.
+  const [highlightAlpha, setHighlightAlpha] = useState(0.20);
   // T-20260522-foot-PENCHART-TOOLS-V3: 배치된 아이템 목록 (텍스트/상용구 드래그·삭제용)
   const [placedItems, setPlacedItems] = useState<PlacedItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [hasDrawing, setHasDrawing] = useState(false);
   const [selectedChart, setSelectedChart] = useState<SavedChart | null>(null);
-  // T-20260602-foot-PENCHART-LOCK-PANZOOM: 차트 고정/잠금 토글 (빨간X).
-  //   ON  → 캔버스 touchAction:'none' + 스크롤 컨테이너 overflow:hidden
-  //         → 펜/형광펜 드로잉 시 네이티브 pan/zoom·스크롤 완전 차단, 획만 기입 (AC-1·2)
-  //   OFF → 기존 동작 (touchAction:'pan-y' + overflow-auto) 유지 → pan/scroll 정상 (AC-3)
-  //   규명: 기존 코드에 고정 토글·pan/zoom lib 부재. 유일한 pan/zoom 출처는
-  //         캔버스 touchAction:'pan-y'(b9cd022 SCROLL-BLOCK) + 래퍼 overflow 스크롤.
-  //         → lock state를 게이팅 조건으로 신규 연결.
-  const [chartLocked, setChartLocked] = useState(false);
+  // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #5: [고정](chartLocked) 토글 제거.
+  //   STROKE-LAG(deployed)가 드로잉 도구(pen/highlight/eraser/white) 활성 시 touchAction:'none'을
+  //   자동 적용 → 고정 토글의 "드로잉 중 스크롤 차단" 목적을 이미 대체. 비드로잉 도구(text/상용구/select)는
+  //   touchAction:'pan-y' 유지 → 세로 스크롤 정상. 토글 UI·state·overflow 게이팅 일괄 제거(회귀 0 검증).
 
   // 상용구 상태
   const [pendingBoilerplate, setPendingBoilerplate] = useState<string>('');
@@ -760,6 +762,8 @@ export function PenChartTab({
   const penColorRef       = useRef('#1a1a1a');
   const penSizeRef        = useRef<number>(DEFAULT_THICKNESS.pen);
   const highlightColorRef = useRef('#fde047');
+  // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #3: 형광펜 농도 ref — native pointermove(stable, deps 없음)가 최신 alpha 참조
+  const highlightAlphaRef = useRef(0.20);
   // strokeScaleRef: scaleX/scaleY를 onPointerDown에서 1회 계산 → native handler가 매 이벤트마다 재계산 생략
   const strokeScaleRef    = useRef<{ x: number; y: number }>({ x: 1, y: 1 });
   // ── T-20260606-foot-PENCHART-REFUND-PEN-MISS: 스크롤로 인한 strokeRect 캐시 stale 방지 ──────────
@@ -824,6 +828,7 @@ export function PenChartTab({
   penColorRef.current       = penColor;
   penSizeRef.current        = penSize;
   highlightColorRef.current = highlightColor;
+  highlightAlphaRef.current = highlightAlpha; // #3: 형광펜 농도 → native handler 동기화
 
   const storagePath = `customer/${customerId}/pen-chart`;
 
@@ -1055,13 +1060,19 @@ export function PenChartTab({
       ctx.lineCap     = 'round';
       ctx.lineJoin    = 'round';
     } else if (tool === 'white') {
-      ctx.strokeStyle = '#ffffff';
+      // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #4 (AC-6 재정의): 화이트=destination-out 지움.
+      //   기존 source-over 흰색 stroke는 draw 레이어에 불투명 흰색을 칠해 저장 합성 시 양식(bgCanvas)을
+      //   가렸다(=현장 '양식까지 지워버림'). destination-out으로 전환 → draw 레이어 픽셀만 투명화 →
+      //   하단 양식(괘선·인쇄텍스트) 그대로 비쳐 보존. placedItems(텍스트/상용구) 삭제는 onPointerUp hit-test 유지.
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.strokeStyle = 'rgba(0,0,0,1)';
       ctx.globalAlpha = 1;
       ctx.lineWidth   = penSize * 8;
       ctx.lineCap     = 'round';
       ctx.lineJoin    = 'round';
     } else if (tool === 'highlight') {
-      ctx.globalAlpha = 0.20;
+      // #3: 고정 0.20 → 가변 highlightAlphaRef (서브패널 슬라이더, 기본 0.20)
+      ctx.globalAlpha = highlightAlphaRef.current;
       ctx.strokeStyle = highlightColor;
       ctx.lineWidth   = penSize * 6 + 6;
       ctx.lineCap     = 'round';
@@ -1135,6 +1146,8 @@ export function PenChartTab({
     }
 
     if (tool === 'highlight') ctx.globalAlpha = 1; // globalAlpha 복원
+    // #4: white(destination-out) 후 GCO를 source-over로 복원 — 다음 펜/형광펜 stroke가 지우개로 새지 않도록
+    if (tool === 'white') ctx.globalCompositeOperation = 'source-over';
 
     if (perf.enabled) perf.drawTimeTotal += performance.now() - _perfT0; // stroke 래스터 시간(redraw 비용 지표)
   }, []); // eslint-disable-line react-hooks/exhaustive-deps — stable; state via *Ref.current
@@ -1764,24 +1777,59 @@ export function PenChartTab({
   };
 
   // ── 상용구 배치 (V3: placedItems 에 추가 — 드래그·삭제 지원) ─────────────
+  // 캔버스 탭 경로(boilerplate-placing 모드)에서 호출: pendingBoilerplate를 탭 좌표에 배치.
   const placeBoilerplate = (x: number, y: number) => {
+    placeBoilerplateAt(pendingBoilerplate, x, y, true);
+  };
+
+  // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #2: 상용구 텍스트를 지정 좌표에 직접 commit.
+  //   캔버스 탭(placing) 경로와 ✓ 즉시삽입 경로가 공유. fromPlacing=true면 placing 모드 정리(pen 전환).
+  const placeBoilerplateAt = (text: string, x: number, y: number, fromPlacing: boolean) => {
     const fontSize = Math.round(penSize * 4 + 6);
     const newItem: PlacedItem = {
       id: `bp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       type: 'boilerplate',
       x, y,
-      text: pendingBoilerplate,
+      text,
       fontSize,
       color: penColor,
     };
     setPlacedItems((prev) => [...prev, newItem]);
     emptyRef.current = false;
     setHasDrawing(true);
-    switchTool('pen');
     setPendingBoilerplate('');
-    // T-20260603-foot-PHRASE-MOVE-RESTORE (B안·AC-2): 배치 직후 방금 놓은 상용구를 자동 선택
-    // → 이동 그립이 보라색으로 강조돼 "여기를 잡아 옮길 수 있다"는 affordance를 즉시 노출.
-    setSelectedIds(new Set([newItem.id]));
+    if (fromPlacing) {
+      // 탭 배치(B안·AC-2): pen 전환 + 방금 놓은 상용구 자동 선택(이동 그립 강조)
+      switchTool('pen');
+      setSelectedIds(new Set([newItem.id]));
+    } else {
+      // ✓ 즉시삽입(#2): 캔버스 탭 단계 없이 commit. select 도구로 전환 + 자동 선택 →
+      //   오버레이가 즉시 interactive(드래그 가능) + "1개 선택됨" 노출로 "삽입됐다"는 피드백 가시화.
+      setActiveTool('select');
+      setShowPhrasePanel(false);
+      setSelectedIds(new Set([newItem.id]));
+    }
+  };
+
+  // #2: 현재 보이는 영역(스크롤 위치 반영) 좌상단의 캔버스 논리 좌표 — 즉시삽입 시 화면 밖 배치 방지.
+  const computeVisibleAnchor = (): { x: number; y: number } => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 60, y: 60 };
+    const dpr = drawDprRef.current;
+    const logicalW = canvas.width / dpr;
+    const logicalH = canvas.height / dpr;
+    const cRect = canvas.getBoundingClientRect();
+    if (cRect.width === 0 || cRect.height === 0) return { x: 60, y: 60 };
+    const scaleX = logicalW / cRect.width;
+    const scaleY = logicalH / cRect.height;
+    let visTopCss = 28, visLeftCss = 28;
+    const scrollEl = drawScrollRef.current;
+    if (scrollEl) {
+      const sRect = scrollEl.getBoundingClientRect();
+      visTopCss  = Math.max(0, sRect.top  - cRect.top)  + 32;
+      visLeftCss = Math.max(0, sRect.left - cRect.left) + 32;
+    }
+    return { x: visLeftCss * scaleX, y: visTopCss * scaleY };
   };
 
   // T-20260522-foot-PENCHART-TOOLS-V3 AC-7~9: 텍스트 도구 — placedItems에 추가 (드래그·삭제 지원)
@@ -1869,10 +1917,11 @@ export function PenChartTab({
       const sz = penSize * 4;
       ctx.clearRect(pos.x - sz, pos.y - sz, sz * 2, sz * 2);
     } else if (activeTool === 'white') {
-      // T-20260522-foot-PENCHART-TOOL-UX AC-3: 화이트 — source-over 흰색 + placedItems hit-test 삭제
+      // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #4: 화이트 시작점 — destination-out(지움)으로 draw 레이어만
+      //   투명화 → 하단 양식 보존. placedItems hit-test 삭제는 onPointerUp 유지. (save/restore로 GCO 격리)
       ctx.save();
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = '#ffffff';
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = 'rgba(0,0,0,1)';
       ctx.globalAlpha = 1;
       const sz = penSize * 4;
       ctx.beginPath();
@@ -1889,7 +1938,7 @@ export function PenChartTab({
       ctx.beginPath();
       const r = Math.max(penSize * 3 + 3, 4);
       ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
-      ctx.globalAlpha = 0.20;
+      ctx.globalAlpha = highlightAlpha; // #3: 가변 농도(기본 0.20)
       ctx.fillStyle = highlightColor;
       ctx.fill();
       ctx.globalAlpha = 1;
@@ -2014,11 +2063,31 @@ export function PenChartTab({
     if (!canvas) return;
     setSaving(true);
     try {
+      // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #6: 저장 직전 미확정 텍스트 입력 자동 commit.
+      //   [회귀 RC] 텍스트 도구로 글자를 타이핑한 뒤 '삽입' 버튼을 누르지 않고 바로 '저장'을 누르면
+      //   textInputValue가 placedItems에 들어가지 않아 래스터화 대상에서 빠짐 → "텍스트가 차트에 고정 안 됨".
+      //   → 저장 시점에 열려있는 입력값을 placedItems에 흡수해 항상 영속화. (저장포맷=PNG 불변, 하위호환)
+      const pendingTextItems: PlacedItem[] = [];
+      if (textInputPos && textInputValue.trim()) {
+        pendingTextItems.push({
+          id: `txt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          type: 'text',
+          x: textInputPos.x,
+          y: textInputPos.y,
+          text: textInputValue,
+          fontSize: Math.round(penSize * 4 + 6),
+          color: penColor,
+        });
+      }
+      const itemsToRasterize = pendingTextItems.length > 0
+        ? [...placedItems, ...pendingTextItems]
+        : placedItems;
+
       // T-20260522-foot-PENCHART-TOOLS-V3: placedItems(텍스트·상용구)를 draw canvas에 먼저 래스터화
-      if (placedItems.length > 0) {
+      if (itemsToRasterize.length > 0) {
         const drawCtx = canvas.getContext('2d');
         if (drawCtx) {
-          for (const item of placedItems) {
+          for (const item of itemsToRasterize) {
             const lines = item.text.split('\n');
             drawCtx.save();
             drawCtx.font = `${item.fontSize}px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif`;
@@ -2114,6 +2183,9 @@ export function PenChartTab({
       await loadSavedCharts();
       setPlacedItems([]);
       setSelectedIds(new Set());
+      // #6: 저장에 흡수된 미확정 텍스트 입력창 정리
+      setTextInputPos(null);
+      setTextInputValue('');
       setActiveDrawTemplate(null);
       setMode('list');
 
@@ -2147,15 +2219,9 @@ export function PenChartTab({
   };
 
   // ── 상용구 선택 ──────────────────────────────────────────────────────
-  const handleBoilerplateSelect = (text: string) => {
-    setPendingBoilerplate(text);
-    setActiveTool('boilerplate-placing');
-    setPenSize(DEFAULT_THICKNESS['boilerplate-placing']);
-
-    setShowPhrasePanel(false);
-    setTextInputPos(null);
-    // V3 C-2: 안내 토스트 제거 (인라인 배지로 대체)
-  };
+  // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #2: handleBoilerplateSelect(placing 모드 진입) 제거 —
+  //   ✓ 즉시삽입(insertPhraseImmediate → placeBoilerplateAt)로 대체. 캔버스 탭 의존 동선이 갤탭 터치에서
+  //   "선택만 되고 안 들어감" 회귀를 유발했으므로 placing 진입 경로 자체를 폐기.
 
   // ── [DEACTIVATED — T-20260605-foot-RX-PHRASE-INSERT-UX Q1] 복수 선택 토글/확정/초기화 ──
   //   복원 시 아래 3종 핸들러 + selectedPhraseIds 상태 + combineBoilerplate 헬퍼를 함께 주석 해제.
@@ -2194,7 +2260,15 @@ export function PenChartTab({
       setRevealedPhraseId(null);
       return;
     }
-    handleBoilerplateSelect(content);
+    // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #2 (AC-3): ✓ 클릭 = 즉시 캔버스에 commit.
+    //   [회귀 RC] 기존 동선은 handleBoilerplateSelect로 'boilerplate-placing' 모드만 진입시키고
+    //   실제 배치는 사용자의 "캔버스 탭"에 의존했다. 갤탭(터치)에서는 placing 모드 캔버스 touchAction:'pan-y'
+    //   라 손가락 탭이 스크롤 의도로 흡수돼 onPointerDown 미발화 → "✓ 선택만 되고 안 들어감"으로 재발.
+    //   → 탭 의존 제거: 보이는 영역 좌상단에 즉시 배치 + select 도구 자동전환(드래그로 위치 조정 가능).
+    const { x, y } = computeVisibleAnchor();
+    // 연속 삽입 시 겹침 방지 — 기존 상용구 수만큼 소폭 stagger
+    const n = placedItems.filter((it) => it.type === 'boilerplate').length % 6;
+    placeBoilerplateAt(content, x + n * 14, y + n * 30, false);
     setRevealedPhraseId(null);
   };
 
@@ -2437,23 +2511,7 @@ export function PenChartTab({
             {isSelectTool && <span className="ml-0.5 text-emerald-600 animate-pulse">●</span>}
           </button>
 
-          {/* 형광펜 색상 선택 (형광펜 모드일 때만 표시) */}
-          {isHighlight && (
-            <div className="flex items-center gap-1 pl-1 border-l border-gray-200">
-              {HIGHLIGHT_COLORS.map((c) => (
-                <button
-                  key={c.value}
-                  onClick={() => setHighlightColor(c.value)}
-                  className={cn(
-                    'h-5 w-5 rounded border-2 transition',
-                    highlightColor === c.value ? 'border-gray-600 scale-125' : 'border-transparent hover:border-gray-400',
-                  )}
-                  style={{ backgroundColor: c.value }}
-                  title={c.label}
-                />
-              ))}
-            </div>
-          )}
+          {/* T-20260609-foot-PENCHART-TOOLS-UX-6FIX #1: 형광펜 색상·농도·굵기는 도구 바로 아래 통일 서브패널로 이동 */}
 
           {/* V3 AC-12: T상용구 — 중복 메뉴 통합. phrase_templates(DB) 단일 메뉴로 통합 */}
           <div className="relative">
@@ -2659,56 +2717,10 @@ export function PenChartTab({
             </div>
           )}
 
-          {/* ── 펜 색상 (펜/상용구/텍스트 모드) ── */}
-          {(activeTool === 'pen' || activeTool === 'text' || activeTool === 'boilerplate-placing') && (
-            <div className="flex items-center gap-1">
-              {PEN_COLORS.map((c) => (
-                <button
-                  key={c.value}
-                  onClick={() => setPenColor(c.value)}
-                  className={cn(
-                    'h-5 w-5 rounded-full border-2 transition',
-                    penColor === c.value ? 'border-gray-600 scale-110' : 'border-transparent hover:border-gray-400',
-                  )}
-                  style={{ backgroundColor: c.value }}
-                  title={c.label}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* V3 C-1: 굵기 슬라이더 max 8→5 */}
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span>굵기</span>
-            <input
-              type="range" min={1} max={5} step={0.5} value={penSize}
-              onChange={(e) => setPenSize(parseFloat(e.target.value))}
-              className="w-16"
-            />
-            <span className="tabular-nums w-4">{penSize}</span>
-          </div>
+          {/* T-20260609-foot-PENCHART-TOOLS-UX-6FIX #1: 펜 색상·굵기는 도구 바로 아래 통일 서브패널로 이동.
+              #5: [고정](chartLocked) 토글 제거 — 드로잉 도구 활성 시 touchAction:'none' 자동화로 목적 대체. */}
 
           <div className="ml-auto flex gap-1.5">
-            {/* T-20260602-foot-PENCHART-LOCK-PANZOOM: 차트 고정/잠금 토글 (빨간X) —
-                ON 시 캔버스 touchAction:'none' + 컨테이너 overflow:hidden 게이팅으로
-                펜/형광펜 드로잉 중 pan/zoom·스크롤 완전 차단 (AC-1·2·4) */}
-            <button
-              onClick={() => setChartLocked((v) => !v)}
-              aria-pressed={chartLocked}
-              data-testid="penchart-lock-toggle"
-              data-locked={chartLocked ? 'true' : 'false'}
-              className={cn(
-                'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
-                chartLocked
-                  ? 'bg-red-600 border-red-700 text-white font-semibold shadow-sm'
-                  : 'bg-white border-red-300 text-red-600 hover:bg-red-50',
-              )}
-              title={chartLocked
-                ? '차트 고정됨 — 펜/형광펜 드로잉 중 차트가 움직이지 않습니다. 클릭하여 고정 해제'
-                : '차트 고정 — 클릭하면 차트가 고정되어 드로잉 중 pan/zoom이 차단됩니다'}
-            >
-              <X className="h-3.5 w-3.5" /> {chartLocked ? '고정됨' : '고정'}
-            </button>
             {/* Undo */}
             <button
               onClick={handleUndo}
@@ -2751,12 +2763,92 @@ export function PenChartTab({
           </div>
         </div>
 
-        {/* 스크롤 콘텐츠 — T-20260602-foot-PENCHART-LOCK-PANZOOM:
-            고정 ON 시 overflow:hidden 으로 세로 pan/스크롤 차단 (AC-1) */}
-        <div className={cn('flex-1 p-4 space-y-4', chartLocked ? 'overflow-hidden' : 'overflow-auto')}>
+        {/* ── T-20260609-foot-PENCHART-TOOLS-UX-6FIX #1: 도구별 통일 서브패널 ──────────────
+            도구를 클릭하면 도구 바로 아래(이 줄)에 그 도구가 지원하는 컬러/굵기/농도 옵션이 인라인 노출.
+            [텍스트] 패턴을 전 도구로 통일. 지우개·화이트=굵기만(컬러 없음, AC-2). 선택/이동=옵션 없음. */}
+        <div
+          className="flex-none border-b bg-gray-50 px-3 py-1.5 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs min-h-[34px]"
+          data-testid="penchart-subpanel"
+        >
+          {/* 컬러 — 펜/텍스트/상용구배치 */}
+          {(activeTool === 'pen' || isTextTool || isBoilerplatePlacing) && (
+            <div className="flex items-center gap-1.5" data-testid="subpanel-color">
+              <span className="text-muted-foreground">색상</span>
+              {PEN_COLORS.map((c) => (
+                <button
+                  key={c.value}
+                  onClick={() => setPenColor(c.value)}
+                  className={cn(
+                    'h-5 w-5 rounded-full border-2 transition',
+                    penColor === c.value ? 'border-gray-600 scale-110' : 'border-transparent hover:border-gray-400',
+                  )}
+                  style={{ backgroundColor: c.value }}
+                  title={c.label}
+                />
+              ))}
+            </div>
+          )}
 
-        {/* 캔버스 — 2-layer 스택 (고정 ON 시 가로 pan 차단) */}
-        <div className={cn('rounded-lg border bg-white p-2', chartLocked ? 'overflow-x-hidden' : 'overflow-x-auto')}>
+          {/* 형광펜 컬러 */}
+          {isHighlight && (
+            <div className="flex items-center gap-1.5" data-testid="subpanel-hl-color">
+              <span className="text-muted-foreground">색상</span>
+              {HIGHLIGHT_COLORS.map((c) => (
+                <button
+                  key={c.value}
+                  onClick={() => setHighlightColor(c.value)}
+                  className={cn(
+                    'h-5 w-5 rounded border-2 transition',
+                    highlightColor === c.value ? 'border-gray-600 scale-125' : 'border-transparent hover:border-gray-400',
+                  )}
+                  style={{ backgroundColor: c.value }}
+                  title={c.label}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* 형광펜 농도 (#3) */}
+          {isHighlight && (
+            <div className="flex items-center gap-1.5 text-muted-foreground" data-testid="subpanel-hl-opacity">
+              <span>농도</span>
+              <input
+                type="range" min={0.10} max={0.35} step={0.01} value={highlightAlpha}
+                onChange={(e) => setHighlightAlpha(parseFloat(e.target.value))}
+                className="w-20"
+                data-testid="subpanel-hl-opacity-range"
+              />
+              <span className="tabular-nums w-8">{Math.round(highlightAlpha * 100)}%</span>
+            </div>
+          )}
+
+          {/* 굵기/글자크기 — 선택/이동 외 전 도구 (지우개·화이트도 굵기만 노출, AC-2) */}
+          {!isSelectTool && (
+            <div className="flex items-center gap-1.5 text-muted-foreground" data-testid="subpanel-thickness">
+              <span>{isTextTool ? '글자 크기' : '굵기'}</span>
+              <input
+                type="range" min={1} max={5} step={0.5} value={penSize}
+                onChange={(e) => setPenSize(parseFloat(e.target.value))}
+                className="w-20"
+                data-testid="subpanel-thickness-range"
+              />
+              <span className="tabular-nums w-4">{penSize}</span>
+            </div>
+          )}
+
+          {/* 선택/이동 — 옵션 없음, 안내만 */}
+          {isSelectTool && (
+            <span className="text-muted-foreground" data-testid="subpanel-select-hint">
+              배치된 텍스트·상용구를 드래그해 이동하거나, 선택 후 삭제하세요.
+            </span>
+          )}
+        </div>
+
+        {/* 스크롤 콘텐츠 (#5: chartLocked 제거 → 항상 overflow-auto) */}
+        <div ref={drawScrollRef} className="flex-1 p-4 space-y-4 overflow-auto">
+
+        {/* 캔버스 — 2-layer 스택 */}
+        <div className="rounded-lg border bg-white p-2 overflow-x-auto">
           <div className="text-[10px] text-muted-foreground mb-1">
             {activeDrawTemplate
               ? `양식: ${activeDrawTemplate.name_ko}`
@@ -2798,17 +2890,16 @@ export function PenChartTab({
                 //     전부 pointer 핸들러로 전달 → 펜/형광펜 획만 기입, 차트 안 움직임.
                 //   OFF → 'pan-y' (기존 동작: touch 세로 스크롤 허용, AC-3 회귀 없음).
                 // ── T-20260609-foot-PENCHART-STROKE-LAG (RC 대표 코드직독 100% 확정 / A안 채택) ──
-                //   [RC] 기본 chartLocked=false → touchAction:'pan-y'. 갤탭 WebView가 S펜(pointerType==='pen')
-                //   세로 이동 5~20px를 native 세로스크롤 의도로 해석 → pointercancel 발화 → onPointerUp 경로로
-                //   drawingRef=false → stroke 강제 종료 = '모든 양식 공통 세로선 뚝뚝 끊김'. touch-action CSS는
-                //   pointerType 무관이라 기존 pointerType==='touch' 가드(L928/L1735)로 못 막는다(S펜=pen).
-                //   [수정 A안] 드로잉 도구 활성 시 'none'으로 스크롤 하이재킹 차단 → pointercancel 비발생 → 획 연속.
-                //   대상=펜/형광펜/지우개 + 화이트(수정펜, 동일 stroke 경로라 동일 결함 → 포함). 텍스트/상용구/이동
-                //   도구는 pan-y 유지 → 스크롤 회귀 0(AC-3). chartLocked 토글·저장포맷·렌더경로 무변경.
+                //   드로잉 도구(펜/형광펜/지우개/화이트) 활성 시 'none' → 갤탭 S펜 세로이동을 native 세로스크롤로
+                //   오해해 pointercancel 발화 → 세로선 끊김 되던 회귀 차단. 비드로잉 도구(텍스트/상용구/선택/이동)는
+                //   'pan-y' 유지 → 세로 스크롤 정상(AC-10). 저장포맷·렌더경로 무변경.
+                // ── T-20260609-foot-PENCHART-TOOLS-UX-6FIX #5: [고정](chartLocked) 토글 제거 ──
+                //   위 드로잉 도구 'none' 자동화가 토글의 "드로잉 중 스크롤 차단" 목적을 이미 대체 →
+                //   chartLocked 분기 삭제. 비드로잉 도구는 항상 'pan-y'.
                 touchAction:
                   (activeTool === 'pen' || activeTool === 'highlight' || activeTool === 'eraser' || activeTool === 'white')
                     ? 'none'
-                    : chartLocked ? 'none' : 'pan-y',
+                    : 'pan-y',
                 cursor: isBoilerplatePlacing ? 'text' : isTextTool ? 'text' : isEraser ? 'cell' : isHighlight ? 'crosshair' : 'crosshair',
                 display: 'block',
                 // T-20260525-foot-PENCHART-FORM-BLACKSCR REOPEN 3 — 근본 수정:

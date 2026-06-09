@@ -18,36 +18,35 @@ import path from 'path';
 
 const SRC = path.resolve('src/components/PenChartTab.tsx');
 
-// 수정본 touchAction 모델 — 드로잉 도구는 'none', 그 외는 chartLocked 의존.
+// 수정본 touchAction 모델 — 드로잉 도구는 'none', 그 외는 'pan-y'.
+// [2026-06-09 TOOLS-UX-6FIX #5] chartLocked 토글 제거 → locked 분기 폐기(드로잉 none 자동화가 목적 대체).
 const DRAW_TOOLS = ['pen', 'highlight', 'eraser', 'white'] as const;
 const NON_DRAW_TOOLS = ['text', 'boilerplate-placing', 'select'] as const;
-const canvasTouchAction = (tool: string, locked: boolean): 'none' | 'pan-y' =>
-  (DRAW_TOOLS as readonly string[]).includes(tool) ? 'none' : locked ? 'none' : 'pan-y';
+const canvasTouchAction = (tool: string): 'none' | 'pan-y' =>
+  (DRAW_TOOLS as readonly string[]).includes(tool) ? 'none' : 'pan-y';
 
 test.describe('T-20260609-foot-PENCHART-STROKE-LAG', () => {
   test('AC-1: 드로잉 도구(pen/highlight/eraser/white) 활성 시 캔버스 touchAction="none"', () => {
     for (const t of DRAW_TOOLS) {
-      expect(canvasTouchAction(t, false), `${t} unlocked`).toBe('none');
-      expect(canvasTouchAction(t, true), `${t} locked`).toBe('none');
+      expect(canvasTouchAction(t), `${t}`).toBe('none');
     }
   });
 
-  test('AC-3: 텍스트/상용구/이동 도구 + 미잠금 → pan-y 유지 (네이티브 세로 스크롤 회귀 0)', () => {
+  test('AC-3: 텍스트/상용구/이동 도구 → pan-y 유지 (네이티브 세로 스크롤 회귀 0)', () => {
     for (const t of NON_DRAW_TOOLS) {
-      expect(canvasTouchAction(t, false), `${t} unlocked`).toBe('pan-y');
-      expect(canvasTouchAction(t, true), `${t} locked`).toBe('none'); // chartLocked 토글 의도 보존
+      expect(canvasTouchAction(t), `${t}`).toBe('pan-y');
     }
   });
 
-  test('소스 정합: 드로잉 도구 touchAction:"none" 분기 + 비드로잉 chartLocked 폴백 존재', () => {
+  test('소스 정합: 드로잉 도구 touchAction:"none" 분기 + 비드로잉 pan-y 폴백 (chartLocked 제거됨)', () => {
     const src = fs.readFileSync(SRC, 'utf-8');
     // 드로잉 도구 4종 전부 'none' 분기 조건에 포함
     expect(src, 'pen 분기 없음').toContain("activeTool === 'pen'");
     expect(src, 'highlight 분기 없음').toContain("activeTool === 'highlight'");
     expect(src, 'eraser 분기 없음').toContain("activeTool === 'eraser'");
     expect(src, 'white(수정펜) 분기 없음').toContain("activeTool === 'white'");
-    // 비드로잉 도구는 기존 chartLocked ? 'none' : 'pan-y' 폴백 유지
-    expect(src, 'chartLocked 폴백 없음').toContain("chartLocked ? 'none' : 'pan-y'");
+    // [TOOLS-UX-6FIX #5] chartLocked 폴백 제거됨 — 비드로잉 도구는 단순 'pan-y'
+    expect(src, 'chartLocked 폴백 잔존(제거돼야 함)').not.toContain("chartLocked ? 'none' : 'pan-y'");
     // STROKE-LAG RC 주석 앵커
     expect(src, 'STROKE-LAG RC 앵커 없음').toContain('PENCHART-STROKE-LAG');
   });
