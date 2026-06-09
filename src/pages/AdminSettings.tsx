@@ -49,6 +49,7 @@ import {
   CheckCircle2, Phone, Send, History, Ban, Zap, QrCode, Download,
 } from 'lucide-react';
 import type { Clinic } from '@/lib/types';
+import { RESERVED_EVENT_TYPES } from '@/lib/notificationEventTypes';
 
 // ── 타입 정의 ─────────────────────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ interface NotificationTemplate {
 }
 
 // 예약 자동발송 규칙(②)에 묶인 예약(reserved) event_type — 삭제 불가, 본문만 수정.
-const RESERVED_EVENT_TYPES = ['resv_confirm', 'resv_reminder_d1', 'resv_reminder_morning', 'noshow'] as const;
+// SSOT: @/lib/notificationEventTypes (SendSmsDialog 와 공용)
 
 interface NotificationLog {
   id: string;
@@ -794,9 +795,14 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
 
   const eventTypes = RESERVED_EVENT_TYPES;
   const getTemplate = (et: string) => templates.find((t) => t.event_type === et && t.channel === 'sms');
-  // 사용자 정의 = reserved 4종이 아닌 모든 sms 템플릿
+  // 사용자 정의 = reserved 4종이 아닌 모든 sms 템플릿.
+  // is_active === false = soft-delete(삭제 처리) → 목록에서 숨김.
   const customTemplates = templates
-    .filter((t) => !RESERVED_EVENT_TYPES.includes(t.event_type as typeof RESERVED_EVENT_TYPES[number]) && t.channel === 'sms')
+    .filter((t) =>
+      !RESERVED_EVENT_TYPES.includes(t.event_type as typeof RESERVED_EVENT_TYPES[number])
+      && t.channel === 'sms'
+      && t.is_active !== false,
+    )
     .sort((a, b) => a.event_type.localeCompare(b.event_type, 'ko'));
 
   // reserved 템플릿 수정/등록
@@ -851,9 +857,22 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
       } else {
         // 신규 — reserved 는 슬러그, custom 은 입력 이름을 event_type 으로 저장
         const event_type = isCustom ? editTitle.trim() : editTarget.event_type;
-        const { error } = await (supabase.from('notification_templates') as any)
-          .insert({ clinic_id: clinicId, event_type, channel: editTarget.channel, body: editBody, is_active: editTarget.is_active });
-        if (error) throw error;
+        // soft-delete 된 동명 템플릿(is_active=false)이 있으면 되살린다(UNIQUE 충돌 방지).
+        const hidden = templates.find(
+          (t) => t.event_type === event_type && t.channel === editTarget.channel && t.is_active === false,
+        );
+        if (hidden) {
+          const { data, error } = await (supabase.from('notification_templates') as any)
+            .update({ body: editBody, is_active: true })
+            .eq('id', hidden.id)
+            .select('id');
+          if (error) throw error;
+          if (!data || (data as any[]).length === 0) throw new Error('저장 권한 없음 — 역할을 확인하세요');
+        } else {
+          const { error } = await (supabase.from('notification_templates') as any)
+            .insert({ clinic_id: clinicId, event_type, channel: editTarget.channel, body: editBody, is_active: editTarget.is_active });
+          if (error) throw error;
+        }
       }
       onRefresh();
       setEditTarget(null);
@@ -871,12 +890,16 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
     }
   };
 
+  // soft-delete: 발송 이력(notification_logs)은 event_type 텍스트로만 참조하므로
+  // hard-delete 해도 FK 위반은 없으나, 이력 추적 무결성을 위해 is_active=false 로
+  // 숨김 처리한다(스키마 무변경, 복구 가능). 목록·발송 모달 양쪽에서 제외된다.
+  //   (T-20260609-foot-MSG-TEMPLATE-CRUD AC-3)
   const handleDelete = async (tmpl: NotificationTemplate) => {
-    if (!window.confirm(`'${tmpl.event_type}' 템플릿을 삭제할까요? 되돌릴 수 없습니다.`)) return;
+    if (!window.confirm(`'${tmpl.event_type}' 템플릿을 삭제할까요?\n목록·문자 발송 선택에서 사라집니다. (발송 이력은 보존)`)) return;
     setDeletingId(tmpl.id);
     try {
       const { data, error } = await (supabase.from('notification_templates') as any)
-        .delete()
+        .update({ is_active: false })
         .eq('id', tmpl.id)
         .select('id');
       if (error) throw error;

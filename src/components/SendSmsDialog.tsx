@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, MessageSquare, Phone, User } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { supabase } from '@/lib/supabase';
+import { isReservedEventType } from '@/lib/notificationEventTypes';
 import {
   Dialog,
   DialogContent,
@@ -88,10 +89,12 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
         .eq('clinic_id', clinicId)
         .order('event_type');
       if (cancelled) return;
-      // 활성 템플릿 우선 노출 (비활성도 선택 가능하나 정렬상 뒤로)
-      const rows = ((data as TemplateRow[]) ?? []).slice().sort(
-        (a, b) => Number(b.is_active) - Number(a.is_active),
-      );
+      // 사용자 정의(custom) 템플릿의 is_active=false 는 soft-delete(삭제 처리) → 발송 선택에서 제외.
+      // reserved 자동발송 템플릿은 is_active=false 여도 수동 발송 선택은 허용(자동발송 off 의미).
+      //   (T-20260609-foot-MSG-TEMPLATE-CRUD AC-3)
+      const rows = ((data as TemplateRow[]) ?? [])
+        .filter((t) => t.is_active !== false || isReservedEventType(t.event_type))
+        .sort((a, b) => Number(b.is_active) - Number(a.is_active));
       setTemplates(rows);
       setLoading(false);
     })();
