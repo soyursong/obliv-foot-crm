@@ -1,5 +1,16 @@
 /**
- * T-20260609-foot-DUMMY-RESV-TESTDATA
+ * ⛔ DEPRECATED — 재실행 금지 (T-20260608-foot-DUMMY-CHART-OPEN-FIX, 2026-06-09)
+ *   결함: 이 생성기는 reservations 만 INSERT 하고 customer_id 를 NULL 로 둔다 (customers 미동반).
+ *         → 카드 클릭 시 Dashboard.openChartFor 가 customer_id 직결 경로(Branch 1)를 못 타고,
+ *           이름-fallback(동명이인 의료안전 가드)으로 빠져 "차트 안 열림"이 발생한다.
+ *         이것이 6/3·6/8·6/9 "격번 차트 안 열림" 3차 재발의 단일 근본원인(데이터 결함, 코드 무결).
+ *   정정: 더미는 반드시 customers 동반 생성 + reservations.customer_id SET 패턴으로 만든다.
+ *         → 올바른 표준 생성기: scripts/T-20260609-foot-DUMMY-RESV-JONGNO_apply.mjs (참조).
+ *   회수: 이미 INSERT 된 결함 행은 scripts/rollback_dummy_resv_20260609.sql 또는
+ *         scripts/T-20260608-foot-DUMMY-CHART-OPEN-FIX_remediate.mjs 로 제거됨.
+ *   ※ 본 파일은 안티패턴 기록용으로만 보존. 아래 로직을 그대로 재실행하지 말 것.
+ *
+ * T-20260609-foot-DUMMY-RESV-TESTDATA (원 헤더)
  * 종로 풋센터(jongno-foot) 테스트용 더미 예약 30건 INSERT
  *
  * 구성: 2026-06-09, 11:00~18:00 30분 단위 15슬롯 × (초진 new 1 + 재진 returning 1) = 30행
@@ -8,6 +19,10 @@
  * 롤백: DELETE FROM reservations WHERE created_by='test-dummy-20260609';
  */
 import { createClient } from '@supabase/supabase-js';
+
+throw new Error('[DEPRECATED] dummy_resv_20260609.mjs 는 customer_id 미연결 결함 생성기입니다. ' +
+  'T-20260609-foot-DUMMY-RESV-JONGNO_apply.mjs(customers 동반 + customer_id SET)를 사용하세요. ' +
+  '재실행하려면 이 가드를 의도적으로 제거해야 합니다.');
 
 const SUPABASE_URL = 'https://rxlomoozakkjesdqjtvd.supabase.co';
 const SERVICE_ROLE_KEY =
