@@ -72,6 +72,7 @@ import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
+import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { formatAmount, maskPhoneTail, seoulISODate, cardDisplayName, phoneTailSuffix } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
@@ -5027,28 +5028,21 @@ export default function Dashboard() {
     markRecentlyUpdated(ci.id);
     // 낙관적 업데이트
     setRows((curr) => curr.map((r) => r.id === ci.id ? { ...r, status_flag: flag } : r));
-    const now = new Date().toISOString();
-    // audit entry (JSONB append)
-    const historyEntry = { flag, changed_at: now, changed_by: profile?.id ?? null };
-    // 1) status_flag 업데이트
-    const { error } = await supabase
-      .from('check_ins')
-      .update({ status_flag: flag })
-      .eq('id', ci.id);
-    if (error) {
+    // T-20260610-foot-TREATMENT-COMPLETE-BTN: status_flag 전이 정본 write를 applyStatusFlagTransition 으로
+    //   추출(SSOT). 진료완료 버튼 등 다른 진입점이 같은 경로를 재사용 — 병렬 2nd write 신설 금지.
+    //   처리자(이름/역할)는 history 엔트리에 함께 적재(의료 추적).
+    try {
+      await applyStatusFlagTransition(ci, flag, {
+        id: profile?.id ?? null,
+        name: profile?.name ?? null,
+        role: profile?.role ?? null,
+      });
+    } catch (e) {
       // 롤백
       setRows((curr) => curr.map((r) => r.id === ci.id ? { ...r, status_flag: ci.status_flag } : r));
-      toast.error(`플래그 변경 실패: ${error.message}`);
+      toast.error(`플래그 변경 실패: ${(e as Error).message}`);
       return;
     }
-    // 2) audit: status_flag_history JSONB array append (|| 연산자)
-    await supabase
-      .from('check_ins')
-      .update({
-        status_flag_history: (ci.status_flag_history ?? []).concat([historyEntry]),
-      })
-      .eq('id', ci.id)
-      .then(() => {/* 이력 저장 실패해도 플래그 변경은 유지 */});
     const label = flag ? STATUS_FLAG_LABEL[flag] : '정상';
     toast.success(`플래그: ${label}`);
   };
