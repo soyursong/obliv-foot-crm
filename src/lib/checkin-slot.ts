@@ -25,7 +25,13 @@ export function getAssignedSlotName(ci: CheckIn): string | null {
     case 'exam_waiting':
       return nonEmpty(ci.examination_room);
     case 'treatment_waiting':
-      return nonEmpty(ci.treatment_room);
+      // T-20260609-foot-WAITROOM-BADGE-STALE — 치료대기 = 아직 치료실 미입실(대기열).
+      // treatment_room 컬럼에 직전 치료실 입실(preconditioning) 잔존값이 남아도
+      // (Dashboard 일반 드롭 분기가 transition 시 treatment_room을 clear하지 않음)
+      // 대기 단계에서는 방 배정 뱃지를 노출하지 않는다 → 잔존 오표시 제거.
+      // 이미 stale된 기존 row도 status 기반 파생이라 즉시 교정됨(write-side clear 불필요).
+      // cf. getCurrentLocationLabel(IN_ROOM_STATUSES) 동일 원칙.
+      return null;
     case 'laser':
     case 'laser_waiting':
     case 'preconditioning':

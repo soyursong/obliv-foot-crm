@@ -79,8 +79,9 @@ test.describe('T-20260601 DASH-HSCROLL-CHART-LOC — 대시보드 UX 3종', () =
     expect(getAssignedSlotName(makeCheckIn({ status: 'laser_waiting', laser_room: '레이저실 L9' }))).toBe('레이저실 L9');
     // 상담 단계 + consultation_room 배정
     expect(getAssignedSlotName(makeCheckIn({ status: 'consultation', consultation_room: 'C1' }))).toBe('C1');
-    // 치료대기 + treatment_room
-    expect(getAssignedSlotName(makeCheckIn({ status: 'treatment_waiting', treatment_room: 'T2' }))).toBe('T2');
+    // 치료대기 + treatment_room → T-20260609-foot-WAITROOM-BADGE-STALE 로 동작 변경:
+    // 치료대기 = 치료실 미입실 대기 단계. treatment_room 잔존값이 있어도 방 뱃지를 파생하지 않는다(null).
+    expect(getAssignedSlotName(makeCheckIn({ status: 'treatment_waiting', treatment_room: 'T2' }))).toBeNull();
     // 검사 + examination_room
     expect(getAssignedSlotName(makeCheckIn({ status: 'examination', examination_room: 'E1' }))).toBe('E1');
     // 슬롯 미배정(대기열) → null (라벨 생략)
