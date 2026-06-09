@@ -388,19 +388,23 @@ test.describe('PENCHART-FORM-AUTOFILL — 자동채움 위치 보정 + 주민번
   // T-20260608-foot-CONSENT-NAME-AUTOLOAD (MSG-20260608-153310-om74)
   // 179795c(AC-R4)가 SignaturePad UI 정리 시 name(x=55 y=3206) 동반 제거 → 회귀.
   // 현장(김주연 총괄 6/8): "맨 하단 본인동의서 이름" 자동 채움 복원 요청.
-  test.describe('CONSENT-NAME-AUTOLOAD 하단 성명란(x=55 y=3206) 자동바인딩 복구', () => {
-    test('REFUND_AUTOFILL_POS_P3 배열 복구 + name x=55 y=3206', async () => {
+  // T-20260609-foot-REFUND-NAME-AUTOFILL-POSITION: 좌표 좌측 이탈 RC 수정으로 x=55→145, y=3206→3224 교정.
+  //   (상세 단언은 T-20260609-foot-REFUND-NAME-AUTOFILL-POSITION.spec.ts 참조)
+  test.describe('CONSENT-NAME-AUTOLOAD 하단 성명란 자동바인딩 복구 (좌표 T-20260609 교정 반영)', () => {
+    test('REFUND_AUTOFILL_POS_P3 배열 복구 + name 좌표 교정값(x=145 y=3224)', async () => {
       const fs = await import('fs');
       const src = fs.readFileSync(
         new URL('../../src/components/PenChartTab.tsx', import.meta.url).pathname,
         'utf-8',
       );
       expect(src).toContain('REFUND_AUTOFILL_POS_P3');
-      // 배열에 name(x=55 y=3206) 항목 존재 — 공백 변형 허용
+      // 배열에 name(x=145 y=3224) 항목 존재 — 공백 변형 허용
       const arrMatch = src.match(/REFUND_AUTOFILL_POS_P3[\s\S]*?\];/)?.[0] ?? '';
       expect(arrMatch).toMatch(/key:\s*'name'/);
-      expect(arrMatch).toMatch(/x:\s*55/);
-      expect(arrMatch).toMatch(/y:\s*3206/);
+      expect(arrMatch).toMatch(/x:\s*145/);
+      expect(arrMatch).toMatch(/y:\s*3224/);
+      // 옛 좌측-이탈 좌표(x=55) 재발 방지
+      expect(arrMatch).not.toMatch(/x:\s*55\b/);
     });
 
     test('렌더 합성부에서 P3 배열을 drawAutofillOnCtx로 합성', async () => {
@@ -413,12 +417,13 @@ test.describe('PENCHART-FORM-AUTOFILL — 자동채움 위치 보정 + 주민번
       expect(src).toMatch(/drawAutofillOnCtx\(ctx,\s*autofillDataRef\.current,\s*REFUND_AUTOFILL_POS_P3\)/);
     });
 
-    test('x=55 y=3206 — page-3 범위(2246~3369) 내', () => {
-      const NAME_Y = 3206;
-      const NAME_X = 55;
+    test('x=145 y=3224 — page-3 범위(2246~3369) 내 + 표 좌측경계(96) 안쪽', () => {
+      const NAME_Y = 3224;
+      const NAME_X = 145;
       expect(NAME_Y).toBeGreaterThanOrEqual(2246);
       expect(NAME_Y).toBeLessThan(3369);
-      expect(NAME_X).toBeGreaterThan(0);
+      // 표 좌측 경계(canvas x=96) 안쪽 — 옛 x=55(여백 이탈) RC 차단
+      expect(NAME_X).toBeGreaterThan(96);
     });
 
     test('forbidden_approach 비파괴 — SignaturePad 재도입 없음 (BLACKSCR P0 안전)', async () => {
