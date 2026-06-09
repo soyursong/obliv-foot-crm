@@ -51,7 +51,12 @@ function nameFnBlock(src: string): string {
   return src.match(/function drawRefundP3NameAutofill[\s\S]*?\n}/)?.[0] ?? '';
 }
 
-test.describe('CONSENT-NAME-CENTER-FONT — 하단 본인동의서 성명 중앙정렬+확대', () => {
+// [SUPERSEDED 2026-06-10 by T-20260610-foot-CONSENT-NAME-VCENTER-2X]
+//   직전 정적 topY=3214 / baseFontSize=28 / minFontSize=14 단언은 본 증분(세로중앙 동적 topY +
+//   2x 확대 56/28)으로 폐기. 회귀 어서션은 새 spec(T-VCENTER-2X)에서 cellTop/cellBottom 기준으로
+//   재정의. 가로중앙(centerX=247, textAlign='center') 단언만 살아있는 게이트는 새 spec AC-4가 이어받음.
+//   이 describe는 .skip 으로 봉인하여 변천 이력만 보존.
+test.describe.skip('[SUPERSEDED] CONSENT-NAME-CENTER-FONT — 하단 본인동의서 성명 중앙정렬+확대', () => {
 
   // ── 빌드/에셋 ────────────────────────────────────────────────────────────
   test('앱 정상 로드', async ({ page }) => {
