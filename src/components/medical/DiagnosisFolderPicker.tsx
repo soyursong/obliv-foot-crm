@@ -344,10 +344,17 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
 
   return (
     <div ref={rootRef} className="relative">
-      {/* 선택된 상병 칩 — 주/부 배지 + 주상병 재지정 + 삭제 (AC-1/AC-2) */}
-      {entries.length > 0 && (
-        <div className="mb-1.5 flex flex-wrap gap-1.5" data-testid="dx-selected-chips">
-          {entries.map((label, idx) => {
+      {/* 선택된 상병 칩 — 주/부 배지 + 주상병 재지정 + 삭제 (AC-1/AC-2)
+          T-20260609-foot-DX-INPUT-LAYOUT-STABLE AC4-1/AC4-2: 칩 영역을 항상 렌더(min-height reserve)해
+          0→1건 추가 시 주변 패널이 밀리는 점프(CLS) 제거. 다건 추가는 max-height + 내부 스크롤로 흡수 →
+          처방·메모 등 주변 패널 위치 고정. 빈 상태에서도 공간만 확보(텍스트 미노출). */}
+      <div
+        className="mb-1.5 flex flex-wrap content-start gap-1.5 min-h-[2.25rem] max-h-[5.5rem] overflow-y-auto"
+        data-testid="dx-selected-chips"
+        aria-hidden={entries.length === 0 ? 'true' : undefined}
+      >
+        {entries.length > 0 &&
+          entries.map((label, idx) => {
             const primary = isDxPrimary(idx);
             return (
               <span
@@ -392,8 +399,7 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
               </span>
             );
           })}
-        </div>
-      )}
+      </div>
 
       {/* 트리거 — 등록 상병만 폴더에서 선택(자유 타이핑 없음). 다중 선택 누적. */}
       <button
