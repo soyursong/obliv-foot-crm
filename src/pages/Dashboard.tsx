@@ -1634,11 +1634,9 @@ function DraggableBox2ResvCard({
     id: `box2r-${reservation.id}`,
     data: { reservationType: 'timeline-resv', reservationId: reservation.id, visitType: reservation.visit_type },
   });
-  const resvChartMap = useContext(ChartNumberMapCtx);
-  const resvChartNum = reservation.customer_id ? resvChartMap.get(reservation.customer_id) : undefined;
-  // T-20260609-foot-RESV-PATIENT-PHONE-SUFFIX: 재진 예약 카드 서브라벨도 초진(DraggableBox1Card)과
-  // 동일하게 핸드폰 뒷4자리 표기로 통일. CHART-NO-VISIBLE(#차트번호) 뱃지는 별도 식별자로 유지(회귀 금지).
-  // 결측/4자리 미만 → suffix 미렌더(빈 suffix 금지) → #차트번호 뱃지가 fallback 식별자 역할.
+  // T-20260609-foot-RESV-CARD-CHARTNUM-REMOVE: 재진 예약 카드 식별자는 핸드폰 뒷4자리만 표기.
+  // (#차트번호 뱃지 제거 — 두 식별자 동시표출 방지. reporter 김주연 총괄 지시)
+  // 결측/4자리 미만 → suffix 미렌더(빈 suffix 금지), 차트번호 fallback 없음 → 성함만 표기.
   const resvPhoneTail = phoneTailSuffix(reservation.customer_phone);
   return (
     <div
@@ -1677,9 +1675,6 @@ function DraggableBox2ResvCard({
       {/* T-20260516-foot-HEALER-RESV-BTN AC-10: 힐러 배지 표시 */}
       {reservation.healer_flag && (
         <span className="shrink-0 text-[8px] font-bold text-yellow-700 bg-yellow-100 border border-yellow-300 rounded px-0.5 leading-tight">힐</span>
-      )}
-      {resvChartNum && (
-        <span className="text-[9px] font-mono text-green-700 shrink-0">#{resvChartNum}</span>
       )}
       {/* T-20260515-foot-REVISIT-CLICK-AUTOCHECK AC-2: 접수 버튼 — 카드 드래그(DnD) 와 분리 위해 onPointerDown stopPropagation */}
       {onCheckIn && (
