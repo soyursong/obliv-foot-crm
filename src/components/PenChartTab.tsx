@@ -1094,7 +1094,7 @@ export function PenChartTab({
   //   bgCanvas = CANVAS_W*DRAW_DPR × canvasH*DRAW_DPR 고정 (= 1588×2246)
   //   소스 300DPI 이미지 → HQ downsample → bgCanvas. drawCanvas와 1:1 합성 보장.
 
-  /** 배경 레이어 초기화: 300DPI 원본을 CANVAS_W×canvasH 논리 크기로 다운샘플
+  /** 배경 레이어 초기화: 양식 PNG(폭 1588px, =물리상한)를 CANVAS_W×canvasH 논리 크기로 다운샘플
    * T-20260523-foot-PENCHART-PEN-SLOW Fix-1:
    *   구 코드는 초기 canvas.width=794(1x)로 설정 후 img.onload에서 canvas.width=1588(2x)으로 재설정.
    *   canvas.width 재할당은 (a) context transform 리셋 + (b) 브라우저 레이아웃 강제 재계산을 유발.
@@ -1129,7 +1129,7 @@ export function PenChartTab({
     canvas.width  = CANVAS_W * DRAW_DPR;
     canvas.height = canvasH  * DRAW_DPR;
     // T-20260525-foot-PENCHART-FORM-BLACKSCR AC-4: 대형 캔버스 할당 실패 방어
-    //   300DPI + DRAW_DPR=2 조합(최대 1588×6738) 시 GPU 메모리 초과 → 브라우저가 canvas.width=0 으로 리셋
+    //   대형 양식(refund_consent canvasH=3368, DRAW_DPR=2 → 1588×6736) GPU 메모리 초과 시 canvas.width=0 리셋
     //   → 이후 drawImage/fillRect가 0×0 화면에 그려짐 → 검정 화면 노출
     if (canvas.width === 0 || canvas.height === 0) {
       console.error('[PenChartTab] bgCanvas 크기 할당 실패 (GPU 메모리 초과 가능)', { canvasH, formKey: activeDrawTemplate?.form_key });
@@ -1222,8 +1222,13 @@ export function PenChartTab({
         //   canvas.width/height 재할당 없음 — 이미 CANVAS_W*DRAW_DPR × canvasH*DRAW_DPR 확정.
         //   ctx transform도 이미 scale(DRAW_DPR, DRAW_DPR) 적용됨 — 리셋 없이 redraw만 수행.
         //
-        // T-20260523-foot-FORM-TEMPLATE-REGEN: 300DPI 소스(2481×3508) → 논리 CANVAS_W×canvasH 다운샘플
+        // T-20260523-foot-FORM-TEMPLATE-REGEN: 양식 소스 → 논리 CANVAS_W×canvasH 다운샘플
         //   imageSmoothingQuality=high (Lanczos-equivalent) → 선명도 보장
+        // T-20260608-foot-PENCHART-REFUND-FORMIMG REOPEN#1: 양식 PNG를 폭 1588px(= canvas
+        //   물리상한 CANVAS_W*DRAW_DPR)로 재래스터화 → 소스 ≈ 물리해상도와 1:1, 다운샘플 잉여 제거.
+        //   RC: 구 300DPI 소스(폭 2481/2482, refund_consent 2481×10524)는 decode heap 단일청크
+        //   ≈104MB → Galaxy Tab img.decode() throw(E7). 폭 1588 재래스터로 heap 42.8MB(2.44× 감축).
+        //   캔버스 물리상한 초과분(192DPI=1588 초과)은 drawImage가 어차피 버려 시각 이득 0 → 무손실.
         ctx.clearRect(0, 0, CANVAS_W, canvasH);
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, CANVAS_W, canvasH);
@@ -1232,8 +1237,9 @@ export function PenChartTab({
         // T-20260526-foot-PENCHART-FORM-BLACKSCR 2차 REOPEN 근본 수정:
         //   iOS Safari GPU 텍스처 상한(기기별 2048~4096px) 초과 시 drawImage SILENT FAIL
         //   — try-catch 무용: iOS Safari는 예외를 throw하지 않고 조용히 검정 픽셀 출력.
-        //   확정 초과 파일: health_q_senior.png(7016px), refund_consent.png(10524px)
-        //   잠재 초과:    pen_chart_form.png(3510px) — 구형 iPad 2048px 상한 포함
+        //   (REOPEN#1 재래스터 후: refund_consent 1588×6736, senior 2종 1588×4490,
+        //    general 3종 1588×2245 — 폭은 MAX_TILE 이내이나 height>2048 양식은 여전히 Y타일 분할.
+        //    타일링 가드는 방어선으로 유지: DB 업로드 고해상 템플릿 등 미래 재투입 대비.)
         //
         //   해법: createImageBitmap(img, sx, sy, sw, sh) 소스-rect 타일 분할
         //     각 타일 ≤ MAX_TILE × MAX_TILE → CPU 메모리에서 크롭 완료 →
