@@ -2729,7 +2729,18 @@ export function PenChartTab({
                 //   → 캔버스 위 모든 제스처(pan/zoom/pinch/스크롤)를 브라우저가 처리하지 않고
                 //     전부 pointer 핸들러로 전달 → 펜/형광펜 획만 기입, 차트 안 움직임.
                 //   OFF → 'pan-y' (기존 동작: touch 세로 스크롤 허용, AC-3 회귀 없음).
-                touchAction: chartLocked ? 'none' : 'pan-y',
+                // ── T-20260609-foot-PENCHART-STROKE-LAG (RC 대표 코드직독 100% 확정 / A안 채택) ──
+                //   [RC] 기본 chartLocked=false → touchAction:'pan-y'. 갤탭 WebView가 S펜(pointerType==='pen')
+                //   세로 이동 5~20px를 native 세로스크롤 의도로 해석 → pointercancel 발화 → onPointerUp 경로로
+                //   drawingRef=false → stroke 강제 종료 = '모든 양식 공통 세로선 뚝뚝 끊김'. touch-action CSS는
+                //   pointerType 무관이라 기존 pointerType==='touch' 가드(L928/L1735)로 못 막는다(S펜=pen).
+                //   [수정 A안] 드로잉 도구 활성 시 'none'으로 스크롤 하이재킹 차단 → pointercancel 비발생 → 획 연속.
+                //   대상=펜/형광펜/지우개 + 화이트(수정펜, 동일 stroke 경로라 동일 결함 → 포함). 텍스트/상용구/이동
+                //   도구는 pan-y 유지 → 스크롤 회귀 0(AC-3). chartLocked 토글·저장포맷·렌더경로 무변경.
+                touchAction:
+                  (activeTool === 'pen' || activeTool === 'highlight' || activeTool === 'eraser' || activeTool === 'white')
+                    ? 'none'
+                    : chartLocked ? 'none' : 'pan-y',
                 cursor: isBoilerplatePlacing ? 'text' : isTextTool ? 'text' : isEraser ? 'cell' : isHighlight ? 'crosshair' : 'crosshair',
                 display: 'block',
                 // T-20260525-foot-PENCHART-FORM-BLACKSCR REOPEN 3 — 근본 수정:
