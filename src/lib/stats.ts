@@ -43,6 +43,10 @@ export interface TherapistSummaryRow {
   experience_total: number;            // 체험 내원 건수
   experience_converted: number;        // 패키지 결제 전환 건수
   conversion_rate: number | null;      // 0~100. experience_total=0 이면 null
+  // T-20260607-foot-CHECKIN-DESIGNATED-FLAG (옵션 B): check_ins.therapist_id == customers.designated_therapist_id
+  designated_count: number;            // 지정 일치 check_in 수(분자)
+  total_checkin_count: number;         // 전체 check_in 수(분모)
+  designated_rate: number | null;      // 0~100. total_checkin_count=0 이면 null
 }
 
 // T-20260607-foot-THERAPIST-STATS-V2: 자유텍스트 service_name → 4종 분류(treatment_type)

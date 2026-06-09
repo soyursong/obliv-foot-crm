@@ -161,21 +161,44 @@ export default function TherapistStatsSection({ summary, services, loading }: Pr
         </Card>
       </section>
 
-      {/* ── 지표3: 지정 치료사 비율 (필드 미구현 placeholder) ── */}
+      {/* ── 지표3: 지정 치료사 비율 (옵션 B: 지정치료사=내원 치료사 일치 비율) ── */}
       <section className="flex flex-col gap-3" data-testid="therapist-metric-designated">
         <h2 className="text-sm font-semibold text-muted-foreground">3. 지정 치료사 비율</h2>
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">지정 비율</CardTitle>
+            <CardTitle className="text-sm">치료사별 지정 비율 (지정 일치 내원 / 전체 내원)</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/60 p-6 text-center">
-              <p className="text-sm font-medium text-amber-800">데이터 없음 · 필드 미구현</p>
-              <p className="text-xs text-amber-700 mt-1.5 leading-relaxed">
-                '지정 여부' 입력 필드가 아직 시스템에 없어 비율을 집계할 수 없습니다.<br />
-                필드 추가 및 입력 동선은 별도 작업으로 검토 중입니다.
-              </p>
-            </div>
+            {loading || summary.length === 0 ? (
+              <EmptyOrLoading loading={loading} />
+            ) : (
+              <div className="overflow-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-xs text-muted-foreground">
+                      <th className="pb-2 font-medium">치료사</th>
+                      <th className="pb-2 font-medium text-right">지정 일치 내원</th>
+                      <th className="pb-2 font-medium text-right">전체 내원</th>
+                      <th className="pb-2 font-medium text-right">지정 비율</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.map((r) => (
+                      <tr key={r.therapist_id} className="border-b last:border-0">
+                        <td className="py-2 font-medium">{r.name}</td>
+                        <td className="py-2 text-right tabular-nums">{r.designated_count}</td>
+                        <td className="py-2 text-right tabular-nums">{r.total_checkin_count}</td>
+                        <td className="py-2 text-right tabular-nums font-medium">
+                          {r.designated_rate != null
+                            ? `${r.designated_rate.toFixed(1)}%`
+                            : <span className="text-muted-foreground font-normal">데이터 없음</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </section>
