@@ -54,6 +54,7 @@ import { toast } from '@/lib/toast';
 import {
   PART_OPTIONS,
   partBadgeClass,
+  partBoxClass,
   partLabel,
   type CalendarView,
   type HandoverChecklistItem,
@@ -610,7 +611,8 @@ export default function Handover() {
                 <div
                   key={n.id}
                   data-testid="handover-card"
-                  className="space-y-2 rounded-lg border bg-white p-3 shadow-sm"
+                  data-part={n.part_code}
+                  className={`space-y-2 rounded-lg border p-3 shadow-sm ${partBoxClass(n.part_code)}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <span
