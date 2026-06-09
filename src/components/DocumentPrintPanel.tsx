@@ -782,7 +782,11 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
           (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard',
         );
         if (needsItems) {
-          const billItems = buildFootBillDetailItems(fb.pricingItems, autoValues.visit_date ?? '');
+          // T-20260609-foot-DOCFORM-3FIX 이슈1: copayInfo 전달 → per-item 본인부담금/공단부담금 채움
+          const billItems = buildFootBillDetailItems(fb.pricingItems, autoValues.visit_date ?? '', {
+            insuranceGrade: customerInsuranceGrade,
+            copaymentTotal: fb.copaymentTotal,
+          });
           autoValues.items_html = buildBillDetailItemsHtml(billItems);
           autoValues.rx_items_html = buildRxItemsHtml([]);
           if (fb.grandTotal > 0) {
@@ -1727,7 +1731,11 @@ function IssueDialog({
       base.total_noncovered = nonCoveredTotal.toLocaleString('ko-KR');
     } else if (template.form_key === 'bill_detail' && footFb) {
       // T-20260608-foot-DOC-PATH12-SYNC: check_in_services 폴백 (PMW handleDocPrint L1479~1497 1:1)
-      const billItems = buildFootBillDetailItems(footFb.pricingItems, base.visit_date ?? '');
+      // T-20260609-foot-DOCFORM-3FIX 이슈1: copayInfo 전달 → per-item 본인부담금/공단부담금 채움
+      const billItems = buildFootBillDetailItems(footFb.pricingItems, base.visit_date ?? '', {
+        insuranceGrade: customerInsuranceGrade,
+        copaymentTotal: footFb.copaymentTotal,
+      });
       base.items_html = buildBillDetailItemsHtml(billItems);
       if (computedTotal === null && footFb.grandTotal > 0) {
         base.total_amount = formatAmount(footFb.grandTotal);

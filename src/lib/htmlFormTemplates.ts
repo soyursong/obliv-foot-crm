@@ -308,7 +308,10 @@ ${COMMON_STYLE}
       <tr>
         <td style="background:#f8f8f8;">환자 성명</td>
         <td>{{patient_name}}</td>
-        <td style="background:#f8f8f8; font-size:8pt; white-space:nowrap;">☐ 상병 표시<br>비활성화</td>
+        <!-- T-20260609-foot-DOCFORM-3FIX 이슈3: 비활성 항목 라벨이 인쇄물에 leak → 조건부 렌더.
+             하드코딩 "☐ 상병 표시/비활성화" 라벨을 placeholder 로 치환. 미바인딩(=비활성) 시 공란.
+             셀/colspan 구조는 보존(8FIX 레이아웃·도장 위치 회귀 방지) → 항목/토글 시스템 보존, 활성 시 재출력. -->
+        <td style="background:#f8f8f8; font-size:8pt; white-space:nowrap;">{{disease_display_note}}</td>
         <td></td>
       </tr>
       <tr>
@@ -477,9 +480,11 @@ ${COMMON_STYLE}
       <tr>
         <td style="background:#f8f8f8;">환자 성명</td>
         <td>{{patient_name}}</td>
-        <td colspan="2" style="font-size:8pt; color:#555;">
-          ☐ 상병 표시 비활성화&nbsp;&nbsp;☐ 향후치료의견 미표시
-        </td>
+        <!-- T-20260609-foot-DOCFORM-3FIX 이슈2: 비활성 항목 라벨이 인쇄물에 leak → 조건부 렌더.
+             하드코딩 "☐ 상병 표시 비활성화 / ☐ 향후치료의견 미표시" 라벨을 placeholder 로 치환.
+             미바인딩(=비활성) 시 공란. colspan=2 셀 구조는 보존(8FIX 레이아웃·도장 위치 회귀 방지)
+             → 항목/토글 시스템 보존, 활성 시 재출력. -->
+        <td colspan="2" style="font-size:8pt; color:#555;">{{visit_display_note}}</td>
       </tr>
       <tr>
         <td style="background:#f8f8f8;">주 민 번 호</td>
