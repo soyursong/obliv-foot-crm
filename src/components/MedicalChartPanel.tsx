@@ -3250,7 +3250,7 @@ export default function MedicalChartPanel({
                       {/* 약품 폴더 (AC-R3: 개별 약품 분류 탐색기 / AC-R5: 단일·다중 추가) */}
                       <div className="flex items-center gap-1.5 px-1 pt-2" data-testid="drug-folder-section-header">
                         <FolderTree className="h-3.5 w-3.5 text-teal-600" />
-                        <span className="text-[11px] font-semibold text-foreground">약품 폴더</span>
+                        <span className="text-[11px] font-semibold text-foreground">처방세트</span>
                       </div>
                       <DrugFolderTree onAdd={addRxFromCodes} disabled={gateChecking} />
 

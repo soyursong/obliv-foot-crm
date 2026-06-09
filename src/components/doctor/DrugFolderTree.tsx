@@ -70,7 +70,7 @@ export default function DrugFolderTree({ onAdd, disabled = false }: DrugFolderTr
   if (foldersLoading || drugsLoading) {
     return (
       <div className="flex items-center gap-1.5 px-1 py-2 text-[11px] text-muted-foreground">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" /> 약품 폴더 불러오는 중…
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> 처방세트 불러오는 중…
       </div>
     );
   }
@@ -81,7 +81,7 @@ export default function DrugFolderTree({ onAdd, disabled = false }: DrugFolderTr
         className="rounded-lg border border-dashed p-3 text-[11px] text-muted-foreground text-center"
         data-testid="drug-folder-empty"
       >
-        등록된 약품 폴더 없음<br />
+        등록된 처방세트 없음<br />
         <span className="text-[10px]">관리 화면에서 폴더를 만들고 약품을 분류하세요</span>
       </div>
     );

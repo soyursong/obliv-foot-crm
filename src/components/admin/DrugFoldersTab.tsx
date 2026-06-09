@@ -327,7 +327,7 @@ export default function DrugFoldersTab() {
   return (
     <div className="space-y-4">
       <div className="rounded-md border border-teal-100 bg-teal-50/40 px-3 py-2 text-[11px] text-muted-foreground">
-        <span className="font-semibold text-teal-700">약품 폴더</span> = 약을 분류·탐색하는 도구입니다.
+        <span className="font-semibold text-teal-700">처방세트</span> = 약을 분류·탐색하는 도구입니다.
         진료차트의 처방세트 탭 좌측 탐색기에 동일하게 나타납니다.
         (이름+약 묶음을 만드는 <span className="font-medium">묶음처방</span>은 별도 탭입니다.)
       </div>
