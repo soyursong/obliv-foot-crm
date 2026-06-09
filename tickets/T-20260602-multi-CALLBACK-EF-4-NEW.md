@@ -7,6 +7,9 @@ deploy_commit: f1e44c1
 deployed_at: ''
 bundle_hash: ''
 db_change: true
+dev_foot_db_apply_pending: false
+db_applied_at: 2026-06-09 11:07 KST
+db_apply_mode: shadow
 deploy-ready: true
 commit_sha: f1e44c1
 build_ok: true
@@ -61,3 +64,11 @@ spec_ssot: agents/docs/_draft/dopamine_callback_receive_pattern.md
 
 - `npm run build` PASS (✓ 3.38s).
 - E2E spec 23/23 PASS (unit project, 699ms) — 마이그레이션/EF/롤백 정적 단언.
+
+## prod DB 적용 (2026-06-09 11:07 KST · FIX-REQUEST MSG-20260609-105822)
+
+- supervisor 마이그 게이트 GO 후 `scripts/apply_20260603010000_dopamine_callback_outbox_pg.mjs` 로 적용.
+- dry-run(BEGIN/ROLLBACK) → 객체 4+2+1 검증 통과 → `--apply` COMMIT.
+- 적용 후 독립 검증: outbox/config 테이블 존재, `dopamine_callback_config.mode='shadow'`(게이트 기본), outbox 0행, cron `foot-dopamine-callback-worker` `* * * * * active=true`.
+- 롤백 페어: `20260603010000_dopamine_callback_outbox.rollback.sql` (cron unschedule → 트리거/함수 DROP → 테이블 DROP).
+- ⚠️ 잔여 게이트: worker는 분당 기동하나 mode=shadow + 도파민 연동 라이프사이클 이벤트 부재 시 claim 0(무해). 도파민 `crm-lifecycle-callback` / 풋 `dopamine-callback-dispatch` EF live + env(DOPAMINE_FUNCTIONS_URL/DOPAMINE_CALLBACK_SECRET/CRON_SECRET) 주입은 supervisor 조율. live 컷오버는 `UPDATE dopamine_callback_config SET mode='live'`.
