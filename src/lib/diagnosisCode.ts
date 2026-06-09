@@ -4,9 +4,12 @@
 //   AC-2 같은 폴더(미분류 포함) 내 상병명 중복 저장 차단(trim 비교, 자기 자신 제외).
 //   ※ 순수 함수로 분리 — 데이터/로그인 비의존 단위 테스트 가능(컴포넌트 결합 최소화).
 
-// KCD-8(한국표준질병사인분류) 코드 형식: 영문 대문자 1 + 숫자 2 + (소수점 + 숫자 1~4) 선택.
-//   예) M79 · M79.3 · S93.401. 영문 1글자(대분류)는 항상 대문자.
-export const KCD8_RE = /^[A-Z][0-9]{2}(\.[0-9]{1,4})?$/;
+// KCD-8(한국표준질병사인분류) 코드 형식: 영문 대문자 1 + 숫자 2~4 + (소수점 + 숫자 1~4) 선택.
+//   예) M79 · M79.3 · S93.401 · M722(dotless 4자리 현장 표기관례=M72.2) · L6005(dotless subdivided).
+//   ★ regex 완화(A2, planner_decision T-20260610-foot-DIAG-CODE-VALIDATION):
+//     dotless 3~4자리(L600=L60.0, K297 등 현장 실데이터 8건)를 수용하고 미래 subdivided 코드까지 커버.
+//     한글·중간공백·구조오류(MM72.2)는 여전히 차단.
+export const KCD8_RE = /^[A-Z][0-9]{2,4}(\.[0-9]{1,4})?$/;
 
 /** trim + 소문자→대문자 정규화 — 저장/검증 직전 공통 적용. */
 export function normalizeServiceCode(raw: string | null | undefined): string {
@@ -20,7 +23,7 @@ export function normalizeServiceCode(raw: string | null | undefined): string {
 export function validateServiceCode(raw: string | null | undefined): string | null {
   const v = normalizeServiceCode(raw);
   if (!v) return null; // 빈 코드 통과
-  if (!KCD8_RE.test(v)) return 'KCD 코드 형식이 올바르지 않아요 (예: M72.2)';
+  if (!KCD8_RE.test(v)) return 'KCD 코드 형식이 올바르지 않아요 (예: M72.2 또는 M722)';
   return null;
 }
 
