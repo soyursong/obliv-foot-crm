@@ -1453,6 +1453,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         insuranceCovered: Math.max(0, coveredTotal - copaymentTotal),
         copayment: copaymentTotal,
         nonCovered: (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
+        // T-20260609-foot-PAY-DOCPRINT-FEE-MISSING: 수납 전 출력 시 진료비(total_amount) 누락 방지.
+        //   수납 시 payments.amount로 기록될 값과 동일(deductMode?deductAmount:grandTotal) → 수납 전/후 동일.
+        total: deductMode ? deductAmount : grandTotal,
       });
 
       // bill_detail items_html 주입 (결제 전 in-memory 데이터 사용)
@@ -1576,6 +1579,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
         insuranceCovered: Math.max(0, coveredTotal - copaymentTotal),
         copayment: copaymentTotal,
         nonCovered: (totalByTax['비급여(과세)'] ?? 0) + (totalByTax['비급여(면세)'] ?? 0),
+        // T-20260609-foot-PAY-DOCPRINT-FEE-MISSING: 출력+수납 경로도 동일 폴백 적용(수납 전 출력본과 일치).
+        total: deductMode ? deductAmount : grandTotal,
       });
 
       // bill_detail items_html 주입 (결제 전 in-memory 데이터 사용)
