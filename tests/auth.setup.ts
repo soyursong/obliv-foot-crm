@@ -22,8 +22,10 @@ const AUTH_FILE = path.join(__dirname, '..', '.auth', 'user.json');
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? '';
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? '';
-const TEST_EMAIL = process.env.TEST_EMAIL ?? 'test@medibuilder.com';
-const TEST_PASSWORD = process.env.TEST_PASSWORD ?? 'TestPass2026!';
+// CI(ci-push.yml)는 secrets 를 TEST_USER_EMAIL / TEST_USER_PASSWORD 로 주입한다.
+// 로컬은 TEST_EMAIL / TEST_PASSWORD 관례를 쓴다. 둘 다 수용 + 기본값 폴백.
+const TEST_EMAIL = process.env.TEST_EMAIL ?? process.env.TEST_USER_EMAIL ?? 'test@medibuilder.com';
+const TEST_PASSWORD = process.env.TEST_PASSWORD ?? process.env.TEST_USER_PASSWORD ?? 'TestPass2026!';
 
 setup('authenticate', async ({ page }) => {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {

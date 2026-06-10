@@ -148,6 +148,38 @@ async function gotoDashboard(page: import('@playwright/test').Page) {
   await expect(page.getByTestId('dashboard-root')).toBeVisible({ timeout: 15000 });
 }
 
+// ── 자동 노쇼 가드 (G3/G4 결정성) ──────────────────────────────────────────────
+// 과거 confirmed 예약은 예약관리(Reservations.tsx) auto-noshow + realtime 으로
+// noshow 전환될 수 있다(라이브 prod 동시 클라이언트/리얼타임 트리거). noshow 예약은
+// 타임라인에서 제외(Dashboard L1875)되어 box1/box2-resv-card 가 렌더되지 않는다.
+// → 시드 row 가 noshow 로 뒤집힌 경우는 "환경(시드 무력화)"이며 회귀가 아니다.
+//   이 회귀 라인(!isPast 게이트)은 G6 정적 가드가 하드락하므로, 여기선 skip 처리해
+//   거짓 RED 를 만들지 않는다. confirmed 유지 상태에서 카드가 안 뜨면 진짜 실패.
+async function resvStatus(id: string): Promise<string | null> {
+  const { data } = await svc().from('reservations').select('status').eq('id', id).single();
+  return (data?.status as string | undefined) ?? null;
+}
+
+async function waitPastCardOrSkipOnAutoNoshow(
+  page: import('@playwright/test').Page,
+  cardLocator: import('@playwright/test').Locator,
+  resvId: string,
+): Promise<void> {
+  try {
+    await cardLocator.first().waitFor({ state: 'visible', timeout: 12000 });
+    return; // 카드 렌더됨 → 정상 행위 검증 진행
+  } catch (e) {
+    const status = await resvStatus(resvId);
+    test.skip(
+      status === 'noshow',
+      `과거 confirmed 예약이 auto-noshow 로 전환됨(status=${status}) — 타임라인 미표시(환경). ` +
+        `!isPast 회귀 라인은 G6 정적 가드가 하드락하므로 거짓 RED 방지 위해 skip.`,
+    );
+    // confirmed 인데도 카드가 없으면 진짜 회귀/렌더 실패 → 원래 타임아웃 전파.
+    throw e;
+  }
+}
+
 const UNIQ = () => `gate-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -208,7 +240,7 @@ test.describe('CHART-OPEN-GATE · G3 타임라인 초진 과거날짜 click→op
       await page.getByTestId('dash-date-prev').click();
       // 과거 날짜 read-only 배너가 떠도 차트 열람(read)은 가능해야 한다.
       const card = page.locator('[data-testid="box1-resv-card"]', { hasText: name });
-      await card.first().waitFor({ state: 'visible', timeout: 12000 });
+      await waitPastCardOrSkipOnAutoNoshow(page, card, resvId);
       await card.first().click();
       const opened = await waitForChartOpen(page);
       expect(
@@ -234,7 +266,7 @@ test.describe('CHART-OPEN-GATE · G4 타임라인 재진 과거날짜 click→op
       await gotoDashboard(page);
       await page.getByTestId('dash-date-prev').click();
       const card = page.locator('[data-testid="box2-resv-card"]', { hasText: name });
-      await card.first().waitFor({ state: 'visible', timeout: 12000 });
+      await waitPastCardOrSkipOnAutoNoshow(page, card, resvId);
       await card.first().click();
       const opened = await waitForChartOpen(page);
       expect(opened, '과거 날짜 재진 카드 클릭 후 차트가 열려야 함(RED면 !isPast 게이트 재발)').toBe(true);
