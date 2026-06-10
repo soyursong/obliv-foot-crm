@@ -245,6 +245,11 @@ export default function Handover() {
   );
 
   const isOwner = (n: HandoverNote) => !!profile?.id && n.author_id === profile.id;
+  // T-20260609-foot-HANDOVER-ADMIN-DELETE: 관리자(총괄)=admin/manager 는 타인 카드도 삭제 가능.
+  //   수정(update)은 본 건 범위 외 — AC-5: 작성자 본인 한정 유지(canon HANDOVER-BOARD AC-7).
+  //   UI 게이트뿐 아니라 DB RLS(handover_notes_delete)도 동일 정책으로 강제(AC-4).
+  const canManageAll = profile?.role === 'admin' || profile?.role === 'manager';
+  const canDelete = (n: HandoverNote) => isOwner(n) || canManageAll;
 
   // ── 이동 ──────────────────────────────────────────────────────────────────
   const goPrev = () => {
@@ -620,24 +625,30 @@ export default function Handover() {
                     >
                       {partLabel(n.part_code)}
                     </span>
-                    {isOwner(n) && (
+                    {(isOwner(n) || canDelete(n)) && (
                       <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={() => openEdit(n)}
-                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-teal-700"
-                          title="수정"
-                          data-testid="handover-edit"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(n)}
-                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-red-600"
-                          title="삭제"
-                          data-testid="handover-delete"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {/* 수정 = 작성자 본인 한정 (AC-5) */}
+                        {isOwner(n) && (
+                          <button
+                            onClick={() => openEdit(n)}
+                            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-teal-700"
+                            title="수정"
+                            data-testid="handover-edit"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {/* 삭제 = 본인 OR 관리자(admin/manager) (AC-1/AC-2) */}
+                        {canDelete(n) && (
+                          <button
+                            onClick={() => handleDelete(n)}
+                            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-red-600"
+                            title={isOwner(n) ? '삭제' : '관리자 삭제'}
+                            data-testid="handover-delete"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
