@@ -3451,17 +3451,12 @@ export default function MedicalChartPanel({
                   {rightTab === 'visit_hist' && (
                     <div className="p-3 space-y-2" data-testid="right-panel-visit-hist-content">
                       {/* T-20260608-foot-MEDCHART-PANEL-CLARITY AC-1: 좌측 '경과 타임라인'과 구분되는 설명 */}
-                      <div className="flex items-center justify-between">
-                        <span
-                          className="text-[10px] font-semibold text-muted-foreground"
-                          title="방문(체크인) 단위 진료 기록을 읽기전용으로 보여줍니다. ↔ 좌측 '경과 타임라인'은 진료차트 회차 기록(편집 가능)입니다."
-                        >
-                          방문이력 (읽기전용)
-                        </span>
-                        <span className="text-[9px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">
-                          2번차트 1구역
-                        </span>
-                      </div>
+                      <span
+                        className="text-[10px] font-semibold text-muted-foreground"
+                        title="방문(체크인) 단위 진료 기록을 읽기전용으로 보여줍니다. ↔ 좌측 '경과 타임라인'은 진료차트 회차 기록(편집 가능)입니다."
+                      >
+                        방문이력 (읽기전용)
+                      </span>
                       <p className="text-[9px] text-muted-foreground/70 leading-tight -mt-1">
                         방문(체크인)별 진료 기록 · 편집 불가
                       </p>
@@ -3526,14 +3521,9 @@ export default function MedicalChartPanel({
                   {/* ── T-20260526-foot-MEDCHART-SYNC: 진료이미지 탭 ─────────────── */}
                   {rightTab === 'images' && (
                     <div className="p-3 space-y-2" data-testid="right-panel-images-content">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-semibold text-muted-foreground">
-                          진료이미지 (읽기전용)
-                        </span>
-                        <span className="text-[9px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">
-                          2번차트 1구역
-                        </span>
-                      </div>
+                      <span className="text-[10px] font-semibold text-muted-foreground">
+                        진료이미지 (읽기전용)
+                      </span>
                       {treatImagesLoading ? (
                         <div className="flex justify-center py-6">
                           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
