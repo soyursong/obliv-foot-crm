@@ -15,6 +15,15 @@
  *   로직을 in-page 순수 함수로 모사해 회귀를 잡는다. (FIRSTVISIT-CHARTLIST-UX spec 동일 패턴)
  */
 import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const __dir = dirname(fileURLToPath(import.meta.url));
+const PANEL_SRC = readFileSync(
+  resolve(__dir, '../../src/components/MedicalChartPanel.tsx'),
+  'utf-8',
+);
 
 // ── 정본 타입 (ConsultRecordTab.DateGroup 부분) ────────────────────────────────
 interface DateGroup {
@@ -134,5 +143,16 @@ test.describe('AC-1 좌/우 소스 구분 불변식', () => {
     expect(RIGHT_DESC).toContain('편집 불가');
     // 좌/우 설명이 서로 달라 사용자가 구분 가능
     expect(LEFT_DESC).not.toBe(RIGHT_DESC);
+  });
+
+  // T-20260609-foot-VISITLOG-NAMING-CLARIFY: 항상 보이는 탭 라벨이 '방문이력'.
+  // (이전 회귀: 탭 콘텐츠 헤더만 '방문이력', 탭 라벨은 '진료내역'이라
+  //  기본 진입(rx 탭)에서 '방문이력'이 노출되지 않아 QA 실패)
+  test('visit_hist 탭 라벨은 "방문이력" — 기본 진입에서도 노출', () => {
+    const tabDef = PANEL_SRC.match(/key:\s*'visit_hist'[^}]*label:\s*'([^']+)'/);
+    expect(tabDef).not.toBeNull();
+    expect(tabDef?.[1]).toBe('방문이력');
+    // 우측 패널에서 '진료내역' 단독 라벨이 visit_hist 탭에 남지 않음
+    expect(PANEL_SRC).not.toMatch(/key:\s*'visit_hist'[^}]*label:\s*'진료내역'/);
   });
 });
