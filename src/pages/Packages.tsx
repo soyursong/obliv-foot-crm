@@ -21,6 +21,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, formatPhone } from '@/lib/format';
+import { isSinglePaymentByCount } from '@/lib/footBilling';
 import { cn } from '@/lib/utils';
 import type { Customer, Package, PackageRemaining, PackageTemplate } from '@/lib/types';
 
@@ -1548,9 +1549,38 @@ function PackagePaymentAdd({ packageId, customerId, clinicId, onAdded }: {
   const save = async () => {
     if (amount <= 0) return;
     setSubmitting(true);
+    const inst = method === 'card' ? installment : 0;
+
+    // ── T-20260610-foot-PKGCLASS-SESSION1-SINGLE — 회수=1 패키지의 추가 결제도 단건(payments) ──
+    // 분류 1차 키=패키지 총 회수. entry A(영수증)·B(발행)와 동일 SSOT 규칙을 추가결제 경로에도
+    // 적용해 "같은 회수1 패키지가 경로마다 다르게 분류되는 구멍"을 차단(reporter 김주연 총괄 의도 정합).
+    const { data: pkgRow } = await supabase
+      .from('packages')
+      .select('total_sessions, paid_amount')
+      .eq('id', packageId)
+      .maybeSingle();
+    if (pkgRow && isSinglePaymentByCount(pkgRow.total_sessions as number)) {
+      const { error: pErr } = await supabase.from('payments').insert({
+        clinic_id: clinicId,
+        check_in_id: null, // 패키지관리 추가결제는 내원 비종속 — payments.check_in_id NULLABLE
+        customer_id: customerId,
+        amount, method, installment: inst, payment_type: 'payment',
+        memo: '패키지 추가결제(회수1·단건)',
+      });
+      setSubmitting(false);
+      if (pErr) { toast.error(`단건 결제 기록 실패: ${pErr.message}`); return; }
+      // payments 행은 package_payments 합계 밖 → paid_amount 에 직접 가산(미납 오표시 방지).
+      await supabase.from('packages')
+        .update({ paid_amount: ((pkgRow.paid_amount as number) ?? 0) + amount })
+        .eq('id', packageId);
+      toast.success('단건 결제로 기록 (회수 1회)');
+      setOpen(false); setAmount(0); onAdded();
+      return;
+    }
+
     const { error } = await supabase.from('package_payments').insert({
       clinic_id: clinicId, package_id: packageId, customer_id: customerId,
-      amount, method, installment: method === 'card' ? installment : 0, payment_type: 'payment',
+      amount, method, installment: inst, payment_type: 'payment',
     });
     setSubmitting(false);
     if (error) { toast.error(`결제 기록 실패: ${error.message}`); return; }

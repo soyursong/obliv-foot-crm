@@ -18,6 +18,7 @@ import { useAuth } from '@/lib/auth';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
 import { formatAmount, parseAmount } from '@/lib/format';
+import { isSinglePaymentByCount } from '@/lib/footBilling';
 import { cn } from '@/lib/utils';
 import { InsuranceCopaymentPanel } from '@/components/insurance/InsuranceCopaymentPanel';
 import type { CheckIn, PackageTemplate } from '@/lib/types';
@@ -314,24 +315,46 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
           ]
         : [{ amount, method, installment: method === 'card' && installment > 0 ? installment : null }];
 
-      const { error: ppErr } = await supabase.from('package_payments').insert(
-        ppRows.map((r) => ({
-          clinic_id: checkIn.clinic_id,
-          package_id: newPackageId,
-          customer_id: checkIn.customer_id,
-          amount: r.amount,
-          method: r.method,
-          installment: r.installment,
-          memo: memo || null,
-          // T-20260526-foot-PAY-INPUT-001-SIMPLIFY: 매처 자동 채움 (UI 입력 제거)
-          external_approval_no: null,
-          external_tid: null,
-        })),
-      );
-      if (ppErr) {
-        toast.error(`결제 기록 실패: ${ppErr.message}`);
-        setSubmitting(false);
-        return;
+      // ── T-20260610-foot-PKGCLASS-SESSION1-SINGLE (AC-1·회수1 발행=단건) ─────────────
+      // 패키지 총 회수=1 이면 발행 결제를 단건(payments)으로 분류한다. 1차 키=회수(금액 보조).
+      // 패키지 row 는 그대로 존속(paid_amount=totalAmount 기 설정, 1회 세션 소진 추적) +
+      // check_ins.package_id 연결도 유지 → 소진 동선 무변경. 단지 매출 분류만 단건 버킷으로 보낸다.
+      // 체험권(회수1) 단건 처리(TRIAL-REVENUE-ZERO)의 일반화 — 회귀 없음(AC-6).
+      if (isSinglePaymentByCount(tmplTotalSessions)) {
+        const { error: pErr } = await insertPayments(
+          ppRows.map((r) => ({
+            amount: r.amount,
+            method: r.method,
+            installment: r.installment,
+            memo: memo || null,
+            payment_type: 'payment',
+          })),
+        );
+        if (pErr) {
+          toast.error(`결제 기록 실패: ${pErr.message}`);
+          setSubmitting(false);
+          return;
+        }
+      } else {
+        const { error: ppErr } = await supabase.from('package_payments').insert(
+          ppRows.map((r) => ({
+            clinic_id: checkIn.clinic_id,
+            package_id: newPackageId,
+            customer_id: checkIn.customer_id,
+            amount: r.amount,
+            method: r.method,
+            installment: r.installment,
+            memo: memo || null,
+            // T-20260526-foot-PAY-INPUT-001-SIMPLIFY: 매처 자동 채움 (UI 입력 제거)
+            external_approval_no: null,
+            external_tid: null,
+          })),
+        );
+        if (ppErr) {
+          toast.error(`결제 기록 실패: ${ppErr.message}`);
+          setSubmitting(false);
+          return;
+        }
       }
 
       await supabase

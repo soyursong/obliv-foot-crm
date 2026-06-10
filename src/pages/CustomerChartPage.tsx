@@ -33,6 +33,7 @@ import { Chart2InsuranceCalcPanel } from '@/components/insurance/Chart2Insurance
 // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
 import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
+import { isSinglePaymentByCount } from '@/lib/footBilling';
 // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드 닫기 (window.close 대체)
 import { useChartSheetClose, useRegisterChartSave } from '@/lib/chartSheetContext';
 // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 패널
@@ -354,19 +355,22 @@ function ReceiptUploadSection({
     packageId: string; paymentDate: string;
   }>({ open: false, amount: '', method: 'cash', packageId: '', paymentDate: todaySeoulISODate() });
   // 활성 패키지 목록 (영수증 결제 라우팅 대상)
-  const [activePkgs, setActivePkgs] = useState<{ id: string; name: string }[]>([]);
+  // T-20260610-foot-PKGCLASS-SESSION1-SINGLE: totalSessions 추가 — 회수=1 영수증은 단건(payments)으로 분기.
+  const [activePkgs, setActivePkgs] = useState<{ id: string; name: string; totalSessions: number }[]>([]);
 
   const storagePath = `customer/${customerId}/receipt`;
 
   // T-20260608-foot-RECEIPT-PKG-PAYCLASS: 고객 활성 패키지 조회 (영수증 결제 라우팅용)
+  // T-20260610-foot-PKGCLASS-SESSION1-SINGLE: total_sessions 동반 조회 (회수 기반 단건/패키지 자동 분류).
   const loadActivePkgs = useCallback(async () => {
     const { data } = await supabase
       .from('packages')
-      .select('id, package_name')
+      .select('id, package_name, total_sessions')
       .eq('customer_id', customerId)
       .eq('status', 'active')
       .order('created_at', { ascending: false });
-    setActivePkgs((data ?? []).map((p: { id: string; package_name: string }) => ({ id: p.id, name: p.package_name })));
+    setActivePkgs((data ?? []).map((p: { id: string; package_name: string; total_sessions: number }) =>
+      ({ id: p.id, name: p.package_name, totalSessions: p.total_sessions ?? 0 })));
   }, [customerId]);
 
   const load = useCallback(async () => {
@@ -406,11 +410,12 @@ function ReceiptUploadSection({
     await loadActivePkgs();
     const { data: pkgRows } = await supabase
       .from('packages')
-      .select('id, package_name')
+      .select('id, package_name, total_sessions')
       .eq('customer_id', customerId)
       .eq('status', 'active')
       .order('created_at', { ascending: false });
-    const pkgs = (pkgRows ?? []).map((p: { id: string; package_name: string }) => ({ id: p.id, name: p.package_name }));
+    const pkgs = (pkgRows ?? []).map((p: { id: string; package_name: string; total_sessions: number }) =>
+      ({ id: p.id, name: p.package_name, totalSessions: p.total_sessions ?? 0 }));
     setActivePkgs(pkgs);
     // 매출 연동 다이얼로그 열기 — 영수증 업로드 = 항상 패키지 결제. 최신 패키지 1건 프리셀렉트.
     // 활성 패키지 없으면 다이얼로그 내 가드로 차단(등록 비활성), 단건 fallback 안 함.
@@ -447,6 +452,41 @@ function ReceiptUploadSection({
       amountDlg.paymentDate && amountDlg.paymentDate !== todaySeoulISODate()
         ? `${amountDlg.paymentDate}T12:00:00+09:00`
         : undefined;
+
+    // ── T-20260610-foot-PKGCLASS-SESSION1-SINGLE (AC-3·회수1 영수증=단건) ───────────
+    // 선택 패키지의 총 회수=1 이면 단건(payments)으로 분류한다. RECEIPT-PKG-ALWAYS(305b0ad)를
+    // 회수=1 케이스에 한해 supersede. 1차 키=회수(금액 보조). Closing은 payments(단건)·
+    // package_payments(패키지) 행을 각각 집계하므로 분기만으로 단건 버킷에 정확히 산입된다.
+    const selectedPkg = activePkgs.find((p) => p.id === amountDlg.packageId);
+    if (selectedPkg && isSinglePaymentByCount(selectedPkg.totalSessions)) {
+      const { error: pErr } = await supabase.from('payments').insert({
+        clinic_id: clinicId,
+        check_in_id: null, // 영수증 업로드는 내원(check_in) 비종속 — payments.check_in_id NULLABLE
+        customer_id: customerId,
+        amount: amt,
+        method: amountDlg.method,
+        installment: 0,
+        payment_type: 'payment',
+        memo: '영수증 업로드(회수1·단건)',
+        ...(createdAtOverride ? { created_at: createdAtOverride } : {}),
+      });
+      if (pErr) { toast.error(`단건 결제 기록 실패: ${pErr.message}`); return; }
+      // 패키지 자체는 존속(1회 세션 소진 추적). paid_amount 에 단건 납부분 직접 반영 —
+      // payments 행은 package_payments 합계에 안 잡히므로 "미납" 오표시 방지.
+      const { data: pkgRow } = await supabase
+        .from('packages')
+        .select('paid_amount')
+        .eq('id', amountDlg.packageId)
+        .maybeSingle();
+      await supabase
+        .from('packages')
+        .update({ paid_amount: (pkgRow?.paid_amount ?? 0) + amt })
+        .eq('id', amountDlg.packageId);
+      setAmountDlg((d) => ({ ...d, open: false }));
+      toast.success('단건 결제로 기록 (회수 1회)');
+      onPaymentCreated();
+      return;
+    }
 
     // PKG-REVENUE-SPLIT(2026-05-19 확립) 경로 재사용 — 새 경로 신설 금지(AC-5).
     const { error: ppErr } = await supabase.from('package_payments').insert({

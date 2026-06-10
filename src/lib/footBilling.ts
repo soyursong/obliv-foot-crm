@@ -26,6 +26,24 @@ import { supabase } from './supabase';
 export type TaxClass = '비급여(과세)' | '비급여(면세)' | '급여';
 
 /**
+ * T-20260610-foot-PKGCLASS-SESSION1-SINGLE — 회수=1 패키지 = 단건 결제 자동 분류.
+ *
+ * 결제 분류의 1차 키는 **패키지 총 회수(total_sessions)**. 회수≥2 만 패키지(package_payments),
+ * 회수≤1(=1회 또는 0회 degenerate)은 단건(payments)으로 분류한다. 금액은 보조 신호일 뿐
+ * 분류 키가 아니다(reporter 김주연 총괄, 2026-06-10).
+ *
+ * 관계 정합:
+ *   - RECEIPT-PKG-ALWAYS(305b0ad): "영수증 = 항상 package_payments" 를 **회수=1 케이스에 한해 supersede**.
+ *   - TRIAL-REVENUE-ZERO(b5bbf28, isTrialService): 체험권(=1회 즉시결제)을 단건 처리한 선례의 **일반화**.
+ *     체험권은 total_sessions=1 이므로 본 규칙으로 동일하게 단건으로 수렴한다(회귀 없음).
+ *
+ * 경계: "회수≥2 → 패키지" 의 여집합. 따라서 1 이하는 모두 단건(0회 degenerate 패키지도 단건 처리해 안전).
+ */
+export function isSinglePaymentByCount(totalSessions: number | null | undefined): boolean {
+  return (totalSessions ?? 0) <= 1;
+}
+
+/**
  * T-20260526-foot-COPAY-MINI-BUG AC-1:
  * 건보 유효 등급(일반/차상위/의료급여/6세미만/65세정액) + hira_code 보유 항목 → 급여 분류.
  */
