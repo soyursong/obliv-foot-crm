@@ -100,7 +100,9 @@ export function ReservationContextMenu({ reservation, position, onClose, onCance
         data-testid="resv-ctx-harddelete-btn"
         className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 active:bg-red-100 transition text-left"
         onClick={() => {
-          if (!window.confirm('예약을 완전 삭제하시겠습니까? 이력이 남지 않습니다.')) return;
+          // T-20260610-foot-RESV-MGMT-CTXMENU-DETAIL-5FIX item2: 삭제=완전제거(복구불가) 의미 명시.
+          // CustomerQuickMenu(예약관리)와 동일 문구 — 진입점 간 의미 단일화(item1).
+          if (!window.confirm('예약을 완전 삭제하시겠습니까?\n삭제하면 정보가 완전히 사라지며 복구할 수 없습니다.\n(다시 올 고객이라면 [예약 취소]를 쓰세요)')) return;
           onDeleteReservation(reservation);
           onClose();
         }}

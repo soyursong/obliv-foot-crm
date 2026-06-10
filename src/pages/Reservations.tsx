@@ -824,18 +824,17 @@ export default function Reservations() {
     setResvMedicalChartOpen(true);
   }, []);
 
-  const handleResvNewReservation = useCallback((ci: CheckIn) => {
-    setEditor({
-      date: format(selectedDay, 'yyyy-MM-dd'),
-      time: '',
-      name: ci.customer_name ?? '',
-      phone: ci.customer_phone ?? '',
-      visit_type: ci.visit_type,
-      memo: '',
-      booking_memo: '',
-      customer_id: ci.customer_id,
-    });
-  }, [selectedDay]);
+  // T-20260610-foot-RESV-MGMT-CTXMENU-DETAIL-5FIX item3 (Q2 김주연 총괄 확정 MSG-181801-wotc):
+  // 예약관리 우클릭 [예약상세] → 신규예약 editor 가 아니라 4분할 예약상세 팝업(ReservationDetailPopup) 오픈.
+  // 라벨만 X — 클릭 동작까지 변경. 기존 [예약하기](신규예약 생성) 동선은 대시보드 고객카드 경로
+  // (handleNewReservation, Dashboard.tsx)에 그대로 유지 — 이 메뉴는 '기존 예약' 대상이므로 상세 진입이 맞음.
+  const handleResvOpenDetailFromMenu = useCallback((ci: CheckIn) => {
+    const resvId = ci.reservation_id;
+    if (!resvId) { toast.error('예약 정보를 찾을 수 없습니다'); return; }
+    const resv = rows.find((r) => r.id === resvId);
+    if (!resv) { toast.error('예약 정보를 찾을 수 없습니다'); return; }
+    setDetail(resv);
+  }, [rows]);
 
   const handleResvOpenPayment = useCallback(async (ci: CheckIn) => {
     if (!ci.customer_id) { toast.info('고객 정보가 연결되어 있지 않습니다'); return; }
@@ -1528,13 +1527,14 @@ export default function Reservations() {
         onClose={() => setResvContextMenu(null)}
         onOpenChart={handleResvOpenChart}
         onOpenMedicalChart={handleResvOpenMedicalChart}
-        onNewReservation={handleResvNewReservation}
+        /* T-20260610-foot-RESV-MGMT-CTXMENU-DETAIL-5FIX item3 (Q2 확정): [예약상세] 클릭 → 예약상세 팝업 오픈
+           (POPUP-SYNC AC-3 에서 라벨만 분기했던 와이어링을 본 티켓에서 동작까지 연결). */
+        onNewReservation={handleResvOpenDetailFromMenu}
         onOpenPayment={handleResvOpenPayment}
         onCancelReservation={handleResvCancelRequest}
         /* T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-1: 완전 삭제 parity (대시보드 우클릭과 동일 hard delete) */
         onDeleteReservation={handleResvHardDelete}
-        /* T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-3: 예약관리(기존 예약 우클릭)는 '예약상세'로 표기.
-           대시보드 고객카드(체크인=신규 예약)는 기본 '예약하기' 유지. 와이어링은 (a) 확정 후. */
+        /* 예약관리(기존 예약 우클릭)는 '예약상세'로 표기. 대시보드 고객카드(체크인=신규 예약)는 기본 '예약하기' 유지. */
         reservationActionLabel="예약상세"
       />
 
