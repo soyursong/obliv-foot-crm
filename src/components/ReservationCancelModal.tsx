@@ -50,6 +50,10 @@ export function ReservationCancelModal({ open, customerName, onClose, onConfirm,
           <p className="text-sm text-muted-foreground">
             <span className="font-semibold text-gray-800">{customerName}</span> 님의 예약을 취소합니다.
           </p>
+          {/* T-20260610-foot-RESV-MGMT-CTXMENU-DETAIL-5FIX item2: 취소=정보 keep·재예약 가능 의미 안내 (삭제와 구분) */}
+          <p className="text-xs text-teal-700">
+            취소해도 고객·예약 이력은 남으며, 같은 고객으로 다시 예약할 수 있습니다.
+          </p>
 
           <div className="space-y-1.5">
             <Label htmlFor="cancel-reason" className="text-sm font-medium">
