@@ -3,8 +3,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { toast } from '@/lib/toast';
-import { Plus, UserCog, DoorOpen, ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, Settings, X, PowerOff, Power } from 'lucide-react';
+import { Plus, UserCog, DoorOpen, ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, Settings, X, PowerOff, Power, ClipboardList } from 'lucide-react';
 import { DutyRosterTab } from '@/components/DutyRosterTab';
+import { ReservationRegistrarTab } from '@/components/ReservationRegistrarTab';
 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -75,6 +76,11 @@ export default function StaffPage() {
             <DoorOpen className="mr-1 h-4 w-4" /> 공간 배정
           </TabsTrigger>
           {isAdmin && (
+            <TabsTrigger value="registrars">
+              <ClipboardList className="mr-1 h-4 w-4" /> 예약등록자
+            </TabsTrigger>
+          )}
+          {isAdmin && (
             <TabsTrigger value="settings">
               <Settings className="mr-1 h-4 w-4" /> 클리닉 설정
             </TabsTrigger>
@@ -83,6 +89,11 @@ export default function StaffPage() {
         <TabsContent value="duty">{clinic && <DutyRosterTab clinic={clinic} />}</TabsContent>
         <TabsContent value="staff">{clinic && <StaffTab clinic={clinic} />}</TabsContent>
         <TabsContent value="rooms">{clinic && <RoomTab clinic={clinic} />}</TabsContent>
+        {isAdmin && (
+          <TabsContent value="registrars">
+            {clinic && <ReservationRegistrarTab clinic={clinic} />}
+          </TabsContent>
+        )}
         {isAdmin && (
           <TabsContent value="settings">
             {clinic && <ClinicSettingsTab clinic={clinic} onSaved={refetchClinic} />}

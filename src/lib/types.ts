@@ -550,3 +550,14 @@ export interface ReservationRegistrar {
   created_at: string;
   updated_at: string;
 }
+
+/**
+ * T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 방문경로(예약경로) 대분류 옵션 SSOT.
+ * customers.visit_route / reservations.visit_route CHECK 제약과 동일 4값.
+ * ⚠ 신규 enum 신설 금지 — 2번차트 방문경로 드롭다운과 동일 항목 재사용(SelfCheckIn/신규예약 editor/예약상세 팝업 공용).
+ */
+export const VISIT_ROUTE_OPTIONS = ['TM', '인바운드', '워크인', '지인소개'] as const;
+export type VisitRoute = (typeof VISIT_ROUTE_OPTIONS)[number];
+
+/** 예약등록자 마스터 그룹 라벨 순서 (드롭다운 그룹 헤더용). */
+export const REGISTRAR_GROUPS = ['원내', 'TM'] as const;
