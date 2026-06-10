@@ -6,6 +6,8 @@ import { Toaster } from 'sonner';
 import { AuthProvider } from '@/lib/auth';
 import { ProtectedRoute, RoleGuard } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
+// T-20260610-foot-SPA-VERSION-AUTORELOAD: 배포 후 stale-app 재발방지 — 신버전 감지 배너
+import UpdateBanner from '@/components/UpdateBanner';
 
 /**
  * T-20260522-foot-SPA-NAV-RELOAD: chunk load failure 자동 복구
@@ -141,6 +143,8 @@ function App() {
             },
           }}
         />
+        {/* T-20260610-foot-SPA-VERSION-AUTORELOAD: 신버전 감지 시 하단 배너(사용자 클릭으로만 reload) */}
+        <UpdateBanner />
         <BrowserRouter>
           <Suspense fallback={<PageLoader />}>
             <Routes>

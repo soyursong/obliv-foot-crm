@@ -1,9 +1,45 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
+/**
+ * T-20260610-foot-SPA-VERSION-AUTORELOAD
+ * 배포 후 현장 태블릿이 in-memory 구번들로 도는 stale-app 재발방지.
+ * 빌드 시점에 고유 BUILD_ID 를 ① 번들에 주입(import.meta.env.VITE_BUILD_ID)하고,
+ * ② 동일 ID 를 담은 정적 version.json 을 dist 루트에 emit 한다.
+ * 클라(useVersionCheck)가 /version.json(no-cache)을 폴링/visibility 전환 시 읽어
+ * 번들에 박힌 로컬 BUILD_ID 와 다르면 '새 버전' 배너를 띄운다(무패키지).
+ * Vercel 은 VERCEL_GIT_COMMIT_SHA 를 제공 → 커밋 단위로 안정적인 버전 식별.
+ */
+const BUILD_ID =
+  process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ??
+  process.env.GIT_COMMIT_SHA?.slice(0, 12) ??
+  `local-${Date.now()}`;
+
+/** dist 루트에 version.json 을 emit (빌드 시에만 동작) */
+function buildVersionPlugin(): Plugin {
+  return {
+    name: "obliv-foot-build-version",
+    apply: "build",
+    generateBundle() {
+      this.emitFile({
+        type: "asset",
+        fileName: "version.json",
+        source: JSON.stringify({
+          buildId: BUILD_ID,
+          builtAt: new Date().toISOString(),
+        }),
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  define: {
+    // 번들에 빌드 ID 주입 — 클라가 서버 version.json 과 비교하는 기준값
+    "import.meta.env.VITE_BUILD_ID": JSON.stringify(BUILD_ID),
+  },
+  plugins: [react(), buildVersionPlugin()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
