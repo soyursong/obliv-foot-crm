@@ -1,6 +1,6 @@
 // LOGIC-LOCK: L-003 — 차트 수정사항 CRM 전체 고객 동일 적용. 변경 시 현장 승인 필수
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, ExternalLink, FileText, Loader2, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
@@ -1874,6 +1874,14 @@ function formatDwell(seconds: number): string {
 export default function CustomerChartPage({ customerId: propCustomerId }: { customerId?: string } = {}) {
   const params = useParams<{ customerId: string }>();
   const customerId = propCustomerId ?? params.customerId;
+  // T-20260609-foot-VISITLOG-NAMING-CLARIFY: 진료차트 우측 패널 deep-link 진입(?medchart=visit_hist 등).
+  //   값이 우측 탭 키면 그 탭으로, 그 외 truthy면 기본 탭으로 패널을 열어 '방문이력' 라벨을 노출 보장.
+  const [searchParams] = useSearchParams();
+  const medchartParam = searchParams.get('medchart');
+  const RIGHT_TAB_KEYS = ['rx', 'phrase', 'super', 'visit_hist', 'images', 'consult'] as const;
+  const medchartInitialTab = (RIGHT_TAB_KEYS as readonly string[]).includes(medchartParam ?? '')
+    ? (medchartParam as 'rx' | 'phrase' | 'super' | 'visit_hist' | 'images' | 'consult')
+    : undefined;
   const navigate = useNavigate();
   const { profile, loading: authLoading } = useAuth();
   // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동
@@ -1929,6 +1937,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [loading, setLoading] = useState(true);
   // T-20260527-foot-MEDCHART-TAB-REAPPEAR: 진료차트 패널 열림 상태 (데이터 유무 무관 항상 렌더 가능)
   const [medicalChartOpen, setMedicalChartOpen] = useState(false);
+  // T-20260609-foot-VISITLOG-NAMING-CLARIFY: ?medchart 진입 시 고객 로드 후 진료차트 패널 1회 자동 오픈.
+  //   (패널 안에 '방문이력' 탭/라벨이 있음 — deep-link 노출 경로 보장. 사용자가 닫으면 재오픈 안 함.)
+  const medchartAutoOpenedRef = useRef(false);
 
   // T-20260507-foot-CHART2-FULL-LAYOUT: 탭 네비게이션 (전능CRM 이중 탭)
   // T-20260522-foot-CHART2-TAB-PENCHART: 기본 탭 → 펜차트 (현장 요청)
@@ -2297,6 +2308,14 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       setLoading(false);
     })();
   }, [customerId, profile]);
+
+  // T-20260609-foot-VISITLOG-NAMING-CLARIFY: ?medchart deep-link → 고객 로드 완료 후 진료차트 패널 자동 오픈(1회).
+  useEffect(() => {
+    if (!medchartParam || medchartAutoOpenedRef.current) return;
+    if (!customer) return; // 패널은 customer 가 있어야 렌더됨
+    medchartAutoOpenedRef.current = true;
+    setMedicalChartOpen(true);
+  }, [medchartParam, customer]);
 
   // T-20260510-foot-C21-IMG-PROGRESS: 영수증 결제 생성 후 결제목록 새로고침
   const refreshPayments = useCallback(async () => {
@@ -7746,6 +7765,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           clinicId={customer.clinic_id}
           currentUserRole={profile?.role ?? ''}
           currentUserEmail={profile?.email ?? null}
+          initialRightTab={medchartInitialTab}
         />
       )}
     </div>

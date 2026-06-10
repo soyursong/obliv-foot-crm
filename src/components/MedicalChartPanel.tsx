@@ -283,6 +283,9 @@ export interface MedicalChartPanelProps {
   // T-20260610-foot-DOCPATIENTLIST-EXPAND-CLINICAL (AC-3, 문지은 대표원장):
   //   caller-forced 읽기전용 게이트. 진료환자목록 펼침 패널에서 '당일 외(과거/미래) 접수' 환자의
   //   임상경과 오기입 차단용 — readOnly=true 면 textarea readOnly + 저장 버튼(embed footer) 미노출.
+  // T-20260609-foot-VISITLOG-NAMING-CLARIFY: 패널 열림 시 우측 기본 탭 지정(deep-link/QA 진입용).
+  //   미지정 시 기존과 동일하게 'rx'. ?medchart=visit_hist 진입 시 '방문이력' 콘텐츠를 바로 노출하기 위함.
+  initialRightTab?: 'rx' | 'phrase' | 'super' | 'visit_hist' | 'images' | 'consult';
   //   default false → 기존 모든 호출자(DoctorCallDashboard 등) 동작 무변경(AC-4 회귀가드).
   readOnly?: boolean;
 }
@@ -467,6 +470,7 @@ export default function MedicalChartPanel({
   embed = false,
   onSaved,
   readOnly = false,
+  initialRightTab,
 }: MedicalChartPanelProps) {
   const isDirector = canViewDoctorMemo(currentUserRole);
   const navigate = useNavigate();
@@ -934,7 +938,8 @@ export default function MedicalChartPanel({
       setEditMode(true); // AC-4: 새 고객 열림 = 신규 작성 모드(편집 가능)
       setPhrasePopoverVisible(false);
       setClickedPhraseId(null);
-      setRightTab('rx');
+      // T-20260609-foot-VISITLOG-NAMING-CLARIFY: deep-link 진입(?medchart=visit_hist)이면 해당 탭으로 열기. 기본은 'rx'(불변).
+      setRightTab(initialRightTab ?? 'rx');
       // T-20260526-foot-MEDCHART-SYNC: 참고 데이터 리셋 (새 고객 열릴 때마다)
       // T-20260527-foot-TREATMEMO-CHART-MERGE: treatMemos는 loadData에서 자동 재로드됨
       setTreatMemos([]);
@@ -952,7 +957,7 @@ export default function MedicalChartPanel({
       setCharts([]);
       setSelectedChartId(null);
     }
-  }, [open, customerId, loadData, resetForm]);
+  }, [open, customerId, loadData, resetForm, initialRightTab]);
 
   // T-20260609-foot-CHARTBTN-MINIMAL-COURSE-DRAWER (clinical variant):
   //   미니멀 임상경과 뷰는 '빠른 경과 입력'이므로, 오늘 날짜의 기존 차트가 있으면 그 차트를 골라
