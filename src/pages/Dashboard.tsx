@@ -2471,6 +2471,55 @@ function DashboardTimeline({
   );
 }
 
+/**
+ * T-20260610-foot-RESV-DUPGUARD-SAMEDAY: 대시보드 예약 신규 생성 당일 동일고객 중복 가드.
+ * 선행 정본 = fn_selfcheckin_dup_guard (T-20260602-foot-SELFCHECKIN-DUP-GUARD) 와 일관 — 병렬 가드 정의 금지.
+ * 분기 (a): reservations 당일 1건 강제. checked_in 예약 row 도 활성(NOT cancelled)이므로
+ *   "체크인 완료 고객 재예약 생성"(증거 F0B9CLQ1KRT)을 동일 가드로 차단.
+ * 조회: clinic_id + (customer_id|phone digits) + reservation_date + status NOT IN ('cancelled').
+ *   - status NOT IN ('cancelled') → 취소 후 재예약 정상 동선 유지 (AC-3).
+ * 서버 권위 RPC fn_reservation_dup_guard 우선, 미배포 환경에서는 fallback SELECT 로 graceful degrade.
+ * @returns true = 중복(차단), false = 생성 허용.
+ */
+async function checkReservationDupSameDay(
+  clinicId: string,
+  customerId: string | null,
+  phone: string | null,
+  date: string,
+): Promise<boolean> {
+  const phoneDigits = (phone ?? '').replace(/[^0-9]/g, '');
+  if (!customerId && phoneDigits.length < 10) return false; // 식별자 없음 → 가드 불가, 허용
+
+  // 1차: 서버 권위 RPC (SELFCHECKIN-DUP-GUARD 와 동일 형태)
+  try {
+    const { data, error } = await supabase.rpc('fn_reservation_dup_guard', {
+      p_clinic_id: clinicId,
+      p_customer_id: customerId,
+      p_phone: phone,
+      p_date: date,
+    });
+    if (!error && data && typeof data === 'object') {
+      return (data as { duplicate?: boolean }).duplicate === true;
+    }
+  } catch {
+    /* RPC 미배포/오류 → fallback */
+  }
+
+  // fallback: 당일·해당 클리닉 활성 예약을 한 번에 받아 클라에서 OR 매칭 (1일치 = 소량, bounded)
+  const { data: rows, error } = await supabase
+    .from('reservations')
+    .select('id, customer_id, customer_phone')
+    .eq('clinic_id', clinicId)
+    .eq('reservation_date', date)
+    .neq('status', 'cancelled');
+  if (error || !rows) return false;
+  return (rows as Array<{ customer_id: string | null; customer_phone: string | null }>).some((r) => {
+    if (customerId && r.customer_id === customerId) return true;
+    if (phoneDigits.length >= 10 && (r.customer_phone ?? '').replace(/[^0-9]/g, '') === phoneDigits) return true;
+    return false;
+  });
+}
+
 // ── QuickReservationDialog ─────────────────────────────────────────────────────
 // T-20260517-foot-TREATROOM-RESV-UNIFY: 치료실현황 예약창 → 당일현황 빠른예약 기준 통일
 //   AC-1: 이름/연락처 InlinePatientSearch — 기존 환자 검색·자동 로드
@@ -2575,6 +2624,15 @@ function QuickReservationDialog({
         setSaving(false);
         return;
       }
+    }
+
+    // T-20260610-foot-RESV-DUPGUARD-SAMEDAY: 동일고객 당일 예약 중복 생성 방지 (insert 직전 게이트)
+    const dupPhone = (normalizeToE164(form.phone) ?? form.phone.trim()) || null;
+    const isDup = await checkReservationDupSameDay(clinicId, customerId, dupPhone, form.date);
+    if (isDup) {
+      toast.error('이미 같은 날짜에 예약(또는 접수)이 있는 고객입니다. 기존 예약을 확인하거나 취소 후 다시 생성해 주세요.');
+      setSaving(false);
+      return;
     }
 
     const { error } = await supabase.from('reservations').insert({
