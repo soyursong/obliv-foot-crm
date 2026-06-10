@@ -23,6 +23,10 @@ import { formatRxConfirmedSummary } from '@/lib/rxTooltip';
 //   배정 슬롯 파생 SSOT 재사용. read-only(기존 *_room 컬럼 조회만), 스키마/비즈로직 무변경.
 import { getAssignedSlotName } from '@/lib/checkin-slot';
 import type { CheckInStatus } from '@/lib/types';
+// T-20260610-foot-DOCPATIENTLIST-EXPAND-COURSE-RXHISTORY (AC-1): 임상경과 = DoctorCallDashboard
+//   showClinical 과 동일 SSOT(MedicalChartPanel embed variant='clinical'). 신규 조회경로/Drawer 신설 금지.
+//   기존 차트 존재 시 read 모드(isReadOnly)로 로드 — read 뷰 요건 충족.
+import MedicalChartPanel from '@/components/MedicalChartPanel';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -389,6 +393,8 @@ function PatientRow({
   onRefresh,
   onOpenChart,
   isPast = false,
+  clinicId,
+  currentUserEmail,
 }: {
   row: PatientRow;
   doctorMode: boolean;
@@ -398,6 +404,9 @@ function PatientRow({
   onOpenChart?: () => void;
   /** T-20260609-foot-PASTVISIT-TREATMENT-VIEW: 과거 날짜(어제 이전) read-only '받은 치료' 모드. */
   isPast?: boolean;
+  /** T-20260610-foot-DOCPATIENTLIST-EXPAND-COURSE-RXHISTORY: 확장 임상경과(MedicalChartPanel) 컨텍스트. */
+  clinicId?: string | null;
+  currentUserEmail?: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const confirm = useConfirmPrescription();
@@ -585,9 +594,11 @@ function PatientRow({
         </div>
       </div>
 
-      {/* 펼쳐진 영역 — 빠른처방 버튼 */}
+      {/* 펼쳐진 영역 — 빠른처방 버튼
+          T-20260610-foot-DOCPATIENTLIST-EXPAND-COURSE-RXHISTORY: 아래에 임상경과+처방내역 블록이
+          이어지므로 rounded-b-lg 는 최하단 블록으로 이관(여기선 제거). 게이트/버튼 로직 불변(AC-3). */}
       {expanded && !isConfirmed && (
-        <div className="border-t px-3 py-2.5 bg-white rounded-b-lg">
+        <div className="border-t px-3 py-2.5 bg-white">
           <QuickRxBar
             doctorMode={doctorMode}
             role={role}
@@ -611,7 +622,7 @@ function PatientRow({
       {/* 확정된 경우 — T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-2/4:
           "처방완료" + 약물리스트(검은글씨, 다중약 전체). 재클릭 → 취소 확인 팝업(별도 취소버튼 폐지). */}
       {expanded && isConfirmed && (
-        <div className="border-t px-3 py-2.5 bg-green-50/60 rounded-b-lg">
+        <div className="border-t px-3 py-2.5 bg-green-50/60">
           <div className="flex items-center gap-1.5">
             <RxConfirmedSummary
               checkInId={row.id}
@@ -631,6 +642,60 @@ function PatientRow({
               </span>
             )}
           </div>
+        </div>
+      )}
+
+      {/* 확장 상세 — 임상경과 + 처방내역 read 뷰.
+          T-20260610-foot-DOCPATIENTLIST-EXPAND-COURSE-RXHISTORY (AC-1/2, 문지은 6/10):
+          - 351dd72/497672b 이후 비잔류(빠른처방 불가) 행은 QuickRxBar가 빈 렌더 → 그 빈 자리를
+            임상경과+처방내역으로 채운다(planner 최소 요건 (b)). 동선 일관성 위해 모든 확장 행에 표시(옵션 a, dev 판단).
+          - 처방내역: prescriptionOneLine(formatRxConfirmedSummary 정본) 다중약 전체 read 한 줄.
+            확정 행은 상단 RxConfirmedSummary가 이미 약물리스트 표시 → 중복 방지 위해 !isConfirmed 행만 노출.
+          - 임상경과: MedicalChartPanel embed variant='clinical'(DoctorCallDashboard showClinical 동일 SSOT).
+            customer_id+clinic_id 있을 때만. 기존 차트 있으면 read 모드(isReadOnly) 로드. 신규 조회경로/Drawer 없음. */}
+      {expanded && (
+        <div
+          className="border-t px-3 py-2.5 bg-white rounded-b-lg space-y-2"
+          data-testid="patient-expand-detail"
+        >
+          {!isConfirmed && (
+            <div className="flex items-start gap-1.5" data-testid="expand-rx-history">
+              <span className="shrink-0 text-[11px] font-semibold text-muted-foreground">처방내역</span>
+              {(() => {
+                const rxLine = prescriptionOneLine(row.prescription_items);
+                const hasRx = rxLine !== '처방없음';
+                return (
+                  <span
+                    className={`text-[11px] ${hasRx ? 'text-foreground' : 'text-muted-foreground/60'}`}
+                    title={rxLine}
+                  >
+                    {rxLine}
+                  </span>
+                );
+              })()}
+            </div>
+          )}
+
+          {row.customer_id && clinicId ? (
+            <div data-testid="expand-clinical-course">
+              <span className="mb-1 block text-[11px] font-semibold text-muted-foreground">임상경과</span>
+              <MedicalChartPanel
+                embed
+                open
+                variant="clinical"
+                customerId={row.customer_id}
+                clinicId={clinicId}
+                currentUserRole={role}
+                currentUserEmail={currentUserEmail ?? null}
+                onOpenChange={() => { /* embed clinical: 호출부 토글 없음 — 확장 토글이 가시성 제어 */ }}
+                onSaved={onRefresh}
+              />
+            </div>
+          ) : (
+            <p className="text-[11px] text-muted-foreground/60" data-testid="expand-clinical-na">
+              임상경과를 표시할 수 없습니다(고객 정보 없음).
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -878,6 +943,8 @@ export default function DoctorPatientList() {
               onRefresh={() => refetch()}
               onOpenChart={row.customer_id ? () => openChart(row.customer_id as string) : undefined}
               isPast={isPast}
+              clinicId={clinicId}
+              currentUserEmail={profile?.email ?? null}
             />
           ))}
         </div>
