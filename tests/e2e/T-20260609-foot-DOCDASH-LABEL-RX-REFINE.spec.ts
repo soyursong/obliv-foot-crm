@@ -133,9 +133,11 @@ test.describe('S4 item4 — 이름·배지 중앙정렬', () => {
     expect(s).toMatch(/처방 상태 배지[\s\S]*?<div className="flex justify-center">/);
   });
 
-  test('회귀: grid 컬럼 정의 7트랙 보존 + items-center(세로 중앙) 유지', () => {
+  test('회귀: grid 컬럼 정의 8트랙 보존 + items-center(세로 중앙) 유지', () => {
     const s = src();
-    expect(s).toContain('grid grid-cols-[1.75rem_3rem_5rem_5.5rem_3.75rem_minmax(0,1fr)_auto] items-center');
+    // T-20260610-foot-DOCDASH-DIAGMGMT-6FIX(5e55c13)이 4.75rem 치료실 열을 추가 — 7→8트랙 정합 갱신.
+    //   가드 의도(이름·배지 셀 가로 중앙 + items-center 세로 중앙 보존)는 불변, 트랙 수만 현행화.
+    expect(s).toContain('grid grid-cols-[1.75rem_3rem_5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto] items-center');
   });
 });
 
