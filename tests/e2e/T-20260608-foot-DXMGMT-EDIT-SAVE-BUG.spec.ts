@@ -24,7 +24,9 @@ test('AC-1: useUpsertDx payload = name/service_code/active/sort_order만 (폴더
   const src = read(TAB);
   expect(src).toContain('useUpsertDx');
   expect(src).toContain('name: form.name.trim()');
-  expect(src).toContain('service_code: form.service_code.trim()');
+  // T-20260610-foot-DIAG-CODE-VALIDATION: service_code 는 trim+대문자 정규화(normalizeServiceCode) 후
+  //   저장(빈 코드 null). 저장 payload 구조(name/service_code/active/sort_order)·무폴더 불변은 유지.
+  expect(src).toContain('service_code: normalizeServiceCode(form.service_code) || null');
   // 폴더 컬럼은 저장 경로에서 완전히 분리 — payload 에 등장 금지
   expect(src).not.toContain('diagnosis_folder: form');
   expect(src).not.toContain('diagnosis_folder_id: form');

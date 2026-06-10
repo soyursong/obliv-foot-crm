@@ -112,7 +112,9 @@ test.describe('S3 item3 — 약 한 줄 표기 포맷', () => {
   test('정본(lib/rxTooltip.ts)이 한 줄 `*` 포맷 유지 (구조 회귀 가드)', () => {
     const src = SRC('lib/rxTooltip.ts');
     expect(src).toContain('export function formatRxConfirmedSummary');
-    expect(src).toMatch(/\$\{name\}\s*\$\{freq\}\s*\*/); // `${name} ${freq} *`
+    // T-20260610-foot-RX-TOKEN-FORMAT(954c999): freq 단일 토큰 → dosage/count/days 3토큰(`${dose}`).
+    //   구조 가드 불변(한 줄 · `${name} … *` 종결), 토큰 변수만 freq→dose 현행화.
+    expect(src).toMatch(/\$\{name\}\s*\$\{dose\}\s*\*/); // `${name} ${dose} *`
   });
 });
 
@@ -161,7 +163,11 @@ test.describe('S5 item6 — 처방나감 필터', () => {
   test('소스: 필터 라벨 "처방나감" + key "confirmed", 옛 "처방 없음"/none 제거', () => {
     const s = SRC('components/doctor/DoctorPatientList.tsx');
     expect(s).toMatch(/key:\s*'confirmed'\s*as const,\s*label:\s*`처방나감/);
-    expect(s).toContain("if (filter === 'confirmed') return p.prescription_status === 'confirmed';");
+    // T-20260610-foot-DOCPATIENTLIST-SIGNDOCTOR-FILTER: 단일 return 술어 → 가드형 early-return
+    //   리팩터(서명의사 필터와 AND 누적 위해). 술어 방향 불변(confirmed만 통과), 형태만 현행화.
+    expect(s).toContain(
+      "if (filter === 'confirmed' && p.prescription_status !== 'confirmed') return false;",
+    );
     // 옛 필터 옵션/술어 제거 (배지 title="처방 없음" 은 별개 — 필터 옵션 라벨만 검사)
     expect(s).not.toMatch(/key:\s*'none'\s*as const/);
     expect(s).not.toContain("if (filter === 'none')");

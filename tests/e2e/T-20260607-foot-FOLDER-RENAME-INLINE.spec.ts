@@ -48,8 +48,9 @@ test('AC-A3: 빈값·형제중복 검증 (미분류 버킷은 rename 비대상)'
   const src = read(DX);
   expect(src).toContain('폴더 이름을 입력해주세요.'); // 빈값
   expect(src).toContain('같은 위치에 같은 이름의 폴더가 이미 있어요.'); // 형제 중복
-  // 미분류는 합성 버킷(UnassignedBucket) — rename 진입점 자체 없음
-  expect(src).toContain('UnassignedBucket');
+  // DXMGMT-LEFT-FOLDER-FIX: 합성 "미분류" 버킷이 "전체목록" 노드(AllItemsBucket, ALL_KEY)로 격상.
+  //   여전히 실폴더 아닌 합성 노드 → rename 진입점 없음(의도 불변, 식별자만 현행화).
+  expect(src).toContain('AllItemsBucket');
 });
 
 // ⚠️ DXRX-MGMT-2PANEL: 폴더 모델 TEXT → 엔티티(diagnosis_folders). rename =

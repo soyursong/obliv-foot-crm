@@ -201,13 +201,16 @@ test.describe('T-20260601 RX-QUICKBAR-ACCUMULATE — 진료 패널 빠른처방 
     // AC-1: 빠른처방 A 클릭 → 1행 추가
     await quickBtn(page, BTN_A_NAME).click();
     await expect(rxRows(page)).toHaveCount(1);
-    await expect(page.getByText(A_DRUG)).toBeVisible();
+    // ⚠ locator 스코프: 약명은 처방행(prescription-item-row) 외에 빠른처방 hover 툴팁
+    //   (quick-rx-tooltip-*, QUICKRX-HOVER-TOOLTIP)에도 노출 → bare getByText 는 strict 위반.
+    //   처방행으로 한정해 누적 실체만 단언한다.
+    await expect(rxRows(page).filter({ hasText: A_DRUG })).toHaveCount(1);
 
     // AC-2(핵심 버그): B 이어 클릭 → A 사라지지 않고 누적 (2행). 버그 시 setFieldsSynced(false) 로 DB(빈) 리셋되어 0~1행.
     await quickBtn(page, BTN_B_NAME).click();
     await expect(rxRows(page)).toHaveCount(2);
-    await expect(page.getByText(A_DRUG)).toBeVisible(); // A 보존
-    await expect(page.getByText(B_DRUG)).toBeVisible(); // B 누적
+    await expect(rxRows(page).filter({ hasText: A_DRUG })).toHaveCount(1); // A 보존
+    await expect(rxRows(page).filter({ hasText: B_DRUG })).toHaveCount(1); // B 누적
 
     // AC-3: 동일 버튼 A 재클릭 → name 중복 필터로 추가 안 됨 (여전히 2행)
     await quickBtn(page, BTN_A_NAME).click();
@@ -219,6 +222,7 @@ test.describe('T-20260601 RX-QUICKBAR-ACCUMULATE — 진료 패널 빠른처방 
     await openTreatmentRxTab(page, CUST1_NAME);
 
     await quickBtn(page, BTN_A_NAME).click();
+    await expect(rxRows(page)).toHaveCount(1); // A 누적 확인 후 B 클릭(연속 클릭 레이스 방지)
     await quickBtn(page, BTN_B_NAME).click();
     await expect(rxRows(page)).toHaveCount(2);
 
@@ -231,8 +235,8 @@ test.describe('T-20260601 RX-QUICKBAR-ACCUMULATE — 진료 패널 빠른처방 
     // 재진입 → DB 영속 확인 (2행 복원)
     await openTreatmentRxTab(page, CUST1_NAME);
     await expect(rxRows(page)).toHaveCount(2);
-    await expect(page.getByText(A_DRUG)).toBeVisible();
-    await expect(page.getByText(B_DRUG)).toBeVisible();
+    await expect(rxRows(page).filter({ hasText: A_DRUG })).toHaveCount(1);
+    await expect(rxRows(page).filter({ hasText: B_DRUG })).toHaveCount(1);
   });
 
   // ── AC-5: 다른 환자 전환 → 그 환자 DB 목록으로 정상 표시 (최초 동기화 회귀 없음) ──
@@ -240,6 +244,6 @@ test.describe('T-20260601 RX-QUICKBAR-ACCUMULATE — 진료 패널 빠른처방 
     await openTreatmentRxTab(page, CUST2_NAME);
     // 최초 동기화 블록(!fieldsSynced)이 유지되어 DB 의 선존재 처방 1건이 표시돼야 함
     await expect(rxRows(page)).toHaveCount(1);
-    await expect(page.getByText(PRESEED_DRUG)).toBeVisible();
+    await expect(rxRows(page).filter({ hasText: PRESEED_DRUG })).toHaveCount(1);
   });
 });
