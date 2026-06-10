@@ -90,6 +90,11 @@ function treatmentSummary(row: Pick<PatientRow, 'treatment_category' | 'treatmen
 //   둘 다 방어적으로 흡수. count = '처방 횟수칸'(1일 투여횟수 SSOT, PrescriptionItem.count).
 // ---------------------------------------------------------------------------
 function normalizeRxItem(raw: unknown) {
+  // T-20260610-foot-RX-TOKEN-FORMAT (supervisor FIX phase1, runtime_null_safety):
+  //   items 배열에 null/undefined/원시값이 섞여 있어도 it.name 접근에서 TypeError 안 나도록 가드.
+  if (!raw || typeof raw !== 'object') {
+    return { name: null, dosage: null, count: null, frequency: null, days: null };
+  }
   const it = raw as {
     name?: string;
     medication_name?: string;
