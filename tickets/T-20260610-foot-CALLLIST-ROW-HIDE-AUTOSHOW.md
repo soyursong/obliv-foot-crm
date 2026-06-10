@@ -10,7 +10,7 @@ db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: null
-commit_sha: PENDING
+commit_sha: be8e598
 created: 2026-06-10
 assignee: dev-foot
 reporter: 김주연(현장 총괄)
