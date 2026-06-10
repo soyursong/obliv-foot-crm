@@ -82,31 +82,41 @@ function treatmentSummary(row: Pick<PatientRow, 'treatment_category' | 'treatmen
 }
 
 // ---------------------------------------------------------------------------
-// 처방 내용 요약 — hover 툴팁용 (T-20260609 ③)
-//   prescription_items 는 unknown(JSONB). 빠른처방 저장 shape {name, frequency, days}
-//   또는 정식 처방 shape {medication_name, dosage, duration_days} 를 방어적으로 흡수.
+// 처방 JSONB 1건 → formatRxConfirmedSummary 입력 형태(전 토큰 필드 보존).
+//   T-20260610-foot-RX-TOKEN-FORMAT: 토큰 '1/3/2'(=1회량/1일횟수/총일수) 도출에 필요한
+//   dosage·count·days·frequency 를 모두 보존해야 함. 이전 정규화는 frequency 만 남겨
+//   1/3/2 를 만들 데이터 자체를 버렸음(반쪽 출력·원문 '1일 3회' 잔류 원인).
+//   빠른처방 shape {name, dosage, count, frequency, days} | 정식 {medication_name, duration_days}
+//   둘 다 방어적으로 흡수. count = '처방 횟수칸'(1일 투여횟수 SSOT, PrescriptionItem.count).
+// ---------------------------------------------------------------------------
+function normalizeRxItem(raw: unknown) {
+  const it = raw as {
+    name?: string;
+    medication_name?: string;
+    dosage?: string | null;
+    count?: number | null;
+    frequency?: string | null;
+    days?: number | null;
+    duration_days?: number | null;
+  };
+  return {
+    name: it.name ?? it.medication_name ?? null,
+    dosage: it.dosage ?? null,
+    count: it.count ?? null,
+    frequency: it.frequency ?? null,
+    days: it.days ?? it.duration_days ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 처방 내용 요약 — hover 툴팁용 (T-20260609 ③ → RX-TOKEN-FORMAT 정합)
+//   배지 hover 툴팁/네이티브 title 도 한 줄 셀과 동일한 1/3/2 토큰 포맷(formatRxConfirmedSummary)
+//   으로 통일 — 원문 용법('1일 3회') 노출 제거(reporter 문지은 6/10 재보고). 처방 없으면 null.
 // ---------------------------------------------------------------------------
 function prescriptionSummary(items: unknown): string | null {
   if (!Array.isArray(items) || items.length === 0) return null;
-  const parts = items
-    .map((raw) => {
-      const it = raw as {
-        name?: string;
-        medication_name?: string;
-        frequency?: string;
-        dosage?: string | null;
-        days?: number;
-        duration_days?: number | null;
-      };
-      const name = it.name ?? it.medication_name;
-      if (!name) return null;
-      const freq = it.frequency ?? it.dosage ?? '';
-      const days = it.days ?? it.duration_days ?? null;
-      const tail = [freq, days != null ? `${days}일` : ''].filter(Boolean).join(' ');
-      return tail ? `${name} (${tail})` : name;
-    })
-    .filter((s): s is string => !!s);
-  return parts.length > 0 ? parts.join(', ') : null;
+  const out = formatRxConfirmedSummary(items.map(normalizeRxItem)).trim();
+  return out || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -176,26 +186,14 @@ function PrescriptionStatusBadge({
 
 // ---------------------------------------------------------------------------
 // 이력 모드 처방 한 줄 — T-20260609-foot-DOCPATIENTLIST-DATEMODE-HISTORY (AC-2)
-//   포맷은 DOCDASH-LABEL-RX-REFINE 정본(formatRxConfirmedSummary, '{name} {freq} *' 나열)을 재사용.
-//   prescription_items 는 JSONB(빠른처방 {name,frequency,days} | 정식 {medication_name,dosage,...})
-//   → name/frequency 를 방어적으로 흡수(prescriptionSummary 와 동일 키 매핑)해 정본 포맷에 투입.
-//   처방 없으면 '처방없음'(AC-2). 토큰 세부(1/3/2) 정형은 RX-TOKEN-FORMAT(blocked) 별도 축 — 미선반영.
+//   포맷은 정본(formatRxConfirmedSummary, '{name} {dosage}/{count}/{days} *' 나열)을 재사용.
+//   T-20260610-foot-RX-TOKEN-FORMAT: 전 토큰 필드(normalizeRxItem)를 정본에 투입해 1/3/2 도출.
+//   prescription_items JSONB(빠른처방 {name,dosage,count,frequency,days} | 정식 {medication_name,...})
+//   를 normalizeRxItem 으로 흡수. 처방 없으면 '처방없음'(AC-2).
 // ---------------------------------------------------------------------------
 function prescriptionOneLine(items: unknown): string {
   if (!Array.isArray(items) || items.length === 0) return '처방없음';
-  const normalized = items.map((raw) => {
-    const it = raw as {
-      name?: string;
-      medication_name?: string;
-      frequency?: string;
-      dosage?: string | null;
-    };
-    return {
-      name: it.name ?? it.medication_name ?? null,
-      frequency: it.frequency ?? it.dosage ?? null,
-    };
-  });
-  const out = formatRxConfirmedSummary(normalized).trim();
+  const out = formatRxConfirmedSummary(items.map(normalizeRxItem)).trim();
   return out || '처방없음';
 }
 
