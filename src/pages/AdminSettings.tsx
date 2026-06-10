@@ -65,6 +65,8 @@ interface MessagingCapability {
   solapi_api_key_vault_name: string | null;
   solapi_secret_vault_name: string | null;
   sender_number: string | null;
+  // T-20260610-foot-SMS-DISPLAYNAME-SPLIT: SMS {지점명} 치환 전용 표시명. NULL이면 clinics.name(법정서식) fallback.
+  sms_display_name: string | null;
   solapi_validation_status: 'unchecked' | 'pending' | 'verified' | 'not_registered' | 'api_unreachable' | null;
   send_start_hour: number;
   send_end_hour: number;
@@ -417,6 +419,8 @@ function SectionConnection({
   const [apiKey, setApiKey]               = useState('');
   const [apiSecret, setApiSecret]         = useState('');
   const [senderNumber, setSenderNumber]   = useState(capability?.sender_number ?? '');
+  // T-20260610-foot-SMS-DISPLAYNAME-SPLIT (AC-4): 문자 {지점명} 치환 전용 표시명. 빈값=clinics.name fallback.
+  const [smsDisplayName, setSmsDisplayName] = useState(capability?.sms_display_name ?? '');
   const [enabled, setEnabled]             = useState(capability?.enabled ?? false);
   const [saving, setSaving]               = useState(false);
   const [testing, setTesting]             = useState(false);
@@ -427,6 +431,7 @@ function SectionConnection({
 
   useEffect(() => {
     setSenderNumber(capability?.sender_number ?? '');
+    setSmsDisplayName(capability?.sms_display_name ?? '');
     setEnabled(capability?.enabled ?? false);
   }, [capability]);
 
@@ -459,6 +464,14 @@ function SectionConnection({
         p_api_secret:    apiSecret.trim() || null,
       });
       if (error) throw error;
+      // ── T-20260610-foot-SMS-DISPLAYNAME-SPLIT (AC-4) ──
+      // 문자용 지점 표시명 저장(additive RPC). 빈값/공백 → NULL = clinics.name fallback.
+      // 기존 admin_save_messaging_config 시그니처 무변경 — 별도 RPC로 분리.
+      const { error: nameErr } = await (supabase.rpc as any)('admin_set_sms_display_name', {
+        p_clinic_id:        clinicId,
+        p_sms_display_name: smsDisplayName.trim() || null,
+      });
+      if (nameErr) throw nameErr;
       setApiKey('');
       setApiSecret('');
       await onRefresh();
@@ -592,6 +605,20 @@ function SectionConnection({
           ) : (
             <p className="text-xs text-amber-600">발신번호가 등록되지 않았습니다. 저장 후 SMS 발송이 가능합니다.</p>
           )}
+        </div>
+
+        {/* T-20260610-foot-SMS-DISPLAYNAME-SPLIT (AC-4): 문자 {지점명} 치환 전용 표시명 */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">문자용 지점명</label>
+          <Input
+            value={smsDisplayName}
+            onChange={(e) => setSmsDisplayName(e.target.value)}
+            placeholder="예: 오리진 (비우면 기관 정식명칭 사용)"
+            data-testid="sms-display-name-input"
+          />
+          <p className="text-xs text-muted-foreground">
+            문자 템플릿의 {'{지점명}'} 자리에 들어갈 표시명입니다. 비워두면 기관 정식명칭(법정 의료서식용)이 그대로 사용됩니다.
+          </p>
         </div>
 
         <Button onClick={handleSave} disabled={saving} className="w-full">
@@ -821,7 +848,8 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
   // ── T-20260609-foot-ADMINTEMPLATE-PREVIEW-BRANCHNAME ──
   // 미리보기 {지점명}/{지점전화번호} 치환을 하드코딩이 아닌 실제 값으로.
   // 발송 EF(send-notification)·SMS 모달과 동일 소스로 통일(정합):
-  //   {지점명}       → clinics.name
+  //   {지점명}       → clinic_messaging_capability.sms_display_name 우선, NULL이면 clinics.name fallback
+  //                    (T-20260610-foot-SMS-DISPLAYNAME-SPLIT AC-2 — clinics.name=법정서식 전용 불변)
   //   {지점전화번호} → clinic_messaging_capability.sender_number (발신번호)
   // 읽기 전용 SELECT. 조회 전/실패 시 빈 문자열 → previewBody 가 원본 토큰 유지(고정값 금지).
   const [clinicName, setClinicName]   = useState('');
@@ -835,16 +863,21 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
           .select('name')
           .eq('id', clinicId)
           .maybeSingle(),
+        // select('*') = 전방호환: sms_display_name 컬럼 미적용(마이그레이션 전) 시에도
+        // PostgREST 에러 없이 누락 필드는 undefined → clinics.name fallback.
         (supabase.from('clinic_messaging_capability') as any)
-          .select('sender_number')
+          .select('*')
           .eq('clinic_id', clinicId)
           .maybeSingle(),
       ]);
       if (cancelled) return;
-      setClinicName(((clinicRes as any)?.data as { name?: string } | null)?.name ?? '');
-      setClinicPhone(
-        ((capRes as any)?.data as { sender_number?: string | null } | null)?.sender_number ?? '',
-      );
+      const clinicLegalName = ((clinicRes as any)?.data as { name?: string } | null)?.name ?? '';
+      const capData = (capRes as any)?.data as
+        { sender_number?: string | null; sms_display_name?: string | null } | null;
+      // {지점명}: 문자 전용 표시명(sms_display_name) 우선, 빈값/NULL이면 clinics.name fallback.
+      // 자동발송 EF(AC-3)·수동 SMS 모달(AC-1)과 동일 우선순위 → 미리보기==자동발송 정합.
+      setClinicName(capData?.sms_display_name || clinicLegalName);
+      setClinicPhone(capData?.sender_number ?? '');
     })();
     return () => { cancelled = true; };
   }, [clinicId]);
