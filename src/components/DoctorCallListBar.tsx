@@ -73,7 +73,7 @@
  *  AC-4) 지정/전체콜·이름클릭→차트·힐러/위치/재진 배지·pink 비활성·메모 저장/조회 전부 불변(레이아웃 클래스 외 미접촉).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
+import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp, MapPin, RotateCcw } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -236,6 +236,18 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
     return () => window.removeEventListener('resize', onResize);
   }, [pos, clampPos]);
 
+  // 컨버전스 흡수(DRAGGABLE-POSITION 이관): 위치 초기화 — 저장 좌표 삭제 + 기본(버튼비가림 우하단) 복귀.
+  //   드래그로 위젯을 화면 밖에 박았을 때 복구용. pos!=null(이동/저장됨)일 때만 헤더에 노출.
+  const resetPos = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      localStorage.removeItem(CALLLIST_POS_KEY);
+    } catch {
+      /* noop */
+    }
+    setPos(null);
+  }, []);
+
   // 2) 재진 N회차 — 누적 내원(진료) 횟수 산출 (활성·비활성 모두 표기)
   const [visitCounts, setVisitCounts] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -357,10 +369,24 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
               해제
             </button>
           )}
+          {/* Phase 2(컨버전스 흡수) 위치 초기화 — 드래그/저장된 좌표가 있을 때만. 기본 위치 복귀(화면 밖 박힘 복구).
+              onPointerDown stopPropagation: 헤더 드래그 핸들로 오발동 방지(버튼 위에서 드래그 미시작과 이중 가드). */}
+          {pos && (
+            <button
+              data-testid="doctor-call-reset-pos"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={resetPos}
+              className="flex items-center justify-center text-gray-500 rounded-md px-1.5 py-1 min-h-[36px] min-w-[36px] border border-gray-200 bg-white hover:bg-gray-50"
+              title="위치 초기화 — 기본(우하단) 위치로 복귀"
+            >
+              <RotateCcw className="h-4 w-4" />
+            </button>
+          )}
           {/* POPUP-RELOC AC-4) 접기/펼치기 토글 */}
           <button
             data-testid="doctor-call-toggle"
             aria-expanded={!collapsed}
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={() => setCollapsed((v) => !v)}
             className="flex items-center justify-center text-red-700 rounded-md px-1.5 py-1 min-h-[36px] min-w-[36px] border border-red-300 bg-white hover:bg-red-100"
             title={collapsed ? '명단 펼치기' : '명단 접기'}
