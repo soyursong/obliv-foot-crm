@@ -5,7 +5,7 @@
 // 치료사: 원장 구두 지시 듣고 → 해당 환자 행 버튼 클릭 → 임시 처방 입력
 // 원장  : 직접 버튼 클릭 → 바로 확정 / 또는 임시 처방 확인 후 확정 버튼
 
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -270,6 +270,66 @@ function usePatientsByDate(clinicId: string | null, dateISO: string) {
         }
         return { ...row, booking_memo } as unknown as PatientRow;
       });
+    },
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 서명한 의사별 필터 인덱스 — T-20260610-foot-DOCPATIENTLIST-SIGNDOCTOR-FILTER
+//   signing_doctor_{id,name} 은 MEDCHART-SIGN-AUDIT(deployed b65357e)에서 medical_charts 에
+//   이미 추가된 기존 컬럼 → 신규 스키마 불요, read-only 조회만.
+//   ※ 연결경로(STEP1 그라운딩): medical_charts 에 check_in_id 컬럼 없음 →
+//      check_ins(행) ↔ signing_doctor 의 유일 연결키 = customer_id + visit_date.
+//      DoctorPatientList 는 이미 selectedDate(=visit_date)로 check_ins 를 조회하므로,
+//      같은 날짜·클리닉의 medical_charts 를 customer_id 로 매핑한다.
+//      1환자 N차트 = 그 날짜 진료의 id 들의 합집합(Set). 미서명/레거시(NULL)·차트없음 = 'unsigned' 그룹.
+//      (동일 환자 동일날짜 복수 check_in 은 모두 같은 차트 집합에 매핑 — 차트의 visit 단위 분해 불가, 허용 근사.)
+// ---------------------------------------------------------------------------
+interface SigningDoctorIndex {
+  /** customer_id → 그 날짜에 서명(진료의 귀속)된 doctor id Set (non-null만) */
+  byCustomer: Map<string, Set<string>>;
+  /** 그 날짜에 서명 진료의가 1건 이상 귀속된 customer_id */
+  signedCustomers: Set<string>;
+  /** 드롭다운 옵션: 그 날짜에 등장한 진료의 [{id,name}] (이름 가나다순) */
+  doctors: { id: string; name: string }[];
+}
+
+function useSigningDoctorsByDate(clinicId: string | null, dateISO: string) {
+  return useQuery<SigningDoctorIndex>({
+    queryKey: ['patient_list_signing_doctors', clinicId, dateISO],
+    enabled: !!clinicId,
+    queryFn: async () => {
+      const empty: SigningDoctorIndex = { byCustomer: new Map(), signedCustomers: new Set(), doctors: [] };
+      if (!clinicId) return empty;
+      const { data, error } = await supabase
+        .from('medical_charts')
+        .select('customer_id, signing_doctor_id, signing_doctor_name')
+        .eq('clinic_id', clinicId)
+        .eq('visit_date', dateISO);
+      if (error) throw error;
+      const byCustomer = new Map<string, Set<string>>();
+      const signedCustomers = new Set<string>();
+      const nameById = new Map<string, string>();
+      for (const raw of (data ?? []) as Array<{
+        customer_id: string | null;
+        signing_doctor_id: string | null;
+        signing_doctor_name: string | null;
+      }>) {
+        const cid = raw.customer_id;
+        const did = raw.signing_doctor_id;
+        if (!cid || !did) continue; // 미서명/레거시 NULL → unsigned 그룹(매핑 제외)
+        signedCustomers.add(cid);
+        let set = byCustomer.get(cid);
+        if (!set) { set = new Set(); byCustomer.set(cid, set); }
+        set.add(did);
+        if (!nameById.has(did)) nameById.set(did, (raw.signing_doctor_name ?? '').trim() || '이름없음');
+      }
+      const doctors = [...nameById.entries()]
+        .map(([id, name]) => ({ id, name }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+      return { byCustomer, signedCustomers, doctors };
     },
     refetchInterval: 30_000,
     staleTime: 15_000,
@@ -597,19 +657,50 @@ export default function DoctorPatientList() {
 
   const { data: patients = [], isLoading, refetch } = usePatientsByDate(clinicId, selectedDate);
 
+  // T-20260610-foot-DOCPATIENTLIST-SIGNDOCTOR-FILTER: 그 날짜의 진료의 귀속 인덱스(read-only).
+  const { data: signingIdx } = useSigningDoctorsByDate(clinicId, selectedDate);
+  const doctorOptions = signingIdx?.doctors ?? [];
+  const signedCustomers = signingIdx?.signedCustomers ?? new Set<string>();
+  const byCustomer = signingIdx?.byCustomer ?? new Map<string, Set<string>>();
+
   // 필터 상태
   // T-20260609-foot-DOCDASH-LABEL-RX-REFINE item6: '처방없음'(none) → '처방나감'(confirmed)으로 교정.
   //   reporter 의도 = "처방전 있는(처방이 나간) 환자만" 필터 → prescription_status === 'confirmed'.
   const [filter, setFilter] = useState<'all' | 'pending' | 'confirmed'>('all');
 
+  // T-20260610-foot-DOCPATIENTLIST-SIGNDOCTOR-FILTER: '서명한 의사별' 필터.
+  //   값 = 'all'(기본·현 동작 유지) | doctor_id | '__unsigned__'(미서명/차트없음).
+  const [doctorFilter, setDoctorFilter] = useState<string>('all');
+
+  // 미서명(서명 차트 없는) 행 존재 여부 — '미서명' 옵션 노출 조건.
+  const hasUnsigned = patients.some((p) => !p.customer_id || !signedCustomers.has(p.customer_id));
+
+  // 날짜 이동 시 진료의 옵션 셋이 바뀌므로 의사 필터를 '전체'로 초기화(stale 선택 → 전 행 누락 방지).
+  useEffect(() => {
+    setDoctorFilter('all');
+  }, [selectedDate]);
+
+  // 방어: 현재 옵션에 없는 doctor_id(혹은 미서명 행 없는데 '__unsigned__')면 '전체'로 폴백.
+  const validDoctorIds = new Set(doctorOptions.map((d) => d.id));
+  const effectiveDoctorFilter =
+    doctorFilter === 'all' ||
+    (doctorFilter === '__unsigned__' && hasUnsigned) ||
+    validDoctorIds.has(doctorFilter)
+      ? doctorFilter
+      : 'all';
+
   // T-20260609 ①: 정렬 옵션 — 시간순(접수시간) / 이름순(가나다). 기본=시간순.
   const [sortBy, setSortBy] = useState<'time' | 'name'>('time');
 
   const filtered = patients.filter((p) => {
-    if (filter === 'pending') return p.prescription_status === 'pending';
-    // item6: '처방나감' = 처방전 있는(확정·나간) 환자만 노출. (술어 방향 교정: none → confirmed)
-    if (filter === 'confirmed') return p.prescription_status === 'confirmed';
-    return true;
+    // 기존 처방상태 필터 (item6: '처방나감' = confirmed)
+    if (filter === 'pending' && p.prescription_status !== 'pending') return false;
+    if (filter === 'confirmed' && p.prescription_status !== 'confirmed') return false;
+    // T-20260610-foot-DOCPATIENTLIST-SIGNDOCTOR-FILTER: 서명한 의사별(누적 AND 조건).
+    if (effectiveDoctorFilter === 'all') return true;
+    const cid = p.customer_id;
+    if (effectiveDoctorFilter === '__unsigned__') return !cid || !signedCustomers.has(cid);
+    return !!cid && (byCustomer.get(cid)?.has(effectiveDoctorFilter) ?? false);
   });
 
   // T-20260609 ①: 원내(in-clinic) 환자 최우선 상단 그룹핑(정렬 옵션 무관) →
@@ -717,8 +808,30 @@ export default function DoctorPatientList() {
           ))}
         </div>
 
+        <div className="flex items-center gap-2 shrink-0">
+        {/* 서명한 의사별 필터 — T-20260610-foot-DOCPATIENTLIST-SIGNDOCTOR-FILTER.
+            그 날짜에 서명 진료의가 있는 차트가 있을 때만 노출(없으면 현 동작 그대로 = 정렬만). */}
+        {doctorOptions.length > 0 && (
+          <div className="flex items-center gap-1" data-testid="signdoctor-filter">
+            <span className="text-[11px] text-muted-foreground mr-0.5">진료의</span>
+            <select
+              value={effectiveDoctorFilter}
+              onChange={(e) => setDoctorFilter(e.target.value)}
+              data-testid="signdoctor-select"
+              aria-label="서명한 의사별 필터"
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-teal-500"
+            >
+              <option value="all">전체</option>
+              {doctorOptions.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+              {hasUnsigned && <option value="__unsigned__">미서명</option>}
+            </select>
+          </div>
+        )}
+
         {/* 정렬 셀렉터 — 원내 우선 그룹은 정렬 옵션과 무관하게 항상 상단 유지 */}
-        <div className="flex items-center gap-1 shrink-0" data-testid="patient-sort-toggle">
+        <div className="flex items-center gap-1" data-testid="patient-sort-toggle">
           <span className="text-[11px] text-muted-foreground mr-0.5">정렬</span>
           {[
             { key: 'time' as const, label: '시간순' },
@@ -739,6 +852,7 @@ export default function DoctorPatientList() {
               {label}
             </button>
           ))}
+        </div>
         </div>
       </div>
 
