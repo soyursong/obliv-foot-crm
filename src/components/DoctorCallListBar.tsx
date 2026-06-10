@@ -81,6 +81,9 @@ import type { CheckIn } from '@/lib/types';
 import { getCurrentLocationLabel } from '@/lib/checkin-slot';
 import { DoctorAckBadge } from '@/components/doctor/DoctorAck';
 
+/** T-20260610-foot-CALLLIST-TOP-COVERS-BUTTONS Phase 2: 드래그 위치 저장 키(사용자/브라우저 단위 개인설정). */
+const CALLLIST_POS_KEY = 'foot.doctorCallList.pos.v1';
+
 interface DoctorCallListBarProps {
   /** Dashboard의 당일·해당지점 check_ins rows */
   checkIns: CheckIn[];
@@ -143,6 +146,96 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
   //   접힘: 헤더 바만 표시(명단 본문 숨김) → 칸반 빈공간 확보.
   const [collapsed, setCollapsed] = useState(false);
 
+  // T-20260610-foot-CALLLIST-TOP-COVERS-BUTTONS Phase 2 — 드래그 자유이동(현장 "개인마다 자유롭게").
+  //   AC-5 헤더(드래그 핸들)를 잡아 화면 어디든 이동. AC-6 localStorage 위치저장 + boundary clamp +
+  //   기본=Phase1 버튼비가림(bottom-4 right-4). AC-7 새 드래그 라이브러리 도입 금지 → 네이티브 pointer events.
+  //   pos=null 이면 CSS 앵커(기본 우하단), 좌표가 있으면 fixed left/top 인라인으로 전환.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
+    try {
+      const raw = localStorage.getItem(CALLLIST_POS_KEY);
+      if (!raw) return null;
+      const p = JSON.parse(raw);
+      if (typeof p?.x === 'number' && typeof p?.y === 'number') return { x: p.x, y: p.y };
+    } catch {
+      /* localStorage 접근 불가/파싱 실패 → 기본 앵커 */
+    }
+    return null;
+  });
+  // 드래그 진행 상태 — 리렌더 없이 보관(pointer offset).
+  const dragRef = useRef<{ active: boolean; offsetX: number; offsetY: number }>({
+    active: false,
+    offsetX: 0,
+    offsetY: 0,
+  });
+
+  // boundary clamp — 헤더가 항상 화면 안에 잡히도록(완전 이탈 방지). 위젯 폭은 실측, 헤더 높이는 상수.
+  const clampPos = useCallback((x: number, y: number) => {
+    const w = panelRef.current?.offsetWidth ?? 480;
+    const headerH = 44; // 헤더(드래그 핸들) 최소 가시 높이
+    const maxX = Math.max(0, window.innerWidth - w);
+    const maxY = Math.max(0, window.innerHeight - headerH);
+    return {
+      x: Math.min(Math.max(0, x), maxX),
+      y: Math.min(Math.max(0, y), maxY),
+    };
+  }, []);
+
+  const onHeaderPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    // 헤더 내 버튼(전체콜/해제/접기)·인터랙티브 요소 위에서는 드래그 시작 안 함(오발동 방지).
+    if ((e.target as HTMLElement).closest('button')) return;
+    const el = panelRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    dragRef.current = {
+      active: true,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+    };
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* pointer capture 미지원 환경 무시 */
+    }
+  }, []);
+
+  const onHeaderPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!dragRef.current.active) return;
+      e.preventDefault();
+      setPos(clampPos(e.clientX - dragRef.current.offsetX, e.clientY - dragRef.current.offsetY));
+    },
+    [clampPos],
+  );
+
+  const onHeaderPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current.active) return;
+    dragRef.current.active = false;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      /* noop */
+    }
+    setPos((cur) => {
+      if (cur) {
+        try {
+          localStorage.setItem(CALLLIST_POS_KEY, JSON.stringify(cur));
+        } catch {
+          /* 저장 실패는 무시(다음 드래그 시 재시도) */
+        }
+      }
+      return cur;
+    });
+  }, []);
+
+  // 리사이즈 시 화면 밖 이탈 방지 — 저장 좌표를 다시 clamp.
+  useEffect(() => {
+    if (!pos) return;
+    const onResize = () => setPos((cur) => (cur ? clampPos(cur.x, cur.y) : cur));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [pos, clampPos]);
+
   // 2) 재진 N회차 — 누적 내원(진료) 횟수 산출 (활성·비활성 모두 표기)
   const [visitCounts, setVisitCounts] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -191,13 +284,29 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
     //   (VERTICAL-FULLNAME가 top-4 채택한 사유가 해소됨). 세로나열+성함 전체표시(AC-2)·콜/차트/배지(AC-4) 불변.
     //   임시 z-index 봉합 금지 — 앵커가 본질.
     <div
+      ref={panelRef}
       data-testid="doctor-call-list"
       data-collapsed={String(collapsed)}
-      data-position-mode="fixed"
-      className="fixed bottom-4 right-4 z-40 w-[min(30rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm"
+      data-position-mode={pos ? 'dragged' : 'fixed'}
+      className={cn(
+        'fixed z-40 w-[min(30rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm',
+        // Phase 2: 저장된/드래그 좌표가 없을 때만 기본 앵커(Phase 1 버튼비가림 우하단). 좌표가 있으면 인라인 left/top.
+        pos ? '' : 'bottom-4 right-4',
+      )}
+      style={pos ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' } : undefined}
     >
-      {/* 헤더 + 접기/펼치기 + 전체콜/지정콜 액션 */}
-      <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-red-200 bg-red-50/80">
+      {/* 헤더 + 접기/펼치기 + 전체콜/지정콜 액션
+          T-20260610-foot-CALLLIST-TOP-COVERS-BUTTONS Phase 2: 헤더 = 드래그 핸들(AC-5).
+          cursor-move + touch-none(터치 스크롤이 드래그 방해 방지) + select-none(드래그 중 텍스트선택 방지).
+          헤더 내 버튼 위에서는 onHeaderPointerDown이 드래그를 시작하지 않음(콜/접기 오발동 방지). */}
+      <div
+        data-testid="doctor-call-header"
+        onPointerDown={onHeaderPointerDown}
+        onPointerMove={onHeaderPointerMove}
+        onPointerUp={onHeaderPointerUp}
+        onPointerCancel={onHeaderPointerUp}
+        className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-red-200 bg-red-50/80 cursor-move touch-none select-none"
+      >
         <div className="flex items-center gap-1.5">
           <Stethoscope className="h-4 w-4 text-red-600" />
           <span className="text-sm font-semibold text-red-800">원장님 진료콜 명단</span>
