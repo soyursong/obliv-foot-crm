@@ -13,7 +13,7 @@ import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/lib/toast';
-import { Loader2, Ban, FileText, CheckCircle2 } from 'lucide-react';
+import { Loader2, FileText, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { IconRenderer } from '@/components/admin/QuickRxButtonsTab';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
@@ -22,7 +22,6 @@ import { evaluateRxInsuranceGate } from '@/lib/prescribableDrugs';
 import {
   checkRxInClinic,
   rxInClinicMessage,
-  rxInClinicShortLabel,
 } from '@/lib/inClinicRxGate';
 import { captureRxSnapshot, buildUndoPatch, type RxSnapshot } from '@/lib/rxUndo';
 import { rxItemTooltipLine, formatRxConfirmedSummary } from '@/lib/rxTooltip';
@@ -328,31 +327,24 @@ export default function QuickRxBar({
     );
   }
 
-  // 원내 비잔류(전날/미래/귀가/취소) — 버튼 대신 차단 패널 + 차트 진입 동선 (AC1~4)
-  if (blockedByUiGate && uiGate) {
+  // 원내 비잔류(전날/미래/귀가/취소) — T-20260610-foot-QUICKRX-BLOCK-PANEL-HIDE:
+  //   "빠른처방 불가" 문구/앰버 패널 제거(문지은 6/10 요청). 처방 버튼 없음으로 충분.
+  //   차트 진입은 onOpenChart 제공 시 차트 열기 버튼만 미니멀 표시.
+  if (blockedByUiGate) {
+    if (!onOpenChart) return null;
     return (
-      <div
-        className={cn('rounded-lg border border-amber-300 bg-amber-50/70 px-3 py-2.5', className)}
-        data-testid="quick-rx-blocked"
-        data-block-reason={uiGate.reason ?? ''}
-      >
-        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-800">
-          <Ban className="h-3.5 w-3.5" />
-          {rxInClinicShortLabel(uiGate.reason)}
-        </div>
-        <p className="mt-1 text-[11px] text-amber-700">{rxInClinicMessage(uiGate.reason)}</p>
-        {onOpenChart && (
-          <button
-            type="button"
-            onClick={onOpenChart}
-            data-testid="quick-rx-open-chart"
-            className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-amber-400 bg-white px-2 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-100"
-          >
-            <FileText className="h-3 w-3" />
-            차트 열기
-          </button>
+      <button
+        type="button"
+        onClick={onOpenChart}
+        data-testid="quick-rx-open-chart"
+        className={cn(
+          'inline-flex items-center gap-1 rounded-md border border-border bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-accent transition',
+          className,
         )}
-      </div>
+      >
+        <FileText className="h-3 w-3" />
+        차트 열기
+      </button>
     );
   }
 
