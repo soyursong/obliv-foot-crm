@@ -109,6 +109,9 @@ export default function Customers() {
         .from('customers')
         .select('*', { count: 'exact' })
         .eq('clinic_id', clinic.id)
+        // T-20260610-foot-ADMIN-SIM-FILTER: 시뮬레이션(테스트 더미) 기본 숨김.
+        // IS NOT TRUE → false/NULL(실고객) 보존, true만 제외 (AC-3 null-safe).
+        .not('is_simulation', 'is', true)
         .order('updated_at', { ascending: false })
         .range(from, to);
       if (trimmed) {
