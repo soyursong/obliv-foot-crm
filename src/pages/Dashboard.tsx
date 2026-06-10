@@ -5313,6 +5313,19 @@ export default function Dashboard() {
     toast.success(`${target.customer_name} 예약 취소됨`);
   }, [dashCancelTarget, clinic, profile, setTimelineReservations]);
 
+  // T-20260610-foot-RESV-CTXMENU-HARDDELETE: 예약 완전 삭제(hard delete) — row 영구 제거(이력 없음)
+  // reporter=김주연 총괄. 기존 reservations.delete 경로 재사용(병렬 경로 신설 금지). 목록 즉시 갱신.
+  const handleDashDeleteConfirm = useCallback(async (target: Reservation) => {
+    const { error } = await supabase.from('reservations').delete().eq('id', target.id);
+    if (error) {
+      toast.error(`삭제 실패: ${error.message}`);
+      return;
+    }
+    // 낙관적 업데이트 — 대시보드 타임라인에서 즉시 제거
+    setTimelineReservations((prev) => prev.filter((r) => r.id !== target.id));
+    toast.success(`${target.customer_name} 예약 완전 삭제됨`);
+  }, [setTimelineReservations]);
+
   // 미니 캘린더 클릭-외부 닫기
   useEffect(() => {
     if (!showCalendar) return;
@@ -6621,6 +6634,10 @@ export default function Dashboard() {
         onCancelReservation={(resv) => {
           setResvContextMenu(null);
           setDashCancelTarget(resv);
+        }}
+        onDeleteReservation={(resv) => {
+          setResvContextMenu(null);
+          handleDashDeleteConfirm(resv);
         }}
       />
 
