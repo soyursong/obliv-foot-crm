@@ -136,8 +136,10 @@ test.describe('#5 [고정] 토글 제거', () => {
 // #6 — 텍스트 저장 고정 (회귀)
 // ═══════════════════════════════════════════════════════════════════════════
 test.describe('#6 텍스트 저장 고정', () => {
-  test('AC-11: 저장 직전 미확정 textInputValue 를 래스터화 대상에 흡수', () => {
-    expect(src, '미확정 텍스트 흡수 로직 없음').toContain('if (textInputPos && textInputValue.trim())');
+  test('AC-11: 저장 직전 미확정 텍스트 입력을 래스터화 대상에 흡수', () => {
+    // T-20260610-foot-PENCHART-TOOLS-3REFIX #6-RE: 흡수 소스를 state→ref(_tPos/_tVal)로 하드닝
+    //   (매 렌더 동기화된 최신 입력값 보장 — 저장 race 누락 차단). 흡수 동작 자체는 동일.
+    expect(src, '미확정 텍스트 흡수 로직 없음').toContain('if (_tPos && _tVal.trim())');
     expect(src, 'itemsToRasterize 합산 없음').toContain('itemsToRasterize');
   });
 

@@ -80,7 +80,8 @@ test.describe('A 텍스트 persist — 단일 commit 수렴', () => {
   });
 
   test('AC-A7: 저장 직전 흡수(부모 #6) 보존 — 저장 단독 진입도 커버', () => {
-    expect(src, '저장 직전 미확정 텍스트 흡수 유실').toContain('if (textInputPos && textInputValue.trim())');
+    // T-20260610-foot-PENCHART-TOOLS-3REFIX #6-RE: 흡수 소스를 state→ref(_tPos/_tVal)로 하드닝.
+    expect(src, '저장 직전 미확정 텍스트 흡수 유실').toContain('if (_tPos && _tVal.trim())');
     expect(src, 'itemsToRasterize 합산 유실').toContain('itemsToRasterize');
   });
 
@@ -140,7 +141,8 @@ test.describe('C 형광펜 농도', () => {
   });
 
   test('AC-C2: 슬라이더 min 0.10 → 0.05 확장(더 옅게)', () => {
-    expect(src, '슬라이더 min 0.05 확장 안 됨').toContain('min={0.05} max={0.35}');
+    // T-20260610-foot-PENCHART-TOOLS-3REFIX #3-RE: max 0.35 → 0.30 (전 구간 더 옅게). min 0.05 유지.
+    expect(src, '슬라이더 min 0.05 확장 안 됨').toContain('min={0.05} max={0.30}');
   });
 
   test('AC-C3: stroke 시작 dot + native move 모두 highlightAlphaRef.current(live) 읽기 → 실시간 반영', () => {
@@ -154,13 +156,13 @@ test.describe('C 형광펜 농도', () => {
     expect(src, '시작 dot에 state 직참 잔존').not.toContain('ctx.globalAlpha = highlightAlpha;');
   });
 
-  test('AC-C4 [logic]: 슬라이더 범위 0.05~0.35, 기본 0.10이 더 옅음', () => {
-    const MIN = 0.05, MAX = 0.35, DEFAULT = 0.10, PREV_DEFAULT = 0.20;
+  test('AC-C4 [logic]: 슬라이더 범위 0.05~0.30, 기본 0.10이 더 옅음', () => {
+    const MIN = 0.05, MAX = 0.30, DEFAULT = 0.10, PREV_DEFAULT = 0.20;
     expect(DEFAULT).toBeGreaterThanOrEqual(MIN);
     expect(DEFAULT).toBeLessThan(PREV_DEFAULT);   // 기본이 더 옅어짐
     expect(MIN).toBeLessThan(0.10);               // 더 옅게 내릴 수 있음
     const clamp = (v: number) => Math.min(MAX, Math.max(MIN, v));
     expect(clamp(0.02)).toBe(0.05);
-    expect(clamp(0.5)).toBe(0.35);
+    expect(clamp(0.5)).toBe(0.30);
   });
 });

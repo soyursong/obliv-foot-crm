@@ -1108,7 +1108,15 @@ export function PenChartTab({
       ctx.lineCap     = 'round';
       ctx.lineJoin    = 'round';
     } else if (tool === 'highlight') {
-      // #3: 고정 0.20 → 가변 highlightAlphaRef (서브패널 슬라이더, 기본 0.20)
+      // #3: 가변 highlightAlphaRef (서브패널 슬라이더, 기본 0.10)
+      // ── T-20260610-foot-PENCHART-TOOLS-3REFIX #3-RE: 형광펜 매끄러움 ──
+      //   [RC — 코드 직독] 기존 형광펜은 아래 else 분기에서 coalesced 점마다 beginPath→lineTo→stroke()를
+      //   **개별 호출**했다. globalAlpha<1 인 stroke는 호출마다 독립 합성되므로, 인접 세그먼트의 round 캡이
+      //   겹치는 지점에서 알파가 **누적(double-paint)** → "구슬(bead)"처럼 짙은 점 + 직선 lineTo의 각진 느낌
+      //   = 현장 "매끄럽지 않음 + 너무 진함". (pen 은 단일 path 누적 후 stroke() 1회라 자기겹침이 합성되지 않아 매끈.)
+      //   [FIX] 형광펜을 pen 과 동일한 **단일 path + quadratic 스무딩**(아래 pen 분기 공유)으로 전환 →
+      //   pointermove 배치당 stroke() 1회 → 배치 내부 자기겹침 알파 누적 제거 + 곡선 보간으로 매끄럽게.
+      //   (배치 경계의 미세 겹침만 잔존하나 점별 대비 stroke 호출 N→1 로 beading 체감 제거.)
       ctx.globalAlpha = highlightAlphaRef.current;
       ctx.strokeStyle = highlightColor;
       ctx.lineWidth   = penSize * 6 + 6;
@@ -1117,7 +1125,9 @@ export function PenChartTab({
     }
     const eraserSz = tool === 'eraser' ? penSize * 4 : 0;
 
-    if (tool === 'pen') {
+    if (tool === 'pen' || tool === 'highlight') {
+      // T-20260610-foot-PENCHART-TOOLS-3REFIX #3-RE: 형광펜도 이 단일-path quadratic 경로 공유 →
+      //   점별 stroke() 의 알파 누적(beading) 제거 + 곡선 보간으로 매끄럽게. (highlight ctx 프로퍼티는 L1110 설정)
       // ── T-20260606-foot-PENCHART-REFUND-LATENCY (desync 비의존 저지연 핵심) ──────────
       //   기존: coalesced 점마다 beginPath()+stroke() 개별 호출 → N개 점 = N회 stroke flush.
       //   대형 캔버스(1588×6738, ~42MB backing)에서 stroke flush 1회당 래스터/합성 비용이 커
@@ -1153,7 +1163,8 @@ export function PenChartTab({
         if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
       }
     } else {
-      // eraser / white / highlight — 점별 처리(기존 동작 유지; pen 외 도구는 latency 비대상)
+      // eraser / white — 점별 처리(기존 동작 유지; pen·highlight 외 도구는 latency·smoothing 비대상)
+      // T-20260610-foot-PENCHART-TOOLS-3REFIX #3-RE: highlight 분기 제거 → pen 단일-path quadratic 경로로 이관.
       for (const evt of events) {
         const pos  = toLogical(evt);
         const last = lastPosRef.current ?? pos;
@@ -1170,13 +1181,6 @@ export function PenChartTab({
           if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
           // Fix-4: hit-test는 onPointerUp에서 1회만 — 포인트 누적
           whiteStrokePathRef.current.push(pos);
-        } else if (tool === 'highlight') {
-          ctx.beginPath();
-          ctx.moveTo(last.x, last.y);
-          ctx.lineTo(pos.x, pos.y);
-          ctx.stroke();
-          emptyRef.current = false;
-          if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
         }
         lastPosRef.current = pos;
       }
@@ -2001,6 +2005,9 @@ export function PenChartTab({
       ctx.fillStyle = highlightColor;
       ctx.fill();
       ctx.globalAlpha = 1;
+      // T-20260610-foot-PENCHART-TOOLS-3REFIX #3-RE: 형광펜이 pen 단일-path quadratic 경로를 공유하므로
+      //   pen 과 동일하게 획 시작 시 bezier 스무딩 상태 리셋(직전 획의 mid 가 새 획에 이어붙지 않도록).
+      lastMidRef.current = null;
       emptyRef.current = false;
       // T-20260523-foot-PENCHART-PEN-SLOW: 첫 획 전환 시에만 setHasDrawing → React 재렌더 최소화
       if (!hasDrawingRef.current) { hasDrawingRef.current = true; setHasDrawing(true); }
@@ -2126,16 +2133,23 @@ export function PenChartTab({
       //   [회귀 RC] 텍스트 도구로 글자를 타이핑한 뒤 '삽입' 버튼을 누르지 않고 바로 '저장'을 누르면
       //   textInputValue가 placedItems에 들어가지 않아 래스터화 대상에서 빠짐 → "텍스트가 차트에 고정 안 됨".
       //   → 저장 시점에 열려있는 입력값을 placedItems에 흡수해 항상 영속화. (저장포맷=PNG 불변, 하위호환)
+      // T-20260610-foot-PENCHART-TOOLS-3REFIX #6-RE: 흡수 소스를 state→ref 로 통일(하드닝).
+      //   [RC 보강] handleDrawSave 는 렌더 클로저의 textInputValue/Pos 를 캡처한다. 빠른 태블릿에서
+      //   마지막 타이핑과 저장 탭이 동일 React 배치에 묶이면 클로저값이 stale 일 수 있어 미확정 입력이
+      //   누락될 수 있다(=텍스트 저장 후 사라짐의 잔여 경로). flushTextInput 과 동일하게 *Ref.current
+      //   (매 렌더 동기화, L865~866)를 읽어 항상 최신 입력값을 흡수 → persistence 보장.
+      const _tPos = textInputPosRef.current;
+      const _tVal = textInputValueRef.current;
       const pendingTextItems: PlacedItem[] = [];
-      if (textInputPos && textInputValue.trim()) {
+      if (_tPos && _tVal.trim()) {
         pendingTextItems.push({
           id: `txt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           type: 'text',
-          x: textInputPos.x,
-          y: textInputPos.y,
-          text: textInputValue,
-          fontSize: Math.round(penSize * 4 + 6),
-          color: penColor,
+          x: _tPos.x,
+          y: _tPos.y,
+          text: _tVal,
+          fontSize: Math.round(penSizeRef.current * 4 + 6),
+          color: penColorRef.current,
         });
       }
       const itemsToRasterize = pendingTextItems.length > 0
@@ -2338,14 +2352,20 @@ export function PenChartTab({
     //   뷰포트 중앙으로 자동 스크롤해 "어디에 들어갔는지" 항상 보이게 한다. (commit 자체는 placedItems 확정)
     const name = phraseTemplates.find((p) => p.id === id)?.name ?? '상용구';
     toast.success(`상용구 '${name}' 삽입됨 — 드래그로 위치 조정`);
+    // ── T-20260610-foot-PENCHART-TOOLS-3REFIX #2-RE: 삽입 가시화 결정성 하드닝 ──
+    //   [RC] commit(placedItems) 은 정상이나, 새 오버레이가 뷰포트 밖에 꽂히면 "삽입 안 됨"으로 오인.
+    //   직전(6FIX-REFIX)은 단일 rAF 에서 querySelector → 그 시점 React 가 아직 DOM commit 전이면
+    //   엘리먼트 null → scrollIntoView 미발화 → 여전히 안 보임. **이중 rAF**(첫 rAF=React commit 보장,
+    //   둘째 rAF=레이아웃 확정 후 측정)로 새 오버레이를 항상 뷰포트 중앙으로 스크롤해 가시성 보장.
     if (newId && typeof requestAnimationFrame !== 'undefined') {
-      requestAnimationFrame(() => {
+      const scrollToNew = () => {
         try {
           document
             .querySelector(`[data-overlay-id="${newId}"]`)
             ?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
         } catch { /* scrollIntoView 미지원/구형 환경 무시 (토스트 피드백은 유지) */ }
-      });
+      };
+      requestAnimationFrame(() => requestAnimationFrame(scrollToNew));
     }
   };
 
@@ -2893,7 +2913,7 @@ export function PenChartTab({
             <div className="flex items-center gap-1.5 text-muted-foreground" data-testid="subpanel-hl-opacity">
               <span>농도</span>
               <input
-                type="range" min={0.05} max={0.35} step={0.01} value={highlightAlpha}
+                type="range" min={0.05} max={0.30} step={0.01} value={highlightAlpha}
                 onChange={(e) => setHighlightAlpha(parseFloat(e.target.value))}
                 className="w-20"
                 data-testid="subpanel-hl-opacity-range"
