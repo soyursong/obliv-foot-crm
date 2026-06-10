@@ -33,7 +33,12 @@ related_tickets:
 - **AC-2**: '· 진료기록 필수 (의료법)' 라벨 span 양쪽(embed clinicalMiniBody + 풀차트
   signing-doctor-select-block) 제거. **로직=A안 선배포**: 진료의 필수검증 유지, 라벨 텍스트만 제거.
   ⚠️GUARD: 진료의 NOT NULL 강제(MEDCHART-SIGN-AUDIT AC-P2-6, 의료법) 검증 절대 제거 금지 — 보존 확인.
-  (B안 embed auto-fill 은 reporter 답변 후 TICKET-UPDATE 로 추가 예정)
+- **AC-2 B안** (CONFIRMED 2026-06-10, reporter 문지은 confirm ts=1781074543.411799 "둘다 맞아 자동으로 내가
+  선택되고, 혹시나 비우면 저장안되게"): embed clinical 로그인 의사 auto-fill 이식.
+  - 풀차트 SIGN-AUDIT auto-fill effect(L871~)의 `isDirector`(director/admin) role 프록시 게이트 제거 →
+    "내 이름 == 활성 clinic_doctor" 매칭 자체를 의사 판정 기준으로 사용. 의사호출 대시보드가 의사로 취급하는
+    manager/doctor role 도 본인 자동 선택됨. 매칭=의사이므로 AC-P2-1 strict superset(풀차트 회귀 없음).
+  - 드롭다운 수동 변경 가능(formSigningDoctorId 빈 값일 때만 채움) + 비우면 NOT NULL guard 저장 차단 유지(AC-P2-6).
 - **AC-3**: clinicalMiniBody Textarea embed `rows 3→5`, `min-h-[4.5rem]→min-h-[8rem]`. embed=false 풀차트(14/18rem) 불변.
 - **AC-4**: 담당의 label+select 1줄 인라인(flex items-center gap-2, label w-16 고정 + select flex-1).
   "진료의를 선택해야 저장할 수 있습니다." 경고 p는 A안이므로 유지.

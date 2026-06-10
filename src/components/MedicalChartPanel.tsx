@@ -869,16 +869,20 @@ export default function MedicalChartPanel({
   }, [loadVisitPayments]);
 
   // T-20260608-foot-MEDCHART-SIGN-AUDIT AC-P2-1 (자동 기본값): 신규 작성 + 진료의 미선택일 때,
-  //   로그인 계정이 의사(director/admin role) 이고 이름이 일치하는 활성 의사가 있으면 본인 자동 선택.
-  //   의사 계정이 아니거나 매칭 없으면 미선택 유지 → 드롭다운에서 수동 선택(AC-P2-2).
+  //   로그인 계정이 의사이고 이름이 일치하는 활성 의사가 있으면 본인 자동 선택.
+  //   매칭 없으면 미선택 유지 → 드롭다운에서 수동 선택(AC-P2-2).
+  // T-20260610-foot-DOCDASH-CLINICAL-UX-REFINE AC-2 B안(reporter 문지은 confirm 1781074543.411799):
+  //   embed clinical(진료대시보드 인라인) 에도 동일 auto-fill 이식. 기존 isDirector(director/admin) 역할 게이트는
+  //   의사호출 대시보드가 의사로 취급하는 manager/doctor 를 누락시켰음 → "내 이름 == 활성 clinic_doctor" 매칭
+  //   자체를 의사 판정 기준으로 사용(role 프록시 제거). 매칭=의사이므로 AC-P2-1 의 strict superset → 풀차트 회귀 없음.
+  //   드롭다운 수동 변경 가능(formSigningDoctorId 빈 값일 때만 채움) + 비우면 NOT NULL guard 로 저장 차단 유지(AC-P2-6).
   useEffect(() => {
     if (selectedChartId) return;          // 저장된 차트는 복원값 유지
-    if (formSigningDoctorId) return;      // 이미 선택됨
+    if (formSigningDoctorId) return;      // 이미 선택됨(수동 선택 보존)
     if (clinicDoctors.length === 0) return;
-    if (!isDirector) return;              // 의사 role 아니면 자동값 없음
     const mine = clinicDoctors.find((d) => d.name === currentUserName);
-    if (mine) setFormSigningDoctorId(mine.id);
-  }, [selectedChartId, formSigningDoctorId, clinicDoctors, isDirector, currentUserName]);
+    if (mine) setFormSigningDoctorId(mine.id);   // 이름 매칭 = 로그인 계정이 의사 → 본인 자동
+  }, [selectedChartId, formSigningDoctorId, clinicDoctors, currentUserName]);
 
   // T-20260608-foot-MEDCHART-SIGN-AUDIT AC-P2-3: 선택된(저장된) 차트의 진료의 변경이력 로드(차트 단위 조회).
   useEffect(() => {
