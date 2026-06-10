@@ -6,6 +6,10 @@ status: deploy-ready
 deploy_ready: true
 db_changed: true
 db_migration: 20260610090000_sms_display_name.sql
+db_migration_applied: true
+db_migration_applied_at: 2026-06-11
+db_migration_applied_by: agent-fdd-dev-foot
+db_migration_applied_note: "운영 DB 적용 완료(컬럼 sms_display_name VARCHAR(100) NULL + RPC admin_set_sms_display_name). EF select 시뮬 무에러 확인. scripts/apply_20260610090000_sms_display_name.mjs"
 hotfix: false
 created: 2026-06-10
 reporter: 김주연 총괄
@@ -45,4 +49,13 @@ NULL이면 `clinics.name` fallback → 미설정 지점은 현행 동작 유지.
 `npm run build` ✓ (vite 3.73s). EF는 Deno — supervisor 배포 시 검증.
 
 ## DB 변경
-있음 — `20260610090000_sms_display_name.sql` (supervisor 적용 필요, DB Gate APPROVED). nullable+fallback → 배포-마이그 순서 레이스 안전(컬럼 미적용 시 select('*') 누락 필드 undefined → fallback).
+있음 — `20260610090000_sms_display_name.sql` (DB Gate APPROVED). nullable+fallback → 배포-마이그 순서 레이스 안전(컬럼 미적용 시 select('*') 누락 필드 undefined → fallback).
+
+### ✅ 운영 DB 적용 완료 (2026-06-11, FIX-REQUEST MSG-20260611-044905-e5jb)
+- 적용 전 상태: 컬럼/RPC 모두 **없음** 확인 → QA phase1 db_migration_pending 원인 일치.
+- 적용: `scripts/apply_20260610090000_sms_display_name.mjs` (BEGIN/COMMIT, 멱등 IF NOT EXISTS + CREATE OR REPLACE).
+- 검증 결과:
+  - `clinic_messaging_capability.sms_display_name` = `character varying(100)`, nullable=YES ✓
+  - RPC `admin_set_sms_display_name(p_clinic_id uuid, p_sms_display_name text)` 존재 ✓
+  - EF select 시뮬(`SELECT clinic_id, sms_display_name FROM clinic_messaging_capability`) 무에러, 기존 행 sms_display_name=NULL(fallback) ✓ → **send-notification EF line 681 명시 select 런타임 500 위험 해소.**
+- send-notification/index.ts:681 select 목록에 `sms_display_name` 포함 / :869 `capTyped.sms_display_name || clinicLegalName` fallback 로직 확인.
