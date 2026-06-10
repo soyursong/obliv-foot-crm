@@ -514,6 +514,8 @@ function CallFeedRow({
             onApplied={onRefresh}
             checkInStatus={checkIn.status}
             checkedInAt={checkIn.checked_in_at}
+            /* T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)는 원내 잔류 → 처방 허용(귀가만 차단). */
+            checkInFlag={checkIn.status_flag}
             onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
             compact
           />
@@ -638,6 +640,8 @@ function CompletedRow({
             onApplied={onRefresh}
             checkInStatus={checkIn.status}
             checkedInAt={checkIn.checked_in_at}
+            /* T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)는 원내 잔류 → 처방 허용(귀가만 차단). */
+            checkInFlag={checkIn.status_flag}
             onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
             compact
           />
