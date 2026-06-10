@@ -478,13 +478,15 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
               </span>
             </div>
             {/* T-20260609-foot-MSG-TEMPLATE-MMS Part C(AC10): 본문 입력 영역 약 2배 확장
-                — 약도·약국 안내 등 장문 입력 시 스크롤 없이 한눈에. rows 5→10 + min-h 보강. */}
+                — 약도·약국 안내 등 장문 입력 시 스크롤 없이 한눈에. rows 5→10 + min-h 보강.
+                T-20260609-foot-SMS-TEXTAREA-2X: 김주연 총괄 요청 — 현재 대비 약 2배 추가 확장.
+                rows 10→20 + min-h 220→440px. 발송 로직·바이트 카운터·길이제한 동작 불변(크기만 확대). */}
             <Textarea
               data-testid="sms-body-textarea"
               value={body}
               onChange={(e) => { setBody(e.target.value); setConfirmStep(false); }}
-              rows={10}
-              className="resize-y text-sm min-h-[220px]"
+              rows={20}
+              className="resize-y text-sm min-h-[440px]"
             />
 
             {/* T-20260609-foot-MSG-TEMPLATE-MMS Part B(AC-6): 이미지 첨부 → MMS */}

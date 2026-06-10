@@ -5,7 +5,8 @@
  * Part A/C 시나리오:
  *   S1(AC1~4): 메시지 설정 ③ 템플릿 관리 → [＋ 새 템플릿 추가] → 이름/본문 입력 → 저장 →
  *              목록에 노출 → [수정] 본문 변경 → [삭제] 제거 (사용자 정의 CRUD 풀사이클)
- *   S2(AC10) : 대시보드 우클릭 [문자] 모달 본문 textarea 가 약 2배(rows≥10, min-h 220px) 확장
+ *   S2(AC10) : 대시보드 우클릭 [문자] 모달 본문 textarea 가 약 2배(rows≥20, min-h 440px) 확장
+ *              (T-20260609-foot-SMS-TEXTAREA-2X 로 rows 10→20 / 220→440px 추가 확장)
  *   S3(회귀) : reserved 자동발송 템플릿 4종 블록은 종전대로 수정/등록 버튼 유지
  *
  * Part B(MMS/이미지) 현장 클릭 시나리오 3종:
@@ -149,7 +150,9 @@ test('회귀: 예약 자동발송 템플릿(reserved) 블록 + 수정/등록 버
 // ---------------------------------------------------------------------------
 // S2 / AC-10: 대시보드 우클릭 [문자] 모달 textarea 약 2배 확장
 // ---------------------------------------------------------------------------
-test('AC-10: 문자 발송 모달 본문 textarea rows≥10 + min-height 220px', async ({ page }) => {
+// T-20260609-foot-SMS-TEXTAREA-2X: 김주연 총괄 요청으로 본문 textarea 추가 2배 확장(rows 20 / min-h 440px).
+// 기존 AC-10 단언(rows 10 / 220px)을 신규 크기로 갱신해 회귀 차단.
+test('AC-10: 문자 발송 모달 본문 textarea rows≥20 + min-height 440px', async ({ page }) => {
   const ok = await loginAndWaitForDashboard(page);
   if (!ok) { test.skip(); return; }
   await page.waitForTimeout(800);
@@ -179,10 +182,10 @@ test('AC-10: 문자 발송 모달 본문 textarea rows≥10 + min-height 220px',
 
   const textarea = page.getByTestId('sms-body-textarea');
   await expect(textarea).toBeVisible({ timeout: 5_000 });
-  await expect(textarea).toHaveAttribute('rows', '10');
-  // min-height 220px 적용 확인
+  await expect(textarea).toHaveAttribute('rows', '20');
+  // min-height 440px 적용 확인 (현재 대비 약 2배)
   const minH = await textarea.evaluate((el) => getComputedStyle(el).minHeight);
-  expect(parseInt(minH || '0', 10)).toBeGreaterThanOrEqual(200);
+  expect(parseInt(minH || '0', 10)).toBeGreaterThanOrEqual(420);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
