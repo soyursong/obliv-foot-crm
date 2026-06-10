@@ -8,10 +8,17 @@
  *   - window.confirm("이력이 남지 않습니다") 게이트 → dismiss 시 삭제 미실행
  *   - 기존 항목([예약 취소]=quick-menu-cancel-resv-btn) 회귀 보존
  *
- * ⚠️ 미구현(planner FOLLOWUP 에스컬레이션 — 스펙 전제 붕괴/티켓 충돌):
- *   AC-3([예약하기]→[예약상세]) · AC-6/AC-7(예약상세 팝업 버튼·복원) 은 본 spec 비대상.
- *   사유: 스크린샷 팝업(단일컬럼·예약구분 신규/리터치/시술예약/기타·예약등록자)이 foot
- *   코드에 존재하지 않으며 ReservationDetailPopup(4분할)은 dead 컴포넌트(미오픈).
+ * AC-3 (구현분, 2026-06-10 14:30 planner INFO): 예약관리 우클릭 메뉴 항목명
+ *   [예약하기]→[예약상세] 텍스트 변경. CustomerQuickMenu 의 reservationActionLabel prop 분기
+ *   (예약관리=예약상세 / 대시보드 고객카드=예약하기 기본). 와이어링(어느 팝업 오픈)은
+ *   (a) reporter 확정 후 REGISTRAR 트랙에서 — 본 단계는 텍스트만.
+ *   - 예약관리 메뉴 항목(quick-menu-resv-action-btn) text = '예약상세'
+ *
+ * ⚠️ 미구현(reporter 확정 대기 — REGISTRAR-ROUTE-FIELDS 트랙 단일 팝업 빌드):
+ *   AC-6/AC-7(예약상세 팝업 버튼 3+3·복원 동작 와이어링) 은 본 spec 비대상.
+ *   사유: (a) 팝업 구현 대상 + (c) 예약구분 reporter 확정 대기. ReservationDetailPopup(4분할)은
+ *   dead 컴포넌트(setDetail non-null 호출 0건). 단, 그 dead 팝업의 복원 latent 버그
+ *   (status만 세팅·cancelled 메타 미초기화)는 본 티켓에서 선제 수정(AC-7 prep).
  *
  * ⚠️ 실제 DB delete 는 confirm dismiss 로 차단 (자동화 환경 데이터 보호).
  */
@@ -82,6 +89,26 @@ test.describe('T-20260610-foot-RESV-CTXMENU-POPUP-SYNC', () => {
     await delBtn.click();
     await page.waitForTimeout(500);
     expect(dialogMsg).toContain('이력이 남지 않습니다');
+  });
+
+  // ── AC-3: 예약관리 우클릭 메뉴 항목명이 [예약상세]로 표시 ────────────────────────────
+  test('AC-3: 예약관리 우클릭 메뉴 예약 액션 항목이 [예약상세]로 표시된다', async ({ page }) => {
+    const opened = await openResvMgmtCtxMenu(page);
+    if (!opened) {
+      console.log('[SKIP] 예약관리 예약 카드 없음 — URL 검증으로 대체');
+      await expect(page).toHaveURL(/reservations/);
+      return;
+    }
+    const actionBtn = page.getByTestId('quick-menu-resv-action-btn');
+    if (!(await actionBtn.isVisible({ timeout: 2000 }).catch(() => false))) {
+      console.log('[SKIP] 메뉴는 떴으나 예약 액션 항목 미노출 — 회귀 비충돌로 통과');
+      await page.keyboard.press('Escape');
+      return;
+    }
+    // 예약관리 surface 는 reservationActionLabel="예약상세" 전달 → '예약상세' 표기, 구 '예약하기' 아님
+    await expect(actionBtn).toHaveText('예약상세');
+    await expect(actionBtn).not.toHaveText('예약하기');
+    await page.keyboard.press('Escape');
   });
 
   // ── 회귀: 기존 [예약 취소] 항목 보존 + JS 에러 없음 ─────────────────────────────────

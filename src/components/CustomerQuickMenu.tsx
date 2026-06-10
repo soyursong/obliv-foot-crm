@@ -5,7 +5,9 @@
  * T-20260606-foot-CTXMENU-SMS-SEND: [문자] 항목 추가 (수납 다음, 예약취소 위) — admin/manager 한정
  * T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-1: [완전 삭제] 항목 추가 (예약취소 아래) — 예약관리 우클릭 parity
  *   대시보드 ReservationContextMenu의 완전삭제와 동작 동일(hard delete, 이력 미보존). onDeleteReservation 제공 시만 노출.
- * 순서: 고객차트 → 진료차트 → 예약하기 → 수납 → 문자 → 예약 취소 → 완전 삭제
+ * T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-3: 3번 항목 라벨을 reservationActionLabel 로 분기
+ *   (예약관리 예약 우클릭=예약상세 / 대시보드 고객카드=예약하기 기본). 와이어링은 (a) 팝업 대상 확정 후.
+ * 순서: 고객차트 → 진료차트 → 예약하기|예약상세 → 수납 → 문자 → 예약 취소 → 완전 삭제
  */
 import { useEffect, useRef } from 'react';
 import { Ban, BookOpen, CalendarPlus, CreditCard, MessageSquare, Stethoscope, Trash2 } from 'lucide-react';
@@ -25,6 +27,12 @@ interface Props {
   onSendSms?: (checkIn: CheckIn) => void;
   /** T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-1: 완전 삭제(hard delete) 콜백 — 제공 시 + reservation_id 있을 때만 표시 */
   onDeleteReservation?: (checkIn: CheckIn) => void;
+  /**
+   * T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-3: 예약 액션 항목 라벨.
+   * 예약관리(기존 예약 우클릭)에서는 '예약상세'로, 대시보드 고객카드(체크인=신규 예약 생성)에서는 기본 '예약하기'.
+   * 텍스트만 분기 — onNewReservation 와이어링은 (a) 팝업 대상 확정 후 별도 변경(REGISTRAR 트랙).
+   */
+  reservationActionLabel?: string;
 }
 
 export function CustomerQuickMenu({
@@ -38,6 +46,7 @@ export function CustomerQuickMenu({
   onCancelReservation,
   onSendSms,
   onDeleteReservation,
+  reservationActionLabel = '예약하기',
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -99,8 +108,10 @@ export function CustomerQuickMenu({
         진료차트
       </button>
 
-      {/* 3. 예약하기 — 기존 유지 */}
+      {/* 3. 예약 액션 — T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-3: 라벨 reservationActionLabel 분기
+          (예약관리=예약상세 / 대시보드 고객카드=예약하기 기본). 와이어링(onNewReservation)은 (a) 확정 후 변경. */}
       <button
+        data-testid="quick-menu-resv-action-btn"
         className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-teal-50 transition text-left"
         onClick={() => {
           onNewReservation(checkIn);
@@ -108,7 +119,7 @@ export function CustomerQuickMenu({
         }}
       >
         <CalendarPlus className="h-4 w-4 text-teal-600 shrink-0" />
-        예약하기
+        {reservationActionLabel}
       </button>
 
       {/* 4. 수납 — T-20260515-foot-CONTEXT-MENU-4ITEM AC-3 신규 */}

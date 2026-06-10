@@ -249,12 +249,19 @@ export function ReservationDetailPopup({
         return;
       }
     }
-    const { error } = await supabase.from('reservations').update({ status }).eq('id', reservation.id);
-    if (error) { toast.error(`업데이트 실패: ${error.message}`); setBusy(false); return; }
     const resolvedAction = action
       ?? (status === 'cancelled' ? 'cancel'
         : status === 'confirmed' && reservation.status === 'cancelled' ? 'restore'
         : 'status_change');
+    // T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-7: 복원 시 취소 메타(cancelled_at/cancel_reason/cancelled_by) 초기화.
+    //   기존 latent 버그 — status='confirmed'만 세팅하고 취소 메타가 stale로 남던 문제 수정.
+    //   handleEditorRestore(Reservations.tsx)와 동일 비파괴 상태전이 정책 통일.
+    const updatePayload =
+      resolvedAction === 'restore'
+        ? { status, cancelled_at: null, cancel_reason: null, cancelled_by: null }
+        : { status };
+    const { error } = await supabase.from('reservations').update(updatePayload).eq('id', reservation.id);
+    if (error) { toast.error(`업데이트 실패: ${error.message}`); setBusy(false); return; }
     await supabase.from('reservation_logs').insert({
       reservation_id: reservation.id,
       clinic_id: reservation.clinic_id,
