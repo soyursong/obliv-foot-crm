@@ -506,6 +506,12 @@ export interface Reservation {
   cancel_reason: string | null;            // 취소 사유 — T-20260515-foot-RESV-CANCEL
   cancelled_by: string | null;             // 취소 처리 staff user_id — T-20260525-foot-RESV-CANCEL-CTX
   referral_source: string | null;
+  /** T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약경로(방문경로 대분류). customers.visit_route enum 재사용 SSOT. */
+  visit_route?: 'TM' | '워크인' | '인바운드' | '지인소개' | null;
+  /** T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약등록자 마스터 FK(reservation_registrars). */
+  registrar_id?: string | null;
+  /** T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약등록자 성함 스냅샷(고객박스 @표시·이력 안정). */
+  registrar_name?: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -526,4 +532,21 @@ export interface Reservation {
    *  카드 표기명을 customers 현재 이름 우선 렌더하기 위한 비영속 파생 필드.
    *  customer_id 미연결(unlink) 시 null → denormalized customer_name fallback. */
   customers?: { name: string | null } | null;
+}
+
+/**
+ * T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약등록자 편집형 마스터.
+ * 관리자 설정에서 CRUD(추가/수정/비활성/정렬). 예약상세 팝업 '예약등록자' 드롭다운 SSOT.
+ * ⚠ staff 계정과 분리된 운영 명단 — STAFF-ROLE-TM-ADD(staff role)와 별개 모델.
+ */
+export interface ReservationRegistrar {
+  id: string;
+  clinic_id: string;
+  group_name: '원내' | 'TM';
+  name: string;
+  sort_order: number;
+  active: boolean;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
 }
