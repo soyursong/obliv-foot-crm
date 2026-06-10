@@ -70,6 +70,44 @@ test.describe('AC-2 — 의료법 라벨 span 제거 (양 surface)', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AC-2 B안 — embed clinical 로그인 의사 auto-fill (reporter 문지은 confirm 1781074543.411799)
+//   풀차트 SIGN-AUDIT auto-fill 패턴을 embed clinical 에 동일 이식.
+//   "로그인 계정이 의사면 자동 본인 + 드롭다운 수동 변경 가능 + 비우면 저장 차단".
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('AC-2 B안 — embed clinical 의사 auto-fill', () => {
+  test('auto-fill effect: 이름 매칭(clinic_doctors)으로 본인 자동 선택', () => {
+    const s = PANEL();
+    // role 프록시 게이트 제거 → 이름 매칭 자체가 의사 판정
+    expect(s).toContain('const mine = clinicDoctors.find((d) => d.name === currentUserName);');
+    expect(s).toContain('if (mine) setFormSigningDoctorId(mine.id);');
+  });
+
+  test('GUARD: 신규+미선택일 때만 채움 (수동 선택/저장차트 보존)', () => {
+    const s = PANEL();
+    const block = s.slice(
+      s.indexOf('AC-2 B안'),
+      s.indexOf('if (mine) setFormSigningDoctorId(mine.id);'),
+    );
+    expect(block).toContain('if (selectedChartId) return;');
+    expect(block).toContain('if (formSigningDoctorId) return;');
+  });
+
+  test('회귀: 옛 isDirector 역할 게이트가 auto-fill 을 막지 않음', () => {
+    const s = PANEL();
+    const block = s.slice(
+      s.indexOf('AC-2 B안'),
+      s.indexOf('if (mine) setFormSigningDoctorId(mine.id);'),
+    );
+    // manager/doctor 역할 의사도 auto-fill 되어야 하므로 effect 내 isDirector 하드 게이트 부재
+    expect(block).not.toContain('if (!isDirector) return;');
+  });
+
+  test('B안 출처 주석(reporter confirm ts) 보존', () => {
+    expect(PANEL()).toContain('AC-2 B안(reporter 문지은 confirm 1781074543.411799)');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AC-3 — clinicalMiniBody Textarea embed 크기 확대 (풀차트 불변)
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('AC-3 — 임상경과 textarea embed 크기', () => {
