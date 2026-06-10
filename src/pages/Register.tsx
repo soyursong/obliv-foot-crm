@@ -12,6 +12,9 @@ const ROLES: { value: UserRole; label: string }[] = [
   { value: 'coordinator', label: '코디' },
   { value: 'therapist', label: '관리사' },
   { value: 'technician', label: '치료사' },
+  // T-20260610-foot-STAFF-ROLE-TM-ADD AC1/AC5: 자기등록(회원가입) 직책에 'TM' 추가.
+  // user_profiles.role CHECK 가 이미 'tm' 허용(20260513000040_contract_align_roles.sql) → 마이그레이션 불요.
+  { value: 'tm', label: 'TM' },
   { value: 'manager', label: '매니저' },
 ];
 
