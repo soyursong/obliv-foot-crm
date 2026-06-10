@@ -81,7 +81,7 @@
  *  버튼/토글/이름→차트/메모는 헤더 드래그핸들 밖 또는 stopPropagation으로 본문 무간섭, clamp로 화면밖 유실 방지.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp, MapPin, RotateCcw } from 'lucide-react';
+import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp, MapPin, RotateCcw, EyeOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -91,6 +91,8 @@ import { DoctorAckBadge } from '@/components/doctor/DoctorAck';
 
 /** T-20260610-foot-CALLLIST-TOP-COVERS-BUTTONS Phase 2: 드래그 위치 저장 키(사용자/브라우저 단위 개인설정). */
 const CALLLIST_POS_KEY = 'foot.doctorCallList.pos.v1';
+/** T-20260610-foot-CALLLIST-HIDE-TOGGLE AC-3: 숨김/표시 상태 저장 키. 위치 키와 별도 네임스페이스(충돌 금지). */
+const CALLLIST_HIDDEN_KEY = 'foot.doctorCallList.hidden.v1';
 
 interface DoctorCallListBarProps {
   /** Dashboard의 당일·해당지점 check_ins rows */
@@ -153,6 +155,30 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
   // POPUP-RELOC AC-4) 접기/펼치기 토글 — 빈공간 점유로 칸반 작업 방해 방지.
   //   접힘: 헤더 바만 표시(명단 본문 숨김) → 칸반 빈공간 확보.
   const [collapsed, setCollapsed] = useState(false);
+
+  // T-20260610-foot-CALLLIST-HIDE-TOGGLE — 전체 숨기기(collapse보다 강함: 헤더까지 사라지고 최소 탭만 잔존).
+  //   AC-3) localStorage 영구(per-browser). 위치 키와 별도 네임스페이스라 드래그 위치 영속과 직교(충돌 X).
+  const [hidden, setHidden] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(CALLLIST_HIDDEN_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(CALLLIST_HIDDEN_KEY, hidden ? '1' : '0');
+    } catch {
+      /* localStorage 접근 불가 → 영속 생략(세션 상태로 동작) */
+    }
+  }, [hidden]);
+
+  // AC-4·AC-5) 숨김 중 신규 리스트업 unseen 카운트 — *강제 펼침 없이* 배지로만 알림(P0 버튼가림 회귀 방지).
+  //   seenIdsRef = 사용자가 이미 본 활성 콜대상 id 집합. 패널이 보이는 동안은 전부 seen(unseen=0).
+  //   숨김 중에는 seen 집합을 자동 갱신하지 않음 → 새로 들어온 활성 id가 unseen으로 누적.
+  //   펼치면(hidden=false) 효과가 다시 전체를 seen 처리 → 배지 리셋.
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  const [unseenCount, setUnseenCount] = useState(0);
 
   // T-20260610-foot-CALLLIST-TOP-COVERS-BUTTONS Phase 2 — 드래그 자유이동(현장 "개인마다 자유롭게").
   //   AC-5 헤더(드래그 핸들)를 잡아 화면 어디든 이동. AC-6 localStorage 위치저장 + boundary clamp +
@@ -290,7 +316,65 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
     };
   }, [displayList]);
 
+  // AC-4) unseen 신규 카운트 산출 — activeList(콜 대상) 또는 hidden 변동 시 재계산.
+  //   보이는 상태: 전체를 seen으로 마킹 → unseen 0(배지 없음).
+  //   숨김 상태: seen 집합에 없는 활성 id 수 = unseen(누적). seen 집합은 숨김 중 갱신하지 않음.
+  useEffect(() => {
+    const activeIds = activeList.map((ci) => ci.id);
+    if (!hidden) {
+      seenIdsRef.current = new Set(activeIds);
+      setUnseenCount(0);
+      return;
+    }
+    let count = 0;
+    for (const id of activeIds) {
+      if (!seenIdsRef.current.has(id)) count++;
+    }
+    setUnseenCount(count);
+  }, [activeList, hidden]);
+
   if (displayList.length === 0) return null;
+
+  // AC-1·AC-2) 숨김 상태: 전체 패널 대신 최소 탭만 렌더(완전소멸 금지 — 재접근 가능).
+  //   위치(pos/anchor)는 그대로 적용 → 드래그해둔 자리에 최소 탭이 남음(AC-7 위치 보존).
+  //   AC-4 빨간 배지(unseen)는 최소 탭 우상단. 클릭 시 펼침(setHidden(false)) → 위 효과가 배지 리셋.
+  if (hidden) {
+    return (
+      <div
+        ref={panelRef}
+        data-testid="doctor-call-list"
+        data-hidden="true"
+        data-position-mode={pos ? 'dragged' : 'fixed'}
+        className={cn(
+          'fixed z-40 rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm',
+          pos ? '' : 'bottom-4 right-4',
+        )}
+        style={pos ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' } : undefined}
+      >
+        <button
+          data-testid="doctor-call-show"
+          onClick={() => setHidden(false)}
+          className="relative flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-xl hover:bg-red-50"
+          title="원장님 진료콜 명단 펼치기"
+        >
+          <Stethoscope className="h-4 w-4 text-red-600" />
+          <span className="text-sm font-semibold text-red-800">진료콜</span>
+          <span className="text-xs text-red-600 bg-red-100 rounded-full px-1.5 py-px font-medium">
+            {activeList.length}
+          </span>
+          {unseenCount > 0 && (
+            <span
+              data-testid="doctor-call-unseen-badge"
+              className="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-red-600 text-white text-[10px] font-bold rounded-full ring-2 ring-white"
+              title={`미확인 신규 ${unseenCount}명`}
+            >
+              {unseenCount}
+            </span>
+          )}
+        </button>
+      </div>
+    );
+  }
 
   return (
     // T-20260601-foot-DASH-POPUP-RIGHT-FIX 진료콜 명단 팝업 — 뷰포트 우측 position:fixed 고정.
@@ -307,6 +391,7 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
       ref={panelRef}
       data-testid="doctor-call-list"
       data-collapsed={String(collapsed)}
+      data-hidden="false"
       data-position-mode={pos ? 'dragged' : 'fixed'}
       className={cn(
         'fixed z-40 w-[min(30rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm',
@@ -390,6 +475,17 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
               <RotateCcw className="h-4 w-4" />
             </button>
           )}
+          {/* T-20260610-foot-CALLLIST-HIDE-TOGGLE AC-1) 숨기기 토글 — 클릭 시 전체 패널 → 최소 탭.
+              onPointerDown stopPropagation: 헤더 드래그 핸들 오발동 방지(콜/접기 토글과 동일 가드). */}
+          <button
+            data-testid="doctor-call-hide"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => setHidden(true)}
+            className="flex items-center justify-center text-red-700 rounded-md px-1.5 py-1 min-h-[36px] min-w-[36px] border border-red-300 bg-white hover:bg-red-100"
+            title="명단 숨기기 — 최소 탭만 남김"
+          >
+            <EyeOff className="h-4 w-4" />
+          </button>
           {/* POPUP-RELOC AC-4) 접기/펼치기 토글 */}
           <button
             data-testid="doctor-call-toggle"
