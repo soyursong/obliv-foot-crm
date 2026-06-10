@@ -2,7 +2,9 @@
 id: T-20260609-foot-CALLLIST-NAME-VERTICAL-LAYOUT
 domain: foot
 priority: P2
-status: deploy-ready
+status: superseded
+superseded_by: T-20260610-foot-CALLLIST-TOP-COVERS-BUTTONS
+superseded_date: 2026-06-10
 title: 원장님 진료콜 명단 — 성함 전체표시 + 세로 나열 + 인원 증가 시 자연 확장
 created: 2026-06-09
 assignee: dev-foot
@@ -15,6 +17,11 @@ e2e-spec: tests/e2e/T-20260609-foot-CALLLIST-NAME-VERTICAL-LAYOUT.spec.ts
 commit_sha: 396167b
 spec_file: tests/e2e/T-20260609-foot-CALLLIST-NAME-VERTICAL-LAYOUT.spec.ts
 ---
+
+> ⛔ SUPERSEDED (2026-06-10) by **T-20260610-foot-CALLLIST-TOP-COVERS-BUTTONS**.
+> 본 티켓이 채택한 외곽 패널 세로 앵커 `top-4`(우상단)가 대시보드 상단 동작버튼을 가리는
+> P0 회귀를 유발 → TOP-COVERS-BUTTONS Phase 1에서 `bottom-4`(우하단)로 정정·대체됨.
+> 세로 나열·성함 전체표시·HEALER 무회귀 AC는 후속 티켓이 승계 보존. 이 티켓은 종결.
 
 # T-20260609-foot-CALLLIST-NAME-VERTICAL-LAYOUT — 진료콜 명단 레이아웃 개선
 
