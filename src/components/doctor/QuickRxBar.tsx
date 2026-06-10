@@ -187,17 +187,19 @@ function useApplyQuickRx(checkInId: string | undefined) {
       if (!checkInId) throw new Error('checkInId 없음');
 
       // 1) 적용 전 현재 상태 + undo 스냅샷 단일 조회
+      //    T-20260610-foot-DOCDASH-STATUS-SPLIT: status_flag 추가 — 진료완료(pink) 원내 잔류 게이트 판정용.
       const { data: cur, error: readErr } = await supabase
         .from('check_ins')
         .select(
-          'status, checked_in_at, prescription_items, prescription_status, doctor_confirm_prescription, doctor_confirmed_at',
+          'status, status_flag, checked_in_at, prescription_items, prescription_status, doctor_confirm_prescription, doctor_confirmed_at',
         )
         .eq('id', checkInId)
         .single();
       if (readErr) throw readErr;
 
       // 2) 원내 잔류 게이트 — DB 최신값 기준(낙관적 UI/탭 경합 방어, race-safe)
-      const gate = checkRxInClinic(cur as { status?: string; checked_in_at?: string | null });
+      //    진료완료(pink)는 원내 잔류로 허용, 귀가(done)만 차단 — inClinicRxGate SSOT.
+      const gate = checkRxInClinic(cur as { status?: string; status_flag?: string | null; checked_in_at?: string | null });
       if (!gate.allowed) {
         const err = new Error(rxInClinicMessage(gate.reason)) as Error & { code?: string };
         err.code = IN_CLINIC_GATE_CODE;
@@ -282,6 +284,11 @@ export interface QuickRxBarProps {
    */
   checkInStatus?: string | null;
   checkedInAt?: string | null;
+  /**
+   * T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(status_flag='pink') 컨텍스트.
+   * 진료완료 환자는 원내 잔류 → 처방 허용(귀가 아님). 미제공 시 status 기준만 판정(무회귀).
+   */
+  checkInFlag?: string | null;
   /** 차단 안내에서 '차트 열기' 진입 동선(제공 시 액션 버튼 노출). */
   onOpenChart?: () => void;
 
@@ -301,6 +308,7 @@ export default function QuickRxBar({
   onApplied,
   checkInStatus,
   checkedInAt,
+  checkInFlag,
   onOpenChart,
   className,
   compact = false,
@@ -314,7 +322,7 @@ export default function QuickRxBar({
   const isDirectMode = !onSelectItems && !!checkInId;
   const hasGateContext = isDirectMode && checkedInAt !== undefined && checkedInAt !== null;
   const uiGate = hasGateContext
-    ? checkRxInClinic({ status: checkInStatus, checked_in_at: checkedInAt })
+    ? checkRxInClinic({ status: checkInStatus, status_flag: checkInFlag, checked_in_at: checkedInAt })
     : null;
   const blockedByUiGate = !!uiGate && !uiGate.allowed;
 
@@ -526,6 +534,7 @@ export function RxConfirmedSummary({
   label = '처방완료',
   checkInStatus,
   checkedInAt,
+  checkInFlag,
   onOpenChart,
 }: {
   checkInId: string | undefined;
@@ -548,6 +557,11 @@ export function RxConfirmedSummary({
    */
   checkInStatus?: string | null;
   checkedInAt?: string | null;
+  /**
+   * T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(status_flag='pink') 컨텍스트.
+   * 진료완료 환자는 원내 잔류 → 처방취소 허용(아직 안 나감). 귀가(done)만 차단. 무제공 시 status 기준만.
+   */
+  checkInFlag?: string | null;
   /** 차단 시 '차트 열기' 진입 동선(제공 시 인라인 버튼 + 안내 토스트 액션 노출). */
   onOpenChart?: () => void;
 }) {
@@ -558,7 +572,7 @@ export function RxConfirmedSummary({
   // 귀가 게이트 — checkedInAt 제공 시에만 판정(SSOT 재사용). 비잔류면 취소 차단.
   const hasGateContext = checkedInAt !== undefined && checkedInAt !== null;
   const gate = hasGateContext
-    ? checkRxInClinic({ status: checkInStatus, checked_in_at: checkedInAt })
+    ? checkRxInClinic({ status: checkInStatus, status_flag: checkInFlag, checked_in_at: checkedInAt })
     : null;
   const blockedByGate = !!gate && !gate.allowed;
 

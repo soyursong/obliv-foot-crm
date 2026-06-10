@@ -38,6 +38,9 @@ interface PatientRow {
   customer_name: string;
   visit_type: 'new' | 'returning' | 'experience';
   status: CheckInStatus;
+  /** T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)/귀가(done) 시각 구분 + 처방 게이트 컨텍스트.
+   *  check_ins 기존 컬럼(status_flag) — SELECT 확장만, 스키마 무변경. */
+  status_flag: string | null;
   checked_in_at: string;
   queue_number: number | null;
   prescription_status: 'none' | 'pending' | 'confirmed';
@@ -255,7 +258,8 @@ function usePatientsByDate(clinicId: string | null, dateISO: string) {
           // T-20260609-foot-PASTVISIT-TREATMENT-VIEW: treatment_* 추가(기존 컬럼, SELECT 확장만 — AC-5)
           // T-20260609-foot-DOCPATIENTLIST-DATEMODE-HISTORY: healer_laser_confirm 추가(기존 컬럼, SELECT 확장만 — AC-3)
           // T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: *_room 추가(기존 컬럼, SELECT 확장만) — 치료실명 표시.
-          'id, customer_id, customer_name, visit_type, status, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, treatment_category, treatment_contents, treatment_kind, healer_laser_confirm, consultation_room, treatment_room, laser_room, examination_room, reservation:reservation_id(booking_memo)',
+          // T-20260610-foot-DOCDASH-STATUS-SPLIT: status_flag 추가(기존 컬럼, SELECT 확장만) — 진료완료/귀가 구분.
+          'id, customer_id, customer_name, visit_type, status, status_flag, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, treatment_category, treatment_contents, treatment_kind, healer_laser_confirm, consultation_room, treatment_room, laser_room, examination_room, reservation:reservation_id(booking_memo)',
         )
         .eq('clinic_id', clinicId)
         .gte('checked_in_at', `${day}T00:00:00+09:00`)
@@ -379,6 +383,46 @@ function VisitTypeBadge({ type }: { type: PatientRow['visit_type'] }) {
       data-testid="visit-type-badge"
     >
       {label}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 상태 셀 — T-20260610-foot-DOCDASH-STATUS-SPLIT (AC-5):
+//   진료완료(status_flag='pink')와 귀가(status='done')를 시각적으로 구분.
+//   · 진료완료 = emerald 배지 '진료완료'(원내 잔류, 처방 허용) — pink 우선(done 아님).
+//   · 귀가     = gray 배지 '귀가'(수납완료, 처방 차단).
+//   · 그 외     = 기존 STATUS_KO 텍스트(현행 유지).
+//   pink와 done(dark_gray)은 상호배타라 분기 충돌 없음. 진료완료가 귀가보다 우선 표기.
+// ---------------------------------------------------------------------------
+function StatusCell({ status, statusFlag }: { status: CheckInStatus; statusFlag: string | null }) {
+  if (statusFlag === 'pink') {
+    return (
+      <span
+        className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"
+        data-testid="status-cell"
+        data-state="treatment-done"
+        title="진료완료 — 원내 잔류(처방 가능)"
+      >
+        진료완료
+      </span>
+    );
+  }
+  if (status === 'done') {
+    return (
+      <span
+        className="inline-flex items-center rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-600"
+        data-testid="status-cell"
+        data-state="discharged"
+        title="귀가 — 수납완료(처방은 차트에서 수정)"
+      >
+        귀가
+      </span>
+    );
+  }
+  return (
+    <span className="text-[11px] text-muted-foreground truncate" data-testid="status-cell" data-state="in-clinic">
+      {STATUS_KO[status] ?? status}
     </span>
   );
 }
@@ -527,10 +571,8 @@ function PatientRow({
           <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
         </div>
 
-        {/* 상태 */}
-        <span className="text-[11px] text-muted-foreground truncate">
-          {STATUS_KO[row.status] ?? row.status}
-        </span>
+        {/* 상태 — T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)/귀가(done) 시각 구분(AC-5). */}
+        <StatusCell status={row.status} statusFlag={row.status_flag} />
 
         {/* 치료실(방이름) — T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3.
             getAssignedSlotName(SSOT) 파생 — 배정된 방 있으면 '◯번 치료실' 등 표시, 미배정/대기면 '—'. */}
@@ -610,6 +652,8 @@ function PatientRow({
             onApplied={onRefresh}
             checkInStatus={row.status}
             checkedInAt={row.checked_in_at}
+            /* T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)는 원내 잔류 → 처방 허용(귀가만 차단). */
+            checkInFlag={row.status_flag}
             /* T-20260610-foot-QUICKRX-BLOCK-PANEL-HIDE: 차트 연결 버그 수정 — onOpenChart 미전달로
                원내 비잔류 시 차트 열기 버튼이 렌더되지 않던 버그. */
             onOpenChart={onOpenChart}
@@ -635,9 +679,11 @@ function PatientRow({
               onCancelled={onRefresh}
               label="처방 내용"
               /* T-20260609-foot-DOCPATIENTLIST-RXCANCEL-DISCHARGE-GATE:
-                 귀가(원내 비잔류) 환자 처방취소 차단(inClinicRxGate SSOT) + 차트 진입 동선. */
+                 귀가(원내 비잔류) 환자 처방취소 차단(inClinicRxGate SSOT) + 차트 진입 동선.
+                 T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)는 원내 잔류 → 취소 허용(귀가만 차단). */
               checkInStatus={row.status}
               checkedInAt={row.checked_in_at}
+              checkInFlag={row.status_flag}
               onOpenChart={onOpenChart}
             />
             {row.doctor_confirmed_at && (

@@ -15,8 +15,15 @@
 //   ※ "진료 완료(completed_at)"는 귀가가 아님 — 레이저 등 시술이 남은 원내 잔류 환자도 completed_at 보유 가능.
 //      따라서 귀가 판정은 completed_at 이 아니라 status==='done' 으로 한다.
 
+// T-20260610-foot-DOCDASH-STATUS-SPLIT (진료완료 ≠ 귀가 — 문지은 대표원장 정정):
+//   "진료완료랑 귀가랑 같지 않지. 의사가 진료실에서 나온 게 진료완료, 처방전 뽑고 수납서류 다 해야 귀가."
+//   허용 = 원내 잔류(진료완료 포함) / 차단 = 귀가(true discharge)로만.
+//   진료완료 = status_flag='pink'(진료완료 버튼, status 미변경) / 귀가 = status='done'(+ 수납완료 dark_gray).
+//   pink 전이는 status 미변경, done 전이는 status_flag를 dark_gray로 덮음 → pink와 done 상호배타.
+//   ⇒ "pink면 허용" 조기 규칙이 done(귀가) 차단을 무력화하지 않음(무스키마, STEP1-B (b)).
+
 import { seoulISODate, todaySeoulISODate } from './format';
-import type { CheckInStatus } from './types';
+import type { CheckInStatus, StatusFlag } from './types';
 
 /** 원내 비잔류(귀가/종료) 상태 — Dashboard active 필터의 여집합 */
 export const NOT_IN_CLINIC_STATUSES = new Set<CheckInStatus>(['done', 'cancelled']);
@@ -33,6 +40,12 @@ export interface RxInClinicGateResult {
 export interface RxInClinicCheckInput {
   status?: CheckInStatus | string | null;
   checked_in_at?: string | null;
+  /**
+   * T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(status_flag='pink') = 원내 잔류 1급 신호.
+   * 진료완료 ≠ 귀가. 진료완료 환자는 처방을 허용해야 함(원내 잔류, 처방·수납 전).
+   * 미제공(undefined) 시 종전 동작(status 기준만) 보존 — 무회귀.
+   */
+  status_flag?: StatusFlag | string | null;
 }
 
 /**
@@ -62,7 +75,13 @@ export function checkRxInClinic(
     return { allowed: false, reason: 'not_today' };
   }
 
-  // 귀가(완료) 차단.
+  // T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)는 원내 잔류 → 처방 허용(진료완료 ≠ 귀가).
+  //   진료완료 전이는 status를 done으로 바꾸지 않고, 귀가(done) 전이는 status_flag를 dark_gray로 덮으므로
+  //   pink와 done은 상호배타 → 이 조기 허용이 아래 귀가(done) 차단을 무력화하지 않는다.
+  const flag = (checkIn.status_flag ?? '') as StatusFlag;
+  if (flag === 'pink') return { allowed: true, reason: null };
+
+  // 귀가(true discharge) 차단 — status='done'(+ 수납완료 dark_gray).
   if (status === 'done') return { allowed: false, reason: 'discharged' };
 
   return { allowed: true, reason: null };
@@ -83,7 +102,8 @@ export function isInClinicForRx(
 export function rxInClinicMessage(reason: RxInClinicBlockReason | null): string {
   switch (reason) {
     case 'discharged':
-      return '원내 잔류 환자만 빠른처방이 가능해요. 이미 나간(완료) 환자는 차트에서 수정하세요.';
+      // T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료와 혼동 차단 — '귀가(수납완료)'로 명시.
+      return '귀가(수납완료)한 환자예요. 진료완료 환자는 처방이 가능하고, 이미 나간 처방은 차트에서 수정하세요.';
     case 'not_today':
       return '원내 잔류 환자(오늘 내원)만 빠른처방이 가능해요. 지난/예정 처방은 차트에서 수정하세요.';
     case 'cancelled':
@@ -98,7 +118,7 @@ export function rxInClinicMessage(reason: RxInClinicBlockReason | null): string 
 export function rxInClinicShortLabel(reason: RxInClinicBlockReason | null): string {
   switch (reason) {
     case 'discharged':
-      return '귀가(완료) 환자 — 빠른처방 불가';
+      return '귀가(수납완료) 환자 — 빠른처방 불가';
     case 'not_today':
       return '오늘 내원 환자 아님 — 빠른처방 불가';
     case 'cancelled':

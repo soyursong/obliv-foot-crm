@@ -65,9 +65,10 @@ test.describe('AC2 귀가(완료) 차단', () => {
     expect(r.reason).toBe('discharged');
   });
 
-  test('차단 안내: 원내 잔류 + 차트에서 수정 동선', () => {
+  test('차단 안내: 귀가(수납완료) 명시 + 차트에서 수정 동선', () => {
+    // T-20260610-foot-DOCDASH-STATUS-SPLIT: '원내 잔류' → '귀가(수납완료)'로 문구 재정의(진료완료 혼동 차단).
     const msg = rxInClinicMessage('discharged');
-    expect(msg).toContain('원내 잔류');
+    expect(msg).toContain('귀가');
     expect(msg).toContain('차트');
     expect(rxInClinicShortLabel('discharged')).toContain('빠른처방 불가');
   });
