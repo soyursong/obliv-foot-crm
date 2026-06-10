@@ -501,6 +501,9 @@ function PatientRow({
             onApplied={onRefresh}
             checkInStatus={row.status}
             checkedInAt={row.checked_in_at}
+            /* T-20260610-foot-QUICKRX-BLOCK-PANEL-HIDE: 차트 연결 버그 수정 — onOpenChart 미전달로
+               원내 비잔류 시 차트 열기 버튼이 렌더되지 않던 버그. */
+            onOpenChart={onOpenChart}
             compact
           />
           {hasPendingRx && (
