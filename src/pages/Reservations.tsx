@@ -850,6 +850,29 @@ export default function Reservations() {
     toast.info('체크인 후 수납이 가능합니다');
   }, []);
 
+  // T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-1: 예약관리 우클릭 [완전 삭제] parity
+  // 대시보드 ReservationContextMenu(handleDashDeleteConfirm)와 동일한 hard delete — 이력 미보존.
+  // window.confirm 게이트는 CustomerQuickMenu 항목 onClick 에서 수행. 여기선 체크인 연결 가드 + DB delete + 낙관적 제거.
+  const handleResvHardDelete = useCallback(async (ci: CheckIn) => {
+    const resvId = ci.reservation_id;
+    if (!resvId) { toast.error('예약 정보를 찾을 수 없습니다'); return; }
+    const resv = rows.find((r) => r.id === resvId);
+    const name = resv?.customer_name ?? ci.customer_name ?? '';
+    // 체크인 연결 예약은 삭제 차단(orphan 방지) — ReservationDetailPopup.deleteReservation 패턴 재사용
+    const { count } = await supabase
+      .from('check_ins')
+      .select('id', { count: 'exact', head: true })
+      .eq('reservation_id', resvId);
+    if ((count ?? 0) > 0) {
+      toast.error('체크인이 연결된 예약은 삭제할 수 없습니다');
+      return;
+    }
+    const { error } = await supabase.from('reservations').delete().eq('id', resvId);
+    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+    setRows((prev) => prev.filter((r) => r.id !== resvId));
+    toast.success(`${name} 예약 완전 삭제됨`);
+  }, [rows]);
+
   // T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 콜백 — CustomerQuickMenu에서 호출
   const handleResvCancelRequest = useCallback((ci: CheckIn) => {
     // ci는 resvAsCheckIn()으로 변환된 어댑터 → reservation_id 가 원본 Reservation.id
@@ -1425,6 +1448,8 @@ export default function Reservations() {
         onNewReservation={handleResvNewReservation}
         onOpenPayment={handleResvOpenPayment}
         onCancelReservation={handleResvCancelRequest}
+        /* T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-1: 완전 삭제 parity (대시보드 우클릭과 동일 hard delete) */
+        onDeleteReservation={handleResvHardDelete}
       />
 
       {/* T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 모달 */}
