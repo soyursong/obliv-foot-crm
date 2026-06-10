@@ -2,7 +2,8 @@
  * E2E spec — T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN
  * 빠른처방 클릭/확정 UX 전면 재정의 (문지은 대표원장):
  *   AC-1 선택지 = 우측 드롭다운 목록형(버튼 아님), 파란글씨/흰배경/테두리 없음.
- *   AC-2 항목 클릭 확정 → "처방완료" + 옆에 약물리스트 검은글씨 `{name} {freq} *` (items 배열 전체·다중약).
+ *   AC-2 항목 클릭 확정 → "처방완료" + 옆에 약물리스트 검은글씨 `{name} {dosage}/{count|freq}/{days} *` (items 배열 전체·다중약).
+ *       토큰 포맷은 T-20260610-foot-RX-TOKEN-FORMAT(954c999)으로 정밀화 — dosage/1일횟수/총일수 슬래시 3토큰.
  *   AC-3 hover 미리보기 우측·비방해 — 13c1770 QuickRxButton portal 재사용(회귀 없이 유지).
  *   AC-4 별도 취소버튼 폐지 → "처방완료" 재클릭 → "취소하시겠습니까?" → useCancelConfirmedRx clean 원복.
  *   AC-5 취소 권한 = DOCTOR_ROLES.
@@ -17,27 +18,31 @@ import { formatRxConfirmedSummary } from '../../src/lib/rxTooltip';
 import { captureRxSnapshot, buildUndoPatch } from '../../src/lib/rxUndo';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 시나리오 1 — AC-2 약물리스트 포맷: `{name} {freq} *` (단일/다중)
+// 시나리오 1 — AC-2 약물리스트 포맷: `{name} {dosage}/{count|freq}/{days} *` (단일/다중)
+//   T-20260610-foot-RX-TOKEN-FORMAT(954c999) 정합: frequency 단일 토큰 echo → 3토큰 슬래시 포맷.
+//   '1/3/2' = "2일동안 하루3번 1알" → dosage(1회투여량)/count(1일횟수)/days(총일수). 정본 무변경 spec-only.
 // ═══════════════════════════════════════════════════════════════════════════
-test.describe('S1 처방완료 약물리스트 포맷 — name freq *', () => {
-  test('단일 약 → "이름 용법 *"', () => {
-    expect(formatRxConfirmedSummary([{ name: '소염제', frequency: '1/3/2' }])).toBe('소염제 1/3/2 *');
+test.describe('S1 처방완료 약물리스트 포맷 — name dosage/count/days *', () => {
+  test('단일 약 → "이름 dosage/횟수/일수 *"', () => {
+    expect(formatRxConfirmedSummary([{ name: '소염제', dosage: '1', count: 3, days: 2 }])).toBe(
+      '소염제 1/3/2 *',
+    );
   });
 
   test('다중 약 → 약마다 " * " 종결·연결 (티켓 예시 형태)', () => {
     const out = formatRxConfirmedSummary([
-      { name: '항생제', frequency: '1/3/2' },
-      { name: '위장약', frequency: '1/1/1' },
+      { name: '항생제', dosage: '1', count: 3, days: 2 },
+      { name: '위장약', dosage: '1', count: 1, days: 1 },
     ]);
     expect(out).toBe('항생제 1/3/2 * 위장약 1/1/1 *');
   });
 
   test('3개 이상도 전부 나열 (slice 절단 없음 — 다중약 전체)', () => {
     const out = formatRxConfirmedSummary([
-      { name: 'A', frequency: '1/0/0' },
-      { name: 'B', frequency: '0/1/0' },
-      { name: 'C', frequency: '0/0/1' },
-      { name: 'D', frequency: '1/1/1' },
+      { name: 'A', dosage: '1', count: 0, days: 0 },
+      { name: 'B', dosage: '0', count: 1, days: 0 },
+      { name: 'C', dosage: '0', count: 0, days: 1 },
+      { name: 'D', dosage: '1', count: 1, days: 1 },
     ]);
     expect(out).toBe('A 1/0/0 * B 0/1/0 * C 0/0/1 * D 1/1/1 *');
     expect(out.split('*').filter((s) => s.trim()).length).toBe(4); // 4개 모두 노출
@@ -54,7 +59,9 @@ test.describe('S2 결측 방어', () => {
   });
 
   test('이름 결측 → "(이름 미입력) *" 폴백(빈 토큰 방지)', () => {
-    expect(formatRxConfirmedSummary([{ name: '', frequency: '1/1/1' }])).toBe('(이름 미입력) 1/1/1 *');
+    expect(formatRxConfirmedSummary([{ name: '', dosage: '1', count: 1, days: 1 }])).toBe(
+      '(이름 미입력) 1/1/1 *',
+    );
   });
 
   test('빈/비배열 → 빈 문자열(요약 미렌더)', () => {

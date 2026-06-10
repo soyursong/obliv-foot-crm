@@ -17,10 +17,11 @@
 
 import { test, expect } from '@playwright/test';
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
-
+// 네비게이션은 playwright.config 의 use.baseURL(테스트 서버 :8089) + storageState 인증을 사용한다.
+//   (과거 하드코딩 :5173 / 폼 로그인 → 포트 8089 표준화·storageState 도입으로 env drift 발생했었음.
+//    상대경로 goto 로 정합 — 인증은 desktop-chrome storageState 가 제공.)
 async function loginIfNeeded(page: import('@playwright/test').Page) {
-  await page.goto(BASE_URL);
+  await page.goto('/');
   const loginInput = page.getByPlaceholder('이메일');
   if (await loginInput.isVisible({ timeout: 3000 }).catch(() => false)) {
     await loginInput.fill(process.env.TEST_EMAIL ?? 'test@test.com');
@@ -34,7 +35,7 @@ async function loginIfNeeded(page: import('@playwright/test').Page) {
 async function navigateToPatientList(page: import('@playwright/test').Page) {
   await loginIfNeeded(page);
   // DoctorTools 페이지로 이동
-  await page.goto(`${BASE_URL}/admin/doctor-tools`);
+  await page.goto('/admin/doctor-tools');
   await page.waitForLoadState('networkidle', { timeout: 15000 });
 
   // 진료환자목록 탭이 있으면 클릭
@@ -157,7 +158,7 @@ test('AC-5: 기존 처방 펼치기 기능 비파괴', async ({ page }) => {
 
 test('회귀: DoctorTools 페이지 정상 로드', async ({ page }) => {
   await loginIfNeeded(page);
-  await page.goto(`${BASE_URL}/admin/doctor-tools`);
+  await page.goto('/admin/doctor-tools');
   await page.waitForLoadState('networkidle', { timeout: 15000 });
 
   // 페이지 타이틀 또는 주요 요소 존재 확인
