@@ -6639,6 +6639,23 @@ export default function Dashboard() {
           setResvContextMenu(null);
           handleDashDeleteConfirm(resv);
         }}
+        /* T-20260610-foot-RESV-OVERHAUL-7 AC-1: [SMS 보내기] parity — CustomerQuickMenu(예약관리)와 동일.
+           admin/manager 한정. 기존 SendSmsDialog(setSmsTarget) 경로 재사용 — 신규 SMS 경로 신설 없음.
+           SendSmsDialog 는 customer_id 로 phone(SSOT) refetch 하므로 최소 필드만 shaping. */
+        onSendSms={
+          canAccess(profile?.role ?? '', 'manual_sms_send')
+            ? (resv) => {
+                setResvContextMenu(null);
+                setSmsTarget({
+                  id: `resv-${resv.id}`,
+                  customer_id: resv.customer_id ?? null,
+                  customer_name: resv.customer_name ?? '',
+                  customer_phone: resv.customer_phone,
+                  reservation_id: resv.id,
+                } as unknown as CheckIn);
+              }
+            : undefined
+        }
       />
 
       {/* T-20260525-foot-RESV-CANCEL-CTX AC-2/AC-3: 취소사유 입력 모달 + DB 저장 */}
