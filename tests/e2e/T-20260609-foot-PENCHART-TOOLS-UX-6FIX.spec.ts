@@ -72,9 +72,11 @@ test.describe('#2 상용구 ✓ 즉시삽입', () => {
 // #3 — 형광펜 농도 가변
 // ═══════════════════════════════════════════════════════════════════════════
 test.describe('#3 형광펜 농도', () => {
-  test('AC-5: highlightAlpha state + ref + 슬라이더 존재, 기본 0.20', () => {
-    expect(src, 'highlightAlpha state 없음').toContain('const [highlightAlpha, setHighlightAlpha] = useState(0.20)');
-    expect(src, 'highlightAlphaRef 없음').toContain('const highlightAlphaRef = useRef(0.20)');
+  // NOTE: 기본 농도는 T-20260610-foot-PENCHART-6FIX-REFIX C에서 0.20 → 0.10 으로 하향(현장 "여전히 진함").
+  //   이 spec은 state/ref/슬라이더 존재만 가드하고 구체 기본값 단언은 REFIX spec으로 이관.
+  test('AC-5: highlightAlpha state + ref + 슬라이더 존재', () => {
+    expect(src, 'highlightAlpha state 없음').toContain('const [highlightAlpha, setHighlightAlpha] = useState(');
+    expect(src, 'highlightAlphaRef 없음').toContain('const highlightAlphaRef = useRef(');
     expect(src, '농도 슬라이더 없음').toContain('data-testid="subpanel-hl-opacity-range"');
   });
 
