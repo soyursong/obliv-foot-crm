@@ -10,7 +10,7 @@ db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: null
-commit_sha: PENDING
+commit_sha: b7befe8
 impl_commit: 351dd72
 created: 2026-06-10
 assignee: dev-foot
