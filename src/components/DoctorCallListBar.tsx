@@ -183,14 +183,18 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
     // T-20260601-foot-DASH-POPUP-RIGHT-FIX 진료콜 명단 팝업 — 뷰포트 우측 position:fixed 고정.
     //   가로스크롤해도 화면 우측에 항상 붙어 따라옴(안 사라짐). right-4: 현장 요청대로 우측.
     //   z-40: 칸반 카드(z-30) 위, 모달(z-50+) 아래.
-    // T-20260609-foot-CALLLIST-NAME-VERTICAL-LAYOUT req3 + VERTICAL-FULLNAME: 세로 앵커 top-4 유지.
-    //   상단 고정이라 인원 증가 시 아래로 자연 확장. 단, 무한 확장으로 뷰포트 하단 밖 잘림을 막기 위해
-    //   행 컨테이너에 max-h(뷰포트 잔여)+overflow-y-auto 재도입 → 초과분은 내부 세로 스크롤. (가로 우측 보존)
+    // T-20260610-foot-CALLLIST-TOP-COVERS-BUTTONS Phase 1 (P0 회귀 핫픽스):
+    //   현장(김주연 총괄): "진료콜 명단이 상위 노출로 변경돼서 버튼들 다 가림".
+    //   RC = VERTICAL-FULLNAME 직전 NAME-VERTICAL-LAYOUT에서 세로 앵커를 bottom-4 → top-4(우상단)로 바꿔
+    //   상단 동작버튼을 덮은 것(추정 아님, L193 실측). 앵커를 우하단(bottom-4)으로 복귀 → 상단 버튼 비가림(AC-1).
+    //   L267 행 컨테이너 max-h-[calc(100vh-6rem)]+overflow-y-auto가 이미 있어 bottom 앵커여도 상단 잘림 재발 없음
+    //   (VERTICAL-FULLNAME가 top-4 채택한 사유가 해소됨). 세로나열+성함 전체표시(AC-2)·콜/차트/배지(AC-4) 불변.
+    //   임시 z-index 봉합 금지 — 앵커가 본질.
     <div
       data-testid="doctor-call-list"
       data-collapsed={String(collapsed)}
       data-position-mode="fixed"
-      className="fixed top-4 right-4 z-40 w-[min(30rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm"
+      className="fixed bottom-4 right-4 z-40 w-[min(30rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm"
     >
       {/* 헤더 + 접기/펼치기 + 전체콜/지정콜 액션 */}
       <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-red-200 bg-red-50/80">
