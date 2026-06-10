@@ -156,3 +156,40 @@ test.describe('AC-1 좌/우 소스 구분 불변식', () => {
     expect(PANEL_SRC).not.toMatch(/key:\s*'visit_hist'[^}]*label:\s*'진료내역'/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260609-foot-VISITLOG-NAMING-CLARIFY (re-fix #2): ?medchart deep-link 노출 경로
+//   QA가 /chart/<id>?medchart=visit_hist 로 진입하면 진료차트 패널이 자동 오픈되어
+//   '방문이력' 탭/콘텐츠가 클릭 없이 노출되도록 보장하는 배선의 회귀 가드.
+//   (기존 QA 실패 근본원인: customers.id 는 uuid라 /chart/1 은 invalid → 패널 자체 미렌더)
+// ─────────────────────────────────────────────────────────────────────────────
+const PAGE_SRC = readFileSync(
+  resolve(__dir, '../../src/pages/CustomerChartPage.tsx'),
+  'utf-8',
+);
+
+test.describe('VISITLOG deep-link 자동 오픈 배선', () => {
+  test('CustomerChartPage 가 useSearchParams 로 ?medchart 파라미터를 읽는다', () => {
+    expect(PAGE_SRC).toContain('useSearchParams');
+    expect(PAGE_SRC).toMatch(/searchParams\.get\(['"]medchart['"]\)/);
+  });
+
+  test('medchart 진입 시 customer 로드 후 진료차트 패널 자동 오픈(1회 가드)', () => {
+    expect(PAGE_SRC).toContain('medchartAutoOpenedRef');
+    // 자동 오픈 effect: param + customer 있을 때 setMedicalChartOpen(true)
+    expect(PAGE_SRC).toMatch(/if \(!medchartParam \|\| medchartAutoOpenedRef\.current\) return/);
+    expect(PAGE_SRC).toContain('setMedicalChartOpen(true)');
+  });
+
+  test('medchart 값이 우측 탭 키면 initialRightTab 으로 패널에 전달', () => {
+    expect(PAGE_SRC).toContain('medchartInitialTab');
+    expect(PAGE_SRC).toMatch(/initialRightTab=\{medchartInitialTab\}/);
+    // visit_hist 는 허용 탭 키 집합에 포함
+    expect(PAGE_SRC).toMatch(/RIGHT_TAB_KEYS[\s\S]*visit_hist/);
+  });
+
+  test('MedicalChartPanel 이 initialRightTab prop 으로 열림 탭을 결정(기본 rx 불변)', () => {
+    expect(PANEL_SRC).toMatch(/initialRightTab\?:/);
+    expect(PANEL_SRC).toContain('setRightTab(initialRightTab ?? \'rx\')');
+  });
+});
