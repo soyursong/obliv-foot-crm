@@ -119,7 +119,8 @@ const NAV_ITEMS: {
   // AC-5: 전 직원 노출 (roles 미지정). 인수인계 작성/조회가 이 캘린더 안에서 이뤄짐.
   { to: '/admin/handover', label: '직원 근무 캘린더', icon: ClipboardCheck },
   // AC-6: 통계 미노출 유지 (consultant/coordinator/therapist 제외)
-  { to: '/admin/stats', label: '통계', icon: BarChart3, roles: ['admin', 'manager', 'part_lead'] },
+  // T-20260610-foot-STAFF-ROLE-TM-ADD AC6 (박민지 팀장 C안): TM → 통계 메뉴 노출 (route 가드와 패리티).
+  { to: '/admin/stats', label: '통계', icon: BarChart3, roles: ['admin', 'manager', 'part_lead', 'tm'] },
   // AC-6: 매출집계 미노출 유지
   { to: '/admin/sales', label: '매출집계', icon: TrendingUp, roles: ['admin', 'manager'] },
   { to: '/admin/accounts', label: '계정관리', icon: ShieldCheck, roles: ['admin'] },

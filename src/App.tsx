@@ -196,7 +196,9 @@ function App() {
                 {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 일마감 접근 (뷰 전용) */}
                 <Route path="closing" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><Closing /></RoleGuard>} />
                 {/* AC-6: 통계 — consultant/coordinator/therapist 직접 URL 차단 유지 */}
-                <Route path="stats" element={<RoleGuard roles={['admin', 'manager', 'part_lead']}><Stats /></RoleGuard>} />
+                {/* T-20260610-foot-STAFF-ROLE-TM-ADD AC6 (박민지 팀장 C안): TM → 통계 route 접근 허용.
+                    통계 내부 탭 가시성(TM집계 탭만)은 자매 티켓 STATS-TM-AGGREGATE-TAB 에서 처리. */}
+                <Route path="stats" element={<RoleGuard roles={['admin', 'manager', 'part_lead', 'tm']}><Stats /></RoleGuard>} />
                 <Route path="history" element={<DailyHistory />} />
                 {/* AC-6: 계정관리 — admin 전용 유지 */}
                 <Route path="accounts" element={<RoleGuard roles={['admin']}><Accounts /></RoleGuard>} />
