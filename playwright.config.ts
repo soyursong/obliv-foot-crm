@@ -96,6 +96,8 @@ export default defineConfig({
         '**/T-20260609-foot-DOCDASH-LABEL-RX-REFINE.spec.ts',
         // T-20260610-foot-DOCDASH-CLINICAL-UX-REFINE: 임상경과 인라인 패널 UX 정제 (소스 정적 검증)
         '**/T-20260610-foot-DOCDASH-CLINICAL-UX-REFINE.spec.ts',
+        // T-20260609-foot-FORM-UPLOAD-DOWNSCALE-GUARD: 양식 업로드 폭 1588 다운스케일 가드 (소스 정적 가드 + 실 canvas 동작, auth 불요)
+        '**/T-20260609-foot-FORM-UPLOAD-DOWNSCALE-GUARD.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

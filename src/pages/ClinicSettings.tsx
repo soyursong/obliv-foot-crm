@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
+import { downscaleFormImage, FORM_DOWNSCALE_NOTICE } from '@/lib/formImageDownscale';
 
 // ── 타입 ──
 
@@ -144,11 +145,18 @@ export default function ClinicSettings() {
     clinicId: string,
     doctorIdOrTemp: string,
   ): Promise<string | null> => {
-    const ext = file.name.split('.').pop()?.toLowerCase() ?? 'png';
+    // T-20260609-foot-FORM-UPLOAD-DOWNSCALE-GUARD AC-1/AC-2:
+    //   직인 이미지는 고해상 문서/펜차트 캔버스(폭 1588px 물리상한)에 합성된다 → 양식과 동일한
+    //   decode heap(W×H×4) E7 벡터. 폭>1588 업로드 시 저장 전 폭 1588 다운스케일(비율유지·시각손실0),
+    //   ≤1588 은 무변환 통과. 발생 시 묵음 금지 → toast.confirm(보이는 채널).
+    const guarded = await downscaleFormImage(file);
+    const uploadFile = guarded.file;
+    if (guarded.downscaled) toast.confirm(FORM_DOWNSCALE_NOTICE);
+    const ext = uploadFile.name.split('.').pop()?.toLowerCase() ?? 'png';
     const path = `seals/${clinicId}/${doctorIdOrTemp}.${ext}`;
-    const { error } = await supabase.storage.from('documents').upload(path, file, {
+    const { error } = await supabase.storage.from('documents').upload(path, uploadFile, {
       upsert: true,
-      contentType: file.type || 'image/png',
+      contentType: uploadFile.type || 'image/png',
     });
     if (error) {
       toast.error(`직인 이미지 업로드 실패: ${error.message}`);
