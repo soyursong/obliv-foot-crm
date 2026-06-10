@@ -110,13 +110,16 @@ test.describe('AC-2 B안 — embed clinical 의사 auto-fill', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // AC-3 — clinicalMiniBody Textarea embed 크기 확대 (풀차트 불변)
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('AC-3 — 임상경과 textarea embed 크기', () => {
-  test('rows embed 5 / 풀차트 14', () => {
-    expect(PANEL()).toContain('rows={embed ? 5 : 14}');
+// NOTE(2026-06-10): T-20260610-foot-DOCDASH-CLINICAL-INLINE-REFINE 가 본 ticket 의 AC-3(textarea 크기)·
+//   AC-4(담당의 행)를 2차 정제로 supersede. embed textarea 5→9rows/8rem→14rem(w-full), 담당의 행 flex-wrap 추가.
+//   superseded 단언은 새 값으로 갱신(비파괴 적층) — 후속 ticket spec 이 최신값 회귀가드 보유.
+test.describe('AC-3 — 임상경과 textarea embed 크기 (INLINE-REFINE 갱신)', () => {
+  test('rows embed 9 / 풀차트 14', () => {
+    expect(PANEL()).toContain('rows={embed ? 9 : 14}');
   });
 
-  test('min-h embed 8rem / 풀차트 18rem', () => {
-    expect(PANEL()).toContain("embed ? 'min-h-[8rem]' : 'min-h-[18rem]'");
+  test('min-h embed 14rem(w-full) / 풀차트 18rem', () => {
+    expect(PANEL()).toContain("embed ? 'w-full min-h-[14rem]' : 'min-h-[18rem]'");
   });
 
   test('회귀: 옛 값(3 / 4.5rem) 잔존 0', () => {
@@ -137,7 +140,8 @@ test.describe('AC-4 — 담당의 인라인 1줄', () => {
       s.indexOf('AC-4: label+select 1줄 인라인'),
       s.indexOf('data-testid="clinical-mini-doctor-warning"'),
     );
-    expect(block).toContain('flex items-center gap-2');
+    // INLINE-REFINE AC-4: flex-wrap 추가(좁은폭 wrap). 1줄 인라인 구조는 유지.
+    expect(block).toContain('flex flex-wrap items-center gap-2');
     expect(block).toMatch(/<label className="w-16 shrink-0/);
     expect(block).toContain('flex-1 max-w-[280px]');
     expect(block).toContain('data-testid="clinical-mini-signing-doctor"');

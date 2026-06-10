@@ -1813,8 +1813,12 @@ export default function MedicalChartPanel({
   }
 
   // T-20260609-foot-DOCDASH-CHART-UX item1: clinical 미니멀 본문 — Drawer/인라인(embed) 양쪽에서 재사용.
-  //   embed=true(진료대시보드 행 아래 인라인): textarea 2~3줄(min-h 4.5rem)·컴팩트 버튼, 풀높이 flex 미사용.
-  //   embed=false(기존 Drawer): rows 14·min-h 18rem 등 기존 레이아웃 그대로.
+  //   embed=true(진료대시보드 행 아래 인라인): textarea rows 9·min-h 14rem(full-width)·컴팩트 버튼, 풀높이 flex 미사용.
+  //   embed=false(기존 Drawer): rows 14·min-h 18rem 등 기존 레이아웃 그대로(불변).
+  //   T-20260610-foot-DOCDASH-CLINICAL-INLINE-REFINE(문지은 6/10, prior DOCDASH-CLINICAL-UX-REFINE 위 2차 정제):
+  //     AC-3 임상경과 textarea embed 추가 확대(5→9 rows / 8rem→14rem, w-full). AC-4 담당의 행 flex-wrap(좁은폭 wrap 허용).
+  //     AC-1(상단 컨텍스트 안내문구) · AC-2(임상경과 텍스트 필수 라벨)는 prior REFINE 에서 이미 제거 완료 — 잔존 0 회귀가드만.
+  //     ⚠ 진료의 NOT NULL 강제(AC-P2-6, 의료법, handleSave `if (!formSigningDoctorId)`)는 절대 무변경.
   //   상태/핸들러(formClinical·handleClinicalChange·handleSave·formSigningDoctorId·clinicDoctors)는 전부 기존 재사용.
   //   저장 로직(같은날 append·진료의 NOT NULL 강제 AC-P2-6)은 무변경.
   const clinicalMiniBody = loading ? (
@@ -1829,9 +1833,10 @@ export default function MedicalChartPanel({
       <div className={cn('space-y-4', embed ? 'p-4' : 'flex-1 p-5')}>
         {/* 담당 의사 (저장 필수 — 의료법, 기존 검증 동일 재사용)
             T-20260610-foot-DOCDASH-CLINICAL-UX-REFINE AC-4: label+select 1줄 인라인.
+            T-20260610-foot-DOCDASH-CLINICAL-INLINE-REFINE AC-4: 담당의 선택칸+인접(label) 동일 행 컴팩트 유지 + flex-wrap(좁은폭 wrap 허용).
             ⚠️ 진료의 NOT NULL 강제(MEDCHART-SIGN-AUDIT AC-P2-6, 의료법) 검증 유지 — 라벨 텍스트만 정리. */}
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <label className="w-16 shrink-0 text-xs font-semibold text-muted-foreground">
               담당 의사
             </label>
@@ -1872,10 +1877,12 @@ export default function MedicalChartPanel({
               onBlur={() => { setTimeout(() => setPhrasePopoverVisible(false), 200); }}
               readOnly={isReadOnly}
               placeholder="임상경과를 입력하세요  예: //통증감소"
-              rows={embed ? 5 : 14}
+              rows={embed ? 9 : 14}
               className={cn(
                 'text-sm resize-y placeholder:text-gray-300',
-                embed ? 'min-h-[8rem]' : 'min-h-[18rem]',
+                // T-20260610-foot-DOCDASH-CLINICAL-INLINE-REFINE AC-3: embed textarea 추가 확대 + full-width.
+                //   (Textarea 기본 w-full 이나 AC-3 'full-width' 명시 의도로 유지) 풀차트(embed=false)는 14/18rem 불변.
+                embed ? 'w-full min-h-[14rem]' : 'min-h-[18rem]',
               )}
               data-testid="clinical-mini-textarea"
               autoComplete="off"
