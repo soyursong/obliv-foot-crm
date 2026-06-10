@@ -405,10 +405,24 @@ function CallFeedRow({
         ) : (
           <Phone className="h-4 w-4 shrink-0 animate-pulse text-red-600" />
         )}
-        {/* 이름 */}
-        <span className={cn('text-sm font-semibold', inactive ? 'text-gray-500' : 'text-gray-900')}>
+        {/* 이름 — T-20260610-foot-VISITLIST-CHART-DRAWER (AC-1): 이름 클릭 → 진료차트(variant='full') 서랍 오픈.
+            기존 '진료차트' 버튼과 같은 onOpenChart·같은 Drawer 재사용(새 조회 경로/새 Drawer 신설 안 함).
+            '임상경과'(인라인 차팅, DOCDASH-CHART-UX AC1-1)와는 별개 트리거 — 회귀 없음. */}
+        <button
+          type="button"
+          onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+          disabled={!checkIn.customer_id}
+          data-testid="doctor-call-name-chart-btn"
+          title="이름 클릭 — 진료차트 열기 (서랍)"
+          className={cn(
+            'text-sm font-semibold text-left underline-offset-2 transition-colors disabled:cursor-default disabled:no-underline',
+            inactive
+              ? 'text-gray-500 hover:text-gray-700 hover:underline'
+              : 'text-gray-900 hover:text-indigo-700 hover:underline cursor-pointer',
+          )}
+        >
           {checkIn.customer_name}
-        </span>
+        </button>
         <VisitBadge visitType={checkIn.visit_type} />
         {/* 위치 */}
         {slotName && (
@@ -552,7 +566,18 @@ function CompletedRow({
   return (
     <li className="px-3 py-2.5" data-testid="doctor-completed-row" data-checkin-id={checkIn.id}>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-semibold">{checkIn.customer_name}</span>
+        {/* 이름 — T-20260610-foot-VISITLIST-CHART-DRAWER (AC-1): 이름 클릭 → 진료차트(variant='full') 서랍 오픈.
+            활성 호출 행과 동일하게 onOpenChart(...'full') 재사용 — '진료차트' 버튼과 같은 Drawer. */}
+        <button
+          type="button"
+          onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+          disabled={!checkIn.customer_id}
+          data-testid="doctor-completed-name-chart-btn"
+          title="이름 클릭 — 진료차트 열기 (서랍)"
+          className="text-sm font-semibold text-left underline-offset-2 transition-colors cursor-pointer hover:text-indigo-700 hover:underline disabled:cursor-default disabled:no-underline"
+        >
+          {checkIn.customer_name}
+        </button>
         <VisitBadge visitType={checkIn.visit_type} />
         {/* T-20260609-foot-DOCCALL-DOCTOR-ACK: 진료완료 환자도 의사 확인 이력 조회(표시 전용). */}
         <DoctorAckBadge ackAt={checkIn.doctor_ack_at} />
