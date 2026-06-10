@@ -166,6 +166,23 @@ function extractErrorMsg(err: unknown): string {
   return JSON.stringify(err);
 }
 
+/**
+ * 이미지 첨부 인프라(image_path 컬럼 / message-images 버킷)가 prod에 미적용일 때 나는
+ * 저수준 에러를 식별한다 (T-20260610-foot-TEMPLATE-IMAGE-SAVE AC-2).
+ *  - storage 버킷 부재: "Bucket not found"
+ *  - DB 컬럼 부재: PostgREST 42703 / "column ... image_path ... does not exist"
+ *  - 테이블/관계 부재(방어): 42P01
+ */
+function isImageInfraMissingError(msg: string): boolean {
+  return (
+    /bucket not found/i.test(msg) ||
+    /42703/.test(msg) ||
+    /42P01/.test(msg) ||
+    /image_path/i.test(msg) ||
+    /(column|relation).*does not exist/i.test(msg)
+  );
+}
+
 // ── 메인 컴포넌트 ──────────────────────────────────────────────────────────────
 
 export default function AdminSettings() {
@@ -987,8 +1004,17 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
       toast.success('템플릿이 저장되었습니다.');
     } catch (err) {
       const msg = extractErrorMsg(err);
+      // ── 이미지 첨부 인프라 미비(버킷/컬럼 부재) → 명확한 한국어 안내 (T-20260610-foot-TEMPLATE-IMAGE-SAVE AC-2)
+      //   migration 20260609200000(image_path 컬럼 + message-images 버킷)이 prod 미적용이면
+      //   storage 업로드는 "Bucket not found", DB 저장은 42703(column does not exist)로 실패한다.
+      //   영어 시스템 메시지를 그대로 노출하면 사용자가 "그냥 저장 안 됨"으로 오인 → 의미를 풀어서 안내.
+      if (isImageInfraMissingError(msg)) {
+        toast.error(
+          '이미지 첨부 저장 기능이 아직 활성화되지 않았습니다. 관리자에게 문의해 주세요. (텍스트만 저장하려면 첨부 이미지를 제거한 뒤 다시 저장하세요)',
+        );
+      }
       // UNIQUE(clinic_id,event_type,channel) 충돌 → 친절 메시지
-      if (/duplicate|unique|uq_notif_tmpl/i.test(msg)) {
+      else if (/duplicate|unique|uq_notif_tmpl/i.test(msg)) {
         toast.error('같은 이름의 템플릿이 이미 있습니다. 다른 이름을 사용하세요.');
       } else {
         toast.error(`저장 실패: ${msg}`);
