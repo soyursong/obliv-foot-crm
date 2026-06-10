@@ -280,6 +280,11 @@ export interface MedicalChartPanelProps {
   // T-20260609-foot-DOCDASH-CHART-UX item1 (AC1-1): 저장 성공 직후 호출(인라인 아코디언 접기용).
   //   저장 로직 자체는 무변경 — 성공 후 presentation 콜백만 추가.
   onSaved?: () => void;
+  // T-20260610-foot-DOCPATIENTLIST-EXPAND-CLINICAL (AC-3, 문지은 대표원장):
+  //   caller-forced 읽기전용 게이트. 진료환자목록 펼침 패널에서 '당일 외(과거/미래) 접수' 환자의
+  //   임상경과 오기입 차단용 — readOnly=true 면 textarea readOnly + 저장 버튼(embed footer) 미노출.
+  //   default false → 기존 모든 호출자(DoctorCallDashboard 등) 동작 무변경(AC-4 회귀가드).
+  readOnly?: boolean;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -461,6 +466,7 @@ export default function MedicalChartPanel({
   onOpenFull,
   embed = false,
   onSaved,
+  readOnly = false,
 }: MedicalChartPanelProps) {
   const isDirector = canViewDoctorMemo(currentUserRole);
   const navigate = useNavigate();
@@ -964,10 +970,12 @@ export default function MedicalChartPanel({
     if (todays) {
       setSelectedChartId(todays.id);
       resetForm(todays);
-      setEditMode(true); // 미니멀 뷰는 즉시 편집 가능(읽기전용 진입 아님)
+      // T-20260610-foot-DOCPATIENTLIST-EXPAND-CLINICAL (AC-3): readOnly(당일 외)면 편집모드 진입 금지 —
+      //   기존 차트를 읽기전용으로만 표시. readOnly=false(당일/기존 호출자)는 즉시 편집 가능(불변).
+      if (!readOnly) setEditMode(true); // 미니멀 뷰는 즉시 편집 가능(읽기전용 진입 아님)
     }
     clinicalInitRef.current = true;
-  }, [variant, open, loading, charts, resetForm]);
+  }, [variant, open, loading, charts, resetForm, readOnly]);
 
   // T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2 [B]): 진단명 자동완성/이력 datalist 로더 제거.
   //   상병 후보는 DiagnosisFolderPicker 가 자체적으로 services(category_label='상병') 단일정본만
@@ -1744,7 +1752,9 @@ export default function MedicalChartPanel({
   const selectedChart = displayCharts.find(c => c.id === selectedChartId) ?? null;
   // T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-4: 저장된 차트(선택됨)는 편집모드 진입 전까지 읽기전용.
   //   신규 작성(selectedChartId=null)은 항상 편집 가능. 더미도 selectedChartId 보유 → 읽기전용(저장 자체 불가).
-  const isReadOnly = !!selectedChartId && !editMode;
+  // T-20260610-foot-DOCPATIENTLIST-EXPAND-CLINICAL (AC-3): caller가 readOnly=true 강제 시 항상 읽기전용
+  //   (당일 외 환자 임상경과 편집 차단). default readOnly=false → 기존 동작 그대로.
+  const isReadOnly = readOnly || (!!selectedChartId && !editMode);
   const chartsIdx = selectedChart ? displayCharts.indexOf(selectedChart) : -1;
 
   // AC-13: created_by(이메일) → 표시명 변환. 매핑 없으면 이메일 로컬파트 폴백.
@@ -1883,6 +1893,8 @@ export default function MedicalChartPanel({
                 // T-20260610-foot-DOCDASH-CLINICAL-INLINE-REFINE AC-3: embed textarea 추가 확대 + full-width.
                 //   (Textarea 기본 w-full 이나 AC-3 'full-width' 명시 의도로 유지) 풀차트(embed=false)는 14/18rem 불변.
                 embed ? 'w-full min-h-[14rem]' : 'min-h-[18rem]',
+                // T-20260610-foot-DOCPATIENTLIST-EXPAND-CLINICAL (AC-3): 읽기전용(당일 외) 시각 힌트 — 회색 처리.
+                isReadOnly && 'bg-gray-50 text-gray-500 cursor-not-allowed',
               )}
               data-testid="clinical-mini-textarea"
               autoComplete="off"
@@ -1942,28 +1954,32 @@ export default function MedicalChartPanel({
         </div>
       </div>
 
-      {/* 저장 / 닫기 — handleSave 그대로 재사용(AC1-3) */}
-      <div className={cn('flex gap-3', embed ? 'px-4 pb-4' : 'flex-none px-5 py-4 border-t bg-background')}>
-        <Button
-          size={embed ? 'default' : 'lg'}
-          variant="outline"
-          className={embed ? 'h-10' : 'h-12 text-base'}
-          onClick={() => onOpenChange(false)}
-          data-testid="clinical-mini-close-btn"
-        >
-          닫기
-        </Button>
-        <Button
-          size={embed ? 'default' : 'lg'}
-          className={cn('flex-1 bg-teal-600 hover:bg-teal-700 text-white', embed ? 'h-10' : 'h-12 text-base')}
-          onClick={handleSave}
-          disabled={saving || !formDate}
-          data-testid="clinical-mini-save-btn"
-        >
-          {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-          {saving ? '저장 중...' : '임상경과 저장'}
-        </Button>
-      </div>
+      {/* 저장 / 닫기 — handleSave 그대로 재사용(AC1-3).
+          T-20260610-foot-DOCPATIENTLIST-EXPAND-CLINICAL (AC-3): embed 읽기전용(당일 외)일 때는
+          footer(닫기+저장) 전체 미노출 → 오기입 방지. 비-embed(Drawer)는 닫기 버튼 필요로 항상 유지(회귀 0). */}
+      {!(embed && isReadOnly) && (
+        <div className={cn('flex gap-3', embed ? 'px-4 pb-4' : 'flex-none px-5 py-4 border-t bg-background')}>
+          <Button
+            size={embed ? 'default' : 'lg'}
+            variant="outline"
+            className={embed ? 'h-10' : 'h-12 text-base'}
+            onClick={() => onOpenChange(false)}
+            data-testid="clinical-mini-close-btn"
+          >
+            닫기
+          </Button>
+          <Button
+            size={embed ? 'default' : 'lg'}
+            className={cn('flex-1 bg-teal-600 hover:bg-teal-700 text-white', embed ? 'h-10' : 'h-12 text-base')}
+            onClick={handleSave}
+            disabled={saving || !formDate}
+            data-testid="clinical-mini-save-btn"
+          >
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+            {saving ? '저장 중...' : '임상경과 저장'}
+          </Button>
+        </div>
+      )}
     </div>
   );
 
