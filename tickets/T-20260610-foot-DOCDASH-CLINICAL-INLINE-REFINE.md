@@ -10,7 +10,7 @@ db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: null
-commit_sha: TBD
+commit_sha: 7195e5b
 created: 2026-06-10
 assignee: dev-foot
 reporter: 문지은 대표원장(C0ATE5P6JTH)
