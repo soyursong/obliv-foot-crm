@@ -14,11 +14,14 @@ import { ko } from 'date-fns/locale';
 import { todaySeoulISODate } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
-import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
 import QuickRxBar, { isDoctor, RxConfirmedSummary } from './QuickRxBar';
 import { STATUS_KO, isInClinic } from '@/lib/status';
 import { useChart } from '@/lib/chartContext';
 import { formatRxConfirmedSummary } from '@/lib/rxTooltip';
+// T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: 치료실명(방이름) 표시 — DoctorCallDashboard와 동일한
+//   배정 슬롯 파생 SSOT 재사용. read-only(기존 *_room 컬럼 조회만), 스키마/비즈로직 무변경.
+import { getAssignedSlotName } from '@/lib/checkin-slot';
 import type { CheckInStatus } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -47,6 +50,12 @@ interface PatientRow {
   /** T-20260609-foot-DOCPATIENTLIST-DATEMODE-HISTORY: 이력 모드 히러레이저 ✅/❌ 배지.
    *  check_ins 기존 컬럼(20260504_doctor_treatment_flow, BOOLEAN NOT NULL DEFAULT false) — SELECT 확장만. */
   healer_laser_confirm: boolean;
+  /** T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: 치료실(방) 배정 — getAssignedSlotName 파생용.
+   *  check_ins 기존 컬럼(consultation/treatment/laser/examination_room) — SELECT 확장만. */
+  consultation_room: string | null;
+  treatment_room: string | null;
+  laser_room: string | null;
+  examination_room: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -106,8 +115,12 @@ function PrescriptionStatusBadge({
   const summary = prescriptionSummary(items);
   let badge: ReactNode;
   if (status === 'confirmed') {
+    // T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-2 (문지은 대표원장, 9ghw/thif/p2bc 흡수 정밀화):
+    //   처방전 O = reporter 명시 '하늘색(sky)'. 이전 초록(green)을 "이상한 민트색"이라 거부, 일반 blue도 아님.
+    //   → sky-100/700 + sky-200 테두리로 확정(명확히 '하늘색'으로 보이게). 일반 blue 잔재 교체.
+    //   ⚠️ green/emerald/teal/mint/cyan/blue 계열 금지 — reporter가 거부한 톤. 아이콘·모양·툴팁·위치 전부 유지, 색만 교체. DB 무변경.
     badge = (
-      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
+      <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
         <CheckCircle2 className="h-2.5 w-2.5" />
         처방전 O
       </span>
@@ -120,8 +133,9 @@ function PrescriptionStatusBadge({
       </span>
     );
   } else {
+    // AC-2: 처방전 X = 회색(유지·정밀화). 강조 없는 중립 회색.
     badge = (
-      <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500">
+      <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] text-gray-400">
         처방전 X
       </span>
     );
@@ -236,7 +250,8 @@ function usePatientsByDate(clinicId: string | null, dateISO: string) {
         .select(
           // T-20260609-foot-PASTVISIT-TREATMENT-VIEW: treatment_* 추가(기존 컬럼, SELECT 확장만 — AC-5)
           // T-20260609-foot-DOCPATIENTLIST-DATEMODE-HISTORY: healer_laser_confirm 추가(기존 컬럼, SELECT 확장만 — AC-3)
-          'id, customer_id, customer_name, visit_type, status, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, treatment_category, treatment_contents, treatment_kind, healer_laser_confirm, reservation:reservation_id(booking_memo)',
+          // T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: *_room 추가(기존 컬럼, SELECT 확장만) — 치료실명 표시.
+          'id, customer_id, customer_name, visit_type, status, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, treatment_category, treatment_contents, treatment_kind, healer_laser_confirm, consultation_room, treatment_room, laser_room, examination_room, reservation:reservation_id(booking_memo)',
         )
         .eq('clinic_id', clinicId)
         .gte('checked_in_at', `${day}T00:00:00+09:00`)
@@ -407,10 +422,11 @@ function PatientRow({
     >
       {/*
         기본 행 — T-20260609 ⑤: flex → grid 고정 열 레이아웃.
-        열 순서: 번호 / 방문배지(②이름왼쪽) / 이름(④고정폭) / 처방배지(③이름오른쪽) / 상태 / 메모 / 액션
+        열 순서: 번호 / 방문배지(②이름왼쪽) / 이름(④고정폭) / 처방배지(③이름오른쪽) / 상태 / 치료실 / 메모 / 액션
+        T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: '상태'와 '메모' 사이에 치료실(방이름) 컬럼 추가.
         모든 행이 동일 grid-template → 큐번호·배지·이름·처방·시간 항목이 행마다 동일 x위치(스크롤 무관).
       */}
-      <div className="grid grid-cols-[1.75rem_3rem_5rem_5.5rem_3.75rem_minmax(0,1fr)_auto] items-center gap-2 px-3 py-2.5">
+      <div className="grid grid-cols-[1.75rem_3rem_5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto] items-center gap-2 px-3 py-2.5">
         {/* 번호 */}
         <span className="text-xs font-mono text-muted-foreground text-center">
           {row.queue_number ?? '—'}
@@ -442,6 +458,24 @@ function PatientRow({
         <span className="text-[11px] text-muted-foreground truncate">
           {STATUS_KO[row.status] ?? row.status}
         </span>
+
+        {/* 치료실(방이름) — T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3.
+            getAssignedSlotName(SSOT) 파생 — 배정된 방 있으면 '◯번 치료실' 등 표시, 미배정/대기면 '—'. */}
+        {(() => {
+          const slotName = getAssignedSlotName(row as unknown as Parameters<typeof getAssignedSlotName>[0]);
+          return slotName ? (
+            <span
+              className="inline-flex min-w-0 items-center gap-0.5 rounded border border-teal-100 bg-teal-50 px-1 py-px text-[10px] font-medium text-teal-700"
+              title={slotName}
+              data-testid="patient-room"
+            >
+              <MapPin className="h-2.5 w-2.5 shrink-0" />
+              <span className="truncate">{slotName}</span>
+            </span>
+          ) : (
+            <span className="text-[11px] text-muted-foreground/50 text-center" data-testid="patient-room">—</span>
+          );
+        })()}
 
         {/* 예약메모 — T-20260517-foot-HEALER-MEMO-DISPLAY AC-1~4 */}
         <span
