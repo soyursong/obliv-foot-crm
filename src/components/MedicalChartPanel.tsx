@@ -3170,12 +3170,12 @@ export default function MedicalChartPanel({
                       </button>
                     ))}
                   </div>
-                  {/* 하단 행: 진료내역 / 진료이미지 / 📋 상담
+                  {/* 하단 행: 방문이력 / 진료이미지 / 📋 상담
                       (T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 탭 제거,
                        T-20260607-foot-MEDCHART-CONSULT-DRAWER: 📋 상담 탭 추가 — A안) */}
                   <div className="flex">
                     {([
-                      { key: 'visit_hist', icon: <History className="h-3 w-3" />, label: '진료내역' },
+                      { key: 'visit_hist', icon: <History className="h-3 w-3" />, label: '방문이력' },
                       { key: 'images', icon: <Camera className="h-3 w-3" />, label: '진료이미지' },
                       { key: 'consult', icon: <span className="text-[11px] leading-none">📋</span>, label: '상담' },
                     ] as const).map(({ key, icon, label }) => (
