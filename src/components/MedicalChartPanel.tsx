@@ -1823,36 +1823,30 @@ export default function MedicalChartPanel({
       data-testid="medical-chart-clinical-mini"
     >
       <div className={cn('space-y-4', embed ? 'p-4' : 'flex-1 p-5')}>
-        {/* 컨텍스트 안내 — 오늘 차트 이어쓰기 / 신규 */}
-        <p className="text-[11px] text-muted-foreground" data-testid="clinical-mini-context">
-          {selectedChartId
-            ? `${fmtDateShort(formDate)} 진료차트의 임상경과를 이어서 작성합니다.`
-            : embed
-              ? '오늘 새 임상경과를 작성합니다.'
-              : '오늘 새 임상경과를 작성합니다. 전체 차트는 헤더의 “본 차트 열기”로 진입하세요.'}
-        </p>
-
-        {/* 담당 의사 (저장 필수 — 의료법, 기존 검증 동일 재사용) */}
+        {/* 담당 의사 (저장 필수 — 의료법, 기존 검증 동일 재사용)
+            T-20260610-foot-DOCDASH-CLINICAL-UX-REFINE AC-4: label+select 1줄 인라인.
+            ⚠️ 진료의 NOT NULL 강제(MEDCHART-SIGN-AUDIT AC-P2-6, 의료법) 검증 유지 — 라벨 텍스트만 정리. */}
         <div>
-          <label className="block text-xs font-semibold text-muted-foreground mb-1">
-            담당 의사
-            <span className="ml-1 text-[10px] text-rose-500 font-normal">· 진료기록 필수 (의료법)</span>
-          </label>
-          <select
-            value={formSigningDoctorId}
-            onChange={(e) => setFormSigningDoctorId(e.target.value)}
-            disabled={isReadOnly}
-            className={`h-10 text-sm w-full max-w-[280px] rounded-md border px-3 bg-background ${
-              !formSigningDoctorId ? 'border-rose-300 focus:border-rose-400' : 'border-input'
-            }`}
-            data-testid="clinical-mini-signing-doctor"
-            aria-label="담당 의사(진료의)"
-          >
-            <option value="">의사를 선택하세요</option>
-            {clinicDoctors.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <label className="w-16 shrink-0 text-xs font-semibold text-muted-foreground">
+              담당 의사
+            </label>
+            <select
+              value={formSigningDoctorId}
+              onChange={(e) => setFormSigningDoctorId(e.target.value)}
+              disabled={isReadOnly}
+              className={`h-10 text-sm flex-1 max-w-[280px] rounded-md border px-3 bg-background ${
+                !formSigningDoctorId ? 'border-rose-300 focus:border-rose-400' : 'border-input'
+              }`}
+              data-testid="clinical-mini-signing-doctor"
+              aria-label="담당 의사(진료의)"
+            >
+              <option value="">의사를 선택하세요</option>
+              {clinicDoctors.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
           {!formSigningDoctorId && (
             <p className="mt-1 text-[11px] text-rose-500" data-testid="clinical-mini-doctor-warning">
               진료의를 선택해야 저장할 수 있습니다.
@@ -1874,10 +1868,10 @@ export default function MedicalChartPanel({
               onBlur={() => { setTimeout(() => setPhrasePopoverVisible(false), 200); }}
               readOnly={isReadOnly}
               placeholder="임상경과를 입력하세요  예: //통증감소"
-              rows={embed ? 3 : 14}
+              rows={embed ? 5 : 14}
               className={cn(
                 'text-sm resize-y placeholder:text-gray-300',
-                embed ? 'min-h-[4.5rem]' : 'min-h-[18rem]',
+                embed ? 'min-h-[8rem]' : 'min-h-[18rem]',
               )}
               data-testid="clinical-mini-textarea"
               autoComplete="off"
@@ -2586,7 +2580,6 @@ export default function MedicalChartPanel({
                   <div data-testid="signing-doctor-select-block">
                     <label className="block text-xs font-semibold text-muted-foreground mb-1">
                       담당 의사
-                      <span className="ml-1 text-[10px] text-rose-500 font-normal">· 진료기록 필수 (의료법)</span>
                     </label>
                     <select
                       value={formSigningDoctorId}

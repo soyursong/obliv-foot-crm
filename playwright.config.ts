@@ -94,6 +94,8 @@ export default defineConfig({
         '**/T-20260609-foot-RECEIPT-LASER-MISSING.spec.ts',
         // T-20260609-foot-DOCDASH-LABEL-RX-REFINE: 진료대시보드 헤더/처방 내용 라벨/약 한 줄/중앙정렬/처방나감 필터 (순수 로직 모사 + 소스 정적 가드, auth 불요)
         '**/T-20260609-foot-DOCDASH-LABEL-RX-REFINE.spec.ts',
+        // T-20260610-foot-DOCDASH-CLINICAL-UX-REFINE: 임상경과 인라인 패널 UX 정제 (소스 정적 검증)
+        '**/T-20260610-foot-DOCDASH-CLINICAL-UX-REFINE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
