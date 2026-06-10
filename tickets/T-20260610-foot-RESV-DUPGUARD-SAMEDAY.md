@@ -13,12 +13,15 @@ db_migration: supabase/migrations/20260610100000_reservation_dup_guard_fn.sql
 db_migration_2: supabase/migrations/20260610100010_reservations_customer_daily_unique.sql
 db_rollback: supabase/migrations/20260610100000_reservation_dup_guard_fn.rollback.sql
 db_rollback_2: supabase/migrations/20260610100010_reservations_customer_daily_unique.rollback.sql
-db_deployed: partial   # RPC fn_reservation_dup_guard 배포 확인됨(2026-06-10 재검증) / index 미적용(confirm 대기)
-db_gate: GO_WARN
-db_gate_status: confirm_pending   # 김주연 총괄 행별 confirm 대기 — responder MSG-20260610-103454-vrv6 / -103513-slrp
+db_deployed: full   # RPC + partial UNIQUE index 모두 적용 완료(2026-06-10 Step3 집행)
+db_gate: DONE
+db_gate_status: done   # 김주연 총괄 Y-CONFIRM(reply_ts 1781056892.979629) → dedupe 14row + index 적용 종결
+db_gate_steps: DONE   # Step3.1 dedupe(14row cancelled) / 3.2 재조사 0건 / 3.3 index 적용 / 3.4 검증
 rpc_deployed: true
-index_deployed: false
+index_deployed: true
 confirm_request_msg: MSG-20260610-103454-vrv6
+confirm_reply_ts: 1781056892.979629
+step3_report: scripts/out/resv_dedupe_step3_execution_report.md
 e2e_spec: tests/e2e/T-20260610-foot-RESV-DUPGUARD-SAMEDAY.spec.ts
 risk_verdict: GO_WARN
 risk_reason: "FE 가드 standalone(fallback SELECT)로 무중단 즉시 동작. RPC는 read-only 추가(supervisor 적용 게이트). index는 prod 활성중복 13그룹 존재 → dedupe+사람확인 후 supervisor 적용(GO_WARN)."
@@ -30,9 +33,11 @@ author: dev-foot
 
 ## 상태
 
-**FE deploy-ready** (가드 동작·빌드·spec·E2E 6 passed). RPC 배포완료.
-**DB index = confirm_pending** — dedupe 13그룹에 대한 김주연 총괄 행별 confirm 회신 대기(responder 처리 중).
-confirm 회신 → dedupe → 재조사 0건 → supervisor index 적용 시 DB 게이트 종결.
+**deploy-ready · DB 게이트 종결** (FE 가드 동작·빌드·spec·E2E 6 passed, RPC + index 모두 적용).
+**DB index = 적용 완료** — 김주연 총괄 Y-CONFIRM("웅 진행ㄱ", reply_ts 1781056892.979629) 후 Step3 집행:
+Step3.1 dedupe 14 row 논리삭제(cancelled) → 3.2 재조사 활성중복 0건 → 3.3 `idx_reservations_customer_daily` 적용 → 3.4 pg_indexes 검증 통과.
+확정 override: 류복화 05-24 KEEP=checked_in(7dba8647)/CANCEL=noshow(e061d191) — 실제내원 보존. 김창재 05-20 KEEP=checked_in(cf9d146a)/CANCEL=동시간중복(422f364e).
+집행 리포트: `scripts/out/resv_dedupe_step3_execution_report.md`.
 
 ## Root Cause
 
