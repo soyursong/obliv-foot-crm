@@ -1533,6 +1533,9 @@ export default function Reservations() {
         onCancelReservation={handleResvCancelRequest}
         /* T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-1: 완전 삭제 parity (대시보드 우클릭과 동일 hard delete) */
         onDeleteReservation={handleResvHardDelete}
+        /* T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-3: 예약관리(기존 예약 우클릭)는 '예약상세'로 표기.
+           대시보드 고객카드(체크인=신규 예약)는 기본 '예약하기' 유지. 와이어링은 (a) 확정 후. */
+        reservationActionLabel="예약상세"
       />
 
       {/* T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 모달 */}
