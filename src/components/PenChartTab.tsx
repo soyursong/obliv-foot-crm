@@ -1473,8 +1473,13 @@ export function PenChartTab({
     //   배지에 emptyCoa·avgDraw·frameGap·coa/move 가 per-form 으로 노출 → "스크린샷 1장"으로 EMPTY-COALESCE
     //   verdict 를 confirm/refute. "모든 양식 끊김" 신호(전역 vs 대형캔버스 특이성)도 양식별 배지 비교로 판별.
     //   배지는 pointerEvents:none·첫 획 이후에만 표시 → 드로잉 비간섭(AC-3), desync 무관(AC-2 검정화면 비재발).
-    //   옵트아웃: ?penchart_perf=off (운영 부담 시 현장 킬스위치). RC 확정 후 게이트 복원 예정(임시 진단빌드).
-    perfRef.current.enabled = !/penchart_perf=off/.test(_search);
+    // ── T-20260610-foot-PENCHART-PERF-BADGE-HIDE: 게이트 복원(기본 ON → opt-in) ──
+    //   [완료] REOPEN#3 기본 ON 진단빌드가 목적 달성 — refund_consent 대형양식 telemetry(coa/move 5.67 >1
+    //   → EMPTY-COALESCE 기각, frameGap 54.9ms jank → RC=렌더/합성 병목) 회수 완료(supervisor court 판정).
+    //   현장(김주연 총괄)이 디버그 HUD를 영구 노출로 오인 → 기본 OFF 복원이 정답. 원래 line817 게이트로 환원:
+    //   ?penchart_perf 명시 시에만 활성(opt-in). 추가 재수집 필요 시 ?penchart_perf 로 on-demand 가능.
+    //   AC-4: ?penchart_perf=off 킬스위치 잔존(기본 OFF가 되어 무의미하나 회귀 안전). localStorage 백업채널 유지.
+    perfRef.current.enabled = /penchart_perf/.test(_search) && !/penchart_perf=off/.test(_search);
     // REOPEN#1: 양식 진입마다 세션 worst 리셋 → 배지가 "현재 양식"의 최악 케이스만 누적.
     if (perfRef.current.enabled) {
       perfWorstRef.current = { frameGap: 0, avgDraw: 0, minCoa: Infinity, strokeMs: 0, strokes: 0 };
