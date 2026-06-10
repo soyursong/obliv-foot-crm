@@ -8,7 +8,8 @@
  *
  * 테스트 전략:
  *   /version.json 응답을 page.route 로 모킹해 '서버 빌드버전 vB' 상태를 재현한다.
- *   로컬 번들 빌드버전(import.meta.env.VITE_BUILD_ID)과 다른 값을 반환 → 배너 노출 검증.
+ *   로컬 번들 빌드버전(전역 __APP_BUILD_ID__ → window.__BUILD_ID__ 로 노출)과 다른 값을
+ *   반환 → 배너 노출 검증. (import.meta 는 page.evaluate 직렬화 불가라 window 경유로 읽음)
  *
  * AC-1: 신버전 감지 시 '새 버전' 배너 노출
  * AC-2: 자동 reload 발생 안 함 (배너만 — 작업 유실 방지)
@@ -91,24 +92,25 @@ test('AC-3: 배너 새로고침 클릭 시 전체 reload 발생', async ({ page 
 
 // ── AC-4: 동일 버전이면 배너 미노출 (회귀 방지) ──────────────────────────────
 test('AC-4: 서버/로컬 빌드버전이 같으면 배너 미노출', async ({ page }) => {
-  // 페이지 로드 후 실제 번들 BUILD_ID 를 읽어 그대로 되돌려주도록 동기화
-  let localBuildId = '';
-  await page.route('**/version.json*', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      headers: { 'cache-control': 'no-store' },
-      body: JSON.stringify({ buildId: localBuildId || 'placeholder', builtAt: new Date().toISOString() }),
-    });
-  });
-
+  // 1) mock 없이 먼저 로드해 실제 로컬 번들 BUILD_ID 를 취득한다.
+  //    import.meta 는 page.evaluate 직렬화 불가이므로 런타임 노출값 window.__BUILD_ID__ 를 읽는다
+  //    (useVersionCheck 모듈이 import 시 주입). dev 에는 /version.json 이 없어 404 → 배너 미노출 상태.
   await page.goto(BASE_URL);
-  // 로컬 번들 BUILD_ID 추출 (define 으로 주입됨)
-  localBuildId = await page.evaluate(
-    () => (import.meta as unknown as { env: { VITE_BUILD_ID?: string } }).env.VITE_BUILD_ID ?? '',
+  await expect
+    .poll(
+      async () => page.evaluate(() => (window as unknown as { __BUILD_ID__?: string }).__BUILD_ID__ ?? ''),
+      { timeout: 5000 },
+    )
+    .not.toBe('');
+  const localBuildId = await page.evaluate(
+    () => (window as unknown as { __BUILD_ID__?: string }).__BUILD_ID__ ?? '',
   );
 
-  // 같은 값으로 다시 한 번 체크 유도 (visibility 전환)
+  // 2) 로컬과 '같은' buildId 를 돌려주도록 mock 후 reload → 첫 체크부터 일치(불일치 race 없음).
+  await mockVersion(page, localBuildId);
+  await page.reload();
+
+  // 3) visibility 전환으로 재체크 유도 — 일치하므로 배너는 끝까지 떠선 안 됨.
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await page.waitForTimeout(2000);
 
