@@ -39,6 +39,7 @@ import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { useChart } from '@/lib/chartContext';
 import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import type { CheckIn, Reservation, Staff, VisitType } from '@/lib/types';
+import { VISIT_ROUTE_OPTIONS } from '@/lib/types';
 import { ReservationMemoTimeline, insertReservationMemo } from '@/components/ReservationMemoTimeline';
 // T-20260516-foot-RESV-DETAIL-POPUP: 4분할 예약 상세 팝업
 import { ReservationDetailPopup } from '@/components/ReservationDetailPopup';
@@ -1406,6 +1407,17 @@ export default function Reservations() {
                                         {r.progress_check_label ?? '경과분석'}
                                       </div>
                                     )}
+                                    {/* T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS AC-5: 우측 하단 @예약등록자.
+                                        정상·취소됨 박스 모두 적용. 미지정 시 빈칸(미렌더, 에러 없음). */}
+                                    {r.registrar_name && (
+                                      <div
+                                        className="truncate text-right text-[9px] text-muted-foreground leading-none mt-0.5"
+                                        data-testid={`registrar-tag-${r.id}`}
+                                        title={`예약등록자 ${r.registrar_name}`}
+                                      >
+                                        @{r.registrar_name}
+                                      </div>
+                                    )}
                                   </div>
                                 ))}
                                 {(() => {
@@ -2519,10 +2531,10 @@ function ReservationEditor({
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="">— 선택 안 함 —</option>
-                <option value="TM">TM</option>
-                <option value="인바운드">인바운드</option>
-                <option value="워크인">워크인</option>
-                <option value="지인소개">지인소개</option>
+                {/* T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 방문경로 옵션 SSOT(VISIT_ROUTE_OPTIONS) 재사용 */}
+                {VISIT_ROUTE_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
               </select>
             </div>
           )}

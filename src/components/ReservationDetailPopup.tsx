@@ -33,7 +33,8 @@ import { cn } from '@/lib/utils';
 import { ReservationMemoTimeline } from '@/components/ReservationMemoTimeline';
 // T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 공유 패널
 import { ReservationAuditLogPanel } from '@/components/ReservationAuditLogPanel';
-import type { Customer, Package, Reservation, Staff } from '@/lib/types';
+import type { Customer, Package, Reservation, ReservationRegistrar, Staff } from '@/lib/types';
+import { VISIT_ROUTE_OPTIONS } from '@/lib/types';
 
 const STATUS_LABEL: Record<Reservation['status'], string> = {
   confirmed: '예약',
@@ -84,6 +85,12 @@ export function ReservationDetailPopup({
   const [consultants, setConsultants] = useState<Staff[]>([]);
   const [packages, setPackages] = useState<Package[]>([]);
 
+  // ── T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약경로 + 예약등록자 (현재 예약 대상 편집)
+  const [registrars, setRegistrars] = useState<ReservationRegistrar[]>([]);
+  const [visitRoute, setVisitRoute] = useState<string>('');      // '' = 미지정
+  const [registrarId, setRegistrarId] = useState<string>('');    // '' = 미지정
+  const [routeSaving, setRouteSaving] = useState(false);
+
   // ── 우상 선택 상태: 좌하에서 클릭 → selectedResvId 변경
   const [selectedResvId, setSelectedResvId] = useState<string | null>(null);
 
@@ -106,9 +113,12 @@ export function ReservationDetailPopup({
       setAllResvs([]);
       setPackages([]);
       setConsultants([]);
+      setRegistrars([]);
       setSelectedResvId(null);
       setCustomerMemo('');
       setSelectedConsultantId('');
+      setVisitRoute('');
+      setRegistrarId('');
       setCancelDialog(false);
       setCancelReason('');
       return;
@@ -116,6 +126,9 @@ export function ReservationDetailPopup({
 
     setSelectedResvId(reservation.id);
     setBusy(false);
+    // T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 현재 예약의 예약경로/예약등록자 프리로드
+    setVisitRoute(reservation.visit_route ?? '');
+    setRegistrarId(reservation.registrar_id ?? '');
 
     const customerId = reservation.customer_id;
     const clinicId = reservation.clinic_id;
@@ -168,6 +181,18 @@ export function ReservationDetailPopup({
       .order('name')
       .then(({ data }) => {
         if (data) setConsultants(data as Staff[]);
+      });
+
+    // 5) T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약등록자 마스터(활성, 그룹·정렬순)
+    supabase
+      .from('reservation_registrars')
+      .select('*')
+      .eq('clinic_id', clinicId)
+      .eq('active', true)
+      .order('group_name', { ascending: true })
+      .order('sort_order', { ascending: true })
+      .then(({ data }) => {
+        if (data) setRegistrars(data as ReservationRegistrar[]);
       });
   // reservation.id 변경 시에만 재로드
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -362,6 +387,26 @@ export function ReservationDetailPopup({
     toast.success('담당 상담사 저장됨');
   };
 
+  // ── T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약경로 + 예약등록자 저장
+  //    현재 예약(reservation) 대상에 visit_route + registrar_id/registrar_name(스냅샷) 영속.
+  //    registrar_name 스냅샷 → 마스터가 리네임/삭제돼도 고객박스 @표시 안정.
+  const saveRouteAndRegistrar = async () => {
+    setRouteSaving(true);
+    const reg = registrars.find((r) => r.id === registrarId) ?? null;
+    const { error } = await supabase
+      .from('reservations')
+      .update({
+        visit_route: visitRoute === '' ? null : visitRoute,
+        registrar_id: registrarId === '' ? null : registrarId,
+        registrar_name: reg ? reg.name : null,
+      })
+      .eq('id', reservation.id);
+    setRouteSaving(false);
+    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+    toast.success('예약경로·예약등록자 저장됨');
+    onChanged();
+  };
+
   // ─── 렌더 ─────────────────────────────────────────────────────────
 
   return (
@@ -521,6 +566,53 @@ export function ReservationDetailPopup({
                       label="초·재진"
                       value={VISIT_TYPE_KO[selectedResv.visit_type]}
                     />
+                    {/* T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약경로 + 예약등록자.
+                        현재 예약(원본)만 편집 가능, 히스토리 다른 예약은 read-only 표시. */}
+                    {selectedResv.id === reservation.id ? (
+                      <>
+                        <div className="flex gap-2 min-w-0 items-center pt-0.5">
+                          <span className="text-muted-foreground shrink-0 w-[4.5rem]">예약경로</span>
+                          <Select
+                            value={visitRoute || '__none__'}
+                            onValueChange={(v) => setVisitRoute(v === '__none__' ? '' : v)}
+                          >
+                            <SelectTrigger className="h-8 text-xs flex-1" data-testid="popup-visit-route">
+                              <SelectValue placeholder="예약경로 선택" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
+                              {VISIT_ROUTE_OPTIONS.map((opt) => (
+                                <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex gap-2 min-w-0 items-center">
+                          <span className="text-muted-foreground shrink-0 w-[4.5rem]">예약등록자</span>
+                          <Select
+                            value={registrarId || '__none__'}
+                            onValueChange={(v) => setRegistrarId(v === '__none__' ? '' : v)}
+                          >
+                            <SelectTrigger className="h-8 text-xs flex-1" data-testid="popup-registrar">
+                              <SelectValue placeholder="예약등록자 선택" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
+                              {registrars.map((r) => (
+                                <SelectItem key={r.id} value={r.id} className="text-xs">
+                                  {r.group_name} - {r.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <FieldRow label="예약경로" value={selectedResv.visit_route ?? '—'} />
+                        <FieldRow label="예약등록자" value={selectedResv.registrar_name ?? '—'} />
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div className="text-xs text-muted-foreground italic">예약 선택 없음</div>
@@ -635,19 +727,27 @@ export function ReservationDetailPopup({
             </div>
           </div>
 
-          {/* 액션 푸터 */}
+          {/* 액션 푸터
+              T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS(+POPUP-SYNC AC-6/7 단일구현):
+                정상(confirmed) → [저장][예약취소][예약삭제]
+                취소/노쇼      → [예약복원][저장][예약삭제]
+              체크인 전환·노쇼·수정은 별도 보존 요소(b_an_decisions: 체크인전환 분리 보존). */}
           <DialogFooter className="px-6 py-3 border-t shrink-0 flex-wrap gap-2">
+            {/* [저장] — 예약경로·예약등록자 영속 (AC-4a/4b) */}
+            <Button
+              size="sm"
+              disabled={routeSaving || busy}
+              data-testid="btn-reservation-save"
+              onClick={saveRouteAndRegistrar}
+            >
+              {routeSaving ? '저장 중…' : '저장'}
+            </Button>
             <Button variant="outline" size="sm" onClick={() => onEdit(reservation)}>
               수정
             </Button>
-            {isAdmin && (
-              <Button variant="destructive" size="sm" disabled={busy} onClick={deleteReservation}>
-                완전 삭제
-              </Button>
-            )}
             {reservation.status === 'confirmed' && (
               <>
-                <Button size="sm" disabled={busy} onClick={convertToCheckIn}>
+                <Button variant="outline" size="sm" disabled={busy} onClick={convertToCheckIn}>
                   체크인 전환
                 </Button>
                 <Button
@@ -668,7 +768,7 @@ export function ReservationDetailPopup({
                   data-testid="btn-reservation-cancel"
                   onClick={() => { setCancelReason(''); setCancelDialog(true); }}
                 >
-                  취소
+                  예약취소
                 </Button>
               </>
             )}
@@ -677,12 +777,18 @@ export function ReservationDetailPopup({
                 size="sm"
                 variant="outline"
                 disabled={busy}
+                data-testid="btn-reservation-restore"
                 onClick={() => {
                   if (window.confirm(`${reservation.customer_name}님 예약을 복원하시겠습니까?`))
                     setStatus('confirmed');
                 }}
               >
-                복원
+                예약복원
+              </Button>
+            )}
+            {isAdmin && (
+              <Button variant="destructive" size="sm" disabled={busy} data-testid="btn-reservation-delete" onClick={deleteReservation}>
+                예약삭제
               </Button>
             )}
             <Button variant="ghost" size="sm" className="ml-auto" onClick={onClose}>
