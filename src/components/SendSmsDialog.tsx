@@ -2,13 +2,19 @@
  * SendSmsDialog — 대시보드 고객 우클릭 [문자] → 템플릿 선택·간략수정 후 수동 1:1 발송
  * T-20260606-foot-CTXMENU-SMS-SEND
  * T-20260609-foot-SMS-CTXMENU-VAR-SUBST — 괄호 변수 5종 전부 자동 치환
+ * T-20260610-foot-CTXMENU-STALE-PHONE — 수신번호 staleness 차단:
+ *   대시보드 check_ins.customer_phone 은 체크인 시점 비정규화 스냅샷이라
+ *   고객차트에서 phone 수정(customers.phone update) 후에도 갱신 안 됨 → 우클릭 발송 시 stale.
+ *   오픈 시 customer_id 로 customers.phone(SSOT, E.164 계약) DB refetch 하여 수신번호 소스로 사용.
+ *   (편집 출처 무관 — 표기·발송·발송직전 읽기전용 노출 모두 최신값. AC-1/2/3)
  *
  * 흐름:
  *  - 오픈 시 해당 지점(clinic_id) notification_templates 목록 로드 (메시지 설정 ③ 템플릿 관리 재사용)
  *    + 치환 변수 컨텍스트(지점명·지점전화번호·고객 다음/최근 예약 날짜·시간) 동시 로드
  *  - 템플릿 선택 → 본문의 5개 괄호 변수를 자동 치환 (자동발송 send-notification EF 와 동일 포맷/규칙)
  *      {고객명} → customers.name (기존)
- *      {지점명} → clinics.name
+ *      {지점명} → clinic_messaging_capability.sms_display_name 우선, NULL이면 clinics.name fallback
+ *               (T-20260610-foot-SMS-DISPLAYNAME-SPLIT 옵션B — clinics.name=법정서식 전용 불변)
  *      {지점전화번호} → clinic_messaging_capability.sender_number (발신번호)
  *      {날짜} → 다음(없으면 최근) 예약 날짜 (예약 일시. 발송시각 아님 — 김주연 총괄 확정)
  *      {시간} → 다음(없으면 최근) 예약 시간
@@ -194,9 +200,16 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
     날짜: '',
     시간: '',
   });
+  // ── T-20260610-foot-CTXMENU-STALE-PHONE ──
+  // livePhone: customers.phone DB refetch 결과(SSOT). phoneResolved: 권위있게 읽었는지 여부.
+  // customer_id 가 있으면 오픈 시 항상 최신 phone 을 다시 읽어 stale 스냅샷을 덮는다.
+  const [livePhone, setLivePhone] = useState<string | null>(null);
+  const [phoneResolved, setPhoneResolved] = useState(false);
 
   const customerName = checkIn?.customer_name ?? '';
-  const phone = checkIn?.customer_phone ?? null;
+  // 수신번호 소스: customers.phone(권위 refetch)을 우선. 아직 못 읽었으면(로딩/customer_id 없음)
+  // 종전대로 check_ins.customer_phone prop fallback (walk-in 미연결 고객 등).
+  const phone = phoneResolved ? livePhone : (checkIn?.customer_phone ?? null);
   const hasPhone = digitsOnly(phone).length > 0;
 
   // 오픈/고객 변경 시 상태 리셋 + 템플릿 + 치환 변수 컨텍스트 동시 로드
@@ -208,27 +221,48 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
     setImagePath(null);
     setImageFile(null);
     setImagePreview(null);
+    setLivePhone(null);
+    setPhoneResolved(false);
     setLoading(true);
     const custId = checkIn?.customer_id ?? null;
     let cancelled = false;
     (async () => {
-      // 템플릿 + 지점 정보 + 발신번호 + 고객 다음/최근 예약을 병렬 조회
-      const [tmplRows, clinicRes, capRes, resvRes] = await Promise.all([
+      // 템플릿 + 지점 정보 + 발신번호 + 고객 다음/최근 예약 + 고객 최신 전화번호를 병렬 조회
+      const [tmplRows, clinicRes, capRes, resvRes, custRes] = await Promise.all([
         loadTemplatesResilient(clinicId),
         (supabase.from('clinics') as any)
           .select('name')
           .eq('id', clinicId)
           .maybeSingle(),
+        // select('*') = 전방호환: sms_display_name 컬럼 미적용(마이그레이션 전) 시에도
+        // PostgREST 에러 없이 누락 필드는 undefined → clinics.name fallback. (배포-마이그레이션 순서 레이스 차단)
         (supabase.from('clinic_messaging_capability') as any)
-          .select('sender_number')
+          .select('*')
           .eq('clinic_id', clinicId)
           .maybeSingle(),
         // 다음(없으면 최근) 예약: 취소/노쇼 제외. 가장 가까운 미래 우선, 없으면 가장 최근 과거.
         custId
           ? loadCustomerResv(clinicId, custId)
           : Promise.resolve(null),
+        // T-20260610-foot-CTXMENU-STALE-PHONE: 수신번호 SSOT — customers.phone 최신값 refetch.
+        // check_ins.customer_phone(스냅샷) 대신 이 값을 표기·발송에 사용해 차트 수정 직후 stale 차단.
+        custId
+          ? (supabase.from('customers') as any)
+              .select('phone')
+              .eq('id', custId)
+              .maybeSingle()
+          : Promise.resolve(null),
       ]);
       if (cancelled) return;
+
+      // 고객 최신 전화번호 반영 — 조회 성공(에러 없음)했을 때만 권위값으로 채택.
+      // 행이 있으면 phone(없으면 null), 행이 없거나 에러면 미해결 → prop fallback 유지.
+      const custRow = (custRes as any)?.data as { phone?: string | null } | null | undefined;
+      const custErr = (custRes as any)?.error;
+      if (custId && !custErr) {
+        setLivePhone(custRow?.phone ?? null);
+        setPhoneResolved(true);
+      }
 
       // 사용자 정의(custom) 템플릿의 is_active=false 는 soft-delete(삭제 처리) → 발송 선택에서 제외.
       // reserved 자동발송 템플릿은 is_active=false 여도 수동 발송 선택은 허용(자동발송 off 의미).
@@ -239,15 +273,20 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
       setTemplates(rows);
 
       const clinicName = ((clinicRes as any)?.data as { name?: string } | null)?.name ?? '';
-      const senderNumber =
-        ((capRes as any)?.data as { sender_number?: string | null } | null)?.sender_number ?? '';
+      const capData = (capRes as any)?.data as
+        { sender_number?: string | null; sms_display_name?: string | null } | null;
+      const senderNumber = capData?.sender_number ?? '';
+      // ── T-20260610-foot-SMS-DISPLAYNAME-SPLIT (AC-1) ──
+      // {지점명}: 문자 전용 표시명(sms_display_name) 우선, 빈값/NULL이면 clinics.name fallback.
+      // 자동발송 EF(send-notification)·템플릿 미리보기와 동일 우선순위(정합).
+      const clinicDisplayName = capData?.sms_display_name || clinicName;
       const resv = resvRes as { reservation_date?: string; reservation_time?: string } | null;
       const dateStr = formatResvDate(resv?.reservation_date);
       const timeStr = formatResvTime(resv?.reservation_time);
 
       setVars({
         고객명: checkIn?.customer_name ?? '',
-        지점명: clinicName,
+        지점명: clinicDisplayName,
         지점전화번호: senderNumber,
         // 예약 없는 고객: placeholder 로 채우되 편집 가능 유지 (AC-3)
         날짜: dateStr || NO_RESV_PLACEHOLDER,
@@ -383,12 +422,20 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
           </div>
           <div className="mt-1 flex items-center gap-2 text-gray-600">
             <Phone className="h-4 w-4 shrink-0" />
-            {hasPhone ? (
+            {/* AC-3: 발송 직전 수신번호(최신 customers.phone) 읽기전용 노출 — 마지막 확인용 */}
+            {loading && checkIn?.customer_id && !phoneResolved ? (
+              <span data-testid="sms-recipient-phone-loading" className="text-gray-400">
+                수신번호 확인 중…
+              </span>
+            ) : hasPhone ? (
               <span data-testid="sms-recipient-phone" className="font-mono">{phone}</span>
             ) : (
               <span data-testid="sms-recipient-nophone" className="text-red-600">연락처 미등록</span>
             )}
           </div>
+          <p className="mt-1 text-[11px] text-gray-400">
+            위 수신번호는 고객차트 최신 번호입니다. 발송 전 확인하세요.
+          </p>
         </div>
 
         {/* 템플릿 선택 */}
