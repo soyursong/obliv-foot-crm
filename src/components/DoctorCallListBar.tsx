@@ -93,6 +93,48 @@ import { DoctorAckBadge } from '@/components/doctor/DoctorAck';
 const CALLLIST_POS_KEY = 'foot.doctorCallList.pos.v1';
 /** T-20260610-foot-CALLLIST-HIDE-TOGGLE AC-3: 숨김/표시 상태 저장 키. 위치 키와 별도 네임스페이스(충돌 금지). */
 const CALLLIST_HIDDEN_KEY = 'foot.doctorCallList.hidden.v1';
+/** T-20260610-foot-CALLLIST-ROW-HIDE-AUTOSHOW AC-2: 개별 행 숨김 시그니처 집합 저장 키.
+ *  위치(pos.v1)·전체숨김(hidden.v1)과 별도 네임스페이스(직교 facet). 값=listup 시그니처 문자열 배열. */
+const CALLLIST_ROW_HIDDEN_KEY = 'foot.doctorCallList.rowHidden.v1';
+
+/**
+ * T-20260610-foot-CALLLIST-ROW-HIDE-AUTOSHOW ★핵심 설계 — "신규 리스트업(listup)" 시그니처 키.
+ *  단순 환자ID/check_in.id 영구숨김 금지(planner AC-0). 키 = `${check_in.id}::${최근 active 진입시각}`.
+ *    - check_in.id: 방문(체크인) 단위 고유 → 새 환자/새 방문은 항상 새 시그니처 → 자동 재노출.
+ *    - 최근 active(purple/yellow) 진입시각: 동일 check_in이 진료완료(pink) 후 재차 진료필요(purple)로
+ *      재등장(re-listup)하면 status_flag_history에 새 changed_at이 쌓여 시그니처가 바뀜 → 숨김 무시·자동 재노출.
+ *      = "리스트업 시점 기반" 키여야 AC-3이 성립(이벤트 시점 미반영 키면 같은 사람 재진료를 영구히 가려 의료 누락).
+ *  status_flag_history가 없거나(healer_waiting status 경로 등) purple/yellow 진입기록이 없으면 checked_in_at로 폴백
+ *  (방문 단위 안정값 — 새 방문은 새 check_in.id라 어차피 재노출됨).
+ */
+export function listupSignature(ci: CheckIn): string {
+  let activationAt = ci.checked_in_at; // 폴백: 방문(체크인) 시각 — 방문 단위 안정.
+  const hist = ci.status_flag_history;
+  if (Array.isArray(hist) && hist.length > 0) {
+    // 뒤에서부터 가장 최근 active(purple/yellow) 진입 엔트리를 찾음 = 최신 리스트업 모먼트.
+    for (let i = hist.length - 1; i >= 0; i--) {
+      const f = hist[i]?.flag;
+      if ((f === 'purple' || f === 'yellow') && hist[i]?.changed_at) {
+        activationAt = hist[i].changed_at;
+        break;
+      }
+    }
+  }
+  return `${ci.id}::${activationAt}`;
+}
+
+/** rowHidden localStorage 로드(array→Set). 파싱 실패/접근 불가 시 빈 집합. */
+function loadRowHidden(): Set<string> {
+  try {
+    const raw = localStorage.getItem(CALLLIST_ROW_HIDDEN_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) return new Set(arr.filter((s) => typeof s === 'string'));
+  } catch {
+    /* noop */
+  }
+  return new Set();
+}
 
 interface DoctorCallListBarProps {
   /** Dashboard의 당일·해당지점 check_ins rows */
@@ -137,6 +179,59 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
 
   // AC-3) 표시 순서: 활성(진료필요) 상단 → 비활성(진료완료) 하단
   const displayList = useMemo(() => [...activeList, ...doneList], [activeList, doneList]);
+
+  // ── T-20260610-foot-CALLLIST-ROW-HIDE-AUTOSHOW ─────────────────────────────────────────────
+  //   개별 행 숨기기(표시 필터 레이어) + 신규 listup 시그니처 재등장 시 자동 재노출.
+  //   AC-1) 행 단위 숨김은 *렌더 필터만* — activeList/doneList/displayList(콜동작·정렬·집계)는 전부 풀데이터로 보존.
+  //   AC-2) 숨김 집합 per-browser localStorage 영구(rowHidden.v1, 위치/전체숨김 키와 직교).
+  //   AC-3) 키=listupSignature(이벤트/리스트업 시점 기반) → 새 환자/새 방문/재진료(re-listup)는 새 시그니처라
+  //         숨김 집합에 없어 자동 노출. 같은 listup이 유지되는 동안만 숨김 지속.
+  const [hiddenSigs, setHiddenSigs] = useState<Set<string>>(loadRowHidden);
+
+  // AC-2) hiddenSigs 변동 시 localStorage 영속(array 직렬화). 접근 불가 시 세션 상태로만 동작.
+  useEffect(() => {
+    try {
+      localStorage.setItem(CALLLIST_ROW_HIDDEN_KEY, JSON.stringify([...hiddenSigs]));
+    } catch {
+      /* noop */
+    }
+  }, [hiddenSigs]);
+
+  // 시그니처 prune — 현재 명단에 더는 존재하지 않는 시그니처 제거(localStorage 무한증식 방지 + fail-safe).
+  //   명단을 떠난 환자가 다시 active로 돌아오면 status_flag_history에 새 진입기록이 쌓여 *새 시그니처*가 되므로
+  //   prune로 옛 시그니처를 지워도 숨김이 잘못 유지될 위험 없음(불확실하면 '노출' 쪽으로 안전).
+  useEffect(() => {
+    const currentSigs = new Set(displayList.map(listupSignature));
+    setHiddenSigs((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const s of prev) {
+        if (currentSigs.has(s)) next.add(s);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [displayList]);
+
+  const hideRow = useCallback((ci: CheckIn) => {
+    const sig = listupSignature(ci);
+    setHiddenSigs((prev) => {
+      if (prev.has(sig)) return prev;
+      const next = new Set(prev);
+      next.add(sig);
+      return next;
+    });
+  }, []);
+
+  const unhideAll = useCallback(() => setHiddenSigs(new Set()), []);
+
+  // AC-1) 렌더 전용 가시 목록 — 숨김 시그니처 제외. 콜/선택/집계는 displayList(풀)로 계속 동작.
+  const visibleList = useMemo(
+    () => displayList.filter((ci) => !hiddenSigs.has(listupSignature(ci))),
+    [displayList, hiddenSigs],
+  );
+  // 현재 명단에서 실제로 숨겨진 행 수(= 사용자에게 보여줄 '숨김 N · 표시' 카운트).
+  const hiddenInViewCount = displayList.length - visibleList.length;
 
   // 4) 지정콜 — 선택된 행 (호출 중 하이라이트). 활성 명단에서 빠지면 자동 해제.
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -427,6 +522,20 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
               완료 {doneList.length}
             </span>
           )}
+          {/* ROW-HIDE-AUTOSHOW AC-1) 숨긴 행이 있으면 '숨김 N · 표시'로 한 번에 복원(escape hatch — 행 유실 방지).
+              드래그 핸들(헤더) 오발동 방지 위해 onPointerDown stopPropagation. */}
+          {hiddenInViewCount > 0 && (
+            <button
+              data-testid="doctor-call-row-unhide-all"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={unhideAll}
+              className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-full px-2 py-px min-h-[28px] border border-gray-200 hover:bg-gray-200"
+              title="숨긴 행 모두 다시 표시"
+            >
+              <EyeOff className="h-3 w-3" />
+              숨김 {hiddenInViewCount} · 표시
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           {!collapsed && (
@@ -508,26 +617,38 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
           활성(진료필요) 상단 → 비활성(진료완료) 하단 정렬 (displayList) 보존. */}
       {!collapsed && (
       <div className="flex flex-col gap-2 px-3 py-2 max-h-[calc(100vh-6rem)] overflow-y-auto" data-testid="doctor-call-rows">
-        {displayList.map((ci) => {
-          const inactive = ci.status_flag === 'pink'; // 진료완료 = 비활성
-          return (
-            <DoctorCallRow
-              key={ci.id}
-              checkIn={ci}
-              inactive={inactive}
-              visitCount={ci.customer_id ? visitCounts[ci.customer_id] : undefined}
-              // 비활성(완료) 행은 콜 대상 아님 → 하이라이트·선택 비활성
-              highlighted={!inactive && (allCall || selectedId === ci.id)}
-              onSelect={() => {
-                if (inactive) return; // 완료 행은 지정콜 불가
-                setAllCall(false);
-                setSelectedId((cur) => (cur === ci.id ? null : ci.id));
-              }}
-              onOpenChart={onOpenChart}
-              onRefresh={onRefresh}
-            />
-          );
-        })}
+        {/* ROW-HIDE-AUTOSHOW AC-1) visibleList(숨김 필터 적용) 렌더. displayList(콜/집계/정렬)는 불변.
+            전부 숨겨 비면 안내 + 헤더의 '숨김 N · 표시'로 복원 가능(행 유실 방지). */}
+        {visibleList.length === 0 ? (
+          <div
+            data-testid="doctor-call-all-hidden"
+            className="text-xs text-gray-400 italic text-center py-2"
+          >
+            모든 행을 숨겼습니다 — 상단 ‘표시’로 복원
+          </div>
+        ) : (
+          visibleList.map((ci) => {
+            const inactive = ci.status_flag === 'pink'; // 진료완료 = 비활성
+            return (
+              <DoctorCallRow
+                key={ci.id}
+                checkIn={ci}
+                inactive={inactive}
+                visitCount={ci.customer_id ? visitCounts[ci.customer_id] : undefined}
+                // 비활성(완료) 행은 콜 대상 아님 → 하이라이트·선택 비활성
+                highlighted={!inactive && (allCall || selectedId === ci.id)}
+                onSelect={() => {
+                  if (inactive) return; // 완료 행은 지정콜 불가
+                  setAllCall(false);
+                  setSelectedId((cur) => (cur === ci.id ? null : ci.id));
+                }}
+                onHide={() => hideRow(ci)}
+                onOpenChart={onOpenChart}
+                onRefresh={onRefresh}
+              />
+            );
+          })
+        )}
       </div>
       )}
     </div>
@@ -541,12 +662,14 @@ interface DoctorCallRowProps {
   /** 진료완료(핑크) = 비활성 — dimmed + "진료완료" 배지, 콜 대상 제외 */
   inactive?: boolean;
   onSelect: () => void;
+  /** T-20260610-foot-CALLLIST-ROW-HIDE-AUTOSHOW AC-1: 이 행 숨기기(표시 필터에서 제외) */
+  onHide?: () => void;
   /** T-20260601-foot-DASH-HSCROLL-CHART-LOC #2: 고객 이름 클릭 → 진료차트 */
   onOpenChart?: (ci: CheckIn) => void;
   onRefresh?: () => void;
 }
 
-function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onSelect, onOpenChart, onRefresh }: DoctorCallRowProps) {
+function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onSelect, onHide, onOpenChart, onRefresh }: DoctorCallRowProps) {
   const isReturning = checkIn.visit_type === 'returning';
   const isExperience = checkIn.visit_type === 'experience';
   // T-20260609-foot-CALLLIST-HEALER-POSITION item1 + REOPEN FIX-SPEC: 힐러 구분 배지.
@@ -686,20 +809,35 @@ function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onS
             </button>
           )}
         </div>
-        {inactive ? (
-          <span
-            className="flex items-center gap-0.5 text-[10px] font-bold text-gray-500 bg-gray-200 rounded px-1 py-px whitespace-nowrap"
-            data-testid="doctor-call-done-badge"
-          >
-            <Check className="h-3 w-3" />
-            진료완료
-          </span>
-        ) : highlighted ? (
-          <span className="flex items-center gap-0.5 text-[10px] font-bold text-red-600 whitespace-nowrap" data-testid="doctor-call-calling">
-            <Phone className="h-3 w-3 animate-pulse" />
-            호출 중
-          </span>
-        ) : null}
+        <div className="flex items-center gap-1 shrink-0">
+          {inactive ? (
+            <span
+              className="flex items-center gap-0.5 text-[10px] font-bold text-gray-500 bg-gray-200 rounded px-1 py-px whitespace-nowrap"
+              data-testid="doctor-call-done-badge"
+            >
+              <Check className="h-3 w-3" />
+              진료완료
+            </span>
+          ) : highlighted ? (
+            <span className="flex items-center gap-0.5 text-[10px] font-bold text-red-600 whitespace-nowrap" data-testid="doctor-call-calling">
+              <Phone className="h-3 w-3 animate-pulse" />
+              호출 중
+            </span>
+          ) : null}
+          {/* T-20260610-foot-CALLLIST-ROW-HIDE-AUTOSHOW AC-1) 이 행 숨기기 — 표시 필터에서 제외.
+              신규 listup 시그니처로 재등장하면 자동 재노출(부모 hiddenSigs/listupSignature가 보장).
+              이름클릭→차트·지정콜과 클릭영역 분리된 별도 버튼. */}
+          {onHide && (
+            <button
+              onClick={onHide}
+              data-testid="doctor-call-row-hide"
+              className="inline-flex items-center justify-center rounded min-w-[28px] min-h-[28px] border border-gray-200 bg-white text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors"
+              title="이 행 숨기기 — 신규로 다시 리스트업되면 자동으로 다시 표시"
+            >
+              <EyeOff className="h-3 w-3" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 진료 전달사항 메모 */}
