@@ -13,8 +13,12 @@ db_migration: supabase/migrations/20260610100000_reservation_dup_guard_fn.sql
 db_migration_2: supabase/migrations/20260610100010_reservations_customer_daily_unique.sql
 db_rollback: supabase/migrations/20260610100000_reservation_dup_guard_fn.rollback.sql
 db_rollback_2: supabase/migrations/20260610100010_reservations_customer_daily_unique.rollback.sql
-db_deployed: false
+db_deployed: partial   # RPC fn_reservation_dup_guard 배포 확인됨(2026-06-10 재검증) / index 미적용(confirm 대기)
 db_gate: GO_WARN
+db_gate_status: confirm_pending   # 김주연 총괄 행별 confirm 대기 — responder MSG-20260610-103454-vrv6 / -103513-slrp
+rpc_deployed: true
+index_deployed: false
+confirm_request_msg: MSG-20260610-103454-vrv6
 e2e_spec: tests/e2e/T-20260610-foot-RESV-DUPGUARD-SAMEDAY.spec.ts
 risk_verdict: GO_WARN
 risk_reason: "FE 가드 standalone(fallback SELECT)로 무중단 즉시 동작. RPC는 read-only 추가(supervisor 적용 게이트). index는 prod 활성중복 13그룹 존재 → dedupe+사람확인 후 supervisor 적용(GO_WARN)."
@@ -26,7 +30,9 @@ author: dev-foot
 
 ## 상태
 
-**deploy-ready** — FE 가드(동작·빌드·spec) 완료. DB 마이그(RPC+index)는 supervisor GO_WARN 게이트 대기.
+**FE deploy-ready** (가드 동작·빌드·spec·E2E 6 passed). RPC 배포완료.
+**DB index = confirm_pending** — dedupe 13그룹에 대한 김주연 총괄 행별 confirm 회신 대기(responder 처리 중).
+confirm 회신 → dedupe → 재조사 0건 → supervisor index 적용 시 DB 게이트 종결.
 
 ## Root Cause
 
@@ -89,9 +95,20 @@ author: dev-foot
 
 ## 검증
 
-- `npm run build` ✅
-- E2E `tests/e2e/T-20260610-foot-RESV-DUPGUARD-SAMEDAY.spec.ts` — **5 passed**,
-  RPC 검증 1건 skip(미배포 GO_WARN hold, 배포 후 자동 활성).
+- `npm run build` ✅ (2026-06-10 재검증, built in 3.78s — 브라우저 시뮬 준비 OK)
+- E2E `tests/e2e/T-20260610-foot-RESV-DUPGUARD-SAMEDAY.spec.ts` — **6 passed** (재실행 2026-06-10 10:34 KST).
+  RPC `fn_reservation_dup_guard` 가 prod 배포 확인되어 RPC 검증 블록도 passed(이전 GO_WARN skip 해소).
+- dry-run 재실행(READ-ONLY, 2026-06-10 10:33 KST): 활성 중복 **13그룹**(행별confirm 11 / QA일괄 2) 동일 유지.
+
+## FIX-REQUEST 조치 (MSG-20260610-102747-wa7d, supervisor)
+
+- ✅ #3 E2E 실행결과 공유: **6 passed** (RPC 포함).
+- ✅ #4 브라우저 시뮬 준비: build green → 시뮬 1회 수행 가능 상태 확인.
+- ✅ RPC 배포 재검증: `fn_reservation_dup_guard` prod 존재 확인 / `idx_reservations_customer_daily` 미적용 확인.
+- ⏳ #1 김주연 총괄 행별 confirm: responder 경유 요청 발행
+  (시트 MSG-20260610-103454-vrv6 + 액션 MSG-20260610-103513-slrp, 확인시트 `scripts/out/resv_dedupe_confirm_request.md`).
+- ⛔ #2 dedupe 실행 + index 적용: **#1 confirm 회신 대기 중 hold**
+  (prod 파괴적 작업 → 사람 confirm 없이 집행 금지). confirm 도착 시: dedupe(취소처리) → 재조사 0건 → supervisor index 적용.
 
 ## supervisor 인계 (GO_WARN)
 
