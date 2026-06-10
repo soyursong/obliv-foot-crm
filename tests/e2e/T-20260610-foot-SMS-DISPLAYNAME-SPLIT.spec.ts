@@ -55,6 +55,9 @@ test('AC-4: ⓪ 연결 설정에 "문자용 지점명" 입력 필드 렌더', as
   // admin이 아니면 ⓪ 연결 설정 미노출 → skip(권한 의존).
   if (!(await gotoConnectionSection(page))) { test.skip(); return; }
 
+  // 라벨 "문자용 지점명" 자체가 화면에 노출되는지 먼저 확정(UI 텍스트 노출 보장).
+  await expect(page.getByText('문자용 지점명').first()).toBeVisible({ timeout: 8_000 });
+
   const input = page.getByTestId('sms-display-name-input');
   await expect(input).toBeVisible({ timeout: 8_000 });
   await testInfo.attach('connection', { body: await page.screenshot(), contentType: 'image/png' });
@@ -64,7 +67,8 @@ test('AC-4: ⓪ 연결 설정에 "문자용 지점명" 입력 필드 렌더', as
   await expect(input).toHaveValue('오리진');
 
   // 빈값=기관 정식명칭 fallback 안내 문구 노출(의도 문서화).
-  await expect(page.locator('text=기관 정식명칭')).toBeVisible({ timeout: 3_000 });
+  // 안내 <p> 단일 요소로 scope — placeholder 속성과의 strict-mode 충돌 방지.
+  await expect(page.getByText('기관 정식명칭').first()).toBeVisible({ timeout: 3_000 });
 });
 
 // ---------------------------------------------------------------------------

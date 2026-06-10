@@ -59,3 +59,11 @@ NULL이면 `clinics.name` fallback → 미설정 지점은 현행 동작 유지.
   - RPC `admin_set_sms_display_name(p_clinic_id uuid, p_sms_display_name text)` 존재 ✓
   - EF select 시뮬(`SELECT clinic_id, sms_display_name FROM clinic_messaging_capability`) 무에러, 기존 행 sms_display_name=NULL(fallback) ✓ → **send-notification EF line 681 명시 select 런타임 500 위험 해소.**
 - send-notification/index.ts:681 select 목록에 `sms_display_name` 포함 / :869 `capTyped.sms_display_name || clinicLegalName` fallback 로직 확인.
+
+### ✅ 재검증 완료 (2026-06-11, FIX-REQUEST MSG-20260611-051248-rue1 / phase2 spec_fail_new)
+- supervisor 지적: `/admin` "문자용 지점명" 필드 렌더·UI 텍스트 노출 보장 + 라벨/selector 일치 확인.
+- 코드 진단: 필드는 `AdminSettings.tsx` ⓪ 연결 설정 섹션 line 610-622에 존재 (라벨 "문자용 지점명", `data-testid="sms-display-name-input"`, 안내문 "...비워두면 기관 정식명칭(법정 의료서식용)..."). **라벨/텍스트 변경 없음 — selector와 정확히 일치.**
+- 라이브 spec 재실행: `T-20260610-foot-SMS-DISPLAYNAME-SPLIT.spec.ts` **4/4 PASS** (desktop-chrome, auth=admin). AC-4 필드 렌더+편집+안내문 노출 confirm, AC-2 미리보기 치환 confirm, 회귀 pass.
+- 하드닝: AC-4 spec에 라벨 "문자용 지점명" 텍스트 노출 명시 assert 추가 + 안내문 assert를 `.first()` scope(placeholder "예: 오리진 (비우면 기관 정식명칭 사용)"와 strict-mode 충돌 방지).
+- 주의: 필드는 `/admin/settings` 기본 진입 섹션(① 채널 가능 여부)이 아니라 **⓪ 연결 설정(admin 전용) 클릭 후** 노출 — 수동 QA 시 ⓪ 섹션 진입 필요(설계상 Solapi 자격증명과 동일 admin 전용 섹션).
+- 빌드 `npm run build` ✓ (vite 4.10s).
