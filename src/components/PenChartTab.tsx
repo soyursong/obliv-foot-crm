@@ -525,6 +525,9 @@ function PlacedItemOverlay({
 
   return (
     <div
+      // T-20260610-foot-PENCHART-6FIX-REFIX B: 삽입 직후 자동 scrollIntoView 타깃 + E2E 가시화 훅
+      data-overlay-id={item.id}
+      data-testid={`penchart-overlay-${item.type}`}
       style={{
         position: 'absolute',
         left: item.x,
@@ -715,9 +718,10 @@ export function PenChartTab({
   const [activeTool, setActiveTool] = useState<ActiveTool>('pen');
   // T-20260522-foot-PENCHART-TOOLS-V2 AC-5: 형광펜 색상
   const [highlightColor, setHighlightColor] = useState('#fde047');
-  // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #3: 형광펜 농도(투명도) 가변 — 기본 0.20 유지(TOOLS-V3 동일).
-  //   서브패널 슬라이더로 0.10~0.35 조절. 세션 유지(차트 진입 동안), 저장포맷 무관.
-  const [highlightAlpha, setHighlightAlpha] = useState(0.20);
+  // T-20260610-foot-PENCHART-6FIX-REFIX C(부모 #3 정련): 형광펜 기본 농도 0.20 → 0.10 하향.
+  //   [현장 회귀] 0.20도 "여전히 진함"(부모 #3 미해결). 슬라이더 min 0.10→0.05 확장으로 더 옅게 조절 가능.
+  //   세션 유지(차트 진입 동안), 저장포맷 무관. 실시간 반영=매 렌더 highlightAlphaRef 동기화(L850).
+  const [highlightAlpha, setHighlightAlpha] = useState(0.10);
   // T-20260522-foot-PENCHART-TOOLS-V3: 배치된 아이템 목록 (텍스트/상용구 드래그·삭제용)
   const [placedItems, setPlacedItems] = useState<PlacedItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -782,7 +786,18 @@ export function PenChartTab({
   const penSizeRef        = useRef<number>(DEFAULT_THICKNESS.pen);
   const highlightColorRef = useRef('#fde047');
   // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #3: 형광펜 농도 ref — native pointermove(stable, deps 없음)가 최신 alpha 참조
-  const highlightAlphaRef = useRef(0.20);
+  // T-20260610-foot-PENCHART-6FIX-REFIX C: 기본 0.20 → 0.10 (state와 초기값 일치)
+  const highlightAlphaRef = useRef(0.10);
+  // ── T-20260610-foot-PENCHART-6FIX-REFIX A: 미확정 텍스트 입력의 단일 commit 수렴용 refs ──
+  //   [RC] 부모 #6은 "저장 직전"에만 textInputValue를 흡수했다. 그러나 사용자가 타이핑 후 '저장'이 아닌
+  //   '도구 전환(switchTool)'을 하면 switchTool이 commit 없이 setTextInputValue('')로 버려(L1526) → 저장
+  //   시점엔 흡수할 값이 이미 없음 → "텍스트 저장 후 안 남음" 회귀. 입력 종료 모든 경로(도구전환/캔버스
+  //   재탭/blur/저장/취소)를 flushTextInput 하나로 수렴해 항상 placedItems로 commit(또는 명시 discard).
+  //   stable useCallback(deps [])가 최신 state를 읽도록 ref 경유(기존 L843 패턴 동일).
+  const textInputPosRef   = useRef<{ x: number; y: number; cssX: number; cssY: number } | null>(null);
+  const textInputValueRef = useRef('');
+  // 텍스트 입력박스 내부 버튼(삽입/취소) 처리 중 플래그 — onBlur가 버튼 onClick과 경쟁(중복 commit/오discard)하지 않도록 가드.
+  const textBtnHandlingRef = useRef(false);
   // strokeScaleRef: scaleX/scaleY를 onPointerDown에서 1회 계산 → native handler가 매 이벤트마다 재계산 생략
   const strokeScaleRef    = useRef<{ x: number; y: number }>({ x: 1, y: 1 });
   // ── T-20260606-foot-PENCHART-REFUND-PEN-MISS: 스크롤로 인한 strokeRect 캐시 stale 방지 ──────────
@@ -848,6 +863,9 @@ export function PenChartTab({
   penSizeRef.current        = penSize;
   highlightColorRef.current = highlightColor;
   highlightAlphaRef.current = highlightAlpha; // #3: 형광펜 농도 → native handler 동기화
+  // T-20260610-foot-PENCHART-6FIX-REFIX A: 매 렌더 동기화 → flushTextInput(stable)이 최신 입력값 읽음
+  textInputPosRef.current   = textInputPos;
+  textInputValueRef.current = textInputValue;
 
   const storagePath = `customer/${customerId}/pen-chart`;
 
@@ -1517,15 +1535,42 @@ export function PenChartTab({
     canvas.addEventListener('pointermove', handleNativePointerMove, { passive: false });
   }, [activeDrawTemplate, handleNativePointerMove]);
 
-  // T-20260522-foot-PENCHART-TOOLS-V3: 도구 전환 + 해당 도구의 기본 굵기 자동 적용
-  const switchTool = useCallback((tool: ActiveTool) => {
-    setActiveTool(tool);
-    setPenSize(DEFAULT_THICKNESS[tool]);
-
-    setShowPhrasePanel(false);
+  // ── T-20260610-foot-PENCHART-6FIX-REFIX A: 텍스트 입력 종료 단일 commit 함수 ──────────────
+  //   입력 종료 모든 경로(도구전환·캔버스 재탭·blur·저장·취소)가 이 함수 하나로 수렴.
+  //   discard=false → 미확정 textInputValue를 placedItems에 commit(영속화). discard=true → 버림(취소/Esc).
+  //   stable(deps []) + ref 경유로 최신값 읽기 → switchTool 등 stable 콜백에서 stale 없이 호출 가능.
+  const flushTextInput = useCallback((discard = false) => {
+    const pos = textInputPosRef.current;
+    const val = textInputValueRef.current;
+    if (pos && !discard && val.trim()) {
+      const item: PlacedItem = {
+        id: `txt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        type: 'text',
+        x: pos.x,
+        y: pos.y,
+        text: val,
+        fontSize: Math.round(penSizeRef.current * 4 + 6),
+        color: penColorRef.current,
+      };
+      setPlacedItems((prev) => [...prev, item]);
+      emptyRef.current = false;
+      hasDrawingRef.current = true;
+      setHasDrawing(true);
+    }
+    // commit 여부와 무관하게 입력 상태 정리(refs는 다음 렌더에서 동기화됨)
     setTextInputPos(null);
     setTextInputValue('');
   }, []);
+
+  // T-20260522-foot-PENCHART-TOOLS-V3: 도구 전환 + 해당 도구의 기본 굵기 자동 적용
+  const switchTool = useCallback((tool: ActiveTool) => {
+    // T-20260610-foot-PENCHART-6FIX-REFIX A: 도구 전환 = 입력 종료 → 미확정 텍스트 먼저 commit.
+    //   (RC) 기존엔 입력값을 빈문자로 초기화해 commit 없이 버려 "타이핑→다른 도구→저장 시 텍스트 소실" 회귀.
+    flushTextInput(false);
+    setActiveTool(tool);
+    setPenSize(DEFAULT_THICKNESS[tool]);
+    setShowPhrasePanel(false);
+  }, [flushTextInput]);
 
   // ── Undo async 사전 캡처 (Fix-5) — initCanvas보다 앞에 선언해야 useCallback dep 참조 가능 ──
   /**
@@ -1803,7 +1848,7 @@ export function PenChartTab({
 
   // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #2: 상용구 텍스트를 지정 좌표에 직접 commit.
   //   캔버스 탭(placing) 경로와 ✓ 즉시삽입 경로가 공유. fromPlacing=true면 placing 모드 정리(pen 전환).
-  const placeBoilerplateAt = (text: string, x: number, y: number, fromPlacing: boolean) => {
+  const placeBoilerplateAt = (text: string, x: number, y: number, fromPlacing: boolean): string => {
     const fontSize = Math.round(penSize * 4 + 6);
     const newItem: PlacedItem = {
       id: `bp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -1828,6 +1873,7 @@ export function PenChartTab({
       setShowPhrasePanel(false);
       setSelectedIds(new Set([newItem.id]));
     }
+    return newItem.id;
   };
 
   // #2: 현재 보이는 영역(스크롤 위치 반영) 좌상단의 캔버스 논리 좌표 — 즉시삽입 시 화면 밖 배치 방지.
@@ -1852,24 +1898,10 @@ export function PenChartTab({
   };
 
   // T-20260522-foot-PENCHART-TOOLS-V3 AC-7~9: 텍스트 도구 — placedItems에 추가 (드래그·삭제 지원)
+  // T-20260610-foot-PENCHART-6FIX-REFIX A: 명시 '삽입'/Enter 도 단일 commit 경로(flushTextInput)로 수렴.
   const handleTextConfirm = useCallback(() => {
-    if (!textInputValue.trim() || !textInputPos) return;
-    const fontSize = Math.round(penSize * 4 + 6);
-    const newItem: PlacedItem = {
-      id: `txt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      type: 'text',
-      x: textInputPos.x,
-      y: textInputPos.y,
-      text: textInputValue,
-      fontSize,
-      color: penColor,
-    };
-    setPlacedItems((prev) => [...prev, newItem]);
-    emptyRef.current = false;
-    setHasDrawing(true);
-    setTextInputPos(null);
-    setTextInputValue('');
-  }, [textInputValue, textInputPos, penSize, penColor]);
+    flushTextInput(false);
+  }, [flushTextInput]);
 
   // ── 포인터 이벤트 ────────────────────────────────────────────────────
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1906,8 +1938,9 @@ export function PenChartTab({
 
     // T-20260522-foot-PENCHART-TOOLS-V2 AC-3: 텍스트 도구
     if (activeTool === 'text') {
-      // 기존 입력창이 열려있으면 닫기
-      if (textInputPos) { setTextInputPos(null); setTextInputValue(''); return; }
+      // T-20260610-foot-PENCHART-6FIX-REFIX A: 입력창이 열린 상태에서 캔버스 재탭 = 입력 종료 → 기존 입력을
+      //   commit(버리지 않음) 후 새 위치에 입력창 재오픈. (기존엔 commit 없이 닫아 텍스트 소실 경로였음)
+      if (textInputPos) flushTextInput(false);
       setTextInputPos({ x: pos.x, y: pos.y, cssX: pos.cssX, cssY: pos.cssY });
       setTextInputValue('');
       // textarea는 textAreaRef로 autoFocus 처리됨
@@ -1953,11 +1986,13 @@ export function PenChartTab({
       // T-20260523-foot-PENCHART-PEN-SLOW Fix-4: hit-test는 onPointerUp에서 1회만 (onPointerDown 시작점 기록)
       whiteStrokePathRef.current = [{ x: pos.x, y: pos.y }];
     } else if (activeTool === 'highlight') {
-      // V3 AC-10~11: 투명도 35%→20%
+      // V3 AC-10~11: 투명도 35%→20%→(6FIX-REFIX) 기본 0.10
       ctx.beginPath();
       const r = Math.max(penSize * 3 + 3, 4);
       ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
-      ctx.globalAlpha = highlightAlpha; // #3: 가변 농도(기본 0.20)
+      // T-20260610-foot-PENCHART-6FIX-REFIX C: 시작 dot도 highlightAlphaRef.current(live) 읽기 →
+      //   슬라이더 조절 직후 다음 stroke가 즉시 반영(native move L1094와 동일 소스). state 캡처 지연 제거.
+      ctx.globalAlpha = highlightAlphaRef.current; // #3: 가변 농도(기본 0.10)
       ctx.fillStyle = highlightColor;
       ctx.fill();
       ctx.globalAlpha = 1;
@@ -2223,6 +2258,8 @@ export function PenChartTab({
         setTimeout(() => window.close(), 150);
       }
     } finally {
+      // T-20260610-foot-PENCHART-6FIX-REFIX A: 저장 가드 리셋(onBlur 미발화 시 잔류 방지)
+      textBtnHandlingRef.current = false;
       setSaving(false);
     }
   };
@@ -2287,8 +2324,24 @@ export function PenChartTab({
     const { x, y } = computeVisibleAnchor();
     // 연속 삽입 시 겹침 방지 — 기존 상용구 수만큼 소폭 stagger
     const n = placedItems.filter((it) => it.type === 'boilerplate').length % 6;
-    placeBoilerplateAt(content, x + n * 14, y + n * 30, false);
+    const newId = placeBoilerplateAt(content, x + n * 14, y + n * 30, false);
     setRevealedPhraseId(null);
+    // ── T-20260610-foot-PENCHART-6FIX-REFIX B: 삽입 가시화 (부모 #2 회귀 재발 차단) ──
+    //   [RC 가설] computeVisibleAnchor가 스크롤 위치를 못 잡거나(refs 타이밍), 사용자가 폼 하단을 보는데
+    //   상용구가 폼 상단/뷰포트 밖에 꽂혀 "삽입 안 됨"으로 인지되는 경로. 또는 ✓ 후 select 전환을 모르고
+    //   캔버스를 탭해도 안 그려져(=select 무동작) "안 됨"으로 오인. → ①명시 토스트 피드백 + ②새 아이템을
+    //   뷰포트 중앙으로 자동 스크롤해 "어디에 들어갔는지" 항상 보이게 한다. (commit 자체는 placedItems 확정)
+    const name = phraseTemplates.find((p) => p.id === id)?.name ?? '상용구';
+    toast.success(`상용구 '${name}' 삽입됨 — 드래그로 위치 조정`);
+    if (newId && typeof requestAnimationFrame !== 'undefined') {
+      requestAnimationFrame(() => {
+        try {
+          document
+            .querySelector(`[data-overlay-id="${newId}"]`)
+            ?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+        } catch { /* scrollIntoView 미지원/구형 환경 무시 (토스트 피드백은 유지) */ }
+      });
+    }
   };
 
   // ── 양식 선택 ─────────────────────────────────────────────────────────
@@ -2773,6 +2826,9 @@ export function PenChartTab({
             <Button
               size="sm"
               className="h-7 text-[11px] px-3 bg-purple-600 hover:bg-purple-700"
+              // T-20260610-foot-PENCHART-6FIX-REFIX A: 저장 버튼 탭 시 textarea blur가 먼저 commit하면
+              //   handleDrawSave 인라인 흡수와 이중 commit → 가드 set으로 blur는 보류, 저장 흡수만 단일 commit.
+              onPointerDown={() => { textBtnHandlingRef.current = true; }}
               onClick={handleDrawSave}
               disabled={saving}
             >
@@ -2832,7 +2888,7 @@ export function PenChartTab({
             <div className="flex items-center gap-1.5 text-muted-foreground" data-testid="subpanel-hl-opacity">
               <span>농도</span>
               <input
-                type="range" min={0.10} max={0.35} step={0.01} value={highlightAlpha}
+                type="range" min={0.05} max={0.35} step={0.01} value={highlightAlpha}
                 onChange={(e) => setHighlightAlpha(parseFloat(e.target.value))}
                 className="w-20"
                 data-testid="subpanel-hl-opacity-range"
@@ -3081,22 +3137,36 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
                   onChange={(e) => setTextInputValue(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextConfirm(); }
-                    if (e.key === 'Escape') { setTextInputPos(null); setTextInputValue(''); }
+                    if (e.key === 'Escape') { flushTextInput(true); }
+                  }}
+                  // T-20260610-foot-PENCHART-6FIX-REFIX A: blur(입력창 밖 탭) = 입력 종료 → commit.
+                  //   단, 내부 버튼(삽입/취소)로 포커스 이동 중이면(textBtnHandlingRef) 버튼 onClick이 처리하도록 보류
+                  //   → blur-vs-button 경쟁(중복 commit/오discard) 방지. 터치(relatedTarget=null)도 가드로 안전.
+                  onBlur={() => {
+                    if (textBtnHandlingRef.current) { textBtnHandlingRef.current = false; return; }
+                    flushTextInput(false);
                   }}
                   placeholder={'텍스트 입력\n(Enter: 삽입 / Shift+Enter: 줄바꿈)'}
                   className="w-full resize-none text-xs border border-gray-200 rounded p-1.5 outline-none focus:border-purple-400"
                   style={{ minHeight: 64 }}
+                  data-testid="penchart-text-input"
                 />
                 <div className="flex gap-1.5 mt-1.5">
                   <button
-                    onClick={handleTextConfirm}
+                    // onPointerDown: blur보다 먼저 발화 → 가드 set → textarea onBlur가 commit을 버튼에 위임
+                    onPointerDown={() => { textBtnHandlingRef.current = true; }}
+                    onClick={() => { flushTextInput(false); textBtnHandlingRef.current = false; }}
                     className="flex-1 rounded bg-purple-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-purple-700 transition"
+                    data-testid="penchart-text-confirm"
                   >
                     삽입
                   </button>
                   <button
-                    onClick={() => { setTextInputPos(null); setTextInputValue(''); }}
+                    // 취소: 가드 set 후 명시 discard. blur는 가드를 보고 보류 → 텍스트가 commit되지 않고 버려짐.
+                    onPointerDown={() => { textBtnHandlingRef.current = true; }}
+                    onClick={() => { flushTextInput(true); textBtnHandlingRef.current = false; }}
                     className="flex-1 rounded bg-gray-100 px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-200 transition"
+                    data-testid="penchart-text-cancel"
                   >
                     취소
                   </button>
