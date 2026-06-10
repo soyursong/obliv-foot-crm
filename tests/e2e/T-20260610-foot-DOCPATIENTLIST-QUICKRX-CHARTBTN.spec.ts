@@ -22,6 +22,13 @@
  *
  * 스타일: 형제 티켓(RXCANCEL-DISCHARGE-GATE/INCLINIC-GATE)과 동일 — 차단 게이트 SSOT
  *   in-page 모사 + 소스 정적 배선 가드. auth/DB 비의존(unit 프로젝트).
+ *
+ * ⚠️ SUPERSEDED(부분) — T-20260610-foot-QUICKRX-BLOCKED-PANEL-HIDE (문지은 6/10, 동일 reporter):
+ *   "불가 환자에겐 버튼 영역 자체를 비워달라(아무것도 렌더 안 함)" 결정으로 QuickRxBar 차단 분기의
+ *   '차트 열기' 버튼(quick-rx-open-chart)이 폐지되고 `if (blockedByUiGate) return null` 로 단순화됨.
+ *   본 spec 의 QuickRxBar-차단-분기 단언(S1·S2·S3 일부)을 새 SSOT(빈 렌더)로 갱신함.
+ *   유지: DoctorPatientList→QuickRxBar onOpenChart 배선(적용시점 게이트 토스트 액션으로 잔존) /
+ *         RxConfirmedSummary(확정패널) 차트열기(rx-cancel-open-chart) — 별개 facet, 회귀가드 유효.
  */
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -53,42 +60,43 @@ const TODAY = '2026-06-10';
 const todayCheckedIn = `${TODAY}T03:00:00+09:00`; // KST 오전 = 당일
 
 /**
- * QuickRxBar 차단 분기 렌더 결정 모사(구현 정본 line ~333):
- *   if (blockedByUiGate) { if (!onOpenChart) return null; return <button data-testid="quick-rx-open-chart">차트 열기</button> }
- * → 비잔류 + onOpenChart 제공 시에만 '차트 열기' 버튼 노출.
+ * QuickRxBar 차단 분기 렌더 결정 모사(구현 정본 line ~333) —
+ *   T-20260610-foot-QUICKRX-BLOCKED-PANEL-HIDE 로 supersede:
+ *   if (blockedByUiGate) { return null; }  // 앰버·불가문구·'차트 열기' 버튼 전부 폐지, 빈 렌더.
+ * → 비잔류면 onOpenChart 유무와 무관하게 항상 빈 렌더(null). 잔류면 처방 버튼.
  */
 function quickRxBlockedRender(
   checkIn: { status?: string | null; checked_in_at?: string | null },
-  onOpenChart: (() => void) | undefined,
+  _onOpenChart: (() => void) | undefined,
   todayISO = TODAY,
-): 'open-chart-button' | 'null' | 'rx-buttons' {
+): 'null' | 'rx-buttons' {
   const gate = checkRxInClinic(checkIn, todayISO);
-  if (!gate.allowed) return onOpenChart ? 'open-chart-button' : 'null';
+  if (!gate.allowed) return 'null';
   return 'rx-buttons';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// S1 — AC1: 미확정 펼침 패널(QuickRxBar)에 onOpenChart 전달 → 비잔류 시 '차트 열기' 노출
+// S1 — (PANEL-HIDE supersede) 미확정 비잔류 환자 = 빈 렌더(null), '차트 열기' 버튼 폐지
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('S1 AC1 — 미확정 차단 패널 차트 열기 버튼 노출', () => {
-  test('귀가(done) 환자 + onOpenChart 제공 → 차트 열기 버튼 렌더', () => {
+test.describe('S1 — 미확정 차단 패널 빈 렌더(PANEL-HIDE: 차트 열기 버튼 폐지)', () => {
+  test('귀가(done) 환자 + onOpenChart 제공이어도 → 빈 렌더(null)', () => {
     expect(
       quickRxBlockedRender({ status: 'done', checked_in_at: todayCheckedIn }, () => {}),
-    ).toBe('open-chart-button');
+    ).toBe('null');
   });
 
-  test('전날/미래/취소 환자도 onOpenChart 제공 시 차트 열기 렌더', () => {
+  test('전날/미래/취소 환자도 onOpenChart 제공이어도 → 빈 렌더(null)', () => {
     const yesterday = { status: 'confirmed', checked_in_at: '2026-06-09T03:00:00+09:00' };
     const tomorrow = { status: 'registered', checked_in_at: '2026-06-11T03:00:00+09:00' };
     const cancelled = { status: 'cancelled', checked_in_at: todayCheckedIn };
     for (const c of [yesterday, tomorrow, cancelled]) {
-      expect(quickRxBlockedRender(c, () => {})).toBe('open-chart-button');
+      expect(quickRxBlockedRender(c, () => {})).toBe('null');
     }
   });
 
-  test('DoctorPatientList → QuickRxBar 에 onOpenChart 전달 (1줄 배선 가드)', () => {
+  test('DoctorPatientList → QuickRxBar onOpenChart 배선 보존(적용시점 게이트 토스트 액션용, 회귀금지)', () => {
     const src = SRC('components/doctor/DoctorPatientList.tsx');
-    // QuickRxBar JSX 블록만 추출 — 그 안에 onOpenChart 전달이 있어야 함(이번 버그의 본질).
+    // QuickRxBar JSX 블록 — onOpenChart 전달은 유지(차단 분기 렌더가 아닌, 적용시점 게이트 실패 토스트 액션 경유).
     const block = src.match(/<QuickRxBar[\s\S]*?\/>/);
     expect(block, 'QuickRxBar JSX 블록 존재').not.toBeNull();
     expect(block![0]).toContain('onOpenChart={onOpenChart}');
@@ -109,13 +117,11 @@ test.describe('S2 AC2 — LOGIC-LOCK L-004 단일 차트 게이트웨이', () =>
     expect(src).toMatch(/id,\s*customer_id,\s*customer_name/);
   });
 
-  test('QuickRxBar 차단 분기가 동일 onOpenChart 콜백을 그대로 호출(별도 라우팅 신설 0)', () => {
+  test('QuickRxBar: 차단 분기 차트라우팅 신설 0 + (PANEL-HIDE) 차단용 차트열기 버튼 폐지', () => {
     const src = SRC('components/doctor/QuickRxBar.tsx');
-    // 차단 패널 = '차트 열기' 버튼, onClick=onOpenChart (props 콜백 그대로).
-    expect(src).toContain('data-testid="quick-rx-open-chart"');
-    expect(src).toMatch(/onClick=\{onOpenChart\}/);
-    expect(src).toContain('차트 열기');
-    // QuickRxBar 가 자체적으로 차트 라우팅(navigate/window.open/href) 신설하지 않음.
+    // PANEL-HIDE supersede: 차단 분기는 빈 렌더 → '차트 열기' 버튼(quick-rx-open-chart) testid 부재.
+    expect(src).not.toContain('data-testid="quick-rx-open-chart"');
+    // QuickRxBar 가 자체적으로 차트 라우팅(navigate/window.open/href) 신설하지 않음(불변).
     expect(src).not.toMatch(/navigate\(|window\.open\(|location\.href/);
   });
 });
@@ -138,11 +144,12 @@ test.describe('S3 AC3 — 미제공 null + 잔류 정상(무회귀)', () => {
     }
   });
 
-  test('QuickRxBar: 차단 + onOpenChart 없으면 return null (앰버 빠른처방불가 패널 폐지 보존)', () => {
+  test('QuickRxBar: 차단(blockedByUiGate) → 무조건 return null (PANEL-HIDE: 앰버·불가문구·차트열기 전부 폐지)', () => {
     const src = SRC('components/doctor/QuickRxBar.tsx');
-    expect(src).toMatch(/if\s*\(blockedByUiGate\)\s*\{[\s\S]*?if\s*\(!onOpenChart\)\s*return null;/);
-    // PANEL-HIDE 회귀가드: 앰버 'Ban' 차단 패널 / "빠른처방 불가" 문구 부활 금지.
+    expect(src).toMatch(/if\s*\(blockedByUiGate\)\s*\{\s*return null;\s*\}/);
+    // PANEL-HIDE 회귀가드: 앰버 'Ban' 차단 패널 / "빠른처방 불가" 문구 / 차단용 '차트 열기' 버튼 부활 금지.
     expect(src).not.toContain('quick-rx-blocked');
+    expect(src).not.toContain('data-testid="quick-rx-open-chart"');
     expect(src).not.toMatch(/\bBan\b/);
   });
 });
@@ -161,8 +168,9 @@ test.describe('S4 회귀가드 — DATEMODE-HISTORY / SORT-LAYOUT / 확정패널
 
   test('R2(SORT-LAYOUT): 기본 행 grid 고정 열 + 원내 우선 그룹 정렬 보존', () => {
     const src = SRC('components/doctor/DoctorPatientList.tsx');
-    // 고정 grid-template(번호/배지/이름/처방/상태/메모/액션).
-    expect(src).toMatch(/grid-cols-\[1\.75rem_3rem_5rem_5\.5rem_3\.75rem_minmax\(0,1fr\)_auto\]/);
+    // 고정 grid-template(번호/배지/이름/처방/상태/시술/메모/액션).
+    //   T-20260610-foot-DOCDASH-DIAGMGMT-6FIX(5e55c13) 레이아웃 갱신으로 4.75rem 열 추가 — 현행 정합.
+    expect(src).toMatch(/grid-cols-\[1\.75rem_3rem_5rem_5\.5rem_3\.75rem_4\.75rem_minmax\(0,1fr\)_auto\]/);
     // 원내 잔류 그룹 항상 상단 + 시간순/이름순 정렬 토글.
     expect(src).toMatch(/isInClinic\(a\.status\)/);
     expect(src).toMatch(/data-testid=\{`sort-by-\$\{key\}`\}/);
