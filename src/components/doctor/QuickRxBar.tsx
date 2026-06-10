@@ -327,25 +327,11 @@ export default function QuickRxBar({
     );
   }
 
-  // 원내 비잔류(전날/미래/귀가/취소) — T-20260610-foot-QUICKRX-BLOCK-PANEL-HIDE:
-  //   "빠른처방 불가" 문구/앰버 패널 제거(문지은 6/10 요청). 처방 버튼 없음으로 충분.
-  //   차트 진입은 onOpenChart 제공 시 차트 열기 버튼만 미니멀 표시.
+  // 원내 비잔류(전날/미래/귀가/취소) — T-20260610-foot-QUICKRX-BLOCKED-PANEL-HIDE:
+  //   "빠른처방 불가" 앰버 패널·텍스트·차트열기 버튼 전부 제거(문지은 6/10 요청).
+  //   불가 환자는 QuickRxBar 영역을 빈 렌더로 둠(버튼 자체 미노출). 게이트 판정 로직은 불변.
   if (blockedByUiGate) {
-    if (!onOpenChart) return null;
-    return (
-      <button
-        type="button"
-        onClick={onOpenChart}
-        data-testid="quick-rx-open-chart"
-        className={cn(
-          'inline-flex items-center gap-1 rounded-md border border-border bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-accent transition',
-          className,
-        )}
-      >
-        <FileText className="h-3 w-3" />
-        차트 열기
-      </button>
-    );
+    return null;
   }
 
   if (buttons.length === 0) {
