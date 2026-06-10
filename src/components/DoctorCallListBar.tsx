@@ -71,6 +71,14 @@
  *  AC-2) 성함 전체 표시(truncate 부재·whitespace-normal·break-words) + 카드 풀폭(w-full) 유지(회귀 없음).
  *  AC-3) 4명 정도는 max-h 안에 들어가 스크롤 없이 한눈에. 그 이상이면 내부 세로 스크롤(off-screen 잘림 방지).
  *  AC-4) 지정/전체콜·이름클릭→차트·힐러/위치/재진 배지·pink 비활성·메모 저장/조회 전부 불변(레이아웃 클래스 외 미접촉).
+ *
+ * T-20260610-foot-CALLLIST-DRAGGABLE-POSITION — 위치 정책 canonical 소유 티켓(현장 김주연 총괄, 긴급):
+ *  "위치 고정 폐기 → 개인이 헤더를 잡고 드래그로 자유 배치 + 위치 영속."
+ *  구현체는 본 파일의 TOP-COVERS-BUTTONS Phase 2(헤더 onPointer* 드래그 + setPointerCapture + clampPos +
+ *  localStorage 'foot.doctorCallList.pos.v1' + reset-pos)와 동일 — 코드 추가 없이 그 구현을 위치 정책의
+ *  canonical로 격상하고, 시나리오 3종(드래그+영속 / 본문 무간섭 / 클램프+초기화)을 전용 spec로 고정한다
+ *  (tests/e2e/T-20260610-foot-CALLLIST-DRAGGABLE-POSITION.spec.ts). 위치=fixed 앵커 폐기·드래그 좌표 제어,
+ *  버튼/토글/이름→차트/메모는 헤더 드래그핸들 밖 또는 stopPropagation으로 본문 무간섭, clamp로 화면밖 유실 방지.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp, MapPin, RotateCcw } from 'lucide-react';
