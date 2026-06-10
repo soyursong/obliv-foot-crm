@@ -202,18 +202,18 @@ const REFUND_AUTOFILL_POS_P1: Array<{ key: keyof AutofillFields; x: number; y: n
 //   AC-3 긴이름 클램프(2x 재산정): measureText 폭이 가용폭(MAX_W=226=234−여백8) 초과 시
 //     폰트 비례 축소(최소 MIN=28px = 직전 14의 2배). 축소 시 topY 동적 재계산으로 세로중앙 유지.
 //     → 좌우 오버플로우/서명칸(x≥430)·중앙 칸막이(x=397) 침범 방지.
-//   [현재 상수 노출 — 동일 슬롯 5번째 미세조정 재요청 시 dev 수렴 비용 절감용]
-//     centerX=247 / topY=3154 / cellTop=3123 / cellBottom=3241 / cellHeight=118
-//     baseFontSize=56 / minFontSize=28 / maxWidth=226
+//   [현재 상수 노출 — 동일 슬롯 미세조정 재요청 시 dev 수렴 비용 절감용]
+//     centerX=247 / topY=3161 / cellTop=3123 / cellBottom=3241 / cellHeight=118
+//     baseFontSize=42 / minFontSize=21 / maxWidth=226  [수렴 마감 기준 — T-CONSENT-NAME-FONT-DOWN-0_5]
 const REFUND_P3_NAME = {
   centerX: 247,       // 이름 칸 밑줄 중심 (130~364) — 불변 (3e0216b 가로중앙)
   cellTop: 3123,      // PIL 측정: 표 라벨/입력 구분선 = 입력 칸 상단
   cellBottom: 3241,   // PIL 측정: 밑줄 (= 입력 칸 하단)
   // topY는 fontSize 기반 동적 계산: cellTop + (cellHeight - fontSize) / 2
-  // base 56px 기준: 3123 + (118 - 56)/2 = 3154 → 상/하 여백 각 31px
+  // base 42px 기준: 3123 + (118 - 42)/2 = 3161 → 상/하 여백 각 38px
   maxWidth: 226,      // 가용폭 = 밑줄폭 234 − 좌우 4px 여백 (보수)
-  baseFontSize: 56,   // bold 56px (직전 28의 2배 — T-VCENTER-2X)
-  minFontSize: 28,    // 긴이름 클램프 하한 (직전 14의 2배)
+  baseFontSize: 42,   // bold 42px (수렴 마감 기준값 — 56→42 0.5 미세축소)
+  minFontSize: 21,    // 긴이름 클램프 하한 (42 기준 동일 0.75 비율)
 };
 
 // ── 환불동의서 P3 날짜 분리 렌더링 (AC-R5) ──
@@ -252,11 +252,11 @@ function drawRefundP3DateAutofill(
 // 직전 T-20260609-foot-CONSENT-NAME-CENTER-FONT(3e0216b: 가로중앙 + bold 28px) 의 증분.
 //   [정밀 코드 스펙 — planner MSG-20260610-084913 정본]
 //   ⓐ 칸 중심(x=247) 기준 가로중앙(textAlign='center') [3e0216b 불변]
-//   ⓑ 'bold 56px' (직전 28의 2배) ⓒ fillStyle '#1a1a1a' ⓓ italic 제거.
+//   ⓑ 'bold 42px' (수렴 마감 기준값 — 56→42 0.5 미세축소) ⓒ fillStyle '#1a1a1a' ⓓ italic 제거.
 //   ⓔ 세로중앙: textBaseline='top' + topY = cellTop + (cellHeight - fontSize)/2
-//      → base 56px 기준 topY=3154, 상/하 여백 각 31px 균등 (PIL 측정 cellTop=3123, cellBottom=3241).
-//      직전 topY=3214(밑줄 하단 안착) → 새 topY=3154 (위로 60px) = "아래쏠림" 해소.
-//   AC-3 긴이름(≤14자) 클램프 2x 재산정: 측정폭이 가용폭(226px) 초과 시 폰트 비례 축소(최소 28px).
+//      → base 42px 기준 topY=3161, 상/하 여백 각 38px 균등 (PIL 측정 cellTop=3123, cellBottom=3241).
+//      세로중앙 식이 fontSize 감소를 자동 반영 → 좌표 작업 불요(쏠림 없음).
+//   AC-3 긴이름(≤14자) 클램프 재산정: 측정폭이 가용폭(226px) 초과 시 폰트 비례 축소(최소 21px).
 //     클램프 발생 시 topY 동적 재계산으로 세로중앙 유지 (작은 폰트도 셀 중앙) →
 //     좌우 오버플로우/서명칸(x≥430)·중앙 칸막이(397) 침범 방지 (AC-5 칸 경계 내 중앙기준).
 //   Canvas 논리좌표 합성(scale 무관) + DRAW_DPR=2 강제 → iPad(DPR2.0)/갤탭 일관 (AC-5).
