@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
+import { stripSimulationRows } from '@/lib/simulationFilter';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import {
@@ -331,7 +332,9 @@ export default function Reservations() {
       setLoading(false);
       return;
     }
-    const list = (data ?? []) as Reservation[];
+    // T-20260610-foot-ADMIN-SIM-FILTER: 시뮬레이션 고객(customer_id→is_simulation=true)에
+    // 연결된 예약은 캘린더/목록에서 숨김. 워크인(customer_id null)·실고객 예약은 보존.
+    const list = await stripSimulationRows((data ?? []) as Reservation[]);
 
     // Auto noshow: past confirmed reservations
     const today = format(new Date(), 'yyyy-MM-dd');

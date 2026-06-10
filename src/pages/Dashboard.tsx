@@ -68,6 +68,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
+import { stripSimulationRows } from '@/lib/simulationFilter';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
@@ -3535,11 +3536,13 @@ export default function Dashboard() {
     // 24시간 이상 경과한 registered 건 필터링 (테스트 데이터 정리)
     const now = Date.now();
     const STALE_MS = 24 * 60 * 60 * 1000;
-    const filtered = ((data ?? []) as CheckIn[]).filter((ci) => {
+    const staleFiltered = ((data ?? []) as CheckIn[]).filter((ci) => {
       if (ci.status !== 'registered') return true;
       const age = now - new Date(ci.checked_in_at).getTime();
       return age < STALE_MS;
     });
+    // T-20260610-foot-ADMIN-SIM-FILTER: 시뮬레이션 고객 체크인 칸반 숨김 (셀프접수 명단 정합).
+    const filtered = await stripSimulationRows(staleFiltered);
     // T-20260519-foot-STATUS-REVERT fix: recentlyUpdated 보호 — 병렬 fetch가
     // DB 쓰기 완료 전 스냅샷을 읽어 optimistic update를 덮어쓰는 경합 방지.
     // markRecentlyUpdated 보호 중인 row는 로컬 상태 우선 유지 (2초 후 만료 → 다음 fetch에서 DB값 적용).
@@ -3682,7 +3685,9 @@ export default function Dashboard() {
       .eq('reservation_date', dateStr)
       .neq('status', 'cancelled')
       .order('reservation_time', { ascending: true });
-    setTimelineReservations((data ?? []) as Reservation[]);
+    // T-20260610-foot-ADMIN-SIM-FILTER: 시뮬레이션 고객 예약 타임라인 숨김.
+    // (pendingReservations도 timelineReservations 파생이므로 함께 정합)
+    setTimelineReservations(await stripSimulationRows((data ?? []) as Reservation[]));
   }, [clinic, dateStr]);
 
   // T-20260508-foot-DASH-SLOT-REMOVE: 통합시간표용 체크인 — 모든 registered 상태 포함
@@ -3704,7 +3709,8 @@ export default function Dashboard() {
       .gte('checked_in_at', start)
       .lte('checked_in_at', end)
       .order('checked_in_at', { ascending: true });
-    setSelfCheckIns((data ?? []) as CheckIn[]);
+    // T-20260610-foot-ADMIN-SIM-FILTER: 시뮬레이션 고객 체크인 숨김.
+    setSelfCheckIns(await stripSimulationRows((data ?? []) as CheckIn[]));
   }, [clinic, dateStr]);
 
   // T-20260522-foot-PERF-TUNING OPT-3: pendingReservations → timelineReservations 파생 (DB round trip 1회 절감)
