@@ -10,7 +10,7 @@ db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: null
-commit_sha: null
+commit_sha: fd31428
 created: 2026-06-10
 assignee: dev-foot
 source_msg: MSG-20260610-115849-vv2l
