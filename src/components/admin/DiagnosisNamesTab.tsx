@@ -47,6 +47,9 @@ import {
   Inbox,
   ChevronUp,
   ChevronDown,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import {
   DndContext,
@@ -247,6 +250,10 @@ function DraggableDxItem({ d, canManage, delPending, onEdit, onDelete }: Draggab
           <Badge variant="outline" className="text-[10px] py-0 font-mono">{d.service_code}</Badge>
         )}
         {!d.active && <Badge variant="outline" className="text-[10px] py-0">비활성</Badge>}
+        {/* 6FIX AC-5: 미폴더(미분류) 항목 — 아주 약하게만 표기(강조 없음). */}
+        {!d.diagnosis_folder_id && (
+          <span className="text-[9px] text-muted-foreground/40 shrink-0" data-testid="dx-unfoldered-hint">미분류</span>
+        )}
       </div>
       {canManage && (
         <div className="flex items-center gap-1 shrink-0">
@@ -440,7 +447,6 @@ function FolderNode(props: FolderNodeProps) {
         )}
         {/* AC-1: 폴더명 표시폭 확대(text-[13px], 패널 280px) · AC-2: 건수 괄호 인라인 텍스트(버튼형 배지 제거) */}
         <span className="text-[13px] font-semibold truncate flex-1" data-testid="dx-folder-name">{node.name}</span>
-        <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums" data-testid="dx-folder-count">({count})</span>
         {canManage && (
           <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
             {/* 순서 ▲▼ — 형제 내 sort_order 교체 (AC-3) */}
@@ -491,6 +497,8 @@ function FolderNode(props: FolderNodeProps) {
             </Button>
           </div>
         )}
+        {/* 6FIX AC-6: 괄호 건수를 관리버튼 뒤(맨 우측)로 이동 → 항상 우측 끝 정렬. 전체목록과 동일 정렬감. */}
+        <span className="ml-auto text-[11px] text-muted-foreground shrink-0 tabular-nums text-right" data-testid="dx-folder-count">({count})</span>
       </div>
       {node.children.length > 0 && (
         <div className="mt-0.5 space-y-0.5">
@@ -545,6 +553,12 @@ export default function DiagnosisNamesTab() {
   // DnD overlay 라벨
   const [activeDx, setActiveDx] = useState<Diagnosis | null>(null);
 
+  // 6FIX AC-4: 전체목록(우측) 정렬 — 가나다순(name) / 추가순(added=sort_order) × 오름/내림.
+  //   기본 = 추가순 오름차순(종전 동작 보존: useDiagnoses 가 sort_order asc 로 적재).
+  //   추가순은 sort_order(신규 등록 시 max+10 누적)를 등록순 프록시로 사용 — 신규 컬럼 없음(DB无변경).
+  const [dxSortBy, setDxSortBy] = useState<'name' | 'added'>('added');
+  const [dxSortDir, setDxSortDir] = useState<'asc' | 'desc'>('asc');
+
   // DnD sensors (태블릿 터치 호환)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
@@ -572,10 +586,17 @@ export default function DiagnosisNamesTab() {
   }, [folders, selectedKey]);
 
   // 우측 목록 — 선택 폴더 소속 항목. AC-3: 전체목록(ALL_KEY) 선택 시 폴더 소속 무관 전체 노출.
+  //   6FIX AC-4: 정렬 적용(가나다/추가순 × asc/desc). 원본 items 불변(복사본 정렬).
   const visibleItems = useMemo(() => {
-    if (selectedKey === ALL_KEY) return items;
-    return items.filter((d) => d.diagnosis_folder_id === selectedKey);
-  }, [items, selectedKey]);
+    const base = selectedKey === ALL_KEY ? items : items.filter((d) => d.diagnosis_folder_id === selectedKey);
+    const dir = dxSortDir === 'asc' ? 1 : -1;
+    return [...base].sort((a, b) => {
+      const cmp = dxSortBy === 'name'
+        ? a.name.localeCompare(b.name, 'ko')
+        : (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name, 'ko');
+      return cmp * dir;
+    });
+  }, [items, selectedKey, dxSortBy, dxSortDir]);
 
   const selectedFolder = useMemo(
     () => folders.find((f) => f.id === selectedKey) ?? null,
@@ -879,6 +900,30 @@ export default function DiagnosisNamesTab() {
                 {selectedKey === ALL_KEY ? ALL_LABEL : selectedFolder?.name ?? '폴더'}
               </span>
               <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{visibleItems.length}</Badge>
+
+              {/* 6FIX AC-4: 정렬 컨트롤 — 가나다순/추가순 토글 + 오름/내림 토글 */}
+              <div className="ml-auto flex items-center gap-1" data-testid="dx-sort-controls">
+                <ArrowUpDown className="h-3 w-3 text-muted-foreground/60" />
+                <button
+                  type="button"
+                  onClick={() => setDxSortBy((p) => (p === 'name' ? 'added' : 'name'))}
+                  className="rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium text-foreground hover:bg-muted"
+                  data-testid="dx-sort-by"
+                  title="정렬 기준 전환"
+                >
+                  {dxSortBy === 'name' ? '가나다순' : '추가순'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDxSortDir((p) => (p === 'asc' ? 'desc' : 'asc'))}
+                  className="inline-flex items-center rounded border border-border bg-background p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  data-testid="dx-sort-dir"
+                  title={dxSortDir === 'asc' ? '오름차순 (클릭 시 내림차순)' : '내림차순 (클릭 시 오름차순)'}
+                  aria-label={dxSortDir === 'asc' ? '오름차순' : '내림차순'}
+                >
+                  {dxSortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                </button>
+              </div>
             </div>
 
             {visibleItems.length === 0 ? (

@@ -436,12 +436,13 @@ export default function QuickRxBar({
     }
   }
 
-  // 목록형 항목 스타일 — T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-1:
-  //   선택지 = 우측 드롭다운(목록형, 버튼 아님). 파란글씨 / 흰배경 / 테두리 없음.
-  //   가로 버튼더미(border+teal/amber bg)에서 세로 목록(blue text · bg-white · border 0)으로 재-presentation.
+  // 처방 항목 스타일 — T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-1:
+  //   QUICKRX-DROPDOWN-LIST-REDESIGN(3299ff5)에서 "처방버튼 사라지고 빠른처방 이름만 구석에 우측정렬"
+  //   되었던 무테두리·blue-text 목록을 → 명시적 '처방' 버튼 affordance로 복원.
+  //   teal 테두리 + bg-teal-50 + shadow + 전폭 → 클릭 가능 버튼임이 명확. 동선/로직은 불변.
   const listItemBase = compact
-    ? 'flex w-full items-center gap-1.5 rounded-md border-0 bg-white px-2.5 py-1.5 text-left text-[11px] font-medium text-blue-600 transition hover:bg-blue-50 active:scale-[0.99] disabled:opacity-50'
-    : 'flex w-full items-center gap-2 rounded-md border-0 bg-white px-3 py-2 text-left text-sm font-medium text-blue-600 transition hover:bg-blue-50 active:scale-[0.99] min-h-[36px] disabled:opacity-50';
+    ? 'flex w-full items-center gap-1.5 rounded-md border border-teal-300 bg-teal-50 px-2.5 py-1.5 text-left text-[11px] font-semibold text-teal-700 shadow-sm transition hover:bg-teal-100 active:scale-[0.99] disabled:opacity-50'
+    : 'flex w-full items-center gap-2 rounded-md border border-teal-300 bg-teal-50 px-3 py-2.5 text-left text-sm font-semibold text-teal-700 shadow-sm transition hover:bg-teal-100 active:scale-[0.99] min-h-[44px] disabled:opacity-50';
 
   return (
     // #4(FOLLOWUP2): 빠른처방 버튼 바 가시성 하드닝 — 자체 stacking context(relative + isolate)로
@@ -463,9 +464,9 @@ export default function QuickRxBar({
         </div>
       )}
 
-      {/* 선택지 드롭다운 목록 — AC-1: 우측 정렬 세로 목록(목록형). 항목 클릭 = 확정. */}
+      {/* 처방 버튼 목록 — 6FIX AC-1: 전폭 세로 버튼(우측정렬 폐지). 항목 클릭 = 확정. */}
       <div
-        className="ml-auto flex w-full max-w-[15rem] flex-col gap-0.5"
+        className="flex w-full flex-col gap-1.5"
         data-testid="quick-rx-bar"
         role="listbox"
         aria-label="빠른처방 선택지"
@@ -622,10 +623,12 @@ export function RxConfirmedSummary({
               : label
         }
         className={cn(
-          'inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-green-700',
-          cancellable && 'cursor-pointer hover:text-rose-600',
-          blockedByGate && 'cursor-help',
-          !interactive && 'cursor-default',
+          // 6FIX AC-1: 확정 후에도 명시적 버튼 affordance(테두리+배경) 복원. 무테두리 글씨 폐지.
+          //   AC-2 O=sky 정합 → 확정 상태도 sky 톤 버튼. 취소 가능 시 hover=rose(취소 신호).
+          'inline-flex shrink-0 items-center gap-0.5 rounded-md border px-2 py-1 text-[11px] font-semibold shadow-sm transition',
+          cancellable && 'cursor-pointer border-sky-300 bg-sky-50 text-sky-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600',
+          blockedByGate && 'cursor-help border-sky-200 bg-sky-50 text-sky-700',
+          !interactive && !blockedByGate && 'cursor-default border-sky-200 bg-sky-50 text-sky-700',
           'disabled:opacity-60',
         )}
       >
