@@ -36,8 +36,11 @@ function buildVersionPlugin(): Plugin {
 
 export default defineConfig({
   define: {
-    // 번들에 빌드 ID 주입 — 클라가 서버 version.json 과 비교하는 기준값
-    "import.meta.env.VITE_BUILD_ID": JSON.stringify(BUILD_ID),
+    // 번들에 빌드 ID 주입 — 클라가 서버 version.json 과 비교하는 기준값.
+    // ⚠ import.meta.env.* nested define 은 dev 모드에서 Vite 가 import.meta.env 를
+    //    런타임 객체로 특수 처리하기 때문에 치환이 누락된다(빌드만 동작, dev/E2E 깨짐).
+    //    plain global identifier define 은 dev(esbuild)·build 양쪽에서 안정적으로 치환된다.
+    __APP_BUILD_ID__: JSON.stringify(BUILD_ID),
   },
   plugins: [react(), buildVersionPlugin()],
   resolve: {

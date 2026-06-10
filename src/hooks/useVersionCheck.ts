@@ -14,7 +14,19 @@
  */
 import { useEffect, useRef, useState } from 'react';
 
-const LOCAL_BUILD_ID = import.meta.env.VITE_BUILD_ID as string | undefined;
+/**
+ * 빌드 시 vite.config define(__APP_BUILD_ID__) 으로 치환되는 전역 상수.
+ * import.meta.env.* 대신 plain global 을 쓰는 이유: dev 모드에서도 안정적으로 주입되어
+ * dev/E2E 에서 버전 비교가 실제로 동작한다(부모 QA 실패 #1 의 근본원인).
+ */
+declare const __APP_BUILD_ID__: string;
+const LOCAL_BUILD_ID: string | undefined =
+  typeof __APP_BUILD_ID__ !== 'undefined' ? __APP_BUILD_ID__ : undefined;
+
+// E2E/디버깅용: import.meta(직렬화 불가) 없이 page.evaluate 로 로컬 빌드 ID 를 읽도록 노출.
+if (typeof window !== 'undefined') {
+  (window as unknown as { __BUILD_ID__?: string }).__BUILD_ID__ = LOCAL_BUILD_ID;
+}
 
 /** 폴링 주기 — 과하지 않게 10분 (AC-4). visibility/focus 전환 시엔 즉시 체크. */
 const POLL_INTERVAL_MS = 10 * 60 * 1000;
@@ -50,10 +62,14 @@ export function useVersionCheck(): { updateAvailable: boolean } {
     let cancelled = false;
     const controller = new AbortController();
 
-    const check = async () => {
+    // force=true: throttle 무시(최초 마운트 체크). StrictMode dev 이중 마운트에서
+    //   1차 마운트의 fetch 가 cleanup 으로 abort 되며 lastCheckRef 만 갱신해두면,
+    //   2차 마운트의 일반 체크가 MIN_CHECK_GAP 에 막혀 끝까지 fetch 를 못 하는 race 가 있다.
+    //   최초 체크를 강제하면 2차 마운트에서 새 controller 로 정상 fetch 가 완료된다.
+    const check = async (force = false) => {
       if (detectedRef.current) return; // 이미 감지됨 → 추가 폴링 불필요
       const now = Date.now();
-      if (now - lastCheckRef.current < MIN_CHECK_GAP_MS) return;
+      if (!force && now - lastCheckRef.current < MIN_CHECK_GAP_MS) return;
       lastCheckRef.current = now;
 
       const remote = await fetchRemoteBuildId(controller.signal);
@@ -64,8 +80,8 @@ export function useVersionCheck(): { updateAvailable: boolean } {
       }
     };
 
-    // 최초 1회 체크
-    void check();
+    // 최초 1회 체크 (throttle 우회 — 마운트 직후 즉시 1회 보장)
+    void check(true);
 
     const interval = window.setInterval(() => void check(), POLL_INTERVAL_MS);
     const onActive = () => {
