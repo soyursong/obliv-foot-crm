@@ -94,6 +94,9 @@ interface ReservationDraft {
   visit_route?: string;  // AC-5: 초진/예약없이방문 방문경로 (customers.visit_route에 저장)
   referral_name?: string; // T-20260515-foot-REFERRAL-NAME: 지인소개 시 소개자 성함
   existingId?: string;
+  // T-20260610-foot-RESV-OVERHAUL-7 AC-6/AC-7: 예약상세(수정) 모달 푸터 버튼 분기용 상태
+  //   confirmed → [저장][예약취소][예약삭제] / cancelled → [예약복원][저장][예약삭제]
+  status?: Reservation['status'];
   service_id?: string | null;
   customer_id?: string | null;
   /** T-PROGRESS-CHECKPOINT AC-2/3: 예약에 연결할 패키지 ID */
@@ -636,6 +639,8 @@ export default function Reservations() {
   const openEdit = (r: Reservation) => {
     setEditor({
       existingId: r.id,
+      // T-20260610-foot-RESV-OVERHAUL-7 AC-6/AC-7: 푸터 버튼 분기용 상태 전달
+      status: r.status,
       date: r.reservation_date,
       time: r.reservation_time.slice(0, 5),
       name: r.customer_name ?? '',
@@ -942,6 +947,80 @@ export default function Reservations() {
       })();
     }
   }, [cancelTarget, clinic, changedBy]);
+
+  // ── T-20260610-foot-RESV-OVERHAUL-7 AC-6/AC-7: 예약상세(수정) 모달 푸터 액션 ──
+  // 기존 취소(ReservationCancelModal)·hard delete·복원 경로 재사용. 신규 경로 신설 금지.
+
+  // AC-6: 예약취소 — 편집 모달 닫고 기존 취소 사유 모달(ReservationCancelModal) 오픈
+  const handleEditorCancel = useCallback((resvId: string) => {
+    const resv = rows.find((r) => r.id === resvId);
+    if (!resv) { toast.error('예약 정보를 찾을 수 없습니다'); return; }
+    if (resv.status === 'cancelled') { toast.info('이미 취소된 예약입니다'); return; }
+    setEditor(null);
+    setCancelTarget(resv);
+  }, [rows]);
+
+  // AC-6: 예약삭제 — hard delete (handleResvHardDelete 패턴 재사용, 체크인 연결 차단)
+  const handleEditorDelete = useCallback(async (resvId: string) => {
+    const resv = rows.find((r) => r.id === resvId);
+    const name = resv?.customer_name ?? '';
+    if (!window.confirm(`${name}님 예약을 완전 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
+    const { count } = await supabase
+      .from('check_ins')
+      .select('id', { count: 'exact', head: true })
+      .eq('reservation_id', resvId);
+    if ((count ?? 0) > 0) {
+      toast.error('체크인이 연결된 예약은 삭제할 수 없습니다');
+      return;
+    }
+    const { error } = await supabase.from('reservations').delete().eq('id', resvId);
+    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+    setRows((prev) => prev.filter((r) => r.id !== resvId));
+    setEditor(null);
+    toast.success(`${name} 예약 완전 삭제됨`);
+  }, [rows]);
+
+  // AC-7: 예약복원 — cancelled_at/cancel_reason/cancelled_by 초기화 → confirmed 상태 복귀 (상태전이, 비파괴)
+  const handleEditorRestore = useCallback(async (resvId: string) => {
+    const resv = rows.find((r) => r.id === resvId);
+    if (!resv) { toast.error('예약 정보를 찾을 수 없습니다'); return; }
+    // 슬롯 마감 검사 — 같은 시간대 활성 예약이 상한 도달 시 복원 차단 (save/setStatus 패턴 재사용)
+    const maxForSlot = slotMaxFor(resv.reservation_time.slice(0, 5));
+    const { count } = await supabase
+      .from('reservations')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinic_id', resv.clinic_id)
+      .eq('reservation_date', resv.reservation_date)
+      .eq('reservation_time', resv.reservation_time)
+      .neq('status', 'cancelled');
+    if ((count ?? 0) >= maxForSlot) {
+      toast.error(`이 시간대는 마감입니다 (${count}/${maxForSlot}). 다른 시간으로 옮긴 뒤 복원하세요.`);
+      return;
+    }
+    const { error } = await supabase
+      .from('reservations')
+      .update({ status: 'confirmed', cancelled_at: null, cancel_reason: null, cancelled_by: null })
+      .eq('id', resvId);
+    if (error) { toast.error(`복원 실패: ${error.message}`); return; }
+    await supabase.from('reservation_logs').insert({
+      reservation_id: resvId,
+      clinic_id: resv.clinic_id,
+      action: 'restore',
+      old_data: { status: resv.status },
+      new_data: { status: 'confirmed' },
+      changed_by: changedBy,
+    });
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === resvId
+          ? { ...r, status: 'confirmed' as const, cancelled_at: null, cancel_reason: null, cancelled_by: null }
+          : r,
+      ),
+    );
+    // AC-7: 편집 모달의 status도 즉시 confirmed로 전환 → 푸터 버튼 자동 전환
+    setEditor((e) => (e && e.existingId === resvId ? { ...e, status: 'confirmed' } : e));
+    toast.success('예약 복원됨');
+  }, [rows, changedBy]);
 
   return (
     <div className="flex h-full flex-col p-6">
@@ -1401,6 +1480,10 @@ export default function Reservations() {
         changedBy={changedBy}
         authorName={profile?.name ?? ''}
         onClose={() => setEditor(null)}
+        /* T-20260610-foot-RESV-OVERHAUL-7 AC-6/AC-7: 예약상세(수정) 모달 푸터 액션 */
+        onCancelReservation={handleEditorCancel}
+        onDeleteReservation={handleEditorDelete}
+        onRestoreReservation={handleEditorRestore}
         onSaved={() => {
           // T-20260529-foot-RESV-TIME-EDIT-NOSYNC AC-2:
           // 낙관적 즉시 반영 — 편집 모달 닫기 전 timetable 카드 위치 즉시 업데이트
@@ -1546,6 +1629,9 @@ function ReservationEditor({
   authorName,
   onClose,
   onSaved,
+  onCancelReservation,
+  onDeleteReservation,
+  onRestoreReservation,
 }: {
   draft: ReservationDraft | null;
   clinicId: string | undefined;
@@ -1554,6 +1640,10 @@ function ReservationEditor({
   authorName: string;
   onClose: () => void;
   onSaved: () => void;
+  // T-20260610-foot-RESV-OVERHAUL-7 AC-6/AC-7: 예약상세(수정) 모달 푸터 액션 (편집 모드 전용)
+  onCancelReservation?: (resvId: string) => void;
+  onDeleteReservation?: (resvId: string) => void;
+  onRestoreReservation?: (resvId: string) => void;
 }) {
   const [state, setState] = useState<ReservationDraft | null>(draft);
   const [submitting, setSubmitting] = useState(false);
@@ -2471,13 +2561,64 @@ function ReservationEditor({
             )}
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            취소
-          </Button>
-          <Button disabled={submitting || !state.name.trim()} onClick={save}>
-            {submitting ? '저장 중…' : '저장'}
-          </Button>
+        {/* T-20260610-foot-RESV-OVERHAUL-7 AC-6/AC-7: 예약상세(수정) 모달 푸터 버튼 — 상태별 3버튼 */}
+        {/*   정상(confirmed): [저장][예약취소][예약삭제] / 취소(cancelled): [예약복원][저장][예약삭제] */}
+        {/*   신규 등록(existingId 없음): 기존 [취소][저장] 유지 */}
+        <DialogFooter className="flex-wrap gap-2">
+          {!state.existingId ? (
+            <>
+              <Button variant="outline" onClick={onClose}>
+                취소
+              </Button>
+              <Button disabled={submitting || !state.name.trim()} onClick={save}>
+                {submitting ? '저장 중…' : '저장'}
+              </Button>
+            </>
+          ) : state.status === 'cancelled' ? (
+            <>
+              <Button
+                variant="outline"
+                data-testid="resv-edit-restore-btn"
+                disabled={submitting}
+                onClick={() => state.existingId && onRestoreReservation?.(state.existingId)}
+              >
+                예약복원
+              </Button>
+              <Button disabled={submitting || !state.name.trim()} onClick={save}>
+                {submitting ? '저장 중…' : '저장'}
+              </Button>
+              <Button
+                variant="destructive"
+                data-testid="resv-edit-delete-btn"
+                disabled={submitting}
+                onClick={() => state.existingId && onDeleteReservation?.(state.existingId)}
+              >
+                예약삭제
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button disabled={submitting || !state.name.trim()} onClick={save}>
+                {submitting ? '저장 중…' : '저장'}
+              </Button>
+              <Button
+                variant="outline"
+                data-testid="resv-edit-cancel-btn"
+                disabled={submitting}
+                onClick={() => state.existingId && onCancelReservation?.(state.existingId)}
+              >
+                예약취소
+              </Button>
+              <Button
+                variant="destructive"
+                data-testid="resv-edit-delete-btn"
+                disabled={submitting}
+                onClick={() => state.existingId && onDeleteReservation?.(state.existingId)}
+              >
+                예약삭제
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
