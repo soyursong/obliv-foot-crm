@@ -3,10 +3,12 @@
  * T-20260515-foot-CONTEXT-MENU-4ITEM: 4항목 확장
  * T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 항목 추가 (5항목)
  * T-20260606-foot-CTXMENU-SMS-SEND: [문자] 항목 추가 (수납 다음, 예약취소 위) — admin/manager 한정
- * 순서: 고객차트 → 진료차트 → 예약하기 → 수납 → 문자 → 예약 취소
+ * T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-1: [완전 삭제] 항목 추가 (예약취소 아래) — 예약관리 우클릭 parity
+ *   대시보드 ReservationContextMenu의 완전삭제와 동작 동일(hard delete, 이력 미보존). onDeleteReservation 제공 시만 노출.
+ * 순서: 고객차트 → 진료차트 → 예약하기 → 수납 → 문자 → 예약 취소 → 완전 삭제
  */
 import { useEffect, useRef } from 'react';
-import { Ban, BookOpen, CalendarPlus, CreditCard, MessageSquare, Stethoscope } from 'lucide-react';
+import { Ban, BookOpen, CalendarPlus, CreditCard, MessageSquare, Stethoscope, Trash2 } from 'lucide-react';
 import type { CheckIn } from '@/lib/types';
 
 interface Props {
@@ -21,6 +23,8 @@ interface Props {
   onCancelReservation?: (checkIn: CheckIn) => void;
   /** T-20260606-foot-CTXMENU-SMS-SEND: 문자 발송 콜백 — 제공 시(admin/manager)만 메뉴 항목 표시 */
   onSendSms?: (checkIn: CheckIn) => void;
+  /** T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-1: 완전 삭제(hard delete) 콜백 — 제공 시 + reservation_id 있을 때만 표시 */
+  onDeleteReservation?: (checkIn: CheckIn) => void;
 }
 
 export function CustomerQuickMenu({
@@ -33,6 +37,7 @@ export function CustomerQuickMenu({
   onOpenPayment,
   onCancelReservation,
   onSendSms,
+  onDeleteReservation,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -55,7 +60,7 @@ export function CustomerQuickMenu({
   if (!position || !checkIn) return null;
 
   // 화면 경계 보정 — 항목 수에 따른 높이 고려 (문자/예약취소 가변)
-  const itemCount = 4 + (onSendSms ? 1 : 0) + (onCancelReservation && checkIn.reservation_id ? 1 : 0);
+  const itemCount = 4 + (onSendSms ? 1 : 0) + (onCancelReservation && checkIn.reservation_id ? 1 : 0) + (onDeleteReservation && checkIn.reservation_id ? 1 : 0);
   const x = Math.min(position.x, window.innerWidth - 190);
   const y = Math.min(position.y, window.innerHeight - (60 + itemCount * 44));
 
@@ -149,6 +154,23 @@ export function CustomerQuickMenu({
             예약 취소
           </button>
         </>
+      )}
+
+      {/* 7. 완전 삭제 — T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-1: 예약관리 우클릭 parity
+          (대시보드 ReservationContextMenu와 동일 — hard delete, 이력 미보존). 예약 연결 고객에게만 표시. */}
+      {onDeleteReservation && checkIn.reservation_id && (
+        <button
+          data-testid="quick-menu-harddelete-btn"
+          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 active:bg-red-100 transition text-left"
+          onClick={() => {
+            if (!window.confirm('예약을 완전 삭제하시겠습니까? 이력이 남지 않습니다.')) return;
+            onDeleteReservation(checkIn);
+            onClose();
+          }}
+        >
+          <Trash2 className="h-4 w-4 shrink-0" />
+          완전 삭제
+        </button>
       )}
     </div>
   );
