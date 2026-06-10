@@ -395,6 +395,7 @@ function PatientRow({
   isPast = false,
   clinicId,
   currentUserEmail,
+  isToday = false,
 }: {
   row: PatientRow;
   doctorMode: boolean;
@@ -407,6 +408,9 @@ function PatientRow({
   /** T-20260610-foot-DOCPATIENTLIST-EXPAND-COURSE-RXHISTORY: 확장 임상경과(MedicalChartPanel) 컨텍스트. */
   clinicId?: string | null;
   currentUserEmail?: string | null;
+  /** T-20260610-foot-DOCPATIENTLIST-EXPAND-CLINICAL (AC-2/3, 문지은 대표원장): 조회 날짜=오늘 여부.
+   *  당일 접수 환자만 임상경과 인라인 편집 허용 → false(당일 외)면 readOnly로 전달(오기입 방지). */
+  isToday?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const confirm = useConfirmPrescription();
@@ -678,7 +682,11 @@ function PatientRow({
 
           {row.customer_id && clinicId ? (
             <div data-testid="expand-clinical-course">
-              <span className="mb-1 block text-[11px] font-semibold text-muted-foreground">임상경과</span>
+              <span className="mb-1 block text-[11px] font-semibold text-muted-foreground">
+                임상경과
+                {/* T-20260610-foot-DOCPATIENTLIST-EXPAND-CLINICAL (AC-3): 당일 외(과거/미래) 읽기전용 명시. */}
+                {!isToday && <span className="ml-1 font-normal text-muted-foreground/60">(읽기전용 · 당일 환자만 수정)</span>}
+              </span>
               <MedicalChartPanel
                 embed
                 open
@@ -689,6 +697,9 @@ function PatientRow({
                 currentUserEmail={currentUserEmail ?? null}
                 onOpenChange={() => { /* embed clinical: 호출부 토글 없음 — 확장 토글이 가시성 제어 */ }}
                 onSaved={onRefresh}
+                /* T-20260610-foot-DOCPATIENTLIST-EXPAND-CLINICAL (AC-2/3): 당일 접수 환자만 편집 허용.
+                   당일 외(미래 날짜 — 과거는 isPast 분기로 미마운트)는 readOnly=true 로 편집 차단. */
+                readOnly={!isToday}
               />
             </div>
           ) : (
@@ -945,6 +956,7 @@ export default function DoctorPatientList() {
               isPast={isPast}
               clinicId={clinicId}
               currentUserEmail={profile?.email ?? null}
+              isToday={isToday}
             />
           ))}
         </div>
