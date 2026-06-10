@@ -6,7 +6,7 @@
  * AC-5: 빈 슬롯 우클릭 시 미표시 (호출 측 조건부 렌더)
  */
 import { useEffect, useRef } from 'react';
-import { Ban, Trash2 } from 'lucide-react';
+import { Ban, MessageSquare, Trash2 } from 'lucide-react';
 import type { Reservation } from '@/lib/types';
 
 interface Props {
@@ -16,9 +16,12 @@ interface Props {
   onCancelReservation: (reservation: Reservation) => void;
   // T-20260610-foot-RESV-CTXMENU-HARDDELETE: 완전 삭제(hard delete) 콜백 (status 무관 노출)
   onDeleteReservation: (reservation: Reservation) => void;
+  // T-20260610-foot-RESV-OVERHAUL-7 AC-1: [SMS 보내기] parity — CustomerQuickMenu(예약관리)와 동일 항목 미러링.
+  //   제공 시(admin/manager)만 노출. 기존 SendSmsDialog 경로 재사용(신규 SMS 경로 신설 금지).
+  onSendSms?: (reservation: Reservation) => void;
 }
 
-export function ReservationContextMenu({ reservation, position, onClose, onCancelReservation, onDeleteReservation }: Props) {
+export function ReservationContextMenu({ reservation, position, onClose, onCancelReservation, onDeleteReservation, onSendSms }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -59,6 +62,22 @@ export function ReservationContextMenu({ reservation, position, onClose, onCance
       <div className="px-3 py-1.5 text-xs font-semibold text-gray-700 border-b truncate">
         {reservation.customer_name ?? '(이름 없음)'}
       </div>
+
+      {/* T-20260610-foot-RESV-OVERHAUL-7 AC-1: SMS 보내기 — CustomerQuickMenu(예약관리) parity.
+          admin/manager(onSendSms 제공 시)만 노출. 기존 SendSmsDialog 경로 재사용. */}
+      {onSendSms && (
+        <button
+          data-testid="resv-ctx-sms-btn"
+          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-teal-50 active:bg-teal-100 transition text-left"
+          onClick={() => {
+            onSendSms(reservation);
+            onClose();
+          }}
+        >
+          <MessageSquare className="h-4 w-4 text-teal-600 shrink-0" />
+          SMS 보내기
+        </button>
+      )}
 
       {/* 예약 취소 — 취소/노쇼 상태 예약은 비활성 */}
       <button
