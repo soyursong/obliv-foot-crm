@@ -678,7 +678,7 @@ Deno.serve(async (req: Request) => {
   // ── 단계 2: clinic_messaging_capability 조회 ──────────────────
   const { data: cap, error: capErr } = await supabase
     .from("clinic_messaging_capability")
-    .select("enabled, solapi_api_key_vault_name, solapi_secret_vault_name, sender_number, solapi_validation_status, send_start_hour, send_end_hour")
+    .select("enabled, solapi_api_key_vault_name, solapi_secret_vault_name, sender_number, solapi_validation_status, send_start_hour, send_end_hour, sms_display_name")
     .eq("clinic_id", clinic_id)
     .maybeSingle();
 
@@ -707,6 +707,7 @@ Deno.serve(async (req: Request) => {
     solapi_validation_status:  string | null;
     send_start_hour:           number;
     send_end_hour:             number;
+    sms_display_name:          string | null;
   };
 
   // ── T-20260523-crm-SENDER-VALIDATE-GUARD AC-1 AC-2: 발신번호 화이트리스트 가드 ──
@@ -861,7 +862,11 @@ Deno.serve(async (req: Request) => {
     .maybeSingle();
 
   const customerName = (resv?.customers as { name?: string } | null)?.name ?? "";
-  const clinicName   = (resv?.clinics   as { name?: string } | null)?.name ?? "";
+  const clinicLegalName = (resv?.clinics as { name?: string } | null)?.name ?? "";
+  // ── T-20260610-foot-SMS-DISPLAYNAME-SPLIT (AC-3) ──
+  // {지점명}: 문자 전용 표시명(sms_display_name) 우선, 빈값/NULL이면 clinics.name(법정서식 전용 불변) fallback.
+  // 수동 SMS 모달(AC-1)·템플릿 미리보기(AC-2)와 동일 우선순위 → 미리보기==자동발송 정합.
+  const clinicName   = capTyped.sms_display_name || clinicLegalName;
   const resvDate     = resv?.reservation_date
     ? new Date(resv.reservation_date).toLocaleDateString("ko-KR", { month: "long", day: "numeric" })
     : "";
