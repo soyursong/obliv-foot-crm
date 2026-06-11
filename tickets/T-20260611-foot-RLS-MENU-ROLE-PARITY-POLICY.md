@@ -11,7 +11,7 @@ created: 2026-06-11
 phase: 2A
 phase1_change: 0
 phase2a_scope: C그룹 = G2(clinic_events) + G1(check_in_room_logs)
-phase1_gate_v2: planner MSG-20260611-135000-b4sj 수신 — C그룹 GO / D-7 EXCL+LOCK(child) / S1·payments·part_lead HOLD(reporter)
+phase1_gate_v2: planner MSG-20260611-135000-b4sj 수신 — C그룹 GO / D-7 EXCL+LOCK(child) / S1·payments·part_lead HOLD(reporter)  ※D-7 = jnz7 정정으로 SUPERSEDE(아래 policy_correction_jnz7)
 g1_decision: NO-OP 종결 확정 (planner MSG-20260611-144018-eih9 DECISION-REQUEST 판정) — room_logs_clinic_rw[ALL]=user_profiles 기반=read 이미 전 role parity. 별도 SELECT 추가=OR-merge no-op, [ALL] write 동반=AC-5 위반. Phase2-A 제외 + 'already-parity(무변경)' 재분류. 추가작업 0.
 g1_status: WITHDRAWN (마이그 20260611170000_*.sql→.WITHDRAWN 회수, db-gate 증빙 WITHDRAWN 배너, supervisor 미적용)
 g1_write_hardening_note: approved+active 게이트 부재는 user_profiles 스코프라 PHI 누수 없음 = 경미 over-permission. write-track P2 후보로만 기록(지금 강제변경 금지).
@@ -19,7 +19,8 @@ g2_status: submitted-awaiting-supervisor (GO 유지 — commit aaf48c9, planner 
 clinic_events_write_finding: clinic_events insert/update/delete staff.id=auth.uid 비정규(write 전원 차단). G2 read 동일 RC. 우산 AC-5(write 불변) 위반→fold 금지→별도 트랙 분리.
 spawned_children: [T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN (D-7 LOCK), T-20260611-foot-CLINIC-EVENTS-WRITE-RLS-CANONICAL (P1 write canonical, planner eih9 발번)]
 phase2a_final_scope: G2 clinic_events_select 단독 (G1 제외). 동결 해제(planner eih9).
-ws2_child: T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN (D-7 LOCK 집행, db-gate 제출)
+ws2_child: T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN (D-7 ★SUPERSEDE★ — LOCK→OPEN 정정, revise db-gate 제출)
+policy_correction_jnz7: 김주연 총괄 직접(§13.1.A reporter-authorized) — 일마감(daily closing workflow)=직원 업무=staff OPEN / 매출집계(실장별·치료사별 성과, 별도 /sales)=staff EXCL. D-7 verdict(daily_closings/closing_manual=EXCL+LOCK) SUPERSEDE. mig 20260611180000=WITHDRAWN, 20260611200000(canonical, over-open만 제거)으로 교체.
 hold_reporter: D-1~D5 payments/package_payments/payment_codes/insurance · part_lead 통계 · D-9 chart_doctor_memos (reporter 김주연 답변 전 OPEN 금지)
 db_gate_status: submitted-awaiting-supervisor
 data_architect_consult: not-required (RLS only, no new column/table/enum)

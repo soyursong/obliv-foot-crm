@@ -1,7 +1,8 @@
 /**
- * T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN — DRY-RUN
- * 매출집계 read 잠금(daily_closings + closing_manual_payments) 마이그를 트랜잭션 안에서
+ * T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN — DRY-RUN (REVISE — policy_correction_jnz7)
+ * 일마감 workflow read 보안 하드닝(daily_closings + closing_manual_payments) 마이그를 트랜잭션 안에서
  * 적용 → 결과 정책 검증 → ROLLBACK (영속 변경 없음).
+ * ★정정: over-open(true) → canonical clinic-scoped 만. 일마감 수행 role(therapist/coordinator/staff) 잠금 0.★
  * 실제 prod 적용은 supervisor DB 게이트.
  */
 import pg from 'pg';
@@ -18,7 +19,7 @@ const client = new Client({ host: 'aws-1-ap-southeast-1.pooler.supabase.com', po
 await client.connect();
 console.log(`✅ DB 연결  ${new Date().toISOString()}  (DRY-RUN — 끝에서 ROLLBACK)\n`);
 
-const migPath = 'supabase/migrations/20260611180000_closing_revenue_read_lock.sql';
+const migPath = 'supabase/migrations/20260611200000_closing_workflow_read_canonical.sql';
 const sql = fs.readFileSync(migPath, 'utf8')
   .split('\n').filter(l => !/^\s*(BEGIN|COMMIT)\s*;/i.test(l)).join('\n');
 
@@ -45,17 +46,19 @@ try {
   const dcSel = dcAfter.filter(r=>r.cmd==='SELECT');
   const cmSel = cmAfter.filter(r=>r.cmd==='SELECT');
 
-  // daily_closings: over-open / therapist 제거, coordinator 제거, staff_read 유지
+  // daily_closings: over-open 제거 → canonical(approved+clinic). ★일마감 수행 role 잠금 0: therapist/coordinator/staff read 유지.★
   const noOverOpen = !dcSel.some(r => norm(r.qual)==='true');
-  const noTherapist = !dcSel.some(r => r.policyname==='daily_closings_therapist_read');
+  const dcRead = dcSel.find(r => r.policyname==='daily_closings_read');
+  const dcReadCanonical = dcRead && /is_approved_user\(\)/.test(dcRead.qual) && /current_user_clinic_id\(\)/.test(dcRead.qual);
+  const therapistKept = dcSel.some(r => r.policyname==='daily_closings_therapist_read');   // 정정: 유지
   const fin = dcSel.find(r => r.policyname==='daily_closings_finance_read');
-  const finNoCoord = fin && /is_consultant_or_above\(\)/.test(fin.qual) && !/is_coordinator_or_above/.test(fin.qual);
+  const finCoordKept = fin && /is_coordinator_or_above/.test(fin.qual);                    // 정정: coordinator 유지
   const staffKept = dcSel.some(r => r.policyname==='daily_closings_staff_read' && /is_floor_staff\(\)/.test(r.qual));
 
-  // closing_manual: over-open 제거 → consultant_or_above ∪ floor_staff
+  // closing_manual: over-open 제거 → canonical(approved+clinic)
   const cmRead = cmSel.find(r=>r.policyname==='closing_manual_read');
-  const cmLocked = cmRead && norm(cmRead.qual)!=='true'
-    && /is_consultant_or_above\(\)/.test(cmRead.qual) && /is_floor_staff\(\)/.test(cmRead.qual);
+  const cmCanonical = cmRead && norm(cmRead.qual)!=='true'
+    && /is_approved_user\(\)/.test(cmRead.qual) && /current_user_clinic_id\(\)/.test(cmRead.qual);
 
   // AC-4: 쓰기 정책 불변(daily_closings ALL ×2, closing_manual insert/update/delete)
   const writeUnchanged = (tBefore, tAfter) => {
@@ -68,19 +71,20 @@ try {
   const dcWriteOk = writeUnchanged(dcBefore, dcAfter);
   const cmWriteOk = writeUnchanged(cmBefore, cmAfter);
 
-  console.log('\n── 회귀가드 자동 점검 ──');
+  console.log('\n── 회귀가드 자동 점검 (정정: over-open 제거 + 일마감 role OPEN 유지) ──');
   console.log(`  daily_closings over-open(USING true) 제거              : ${noOverOpen ? '✅' : '❌'}`);
-  console.log(`  daily_closings therapist_read 회수                     : ${noTherapist ? '✅' : '❌'}`);
-  console.log(`  daily_closings finance_read coordinator 회수           : ${finNoCoord ? '✅' : '❌'}`);
+  console.log(`  daily_closings_read canonical(approved+clinic) 전환    : ${dcReadCanonical ? '✅' : '❌'}`);
+  console.log(`  daily_closings therapist_read 유지(일마감 OPEN)        : ${therapistKept ? '✅' : '❌'}`);
+  console.log(`  daily_closings finance_read coordinator 유지           : ${finCoordKept ? '✅' : '❌'}`);
   console.log(`  daily_closings staff_read(is_floor_staff) 유지         : ${staffKept ? '✅' : '❌'}`);
-  console.log(`  closing_manual over-open 회수→consultant∪floor 게이트  : ${cmLocked ? '✅' : '❌'}`);
+  console.log(`  closing_manual over-open 제거→canonical(approved+clinic): ${cmCanonical ? '✅' : '❌'}`);
   console.log(`  AC-4 daily_closings 쓰기(ALL×2) 불변                   : ${dcWriteOk ? '✅' : '❌'}`);
   console.log(`  AC-4 closing_manual 쓰기(insert/update/delete) 불변    : ${cmWriteOk ? '✅' : '❌'}`);
 
-  const pass = noOverOpen && noTherapist && finNoCoord && staffKept && cmLocked && dcWriteOk && cmWriteOk;
+  const pass = noOverOpen && dcReadCanonical && therapistKept && finCoordKept && staffKept && cmCanonical && dcWriteOk && cmWriteOk;
   await client.query('ROLLBACK');
   console.log('\n↩️  ROLLBACK 완료 — prod 영속 변경 없음.');
-  console.log(pass ? '\n✅ DRY-RUN PASS — 매출 read 잠금/쓰기 불변 모두 통과.' : '\n❌ DRY-RUN FAIL — 위 항목 확인.');
+  console.log(pass ? '\n✅ DRY-RUN PASS — over-open 제거 + 일마감 role OPEN 유지 + 쓰기 불변 모두 통과.' : '\n❌ DRY-RUN FAIL — 위 항목 확인.');
   if (!pass) process.exitCode = 1;
 } catch (e) {
   await client.query('ROLLBACK').catch(()=>{});

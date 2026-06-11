@@ -197,8 +197,8 @@ function App() {
                 <Route path="packages" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist', 'staff', 'part_lead']}><Packages /></RoleGuard>} />
                 {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 직원·공간 접근 */}
                 <Route path="staff" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><Staff /></RoleGuard>} />
-                {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1 → T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN: 매출집계=EXCL(민감). coordinator/therapist 일마감 노출 회수(김주연 총괄 escalation). consultant(finance)/desk 한정. */}
-                <Route path="closing" element={<RoleGuard roles={['admin', 'manager', 'consultant']}><Closing /></RoleGuard>} />
+                {/* T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN(policy_correction_jnz7 — 김주연 총괄 직접): 일마감=직원 업무(daily closing workflow) → 전직원(8역할, tm 제외) OPEN. 이전 회수는 '일마감'을 '매출집계'로 오분류한 것 정정. 매출집계(실장별·치료사별 성과)는 별도 /admin/sales(admin/manager EXCL). AdminLayout nav + PERM_MATRIX.closing 3-gate 파리티(메뉴 보이는데 route 튕김=NAV-BOUNCE 차단). */}
+                <Route path="closing" element={<RoleGuard roles={['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'staff']}><Closing /></RoleGuard>} />
                 {/* AC-6: 통계 — consultant/coordinator/therapist 직접 URL 차단 유지 */}
                 {/* T-20260610-foot-STAFF-ROLE-TM-ADD AC6 (박민지 팀장 C안): TM → 통계 route 접근 허용.
                     통계 내부 탭 가시성(TM집계 탭만)은 자매 티켓 STATS-TM-AGGREGATE-TAB 에서 처리. */}
