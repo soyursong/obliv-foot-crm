@@ -1042,7 +1042,7 @@ ${COMMON_STYLE}
 
 const REFERRAL_LETTER_HTML = `
 ${COMMON_STYLE}
-<!-- T-20260611-foot-REFERRAL-PRINT-CLIP-CENTER: width 188mm + margin:0 auto 로 A4(210mm) 중앙 배치 + 좌우 11mm 여백 확보(프린터 unprintable edge clipping 제거) --><div class="form-wrap" style="border:1px solid #000; padding:0; width:188mm; max-width:188mm; margin:0 auto;">
+<!-- T-20260611-foot-REFERRAL-PRINT-CLIP-CENTER: width 188mm + margin:0 auto 로 A4(210mm) 중앙 배치 + 좌우 11mm 여백 확보(프린터 unprintable edge clipping 제거) --><div class="form-wrap" style="border:1px solid #000; padding:0; width:188mm; max-width:188mm; margin:12mm auto;"><!-- T-20260611-foot-REFERRAL-FORM-CENTER-CLIP: 좌우(margin auto)와 동일 논리로 상하 12mm 여백 추가(0→12mm). form-wrap이 page 최상단(top 0mm)에 붙어 프린터 unprintable 상단영역이 제목을 자르던 상단 짤림 제거 + 하단 18mm 클리어런스 확보. 의뢰서 한정 변경. -->
   <div style="border-bottom:1px solid #000; padding:10px 14px 8px;">
     <div class="title" style="font-size:18pt; letter-spacing:14px; padding:8px 0 6px;">진 료 의 뢰 서</div>
   </div>
