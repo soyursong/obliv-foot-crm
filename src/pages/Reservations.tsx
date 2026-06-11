@@ -1133,28 +1133,32 @@ export default function Reservations() {
             경과분석
             {filterProgress && <span className="ml-0.5 opacity-70">ON</span>}
           </button>
-          {/* T-20260513-foot-RESV-PLUS-PHONE-SEARCH: 페이지 상단 새 예약 버튼 — InlinePatientSearch(phone) 연결 */}
-          <Button
-            size="sm"
-            onClick={() => {
-              const today = format(new Date(), 'yyyy-MM-dd');
-              setEditor({
-                date: today,
-                time: '10:00',
-                name: '',
-                phone: '',
-                visit_type: 'returning',
-                memo: '',
-                booking_memo: '',
-                visit_route: '',
-                customer_id: null,
-              });
-            }}
-            className="gap-1.5"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            새 예약
-          </Button>
+          {/* T-20260513-foot-RESV-PLUS-PHONE-SEARCH: 페이지 상단 새 예약 버튼 — InlinePatientSearch(phone) 연결
+              T-20260611-foot-PROGRESS-CAL-SESSION-AUTOLINK §2: 경과분석 뷰(조회 전용)에서는 예약생성 진입 숨김.
+              filterProgress OFF 복귀 시 즉시 재노출(영구 제거 아님). */}
+          {!filterProgress && (
+            <Button
+              size="sm"
+              onClick={() => {
+                const today = format(new Date(), 'yyyy-MM-dd');
+                setEditor({
+                  date: today,
+                  time: '10:00',
+                  name: '',
+                  phone: '',
+                  visit_type: 'returning',
+                  memo: '',
+                  booking_memo: '',
+                  visit_route: '',
+                  customer_id: null,
+                });
+              }}
+              className="gap-1.5"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              새 예약
+            </Button>
+          )}
           <div className="flex rounded-md border">
             <button
               onClick={() => setViewMode('day')}
@@ -1332,7 +1336,10 @@ export default function Reservations() {
                                   );
                                 })()}
 
-                                {/* T-PROGRESS-CHECKPOINT AC-4: filterProgress 시 경과분석 대상만 표시 */}
+                                {/* T-PROGRESS-CHECKPOINT AC-4: filterProgress 시 경과분석 대상만 표시
+                                    T-20260611-foot-PROGRESS-CAL-SESSION-AUTOLINK §3 자동연동: 체크포인트 태그
+                                    (progress_check_required=TRUE, 예약 생성 시 plan.session_milestone 도달로 자동 부여)
+                                    환자만 노출. PROGRESS-CHECKPOINT 태그 로직 그대로 재사용 — read-only 필터, 신설 없음. */}
                                 {(filterProgress ? list.filter(r => r.progress_check_required) : list).map((r) => (
                                   <div
                                     key={r.id}
@@ -1495,15 +1502,24 @@ export default function Reservations() {
                                         📝 {r.booking_memo}
                                       </div>
                                     )}
-                                    {/* T-PROGRESS-CHECKPOINT AC-3/4: 경과분석 배지 */}
+                                    {/* T-PROGRESS-CHECKPOINT AC-3/4: 경과분석 배지
+                                        T-20260611-foot-PROGRESS-CAL-SESSION-AUTOLINK §1 회차 명확화:
+                                        progress_check_label(=plan label, 예 "6회 경과분석")에 '체크포인트' 접미를 붙여
+                                        해당 항목이 '몇 회차 경과분석 체크포인트'인지 한눈에. 회차 카운트는
+                                        PROGRESS-CHECKPOINT plan.session_milestone(label에 반영) 재사용 — 신설 없음. */}
                                     {r.progress_check_required && (
                                       <div
-                                        className="inline-flex items-center gap-0.5 rounded border border-teal-300 bg-teal-100 px-1 text-[9px] font-medium text-teal-800 leading-none py-0.5 mt-0.5"
+                                        className={cn(
+                                          'inline-flex items-center gap-0.5 rounded border border-teal-300 bg-teal-100 px-1 font-medium text-teal-800 leading-none py-0.5 mt-0.5',
+                                          // 경과분석 뷰에서는 회차를 더 또렷하게(약간 큰 글자 + 굵게)
+                                          filterProgress ? 'text-[10px] font-semibold' : 'text-[9px]',
+                                        )}
                                         data-testid={`progress-badge-${r.id}`}
-                                        title={r.progress_check_label ?? '경과분석 필요'}
+                                        title={`${r.progress_check_label ?? '경과분석'} — 경과분석 체크포인트`}
                                       >
                                         <TrendingUp className="h-2.5 w-2.5" />
                                         {r.progress_check_label ?? '경과분석'}
+                                        <span className="opacity-70">체크포인트</span>
                                       </div>
                                     )}
                                     {/* T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS AC-5: 우측 하단 @예약등록자.
@@ -1536,7 +1552,12 @@ export default function Reservations() {
                                     </button>
                                   ) : null;
                                 })()}
-                                {!full ? (
+                                {/* T-20260611-foot-PROGRESS-CAL-SESSION-AUTOLINK §2 (+)예약생성 제거:
+                                    경과분석 뷰(filterProgress ON)는 조회 전용 → 슬롯 예약생성(+) 버튼 숨김.
+                                    BATCH-CHECKIN-LEAK 선례와 동일 가드(렌더만 차단, openNewSlot 로직 불변).
+                                    일반 달력(filterProgress OFF)은 기존대로 (+) 노출 — 유일 진입점 아님(상단 '새 예약'·
+                                    고객관리·대시보드·차트 등 보존). */}
+                                {!filterProgress && !full ? (
                                   <button
                                     data-testid={`slot-plus-${dateStr}-${time}`}
                                     onClick={(e) => {
@@ -1554,7 +1575,7 @@ export default function Reservations() {
                                   >
                                     <Plus className="h-3 w-3" />
                                   </button>
-                                ) : list.length === 0 ? (
+                                ) : full && list.length === 0 ? (
                                   <span className="m-auto text-xs font-medium text-red-500">마감</span>
                                 ) : null}
                                 {clinic && activeCount > 0 && (
