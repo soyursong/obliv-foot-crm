@@ -16,7 +16,7 @@
 //   ※ 레거시 TEXT services.diagnosis_folder 는 안전망 공존(본 화면은 더 이상 쓰지 않음).
 //   폴더 CRUD/배치 훅은 @/lib/diagnosisFolders (drugFolders.ts 미러)에서 재사용.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
@@ -66,6 +66,12 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
   useDiagnosisFolders,
@@ -74,6 +80,7 @@ import {
   useUpdateDiagnosisFolder,
   useDeleteDiagnosisFolder,
   useAssignDiagnosisToFolder,
+  useReorderDiagnoses,
   type DiagnosisFolderNode,
 } from '@/lib/diagnosisFolders';
 import {
@@ -206,43 +213,52 @@ function useDeleteDx() {
 }
 
 // ---------------------------------------------------------------------------
-// 우측: 드래그 가능한 상병 항목 행 (AC-2 — 좌측 폴더로 끌어 배치)
+// 우측: 상병 항목 행
+//   드래그 2종(단일 핸들):
+//     ① 좌측 폴더로 끌어 배치 (AC-2, useDraggable — 항상 가능)
+//     ② 폴더 내 위/아래 순서변경 (T-...-DIAGNAMES-FOLDER-ITEM-REORDER, useSortable —
+//        폴더 선택 + 추가순 오름차순일 때만. 그 외엔 ①만 동작)
+//   표현부(DxItemView)는 공유, dnd wiring(ref/style/handle)만 두 변형이 주입.
 // ---------------------------------------------------------------------------
-interface DraggableDxItemProps {
+interface DxItemViewProps {
   d: Diagnosis;
   canManage: boolean;
   delPending: boolean;
   onEdit: (d: Diagnosis) => void;
   onDelete: (id: string, name: string) => void;
+  // dnd wiring (변형이 주입)
+  setNodeRef: (el: HTMLElement | null) => void;
+  style: CSSProperties;
+  isDragging: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handleAttributes: Record<string, any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handleListeners: Record<string, any> | undefined;
+  reorderable: boolean; // true면 핸들 안내문구 = 순서변경 포함
 }
 
-function DraggableDxItem({ d, canManage, delPending, onEdit, onDelete }: DraggableDxItemProps) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: d.id,
-    disabled: !canManage,
-  });
-
+function DxItemView({
+  d, canManage, delPending, onEdit, onDelete,
+  setNodeRef, style, isDragging, handleAttributes, handleListeners, reorderable,
+}: DxItemViewProps) {
   return (
     <div
       ref={setNodeRef}
-      style={{
-        transform: CSS.Translate.toString(transform),
-        opacity: isDragging ? 0.4 : 1,
-        zIndex: isDragging ? 30 : undefined,
-      }}
+      style={style}
       className={`rounded-lg border bg-card px-4 py-2.5 flex items-center justify-between ${isDragging ? 'shadow-md' : ''}`}
       data-testid="dx-item"
+      data-dx-id={d.id}
     >
       <div className="flex items-center gap-2 min-w-0">
         {/* 드래그 핸들 — 관리권한 전용, touch-none(태블릿 탭 오인식 방지) */}
         {canManage && (
           <button
-            {...attributes}
-            {...listeners}
+            {...handleAttributes}
+            {...handleListeners}
             type="button"
             tabIndex={-1}
             className="flex items-center justify-center min-w-[28px] min-h-[28px] -ml-1 rounded text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none shrink-0"
-            title="드래그하여 왼쪽 폴더로 옮기기"
+            title={reorderable ? '드래그: 위/아래 순서변경 또는 왼쪽 폴더로 옮기기' : '드래그하여 왼쪽 폴더로 옮기기'}
             onClick={(e) => e.stopPropagation()}
             data-testid="dx-item-handle"
           >
@@ -278,6 +294,60 @@ function DraggableDxItem({ d, canManage, delPending, onEdit, onDelete }: Draggab
         </div>
       )}
     </div>
+  );
+}
+
+type DxItemWrapProps = Omit<
+  DxItemViewProps,
+  'setNodeRef' | 'style' | 'isDragging' | 'handleAttributes' | 'handleListeners' | 'reorderable'
+>;
+
+// 변형 ① 폴더 배치 전용 (전체목록 뷰 · 비-추가순 정렬에서 사용). 기존 동작 보존.
+function DraggableDxItem(props: DxItemWrapProps) {
+  const { d, canManage } = props;
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: d.id,
+    disabled: !canManage,
+  });
+  return (
+    <DxItemView
+      {...props}
+      setNodeRef={setNodeRef}
+      style={{
+        transform: CSS.Translate.toString(transform),
+        opacity: isDragging ? 0.4 : 1,
+        zIndex: isDragging ? 30 : undefined,
+      }}
+      isDragging={isDragging}
+      handleAttributes={attributes}
+      handleListeners={listeners}
+      reorderable={false}
+    />
+  );
+}
+
+// 변형 ② 폴더 내 순서변경 + 폴더 배치 (폴더 선택 + 추가순 오름차순일 때). useSortable.
+function SortableDxItem(props: DxItemWrapProps) {
+  const { d, canManage } = props;
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: d.id,
+    disabled: !canManage,
+  });
+  return (
+    <DxItemView
+      {...props}
+      setNodeRef={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+        zIndex: isDragging ? 30 : undefined,
+      }}
+      isDragging={isDragging}
+      handleAttributes={attributes}
+      handleListeners={listeners}
+      reorderable
+    />
   );
 }
 
@@ -651,6 +721,7 @@ export default function DiagnosisNamesTab() {
   const updateFolder = useUpdateDiagnosisFolder();
   const deleteFolder = useDeleteDiagnosisFolder();
   const assign = useAssignDiagnosisToFolder();
+  const reorder = useReorderDiagnoses(clinicId);
 
   // 항목 등록/수정 다이얼로그
   const [open, setOpen] = useState(false);
@@ -721,6 +792,13 @@ export default function DiagnosisNamesTab() {
     () => folders.find((f) => f.id === selectedKey) ?? null,
     [folders, selectedKey],
   );
+
+  // 폴더 내 순서변경(드래그) 활성 조건 (T-...-DIAGNAMES-FOLDER-ITEM-REORDER):
+  //   특정 폴더 선택 + 추가순 오름차순(= sort_order 정본 순서 = 화면순서) + 관리권한.
+  //   AC-4 별 트랙: 전체목록(ALL)·가나다순·내림차순에서는 순서변경 비활성(폴더 배치 드래그만).
+  //     ↳ 화면순서가 sort_order 와 단조 일치하지 않으면 재번호가 왜곡되므로 정본 순서에서만 허용.
+  const reorderActive =
+    canManage && selectedKey !== ALL_KEY && dxSortBy === 'added' && dxSortDir === 'asc';
 
   function nextSortOrder() {
     return items.length === 0 ? 0 : Math.max(...items.map((d) => d.sort_order ?? 0)) + 10;
@@ -890,9 +968,20 @@ export default function DiagnosisNamesTab() {
     if (!over || !canManage) return;
     const serviceId = String(active.id);
     const overKey = String(over.id);
-    const targetFolderId = overKey === ALL_KEY ? null : overKey;
+    if (serviceId === overKey) return; // 제자리
+
     const item = items.find((d) => d.id === serviceId);
     if (!item) return;
+
+    // 드롭 대상이 다른 상병 항목 → 폴더 내 순서변경(reorder). 폴더 노드/전체목록이 아닐 때만.
+    const isItemTarget = overKey !== ALL_KEY && items.some((d) => d.id === overKey);
+    if (isItemTarget) {
+      if (reorderActive) handleReorder(serviceId, overKey);
+      return;
+    }
+
+    // 드롭 대상이 폴더 노드/전체목록 → 폴더 배치(이동/해제). 기존 동작(AC-2 별건) 보존.
+    const targetFolderId = overKey === ALL_KEY ? null : overKey;
     if ((item.diagnosis_folder_id ?? null) === targetFolderId) return; // 변화 없음
     // AC-3: 전체목록(null) 드롭 = 폴더 분류 해제. 폴더 드롭 = 해당 폴더로 이동.
     const okMsg = targetFolderId
@@ -905,6 +994,24 @@ export default function DiagnosisNamesTab() {
         onError: (err: Error) => toast.error(`이동 실패: ${err.message}`),
       },
     );
+  }
+
+  // 폴더 내 항목 순서변경 — 현재 폴더의 가시 항목(추가순 asc = 정본 순서)을 arrayMove 후
+  //   0,10,20… 으로 재번호. 값이 바뀐 항목만 services.sort_order PATCH (AC-2/AC-3/AC-5).
+  function handleReorder(activeId: string, overId: string) {
+    const ids = visibleItems.map((d) => d.id);
+    const from = ids.indexOf(activeId);
+    const to = ids.indexOf(overId);
+    if (from === -1 || to === -1 || from === to) return;
+    const reordered = arrayMove(visibleItems, from, to);
+    const updates = reordered
+      .map((d, idx) => ({ id: d.id, sort_order: idx * 10, prev: d.sort_order ?? null }))
+      .filter((u) => u.prev !== u.sort_order)
+      .map(({ id, sort_order }) => ({ id, sort_order }));
+    if (updates.length === 0) return;
+    reorder.mutate(updates, {
+      onError: (err: Error) => toast.error(`순서 변경 실패: ${err.message}`),
+    });
   }
 
   if (isLoading || foldersLoading)
@@ -1054,6 +1161,19 @@ export default function DiagnosisNamesTab() {
               </div>
             </div>
 
+            {/* 폴더 내 순서변경 안내 (AC-1) — 특정 폴더 + 관리권한 + 항목 있을 때만 */}
+            {canManage && selectedKey !== ALL_KEY && visibleItems.length > 0 && (
+              reorderActive ? (
+                <p className="px-1 mb-2 text-[11px] text-teal-700" data-testid="dx-reorder-hint">
+                  손잡이(⋮⋮)를 잡고 위/아래로 끌면 이 폴더 안에서 순서가 바뀝니다.
+                </p>
+              ) : (
+                <p className="px-1 mb-2 text-[11px] text-muted-foreground" data-testid="dx-reorder-hint-disabled">
+                  순서를 바꾸려면 정렬을 ‘추가순 · 오름차순(↑)’으로 두세요.
+                </p>
+              )
+            )}
+
             {visibleItems.length === 0 ? (
               <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
                 {items.length === 0
@@ -1062,8 +1182,28 @@ export default function DiagnosisNamesTab() {
                     ? '등록된 상병명이 없습니다.'
                     : '이 폴더에 분류된 상병명이 없습니다. 전체목록에서 상병을 끌어다 놓으세요.'}
               </div>
+            ) : reorderActive ? (
+              // 폴더 선택 + 추가순 오름차순 → 폴더 내 드래그 순서변경 활성 (AC-1)
+              <SortableContext
+                items={visibleItems.map((d) => d.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-1.5" data-testid="dx-folder-items" data-reorderable="true">
+                  {visibleItems.map((d) => (
+                    <SortableDxItem
+                      key={d.id}
+                      d={d}
+                      canManage={canManage}
+                      delPending={del.isPending}
+                      onEdit={openEdit}
+                      onDelete={handleDelete}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
             ) : (
-              <div className="space-y-1.5" data-testid="dx-folder-items">
+              // 전체목록/가나다순/내림차순 → 폴더 배치 드래그만(순서변경 비활성). 기존 동작 보존.
+              <div className="space-y-1.5" data-testid="dx-folder-items" data-reorderable="false">
                 {visibleItems.map((d) => (
                   <DraggableDxItem
                     key={d.id}
