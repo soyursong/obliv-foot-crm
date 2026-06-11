@@ -3,7 +3,11 @@ id: T-20260611-foot-CLINIC-EVENTS-WRITE-RLS-CANONICAL
 domain: foot
 type: rls-write-fix
 priority: P1
-status: db-gate-submitted
+status: deploy-ready
+qa_result: pass
+deploy_commit: b735505e036a
+deployed_at: 2026-06-11T15:24:00+09:00
+bundle_hash: n/a-db-rls-only
 db_change: true
 gate: GO
 owner: agent-fdd-dev-foot
@@ -11,7 +15,7 @@ created: 2026-06-11
 parent: T-20260611-foot-RLS-MENU-ROLE-PARITY-POLICY
 spawned_by: planner MSG-20260611-144018-eih9
 data_architect_consult: not-required (RLS only, no new column/table/enum)
-db_gate_status: submitted-awaiting-supervisor
+db_gate_status: applied-persisted
 ---
 
 # T-20260611-foot-CLINIC-EVENTS-WRITE-RLS-CANONICAL — clinic_events 쓰기 RLS canonical 정렬
@@ -54,3 +58,16 @@ raw dump (scripts/audit_out/T-20260611-RLS-PARITY_phase1_dump.txt) 근거.
 - §S2.4: RLS only, 신규 컬럼/테이블/enum 0 → data-architect CONSULT 불요. 신규 npm 0.
 
 > db_change=true → **supervisor DB 게이트 적용 전까지 deploy-ready 마킹 금지.** signals 는 db-gate 제출만 기록.
+
+## 후속 업데이트 (2026-06-11 15:24 KST)
+- 출처: dev-foot (supervisor FIX-REQUEST MSG-20260611-150646-eq45 처리)
+- 사유: phase1 QA fail `deploy_blocked_shadow_mode` — `supabase db push` 가 SHADOW_MODE dry-run 만 수행 → DB 미적용.
+- 조치: dev-foot 직접 pg 연결(pooler)로 `20260611190000_clinic_events_write_rls_canonical.sql` **APPLY(COMMIT) + 별도 신규 연결 영속검증**.
+  - apply 스크립트: `scripts/T-20260611-foot-CLINIC-EVENTS-WRITE-RLS-CANONICAL_apply.mjs` (commit b735505e036a)
+  - 적용 전 dry-run 재확인 PASS(6/6) → 실적용 → 영속검증 PASS(5/5).
+- 적용 후 pg_policies (clinic_events, 신규 연결 확인):
+  - `clinic_events_insert [INSERT] WITH CHECK (is_approved_user() AND clinic_id = current_user_clinic_id())`
+  - `clinic_events_update [UPDATE] USING + WITH CHECK (is_approved_user() AND clinic_id = current_user_clinic_id())`
+  - `clinic_events_delete [DELETE] USING (is_approved_user() AND clinic_id = current_user_clinic_id())`
+  - `clinic_events_select [SELECT]` 미접촉(staff 기반 그대로 — G2 read fix 20260611160000 별도 트랙).
+- status: db-gate-submitted → **deploy-ready** 전환. supervisor 재검 요청(re-run).
