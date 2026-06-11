@@ -121,4 +121,24 @@ test.describe('T-20260611-foot-DOC-REISSUE-CONTENT-MISSING — 재발급 내용 
     expect(PANEL_SRC).toContain('bindHtmlTemplate');
     expect(PANEL_SRC).toContain('openBatchPrintWindow');
   });
+
+  // ── 진짜 근인(diag3 입증): 단건 발행(IssueDialog.allValues)이 async state(footBillingItems·
+  //    serviceItems·autoValues·grade) 의존 → 로드 미완 시 빈 items_html·total 0 스냅샷 저장/출력.
+  //    bill_detail "진료 항목 없음"·bill_receipt total=0 스냅샷이 check_in_services 보유 케이스에서도
+  //    저장돼 있었음(=소스 있으나 state 비어 폴백 미발동). billingReady 게이트로 race 자체를 제거. ──
+  test('AC-1/2 근인: IssueDialog 콘텐츠 4소스 로드 게이트(billingReady)로 출력 차단', () => {
+    // billingReady state 가 선언되어야 한다.
+    expect(PANEL_SRC).toContain('billingReady');
+    expect(PANEL_SRC).toContain('setBillingReady');
+
+    // 4소스(serviceItems·autoValues·footBilling·grade)를 Promise.allSettled 로 모아 게이트 set.
+    expect(PANEL_SRC).toMatch(/Promise\.allSettled\(\[[\s\S]*?\]\)\.then\(\(\)\s*=>\s*\{[\s\S]*?setBillingReady\(true\)/);
+
+    // 인쇄/미리보기 버튼이 billingReady 로 게이트 — race 중 출력 행위 자체 불가.
+    expect(PANEL_SRC).toContain('disabled={saving || !billingReady}');
+    expect(PANEL_SRC).toContain('onClick={renderPreview} disabled={!billingReady}');
+
+    // handlePrint 방어 가드(이중 안전장치): 로드 미완 시 저장/출력 중단.
+    expect(PANEL_SRC).toMatch(/if\s*\(!billingReady\)\s*\{[\s\S]*?return;/);
+  });
 });
