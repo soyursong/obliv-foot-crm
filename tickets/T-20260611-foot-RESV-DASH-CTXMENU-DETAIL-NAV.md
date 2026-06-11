@@ -11,7 +11,7 @@ db_changed: false
 db_migration: none
 db_gate: N/A
 scenario_count: 2
-commit: PENDING
+commit: dcf898d
 spec: tests/e2e/T-20260611-foot-RESV-DASH-CTXMENU-DETAIL-NAV.spec.ts
 build: pass
 source_msg: MSG-20260611-181147-rgzg
