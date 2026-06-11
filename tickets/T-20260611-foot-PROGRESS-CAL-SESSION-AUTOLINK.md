@@ -11,7 +11,7 @@ spec_added: tests/e2e/T-20260611-foot-PROGRESS-CAL-SESSION-AUTOLINK.spec.ts
 db_changed: false
 rollback_sql: ""
 risk_level: GO_WARN (ask2 유일경로 가드 통과 + ask3 태그필터 재사용 확인)
-commit_sha: <pending>
+commit_sha: c54bb16
 ---
 
 ## 요청
