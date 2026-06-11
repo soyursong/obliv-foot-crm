@@ -4937,6 +4937,22 @@ export default function Dashboard() {
       });
       setStageStartMap((prev) => new Map(prev).set(ci.id, now));
     }
+    // T-20260611-foot-CHECKIN-CANCEL-RENAME-RESTORE: '체크인 취소' = 체크인 역전이(soft).
+    //   check_in row는 status='cancelled'로 보존(위 update). 추가로, 체크인 시 'checked_in'으로
+    //   전이됐던 원본 예약을 'confirmed'(예약)로 되돌려 통합시간표 원래 슬롯에 복구한다.
+    //   (CHECKIN-DASHBOARD-SYNC: 체크인 시 reservations→'checked_in' 전이의 역방향.
+    //    CANCEL-CUST-RETAIN-AUDIT canon: 삭제 아님 = row 보존 + 역연산.)
+    if (newStatus === 'cancelled' && ci.reservation_id) {
+      const { error: resvErr } = await supabase
+        .from('reservations')
+        .update({ status: 'confirmed' })
+        .eq('id', ci.reservation_id);
+      if (resvErr) {
+        toast.error(`예약 복구 실패: ${resvErr.message}`);
+      } else {
+        fetchTimelineReservations(); // 통합시간표 즉시 복구 반영
+      }
+    }
     // AC-4: 수납대기 이동 시 PaymentMiniWindow 직접 오픈
     if (newStatus === 'payment_waiting') setMiniPayTarget({ ...ci, status: newStatus });
     if (newStatus === 'done' && ci.package_id) {
@@ -5577,6 +5593,9 @@ export default function Dashboard() {
   const checkedInResvIds = useMemo(() => {
     const s = new Set<string>();
     for (const ci of rows) {
+      // T-20260611-foot-CHECKIN-CANCEL-RENAME-RESTORE: 체크인 취소(cancelled)된 row는 예약 슬롯 점유 해제.
+      //   → 복구된 예약이 통합시간표에서 'confirmed'(예약가능) 슬롯으로 정상 표시되고 재체크인 가능해진다.
+      if (ci.status === 'cancelled') continue;
       if (ci.reservation_id) s.add(ci.reservation_id);
     }
     return s;
