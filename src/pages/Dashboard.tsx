@@ -98,8 +98,8 @@ import { useChart } from '@/lib/chartContext';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 // T-20260611-foot-CTXMENU-UNIFY-CANONICAL: 대시보드 타임라인 예약 박스 우클릭 메뉴를
 //   ReservationContextMenu(SMS/취소/완전삭제 3항목) → CustomerQuickMenu(5항목 canonical) 미러링으로 통일.
-//   [예약상세] 진입을 위해 ReservationDetailPopup 임베드. 취소/완전삭제는 팝업 내부 버튼으로만(메뉴 제거).
-import { ReservationDetailPopup } from '@/components/ReservationDetailPopup';
+// T-20260611-foot-RESV-DASH-CTXMENU-DETAIL-NAV: [예약상세] 는 대시보드 로컬 팝업 대신 예약관리 정본 팝업으로
+//   라우팅 위임(중복 마운트 제거) → ReservationDetailPopup 임베드/임포트 불요.
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
@@ -2951,8 +2951,6 @@ export default function Dashboard() {
   const [smsTarget, setSmsTarget] = useState<CheckIn | null>(null);
   // T-20260525-foot-RESV-CANCEL-CTX: 타임라인 예약 박스 컨텍스트메뉴 상태
   const [resvContextMenu, setResvContextMenu] = useState<{ reservation: Reservation; pos: { x: number; y: number } } | null>(null);
-  // T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC2: 타임라인 예약 박스 우클릭 [예약상세] → 예약상세 팝업 대상
-  const [dashResvDetail, setDashResvDetail] = useState<Reservation | null>(null);
   // T-20260524-foot-TIMETABLE-TIME-CONFIRM: 시간 변경 확인 대기 상태
   const [pendingTimeChange, setPendingTimeChange] = useState<{
     reservationId: string;
@@ -5381,13 +5379,17 @@ export default function Dashboard() {
 
   // T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC2: 타임라인 우클릭 [예약상세] → 예약상세 팝업(ReservationDetailPopup) 오픈.
   //   ci.reservation_id 로 원본 Reservation 을 timelineReservations 에서 복원해 팝업 대상 세팅.
+  // T-20260611-foot-RESV-DASH-CTXMENU-DETAIL-NAV: 대시보드 타임라인 슬롯 카드 우클릭 [예약상세] →
+  //   대시보드 로컬 팝업을 띄우지 않고 예약관리(/admin/reservations)로 라우팅하며 정본 팝업을 연다.
+  //   ⚠ 정합: 대시보드/예약관리 두 곳에 팝업 인스턴스가 공존(중복 마운트)하면 POPUP-SYNC(field-soak)와
+  //   동기화가 깨질 수 있어, 클릭 원 예약 객체를 state로 넘겨 예약관리 정본 팝업(detail) 한 곳만 사용한다.
   const handleResvOpenDetailFromCtx = useCallback((ci: CheckIn) => {
     const resvId = ci.reservation_id;
     if (!resvId) { toast.error('예약 정보를 찾을 수 없습니다'); return; }
     const resv = timelineReservations.find((r) => r.id === resvId);
     if (!resv) { toast.error('예약 정보를 찾을 수 없습니다'); return; }
-    setDashResvDetail(resv);
-  }, [timelineReservations]);
+    navigate('/admin/reservations', { state: { openReservationDetail: resv } });
+  }, [timelineReservations, navigate]);
 
   // T-20260611-foot-CTXMENU-UNIFY-CANONICAL: 타임라인 우클릭 [수납] → 연결된 check_in 의 결제 미니창.
   //   예약관리(handleResvOpenPayment)와 동일 — 체크인 전 예약은 "체크인 후 수납" 안내(가짜 check_in 결제 방지).
@@ -5421,9 +5423,10 @@ export default function Dashboard() {
       handleNewReservation(ci);
       return;
     }
-    // 연결 예약 존재 → 예약상세 팝업. 타임라인 캐시 우선, 없으면 DB refetch(미래/타일자 예약 대응).
+    // T-20260611-foot-RESV-DASH-CTXMENU-DETAIL-NAV: 연결 예약 존재 → 예약관리로 라우팅하며 정본 팝업 오픈.
+    //   대시보드 로컬 팝업 미사용(중복 마운트 제거). 타임라인 캐시 우선, 없으면 DB refetch(미래/타일자 예약 대응).
     const cached = timelineReservations.find((r) => r.id === resvId);
-    if (cached) { setDashResvDetail(cached); return; }
+    if (cached) { navigate('/admin/reservations', { state: { openReservationDetail: cached } }); return; }
     const { data, error } = await supabase
       .from('reservations')
       .select('*')
@@ -5434,8 +5437,8 @@ export default function Dashboard() {
       handleNewReservation(ci);
       return;
     }
-    setDashResvDetail(data as Reservation);
-  }, [timelineReservations, handleNewReservation]);
+    navigate('/admin/reservations', { state: { openReservationDetail: data as Reservation } });
+  }, [timelineReservations, handleNewReservation, navigate]);
 
   // 미니 캘린더 클릭-외부 닫기
   useEffect(() => {
@@ -6769,19 +6772,9 @@ export default function Dashboard() {
         }
       />
 
-      {/* T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC2/AC3: 타임라인 우클릭 [예약상세] 팝업.
-          예약 취소/완전삭제는 이 팝업 내부 [예약취소]/[예약삭제] 버튼으로만 수행(메뉴 진입점 제거).
-          [수정] 은 대시보드에 예약 에디터가 없어 예약관리 페이지로 위임(navigate). */}
-      <ReservationDetailPopup
-        reservation={dashResvDetail}
-        noshowCount={0}
-        changedBy={profile?.id ?? null}
-        authorName={profile?.name ?? ''}
-        isAdmin={profile?.role === 'admin'}
-        onClose={() => setDashResvDetail(null)}
-        onEdit={() => { setDashResvDetail(null); navigate('/admin/reservations'); }}
-        onChanged={() => { setDashResvDetail(null); fetchTimelineReservations(); }}
-      />
+      {/* T-20260611-foot-RESV-DASH-CTXMENU-DETAIL-NAV: 대시보드 로컬 예약상세 팝업 제거.
+          우클릭 [예약상세] 는 예약관리(/admin/reservations) 정본 팝업으로 라우팅 위임 →
+          팝업 인스턴스 단일화(중복 마운트 제거)로 POPUP-SYNC 동기화 깨짐 방지. */}
 
       {/* T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동 */}
 

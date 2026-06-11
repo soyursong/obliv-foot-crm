@@ -45,8 +45,11 @@ test.describe('AC1: 5항목 canonical 통일 (대시보드 타임라인 + 예약
     // 통일 = 타임라인도 CustomerQuickMenu(5항목) 사용. 구 3항목 ReservationContextMenu 컴포넌트 import 금지.
     expect(DASH_PAGE, 'ReservationContextMenu 컴포넌트 import 잔존(통일 미완)')
       .not.toContain("import { ReservationContextMenu }");
-    expect(DASH_PAGE, '대시보드가 예약상세 팝업을 임베드하지 않음')
-      .toContain("import { ReservationDetailPopup } from '@/components/ReservationDetailPopup'");
+    // T-20260611-foot-RESV-DASH-CTXMENU-DETAIL-NAV 으로 superseded: 대시보드는 더 이상 자체 예약상세 팝업을
+    // 임베드하지 않고 예약관리 정본 팝업으로 라우팅 위임(중복 마운트 제거). 따라서 ReservationDetailPopup
+    // import 도 제거됨 → [예약상세] 동작은 navigate('/admin/reservations') 로 보증.
+    expect(DASH_PAGE, '대시보드 로컬 예약상세 팝업 import 잔존(중복 마운트 위험)')
+      .not.toContain("import { ReservationDetailPopup } from '@/components/ReservationDetailPopup'");
   });
 
   test('AC1-4: 두 surface 의 [예약상세] 동작 = 예약상세 팝업 오픈 핸들러로 연결', () => {
@@ -127,13 +130,16 @@ test.describe('AC4: 대시보드 고객카드 surface 통일 + L-002 fallback', 
     expect(DASH_PAGE).toContain('onNewReservation={handleCardResvDetailOrCreate}');
   });
 
-  test('AC4-3: hybrid 핸들러 = 연결예약 존재 시 예약상세 팝업 / 없으면 신규생성 fallback', () => {
-    // 연결예약 → setDashResvDetail(ReservationDetailPopup 대상). 미연결(워크인) → handleNewReservation(L-002).
+  test('AC4-3: hybrid 핸들러 = 연결예약 존재 시 예약상세(라우팅 위임) / 없으면 신규생성 fallback', () => {
+    // T-20260611-foot-RESV-DASH-CTXMENU-DETAIL-NAV 으로 superseded: 연결예약 → 대시보드 로컬 setDashResvDetail
+    // 대신 navigate('/admin/reservations', { state: { openReservationDetail } }) 로 정본 팝업 위임.
+    // 미연결(워크인) → handleNewReservation(L-002) fallback 은 유지.
     const handlerBlock = DASH_PAGE.slice(
       DASH_PAGE.indexOf('const handleCardResvDetailOrCreate'),
-      DASH_PAGE.indexOf('const handleCardResvDetailOrCreate') + 1200,
+      DASH_PAGE.indexOf('const handleCardResvDetailOrCreate') + 1400,
     );
-    expect(handlerBlock, 'hybrid: 연결예약 예약상세 팝업 경로 없음').toContain('setDashResvDetail');
+    expect(handlerBlock, 'hybrid: 연결예약 예약상세 라우팅 위임 경로 없음').toContain('openReservationDetail');
+    expect(handlerBlock, 'hybrid: 연결예약 예약관리 라우팅 경로 없음').toContain("navigate('/admin/reservations'");
     expect(handlerBlock, 'hybrid: 워크인 신규생성 fallback 경로 없음').toContain('handleNewReservation(ci)');
   });
 });

@@ -140,6 +140,10 @@ export default function Reservations() {
   const changedBy = profile?.id ?? null;
   const clinic = useClinic();
   const navStateConsumed = useRef(false);
+  // T-20260611-foot-RESV-DASH-CTXMENU-DETAIL-NAV: 대시보드 슬롯 카드 우클릭 [예약상세] → 이 페이지로
+  //   라우팅하며 넘어온 예약상세 팝업 오픈 요청(location.state.openReservationDetail)을 1회만 소비하는 가드.
+  //   openReservationFor(navStateConsumed)와 별도 ref — 서로 다른 동선이 같은 mount에서 간섭하지 않도록 분리.
+  const navDetailConsumed = useRef(false);
   // T-20260527-foot-TREATMENT-CYCLE-ALERT AC-4: 마운트 자동로드 중복 방지.
   // StrictMode 이중 마운트(dev) / 동일 파라미터 재렌더 시 fetchWeek 중복 실행 → RPC N+1 차단.
   const lastAutoFetchKeyRef = useRef<string | null>(null);
@@ -312,6 +316,22 @@ export default function Reservations() {
       customer_id: customer_id ?? null,
     });
   }, [clinic, location.state]);
+
+  // T-20260611-foot-RESV-DASH-CTXMENU-DETAIL-NAV: 대시보드 슬롯 카드/고객카드 우클릭 [예약상세] →
+  //   navigate('/admin/reservations', { state: { openReservationDetail: <Reservation> } }) 로 넘어온 요청을
+  //   소비해 예약관리 정본 팝업(setDetail)을 즉시 오픈.
+  //   ⚠ 정합: 대시보드에 별도 팝업 인스턴스를 두지 않고(중복 마운트 제거) 이 단일 정본 팝업(detail)만 사용 →
+  //   POPUP-SYNC(field-soak) 와 동기화 깨짐 방지. 전체 Reservation 객체를 state로 전달받아 추가 fetch 없이
+  //   라우팅 직후 깜빡임 없이 팝업이 열린 채로 보이게 한다(라우팅 unmount→재오픈 흐름을 사용자 무지각화).
+  useEffect(() => {
+    if (navDetailConsumed.current) return;
+    const state = location.state as { openReservationDetail?: Reservation } | null;
+    const resv = state?.openReservationDetail;
+    if (!resv) return;
+    navDetailConsumed.current = true;
+    window.history.replaceState({}, '');
+    setDetail(resv);
+  }, [location.state]);
 
   // AC-7: 좌측 캘린더 날짜 클릭 → 해당 날짜 포함 주로 이동 (state 방식 — 레거시 호환)
   useEffect(() => {
