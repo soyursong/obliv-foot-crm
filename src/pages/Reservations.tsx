@@ -855,39 +855,10 @@ export default function Reservations() {
     toast.info('체크인 후 수납이 가능합니다');
   }, []);
 
-  // T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-1: 예약관리 우클릭 [완전 삭제] parity
-  // 대시보드 ReservationContextMenu(handleDashDeleteConfirm)와 동일한 hard delete — 이력 미보존.
-  // window.confirm 게이트는 CustomerQuickMenu 항목 onClick 에서 수행. 여기선 체크인 연결 가드 + DB delete + 낙관적 제거.
-  const handleResvHardDelete = useCallback(async (ci: CheckIn) => {
-    const resvId = ci.reservation_id;
-    if (!resvId) { toast.error('예약 정보를 찾을 수 없습니다'); return; }
-    const resv = rows.find((r) => r.id === resvId);
-    const name = resv?.customer_name ?? ci.customer_name ?? '';
-    // 체크인 연결 예약은 삭제 차단(orphan 방지) — ReservationDetailPopup.deleteReservation 패턴 재사용
-    const { count } = await supabase
-      .from('check_ins')
-      .select('id', { count: 'exact', head: true })
-      .eq('reservation_id', resvId);
-    if ((count ?? 0) > 0) {
-      toast.error('체크인이 연결된 예약은 삭제할 수 없습니다');
-      return;
-    }
-    const { error } = await supabase.from('reservations').delete().eq('id', resvId);
-    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
-    setRows((prev) => prev.filter((r) => r.id !== resvId));
-    toast.success(`${name} 예약 완전 삭제됨`);
-  }, [rows]);
-
-  // T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 콜백 — CustomerQuickMenu에서 호출
-  const handleResvCancelRequest = useCallback((ci: CheckIn) => {
-    // ci는 resvAsCheckIn()으로 변환된 어댑터 → reservation_id 가 원본 Reservation.id
-    const resvId = ci.reservation_id;
-    if (!resvId) { toast.error('예약 정보를 찾을 수 없습니다'); return; }
-    const resv = rows.find((r) => r.id === resvId);
-    if (!resv) { toast.error('예약 정보를 찾을 수 없습니다'); return; }
-    if (resv.status === 'cancelled') { toast.info('이미 취소된 예약입니다'); return; }
-    setCancelTarget(resv);
-  }, [rows]);
+  // T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC3/AC4: 우클릭 [완전 삭제]·[예약 취소] 메뉴 항목 제거에 따라
+  //   기존 컨텍스트메뉴 전용 핸들러(handleResvHardDelete / handleResvCancelRequest) orphan 정리.
+  //   취소/완전삭제 경로는 ReservationDetailPopup 내부 버튼([예약취소] cancelWithReason / [예약삭제] deleteReservation)
+  //   + 편집 모달 경로(handleEditorCancel → setCancelTarget / handleEditorDelete)로 보존됨.
 
   // T-20260525-foot-RESV-CANCEL-CTX: DB 취소 실행
   const handleResvCancelConfirm = useCallback(async (reason: string) => {
@@ -1532,7 +1503,10 @@ export default function Reservations() {
       />
 
       {/* T-20260515-foot-RESV-CTX-HOVER: 예약관리 우클릭 메뉴 + hover 팝업 오버레이 */}
-      {/* T-20260525-foot-RESV-CANCEL-CTX: onCancelReservation 추가 */}
+      {/* T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC1/AC3: 우클릭 메뉴 정확히 5항목
+          [고객차트 → 진료차트 → 예약상세 → 수납 → 문자]로 통일.
+          [예약 취소]·[완전 삭제] 메뉴 항목 제거 — 둘 다 예약상세 팝업(ReservationDetailPopup)
+          [예약취소]/[예약삭제] 버튼에서만 가능(기능 손실 0). onCancelReservation/onDeleteReservation 미전달. */}
       <CustomerQuickMenu
         checkIn={resvContextMenu ? resvAsCheckIn(resvContextMenu.resv) : null}
         position={resvContextMenu?.pos ?? null}
@@ -1543,10 +1517,7 @@ export default function Reservations() {
            (POPUP-SYNC AC-3 에서 라벨만 분기했던 와이어링을 본 티켓에서 동작까지 연결). */
         onNewReservation={handleResvOpenDetailFromMenu}
         onOpenPayment={handleResvOpenPayment}
-        onCancelReservation={handleResvCancelRequest}
-        /* T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-1: 완전 삭제 parity (대시보드 우클릭과 동일 hard delete) */
-        onDeleteReservation={handleResvHardDelete}
-        /* 예약관리(기존 예약 우클릭)는 '예약상세'로 표기. 대시보드 고객카드(체크인=신규 예약)는 기본 '예약하기' 유지. */
+        /* CANONICAL: 기존 예약 우클릭 → '예약상세' 라벨 고정. [예약하기] 표현 미사용. */
         reservationActionLabel="예약상세"
       />
 

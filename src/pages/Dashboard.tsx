@@ -97,9 +97,10 @@ import { getAssignedSlotName } from '@/lib/checkin-slot';
 import { useChart } from '@/lib/chartContext';
 // T-20260515-foot-CONTEXT-MENU-4ITEM: 진료차트 패널
 import MedicalChartPanel from '@/components/MedicalChartPanel';
-// T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 컨텍스트메뉴 + 모달
-import { ReservationContextMenu } from '@/components/ReservationContextMenu';
-import { ReservationCancelModal } from '@/components/ReservationCancelModal';
+// T-20260611-foot-CTXMENU-UNIFY-CANONICAL: 대시보드 타임라인 예약 박스 우클릭 메뉴를
+//   ReservationContextMenu(SMS/취소/완전삭제 3항목) → CustomerQuickMenu(5항목 canonical) 미러링으로 통일.
+//   [예약상세] 진입을 위해 ReservationDetailPopup 임베드. 취소/완전삭제는 팝업 내부 버튼으로만(메뉴 제거).
+import { ReservationDetailPopup } from '@/components/ReservationDetailPopup';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
@@ -2906,8 +2907,8 @@ export default function Dashboard() {
   const [smsTarget, setSmsTarget] = useState<CheckIn | null>(null);
   // T-20260525-foot-RESV-CANCEL-CTX: 타임라인 예약 박스 컨텍스트메뉴 상태
   const [resvContextMenu, setResvContextMenu] = useState<{ reservation: Reservation; pos: { x: number; y: number } } | null>(null);
-  const [dashCancelTarget, setDashCancelTarget] = useState<Reservation | null>(null);
-  const [dashCancelBusy, setDashCancelBusy] = useState(false);
+  // T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC2: 타임라인 예약 박스 우클릭 [예약상세] → 예약상세 팝업 대상
+  const [dashResvDetail, setDashResvDetail] = useState<Reservation | null>(null);
   // T-20260524-foot-TIMETABLE-TIME-CONFIRM: 시간 변경 확인 대기 상태
   const [pendingTimeChange, setPendingTimeChange] = useState<{
     reservationId: string;
@@ -5250,60 +5251,88 @@ export default function Dashboard() {
     setResvContextMenu({ reservation: res, pos });
   }, []);
 
-  // T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 DB 실행
-  // AC-3: status→cancelled + cancel_reason/cancelled_at/cancelled_by + 감사 로그 + 낙관적 업데이트
-  const handleDashCancelConfirm = useCallback(async (reason: string) => {
-    const target = dashCancelTarget;
-    if (!target || !clinic) return;
-    setDashCancelBusy(true);
-    const { error } = await supabase
-      .from('reservations')
-      .update({
-        status: 'cancelled',
-        cancelled_at: new Date().toISOString(),
-        cancel_reason: reason,
-        cancelled_by: profile?.id ?? null,
-      })
-      .eq('id', target.id);
-    if (error) {
-      toast.error(`취소 실패: ${error.message}`);
-      setDashCancelBusy(false);
-      return;
-    }
-    // 감사 로그
-    await supabase.from('reservation_logs').insert({
-      reservation_id: target.id,
-      clinic_id: target.clinic_id,
-      action: 'cancel',
-      old_data: { status: target.status },
-      new_data: { status: 'cancelled', cancel_reason: reason },
-      changed_by: profile?.id ?? null,
-    });
-    // AC-4: 낙관적 업데이트 — 대시보드 타임라인 즉시 반영
-    setTimelineReservations((prev) =>
-      prev.map((r) =>
-        r.id === target.id
-          ? { ...r, status: 'cancelled' as const, cancelled_at: new Date().toISOString(), cancel_reason: reason, cancelled_by: profile?.id ?? null }
-          : r,
-      ),
-    );
-    setDashCancelBusy(false);
-    setDashCancelTarget(null);
-    toast.success(`${target.customer_name} 예약 취소됨`);
-  }, [dashCancelTarget, clinic, profile, setTimelineReservations]);
+  // T-20260611-foot-CTXMENU-UNIFY-CANONICAL: Reservation → minimal CheckIn 어댑터.
+  //   CustomerQuickMenu(5항목 canonical)가 사용하는 필드(customer_id/reservation_id/이름/전화/visit_type)만 매핑.
+  //   예약관리(Reservations.tsx)의 resvAsCheckIn 과 동일 패턴 — 두 surface 메뉴 동작 동일성 보장.
+  const resvAsCheckIn = useCallback((r: Reservation): CheckIn => ({
+    id: `resv-${r.id}`,
+    clinic_id: clinic?.id ?? '',
+    customer_id: r.customer_id,
+    reservation_id: r.id,
+    queue_number: null,
+    customer_name: r.customer_name ?? '',
+    customer_phone: r.customer_phone,
+    visit_type: r.visit_type,
+    status: 'waiting' as CheckIn['status'],
+    consultant_id: null,
+    therapist_id: null,
+    technician_id: null,
+    consultation_room: null,
+    treatment_room: null,
+    laser_room: null,
+    package_id: null,
+    notes: null,
+    treatment_memo: null,
+    treatment_photos: null,
+    doctor_note: null,
+    examination_room: null,
+    checked_in_at: `${r.reservation_date}T${r.reservation_time}`,
+    called_at: null,
+    completed_at: null,
+    priority_flag: null,
+    sort_order: 0,
+    skip_reason: null,
+    created_at: r.created_at,
+    consultation_done: false,
+    treatment_kind: null,
+    preconditioning_done: false,
+    pododulle_done: false,
+    laser_minutes: null,
+    prescription_items: null,
+    document_content: null,
+    doctor_confirm_charting: false,
+    doctor_confirm_prescription: false,
+    doctor_confirm_document: false,
+    doctor_confirmed_at: null,
+    healer_laser_confirm: false,
+    prescription_status: 'none',
+    status_flag: null,
+    status_flag_history: null,
+    assigned_counselor_id: null,
+    treatment_category: null,
+    treatment_contents: null,
+    doctor_call_memo: null,
+    doctor_ack_at: null,
+  }), [clinic?.id]);
 
-  // T-20260610-foot-RESV-CTXMENU-HARDDELETE: 예약 완전 삭제(hard delete) — row 영구 제거(이력 없음)
-  // reporter=김주연 총괄. 기존 reservations.delete 경로 재사용(병렬 경로 신설 금지). 목록 즉시 갱신.
-  const handleDashDeleteConfirm = useCallback(async (target: Reservation) => {
-    const { error } = await supabase.from('reservations').delete().eq('id', target.id);
-    if (error) {
-      toast.error(`삭제 실패: ${error.message}`);
-      return;
+  // T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC2: 타임라인 우클릭 [예약상세] → 예약상세 팝업(ReservationDetailPopup) 오픈.
+  //   ci.reservation_id 로 원본 Reservation 을 timelineReservations 에서 복원해 팝업 대상 세팅.
+  const handleResvOpenDetailFromCtx = useCallback((ci: CheckIn) => {
+    const resvId = ci.reservation_id;
+    if (!resvId) { toast.error('예약 정보를 찾을 수 없습니다'); return; }
+    const resv = timelineReservations.find((r) => r.id === resvId);
+    if (!resv) { toast.error('예약 정보를 찾을 수 없습니다'); return; }
+    setDashResvDetail(resv);
+  }, [timelineReservations]);
+
+  // T-20260611-foot-CTXMENU-UNIFY-CANONICAL: 타임라인 우클릭 [수납] → 연결된 check_in 의 결제 미니창.
+  //   예약관리(handleResvOpenPayment)와 동일 — 체크인 전 예약은 "체크인 후 수납" 안내(가짜 check_in 결제 방지).
+  const handleResvOpenPaymentFromCtx = useCallback(async (ci: CheckIn) => {
+    if (!ci.customer_id) { toast.info('고객 정보가 연결되어 있지 않습니다'); return; }
+    if (ci.reservation_id) {
+      const { data } = await supabase
+        .from('check_ins')
+        .select('*')
+        .eq('reservation_id', ci.reservation_id)
+        .maybeSingle();
+      if (data) {
+        setMiniPayTarget(data as CheckIn);
+        setMiniPayAttemptCounter((c) => c + 1);
+        return;
+      }
     }
-    // 낙관적 업데이트 — 대시보드 타임라인에서 즉시 제거
-    setTimelineReservations((prev) => prev.filter((r) => r.id !== target.id));
-    toast.success(`${target.customer_name} 예약 완전 삭제됨`);
-  }, [setTimelineReservations]);
+    toast.info('체크인 후 수납이 가능합니다');
+  }, []);
 
   // 미니 캘린더 클릭-외부 닫기
   useEffect(() => {
@@ -6605,45 +6634,43 @@ export default function Dashboard() {
         clinicId={clinic?.id ?? ''}
       />
 
-      {/* T-20260525-foot-RESV-CANCEL-CTX AC-1: 타임라인 예약 박스 우클릭/롱프레스 컨텍스트메뉴 */}
-      <ReservationContextMenu
-        reservation={resvContextMenu?.reservation ?? null}
+      {/* T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC1/AC2/AC3: 타임라인 예약 박스 우클릭 메뉴를
+          예약관리와 동일한 CustomerQuickMenu 5항목 [고객차트 → 진료차트 → 예약상세 → 수납 → 문자]로 통일.
+          - 고객차트/진료차트: 기존 핸들러 재사용(handleOpenChart/handleOpenMedicalChart) — 고객카드 메뉴와 동작 동일.
+          - 예약상세: handleResvOpenDetailFromCtx → ReservationDetailPopup 오픈([예약하기] 라벨 미사용).
+          - 수납: handleResvOpenPaymentFromCtx(연결 check_in 결제 미니창).
+          - 문자: admin/manager 한정 SendSmsDialog 경로 재사용.
+          - [예약 취소]·[완전 삭제] 메뉴 항목 제거 → 둘 다 ReservationDetailPopup 내부 버튼에서만(메뉴 진입점 제거). */}
+      <CustomerQuickMenu
+        checkIn={resvContextMenu ? resvAsCheckIn(resvContextMenu.reservation) : null}
         position={resvContextMenu?.pos ?? null}
         onClose={() => setResvContextMenu(null)}
-        onCancelReservation={(resv) => {
-          setResvContextMenu(null);
-          setDashCancelTarget(resv);
-        }}
-        onDeleteReservation={(resv) => {
-          setResvContextMenu(null);
-          handleDashDeleteConfirm(resv);
-        }}
-        /* T-20260610-foot-RESV-OVERHAUL-7 AC-1: [SMS 보내기] parity — CustomerQuickMenu(예약관리)와 동일.
-           admin/manager 한정. 기존 SendSmsDialog(setSmsTarget) 경로 재사용 — 신규 SMS 경로 신설 없음.
-           SendSmsDialog 는 customer_id 로 phone(SSOT) refetch 하므로 최소 필드만 shaping. */
+        onOpenChart={handleOpenChart}
+        onOpenMedicalChart={handleOpenMedicalChart}
+        onNewReservation={handleResvOpenDetailFromCtx}
+        onOpenPayment={handleResvOpenPaymentFromCtx}
+        /* CANONICAL: 기존 예약 우클릭 → '예약상세' 라벨 고정. [예약하기] 표현 미사용. */
+        reservationActionLabel="예약상세"
+        /* 문자 — admin/manager(onSendSms 제공 시)만 노출. ci는 resvAsCheckIn 어댑터(customer_id로 phone SSOT refetch). */
         onSendSms={
           canAccess(profile?.role ?? '', 'manual_sms_send')
-            ? (resv) => {
-                setResvContextMenu(null);
-                setSmsTarget({
-                  id: `resv-${resv.id}`,
-                  customer_id: resv.customer_id ?? null,
-                  customer_name: resv.customer_name ?? '',
-                  customer_phone: resv.customer_phone,
-                  reservation_id: resv.id,
-                } as unknown as CheckIn);
-              }
+            ? (ci) => { setResvContextMenu(null); setSmsTarget(ci); }
             : undefined
         }
       />
 
-      {/* T-20260525-foot-RESV-CANCEL-CTX AC-2/AC-3: 취소사유 입력 모달 + DB 저장 */}
-      <ReservationCancelModal
-        open={dashCancelTarget !== null}
-        customerName={dashCancelTarget?.customer_name ?? ''}
-        onClose={() => { if (!dashCancelBusy) setDashCancelTarget(null); }}
-        onConfirm={handleDashCancelConfirm}
-        busy={dashCancelBusy}
+      {/* T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC2/AC3: 타임라인 우클릭 [예약상세] 팝업.
+          예약 취소/완전삭제는 이 팝업 내부 [예약취소]/[예약삭제] 버튼으로만 수행(메뉴 진입점 제거).
+          [수정] 은 대시보드에 예약 에디터가 없어 예약관리 페이지로 위임(navigate). */}
+      <ReservationDetailPopup
+        reservation={dashResvDetail}
+        noshowCount={0}
+        changedBy={profile?.id ?? null}
+        authorName={profile?.name ?? ''}
+        isAdmin={profile?.role === 'admin'}
+        onClose={() => setDashResvDetail(null)}
+        onEdit={() => { setDashResvDetail(null); navigate('/admin/reservations'); }}
+        onChanged={() => { setDashResvDetail(null); fetchTimelineReservations(); }}
       />
 
       {/* T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동 */}
