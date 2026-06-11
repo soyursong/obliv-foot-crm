@@ -251,4 +251,30 @@ test.describe('T-20260611 CALLLIST-ROOM-LABEL — 진료콜 명단 방번호 표
       await expect(emptyTab).not.toContainText('undefined');
     }
   });
+
+  // ── FIX phase2-b: 위젯이 body 직속(createPortal)으로 마운트돼 칸반 cage(overflow/transform)에 안 갇힘 ──
+  //   RC: position:fixed 위젯이 AdminLayout page-content-area(overflow-hidden) + 칸반 zoom transform 조상
+  //   안에 마운트되면 fixed가 조상 기준으로 트랩·클리핑돼 prod에서 미표시됐다. createPortal(document.body)로 해소.
+  //   불변식: doctor-call-list의 부모는 <body>여야 한다(칸반 스크롤 컨테이너 kanban-scroll의 자손이면 안 됨).
+  test('FIX phase2-b: 진료콜 명단 위젯이 document.body 직속 portal로 마운트(칸반 cage 밖)', async ({ page }) => {
+    const ok = await loginAndWaitForDashboard(page);
+    if (!ok) {
+      test.skip(true, '로그인 실패 — 스킵');
+      return;
+    }
+    await expect(page.locator('[data-testid="dashboard-root"]')).toBeVisible();
+
+    const widget = page.locator('[data-testid="doctor-call-list"]').first();
+    await expect(widget).toBeVisible();
+
+    // 위젯의 부모 노드 tagName이 BODY여야 한다(portal). 칸반 스크롤 컨테이너 안이면 트랩 RC 재발.
+    const parentTag = await widget.evaluate((el) => el.parentElement?.tagName ?? '');
+    expect(parentTag).toBe('BODY');
+
+    // 보강: kanban-scroll(overflow-auto cage) 자손으로 위젯이 들어가 있지 않아야 한다.
+    const trappedInKanban = await page
+      .locator('[data-testid="kanban-scroll"] [data-testid="doctor-call-list"]')
+      .count();
+    expect(trappedInKanban).toBe(0);
+  });
 });
