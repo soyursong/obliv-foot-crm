@@ -1,4 +1,14 @@
-# T-20260611-foot-RLS-MENU-ROLE-PARITY-POLICY — Phase 2-A / G1 (check_in_room_logs) DB-gate 제출 (dev-foot)
+> ## ⛔ WITHDRAWN — 적용 금지 (2026-06-11, planner MSG-20260611-144018-eih9)
+> planner 직접 교차검증 후 **G1 = NO-OP 종결 확정**. DECISION-REQUEST 판정 수용:
+> - `room_logs_clinic_rw [ALL]` = user_profiles 기반(= `current_user_clinic_id()` 동등) → **read 이미 전 role parity 충족**(G2 와 신원소스 다름). read-parity surface 로는 fix 불요.
+> - 별도 SELECT 정책 추가 = OR-merge **no-op**, [ALL] write 동반수정 = 우산 **AC-5(write 불변) 위반**.
+> - 조치: check_in_room_logs **Phase2-A 에서 제외 + 매트릭스 'already-parity(무변경)' 재분류. 추가 작업 0.**
+> - write 하드닝(approved+active 게이트 부재)은 user_profiles 스코프 → PHI 누수 없음 = 경미 over-permission → **write-track P2 후보로만 기록(지금 강제변경 금지)**.
+> - 마이그 파일 `20260611170000_*.sql` → `.WITHDRAWN` 으로 회수(supabase db push 미적용). **supervisor: 본 G1 적용하지 말 것.**
+>
+> ---
+
+# T-20260611-foot-RLS-MENU-ROLE-PARITY-POLICY — Phase 2-A / G1 (check_in_room_logs) DB-gate 제출 (dev-foot) — ⛔WITHDRAWN
 
 - prod: rxlomoozakkjesdqjtvd
 - 작성: dev-foot, 2026-06-11
