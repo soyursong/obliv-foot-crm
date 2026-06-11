@@ -11,7 +11,7 @@ spec_added: tests/e2e/T-20260611-foot-TOPBAR-RESV-BTN-REMOVE.spec.ts
 db_changed: false
 rollback_sql: ""
 risk_level: GO (0/5)
-commit_sha: PENDING
+commit_sha: 6a5b63a
 ---
 
 ## 요청
