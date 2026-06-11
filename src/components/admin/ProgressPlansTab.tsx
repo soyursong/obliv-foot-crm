@@ -1,16 +1,18 @@
 /**
  * ProgressPlansTab — 경과분석 플랜 관리 탭
  * T-20260526-foot-PROGRESS-CHECKPOINT Phase 1 (AC-2)
+ * T-20260611-foot-PROGRESSPLAN-PKGTYPE-DB-BIND (AC-1): 패키지타입(string) → 회차 tier(total_sessions) 기준 UI.
  *
- * 역할: 패키지 타입별 경과분석 회차(체크포인트) CRUD
+ * 역할: 회차수(tier)별 경과분석 회차(체크포인트) CRUD
  * 접근: admin / manager / director 전용
  * 탑재: DoctorTools.tsx "경과분석 플랜" 탭
  *
  * package_progress_plans 테이블:
- *   id, clinic_id, package_type, session_milestone, label,
- *   notify_staff, notify_patient, is_active
+ *   id, clinic_id, session_count_tier(매칭키), package_type(=tier_N 호환표기),
+ *   session_milestone, label, notify_staff, notify_patient, is_active
  *
- * Phase 2에서 reservations.anticipated_session_number와 연동됨
+ * 매칭: packages.total_sessions == session_count_tier && milestone == 예상회차.
+ *   이름·FK 무관 전수 커버(Option C). tier = 6의 배수: 6/12/18/24/30/36/42/48.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -36,7 +38,8 @@ import { Loader2, Plus, Pencil, Trash2, Bell, BellOff, ChevronDown, ChevronRight
 export interface ProgressPlan {
   id: string;
   clinic_id: string;
-  package_type: string;
+  session_count_tier: number;   // 매칭키 = packages.total_sessions
+  package_type: string;         // 'tier_N' 호환 표기 (단계 폐기 예정)
   session_milestone: number;
   label: string;
   notify_staff: boolean;
@@ -47,41 +50,36 @@ export interface ProgressPlan {
 }
 
 interface PlanForm {
-  package_type: string;
-  session_milestone: string;  // string for input
+  session_count_tier: string;  // string for input
+  session_milestone: string;   // string for input
   label: string;
   notify_staff: boolean;
   notify_patient: boolean;
   is_active: boolean;
 }
 
-// ── 패키지 타입 메타데이터 ────────────────────────────────────────────────────
+// ── 회차 tier 메타데이터 (6의 배수: 6/12/18/24/30/36/42/48) ───────────────────
+// 패키지명·FK 무관, 회차수(total_sessions)로 경과분석 tier 판정 (Option C).
 
-const PACKAGE_TYPE_OPTIONS = [
-  { value: 'package1', label: '패키지1', total: 12 },
-  { value: 'blelabel', label: '블레라벨', total: 36 },
-  { value: 'special', label: '스페셜', total: 12 },
-  { value: 'other', label: '기타', total: null },
-] as const;
+const TIER_OPTIONS = [6, 12, 18, 24, 30, 36, 42, 48] as const;
 
-function getPackageTypeLabel(packageType: string): string {
-  const found = PACKAGE_TYPE_OPTIONS.find(o => o.value === packageType);
-  return found ? found.label : packageType;
+function getTierLabel(tier: number): string {
+  return `${tier}회 패키지`;
 }
 
-function getPackageTypeBadgeColor(packageType: string): string {
-  switch (packageType) {
-    case 'package1': return 'bg-teal-100 text-teal-800 border-teal-300';
-    case 'blelabel': return 'bg-blue-100 text-blue-800 border-blue-300';
-    case 'special': return 'bg-purple-100 text-purple-800 border-purple-300';
-    default: return 'bg-gray-100 text-gray-700 border-gray-300';
-  }
+function getTierBadgeColor(tier: number): string {
+  // 회차수가 클수록 진한 teal — 시각적 위계
+  if (tier <= 6) return 'bg-teal-50 text-teal-700 border-teal-200';
+  if (tier <= 12) return 'bg-teal-100 text-teal-800 border-teal-300';
+  if (tier <= 24) return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+  if (tier <= 36) return 'bg-blue-100 text-blue-800 border-blue-300';
+  return 'bg-indigo-100 text-indigo-800 border-indigo-300';
 }
 
 // ── 기본 폼 상태 ──────────────────────────────────────────────────────────────
 
 const EMPTY_FORM: PlanForm = {
-  package_type: 'package1',
+  session_count_tier: '12',
   session_milestone: '',
   label: '',
   notify_staff: true,
@@ -118,7 +116,7 @@ export default function ProgressPlansTab() {
       .from('package_progress_plans')
       .select('*')
       .eq('clinic_id', clinic.id)
-      .order('package_type', { ascending: true })
+      .order('session_count_tier', { ascending: true })
       .order('session_milestone', { ascending: true });
     setLoading(false);
     if (error) {
@@ -132,30 +130,29 @@ export default function ProgressPlansTab() {
     fetchPlans();
   }, [fetchPlans]);
 
-  // ── 패키지 타입별 그룹핑 ──────────────────────────────────────────────────
+  // ── 회차 tier별 그룹핑 ────────────────────────────────────────────────────
 
-  const grouped = plans.reduce<Record<string, ProgressPlan[]>>((acc, p) => {
-    (acc[p.package_type] ??= []).push(p);
+  const grouped = plans.reduce<Record<number, ProgressPlan[]>>((acc, p) => {
+    (acc[p.session_count_tier] ??= []).push(p);
     return acc;
   }, {});
 
-  const packageTypes = Object.keys(grouped).sort((a, b) => {
-    const ORDER: Record<string, number> = { package1: 0, blelabel: 1, special: 2 };
-    return (ORDER[a] ?? 99) - (ORDER[b] ?? 99);
-  });
+  const tiers = Object.keys(grouped)
+    .map(Number)
+    .sort((a, b) => a - b);
 
   // ── 다이얼로그 열기 ────────────────────────────────────────────────────────
 
-  function openCreate(defaultType?: string) {
+  function openCreate(defaultTier?: number) {
     setEditingId(null);
-    setForm({ ...EMPTY_FORM, package_type: defaultType ?? 'package1' });
+    setForm({ ...EMPTY_FORM, session_count_tier: String(defaultTier ?? 12) });
     setDialogOpen(true);
   }
 
   function openEdit(plan: ProgressPlan) {
     setEditingId(plan.id);
     setForm({
-      package_type: plan.package_type,
+      session_count_tier: String(plan.session_count_tier),
       session_milestone: String(plan.session_milestone),
       label: plan.label,
       notify_staff: plan.notify_staff,
@@ -169,13 +166,18 @@ export default function ProgressPlansTab() {
 
   const handleSave = async () => {
     if (!clinic) return;
+    const tier = parseInt(form.session_count_tier, 10);
     const milestone = parseInt(form.session_milestone, 10);
-    if (!form.package_type.trim()) {
-      toast.error('패키지 타입을 선택해주세요');
+    if (!tier || tier <= 0) {
+      toast.error('회차 tier를 선택해주세요 (예: 12회 패키지)');
       return;
     }
     if (!milestone || milestone <= 0) {
       toast.error('유효한 회차 번호를 입력해주세요 (1 이상)');
+      return;
+    }
+    if (milestone > tier) {
+      toast.error(`경과분석 회차(${milestone})는 패키지 회차수(${tier})를 넘을 수 없습니다`);
       return;
     }
     if (!form.label.trim()) {
@@ -187,7 +189,8 @@ export default function ProgressPlansTab() {
     try {
       const payload = {
         clinic_id: clinic.id,
-        package_type: form.package_type.trim(),
+        session_count_tier: tier,
+        package_type: `tier_${tier}`,  // 호환 표기 (매칭은 session_count_tier 기준)
         session_milestone: milestone,
         label: form.label.trim(),
         notify_staff: form.notify_staff,
@@ -211,7 +214,7 @@ export default function ProgressPlansTab() {
           .insert({ ...payload, created_by: profile?.email });
         if (error) {
           if (error.code === '23505') {
-            toast.error(`이미 존재하는 체크포인트입니다 — ${getPackageTypeLabel(form.package_type)} ${milestone}회차`);
+            toast.error(`이미 존재하는 체크포인트입니다 — ${getTierLabel(tier)} ${milestone}회차`);
             return;
           }
           throw error;
@@ -246,7 +249,7 @@ export default function ProgressPlansTab() {
   // ── 삭제 ──────────────────────────────────────────────────────────────────
 
   const handleDelete = async (plan: ProgressPlan) => {
-    if (!window.confirm(`"${getPackageTypeLabel(plan.package_type)} ${plan.session_milestone}회차 — ${plan.label}" 를 삭제하시겠습니까?`)) return;
+    if (!window.confirm(`"${getTierLabel(plan.session_count_tier)} ${plan.session_milestone}회차 — ${plan.label}" 를 삭제하시겠습니까?`)) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase as any)
       .from('package_progress_plans')
@@ -261,35 +264,35 @@ export default function ProgressPlansTab() {
   };
 
   // ── 레이블 자동완성 (회차 입력 시) ───────────────────────────────────────
+  // tier(총회차)와 같으면 "최종", 6의 배수면 "중간", 그 외 "N회차".
 
-  const autoLabel = (packageType: string, milestone: number): string => {
-    const meta = PACKAGE_TYPE_OPTIONS.find(o => o.value === packageType);
-    if (!meta) return `${milestone}회차 경과분석`;
-    const isLast = meta.total !== null && milestone === meta.total;
-    if (isLast) return `${milestone}회 최종 경과분석`;
+  const autoLabel = (tier: number, milestone: number): string => {
+    if (tier > 0 && milestone === tier) return `${milestone}회 최종 경과분석`;
     if (milestone % 6 === 0) return `${milestone}회 중간 경과분석`;
     return `${milestone}회차 경과분석`;
   };
 
   const handleMilestoneChange = (value: string) => {
     const n = parseInt(value, 10);
+    const tier = parseInt(form.session_count_tier, 10);
     setForm(prev => ({
       ...prev,
       session_milestone: value,
       // 레이블이 비어있거나 자동생성 패턴인 경우에만 자동 업데이트
       label: (!prev.label || prev.label.match(/^\d+회/))
-        ? (isNaN(n) || n <= 0 ? '' : autoLabel(prev.package_type, n))
+        ? (isNaN(n) || n <= 0 ? '' : autoLabel(tier, n))
         : prev.label,
     }));
   };
 
-  const handlePackageTypeChange = (value: string) => {
+  const handleTierChange = (value: string) => {
     const n = parseInt(form.session_milestone, 10);
+    const tier = parseInt(value, 10);
     setForm(prev => ({
       ...prev,
-      package_type: value,
+      session_count_tier: value,
       label: (!prev.label || prev.label.match(/^\d+회/))
-        ? (isNaN(n) || n <= 0 ? '' : autoLabel(value, n))
+        ? (isNaN(n) || n <= 0 ? '' : autoLabel(tier, n))
         : prev.label,
     }));
   };
@@ -311,9 +314,9 @@ export default function ProgressPlansTab() {
         <div>
           <h2 className="text-sm font-semibold">경과분석 플랜 설정</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            패키지 타입별로 경과분석이 필요한 회차를 정의합니다.
+            패키지 회차수(예: 12회·24회·36회)별로 경과분석이 필요한 회차를 정의합니다.
             <br />
-            <span className="text-teal-600">Phase 2</span>에서 해당 회차 예약 시 스태프 알림 + 예약현황 배지로 연동됩니다.
+            패키지 이름과 무관하게 <span className="text-teal-600">회차수가 같은 모든 패키지</span>에 자동 적용됩니다.
           </p>
         </div>
         <Button
@@ -335,7 +338,7 @@ export default function ProgressPlansTab() {
         <div className="rounded-xl border-2 border-dashed border-teal-200 bg-teal-50/30 p-10 text-center">
           <p className="text-sm font-medium text-teal-700">등록된 체크포인트가 없습니다</p>
           <p className="text-xs text-muted-foreground mt-1">
-            "체크포인트 추가" 버튼으로 패키지 타입별 경과분석 회차를 설정하세요.
+            "체크포인트 추가" 버튼으로 회차수(tier)별 경과분석 회차를 설정하세요.
           </p>
           <Button
             size="sm"
@@ -348,22 +351,22 @@ export default function ProgressPlansTab() {
         </div>
       ) : (
         <div className="space-y-4">
-          {packageTypes.map(ptype => {
-            const group = grouped[ptype] ?? [];
-            const isCollapsed = collapsed[ptype] ?? false;
+          {tiers.map(tier => {
+            const group = grouped[tier] ?? [];
+            const isCollapsed = collapsed[tier] ?? false;
             const activeCount = group.filter(p => p.is_active).length;
 
             return (
               <div
-                key={ptype}
+                key={tier}
                 className="rounded-xl border bg-card shadow-sm overflow-hidden"
-                data-testid={`progress-plan-group-${ptype}`}
+                data-testid={`progress-plan-group-${tier}`}
               >
                 {/* 그룹 헤더 */}
                 <button
                   type="button"
                   className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/40 transition-colors"
-                  onClick={() => setCollapsed(prev => ({ ...prev, [ptype]: !isCollapsed }))}
+                  onClick={() => setCollapsed(prev => ({ ...prev, [tier]: !isCollapsed }))}
                 >
                   <div className="flex items-center gap-2.5">
                     {isCollapsed
@@ -371,11 +374,11 @@ export default function ProgressPlansTab() {
                       : <ChevronDown className="h-4 w-4 text-muted-foreground" />
                     }
                     <span
-                      className={`inline-flex items-center rounded border px-2.5 py-0.5 text-xs font-semibold ${getPackageTypeBadgeColor(ptype)}`}
+                      className={`inline-flex items-center rounded border px-2.5 py-0.5 text-xs font-semibold ${getTierBadgeColor(tier)}`}
                     >
-                      {getPackageTypeLabel(ptype)}
+                      {getTierLabel(tier)}
                     </span>
-                    <span className="text-sm font-medium">{ptype}</span>
+                    <span className="text-xs text-muted-foreground">회차수 {tier}회 기준</span>
                     <Badge variant="outline" className="text-[10px] h-4 px-1.5">
                       {activeCount}/{group.length}건 활성
                     </Badge>
@@ -385,8 +388,8 @@ export default function ProgressPlansTab() {
                     size="sm"
                     variant="ghost"
                     className="h-7 gap-1 text-xs text-teal-600 hover:bg-teal-50"
-                    onClick={(e) => { e.stopPropagation(); openCreate(ptype); }}
-                    data-testid={`progress-plan-add-${ptype}`}
+                    onClick={(e) => { e.stopPropagation(); openCreate(tier); }}
+                    data-testid={`progress-plan-add-${tier}`}
                   >
                     <Plus className="h-3 w-3" />
                     추가
@@ -483,11 +486,12 @@ export default function ProgressPlansTab() {
         </div>
       )}
 
-      {/* Phase 2 예고 안내 */}
+      {/* 동작 안내 */}
       <div className="rounded-lg border border-teal-200 bg-teal-50/40 px-4 py-3 text-xs text-teal-700">
-        <p className="font-semibold mb-0.5">Phase 2 예정</p>
+        <p className="font-semibold mb-0.5">회차수 기준 자동 적용</p>
         <p className="text-teal-600">
-          예약 생성 시 패키지 연결 + 경과분석 회차 자동 계산 → 스태프 알림 배너 + 예약현황 카드 배지
+          예약에 패키지를 연결하면 그 패키지의 회차수(예: 12회)에 맞는 플랜이 자동 매칭됩니다.
+          진행 회차가 설정된 경과분석 회차에 도달하면 예약현황 카드에 배지가 표시됩니다.
         </p>
       </div>
 
@@ -501,45 +505,29 @@ export default function ProgressPlansTab() {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            {/* 패키지 타입 */}
+            {/* 회차수 tier */}
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground">패키지 타입</label>
+              <label className="text-xs font-semibold text-muted-foreground">패키지 회차수 (tier)</label>
               <div className="flex flex-wrap gap-1.5">
-                {PACKAGE_TYPE_OPTIONS.map(opt => (
+                {TIER_OPTIONS.map(t => (
                   <button
-                    key={opt.value}
+                    key={t}
                     type="button"
-                    onClick={() => handlePackageTypeChange(opt.value)}
+                    onClick={() => handleTierChange(String(t))}
                     className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                      form.package_type === opt.value
+                      form.session_count_tier === String(t)
                         ? 'border-teal-500 bg-teal-600 text-white'
                         : 'border-border hover:border-teal-300 hover:bg-teal-50'
                     }`}
-                    data-testid={`pkg-type-btn-${opt.value}`}
+                    data-testid={`tier-btn-${t}`}
                   >
-                    {opt.label}
-                    {opt.total && (
-                      <span className="ml-1 opacity-70">({opt.total}회)</span>
-                    )}
+                    {t}회
                   </button>
                 ))}
-                {/* 직접 입력 */}
-                {!PACKAGE_TYPE_OPTIONS.find(o => o.value === form.package_type) && (
-                  <span className="rounded-full border border-teal-500 bg-teal-600 text-white px-3 py-1 text-xs font-medium">
-                    {form.package_type}
-                  </span>
-                )}
               </div>
-              {/* 커스텀 타입 입력 */}
-              <div className="mt-1">
-                <Input
-                  value={form.package_type}
-                  onChange={e => handlePackageTypeChange(e.target.value)}
-                  placeholder="커스텀 패키지 타입 (예: bleremedies)"
-                  className="h-8 text-xs"
-                  data-testid="pkg-type-input"
-                />
-              </div>
+              <p className="text-[10px] text-muted-foreground">
+                회차수가 같은 모든 패키지(이름 무관)에 적용됩니다. 6의 배수.
+              </p>
             </div>
 
             {/* 회차 */}

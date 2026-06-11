@@ -1769,8 +1769,10 @@ interface LinkedPackageOption {
 }
 
 // T-PROGRESS-CHECKPOINT: 경과분석 플랜 타입 (package_progress_plans 행)
+// T-20260611-foot-PROGRESSPLAN-PKGTYPE-DB-BIND: 매칭키를 package_type(string) → session_count_tier(int)로 교체.
+// tier = packages.total_sessions(6의배수 6..48). 이름·FK 무관 전수 커버(Option C).
 interface ProgressPlanEntry {
-  package_type: string;
+  session_count_tier: number;   // = packages.total_sessions (매칭키)
   session_milestone: number;
   label: string;
   is_active: boolean;
@@ -2112,7 +2114,7 @@ function ReservationEditor({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('package_progress_plans')
-      .select('package_type, session_milestone, label, is_active')
+      .select('session_count_tier, session_milestone, label, is_active')
       .eq('clinic_id', clinicId)
       .eq('is_active', true)
       .then(({ data }: { data: ProgressPlanEntry[] | null }) => {
@@ -2126,11 +2128,14 @@ function ReservationEditor({
     setState((s) => (s ? { ...s, [k]: v } : s));
 
   // T-PROGRESS-CHECKPOINT AC-2/3: 경과분석 파생 계산
+  // T-20260611-foot-PROGRESSPLAN-PKGTYPE-DB-BIND: 매칭을 회차 tier(total_sessions) 기준으로 교체.
+  //   - 이름/FK 무관, 회차수(total_sessions)가 6의배수 tier에 걸리면 해당 milestone 발동.
+  //   - total_sessions=0(체험/Re:Born 등) = 경과분석 제외 가드 (tier 0은 시드에 없지만 명시 배제).
   const selectedLinkedPkg = linkedPackages.find(p => p.id === state.linked_package_id);
   const anticipatedSession = selectedLinkedPkg ? selectedLinkedPkg.used_sessions + 1 : null;
-  const progressCheckPlan = (anticipatedSession && selectedLinkedPkg)
+  const progressCheckPlan = (anticipatedSession && selectedLinkedPkg && selectedLinkedPkg.total_sessions > 0)
     ? progressPlans.find(
-        p => p.package_type === selectedLinkedPkg.package_type
+        p => p.session_count_tier === selectedLinkedPkg.total_sessions
           && p.session_milestone === anticipatedSession
           && p.is_active,
       ) ?? null

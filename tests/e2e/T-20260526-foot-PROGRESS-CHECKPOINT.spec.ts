@@ -43,7 +43,7 @@ test.describe('T-20260526-foot-PROGRESS-CHECKPOINT — 경과분석 플랜 탭 (
   // ─────────────────────────────────────────────────────────────────────────────
   // T1: 탭 진입 + 시드 데이터 렌더
   // ─────────────────────────────────────────────────────────────────────────────
-  test('T1: 경과분석 플랜 탭 진입 + 패키지 타입 그룹 렌더', async ({ page }) => {
+  test('T1: 경과분석 플랜 탭 진입 + 회차 tier 그룹 렌더', async ({ page }) => {
     const ok = await GOTO_TAB(page);
     if (!ok) return;
 
@@ -53,11 +53,11 @@ test.describe('T-20260526-foot-PROGRESS-CHECKPOINT — 경과분석 플랜 탭 (
     // 로딩 스피너 사라질 때까지 대기
     await page.waitForTimeout(1_000);
 
-    // 패키지 그룹이 하나 이상 존재 (시드: package1 · blelabel · special)
-    const groups = page.getByTestId('progress-plan-group-package1');
+    // T-PROGRESSPLAN-PKGTYPE-DB-BIND: 회차 tier 그룹(12회 등) 존재 — package_type 하드코딩 제거됨
+    const groups = page.getByTestId('progress-plan-group-12');
     await expect(groups).toBeVisible({ timeout: 5_000 });
 
-    console.log('[T1] 경과분석 플랜 탭 + 시드 그룹 렌더 OK');
+    console.log('[T1] 경과분석 플랜 탭 + 회차 tier 그룹 렌더 OK');
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -78,14 +78,14 @@ test.describe('T-20260526-foot-PROGRESS-CHECKPOINT — 경과분석 플랜 탭 (
     const dialog = page.getByTestId('progress-plan-dialog');
     await expect(dialog).toBeVisible({ timeout: 5_000 });
 
-    // 패키지 타입: package1 선택 (기본값)
-    await page.getByTestId('pkg-type-btn-package1').click();
+    // 회차 tier: 48회 선택 (milestone ≤ tier). 47 = 6배수 아니라 시드 비충돌
+    await page.getByTestId('tier-btn-48').click();
 
-    // 회차 입력 (99 — 테스트용 비충돌 값)
-    await page.getByTestId('milestone-input').fill('99');
+    // 회차 입력 (47 — 48 tier 내 비충돌 값)
+    await page.getByTestId('milestone-input').fill('47');
 
     // 레이블 자동 생성 확인 후 커스텀 입력
-    await page.getByTestId('label-input').fill('[테스트] 99회 E2E 검증');
+    await page.getByTestId('label-input').fill('[테스트] 47회 E2E 검증');
 
     // 저장
     await page.getByTestId('progress-plan-save-btn').click();
@@ -98,18 +98,18 @@ test.describe('T-20260526-foot-PROGRESS-CHECKPOINT — 경과분석 플랜 탭 (
     await page.waitForTimeout(800);
     const rows = page.getByTestId('progress-plan-row');
     const texts = await rows.allTextContents();
-    const found = texts.some(t => t.includes('99'));
+    const found = texts.some(t => t.includes('47'));
     expect(found).toBeTruthy();
 
     console.log('[T2] 신규 체크포인트 추가 + 목록 반영 OK');
 
-    // 정리: 추가한 99회 행 삭제 (테스트 격리)
+    // 정리: 추가한 47회 행 삭제 (테스트 격리)
     // delete 버튼은 row 내 Trash2 아이콘 — 목록 재조회 후 해당 행 찾아 삭제
     const deleteButtons = page.getByTestId(/progress-plan-delete-/);
     const count = await deleteButtons.count();
     for (let i = 0; i < count; i++) {
       const rowText = await rows.nth(i).textContent();
-      if (rowText?.includes('99')) {
+      if (rowText?.includes('47')) {
         page.on('dialog', d => d.accept()); // confirm 자동승인
         await deleteButtons.nth(i).click();
         await page.waitForTimeout(600);
