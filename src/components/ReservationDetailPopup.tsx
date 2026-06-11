@@ -307,6 +307,8 @@ export function ReservationDetailPopup({
   //   이 팝업 [체크인 전환] 경로가 재진 카드의 활성 경로가 되며, 잔존하던 CHECKIN-FIRST-INFO의
   //   'consult_waiting' 전(全) visit_type 하드코딩이 재진을 상담대기로 잘못 활성화(권준서 F-1548).
   //   canonical 출처: T-20260522-foot-REVISIT-TREAT-WAIT(ebe1dd7) / NewCheckInDialog:223 / Dashboard:5195 동일 규칙.
+  //   재배포 트리거(2026-06-11): b584a06 소스 fix는 정확했으나 Vercel 라이브 번들이 pre-fix(consult_waiting 하드코딩)
+  //   상태로 정체(배포 미전파). 라이브 청크 강제 갱신 위한 redeploy 마커. AC/로직 무변경.
   const doCheckIn = async () => {
     setBusy(true);
     const { data: existing } = await supabase
