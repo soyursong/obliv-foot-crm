@@ -16,6 +16,13 @@ import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
 import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
 import QuickRxBar, { isDoctor, RxConfirmedSummary } from './QuickRxBar';
+import {
+  // T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 처방확정 공통 가드 + 차트변경 audit.
+  assertInClinicForRxMutation,
+  logRxAudit,
+  summarizeRxForAudit,
+  IN_CLINIC_GATE_CODE,
+} from '@/lib/rxMutationGuard';
 import { STATUS_KO, isInClinic } from '@/lib/status';
 import { useChart } from '@/lib/chartContext';
 import { formatRxConfirmedSummary } from '@/lib/rxTooltip';
@@ -349,8 +356,18 @@ function useSigningDoctorsByDate(clinicId: string | null, dateISO: string) {
 
 function useConfirmPrescription() {
   const qc = useQueryClient();
+  const { profile } = useAuth();
   return useMutation({
-    mutationFn: async (checkInId: string) => {
+    mutationFn: async ({ checkInId, customerId }: { checkInId: string; customerId?: string | null }) => {
+      // T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 처방확정도 인플레이스 chart mutate →
+      //   공통 가드로 귀가환자 차단(fail-closed, 우회 0). 비잔류면 audit(차단) 후 throw.
+      const actor = { id: profile?.id ?? null, name: profile?.name ?? null, role: profile?.role ?? null };
+      const cur = await assertInClinicForRxMutation(checkInId, {
+        blockedAction: 'rx_confirm_blocked',
+        surface: 'doctor_patient_list',
+        actor,
+        customerId,
+      });
       const now = new Date().toISOString();
       const { error } = await supabase
         .from('check_ins')
@@ -361,12 +378,26 @@ function useConfirmPrescription() {
         })
         .eq('id', checkInId);
       if (error) throw error;
+      // 차트변경 내부로그(성공) — confirm.
+      void logRxAudit({
+        checkInId,
+        customerId,
+        action: 'rx_confirm',
+        surface: 'doctor_patient_list',
+        actor,
+        beforeSummary: summarizeRxForAudit(cur.prescription_items),
+        afterSummary: summarizeRxForAudit(cur.prescription_items),
+      });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['quick_rx_patient_list'] });
       toast.success('처방이 확정됐어요.');
     },
-    onError: (e: Error) => toast.error(`확정 실패: ${e.message}`),
+    onError: (e: Error & { code?: string }) => {
+      // 귀가환자 차단(IN_CLINIC_GATE) — 친절 안내. 그 외 일반 실패.
+      if (e.code === IN_CLINIC_GATE_CODE) toast.error(e.message);
+      else toast.error(`확정 실패: ${e.message}`);
+    },
   });
 }
 
@@ -611,7 +642,7 @@ function PatientRow({
             <Button
               size="sm"
               className="h-6 text-[11px] bg-teal-600 hover:bg-teal-700 px-2"
-              onClick={() => confirm.mutate(row.id)}
+              onClick={() => confirm.mutate({ checkInId: row.id, customerId: row.customer_id })}
               disabled={confirm.isPending}
               data-testid="confirm-prescription-btn"
             >
@@ -660,6 +691,9 @@ function PatientRow({
             /* T-20260610-foot-QUICKRX-BLOCK-PANEL-HIDE: 차트 연결 버그 수정 — onOpenChart 미전달로
                원내 비잔류 시 차트 열기 버튼이 렌더되지 않던 버그. */
             onOpenChart={onOpenChart}
+            /* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 차트변경 audit attribution. */
+            surface="doctor_patient_list"
+            customerId={row.customer_id}
             compact
           />
           {hasPendingRx && (
@@ -688,6 +722,9 @@ function PatientRow({
               checkedInAt={row.checked_in_at}
               checkInFlag={row.status_flag}
               onOpenChart={onOpenChart}
+              /* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 차트변경 audit attribution. */
+              surface="doctor_patient_list"
+              customerId={row.customer_id}
             />
             {row.doctor_confirmed_at && (
               <span className="ml-auto shrink-0 text-[11px] text-green-600">
