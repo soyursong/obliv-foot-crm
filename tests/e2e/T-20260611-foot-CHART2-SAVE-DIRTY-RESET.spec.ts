@@ -52,14 +52,26 @@ async function editEmail(page: Page, value: string) {
   return true;
 }
 
-/** 본문 [저장] 버튼 클릭 → 저장 완료 대기. 버튼 미활성/실패 시 false. */
+/**
+ * 본문 [저장] 버튼 클릭 → 저장 "완료"까지 대기. 버튼 미활성/실패 시 false.
+ *
+ * 주의(타이밍): 저장 버튼은 `disabled={savingInfoPanel || !isDirty}`.
+ *   저장 시작 즉시 savingInfoPanel=true 로 버튼이 disabled("저장 중…")가 되므로,
+ *   단순히 toBeDisabled 만 기다리면 비동기 저장(handleInfoPanelSave 의 RPC + markChartClean)
+ *   완료 "이전"에 통과해버린다 → 가드 dirtyRef 가 아직 clean 되기 전에 닫기 단계로 진입.
+ *   따라서 (1) 텍스트가 "저장 중…" → "저장" 으로 복귀(savingInfoPanel=false)하고
+ *           (2) 버튼이 disabled(=isDirty 리셋됨) 인 상태,
+ *   즉 "저장 완료" 상태까지 기다린다. 이 시점이면 markChartClean 이 동기적으로 이미 실행됨.
+ */
 async function saveInfoPanel(page: Page) {
   const saveBtn = page.locator('[data-testid="chart-info-save-btn"]');
   if ((await saveBtn.count()) === 0) return false;
   if (await saveBtn.isDisabled()) return false; // isDirty 미반영 시드 환경 → skip
   await saveBtn.click();
-  // 저장 후 버튼은 isDirty=false 로 다시 disabled 가 되어야 정상(저장 성공 신호)
   try {
+    // 저장 in-flight("저장 중…") 종료 = 텍스트 "저장" 복귀(savingInfoPanel=false)
+    await expect(saveBtn).toHaveText('저장', { timeout: 8000 });
+    // isDirty=false 반영(저장 성공 신호) — 완료 후엔 disabled 유지
     await expect(saveBtn).toBeDisabled({ timeout: 8000 });
   } catch {
     return false; // 저장 실패(권한/시드) → 가드 리셋 검증 불가 → graceful
@@ -88,7 +100,10 @@ test.describe('T-20260611-foot-CHART2-SAVE-DIRTY-RESET — 저장 성공 시 dir
     if (!(await editEmail(page, `reset.s1b.${Date.now()}@obliv.test`))) { test.skip(); return; }
     if (!(await saveInfoPanel(page))) { test.skip(); return; }
 
-    await page.locator('[data-testid="chart-backdrop"]').click();
+    // 백드롭은 full-screen(fixed inset-0)이지만 슬라이드 패널(우측 88~95vw)이 중앙을 덮어
+    //   기본 .click()(요소 중앙 타깃)은 패널 subtree 에 pointer intercept 된다.
+    //   → 패널에 가려지지 않는 좌측 노출 영역 좌표를 직접 지정해 백드롭을 클릭한다.
+    await page.locator('[data-testid="chart-backdrop"]').click({ position: { x: 12, y: 300 } });
     await expect(page.locator('[data-testid="chart-close-confirm"]')).toBeHidden();
     await expect(panel).toBeHidden({ timeout: 3000 });
   });
