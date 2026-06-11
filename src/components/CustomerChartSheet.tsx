@@ -179,7 +179,7 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
 
       {/* T-20260603-foot-CHART-UNSAVED-GUARD AC-1: 닫기 확인 다이얼로그 (z-[80]/[90] — 차트 위) */}
       <Dialog open={showCloseConfirm} onOpenChange={(o) => { if (!o) setShowCloseConfirm(false); }}>
-        <DialogContent className="max-w-sm" hideClose data-testid="chart-close-confirm">
+        <DialogContent className="max-w-lg" hideClose data-testid="chart-close-confirm">
           <DialogHeader>
             <DialogTitle>작성 중인 내용이 있습니다</DialogTitle>
           </DialogHeader>
@@ -187,7 +187,8 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
             저장하지 않은 작성 내용이 사라질 수 있습니다. 저장 후 닫으시겠습니까?
           </p>
           {/* T-20260609-foot-CHART2-SAVE-CLOSE-BTN: 3선택지 — 저장 후 닫기(primary) / 저장하지 않고 닫기 / 취소 */}
-          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          {/* T-20260611-foot-CHART2-CONFIRM-BTN-OVERFLOW: max-w-lg + sm:flex-wrap 으로 3버튼 가로 배치 시 경계 밖 overflow 방지 (좁은 폭은 col-reverse 세로 스택) */}
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
             <Button
               variant="outline"
               data-testid="chart-close-cancel"
