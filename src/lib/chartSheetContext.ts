@@ -40,3 +40,18 @@ export function useRegisterChartSave(saveFn: ChartSaveFn): void {
     };
   }); // deps 없음 — 매 렌더 최신 saveFn 반영(stale closure 방지)
 }
+
+/**
+ * T-20260611-foot-CHART2-SAVE-DIRTY-RESET
+ * 본문 [저장] 직접 클릭으로 저장 성공 시, Sheet의 미저장 가드 dirty 상태(onInput proxy)를
+ * clean으로 리셋하는 알림 채널. 신규 dirty 메커니즘 신설 X — 기존 dirtyRef를 그대로 끈다.
+ * - Sheet(CustomerChartSheet)가 markChartClean(dirtyRef=false)을 Provider로 내려주고,
+ *   Page(CustomerChartPage)가 handleInfoPanelSave 성공 시 호출.
+ * - null이면 독립 페이지 모드(Sheet 아님) → no-op.
+ */
+export const ChartSheetMarkCleanCtx = createContext<(() => void) | null>(null);
+
+/** Sheet dirty 가드를 clean으로 리셋. Sheet 모드 아니면 no-op 반환(독립 페이지 안전). */
+export function useChartSheetMarkClean(): () => void {
+  return useContext(ChartSheetMarkCleanCtx) ?? (() => {});
+}
