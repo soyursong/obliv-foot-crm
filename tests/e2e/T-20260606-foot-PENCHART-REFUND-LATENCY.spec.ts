@@ -43,19 +43,21 @@ test.describe('T-20260606-foot-PENCHART-REFUND-LATENCY', () => {
     expect(fnEnd, 'handleNativePointerMove 종료 경계 없음').toBeGreaterThan(fnIdx);
     const fn = src.slice(fnIdx, fnEnd);
 
-    // 펜 전용 배칭 분기: tool === 'pen' 블록 안에서 beginPath 1회 + 단일 stroke
-    const penBranchIdx = fn.indexOf("if (tool === 'pen') {", fn.indexOf("const eraserSz"));
-    expect(penBranchIdx, '펜 배칭 분기(if tool===pen) 없음').toBeGreaterThan(0);
-    // 펜 분기 끝 = 펜 외 도구 블록의 white 마커 직전까지 (그 사이엔 펜 stroke 1회만 존재)
+    // 펜 단일-path 배칭 분기: eraserSz 이후의 드로잉 stroke 블록.
+    //   T-20260610-3REFIX 이후 형광펜이 같은 단일-path quadratic 경로를 공유 →
+    //   분기 헤더가 `if (tool === 'pen' || tool === 'highlight') {` 로 통합됨(가드 확정 구조).
+    const penBranchIdx = fn.indexOf("if (tool === 'pen' || tool === 'highlight') {", fn.indexOf("const eraserSz"));
+    expect(penBranchIdx, '펜/형광펜 단일-path 배칭 분기 없음').toBeGreaterThan(0);
+    // 펜·형광펜 배칭 분기 끝 = 펜 외 도구(eraser/white) else 블록의 white 마커 직전까지.
     const whiteMarkerIdx = fn.indexOf("tool === 'white'", penBranchIdx);
     expect(whiteMarkerIdx, '펜 외 도구(white) 경계 마커 없음').toBeGreaterThan(penBranchIdx);
     const penBranch = fn.slice(penBranchIdx, whiteMarkerIdx);
     expect(penBranch, '단일 path 배칭 플래그(drewSomething) 없음').toContain('drewSomething');
     expect(penBranch, '배칭 path 시작(beginPath) 없음').toContain('ctx.beginPath()');
     expect(penBranch, '연속 곡선 이어붙임(quadraticCurveTo) 없음').toContain('ctx.quadraticCurveTo(');
-    // 펜 분기 안 stroke() 는 정확히 1회 (점별 stroke 제거 확인)
+    // 배칭 분기 안 stroke() 는 정확히 1회 (점별 stroke 제거 확인 = flush N→1)
     const penStrokeCount = (penBranch.match(/ctx\.stroke\(\)/g) ?? []).length;
-    expect(penStrokeCount, `펜 분기 stroke() ${penStrokeCount}회 — 단일 stroke(1회) 아님`).toBe(1);
+    expect(penStrokeCount, `펜/형광펜 배칭 분기 stroke() ${penStrokeCount}회 — 단일 stroke(1회) 아님`).toBe(1);
   });
 
   // ── AC-1: 빠른 획 누락 방지(coalesced events) 유지 ──────────────────────────
@@ -193,6 +195,35 @@ test.describe('T-20260606-foot-PENCHART-REFUND-LATENCY', () => {
     expect(drawCanvasIdx).toBeGreaterThan(0);
     const styleBlock = src.slice(drawCanvasIdx, drawCanvasIdx + 600);
     expect(styleBlock, "willChange:'transform' 잔존 — 검정화면 재발 위험").not.toContain("willChange: 'transform'");
+  });
+
+  // ── REAL-FIX (합성 비용 절감): 정적·불투명 bgCanvas 만 독립 GPU 레이어로 승격 ──────────────
+  //   [RC — SUPERVISOR COURT 6/10] 대형 양식 jank = 렌더/합성 병목(frameGap 54.9ms). 입력경로 아님.
+  //   [수정] bgCanvas(불투명 양식 ~42MB, 드로잉 중 불변)를 translateZ(0)로 레이어 캐시 →
+  //          펜 stroke 시 *드로잉 레이어 dirty 영역만* 재합성(배경 재합성 제외) = dirty-rect 부분 redraw 효과.
+  //   [검정화면 안전] 승격 대상은 *불투명* bgCanvas → opaque backing이 정답 렌더(투명도 소실 없음).
+  //          *투명* drawCanvas 는 비승격 유지(승격 시 opaque backing=검정화면 근인) → 가드 준수.
+  test('REAL-FIX: bgCanvas(불투명·정적) translateZ(0) 레이어 승격 — drawCanvas(투명)는 비승격 유지', () => {
+    const src: string = fs.readFileSync(SRC, 'utf-8');
+
+    // bgCanvas 스타일 블록에 translateZ(0) 합성 레이어 승격 적용
+    const bgCanvasIdx = src.indexOf('ref={bgCanvasRef}');
+    expect(bgCanvasIdx, 'bgCanvas 렌더 없음').toBeGreaterThan(0);
+    const bgStyle = src.slice(bgCanvasIdx, bgCanvasIdx + 2600);
+    expect(bgStyle, 'bgCanvas 합성 레이어 승격(translateZ(0)) 없음').toContain("transform: 'translateZ(0)'");
+
+    // drawCanvas(투명)는 transform/translateZ/willChange 승격 금지 — 검정화면 근인 차단
+    const drawCanvasIdx = src.indexOf('ref={canvasRef}');
+    const drawStyle = src.slice(drawCanvasIdx, drawCanvasIdx + 700);
+    expect(drawStyle, "drawCanvas 에 translateZ 승격 잔존 — 투명 캔버스 opaque backing=검정화면 위험").not.toContain('translateZ');
+    expect(drawStyle, "drawCanvas willChange:'transform' 잔존 — 검정화면 위험").not.toContain("willChange: 'transform'");
+
+    // 승격 위치 정합: translateZ(0) 는 drawCanvas 가 아니라 bgCanvas 쪽에 위치(둘 사이 순서 검증)
+    const tzIdx = src.indexOf("transform: 'translateZ(0)'");
+    expect(tzIdx, 'translateZ(0) 없음').toBeGreaterThan(0);
+    expect(tzIdx, 'translateZ(0) 가 bgCanvas 이후·drawCanvas 이전 위치가 아님(=잘못된 캔버스에 적용)')
+      .toBeGreaterThan(bgCanvasIdx);
+    expect(tzIdx, 'translateZ(0) 가 drawCanvas 블록에 적용됨').toBeLessThan(drawCanvasIdx);
   });
 
   // ── AC-1: 대형 캔버스(환불/비급여 동의서) 정의 보존 ──────────────────────────
