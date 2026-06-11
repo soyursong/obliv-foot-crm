@@ -2975,6 +2975,24 @@ export function PenChartTab({
                 pointerEvents: 'none',
                 // AC-1: CSS downscale → GPU 고품질 보간
                 imageRendering: 'auto',
+                // ── T-20260606-foot-PENCHART-REFUND-LATENCY (REAL-FIX: 합성 비용 절감) ──────────
+                //   [RC — SUPERVISOR COURT 6/10] 대형 양식(refund_consent 1588×6738, ~42MB)의 펜
+                //   jank 근인은 입력경로가 아니라 *렌더/합성 병목*(frameGap 54.9ms, coa/move 5.67=정상).
+                //   [기존 구조] bgCanvas(불투명 양식 ~42MB) + drawCanvas(투명 드로잉 ~42MB)가 **동일
+                //   parent 합성 레이어**에 공존 → 펜 stroke가 invalidate 한 영역을 브라우저가 매 프레임
+                //   "배경+드로잉 두 캔버스 합쳐" 재합성 → 대형 양식에서 합성 stall(jank).
+                //   [수정] 정적·불투명 배경을 translateZ(0)로 **독립 GPU 레이어로 승격(캐시)**.
+                //   배경은 양식 로드 후 불변(드로잉 중 픽셀 변화 0)이므로 한 번 업로드된 텍스처가 그대로
+                //   재사용됨 → 이후 펜 stroke는 *드로잉 레이어의 dirty 영역만* 재래스터/재합성(배경 재합성 제외)
+                //   = "매 프레임 전체(배경 포함) redraw" 제거 = dirty-rect 부분 redraw 효과.
+                //   [검정화면 안전 — AC-2] 검정화면(BLACKSCR) 근인은 *투명* drawCanvas가 레이어 승격 시
+                //   opaque(alpha-less) backing store를 받아 투명 픽셀이 BLACK으로 합성되는 것. 본 승격은
+                //   **불투명** bgCanvas(흰 fillRect + 양식 이미지) 대상 → opaque backing이 곧 정답 렌더라
+                //   투명도 소실 자체가 없음 → 검정화면 메커니즘 비해당. drawCanvas는 의도적으로 비승격 유지.
+                //   [진단 비간섭] REOPEN4 진단(runPenChartDiagnostics)은 drawCanvas의 *조상* 체인만 순회 →
+                //   sibling 인 bgCanvas의 transform 은 false-flag 안 됨. desync 미사용·willChange 없음.
+                transform: 'translateZ(0)',
+                backfaceVisibility: 'hidden',
               }}
             />
             {/* 드로잉 레이어: 투명 배경 */}
