@@ -81,7 +81,6 @@ import { cn } from '@/lib/utils';
 import { nextSlotSortOrder as computeNextSlotSortOrder, compareSlotFifo } from '@/lib/slotOrder';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import { NewCheckInDialog } from '@/components/NewCheckInDialog';
-import { CheckinFirstInfoDialog } from '@/components/CheckinFirstInfoDialog';
 import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
 import DoctorCallListBar from '@/components/DoctorCallListBar';
 import { PaymentDialog } from '@/components/PaymentDialog';
@@ -2887,8 +2886,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState<CheckIn | null>(null);
   const [openNew, setOpenNew] = useState(false);
-  // T-20260522-foot-CHECKIN-FIRST-INFO: 초진 접수 정보입력 폼 다이얼로그 상태
-  const [firstInfoTarget, setFirstInfoTarget] = useState<Reservation | null>(null);
   const [selectedCheckIn, setSelectedCheckIn] = useState<CheckIn | null>(null);
   const [paymentTarget, setPaymentTarget] = useState<CheckIn | null>(null);
   const [paymentInitialMode, setPaymentInitialMode] = useState<'single' | 'package'>('single');
@@ -5243,9 +5240,7 @@ export default function Dashboard() {
 
   // T-20260529-foot-RECEPTION-BTN-REMOVE: 접수 버튼 제거로 현재 미사용 — 복구용 보존
   // 접수는 셀프접수 매칭 또는 우측 상단 체크인 버튼으로만 처리
-  // T-20260529-foot-RRN-SETTING-CHECK: handleReservationCheckIn 복원
-  // 초진 → CheckinFirstInfoDialog 오픈(주민번호 입력) → onCompleted → doCheckInForReservation
-  // 재진/체험 → 폼 없이 바로 doCheckInForReservation
+  // T-20260611-foot-CHECKIN-XFER-OLDFORM-REMOVE: 초진 구 정보입력 폼(주민번호+동의서) 제거 → 모든 visit_type 바로 체크인
   const _handleReservationCheckIn = async (res: Reservation) => {
     if (!clinic) return;
     // 프론트 중복 방지 — 이미 체크인된 예약이면 차단
@@ -5256,13 +5251,8 @@ export default function Dashboard() {
       return;
     }
 
-    if (res.visit_type === 'new') {
-      // 초진: 정보입력 폼 다이얼로그 → 완료 후 doCheckInForReservation
-      setFirstInfoTarget(res);
-    } else {
-      // 재진/체험: 폼 없이 바로 체크인
-      await doCheckInForReservation(res);
-    }
+    // 초진/재진/체험 모두 폼 없이 바로 체크인 (slot 분기는 doCheckInForReservation 내부 유지)
+    await doCheckInForReservation(res);
   };
   void _handleReservationCheckIn; // T-20260529-foot-RECEPTION-BTN-REMOVE: 접수 버튼 제거로 미사용 — 복구용 보존
 
@@ -6785,20 +6775,6 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* T-20260522-foot-CHECKIN-FIRST-INFO: 초진 접수 정보입력 폼 다이얼로그 */}
-      {firstInfoTarget && (
-        <CheckinFirstInfoDialog
-          reservation={firstInfoTarget}
-          open
-          onOpenChange={(o) => { if (!o) setFirstInfoTarget(null); }}
-          onCompleted={() => {
-            // 클로저 캡처 방지: 현재 타겟 로컬에 복사 후 state 초기화
-            const target = firstInfoTarget;
-            setFirstInfoTarget(null);
-            doCheckInForReservation(target);
-          }}
-        />
-      )}
     </div>
   );
 }
