@@ -1,5 +1,5 @@
 // T-20260525-foot-MESSAGING-V1: 풋센터 권한 매트릭스
-// admin/manager/director 전용 메시지 설정 포함
+// 메시지 설정: T-20260611-foot-MSGSETTINGS-STAFF-ACCESS 로 전직원(8역할, tm 제외) 개방
 
 export type UserRole =
   | 'admin'
@@ -19,7 +19,7 @@ export type PermKey =
   | 'closing'
   | 'stats'
   | 'register'
-  | 'messaging'      // T-20260525-foot-MESSAGING-V1: 통합 설정 > 메시지 (admin/manager/director 전용)
+  | 'messaging'      // T-20260525-foot-MESSAGING-V1: 통합 설정 > 메시지 → T-20260611-foot-MSGSETTINGS-STAFF-ACCESS: 전직원(8역할) 개방, tm 제외
   | 'manual_sms_send';  // T-20260606-foot-CTXMENU-SMS-SEND: 대시보드 우클릭 [문자] 수동 1:1 발송 → T-20260608-foot-SMS-CTXMENU-ALLROLE: 전직원 확대
 
 // T-20260608-foot-SMS-CTXMENU-ALLROLE: 전직원(8역할) 집합 SSOT.
@@ -40,7 +40,10 @@ const PERM_MATRIX: Record<PermKey, UserRole[]> = {
   closing:      ['admin', 'manager', 'director', 'consultant', 'part_lead'],  // T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN: coordinator/therapist 회수(매출집계 EXCL). RLS reader(consultant_or_above ∪ floor_staff)와 정렬.
   stats:        ['admin', 'manager', 'director', 'part_lead', 'tm'],
   register:     ['admin', 'manager'],
-  messaging:    ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'],  // T-20260525-foot-MESSAGING-V1 + T-20260525-foot-ROLE-PERM-CUSTOM 3차: coordinator/therapist 추가
+  // T-20260525-foot-MESSAGING-V1 + ROLE-PERM-CUSTOM 3차(coordinator/therapist) → T-20260611-foot-MSGSETTINGS-STAFF-ACCESS: part_lead/staff 추가 = 전직원(8역할).
+  //   ★tm 제외★: 박민지 팀장 C안(AC6, STAFF-ROLE-TM-ADD) tm=4메뉴 최소권한 고정 → messaging 미포함. ALL_STAFF_ROLES(tm 미포함) 재사용으로 구조적 보장.
+  //   ⚠️ App.tsx settings RoleGuard 와 동일 집합 SSOT — 한쪽만 바꾸지 말 것.
+  messaging:    [...ALL_STAFF_ROLES],
   // T-20260606-foot-CTXMENU-SMS-SEND §6 admin/manager 한정 → T-20260608-foot-SMS-CTXMENU-ALLROLE: 김주연 총괄 re-scope("전직원 권한 풀어줘") 전직원 확대(supersede).
   // tm 제외: AC6(STAFF-ROLE-TM-ADD) 미포함 + EF send-notification allowedRoles 패리티 유지.
   manual_sms_send: [...ALL_STAFF_ROLES],

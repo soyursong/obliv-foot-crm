@@ -104,8 +104,9 @@ const NAV_ITEMS: {
   //   진료관리 서브탭은 Services.tsx 내부에서 admin/manager/director 한정 노출 + App.tsx RoleGuard 이중가드 보존.
   { to: '/admin/services', label: '서비스관리', icon: Stethoscope, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
   // T-20260525-foot-MESSAGING-V1 AC-S1: 메시지 설정 — 서비스관리 바로 아래 (현장 요청: 김주연 총괄)
-  // T-20260525-foot-ROLE-PERM-CUSTOM 3차: 통계·매출집계·계정관리 외 전권한 → coordinator/therapist 추가
-  { to: '/admin/settings', label: '메시지 설정', icon: MessageSquare, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'] },
+  // T-20260525-foot-ROLE-PERM-CUSTOM 3차: coordinator/therapist 추가
+  // T-20260611-foot-MSGSETTINGS-STAFF-ACCESS: part_lead/staff 추가 = 전직원(8역할). 메뉴=라우트(App.tsx settings RoleGuard)=PERM_MATRIX.messaging 동일 집합 SSOT. ★tm 제외★(최소권한). nav 누락 시 route 개방돼도 메뉴 미노출로 무력화 → 패리티 필수.
+  { to: '/admin/settings', label: '메시지 설정', icon: MessageSquare, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'staff'] },
   // AC-1: 3역할 → 직원·공간관리 접근
   { to: '/admin/staff', label: '직원·공간', icon: UserCog, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
   // AC-1: 3역할 → 병원·원장 정보 접근 (뷰 전용)
