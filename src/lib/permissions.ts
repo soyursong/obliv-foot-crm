@@ -37,7 +37,10 @@ const PERM_MATRIX: Record<PermKey, UserRole[]> = {
   dashboard:    [...ALL_STAFF_ROLES, 'tm'],
   reservations: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'tm'],
   customers:    [...ALL_STAFF_ROLES, 'tm'],
-  closing:      ['admin', 'manager', 'director', 'consultant', 'part_lead'],  // T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN: coordinator/therapist 회수(매출집계 EXCL). RLS reader(consultant_or_above ∪ floor_staff)와 정렬.
+  // T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN(policy_correction_jnz7 — 김주연 총괄 직접 정정): 일마감=직원 업무(daily closing workflow, /closing Closing.tsx → daily_closings/closing_manual). 전직원(8역할, tm 제외) OPEN.
+  //   ★이전 값(coordinator/therapist 회수)은 '일마감'을 '매출집계'로 오분류 → 정정. 매출집계(실장별·치료사별 성과)는 별도 /sales(payments 직접쿼리, PERM 없음·route admin/manager EXCL) — 이 키와 무관.★
+  //   ⚠️ AdminLayout nav + App.tsx route 와 3-gate 동일 집합 SSOT(한쪽만 바꾸면 NAV-BOUNCE). ★tm 제외★(STAFF-ROLE-TM-ADD 최소권한) → ALL_STAFF_ROLES 재사용으로 구조 보장.
+  closing:      [...ALL_STAFF_ROLES],
   stats:        ['admin', 'manager', 'director', 'part_lead', 'tm'],
   register:     ['admin', 'manager'],
   // T-20260525-foot-MESSAGING-V1 + ROLE-PERM-CUSTOM 3차(coordinator/therapist) → T-20260611-foot-MSGSETTINGS-STAFF-ACCESS: part_lead/staff 추가 = 전직원(8역할).

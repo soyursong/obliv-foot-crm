@@ -113,8 +113,10 @@ const NAV_ITEMS: {
   { to: '/admin/clinic-settings', label: '병원·원장 정보', icon: Building2, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
   // T-20260606-foot-THERAPIST-EVAL-VIEWER-ADMIN: 치료사 평가 근거 데이터 → 어드민(원장/관리자)만 노출 + 라우트 가드(App.tsx) 이중
   { to: '/admin/treatment-table', label: '치료 테이블', icon: Table2, roles: ['admin', 'manager'] },
-  // AC-1: 3역할 → 일마감 접근 (뷰 전용; WRITE=admin/manager만)
-  { to: '/admin/closing', label: '일마감', icon: Receipt, roles: ['admin', 'manager', 'consultant', 'coordinator', 'therapist'] },
+  // T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN(policy_correction_jnz7 — 김주연 총괄 직접): 일마감=직원 업무(daily closing workflow). 전직원(8역할, tm 제외) OPEN.
+  //   ★이전 LOCK(coordinator/therapist 회수)은 '일마감'을 '매출집계'로 오분류한 것 → 정정. 매출집계(실장별·치료사별 성과)는 별도 /admin/sales(admin/manager).★
+  //   nav(여기) = route(App.tsx) = PERM_MATRIX.closing 3-gate 파리티 SSOT 정렬(메뉴 보이는데 route 튕김=NAV-BOUNCE 차단). WRITE=admin/manager만(RLS daily_closings_admin_all).
+  { to: '/admin/closing', label: '일마감', icon: Receipt, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'staff'] },
   { to: '/admin/history', label: '일일 이력', icon: ClipboardList },
   // T-20260605-foot-HANDOVER-BOARD: 현장 명칭 "직원 근무 캘린더"(원장 듀티 로스터와 분리된 독립 메뉴).
   // AC-5: 전 직원 노출 (roles 미지정). 인수인계 작성/조회가 이 캘린더 안에서 이뤄짐.
