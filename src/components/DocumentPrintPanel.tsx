@@ -1495,6 +1495,10 @@ function IssueDialog({
   //   service_charges 가 비어있는 경로에서만 사용(무파괴). 건보 등급은 copay 산출용.
   const [footBillingItems, setFootBillingItems] = useState<FootBillingItem[]>([]);
   const [customerInsuranceGrade, setCustomerInsuranceGrade] = useState<InsuranceGrade | null>(null);
+  // T-20260611-foot-DOC-REISSUE-CONTENT-MISSING: 콘텐츠 핵심 소스(autoValues·serviceItems·
+  //   footBillingItems·grade) 로드 완료 게이트. 로드 전 출력/발행 차단 → async state race 로
+  //   '내용 누락'(빈 items_html·total 0) 스냅샷 저장/출력 방지.
+  const [billingReady, setBillingReady] = useState(false);
   // E2E 통합 — 비급여 서비스 직접 추가 (T-20260507-foot-PATIENT-FLOW-E2E)
   const [addServiceOpen, setAddServiceOpen] = useState(false);
   const [allServices, setAllServices] = useState<{ id: string; name: string; service_code: string | null; price: number; category: string }[]>([]);
@@ -1534,12 +1538,33 @@ function IssueDialog({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    // T-20260611-foot-DOC-REISSUE-CONTENT-MISSING: 콘텐츠 핵심 4소스 로드 완료 전 출력/발행 차단.
+    //   (서류출력 3차 근인) 단건 발행(IssueDialog.allValues)이 async state(footBillingItems·
+    //   serviceItems·autoValues·grade)에 의존 → 로드 미완 시 빈 items_html·total 0 스냅샷이
+    //   저장/출력되어 '내용 전부 누락'. 게이트로 race 자체를 제거(바인딩 로직 무변경).
+    setBillingReady(false);
 
+    // 원장님 이름 결정
+    // - 1명: 자동 세팅 (이미 loadAutoBindContext에서 처리됨)
+    // - 2명 이상: 빈 채로 — 아래 selectedDoctorName으로 별도 처리
+    // - 0명: loadAutoBindContext fallback 처리
+    const resolvedDoctorName =
+      dutyDoctors.length === 1
+        ? dutyDoctors[0].name
+        : dutyDoctors.length > 1
+          ? ''  // 복수: UI에서 선택
+          : undefined; // 없음: loadAutoBindContext 내부 fallback
+
+    if (dutyDoctors.length > 1) {
+      setSelectedDoctorName(dutyDoctors[0].name); // 첫 번째 기본 선택
+    }
+
+    // === 콘텐츠 핵심 4소스 (Promise.all 게이트) ===
     // 서비스 항목 조회 (service_charges JOIN services — T-20260507-SERVICE-CATALOG-SEED Phase 3)
     // T-20260525-foot-INS-FIELD-BIND: category_label 추가 — 상병코드 식별 후 diag_code_N 주입
     // T-20260525-foot-DOC-AUTOBIND-REGRESS AC-2: copayment_amount 추가 — bill_detail 본인부담금 열 동기화
     //   PRINT-FORM-BIND(3cd5c8d) 당시 초회 useEffect에 미포함되어 refreshServiceItems와 불일치 발생.
-    supabase
+    const pServiceItems = supabase
       .from('service_charges')
       .select('id, base_amount, copayment_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code, category_label)')
       .eq('check_in_id', checkIn.id)
@@ -1561,6 +1586,25 @@ function IssueDialog({
         setServiceItems(items);
       });
 
+    const pAutoValues = loadAutoBindContext(checkIn, resolvedDoctorName).then((vals) => {
+      if (!cancelled) setAutoValues(vals);
+    });
+
+    // T-20260608-foot-DOC-PATH12-SYNC: PMW 수기조정 소스(check_in_services) + 건보 등급 로드 →
+    //   service_charges 가 비었을 때 PATH-4 와 동일한 빌링 폴백에 사용.
+    const pFootBilling = loadFootBillingItems(checkIn.id, checkIn.clinic_id).then((items) => {
+      if (!cancelled) setFootBillingItems(items);
+    });
+    const pGrade = loadCustomerInsuranceGrade(checkIn.customer_id).then((grade) => {
+      if (!cancelled) setCustomerInsuranceGrade(grade);
+    });
+
+    // 4소스 모두 resolve 후에만 출력/발행 허용. 일부 실패해도 영구 차단 방지(allSettled).
+    Promise.allSettled([pServiceItems, pAutoValues, pFootBilling, pGrade]).then(() => {
+      if (!cancelled) setBillingReady(true);
+    });
+
+    // === 보조 소스 (게이트 미포함 — UX 보조용) ===
     // 서비스 목록 로드 (비급여 직접 추가용 — T-20260507-foot-PATIENT-FLOW-E2E)
     supabase
       .from('services')
@@ -1573,21 +1617,6 @@ function IssueDialog({
           setAllServices(data as { id: string; name: string; service_code: string | null; price: number; category: string }[]);
         }
       });
-
-    // 원장님 이름 결정
-    // - 1명: 자동 세팅 (이미 loadAutoBindContext에서 처리됨)
-    // - 2명 이상: 빈 채로 — 아래 selectedDoctorName으로 별도 처리
-    // - 0명: loadAutoBindContext fallback 처리
-    const resolvedDoctorName =
-      dutyDoctors.length === 1
-        ? dutyDoctors[0].name
-        : dutyDoctors.length > 1
-          ? ''  // 복수: UI에서 선택
-          : undefined; // 없음: loadAutoBindContext 내부 fallback
-
-    if (dutyDoctors.length > 1) {
-      setSelectedDoctorName(dutyDoctors[0].name); // 첫 번째 기본 선택
-    }
 
     // T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors 로드
     supabase
@@ -1610,21 +1639,9 @@ function IssueDialog({
         }
       });
 
-    loadAutoBindContext(checkIn, resolvedDoctorName).then((vals) => {
-      if (!cancelled) setAutoValues(vals);
-    });
-
-    // T-20260608-foot-DOC-PATH12-SYNC: PMW 수기조정 소스(check_in_services) + 건보 등급 로드 →
-    //   service_charges 가 비었을 때 PATH-4 와 동일한 빌링 폴백에 사용.
-    loadFootBillingItems(checkIn.id, checkIn.clinic_id).then((items) => {
-      if (!cancelled) setFootBillingItems(items);
-    });
-    loadCustomerInsuranceGrade(checkIn.customer_id).then((grade) => {
-      if (!cancelled) setCustomerInsuranceGrade(grade);
-    });
-
     return () => {
       cancelled = true;
+      setBillingReady(false);
       setServiceItems([]);
       setFootBillingItems([]);
       setCustomerInsuranceGrade(null);
@@ -2008,6 +2025,12 @@ function IssueDialog({
   }, [template, allValues]);
 
   const handlePrint = async () => {
+    // T-20260611-foot-DOC-REISSUE-CONTENT-MISSING: 콘텐츠 4소스 로드 미완 시 출력/저장 차단(방어).
+    //   버튼 disabled 게이트의 이중 안전장치 — race 로 빈 스냅샷이 저장되는 것을 원천 차단.
+    if (!billingReady) {
+      toast.error('서류 내용을 불러오는 중입니다. 잠시 후 다시 시도해 주세요.');
+      return;
+    }
     setSaving(true);
     const isFallback = template.id.startsWith('fallback-');
 
@@ -2442,8 +2465,10 @@ function IssueDialog({
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0">
+            {/* T-20260611-foot-DOC-REISSUE-CONTENT-MISSING: 콘텐츠 4소스 로드 완료(billingReady)
+                전까지 미리보기/인쇄 차단 → 빈 내용 스냅샷 저장/출력 방지. */}
             {(template.template_format !== 'pdf') && (
-              <Button variant="outline" size="sm" className="gap-1" onClick={renderPreview}>
+              <Button variant="outline" size="sm" className="gap-1" onClick={renderPreview} disabled={!billingReady}>
                 <Eye className="h-3.5 w-3.5" /> 미리보기
               </Button>
             )}
@@ -2452,11 +2477,11 @@ function IssueDialog({
             </Button>
             <Button
               onClick={handlePrint}
-              disabled={saving}
+              disabled={saving || !billingReady}
               className="gap-1 bg-teal-600 hover:bg-teal-700"
             >
               <Printer className="h-3.5 w-3.5" />
-              {saving ? '발행 중…' : '인쇄'}
+              {!billingReady ? '불러오는 중…' : saving ? '발행 중…' : '인쇄'}
             </Button>
           </DialogFooter>
         </DialogContent>
