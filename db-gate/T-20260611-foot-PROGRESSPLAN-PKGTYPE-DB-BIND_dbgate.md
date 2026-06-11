@@ -69,3 +69,11 @@
 ## 7. 롤백 안전성
 - rollback SQL: tier 행 DELETE + 레거시 10건 재시드 + 컬럼 드랍. 데이터 무손실 복귀.
 - 주의: forward 후 UI로 신규 추가된 tier 행도 rollback 시 삭제(의도된 복귀).
+
+## 8. data-architect CONSULT — GO (§S2.4 데이터 정책 게이트 clear)
+> CONSULT-REPLY: MSG-20260612-062511-33rs (2026-06-12) · 판정 **GO, 이의 없음**
+
+- **계약 영향 0**: `package_progress_plans`는 foot 로컬 운영 테이블 — cross_crm_data_contract.md 부재 grep 확인. `session_count_tier` 신규 컬럼은 타 CRM/도파민 push 영향 0. cue_card_policy 무관(임상 운영). schema_registry 등재 불요(foot 내부 전용).
+- **명명·제약 적정**: `session_count_tier INTEGER` snake_case 표준 부합 + 소스(`packages.total_sessions`) 매칭키 OK. `CHECK(>0)` = total_sessions=0(체험권·Re:Born) tier 매칭 배제를 구조적 강제(AC §130 가드와 정합). `UNIQUE(clinic_id, session_count_tier, session_milestone)` 그레인 정합.
+- **비차단 관찰(이미 해소)**: 비6배수 변칙 total_sessions(예 18·10·20·2·7) 매칭 누락 가능 → **본 dbgate §3 dry-run에서 이미 확인됨**: `1(체험권 ts=1) 17건 ✗ / 기타 비6배수(10,20,2,7) ✗ 자연배제`. 김주연 총괄 confirm "6의 배수 tier" 모델 전제와 정합 → 의도된 배제, 코드 변경 불요.
+- **결론**: 계약 측 차단 없음. supervisor DB 게이트 GO와 **병행 진행 무방**.
