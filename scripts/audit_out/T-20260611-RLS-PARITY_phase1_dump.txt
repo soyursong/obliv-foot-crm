@@ -1,0 +1,280 @@
+READ-ONLY 2026-06-11T04:37:26.566Z
+
+
+══════ chart_doctor_memos ══════
+  • cdm_director_clinic_v2 [ALL] roles="{authenticated}"
+      USING: (((clinic_id = (current_user_clinic_id())::text) AND (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.role = ANY (ARRAY['director'::text, 'admin'::text])))))) OR ((current_user_clinic_id() IS NULL) AND (current_user_role() = ANY (ARRAY['admin'::text, 'director'::text]))))
+      CHECK: (((clinic_id = (current_user_clinic_id())::text) AND (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.role = ANY (ARRAY['director'::text, 'admin'::text])))))) OR ((current_user_clinic_id() IS NULL) AND (current_user_role() = ANY (ARRAY['admin'::text, 'director'::text]))))
+
+══════ check_in_room_logs ══════
+  • room_logs_clinic_rw [ALL] roles="{public}"
+      USING: (clinic_id IN ( SELECT user_profiles.clinic_id
+   FROM user_profiles
+  WHERE (user_profiles.id = auth.uid())))
+      CHECK: (clinic_id IN ( SELECT user_profiles.clinic_id
+   FROM user_profiles
+  WHERE (user_profiles.id = auth.uid())))
+
+══════ clinic_dashboard_layouts ══════
+  • clinic_dashboard_layouts_delete [DELETE] roles="{public}"
+      USING: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = clinic_dashboard_layouts.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))
+  • clinic_dashboard_layouts_insert [INSERT] roles="{public}"
+      CHECK: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = clinic_dashboard_layouts.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))
+  • clinic_dashboard_layouts_select [SELECT] roles="{public}"
+      USING: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = clinic_dashboard_layouts.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true))))
+  • clinic_dashboard_layouts_update [UPDATE] roles="{public}"
+      USING: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = clinic_dashboard_layouts.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))
+
+══════ clinic_events ══════
+  • clinic_events_delete [DELETE] roles="{public}"
+      USING: (clinic_id IN ( SELECT staff.clinic_id
+   FROM staff
+  WHERE (staff.id = auth.uid())))
+  • clinic_events_insert [INSERT] roles="{public}"
+      CHECK: (clinic_id IN ( SELECT staff.clinic_id
+   FROM staff
+  WHERE (staff.id = auth.uid())))
+  • clinic_events_select [SELECT] roles="{public}"
+      USING: (clinic_id IN ( SELECT staff.clinic_id
+   FROM staff
+  WHERE (staff.id = auth.uid())))
+  • clinic_events_update [UPDATE] roles="{public}"
+      USING: (clinic_id IN ( SELECT staff.clinic_id
+   FROM staff
+  WHERE (staff.id = auth.uid())))
+
+══════ clinic_memos ══════
+  • clinic_memos_delete [DELETE] roles="{public}"
+      USING: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = clinic_memos.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))
+  • clinic_memos_insert [INSERT] roles="{public}"
+      CHECK: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = clinic_memos.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))
+  • clinic_memos_select [SELECT] roles="{public}"
+      USING: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = clinic_memos.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true))))
+  • clinic_memos_update [UPDATE] roles="{public}"
+      USING: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = clinic_memos.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))
+
+══════ clinic_messaging_capability ══════
+  • notif_cap_write [ALL] roles="{authenticated}"
+      USING: (get_user_role() = 'admin'::text)
+      CHECK: (get_user_role() = 'admin'::text)
+  • notif_cap_select [SELECT] roles="{authenticated}"
+      USING: (clinic_id = get_user_clinic_id())
+
+══════ customer_special_notes ══════
+  • own_delete_csn [DELETE] roles="{authenticated}"
+      USING: (created_by = (auth.jwt() ->> 'email'::text))
+  • clinic_isolation_csn_insert [INSERT] roles="{authenticated}"
+      CHECK: (clinic_id = current_user_clinic_id())
+  • clinic_isolation_csn_select [SELECT] roles="{authenticated}"
+      USING: (clinic_id = current_user_clinic_id())
+  • own_update_csn [UPDATE] roles="{authenticated}"
+      USING: (created_by = (auth.jwt() ->> 'email'::text))
+      CHECK: (created_by = (auth.jwt() ->> 'email'::text))
+
+══════ customer_treatment_memos ══════
+  • own_delete_ctm [DELETE] roles="{authenticated}"
+      USING: (created_by = (auth.jwt() ->> 'email'::text))
+  • clinic_isolation_ctm_insert [INSERT] roles="{authenticated}"
+      CHECK: (clinic_id = current_user_clinic_id())
+  • clinic_isolation_ctm_select [SELECT] roles="{authenticated}"
+      USING: (clinic_id = current_user_clinic_id())
+  • own_update_ctm [UPDATE] roles="{authenticated}"
+      USING: (created_by = (auth.jwt() ->> 'email'::text))
+      CHECK: (created_by = (auth.jwt() ->> 'email'::text))
+
+══════ duty_roster ══════
+  • duty_roster_delete [DELETE] roles="{public}"
+      USING: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = duty_roster.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))
+  • duty_roster_insert [INSERT] roles="{public}"
+      CHECK: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = duty_roster.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))
+  • duty_roster_select [SELECT] roles="{public}"
+      USING: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = duty_roster.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true))))
+  • duty_roster_update [UPDATE] roles="{public}"
+      USING: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = duty_roster.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))
+
+══════ form_submissions ══════
+  • form_submissions_insert [INSERT] roles="{public}"
+      CHECK: (clinic_id IN ( SELECT user_profiles.clinic_id
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.active = true))))
+  • form_submissions_read [SELECT] roles="{public}"
+      USING: (clinic_id IN ( SELECT user_profiles.clinic_id
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.active = true))))
+  • form_submissions_update [UPDATE] roles="{public}"
+      USING: (clinic_id IN ( SELECT user_profiles.clinic_id
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.active = true))))
+
+══════ medical_charts ══════
+  • mc_clinic_isolated_v3 [ALL] roles="{authenticated}"
+      USING: ((clinic_id = (current_user_clinic_id())::text) OR ((current_user_clinic_id() IS NULL) AND (current_user_role() = ANY (ARRAY['admin'::text, 'director'::text, 'manager'::text, 'coordinator'::text]))))
+      CHECK: ((clinic_id = (current_user_clinic_id())::text) OR ((current_user_clinic_id() IS NULL) AND (current_user_role() = ANY (ARRAY['admin'::text, 'director'::text, 'manager'::text, 'coordinator'::text]))))
+
+══════ notification_logs ══════
+  • notif_logs_select [SELECT] roles="{authenticated}"
+      USING: (clinic_id = get_user_clinic_id())
+
+══════ notification_opt_outs ══════
+  • notif_optout_write [ALL] roles="{authenticated}"
+      USING: ((clinic_id = get_user_clinic_id()) AND (get_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))
+      CHECK: ((clinic_id = get_user_clinic_id()) AND (get_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))
+  • notif_optout_select [SELECT] roles="{authenticated}"
+      USING: (clinic_id = get_user_clinic_id())
+
+══════ notification_templates ══════
+  • notif_tmpl_write [ALL] roles="{authenticated}"
+      USING: ((clinic_id = get_user_clinic_id()) AND (get_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))
+      CHECK: ((clinic_id = get_user_clinic_id()) AND (get_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))
+  • notif_tmpl_select [SELECT] roles="{authenticated}"
+      USING: ((clinic_id = get_user_clinic_id()) OR (clinic_id IS NULL))
+
+══════ package_progress_plans ══════
+  • ppp_write [ALL] roles="{authenticated}"
+      USING: ((clinic_id = current_user_clinic_id()) AND (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))
+      CHECK: ((clinic_id = current_user_clinic_id()) AND (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))
+  • ppp_select [SELECT] roles="{authenticated}"
+      USING: (clinic_id = current_user_clinic_id())
+
+══════ patient_room_daily_log ══════
+  • patient_room_daily_log_clinic_access [ALL] roles="{public}"
+      USING: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = patient_room_daily_log.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true))))
+
+══════ reservation_registrars ══════
+  • resv_registrars_delete [DELETE] roles="{public}"
+      USING: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = reservation_registrars.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))
+  • resv_registrars_insert [INSERT] roles="{public}"
+      CHECK: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = reservation_registrars.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))
+  • resv_registrars_select [SELECT] roles="{public}"
+      USING: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = reservation_registrars.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true))))
+  • resv_registrars_update [UPDATE] roles="{public}"
+      USING: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = reservation_registrars.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))
+
+══════ service_menu_order ══════
+  • smo_clinic_isolated [ALL] roles="{authenticated}"
+      USING: (clinic_id = (current_user_clinic_id())::text)
+      CHECK: (clinic_id = (current_user_clinic_id())::text)
+
+══════ user_dashboard_layout_overrides ══════
+  • udlo_delete [DELETE] roles="{public}"
+      USING: (user_id = auth.uid())
+  • udlo_insert [INSERT] roles="{public}"
+      CHECK: ((user_id = auth.uid()) AND (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = user_dashboard_layout_overrides.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true)))))
+  • udlo_select [SELECT] roles="{public}"
+      USING: ((user_id = auth.uid()) AND (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = user_dashboard_layout_overrides.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true)))))
+  • udlo_update [UPDATE] roles="{public}"
+      USING: (user_id = auth.uid())
+      CHECK: ((user_id = auth.uid()) AND (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = user_dashboard_layout_overrides.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true)))))
+
+══════ insurance_sync_runs ══════
+  • insurance_sync_runs_read_admin [SELECT] roles="{public}"
+      USING: current_user_is_admin_or_manager()
+
+══════ consultation_notes ══════
+  (정책 0건)
+
+══════ leads ══════
+  (정책 0건)
+
+══════ tm_call_logs ══════
+  (정책 0건)
+
+══════ dopamine_callback_config ══════
+  (정책 0건)
+
+══════ dopamine_callback_outbox ══════
+  (정책 0건)
+
+══════ customers ══════
+  • customers_admin_all [ALL] roles="{authenticated}"
+      USING: is_admin_or_manager()
+      CHECK: is_admin_or_manager()
+  • anon_insert_customer_self_checkin [INSERT] roles="{anon}"
+      CHECK: (clinic_id IS NOT NULL)
+  • customers_coord_insert [INSERT] roles="{authenticated}"
+      CHECK: (is_coordinator_or_above() OR is_consultant_or_above())
+  • anon_select_customer_self_checkin [SELECT] roles="{anon}"
+      USING: (clinic_id IS NOT NULL)
+  • customers_approved_read [SELECT] roles="{authenticated}"
+      USING: is_approved_user()
+  • customers_staff_select [SELECT] roles="{authenticated}"
+      USING: is_floor_staff()
+  • customers_consult_update [UPDATE] roles="{authenticated}"
+      USING: is_consultant_or_above()
+      CHECK: is_consultant_or_above()
+  • customers_coord_update [UPDATE] roles="{authenticated}"
+      USING: is_coordinator_or_above()
+      CHECK: is_coordinator_or_above()
+  • customers_staff_update [UPDATE] roles="{authenticated}"
+      USING: is_floor_staff()
+      CHECK: is_floor_staff()
+
+══════ daily_closings ══════
+  • daily_closings_admin_all [ALL] roles="{authenticated}"
+      USING: is_admin_or_manager()
+      CHECK: is_admin_or_manager()
+  • daily_closings_write [ALL] roles="{authenticated}"
+      USING: current_user_is_admin_or_manager()
+      CHECK: current_user_is_admin_or_manager()
+  • daily_closings_finance_read [SELECT] roles="{authenticated}"
+      USING: (is_consultant_or_above() OR is_coordinator_or_above())
+  • daily_closings_read [SELECT] roles="{authenticated}"
+      USING: true
+  • daily_closings_staff_read [SELECT] roles="{authenticated}"
+      USING: is_floor_staff()
+  • daily_closings_therapist_read [SELECT] roles="{authenticated}"
+      USING: is_therapist_or_technician()
+
+══════ document_templates ══════
+  • admin_write_document_templates [ALL] roles="{authenticated}"
+      USING: (EXISTS ( SELECT 1
+   FROM user_profiles
+  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])) AND (user_profiles.active = true))))
+  • staff_read_document_templates [SELECT] roles="{authenticated}"
+      USING: true
+
+DONE (write 없음)
