@@ -2,10 +2,10 @@
 // 환자 클릭 시 2열 × 2행 = 4분할 모달
 // 좌상: 환자정보 8필드 | 우상: 선택 예약 상세
 // 좌하: 전체 예약 히스토리 | 우하: 메모 2종
-// T-20260522-foot-CHECKIN-FIRST-INFO: 초진 접수 시 정보입력 폼 분기
+// T-20260611-foot-CHECKIN-XFER-OLDFORM-REMOVE: 초진 [체크인 전환] 구 정보입력 폼(주민번호+건보동의서) 제거
+//   → 초진도 재진처럼 폼 없이 바로 doCheckIn. 주민번호/동의서 수집은 펜차트로 일원화(정책: RRN-FIELD-REMOVE/CHECKIN-CONSENT-REMOVE).
 
 import { useEffect, useState } from 'react';
-import { CheckinFirstInfoDialog } from '@/components/CheckinFirstInfoDialog';
 import { toast } from '@/lib/toast';
 import {
   Dialog,
@@ -84,8 +84,6 @@ export function ReservationDetailPopup({
   const [busy, setBusy] = useState(false);
   const [cancelDialog, setCancelDialog] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
-  // T-20260522-foot-CHECKIN-FIRST-INFO: 초진 정보입력 폼 다이얼로그
-  const [showFirstInfoDialog, setShowFirstInfoDialog] = useState(false);
 
   // ── 4분할 데이터
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -365,16 +363,13 @@ export function ReservationDetailPopup({
     onChanged();
   };
 
-  // ── 액션: 체크인 전환 (진입점 — 초진/재진 분기)
-  // T-20260522-foot-CHECKIN-FIRST-INFO
-  // - 초진(new): 정보입력 폼 다이얼로그 → 완료 후 doCheckIn 호출
-  // - 재진/선체험: 폼 없이 바로 doCheckIn
+  // ── 액션: 체크인 전환 (진입점)
+  // T-20260611-foot-CHECKIN-XFER-OLDFORM-REMOVE
+  // - 초진/재진/선체험 모두 폼 없이 바로 doCheckIn.
+  //   (구 초진 정보입력 폼 = 주민번호 입력 + 건보 자격조회 동의서 = 제거. 수집은 펜차트로 일원화)
+  //   slot 분기(초진→상담대기 / 재진→치료대기)는 doCheckIn 내부 그대로 유지(무회귀).
   const convertToCheckIn = async () => {
-    if (reservation.visit_type === 'new') {
-      setShowFirstInfoDialog(true);
-    } else {
-      await doCheckIn();
-    }
+    await doCheckIn();
   };
 
   // ── 고객메모 저장
@@ -895,14 +890,6 @@ export function ReservationDetailPopup({
           </DialogContent>
         </Dialog>
       )}
-
-      {/* T-20260522-foot-CHECKIN-FIRST-INFO: 초진 접수 정보입력 폼 */}
-      <CheckinFirstInfoDialog
-        reservation={reservation}
-        open={showFirstInfoDialog}
-        onOpenChange={(o) => { if (!o) setShowFirstInfoDialog(false); }}
-        onCompleted={doCheckIn}
-      />
     </>
   );
 }

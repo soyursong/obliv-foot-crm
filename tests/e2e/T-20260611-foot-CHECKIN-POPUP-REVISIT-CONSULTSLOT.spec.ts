@@ -82,9 +82,13 @@ test.describe('AC-4: 체크인전환 진입점·배선', () => {
     expect(DETAIL_POPUP).toContain('체크인 전환');
   });
 
-  test('AC-4-2: convertToCheckIn — 초진은 정보입력 폼, 재진/체험은 doCheckIn 직행', () => {
-    // 재진/선체험은 폼 없이 바로 doCheckIn → canonical 분기로 treatment_waiting 활성.
-    expect(DETAIL_POPUP).toMatch(/if \(reservation\.visit_type === 'new'\)[\s\S]*?else[\s\S]*?doCheckIn\(\)/);
+  test('AC-4-2: convertToCheckIn — 모든 visit_type 이 doCheckIn 직행 (초진 구 정보입력 폼 제거 후)', () => {
+    // T-20260611-foot-CHECKIN-XFER-OLDFORM-REMOVE 반영:
+    //   초진 구 정보입력 폼(CheckinFirstInfoDialog) 제거로 convertToCheckIn 은 분기 없이 doCheckIn 직행.
+    //   재진/초진 슬롯 분기는 doCheckIn 내부 canonical(AC-1-1/AC-2)로 유지 → 본 ticket 의도 무회귀.
+    expect(DETAIL_POPUP).toMatch(/const convertToCheckIn = async \(\) => \{[\s\S]*?await doCheckIn\(\);[\s\S]*?\};/);
+    // 구 정보입력 폼 분기(showFirstInfoDialog) 가 잔존하면 안 됨.
+    expect(DETAIL_POPUP.includes('showFirstInfoDialog'), 'showFirstInfoDialog 잔존 금지').toBe(false);
   });
 });
 
