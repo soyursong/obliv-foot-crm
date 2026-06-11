@@ -49,8 +49,10 @@ import {
   CheckCircle2, Phone, Send, History, Ban, Zap, QrCode, Download,
   ImagePlus, X,
 } from 'lucide-react';
-import type { Clinic } from '@/lib/types';
+import type { Clinic, CheckIn } from '@/lib/types';
 import { RESERVED_EVENT_TYPES } from '@/lib/notificationEventTypes';
+import SendSmsDialog from '@/components/SendSmsDialog';
+import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import {
   MMS_ACCEPT, validateMmsImage, checkMmsResolution,
   uploadMmsImage, signedMmsImageUrl, removeMmsImage,
@@ -1262,19 +1264,74 @@ function SectionTemplates({ clinicId, templates, onRefresh }: {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// ④ 수동 발송 (stub — Phase 2)
+// ④ 수동 발송 — 고객 검색 → 문자 작성(즉시/예약 선택)
+// T-20260612-foot-SMS-SCHEDULE-SEND-OPTION: 진입점 B. 대시보드 우클릭 [문자]와
+//   동일 SendSmsDialog(발송방식 즉시/예약 선택 UI 포함) 재사용. 신규 SMS 경로 신설 금지.
 // ══════════════════════════════════════════════════════════════════════════════
 
-function SectionManual({ clinicId: _clinicId }: { clinicId: string }) {
+function SectionManual({ clinicId }: { clinicId: string }) {
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState<PatientMatch | null>(null);
+  const [smsTarget, setSmsTarget] = useState<CheckIn | null>(null);
+
+  // SendSmsDialog 는 checkIn(CheckIn) 대상으로 동작. 메시지 설정 진입점은 예약/체크인 맥락이
+  // 없으므로 선택 고객으로 합성 대상을 구성한다(실제 사용 필드: customer_id/name/phone/id).
+  // SendSmsDialog 가 customer_id 로 customers.phone(SSOT)을 재조회하므로 수신번호는 항상 최신.
+  const openSms = useCallback(() => {
+    if (!selected) return;
+    const synthetic = {
+      id: `manual-${selected.id}`,
+      clinic_id: clinicId,
+      customer_id: selected.id,
+      customer_name: selected.name,
+      customer_phone: selected.phone,
+    } as unknown as CheckIn;
+    setSmsTarget(synthetic);
+  }, [selected, clinicId]);
+
   return (
     <div className="max-w-xl space-y-4">
       <div>
         <h2 className="text-lg font-semibold">④ 수동 발송</h2>
-        <p className="text-sm text-muted-foreground mt-1">개별·타겟 발송 기능 (Phase 2 구현 예정)</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          고객을 검색해 문자를 발송합니다. 발송 방식(즉시 / 예약)을 선택할 수 있습니다.
+        </p>
       </div>
-      <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground text-sm">
-        준비 중입니다. D-1 자동 발송 안정화 후 오픈됩니다.
+
+      <div className="space-y-2 rounded-lg border p-4">
+        <label className="text-xs font-medium text-muted-foreground">고객 검색 (이름)</label>
+        <InlinePatientSearch
+          value={query}
+          onChange={setQuery}
+          onSelect={(p) => { setSelected(p); setQuery(p.name); }}
+          onClearSelection={() => { setSelected(null); setQuery(''); }}
+          searchField="name"
+          clinicId={clinicId}
+          selectedCustomerId={selected?.id ?? null}
+          placeholder="고객 이름 2글자 이상 입력"
+        />
+        <div className="pt-1">
+          <Button
+            data-testid="manual-send-open-sms"
+            onClick={openSms}
+            disabled={!selected}
+            className="bg-teal-600 hover:bg-teal-700"
+          >
+            <Send className="mr-1.5 h-4 w-4" /> 문자 작성
+          </Button>
+        </div>
+        {!selected && (
+          <p className="text-[11px] text-muted-foreground">고객을 먼저 선택하세요.</p>
+        )}
       </div>
+
+      <SendSmsDialog
+        open={smsTarget !== null}
+        onOpenChange={(v) => { if (!v) setSmsTarget(null); }}
+        checkIn={smsTarget}
+        clinicId={clinicId}
+        entrySource="settings"
+      />
     </div>
   );
 }

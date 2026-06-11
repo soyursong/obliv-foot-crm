@@ -627,6 +627,152 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // ── scheduled_send 액션 (T-20260612-foot-SMS-SCHEDULE-SEND-OPTION) ─────
+    // 예약(지정시각) 발송. dispatch_scheduled_messages() pg_cron 디스패처가
+    // scheduled_messages 행을 'processing' 으로 점유한 뒤 이 액션으로 POST 한다.
+    // 입력: { _action:'scheduled_send', scheduled_message_id, clinic_id }
+    // 인증: service_role 또는 X-Internal-Cron (위 auth 블록). 사용자 JWT 불가(내부 호출).
+    // 무손실: 결과를 반드시 scheduled_messages.status(sent/failed) 로 기록.
+    //   (기록 실패 시 reaper 가 10분 후 pending 회수 → 재시도. 중복발송은 'processing' 점유로 차단.)
+    if (action === "scheduled_send") {
+      if (!isServiceRole && !isCronCall) {
+        return new Response(
+          JSON.stringify({ success: false, message: "scheduled_send 는 내부 호출 전용입니다." }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const schedId = String(bodyJson.scheduled_message_id ?? "");
+      if (!schedId) {
+        return new Response(
+          JSON.stringify({ success: false, message: "scheduled_message_id 필수" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // 예약 행 로드 — 'processing' 점유 상태만 발송(중복/취소 방어).
+      const { data: schedRow, error: schedErr } = await supabase
+        .from("scheduled_messages")
+        .select("id, clinic_id, customer_id, recipient_phone, body, image_path, status")
+        .eq("id", schedId)
+        .maybeSingle();
+
+      if (schedErr || !schedRow) {
+        return new Response(
+          JSON.stringify({ success: false, message: "예약 발송 건을 찾을 수 없습니다." }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const sr = schedRow as {
+        id: string; clinic_id: string; customer_id: string | null;
+        recipient_phone: string; body: string; image_path: string | null; status: string;
+      };
+
+      // 디스패처가 점유(processing)한 건만 처리. 취소/이미처리 → idempotent skip.
+      if (sr.status !== "processing") {
+        return new Response(
+          JSON.stringify({ success: true, skipped: `status=${sr.status}` }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const sClinic = sr.clinic_id;
+      const sPhone  = (sr.recipient_phone ?? "").replace(/[^0-9]/g, "");
+      const sBody   = (sr.body ?? "").trim();
+      const sImage  = sr.image_path ? String(sr.image_path).trim() : null;
+
+      // 발송 실패를 scheduled_messages 에 기록하고 응답하는 헬퍼(공통).
+      const finalizeSched = async (
+        ok: boolean, channel: string, messageId: string | null, errMsg: string | null,
+      ): Promise<Response> => {
+        // notification_logs 적재(수동발송과 동일 스키마, event_type='scheduled_send')
+        let logId: string | null = null;
+        try {
+          const { data: logRow } = await supabase.from("notification_logs").insert({
+            clinic_id: sClinic,
+            customer_id: sr.customer_id,
+            reservation_id: null,
+            event_type: "scheduled_send",
+            channel,
+            recipient_phone: sPhone,
+            body_rendered: sBody,
+            status: ok ? "sent" : "failed",
+            solapi_message_id: ok ? messageId : null,
+            error_message: ok ? "scheduled" : `scheduled: ${errMsg ?? "발송 실패"}`,
+            sent_at: ok ? new Date().toISOString() : null,
+          }).select("id").maybeSingle();
+          logId = (logRow as { id?: string } | null)?.id ?? null;
+        } catch (e) {
+          console.error("[send-notification] scheduled_send log insert err:", e);
+        }
+        await supabase.from("scheduled_messages").update({
+          status: ok ? "sent" : "failed",
+          sent_at: ok ? new Date().toISOString() : null,
+          notification_log_id: logId,
+          error_message: ok ? null : (errMsg ?? "발송 실패"),
+          updated_at: new Date().toISOString(),
+        }).eq("id", sr.id);
+        return new Response(
+          JSON.stringify({ success: ok, channel: channel.toUpperCase(), message: ok ? "예약 발송 완료" : (errMsg ?? "발송 실패") }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      };
+
+      if (!sPhone || !sBody) {
+        return await finalizeSched(false, "sms", null, "수신번호 또는 본문 누락");
+      }
+      // 이미지 격리 가드(타지점 첨부 차단)
+      if (sImage && sImage.split("/")[0] !== sClinic) {
+        return await finalizeSched(false, "mms", null, "이미지 접근 권한 없음(지점 불일치)");
+      }
+
+      // capability + 발신/화이트리스트 가드 (자동/수동발송과 동일 정책)
+      const { data: scap } = await supabase
+        .from("clinic_messaging_capability")
+        .select("enabled, solapi_api_key_vault_name, solapi_secret_vault_name, sender_number, solapi_validation_status")
+        .eq("clinic_id", sClinic)
+        .maybeSingle();
+      const sc = scap as {
+        enabled: boolean;
+        solapi_api_key_vault_name: string | null;
+        solapi_secret_vault_name: string | null;
+        sender_number: string | null;
+        solapi_validation_status: string | null;
+      } | null;
+      if (!sc || !sc.enabled || !sc.solapi_api_key_vault_name || !sc.solapi_secret_vault_name || !sc.sender_number) {
+        return await finalizeSched(false, "sms", null, "문자 발송 설정 미완료(연결/발신번호)");
+      }
+      if (sc.solapi_validation_status === "not_registered") {
+        return await finalizeSched(false, "sms", null, "발신번호 SOLAPI 화이트리스트 미등록");
+      }
+
+      // 수신거부 가드
+      const { data: sOpt } = await supabase
+        .from("notification_opt_outs")
+        .select("id").eq("clinic_id", sClinic).eq("phone", sPhone).maybeSingle();
+      if (sOpt) {
+        return await finalizeSched(false, "sms", null, "수신거부 고객");
+      }
+
+      const sApiKey    = await getVaultSecret(sc.solapi_api_key_vault_name);
+      const sApiSecret = await getVaultSecret(sc.solapi_secret_vault_name);
+      if (!sApiKey || !sApiSecret) {
+        return await finalizeSched(false, "sms", null, "Vault 시크릿 누락");
+      }
+
+      const sSubject = sImage ? (sBody.split("\n")[0].trim() || "[오블리브] 안내") : null;
+      const sResult = await sendWithOptionalImage({
+        apiKey: sApiKey,
+        apiSecret: sApiSecret,
+        senderNumber: sc.sender_number,
+        recipientPhone: sPhone,
+        body: sBody,
+        imagePath: sImage,
+        subject: sSubject,
+      });
+      console.log(`[send-notification] scheduled_send id=${sr.id} clinic=${sClinic} mms=${Boolean(sImage)} result=`, sResult);
+      return await finalizeSched(sResult.success, sResult.channel, sResult.messageId, sResult.errorMessage);
+    }
+
     // ── keep_warm 액션 (AC-1: EF keep-warm ping) ────────────────
     // pg_cron이 5분마다 호출 → cold-start 방지 (5s+ 제거)
     // 인증: X-Internal-Cron 헤더 (isCronCall=true → admin JWT 검증 불필요)

@@ -46,6 +46,12 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import SendMethodSelector, {
+  type SendMethodValue,
+  parseScheduledKstToUtcIso,
+  validateScheduled,
+  formatScheduledKst,
+} from '@/components/SendMethodSelector';
 import type { CheckIn } from '@/lib/types';
 
 interface TemplateRow {
@@ -63,6 +69,8 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   checkIn: CheckIn | null;
   clinicId: string;
+  /** 진입점 태그 — 예약 발송 source 구분(대시보드 우클릭=manual / 메시지설정=settings). */
+  entrySource?: 'dashboard' | 'settings';
 }
 
 /** 템플릿 표기명 — AdminSettings EVENT_TYPE_LABELS 와 동일 키 (없으면 event_type 그대로) */
@@ -179,13 +187,18 @@ async function loadCustomerResv(
   return (recent as { reservation_date?: string; reservation_time?: string } | null) ?? null;
 }
 
-export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }: Props) {
+export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId, entrySource = 'dashboard' }: Props) {
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedId, setSelectedId] = useState('');
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
   const [confirmStep, setConfirmStep] = useState(false);
+  // ── T-20260612-foot-SMS-SCHEDULE-SEND-OPTION: 발송방식(즉시/예약) ──
+  // sendMethod.mode='immediate' → 기존 EF 즉시 발송. 'scheduled' → scheduled_messages 적재.
+  // scheduleAvailable: scheduled_messages 테이블 존재 여부 probe(마이그 적용 전이면 false → 예약 비활성).
+  const [sendMethod, setSendMethod] = useState<SendMethodValue>({ mode: 'immediate', localValue: '' });
+  const [scheduleAvailable, setScheduleAvailable] = useState(false);
   // ── T-20260609-foot-MSG-TEMPLATE-MMS Part B(AC-6): 이미지 첨부(MMS) ──
   // imagePath: 이미 업로드된 경로(템플릿 첨부 이미지). imageFile: 즉석 첨부(아직 업로드 전).
   // 둘 중 하나라도 있으면 MMS 발송. preview 로 표시.
@@ -223,9 +236,20 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
     setImagePreview(null);
     setLivePhone(null);
     setPhoneResolved(false);
+    setSendMethod({ mode: 'immediate', localValue: '' });
+    setScheduleAvailable(false);
     setLoading(true);
     const custId = checkIn?.customer_id ?? null;
     let cancelled = false;
+
+    // scheduled_messages 사용 가능 여부 probe — 테이블 미배포(마이그 전) 환경에서
+    // '예약 발송' 비활성화하여 즉시 발송 회귀를 차단(배포-마이그 순서 레이스 안전).
+    (async () => {
+      const probe = await (supabase.from('scheduled_messages') as any)
+        .select('id', { head: true, count: 'exact' })
+        .limit(1);
+      if (!cancelled) setScheduleAvailable(!probe.error);
+    })();
     (async () => {
       // 템플릿 + 지점 정보 + 발신번호 + 고객 다음/최근 예약 + 고객 최신 전화번호를 병렬 조회
       const [tmplRows, clinicRes, capRes, resvRes, custRes] = await Promise.all([
@@ -340,8 +364,13 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
   const byteLen = new TextEncoder().encode(body).length;
   const channelLabel = hasImage ? 'MMS' : (byteLen <= 90 ? 'SMS' : 'LMS');
 
+  // 예약 모드면 발송 일시가 유효(미래)해야 발송 가능 (과거시각 차단 AC).
+  const scheduledInvalid =
+    sendMethod.mode === 'scheduled' && validateScheduled(sendMethod.localValue) !== null;
   const canSend =
-    hasPhone && body.trim().length > 0 && selectedId !== '' && !sending && templates.length > 0;
+    hasPhone && body.trim().length > 0 && selectedId !== '' && !sending &&
+    templates.length > 0 && !scheduledInvalid;
+  const isScheduled = sendMethod.mode === 'scheduled' && scheduleAvailable;
 
   const doSend = useCallback(async () => {
     if (!checkIn || !canSend) return;
@@ -363,6 +392,40 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
       const {
         data: { session },
       } = await supabase.auth.getSession();
+
+      // ── 예약 발송: scheduled_messages 적재 (즉시 발송하지 않음) ──
+      // pg_cron dispatch_scheduled_messages() 가 지정 시각 도래 시 send-notification EF 로 발송.
+      if (isScheduled) {
+        const utcIso = parseScheduledKstToUtcIso(sendMethod.localValue);
+        const stillInvalid = validateScheduled(sendMethod.localValue);
+        if (!utcIso || stillInvalid) {
+          toast.error(stillInvalid ?? '발송 일시가 올바르지 않습니다.');
+          setConfirmStep(false);
+          return;
+        }
+        const { error: insErr } = await (supabase.from('scheduled_messages') as any).insert({
+          clinic_id: clinicId,
+          customer_id: checkIn.customer_id,
+          recipient_phone: phone,
+          body: body.trim(),
+          channel: finalImagePath ? 'mms' : 'sms',
+          scheduled_at: utcIso,
+          source: entrySource === 'settings' ? 'settings_scheduled' : 'manual_scheduled',
+          created_by: session?.user?.id ?? null,
+          ...(finalImagePath ? { image_path: finalImagePath } : {}),
+        });
+        if (insErr) {
+          // 테이블 미배포 등 → 즉시 발송 동선은 보존, 예약만 안내 후 차단.
+          toast.error(`예약 발송 등록 실패: ${insErr.message ?? '잠시 후 다시 시도하세요.'}`);
+          setConfirmStep(false);
+          return;
+        }
+        toast.confirm(`예약 발송 등록 완료 — ${formatScheduledKst(sendMethod.localValue)} 발송 예정`);
+        onOpenChange(false);
+        return;
+      }
+
+      // ── 즉시 발송 (기존 동선) ──
       const { data, error } = await supabase.functions.invoke('send-notification', {
         body: {
           _action: 'manual_send',
@@ -370,7 +433,7 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
           customer_id: checkIn.customer_id,
           recipient_phone: phone,
           body: body.trim(),
-          source: 'manual_dashboard',
+          source: entrySource === 'settings' ? 'manual_settings' : 'manual_dashboard',
           // image_path 는 첨부가 있을 때만 전달(없으면 키 생략 → 종전 SMS/LMS 무영향, AC-11)
           ...(finalImagePath ? { image_path: finalImagePath } : {}),
         },
@@ -394,7 +457,7 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
     } finally {
       setSending(false);
     }
-  }, [checkIn, canSend, clinicId, phone, body, imageFile, imagePath, onOpenChange]);
+  }, [checkIn, canSend, clinicId, phone, body, imageFile, imagePath, onOpenChange, isScheduled, sendMethod, entrySource]);
 
   if (!checkIn) return null;
 
@@ -528,6 +591,15 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
           </div>
         )}
 
+        {/* 발송 방식 선택 (즉시/예약) — 템플릿 선택 후 노출 */}
+        {selectedId !== '' && (
+          <SendMethodSelector
+            value={sendMethod}
+            onChange={(v) => { setSendMethod(v); setConfirmStep(false); }}
+            available={scheduleAvailable}
+          />
+        )}
+
         {/* 확인 단계 (오발송 가드) */}
         {confirmStep && (
           <div
@@ -535,9 +607,16 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
             className="rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 flex items-start gap-2"
           >
             <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-            <span>
-              <b>{customerName}</b>({phone}) 님께 실제로 문자가 즉시 발송됩니다. 발송하시겠습니까?
-            </span>
+            {isScheduled ? (
+              <span>
+                <b>{customerName}</b>({phone}) 님께 <b>{formatScheduledKst(sendMethod.localValue)}</b> 에
+                문자가 예약 발송됩니다. 등록하시겠습니까?
+              </span>
+            ) : (
+              <span>
+                <b>{customerName}</b>({phone}) 님께 실제로 문자가 즉시 발송됩니다. 발송하시겠습니까?
+              </span>
+            )}
           </div>
         )}
 
@@ -552,7 +631,7 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
               disabled={!canSend}
               className="bg-teal-600 hover:bg-teal-700"
             >
-              발송
+              {isScheduled ? '예약 발송' : '발송'}
             </Button>
           ) : (
             <Button
@@ -561,7 +640,9 @@ export default function SendSmsDialog({ open, onOpenChange, checkIn, clinicId }:
               disabled={sending}
               className="bg-red-600 hover:bg-red-700"
             >
-              {sending ? '발송 중…' : '확정 발송'}
+              {sending
+                ? (isScheduled ? '등록 중…' : '발송 중…')
+                : (isScheduled ? '예약 등록' : '확정 발송')}
             </Button>
           )}
         </DialogFooter>
