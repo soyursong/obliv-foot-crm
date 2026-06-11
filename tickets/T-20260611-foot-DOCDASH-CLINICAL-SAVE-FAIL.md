@@ -11,7 +11,7 @@ db_changed: false
 db_migration: none
 db_gate: N/A
 scenario_count: 4
-commit: PENDING
+commit: 1dd558e
 spec: tests/e2e/T-20260611-foot-DOCDASH-CLINICAL-SAVE-FAIL.spec.ts
 build: pass
 ---
