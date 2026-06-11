@@ -61,11 +61,32 @@ const STATUS_STYLE: Record<Reservation['status'], string> = {
   noshow: 'bg-red-100 text-red-700 border-red-200',
 };
 
-// 초진(파란) / 재진(초록) / 선체험(amber)
-const VISIT_TYPE_STYLE: Record<VisitType, string> = {
-  new: 'border-l-[3px] border-l-blue-500 bg-blue-50/60',
-  returning: 'border-l-[3px] border-l-emerald-500 bg-emerald-50/60',
-  experience: 'border-l-[3px] border-l-amber-500 bg-amber-50/60',
+// T-20260611-foot-RESVCAL-DISPLAY-REWORK item3: 예약 카드 유형별 배경색
+//   초진=초록 / 재진=파랑 / 힐러(HL)=노랑 (이전 초진=파랑/재진=초록에서 현장 요청으로 반전).
+//   힐러는 visit_type와 직교(healer_flag) → resvKind()로 우선 분류.
+type ResvKind = 'new' | 'returning' | 'healer' | 'other';
+/** 예약 유형 분류: 힐러(healer_flag) 우선 → 초진/재진 → 기타(선체험 등). */
+function resvKind(r: Reservation): ResvKind {
+  if (r.healer_flag) return 'healer';
+  if (r.visit_type === 'new') return 'new';
+  if (r.visit_type === 'returning') return 'returning';
+  return 'other';
+}
+// item6: 동일 시간대 정렬 순서 초진 → 재진 → 힐러 → 기타
+const KIND_ORDER: Record<ResvKind, number> = { new: 0, returning: 1, healer: 2, other: 3 };
+// item3: 카드 좌측 보더 + 배경
+const KIND_CARD_STYLE: Record<ResvKind, string> = {
+  new: 'border-l-[3px] border-l-emerald-500 bg-emerald-50/60',
+  returning: 'border-l-[3px] border-l-blue-500 bg-blue-50/60',
+  healer: 'border-l-[3px] border-l-yellow-400 bg-yellow-50/70',
+  other: 'border-l-[3px] border-l-amber-500 bg-amber-50/60',
+};
+// item1/2: 헤더·슬롯 카운트 점 색상 (유형별)
+const KIND_DOT: Record<ResvKind, string> = {
+  new: 'bg-emerald-500',
+  returning: 'bg-blue-500',
+  healer: 'bg-yellow-400',
+  other: 'bg-amber-500',
 };
 
 const STATUS_LABEL: Record<Reservation['status'], string> = {
@@ -610,6 +631,22 @@ export default function Reservations() {
       (map[key] ??= []).push(r);
     }
     return map;
+  }, [rows]);
+
+  // T-20260611-foot-RESVCAL-DISPLAY-REWORK item1: 날짜별 유형 카운트 (취소 제외).
+  //   총건수 = 초진(new) + 재진(returning)만. 힐러(HL)는 별도 표기, 총합 제외.
+  const dayKindCounts = useMemo(() => {
+    const m = new Map<string, { n: number; r: number; h: number }>();
+    for (const row of rows) {
+      if (row.status === 'cancelled') continue;
+      const kind = resvKind(row);
+      const cur = m.get(row.reservation_date) ?? { n: 0, r: 0, h: 0 };
+      if (kind === 'new') cur.n += 1;
+      else if (kind === 'returning') cur.r += 1;
+      else if (kind === 'healer') cur.h += 1;
+      m.set(row.reservation_date, cur);
+    }
+    return m;
   }, [rows]);
 
   const slotActiveCount = useCallback(
@@ -1166,6 +1203,22 @@ export default function Reservations() {
                     )}
                   >
                     {WEEK_DAYS_KO[i]} {format(d, 'M/d')}
+                    {/* T-20260611-foot-RESVCAL-DISPLAY-REWORK item1: 날짜 헤더 총건수(초진+재진) 요약. HL은 합산 제외 별도 표기. */}
+                    {(() => {
+                      const c = dayKindCounts.get(format(d, 'yyyy-MM-dd'));
+                      if (!c || (c.n === 0 && c.r === 0 && c.h === 0)) return null;
+                      return (
+                        <div
+                          data-testid={`day-summary-${format(d, 'yyyy-MM-dd')}`}
+                          className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0 text-[10px] font-normal leading-tight"
+                        >
+                          <span className="font-semibold text-foreground">총 {c.n + c.r}</span>
+                          <span className="text-emerald-600">초 {c.n}</span>
+                          <span className="text-blue-600">재 {c.r}</span>
+                          {c.h > 0 && <span className="text-yellow-600">HL {c.h}</span>}
+                        </div>
+                      );
+                    })()}
                   </th>
                 ))}
               </tr>
@@ -1194,7 +1247,11 @@ export default function Reservations() {
                         const allowed = slotsFor(d).includes(time);
                         const dateStr = format(d, 'yyyy-MM-dd');
                         const key = `${dateStr}_${time}`;
-                        const list = resvByKey[key] ?? [];
+                        // T-20260611-foot-RESVCAL-DISPLAY-REWORK item6: 동일 시간대 정렬 초진→재진→힐러.
+                        //   Array.sort는 stable → 동일 유형 내 기존(시간) 순서 보존.
+                        const list = [...(resvByKey[key] ?? [])].sort(
+                          (a, b) => KIND_ORDER[resvKind(a)] - KIND_ORDER[resvKind(b)],
+                        );
                         const full = isSlotFull(dateStr, time);
                         const activeCount = slotActiveCount(dateStr, time);
                         const cellKey = `${dateStr}_${time}`;
@@ -1234,6 +1291,26 @@ export default function Reservations() {
                           >
                             {allowed && (
                               <div className="flex h-full w-full min-w-0 flex-col gap-0.5 rounded text-left">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 → 자식 flex 아이템이 셀 너비 이하로 수축 허용 */}
+
+                                {/* T-20260611-foot-RESVCAL-DISPLAY-REWORK item2: 시간대(슬롯)별 유형 카운트 (취소 제외). */}
+                                {(() => {
+                                  const active = list.filter((r) => r.status !== 'cancelled');
+                                  if (active.length === 0) return null;
+                                  const n = active.filter((r) => resvKind(r) === 'new').length;
+                                  const rr = active.filter((r) => resvKind(r) === 'returning').length;
+                                  const h = active.filter((r) => resvKind(r) === 'healer').length;
+                                  if (n === 0 && rr === 0 && h === 0) return null;
+                                  return (
+                                    <div
+                                      data-testid={`slot-kind-count-${dateStr}-${time}`}
+                                      className="flex flex-wrap items-center gap-x-1 text-[9px] font-medium leading-none"
+                                    >
+                                      {n > 0 && <span className="text-emerald-600">초 {n}</span>}
+                                      {rr > 0 && <span className="text-blue-600">재 {rr}</span>}
+                                      {h > 0 && <span className="text-yellow-600">HL {h}</span>}
+                                    </div>
+                                  );
+                                })()}
 
                                 {/* T-PROGRESS-CHECKPOINT AC-4: filterProgress 시 경과분석 대상만 표시 */}
                                 {(filterProgress ? list.filter(r => r.progress_check_required) : list).map((r) => (
@@ -1286,7 +1363,8 @@ export default function Reservations() {
                                       r.status === 'confirmed' && 'cursor-grab active:cursor-grabbing',
                                       draggedId === r.id && 'opacity-40',
                                       STATUS_STYLE[r.status],
-                                      VISIT_TYPE_STYLE[r.visit_type],
+                                      // T-20260611-foot-RESVCAL-DISPLAY-REWORK item3: 초진=초록/재진=파랑/힐러=노랑
+                                      KIND_CARD_STYLE[resvKind(r)],
                                       // AC-3: 내원완료(checked_in) → 희미하게, 미내원(confirmed) → 진하게 (T-20260514-foot-CHECKIN-AUTO-STAGE)
                                       r.status === 'checked_in' && draggedId !== r.id && 'opacity-50',
                                       // T-20260515-foot-RESV-DND-SHORTCUT: 클립보드 시각적 피드백
@@ -1376,11 +1454,12 @@ export default function Reservations() {
                                     </div>
                                     {/* RESV-SLOT-INFO: 방문유형·상태 + 전화번호 뒷4자리 */}
                                     <div className="flex min-w-0 items-center gap-1 overflow-hidden text-xs opacity-80">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 + overflow-hidden → 상태줄 셀 밖 넘침 방지 */}
+                                      {/* T-20260611-foot-RESVCAL-DISPLAY-REWORK item3: 유형 점 색 일치(초진=초록/재진=파랑/힐러=노랑) */}
                                       <span className={cn(
                                         'inline-block h-1.5 w-1.5 rounded-full',
-                                        r.visit_type === 'new' ? 'bg-blue-500' : 'bg-emerald-500',
+                                        KIND_DOT[resvKind(r)],
                                       )} />
-                                      {VISIT_TYPE_KO[r.visit_type]} · {STATUS_LABEL[r.status]}
+                                      {r.healer_flag ? '힐러' : VISIT_TYPE_KO[r.visit_type]} · {STATUS_LABEL[r.status]}
                                       {r.customer_phone && (
                                         <span className="text-muted-foreground">
                                           · ···{maskPhoneTail(r.customer_phone)}
