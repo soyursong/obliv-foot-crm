@@ -133,6 +133,13 @@ test.describe('AC-4 회귀가드 — 인접 변경 보존', () => {
     expect(src).not.toContain('2번차트 1구역');
   });
 
+  test('AC-5: 2번차트(CustomerChartSheet 조회면)는 MedicalChartPanel 미공유 — 레이아웃 변경 무전파', () => {
+    // 입력 패널(MedicalChartPanel)의 2단 레이아웃·태그제거가 2번차트 진료내역 조회면에 전파되지 않음을
+    // 컴포넌트 독립으로 보장. CustomerChartSheet 가 MedicalChartPanel 을 렌더/임포트하지 않아야 함.
+    const sheet = SRC('components/CustomerChartSheet.tsx');
+    expect(sheet).not.toContain('MedicalChartPanel');
+  });
+
   test('SAVE-FAIL(P1) 보존: chartsLoadedRef 레이스 게이트 배선 불변', () => {
     const src = PANEL();
     expect(src).toMatch(/const chartsLoadedRef = useRef\(false\)/);
