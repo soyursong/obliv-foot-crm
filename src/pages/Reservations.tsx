@@ -45,6 +45,9 @@ import { ReservationMemoTimeline, insertReservationMemo } from '@/components/Res
 import { ReservationDetailPopup } from '@/components/ReservationDetailPopup';
 // T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 모달
 import { ReservationCancelModal } from '@/components/ReservationCancelModal';
+// T-20260611-foot-RESV-CTXMENU-SMS-MISSING: 예약관리 우클릭 메뉴 '문자' 항목 복원(Dashboard.tsx 정본 미러)
+import SendSmsDialog from '@/components/SendSmsDialog';
+import { canAccess } from '@/lib/permissions';
 
 // AC-5 재오픈 fix: 모듈 레벨 클립보드 백업 — 컴포넌트 remount 시에도 상태 복원
 // (navigate('/admin/reservations', { state }) + lazy/Suspense remount 케이스 대응)
@@ -167,6 +170,8 @@ export default function Reservations() {
   const [resvMedicalChartOpen, setResvMedicalChartOpen] = useState(false);
   const [resvMedicalChartCustomerId, setResvMedicalChartCustomerId] = useState<string | null>(null);
   const [resvMiniPayTarget, setResvMiniPayTarget] = useState<CheckIn | null>(null);
+  // T-20260611-foot-RESV-CTXMENU-SMS-MISSING: 우클릭 '문자' → SendSmsDialog 대상(Dashboard.tsx 정본 미러)
+  const [smsTarget, setSmsTarget] = useState<CheckIn | null>(null);
   const [resvMiniPayCounter, setResvMiniPayCounter] = useState(0);
   // T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 모달 상태
   const [cancelTarget, setCancelTarget] = useState<Reservation | null>(null);
@@ -1523,6 +1528,13 @@ export default function Reservations() {
         onOpenPayment={handleResvOpenPayment}
         /* CANONICAL: 기존 예약 우클릭 → '예약상세' 라벨 고정. [예약하기] 표현 미사용. */
         reservationActionLabel="예약상세"
+        /* T-20260611-foot-RESV-CTXMENU-SMS-MISSING: CANONICAL 5항목 中 '문자' 복원.
+           admin/manager(manual_sms_send 권한) 한정 노출 — 미허용 시 onSendSms 미전달 → 항목 숨김. */
+        onSendSms={
+          canAccess(profile?.role ?? '', 'manual_sms_send')
+            ? (ci) => { setResvContextMenu(null); setSmsTarget(ci); }
+            : undefined
+        }
       />
 
       {/* T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 모달 */}
@@ -1532,6 +1544,14 @@ export default function Reservations() {
         onClose={() => { if (!cancelBusy) setCancelTarget(null); }}
         onConfirm={handleResvCancelConfirm}
         busy={cancelBusy}
+      />
+
+      {/* T-20260611-foot-RESV-CTXMENU-SMS-MISSING: 수동 1:1 문자 발송 모달(Dashboard.tsx 정본 미러) */}
+      <SendSmsDialog
+        open={smsTarget !== null}
+        onOpenChange={(v) => { if (!v) setSmsTarget(null); }}
+        checkIn={smsTarget}
+        clinicId={clinic?.id ?? ''}
       />
 
       {/* T-20260516-foot-CHART-OPEN-UNIFY AC-1: CustomerChartSheet 렌더 제거 → AdminLayout 단일 렌더로 통합 */}
