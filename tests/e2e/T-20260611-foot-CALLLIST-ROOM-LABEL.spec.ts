@@ -141,8 +141,64 @@ test.describe('T-20260611 CALLLIST-ROOM-LABEL — 진료콜 명단 방번호 표
     }
   });
 
-  // ── AC-0 회귀 스모크: 대시보드 정상 렌더 + 진료콜 명단 위치 배지 DOM 존재(데이터 의존 graceful skip) ──
-  test('AC-0 회귀: 대시보드 렌더 + 진료콜 명단 위치 배지(doctor-call-location) 무파괴', async ({ page }) => {
+  // ── 시나리오4 / AC-1·AC-2 (surface 가산): 콜 행 방이름 배지(doctor-call-room) 표기 규칙 박제 ──
+  //   getAssignedSlotName 결과를 그대로 배지에 표기, null이면 '—' (6FIX AC-3 진료환자목록과 동일 규칙).
+  test('AC-1·AC-2: 방배지 표기 — 값 있으면 코드, 미배정이면 "—"(undefined 금지)', async ({ page }) => {
+    await page.goto('/');
+    const result = await page.evaluate(() => {
+      const nonEmpty = (v: string | null | undefined) => {
+        const t = (v ?? '').trim();
+        return t === '' ? null : t;
+      };
+      const getAssignedSlotName = (ci: Record<string, string | null | undefined>) => {
+        switch (ci.status) {
+          case 'consultation':
+          case 'consult_waiting':
+            return nonEmpty(ci.consultation_room);
+          case 'examination':
+          case 'exam_waiting':
+            return nonEmpty(ci.examination_room);
+          case 'treatment_waiting':
+            return null;
+          case 'preconditioning':
+            return nonEmpty(ci.treatment_room);
+          case 'laser':
+          case 'laser_waiting':
+          case 'healer_waiting':
+            return nonEmpty(ci.laser_room);
+          default:
+            return (
+              nonEmpty(ci.laser_room) ??
+              nonEmpty(ci.treatment_room) ??
+              nonEmpty(ci.consultation_room) ??
+              nonEmpty(ci.examination_room)
+            );
+        }
+      };
+      // DoctorCallRow의 배지 표기 규칙: assignedRoom ?? '—'
+      const badge = (ci: Record<string, string | null | undefined>) => getAssignedSlotName(ci) ?? '—';
+      return {
+        treatRoom: badge({ status: 'preconditioning', treatment_room: 'C2', laser_room: null }), // C2
+        laserRoom: badge({ status: 'laser', laser_room: 'L3' }),                                  // L3
+        consultRoom: badge({ status: 'consultation', consultation_room: '상담실1' }),              // 상담실1
+        waitingDash: badge({ status: 'treatment_waiting', treatment_room: 'C2' }),                // — (대기)
+        unassignedDash: badge({ status: 'registered' }),                                          // — (미배정)
+        emptyDash: badge({ status: 'preconditioning', treatment_room: '' }),                      // — (빈값)
+        undefDash: badge({ status: 'preconditioning', treatment_room: undefined }),               // — (undefined)
+      };
+    });
+    expect(result.treatRoom).toBe('C2');
+    expect(result.laserRoom).toBe('L3');
+    expect(result.consultRoom).toBe('상담실1');
+    // AC-2: 미배정/대기/빈값/undefined 모두 '—', "undefined" 문자열 노출 금지
+    for (const v of [result.waitingDash, result.unassignedDash, result.emptyDash, result.undefDash]) {
+      expect(v).toBe('—');
+      expect(v).not.toContain('undefined');
+    }
+  });
+
+  // ── AC-0 회귀 스모크: 대시보드 정상 렌더 + 진료콜 명단 위치/방 배지 DOM 존재(데이터 의존 graceful skip) ──
+  test('AC-0 회귀: 대시보드 렌더 + 진료콜 명단 위치(doctor-call-location)·방(doctor-call-room) 배지 무파괴', async ({ page }) => {
     const ok = await loginAndWaitForDashboard(page);
     if (!ok) {
       test.skip(true, '로그인 실패 — 스킵');
@@ -156,7 +212,7 @@ test.describe('T-20260611 CALLLIST-ROOM-LABEL — 진료콜 명단 방번호 표
       test.skip(true, '진료콜 명단 데이터 없음(당일 콜대상 0) — 스킵');
       return;
     }
-    // 명단이 펼쳐진 경우, 각 행에 위치 배지가 렌더되어야 한다(라벨 문자열은 데이터 의존이라 존재만 확인).
+    // 명단이 펼쳐진 경우, 각 행에 위치 배지 + 방 배지가 렌더되어야 한다(라벨 문자열은 데이터 의존이라 존재만 확인).
     const rows = page.locator('[data-testid="doctor-call-row"]');
     const rowCount = await rows.count();
     if (rowCount > 0) {
@@ -164,6 +220,10 @@ test.describe('T-20260611 CALLLIST-ROOM-LABEL — 진료콜 명단 방번호 표
       await expect(loc).toBeVisible();
       // 라벨 텍스트에 "undefined"가 노출되지 않아야 함(AC-2 회귀 가드)
       await expect(loc).not.toHaveText(/undefined/);
+      // ROOM-LABEL 가산: 방 배지 존재 + "undefined" 미노출
+      const room = rows.first().locator('[data-testid="doctor-call-room"]');
+      await expect(room).toBeVisible();
+      await expect(room).not.toHaveText(/undefined/);
     }
   });
 });
