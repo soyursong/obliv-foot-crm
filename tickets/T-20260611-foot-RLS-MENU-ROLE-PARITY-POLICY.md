@@ -10,8 +10,12 @@ owner: agent-fdd-dev-foot
 created: 2026-06-11
 phase: 2A
 phase1_change: 0
-phase2a_scope: G2(clinic_events) only
-g1_status: HOLD-decision-requested
+phase2a_scope: C그룹 = G2(clinic_events) + G1(check_in_room_logs)
+phase1_gate_v2: planner MSG-20260611-135000-b4sj 수신 — C그룹 GO / D-7 EXCL+LOCK(child) / S1·payments·part_lead HOLD(reporter)
+g1_status: GO-submitted (planner 재게이트 b4sj, [ALL]→split canonical, dry-run PASS)
+g2_status: submitted-awaiting-supervisor
+ws2_child: T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN (D-7 LOCK 집행, db-gate 제출)
+hold_reporter: D-1~D5 payments/package_payments/payment_codes/insurance · part_lead 통계 · D-9 chart_doctor_memos (reporter 김주연 답변 전 OPEN 금지)
 db_gate_status: submitted-awaiting-supervisor
 data_architect_consult: not-required (RLS only, no new column/table/enum)
 ---
@@ -99,7 +103,31 @@ planner + supervisor 가 아래를 확정해야 Phase 2 진입:
 - 제출 패키지: `db-gate/T-20260611-foot-RLS-PARITY-G2-clinic_events_evidence.md`
 - 변경: `clinic_events_select` USING `staff.id=auth.uid()` → `is_approved_user() AND clinic_id=current_user_clinic_id()`. SELECT 단독. 쓰기 3정책 불변(dry-run 검증).
 
-### ★ G1 check_in_room_logs — HOLD, planner DECISION-REQUEST 발행 (전제 불일치)
+### ★ Phase 1 게이트 v2 판정 (planner MSG-20260611-135000-b4sj — matrix v2/commit 422d1af 검토 후 확정. 본 테이블이 정본)
+
+| # | 대상 | 판정 | 집행 |
+|---|------|------|------|
+| **C그룹** | clinic_events + check_in_room_logs | **GO Phase2-A** (canonical is_approved_user()+clinic) | G2 제출 완료 / G1 본 라운드 제출 (split canonical) |
+| **D-7** | daily_closings + closing_manual | **EXCL 확정 + LOCK(회수) 우선** (역방향 누수=보안) | child `T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN` 으로 집행·db-gate 제출 |
+| D-10 | medical_chart_signer_audit | **EXCL 확정** (감사로그, 보수 default) | 무변경(잠금 유지) |
+| D-8 | user_profiles/staff 이름표시 | 표시용 read parity 유지(OPEN) + 계정 CRUD/권한설정 EXCL | 무변경(표시 read parity, 계정관리만 직원 잠금) |
+| stats | tm 통계 | **잠금 확정** (통계=제외) | 기존 STAFF-ROLE-TM-ADD 매핑 유지(이미 stats 미포함) |
+| view 10 / OPEN ~58 / health_q×2 | — | EXCL/무변경 / health_q 는 point-fix SURVEY-ITEM-VISIBILITY 흡수 | 무변경 |
+| **HOLD(reporter)** | D-1~D5 payments/package_payments/payment_codes/insurance · part_lead 통계 · D-9 chart_doctor_memos | **reporter 김주연 확정 전 OPEN 금지** | planner batched DECISION-REQUEST 발행 — 답변 후 별도 NEW-TASK unblock |
+| payment_audit_logs | — | EXCL 별도확정 (감사로그) | 무변경 |
+
+> ⚠ payment_audit_logs / medical_chart_signer_audit = 감사로그 보수 EXCL. HOLD 3건은 reporter 답변 전 절대 OPEN 금지.
+
+### ★ G1 check_in_room_logs — GO 재게이트 후 제출 (planner b4sj, DECISION-REQUEST 해소)
+**해소**: 이전 라운드(MSG-20260611-143552-2sqv) DECISION-REQUEST 의 전제 불일치(아래)를 planner 가 matrix v2 검토 후 **C그룹 canonical GO 재확정**.
+- 마이그: `supabase/migrations/20260611170000_check_in_room_logs_select_rls_canonical.sql` (+rollback)
+- dry-run: `scripts/T-20260611-foot-RLS-PARITY-G1-check_in_room_logs_dryrun.mjs` → **PASS** (단일 [ALL] 해체 / SELECT canonical / 쓰기 3정책 user_profiles 술어 보존)
+- E2E: `tests/e2e/T-20260611-foot-RLS-PARITY-G1-check-in-room-logs.spec.ts` (3 tests)
+- 증빙: `db-gate/T-20260611-foot-RLS-PARITY-G1-check_in_room_logs_evidence.md`
+- 구현: 단일 `[ALL] room_logs_clinic_rw` 해체 → SELECT 만 canonical(`is_approved_user() AND clinic_id=current_user_clinic_id()`) + INSERT/UPDATE/DELETE 는 원 user_profiles 술어 보존(쓰기 byte-identical, AC-4).
+- ⚠ **하드닝 성격 명시**: G1 은 G2 와 달리 read parity 가 이미 충족(전원 deny 아님)이었음 → 본 변경은 canonical 신원 정렬 + approved/active 게이트 하드닝. supervisor 적용 전 planner "하드닝 의도 맞음" 최종 확인 권고(증빙에 명기).
+
+### (참고) 이전 라운드 G1 HOLD 사유 — planner DECISION-REQUEST 발행 (전제 불일치)
 Phase 1 raw dump 가 planner 판정 전제(`staff.id=auth.uid` OUTLIER→전원 deny)와 **불일치**:
 ```
 room_logs_clinic_rw [ALL] USING:

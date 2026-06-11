@@ -37,7 +37,7 @@ const PERM_MATRIX: Record<PermKey, UserRole[]> = {
   dashboard:    [...ALL_STAFF_ROLES, 'tm'],
   reservations: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'tm'],
   customers:    [...ALL_STAFF_ROLES, 'tm'],
-  closing:      ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead'],
+  closing:      ['admin', 'manager', 'director', 'consultant', 'part_lead'],  // T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN: coordinator/therapist 회수(매출집계 EXCL). RLS reader(consultant_or_above ∪ floor_staff)와 정렬.
   stats:        ['admin', 'manager', 'director', 'part_lead', 'tm'],
   register:     ['admin', 'manager'],
   messaging:    ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist'],  // T-20260525-foot-MESSAGING-V1 + T-20260525-foot-ROLE-PERM-CUSTOM 3차: coordinator/therapist 추가

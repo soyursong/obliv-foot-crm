@@ -197,8 +197,8 @@ function App() {
                 <Route path="packages" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist', 'staff', 'part_lead']}><Packages /></RoleGuard>} />
                 {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 직원·공간 접근 */}
                 <Route path="staff" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><Staff /></RoleGuard>} />
-                {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 일마감 접근 (뷰 전용) */}
-                <Route path="closing" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><Closing /></RoleGuard>} />
+                {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1 → T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN: 매출집계=EXCL(민감). coordinator/therapist 일마감 노출 회수(김주연 총괄 escalation). consultant(finance)/desk 한정. */}
+                <Route path="closing" element={<RoleGuard roles={['admin', 'manager', 'consultant']}><Closing /></RoleGuard>} />
                 {/* AC-6: 통계 — consultant/coordinator/therapist 직접 URL 차단 유지 */}
                 {/* T-20260610-foot-STAFF-ROLE-TM-ADD AC6 (박민지 팀장 C안): TM → 통계 route 접근 허용.
                     통계 내부 탭 가시성(TM집계 탭만)은 자매 티켓 STATS-TM-AGGREGATE-TAB 에서 처리. */}
