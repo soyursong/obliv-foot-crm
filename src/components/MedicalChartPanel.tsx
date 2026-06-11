@@ -2607,8 +2607,11 @@ export default function MedicalChartPanel({
                         오인을 피해 본문 하단 서명 위치로 이동(아래 진료메모 다음 서명 블록 참조). 상단 미표시. */}
                   </div>
 
+                  {/* T-20260611-foot-MEDREC-CLINICAL-SAVE-UICLEANUP AC-1: 진료일 | 담당의사 두 단 배치.
+                      (임상경과/진료메모 2단 + 처방내역 진단명아래 누적은 NOTES-2COL 850ceed 기구현 — 회귀 금지) */}
+                  <div className="flex flex-col sm:flex-row gap-3" data-testid="chart-date-doctor-row">
                   {/* 진료일 */}
-                  <div>
+                  <div className="sm:flex-1 min-w-0">
                     <label className="block text-xs font-semibold text-muted-foreground mb-1">진료일</label>
                     <Input
                       type="date"
@@ -2628,7 +2631,7 @@ export default function MedicalChartPanel({
                       신규/수정(editMode)/더미 차트는 그대로 노출 → formSigningDoctorId 선택·NOT NULL 강제·변경이력
                       ·직인 귀속 로직(SIGN-AUDIT Phase2) 일절 변경 없음. */}
                   {!(isReadOnly && selectedChart && !selectedChartId?.startsWith('__dummy__')) && (
-                  <div data-testid="signing-doctor-select-block">
+                  <div className="sm:flex-1 min-w-0" data-testid="signing-doctor-select-block">
                     <label className="block text-xs font-semibold text-muted-foreground mb-1">
                       담당 의사
                     </label>
@@ -2665,6 +2668,8 @@ export default function MedicalChartPanel({
                     )}
                   </div>
                   )}
+                  {/* /진료일·담당의사 두 단 wrapper */}
+                  </div>
 
                   {/* 진단명 — T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2 [B] + AC-3 [C]):
                       자동완성/이력 datalist 폐지 → 폴더 탐색 드롭다운(등록 상병만 선택) + 원장별 즐겨찾기.
@@ -2826,11 +2831,12 @@ export default function MedicalChartPanel({
                     </div>
                   )}
 
-                  {/* 치료사차트 — 읽기전용 (AC-3) + T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 통합 */}
+                  {/* 치료사차트 — 읽기전용 (AC-3) + T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 통합
+                      T-20260611-foot-MEDREC-CLINICAL-SAVE-UICLEANUP AC-2: '읽기전용' 태그 badge 제거(시각 정리).
+                      읽기전용 동작(readOnly/disabled Textarea)은 그대로 유지 — 라벨만 남김. */}
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <label className="text-xs font-semibold text-muted-foreground">치료사차트</label>
-                      <span className="text-[10px] text-muted-foreground bg-gray-100 rounded px-1.5 py-0.5">읽기전용</span>
                     </div>
                     <Textarea
                       value={formTx}
@@ -2841,13 +2847,11 @@ export default function MedicalChartPanel({
                       className="text-sm resize-none bg-gray-50 text-gray-500 cursor-not-allowed placeholder:text-gray-300 disabled:opacity-100 min-h-[8rem]"
                       data-testid="medical-chart-treatment"
                     />
-                    {/* T-20260527-foot-TREATMEMO-CHART-MERGE AC-1/3/4: 치료메모 이력 통합 표시 */}
+                    {/* T-20260527-foot-TREATMEMO-CHART-MERGE AC-1/3/4: 치료메모 이력 통합 표시
+                        T-20260611-foot-MEDREC-CLINICAL-SAVE-UICLEANUP AC-2: 태그형 '치료메모' 라벨 + '읽기전용'
+                        badge 헤더 제거(시각 정리). 치료메모 이력 항목(내용·작성자·일시) 표시는 그대로 유지. */}
                     {treatMemos.length > 0 && (
                       <div className="mt-2 space-y-1.5" data-testid="treat-memo-in-chart-section">
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <span className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide">치료메모 이력</span>
-                          <span className="text-[9px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">읽기전용</span>
-                        </div>
                         {treatMemos.map((memo) => (
                           <div
                             key={memo.id}
@@ -3011,14 +3015,16 @@ export default function MedicalChartPanel({
                       좌측 굵은 세로줄(border-l-2 border-gray-300)로 미니멀 구분 — 원장전용 표식만 유지. */}
                   {isDirector ? (
                     <div className="sm:flex-[1] min-w-0 flex flex-col border-l-2 border-gray-300 pl-3" data-testid="doctor-memo-section">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap justify-end">
-                        <span className="text-[10px] text-muted-foreground bg-gray-100 rounded px-1.5 py-0.5">원장 전용</span>
-                      </div>
+                      {/* T-20260611-foot-MEDREC-CLINICAL-SAVE-UICLEANUP AC-2: '원장 전용' 태그 badge 제거 →
+                          안내문구로 대체. 의료진 전용 노출제한(isDirector 게이트) 동작은 그대로 유지. */}
+                      <p className="text-[10px] text-muted-foreground mb-1" data-testid="doctor-memo-notice">
+                        의료진 전용 메모입니다. 타 스태프에게 노출되지 않습니다
+                      </p>
                       <Textarea
                         value={formMemo}
                         onChange={(e) => setFormMemo(e.target.value)}
                         readOnly={isReadOnly}
-                        placeholder="원장 전용 메모 — 타 스태프 미노출"
+                        placeholder="의료진 전용 메모 — 타 스태프 미노출"
                         className={`flex-1 text-sm resize-y placeholder:text-gray-300 min-h-[16rem] ${isReadOnly ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
                         data-testid="doctor-memo-input"
                       />
@@ -3138,7 +3144,7 @@ export default function MedicalChartPanel({
                             ? '더미 데이터 — 저장 불가'
                             : selectedChartId
                               ? '수정 저장'
-                              : '기록 저장'}
+                              : '진료기록 저장'}
                       </Button>
                     )}
                   </div>
