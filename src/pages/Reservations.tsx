@@ -168,6 +168,9 @@ export default function Reservations() {
   const [noshowByCustomer, setNoshowByCustomer] = useState<Record<string, number>>({});
   // T-20260527-foot-TREATMENT-CYCLE-ALERT AC-1: 고객별 완료 치료 회차 수 (패키지 무관)
   const [treatmentCycleMap, setTreatmentCycleMap] = useState<Map<string, number>>(new Map());
+  // T-20260611-foot-HEALER-DEDUCT-LINK: 고객별 '다음 예약이 힐러' read-only 표시.
+  //   값 = 가장 이른 예정(미래) 힐러 예약 datetime 키(`${date} ${time}`). 차감 트랜잭션 무접촉.
+  const [nextHealerByCustomer, setNextHealerByCustomer] = useState<Record<string, string>>({});
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   // T-20260515-foot-RESV-DND-SHORTCUT: 키보드 클립보드 (Ctrl+C/X/V)
@@ -443,10 +446,35 @@ export default function Reservations() {
         cycleM.set(row.customer_id, row.completed_count);
       }
       setTreatmentCycleMap(cycleM);
+
+      // T-20260611-foot-HEALER-DEDUCT-LINK: 고객별 '다음 예약이 힐러' read-only 집계.
+      //   미래(>= today) 힐러(healer_flag) 예약 중 가장 이른 1건 datetime을 보관 → 카드에서
+      //   현재 슬롯보다 미래일 때만 '다음 힐러' indicator 노출. DB read-only, 차감 무접촉.
+      const { data: hlData } = await supabase
+        .from('reservations')
+        .select('customer_id, reservation_date, reservation_time')
+        .in('customer_id', customerIds)
+        .eq('healer_flag', true)
+        .neq('status', 'cancelled')
+        .gte('reservation_date', today)
+        .order('reservation_date', { ascending: true })
+        .order('reservation_time', { ascending: true });
+      const hlM: Record<string, string> = {};
+      for (const row of (hlData ?? []) as {
+        customer_id: string | null;
+        reservation_date: string;
+        reservation_time: string;
+      }[]) {
+        if (row.customer_id && !hlM[row.customer_id]) {
+          hlM[row.customer_id] = `${row.reservation_date} ${row.reservation_time.slice(0, 5)}`;
+        }
+      }
+      setNextHealerByCustomer(hlM);
     } else {
       setNoshowByCustomer({});
       setResvChartMap(new Map());
       setTreatmentCycleMap(new Map());
+      setNextHealerByCustomer({});
     }
   }, [clinic, weekDays, viewMode, selectedDay]);
 
@@ -1476,6 +1504,23 @@ export default function Reservations() {
                                               </Badge>
                                             )}
                                           </>
+                                        );
+                                      })()}
+                                      {/* T-20260611-foot-HEALER-DEDUCT-LINK: 고객 '다음 예약이 힐러' read-only indicator.
+                                          현재 카드 자신이 힐러가 아니고(중복 회피), 미래 힐러 예약이 이 카드보다 늦을 때만 노출. */}
+                                      {r.customer_id && !r.healer_flag && r.status !== 'cancelled' && (() => {
+                                        const hl = nextHealerByCustomer[r.customer_id];
+                                        if (!hl) return null;
+                                        const cardKey = `${r.reservation_date} ${r.reservation_time.slice(0, 5)}`;
+                                        if (hl <= cardKey) return null;
+                                        return (
+                                          <Badge
+                                            className="h-4 px-1 text-[9px] bg-yellow-100 text-yellow-700 border border-yellow-300 hover:bg-yellow-100"
+                                            data-testid={`next-healer-badge-${r.id}`}
+                                            title={`다음 예약 힐러 — ${hl}`}
+                                          >
+                                            다음 힐러
+                                          </Badge>
                                         );
                                       })()}
                                     </div>
