@@ -12,8 +12,13 @@ phase: 2A
 phase1_change: 0
 phase2a_scope: C그룹 = G2(clinic_events) + G1(check_in_room_logs)
 phase1_gate_v2: planner MSG-20260611-135000-b4sj 수신 — C그룹 GO / D-7 EXCL+LOCK(child) / S1·payments·part_lead HOLD(reporter)
-g1_status: GO-submitted (planner 재게이트 b4sj, [ALL]→split canonical, dry-run PASS)
-g2_status: submitted-awaiting-supervisor
+g1_decision: NO-OP 종결 확정 (planner MSG-20260611-144018-eih9 DECISION-REQUEST 판정) — room_logs_clinic_rw[ALL]=user_profiles 기반=read 이미 전 role parity. 별도 SELECT 추가=OR-merge no-op, [ALL] write 동반=AC-5 위반. Phase2-A 제외 + 'already-parity(무변경)' 재분류. 추가작업 0.
+g1_status: WITHDRAWN (마이그 20260611170000_*.sql→.WITHDRAWN 회수, db-gate 증빙 WITHDRAWN 배너, supervisor 미적용)
+g1_write_hardening_note: approved+active 게이트 부재는 user_profiles 스코프라 PHI 누수 없음 = 경미 over-permission. write-track P2 후보로만 기록(지금 강제변경 금지).
+g2_status: submitted-awaiting-supervisor (GO 유지 — commit aaf48c9, planner eih9 GO 재확인)
+clinic_events_write_finding: clinic_events insert/update/delete staff.id=auth.uid 비정규(write 전원 차단). G2 read 동일 RC. 우산 AC-5(write 불변) 위반→fold 금지→별도 트랙 분리.
+spawned_children: [T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN (D-7 LOCK), T-20260611-foot-CLINIC-EVENTS-WRITE-RLS-CANONICAL (P1 write canonical, planner eih9 발번)]
+phase2a_final_scope: G2 clinic_events_select 단독 (G1 제외). 동결 해제(planner eih9).
 ws2_child: T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN (D-7 LOCK 집행, db-gate 제출)
 hold_reporter: D-1~D5 payments/package_payments/payment_codes/insurance · part_lead 통계 · D-9 chart_doctor_memos (reporter 김주연 답변 전 OPEN 금지)
 db_gate_status: submitted-awaiting-supervisor
@@ -66,7 +71,7 @@ data_architect_consult: not-required (RLS only, no new column/table/enum)
 | # | 테이블 | 읽는 메뉴 (FE) | 메뉴 공유? | 현재 staff SELECT | parity 필요 | 분류·비고 |
 |---|---|---|---|---|---|---|
 | **ROW-0** | health_q_results / health_q_tokens | 차트>발건강질문지 패널 | **공유**(chart, 전 role) | ✅(point-fix 후 정상) | **완료** | point-fix 마이그 `20260611150000` → `is_approved_user()+clinic`. 본 우산 흡수. |
-| **G1** | `check_in_room_logs` | CheckInDetailSheet (대시보드) | **공유**(대시보드, 전 role) | ❌ `staff.id=auth.uid()` OUTLIER → 전원 deny | **예 (파리티)** | INSERT 는 Dashboard 에서 발생하나 SELECT 가 비정규 → 직원·관리자 모두 0건. canonical 전환 후보. |
+| ~~**G1**~~ | `check_in_room_logs` | CheckInDetailSheet (대시보드) | **공유**(대시보드, 전 role) | ✅ `room_logs_clinic_rw[ALL]`=user_profiles 기반(=current_user_clinic_id 동등) | **아니오 (이미 parity)** | **★NO-OP 종결(planner eih9)★** Phase1 raw dump 가 OUTLIER 전제와 불일치 — read 이미 전 role parity 충족. 별도 SELECT 추가=no-op, [ALL] write 동반=AC-5 위반. **already-parity(무변경) 재분류. Phase2-A 제외.** (write 하드닝=P2 후보 기록만) |
 | **G2** | `clinic_events` | ClinicCalendar (대시보드 사이드바) | **공유**(대시보드, 전 role) | ❌ `staff.id=auth.uid()` OUTLIER → 전원 deny | **예 (파리티)** | 일정 이벤트. 동일 OUTLIER RC. canonical 전환 후보. |
 | **S1** | `chart_doctor_memos` | MedicalChartPanel (차트) | 공유(차트는 전 role 진입) | admin/director 한정 read | **판정필요** | 원장 임상 메모 — 의도적 제한일 가능성↑. **민감/제외 후보**. 총괄·supervisor 확정 요청. |
 | **S2** | `insurance_sync_runs` | InsuranceStatusTab → `clinic-management` | **비공유**(MGMT 메뉴: admin/manager/director) | admin/manager 한정 read | 아니오 | 메뉴 자체가 MGMT 전용 → 정책 정렬됨. **제외**(gap 아님). |
@@ -118,7 +123,27 @@ planner + supervisor 가 아래를 확정해야 Phase 2 진입:
 
 > ⚠ payment_audit_logs / medical_chart_signer_audit = 감사로그 보수 EXCL. HOLD 3건은 reporter 답변 전 절대 OPEN 금지.
 
-### ★ G1 check_in_room_logs — GO 재게이트 후 제출 (planner b4sj, DECISION-REQUEST 해소)
+### ★★ G1 DECISION-REQUEST 판정 — NO-OP 종결 확정 (planner MSG-20260611-144018-eih9) ★★
+planner 가 raw dump(`scripts/audit_out/T-20260611-RLS-PARITY_phase1_dump.txt`)를 직접 교차검증 후 dev-foot DECISION-REQUEST 를 수용·판정. (planner: "G1/G2 를 동일 RC 로 오기술한 것이 오류 — 정정 수용.")
+
+- **판정: G1 check_in_room_logs = NO-OP 종결 확정.**
+  - `room_logs_clinic_rw [ALL]` = user_profiles 기반(= `current_user_clinic_id()` 동등) → read 이미 전 role parity. G2(staff 기반)와 **신원소스 다름**.
+  - read-parity surface 로는 fix 불요: 별도 SELECT 정책 추가 = OR-merge **no-op**, [ALL] write 동반수정 = 우산 **AC-5(write 불변) 위반**.
+- **조치(dev-foot 집행 완료)**:
+  - check_in_room_logs **Phase2-A 제외 + 매트릭스 'already-parity(무변경)' 재분류**. 추가 작업 0.
+  - 제출했던 마이그 `20260611170000_check_in_room_logs_select_rls_canonical.sql`(+rollback) → **`.WITHDRAWN` 로 회수**(supabase db push 미적용). db-gate 증빙에 WITHDRAWN 배너 추가. **supervisor 미적용.**
+  - write 하드닝(approved+active 게이트 부재)은 user_profiles 스코프 → PHI 누수 없음 = 경미 over-permission → **write-track P2 후보로만 기록(지금 강제변경 금지)**. (frontmatter `g1_write_hardening_note` 참조)
+
+### ★ clinic_events 쓰기 비정규 부수발견 → 신규 child 발번 (planner eih9)
+- 교차검증 확인: clinic_events insert/update/delete 3정책 전부 staff 기반 → **write 전원 차단(파손)**. G2 read 와 동일 RC.
+- 우산 AC-5(write 불변) 위반이라 우산 Phase2-A 에 fold 금지 → **별도 write 트랙으로 분리**.
+- **신규 티켓 `T-20260611-foot-CLINIC-EVENTS-WRITE-RLS-CANONICAL` (P1, approved) 착수 완료** — canonical `is_approved_user()+clinic` 으로 write 3정책 정렬. dry-run PASS, db-gate 제출. supervisor 검수에서 write delta 명확 분리·표기.
+
+### ★ Phase2-A 최종 범위 = G2 clinic_events_select 단독 (G1 제외). 동결 해제(planner eih9).
+
+---
+
+### (이력) G1 check_in_room_logs — 이전 라운드 GO 재게이트 후 제출 (planner b4sj) — ※위 eih9 판정으로 WITHDRAWN
 **해소**: 이전 라운드(MSG-20260611-143552-2sqv) DECISION-REQUEST 의 전제 불일치(아래)를 planner 가 matrix v2 검토 후 **C그룹 canonical GO 재확정**.
 - 마이그: `supabase/migrations/20260611170000_check_in_room_logs_select_rls_canonical.sql` (+rollback)
 - dry-run: `scripts/T-20260611-foot-RLS-PARITY-G1-check_in_room_logs_dryrun.mjs` → **PASS** (단일 [ALL] 해체 / SELECT canonical / 쓰기 3정책 user_profiles 술어 보존)
