@@ -2062,6 +2062,21 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260516-foot-HEALER-RESV-BTN → T-20260522-foot-PKG-HEALER-DEDUCT 통합으로 healerFlagLoading 폐기
   // T-20260522-foot-PKG-HEALER-DEDUCT: [힐러예약 후 차감] 복합 동작 로딩
   const [savingHealerDeduct, setSavingHealerDeduct] = useState(false);
+  // T-20260611-foot-DEDUCT-DUPKEY-SUBTHERAPIST: 같은 내원(check_in_id)·같은 패키지 재차감 감지 시 이중선택 모달
+  // ★ 충돌 판정은 오직 (package_id, check_in_id) 중복 — 지정치료사 유무·값과 무관 (planner INFO 2026-06-11)
+  const [dupDeductModal, setDupDeductModal] = useState<{
+    targetPkgId: string;
+    deductCheckInId: string;
+    existingSessionId: string;
+    existingSessionNumber: number;
+    existingPerformedBy: string | null;
+    usedCount: number;
+    therapistId: string;
+    treatmentType: string;
+    sessionDate: string;
+    source: 'c22' | 'healer';
+  } | null>(null);
+  const [dupDeductBusy, setDupDeductBusy] = useState(false);
   // C22-RESV-EDIT: 예약 수정 모달
   const [editResvId, setEditResvId] = useState<string | null>(null);
   // T-20260524-foot-THERAPIST-BISYNC: therapistId + visitType 추가 (AC-2 역동기화용)
@@ -3425,44 +3440,35 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   };
 
   // C22-PKG-DEDUCT: 치료사 차감 인라인 폼 저장 (복구 — regression fix)
-  const saveC22Deduct = async () => {
-    if (!customer || !c22DeductForm.therapistId) {
-      toast.error('치료사를 선택해주세요');
-      return;
-    }
-    const activePackages = packages.filter(p => p.status === 'active');
-    // T-20260523-foot-PKG-AUTOSEL-REMOVE AC-2: 활성 패키지 1개 이상 시 미선택 차단
-    const activeDisplayPackages = packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0));
-    if (activeDisplayPackages.length >= 1 && !c22DeductForm.packageId) {
-      toast.error('차감할 패키지를 선택해주세요');
-      return;
-    }
-    const targetPkg = c22DeductForm.packageId
-      ? activePackages.find(p => p.id === c22DeductForm.packageId)
-      : activePackages[0];
-    if (!targetPkg) {
-      toast.error('활성 패키지가 없습니다');
-      return;
-    }
-    const usedCount = packageSessions.filter(s => s.package_id === targetPkg.id && s.status === 'used').length;
-    setSavingC22Deduct(true);
-    const { error } = await supabase.from('package_sessions').insert({
-      package_id: targetPkg.id,
-      session_number: usedCount + 1,
-      session_type: c22DeductForm.treatmentType,
-      session_date: c22DeductForm.sessionDate,
-      performed_by: c22DeductForm.therapistId,
-      status: 'used',
-      // T-20260609-foot-PKGSESS-CHECKIN-LINK (AC2): 차감일 == 최근 내원일(KST)일 때만 귀속, 아니면 NULL 근사
-      check_in_id:
-        latestCheckIn?.checked_in_at &&
-        seoulISODate(latestCheckIn.checked_in_at) === c22DeductForm.sessionDate
-          ? latestCheckIn.id
-          : null,
-    });
-    setSavingC22Deduct(false);
-    if (error) { toast.error(`차감 실패: ${error.message}`); return; }
-    // 세션 새로고침 — 2-1 시술내역 자동 리스트업
+  // T-20260611-foot-DEDUCT-DUPKEY-SUBTHERAPIST 공통 헬퍼 ───────────────────────
+  // 차감일이 최근 내원일(KST)과 같을 때만 check_in_id 귀속 (T-20260609-foot-PKGSESS-CHECKIN-LINK)
+  const computeDeductCheckInId = (sessionDate: string): string | null =>
+    latestCheckIn?.checked_in_at && seoulISODate(latestCheckIn.checked_in_at) === sessionDate
+      ? latestCheckIn.id
+      : null;
+
+  // 같은 내원(check_in_id)·같은 패키지에 이미 'used' 차감 이력이 있으면 그 회차를 반환 (없으면 null)
+  // ★ 지정치료사와 무관 — 오직 (package_id, check_in_id) 중복(unique_package_checkin)으로 판정
+  const findSameCheckinSession = async (packageId: string, checkInId: string) => {
+    const { data } = await supabase
+      .from('package_sessions')
+      .select('id, session_number, performed_by')
+      .eq('package_id', packageId)
+      .eq('check_in_id', checkInId)
+      .eq('status', 'used')
+      .order('session_number', { ascending: false })
+      .limit(1);
+    return data && data.length > 0
+      ? (data[0] as { id: string; session_number: number; performed_by: string | null })
+      : null;
+  };
+
+  // unique_package_checkin 위반(23505) graceful 판정 — AC3: raw error.message 토스트 금지
+  const isDupCheckinError = (err: { message?: string; code?: string } | null): boolean =>
+    !!err && (err.code === '23505' || /unique_package_checkin/i.test(err.message ?? ''));
+
+  // 세션 새로고침 + remaining 클라이언트 집계 (차감/추가차감/치료사변경 후 공통)
+  const refreshPackageSessionsAndRemaining = async () => {
     const pkgIds = packages.map(p => p.id);
     const { data: sessData } = await supabase
       .from('package_sessions')
@@ -3485,14 +3491,116 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     // T-20260522-foot-PERF-TUNING OPT-4: sessData 재사용 → remaining 클라이언트 집계 (N RPC 제거)
     const remainingArr = computeRemainingFromSessionRows(packages, (sessData ?? []) as _SessRow[]);
     setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? prev[i]?.remaining ?? null })));
-    // AC-R1 (2026-05-23): 차감 후 리셋 — 지정 치료사 자동세팅 제거, 치료사 계정만 유지
-    // 치료사 계정: currentUserStaffId(RLS 준수), admin/consultant: 빈 상태(수기 선택)
-    setC22DeductForm(f => ({
-      ...f,
-      therapistId: currentUserStaffId || '',
-      treatmentType: 'heated_laser',
-    }));
+  };
+
+  // 차감 후 폼 리셋 (AC-R1 2026-05-23)
+  const resetDeductFormAfterSave = () =>
+    setC22DeductForm(f => ({ ...f, therapistId: currentUserStaffId || '', treatmentType: 'heated_laser' }));
+
+  const saveC22Deduct = async () => {
+    if (!customer || !c22DeductForm.therapistId) {
+      toast.error('치료사를 선택해주세요');
+      return;
+    }
+    const activePackages = packages.filter(p => p.status === 'active');
+    // T-20260523-foot-PKG-AUTOSEL-REMOVE AC-2: 활성 패키지 1개 이상 시 미선택 차단
+    const activeDisplayPackages = packages.filter(p => p.status === 'active' && (p.remaining === null || p.remaining.total_remaining > 0));
+    if (activeDisplayPackages.length >= 1 && !c22DeductForm.packageId) {
+      toast.error('차감할 패키지를 선택해주세요');
+      return;
+    }
+    const targetPkg = c22DeductForm.packageId
+      ? activePackages.find(p => p.id === c22DeductForm.packageId)
+      : activePackages[0];
+    if (!targetPkg) {
+      toast.error('활성 패키지가 없습니다');
+      return;
+    }
+    const usedCount = packageSessions.filter(s => s.package_id === targetPkg.id && s.status === 'used').length;
+    setSavingC22Deduct(true);
+    // AC2: 같은 내원·같은 패키지 재차감 감지 → 즉시 INSERT 금지, 이중선택 모달
+    const deductCheckInId = computeDeductCheckInId(c22DeductForm.sessionDate);
+    if (deductCheckInId) {
+      const existing = await findSameCheckinSession(targetPkg.id, deductCheckInId);
+      if (existing) {
+        setSavingC22Deduct(false);
+        setDupDeductModal({
+          targetPkgId: targetPkg.id,
+          deductCheckInId,
+          existingSessionId: existing.id,
+          existingSessionNumber: existing.session_number,
+          existingPerformedBy: existing.performed_by,
+          usedCount,
+          therapistId: c22DeductForm.therapistId,
+          treatmentType: c22DeductForm.treatmentType,
+          sessionDate: c22DeductForm.sessionDate,
+          source: 'c22',
+        });
+        return;
+      }
+    }
+    const { error } = await supabase.from('package_sessions').insert({
+      package_id: targetPkg.id,
+      session_number: usedCount + 1,
+      session_type: c22DeductForm.treatmentType,
+      session_date: c22DeductForm.sessionDate,
+      performed_by: c22DeductForm.therapistId,
+      status: 'used',
+      check_in_id: deductCheckInId,
+    });
+    setSavingC22Deduct(false);
+    if (error) {
+      // AC3: raw "duplicate key ... unique_package_checkin" 토스트 금지 → graceful 흡수
+      if (isDupCheckinError(error)) { toast.error('이미 오늘 내원으로 차감된 회차가 있어요. 잠시 후 다시 시도해 주세요.'); return; }
+      toast.error(`차감 실패: ${error.message}`); return;
+    }
+    await refreshPackageSessionsAndRemaining();
+    resetDeductFormAfterSave();
     toast.success('회차 차감 완료');
+  };
+
+  // AC2 ①: 당일 대체 치료사 전담 → 기존 회차 performed_by UPDATE (회차 추가 소진 없음)
+  const handleDupChangeTherapistOnly = async () => {
+    if (!dupDeductModal || dupDeductBusy) return;
+    setDupDeductBusy(true);
+    const { error } = await supabase
+      .from('package_sessions')
+      .update({ performed_by: dupDeductModal.therapistId })
+      .eq('id', dupDeductModal.existingSessionId);
+    if (error) { setDupDeductBusy(false); toast.error(`치료사 변경 실패: ${error.message}`); return; }
+    await refreshPackageSessionsAndRemaining();
+    if (dupDeductModal.source === 'healer') await applyHealerFlagForCustomer();
+    setDupDeductBusy(false);
+    resetDeductFormAfterSave();
+    setDupDeductModal(null);
+    if (dupDeductModal.source !== 'healer') toast.success('당일 담당 치료사 변경 완료 (회차 추가 차감 없음)');
+  };
+
+  // AC2 ②: 하루 두 번 시술(ⓠ1=B) → 새 회차 INSERT (session_number+1, 회차 추가 소진)
+  const handleDupAddSession = async () => {
+    if (!dupDeductModal || dupDeductBusy) return;
+    setDupDeductBusy(true);
+    const { error } = await supabase.from('package_sessions').insert({
+      package_id: dupDeductModal.targetPkgId,
+      session_number: dupDeductModal.usedCount + 1,
+      session_type: dupDeductModal.treatmentType,
+      session_date: dupDeductModal.sessionDate,
+      performed_by: dupDeductModal.therapistId,
+      status: 'used',
+      check_in_id: dupDeductModal.deductCheckInId,
+    });
+    if (error) {
+      setDupDeductBusy(false);
+      // 제약 마이그(20260611230000)가 prod 미적용이면 23505 잔존 가능 → graceful
+      if (isDupCheckinError(error)) { toast.error('같은 날 추가 차감 설정이 아직 반영되지 않았어요. 관리자에게 문의해 주세요.'); return; }
+      toast.error(`추가 차감 실패: ${error.message}`); return;
+    }
+    await refreshPackageSessionsAndRemaining();
+    if (dupDeductModal.source === 'healer') await applyHealerFlagForCustomer();
+    setDupDeductBusy(false);
+    resetDeductFormAfterSave();
+    setDupDeductModal(null);
+    if (dupDeductModal.source !== 'healer') toast.success('1회차 추가 차감 완료');
   };
 
   // T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 저장
@@ -3588,6 +3696,27 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
     // 2. 패키지 회차 차감 (saveC22Deduct 동일 로직)
     const usedCount = packageSessions.filter(s => s.package_id === targetPkg.id && s.status === 'used').length;
+    // AC2: 같은 내원·같은 패키지 재차감 감지 → 모달로 분기 (source='healer' → 모달 처리 후 힐러 플래그 이어감)
+    const deductCheckInId = computeDeductCheckInId(c22DeductForm.sessionDate);
+    if (deductCheckInId) {
+      const existing = await findSameCheckinSession(targetPkg.id, deductCheckInId);
+      if (existing) {
+        setSavingHealerDeduct(false);
+        setDupDeductModal({
+          targetPkgId: targetPkg.id,
+          deductCheckInId,
+          existingSessionId: existing.id,
+          existingSessionNumber: existing.session_number,
+          existingPerformedBy: existing.performed_by,
+          usedCount,
+          therapistId: c22DeductForm.therapistId,
+          treatmentType: c22DeductForm.treatmentType,
+          sessionDate: c22DeductForm.sessionDate,
+          source: 'healer',
+        });
+        return;
+      }
+    }
     const { error: deductError } = await supabase.from('package_sessions').insert({
       package_id: targetPkg.id,
       session_number: usedCount + 1,
@@ -3595,50 +3724,29 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       session_date: c22DeductForm.sessionDate,
       performed_by: c22DeductForm.therapistId,
       status: 'used',
-      // T-20260609-foot-PKGSESS-CHECKIN-LINK (AC2): 힐러 예약 후 차감 — 차감일 == 최근 내원일(KST)일 때 귀속
-      check_in_id:
-        latestCheckIn?.checked_in_at &&
-        seoulISODate(latestCheckIn.checked_in_at) === c22DeductForm.sessionDate
-          ? latestCheckIn.id
-          : null,
+      check_in_id: deductCheckInId,
     });
     if (deductError) {
       setSavingHealerDeduct(false);
+      // AC3: raw 23505 토스트 금지
+      if (isDupCheckinError(deductError)) { toast.error('이미 오늘 내원으로 차감된 회차가 있어요. 잠시 후 다시 시도해 주세요.'); return; }
       toast.error(`차감 실패: ${deductError.message}`);
       return;
     }
 
-    // 세션 새로고침 (remaining 집계)
-    const pkgIds = packages.map(p => p.id);
-    const { data: sessData } = await supabase
-      .from('package_sessions')
-      .select('id, package_id, session_number, session_type, session_date, performed_by, status, memo, staff:performed_by(name)')
-      .in('package_id', pkgIds)
-      .order('session_number', { ascending: true });
-    setPackageSessions(
-      (sessData ?? []).map((s: Record<string, unknown>) => ({
-        id: s.id as string,
-        package_id: s.package_id as string,
-        session_number: s.session_number as number,
-        session_type: s.session_type as string,
-        session_date: s.session_date as string,
-        performed_by: s.performed_by as string | null,
-        staff_name: (s.staff as { name: string } | null)?.name ?? null,
-        status: s.status as string,
-        memo: s.memo as string | null,
-      }))
-    );
-    const remainingArr = computeRemainingFromSessionRows(packages, (sessData ?? []) as _SessRow[]);
-    setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? prev[i]?.remaining ?? null })));
+    await refreshPackageSessionsAndRemaining();
     // AC-R1 (2026-05-23): 힐러차감 후 리셋 — 지정 치료사 자동세팅 제거
-    setC22DeductForm(f => ({
-      ...f,
-      therapistId: currentUserStaffId || '',
-      treatmentType: 'heated_laser',
-    }));
+    resetDeductFormAfterSave();
 
-    // 3. 힐러 플래그 ON (토글 아닌 SET — 차감과 동시이므로 항상 ON)
-    // v4: > today (strictly greater) — 오늘 예약 제외. 당일 고객박스가 즉시 노란색으로 변하는 문제 수정.
+    // 3. 힐러 플래그 ON
+    await applyHealerFlagForCustomer();
+    setSavingHealerDeduct(false);
+  };
+
+  // T-20260522-foot-PKG-HEALER-DEDUCT: 힐러 플래그 ON (토글 아닌 SET — 차감과 동시이므로 항상 ON)
+  // v4: > today (strictly greater) — 오늘 예약 제외. 당일 고객박스가 즉시 노란색으로 변하는 문제 수정.
+  const applyHealerFlagForCustomer = async () => {
+    if (!customer) return;
     const today = format(new Date(), 'yyyy-MM-dd');
     const nextResv = reservations
       .filter(r => r.reservation_date > today && r.status !== 'cancelled' && r.status !== 'noshow')
@@ -3650,7 +3758,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         .from('customers')
         .update({ pending_healer_flag: true })
         .eq('id', customer.id);
-      setSavingHealerDeduct(false);
       if (flagError) { toast.error(`힐러 플래그 저장 실패: ${flagError.message}`); return; }
       setCustomer(prev => prev ? { ...prev, pending_healer_flag: true } : prev);
       toast.success('회차 차감 + 힐러 예약 대기 설정 완료');
@@ -3660,7 +3767,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         .from('reservations')
         .update({ healer_flag: true })
         .eq('id', nextResv.id);
-      setSavingHealerDeduct(false);
       if (flagError) { toast.error(`힐러 플래그 저장 실패: ${flagError.message}`); return; }
       setReservations(prev => prev.map(r => r.id === nextResv.id ? { ...r, healer_flag: true } : r));
       toast.success(`회차 차감 + 다음 예약(${nextResv.reservation_date}) 힐러 플래그 설정 완료`);
@@ -7774,6 +7880,59 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           </DialogContent>
         </Dialog>
       )}
+
+      {/* T-20260611-foot-DEDUCT-DUPKEY-SUBTHERAPIST: 같은 내원 재차감 이중선택 모달 */}
+      <Dialog open={dupDeductModal !== null} onOpenChange={(o) => { if (!o && !dupDeductBusy) setDupDeductModal(null); }}>
+        <DialogContent className="max-w-sm" data-testid="dup-deduct-modal">
+          <DialogHeader>
+            <DialogTitle>오늘 이미 차감된 회차가 있어요</DialogTitle>
+          </DialogHeader>
+          {dupDeductModal && (
+            <div className="space-y-3 text-sm">
+              <p className="text-muted-foreground leading-relaxed">
+                같은 내원 건에 이 패키지로 <b>{dupDeductModal.existingSessionNumber}회차</b>가 이미 차감되어 있어요
+                {dupDeductModal.existingPerformedBy && (
+                  <> (담당: {therapistList.find(t => t.id === dupDeductModal.existingPerformedBy)?.name ?? '-'})</>
+                )}.
+                <br />어떻게 처리할까요?
+              </p>
+              <button
+                type="button"
+                disabled={dupDeductBusy}
+                onClick={handleDupChangeTherapistOnly}
+                data-testid="dup-deduct-change-therapist"
+                className="w-full text-left rounded-lg border border-teal-300 bg-teal-50 hover:bg-teal-100 px-3 py-2.5 transition disabled:opacity-50"
+              >
+                <div className="font-semibold text-teal-800">① 담당 치료사만 변경</div>
+                <div className="text-[11px] text-teal-700 mt-0.5">
+                  당일 다른 치료사가 전담 — 회차 추가 차감 없이 담당만
+                  <b> {therapistList.find(t => t.id === dupDeductModal.therapistId)?.name ?? '선택 치료사'}</b>(으)로 변경
+                </div>
+              </button>
+              <button
+                type="button"
+                disabled={dupDeductBusy}
+                onClick={handleDupAddSession}
+                data-testid="dup-deduct-add-session"
+                className="w-full text-left rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 px-3 py-2.5 transition disabled:opacity-50"
+              >
+                <div className="font-semibold text-amber-800">② 1회차 추가 차감</div>
+                <div className="text-[11px] text-amber-700 mt-0.5">
+                  하루 두 번 시술 — 새 회차(<b>{dupDeductModal.usedCount + 1}회차</b>)로 추가 차감, 잔여 1회 감소
+                </div>
+              </button>
+              <button
+                type="button"
+                disabled={dupDeductBusy}
+                onClick={() => setDupDeductModal(null)}
+                className="w-full rounded-lg border border-gray-300 bg-white hover:bg-gray-50 px-3 py-2 text-gray-600 transition disabled:opacity-50"
+              >
+                ③ 취소
+              </button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* T-20260517-foot-C2-CONSULT-DOCS AC-R1: 합본1 — 개인정보 + 체크리스트 */}
       {showChecklistForm && (
