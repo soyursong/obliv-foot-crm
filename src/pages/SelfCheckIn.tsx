@@ -1246,6 +1246,14 @@ export default function SelfCheckIn() {
             newCustomerPayload.privacy_consent = privacyConsent;
             // T-20260602-foot-CONSENT-TIMESTAMP-COLS: 동의(true) 시 시각 병기, 미동의(false) 시 NULL
             newCustomerPayload.privacy_consent_at = privacyConsent ? new Date().toISOString() : null;
+            // T-20260611-foot-WALKIN-CHART-HIRA-CONSENT-NOTSAVED AC-1/AC-3: 워크인 신규 INSERT 경로에서도
+            //   hira_consent 직접 선저장. 기존엔 hira_consent 가 INSERT 누락(RPC fn_selfcheckin_update_personal_info
+            //   전용)이라 write-path RPC 가 실패하면(시그니처 불일치 PGRST202 등) hira 동의가 영구 유실됐다.
+            //   privacy_consent 와 동일 단일 패턴으로 선저장해 RPC 가용성과 무관하게 보관의무 충족
+            //   (이후 RPC UPDATE 가 멱등 재확정). sibling foot-checkin(kiosk) e7a8494 와 동일 경로.
+            newCustomerPayload.hira_consent = insuranceConsent;
+            // T-20260602-foot-CONSENT-TIMESTAMP-COLS 패턴: 동의(true) 시 시각 병기, 미동의(false) 시 NULL
+            newCustomerPayload.hira_consent_at = insuranceConsent ? new Date().toISOString() : null;
           }
         }
 
@@ -1504,7 +1512,7 @@ export default function SelfCheckIn() {
         // (4) 개인정보 업데이트 (birth_date + address + privacy_consent)
         // 기존 고객은 업데이트, 신규 고객은 INSERT 시 이미 포함. 중복 업데이트 허용 (멱등).
         try {
-          await anonClient.rpc('fn_selfcheckin_update_personal_info', {
+          const { error: piErr } = await anonClient.rpc('fn_selfcheckin_update_personal_info', {
             p_check_in_id:       newCheckInId,
             p_clinic_id:         clinicId,
             p_birth_date:        extractBirthDate(rrn) ?? null,
@@ -1515,8 +1523,15 @@ export default function SelfCheckIn() {
             p_visit_route:        reservationType === 'walkin' ? '워크인' : null,
             p_visit_route_detail: reservationType === 'walkin' ? visitRouteDetail : null,
           });
-        } catch {
-          // 개인정보 저장 실패는 silent — 접수 완료 UX를 블록하지 않음
+          // T-20260611-foot-WALKIN-CHART-HIRA-CONSENT-NOTSAVED AC-2: silent-fail 표면화.
+          //   기존 빈 catch{} 가 RPC 시그니처 불일치(PGRST202 등)를 삼켜, hira/주소/동의 미저장 버그가
+          //   현장 신고 전까지 무관측이었다. 접수 완료 UX 는 계속 비블로킹이되 콘솔/모니터링에 노출한다.
+          if (piErr) {
+            console.error('[selfcheckin] fn_selfcheckin_update_personal_info 실패 (개인정보/동의/주소 미저장 위험):', piErr);
+          }
+        } catch (e) {
+          // 네트워크/예외 — 접수 완료 UX 는 블록하지 않되 표면화(AC-2)
+          console.error('[selfcheckin] fn_selfcheckin_update_personal_info 예외:', e);
         }
 
         // (4.5) AC-9: 주민번호 자동 매칭 — 데스크 기입 레코드와 병합 시도
