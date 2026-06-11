@@ -301,9 +301,12 @@ export function ReservationDetailPopup({
   };
 
   // ── 액션: 체크인 전환 (실제 DB INSERT)
-  // T-20260522-foot-CHECKIN-FIRST-INFO: 분리된 DB 로직 — 초진/재진 모두 consult_waiting
-  // ※ 기존: returning → treatment_waiting. 이 경로(예약팝업 접수)만 consult_waiting으로 변경.
-  //   NewCheckInDialog / batchCheckIn / SelfCheckIn 은 AC-4 회귀 방지로 변경 없음.
+  // T-20260611-foot-CHECKIN-POPUP-REVISIT-CONSULTSLOT (regression fix):
+  //   canonical 슬롯 분기 복원 — 재진(returning) → treatment_waiting(치료대기), 초진/예약없이방문 → consult_waiting(상담대기).
+  //   배경: fbb843b(CTXMENU-UNIFY-CANONICAL)가 카드/타임라인 우클릭 [예약하기]→[예약상세] 재배선 후
+  //   이 팝업 [체크인 전환] 경로가 재진 카드의 활성 경로가 되며, 잔존하던 CHECKIN-FIRST-INFO의
+  //   'consult_waiting' 전(全) visit_type 하드코딩이 재진을 상담대기로 잘못 활성화(권준서 F-1548).
+  //   canonical 출처: T-20260522-foot-REVISIT-TREAT-WAIT(ebe1dd7) / NewCheckInDialog:223 / Dashboard:5195 동일 규칙.
   const doCheckIn = async () => {
     setBusy(true);
     const { data: existing } = await supabase
@@ -328,8 +331,8 @@ export function ReservationDetailPopup({
       customer_name: reservation.customer_name ?? '',
       customer_phone: reservation.customer_phone,
       visit_type: reservation.visit_type,
-      // AC-2/AC-3: 초진·재진 모두 → 상담대기(consult_waiting) (예약팝업 접수 경로)
-      status: 'consult_waiting',
+      // AC-1/AC-2: 재진 → 치료대기(treatment_waiting), 초진·예약없이방문 → 상담대기(consult_waiting). canonical 분기 복원.
+      status: reservation.visit_type === 'returning' ? 'treatment_waiting' : 'consult_waiting',
       queue_number: queueData as number,
     });
     if (error) { toast.error(`체크인 실패: ${error.message}`); setBusy(false); return; }
