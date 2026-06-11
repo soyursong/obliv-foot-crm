@@ -440,7 +440,39 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
     setUnseenCount(count);
   }, [activeList, hidden]);
 
-  if (displayList.length === 0) return null;
+  // T-20260611-foot-CALLLIST-ROOM-LABEL (FIX phase2) — 빈 명단 완전소멸(return null) 금지.
+  //   기존엔 콜 대상(purple/yellow/healer_waiting/pink)이 한 명도 없으면 위젯이 DOM에서 사라져
+  //     (a) 원장님이 "진료콜 명단" 자체를 화면에서 못 찾고,
+  //     (b) 기본 로그인(데이터 없는) 환경의 브라우저 QA에서 안정 selector([data-testid=doctor-call-list])가 깨졌다.
+  //   → 빈 상태에서도 최소 헤더 탭을 항상 렌더해 위젯의 존재/위치를 보장한다(우하단, 버튼 비가림).
+  //   data-empty="true": 회귀 가드 마커 — 행(rows) 존재를 전제로 단언하는 형제 스펙들은 이 마커로
+  //     '데이터 없음'을 식별해 기존처럼 스킵한다(빈 탭을 콜 데이터로 오인 금지).
+  //   위치(pos)·헤더 testid는 일반 패널과 동일 규칙으로 보존(드래그 저장 좌표가 있으면 그 자리에 최소 탭).
+  if (displayList.length === 0) {
+    return (
+      <div
+        ref={panelRef}
+        data-testid="doctor-call-list"
+        data-empty="true"
+        data-hidden="false"
+        data-position-mode={pos ? 'dragged' : 'fixed'}
+        className={cn(
+          'fixed z-40 rounded-xl border border-gray-300 bg-white/95 shadow-2xl backdrop-blur-sm',
+          pos ? '' : 'bottom-4 right-4',
+        )}
+        style={pos ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' } : undefined}
+      >
+        <div className="flex items-center gap-1.5 px-3 py-2 min-h-[44px]">
+          <Stethoscope className="h-4 w-4 text-gray-400" />
+          <span className="text-sm font-semibold text-gray-500">원장님 진료콜 명단</span>
+          <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-1.5 py-px font-medium">
+            0명
+          </span>
+          <span className="text-xs text-gray-400">대기 없음</span>
+        </div>
+      </div>
+    );
+  }
 
   // AC-1·AC-2) 숨김 상태: 전체 패널 대신 최소 탭만 렌더(완전소멸 금지 — 재접근 가능).
   //   위치(pos/anchor)는 그대로 적용 → 드래그해둔 자리에 최소 탭이 남음(AC-7 위치 보존).

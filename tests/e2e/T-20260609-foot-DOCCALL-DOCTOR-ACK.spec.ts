@@ -106,7 +106,7 @@ test.describe('T-20260609 DOCCALL-DOCTOR-ACK — 진료호출 의사 ✋확인',
       return;
     }
     // 대시보드(직원 동선)의 진료콜 명단(DoctorCallListBar) — 호출 발신 측 화면.
-    const callList = page.locator('[data-testid="doctor-call-list"]');
+    const callList = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if ((await callList.count()) === 0) {
       test.skip(true, '진료콜 명단 미표시(당일 호출 없음/권한) — 스킵');
       return;

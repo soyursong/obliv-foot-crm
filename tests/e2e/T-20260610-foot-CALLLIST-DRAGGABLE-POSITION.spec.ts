@@ -27,7 +27,7 @@ const POS_KEY = 'foot.doctorCallList.pos.v1';
 async function ensureWidget(page: import('@playwright/test').Page): Promise<boolean> {
   const ok = await loginAndWaitForDashboard(page);
   if (!ok) return false;
-  if ((await page.locator('[data-testid="doctor-call-list"]').count()) === 0) return false;
+  if ((await page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])').count()) === 0) return false;
   if ((await page.locator('[data-testid="doctor-call-header"]').count()) === 0) return false;
   return true;
 }
@@ -58,7 +58,7 @@ test.describe('T-20260610 CALLLIST-DRAGGABLE-POSITION — 진료콜 명단 드�
       test.skip(true, '위젯/헤더 미표시 환경 — 스킵');
       return;
     }
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     // 드래그 전: 위치 고정(fixed/anchored) 모드 — 아직 자유배치 아님
     await expect(list).toHaveAttribute('data-position-mode', /fixed|anchored/);
 
@@ -88,7 +88,7 @@ test.describe('T-20260610 CALLLIST-DRAGGABLE-POSITION — 진료콜 명단 드�
       expect(stillSaved).toBeTruthy();
       return;
     }
-    await expect(page.locator('[data-testid="doctor-call-list"]')).toHaveAttribute(
+    await expect(page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])')).toHaveAttribute(
       'data-position-mode',
       'dragged',
     );
@@ -101,7 +101,7 @@ test.describe('T-20260610 CALLLIST-DRAGGABLE-POSITION — 진료콜 명단 드�
       test.skip(true, '위젯/헤더 미표시 환경 — 스킵');
       return;
     }
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     // 시작 = 기본 앵커(fixed). 토글을 눌러도 드래그로 전환되면 안 됨(stopPropagation 가드).
     await expect(list).toHaveAttribute('data-position-mode', /fixed|anchored/);
 
@@ -129,7 +129,7 @@ test.describe('T-20260610 CALLLIST-DRAGGABLE-POSITION — 진료콜 명단 드�
       test.skip(true, '위젯/헤더 미표시 환경 — 스킵');
       return;
     }
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     const vp = page.viewportSize();
     // 뷰포트 밖(우하단 한참 너머)으로 강하게 드래그 → clamp되어 화면 내 잔존해야 함
     const dropped = await dragHeader(page, (vp?.width ?? 1280) + 600, (vp?.height ?? 800) + 600);

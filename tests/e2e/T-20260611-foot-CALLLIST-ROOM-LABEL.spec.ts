@@ -207,7 +207,7 @@ test.describe('T-20260611 CALLLIST-ROOM-LABEL — 진료콜 명단 방번호 표
     await expect(page.locator('[data-testid="dashboard-root"]')).toBeVisible();
 
     // 진료콜 명단 위젯(숨김 상태일 수 있음 — 탭/패널 중 하나는 존재). 데이터 없으면 graceful skip.
-    const widget = page.locator('[data-testid="doctor-call-list"]');
+    const widget = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if ((await widget.count()) === 0) {
       test.skip(true, '진료콜 명단 데이터 없음(당일 콜대상 0) — 스킵');
       return;
@@ -224,6 +224,31 @@ test.describe('T-20260611 CALLLIST-ROOM-LABEL — 진료콜 명단 방번호 표
       const room = rows.first().locator('[data-testid="doctor-call-room"]');
       await expect(room).toBeVisible();
       await expect(room).not.toHaveText(/undefined/);
+    }
+  });
+
+  // ── FIX phase2: 콜 대상 0명(기본 로그인·무데이터)에서도 진료콜 명단 위젯이 DOM에 존재(완전소멸 금지) ──
+  //   기존 displayList.length===0 → return null 이라 위젯이 사라져 브라우저 QA의 안정 selector가 깨졌다.
+  //   빈 상태에서도 최소 헤더 탭([data-testid=doctor-call-list])이 항상 보여야 한다.
+  test('FIX phase2: 빈 명단에서도 진료콜 명단 위젯(raw selector)이 항상 표시 — data-empty 탭', async ({ page }) => {
+    const ok = await loginAndWaitForDashboard(page);
+    if (!ok) {
+      test.skip(true, '로그인 실패 — 스킵');
+      return;
+    }
+    await expect(page.locator('[data-testid="dashboard-root"]')).toBeVisible();
+
+    // 데이터 유무와 무관하게 raw selector(콜대상 0이면 data-empty 탭, 있으면 패널)는 항상 1개 이상 존재·표시.
+    const anyWidget = page.locator('[data-testid="doctor-call-list"]');
+    await expect(anyWidget.first()).toBeVisible();
+
+    // 콜 대상이 없는(빈) 환경이면 data-empty 탭이어야 하고, "원장님 진료콜 명단" 헤더와 0명 표기가 보인다.
+    const realWidget = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
+    if ((await realWidget.count()) === 0) {
+      const emptyTab = page.locator('[data-testid="doctor-call-list"][data-empty="true"]');
+      await expect(emptyTab).toBeVisible();
+      await expect(emptyTab).toContainText('진료콜 명단');
+      await expect(emptyTab).not.toContainText('undefined');
     }
   });
 });

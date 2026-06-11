@@ -174,7 +174,7 @@ test.describe('T-20260601 DOCTOR-CALL-LIST — 원장님 진료콜 자동명단'
     await expect(root).toBeVisible();
 
     // 보라(진료필요) check_in 이 없으면 위젯은 null 렌더 → 구조 검증 스킵(데이터 의존)
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if ((await list.count()) === 0) {
       test.skip(true, '보라(진료필요) 당일 체크인 없음 — 위젯 미표시 환경 스킵');
       return;

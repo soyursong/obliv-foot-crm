@@ -31,7 +31,7 @@ test.describe('T-20260610 CALLLIST-TOP-COVERS-BUTTONS — 버튼 비가림 앵�
   test('AC-1: 위젯 컨테이너 앵커 = bottom-4 right-4 (top-4 회귀 금지)', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if (!ok || (await list.count()) === 0) {
       test.skip(true, '위젯 미표시 환경 — 스킵');
       return;
@@ -50,7 +50,7 @@ test.describe('T-20260610 CALLLIST-TOP-COVERS-BUTTONS — 버튼 비가림 앵�
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
     const rows = page.locator('[data-testid="doctor-call-rows"]');
-    if (!ok || (await page.locator('[data-testid="doctor-call-list"]').count()) === 0) {
+    if (!ok || (await page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])').count()) === 0) {
       test.skip(true, '위젯 미표시 환경 — 스킵');
       return;
     }
@@ -68,7 +68,7 @@ test.describe('T-20260610 CALLLIST-TOP-COVERS-BUTTONS — 버튼 비가림 앵�
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
     const rows = page.locator('[data-testid="doctor-call-rows"]');
-    if (!ok || (await page.locator('[data-testid="doctor-call-list"]').count()) === 0 || (await rows.count()) === 0) {
+    if (!ok || (await page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])').count()) === 0 || (await rows.count()) === 0) {
       test.skip(true, '위젯 미표시/접힘 — 스킵');
       return;
     }
@@ -88,7 +88,7 @@ test.describe('T-20260610 CALLLIST-TOP-COVERS-BUTTONS — 버튼 비가림 앵�
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
     const header = page.locator('[data-testid="doctor-call-header"]');
-    if (!ok || (await page.locator('[data-testid="doctor-call-list"]').count()) === 0 || (await header.count()) === 0) {
+    if (!ok || (await page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])').count()) === 0 || (await header.count()) === 0) {
       test.skip(true, '위젯/헤더 미표시 — 스킵');
       return;
     }
@@ -101,7 +101,7 @@ test.describe('T-20260610 CALLLIST-TOP-COVERS-BUTTONS — 버튼 비가림 앵�
   test('AC-5/6: 헤더 드래그 → data-position-mode=dragged + 인라인 left/top 적용', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     const header = page.locator('[data-testid="doctor-call-header"]');
     if (!ok || (await list.count()) === 0 || (await header.count()) === 0) {
       test.skip(true, '위젯/헤더 미표시 — 스킵');
@@ -133,7 +133,7 @@ test.describe('T-20260610 CALLLIST-TOP-COVERS-BUTTONS — 버튼 비가림 앵�
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
     const header = page.locator('[data-testid="doctor-call-header"]');
-    if (!ok || (await page.locator('[data-testid="doctor-call-list"]').count()) === 0 || (await header.count()) === 0) {
+    if (!ok || (await page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])').count()) === 0 || (await header.count()) === 0) {
       test.skip(true, '위젯/헤더 미표시 — 스킵');
       return;
     }
@@ -159,7 +159,7 @@ test.describe('T-20260610 CALLLIST-TOP-COVERS-BUTTONS — 버튼 비가림 앵�
   test('AC-6: 위치 초기화 — 드래그 후 reset-pos 클릭 시 fixed 앵커 복귀 + localStorage 제거', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     const header = page.locator('[data-testid="doctor-call-header"]');
     if (!ok || (await list.count()) === 0 || (await header.count()) === 0) {
       test.skip(true, '위젯/헤더 미표시 — 스킵');
@@ -190,7 +190,7 @@ test.describe('T-20260610 CALLLIST-TOP-COVERS-BUTTONS — 버튼 비가림 앵�
   test('AC-4: 무회귀 — 헤더/행/이름/지정콜/위치배지 testid 보존', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    if (!ok || (await page.locator('[data-testid="doctor-call-list"]').count()) === 0) {
+    if (!ok || (await page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])').count()) === 0) {
       test.skip(true, '위젯 미표시 — 스킵');
       return;
     }

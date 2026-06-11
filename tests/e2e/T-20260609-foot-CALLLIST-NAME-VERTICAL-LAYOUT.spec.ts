@@ -58,7 +58,7 @@ test.describe('T-20260609 CALLLIST-NAME-VERTICAL-LAYOUT — 성함 전체표시 
   test('AC-2: 행 컨테이너가 세로 스택(flex-col) — 가로 overflow-x-auto 제거', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    if (!ok || (await page.locator('[data-testid="doctor-call-list"]').count()) === 0) {
+    if (!ok || (await page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])').count()) === 0) {
       test.skip(true, '위젯 미표시 환경 — 스킵');
       return;
     }
@@ -83,7 +83,7 @@ test.describe('T-20260609 CALLLIST-NAME-VERTICAL-LAYOUT — 성함 전체표시 
   test('AC-3: 행이 2개 이상일 때 위→아래로 쌓임(세로 누적) + 컨테이너 내부 스크롤 없음', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    if (!ok || (await page.locator('[data-testid="doctor-call-list"]').count()) === 0) {
+    if (!ok || (await page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])').count()) === 0) {
       test.skip(true, '위젯 미표시 환경 — 스킵');
       return;
     }
@@ -110,11 +110,11 @@ test.describe('T-20260609 CALLLIST-NAME-VERTICAL-LAYOUT — 성함 전체표시 
   test('AC-3b: 외곽 팝업이 우상단(top) 앵커 fixed — 가로 위치(우측)는 보존', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    if (!ok || (await page.locator('[data-testid="doctor-call-list"]').count()) === 0) {
+    if (!ok || (await page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])').count()) === 0) {
       test.skip(true, '위젯 미표시 환경 — 스킵');
       return;
     }
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     const cls = (await list.getAttribute('class')) ?? '';
     expect(cls).toContain('fixed');
     expect(cls).toContain('top-4');     // req3: 아래로 자연 확장 위한 상단 앵커
@@ -172,7 +172,7 @@ test.describe('T-20260609 CALLLIST-NAME-VERTICAL-LAYOUT — 성함 전체표시 
       return;
     }
     await expect(page.locator('[data-testid="dashboard-root"]')).toBeVisible();
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if ((await list.count()) === 0) {
       test.skip(true, '진료필요/힐러 당일 체크인 없음 — 위젯 미표시 스킵');
       return;

@@ -73,7 +73,7 @@ test.describe('T-20260610 CALLLIST-ROW-HIDE-AUTOSHOW — 행 숨기기 + 신규 
   test('AC-1/2: 행 숨기기 → 그 행만 명단 제외, rowHidden.v1 localStorage 영구(새로고침 유지)', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if (!ok || (await list.count()) === 0) {
       test.skip(true, '위젯 미표시 환경 — 스킵');
       return;
@@ -119,7 +119,7 @@ test.describe('T-20260610 CALLLIST-ROW-HIDE-AUTOSHOW — 행 숨기기 + 신규 
   test('AC-1: 숨김 N · 표시 클릭 → 숨긴 행 전부 복원', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if (!ok || (await list.count()) === 0) {
       test.skip(true, '위젯 미표시 환경 — 스킵');
       return;
@@ -192,7 +192,7 @@ test.describe('T-20260610 CALLLIST-ROW-HIDE-AUTOSHOW — 행 숨기기 + 신규 
   test('AC-4: 행 숨김이 드래그/전체숨김/상단콜버튼/세로풀네임 회귀 없음', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if (!ok || (await list.count()) === 0) {
       test.skip(true, '위젯 미표시 환경 — 스킵');
       return;
