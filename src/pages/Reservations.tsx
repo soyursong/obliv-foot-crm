@@ -1520,8 +1520,11 @@ export default function Reservations() {
                                   </div>
                                 ))}
                                 {(() => {
+                                  // T-20260611-foot-PROGRESS-VIEW-BATCH-CHECKIN-LEAK (정본 AUTOLINK §2b):
+                                  // 경과분석 뷰(filterProgress ON)는 조회 전용 → '일괄 배치' 버튼 숨김.
+                                  // batchCheckIn 로직 자체는 불변(버튼 렌더 가드만). 일반 달력은 기존대로 노출·동작.
                                   const confirmed = list.filter((r) => r.status === 'confirmed');
-                                  return confirmed.length > 0 ? (
+                                  return !filterProgress && confirmed.length > 0 ? (
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
