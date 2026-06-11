@@ -1042,7 +1042,7 @@ ${COMMON_STYLE}
 
 const REFERRAL_LETTER_HTML = `
 ${COMMON_STYLE}
-<div class="form-wrap" style="border:1px solid #000; padding:0;">
+<!-- T-20260611-foot-REFERRAL-PRINT-CLIP-CENTER: width 188mm + margin:0 auto 로 A4(210mm) 중앙 배치 + 좌우 11mm 여백 확보(프린터 unprintable edge clipping 제거) --><div class="form-wrap" style="border:1px solid #000; padding:0; width:188mm; max-width:188mm; margin:0 auto;">
   <div style="border-bottom:1px solid #000; padding:10px 14px 8px;">
     <div class="title" style="font-size:18pt; letter-spacing:14px; padding:8px 0 6px;">진 료 의 뢰 서</div>
   </div>
