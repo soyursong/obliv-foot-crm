@@ -203,7 +203,7 @@ test.describe('T-20260609 CALLLIST-HEALER-POSITION — 힐러 포함 + 현재 �
     }
     await expect(page.locator('[data-testid="dashboard-root"]')).toBeVisible();
 
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if ((await list.count()) === 0) {
       test.skip(true, '진료필요/힐러 당일 체크인 없음 — 위젯 미표시 환경 스킵');
       return;

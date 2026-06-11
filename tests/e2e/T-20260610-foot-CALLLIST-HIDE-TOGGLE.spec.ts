@@ -42,7 +42,7 @@ test.describe('T-20260610 CALLLIST-HIDE-TOGGLE — 숨기기 토글 + 신규 리
   test('AC-1/2: 숨기기 토글 → 최소 탭만 잔존, 탭 클릭 시 펼침(완전소멸 금지)', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if (!ok || (await list.count()) === 0) {
       test.skip(true, '위젯 미표시 환경 — 스킵');
       return;
@@ -69,7 +69,7 @@ test.describe('T-20260610 CALLLIST-HIDE-TOGGLE — 숨기기 토글 + 신규 리
   test('AC-3: 숨김/표시 상태 localStorage 영구(새로고침 유지) + 위치 키 별도 네임스페이스', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if (!ok || (await list.count()) === 0) {
       test.skip(true, '위젯 미표시 환경 — 스킵');
       return;
@@ -102,7 +102,7 @@ test.describe('T-20260610 CALLLIST-HIDE-TOGGLE — 숨기기 토글 + 신규 리
   test('AC-5: 숨김 중 명단 변동에도 자동 강제 펼침 없음(배지로만 알림)', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if (!ok || (await list.count()) === 0) {
       test.skip(true, '위젯 미표시 환경 — 스킵');
       return;
@@ -120,7 +120,7 @@ test.describe('T-20260610 CALLLIST-HIDE-TOGGLE — 숨기기 토글 + 신규 리
   test('AC-4: unseen 배지 계약 — 숨김 탭 하위에 배지 testid, 펼치면 배지 영역 소멸', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if (!ok || (await list.count()) === 0) {
       test.skip(true, '위젯 미표시 환경 — 스킵');
       return;
@@ -145,7 +145,7 @@ test.describe('T-20260610 CALLLIST-HIDE-TOGGLE — 숨기기 토글 + 신규 리
   test('AC-6/7: 위치 키(pos.v1) 미접촉 + 콜/접기/이름 testid 보존', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if (!ok || (await list.count()) === 0) {
       test.skip(true, '위젯 미표시 환경 — 스킵');
       return;

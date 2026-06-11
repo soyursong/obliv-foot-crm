@@ -30,7 +30,7 @@ test.describe('T-20260609 CALLLIST-VERTICAL-FULLNAME — 세로 나열 + 성함 
   test('AC-1: 행 컨테이너 세로 스택(flex-col) + 가로 overflow-x-auto 없음 + max-h/overflow-y-auto', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    if (!ok || (await page.locator('[data-testid="doctor-call-list"]').count()) === 0) {
+    if (!ok || (await page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])').count()) === 0) {
       test.skip(true, '위젯 미표시 환경 — 스킵');
       return;
     }
@@ -62,7 +62,7 @@ test.describe('T-20260609 CALLLIST-VERTICAL-FULLNAME — 세로 나열 + 성함 
     expect(nameContract).toContain('whitespace-normal');
     expect(nameContract).toContain('break-words');
 
-    if (!ok || (await page.locator('[data-testid="doctor-call-list"]').count()) === 0) {
+    if (!ok || (await page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])').count()) === 0) {
       test.skip(true, '위젯 미표시 환경 — 클래스 계약만 검증 후 스킵');
       return;
     }
@@ -87,7 +87,7 @@ test.describe('T-20260609 CALLLIST-VERTICAL-FULLNAME — 세로 나열 + 성함 
   test('AC-3: 행 2개 이상이면 위→아래 세로 누적(동일 x) + max-h 초과 시 컨테이너 내부 세로 스크롤', async ({ page }) => {
     await page.goto('/');
     const ok = await loginAndWaitForDashboard(page);
-    if (!ok || (await page.locator('[data-testid="doctor-call-list"]').count()) === 0) {
+    if (!ok || (await page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])').count()) === 0) {
       test.skip(true, '위젯 미표시 환경 — 스킵');
       return;
     }
@@ -187,7 +187,7 @@ test.describe('T-20260609 CALLLIST-VERTICAL-FULLNAME — 세로 나열 + 성함 
       return;
     }
     await expect(page.locator('[data-testid="dashboard-root"]')).toBeVisible();
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if ((await list.count()) === 0) {
       test.skip(true, '진료필요/힐러 당일 체크인 없음 — 위젯 미표시 스킵');
       return;

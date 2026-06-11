@@ -129,7 +129,7 @@ test.describe('T-20260601 DASH-HSCROLL-CHART-LOC — 대시보드 UX 3종', () =
     await page.getByText('대시보드', { exact: true }).first().waitFor({ timeout: 15_000 });
     await expect(page.locator('[data-testid="dashboard-root"]')).toBeVisible();
 
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if ((await list.count()) === 0) {
       test.skip(true, '보라(진료필요) 당일 체크인 없음 — 위젯 미표시 환경 스킵');
       return;
@@ -150,7 +150,7 @@ test.describe('T-20260601 DASH-HSCROLL-CHART-LOC — 대시보드 UX 3종', () =
     await page.goto('/admin');
     await page.getByText('대시보드', { exact: true }).first().waitFor({ timeout: 15_000 });
 
-    const list = page.locator('[data-testid="doctor-call-list"]');
+    const list = page.locator('[data-testid="doctor-call-list"]:not([data-empty="true"])');
     if ((await list.count()) === 0) {
       test.skip(true, '진료콜 명단 위젯 미표시 환경 스킵');
       return;
