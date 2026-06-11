@@ -93,6 +93,7 @@
  *        위치배지 teal MapPin = "어느 단계", 방배지 indigo DoorOpen = "어느 방으로 갈지"(원장 네비게이션).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp, MapPin, RotateCcw, EyeOff, DoorOpen } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
@@ -448,8 +449,12 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
   //   data-empty="true": 회귀 가드 마커 — 행(rows) 존재를 전제로 단언하는 형제 스펙들은 이 마커로
   //     '데이터 없음'을 식별해 기존처럼 스킵한다(빈 탭을 콜 데이터로 오인 금지).
   //   위치(pos)·헤더 testid는 일반 패널과 동일 규칙으로 보존(드래그 저장 좌표가 있으면 그 자리에 최소 탭).
+  //   T-20260611-foot-CALLLIST-ROOM-LABEL (FIX phase2-b) — createPortal(document.body):
+  //     위젯은 position:fixed지만 AdminLayout의 page-content-area(overflow-hidden) + 칸반 transform(zoom scale)
+  //     조상 cage 안에 마운트되면 fixed가 조상 기준으로 트랩·클리핑돼 뷰포트에서 사라진다(prod 미표시 RC).
+  //     QuickRxBar(같은 원장 플로팅 바)가 이미 채택한 portal 패턴과 통일 — body 직속 마운트로 트랩 회피.
   if (displayList.length === 0) {
-    return (
+    return createPortal(
       <div
         ref={panelRef}
         data-testid="doctor-call-list"
@@ -470,7 +475,8 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
           </span>
           <span className="text-xs text-gray-400">대기 없음</span>
         </div>
-      </div>
+      </div>,
+      document.body,
     );
   }
 
@@ -478,7 +484,7 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
   //   위치(pos/anchor)는 그대로 적용 → 드래그해둔 자리에 최소 탭이 남음(AC-7 위치 보존).
   //   AC-4 빨간 배지(unseen)는 최소 탭 우상단. 클릭 시 펼침(setHidden(false)) → 위 효과가 배지 리셋.
   if (hidden) {
-    return (
+    return createPortal(
       <div
         ref={panelRef}
         data-testid="doctor-call-list"
@@ -511,11 +517,12 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
             </span>
           )}
         </button>
-      </div>
+      </div>,
+      document.body,
     );
   }
 
-  return (
+  return createPortal(
     // T-20260601-foot-DASH-POPUP-RIGHT-FIX 진료콜 명단 팝업 — 뷰포트 우측 position:fixed 고정.
     //   가로스크롤해도 화면 우측에 항상 붙어 따라옴(안 사라짐). right-4: 현장 요청대로 우측.
     //   z-40: 칸반 카드(z-30) 위, 모달(z-50+) 아래.
@@ -695,7 +702,8 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
         )}
       </div>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
