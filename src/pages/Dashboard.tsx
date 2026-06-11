@@ -5334,6 +5334,35 @@ export default function Dashboard() {
     toast.info('체크인 후 수납이 가능합니다');
   }, []);
 
+  // T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC4: 대시보드 고객카드(체크인 큐) 우클릭 position-3 [예약상세] 핸들러.
+  //   §8 가드 / escape-hatch 결과: 고객카드 check_in.reservation_id 는 *항상* null 이 아님(예약-origin 체크인은 세팅됨,
+  //   워크인만 null — NewCheckInDialog.tsx:218 / SelfCheckIn.tsx:1049,1465). → "항상 예약 미연결" 조건 미충족 →
+  //   FOLLOWUP 불요, directive(B) 적용: 라벨=예약상세 통일 + 연결예약 존재 시 ReservationDetailPopup 오픈.
+  //   ⚠ L-002 LOGIC-LOCK 보존: reservation_id 없는(워크인) 카드는 신규예약 생성(handleNewReservation)으로 fallback —
+  //   생성 capability 삭제 0, 기능 손실 0. handleNewReservation 함수 자체는 미변경(라벨/배선만 통일).
+  const handleCardResvDetailOrCreate = useCallback(async (ci: CheckIn) => {
+    const resvId = ci.reservation_id;
+    if (!resvId) {
+      // 워크인 등 연결 예약 없음 → 신규 예약 생성 진입점 보존(L-002)
+      handleNewReservation(ci);
+      return;
+    }
+    // 연결 예약 존재 → 예약상세 팝업. 타임라인 캐시 우선, 없으면 DB refetch(미래/타일자 예약 대응).
+    const cached = timelineReservations.find((r) => r.id === resvId);
+    if (cached) { setDashResvDetail(cached); return; }
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('*')
+      .eq('id', resvId)
+      .maybeSingle();
+    if (error || !data) {
+      // 예약 row 소실(취소-삭제 등) → 생성 진입점으로 안전 fallback (dead 메뉴 방지)
+      handleNewReservation(ci);
+      return;
+    }
+    setDashResvDetail(data as Reservation);
+  }, [timelineReservations, handleNewReservation]);
+
   // 미니 캘린더 클릭-외부 닫기
   useEffect(() => {
     if (!showCalendar) return;
@@ -6610,13 +6639,17 @@ export default function Dashboard() {
         onConsultStatusChange={handleContextConsultStatusChange}
       />
 
+      {/* T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC4: 대시보드 고객카드 우클릭도 canonical 5항목 통일.
+          position-3 = [예약상세] 단일 라벨([예약하기] 표현 제거). 연결예약 있으면 ReservationDetailPopup,
+          워크인(연결예약 없음)은 신규예약 생성(handleNewReservation, L-002)으로 fallback — 기능 손실 0. */}
       <CustomerQuickMenu
         checkIn={customerMenu?.checkIn ?? null}
         position={customerMenu?.pos ?? null}
         onClose={() => setCustomerMenu(null)}
         onOpenChart={handleOpenChart}
         onOpenMedicalChart={handleOpenMedicalChart}
-        onNewReservation={handleNewReservation}
+        onNewReservation={handleCardResvDetailOrCreate}
+        reservationActionLabel="예약상세"
         onOpenPayment={handleOpenPaymentFromMenu}
         /* T-20260606-foot-CTXMENU-SMS-SEND: admin/manager 한정 노출(미허용 시 onSendSms 미전달 → 항목 숨김) */
         onSendSms={
