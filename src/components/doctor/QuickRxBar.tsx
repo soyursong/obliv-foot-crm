@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/lib/toast';
+import { useAuth } from '@/lib/auth';
 import { Loader2, FileText, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { IconRenderer } from '@/components/admin/QuickRxButtonsTab';
@@ -23,11 +24,29 @@ import {
   checkRxInClinic,
   rxInClinicMessage,
 } from '@/lib/inClinicRxGate';
+import {
+  // T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 인플레이스 처방 mutate 공통 가드 + 차트변경 audit.
+  assertInClinicForRxMutation,
+  rxGateError,
+  logRxAudit,
+  summarizeRxForAudit,
+  IN_CLINIC_GATE_CODE,
+  type RxAuditSurface,
+  type RxAuditActor,
+} from '@/lib/rxMutationGuard';
 import { captureRxSnapshot, buildUndoPatch, type RxSnapshot } from '@/lib/rxUndo';
 import { rxItemTooltipLine, formatRxConfirmedSummary } from '@/lib/rxTooltip';
 
-/** 빠른처방 원내 잔류 게이트 차단 시 mutation 이 던지는 에러 코드 */
-const IN_CLINIC_GATE_CODE = 'IN_CLINIC_GATE';
+/**
+ * T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 인플레이스 처방 mutate 가드/감사 컨텍스트.
+ * surface(발생 화면) + actor(처리자) + customerId(audit FK). 강제(enforcement)는 DB 재검증으로
+ * 진입점과 무관하게 fail-closed — UI prop 누락에 의존하지 않는다(우회 0).
+ */
+interface RxAuditCtx {
+  surface: RxAuditSurface;
+  actor: RxAuditActor;
+  customerId?: string | null;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -174,7 +193,7 @@ function invalidateRxQueries(qc: ReturnType<typeof useQueryClient>, checkInId: s
 //     + (2) 되돌리기(undo) 스냅샷 확보. 차단 시 IN_CLINIC_GATE 코드로 throw.
 //     성공 시 적용 전 스냅샷을 반환 → 호출부가 '되돌리기' 토스트 액션으로 사용.
 // ---------------------------------------------------------------------------
-function useApplyQuickRx(checkInId: string | undefined) {
+function useApplyQuickRx(checkInId: string | undefined, auditCtx: RxAuditCtx) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({
@@ -198,12 +217,21 @@ function useApplyQuickRx(checkInId: string | undefined) {
       if (readErr) throw readErr;
 
       // 2) 원내 잔류 게이트 — DB 최신값 기준(낙관적 UI/탭 경합 방어, race-safe)
-      //    진료완료(pink)는 원내 잔류로 허용, 귀가(done)만 차단 — inClinicRxGate SSOT.
+      //    진료완료(pink)는 원내 잔류로 허용, 귀가(done)만 차단 — inClinicRxGate SSOT(공통 판정).
+      //    T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 차단된 시도도 audit(best-effort) + 공통 에러코드.
       const gate = checkRxInClinic(cur as { status?: string; status_flag?: string | null; checked_in_at?: string | null });
+      const beforeSummary = summarizeRxForAudit((cur as { prescription_items?: unknown }).prescription_items);
       if (!gate.allowed) {
-        const err = new Error(rxInClinicMessage(gate.reason)) as Error & { code?: string };
-        err.code = IN_CLINIC_GATE_CODE;
-        throw err;
+        void logRxAudit({
+          checkInId,
+          customerId: auditCtx.customerId,
+          action: 'rx_apply_blocked',
+          surface: auditCtx.surface,
+          actor: auditCtx.actor,
+          beforeSummary,
+          blockedReason: gate.reason,
+        });
+        throw rxGateError(gate.reason);
       }
 
       // 3) 되돌리기 스냅샷 보존(적용 전 4개 필드 그대로) — rxUndo 단일 출처
@@ -222,6 +250,17 @@ function useApplyQuickRx(checkInId: string | undefined) {
       const { error } = await supabase.from('check_ins').update(patch).eq('id', checkInId);
       if (error) throw error;
 
+      // 5) 차트변경 내부로그(성공) — apply.
+      void logRxAudit({
+        checkInId,
+        customerId: auditCtx.customerId,
+        action: 'rx_apply',
+        surface: auditCtx.surface,
+        actor: auditCtx.actor,
+        beforeSummary,
+        afterSummary: summarizeRxForAudit(items),
+      });
+
       return snapshot;
     },
     onSuccess: () => {
@@ -237,7 +276,7 @@ function useApplyQuickRx(checkInId: string | undefined) {
 //   방금 적용 전 스냅샷(4개 필드)을 그대로 write-back → 원복.
 //   덮어쓰기(overwrite)이므로 이중적용·유령행 없음(단일 check_ins 행, INSERT 없음).
 // ---------------------------------------------------------------------------
-function useUndoQuickRx(checkInId: string | undefined) {
+function useUndoQuickRx(checkInId: string | undefined, auditCtx: RxAuditCtx) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (snapshot: RxSnapshot) => {
@@ -247,6 +286,16 @@ function useUndoQuickRx(checkInId: string | undefined) {
         .update(buildUndoPatch(snapshot) as unknown as Record<string, unknown>)
         .eq('id', checkInId);
       if (error) throw error;
+      // T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 되돌리기도 차트변경 — 내부로그(성공).
+      //   직전 apply 의 8초 토스트 내 동선이라 게이트 재검증은 생략(직전 적용 원복일 뿐).
+      void logRxAudit({
+        checkInId,
+        customerId: auditCtx.customerId,
+        action: 'rx_undo',
+        surface: auditCtx.surface,
+        actor: auditCtx.actor,
+        afterSummary: summarizeRxForAudit(snapshot?.prescription_items),
+      });
     },
     onSuccess: () => {
       if (checkInId) invalidateRxQueries(qc, checkInId);
@@ -292,6 +341,14 @@ export interface QuickRxBarProps {
   /** 차단 안내에서 '차트 열기' 진입 동선(제공 시 액션 버튼 노출). */
   onOpenChart?: () => void;
 
+  /**
+   * T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 차트변경 audit 컨텍스트.
+   * surface=발생 화면(추적), customerId=audit FK(옵션). 미지정 시 'unknown'/null(무회귀, audit만 약화).
+   * ⚠️ 강제(귀가환자 차단)는 DB 재검증으로 surface와 무관하게 동작 — audit 정확도용 메타일 뿐.
+   */
+  surface?: RxAuditSurface;
+  customerId?: string | null;
+
   className?: string;
   /** 컴팩트 모드 (리스트 행 내 사용 시) */
   compact?: boolean;
@@ -310,12 +367,21 @@ export default function QuickRxBar({
   checkedInAt,
   checkInFlag,
   onOpenChart,
+  surface = 'unknown',
+  customerId = null,
   className,
   compact = false,
 }: QuickRxBarProps) {
+  const { profile } = useAuth();
+  // T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 처리자(actor) — 차트변경 audit 적재용.
+  const auditCtx: RxAuditCtx = {
+    surface,
+    actor: { id: profile?.id ?? null, name: profile?.name ?? null, role: profile?.role ?? null },
+    customerId,
+  };
   const { data: buttons = [], isLoading } = useQuickRxButtonsBar();
-  const applyMut = useApplyQuickRx(checkInId);
-  const undoMut = useUndoQuickRx(checkInId);
+  const applyMut = useApplyQuickRx(checkInId, auditCtx);
+  const undoMut = useUndoQuickRx(checkInId, auditCtx);
 
   // T-20260609-foot-QUICKRX-INCLINIC-GATE: 모드 B + 게이트 컨텍스트 제공 시 클릭 전 차단 판정.
   //   checkedInAt 이 주어졌을 때만 UI 선검증(미제공 시 적용 시점 DB 게이트로 방어).
@@ -491,11 +557,24 @@ export default function QuickRxBar({
 //   성공 시 invalidateRxQueries 로 적용/되돌리기 공통 캐시 무효화(정합).
 //   ⚠️ AC-6 guard: 본 훅 내부로직·rxUndo·invalidateRxQueries 3쿼리 변경금지.
 // ===========================================================================
-function useCancelConfirmedRx(checkInId: string | undefined) {
+function useCancelConfirmedRx(checkInId: string | undefined, auditCtx: RxAuditCtx) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
       if (!checkInId) throw new Error('checkInId 없음');
+
+      // T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK (본체 누수 close):
+      //   기존엔 cancel 에 DB 게이트가 없어, UI prop(checkedInAt) 미제공 소비처(진료대시보드)에서
+      //   귀가환자 처방취소가 통과(fail-open)됐다. → 공통 가드로 강제 수렴(우회 0, fail-closed).
+      //   비잔류(귀가/전날/미래/취소)면 audit(차단) 후 throw — UI prop 누락과 무관하게 차단.
+      const cur = await assertInClinicForRxMutation(checkInId, {
+        blockedAction: 'rx_cancel_blocked',
+        surface: auditCtx.surface,
+        actor: auditCtx.actor,
+        customerId: auditCtx.customerId,
+      });
+      const beforeSummary = summarizeRxForAudit(cur.prescription_items);
+
       // 적용 전(clean) 스냅샷 = captureRxSnapshot(undefined) → none/false/null 정규화. rxUndo 단일 출처.
       const patch = buildUndoPatch(captureRxSnapshot(undefined));
       const { error } = await supabase
@@ -503,6 +582,17 @@ function useCancelConfirmedRx(checkInId: string | undefined) {
         .update(patch as unknown as Record<string, unknown>)
         .eq('id', checkInId);
       if (error) throw error;
+
+      // 차트변경 내부로그(성공) — cancel.
+      void logRxAudit({
+        checkInId,
+        customerId: auditCtx.customerId,
+        action: 'rx_cancel',
+        surface: auditCtx.surface,
+        actor: auditCtx.actor,
+        beforeSummary,
+        afterSummary: '(없음)',
+      });
     },
     onSuccess: () => {
       if (checkInId) invalidateRxQueries(qc, checkInId);
@@ -536,6 +626,8 @@ export function RxConfirmedSummary({
   checkedInAt,
   checkInFlag,
   onOpenChart,
+  surface = 'unknown',
+  customerId = null,
 }: {
   checkInId: string | undefined;
   /** 확정된 처방 약물(JSONB) — 약물리스트 검은글씨 나열용. 배열 아니면 빈 줄. */
@@ -564,8 +656,20 @@ export function RxConfirmedSummary({
   checkInFlag?: string | null;
   /** 차단 시 '차트 열기' 진입 동선(제공 시 인라인 버튼 + 안내 토스트 액션 노출). */
   onOpenChart?: () => void;
+  /**
+   * T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 차트변경 audit 컨텍스트(surface/customerId).
+   * 강제(귀가환자 처방취소 차단)는 useCancelConfirmedRx 내부 DB 재검증으로 동작 — 이 props 미제공이어도 fail-closed.
+   */
+  surface?: RxAuditSurface;
+  customerId?: string | null;
 }) {
-  const cancelMut = useCancelConfirmedRx(checkInId);
+  const { profile } = useAuth();
+  const cancelAuditCtx: RxAuditCtx = {
+    surface,
+    actor: { id: profile?.id ?? null, name: profile?.name ?? null, role: profile?.role ?? null },
+    customerId,
+  };
+  const cancelMut = useCancelConfirmedRx(checkInId, cancelAuditCtx);
   const list = Array.isArray(items) ? (items as Parameters<typeof formatRxConfirmedSummary>[0]) : null;
   const summary = formatRxConfirmedSummary(list);
 
@@ -600,7 +704,18 @@ export function RxConfirmedSummary({
         onCancelled?.();
         toast.confirm('처방 확정을 취소했어요.');
       })
-      .catch((e: Error) => toast.error(`처방 취소 실패: ${e.message}`));
+      .catch((e: Error & { code?: string }) => {
+        // T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: DB 재검증 가드가 귀가환자 취소를 막은 경우
+        //   (UI prop 미제공 소비처 방어) — 친절 안내 + 차트 진입 동선.
+        if (e.code === IN_CLINIC_GATE_CODE) {
+          toast.error(
+            e.message,
+            onOpenChart ? { action: { label: '차트 열기', onClick: onOpenChart } } : undefined,
+          );
+        } else {
+          toast.error(`처방 취소 실패: ${e.message}`);
+        }
+      });
   }
 
   return (

@@ -144,15 +144,28 @@ test.describe('S4 AC2 — 차트 진입 동선 + 배선/무회귀', () => {
     expect(src).toContain('차트에서 수정');
   });
 
-  test('회귀: DoctorCallDashboard 의 RxConfirmedSummary 는 게이트 컨텍스트 미전달 → 종전 취소 동작 보존', () => {
+  // T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK (정책 정정 — 누수 close):
+  //   기존엔 "DoctorCallDashboard RxConfirmedSummary 가 게이트 컨텍스트 미전달 = 종전 동작 보존"을
+  //   회귀로 박제했으나, 그게 바로 현장이 신고한 누수(귀가환자 처방취소 fail-open)였다.
+  //   → 이제 진료대시보드도 게이트 컨텍스트를 전달(fail-closed) + DB 재검증 가드(우회 0)로 이중 차단.
+  test('누수 close: DoctorCallDashboard 의 RxConfirmedSummary 는 게이트 컨텍스트를 전달(귀가 처방취소 차단)', () => {
     const src = SRC('components/doctor/DoctorCallDashboard.tsx');
-    // RxConfirmedSummary JSX 블록만 추출 — checkedInAt 은 QuickRxBar(빠른처방 생성 게이트)에만 전달되며
-    //   RxConfirmedSummary(처방취소 surface)에는 새어들지 않아야 함(귀가 게이트 비적용 = 무회귀).
     const blocks = src.match(/<RxConfirmedSummary[\s\S]*?\/>/g) ?? [];
     expect(blocks.length).toBeGreaterThan(0);
     for (const b of blocks) {
-      expect(b).not.toContain('checkedInAt');
-      expect(b).not.toContain('checkInStatus');
+      // 게이트 판정에 필요한 3컨텍스트 + 차트 진입 동선 전달.
+      expect(b).toContain('checkedInAt');
+      expect(b).toContain('checkInStatus');
+      expect(b).toContain('checkInFlag');
+      expect(b).toContain('onOpenChart');
     }
+  });
+
+  test('우회 0: cancel 도 DB 재검증 공통 가드(assertInClinicForRxMutation) 경유 — UI prop 누락 무관 fail-closed', () => {
+    const src = SRC('components/doctor/QuickRxBar.tsx');
+    // useCancelConfirmedRx 가 공통 가드를 호출(귀가환자 처방취소를 DB 최신값으로 강제 차단).
+    expect(src).toContain('useCancelConfirmedRx');
+    expect(src).toContain('assertInClinicForRxMutation');
+    expect(src).toContain("blockedAction: 'rx_cancel_blocked'");
   });
 });

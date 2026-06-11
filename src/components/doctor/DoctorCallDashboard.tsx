@@ -490,13 +490,22 @@ function CallFeedRow({
           처방
           {showRx ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
         </button>
-        {/* T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-2/4: "처방완료"+약물리스트, 재클릭→취소 팝업. */}
+        {/* T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-2/4: "처방완료"+약물리스트, 재클릭→취소 팝업.
+            T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK (본체 누수 close): 게이트 컨텍스트 prop 전달.
+              이전엔 진료대시보드가 prop 을 안 넘겨(opt-in) 귀가환자 처방취소가 통과(fail-open)됐다.
+              status/checked_in_at/status_flag/onOpenChart 전달 + DB 재검증 가드(useCancelConfirmedRx)로 이중 차단. */}
         {checkIn.prescription_status === 'confirmed' && (
           <RxConfirmedSummary
             checkInId={checkIn.id}
             items={checkIn.prescription_items}
             doctorMode={doctorMode}
             onCancelled={onRefresh}
+            checkInStatus={checkIn.status}
+            checkedInAt={checkIn.checked_in_at}
+            checkInFlag={checkIn.status_flag}
+            onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+            surface="doctor_call_dashboard"
+            customerId={checkIn.customer_id}
           />
         )}
         {/* T-20260610-foot-TREATMENT-COMPLETE-BTN: 활성 호출(purple)에만 진료완료 버튼. 의사/직원 공통(권한 개방). */}
@@ -517,6 +526,9 @@ function CallFeedRow({
             /* T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)는 원내 잔류 → 처방 허용(귀가만 차단). */
             checkInFlag={checkIn.status_flag}
             onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+            /* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 차트변경 audit attribution. */
+            surface="doctor_call_dashboard"
+            customerId={checkIn.customer_id}
             compact
           />
         </div>
@@ -585,13 +597,21 @@ function CompletedRow({
         <DoctorAckBadge ackAt={checkIn.doctor_ack_at} />
         <span className="text-xs text-muted-foreground">{treatmentLabel(checkIn)}</span>
         <div className="ml-auto flex items-center gap-1.5">
-          {/* T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-2/4: "처방완료"+약물리스트, 재클릭→취소 팝업. */}
+          {/* T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-2/4: "처방완료"+약물리스트, 재클릭→취소 팝업.
+              T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK (본체 누수 close): 게이트 컨텍스트 prop 전달.
+                진료완료 환자 섹션도 pink(원내잔류)/done(귀가) 혼재 — 게이트가 귀가만 차단(진료완료 무회귀). */}
           {checkIn.prescription_status === 'confirmed' ? (
             <RxConfirmedSummary
               checkInId={checkIn.id}
               items={checkIn.prescription_items}
               doctorMode={doctorMode}
               onCancelled={onRefresh}
+              checkInStatus={checkIn.status}
+              checkedInAt={checkIn.checked_in_at}
+              checkInFlag={checkIn.status_flag}
+              onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+              surface="doctor_call_dashboard"
+              customerId={checkIn.customer_id}
             />
           ) : (
             <span className="text-[10px] text-muted-foreground">처방 없음</span>
@@ -643,6 +663,9 @@ function CompletedRow({
             /* T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)는 원내 잔류 → 처방 허용(귀가만 차단). */
             checkInFlag={checkIn.status_flag}
             onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+            /* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 차트변경 audit attribution. */
+            surface="doctor_call_dashboard"
+            customerId={checkIn.customer_id}
             compact
           />
         </div>
