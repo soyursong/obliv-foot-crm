@@ -11,8 +11,22 @@ spec_added: tests/e2e/T-20260611-foot-CHART2-SAVE-DIRTY-RESET.spec.ts
 db_changed: false
 rollback_sql: ""
 risk_level: GO (0/5)
-commit_sha: 3cbd175
+commit_sha: 544a1c0
 ---
+
+## phase2 FIX (2026-06-12, supervisor FIX-REQUEST)
+
+QA(E2E)에서 S1/S1b 실패 → 원인은 **spec 타이밍/셀렉터** (프로덕션 dirty-reset 로직은 정상).
+
+- **S1 실패**: 저장 버튼 `disabled={savingInfoPanel || !isDirty}` → 저장 시작 즉시 disabled("저장 중…").
+  기존 `saveInfoPanel`이 `toBeDisabled`만 기다려 **비동기 저장+markChartClean 완료 전**에 통과 →
+  ESC가 저장 in-flight 중 발생, dirtyRef 미clean → 가드 노출. 디버그 트레이스로 실측 확인:
+  `onInput(dirty=true) → ESC(dirty=true) → markChartClean(dirty=false)` 순서.
+  → `saveInfoPanel`을 "저장" 텍스트 복귀(savingInfoPanel=false) + disabled(isDirty=false) = **저장 완료** 신호까지 대기하도록 강화.
+- **S1b 실패**: 백드롭(fixed inset-0)이 슬라이드 패널(우측 88~95vw)에 중앙이 덮여 `.click()` pointer intercept.
+  → 패널 비노출 좌측 영역 좌표 `click({ position: { x:12, y:300 } })` 로 교체.
+- 프로덕션 코드(CustomerChartSheet / CustomerChartPage) **무변경**. spec only. commit 544a1c0.
+- E2E 5/5 PASS (S1·S1b·S2·S3 + setup). build OK.
 
 # T-20260611-foot-CHART2-SAVE-DIRTY-RESET — 2번차트 본문 저장 성공 시 미저장 가드 dirty 리셋
 
