@@ -226,8 +226,9 @@ function App() {
                 {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 접근 추가 */}
                 <Route path="clinic-settings" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><ClinicSettings /></RoleGuard>} />
                 {/* T-20260525-foot-MESSAGING-V1 AC-3: 메시지 설정 */}
-                {/* T-20260525-foot-ROLE-PERM-CUSTOM 3차: 통계·매출집계·계정관리 외 전권한 → consultant/coordinator/therapist 추가 */}
-                <Route path="settings" element={<RoleGuard roles={['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist']}><AdminSettings /></RoleGuard>} />
+                {/* T-20260525-foot-ROLE-PERM-CUSTOM 3차: consultant/coordinator/therapist 추가 */}
+                {/* T-20260611-foot-MSGSETTINGS-STAFF-ACCESS: part_lead/staff 추가 = 전직원(8역할). PERM_MATRIX.messaging 과 동일 집합 SSOT. ★tm 제외★(AC6 STAFF-ROLE-TM-ADD 최소권한). 연결설정(Solapi)=adminOnly 내부게이팅 → staff 라우트 개방해도 자격증명/계정/통계/매출 누수 0. */}
+                <Route path="settings" element={<RoleGuard roles={['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'staff']}><AdminSettings /></RoleGuard>} />
                 {/* calendar 풀페이지 → 대시보드로 리다이렉트 (사이드바 패널로 대체) */}
                 <Route path="calendar" element={<Navigate to="/admin" replace />} />
               </Route>
