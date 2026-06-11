@@ -8,6 +8,7 @@ import { DutyRosterTab } from '@/components/DutyRosterTab';
 import { ReservationRegistrarTab } from '@/components/ReservationRegistrarTab';
 
 import { supabase } from '@/lib/supabase';
+import { fetchEffectiveRoomAssignments } from '@/lib/roomAssignments';
 import { useAuth } from '@/lib/auth';
 import { getClinic, clearClinicCache } from '@/lib/clinic';
 import type { Clinic, Room, Staff, StaffRole } from '@/lib/types';
@@ -638,51 +639,21 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
   // T-20260608-foot-SPACE-RESET-RECUR4 (Option 2): baseline+today 머지 로직을 추출.
   //   읽기 쿼리(assignmentBundle)와 저장 직전 live 재조회(handleSave)가 동일 함수를 공유 →
   //   로직 drift 방지 + 저장이 항상 "현재 DB live 값" 위에 pending 델타만 얹도록 보장.
+  // T-20260611-foot-SPACE-RESET-RECUR5 (Phase B): baseline 을 단일 priorMax 날짜에서
+  //   room_name 별 prior-latest 로 교체. 공용 lib(fetchEffectiveRoomAssignments)로 추출하여
+  //   Staff(읽기/저장 live 재조회) ↔ Dashboard 읽기 경로의 carry-over 로직 drift 를 영구 차단.
   const fetchEffectiveAssignments = useCallback(async (): Promise<{
     byRoom: Map<string, RoomAssignmentRow>;
     rows: RoomAssignmentRow[];
     hasToday: boolean;
     baselineDate: string | null;
   }> => {
-    // 1) 당일(today) 행
-    const { data: todayRows, error: todayErr } = await supabase
-      .from('room_assignments')
-      .select('*')
-      .eq('clinic_id', clinic.id)
-      .eq('date', todayStr);
-    if (todayErr) throw todayErr;
-
-    // 2) baseline: today 이전 가장 최근 날짜의 스냅샷 (풀 carry-over 기준)
-    const { data: priorMax } = await supabase
-      .from('room_assignments')
-      .select('date')
-      .eq('clinic_id', clinic.id)
-      .lt('date', todayStr)
-      .order('date', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    let baselineRows: RoomAssignmentRow[] = [];
-    if (priorMax?.date) {
-      const { data, error } = await supabase
-        .from('room_assignments')
-        .select('*')
-        .eq('clinic_id', clinic.id)
-        .eq('date', priorMax.date);
-      if (error) throw error;
-      baselineRows = (data ?? []) as RoomAssignmentRow[];
-    }
-
-    // 3) 머지: baseline 먼저 깔고 today 로 덮어쓰기 (room_name 기준, today 우선)
-    const byRoom = new Map<string, RoomAssignmentRow>();
-    for (const r of baselineRows) byRoom.set(r.room_name, r);
-    for (const r of (todayRows ?? []) as RoomAssignmentRow[]) byRoom.set(r.room_name, r);
-
+    const eff = await fetchEffectiveRoomAssignments<RoomAssignmentRow>(clinic.id, todayStr, '*');
     return {
-      byRoom,
-      rows: Array.from(byRoom.values()),
-      hasToday: (todayRows ?? []).length > 0,
-      baselineDate: priorMax?.date ?? null,
+      byRoom: eff.byRoom,
+      rows: eff.rows,
+      hasToday: eff.hasToday,
+      baselineDate: eff.lastPriorDate,
     };
   }, [clinic.id, todayStr]);
 
@@ -697,7 +668,7 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
 
   const assignments = useMemo(() => assignmentBundle?.rows ?? [], [assignmentBundle]);
 
-  // "마지막 저장" 라벨: 당일 저장이 있으면 today, 없으면 carry-over 기준 baseline 날짜
+  // "마지막 저장" 라벨: 당일 저장이 있으면 today, 없으면 carry-over 기준 가장 최근 prior 날짜
   const lastSavedDate = assignmentBundle
     ? (assignmentBundle.hasToday ? todayStr : assignmentBundle.baselineDate)
     : null;

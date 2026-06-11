@@ -68,6 +68,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
+import { fetchEffectiveRoomAssignments } from '@/lib/roomAssignments';
 import { stripSimulationRows } from '@/lib/simulationFilter';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
@@ -3393,48 +3394,26 @@ export default function Dashboard() {
     //   기존 로직은 "당일(today) 행이 1건이라도 있으면 today 행만 사용"이라, 슬롯에서 한 방만
     //   바꿔도(부분 today INSERT) 나머지 방의 풀 carry-over가 통째로 사라져 "리셋"처럼 보였다.
     //   → baseline(today 이전 최신 날짜 스냅샷) + today 를 room_name 기준 머지(today 우선)한다.
-    const { data: todayData } = await supabase
-      .from('room_assignments')
-      .select('id, clinic_id, date, room_name, room_type, staff_id, staff_name')
-      .eq('clinic_id', clinic.id)
-      .eq('date', dateStr);
+    // T-20260611-foot-SPACE-RESET-RECUR5 (Phase B): baseline 단일 priorMax 날짜 → room_name 별
+    //   prior-latest carry-over 로 교체. Staff 와 동일한 공용 lib 사용(drift 차단). 부분저장 today
+    //   여도 미터치 방은 prior-latest 유지(RECUR6 차단). 페이로드 컬럼은 기존과 동일하게 한정.
+    const eff = await fetchEffectiveRoomAssignments<RoomAssignment>(
+      clinic.id,
+      dateStr,
+      'id, clinic_id, date, room_name, room_type, staff_id, staff_name',
+    );
 
-    // baseline: today 이전 가장 최근 날짜의 스냅샷
-    const { data: priorMax } = await supabase
-      .from('room_assignments')
-      .select('date')
-      .eq('clinic_id', clinic.id)
-      .lt('date', dateStr)
-      .order('date', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    let baselineData: RoomAssignment[] = [];
-    if (priorMax?.date) {
-      const { data: lastData } = await supabase
-        .from('room_assignments')
-        .select('id, clinic_id, date, room_name, room_type, staff_id, staff_name')
-        .eq('clinic_id', clinic.id)
-        .eq('date', priorMax.date);
-      baselineData = (lastData ?? []) as RoomAssignment[];
-    }
-
-    const today = (todayData ?? []) as RoomAssignment[];
-    if (today.length === 0 && baselineData.length === 0) {
+    if (eff.rows.length === 0) {
       setAssignments([]);
       setAssignCarryOver(null);
       return;
     }
 
-    // 머지: baseline 먼저 깔고 today 로 덮어쓰기 (room_name 기준, today 우선)
-    const byRoom = new Map<string, RoomAssignment>();
-    for (const r of baselineData) byRoom.set(r.room_name, r);
-    for (const r of today) byRoom.set(r.room_name, r);
-    setAssignments(Array.from(byRoom.values()));
+    setAssignments(eff.rows);
 
     // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-A1: carry-over 인디케이터.
     //   당일 저장이 전혀 없을 때만 "carry-over 표시 중" 인디케이터 노출 (기존 의미 유지).
-    setAssignCarryOver(today.length > 0 ? null : (priorMax?.date ?? null));
+    setAssignCarryOver(eff.hasToday ? null : eff.lastPriorDate);
   }, [clinic, dateStr]);
 
   // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-B1 + T-20260523-foot-ROOM-DISABLE-TOGGLE AC-3:
