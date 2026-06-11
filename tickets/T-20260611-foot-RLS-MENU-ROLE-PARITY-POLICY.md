@@ -3,13 +3,17 @@ id: T-20260611-foot-RLS-MENU-ROLE-PARITY-POLICY
 domain: foot
 type: policy-audit
 priority: P1
-status: phase1-gate
+status: phase2a-g2-dbgate
 db_change: true
 gate: GO_WARN
 owner: agent-fdd-dev-foot
 created: 2026-06-11
-phase: 1
+phase: 2A
 phase1_change: 0
+phase2a_scope: G2(clinic_events) only
+g1_status: HOLD-decision-requested
+db_gate_status: submitted-awaiting-supervisor
+data_architect_consult: not-required (RLS only, no new column/table/enum)
 ---
 
 # T-20260611-foot-RLS-MENU-ROLE-PARITY-POLICY — RLS 메뉴-역할 패리티 정책 (전수감사 우산)
@@ -83,3 +87,29 @@ planner + supervisor 가 아래를 확정해야 Phase 2 진입:
 
 ## Phase 3 (초안만 — data-architect 핸드오프)
 신규 메뉴/테이블 RLS 컨벤션: "메뉴가 비-mgmt staff 에 열리면 그 테이블 SELECT 는 `is_approved_user() AND clinic_id=current_user_clinic_id()` 정규 패턴 의무." codify 는 dev-foot 권한 밖 → data-architect 로 초안 핸드오프.
+
+---
+
+## ★ Phase 2-A 진행 (dev-foot, planner 게이트 MSG-20260611-134442-gsgf 수신 후)
+
+### G2 clinic_events — GO, DB-gate 제출 완료 (supervisor 대기)
+- 마이그: `supabase/migrations/20260611160000_clinic_events_select_rls_canonical.sql` (+ `.rollback.sql`)
+- dry-run: `scripts/T-20260611-foot-RLS-PARITY-G2-clinic_events_dryrun.mjs` → **PASS** (트랜잭션 적용→검증→ROLLBACK, prod 무변경)
+- E2E: `tests/e2e/T-20260611-foot-RLS-PARITY-G2-clinic-events.spec.ts` (3 tests)
+- 제출 패키지: `db-gate/T-20260611-foot-RLS-PARITY-G2-clinic_events_evidence.md`
+- 변경: `clinic_events_select` USING `staff.id=auth.uid()` → `is_approved_user() AND clinic_id=current_user_clinic_id()`. SELECT 단독. 쓰기 3정책 불변(dry-run 검증).
+
+### ★ G1 check_in_room_logs — HOLD, planner DECISION-REQUEST 발행 (전제 불일치)
+Phase 1 raw dump 가 planner 판정 전제(`staff.id=auth.uid` OUTLIER→전원 deny)와 **불일치**:
+```
+room_logs_clinic_rw [ALL] USING:
+  (clinic_id IN (SELECT user_profiles.clinic_id FROM user_profiles WHERE user_profiles.id = auth.uid()))
+```
+- `user_profiles.id=auth.uid()` 기반 = `current_user_clinic_id()` 와 **기능적으로 동일** → read 이미 동작(전원 deny 아님). G2 와 신원 소스가 다름(check_in_room_logs=user_profiles / clinic_events=staff).
+- 게다가 단일 `[ALL]` 정책 → SELECT 만 canonical 화 하려면 ① write 경로 동시 변경(AC-4 위반) 또는 ② permissive OR 로 no-op. READ parity 단독 surface 로는 깨끗이 안 됨.
+- → **planner FOLLOWUP/DECISION 발행. 답변 전 동결.** (canonical 추가 가치는 approved+active 게이트뿐 — 이는 over-permissive write 하드닝 트랙 = WS 류에 가까움.)
+
+### 부수 발견 (planner 보고 — 별도 티켓 권고)
+- **clinic_events 쓰기 3정책(insert/update/delete)도 `staff.id=auth.uid()` 비정규** → 이벤트 생성/수정/삭제 깨질 소지. WS-1(form_templates write) 동류. READ parity 범위 밖 → 본 마이그 미접촉.
+
+> 본 티켓은 db_change=true → **supervisor DB 게이트 적용 전까지 deploy-ready 마킹 금지.** signals 는 db-gate 제출만 기록.
