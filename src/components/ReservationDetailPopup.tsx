@@ -33,6 +33,8 @@ import { cn } from '@/lib/utils';
 import { ReservationMemoTimeline } from '@/components/ReservationMemoTimeline';
 // T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 공유 패널
 import { ReservationAuditLogPanel } from '@/components/ReservationAuditLogPanel';
+// T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1: 고객 검색창 (기존 인라인 검색 재사용, 신규 PII 경로 금지)
+import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import type { Customer, Package, Reservation, ReservationRegistrar, Staff } from '@/lib/types';
 import { VISIT_ROUTE_OPTIONS } from '@/lib/types';
 
@@ -62,6 +64,7 @@ export function ReservationDetailPopup({
   onClose,
   onEdit,
   onChanged,
+  onNewReservationForCustomer,
 }: {
   reservation: Reservation | null;
   noshowCount: number;
@@ -71,6 +74,11 @@ export function ReservationDetailPopup({
   onClose: () => void;
   onEdit: (r: Reservation) => void;
   onChanged: () => void;
+  // T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1 (현장 확정: "A고객 등록 후 B고객 불러와 신규 예약 생성"):
+  //   1번구역 검색창에서 B고객 선택 → 팝업 닫고 기존 예약관리 신규예약 editor 를 B고객 기준으로 오픈(연속 등록).
+  //   🔒 L-002 LOGIC-LOCK: 신규예약 생성 capability 는 이 동선으로 '확장'될 뿐, 기존 생성 로직 재사용
+  //   (신규 INSERT 로직 팝업 내 작성 금지). 미전달 시 검색창 자체를 숨겨 graceful degrade.
+  onNewReservationForCustomer?: (customer: PatientMatch) => void;
 }) {
   // ── 액션 상태
   const [busy, setBusy] = useState(false);
@@ -102,6 +110,9 @@ export function ReservationDetailPopup({
   const [selectedConsultantId, setSelectedConsultantId] = useState<string>('');
   const [consultantSaving, setConsultantSaving] = useState(false);
 
+  // ── T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1: 고객 검색창(1번구역 최상단)
+  const [searchValue, setSearchValue] = useState('');
+
   // 현재 우상에 표시할 예약 (좌하 클릭 선택, 기본값 = 원본 예약)
   const selectedResv: Reservation | undefined =
     allResvs.find((r) => r.id === selectedResvId) ?? reservation ?? undefined;
@@ -121,11 +132,13 @@ export function ReservationDetailPopup({
       setRegistrarId('');
       setCancelDialog(false);
       setCancelReason('');
+      setSearchValue('');
       return;
     }
 
     setSelectedResvId(reservation.id);
     setBusy(false);
+    setSearchValue('');
     // T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 현재 예약의 예약경로/예약등록자 프리로드
     setVisitRoute(reservation.visit_route ?? '');
     setRegistrarId(reservation.registrar_id ?? '');
@@ -412,6 +425,15 @@ export function ReservationDetailPopup({
     onChanged();
   };
 
+  // ── T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1: 검색창에서 B고객 선택
+  //    → 팝업 닫고 기존 예약관리 신규예약 동선을 B고객 기준으로 오픈(연속 등록).
+  //    🔒 L-002: 신규 생성 로직 작성 0 — parent 의 기존 ReservationEditor 재사용에 위임.
+  const handleSelectOtherCustomer = (p: PatientMatch) => {
+    if (!onNewReservationForCustomer) return;
+    setSearchValue('');
+    onNewReservationForCustomer(p);
+  };
+
   // ─── 렌더 ─────────────────────────────────────────────────────────
 
   return (
@@ -444,8 +466,29 @@ export function ReservationDetailPopup({
           {/* 4분할 본문 */}
           <div className="flex-1 grid grid-cols-2 gap-4 p-4 overflow-hidden min-h-0">
 
-            {/* ── 좌측 컬럼 ── */}
+            {/* ── 좌측 컬럼 (1번구역 = 고객정보) ── */}
             <div className="flex flex-col gap-3 min-h-0">
+
+              {/* T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1: 고객 검색창(1번구역 최상단).
+                  현장 확정: A고객 등록 완료 후 B고객 검색·선택 → 팝업 닫지 않고 B고객 신규예약 생성 동선으로 연속 진입.
+                  onNewReservationForCustomer 미전달 환경(graceful)에선 검색창 자체를 숨김. */}
+              {onNewReservationForCustomer && (
+                <div className="border rounded-lg p-3 flex-shrink-0 bg-teal-50/40">
+                  <div className="text-xs font-semibold text-teal-700 mb-1.5">다른 고객 신규예약</div>
+                  <InlinePatientSearch
+                    value={searchValue}
+                    onChange={setSearchValue}
+                    onSelect={handleSelectOtherCustomer}
+                    searchField="name"
+                    clinicId={reservation.clinic_id}
+                    placeholder="고객명 입력 → 선택 시 신규예약 등록"
+                    id="resv-popup-customer-search"
+                  />
+                  <div className="text-[10px] text-muted-foreground mt-1">
+                    선택한 고객 기준으로 신규 예약 등록 화면이 열립니다.
+                  </div>
+                </div>
+              )}
 
               {/* 좌상: 환자 정보 */}
               <div className="border rounded-lg p-3 flex-shrink-0">

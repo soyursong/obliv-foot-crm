@@ -662,6 +662,26 @@ export default function Reservations() {
     setDetail(null);
   };
 
+  // T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1 (현장 확정: A→B 연속 신규예약):
+  //   예약상세 팝업 검색창에서 B고객 선택 → 팝업 닫고 기존 신규예약 editor 를 B고객 기준으로 오픈.
+  //   🔒 L-002: 신규 생성 로직 신설 금지 — 기존 ReservationEditor(openNewSlot 동선) 재사용.
+  const openNewForCustomer = (p: { id: string; name: string; phone: string }) => {
+    const baseDate = detail?.reservation_date ?? format(new Date(), 'yyyy-MM-dd');
+    const baseTime = detail?.reservation_time?.slice(0, 5) ?? '10:00';
+    setDetail(null);
+    setEditor({
+      date: baseDate,
+      time: baseTime,
+      name: p.name,
+      phone: p.phone,
+      visit_type: 'returning',
+      memo: '',
+      booking_memo: '',
+      visit_route: '',
+      customer_id: p.id,
+    });
+  };
+
   const batchCheckIn = async (confirmed: Reservation[]) => {
     if (!clinic || confirmed.length === 0) return;
     if (!window.confirm(`${confirmed.length}건의 예약을 일괄 체크인하시겠습니까?`)) return;
@@ -1509,6 +1529,8 @@ export default function Reservations() {
           setDetail(null);
           fetchWeek();
         }}
+        /* T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1: 검색창 B고객 선택 → 기존 신규예약 editor 재사용 */
+        onNewReservationForCustomer={openNewForCustomer}
       />
 
       {/* T-20260515-foot-RESV-CTX-HOVER: 예약관리 우클릭 메뉴 + hover 팝업 오버레이 */}
