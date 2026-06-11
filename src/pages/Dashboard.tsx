@@ -4240,6 +4240,18 @@ export default function Dashboard() {
   const nextSlotSortOrder = (destStatus: string, excludeId?: string): number =>
     computeNextSlotSortOrder(rows, destStatus, excludeId);
 
+  // T-20260611-foot-INACTIVE-ROOM-ENTRY-BLOCK: 비활성(유지) 방으로의 신규 진입(드롭/배정/이동)을 전수 차단.
+  // 부모 T-20260523-foot-ROOM-DISABLE-TOGGLE(daily_room_status.is_active) 재사용 — inactiveRooms(방이름 Set)로 판정.
+  // 부모 AC-4 보존: 비활성 이전 기존 배정은 건드리지 않고(차단 대상 아님), "비활성 이후 신규 진입"만 차단.
+  // 상담실/치료실/레이저실(가열성레이저 포함) 3타입 공통. true 반환 시 호출부에서 return.
+  const blockIfInactiveRoom = (roomName: string): boolean => {
+    if (inactiveRooms.has(roomName)) {
+      toast.info('비활성 상태인 방에는 배정할 수 없습니다. 먼저 방을 활성화해주세요.');
+      return true;
+    }
+    return false;
+  };
+
   const handleDragEnd = async (e: DragEndEvent) => {
     setDragging(null);
     const target = e.over?.id as string | undefined;
@@ -4303,6 +4315,9 @@ export default function Dashboard() {
       const roomData = e.over?.data?.current as { roomType: string; isFull?: boolean } | undefined;
       const roomType = roomData?.roomType ?? rooms.find((r) => r.name === roomName)?.room_type;
       if (!roomType) return;
+
+      // T-20260611-foot-INACTIVE-ROOM-ENTRY-BLOCK AC-1/2(a)/3: 비활성 방 드롭 차단 (배정 미반영)
+      if (blockIfInactiveRoom(roomName)) return;
 
       if (roomData?.isFull) {
         const room = rooms.find((r) => r.name === roomName);
@@ -4911,6 +4926,8 @@ export default function Dashboard() {
       toast.info('체크인 처리 중입니다. 잠시 후 다시 시도해주세요.');
       return;
     }
+    // T-20260611-foot-INACTIVE-ROOM-ENTRY-BLOCK AC-1/2(b)/3: 비활성 상담실 선택/배정 차단
+    if (blockIfInactiveRoom(consultRoom)) return;
     markRecentlyUpdated(ci.id);
     let prevRow: CheckIn | undefined;
     setRows((curr) => {
@@ -5006,6 +5023,8 @@ export default function Dashboard() {
       toast.info('체크인 처리 중입니다. 잠시 후 다시 시도해주세요.');
       return;
     }
+    // T-20260611-foot-INACTIVE-ROOM-ENTRY-BLOCK AC-1/2(b)/3: 비활성 치료실 선택/배정 차단
+    if (blockIfInactiveRoom(treatmentRoom)) return;
     markRecentlyUpdated(ci.id);
     let prevRow: CheckIn | undefined;
     setRows((curr) => {
@@ -5056,6 +5075,8 @@ export default function Dashboard() {
       toast.info('체크인 처리 중입니다. 잠시 후 다시 시도해주세요.');
       return;
     }
+    // T-20260611-foot-INACTIVE-ROOM-ENTRY-BLOCK AC-1/2(b)/3: 비활성 레이저실 선택/배정 차단
+    if (blockIfInactiveRoom(laserRoom)) return;
     markRecentlyUpdated(ci.id);
     let prevRow: CheckIn | undefined;
     setRows((curr) => {
