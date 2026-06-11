@@ -4,7 +4,7 @@
  *
  * 요청: 매니저 — 출근 명단 칩 배경을 직원 역할별로 구분(한눈에 파트 식별).
  * 매핑(staffRoleCardClass, 정적 STAFF_ROLE_CARD_CLASS — JIT purge 안전):
- *   consultant(상담)  → bg-sky-100  text-sky-800  border-sky-300   (하늘)
+ *   consultant(상담)  → bg-rose-100 text-rose-800 border-rose-300 (로즈) ← T-20260611 sky→rose
  *   coordinator(코디) → bg-yellow-100 text-yellow-800 border-yellow-300 (노랑)
  *   therapist(치료)   → bg-green-100 text-green-800 border-green-300 (초록)
  *   그 외(director·technician 등) / 시트엔 있으나 CRM staff 미매칭 → 중립 fallback (slate)
@@ -28,12 +28,12 @@ const HANDOVER_URL = '/admin/handover';
 const DUTY_FN_GLOB = '**/functions/v1/duty-sheet-read*';
 
 const ROLE_CLASS: Record<string, string[]> = {
-  consultant: ['bg-sky-100', 'text-sky-800', 'border-sky-300'],
+  consultant: ['bg-rose-100', 'text-rose-800', 'border-rose-300'],
   coordinator: ['bg-yellow-100', 'text-yellow-800', 'border-yellow-300'],
   therapist: ['bg-green-100', 'text-green-800', 'border-green-300'],
 };
 const FALLBACK_CLASS = ['bg-slate-100', 'text-slate-700', 'border-slate-300'];
-const ROLE_COLOR_TOKENS = ['sky', 'yellow', 'green'];
+const ROLE_COLOR_TOKENS = ['rose', 'yellow', 'green'];
 
 function kstMonthDay(): { m: number; d: number } {
   const kst = new Date(Date.now() + 9 * 3600 * 1000);

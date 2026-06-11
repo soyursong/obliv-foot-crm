@@ -141,11 +141,12 @@ export const STAFF_ROLE_ORDER: StaffRole[] = [
  * 직원 역할별 이름 칩 색상 (bg + text + border) — T-20260606-foot-HANDOVER-NAMECARD-ROLECOLOR.
  * 인수인계 "오늘 출근 명단" 칩 배경을 역할별로 구분한다.
  * handover.ts PART_BADGE_CLASS 패턴 그대로 정적 매핑(JIT purge 안전, 동적 클래스 금지).
- *   상담(consultant) → 하늘 / 코디(coordinator) → 노랑 / 치료(therapist) → 초록
+ *   상담(consultant) → 로즈 / 코디(coordinator) → 노랑 / 치료(therapist) → 초록
  *   그 외 역할(director·technician 등) → 중립 fallback.
+ *   (T-20260611-foot-HANDOVER-ATTENDEE-PARTCOLOR: 상담 sky→rose, 김주연 총괄 요청)
  */
 export const STAFF_ROLE_CARD_CLASS: Record<string, string> = {
-  consultant: 'bg-sky-100 text-sky-800 border-sky-300',
+  consultant: 'bg-rose-100 text-rose-800 border-rose-300',
   coordinator: 'bg-yellow-100 text-yellow-800 border-yellow-300',
   therapist: 'bg-green-100 text-green-800 border-green-300',
 };
