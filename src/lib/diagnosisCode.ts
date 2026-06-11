@@ -33,6 +33,32 @@ export interface DiagnosisNameItem {
   diagnosis_folder_id: string | null;
 }
 
+/** 코드 비교 정규화 — trim·대문자·점 제거(dotless/dotted 동치: M72.2 == M722). */
+function codeCompareKey(raw: string | null | undefined): string {
+  return normalizeServiceCode(raw).replace(/\./g, '');
+}
+
+export interface DiagnosisCodeItem {
+  id: string;
+  service_code: string | null;
+}
+
+/**
+ * 같은 코드 중복 여부 (AC-2, T-20260611-foot-DIAG-KCD-BUNDLE-LOCKDOWN).
+ *   ★ 스코프 = clinic 전체(폴더 무관). KCD 코드는 진료/청구 정본이므로 한 clinic에 1회만 존재해야 함
+ *     — reporter "같은 코드로 이름 두 개" 제보를 폴더 경계와 무관하게 차단.
+ *   dotless/dotted 동치(M72.2 == M722) 비교, 자기 자신(excludeId) 제외, 빈 코드는 중복 아님.
+ */
+export function isDuplicateServiceCode(
+  items: DiagnosisCodeItem[],
+  code: string | null | undefined,
+  excludeId?: string,
+): boolean {
+  const key = codeCompareKey(code);
+  if (!key) return false; // 빈 코드는 중복 판정 제외(nullable 유지)
+  return items.some((d) => d.id !== excludeId && codeCompareKey(d.service_code) === key);
+}
+
 /**
  * 같은 폴더(folderId, null=미분류) 내 상병명 중복 여부 — trim 비교, 자기 자신(excludeId) 제외.
  *   다른 폴더의 동명 상병은 허용(폴더 단위 유일성).

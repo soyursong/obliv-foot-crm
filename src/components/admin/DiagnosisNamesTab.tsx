@@ -50,6 +50,7 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Search,
 } from 'lucide-react';
 import {
   DndContext,
@@ -77,9 +78,14 @@ import {
 } from '@/lib/diagnosisFolders';
 import {
   normalizeServiceCode,
-  validateServiceCode,
   isDuplicateDiagnosisName,
+  isDuplicateServiceCode,
 } from '@/lib/diagnosisCode';
+import {
+  loadKcdBundle,
+  searchKcd,
+  type KcdSearchResult,
+} from '@/lib/kcd/kcdSearch';
 
 // ---------------------------------------------------------------------------
 // Types — 상병 = services 행 (category_label='상병')
@@ -519,6 +525,117 @@ function FolderNode(props: FolderNodeProps) {
 }
 
 // ---------------------------------------------------------------------------
+// KCD 검색·클릭 입력 (AC-1) — 자유타이핑 제거. 번들 검색 → 후보 클릭 → 코드+명칭 확정.
+//   T-20260611-foot-DIAG-KCD-BUNDLE-LOCKDOWN. dynamic import 번들, 신규 의존성 0.
+//   드롭다운 = Dialog 내부 absolute 위치(팝오버 lib 불요).
+// ---------------------------------------------------------------------------
+interface SelectedKcd {
+  code: string;
+  name: string;
+}
+
+function KcdComboBox({
+  value,
+  onSelect,
+  autoFocus,
+}: {
+  value: SelectedKcd | null;
+  onSelect: (sel: SelectedKcd) => void;
+  autoFocus?: boolean;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<KcdSearchResult[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [openList, setOpenList] = useState(false);
+
+  // 번들 1회 로드(탭/다이얼로그 진입 시). dynamic import → 코드 스플릿.
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    loadKcdBundle()
+      .then(() => alive && setLoading(false))
+      .catch(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    setResults(searchKcd(query, 30));
+  }, [query, loading]);
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+        <Input
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpenList(true);
+          }}
+          onFocus={() => setOpenList(true)}
+          autoFocus={autoFocus}
+          placeholder={loading ? 'KCD 목록 불러오는 중…' : 'KCD 코드 또는 상병명 검색 (예: M72.2, 족저근막염)'}
+          disabled={loading}
+          className="pl-8"
+          data-testid="dx-kcd-search"
+          autoComplete="off"
+        />
+      </div>
+
+      {/* 선택된 KCD 표기 */}
+      {value && (
+        <div
+          className="mt-2 flex items-center gap-2 rounded-md border border-teal-200 bg-teal-50 px-3 py-2"
+          data-testid="dx-kcd-selected"
+        >
+          <Check className="h-4 w-4 text-teal-600 shrink-0" />
+          <Badge variant="outline" className="text-[11px] py-0 font-mono shrink-0">{value.code || '코드없음'}</Badge>
+          <span className="text-sm font-medium text-teal-900 truncate">{value.name}</span>
+        </div>
+      )}
+
+      {/* 후보 드롭다운 — Dialog 내부 absolute */}
+      {openList && query.trim() && !loading && (
+        <div
+          className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-md border bg-popover shadow-lg"
+          data-testid="dx-kcd-results"
+        >
+          {results.length === 0 ? (
+            <div
+              className="px-3 py-3 text-xs text-muted-foreground"
+              data-testid="dx-kcd-empty"
+            >
+              검색 결과가 없어요. KCD 목록에 있는 코드/상병명만 추가할 수 있어요.
+            </div>
+          ) : (
+            results.map((r) => (
+              <button
+                key={`${r.code}-${r.name}`}
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/60 border-b last:border-b-0"
+                data-testid="dx-kcd-option"
+                data-code={r.code}
+                onClick={() => {
+                  onSelect({ code: r.code, name: r.name });
+                  setQuery('');
+                  setOpenList(false);
+                }}
+              >
+                <Badge variant="outline" className="text-[10px] py-0 font-mono shrink-0">{r.code}</Badge>
+                <span className="text-sm truncate">{r.name}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 export default function DiagnosisNamesTab() {
@@ -539,7 +656,9 @@ export default function DiagnosisNamesTab() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Diagnosis | null>(null);
   const [form, setForm] = useState<DxForm>(EMPTY_FORM);
-  // 인라인 검증 에러 (AC-1 상병코드 형식 / AC-2 같은 폴더 중복)
+  // AC-1: KCD 검색클릭 선택값(코드+명칭). 자유타이핑 폼 입력 대체.
+  const [selectedKcd, setSelectedKcd] = useState<SelectedKcd | null>(null);
+  // 인라인 검증 에러 (AC-2 코드 중복 / AC-3 이름 중복)
   const [codeError, setCodeError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
 
@@ -611,6 +730,7 @@ export default function DiagnosisNamesTab() {
   function openAdd() {
     setEditing(null);
     setForm({ ...EMPTY_FORM, sort_order: nextSortOrder() });
+    setSelectedKcd(null); // 신규 = 반드시 KCD 검색클릭으로 선택
     setCodeError(null);
     setNameError(null);
     setOpen(true);
@@ -618,29 +738,37 @@ export default function DiagnosisNamesTab() {
   function openEdit(d: Diagnosis) {
     setEditing(d);
     setForm({ name: d.name, service_code: d.service_code ?? '', active: d.active, sort_order: d.sort_order });
+    // 수정 = 기존 코드+명칭을 선택값으로 프리필(레거시 비-KCD 데이터도 보존, 강제 재선택 없음 = AC-4).
+    setSelectedKcd({ code: d.service_code ?? '', name: d.name });
     setCodeError(null);
     setNameError(null);
     setOpen(true);
   }
   async function handleSave() {
-    const name = form.name.trim();
-    if (!name) {
-      setNameError('상병명을 입력해주세요.');
-      return toast.error('상병명을 입력해주세요.');
-    }
-    // AC-1: 상병코드 KCD-8 형식 검증(빈 코드는 통과). 위반 시 인라인 에러 + 저장 차단.
-    const codeErr = validateServiceCode(form.service_code);
-    if (codeErr) {
-      setCodeError(codeErr);
+    // AC-1: 자유타이핑 제거 → KCD 검색클릭 선택 필수.
+    if (!selectedKcd || !selectedKcd.name.trim()) {
+      setNameError('KCD 목록에서 상병을 검색해 선택해주세요.');
       return;
     }
-    // AC-2: 같은 폴더(미분류 포함) 내 상병명 중복 차단. 신규=미분류(NULL), 수정=기존 폴더 유지.
+    const name = selectedKcd.name.trim();
+    const code = normalizeServiceCode(selectedKcd.code) || null;
+
+    // AC-2: 코드 중복 차단(clinic 전체, dotless/dotted 동치). 이름 달라도 코드 같으면 불가.
+    if (code && isDuplicateServiceCode(items, code, editing?.id)) {
+      setCodeError(`이미 등록된 코드예요 (${code})`);
+      return;
+    }
+    // AC-3: 같은 폴더(미분류 포함) 내 상병명 중복 차단. 신규=미분류(NULL), 수정=기존 폴더 유지.
     const targetFolder = editing ? (editing.diagnosis_folder_id ?? null) : null;
     if (isDuplicateDiagnosisName(items, name, targetFolder, editing?.id)) {
       setNameError('이미 등록된 상병명이에요.');
       return;
     }
-    await upsert.mutateAsync({ id: editing?.id, form });
+
+    await upsert.mutateAsync({
+      id: editing?.id,
+      form: { ...form, name, service_code: code ?? '' },
+    });
     setOpen(false);
   }
   function handleDelete(id: string, name: string) {
@@ -958,49 +1086,31 @@ export default function DiagnosisNamesTab() {
               <DialogTitle>{editing ? '상병명 수정' : '상병명 추가'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
-                  <Label className="text-xs">상병명 *</Label>
-                  <Input
-                    value={form.name}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setForm((f) => ({ ...f, name: v }));
-                      if (nameError) setNameError(null);
+              {/* AC-1: 자유타이핑 제거 → KCD 공식목록 검색 + 클릭 선택. */}
+              <div>
+                <Label className="text-xs">상병 (KCD 검색) *</Label>
+                <div className="mt-1">
+                  <KcdComboBox
+                    value={selectedKcd}
+                    autoFocus={!editing}
+                    onSelect={(sel) => {
+                      setSelectedKcd(sel);
+                      setNameError(null);
+                      setCodeError(null);
                     }}
-                    placeholder="예) 족저근막염"
-                    aria-invalid={!!nameError}
-                    className={`mt-1 ${nameError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
-                    data-testid="dx-name-input"
                   />
-                  {nameError && (
-                    <p className="mt-1 text-[11px] text-destructive" data-testid="dx-name-error">{nameError}</p>
-                  )}
                 </div>
-                <div>
-                  <Label className="text-xs">상병코드</Label>
-                  <Input
-                    value={form.service_code}
-                    onChange={(e) => {
-                      // AC-1: 입력 즉시 대문자 정규화(소문자자동변환) + 인라인 형식 검증.
-                      const v = e.target.value.toUpperCase();
-                      setForm((f) => ({ ...f, service_code: v }));
-                      setCodeError(validateServiceCode(v));
-                    }}
-                    placeholder="예) M79.3"
-                    aria-invalid={!!codeError}
-                    className={`mt-1 font-mono ${codeError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
-                    data-testid="dx-code-input"
-                  />
-                  {codeError && (
-                    <p className="mt-1 text-[11px] text-destructive" data-testid="dx-code-error">{codeError}</p>
-                  )}
-                </div>
+                {codeError && (
+                  <p className="mt-1 text-[11px] text-destructive" data-testid="dx-code-error">{codeError}</p>
+                )}
+                {nameError && (
+                  <p className="mt-1 text-[11px] text-destructive" data-testid="dx-name-error">{nameError}</p>
+                )}
               </div>
               {/* AC-2: 폴더(분류) 입력 필드 제거 — 등록 후 좌측 폴더로 드래그앤드롭 배치. */}
               <p className="text-[11px] text-muted-foreground">
                 {editing
-                  ? '폴더 분류는 목록에서 왼쪽 폴더로 끌어다 옮기세요.'
+                  ? 'KCD 목록에서 다시 검색해 선택하면 코드·명칭이 바뀝니다. 폴더 분류는 목록에서 왼쪽 폴더로 끌어다 옮기세요.'
                   : '등록하면 "미분류"에 추가됩니다. 왼쪽 폴더로 끌어다 분류하세요.'}
               </p>
               <div className="flex items-center gap-2">
@@ -1010,7 +1120,7 @@ export default function DiagnosisNamesTab() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setOpen(false)}>취소</Button>
-              <Button onClick={handleSave} disabled={upsert.isPending || !!codeError} data-testid="dx-save-btn">
+              <Button onClick={handleSave} disabled={upsert.isPending || !selectedKcd} data-testid="dx-save-btn">
                 {upsert.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
                 저장
               </Button>
