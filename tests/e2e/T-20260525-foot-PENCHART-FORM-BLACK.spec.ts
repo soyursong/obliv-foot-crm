@@ -141,8 +141,12 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
     const onloadIdx = src.indexOf('img.onload = async () => {');
     expect(onloadIdx, 'img.onload = async () => { 패턴 없음 — REOPEN 2 수정 누락').toBeGreaterThan(0);
 
-    // REOPEN 2: tiling 코드로 onload 블록 길이 증가 → 6000자 윈도우
-    const onloadFullBlock = src.slice(onloadIdx, onloadIdx + 6000);
+    // REOPEN 2: tiling 코드로 onload 블록 길이 증가.
+    //   SPEC-DRIFT-REPAIR(T-20260612): 고정 6000자 윈도는 REOPEN 누적 주석으로 setBgImgLoadError(false)가
+    //   rel 5993~6017로 밀려 윈도 경계(6000)에 걸쳐 contains 실패. onload 핸들러 종료 = 이어지는 img.src 대입
+    //   (이미지 setup 종료) 지점을 끝 경계로 앵커 → 핸들러 본문 전체를 포착(드리프트 내성). assertion 무변경.
+    const onloadEnd = src.indexOf('img.src', onloadIdx);
+    const onloadFullBlock = src.slice(onloadIdx, onloadEnd > onloadIdx ? onloadEnd : onloadIdx + 8000);
     expect(onloadFullBlock).toContain('setBgImgLoadError(false)');
 
     // onload 시작 200자 이내에는 setBgImgLoadError(false) 없어야 함 (drawImage 이후로 이동됨)
@@ -226,11 +230,12 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
 
     const drawInitIdx = src.indexOf('const initDrawCanvas = useCallback');
     expect(drawInitIdx).toBeGreaterThan(0);
-    // 4500→4900→5600자 윈도우: 블록 주석 누적 확대로 canvas.width===0 위치가 밀림(테스트 유지보수 패턴).
-    //   (T-20260606-REFUND-PEN-MISS 기기별 desync 주석 / FORMIMG 진단 줄 / REOPEN#3 프로파일러 기본-ON
-    //    메타-RC 주석 추가 → canvas.width===0 가 ~5293 로 밀림. 가드 로직 자체는 무변경.)
+    // SPEC-DRIFT-REPAIR(T-20260612): 고정 5600자 윈도는 누적 주석으로 canvas.width===0 가 rel 5759로 밀려 벗어남.
+    //   고정 char 윈도를 매번 키우는 대신 initDrawCanvas 함수 끝 경계(다음 `= useCallback` 선언)까지 앵커 →
+    //   주석 증감과 무관하게 함수 본문 전체를 포착(드리프트 내성). 가드 로직/assertion 자체는 무변경.
     // ctx null 가드 + drawCtxRef 캐싱 + canvasH 계산 + canvas.width 설정 + BLACKSCR size check
-    const drawBlock = src.slice(drawInitIdx, drawInitIdx + 5600);
+    const drawBlockEnd = src.indexOf('= useCallback', drawInitIdx + 50);
+    const drawBlock = src.slice(drawInitIdx, drawBlockEnd > drawInitIdx ? drawBlockEnd : drawInitIdx + 8000);
 
     expect(drawBlock).toContain("if (!ctx)");
     expect(drawBlock).toContain('setBgImgLoadError(true)');
@@ -387,7 +392,11 @@ test.describe('T-20260525-foot-PENCHART-FORM-BLACK', () => {
 
     const initDrawIdx = src.indexOf('const initDrawCanvas = useCallback');
     expect(initDrawIdx).toBeGreaterThan(0);
-    const drawInitBlock = src.slice(initDrawIdx, initDrawIdx + 4000);
+    // SPEC-DRIFT-REPAIR(T-20260612): 고정 4000자 윈도는 누적 주석으로 `desynchronized: useDesync`(rel 4373)가 벗어남.
+    //   initDrawCanvas 함수 끝 경계(다음 `= useCallback`)까지 앵커 → 함수 본문 전체 포착. desync OFF/useDesync 기본 false
+    //   /isIOS 분기 부재 단언은 그대로 검증(green-washing 아님 — 함수 범위로 한정해 not-contains 신뢰성도 유지).
+    const drawInitEnd = src.indexOf('= useCallback', initDrawIdx + 50);
+    const drawInitBlock = src.slice(initDrawIdx, drawInitEnd > initDrawIdx ? drawInitEnd : initDrawIdx + 8000);
 
     // override param 유지
     expect(drawInitBlock, 'penchart_enable_desync URL param 없음')
