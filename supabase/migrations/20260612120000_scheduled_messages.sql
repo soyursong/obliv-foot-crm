@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS public.scheduled_messages (
   claimed_at          TIMESTAMPTZ,                -- dispatcher 가 processing 으로 점유한 시각(reaper 기준)
   attempts            SMALLINT    NOT NULL DEFAULT 0,
   sent_at             TIMESTAMPTZ,
-  notification_log_id UUID,                       -- 발송 후 notification_logs 연결
+  notification_log_id UUID
+                                  REFERENCES public.notification_logs(id) ON DELETE SET NULL,  -- 발송 후 notification_logs 연결(실FK; logs append-only → SET NULL 안전)
   error_message       TEXT,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -92,11 +93,15 @@ CREATE POLICY sched_msg_insert ON public.scheduled_messages
 
 -- UPDATE: 같은 지점 전직원(예약 취소 — status='cancelled' 전이). 발송 처리(processing/sent)는
 --         dispatcher/EF 가 service_role 로 수행(RLS 우회) → 사용자 UPDATE 는 취소 용도.
+--   ★USING status='pending' 가드(data-architect 하드닝): 사용자 UPDATE 대상을 pending 행으로 한정.
+--    → (a) processing 행을 건드려 dispatcher 와 레이스, (b) sent 행 되돌림,
+--       (c) 타인 pending 의 body/scheduled_at/recipient_phone 편집 차단. 취소는 pending→cancelled 만 안전.
 DROP POLICY IF EXISTS sched_msg_update ON public.scheduled_messages;
 CREATE POLICY sched_msg_update ON public.scheduled_messages
   FOR UPDATE TO authenticated
   USING (
     clinic_id = public.get_user_clinic_id()
+    AND status = 'pending'
     AND public.get_user_role() IN
       ('admin','manager','director','consultant','coordinator','therapist','part_lead','staff')
   )
