@@ -42,6 +42,7 @@ export interface CustomerBindInfo {
   birth_date?: string | null;    // YYMMDD 텍스트 (예: 900515)
   chart_number?: string | null;  // 차트번호
   gender?: 'M' | 'F' | null;
+  customer_email?: string | null; // T-20260611-foot-EMAIL-BINDING-FIX: 서류 patient_email 바인딩
 }
 
 /** T-20260522-foot-INS-DOC-PRINT: 보험서류 바인딩용 건보 정보 */
@@ -229,6 +230,8 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     patient_phone: formatPhone(ctx.customer?.phone ?? ctx.checkIn.customer_phone),
     patient_rrn: patientRrn,
     patient_address: fullAddress,
+    // T-20260611-foot-EMAIL-BINDING-FIX: 서류 출력 시 이메일 공란 버그 — customers.customer_email 바인딩
+    patient_email: ctx.customer?.customer_email ?? '',
     // T-20260520-foot-PRINT-FORM-BIND: 신규 바인딩 필드
     // T-20260601-foot-DOC-PRINT-8FIX: 컬럼 공란 시 주민번호 산출본 사용
     patient_gender: formatGenderCheckbox(effGender),
@@ -384,7 +387,7 @@ export async function loadAutoBindContext(
     const [custRes, rrnRes] = await Promise.all([
       supabase
         .from('customers')
-        .select('name, phone, address, address_detail, birth_date, chart_number, gender, insurance_grade')
+        .select('name, phone, address, address_detail, birth_date, chart_number, gender, insurance_grade, customer_email')
         .eq('id', checkIn.customer_id)
         .maybeSingle(),
       // rrn_decrypt RPC — 주민번호 복호화 (암호화된 컬럼 직접 접근 불가)
