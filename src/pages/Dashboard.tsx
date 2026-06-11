@@ -1337,12 +1337,30 @@ function TimelineCard({
  * - onClick → CheckInDetailSheet 열기
  * - 초진(파란)/재진(초록) 2종 배지 (T-20260513-foot-VISITTYPE-SIMPLIFY: 체험 제거)
  */
+// T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 배지 (공용)
+//   WALKIN 'W' 배지(T-20260530-foot-WALKIN-TIMETABLE, ed79513) 동일 패턴 재사용.
+//   --status-noshow CSS 변수(붉은 계열)로 일반 예약과 시각 구분(AC-3).
+//   예약 카드(초진/재진)·체크인 카드 3곳에서 공통 사용.
+function NoShowBadge() {
+  return (
+    <span
+      className="text-[8px] px-0.5 rounded shrink-0 leading-tight font-bold text-white"
+      style={{ backgroundColor: 'var(--status-noshow)' }}
+      title="노쇼 (예약 미내원 처리)"
+      data-testid="noshow-badge"
+    >
+      노쇼
+    </span>
+  );
+}
+
 function TimelineCheckInCard({
   checkIn,
   onClick,
   onContextMenu,
   offHourTime,
   isWalkIn,
+  isNoShow,
 }: {
   checkIn: CheckIn;
   onClick?: () => void;
@@ -1351,6 +1369,8 @@ function TimelineCheckInCard({
   offHourTime?: string;
   /** T-20260530-foot-WALKIN-TIMETABLE: 워크인(예약 없이 당일 접수) 여부 → 'W' 배지 표시 */
   isWalkIn?: boolean;
+  /** T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 처리된 예약 매칭 카드 → 노쇼 배지 표시 */
+  isNoShow?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: checkIn.id,
@@ -1373,6 +1393,8 @@ function TimelineCheckInCard({
     touchAction: 'none',
     // T-20260511-foot-DASH-DRAG-PERF: GPU 레이어 승격 힌트
     willChange: isDragging ? 'transform' : undefined,
+    // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST AC-3: 노쇼 시각 구분 — 좌측 붉은 인셋 바
+    ...(isNoShow ? { boxShadow: 'inset 3px 0 0 var(--status-noshow)' } : {}),
   };
 
   // 2번 박스 활성화 스타일: 방문유형별 컬러 (초진=노랑, 재진=초록)
@@ -1425,6 +1447,8 @@ function TimelineCheckInCard({
           W
         </span>
       )}
+      {/* T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 배지 (워크인 'W' 배지와 동시 표시 가능 — AC-4) */}
+      {isNoShow && <NoShowBadge />}
       {/* T-20260530-foot-WALKIN-OFFHOUR-SLOT: 영업시간 외 실접수 시각 배지 */}
       {offHourTime && (
         <span
@@ -1564,6 +1588,8 @@ function DraggableBox1Card({
     data: { reservationType: 'timeline-resv', reservationId: reservation.id, visitType: reservation.visit_type },
   });
   const tail = (reservation.customer_phone ?? '').replace(/\D/g, '').slice(-4) || '????';
+  // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 처리된 미내원 예약 → 명단 유지 + 배지
+  const isNoShow = reservation.status === 'noshow';
   return (
     <div
       ref={setNodeRef}
@@ -1572,6 +1598,8 @@ function DraggableBox1Card({
         opacity: isDragging ? 0.4 : 1,
         touchAction: 'none',
         willChange: isDragging ? 'transform' : undefined,
+        // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST AC-3: 노쇼 시각 구분 — 좌측 붉은 인셋 바
+        ...(isNoShow ? { boxShadow: 'inset 3px 0 0 var(--status-noshow)' } : {}),
       }}
       {...attributes}
       {...listeners}
@@ -1588,10 +1616,13 @@ function DraggableBox1Card({
       }}
       title={`${cardDisplayName(reservation)} — 드래그=시간변경 · 클릭=차트조회 · 우클릭=메뉴`}
       data-testid="box1-resv-card"
+      data-noshow={isNoShow ? 'true' : undefined}
     >
       <span className="shrink-0 bg-yellow-200 text-yellow-800 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
       <span className="truncate text-yellow-900 font-semibold">{cardDisplayName(reservation)}</span>
       <span className="shrink-0 text-yellow-700 font-mono text-[9px]">{tail}</span>
+      {/* T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 배지 */}
+      {isNoShow && <NoShowBadge />}
       {/* T-20260519-foot-FIRSTVISIT-CHECKIN AC-1: 접수 버튼 — DnD와 분리 위해 onPointerDown stopPropagation */}
       {onCheckIn && (
         <button
@@ -1641,6 +1672,8 @@ function DraggableBox2ResvCard({
   // (#차트번호 뱃지 제거 — 두 식별자 동시표출 방지. reporter 김주연 총괄 지시)
   // 결측/4자리 미만 → suffix 미렌더(빈 suffix 금지), 차트번호 fallback 없음 → 성함만 표기.
   const resvPhoneTail = phoneTailSuffix(reservation.customer_phone);
+  // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 처리된 재진 미내원 예약 → 명단 유지 + 배지
+  const isNoShow = reservation.status === 'noshow';
   return (
     <div
       ref={setNodeRef}
@@ -1649,6 +1682,8 @@ function DraggableBox2ResvCard({
         opacity: isDragging ? 0.4 : 1,
         touchAction: 'none',
         willChange: isDragging ? 'transform' : undefined,
+        // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST AC-3: 노쇼 시각 구분 — 좌측 붉은 인셋 바
+        ...(isNoShow ? { boxShadow: 'inset 3px 0 0 var(--status-noshow)' } : {}),
       }}
       {...attributes}
       {...listeners}
@@ -1669,8 +1704,11 @@ function DraggableBox2ResvCard({
         ? `${cardDisplayName(reservation)} — 힐러 치료 예정 · 드래그=시간변경 · 클릭=차트조회 · 우클릭=메뉴`
         : `${cardDisplayName(reservation)} — 드래그=시간변경 · 클릭=차트조회 · 우클릭=메뉴`}
       data-testid="box2-resv-card"
+      data-noshow={isNoShow ? 'true' : undefined}
     >
       <span className="truncate text-green-900">{cardDisplayName(reservation)}</span>
+      {/* T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 배지 */}
+      {isNoShow && <NoShowBadge />}
       {/* T-20260609-foot-RESV-PATIENT-PHONE-SUFFIX: 핸드폰 뒷4자리 (초진 카드와 동일 포맷·통일) */}
       {resvPhoneTail && (
         <span data-testid="resv-phone-suffix" className="shrink-0 text-green-700 font-mono text-[9px]">{resvPhoneTail}</span>
@@ -1870,10 +1908,15 @@ function DashboardTimeline({
   const offHourActualTimeMap = new Map<string, string>();
   // T-20260530-foot-WALKIN-TIMETABLE: 워크인 체크인 ID 집합 (예약 미매칭) → 'W' 배지 표시 기준
   const walkInCiIdSet = new Set<string>();
+  // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 예약에 매칭된 체크인 ID 집합 → 체크인 카드 노쇼 배지 기준
+  //   (예약 카드는 render 시 r.status === 'noshow' 직접 판정. 체크인 카드는 ci에 status 부재 → 별도 set)
+  const noshowCiIdSet = new Set<string>();
 
-  // 예약 처리 (cancelled/noshow 제외)
+  // 예약 처리 (cancelled 제외. noshow 는 유지하고 배지로 구분 — T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST)
   for (const r of reservations) {
-    if (r.status === 'cancelled' || r.status === 'noshow') continue;
+    if (r.status === 'cancelled') continue;
+    // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 처리(status='noshow') 후에도 슬롯을 명단에 유지
+    const isNoShow = r.status === 'noshow';
     const slot = resvToSlot(r.reservation_time);
     const sd = ensure(slot);
 
@@ -1885,24 +1928,26 @@ function DashboardTimeline({
     if (r.visit_type === 'new') {
       // 초진
       if (!ci) {
-        // 셀프접수 전 → 1번 박스 (비활성)
-        if (r.status === 'confirmed') sd.newBox1.push(r);
+        // 셀프접수 전 → 1번 박스 (비활성). 노쇼도 미내원 → 1번 박스에 유지(배지 표시)
+        if (r.status === 'confirmed' || isNoShow) sd.newBox1.push(r);
         // status='checked_in' + selfCheckIns에 없음 = 칸반으로 이동 완료 → 미표시
       } else {
         // 셀프접수 완료 → 2번 박스 (활성, 드래그/클릭)
         matchedCiIds.add(ci.id);
         sd.newBox2Ci.push(ci);
+        if (isNoShow) noshowCiIdSet.add(ci.id);
       }
     } else {
       // 재진
       if (!ci) {
-        // 셀프접수 전 → 2번 박스 (재진은 예약부터 활성, 차트 접근)
-        if (r.status === 'confirmed') sd.retBox2Resv.push(r);
+        // 셀프접수 전 → 2번 박스 (재진은 예약부터 활성, 차트 접근). 노쇼도 유지(배지 표시)
+        if (r.status === 'confirmed' || isNoShow) sd.retBox2Resv.push(r);
         // status='checked_in' + 없음 = treatment_waiting 이상 이동 → 미표시
       } else {
         // 체크인 매칭 → 2번 박스 (활성)
         matchedCiIds.add(ci.id);
         sd.retBox2Ci.push(ci);
+        if (isNoShow) noshowCiIdSet.add(ci.id);
       }
     }
   }
@@ -2351,6 +2396,7 @@ function DashboardTimeline({
                       key={`b2n-${ci.id}`}
                       checkIn={ci}
                       isWalkIn={walkInCiIdSet.has(ci.id)}
+                      isNoShow={noshowCiIdSet.has(ci.id)}
                       offHourTime={offHourActualTimeMap.get(ci.id)}
                       onClick={onCardClick ? () => onCardClick(ci) : undefined}
                       onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
@@ -2393,6 +2439,7 @@ function DashboardTimeline({
                       key={`b2c-${ci.id}`}
                       checkIn={ci}
                       isWalkIn={walkInCiIdSet.has(ci.id)}
+                      isNoShow={noshowCiIdSet.has(ci.id)}
                       offHourTime={offHourActualTimeMap.get(ci.id)}
                       onClick={onCardClick ? () => onCardClick(ci) : undefined}
                       onContextMenu={onCardContext ? (e) => onCardContext(ci, e) : undefined}
