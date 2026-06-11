@@ -2,15 +2,17 @@
  * CustomerQuickMenu — 대시보드 고객 카드 이름 우클릭/롱프레스 메뉴
  * T-20260515-foot-CONTEXT-MENU-4ITEM: 4항목 확장
  * T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 항목 추가 (5항목)
- * T-20260606-foot-CTXMENU-SMS-SEND: [문자] 항목 추가 (수납 다음, 예약취소 위) — admin/manager 한정
- * T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-1: [완전 삭제] 항목 추가 (예약취소 아래) — 예약관리 우클릭 parity
- *   대시보드 ReservationContextMenu의 완전삭제와 동작 동일(hard delete, 이력 미보존). onDeleteReservation 제공 시만 노출.
+ * T-20260606-foot-CTXMENU-SMS-SEND: [문자] 항목 추가 (수납 다음) — admin/manager 한정
  * T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-3: 3번 항목 라벨을 reservationActionLabel 로 분기
- *   (예약관리 예약 우클릭=예약상세 / 대시보드 고객카드=예약하기 기본). 와이어링은 (a) 팝업 대상 확정 후.
- * 순서: 고객차트 → 진료차트 → 예약하기|예약상세 → 수납 → 문자 → 예약 취소 → 완전 삭제
+ *   (예약관리 예약 우클릭=예약상세 / 대시보드 고객카드=예약하기 기본).
+ * T-20260611-foot-CTXMENU-UNIFY-CANONICAL: 우클릭 메뉴 5항목 통일 — [예약 취소]·[완전 삭제] 메뉴 항목 제거
+ *   (둘 다 ReservationDetailPopup 버튼에서만). 전 사용처에서 onCancelReservation/onDeleteReservation 미전달.
+ * T-20260611-foot-CTXMENU-DEADPROP-CLEANUP: 위 미전달로 dead 가 된 onCancelReservation/onDeleteReservation
+ *   prop·타입·내부 분기 제거(latent 1-click hard-delete 부활 차단). 동작 변화 0.
+ * 순서: 고객차트 → 진료차트 → 예약하기|예약상세 → 수납 → 문자
  */
 import { useEffect, useRef } from 'react';
-import { Ban, BookOpen, CalendarPlus, CreditCard, MessageSquare, Stethoscope, Trash2 } from 'lucide-react';
+import { BookOpen, CalendarPlus, CreditCard, MessageSquare, Stethoscope } from 'lucide-react';
 import type { CheckIn } from '@/lib/types';
 
 interface Props {
@@ -21,12 +23,8 @@ interface Props {
   onOpenMedicalChart: (checkIn: CheckIn) => void;
   onNewReservation: (checkIn: CheckIn) => void;
   onOpenPayment: (checkIn: CheckIn) => void;
-  /** T-20260525-foot-RESV-CANCEL-CTX: 예약 취소 콜백 — 제공 시만 메뉴 항목 표시 */
-  onCancelReservation?: (checkIn: CheckIn) => void;
   /** T-20260606-foot-CTXMENU-SMS-SEND: 문자 발송 콜백 — 제공 시(admin/manager)만 메뉴 항목 표시 */
   onSendSms?: (checkIn: CheckIn) => void;
-  /** T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-1: 완전 삭제(hard delete) 콜백 — 제공 시 + reservation_id 있을 때만 표시 */
-  onDeleteReservation?: (checkIn: CheckIn) => void;
   /**
    * T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-3: 예약 액션 항목 라벨.
    * 예약관리(기존 예약 우클릭)에서는 '예약상세'로, 대시보드 고객카드(체크인=신규 예약 생성)에서는 기본 '예약하기'.
@@ -43,9 +41,7 @@ export function CustomerQuickMenu({
   onOpenMedicalChart,
   onNewReservation,
   onOpenPayment,
-  onCancelReservation,
   onSendSms,
-  onDeleteReservation,
   reservationActionLabel = '예약하기',
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
@@ -68,8 +64,8 @@ export function CustomerQuickMenu({
 
   if (!position || !checkIn) return null;
 
-  // 화면 경계 보정 — 항목 수에 따른 높이 고려 (문자/예약취소 가변)
-  const itemCount = 4 + (onSendSms ? 1 : 0) + (onCancelReservation && checkIn.reservation_id ? 1 : 0) + (onDeleteReservation && checkIn.reservation_id ? 1 : 0);
+  // 화면 경계 보정 — 항목 수에 따른 높이 고려 (문자 가변)
+  const itemCount = 4 + (onSendSms ? 1 : 0);
   const x = Math.min(position.x, window.innerWidth - 190);
   const y = Math.min(position.y, window.innerHeight - (60 + itemCount * 44));
 
@@ -149,42 +145,9 @@ export function CustomerQuickMenu({
         </button>
       )}
 
-      {/* 6. 예약 취소 — T-20260525-foot-RESV-CANCEL-CTX: 예약 연결 고객에게만 표시 */}
-      {onCancelReservation && checkIn.reservation_id && (
-        <>
-          <div className="border-t my-0.5" />
-          <button
-            data-testid="quick-menu-cancel-resv-btn"
-            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 active:bg-red-100 transition text-left"
-            onClick={() => {
-              onCancelReservation(checkIn);
-              onClose();
-            }}
-          >
-            <Ban className="h-4 w-4 shrink-0" />
-            예약 취소
-          </button>
-        </>
-      )}
-
-      {/* 7. 완전 삭제 — T-20260610-foot-RESV-CTXMENU-POPUP-SYNC AC-1: 예약관리 우클릭 parity
-          (대시보드 ReservationContextMenu와 동일 — hard delete, 이력 미보존). 예약 연결 고객에게만 표시. */}
-      {onDeleteReservation && checkIn.reservation_id && (
-        <button
-          data-testid="quick-menu-harddelete-btn"
-          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 active:bg-red-100 transition text-left"
-          onClick={() => {
-            // T-20260610-foot-RESV-MGMT-CTXMENU-DETAIL-5FIX item2: 삭제=완전제거(복구불가) 의미 명시.
-            // 동일 문구를 ReservationContextMenu(대시보드 타임라인)와 일치시켜 진입점 간 의미 단일화(item1).
-            if (!window.confirm('예약을 완전 삭제하시겠습니까?\n삭제하면 정보가 완전히 사라지며 복구할 수 없습니다.\n(다시 올 고객이라면 [예약 취소]를 쓰세요)')) return;
-            onDeleteReservation(checkIn);
-            onClose();
-          }}
-        >
-          <Trash2 className="h-4 w-4 shrink-0" />
-          완전 삭제
-        </button>
-      )}
+      {/* T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC3 + DEADPROP-CLEANUP:
+          [예약 취소]·[완전 삭제] 메뉴 항목 제거됨 — 둘 다 ReservationDetailPopup 내 버튼에서만.
+          관련 dead prop/handler(onCancelReservation/onDeleteReservation) 영구 제거(latent hard-delete 차단). */}
     </div>
   );
 }
