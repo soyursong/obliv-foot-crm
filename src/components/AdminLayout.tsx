@@ -7,7 +7,6 @@ import { CustomerChartSheet } from '@/components/CustomerChartSheet';
 import {
   LayoutDashboard,
   CalendarDays,
-  CalendarPlus,
   Users,
   Package,
   UserCog,
@@ -490,27 +489,9 @@ export default function AdminLayout() {
             <span className="text-xs text-muted-foreground hidden sm:inline">{today}</span>
           </div>
           <div className="flex items-center gap-2">
-            {/* T-20260517-foot-RESV-NAV-DIRECT: 전역 [예약하기] — 고객 컨텍스트 없음, 빈 예약 생성 */}
-            {/* LOGIC-LOCK: L-002 — [예약하기] 클릭 시 항상 /admin/reservations full page 전환. 예외 없음. 변경 시 현장 승인 필수 */}
-            <button
-              onClick={() =>
-                navigate('/admin/reservations', {
-                  state: {
-                    openReservationFor: {
-                      customer_id: null,
-                      name: '',
-                      phone: '',
-                      visit_type: 'returning' as const,
-                    },
-                  },
-                })
-              }
-              className="hidden sm:flex items-center gap-1.5 rounded-md bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700 transition"
-              data-testid="btn-header-make-reservation"
-            >
-              <CalendarPlus className="h-3.5 w-3.5" />
-              예약하기
-            </button>
+            {/* T-20260611-foot-TOPBAR-RESV-BTN-REMOVE: 헤더 전역 예약 생성 버튼 제거 (김주연 총괄 요청).
+                예약 등록은 예약관리 페이지 '새 예약' 버튼 / 고객관리·대시보드·차트 컨텍스트 메뉴 / 캘린더 날짜 클릭으로
+                대체 진입 가능 — 유일 진입점 아니므로 제거 안전. L-002 원칙(클릭 시 full page 전환)은 잔존 진입점에 그대로 유지. */}
           <div className="relative">
             <button
               onClick={() => { setSearchOpen(true); setTimeout(() => searchRef.current?.focus(), 50); }}
