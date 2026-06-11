@@ -32,9 +32,17 @@ export function getAssignedSlotName(ci: CheckIn): string | null {
       // 이미 stale된 기존 row도 status 기반 파생이라 즉시 교정됨(write-side clear 불필요).
       // cf. getCurrentLocationLabel(IN_ROOM_STATUSES) 동일 원칙.
       return null;
+    case 'preconditioning':
+      // T-20260611-foot-CALLLIST-ROOM-LABEL AC-3 (TREATROOM-NUMBER fold) — 치료실 입실.
+      // 치료실 방번호는 treatment_room에 write됨(Dashboard.tsx room field map 'treatment'→'treatment_room',
+      // StatusContextMenu 치료실 슬롯 배정). laser_room은 null이라 기존 그룹핑(laser_room 읽기)은
+      // null 반환 → 진료콜 명단에 "치료실"만 뜨고 C1-C10 방번호 누락(현장 김민준 C2 실증).
+      // preconditioning만 그룹에서 분리해 treatment_room을 읽는다.
+      //   ※ treatment_waiting(대기)=null 유지(WAITROOM-BADGE-STALE), healer_waiting=laser_room 유지
+      //     (HEALER-POSITION) — 아래 분기 불변. read-only switch case 수정(스키마/write/status전이 불변).
+      return nonEmpty(ci.treatment_room);
     case 'laser':
     case 'laser_waiting':
-    case 'preconditioning':
     case 'healer_waiting':
       return nonEmpty(ci.laser_room);
     default:
