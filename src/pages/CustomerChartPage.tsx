@@ -1988,8 +1988,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     sessionType: 'heated_laser',
   });
   const [savingSession, setSavingSession] = useState(false);
-  // C2-HIRA-CONSENT: 건보 조회 동의 상태
-  const [savingHira, setSavingHira] = useState(false);
   // C2-RESV-MINI-POPUP: 예약하기 미니창
   const [openResvMiniPopup, setOpenResvMiniPopup] = useState(false);
   // T-20260508-foot-C22-RESV-EDIT: endTime 삭제 (불필요)
@@ -3022,18 +3020,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   };
 
   // C2-HIRA-CONSENT: 건보 조회 동의 토글
+  // T-20260611-foot-WALKIN-CHART-HIRA-CONSENT-NOTSAVED AC-3(단일경로): privacy/sms 토글과 동일하게
+  //   공통 핸들러 saveCustomerField 를 경유한다. 기존 인라인 update 분기는 cross-tab 갱신
+  //   (localStorage foot_crm_customer_refresh) 누락 + savingHira 별도 state 로 "한쪽만 고쳐지는"
+  //   분기 위험이 있었다. 동일 필드는 단일 경로로 저장(현장 요구).
   const toggleHiraConsent = async () => {
     if (!customer) return;
-    setSavingHira(true);
+    setIsDirty(true);
     const newVal = !(customer.hira_consent ?? false);
-    const patch: Partial<Customer> = {
+    await saveCustomerField({
       hira_consent: newVal,
       hira_consent_at: newVal ? new Date().toISOString() : null,
-    };
-    const { error } = await supabase.from('customers').update(patch).eq('id', customer.id);
-    setSavingHira(false);
-    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
-    setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
+    });
   };
 
   // C2-RESV-MINI-POPUP: 미니 예약 저장
@@ -4244,7 +4242,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     <div className="flex items-center gap-2 flex-wrap" data-testid="chart-consent-section">
                       {([
                         { label: '개인정보수집', checked: customer.privacy_consent ?? false, onToggle: togglePrivacyConsent, saving: savingField },
-                        { label: '건강보험조회', checked: customer.hira_consent ?? false, onToggle: toggleHiraConsent, saving: savingHira },
+                        { label: '건강보험조회', checked: customer.hira_consent ?? false, onToggle: toggleHiraConsent, saving: savingField },
                         { label: '문자수신', checked: customer.sms_opt_in ?? false, onToggle: toggleSmsOptIn, saving: savingField },
                       ]).map(({ label, checked, onToggle, saving }) => (
                         <button
