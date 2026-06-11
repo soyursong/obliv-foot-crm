@@ -1529,42 +1529,12 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
 
         {/* T-20260603-foot-CHART-UNSAVED-GUARD AC-2: 하위 메모 입력 dirty 추적 */}
         <div className="mt-4 space-y-4" onInput={markDirty}>
-          {/* 기본 정보 — 방문유형·상태 배지는 성함 옆으로 이동 (T-20260506 항목1) / 우선순위·신분증만 표시 */}
-          {(checkIn.priority_flag || checkIn.notes?.id_check_required) && (
+          {/* 기본 정보 — 방문유형·상태 배지는 성함 옆으로 이동 (T-20260506 항목1) / 우선순위만 표시.
+              T-20260611-foot-CHART2-IDVERIFY-MOVE-AUTOCHECK: 신분증 확인 표시는 2번차트(CustomerChartPage)
+              주민번호 입력칸 옆으로 이동 + 주민번호 유효 저장 시 자동 "확인 완료". 1번차트에서는 제거. */}
+          {checkIn.priority_flag && (
             <div className="flex flex-wrap items-center gap-2 text-sm">
-              {checkIn.priority_flag && (
-                <Badge variant="destructive">{checkIn.priority_flag}</Badge>
-              )}
-              {checkIn.notes?.id_check_required && (
-                <button
-                  title="클릭하면 신분증 확인 완료 처리"
-                  onClick={async () => {
-                    const newNotes = {
-                      ...(checkIn.notes as Record<string, unknown> ?? {}),
-                      id_check_required: false,
-                    };
-                    const { error } = await supabase
-                      .from('check_ins')
-                      .update({ notes: newNotes })
-                      .eq('id', checkIn.id);
-                    if (!error) {
-                      toast.success('신분증 확인 완료');
-                      onUpdated();
-                    } else {
-                      toast.error('업데이트 실패');
-                    }
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition hover:opacity-80 active:scale-95 cursor-pointer"
-                  style={{
-                    backgroundColor: '#FEE2E2',
-                    color: '#B91C1C',
-                    border: '1.5px solid #FECACA',
-                  }}
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-red-500 inline-block animate-pulse" />
-                  신분증 확인 필요 · 탭하여 해제
-                </button>
-              )}
+              <Badge variant="destructive">{checkIn.priority_flag}</Badge>
             </div>
           )}
 
