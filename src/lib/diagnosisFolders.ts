@@ -173,3 +173,53 @@ export function useAssignDiagnosisToFolder() {
     },
   });
 }
+
+// 폴더 내 항목 순서변경 시 cache 옵티미스틱 갱신 대상(useDiagnoses 와 동일 키/형상).
+interface DxRow {
+  id: string;
+  sort_order: number | null;
+  [k: string]: unknown;
+}
+
+/**
+ * 폴더 내 상병 항목 순서변경 — services.sort_order 일괄 PATCH (신규 컬럼 없음).
+ *   Ticket: T-20260611-foot-DIAGNAMES-FOLDER-ITEM-REORDER
+ *   AC-2 영속 / AC-3 폴더별 독립(한 폴더 항목만 0,10,20… 재번호 → 타 폴더 sort_order 불변).
+ *   AC-5 기존행 NULL/중복도 재번호로 정규화. additive·무손실(기존 sort_order 의미 유지).
+ *
+ *   updates: 변경된 항목만 {id, sort_order}. Supabase 는 행마다 값이 달라 단일 update 불가 →
+ *            Promise.all 로 행별 PATCH(폴더 단위라 N≈수십, 부하 무시 가능).
+ *   옵티미스틱: ['diagnosis_master', clinicId] 캐시를 즉시 갱신(태블릿 드래그 즉응) → 실패 시 롤백.
+ */
+export function useReorderDiagnoses(clinicId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (updates: { id: string; sort_order: number }[]) => {
+      if (updates.length === 0) return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sb = supabase as any;
+      const results = await Promise.all(
+        updates.map((u) => sb.from('services').update({ sort_order: u.sort_order }).eq('id', u.id)),
+      );
+      const failed = results.find((r) => r.error);
+      if (failed?.error) throw failed.error;
+    },
+    onMutate: async (updates) => {
+      const key = ['diagnosis_master', clinicId];
+      await qc.cancelQueries({ queryKey: key });
+      const prev = qc.getQueryData<DxRow[]>(key);
+      if (prev) {
+        const next = new Map(updates.map((u) => [u.id, u.sort_order]));
+        qc.setQueryData<DxRow[]>(
+          key,
+          prev.map((d) => (next.has(d.id) ? { ...d, sort_order: next.get(d.id)! } : d)),
+        );
+      }
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['diagnosis_master', clinicId], ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['diagnosis_master'] }),
+  });
+}
