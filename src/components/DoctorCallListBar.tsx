@@ -136,6 +136,32 @@ export function listupSignature(ci: CheckIn): string {
   return `${ci.id}::${activationAt}`;
 }
 
+/**
+ * T-20260611-foot-DOCTORCALL-SORT-INTREATMENT-BADGE WS-1 — 진료콜 명단 정렬 키 = "진료콜 진입 시각".
+ *   접수시각(checked_in_at)이 아니라, 환자가 진료콜 상태(보라/노랑)로 *전환된 시각* 기준으로 정렬해야
+ *   원장 호출 우선순위가 맞다(접수만 먼저였고 콜은 늦게 뜬 환자가 위로 오던 오정렬 제거 — 현장 김주연 총괄).
+ *   = status_flag_history(이미 존재하는 "상태 변경 시각" 감사 컬럼, 신규 컬럼 추가 없음 — responder 확인)의
+ *     가장 최근 active(purple/yellow) 전환 changed_at. 이력이 없으면(순수 healer_waiting status 경로 등)
+ *     checked_in_at 폴백(방문 단위 안정값).
+ *   ※ listupSignature의 activationAt 파생과 의도적으로 동일 규칙(콜 진입 모먼트). 다만 listupSignature는
+ *     형제 티켓(ROW-HIDE-AUTOSHOW)이 본문을 정적 가드로 락하고 있어 그 함수를 건드리지 않고 별도 헬퍼로 둔다.
+ */
+export function callEntryTime(
+  ci: Pick<CheckIn, 'checked_in_at' | 'status_flag_history'>,
+): string {
+  const hist = ci.status_flag_history;
+  if (Array.isArray(hist) && hist.length > 0) {
+    // 뒤에서부터 가장 최근 active(purple/yellow) 진입 엔트리를 찾음 = 최신 진료콜 진입 모먼트.
+    for (let i = hist.length - 1; i >= 0; i--) {
+      const entry = hist[i];
+      if (entry && (entry.flag === 'purple' || entry.flag === 'yellow') && entry.changed_at) {
+        return entry.changed_at;
+      }
+    }
+  }
+  return ci.checked_in_at; // 폴백: 방문(체크인) 시각 — 방문 단위 안정.
+}
+
 /** rowHidden localStorage 로드(array→Set). 파싱 실패/접근 불가 시 빈 집합. */
 function loadRowHidden(): Set<string> {
   try {
@@ -177,7 +203,10 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
             ci.status_flag === 'yellow' ||
             ci.status === 'healer_waiting',
         )
-        .sort((a, b) => a.checked_in_at.localeCompare(b.checked_in_at)),
+        // T-20260611-foot-DOCTORCALL-SORT-INTREATMENT-BADGE WS-1: 정렬 키 checked_in_at(접수순) →
+        //   callEntryTime(진료콜 진입 시각, status_flag_history 파생). 오름차순 = 콜 진입이 빠른 환자 상단
+        //   (가장 오래 기다린 콜대상부터 호출). 대상 상태 보라/노랑/힐러대기 모두 동일 키 적용.
+        .sort((a, b) => callEntryTime(a).localeCompare(callEntryTime(b))),
     [checkIns],
   );
 
