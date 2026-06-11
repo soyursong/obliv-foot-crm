@@ -1,0 +1,183 @@
+✅ DB 연결 (READ-ONLY)  2026-06-11T04:37:25.511Z
+
+══════════ 분류별 테이블 수 ══════════
+  OPEN              : 46
+  PARITY            : 22
+  OTHER             : 19
+  NO_SELECT_POLICY  : 7
+  OUTLIER           : 2
+  MGMT_ONLY         : 1
+  ── 총 base table: 97 / 뷰: 11
+
+══════════ ★ parity 점검 우선 후보 (MGMT_ONLY / OUTLIER) ══════════
+  [OUTLIER] health_q_results
+      hq_results_staff_select[SELECT]:OUTLIER
+  [OUTLIER] health_q_tokens
+      hq_tokens_staff_select[SELECT]:OUTLIER
+  [MGMT_ONLY] insurance_sync_runs
+      insurance_sync_runs_read_admin[SELECT]:MGMT_ONLY
+
+══════════ NO_SELECT_POLICY (RLS on, SELECT 정책 부재 → staff·mgmt 모두 deny) ══════════
+  _backup_staff_user_id_20260426
+  _rollback_room_max_occ_20260602
+  consultation_notes
+  dopamine_callback_config
+  dopamine_callback_outbox
+  leads
+  tm_call_logs
+
+══════════ RLS_OFF (RLS 미적용 테이블) ══════════
+
+══════════ OTHER (수기 검토 필요) ══════════
+  chart_doctor_memos
+      cdm_director_clinic_v2[ALL]:OTHER
+  check_in_room_logs
+      room_logs_clinic_rw[ALL]:OTHER
+  clinic_dashboard_layouts
+      clinic_dashboard_layouts_select[SELECT]:OTHER
+  clinic_events
+      clinic_events_select[SELECT]:OTHER
+  clinic_memos
+      clinic_memos_select[SELECT]:OTHER
+  clinic_messaging_capability
+      notif_cap_write[ALL]:OTHER | notif_cap_select[SELECT]:OTHER
+  customer_special_notes
+      clinic_isolation_csn_select[SELECT]:OTHER
+  customer_treatment_memos
+      clinic_isolation_ctm_select[SELECT]:OTHER
+  duty_roster
+      duty_roster_select[SELECT]:OTHER
+  form_submissions
+      form_submissions_read[SELECT]:OTHER
+  medical_charts
+      mc_clinic_isolated_v3[ALL]:OTHER
+  notification_logs
+      notif_logs_select[SELECT]:OTHER
+  notification_opt_outs
+      notif_optout_write[ALL]:OTHER | notif_optout_select[SELECT]:OTHER
+  notification_templates
+      notif_tmpl_write[ALL]:OTHER | notif_tmpl_select[SELECT]:OTHER
+  package_progress_plans
+      ppp_write[ALL]:OTHER | ppp_select[SELECT]:OTHER
+  patient_room_daily_log
+      patient_room_daily_log_clinic_access[ALL]:OTHER
+  reservation_registrars
+      resv_registrars_select[SELECT]:OTHER
+  service_menu_order
+      smo_clinic_isolated[ALL]:OTHER
+  user_dashboard_layout_overrides
+      udlo_select[SELECT]:OTHER
+
+══════════ 전체 테이블 SELECT 분류 (table|rls|class|detail) ══════════
+_backup_staff_user_id_20260426	true	NO_SELECT_POLICY	(SELECT 정책 없음 → 기본 deny)
+_rollback_room_max_occ_20260602	true	NO_SELECT_POLICY	(SELECT 정책 없음 → 기본 deny)
+call_type_codes	true	OPEN	call_type_codes_auth_read[SELECT]:OPEN
+chart_doctor_memos	true	OTHER	cdm_director_clinic_v2[ALL]:OTHER
+check_in_room_logs	true	OTHER	room_logs_clinic_rw[ALL]:OTHER
+check_in_services	true	PARITY	check_in_services_admin_all[ALL]:MGMT_ONLY | check_in_services_consult_all[ALL]:TIER | check_in_services_approved_read[SELECT]:PARITY
+check_ins	true	OPEN	check_ins_admin_all[ALL]:MGMT_ONLY | anon_checkin_read[SELECT]:OPEN | check_ins_approved_read[SELECT]:PARITY | check_ins_read[SELECT]:OPEN
+checklists	true	OPEN	auth_users_all[ALL]:OPEN | checklists_admin_all[ALL]:MGMT_ONLY | anon_checklist_read[SELECT]:OPEN | checklists_approved_read[SELECT]:PARITY
+claim_diagnoses	true	OPEN	claim_diagnoses_auth_all[ALL]:OPEN
+clinic_dashboard_layouts	true	OTHER	clinic_dashboard_layouts_select[SELECT]:OTHER
+clinic_doctors	true	PARITY	clinic_doctors_write[ALL]:MGMT_ONLY | clinic_doctors_select[SELECT]:PARITY
+clinic_events	true	OTHER	clinic_events_select[SELECT]:OTHER
+clinic_holidays	true	PARITY	clinic_holidays_admin_all[ALL]:MGMT_ONLY | clinic_holidays_approved_read[SELECT]:PARITY
+clinic_memos	true	OTHER	clinic_memos_select[SELECT]:OTHER
+clinic_messaging_capability	true	OTHER	notif_cap_write[ALL]:OTHER | notif_cap_select[SELECT]:OTHER
+clinic_schedules	true	PARITY	clinic_schedules_admin_all[ALL]:MGMT_ONLY | clinic_schedules_approved_read[SELECT]:PARITY
+clinical_images	true	OPEN	auth_all[ALL]:OPEN
+clinics	true	OPEN	clinics_admin_all[ALL]:MGMT_ONLY | anon_clinic_read[SELECT]:OPEN | clinics_approved_read[SELECT]:PARITY
+closing_manual_payments	true	OPEN	closing_manual_read[SELECT]:OPEN
+consent_forms	true	OPEN	auth_users_all[ALL]:OPEN | consent_forms_admin_all[ALL]:MGMT_ONLY | consent_forms_consult_all[ALL]:TIER | consent_forms_approved_read[SELECT]:PARITY
+consent_templates	true	PARITY	consent_templates_admin_all[ALL]:MGMT_ONLY | consent_templates_approved_read[SELECT]:PARITY
+consultation_notes	true	NO_SELECT_POLICY	(SELECT 정책 없음 → 기본 deny)
+customer_special_notes	true	OTHER	clinic_isolation_csn_select[SELECT]:OTHER
+customer_treatment_memos	true	OTHER	clinic_isolation_ctm_select[SELECT]:OTHER
+customers	true	PARITY	customers_admin_all[ALL]:MGMT_ONLY | anon_select_customer_self_checkin[SELECT]:OTHER | customers_approved_read[SELECT]:PARITY | customers_staff_select[SELECT]:OTHER
+daily_closings	true	OPEN	daily_closings_admin_all[ALL]:MGMT_ONLY | daily_closings_write[ALL]:MGMT_ONLY | daily_closings_finance_read[SELECT]:TIER | daily_closings_read[SELECT]:OPEN | daily_closings_staff_read[SELECT]:OTHER | daily_closings_therapist_read[SELECT]:TIER
+daily_room_status	true	PARITY	daily_room_status_admin_manager_write[ALL]:MGMT_ONLY | daily_room_status_staff_own_write[ALL]:PARITY | daily_room_status_approved_read[SELECT]:PARITY
+diagnosis_folders	true	OPEN	diagnosis_folders_write_auth[ALL]:OPEN | diagnosis_folders_read_all[SELECT]:OPEN
+diagnosis_set_items	true	OPEN	diagnosis_set_items_write_auth[ALL]:OPEN | diagnosis_set_items_read_all[SELECT]:OPEN
+diagnosis_sets	true	OPEN	diagnosis_sets_write_auth[ALL]:OPEN | diagnosis_sets_read_all[SELECT]:OPEN
+document_templates	true	OPEN	admin_write_document_templates[ALL]:OTHER | staff_read_document_templates[SELECT]:OPEN
+dopamine_callback_config	true	NO_SELECT_POLICY	(SELECT 정책 없음 → 기본 deny)
+dopamine_callback_outbox	true	NO_SELECT_POLICY	(SELECT 정책 없음 → 기본 deny)
+dopamine_outbound_log	true	OPEN	dopamine_outbound_log_service_role_only[ALL]:OPEN
+duty_roster	true	OTHER	duty_roster_select[SELECT]:OTHER
+fee_set_templates	true	OPEN	auth_all[ALL]:OPEN
+form_submissions	true	OTHER	form_submissions_read[SELECT]:OTHER
+form_templates	true	OPEN	form_templates_manage[ALL]:OUTLIER | form_templates_read[SELECT]:OPEN
+handover_checklist_items	true	OPEN	handover_checklist_select[SELECT]:OPEN
+handover_notes	true	OPEN	handover_notes_select[SELECT]:OPEN
+health_q_results	true	OUTLIER	hq_results_staff_select[SELECT]:OUTLIER
+health_q_tokens	true	OUTLIER	hq_tokens_staff_select[SELECT]:OUTLIER
+insurance_documents	true	PARITY	insurance_documents_admin_all[ALL]:MGMT_ONLY | insurance_documents_consult_all[ALL]:TIER | insurance_documents_approved_read[SELECT]:PARITY
+insurance_receipts	true	PARITY	insurance_receipts_admin_all[ALL]:MGMT_ONLY | insurance_receipts_consult_all[ALL]:TIER | insurance_receipts_approved_read[SELECT]:PARITY
+insurance_sync_runs	true	MGMT_ONLY	insurance_sync_runs_read_admin[SELECT]:MGMT_ONLY
+leads	true	NO_SELECT_POLICY	(SELECT 정책 없음 → 기본 deny)
+medical_chart_signer_audit	true	PARITY	mc_signer_audit_select[SELECT]:PARITY
+medical_charts	true	OTHER	mc_clinic_isolated_v3[ALL]:OTHER
+medications	true	PARITY	medications_admin_all[ALL]:MGMT_ONLY | medications_approved_read[SELECT]:PARITY
+message_logs	true	OPEN	message_logs_authenticated[ALL]:OPEN
+nhis_idor_audit_logs	true	OPEN	nhis_idor_audit_service_role_only[ALL]:OPEN
+notices	true	OPEN	notices_select_for_authenticated[SELECT]:OPEN
+notification_logs	true	OTHER	notif_logs_select[SELECT]:OTHER
+notification_opt_outs	true	OTHER	notif_optout_write[ALL]:OTHER | notif_optout_select[SELECT]:OTHER
+notification_templates	true	OTHER	notif_tmpl_write[ALL]:OTHER | notif_tmpl_select[SELECT]:OTHER
+notifications	true	PARITY	notifications_admin_all[ALL]:MGMT_ONLY | notifications_approved_read[SELECT]:PARITY
+package_payments	true	OPEN	package_payments_admin_all[ALL]:MGMT_ONLY | package_payments_write[ALL]:OTHER | package_payments_approved_read[SELECT]:PARITY | package_payments_read[SELECT]:OPEN
+package_progress_plans	true	OTHER	ppp_write[ALL]:OTHER | ppp_select[SELECT]:OTHER
+package_sessions	true	OPEN	package_sessions_admin_all[ALL]:MGMT_ONLY | package_sessions_write[ALL]:OTHER | package_sessions_approved_read[SELECT]:PARITY | package_sessions_read[SELECT]:OPEN
+package_templates	true	OPEN	auth_all[ALL]:OPEN
+package_tiers	true	OPEN	package_tiers_admin_all[ALL]:MGMT_ONLY | anon_read_package_tiers[SELECT]:OPEN | package_tiers_approved_read[SELECT]:PARITY | package_tiers_auth_read[SELECT]:OPEN
+packages	true	OPEN	packages_admin_all[ALL]:MGMT_ONLY | packages_approved_read[SELECT]:PARITY | packages_read[SELECT]:OPEN
+patient_room_daily_log	true	OTHER	patient_room_daily_log_clinic_access[ALL]:OTHER
+payment_audit_logs	true	OPEN	payment_audit_logs_open[ALL]:OPEN
+payment_code_claims	true	PARITY	payment_code_claims_admin_all[ALL]:MGMT_ONLY | payment_code_claims_approved_read[SELECT]:PARITY
+payment_codes	true	OPEN	payment_codes_admin_all[ALL]:MGMT_ONLY | payment_codes_approved_read[SELECT]:PARITY | payment_codes_auth_read[SELECT]:OPEN
+payments	true	OPEN	payments_admin_all[ALL]:MGMT_ONLY | payments_approved_read[SELECT]:PARITY | payments_read[SELECT]:OPEN
+phrase_templates	true	OPEN	admin_write_phrase_templates[ALL]:OTHER | staff_read_phrase_templates[SELECT]:OPEN
+prescription_code_folders	true	OPEN	prescription_code_folders_write_auth[ALL]:OPEN | prescription_code_folders_read_all[SELECT]:OPEN
+prescription_codes	true	OPEN	prescription_codes_read_all[SELECT]:OPEN
+prescription_contraindications	true	OPEN	rx_contra_admin_write[ALL]:OTHER | rx_contra_read[SELECT]:OPEN
+prescription_folders	true	OPEN	prescription_folders_write_auth[ALL]:OPEN | prescription_folders_read_all[SELECT]:OPEN
+prescription_items	true	PARITY	prescription_items_admin_all[ALL]:MGMT_ONLY | prescription_items_approved_read[SELECT]:PARITY
+prescription_sets	true	OPEN	admin_write_prescription_sets[ALL]:OTHER | staff_read_prescription_sets[SELECT]:OPEN
+prescriptions	true	PARITY	prescriptions_admin_all[ALL]:MGMT_ONLY | prescriptions_approved_read[SELECT]:PARITY
+quick_rx_buttons	true	OPEN	admin_write_quick_rx_buttons[ALL]:OTHER | staff_read_quick_rx_buttons[SELECT]:OPEN
+receipt_ocr_results	true	OPEN	auth_all[ALL]:OPEN
+reservation_logs	true	PARITY	reservation_logs_admin_all[ALL]:MGMT_ONLY | reservation_logs_approved_all[ALL]:PARITY | reservation_logs_approved_read[SELECT]:PARITY
+reservation_memo_history	true	PARITY	clinic_isolation_rmh[ALL]:OTHER | rmh_approved_all[ALL]:PARITY
+reservation_registrars	true	OTHER	resv_registrars_select[SELECT]:OTHER
+reservations	true	OPEN	reservations_admin_all[ALL]:MGMT_ONLY | reservations_coord_all[ALL]:TIER | anon_reservation_read[SELECT]:OPEN | reservations_approved_read[SELECT]:PARITY
+room_assignments	true	PARITY	room_assignments_admin_all[ALL]:MGMT_ONLY | room_assignments_approved_read[SELECT]:PARITY
+room_role_mapping	true	OPEN	room_role_write[ALL]:OTHER | room_role_read[SELECT]:OPEN
+rooms	true	PARITY	rooms_admin_all[ALL]:MGMT_ONLY | rooms_approved_read[SELECT]:PARITY
+service_charges	true	OPEN	auth_all[ALL]:OPEN
+service_menu_order	true	OTHER	smo_clinic_isolated[ALL]:OTHER
+service_payment_codes	true	OPEN	service_payment_codes_admin_all[ALL]:MGMT_ONLY | service_payment_codes_approved_read[SELECT]:PARITY | service_payment_codes_auth_read[SELECT]:OPEN
+services	true	OPEN	services_admin_all[ALL]:MGMT_ONLY | anon_service_read[SELECT]:OPEN | services_approved_read[SELECT]:PARITY
+staff	true	PARITY	staff_admin_all[ALL]:MGMT_ONLY | staff_approved_read[SELECT]:PARITY
+status_transitions	true	PARITY	status_transitions_admin_all[ALL]:MGMT_ONLY | status_transitions_approved_read[SELECT]:PARITY
+super_phrases	true	OPEN	admin_write_super_phrases[ALL]:OTHER | staff_read_super_phrases[SELECT]:OPEN
+timer_records	true	OPEN	timer_records_authenticated_select[SELECT]:OPEN
+tm_call_logs	true	NO_SELECT_POLICY	(SELECT 정책 없음 → 기본 deny)
+treatment_set_items	true	OPEN	authenticated_all_treatment_set_items[ALL]:OPEN
+treatment_sets	true	OPEN	authenticated_all_treatment_sets[ALL]:OPEN
+user_dashboard_layout_overrides	true	OTHER	udlo_select[SELECT]:OTHER
+user_profiles	true	PARITY	user_profiles_admin_all[ALL]:MGMT_ONLY | approved users read all profiles[SELECT]:PARITY | user_profiles_peer_read[SELECT]:PARITY | user_profiles_read_own[SELECT]:OTHER | user_profiles_self_read[SELECT]:OTHER | users read own profile[SELECT]:OTHER
+
+══════════ 뷰 (security_invoker 여부는 별도 확인) ══════════
+  aicc_crm_phone_match
+  v_daily_avg_spend
+  v_daily_consult_wait
+  v_daily_revenue
+  v_daily_stay_duration
+  v_daily_visit_rate
+  v_daily_visits
+  v_monthly_consultant_perf
+  v_monthly_technician_perf
+  v_monthly_therapist_perf
+  v_monthly_tm_perf
+
+✅ Phase 1 감사 종료 (write 없음, RLS 변경 없음)
