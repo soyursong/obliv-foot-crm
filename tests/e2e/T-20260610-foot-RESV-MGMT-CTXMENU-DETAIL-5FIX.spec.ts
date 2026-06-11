@@ -24,6 +24,9 @@ const RESV_PAGE = fs.readFileSync(path.resolve('src/pages/Reservations.tsx'), 'u
 const QUICK_MENU = fs.readFileSync(path.resolve('src/components/CustomerQuickMenu.tsx'), 'utf-8');
 const CTX_MENU = fs.readFileSync(path.resolve('src/components/ReservationContextMenu.tsx'), 'utf-8');
 const CANCEL_MODAL = fs.readFileSync(path.resolve('src/components/ReservationCancelModal.tsx'), 'utf-8');
+// T-20260611-foot-CTXMENU-UNIFY-CANONICAL: 취소/삭제가 우클릭 메뉴 와이어링 → 예약상세 팝업 버튼으로 단일화.
+//   AC2-5 의 status-전이 vs hard-delete 분리 가드를 새 위치(ReservationDetailPopup)에서 검증.
+const DETAIL_POPUP = fs.readFileSync(path.resolve('src/components/ReservationDetailPopup.tsx'), 'utf-8');
 
 // 두 진입점이 공유해야 하는 삭제 확인 문구(복구불가 경고) — item1 일관 + item2 의미.
 const DELETE_CONFIRM = '삭제하면 정보가 완전히 사라지며 복구할 수 없습니다.';
@@ -78,10 +81,22 @@ test.describe('시나리오2: 취소 vs 삭제 의미 구분 (item2)', () => {
       .toContain('같은 고객으로 다시 예약할 수 있습니다');
   });
 
-  test('AC2-5: 취소 경로는 hard-delete 가 아니라 status 전이(고객 keep) 유지 — 회귀 가드', () => {
-    // 예약관리 취소는 모달(handleResvCancelRequest) 경유, 삭제(reservations.delete)와 분리되어야 한다.
-    expect(RESV_PAGE).toContain('onCancelReservation={handleResvCancelRequest}');
-    expect(RESV_PAGE).toContain('onDeleteReservation={handleResvHardDelete}');
+  test('AC2-5: 취소=status 전이(고객 keep) vs 삭제=hard-delete 분리 유지 — 회귀 가드', () => {
+    // T-20260611-foot-CTXMENU-UNIFY-CANONICAL 으로 취소/삭제는 우클릭 메뉴 와이어링에서 제거되고
+    // 예약상세 팝업(ReservationDetailPopup)의 [예약취소]/[예약삭제] 버튼으로 단일화됐다.
+    //   → 예약관리 메뉴는 더이상 취소/삭제 핸들러를 와이어링하지 않는다(canonical 5항목).
+    expect(RESV_PAGE, '예약관리 우클릭 메뉴에 취소 핸들러 잔존(canonical 위반)')
+      .not.toContain('onCancelReservation={handleResvCancelRequest}');
+    expect(RESV_PAGE, '예약관리 우클릭 메뉴에 삭제 핸들러 잔존(canonical 위반)')
+      .not.toContain('onDeleteReservation={handleResvHardDelete}');
+    // 취소 = status 전이(고객 keep) — 행 보존, 사유 기록
+    expect(DETAIL_POPUP, '취소가 status 전이(cancelled)로 고객 keep 하지 않음')
+      .toContain("status: 'cancelled'");
+    expect(DETAIL_POPUP, '예약취소 버튼 누락').toContain('data-testid="btn-reservation-cancel"');
+    // 삭제 = hard-delete — 행 제거 (취소와 명확히 분리)
+    expect(DETAIL_POPUP, '삭제가 hard-delete(.delete())가 아님')
+      .toContain(".from('reservations').delete()");
+    expect(DETAIL_POPUP, '예약삭제 버튼 누락').toContain('data-testid="btn-reservation-delete"');
   });
 });
 
