@@ -2599,6 +2599,27 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     setIsDirty(true);
   };
 
+  // T-20260611-foot-CHART2-IDVERIFY-MOVE-AUTOCHECK:
+  //   주민번호 유효 저장(13자리 성공) 직후 신분증 확인 플래그 자동 해제(= "확인 완료").
+  //   - 기존 check_ins.notes.id_check_required 필드 재사용(신규 컬럼 없음 / db_change:false).
+  //   - 빈값/형식미달 저장은 호출부에서 이미 early-return → 여기 도달 X (빈값 가드).
+  //   - latestCheckIn(내원 기록) 없으면 no-op. 이미 false면 중복 쓰기 skip.
+  //   - 2번차트 배지의 수동 "확인 완료" 클릭에서도 재사용.
+  const markIdVerified = useCallback(async () => {
+    const ci = latestCheckIn;
+    if (!ci) return;
+    const notes = (ci.notes ?? {}) as Record<string, unknown>;
+    if (notes.id_check_required === false) return; // 이미 확인 완료 — 중복 쓰기 방지
+    const newNotes = { ...notes, id_check_required: false };
+    const { error } = await supabase
+      .from('check_ins')
+      .update({ notes: newNotes })
+      .eq('id', ci.id);
+    if (!error) {
+      setLatestCheckIn({ ...ci, notes: newNotes } as CheckIn);
+    }
+  }, [latestCheckIn]);
+
   // C21-RESIDENT-ID: 주민번호 암호화 저장
   // T-20260522-foot-SSN-SESSION-KILL: 저장 전 세션 체크 + 에러 코드별 메시지 분기
   // T-20260522-foot-CUST-REG-LOGOUT: 401 수신 시 refreshSession() 후 1회 재시도 추가
@@ -2635,6 +2656,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             setRrnFront('');
             setRrnBack('');
             setRrnText('');
+            await markIdVerified(); // T-20260611-foot-CHART2-IDVERIFY: 유효 저장 → 자동 확인완료
             return;
           }
           toast.error(`주민번호 저장 실패: ${retryErr.message}`);
@@ -2653,6 +2675,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     setRrnFront('');
     setRrnBack('');
     setRrnText('');
+    await markIdVerified(); // T-20260611-foot-CHART2-IDVERIFY: 유효 저장 → 자동 확인완료
   };
 
   // T-20260510-foot-C21-SAVE-UNIFY: 고객정보 패널 통합 저장
@@ -2708,6 +2731,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         setRrnFront('');
         setRrnBack('');
         setRrnText('');
+        await markIdVerified(); // T-20260611-foot-CHART2-IDVERIFY: 유효 저장 → 자동 확인완료
       }
       // 2) 나머지 필드 일괄 patch (address 제외 — T-20260516-foot-C21-SAVE-REGRESS)
       const patch: Partial<Customer> = {};
@@ -4051,6 +4075,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <tr>
                   <td className={LC}>주민번호</td>
                   <td className={VC} colSpan={3}>
+                   <div className="flex items-center gap-2 flex-wrap">
                     {editingRrn ? (
                       <div className="flex items-center gap-1">
                         {/* 앞 6자리 — 생년월일 (plain text) */}
@@ -4116,6 +4141,36 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         </button>
                       </div>
                     )}
+                    {/* T-20260611-foot-CHART2-IDVERIFY-MOVE-AUTOCHECK: 신분증 확인 상태 —
+                        1번차트(CheckInDetailSheet)에서 이동. 주민번호 유효 저장 시 자동 "확인 완료".
+                        verified = 플래그 명시적 false(저장 후 자동 set) OR (rrn 존재 & 미확인필요).
+                        미확인 시 클릭으로 수동 확인완료(구 1번차트 동작 보존) — 내원 기록 없으면 비활성. */}
+                    {(() => {
+                      const flag = latestCheckIn?.notes?.id_check_required;
+                      const verified = flag === false || (flag !== true && !!rrnMasked);
+                      return verified ? (
+                        <span
+                          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
+                          style={{ backgroundColor: '#DCFCE7', color: '#15803D', border: '1.5px solid #BBF7D0' }}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-green-500 inline-block" />
+                          신분증 확인 완료
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={!latestCheckIn}
+                          title={latestCheckIn ? '클릭하면 신분증 확인 완료 처리' : '내원 기록이 없어 수동 처리 불가 (주민번호 저장 시 자동 처리)'}
+                          onClick={() => { if (latestCheckIn) markIdVerified(); }}
+                          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition hover:opacity-80 active:scale-95 disabled:cursor-default disabled:opacity-70 disabled:hover:opacity-70"
+                          style={{ backgroundColor: '#FEE2E2', color: '#B91C1C', border: '1.5px solid #FECACA' }}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-red-500 inline-block animate-pulse" />
+                          신분증 확인 필요
+                        </button>
+                      );
+                    })()}
+                   </div>
                   </td>
                 </tr>
 
