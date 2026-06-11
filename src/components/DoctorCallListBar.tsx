@@ -79,14 +79,26 @@
  *  canonical로 격상하고, 시나리오 3종(드래그+영속 / 본문 무간섭 / 클램프+초기화)을 전용 spec로 고정한다
  *  (tests/e2e/T-20260610-foot-CALLLIST-DRAGGABLE-POSITION.spec.ts). 위치=fixed 앵커 폐기·드래그 좌표 제어,
  *  버튼/토글/이름→차트/메모는 헤더 드래그핸들 밖 또는 stopPropagation으로 본문 무간섭, clamp로 화면밖 유실 방지.
+ *
+ * T-20260611-foot-CALLLIST-ROOM-LABEL — 콜 행에 배정 방이름 배지 가산 (현장 김주연 총괄):
+ *  "진료콜 명단에 방 번호가 명확히 떠야 원장님이 어느 방(예: 치료실 C1)으로 갈지 찾아간다."
+ *  surface = 진료콜 명단 위젯(call list bar). 진료환자목록(DoctorPatientList 6FIX AC-3, 5e55c13 deployed)과
+ *  다른 surface지만 *동일한 read-only 파생 규칙* 재사용: getAssignedSlotName(checkin-slot.ts SSOT) +
+ *  check_ins.*_room(consultation/examination/treatment/laser). 신규 파생함수·스키마·DB변경 없음
+ *  (Dashboard.fetchCheckIns select '*' → *_room 4종이 이미 row에 포함, STEP1 확인).
+ *  AC-1) 각 콜 행에 'doctor-call-room' 방이름 배지(getAssignedSlotName 결과 = 'C2'/'L3'/'상담실1' 등).
+ *  AC-2) 미배정/대기(getAssignedSlotName=null)면 '—'(undefined·"undefined"·크래시 금지).
+ *  AC-0) 기존 doctor-call-location(getCurrentLocationLabel) 배지·세로풀네임·숨기기·행자동표시·드래그 위치
+ *        전부 불변 — 방배지만 *가산*. 위치배지(단계 인식)와 방배지(방 코드 직접)는 다른 facet으로 공존:
+ *        위치배지 teal MapPin = "어느 단계", 방배지 indigo DoorOpen = "어느 방으로 갈지"(원장 네비게이션).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp, MapPin, RotateCcw, EyeOff } from 'lucide-react';
+import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp, MapPin, RotateCcw, EyeOff, DoorOpen } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { CheckIn } from '@/lib/types';
-import { getCurrentLocationLabel } from '@/lib/checkin-slot';
+import { getAssignedSlotName, getCurrentLocationLabel } from '@/lib/checkin-slot';
 import { DoctorAckBadge } from '@/components/doctor/DoctorAck';
 
 /** T-20260610-foot-CALLLIST-TOP-COVERS-BUTTONS Phase 2: 드래그 위치 저장 키(사용자/브라우저 단위 개인설정). */
@@ -679,6 +691,10 @@ function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onS
   //   기존 getAssignedSlotName(방 이름) → getCurrentLocationLabel(단계 라벨, 대기 단계는 방 미표시).
   //   치료대기 환자가 '방배정'으로 잘못 표시되던 오표시 제거 + status 파생으로 실시간 갱신.
   const locationLabel = getCurrentLocationLabel(checkIn);
+  // T-20260611-foot-CALLLIST-ROOM-LABEL AC-1·AC-2: 배정 방이름(원장 네비게이션 — '어느 방으로 갈지').
+  //   6FIX AC-3(진료환자목록)와 동일 read-only 파생 규칙 — getAssignedSlotName(SSOT) + check_ins.*_room.
+  //   값 있으면 방 코드('C2'/'L3'/'상담실1'), 미배정/대기면 null → 배지에서 '—'(undefined·크래시 금지).
+  const assignedRoom = getAssignedSlotName(checkIn);
 
   // 3) 진료 전달사항 메모
   const [editing, setEditing] = useState(false);
@@ -776,6 +792,23 @@ function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onS
           >
             <MapPin className="h-2.5 w-2.5" />
             {locationLabel}
+          </span>
+          {/* T-20260611-foot-CALLLIST-ROOM-LABEL AC-1·AC-2: 배정 방이름 배지 — 원장이 어느 방으로 갈지.
+              getAssignedSlotName(SSOT, 6FIX AC-3 동일 파생). 값 없으면 '—'(미배정/대기). 위치배지(teal MapPin)와
+              다른 facet으로 공존 — 방배지는 indigo DoorOpen으로 시각 구분(방 코드 = 네비게이션 타깃). */}
+          <span
+            data-testid="doctor-call-room"
+            data-room={assignedRoom ?? ''}
+            className={cn(
+              'inline-flex items-center gap-0.5 shrink-0 text-[10px] font-semibold rounded px-1 py-px whitespace-nowrap border',
+              assignedRoom
+                ? 'text-indigo-700 bg-indigo-50 border-indigo-200'
+                : 'text-gray-400 bg-gray-50 border-gray-200 font-medium',
+            )}
+            title={assignedRoom ? `배정 방: ${assignedRoom}` : '방 미배정'}
+          >
+            <DoorOpen className="h-2.5 w-2.5" />
+            {assignedRoom ?? '—'}
           </span>
           {/* item1 힐러(yellow) 구분 배지 — 진료필요(보라)와 시각 구분 */}
           {isHealer && (
