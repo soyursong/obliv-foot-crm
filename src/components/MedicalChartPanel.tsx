@@ -559,6 +559,10 @@ export default function MedicalChartPanel({
 
   // ── 선택 차트 (null = 새 기록 모드) ──────────────────────────────────────────
   const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
+  // T-20260611-foot-DOCDASH-CLINICAL-SAVE-FAIL: loadData(차트 서버조회)가 최초 1회 완료됐는지 신호.
+  //   clinical variant 의 today-차트 자동선택(clinicalInit)이 "아직 charts 미로드(초기 빈 배열)" 상태에서
+  //   먼저 돌아 ref 가 굳는 레이스를 차단하기 위함. loadData finally 직전 true, 매 로드 시작 시 false 로 재게이트.
+  const chartsLoadedRef = useRef(false);
 
   // ── 폼 상태 ─────────────────────────────────────────────────────────────────
   const [formDate, setFormDate] = useState('');
@@ -677,6 +681,8 @@ export default function MedicalChartPanel({
 
   const loadData = useCallback(async () => {
     if (!customerId || !clinicId) return;
+    // T-20260611-foot-DOCDASH-CLINICAL-SAVE-FAIL: 새 로드 시작 → today-차트 자동선택 게이트 재무장.
+    chartsLoadedRef.current = false;
     setLoading(true);
     try {
       const [custRes, chartsRes, phrasesRes, rxSetsRes, treatMemosRes, staffRes, superRes, specialNotesRes, clinicDoctorsRes] = await Promise.all([
@@ -815,6 +821,9 @@ export default function MedicalChartPanel({
       } else {
         setCharts(rawCharts);
       }
+      // T-20260611-foot-DOCDASH-CLINICAL-SAVE-FAIL: charts 서버조회 성공 반영 완료 → today-차트 자동선택 허용.
+      //   (성공 경로에서만 true. 실패 시 false 유지 → 빈 charts 로 today-차트 자동선택이 굳지 않음)
+      chartsLoadedRef.current = true;
     } catch {
       toast.error('진료차트 로드 실패 — 잠시 후 다시 시도해주세요');
     } finally {
@@ -968,6 +977,11 @@ export default function MedicalChartPanel({
     if (variant !== 'clinical') return;
     if (!open) { clinicalInitRef.current = false; return; }
     if (loading || clinicalInitRef.current) return;
+    // T-20260611-foot-DOCDASH-CLINICAL-SAVE-FAIL (회귀/데이터무결): charts 가 서버에서 최초 로드되기 전
+    //   (초기 빈 배열) 에 이 effect 가 돌면 today-차트를 못 찾고 clinicalInitRef 만 true 로 굳어 →
+    //   재펼침 시 기존 today-차트 미선택(빈 textarea) → 다음 저장이 UPDATE 가 아닌 신규 INSERT(같은날 중복차트).
+    //   현장(문지은 6/11): 같은 환자 today-차트 2건 중복 INSERT 확인. loadData 완료 전엔 latch 금지.
+    if (!chartsLoadedRef.current) return;
     const today = format(new Date(), 'yyyy-MM-dd');
     const todays = charts.find(
       (c) => c.visit_date === today && !c.id.startsWith('__dummy__'),
@@ -1038,7 +1052,12 @@ export default function MedicalChartPanel({
   // ── 저장 ─────────────────────────────────────────────────────────────────────
 
   const handleSave = async () => {
-    if (!customerId || !clinicId || !formDate) return;
+    // T-20260611-foot-DOCDASH-CLINICAL-SAVE-FAIL (planner 가드): 저장 차단을 silent return 하지 말고 표면화.
+    //   formDate 미설정(로드 미완 등) 시 사용자가 "저장했는데 안 됨"으로 오인하지 않도록 안내.
+    if (!customerId || !clinicId || !formDate) {
+      toast.error('아직 차트 정보를 불러오는 중입니다 — 잠시 후 다시 저장해주세요');
+      return;
+    }
     // T-20260526-foot-NAV-ARROW-DUMMY: 더미 차트는 저장 불가
     if (selectedChartId?.startsWith('__dummy__')) {
       toast.error('더미 데이터는 저장할 수 없습니다 (실제 고객 데이터 없음)');
