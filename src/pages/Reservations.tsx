@@ -1220,8 +1220,12 @@ export default function Reservations() {
                                     onDragEnd={() => { setDraggedId(null); setDropTarget(null); }}
                                     // T-20260525-foot-RESV-CANCEL-ANYDATE: 카드 전체 영역 우클릭 → 컨텍스트메뉴
                                     // (이름 span 밖 클릭도 취소 메뉴 접근 가능 — 전일자 포함 날짜 무관 동작)
+                                    // T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC5: soft-delete 메뉴 노출 정책.
+                                    //   취소(cancelled_at NOT NULL) 예약도 우클릭 메뉴 노출 → [예약상세]에서 [예약복원] 가능.
+                                    //   reservations 는 hard-delete(deleted_at 컬럼 없음)이므로 row 존재 = 메뉴 표시 대상.
+                                    //   기존 `status !== 'cancelled'` 차단 제거(취소 예약 메뉴 진입 불가 버그 해소).
                                     onContextMenu={(e) => {
-                                      if (r.customer_id && r.status !== 'cancelled') {
+                                      if (r.customer_id) {
                                         e.preventDefault();
                                         e.stopPropagation();
                                         setResvContextMenu({ resv: r, pos: { x: e.clientX, y: e.clientY } });
