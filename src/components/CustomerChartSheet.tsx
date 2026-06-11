@@ -28,7 +28,7 @@
 import { useEffect, useRef, useState, Suspense, lazy } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2 } from 'lucide-react';
-import { ChartSheetCloseCtx, ChartSheetSaveRegistryCtx, type ChartSaveFn } from '@/lib/chartSheetContext';
+import { ChartSheetCloseCtx, ChartSheetSaveRegistryCtx, ChartSheetMarkCleanCtx, type ChartSaveFn } from '@/lib/chartSheetContext';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
@@ -112,6 +112,11 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
 
   if (!customerId) return null;
 
+  // T-20260611-foot-CHART2-SAVE-DIRTY-RESET AC-1: 본문 저장 성공 시 기존 dirty 가드를 clean으로 리셋.
+  //  - 신규 dirty 메커니즘 X — onInput proxy가 쓰는 dirtyRef를 그대로 끈다(= baseline을 방금 저장값으로 갱신).
+  //  - 이후 추가 입력이 발생하면 onInput이 다시 dirtyRef=true로 올려 가드 재노출(AC-2).
+  const markChartClean = () => { dirtyRef.current = false; };
+
   // 백드롭/요청 닫기 — dirty면 확인, 아니면 즉시 닫기
   const requestClose = () => {
     if (dirtyRef.current) {
@@ -160,7 +165,9 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
         {/* 콘텐츠 스크롤 영역 */}
         <div className="flex-grow overflow-y-auto">
           {/* T-20260609-foot-CHART2-SAVE-CLOSE-BTN: 본문 저장 핸들러 등록 채널 제공 */}
+          {/* T-20260611-foot-CHART2-SAVE-DIRTY-RESET: 저장 성공 시 dirty 가드 리셋 채널 제공 */}
           <ChartSheetSaveRegistryCtx.Provider value={saveFnRef}>
+          <ChartSheetMarkCleanCtx.Provider value={markChartClean}>
           <ChartSheetCloseCtx.Provider value={onClose}>
             <Suspense
               fallback={
@@ -173,6 +180,7 @@ export function CustomerChartSheet({ customerId, onClose }: Props) {
               <CustomerChartPage customerId={customerId} />
             </Suspense>
           </ChartSheetCloseCtx.Provider>
+          </ChartSheetMarkCleanCtx.Provider>
           </ChartSheetSaveRegistryCtx.Provider>
         </div>
       </div>

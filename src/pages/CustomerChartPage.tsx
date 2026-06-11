@@ -35,7 +35,7 @@ import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { isSinglePaymentByCount } from '@/lib/footBilling';
 // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드 닫기 (window.close 대체)
-import { useChartSheetClose, useRegisterChartSave } from '@/lib/chartSheetContext';
+import { useChartSheetClose, useRegisterChartSave, useChartSheetMarkClean } from '@/lib/chartSheetContext';
 // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 패널
 import { PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 // T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
@@ -1888,6 +1888,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const clinic = useClinic();
   // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드에서 닫기 콜백 (null이면 독립 페이지 모드)
   const chartSheetClose = useChartSheetClose();
+  // T-20260611-foot-CHART2-SAVE-DIRTY-RESET: 본문 저장 성공 시 Sheet 미저장 가드 clean 리셋 (독립 페이지 모드 no-op)
+  const markChartClean = useChartSheetMarkClean();
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [packages, setPackages] = useState<PackageWithRemaining[]>([]);
@@ -2788,6 +2790,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: setEditingEmail/setEditingPassport/setEditingAddress 제거
       setEditingPhone(false);
       setIsDirty(false);
+      // T-20260611-foot-CHART2-SAVE-DIRTY-RESET AC-1: 전체 저장 성공 시 Sheet 미저장 가드(dirtyRef) clean 리셋.
+      //   부분 실패(allOk=false)면 미저장 내용 잔존 → 가드 유지(리셋 안 함). Sheet 모드 아니면 no-op.
+      if (allOk) markChartClean();
       return allOk; // T-20260609-CHART2-SAVE-CLOSE-BTN: 정상 완료 — 성공 여부 반환
     } finally {
       setSavingInfoPanel(false);
@@ -4036,6 +4041,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </span>
             <Button
               size="sm"
+              data-testid="chart-info-save-btn"
               className="ml-auto h-6 text-[11px] px-3 bg-teal-600 hover:bg-teal-700"
               onClick={() => handleInfoPanelSave()}
               disabled={savingInfoPanel || !isDirty}
@@ -4329,6 +4335,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   <td className={VC} colSpan={3}>
                     <input
                       type="email"
+                      data-testid="chart-email-input"
                       value={emailText}
                       onChange={(e) => { setEmailText(e.target.value); setIsDirty(true); }}
                       placeholder="example@email.com"
