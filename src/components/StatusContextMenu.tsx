@@ -326,13 +326,14 @@ export function StatusContextMenu({
         <button
           className="flex w-full items-center gap-1 px-2 py-1 text-[11px] min-h-[28px] text-red-600 hover:bg-red-50 active:bg-red-100 transition"
           onClick={() => {
-            if (!window.confirm(`${checkIn.customer_name} 체크인을 취소하시겠습니까?`)) { onClose(); return; }
+            // T-20260611-foot-CHECKIN-CANCEL-RENAME-RESTORE: 체크인 취소 = 삭제 아님. 통합시간표 원래 예약 슬롯으로 복구.
+            if (!window.confirm(`${checkIn.customer_name} 체크인을 취소하고 통합시간표 예약으로 복구하시겠습니까?`)) { onClose(); return; }
             onStatusChange(checkIn, 'cancelled');
             onClose();
           }}
         >
           <span className="h-2 w-2 rounded-full bg-red-500 shrink-0" />
-          취소
+          체크인 취소
         </button>
       </div>
     </div>
