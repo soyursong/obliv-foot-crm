@@ -13,8 +13,10 @@ import { useState } from 'react';
 import DoctorPatientList from '@/components/doctor/DoctorPatientList';
 // T-20260601-foot-DOCTOR-CALL-PUSH-DASH: 진료부 통합 대시보드(호출 알람+처방+차팅+진료완료)
 import DoctorCallDashboard from '@/components/doctor/DoctorCallDashboard';
+// T-20260611-foot-KOH-REPORT-TAB (Phase 1): 균검사지 — KOH 진균검사 명단 리포트(read-only 4컬럼)
+import KohReportTab from '@/components/doctor/KohReportTab';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Users, Stethoscope } from 'lucide-react';
+import { Users, Stethoscope, FlaskConical } from 'lucide-react';
 
 export default function DoctorTools() {
   // 모든 역할이 진료 알림판(진료부 통합 대시보드)을 기본 화면으로 — 상시 켜놓는 단일 창 동선.
@@ -26,7 +28,7 @@ export default function DoctorTools() {
         {/* T-20260609-foot-DOCDASH-LABEL-RX-REFINE item1: 헤더 라벨 오기 교정('진료 도구'→'진료대시보드') */}
         <h1 className="text-lg font-bold">진료대시보드</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          진료 알림판과 진료 환자 목록을 확인합니다.
+          진료 알림판 · 진료 환자 목록 · 균검사지(KOH)를 확인합니다.
         </p>
       </div>
 
@@ -42,6 +44,11 @@ export default function DoctorTools() {
             <Users className="h-3.5 w-3.5" />
             진료 환자 목록
           </TabsTrigger>
+          {/* 균검사지 — KOH 진균검사 명단 (T-20260611-foot-KOH-REPORT-TAB Phase 1) */}
+          <TabsTrigger value="koh_report" className="gap-1.5" data-testid="tab-koh-report">
+            <FlaskConical className="h-3.5 w-3.5" />
+            균검사지
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="call_dashboard">
@@ -50,6 +57,10 @@ export default function DoctorTools() {
 
         <TabsContent value="patient_list">
           <DoctorPatientList />
+        </TabsContent>
+
+        <TabsContent value="koh_report">
+          <KohReportTab />
         </TabsContent>
       </Tabs>
     </div>
