@@ -1,7 +1,7 @@
 # T-20260611-foot-SELFCHECKIN-CONSENT-ADDR-NOTSAVED — DB-gate evidence
 
 - prod: rxlomoozakkjesdqjtvd
-- 실행: 2026-06-11T04:49:31.448Z
+- 실행: 2026-06-11T05:03:54.277Z
 - 출처: supervisor FIX-REQUEST MSG-20260611-104014-tfn2 (phase1 db_migration_pending)
 - 마이그: supabase/migrations/20260611100000_selfcheckin_personal_info_consolidate.sql (commit 7b04bef)
 
