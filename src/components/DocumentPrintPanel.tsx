@@ -537,8 +537,18 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
       //   PATH-3/PATH-4 출력본이 일치(L-006 AC-3). bill_receipt 는 항목 리스트가 아닌 집계(소계/총계) 양식이므로
       //   total/insurance_covered/copayment/non_covered 를 전체 항목 기준으로 함께 맞춰 영수증 내부 정합도 유지(AC-1/4).
       //   무파괴: 진료 항목(check_in_services/service_charges) 미기록 구(舊) 데이터는 기존 동작(선택 결제 합산)으로 폴백.
-      const fb = footBillingItems.length > 0
-        ? computeFootBilling(footBillingItems, customerInsuranceGrade)
+      // T-20260611-foot-DOC-REISSUE-CONTENT-MISSING 근인: 폴백 소스가 비동기 load() state 의존 → 재발급 모달
+      //   mount 직후 load() 완료 전 발급 시 빈값으로 영수증 합계 누락. state 비면 print 시점 fresh 조회로 결정적
+      //   폴백(무파괴: 로드됐으면 state 재사용).
+      const fbStale = footBillingItems.length > 0;
+      const fbItems = fbStale
+        ? footBillingItems
+        : await loadFootBillingItems(checkIn.id, checkIn.clinic_id);
+      const fbGrade = fbStale
+        ? customerInsuranceGrade
+        : await loadCustomerInsuranceGrade(checkIn.customer_id);
+      const fb = fbItems.length > 0
+        ? computeFootBilling(fbItems, fbGrade)
         : null;
       const treatmentTotal = fb
         ? fb.grandTotal
@@ -773,37 +783,49 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false }: Pr
             nonCovered: nonCoveredTotal,
           });
         }
-      } else if (footBillingItems.length > 0) {
-        // T-20260608-foot-DOC-PATH12-SYNC: service_charges 미기록 경로 → PMW(PATH-4)와 동일하게
-        //   check_in_services(수기조정 반영분) 기반으로 빌링·항목 폴백. (PMW handleDocPrint L1468~1498 1:1)
-        const fb = computeFootBilling(footBillingItems, customerInsuranceGrade);
-        applyBillingFallback(autoValues, fb.liveBillingValues);
-        const needsItems = selectedTemplates.some(
-          (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard',
-        );
-        if (needsItems) {
-          // T-20260609-foot-DOCFORM-3FIX 이슈1: copayInfo 전달 → per-item 본인부담금/공단부담금 채움
-          const billItems = buildFootBillDetailItems(fb.pricingItems, autoValues.visit_date ?? '', {
-            insuranceGrade: customerInsuranceGrade,
-            copaymentTotal: fb.copaymentTotal,
-          });
-          autoValues.items_html = buildBillDetailItemsHtml(billItems);
-          autoValues.rx_items_html = buildRxItemsHtml([]);
-          if (fb.grandTotal > 0) {
-            autoValues.total_amount = formatAmount(fb.grandTotal);
-            autoValues.subtotal_amount = formatAmount(fb.grandTotal);
-          }
-          if (fb.nonCoveredTotal > 0) {
-            autoValues.subtotal_noncovered = fb.nonCoveredTotal.toLocaleString('ko-KR');
-            autoValues.total_noncovered = fb.nonCoveredTotal.toLocaleString('ko-KR');
-          }
-        }
       } else {
-        // chargeItems·check_in_services 모두 없을 때: bill_detail/rx_standard 빈 rows 처리
+        // T-20260611-foot-DOC-REISSUE-CONTENT-MISSING 근인 수정:
+        //   폴백 소스(check_in_services=footBillingItems · 건보등급=customerInsuranceGrade)를 비동기 load()가
+        //   채우는 React state에 의존하던 구조가 회귀 근인. 재발급 모달은 load()가 templates(L432)를 먼저 set →
+        //   서류 목록이 보이는 순간 사용자가 [발행] 클릭 가능하나, 빌링 폴백 소스는 그 뒤 await(L443~466)에서 set →
+        //   load() 완료 전 발행 시 state가 빈 채 폴백 미발동. service_charges 미기록 케이스(=당일 PATH-4(결제 미니창)로
+        //   정상 출력한 서류는 service_charges를 안 씀)에서 항목·금액 전부 공란 출력. service_charges는 위(L686)에서
+        //   fresh 조회인데 check_in_services만 state 의존이던 비대칭이 핵심.
+        //   → state가 비었으면 print 시점에 fresh 조회해 결정적 폴백(무파괴: 이미 로드됐으면 state 재사용 → 기존 동작 동일).
+        const fbStale = footBillingItems.length > 0;
+        const fbItems = fbStale
+          ? footBillingItems
+          : await loadFootBillingItems(checkIn.id, checkIn.clinic_id);
+        const fbGrade = fbStale
+          ? customerInsuranceGrade
+          : await loadCustomerInsuranceGrade(checkIn.customer_id);
         const needsItems = selectedTemplates.some(
           (t) => t.form_key === 'bill_detail' || t.form_key === 'rx_standard',
         );
-        if (needsItems) {
+        if (fbItems.length > 0) {
+          // T-20260608-foot-DOC-PATH12-SYNC: service_charges 미기록 경로 → PMW(PATH-4)와 동일하게
+          //   check_in_services(수기조정 반영분) 기반으로 빌링·항목 폴백. (PMW handleDocPrint L1468~1498 1:1)
+          const fb = computeFootBilling(fbItems, fbGrade);
+          applyBillingFallback(autoValues, fb.liveBillingValues);
+          if (needsItems) {
+            // T-20260609-foot-DOCFORM-3FIX 이슈1: copayInfo 전달 → per-item 본인부담금/공단부담금 채움
+            const billItems = buildFootBillDetailItems(fb.pricingItems, autoValues.visit_date ?? '', {
+              insuranceGrade: fbGrade,
+              copaymentTotal: fb.copaymentTotal,
+            });
+            autoValues.items_html = buildBillDetailItemsHtml(billItems);
+            autoValues.rx_items_html = buildRxItemsHtml([]);
+            if (fb.grandTotal > 0) {
+              autoValues.total_amount = formatAmount(fb.grandTotal);
+              autoValues.subtotal_amount = formatAmount(fb.grandTotal);
+            }
+            if (fb.nonCoveredTotal > 0) {
+              autoValues.subtotal_noncovered = fb.nonCoveredTotal.toLocaleString('ko-KR');
+              autoValues.total_noncovered = fb.nonCoveredTotal.toLocaleString('ko-KR');
+            }
+          }
+        } else if (needsItems) {
+          // chargeItems·check_in_services 모두 없을 때: bill_detail/rx_standard 빈 rows 처리
           autoValues.items_html = buildBillDetailItemsHtml([]);
           autoValues.rx_items_html = buildRxItemsHtml([]);
         }
