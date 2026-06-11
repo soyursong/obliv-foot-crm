@@ -6,6 +6,8 @@
 //   → 초진도 재진처럼 폼 없이 바로 doCheckIn. 주민번호/동의서 수집은 펜차트로 일원화(정책: RRN-FIELD-REMOVE/CHECKIN-CONSENT-REMOVE).
 
 import { useEffect, useState } from 'react';
+import { format } from 'date-fns';
+import { ko } from 'date-fns/locale';
 import { toast } from '@/lib/toast';
 import {
   Dialog,
@@ -25,7 +27,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { supabase } from '@/lib/supabase';
 import { VISIT_TYPE_KO } from '@/lib/status';
 import { formatPhone } from '@/lib/format';
@@ -35,8 +36,23 @@ import { ReservationMemoTimeline } from '@/components/ReservationMemoTimeline';
 import { ReservationAuditLogPanel } from '@/components/ReservationAuditLogPanel';
 // T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1: 고객 검색창 (기존 인라인 검색 재사용, 신규 PII 경로 금지)
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
+// T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-3: 2번구역 미니 캘린더 (기존 month-grid 패턴 재사용)
+import { MiniMonthCalendar } from '@/components/MiniMonthCalendar';
 import type { Customer, Package, Reservation, ReservationRegistrar, Staff } from '@/lib/types';
 import { VISIT_ROUTE_OPTIONS } from '@/lib/types';
+
+// T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-2: 1번구역 치료내역(net-new) — check_ins treatment 필드 JOIN.
+//   신규 테이블/컬럼 없음(기존 check_ins 컬럼 재사용). 일자별 시술내역 + 담당치료사.
+type TreatmentRow = {
+  id: string;
+  checked_in_at: string;
+  completed_at: string | null;
+  visit_type: Reservation['visit_type'];
+  treatment_category: string | null;
+  treatment_contents: string[] | null;
+  treatment_kind: string | null;
+  therapist_id: string | null;
+};
 
 const STATUS_LABEL: Record<Reservation['status'], string> = {
   confirmed: '예약',
@@ -85,11 +101,33 @@ export function ReservationDetailPopup({
   const [cancelDialog, setCancelDialog] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
 
-  // ── 4분할 데이터
+  // ── 2구역 데이터
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [allResvs, setAllResvs] = useState<Reservation[]>([]);
-  const [consultants, setConsultants] = useState<Staff[]>([]);
+  // T-20260611-foot-RESVPOPUP-2ZONE: 클리닉 전체 활성 staff (담당상담사 드롭다운 + 치료사 이름 resolve).
+  //   기존 consultant-만-로드 → 전체 로드로 확장: assigned_staff_id 가 role!=consultant 직원이어도
+  //   이름 resolve 가능(처리로그 17:04 '담당상담사 raw UUID 표시' 부수 개선).
+  const [allStaff, setAllStaff] = useState<Staff[]>([]);
   const [packages, setPackages] = useState<Package[]>([]);
+  // T-20260611-foot-RESVPOPUP-2ZONE AC-2: 치료내역(일자별 시술 + 담당치료사) — check_ins JOIN
+  const [treatments, setTreatments] = useState<TreatmentRow[]>([]);
+
+  // 드롭다운 옵션 = 활성 consultant 만. (이름 resolve 는 비활성/타직군 포함 allStaff 전체로 — UUID 노출 방지)
+  const consultants = allStaff.filter((s) => s.role === 'consultant' && s.active);
+  // staff id → 표시명 resolve (display_name 우선, STAFF-NAME-UNIFY 관례)
+  const staffName = (id: string | null | undefined): string | null => {
+    if (!id) return null;
+    const s = allStaff.find((x) => x.id === id);
+    return s ? (s.display_name ?? s.name) : null;
+  };
+  // 치료내역 한 줄 요약(시술내역): category · contents, 없으면 kind
+  const treatmentSummary = (t: TreatmentRow): string => {
+    const parts: string[] = [];
+    if (t.treatment_category) parts.push(t.treatment_category);
+    if (t.treatment_contents && t.treatment_contents.length) parts.push(t.treatment_contents.join(', '));
+    if (!parts.length && t.treatment_kind) parts.push(t.treatment_kind);
+    return parts.join(' · ') || '시술내역 없음';
+  };
 
   // ── T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약경로 + 예약등록자 (현재 예약 대상 편집)
   const [registrars, setRegistrars] = useState<ReservationRegistrar[]>([]);
@@ -111,6 +149,9 @@ export function ReservationDetailPopup({
   // ── T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1: 고객 검색창(1번구역 최상단)
   const [searchValue, setSearchValue] = useState('');
 
+  // ── T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-3/4: 2번구역 미니 캘린더 선택 일자
+  const [pickedDate, setPickedDate] = useState<Date | null>(null);
+
   // 현재 우상에 표시할 예약 (좌하 클릭 선택, 기본값 = 원본 예약)
   const selectedResv: Reservation | undefined =
     allResvs.find((r) => r.id === selectedResvId) ?? reservation ?? undefined;
@@ -121,7 +162,8 @@ export function ReservationDetailPopup({
       setCustomer(null);
       setAllResvs([]);
       setPackages([]);
-      setConsultants([]);
+      setAllStaff([]);
+      setTreatments([]);
       setRegistrars([]);
       setSelectedResvId(null);
       setCustomerMemo('');
@@ -131,12 +173,14 @@ export function ReservationDetailPopup({
       setCancelDialog(false);
       setCancelReason('');
       setSearchValue('');
+      setPickedDate(null);
       return;
     }
 
     setSelectedResvId(reservation.id);
     setBusy(false);
     setSearchValue('');
+    setPickedDate(null);
     // T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 현재 예약의 예약경로/예약등록자 프리로드
     setVisitRoute(reservation.visit_route ?? '');
     setRegistrarId(reservation.registrar_id ?? '');
@@ -180,18 +224,30 @@ export function ReservationDetailPopup({
         .then(({ data }) => {
           if (data) setPackages(data as Package[]);
         });
+
+      // 6) T-20260611-foot-RESVPOPUP-2ZONE AC-2: 치료내역 — 이 고객의 check_ins(시술내역) 최신순.
+      //    신규 테이블/컬럼 0(기존 check_ins 재사용). 담당치료사는 staffName(therapist_id)로 resolve.
+      supabase
+        .from('check_ins')
+        .select('id, checked_in_at, completed_at, visit_type, treatment_category, treatment_contents, treatment_kind, therapist_id')
+        .eq('customer_id', customerId)
+        .order('checked_in_at', { ascending: false })
+        .limit(20)
+        .then(({ data }) => {
+          if (data) setTreatments(data as TreatmentRow[]);
+        });
     }
 
-    // 3) 상담사 목록 (해당 클리닉 + role=consultant)
+    // 3) 직원 목록 (해당 클리닉 전체) — 담당상담사 드롭다운(활성만) + 치료사/담당상담사 이름 resolve(비활성 포함).
+    //    active 필터를 제거해 비활성·과거 담당자도 이름 resolve 가능(raw UUID 노출 방지). 드롭다운 옵션은 파생에서 active 필터.
+    //    ⚠ staff.display_name 컬럼은 DB 미존재(STAFF-NAME-UNIFY 타입만 추가, 미마이그레이션) → select 금지(400).
     supabase
       .from('staff')
       .select('id, name, role, clinic_id, active, created_at')
       .eq('clinic_id', clinicId)
-      .eq('active', true)
-      .eq('role', 'consultant')
       .order('name')
       .then(({ data }) => {
-        if (data) setConsultants(data as Staff[]);
+        if (data) setAllStaff(data as Staff[]);
       });
 
     // 5) T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약등록자 마스터(활성, 그룹·정렬순)
@@ -458,13 +514,16 @@ export function ReservationDetailPopup({
             </DialogTitle>
           </DialogHeader>
 
-          {/* 4분할 본문 */}
+          {/* T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR: 2구역 전면 재구성.
+              1번구역(좌)=고객정보: 검색창 / 환자정보(+담당상담사 relocate) / 활성패키지(relocate) / 치료내역(net-new) / 고객메모(relocate)
+              2번구역(우)=예약정보: 예약경로 / 예약등록자 / 미니캘린더 / 선택일자·시간 / 예약메모 / 예약이력(히스토리+변경이력)
+              🔒 L-002: 신규예약 생성 capability 불변(팝업 내 reservations.insert 0). chart2 read-only. */}
           <div className="flex-1 grid grid-cols-2 gap-4 p-4 overflow-hidden min-h-0">
 
-            {/* ── 좌측 컬럼 (1번구역 = 고객정보) ── */}
-            <div className="flex flex-col gap-3 min-h-0">
+            {/* ── 1번구역 (좌) = 고객정보 ── */}
+            <div className="flex flex-col gap-3 min-h-0 overflow-y-auto pr-1" data-testid="popup-zone1-customer">
 
-              {/* T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1: 고객 검색창(1번구역 최상단).
+              {/* AC-1(Stage1): 고객 검색창(1번구역 최상단).
                   현장 확정: A고객 등록 완료 후 B고객 검색·선택 → 팝업 닫지 않고 B고객 신규예약 생성 동선으로 연속 진입.
                   onNewReservationForCustomer 미전달 환경(graceful)에선 검색창 자체를 숨김. */}
               {onNewReservationForCustomer && (
@@ -485,7 +544,7 @@ export function ReservationDetailPopup({
                 </div>
               )}
 
-              {/* 좌상: 환자 정보 */}
+              {/* 환자 정보 (+ 담당 상담사 RELOCATE from 2번구역) */}
               <div className="border rounded-lg p-3 flex-shrink-0">
                 <div className="text-xs font-semibold text-teal-700 mb-2">환자 정보</div>
                 <div className="space-y-1 text-xs">
@@ -521,24 +580,238 @@ export function ReservationDetailPopup({
                   />
                   <FieldRow label="고객등급" value={customer?.customer_grade ?? '일반'} />
                 </div>
-                {/* 예약메모 (compact 타임라인) */}
+
+                {/* 담당 상담사 (RELOCATE: 기존 2번구역 → 1번구역. 기존 state·saveConsultant 재사용.
+                    raw UUID 표시 버그 부수 개선: assigned_staff_id 가 role!=consultant 직원이어도 allStaff 로 이름 resolve) */}
                 <div className="mt-2 pt-2 border-t">
-                  <div className="text-[11px] font-medium text-amber-700 mb-1">예약메모</div>
-                  <ReservationMemoTimeline
-                    reservationId={reservation.id}
-                    clinicId={reservation.clinic_id}
-                    authorName={authorName}
-                    compact
-                  />
+                  <div className="text-[11px] font-medium text-muted-foreground mb-1.5">담당 상담사</div>
+                  {(() => {
+                    const assignedExtra =
+                      selectedConsultantId && !consultants.some((c) => c.id === selectedConsultantId)
+                        ? allStaff.find((s) => s.id === selectedConsultantId)
+                        : null;
+                    return (
+                      <Select
+                        value={selectedConsultantId || '__none__'}
+                        onValueChange={saveConsultant}
+                        disabled={consultantSaving || !reservation.customer_id}
+                      >
+                        <SelectTrigger className="h-8 text-xs" data-testid="popup-consultant">
+                          <SelectValue placeholder="상담사 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs">— 미배정 —</SelectItem>
+                          {assignedExtra && (
+                            <SelectItem value={assignedExtra.id} className="text-xs">
+                              {(assignedExtra.display_name ?? assignedExtra.name)} (담당)
+                            </SelectItem>
+                          )}
+                          {consultants.map((s) => (
+                            <SelectItem key={s.id} value={s.id} className="text-xs">
+                              {s.display_name ?? s.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    );
+                  })()}
                 </div>
               </div>
 
-              {/* 좌하: 전체 예약 히스토리 */}
-              <div className="border rounded-lg p-3 flex-1 flex flex-col min-h-0">
-                <div className="text-xs font-semibold text-teal-700 mb-2">
-                  전체 예약 히스토리{allResvs.length > 0 && ` (${allResvs.length}건)`}
+              {/* 활성 패키지 (RELOCATE: 기존 2번구역 → 1번구역. 기존 packages 쿼리 재사용) */}
+              <div className="border rounded-lg p-3 flex-shrink-0">
+                <div className="text-xs font-semibold text-teal-700 mb-2">활성 패키지</div>
+                {packages.length === 0 ? (
+                  <div className="text-xs text-muted-foreground italic">보유 패키지 없음</div>
+                ) : (
+                  <div className="flex flex-wrap gap-1">
+                    {packages.map((p) => (
+                      <Badge key={p.id} variant="outline" className="text-[10px] px-1.5 py-0.5">
+                        {p.package_name}
+                        {p.total_sessions ? ` (${p.total_sessions}회)` : ''}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 치료내역 (net-new) — 지정치료사 + 일자별 시술내역(담당치료사). check_ins JOIN, chart2 read-only */}
+              <div className="border rounded-lg p-3 flex-shrink-0" data-testid="popup-treatment-history">
+                <div className="text-xs font-semibold text-teal-700 mb-2">치료내역</div>
+                <div className="flex items-center gap-2 text-[11px] mb-1.5">
+                  <span className="text-muted-foreground shrink-0">지정치료사</span>
+                  <span className="font-medium">
+                    {staffName(customer?.designated_therapist_id) ?? '미지정'}
+                  </span>
                 </div>
-                <div className="flex-1 overflow-y-auto space-y-1 pr-0.5">
+                {treatments.length === 0 ? (
+                  <div className="text-xs text-muted-foreground italic py-1">치료내역 없음</div>
+                ) : (
+                  <div className="space-y-1 max-h-44 overflow-y-auto pr-0.5">
+                    {treatments.map((t) => (
+                      <div key={t.id} className="rounded border px-2 py-1.5 text-xs">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-medium tabular-nums">
+                            {t.checked_in_at.slice(0, 10)}
+                          </span>
+                          <span
+                            className={cn(
+                              'px-1.5 py-0.5 rounded-full text-[10px] font-medium',
+                              VISIT_TYPE_BADGE_CLASS[t.visit_type],
+                            )}
+                          >
+                            {VISIT_TYPE_KO[t.visit_type]}
+                          </span>
+                        </div>
+                        <div className="text-muted-foreground mt-0.5 break-words">
+                          {treatmentSummary(t)}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                          담당치료사: {staffName(t.therapist_id) ?? '—'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 고객메모 (RELOCATE: 기존 우하 메모 → 1번구역. 예약메모와 구분: 고객메모≠예약메모) */}
+              <div className="border rounded-lg p-3 flex-shrink-0">
+                <div className="text-xs font-semibold text-blue-700 mb-2">고객메모</div>
+                <div className="flex flex-col gap-1.5">
+                  <Textarea
+                    value={customerMemo}
+                    onChange={(e) => setCustomerMemo(e.target.value)}
+                    rows={3}
+                    placeholder="고객 특이사항·성향·주차 등"
+                    className="text-xs resize-none"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="self-end h-7 text-xs"
+                    onClick={saveCustomerMemo}
+                    disabled={memoSaving || !reservation.customer_id}
+                  >
+                    {memoSaving ? '저장 중…' : '고객메모 저장'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* ── 2번구역 (우) = 예약정보 ── */}
+            <div className="flex flex-col gap-3 min-h-0 overflow-y-auto pr-1" data-testid="popup-zone2-reservation">
+
+              {/* AC-4 #1·#2: 예약경로 + 예약등록자 (현재 예약 대상 편집 — REGISTRAR-ROUTE-FIELDS 자산 재사용) */}
+              <div className="border rounded-lg p-3 flex-shrink-0">
+                <div className="text-xs font-semibold text-teal-700 mb-2">예약 정보</div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex gap-2 min-w-0 items-center">
+                    <span className="text-muted-foreground shrink-0 w-[4.5rem]">예약경로</span>
+                    <Select
+                      value={visitRoute || '__none__'}
+                      onValueChange={(v) => setVisitRoute(v === '__none__' ? '' : v)}
+                    >
+                      <SelectTrigger className="h-8 text-xs flex-1" data-testid="popup-visit-route">
+                        <SelectValue placeholder="예약경로 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
+                        {VISIT_ROUTE_OPTIONS.map((opt) => (
+                          <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex gap-2 min-w-0 items-center">
+                    <span className="text-muted-foreground shrink-0 w-[4.5rem]">예약등록자</span>
+                    <Select
+                      value={registrarId || '__none__'}
+                      onValueChange={(v) => setRegistrarId(v === '__none__' ? '' : v)}
+                    >
+                      <SelectTrigger className="h-8 text-xs flex-1" data-testid="popup-registrar">
+                        <SelectValue placeholder="예약등록자 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
+                        {registrars.map((r) => (
+                          <SelectItem key={r.id} value={r.id} className="text-xs">
+                            {r.group_name} - {r.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              {/* AC-3 / AC-4 #3: 미니 캘린더 (예약 가능 일자 확인 — 닫지 않고). 고객 기존 예약일은 점 표기 */}
+              <div className="border rounded-lg p-3 flex-shrink-0">
+                <div className="text-xs font-semibold text-teal-700 mb-2">예약 캘린더</div>
+                <MiniMonthCalendar
+                  value={pickedDate}
+                  onSelect={(d) => setPickedDate((prev) => (prev && d.getTime() === prev.getTime() ? null : d))}
+                  markedDates={allResvs
+                    .filter((r) => r.status !== 'cancelled')
+                    .map((r) => r.reservation_date)}
+                />
+              </div>
+
+              {/* AC-4 #4: 선택한 일자 및 시간 (미니캘린더 선택 일자 + 현재 보기 예약의 일자/시간 상세) */}
+              <div className="border rounded-lg p-3 flex-shrink-0">
+                <div className="text-xs font-semibold text-teal-700 mb-2">
+                  선택한 일자 및 시간
+                  {selectedResv && selectedResv.id !== reservation.id && (
+                    <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
+                      (다른 예약 보기 중)
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1 text-xs">
+                  <FieldRow
+                    label="선택 일자"
+                    value={pickedDate ? format(pickedDate, 'yyyy-MM-dd (E)', { locale: ko }) : '미선택'}
+                  />
+                  {selectedResv ? (
+                    <>
+                      <FieldRow label="예약 일자" value={selectedResv.reservation_date} />
+                      <FieldRow label="시작 시간" value={selectedResv.reservation_time.slice(0, 5)} />
+                      <FieldRow label="소요 시간" value={getDuration(selectedResv)} />
+                      <FieldRow label="초·재진" value={VISIT_TYPE_KO[selectedResv.visit_type]} />
+                      {selectedResv.id !== reservation.id && (
+                        <>
+                          <FieldRow label="예약경로" value={selectedResv.visit_route ?? '—'} />
+                          <FieldRow label="예약등록자" value={selectedResv.registrar_name ?? '—'} />
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-muted-foreground italic">예약 선택 없음</div>
+                  )}
+                </div>
+              </div>
+
+              {/* AC-4 #5: 예약메모 (현재 보기 예약 기준) */}
+              <div className="border rounded-lg p-3 flex-shrink-0">
+                <div className="text-xs font-semibold text-amber-700 mb-2">예약메모</div>
+                {selectedResv ? (
+                  <ReservationMemoTimeline
+                    key={selectedResv.id}
+                    reservationId={selectedResv.id}
+                    clinicId={selectedResv.clinic_id}
+                    authorName={authorName}
+                  />
+                ) : (
+                  <div className="text-xs text-muted-foreground italic">예약 선택 필요</div>
+                )}
+              </div>
+
+              {/* AC-4 #6: 예약이력 (전체 예약 히스토리 + 변경이력). 히스토리 항목 클릭 → 상세 전환 */}
+              <div className="border rounded-lg p-3 flex-1 flex flex-col min-h-0" data-testid="popup-reservation-history">
+                <div className="text-xs font-semibold text-teal-700 mb-2">
+                  예약이력{allResvs.length > 0 && ` (${allResvs.length}건)`}
+                </div>
+                <div className="flex-1 overflow-y-auto space-y-1 pr-0.5 min-h-0">
                   {allResvs.length === 0 ? (
                     <div className="text-xs text-muted-foreground italic py-2">예약 없음</div>
                   ) : (
@@ -584,187 +857,13 @@ export function ReservationDetailPopup({
                     })
                   )}
                 </div>
-              </div>
-            </div>
-
-            {/* ── 우측 컬럼 ── */}
-            <div className="flex flex-col gap-3 min-h-0">
-
-              {/* 우상: 선택 예약 상세 */}
-              <div className="border rounded-lg p-3 flex-shrink-0">
-                <div className="text-xs font-semibold text-teal-700 mb-2">
-                  예약 상세
-                  {selectedResv && selectedResv.id !== reservation.id && (
-                    <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
-                      (다른 예약 보기 중)
-                    </span>
-                  )}
-                </div>
-                {selectedResv ? (
-                  <div className="space-y-1 text-xs">
-                    <FieldRow label="예약 일자" value={selectedResv.reservation_date} />
-                    <FieldRow label="시작 시간" value={selectedResv.reservation_time.slice(0, 5)} />
-                    <FieldRow label="소요 시간" value={getDuration(selectedResv)} />
-                    <FieldRow
-                      label="초·재진"
-                      value={VISIT_TYPE_KO[selectedResv.visit_type]}
-                    />
-                    {/* T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약경로 + 예약등록자.
-                        현재 예약(원본)만 편집 가능, 히스토리 다른 예약은 read-only 표시. */}
-                    {selectedResv.id === reservation.id ? (
-                      <>
-                        <div className="flex gap-2 min-w-0 items-center pt-0.5">
-                          <span className="text-muted-foreground shrink-0 w-[4.5rem]">예약경로</span>
-                          <Select
-                            value={visitRoute || '__none__'}
-                            onValueChange={(v) => setVisitRoute(v === '__none__' ? '' : v)}
-                          >
-                            <SelectTrigger className="h-8 text-xs flex-1" data-testid="popup-visit-route">
-                              <SelectValue placeholder="예약경로 선택" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
-                              {VISIT_ROUTE_OPTIONS.map((opt) => (
-                                <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="flex gap-2 min-w-0 items-center">
-                          <span className="text-muted-foreground shrink-0 w-[4.5rem]">예약등록자</span>
-                          <Select
-                            value={registrarId || '__none__'}
-                            onValueChange={(v) => setRegistrarId(v === '__none__' ? '' : v)}
-                          >
-                            <SelectTrigger className="h-8 text-xs flex-1" data-testid="popup-registrar">
-                              <SelectValue placeholder="예약등록자 선택" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none__" className="text-xs">— 미지정 —</SelectItem>
-                              {registrars.map((r) => (
-                                <SelectItem key={r.id} value={r.id} className="text-xs">
-                                  {r.group_name} - {r.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <FieldRow label="예약경로" value={selectedResv.visit_route ?? '—'} />
-                        <FieldRow label="예약등록자" value={selectedResv.registrar_name ?? '—'} />
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-xs text-muted-foreground italic">예약 선택 없음</div>
-                )}
-
-                {/* 보유 패키지 */}
-                <div className="mt-2 pt-2 border-t">
-                  <div className="text-[11px] font-medium text-muted-foreground mb-1.5">
-                    적용 가능 패키지 (활성)
-                  </div>
-                  {packages.length === 0 ? (
-                    <div className="text-xs text-muted-foreground italic">보유 패키지 없음</div>
-                  ) : (
-                    <div className="flex flex-wrap gap-1">
-                      {packages.map((p) => (
-                        <Badge key={p.id} variant="outline" className="text-[10px] px-1.5 py-0.5">
-                          {p.package_name}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* 담당 상담사 */}
-                <div className="mt-2 pt-2 border-t">
-                  <div className="text-[11px] font-medium text-muted-foreground mb-1.5">
-                    담당 상담사
-                  </div>
-                  {consultants.length > 0 ? (
-                    <Select
-                      value={selectedConsultantId || '__none__'}
-                      onValueChange={saveConsultant}
-                      disabled={consultantSaving || !reservation.customer_id}
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue placeholder="상담사 선택" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__" className="text-xs">— 미배정 —</SelectItem>
-                        {consultants.map((s) => (
-                          <SelectItem key={s.id} value={s.id} className="text-xs">
-                            {s.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <div className="text-xs text-muted-foreground italic">
-                      상담사 없음 (role=consultant 미등록)
-                    </div>
-                  )}
-                </div>
-
-                {/* T-20260522-foot-RESV-HISTORY-SYNC AC-1/2/3: 예약시간 변경 이력 */}
-                {/* AC-2: 예약관리 화면 이력 표시 강조 — 우상(예약 상세) 영역에 통합 */}
-                {/* AC-3: ReservationAuditLogPanel 단일 컴포넌트 import (화면별 분리 금지) */}
-                <div className="mt-2 pt-2 border-t">
-                  <div className="text-[11px] font-medium text-teal-700 mb-1">
-                    예약 변경 이력
-                  </div>
+                {/* T-20260522-foot-RESV-HISTORY-SYNC: 예약 변경 이력 (단일 공유 패널 재사용) */}
+                <div className="mt-2 pt-2 border-t shrink-0">
+                  <div className="text-[11px] font-medium text-teal-700 mb-1">예약 변경 이력</div>
                   <ReservationAuditLogPanel
                     reservationId={selectedResv?.id ?? null}
                     compact
                   />
-                </div>
-              </div>
-
-              {/* 우하: 메모 2종 */}
-              <div className="border rounded-lg p-3 flex-1 flex flex-col min-h-0 overflow-hidden">
-                <div className="text-xs font-semibold text-teal-700 mb-2">메모</div>
-                <div className="flex-1 flex flex-col gap-3 overflow-y-auto">
-
-                  {/* 예약메모 히스토리 */}
-                  <div>
-                    <div className="text-[11px] font-medium text-amber-700 mb-1.5">예약메모</div>
-                    {selectedResv ? (
-                      <ReservationMemoTimeline
-                        key={selectedResv.id}
-                        reservationId={selectedResv.id}
-                        clinicId={selectedResv.clinic_id}
-                        authorName={authorName}
-                      />
-                    ) : (
-                      <div className="text-xs text-muted-foreground italic">예약 선택 필요</div>
-                    )}
-                  </div>
-
-                  <Separator />
-
-                  {/* 고객메모 */}
-                  <div className="flex flex-col gap-1.5 flex-shrink-0">
-                    <div className="text-[11px] font-medium text-blue-700">고객메모</div>
-                    <Textarea
-                      value={customerMemo}
-                      onChange={(e) => setCustomerMemo(e.target.value)}
-                      rows={3}
-                      placeholder="고객 특이사항·성향·주차 등"
-                      className="text-xs resize-none"
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="self-end h-7 text-xs"
-                      onClick={saveCustomerMemo}
-                      disabled={memoSaving || !reservation.customer_id}
-                    >
-                      {memoSaving ? '저장 중…' : '고객메모 저장'}
-                    </Button>
-                  </div>
                 </div>
               </div>
             </div>
