@@ -1,20 +1,20 @@
 # T-20260611-foot-SELFCHECKIN-CONSENT-ADDR-NOTSAVED — DB-gate evidence
 
 - prod: rxlomoozakkjesdqjtvd
-- 실행: 2026-06-11T03:15:01.079Z
+- 실행: 2026-06-11T04:49:31.448Z
 - 출처: supervisor FIX-REQUEST MSG-20260611-104014-tfn2 (phase1 db_migration_pending)
 - 마이그: supabase/migrations/20260611100000_selfcheckin_personal_info_consolidate.sql (commit 7b04bef)
 
 ## [1] 사전 probe (적용 전)
 ```
 fn_selfcheckin_update_personal_info 시그니처:
-  (9 args) p_check_in_id uuid, p_clinic_id uuid, p_birth_date text, p_address text, p_address_detail text, p_privacy_consent boolean, p_insurance_consent boolean, p_visit_route text, p_visit_route_detail text
-customers.privacy_consent_at : false
-customers.sms_opt_in_at      : false
+  (10 args) p_check_in_id uuid, p_clinic_id uuid, p_birth_date text, p_address text, p_address_detail text, p_postal_code text, p_privacy_consent boolean, p_insurance_consent boolean, p_visit_route text, p_visit_route_detail text
+customers.privacy_consent_at : true
+customers.sms_opt_in_at      : true
 ```
 적용 전 REST 10-arg 호출:
 ```
-HTTP 404 → {"code":"PGRST202","details":"Searched for the function public.fn_selfcheckin_update_personal_info with parameters p_address, p_address_detail, p_birth_date, p_check_in_id, p_clinic_id, p_insurance_consent, p_postal_code, p_privacy_consent, p_visit_route, p_visit_route_detail or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache.","hint":"Perhaps you meant to call the function public.fn_selfcheckin_update_personal_info(p_address, p_address_detail, p_birth_date, p_check_in_id, p_clinic_id, p_insurance_consent, p_privacy_consent, p_visit_route, p_visit_route_detail)","message":"Could not find the function public.fn_selfcheckin_update_personal_info(p_address, p_address_detail, p_birth_date, p_check_in_id, p_clinic_id, p_insurance_consent, p_postal_code, p_privacy_consent, p_visit_route, p_visit_route_detail) in the schema cache"}
+HTTP 200 → {"error":"check_in_not_found","success":false}
 ```
 
 ## [2] 마이그레이션 적용 (BEGIN/COMMIT 내장, DROP 구시그니처 → 10-arg 재생성)
