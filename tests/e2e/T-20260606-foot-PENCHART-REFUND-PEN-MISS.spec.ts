@@ -43,7 +43,10 @@ test.describe('T-20260606-foot-PENCHART-REFUND-PEN-MISS', () => {
     const initDrawIdx = src.indexOf('const initDrawCanvas = useCallback');
     expect(initDrawIdx, 'initDrawCanvas 없음').toBeGreaterThan(0);
     // 주석 블록이 크므로 충분한 윈도우 사용
-    const block = src.slice(initDrawIdx, initDrawIdx + 4000);
+    // SPEC-DRIFT-REPAIR(T-20260612): 고정 4000자 윈도는 누적 주석으로 `desynchronized: useDesync`(rel 4373)를 놓침.
+    //   initDrawCanvas 함수 끝 경계(다음 `= useCallback`)까지 앵커 → 함수 본문 전체 포착(드리프트 내성). assertion 무변경.
+    const drawEnd = src.indexOf('= useCallback', initDrawIdx + 50);
+    const block = src.slice(initDrawIdx, drawEnd > initDrawIdx ? drawEnd : initDrawIdx + 8000);
 
     // REOPEN6: 기기별 분기(isIOS/Android=ON) 완전 제거 — 검정화면 재도입축 차단
     expect(block, 'isIOS 기기 분기 잔존 — Android=ON 검정화면 재발 위험').not.toContain('const isIOS');
@@ -63,7 +66,10 @@ test.describe('T-20260606-foot-PENCHART-REFUND-PEN-MISS', () => {
     const src: string = fs.readFileSync(SRC, 'utf-8');
 
     const initDrawIdx = src.indexOf('const initDrawCanvas = useCallback');
-    const block = src.slice(initDrawIdx, initDrawIdx + 4000);
+    // SPEC-DRIFT-REPAIR(T-20260612): 고정 4000자 윈도는 누적 주석으로 `desynchronized: useDesync`(rel 4373)를 놓침.
+    //   initDrawCanvas 함수 끝 경계(다음 `= useCallback`)까지 앵커 → 함수 본문 전체 포착(드리프트 내성). assertion 무변경.
+    const drawEnd = src.indexOf('= useCallback', initDrawIdx + 50);
+    const block = src.slice(initDrawIdx, drawEnd > initDrawIdx ? drawEnd : initDrawIdx + 8000);
 
     // 긴급 폴백: penchart_no_desync → 강제 OFF
     expect(block).toContain("penchart_no_desync");
@@ -162,7 +168,10 @@ test.describe('T-20260606-foot-PENCHART-REFUND-PEN-MISS', () => {
     const src: string = fs.readFileSync(SRC, 'utf-8');
 
     const initDrawIdx = src.indexOf('const initDrawCanvas = useCallback');
-    const block = src.slice(initDrawIdx, initDrawIdx + 4000);
+    // SPEC-DRIFT-REPAIR(T-20260612): 고정 4000자 윈도는 누적 주석으로 `desynchronized: useDesync`(rel 4373)를 놓침.
+    //   initDrawCanvas 함수 끝 경계(다음 `= useCallback`)까지 앵커 → 함수 본문 전체 포착(드리프트 내성). assertion 무변경.
+    const drawEnd = src.indexOf('= useCallback', initDrawIdx + 50);
+    const block = src.slice(initDrawIdx, drawEnd > initDrawIdx ? drawEnd : initDrawIdx + 8000);
     const useDesyncDecl = (block.match(/const useDesync\s*=.*?;/s)?.[0]) ?? '';
 
     // 기본 분기는 false — 기기 판별 없이 전 기기 OFF (iOS+Android 검정화면 안전).

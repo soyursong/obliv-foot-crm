@@ -137,6 +137,10 @@ test.describe('T-20260608-foot-PENCHART-REFUND-FORMIMG', () => {
     const src: string = fs.readFileSync(SRC_PATH, 'utf-8');
     expect(src).toContain('drawRefundP3DateAutofill');
     expect(src).toContain('REFUND_AUTOFILL_POS_P1');
-    expect(src).toContain('REFUND_AUTOFILL_POS_P3');
+    // SPEC-DRIFT-REPAIR(T-20260612): P3 자동채움이 단일 POS 상수(REFUND_AUTOFILL_POS_P3) → 날짜/이름 분리
+    //   (drawRefundP3DateAutofill + drawRefundP3NameAutofill, 위치상수 REFUND_P3_NAME)로 리팩터되어 구 심볼 제거됨.
+    //   green-washing 아님 — P3 자동채움 배선(날짜+이름) 회귀 가드를 현 심볼로 동일 의미 재정렬.
+    expect(src).toContain('drawRefundP3NameAutofill');
+    expect(src).toContain('REFUND_P3_NAME');
   });
 });
