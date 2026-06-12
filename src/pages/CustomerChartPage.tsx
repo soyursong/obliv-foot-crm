@@ -2842,7 +2842,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     setSavingSession(true);
     const { error } = await supabase.from('package_sessions').insert({
       package_id: useSessionDlg.packageId,
-      session_number: useSessionDlg.nextSession,
+      // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 재계산(stale nextSession 보정)
+      session_number: nextSessionNumberFor(useSessionDlg.packageId),
       session_type: sessionDlgForm.sessionType,
       session_date: sessionDlgForm.sessionDate,
       performed_by: sessionDlgForm.therapistId,
@@ -2934,12 +2935,36 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   };
 
   // T-20260511-foot-C21-PKG-USAGE-EDIT: 시술내역 삭제 (잔여횟수 자동 재계산)
+  // T-20260612-foot-USAGEHIST-DELETE-RESTORE: HARD DELETE → SOFT DELETE.
+  //   실수 삭제 원복 가능하도록 물리삭제 대신 status='deleted' 표식(soft_delete_package_session RPC).
+  //   권한은 RPC 내부 is_admin_or_manager() 게이트 = 기존 DELETE 권한과 동일(확대 없음).
+  //   잔여횟수는 status='used'만 집계하므로 자동 +1.
   const deleteSession = async (session: PackageSession) => {
-    if (!window.confirm(`${session.session_number}회 시술내역을 삭제하시겠습니까?\n삭제하면 잔여 횟수가 자동 증가합니다.`)) return;
-    const { error } = await supabase.from('package_sessions').delete().eq('id', session.id);
+    if (!window.confirm(`${session.session_number}회 시술내역을 삭제하시겠습니까?\n삭제하면 잔여 횟수가 +1 됩니다. (삭제 후 '복원'으로 되돌릴 수 있습니다)`)) return;
+    const { error } = await supabase.rpc('soft_delete_package_session', { p_session_id: session.id });
     if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
-    toast.success('시술내역이 삭제되었습니다. (잔여횟수 +1)');
+    toast.success('시술내역이 삭제되었습니다. (잔여횟수 +1 · 복원 가능)');
     await refreshPackageData(packages);
+  };
+
+  // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제된 회차 복원(원복).
+  //   restore_package_session RPC → status='deleted' → 'used'. 잔여횟수 자동 -1.
+  const restoreSession = async (session: PackageSession) => {
+    if (!window.confirm(`${session.session_number}회 시술내역을 복원하시겠습니까?\n복원하면 잔여 횟수가 -1 됩니다.`)) return;
+    const { error } = await supabase.rpc('restore_package_session', { p_session_id: session.id });
+    if (error) { toast.error(`복원 실패: ${error.message}`); return; }
+    toast.success('시술내역이 복원되었습니다. (잔여횟수 -1)');
+    await refreshPackageData(packages);
+  };
+
+  // T-20260612-foot-USAGEHIST-DELETE-RESTORE: soft-delete row가 session_number를 점유한 채 남으므로
+  //   신규 회차번호는 'used' 개수가 아니라 해당 패키지 전체 row(삭제 포함) 최대 session_number + 1 로 산출.
+  //   UNIQUE(package_id, session_number) 충돌 방지 — 마지막/중간 회차 삭제 후 재차감 시나리오 가드.
+  const nextSessionNumberFor = (packageId: string): number => {
+    const nums = packageSessions
+      .filter((s) => s.package_id === packageId)
+      .map((s) => s.session_number);
+    return (nums.length ? Math.max(...nums) : 0) + 1;
   };
 
   // T-20260522-foot-PKG-EDIT-DEL: 구매 패키지 수정 저장
@@ -3541,7 +3566,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }
     const { error } = await supabase.from('package_sessions').insert({
       package_id: targetPkg.id,
-      session_number: usedCount + 1,
+      // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 (UNIQUE 충돌 방지)
+      session_number: nextSessionNumberFor(targetPkg.id),
       session_type: c22DeductForm.treatmentType,
       session_date: c22DeductForm.sessionDate,
       performed_by: c22DeductForm.therapistId,
@@ -3582,7 +3608,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     setDupDeductBusy(true);
     const { error } = await supabase.from('package_sessions').insert({
       package_id: dupDeductModal.targetPkgId,
-      session_number: dupDeductModal.usedCount + 1,
+      // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 (UNIQUE 충돌 방지)
+      session_number: nextSessionNumberFor(dupDeductModal.targetPkgId),
       session_type: dupDeductModal.treatmentType,
       session_date: dupDeductModal.sessionDate,
       performed_by: dupDeductModal.therapistId,
@@ -3719,7 +3746,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }
     const { error: deductError } = await supabase.from('package_sessions').insert({
       package_id: targetPkg.id,
-      session_number: usedCount + 1,
+      // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 (UNIQUE 충돌 방지)
+      session_number: nextSessionNumberFor(targetPkg.id),
       session_type: c22DeductForm.treatmentType,
       session_date: c22DeductForm.sessionDate,
       performed_by: c22DeductForm.therapistId,
@@ -5541,6 +5569,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     {/* T-20260522-foot-PKG-EDIT-DEL AC-5: cancelled(soft delete) 패키지 비노출 */}
                     {packages.filter((p) => p.status !== 'cancelled').map((p) => {
                       const usedSessions = packageSessions.filter((s) => s.package_id === p.id && s.status === 'used');
+                      // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 실수 삭제된 회차(soft-delete) — 복원용 노출
+                      const deletedSessions = packageSessions.filter((s) => s.package_id === p.id && s.status === 'deleted');
                       // 시술 타입별 사용횟수 집계
                       const usedByType: Record<string, number> = {};
                       usedSessions.forEach((s) => { usedByType[s.session_type] = (usedByType[s.session_type] || 0) + 1; });
@@ -5705,6 +5735,30 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                         )}
                                       </span>
                                     )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {/* T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제된 시술내역 — 복원(원복) */}
+                          {deletedSessions.length > 0 && (profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director') && (
+                            <div className="border-t border-dashed border-red-200 bg-red-50/40 px-3 pb-2 pt-1.5">
+                              <div className="text-[10px] text-red-400 mb-1 font-medium">삭제된 시술내역 ({deletedSessions.length}건) — 복원 가능</div>
+                              <div className="space-y-0.5">
+                                {deletedSessions.map((s) => (
+                                  <div key={s.id} className="group flex items-center gap-1.5 text-[10px] rounded px-0.5 hover:bg-red-100/50 transition">
+                                    <span className="text-red-300 w-5 tabular-nums shrink-0 line-through">{s.session_number}회</span>
+                                    <span className="rounded bg-red-100/60 text-red-500 px-1 shrink-0 line-through">{TREAT_KO[s.session_type] ?? s.session_type}</span>
+                                    <span className="text-red-300 shrink-0 line-through">{s.session_date}</span>
+                                    {s.staff_name && <span className="text-red-400 truncate line-through">{s.staff_name}</span>}
+                                    <button
+                                      type="button"
+                                      onClick={() => restoreSession(s)}
+                                      className="ml-auto flex items-center gap-0.5 shrink-0 h-5 px-1.5 rounded bg-white border border-teal-200 hover:bg-teal-50 text-teal-600 font-medium transition"
+                                      title="복원"
+                                    >
+                                      <RotateCcw className="h-3 w-3" /> 복원
+                                    </button>
                                   </div>
                                 ))}
                               </div>
