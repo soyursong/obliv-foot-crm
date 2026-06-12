@@ -10,7 +10,7 @@ db-change: true
 spec-added: true
 spec-exempt: false
 rollback-sql: migration_packages/T-20260610-foot-RXSET-NAMEDESC-MODEL/rollback.sql
-commit_sha: PENDING
+commit_sha: 8db6350
 created: 2026-06-12
 assignee: dev-foot
 reporter: 현장(문지은 대표원장) ESCALATE
