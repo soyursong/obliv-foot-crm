@@ -16,7 +16,7 @@
 //   ※ 레거시 TEXT services.diagnosis_folder 는 안전망 공존(본 화면은 더 이상 쓰지 않음).
 //   폴더 CRUD/배치 훅은 @/lib/diagnosisFolders (drugFolders.ts 미러)에서 재사용.
 
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
@@ -769,6 +769,14 @@ export default function DiagnosisNamesTab() {
 
   const countOf = (folderId: string) => countByFolder.get(folderId) ?? 0;
 
+  // 좌측 드롭존(폴더 노드 + 전체목록) id 집합 — reorderActive 충돌판정에서 제외용.
+  //   T-...-DIAGNAMES-REORDER-FOLDER-CAPTURE: 우측 항목 수직 드래그 시 좌측 280px 폴더 패널이
+  //   closestCenter 로 "가장 가까운 드롭 대상"으로 오판되는 회귀 차단.
+  const folderIdSet = useMemo(
+    () => new Set<string>([ALL_KEY, ...folders.map((f) => f.id)]),
+    [folders],
+  );
+
   // 선택 폴더 키가 유효한지 보정(삭제된 폴더 → 미분류로 환원)
   useEffect(() => {
     if (selectedKey === ALL_KEY) return;
@@ -799,6 +807,25 @@ export default function DiagnosisNamesTab() {
   //     ↳ 화면순서가 sort_order 와 단조 일치하지 않으면 재번호가 왜곡되므로 정본 순서에서만 허용.
   const reorderActive =
     canManage && selectedKey !== ALL_KEY && dxSortBy === 'added' && dxSortDir === 'asc';
+
+  // 충돌판정 — reorderActive(폴더 내 순서변경) 시에는 좌측 폴더/전체목록 droppable 을 후보에서
+  //   제외하고 우측 sortable 항목끼리만 closestCenter 평가. 비-reorder(폴더 배치) 시에는 원본
+  //   closestCenter 그대로(AC-3 회귀가드). T-...-DIAGNAMES-REORDER-FOLDER-CAPTURE.
+  const dxCollisionDetection = useCallback(
+    (args: Parameters<typeof closestCenter>[0]) => {
+      if (reorderActive) {
+        const filtered = {
+          ...args,
+          droppableContainers: args.droppableContainers.filter(
+            (c) => !folderIdSet.has(String(c.id)),
+          ),
+        };
+        return closestCenter(filtered);
+      }
+      return closestCenter(args);
+    },
+    [reorderActive, folderIdSet],
+  );
 
   function nextSortOrder() {
     return items.length === 0 ? 0 : Math.max(...items.map((d) => d.sort_order ?? 0)) + 10;
@@ -1026,7 +1053,7 @@ export default function DiagnosisNamesTab() {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={dxCollisionDetection}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
