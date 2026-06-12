@@ -10,6 +10,7 @@
 //   DB엔 구조(shape)만 저장 — 표시문자열('L1') 저장 금지. render는 formatFootSite로 파생.
 
 import { cn } from '@/lib/utils';
+import { toast } from '@/lib/toast';
 
 // ---------------------------------------------------------------------------
 // Types & 상수
@@ -40,6 +41,14 @@ export function formatFootSite(site: FootSite | null | undefined): string {
   return `${site.side}${site.toe}`;
 }
 
+/**
+ * 완전한 값 판정 — side ∈ {L,R} AND toe ∈ 1~5 일 때만 true.
+ * 저장 게이트(불완전 값은 DB에 기록하지 않음)의 단일 근거. formatFootSite와 동일 규칙.
+ */
+export function isCompleteFootSite(site: FootSite | null | undefined): boolean {
+  return formatFootSite(site) !== '';
+}
+
 /** 임의의 jsonb 값에서 FootSite를 안전 파싱 (treatment_memo.foot_site 로드용). */
 export function parseFootSite(raw: unknown): FootSite | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -67,14 +76,20 @@ export default function FootSiteSelector({
   disabled = false,
   className,
 }: FootSiteSelectorProps) {
-  // 좌/우 선택 — toe 미선택 상태에서도 side 단독 선택 허용(불완전값은 저장 시 formatFootSite=''로 안전).
+  // 좌/우 선택 — toe 미선택 상태에서도 side 단독 선택 허용.
+  //   불완전값(toe=0)은 저장 게이트(isCompleteFootSite=false)에서 차단되어 DB 미기록.
   const setSide = (side: FootSide) => {
     if (disabled) return;
     onChange({ side, toe: value?.toe ?? 0 } as FootSite);
   };
+  // 발가락 선택 — side 미선택이면 임의 기본값('L') 자동지정 금지. 방향 먼저 선택을 강제.
   const setToe = (toe: number) => {
     if (disabled) return;
-    onChange({ side: value?.side ?? 'L', toe });
+    if (value?.side !== 'L' && value?.side !== 'R') {
+      toast.error('방향(좌/우)을 먼저 선택하세요');
+      return;
+    }
+    onChange({ side: value.side, toe });
   };
   const clear = () => {
     if (disabled) return;
