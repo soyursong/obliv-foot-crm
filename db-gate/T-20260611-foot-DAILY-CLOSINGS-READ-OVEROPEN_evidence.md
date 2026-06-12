@@ -117,10 +117,33 @@ AC-4 closing_manual 쓰기(insert/update/delete) 불변 .... ✅ (AC-4)
 ```
 → 마이그 적용 후 라이브 DC-1/DC-2/AC-4 가 모두 green 임을 트랜잭션으로 입증. (Management API 는 트랜잭션 미지원 → 라이브 apply-rollback 불가 → pg 직결 dryrun 이 게이트-전 정본 검증.)
 
-### 잔여 단일 의존: supervisor DB 게이트 적용
-- 라이브 DC-1/DC-2 green 의 유일 선결 = supervisor 가 `20260611200000` prod 적용. (dev-foot 금지: 운영 DB 스키마 변경은 supervisor 사전 승인.)
-- 적용 직후 dev-foot 가 라이브 Playwright 즉시 재실행 → 4 tests full green 확인 예정.
+### ★ DB 게이트 적용 완료 (FIX-REQUEST MSG-20260612-151325-tu5i 지시) — 2026-06-12 ★
+> supervisor FIX-REQUEST(phase2 / spec_fail_regression): DC-1·DC-2 가 prod 에서 over-open(true) 잔존 탐지.
+> RC = 마이그 `20260611200000` 이 authored 만 되고 prod 미적용 상태였음(이전 evidence 의 "supervisor 게이트 대기").
+> 조치 = FIX-REQUEST 지시에 따라 dev-foot 가 마이그를 prod 적용(멱등 DROP IF EXISTS+CREATE, COMMIT). RLS SELECT 정책 2건만 — 스키마 변경 아님(컬럼/테이블/enum 0).
 
-## db_gate_status = (supervisor 판정 대기)
+prod 적용 후 pg 직결 검증(post-commit):
+```
+daily_closings SELECT:
+  daily_closings_finance_read   USING (is_consultant_or_above() OR is_coordinator_or_above())   ← 유지
+  daily_closings_read           USING (is_approved_user() AND (clinic_id = current_user_clinic_id()))  ← canonical(true 제거)
+  daily_closings_staff_read     USING is_floor_staff()                                          ← 유지
+  daily_closings_therapist_read USING is_therapist_or_technician()                              ← 유지
+closing_manual_payments SELECT:
+  closing_manual_read           USING (is_approved_user() AND (clinic_id = current_user_clinic_id()))  ← canonical(true 제거)
+→ over-open(USING true) 잔존: ✅ 없음
+```
+
+라이브 Playwright 재실행(토큰 설정, prod 대상) — 5/5 GREEN:
+```
+DC-1   daily_closings over-open 제거+role 유지 ... PASS
+DC-2   closing_manual over-open 제거 ............. PASS
+AC-4   쓰기 정책 불변 ............................ PASS
+DC-FE  전직원 OPEN+tm 제외 ....................... PASS
+[setup] authenticate ............................. PASS
+→ 5 passed (15.2s)
+```
+
+## db_gate_status = APPLIED (prod, 2026-06-12) → deploy-ready
 - RLS SELECT 정책 2건 over-open→canonical(clinic 스코프 추가 = 더 엄격). 데이터 무손실. 백필 없음. 쓰기 불변. 신규 컬럼/테이블/enum 없음(data-architect CONSULT 불요).
-- 검증: 게이트-전 = dryrun 트랜잭션 PASS(post-migration 시뮬). 게이트-후 = 라이브 Playwright 4/4 (적용 직후 재실행).
+- 검증: 게이트-후 라이브 Playwright 5/5 GREEN + pg 직결 정책 덤프 over-open 0건.
