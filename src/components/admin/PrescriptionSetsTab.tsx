@@ -20,7 +20,6 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
 import { Loader2, Plus, Pencil, Trash2, X, Folder, Check, Search, Link2, MoreVertical } from 'lucide-react';
-import RxCountInput from '@/components/admin/RxCountInput';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -289,10 +288,15 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
   }
 
   return (
+    // T-20260610-foot-RXSET-NAMEDESC-MODEL (Q1 LOCK): 처방세트 항목 = [이름+용량] / [설명] 2칸만.
+    //   route·용법(frequency)·횟수(count)·일수(days)·용량(dosage) 입력칸은 세트등록 화면에서 제거.
+    //   ⚠️ 값은 보존(손실0): onChange 가 항목 객체를 spread 갱신하므로 숨긴 필드는 그대로 유지되고,
+    //      신규 항목은 EMPTY_ITEM 기본값을 캐리. 용법(1/3/2)은 묶음·빠른처방 '불러올 때'(MedicalChartPanel
+    //      인라인 편집표 L2920~)에서 입력(비우면 빈칸). 마스터 선택 시 route/classification 자동채움은 유지.
     <div className="grid grid-cols-12 gap-1.5 items-end border rounded-lg p-2.5 bg-muted/30">
-      <div className="col-span-3">
+      <div className="col-span-8">
         <Label className="text-[10px] flex items-center gap-1">
-          약품/시술명 *
+          이름+용량 *
           {linked && (
             <span className="inline-flex items-center gap-0.5 text-[9px] text-teal-600" title="약품 마스터에 연결됨">
               <Link2 className="h-2.5 w-2.5" />연결됨
@@ -305,7 +309,7 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
             value={item.name}
             onChange={(e) => handleNameChange(e.target.value)}
             onFocus={() => { if (item.name.trim()) { setOpen(true); runSearch(item.name); } }}
-            placeholder="약품명·보험코드 검색"
+            placeholder="약품명+용량 (예: 주블리아외용액 4ml)·보험코드 검색"
             className="h-7 text-xs pl-6"
             data-testid="rx-set-item-name-input"
             autoComplete="off"
@@ -350,58 +354,17 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
           )}
         </div>
       </div>
-      <div className="col-span-2">
-        <Label className="text-[10px]">용량</Label>
-        <Input
-          value={item.dosage}
-          onChange={(e) => onChange(idx, 'dosage', e.target.value)}
-          placeholder="적정량"
-          className="h-7 text-xs mt-0.5"
-        />
-      </div>
-      <div className="col-span-1">
-        <Label className="text-[10px]">투여경로</Label>
-        <Input
-          value={item.route}
-          onChange={(e) => onChange(idx, 'route', e.target.value)}
-          placeholder="외용"
-          className="h-7 text-xs mt-0.5"
-        />
-      </div>
-      <div className="col-span-2">
-        <Label className="text-[10px]">용법</Label>
-        <Input
-          value={item.frequency}
-          onChange={(e) => onChange(idx, 'frequency', e.target.value)}
-          placeholder="1일 2회"
-          className="h-7 text-xs mt-0.5"
-        />
-      </div>
-      {/* T-20260603-foot-RX-CHART-FOLLOWUP3 C-2-5: 횟수 = 숫자만, "회"는 배경 suffix */}
-      <div className="col-span-1">
-        <Label className="text-[10px]">횟수</Label>
-        <RxCountInput
-          value={item.count ?? null}
-          onChange={(v) => onChange(idx, 'count', v)}
-        />
-      </div>
-      <div className="col-span-1">
-        <Label className="text-[10px]">일수</Label>
-        <Input
-          type="number"
-          value={item.days}
-          onChange={(e) => onChange(idx, 'days', Number(e.target.value))}
-          className="h-7 text-xs mt-0.5"
-          min={1}
-        />
-      </div>
-      <div className="col-span-1">
-        <Label className="text-[10px]">비고</Label>
+      {/* T-20260610-foot-RXSET-NAMEDESC-MODEL (Q1 LOCK): [설명] = notes 칸.
+          용량(dosage)·투여경로(route)·용법(frequency)·횟수(count)·일수(days) 입력칸은 제거.
+          숨긴 값은 item 객체에 보존(onChange spread)되고, 마스터 선택 시 route/classification 자동채움 유지. */}
+      <div className="col-span-3">
+        <Label className="text-[10px]">설명</Label>
         <Input
           value={item.notes}
           onChange={(e) => onChange(idx, 'notes', e.target.value)}
-          placeholder=""
+          placeholder="분류·메모 (예: 항진균제 연고)"
           className="h-7 text-xs mt-0.5"
+          data-testid="rx-set-item-notes-input"
         />
       </div>
       <div className="col-span-1 flex items-end">
@@ -841,14 +804,12 @@ export default function PrescriptionSetsTab() {
               </div>
               {s.items.length > 0 && (
                 <div className="space-y-1">
+                  {/* T-20260610-foot-RXSET-NAMEDESC-MODEL (Q2): 세트관리 카드 = [이름+용량] + [설명] 만.
+                      route/용법/횟수/일수 메타는 '불러올 때' 입력이므로 세트관리 미리보기에서 제거. */}
                   {s.items.slice(0, 3).map((item, idx) => (
                     <div key={idx} className="text-xs text-muted-foreground flex items-center gap-2">
                       <span className="font-medium text-foreground">{item.name}</span>
-                      {item.dosage && <span>{item.dosage}</span>}
-                      <span>{item.route}</span>
-                      <span>{item.frequency}</span>
-                      {item.count != null && <span>{item.count}회</span>}
-                      <span>{item.days}일</span>
+                      {item.notes && <span className="text-muted-foreground">· {item.notes}</span>}
                     </div>
                   ))}
                   {s.items.length > 3 && (
