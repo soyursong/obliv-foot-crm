@@ -71,7 +71,8 @@ test.describe('STAGE 2 — 1번구역 relocate + 치료내역(net-new) (AC-2)', 
     const z1 = DETAIL_POPUP.indexOf('data-testid="popup-zone1-customer"');
     const z2 = DETAIL_POPUP.indexOf('data-testid="popup-zone2-reservation"');
     const consultantIdx = DETAIL_POPUP.indexOf('data-testid="popup-consultant"');
-    const packageIdx = DETAIL_POPUP.indexOf('>활성 패키지</div>');
+    // T-20260612-RESTRUCTURE AC-6 미화: 카드 제목이 <div> → <SectionHeader> 로 통일됨(마크업 변경, 기능 동일).
+    const packageIdx = DETAIL_POPUP.indexOf('활성 패키지</SectionHeader>');
     // 둘 다 zone1 영역(z1 < idx < z2)
     expect(consultantIdx).toBeGreaterThan(z1);
     expect(consultantIdx).toBeLessThan(z2);
@@ -118,7 +119,7 @@ test.describe('STAGE 2 — 2번구역 미니캘린더 + 배치순서 (AC-3/AC-4)
       'data-testid="popup-registrar"',
       '<MiniMonthCalendar',
       '선택한 일자 및 시간',
-      '>예약메모</div>',
+      '예약메모</SectionHeader>', // AC-6 미화: <div> → SectionHeader 통일
       'data-testid="popup-reservation-history"',
     ].map((m) => DETAIL_POPUP.indexOf(m));
     // 모두 발견 + 엄격 오름차순
