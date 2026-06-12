@@ -160,18 +160,22 @@ test.describe('S3 AC3 — 미제공 null + 잔류 정상(무회귀)', () => {
 test.describe('S4 회귀가드 — DATEMODE-HISTORY / SORT-LAYOUT / 확정패널 차트열기', () => {
   test('R1(DATEMODE-HISTORY): isPast 행 클릭 = onOpenChart 차트 진입 보존', () => {
     const src = SRC('components/doctor/DoctorPatientList.tsx');
-    // 과거(read-only) 모드 분기 + 행 버튼 onClick=onOpenChart + 미제공 시 disabled.
+    // 과거(read-only) 모드 분기 + 행 클릭=onOpenChart + 미제공 시 클릭 무효.
+    //   T-20260612-foot-DOCPATIENTLIST-TABLEVIEW: 카드형 <button disabled> → 테이블 <tr> 전환.
+    //   행 클릭→차트 동선 보존(onClick={onOpenChart}), 미제공 시 onClick=undefined + cursor 미부여로 무효.
     expect(src).toMatch(/if\s*\(isPast\)\s*\{/);
     expect(src).toMatch(/data-mode="history"/);
-    expect(src).toMatch(/onClick=\{onOpenChart\}[\s\S]*?disabled=\{!onOpenChart\}/);
+    expect(src).toMatch(/onClick=\{onOpenChart\}/);
+    expect(src).toMatch(/onOpenChart\s*\?\s*'cursor-pointer/);
   });
 
-  test('R2(SORT-LAYOUT): 기본 행 grid 고정 열 + 원내 우선 그룹 정렬 보존', () => {
+  test('R2(SORT-LAYOUT): 테이블뷰 고정 열 + 원내 우선 그룹 정렬 보존', () => {
     const src = SRC('components/doctor/DoctorPatientList.tsx');
-    // 고정 grid-template(번호/배지/이름/처방/상태/시술/메모/액션).
-    //   T-20260610-foot-DOCDASH-DIAGMGMT-6FIX(5e55c13) 레이아웃 갱신으로 4.75rem 열 추가 — 현행 정합.
-    expect(src).toMatch(/grid-cols-\[1\.75rem_3rem_5rem_5\.5rem_3\.75rem_4\.75rem_minmax\(0,1fr\)_auto\]/);
-    // 원내 잔류 그룹 항상 상단 + 시간순/이름순 정렬 토글.
+    // T-20260612-foot-DOCPATIENTLIST-TABLEVIEW: grid 카드 → 테이블뷰(table-fixed + colgroup) 전환.
+    //   진료대시보드 doctor-call-feed-table 동일 패턴 — 열 너비 고정(행마다 컬럼 어긋남 제거).
+    expect(src).toMatch(/<table className="w-full table-fixed text-sm" data-testid="patient-list">/);
+    expect(src).toMatch(/<colgroup>/);
+    // 원내 잔류 그룹 항상 상단 + 시간순/이름순 정렬 토글(정렬 로직 불변 — 표시 레이아웃만 재구성).
     expect(src).toMatch(/isInClinic\(a\.status\)/);
     expect(src).toMatch(/data-testid=\{`sort-by-\$\{key\}`\}/);
     expect(src).toMatch(/key:\s*'time'[\s\S]*?key:\s*'name'/);
