@@ -1282,8 +1282,9 @@ function PackageDetailSheet({
     const [pkgRes, remainRes, sessRes, payRes] = await Promise.all([
       supabase.from('packages').select('*, customer:customers!customer_id(name, phone)').eq('id', packageId).single(),
       supabase.rpc('get_package_remaining', { p_package_id: packageId }),
+      // T-20260612-foot-USAGEHIST-DELETE-RESTORE: soft-delete(status='deleted') 회차는 소진이력 표시에서 제외.
       supabase.from('package_sessions').select('id, session_number, session_type, session_date, status')
-        .eq('package_id', packageId).order('session_number', { ascending: true }),
+        .eq('package_id', packageId).neq('status', 'deleted').order('session_number', { ascending: true }),
       supabase.from('package_payments').select('id, amount, method, payment_type, created_at')
         .eq('package_id', packageId).order('created_at', { ascending: false }),
     ]);
