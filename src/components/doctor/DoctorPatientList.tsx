@@ -14,7 +14,8 @@ import { ko } from 'date-fns/locale';
 import { todaySeoulISODate } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
-import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
+import { Loader2, CheckCircle2, Clock, AlertCircle, ChevronLeft, ChevronRight, MapPin, FileText } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import QuickRxBar, { isDoctor, RxConfirmedSummary } from './QuickRxBar';
 import {
   // T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 처방확정 공통 가드 + 차트변경 audit.
@@ -34,6 +35,22 @@ import type { CheckInStatus } from '@/lib/types';
 //   showClinical 과 동일 SSOT(MedicalChartPanel embed variant='clinical'). 신규 조회경로/Drawer 신설 금지.
 //   기존 차트 존재 시 read 모드(isReadOnly)로 로드 — read 뷰 요건 충족.
 import MedicalChartPanel from '@/components/MedicalChartPanel';
+
+// ---------------------------------------------------------------------------
+// T-20260612-foot-DOCPATIENTLIST-TABLEVIEW: 진료대시보드 테이블뷰(doctor-call-feed-table)와
+//   동일 디자인 언어 — 셀 내 액션은 버튼 박스 대신 텍스트/링크(hover underline)로 최소화.
+//   (DoctorCallDashboard CELL_ACTION_BTN 패턴 이식. box 제거 = "난잡함" 축소.)
+// ---------------------------------------------------------------------------
+const CELL_ACTION_BTN =
+  'inline-flex items-center gap-1 px-1 py-1 text-[11px] font-medium text-gray-600 transition-colors ' +
+  'hover:text-gray-900 hover:underline underline-offset-2 disabled:opacity-40 disabled:no-underline disabled:hover:no-underline';
+// 확정(처방 확정)은 1차 액션 — box 없이도 식별되게 teal 텍스트 강조(클릭 동선 유지, 시각만 축소).
+const CELL_ACTION_BTN_PRIMARY =
+  'inline-flex items-center gap-1 px-1 py-1 text-[11px] font-semibold text-teal-700 transition-colors ' +
+  'hover:text-teal-800 hover:underline underline-offset-2 disabled:opacity-40 disabled:no-underline disabled:hover:no-underline';
+
+/** 활성(오늘/미래) 테이블 열 수 — 펼침 행 colSpan SSOT. 이름|방|처방|상태|메모 = 5 */
+const ACTIVE_COLS = 5;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -511,174 +528,172 @@ function PatientRow({
     const kind = (row.treatment_kind ?? '').trim();
     const received = treatmentSummary(row); // PASTVISIT 정본 — treatment_kind 결측 시 폴백
     const treatmentText = kind || received || '—';
+    // T-20260612-foot-DOCPATIENTLIST-TABLEVIEW: 이력 행 = 테이블 행(행=환자). 행 클릭 → 진료차트
+    //   (onOpenChart=useChart.openChart). 카드형 → 테이블화, read-only 동선·표시값 보존.
     return (
-      <button
-        type="button"
+      <tr
         onClick={onOpenChart}
-        disabled={!onOpenChart}
-        className="w-full rounded-lg border border-border bg-card text-left transition hover:bg-accent/40 disabled:cursor-default disabled:hover:bg-card"
+        className={cn('align-top transition', onOpenChart ? 'cursor-pointer hover:bg-accent/40' : '')}
         data-testid="patient-row"
         data-mode="history"
       >
-        <div className="grid grid-cols-[1.75rem_3rem_5rem_5.5rem_minmax(0,1fr)_auto_auto] items-center gap-2 px-3 py-2.5">
-          {/* 번호 */}
-          <span className="text-xs font-mono text-muted-foreground text-center">
-            {row.queue_number ?? '—'}
-          </span>
-          {/* 방문유형 배지 (초진/재진) */}
-          <div className="flex justify-center">
+        {/* 이름 — 번호 + 방문배지(초진/재진) + 이름 */}
+        <td className="px-3 py-2">
+          <div className="flex items-center gap-1.5">
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{row.queue_number ?? '—'}</span>
             <VisitTypeBadge type={row.visit_type} />
+            <span className="truncate text-sm font-semibold" title={row.customer_name} data-testid="patient-name">
+              {row.customer_name}
+            </span>
           </div>
-          {/* 이름 */}
+        </td>
+        {/* 처방 상태 배지 (처방전 O/X) — 그날의 사실 기록(read-only) */}
+        <td className="px-3 py-2">
+          <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
+        </td>
+        {/* 처방 내용 한 줄 — 없으면 '처방없음' (AC-2) */}
+        <td className="px-3 py-2">
           <span
-            className="text-sm font-semibold truncate text-center"
-            title={row.customer_name}
-            data-testid="patient-name"
-          >
-            {row.customer_name}
-          </span>
-          {/* 처방 상태 배지 (처방전 O/X) — 그날의 사실 기록(read-only) */}
-          <div className="flex justify-center">
-            <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
-          </div>
-          {/* 처방 내용 한 줄 — 없으면 '처방없음' (AC-2) */}
-          <span
-            className={`text-[12px] truncate ${hasRx ? 'text-foreground' : 'text-muted-foreground/70'}`}
+            className={`block truncate text-[12px] ${hasRx ? 'text-foreground' : 'text-muted-foreground/70'}`}
             title={rxLine}
             data-testid="rx-oneline"
           >
             {rxLine}
           </span>
-          {/* 치료 종류 (treatment_kind, 폴백=받은 치료) */}
+        </td>
+        {/* 치료 종류 (treatment_kind, 폴백=받은 치료) — 무채색 톤으로 단순화 */}
+        <td className="px-3 py-2">
           <span
-            className="text-[12px] text-emerald-700 font-medium truncate max-w-[8rem]"
+            className="block truncate text-[12px] font-medium text-gray-600"
             title={treatmentText}
             data-testid="treatment-kind"
           >
             {treatmentText}
           </span>
-          {/* 히러레이저 ✅/❌ 배지 */}
+        </td>
+        {/* 히러레이저 ✅/❌ 배지 */}
+        <td className="px-3 py-2">
           <HealerLaserBadge confirmed={row.healer_laser_confirm} />
-        </div>
-      </button>
+        </td>
+      </tr>
     );
   }
 
   return (
-    <div
-      className={`rounded-lg border transition ${
-        hasPendingRx ? 'border-amber-300 bg-amber-50/40' : 'border-border bg-card'
-      }`}
-      data-testid="patient-row"
-    >
+    <>
       {/*
-        기본 행 — T-20260609 ⑤: flex → grid 고정 열 레이아웃.
-        열 순서: 번호 / 방문배지(②이름왼쪽) / 이름(④고정폭) / 처방배지(③이름오른쪽) / 상태 / 치료실 / 메모 / 액션
-        T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: '상태'와 '메모' 사이에 치료실(방이름) 컬럼 추가.
-        모든 행이 동일 grid-template → 큐번호·배지·이름·처방·시간 항목이 행마다 동일 x위치(스크롤 무관).
+        T-20260612-foot-DOCPATIENTLIST-TABLEVIEW: 진료대시보드 테이블뷰(doctor-call-feed-table) 동일 언어로 전환.
+        행=환자, 열=이름|방|처방|상태|메모. grid 카드 → 테이블 행. 셀 내 액션은 텍스트/링크(버튼 박스 제거).
+        펼침(처방·임상경과)·인라인 편집·서명의사 필터·날짜이동 등 기능은 전부 보존 — 표시 레이아웃만 재구성.
       */}
-      <div className="grid grid-cols-[1.75rem_3rem_5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto] items-center gap-2 px-3 py-2.5">
-        {/* 번호 */}
-        <span className="text-xs font-mono text-muted-foreground text-center">
-          {row.queue_number ?? '—'}
-        </span>
-
-        {/* ② 방문유형 배지 — 이름 왼쪽(행 첫 식별 위치) */}
-        <div className="flex justify-center">
-          <VisitTypeBadge type={row.visit_type} />
-        </div>
-
-        {/* ④ 이름 — 고정 너비(글자수 변동 무관), 초과 시 truncate.
-            T-20260609-foot-DOCDASH-LABEL-RX-REFINE item4: 셀 내 가로 중앙정렬(text-center).
-            grid items-center(세로 중앙)는 기존 유지 — 컬럼 정의 보존, alignment만 보정. */}
-        <span
-          className="text-sm font-semibold truncate text-center"
-          title={row.customer_name}
-          data-testid="patient-name"
-        >
-          {row.customer_name}
-        </span>
-
-        {/* ③ 처방 상태 배지 — 이름 오른쪽 + hover 처방내용 툴팁.
-            item4: justify-start → justify-center (이름과 같이 가로 중앙정렬). */}
-        <div className="flex justify-center">
-          <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
-        </div>
-
-        {/* 상태 — T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)/귀가(done) 시각 구분(AC-5). */}
-        <StatusCell status={row.status} statusFlag={row.status_flag} />
-
-        {/* 치료실(방이름) — T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3.
-            getAssignedSlotName(SSOT) 파생 — 배정된 방 있으면 '◯번 치료실' 등 표시, 미배정/대기면 '—'. */}
-        {(() => {
-          const slotName = getAssignedSlotName(row as unknown as Parameters<typeof getAssignedSlotName>[0]);
-          return slotName ? (
+      <tr
+        className={cn('align-top transition', hasPendingRx ? 'bg-amber-50/40' : 'bg-white')}
+        data-testid="patient-row"
+        data-pending={String(hasPendingRx)}
+      >
+        {/* 이름 — 번호 + 방문배지(초/재진, 이름 왼쪽) + 이름 */}
+        <td className="px-3 py-2">
+          <div className="flex items-center gap-1.5">
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{row.queue_number ?? '—'}</span>
+            <VisitTypeBadge type={row.visit_type} />
             <span
-              className="inline-flex min-w-0 items-center gap-0.5 rounded border border-teal-100 bg-teal-50 px-1 py-px text-[10px] font-medium text-teal-700"
-              title={slotName}
-              data-testid="patient-room"
+              className="truncate text-sm font-semibold"
+              title={row.customer_name}
+              data-testid="patient-name"
             >
-              <MapPin className="h-2.5 w-2.5 shrink-0" />
-              <span className="truncate">{slotName}</span>
+              {row.customer_name}
             </span>
-          ) : (
-            <span className="text-[11px] text-muted-foreground/50 text-center" data-testid="patient-room">—</span>
-          );
-        })()}
+          </div>
+        </td>
 
-        {/* 예약메모 — T-20260517-foot-HEALER-MEMO-DISPLAY AC-1~4 */}
-        <span
-          className="text-[11px] text-muted-foreground truncate"
-          title={row.booking_memo ?? undefined}
-          data-testid="booking-memo"
-        >
-          {row.booking_memo || '—'}
-        </span>
+        {/* 방(치료실) — T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3.
+            getAssignedSlotName(SSOT) 파생. 진료대시보드 '방' 셀과 동일 무채색 톤(teal 박스 → gray 텍스트). */}
+        <td className="px-3 py-2" data-testid="patient-room-cell">
+          {(() => {
+            const slotName = getAssignedSlotName(row as unknown as Parameters<typeof getAssignedSlotName>[0]);
+            return slotName ? (
+              <span
+                className="inline-flex min-w-0 items-center gap-0.5 text-[11px] font-medium text-gray-600"
+                title={slotName}
+                data-testid="patient-room"
+              >
+                <MapPin className="h-2.5 w-2.5 shrink-0 text-gray-400" />
+                <span className="truncate">{slotName}</span>
+              </span>
+            ) : (
+              <span className="text-[11px] text-gray-300" data-testid="patient-room">-</span>
+            );
+          })()}
+        </td>
 
-        {/* 액션 — 확정 버튼 / 대기 알림 / 펼치기 토글 */}
-        <div className="flex items-center gap-1.5 justify-end">
-          {/* 임시 처방이고 의사인 경우 → 확정 버튼 */}
-          {hasPendingRx && doctorMode && (
-            <Button
-              size="sm"
-              className="h-6 text-[11px] bg-teal-600 hover:bg-teal-700 px-2"
-              onClick={() => confirm.mutate({ checkInId: row.id, customerId: row.customer_id })}
-              disabled={confirm.isPending}
-              data-testid="confirm-prescription-btn"
+        {/* 처방 — 처방전 O/X 배지(hover 처방내용) + 확정(임시·의사) 텍스트 액션 / 대기 안내 */}
+        <td className="px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
+            {/* 임시 처방이고 의사인 경우 → 확정(텍스트 액션, box 제거 — 클릭 동선 유지) */}
+            {hasPendingRx && doctorMode && (
+              <button
+                type="button"
+                className={CELL_ACTION_BTN_PRIMARY}
+                onClick={() => confirm.mutate({ checkInId: row.id, customerId: row.customer_id })}
+                disabled={confirm.isPending}
+                data-testid="confirm-prescription-btn"
+              >
+                {confirm.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-3 w-3" />
+                )}
+                확정
+              </button>
+            )}
+            {/* 임시 처방 알림 (치료사용) */}
+            {hasPendingRx && !doctorMode && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-700">
+                <AlertCircle className="h-3 w-3" />
+                원장 확인 대기
+              </span>
+            )}
+          </div>
+        </td>
+
+        {/* 상태 — STATUS-SPLIT(진료완료/귀가) + 펼치기(처방·경과) 텍스트 토글(chevron 제거) */}
+        <td className="px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <StatusCell status={row.status} statusFlag={row.status_flag} />
+            <button
+              type="button"
+              onClick={() => setExpanded((e) => !e)}
+              aria-expanded={expanded}
+              className={CELL_ACTION_BTN}
+              data-testid="patient-expand-toggle"
+              title="처방·임상경과 펼치기/접기"
             >
-              {confirm.isPending ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <CheckCircle2 className="h-3 w-3 mr-0.5" />
-              )}
-              확정
-            </Button>
-          )}
+              <FileText className="h-3 w-3 text-gray-400" />
+              {expanded ? '닫기' : '처방·경과'}
+            </button>
+          </div>
+        </td>
 
-          {/* 임시 처방 알림 (치료사용) */}
-          {hasPendingRx && !doctorMode && (
-            <span className="text-[10px] text-amber-700 flex items-center gap-0.5">
-              <AlertCircle className="h-3 w-3" />
-              원장 확인 대기
-            </span>
-          )}
-
-          {/* 펼치기 토글 */}
-          <button
-            type="button"
-            onClick={() => setExpanded((e) => !e)}
-            className="rounded p-0.5 hover:bg-accent transition text-muted-foreground"
+        {/* 메모 — T-20260517-foot-HEALER-MEMO-DISPLAY AC-1~4 */}
+        <td className="px-3 py-2">
+          <span
+            className="block truncate text-[11px] text-muted-foreground"
+            title={row.booking_memo ?? undefined}
+            data-testid="booking-memo"
           >
-            {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          </button>
-        </div>
-      </div>
+            {row.booking_memo || '—'}
+          </span>
+        </td>
+      </tr>
 
       {/* 펼쳐진 영역 — 빠른처방 버튼
           T-20260610-foot-DOCPATIENTLIST-EXPAND-COURSE-RXHISTORY: 아래에 임상경과+처방내역 블록이
           이어지므로 rounded-b-lg 는 최하단 블록으로 이관(여기선 제거). 게이트/버튼 로직 불변(AC-3). */}
       {expanded && !isConfirmed && (
-        <div className="border-t px-3 py-2.5 bg-white">
+        <tr data-testid="patient-expand-rx-row" className="bg-white">
+        <td colSpan={ACTIVE_COLS} className="px-3 pb-2">
+        <div className="rounded-lg border bg-white p-2">
           <QuickRxBar
             doctorMode={doctorMode}
             role={role}
@@ -702,12 +717,16 @@ function PatientRow({
             </p>
           )}
         </div>
+        </td>
+        </tr>
       )}
 
       {/* 확정된 경우 — T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-2/4:
           "처방완료" + 약물리스트(검은글씨, 다중약 전체). 재클릭 → 취소 확인 팝업(별도 취소버튼 폐지). */}
       {expanded && isConfirmed && (
-        <div className="border-t px-3 py-2.5 bg-green-50/60">
+        <tr data-testid="patient-expand-rxconfirmed-row" className="bg-white">
+        <td colSpan={ACTIVE_COLS} className="px-3 pb-2">
+        <div className="rounded-lg border bg-green-50/60 p-2">
           <div className="flex items-center gap-1.5">
             <RxConfirmedSummary
               checkInId={row.id}
@@ -733,6 +752,8 @@ function PatientRow({
             )}
           </div>
         </div>
+        </td>
+        </tr>
       )}
 
       {/* 확장 상세 — 임상경과 + 처방내역 read 뷰.
@@ -744,8 +765,10 @@ function PatientRow({
           - 임상경과: MedicalChartPanel embed variant='clinical'(DoctorCallDashboard showClinical 동일 SSOT).
             customer_id+clinic_id 있을 때만. 기존 차트 있으면 read 모드(isReadOnly) 로드. 신규 조회경로/Drawer 없음. */}
       {expanded && (
+        <tr data-testid="patient-expand-detail-row" className="bg-white">
+        <td colSpan={ACTIVE_COLS} className="px-3 pb-2">
         <div
-          className="border-t px-3 py-2.5 bg-white rounded-b-lg space-y-2"
+          className="rounded-lg border bg-white px-3 py-2.5 space-y-2"
           data-testid="patient-expand-detail"
         >
           {!isConfirmed && (
@@ -794,8 +817,10 @@ function PatientRow({
             </p>
           )}
         </div>
+        </td>
+        </tr>
       )}
-    </div>
+    </>
   );
 }
 
@@ -1030,28 +1055,70 @@ export default function DoctorPatientList() {
             : '해당 조건의 환자가 없습니다.'}
         </div>
       ) : (
-        <div className="space-y-2" data-testid="patient-list">
-          {sorted.map((row) => (
-            <PatientRow
-              key={row.id}
-              row={row}
-              doctorMode={doctorMode}
-              role={profile?.role ?? ''}
-              onRefresh={() => refetch()}
-              onOpenChart={row.customer_id ? () => openChart(row.customer_id as string) : undefined}
-              isPast={isPast}
-              clinicId={clinicId}
-              currentUserEmail={profile?.email ?? null}
-              isToday={isToday}
-            />
-          ))}
+        // T-20260612-foot-DOCPATIENTLIST-TABLEVIEW: 진료대시보드 테이블뷰(doctor-call-feed-table) 동일 패턴.
+        //   table-fixed + colgroup 으로 열 너비 고정(행마다 컬럼 어긋남 제거). 이력(과거)/활성(오늘·미래) 열 구성 분기.
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full table-fixed text-sm" data-testid="patient-list">
+            {isPast ? (
+              <colgroup>
+                <col className="w-[30%]" />
+                <col className="w-[14%]" />
+                <col className="w-[26%]" />
+                <col className="w-[18%]" />
+                <col className="w-[12%]" />
+              </colgroup>
+            ) : (
+              <colgroup>
+                <col className="w-[28%]" />
+                <col className="w-[14%]" />
+                <col className="w-[22%]" />
+                <col className="w-[16%]" />
+                <col className="w-[20%]" />
+              </colgroup>
+            )}
+            <thead>
+              {isPast ? (
+                <tr className="border-b border-gray-100 bg-gray-50/70 text-left text-[11px] font-semibold text-muted-foreground">
+                  <th className="px-3 py-1.5">이름</th>
+                  <th className="px-3 py-1.5">처방</th>
+                  <th className="px-3 py-1.5">처방내역</th>
+                  <th className="px-3 py-1.5">치료</th>
+                  <th className="px-3 py-1.5">레이저</th>
+                </tr>
+              ) : (
+                <tr className="border-b border-gray-100 bg-gray-50/70 text-left text-[11px] font-semibold text-muted-foreground">
+                  <th className="px-3 py-1.5">이름</th>
+                  <th className="px-3 py-1.5">방</th>
+                  <th className="px-3 py-1.5">처방</th>
+                  <th className="px-3 py-1.5">상태</th>
+                  <th className="px-3 py-1.5">메모</th>
+                </tr>
+              )}
+            </thead>
+            <tbody className="divide-y divide-gray-100" data-testid="patient-list-rows">
+              {sorted.map((row) => (
+                <PatientRow
+                  key={row.id}
+                  row={row}
+                  doctorMode={doctorMode}
+                  role={profile?.role ?? ''}
+                  onRefresh={() => refetch()}
+                  onOpenChart={row.customer_id ? () => openChart(row.customer_id as string) : undefined}
+                  isPast={isPast}
+                  clinicId={clinicId}
+                  currentUserEmail={profile?.email ?? null}
+                  isToday={isToday}
+                />
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
       {/* 사용 안내 */}
       <div className="rounded-lg border bg-muted/30 px-3 py-2.5 text-[11px] text-muted-foreground space-y-0.5">
         <p className="font-medium text-foreground/60">사용 방법</p>
-        <p>• 환자 행 오른쪽 화살표를 눌러 빠른처방 버튼을 펼치세요.</p>
+        <p>• 환자 행 상태 칸의 '처방·경과'를 눌러 빠른처방·임상경과를 펼치세요.</p>
         <p>• {doctorMode ? '원장 모드: 버튼 클릭 시 바로 확정 처리됩니다.' : '치료사 모드: 버튼 클릭 시 임시(pending) 상태로 저장되고, 원장 확인 후 확정됩니다.'}</p>
         <p>• 임시(⚠) 상태인 행은 노란 테두리로 표시됩니다.</p>
       </div>
