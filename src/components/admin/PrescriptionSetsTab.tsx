@@ -20,7 +20,6 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
 import { Loader2, Plus, Pencil, Trash2, X, Folder, Check, Search, Link2, MoreVertical } from 'lucide-react';
-import RxCountInput from '@/components/admin/RxCountInput';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -290,7 +289,10 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
 
   return (
     <div className="grid grid-cols-12 gap-1.5 items-end border rounded-lg p-2.5 bg-muted/30">
-      <div className="col-span-3">
+      {/* T-20260610-foot-RXSET-NAMEDESC-MODEL AC-2: 처방세트 항목 = [이름+용량]/[설명] 2필드.
+          투여경로·용법·횟수·일수 입력은 등록화면에서 제거(용법은 묶음·빠른처방 불러올 때 입력).
+          기존 값은 onChange 미발생으로 보존(숨김). */}
+      <div className="col-span-5">
         <Label className="text-[10px] flex items-center gap-1">
           약품/시술명 *
           {linked && (
@@ -357,51 +359,18 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
           onChange={(e) => onChange(idx, 'dosage', e.target.value)}
           placeholder="적정량"
           className="h-7 text-xs mt-0.5"
+          data-testid="rx-set-item-dosage-input"
         />
       </div>
-      <div className="col-span-1">
-        <Label className="text-[10px]">투여경로</Label>
-        <Input
-          value={item.route}
-          onChange={(e) => onChange(idx, 'route', e.target.value)}
-          placeholder="외용"
-          className="h-7 text-xs mt-0.5"
-        />
-      </div>
-      <div className="col-span-2">
-        <Label className="text-[10px]">용법</Label>
-        <Input
-          value={item.frequency}
-          onChange={(e) => onChange(idx, 'frequency', e.target.value)}
-          placeholder="1일 2회"
-          className="h-7 text-xs mt-0.5"
-        />
-      </div>
-      {/* T-20260603-foot-RX-CHART-FOLLOWUP3 C-2-5: 횟수 = 숫자만, "회"는 배경 suffix */}
-      <div className="col-span-1">
-        <Label className="text-[10px]">횟수</Label>
-        <RxCountInput
-          value={item.count ?? null}
-          onChange={(v) => onChange(idx, 'count', v)}
-        />
-      </div>
-      <div className="col-span-1">
-        <Label className="text-[10px]">일수</Label>
-        <Input
-          type="number"
-          value={item.days}
-          onChange={(e) => onChange(idx, 'days', Number(e.target.value))}
-          className="h-7 text-xs mt-0.5"
-          min={1}
-        />
-      </div>
-      <div className="col-span-1">
-        <Label className="text-[10px]">비고</Label>
+      {/* 설명(notes) — 상세 관리화면 限 노출(공식문서·미니멀목록 금지, AC-4). 투여경로/용법/횟수/일수 입력칸은 제거(값은 보존). */}
+      <div className="col-span-4">
+        <Label className="text-[10px]">설명</Label>
         <Input
           value={item.notes}
           onChange={(e) => onChange(idx, 'notes', e.target.value)}
-          placeholder=""
+          placeholder="분류·메모 등 (공식문서 미노출)"
           className="h-7 text-xs mt-0.5"
+          data-testid="rx-set-item-notes-input"
         />
       </div>
       <div className="col-span-1 flex items-end">
