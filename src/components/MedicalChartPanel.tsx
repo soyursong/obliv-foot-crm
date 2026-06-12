@@ -1923,9 +1923,10 @@ export default function MedicalChartPanel({
 
         {/* 임상경과 — 기존 textarea 핸들러/// 자동완성 재사용. embed는 2~3줄로 컴팩트. */}
         <div>
-          <div className="flex items-center justify-between mb-1">
+          {/* T-20260612-foot-MEDREC-DATE-DIAG-UI-REFINE 6번: 슬래시 단축어 안내 설명 텍스트 제거
+              (기능 무변경 — 슬래시 트리거 핸들러·팝오버 유지). 임상경과 라벨만 유지. */}
+          <div className="flex items-center mb-1">
             <label className="text-xs font-semibold text-muted-foreground">임상경과</label>
-            <span className="text-[10px] text-muted-foreground">//단축어 입력 시 자동완성</span>
           </div>
           <div className="relative">
             <Textarea
@@ -2816,15 +2817,16 @@ export default function MedicalChartPanel({
                   {/* T-20260611-foot-MEDREC-CLINICAL-SAVE-UICLEANUP AC-1: 진료일 | 담당의사 두 단 배치.
                       (임상경과/진료메모 2단 + 처방내역 진단명아래 누적은 NOTES-2COL 850ceed 기구현 — 회귀 금지) */}
                   <div className="flex flex-col sm:flex-row gap-3" data-testid="chart-date-doctor-row">
-                  {/* 진료일 */}
-                  <div className="sm:flex-1 min-w-0">
-                    <label className="block text-xs font-semibold text-muted-foreground mb-1">진료일</label>
+                  {/* 진료일 — T-20260612-foot-MEDREC-DATE-DIAG-UI-REFINE ①: 좌측정렬 + 달력 아이콘 date input.
+                      (type=date = 네이티브 달력 아이콘/피커, 비읽기전용일 때 클릭 수정 가능 — 동작 무변경) */}
+                  <div className="sm:flex-1 min-w-0 text-left">
+                    <label className="block text-xs font-semibold text-muted-foreground mb-1 text-left">진료일</label>
                     <Input
                       type="date"
                       value={formDate}
                       onChange={(e) => { setFormDate(e.target.value); loadVisitPayments(e.target.value); }}
                       disabled={isReadOnly}
-                      className="h-9 text-sm max-w-[180px] disabled:opacity-100 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
+                      className="h-9 text-sm text-left max-w-[180px] disabled:opacity-100 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
                       data-testid="medical-chart-date"
                     />
                   </div>
@@ -2837,15 +2839,17 @@ export default function MedicalChartPanel({
                       신규/수정(editMode)/더미 차트는 그대로 노출 → formSigningDoctorId 선택·NOT NULL 강제·변경이력
                       ·직인 귀속 로직(SIGN-AUDIT Phase2) 일절 변경 없음. */}
                   {!(isReadOnly && selectedChart && !selectedChartId?.startsWith('__dummy__')) && (
-                  <div className="sm:flex-1 min-w-0" data-testid="signing-doctor-select-block">
-                    <label className="block text-xs font-semibold text-muted-foreground mb-1">
+                  /* 담당 의사 — T-20260612-foot-MEDREC-DATE-DIAG-UI-REFINE ②: 우측정렬 + 드롭다운(select, 의사 role만=clinicDoctors).
+                     컬럼을 flex-col items-end 로 두어 라벨·select·경고를 우측 정렬. select width=auto 로 ml-auto 효과. */
+                  <div className="sm:flex-1 min-w-0 sm:flex sm:flex-col sm:items-end" data-testid="signing-doctor-select-block">
+                    <label className="block w-full text-xs font-semibold text-muted-foreground mb-1 sm:text-right">
                       담당 의사
                     </label>
                     <select
                       value={formSigningDoctorId}
                       onChange={(e) => setFormSigningDoctorId(e.target.value)}
                       disabled={isReadOnly}
-                      className={`h-10 text-sm w-full max-w-[280px] rounded-md border px-3 bg-background ${
+                      className={`h-10 text-sm w-full sm:w-auto sm:min-w-[220px] max-w-[280px] rounded-md border px-3 bg-background ${
                         isReadOnly
                           ? 'opacity-100 bg-gray-50 text-gray-500 cursor-not-allowed'
                           : !formSigningDoctorId
@@ -2863,12 +2867,12 @@ export default function MedicalChartPanel({
                       ))}
                     </select>
                     {!isReadOnly && !formSigningDoctorId && (
-                      <p className="mt-1 text-[11px] text-rose-500" data-testid="signing-doctor-warning">
+                      <p className="mt-1 text-[11px] text-rose-500 sm:text-right" data-testid="signing-doctor-warning">
                         진료의를 선택해야 저장할 수 있습니다.
                       </p>
                     )}
                     {clinicDoctors.length === 0 && (
-                      <p className="mt-1 text-[11px] text-amber-600">
+                      <p className="mt-1 text-[11px] text-amber-600 sm:text-right">
                         등록된 의사가 없습니다 — 설정 &gt; 병원·원장 정보에서 의사를 먼저 등록하세요.
                       </p>
                     )}
@@ -2877,10 +2881,16 @@ export default function MedicalChartPanel({
                   {/* /진료일·담당의사 두 단 wrapper */}
                   </div>
 
-                  {/* 진단명 — T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2 [B] + AC-3 [C]):
+                  {/* T-20260611-foot-MEDCHART-2COL-LABEL-CLEANUP AC-3 row2: 진단명(좌) | 처방내역(우) 2단 grid.
+                      NOTES-2COL AC-2(처방내역 진단명 직하단 stack)를 본 티켓이 supersede — 좌우 컬럼으로 분리.
+                      각 컬럼은 vertical stack 유지(AC-4 진단명 / AC-5 처방내역). 좁은 폭(<sm)은 1단 자연 collapse.
+                      저장경로(formDx→diagnosis, formRx→prescription_items) 무변경 — 배치만 좌우 2단. */}
+                  <div className="flex flex-col sm:flex-row gap-3" data-testid="chart-dx-rx-row">
+                  {/* 진단명 (좌) — T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2 [B] + AC-3 [C]):
                       자동완성/이력 datalist 폐지 → 폴더 탐색 드롭다운(등록 상병만 선택) + 원장별 즐겨찾기.
-                      넓게/오른쪽 아래로 확장. 저장값=순수 상병명(formDx), medical_charts.diagnosis 저장경로 무변경. */}
-                  <div>
+                      저장값=순수 상병명(formDx), medical_charts.diagnosis 저장경로 무변경.
+                      AC-4: 복수 진단명은 컬럼 내 세로 stack(picker 값 자체가 줄단위 누적). */}
+                  <div className="sm:flex-1 min-w-0">
                     <label className="block text-xs font-semibold text-muted-foreground mb-1">
                       진단명
                       <span className="ml-1 text-[10px] text-teal-600 font-normal">· 등록 상병명 폴더 선택</span>
@@ -2894,9 +2904,9 @@ export default function MedicalChartPanel({
                     />
                   </div>
 
-                  {/* 처방내역 — T-20260609-foot-MEDCHART-NOTES-2COL AC-2: 진단명 아래로 이동.
-                      우측 패널에서 선택 후 이 테이블에 반영 */}
-                  <div>
+                  {/* 처방내역 (우) — AC-3 row2 우측 컬럼. 우측 패널에서 선택 후 이 테이블에 반영.
+                      AC-5: 복수 처방은 테이블 행(세로 stack)으로 표시. */}
+                  <div className="sm:flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-xs font-semibold text-muted-foreground">처방내역</label>
                       <span className="text-[10px] text-muted-foreground">우측 패널에서 처방세트 선택</span>
@@ -3005,6 +3015,8 @@ export default function MedicalChartPanel({
                       </div>
                     )}
                   </div>
+                  {/* /진단명·처방내역 2단 wrapper (AC-3 row2) */}
+                  </div>
 
                   {/* 치료·시술 — 결제내역 자동 연동 (readonly)
                       T-20260608-foot-CHART-LAYOUT-SHIFT AC-1: 별도 fetch(loadVisitPayments) in-flight 동안
@@ -3037,27 +3049,38 @@ export default function MedicalChartPanel({
                     </div>
                   )}
 
-                  {/* 치료사차트 — 읽기전용 (AC-3) + T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 통합
-                      T-20260611-foot-MEDREC-CLINICAL-SAVE-UICLEANUP AC-2: '읽기전용' 태그 badge 제거(시각 정리).
-                      읽기전용 동작(readOnly/disabled Textarea)은 그대로 유지 — 라벨만 남김. */}
-                  <div>
+                  {/* T-20260611-foot-MEDCHART-2COL-LABEL-CLEANUP AC-3 row3: 치료사차트(좌) | 치료메모(우) 2단 grid.
+                      TREATMEMO-CHART-MERGE(치료메모를 치료사차트 하단에 통합)를 본 티켓이 좌우 2단으로 재분리.
+                      AC-1: '읽기전용' 텍스트/배지 미표시(라벨만). AC-2: '치료메모' 태그형 버튼(배지) 아닌 일반 라벨.
+                      읽기전용 동작(formTx readOnly/disabled, treatMemos 뷰어) 무변경 — 배치만 좌우 2단.
+                      좁은 폭(<sm)은 1단 자연 collapse. */}
+                  <div className="flex flex-col sm:flex-row gap-3" data-testid="chart-tx-treatmemo-row">
+                  {/* 치료사차트 (좌) — 읽기전용 동작 유지, 시각 라벨만 '치료사차트'. */}
+                  <div className="sm:flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <label className="text-xs font-semibold text-muted-foreground">치료사차트</label>
                     </div>
+                    {/* T-20260612-foot-MEDREC-DATE-DIAG-UI-REFINE ⑨: 뷰어 모드라 내용 유무를 미리 앎 —
+                        치료사차트 내용 없으면 compact(rows 2 / min-h 제거), 있으면 기존 높이 유지. */}
                     <Textarea
                       value={formTx}
                       readOnly
                       disabled
                       placeholder="치료사가 기록한 내용이 여기 표시됩니다"
-                      rows={7}
-                      className="text-sm resize-none bg-gray-50 text-gray-500 cursor-not-allowed placeholder:text-gray-300 disabled:opacity-100 min-h-[8rem]"
+                      rows={formTx ? 7 : 2}
+                      className={`text-sm resize-none bg-gray-50 text-gray-500 cursor-not-allowed placeholder:text-gray-300 disabled:opacity-100 ${formTx ? 'min-h-[8rem]' : 'min-h-0'}`}
                       data-testid="medical-chart-treatment"
                     />
-                    {/* T-20260527-foot-TREATMEMO-CHART-MERGE AC-1/3/4: 치료메모 이력 통합 표시
-                        T-20260611-foot-MEDREC-CLINICAL-SAVE-UICLEANUP AC-2: 태그형 '치료메모' 라벨 + '읽기전용'
-                        badge 헤더 제거(시각 정리). 치료메모 이력 항목(내용·작성자·일시) 표시는 그대로 유지. */}
-                    {treatMemos.length > 0 && (
-                      <div className="mt-2 space-y-1.5" data-testid="treat-memo-in-chart-section">
+                  </div>
+
+                  {/* 치료메모 (우) — AC-3 row3 우측 컬럼. 일반 라벨(태그/배지 아님, AC-2).
+                      치료메모 이력 항목(내용·작성자·일시) 읽기전용 뷰어 — 표시·데이터 경로 무변경. */}
+                  <div className="sm:flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <label className="text-xs font-semibold text-muted-foreground">치료메모</label>
+                    </div>
+                    {treatMemos.length > 0 ? (
+                      <div className="space-y-1.5" data-testid="treat-memo-in-chart-section">
                         {treatMemos.map((memo) => (
                           <div
                             key={memo.id}
@@ -3075,7 +3098,17 @@ export default function MedicalChartPanel({
                           </div>
                         ))}
                       </div>
+                    ) : (
+                      /* ⑨ 치료메모 내용 없으면 compact — 고정 8rem 제거, 헤더+최소 padding만. */
+                      <div
+                        className="rounded-lg border border-dashed p-2 text-xs text-muted-foreground text-center"
+                        data-testid="treat-memo-empty"
+                      >
+                        치료메모 없음
+                      </div>
                     )}
+                  </div>
+                  {/* /치료사차트·치료메모 2단 wrapper (AC-3 row3) */}
                   </div>
 
                   {/* T-20260609-foot-MEDCHART-NOTES-2COL AC-1: 임상경과(좌·너비4) · 진료메모(우·너비1)
@@ -3085,8 +3118,10 @@ export default function MedicalChartPanel({
                       T-20260609-foot-DOCDASH-CHART-UX item5 (AC5-1): 섹션 헤더 라벨('임상경과') 텍스트 태그 완전 제거.
                       좌측 굵은 세로줄(border-l-2 border-gray-300)로 미니멀 구분 — 텍스트는 placeholder/내용으로 식별. */}
                   <div className="sm:flex-[4] min-w-0 border-l-2 border-gray-300 pl-3">
-                    <div className="flex items-center justify-end mb-1">
-                      <span className="text-[10px] text-muted-foreground">//단축어 입력 시 자동완성</span>
+                    {/* T-20260612-foot-MEDREC-DATE-DIAG-UI-REFINE ⑤: '임상경과' 소헤더 추가.
+                        6번: 슬래시 단축어 안내 설명 텍스트 제거 — 기능(슬래시 트리거 핸들러·팝오버)은 무변경 유지. */}
+                    <div className="flex items-center mb-1">
+                      <h4 className="text-xs font-medium text-gray-700">임상경과</h4>
                     </div>
 
                     <div className="relative">
@@ -3221,11 +3256,10 @@ export default function MedicalChartPanel({
                       좌측 굵은 세로줄(border-l-2 border-gray-300)로 미니멀 구분 — 원장전용 표식만 유지. */}
                   {isDirector ? (
                     <div className="sm:flex-[1] min-w-0 flex flex-col border-l-2 border-gray-300 pl-3" data-testid="doctor-memo-section">
-                      {/* T-20260611-foot-MEDREC-CLINICAL-SAVE-UICLEANUP AC-2: '원장 전용' 태그 badge 제거 →
-                          안내문구로 대체. 의료진 전용 노출제한(isDirector 게이트) 동작은 그대로 유지. */}
-                      <p className="text-[10px] text-muted-foreground mb-1" data-testid="doctor-memo-notice">
-                        의료진 전용 메모입니다. 타 스태프에게 노출되지 않습니다
-                      </p>
+                      {/* T-20260612-foot-MEDREC-DATE-DIAG-UI-REFINE ⑦: 안내문구('의료진 전용 메모입니다…') 전부 제거 →
+                          '의료진 전용메모' 소헤더만. (2COL-LABEL AC6 '안내문구 표출'을 reporter 직접지시로 supersede.
+                          의료진 전용 노출제한 isDirector 게이트 동작은 그대로 유지.) */}
+                      <h4 className="text-xs font-medium text-gray-500 mb-1" data-testid="doctor-memo-header">의료진 전용메모</h4>
                       <Textarea
                         value={formMemo}
                         onChange={(e) => setFormMemo(e.target.value)}
