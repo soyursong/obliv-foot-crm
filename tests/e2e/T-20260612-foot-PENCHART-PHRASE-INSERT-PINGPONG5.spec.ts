@@ -30,17 +30,21 @@ async function openPenChartDraw(page: Page): Promise<boolean> {
 
   // popupMode → select 모드에서 시작. 보험차트(pen_chart) 양식 버튼 클릭.
   const formBtn = page.locator('button', { hasText: /보험차트|펜차트/ }).first();
-  if (!(await formBtn.isVisible({ timeout: 8000 }).catch(() => false))) return false;
+  if (!(await formBtn.isVisible({ timeout: 12000 }).catch(() => false))) return false;
   await formBtn.click();
 
-  // draw 진입 = 상용구 버튼 노출 (양식 배경 로드 + 캔버스 init 대기)
-  return await page.locator('[data-testid="phrase-library-btn"]').isVisible({ timeout: 8000 }).catch(() => false);
+  // draw 진입 = 상용구 버튼 노출 (양식 배경 로드 + 캔버스 init 200ms effect 대기). 콜드 로드 여유 확보.
+  return await page.locator('[data-testid="phrase-library-btn"]').isVisible({ timeout: 15000 }).catch(() => false);
 }
 
 async function openPhrasePanelWithItems(page: Page): Promise<boolean> {
-  await page.locator('[data-testid="phrase-library-btn"]').click();
+  // T-20260612-PINGPONG5 AC-1.B: 삽입 후 패널이 *열린 채 유지*되므로 멱등 처리 —
+  //   이미 열려 있으면 토글 버튼을 다시 누르지 않는다(누르면 닫혀버림).
   const panel = page.locator('[data-testid="phrase-library-panel"]');
-  if (!(await panel.isVisible({ timeout: 3000 }).catch(() => false))) return false;
+  if (!(await panel.isVisible({ timeout: 500 }).catch(() => false))) {
+    await page.locator('[data-testid="phrase-library-btn"]').click();
+    if (!(await panel.isVisible({ timeout: 3000 }).catch(() => false))) return false;
+  }
   // 항목 있는 카테고리 탐색 — 첫 항목 보이면 OK
   const firstItem = page.locator('[data-testid^="phrase-item-"]').first();
   return await firstItem.isVisible({ timeout: 2000 }).catch(() => false);
@@ -72,11 +76,11 @@ test('S1-AC2 [실DOM]: 연속 행 탭 → 오버레이 누적(다중 삽입, 덮
   const overlay = page.locator('[data-testid="penchart-overlay-boilerplate"]');
   const start = await overlay.count();
 
-  // 1탭 → 삽입(패널이 닫히므로 재오픈)
+  // 1탭 → 삽입 (패널은 AC-1.B로 열린 채 유지됨)
   await page.locator('[data-testid^="phrase-item-"]').first().click();
   await expect(overlay).toHaveCount(start + 1, { timeout: 3000 });
 
-  // 두 번째 삽입
+  // 두 번째 삽입 — 패널 재오픈 불필요(멱등 헬퍼가 이미 열림 감지)
   if (await openPhrasePanelWithItems(page)) {
     await page.locator('[data-testid^="phrase-item-"]').first().click();
     await expect(overlay).toHaveCount(start + 2, { timeout: 3000 });
@@ -109,7 +113,69 @@ test('AC2 [실DOM/회귀]: ✓ 버튼 직접 클릭도 정확히 1개만 삽입(
   const overlay = page.locator('[data-testid="penchart-overlay-boilerplate"]');
   const start = await overlay.count();
 
-  // ✓ 버튼은 항상 노출(어포던스). 직접 클릭 시 행 onClick 중복발화 없이 정확히 1개.
+  // 삽입 어포던스 버튼은 항상 노출. 직접 클릭 시 행 onClick 중복발화 없이 정확히 1개.
   await page.locator('[data-testid^="phrase-insert-"]').first().click();
   await expect(overlay).toHaveCount(start + 1, { timeout: 3000 });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// 시나리오 3 (AC-1.A): 캔버스 삽입 후 안착/고정 — 빈 캔버스 클릭 → 이동핸들 제거(deselect)
+// ════════════════════════════════════════════════════════════════════════
+test('S3-AC1.A [실DOM]: 삽입 직후 이동핸들 표시 → 빈 캔버스 클릭 → 핸들 사라짐(안착/deselect)', async ({ page }) => {
+  const opened = await openPenChartDraw(page);
+  if (!opened) { test.skip(true, '시드 미가용'); return; }
+  if (!(await openPhrasePanelWithItems(page))) { test.skip(true, 'phrase 항목 0건'); return; }
+
+  // 1탭 삽입 → select 도구 자동전환 + 자동선택 → 이동핸들(+) 노출
+  await page.locator('[data-testid^="phrase-item-"]').first().click();
+  const overlay = page.locator('[data-testid="penchart-overlay-boilerplate"]').last();
+  await expect(overlay).toBeVisible({ timeout: 3000 });
+  const handle = page.locator('[data-testid="penchart-move-handle"]');
+  await expect(handle).toHaveCount(1, { timeout: 3000 }); // 선택 상태 → 핸들 1개
+  await page.screenshot({ path: 'evidence/PINGPONG5_S3_A_handle_visible.png' }).catch(() => {});
+
+  // 오브젝트 범위 *밖* 빈 캔버스 클릭 → deselect → 안착.
+  //   클릭점은 중앙-하단(패널=좌상단, 삽입 anchor=좌상단과 겹치지 않는 빈 영역).
+  const canvas = page.locator('[data-testid="penchart-draw-canvas"]');
+  const box = await canvas.boundingBox();
+  if (!box) { test.skip(true, '캔버스 박스 미측정'); return; }
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.6);
+
+  // 핵심: 안착 후 이동핸들(+)이 사라져야 함(selected 해제). 현장 결함("핸들 계속 떠 있음") 해소.
+  await expect(handle).toHaveCount(0, { timeout: 3000 });
+  // 오브젝트 자체는 그대로 남아 있음(삭제가 아니라 안착)
+  await expect(overlay).toBeVisible();
+  await page.screenshot({ path: 'evidence/PINGPONG5_S3_B_settled_handle_gone.png' }).catch(() => {});
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// 시나리오 4 (AC-1.B): 패널 단일선택 — 클릭한 1건만 ✓, 나머지는 ✓ 없음
+// ════════════════════════════════════════════════════════════════════════
+test('S4-AC1.B [실DOM]: 패널 1개 클릭 → 그 항목만 marked, 다른 항목 클릭 → ✓ 이동(전체 ✓ 아님)', async ({ page }) => {
+  const opened = await openPenChartDraw(page);
+  if (!opened) { test.skip(true, '시드 미가용'); return; }
+  if (!(await openPhrasePanelWithItems(page))) { test.skip(true, 'phrase 항목 0건'); return; }
+
+  const items = page.locator('[data-testid^="phrase-item-"]');
+  const n = await items.count();
+  if (n < 2) { test.skip(true, '동일 카테고리 항목 2건 미만 — 단일/이동 비교 불가'); return; }
+
+  // 클릭 전: 어떤 항목도 marked=true가 아니어야 함(상시 전체 ✓ 회귀 차단)
+  await expect(page.locator('[data-testid^="phrase-item-"][data-marked="true"]'))
+    .toHaveCount(0, { timeout: 2000 });
+
+  // 1번 항목 클릭 → 정확히 그 1건만 marked
+  await items.nth(0).click();
+  await expect(page.locator('[data-testid^="phrase-item-"][data-marked="true"]'))
+    .toHaveCount(1, { timeout: 3000 });
+  await expect(items.nth(0)).toHaveAttribute('data-marked', 'true');
+  await expect(items.nth(1)).toHaveAttribute('data-marked', 'false');
+  await page.screenshot({ path: 'evidence/PINGPONG5_S4_single_check.png' }).catch(() => {});
+
+  // 2번 항목 클릭 → ✓가 2번으로만 이동(1번은 해제). 여전히 정확히 1건만 marked.
+  await items.nth(1).click();
+  await expect(page.locator('[data-testid^="phrase-item-"][data-marked="true"]'))
+    .toHaveCount(1, { timeout: 3000 });
+  await expect(items.nth(1)).toHaveAttribute('data-marked', 'true');
+  await expect(items.nth(0)).toHaveAttribute('data-marked', 'false');
 });
