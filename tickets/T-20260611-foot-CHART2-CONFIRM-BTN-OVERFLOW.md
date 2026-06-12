@@ -12,6 +12,7 @@ db_migration: none
 db_gate: N/A
 scenario_count: 2
 commit: 4fadfdc
+qa_fix_commit: dac2580
 spec: tests/e2e/T-20260611-foot-CHART2-CONFIRM-BTN-OVERFLOW.spec.ts
 build: pass
 e2e_executed: true
