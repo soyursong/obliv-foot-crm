@@ -93,6 +93,7 @@ export function DoctorAckButton({
   doctorMode,
   onAcked,
   className,
+  label = '확인',
 }: {
   checkInId: string;
   ackAt: string | null | undefined;
@@ -100,6 +101,8 @@ export function DoctorAckButton({
   doctorMode: boolean;
   onAcked?: () => void;
   className?: string;
+  /** 버튼 텍스트. T-20260612-foot-DOCDASH-11FIX AC-8: 진료대시보드 1단계는 '손들기'로 노출. 기본 '확인'(무회귀). */
+  label?: string;
 }) {
   const [pending, setPending] = useState(false);
 
@@ -143,7 +146,7 @@ export function DoctorAckButton({
       ) : (
         <Hand className="h-3.5 w-3.5 animate-pulse-hand" />
       )}
-      확인
+      {label}
     </button>
   );
 }

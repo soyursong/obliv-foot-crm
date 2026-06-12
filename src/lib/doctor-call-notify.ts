@@ -82,6 +82,19 @@ export function formatElapsed(min: number): string {
   return m === 0 ? `${h}시간 전` : `${h}시간 ${m}분 전`;
 }
 
+/**
+ * T-20260612-foot-DOCDASH-11FIX AC-7: 진료대시보드 경과시간 표기.
+ *   기준 시각 = getCallTime(직원이 진료 호출(purple)한 시각) → "콜 후 _분 경과"로 명시.
+ *   '_시간 _분 전'은 기준이 모호하다는 현장(문지은 대표원장) 피드백 반영.
+ */
+export function formatSinceCall(min: number): string {
+  if (min < 1) return '콜 직후';
+  if (min < 60) return `콜 후 ${min}분 경과`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `콜 후 ${h}시간 경과` : `콜 후 ${h}시간 ${m}분 경과`;
+}
+
 /** 시술명 라벨 (treatment_kind → treatment_category → 폴백) */
 export function treatmentLabel(
   ci: Pick<CallCheckIn, 'treatment_kind' | 'treatment_category'>,
