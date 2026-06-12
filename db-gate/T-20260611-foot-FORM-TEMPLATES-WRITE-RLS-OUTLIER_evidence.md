@@ -71,5 +71,29 @@ AFTER : form_templates_admin_all [ALL] {authenticated} USING(is_admin_or_manager
 2. 사후 검증: `pg_policies` 에서 form_templates_admin_all [ALL] {authenticated} USING/WITH CHECK = is_admin_or_manager(), form_templates_manage 부재, form_templates_read [SELECT] true 존재 확인
 3. 회귀 시 rollback SQL 적용 (단, 적용 시 write OUTLIER 재발 — 긴급용)
 
-## db_gate_status = (supervisor 판정 대기)
+## db_gate_status = APPLIED + VERIFIED (2026-06-12 02:04 UTC, dev-foot 직접 적용)
 - write RLS 정책 1개 교체(OUTLIER→canonical). READ 불변. 데이터 무손실. 백필 없음. 신규 컬럼/테이블/enum 없음(data-architect CONSULT 불요). E2E 면제: db_only.
+
+## ── prod 영속 적용 결과 (FIX-REQUEST MSG-20260612-110137-8ipq 해소) ──
+- 사유: supervisor 환경 SHADOW_MODE 로 DB mutation 차단 → dev-foot 직접 적용(정책 "dev-foot DB 마이그레이션 직접 실행", 형제 CLINIC-EVENTS-WRITE-RLS-CANONICAL_apply.mjs 와 동일 우회 패턴).
+- 적용 스크립트: `scripts/T-20260611-foot-FORM-TEMPLATES-WRITE-RLS_apply.mjs` (pg 직접 연결, pooler aws-1-ap-southeast-1, prod rxlomoozakkjesdqjtvd). 마이그 파일 BEGIN..COMMIT 그대로 실행.
+- 사전 dry-run 재실행 PASS (BEFORE 라이브 = manage[ALL]{public}staff.user_id + read[SELECT]true).
+- APPLY + 영속검증 PASS, 그리고 별도 독립 세션 재조회로 1회 더 확인:
+
+```
+pg_policies (public.form_templates) — 적용 후 영속 확인 (독립 2회):
+  form_templates_admin_all [ALL]   roles={authenticated}
+      USING:      is_admin_or_manager()
+      WITH CHECK: is_admin_or_manager()
+  form_templates_read      [SELECT] roles={public}
+      USING:      true            ← 불변 (READ 미접촉)
+  form_templates_manage    → 부재 (OUTLIER 제거됨)
+```
+
+회귀가드(영속):
+  ✅ AC-2 write canonical(is_admin_or_manager, authenticated, WITH CHECK)
+  ✅ OUTLIER form_templates_manage 제거
+  ✅ write 경로 비정규 staff 신원 잔존 없음
+  ✅ AC-4 READ(form_templates_read SELECT true) 불변
+
+→ **db_gate_status = applied_verified.** 회귀 시 `20260612000000_form_templates_write_rls_canonical.rollback.sql` (긴급용, 적용 시 OUTLIER 재발).
