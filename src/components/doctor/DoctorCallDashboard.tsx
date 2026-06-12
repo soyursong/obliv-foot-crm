@@ -13,7 +13,8 @@
  *   기존 발신/상태머신/집계 로직은 변경하지 않고 표시만 추가(회귀 0).
  * 실시간: check_ins postgres_changes 구독 → refetch (3초 내 반영, AC-1).
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Stethoscope,
@@ -112,6 +113,103 @@ function readChartNo(ci: CheckIn): string | number | null | undefined {
   if (!c) return null;
   if (Array.isArray(c)) return c[0]?.chart_number ?? null;
   return c.chart_number ?? null;
+}
+
+// T-20260612-foot-DOCDASH-RXCELL-REFINE item2/AC-2 (문지은 대표원장):
+//   처방 드롭다운이 "행 전체폭 펼침행(<td colSpan>)"으로 떠 다른 행을 밀어내던 것을 →
+//   처방(알약) 버튼에 anchor된 portal+fixed 팝오버로 전환. 행을 밀지 않고 알약 근처에만 뜸.
+//   좌표 선례 재사용: QuickRxButton 툴팁(createPortal+position:fixed+getBoundingClientRect+viewport clamp)
+//   = CLINICAL-SINGLELINE-DROPDOWN-POS / PHRASE-SLASH-DROPDOWN-POS 패턴(신규 패키지·좌표 로직 난발 0).
+//   하단 행에서 아래 공간 부족 시 위쪽으로 열어 viewport 밖 잘림 방지(up/down clamp).
+//   QuickRxBar 내부·저장·취소 로직은 children 으로 그대로 주입 — 컨테이너 위치/형태만 변경.
+const RX_POPOVER_W = 320; // max-w-xs(20rem) 환산. 처방 셀 근처 폭(행 전체폭 아님).
+
+function RxPopover({
+  open,
+  anchorRef,
+  onClose,
+  children,
+  testId,
+}: {
+  open: boolean;
+  anchorRef: React.RefObject<HTMLElement>;
+  onClose: () => void;
+  children: React.ReactNode;
+  testId: string;
+}) {
+  const popRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; placement: 'down' | 'up' } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    function compute() {
+      const el = anchorRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      // 가로: 알약 좌측 기준 + 우측 화면 이탈 방지 clamp(8px 여백) — QuickRxButton 툴팁 선례와 동일.
+      const left = Math.max(8, Math.min(r.left, vw - RX_POPOVER_W - 8));
+      // 세로: 콘텐츠 높이 측정 후 아래 공간 부족 + 위 공간 더 넓으면 위쪽으로(하단 행 잘림 방지).
+      const estH = popRef.current?.offsetHeight ?? 220;
+      const spaceBelow = vh - r.bottom;
+      const spaceAbove = r.top;
+      let placement: 'down' | 'up' = 'down';
+      let top = r.bottom + 6;
+      if (spaceBelow < estH + 12 && spaceAbove > spaceBelow) {
+        placement = 'up';
+        top = Math.max(8, r.top - estH - 6);
+      }
+      setPos({ top, left, placement });
+    }
+    compute();
+    // 콘텐츠 렌더 후 실제 높이로 1회 재계산(up/down 정확도).
+    const raf = requestAnimationFrame(compute);
+    window.addEventListener('scroll', compute, true);
+    window.addEventListener('resize', compute);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('scroll', compute, true);
+      window.removeEventListener('resize', compute);
+    };
+  }, [open, anchorRef]);
+
+  // 바깥 클릭 + Esc 로 닫기(앵커 버튼 클릭은 토글이 처리하므로 제외).
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      const t = e.target as Node;
+      if (popRef.current?.contains(t)) return;
+      if (anchorRef.current?.contains(t)) return;
+      onClose();
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, anchorRef, onClose]);
+
+  if (!open || !pos) return null;
+  return createPortal(
+    <div
+      ref={popRef}
+      data-testid={testId}
+      data-placement={pos.placement}
+      style={{ position: 'fixed', top: pos.top, left: pos.left, width: RX_POPOVER_W, zIndex: 9999 }}
+      className="rounded-lg border bg-white p-2 shadow-xl"
+    >
+      {children}
+    </div>,
+    document.body,
+  );
 }
 
 function useDoctorCallFeed(clinicId: string | null) {
@@ -531,6 +629,8 @@ function CallFeedRow({
   // T-20260612-foot-WAITELAPSED-POLISH AC-3: 콜(진료호출 purple) 시각 기준 "+N분" 분단위 컴팩트 표기('콜 후' 제거).
   const elapsed = formatElapsedPlus(elapsedMinutes(getCallTime(checkIn)));
   const [showRx, setShowRx] = useState(false);
+  // T-20260612-foot-DOCDASH-RXCELL-REFINE item2: 처방 팝오버 anchor(알약 버튼) — 좌표 기준점.
+  const rxBtnRef = useRef<HTMLButtonElement>(null);
   // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 임상경과 = 한 줄 인풋(아코디언 아님), 토글로 노출/숨김.
   const [showClinical, setShowClinical] = useState(false);
 
@@ -671,16 +771,42 @@ function CallFeedRow({
                 plainText
               />
             ) : (
-              <button
-                type="button"
-                onClick={() => setShowRx((v) => !v)}
-                data-testid="doctor-call-rx-btn"
-                aria-expanded={showRx}
-                className={CELL_ACTION_BTN}
-              >
-                <Pill className="h-3 w-3 text-gray-400" />
-                처방
-              </button>
+              <>
+                <button
+                  ref={rxBtnRef}
+                  type="button"
+                  onClick={() => setShowRx((v) => !v)}
+                  data-testid="doctor-call-rx-btn"
+                  aria-expanded={showRx}
+                  className={CELL_ACTION_BTN}
+                >
+                  <Pill className="h-3 w-3 text-gray-400" />
+                  처방
+                </button>
+                {/* T-20260612-foot-DOCDASH-RXCELL-REFINE item2/AC-2: 알약 anchor portal 팝오버(행 전체폭 펼침행 폐지). */}
+                <RxPopover
+                  open={showRx}
+                  anchorRef={rxBtnRef}
+                  onClose={() => setShowRx(false)}
+                  testId="doctor-call-rx-popover"
+                >
+                  <QuickRxBar
+                    doctorMode={doctorMode}
+                    role={role}
+                    checkInId={checkIn.id}
+                    onApplied={onRefresh}
+                    checkInStatus={checkIn.status}
+                    checkedInAt={checkIn.checked_in_at}
+                    /* T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)는 원내 잔류 → 처방 허용(귀가만 차단). */
+                    checkInFlag={checkIn.status_flag}
+                    onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+                    /* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 차트변경 audit attribution. */
+                    surface="doctor_call_dashboard"
+                    customerId={checkIn.customer_id}
+                    compact
+                  />
+                </RxPopover>
+              </>
             )}
           </div>
         </td>
@@ -698,33 +824,8 @@ function CallFeedRow({
         </td>
       </tr>
 
-      {/* 처방 인라인 펼침 — T-20260612-foot-DOCDASH-FULLWIDTH-INLINE-EMOJI item7(문지은 대표원장):
-          드롭다운이 행 전체폭으로 뜨던 것 → 처방(알약) 칼럼 근처 폭으로 축소(우측 정렬 + 처방칼럼 폭 anchor). */}
-      {showRx && (
-        <tr data-testid="doctor-call-rx-expand-row" className={inactive ? 'bg-gray-50/60' : 'bg-white'}>
-          <td colSpan={DOCDASH_COLSPAN} className="px-3 pb-2">
-            <div className="flex justify-end">
-              <div className="mr-[22%] w-full max-w-xs rounded-lg border bg-white p-2">
-              <QuickRxBar
-                doctorMode={doctorMode}
-                role={role}
-                checkInId={checkIn.id}
-                onApplied={onRefresh}
-                checkInStatus={checkIn.status}
-                checkedInAt={checkIn.checked_in_at}
-                /* T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)는 원내 잔류 → 처방 허용(귀가만 차단). */
-                checkInFlag={checkIn.status_flag}
-                onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
-                /* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 차트변경 audit attribution. */
-                surface="doctor_call_dashboard"
-                customerId={checkIn.customer_id}
-                compact
-              />
-              </div>
-            </div>
-          </td>
-        </tr>
-      )}
+      {/* T-20260612-foot-DOCDASH-RXCELL-REFINE item2: 처방 드롭다운 펼침행(<tr colSpan>) 폐지 →
+          처방 셀의 RxPopover(알약 anchor portal 팝오버)로 대체. 더 이상 행을 밀어내지 않음. */}
 
       {/* T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 임상경과 = 한 줄 텍스트 인풋(singleLine).
           tall 아코디언 제거 — MedicalChartPanel singleLine 모드 재사용(저장 로직·진료의 NOT NULL 강제 동일). */}
@@ -775,6 +876,8 @@ function CompletedRow({
   // T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7 (POLISH AC-4 supersede): 진료 완료 섹션은 경과시간 칼럼 자체 제거(7칼럼).
   //   완료환자는 대기시간 불요(문지은 대표원장). 호출 섹션은 경과시간 유지.
   const [showRx, setShowRx] = useState(false);
+  // T-20260612-foot-DOCDASH-RXCELL-REFINE item2: 처방 팝오버 anchor(알약 버튼) — 좌표 기준점.
+  const rxBtnRef = useRef<HTMLButtonElement>(null);
   // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 임상경과 = 한 줄 인풋(아코디언 아님) 토글.
   const [showClinical, setShowClinical] = useState(false);
   // T-20260612-foot-DOCDASH-11FIX AC-9/AC-10: 귀가(true discharge) 판정 = QUICKRX-INCLINIC-GATE SSOT 재사용.
@@ -899,16 +1002,42 @@ function CompletedRow({
                 plainText
               />
             ) : !discharged ? (
-              <button
-                type="button"
-                onClick={() => setShowRx((v) => !v)}
-                aria-expanded={showRx}
-                data-testid="doctor-completed-rx-btn"
-                className={CELL_ACTION_BTN}
-              >
-                <Pill className="h-3 w-3 text-gray-400" />
-                처방
-              </button>
+              <>
+                <button
+                  ref={rxBtnRef}
+                  type="button"
+                  onClick={() => setShowRx((v) => !v)}
+                  aria-expanded={showRx}
+                  data-testid="doctor-completed-rx-btn"
+                  className={CELL_ACTION_BTN}
+                >
+                  <Pill className="h-3 w-3 text-gray-400" />
+                  처방
+                </button>
+                {/* T-20260612-foot-DOCDASH-RXCELL-REFINE item2/AC-2: 알약 anchor portal 팝오버(행 전체폭 펼침행 폐지). */}
+                <RxPopover
+                  open={showRx}
+                  anchorRef={rxBtnRef}
+                  onClose={() => setShowRx(false)}
+                  testId="doctor-completed-rx-popover"
+                >
+                  <QuickRxBar
+                    doctorMode={doctorMode}
+                    role={role}
+                    checkInId={checkIn.id}
+                    onApplied={onRefresh}
+                    checkInStatus={checkIn.status}
+                    checkedInAt={checkIn.checked_in_at}
+                    /* T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)는 원내 잔류 → 처방 허용(귀가만 차단). */
+                    checkInFlag={checkIn.status_flag}
+                    onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+                    /* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 차트변경 audit attribution. */
+                    surface="doctor_call_dashboard"
+                    customerId={checkIn.customer_id}
+                    compact
+                  />
+                </RxPopover>
+              </>
             ) : (
               /* T-20260612-WAITELAPSED-POLISH AC-7: 귀가·미처방 표기를 '-' 로 축약. */
               <span className="text-[13px] text-gray-300" data-testid="doctor-completed-no-rx">-</span>
@@ -929,32 +1058,8 @@ function CompletedRow({
         </td>
       </tr>
 
-      {/* FULLWIDTH-INLINE-EMOJI item7: 드롭다운 행 전체폭 → 처방칼럼 근처 폭(우측 정렬 anchor). */}
-      {showRx && (
-        <tr data-testid="doctor-completed-rx-expand-row" className="bg-white">
-          <td colSpan={DOCDASH_COMPLETED_COLSPAN} className="px-3 pb-2">
-            <div className="flex justify-end">
-              <div className="mr-[23%] w-full max-w-xs rounded-lg border bg-white p-2">
-              <QuickRxBar
-                doctorMode={doctorMode}
-                role={role}
-                checkInId={checkIn.id}
-                onApplied={onRefresh}
-                checkInStatus={checkIn.status}
-                checkedInAt={checkIn.checked_in_at}
-                /* T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)는 원내 잔류 → 처방 허용(귀가만 차단). */
-                checkInFlag={checkIn.status_flag}
-                onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
-                /* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 차트변경 audit attribution. */
-                surface="doctor_call_dashboard"
-                customerId={checkIn.customer_id}
-                compact
-              />
-              </div>
-            </div>
-          </td>
-        </tr>
-      )}
+      {/* T-20260612-foot-DOCDASH-RXCELL-REFINE item2: 처방 드롭다운 펼침행(<tr colSpan>) 폐지 →
+          처방 셀의 RxPopover(알약 anchor portal 팝오버)로 대체(완료 섹션 동일). */}
 
       {/* T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 진료완료 환자도 임상경과 = 한 줄 인풋(singleLine). */}
       {showClinical && checkIn.customer_id && (
