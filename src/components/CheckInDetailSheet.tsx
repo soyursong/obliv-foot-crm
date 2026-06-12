@@ -4,6 +4,7 @@ import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
 import { ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Phone, FileText, Package, Stethoscope, Trash2, Bell, Upload } from 'lucide-react';
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
+import FootSiteSelector, { type FootSite, parseFootSite } from '@/components/FootSiteSelector';
 import { toast } from '@/lib/toast';
 import {
   Sheet,
@@ -471,6 +472,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const [pkgRemaining, setPkgRemaining] = useState<Map<string, PackageRemaining>>(new Map());
   const [notes, setNotes] = useState('');
   const [treatmentMemo, setTreatmentMemo] = useState('');
+  // T-20260612-foot-CHART-INTAKE-TOGGLE-INPUT: 좌우+발가락 단일 부위 ({side,toe}) — treatment_memo.foot_site 서브키 저장(신규 컬럼 없음).
+  const [footSite, setFootSite] = useState<FootSite | null>(null);
   const [doctorNote, setDoctorNote] = useState('');
   // T-20260504-foot-MEMO-RESTRUCTURE: 고객메모 (예약메모는 2번차트 1구역 전용 — T-20260512)
   const [customerMemo, setCustomerMemo] = useState('');
@@ -822,6 +825,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     const noteObj = checkIn.notes as Record<string, string> | null;
     setNotes(noteObj?.text ?? '');
     setTreatmentMemo(checkIn.treatment_memo?.details ?? '');
+    // T-20260612-foot-CHART-INTAKE-TOGGLE-INPUT: 좌우+발가락 부위 로드 (treatment_memo.foot_site)
+    setFootSite(parseFootSite(checkIn.treatment_memo?.foot_site));
     setDoctorNote(checkIn.doctor_note ?? '');
 
     // T-20260522-foot-SPACE-AUTOROUTE: 이동이력 로드 — 테이블 미존재 시 graceful skip
@@ -911,7 +916,11 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     if (!checkIn) return;
     setSaving(true);
     const notesObj = { ...(checkIn.notes as Record<string, unknown> ?? {}), text: notes };
-    const memoObj = { ...(checkIn.treatment_memo ?? {}), details: treatmentMemo };
+    // T-20260612-foot-CHART-INTAKE-TOGGLE-INPUT: 좌우+발가락 부위를 treatment_memo.foot_site 서브키로 저장.
+    //   값(shape {side,toe})만 저장 — 표시문자열('L1')은 formatFootSite로 파생(저장 금지). null이면 키 제거.
+    const memoObj: Record<string, unknown> = { ...(checkIn.treatment_memo ?? {}), details: treatmentMemo };
+    if (footSite) memoObj.foot_site = footSite;
+    else delete memoObj.foot_site;
     const { error } = await supabase
       .from('check_ins')
       .update({
@@ -1605,6 +1614,15 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               )}
             </div>
           )}
+
+          {/* T-20260612-foot-CHART-INTAKE-TOGGLE-INPUT: 좌우+발가락 단일 부위 토글(치료사 모달).
+              직원·치료사 누구나 입력(권한 구분 없음 — reporter 확정). 선택 시 dirty → '메모 저장'으로 저장. */}
+          <div className="rounded-md border bg-muted/20 p-3">
+            <FootSiteSelector
+              value={footSite}
+              onChange={(next) => { setFootSite(next); setIsDirty(true); markDirty(); }}
+            />
+          </div>
 
           {/* T-20260529-foot-CHART-OPEN-SINGLE: 고객 연결 UI — customer_id·phone 모두 null인 경우 */}
           {!checkIn.customer_id && !resolvedCustomerId && !checkIn.customer_phone && (
