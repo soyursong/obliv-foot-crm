@@ -18,11 +18,19 @@ withdrawn_migration: 20260611180000_closing_revenue_read_lock (.sql.WITHDRAWN �
 active_migration: 20260611200000_closing_workflow_read_canonical
 data_architect_consult: not-required (RLS only, no new column/table/enum)
 deploy_ready_marked_by: agent-fdd-dev-foot
-deploy_ready_at: 2026-06-11
+deploy_ready_at: 2026-06-12
 build_status: pass
 dry_run_status: PASS
 spec_added: tests/e2e/T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN.spec.ts
 db_migration_pending: true
+qa_fix: MSG-20260612-092633-y9vi (insufficient_verification / DB정책 spec skipped)
+qa_fix_by: agent-fdd-dev-foot
+qa_fix_at: 2026-06-12
+qa_fix_root_cause: SUPABASE_ACCESS_TOKEN 이 playwright dotenv 로드 경로(.env/.env.test)에 부재 → DB정책 spec(DC-1/DC-2/AC-4) test.skip
+qa_fix_change: playwright.config.ts 가 .env.local(gitignored) 추가 로드 → 토큰 자동 소싱(스킵 구조 제거)
+e2e_rerun_live: "DC-FE PASS, AC-4 PASS, DC-1/DC-2 FAIL(=prod still over-open; 마이그 미적용=의도된 RED). 스킵 0건"
+e2e_postmigration_sim: dryrun 트랜잭션 PASS (DC-1/DC-2/AC-4 동치 가드 8/8 green, prod 무변경 ROLLBACK)
+live_green_blocked_on: supervisor DB 게이트 적용(20260611200000) — 적용 직후 dev-foot 라이브 재실행 예정
 ---
 
 # T-20260611-foot-DAILY-CLOSINGS-READ-OVEROPEN — 일마감 workflow read 보안 하드닝 (REVISE: LOCK→OPEN 정정)

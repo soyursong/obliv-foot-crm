@@ -89,5 +89,38 @@ closing_manual_payments:
    - staff 계정 `SELECT count(*) FROM daily_closings WHERE clinic_id = current_user_clinic_id()` → 본인 clinic row 반환(deny 아님)
 4. 회귀 시 rollback SQL (적용 시 over-open(true) 재발 — 보안 회귀)
 
+## ★ E2E 재실행 (QA-FIX MSG-20260612-092633-y9vi — SUPABASE_ACCESS_TOKEN 설정 후) ★
+> supervisor QA: DB 정책 검증 3건(DC-1/DC-2/AC-4)이 토큰 미설정으로 skipped → insufficient_verification.
+> 조치: `SUPABASE_ACCESS_TOKEN`(~/.zshrc) export 후 재실행. **이제 skip 없이 실제 assert.**
+
+### (1) 라이브 prod 대상 Playwright (2026-06-12, 토큰 설정)
+```
+DC-FE  전직원 OPEN+tm 제외 ............... PASS
+AC-4   쓰기 정책 불변 .................... PASS
+DC-1   daily_closings over-open 제거 ..... FAIL  ← prod 아직 over-open(true) (마이그 미적용)
+DC-2   closing_manual over-open 제거 ..... FAIL  ← prod 아직 over-open(true) (마이그 미적용)
+```
+→ **DC-1/DC-2 의 FAIL 은 "검증 불충분"이 아니라 의도된 결과.** 가드가 prod 의 over-open(true) 잔존을 정확히 탐지(=vacuous 아님). 이 두 테스트는 **post-deploy 회귀가드** — 마이그 `20260611200000` 가 supervisor DB 게이트로 prod 적용된 직후에만 green. db_migration_pending=true 상태에선 정상적으로 RED.
+
+### (2) post-migration 시뮬레이션 (트랜잭션 apply→assert→ROLLBACK, prod 무변경)
+`node scripts/..._dryrun.mjs` → BEGIN 안에서 마이그 적용 후 DC-1/DC-2/AC-4 동치 가드 8종 점검:
+```
+daily_closings over-open(true) 제거 .................... ✅ (DC-1)
+daily_closings_read canonical(approved+clinic) 전환 .... ✅ (DC-1)
+daily_closings therapist_read 유지(일마감 OPEN) ........ ✅ (DC-1)
+daily_closings finance_read coordinator 유지 ........... ✅ (DC-1)
+daily_closings staff_read(is_floor_staff) 유지 ......... ✅ (DC-1)
+closing_manual over-open 제거→canonical ................ ✅ (DC-2)
+AC-4 daily_closings 쓰기(ALL×2) 불변 ................... ✅ (AC-4)
+AC-4 closing_manual 쓰기(insert/update/delete) 불변 .... ✅ (AC-4)
+→ DRY-RUN PASS  ↩️ ROLLBACK (prod 영속 변경 없음)
+```
+→ 마이그 적용 후 라이브 DC-1/DC-2/AC-4 가 모두 green 임을 트랜잭션으로 입증. (Management API 는 트랜잭션 미지원 → 라이브 apply-rollback 불가 → pg 직결 dryrun 이 게이트-전 정본 검증.)
+
+### 잔여 단일 의존: supervisor DB 게이트 적용
+- 라이브 DC-1/DC-2 green 의 유일 선결 = supervisor 가 `20260611200000` prod 적용. (dev-foot 금지: 운영 DB 스키마 변경은 supervisor 사전 승인.)
+- 적용 직후 dev-foot 가 라이브 Playwright 즉시 재실행 → 4 tests full green 확인 예정.
+
 ## db_gate_status = (supervisor 판정 대기)
 - RLS SELECT 정책 2건 over-open→canonical(clinic 스코프 추가 = 더 엄격). 데이터 무손실. 백필 없음. 쓰기 불변. 신규 컬럼/테이블/enum 없음(data-architect CONSULT 불요).
+- 검증: 게이트-전 = dryrun 트랜잭션 PASS(post-migration 시뮬). 게이트-후 = 라이브 Playwright 4/4 (적용 직후 재실행).
