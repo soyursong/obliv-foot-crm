@@ -95,6 +95,17 @@ export function formatSinceCall(min: number): string {
   return m === 0 ? `콜 후 ${h}시간 경과` : `콜 후 ${h}시간 ${m}분 경과`;
 }
 
+/**
+ * T-20260612-foot-DOCDASH-WAITELAPSED-POLISH AC-3: 진료 대기중 경과시간 셀 컴팩트 표기.
+ *   "콜 후 N분 경과"(formatSinceCall)는 셀 폭 대비 장황 → "+N분" 분단위 plain text로 축약.
+ *   기준 시각은 동일(getCallTime=직원 진료호출 purple 시각). 음수/NaN 은 elapsedMinutes 가 0 으로 방어(AC-9).
+ *   분단위만 노출(시/분 분리 없음) — 급한순(경과 내림차순) 정렬과 함께 한눈에 누적 분을 보여준다.
+ */
+export function formatElapsedPlus(min: number): string {
+  const safe = Number.isFinite(min) && min > 0 ? Math.floor(min) : 0;
+  return `+${safe}분`;
+}
+
 /** 시술명 라벨 (treatment_kind → treatment_category → 폴백) */
 export function treatmentLabel(
   ci: Pick<CallCheckIn, 'treatment_kind' | 'treatment_category'>,
