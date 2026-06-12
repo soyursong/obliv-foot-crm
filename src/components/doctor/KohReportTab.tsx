@@ -73,6 +73,18 @@ export function formatExamDateTime(createdAt: string | null | undefined): string
 }
 
 // ---------------------------------------------------------------------------
+// +1일 경과 판정 — T-20260611-foot-KOH-REPORT-TAB (AC-1/AC-3 SSOT).
+//   현장 요구 = "KOH 균검사를 받은 지 하루 지난 환자"만 명단에 노출(검사지 발행 대상).
+//   판정식: 검사일(KST 캘린더 날짜) < 오늘(KST) → 검사 다음날부터 표시. 당일/미래 검사는 제외.
+//   ISO 'YYYY-MM-DD' 사전식 비교 = 캘린더 비교(타임존 무관). 시·분 무관(날짜 경계 기준).
+//   AC-3: 검사 당일(+1일 미경과) 환자 / 미수검(KOH row 없음) 환자는 자연히 제외.
+// ---------------------------------------------------------------------------
+export function isKohExamEligible(createdAt: string | null | undefined, todayISO: string): boolean {
+  if (!createdAt) return false;
+  return seoulISODate(createdAt) < todayISO;
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 export interface KohRow {
@@ -146,19 +158,28 @@ export default function KohReportTab() {
   const [ym, setYm] = useState<string>(currentYearMonthSeoul());
   const [query, setQuery] = useState('');
   const isCurrentMonth = ym === currentYearMonthSeoul();
+  const todayISO = todaySeoulISODate();
 
   const { data: rows = [], isLoading, isError, error } = useKohReport(clinicId, ym);
+
+  // T-20260611-foot-KOH-REPORT-TAB (AC-1/AC-3): +1일 경과(검사 다음날부터)만 노출.
+  //   검사 당일(+1일 미경과) row 는 제외 — isKohExamEligible(검사일 KST < 오늘 KST).
+  //   이번 달 조회 시 오늘 검사분이 걸러지고, 과거 달은 전부 경과 → 자연 통과.
+  const eligibleRows = useMemo(
+    () => rows.filter((r) => isKohExamEligible(r.created_at, todayISO)),
+    [rows, todayISO],
+  );
 
   // 이름/차트번호 클라이언트 검색(read-only). 공백 trim, 대소문자 무시.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
+    if (!q) return eligibleRows;
+    return eligibleRows.filter(
       (r) =>
         r.customer_name.toLowerCase().includes(q) ||
         (r.chart_number ?? '').toLowerCase().includes(q),
     );
-  }, [rows, query]);
+  }, [eligibleRows, query]);
 
   return (
     <div className="space-y-4">
@@ -170,7 +191,7 @@ export default function KohReportTab() {
             균검사지 — KOH 진균검사 명단
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            KOH(진균) 검사를 시행한 환자 명단입니다. 검사일 기준 월별 조회.
+            KOH(진균) 검사 후 하루가 지난 환자 명단입니다. 검사일 기준 월별 조회(당일 검사분은 다음날 표시).
           </p>
         </div>
 
@@ -229,8 +250,8 @@ export default function KohReportTab() {
         </div>
         <span className="text-xs text-muted-foreground" data-testid="koh-count">
           {formatYearMonthKo(ym)} 검사 <span className="font-semibold text-foreground">{filtered.length}</span>건
-          {query.trim() && rows.length !== filtered.length && (
-            <span className="ml-1 text-muted-foreground/70">(전체 {rows.length}건 중)</span>
+          {query.trim() && eligibleRows.length !== filtered.length && (
+            <span className="ml-1 text-muted-foreground/70">(전체 {eligibleRows.length}건 중)</span>
           )}
         </span>
       </div>
@@ -248,7 +269,7 @@ export default function KohReportTab() {
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
           {query.trim()
             ? '검색 결과가 없습니다.'
-            : `${formatYearMonthKo(ym)}에 KOH 진균검사 기록이 없습니다.`}
+            : `${formatYearMonthKo(ym)}에 검사 후 하루가 지난 KOH 진균검사 명단이 없습니다.`}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border" data-testid="koh-table">

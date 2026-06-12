@@ -9,6 +9,7 @@
  *   S3 월 네비게이터 — shiftYearMonth(±N), 범위 바운드(KST), 라벨 포맷.
  *   S4 표시 포맷 — 생년월일 10자리, 검사일 KST 변환, 결측 '—'.
  *   S5 Phase 경계 — 발톱부위·당일의사명 컬럼은 Phase 1 미포함(4컬럼 고정).
+ *   S6 +1일 경과 필터 — AC-1/AC-3: 검사 다음날부터 표시, 당일(+1일 미경과)·미래 제외.
  *
  * 스타일: in-page 순수 로직 시뮬레이션 — 구현 정본(KohReportTab의 매칭/포맷/월이동 헬퍼)을
  *   모사해 회귀를 잡는다. (컴포넌트는 auth/DB 의존이라 직접 마운트 대신 로직 동치 검증.)
@@ -39,6 +40,14 @@ const formatBirthDate = (birth: string | null | undefined): string => {
   if (!birth) return '—';
   const s = String(birth).trim();
   return s.length >= 10 ? s.slice(0, 10) : s || '—';
+};
+
+// ── 정본 모사: seoulISODate + isKohExamEligible (KohReportTab.tsx) ─────────────
+const seoulISODate = (input: string | number | Date): string =>
+  new Date(input).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+const isKohExamEligible = (createdAt: string | null | undefined, todayISO: string): boolean => {
+  if (!createdAt) return false;
+  return seoulISODate(createdAt) < todayISO;
 };
 
 // ── 정본 모사: 행 매핑 (useKohReport flatten) ─────────────────────────────────
@@ -197,5 +206,49 @@ test.describe('S5 Phase 1 컬럼 경계', () => {
     expect(PHASE1_COLUMNS).not.toContain('발톱부위');
     expect(PHASE1_COLUMNS).not.toContain('당일의사명');
     expect(PHASE1_COLUMNS).not.toContain('의사명');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S6 — +1일 경과 필터 (AC-1: 검사 다음날부터 표시 / AC-3: 당일·미래 제외)
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('S6 +1일 경과 필터', () => {
+  const TODAY = '2026-06-12'; // KST 기준 오늘 고정
+
+  test('어제 검사 → 표시(경과 충족)', () => {
+    // 2026-06-11 KST 오후 = 2026-06-11T05:00:00Z (KST 14:00) → 어제
+    expect(isKohExamEligible('2026-06-11T05:00:00Z', TODAY)).toBe(true);
+  });
+
+  test('당일(+1일 미경과) 검사 → 미표시 (AC-3)', () => {
+    // 2026-06-12 KST 오전 = 2026-06-12T01:00:00Z (KST 10:00) → 오늘 = 제외
+    expect(isKohExamEligible('2026-06-12T01:00:00Z', TODAY)).toBe(false);
+  });
+
+  test('KST 자정 경계 — UTC 전날 저녁이 KST 오늘이면 제외', () => {
+    // 2026-06-11T20:00:00Z = KST 2026-06-12 05:00 → 오늘(KST) → 제외
+    expect(isKohExamEligible('2026-06-11T20:00:00Z', TODAY)).toBe(false);
+    // 2026-06-11T14:00:00Z = KST 2026-06-11 23:00 → 어제(KST) → 표시
+    expect(isKohExamEligible('2026-06-11T14:00:00Z', TODAY)).toBe(true);
+  });
+
+  test('미래 검사 → 미표시', () => {
+    expect(isKohExamEligible('2026-06-13T01:00:00Z', TODAY)).toBe(false);
+  });
+
+  test('created_at 결측 → 미표시(방어)', () => {
+    expect(isKohExamEligible(null, TODAY)).toBe(false);
+    expect(isKohExamEligible(undefined, TODAY)).toBe(false);
+    expect(isKohExamEligible('', TODAY)).toBe(false);
+  });
+
+  test('월별 명단에 적용 — 당일분만 걸러지고 경과분은 통과', () => {
+    const rows = [
+      { id: 'a', created_at: '2026-06-01T01:00:00Z' }, // 경과
+      { id: 'b', created_at: '2026-06-11T01:00:00Z' }, // 경과(어제)
+      { id: 'c', created_at: '2026-06-12T01:00:00Z' }, // 당일 → 제외
+    ];
+    const eligible = rows.filter((r) => isKohExamEligible(r.created_at, TODAY));
+    expect(eligible.map((r) => r.id)).toEqual(['a', 'b']);
   });
 });
