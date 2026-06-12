@@ -1345,13 +1345,19 @@ const RX_STANDARD_HTML = `
 
   <!-- ① 상단 헤더 -->
   <div style="display:flex; align-items:flex-start; gap:8px; margin-bottom:3px;">
-    <div style="font-size:7.5pt; line-height:1.9; min-width:110px; white-space:nowrap;">
+    <!-- T-20260612-foot-RX-TOPBAR-PATIENT-HIRA-MISSING AC-2: 상단 좌측 고객정보 바인딩 추가.
+         진료의뢰서(REFERRAL_LETTER_HTML) 고객정보 블록과 동일 autobind 키 이식
+         (record_no·patient_name·patient_birthdate·patient_rrn·patient_phone·patient_address).
+         기존 빈 레거시 라인(조합기호·증번호·보호종별 — 풋센터 비급여 자가부담이라 데이터 소스 없음)을
+         실제 고객차트 기본정보로 치환. 미입력 필드는 빈 문자열 렌더 → 라벨만 남고 레이아웃 무붕괴(시나리오2).
+         width 고정 + 줄바꿈 허용으로 긴 주소가 외부 flex(제목/QR)를 밀지 않게 함. -->
+    <div style="font-size:7.5pt; line-height:1.7; width:160px; max-width:160px; word-break:break-all;">
       환자정보 :&nbsp;{{record_no}}<br>
-      피보성명 :&nbsp;{{patient_name}}<br>
-      피보주민 :&nbsp;&nbsp;<br>
-      조합기호 :&nbsp;&nbsp;<br>
-      증&nbsp;번&nbsp;호 :&nbsp;&nbsp;<br>
-      보호종별 :&nbsp;&nbsp;
+      성&nbsp;&nbsp;&nbsp;&nbsp;명 :&nbsp;{{patient_name}}<br>
+      생년월일 :&nbsp;{{patient_birthdate}}<br>
+      주민번호 :&nbsp;{{patient_rrn}}<br>
+      연 락 처 :&nbsp;{{patient_phone}}<br>
+      주&nbsp;&nbsp;&nbsp;&nbsp;소 :&nbsp;{{patient_address}}
     </div>
     <div style="flex:1; text-align:center;">
       <!-- T-20260601-foot-RX-QR-LABEL (현장 확정 재구현): 중앙 상단 [약국보관용/환자보관용] 구분
