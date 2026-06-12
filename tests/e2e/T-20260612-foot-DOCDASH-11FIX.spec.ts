@@ -204,16 +204,63 @@ test.describe('AC-11 — 임상경과 칼럼', () => {
     expect(s).toContain('data-testid="doctor-completed-clinical-cell"');
     expect(s).toContain('useCompletedClinicalProgress');
   });
-  test('피드(대기) 테이블에는 임상경과 칼럼 미추가(헤더 4열 유지)', () => {
+  test('피드(대기) 테이블에는 임상경과 칼럼 미추가(헤더 5열 = 이름/시술/방/처방/상태, AC-12 시술 칼럼 포함)', () => {
     const s = DASH();
     const feedThead = s.slice(
       s.indexOf('doctor-call-feed-table'),
       s.indexOf('doctor-call-feed-rows'),
     );
-    // 피드 테이블 thead 의 <th> 는 이름/방/처방/상태 4개
-    expect((feedThead.match(/<th /g) ?? []).length).toBe(4);
+    // AC-12 로 '시술' 칼럼 추가 → 5열. '임상경과'는 여전히 미포함(진료완료 테이블 한정).
+    expect((feedThead.match(/<th /g) ?? []).length).toBe(5);
+    expect(feedThead).not.toContain('임상경과');
   });
-  test('진료완료 expand colSpan 5(임상경과 칼럼 포함 정합)', () => {
-    expect(DASH()).toContain('<td colSpan={5}');
+  test('진료완료 expand colSpan 6(임상경과+시술 칼럼 포함 정합, AC-12)', () => {
+    expect(DASH()).toContain('<td colSpan={6}');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-12 — 시술 정보 별도 칼럼 (reopen 신규 스코프, 2026-06-12)
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('AC-12 — 시술 별도 칼럼', () => {
+  test('이름 셀 아래 treatmentLabel 표기 제거(이름+시술 뭉뚱그림 해소)', () => {
+    const s = DASH();
+    // 이름 셀 아래 <p>{treatmentLabel(checkIn)}</p> 잔존 0
+    expect(s).not.toContain('treatmentLabel(checkIn)');
+    expect(s).not.toContain('treatmentLabel,'); // import 도 제거
+  });
+  test('ProcedureCell 컴포넌트 존속 + 미지정 폴백', () => {
+    const s = DASH();
+    expect(s).toContain('function ProcedureCell(');
+    expect(s).toContain('미지정');
+    // 데이터 소스 = treatment_kind ?? treatment_category (DB read, 무변경)
+    expect(s).toContain("(checkIn.treatment_kind ?? checkIn.treatment_category ?? '').trim()");
+    expect(s).toContain('data-testid="doctor-procedure-cell"');
+  });
+  test('대기 테이블: 이름 다음 시술 칼럼(헤더 순서 이름→시술→방→처방→상태)', () => {
+    const s = DASH();
+    const feedThead = s.slice(
+      s.indexOf('doctor-call-feed-table'),
+      s.indexOf('doctor-call-feed-rows'),
+    );
+    const order = (feedThead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
+    expect(order).toEqual(['이름', '시술', '방', '처방', '상태']);
+  });
+  test('진료완료 테이블: 헤더 순서 이름→시술→방→처방→상태→임상경과(6열)', () => {
+    const s = DASH();
+    const compThead = s.slice(
+      s.indexOf('doctor-completed-table'),
+      s.indexOf('doctor-completed-rows'),
+    );
+    expect((compThead.match(/<th /g) ?? []).length).toBe(6);
+    const order = (compThead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
+    expect(order).toEqual(['이름', '시술', '방', '처방', '상태', '임상경과']);
+  });
+  test('양 테이블 행에 ProcedureCell 렌더(대기 1 + 완료 1)', () => {
+    const s = DASH();
+    expect((s.match(/<ProcedureCell checkIn=\{checkIn\} \/>/g) ?? []).length).toBe(2);
+  });
+  test('GUARD: 시술 데이터는 read-only — treatment_kind/category 가 CALL_SELECT 에 포함', () => {
+    expect(DASH()).toContain('treatment_kind, treatment_category');
   });
 });
