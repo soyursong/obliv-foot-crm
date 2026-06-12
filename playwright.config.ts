@@ -103,6 +103,8 @@ export default defineConfig({
         '**/T-20260609-foot-FORM-UPLOAD-DOWNSCALE-GUARD.spec.ts',
         // T-20260611-foot-REFERRAL-PRINT-CLIP-CENTER: 진료의뢰서 출력 짤림/중앙배치 — form-wrap 폭·margin 정적 검증 + 바인딩 회귀 (auth 불요)
         '**/T-20260611-foot-REFERRAL-PRINT-CLIP-CENTER.spec.ts',
+        // T-20260611-foot-DOC-FEATURE-AUDIT-HARDENING: 서류 전 기능 회귀방지 우산 — P0 근인 고정 + 3경로 non-empty 스모크 + L-006 단일경로 가드 (순수 SSOT + 소스 introspection, auth 불요)
+        '**/T-20260611-foot-DOC-FEATURE-AUDIT-HARDENING.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
