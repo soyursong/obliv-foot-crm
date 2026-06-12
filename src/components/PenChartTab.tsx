@@ -748,7 +748,6 @@ export function PenChartTab({
   // const [selectedPhraseIds, setSelectedPhraseIds] = useState<number[]>([]);
   // T-20260605-foot-RX-PHRASE-INSERT-UX (AC-2): 행 클릭 시 그 행에만 인라인 ✓ 노출 (한 번에 한 행).
   //   null = 노출 없음 / number = 해당 phrase.id 행에 ✓ 노출. 같은 행 재클릭 = 닫힘.
-  const [revealedPhraseId, setRevealedPhraseId] = useState<number | null>(null);
 
   // T-20260522-foot-PENCHART-TOOLS-V2 AC-3: 텍스트 도구 상태
   const [textInputPos, setTextInputPos] = useState<{
@@ -1637,7 +1636,6 @@ export function PenChartTab({
     setPendingBoilerplate('');
 
     setShowPhrasePanel(false);
-    setRevealedPhraseId(null); // T-20260605-foot-RX-PHRASE-INSERT-UX: 차트 초기화 시 인라인 ✓ 비움
     setTextInputPos(null);
     setTextInputValue('');
     setPlacedItems([]);
@@ -2317,12 +2315,8 @@ export function PenChartTab({
   // const clearPhraseSelection = () => setSelectedPhraseIds([]);
 
   // ── T-20260605-foot-RX-PHRASE-INSERT-UX: 단건 즉시삽입 동선 ──────────────
-  // AC-2: 행 클릭 → 그 행에만 인라인 ✓ 노출(한 번에 한 행). 같은 행 재클릭 = 닫힘.
-  const revealPhraseInsert = (id: number) => {
-    setRevealedPhraseId((prev) => (prev === id ? null : id));
-  };
-  // AC-3: ✓ 클릭 → 즉시 삽입. handleBoilerplateSelect로 boilerplate-placing 진입(GUARD: placeBoilerplate 불변).
-  //   기존 단건 동선과 동일하게 단일 content를 그대로 pendingBoilerplate로 전달.
+  // T-20260612-PINGPONG5 AC-1: revealPhraseInsert(2단계 게이트) 제거 — 행 클릭이 곧 삽입.
+  //   행 onClick / ✓ onClick 모두 아래 insertPhraseImmediate 단일 진입점으로 수렴.
   const insertPhraseImmediate = (id: number) => {
     const content = phraseTemplates.find((p) => p.id === id)?.content;
     // AC-2 (T-20260606-foot-PENCHART-PHRASE-INSERT-FIX): content 누락/빈값이면 가시 피드백 후 무동작.
@@ -2332,7 +2326,6 @@ export function PenChartTab({
     //   → 모드 진입 전에 차단하고 토스트로 원인(상용구 내용 비어있음)을 가시화. phrase-agnostic.
     if (typeof content !== 'string' || content.trim() === '') {
       toast.warning('이 상용구에 내용이 없습니다. 상용구 관리에서 내용을 입력해 주세요.');
-      setRevealedPhraseId(null);
       return;
     }
     // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #2 (AC-3): ✓ 클릭 = 즉시 캔버스에 commit.
@@ -2344,7 +2337,6 @@ export function PenChartTab({
     // 연속 삽입 시 겹침 방지 — 기존 상용구 수만큼 소폭 stagger
     const n = placedItems.filter((it) => it.type === 'boilerplate').length % 6;
     const newId = placeBoilerplateAt(content, x + n * 14, y + n * 30, false);
-    setRevealedPhraseId(null);
     // ── T-20260610-foot-PENCHART-6FIX-REFIX B: 삽입 가시화 (부모 #2 회귀 재발 차단) ──
     //   [RC 가설] computeVisibleAnchor가 스크롤 위치를 못 잡거나(refs 타이밍), 사용자가 폼 하단을 보는데
     //   상용구가 폼 상단/뷰포트 밖에 꽂혀 "삽입 안 됨"으로 인지되는 경로. 또는 ✓ 후 select 전환을 모르고
@@ -2615,7 +2607,6 @@ export function PenChartTab({
             <button
               onClick={() => {
                 setShowPhrasePanel(!showPhrasePanel);
-                setRevealedPhraseId(null); // 패널 토글 시 인라인 ✓ 초기화
                 setTextInputPos(null);
               }}
               className={cn(
@@ -2642,7 +2633,7 @@ export function PenChartTab({
                 {/* T-20260522-foot-PENCHART-TOOL-UX AC-6: 패널 헤더 중복 라벨 제거 (버튼에 이미 "상용구" 표시됨) */}
                 <div className="flex items-center justify-end px-2 py-1 bg-teal-50 border-b">
                   <button
-                    onClick={() => { setShowPhrasePanel(false); setRevealedPhraseId(null); }}
+                    onClick={() => setShowPhrasePanel(false)}
                     className="text-teal-500 hover:text-teal-700"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -2665,7 +2656,7 @@ export function PenChartTab({
                       return (
                         <button
                           key={key}
-                          onClick={() => { setPhraseCategory(key); setRevealedPhraseId(null); }}
+                          onClick={() => setPhraseCategory(key)}
                           className={cn(
                             'flex flex-col items-center gap-0.5 px-1 py-2 text-center border-b border-gray-100 last:border-0 transition',
                             phraseCategory === key
@@ -2696,44 +2687,46 @@ export function PenChartTab({
                       phraseTemplates
                         .filter((p) => p.category === phraseCategory)
                         .map((phrase) => {
-                          // T-20260605-foot-RX-PHRASE-INSERT-UX: 행 클릭 → 인라인 ✓ 노출(한 행). ✓ 클릭 = 즉시삽입.
-                          const isRevealed = revealedPhraseId === phrase.id;
+                          // ── T-20260612-foot-PENCHART-PHRASE-INSERT-PINGPONG5 AC-1 [근본픽스] ──
+                          //   [RC = #2 선택이벤트] 직전 동선은 행 클릭이 revealedPhraseId만 토글해 20px ✓만
+                          //   노출하고 *삽입은 ✓ 2차 클릭에 의존*했다. 갤탭 현장(총괄)이 작은 ✓를 못 찾아
+                          //   "선택해도 전혀 안 들어감"으로 5차 재발(같은 행 재탭은 ✓를 도로 숨김 → 영영 도달 불가).
+                          //   직전 4회 패치는 전부 ✓ *이후* 기계장치(즉시commit·이중rAF scrollIntoView)만 고쳐
+                          //   이 게이트는 한 번도 안 건드림 + 검증이 소스 string 정적 assertion이라 거짓 green.
+                          //   → 2단계 게이트 제거: **행 어디를 눌러도 1탭 = 즉시 삽입**. ✓는 상시 노출 어포던스.
                           return (
                             <div
                               key={phrase.id}
                               role="button"
                               tabIndex={0}
-                              onClick={() => revealPhraseInsert(phrase.id)}
+                              onClick={() => insertPhraseImmediate(phrase.id)}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter' || e.key === ' ') {
                                   e.preventDefault();
-                                  revealPhraseInsert(phrase.id);
+                                  insertPhraseImmediate(phrase.id);
                                 }
                               }}
                               className={cn(
                                 'w-full cursor-pointer text-left px-2.5 py-1.5 text-[11px] border-b border-gray-100 last:border-0 transition flex items-center gap-1.5 focus:outline-none focus:bg-teal-50',
-                                isRevealed ? 'bg-teal-50 hover:bg-teal-50' : 'hover:bg-teal-50',
+                                'hover:bg-teal-50 active:bg-teal-100',
                               )}
                               data-testid={`phrase-item-${phrase.id}`}
-                              data-revealed={isRevealed}
-                              aria-expanded={isRevealed}
                             >
-                              {/* AC-2·AC-3·AC-5: 인라인 ✓ 삽입 버튼 — 행 클릭 시 좌측 노출, 클릭=즉시삽입 */}
-                              {isRevealed && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation(); // 행 토글로 전파 방지 (재클릭=닫힘 방지)
-                                    insertPhraseImmediate(phrase.id);
-                                  }}
-                                  className="flex-shrink-0 h-5 w-5 rounded-full flex items-center justify-center bg-teal-500 text-white hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-300 transition"
-                                  data-testid={`phrase-insert-${phrase.id}`}
-                                  aria-label={`${phrase.name} 삽입`}
-                                  title="삽입"
-                                >
-                                  <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                                </button>
-                              )}
+                              {/* ✓ 상시 노출 = "탭하면 삽입" 어포던스. 행 onClick과 동일 삽입(이중삽입 방지 stopPropagation). */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation(); // 행 onClick 중복 발화 방지 (단일 삽입 보장)
+                                  insertPhraseImmediate(phrase.id);
+                                }}
+                                className="flex-shrink-0 h-5 w-5 rounded-full flex items-center justify-center bg-teal-500 text-white hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-300 transition"
+                                data-testid={`phrase-insert-${phrase.id}`}
+                                aria-label={`${phrase.name} 삽입`}
+                                title="삽입"
+                                tabIndex={-1}
+                              >
+                                <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                              </button>
                               <span className="min-w-0 flex-1">
                                 <span className="block font-medium text-gray-800 truncate">{phrase.name}</span>
                                 <span className="block text-gray-400 mt-0.5 text-[10px] truncate">
