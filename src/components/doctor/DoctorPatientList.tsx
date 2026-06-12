@@ -11,7 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { todaySeoulISODate, chartNoBadge } from '@/lib/format';
+import { todaySeoulISODate, chartNoDisplay } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
 import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
@@ -531,7 +531,7 @@ function PatientRow({
         data-testid="patient-row"
         data-mode="history"
       >
-        <div className="grid grid-cols-[1.75rem_3rem_5rem_5.5rem_minmax(0,1fr)_auto_auto] items-center gap-2 px-3 py-2.5">
+        <div className="grid grid-cols-[1.75rem_3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto_auto] items-center gap-2 px-3 py-2.5">
           {/* 번호 */}
           <span className="text-xs font-mono text-muted-foreground text-center">
             {row.queue_number ?? '—'}
@@ -540,17 +540,21 @@ function PatientRow({
           <div className="flex justify-center">
             <VisitTypeBadge type={row.visit_type} />
           </div>
-          {/* 이름 */}
-          {/* T-20260612-foot-CHARTNO-B2-P1: 이름 + 차트번호 서브텍스트(별도 칼럼 신설 금지). 미발번도 '#미발번' 명시. */}
+          {/* 이름 — T-20260612-foot-CHARTNO-COL-SPLIT-P1: 차트번호 서브텍스트 제거 → 옆 독립 칼럼으로 이전. */}
           <span
-            className="flex min-w-0 flex-col items-center"
-            title={`${row.customer_name} ${chartNoBadge(row.chart_number)}`}
+            className="min-w-0 max-w-full truncate text-center text-sm font-semibold"
+            title={row.customer_name}
             data-testid="patient-name"
           >
-            <span className="max-w-full truncate text-sm font-semibold">{row.customer_name}</span>
-            <span className="font-mono text-[10px] font-normal text-muted-foreground/70" data-testid="patient-chartno">
-              {chartNoBadge(row.chart_number)}
-            </span>
+            {row.customer_name}
+          </span>
+          {/* 차트번호 — CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
+          <span
+            className="min-w-0 max-w-full truncate text-center font-mono text-[11px] text-muted-foreground"
+            title={chartNoDisplay(row.chart_number)}
+            data-testid="patient-chartno"
+          >
+            {chartNoDisplay(row.chart_number)}
           </span>
           {/* 처방 상태 배지 (처방전 O/X) — 그날의 사실 기록(read-only) */}
           <div className="flex justify-center">
@@ -588,11 +592,12 @@ function PatientRow({
     >
       {/*
         기본 행 — T-20260609 ⑤: flex → grid 고정 열 레이아웃.
-        열 순서: 번호 / 방문배지(②이름왼쪽) / 이름(④고정폭) / 처방배지(③이름오른쪽) / 상태 / 치료실 / 메모 / 액션
+        열 순서: 번호 / 방문배지(②이름왼쪽) / 이름(④고정폭) / 차트번호(독립칼럼) / 처방배지(③이름오른쪽) / 상태 / 치료실 / 메모 / 액션
         T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: '상태'와 '메모' 사이에 치료실(방이름) 컬럼 추가.
-        모든 행이 동일 grid-template → 큐번호·배지·이름·처방·시간 항목이 행마다 동일 x위치(스크롤 무관).
+        T-20260612-foot-CHARTNO-COL-SPLIT-P1: 이름 칸 내 차트번호 서브텍스트 제거 → 이름 바로 옆 독립 칼럼.
+        모든 행이 동일 grid-template → 큐번호·배지·이름·차트번호·처방·시간 항목이 행마다 동일 x위치(스크롤 무관).
       */}
-      <div className="grid grid-cols-[1.75rem_3rem_5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto] items-center gap-2 px-3 py-2.5">
+      <div className="grid grid-cols-[1.75rem_3rem_5rem_4.5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto] items-center gap-2 px-3 py-2.5">
         {/* 번호 */}
         <span className="text-xs font-mono text-muted-foreground text-center">
           {row.queue_number ?? '—'}
@@ -605,17 +610,22 @@ function PatientRow({
 
         {/* ④ 이름 — 고정 너비(글자수 변동 무관), 초과 시 truncate.
             T-20260609-foot-DOCDASH-LABEL-RX-REFINE item4: 셀 내 가로 중앙정렬(text-center).
-            grid items-center(세로 중앙)는 기존 유지 — 컬럼 정의 보존, alignment만 보정. */}
-        {/* T-20260612-foot-CHARTNO-B2-P1: 이름 + 차트번호 서브텍스트(별도 칼럼 신설 금지). 미발번도 '#미발번' 명시. */}
+            T-20260612-foot-CHARTNO-COL-SPLIT-P1: 차트번호 서브텍스트 제거 → 옆 독립 칼럼으로 이전. */}
         <span
-          className="flex min-w-0 flex-col items-center"
-          title={`${row.customer_name} ${chartNoBadge(row.chart_number)}`}
+          className="min-w-0 max-w-full truncate text-center text-sm font-semibold"
+          title={row.customer_name}
           data-testid="patient-name"
         >
-          <span className="max-w-full truncate text-sm font-semibold">{row.customer_name}</span>
-          <span className="font-mono text-[10px] font-normal text-muted-foreground/70" data-testid="patient-chartno">
-            {chartNoBadge(row.chart_number)}
-          </span>
+          {row.customer_name}
+        </span>
+
+        {/* 차트번호 — CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
+        <span
+          className="min-w-0 max-w-full truncate text-center font-mono text-[11px] text-muted-foreground"
+          title={chartNoDisplay(row.chart_number)}
+          data-testid="patient-chartno"
+        >
+          {chartNoDisplay(row.chart_number)}
         </span>
 
         {/* ③ 처방 상태 배지 — 이름 오른쪽 + hover 처방내용 툴팁.
