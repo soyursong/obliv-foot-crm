@@ -258,15 +258,16 @@ test.describe('AC-12 — 시술 별도 칼럼', () => {
     const order = (feedThead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
     expect(order).toEqual(['이름', '상태', '경과시간', '방', '오늘시술', '처방', '임상경과', '진료차트']);
   });
-  test('진료완료 테이블: 대기 테이블과 동일 8칼럼 순서(SECTION-RESTRUCTURE AC-3 스키마 완전 동일)', () => {
+  // T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7 supersede: 완료 섹션 경과시간 칼럼 제거 → 7칼럼.
+  test('진료완료 테이블: 경과시간 제거 7칼럼 순서(UX7 AC-7)', () => {
     const s = DASH();
     const compThead = s.slice(
       s.indexOf('doctor-completed-table'),
       s.indexOf('doctor-completed-rows'),
     );
-    expect((compThead.match(/<th /g) ?? []).length).toBe(8);
+    expect((compThead.match(/<th /g) ?? []).length).toBe(7);
     const order = (compThead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
-    expect(order).toEqual(['이름', '상태', '경과시간', '방', '오늘시술', '처방', '임상경과', '진료차트']);
+    expect(order).toEqual(['이름', '상태', '방', '오늘시술', '처방', '임상경과', '진료차트']);
   });
   test('양 테이블 행에 ProcedureCell 렌더(대기 1 + 완료 1)', () => {
     const s = DASH();
