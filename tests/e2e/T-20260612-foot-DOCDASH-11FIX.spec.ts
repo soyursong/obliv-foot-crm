@@ -52,8 +52,9 @@ test.describe('AC-1 — 전화 아이콘 제거', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('AC-2 — 초/재진 레이블 이름 왼쪽', () => {
   test('CallFeedRow 이름 셀: VisitBadge 가 name 버튼보다 앞', () => {
+    // T-20260612-foot-DOCDASH-SECTION-RESTRUCTURE: 레이아웃 재정의로 주석 앵커 변경 — 동작(VisitBadge가 이름 앞)은 보존.
     const s = DASH();
-    const cell = s.slice(s.indexOf('AC-2: 초진/재진 레이블을 이름 왼쪽'), s.indexOf('doctor-call-name-chart-btn'));
+    const cell = s.slice(s.indexOf('doctor-call-feed-row'), s.indexOf('doctor-call-name-chart-btn'));
     expect(cell).toContain('<VisitBadge visitType={checkIn.visit_type} />');
   });
   test('VisitBadge 컴포넌트 존속 (new/returning/experience 매핑 유지)', () => {
@@ -204,18 +205,19 @@ test.describe('AC-11 — 임상경과 칼럼', () => {
     expect(s).toContain('data-testid="doctor-completed-clinical-cell"');
     expect(s).toContain('useCompletedClinicalProgress');
   });
-  test('피드(대기) 테이블에는 임상경과 칼럼 미추가(헤더 5열 = 이름/시술/방/처방/상태, AC-12 시술 칼럼 포함)', () => {
+  // T-20260612-foot-DOCDASH-SECTION-RESTRUCTURE(대표원장 전면 재정의)로 superseded:
+  //   양 섹션이 동일 8칼럼(임상경과 포함)으로 통일 → 피드 테이블도 임상경과 칼럼 보유. 임상경과 미리보기 셀은 진료완료 한정 유지.
+  test('피드(대기) 테이블도 8칼럼(임상경과 칼럼 포함, SECTION-RESTRUCTURE 재정의)', () => {
     const s = DASH();
     const feedThead = s.slice(
       s.indexOf('doctor-call-feed-table'),
       s.indexOf('doctor-call-feed-rows'),
     );
-    // AC-12 로 '시술' 칼럼 추가 → 5열. '임상경과'는 여전히 미포함(진료완료 테이블 한정).
-    expect((feedThead.match(/<th /g) ?? []).length).toBe(5);
-    expect(feedThead).not.toContain('임상경과');
+    expect((feedThead.match(/<th /g) ?? []).length).toBe(8);
+    expect(feedThead).toContain('임상경과');
   });
-  test('진료완료 expand colSpan 6(임상경과+시술 칼럼 포함 정합, AC-12)', () => {
-    expect(DASH()).toContain('<td colSpan={6}');
+  test('진료완료 expand colSpan = 8칼럼(DOCDASH_COLSPAN, SECTION-RESTRUCTURE)', () => {
+    expect(DASH()).toContain('colSpan={DOCDASH_COLSPAN}');
   });
 });
 
@@ -237,24 +239,26 @@ test.describe('AC-12 — 시술 별도 칼럼', () => {
     expect(s).toContain("(checkIn.treatment_kind ?? checkIn.treatment_category ?? '').trim()");
     expect(s).toContain('data-testid="doctor-procedure-cell"');
   });
-  test('대기 테이블: 이름 다음 시술 칼럼(헤더 순서 이름→시술→방→처방→상태)', () => {
+  // T-20260612-foot-DOCDASH-SECTION-RESTRUCTURE AC-4(대표원장 지정, 변경 불가)로 헤더 순서 재정의 — 양 섹션 동일 8칼럼.
+  //   ProcedureCell('오늘시술') 칼럼 자체는 보존(AC-12 동작 무회귀), 위치만 새 스펙으로 이동.
+  test('대기 테이블: 헤더 순서 이름→상태→콜경과시간→방→오늘시술→처방→임상경과→진료차트(SECTION-RESTRUCTURE)', () => {
     const s = DASH();
     const feedThead = s.slice(
       s.indexOf('doctor-call-feed-table'),
       s.indexOf('doctor-call-feed-rows'),
     );
     const order = (feedThead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
-    expect(order).toEqual(['이름', '시술', '방', '처방', '상태']);
+    expect(order).toEqual(['이름', '상태', '콜경과시간', '방', '오늘시술', '처방', '임상경과', '진료차트']);
   });
-  test('진료완료 테이블: 헤더 순서 이름→시술→방→처방→상태→임상경과(6열)', () => {
+  test('진료완료 테이블: 대기 테이블과 동일 8칼럼 순서(SECTION-RESTRUCTURE AC-3 스키마 완전 동일)', () => {
     const s = DASH();
     const compThead = s.slice(
       s.indexOf('doctor-completed-table'),
       s.indexOf('doctor-completed-rows'),
     );
-    expect((compThead.match(/<th /g) ?? []).length).toBe(6);
+    expect((compThead.match(/<th /g) ?? []).length).toBe(8);
     const order = (compThead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
-    expect(order).toEqual(['이름', '시술', '방', '처방', '상태', '임상경과']);
+    expect(order).toEqual(['이름', '상태', '콜경과시간', '방', '오늘시술', '처방', '임상경과', '진료차트']);
   });
   test('양 테이블 행에 ProcedureCell 렌더(대기 1 + 완료 1)', () => {
     const s = DASH();
