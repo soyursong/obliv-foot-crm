@@ -39,7 +39,7 @@ import { useAuth } from '@/lib/auth';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
-import { todaySeoulISODate, chartNoBadge } from '@/lib/format';
+import { todaySeoulISODate, chartNoDisplay } from '@/lib/format';
 import { getAssignedSlotName } from '@/lib/checkin-slot';
 import {
   loadMute,
@@ -85,8 +85,10 @@ const CELL_ACTION_BTN =
 //   T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7 (문지은 대표원장 실사용 후속, POLISH AC-4 supersede):
 //     진료 완료 섹션은 경과시간을 '-'로 두지 않고 칼럼 자체를 제거 → 완료환자는 대기시간 불요(7칼럼).
 //     호출(진료 대기중) 섹션은 경과시간 8칼럼 그대로 유지. 두 테이블은 별도 <table> 이라 폭 정렬은 시각적 독립.
-const DOCDASH_COLSPAN = 8; // 진료 대기중(호출): 이름·상태·경과시간·방·오늘시술·처방·임상경과·진료차트
-const DOCDASH_COMPLETED_COLSPAN = 7; // 진료 완료: 경과시간 제거(UX7 AC-7) → 이름·상태·방·오늘시술·처방·임상경과·진료차트
+// T-20260612-foot-CHARTNO-COL-SPLIT-P1 (문지은 대표원장, §13.1.A reporter 권위로 B2-P1 supersede):
+//   차트번호를 이름 칸 내 서브텍스트가 아니라 이름 칼럼 '바로 옆 독립 칼럼'으로 분리. 각 테이블 칼럼 +1.
+const DOCDASH_COLSPAN = 9; // 진료 대기중(호출): 이름·차트번호·상태·경과시간·방·오늘시술·처방·임상경과·진료차트
+const DOCDASH_COMPLETED_COLSPAN = 8; // 진료 완료: 경과시간 제거(UX7 AC-7) → 이름·차트번호·상태·방·오늘시술·처방·임상경과·진료차트
 
 // T-20260612-foot-CHARTNO-B2-P1: customers 임베드(to-one)에서 차트번호 안전 추출.
 //   PostgREST 임베드는 object|array 양쪽으로 직렬화될 수 있어 둘 다 흡수(KohReportTab 흡수 패턴 동일).
@@ -360,21 +362,23 @@ export default function DoctorCallDashboard() {
           // T-20260612-foot-DOCDASH-SECTION-RESTRUCTURE AC-3/AC-4: 공유 colgroup/thead 로 진료 완료 섹션과 칼럼 폭·순서 완전 동일.
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-sm" data-testid="doctor-call-feed-table">
-              {/* DOCDASH_COLGROUP — 진료 완료 섹션과 글자 그대로 동일(8칼럼 폭 통일, AC-3/AC-4). */}
+              {/* DOCDASH_COLGROUP — T-20260612-foot-CHARTNO-COL-SPLIT-P1: 이름 옆 차트번호 독립 칼럼(9칼럼, 합 100%). */}
               <colgroup>
-                <col className="w-[16%]" />
-                <col className="w-[11%]" />
-                <col className="w-[11%]" />
-                <col className="w-[8%]" />
-                <col className="w-[14%]" />
                 <col className="w-[13%]" />
-                <col className="w-[17%]" />
+                <col className="w-[8%]" />
+                <col className="w-[10%]" />
+                <col className="w-[10%]" />
+                <col className="w-[8%]" />
+                <col className="w-[13%]" />
+                <col className="w-[12%]" />
+                <col className="w-[16%]" />
                 <col className="w-[10%]" />
               </colgroup>
-              {/* DOCDASH_THEAD — 진료 완료 섹션과 글자 그대로 동일(칼럼 순서 변경 불가, AC-4). */}
+              {/* DOCDASH_THEAD — CHARTNO-COL-SPLIT-P1: 이름 바로 옆 차트번호 칼럼 신설. */}
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/70 text-center text-[11px] font-semibold text-muted-foreground">
                   <th className="px-3 py-1.5">이름</th>
+                  <th className="px-3 py-1.5">차트번호</th>
                   <th className="px-3 py-1.5">상태</th>
                   <th className="px-3 py-1.5">경과시간</th>
                   <th className="px-3 py-1.5">방</th>
@@ -421,20 +425,22 @@ export default function DoctorCallDashboard() {
           //   호출 섹션(8칼럼)과 폭 통일이 아닌 독립 — 완료환자는 대기시간 불요(문지은 대표원장). 제거된 11% 재분배.
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-sm" data-testid="doctor-completed-table">
-              {/* COMPLETED COLGROUP — 7칼럼(경과시간 제거). 합 100%: 18+12+9+16+15+20+10. */}
+              {/* COMPLETED COLGROUP — CHARTNO-COL-SPLIT-P1: 경과시간 제거 + 차트번호 독립 칼럼(8칼럼). 합 100%: 13+9+11+9+15+14+19+10. */}
               <colgroup>
-                <col className="w-[18%]" />
-                <col className="w-[12%]" />
+                <col className="w-[13%]" />
                 <col className="w-[9%]" />
-                <col className="w-[16%]" />
+                <col className="w-[11%]" />
+                <col className="w-[9%]" />
                 <col className="w-[15%]" />
-                <col className="w-[20%]" />
+                <col className="w-[14%]" />
+                <col className="w-[19%]" />
                 <col className="w-[10%]" />
               </colgroup>
-              {/* COMPLETED THEAD — UX7 AC-7: 경과시간 헤더 제거(이름·상태·방·오늘시술·처방·임상경과·진료차트). */}
+              {/* COMPLETED THEAD — UX7 AC-7(경과시간 제거) + CHARTNO-COL-SPLIT-P1(차트번호 독립 칼럼). */}
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/70 text-center text-[11px] font-semibold text-muted-foreground">
                   <th className="px-3 py-1.5">이름</th>
+                  <th className="px-3 py-1.5">차트번호</th>
                   <th className="px-3 py-1.5">상태</th>
                   <th className="px-3 py-1.5">방</th>
                   <th className="px-3 py-1.5">오늘시술</th>
@@ -542,12 +548,8 @@ function CallFeedRow({
                   : 'text-gray-900 hover:text-indigo-700 hover:underline cursor-pointer',
               )}
             >
-              {/* T-20260612-foot-CHARTNO-B2-P1: 이름 + 차트번호 인접 표기(별도 칼럼 신설 금지, 이름 칼럼 내 서브텍스트).
-                  미발번도 '#미발번' 명시 — 환자명 단독 노출 0(AC). */}
+              {/* T-20260612-foot-CHARTNO-COL-SPLIT-P1: 이름 칸 내 차트번호 서브텍스트 제거 → 옆 독립 칼럼으로 이전. */}
               <span className="block text-sm font-semibold">{checkIn.customer_name}</span>
-              <span className="block font-mono text-[10px] font-normal text-gray-400" data-testid="doctor-call-chartno">
-                {chartNoBadge(readChartNo(checkIn))}
-              </span>
             </button>
             {/* AC-0(11FIX AC-8 보존): 손들기 2단계 워크플로우(의사ack→진료완료). 활성 호출(purple)에만. */}
             {!inactive && (
@@ -567,7 +569,14 @@ function CallFeedRow({
           )}
         </td>
 
-        {/* 2. 상태 — 진료필요(purple)/진료완료(pink, STATUS-SPLIT 원내잔류). AC-6: 중앙정렬. */}
+        {/* 2. 차트번호 — T-20260612-foot-CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
+        <td className="px-3 py-2 text-center">
+          <span className="font-mono text-[11px] text-gray-500" data-testid="doctor-call-chartno">
+            {chartNoDisplay(readChartNo(checkIn))}
+          </span>
+        </td>
+
+        {/* 3. 상태 — 진료필요(purple)/진료완료(pink, STATUS-SPLIT 원내잔류). AC-6: 중앙정렬. */}
         <td className="px-3 py-2 text-center">
           <span className="inline-flex items-center justify-center gap-1 text-[11px] font-medium text-gray-700">
             <span
@@ -767,16 +776,20 @@ function CompletedRow({
               title="이름 클릭 — 진료차트 열기 (서랍)"
               className="min-w-[4rem] break-keep text-center underline-offset-2 transition-colors cursor-pointer hover:text-indigo-700 hover:underline disabled:cursor-default disabled:no-underline"
             >
-              {/* T-20260612-foot-CHARTNO-B2-P1: 이름 + 차트번호 인접 표기(이름 칼럼 내 서브텍스트). 미발번도 명시. */}
+              {/* T-20260612-foot-CHARTNO-COL-SPLIT-P1: 이름 칸 내 차트번호 서브텍스트 제거 → 옆 독립 칼럼으로 이전. */}
               <span className="block text-sm font-semibold">{checkIn.customer_name}</span>
-              <span className="block font-mono text-[10px] font-normal text-gray-400" data-testid="doctor-completed-chartno">
-                {chartNoBadge(readChartNo(checkIn))}
-              </span>
             </button>
           </div>
         </td>
 
-        {/* 2. 상태 — AC-0(11FIX AC-10 보존): 귀가(status==='done', emerald) / 귀가 대기(원내잔류, amber) + 의사ack 뱃지(표시 전용). AC-6: 중앙정렬. */}
+        {/* 2. 차트번호 — T-20260612-foot-CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
+        <td className="px-3 py-2 text-center">
+          <span className="font-mono text-[11px] text-gray-500" data-testid="doctor-completed-chartno">
+            {chartNoDisplay(readChartNo(checkIn))}
+          </span>
+        </td>
+
+        {/* 3. 상태 — AC-0(11FIX AC-10 보존): 귀가(status==='done', emerald) / 귀가 대기(원내잔류, amber) + 의사ack 뱃지(표시 전용). AC-6: 중앙정렬. */}
         <td className="px-3 py-2 text-center">
           <div className="flex flex-wrap items-center justify-center gap-1.5">
             <span
