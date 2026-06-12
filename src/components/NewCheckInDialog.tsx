@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { toast } from '@/lib/toast';
 import { supabase } from '@/lib/supabase';
 import { normalizeToE164 } from '@/lib/phone';
-import { formatPhone } from '@/lib/format';
+import { formatPhone, chartNoBadge } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -37,6 +37,8 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
   const [visitType, setVisitType] = useState<VisitType>('new');
   const [submitting, setSubmitting] = useState(false);
   const [todayReservations, setTodayReservations] = useState<Reservation[]>([]);
+  // T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 예약 고객(customer_id) → 차트번호 맵
+  const [resvChartMap, setResvChartMap] = useState<Map<string, string>>(new Map());
   const [linkedReservation, setLinkedReservation] = useState<Reservation | null>(null);
   /** 인라인 검색으로 선택된 기존 고객 */
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
@@ -67,7 +69,23 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
         .eq('reservation_date', today)
         .eq('status', 'confirmed')
         .order('reservation_time', { ascending: true });
-      setTodayReservations((data ?? []) as Reservation[]);
+      const resvs = (data ?? []) as Reservation[];
+      setTodayReservations(resvs);
+      // 예약 고객들의 차트번호 일괄 조회 → 동명이인 구분(미발번도 명시)
+      const custIds = Array.from(new Set(resvs.map((r) => r.customer_id).filter(Boolean))) as string[];
+      if (custIds.length > 0) {
+        const { data: chartData } = await supabase
+          .from('customers')
+          .select('id, chart_number')
+          .in('id', custIds);
+        const m = new Map<string, string>();
+        for (const c of (chartData ?? []) as { id: string; chart_number: string | null }[]) {
+          if (c.chart_number) m.set(c.id, c.chart_number);
+        }
+        setResvChartMap(m);
+      } else {
+        setResvChartMap(new Map());
+      }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, clinicId]);
@@ -265,6 +283,12 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
                 >
                   <span className="flex items-center gap-2">
                     <span className="font-medium">{r.customer_name}</span>
+                    {/* T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 등록환자면 차트번호 항상 표시 */}
+                    {r.customer_id && (
+                      <span className={cn('font-mono text-[11px]', resvChartMap.get(r.customer_id) ? 'text-teal-600' : 'text-muted-foreground')}>
+                        {chartNoBadge(resvChartMap.get(r.customer_id))}
+                      </span>
+                    )}
                     <span className="text-xs text-muted-foreground">
                       {r.reservation_time?.slice(0, 5)}
                     </span>

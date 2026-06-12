@@ -32,7 +32,7 @@ import {
 import CalendarNoticePanel from '@/components/CalendarNoticePanel';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { formatPhone } from '@/lib/format';
+import { formatPhone, chartNoBadge } from '@/lib/format';
 import { useClinic } from '@/hooks/useClinic';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -536,7 +536,8 @@ export default function AdminLayout() {
                       >
                         <span className="font-medium">{c.name}</span>
                         <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                          {c.chart_number && <span className="rounded bg-teal-50 px-1.5 py-0 text-teal-700">{c.chart_number}</span>}
+                          {/* T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 차트번호 항상 표시(미발번도 명시) */}
+                          <span className={`rounded px-1.5 py-0 ${c.chart_number ? 'bg-teal-50 text-teal-700' : 'bg-muted text-muted-foreground'}`}>{chartNoBadge(c.chart_number)}</span>
                           {c.birth_date && <span>{c.birth_date}</span>}
                           <span>{formatPhone(c.phone)}</span>
                         </span>

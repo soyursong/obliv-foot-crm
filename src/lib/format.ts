@@ -119,3 +119,27 @@ export function todaySeoulStr(): string {
     timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
   });
 }
+
+/**
+ * T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 환자명↔차트번호 무조건 세트 표시 헬퍼.
+ * 환자명이 노출되는 모든 surface에서 차트번호를 항상 인접 표시(동명이인 오인=의료안전).
+ * 미발번(null/빈값)이면 환자명 단독 노출 금지 → '(미발번)' 명시(AC3).
+ * presentation only — 저장값 미변경. cross_crm_data_contract v2 차트번호 발번 정책과 정합.
+ *
+ * chartNoDisplay: 칼럼/필드/서브텍스트에 넣을 차트번호 텍스트 ('F-1234' 또는 '(미발번)').
+ */
+export function chartNoDisplay(chart_number: string | number | null | undefined): string {
+  if (chart_number === null || chart_number === undefined) return '(미발번)';
+  const s = String(chart_number).trim();
+  return s.length > 0 ? s : '(미발번)';
+}
+
+/**
+ * chartNoBadge: 차트번호 칼럼이 없는 인라인 표기용 짧은 라벨('#F-1234' 또는 '#미발번').
+ * 환자명 옆 괄호병기·서브텍스트·드롭다운 옵션 등 공간 제약 surface용.
+ */
+export function chartNoBadge(chart_number: string | number | null | undefined): string {
+  if (chart_number === null || chart_number === undefined) return '#미발번';
+  const s = String(chart_number).trim();
+  return s.length > 0 ? `#${s}` : '#미발번';
+}

@@ -9,7 +9,7 @@ import { useCallback, useRef, useState } from 'react';
 import { Clock, FileText, Phone, Stethoscope } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/lib/supabase';
-import { formatPhone } from '@/lib/format';
+import { formatPhone, chartNoBadge } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { CheckIn } from '@/lib/types';
 
@@ -171,11 +171,10 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, onContext
         >
           {/* ── 헤더: 차트번호 + 성함(성별/나이) + 초진/재진 ── */}
           <div className="flex flex-wrap items-center gap-1.5">
-            {details?.chart_number && (
-              <span className="rounded bg-teal-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-teal-700 border border-teal-100">
-                #{details.chart_number}
-              </span>
-            )}
+            {/* T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 차트번호 항상 표시(미발번도 명시) */}
+            <span className={`rounded px-1.5 py-0.5 font-mono text-[11px] font-semibold border ${details?.chart_number ? 'bg-teal-50 text-teal-700 border-teal-100' : 'bg-muted text-muted-foreground border-border'}`}>
+              {chartNoBadge(details?.chart_number)}
+            </span>
             <span className="font-bold text-gray-900 text-sm">{checkIn.customer_name}</span>
             {(genderLabel || age != null) && (
               <span className="text-gray-500 text-[11px]">
