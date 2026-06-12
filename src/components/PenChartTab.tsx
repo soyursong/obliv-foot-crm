@@ -508,6 +508,10 @@ function PlacedItemOverlay({
     const dx = e.clientX - dragStart.current.px;
     const dy = e.clientY - dragStart.current.py;
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      // T-20260612-PINGPONG5 AC-1.A [위치 고정]: 선택된 항목만 이동. 미선택 상태에서의 드래그는 무시되고
+      //   pointerUp의 onSelect(!hasMoved)로 '선택'만 됨 → 다음 드래그부터 이동 가능. "안착 후 [이동]
+      //   클릭 전까지 고정" 충족(우발적 드래그 방지). 이동 핸들(+)도 isSelected일 때만 렌더되므로 정합.
+      if (!isSelected) return;
       hasMoved.current = true;
       onMove(item.id, dx, dy);
       dragStart.current = { px: e.clientX, py: e.clientY };
@@ -595,19 +599,22 @@ function PlacedItemOverlay({
           ×
         </button>
       )}
-      {/* T-20260603-foot-PHRASE-MOVE-RESTORE (AC-2·AC-4):
-          항상 보이는 인터랙티브 이동 그립 핸들.
-          - 본문(wrapper)은 드로잉 모드에서 pointerEvents:'none'(펜 passthrough, AC-3 무회귀) 유지하되,
-            이 핸들만 pointerEvents:'auto' → CSS상 부모 none이어도 자식 auto는 이벤트 수신 →
-            어느 도구(펜/형광펜/지우개/화이트)에서든 핸들 드래그로 1단계 상용구 이동(AC-4).
-          - parent PHRASE-PEN-PASSTHROUGH의 '선택/이동 도구 명시 전환' 요구를 제거 → 회귀 복구.
-          - 핸들 자체가 발견 가능한 이동 진입점(AC-2). 별도 버튼 탐색 불필요. */}
+      {/* ── 이동 그립 핸들 ──
+          T-20260612-foot-PENCHART-PHRASE-INSERT-PINGPONG5 AC-1.A [안착/고정]:
+            (구 T-20260603-PHRASE-MOVE-RESTORE: 어느 도구에서든 항상 보이는 핸들)
+            → 현장 신규 요구로 **select 도구 + 선택된 항목일 때만** 핸들 노출하도록 게이트.
+            · 삽입 직후: select 도구 + 자동선택 → 핸들 표시(즉시 드래그 가능).
+            · 빈 캔버스 클릭(안착) → deselect → 핸들 제거 + 위치 고정(우발적 드래그 방지).
+            · 재이동: select 도구에서 항목 본문 탭 → 재선택 → 핸들 재노출 → 드래그.
+          isSelected일 때만 렌더되므로 pointerEvents:'auto'는 항상 활성(부모 none이어도 자식 수신). */}
+      {interactive && isSelected && (
       <div
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        title="드래그하여 상용구 이동 (탭: 선택)"
+        title="드래그하여 상용구 이동"
+        data-testid="penchart-move-handle"
         style={{
           position: 'absolute',
           top: -9,
@@ -615,13 +622,12 @@ function PlacedItemOverlay({
           width: 22,
           height: 22,
           borderRadius: '50%',
-          background: isSelected ? '#7c3aed' : '#0d9488', // 선택 시 보라, 기본 teal-600 (풋 팔레트)
+          background: '#7c3aed', // 선택 상태에서만 노출 → 보라(선택색) 고정
           color: '#fff',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           cursor: 'grab',
-          // 핵심: wrapper가 'none'이어도 이 핸들만 'auto' → 드로잉 모드에서도 1단계 이동 가능
           pointerEvents: 'auto',
           touchAction: 'none',
           boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
@@ -630,6 +636,7 @@ function PlacedItemOverlay({
       >
         <Move style={{ width: 12, height: 12 }} />
       </div>
+      )}
     </div>
   );
 }
@@ -744,11 +751,14 @@ export function PenChartTab({
   const [phraseTemplatesLoaded, setPhraseTemplatesLoaded] = useState(false);
   const [showPhrasePanel, setShowPhrasePanel] = useState(false);
   const [phraseCategory, setPhraseCategory] = useState<string>('charting');
+  // T-20260612-foot-PENCHART-PHRASE-INSERT-PINGPONG5 AC-1.B: 마지막으로 삽입(클릭)한 상용구 1건만 ✓ 마킹.
+  //   [RC] 기존 패널은 모든 행의 ✓ 버튼을 상시 teal-500(초록 채움)으로 렌더 → 현장이 "전체 ✓(전부 선택됨)"로
+  //   오인. 단일선택 어포던스가 전역처럼 보이는 회귀. → 클릭한 1건만 green ✓, 나머지는 중립(outline + Plus).
+  const [lastInsertedPhraseId, setLastInsertedPhraseId] = useState<number | null>(null);
   // [DEACTIVATED — T-20260605-foot-RX-PHRASE-INSERT-UX Q1] 복수 선택 배열. 복원 시 주석 해제.
   // const [selectedPhraseIds, setSelectedPhraseIds] = useState<number[]>([]);
   // T-20260605-foot-RX-PHRASE-INSERT-UX (AC-2): 행 클릭 시 그 행에만 인라인 ✓ 노출 (한 번에 한 행).
   //   null = 노출 없음 / number = 해당 phrase.id 행에 ✓ 노출. 같은 행 재클릭 = 닫힘.
-  const [revealedPhraseId, setRevealedPhraseId] = useState<number | null>(null);
 
   // T-20260522-foot-PENCHART-TOOLS-V2 AC-3: 텍스트 도구 상태
   const [textInputPos, setTextInputPos] = useState<{
@@ -1623,7 +1633,19 @@ export function PenChartTab({
     }
   }, []);
 
-  const initCanvas = useCallback(() => {
+  // ── T-20260612-foot-PENCHART-PHRASE-INSERT-PINGPONG5 [근본픽스 RC] ─────────────────────────
+  //   [RC = 5차 재발의 진짜 게이트] 캔버스 그래픽 초기화(initCanvasGraphics)와 *사용자 작업상태 초기화*
+  //   (placedItems/패널/선택/도구)를 한 함수(구 initCanvas)에 묶어두고, 200ms init effect 의 deps 에
+  //   initCanvas(=initBgCanvas/initDrawCanvas 식별자) 와 runPenChartDiagnostics(phraseTemplates dep)
+  //   를 넣어두었다. → phrase_templates·templateImgUrl 등 *비동기 로드*가 끝나면 콜백 식별자가 바뀌어
+  //   effect 가 재실행 → 200ms 뒤 initCanvas 가 다시 돌며 **방금 삽입한 상용구(placedItems)를 []로 날리고
+  //   + showPhrasePanel 을 false 로 닫아버린다.** = "선택해도 안 들어감 / 삽입했는데 사라짐" 현장 회귀.
+  //   직전 4회 패치는 삽입 *동선*만 봤고 이 파괴적 재초기화를 한 번도 못 봤다.
+  //   → 분리: 그래픽(재실행 안전)과 세션리셋(드로잉 진입 1회)을 떼고, effect 가 비동기 dep 로 재실행돼도
+  //   사용자 작업을 건드리지 않게 한다.
+
+  // 캔버스 그래픽만 — 배경/드로잉 레이어 재할당. placedItems·패널·선택은 절대 건드리지 않음(재실행 안전).
+  const initCanvasGraphics = useCallback(() => {
     setBgImgLoadError(false); // T-20260525-foot-PENCHART-FORM-BLACK AC-4: 재시도 시 에러 초기화
     setBgImgErrorReason(null);   // T-20260608-foot-PENCHART-REFUND-FORMIMG: 재시도/양식 진입 시 단계코드 리셋
     bgImgRetryRef.current = 0;    // T-20260608-foot-PENCHART-REFUND-FORMIMG: cache-bust 재시도 카운터 리셋
@@ -1632,19 +1654,6 @@ export function PenChartTab({
     emptyRef.current = true;
     hasDrawingRef.current = false; // T-20260523-foot-PENCHART-PEN-SLOW
     setHasDrawing(false);
-    setActiveTool('pen');
-    setPenSize(DEFAULT_THICKNESS.pen);
-    setPendingBoilerplate('');
-
-    setShowPhrasePanel(false);
-    setRevealedPhraseId(null); // T-20260605-foot-RX-PHRASE-INSERT-UX: 차트 초기화 시 인라인 ✓ 비움
-    setTextInputPos(null);
-    setTextInputValue('');
-    setPlacedItems([]);
-    setSelectedIds(new Set());
-    undoStackRef.current = [];
-    // T-20260522-foot-PENCHART-TOOL-UX AC-1: bezier 스무딩 상태 초기화
-    lastMidRef.current = null;
     // T-20260524-foot-PENCHART-PEN-SLOW Fix-5: pending undo 초기화 + blank 상태 async 사전 캡처
     // initCanvas 직후 rAF → blank draw canvas 캡처 → 첫 획 onPointerDown에서 stack에 즉시 적재 가능
     if (pendingUndoRafRef.current !== null) {
@@ -1652,8 +1661,30 @@ export function PenChartTab({
       pendingUndoRafRef.current = null;
     }
     pendingUndoDataRef.current = null;
+    undoStackRef.current = [];
+    lastMidRef.current = null; // T-20260522-foot-PENCHART-TOOL-UX AC-1: bezier 스무딩 상태 초기화
     captureUndoAsync();
   }, [initBgCanvas, initDrawCanvas, captureUndoAsync]);
+
+  // 드로잉 세션 진입(양식 선택/재진입/양식 변경) 시 1회 — 사용자 작업상태 초기화.
+  //   비동기 dep(phrase/template) 변경엔 절대 반응하지 않는다(stable useCallback).
+  const resetDrawSession = useCallback(() => {
+    setActiveTool('pen');
+    setPenSize(DEFAULT_THICKNESS.pen);
+    setPendingBoilerplate('');
+    setShowPhrasePanel(false);
+    setTextInputPos(null);
+    setTextInputValue('');
+    setPlacedItems([]);
+    setSelectedIds(new Set());
+    setLastInsertedPhraseId(null); // T-20260612-PINGPONG5 AC-1.B: 새 세션 시작 시 패널 ✓ 마킹 리셋
+  }, []);
+
+  // 명시적 전체 초기화(세션리셋+그래픽) — contextrestored 복구·수동 재시도 등에서 사용.
+  const initCanvas = useCallback(() => {
+    resetDrawSession();
+    initCanvasGraphics();
+  }, [resetDrawSession, initCanvasGraphics]);
 
   // ── REOPEN4 진단: AC-R4-4 CSS stacking context + AC-R4-5 CORS ──────────────
   /** T-20260527-foot-PENCHART-FORM-BLACKSCR REOPEN4:
@@ -1746,6 +1777,19 @@ export function PenChartTab({
     console.groupEnd();
   }, [activeDrawTemplate, popupMode, penChartTemplate, phraseTemplates, phraseTemplatesLoaded]);
 
+  // T-20260612-PINGPONG5: 세션 리셋은 드로잉 진입/양식 변경 시 1회만 — placedItems/패널을 비동기 dep
+  //   변경(phrase/template 로드)으로 날리던 RC 차단. deps 는 stable 값(mode, 양식 id, stable 콜백)만.
+  useEffect(() => {
+    if (mode === 'draw') resetDrawSession();
+    // activeDrawTemplate?.id 변경 = 다른 양식 진입 → 새 세션이므로 사용자 상태 초기화 정당.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, activeDrawTemplate?.id, resetDrawSession]);
+
+  // T-20260612-PINGPONG5: 캔버스 그래픽 초기화는 비파괴(placedItems/패널 미관여)이므로 비동기 dep
+  //   변경으로 재실행돼도 안전. 진단은 ref 경유로 호출해 phraseTemplates dep 가 effect 재실행을
+  //   유발(→과거엔 파괴적 재init)하지 않게 한다.
+  const runPenChartDiagnosticsRef = useRef(runPenChartDiagnostics);
+  runPenChartDiagnosticsRef.current = runPenChartDiagnostics;
   useEffect(() => {
     if (mode === 'draw') {
       // T-20260527-foot-PENCHART-FORM-BLACKSCR REOPEN4:
@@ -1757,15 +1801,14 @@ export function PenChartTab({
       //     desynchronized:true drawCanvas가 이 layer 안에서 초기화되면
       //     iOS Safari에서 opaque(alpha-less) backing store 할당 → 투명 픽셀=BLACK → 검정화면.
       //   수정: 50ms(애니메이션 도중) → 200ms(애니메이션 완료 50ms 후) 로 연장.
-      //   진단: initCanvas + runPenChartDiagnostics 연속 실행으로 AC-R4-3/4/5 자동 덤프.
       const t = setTimeout(() => {
-        initCanvas();
+        initCanvasGraphics();
         // 진단은 다음 rAF에서 — initCanvas 내 DOM 반영 완료 후 computed style 측정 보장
-        requestAnimationFrame(runPenChartDiagnostics);
+        requestAnimationFrame(() => runPenChartDiagnosticsRef.current());
       }, 200);
       return () => clearTimeout(t);
     }
-  }, [mode, initCanvas, runPenChartDiagnostics]);
+  }, [mode, initCanvasGraphics]);
 
   // T-20260526-foot-PENCHART-FORM-BLACKSCR REOPEN AC-R3:
   //   bgCanvas contextlost/contextrestored 핸들러
@@ -1879,7 +1922,9 @@ export function PenChartTab({
       // ✓ 즉시삽입(#2): 캔버스 탭 단계 없이 commit. select 도구로 전환 + 자동 선택 →
       //   오버레이가 즉시 interactive(드래그 가능) + "1개 선택됨" 노출로 "삽입됐다"는 피드백 가시화.
       setActiveTool('select');
-      setShowPhrasePanel(false);
+      // T-20260612-PINGPONG5 AC-1.B: 삽입 후에도 상용구 패널 유지 — 연속 삽입(시나리오1·2) +
+      //   '클릭한 1건만 ✓' 피드백(시나리오4)이 보이도록. (구: setShowPhrasePanel(false) → 패널이 닫혀
+      //   연속 삽입마다 재오픈 필요 + 단일 ✓ 어포던스 확인 불가였음.)
       setSelectedIds(new Set([newItem.id]));
     }
     return newItem.id;
@@ -1914,12 +1959,21 @@ export function PenChartTab({
 
   // ── 포인터 이벤트 ────────────────────────────────────────────────────
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // ── T-20260612-foot-PENCHART-PHRASE-INSERT-PINGPONG5 AC-1.A [안착/고정] ──────────────
+    //   [RC] 상용구 삽입 후 placeBoilerplateAt가 select 도구+자동선택으로 전환 → 이동 핸들(+) 노출.
+    //   이후 *빈 캔버스 클릭*이 select 모드에서 그냥 return 돼 selectedIds가 해제되지 않음 → 핸들(+)이
+    //   계속 떠 있고 우발적 드래그로 위치가 흔들리는 현장 결함. → 오브젝트 *밖* 빈 캔버스 pointerdown =
+    //   현재 위치 안착(deselect)·핸들 제거. (오버레이/이동핸들 클릭은 handlePointerDown의 stopPropagation
+    //   으로 이 캔버스 핸들러에 도달하지 않으므로, 여기 도달 = 빈 영역 클릭이 확실하다.)
+    //   ★터치 가드(아래)보다 먼저 처리 — 갤탭(터치)에서도 빈 캔버스 탭으로 안착돼야 하기 때문.
+    if (activeTool === 'select') {
+      if (selectedIds.size > 0) setSelectedIds(new Set());
+      return;
+    }
     // touch → 스크롤 전용 (draw 건너뜀)
     // T-20260606-foot-RX-PHRASE-TOUCH-INSERT-FIX: 단, boilerplate-placing 모드에선 iPad 손가락 탭도
     // 상용구 배치 진입 허용 (a16193f touch guard가 placing 체크 앞에 있어 손가락 탭 전면 차단되던 회귀 수정)
     if (e.pointerType === 'touch' && activeTool !== 'boilerplate-placing') return;
-    // T-20260602-foot-PHRASE-PEN-PASSTHROUGH: select(선택/이동) 모드는 캔버스 빈 영역 탭에도 드로잉 안 함
-    if (activeTool === 'select') return;
     e.preventDefault();
     e.stopPropagation();
     const canvas = canvasRef.current;
@@ -2317,12 +2371,8 @@ export function PenChartTab({
   // const clearPhraseSelection = () => setSelectedPhraseIds([]);
 
   // ── T-20260605-foot-RX-PHRASE-INSERT-UX: 단건 즉시삽입 동선 ──────────────
-  // AC-2: 행 클릭 → 그 행에만 인라인 ✓ 노출(한 번에 한 행). 같은 행 재클릭 = 닫힘.
-  const revealPhraseInsert = (id: number) => {
-    setRevealedPhraseId((prev) => (prev === id ? null : id));
-  };
-  // AC-3: ✓ 클릭 → 즉시 삽입. handleBoilerplateSelect로 boilerplate-placing 진입(GUARD: placeBoilerplate 불변).
-  //   기존 단건 동선과 동일하게 단일 content를 그대로 pendingBoilerplate로 전달.
+  // T-20260612-PINGPONG5 AC-1: revealPhraseInsert(2단계 게이트) 제거 — 행 클릭이 곧 삽입.
+  //   행 onClick / ✓ onClick 모두 아래 insertPhraseImmediate 단일 진입점으로 수렴.
   const insertPhraseImmediate = (id: number) => {
     const content = phraseTemplates.find((p) => p.id === id)?.content;
     // AC-2 (T-20260606-foot-PENCHART-PHRASE-INSERT-FIX): content 누락/빈값이면 가시 피드백 후 무동작.
@@ -2332,9 +2382,10 @@ export function PenChartTab({
     //   → 모드 진입 전에 차단하고 토스트로 원인(상용구 내용 비어있음)을 가시화. phrase-agnostic.
     if (typeof content !== 'string' || content.trim() === '') {
       toast.warning('이 상용구에 내용이 없습니다. 상용구 관리에서 내용을 입력해 주세요.');
-      setRevealedPhraseId(null);
       return;
     }
+    // T-20260612-PINGPONG5 AC-1.B: 클릭한 이 1건만 패널 ✓ 마킹(전역 ✓ 회귀 차단). 다음 클릭 시 새 항목으로 이동.
+    setLastInsertedPhraseId(id);
     // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #2 (AC-3): ✓ 클릭 = 즉시 캔버스에 commit.
     //   [회귀 RC] 기존 동선은 handleBoilerplateSelect로 'boilerplate-placing' 모드만 진입시키고
     //   실제 배치는 사용자의 "캔버스 탭"에 의존했다. 갤탭(터치)에서는 placing 모드 캔버스 touchAction:'pan-y'
@@ -2344,7 +2395,6 @@ export function PenChartTab({
     // 연속 삽입 시 겹침 방지 — 기존 상용구 수만큼 소폭 stagger
     const n = placedItems.filter((it) => it.type === 'boilerplate').length % 6;
     const newId = placeBoilerplateAt(content, x + n * 14, y + n * 30, false);
-    setRevealedPhraseId(null);
     // ── T-20260610-foot-PENCHART-6FIX-REFIX B: 삽입 가시화 (부모 #2 회귀 재발 차단) ──
     //   [RC 가설] computeVisibleAnchor가 스크롤 위치를 못 잡거나(refs 타이밍), 사용자가 폼 하단을 보는데
     //   상용구가 폼 상단/뷰포트 밖에 꽂혀 "삽입 안 됨"으로 인지되는 경로. 또는 ✓ 후 select 전환을 모르고
@@ -2615,7 +2665,6 @@ export function PenChartTab({
             <button
               onClick={() => {
                 setShowPhrasePanel(!showPhrasePanel);
-                setRevealedPhraseId(null); // 패널 토글 시 인라인 ✓ 초기화
                 setTextInputPos(null);
               }}
               className={cn(
@@ -2642,7 +2691,7 @@ export function PenChartTab({
                 {/* T-20260522-foot-PENCHART-TOOL-UX AC-6: 패널 헤더 중복 라벨 제거 (버튼에 이미 "상용구" 표시됨) */}
                 <div className="flex items-center justify-end px-2 py-1 bg-teal-50 border-b">
                   <button
-                    onClick={() => { setShowPhrasePanel(false); setRevealedPhraseId(null); }}
+                    onClick={() => setShowPhrasePanel(false)}
                     className="text-teal-500 hover:text-teal-700"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -2665,7 +2714,7 @@ export function PenChartTab({
                       return (
                         <button
                           key={key}
-                          onClick={() => { setPhraseCategory(key); setRevealedPhraseId(null); }}
+                          onClick={() => setPhraseCategory(key)}
                           className={cn(
                             'flex flex-col items-center gap-0.5 px-1 py-2 text-center border-b border-gray-100 last:border-0 transition',
                             phraseCategory === key
@@ -2696,44 +2745,61 @@ export function PenChartTab({
                       phraseTemplates
                         .filter((p) => p.category === phraseCategory)
                         .map((phrase) => {
-                          // T-20260605-foot-RX-PHRASE-INSERT-UX: 행 클릭 → 인라인 ✓ 노출(한 행). ✓ 클릭 = 즉시삽입.
-                          const isRevealed = revealedPhraseId === phrase.id;
+                          // ── T-20260612-foot-PENCHART-PHRASE-INSERT-PINGPONG5 AC-1 [근본픽스] ──
+                          //   [RC = #2 선택이벤트] 직전 동선은 행 클릭이 revealedPhraseId만 토글해 20px ✓만
+                          //   노출하고 *삽입은 ✓ 2차 클릭에 의존*했다. 갤탭 현장(총괄)이 작은 ✓를 못 찾아
+                          //   "선택해도 전혀 안 들어감"으로 5차 재발(같은 행 재탭은 ✓를 도로 숨김 → 영영 도달 불가).
+                          //   직전 4회 패치는 전부 ✓ *이후* 기계장치(즉시commit·이중rAF scrollIntoView)만 고쳐
+                          //   이 게이트는 한 번도 안 건드림 + 검증이 소스 string 정적 assertion이라 거짓 green.
+                          //   → 2단계 게이트 제거: **행 어디를 눌러도 1탭 = 즉시 삽입**.
+                          //   ── AC-1.B [단일 ✓] ──: 마킹(green ✓)은 *마지막으로 클릭한 1건*에만. 나머지 행은
+                          //   중립 어포던스(회색 outline + Plus)로 "탭하면 삽입"을 안내하되 '선택됨'처럼 보이지 않게.
+                          //   (구: 모든 행을 상시 teal-500 ✓로 칠해 "전체 선택"으로 오인되던 회귀 차단.)
+                          const isMarked = lastInsertedPhraseId === phrase.id;
                           return (
                             <div
                               key={phrase.id}
                               role="button"
                               tabIndex={0}
-                              onClick={() => revealPhraseInsert(phrase.id)}
+                              aria-pressed={isMarked}
+                              onClick={() => insertPhraseImmediate(phrase.id)}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter' || e.key === ' ') {
                                   e.preventDefault();
-                                  revealPhraseInsert(phrase.id);
+                                  insertPhraseImmediate(phrase.id);
                                 }
                               }}
                               className={cn(
                                 'w-full cursor-pointer text-left px-2.5 py-1.5 text-[11px] border-b border-gray-100 last:border-0 transition flex items-center gap-1.5 focus:outline-none focus:bg-teal-50',
-                                isRevealed ? 'bg-teal-50 hover:bg-teal-50' : 'hover:bg-teal-50',
+                                'hover:bg-teal-50 active:bg-teal-100',
+                                isMarked && 'bg-teal-50',
                               )}
                               data-testid={`phrase-item-${phrase.id}`}
-                              data-revealed={isRevealed}
-                              aria-expanded={isRevealed}
+                              data-marked={isMarked ? 'true' : 'false'}
                             >
-                              {/* AC-2·AC-3·AC-5: 인라인 ✓ 삽입 버튼 — 행 클릭 시 좌측 노출, 클릭=즉시삽입 */}
-                              {isRevealed && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation(); // 행 토글로 전파 방지 (재클릭=닫힘 방지)
-                                    insertPhraseImmediate(phrase.id);
-                                  }}
-                                  className="flex-shrink-0 h-5 w-5 rounded-full flex items-center justify-center bg-teal-500 text-white hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-300 transition"
-                                  data-testid={`phrase-insert-${phrase.id}`}
-                                  aria-label={`${phrase.name} 삽입`}
-                                  title="삽입"
-                                >
-                                  <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                                </button>
-                              )}
+                              {/* 삽입 어포던스 — 마킹된 1건만 green ✓, 나머지는 중립 outline+Plus. 행 onClick과 동일 삽입(이중삽입 방지 stopPropagation). */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation(); // 행 onClick 중복 발화 방지 (단일 삽입 보장)
+                                  insertPhraseImmediate(phrase.id);
+                                }}
+                                className={cn(
+                                  'flex-shrink-0 h-5 w-5 rounded-full flex items-center justify-center transition focus:outline-none focus:ring-2 focus:ring-teal-300',
+                                  isMarked
+                                    ? 'bg-teal-500 text-white hover:bg-teal-600'
+                                    : 'border border-gray-300 bg-white text-gray-400 hover:border-teal-400 hover:text-teal-500',
+                                )}
+                                data-testid={`phrase-insert-${phrase.id}`}
+                                data-marked={isMarked ? 'true' : 'false'}
+                                aria-label={`${phrase.name} 삽입`}
+                                title="삽입"
+                                tabIndex={-1}
+                              >
+                                {isMarked
+                                  ? <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                                  : <Plus className="h-3.5 w-3.5" aria-hidden="true" />}
+                              </button>
                               <span className="min-w-0 flex-1">
                                 <span className="block font-medium text-gray-800 truncate">{phrase.name}</span>
                                 <span className="block text-gray-400 mt-0.5 text-[10px] truncate">
@@ -2998,6 +3064,7 @@ export function PenChartTab({
             {/* 드로잉 레이어: 투명 배경 */}
             <canvas
               ref={canvasRef}
+              data-testid="penchart-draw-canvas"
               style={{
                 position: 'absolute',
                 top: 0,

@@ -99,13 +99,18 @@ export default function Handover() {
     setAttendeesLoading(true);
     try {
       // 활성 직원 먼저 조회 — 시트 "전직원" 토큰 확장(2001c73 룰)에 직원 이름 목록 필요.
+      // ⚠ staff.display_name 컬럼은 DB 미존재(STAFF-NAME-UNIFY 타입만 추가, 미마이그레이션).
+      //   select에 포함하면 PostgREST 400(42703) → staffData=null → roleByName 빈 맵 →
+      //   출근자 칩 전 역할이 slate fallback으로 떨어짐(상담 rose 미반영의 근본원인).
+      //   프로젝트 관례(Closing/CustomerChart/ReservationDetailPopup) 동일: select는 name만, UI는 ||name fallback.
+      //   (T-20260611-foot-HANDOVER-ATTENDEE-PARTCOLOR FIX)
       const { data: staffData } = await supabase
         .from('staff')
-        .select('id, name, display_name, role, active')
+        .select('id, name, role, active')
         .eq('clinic_id', clinic.id)
         .eq('active', true);
 
-      // 이름 → CRM staff.role 매핑 (name / display_name 모두 키로, 공백 제거)
+      // 이름 → CRM staff.role 매핑 (name 키, 공백 제거)
       const norm = (s: string) => s.replace(/\s+/g, '');
       const rmap = new Map<string, Staff['role']>();
       const allStaffNames: string[] = [];
@@ -115,7 +120,6 @@ export default function Handover() {
           rmap.set(norm(staff.name), staff.role);
           allStaffNames.push(staff.name);
         }
-        if (staff.display_name) rmap.set(norm(staff.display_name), staff.role);
       });
 
       // 시트 직접 read — 날짜별 맵(gid당 CSV 1회 fetch). 장애/포맷 변경 시 graceful({}).

@@ -5,7 +5,7 @@
 // T-20260611-foot-CHECKIN-XFER-OLDFORM-REMOVE: 초진 [체크인 전환] 구 정보입력 폼(주민번호+건보동의서) 제거
 //   → 초진도 재진처럼 폼 없이 바로 doCheckIn. 주민번호/동의서 수집은 펜차트로 일원화(정책: RRN-FIELD-REMOVE/CHECKIN-CONSENT-REMOVE).
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { toast } from '@/lib/toast';
@@ -152,9 +152,20 @@ export function ReservationDetailPopup({
   // ── T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-3/4: 2번구역 미니 캘린더 선택 일자
   const [pickedDate, setPickedDate] = useState<Date | null>(null);
 
+  // ── T-20260612-foot-RESVPOPUP-2ZONE-RESTRUCTURE AC-7: 예약등록자 기준 필터 (예약이력·캘린더 표시 한정).
+  //    기존 registrars(active=true) 재사용 — group_name('TM'/'원내')은 reservation_registrars 마스터 소스(신규 스키마 0).
+  //    편집용 registrarId 와 '별개' 상태: 필터는 표시 전용으로 저장(reservations.update)에 일절 관여 안 함 → 엉뚱 저장 0.
+  const [registrarFilter, setRegistrarFilter] = useState<string>(''); // '' = 전체(미지정)
+
   // 현재 우상에 표시할 예약 (좌하 클릭 선택, 기본값 = 원본 예약)
   const selectedResv: Reservation | undefined =
     allResvs.find((r) => r.id === selectedResvId) ?? reservation ?? undefined;
+
+  // AC-7: 등록자 필터 적용 예약 목록 — 예약이력 리스트 + 캘린더 점표기에만 사용.
+  //   selectedResv 해소(선택/현재 예약 접근)는 unfiltered allResvs 유지 → 필터로 현재 예약 숨어도 상세 보기 안전.
+  const visibleResvs = registrarFilter
+    ? allResvs.filter((r) => r.registrar_id === registrarFilter)
+    : allResvs;
 
   // ── 데이터 로드
   useEffect(() => {
@@ -174,6 +185,7 @@ export function ReservationDetailPopup({
       setCancelReason('');
       setSearchValue('');
       setPickedDate(null);
+      setRegistrarFilter('');
       return;
     }
 
@@ -181,6 +193,7 @@ export function ReservationDetailPopup({
     setBusy(false);
     setSearchValue('');
     setPickedDate(null);
+    setRegistrarFilter('');
     // T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 현재 예약의 예약경로/예약등록자 프리로드
     setVisitRoute(reservation.visit_route ?? '');
     setRegistrarId(reservation.registrar_id ?? '');
@@ -527,8 +540,8 @@ export function ReservationDetailPopup({
                   현장 확정: A고객 등록 완료 후 B고객 검색·선택 → 팝업 닫지 않고 B고객 신규예약 생성 동선으로 연속 진입.
                   onNewReservationForCustomer 미전달 환경(graceful)에선 검색창 자체를 숨김. */}
               {onNewReservationForCustomer && (
-                <div className="border rounded-lg p-3 flex-shrink-0 bg-teal-50/40">
-                  <div className="text-xs font-semibold text-teal-700 mb-1.5">다른 고객 신규예약</div>
+                <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0 bg-teal-50/40">
+                  <SectionHeader accent="teal" className="mb-1.5">다른 고객 신규예약</SectionHeader>
                   <InlinePatientSearch
                     value={searchValue}
                     onChange={setSearchValue}
@@ -545,8 +558,8 @@ export function ReservationDetailPopup({
               )}
 
               {/* 환자 정보 (+ 담당 상담사 RELOCATE from 2번구역) */}
-              <div className="border rounded-lg p-3 flex-shrink-0">
-                <div className="text-xs font-semibold text-teal-700 mb-2">환자 정보</div>
+              <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0">
+                <SectionHeader accent="teal">환자 정보</SectionHeader>
                 <div className="space-y-1 text-xs">
                   <FieldRow label="이름" value={customer?.name ?? reservation.customer_name ?? '—'} />
                   <FieldRow label="고객번호" value={customer?.chart_number ?? '—'} />
@@ -619,8 +632,8 @@ export function ReservationDetailPopup({
               </div>
 
               {/* 활성 패키지 (RELOCATE: 기존 2번구역 → 1번구역. 기존 packages 쿼리 재사용) */}
-              <div className="border rounded-lg p-3 flex-shrink-0">
-                <div className="text-xs font-semibold text-teal-700 mb-2">활성 패키지</div>
+              <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0">
+                <SectionHeader accent="teal">활성 패키지</SectionHeader>
                 {packages.length === 0 ? (
                   <div className="text-xs text-muted-foreground italic">보유 패키지 없음</div>
                 ) : (
@@ -636,8 +649,8 @@ export function ReservationDetailPopup({
               </div>
 
               {/* 치료내역 (net-new) — 지정치료사 + 일자별 시술내역(담당치료사). check_ins JOIN, chart2 read-only */}
-              <div className="border rounded-lg p-3 flex-shrink-0" data-testid="popup-treatment-history">
-                <div className="text-xs font-semibold text-teal-700 mb-2">치료내역</div>
+              <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0" data-testid="popup-treatment-history">
+                <SectionHeader accent="teal">치료내역</SectionHeader>
                 <div className="flex items-center gap-2 text-[11px] mb-1.5">
                   <span className="text-muted-foreground shrink-0">지정치료사</span>
                   <span className="font-medium">
@@ -676,8 +689,8 @@ export function ReservationDetailPopup({
               </div>
 
               {/* 고객메모 (RELOCATE: 기존 우하 메모 → 1번구역. 예약메모와 구분: 고객메모≠예약메모) */}
-              <div className="border rounded-lg p-3 flex-shrink-0">
-                <div className="text-xs font-semibold text-blue-700 mb-2">고객메모</div>
+              <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0">
+                <SectionHeader accent="blue">고객메모</SectionHeader>
                 <div className="flex flex-col gap-1.5">
                   <Textarea
                     value={customerMemo}
@@ -703,8 +716,8 @@ export function ReservationDetailPopup({
             <div className="flex flex-col gap-3 min-h-0 overflow-y-auto pr-1" data-testid="popup-zone2-reservation">
 
               {/* AC-4 #1·#2: 예약경로 + 예약등록자 (현재 예약 대상 편집 — REGISTRAR-ROUTE-FIELDS 자산 재사용) */}
-              <div className="border rounded-lg p-3 flex-shrink-0">
-                <div className="text-xs font-semibold text-teal-700 mb-2">예약 정보</div>
+              <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0">
+                <SectionHeader accent="teal">예약 정보</SectionHeader>
                 <div className="space-y-1 text-xs">
                   <div className="flex gap-2 min-w-0 items-center">
                     <span className="text-muted-foreground shrink-0 w-[4.5rem]">예약경로</span>
@@ -745,28 +758,55 @@ export function ReservationDetailPopup({
                 </div>
               </div>
 
-              {/* AC-3 / AC-4 #3: 미니 캘린더 (예약 가능 일자 확인 — 닫지 않고). 고객 기존 예약일은 점 표기 */}
-              <div className="border rounded-lg p-3 flex-shrink-0">
-                <div className="text-xs font-semibold text-teal-700 mb-2">예약 캘린더</div>
+              {/* AC-3 / AC-4 #3: 미니 캘린더 (예약 가능 일자 확인 — 닫지 않고). 고객 기존 예약일은 점 표기.
+                  T-20260612-foot-RESVPOPUP-2ZONE-RESTRUCTURE AC-7: 예약등록자 필터를 캘린더 '바로 위'에 배치.
+                  선택 시 캘린더 점표기 + 예약이력 목록이 해당 등록자 예약만 표시(미지정=전체). 옵션=reservation_registrars(group_name-name). */}
+              <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0">
+                <SectionHeader accent="teal">예약 캘린더</SectionHeader>
+                {/* AC-7: 예약등록자 필터 (표시 전용 — 저장 로직 무관) */}
+                <div className="flex items-center gap-2 mb-2.5">
+                  <span className="text-[11px] text-muted-foreground shrink-0">예약등록자 필터</span>
+                  <Select
+                    value={registrarFilter || '__all__'}
+                    onValueChange={(v) => setRegistrarFilter(v === '__all__' ? '' : v)}
+                  >
+                    <SelectTrigger className="h-8 text-xs flex-1" data-testid="popup-registrar-filter">
+                      <SelectValue placeholder="예약등록자 필터" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__" className="text-xs">— 미지정 — (전체)</SelectItem>
+                      {registrars.map((r) => (
+                        <SelectItem key={r.id} value={r.id} className="text-xs">
+                          {r.group_name} - {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <MiniMonthCalendar
                   value={pickedDate}
                   onSelect={(d) => setPickedDate((prev) => (prev && d.getTime() === prev.getTime() ? null : d))}
-                  markedDates={allResvs
+                  markedDates={visibleResvs
                     .filter((r) => r.status !== 'cancelled')
                     .map((r) => r.reservation_date)}
                 />
+                {registrarFilter && (
+                  <div className="text-[10px] text-teal-600 mt-1.5">
+                    이 등록자 예약만 표시 중 — 캘린더·예약이력에 필터 적용
+                  </div>
+                )}
               </div>
 
               {/* AC-4 #4: 선택한 일자 및 시간 (미니캘린더 선택 일자 + 현재 보기 예약의 일자/시간 상세) */}
-              <div className="border rounded-lg p-3 flex-shrink-0">
-                <div className="text-xs font-semibold text-teal-700 mb-2">
+              <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0">
+                <SectionHeader accent="teal">
                   선택한 일자 및 시간
                   {selectedResv && selectedResv.id !== reservation.id && (
                     <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
                       (다른 예약 보기 중)
                     </span>
                   )}
-                </div>
+                </SectionHeader>
                 <div className="space-y-1 text-xs">
                   <FieldRow
                     label="선택 일자"
@@ -792,8 +832,8 @@ export function ReservationDetailPopup({
               </div>
 
               {/* AC-4 #5: 예약메모 (현재 보기 예약 기준) */}
-              <div className="border rounded-lg p-3 flex-shrink-0">
-                <div className="text-xs font-semibold text-amber-700 mb-2">예약메모</div>
+              <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0">
+                <SectionHeader accent="amber">예약메모</SectionHeader>
                 {selectedResv ? (
                   <ReservationMemoTimeline
                     key={selectedResv.id}
@@ -807,15 +847,20 @@ export function ReservationDetailPopup({
               </div>
 
               {/* AC-4 #6: 예약이력 (전체 예약 히스토리 + 변경이력). 히스토리 항목 클릭 → 상세 전환 */}
-              <div className="border rounded-lg p-3 flex-1 flex flex-col min-h-0" data-testid="popup-reservation-history">
-                <div className="text-xs font-semibold text-teal-700 mb-2">
-                  예약이력{allResvs.length > 0 && ` (${allResvs.length}건)`}
-                </div>
+              <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-1 flex flex-col min-h-0" data-testid="popup-reservation-history">
+                <SectionHeader accent="teal">
+                  예약이력{visibleResvs.length > 0 && ` (${visibleResvs.length}건)`}
+                  {registrarFilter && (
+                    <span className="ml-1 text-[10px] font-normal text-muted-foreground">필터 적용</span>
+                  )}
+                </SectionHeader>
                 <div className="flex-1 overflow-y-auto space-y-1 pr-0.5 min-h-0">
-                  {allResvs.length === 0 ? (
-                    <div className="text-xs text-muted-foreground italic py-2">예약 없음</div>
+                  {visibleResvs.length === 0 ? (
+                    <div className="text-xs text-muted-foreground italic py-2">
+                      {registrarFilter ? '이 등록자 예약 없음' : '예약 없음'}
+                    </div>
                   ) : (
-                    allResvs.map((r) => {
+                    visibleResvs.map((r) => {
                       const isFocused = r.id === selectedResvId;
                       const isOriginal = r.id === reservation.id;
                       return (
@@ -993,13 +1038,37 @@ export function ReservationDetailPopup({
   );
 }
 
-// ─── 보조: 필드 한 줄 표시 ───────────────────────────────────────────
+// ─── 보조: 섹션 헤더 (AC-6 미화 — 롱래CRM 스타일 일관 타이포 위계) ──────
+// 컬러 액센트 바 + 동일 폰트 위계로 카드 제목을 통일. 기능 무관 순수 표현.
+
+function SectionHeader({
+  children,
+  accent = 'teal',
+  className,
+}: {
+  children: ReactNode;
+  accent?: 'teal' | 'blue' | 'amber';
+  className?: string;
+}) {
+  const bar =
+    accent === 'blue' ? 'bg-blue-500' : accent === 'amber' ? 'bg-amber-500' : 'bg-teal-500';
+  const text =
+    accent === 'blue' ? 'text-blue-700' : accent === 'amber' ? 'text-amber-700' : 'text-teal-700';
+  return (
+    <div className={cn('flex items-center gap-1.5 mb-2.5', className)}>
+      <span className={cn('h-3.5 w-1 rounded-full', bar)} />
+      <span className={cn('text-xs font-semibold tracking-tight', text)}>{children}</span>
+    </div>
+  );
+}
+
+// ─── 보조: 필드 한 줄 표시 (AC-6 — 라벨↔값 그리드 정렬) ─────────────────
 
 function FieldRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex gap-2 min-w-0 items-baseline">
-      <span className="text-muted-foreground shrink-0 w-[4.5rem]">{label}</span>
-      <span className="font-medium break-words min-w-0">{value}</span>
+    <div className="grid grid-cols-[4.75rem_1fr] gap-2 min-w-0 items-baseline">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium break-words min-w-0 text-foreground">{value}</span>
     </div>
   );
 }

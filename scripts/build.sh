@@ -11,15 +11,33 @@
 #   Auto-install node_modules if missing (git worktree environments).
 #   tsc lives in node_modules/.bin — worktrees start without node_modules.
 #
+# FIX (2026-06-12 T-20260612-foot-REFERRAL-VISITTYPE-CHECKBOX FIX-REQUEST):
+#   Two root causes of recurring false build_fail under supervisor QA:
+#   (1) tsconfig.app.tsbuildinfo is gitignored → every fresh worktree did a COLD
+#       full `tsc -b` typecheck. Now seeded from the primary checkout in the
+#       worktree fast-path so tsc is incremental (much shorter wall-clock).
+#   (2) A caller-passed 120s timeout is too tight when several cold builds
+#       contend for CPU on macstudio. A 240s floor is enforced (see below).
+#
 # Usage: bash scripts/build.sh [timeout_seconds]
-#   timeout_seconds defaults to 120.
+#   timeout_seconds defaults to 120; effective timeout is floored at 240.
 #
 # DO NOT run: timeout 60 npm run build
 #   → Use this script or plain: npm run build
 
 set -euo pipefail
 
-TIMEOUT_SECS="${1:-120}"
+# Effective timeout = max(requested, 240s). Building under parallel-worktree CPU
+# contention can stretch a ~13s build well past a caller's 120s; the floor kills
+# the false-build_fail class without masking a genuinely hung build (it still
+# dies at 240s).
+TIMEOUT_FLOOR=240
+REQUESTED_TIMEOUT="${1:-120}"
+if [ "$REQUESTED_TIMEOUT" -gt "$TIMEOUT_FLOOR" ] 2>/dev/null; then
+  TIMEOUT_SECS="$REQUESTED_TIMEOUT"
+else
+  TIMEOUT_SECS="$TIMEOUT_FLOOR"
+fi
 
 # ── dependency guard (git worktree / fresh clone) ────────────────────────────
 # node_modules/.bin/tsc is required by `npm run build`.
@@ -53,6 +71,18 @@ if [ ! -f "node_modules/.bin/tsc" ]; then
        && cmp -s package-lock.json "$PRIMARY_ROOT/package-lock.json"; then
       echo "[build.sh] linking node_modules from primary worktree: $PRIMARY_ROOT"
       ln -s "$PRIMARY_ROOT/node_modules" node_modules
+
+      # Seed the tsc incremental cache so `tsc -b` is incremental, not a cold
+      # full typecheck. tsconfig.app.tsbuildinfo lives at the repo root (NOT in
+      # node_modules) and is gitignored, so a fresh worktree never inherits it.
+      # Copy (don't symlink) the primary's so the worktree's own build can
+      # update it freely without corrupting the primary's cache.
+      for _tsbi in tsconfig.app.tsbuildinfo tsconfig.node.tsbuildinfo; do
+        if [ -f "$PRIMARY_ROOT/$_tsbi" ] && [ ! -e "$_tsbi" ]; then
+          cp "$PRIMARY_ROOT/$_tsbi" "$_tsbi" 2>/dev/null \
+            && echo "[build.sh] seeded tsc cache: $_tsbi" || true
+        fi
+      done
     fi
   fi
 

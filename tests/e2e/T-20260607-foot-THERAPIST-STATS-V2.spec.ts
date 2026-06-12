@@ -8,8 +8,12 @@
  * 확정 SSOT:
  *   - AC1 시술 분류 = 4종 [비가열/가열/포돌로게/Re:Born]. 수액(iv)·체험(trial) 제외.
  *     프리컨디셔닝(preconditioning) 입력 = 비가열 범주.
- *   - AC2 측정 구간 = 시작(최초 preconditioning 진입) → 종료(최초 laser 진입). done 아님.
- *   - AC3 이벤트 순서 무관 매칭: A(레이저실 이동)·B(티켓 차감) 임의 순서 → 둘 다 영속 →
+ *   - AC2 측정 구간 = 시작(최초 preconditioning 진입=to_status) → 종료(치료실 퇴실).
+ *     ★정정(20260612130000, 김주연 총괄): 종료 = 치료실 슬롯을 떠나는 최초 전이
+ *       = from_status='preconditioning'인 가장 이른 전이(목적지 무관: laser/done/healer 등).
+ *       기존 'to_status=laser' 는 레이저실 미방문 세션(치료실→done 등)을 누락 → 정정으로 포함.
+ *       핵심 = "고객이 치료실에서 머문 시간" 추출.
+ *   - AC3 이벤트 순서 무관 매칭: A(치료실 퇴실=측정시간)·B(티켓 차감) 임의 순서 → 둘 다 영속 →
  *     (고객+KST일자+치료사) JOIN 성립 시 linked → 집계. 단독 = pending(제외). carry-over 없음.
  *   - AC4 치료사 × 4종: cnt=차감건수(분포), avg=linked 만.
  *
@@ -73,60 +77,82 @@ test.describe('T-20260607 THERAPIST-STATS-V2 — 치료사 통계 재설계', ()
     );
   });
 
-  // ── 시나리오1 / AC2: 측정구간 = 최초 preconditioning 진입 → 최초 laser 진입(done 아님) ──
-  test('AC2: 측정구간은 시작(최초 preconditioning) → 종료(최초 laser 진입), done/레이저실 체류 미포함', async ({ page }) => {
+  // ── 시나리오1 / AC2(정정): 측정구간 = 최초 preconditioning 진입(to) → 치료실 퇴실(from) ──
+  test('AC2: 측정구간은 시작(최초 to_status=preconditioning) → 종료(치료실 퇴실=최초 from_status=preconditioning, 목적지 무관)', async ({ page }) => {
     await page.goto('/');
     const result = await page.evaluate(() => {
-      type ST = { to_status: string; at: number }; // at = epoch minutes
-      // v2 a_events 와 동일: 시작=최초 preconditioning, 종료=최초 laser. 둘 다 있고 종료>시작.
+      // status_transitions 모델: 각 전이는 from_status·to_status·at(epoch minutes) 보유.
+      type ST = { from_status: string; to_status: string; at: number };
+      // ★정정 a_events 와 동일: 시작=최초 to_status='preconditioning'(치료실 입장),
+      //   종료=최초 from_status='preconditioning'(치료실 퇴실, 목적지 무관). 둘 다 있고 종료>시작.
       const windowMinutes = (sts: ST[]): number | null => {
-        const pre = sts.filter((s) => s.to_status === 'preconditioning');
-        const las = sts.filter((s) => s.to_status === 'laser');
-        if (pre.length === 0 || las.length === 0) return null;
-        const start = Math.min(...pre.map((s) => s.at));
-        const end = Math.min(...las.map((s) => s.at));
+        const entries = sts.filter((s) => s.to_status === 'preconditioning');
+        const exits = sts.filter((s) => s.from_status === 'preconditioning');
+        if (entries.length === 0 || exits.length === 0) return null;
+        const start = Math.min(...entries.map((s) => s.at));
+        const end = Math.min(...exits.map((s) => s.at));
         return end > start ? end - start : null;
       };
 
-      // A: precond@10 → laser@30 → done@90 ⇒ 20분 (레이저실 체류[30~90] 미포함)
+      // A: tw→precond@10, precond→laser@30, laser→done@90 ⇒ 20분 (치료실 체류[10~30])
       const a = windowMinutes([
-        { to_status: 'preconditioning', at: 10 },
-        { to_status: 'laser', at: 30 },
-        { to_status: 'done', at: 90 },
+        { from_status: 'treatment_waiting', to_status: 'preconditioning', at: 10 },
+        { from_status: 'preconditioning', to_status: 'laser', at: 30 },
+        { from_status: 'laser', to_status: 'done', at: 90 },
       ]);
-      // B: laser 진입 없음(precond→done) ⇒ null (AC2 종료조건 부재 → 산출 제외)
+      // B(★레이저실 미방문): tw→precond@10, precond→done@50 ⇒ 40분.
+      //   정정 전(to_status=laser)이면 종료 미검출 → null(누락). 정정 후 치료실 퇴실(@50) 포착 → 포함.
       const b = windowMinutes([
-        { to_status: 'preconditioning', at: 10 },
-        { to_status: 'done', at: 50 },
+        { from_status: 'treatment_waiting', to_status: 'preconditioning', at: 10 },
+        { from_status: 'preconditioning', to_status: 'done', at: 50 },
       ]);
-      // C: laser 만(precond 없음) ⇒ null (v1 은 laser 를 시작으로 잡았으나 v2 는 제외 — R2)
+      // B2(★미방문, 힐러 경유): precond→healer_waiting@45 ⇒ 35분. 목적지 무관 포착.
+      const b2 = windowMinutes([
+        { from_status: 'treatment_waiting', to_status: 'preconditioning', at: 10 },
+        { from_status: 'preconditioning', to_status: 'healer_waiting', at: 45 },
+        { from_status: 'healer_waiting', to_status: 'done', at: 80 },
+      ]);
+      // C: precond 입장 없음(laser 만) ⇒ null (치료실 미진입)
       const c = windowMinutes([
-        { to_status: 'laser', at: 100 },
-        { to_status: 'done', at: 130 },
+        { from_status: 'laser_waiting', to_status: 'laser', at: 100 },
+        { from_status: 'laser', to_status: 'done', at: 130 },
       ]);
-      return { a, b, c };
+      // D(미퇴실): 치료실 입장 후 퇴실 전이 없음(아직 치료실 체류) ⇒ null (incomplete → pending)
+      const d = windowMinutes([
+        { from_status: 'treatment_waiting', to_status: 'preconditioning', at: 10 },
+      ]);
+      return { a, b, b2, c, d };
     });
 
-    expect(result.a).toBe(20); // done(90)이 아니라 laser(30) 기준
-    expect(result.b).toBeNull(); // laser 없으면 종료 미정 → 제외
-    expect(result.c).toBeNull(); // R2: laser-only 시작 제거
+    expect(result.a).toBe(20); // 치료실 퇴실(@30, →laser) 기준
+    expect(result.b).toBe(40); // ★정정 핵심: 레이저실 미방문(치료실→done)도 집계 포함
+    expect(result.b2).toBe(35); // 목적지 무관(치료실→힐러대기) 포착
+    expect(result.c).toBeNull(); // 치료실 미진입 → 제외
+    expect(result.d).toBeNull(); // 미퇴실(incomplete) → 제외
   });
 
-  // ── 시나리오2 / AC3: 이벤트 순서 무관 매칭 — 단독=pending(제외), linked 시에만 집계 ──
-  test('AC3: A·B 가 (고객+일자+치료사)로 매칭될 때만 linked → 집계, 단독은 pending(순서 무관)', async ({ page }) => {
+  // ── 시나리오2 / AC3(정정): 이벤트 순서 무관 매칭 — 이벤트 A='치료실 퇴실'(레이저실 미방문 케이스 포함) ──
+  test('AC3: A(치료실 퇴실)·B 가 (고객+일자+치료사)로 매칭될 때만 linked → 집계, 레이저실 미방문 세션도 A 로 잡힌다', async ({ page }) => {
     await page.goto('/');
     const result = await page.evaluate(() => {
-      // 이벤트 A(레이저실 이동=측정시간 보유), B(티켓 차감=시술분류 보유). 매칭키=cust+date+therapist.
-      type A = { check_in: string; cust: string; date: string; therapist: string; minutes: number };
+      // 이벤트 A = '치료실 퇴실'(from_status='preconditioning'인 최초 전이 → 측정시간 보유, 목적지 무관).
+      //   exitTo = 치료실에서 떠난 목적지(laser/done/healer 등). 정정 전(laser-only)이면 exitTo!=='laser' 는 미검출.
+      // 이벤트 B = 티켓 차감(시술분류 보유). 매칭키 = cust+date+therapist.
+      type A = { check_in: string; cust: string; date: string; therapist: string; minutes: number; exitTo: string };
       type B = { cust: string; date: string; therapist: string; type: string };
 
       const aEvents: A[] = [
-        { check_in: 'ci1', cust: 'c1', date: '2026-06-09', therapist: 't1', minutes: 20 }, // 매칭 O
-        { check_in: 'ci2', cust: 'c2', date: '2026-06-09', therapist: 't1', minutes: 30 }, // B 없음 → pending
+        // ci1: 치료실→레이저 퇴실(레이저실 방문) — B 매칭 O
+        { check_in: 'ci1', cust: 'c1', date: '2026-06-09', therapist: 't1', minutes: 20, exitTo: 'laser' },
+        // ci2: B 없음 → pending
+        { check_in: 'ci2', cust: 'c2', date: '2026-06-09', therapist: 't1', minutes: 30, exitTo: 'laser' },
+        // ★ci4: 치료실→완료 퇴실(레이저실 미방문) — B 매칭 O. 정정으로 새로 잡히는 케이스.
+        { check_in: 'ci4', cust: 'c4', date: '2026-06-09', therapist: 't1', minutes: 40, exitTo: 'done' },
       ];
       const bEvents: B[] = [
-        { cust: 'c1', date: '2026-06-09', therapist: 't1', type: '비가열' }, // ci1 과 매칭
+        { cust: 'c1', date: '2026-06-09', therapist: 't1', type: '비가열' }, // ci1 매칭
         { cust: 'c3', date: '2026-06-09', therapist: 't1', type: '가열' },   // A 없음 → pending
+        { cust: 'c4', date: '2026-06-09', therapist: 't1', type: '포돌로게' }, // ★ci4 매칭(미방문 세션)
       ];
 
       const isLinked = (a: A) =>
@@ -139,7 +165,12 @@ test.describe('T-20260607 THERAPIST-STATS-V2 — 치료사 통계 재설계', ()
       );
 
       // 역순(B 먼저 저장 후 A 도착)도 동일 — 둘 다 영속이므로 JOIN 결과 불변
-      const reverseLinked = aEvents.filter(isLinked).length; // 평가 순서 무관
+      const reverseLinked = aEvents.filter(isLinked).length;
+
+      // ★회귀 대조: 정정 전(이벤트 A = to_status='laser' 만) 정의였다면 미방문 세션(ci4)은 A 미검출 → 누락.
+      const legacyAEvents = aEvents.filter((a) => a.exitTo === 'laser');
+      const legacyLinkedCount = legacyAEvents.filter(isLinked).length;
+      const legacyLinkedSum = legacyAEvents.filter(isLinked).reduce((s, a) => s + a.minutes, 0);
 
       return {
         linkedCount: linkedMinutes.length,
@@ -147,14 +178,20 @@ test.describe('T-20260607 THERAPIST-STATS-V2 — 치료사 통계 재설계', ()
         pendingA,
         pendingBCount: pendingB.length,
         reverseLinked,
+        legacyLinkedCount,
+        legacyLinkedSum,
       };
     });
 
-    expect(result.linkedCount).toBe(1); // ci1 만 linked
-    expect(result.linkedSum).toBe(20); // ci1 시간만 집계
+    expect(result.linkedCount).toBe(2); // ci1 + ci4(미방문) linked
+    expect(result.linkedSum).toBe(60); // 20 + 40 — 정정으로 미방문 세션 포함
     expect(result.pendingA).toEqual(['ci2']); // A 단독 → pending(제외)
     expect(result.pendingBCount).toBe(1); // B 단독(c3) → pending(제외)
-    expect(result.reverseLinked).toBe(1); // 순서 무관 동일 결과
+    expect(result.reverseLinked).toBe(2); // 순서 무관 동일 결과
+    // ★정정 효과 입증: 정정 전 정의면 ci4 누락 → linked 1건/20분. 정정 후 2건/60분.
+    expect(result.legacyLinkedCount).toBe(1);
+    expect(result.legacyLinkedSum).toBe(20);
+    expect(result.linkedCount).toBeGreaterThan(result.legacyLinkedCount);
   });
 
   // ── 시나리오2 / AC3·AC4: linked 만 평균시간, 분포(cnt)는 B 전체 ──

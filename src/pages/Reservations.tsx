@@ -74,12 +74,14 @@ function resvKind(r: Reservation): ResvKind {
 }
 // item6: 동일 시간대 정렬 순서 초진 → 재진 → 힐러 → 기타
 const KIND_ORDER: Record<ResvKind, number> = { new: 0, returning: 1, healer: 2, other: 3 };
-// item3: 카드 좌측 보더 + 배경
+// T-20260612-foot-WEEKCAL-HEADER-CARD-REDESIGN (3번): 예약카드 색상박스 전면 재작업.
+//   롱래CRM 스타일 — 좌측 4px 컬러 액센트 + 풀 파스텔 배경 + 동일 톤 보더로 카드 경계 또렷.
+//   색상 코딩 유지: 초진=초록(emerald) / 재진=파랑(blue) / 힐러(HL)=노랑(yellow).
 const KIND_CARD_STYLE: Record<ResvKind, string> = {
-  new: 'border-l-[3px] border-l-emerald-500 bg-emerald-50/60',
-  returning: 'border-l-[3px] border-l-blue-500 bg-blue-50/60',
-  healer: 'border-l-[3px] border-l-yellow-400 bg-yellow-50/70',
-  other: 'border-l-[3px] border-l-amber-500 bg-amber-50/60',
+  new: 'border-l-4 border-l-emerald-400 border-emerald-200/80 bg-emerald-50',
+  returning: 'border-l-4 border-l-blue-400 border-blue-200/80 bg-blue-50',
+  healer: 'border-l-4 border-l-yellow-400 border-yellow-200/80 bg-yellow-50',
+  other: 'border-l-4 border-l-amber-400 border-amber-200/80 bg-amber-50',
 };
 // item1/2: 헤더·슬롯 카운트 점 색상 (유형별)
 const KIND_DOT: Record<ResvKind, string> = {
@@ -118,6 +120,7 @@ interface ReservationDraft {
   booking_memo: string;  // T-20260504-foot-MEMO-RESTRUCTURE: 예약 경로 확인용
   visit_route?: string;  // AC-5: 초진/예약없이방문 방문경로 (customers.visit_route에 저장)
   referral_name?: string; // T-20260515-foot-REFERRAL-NAME: 지인소개 시 소개자 성함
+  registrar_type?: string; // T-20260612-foot-RESV-ROUTE-AUTOCLASS: 등록자 선택('desk'|'tm') → 방문경로 대분류 자동 고정 (form-only, DB 미저장)
   existingId?: string;
   // T-20260610-foot-RESV-OVERHAUL-7 AC-6/AC-7: 예약상세(수정) 모달 푸터 버튼 분기용 상태
   //   confirmed → [저장][예약취소][예약삭제] / cancelled → [예약복원][저장][예약삭제]
@@ -1260,14 +1263,16 @@ export default function Reservations() {
                       const c = dayKindCounts.get(format(d, 'yyyy-MM-dd'));
                       if (!c || (c.n === 0 && c.r === 0 && c.h === 0)) return null;
                       return (
+                        // T-20260612-foot-WEEKCAL-HEADER-CARD-REDESIGN (2번): 요일 헤더 건수 칩/뱃지형 재디자인.
+                        //   초진=초록/재진=파랑/HL=노랑 칩으로 색상 코딩 일관. 총건수(초+재)는 앞에 굵게.
                         <div
                           data-testid={`day-summary-${format(d, 'yyyy-MM-dd')}`}
-                          className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0 text-[10px] font-normal leading-tight"
+                          className="mt-1 flex flex-wrap items-center gap-1 text-[10px] font-medium leading-none"
                         >
-                          <span className="font-semibold text-foreground">총 {c.n + c.r}</span>
-                          <span className="text-emerald-600">초 {c.n}</span>
-                          <span className="text-blue-600">재 {c.r}</span>
-                          {c.h > 0 && <span className="text-yellow-600">HL {c.h}</span>}
+                          <span className="font-semibold text-foreground/80">총 {c.n + c.r}</span>
+                          <span className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-emerald-700">초 {c.n}</span>
+                          <span className="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-blue-700">재 {c.r}</span>
+                          {c.h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-1.5 py-0.5 text-yellow-700">HL {c.h}</span>}
                         </div>
                       );
                     })()}
@@ -1342,7 +1347,7 @@ export default function Reservations() {
                             }}
                           >
                             {allowed && (
-                              <div className="flex h-full w-full min-w-0 flex-col gap-0.5 rounded text-left">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 → 자식 flex 아이템이 셀 너비 이하로 수축 허용 */}
+                              <div className="flex h-full w-full min-w-0 flex-col gap-1 rounded text-left">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 → 자식 flex 아이템이 셀 너비 이하로 수축 허용 / T-20260612-WEEKCAL: 카드 간 여백 gap-0.5→gap-1 */}
 
                                 {/* T-20260611-foot-RESVCAL-DISPLAY-REWORK item2: 시간대(슬롯)별 유형 카운트 (취소 제외). */}
                                 {(() => {
@@ -1353,13 +1358,14 @@ export default function Reservations() {
                                   const h = active.filter((r) => resvKind(r) === 'healer').length;
                                   if (n === 0 && rr === 0 && h === 0) return null;
                                   return (
+                                    // T-20260612-foot-WEEKCAL-HEADER-CARD-REDESIGN (2번): 슬롯별 건수도 칩형으로 일관.
                                     <div
                                       data-testid={`slot-kind-count-${dateStr}-${time}`}
-                                      className="flex flex-wrap items-center gap-x-1 text-[9px] font-medium leading-none"
+                                      className="flex flex-wrap items-center gap-1 text-[9px] font-medium leading-none"
                                     >
-                                      {n > 0 && <span className="text-emerald-600">초 {n}</span>}
-                                      {rr > 0 && <span className="text-blue-600">재 {rr}</span>}
-                                      {h > 0 && <span className="text-yellow-600">HL {h}</span>}
+                                      {n > 0 && <span className="inline-flex items-center rounded-full bg-emerald-100 px-1 py-0.5 text-emerald-700">초 {n}</span>}
+                                      {rr > 0 && <span className="inline-flex items-center rounded-full bg-blue-100 px-1 py-0.5 text-blue-700">재 {rr}</span>}
+                                      {h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-1 py-0.5 text-yellow-700">HL {h}</span>}
                                     </div>
                                   );
                                 })()}
@@ -1413,7 +1419,7 @@ export default function Reservations() {
                                       }
                                     }}
                                     className={cn(
-                                      'w-full overflow-hidden rounded border px-1.5 py-0.5 text-xs leading-tight transition-opacity', // T-20260522-foot-RESV-CAL-COLWIDTH: w-full + overflow-hidden → 카드가 셀 너비에 맞게 수축, 내용 클립
+                                      'w-full overflow-hidden rounded-md border px-2 py-1 text-xs leading-snug shadow-sm transition-opacity', // T-20260522-foot-RESV-CAL-COLWIDTH: w-full + overflow-hidden → 카드가 셀 너비에 맞게 수축, 내용 클립 / T-20260612-WEEKCAL(3번): 패딩 px-1.5 py-0.5→px-2 py-1, rounded→rounded-md, leading-tight→leading-snug, shadow-sm 추가(롱래CRM 카드 가독성·여백)
 
                                       r.status === 'confirmed' && 'cursor-grab active:cursor-grabbing',
                                       draggedId === r.id && 'opacity-40',
@@ -2054,6 +2060,9 @@ function ReservationEditor({
         .from('package_sessions')
         .select('id, package_id, session_number, session_type, session_date, performed_by, staff:performed_by(name)')
         .in('package_id', pkgIds)
+        // T-20260612-foot-USAGEHIST-DELETE-RESTORE: soft-delete(status='deleted') 회차는 시술이력 표시에서 제외.
+        // (이 표시 쿼리는 status 필터가 없어 soft-delete 도입 후 삭제 회차가 정상 시술처럼 새어들 수 있음 → 명시 제외)
+        .neq('status', 'deleted')
         .not('session_date', 'is', null)
         .order('session_date', { ascending: false })
         .limit(200);
@@ -2711,6 +2720,31 @@ function ReservationEditor({
           )}
 
           {/* AC-4: [서비스] 필드 제거 (DB 컬럼은 유지, UI 비노출) */}
+          {/* T-20260612-foot-RESV-ROUTE-AUTOCLASS: 등록자 선택 드롭다운 — 방문경로 위에 우선 배치.
+              선택값 → 방문경로 대분류 자동 고정 (데스크→인바운드 / TM팀→TM[대분류 '티엠']).
+              GUARD: 신규등록 form(Reservations.tsx)에만. 예약상세팝업 미변경. enum 신설 금지(VISIT_ROUTE_OPTIONS 재사용). */}
+          {state.visit_type === 'new' && (
+            <div className="space-y-1.5">
+              <Label>등록자 선택 <span className="text-muted-foreground font-normal text-xs">(선택 시 방문경로 자동 분류)</span></Label>
+              <select
+                value={state.registrar_type ?? ''}
+                onChange={(e) => {
+                  const rt = e.target.value;
+                  // 등록자 유형 → 방문경로 대분류 자동 고정 (단일 setState로 동기 세팅 → race 방지)
+                  const autoRoute = rt === 'desk' ? '인바운드' : rt === 'tm' ? 'TM' : null;
+                  setState((s) =>
+                    s ? { ...s, registrar_type: rt, ...(autoRoute !== null ? { visit_route: autoRoute } : {}) } : s
+                  );
+                }}
+                data-testid="registrar-type-select"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">— 선택 안 함 —</option>
+                <option value="desk">데스크 직원 직접 등록</option>
+                <option value="tm">TM팀 등록</option>
+              </select>
+            </div>
+          )}
           {/* AC-5: 방문경로 드롭다운 — 초진만 표시, 재진 미표시 */}
           {state.visit_type === 'new' && (
             <div className="space-y-1.5">
@@ -2718,6 +2752,7 @@ function ReservationEditor({
               <select
                 value={state.visit_route ?? ''}
                 onChange={(e) => update('visit_route', e.target.value)}
+                data-testid="visit-route-select"
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="">— 선택 안 함 —</option>
