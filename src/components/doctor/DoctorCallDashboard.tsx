@@ -28,8 +28,6 @@ import {
   Check,
   CheckCircle2,
   Clock,
-  ChevronDown,
-  ChevronUp,
   Loader2,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -69,6 +67,13 @@ const CALL_SELECT =
   'id, customer_id, customer_name, visit_type, status, status_flag, status_flag_history, ' +
   'checked_in_at, completed_at, treatment_kind, treatment_category, prescription_status, prescription_items, ' +
   'doctor_call_memo, doctor_ack_at, queue_number, consultation_room, treatment_room, laser_room, examination_room';
+
+// T-20260612-foot-DOCDASH-TABLE-BTN-MINIMIZE (문지은 대표원장 follow-up):
+//   테이블 셀 액션을 '버튼 박스(bg/border)' → 텍스트/아이콘 링크로 축소. 클릭 동선은 유지(기능 제거 아님).
+//   컬러는 상태 dot 1~2색만, 액션·아이콘은 무채색 텍스트 톤. chevron(펼침 화살표)은 전면 제거(aria-expanded로 상태 표현).
+const CELL_ACTION_BTN =
+  'inline-flex items-center gap-1 px-1 py-1 text-[11px] font-medium text-gray-600 transition-colors ' +
+  'hover:text-gray-900 hover:underline underline-offset-2 disabled:opacity-40 disabled:no-underline disabled:hover:no-underline';
 
 function useDoctorCallFeed(clinicId: string | null) {
   return useQuery({
@@ -463,8 +468,8 @@ function CallFeedRow({
         {/* 방 — 방이름 표시 유지(reporter 긍정 확인됨, 회귀 금지) */}
         <td className="px-3 py-2" data-testid="doctor-call-room-cell">
           {slotName ? (
-            <span className="inline-flex items-center gap-0.5 rounded border border-teal-100 bg-teal-50 px-1 py-px text-[11px] font-medium text-teal-700">
-              <MapPin className="h-2.5 w-2.5" />
+            <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-gray-600">
+              <MapPin className="h-2.5 w-2.5 text-gray-400" />
               {slotName}
             </span>
           ) : (
@@ -480,11 +485,10 @@ function CallFeedRow({
               onClick={() => setShowRx((v) => !v)}
               data-testid="doctor-call-rx-btn"
               aria-expanded={showRx}
-              className="inline-flex items-center gap-1 rounded-md border border-teal-200 bg-teal-50 px-2 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100"
+              className={CELL_ACTION_BTN}
             >
-              <Pill className="h-3 w-3" />
+              <Pill className="h-3 w-3 text-gray-400" />
               처방
-              {showRx ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             </button>
             {/* T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-2/4 + T-20260611-DISCHARGED-DASH-RXMUTATE-LOCK 게이트 prop 유지. */}
             {checkIn.prescription_status === 'confirmed' && (
@@ -507,12 +511,10 @@ function CallFeedRow({
         {/* 상태 — 진료필요/완료 + 의사ack + 경과 + 임상경과/진료차트/진료완료 액션 */}
         <td className="px-3 py-2">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span
-              className={cn(
-                'inline-flex items-center rounded-full px-1.5 py-px text-[10px] font-semibold',
-                inactive ? 'bg-gray-100 text-gray-500' : 'bg-red-100 text-red-700',
-              )}
-            >
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-700">
+              <span
+                className={cn('h-1.5 w-1.5 rounded-full', inactive ? 'bg-gray-300' : 'bg-red-500')}
+              />
               {inactive ? '진료완료' : '진료필요'}
             </span>
             {/* T-20260609-foot-DOCCALL-DOCTOR-ACK: 의사 ✋확인 — 의사만 버튼, ack 후 파란 배지. */}
@@ -533,22 +535,21 @@ function CallFeedRow({
               disabled={!checkIn.customer_id}
               aria-expanded={showClinical}
               data-testid="doctor-call-chart-btn"
-              className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+              className={CELL_ACTION_BTN}
               title="임상경과를 한 줄로 빠르게 입력"
             >
-              <FileText className="h-3 w-3" />
+              <FileText className="h-3 w-3 text-gray-400" />
               임상경과
-              {showClinical ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             </button>
             <button
               type="button"
               onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
               disabled={!checkIn.customer_id}
               data-testid="doctor-call-fullchart-btn"
-              className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+              className={CELL_ACTION_BTN}
               title="전체 진료차트 열기 (서랍)"
             >
-              <Stethoscope className="h-3 w-3" />
+              <Stethoscope className="h-3 w-3 text-gray-400" />
               진료차트
             </button>
             {/* T-20260610-foot-TREATMENT-COMPLETE-BTN: 활성 호출(purple)에만 진료완료 버튼. */}
@@ -655,8 +656,8 @@ function CompletedRow({
         {/* 방 — 방이름 표시 유지(회귀 금지) */}
         <td className="px-3 py-2" data-testid="doctor-completed-room-cell">
           {slotName ? (
-            <span className="inline-flex items-center gap-0.5 rounded border border-teal-100 bg-teal-50 px-1 py-px text-[11px] font-medium text-teal-700">
-              <MapPin className="h-2.5 w-2.5" />
+            <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-gray-600">
+              <MapPin className="h-2.5 w-2.5 text-gray-400" />
               {slotName}
             </span>
           ) : (
@@ -671,11 +672,10 @@ function CompletedRow({
               type="button"
               onClick={() => setShowRx((v) => !v)}
               aria-expanded={showRx}
-              className="inline-flex items-center gap-1 rounded-md border border-teal-200 bg-teal-50 px-2 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100"
+              className={CELL_ACTION_BTN}
             >
-              <Pill className="h-3 w-3" />
+              <Pill className="h-3 w-3 text-gray-400" />
               처방
-              {showRx ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             </button>
             {/* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK 게이트 prop 유지(진료완료 무회귀). */}
             {checkIn.prescription_status === 'confirmed' ? (
@@ -700,7 +700,8 @@ function CompletedRow({
         {/* 상태 — 진료완료 + 의사ack 배지 + 임상경과/진료차트 */}
         <td className="px-3 py-2">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-px text-[10px] font-semibold text-emerald-700">
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               진료완료
             </span>
             {/* T-20260609-foot-DOCCALL-DOCTOR-ACK: 진료완료 환자도 의사 확인 이력 조회(표시 전용). */}
@@ -711,22 +712,21 @@ function CompletedRow({
               disabled={!checkIn.customer_id}
               aria-expanded={showClinical}
               data-testid="doctor-completed-chart-btn"
-              className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+              className={CELL_ACTION_BTN}
               title="임상경과를 한 줄로 빠르게 입력"
             >
-              <FileText className="h-3 w-3" />
+              <FileText className="h-3 w-3 text-gray-400" />
               임상경과
-              {showClinical ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             </button>
             <button
               type="button"
               onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
               disabled={!checkIn.customer_id}
               data-testid="doctor-completed-fullchart-btn"
-              className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+              className={CELL_ACTION_BTN}
               title="전체 진료차트 열기 (서랍)"
             >
-              <Stethoscope className="h-3 w-3" />
+              <Stethoscope className="h-3 w-3 text-gray-400" />
               진료차트
             </button>
           </div>
@@ -816,7 +816,7 @@ function TreatmentCompleteButton({
       disabled={pending}
       data-testid="doctor-call-complete-btn"
       aria-label="진료완료 처리"
-      className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100 active:scale-95 disabled:opacity-50"
+      className="inline-flex items-center gap-1 px-1 py-1 text-[11px] font-semibold text-emerald-700 transition-colors hover:text-emerald-900 hover:underline underline-offset-2 active:scale-95 disabled:opacity-50"
       title="이 환자 진료를 완료 처리해요 (활성 호출 명단에서 제거)"
     >
       {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
