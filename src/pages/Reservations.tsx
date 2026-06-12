@@ -28,7 +28,7 @@ import {
   WEEK_DAYS_KO,
 } from '@/lib/schedule';
 import { VISIT_TYPE_KO } from '@/lib/status';
-import { formatPhone, maskPhoneTail } from '@/lib/format';
+import { formatPhone, maskPhoneTail, chartNoBadge } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
@@ -1474,10 +1474,10 @@ export default function Reservations() {
                                       {r.status === 'cancelled' && (
                                         <span className="text-[9px] bg-gray-200 text-gray-500 rounded px-0.5 leading-none">취소됨</span>
                                       )}
-                                      {/* T-20260514-foot-CHART-NO-VISIBLE: AC-2 차트번호 상시 표시 */}
-                                      {r.customer_id && resvChartMap.get(r.customer_id) && (
-                                        <span className="text-[10px] font-mono text-teal-600">
-                                          #{resvChartMap.get(r.customer_id)}
+                                      {/* T-20260514-foot-CHART-NO-VISIBLE / T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 등록환자(customer_id)면 차트번호 항상 표시(미발번도 명시) */}
+                                      {r.customer_id && (
+                                        <span className={`text-[10px] font-mono ${resvChartMap.get(r.customer_id) ? 'text-teal-600' : 'text-muted-foreground'}`}>
+                                          {chartNoBadge(resvChartMap.get(r.customer_id))}
                                         </span>
                                       )}
                                       {r.customer_id && noshowByCustomer[r.customer_id] ? (

@@ -62,7 +62,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { checkRxRoleGate, rxRoleGateMessage, rxInsuranceGateMessage, rxInsuranceOverrideConfirm } from '@/lib/prescriptionGate';
 import { evaluateRxInsuranceGate } from '@/lib/prescribableDrugs';
-import { formatAmount, formatPhone, todaySeoulISODate } from '@/lib/format';
+import { formatAmount, formatPhone, todaySeoulISODate, chartNoBadge } from '@/lib/format';
 import { cn } from '@/lib/utils';
 // T-20260609-foot-DOCCALL-DOCTOR-ACK AC8: 환자차트에도 ✋ 표시(대기 pulse / 확인 후 파란 고정).
 import { DoctorAckBadge } from '@/components/doctor/DoctorAck';
@@ -2258,9 +2258,8 @@ export default function MedicalChartPanel({
             {customer && (
               <div className="flex items-center gap-2 ml-1">
                 <span className="font-semibold">{customer.name}</span>
-                {customer.chart_number && (
-                  <span className="text-xs text-muted-foreground font-mono">#{customer.chart_number}</span>
-                )}
+                {/* T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 차트번호 항상 표시(미발번도 명시) */}
+                <span className="text-xs text-muted-foreground font-mono">{chartNoBadge(customer.chart_number)}</span>
                 <span className="text-xs text-muted-foreground">{formatPhone(customer.phone)}</span>
                 {customer.birth_date && (
                   <span className="text-xs text-muted-foreground">

@@ -11,7 +11,7 @@ import { ResultCard, type HQResult } from '@/components/HealthQResultsPanel';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { formatAmount, formatPhone, formatPhoneInput, parseAmount, seoulISODate, todaySeoulISODate } from '@/lib/format';
+import { formatAmount, formatPhone, formatPhoneInput, parseAmount, seoulISODate, todaySeoulISODate, chartNoBadge, chartNoDisplay } from '@/lib/format';
 // T-20260524-foot-PKG-LABEL-AMOUNT AC-3: METHOD_KO 추가 import
 import { VISIT_TYPE_KO, METHOD_KO, STATUS_KO } from '@/lib/status';
 import { cn } from '@/lib/utils';
@@ -4117,7 +4117,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         <div className="flex items-center gap-2 ml-2 text-xs">
           <span className="bg-white/20 rounded px-2 py-0.5 font-semibold">{customer.name}</span>
           {customer.phone && <span className="text-white/70 text-[11px]">{formatPhone(customer.phone)}</span>}
-          {customer.chart_number && <span className="text-white/60"># {customer.chart_number}</span>}
+          {/* T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 차트번호 항상 표시(미발번도 명시) */}
+          <span className="text-white/60">{chartNoBadge(customer.chart_number)}</span>
           <Badge variant={customer.visit_type === 'new' ? 'teal' : 'secondary'} className="text-[10px]">
             {VISIT_TYPE_KO[customer.visit_type as keyof typeof VISIT_TYPE_KO] ?? customer.visit_type}
           </Badge>
@@ -4202,11 +4203,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-sm text-gray-900">{customer.name}</span>
                       <span className="rounded border border-blue-300 bg-blue-50 text-blue-700 px-1.5 py-0.5 text-[10px] cursor-default select-none">검증</span>
-                      {customer.chart_number && (
-                        <span className="text-[11px] text-muted-foreground">
-                          고객번호: <strong className="text-gray-700">{customer.chart_number}</strong>
-                        </span>
-                      )}
+                      {/* T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 고객번호 항상 표시(미발번도 명시) */}
+                      <span className="text-[11px] text-muted-foreground">
+                        고객번호: <strong className="text-gray-700">{chartNoDisplay(customer.chart_number)}</strong>
+                      </span>
                     </div>
                   </td>
                 </tr>

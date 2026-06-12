@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { FileText, RotateCcw } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { chartNoBadge } from '@/lib/format';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -274,7 +275,8 @@ export function ConsentForm({
             {data.name && (
               <span className="text-xs text-teal-700 bg-teal-50 rounded px-2 py-0.5 border border-teal-200">
                 서명인: <strong>{data.name}</strong>
-                {data.chart_number && <span className="ml-1 text-teal-500 font-mono">#{data.chart_number}</span>}
+                {/* T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 차트번호 항상 표시(미발번도 명시) */}
+                <span className="ml-1 text-teal-500 font-mono">{chartNoBadge(data.chart_number)}</span>
               </span>
             )}
           </div>

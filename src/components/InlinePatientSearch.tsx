@@ -10,13 +10,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { formatPhoneInput } from '@/lib/format';
+import { formatPhoneInput, chartNoBadge } from '@/lib/format';
 
 export interface PatientMatch {
   id: string;
   name: string;
   phone: string;
   birth_date: string | null;
+  // T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 환자 선택 시 동명이인 구분용 차트번호
+  chart_number?: string | null;
 }
 
 interface InlinePatientSearchProps {
@@ -84,7 +86,7 @@ export function InlinePatientSearch({
 
       let baseQuery = supabase
         .from('customers')
-        .select('id, name, phone, birth_date')
+        .select('id, name, phone, birth_date, chart_number')
         .eq('clinic_id', clinicId);
 
       if (isPhone) {
@@ -252,7 +254,13 @@ export function InlinePatientSearch({
                   : 'hover:bg-teal-50 hover:text-teal-800',
               )}
             >
-              <span className="font-semibold">{p.name}</span>
+              <span className="flex items-center gap-1.5">
+                <span className="font-semibold">{p.name}</span>
+                {/* T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 동명이인 구분 차트번호 항상 표시 */}
+                <span className={cn('font-mono text-[11px]', p.chart_number ? 'text-teal-600' : 'text-muted-foreground')}>
+                  {chartNoBadge(p.chart_number)}
+                </span>
+              </span>
               <span className="text-xs text-muted-foreground">
                 {phoneTail(p.phone)}
                 {p.birth_date && ` · ${formatBirth(p.birth_date)}`}

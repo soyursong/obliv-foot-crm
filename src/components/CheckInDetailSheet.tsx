@@ -28,7 +28,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { STATUS_KO } from '@/lib/status';
-import { formatAmount, formatPhone, todaySeoulStr, todaySeoulISODate, seoulISODate } from '@/lib/format';
+import { formatAmount, formatPhone, todaySeoulStr, todaySeoulISODate, seoulISODate, chartNoBadge } from '@/lib/format';
 import { cn } from '@/lib/utils';
 // T-20260522-foot-CHECKIN-CONSENT-REMOVE: PreChecklist/ChecklistForm/ConsentForm 제거 (PenChart 이관 완료)
 import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
@@ -1629,7 +1629,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                     <li key={c.id} className="flex items-center justify-between gap-2 rounded border border-amber-200 bg-white px-2 py-1">
                       <span className="text-xs truncate">
                         <span className="font-semibold">{c.name}</span>
-                        {c.chart_number && <span className="ml-1 text-teal-600">#{c.chart_number}</span>}
+                        {/* T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 차트번호 항상 표시 */}
+                        <span className={`ml-1 ${c.chart_number ? 'text-teal-600' : 'text-muted-foreground'}`}>{chartNoBadge(c.chart_number)}</span>
                         {c.phone && <span className="ml-1 text-muted-foreground">{c.phone.slice(-4)}</span>}
                       </span>
                       <button
