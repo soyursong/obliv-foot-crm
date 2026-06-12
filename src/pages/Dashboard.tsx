@@ -3605,7 +3605,7 @@ export default function Dashboard() {
     const { data, error } = await supabase
       .from('check_ins')
       // T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed → 카드 표기명 현재화
-      .select('*, customers(name)')
+      .select('*, customers(name, chart_number)')
       .eq('clinic_id', clinic.id)
       .gte('checked_in_at', start)
       .lte('checked_in_at', end)
@@ -3762,7 +3762,7 @@ export default function Dashboard() {
     const { data } = await supabase
       .from('reservations')
       // T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed → 카드 표기명 현재화
-      .select('*, customers(name)')
+      .select('*, customers(name, chart_number)')
       .eq('clinic_id', clinic.id)
       .eq('reservation_date', dateStr)
       .neq('status', 'cancelled')
@@ -3784,7 +3784,7 @@ export default function Dashboard() {
     const { data } = await supabase
       .from('check_ins')
       // T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed → 카드 표기명 현재화
-      .select('*, customers(name)')
+      .select('*, customers(name, chart_number)')
       .eq('clinic_id', clinic.id)
       .not('status', 'in', '("cancelled","done")')
       .in('visit_type', ['new', 'returning', 'experience'])
@@ -6600,7 +6600,9 @@ export default function Dashboard() {
                 </div>
               </div>
               <p className="text-xs text-center text-muted-foreground">
-                {pendingTimeChange.visitType === 'new' ? '초진' : '재진'} &middot; {pendingTimeChange.reservation.customer_name ?? '고객'}
+                {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
+                {pendingTimeChange.visitType === 'new' ? '초진' : '재진'} &middot; {pendingTimeChange.reservation.customer_name ?? '고객'}{' '}
+                <span className="font-mono text-teal-600">{chartNoBadge(pendingTimeChange.reservation.customer_id ? (todayCustomerChartMap.get(pendingTimeChange.reservation.customer_id) ?? null) : null)}</span>
               </p>
               {/* T-20260525-foot-RESV-CHANGE-REASON AC-1: 변경 사유 (시간 정보 아래, 확인 버튼 위) */}
               <textarea

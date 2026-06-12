@@ -16,7 +16,7 @@ import { useQuery } from '@tanstack/react-query';
 import { FileText } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
-import { formatAmount } from '@/lib/format';
+import { formatAmount, chartNoBadge } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { SalesFilterState } from '@/components/sales/SalesFilterBar';
 import {
@@ -149,8 +149,10 @@ function PatientDetailModal({
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md" data-testid="sales-patient-modal">
         <DialogHeader>
-          <DialogTitle className="text-base">
-            수납 상세 — {ci?.customer_name ?? '—'}
+          <DialogTitle className="text-base flex items-center gap-2 flex-wrap">
+            <span>수납 상세 — {ci?.customer_name ?? '—'}</span>
+            {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
+            <span className="text-xs font-mono font-normal text-teal-600">{chartNoBadge(ci?.customers?.chart_number ?? null)}</span>
           </DialogTitle>
         </DialogHeader>
 
