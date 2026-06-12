@@ -4,7 +4,9 @@
 -- DB: rxlomoozakkjesdqjtvd (obliv-foot-crm)
 -- 작성: dev-foot / 2026-06-12
 -- 선행: 20260526170000_progress_plans.sql (package_progress_plans 존재)
--- 롤백: 20260612000000_progress_plans_tier_model.rollback.sql
+-- 롤백: 20260612060000_progress_plans_tier_model.rollback.sql
+-- 버전 rename: 20260612000000 → 20260612060000 (form_templates_write_rls_canonical와 버전 충돌 해소, T-PROGRESSPLAN-TAB-LOAD-FAIL)
+-- prod apply: scripts/T-20260612-foot-PROGRESSPLAN-TABLOAD_apply.mjs (2026-06-12 직접 pg, drift 복구)
 -- 근거: 김주연 총괄 confirm (Option C) + dry-run (scripts/..._dryrun.mjs)
 --   - tier = 6의 배수 전체: 6/12/18/24/30/36/42/48
 --   - 레거시 이관: package1→tier_12, blelabel→tier_36, special→폐기
