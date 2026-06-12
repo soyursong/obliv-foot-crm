@@ -57,10 +57,12 @@ test.describe('AC-2 — 초/재진 레이블 이름 왼쪽', () => {
     const cell = s.slice(s.indexOf('doctor-call-feed-row'), s.indexOf('doctor-call-name-chart-btn'));
     expect(cell).toContain('<VisitBadge visitType={checkIn.visit_type} />');
   });
-  test('VisitBadge 컴포넌트 존속 (new/returning/experience 매핑 유지)', () => {
+  // T-20260612-foot-DOCDASH-WAITELAPSED-POLISH supersede(AC-8): 레이블 초진/재진 → 초/재 한 글자(색상·매핑 유지).
+  test('VisitBadge 컴포넌트 존속 (new/returning/experience 매핑 유지, 한 글자 레이블)', () => {
     const s = DASH();
-    expect(s).toContain("new: { label: '초진'");
-    expect(s).toContain("returning: { label: '재진'");
+    expect(s).toContain("new: { label: '초', full: '초진'");
+    expect(s).toContain("returning: { label: '재', full: '재진'");
+    expect(s).toContain("experience: { label: '체', full: '체험'");
   });
 });
 
@@ -80,10 +82,14 @@ test.describe('AC-3 — 데이터테이블 정렬', () => {
 // AC-4 — 손들기 버튼 오른쪽 + 이름 너비
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('AC-4 — 손들기 오른쪽 / 이름 너비', () => {
-  test('손들기 affordance 가 이름 셀 우측(ml-auto)', () => {
+  // T-20260612-foot-DOCDASH-WAITELAPSED-POLISH supersede(AC-6): 이름 셀 중앙정렬로 손들기 affordance 가
+  //   우측(ml-auto)이 아니라 이름 옆 중앙 배치로 이동. HandRaiseFlow 동작(2단계)은 보존.
+  test('손들기 affordance 가 이름 셀에 인접 렌더(HandRaiseFlow 보존)', () => {
     const s = DASH();
-    expect(s).toContain('ml-auto shrink-0');
     expect(s).toContain('<HandRaiseFlow');
+    // 이름 셀 중앙정렬(AC-6) — 구 ml-auto 우측배치 잔존 0
+    expect(s).not.toContain('ml-auto shrink-0');
+    expect(s).toContain('flex items-center justify-center gap-1.5');
   });
   test('이름 버튼 min-w 확보(잘림 방지)', () => {
     expect(DASH()).toContain('min-w-[4rem] break-keep');
@@ -135,10 +141,12 @@ test.describe('AC-7 — 콜 후 _분 경과', () => {
     expect(formatSinceCall(60)).toBe('콜 후 1시간 경과');
     expect(formatSinceCall(135)).toBe('콜 후 2시간 15분 경과');
   });
-  test('대시보드가 formatSinceCall 사용(formatElapsed 미사용)', () => {
+  // T-20260612-foot-DOCDASH-WAITELAPSED-POLISH supersede(AC-3): 대시보드 경과시간 표기가 '콜 후 N분'(formatSinceCall)
+  //   → '+N분'(formatElapsedPlus)로 축약. formatSinceCall 순수 헬퍼는 lib 잔존(타 surface 무회귀).
+  test('대시보드가 formatElapsedPlus("+N분") 사용(콜 후 표기 축약)', () => {
     const s = DASH();
-    expect(s).toContain('formatSinceCall(elapsedMinutes(getCallTime(checkIn)))');
-    expect(s).not.toContain('formatElapsed(');
+    expect(s).toContain('formatElapsedPlus(elapsedMinutes(getCallTime(checkIn)))');
+    expect(s).not.toContain('formatSinceCall(elapsedMinutes');
   });
   test('formatElapsed 헬퍼는 잔존(타 surface 무회귀)', () => {
     expect(formatElapsed(3)).toBe('3분 전');
@@ -241,14 +249,14 @@ test.describe('AC-12 — 시술 별도 칼럼', () => {
   });
   // T-20260612-foot-DOCDASH-SECTION-RESTRUCTURE AC-4(대표원장 지정, 변경 불가)로 헤더 순서 재정의 — 양 섹션 동일 8칼럼.
   //   ProcedureCell('오늘시술') 칼럼 자체는 보존(AC-12 동작 무회귀), 위치만 새 스펙으로 이동.
-  test('대기 테이블: 헤더 순서 이름→상태→콜경과시간→방→오늘시술→처방→임상경과→진료차트(SECTION-RESTRUCTURE)', () => {
+  test('대기 테이블: 헤더 순서 이름→상태→경과시간→방→오늘시술→처방→임상경과→진료차트(WAITELAPSED-POLISH AC-2 rename)', () => {
     const s = DASH();
     const feedThead = s.slice(
       s.indexOf('doctor-call-feed-table'),
       s.indexOf('doctor-call-feed-rows'),
     );
     const order = (feedThead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
-    expect(order).toEqual(['이름', '상태', '콜경과시간', '방', '오늘시술', '처방', '임상경과', '진료차트']);
+    expect(order).toEqual(['이름', '상태', '경과시간', '방', '오늘시술', '처방', '임상경과', '진료차트']);
   });
   test('진료완료 테이블: 대기 테이블과 동일 8칼럼 순서(SECTION-RESTRUCTURE AC-3 스키마 완전 동일)', () => {
     const s = DASH();
@@ -258,7 +266,7 @@ test.describe('AC-12 — 시술 별도 칼럼', () => {
     );
     expect((compThead.match(/<th /g) ?? []).length).toBe(8);
     const order = (compThead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
-    expect(order).toEqual(['이름', '상태', '콜경과시간', '방', '오늘시술', '처방', '임상경과', '진료차트']);
+    expect(order).toEqual(['이름', '상태', '경과시간', '방', '오늘시술', '처방', '임상경과', '진료차트']);
   });
   test('양 테이블 행에 ProcedureCell 렌더(대기 1 + 완료 1)', () => {
     const s = DASH();
