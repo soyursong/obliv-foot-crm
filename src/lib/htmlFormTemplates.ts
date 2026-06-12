@@ -32,6 +32,11 @@ const COMMON_STYLE = `
       padding: 8mm 10mm;
       width: 190mm;
       min-height: 267mm;
+      /* T-20260611-foot-DOC-FORM-TITLE-CENTER-6: 기본 form-wrap(190mm) margin auto 미적용으로
+         page 중앙 대비 제목 ~10mm 좌측 이탈. 좌우 auto 중앙정렬 추가 → 진단서·진료확인서·통원확인서·
+         소견서·진료비납입증명서·의무기록사본발급신청서·소견서v2·보험청구서 일괄 중앙정렬.
+         의뢰서(REFERRAL_LETTER_HTML)는 인라인 margin:12mm auto가 본 규칙을 override → 회귀 없음. */
+      margin: 0 auto;
     }
     table { width: 100%; border-collapse: collapse; }
     td, th {
