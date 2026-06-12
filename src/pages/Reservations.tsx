@@ -2060,6 +2060,9 @@ function ReservationEditor({
         .from('package_sessions')
         .select('id, package_id, session_number, session_type, session_date, performed_by, staff:performed_by(name)')
         .in('package_id', pkgIds)
+        // T-20260612-foot-USAGEHIST-DELETE-RESTORE: soft-delete(status='deleted') 회차는 시술이력 표시에서 제외.
+        // (이 표시 쿼리는 status 필터가 없어 soft-delete 도입 후 삭제 회차가 정상 시술처럼 새어들 수 있음 → 명시 제외)
+        .neq('status', 'deleted')
         .not('session_date', 'is', null)
         .order('session_date', { ascending: false })
         .limit(200);
