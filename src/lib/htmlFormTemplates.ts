@@ -1078,7 +1078,8 @@ ${COMMON_STYLE}
         </tr>
         <tr>
           <td style="border:none; padding:2px 4px; background:none; white-space:nowrap; font-size:9.5pt;">진료&nbsp;구분</td>
-          <td style="border:none; padding:2px 4px; background:none; font-size:9.5pt;">외래&nbsp;·&nbsp;입원</td>
+          <!-- T-20260612-foot-REFERRAL-VISITTYPE-CHECKBOX: 진료 구분을 정적 체크박스 표기로 변경. 풋센터 외래 전용(입원 개념 없음) → 외래=☑ 고정, 입원=☐ 고정. 데이터 바인딩 없는 정적 출력값(line 1106/1107 기존 ☐ 글리프 패턴 재사용 → 흑백 인쇄 명확·폰트 지원 확인됨). -->
+          <td style="border:none; padding:2px 4px; background:none; font-size:9.5pt;">☑&nbsp;외래&nbsp;&nbsp;&nbsp;☐&nbsp;입원</td>
           <td style="border:none; padding:2px 16px 2px 16px; background:none; white-space:nowrap; font-size:9.5pt;">E-mail&nbsp;주소</td>
           <td style="border:none; border-bottom:1px solid #000; padding:2px 4px; background:none; font-size:9.5pt;">{{patient_email}}</td>
         </tr>
