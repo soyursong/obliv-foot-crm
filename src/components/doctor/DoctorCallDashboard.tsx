@@ -50,7 +50,6 @@ import {
   callKey,
   elapsedMinutes,
   formatSinceCall,
-  treatmentLabel,
 } from '@/lib/doctor-call-notify';
 import { checkRxInClinic } from '@/lib/inClinicRxGate';
 import {
@@ -335,16 +334,19 @@ export default function DoctorCallDashboard() {
           // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE A안: 환자 목록 → 테이블뷰(행=환자, 열=이름|방|처방|상태).
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-sm" data-testid="doctor-call-feed-table">
-              {/* T-20260612-foot-DOCDASH-11FIX AC-3: table-fixed + colgroup 으로 열 너비 고정 → 행마다 컬럼 어긋남 제거. */}
+              {/* T-20260612-foot-DOCDASH-11FIX AC-3: table-fixed + colgroup 으로 열 너비 고정 → 행마다 컬럼 어긋남 제거.
+                  AC-12: '시술' 칼럼을 이름 다음에 분리 추가(이름 셀 아래 뭉뚱그림 제거). */}
               <colgroup>
-                <col className="w-[38%]" />
-                <col className="w-[14%]" />
-                <col className="w-[18%]" />
-                <col className="w-[30%]" />
+                <col className="w-[28%]" />
+                <col className="w-[16%]" />
+                <col className="w-[12%]" />
+                <col className="w-[16%]" />
+                <col className="w-[28%]" />
               </colgroup>
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/70 text-left text-[11px] font-semibold text-muted-foreground">
                   <th className="px-3 py-1.5">이름</th>
+                  <th className="px-3 py-1.5">시술</th>
                   <th className="px-3 py-1.5">방</th>
                   <th className="px-3 py-1.5">처방</th>
                   <th className="px-3 py-1.5">상태</th>
@@ -387,17 +389,20 @@ export default function DoctorCallDashboard() {
           // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE A안: 진료 완료 환자도 동일 테이블뷰(열=이름|방|처방|상태).
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-sm" data-testid="doctor-completed-table">
-              {/* T-20260612-foot-DOCDASH-11FIX AC-3+AC-11: table-fixed + colgroup, 진료완료 테이블 한정 '임상경과' 열 추가. */}
+              {/* T-20260612-foot-DOCDASH-11FIX AC-3+AC-11: table-fixed + colgroup, 진료완료 테이블 한정 '임상경과' 열 추가.
+                  AC-12: '시술' 칼럼을 이름 다음에 분리 추가. */}
               <colgroup>
-                <col className="w-[26%]" />
-                <col className="w-[12%]" />
+                <col className="w-[22%]" />
+                <col className="w-[14%]" />
+                <col className="w-[10%]" />
+                <col className="w-[14%]" />
                 <col className="w-[16%]" />
-                <col className="w-[18%]" />
-                <col className="w-[28%]" />
+                <col className="w-[24%]" />
               </colgroup>
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/70 text-left text-[11px] font-semibold text-muted-foreground">
                   <th className="px-3 py-1.5">이름</th>
+                  <th className="px-3 py-1.5">시술</th>
                   <th className="px-3 py-1.5">방</th>
                   <th className="px-3 py-1.5">처방</th>
                   <th className="px-3 py-1.5">상태</th>
@@ -518,11 +523,16 @@ function CallFeedRow({
               </span>
             )}
           </div>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">{treatmentLabel(checkIn)}</p>
+          {/* T-20260612-foot-DOCDASH-11FIX AC-12: 이름 셀 아래 시술 표기 제거 → 별도 '시술' 칼럼으로 이동. */}
           {/* 전달사항 메모 */}
           {checkIn.doctor_call_memo && (
             <p className="mt-0.5 text-[11px] text-gray-600">📋 {checkIn.doctor_call_memo}</p>
           )}
+        </td>
+
+        {/* 시술 — T-20260612-foot-DOCDASH-11FIX AC-12: 이름 셀에서 분리한 독립 칼럼. */}
+        <td className="px-3 py-2">
+          <ProcedureCell checkIn={checkIn} />
         </td>
 
         {/* 방 — 방이름 표시 유지(reporter 긍정 확인됨, 회귀 금지) */}
@@ -614,7 +624,7 @@ function CallFeedRow({
       {/* 처방 인라인 펼침 — 전체폭 행 */}
       {showRx && (
         <tr data-testid="doctor-call-rx-expand-row" className={inactive ? 'bg-gray-50/60' : 'bg-white'}>
-          <td colSpan={4} className="px-3 pb-2">
+          <td colSpan={5} className="px-3 pb-2">
             <div className="rounded-lg border bg-white p-2">
               <QuickRxBar
                 doctorMode={doctorMode}
@@ -640,7 +650,7 @@ function CallFeedRow({
           tall 아코디언 제거 — MedicalChartPanel singleLine 모드 재사용(저장 로직·진료의 NOT NULL 강제 동일). */}
       {showClinical && checkIn.customer_id && (
         <tr data-testid="doctor-call-chart-inline-row" className={inactive ? 'bg-gray-50/60' : 'bg-white'}>
-          <td colSpan={4} className="px-3 pb-2" data-testid="doctor-call-chart-inline">
+          <td colSpan={5} className="px-3 pb-2" data-testid="doctor-call-chart-inline">
             <MedicalChartPanel
               embed
               open
@@ -713,7 +723,12 @@ function CompletedRow({
               {checkIn.customer_name}
             </button>
           </div>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">{treatmentLabel(checkIn)}</p>
+          {/* T-20260612-foot-DOCDASH-11FIX AC-12: 이름 셀 아래 시술 표기 제거 → 별도 '시술' 칼럼으로 이동. */}
+        </td>
+
+        {/* 시술 — T-20260612-foot-DOCDASH-11FIX AC-12: 이름 셀에서 분리한 독립 칼럼. */}
+        <td className="px-3 py-2">
+          <ProcedureCell checkIn={checkIn} />
         </td>
 
         {/* 방 — 방이름 표시 유지(회귀 금지) */}
@@ -822,7 +837,7 @@ function CompletedRow({
 
       {showRx && (
         <tr data-testid="doctor-completed-rx-expand-row" className="bg-white">
-          <td colSpan={5} className="px-3 pb-2">
+          <td colSpan={6} className="px-3 pb-2">
             <div className="rounded-lg border bg-white p-2">
               <QuickRxBar
                 doctorMode={doctorMode}
@@ -847,7 +862,7 @@ function CompletedRow({
       {/* T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 진료완료 환자도 임상경과 = 한 줄 인풋(singleLine). */}
       {showClinical && checkIn.customer_id && (
         <tr data-testid="doctor-completed-chart-inline-row" className="bg-white">
-          <td colSpan={5} className="px-3 pb-2" data-testid="doctor-completed-chart-inline">
+          <td colSpan={6} className="px-3 pb-2" data-testid="doctor-completed-chart-inline">
             <MedicalChartPanel
               embed
               open
@@ -958,5 +973,21 @@ function VisitBadge({ visitType }: { visitType: CheckIn['visit_type'] }) {
   const { label, cls } = map[visitType] ?? { label: visitType, cls: 'bg-gray-100 text-gray-600' };
   return (
     <span className={cn('rounded px-1 py-px text-[10px] font-medium', cls)}>{label}</span>
+  );
+}
+
+// T-20260612-foot-DOCDASH-11FIX AC-12: 시술 정보를 이름 셀에서 분리해 독립 칼럼으로 표시.
+//   데이터 소스는 treatmentLabel과 동일(treatment_kind ?? treatment_category)이나, 전용 칼럼에서는
+//   '시술 미지정' 대신 '미지정'(회색)으로 컴팩트 표기. 미지정은 read-only(DB 무변경).
+function ProcedureCell({ checkIn }: { checkIn: Pick<CheckIn, 'treatment_kind' | 'treatment_category'> }) {
+  const v = (checkIn.treatment_kind ?? checkIn.treatment_category ?? '').trim();
+  return v === '' ? (
+    <span className="text-[11px] text-gray-300" data-testid="doctor-procedure-cell">
+      미지정
+    </span>
+  ) : (
+    <span className="text-[11px] font-medium text-gray-700" data-testid="doctor-procedure-cell">
+      {v}
+    </span>
   );
 }
