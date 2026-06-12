@@ -288,6 +288,14 @@ export interface MedicalChartPanelProps {
   initialRightTab?: 'rx' | 'phrase' | 'super' | 'visit_hist' | 'images' | 'consult';
   //   default false → 기존 모든 호출자(DoctorCallDashboard 등) 동작 무변경(AC-4 회귀가드).
   readOnly?: boolean;
+  // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안 (문지은 대표원장, '둘다해줘'):
+  //   진료부 대시보드 테이블뷰에서 임상경과 입력을 '한 줄 텍스트 인풋'으로 축소.
+  //   embed && variant='clinical' && singleLine → 기존 tall 아코디언(textarea rows 9, 담당의+임상경과+저장 3섹션)
+  //   대신 [담당의 select | 한 줄 input | 저장] 1줄 컴팩트 폼으로 렌더.
+  //   ⚠ 저장 로직(handleSave) · 진료의 NOT NULL 강제(AC-P2-6, 의료법) · clinical_progress 같은날 append
+  //     전부 무변경(비간섭) — input UI 폼만 1줄로 축소. // 자동완성도 동일 clinicalRef(Textarea rows=1)로 유지.
+  //   default false → 기존 embed clinical 호출자(DoctorPatientList 펼침 등) 무회귀.
+  singleLine?: boolean;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -471,6 +479,7 @@ export default function MedicalChartPanel({
   onSaved,
   readOnly = false,
   initialRightTab,
+  singleLine = false,
 }: MedicalChartPanelProps) {
   const isDirector = canViewDoctorMemo(currentUserRole);
   const navigate = useNavigate();
@@ -2007,9 +2016,134 @@ export default function MedicalChartPanel({
     </div>
   );
 
+  // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 임상경과 '한 줄 텍스트 인풋' 컴팩트 폼.
+  //   tall 아코디언(담당의 섹션 + textarea rows 9 + 저장 섹션) 대신 1줄: [담당의 select | 한 줄 input | 저장].
+  //   상태/핸들러(formClinical·handleClinicalChange·handleSave·formSigningDoctorId·clinicDoctors)·// 자동완성 전부 재사용.
+  //   ⚠ 진료의 NOT NULL 강제(handleSave `if (!formSigningDoctorId)`, 의료법)·clinical_progress 저장 로직 무변경.
+  const clinicalSingleLineBody = loading ? (
+    <div className="flex items-center justify-center py-4" data-testid="clinical-singleline-loading">
+      <Loader2 className="h-5 w-5 animate-spin text-teal-400" />
+    </div>
+  ) : (
+    <div className="p-2.5" data-testid="clinical-singleline">
+      <div className="flex flex-wrap items-center gap-2">
+        {/* 담당 의사 (저장 필수 — 의료법, 기존 검증 동일 재사용) */}
+        <select
+          value={formSigningDoctorId}
+          onChange={(e) => setFormSigningDoctorId(e.target.value)}
+          disabled={isReadOnly}
+          className={cn(
+            'h-9 w-28 shrink-0 rounded-md border px-2 text-xs bg-background',
+            !formSigningDoctorId ? 'border-rose-300 focus:border-rose-400' : 'border-input',
+          )}
+          data-testid="clinical-singleline-doctor"
+          aria-label="담당 의사(진료의)"
+        >
+          <option value="">의사 선택</option>
+          {clinicDoctors.map((d) => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+        {/* 임상경과 — 한 줄 입력. // 자동완성 유지 위해 Textarea(rows=1)로 단일행 렌더. */}
+        <div className="relative min-w-[160px] flex-1">
+          <Textarea
+            ref={clinicalRef}
+            value={formClinical}
+            onChange={handleClinicalChange}
+            onBlur={() => { setTimeout(() => setPhrasePopoverVisible(false), 200); }}
+            readOnly={isReadOnly}
+            placeholder="임상경과 한 줄 입력  예: //통증감소"
+            rows={1}
+            className={cn(
+              'h-9 min-h-0 resize-none overflow-hidden py-2 text-sm placeholder:text-gray-300',
+              isReadOnly && 'bg-gray-50 text-gray-500 cursor-not-allowed',
+            )}
+            data-testid="clinical-singleline-input"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-1p-ignore
+            data-lpignore="true"
+          />
+          {phrasePopoverVisible && (filteredSuperPhrases.length > 0 || filteredPhrases.length > 0) && (
+            <div
+              className="absolute left-0 right-0 top-full mt-1 z-[200] max-h-72 overflow-y-auto rounded-lg border bg-popover shadow-xl"
+              onMouseDown={(e) => e.preventDefault()}
+              data-testid="clinical-singleline-phrase-popover"
+            >
+              {filteredSuperPhrases.map((sp) => (
+                <button
+                  key={`sp-${sp.id}`}
+                  type="button"
+                  onClick={() => applySuperPhraseFromSlash(sp)}
+                  disabled={gateChecking}
+                  className="w-full text-left px-3 py-2 hover:bg-teal-50 flex items-start gap-2 border-b border-border/50 disabled:opacity-50"
+                  data-testid="clinical-singleline-super-option"
+                >
+                  <Sparkles className="h-3 w-3 text-teal-600 shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium truncate">{sp.name}</div>
+                    <div className="text-[10px] text-muted-foreground line-clamp-1">
+                      {[sp.diagnosis, sp.clinical_progress].filter(Boolean).join(' · ') || `처방 ${sp.rx_items.length}개`}
+                    </div>
+                  </div>
+                </button>
+              ))}
+              {filteredPhrases.map((p) => (
+                <button
+                  key={`p-${p.id}`}
+                  type="button"
+                  onClick={() => insertPhrase(p)}
+                  className="w-full text-left px-3 py-2 hover:bg-muted flex items-start gap-2 border-b border-border/50 last:border-0"
+                  data-testid="clinical-singleline-phrase-option"
+                >
+                  {p.shortcut_key && (
+                    <Badge variant="secondary" className="text-[9px] shrink-0 mt-0.5 h-4 px-1 font-mono">
+                      //{p.shortcut_key}
+                    </Badge>
+                  )}
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium truncate">{p.name}</div>
+                    <div className="text-[10px] text-muted-foreground line-clamp-1">{p.content}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {/* 저장 — handleSave 그대로 재사용. 읽기전용(당일 외)일 땐 미노출(오기입 방지, 기존 정책 동일).
+            ⚠ 한 줄(singleLine) 유지를 위해 별도 경고 <p> 미추가 — 미선택 시 select rose 보더 + handleSave toast 로 안내
+              (CLINICAL-UX-REFINE '경고 p 2건' 카운트 무회귀). 진료의 NOT NULL 강제(handleSave)는 동일. */}
+        {!isReadOnly && (
+          <Button
+            size="sm"
+            className="h-9 shrink-0 bg-teal-600 hover:bg-teal-700 text-white"
+            onClick={handleSave}
+            disabled={saving || !formDate}
+            data-testid="clinical-singleline-save"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : '저장'}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+
   // T-20260609-foot-DOCDASH-CHART-UX item1 (AC1-1): embed clinical → 인라인(아코디언) 렌더.
   //   portal/백드롭/슬라이드아웃 Drawer 미사용 — 호출부(진료대시보드 행) DOM 흐름에 그대로 펼침.
+  // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: singleLine=true 면 tall 아코디언 대신 한 줄 폼.
   if (embed && variant === 'clinical') {
+    if (singleLine) {
+      return (
+        <div
+          className="rounded-lg border border-teal-200 bg-teal-50/20"
+          data-testid="medical-chart-clinical-singleline"
+        >
+          {clinicalSingleLineBody}
+        </div>
+      );
+    }
     return (
       <div
         className="rounded-lg border border-teal-200 bg-teal-50/20"

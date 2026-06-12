@@ -293,21 +293,34 @@ export default function DoctorCallDashboard() {
             오늘 진료 호출이 아직 없어요.
           </div>
         ) : (
-          <ul className="divide-y divide-gray-100" data-testid="doctor-call-feed-rows">
-            {feed.map((ci) => (
-              <CallFeedRow
-                key={callKey(ci)}
-                checkIn={ci}
-                doctorMode={doctorMode}
-                role={profile?.role ?? ''}
-                clinicId={clinicId ?? ''}
-                currentUserEmail={profile?.email ?? null}
-                actor={actor}
-                onOpenChart={openTreatmentChart}
-                onRefresh={() => void refetch()}
-              />
-            ))}
-          </ul>
+          // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE A안: 환자 목록 → 테이블뷰(행=환자, 열=이름|방|처방|상태).
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" data-testid="doctor-call-feed-table">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/70 text-left text-[11px] font-semibold text-muted-foreground">
+                  <th className="px-3 py-1.5">이름</th>
+                  <th className="px-3 py-1.5">방</th>
+                  <th className="px-3 py-1.5">처방</th>
+                  <th className="px-3 py-1.5">상태</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100" data-testid="doctor-call-feed-rows">
+                {feed.map((ci) => (
+                  <CallFeedRow
+                    key={callKey(ci)}
+                    checkIn={ci}
+                    doctorMode={doctorMode}
+                    role={profile?.role ?? ''}
+                    clinicId={clinicId ?? ''}
+                    currentUserEmail={profile?.email ?? null}
+                    actor={actor}
+                    onOpenChart={openTreatmentChart}
+                    onRefresh={() => void refetch()}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 
@@ -325,20 +338,33 @@ export default function DoctorCallDashboard() {
             아직 진료 완료된 환자가 없어요.
           </div>
         ) : (
-          <ul className="divide-y divide-gray-100" data-testid="doctor-completed-rows">
-            {completedPatients.map((ci) => (
-              <CompletedRow
-                key={ci.id}
-                checkIn={ci}
-                doctorMode={doctorMode}
-                role={profile?.role ?? ''}
-                clinicId={clinicId ?? ''}
-                currentUserEmail={profile?.email ?? null}
-                onOpenChart={openTreatmentChart}
-                onRefresh={() => void refetch()}
-              />
-            ))}
-          </ul>
+          // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE A안: 진료 완료 환자도 동일 테이블뷰(열=이름|방|처방|상태).
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" data-testid="doctor-completed-table">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/70 text-left text-[11px] font-semibold text-muted-foreground">
+                  <th className="px-3 py-1.5">이름</th>
+                  <th className="px-3 py-1.5">방</th>
+                  <th className="px-3 py-1.5">처방</th>
+                  <th className="px-3 py-1.5">상태</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100" data-testid="doctor-completed-rows">
+                {completedPatients.map((ci) => (
+                  <CompletedRow
+                    key={ci.id}
+                    checkIn={ci}
+                    doctorMode={doctorMode}
+                    role={profile?.role ?? ''}
+                    clinicId={clinicId ?? ''}
+                    currentUserEmail={profile?.email ?? null}
+                    onOpenChart={openTreatmentChart}
+                    onRefresh={() => void refetch()}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 
@@ -388,171 +414,197 @@ function CallFeedRow({
   const slotName = getAssignedSlotName(checkIn);
   const elapsed = formatElapsed(elapsedMinutes(getCallTime(checkIn)));
   const [showRx, setShowRx] = useState(false);
-  // T-20260609-foot-DOCDASH-CHART-UX item1 (AC1-1): '임상경과' = 행 바로 아래 인라인(아코디언) 펼침.
+  // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 임상경과 = 한 줄 인풋(아코디언 아님), 토글로 노출/숨김.
   const [showClinical, setShowClinical] = useState(false);
 
   return (
-    <li
-      data-testid="doctor-call-feed-row"
-      data-checkin-id={checkIn.id}
-      data-inactive={String(inactive)}
-      className={cn('px-3 py-2.5 transition', inactive ? 'bg-gray-50/60 opacity-60' : 'bg-white')}
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        {/* 호출 상태 점 */}
-        {inactive ? (
-          <Check className="h-4 w-4 shrink-0 text-gray-400" />
-        ) : (
-          <Phone className="h-4 w-4 shrink-0 animate-pulse text-red-600" />
-        )}
-        {/* 이름 — T-20260610-foot-VISITLIST-CHART-DRAWER (AC-1): 이름 클릭 → 진료차트(variant='full') 서랍 오픈.
-            기존 '진료차트' 버튼과 같은 onOpenChart·같은 Drawer 재사용(새 조회 경로/새 Drawer 신설 안 함).
-            '임상경과'(인라인 차팅, DOCDASH-CHART-UX AC1-1)와는 별개 트리거 — 회귀 없음. */}
-        <button
-          type="button"
-          onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
-          disabled={!checkIn.customer_id}
-          data-testid="doctor-call-name-chart-btn"
-          title="이름 클릭 — 진료차트 열기 (서랍)"
-          className={cn(
-            'text-sm font-semibold text-left underline-offset-2 transition-colors disabled:cursor-default disabled:no-underline',
-            inactive
-              ? 'text-gray-500 hover:text-gray-700 hover:underline'
-              : 'text-gray-900 hover:text-indigo-700 hover:underline cursor-pointer',
+    // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE A안: 행=환자, 열=이름|방|처방|상태. 액션은 각 열 내부 컴팩트 배치.
+    //   기존 동작(이름→진료차트 / 처방 / 임상경과 / 진료완료 / 의사ack / 방이름)은 전부 유지 — 레이아웃만 테이블화.
+    <>
+      <tr
+        data-testid="doctor-call-feed-row"
+        data-checkin-id={checkIn.id}
+        data-inactive={String(inactive)}
+        className={cn('align-top transition', inactive ? 'bg-gray-50/60 opacity-70' : 'bg-white')}
+      >
+        {/* 이름 */}
+        <td className="px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {inactive ? (
+              <Check className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+            ) : (
+              <Phone className="h-3.5 w-3.5 shrink-0 animate-pulse text-red-600" />
+            )}
+            {/* 이름 클릭 → 진료차트(variant='full') 서랍. 기존 onOpenChart 재사용(회귀 없음). */}
+            <button
+              type="button"
+              onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+              disabled={!checkIn.customer_id}
+              data-testid="doctor-call-name-chart-btn"
+              title="이름 클릭 — 진료차트 열기 (서랍)"
+              className={cn(
+                'text-sm font-semibold text-left underline-offset-2 transition-colors disabled:cursor-default disabled:no-underline',
+                inactive
+                  ? 'text-gray-500 hover:text-gray-700 hover:underline'
+                  : 'text-gray-900 hover:text-indigo-700 hover:underline cursor-pointer',
+              )}
+            >
+              {checkIn.customer_name}
+            </button>
+            <VisitBadge visitType={checkIn.visit_type} />
+          </div>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">{treatmentLabel(checkIn)}</p>
+          {/* 전달사항 메모 */}
+          {checkIn.doctor_call_memo && (
+            <p className="mt-0.5 text-[11px] text-gray-600">📋 {checkIn.doctor_call_memo}</p>
           )}
-        >
-          {checkIn.customer_name}
-        </button>
-        <VisitBadge visitType={checkIn.visit_type} />
-        {/* 위치 */}
-        {slotName && (
-          <span className="inline-flex items-center gap-0.5 rounded border border-teal-100 bg-teal-50 px-1 py-px text-[10px] font-medium text-teal-700">
-            <MapPin className="h-2.5 w-2.5" />
-            {slotName}
-          </span>
-        )}
-        {/* 시술명 */}
-        <span className="text-xs text-muted-foreground">{treatmentLabel(checkIn)}</span>
-        {/* T-20260609-foot-DOCCALL-DOCTOR-ACK: 의사 ✋확인(손 들기) — 의사만 버튼, ack 후 파란 배지(직원도 조회).
-            미확인+비의사는 미노출(조회만). 활성/완료 호출 모두 노출(완료 환자도 ack 표시 조회 가능). */}
-        <DoctorAckButton
-          checkInId={checkIn.id}
-          ackAt={checkIn.doctor_ack_at}
-          doctorMode={doctorMode}
-          onAcked={onRefresh}
-        />
-        {/* 경과시간 */}
-        <span className="ml-auto inline-flex items-center gap-0.5 text-[11px] text-muted-foreground">
-          <Clock className="h-3 w-3" />
-          {elapsed}
-        </span>
-      </div>
+        </td>
 
-      {/* 전달사항 메모 */}
-      {checkIn.doctor_call_memo && (
-        <p className="mt-1 pl-6 text-xs text-gray-600">📋 {checkIn.doctor_call_memo}</p>
-      )}
+        {/* 방 — 방이름 표시 유지(reporter 긍정 확인됨, 회귀 금지) */}
+        <td className="px-3 py-2" data-testid="doctor-call-room-cell">
+          {slotName ? (
+            <span className="inline-flex items-center gap-0.5 rounded border border-teal-100 bg-teal-50 px-1 py-px text-[11px] font-medium text-teal-700">
+              <MapPin className="h-2.5 w-2.5" />
+              {slotName}
+            </span>
+          ) : (
+            <span className="text-[11px] text-gray-300">-</span>
+          )}
+        </td>
 
-      {/* 액션 — 임상경과(인라인 아코디언) / 진료차트(전체 Drawer) / 처방
-          T-20260609-foot-DOCDASH-CHART-UX item1: AC1-1 차팅 서랍 → 행 아래 인라인. AC1-4 라벨 '차팅'→'임상경과', '차트 열기'→'진료차트'. */}
-      <div className="mt-1.5 flex items-center gap-1.5 pl-6">
-        <button
-          type="button"
-          onClick={() => setShowClinical((v) => !v)}
-          disabled={!checkIn.customer_id}
-          aria-expanded={showClinical}
-          data-testid="doctor-call-chart-btn"
-          className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-          title="임상경과를 이 줄 바로 아래에서 빠르게 입력"
-        >
-          <FileText className="h-3 w-3" />
-          임상경과
-          {showClinical ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-        </button>
-        <button
-          type="button"
-          onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
-          disabled={!checkIn.customer_id}
-          data-testid="doctor-call-fullchart-btn"
-          className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
-          title="전체 진료차트 열기 (서랍)"
-        >
-          <Stethoscope className="h-3 w-3" />
-          진료차트
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowRx((v) => !v)}
-          data-testid="doctor-call-rx-btn"
-          className="inline-flex items-center gap-1 rounded-md border border-teal-200 bg-teal-50 px-2 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100"
-        >
-          <Pill className="h-3 w-3" />
-          처방
-          {showRx ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-        </button>
-        {/* T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-2/4: "처방완료"+약물리스트, 재클릭→취소 팝업.
-            T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK (본체 누수 close): 게이트 컨텍스트 prop 전달.
-              이전엔 진료대시보드가 prop 을 안 넘겨(opt-in) 귀가환자 처방취소가 통과(fail-open)됐다.
-              status/checked_in_at/status_flag/onOpenChart 전달 + DB 재검증 가드(useCancelConfirmedRx)로 이중 차단. */}
-        {checkIn.prescription_status === 'confirmed' && (
-          <RxConfirmedSummary
-            checkInId={checkIn.id}
-            items={checkIn.prescription_items}
-            doctorMode={doctorMode}
-            onCancelled={onRefresh}
-            checkInStatus={checkIn.status}
-            checkedInAt={checkIn.checked_in_at}
-            checkInFlag={checkIn.status_flag}
-            onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
-            surface="doctor_call_dashboard"
-            customerId={checkIn.customer_id}
-          />
-        )}
-        {/* T-20260610-foot-TREATMENT-COMPLETE-BTN: 활성 호출(purple)에만 진료완료 버튼. 의사/직원 공통(권한 개방). */}
-        {!inactive && (
-          <TreatmentCompleteButton checkIn={checkIn} actor={actor} onCompleted={onRefresh} />
-        )}
-      </div>
+        {/* 처방 */}
+        <td className="px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setShowRx((v) => !v)}
+              data-testid="doctor-call-rx-btn"
+              aria-expanded={showRx}
+              className="inline-flex items-center gap-1 rounded-md border border-teal-200 bg-teal-50 px-2 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100"
+            >
+              <Pill className="h-3 w-3" />
+              처방
+              {showRx ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            </button>
+            {/* T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-2/4 + T-20260611-DISCHARGED-DASH-RXMUTATE-LOCK 게이트 prop 유지. */}
+            {checkIn.prescription_status === 'confirmed' && (
+              <RxConfirmedSummary
+                checkInId={checkIn.id}
+                items={checkIn.prescription_items}
+                doctorMode={doctorMode}
+                onCancelled={onRefresh}
+                checkInStatus={checkIn.status}
+                checkedInAt={checkIn.checked_in_at}
+                checkInFlag={checkIn.status_flag}
+                onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+                surface="doctor_call_dashboard"
+                customerId={checkIn.customer_id}
+              />
+            )}
+          </div>
+        </td>
 
+        {/* 상태 — 진료필요/완료 + 의사ack + 경과 + 임상경과/진료차트/진료완료 액션 */}
+        <td className="px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span
+              className={cn(
+                'inline-flex items-center rounded-full px-1.5 py-px text-[10px] font-semibold',
+                inactive ? 'bg-gray-100 text-gray-500' : 'bg-red-100 text-red-700',
+              )}
+            >
+              {inactive ? '진료완료' : '진료필요'}
+            </span>
+            {/* T-20260609-foot-DOCCALL-DOCTOR-ACK: 의사 ✋확인 — 의사만 버튼, ack 후 파란 배지. */}
+            <DoctorAckButton
+              checkInId={checkIn.id}
+              ackAt={checkIn.doctor_ack_at}
+              doctorMode={doctorMode}
+              onAcked={onRefresh}
+            />
+            <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground">
+              <Clock className="h-3 w-3" />
+              {elapsed}
+            </span>
+            {/* 임상경과 — 한 줄 인풋 토글(B안). AC1-4 라벨 '임상경과' 유지. */}
+            <button
+              type="button"
+              onClick={() => setShowClinical((v) => !v)}
+              disabled={!checkIn.customer_id}
+              aria-expanded={showClinical}
+              data-testid="doctor-call-chart-btn"
+              className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+              title="임상경과를 한 줄로 빠르게 입력"
+            >
+              <FileText className="h-3 w-3" />
+              임상경과
+              {showClinical ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+              disabled={!checkIn.customer_id}
+              data-testid="doctor-call-fullchart-btn"
+              className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+              title="전체 진료차트 열기 (서랍)"
+            >
+              <Stethoscope className="h-3 w-3" />
+              진료차트
+            </button>
+            {/* T-20260610-foot-TREATMENT-COMPLETE-BTN: 활성 호출(purple)에만 진료완료 버튼. */}
+            {!inactive && (
+              <TreatmentCompleteButton checkIn={checkIn} actor={actor} onCompleted={onRefresh} />
+            )}
+          </div>
+        </td>
+      </tr>
+
+      {/* 처방 인라인 펼침 — 전체폭 행 */}
       {showRx && (
-        <div className="mt-1.5 ml-6 rounded-lg border bg-white p-2">
-          <QuickRxBar
-            doctorMode={doctorMode}
-            role={role}
-            checkInId={checkIn.id}
-            onApplied={onRefresh}
-            checkInStatus={checkIn.status}
-            checkedInAt={checkIn.checked_in_at}
-            /* T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)는 원내 잔류 → 처방 허용(귀가만 차단). */
-            checkInFlag={checkIn.status_flag}
-            onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
-            /* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 차트변경 audit attribution. */
-            surface="doctor_call_dashboard"
-            customerId={checkIn.customer_id}
-            compact
-          />
-        </div>
+        <tr data-testid="doctor-call-rx-expand-row" className={inactive ? 'bg-gray-50/60' : 'bg-white'}>
+          <td colSpan={4} className="px-3 pb-2">
+            <div className="rounded-lg border bg-white p-2">
+              <QuickRxBar
+                doctorMode={doctorMode}
+                role={role}
+                checkInId={checkIn.id}
+                onApplied={onRefresh}
+                checkInStatus={checkIn.status}
+                checkedInAt={checkIn.checked_in_at}
+                /* T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)는 원내 잔류 → 처방 허용(귀가만 차단). */
+                checkInFlag={checkIn.status_flag}
+                onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+                /* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 차트변경 audit attribution. */
+                surface="doctor_call_dashboard"
+                customerId={checkIn.customer_id}
+                compact
+              />
+            </div>
+          </td>
+        </tr>
       )}
 
-      {/* T-20260609-foot-DOCDASH-CHART-UX item1 (AC1-1/2): 임상경과 인라인 아코디언 — 행 바로 아래 펼침.
-          서랍/별도 패널 아님. MedicalChartPanel embed clinical 재사용(저장 로직·진료의 NOT NULL 강제 동일).
-          저장 완료(onSaved) 또는 다시 '임상경과' 클릭 시 접힘. */}
+      {/* T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 임상경과 = 한 줄 텍스트 인풋(singleLine).
+          tall 아코디언 제거 — MedicalChartPanel singleLine 모드 재사용(저장 로직·진료의 NOT NULL 강제 동일). */}
       {showClinical && checkIn.customer_id && (
-        <div className="mt-1.5 ml-6" data-testid="doctor-call-chart-inline">
-          <MedicalChartPanel
-            embed
-            open
-            variant="clinical"
-            customerId={checkIn.customer_id}
-            clinicId={clinicId}
-            currentUserRole={role}
-            currentUserEmail={currentUserEmail}
-            onOpenChange={(v) => { if (!v) setShowClinical(false); }}
-            onSaved={() => setShowClinical(false)}
-          />
-        </div>
+        <tr data-testid="doctor-call-chart-inline-row" className={inactive ? 'bg-gray-50/60' : 'bg-white'}>
+          <td colSpan={4} className="px-3 pb-2" data-testid="doctor-call-chart-inline">
+            <MedicalChartPanel
+              embed
+              open
+              variant="clinical"
+              singleLine
+              customerId={checkIn.customer_id}
+              clinicId={clinicId}
+              currentUserRole={role}
+              currentUserEmail={currentUserEmail}
+              onOpenChange={(v) => { if (!v) setShowClinical(false); }}
+              onSaved={() => setShowClinical(false)}
+            />
+          </td>
+        </tr>
       )}
-    </li>
+    </>
   );
 }
 
@@ -574,120 +626,157 @@ function CompletedRow({
   onOpenChart: (customerId: string, variant?: 'full' | 'clinical') => void;
   onRefresh: () => void;
 }) {
+  const slotName = getAssignedSlotName(checkIn);
   const [showRx, setShowRx] = useState(false);
-  // T-20260609-foot-DOCDASH-CHART-UX item1 (AC1-1): '임상경과' = 행 바로 아래 인라인(아코디언) 펼침.
+  // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 임상경과 = 한 줄 인풋(아코디언 아님) 토글.
   const [showClinical, setShowClinical] = useState(false);
   return (
-    <li className="px-3 py-2.5" data-testid="doctor-completed-row" data-checkin-id={checkIn.id}>
-      <div className="flex flex-wrap items-center gap-2">
-        {/* 이름 — T-20260610-foot-VISITLIST-CHART-DRAWER (AC-1): 이름 클릭 → 진료차트(variant='full') 서랍 오픈.
-            활성 호출 행과 동일하게 onOpenChart(...'full') 재사용 — '진료차트' 버튼과 같은 Drawer. */}
-        <button
-          type="button"
-          onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
-          disabled={!checkIn.customer_id}
-          data-testid="doctor-completed-name-chart-btn"
-          title="이름 클릭 — 진료차트 열기 (서랍)"
-          className="text-sm font-semibold text-left underline-offset-2 transition-colors cursor-pointer hover:text-indigo-700 hover:underline disabled:cursor-default disabled:no-underline"
-        >
-          {checkIn.customer_name}
-        </button>
-        <VisitBadge visitType={checkIn.visit_type} />
-        {/* T-20260609-foot-DOCCALL-DOCTOR-ACK: 진료완료 환자도 의사 확인 이력 조회(표시 전용). */}
-        <DoctorAckBadge ackAt={checkIn.doctor_ack_at} />
-        <span className="text-xs text-muted-foreground">{treatmentLabel(checkIn)}</span>
-        <div className="ml-auto flex items-center gap-1.5">
-          {/* T-20260609-foot-QUICKRX-DROPDOWN-LIST-REDESIGN AC-2/4: "처방완료"+약물리스트, 재클릭→취소 팝업.
-              T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK (본체 누수 close): 게이트 컨텍스트 prop 전달.
-                진료완료 환자 섹션도 pink(원내잔류)/done(귀가) 혼재 — 게이트가 귀가만 차단(진료완료 무회귀). */}
-          {checkIn.prescription_status === 'confirmed' ? (
-            <RxConfirmedSummary
-              checkInId={checkIn.id}
-              items={checkIn.prescription_items}
-              doctorMode={doctorMode}
-              onCancelled={onRefresh}
-              checkInStatus={checkIn.status}
-              checkedInAt={checkIn.checked_in_at}
-              checkInFlag={checkIn.status_flag}
-              onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
-              surface="doctor_call_dashboard"
-              customerId={checkIn.customer_id}
-            />
+    // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE A안: 진료완료 환자도 테이블 행(열=이름|방|처방|상태).
+    <>
+      <tr className="align-top" data-testid="doctor-completed-row" data-checkin-id={checkIn.id}>
+        {/* 이름 — 클릭 시 진료차트(variant='full') 서랍 오픈(기존 onOpenChart 재사용). */}
+        <td className="px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+              disabled={!checkIn.customer_id}
+              data-testid="doctor-completed-name-chart-btn"
+              title="이름 클릭 — 진료차트 열기 (서랍)"
+              className="text-sm font-semibold text-left underline-offset-2 transition-colors cursor-pointer hover:text-indigo-700 hover:underline disabled:cursor-default disabled:no-underline"
+            >
+              {checkIn.customer_name}
+            </button>
+            <VisitBadge visitType={checkIn.visit_type} />
+          </div>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">{treatmentLabel(checkIn)}</p>
+        </td>
+
+        {/* 방 — 방이름 표시 유지(회귀 금지) */}
+        <td className="px-3 py-2" data-testid="doctor-completed-room-cell">
+          {slotName ? (
+            <span className="inline-flex items-center gap-0.5 rounded border border-teal-100 bg-teal-50 px-1 py-px text-[11px] font-medium text-teal-700">
+              <MapPin className="h-2.5 w-2.5" />
+              {slotName}
+            </span>
           ) : (
-            <span className="text-[10px] text-muted-foreground">처방 없음</span>
+            <span className="text-[11px] text-gray-300">-</span>
           )}
-          {/* T-20260609-foot-DOCDASH-CHART-UX item1: AC1-1 인라인 아코디언 + AC1-4 라벨 '차팅'→'임상경과', '차트 열기'→'진료차트'. */}
-          <button
-            type="button"
-            onClick={() => setShowClinical((v) => !v)}
-            disabled={!checkIn.customer_id}
-            aria-expanded={showClinical}
-            data-testid="doctor-completed-chart-btn"
-            className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-            title="임상경과를 이 줄 바로 아래에서 빠르게 입력"
-          >
-            <FileText className="h-3 w-3" />
-            임상경과
-            {showClinical ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-          </button>
-          <button
-            type="button"
-            onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
-            disabled={!checkIn.customer_id}
-            data-testid="doctor-completed-fullchart-btn"
-            className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
-            title="전체 진료차트 열기 (서랍)"
-          >
-            <Stethoscope className="h-3 w-3" />
-            진료차트
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowRx((v) => !v)}
-            className="inline-flex items-center gap-1 rounded-md border border-teal-200 bg-teal-50 px-2 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100"
-          >
-            <Pill className="h-3 w-3" />
-            처방
-          </button>
-        </div>
-      </div>
+        </td>
+
+        {/* 처방 */}
+        <td className="px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setShowRx((v) => !v)}
+              aria-expanded={showRx}
+              className="inline-flex items-center gap-1 rounded-md border border-teal-200 bg-teal-50 px-2 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100"
+            >
+              <Pill className="h-3 w-3" />
+              처방
+              {showRx ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            </button>
+            {/* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK 게이트 prop 유지(진료완료 무회귀). */}
+            {checkIn.prescription_status === 'confirmed' ? (
+              <RxConfirmedSummary
+                checkInId={checkIn.id}
+                items={checkIn.prescription_items}
+                doctorMode={doctorMode}
+                onCancelled={onRefresh}
+                checkInStatus={checkIn.status}
+                checkedInAt={checkIn.checked_in_at}
+                checkInFlag={checkIn.status_flag}
+                onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+                surface="doctor_call_dashboard"
+                customerId={checkIn.customer_id}
+              />
+            ) : (
+              <span className="text-[10px] text-muted-foreground">처방 없음</span>
+            )}
+          </div>
+        </td>
+
+        {/* 상태 — 진료완료 + 의사ack 배지 + 임상경과/진료차트 */}
+        <td className="px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-px text-[10px] font-semibold text-emerald-700">
+              진료완료
+            </span>
+            {/* T-20260609-foot-DOCCALL-DOCTOR-ACK: 진료완료 환자도 의사 확인 이력 조회(표시 전용). */}
+            <DoctorAckBadge ackAt={checkIn.doctor_ack_at} />
+            <button
+              type="button"
+              onClick={() => setShowClinical((v) => !v)}
+              disabled={!checkIn.customer_id}
+              aria-expanded={showClinical}
+              data-testid="doctor-completed-chart-btn"
+              className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+              title="임상경과를 한 줄로 빠르게 입력"
+            >
+              <FileText className="h-3 w-3" />
+              임상경과
+              {showClinical ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+              disabled={!checkIn.customer_id}
+              data-testid="doctor-completed-fullchart-btn"
+              className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+              title="전체 진료차트 열기 (서랍)"
+            >
+              <Stethoscope className="h-3 w-3" />
+              진료차트
+            </button>
+          </div>
+        </td>
+      </tr>
+
       {showRx && (
-        <div className="mt-1.5 rounded-lg border bg-white p-2">
-          <QuickRxBar
-            doctorMode={doctorMode}
-            role={role}
-            checkInId={checkIn.id}
-            onApplied={onRefresh}
-            checkInStatus={checkIn.status}
-            checkedInAt={checkIn.checked_in_at}
-            /* T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)는 원내 잔류 → 처방 허용(귀가만 차단). */
-            checkInFlag={checkIn.status_flag}
-            onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
-            /* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 차트변경 audit attribution. */
-            surface="doctor_call_dashboard"
-            customerId={checkIn.customer_id}
-            compact
-          />
-        </div>
+        <tr data-testid="doctor-completed-rx-expand-row" className="bg-white">
+          <td colSpan={4} className="px-3 pb-2">
+            <div className="rounded-lg border bg-white p-2">
+              <QuickRxBar
+                doctorMode={doctorMode}
+                role={role}
+                checkInId={checkIn.id}
+                onApplied={onRefresh}
+                checkInStatus={checkIn.status}
+                checkedInAt={checkIn.checked_in_at}
+                /* T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)는 원내 잔류 → 처방 허용(귀가만 차단). */
+                checkInFlag={checkIn.status_flag}
+                onOpenChart={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+                /* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK: 차트변경 audit attribution. */
+                surface="doctor_call_dashboard"
+                customerId={checkIn.customer_id}
+                compact
+              />
+            </div>
+          </td>
+        </tr>
       )}
-      {/* T-20260609-foot-DOCDASH-CHART-UX item1 (AC1-1): 진료완료 환자도 '임상경과' = 행 바로 아래 인라인(아코디언) 펼침.
-          활성 콜 행과 동일하게 MedicalChartPanel embed clinical 재사용. */}
+
+      {/* T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 진료완료 환자도 임상경과 = 한 줄 인풋(singleLine). */}
       {showClinical && checkIn.customer_id && (
-        <div className="mt-1.5" data-testid="doctor-completed-chart-inline">
-          <MedicalChartPanel
-            embed
-            open
-            variant="clinical"
-            customerId={checkIn.customer_id}
-            clinicId={clinicId}
-            currentUserRole={role}
-            currentUserEmail={currentUserEmail}
-            onOpenChange={(v) => { if (!v) setShowClinical(false); }}
-            onSaved={() => setShowClinical(false)}
-          />
-        </div>
+        <tr data-testid="doctor-completed-chart-inline-row" className="bg-white">
+          <td colSpan={4} className="px-3 pb-2" data-testid="doctor-completed-chart-inline">
+            <MedicalChartPanel
+              embed
+              open
+              variant="clinical"
+              singleLine
+              customerId={checkIn.customer_id}
+              clinicId={clinicId}
+              currentUserRole={role}
+              currentUserEmail={currentUserEmail}
+              onOpenChange={(v) => { if (!v) setShowClinical(false); }}
+              onSaved={() => setShowClinical(false)}
+            />
+          </td>
+        </tr>
       )}
-    </li>
+    </>
   );
 }
 
