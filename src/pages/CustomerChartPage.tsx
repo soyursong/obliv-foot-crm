@@ -1929,7 +1929,6 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   const [checklistEntries, setChecklistEntries] = useState<{
     id: string;
     completed_at: string | null;
-    started_at: string;
     checklist_data: Record<string, unknown>;
   }[]>([]);
   const [packageSessions, setPackageSessions] = useState<PackageSession[]>([]);
@@ -2206,7 +2205,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
         supabase.from('reservations').select('*').eq('customer_id', customerId).order('reservation_date', { ascending: false }).limit(30),
         supabase.from('check_ins').select('*').eq('customer_id', customerId).neq('status', 'cancelled').order('checked_in_at', { ascending: false }).limit(100),
         // T-20260519-foot-CHART-BEFORE-CHECKIN AC-2: checklists + form_submissions 병렬 선행 (customerId만 필요)
-        supabase.from('checklists').select('id, completed_at, started_at, checklist_data').eq('customer_id', customerId)
+        // T-20260613-foot-DUMMY-CHART-FIELD-NOTOPEN: started_at 컬럼은 checklists 테이블에 미존재 →
+        //   매 차트 오픈마다 400(42703) 발생 + 체크리스트 로드 실패. select 에서 사용처 없는 started_at 제거.
+        supabase.from('checklists').select('id, completed_at, checklist_data').eq('customer_id', customerId)
           .not('completed_at', 'is', null).order('completed_at', { ascending: false }).limit(10),
         supabase.from('form_submissions').select('check_in_id, printed_at, signed_at, field_data, form_templates!template_id(form_key)')
           .eq('customer_id', customerId).order('printed_at', { ascending: false, nullsFirst: false }).limit(30),
@@ -2268,7 +2269,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       setSlotDwell([]);
 
       const checkInIds = ciHistory.map((ci: CheckIn) => ci.id);
-      setChecklistEntries((clRes.data ?? []) as { id: string; completed_at: string | null; started_at: string; checklist_data: Record<string, unknown> }[]);
+      setChecklistEntries((clRes.data ?? []) as { id: string; completed_at: string | null; checklist_data: Record<string, unknown> }[]);
       // T-20260520-foot-PENCHART-REFINE AC-1:
       // builtin 템플릿 저장 시 template_id FK 없음 → JOIN 결과 null → template_key null
       // field_data.form_key fallback 으로 [내용보기] 활성화 보장
@@ -8002,13 +8003,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             // Storage 저장 후 DB checklist 재조회 시도 (태블릿 경로 체크리스트가 있을 경우 반영)
             void supabase
               .from('checklists')
-              .select('id, completed_at, started_at, checklist_data')
+              .select('id, completed_at, checklist_data')
               .eq('customer_id', customer.id)
               .not('completed_at', 'is', null)
               .order('completed_at', { ascending: false })
               .limit(10)
               .then(({ data }) => {
-                if (data) setChecklistEntries(data as { id: string; completed_at: string | null; started_at: string; checklist_data: Record<string, unknown> }[]);
+                if (data) setChecklistEntries(data as { id: string; completed_at: string | null; checklist_data: Record<string, unknown> }[]);
               });
           }}
         />
