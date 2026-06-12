@@ -2066,51 +2066,76 @@ export default function MedicalChartPanel({
             data-1p-ignore
             data-lpignore="true"
           />
-          {phrasePopoverVisible && (filteredSuperPhrases.length > 0 || filteredPhrases.length > 0) && (
-            <div
-              className="absolute left-0 right-0 top-full mt-1 z-[200] max-h-72 overflow-y-auto rounded-lg border bg-popover shadow-xl"
-              onMouseDown={(e) => e.preventDefault()}
-              data-testid="clinical-singleline-phrase-popover"
-            >
-              {filteredSuperPhrases.map((sp) => (
-                <button
-                  key={`sp-${sp.id}`}
-                  type="button"
-                  onClick={() => applySuperPhraseFromSlash(sp)}
-                  disabled={gateChecking}
-                  className="w-full text-left px-3 py-2 hover:bg-teal-50 flex items-start gap-2 border-b border-border/50 disabled:opacity-50"
-                  data-testid="clinical-singleline-super-option"
-                >
-                  <Sparkles className="h-3 w-3 text-teal-600 shrink-0 mt-0.5" />
-                  <div className="min-w-0">
-                    <div className="text-xs font-medium truncate">{sp.name}</div>
-                    <div className="text-[10px] text-muted-foreground line-clamp-1">
-                      {[sp.diagnosis, sp.clinical_progress].filter(Boolean).join(' · ') || `처방 ${sp.rx_items.length}개`}
+          {/* T-20260612-foot-CLINICAL-SINGLELINE-DROPDOWN-POS:
+              단축어 드롭다운이 absolute(top-full)라 진료대시보드 '테이블 행' stacking/overflow 에 갇혀
+              텍스트칸/다음 행 뒤로 가려짐(문지은 재신고). → 선례 PHRASE-SLASH-DROPDOWN-POS(4e8df2b) 패턴
+              (document.body portal + position:fixed + getTextareaCaretRect + z-[200]) 을 single-line 분기에 한정 적용.
+              AC-1 최상위 렌더(클리핑/뒤로깔림 제거) · AC-2 하단 행에선 위로 열기(flip)+viewport clamp · AC-3 자동완성 무회귀.
+              ⚠ 공유 유틸 getTextareaCaretRect 는 호출만(무변경) — PHRASE-BROKEN-REGRESS·PINGPONG5 회귀 가드. */}
+          {phrasePopoverVisible && (filteredSuperPhrases.length > 0 || filteredPhrases.length > 0) && (() => {
+            const ta = clinicalRef.current;
+            if (!ta) return null;
+            const POPOVER_MAX = 300;
+            const taRect = ta.getBoundingClientRect();
+            // single-line 폭에 맞춰 드롭다운 폭 정렬(최소 240, viewport 안전 clamp).
+            const POPOVER_W = Math.min(Math.max(240, taRect.width), window.innerWidth - 16);
+            // single-line 은 caret 좌표보다 input 자체 하단/상단 기준이 자연스러움 → input 경계로 앵커.
+            // (getTextareaCaretRect 는 줄바꿈 없는 한 줄이라 lineHeight 만 안전 참조 — 호출 무변경/회귀가드.)
+            const lineBottom = taRect.bottom;
+            const spaceBelow = window.innerHeight - lineBottom;
+            // AC-2: 아래 공간 부족(테이블 하단 행)이면 위로 열기(flip) + 상단 8px clamp.
+            const top = spaceBelow > POPOVER_MAX
+              ? lineBottom + 4
+              : Math.max(8, taRect.top - POPOVER_MAX - 4);
+            const left = Math.min(Math.max(8, taRect.left), window.innerWidth - POPOVER_W - 8);
+            return createPortal(
+              <div
+                style={{ position: 'fixed', top, left, width: POPOVER_W, maxHeight: POPOVER_MAX }}
+                className="z-[200] overflow-y-auto rounded-lg border bg-popover shadow-xl"
+                onMouseDown={(e) => e.preventDefault()}
+                data-testid="clinical-singleline-phrase-popover"
+              >
+                {filteredSuperPhrases.map((sp) => (
+                  <button
+                    key={`sp-${sp.id}`}
+                    type="button"
+                    onClick={() => applySuperPhraseFromSlash(sp)}
+                    disabled={gateChecking}
+                    className="w-full text-left px-3 py-2 hover:bg-teal-50 flex items-start gap-2 border-b border-border/50 disabled:opacity-50"
+                    data-testid="clinical-singleline-super-option"
+                  >
+                    <Sparkles className="h-3 w-3 text-teal-600 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium truncate">{sp.name}</div>
+                      <div className="text-[10px] text-muted-foreground line-clamp-1">
+                        {[sp.diagnosis, sp.clinical_progress].filter(Boolean).join(' · ') || `처방 ${sp.rx_items.length}개`}
+                      </div>
                     </div>
-                  </div>
-                </button>
-              ))}
-              {filteredPhrases.map((p) => (
-                <button
-                  key={`p-${p.id}`}
-                  type="button"
-                  onClick={() => insertPhrase(p)}
-                  className="w-full text-left px-3 py-2 hover:bg-muted flex items-start gap-2 border-b border-border/50 last:border-0"
-                  data-testid="clinical-singleline-phrase-option"
-                >
-                  {p.shortcut_key && (
-                    <Badge variant="secondary" className="text-[9px] shrink-0 mt-0.5 h-4 px-1 font-mono">
-                      //{p.shortcut_key}
-                    </Badge>
-                  )}
-                  <div className="min-w-0">
-                    <div className="text-xs font-medium truncate">{p.name}</div>
-                    <div className="text-[10px] text-muted-foreground line-clamp-1">{p.content}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
+                  </button>
+                ))}
+                {filteredPhrases.map((p) => (
+                  <button
+                    key={`p-${p.id}`}
+                    type="button"
+                    onClick={() => insertPhrase(p)}
+                    className="w-full text-left px-3 py-2 hover:bg-muted flex items-start gap-2 border-b border-border/50 last:border-0"
+                    data-testid="clinical-singleline-phrase-option"
+                  >
+                    {p.shortcut_key && (
+                      <Badge variant="secondary" className="text-[9px] shrink-0 mt-0.5 h-4 px-1 font-mono">
+                        //{p.shortcut_key}
+                      </Badge>
+                    )}
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium truncate">{p.name}</div>
+                      <div className="text-[10px] text-muted-foreground line-clamp-1">{p.content}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>,
+              document.body
+            );
+          })()}
         </div>
         {/* 저장 — handleSave 그대로 재사용. 읽기전용(당일 외)일 땐 미노출(오기입 방지, 기존 정책 동일).
             ⚠ 한 줄(singleLine) 유지를 위해 별도 경고 <p> 미추가 — 미선택 시 select rose 보더 + handleSave toast 로 안내
