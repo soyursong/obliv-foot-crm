@@ -135,13 +135,15 @@ export function StatusContextMenu({
       {stages.map((status, i) => {
         const isCurrent = status === checkIn.status;
         const isPast = i < currentIdx;
-        const isBackward = isPast && !isCurrent;
         const isLaser = status === 'laser';
         const isTreatment = status === 'preconditioning';
         const isConsult = status === 'consultation';
-        const showSubArrow = isLaser && hasLaserRooms && !isCurrent && !isBackward;
-        const showTreatArrow = isTreatment && hasTreatmentRooms && !isCurrent && !isBackward;
-        const showConsultArrow = isConsult && hasConsultRooms && !isCurrent && !isBackward;
+        // T-20260613-foot-SLOT-BACKWARD-MOVE-UNLOCK: 역방향(이전 단계) 이동 차단 해제.
+        // 임상상 역행 필수(예: 수납대기→후상담 요청 시 상담 단계 복귀). isBackward 가드 제거 — 역방향 방 서브메뉴도 노출.
+        // opacity-50 시각 힌트는 유지(과거 단계임을 표시), 클릭/서브메뉴/실이동만 허용.
+        const showSubArrow = isLaser && hasLaserRooms && !isCurrent;
+        const showTreatArrow = isTreatment && hasTreatmentRooms && !isCurrent;
+        const showConsultArrow = isConsult && hasConsultRooms && !isCurrent;
 
         return (
           <div key={status}>
@@ -150,11 +152,12 @@ export function StatusContextMenu({
                 'flex w-full items-center gap-1 px-2 py-1 text-[11px] min-h-[28px] transition',
                 isCurrent && 'bg-teal-50 text-teal-700 font-semibold',
                 isPast && 'text-muted-foreground opacity-50',
-                !isCurrent && !isPast && 'hover:bg-muted/60',
+                // 역방향 단계도 클릭 가능 — hover 피드백 제공 (isPast 포함, 현재 단계만 제외)
+                !isCurrent && 'hover:bg-muted/60',
               )}
               onClick={() => {
                 if (isCurrent) { onClose(); return; }
-                if (isBackward) return;
+                // T-20260613-foot-SLOT-BACKWARD-MOVE-UNLOCK: isBackward return 제거 — 역방향 이동 허용
                 // 상담실 목록이 있으면 서브메뉴 토글 — T-20260516-foot-CONSULT-KANBAN-MISS AC-6
                 if (isConsult && hasConsultRooms) {
                   setShowConsultSubmenu((v) => !v);
@@ -173,7 +176,7 @@ export function StatusContextMenu({
                 onStatusChange(checkIn, status);
                 onClose();
               }}
-              disabled={isCurrent || isBackward}
+              disabled={isCurrent}
             >
               <span
                 className={cn(
