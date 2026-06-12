@@ -22,8 +22,10 @@ export default function DoctorTools() {
   // 모든 역할이 진료 알림판(진료부 통합 대시보드)을 기본 화면으로 — 상시 켜놓는 단일 창 동선.
   const [activeTab, setActiveTab] = useState('call_dashboard');
 
+  // T-20260612-foot-DOCDASH-FULLWIDTH-INLINE-EMOJI AC-1 (문지은 대표원장):
+  //   max-w-5xl(너비 제한) 해제 → 컨테이너 가로 100% 풀폭. 페이지 여백 p-4/md:p-6 → p-2/md:p-3 축소(화면 꽉).
   return (
-    <div className="h-full overflow-auto p-4 md:p-6 space-y-4 max-w-5xl">
+    <div className="h-full overflow-auto p-2 md:p-3 space-y-4 w-full">
       <div>
         {/* T-20260609-foot-DOCDASH-LABEL-RX-REFINE item1: 헤더 라벨 오기 교정('진료 도구'→'진료대시보드') */}
         <h1 className="text-lg font-bold">진료대시보드</h1>

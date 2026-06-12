@@ -622,6 +622,7 @@ export function RxConfirmedSummary({
   onCancelled,
   className,
   label = '처방완료',
+  plainText = false,
   checkInStatus,
   checkedInAt,
   checkInFlag,
@@ -642,6 +643,12 @@ export function RxConfirmedSummary({
    * DoctorCallDashboard 등 다른 소비처는 기본값 유지 → 무회귀.
    */
   label?: string;
+  /**
+   * T-20260612-foot-DOCDASH-FULLWIDTH-INLINE-EMOJI item9(문지은 대표원장):
+   * 진료대시보드 처방 셀은 "버튼 chrome 금지, 그냥 파란글씨 '처방완료'". true면 테두리/배경 버튼이 아니라
+   * 파란 텍스트 링크(취소 재클릭 동선 보존)로 렌더. 다른 소비처(기본 false)는 종전 버튼 affordance 유지 → 무회귀.
+   */
+  plainText?: boolean;
   /**
    * T-20260609-foot-DOCPATIENTLIST-RXCANCEL-DISCHARGE-GATE: 귀가 게이트 컨텍스트.
    * 둘 다(특히 checkedInAt) 주어졌을 때만 게이팅 — 귀가/전날/미래/취소 환자는 취소 차단 + 차트 안내.
@@ -738,25 +745,36 @@ export function RxConfirmedSummary({
               : label
         }
         className={cn(
-          // 6FIX AC-1: 확정 후에도 명시적 버튼 affordance(테두리+배경) 복원. 무테두리 글씨 폐지.
-          //   AC-2 O=sky 정합 → 확정 상태도 sky 톤 버튼. 취소 가능 시 hover=rose(취소 신호).
-          'inline-flex shrink-0 items-center gap-0.5 rounded-md border px-2 py-1 text-[11px] font-semibold shadow-sm transition',
-          cancellable && 'cursor-pointer border-sky-300 bg-sky-50 text-sky-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600',
-          blockedByGate && 'cursor-help border-sky-200 bg-sky-50 text-sky-700',
-          !interactive && !blockedByGate && 'cursor-default border-sky-200 bg-sky-50 text-sky-700',
-          'disabled:opacity-60',
+          plainText
+            ? // FULLWIDTH-INLINE-EMOJI item9: 버튼 chrome 제거 → 파란글씨 '처방완료'. 취소 가능 시 hover=rose 신호.
+              cn(
+                'inline-flex shrink-0 items-center gap-0.5 bg-transparent p-0 text-[13px] font-semibold text-sky-600 transition',
+                cancellable && 'cursor-pointer hover:text-rose-600 hover:underline underline-offset-2',
+                blockedByGate && 'cursor-help',
+                !interactive && !blockedByGate && 'cursor-default',
+                'disabled:opacity-60',
+              )
+            : // 6FIX AC-1: 확정 후에도 명시적 버튼 affordance(테두리+배경) 복원. 무테두리 글씨 폐지.
+              //   AC-2 O=sky 정합 → 확정 상태도 sky 톤 버튼. 취소 가능 시 hover=rose(취소 신호).
+              cn(
+                'inline-flex shrink-0 items-center gap-0.5 rounded-md border px-2 py-1 text-[11px] font-semibold shadow-sm transition',
+                cancellable && 'cursor-pointer border-sky-300 bg-sky-50 text-sky-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600',
+                blockedByGate && 'cursor-help border-sky-200 bg-sky-50 text-sky-700',
+                !interactive && !blockedByGate && 'cursor-default border-sky-200 bg-sky-50 text-sky-700',
+                'disabled:opacity-60',
+              ),
         )}
       >
         {cancelMut.isPending ? (
           <Loader2 className="h-3 w-3 animate-spin" />
-        ) : (
+        ) : plainText ? null : (
           <CheckCircle2 className="h-3 w-3" />
         )}
         {label}
       </button>
       {summary && (
         <span
-          className="truncate text-[11px] text-foreground"
+          className={cn('truncate text-foreground', plainText ? 'text-[13px]' : 'text-[11px]')}
           data-testid="rx-confirmed-drugs"
           title={summary}
         >

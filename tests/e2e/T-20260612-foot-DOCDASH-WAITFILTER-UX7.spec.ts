@@ -86,8 +86,8 @@ test.describe('시나리오2 — UX 표시(AC-2~8)', () => {
     expect(theads.length).toBe(2);
     for (const th of theads) expect(th).toContain('text-center');
     expect(s).not.toContain('bg-gray-50/70 text-left');
-    // 데이터 셀 중앙정렬 다수
-    expect((s.match(/px-3 py-2 text-center/g) ?? []).length).toBeGreaterThanOrEqual(12);
+    // 데이터 셀 중앙정렬 다수 — FULLWIDTH-INLINE-EMOJI AC-1: 셀 여백 px-3→px-2 축소.
+    expect((s.match(/px-2 py-2 text-center/g) ?? []).length).toBeGreaterThanOrEqual(12);
   });
   test('AC-6 처방 빈값 "-"(처방 없음 텍스트 0)', () => {
     const s = DASH();
@@ -102,7 +102,8 @@ test.describe('시나리오2 — UX 표시(AC-2~8)', () => {
     const compThead = s.slice(s.indexOf('doctor-completed-table'), s.indexOf('doctor-completed-rows'));
     expect((compThead.match(/<th /g) ?? []).length).toBe(7);
     const compOrder = (compThead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
-    expect(compOrder).toEqual(['이름', '상태', '방', '오늘시술', '처방', '임상경과', '진료차트']);
+    // CHARTNO-COL-SPLIT-P1(차트번호 칼럼) + FULLWIDTH-INLINE-EMOJI AC-3(진료차트 칼럼 제거).
+    expect(compOrder).toEqual(['이름', '차트번호', '상태', '방', '오늘시술', '처방', '임상경과']);
     // 호출 thead 는 경과시간 유지(8칼럼)
     const callThead = s.slice(s.indexOf('doctor-call-feed-table'), s.indexOf('doctor-call-feed-rows'));
     expect((callThead.match(/<th /g) ?? []).length).toBe(8);

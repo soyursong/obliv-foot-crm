@@ -46,18 +46,19 @@ test.describe('T-20260612-foot-CHARTNO-COL-SPLIT-P1', () => {
     await loginIfNeeded(page);
   });
 
-  // S1: 진료부 통합 대시보드 — 차트번호가 이름 옆 독립 칼럼(호출 9 / 완료 8), 빈칸 금지
-  test('S1: DoctorCallDashboard 차트번호 독립 칼럼 분리(호출 9칼럼/완료 8칼럼)', async ({ page }) => {
+  // S1: 진료부 통합 대시보드 — 차트번호가 이름 옆 독립 칼럼, 빈칸 금지.
+  //   T-20260612-foot-DOCDASH-FULLWIDTH-INLINE-EMOJI AC-3 supersede: 진료차트 칼럼 제거(이름 옆 🩺 이모지 버튼) → 호출 8 / 완료 7.
+  test('S1: DoctorCallDashboard 차트번호 독립 칼럼 분리(호출 8칼럼/완료 7칼럼, 진료차트 칼럼 제거)', async ({ page }) => {
     await page.goto(`${BASE_URL}/admin/doctor-tools`);
     await page.waitForLoadState('networkidle').catch(() => {});
 
     const dash = page.getByTestId('doctor-call-dashboard');
     if (await dash.isVisible({ timeout: 8000 }).catch(() => false)) {
-      // 호출 테이블 — thead 9칼럼 + '차트번호' 헤더 존재(독립 칼럼)
+      // 호출 테이블 — thead 8칼럼(진료차트 칼럼 제거) + '차트번호' 헤더 존재(독립 칼럼)
       const feedTable = page.getByTestId('doctor-call-feed-table');
       if (await feedTable.isVisible({ timeout: 3000 }).catch(() => false)) {
         const th = feedTable.locator('thead th');
-        expect(await th.count()).toBe(9);
+        expect(await th.count()).toBe(8);
         await expect(feedTable.locator('thead th', { hasText: '차트번호' })).toHaveCount(1);
         // 이름과 차트번호가 인접(이름=1번째, 차트번호=2번째 헤더)
         await expect(th.nth(0)).toHaveText('이름');

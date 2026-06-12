@@ -29,9 +29,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = (rel: string) => readFileSync(path.join(__dirname, '..', '..', 'src', rel), 'utf8');
 const DASH = () => SRC('components/doctor/DoctorCallDashboard.tsx');
 
-/** CallFeedRow + CompletedRow 의 4개 셀 액션 버튼 className 토큰을 추출(공통 상수 사용 검증용). */
-const ACTION_BTN_TESTIDS = [
-  'doctor-call-rx-btn',
+// T-20260612-foot-DOCDASH-FULLWIDTH-INLINE-EMOJI(대표원장) supersede:
+//   임상경과·진료차트 셀 액션 → 이름 옆 이모지 버튼(NAME_EMOJI_BTN, 테두리형)으로 이동.
+//   남은 셀 텍스트-링크(CELL_ACTION_BTN) 액션 = 처방 토글 2벌.
+const CELL_LINK_BTN_TESTIDS = ['doctor-call-rx-btn', 'doctor-completed-rx-btn'];
+//   이모지 인라인 버튼(임상경과 📝 / 진료차트 🩺) = NAME_EMOJI_BTN.
+const EMOJI_BTN_TESTIDS = [
   'doctor-call-chart-btn',
   'doctor-call-fullchart-btn',
   'doctor-completed-chart-btn',
@@ -58,11 +61,19 @@ test.describe('시나리오1 — 셀 텍스트 위주 미니멀 표시', () => {
     expect(src).toMatch(/const CELL_ACTION_BTN =/);
     expect(src).toMatch(/CELL_ACTION_BTN[\s\S]{0,260}hover:underline/);
     expect(src).not.toMatch(/CELL_ACTION_BTN[\s\S]{0,260}bg-(teal|indigo|emerald)-50/);
-    // 5개 액션 버튼이 모두 className={CELL_ACTION_BTN} 로 통일
-    for (const id of ACTION_BTN_TESTIDS) {
+    // 처방 토글 2벌은 텍스트-링크 상수(CELL_ACTION_BTN) 유지.
+    for (const id of CELL_LINK_BTN_TESTIDS) {
       const block = src.match(new RegExp(`data-testid="${id}"[\\s\\S]{0,200}`));
       expect(block, `${id} 블록 존재`).not.toBeNull();
       expect(block![0]).toContain('className={CELL_ACTION_BTN}');
+    }
+    // FULLWIDTH-INLINE-EMOJI AC-2: 임상경과·진료차트 버튼은 이름 옆 이모지 버튼(NAME_EMOJI_BTN, 테두리형)으로 이동.
+    expect(src).toMatch(/const NAME_EMOJI_BTN =/);
+    expect(src).toMatch(/NAME_EMOJI_BTN[\s\S]{0,220}border/); // 테두리(버튼처럼)
+    for (const id of EMOJI_BTN_TESTIDS) {
+      const block = src.match(new RegExp(`data-testid="${id}"[\\s\\S]{0,200}`));
+      expect(block, `${id} 블록 존재`).not.toBeNull();
+      expect(block![0]).toContain('className={NAME_EMOJI_BTN}');
     }
   });
 
@@ -79,8 +90,8 @@ test.describe('시나리오1 — 셀 텍스트 위주 미니멀 표시', () => {
     const src = DASH();
     // 호출 행: red/gray dot
     expect(src).toMatch(/rounded-full', inactive \? 'bg-gray-300' : 'bg-red-500'/);
-    // 완료 행: emerald dot
-    expect(src).toMatch(/h-1\.5 w-1\.5 rounded-full bg-emerald-500/);
+    // 완료 행: STATUS-SPLIT supersede — 귀가(emerald)/귀가대기 원내잔류(amber) 단색 dot.
+    expect(src).toMatch(/discharged \? 'bg-emerald-500' : 'bg-amber-500'/);
     // 구 색 박스 배지 잔존 금지
     expect(src).not.toMatch(/bg-red-100 text-red-700/);
     expect(src).not.toMatch(/rounded-full bg-emerald-100 px-1\.5 py-px text-\[10px\] font-semibold text-emerald-700/);
@@ -155,10 +166,10 @@ test.describe('시나리오2 — 액션 동선 유지 + 테이블 구조 회귀 
     expect(src).toMatch(/<TreatmentCompleteButton/);
     expect(src).toMatch(/<DoctorAckButton/);
     expect(src).toMatch(/<DoctorAckBadge/);
-    // 진료완료 = 텍스트 링크화(emerald 텍스트 accent 유지, 박스 제거)
+    // 진료완료 버튼 = 확정(confirmed) 단계 강조 박스(emerald) — 후속 supersede 로 박스 복원.
+    //   핵심 회귀 가드는 '버튼/컴포넌트 보존'(위 3종) + emerald accent 유지.
     const block = src.match(/data-testid="doctor-call-complete-btn"[\s\S]{0,260}/);
     expect(block, '진료완료 버튼 블록').not.toBeNull();
-    expect(block![0]).not.toContain('bg-emerald-50');
     expect(block![0]).toContain('text-emerald-700');
   });
 });

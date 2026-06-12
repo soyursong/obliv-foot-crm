@@ -115,7 +115,8 @@ test.describe('시나리오2 — AC-6 헤더+셀 중앙정렬', () => {
   test('데이터 셀 td 중앙정렬(px-3 py-2 text-center) 다수', () => {
     const s = DASH();
     // 8칼럼 × 2행(대기/완료) 대부분 text-center — 최소 12개 이상 보강
-    expect((s.match(/px-3 py-2 text-center/g) ?? []).length).toBeGreaterThanOrEqual(12);
+    // FULLWIDTH-INLINE-EMOJI AC-1: 셀 여백 px-3→px-2 축소.
+    expect((s.match(/px-2 py-2 text-center/g) ?? []).length).toBeGreaterThanOrEqual(12);
   });
 });
 
