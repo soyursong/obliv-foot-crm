@@ -11,7 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { todaySeoulISODate } from '@/lib/format';
+import { todaySeoulISODate, chartNoBadge } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
 import { Loader2, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
@@ -43,6 +43,8 @@ interface PatientRow {
   /** T-20260609-foot-DOCPATIENTLIST-RXCANCEL-DISCHARGE-GATE: 귀가 차단 시 차트 진입(useChart.openChart). */
   customer_id: string | null;
   customer_name: string;
+  /** T-20260612-foot-CHARTNO-B2-P1: 이름 옆 차트번호 인접 표기용(customers join). 미발번이면 null → '#미발번'. */
+  chart_number: string | null;
   visit_type: 'new' | 'returning' | 'experience';
   status: CheckInStatus;
   /** T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)/귀가(done) 시각 구분 + 처방 게이트 컨텍스트.
@@ -269,7 +271,8 @@ function usePatientsByDate(clinicId: string | null, dateISO: string) {
           // T-20260609-foot-DOCPATIENTLIST-DATEMODE-HISTORY: healer_laser_confirm 추가(기존 컬럼, SELECT 확장만 — AC-3)
           // T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: *_room 추가(기존 컬럼, SELECT 확장만) — 치료실명 표시.
           // T-20260610-foot-DOCDASH-STATUS-SPLIT: status_flag 추가(기존 컬럼, SELECT 확장만) — 진료완료/귀가 구분.
-          'id, customer_id, customer_name, visit_type, status, status_flag, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, treatment_category, treatment_contents, treatment_kind, healer_laser_confirm, consultation_room, treatment_room, laser_room, examination_room, reservation:reservation_id(booking_memo)',
+          // T-20260612-foot-CHARTNO-B2-P1: 이름 옆 차트번호 인접 표기용 customers join 추가(read-only, DB 무변경).
+          'id, customer_id, customer_name, visit_type, status, status_flag, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, treatment_category, treatment_contents, treatment_kind, healer_laser_confirm, consultation_room, treatment_room, laser_room, examination_room, reservation:reservation_id(booking_memo), customers!customer_id(chart_number)',
         )
         .eq('clinic_id', clinicId)
         .gte('checked_in_at', `${day}T00:00:00+09:00`)
@@ -286,7 +289,15 @@ function usePatientsByDate(clinicId: string | null, dateISO: string) {
         } else if (resv && typeof resv === 'object' && !Array.isArray(resv)) {
           booking_memo = (resv as { booking_memo?: string | null }).booking_memo ?? null;
         }
-        return { ...row, booking_memo } as unknown as PatientRow;
+        // T-20260612-foot-CHARTNO-B2-P1: customers 임베드(object|array 양쪽 흡수)에서 차트번호 평탄화.
+        const cust = row['customers'];
+        let chart_number: string | null = null;
+        if (Array.isArray(cust) && cust.length > 0) {
+          chart_number = (cust[0] as { chart_number?: string | null }).chart_number ?? null;
+        } else if (cust && typeof cust === 'object') {
+          chart_number = (cust as { chart_number?: string | null }).chart_number ?? null;
+        }
+        return { ...row, booking_memo, chart_number } as unknown as PatientRow;
       });
     },
     refetchInterval: 30_000,
@@ -530,12 +541,16 @@ function PatientRow({
             <VisitTypeBadge type={row.visit_type} />
           </div>
           {/* 이름 */}
+          {/* T-20260612-foot-CHARTNO-B2-P1: 이름 + 차트번호 서브텍스트(별도 칼럼 신설 금지). 미발번도 '#미발번' 명시. */}
           <span
-            className="text-sm font-semibold truncate text-center"
-            title={row.customer_name}
+            className="flex min-w-0 flex-col items-center"
+            title={`${row.customer_name} ${chartNoBadge(row.chart_number)}`}
             data-testid="patient-name"
           >
-            {row.customer_name}
+            <span className="max-w-full truncate text-sm font-semibold">{row.customer_name}</span>
+            <span className="font-mono text-[10px] font-normal text-muted-foreground/70" data-testid="patient-chartno">
+              {chartNoBadge(row.chart_number)}
+            </span>
           </span>
           {/* 처방 상태 배지 (처방전 O/X) — 그날의 사실 기록(read-only) */}
           <div className="flex justify-center">
@@ -591,12 +606,16 @@ function PatientRow({
         {/* ④ 이름 — 고정 너비(글자수 변동 무관), 초과 시 truncate.
             T-20260609-foot-DOCDASH-LABEL-RX-REFINE item4: 셀 내 가로 중앙정렬(text-center).
             grid items-center(세로 중앙)는 기존 유지 — 컬럼 정의 보존, alignment만 보정. */}
+        {/* T-20260612-foot-CHARTNO-B2-P1: 이름 + 차트번호 서브텍스트(별도 칼럼 신설 금지). 미발번도 '#미발번' 명시. */}
         <span
-          className="text-sm font-semibold truncate text-center"
-          title={row.customer_name}
+          className="flex min-w-0 flex-col items-center"
+          title={`${row.customer_name} ${chartNoBadge(row.chart_number)}`}
           data-testid="patient-name"
         >
-          {row.customer_name}
+          <span className="max-w-full truncate text-sm font-semibold">{row.customer_name}</span>
+          <span className="font-mono text-[10px] font-normal text-muted-foreground/70" data-testid="patient-chartno">
+            {chartNoBadge(row.chart_number)}
+          </span>
         </span>
 
         {/* ③ 처방 상태 배지 — 이름 오른쪽 + hover 처방내용 툴팁.
