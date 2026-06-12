@@ -120,6 +120,7 @@ interface ReservationDraft {
   booking_memo: string;  // T-20260504-foot-MEMO-RESTRUCTURE: 예약 경로 확인용
   visit_route?: string;  // AC-5: 초진/예약없이방문 방문경로 (customers.visit_route에 저장)
   referral_name?: string; // T-20260515-foot-REFERRAL-NAME: 지인소개 시 소개자 성함
+  registrar_type?: string; // T-20260612-foot-RESV-ROUTE-AUTOCLASS: 등록자 선택('desk'|'tm') → 방문경로 대분류 자동 고정 (form-only, DB 미저장)
   existingId?: string;
   // T-20260610-foot-RESV-OVERHAUL-7 AC-6/AC-7: 예약상세(수정) 모달 푸터 버튼 분기용 상태
   //   confirmed → [저장][예약취소][예약삭제] / cancelled → [예약복원][저장][예약삭제]
@@ -2716,6 +2717,31 @@ function ReservationEditor({
           )}
 
           {/* AC-4: [서비스] 필드 제거 (DB 컬럼은 유지, UI 비노출) */}
+          {/* T-20260612-foot-RESV-ROUTE-AUTOCLASS: 등록자 선택 드롭다운 — 방문경로 위에 우선 배치.
+              선택값 → 방문경로 대분류 자동 고정 (데스크→인바운드 / TM팀→TM[대분류 '티엠']).
+              GUARD: 신규등록 form(Reservations.tsx)에만. 예약상세팝업 미변경. enum 신설 금지(VISIT_ROUTE_OPTIONS 재사용). */}
+          {state.visit_type === 'new' && (
+            <div className="space-y-1.5">
+              <Label>등록자 선택 <span className="text-muted-foreground font-normal text-xs">(선택 시 방문경로 자동 분류)</span></Label>
+              <select
+                value={state.registrar_type ?? ''}
+                onChange={(e) => {
+                  const rt = e.target.value;
+                  // 등록자 유형 → 방문경로 대분류 자동 고정 (단일 setState로 동기 세팅 → race 방지)
+                  const autoRoute = rt === 'desk' ? '인바운드' : rt === 'tm' ? 'TM' : null;
+                  setState((s) =>
+                    s ? { ...s, registrar_type: rt, ...(autoRoute !== null ? { visit_route: autoRoute } : {}) } : s
+                  );
+                }}
+                data-testid="registrar-type-select"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">— 선택 안 함 —</option>
+                <option value="desk">데스크 직원 직접 등록</option>
+                <option value="tm">TM팀 등록</option>
+              </select>
+            </div>
+          )}
           {/* AC-5: 방문경로 드롭다운 — 초진만 표시, 재진 미표시 */}
           {state.visit_type === 'new' && (
             <div className="space-y-1.5">
@@ -2723,6 +2749,7 @@ function ReservationEditor({
               <select
                 value={state.visit_route ?? ''}
                 onChange={(e) => update('visit_route', e.target.value)}
+                data-testid="visit-route-select"
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="">— 선택 안 함 —</option>
