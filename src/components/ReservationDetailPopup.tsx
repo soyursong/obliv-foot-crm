@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/select';
 import { supabase } from '@/lib/supabase';
 import { VISIT_TYPE_KO } from '@/lib/status';
-import { formatPhone } from '@/lib/format';
+import { formatPhone, chartNoBadge } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { ReservationMemoTimeline } from '@/components/ReservationMemoTimeline';
 // T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 공유 패널
@@ -509,6 +509,8 @@ export function ReservationDetailPopup({
           <DialogHeader className="px-6 pt-5 pb-3 border-b shrink-0">
             <DialogTitle className="flex flex-wrap items-center gap-2 text-base">
               <span>{reservation.customer_name}</span>
+              {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
+              <span className="text-xs font-mono font-normal text-teal-600">{chartNoBadge(customer?.chart_number ?? null)}</span>
               <span
                 className={cn(
                   'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',

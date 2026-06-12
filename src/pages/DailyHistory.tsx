@@ -19,7 +19,7 @@ import {
 
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
-import { formatAmount } from '@/lib/format';
+import { formatAmount, chartNoBadge, chartNoDisplay } from '@/lib/format';
 // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
 import { PaymentEditDialog, PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 import type { EditMode, PaymentRowForEdit } from '@/components/PaymentEditDialog';
@@ -138,7 +138,8 @@ export default function DailyHistory() {
     const [ciRes, trRes, payRes, pkgPayRes, resvRes] = await Promise.all([
       supabase
         .from('check_ins')
-        .select('*')
+        // T-20260612-foot-CHARTNO-B2-P2: 체크인 카드 환자명 옆 차트번호 인접 표시용 embed
+        .select('*, customers(name, chart_number)')
         .eq('clinic_id', clinic.id)
         .gte('checked_in_at', start)
         .lte('checked_in_at', end)
@@ -165,7 +166,8 @@ export default function DailyHistory() {
         .lte('created_at', end),
       supabase
         .from('reservations')
-        .select('*')
+        // T-20260612-foot-CHARTNO-B2-P2: 미내원 예약 테이블 차트번호 칼럼용 embed
+        .select('*, customers(name, chart_number)')
         .eq('clinic_id', clinic.id)
         .eq('reservation_date', date),
     ]);
@@ -528,6 +530,8 @@ export default function DailyHistory() {
                   <tr className="border-b text-left text-xs text-muted-foreground">
                     <th className="pb-2 font-medium">예약 시간</th>
                     <th className="pb-2 font-medium">고객명</th>
+                    {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접 칼럼(분리 유지) */}
+                    <th className="pb-2 font-medium">차트번호</th>
                     <th className="pb-2 font-medium">연락처</th>
                     <th className="pb-2 font-medium">방문 유형</th>
                     <th className="pb-2 font-medium">상태</th>
@@ -540,6 +544,8 @@ export default function DailyHistory() {
                       <tr key={r.id} className="border-b last:border-0">
                         <td className="py-2 tabular-nums">{r.reservation_time?.slice(0, 5)}</td>
                         <td className="py-2 font-medium">{r.customer_name ?? '—'}</td>
+                        {/* T-20260612-foot-CHARTNO-B2-P2: 차트번호 인접 칼럼(미발번 명시) */}
+                        <td className="py-2 font-mono text-xs text-muted-foreground">{chartNoDisplay(r.customers?.chart_number ?? null)}</td>
                         <td className="py-2 text-muted-foreground">{r.customer_phone ?? '—'}</td>
                         <td className="py-2">
                           <Badge className={VISIT_TYPE_COLOR[r.visit_type]}>
@@ -658,6 +664,8 @@ export default function DailyHistory() {
                   {/* Name + visit type */}
                   <div className="flex min-w-0 flex-1 items-center gap-2">
                     <span className="truncate font-medium">{ci.customer_name}</span>
+                    {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
+                    <span className="shrink-0 font-mono text-xs text-teal-600">{chartNoBadge(ci.customers?.chart_number ?? null)}</span>
                     <Badge className={VISIT_TYPE_COLOR[ci.visit_type]}>
                       {VISIT_TYPE_KO[ci.visit_type]}
                     </Badge>

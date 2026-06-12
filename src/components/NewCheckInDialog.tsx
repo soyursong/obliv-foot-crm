@@ -305,7 +305,11 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
         {linkedReservation && (
           <div className="flex items-center justify-between rounded border bg-teal-50 px-3 py-2 text-sm">
             <span>
+              {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
               예약 연결: <strong>{linkedReservation.customer_name}</strong>{' '}
+              {linkedReservation.customer_id && (
+                <span className="font-mono text-[11px] text-teal-600">{chartNoBadge(resvChartMap.get(linkedReservation.customer_id))}</span>
+              )}{' '}
               {linkedReservation.reservation_time?.slice(0, 5)}
             </span>
             <Button

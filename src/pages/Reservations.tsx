@@ -956,7 +956,7 @@ export default function Reservations() {
     if (ci.reservation_id) {
       const { data } = await supabase
         .from('check_ins')
-        .select('*')
+        .select('*, customers(name, chart_number)')
         .eq('reservation_id', ci.reservation_id)
         .maybeSingle();
       if (data) {
@@ -1218,6 +1218,10 @@ export default function Reservations() {
             <span className="font-semibold">
               {clipboard.resv.customer_name}
             </span>
+            {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
+            {clipboard.resv.customer_id && (
+              <span className="ml-1 font-mono text-amber-700">{chartNoBadge(resvChartMap.get(clipboard.resv.customer_id))}</span>
+            )}
             {clipboardTarget
               ? ` → ${clipboardTarget.date} ${clipboardTarget.time} (Ctrl+V로 붙여넣기)`
               : ' — 슬롯 클릭 후 Ctrl+V / Esc로 취소'}

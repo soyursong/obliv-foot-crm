@@ -17,7 +17,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
-import { formatAmount, parseAmount } from '@/lib/format';
+import { formatAmount, parseAmount, chartNoBadge } from '@/lib/format';
 import { isSinglePaymentByCount } from '@/lib/footBilling';
 import { cn } from '@/lib/utils';
 import { InsuranceCopaymentPanel } from '@/components/insurance/InsuranceCopaymentPanel';
@@ -549,6 +549,8 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
             <DialogTitle className="flex items-center gap-2">
               <CreditCard className="h-5 w-5" />
               결제 — {checkIn.customer_name}
+              {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
+              <span className="text-sm font-mono font-normal text-teal-700">{chartNoBadge(checkIn.customers?.chart_number ?? null)}</span>
               {checkIn.queue_number != null && (
                 <span className="text-sm text-teal-700">#{checkIn.queue_number}</span>
               )}

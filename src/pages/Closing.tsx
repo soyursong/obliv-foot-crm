@@ -22,7 +22,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { getClinic } from '@/lib/clinic';
-import { formatAmount, formatPhone } from '@/lib/format';
+import { formatAmount, formatPhone, chartNoBadge } from '@/lib/format';
 import { METHOD_KO, STATUS_KO, VISIT_TYPE_KO } from '@/lib/status';
 import type { CheckIn, CheckInStatus, Clinic, Staff, VisitType } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -91,6 +91,8 @@ interface UnpaidCheckIn {
   customer_phone: string | null;
   status: string;
   checked_in_at: string;
+  // T-20260612-foot-CHARTNO-B2-P2: 경고카드 환자명 단독 노출 0 — 차트번호 인접 표기용 embed(읽기 전용)
+  customers?: { chart_number: string | null } | null;
 }
 
 interface DailyClosingRow {
@@ -312,14 +314,15 @@ export default function Closing() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('check_ins')
-        .select('id, customer_name, customer_phone, status, checked_in_at')
+        .select('id, customer_name, customer_phone, status, checked_in_at, customers(chart_number)')
         .eq('clinic_id', clinic!.id)
         .eq('status', 'payment_waiting')
         .gte('checked_in_at', start)
         .lte('checked_in_at', end)
         .order('checked_in_at', { ascending: true });
       if (error) throw error;
-      return (data ?? []) as UnpaidCheckIn[];
+      // T-20260612-foot-CHARTNO-B2-P2: supabase embed customers는 배열로 추론 → unknown 경유 캐스트
+      return (data ?? []) as unknown as UnpaidCheckIn[];
     },
   });
 
@@ -441,14 +444,15 @@ export default function Closing() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('check_ins')
-        .select('id, customer_name, customer_phone, status, checked_in_at')
+        .select('id, customer_name, customer_phone, status, checked_in_at, customers(chart_number)')
         .eq('clinic_id', clinic!.id)
         .not('status', 'in', '("done","cancelled","payment_waiting")')
         .gte('checked_in_at', start)
         .lte('checked_in_at', end)
         .order('checked_in_at', { ascending: true });
       if (error) throw error;
-      return (data ?? []) as UnpaidCheckIn[];
+      // T-20260612-foot-CHARTNO-B2-P2: supabase embed customers는 배열로 추론 → unknown 경유 캐스트
+      return (data ?? []) as unknown as UnpaidCheckIn[];
     },
   });
 
@@ -1178,6 +1182,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                   >
                     <span className="flex items-center gap-2">
                       <span>{c.customer_name}</span>
+                      {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
+                      <span className="font-mono text-xs text-orange-700">{chartNoBadge(c.customers?.chart_number ?? null)}</span>
                       <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-orange-400 text-orange-800">
                         {STATUS_KO[c.status as CheckInStatus] ?? c.status}
                       </Badge>
@@ -1205,12 +1211,13 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                     key={c.id}
                     className="flex w-full justify-between rounded px-1 py-0.5 hover:bg-amber-100 transition text-left"
                     onClick={async () => {
-                      const { data } = await supabase.from('check_ins').select('*').eq('id', c.id).maybeSingle();
+                      const { data } = await supabase.from('check_ins').select('*, customers(name, chart_number)').eq('id', c.id).maybeSingle();
                       if (data) setPayTarget(data as CheckIn);
                       else toast.error('체크인을 불러올 수 없습니다');
                     }}
                   >
-                    <span>{c.customer_name} <span className="text-amber-700">{formatPhone(c.customer_phone)}</span></span>
+                    {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
+                    <span>{c.customer_name} <span className="font-mono text-amber-800">{chartNoBadge(c.customers?.chart_number ?? null)}</span> <span className="text-amber-700">{formatPhone(c.customer_phone)}</span></span>
                     <span className="text-xs text-amber-700">{format(new Date(c.checked_in_at), 'HH:mm')}</span>
                   </button>
                 ))}

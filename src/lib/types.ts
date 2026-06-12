@@ -531,8 +531,9 @@ export interface Reservation {
   progress_check_label?: string | null;
   /** T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed 조인 결과.
    *  카드 표기명을 customers 현재 이름 우선 렌더하기 위한 비영속 파생 필드.
-   *  customer_id 미연결(unlink) 시 null → denormalized customer_name fallback. */
-  customers?: { name: string | null } | null;
+   *  customer_id 미연결(unlink) 시 null → denormalized customer_name fallback.
+   *  T-20260612-foot-CHARTNO-B2-P2: chart_number 인접 표시용 embed(읽기 전용, 비영속). */
+  customers?: { name: string | null; chart_number?: string | null } | null;
 }
 
 /**

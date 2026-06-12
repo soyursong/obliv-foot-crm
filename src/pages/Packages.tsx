@@ -20,12 +20,13 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
-import { formatAmount, formatPhone } from '@/lib/format';
+import { formatAmount, formatPhone, chartNoBadge } from '@/lib/format';
 import { isSinglePaymentByCount } from '@/lib/footBilling';
 import { cn } from '@/lib/utils';
 import type { Customer, Package, PackageRemaining, PackageTemplate } from '@/lib/types';
 
-type PackageListItem = Package & { customer: { name: string; phone: string } | null };
+// T-20260612-foot-CHARTNO-B2-P2: chart_number 인접 표시용 embed(읽기 전용, 옵셔널)
+type PackageListItem = Package & { customer: { name: string; phone: string; chart_number?: string | null } | null };
 
 interface RefundQuote {
   total_amount: number;
@@ -1280,7 +1281,8 @@ function PackageDetailSheet({
   const reload = useCallback(async () => {
     if (!packageId) return;
     const [pkgRes, remainRes, sessRes, payRes] = await Promise.all([
-      supabase.from('packages').select('*, customer:customers!customer_id(name, phone)').eq('id', packageId).single(),
+      // T-20260612-foot-CHARTNO-B2-P2: 패키지 상세시트 환자명 옆 차트번호 인접 표시용 embed
+      supabase.from('packages').select('*, customer:customers!customer_id(name, phone, chart_number)').eq('id', packageId).single(),
       supabase.rpc('get_package_remaining', { p_package_id: packageId }),
       // T-20260612-foot-USAGEHIST-DELETE-RESTORE: soft-delete(status='deleted') 회차는 소진이력 표시에서 제외.
       supabase.from('package_sessions').select('id, session_number, session_type, session_date, status')
@@ -1319,7 +1321,11 @@ function PackageDetailSheet({
         </SheetHeader>
         <div className="space-y-4 text-sm">
           <div>
-            <div className="font-medium">{pkg.customer?.name}</div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium">{pkg.customer?.name}</span>
+              {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
+              <span className="font-mono text-xs text-teal-600">{chartNoBadge(pkg.customer?.chart_number ?? null)}</span>
+            </div>
             <div className="text-xs text-muted-foreground">{formatPhone(pkg.customer?.phone)}</div>
           </div>
 

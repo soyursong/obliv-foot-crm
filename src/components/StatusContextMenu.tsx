@@ -2,6 +2,7 @@ import { useRef, useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { STATUS_KO, STATUS_FLAGS, STATUS_FLAG_LABEL, STATUS_FLAG_DOT, NEW_PATIENT_STAGES } from '@/lib/status';
 import { cn } from '@/lib/utils';
+import { chartNoBadge } from '@/lib/format';
 import type { CheckIn, CheckInStatus, StatusFlag } from '@/lib/types';
 
 interface Props {
@@ -128,7 +129,8 @@ export function StatusContextMenu({
         현 진행단계
       </div>
       <div className="px-2 py-0.5 text-[10px] text-muted-foreground">
-        {checkIn.customer_name} — {STATUS_KO[checkIn.status]}
+        {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
+        {checkIn.customer_name} <span className="font-mono text-teal-600">{chartNoBadge(checkIn.customers?.chart_number ?? null)}</span> — {STATUS_KO[checkIn.status]}
       </div>
       {stages.map((status, i) => {
         const isCurrent = status === checkIn.status;

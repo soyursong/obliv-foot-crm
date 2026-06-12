@@ -149,6 +149,10 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, onContext
         }}
       >
         {checkIn.customer_name?.trim() || '이름없음'}
+        {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 트리거에도 차트번호 인접(hover 전 embed, hover 후 fetch 우선) */}
+        <span className="ml-1 font-mono text-[11px] font-normal text-teal-600">
+          {chartNoBadge(details?.chart_number ?? checkIn.customers?.chart_number ?? null)}
+        </span>
       </span>
 
       {/* 호버 팝업 — position:fixed 로 overflow 클리핑 우회 */}

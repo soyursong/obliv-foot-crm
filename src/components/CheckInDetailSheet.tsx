@@ -1504,6 +1504,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 <span className="text-teal-700">#{checkIn.queue_number}</span>
               )}
               {checkIn.customer_name}
+              {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
+              <span className="text-xs font-mono font-normal text-teal-600 shrink-0">{chartNoBadge(chartNumber)}</span>
               {/* 초진/재진/체험 배지 — 성함 옆 상단 배치 (T-20260506 항목1) */}
               {checkIn.visit_type === 'new' ? (
                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-blue-100 text-blue-700 shrink-0">

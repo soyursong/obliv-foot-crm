@@ -48,7 +48,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
-import { formatAmount, todaySeoulISODate } from '@/lib/format';
+import { formatAmount, todaySeoulISODate, chartNoBadge } from '@/lib/format';
 // T-20260525-foot-AMOUNT-COMMA-FMT: 수가 인라인 편집 쉼표 포맷팅
 import { formatAmountDisplay, parseAmountRaw } from '@/components/ui/AmountInput';
 import type { CheckIn, Service } from '@/lib/types';
@@ -1739,6 +1739,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
           <DialogTitle className="flex items-center gap-2 text-base font-semibold">
             <CreditCard className="h-4 w-4 text-purple-600" />
             결제 미니창 — {checkIn.customer_name}
+            {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
+            <span className="text-sm font-mono font-normal text-teal-600">{chartNoBadge(checkIn.customers?.chart_number ?? null)}</span>
             {checkIn.queue_number != null && (
               <span className="text-sm text-teal-600 font-normal">
                 #{checkIn.queue_number}
