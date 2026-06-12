@@ -14,7 +14,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { formatFootSite, parseFootSite, type FootSite } from '../../src/components/FootSiteSelector';
+import { formatFootSite, parseFootSite, isCompleteFootSite, type FootSite } from '../../src/components/FootSiteSelector';
 
 // ── AC-2: {side,toe} → canonical 표시문자열 ──────────────────────────────────
 test.describe('AC-2: formatFootSite — 좌우+발가락 단일 조합', () => {
@@ -43,6 +43,28 @@ test.describe('AC-5: 안전 fallback — 불완전 값은 빈 문자열', () => 
   });
   test('잘못된 side → 빈 문자열', () => {
     expect(formatFootSite({ side: 'X', toe: 1 } as unknown as FootSite)).toBe('');
+  });
+});
+
+// ── FIX(TOGGLE-INPUT): 저장 게이트 — 불완전 값은 DB 미기록 ──────────────────
+// supervisor FIX-REQUEST(MSG-20260613-020322): side-only 또는 toe-only 불완전 객체가
+//   memoObj.foot_site로 적재되던 결함 차단. 완전 값일 때만 true.
+test.describe('isCompleteFootSite — 저장 게이트(완전 값만 기록)', () => {
+  test('완전 값(L1/R3) → true', () => {
+    expect(isCompleteFootSite({ side: 'L', toe: 1 })).toBe(true);
+    expect(isCompleteFootSite({ side: 'R', toe: 3 })).toBe(true);
+  });
+  test('side만 선택(toe=0) → false (불완전, DB 미기록)', () => {
+    expect(isCompleteFootSite({ side: 'L', toe: 0 } as FootSite)).toBe(false);
+    expect(isCompleteFootSite({ side: 'R', toe: 0 } as FootSite)).toBe(false);
+  });
+  test('toe만 있고 side 이상값 → false', () => {
+    expect(isCompleteFootSite({ side: '' as unknown as 'L', toe: 2 } as FootSite)).toBe(false);
+  });
+  test('null/undefined/범위밖 → false', () => {
+    expect(isCompleteFootSite(null)).toBe(false);
+    expect(isCompleteFootSite(undefined)).toBe(false);
+    expect(isCompleteFootSite({ side: 'R', toe: 6 } as FootSite)).toBe(false);
   });
 });
 

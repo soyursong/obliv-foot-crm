@@ -4,7 +4,7 @@ import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
 import { ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Phone, FileText, Package, Stethoscope, Trash2, Bell, Upload } from 'lucide-react';
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
-import FootSiteSelector, { type FootSite, parseFootSite } from '@/components/FootSiteSelector';
+import FootSiteSelector, { type FootSite, parseFootSite, isCompleteFootSite } from '@/components/FootSiteSelector';
 import { toast } from '@/lib/toast';
 import {
   Sheet,
@@ -918,8 +918,9 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     const notesObj = { ...(checkIn.notes as Record<string, unknown> ?? {}), text: notes };
     // T-20260612-foot-CHART-INTAKE-TOGGLE-INPUT: 좌우+발가락 부위를 treatment_memo.foot_site 서브키로 저장.
     //   값(shape {side,toe})만 저장 — 표시문자열('L1')은 formatFootSite로 파생(저장 금지). null이면 키 제거.
+    //   FIX(T-…-TOGGLE-INPUT): 완전한 값(side∈L/R AND toe 1~5)일 때만 기록. 불완전값(toe=0 등)은 키 제거 — DB 불완전 적재 차단.
     const memoObj: Record<string, unknown> = { ...(checkIn.treatment_memo ?? {}), details: treatmentMemo };
-    if (footSite) memoObj.foot_site = footSite;
+    if (isCompleteFootSite(footSite)) memoObj.foot_site = footSite;
     else delete memoObj.foot_site;
     const { error } = await supabase
       .from('check_ins')
