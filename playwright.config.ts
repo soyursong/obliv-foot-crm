@@ -8,6 +8,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // .env (Supabase URL/key) + .env.test (테스트 전용 플래그) 를 모두 로드
 dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config({ path: path.join(__dirname, '.env.test') });
+// .env.local (gitignored, 비커밋) — SUPABASE_ACCESS_TOKEN 등 DB정책 E2E 비밀 로드.
+// 미존재 시 무시 → DB 정책 spec 은 test.skip 로 안전 강등(스킵 사유 명확).
+dotenv.config({ path: path.join(__dirname, '.env.local'), override: true });
 
 const AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
 
