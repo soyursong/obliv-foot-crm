@@ -105,7 +105,9 @@ test.describe('T-20260601 예약자 목록 선택 동선', () => {
     await page.locator('[data-testid="reservation-item"]').first().click();
 
     // confirm 단계에서 원본 이름이 본인 확인용으로 표시됨
-    await expect(page.getByText(RAW_NAME)).toBeVisible({ timeout: 6000 });
+    // (T-20260613-foot-SELFCHECKIN-BANNER-NAME 이후 confirm 에 예약 배너도 성함을 포함하므로
+    //  요약 카드 행 1건만 단언하도록 .first() 로 명확화 — strict-mode 모호성 제거)
+    await expect(page.getByText(RAW_NAME).first()).toBeVisible({ timeout: 6000 });
     await expect(page.getByRole('button', { name: '접수하기' })).toBeVisible();
   });
 

@@ -653,6 +653,8 @@ export default function SelfCheckIn() {
   const [reservationBanner, setReservationBanner] = useState<{
     time: string;
     visitType: string;
+    // T-20260613-foot-SELFCHECKIN-BANNER-NAME: 배너에 예약자 성함 표기 (비마스킹, ref 원본)
+    name: string;
   } | null>(null);
 
   // 완료 화면 카운트다운
@@ -880,7 +882,8 @@ export default function SelfCheckIn() {
           const vt = reservation.visit_type as VisitType;
           // 예약 배너 표시 — 방문유형 라벨 (체험 제외, new/returning만)
           const vtLabel = vt === 'new' ? t.visitNew : vt === 'returning' ? t.visitReturning : '';
-          setReservationBanner({ time: timeStr, visitType: vtLabel });
+          // 전화번호 직접조회 경로: name select 미수집(DB 조회 추가 없음) → 빈값, 배너 성함 접두 생략
+          setReservationBanner({ time: timeStr, visitType: vtLabel, name: '' });
           // 예약 확인되면 자동으로 '예약하고 왔어요' + 해당 방문유형 설정
           if (vt === 'new' || vt === 'returning') {
             setReservationType('reserved');
@@ -1131,6 +1134,8 @@ export default function SelfCheckIn() {
       setReservationBanner({
         time: item.reservation_time,
         visitType: vt === 'new' ? t.visitNew : vt === 'returning' ? t.visitReturning : '',
+        // ref 원본 성함 (DB 추가 조회 없음, 빈값 가능)
+        name: rawName,
       });
       // 전화 자동조회 useEffect 재트리거 방지 (이미 채워진 번호)
       reservationCheckedRef.current = digits;
@@ -1971,7 +1976,8 @@ export default function SelfCheckIn() {
                 <svg className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: C.medium }}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                <span className="text-sm font-medium" style={{ color: C.medium }}>
+                <span className="text-sm font-medium" style={{ color: C.medium }} data-testid="reservation-banner">
+                  {reservationBanner.name ? `${reservationBanner.name}님, ` : ''}
                   {t.reservationBanner(reservationBanner.time, reservationBanner.visitType)}
                 </span>
               </div>
@@ -2238,6 +2244,22 @@ export default function SelfCheckIn() {
             <p className="text-sm tracking-widest uppercase mb-2" style={{ color: C.gold }}>{clinicName}</p>
             <h1 className="text-2xl font-bold" style={{ color: C.dark }}>{t.confirmTitle}</h1>
           </div>
+          {/* T-20260613-foot-SELFCHECKIN-BANNER-NAME: 예약 확인 배너 — 재진 select 경로는 confirm 직행이라
+              여기에서 성함 인사를 노출(personal_info/input 배너와 동일 형식, name 빈값 시 접두 생략) */}
+          {reservationBanner && (
+            <div
+              className="flex items-center gap-2 rounded-xl px-4 py-3"
+              style={{ backgroundColor: C.bannerBg, border: `1.5px solid ${C.bannerBorder}` }}
+            >
+              <svg className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: C.medium }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span className="text-sm font-medium" style={{ color: C.medium }} data-testid="reservation-banner">
+                {reservationBanner.name ? `${reservationBanner.name}님, ` : ''}
+                {t.reservationBanner(reservationBanner.time, reservationBanner.visitType)}
+              </span>
+            </div>
+          )}
           <div
             className="space-y-4 rounded-2xl p-6 shadow-sm"
             style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}
@@ -2450,7 +2472,8 @@ export default function SelfCheckIn() {
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                <span className="text-sm font-medium" style={{ color: C.medium }}>
+                <span className="text-sm font-medium" style={{ color: C.medium }} data-testid="reservation-banner">
+                  {reservationBanner.name ? `${reservationBanner.name}님, ` : ''}
                   {t.reservationBanner(reservationBanner.time, reservationBanner.visitType)}
                 </span>
               </div>
