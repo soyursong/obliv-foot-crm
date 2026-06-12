@@ -71,6 +71,7 @@ export default function ClinicSettings() {
     fax: '',
     business_no: '',
     established_date: '',
+    nhis_code: '',
   });
   const [clinicSaving, setClinicSaving] = useState(false);
 
@@ -94,7 +95,7 @@ export default function ClinicSettings() {
     const [{ data: clinicData }, { data: doctorData }] = await Promise.all([
       supabase
         .from('clinics')
-        .select('id, name, address, phone, fax, business_no, established_date')
+        .select('id, name, address, phone, fax, business_no, established_date, nhis_code')
         .eq('id', clinic.id)
         .maybeSingle(),
       supabase
@@ -114,6 +115,7 @@ export default function ClinicSettings() {
         fax: clinicData.fax ?? '',
         business_no: clinicData.business_no ?? '',
         established_date: clinicData.established_date ?? '',
+        nhis_code: clinicData.nhis_code ?? '',
       });
     }
 
@@ -179,6 +181,7 @@ export default function ClinicSettings() {
           fax: clinicForm.fax.trim() || null,
           business_no: clinicForm.business_no.trim() || null,
           established_date: clinicForm.established_date || null,
+          nhis_code: clinicForm.nhis_code.trim() || null,
         })
         .eq('id', clinic.id);
 
@@ -385,6 +388,15 @@ export default function ClinicSettings() {
                 value={clinicForm.business_no}
                 onChange={(e) => setClinicForm((p) => ({ ...p, business_no: e.target.value }))}
                 placeholder="123-45-67890"
+                disabled={!canEdit}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">요양기관기호</Label>
+              <Input
+                value={clinicForm.nhis_code}
+                onChange={(e) => setClinicForm((p) => ({ ...p, nhis_code: e.target.value }))}
+                placeholder="처방전·진료의뢰서 우상단 표기"
                 disabled={!canEdit}
               />
             </div>
