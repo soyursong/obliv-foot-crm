@@ -14,7 +14,12 @@
  *   S2. AC4 회귀가드 — coordinator=yellow / therapist=green 무회귀
  *   S3. 미매칭 역할(director·technician 등) → 중립 slate fallback 무회귀
  *   S4. 정렬 순서(STAFF_ROLE_ORDER) 무회귀 — 상담이 코디·치료보다 앞
+ *   S5. [FIX 회귀가드] Handover.tsx staff select가 display_name 미포함 —
+ *        DB 미존재 컬럼 select 시 PostgREST 400 → roleByName 빈 맵 → 전 역할 slate fallback.
+ *        S1~S4(SSOT 단위)는 이 데이터 경로 단절을 못 잡아 false green이었음(근본원인).
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import { test, expect } from '@playwright/test';
 import { STAFF_ROLE_CARD_CLASS, STAFF_ROLE_ORDER, staffRoleCardClass } from '@/lib/status';
 
@@ -50,5 +55,27 @@ test.describe('T-20260611-foot-HANDOVER-ATTENDEE-PARTCOLOR 상담칩 sky→rose'
     expect(idx('consultant')).toBeGreaterThanOrEqual(0);
     expect(idx('consultant')).toBeLessThan(idx('coordinator'));
     expect(idx('coordinator')).toBeLessThan(idx('therapist'));
+  });
+
+  // ── S5. [근본원인 FIX 회귀가드] staff select에 display_name 금지 ────────────
+  //   staff.display_name 컬럼은 DB 미존재(STAFF-NAME-UNIFY 타입만 추가, 미마이그레이션).
+  //   select 포함 시 PostgREST 400(42703) → staffData=null → roleByName 빈 맵 →
+  //   출근자 칩 전 역할이 slate fallback(=상담 rose 미반영의 실제 근본원인).
+  //   소스 레벨 결정적 가드 — 동일 컬럼 재유입을 빌드 단계에서 즉시 차단.
+  test('S5 Handover.tsx staff select가 display_name을 포함하지 않는다', () => {
+    const src = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/pages/Handover.tsx'),
+      'utf8',
+    );
+    // staff 테이블 select(...) 절 추출
+    const m = src.match(/from\(['"]staff['"]\)\s*\.\s*select\(\s*['"]([^'"]+)['"]\s*\)/);
+    expect(m, "Handover.tsx의 staff select 절을 찾을 수 없음").not.toBeNull();
+    expect(
+      m![1],
+      `staff select에 DB 미존재 컬럼 display_name 포함 금지(400 유발): "${m?.[1]}"`,
+    ).not.toContain('display_name');
+    // role·name은 칩 색 매핑에 필수 — 누락 회귀 방지
+    expect(m![1]).toContain('name');
+    expect(m![1]).toContain('role');
   });
 });

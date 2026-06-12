@@ -3,7 +3,12 @@ id: T-20260611-foot-RLS-MENU-ROLE-PARITY-POLICY
 domain: foot
 type: policy-audit
 priority: P1
-status: phase2a-g2-dbgate
+status: deploy-ready
+e2e_spec: tests/e2e/T-20260611-foot-RLS-MENU-ROLE-PARITY-POLICY.spec.ts
+e2e_spec_secondary: tests/e2e/T-20260611-foot-RLS-PARITY-G2-clinic-events.spec.ts
+e2e_note: "우산 spec(티켓 ID 매칭) 4 tests = AC-PARITY/AC-5/AC-OUTLIER(G2 SELECT) + AC-4(쓰기 3정책 불변) + 정규헬퍼 SECURITY DEFINER + G1 NO-OP 보존. ★post-migration 회귀가드★ — 우산-1(AC-PARITY)은 supervisor 가 G2 마이그 20260611160000_clinic_events_select_rls_canonical.sql 를 DB-gate 에서 적용한 뒤 GREEN. 미적용 prod 에서는 by-design RED(기존 G2 evidence spec 와 동일 시퀀싱). 우산-2/3/4 는 현재 prod 에서 PASS. build exit 0."
+build_verified: "bash scripts/build.sh 180 → exit 0 (dev-foot 2026-06-12 재확인)"
+fix_request_resolved: "MSG-20260612-101318-i4nc(supervisor, phase2/spec_missing) — 티켓 ID 매칭 spec 신규 추가로 해소. e2e_spec_exempt 미사용."
 db_change: true
 gate: GO_WARN
 owner: agent-fdd-dev-foot
