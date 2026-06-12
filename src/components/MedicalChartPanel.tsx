@@ -912,6 +912,21 @@ export default function MedicalChartPanel({
     if (mine) setFormSigningDoctorId(mine.id);   // 이름 매칭 = 로그인 계정이 의사 → 본인 자동
   }, [selectedChartId, formSigningDoctorId, clinicDoctors, currentUserName]);
 
+  // T-20260612-foot-DOCDASH-11FIX AC-6: singleLine 진료의 = 평소엔 "진료의 ○○○" 레이블, '변경' 클릭 시에만
+  //   드롭다운 노출. 미선택(빈값)이면 드롭다운 강제 노출 → NOT NULL 강제(AC-P2-6) 무회귀.
+  const [editingSingleDoctor, setEditingSingleDoctor] = useState(false);
+
+  // T-20260612-foot-DOCDASH-11FIX AC-5: singleLine 임상경과 textarea auto-resize.
+  //   상용구(//) 삽입 등 긴 내용도 스크롤 없이 전체가 보이도록 내용 높이만큼 확장.
+  //   singleLine 분기에 한정 — 다른 variant(rows 고정 9/13/14)는 비간섭(무회귀).
+  useEffect(() => {
+    if (!(embed && variant === 'clinical' && singleLine)) return;
+    const ta = clinicalRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${ta.scrollHeight}px`;
+  }, [formClinical, embed, variant, singleLine]);
+
   // T-20260608-foot-MEDCHART-SIGN-AUDIT AC-P2-3: 선택된(저장된) 차트의 진료의 변경이력 로드(차트 단위 조회).
   useEffect(() => {
     if (!selectedChartId || selectedChartId.startsWith('__dummy__')) {
@@ -2027,23 +2042,54 @@ export default function MedicalChartPanel({
   ) : (
     <div className="p-2.5" data-testid="clinical-singleline">
       <div className="flex flex-wrap items-center gap-2">
-        {/* 담당 의사 (저장 필수 — 의료법, 기존 검증 동일 재사용) */}
-        <select
-          value={formSigningDoctorId}
-          onChange={(e) => setFormSigningDoctorId(e.target.value)}
-          disabled={isReadOnly}
-          className={cn(
-            'h-9 w-28 shrink-0 rounded-md border px-2 text-xs bg-background',
-            !formSigningDoctorId ? 'border-rose-300 focus:border-rose-400' : 'border-input',
-          )}
-          data-testid="clinical-singleline-doctor"
-          aria-label="담당 의사(진료의)"
-        >
-          <option value="">의사 선택</option>
-          {clinicDoctors.map((d) => (
-            <option key={d.id} value={d.id}>{d.name}</option>
-          ))}
-        </select>
+        {/* 담당 의사 (저장 필수 — 의료법, 기존 검증 동일 재사용).
+            T-20260612-foot-DOCDASH-11FIX AC-6: 진료의 선택됨 + 비편집 + 쓰기가능 → "진료의 ○○○" 레이블
+            (클릭 '변경'으로만 드롭다운). 미선택(빈값)이거나 편집 중이면 드롭다운 노출 → NOT NULL 강제(AC-P2-6) 무회귀. */}
+        {(() => {
+          const selectedSingleDoctor = clinicDoctors.find((d) => d.id === formSigningDoctorId) ?? null;
+          const showLabel = !!formSigningDoctorId && !!selectedSingleDoctor && !editingSingleDoctor;
+          if (showLabel) {
+            return (
+              <span
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1.5 text-xs"
+                data-testid="clinical-singleline-doctor-label"
+              >
+                <span className="font-medium text-gray-700">진료의 {selectedSingleDoctor.name}</span>
+                {!isReadOnly && (
+                  <button
+                    type="button"
+                    onClick={() => setEditingSingleDoctor(true)}
+                    className="text-[11px] text-teal-600 underline-offset-2 hover:underline"
+                    data-testid="clinical-singleline-doctor-edit"
+                  >
+                    변경
+                  </button>
+                )}
+              </span>
+            );
+          }
+          return (
+            <select
+              value={formSigningDoctorId}
+              onChange={(e) => {
+                setFormSigningDoctorId(e.target.value);
+                if (e.target.value) setEditingSingleDoctor(false);
+              }}
+              disabled={isReadOnly}
+              className={cn(
+                'h-9 w-28 shrink-0 rounded-md border px-2 text-xs bg-background',
+                !formSigningDoctorId ? 'border-rose-300 focus:border-rose-400' : 'border-input',
+              )}
+              data-testid="clinical-singleline-doctor"
+              aria-label="담당 의사(진료의)"
+            >
+              <option value="">의사 선택</option>
+              {clinicDoctors.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          );
+        })()}
         {/* 임상경과 — 한 줄 입력. // 자동완성 유지 위해 Textarea(rows=1)로 단일행 렌더. */}
         <div className="relative min-w-[160px] flex-1">
           <Textarea
@@ -2052,10 +2098,12 @@ export default function MedicalChartPanel({
             onChange={handleClinicalChange}
             onBlur={() => { setTimeout(() => setPhrasePopoverVisible(false), 200); }}
             readOnly={isReadOnly}
-            placeholder="임상경과 한 줄 입력  예: //통증감소"
+            placeholder="임상경과 입력  예: //통증감소"
             rows={1}
+            /* T-20260612-foot-DOCDASH-11FIX AC-5: 고정 h-9 → 내용 높이만큼 auto-resize(useEffect가 scrollHeight로 확장).
+               min-h 로 한 줄 기준 높이 보장, overflow-hidden 으로 스크롤 없이 전체 표시. */
             className={cn(
-              'h-9 min-h-0 resize-none overflow-hidden py-2 text-sm placeholder:text-gray-300',
+              'min-h-[2.25rem] resize-none overflow-hidden py-2 text-sm placeholder:text-gray-300',
               isReadOnly && 'bg-gray-50 text-gray-500 cursor-not-allowed',
             )}
             data-testid="clinical-singleline-input"
