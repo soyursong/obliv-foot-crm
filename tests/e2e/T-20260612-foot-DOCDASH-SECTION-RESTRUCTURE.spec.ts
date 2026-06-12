@@ -77,19 +77,21 @@ test.describe('시나리오2 — AC-3 flat + 칼럼 너비/스키마 동일', ()
     expect(s).toContain('<section className="bg-white" data-testid="doctor-call-feed">');
     expect(s).toContain('<section className="bg-white" data-testid="doctor-completed-section">');
   });
-  test('colgroup 8칼럼 폭이 양 섹션 글자 그대로 동일(2벌)', () => {
+  // T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7 supersede: 완료 섹션 경과시간 칼럼 제거 →
+  //   호출=8칼럼 / 완료=7칼럼. 더 이상 양 섹션 colgroup/thead 글자 동일 아님(섹션별 독립).
+  test('colgroup: 호출 8칼럼 / 완료 7칼럼(UX7 AC-7 경과시간 제거)', () => {
     const s = DASH();
     const colgroups = s.match(/<colgroup>[\s\S]*?<\/colgroup>/g) ?? [];
     expect(colgroups.length).toBe(2);
-    expect(colgroups[0]).toBe(colgroups[1]); // 완전 동일
-    // 8개 col 폭 정의
-    expect((colgroups[0].match(/<col /g) ?? []).length).toBe(8);
+    expect((colgroups[0].match(/<col /g) ?? []).length).toBe(8); // 호출
+    expect((colgroups[1].match(/<col /g) ?? []).length).toBe(7); // 완료(경과시간 제거)
   });
-  test('thead 8칼럼이 양 섹션 글자 그대로 동일(2벌)', () => {
+  test('thead: 호출 8칼럼 / 완료 7칼럼(UX7 AC-7)', () => {
     const s = DASH();
     const theads = s.match(/<thead>[\s\S]*?<\/thead>/g) ?? [];
     expect(theads.length).toBe(2);
-    expect(theads[0]).toBe(theads[1]); // 스키마 완전 동일
+    expect((theads[0].match(/<th /g) ?? []).length).toBe(8); // 호출
+    expect((theads[1].match(/<th /g) ?? []).length).toBe(7); // 완료(경과시간 제거)
   });
 });
 
@@ -100,11 +102,12 @@ test.describe('시나리오2 — AC-4 칼럼 순서(변경 불가)', () => {
     const order = (thead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
     expect(order).toEqual(NEW_ORDER);
   });
-  test('진료완료 테이블 헤더 순서도 동일(AC-3 완전 동일)', () => {
+  // UX7 AC-7 supersede: 완료 테이블은 경과시간 칼럼 제거 → NEW_ORDER 에서 '경과시간' 뺀 7칼럼.
+  test('진료완료 테이블 헤더 순서 = 경과시간 제거 7칼럼(UX7 AC-7)', () => {
     const s = DASH();
     const thead = s.slice(s.indexOf('doctor-completed-table'), s.indexOf('doctor-completed-rows'));
     const order = (thead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
-    expect(order).toEqual(NEW_ORDER);
+    expect(order).toEqual(NEW_ORDER.filter((c) => c !== '경과시간'));
   });
   test('임상경과 버튼은 임상경과 칼럼 내부(toggle showClinical)', () => {
     const s = DASH();
@@ -116,11 +119,14 @@ test.describe('시나리오2 — AC-4 칼럼 순서(변경 불가)', () => {
     expect(s).toContain('data-testid="doctor-call-fullchart-btn"');
     expect(s).toContain('data-testid="doctor-completed-fullchart-btn"');
   });
-  test('인라인 펼침 행 colSpan 8칼럼 정합(DOCDASH_COLSPAN)', () => {
+  // UX7 AC-7 supersede: 완료 인라인 행 colSpan = DOCDASH_COMPLETED_COLSPAN(7). 호출 인라인 = DOCDASH_COLSPAN(8).
+  test('인라인 펼침 행 colSpan 정합(호출 8 / 완료 7)', () => {
     const s = DASH();
     expect(s).toContain('const DOCDASH_COLSPAN = 8');
-    // 처방/임상경과 인라인 4행(대기2+완료2) 모두 DOCDASH_COLSPAN 사용
-    expect((s.match(/colSpan=\{DOCDASH_COLSPAN\}/g) ?? []).length).toBe(4);
+    expect(s).toContain('const DOCDASH_COMPLETED_COLSPAN = 7');
+    // 호출(대기) 인라인 2행 = DOCDASH_COLSPAN, 완료 인라인 2행 = DOCDASH_COMPLETED_COLSPAN
+    expect((s.match(/colSpan=\{DOCDASH_COLSPAN\}/g) ?? []).length).toBe(2);
+    expect((s.match(/colSpan=\{DOCDASH_COMPLETED_COLSPAN\}/g) ?? []).length).toBe(2);
     // 구 하드코딩 colSpan(5/6) 잔존 0
     expect(s).not.toContain('colSpan={5}');
     expect(s).not.toContain('colSpan={6}');
@@ -147,12 +153,12 @@ test.describe('시나리오2 — AC-5 숫자/카운트 plain text', () => {
 // 시나리오3 — AC-0/AC-6 회귀 보존
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('시나리오3 — AC-0 회귀(직전 deployed 동작 보존)', () => {
-  // T-20260612-WAITELAPSED-POLISH supersede(AC-3/AC-4): 대기 섹션은 formatElapsedPlus("+N분") 1곳,
-  //   진료 완료 섹션은 경과시간 비표시('-'). 양 섹션 동일 formatSinceCall(2회)는 더 이상 아님.
-  test('경과시간: 대기 섹션 formatElapsedPlus 사용 + 완료 섹션 비표시', () => {
+  // UX7 AC-7 supersede(POLISH AC-4 재정의): 대기 섹션 formatElapsedPlus("+N분") 1곳,
+  //   진료 완료 섹션은 경과시간 칼럼 자체 제거(셀 testid 도 소멸).
+  test('경과시간: 대기 섹션 formatElapsedPlus 사용 + 완료 섹션 칼럼 제거', () => {
     const s = DASH();
     expect((s.match(/formatElapsedPlus\(elapsedMinutes\(getCallTime\(checkIn\)\)\)/g) ?? []).length).toBe(1);
-    expect(s).toContain('data-testid="doctor-completed-elapsed-cell"');
+    expect(s).not.toContain('data-testid="doctor-completed-elapsed-cell"');
     expect(formatElapsedPlus(0)).toBe('+0분');
     expect(formatElapsedPlus(12)).toBe('+12분');
   });

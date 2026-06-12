@@ -93,10 +93,11 @@ test.describe('시나리오1 — AC-5 급한순(경과 내림차순) 정렬', ()
 // ─────────────────────────────────────────────────────────────────────────────
 // 시나리오2 — 진료 완료 섹션 + 라벨/중앙정렬/안전 + AC-0 회귀 (AC-4/6/7/8/9 + AC-0)
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('시나리오2 — AC-4 진료 완료 경과시간 비표시', () => {
-  test("완료 행 경과시간 셀 = '-' 비표시(전용 testid)", () => {
+// T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7 supersede: POLISH 의 '-' 비표시 셀을 칼럼 자체 제거로 재정의.
+test.describe('시나리오2 — AC-4 → UX7 AC-7 진료 완료 경과시간 칼럼 제거', () => {
+  test('완료 행 경과시간 셀/칼럼 소멸(testid 부재)', () => {
     const s = DASH();
-    expect(s).toContain('data-testid="doctor-completed-elapsed-cell"');
+    expect(s).not.toContain('data-testid="doctor-completed-elapsed-cell"');
     // 완료 섹션은 elapsed 계산 자체를 하지 않음(formatElapsedPlus 호출은 대기 1곳뿐)
     expect((s.match(/formatElapsedPlus\(/g) ?? []).length).toBe(1);
   });
@@ -180,16 +181,21 @@ test.describe('시나리오2 — AC-0 회귀 rebase(부모 동작 보존)', () =
     expect(s).toContain('useCompletedClinicalProgress');
     expect(s).toContain('clinicalPreview');
   });
-  test('RESTRUCTURE: flat 8칼럼 colgroup/thead 양 섹션 글자 그대로 동일', () => {
+  // UX7 AC-7 supersede: 완료 섹션 경과시간 제거로 양 섹션 비대칭(호출 8 / 완료 7). flat 테이블 구조·순서는 보존.
+  test('RESTRUCTURE: flat 테이블 보존 — 호출 8칼럼 / 완료 7칼럼(UX7 AC-7)', () => {
     const s = DASH();
     const colgroups = s.match(/<colgroup>[\s\S]*?<\/colgroup>/g) ?? [];
     const theads = s.match(/<thead>[\s\S]*?<\/thead>/g) ?? [];
     expect(colgroups.length).toBe(2);
-    expect(colgroups[0]).toBe(colgroups[1]);
+    expect((colgroups[0].match(/<col /g) ?? []).length).toBe(8);
+    expect((colgroups[1].match(/<col /g) ?? []).length).toBe(7);
     expect(theads.length).toBe(2);
-    expect(theads[0]).toBe(theads[1]);
+    expect((theads[0].match(/<th /g) ?? []).length).toBe(8);
+    expect((theads[1].match(/<th /g) ?? []).length).toBe(7);
     expect(s).toContain('const DOCDASH_COLSPAN = 8');
-    expect((s.match(/colSpan=\{DOCDASH_COLSPAN\}/g) ?? []).length).toBe(4);
+    expect(s).toContain('const DOCDASH_COMPLETED_COLSPAN = 7');
+    expect((s.match(/colSpan=\{DOCDASH_COLSPAN\}/g) ?? []).length).toBe(2);
+    expect((s.match(/colSpan=\{DOCDASH_COMPLETED_COLSPAN\}/g) ?? []).length).toBe(2);
   });
   test('완료 행: 귀가/귀가 대기 상태 + discharge 게이트 보존', () => {
     const s = DASH();

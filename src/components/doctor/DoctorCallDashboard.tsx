@@ -82,7 +82,11 @@ const CELL_ACTION_BTN =
 //   colgroup·thead는 두 테이블에 '글자 그대로 동일'하게 인라인(아래 DOCDASH_COLGROUP/DOCDASH_THEAD 주석 기준) —
 //   양쪽 폭/순서가 동일함을 시각·테스트로 함께 보장. 인라인 펼침 행 colSpan 도 8칼럼 고정.
 //   T-20260612-WAITELAPSED-POLISH AC-2: 헤더 '콜경과시간' → '경과시간'. AC-6: 헤더·셀 텍스트 중앙정렬.
-const DOCDASH_COLSPAN = 8; // 이름·상태·경과시간·방·오늘시술·처방·임상경과·진료차트
+//   T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7 (문지은 대표원장 실사용 후속, POLISH AC-4 supersede):
+//     진료 완료 섹션은 경과시간을 '-'로 두지 않고 칼럼 자체를 제거 → 완료환자는 대기시간 불요(7칼럼).
+//     호출(진료 대기중) 섹션은 경과시간 8칼럼 그대로 유지. 두 테이블은 별도 <table> 이라 폭 정렬은 시각적 독립.
+const DOCDASH_COLSPAN = 8; // 진료 대기중(호출): 이름·상태·경과시간·방·오늘시술·처방·임상경과·진료차트
+const DOCDASH_COMPLETED_COLSPAN = 7; // 진료 완료: 경과시간 제거(UX7 AC-7) → 이름·상태·방·오늘시술·처방·임상경과·진료차트
 
 // T-20260612-foot-CHARTNO-B2-P1: customers 임베드(to-one)에서 차트번호 안전 추출.
 //   PostgREST 임베드는 object|array 양쪽으로 직렬화될 수 있어 둘 다 흡수(KohReportTab 흡수 패턴 동일).
@@ -413,26 +417,25 @@ export default function DoctorCallDashboard() {
             아직 진료 완료된 환자가 없어요.
           </div>
         ) : (
-          // T-20260612-foot-DOCDASH-SECTION-RESTRUCTURE AC-3/AC-4: 진료 대기중 섹션과 동일한 공유 colgroup/thead(8칼럼 동일).
+          // T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7: 진료 완료 섹션은 경과시간 칼럼 제거(7칼럼).
+          //   호출 섹션(8칼럼)과 폭 통일이 아닌 독립 — 완료환자는 대기시간 불요(문지은 대표원장). 제거된 11% 재분배.
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-sm" data-testid="doctor-completed-table">
-              {/* DOCDASH_COLGROUP — 진료 대기중 섹션과 글자 그대로 동일(8칼럼 폭 통일, AC-3/AC-4). */}
+              {/* COMPLETED COLGROUP — 7칼럼(경과시간 제거). 합 100%: 18+12+9+16+15+20+10. */}
               <colgroup>
+                <col className="w-[18%]" />
+                <col className="w-[12%]" />
+                <col className="w-[9%]" />
                 <col className="w-[16%]" />
-                <col className="w-[11%]" />
-                <col className="w-[11%]" />
-                <col className="w-[8%]" />
-                <col className="w-[14%]" />
-                <col className="w-[13%]" />
-                <col className="w-[17%]" />
+                <col className="w-[15%]" />
+                <col className="w-[20%]" />
                 <col className="w-[10%]" />
               </colgroup>
-              {/* DOCDASH_THEAD — 진료 대기중 섹션과 글자 그대로 동일(칼럼 순서 변경 불가, AC-4). */}
+              {/* COMPLETED THEAD — UX7 AC-7: 경과시간 헤더 제거(이름·상태·방·오늘시술·처방·임상경과·진료차트). */}
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/70 text-center text-[11px] font-semibold text-muted-foreground">
                   <th className="px-3 py-1.5">이름</th>
                   <th className="px-3 py-1.5">상태</th>
-                  <th className="px-3 py-1.5">경과시간</th>
                   <th className="px-3 py-1.5">방</th>
                   <th className="px-3 py-1.5">오늘시술</th>
                   <th className="px-3 py-1.5">처방</th>
@@ -733,7 +736,8 @@ function CompletedRow({
   onRefresh: () => void;
 }) {
   const slotName = getAssignedSlotName(checkIn);
-  // T-20260612-foot-WAITELAPSED-POLISH AC-4: 진료 완료 섹션은 경과시간 비표시('-'). 8칼럼 폭은 유지(레이아웃 무붕괴) — 경과시간 셀만 빈 표기.
+  // T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7 (POLISH AC-4 supersede): 진료 완료 섹션은 경과시간 칼럼 자체 제거(7칼럼).
+  //   완료환자는 대기시간 불요(문지은 대표원장). 호출 섹션은 경과시간 유지.
   const [showRx, setShowRx] = useState(false);
   // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 임상경과 = 한 줄 인풋(아코디언 아님) 토글.
   const [showClinical, setShowClinical] = useState(false);
@@ -792,14 +796,9 @@ function CompletedRow({
           </div>
         </td>
 
-        {/* 3. 경과시간 — AC-4: 진료 완료 섹션은 비표시('-'). 칼럼 폭은 유지(레이아웃 무붕괴). AC-6: 중앙정렬. */}
-        <td className="px-3 py-2 text-center">
-          <span className="text-[11px] text-gray-300" data-testid="doctor-completed-elapsed-cell">
-            -
-          </span>
-        </td>
+        {/* UX7 AC-7: 경과시간 칼럼 제거(완료환자 대기시간 불요) — 셀 없음. 호출 섹션은 유지. */}
 
-        {/* 4. 방 — getAssignedSlotName SSOT(치료실 preconditioning=treatment_room). plain text. AC-6: 중앙정렬. */}
+        {/* 3. 방 — getAssignedSlotName SSOT(치료실 preconditioning=treatment_room). plain text. AC-6: 중앙정렬. */}
         <td className="px-3 py-2 text-center" data-testid="doctor-completed-room-cell">
           {slotName ? (
             <span className="inline-flex items-center justify-center gap-0.5 text-[11px] font-medium text-gray-600">
@@ -895,7 +894,7 @@ function CompletedRow({
 
       {showRx && (
         <tr data-testid="doctor-completed-rx-expand-row" className="bg-white">
-          <td colSpan={DOCDASH_COLSPAN} className="px-3 pb-2">
+          <td colSpan={DOCDASH_COMPLETED_COLSPAN} className="px-3 pb-2">
             <div className="rounded-lg border bg-white p-2">
               <QuickRxBar
                 doctorMode={doctorMode}
@@ -920,7 +919,7 @@ function CompletedRow({
       {/* T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 진료완료 환자도 임상경과 = 한 줄 인풋(singleLine). */}
       {showClinical && checkIn.customer_id && (
         <tr data-testid="doctor-completed-chart-inline-row" className="bg-white">
-          <td colSpan={DOCDASH_COLSPAN} className="px-3 pb-2" data-testid="doctor-completed-chart-inline">
+          <td colSpan={DOCDASH_COMPLETED_COLSPAN} className="px-3 pb-2" data-testid="doctor-completed-chart-inline">
             <MedicalChartPanel
               embed
               open
