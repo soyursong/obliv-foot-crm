@@ -19,7 +19,7 @@ import {
 
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
-import { formatAmount } from '@/lib/format';
+import { formatAmount, chartNoBadge, chartNoDisplay } from '@/lib/format';
 import type { CheckIn, Staff } from '@/lib/types';
 import {
   STATUS_KO,
@@ -119,6 +119,8 @@ export default function TreatmentTable() {
   const [packages, setPackages] = useState<PackageInfo[]>([]);
   const [paymentMap, setPaymentMap] = useState<Map<string, PaymentSummary>>(new Map());
   const [nextResvMap, setNextResvMap] = useState<Map<string, NextReservation>>(new Map());
+  // T-20260612-foot-CHARTNO-B2-P1: customer_id → chart_number 맵(환자명 옆 차트번호 인접 표기). read-only.
+  const [chartMap, setChartMap] = useState<Map<string, string>>(new Map());
   const [dutyDoctors, setDutyDoctors] = useState<DutyDoctor[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -155,7 +157,7 @@ export default function TreatmentTable() {
     const ciIds   = ciRows.map((c) => c.id);
     const custIds = [...new Set(ciRows.map((c) => c.customer_id).filter(Boolean))] as string[];
 
-    const [pkgRes, payRes, resvRes] = await Promise.all([
+    const [pkgRes, payRes, resvRes, chartRes] = await Promise.all([
       pkgIds.length > 0
         ? supabase.from('packages').select('id, package_name, package_type, total_sessions, total_amount').in('id', pkgIds)
         : Promise.resolve({ data: [] as PackageInfo[] }),
@@ -168,6 +170,10 @@ export default function TreatmentTable() {
             .gt('reservation_date', today).in('status', ['confirmed', 'checked_in'])
             .order('reservation_date', { ascending: true })
         : Promise.resolve({ data: [] as NextReservation[] }),
+      // T-20260612-foot-CHARTNO-B2-P1: 환자명 옆 차트번호 인접 표기용(read-only, DB 무변경).
+      custIds.length > 0
+        ? supabase.from('customers').select('id, chart_number').in('id', custIds)
+        : Promise.resolve({ data: [] as { id: string; chart_number: string | null }[] }),
     ]);
 
     setPackages((pkgRes.data ?? []) as PackageInfo[]);
@@ -192,6 +198,13 @@ export default function TreatmentTable() {
       if (r.customer_id && !rmap.has(r.customer_id)) rmap.set(r.customer_id, r);
     }
     setNextResvMap(custIds.length > 0 ? rmap : new Map());
+
+    // T-20260612-foot-CHARTNO-B2-P1: customer_id → chart_number 맵 구성(미발번은 미수록 → 렌더 시 '#미발번').
+    const cmap = new Map<string, string>();
+    for (const c of (chartRes.data ?? []) as { id: string; chart_number: string | null }[]) {
+      if (c.id && c.chart_number) cmap.set(c.id, c.chart_number);
+    }
+    setChartMap(custIds.length > 0 ? cmap : new Map());
 
     setLoading(false);
   }, [clinic, dateFrom, dateTo, today]);
@@ -299,6 +312,8 @@ export default function TreatmentTable() {
         접수시간: format(new Date(c.checked_in_at), 'HH:mm'),
         대기번호: c.queue_number ?? '',
         환자명: c.customer_name,
+        // T-20260612-foot-CHARTNO-B2-P1: 내보내기에도 차트번호 동반(미발번이면 '(미발번)').
+        차트번호: chartNoDisplay(c.customer_id ? (chartMap.get(c.customer_id) ?? null) : null),
         방문유형: VISIT_TYPE_KO[c.visit_type],
         상태: STATUS_KO[c.status],
         담당실장: c.consultant_id ? (staffMap.get(c.consultant_id)?.name ?? '') : '',
@@ -658,7 +673,7 @@ export default function TreatmentTable() {
                       {format(new Date(ci.checked_in_at), 'HH:mm')}
                     </td>
 
-                    {/* 환자명 */}
+                    {/* 환자명 — T-20260612-foot-CHARTNO-B2-P1: 차트번호 인접 표기(동명이인 오인 방지). 미발번도 '#미발번' 명시. */}
                     <td className="px-4 py-3 font-medium whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
                         {ci.priority_flag && (
@@ -666,7 +681,10 @@ export default function TreatmentTable() {
                             {ci.priority_flag}
                           </span>
                         )}
-                        {ci.customer_name}
+                        <span>{ci.customer_name}</span>
+                        <span className="font-mono text-[11px] font-normal text-muted-foreground/70" data-testid="treatment-chartno">
+                          {chartNoBadge(ci.customer_id ? (chartMap.get(ci.customer_id) ?? null) : null)}
+                        </span>
                       </div>
                     </td>
 

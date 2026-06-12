@@ -75,7 +75,7 @@ import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
-import { formatAmount, maskPhoneTail, seoulISODate, cardDisplayName, phoneTailSuffix } from '@/lib/format';
+import { formatAmount, maskPhoneTail, seoulISODate, cardDisplayName, phoneTailSuffix, chartNoBadge } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 import { nextSlotSortOrder as computeNextSlotSortOrder, compareSlotFifo } from '@/lib/slotOrder';
@@ -435,10 +435,11 @@ const DraggableCard = memo(function DraggableCard({
                 {slotName}
               </span>
             )}
-            {/* T-20260514-foot-CHART-NO-VISIBLE: AC-1 차트번호 상시 표시 */}
-            {chartNum && (
-              <span className="text-[10px] font-mono text-teal-600 shrink-0">#{chartNum}</span>
-            )}
+            {/* T-20260514-foot-CHART-NO-VISIBLE: AC-1 차트번호 상시 표시
+                T-20260612-foot-CHARTNO-B2-P1: 미발번도 '#미발번' 명시 — 환자명 단독 노출 0(AC2). 조건부 → always-on. */}
+            <span className="text-[10px] font-mono text-teal-600 shrink-0" data-testid="waiting-card-chartno">
+              {chartNoBadge(chartNum ?? null)}
+            </span>
             {checkIn.queue_number != null && (
               <span className="text-[10px] text-teal-600 shrink-0">#{checkIn.queue_number}</span>
             )}
@@ -614,10 +615,11 @@ const DraggableCard = memo(function DraggableCard({
               {slotName}
             </span>
           )}
-          {/* T-20260514-foot-CHART-NO-VISIBLE: AC-1 차트번호 상시 표시 */}
-          {chartNum && (
-            <span className="text-[10px] font-mono text-teal-600 shrink-0">#{chartNum}</span>
-          )}
+          {/* T-20260514-foot-CHART-NO-VISIBLE: AC-1 차트번호 상시 표시
+              T-20260612-foot-CHARTNO-B2-P1: 미발번도 '#미발번' 명시 — 환자명 단독 노출 0(AC2). 조건부 → always-on. */}
+          <span className="text-[10px] font-mono text-teal-600 shrink-0" data-testid="waiting-card-chartno">
+            {chartNoBadge(chartNum ?? null)}
+          </span>
           {checkIn.queue_number != null && (
             <span className="text-[10px] text-teal-600 shrink-0">#{checkIn.queue_number}</span>
           )}
@@ -6374,9 +6376,19 @@ export default function Dashboard() {
       {isToday && (byStatus['exam_waiting'] ?? []).length > 0 && (
         <div className="mx-4 mt-2 rounded-md border border-violet-300 bg-violet-50 px-4 py-2 text-sm text-violet-800 flex items-center gap-2 animate-pulse">
           <Bell className="h-4 w-4 shrink-0 text-violet-600" />
-          <span className="font-semibold">진료 대기 {(byStatus['exam_waiting'] ?? []).length}명</span>
-          <span className="text-violet-600">—</span>
-          <span>{(byStatus['exam_waiting'] ?? []).map((ci) => ci.customer_name).join(', ')}</span>
+          <span className="font-semibold shrink-0">진료 대기 {(byStatus['exam_waiting'] ?? []).length}명</span>
+          <span className="text-violet-600 shrink-0">—</span>
+          {/* T-20260612-foot-CHARTNO-B2-P1: 환자명에 차트번호 병기(동명이인 오인 방지). 미발번도 '#미발번' 명시. */}
+          <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            {(byStatus['exam_waiting'] ?? []).map((ci) => (
+              <span key={ci.id} className="inline-flex items-baseline gap-0.5" data-testid="exam-waiting-banner-patient">
+                <span>{ci.customer_name}</span>
+                <span className="font-mono text-[11px] text-violet-500">
+                  {chartNoBadge(ci.customer_id ? (todayCustomerChartMap.get(ci.customer_id) ?? null) : null)}
+                </span>
+              </span>
+            ))}
+          </span>
         </div>
       )}
 

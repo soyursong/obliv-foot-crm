@@ -39,7 +39,7 @@ import { useAuth } from '@/lib/auth';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
-import { todaySeoulISODate } from '@/lib/format';
+import { todaySeoulISODate, chartNoBadge } from '@/lib/format';
 import { getAssignedSlotName } from '@/lib/checkin-slot';
 import {
   loadMute,
@@ -65,7 +65,9 @@ import type { CheckIn } from '@/lib/types';
 const CALL_SELECT =
   'id, customer_id, customer_name, visit_type, status, status_flag, status_flag_history, ' +
   'checked_in_at, completed_at, treatment_kind, treatment_category, prescription_status, prescription_items, ' +
-  'doctor_call_memo, doctor_ack_at, queue_number, consultation_room, treatment_room, laser_room, examination_room';
+  'doctor_call_memo, doctor_ack_at, queue_number, consultation_room, treatment_room, laser_room, examination_room, ' +
+  // T-20260612-foot-CHARTNO-B2-P1: 이름 셀 차트번호 인접 표기용 join(KohReportTab 패턴). read-only, DB 무변경.
+  'customers!customer_id(chart_number)';
 
 // T-20260612-foot-DOCDASH-TABLE-BTN-MINIMIZE (문지은 대표원장 follow-up):
 //   테이블 셀 액션을 '버튼 박스(bg/border)' → 텍스트/아이콘 링크로 축소. 클릭 동선은 유지(기능 제거 아님).
@@ -80,6 +82,19 @@ const CELL_ACTION_BTN =
 //   colgroup·thead는 두 테이블에 '글자 그대로 동일'하게 인라인(아래 DOCDASH_COLGROUP/DOCDASH_THEAD 주석 기준) —
 //   양쪽 폭/순서가 동일함을 시각·테스트로 함께 보장. 인라인 펼침 행 colSpan 도 8칼럼 고정.
 const DOCDASH_COLSPAN = 8; // 이름·상태·콜경과시간·방·오늘시술·처방·임상경과·진료차트
+
+// T-20260612-foot-CHARTNO-B2-P1: customers 임베드(to-one)에서 차트번호 안전 추출.
+//   PostgREST 임베드는 object|array 양쪽으로 직렬화될 수 있어 둘 다 흡수(KohReportTab 흡수 패턴 동일).
+function readChartNo(ci: CheckIn): string | number | null | undefined {
+  const c = ci.customers as
+    | { chart_number?: string | null }
+    | Array<{ chart_number?: string | null }>
+    | null
+    | undefined;
+  if (!c) return null;
+  if (Array.isArray(c)) return c[0]?.chart_number ?? null;
+  return c.chart_number ?? null;
+}
 
 function useDoctorCallFeed(clinicId: string | null) {
   return useQuery({
@@ -519,13 +534,18 @@ function CallFeedRow({
               data-testid="doctor-call-name-chart-btn"
               title="이름 클릭 — 진료차트 열기 (서랍)"
               className={cn(
-                'min-w-[4rem] break-keep text-sm font-semibold text-left underline-offset-2 transition-colors disabled:cursor-default disabled:no-underline',
+                'min-w-[4rem] break-keep text-left underline-offset-2 transition-colors disabled:cursor-default disabled:no-underline',
                 inactive
                   ? 'text-gray-500 hover:text-gray-700 hover:underline'
                   : 'text-gray-900 hover:text-indigo-700 hover:underline cursor-pointer',
               )}
             >
-              {checkIn.customer_name}
+              {/* T-20260612-foot-CHARTNO-B2-P1: 이름 + 차트번호 인접 표기(별도 칼럼 신설 금지, 이름 칼럼 내 서브텍스트).
+                  미발번도 '#미발번' 명시 — 환자명 단독 노출 0(AC). */}
+              <span className="block text-sm font-semibold">{checkIn.customer_name}</span>
+              <span className="block font-mono text-[10px] font-normal text-gray-400" data-testid="doctor-call-chartno">
+                {chartNoBadge(readChartNo(checkIn))}
+              </span>
             </button>
             {/* AC-0(11FIX AC-8 보존): 손들기 2단계 워크플로우(의사ack→진료완료). 활성 호출(purple)에만. */}
             {!inactive && (
@@ -743,9 +763,13 @@ function CompletedRow({
               disabled={!checkIn.customer_id}
               data-testid="doctor-completed-name-chart-btn"
               title="이름 클릭 — 진료차트 열기 (서랍)"
-              className="min-w-[4rem] break-keep text-sm font-semibold text-left underline-offset-2 transition-colors cursor-pointer hover:text-indigo-700 hover:underline disabled:cursor-default disabled:no-underline"
+              className="min-w-[4rem] break-keep text-left underline-offset-2 transition-colors cursor-pointer hover:text-indigo-700 hover:underline disabled:cursor-default disabled:no-underline"
             >
-              {checkIn.customer_name}
+              {/* T-20260612-foot-CHARTNO-B2-P1: 이름 + 차트번호 인접 표기(이름 칼럼 내 서브텍스트). 미발번도 명시. */}
+              <span className="block text-sm font-semibold">{checkIn.customer_name}</span>
+              <span className="block font-mono text-[10px] font-normal text-gray-400" data-testid="doctor-completed-chartno">
+                {chartNoBadge(readChartNo(checkIn))}
+              </span>
             </button>
           </div>
         </td>
