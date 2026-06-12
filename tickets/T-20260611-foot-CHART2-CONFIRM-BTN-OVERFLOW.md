@@ -14,6 +14,10 @@ scenario_count: 2
 commit: 4fadfdc
 spec: tests/e2e/T-20260611-foot-CHART2-CONFIRM-BTN-OVERFLOW.spec.ts
 build: pass
+e2e_executed: true
+e2e_result: 6 passed (0 skipped) — desktop-chrome, 26.2s
+e2e_evidence: evidence/T-20260611-foot-CHART2-CONFIRM-BTN-OVERFLOW_H1_desktop.png, evidence/T-20260611-foot-CHART2-CONFIRM-BTN-OVERFLOW_H2_mobile.png
+qa_fix: phase2 insufficient_verification 대응 — seed-free HARNESS 2종 추가(항상 실행) + 실측 스크린샷 첨부
 ---
 
 # T-20260611-foot-CHART2-CONFIRM-BTN-OVERFLOW
@@ -57,7 +61,20 @@ DB 변경 없음.
 
 ## 검증
 
-- 빌드: `npm run build` ✅ built in 3.71s
-- E2E spec: `tests/e2e/T-20260611-foot-CHART2-CONFIRM-BTN-OVERFLOW.spec.ts` (S1 데스크톱 / S2 모바일
-  bounding-box 경계 검증 + REG 라벨 무변경). prod 시드 미존재 환경에선 graceful skip(기존 CHART2 spec 관례).
-  supervisor macstudio 시드 환경 QA에서 본 검증.
+- 빌드: `npm run build` ✅ built in 3.67s
+- E2E 실행: `npx playwright test tests/e2e/T-20260611-foot-CHART2-CONFIRM-BTN-OVERFLOW.spec.ts --project=desktop-chrome`
+  → **6 passed (0 skipped), 26.2s** (2026-06-12 09:27, macstudio)
+  - HARNESS H1 (1280px) ✅ / HARNESS H2 (390px) ✅ — 시드 무관, 실 CSS 주입 후 boundingBox 경계 검증
+  - S1 데스크톱 ✅ / S2 모바일 ✅ / REG 라벨 무변경 ✅ — 실 시드 플로우(이 환경에 시드 존재, skip 없이 실행)
+- 브라우저 시뮬레이션 근거(스크린샷):
+  - `evidence/T-20260611-foot-CHART2-CONFIRM-BTN-OVERFLOW_H1_desktop.png` — 3버튼 우측 정렬, 경계 내, overflow 없음
+  - `evidence/T-20260611-foot-CHART2-CONFIRM-BTN-OVERFLOW_H2_mobile.png` — 3버튼 세로 스택, 경계 내, overflow 없음
+  - 확인 스텝: `/admin/customers` 로 앱 CSS 로드 → 정본 클래스(dialog.tsx/button.tsx/Footer className) 복제 DOM 주입
+    → 각 버튼 boundingBox 가 다이얼로그 box 의 L/R/T/B 경계 내(1px tol) 임을 단언.
+
+## QA FIX (supervisor FIX-REQUEST, qa_fail_phase=phase2, insufficient_verification)
+
+- 원인: 기존 spec 3종(S1/S2/REG)이 모두 실서버 시드 의존 → 시드 미존재 환경에서 전부 graceful skip → "실측 0건".
+- 조치: 시드와 무관하게 **항상 실행되는 HARNESS 2종**(H1 데스크톱 / H2 모바일)을 추가.
+  구동 중 앱의 실 Tailwind CSS 를 로드한 뒤 정본 클래스 복제 DOM 을 주입해 실제 레이아웃 boundingBox 로 검증 + 스크린샷 저장.
+- 결과: 6 passed / 0 skipped. 스크린샷 2종 첨부. CSS-only 수정(핸들러·로직·DB 무변경) 유지.
