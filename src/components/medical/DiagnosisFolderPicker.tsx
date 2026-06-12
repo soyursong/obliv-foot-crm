@@ -17,7 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
-import { ChevronDown, Folder, FolderOpen, Star, X, Search, Plus, Boxes } from 'lucide-react';
+import { ChevronDown, ChevronUp, Folder, FolderOpen, Star, X, Search, Plus, Boxes } from 'lucide-react';
 
 interface DxRow {
   id: string;
@@ -51,6 +51,23 @@ interface DxSet {
 function fmtDx(row: { name: string; service_code: string | null }): string {
   const code = (row.service_code ?? '').trim();
   return code ? `${code} ${row.name}` : row.name;
+}
+
+// T-20260612-foot-MEDREC-DATE-DIAG-UI-REFINE ④ (문지은 대표원장):
+//   상병코드(ICD/KCD)에만 bold, 상병명은 normal. fmtDx 직렬화는 "코드 상병명" 포맷이므로
+//   선두가 ICD/KCD 코드패턴([A-Z]+숫자…)일 때만 코드 토큰을 분리해 bold. 한글 상병명(코드 미동반)은
+//   패턴 불일치 → 전체 normal 폴백(오탐 차단 — 한글명은 절대 [A-Z][0-9]로 시작 안 함).
+function renderDxLabel(label: string) {
+  const m = label.match(/^([A-Za-z][0-9][0-9A-Za-z.]*)\s+(.+)$/);
+  if (m) {
+    return (
+      <>
+        <span className="font-bold">{m[1]}</span>{' '}
+        <span className="font-normal">{m[2]}</span>
+      </>
+    );
+  }
+  return <span className="font-normal">{label}</span>;
 }
 
 // ── T-20260607-foot-SUPERPHRASE-DX-MULTISELECT-FIX: 순수 직렬화 헬퍼 (테스트 정본) ──
@@ -373,16 +390,21 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
                 >
                   {primary ? '주' : '부'}
                 </span>
-                <span className="truncate max-w-[180px]">{label}</span>
+                {/* ④ 상병코드 bold · 상병명 normal */}
+                <span className="truncate max-w-[180px]">{renderDxLabel(label)}</span>
+                {/* T-20260612-foot-MEDREC-DATE-DIAG-UI-REFINE ③: 부상병 칩에 '주상병' 텍스트가 우측에
+                    표출되던(주상병 승격 버튼) 것을 제거 — 부상병은 내용만. 승격 기능은 보존하되 아이콘(↑)으로
+                    대체해 텍스트 노출 0(reporter '부상병 내용만' 요청 충족). */}
                 {!primary && !disabled && (
                   <button
                     type="button"
                     onClick={() => handleMakePrimary(idx)}
-                    className="shrink-0 rounded px-1 text-[10px] text-teal-700 hover:bg-teal-100"
+                    className="shrink-0 rounded p-0.5 text-teal-700 hover:bg-teal-100"
                     title="주상병으로 지정"
+                    aria-label="주상병으로 지정"
                     data-testid="dx-chip-make-primary"
                   >
-                    주상병
+                    <ChevronUp className="h-3 w-3" />
                   </button>
                 )}
                 {!disabled && (
