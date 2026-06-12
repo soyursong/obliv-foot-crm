@@ -72,8 +72,9 @@ test.describe('AC-2 — 초/재진 레이블 이름 왼쪽', () => {
 test.describe('AC-3 — 데이터테이블 정렬', () => {
   test('두 테이블 모두 table-fixed + colgroup 적용', () => {
     const s = DASH();
-    expect(s).toContain('table-fixed text-sm" data-testid="doctor-call-feed-table"');
-    expect(s).toContain('table-fixed text-sm" data-testid="doctor-completed-table"');
+    // T-20260612-foot-DOCDASH-FULLWIDTH-INLINE-EMOJI AC-1: 폰트 확대(text-sm→text-[15px]).
+    expect(s).toContain('table-fixed text-[15px]" data-testid="doctor-call-feed-table"');
+    expect(s).toContain('table-fixed text-[15px]" data-testid="doctor-completed-table"');
     expect((s.match(/<colgroup>/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 });
@@ -187,7 +188,11 @@ test.describe('AC-9/AC-10 — 귀가 처방게이트 / 상태', () => {
     expect(s).toContain('checkRxInClinic({');
   });
   test('AC-9: 귀가면 처방 버튼 숨김(!discharged 게이트)', () => {
-    expect(DASH()).toContain('{!discharged && (');
+    // T-20260612-foot-DOCDASH-FULLWIDTH-INLINE-EMOJI item9: 처방 셀이 either/or 삼항으로 재구조화됨
+    //   (확정→파란글씨 처방완료 / 미처방·원내잔류→알약 버튼 / 귀가·미처방→'-'). 귀가 게이트는 !discharged 분기로 보존.
+    const s = DASH();
+    expect(s).toContain('discharged ? (');
+    expect(s).toContain('doctor-completed-no-rx');
   });
   test('AC-10: 상태 칼럼 귀가/귀가 대기', () => {
     const s = DASH();
@@ -209,7 +214,8 @@ test.describe('AC-9/AC-10 — 귀가 처방게이트 / 상태', () => {
 test.describe('AC-11 — 임상경과 칼럼', () => {
   test('진료완료 테이블 헤더에 임상경과 + 미리보기 셀', () => {
     const s = DASH();
-    expect(s).toContain('<th className="px-3 py-1.5">임상경과</th>');
+    // FULLWIDTH-INLINE-EMOJI AC-1: 여백 축소(px-3→px-2). 임상경과 칼럼은 끝 미리보기 전용 유지(11FIX AC-11 정합).
+    expect(s).toContain('<th className="px-2 py-1.5">임상경과</th>');
     expect(s).toContain('data-testid="doctor-completed-clinical-cell"');
     expect(s).toContain('useCompletedClinicalProgress');
   });
@@ -249,17 +255,21 @@ test.describe('AC-12 — 시술 별도 칼럼', () => {
   });
   // T-20260612-foot-DOCDASH-SECTION-RESTRUCTURE AC-4(대표원장 지정, 변경 불가)로 헤더 순서 재정의 — 양 섹션 동일 8칼럼.
   //   ProcedureCell('오늘시술') 칼럼 자체는 보존(AC-12 동작 무회귀), 위치만 새 스펙으로 이동.
-  test('대기 테이블: 헤더 순서 이름→상태→경과시간→방→오늘시술→처방→임상경과→진료차트(WAITELAPSED-POLISH AC-2 rename)', () => {
+  // T-20260612-foot-CHARTNO-COL-SPLIT-P1(차트번호 독립 칼럼) + FULLWIDTH-INLINE-EMOJI AC-3(진료차트 칼럼 제거)로 재정의:
+  //   대기 8칼럼 = 이름·차트번호·상태·경과시간·방·오늘시술·처방·임상경과. 진료차트는 이름 옆 🩺 이모지 버튼으로 이동.
+  test('대기 테이블: 헤더 순서 이름→차트번호→상태→경과시간→방→오늘시술→처방→임상경과(진료차트 칼럼 제거)', () => {
     const s = DASH();
     const feedThead = s.slice(
       s.indexOf('doctor-call-feed-table'),
       s.indexOf('doctor-call-feed-rows'),
     );
     const order = (feedThead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
-    expect(order).toEqual(['이름', '상태', '경과시간', '방', '오늘시술', '처방', '임상경과', '진료차트']);
+    expect(order).toEqual(['이름', '차트번호', '상태', '경과시간', '방', '오늘시술', '처방', '임상경과']);
   });
   // T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7 supersede: 완료 섹션 경과시간 칼럼 제거 → 7칼럼.
-  test('진료완료 테이블: 경과시간 제거 7칼럼 순서(UX7 AC-7)', () => {
+  // UX7 AC-7(경과시간 제거) + CHARTNO-COL-SPLIT-P1(차트번호 칼럼) + FULLWIDTH-INLINE-EMOJI AC-3(진료차트 칼럼 제거):
+  //   완료 7칼럼 = 이름·차트번호·상태·방·오늘시술·처방·임상경과.
+  test('진료완료 테이블: 7칼럼 순서(경과시간·진료차트 제거 + 차트번호 칼럼)', () => {
     const s = DASH();
     const compThead = s.slice(
       s.indexOf('doctor-completed-table'),
@@ -267,7 +277,7 @@ test.describe('AC-12 — 시술 별도 칼럼', () => {
     );
     expect((compThead.match(/<th /g) ?? []).length).toBe(7);
     const order = (compThead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
-    expect(order).toEqual(['이름', '상태', '방', '오늘시술', '처방', '임상경과', '진료차트']);
+    expect(order).toEqual(['이름', '차트번호', '상태', '방', '오늘시술', '처방', '임상경과']);
   });
   test('양 테이블 행에 ProcedureCell 렌더(대기 1 + 완료 1)', () => {
     const s = DASH();

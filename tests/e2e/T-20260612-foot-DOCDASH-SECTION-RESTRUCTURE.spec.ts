@@ -31,7 +31,10 @@ const SRC = (rel: string) => readFileSync(join(HERE, '../../src', rel), 'utf-8')
 const DASH = () => SRC('components/doctor/DoctorCallDashboard.tsx');
 
 // T-20260612-foot-DOCDASH-WAITELAPSED-POLISH(후속) supersede: 헤더 '콜경과시간' → '경과시간'(AC-2).
-const NEW_ORDER = ['이름', '상태', '경과시간', '방', '오늘시술', '처방', '임상경과', '진료차트'];
+// T-20260612-foot-CHARTNO-COL-SPLIT-P1: 이름 옆 '차트번호' 독립 칼럼 추가.
+// T-20260612-foot-DOCDASH-FULLWIDTH-INLINE-EMOJI AC-3: '진료차트' 칼럼 제거(이름 옆 🩺 이모지 버튼으로 이동).
+//   → 대기 8칼럼: 이름·차트번호·상태·경과시간·방·오늘시술·처방·임상경과.
+const NEW_ORDER = ['이름', '차트번호', '상태', '경과시간', '방', '오늘시술', '처방', '임상경과'];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 시나리오1 — AC-1 필터링 버그(진료 대기중에서 completed_at 제외)
@@ -96,7 +99,7 @@ test.describe('시나리오2 — AC-3 flat + 칼럼 너비/스키마 동일', ()
 });
 
 test.describe('시나리오2 — AC-4 칼럼 순서(변경 불가)', () => {
-  test('대기 테이블 헤더 순서 = 이름|상태|경과시간|방|오늘시술|처방|임상경과|진료차트', () => {
+  test('대기 테이블 헤더 순서 = 이름|차트번호|상태|경과시간|방|오늘시술|처방|임상경과(진료차트 칼럼 제거)', () => {
     const s = DASH();
     const thead = s.slice(s.indexOf('doctor-call-feed-table'), s.indexOf('doctor-call-feed-rows'));
     const order = (thead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
@@ -114,7 +117,8 @@ test.describe('시나리오2 — AC-4 칼럼 순서(변경 불가)', () => {
     expect(s).toContain('data-testid="doctor-call-chart-btn"');
     expect(s).toContain('data-testid="doctor-completed-chart-btn"');
   });
-  test('진료차트 버튼 전용 칼럼 신설(full chart 오픈)', () => {
+  // FULLWIDTH-INLINE-EMOJI AC-2/AC-3: 진료차트 전용 칼럼 → 이름 옆 🩺 이모지 버튼으로 이동(testid·full chart 오픈 동선 보존).
+  test('진료차트 진입(full chart 오픈) 버튼 보존 — 이름 옆 이모지 버튼으로 이동', () => {
     const s = DASH();
     expect(s).toContain('data-testid="doctor-call-fullchart-btn"');
     expect(s).toContain('data-testid="doctor-completed-fullchart-btn"');
@@ -204,7 +208,8 @@ test.describe('시나리오3 — 방 칼럼 SSOT(ROOM-LABEL CRITICAL: preconditi
 test.describe('시나리오3 — AC-6 안전/빈상태', () => {
   test('빈 방 값은 "—" 폴백(빈칸 안전)', () => {
     const s = DASH();
-    expect(s).toContain('<span className="text-[11px] text-gray-300">—</span>');
+    // FULLWIDTH-INLINE-EMOJI AC-1: 폰트 확대(text-[11px]→text-[13px]).
+    expect(s).toContain('<span className="text-[13px] text-gray-300">—</span>');
   });
   test('양 섹션 0건 빈상태 메시지 + 헤더 항상 렌더(DOM 소멸 없음)', () => {
     const s = DASH();
