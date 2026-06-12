@@ -3831,15 +3831,21 @@ export default function Dashboard() {
     if (!pkgs || pkgs.length === 0) { setPkgMap(new Map()); setPkgHolderSet(new Set()); return; }
 
     const pkgIds = pkgs.map((p: { id: string }) => p.id);
-    const { data: sessions } = await supabase
-      .from('package_sessions')
-      .select('package_id')
-      .in('package_id', pkgIds)
-      .eq('status', 'used');
-
+    // T-20260613-foot-DUMMY-CHART-FIELD-NOTOPEN: 활성 패키지가 누적(클리닉당 수백건)되면
+    //   .in('package_id', pkgIds) 단일 쿼리의 GET URL 길이가 서버 한계를 초과해 400 발생 →
+    //   대시보드 패키지 잔여 배지가 전 환자에서 조용히 사라짐. id 목록을 배치(150)로 쪼개 합산한다.
+    const IN_CHUNK = 150;
     const usedMap = new Map<string, number>();
-    for (const s of (sessions ?? []) as { package_id: string }[]) {
-      usedMap.set(s.package_id, (usedMap.get(s.package_id) ?? 0) + 1);
+    for (let i = 0; i < pkgIds.length; i += IN_CHUNK) {
+      const slice = pkgIds.slice(i, i + IN_CHUNK);
+      const { data: sessions } = await supabase
+        .from('package_sessions')
+        .select('package_id')
+        .in('package_id', slice)
+        .eq('status', 'used');
+      for (const s of (sessions ?? []) as { package_id: string }[]) {
+        usedMap.set(s.package_id, (usedMap.get(s.package_id) ?? 0) + 1);
+      }
     }
 
     const map = new Map<string, PackageLabel>();
