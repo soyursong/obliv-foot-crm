@@ -29,11 +29,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = (rel: string) => readFileSync(path.join(__dirname, '..', '..', 'src', rel), 'utf8');
 const DASH = () => SRC('components/doctor/DoctorCallDashboard.tsx');
 
-// T-20260612-foot-DOCDASH-FULLWIDTH-INLINE-EMOJI(대표원장) supersede:
-//   임상경과·진료차트 셀 액션 → 이름 옆 이모지 버튼(NAME_EMOJI_BTN, 테두리형)으로 이동.
+// T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT(대표원장) supersede(FULLWIDTH-INLINE-EMOJI):
+//   임상경과·진료차트 이모지 버튼은 이름 옆이 아니라 신설 '차트' 칼럼(CHART_CELL_EMOJI_BTN, 테두리형)에 위치.
 //   남은 셀 텍스트-링크(CELL_ACTION_BTN) 액션 = 처방 토글 2벌.
 const CELL_LINK_BTN_TESTIDS = ['doctor-call-rx-btn', 'doctor-completed-rx-btn'];
-//   이모지 인라인 버튼(임상경과 📝 / 진료차트 🩺) = NAME_EMOJI_BTN.
+//   차트 칼럼 이모지 버튼(임상경과 📝 / 진료차트 🩺) = CHART_CELL_EMOJI_BTN.
 const EMOJI_BTN_TESTIDS = [
   'doctor-call-chart-btn',
   'doctor-call-fullchart-btn',
@@ -67,13 +67,15 @@ test.describe('시나리오1 — 셀 텍스트 위주 미니멀 표시', () => {
       expect(block, `${id} 블록 존재`).not.toBeNull();
       expect(block![0]).toContain('className={CELL_ACTION_BTN}');
     }
-    // FULLWIDTH-INLINE-EMOJI AC-2: 임상경과·진료차트 버튼은 이름 옆 이모지 버튼(NAME_EMOJI_BTN, 테두리형)으로 이동.
-    expect(src).toMatch(/const NAME_EMOJI_BTN =/);
-    expect(src).toMatch(/NAME_EMOJI_BTN[\s\S]{0,220}border/); // 테두리(버튼처럼)
+    // MONOTONE-RELAYOUT AC-6 supersede(FULLWIDTH NAME_EMOJI_BTN): 문지은 대표원장 요청으로 임상경과·진료차트
+    //   이모지 버튼을 이름 옆에서 신설 '차트' 칼럼으로 이동 → CHART_CELL_EMOJI_BTN(테두리형). 이름 옆 NAME_EMOJI_BTN 잔존 0.
+    expect(src).not.toMatch(/const NAME_EMOJI_BTN =/);
+    expect(src).toMatch(/const CHART_CELL_EMOJI_BTN =/);
+    expect(src).toMatch(/CHART_CELL_EMOJI_BTN[\s\S]{0,220}border/); // 테두리(버튼처럼)
     for (const id of EMOJI_BTN_TESTIDS) {
       const block = src.match(new RegExp(`data-testid="${id}"[\\s\\S]{0,200}`));
       expect(block, `${id} 블록 존재`).not.toBeNull();
-      expect(block![0]).toContain('className={NAME_EMOJI_BTN}');
+      expect(block![0]).toContain('className={CHART_CELL_EMOJI_BTN}');
     }
   });
 
@@ -109,7 +111,7 @@ test.describe('시나리오2 — 액션 동선 유지 + 테이블 구조 회귀 
       'doctor-call-rx-btn',
       'doctor-call-chart-btn',
       'doctor-call-fullchart-btn',
-      'doctor-call-complete-btn',
+      'doctor-hand-toggle', // MONOTONE-RELAYOUT AC-4: 손들기 ✋ 토글(구 doctor-call-complete-btn 대체)
       'doctor-completed-name-chart-btn',
       'doctor-completed-chart-btn',
       'doctor-completed-fullchart-btn',
@@ -161,16 +163,21 @@ test.describe('시나리오2 — 액션 동선 유지 + 테이블 구조 회귀 
     }
   });
 
-  test('진료완료/의사ack 액션 컴포넌트 보존(시각 축소되어도 기능 유지)', () => {
+  // T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT AC-4 supersede: 손들기 2단계 버튼 3종
+  //   (TreatmentCompleteButton/DoctorAckButton/DoctorAckBadge) → 상태셀 HandToggle(✋ 단색 3-상태) 단일화.
+  //   ack/완료 기능은 HandToggle 내부에서 보존(recordAck → applyStatusFlagTransition). emerald accent = 초록(ack) 상태.
+  test('진료완료/의사ack 액션 = HandToggle 단일화 보존(시각 축소되어도 기능 유지)', () => {
     const src = DASH();
-    expect(src).toMatch(/<TreatmentCompleteButton/);
-    expect(src).toMatch(/<DoctorAckButton/);
-    expect(src).toMatch(/<DoctorAckBadge/);
-    // 진료완료 버튼 = 확정(confirmed) 단계 강조 박스(emerald) — 후속 supersede 로 박스 복원.
-    //   핵심 회귀 가드는 '버튼/컴포넌트 보존'(위 3종) + emerald accent 유지.
-    const block = src.match(/data-testid="doctor-call-complete-btn"[\s\S]{0,260}/);
-    expect(block, '진료완료 버튼 블록').not.toBeNull();
-    expect(block![0]).toContain('text-emerald-700');
+    expect(src).toMatch(/<HandToggle/);
+    expect(src).not.toMatch(/<TreatmentCompleteButton/);
+    expect(src).not.toMatch(/<DoctorAckButton/);
+    // 손 토글 버튼 블록 — emerald accent(초록=ack 상태) 유지.
+    const block = src.match(/data-testid="doctor-hand-toggle"[\s\S]{0,400}/);
+    expect(block, '손 토글 버튼 블록').not.toBeNull();
+    expect(src).toContain('text-emerald-600');
+    // ack/완료 SSOT 재사용(신설 write 0)
+    expect(src).toContain('recordAck(checkIn.id)');
+    expect(src).toContain("applyStatusFlagTransition(checkIn, 'pink', actor)");
   });
 });
 
