@@ -73,6 +73,9 @@ import DrugFolderTree, { type DrugPick } from '@/components/doctor/DrugFolderTre
 // T-20260607-foot-RXQUICK-SET-FOLDER-NAV: 묶음처방 folder→set 2단 트리(공용 추출).
 import PrescriptionSetTreePicker from '@/components/prescription/PrescriptionSetTreePicker';
 import RxCountInput from '@/components/admin/RxCountInput';
+// T-20260614-foot-RX-DISPLAY-BUNDLE-TOKEN-FIX: 묶음처방 흡수분 포함 처방 표기를 '약물명 1/3/2'
+//   단일 토큰 경로(SSOT)로 수렴 — 진료차트 처방내역/미리보기 raw text 제거.
+import { formatRxItemToken } from '@/lib/rxTooltip';
 // T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2/AC-3): 상병명 폴더 탐색 선택기(자동완성 폐지)
 import DiagnosisFolderPicker from '@/components/medical/DiagnosisFolderPicker';
 // T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구 적용(진단명+임상경과+처방 일괄 라우팅)
@@ -353,11 +356,13 @@ function chartPreviewSegments(chart: MedicalChart, filters: Set<MemoFilter>): st
     if (d) segs.push(d);
   }
   if (isTypeActive(filters, 'rx') && hasRx(chart)) {
-    const rxNames = (Array.isArray(chart.prescription_items) ? chart.prescription_items : [])
-      .map(rx => rx?.name)
-      .filter((n): n is string => !!n && !!n.trim());
-    if (rxNames.length > 0) {
-      segs.push(`💊 ${rxNames.slice(0, 2).join(', ')}${rxNames.length > 2 ? ` 외 ${rxNames.length - 2}` : ''}`);
+    // T-20260614-foot-RX-DISPLAY-BUNDLE-TOKEN-FIX (AC-2): 미리보기 teaser 도 '약물명 1/3/2' 토큰으로
+    //   통일(구 약명-only). name 결측 항목은 제외 후 토큰화 — 단일 경로(formatRxItemToken) 수렴.
+    const rxTokens = (Array.isArray(chart.prescription_items) ? chart.prescription_items : [])
+      .filter(rx => !!rx?.name?.trim())
+      .map(rx => formatRxItemToken(rx));
+    if (rxTokens.length > 0) {
+      segs.push(`💊 ${rxTokens.slice(0, 2).join(', ')}${rxTokens.length > 2 ? ` 외 ${rxTokens.length - 2}` : ''}`);
     }
   }
   // AC-10: 특이(notable)는 미리보기 세그먼트에서 제외 — 특이사항은 좌측 상단 고정 카드로 일원화.
@@ -2818,9 +2823,13 @@ export default function MedicalChartPanel({
                                   </div>
                                   {/* AC3-4: 항목마다 줄바꿈 (truncate 제거 → break-words) */}
                                   <ul className="text-[10px] text-gray-700 leading-relaxed mt-0.5 space-y-0.5">
+                                    {/* T-20260614-foot-RX-DISPLAY-BUNDLE-TOKEN-FIX (AC-1/AC-2):
+                                        reporter(문지은) — 약물명 1/3/2(1회량/1일횟수/총일수) 토큰 표기.
+                                        구 '{name} {dosage}' raw text(반쪽) → SSOT formatRxItemToken 단일 경로.
+                                        묶음처방(prescription_sets) 흡수분도 동일 항목 shape라 동일 토큰으로 렌더. */}
                                     {shown.map((rx, i) => (
                                       <li key={i} className="break-words" data-testid="timeline-rx-item">
-                                        {rx.name}{rx.dosage?.trim() ? ` ${rx.dosage.trim()}` : ''}
+                                        {formatRxItemToken(rx)}
                                       </li>
                                     ))}
                                   </ul>

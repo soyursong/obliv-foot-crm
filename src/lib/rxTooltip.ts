@@ -74,19 +74,74 @@ export function formatRxConfirmedSummary(
   return items
     .map((it) => {
       const name = (it?.name ?? '').trim() || '(이름 미입력)';
-      // 토큰: 1회투여량(dosage) / 1일투여횟수(count → freq파싱 폴백) / 총투약일수(days).
-      //   결측 토큰은 push 안 함 → join('/') 시 빈 슬롯('//') 미노출(AC-2).
-      const tokens: string[] = [];
-      const dosage = (it?.dosage ?? '').trim();
-      if (dosage) tokens.push(dosage);
-      const perDay =
-        it?.count != null && Number.isFinite(it.count)
-          ? it.count
-          : parseFrequencyPerDay(it?.frequency);
-      if (perDay != null) tokens.push(String(perDay));
-      if (it?.days != null && Number.isFinite(it.days)) tokens.push(String(it.days));
-      const dose = tokens.join('/');
+      const dose = buildDoseTokens(it);
       return dose ? `${name} ${dose} *` : `${name} *`;
     })
     .join(' ');
+}
+
+// ---------------------------------------------------------------------------
+// 단일 정규화 경로 SSOT — T-20260614-foot-RX-DISPLAY-BUNDLE-TOKEN-FIX
+//   reporter(문지은 대표원장): 묶음처방 흡수분 포함 모든 처방 surface 가 '약물명 1/3/2'
+//   토큰으로 보여야 함(raw text 금지). 토큰 도출 로직(dosage/perDay/days)을 buildDoseTokens
+//   1곳으로 수렴 → formatRxConfirmedSummary(다중·' *' 구분) / formatRxItemToken(단일·per-<li>) 공용.
+// ---------------------------------------------------------------------------
+
+/**
+ * 처방 1건 → 용량 토큰 '{dosage}/{perDay}/{days}' (있는 것만).
+ *   앞=1회투여량(dosage) / 가운데=1일투여횟수(count → frequency '(\d+)회' 파싱 폴백) / 뒤=총투약일수(days).
+ *   결측 토큰은 skip → join('/') 시 빈 슬롯('//') 미노출. 값 전무면 ''.
+ */
+function buildDoseTokens(it: RxTooltipItemLike | null | undefined): string {
+  const tokens: string[] = [];
+  const dosage = (it?.dosage ?? '').trim();
+  if (dosage) tokens.push(dosage);
+  const perDay =
+    it?.count != null && Number.isFinite(it.count)
+      ? it.count
+      : parseFrequencyPerDay(it?.frequency);
+  if (perDay != null) tokens.push(String(perDay));
+  if (it?.days != null && Number.isFinite(it.days)) tokens.push(String(it.days));
+  return tokens.join('/');
+}
+
+/**
+ * 처방 raw 1건 → 토큰 필드 정규화(빠른처방 {name,dosage,count,frequency,days} | 정식
+ *   {medication_name,duration_days} 둘 다 방어 흡수). null/원시값 가드 포함.
+ *   T-20260610 RX-TOKEN-FORMAT 의 DoctorPatientList 로컬 normalizeRxItem 을 SSOT 로 격상 —
+ *   묶음처방 흡수 경로(MedicalChartPanel 등)도 동일 단일 경로로 수렴(AC-1/AC-2).
+ *   count = '처방 횟수칸'(1일 투여횟수 SSOT, PrescriptionItem.count).
+ */
+export function normalizeRxItem(raw: unknown): RxTooltipItemLike {
+  if (!raw || typeof raw !== 'object') {
+    return { name: null, dosage: null, count: null, frequency: null, days: null };
+  }
+  const it = raw as {
+    name?: string;
+    medication_name?: string;
+    dosage?: string | null;
+    count?: number | null;
+    frequency?: string | null;
+    days?: number | null;
+    duration_days?: number | null;
+  };
+  return {
+    name: it.name ?? it.medication_name ?? null,
+    dosage: it.dosage ?? null,
+    count: it.count ?? null,
+    frequency: it.frequency ?? null,
+    days: it.days ?? it.duration_days ?? null,
+  };
+}
+
+/**
+ * 처방 raw 1건 → '약물명 1/3/2' 한 항목 토큰 문자열(per-<li> 렌더용, 다중구분 '*' 없음).
+ *   내부에서 normalizeRxItem 으로 흡수 → 빠른처방/정식/묶음처방 흡수분 shape 모두 안전.
+ *   값 전무 약은 이름만 반환(회귀 0). 이름 결측은 '(이름 미입력)'.
+ */
+export function formatRxItemToken(raw: unknown): string {
+  const it = normalizeRxItem(raw);
+  const name = (it.name ?? '').trim() || '(이름 미입력)';
+  const dose = buildDoseTokens(it);
+  return dose ? `${name} ${dose}` : name;
 }

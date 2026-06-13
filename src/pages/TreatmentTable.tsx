@@ -20,6 +20,8 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, chartNoBadge, chartNoDisplay } from '@/lib/format';
+// T-20260614-foot-RX-DISPLAY-BUNDLE-TOKEN-FIX (AC-2): 처방 요약을 '약물명 1/3/2' 단일 토큰 경로로 수렴.
+import { formatRxConfirmedSummary, normalizeRxItem } from '@/lib/rxTooltip';
 import type { CheckIn, Staff } from '@/lib/types';
 import {
   STATUS_KO,
@@ -88,12 +90,11 @@ function formatDateKo(dateStr: string) {
 
 function prescriptionSummary(items: unknown): string {
   if (!items || !Array.isArray(items) || items.length === 0) return '—';
-  return items
-    .slice(0, 3)
-    .map((it: Record<string, unknown>) =>
-      [it.medication_name, it.dosage].filter(Boolean).join(' '),
-    )
-    .join(', ');
+  // T-20260614-foot-RX-DISPLAY-BUNDLE-TOKEN-FIX (AC-2): 구 '{medication_name} {dosage}' raw text →
+  //   SSOT 토큰 경로(normalizeRxItem→formatRxConfirmedSummary)로 '약물명 1/3/2 *' 통일.
+  //   빠른처방/정식/묶음처방 흡수분 shape 모두 normalizeRxItem 으로 흡수. 상위 3건만 미리보기.
+  const out = formatRxConfirmedSummary(items.slice(0, 3).map(normalizeRxItem)).trim();
+  return out || '—';
 }
 
 /* ─── 컴포넌트 ─────────────────────────────────────────────────── */
