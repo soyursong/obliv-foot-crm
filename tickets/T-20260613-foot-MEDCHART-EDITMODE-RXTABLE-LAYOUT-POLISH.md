@@ -10,7 +10,7 @@ db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: null
-commit_sha: PENDING
+commit_sha: aab901c
 created: 2026-06-13
 assignee: dev-foot
 reporter: 문지은 대표원장
