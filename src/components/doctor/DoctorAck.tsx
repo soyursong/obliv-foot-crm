@@ -28,8 +28,9 @@ export function isDoctorAcked(ackAt: string | null | undefined): boolean {
 /**
  * 의사 ✋확인 기록 (idempotent).
  *   `.is('doctor_ack_at', null)` 가드로 이미 ack 된 호출 재클릭은 0행 update → 예외 없이 동일 상태(AC4).
+ *   T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT: 진료대시보드 상태셀 ✋ 토글(HandToggle)이 ack write SSOT로 재사용 → export.
  */
-async function recordAck(checkInId: string): Promise<void> {
+export async function recordAck(checkInId: string): Promise<void> {
   const { error } = await supabase
     .from('check_ins')
     .update({ doctor_ack_at: new Date().toISOString() })

@@ -61,9 +61,19 @@ export default {
           "0%, 100%": { opacity: "0.4" },
           "50%": { opacity: "1" },
         },
+        // T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT AC-4: 상태 셀 ✋ 손들기 초기(진료필요·미ack) SHAKE.
+        //   좌우 흔들림(rotate ±). 1차 클릭(초록=ack) 후엔 미적용(정적). 주기 0.9s ease-in-out 무한.
+        shake: {
+          "0%, 100%": { transform: "rotate(0deg)" },
+          "20%": { transform: "rotate(-14deg)" },
+          "40%": { transform: "rotate(12deg)" },
+          "60%": { transform: "rotate(-10deg)" },
+          "80%": { transform: "rotate(8deg)" },
+        },
       },
       animation: {
         "pulse-hand": "pulse-hand 1.5s ease-in-out infinite",
+        shake: "shake 0.9s ease-in-out infinite",
       },
     },
   },
