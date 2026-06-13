@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Undo2 } from 'lucide-react';
 import { STATUS_KO, STATUS_FLAGS, STATUS_FLAG_LABEL, STATUS_FLAG_DOT, NEW_PATIENT_STAGES } from '@/lib/status';
 import { cn } from '@/lib/utils';
 import { chartNoBadge } from '@/lib/format';
@@ -140,10 +140,14 @@ export function StatusContextMenu({
         const isConsult = status === 'consultation';
         // T-20260613-foot-SLOT-BACKWARD-MOVE-UNLOCK: 역방향(이전 단계) 이동 차단 해제.
         // 임상상 역행 필수(예: 수납대기→후상담 요청 시 상담 단계 복귀). isBackward 가드 제거 — 역방향 방 서브메뉴도 노출.
-        // opacity-50 시각 힌트는 유지(과거 단계임을 표시), 클릭/서브메뉴/실이동만 허용.
+        // REOPEN(SLOT-BACKWARD-MOVE-UNLOCK): morning fix가 opacity-50 disabled-look을 유지 → 현장이
+        //   회색 처리된 이전 단계를 "막혀 있음"으로 오인 보고. disabled-look(opacity-50/muted/gray-300 dot) 제거.
+        //   역방향 항목은 정상 텍스트 + "되돌리기" 어포던스로 명확히 클릭 가능함을 표시(AC-R3).
         const showSubArrow = isLaser && hasLaserRooms && !isCurrent;
         const showTreatArrow = isTreatment && hasTreatmentRooms && !isCurrent;
         const showConsultArrow = isConsult && hasConsultRooms && !isCurrent;
+        // 역방향(이전 단계) 항목인데 방 서브메뉴 화살표가 없을 때만 "되돌리기" 배지 노출
+        const showRevertHint = isPast && !showSubArrow && !showTreatArrow && !showConsultArrow;
 
         return (
           <div key={status}>
@@ -151,9 +155,10 @@ export function StatusContextMenu({
               className={cn(
                 'flex w-full items-center gap-1 px-2 py-1 text-[11px] min-h-[28px] transition',
                 isCurrent && 'bg-teal-50 text-teal-700 font-semibold',
-                isPast && 'text-muted-foreground opacity-50',
+                // REOPEN: isPast disabled-look(opacity-50/muted) 제거 — 역방향도 정상 클릭 가능하게 보이도록.
+                isPast && 'text-gray-700',
                 // 역방향 단계도 클릭 가능 — hover 피드백 제공 (isPast 포함, 현재 단계만 제외)
-                !isCurrent && 'hover:bg-muted/60',
+                !isCurrent && 'hover:bg-muted/60 cursor-pointer',
               )}
               onClick={() => {
                 if (isCurrent) { onClose(); return; }
@@ -181,7 +186,8 @@ export function StatusContextMenu({
               <span
                 className={cn(
                   'h-2 w-2 rounded-full shrink-0',
-                  isCurrent ? 'bg-teal-500' : isPast ? 'bg-gray-300' : 'bg-gray-400',
+                  // REOPEN: isPast 도 bg-gray-300(disabled-look) 대신 bg-gray-400 — 미래 단계와 동일한 "활성" 점.
+                  isCurrent ? 'bg-teal-500' : 'bg-gray-400',
                 )}
               />
               {STATUS_KO[status]}
@@ -208,6 +214,12 @@ export function StatusContextMenu({
                     showLaserSubmenu && 'rotate-90 text-emerald-500',
                   )}
                 />
+              )}
+              {/* REOPEN(AC-R3): 역방향(이전 단계) 항목임을 "막힘"이 아닌 "되돌리기 가능"으로 명확히 표시 */}
+              {showRevertHint && (
+                <span className="ml-auto flex items-center gap-0.5 text-teal-600 text-[10px] font-medium shrink-0">
+                  <Undo2 className="h-3 w-3" />되돌리기
+                </span>
               )}
               {isCurrent && <span className="ml-auto text-teal-500 text-[10px]">현재</span>}
             </button>
