@@ -91,15 +91,27 @@
  *  AC-0) 기존 doctor-call-location(getCurrentLocationLabel) 배지·세로풀네임·숨기기·행자동표시·드래그 위치
  *        전부 불변 — 방배지만 *가산*. 위치배지(단계 인식)와 방배지(방 코드 직접)는 다른 facet으로 공존:
  *        위치배지 teal MapPin = "어느 단계", 방배지 indigo DoorOpen = "어느 방으로 갈지"(원장 네비게이션).
+ *
+ * T-20260614-foot-CALLLIST-DOCCALL-3FIX — 진료콜 명단 현장 피드백 3건(현장 김주연 총괄):
+ *  #1 위치 배지 중복 제거: ROOM-LABEL이 추가한 standalone 방 배지(doctor-call-room, indigo DoorOpen)는
+ *     위치 배지(doctor-call-location)가 입실 단계에서 '치료실 · C1'로 방번호를 이미 포함하면서 'C1'을
+ *     이중 표기하는 중복이 됐다(현장 실증: "📍 치료실 · C1" + "🏛 C1"). standalone 방 배지 제거 →
+ *     행당 위치 배지 1개로 통일(치료실명+방번호 유지). getAssignedSlotName 직접 사용처 소멸(getCurrentLocationLabel
+ *     내부에서만 호출).
+ *  #2 행 우측 전화기(지정콜, doctor-call-select) 버튼 완전 제거 + 핸들러 dead code 정리.
+ *  #3 상단 우측 '전체콜'(doctor-call-all) 버튼 완전 제거(+ 무용해진 '해제' doctor-call-clear 동반 제거).
+ *     숨기기(EyeOff)·접기/펼치기(chevron)는 유지.
+ *  ⇒ #2·#3로 콜 하이라이트 메커니즘(allCall/selectedId state·highlighted prop·"호출 중" doctor-call-calling)이
+ *     모든 진입점을 잃어 dead code화 → 일괄 정리. 명단 자동표시·메모·위치/힐러/재진 배지·행숨김·드래그 위치 불변.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Stethoscope, Phone, Check, X, Pencil, ChevronDown, ChevronUp, MapPin, RotateCcw, EyeOff, DoorOpen } from 'lucide-react';
+import { Stethoscope, Check, Pencil, ChevronDown, ChevronUp, MapPin, RotateCcw, EyeOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { CheckIn } from '@/lib/types';
-import { getAssignedSlotName, getCurrentLocationLabel } from '@/lib/checkin-slot';
+import { getCurrentLocationLabel } from '@/lib/checkin-slot';
 import { DoctorAckBadge } from '@/components/doctor/DoctorAck';
 
 /** T-20260610-foot-CALLLIST-TOP-COVERS-BUTTONS Phase 2: 드래그 위치 저장 키(사용자/브라우저 단위 개인설정). */
@@ -275,19 +287,10 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
   // 현재 명단에서 실제로 숨겨진 행 수(= 사용자에게 보여줄 '숨김 N · 표시' 카운트).
   const hiddenInViewCount = displayList.length - visibleList.length;
 
-  // 4) 지정콜 — 선택된 행 (호출 중 하이라이트). 활성 명단에서 빠지면 자동 해제.
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  useEffect(() => {
-    if (selectedId && !activeList.some((ci) => ci.id === selectedId)) {
-      setSelectedId(null);
-    }
-  }, [activeList, selectedId]);
-
-  // 4) 전체콜 — 활성 명단 전체 호출 모드 (활성 행만 강조)
-  const [allCall, setAllCall] = useState(false);
-  useEffect(() => {
-    if (activeList.length === 0) setAllCall(false);
-  }, [activeList.length]);
+  // T-20260614-foot-CALLLIST-DOCCALL-3FIX (#2·#3): 전체콜/지정콜(호출 하이라이트) 기능 폐기.
+  //   현장 김주연 총괄 — 행 우측 전화기(지정콜)·상단 전체콜 버튼 모두 제거. 두 진입점이 사라져
+  //   allCall/selectedId 상태·highlighted·"호출 중" 표시·"해제" 버튼이 전부 dead code가 되어 함께 정리.
+  //   숨기기(EyeOff)·접기/펼치기(chevron)·행숨김·메모·이름→차트·위치배지는 불변.
 
   // POPUP-RELOC AC-4) 접기/펼치기 토글 — 빈공간 점유로 칸반 작업 방해 방지.
   //   접힘: 헤더 바만 표시(명단 본문 숨김) → 칸반 빈공간 확보.
@@ -618,39 +621,8 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          {!collapsed && (
-            <button
-              data-testid="doctor-call-all"
-              disabled={activeList.length === 0}
-              onClick={() => {
-                setAllCall((v) => !v);
-                setSelectedId(null);
-              }}
-              className={cn(
-                'flex items-center gap-1 text-xs font-medium rounded-md px-2.5 py-1 min-h-[36px] border transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
-                allCall
-                  ? 'bg-red-600 text-white border-red-600'
-                  : 'bg-white text-red-700 border-red-300 hover:bg-red-100',
-              )}
-            >
-              <Phone className="h-3.5 w-3.5" />
-              전체콜
-            </button>
-          )}
-          {!collapsed && (allCall || selectedId) && (
-            <button
-              data-testid="doctor-call-clear"
-              onClick={() => {
-                setAllCall(false);
-                setSelectedId(null);
-              }}
-              className="flex items-center gap-1 text-xs text-gray-500 rounded-md px-2 py-1 min-h-[36px] border border-gray-200 bg-white hover:bg-gray-50"
-              title="호출 해제"
-            >
-              <X className="h-3.5 w-3.5" />
-              해제
-            </button>
-          )}
+          {/* T-20260614-foot-CALLLIST-DOCCALL-3FIX #3: 상단 '전체콜' 버튼 + (이제 무용한) '해제' 버튼 제거.
+              숨기기/펼침 토글·위치초기화는 유지. */}
           {/* Phase 2(컨버전스 흡수) 위치 초기화 — 드래그/저장된 좌표가 있을 때만. 기본 위치 복귀(화면 밖 박힘 복구).
               onPointerDown stopPropagation: 헤더 드래그 핸들로 오발동 방지(버튼 위에서 드래그 미시작과 이중 가드). */}
           {pos && (
@@ -715,13 +687,6 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
                 checkIn={ci}
                 inactive={inactive}
                 visitCount={ci.customer_id ? visitCounts[ci.customer_id] : undefined}
-                // 비활성(완료) 행은 콜 대상 아님 → 하이라이트·선택 비활성
-                highlighted={!inactive && (allCall || selectedId === ci.id)}
-                onSelect={() => {
-                  if (inactive) return; // 완료 행은 지정콜 불가
-                  setAllCall(false);
-                  setSelectedId((cur) => (cur === ci.id ? null : ci.id));
-                }}
                 onHide={() => hideRow(ci)}
                 onOpenChart={onOpenChart}
                 onRefresh={onRefresh}
@@ -739,10 +704,8 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
 interface DoctorCallRowProps {
   checkIn: CheckIn;
   visitCount?: number;
-  highlighted: boolean;
   /** 진료완료(핑크) = 비활성 — dimmed + "진료완료" 배지, 콜 대상 제외 */
   inactive?: boolean;
-  onSelect: () => void;
   /** T-20260610-foot-CALLLIST-ROW-HIDE-AUTOSHOW AC-1: 이 행 숨기기(표시 필터에서 제외) */
   onHide?: () => void;
   /** T-20260601-foot-DASH-HSCROLL-CHART-LOC #2: 고객 이름 클릭 → 진료차트 */
@@ -750,20 +713,17 @@ interface DoctorCallRowProps {
   onRefresh?: () => void;
 }
 
-function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onSelect, onHide, onOpenChart, onRefresh }: DoctorCallRowProps) {
+function DoctorCallRow({ checkIn, visitCount, inactive = false, onHide, onOpenChart, onRefresh }: DoctorCallRowProps) {
   const isReturning = checkIn.visit_type === 'returning';
   const isExperience = checkIn.visit_type === 'experience';
   // T-20260609-foot-CALLLIST-HEALER-POSITION item1 + REOPEN FIX-SPEC: 힐러 구분 배지.
   //   힐러 신호 두 갈래 모두 [힐러] 배지: status_flag='yellow'(HL) OR status='healer_waiting'(힐러대기 단계).
   const isHealer = checkIn.status_flag === 'yellow' || checkIn.status === 'healer_waiting';
-  // T-20260609-foot-CALLLIST-HEALER-POSITION item2·3: 성함 옆 현재 위치(단계 인식).
-  //   기존 getAssignedSlotName(방 이름) → getCurrentLocationLabel(단계 라벨, 대기 단계는 방 미표시).
-  //   치료대기 환자가 '방배정'으로 잘못 표시되던 오표시 제거 + status 파생으로 실시간 갱신.
+  // T-20260609-foot-CALLLIST-HEALER-POSITION item2·3 + T-20260614-foot-CALLLIST-DOCCALL-3FIX #1: 현재 위치(단계 인식).
+  //   getCurrentLocationLabel은 입실 단계(상담/원장실/치료실/레이저)에서 '단계 · 방번호'(예: '치료실 · C1')로
+  //   방번호를 이미 포함한다. 별도 standalone 방 배지(ROOM-LABEL)는 같은 'C1'을 한 번 더 띄워 중복 →
+  //   현장 김주연 총괄 지적. 위치 배지(치료실명+방번호) 단일로 통일하고 standalone 방 배지는 제거.
   const locationLabel = getCurrentLocationLabel(checkIn);
-  // T-20260611-foot-CALLLIST-ROOM-LABEL AC-1·AC-2: 배정 방이름(원장 네비게이션 — '어느 방으로 갈지').
-  //   6FIX AC-3(진료환자목록)와 동일 read-only 파생 규칙 — getAssignedSlotName(SSOT) + check_ins.*_room.
-  //   값 있으면 방 코드('C2'/'L3'/'상담실1'), 미배정/대기면 null → 배지에서 '—'(undefined·크래시 금지).
-  const assignedRoom = getAssignedSlotName(checkIn);
 
   // 3) 진료 전달사항 메모
   const [editing, setEditing] = useState(false);
@@ -819,7 +779,6 @@ function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onS
     <div
       data-testid="doctor-call-row"
       data-checkin-id={checkIn.id}
-      data-highlighted={String(highlighted)}
       data-inactive={String(inactive)}
       className={cn(
         // VERTICAL-LAYOUT req2: 세로 나열 → 카드는 패널 폭 가득(w-full). (구 가로배치 shrink-0 w-56 폐기)
@@ -827,9 +786,7 @@ function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onS
         // CALLLIST-DONE-INACTIVE) 진료완료 = 비활성 (흐림 + 회색조), 콜 대상 활성과 시각 구분
         inactive
           ? 'border-gray-200 bg-gray-50 opacity-60'
-          : highlighted
-            ? 'border-red-500 ring-2 ring-red-400 shadow-md bg-red-50'
-            : 'border-red-200 bg-white hover:border-red-300',
+          : 'border-red-200 bg-white hover:border-red-300',
       )}
     >
       {/* 헤더: 고객명(클릭→진료차트) + 위치배지 + 배지 + 지정콜/호출표시 */}
@@ -862,23 +819,8 @@ function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onS
             <MapPin className="h-2.5 w-2.5" />
             {locationLabel}
           </span>
-          {/* T-20260611-foot-CALLLIST-ROOM-LABEL AC-1·AC-2: 배정 방이름 배지 — 원장이 어느 방으로 갈지.
-              getAssignedSlotName(SSOT, 6FIX AC-3 동일 파생). 값 없으면 '—'(미배정/대기). 위치배지(teal MapPin)와
-              다른 facet으로 공존 — 방배지는 indigo DoorOpen으로 시각 구분(방 코드 = 네비게이션 타깃). */}
-          <span
-            data-testid="doctor-call-room"
-            data-room={assignedRoom ?? ''}
-            className={cn(
-              'inline-flex items-center gap-0.5 shrink-0 text-[10px] font-semibold rounded px-1 py-px whitespace-nowrap border',
-              assignedRoom
-                ? 'text-indigo-700 bg-indigo-50 border-indigo-200'
-                : 'text-gray-400 bg-gray-50 border-gray-200 font-medium',
-            )}
-            title={assignedRoom ? `배정 방: ${assignedRoom}` : '방 미배정'}
-          >
-            <DoorOpen className="h-2.5 w-2.5" />
-            {assignedRoom ?? '—'}
-          </span>
+          {/* T-20260614-foot-CALLLIST-DOCCALL-3FIX #1: standalone 방 배지(doctor-call-room) 제거.
+              방번호는 위 위치 배지(doctor-call-location)가 '치료실 · C1'로 이미 포함 → 중복 'C1' 박멸. */}
           {/* item1 힐러(yellow) 구분 배지 — 진료필요(보라)와 시각 구분 */}
           {isHealer && (
             <span
@@ -894,25 +836,10 @@ function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onS
               checkIns는 Dashboard fetchCheckIns(check_ins Realtime 구독)에서 갱신 → 새로고침 없이 즉시 반영.
               직원은 조회만(확인 버튼 없음 — 시나리오2 권한 게이트는 ack 버튼이 DoctorCallDashboard에만 존재). */}
           <DoctorAckBadge ackAt={checkIn.doctor_ack_at} className="shrink-0" />
-          {/* 지정콜 토글 — 이름 클릭(차트)과 분리된 별도 버튼 */}
-          {!inactive && (
-            <button
-              onClick={onSelect}
-              data-testid="doctor-call-select"
-              className={cn(
-                'shrink-0 inline-flex items-center justify-center rounded min-w-[28px] min-h-[28px] border transition-colors',
-                highlighted
-                  ? 'bg-red-600 text-white border-red-600'
-                  : 'bg-white text-red-600 border-red-200 hover:bg-red-50',
-              )}
-              title="지정콜 — 클릭하여 호출 중 표시"
-            >
-              <Phone className="h-3 w-3" />
-            </button>
-          )}
+          {/* T-20260614-foot-CALLLIST-DOCCALL-3FIX #2: 행 우측 전화기(지정콜) 버튼 제거 — 핸들러 dead code 동반 정리. */}
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {inactive ? (
+          {inactive && (
             <span
               className="flex items-center gap-0.5 text-[10px] font-bold text-gray-500 bg-gray-200 rounded px-1 py-px whitespace-nowrap"
               data-testid="doctor-call-done-badge"
@@ -920,15 +847,10 @@ function DoctorCallRow({ checkIn, visitCount, highlighted, inactive = false, onS
               <Check className="h-3 w-3" />
               진료완료
             </span>
-          ) : highlighted ? (
-            <span className="flex items-center gap-0.5 text-[10px] font-bold text-red-600 whitespace-nowrap" data-testid="doctor-call-calling">
-              <Phone className="h-3 w-3 animate-pulse" />
-              호출 중
-            </span>
-          ) : null}
+          )}
           {/* T-20260610-foot-CALLLIST-ROW-HIDE-AUTOSHOW AC-1) 이 행 숨기기 — 표시 필터에서 제외.
               신규 listup 시그니처로 재등장하면 자동 재노출(부모 hiddenSigs/listupSignature가 보장).
-              이름클릭→차트·지정콜과 클릭영역 분리된 별도 버튼. */}
+              이름클릭→차트와 클릭영역 분리된 별도 버튼. */}
           {onHide && (
             <button
               onClick={onHide}

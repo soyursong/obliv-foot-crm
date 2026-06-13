@@ -197,8 +197,9 @@ test.describe('T-20260610 CALLLIST-ROW-HIDE-AUTOSHOW — 행 숨기기 + 신규 
       test.skip(true, '위젯 미표시 환경 — 스킵');
       return;
     }
-    // 상단 액션 버튼(전체콜/숨기기/접기) 여전히 동작 — 행 숨김 facet과 직교
-    await expect(page.locator('[data-testid="doctor-call-all"]')).toBeVisible();
+    // 상단 액션 버튼(숨기기/접기) 여전히 동작 — 행 숨김 facet과 직교.
+    // T-20260614-foot-CALLLIST-DOCCALL-3FIX: 전체콜(doctor-call-all)은 제거 → 부재 단언으로 교체.
+    await expect(page.locator('[data-testid="doctor-call-all"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="doctor-call-hide"]')).toBeVisible(); // 전체숨김 토글 보존
     await expect(page.locator('[data-testid="doctor-call-toggle"]')).toBeVisible();
 
