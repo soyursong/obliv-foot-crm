@@ -83,14 +83,13 @@ test.describe('AC-3 — 데이터테이블 정렬', () => {
 // AC-4 — 손들기 버튼 오른쪽 + 이름 너비
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('AC-4 — 손들기 오른쪽 / 이름 너비', () => {
-  // T-20260612-foot-DOCDASH-WAITELAPSED-POLISH supersede(AC-6): 이름 셀 중앙정렬로 손들기 affordance 가
-  //   우측(ml-auto)이 아니라 이름 옆 중앙 배치로 이동. HandRaiseFlow 동작(2단계)은 보존.
-  test('손들기 affordance 가 이름 셀에 인접 렌더(HandRaiseFlow 보존)', () => {
+  // T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT supersede(AC-4): 손들기 affordance 가 이름 셀이 아니라
+  //   상태 셀('진료필요' 옆)로 이동 — HandRaiseFlow(2단계 버튼) → HandToggle(✋ 단색 3-상태 토글)로 대체.
+  test('손들기 affordance = 상태 셀 HandToggle(MONOTONE-RELAYOUT 이동)', () => {
     const s = DASH();
-    expect(s).toContain('<HandRaiseFlow');
-    // 이름 셀 중앙정렬(AC-6) — 구 ml-auto 우측배치 잔존 0
-    expect(s).not.toContain('ml-auto shrink-0');
-    expect(s).toContain('flex items-center justify-center gap-1.5');
+    expect(s).toContain('<HandToggle');
+    expect(s).not.toContain('<HandRaiseFlow'); // 구 이름-셀 affordance 잔존 0
+    expect(s).toContain('data-testid="doctor-hand-toggle"');
   });
   test('이름 버튼 min-w 확보(잘림 방지)', () => {
     expect(DASH()).toContain('min-w-[4rem] break-keep');
@@ -159,16 +158,18 @@ test.describe('AC-7 — 콜 후 _분 경과', () => {
 // AC-8 — 손들기 2단계 워크플로우
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('AC-8 — 손들기 2단계', () => {
-  test('HandRaiseFlow: acked → 진료완료(두손), 미acked → 손들기', () => {
+  // T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT supersede(AC-4/AC-5): 2단계 버튼(HandRaiseFlow/TreatmentCompleteButton)
+  //   → HandToggle 단일 ✋ 3-상태(shake→green ack→blue 완료). ack/완료 SSOT(recordAck/applyStatusFlagTransition) 재사용.
+  test('HandToggle: 미ack→shake, ack→green(완료가능), 완료→blue', () => {
     const s = DASH();
     expect(s).toContain('const acked = isDoctorAcked(checkIn.doctor_ack_at)');
-    expect(s).toContain('<TreatmentCompleteButton checkIn={checkIn} actor={actor} onCompleted={onRefresh} />');
-    expect(s).toContain('label="손들기"');
+    expect(s).toContain("completed ? 'blue' : acked ? 'green' : 'shake'");
+    expect(s).toContain('recordAck(checkIn.id)');
   });
-  test('진료완료 버튼 = 두손(Handshake) 아이콘', () => {
+  test('진료완료 전이 = HandToggle 초록 클릭(두손 버튼/Handshake 폐지)', () => {
     const s = DASH();
-    expect(s).toContain('Handshake');
-    expect(s).toContain('<Handshake className="h-3.5 w-3.5" />');
+    expect(s).not.toContain('Handshake'); // 구 두손 아이콘 폐지
+    expect(s).toContain("applyStatusFlagTransition(checkIn, 'pink', actor)");
   });
   test('진료완료 전이 = applyStatusFlagTransition(pink) SSOT(의사+직원, 신설 0)', () => {
     expect(DASH()).toContain("applyStatusFlagTransition(checkIn, 'pink', actor)");
@@ -219,16 +220,16 @@ test.describe('AC-11 — 임상경과 칼럼', () => {
     expect(s).toContain('data-testid="doctor-completed-clinical-cell"');
     expect(s).toContain('useCompletedClinicalProgress');
   });
-  // T-20260612-foot-DOCDASH-SECTION-RESTRUCTURE(대표원장 전면 재정의)로 superseded:
-  //   양 섹션이 동일 8칼럼(임상경과 포함)으로 통일 → 피드 테이블도 임상경과 칼럼 보유. 임상경과 미리보기 셀은 진료완료 한정 유지.
-  test('피드(대기) 테이블도 8칼럼(임상경과 칼럼 포함, SECTION-RESTRUCTURE 재정의)', () => {
+  // T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT supersede(AC-3): 차트 칼럼 신설(처방 오른쪽) → 피드 테이블 9칼럼.
+  test('피드(대기) 테이블 9칼럼(차트 칼럼 신설, MONOTONE-RELAYOUT)', () => {
     const s = DASH();
     const feedThead = s.slice(
       s.indexOf('doctor-call-feed-table'),
       s.indexOf('doctor-call-feed-rows'),
     );
-    expect((feedThead.match(/<th /g) ?? []).length).toBe(8);
+    expect((feedThead.match(/<th /g) ?? []).length).toBe(9);
     expect(feedThead).toContain('임상경과');
+    expect(feedThead).toContain('차트');
   });
   test('진료완료 expand colSpan = 8칼럼(DOCDASH_COLSPAN, SECTION-RESTRUCTURE)', () => {
     expect(DASH()).toContain('colSpan={DOCDASH_COLSPAN}');
@@ -255,29 +256,29 @@ test.describe('AC-12 — 시술 별도 칼럼', () => {
   });
   // T-20260612-foot-DOCDASH-SECTION-RESTRUCTURE AC-4(대표원장 지정, 변경 불가)로 헤더 순서 재정의 — 양 섹션 동일 8칼럼.
   //   ProcedureCell('오늘시술') 칼럼 자체는 보존(AC-12 동작 무회귀), 위치만 새 스펙으로 이동.
-  // T-20260612-foot-CHARTNO-COL-SPLIT-P1(차트번호 독립 칼럼) + FULLWIDTH-INLINE-EMOJI AC-3(진료차트 칼럼 제거)로 재정의:
-  //   대기 8칼럼 = 이름·차트번호·상태·경과시간·방·오늘시술·처방·임상경과. 진료차트는 이름 옆 🩺 이모지 버튼으로 이동.
-  test('대기 테이블: 헤더 순서 이름→차트번호→상태→경과시간→방→오늘시술→처방→임상경과(진료차트 칼럼 제거)', () => {
+  // T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT AC-3 재정의: 시간 칼럼명 '시간'(시계 제거) + 임상경과=처방 왼쪽,
+  //   차트 칼럼 신설(처방 오른쪽). 대기 9칼럼 = 이름·차트번호·상태·시간·방·오늘시술·임상경과·처방·차트.
+  test('대기 테이블: 헤더 순서 이름→차트번호→상태→시간→방→오늘시술→임상경과→처방→차트', () => {
     const s = DASH();
     const feedThead = s.slice(
       s.indexOf('doctor-call-feed-table'),
       s.indexOf('doctor-call-feed-rows'),
     );
     const order = (feedThead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
-    expect(order).toEqual(['이름', '차트번호', '상태', '경과시간', '방', '오늘시술', '처방', '임상경과']);
+    expect(order).toEqual(['이름', '차트번호', '상태', '시간', '방', '오늘시술', '임상경과', '처방', '차트']);
   });
-  // T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7 supersede: 완료 섹션 경과시간 칼럼 제거 → 7칼럼.
-  // UX7 AC-7(경과시간 제거) + CHARTNO-COL-SPLIT-P1(차트번호 칼럼) + FULLWIDTH-INLINE-EMOJI AC-3(진료차트 칼럼 제거):
-  //   완료 7칼럼 = 이름·차트번호·상태·방·오늘시술·처방·임상경과.
-  test('진료완료 테이블: 7칼럼 순서(경과시간·진료차트 제거 + 차트번호 칼럼)', () => {
+  // T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7(경과시간 제거) 유지 + T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT
+  //   AC-3 재정의: 임상경과=처방 왼쪽 + 차트 칼럼 신설(처방 오른쪽) → 완료 8칼럼.
+  //   완료 8칼럼 = 이름·차트번호·상태·방·오늘시술·임상경과·처방·차트.
+  test('진료완료 테이블: 8칼럼 순서(경과시간 제거 + 차트번호·차트 칼럼, MONOTONE-RELAYOUT)', () => {
     const s = DASH();
     const compThead = s.slice(
       s.indexOf('doctor-completed-table'),
       s.indexOf('doctor-completed-rows'),
     );
-    expect((compThead.match(/<th /g) ?? []).length).toBe(7);
+    expect((compThead.match(/<th /g) ?? []).length).toBe(8);
     const order = (compThead.match(/>([가-힣]+)<\/th>/g) ?? []).map((m) => m.replace(/[<>/th]/g, ''));
-    expect(order).toEqual(['이름', '차트번호', '상태', '방', '오늘시술', '처방', '임상경과']);
+    expect(order).toEqual(['이름', '차트번호', '상태', '방', '오늘시술', '임상경과', '처방', '차트']);
   });
   test('양 테이블 행에 ProcedureCell 렌더(대기 1 + 완료 1)', () => {
     const s = DASH();
