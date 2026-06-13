@@ -1,10 +1,13 @@
 /**
  * E2E spec — T-20260607-foot-DXTOOL-MENU-REORG (문지은 대표원장 C0ATE5P6JTH)
  *
- * Stage A (FE 무DB): 진료관리(ClinicManagement) 탭 3행 재배치 — flex-wrap basis-full 빈 div 로 행 경계 명시 강제.
- *   행1: 상병명 관리 → 처방세트(=기존 drug_folders 리네임) → 빠른처방 버튼 → 금기증 관리
+ * Stage A (FE 무DB): 진료관리(ClinicManagement) 탭 2행 재배치 — flex-wrap basis-full 빈 div 로 행 경계 명시 강제.
+ *   행1: 상병명 관리 → 묶음상병 → 처방세트(=기존 drug_folders 리네임) → 묶음처방 → 빠른처방 → 금기증 관리 → 급여여부 관리
  *   행2: 상용구 → 슈퍼상용구 → 서류 템플릿
  *   행3: 진료세트 → 수가세트 → 경과분석 플랜
+ *   ※ T-20260607-foot-PROCMENU-RX-UNIFY item2(2026-06-13 문지은 대표원장 "묶음처방은 처방세트 옆에 별도로 만들기"):
+ *     묶음처방 탭을 맨 끝 별도 행 → '처방세트' 바로 옆(행1)으로 이동. 행 경계 div 3 → 2.
+ *   ※ item3(동): '빠른처방 버튼' 탭 라벨 → '빠른처방'.
  * Stage B (FE 무DB): drug_folders 탭 라벨 '약품 폴더' → '처방세트' (data-testid=tab-drug-folders 보존).
  *   ↳ prescription_sets 탭은 '묶음처방'으로 분리 표기. 영구 보존(별도 유지) — 2026-06-08 문지은 대표원장 최종결정.
  *
@@ -44,21 +47,24 @@ test.describe('DXTOOL-MENU-REORG — 소스 구조 불변식', () => {
     expect(block![0]).not.toMatch(/>\s*처방세트\s*</);
   });
 
-  test('Stage A: 3개의 행 경계(basis-full 강제 줄바꿈) div 가 존재', () => {
+  test('Stage A: 2개의 행 경계(basis-full 강제 줄바꿈) div 가 존재 — 묶음처방 행1 편입 후', () => {
+    // PROCMENU-RX-UNIFY item2: 묶음처방을 행1로 이동하며 '행 경계 3→묶음처방' div 제거 → 2개 잔존.
     const breaks = src.match(/basis-full h-0/g) ?? [];
-    expect(breaks.length).toBe(3);
+    expect(breaks.length).toBe(2);
   });
 
-  test('Stage A: 행1 순서 = 상병명 관리 → 처방세트(drug_folders) → 빠른처방 → 금기증', () => {
+  test('Stage A: 행1 순서 = 상병명 관리 → 처방세트(drug_folders) → 묶음처방(prescriptions) → 빠른처방 → 금기증', () => {
     const iDiag = src.indexOf('value="diagnosis_names"');
     const iDrug = src.indexOf('value="drug_folders"');
+    const iRxSet = src.indexOf('value="prescriptions"');
     const iQuick = src.indexOf('value="quick_rx"');
     const iContra = src.indexOf('value="contraindications"');
     const iBreak1 = src.indexOf('basis-full h-0');
-    [iDiag, iDrug, iQuick, iContra, iBreak1].forEach((i) => expect(i).toBeGreaterThan(-1));
-    // 행1 4개 트리거가 모두 첫 행 경계(div) 이전에 위치
+    [iDiag, iDrug, iRxSet, iQuick, iContra, iBreak1].forEach((i) => expect(i).toBeGreaterThan(-1));
+    // 행1 트리거가 모두 첫 행 경계(div) 이전에 위치 + 묶음처방이 처방세트 바로 옆(처방세트와 빠른처방 사이)
     expect(iDiag).toBeLessThan(iDrug);
-    expect(iDrug).toBeLessThan(iQuick);
+    expect(iDrug).toBeLessThan(iRxSet); // item2: 묶음처방은 처방세트 '옆'(직후)
+    expect(iRxSet).toBeLessThan(iQuick);
     expect(iQuick).toBeLessThan(iContra);
     expect(iContra).toBeLessThan(iBreak1);
   });
@@ -74,13 +80,13 @@ test.describe('DXTOOL-MENU-REORG — 소스 구조 불변식', () => {
     expect(iSuper).toBeLessThan(iDocs);
   });
 
-  test('Stage A: 행3(진료세트·수가세트·경과분석) 가 행2 경계 뒤 / 행3 경계 앞', () => {
+  test('Stage A: 행3(진료세트·수가세트·경과분석) 가 행2 경계 뒤(마지막 행, 후행 경계 없음)', () => {
     const breaks = [...src.matchAll(/basis-full h-0/g)].map((m) => m.index!);
     const iTreat = src.indexOf('value="treatment_sets"');
     const iFee = src.indexOf('value="fee_set_templates"');
     const iProg = src.indexOf('value="progress_plans"');
+    // item2 이후 묶음처방이 행1로 올라가며 행3 뒤 경계 div 제거 → 행3 = 마지막 행
     expect(iTreat).toBeGreaterThan(breaks[1]);
-    expect(iProg).toBeLessThan(breaks[2]);
     expect(iTreat).toBeLessThan(iFee);
     expect(iFee).toBeLessThan(iProg);
   });

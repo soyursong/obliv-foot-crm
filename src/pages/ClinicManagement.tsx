@@ -78,7 +78,7 @@ export default function ClinicManagement() {
         {/* 진료관리 도구 3행 재배치 — T-20260607-foot-DXTOOL-MENU-REORG (문지은 대표원장 C0ATE5P6JTH)
             "다음 줄"=시각 행 분리. flex-wrap 자연 줄바꿈에 의존하지 않고 basis-full 빈 div 로 행 경계를 명시 강제. */}
         <TabsList className="mb-4 flex w-full flex-wrap h-auto gap-1">
-          {/* ── 행 1: 상병명 관리 · 처방세트 · 빠른처방 · 금기증 관리 ── */}
+          {/* ── 행 1: 상병명 관리 · 묶음상병 · 처방세트 · 묶음처방 · 빠른처방 · 금기증 관리 · 급여여부 관리 ── */}
           {/* AC-1: 상병명 관리 — services.category_label='상병' 단일 SSOT (서비스관리와 동기화) */}
           <TabsTrigger value="diagnosis_names" className="gap-1.5" data-testid="tab-diagnosis-names">
             <ClipboardList className="h-3.5 w-3.5" />
@@ -95,9 +95,18 @@ export default function ClinicManagement() {
             <FolderTree className="h-3.5 w-3.5" />
             처방세트
           </TabsTrigger>
+          {/* ── 묶음처방 = prescription_sets 탭(value=prescriptions). 영구 보존(별도 유지) — 2026-06-08 문지은 대표원장 최종결정.
+              T-20260607-foot-PROCMENU-RX-UNIFY item2(2026-06-13 문지은 대표원장): "묶음처방은 처방세트 옆에 별도로 만들기"
+              → 맨 끝 별도 행에서 '처방세트' 바로 옆으로 이동. dissolve 금지(prescription_sets 보존), 병렬 노출.
+              여러 약 조합 단축키·상용구형 처방 묶음(posology 보유). '처방세트'(drug_folders 폴더기능)와 직교한 별개 기능.
+              data-testid=tab-prescription-sets-legacy 보존(라우트·E2E 호환). value=prescriptions 유지(?tab 호환). */}
+          <TabsTrigger value="prescriptions" className="gap-1.5" data-testid="tab-prescription-sets-legacy">
+            <Pill className="h-3.5 w-3.5" />
+            묶음처방
+          </TabsTrigger>
           <TabsTrigger value="quick_rx" className="gap-1.5" data-testid="tab-quick-rx">
             <Zap className="h-3.5 w-3.5" />
-            빠른처방 버튼
+            빠른처방
           </TabsTrigger>
           {/* 금기증 관리 — admin 한정 노출 (admin-write RLS와 일치) */}
           {isAdmin && (
@@ -146,18 +155,6 @@ export default function ClinicManagement() {
           <TabsTrigger value="progress_plans" className="gap-1.5" data-testid="tab-progress-plans">
             <TrendingUp className="h-3.5 w-3.5" />
             경과분석 플랜
-          </TabsTrigger>
-
-          {/* 행 경계 3→묶음처방 */}
-          <div className="basis-full h-0" aria-hidden="true" />
-
-          {/* ── 묶음처방 = prescription_sets 탭(value=prescriptions). 영구 보존(별도 유지) — 2026-06-08 문지은 대표원장 최종결정.
-              여러 약 조합 단축키·상용구형 처방 묶음(posology 보유). '처방세트'(drug_folders 폴더기능)와 직교한 별개 기능.
-              ※ Stage C 그라운딩 결론: prescription_sets→folder 이관 없음(키공간 SERIAL≠UUID·posology 슬롯 부재·묶음의미 파괴).
-              data-testid=tab-prescription-sets-legacy 보존(라우트·E2E 호환). value=prescriptions 유지(?tab 호환). */}
-          <TabsTrigger value="prescriptions" className="gap-1.5" data-testid="tab-prescription-sets-legacy">
-            <Pill className="h-3.5 w-3.5" />
-            묶음처방
           </TabsTrigger>
         </TabsList>
 
