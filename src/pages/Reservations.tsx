@@ -1262,7 +1262,9 @@ export default function Reservations() {
                     )}
                   >
                     {WEEK_DAYS_KO[i]} {format(d, 'M/d')}
-                    {/* T-20260611-foot-RESVCAL-DISPLAY-REWORK item1: 날짜 헤더 총건수(초진+재진) 요약. HL은 합산 제외 별도 표기. */}
+                    {/* T-20260611-foot-RESVCAL-DISPLAY-REWORK item1: 날짜 헤더 총건수 요약.
+                        T-20260613-foot-RESVCAL-FOLLOWUP-5FIX AC1 (REDEFINITION (a)): HL을 총건수에 포함(초+재+힐러).
+                        HL 칩(HL N)은 별도 유지 — 합산+별도표기 병존. nji4 'HL 제외' supersede. */}
                     {(() => {
                       const c = dayKindCounts.get(format(d, 'yyyy-MM-dd'));
                       if (!c || (c.n === 0 && c.r === 0 && c.h === 0)) return null;
@@ -1273,7 +1275,7 @@ export default function Reservations() {
                           data-testid={`day-summary-${format(d, 'yyyy-MM-dd')}`}
                           className="mt-1 flex flex-wrap items-center gap-1 text-[10px] font-medium leading-none"
                         >
-                          <span className="font-semibold text-foreground/80">총 {c.n + c.r}</span>
+                          <span className="font-semibold text-foreground/80">총 {c.n + c.r + c.h}</span>
                           <span className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-emerald-700">초 {c.n}</span>
                           <span className="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-blue-700">재 {c.r}</span>
                           {c.h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-1.5 py-0.5 text-yellow-700">HL {c.h}</span>}
