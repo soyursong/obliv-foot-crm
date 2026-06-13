@@ -76,15 +76,22 @@ test.describe('③ 부상병 칩 주상병 텍스트 제거', () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ④ 상병코드 bold · 상병명 normal
+//   T-20260613-foot-MEDCHART-DIAG-RX-TABLEVIEW-REFINE AC-2 supersede: 진단명 칩(inline renderDxLabel)
+//   → 헤더없는 테이블뷰 [주/부 | 코드 | 상병명]. 코드/이름이 별도 컬럼으로 분리(splitDxLabel)되며,
+//   '코드 bold' 의도는 코드 <td> 의 font-bold 로 보존. 이전 renderDxLabel 인라인 분리는 폐지.
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('④ 상병코드 bold', () => {
-  test('renderDxLabel: ICD/KCD 코드 토큰만 font-bold, 상병명 font-normal', () => {
+test.describe('④ 상병코드 bold (테이블뷰 컬럼)', () => {
+  test('splitDxLabel: ICD/KCD 코드 토큰 분리 + 코드 컬럼 font-bold, 상병명 컬럼 normal', () => {
     const src = PICKER();
-    expect(src).toContain('function renderDxLabel(');
-    expect(src).toMatch(/font-bold[\s\S]{0,40}\{m\[1\]\}/);
-    expect(src).toMatch(/font-normal[\s\S]{0,40}\{m\[2\]\}/);
-    // 칩 라벨이 renderDxLabel 경유.
-    expect(src).toContain('{renderDxLabel(label)}');
+    // 코드/이름 분리 헬퍼(테이블 컬럼용).
+    expect(src).toContain('function splitDxLabel(');
+    expect(src).toMatch(/code: m\[1\], name: m\[2\]/);
+    // 선택 상병 테이블 — [주/부 | 코드 | 상병명] 헤더없는 테이블뷰(AC-2).
+    expect(src).toContain('data-testid="dx-selected-table"');
+    expect(src).toContain('const { code, name } = splitDxLabel(label);');
+    // 코드 컬럼 bold(④ 의도 보존), 상병명 컬럼은 일반.
+    expect(src).toMatch(/font-bold font-mono[\s\S]{0,60}\{code\}/);
+    expect(src).toMatch(/block truncate[\s\S]{0,40}\{name\}/);
   });
 });
 

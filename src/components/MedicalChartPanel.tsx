@@ -51,7 +51,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FileText, FlaskConical, FolderTree, History, Loader2, Pill, Pin, PinOff, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
+import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FileText, FlaskConical, FolderTree, History, Loader2, Pill, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
 // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 진료차트 우측 "📋 상담" 탭 (A안 — 서랍에서 탭으로 이식)
 import ConsultRecordTab from '@/components/ConsultRecordTab';
 import { Button } from '@/components/ui/button';
@@ -673,11 +673,15 @@ export default function MedicalChartPanel({
   //   사용자가 직접 토글하면 specialNoteManualRef 로 자동결정 무력화(의도 존중).
   const [specialNoteOpen, setSpecialNoteOpen] = useState(false);
   const specialNoteManualRef = useRef(false);
-  // T-20260603-foot-RX-CHART-FOLLOWUP2 #10: 특이사항 핀 토글 진행상태.
-  //   ⚠ Rules of Hooks: 반드시 `if (!open) return null` 조기반환(아래) 이전에 선언해야 함.
-  //   (T-20260604-foot-RX-CHART-PERSIST-BUG: 조기반환 이후 useState가 있어 open 토글 시
-  //    "Rendered more hooks" 크래시로 진료차트 진입 불가 → 본 위치로 상향 이동.)
-  const [pinningId, setPinningId] = useState<string | null>(null);
+  // T-20260613-foot-MEDCHART-MEMO-TIMELINE-REFINE AC-6: 핀 토글(pinningId/toggleSpecialNotePin) 제거 —
+  //   특이사항 핀 버튼을 빨강/파랑 닷(글씨색 토글)으로 대체. is_pinned 기반 정렬(sortSpecialNotes)은 유지
+  //   (레거시 고정 항목 상단 보존), UI 토글만 제거.
+  // T-20260613-foot-MEDCHART-MEMO-TIMELINE-REFINE AC-5: 특이사항 편집 게이트 — 펼침(specialNoteOpen)은
+  //   읽기전용, 연필 토글을 눌러야 입력창 노출(오기입 방지). 펼침/편집을 분리한 별도 플래그.
+  const [specialNoteEditing, setSpecialNoteEditing] = useState(false);
+  // AC-6: 핀 버튼 제거 → 빨강/파랑 닷으로 특이사항 '글씨색' 토글(presentation-only · 비영속 · db_change 無).
+  //   note.id → 'red'|'blue'. 같은 색 재클릭 = 해제(기본 검정). 새로고침 시 초기화(영속 컬럼 없음, UI 강조용).
+  const [noteColorOverrides, setNoteColorOverrides] = useState<Record<string, 'red' | 'blue'>>({});
 
   // T-20260526-foot-VISIT-FOLD-FILTER: 아코디언 + 필터 상태
   const [expandedChartIds, setExpandedChartIds] = useState<Set<string>>(new Set<string>());
@@ -1842,33 +1846,8 @@ export default function MedicalChartPanel({
     }
   }
 
-  // T-20260603-foot-RX-CHART-FOLLOWUP2 #10: 특이사항 핀 토글(맨위로 고정).
-  //   클리닉 공용 표식 — 타인 작성 항목도 고정 가능. set_special_note_pin RPC 로 컬럼 단위 변경.
-  //   (pinningId useState 는 Rules of Hooks 준수 위해 조기반환 이전 상단으로 이동 — PERSIST-BUG.)
-  async function toggleSpecialNotePin(note: SpecialNoteEntry) {
-    const next = !note.is_pinned;
-    setPinningId(note.id);
-    // 낙관적 업데이트 (즉시 재정렬)
-    setSpecialNotes(prev =>
-      sortSpecialNotes(prev.map(n => (n.id === note.id ? { ...n, is_pinned: next } : n))),
-    );
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any).rpc('set_special_note_pin', {
-        p_note_id: note.id,
-        p_pinned: next,
-      });
-      if (error) throw error;
-    } catch {
-      // 실패 시 롤백
-      setSpecialNotes(prev =>
-        sortSpecialNotes(prev.map(n => (n.id === note.id ? { ...n, is_pinned: note.is_pinned } : n))),
-      );
-      toast.error('고정 상태 변경 실패 — 잠시 후 다시 시도해주세요');
-    } finally {
-      setPinningId(null);
-    }
-  }
+  // T-20260613-foot-MEDCHART-MEMO-TIMELINE-REFINE AC-6: 특이사항 핀 토글(toggleSpecialNotePin) 제거됨 —
+  //   핀 버튼을 빨강/파랑 닷(글씨색 강조 토글)으로 대체. is_pinned 정렬(sortSpecialNotes)은 보존(레거시 고정 상단 유지).
 
   // T-20260609-foot-DOCDASH-CHART-UX item1: clinical 미니멀 본문 — Drawer/인라인(embed) 양쪽에서 재사용.
   //   embed=true(진료대시보드 행 아래 인라인): textarea rows 9·min-h 14rem(full-width)·컴팩트 버튼, 풀높이 flex 미사용.
@@ -2245,7 +2224,10 @@ export default function MedicalChartPanel({
         aria-label="진료차트"
         className="fixed right-0 top-0 z-[90] h-full bg-background shadow-2xl flex flex-col outline-none animate-in slide-in-from-right duration-300"
         // T-20260609-foot-CHARTBTN-MINIMAL-COURSE-DRAWER: clinical 미니멀 뷰는 좁은 폭(임상경과만).
-        style={{ width: variant === 'clinical' ? 'min(94vw, 560px)' : 'min(97vw, 1440px)' }}
+        // T-20260613-foot-MEDCHART-DIAG-RX-TABLEVIEW-REFINE AC-1: 진료차트 Drawer 폭 1440→1520px 소폭 확대.
+        //   좌측 타임라인(w-56)·우측 패널(w-72)은 고정폭 → 추가 80px는 전부 중앙 본문(flex-1)으로 흘러
+        //   '중앙 차트만 넓게'(좌우 칼럼 폭 불변) 요청 충족. 1520-(224+288)=1008px < max-w-5xl(1024) → 클리핑 無.
+        style={{ width: variant === 'clinical' ? 'min(94vw, 560px)' : 'min(97vw, 1520px)' }}
         data-testid="medical-chart-drawer"
         data-variant={variant}
       >
@@ -2356,62 +2338,83 @@ export default function MedicalChartPanel({
                       · AC1-4 미리보기 글씨 제거 · AC1-5 빈상태 텍스트 제거(비면 아무것도 안 보임)
                       · AC1-6 버튼형 입력→줄(inline) 입력 (밑줄, Enter 저장) */}
                 <div className="flex-none mx-2 mt-2" data-testid="special-note-section">
-                  {/* AC1-2: 헤더 스타일을 '진료 경과 타임라인' 라벨과 동일 규격으로 통일(text-[10px] font-semibold uppercase tracking-wide).
-                      AC1-1 이모지 없음. AC1-3 내용 有일 때만 글씨색 강조(gray-900), 없으면 배경에 녹은 muted. */}
-                  <button
-                    type="button"
-                    onClick={() => { specialNoteManualRef.current = true; setSpecialNoteOpen(o => !o); }}
-                    className="w-full flex items-center justify-between gap-1 py-1 hover:opacity-80 transition-opacity"
-                    data-testid="special-note-toggle"
-                    aria-expanded={specialNoteOpen}
-                  >
-                    <span className={`flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide ${specialNotes.length > 0 ? 'text-gray-900' : 'text-muted-foreground'}`}>
-                      특이사항
-                      {specialNotes.length > 0 && (
-                        <span className="text-[9px] tabular-nums font-bold">({specialNotes.length})</span>
-                      )}
-                    </span>
-                    <ChevronDown
-                      className={`h-3 w-3 text-muted-foreground transition-transform duration-200 ${specialNoteOpen ? 'rotate-180' : ''}`}
-                    />
-                  </button>
+                  {/* T-20260613-foot-MEDCHART-MEMO-TIMELINE-REFINE AC-5: 헤더 = [연필(편집 진입)] + [특이사항 펼침 토글].
+                      펼침은 읽기 전용(입력창 자동 노출 X). 토글 왼쪽 연필(흑백 아이콘)을 눌러야 편집 모드 진입(입력창 노출). */}
+                  <div className="w-full flex items-center gap-1 py-1">
+                    {/* AC-5: 연필 토글(흑백) — 펼친 상태에서만 노출. 클릭 시 편집 모드 on/off. */}
+                    {specialNoteOpen && (
+                      <button
+                        type="button"
+                        onClick={() => setSpecialNoteEditing(e => !e)}
+                        className={`shrink-0 rounded p-0.5 transition-colors ${specialNoteEditing ? 'text-gray-900' : 'text-gray-400 hover:text-gray-700'}`}
+                        title={specialNoteEditing ? '편집 종료' : '특이사항 편집'}
+                        aria-label={specialNoteEditing ? '편집 종료' : '특이사항 편집'}
+                        aria-pressed={specialNoteEditing}
+                        data-testid="special-note-edit-toggle"
+                      >
+                        <Edit2 className="h-3 w-3" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => { specialNoteManualRef.current = true; setSpecialNoteOpen(o => { const next = !o; if (!next) setSpecialNoteEditing(false); return next; }); }}
+                      className="flex-1 flex items-center justify-between gap-1 hover:opacity-80 transition-opacity"
+                      data-testid="special-note-toggle"
+                      aria-expanded={specialNoteOpen}
+                    >
+                      <span className={`flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide ${specialNotes.length > 0 ? 'text-gray-900' : 'text-muted-foreground'}`}>
+                        특이사항
+                        {specialNotes.length > 0 && (
+                          <span className="text-[9px] tabular-nums font-bold">({specialNotes.length})</span>
+                        )}
+                      </span>
+                      <ChevronDown
+                        className={`h-3 w-3 text-muted-foreground transition-transform duration-200 ${specialNoteOpen ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                  </div>
 
                   {specialNoteOpen && (
                     <div className="pb-1 space-y-1">
-                      {/* AC1-5: 빈상태 텍스트 제거 — 내용 있을 때만 목록 렌더, 비면 아무것도 안 보임.
-                          AC1-3: 박스/배경 강조 제거 → 왼쪽 얇은 컬러바 + 검은 볼드 본문으로만 시각 구분(배경 녹임). */}
+                      {/* 내용 있을 때만 목록 렌더(빈상태 텍스트 없음). 박스/배경 강조 없이 왼쪽 컬러바 + 본문. */}
                       {specialNotes.length > 0 && (
                         <div className="max-h-44 overflow-y-auto space-y-1" data-testid="special-note-list">
                           {specialNotes.map(note => {
                             const recorder = note.created_by_name || recorderName(note.created_by) || '미상';
                             let metaDate = '';
                             try { metaDate = format(new Date(note.created_at), 'yy.MM.dd'); } catch { metaDate = ''; }
+                            // AC-6: 빨강/파랑 닷으로 글씨색 토글(presentation-only). 미지정 = 기본 gray-900.
+                            const colorOv = noteColorOverrides[note.id];
+                            const bodyColorClass = colorOv === 'red' ? 'text-red-600' : colorOv === 'blue' ? 'text-blue-600' : 'text-gray-900';
                             return (
                             <div
                               key={note.id}
-                              className={`border-l-2 pl-2 py-0.5 ${note.is_pinned ? 'border-gray-900' : 'border-gray-200'}`}
+                              className="border-l-2 border-gray-200 pl-2 py-0.5"
                               data-testid="special-note-item"
-                              data-pinned={note.is_pinned ? 'true' : 'false'}
                             >
-                              {/* 우상단 메타 1줄 (흐린 작은 글씨 'YY.MM.DD 작성자성명') + 핀 토글 */}
+                              {/* 우상단 메타 1줄 + (좌) AC-6 컬러 닷 토글 */}
                               <div className="flex items-center justify-between gap-1">
-                                {/* #10: 핀 고정 토글 (맨위로) */}
-                                <button
-                                  type="button"
-                                  onClick={() => toggleSpecialNotePin(note)}
-                                  disabled={pinningId === note.id}
-                                  className={`shrink-0 -ml-0.5 rounded p-0.5 transition-colors disabled:opacity-40 ${note.is_pinned ? 'text-gray-900 hover:text-black' : 'text-gray-300 hover:text-gray-600'}`}
-                                  title={note.is_pinned ? '고정 해제' : '맨위로 고정'}
-                                  aria-label={note.is_pinned ? '고정 해제' : '맨위로 고정'}
-                                  aria-pressed={!!note.is_pinned}
-                                  data-testid="special-note-pin-btn"
-                                >
-                                  {pinningId === note.id
-                                    ? <Loader2 className="h-3 w-3 animate-spin" />
-                                    : note.is_pinned
-                                      ? <Pin className="h-3 w-3 fill-current" />
-                                      : <PinOff className="h-3 w-3" />}
-                                </button>
+                                {/* AC-6: 핀 버튼 제거 → 빨강/파랑 닷. 같은 색 재클릭 = 해제(기본색). */}
+                                <span className="flex items-center gap-1 shrink-0" data-testid="special-note-color-dots">
+                                  <button
+                                    type="button"
+                                    onClick={() => setNoteColorOverrides(prev => { const n = { ...prev }; if (n[note.id] === 'red') delete n[note.id]; else n[note.id] = 'red'; return n; })}
+                                    className={`h-2.5 w-2.5 rounded-full bg-red-500 transition-all ${colorOv === 'red' ? 'ring-1 ring-offset-1 ring-red-600' : 'opacity-50 hover:opacity-100'}`}
+                                    title="글씨 빨강"
+                                    aria-label="글씨 빨강으로 표시"
+                                    aria-pressed={colorOv === 'red'}
+                                    data-testid="special-note-dot-red"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setNoteColorOverrides(prev => { const n = { ...prev }; if (n[note.id] === 'blue') delete n[note.id]; else n[note.id] = 'blue'; return n; })}
+                                    className={`h-2.5 w-2.5 rounded-full bg-blue-500 transition-all ${colorOv === 'blue' ? 'ring-1 ring-offset-1 ring-blue-600' : 'opacity-50 hover:opacity-100'}`}
+                                    title="글씨 파랑"
+                                    aria-label="글씨 파랑으로 표시"
+                                    aria-pressed={colorOv === 'blue'}
+                                    data-testid="special-note-dot-blue"
+                                  />
+                                </span>
                                 <span
                                   className="shrink-0 text-[8px] leading-tight text-muted-foreground/60 tabular-nums text-right"
                                   data-testid="special-note-meta"
@@ -2420,8 +2423,8 @@ export default function MedicalChartPanel({
                                   {metaDate} <span data-testid="special-note-recorder">{recorder}</span>
                                 </span>
                               </div>
-                              {/* AC1-3: 본문 — 내용 강조(검은 볼드 글씨), 왼쪽 정렬 */}
-                              <p className="text-left text-[11px] font-semibold text-gray-900 whitespace-pre-wrap leading-snug break-words mt-0.5">
+                              {/* 본문 — AC-6 글씨색(빨강/파랑/기본) 적용 */}
+                              <p className={`text-left text-[11px] font-semibold whitespace-pre-wrap leading-snug break-words mt-0.5 ${bodyColorClass}`}>
                                 {note.content}
                               </p>
                             </div>
@@ -2430,21 +2433,24 @@ export default function MedicalChartPanel({
                         </div>
                       )}
 
-                      {/* AC1-6: 줄(inline) 입력 — 버튼/박스 없이 한 줄에 직접 입력, Enter 저장. 밑줄 스타일로 배경에 녹임. */}
-                      <Input
-                        value={specialNoteInput}
-                        onChange={e => setSpecialNoteInput(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && !(e.nativeEvent as { isComposing?: boolean }).isComposing) {
-                            e.preventDefault();
-                            if (!specialNoteSaving && specialNoteInput.trim()) addSpecialNote();
-                          }
-                        }}
-                        placeholder="특이사항 입력 후 Enter"
-                        disabled={specialNoteSaving}
-                        className="h-7 text-[11px] border-0 border-b border-gray-200 rounded-none bg-transparent px-1 shadow-none focus-visible:ring-0 focus-visible:border-gray-900 placeholder:text-muted-foreground/40"
-                        data-testid="special-note-input"
-                      />
+                      {/* AC-5: 입력창은 편집 모드(연필 클릭)일 때만 노출 — 펼침만으로는 안 보임(읽기 전용 기본). */}
+                      {specialNoteEditing && (
+                        <Input
+                          value={specialNoteInput}
+                          onChange={e => setSpecialNoteInput(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && !(e.nativeEvent as { isComposing?: boolean }).isComposing) {
+                              e.preventDefault();
+                              if (!specialNoteSaving && specialNoteInput.trim()) addSpecialNote();
+                            }
+                          }}
+                          placeholder="특이사항 입력 후 Enter"
+                          disabled={specialNoteSaving}
+                          autoFocus
+                          className="h-7 text-[11px] border-0 border-b border-gray-200 rounded-none bg-transparent px-1 shadow-none focus-visible:ring-0 focus-visible:border-gray-900 placeholder:text-muted-foreground/40"
+                          data-testid="special-note-input"
+                        />
+                      )}
                     </div>
                   )}
                 </div>
@@ -2536,7 +2542,8 @@ export default function MedicalChartPanel({
                     title="이 패널은 '진료 경과'만 시간순으로 모읍니다 — 진료메모·치료메모·처방. 항목을 클릭하면 우측 폼에서 편집합니다. ▸ 상담기록은 우측 '📋 상담' 탭에 있습니다. ▸ 우측 '방문이력'은 방문(체크인) 단위 읽기전용 뷰입니다."
                   >
                     <Stethoscope className="h-3 w-3" />
-                    진료 경과 타임라인
+                    {/* T-20260613-foot-MEDCHART-MEMO-TIMELINE-REFINE AC-7: 라벨에서 '타임라인' 단어 제거 → '진료경과'. */}
+                    진료경과
                     {isDummyMode && (
                       <span className="ml-1 text-yellow-600 font-bold">[더미]</span>
                     )}
@@ -2571,79 +2578,80 @@ export default function MedicalChartPanel({
                         style={isDummyEntry ? { outline: '2px solid #facc15', outlineOffset: '-2px' } : undefined}
                         data-testid="medical-chart-timeline-entry"
                       >
-                        {/* 엔트리 헤더 */}
-                        <div className="flex items-stretch">
-                          {/* 클릭 → 센터 폼 선택 */}
-                          <button
-                            type="button"
-                            onClick={() => selectChart(chart)}
-                            className={`flex-1 text-left px-3 py-2.5 hover:bg-muted transition-colors min-w-0 ${
-                              selectedChartId === chart.id
-                                ? 'bg-teal-50 border-l-2 border-l-teal-500'
-                                : ''
-                            }`}
-                          >
-                            {/* T-20260609-foot-MEDCHART-TIMELINE-COMPACT AC-1/AC-2 (문지은 대표원장):
-                                부가정보(날짜·작성자성명·유형badge)를 상단 '한 줄'에 모으고 메모 텍스트만 아래로.
-                                "기록자" 단어 제거 — 성명만(created_by_name/recorderName 데이터 보존).
-                                T-20260609-foot-TIMELINE-FILTER-PREVIEW-FIX AC-1(잔여 마감):
-                                날짜+성명을 좌측 그룹(min-w-0 flex-1)으로 묶어 같은 줄 정렬을 보장하고,
-                                성명이 배지에 밀려 0폭으로 깨지지 않게 함(성명 제거 X). 유형 배지는 우측 고정. */}
-                            <div className="flex items-center gap-1.5 leading-tight">
-                              {/* T-20260609-foot-TIMELINE-FILTER-PREVIEW-FIX AC-9: 유형 컬러 닷 — 좌측 고정 컬럼.
-                                  치료=파랑 / 진료=초록(emerald) / 처방=amber, 각 유형은 고정 슬롯(x)을 점유하고
-                                  부재 유형은 transparent 닷으로 컬럼 폭만 유지 → 스크롤 시 같은 색이 같은 열에 정렬. */}
-                              <span className="flex items-center gap-1 shrink-0" data-testid="timeline-type-dots">
-                                <span
-                                  className={`h-1.5 w-1.5 rounded-full ${hasTreat ? TYPE_DOT_CLASS.treat : 'bg-transparent'}`}
-                                  data-type="treat"
-                                  title={hasTreat ? '치료메모' : undefined}
-                                />
-                                <span
-                                  className={`h-1.5 w-1.5 rounded-full ${hasDoc ? TYPE_DOT_CLASS.doc : 'bg-transparent'}`}
-                                  data-type="doc"
-                                  title={hasDoc ? '진료메모' : undefined}
-                                />
-                                <span
-                                  className={`h-1.5 w-1.5 rounded-full ${hasRxItems ? TYPE_DOT_CLASS.rx : 'bg-transparent'}`}
-                                  data-type="rx"
-                                  title={hasRxItems ? '처방' : undefined}
-                                />
-                              </span>
-                              {/* 좌측 그룹: 날짜 + (더미) + 성명 — 같은 줄, 성명은 여기서만 truncate */}
-                              <span className="flex items-center gap-1.5 min-w-0 flex-1">
+                        {/* 엔트리 헤더 — T-20260613-foot-MEDCHART-MEMO-TIMELINE-REFINE AC-8/AC-9 재구성.
+                            상단 헤더 행(닷·날짜·진료의) 클릭 = 센터 폼 선택(기존 동선 유지).
+                            하단 미리보기 텍스트 클릭 = 펼침/접기 토글(AC-8). 우측 ▾ 셰브론도 동일 토글. */}
+                        <div className={`flex items-stretch ${selectedChartId === chart.id ? 'bg-teal-50 border-l-2 border-l-teal-500' : ''}`}>
+                          <div className="flex-1 min-w-0">
+                            {/* 헤더 행: 클릭 → 센터 폼 선택. AC-9: 닷 토글 왼쪽 여백 최소(pl-1.5),
+                                날짜(좌측정렬) … 진료의(우측정렬) 한 줄. */}
+                            <button
+                              type="button"
+                              onClick={() => selectChart(chart)}
+                              className="w-full text-left pl-1.5 pr-2 pt-2 pb-0.5 hover:bg-muted transition-colors min-w-0"
+                              data-testid={`chart-select-${chart.id}`}
+                            >
+                              <div className="flex items-center gap-1.5 leading-tight">
+                                {/* T-20260609-foot-TIMELINE-FILTER-PREVIEW-FIX AC-9: 유형 컬러 닷 — 좌측 고정 컬럼.
+                                    치료=파랑 / 진료=초록(emerald) / 처방=amber. 부재 유형은 transparent 닷으로 컬럼 폭만 유지. */}
+                                <span className="flex items-center gap-1 shrink-0" data-testid="timeline-type-dots">
+                                  <span
+                                    className={`h-1.5 w-1.5 rounded-full ${hasTreat ? TYPE_DOT_CLASS.treat : 'bg-transparent'}`}
+                                    data-type="treat"
+                                    title={hasTreat ? '치료메모' : undefined}
+                                  />
+                                  <span
+                                    className={`h-1.5 w-1.5 rounded-full ${hasDoc ? TYPE_DOT_CLASS.doc : 'bg-transparent'}`}
+                                    data-type="doc"
+                                    title={hasDoc ? '진료메모' : undefined}
+                                  />
+                                  <span
+                                    className={`h-1.5 w-1.5 rounded-full ${hasRxItems ? TYPE_DOT_CLASS.rx : 'bg-transparent'}`}
+                                    data-type="rx"
+                                    title={hasRxItems ? '처방' : undefined}
+                                  />
+                                </span>
+                                {/* AC-9: 날짜 좌측정렬(+더미) */}
                                 <span className="text-[11px] font-semibold text-teal-700 shrink-0">
                                   {fmtDateShort(chart.visit_date)}
                                 </span>
                                 {isDummyEntry && (
                                   <span className="text-[9px] text-yellow-600 font-bold shrink-0">더미</span>
                                 )}
+                                {/* AC-9: 진료의(작성자) 우측정렬 — 한 줄. 펼침 상세의 중복 표기(구 timeline-expanded-recorder)는 제거. */}
                                 {recorder && (
-                                  <span className="text-[9px] text-muted-foreground truncate min-w-0" data-testid="timeline-recorder">
+                                  <span className="ml-auto text-[9px] text-muted-foreground truncate min-w-0 text-right pl-1" data-testid="timeline-recorder">
                                     {recorder}
                                   </span>
                                 )}
-                              </span>
-                              {/* AC-10: 특이사항은 좌측 상단 고정 '특이사항' 섹션으로 일원화 — 접힌 항목엔 특이 badge/닷 비노출.
-                                  키워드 감지(isNotable) 안전 신호는 펼침 상세의 '⚠ 특이사항 감지' 로만 detail-on-demand 표시. */}
-                            </div>
-                            {/* T-20260609-foot-TIMELINE-FILTER-PREVIEW-FIX (AC-2/3/4/5):
-                                미리보기는 선택 필터 유형 기준으로 구성. 무필터=전체 유형 누적, 필터선택=선택 유형만(다중=누적).
-                                상병명(diagnosis)/주증상(chief_complaint)은 미리보기 소스에서 제외 → 상병명 라벨 비노출. */}
-                            {(() => {
-                              const segs = chartPreviewSegments(chart, memoFilters);
-                              return (
-                                <div className="text-[10px] font-medium text-foreground/80 truncate mt-0.5" data-testid="timeline-preview">
-                                  {segs.length > 0
-                                    ? segs.join('  ·  ')
-                                    /* T-20260613-foot-CHARTFILTER-EMPTYTEXT-TOGGLE AC-1: 필터 적용 후 미리보기 빈상태
-                                       안내문(구 "...없음")을 "-"(대시 하나)로 축약. 현장 '번잡함' 해소. */
-                                    : <span className="text-muted-foreground/60 font-normal">-</span>}
-                                </div>
-                              );
-                            })()}
-                          </button>
-                          {/* 아코디언 토글 버튼 */}
+                              </div>
+                            </button>
+                            {/* AC-8: 하단 미리보기 텍스트 — 클릭 시 펼침/접기 토글(별도 버튼: selectChart와 분리, 중첩 button 회피).
+                                T-20260609-foot-TIMELINE-FILTER-PREVIEW-FIX: 미리보기는 선택 필터 유형 기준 구성. */}
+                            <button
+                              type="button"
+                              onClick={() => toggleExpandChart(chart.id)}
+                              className="w-full text-left pl-1.5 pr-2 pb-2 hover:bg-muted/60 transition-colors"
+                              aria-expanded={isExpanded}
+                              data-testid={`timeline-preview-toggle-${chart.id}`}
+                            >
+                              {(() => {
+                                const segs = chartPreviewSegments(chart, memoFilters);
+                                return (
+                                  <div
+                                    className={`text-[10px] font-medium text-foreground/80 mt-0.5 ${isExpanded ? 'whitespace-pre-wrap break-words' : 'truncate'}`}
+                                    data-testid="timeline-preview"
+                                  >
+                                    {segs.length > 0
+                                      ? segs.join('  ·  ')
+                                      /* T-20260613-foot-CHARTFILTER-EMPTYTEXT-TOGGLE AC-1: 필터 빈상태 → "-"(대시). */
+                                      : <span className="text-muted-foreground/60 font-normal">-</span>}
+                                  </div>
+                                );
+                              })()}
+                            </button>
+                          </div>
+                          {/* 아코디언 토글 ▾ 버튼 (AC-8: 미리보기 클릭과 동일 동작) */}
                           <button
                             type="button"
                             onClick={() => toggleExpandChart(chart.id)}
@@ -2753,19 +2761,10 @@ export default function MedicalChartPanel({
                                 {memoFilters.size > 0 ? '-' : '저장된 메모 없음'}
                               </p>
                             )}
-                            {/* T-20260607-foot-PROGRESS-TIMELINE-AUTHOR: 경과 펼침 상세에도 작성 의사 표시
-                                (read-only, 8-A created_by_name 우선·recorderName 폴백 재사용 — L1734 recorder 변수).
-                                과거 무작성자(created_by NULL) 레코드는 recorder=null → 미렌더(빈값 처리). */}
-                            {recorder && (
-                              <div
-                                className="mt-1 pt-1 border-t border-border/20 flex items-center gap-1 text-[9px] text-muted-foreground"
-                                data-testid="timeline-expanded-recorder"
-                              >
-                                {/* T-20260609-foot-MEDCHART-TIMELINE-COMPACT AC-1: "작성/기록자" 단어 제거 — 성명만(아이콘이 작성자 표식 역할) */}
-                                <Stethoscope className="h-3 w-3 text-teal-600 shrink-0" />
-                                <span className="font-semibold text-teal-700">{recorder}</span>
-                              </div>
-                            )}
+                            {/* T-20260613-foot-MEDCHART-MEMO-TIMELINE-REFINE AC-9 (중복 제거): 진료의(작성자)가
+                                펼침 상세에서 또 표시되어 헤더 행과 합쳐 '2회 표시'되던 문제 — 펼침 상세의 작성자 블록
+                                (구 timeline-expanded-recorder, T-20260607-foot-PROGRESS-TIMELINE-AUTHOR)을 제거.
+                                진료의는 헤더 행 우측(timeline-recorder)에 1회만 표시(접힘/펼침 무관 상시 노출). */}
                           </div>
                         )}
                       </div>
@@ -2783,9 +2782,13 @@ export default function MedicalChartPanel({
 
                   {/* 타이틀 */}
                   <div className="flex items-center gap-2 pb-1.5 border-b flex-wrap">
-                    <span className="text-sm font-semibold text-teal-700">
+                    <span className="text-sm font-semibold text-teal-700" data-testid="medical-chart-form-title">
+                      {/* T-20260613-foot-MEDCHART-MEMO-TIMELINE-REFINE AC-10 (버그): 뷰 모드(읽기전용)에서도
+                          "수정" 라벨이 상시 표시되던 상태관리 버그 수정. 저장된 차트는 진입 시 editMode=false(읽기전용) →
+                          이때는 "수정" 미표시. [수정] 버튼으로 editMode 진입(=!isReadOnly)했을 때만 "수정" 노출.
+                          더미는 기존대로 [더미]. 저장/취소(selectChart)로 editMode=false 복귀 시 자동으로 라벨 사라짐. */}
                       {selectedChartId
-                        ? `진료 기록 ${selectedChartId.startsWith('__dummy__') ? '[더미]' : '수정'} — ${fmtDateFull(formDate)}`
+                        ? `진료 기록 ${selectedChartId.startsWith('__dummy__') ? '[더미] ' : (!isReadOnly ? '수정 ' : '')}— ${fmtDateFull(formDate)}`
                         : '새 진료 기록'}
                     </span>
                     {/* T-20260526-foot-NAV-ARROW-DUMMY: 방문 레코드 간 좌/우 화살표 네비게이션 (AC-2/3) */}
@@ -2838,17 +2841,21 @@ export default function MedicalChartPanel({
 
                   {/* T-20260611-foot-MEDREC-CLINICAL-SAVE-UICLEANUP AC-1: 진료일 | 담당의사 두 단 배치.
                       (임상경과/진료메모 2단 + 처방내역 진단명아래 누적은 NOTES-2COL 850ceed 기구현 — 회귀 금지) */}
-                  <div className="flex flex-col sm:flex-row gap-3" data-testid="chart-date-doctor-row">
+                  {/* T-20260613-foot-MEDCHART-DIAG-RX-TABLEVIEW-REFINE AC-5: 진료일 ___ 담당의 ___ 를
+                      한 줄(같은 행)에 — flex-1 반반 분할 폐지 → 각 필드 자연폭 인라인 배치(sm:items-end 베이스라인).
+                      행/필드 테두리 정리. */}
+                  <div className="flex flex-col sm:flex-row sm:items-end gap-2 sm:gap-6" data-testid="chart-date-doctor-row">
                   {/* 진료일 — T-20260612-foot-MEDREC-DATE-DIAG-UI-REFINE ①: 좌측정렬 + 달력 아이콘 date input.
-                      (type=date = 네이티브 달력 아이콘/피커, 비읽기전용일 때 클릭 수정 가능 — 동작 무변경) */}
-                  <div className="sm:flex-1 min-w-0 text-left">
+                      (type=date = 네이티브 달력 아이콘/피커, 비읽기전용일 때 클릭 수정 가능 — 동작 무변경)
+                      AC-5: flex-1 제거(자연폭) + 입력칸 테두리 제거(border-0). */}
+                  <div className="sm:flex-none min-w-0 text-left">
                     <label className="block text-xs font-semibold text-muted-foreground mb-1 text-left">진료일</label>
                     <Input
                       type="date"
                       value={formDate}
                       onChange={(e) => { setFormDate(e.target.value); loadVisitPayments(e.target.value); }}
                       disabled={isReadOnly}
-                      className="h-9 text-sm text-left max-w-[180px] disabled:opacity-100 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
+                      className="h-9 text-sm text-left border-0 max-w-[160px] disabled:opacity-100 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
                       data-testid="medical-chart-date"
                     />
                   </div>
@@ -2863,7 +2870,10 @@ export default function MedicalChartPanel({
                   {!(isReadOnly && selectedChart && !selectedChartId?.startsWith('__dummy__')) && (
                   /* 담당 의사 — T-20260612-foot-MEDREC-DATE-DIAG-UI-REFINE ②: 우측정렬 + 드롭다운(select, 의사 role만=clinicDoctors).
                      컬럼을 flex-col items-end 로 두어 라벨·select·경고를 우측 정렬. select width=auto 로 ml-auto 효과. */
-                  <div className="sm:flex-1 min-w-0 sm:flex sm:flex-col sm:items-end" data-testid="signing-doctor-select-block">
+                  /* AC-5: flex-1 제거(자연폭) → 진료일과 한 줄 인라인. sm:items-end 유지(우측 정렬·
+                     DATE-DIAG-UI-REFINE 회귀 가드). 담당의 이름 입력칸 폭을 한글 5자 내외(약 7.5rem)로
+                     슬림화 + 평상시 테두리 제거('토글·테두리 과하게 넓음'); 미선택 경고시에만 rose 테두리 유지. */
+                  <div className="min-w-0 sm:flex sm:flex-col sm:items-end" data-testid="signing-doctor-select-block">
                     <label className="block w-full text-xs font-semibold text-muted-foreground mb-1 sm:text-right">
                       담당 의사
                     </label>
@@ -2871,12 +2881,12 @@ export default function MedicalChartPanel({
                       value={formSigningDoctorId}
                       onChange={(e) => setFormSigningDoctorId(e.target.value)}
                       disabled={isReadOnly}
-                      className={`h-10 text-sm w-full sm:w-auto sm:min-w-[220px] max-w-[280px] rounded-md border px-3 bg-background ${
+                      className={`h-9 text-sm w-full sm:w-auto sm:min-w-0 sm:max-w-[7.5rem] truncate rounded-md px-1.5 bg-background ${
                         isReadOnly
-                          ? 'opacity-100 bg-gray-50 text-gray-500 cursor-not-allowed'
+                          ? 'opacity-100 bg-gray-50 text-gray-500 cursor-not-allowed border-0'
                           : !formSigningDoctorId
-                            ? 'border-rose-300 focus:border-rose-400'
-                            : 'border-input'
+                            ? 'border border-rose-300 focus:border-rose-400'
+                            : 'border-0'
                       }`}
                       data-testid="medical-chart-signing-doctor"
                       aria-label="담당 의사(진료의)"
@@ -2915,7 +2925,9 @@ export default function MedicalChartPanel({
                   <div className="sm:flex-1 min-w-0">
                     <label className="block text-xs font-semibold text-muted-foreground mb-1">
                       진단명
-                      <span className="ml-1 text-[10px] text-teal-600 font-normal">· 등록 상병명 폴더 선택</span>
+                      {/* T-20260613-foot-MEDCHART-DIAG-RX-TABLEVIEW-REFINE AC-2: 라벨 옆 폴더선택 안내
+                          보조문구(span) 제거. 폴더 선택 진입 어포던스는 DiagnosisFolderPicker 트리거 버튼
+                          (＋ 아이콘 + 펼침 ▾)으로 유지 — 보조 텍스트만 제거. */}
                     </label>
                     <DiagnosisFolderPicker
                       value={formDx}
@@ -2927,28 +2939,33 @@ export default function MedicalChartPanel({
                   </div>
 
                   {/* 처방내역 (우) — AC-3 row2 우측 컬럼. 우측 패널에서 선택 후 이 테이블에 반영.
-                      AC-5: 복수 처방은 테이블 행(세로 stack)으로 표시. */}
-                  <div className="sm:flex-1 min-w-0">
+                      AC-5: 복수 처방은 테이블 행(세로 stack)으로 표시.
+                      T-20260613-foot-MEDCHART-DIAG-RX-TABLEVIEW-REFINE AC-4: 처방내역 폭 확대 —
+                      진단명(flex-1) 대비 처방내역 컬럼을 flex-[1.5]로 넓힘(현장 '처방내역 너무 짧음'). */}
+                  <div className="sm:flex-[1.5] min-w-0">
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-xs font-semibold text-muted-foreground">처방내역</label>
                       <span className="text-[10px] text-muted-foreground">우측 패널에서 처방세트 선택</span>
                     </div>
                     {formRx.length > 0 ? (
+                      /* T-20260613-foot-MEDCHART-DIAG-RX-TABLEVIEW-REFINE AC-4: 테두리 전부 제거 —
+                         외곽 테두리(border) 제거 + 내부 입력칸/버튼 테두리·그림자도 전부 제거
+                         (arbitrary variant [&_input]/[&_button]). 기능 동선(추가/수정/삭제·세트 반영) 무변경. */
                       <div
-                        className="rounded-lg border bg-card overflow-hidden"
+                        className="rounded-lg bg-card overflow-hidden [&_input]:border-0 [&_input]:shadow-none [&_input]:bg-transparent [&_button]:border-0"
                         data-testid="prescription-items-table"
                       >
                         {/* AC-4: 약이름(용량 포함) | 용법 | 횟수 | 일수 컬럼 분리 + 행별 직접 조정.
                             AC-3: 약 종류(투여경로) 색상 도트.
                             MEDCHART-SUPERPHRASE-EXT 2-5: 횟수 = 숫자만 입력 + 배경 '회'(RxCountInput), 용법과 별도 칸. */}
                         <table className="w-full text-xs">
-                          <thead className="bg-muted/40">
+                          <thead className="text-muted-foreground/70">
                             <tr>
-                              <th className="text-left px-3 py-1.5 font-medium">약이름 (용량)</th>
-                              <th className="text-left px-2 py-1.5 font-medium w-24">용법</th>
-                              <th className="text-left px-2 py-1.5 font-medium w-20">횟수</th>
-                              <th className="text-left px-2 py-1.5 font-medium w-16">일수</th>
-                              <th className="py-1.5 w-6" />
+                              <th className="text-left px-3 py-1 font-medium">약이름 (용량)</th>
+                              <th className="text-left px-2 py-1 font-medium w-24">용법</th>
+                              <th className="text-left px-2 py-1 font-medium w-20">횟수</th>
+                              <th className="text-left px-2 py-1 font-medium w-16">일수</th>
+                              <th className="py-1 w-6" />
                             </tr>
                           </thead>
                           <tbody>
@@ -2957,7 +2974,6 @@ export default function MedicalChartPanel({
                               return (
                                 <tr
                                   key={idx}
-                                  className="border-t border-border/50"
                                   data-testid={`prescription-row-${idx}`}
                                 >
                                   <td className="px-3 py-1.5">
@@ -3102,23 +3118,38 @@ export default function MedicalChartPanel({
                       <label className="text-xs font-semibold text-muted-foreground">치료메모</label>
                     </div>
                     {treatMemos.length > 0 ? (
-                      <div className="space-y-1.5" data-testid="treat-memo-in-chart-section">
-                        {treatMemos.map((memo) => (
-                          <div
-                            key={memo.id}
-                            className="rounded border bg-blue-50/40 border-blue-100 px-2.5 py-2 space-y-1"
-                            data-testid="treat-memo-item"
-                          >
-                            <p className="text-[11px] text-gray-800 whitespace-pre-wrap leading-relaxed">{memo.content}</p>
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="text-[9px] text-muted-foreground">{memo.created_by_name ?? '알 수 없음'}</span>
-                              <span className="text-[9px] text-muted-foreground tabular-nums">{fmtDateShort(memo.created_at)}</span>
+                      /* T-20260613-foot-MEDCHART-MEMO-TIMELINE-REFINE 치료메모 미니멀 리파인:
+                         AC-1 항목별 '치료메모' 태그 배지(memo_type) 제거.
+                         AC-2 날짜·작성자를 항목 우측 상단 한 줄로 이동(본문 아래 X).
+                         AC-3 테두리/배경 박스 제거 → 좌측 경과 타임라인과 동일한 `| 텍스트`(border-l) 미니멀 통일.
+                         AC-4 [중복 진단] 박민석 환자 치료메모 2건은 content가 서로 다른 별개 메모(데이터/렌더 중복 아님 —
+                              diag SQL: scripts/...AC4_diag.mjs 결과). 동일 배지+박스로 '중복 오인' → AC-1/AC-3로 자연 해소.
+                              단 방어적으로 byte-identical(동일 content+작성자+created_at) 행만 1건으로 축약(영속 데이터 무변경). */
+                      <div className="space-y-1" data-testid="treat-memo-in-chart-section">
+                        {(() => {
+                          const seen = new Set<string>();
+                          const uniqMemos = treatMemos.filter((m) => {
+                            const sig = `${(m.content ?? '').trim()}__${m.created_by_name ?? ''}__${m.created_at ?? ''}`;
+                            if (seen.has(sig)) return false;
+                            seen.add(sig);
+                            return true;
+                          });
+                          return uniqMemos.map((memo) => (
+                            <div
+                              key={memo.id}
+                              className="border-l-2 border-blue-300 pl-2 py-0.5"
+                              data-testid="treat-memo-item"
+                            >
+                              {/* AC-2: 우측 상단 메타 한 줄 (날짜 · 작성자) — 흐린 작은 글씨 */}
+                              <div className="flex items-center justify-end gap-1 text-[9px] text-muted-foreground/60 tabular-nums">
+                                <span>{fmtDateShort(memo.created_at)}</span>
+                                <span data-testid="treat-memo-recorder">{memo.created_by_name ?? '알 수 없음'}</span>
+                              </div>
+                              {/* AC-3: 본문 — 테두리/배경 없이 텍스트만 */}
+                              <p className="text-[11px] text-gray-800 whitespace-pre-wrap leading-snug break-words">{memo.content}</p>
                             </div>
-                            {memo.memo_type && (
-                              <span className="text-[9px] text-blue-600 bg-blue-100 rounded px-1 py-0.5">{memo.memo_type}</span>
-                            )}
-                          </div>
-                        ))}
+                          ));
+                        })()}
                       </div>
                     ) : (
                       /* ⑨ 치료메모 내용 없으면 compact — 고정 8rem 제거, 헤더+최소 padding만. */
