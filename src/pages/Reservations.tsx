@@ -31,6 +31,9 @@ import { VISIT_TYPE_KO } from '@/lib/status';
 import { formatPhone, maskPhoneTail, chartNoBadge } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
+// T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER: resvKind 단일 소스화(중복 구현 금지).
+//   기존 로컬 resvKind 정의 → 공유 lib(resvSlotAgg)로 이관. 예약상세팝업 시간대 패널과 동일 분류규칙 공유.
+import { resvKind, type ResvKind } from '@/lib/resvSlotAgg';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import { CustomerHoverCard } from '@/components/CustomerHoverCard';
@@ -64,14 +67,7 @@ const STATUS_STYLE: Record<Reservation['status'], string> = {
 // T-20260611-foot-RESVCAL-DISPLAY-REWORK item3: 예약 카드 유형별 배경색
 //   초진=초록 / 재진=파랑 / 힐러(HL)=노랑 (이전 초진=파랑/재진=초록에서 현장 요청으로 반전).
 //   힐러는 visit_type와 직교(healer_flag) → resvKind()로 우선 분류.
-type ResvKind = 'new' | 'returning' | 'healer' | 'other';
-/** 예약 유형 분류: 힐러(healer_flag) 우선 → 초진/재진 → 기타(선체험 등). */
-function resvKind(r: Reservation): ResvKind {
-  if (r.healer_flag) return 'healer';
-  if (r.visit_type === 'new') return 'new';
-  if (r.visit_type === 'returning') return 'returning';
-  return 'other';
-}
+//   resvKind / ResvKind 는 @/lib/resvSlotAgg 단일 소스에서 import(중복 구현 금지, TIMESLOT-PICKER).
 // item6: 동일 시간대 정렬 순서 초진 → 재진 → 힐러 → 기타
 const KIND_ORDER: Record<ResvKind, number> = { new: 0, returning: 1, healer: 2, other: 3 };
 // T-20260612-foot-WEEKCAL-HEADER-CARD-REDESIGN (3번): 예약카드 색상박스 전면 재작업.

@@ -38,6 +38,8 @@ import { ReservationAuditLogPanel } from '@/components/ReservationAuditLogPanel'
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 // T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-3: 2번구역 미니 캘린더 (기존 month-grid 패턴 재사용)
 import { MiniMonthCalendar } from '@/components/MiniMonthCalendar';
+// T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER AC1: 미니캘린더 날짜클릭 → 시간대별 예약현황 패널(read-only)
+import { ReservationDayTimeslotPanel } from '@/components/ReservationDayTimeslotPanel';
 import type { Customer, Package, Reservation, ReservationRegistrar, Staff } from '@/lib/types';
 import { VISIT_ROUTE_OPTIONS } from '@/lib/types';
 
@@ -797,6 +799,9 @@ export function ReservationDetailPopup({
                     이 등록자 예약만 표시 중 — 캘린더·예약이력에 필터 적용
                   </div>
                 )}
+                {/* T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER AC1: 선택 일자 시간대별 예약현황(read-only).
+                    날짜클릭(pickedDate) → 시간대별 초/재/힐러 카운트. AC2 시간선택·Q2 마감표시는 field clarify 대기. */}
+                <ReservationDayTimeslotPanel date={pickedDate} clinicId={reservation.clinic_id} />
               </div>
 
               {/* AC-4 #4: 선택한 일자 및 시간 (미니캘린더 선택 일자 + 현재 보기 예약의 일자/시간 상세) */}
