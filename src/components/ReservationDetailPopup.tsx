@@ -40,6 +40,8 @@ import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatie
 import { MiniMonthCalendar } from '@/components/MiniMonthCalendar';
 // T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER AC1: 미니캘린더 날짜클릭 → 시간대별 예약현황 패널(read-only)
 import { ReservationDayTimeslotPanel } from '@/components/ReservationDayTimeslotPanel';
+// T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC5: 활성패키지/치료내역 = 2번차트 패키지탭 양식(read-only) 재사용
+import { PackageTicketReadonlyList, type PackageSessionRow } from '@/components/PackageTicketReadonlyList';
 import type { Customer, Package, Reservation, ReservationRegistrar, Staff } from '@/lib/types';
 import { VISIT_ROUTE_OPTIONS } from '@/lib/types';
 
@@ -111,11 +113,23 @@ export function ReservationDetailPopup({
   //   이름 resolve 가능(처리로그 17:04 '담당상담사 raw UUID 표시' 부수 개선).
   const [allStaff, setAllStaff] = useState<Staff[]>([]);
   const [packages, setPackages] = useState<Package[]>([]);
+  // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC5: 패키지 시술내역(차감기록) — 2번차트 양식 표시용 read-only
+  const [packageSessions, setPackageSessions] = useState<PackageSessionRow[]>([]);
   // T-20260611-foot-RESVPOPUP-2ZONE AC-2: 치료내역(일자별 시술 + 담당치료사) — check_ins JOIN
   const [treatments, setTreatments] = useState<TreatmentRow[]>([]);
 
+  // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC1: 팝업 내 다른 고객 불러오기(B) — 1번구역만 교체, 팝업 닫지 않음.
+  //   loadedMatch 가 set 이면 1번구역(고객정보/패키지/치료내역/메모)이 B 로 교체된 '신규예약 대상' 상태.
+  //   ⚠ 저장 컨텍스트 안전분리: B 로딩 중에는 footer 의 현재예약(A) 액션(저장/체크인/취소/노쇼/삭제) 숨김 →
+  //      엉뚱한 예약/고객에 저장 0. 신규예약 등록은 onNewReservationForCustomer(canonical editor) 위임(L-002 보존).
+  const [loadedMatch, setLoadedMatch] = useState<PatientMatch | null>(null);
+
   // 드롭다운 옵션 = 활성 consultant 만. (이름 resolve 는 비활성/타직군 포함 allStaff 전체로 — UUID 노출 방지)
   const consultants = allStaff.filter((s) => s.role === 'consultant' && s.active);
+  // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC4: 담당자 raw UUID 노출 버그 수정.
+  //   assigned_staff_id 가 clinic staff 목록(allStaff)에 없을 때(타클리닉/삭제/비활성 누락) Select 가 raw UUID 를
+  //   그대로 표기하던 문제 → 해당 id 를 직접 1건 조회해 이름 확보(없으면 친화 fallback, UUID 절대 비노출).
+  const [assignedStaffName, setAssignedStaffName] = useState<string | null>(null);
   // staff id → 표시명 resolve (display_name 우선, STAFF-NAME-UNIFY 관례)
   const staffName = (id: string | null | undefined): string | null => {
     if (!id) return null;
@@ -154,20 +168,77 @@ export function ReservationDetailPopup({
   // ── T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-3/4: 2번구역 미니 캘린더 선택 일자
   const [pickedDate, setPickedDate] = useState<Date | null>(null);
 
-  // ── T-20260612-foot-RESVPOPUP-2ZONE-RESTRUCTURE AC-7: 예약등록자 기준 필터 (예약이력·캘린더 표시 한정).
-  //    기존 registrars(active=true) 재사용 — group_name('TM'/'원내')은 reservation_registrars 마스터 소스(신규 스키마 0).
-  //    편집용 registrarId 와 '별개' 상태: 필터는 표시 전용으로 저장(reservations.update)에 일절 관여 안 함 → 엉뚱 저장 0.
-  const [registrarFilter, setRegistrarFilter] = useState<string>(''); // '' = 전체(미지정)
-
   // 현재 우상에 표시할 예약 (좌하 클릭 선택, 기본값 = 원본 예약)
   const selectedResv: Reservation | undefined =
     allResvs.find((r) => r.id === selectedResvId) ?? reservation ?? undefined;
 
-  // AC-7: 등록자 필터 적용 예약 목록 — 예약이력 리스트 + 캘린더 점표기에만 사용.
-  //   selectedResv 해소(선택/현재 예약 접근)는 unfiltered allResvs 유지 → 필터로 현재 예약 숨어도 상세 보기 안전.
-  const visibleResvs = registrarFilter
-    ? allResvs.filter((r) => r.registrar_id === registrarFilter)
-    : allResvs;
+  // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC6: 캘린더 영역 '예약등록자 필터' 드롭다운 삭제(중복 표기 제거).
+  //   예약이력·캘린더 점표기는 전체 예약(allResvs) 그대로 표시. 상단 예약정보의 '예약등록자'(편집)만 유지.
+  const visibleResvs = allResvs;
+
+  // ── T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC1/AC5: 1번구역(고객정보·활성패키지·치료내역) 로더.
+  //   현재 예약 고객(A) 최초 로드 + 검색으로 다른 고객(B) 불러올 때 동일 함수 재사용 → 1번구역만 교체(팝업 닫지 않음).
+  //   zone2(예약이력·캘린더·등록자)는 현재 예약(A)에 고정 — 본 로더는 1번구역 한정.
+  const loadZone1Data = (customerId: string) => {
+    // 1) 고객 정보
+    supabase
+      .from('customers')
+      .select('*')
+      .eq('id', customerId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!data) return;
+        const c = data as Customer;
+        setCustomer(c);
+        setCustomerMemo(c.customer_memo ?? c.memo ?? '');
+        setSelectedConsultantId(c.assigned_staff_id ?? '');
+      });
+    // 4) 보유 패키지 (활성) — 2번차트 양식 표시 위해 전체 컬럼 + 시술내역(package_sessions) 로드
+    supabase
+      .from('packages')
+      .select('*')
+      .eq('customer_id', customerId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        const pkgs = (data ?? []) as Package[];
+        setPackages(pkgs);
+        const pkgIds = pkgs.map((p) => p.id);
+        if (pkgIds.length === 0) {
+          setPackageSessions([]);
+          return;
+        }
+        // 2번차트와 동일 select(staff:performed_by(name) join)로 담당자 이름 resolve
+        supabase
+          .from('package_sessions')
+          .select('id, package_id, session_number, session_type, session_date, status, staff:performed_by(name)')
+          .in('package_id', pkgIds)
+          .order('session_number', { ascending: true })
+          .then(({ data: sess }) => {
+            setPackageSessions(
+              ((sess ?? []) as Record<string, unknown>[]).map((s) => ({
+                id: s.id as string,
+                package_id: s.package_id as string,
+                session_number: s.session_number as number,
+                session_type: s.session_type as string,
+                session_date: s.session_date as string,
+                status: s.status as string,
+                staff_name: (s.staff as { name: string } | null)?.name ?? null,
+              })),
+            );
+          });
+      });
+    // 6) 치료내역 — 이 고객의 check_ins(시술내역) 최신순. 신규 테이블/컬럼 0(기존 check_ins 재사용).
+    supabase
+      .from('check_ins')
+      .select('id, checked_in_at, completed_at, visit_type, treatment_category, treatment_contents, treatment_kind, therapist_id')
+      .eq('customer_id', customerId)
+      .order('checked_in_at', { ascending: false })
+      .limit(20)
+      .then(({ data }) => {
+        setTreatments((data ?? []) as TreatmentRow[]);
+      });
+  };
 
   // ── 데이터 로드
   useEffect(() => {
@@ -175,6 +246,7 @@ export function ReservationDetailPopup({
       setCustomer(null);
       setAllResvs([]);
       setPackages([]);
+      setPackageSessions([]);
       setAllStaff([]);
       setTreatments([]);
       setRegistrars([]);
@@ -187,7 +259,7 @@ export function ReservationDetailPopup({
       setCancelReason('');
       setSearchValue('');
       setPickedDate(null);
-      setRegistrarFilter('');
+      setLoadedMatch(null);
       return;
     }
 
@@ -195,7 +267,8 @@ export function ReservationDetailPopup({
     setBusy(false);
     setSearchValue('');
     setPickedDate(null);
-    setRegistrarFilter('');
+    // AC1: 다른 예약 오픈 시 B 로딩 상태 초기화(현재 예약 A 기준 복귀)
+    setLoadedMatch(null);
     // T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 현재 예약의 예약경로/예약등록자 프리로드
     setVisitRoute(reservation.visit_route ?? '');
     setRegistrarId(reservation.registrar_id ?? '');
@@ -204,21 +277,10 @@ export function ReservationDetailPopup({
     const clinicId = reservation.clinic_id;
 
     if (customerId) {
-      // 1) 고객 정보
-      supabase
-        .from('customers')
-        .select('*')
-        .eq('id', customerId)
-        .maybeSingle()
-        .then(({ data }) => {
-          if (!data) return;
-          const c = data as Customer;
-          setCustomer(c);
-          setCustomerMemo(c.customer_memo ?? c.memo ?? '');
-          setSelectedConsultantId(c.assigned_staff_id ?? '');
-        });
+      // 1·4·6) 1번구역(고객정보·활성패키지·치료내역) = 공용 로더 (AC1 B 불러오기와 재사용)
+      loadZone1Data(customerId);
 
-      // 2) 전체 예약 히스토리 (최신순)
+      // 2) 전체 예약 히스토리 (최신순) — zone2, 현재 예약(A) 고정
       supabase
         .from('reservations')
         .select('*')
@@ -227,29 +289,6 @@ export function ReservationDetailPopup({
         .order('reservation_time', { ascending: false })
         .then(({ data }) => {
           if (data) setAllResvs(data as Reservation[]);
-        });
-
-      // 4) 보유 패키지 (활성)
-      supabase
-        .from('packages')
-        .select('id, package_name, status, total_sessions, contract_date')
-        .eq('customer_id', customerId)
-        .eq('status', 'active')
-        .order('created_at', { ascending: false })
-        .then(({ data }) => {
-          if (data) setPackages(data as Package[]);
-        });
-
-      // 6) T-20260611-foot-RESVPOPUP-2ZONE AC-2: 치료내역 — 이 고객의 check_ins(시술내역) 최신순.
-      //    신규 테이블/컬럼 0(기존 check_ins 재사용). 담당치료사는 staffName(therapist_id)로 resolve.
-      supabase
-        .from('check_ins')
-        .select('id, checked_in_at, completed_at, visit_type, treatment_category, treatment_contents, treatment_kind, therapist_id')
-        .eq('customer_id', customerId)
-        .order('checked_in_at', { ascending: false })
-        .limit(20)
-        .then(({ data }) => {
-          if (data) setTreatments(data as TreatmentRow[]);
         });
     }
 
@@ -279,6 +318,33 @@ export function ReservationDetailPopup({
   // reservation.id 변경 시에만 재로드
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reservation?.id, reservation?.customer_id, reservation?.clinic_id]);
+
+  // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC4: 담당자(assigned_staff_id) 이름 resolve.
+  //   clinic staff 목록(allStaff)에 있으면 그 이름, 없으면(타클리닉/삭제/비활성 누락) id 1건 직접 조회.
+  //   어느 경우에도 raw UUID 가 Select 트리거에 노출되지 않도록 보장.
+  useEffect(() => {
+    if (!selectedConsultantId) {
+      setAssignedStaffName(null);
+      return;
+    }
+    const inList = allStaff.find((s) => s.id === selectedConsultantId);
+    if (inList) {
+      setAssignedStaffName(inList.display_name ?? inList.name);
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from('staff')
+      .select('id, name')
+      .eq('id', selectedConsultantId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setAssignedStaffName((data as { name?: string } | null)?.name ?? null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedConsultantId, allStaff]);
 
   if (!reservation) return null;
 
@@ -415,8 +481,13 @@ export function ReservationDetailPopup({
       customer_name: reservation.customer_name ?? '',
       customer_phone: reservation.customer_phone,
       visit_type: reservation.visit_type,
-      // AC-1/AC-2: 재진 → 치료대기(treatment_waiting), 초진·예약없이방문 → 상담대기(consult_waiting). canonical 분기 복원.
-      status: reservation.visit_type === 'returning' ? 'treatment_waiting' : 'consult_waiting',
+      // AC-1/AC-2: 재진 → 치료대기(treatment_waiting), 예약없이방문 → 상담대기(consult_waiting). canonical 분기 복원.
+      // T-20260613-foot-FIELDBATCH item2: 초진(new) → [접수중](receiving). 우클릭→예약상세→초진 체크인 진입점. 셀프접수 초진(receiving)과 통일.
+      status: reservation.visit_type === 'returning'
+        ? 'treatment_waiting'
+        : reservation.visit_type === 'new'
+          ? 'receiving'
+          : 'consult_waiting',
       queue_number: queueData as number,
     });
     if (error) { toast.error(`체크인 실패: ${error.message}`); setBusy(false); return; }
@@ -467,8 +538,8 @@ export function ReservationDetailPopup({
       .update({ assigned_staff_id: staffId })
       .eq('id', reservation.customer_id);
     setConsultantSaving(false);
-    if (error) { toast.error(`상담사 저장 실패: ${error.message}`); return; }
-    toast.success('담당 상담사 저장됨');
+    if (error) { toast.error(`담당자 저장 실패: ${error.message}`); return; }
+    toast.success('담당자 저장됨');
   };
 
   // ── T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약경로 + 예약등록자 저장
@@ -491,13 +562,26 @@ export function ReservationDetailPopup({
     onChanged();
   };
 
-  // ── T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1: 검색창에서 B고객 선택
-  //    → 팝업 닫고 기존 예약관리 신규예약 동선을 B고객 기준으로 오픈(연속 등록).
-  //    🔒 L-002: 신규 생성 로직 작성 0 — parent 의 기존 ReservationEditor 재사용에 위임.
+  // ── T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC1: 검색창에서 다른 고객(B) 선택
+  //    → 팝업을 닫지 않고 1번구역(고객정보·패키지·치료내역·메모)만 B 로 교체(신규예약 대상 미리보기).
+  //    검색 입력값도 즉시 초기화(stale text clear). 실제 신규예약 등록은 footer 버튼 → onNewReservationForCustomer 위임.
+  //    🔒 L-002: 신규 생성 로직 작성 0 — parent ReservationEditor(canonical) 재사용.
   const handleSelectOtherCustomer = (p: PatientMatch) => {
-    if (!onNewReservationForCustomer) return;
     setSearchValue('');
-    onNewReservationForCustomer(p);
+    setLoadedMatch(p);
+    loadZone1Data(p.id);
+  };
+
+  // AC1: 다시 현재 예약(A) 고객으로 1번구역 복귀
+  const resetToOriginalCustomer = () => {
+    setLoadedMatch(null);
+    setSearchValue('');
+    if (reservation.customer_id) loadZone1Data(reservation.customer_id);
+  };
+
+  // AC1: B 신규예약 등록 — canonical editor 로 위임(팝업 닫고 B 기준 신규예약). 저장 컨텍스트는 editor 가 보장.
+  const registerNewForLoaded = () => {
+    if (loadedMatch && onNewReservationForCustomer) onNewReservationForCustomer(loadedMatch);
   };
 
   // ─── 렌더 ─────────────────────────────────────────────────────────
@@ -507,28 +591,46 @@ export function ReservationDetailPopup({
       <Dialog open onOpenChange={(o) => (!o ? onClose() : undefined)}>
         <DialogContent className="max-w-[1100px] h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
 
-          {/* 헤더 */}
+          {/* 헤더
+              T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC3: 고객 검색창을 헤더 우상단(× 닫기 버튼 왼쪽)으로 이동.
+                좌측 제목블록 + 우측 검색창. 이름/연락처 단일창 OR 검색('both'). 불필요 안내문구 제거. */}
           <DialogHeader className="px-6 pt-5 pb-3 border-b shrink-0">
-            <DialogTitle className="flex flex-wrap items-center gap-2 text-base">
-              <span>{reservation.customer_name}</span>
-              {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
-              <span className="text-xs font-mono font-normal text-teal-600">{chartNoBadge(customer?.chart_number ?? null)}</span>
-              <span
-                className={cn(
-                  'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                  VISIT_TYPE_BADGE_CLASS[reservation.visit_type],
+            <div className="flex items-start justify-between gap-3 pr-8">
+              <DialogTitle className="flex flex-wrap items-center gap-2 text-base min-w-0">
+                <span>{reservation.customer_name}</span>
+                {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
+                <span className="text-xs font-mono font-normal text-teal-600">{chartNoBadge(customer?.chart_number ?? null)}</span>
+                <span
+                  className={cn(
+                    'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+                    VISIT_TYPE_BADGE_CLASS[reservation.visit_type],
+                  )}
+                >
+                  {VISIT_TYPE_KO[reservation.visit_type]}
+                </span>
+                <Badge variant="outline" className="text-xs">{STATUS_LABEL[reservation.status]}</Badge>
+                {noshowCount > 0 && (
+                  <Badge variant="destructive" className="text-xs">노쇼 {noshowCount}회</Badge>
                 )}
-              >
-                {VISIT_TYPE_KO[reservation.visit_type]}
-              </span>
-              <Badge variant="outline" className="text-xs">{STATUS_LABEL[reservation.status]}</Badge>
-              {noshowCount > 0 && (
-                <Badge variant="destructive" className="text-xs">노쇼 {noshowCount}회</Badge>
+                <span className="text-sm font-normal text-muted-foreground">
+                  {reservation.reservation_date} {reservation.reservation_time.slice(0, 5)}
+                </span>
+              </DialogTitle>
+              {/* AC3: 헤더 우상단 고객 검색창 (이름 또는 연락처). graceful: onNewReservationForCustomer 미전달 시 숨김 */}
+              {onNewReservationForCustomer && (
+                <div className="w-[230px] shrink-0">
+                  <InlinePatientSearch
+                    value={searchValue}
+                    onChange={setSearchValue}
+                    onSelect={handleSelectOtherCustomer}
+                    searchField="both"
+                    clinicId={reservation.clinic_id}
+                    placeholder="이름 또는 연락처로 고객 검색"
+                    id="resv-popup-customer-search"
+                  />
+                </div>
               )}
-              <span className="text-sm font-normal text-muted-foreground">
-                {reservation.reservation_date} {reservation.reservation_time.slice(0, 5)}
-              </span>
-            </DialogTitle>
+            </div>
           </DialogHeader>
 
           {/* T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR: 2구역 전면 재구성.
@@ -540,23 +642,24 @@ export function ReservationDetailPopup({
             {/* ── 1번구역 (좌) = 고객정보 ── */}
             <div className="flex flex-col gap-3 min-h-0 overflow-y-auto pr-1" data-testid="popup-zone1-customer">
 
-              {/* AC-1(Stage1): 고객 검색창(1번구역 최상단).
-                  현장 확정: A고객 등록 완료 후 B고객 검색·선택 → 팝업 닫지 않고 B고객 신규예약 생성 동선으로 연속 진입.
-                  onNewReservationForCustomer 미전달 환경(graceful)에선 검색창 자체를 숨김. */}
-              {onNewReservationForCustomer && (
-                <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0 bg-teal-50/40">
-                  <SectionHeader accent="teal" className="mb-1.5">다른 고객 신규예약</SectionHeader>
-                  <InlinePatientSearch
-                    value={searchValue}
-                    onChange={setSearchValue}
-                    onSelect={handleSelectOtherCustomer}
-                    searchField="name"
-                    clinicId={reservation.clinic_id}
-                    placeholder="고객명 입력 → 선택 시 신규예약 등록"
-                    id="resv-popup-customer-search"
-                  />
-                  <div className="text-[10px] text-muted-foreground mt-1">
-                    선택한 고객 기준으로 신규 예약 등록 화면이 열립니다.
+              {/* AC1: 다른 고객(B) 불러옴 — 1번구역만 교체된 '신규예약 대상' 배너.
+                  검색은 헤더 우상단 검색창에서 수행(AC3). 여기서는 로딩 상태 표시 + 원복/등록 안내. */}
+              {loadedMatch && (
+                <div className="rounded-xl border border-teal-300 bg-teal-50/70 px-3.5 py-2.5 shadow-sm flex-shrink-0" data-testid="popup-loaded-customer-banner">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-medium text-teal-700">신규예약 대상 (다른 고객 불러옴)</div>
+                      <div className="text-sm font-semibold text-teal-800 truncate">{loadedMatch.name}</div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs text-muted-foreground shrink-0"
+                      onClick={resetToOriginalCustomer}
+                      data-testid="btn-reset-original-customer"
+                    >
+                      원래 고객으로
+                    </Button>
                   </div>
                 </div>
               )}
@@ -598,14 +701,23 @@ export function ReservationDetailPopup({
                   <FieldRow label="고객등급" value={customer?.customer_grade ?? '일반'} />
                 </div>
 
-                {/* 담당 상담사 (RELOCATE: 기존 2번구역 → 1번구역. 기존 state·saveConsultant 재사용.
-                    raw UUID 표시 버그 부수 개선: assigned_staff_id 가 role!=consultant 직원이어도 allStaff 로 이름 resolve) */}
+                {/* T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC4: 항목명 "담당 상담사"→"담당자".
+                    표시값 raw UUID 노출 버그 수정 — assigned_staff_id 가 consultants/allStaff 에 없어도
+                    assignedStaffName(직접 조회) 로 SelectItem 을 보장 생성 → 트리거에 항상 이름 표기(UUID 비노출). */}
                 <div className="mt-2 pt-2 border-t">
-                  <div className="text-[11px] font-medium text-muted-foreground mb-1.5">담당 상담사</div>
+                  <div className="text-[11px] font-medium text-muted-foreground mb-1.5">담당자</div>
                   {(() => {
+                    const inConsultants = consultants.some((c) => c.id === selectedConsultantId);
+                    const inAllStaff = allStaff.find((s) => s.id === selectedConsultantId);
+                    // consultants 드롭다운에 없는 배정자 → 보장 SelectItem (이름: allStaff → 직접조회 → 친화 fallback)
                     const assignedExtra =
-                      selectedConsultantId && !consultants.some((c) => c.id === selectedConsultantId)
-                        ? allStaff.find((s) => s.id === selectedConsultantId)
+                      selectedConsultantId && !inConsultants
+                        ? {
+                            id: selectedConsultantId,
+                            label: inAllStaff
+                              ? (inAllStaff.display_name ?? inAllStaff.name)
+                              : (assignedStaffName ?? '이전 담당자'),
+                          }
                         : null;
                     return (
                       <Select
@@ -614,13 +726,13 @@ export function ReservationDetailPopup({
                         disabled={consultantSaving || !reservation.customer_id}
                       >
                         <SelectTrigger className="h-8 text-xs" data-testid="popup-consultant">
-                          <SelectValue placeholder="상담사 선택" />
+                          <SelectValue placeholder="담당자 선택" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__none__" className="text-xs">— 미배정 —</SelectItem>
                           {assignedExtra && (
                             <SelectItem value={assignedExtra.id} className="text-xs">
-                              {(assignedExtra.display_name ?? assignedExtra.name)} (담당)
+                              {assignedExtra.label} (담당)
                             </SelectItem>
                           )}
                           {consultants.map((s) => (
@@ -635,21 +747,11 @@ export function ReservationDetailPopup({
                 </div>
               </div>
 
-              {/* 활성 패키지 (RELOCATE: 기존 2번구역 → 1번구역. 기존 packages 쿼리 재사용) */}
-              <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0">
+              {/* T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC5: 활성패키지 = 2번차트 "구매 패키지(티켓)" 양식(read-only).
+                  카드(패키지명·발행일·상태) / 총금액 / 시술명·수가·총횟수·사용·잔여 표 / 시술내역(회차·시술명·날짜·담당자). */}
+              <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0" data-testid="popup-active-packages">
                 <SectionHeader accent="teal">활성 패키지</SectionHeader>
-                {packages.length === 0 ? (
-                  <div className="text-xs text-muted-foreground italic">보유 패키지 없음</div>
-                ) : (
-                  <div className="flex flex-wrap gap-1">
-                    {packages.map((p) => (
-                      <Badge key={p.id} variant="outline" className="text-[10px] px-1.5 py-0.5">
-                        {p.package_name}
-                        {p.total_sessions ? ` (${p.total_sessions}회)` : ''}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
+                <PackageTicketReadonlyList packages={packages} sessions={packageSessions} />
               </div>
 
               {/* 치료내역 (net-new) — 지정치료사 + 일자별 시술내역(담당치료사). check_ins JOIN, chart2 read-only */}
@@ -763,30 +865,10 @@ export function ReservationDetailPopup({
               </div>
 
               {/* AC-3 / AC-4 #3: 미니 캘린더 (예약 가능 일자 확인 — 닫지 않고). 고객 기존 예약일은 점 표기.
-                  T-20260612-foot-RESVPOPUP-2ZONE-RESTRUCTURE AC-7: 예약등록자 필터를 캘린더 '바로 위'에 배치.
-                  선택 시 캘린더 점표기 + 예약이력 목록이 해당 등록자 예약만 표시(미지정=전체). 옵션=reservation_registrars(group_name-name). */}
+                  T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC6: 캘린더 영역의 '예약등록자 필터' 드롭다운 삭제(중복 제거).
+                  예약등록자는 상단 '예약 정보' 섹션(편집)만 유지. 캘린더 점표기·예약이력은 전체 예약 표시. */}
               <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0">
                 <SectionHeader accent="teal">예약 캘린더</SectionHeader>
-                {/* AC-7: 예약등록자 필터 (표시 전용 — 저장 로직 무관) */}
-                <div className="flex items-center gap-2 mb-2.5">
-                  <span className="text-[11px] text-muted-foreground shrink-0">예약등록자 필터</span>
-                  <Select
-                    value={registrarFilter || '__all__'}
-                    onValueChange={(v) => setRegistrarFilter(v === '__all__' ? '' : v)}
-                  >
-                    <SelectTrigger className="h-8 text-xs flex-1" data-testid="popup-registrar-filter">
-                      <SelectValue placeholder="예약등록자 필터" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__all__" className="text-xs">— 미지정 — (전체)</SelectItem>
-                      {registrars.map((r) => (
-                        <SelectItem key={r.id} value={r.id} className="text-xs">
-                          {r.group_name} - {r.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
                 <MiniMonthCalendar
                   value={pickedDate}
                   onSelect={(d) => setPickedDate((prev) => (prev && d.getTime() === prev.getTime() ? null : d))}
@@ -794,11 +876,6 @@ export function ReservationDetailPopup({
                     .filter((r) => r.status !== 'cancelled')
                     .map((r) => r.reservation_date)}
                 />
-                {registrarFilter && (
-                  <div className="text-[10px] text-teal-600 mt-1.5">
-                    이 등록자 예약만 표시 중 — 캘린더·예약이력에 필터 적용
-                  </div>
-                )}
                 {/* T-20260614-foot-RESVPOPUP-TIMESLOT-PICKER AC1: 선택 일자 시간대별 예약현황(read-only).
                     날짜클릭(pickedDate) → 시간대별 초/재/힐러 카운트. AC2 시간선택·Q2 마감표시는 field clarify 대기. */}
                 <ReservationDayTimeslotPanel date={pickedDate} clinicId={reservation.clinic_id} />
@@ -857,14 +934,11 @@ export function ReservationDetailPopup({
               <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-1 flex flex-col min-h-0" data-testid="popup-reservation-history">
                 <SectionHeader accent="teal">
                   예약이력{visibleResvs.length > 0 && ` (${visibleResvs.length}건)`}
-                  {registrarFilter && (
-                    <span className="ml-1 text-[10px] font-normal text-muted-foreground">필터 적용</span>
-                  )}
                 </SectionHeader>
                 <div className="flex-1 overflow-y-auto space-y-1 pr-0.5 min-h-0">
                   {visibleResvs.length === 0 ? (
                     <div className="text-xs text-muted-foreground italic py-2">
-                      {registrarFilter ? '이 등록자 예약 없음' : '예약 없음'}
+                      예약 없음
                     </div>
                   ) : (
                     visibleResvs.map((r) => {
@@ -927,67 +1001,89 @@ export function ReservationDetailPopup({
                 취소/노쇼      → [예약복원][저장][예약삭제]
               체크인 전환·노쇼·수정은 별도 보존 요소(b_an_decisions: 체크인전환 분리 보존). */}
           <DialogFooter className="px-6 py-3 border-t shrink-0 flex-wrap gap-2">
-            {/* [저장] — 예약경로·예약등록자 영속 (AC-4a/4b) */}
-            <Button
-              size="sm"
-              disabled={routeSaving || busy}
-              data-testid="btn-reservation-save"
-              onClick={saveRouteAndRegistrar}
-            >
-              {routeSaving ? '저장 중…' : '저장'}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => onEdit(reservation)}>
-              수정
-            </Button>
-            {reservation.status === 'confirmed' && (
+            {loadedMatch ? (
+              /* AC1: 다른 고객(B) 조회됨 → 예약(A) 액션 전부 숨김 (엉뚱저장 0).
+                 B 신규예약은 정규 ReservationEditor 위임 (L-002 LOGIC-LOCK 준수). */
               <>
-                <Button variant="outline" size="sm" disabled={busy} onClick={convertToCheckIn}>
-                  체크인 전환
-                </Button>
                 <Button
-                  variant="outline"
                   size="sm"
-                  disabled={busy}
-                  onClick={() => {
-                    if (window.confirm(`${reservation.customer_name}님을 노쇼 처리하시겠습니까?`))
-                      setStatus('noshow');
-                  }}
+                  data-testid="btn-register-new-for-loaded"
+                  onClick={registerNewForLoaded}
                 >
-                  노쇼
+                  {loadedMatch.name}님 신규예약 등록
                 </Button>
+                <Button variant="outline" size="sm" onClick={resetToOriginalCustomer}>
+                  원래 고객으로
+                </Button>
+                <Button variant="ghost" size="sm" className="ml-auto" onClick={onClose}>
+                  닫기
+                </Button>
+              </>
+            ) : (
+              <>
+                {/* [저장] — 예약경로·예약등록자 영속 (AC-4a/4b) */}
                 <Button
-                  variant="destructive"
                   size="sm"
-                  disabled={busy}
-                  data-testid="btn-reservation-cancel"
-                  onClick={() => { setCancelReason(''); setCancelDialog(true); }}
+                  disabled={routeSaving || busy}
+                  data-testid="btn-reservation-save"
+                  onClick={saveRouteAndRegistrar}
                 >
-                  예약취소
+                  {routeSaving ? '저장 중…' : '저장'}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => onEdit(reservation)}>
+                  수정
+                </Button>
+                {reservation.status === 'confirmed' && (
+                  <>
+                    <Button variant="outline" size="sm" disabled={busy} onClick={convertToCheckIn}>
+                      체크인 전환
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => {
+                        if (window.confirm(`${reservation.customer_name}님을 노쇼 처리하시겠습니까?`))
+                          setStatus('noshow');
+                      }}
+                    >
+                      노쇼
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={busy}
+                      data-testid="btn-reservation-cancel"
+                      onClick={() => { setCancelReason(''); setCancelDialog(true); }}
+                    >
+                      예약취소
+                    </Button>
+                  </>
+                )}
+                {(reservation.status === 'cancelled' || reservation.status === 'noshow') && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    data-testid="btn-reservation-restore"
+                    onClick={() => {
+                      if (window.confirm(`${reservation.customer_name}님 예약을 복원하시겠습니까?`))
+                        setStatus('confirmed');
+                    }}
+                  >
+                    예약복원
+                  </Button>
+                )}
+                {isAdmin && (
+                  <Button variant="destructive" size="sm" disabled={busy} data-testid="btn-reservation-delete" onClick={deleteReservation}>
+                    예약삭제
+                  </Button>
+                )}
+                <Button variant="ghost" size="sm" className="ml-auto" onClick={onClose}>
+                  닫기
                 </Button>
               </>
             )}
-            {(reservation.status === 'cancelled' || reservation.status === 'noshow') && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                data-testid="btn-reservation-restore"
-                onClick={() => {
-                  if (window.confirm(`${reservation.customer_name}님 예약을 복원하시겠습니까?`))
-                    setStatus('confirmed');
-                }}
-              >
-                예약복원
-              </Button>
-            )}
-            {isAdmin && (
-              <Button variant="destructive" size="sm" disabled={busy} data-testid="btn-reservation-delete" onClick={deleteReservation}>
-                예약삭제
-              </Button>
-            )}
-            <Button variant="ghost" size="sm" className="ml-auto" onClick={onClose}>
-              닫기
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
