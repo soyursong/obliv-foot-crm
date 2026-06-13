@@ -47,8 +47,9 @@ import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, formatPhone, birthDateYMD } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
-// T-20260613-foot-CUSTMGMT-LIST-5FIX AC4: 리스트 다운로드(xlsx) — salesExport 패턴 재사용, PHI(주민번호 평문) 제외
-import { downloadCustomerExcel, customerExportFilename, type CustomerExcelRow } from '@/lib/customerExport';
+// T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 리스트 내보내기 CSV(무의존). PHI(rrn) 영구 제외, admin/manager 게이팅.
+//   (엑셀 .xlsx 내보내기는 후속 — customerExport.ts 유지)
+import { downloadCustomerCsv, customerCsvFilename, type CustomerCsvRow } from '@/lib/customerCsv';
 import type { CheckIn, Customer, LeadSource } from '@/lib/types';
 
 interface CustomerStats {
@@ -70,6 +71,103 @@ function getPageNumbers(current: number, total: number): (number | '…')[] {
   return [1, '…', current - 1, current, current + 1, '…', total];
 }
 
+// T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 내보내기(필터 전체) 안전 상한.
+// 선택 0건 → 현재 필터에 매칭되는 전체 고객 export. 폭주 방지 상한(단일 지점 현실 규모 충분).
+const EXPORT_MAX = 5000;
+// 통계 집계용 IN 쿼리 청크 크기 (URL 길이 한계 회피).
+const STATS_CHUNK = 150;
+
+/**
+ * 고객관리 검색/내보내기 공통 필터 적용 (검색어 + 담당자).
+ * runSearch(목록)와 export(전체)에서 동일 필터를 보장하기 위해 추출 — drift 차단.
+ * 구조적 제네릭: PostgREST 빌더(.is/.eq/.or 동일 반환)를 내부 타입 import 없이 수용.
+ */
+function applyCustomerSearchFilters<
+  Q extends {
+    is: (col: string, val: null) => Q;
+    eq: (col: string, val: string) => Q;
+    or: (filters: string) => Q;
+  },
+>(req: Q, staffFilter: string, rawQuery: string): Q {
+  // 담당자 필터 ('미지정' → IS NULL, 특정 직원 → assigned_staff_id 일치, '전체' → 미적용)
+  if (staffFilter === '__unassigned__') {
+    req = req.is('assigned_staff_id', null);
+  } else if (staffFilter) {
+    req = req.eq('assigned_staff_id', staffFilter);
+  }
+  const trimmed = rawQuery.trim();
+  if (trimmed) {
+    const safe = trimmed.replace(/[%_(),.]/g, '');
+    if (safe) {
+      const digits = safe.replace(/\D/g, '');
+      const digitsNoLeadingZero = digits.startsWith('0') && digits.length >= 5 ? digits.slice(1) : null;
+      const dobYYMMDD = digits.length === 8 ? digits.slice(2) : null;
+      const orParts = [
+        `name.ilike.%${safe}%`,
+        `phone.ilike.%${safe}%`,
+        `birth_date.ilike.%${safe}%`,
+        `chart_number.ilike.%${safe}%`,
+      ];
+      if (digitsNoLeadingZero) orParts.push(`phone.ilike.%${digitsNoLeadingZero}%`);
+      if (dobYYMMDD) orParts.push(`birth_date.ilike.%${dobYYMMDD}%`);
+      req = req.or(orParts.join(','));
+    }
+  }
+  return req;
+}
+
+/**
+ * 고객 id 집합에 대한 통계(방문·결제·패키지) + 서버 파생 생년월일 로드.
+ * runSearch(현재 페이지)와 export(필터 전체)에서 공유. 많은 id는 청크로 나눠 IN 쿼리.
+ * PHI: 생년월일은 RPC(fn_customer_birthdates) 서버 파생값만 수신 — rrn 복호화 결과는 클라에 미노출.
+ */
+async function loadCustomerStats(
+  clinicId: string,
+  ids: string[],
+): Promise<{ statsMap: Map<string, CustomerStats>; birthMap: Map<string, string> }> {
+  const statsMap = new Map<string, CustomerStats>();
+  const birthMap = new Map<string, string>();
+  if (ids.length === 0) return { statsMap, birthMap };
+  for (const id of ids) statsMap.set(id, { visit_count: 0, last_visit: null, total_revenue: 0, has_package: false });
+
+  // id 청크 단위로 집계 (URL 길이 한계 회피)
+  for (let i = 0; i < ids.length; i += STATS_CHUNK) {
+    const chunk = ids.slice(i, i + STATS_CHUNK);
+    const [checkInsRes, paymentsRes, pkgPaymentsRes, pkgsRes, birthRes] = await Promise.all([
+      supabase.from('check_ins').select('customer_id, checked_in_at').in('customer_id', chunk).neq('status', 'cancelled'),
+      supabase.from('payments').select('customer_id, amount, payment_type').in('customer_id', chunk),
+      supabase.from('package_payments').select('customer_id, amount, payment_type').in('customer_id', chunk),
+      supabase.from('packages').select('customer_id').in('customer_id', chunk).eq('status', 'active'),
+      supabase.rpc('fn_customer_birthdates', { p_clinic_id: clinicId, p_ids: chunk }),
+    ]);
+    for (const row of (checkInsRes.data ?? []) as { customer_id: string; checked_in_at: string }[]) {
+      const s = statsMap.get(row.customer_id);
+      if (!s) continue;
+      s.visit_count++;
+      if (!s.last_visit || row.checked_in_at > s.last_visit) s.last_visit = row.checked_in_at;
+    }
+    for (const row of (paymentsRes.data ?? []) as { customer_id: string | null; amount: number; payment_type: string }[]) {
+      if (!row.customer_id) continue;
+      const s = statsMap.get(row.customer_id);
+      if (s) s.total_revenue += row.payment_type === 'refund' ? -row.amount : row.amount;
+    }
+    for (const row of (pkgPaymentsRes.data ?? []) as { customer_id: string; amount: number; payment_type: string }[]) {
+      const s = statsMap.get(row.customer_id);
+      if (s) s.total_revenue += row.payment_type === 'refund' ? -row.amount : row.amount;
+    }
+    for (const row of (pkgsRes.data ?? []) as { customer_id: string }[]) {
+      const s = statsMap.get(row.customer_id);
+      if (s) s.has_package = true;
+    }
+    if (!birthRes.error) {
+      for (const row of (birthRes.data ?? []) as { customer_id: string; birth_date_display: string | null }[]) {
+        if (row.birth_date_display) birthMap.set(row.customer_id, row.birth_date_display);
+      }
+    }
+  }
+  return { statsMap, birthMap };
+}
+
 
 export default function Customers() {
   const location = useLocation();
@@ -80,6 +178,8 @@ export default function Customers() {
   const canEditCustomer = ['admin', 'manager', 'consultant', 'coordinator', 'staff', 'part_lead'].includes(profile?.role ?? '');
   // 삭제는 admin만 (기존 동작 유지)
   const canDeleteCustomer = profile?.role === 'admin';
+  // T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 내보내기는 PII(전화·생년월일) 포함 → admin/manager 한정(노출+실행 동시 게이팅).
+  const canExportCustomers = canAccess(profile?.role ?? '', 'customer_export');
   const [query, setQuery] = useState('');
   // T-20260613-foot-CUSTLIST-STAFF-FILTER: 담당자 드롭다운 필터.
   // '' = 전체(필터해제), '__unassigned__' = 미지정(assigned_staff_id IS NULL), 그 외 = staff.id 일치.
@@ -167,6 +267,8 @@ export default function Customers() {
   // T-20260613-foot-CUSTMGMT-LIST-5FIX AC4: 행 선택(체크박스) + 리스트 다운로드.
   // 선택은 customer id Set. 검색/페이지 전환 시 초기화(혼선 방지).
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 내보내기 진행 중(중복 클릭·전체 fetch 대기) 표시.
+  const [exporting, setExporting] = useState(false);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -188,35 +290,8 @@ export default function Customers() {
         .not('is_simulation', 'is', true)
         .order('updated_at', { ascending: false })
         .range(from, to);
-      // T-20260613-foot-CUSTLIST-STAFF-FILTER: 담당자 필터 (검색어와 AND).
-      // '미지정' → IS NULL, 특정 직원 → assigned_staff_id 일치, '전체' → 미적용.
-      if (staffFilter === '__unassigned__') {
-        req = req.is('assigned_staff_id', null);
-      } else if (staffFilter) {
-        req = req.eq('assigned_staff_id', staffFilter);
-      }
-      if (trimmed) {
-        const safe = trimmed.replace(/[%_(),.]/g, '');
-        if (safe) {
-          // SEARCH-PHONE-DOB: E.164 phone 검색 정규화
-          // T-20260513-foot-PHONE-E164-SEARCH fix가 InlinePatientSearch에만 적용됨.
-          // 고객관리 페이지에도 동일 로직 추가: leading 0 제거 → +821012345678 substring 매칭
-          const digits = safe.replace(/\D/g, '');
-          // E.164 phone: leading 0 제거 → +821012345678 substring 매칭 (010… → 10…)
-          const digitsNoLeadingZero = digits.startsWith('0') && digits.length >= 5 ? digits.slice(1) : null;
-          // DOB: YYYYMMDD(8자리) 입력 → DB 저장 YYMMDD(6자리)로 변환해 추가 매칭
-          const dobYYMMDD = digits.length === 8 ? digits.slice(2) : null;
-          const orParts = [
-            `name.ilike.%${safe}%`,
-            `phone.ilike.%${safe}%`,
-            `birth_date.ilike.%${safe}%`,
-            `chart_number.ilike.%${safe}%`,
-          ];
-          if (digitsNoLeadingZero) orParts.push(`phone.ilike.%${digitsNoLeadingZero}%`);
-          if (dobYYMMDD) orParts.push(`birth_date.ilike.%${dobYYMMDD}%`);
-          req = req.or(orParts.join(','));
-        }
-      }
+      // T-20260613-foot-CUSTLIST-STAFF-FILTER + SEARCH-PHONE-DOB: 담당자·검색어 필터 (export와 공유 헬퍼).
+      req = applyCustomerSearchFilters(req, staffFilter, trimmed);
       const { data, error, count } = await req;
       setLoading(false);
       if (error) {
@@ -230,62 +305,9 @@ export default function Customers() {
       setSelectedIds(new Set());
 
       if (customers.length > 0) {
-        const ids = customers.map((c) => c.id);
-        const [checkInsRes, paymentsRes, pkgPaymentsRes, pkgsRes, birthRes] = await Promise.all([
-          supabase
-            .from('check_ins')
-            .select('customer_id, checked_in_at')
-            .in('customer_id', ids)
-            .neq('status', 'cancelled'),
-          supabase
-            .from('payments')
-            .select('customer_id, amount, payment_type')
-            .in('customer_id', ids),
-          supabase
-            .from('package_payments')
-            .select('customer_id, amount, payment_type')
-            .in('customer_id', ids),
-          supabase
-            .from('packages')
-            .select('customer_id')
-            .in('customer_id', ids)
-            .eq('status', 'active'),
-          // T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 생년월일 서버 파생 (birth_date 우선, 없으면 rrn 세기코드)
-          supabase.rpc('fn_customer_birthdates', { p_clinic_id: clinic.id, p_ids: ids }),
-        ]);
-
-        const map = new Map<string, CustomerStats>();
-        for (const id of ids) map.set(id, { visit_count: 0, last_visit: null, total_revenue: 0, has_package: false });
-
-        for (const row of (checkInsRes.data ?? []) as { customer_id: string; checked_in_at: string }[]) {
-          const s = map.get(row.customer_id);
-          if (!s) continue;
-          s.visit_count++;
-          if (!s.last_visit || row.checked_in_at > s.last_visit) s.last_visit = row.checked_in_at;
-        }
-        for (const row of (paymentsRes.data ?? []) as { customer_id: string | null; amount: number; payment_type: string }[]) {
-          if (!row.customer_id) continue;
-          const s = map.get(row.customer_id);
-          if (s) s.total_revenue += row.payment_type === 'refund' ? -row.amount : row.amount;
-        }
-        for (const row of (pkgPaymentsRes.data ?? []) as { customer_id: string; amount: number; payment_type: string }[]) {
-          const s = map.get(row.customer_id);
-          if (s) s.total_revenue += row.payment_type === 'refund' ? -row.amount : row.amount;
-        }
-        for (const row of (pkgsRes.data ?? []) as { customer_id: string }[]) {
-          const s = map.get(row.customer_id);
-          if (s) s.has_package = true;
-        }
+        // T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 통계·생년월일 로드 공유 헬퍼로 추출(export와 동일 산식).
+        const { statsMap: map, birthMap: bMap } = await loadCustomerStats(clinic.id, customers.map((c) => c.id));
         setStatsMap(map);
-
-        // T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 서버 파생 생년월일 맵 구성.
-        // RPC 미적용/오류 시 birthMap 비움 → 셀이 birth_date 컬럼 휴리스틱 fallback 사용.
-        const bMap = new Map<string, string>();
-        if (!birthRes.error) {
-          for (const row of (birthRes.data ?? []) as { customer_id: string; birth_date_display: string | null }[]) {
-            if (row.birth_date_display) bMap.set(row.customer_id, row.birth_date_display);
-          }
-        }
         setBirthMap(bMap);
       } else {
         setStatsMap(new Map());
@@ -399,30 +421,76 @@ export default function Customers() {
     });
   }, [results]);
 
-  const handleExport = useCallback(() => {
-    // 선택 0건이면 현재 화면(필터·페이지)의 리스트 전체 export. 전수 무필터 덤프는 지양(현재 results 범위 한정).
-    const targets = selectedIds.size > 0 ? results.filter((c) => selectedIds.has(c.id)) : results;
-    if (targets.length === 0) {
-      toast.error('내려받을 고객이 없습니다');
+  // T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 한 고객 → CSV 1행 매핑.
+  // PHI 가드: rrn(주민번호) 평문·뒷자리 절대 미포함(CSV 헤더에 부재). 생년월일은 서버 파생값(birthMap) 우선.
+  const toCsvRow = useCallback(
+    (c: Customer, stats: CustomerStats | undefined, bMap: Map<string, string>): CustomerCsvRow => ({
+      이름: c.name ?? '',
+      전화번호: formatPhone(c.phone) || (c.phone ?? ''),
+      생년월일: bMap.get(c.id) ?? (birthDateYMD(c.birth_date) || ''),
+      차트번호: c.chart_number ?? '',
+      방문횟수: stats?.visit_count ?? 0,
+      최종방문: stats?.last_visit ? format(new Date(stats.last_visit), 'yyyy-MM-dd') : '',
+      결제액: stats?.total_revenue ?? 0,
+      고객메모: c.customer_memo ?? '',
+    }),
+    [],
+  );
+
+  const handleExport = useCallback(async () => {
+    // 권한 게이트(실행): admin/manager만. 버튼은 미노출이지만 호출 경로 이중 방어.
+    if (!canExportCustomers) {
+      toast.error('내보내기 권한이 없습니다 (관리자·매니저 전용)');
       return;
     }
-    // PHI 가드: 주민번호 평문 절대 미포함. 생년월일은 서버 파생값(birthMap) 우선, 없으면 birth_date 휴리스틱.
-    const rows: CustomerExcelRow[] = targets.map((c) => {
-      const stats = statsMap.get(c.id);
-      return {
-        이름: c.name ?? '',
-        전화번호: formatPhone(c.phone) || (c.phone ?? ''),
-        생년월일: birthMap.get(c.id) ?? (birthDateYMD(c.birth_date) || ''),
-        차트번호: c.chart_number ?? '',
-        방문횟수: stats?.visit_count ?? 0,
-        최종방문: stats?.last_visit ? format(new Date(stats.last_visit), 'yyyy-MM-dd') : '',
-        결제액: stats?.total_revenue ?? 0,
-        고객메모: c.customer_memo ?? '',
-      };
-    });
-    downloadCustomerExcel(rows, customerExportFilename());
-    toast.success(`${rows.length}명 내려받기 완료`);
-  }, [selectedIds, results, statsMap, birthMap]);
+    if (exporting || !clinic) return;
+
+    // 선택 있음 → 선택된 행(현재 페이지)만. 선택 0건 → 현재 필터에 매칭되는 전체 고객.
+    if (selectedIds.size > 0) {
+      const targets = results.filter((c) => selectedIds.has(c.id));
+      if (targets.length === 0) {
+        toast.error('내보낼 고객이 없습니다');
+        return;
+      }
+      const rows = targets.map((c) => toCsvRow(c, statsMap.get(c.id), birthMap));
+      downloadCustomerCsv(rows, customerCsvFilename());
+      toast.success(`${rows.length}명 내보내기 완료`);
+      return;
+    }
+
+    // 선택 0건 → 필터된 전체 (페이지네이션 없이 재조회, 안전 상한 EXPORT_MAX).
+    setExporting(true);
+    try {
+      let req = supabase
+        .from('customers')
+        .select('*')
+        .eq('clinic_id', clinic.id)
+        .not('is_simulation', 'is', true)
+        .order('updated_at', { ascending: false })
+        .range(0, EXPORT_MAX - 1);
+      req = applyCustomerSearchFilters(req, staffFilter, query);
+      const { data, error } = await req;
+      if (error) {
+        toast.error('내보내기 조회 실패');
+        return;
+      }
+      const all = (data ?? []) as Customer[];
+      if (all.length === 0) {
+        toast.error('내보낼 고객이 없습니다');
+        return;
+      }
+      const { statsMap: exStats, birthMap: exBirth } = await loadCustomerStats(
+        clinic.id,
+        all.map((c) => c.id),
+      );
+      const rows = all.map((c) => toCsvRow(c, exStats.get(c.id), exBirth));
+      downloadCustomerCsv(rows, customerCsvFilename());
+      const capped = all.length >= EXPORT_MAX;
+      toast.success(`${rows.length}명 내보내기 완료${capped ? ` (상한 ${EXPORT_MAX}명)` : ''}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [canExportCustomers, exporting, clinic, selectedIds, results, statsMap, birthMap, staffFilter, query, toCsvRow]);
 
   return (
     <div className="flex h-full flex-col p-6">
@@ -464,18 +532,21 @@ export default function Customers() {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {/* T-20260613-foot-CUSTMGMT-LIST-5FIX AC4: 리스트 다운로드. 선택 0건이면 현재 화면 전체 export */}
-          <Button
-            variant="outline"
-            onClick={handleExport}
-            disabled={results.length === 0}
-            className="gap-1"
-            data-testid="cust-export-btn"
-            title="선택 고객(미선택 시 현재 목록)을 엑셀로 내려받기"
-          >
-            <Download className="h-4 w-4" />
-            내려받기{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
-          </Button>
+          {/* T-20260613-foot-CUSTLIST-MULTISELECT-EXPORT: 내보내기(CSV). admin/manager만 노출(PII 게이팅).
+              선택 있으면 선택분, 0건이면 필터된 전체 export. */}
+          {canExportCustomers && (
+            <Button
+              variant="outline"
+              onClick={handleExport}
+              disabled={results.length === 0 || exporting}
+              className="gap-1"
+              data-testid="cust-export-btn"
+              title="선택 고객(미선택 시 현재 필터 전체)을 CSV로 내보내기"
+            >
+              <Download className="h-4 w-4" />
+              {exporting ? '내보내는 중…' : `내보내기${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+            </Button>
+          )}
           <Button onClick={() => setOpenCreate(true)} className="gap-1">
             <Plus className="h-4 w-4" /> 신규 고객
           </Button>
