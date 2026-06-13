@@ -55,19 +55,14 @@ function fmtDx(row: { name: string; service_code: string | null }): string {
 
 // T-20260612-foot-MEDREC-DATE-DIAG-UI-REFINE ④ (문지은 대표원장):
 //   상병코드(ICD/KCD)에만 bold, 상병명은 normal. fmtDx 직렬화는 "코드 상병명" 포맷이므로
-//   선두가 ICD/KCD 코드패턴([A-Z]+숫자…)일 때만 코드 토큰을 분리해 bold. 한글 상병명(코드 미동반)은
-//   패턴 불일치 → 전체 normal 폴백(오탐 차단 — 한글명은 절대 [A-Z][0-9]로 시작 안 함).
-function renderDxLabel(label: string) {
+//   선두가 ICD/KCD 코드패턴([A-Z]+숫자…)일 때만 코드 토큰을 분리한다. 한글 상병명(코드 미동반)은
+//   패턴 불일치 → 코드 공란 + 이름 단독 폴백(오탐 차단 — 한글명은 절대 [A-Z][0-9]로 시작 안 함).
+// T-20260613-foot-MEDCHART-DIAG-RX-TABLEVIEW-REFINE AC-2: 진단명을 헤더없는 테이블뷰
+//   [주/부 | 코드 | 상병명] 3컬럼으로 표시 → 코드/이름을 별도 컬럼에 두기 위해 분리값으로 반환.
+function splitDxLabel(label: string): { code: string; name: string } {
   const m = label.match(/^([A-Za-z][0-9][0-9A-Za-z.]*)\s+(.+)$/);
-  if (m) {
-    return (
-      <>
-        <span className="font-bold">{m[1]}</span>{' '}
-        <span className="font-normal">{m[2]}</span>
-      </>
-    );
-  }
-  return <span className="font-normal">{label}</span>;
+  if (m) return { code: m[1], name: m[2] };
+  return { code: '', name: label };
 }
 
 // ── T-20260607-foot-SUPERPHRASE-DX-MULTISELECT-FIX: 순수 직렬화 헬퍼 (테스트 정본) ──
@@ -361,69 +356,9 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
 
   return (
     <div ref={rootRef} className="relative">
-      {/* 선택된 상병 칩 — 주/부 배지 + 주상병 재지정 + 삭제 (AC-1/AC-2)
-          T-20260609-foot-DX-INPUT-LAYOUT-STABLE AC4-1/AC4-2: 칩 영역을 항상 렌더(min-height reserve)해
-          0→1건 추가 시 주변 패널이 밀리는 점프(CLS) 제거. 다건 추가는 max-height + 내부 스크롤로 흡수 →
-          처방·메모 등 주변 패널 위치 고정. 빈 상태에서도 공간만 확보(텍스트 미노출). */}
-      <div
-        className="mb-1.5 flex flex-wrap content-start gap-1.5 min-h-[2.25rem] max-h-[5.5rem] overflow-y-auto"
-        data-testid="dx-selected-chips"
-        aria-hidden={entries.length === 0 ? 'true' : undefined}
-      >
-        {entries.length > 0 &&
-          entries.map((label, idx) => {
-            const primary = isDxPrimary(idx);
-            return (
-              <span
-                key={`${idx}-${label}`}
-                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs ${
-                  primary ? 'border-teal-300 bg-teal-50' : 'border-input bg-muted/40'
-                }`}
-                data-testid="dx-chip"
-                data-primary={primary ? 'true' : 'false'}
-              >
-                <span
-                  className={`shrink-0 rounded px-1 text-[10px] font-semibold ${
-                    primary ? 'bg-teal-600 text-white' : 'bg-gray-300 text-gray-700'
-                  }`}
-                  data-testid="dx-chip-badge"
-                >
-                  {primary ? '주' : '부'}
-                </span>
-                {/* ④ 상병코드 bold · 상병명 normal */}
-                <span className="truncate max-w-[180px]">{renderDxLabel(label)}</span>
-                {/* T-20260612-foot-MEDREC-DATE-DIAG-UI-REFINE ③: 부상병 칩에 '주상병' 텍스트가 우측에
-                    표출되던(주상병 승격 버튼) 것을 제거 — 부상병은 내용만. 승격 기능은 보존하되 아이콘(↑)으로
-                    대체해 텍스트 노출 0(reporter '부상병 내용만' 요청 충족). */}
-                {!primary && !disabled && (
-                  <button
-                    type="button"
-                    onClick={() => handleMakePrimary(idx)}
-                    className="shrink-0 rounded p-0.5 text-teal-700 hover:bg-teal-100"
-                    title="주상병으로 지정"
-                    aria-label="주상병으로 지정"
-                    data-testid="dx-chip-make-primary"
-                  >
-                    <ChevronUp className="h-3 w-3" />
-                  </button>
-                )}
-                {!disabled && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemove(idx)}
-                    className="shrink-0 text-muted-foreground hover:text-destructive"
-                    aria-label={`${label} 삭제`}
-                    data-testid="dx-chip-remove"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
-              </span>
-            );
-          })}
-      </div>
-
-      {/* 트리거 — 등록 상병만 폴더에서 선택(자유 타이핑 없음). 다중 선택 누적. */}
+      {/* T-20260613-foot-MEDCHART-DIAG-RX-TABLEVIEW-REFINE AC-3: '___ 외 N건' 요약(트리거)을
+          선택목록 맨 위(상단)로 이동. 트리거는 폴더 선택 진입 + 선택요약 겸용 — 등록 상병만 폴더에서
+          선택(자유 타이핑 없음), 다중 선택 누적. */}
       <button
         type="button"
         disabled={disabled}
@@ -448,6 +383,82 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
           <ChevronDown className="h-4 w-4 text-muted-foreground" />
         </span>
       </button>
+
+      {/* AC-2: 선택된 상병 — 버튼형(칩) → 헤더 없는 테이블뷰 [주/부 | 코드 | 상병명].
+          상병 1건당 한 줄(세로 stack). 칼럼명(thead) 없음. 주/부 = 순서기반(index 0=주, 나머지=부,
+          T-20260606-foot-CHART-DIAG-MULTI-PRIMARY-PRINT 정의). 주상병 승격(↑)·삭제(×) 기능 보존.
+          T-20260609-foot-DX-INPUT-LAYOUT-STABLE(회귀 가드): dx-selected-chips 컨테이너는 entries 0건에도
+          항상 렌더 + min-h reserve(0→1 추가 시 주변 패널 점프 억제). max-height + 내부 스크롤로 다건 흡수.
+          테이블(행)만 entries>0일 때 조건부 렌더. */}
+      <div
+        className="mt-1.5 min-h-[2.25rem] max-h-[8rem] overflow-y-auto"
+        data-testid="dx-selected-chips"
+        aria-hidden={entries.length === 0 ? 'true' : undefined}
+      >
+        {entries.length > 0 && (
+          <table className="w-full text-xs" data-testid="dx-selected-table">
+            <tbody>
+              {entries.map((label, idx) => {
+                const primary = isDxPrimary(idx);
+                const { code, name } = splitDxLabel(label);
+                return (
+                  <tr
+                    key={`${idx}-${label}`}
+                    data-testid="dx-chip"
+                    data-primary={primary ? 'true' : 'false'}
+                  >
+                    {/* [주/부] */}
+                    <td className="py-0.5 pr-2 align-middle w-7">
+                      <span
+                        className={`inline-block rounded px-1 text-[10px] font-semibold ${
+                          primary ? 'bg-teal-600 text-white' : 'bg-gray-300 text-gray-700'
+                        }`}
+                        data-testid="dx-chip-badge"
+                      >
+                        {primary ? '주' : '부'}
+                      </span>
+                    </td>
+                    {/* [코드] — ICD/KCD 코드만 bold·mono, 코드 미동반 한글명은 공란 */}
+                    <td className="py-0.5 pr-2 align-middle whitespace-nowrap font-bold font-mono text-foreground">
+                      {code}
+                    </td>
+                    {/* [상병명] */}
+                    <td className="py-0.5 pr-1 align-middle w-full">
+                      <span className="block truncate text-foreground">{name}</span>
+                    </td>
+                    {/* 액션 — 주상병 승격(부상병만)·삭제. 텍스트 노출 0(아이콘만). */}
+                    <td className="py-0.5 pl-1 align-middle text-right whitespace-nowrap">
+                      {!primary && !disabled && (
+                        <button
+                          type="button"
+                          onClick={() => handleMakePrimary(idx)}
+                          className="shrink-0 rounded p-0.5 text-teal-700 hover:bg-teal-100 align-middle"
+                          title="주상병으로 지정"
+                          aria-label="주상병으로 지정"
+                          data-testid="dx-chip-make-primary"
+                        >
+                          <ChevronUp className="h-3 w-3" />
+                        </button>
+                      )}
+                      {!disabled && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemove(idx)}
+                          className="shrink-0 ml-0.5 text-muted-foreground hover:text-destructive align-middle"
+                          aria-label={`${label} 삭제`}
+                          data-testid="dx-chip-remove"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
 
       {/* 폴더 탐색 패널 — 넓게, 왼쪽 정렬로 오른쪽 아래 방향 확장 */}
       {open && !disabled && (
