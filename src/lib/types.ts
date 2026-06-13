@@ -368,8 +368,10 @@ export interface CheckIn {
   /** T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed 조인 결과.
    *  카드 표기명을 customers 현재 이름 우선 렌더하기 위한 비영속 파생 필드.
    *  customer_id 미연결(unlink) 시 null → denormalized customer_name fallback.
-   *  T-20260612-foot-CHARTNO-B2-P1: chart_number 추가(additive) — 환자명 노출 surface 차트번호 인접 표기. */
-  customers?: { name: string | null; chart_number?: string | null } | null;
+   *  T-20260612-foot-CHARTNO-B2-P1: chart_number 추가(additive) — 환자명 노출 surface 차트번호 인접 표기.
+   *  T-20260614-foot-TIMETABLE-THERAPIST-DESIGNATED: designated_therapist_id 추가(additive, read-only) —
+   *    통합시간표 [치료사별] 탭 그룹핑 키 + "지정" 배지 판정용. customers.designated_therapist_id SSOT 재사용. */
+  customers?: { name: string | null; chart_number?: string | null; designated_therapist_id?: string | null } | null;
 }
 
 export interface Package {
@@ -532,8 +534,10 @@ export interface Reservation {
   /** T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed 조인 결과.
    *  카드 표기명을 customers 현재 이름 우선 렌더하기 위한 비영속 파생 필드.
    *  customer_id 미연결(unlink) 시 null → denormalized customer_name fallback.
-   *  T-20260612-foot-CHARTNO-B2-P2: chart_number 인접 표시용 embed(읽기 전용, 비영속). */
-  customers?: { name: string | null; chart_number?: string | null } | null;
+   *  T-20260612-foot-CHARTNO-B2-P2: chart_number 인접 표시용 embed(읽기 전용, 비영속).
+   *  T-20260614-foot-TIMETABLE-THERAPIST-DESIGNATED: designated_therapist_id 추가(additive, read-only) —
+   *    통합시간표 명단 "지정" 배지 판정용. customers.designated_therapist_id SSOT 재사용. */
+  customers?: { name: string | null; chart_number?: string | null; designated_therapist_id?: string | null } | null;
 }
 
 /**

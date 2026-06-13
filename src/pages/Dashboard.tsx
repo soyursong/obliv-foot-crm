@@ -1888,10 +1888,13 @@ function DashboardTimeline({
   });
 
   // 치료사별 체크인 그룹 (checked_in_at 오름차순 정렬)
+  // T-20260614-foot-TIMETABLE-THERAPIST-DESIGNATED: 그룹핑 키를 "그날 배정 치료사(ci.therapist_id)"
+  //   → "고객 상시 지정치료사(customers.designated_therapist_id)" 로 변경 (Q1=a 해석).
+  //   지정치료사 미설정 환자는 '__none__'(미지정 섹션)으로 수용해 명단 누락 방지(Q2 baseline).
   const checkInsByTherapist = useMemo(() => {
     const groups = new Map<string, CheckIn[]>();
     for (const ci of selfCheckIns) {
-      const key = ci.therapist_id ?? '__none__';
+      const key = ci.customers?.designated_therapist_id ?? '__none__';
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(ci);
     }
@@ -2220,8 +2223,9 @@ function DashboardTimeline({
               </div>
             ) : (
               [...checkInsByTherapist.entries()].map(([therapistId, cis]) => {
+                // T-20260614-foot-TIMETABLE-THERAPIST-DESIGNATED: 미설정 환자 섹션 = '미지정'
                 const tname = therapistId === '__none__'
-                  ? '미배정'
+                  ? '미지정'
                   : staffMap?.get(therapistId)?.name ?? '치료사';
                 const isFolded = foldedTherapists.has(therapistId);
                 return (
@@ -2265,6 +2269,12 @@ function DashboardTimeline({
                             <span className="text-[11px] font-medium flex-1 truncate text-gray-800">
                               {cardDisplayName(ci)}
                             </span>
+                            {/* T-20260614-foot-TIMETABLE-THERAPIST-DESIGNATED: 지정치료사 환자 "지정" 배지 */}
+                            {ci.customers?.designated_therapist_id && (
+                              <Badge className="bg-indigo-100 text-indigo-700 border-transparent text-[9px] px-1 py-0 shrink-0 leading-tight">
+                                지정
+                              </Badge>
+                            )}
                             <Badge className={cn(VISIT_TYPE_COLOR[ci.visit_type], 'text-[9px] px-1 py-0 shrink-0 leading-tight')}>
                               {VISIT_TYPE_KO[ci.visit_type]}
                             </Badge>
@@ -2323,14 +2333,15 @@ function DashboardTimeline({
           // T-20260522-foot-TIMETABLE-FOLD V2 AC-7: 아코디언용 예약 목록 구성
           // 초진(new) 우선, 재진(returning) 다음 — 슬롯 안의 모든 예약·체크인 합산
           // T-20260526-foot-TIMETABLE-BROKEN AC-2: null-safe 방어 코드 강화
-          type AccordionItem = { name: string | null; visitType: 'new' | 'returning'; customerId: string | null };
+          // T-20260614-foot-TIMETABLE-THERAPIST-DESIGNATED: designatedTherapistId 추가 → 명단 "지정" 배지 판정
+          type AccordionItem = { name: string | null; visitType: 'new' | 'returning'; customerId: string | null; designatedTherapistId: string | null };
           const accordionItems: AccordionItem[] = [];
           try {
             accordionItems.push(
-              ...newBox1.map((r): AccordionItem => ({ name: r ? cardDisplayName(r) : null, visitType: 'new', customerId: r?.customer_id ?? null })),
-              ...newBox2Ci.map((ci): AccordionItem => ({ name: ci ? cardDisplayName(ci) : null, visitType: 'new', customerId: ci?.customer_id ?? null })),
-              ...retBox2Resv.map((r): AccordionItem => ({ name: r ? cardDisplayName(r) : null, visitType: 'returning', customerId: r?.customer_id ?? null })),
-              ...retBox2Ci.map((ci): AccordionItem => ({ name: ci ? cardDisplayName(ci) : null, visitType: 'returning', customerId: ci?.customer_id ?? null })),
+              ...newBox1.map((r): AccordionItem => ({ name: r ? cardDisplayName(r) : null, visitType: 'new', customerId: r?.customer_id ?? null, designatedTherapistId: r?.customers?.designated_therapist_id ?? null })),
+              ...newBox2Ci.map((ci): AccordionItem => ({ name: ci ? cardDisplayName(ci) : null, visitType: 'new', customerId: ci?.customer_id ?? null, designatedTherapistId: ci?.customers?.designated_therapist_id ?? null })),
+              ...retBox2Resv.map((r): AccordionItem => ({ name: r ? cardDisplayName(r) : null, visitType: 'returning', customerId: r?.customer_id ?? null, designatedTherapistId: r?.customers?.designated_therapist_id ?? null })),
+              ...retBox2Ci.map((ci): AccordionItem => ({ name: ci ? cardDisplayName(ci) : null, visitType: 'returning', customerId: ci?.customer_id ?? null, designatedTherapistId: ci?.customers?.designated_therapist_id ?? null })),
             );
           } catch {
             // 아코디언 데이터 구성 실패 시 빈 배열로 폴백 — 시간표 렌더링은 계속
@@ -2555,6 +2566,20 @@ function DashboardTimeline({
                             <span className="text-[11px] font-medium text-gray-800 flex-1 truncate">
                               {item.name ?? '(이름 없음)'}
                             </span>
+                            {/* T-20260614-foot-TIMETABLE-THERAPIST-DESIGNATED: 지정치료사 환자 "지정" 배지
+                                (가독성 — 지정치료사 이름 확보 시 "지정·{이름}" 표기) */}
+                            {item.designatedTherapistId && (
+                              <Badge
+                                className="bg-indigo-100 text-indigo-700 border-transparent text-[9px] px-1 py-0 shrink-0 leading-tight"
+                                title={staffMap?.get(item.designatedTherapistId)?.name
+                                  ? `지정치료사: ${staffMap.get(item.designatedTherapistId)!.name}`
+                                  : '지정치료사'}
+                              >
+                                {staffMap?.get(item.designatedTherapistId)?.name
+                                  ? `지정·${staffMap.get(item.designatedTherapistId)!.name}`
+                                  : '지정'}
+                              </Badge>
+                            )}
                             {chartNo && (
                               <span className="text-[9px] text-gray-400 tabular-nums shrink-0">
                                 #{chartNo}
@@ -3817,7 +3842,8 @@ export default function Dashboard() {
     const { data } = await supabase
       .from('reservations')
       // T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed → 카드 표기명 현재화
-      .select('*, customers(name, chart_number)')
+      // T-20260614-foot-TIMETABLE-THERAPIST-DESIGNATED: designated_therapist_id 추가(read-only) → 명단 "지정" 배지
+      .select('*, customers(name, chart_number, designated_therapist_id)')
       .eq('clinic_id', clinic.id)
       .eq('reservation_date', dateStr)
       .neq('status', 'cancelled')
@@ -3839,7 +3865,9 @@ export default function Dashboard() {
     const { data } = await supabase
       .from('check_ins')
       // T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed → 카드 표기명 현재화
-      .select('*, customers(name, chart_number)')
+      // T-20260614-foot-TIMETABLE-THERAPIST-DESIGNATED: designated_therapist_id 추가(read-only) →
+      //   [치료사별] 탭 그룹핑 키 + "지정" 배지 판정
+      .select('*, customers(name, chart_number, designated_therapist_id)')
       .eq('clinic_id', clinic.id)
       .not('status', 'in', '("cancelled","done")')
       .in('visit_type', ['new', 'returning', 'experience'])
