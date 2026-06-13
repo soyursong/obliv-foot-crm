@@ -127,6 +127,147 @@ interface ReservationDraft {
   linked_package_id?: string | null;
 }
 
+// ─── T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002 (옵션A · L-002 개정) ───────────────
+//   예약 '신규 생성' 단일소스 함수. 기존 ReservationEditor.save() 의 신규(INSERT) 경로를 그대로 추출.
+//   ReservationEditor(우클릭/+버튼 동선)와 예약상세 팝업 new-mode 가 '동일' 이 함수를 호출 → 단일 생성경로 유지.
+//   🔒 L-002(개정): 생성경로는 이 함수 1곳뿐. 팝업은 이 함수를 직접 import 하지 않고 parent 콜백으로만 위임(팝업 내 reservations.insert = 0 자구).
+//   생성 무결성 5요소 전부 함수 내 보존: ① slot 상한 ② 패키지연결(progress) ③ 경과체크 ④ 치료사 역동기화 ⑤ 생성로그.
+//   ⚠ 고객 INSERT(전화→신규고객 생성)는 호출측 책임 — 이 함수는 resolve 된 customerId 를 받음(팝업 new-mode 는 검색으로 선택된 고객만 대상).
+type CanonicalCreateInput = {
+  clinicId: string;
+  customerId: string | null;
+  name: string;
+  phone: string | null;
+  date: string; // yyyy-MM-dd
+  time: string; // HH:mm
+  visit_type: VisitType;
+  service_id?: string | null;
+  memo?: string | null;
+  booking_memo?: string | null;
+  visit_route?: string | null;
+  referral_name?: string | null;
+  linked_package_id?: string | null;
+  preferred_therapist_id?: string | null; // 재진 치료사(역동기화 대상)
+  progressCheck?: { required: boolean; label: string | null } | null;
+  maxPerSlot: number;
+  changedBy: string | null;
+  authorName: string;
+  onDuplicateConfirm?: (msg: string) => boolean; // 같은날 중복예약 confirm (취소 시 생성 중단)
+};
+type CanonicalCreateResult =
+  | { ok: true; reservationId: string }
+  | { ok: false; reason: 'slot_full' | 'duplicate_cancelled' | 'error'; message?: string };
+
+async function createReservationCanonical(input: CanonicalCreateInput): Promise<CanonicalCreateResult> {
+  const normalizedPhone = input.phone ? (normalizeToE164(input.phone) ?? input.phone.trim()) : null;
+
+  // ① slot 상한 — 같은 시간대 활성 예약 수가 상한 도달 시 생성 차단
+  {
+    const { count } = await supabase
+      .from('reservations')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinic_id', input.clinicId)
+      .eq('reservation_date', input.date)
+      .eq('reservation_time', input.time)
+      .neq('status', 'cancelled');
+    if ((count ?? 0) >= input.maxPerSlot) {
+      return { ok: false, reason: 'slot_full', message: `이 시간대는 마감입니다 (${count}/${input.maxPerSlot})` };
+    }
+  }
+
+  // 같은 고객 같은날 중복예약 확인 (callback 으로 사용자 confirm — 미전달 시 통과)
+  if (input.customerId) {
+    const { count } = await supabase
+      .from('reservations')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinic_id', input.clinicId)
+      .eq('customer_id', input.customerId)
+      .eq('reservation_date', input.date)
+      .neq('status', 'cancelled');
+    if ((count ?? 0) > 0) {
+      const proceed = input.onDuplicateConfirm
+        ? input.onDuplicateConfirm(`${input.name}님은 이미 ${input.date}에 예약이 있습니다. 계속하시겠습니까?`)
+        : true;
+      if (!proceed) return { ok: false, reason: 'duplicate_cancelled' };
+    }
+  }
+
+  // 초진 방문경로 → customers 동기 (visit_route / lead_source / referral_name)
+  if (input.customerId && input.visit_type === 'new' && input.visit_route) {
+    const customerUpdate: Record<string, string | null> = {
+      visit_route: input.visit_route,
+      lead_source: input.visit_route,
+    };
+    if (input.visit_route === '지인소개') {
+      customerUpdate.referral_name = input.referral_name?.trim() || null;
+    }
+    await supabase.from('customers').update(customerUpdate).eq('id', input.customerId);
+  }
+
+  // ② 패키지연결 + 치료사 preferred 포함 페이로드
+  const payload = {
+    clinic_id: input.clinicId,
+    customer_id: input.customerId,
+    customer_name: input.name.trim(),
+    customer_phone: normalizedPhone || null,
+    reservation_date: input.date,
+    reservation_time: input.time,
+    visit_type: input.visit_type,
+    service_id: input.service_id || null,
+    memo: input.memo?.trim() || null,
+    booking_memo: input.booking_memo?.trim() || null,
+    referral_source: (input.visit_type === 'new' && input.visit_route) ? input.visit_route : null,
+    ...(input.visit_type === 'returning' ? { preferred_therapist_id: input.preferred_therapist_id || null } : {}),
+    // ③ 경과체크 — 패키지 연결 시 체크포인트 도달 여부 저장 (원본 save() 동일 시맨틱)
+    ...(input.linked_package_id ? {
+      progress_check_required: input.progressCheck?.required ?? false,
+      progress_check_label: input.progressCheck?.label ?? null,
+    } : {}),
+  };
+
+  const result = await supabase
+    .from('reservations')
+    .insert({ ...payload, status: 'confirmed' })
+    .select('id')
+    .maybeSingle();
+  if (result.error) return { ok: false, reason: 'error', message: result.error.message };
+  const savedId = (result.data as { id: string } | null)?.id;
+  if (!savedId) return { ok: false, reason: 'error', message: '예약이 생성되지 않았습니다.' };
+
+  // ⑤ 생성로그
+  await supabase.from('reservation_logs').insert({
+    reservation_id: savedId,
+    clinic_id: input.clinicId,
+    action: 'create',
+    old_data: null,
+    new_data: {
+      date: input.date,
+      time: input.time.slice(0, 5),
+      visit_type: input.visit_type,
+      customer_name: payload.customer_name,
+      customer_phone: payload.customer_phone,
+      service_id: payload.service_id,
+      memo: payload.memo,
+    },
+    changed_by: input.changedBy,
+  });
+
+  // 예약메모 → 이력 테이블
+  if (input.booking_memo?.trim()) {
+    await insertReservationMemo(savedId, input.clinicId, input.booking_memo.trim(), input.authorName);
+  }
+
+  // ④ 치료사 역동기화 — 재진 + 치료사 선택 + 고객 → customers.designated_therapist_id
+  if (input.visit_type === 'returning' && input.preferred_therapist_id && input.customerId) {
+    await supabase
+      .from('customers')
+      .update({ designated_therapist_id: input.preferred_therapist_id })
+      .eq('id', input.customerId);
+  }
+
+  return { ok: true, reservationId: savedId };
+}
+
 type ViewMode = 'week' | 'day';
 
 export default function Reservations() {
@@ -746,25 +887,43 @@ export default function Reservations() {
     setDetail(null);
   };
 
-  // T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1 (현장 확정: A→B 연속 신규예약):
-  //   예약상세 팝업 검색창에서 B고객 선택 → 팝업 닫고 기존 신규예약 editor 를 B고객 기준으로 오픈.
-  //   🔒 L-002: 신규 생성 로직 신설 금지 — 기존 ReservationEditor(openNewSlot 동선) 재사용.
-  const openNewForCustomer = (p: { id: string; name: string; phone: string }) => {
-    const baseDate = detail?.reservation_date ?? format(new Date(), 'yyyy-MM-dd');
-    const baseTime = detail?.reservation_time?.slice(0, 5) ?? '10:00';
-    setDetail(null);
-    setEditor({
-      date: baseDate,
-      time: baseTime,
-      name: p.name,
-      phone: p.phone,
-      visit_type: 'returning',
-      memo: '',
-      booking_memo: '',
-      visit_route: '',
-      customer_id: p.id,
-    });
-  };
+  // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002 (옵션A · L-002 개정):
+  //   현장 확정 동선(A 등록 → B 검색 → 신규예약)을 '예약상세 팝업 안에서' 완결(모달 스폰 폐기).
+  //   팝업 new-mode 가 수집한 날짜/시간/초·재/고객을 이 콜백으로 위임 → 단일소스 createReservationCanonical 호출.
+  //   🔒 L-002(개정): 생성경로는 함수 1곳뿐. 팝업은 콜백만 호출(팝업 내 reservations.insert 0). 5요소는 함수 내부 보존.
+  const handleCreateReservationFromPopup = useCallback(
+    async (params: {
+      customerId: string;
+      name: string;
+      phone: string | null;
+      date: string;
+      time: string;
+      visit_type: VisitType;
+    }): Promise<{ ok: boolean; reason?: string; message?: string }> => {
+      if (!clinic) return { ok: false, reason: 'error', message: '클리닉 정보를 불러오지 못했습니다.' };
+      const res = await createReservationCanonical({
+        clinicId: clinic.id,
+        customerId: params.customerId,
+        name: params.name,
+        phone: params.phone,
+        date: params.date,
+        time: params.time,
+        visit_type: params.visit_type,
+        maxPerSlot: slotMaxFor(params.time),
+        changedBy,
+        authorName: profile?.name ?? '',
+        onDuplicateConfirm: (msg) => window.confirm(msg),
+      });
+      if (res.ok) {
+        fetchWeek();
+        return { ok: true };
+      }
+      return { ok: false, reason: res.reason, message: res.message };
+    },
+    // fetchWeek 는 useCallback 안정 참조. clinic/changedBy/profile 변경 시 재생성.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [clinic, changedBy, profile?.name],
+  );
 
   const batchCheckIn = async (confirmed: Reservation[]) => {
     if (!clinic || confirmed.length === 0) return;
@@ -919,7 +1078,13 @@ export default function Reservations() {
     treatment_contents: null,
     doctor_call_memo: null,
     doctor_ack_at: null,
-  }), [clinic?.id]);
+    // T-20260613-foot-CHART1-CHARTNO-DEDUP-REORDER §D(AC-5): CustomerHoverCard 트리거 인라인
+    //   차트번호 배지를 hover 전부터 SSOT(resvChartMap=customers.chart_number)로 채워 안정화.
+    //   → hover 시 fetch로 '#미발번' → 차트번호 덮어쓰는 깜빡임 제거(미발번이면 null 유지 → '#미발번' 그대로).
+    customers: r.customer_id
+      ? { name: r.customer_name ?? null, chart_number: resvChartMap.get(r.customer_id) ?? null }
+      : null,
+  }), [clinic?.id, resvChartMap]);
 
   // T-20260515-foot-RESV-CTX-HOVER: 핸들러
   // T-20260516-foot-CHART-OPEN-UNIFY AC-1: setResvChartSheetId → openChart (ChartContext 단일 소스)
@@ -1488,8 +1653,11 @@ export default function Reservations() {
                                       {r.status === 'cancelled' && (
                                         <span className="text-[9px] bg-gray-200 text-gray-500 rounded px-0.5 leading-none">취소됨</span>
                                       )}
-                                      {/* T-20260514-foot-CHART-NO-VISIBLE / T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 등록환자(customer_id)면 차트번호 항상 표시(미발번도 명시) */}
-                                      {r.customer_id && (
+                                      {/* T-20260514-foot-CHART-NO-VISIBLE / T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 등록환자(customer_id)면 차트번호 항상 표시(미발번도 명시)
+                                          T-20260613-foot-CHART1-CHARTNO-DEDUP-REORDER §D(AC-5): 활성 카드는 CustomerHoverCard 트리거가
+                                          이미 차트번호를 인접 표기 → 여기서 중복 배지 제거. 취소건(plain span 분기, hovercard 미사용)에만
+                                          PAIRING-AUDIT(환자명 단독노출 0) 유지용으로 별도 배지 렌더. */}
+                                      {r.customer_id && r.status === 'cancelled' && (
                                         <span className={`text-[10px] font-mono ${resvChartMap.get(r.customer_id) ? 'text-teal-600' : 'text-muted-foreground'}`}>
                                           {chartNoBadge(resvChartMap.get(r.customer_id))}
                                         </span>
@@ -1717,8 +1885,8 @@ export default function Reservations() {
           setDetail(null);
           fetchWeek();
         }}
-        /* T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1: 검색창 B고객 선택 → 기존 신규예약 editor 재사용 */
-        onNewReservationForCustomer={openNewForCustomer}
+        /* T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: 팝업 new-mode → 단일소스 생성 함수 위임(모달 스폰 폐기). */
+        onCreateReservation={handleCreateReservationFromPopup}
       />
 
       {/* T-20260515-foot-RESV-CTX-HOVER: 예약관리 우클릭 메뉴 + hover 팝업 오버레이 */}
@@ -2221,38 +2389,118 @@ function ReservationEditor({
     if (!clinicId || !state) return;
     setSubmitting(true);
 
-    if (!state.existingId) {
-      const { count } = await supabase
+    // ─── 수정(UPDATE) 경로 — 인라인 유지(신규 생성경로와 분리, 회귀 0) ───────────────
+    //   T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: 신규(INSERT) 경로만 단일소스 함수로 추출.
+    //   수정 경로는 예약 변경/감사 로그(reschedule·update) 시맨틱이 달라 기존 인라인 그대로 보존.
+    if (state.existingId) {
+      const customerId: string | null = state.customer_id ?? null;
+
+      // 초진 방문경로 → customers 동기 (편집 시에도 유지)
+      if (customerId && state.visit_type === 'new' && state.visit_route) {
+        const customerUpdate: Record<string, string | null> = {
+          visit_route: state.visit_route,
+          lead_source: state.visit_route,
+        };
+        if (state.visit_route === '지인소개') {
+          customerUpdate.referral_name = state.referral_name?.trim() || null;
+        }
+        await supabase.from('customers').update(customerUpdate).eq('id', customerId);
+      }
+
+      const payload = {
+        clinic_id: clinicId,
+        customer_id: customerId,
+        customer_name: state.name.trim(),
+        customer_phone: (normalizeToE164(state.phone) ?? state.phone.trim()) || null,
+        reservation_date: state.date,
+        reservation_time: state.time,
+        visit_type: state.visit_type,
+        service_id: state.service_id || null,
+        memo: state.memo.trim() || null,
+        booking_memo: state.booking_memo?.trim() || null,
+        referral_source: (state.visit_type === 'new' && state.visit_route) ? state.visit_route : null,
+        ...(state.visit_type === 'returning' ? { preferred_therapist_id: overrideTherapistId || null } : {}),
+      };
+
+      // 수정 전 원본 캡처 (감사 로그용)
+      const { data: prev } = await supabase
         .from('reservations')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinic_id', clinicId)
-        .eq('reservation_date', state.date)
-        .eq('reservation_time', state.time)
-        .neq('status', 'cancelled');
-      if ((count ?? 0) >= maxPerSlot) {
-        toast.error(`이 시간대는 마감입니다 (${count}/${maxPerSlot})`);
+        .select('reservation_date, reservation_time, visit_type, customer_name, customer_phone, service_id, memo')
+        .eq('id', state.existingId)
+        .maybeSingle();
+      const prevRow = (prev as Record<string, unknown>) ?? null;
+
+      const result = await supabase
+        .from('reservations')
+        .update(payload)
+        .eq('id', state.existingId)
+        .select('id')
+        .maybeSingle();
+
+      if (result.error) {
+        toast.error(`저장 실패: ${result.error.message}`);
         setSubmitting(false);
         return;
       }
-    }
-
-    let customerId: string | null = state.customer_id ?? null;
-
-    if (!state.existingId && customerId) {
-      const { count } = await supabase
-        .from('reservations')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinic_id', clinicId)
-        .eq('customer_id', customerId)
-        .eq('reservation_date', state.date)
-        .neq('status', 'cancelled');
-      if ((count ?? 0) > 0) {
-        if (!window.confirm(`${state.name}님은 이미 ${state.date}에 예약이 있습니다. 계속하시겠습니까?`)) {
-          setSubmitting(false);
-          return;
-        }
+      // T-20260529-foot-RESV-TIME-EDIT-NOSYNC AC-1: UPDATE silent failure 감지 (RLS 0-row block)
+      if (!result.data) {
+        toast.error('예약 변경이 적용되지 않았습니다. 권한 또는 연결 상태를 확인해 주세요.');
+        setSubmitting(false);
+        onSaved();
+        return;
       }
+
+      const savedId = (result.data as { id: string }).id;
+      if (prevRow) {
+        const oldTime = String(prevRow.reservation_time ?? '').slice(0, 5);
+        const newTime = state.time.slice(0, 5);
+        const isReschedule = prevRow.reservation_date !== state.date || oldTime !== newTime;
+        await supabase.from('reservation_logs').insert({
+          reservation_id: savedId,
+          clinic_id: clinicId,
+          action: isReschedule ? 'reschedule' : 'update',
+          old_data: {
+            date: prevRow.reservation_date,
+            time: oldTime,
+            visit_type: prevRow.visit_type,
+            customer_name: prevRow.customer_name,
+            customer_phone: prevRow.customer_phone,
+            service_id: prevRow.service_id,
+            memo: prevRow.memo,
+          },
+          new_data: {
+            date: state.date,
+            time: newTime,
+            visit_type: state.visit_type,
+            customer_name: payload.customer_name,
+            customer_phone: payload.customer_phone,
+            service_id: payload.service_id,
+            memo: payload.memo,
+          },
+          changed_by: changedBy,
+        });
+      }
+
+      if (state.booking_memo?.trim()) {
+        await insertReservationMemo(savedId, clinicId, state.booking_memo.trim(), authorName);
+      }
+      // 재진 치료사 역동기화 (편집 시에도 유지)
+      if (state.visit_type === 'returning' && overrideTherapistId && customerId) {
+        await supabase
+          .from('customers')
+          .update({ designated_therapist_id: overrideTherapistId })
+          .eq('id', customerId);
+      }
+
+      toast.success('수정됨');
+      setSubmitting(false);
+      onSaved();
+      return;
     }
+
+    // ─── 신규(CREATE) 경로 — 고객 resolve 후 단일소스 함수 위임 ─────────────────────
+    //   고객 INSERT(전화→신규고객)는 여기서 resolve. 그 외 생성 무결성 5요소는 전부 함수 내부.
+    let customerId: string | null = state.customer_id ?? null;
 
     if (!customerId && state.phone.trim()) {
       const { data: existing } = await supabase
@@ -2282,150 +2530,45 @@ function ReservationEditor({
       }
     }
 
-    // AC-5: 초진이고 방문경로 선택 시 customers.visit_route + lead_source 동기 업데이트
-    // T-20260515-foot-REFERRAL-NAME: 지인소개 시 referral_name도 함께 저장
-    // AC-3 FIX: lead_source도 함께 업데이트 — Customers.tsx / Closing.tsx와 일관성 유지
-    if (customerId && state.visit_type === 'new' && state.visit_route) {
-      const customerUpdate: Record<string, string | null> = {
-        visit_route: state.visit_route,
-        lead_source: state.visit_route,  // AC-3 FIX: lead_source에도 동기화
-      };
-      if (state.visit_route === '지인소개') {
-        customerUpdate.referral_name = state.referral_name?.trim() || null;
-      }
-      await supabase
-        .from('customers')
-        .update(customerUpdate)
-        .eq('id', customerId);
-    }
+    const progressCheck = state.linked_package_id
+      ? { required: !!progressCheckPlan, label: progressCheckPlan?.label ?? null }
+      : null;
 
-    const payload = {
-      clinic_id: clinicId,
-      customer_id: customerId,
-      customer_name: state.name.trim(),
-      customer_phone: (normalizeToE164(state.phone) ?? state.phone.trim()) || null,
-      reservation_date: state.date,
-      reservation_time: state.time,
+    const res = await createReservationCanonical({
+      clinicId,
+      customerId,
+      name: state.name,
+      phone: state.phone,
+      date: state.date,
+      time: state.time,
       visit_type: state.visit_type,
-      service_id: state.service_id || null,
-      memo: state.memo.trim() || null,
-      // T-20260504-foot-MEMO-RESTRUCTURE: 예약 경로 확인용 메모
-      booking_memo: state.booking_memo?.trim() || null,
-      // AC-3 FIX: 방문경로를 예약 레코드에 직접 저장 → 수정 모달 재진입 시 즉시 프리로드
-      referral_source: (state.visit_type === 'new' && state.visit_route) ? state.visit_route : null,
-      // T-20260524-foot-THERAPIST-BISYNC AC-2: 재진 예약 치료사 수기 선택 → preferred_therapist_id 저장
-      // AC-3: 재진(returning)만 — 초진(new)은 지정 치료사 연동 대상 외
-      ...(state.visit_type === 'returning' ? { preferred_therapist_id: overrideTherapistId || null } : {}),
-      // T-PROGRESS-CHECKPOINT AC-3: 경과분석 플래그 — 신규 예약 시 체크포인트 도달 여부 저장
-      // 기존 예약 수정 시에는 재계산 안 함 (null → DB default false 유지)
-      ...(!state.existingId && state.linked_package_id ? {
-        progress_check_required: !!progressCheckPlan,
-        progress_check_label: progressCheckPlan?.label ?? null,
-      } : {}),
-    };
+      service_id: state.service_id,
+      memo: state.memo,
+      booking_memo: state.booking_memo,
+      visit_route: state.visit_route,
+      referral_name: state.referral_name,
+      linked_package_id: state.linked_package_id,
+      preferred_therapist_id: state.visit_type === 'returning' ? (overrideTherapistId || null) : null,
+      progressCheck,
+      maxPerSlot,
+      changedBy,
+      authorName,
+      onDuplicateConfirm: (msg) => window.confirm(msg),
+    });
 
-    // 수정 전 원본 캡처 (감사 로그용)
-    let prevRow: Record<string, unknown> | null = null;
-    if (state.existingId) {
-      const { data: prev } = await supabase
-        .from('reservations')
-        .select('reservation_date, reservation_time, visit_type, customer_name, customer_phone, service_id, memo')
-        .eq('id', state.existingId)
-        .maybeSingle();
-      prevRow = (prev as Record<string, unknown>) ?? null;
-    }
-
-    const result = state.existingId
-      ? await supabase.from('reservations').update(payload).eq('id', state.existingId).select('id').maybeSingle()
-      : await supabase.from('reservations').insert({ ...payload, status: 'confirmed' }).select('id').maybeSingle();
-
-    if (result.error) {
-      toast.error(`저장 실패: ${result.error.message}`);
+    if (!res.ok) {
+      if (res.reason === 'slot_full') toast.error(res.message ?? '이 시간대는 마감입니다');
+      else if (res.reason === 'error') toast.error(`저장 실패: ${res.message ?? ''}`);
+      // duplicate_cancelled → 사용자가 취소 선택, 조용히 종료
       setSubmitting(false);
       return;
-    }
-
-    // T-20260529-foot-RESV-TIME-EDIT-NOSYNC AC-1:
-    // UPDATE silent failure 감지 — RLS 차단 시 result.data = null (error = null)
-    // 0-row silent block → 사용자에게 명시적 오류 알림 (false success toast 방지)
-    if (state.existingId && !result.data) {
-      toast.error('예약 변경이 적용되지 않았습니다. 권한 또는 연결 상태를 확인해 주세요.');
-      setSubmitting(false);
-      onSaved(); // DB 현재 상태를 즉시 재확인 (fetchWeek 호출)
-      return;
-    }
-
-    // 감사 로그 — create / update / reschedule
-    const savedId = (result.data as { id: string } | null)?.id ?? state.existingId;
-    if (savedId) {
-      if (state.existingId && prevRow) {
-        const oldTime = String(prevRow.reservation_time ?? '').slice(0, 5);
-        const newTime = state.time.slice(0, 5);
-        const isReschedule =
-          prevRow.reservation_date !== state.date || oldTime !== newTime;
-        await supabase.from('reservation_logs').insert({
-          reservation_id: savedId,
-          clinic_id: clinicId,
-          action: isReschedule ? 'reschedule' : 'update',
-          old_data: {
-            date: prevRow.reservation_date,
-            time: oldTime,
-            visit_type: prevRow.visit_type,
-            customer_name: prevRow.customer_name,
-            customer_phone: prevRow.customer_phone,
-            service_id: prevRow.service_id,
-            memo: prevRow.memo,
-          },
-          new_data: {
-            date: state.date,
-            time: newTime,
-            visit_type: state.visit_type,
-            customer_name: payload.customer_name,
-            customer_phone: payload.customer_phone,
-            service_id: payload.service_id,
-            memo: payload.memo,
-          },
-          changed_by: changedBy,
-        });
-      } else if (!state.existingId) {
-        await supabase.from('reservation_logs').insert({
-          reservation_id: savedId,
-          clinic_id: clinicId,
-          action: 'create',
-          old_data: null,
-          new_data: {
-            date: state.date,
-            time: state.time.slice(0, 5),
-            visit_type: state.visit_type,
-            customer_name: payload.customer_name,
-            customer_phone: payload.customer_phone,
-            service_id: payload.service_id,
-            memo: payload.memo,
-          },
-          changed_by: changedBy,
-        });
-      }
-    }
-
-    // T-20260515-foot-RESV-MEMO-APPEND: 입력된 예약메모 → 이력 테이블 INSERT
-    if (savedId && clinicId && state.booking_memo?.trim()) {
-      await insertReservationMemo(savedId, clinicId, state.booking_memo.trim(), authorName);
-    }
-
-    // T-20260524-foot-THERAPIST-BISYNC AC-2: 재진 예약 저장 시 customers.designated_therapist_id 역동기화
-    // AC-3: visit_type = 'returning'이고 치료사가 선택된 경우만 (초진 제외)
-    if (state.visit_type === 'returning' && overrideTherapistId && customerId) {
-      await supabase
-        .from('customers')
-        .update({ designated_therapist_id: overrideTherapistId })
-        .eq('id', customerId);
     }
 
     // T-PROGRESS-CHECKPOINT AC-3: 경과분석 필요 토스트 알림
-    if (!state.existingId && progressCheckPlan) {
+    if (progressCheckPlan) {
       toast.info(`🔔 경과분석 필요 — ${progressCheckPlan.label}`, { duration: 6000 });
     }
-    toast.success(state.existingId ? '수정됨' : '예약 등록');
+    toast.success('예약 등록');
     setSubmitting(false);
     onSaved();
   };

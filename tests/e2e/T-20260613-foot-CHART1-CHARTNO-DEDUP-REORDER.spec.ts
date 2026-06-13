@@ -256,3 +256,70 @@ test.describe('T-20260613-foot-CHART1-CHARTNO-DEDUP-REORDER — 차트번호 중
     }
   });
 });
+
+/**
+ * §D — 예약 명단 '#미발번' hover 차트번호 중복 버그 제거 (AC-5)
+ *   ⚠ surface: src/pages/Reservations.tsx (주간 캘린더 슬롯/명단 카드). CheckInDetailSheet 아님.
+ *
+ *   버그(수정 전): 예약 카드에 차트번호 배지 2곳(CustomerHoverCard 인라인 + Reservations 별도 배지).
+ *     hover 전엔 hovercard 배지가 '#미발번'(resvAsCheckIn이 chart_number 미전달) → hover 시 fetch로
+ *     차트번호 덮어쓰기 → 활성 카드에서 차트번호 2개 동시 표기.
+ *   수정(AC-5): resvAsCheckIn이 resvChartMap(SSOT)을 customers.chart_number로 미리 주입(hover 전/후 안정) +
+ *     활성 카드의 별도 배지 제거(취소건만 유지) → 카드당 차트번호 표기 1회, hover 중복 0.
+ *
+ *   비시딩 구조 검증(데이터 없으면 페이지 로드만 확인) — 라이브 데이터 의존 최소화.
+ */
+test.describe('T-20260613-foot-CHART1-CHARTNO-DEDUP-REORDER §D — 예약명단 #미발번 hover 중복 제거 (AC-5)', () => {
+  test.beforeEach(async ({ page }) => {
+    const ok = await loginAndWaitForDashboard(page);
+    if (!ok) test.skip(true, '로그인 실패');
+    await page.goto('/admin/reservations');
+    await page.waitForLoadState('networkidle');
+    await expect(page).toHaveURL(/reservations/);
+  });
+
+  // 시나리오 5-2/5-3: 활성(취소 아님) 예약 카드 — 차트번호 배지 hover 전·후 모두 카드당 1개
+  test('AC-5: 활성 예약 카드의 차트번호 배지는 hover 전·후 모두 카드당 ≤1개', async ({ page }) => {
+    const table = page.locator('table');
+    await expect(table).toBeVisible({ timeout: 8_000 });
+
+    // hovercard 트리거(클릭 가능 환자명) = 활성 카드 진입점
+    const triggers = page.locator('[data-testid="customer-hover-card-name-clickable"]');
+    const n = await triggers.count();
+    if (n === 0) {
+      // 활성 예약 데이터 없음 → 페이지 로드만 검증(soft)
+      await expect(page).toHaveURL(/reservations/);
+      return;
+    }
+
+    const trigger = triggers.first();
+    // 트리거를 감싸는 카드 row(이름·배지 flex row)
+    const row = trigger.locator('xpath=ancestor::div[contains(@class,"flex")][1]');
+
+    // hover 전: 차트번호성(#패턴) 배지 개수 — 활성 카드는 hovercard 인라인 1개만(별도 배지 제거됨)
+    const before = await row.locator('span.font-mono').filter({ hasText: /^#/ }).count();
+    expect(before, 'AC-5: hover 전 차트번호 배지 ≤1개').toBeLessThanOrEqual(1);
+
+    // hover (280ms 딜레이 + customers fetch)
+    await trigger.hover();
+    await page.waitForTimeout(500);
+
+    // hover 후에도 동일 카드 row 내 차트번호 배지 개수 불변(덮어쓰기/중복 0)
+    const after = await row.locator('span.font-mono').filter({ hasText: /^#/ }).count();
+    expect(after, 'AC-5: hover 후 차트번호 배지 개수 불변(중복 0)').toBe(before);
+  });
+
+  // 보강: 화면 상의 활성 카드들 모두 차트번호 배지 카드당 ≤1개 (#미발번 + 차트번호 동시 표기 0)
+  test('AC-5: 활성 카드별 #미발번/차트번호 동시 표기 0', async ({ page }) => {
+    const table = page.locator('table');
+    await expect(table).toBeVisible({ timeout: 8_000 });
+
+    const triggers = page.locator('[data-testid="customer-hover-card-name-clickable"]');
+    const n = await triggers.count();
+    for (let i = 0; i < Math.min(n, 5); i++) {
+      const row = triggers.nth(i).locator('xpath=ancestor::div[contains(@class,"flex")][1]');
+      const cnt = await row.locator('span.font-mono').filter({ hasText: /^#/ }).count();
+      expect(cnt, `AC-5: 활성 카드[${i}] 차트번호 배지 ≤1개`).toBeLessThanOrEqual(1);
+    }
+  });
+});
