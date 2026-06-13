@@ -509,17 +509,17 @@ export default function DoctorCallDashboard() {
               </colgroup>
               {/* DOCDASH_THEAD — CALLUX-3FIX AC-1: 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과·시간. */}
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/70 text-center text-[13px] font-semibold text-muted-foreground">
-                  <th className="px-2 py-1.5">방</th>
-                  <th className="px-2 py-1.5">상태</th>
-                  <th className="px-2 py-1.5">이름</th>
-                  <th className="px-2 py-1.5">생년(만나이)</th>
-                  <th className="px-2 py-1.5">차트번호</th>
-                  <th className="px-2 py-1.5">오늘시술</th>
-                  <th className="px-2 py-1.5">차트</th>
-                  <th className="px-2 py-1.5">처방</th>
-                  <th className="px-2 py-1.5">임상경과</th>
-                  <th className="px-2 py-1.5">시간</th>
+                <tr className="border-b border-gray-100 bg-gray-50/70 text-left text-[13px] font-semibold text-muted-foreground">
+                  <th className="px-1.5 py-1">방</th>
+                  <th className="px-1.5 py-1">상태</th>
+                  <th className="px-1.5 py-1">이름</th>
+                  <th className="px-1.5 py-1">생년(만나이)</th>
+                  <th className="px-1.5 py-1">차트번호</th>
+                  <th className="px-1.5 py-1">오늘시술</th>
+                  <th className="px-1.5 py-1">차트</th>
+                  <th className="px-1.5 py-1">처방</th>
+                  <th className="px-1.5 py-1">임상경과</th>
+                  <th className="px-1.5 py-1">시간</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100" data-testid="doctor-call-feed-rows">
@@ -576,16 +576,16 @@ export default function DoctorCallDashboard() {
               </colgroup>
               {/* COMPLETED THEAD — CALLUX-3FIX AC-1: 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과(시간 없음). */}
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/70 text-center text-[13px] font-semibold text-muted-foreground">
-                  <th className="px-2 py-1.5">방</th>
-                  <th className="px-2 py-1.5">상태</th>
-                  <th className="px-2 py-1.5">이름</th>
-                  <th className="px-2 py-1.5">생년(만나이)</th>
-                  <th className="px-2 py-1.5">차트번호</th>
-                  <th className="px-2 py-1.5">오늘시술</th>
-                  <th className="px-2 py-1.5">차트</th>
-                  <th className="px-2 py-1.5">처방</th>
-                  <th className="px-2 py-1.5">임상경과</th>
+                <tr className="border-b border-gray-100 bg-gray-50/70 text-left text-[13px] font-semibold text-muted-foreground">
+                  <th className="px-1.5 py-1">방</th>
+                  <th className="px-1.5 py-1">상태</th>
+                  <th className="px-1.5 py-1">이름</th>
+                  <th className="px-1.5 py-1">생년(만나이)</th>
+                  <th className="px-1.5 py-1">차트번호</th>
+                  <th className="px-1.5 py-1">오늘시술</th>
+                  <th className="px-1.5 py-1">차트</th>
+                  <th className="px-1.5 py-1">처방</th>
+                  <th className="px-1.5 py-1">임상경과</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100" data-testid="doctor-completed-rows">
@@ -677,9 +677,9 @@ function CallFeedRow({
         className={cn('align-top transition', inactive ? 'bg-gray-50/60 opacity-70' : 'bg-white')}
       >
         {/* 1. 방 — getAssignedSlotName SSOT(치료실 preconditioning=treatment_room 분기 내장). plain text(배지 아님). 중앙정렬. */}
-        <td className="px-2 py-2 text-center" data-testid="doctor-call-room-cell">
+        <td className="px-1.5 py-1 text-left" data-testid="doctor-call-room-cell">
           {slotName ? (
-            <span className="inline-flex items-center justify-center gap-0.5 text-[13px] font-medium text-gray-600">
+            <span className="inline-flex items-center justify-start gap-0.5 text-[13px] font-medium text-gray-600">
               <MapPin className="h-2.5 w-2.5 text-gray-400" />
               {slotName}
             </span>
@@ -689,8 +689,8 @@ function CallFeedRow({
         </td>
 
         {/* 2. 상태 — 진료필요 + 손들기 ✋: 진료필요 텍스트 바로 오른쪽. shake→초록(ack)→파랑(완료) 토글. 중앙정렬. */}
-        <td className="px-2 py-2 text-center">
-          <span className="inline-flex items-center justify-center gap-1 text-[13px] font-medium text-gray-700">
+        <td className="px-1.5 py-1 text-left">
+          <span className="inline-flex items-center justify-start gap-1 text-[13px] font-medium text-gray-700">
             <span
               className={cn('h-1.5 w-1.5 rounded-full', inactive ? 'bg-gray-300' : 'bg-red-500')}
             />
@@ -708,8 +708,8 @@ function CallFeedRow({
         </td>
 
         {/* 3. 이름 — 초/재 레이블 + 이름(중앙정렬, 진료차트 클릭). 이름 옆 이모지/손/꺾쇠 없음. */}
-        <td className="px-2 py-2 text-center">
-          <div className="flex items-center justify-center gap-1.5">
+        <td className="px-1.5 py-1 text-left">
+          <div className="flex items-center justify-start gap-1.5">
             <VisitBadge visitType={checkIn.visit_type} />
             <button
               type="button"
@@ -718,7 +718,7 @@ function CallFeedRow({
               data-testid="doctor-call-name-chart-btn"
               title="이름 클릭 — 진료차트 열기 (서랍)"
               className={cn(
-                'min-w-[4rem] break-keep text-center underline-offset-2 transition-colors disabled:cursor-default disabled:no-underline',
+                'min-w-[4rem] break-keep text-left underline-offset-2 transition-colors disabled:cursor-default disabled:no-underline',
                 inactive
                   ? 'text-gray-500 hover:text-gray-700 hover:underline'
                   : 'text-gray-900 hover:text-indigo-700 hover:underline cursor-pointer',
@@ -734,7 +734,7 @@ function CallFeedRow({
         </td>
 
         {/* 4. 생년(만나이) — T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1: customers.birth_date 파생 "YYYY (만 N세)". 결측 '—'. 중앙정렬. */}
-        <td className="px-2 py-2 text-center">
+        <td className="px-1.5 py-1 text-left">
           {(() => {
             const bd = birthYearAgeDisplay(readBirthDate(checkIn));
             return bd ? (
@@ -746,20 +746,20 @@ function CallFeedRow({
         </td>
 
         {/* 5. 차트번호 — T-20260612-foot-CHARTNO-COL-SPLIT-P1: 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
-        <td className="px-2 py-2 text-center">
+        <td className="px-1.5 py-1 text-left">
           <span className="font-mono text-[13px] text-gray-500" data-testid="doctor-call-chartno">
             {chartNoDisplay(readChartNo(checkIn))}
           </span>
         </td>
 
         {/* 6. 오늘시술 — 중앙정렬. */}
-        <td className="px-2 py-2 text-center">
+        <td className="px-1.5 py-1 text-left">
           <ProcedureCell checkIn={checkIn} />
         </td>
 
         {/* 7. 차트 — 임상경과 단축이모지(📝, 인라인 입력 토글) + 진료차트(🩺, 서랍). 중앙정렬. */}
-        <td className="px-2 py-2 text-center" data-testid="doctor-call-chart-cell">
-          <div className="inline-flex items-center justify-center gap-1">
+        <td className="px-1.5 py-1 text-left" data-testid="doctor-call-chart-cell">
+          <div className="inline-flex items-center justify-start gap-1">
             <button
               type="button"
               onClick={() => setShowClinical((v) => !v)}
@@ -785,8 +785,8 @@ function CallFeedRow({
         </td>
 
         {/* 8. 처방 — AC-7(FULLWIDTH 보존): 확정 시 알약버튼 제거→파란글씨 '처방완료'(plainText)+약명 미리보기. 미처방 시 알약 드롭다운. 중앙정렬. */}
-        <td className="px-2 py-2 text-center" data-testid="doctor-call-rx-cell">
-          <div className="flex flex-wrap items-center justify-center gap-1.5">
+        <td className="px-1.5 py-1 text-left" data-testid="doctor-call-rx-cell">
+          <div className="flex flex-wrap items-center justify-start gap-1.5">
             {checkIn.prescription_status === 'confirmed' ? (
               <RxConfirmedSummary
                 checkInId={checkIn.id}
@@ -845,7 +845,7 @@ function CallFeedRow({
         </td>
 
         {/* 9. 임상경과 — CALLUX-3FIX AC-1: 처방 '오른쪽'(요청순서 끝). 미리보기 전용(최신 1줄 말줄임, 입력은 차트칼럼 📝). 중앙정렬. */}
-        <td className="px-2 py-2 text-center" data-testid="doctor-call-clinical-cell">
+        <td className="px-1.5 py-1 text-left" data-testid="doctor-call-clinical-cell">
           {clinicalPreview ? (
             <span className="block max-w-full truncate text-[13px] text-gray-600" title={clinicalPreview}>
               {clinicalPreview}
@@ -856,7 +856,7 @@ function CallFeedRow({
         </td>
 
         {/* 10(끝). 시간 — AC-1 dev판단 기본보존(요청순서 미포함이나 경과시간 유지). 시계 이모지 제거, "+N분" 텍스트만. 중앙정렬. */}
-        <td className="px-2 py-2 text-center">
+        <td className="px-1.5 py-1 text-left">
           <span className="text-[13px] text-muted-foreground" data-testid="doctor-call-elapsed">
             {elapsed}
           </span>
@@ -937,9 +937,9 @@ function CompletedRow({
     <>
       <tr className="align-top" data-testid="doctor-completed-row" data-checkin-id={checkIn.id}>
         {/* 1. 방 — getAssignedSlotName SSOT(치료실 preconditioning=treatment_room). plain text. 중앙정렬. */}
-        <td className="px-2 py-2 text-center" data-testid="doctor-completed-room-cell">
+        <td className="px-1.5 py-1 text-left" data-testid="doctor-completed-room-cell">
           {slotName ? (
-            <span className="inline-flex items-center justify-center gap-0.5 text-[13px] font-medium text-gray-600">
+            <span className="inline-flex items-center justify-start gap-0.5 text-[13px] font-medium text-gray-600">
               <MapPin className="h-2.5 w-2.5 text-gray-400" />
               {slotName}
             </span>
@@ -949,8 +949,8 @@ function CompletedRow({
         </td>
 
         {/* 2. 상태 — 귀가/귀가 대기 + 손들기 ✋: 진료완료 상태이므로 파랑(완료) 표시. cross-client. 중앙정렬. */}
-        <td className="px-2 py-2 text-center">
-          <div className="flex flex-wrap items-center justify-center gap-1.5">
+        <td className="px-1.5 py-1 text-left">
+          <div className="flex flex-wrap items-center justify-start gap-1.5">
             <span
               className="inline-flex items-center gap-1 text-[13px] font-medium text-gray-700"
               data-testid="doctor-completed-discharge-status"
@@ -975,8 +975,8 @@ function CompletedRow({
         </td>
 
         {/* 3. 이름 — 초/재 레이블 + 이름(중앙정렬, 진료차트 클릭). 이름 옆 이모지/손/꺾쇠 없음. */}
-        <td className="px-2 py-2 text-center">
-          <div className="flex items-center justify-center gap-1.5">
+        <td className="px-1.5 py-1 text-left">
+          <div className="flex items-center justify-start gap-1.5">
             <VisitBadge visitType={checkIn.visit_type} />
             <button
               type="button"
@@ -984,7 +984,7 @@ function CompletedRow({
               disabled={!checkIn.customer_id}
               data-testid="doctor-completed-name-chart-btn"
               title="이름 클릭 — 진료차트 열기 (서랍)"
-              className="min-w-[4rem] break-keep text-center underline-offset-2 transition-colors cursor-pointer hover:text-indigo-700 hover:underline disabled:cursor-default disabled:no-underline"
+              className="min-w-[4rem] break-keep text-left underline-offset-2 transition-colors cursor-pointer hover:text-indigo-700 hover:underline disabled:cursor-default disabled:no-underline"
             >
               <span className="block text-[15px] font-semibold">{checkIn.customer_name}</span>
             </button>
@@ -992,7 +992,7 @@ function CompletedRow({
         </td>
 
         {/* 4. 생년(만나이) — T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1: customers.birth_date 파생 "YYYY (만 N세)". 결측 '—'. 중앙정렬. */}
-        <td className="px-2 py-2 text-center">
+        <td className="px-1.5 py-1 text-left">
           {(() => {
             const bd = birthYearAgeDisplay(readBirthDate(checkIn));
             return bd ? (
@@ -1004,20 +1004,20 @@ function CompletedRow({
         </td>
 
         {/* 5. 차트번호 — T-20260612-foot-CHARTNO-COL-SPLIT-P1: 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
-        <td className="px-2 py-2 text-center">
+        <td className="px-1.5 py-1 text-left">
           <span className="font-mono text-[13px] text-gray-500" data-testid="doctor-completed-chartno">
             {chartNoDisplay(readChartNo(checkIn))}
           </span>
         </td>
 
         {/* 6. 오늘시술 — 중앙정렬. */}
-        <td className="px-2 py-2 text-center">
+        <td className="px-1.5 py-1 text-left">
           <ProcedureCell checkIn={checkIn} />
         </td>
 
         {/* 7. 차트 — 임상경과 단축이모지(📝, 인라인 입력 토글) + 진료차트(🩺, 서랍). 중앙정렬. */}
-        <td className="px-2 py-2 text-center" data-testid="doctor-completed-chart-cell">
-          <div className="inline-flex items-center justify-center gap-1">
+        <td className="px-1.5 py-1 text-left" data-testid="doctor-completed-chart-cell">
+          <div className="inline-flex items-center justify-start gap-1">
             <button
               type="button"
               onClick={() => setShowClinical((v) => !v)}
@@ -1043,8 +1043,8 @@ function CompletedRow({
         </td>
 
         {/* 8. 처방 — AC-7(보존): 귀가(discharged) 미처방 '-', 원내잔류 알약 드롭다운, 확정 시 파란글씨 '처방완료'+미리보기. 중앙정렬. */}
-        <td className="px-2 py-2 text-center" data-testid="doctor-completed-rx-cell">
-          <div className="flex flex-wrap items-center justify-center gap-1.5">
+        <td className="px-1.5 py-1 text-left" data-testid="doctor-completed-rx-cell">
+          <div className="flex flex-wrap items-center justify-start gap-1.5">
             {checkIn.prescription_status === 'confirmed' ? (
               /* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK 게이트 prop 유지(진료완료 무회귀).
                  item9: plainText 파란글씨 '처방완료'(버튼 chrome 제거). item8: 약명 RXSET 표시모델 셀 미리보기. */
@@ -1108,7 +1108,7 @@ function CompletedRow({
         </td>
 
         {/* 9(끝). 임상경과 — CALLUX-3FIX AC-1: 처방 '오른쪽'(요청순서 끝). 미리보기 전용(입력은 차트칼럼 📝). 중앙정렬. */}
-        <td className="px-2 py-2 text-center" data-testid="doctor-completed-clinical-cell">
+        <td className="px-1.5 py-1 text-left" data-testid="doctor-completed-clinical-cell">
           {clinicalPreview ? (
             <span className="block max-w-full truncate text-[13px] text-gray-600" title={clinicalPreview}>
               {clinicalPreview}

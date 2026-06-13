@@ -531,15 +531,15 @@ function PatientRow({
         data-testid="patient-row"
         data-mode="history"
       >
-        <div className="grid grid-cols-[3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto_auto] items-center gap-2 px-3 py-2.5">
+        <div className="grid grid-cols-[3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto_auto] items-center gap-1.5 px-2 py-1.5">
           {/* T-20260613-foot-DOCPATIENTLIST-MIRROR-MONOTONE(B): 대기순번(queue_number) 표시 칼럼 제거. */}
           {/* 방문유형 배지 (초진/재진) */}
-          <div className="flex justify-center">
+          <div className="flex justify-start">
             <VisitTypeBadge type={row.visit_type} />
           </div>
           {/* 이름 — T-20260612-foot-CHARTNO-COL-SPLIT-P1: 차트번호 서브텍스트 제거 → 옆 독립 칼럼으로 이전. */}
           <span
-            className="min-w-0 max-w-full truncate text-center text-sm font-semibold"
+            className="min-w-0 max-w-full truncate text-left text-sm font-semibold"
             title={row.customer_name}
             data-testid="patient-name"
           >
@@ -547,14 +547,14 @@ function PatientRow({
           </span>
           {/* 차트번호 — CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
           <span
-            className="min-w-0 max-w-full truncate text-center font-mono text-[11px] text-muted-foreground"
+            className="min-w-0 max-w-full truncate text-left font-mono text-[11px] text-muted-foreground"
             title={chartNoDisplay(row.chart_number)}
             data-testid="patient-chartno"
           >
             {chartNoDisplay(row.chart_number)}
           </span>
           {/* 처방 상태 배지 (처방전 O/X) — 그날의 사실 기록(read-only) */}
-          <div className="flex justify-center">
+          <div className="flex justify-start">
             <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
           </div>
           {/* 처방 내용 한 줄 — 없으면 '처방없음' (AC-2) */}
@@ -595,12 +595,12 @@ function PatientRow({
         T-20260613-foot-DOCPATIENTLIST-MIRROR-MONOTONE(B): 대기순번(queue_number) 칼럼 제거 → 차트번호만 숫자.
         모든 행이 동일 grid-template → 배지·이름·차트번호·처방·시간 항목이 행마다 동일 x위치(스크롤 무관).
       */}
-      <div className="grid grid-cols-[3rem_5rem_4.5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto] items-center gap-2 px-3 py-2.5">
+      <div className="grid grid-cols-[3rem_5rem_4.5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto] items-center gap-1.5 px-2 py-1.5">
         {/* T-20260613-foot-DOCPATIENTLIST-MIRROR-MONOTONE(B): 대기순번(queue_number=1036) 표시 칼럼 제거.
             차트번호 외 식별 숫자 비표시(reporter 요청). queue_number 타입/SELECT/정렬·RPC는 무손상 — 표시만 숨김. */}
 
         {/* ② 방문유형 배지 — 이름 왼쪽(행 첫 식별 위치) */}
-        <div className="flex justify-center">
+        <div className="flex justify-start">
           <VisitTypeBadge type={row.visit_type} />
         </div>
 
@@ -608,7 +608,7 @@ function PatientRow({
             T-20260609-foot-DOCDASH-LABEL-RX-REFINE item4: 셀 내 가로 중앙정렬(text-center).
             T-20260612-foot-CHARTNO-COL-SPLIT-P1: 차트번호 서브텍스트 제거 → 옆 독립 칼럼으로 이전. */}
         <span
-          className="min-w-0 max-w-full truncate text-center text-sm font-semibold"
+          className="min-w-0 max-w-full truncate text-left text-sm font-semibold"
           title={row.customer_name}
           data-testid="patient-name"
         >
@@ -617,7 +617,7 @@ function PatientRow({
 
         {/* 차트번호 — CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
         <span
-          className="min-w-0 max-w-full truncate text-center font-mono text-[11px] text-muted-foreground"
+          className="min-w-0 max-w-full truncate text-left font-mono text-[11px] text-muted-foreground"
           title={chartNoDisplay(row.chart_number)}
           data-testid="patient-chartno"
         >
@@ -626,7 +626,7 @@ function PatientRow({
 
         {/* ③ 처방 상태 배지 — 이름 오른쪽 + hover 처방내용 툴팁.
             item4: justify-start → justify-center (이름과 같이 가로 중앙정렬). */}
-        <div className="flex justify-center">
+        <div className="flex justify-start">
           <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
         </div>
 
@@ -647,7 +647,7 @@ function PatientRow({
               <span className="truncate">{slotName}</span>
             </span>
           ) : (
-            <span className="text-[11px] text-muted-foreground/50 text-center" data-testid="patient-room">—</span>
+            <span className="text-[11px] text-muted-foreground/50 text-left" data-testid="patient-room">—</span>
           );
         })()}
 
