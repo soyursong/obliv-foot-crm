@@ -11,7 +11,7 @@ spec_added: tests/e2e/T-20260613-foot-CUSTLIST-STAFF-FILTER.spec.ts
 db_changed: false
 rollback_sql: none
 risk_level: GO (1/5)
-commit_sha: PENDING
+commit_sha: c6f0cb1
 ---
 
 ## 요청
