@@ -4,7 +4,8 @@ import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
 import { Calendar, ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Phone, FileText, Package, Stethoscope, Trash2, Bell, Upload } from 'lucide-react';
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
-import FootSiteSelector, { type FootSite, parseFootSite, isCompleteFootSite } from '@/components/FootSiteSelector';
+import { type FootSite, parseFootSite, isCompleteFootSite, parseFootSites } from '@/components/FootSiteSelector';
+import FootToeIllustration from '@/components/FootToeIllustration';
 import { toast } from '@/lib/toast';
 import {
   Sheet,
@@ -1533,7 +1534,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               )}
               {checkIn.customer_name}
               {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
-              <span className="text-xs font-mono font-normal text-teal-600 shrink-0">{chartNoBadge(chartNumber)}</span>
+              {/* T-20260613-foot-CHART1-CHARTNO-DEDUP-REORDER AC-2: 이름 옆 차트번호 = 화면당 유일 노출(이름 하단 단독 div 제거) */}
+              <span data-testid="chartno-inline" className="text-xs font-mono font-normal text-teal-600 shrink-0">{chartNoBadge(chartNumber)}</span>
               {/* 초진/재진/체험 배지 — 성함 옆 상단 배치 (T-20260506 항목1) */}
               {checkIn.visit_type === 'new' ? (
                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-blue-100 text-blue-700 shrink-0">
@@ -1568,10 +1570,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             </div>
           )}
 
-          {/* 차트번호 — 단독 배치, 괄호 없음 (T-20260506 항목2) */}
-          {chartNumber && (
-            <div className="text-sm font-semibold text-teal-700">{chartNumber}</div>
-          )}
+          {/* T-20260613-foot-CHART1-CHARTNO-DEDUP-REORDER AC-1/AC-2: 이름 하단 단독 차트번호 제거.
+              차트번호는 성함 옆 인접 표시(위 SheetTitle chartNoBadge)로 일원화 — 화면당 1회만 노출. */}
           {/* 연락처 / 접수시간 — 한 줄 배치 (T-20260506 항목3) */}
           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
             {checkIn.customer_phone && (
@@ -1634,14 +1634,19 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             </div>
           )}
 
-          {/* T-20260612-foot-CHART-INTAKE-TOGGLE-INPUT: 좌우+발가락 단일 부위 토글(치료사 모달).
-              직원·치료사 누구나 입력(권한 구분 없음 — reporter 확정). 선택 시 dirty → '메모 저장'으로 저장. */}
-          <div className="rounded-md border bg-muted/20 p-3">
-            <FootSiteSelector
-              value={footSite}
-              onChange={(next) => { setFootSite(next); setIsDirty(true); markDirty(); }}
-            />
-          </div>
+          {/* T-20260613-foot-FIELDBATCH item4(스펙 최종확정 pzp9) + CHART1-CHARTNO-DEDUP-REORDER AC-3:
+              치료부위 선택은 2번차트 패키지 탭으로 이동. 1번차트는 "2번차트에서 생성된 경우에만" read-only 조건부 표시(위치 유지).
+              값 소스: treatment_memo.foot_sites(신규 배열) 우선, 없으면 레거시 단일 foot_site 폴백. 빈 값이면 섹션 미렌더. */}
+          {(() => {
+            const tm = checkIn.treatment_memo as { foot_sites?: unknown; foot_site?: unknown } | null;
+            const toes = parseFootSites(tm?.foot_sites ?? tm?.foot_site);
+            if (toes.length === 0) return null;
+            return (
+              <div className="rounded-md border bg-muted/20 p-3" data-testid="chart1-toe-readonly">
+                <FootToeIllustration value={toes} readOnly />
+              </div>
+            );
+          })()}
 
           {/* T-20260529-foot-CHART-OPEN-SINGLE: 고객 연결 UI — customer_id·phone 모두 null인 경우 */}
           {!checkIn.customer_id && !resolvedCustomerId && !checkIn.customer_phone && (
@@ -1691,108 +1696,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             </div>
           )}
 
-          {/* T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 방문경로/예약메모/고객메모/기타메모 4항목 쌍방연동 */}
-          {(checkIn.customer_id || resolvedCustomerId) && (
-            <>
-              <Separator />
-              <div className="space-y-3">
-                {/* ① 방문경로 — 초진/체험(예약없이방문)만 노출. 재진 미노출. */}
-                {checkIn.visit_type !== 'returning' && (
-                  <div className="flex items-center gap-2">
-                    <Label className="text-xs font-semibold text-teal-700 shrink-0">방문경로</Label>
-                    <select
-                      value={visitRoute}
-                      onChange={(e) => {
-                        setVisitRoute(e.target.value);
-                        saveVisitRoute(e.target.value);
-                      }}
-                      className="rounded border border-gray-300 px-2 py-0.5 text-xs cursor-pointer focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
-                    >
-                      <option value="">— 선택 —</option>
-                      <option value="TM">TM</option>
-                      <option value="인바운드">인바운드</option>
-                      <option value="워크인">워크인</option>
-                      <option value="지인소개">지인소개</option>
-                    </select>
-                  </div>
-                )}
-                {/* T-20260523-foot-KENBO-UI-MOVE: 건보공단 자격조회 — 예약메모 바로 위 */}
-                {/* T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 */}
-                {checkIn.customer_id && (
-                  <NhisLookupPanel
-                    customerId={checkIn.customer_id}
-                    clinicId={checkIn.clinic_id}
-                    hiraConsent={hiraConsent}
-                    onGradeUpdated={load}
-                  />
-                )}
-                {/* ② 예약메모 (T-20260515-foot-RESV-MEMO-APPEND: append-only 타임라인) */}
-                {/* T-20260520-foot-RESV-MEMO-WALKIN: reservationId 없어도 customerId fallback으로 메모 작성 가능 */}
-                {/* T-20260521-foot-WALKIN-MEMO-GAP: customer_id=null 수기 워크인에 checkInId 3순위 fallback */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
-                    <FileText className="h-3 w-3" /> 예약메모
-                  </Label>
-                  <ReservationMemoTimeline
-                    reservationId={latestResvId ?? undefined}
-                    customerId={checkIn?.customer_id ?? resolvedCustomerId ?? undefined}
-                    checkInId={checkIn?.id}
-                    clinicId={clinic?.id ?? ''}
-                    authorName={profile?.name ?? ''}
-                    compact
-                  />
-                </div>
-                {/* ③ 고객메모 (customers.customer_memo) — AC-6 추가 */}
-                {checkIn.customer_id && (
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
-                      <FileText className="h-3 w-3" /> 고객메모
-                    </Label>
-                    <Textarea
-                      value={customerMemo}
-                      onChange={(e) => setCustomerMemo(e.target.value)}
-                      placeholder="고객 성향, 특이사항, 주차 정보 등"
-                      rows={2}
-                      className="text-xs"
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 text-xs w-full border-teal-300 text-teal-700 hover:bg-teal-50"
-                      onClick={saveCustomerMemo}
-                      disabled={savingCustomerMemo}
-                    >
-                      {savingCustomerMemo ? '저장 중…' : '고객메모 저장'}
-                    </Button>
-                  </div>
-                )}
-                {/* ④ 기타메모 (customers.memo) — AC-6 추가 */}
-                {checkIn.customer_id && (
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
-                      <FileText className="h-3 w-3" /> 기타메모
-                    </Label>
-                    <Textarea
-                      value={etcMemo}
-                      onChange={(e) => setEtcMemo(e.target.value)}
-                      placeholder="기타 참고사항"
-                      rows={2}
-                      className="text-xs"
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 text-xs w-full border-teal-300 text-teal-700 hover:bg-teal-50"
-                      onClick={saveEtcMemo}
-                      disabled={savingEtcMemo}
-                    >
-                      {savingEtcMemo ? '저장 중…' : '기타메모 저장'}
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
+          {/* T-20260613-foot-CHART1-CHARTNO-DEDUP-REORDER AC-3: 방문경로/예약메모/고객메모/기타메모 블록은
+              패키지 섹션 아래로 이동됨(섹션 순서 재정렬). 실제 렌더는 패키지 블록 직후 참조. */}
 
           {/* ── [NEW] 데스크 통합 수납 메뉴 (payment_waiting 전용) ─ T-20260430-foot-DESK-PAYMENT-MENU ── */}
           {isDeskStage && (
@@ -1915,6 +1820,112 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">활성 패키지 없음</p>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* T-20260613-foot-CHART1-CHARTNO-DEDUP-REORDER AC-3: 방문경로/예약메모/고객메모/기타메모 블록 —
+              패키지 섹션 아래로 재배치(섹션 순서: 치료부위 → 금일동선 → 패키지 → 예약메모 → 고객메모 → 기타메모 ...).
+              섹션 내부 동작·데이터 불변, 렌더 순서만 변경. */}
+          {/* T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 방문경로/예약메모/고객메모/기타메모 4항목 쌍방연동 */}
+          {(checkIn.customer_id || resolvedCustomerId) && (
+            <>
+              <Separator />
+              <div className="space-y-3">
+                {/* ① 방문경로 — 초진/체험(예약없이방문)만 노출. 재진 미노출. */}
+                {checkIn.visit_type !== 'returning' && (
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs font-semibold text-teal-700 shrink-0">방문경로</Label>
+                    <select
+                      value={visitRoute}
+                      onChange={(e) => {
+                        setVisitRoute(e.target.value);
+                        saveVisitRoute(e.target.value);
+                      }}
+                      className="rounded border border-gray-300 px-2 py-0.5 text-xs cursor-pointer focus:outline-none focus:border-teal-500 bg-white hover:border-teal-400 transition"
+                    >
+                      <option value="">— 선택 —</option>
+                      <option value="TM">TM</option>
+                      <option value="인바운드">인바운드</option>
+                      <option value="워크인">워크인</option>
+                      <option value="지인소개">지인소개</option>
+                    </select>
+                  </div>
+                )}
+                {/* T-20260523-foot-KENBO-UI-MOVE: 건보공단 자격조회 — 예약메모 바로 위 */}
+                {/* T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 */}
+                {checkIn.customer_id && (
+                  <NhisLookupPanel
+                    customerId={checkIn.customer_id}
+                    clinicId={checkIn.clinic_id}
+                    hiraConsent={hiraConsent}
+                    onGradeUpdated={load}
+                  />
+                )}
+                {/* ② 예약메모 (T-20260515-foot-RESV-MEMO-APPEND: append-only 타임라인) */}
+                {/* T-20260520-foot-RESV-MEMO-WALKIN: reservationId 없어도 customerId fallback으로 메모 작성 가능 */}
+                {/* T-20260521-foot-WALKIN-MEMO-GAP: customer_id=null 수기 워크인에 checkInId 3순위 fallback */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
+                    <FileText className="h-3 w-3" /> 예약메모
+                  </Label>
+                  <ReservationMemoTimeline
+                    reservationId={latestResvId ?? undefined}
+                    customerId={checkIn?.customer_id ?? resolvedCustomerId ?? undefined}
+                    checkInId={checkIn?.id}
+                    clinicId={clinic?.id ?? ''}
+                    authorName={profile?.name ?? ''}
+                    compact
+                  />
+                </div>
+                {/* ③ 고객메모 (customers.customer_memo) — AC-6 추가 */}
+                {checkIn.customer_id && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
+                      <FileText className="h-3 w-3" /> 고객메모
+                    </Label>
+                    <Textarea
+                      value={customerMemo}
+                      onChange={(e) => setCustomerMemo(e.target.value)}
+                      placeholder="고객 성향, 특이사항, 주차 정보 등"
+                      rows={2}
+                      className="text-xs"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs w-full border-teal-300 text-teal-700 hover:bg-teal-50"
+                      onClick={saveCustomerMemo}
+                      disabled={savingCustomerMemo}
+                    >
+                      {savingCustomerMemo ? '저장 중…' : '고객메모 저장'}
+                    </Button>
+                  </div>
+                )}
+                {/* ④ 기타메모 (customers.memo) — AC-6 추가 */}
+                {checkIn.customer_id && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-teal-700 flex items-center gap-1">
+                      <FileText className="h-3 w-3" /> 기타메모
+                    </Label>
+                    <Textarea
+                      value={etcMemo}
+                      onChange={(e) => setEtcMemo(e.target.value)}
+                      placeholder="기타 참고사항"
+                      rows={2}
+                      className="text-xs"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs w-full border-teal-300 text-teal-700 hover:bg-teal-50"
+                      onClick={saveEtcMemo}
+                      disabled={savingEtcMemo}
+                    >
+                      {savingEtcMemo ? '저장 중…' : '기타메모 저장'}
+                    </Button>
+                  </div>
                 )}
               </div>
             </>

@@ -6,6 +6,8 @@ import { ko } from 'date-fns/locale';
 import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, ExternalLink, FileText, Loader2, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
+import FootToeIllustration from '@/components/FootToeIllustration';
+import { parseFootSites, type FootSite } from '@/components/FootSiteSelector';
 // T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성 발건강질문지(health_q_results) 상담내역 [내용보기] 렌더
 import { ResultCard, type HQResult } from '@/components/HealthQResultsPanel';
 import { Badge } from '@/components/ui/badge';
@@ -2615,6 +2617,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     const digits = val.replace(/\D/g, '').slice(0, 7);
     setRrnBack(digits);
     setIsDirty(true);
+    // T-20260613-foot-FIELDBATCH item7: 주민번호 뒷자리 첫 숫자로 성별 자동 선택.
+    //   feasibility: 복호화 불요 — 입력 시점의 평문 값(digits)을 그대로 파생에 사용(저장은 별도 rrn_encrypt).
+    //   1·3·9 → 남 / 2·4·0 → 여, 5·6·7·8 → 외국인(가운데 1900s/2000s 외국인등록번호). 성별 박스(customer.gender/is_foreign)에 즉시 반영.
+    const d = digits[0];
+    if (d && customer) {
+      const isForeign = '5678'.includes(d);
+      const gender: 'M' | 'F' = '13579'.includes(d) ? 'M' : 'F';
+      // 이미 동일 선택이면 중복 저장 skip (rrn 뒷자리 추가 입력마다 재저장 방지 — d는 첫자리 고정)
+      if (customer.gender !== gender || !!customer.is_foreign !== isForeign) {
+        void saveCustomerField({ gender, is_foreign: isForeign });
+      }
+    }
   };
 
   // T-20260611-foot-CHART2-IDVERIFY-MOVE-AUTOCHECK:
@@ -2637,6 +2651,36 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       setLatestCheckIn({ ...ci, notes: newNotes } as CheckIn);
     }
   }, [latestCheckIn]);
+
+  // T-20260613-foot-FIELDBATCH item4: 치료부위(발가락) 멀티선택 — 패키지 탭 상단 일러스트.
+  //   저장: latestCheckIn.treatment_memo.foot_sites jsonb 배열({side,toe}). 기존 treatment_memo 재사용(신규 컬럼 0, db_change:false).
+  //   1번차트(CheckInDetailSheet)는 이 값을 읽어 조건부 read-only 표시 — "2번차트 패키지 탭 생성분만 연동".
+  const treatmentToes = useMemo<FootSite[]>(
+    () => parseFootSites((latestCheckIn?.treatment_memo as { foot_sites?: unknown } | null)?.foot_sites),
+    [latestCheckIn],
+  );
+  const canEditToes = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant';
+  const saveTreatmentToes = useCallback(
+    async (next: FootSite[]) => {
+      const ci = latestCheckIn;
+      if (!ci) {
+        toast.error('내원(체크인) 기록이 있어야 치료부위를 저장할 수 있습니다');
+        return;
+      }
+      const memo = { ...((ci.treatment_memo as Record<string, unknown> | null) ?? {}) };
+      if (next.length > 0) memo.foot_sites = next;
+      else delete memo.foot_sites;
+      const prev = ci.treatment_memo;
+      // optimistic
+      setLatestCheckIn({ ...ci, treatment_memo: memo } as CheckIn);
+      const { error } = await supabase.from('check_ins').update({ treatment_memo: memo }).eq('id', ci.id);
+      if (error) {
+        toast.error('치료부위 저장 실패');
+        setLatestCheckIn({ ...ci, treatment_memo: prev } as CheckIn); // 롤백
+      }
+    },
+    [latestCheckIn],
+  );
 
   // C21-RESIDENT-ID: 주민번호 암호화 저장
   // T-20260522-foot-SSN-SESSION-KILL: 저장 전 세션 체크 + 에러 코드별 메시지 분기
@@ -3951,7 +3995,12 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     if (chartTabGroup !== 'history' || chartTab !== 'slot_dwell') return;
     if (slotDwellLoaded || slotDwellLoading) return;
     const ids = checkInHistory.map((ci) => ci.id);
-    if (ids.length === 0) { setSlotDwellLoaded(true); return; }
+    // T-20260613-foot-FIELDBATCH item8(2) 버그수정: checkInHistory 비동기 로드 race 해소.
+    //   기존 버그 — 체류시간 탭을 checkInHistory 로드 전(빈 배열)에 열면 slotDwellLoaded=true로 잠겨,
+    //   이후 방문이력이 채워져도 effect guard(slotDwellLoaded)에 막혀 fn_check_in_slot_dwell를 영영 호출 못 함
+    //   → "로딩만 되고 실제 기록 조회 안 됨"(현장 김주연 총괄). 빈 ids면 loaded 잠그지 말고 대기(방문 채워지면 재실행).
+    //   방문이 진짜 0건이면 slotDwell=[]·loading=false → 아래 렌더가 "기록 없음" 표시(무한 스피너 아님).
+    if (ids.length === 0) return;
     let cancelled = false;
     (async () => {
       setSlotDwellLoading(true);
@@ -5539,6 +5588,21 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               {/* History: 패키지 — T-20260510-foot-C22-SECTION-MERGE: 치료플랜 요약 제거, 티켓 상세만 표시 */}
               {chartTabGroup === 'history' && chartTab === 'packages' && (
             <div className="space-y-3">
+              {/* T-20260613-foot-FIELDBATCH item4(스펙 최종확정 pzp9): 치료부위 발가락 일러스트 —
+                  패키지명 조건 없이 패키지 탭 상단에 항상 고정 노출. 양발 발가락 10개 멀티선택.
+                  저장: latestCheckIn.treatment_memo.foot_sites(신규 컬럼 0). 1번차트는 이 값 read-only 연동. */}
+              <div className="rounded-lg border bg-white p-3" data-testid="pkg-tab-toe-section">
+                <FootToeIllustration
+                  value={treatmentToes}
+                  onChange={canEditToes ? saveTreatmentToes : undefined}
+                  readOnly={!canEditToes}
+                />
+                {!latestCheckIn && canEditToes && (
+                  <p className="mt-1 text-[11px] text-amber-600" data-testid="pkg-tab-toe-nocheckin">
+                    ※ 내원(체크인) 기록이 있어야 치료부위를 저장할 수 있습니다.
+                  </p>
+                )}
+              </div>
               {/* 구매 패키지(티켓) 상세 — T-20260510-foot-C21-PKG-ITEM-DETAIL: 시술별 상세표시 */}
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center justify-between mb-2">

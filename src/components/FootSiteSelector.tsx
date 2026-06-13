@@ -61,6 +61,41 @@ export function parseFootSite(raw: unknown): FootSite | null {
 }
 
 // ---------------------------------------------------------------------------
+// 멀티선택(발가락 일러스트) 헬퍼 — T-20260613-foot-FIELDBATCH item4
+//   저장: check_ins.treatment_memo.foot_sites jsonb 배열(원소 {side,toe}). 단일 foot_site 와 동일 shape 재사용.
+//   ★신규 컬럼/테이블/enum 0 — DB 스키마 변경 없음(기존 treatment_memo jsonb 재사용).
+// ---------------------------------------------------------------------------
+/** jsonb 배열(또는 단일 객체)에서 FootSite[] 안전 파싱. 중복 제거·정렬(좌→우, 번호 오름차순). */
+export function parseFootSites(raw: unknown): FootSite[] {
+  const out: FootSite[] = [];
+  const push = (v: unknown) => {
+    const s = parseFootSite(v);
+    if (s && !out.some((o) => o.side === s.side && o.toe === s.toe)) out.push(s);
+  };
+  if (Array.isArray(raw)) raw.forEach(push);
+  else if (raw) push(raw); // 레거시 단일 foot_site 객체 호환
+  return out.sort((a, b) => (a.side === b.side ? a.toe - b.toe : a.side === 'L' ? -1 : 1));
+}
+
+/** FootSite[] → 'L1, L3, R2'. 비면 ''. */
+export function formatFootSites(sites: FootSite[] | null | undefined): string {
+  if (!sites || sites.length === 0) return '';
+  return parseFootSites(sites).map(formatFootSite).filter(Boolean).join(', ');
+}
+
+/** 해당 toe 가 선택집합에 포함되는지. */
+export function hasFootSite(sites: FootSite[], side: FootSide, toe: number): boolean {
+  return sites.some((s) => s.side === side && s.toe === toe);
+}
+
+/** toggle: 있으면 제거, 없으면 추가. 새 배열 반환(불변). */
+export function toggleFootSite(sites: FootSite[], side: FootSide, toe: number): FootSite[] {
+  return hasFootSite(sites, side, toe)
+    ? sites.filter((s) => !(s.side === side && s.toe === toe))
+    : [...sites, { side, toe }];
+}
+
+// ---------------------------------------------------------------------------
 // 컴포넌트
 // ---------------------------------------------------------------------------
 interface FootSiteSelectorProps {
