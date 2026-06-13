@@ -143,3 +143,34 @@ export function chartNoBadge(chart_number: string | number | null | undefined): 
   const s = String(chart_number).trim();
   return s.length > 0 ? `#${s}` : '#미발번';
 }
+
+/**
+ * T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1: 생년(만나이) 표기 헬퍼.
+ * customers.birth_date 는 YYMMDD 6자리 텍스트(예: '900515'). 세기(19/20) 정보가 없어
+ * 2자리 연도로 세기를 추정한다: YY ≤ 현재연도 2자리면 2000년대, 아니면 1900년대.
+ *   (예: 2026년 기준 '90'→1990, '05'→2005, '27'→1927). 풋센터 환자 연령대(영유아~노년)에서
+ *   미래 출생연도를 만들지 않는 보수적 규칙.
+ * presentation only — 저장값 미변경. 출력: "1990 (만 35세)".
+ * 파싱 불가/결측이면 '' (호출부가 '—' 표기). 나이 이상치(>130 또는 음수)면 연도만 표기.
+ */
+export function birthYearAgeDisplay(birth_date: string | null | undefined): string {
+  if (!birth_date) return '';
+  const digits = String(birth_date).replace(/\D/g, '');
+  if (digits.length < 6) return '';
+  const yy = Number(digits.slice(0, 2));
+  const mm = Number(digits.slice(2, 4));
+  const dd = Number(digits.slice(4, 6));
+  if (Number.isNaN(yy) || Number.isNaN(mm) || Number.isNaN(dd)) return '';
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return '';
+  const now = new Date();
+  const curYY = now.getFullYear() % 100;
+  const century = yy <= curYY ? 2000 : 1900;
+  const birthYear = century + yy;
+  let age = now.getFullYear() - birthYear;
+  const curMonth = now.getMonth() + 1;
+  const curDay = now.getDate();
+  // 올해 생일이 아직 안 지났으면 만나이 -1
+  if (curMonth < mm || (curMonth === mm && curDay < dd)) age -= 1;
+  if (age < 0 || age > 130) return String(birthYear); // 이상치 → 연도만
+  return `${birthYear} (만 ${age}세)`;
+}
