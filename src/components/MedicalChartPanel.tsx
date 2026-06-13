@@ -2445,11 +2445,12 @@ export default function MedicalChartPanel({
                         {specialNotes.length > 0 && (
                           <span className="text-[9px] tabular-nums font-bold">({specialNotes.length})</span>
                         )}
-                        {/* T-20260613-foot-MEDCHART-EDITMODE-RXTABLE-LAYOUT-POLISH AC-3: 편집 vs 일반 텍스트
-                            시각 구분 — 편집(연필 ON) 상태일 때만 teal '편집 중' 배지로 색상 구분(색상 1택). */}
+                        {/* T-20260613-foot-MEDCHART-EDITSTATE-RX-POLISH AC-2 (supersede EDITMODE AC-3):
+                            편집 vs 읽기 시각 구분을 '과한 색' teal 배지 → 미니멀 흑백 톤으로 전환.
+                            편집(연필 ON) 상태일 때만 중립 회색 '편집 중' 배지 노출(흑백 톤, 색상 강조 없음). */}
                         {specialNoteEditing && (
                           <span
-                            className="rounded-sm bg-teal-50 px-1 py-px text-[8px] font-bold normal-case tracking-normal text-teal-600"
+                            className="rounded-sm border border-gray-300 bg-gray-100 px-1 py-px text-[8px] font-bold normal-case tracking-normal text-gray-600"
                             data-testid="special-note-editing-badge"
                           >
                             편집 중
@@ -2463,7 +2464,13 @@ export default function MedicalChartPanel({
                   </div>
 
                   {specialNoteOpen && (
-                    <div className="pb-1 space-y-1">
+                    <div
+                      className={`pb-1 space-y-1 transition-colors ${specialNoteEditing ? 'rounded-md bg-gray-50 ring-1 ring-gray-200 px-1.5 py-1' : ''}`}
+                      data-testid="special-note-panel"
+                    >
+                      {/* T-20260613-foot-MEDCHART-EDITSTATE-RX-POLISH AC-2: 편집(연필 ON) 모드일 때만 패널에
+                          옅은 회색 배경+테두리(흑백 톤)를 입혀 읽기 모드와 '글씨 느낌'이 달라 보이게 — 과한 색 없이
+                          미니멀 그레이스케일로 '지금 편집 중' 인지. 읽기 모드는 기존처럼 배경 강조 없음. */}
                       {/* 내용 있을 때만 목록 렌더(빈상태 텍스트 없음). 박스/배경 강조 없이 왼쪽 컬러바 + 본문. */}
                       {specialNotes.length > 0 && (
                         <div className="max-h-44 overflow-y-auto space-y-1" data-testid="special-note-list">
@@ -3017,12 +3024,16 @@ export default function MedicalChartPanel({
                       저장값=순수 상병명(formDx), medical_charts.diagnosis 저장경로 무변경.
                       AC-4: 복수 진단명은 컬럼 내 세로 stack(picker 값 자체가 줄단위 누적). */}
                   <div className="sm:flex-1 min-w-0">
-                    <label className="block text-xs font-semibold text-muted-foreground mb-1">
-                      진단명
-                      {/* T-20260613-foot-MEDCHART-DIAG-RX-TABLEVIEW-REFINE AC-2: 라벨 옆 폴더선택 안내
-                          보조문구(span) 제거. 폴더 선택 진입 어포던스는 DiagnosisFolderPicker 트리거 버튼
-                          (＋ 아이콘 + 펼침 ▾)으로 유지 — 보조 텍스트만 제거. */}
-                    </label>
+                    {/* T-20260613-foot-MEDCHART-EDITSTATE-RX-POLISH AC-7: 진단명 헤더를 처방내역 헤더와
+                        동일한 flex 행(min-h)으로 맞춰 두 컬럼 헤더 베이스라인/높이 통일(전체 정렬 정돈). */}
+                    <div className="flex items-center mb-1 min-h-[1.125rem]">
+                      <label className="text-xs font-semibold text-muted-foreground">
+                        진단명
+                        {/* T-20260613-foot-MEDCHART-DIAG-RX-TABLEVIEW-REFINE AC-2: 라벨 옆 폴더선택 안내
+                            보조문구(span) 제거. 폴더 선택 진입 어포던스는 DiagnosisFolderPicker 트리거 버튼
+                            (＋ 아이콘 + 펼침 ▾)으로 유지 — 보조 텍스트만 제거. */}
+                      </label>
+                    </div>
                     <DiagnosisFolderPicker
                       value={formDx}
                       onChange={setFormDx}
@@ -3040,7 +3051,8 @@ export default function MedicalChartPanel({
                       처방 내용 사이 세로 구분선 1개 추가(sm:border-l). DIAG-RX AC-4 '무거운 외곽/버튼 테두리
                       제거'는 유지하고, 컬럼 경계 얇은 세로선 1개만 덧댐(전부 복원 아님). */}
                   <div className="sm:flex-[1.5] min-w-0 sm:border-l sm:border-gray-200 sm:pl-3">
-                    <div className="flex items-center justify-between mb-1">
+                    {/* T-20260613-foot-MEDCHART-EDITSTATE-RX-POLISH AC-7: 진단명 헤더와 동일 높이(min-h)로 베이스라인 통일. */}
+                    <div className="flex items-center justify-between mb-1 min-h-[1.125rem]">
                       <label className="text-xs font-semibold text-muted-foreground">처방내역</label>
                       <span className="text-[10px] text-muted-foreground">우측 패널에서 처방세트 선택</span>
                     </div>
@@ -3075,7 +3087,7 @@ export default function MedicalChartPanel({
                               return (
                                 <tr
                                   key={idx}
-                                  className="border-b border-gray-100 last:border-b-0"
+                                  className="border-b border-gray-200 last:border-b-0"
                                   data-testid={`prescription-row-${idx}`}
                                 >
                                   <td className="px-3 py-1.5">
