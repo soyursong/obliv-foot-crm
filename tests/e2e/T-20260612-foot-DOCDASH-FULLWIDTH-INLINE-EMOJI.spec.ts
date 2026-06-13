@@ -47,11 +47,12 @@ test.describe('AC-1 — 테이블 풀폭/폰트/여백', () => {
     expect(m).toBeTruthy();
   });
 
-  test('셀 패딩 축소(px-2) — 과한 px-3 셀 잔존 최소화', () => {
+  test('셀 패딩 축소 — 밀도 압축(px-1.5 py-1)', () => {
     const s = DASH();
-    // 헤더/바디 셀은 px-2 로 축소되었어야 함(드롭다운 expand 행 px-3 는 예외).
-    expect(s).toContain('<th className="px-2 py-1.5">이름</th>');
-    expect(s).toContain('<th className="px-2 py-1.5">처방</th>');
+    // CLINIC3-TABLEDENSITY-TIGHTEN supersede(밀도 압축, 4~6px 여백): px-2 py-1.5 → px-1.5 py-1.
+    // 헤더 셀은 px-1.5 py-1 로 추가 축소되었어야 함(드롭다운 expand 행 px-3 는 예외).
+    expect(s).toContain('<th className="px-1.5 py-1">이름</th>');
+    expect(s).toContain('<th className="px-1.5 py-1">처방</th>');
   });
 });
 
@@ -94,10 +95,12 @@ test.describe('AC-2 — 이름 옆 이모지 인라인 버튼', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('AC-3 — 임상경과 미리보기 유지 + 진료차트 칼럼 제거', () => {
   // MONOTONE-RELAYOUT supersede(FULLWIDTH 진료차트 칼럼 제거 반전): 차트 칼럼 재신설 → 9 / 8.
-  test('colspan = 차트 칼럼 재신설 반영(9 / 8)', () => {
+  // CALLUX-3FIX supersede(생년(만나이) 칼럼 신설): 칼럼 +1 → 대기 10 / 완료 9.
+  //   대기 10칼럼 = 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과·시간.
+  test('colspan = 생년 칼럼 신설 반영(10 / 9)', () => {
     const s = DASH();
-    expect(s).toContain('const DOCDASH_COLSPAN = 9;');
-    expect(s).toContain('const DOCDASH_COMPLETED_COLSPAN = 8;');
+    expect(s).toContain('const DOCDASH_COLSPAN = 10;');
+    expect(s).toContain('const DOCDASH_COMPLETED_COLSPAN = 9;');
   });
 
   test('진료차트 별도 칼럼 헤더 제거(thead 내 "진료차트" th 잔존 0)', () => {
