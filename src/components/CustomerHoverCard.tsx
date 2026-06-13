@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Clock, FileText, Phone, Stethoscope } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/lib/supabase';
@@ -155,8 +156,12 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, onContext
         </span>
       </span>
 
-      {/* 호버 팝업 — position:fixed 로 overflow 클리핑 우회 */}
-      {visible && (
+      {/* 호버 팝업 — position:fixed + document.body 포털.
+          T-20260613-foot-CHART1-CHARTNO-DEDUP-REORDER §D(AC-5): 팝업 헤더의 차트번호 배지(font-mono #)가
+          트리거와 같은 카드 row DOM 서브트리 안에 렌더되어, hover 시 row 내 차트번호 배지가 1→2로 증가하던 버그.
+          이미 position:fixed(뷰포트 좌표)이므로 document.body 포털로 빼내 row 서브트리에서 분리 → 시각 동일,
+          카드 row 내 차트번호 배지는 hover 전·후 모두 트리거 인라인 1개로 고정(중복 0). React 이벤트 버블링은 포털에서도 트리 기준 유지. */}
+      {visible && createPortal(
         <div
           role="tooltip"
           data-testid="customer-hover-card"
@@ -247,7 +252,8 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, onContext
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </span>
   );
