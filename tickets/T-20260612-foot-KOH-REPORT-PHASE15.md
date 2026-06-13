@@ -1,6 +1,9 @@
 ---
 ticket_id: T-20260612-foot-KOH-REPORT-PHASE15
-status: db-gate-pending
+status: db-deployed
+db_deployed: true
+db_deployed_at: 2026-06-14
+db_deployed_evidence: db-gate/T-20260612-foot-KOH-REPORT-PHASE15_evidence.md
 priority: P2
 domain: foot
 created_at: 2026-06-12
