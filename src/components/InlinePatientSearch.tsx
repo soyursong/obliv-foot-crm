@@ -26,7 +26,8 @@ interface InlinePatientSearchProps {
   onChange: (v: string) => void;
   onSelect: (p: PatientMatch) => void;
   onClearSelection?: () => void;
-  searchField: 'name' | 'phone';
+  // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC3: 'both' = 단일 입력창에서 이름 OR 연락처 매칭
+  searchField: 'name' | 'phone' | 'both';
   clinicId: string | undefined | null;
   /** 고객이 선택된 상태 → 배지 표시 + 재검색 억제 */
   selectedCustomerId?: string | null;
@@ -68,6 +69,8 @@ export function InlinePatientSearch({
       }
       const digits = q.replace(/\D/g, '');
       const isPhone = searchField === 'phone';
+      const isBoth = searchField === 'both';
+      // both: 이름 2자↑ 또는 연락처 숫자 2자↑ 어느 쪽이든 트리거 (둘 중 짧은 minLen=2)
       const len = isPhone ? digits.length : q.trim().length;
       const minLen = isPhone ? 4 : 2;
 
@@ -98,6 +101,19 @@ export function InlinePatientSearch({
         const orParts = [`phone.ilike.%${digits}%`, `phone.ilike.%${hyphenated}%`];
         if (digitsNoLeadingZero && digitsNoLeadingZero.length >= 4) {
           orParts.push(`phone.ilike.%${digitsNoLeadingZero}%`);
+        }
+        baseQuery = baseQuery.or(orParts.join(','));
+      } else if (isBoth) {
+        // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC3: 이름 OR 연락처 단일창 매칭.
+        //   이름은 항상 ilike, 입력에 숫자가 2자↑ 있으면 phone 패턴(원시/하이픈/leading0제거)도 OR 결합.
+        const orParts = [`name.ilike.%${q.trim()}%`];
+        if (digits.length >= 2) {
+          const hyphenated = formatPhoneInput(digits);
+          orParts.push(`phone.ilike.%${digits}%`, `phone.ilike.%${hyphenated}%`);
+          const digitsNoLeadingZero = digits.startsWith('0') ? digits.slice(1) : null;
+          if (digitsNoLeadingZero && digitsNoLeadingZero.length >= 4) {
+            orParts.push(`phone.ilike.%${digitsNoLeadingZero}%`);
+          }
         }
         baseQuery = baseQuery.or(orParts.join(','));
       } else {
