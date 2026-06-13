@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { BookOpen, CalendarPlus, CreditCard, ExternalLink, Pencil, Plus, Search, Stethoscope, Trash2 } from 'lucide-react';
+import { BookOpen, CalendarPlus, CreditCard, ExternalLink, MessageSquare, Pencil, Plus, Search, Stethoscope, Trash2 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -39,12 +39,15 @@ import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
 import { useChart } from '@/lib/chartContext';
 // T-20260515-foot-CONTEXT-MENU-4ITEM AC-4: 진료차트 패널
 import MedicalChartPanel from '@/components/MedicalChartPanel';
+// T-20260614-foot-CUSTLIST-CTXMENU-PARITY: 우클릭 [문자] parity — 기존 SMS 발송 경로(SendSmsDialog) 재사용
+import SendSmsDialog from '@/components/SendSmsDialog';
+import { canAccess } from '@/lib/permissions';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, formatPhone, birthDateYMD } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
-import type { Customer, LeadSource } from '@/lib/types';
+import type { CheckIn, Customer, LeadSource } from '@/lib/types';
 
 interface CustomerStats {
   visit_count: number;
@@ -90,6 +93,62 @@ export default function Customers() {
   // T-20260515-foot-CONTEXT-MENU-4ITEM AC-4: 진료차트 패널
   const [medicalChartOpen, setMedicalChartOpen] = useState(false);
   const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
+  // T-20260614-foot-CUSTLIST-CTXMENU-PARITY: 우클릭 [문자] → 기존 SendSmsDialog 경로 재사용(신규 발송 로직 없음).
+  // 게이트는 canon SSOT인 manual_sms_send 권한(CustomerQuickMenu/Dashboard/Reservations 동일) — 미충족 시 onSendSms 미전달로 항목 미노출.
+  const [smsTarget, setSmsTarget] = useState<CheckIn | null>(null);
+  const canSendSms = canAccess(profile?.role ?? '', 'manual_sms_send');
+  // Customer → CheckIn 어댑터: SendSmsDialog는 customer_id로 phone을 SSOT refetch하므로 식별 필드만 채우면 충분
+  // (resvAsCheckIn(Reservations.tsx) 패턴 미러). 가짜 체크인 행이므로 id에 cust- 접두.
+  const customerAsCheckIn = useCallback((c: Customer): CheckIn => ({
+    id: `cust-${c.id}`,
+    clinic_id: c.clinic_id,
+    customer_id: c.id,
+    reservation_id: null,
+    queue_number: null,
+    customer_name: c.name,
+    customer_phone: c.phone,
+    visit_type: c.visit_type,
+    status: 'waiting' as CheckIn['status'],
+    consultant_id: null,
+    therapist_id: null,
+    technician_id: null,
+    consultation_room: null,
+    treatment_room: null,
+    laser_room: null,
+    package_id: null,
+    notes: null,
+    treatment_memo: null,
+    treatment_photos: null,
+    doctor_note: null,
+    examination_room: null,
+    checked_in_at: c.created_at,
+    called_at: null,
+    completed_at: null,
+    priority_flag: null,
+    sort_order: 0,
+    skip_reason: null,
+    created_at: c.created_at,
+    consultation_done: false,
+    treatment_kind: null,
+    preconditioning_done: false,
+    pododulle_done: false,
+    laser_minutes: null,
+    prescription_items: null,
+    document_content: null,
+    doctor_confirm_charting: false,
+    doctor_confirm_prescription: false,
+    doctor_confirm_document: false,
+    doctor_confirmed_at: null,
+    healer_laser_confirm: false,
+    prescription_status: 'none',
+    status_flag: null,
+    status_flag_history: null,
+    assigned_counselor_id: null,
+    treatment_category: null,
+    treatment_contents: null,
+    doctor_call_memo: null,
+    doctor_ack_at: null,
+  }), []);
   // 우클릭 컨텍스트 메뉴
   // T-20260613-foot-CUST-CONTEXTMENU-STALE: customer 스냅샷 대신 customerId만 보관.
   // 메뉴 표시 데이터는 render 시점에 results에서 라이브 조회 → 수정·저장 후 stale 방지.
@@ -509,8 +568,19 @@ export default function Customers() {
           }}
           onEdit={(c) => { setEditingCustomer(c); setCtxMenu(null); }}
           canEditCustomer={canEditCustomer}
+          /* T-20260614-foot-CUSTLIST-CTXMENU-PARITY: [문자] — manual_sms_send 권한 시만 전달(미충족 → 항목 미노출).
+             발송은 SendSmsDialog 기존 경로(optout·발신번호 화이트리스트 차단 포함) 그대로 재사용. */
+          onSendSms={canSendSms ? (c) => { setSmsTarget(customerAsCheckIn(c)); setCtxMenu(null); } : undefined}
         />
       )}
+
+      {/* T-20260614-foot-CUSTLIST-CTXMENU-PARITY: 수동 1:1 문자 발송 모달 — 대시보드/예약관리와 동일 컴포넌트·경로 */}
+      <SendSmsDialog
+        open={smsTarget !== null}
+        onOpenChange={(v) => { if (!v) setSmsTarget(null); }}
+        checkIn={smsTarget}
+        clinicId={clinic?.id ?? ''}
+      />
 
       {/* T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동 */}
 
@@ -1020,9 +1090,11 @@ interface CustomerContextMenuProps {
   onOpenMedicalChart: (c: Customer) => void;
   onEdit: (c: Customer) => void;
   canEditCustomer: boolean;
+  /** T-20260614-foot-CUSTLIST-CTXMENU-PARITY: 문자 발송 콜백 — 제공 시(manual_sms_send 권한)만 메뉴 항목 표시 */
+  onSendSms?: (c: Customer) => void;
 }
 
-function CustomerContextMenu({ customer, x, y, onClose, onOpenChart, onOpenMedicalChart, onEdit, canEditCustomer }: CustomerContextMenuProps) {
+function CustomerContextMenu({ customer, x, y, onClose, onOpenChart, onOpenMedicalChart, onEdit, canEditCustomer, onSendSms }: CustomerContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
@@ -1040,7 +1112,8 @@ function CustomerContextMenu({ customer, x, y, onClose, onOpenChart, onOpenMedic
   }, [onClose]);
 
   const safeX = Math.min(x, window.innerWidth - 190);
-  const safeY = Math.min(y, window.innerHeight - 200);
+  // T-20260614-foot-CUSTLIST-CTXMENU-PARITY: [문자] 항목(+44px) 노출 시 하단 경계 여유 확보
+  const safeY = Math.min(y, window.innerHeight - (200 + (onSendSms ? 44 : 0)));
 
   return (
     <div
@@ -1104,6 +1177,19 @@ function CustomerContextMenu({ customer, x, y, onClose, onOpenChart, onOpenMedic
         <CreditCard className="h-4 w-4 text-teal-600 shrink-0" />
         수납
       </button>
+
+      {/* 5. 문자 — T-20260614-foot-CUSTLIST-CTXMENU-PARITY: CustomerQuickMenu와 동일 항목 미러링.
+          manual_sms_send 권한(onSendSms 제공) 시만 노출. 발송 로직은 SendSmsDialog 기존 경로 재사용. */}
+      {onSendSms && (
+        <button
+          data-testid="cust-ctxmenu-sms-btn"
+          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-teal-50 transition text-left"
+          onClick={() => onSendSms(customer)}
+        >
+          <MessageSquare className="h-4 w-4 text-teal-600 shrink-0" />
+          문자
+        </button>
+      )}
 
       {/* 정보 수정 (T-20260520-foot-STAFF-CUSTOMER-UPDATE: staff/part_lead까지 허용) */}
       {canEditCustomer && (
