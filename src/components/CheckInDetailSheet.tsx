@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
-import { ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Phone, FileText, Package, Stethoscope, Trash2, Bell, Upload } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Phone, FileText, Package, Stethoscope, Trash2, Bell, Upload } from 'lucide-react';
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
 import FootSiteSelector, { type FootSite, parseFootSite, isCompleteFootSite } from '@/components/FootSiteSelector';
 import { toast } from '@/lib/toast';
@@ -531,6 +531,9 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const [roomLogs, setRoomLogs] = useState<RoomLog[]>([]);
   // T-20260515-foot-KENBO-API-NATIVE: 고객 건보 조회 동의 여부
   const [hiraConsent, setHiraConsent] = useState(false);
+  // T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 고객 상세 생년월일(YYYY-MM-DD).
+  // PHI: rrn 복호화는 RPC(fn_customer_birthdates) 서버측만, birth_date만 수신.
+  const [birthDateDisplay, setBirthDateDisplay] = useState<string | null>(null);
 
   // ── 시술 항목 상태 (ServiceSelectModal/SessionUseInSheetDialog 유지용) ──
   const [, setTreatmentItems] = useState<TreatmentItem[]>([]);
@@ -651,6 +654,14 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       setVisitRoute(custData?.visit_route ?? '');
       setEtcMemo(custData?.memo ?? '');
       setHiraConsent(custData?.hira_consent ?? false);
+      // T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 생년월일 서버 파생 (birth_date 우선, 없으면 rrn 세기코드)
+      supabase
+        .rpc('fn_customer_birthdates', { p_clinic_id: clinicId, p_ids: [customerId] })
+        .then(({ data, error }) => {
+          if (error) { setBirthDateDisplay(null); return; }
+          const row = (data ?? [])[0] as { birth_date_display: string | null } | undefined;
+          setBirthDateDisplay(row?.birth_date_display ?? null);
+        });
       const latestResvData = latestResvRes.data as { id: string } | null;
       setLatestResvId(latestResvData?.id ?? null);
       setStaffList((staffRes.data ?? []) as Array<{ id: string; name: string; role: string }>);
@@ -1176,6 +1187,13 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             <div className="flex items-center gap-1 text-sm text-muted-foreground">
               <Phone className="h-3.5 w-3.5" />
               {formatPhone(customerMode.customerPhone)}
+            </div>
+
+            {/* T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 생년월일(YYYY-MM-DD) 자동 표기.
+                PHI: rrn 평문/뒷자리 미노출, 서버 RPC 파생값만 표시 */}
+            <div className="flex items-center gap-1 text-sm text-muted-foreground" data-testid="cust-detail-birthdate">
+              <Calendar className="h-3.5 w-3.5" />
+              <span className="tabular-nums">{birthDateDisplay ?? '생년월일 미등록'}</span>
             </div>
 
             {/* AC9: 접수 상태 표시 — 항상 표시 (T-20260511-CUSTMGMT 3차) */}
