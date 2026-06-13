@@ -174,3 +174,23 @@ export function birthYearAgeDisplay(birth_date: string | null | undefined): stri
   if (age < 0 || age > 130) return String(birthYear); // 이상치 → 연도만
   return `${birthYear} (만 ${age}세)`;
 }
+
+/**
+ * T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 생년월일 YYMMDD → 'YYYY-MM-DD' 표기.
+ * 클라이언트 fallback 전용 — 서버 RPC fn_customer_birthdates(세기코드 정확)가 없거나
+ * birth_date 컬럼만 있을 때 사용. 세기는 휴리스틱(YY ≤ 현재연도 2자리 → 2000년대, 아니면 1900년대).
+ * presentation only. 파싱 불가/결측이면 '' (호출부가 '-' 표기). rrn 미사용(평문 디코딩 없음).
+ */
+export function birthDateYMD(birth_date: string | null | undefined): string {
+  if (!birth_date) return '';
+  const digits = String(birth_date).replace(/\D/g, '');
+  if (digits.length < 6) return '';
+  const yy = Number(digits.slice(0, 2));
+  const mm = Number(digits.slice(2, 4));
+  const dd = Number(digits.slice(4, 6));
+  if (Number.isNaN(yy) || Number.isNaN(mm) || Number.isNaN(dd)) return '';
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return '';
+  const curYY = new Date().getFullYear() % 100;
+  const fullYear = yy <= curYY ? 2000 + yy : 1900 + yy;
+  return `${fullYear}-${digits.slice(2, 4)}-${digits.slice(4, 6)}`;
+}

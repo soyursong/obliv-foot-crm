@@ -42,7 +42,7 @@ import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
-import { formatAmount, formatPhone } from '@/lib/format';
+import { formatAmount, formatPhone, birthDateYMD } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 import type { Customer, LeadSource } from '@/lib/types';
 
@@ -93,6 +93,9 @@ export default function Customers() {
   // 우클릭 컨텍스트 메뉴
   const [ctxMenu, setCtxMenu] = useState<{ customer: Customer; x: number; y: number } | null>(null);
   const [statsMap, setStatsMap] = useState<Map<string, CustomerStats>>(new Map());
+  // T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 생년월일(YYYY-MM-DD) 서버 파생값.
+  // PHI: rrn 복호화는 RPC(fn_customer_birthdates) 서버측에서만, birth_date만 수신.
+  const [birthMap, setBirthMap] = useState<Map<string, string>>(new Map());
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -148,7 +151,7 @@ export default function Customers() {
 
       if (customers.length > 0) {
         const ids = customers.map((c) => c.id);
-        const [checkInsRes, paymentsRes, pkgPaymentsRes, pkgsRes] = await Promise.all([
+        const [checkInsRes, paymentsRes, pkgPaymentsRes, pkgsRes, birthRes] = await Promise.all([
           supabase
             .from('check_ins')
             .select('customer_id, checked_in_at')
@@ -167,6 +170,8 @@ export default function Customers() {
             .select('customer_id')
             .in('customer_id', ids)
             .eq('status', 'active'),
+          // T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 생년월일 서버 파생 (birth_date 우선, 없으면 rrn 세기코드)
+          supabase.rpc('fn_customer_birthdates', { p_clinic_id: clinic.id, p_ids: ids }),
         ]);
 
         const map = new Map<string, CustomerStats>();
@@ -192,8 +197,19 @@ export default function Customers() {
           if (s) s.has_package = true;
         }
         setStatsMap(map);
+
+        // T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 서버 파생 생년월일 맵 구성.
+        // RPC 미적용/오류 시 birthMap 비움 → 셀이 birth_date 컬럼 휴리스틱 fallback 사용.
+        const bMap = new Map<string, string>();
+        if (!birthRes.error) {
+          for (const row of (birthRes.data ?? []) as { customer_id: string; birth_date_display: string | null }[]) {
+            if (row.birth_date_display) bMap.set(row.customer_id, row.birth_date_display);
+          }
+        }
+        setBirthMap(bMap);
       } else {
         setStatsMap(new Map());
+        setBirthMap(new Map());
       }
     },
     [clinic],
@@ -318,7 +334,11 @@ export default function Customers() {
                     </span>
                   </td>
                   <td className="px-4 py-2 text-muted-foreground">{formatPhone(c.phone)}</td>
-                  <td className="px-4 py-2 text-muted-foreground tabular-nums">{c.birth_date ?? '-'}</td>
+                  {/* T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 서버 파생 YYYY-MM-DD 우선,
+                      없으면 birth_date 컬럼 휴리스틱 fallback, 그래도 없으면 '-' */}
+                  <td className="px-4 py-2 text-muted-foreground tabular-nums" data-testid="cust-birthdate">
+                    {birthMap.get(c.id) ?? (birthDateYMD(c.birth_date) || '-')}
+                  </td>
                   <td className="px-4 py-2 text-muted-foreground">{c.chart_number ?? '-'}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{stats?.visit_count ?? 0}</td>
                   <td className="px-4 py-2 text-muted-foreground">
