@@ -504,13 +504,13 @@ export default function KohReportTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
-                <th className="px-3 py-2.5 font-medium">환자이름</th>
-                <th className="px-3 py-2.5 font-medium">생년월일</th>
-                <th className="px-3 py-2.5 font-medium">차트번호</th>
-                <th className="px-3 py-2.5 font-medium">검사일</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap">환자이름</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap">생년월일</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap">차트번호</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap">검사일</th>
                 {/* PHASE15(C): 발톱부위 · 당일의사명 컬럼 추가 */}
-                <th className="px-3 py-2.5 font-medium">조갑부위</th>
-                <th className="px-3 py-2.5 font-medium">당일 진료의사</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap">조갑부위</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap">당일 진료의사</th>
               </tr>
             </thead>
             <tbody>
@@ -521,23 +521,23 @@ export default function KohReportTab() {
                   data-testid="koh-row"
                 >
                   <td
-                    className="px-3 py-2.5 font-semibold text-foreground"
+                    className="px-1.5 py-1 font-semibold text-foreground whitespace-nowrap max-w-[8rem] truncate"
                     data-testid="koh-cell-name"
-                    title={r.service_name}
+                    title={`${r.customer_name} · ${r.service_name}`}
                   >
                     {r.customer_name}
                   </td>
-                  <td className="px-3 py-2.5 tabular-nums text-foreground/90" data-testid="koh-cell-birth">
+                  <td className="px-1.5 py-1 tabular-nums text-foreground/90 whitespace-nowrap" data-testid="koh-cell-birth">
                     {formatBirthDate(r.birth_date)}
                   </td>
-                  <td className="px-3 py-2.5 font-mono text-foreground/90" data-testid="koh-cell-chart">
+                  <td className="px-1.5 py-1 font-mono text-foreground/90 whitespace-nowrap" data-testid="koh-cell-chart">
                     {r.chart_number || '—'}
                   </td>
-                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground" data-testid="koh-cell-examdate">
+                  <td className="px-1.5 py-1 tabular-nums text-muted-foreground whitespace-nowrap" data-testid="koh-cell-examdate">
                     {formatExamDateTime(r.created_at)}
                   </td>
                   {/* PHASE15(A): 발톱부위 — 현재값(FE 파생) + 입력 위젯(R/L+발가락+조갑 단일선택). */}
-                  <td className="px-3 py-2.5" data-testid="koh-cell-nailsite">
+                  <td className="px-1.5 py-1" data-testid="koh-cell-nailsite">
                     <div className="space-y-1.5">
                       <span
                         className={`block text-xs font-medium ${
@@ -558,7 +558,7 @@ export default function KohReportTab() {
                   </td>
                   {/* PHASE15(B): 당일 진료의사 — customer_id+검사일 조인. 없으면 '미정'. */}
                   <td
-                    className={`px-3 py-2.5 text-xs ${
+                    className={`px-1.5 py-1 text-xs ${
                       doctorNameForRow(r, doctorMap) === '미정'
                         ? 'text-muted-foreground/60'
                         : 'font-medium text-foreground'
