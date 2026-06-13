@@ -19,6 +19,8 @@ import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
 import { formatAmount, parseAmount, chartNoBadge } from '@/lib/format';
 import { isSinglePaymentByCount } from '@/lib/footBilling';
+// T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 미작성 → 수납 완료 하드차단(방어적 적용).
+import { evaluateMedicalRecordGate, MEDLAW22_BLOCK_MESSAGE } from '@/lib/medicalRecordGate';
 import { cn } from '@/lib/utils';
 import { InsuranceCopaymentPanel } from '@/components/insurance/InsuranceCopaymentPanel';
 import type { CheckIn, PackageTemplate } from '@/lib/types';
@@ -235,6 +237,22 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
     setSubmitting(true);
     // T-20260514-foot-PAYMENTDLG-TRYCATCH: 네트워크 오류 등 미처리 예외 → submitting 영구 멈춤 방지
     try {
+
+    // ── T-20260612-foot-MEDLAW22-B-GATE: 수납 완료(payment_waiting→done) 전 진료기록 게이트 ──
+    //   수납 완료로 done 전이되는 경우에만 평가(상담→시술 전이는 무관). 급여 방문 + 서명 진료기록
+    //   미존재 → 하드차단(사유 우회 없음). 비급여는 즉시 통과. 평가 오류는 과차단 방지 위해 통과.
+    if (checkIn.status === 'payment_waiting') {
+      try {
+        const gate = await evaluateMedicalRecordGate(checkIn);
+        if (gate.blocked) {
+          toast.error(gate.reason ?? MEDLAW22_BLOCK_MESSAGE);
+          setSubmitting(false);
+          return;
+        }
+      } catch {
+        // 비차단(운영 연속성 우선).
+      }
+    }
 
     if (paymentMode === 'package') {
       // AC-5(B): package_payments CHECK ❌ membership 제외 — submit 가드
