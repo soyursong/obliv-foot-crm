@@ -25,7 +25,7 @@ import {
 } from '@/lib/rxMutationGuard';
 import { STATUS_KO, isInClinic } from '@/lib/status';
 import { useChart } from '@/lib/chartContext';
-import { formatRxConfirmedSummary } from '@/lib/rxTooltip';
+import { formatRxConfirmedSummary, normalizeRxItem } from '@/lib/rxTooltip';
 // T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: 치료실명(방이름) 표시 — DoctorCallDashboard와 동일한
 //   배정 슬롯 파생 SSOT 재사용. read-only(기존 *_room 컬럼 조회만), 스키마/비즈로직 무변경.
 import { getAssignedSlotName } from '@/lib/checkin-slot';
@@ -91,37 +91,10 @@ function treatmentSummary(row: Pick<PatientRow, 'treatment_category' | 'treatmen
 }
 
 // ---------------------------------------------------------------------------
-// 처방 JSONB 1건 → formatRxConfirmedSummary 입력 형태(전 토큰 필드 보존).
-//   T-20260610-foot-RX-TOKEN-FORMAT: 토큰 '1/3/2'(=1회량/1일횟수/총일수) 도출에 필요한
-//   dosage·count·days·frequency 를 모두 보존해야 함. 이전 정규화는 frequency 만 남겨
-//   1/3/2 를 만들 데이터 자체를 버렸음(반쪽 출력·원문 '1일 3회' 잔류 원인).
-//   빠른처방 shape {name, dosage, count, frequency, days} | 정식 {medication_name, duration_days}
-//   둘 다 방어적으로 흡수. count = '처방 횟수칸'(1일 투여횟수 SSOT, PrescriptionItem.count).
-// ---------------------------------------------------------------------------
-function normalizeRxItem(raw: unknown) {
-  // T-20260610-foot-RX-TOKEN-FORMAT (supervisor FIX phase1, runtime_null_safety):
-  //   items 배열에 null/undefined/원시값이 섞여 있어도 it.name 접근에서 TypeError 안 나도록 가드.
-  if (!raw || typeof raw !== 'object') {
-    return { name: null, dosage: null, count: null, frequency: null, days: null };
-  }
-  const it = raw as {
-    name?: string;
-    medication_name?: string;
-    dosage?: string | null;
-    count?: number | null;
-    frequency?: string | null;
-    days?: number | null;
-    duration_days?: number | null;
-  };
-  return {
-    name: it.name ?? it.medication_name ?? null,
-    dosage: it.dosage ?? null,
-    count: it.count ?? null,
-    frequency: it.frequency ?? null,
-    days: it.days ?? it.duration_days ?? null,
-  };
-}
-
+// 처방 JSONB 1건 정규화는 SSOT(@/lib/rxTooltip normalizeRxItem)로 수렴.
+//   T-20260614-foot-RX-DISPLAY-BUNDLE-TOKEN-FIX (AC-2): 묶음처방 흡수 경로(MedicalChartPanel)와
+//   동일 단일 정규화 경로를 쓰기 위해 로컬 복제(구 T-20260610 RX-TOKEN-FORMAT 정의)를 제거하고
+//   rxTooltip 의 export 를 import. 흡수 규칙·null 가드 동작 동일(회귀 0).
 // ---------------------------------------------------------------------------
 // 처방 내용 요약 — hover 툴팁용 (T-20260609 ③ → RX-TOKEN-FORMAT 정합)
 //   배지 hover 툴팁/네이티브 title 도 한 줄 셀과 동일한 1/3/2 토큰 포맷(formatRxConfirmedSummary)
