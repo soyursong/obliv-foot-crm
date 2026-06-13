@@ -3047,9 +3047,13 @@ export default function MedicalChartPanel({
                     {formRx.length > 0 ? (
                       /* T-20260613-foot-MEDCHART-DIAG-RX-TABLEVIEW-REFINE AC-4: 테두리 전부 제거 —
                          외곽 테두리(border) 제거 + 내부 입력칸/버튼 테두리·그림자도 전부 제거
-                         (arbitrary variant [&_input]/[&_button]). 기능 동선(추가/수정/삭제·세트 반영) 무변경. */
+                         (arbitrary variant [&_input]/[&_button]). 기능 동선(추가/수정/삭제·세트 반영) 무변경.
+                         T-20260613-foot-MEDCHART-EDITMODE-RXTABLE-LAYOUT-POLISH AC-12 (문지은 대표원장):
+                         처방제품 셀을 클릭/포커스해도 테두리(focus ring/outline/그림자)가 안 뜨게 →
+                         정적 border-0만으론 shadcn Input의 focus-visible:ring-2 가 남아 클릭 시 테두리가 보였음.
+                         포커스 상태 ring/offset/outline/shadow 까지 전부 0 (입력·저장 동선·편집 접근성은 유지). */
                       <div
-                        className="rounded-lg bg-card overflow-hidden [&_input]:border-0 [&_input]:shadow-none [&_input]:bg-transparent [&_button]:border-0"
+                        className="rounded-lg bg-card overflow-hidden [&_input]:border-0 [&_input]:shadow-none [&_input]:bg-transparent [&_button]:border-0 [&_input:focus]:border-0 [&_input]:focus-visible:ring-0 [&_input]:focus-visible:ring-offset-0 [&_input]:focus-visible:outline-none [&_input:focus]:shadow-none [&_button]:focus-visible:ring-0 [&_button]:focus-visible:outline-none"
                         data-testid="prescription-items-table"
                       >
                         {/* AC-4: 약이름(용량 포함) | 용법 | 횟수 | 일수 컬럼 분리 + 행별 직접 조정.
