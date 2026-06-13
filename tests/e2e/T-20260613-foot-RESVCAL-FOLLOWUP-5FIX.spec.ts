@@ -6,18 +6,19 @@ import path from 'path';
  * T-20260613-foot-RESVCAL-FOLLOWUP-5FIX — 예약 캘린더 5FIX 후속
  * MQ: MSG-20260613-232101-yr9a (planner NEW-TASK, P1, deadline 2026-06-17).
  *
- * 본 spec 구현 범위 = AC1 (FE-only, DB 무변경, 순수 집계 수식):
- *   AC1-a 힐러 총인원 합산 포함 — REDEFINITION (a) 확정.
+ * 본 spec 구현 범위 = AC1(완료·회귀) + AC2(신규, FE-only, DB 무변경):
+ *   AC1-a 힐러 총인원 합산 포함 — REDEFINITION (a) 확정 (완료, 회귀 고정).
  *     날짜 헤더 총건수 = 초진+재진+힐러(c.n + c.r + c.h). nji4 'HL 제외' supersede.
  *     HL 칩(HL N)은 별도 유지 — 합산+별도표기 병존.
- *   AC1-b 슬롯(타임슬롯 리스트) 'HL N' 칩 — FIX-REQUEST MSG-…-fjcc 범위 확대.
- *     슬롯 카운트 칩에서 h(=resvKind==='healer') ≥ 1 이면 'HL {h}' 칩 표기.
- *     ⚠ 렌더 코드는 이미 존재·배포 완료(slot-kind-count, {h > 0 && HL}).
- *       현장 "HL 안 뜸" 증상의 근본원인은 표시 레이어가 아니라 healer_flag 데이터 시맨틱:
- *         (1) healer_flag는 당일 체크인 시 1회성 소모(Dashboard.tsx reset→false)
- *         (2) 캘린더 예약 editor는 healer_flag를 set하지 않음(read-only)
- *       → 캘린더에서 직접 잡았거나 이미 체크인된 힐러 예약은 healer_flag=false → 초/재로 분류.
- *       이 근본원인은 DB/시맨틱 결정 필요(planner FOLLOWUP 발행). 본 spec은 렌더 정합 회귀 고정.
+ *   AC2 시간대별 초/재/힐러 카운트 위치 이동 (본 커밋):
+ *     슬롯 '고객 박스 위'(RESVCAL item2, slot-kind-count) → 좌측 시간축 라벨(resv-time-col-cell) 이동.
+ *     시간축 셀은 행당 1개 → 보이는 날짜(주간 weekDays 6일 / 일간 선택일 1일)의 해당 시간대 활성 예약 합산.
+ *     집계 로직·데이터 불변(취소 제외 가드 + resvKind 분류 = 기존 슬롯 칩 동일 시맨틱). 표시 위치만 이동.
+ *     '현장 클릭 시나리오 1' 변환: ① 시간축 라벨에 초/재/힐러 카운트 표시 ② 기존 고객 박스 위 카운트 제거
+ *     ③ 예약 카드 클릭/우클릭 동선 회귀 0.
+ *   ※ AC1-b(슬롯 'HL N' 칩 미표기 = healer_flag 데이터 시맨틱)는 본 5FIX out-of-scope로 분리 이관
+ *     → T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(blocked/human_pending). AC2로 슬롯 칩 자체가 제거되어
+ *     기존 AC1-b 슬롯 칩 회귀 테스트는 폐기(카운트가 시간축으로 이동).
  *
  * 보류(이번 커밋 제외, planner FOLLOWUP):
  *   AC3 '내 예약 ▼' 드롭 — 블로커 재확인. MQ 1차 검증 게이트 발동:
@@ -69,36 +70,69 @@ test.describe('AC1: 힐러 총인원 합산 포함', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// AC1-b — 슬롯(타임슬롯 리스트) 'HL N' 칩 렌더 정합 (FIX-REQUEST 범위 확대)
-//   렌더 코드는 기 존재·배포. 본 블록은 'h≥1 → HL 칩' 조건이 슬롯 칩에 유지됨을 회귀 고정.
-//   (증상 근본원인=healer_flag 데이터 시맨틱은 planner FOLLOWUP — 표시 레이어 무관)
+// AC2 — 시간대별 초/재/힐러 카운트 위치 이동 (고객 박스 위 → 좌측 시간축 라벨)
+//   '현장 클릭 시나리오 1' 변환. 거대 인라인 source-integrity gating(실 렌더=field-soak).
 // ═══════════════════════════════════════════════════════════════════════════
-test.describe('AC1-b: 슬롯 카운트 칩 HL 표기', () => {
-  // slot-kind-count 칩 IIFE 블록 전체 추출 (const 선언부 포함, 헤더 day-summary 와 분리)
-  const SLOT = (() => {
-    const m = RESV_PAGE.match(/const active = list\.filter[\s\S]*?slot-kind-count-\$\{dateStr\}-\$\{time\}[\s\S]*?\}\)\(\)\}/);
+test.describe('AC2: 시간대 카운트 좌측 시간축 이동', () => {
+  // 시간축 셀(resv-time-col-cell) td 블록 추출 — time-axis-kind-count IIFE 포함.
+  const TIME_AXIS = (() => {
+    const m = RESV_PAGE.match(/data-testid="resv-time-col-cell"[\s\S]*?time-axis-kind-count-\$\{time\}[\s\S]*?\}\)\(\)\}/);
     return m ? m[0] : '';
   })();
 
-  test('AC1-b-1: 슬롯 칩 블록 존재 (slot-kind-count testid)', () => {
-    expect(SLOT, '슬롯 카운트 칩 블록(slot-kind-count) 소실').not.toBe('');
+  test('AC2-1: 시간축 라벨 셀에 카운트 칩 블록 신설 (time-axis-kind-count testid)', () => {
+    expect(TIME_AXIS, '시간축 카운트 블록(time-axis-kind-count) 누락 — 이동 미반영').not.toBe('');
+    expect(RESV_PAGE, '시간축 셀 testid(resv-time-col-cell) 소실(회귀)')
+      .toContain('data-testid="resv-time-col-cell"');
   });
 
-  test('AC1-b-2: 슬롯 칩이 힐러 카운트 h = resvKind==="healer" 로 집계', () => {
-    expect(SLOT, '힐러 카운트 h 파생 누락')
-      .toMatch(/const h = active\.filter\(\(r\) => resvKind\(r\) === 'healer'\)\.length/);
+  test('AC2-2: 시간축 카운트가 보이는 날짜(주간 weekDays/일간 선택일) 합산', () => {
+    expect(TIME_AXIS, '보이는 날짜 집합(weekDays / selectedDay) 분기 누락')
+      .toMatch(/viewMode === 'week' \? weekDays : \[selectedDay\]/);
+    expect(TIME_AXIS, '날짜×시간 키로 resvByKey 조회 누락')
+      .toContain('resvByKey[k]');
   });
 
-  test('AC1-b-3: h ≥ 1 이면 HL 칩 렌더 (조건 누락/0건 스킵 방지)', () => {
-    expect(SLOT, '슬롯 HL 칩 조건부 렌더 누락 ({h > 0 && ... HL {h}})')
-      .toMatch(/h > 0 &&[\s\S]*?HL \{h\}/);
-    expect(SLOT, '슬롯 HL 칩 노란색(yellow) 스타일 누락')
-      .toMatch(/h > 0 &&[\s\S]*?bg-yellow-100[\s\S]*?HL \{h\}/);
+  test('AC2-3: 집계 시맨틱 불변 — 취소 제외 가드 + resvKind 분류', () => {
+    expect(TIME_AXIS, '취소 제외 가드 누락(회귀)').toContain("r.status === 'cancelled') continue");
+    expect(TIME_AXIS, '힐러 분류 누락').toContain("kind === 'healer') h += 1");
+    expect(TIME_AXIS, '초진 분류 누락').toContain("kind === 'new') n += 1");
+    expect(TIME_AXIS, '재진 분류 누락').toContain("kind === 'returning') rr += 1");
   });
 
-  test('AC1-b-4: 슬롯 초/재 칩도 병존 (회귀 — HL만 추가, 기존 유지)', () => {
-    expect(SLOT, '슬롯 초진 칩 누락').toMatch(/n > 0 &&[\s\S]*?초 \{n\}/);
-    expect(SLOT, '슬롯 재진 칩 누락').toMatch(/rr > 0 &&[\s\S]*?재 \{rr\}/);
+  test('AC2-4: 시간축 칩 초/재/HL 3종 + 색상 코딩(emerald/blue/yellow)', () => {
+    expect(TIME_AXIS, '시간축 초진 칩 누락').toMatch(/n > 0 &&[\s\S]*?bg-emerald-100[\s\S]*?초 \{n\}/);
+    expect(TIME_AXIS, '시간축 재진 칩 누락').toMatch(/rr > 0 &&[\s\S]*?bg-blue-100[\s\S]*?재 \{rr\}/);
+    expect(TIME_AXIS, '시간축 HL 칩 누락').toMatch(/h > 0 &&[\s\S]*?bg-yellow-100[\s\S]*?HL \{h\}/);
+  });
+
+  test('AC2-5: 전건 0 시 시간축 칩 null 렌더 가드', () => {
+    expect(TIME_AXIS, '전건 0 null 가드 누락(빈 시간대 빈 칩 방지)')
+      .toContain('if (n === 0 && rr === 0 && h === 0) return null');
+  });
+
+  test('AC2-6: 기존 고객 박스 위 슬롯 카운트(slot-kind-count) 제거', () => {
+    expect(RESV_PAGE, '슬롯 고객 박스 위 카운트(slot-kind-count) 잔존 — 이동 미완(중복 표시)')
+      .not.toContain('slot-kind-count-${dateStr}-${time}');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AC2 회귀 — 예약 카드 클릭/우클릭/표시 동선 무파괴 (시나리오 1-4)
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('AC2 회귀: 예약 카드 동선 무파괴', () => {
+  test('REG-A2-1: 예약 카드 렌더 + 단/더블 클릭 핸들러 유지', () => {
+    expect(RESV_PAGE, '예약 카드 testid 소실').toContain('data-testid={`resv-card-${r.id}`}');
+    expect(RESV_PAGE, '더블클릭 → 예약수정(openEdit) 동선 소실').toContain('openEdit(r)');
+  });
+
+  test('REG-A2-2: 카드 우클릭 컨텍스트 메뉴 동선 유지', () => {
+    expect(RESV_PAGE, '우클릭 컨텍스트 메뉴(setResvContextMenu) 소실')
+      .toContain('setResvContextMenu({ resv: r');
+  });
+
+  test('REG-A2-3: 카드 유형색 코딩(KIND_CARD_STYLE) 유지 — 시간축 이동과 무관', () => {
+    expect(RESV_PAGE, 'KIND_CARD_STYLE 적용 소실').toContain('KIND_CARD_STYLE[resvKind(r)]');
   });
 });
 

@@ -1300,7 +1300,37 @@ export default function Reservations() {
                         data-testid="resv-time-col-cell"
                         className="w-20 border-b border-r py-1.5 text-center text-xs font-medium text-muted-foreground sticky left-0 bg-background z-10"
                       >
-                        {time}
+                        <div>{time}</div>
+                        {/* T-20260613-foot-RESVCAL-FOLLOWUP-5FIX AC2: 시간대별 초/재/힐러 카운트를
+                            '슬롯 고객 박스 위'(RESVCAL item2)에서 좌측 시간축 라벨 영역으로 이동.
+                            집계 로직·데이터 불변 — 표시 위치만 이동. 시간축 셀은 행당 1개이므로
+                            보이는 날짜(주간=weekDays 6일 / 일간=선택일 1일)의 해당 시간대 활성 예약 합산.
+                            취소 제외 가드(status==='cancelled') · resvKind 분류 = 기존 슬롯 칩과 동일 시맨틱. */}
+                        {(() => {
+                          const days = viewMode === 'week' ? weekDays : [selectedDay];
+                          let n = 0, rr = 0, h = 0;
+                          for (const d of days) {
+                            const k = `${format(d, 'yyyy-MM-dd')}_${time}`;
+                            for (const r of (resvByKey[k] ?? [])) {
+                              if (r.status === 'cancelled') continue;
+                              const kind = resvKind(r);
+                              if (kind === 'new') n += 1;
+                              else if (kind === 'returning') rr += 1;
+                              else if (kind === 'healer') h += 1;
+                            }
+                          }
+                          if (n === 0 && rr === 0 && h === 0) return null;
+                          return (
+                            <div
+                              data-testid={`time-axis-kind-count-${time}`}
+                              className="mt-1 flex flex-col items-center gap-0.5 text-[9px] font-medium leading-none"
+                            >
+                              {n > 0 && <span className="inline-flex items-center rounded-full bg-emerald-100 px-1 py-0.5 text-emerald-700">초 {n}</span>}
+                              {rr > 0 && <span className="inline-flex items-center rounded-full bg-blue-100 px-1 py-0.5 text-blue-700">재 {rr}</span>}
+                              {h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-1 py-0.5 text-yellow-700">HL {h}</span>}
+                            </div>
+                          );
+                        })()}
                       </td>
                       {(viewMode === 'week' ? weekDays : [selectedDay]).map((d) => {
                         const allowed = slotsFor(d).includes(time);
@@ -1351,26 +1381,8 @@ export default function Reservations() {
                             {allowed && (
                               <div className="flex h-full w-full min-w-0 flex-col gap-1 rounded text-left">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 → 자식 flex 아이템이 셀 너비 이하로 수축 허용 / T-20260612-WEEKCAL: 카드 간 여백 gap-0.5→gap-1 */}
 
-                                {/* T-20260611-foot-RESVCAL-DISPLAY-REWORK item2: 시간대(슬롯)별 유형 카운트 (취소 제외). */}
-                                {(() => {
-                                  const active = list.filter((r) => r.status !== 'cancelled');
-                                  if (active.length === 0) return null;
-                                  const n = active.filter((r) => resvKind(r) === 'new').length;
-                                  const rr = active.filter((r) => resvKind(r) === 'returning').length;
-                                  const h = active.filter((r) => resvKind(r) === 'healer').length;
-                                  if (n === 0 && rr === 0 && h === 0) return null;
-                                  return (
-                                    // T-20260612-foot-WEEKCAL-HEADER-CARD-REDESIGN (2번): 슬롯별 건수도 칩형으로 일관.
-                                    <div
-                                      data-testid={`slot-kind-count-${dateStr}-${time}`}
-                                      className="flex flex-wrap items-center gap-1 text-[9px] font-medium leading-none"
-                                    >
-                                      {n > 0 && <span className="inline-flex items-center rounded-full bg-emerald-100 px-1 py-0.5 text-emerald-700">초 {n}</span>}
-                                      {rr > 0 && <span className="inline-flex items-center rounded-full bg-blue-100 px-1 py-0.5 text-blue-700">재 {rr}</span>}
-                                      {h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-1 py-0.5 text-yellow-700">HL {h}</span>}
-                                    </div>
-                                  );
-                                })()}
+                                {/* T-20260613-foot-RESVCAL-FOLLOWUP-5FIX AC2: 슬롯 '고객 박스 위' 초/재/힐러 카운트 칩(RESVCAL item2)
+                                    제거 → 좌측 시간축 라벨 영역(resv-time-col-cell)으로 이동. 카드만 잔류. 집계 로직·데이터 불변. */}
 
                                 {/* T-PROGRESS-CHECKPOINT AC-4: filterProgress 시 경과분석 대상만 표시
                                     T-20260611-foot-PROGRESS-CAL-SESSION-AUTOLINK §3 자동연동: 체크포인트 태그
