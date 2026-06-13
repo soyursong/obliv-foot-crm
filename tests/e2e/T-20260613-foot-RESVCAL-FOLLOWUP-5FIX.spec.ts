@@ -7,9 +7,17 @@ import path from 'path';
  * MQ: MSG-20260613-232101-yr9a (planner NEW-TASK, P1, deadline 2026-06-17).
  *
  * 본 spec 구현 범위 = AC1 (FE-only, DB 무변경, 순수 집계 수식):
- *   AC1 힐러 총인원 합산 포함 — REDEFINITION (a) 확정.
+ *   AC1-a 힐러 총인원 합산 포함 — REDEFINITION (a) 확정.
  *     날짜 헤더 총건수 = 초진+재진+힐러(c.n + c.r + c.h). nji4 'HL 제외' supersede.
  *     HL 칩(HL N)은 별도 유지 — 합산+별도표기 병존.
+ *   AC1-b 슬롯(타임슬롯 리스트) 'HL N' 칩 — FIX-REQUEST MSG-…-fjcc 범위 확대.
+ *     슬롯 카운트 칩에서 h(=resvKind==='healer') ≥ 1 이면 'HL {h}' 칩 표기.
+ *     ⚠ 렌더 코드는 이미 존재·배포 완료(slot-kind-count, {h > 0 && HL}).
+ *       현장 "HL 안 뜸" 증상의 근본원인은 표시 레이어가 아니라 healer_flag 데이터 시맨틱:
+ *         (1) healer_flag는 당일 체크인 시 1회성 소모(Dashboard.tsx reset→false)
+ *         (2) 캘린더 예약 editor는 healer_flag를 set하지 않음(read-only)
+ *       → 캘린더에서 직접 잡았거나 이미 체크인된 힐러 예약은 healer_flag=false → 초/재로 분류.
+ *       이 근본원인은 DB/시맨틱 결정 필요(planner FOLLOWUP 발행). 본 spec은 렌더 정합 회귀 고정.
  *
  * 보류(이번 커밋 제외, planner FOLLOWUP):
  *   AC3 '내 예약 ▼' 드롭 — 블로커 재확인. MQ 1차 검증 게이트 발동:
@@ -57,6 +65,40 @@ test.describe('AC1: 힐러 총인원 합산 포함', () => {
   test('AC1-4: REDEFINITION supersede 주석으로 의도 명시', () => {
     expect(RESV_PAGE, 'AC1 supersede 주석 누락 (의도 추적 불가)')
       .toMatch(/RESVCAL-FOLLOWUP-5FIX AC1[\s\S]*?HL[\s\S]*?포함/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AC1-b — 슬롯(타임슬롯 리스트) 'HL N' 칩 렌더 정합 (FIX-REQUEST 범위 확대)
+//   렌더 코드는 기 존재·배포. 본 블록은 'h≥1 → HL 칩' 조건이 슬롯 칩에 유지됨을 회귀 고정.
+//   (증상 근본원인=healer_flag 데이터 시맨틱은 planner FOLLOWUP — 표시 레이어 무관)
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('AC1-b: 슬롯 카운트 칩 HL 표기', () => {
+  // slot-kind-count 칩 IIFE 블록 전체 추출 (const 선언부 포함, 헤더 day-summary 와 분리)
+  const SLOT = (() => {
+    const m = RESV_PAGE.match(/const active = list\.filter[\s\S]*?slot-kind-count-\$\{dateStr\}-\$\{time\}[\s\S]*?\}\)\(\)\}/);
+    return m ? m[0] : '';
+  })();
+
+  test('AC1-b-1: 슬롯 칩 블록 존재 (slot-kind-count testid)', () => {
+    expect(SLOT, '슬롯 카운트 칩 블록(slot-kind-count) 소실').not.toBe('');
+  });
+
+  test('AC1-b-2: 슬롯 칩이 힐러 카운트 h = resvKind==="healer" 로 집계', () => {
+    expect(SLOT, '힐러 카운트 h 파생 누락')
+      .toMatch(/const h = active\.filter\(\(r\) => resvKind\(r\) === 'healer'\)\.length/);
+  });
+
+  test('AC1-b-3: h ≥ 1 이면 HL 칩 렌더 (조건 누락/0건 스킵 방지)', () => {
+    expect(SLOT, '슬롯 HL 칩 조건부 렌더 누락 ({h > 0 && ... HL {h}})')
+      .toMatch(/h > 0 &&[\s\S]*?HL \{h\}/);
+    expect(SLOT, '슬롯 HL 칩 노란색(yellow) 스타일 누락')
+      .toMatch(/h > 0 &&[\s\S]*?bg-yellow-100[\s\S]*?HL \{h\}/);
+  });
+
+  test('AC1-b-4: 슬롯 초/재 칩도 병존 (회귀 — HL만 추가, 기존 유지)', () => {
+    expect(SLOT, '슬롯 초진 칩 누락').toMatch(/n > 0 &&[\s\S]*?초 \{n\}/);
+    expect(SLOT, '슬롯 재진 칩 누락').toMatch(/rr > 0 &&[\s\S]*?재 \{rr\}/);
   });
 });
 
