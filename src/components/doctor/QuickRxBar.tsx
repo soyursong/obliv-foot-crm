@@ -629,6 +629,7 @@ export function RxConfirmedSummary({
   onOpenChart,
   surface = 'unknown',
   customerId = null,
+  actionMenu = false,
 }: {
   checkInId: string | undefined;
   /** 확정된 처방 약물(JSONB) — 약물리스트 검은글씨 나열용. 배열 아니면 빈 줄. */
@@ -669,6 +670,13 @@ export function RxConfirmedSummary({
    */
   surface?: RxAuditSurface;
   customerId?: string | null;
+  /**
+   * T-20260613-foot-DOCDASH-CALLUX-3FIX AC-3 (문지은 대표원장): true면 '처방완료' 클릭 시 즉시 취소가 아니라
+   * 드롭다운(수정/취소) 노출. 귀가(원내 비잔류) 환자는 버튼 비활성(드롭다운 미노출). 미지정(기본 false)이면
+   * 종전 즉시-취소확인 동선 유지 → 다른 소비처(DoctorPatientList) 무회귀.
+   *   · 수정 → onOpenChart() (처방을 차트에서 수정). · 취소 → 기존 취소확인+원복 동선.
+   */
+  actionMenu?: boolean;
 }) {
   const { profile } = useAuth();
   const cancelAuditCtx: RxAuditCtx = {
@@ -692,19 +700,16 @@ export function RxConfirmedSummary({
   // 클릭 자체는 게이트 차단 시에도 살림(거부 + 안내 토스트). 표시 전용(비의사·차단없음)만 비활성.
   const interactive = cancellable || blockedByGate;
 
-  function handleDoneClick() {
+  // T-20260613-foot-DOCDASH-CALLUX-3FIX AC-3: actionMenu 모드 드롭다운(수정/취소) 상태 + portal anchor.
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+
+  // 실제 취소(원복) 실행 — 즉시동선/드롭다운동선 공용.
+  function executeCancel() {
     if (cancelMut.isPending) return;
-    // 귀가(원내 비잔류) — 취소 거부 + "차트에서 수정" 안내 + 차트 진입 동선.
-    if (blockedByGate && gate) {
-      toast.error(
-        rxInClinicMessage(gate.reason),
-        onOpenChart ? { action: { label: '차트 열기', onClick: onOpenChart } } : undefined,
-      );
-      return;
-    }
     if (!cancellable) return;
-    // AC-4: "처방완료" 재클릭 → 취소 확인 팝업 → clean 원복.
-    if (!window.confirm('취소하시겠습니까?')) return;
+    // AC-4: 취소 확인 팝업 → clean 원복.
+    if (!window.confirm('처방완료를 취소할까요?')) return;
     void cancelMut
       .mutateAsync()
       .then(() => {
@@ -725,6 +730,45 @@ export function RxConfirmedSummary({
       });
   }
 
+  function handleDoneClick() {
+    if (cancelMut.isPending) return;
+    // 귀가(원내 비잔류) — 취소 거부 + "차트에서 수정" 안내 + 차트 진입 동선.
+    if (blockedByGate && gate) {
+      toast.error(
+        rxInClinicMessage(gate.reason),
+        onOpenChart ? { action: { label: '차트 열기', onClick: onOpenChart } } : undefined,
+      );
+      return;
+    }
+    if (!cancellable) return;
+    executeCancel();
+  }
+
+  // T-20260613-foot-DOCDASH-CALLUX-3FIX AC-3: actionMenu=true 면 '처방완료' 클릭 → 드롭다운 토글(즉시취소 금지).
+  //   귀가(blockedByGate)면 버튼 자체가 비활성이라 이 핸들러 미도달(드롭다운 미노출).
+  function handleButtonClick() {
+    if (cancelMut.isPending) return;
+    if (!actionMenu) {
+      handleDoneClick();
+      return;
+    }
+    if (!cancellable) return; // AC-3: 귀가 환자 등 비활성 — 드롭다운 안 띄움.
+    const el = btnRef.current;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const MENU_W = 132;
+      setMenuPos((cur) =>
+        cur
+          ? null // 토글 닫기
+          : { top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - MENU_W - 8)) },
+      );
+    }
+  }
+
+  // actionMenu 모드: 귀가(blocked) → 버튼 비활성(AC-3). 그 외(취소 가능)만 활성.
+  const buttonDisabled = cancelMut.isPending || (actionMenu ? !cancellable : !interactive);
+  const menuOpen = actionMenu && menuPos !== null;
+
   return (
     <div
       className={cn('flex min-w-0 items-center gap-1.5', className)}
@@ -733,16 +777,21 @@ export function RxConfirmedSummary({
       data-block-reason={blockedByGate ? gate?.reason ?? '' : undefined}
     >
       <button
+        ref={btnRef}
         type="button"
-        onClick={handleDoneClick}
-        disabled={cancelMut.isPending || !interactive}
+        onClick={handleButtonClick}
+        disabled={buttonDisabled}
         data-testid="rx-confirmed-done"
+        aria-haspopup={actionMenu ? 'menu' : undefined}
+        aria-expanded={actionMenu ? menuOpen : undefined}
         title={
           blockedByGate
             ? '귀가 환자는 차트에서 수정하세요'
-            : cancellable
-              ? '재클릭 시 처방 확정을 취소합니다'
-              : label
+            : actionMenu && cancellable
+              ? '클릭 — 수정/취소 선택'
+              : cancellable
+                ? '재클릭 시 처방 확정을 취소합니다'
+                : label
         }
         className={cn(
           plainText
@@ -793,6 +842,52 @@ export function RxConfirmedSummary({
           <FileText className="h-2.5 w-2.5" />
           차트에서 수정
         </button>
+      )}
+
+      {/* T-20260613-foot-DOCDASH-CALLUX-3FIX AC-3: 처방완료 드롭다운(수정/취소). 표 overflow 클리핑 회피 위해 portal+fixed.
+          수정 → onOpenChart(처방을 차트에서 수정). 취소 → executeCancel(확인 팝업 + clean 원복). */}
+      {menuOpen && menuPos && createPortal(
+        <>
+          {/* 바깥 클릭 닫기 backdrop(투명) */}
+          <div
+            className="fixed inset-0 z-[290]"
+            data-testid="rx-confirmed-menu-backdrop"
+            onMouseDown={() => setMenuPos(null)}
+          />
+          <div
+            role="menu"
+            data-testid="rx-confirmed-menu"
+            style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, width: 132, zIndex: 300 }}
+            className="overflow-hidden rounded-md border border-border bg-popover shadow-lg"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="rx-confirmed-menu-edit"
+              onClick={() => {
+                setMenuPos(null);
+                onOpenChart?.();
+              }}
+              className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-[13px] text-gray-700 hover:bg-gray-100"
+            >
+              <FileText className="h-3 w-3 text-gray-400" />
+              수정
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="rx-confirmed-menu-cancel"
+              onClick={() => {
+                setMenuPos(null);
+                executeCancel();
+              }}
+              className="flex w-full items-center gap-1.5 border-t border-border/60 px-3 py-2 text-left text-[13px] text-rose-600 hover:bg-rose-50"
+            >
+              취소
+            </button>
+          </div>
+        </>,
+        document.body,
       )}
     </div>
   );

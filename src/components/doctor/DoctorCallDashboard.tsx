@@ -38,7 +38,7 @@ import { useAuth } from '@/lib/auth';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
-import { todaySeoulISODate, chartNoDisplay } from '@/lib/format';
+import { todaySeoulISODate, chartNoDisplay, birthYearAgeDisplay } from '@/lib/format';
 import { getAssignedSlotName } from '@/lib/checkin-slot';
 import {
   loadMute,
@@ -66,7 +66,8 @@ const CALL_SELECT =
   'checked_in_at, completed_at, treatment_kind, treatment_category, prescription_status, prescription_items, ' +
   'doctor_call_memo, doctor_ack_at, queue_number, consultation_room, treatment_room, laser_room, examination_room, ' +
   // T-20260612-foot-CHARTNO-B2-P1: 이름 셀 차트번호 인접 표기용 join(KohReportTab 패턴). read-only, DB 무변경.
-  'customers!customer_id(chart_number)';
+  // T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1: 생년(만나이) 칼럼용 birth_date 추가(read-only, 파생표기). DB 무변경.
+  'customers!customer_id(chart_number, birth_date)';
 
 // T-20260612-foot-DOCDASH-TABLE-BTN-MINIMIZE (문지은 대표원장 follow-up):
 //   테이블 셀 액션을 '버튼 박스(bg/border)' → 텍스트/아이콘 링크로 축소. 클릭 동선은 유지(기능 제거 아님).
@@ -101,8 +102,14 @@ const CHART_CELL_EMOJI_BTN =
 // T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT AC-3 (문지은 대표원장): 칼럼 재배치 + 차트 칼럼 신설.
 //   진료 대기중 9칼럼: 이름·차트번호·상태(✋)·시간·방·오늘시술·임상경과·처방·차트. (임상경과=처방 왼쪽, 차트=처방 오른쪽 신설)
 //   진료 완료 8칼럼: 이름·차트번호·상태(✋)·방·오늘시술·임상경과·처방·차트 (경과시간 제거 UX7 유지).
-const DOCDASH_COLSPAN = 9; // 진료 대기중(호출)
-const DOCDASH_COMPLETED_COLSPAN = 8; // 진료 완료
+// T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1 (문지은 대표원장, MONOTONE-RELAYOUT supersede 컬럼순서):
+//   재배치 좌→우: 방 | 상태 | 이름 | 생년(만나이) | 차트번호 | 오늘시술 | 차트 | 처방 | 임상경과.
+//   · 생년(만나이) = 신설 칼럼(customers.birth_date 파생 "YYYY (만 N세)").
+//   · 시간(경과시간) 칼럼: 본 요청 순서 미포함이나 AC-1 dev판단 '기본 보존' → 대기(호출) 테이블 맨 끝에 보존
+//     (요청 9칼럼 순서를 contiguous prefix 로 그대로 유지, 시간만 끝에 append = 10칼럼). responder confirm 대상.
+//   · 완료 테이블은 경과시간이 UX7 에서 이미 제거(완료환자 대기시간 불요) → 9칼럼(시간 없음).
+const DOCDASH_COLSPAN = 10; // 진료 대기중(호출): 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과·시간
+const DOCDASH_COMPLETED_COLSPAN = 9; // 진료 완료: 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과
 
 // T-20260612-foot-CHARTNO-B2-P1: customers 임베드(to-one)에서 차트번호 안전 추출.
 //   PostgREST 임베드는 object|array 양쪽으로 직렬화될 수 있어 둘 다 흡수(KohReportTab 흡수 패턴 동일).
@@ -115,6 +122,18 @@ function readChartNo(ci: CheckIn): string | number | null | undefined {
   if (!c) return null;
   if (Array.isArray(c)) return c[0]?.chart_number ?? null;
   return c.chart_number ?? null;
+}
+
+// T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1: 생년(만나이) 칼럼용 birth_date 안전 추출(readChartNo 흡수 패턴 동일).
+function readBirthDate(ci: CheckIn): string | null | undefined {
+  const c = ci.customers as
+    | { birth_date?: string | null }
+    | Array<{ birth_date?: string | null }>
+    | null
+    | undefined;
+  if (!c) return null;
+  if (Array.isArray(c)) return c[0]?.birth_date ?? null;
+  return c.birth_date ?? null;
 }
 
 // T-20260612-foot-DOCDASH-RXCELL-REFINE item2/AC-2 (문지은 대표원장):
@@ -473,31 +492,34 @@ export default function DoctorCallDashboard() {
           // T-20260612-foot-DOCDASH-SECTION-RESTRUCTURE AC-3/AC-4: 공유 colgroup/thead 로 진료 완료 섹션과 칼럼 폭·순서 완전 동일.
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-[15px]" data-testid="doctor-call-feed-table">
-              {/* DOCDASH_COLGROUP — T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT AC-3(문지은 대표원장): 9칼럼, 합 100%.
-                  순서: 이름 14 · 차트번호 8 · 상태(✋) 12 · 시간 8 · 방 8 · 오늘시술 11 · 임상경과 18 · 처방 14 · 차트 7. */}
+              {/* DOCDASH_COLGROUP — T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1(문지은 대표원장, MONOTONE 컬럼순서 supersede): 10칼럼, 합 100%.
+                  순서: 방 7 · 상태(✋) 12 · 이름 12 · 생년(만나이) 11 · 차트번호 9 · 오늘시술 11 · 차트 7 · 처방 13 · 임상경과 12 · 시간 6.
+                  (시간=AC-1 dev판단 기본보존, 맨 끝 append) */}
               <colgroup>
-                <col className="w-[14%]" />
-                <col className="w-[8%]" />
-                <col className="w-[12%]" />
-                <col className="w-[8%]" />
-                <col className="w-[8%]" />
-                <col className="w-[11%]" />
-                <col className="w-[18%]" />
-                <col className="w-[14%]" />
                 <col className="w-[7%]" />
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
+                <col className="w-[11%]" />
+                <col className="w-[9%]" />
+                <col className="w-[11%]" />
+                <col className="w-[7%]" />
+                <col className="w-[13%]" />
+                <col className="w-[12%]" />
+                <col className="w-[6%]" />
               </colgroup>
-              {/* DOCDASH_THEAD — MONOTONE-RELAYOUT AC-3: 임상경과=처방 왼쪽, 차트 칼럼 신설(처방 오른쪽). */}
+              {/* DOCDASH_THEAD — CALLUX-3FIX AC-1: 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과·시간. */}
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/70 text-center text-[13px] font-semibold text-muted-foreground">
-                  <th className="px-2 py-1.5">이름</th>
-                  <th className="px-2 py-1.5">차트번호</th>
-                  <th className="px-2 py-1.5">상태</th>
-                  <th className="px-2 py-1.5">시간</th>
                   <th className="px-2 py-1.5">방</th>
+                  <th className="px-2 py-1.5">상태</th>
+                  <th className="px-2 py-1.5">이름</th>
+                  <th className="px-2 py-1.5">생년(만나이)</th>
+                  <th className="px-2 py-1.5">차트번호</th>
                   <th className="px-2 py-1.5">오늘시술</th>
-                  <th className="px-2 py-1.5">임상경과</th>
-                  <th className="px-2 py-1.5">처방</th>
                   <th className="px-2 py-1.5">차트</th>
+                  <th className="px-2 py-1.5">처방</th>
+                  <th className="px-2 py-1.5">임상경과</th>
+                  <th className="px-2 py-1.5">시간</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100" data-testid="doctor-call-feed-rows">
@@ -539,29 +561,31 @@ export default function DoctorCallDashboard() {
           //   호출 섹션(8칼럼)과 폭 통일이 아닌 독립 — 완료환자는 대기시간 불요(문지은 대표원장). 제거된 11% 재분배.
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-[15px]" data-testid="doctor-completed-table">
-              {/* COMPLETED COLGROUP — T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT AC-3: 경과시간 제거(UX7 유지) + 차트 칼럼 신설(8칼럼).
-                  순서·합 100%: 이름15 · 차트번호9 · 상태(✋)12 · 방8 · 오늘시술11 · 임상경과19 · 처방19 · 차트7. */}
+              {/* COMPLETED COLGROUP — T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1: 경과시간 제거(UX7 유지) + 생년 신설(9칼럼).
+                  순서·합 100%: 방8 · 상태(✋)13 · 이름13 · 생년(만나이)12 · 차트번호10 · 오늘시술12 · 차트8 · 처방12 · 임상경과12. */}
               <colgroup>
-                <col className="w-[15%]" />
-                <col className="w-[9%]" />
+                <col className="w-[8%]" />
+                <col className="w-[13%]" />
+                <col className="w-[13%]" />
+                <col className="w-[12%]" />
+                <col className="w-[10%]" />
                 <col className="w-[12%]" />
                 <col className="w-[8%]" />
-                <col className="w-[11%]" />
-                <col className="w-[19%]" />
-                <col className="w-[19%]" />
-                <col className="w-[7%]" />
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
               </colgroup>
-              {/* COMPLETED THEAD — MONOTONE-RELAYOUT AC-3: 임상경과=처방 왼쪽, 차트 칼럼 신설(처방 오른쪽). */}
+              {/* COMPLETED THEAD — CALLUX-3FIX AC-1: 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과(시간 없음). */}
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/70 text-center text-[13px] font-semibold text-muted-foreground">
-                  <th className="px-2 py-1.5">이름</th>
-                  <th className="px-2 py-1.5">차트번호</th>
-                  <th className="px-2 py-1.5">상태</th>
                   <th className="px-2 py-1.5">방</th>
+                  <th className="px-2 py-1.5">상태</th>
+                  <th className="px-2 py-1.5">이름</th>
+                  <th className="px-2 py-1.5">생년(만나이)</th>
+                  <th className="px-2 py-1.5">차트번호</th>
                   <th className="px-2 py-1.5">오늘시술</th>
-                  <th className="px-2 py-1.5">임상경과</th>
-                  <th className="px-2 py-1.5">처방</th>
                   <th className="px-2 py-1.5">차트</th>
+                  <th className="px-2 py-1.5">처방</th>
+                  <th className="px-2 py-1.5">임상경과</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100" data-testid="doctor-completed-rows">
@@ -652,7 +676,38 @@ function CallFeedRow({
         data-inactive={String(inactive)}
         className={cn('align-top transition', inactive ? 'bg-gray-50/60 opacity-70' : 'bg-white')}
       >
-        {/* 1. 이름 — AC-1: 이름 옆 이모지/손/꺾쇠 전부 제거. 초/재 레이블 + 이름(중앙정렬, 진료차트 클릭). */}
+        {/* 1. 방 — getAssignedSlotName SSOT(치료실 preconditioning=treatment_room 분기 내장). plain text(배지 아님). 중앙정렬. */}
+        <td className="px-2 py-2 text-center" data-testid="doctor-call-room-cell">
+          {slotName ? (
+            <span className="inline-flex items-center justify-center gap-0.5 text-[13px] font-medium text-gray-600">
+              <MapPin className="h-2.5 w-2.5 text-gray-400" />
+              {slotName}
+            </span>
+          ) : (
+            <span className="text-[13px] text-gray-300">—</span>
+          )}
+        </td>
+
+        {/* 2. 상태 — 진료필요 + 손들기 ✋: 진료필요 텍스트 바로 오른쪽. shake→초록(ack)→파랑(완료) 토글. 중앙정렬. */}
+        <td className="px-2 py-2 text-center">
+          <span className="inline-flex items-center justify-center gap-1 text-[13px] font-medium text-gray-700">
+            <span
+              className={cn('h-1.5 w-1.5 rounded-full', inactive ? 'bg-gray-300' : 'bg-red-500')}
+            />
+            {inactive ? '진료완료' : '진료필요'}
+            {!inactive && (
+              <HandToggle
+                checkIn={checkIn}
+                doctorMode={doctorMode}
+                actor={actor}
+                completed={false}
+                onRefresh={onRefresh}
+              />
+            )}
+          </span>
+        </td>
+
+        {/* 3. 이름 — 초/재 레이블 + 이름(중앙정렬, 진료차트 클릭). 이름 옆 이모지/손/꺾쇠 없음. */}
         <td className="px-2 py-2 text-center">
           <div className="flex items-center justify-center gap-1.5">
             <VisitBadge visitType={checkIn.visit_type} />
@@ -678,68 +733,58 @@ function CallFeedRow({
           )}
         </td>
 
-        {/* 2. 차트번호 — T-20260612-foot-CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
+        {/* 4. 생년(만나이) — T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1: customers.birth_date 파생 "YYYY (만 N세)". 결측 '—'. 중앙정렬. */}
+        <td className="px-2 py-2 text-center">
+          {(() => {
+            const bd = birthYearAgeDisplay(readBirthDate(checkIn));
+            return bd ? (
+              <span className="text-[13px] text-gray-600" data-testid="doctor-call-birth">{bd}</span>
+            ) : (
+              <span className="text-[13px] text-gray-300" data-testid="doctor-call-birth">—</span>
+            );
+          })()}
+        </td>
+
+        {/* 5. 차트번호 — T-20260612-foot-CHARTNO-COL-SPLIT-P1: 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
         <td className="px-2 py-2 text-center">
           <span className="font-mono text-[13px] text-gray-500" data-testid="doctor-call-chartno">
             {chartNoDisplay(readChartNo(checkIn))}
           </span>
         </td>
 
-        {/* 3. 상태 — 진료필요 + 손들기 ✋(AC-4): 진료필요 텍스트 바로 오른쪽. shake→초록(ack)→파랑(완료) 토글. AC-6: 중앙정렬. */}
-        <td className="px-2 py-2 text-center">
-          <span className="inline-flex items-center justify-center gap-1 text-[13px] font-medium text-gray-700">
-            <span
-              className={cn('h-1.5 w-1.5 rounded-full', inactive ? 'bg-gray-300' : 'bg-red-500')}
-            />
-            {inactive ? '진료완료' : '진료필요'}
-            {!inactive && (
-              <HandToggle
-                checkIn={checkIn}
-                doctorMode={doctorMode}
-                actor={actor}
-                completed={false}
-                onRefresh={onRefresh}
-              />
-            )}
-          </span>
-        </td>
-
-        {/* 4. 시간 — AC-2: 시계 이모지 제거, "+N분" 텍스트만. AC-6: 중앙정렬. */}
-        <td className="px-2 py-2 text-center">
-          <span className="text-[13px] text-muted-foreground" data-testid="doctor-call-elapsed">
-            {elapsed}
-          </span>
-        </td>
-
-        {/* 5. 방 — getAssignedSlotName SSOT(치료실 preconditioning=treatment_room 분기 내장). plain text(배지 아님). AC-6: 중앙정렬. */}
-        <td className="px-2 py-2 text-center" data-testid="doctor-call-room-cell">
-          {slotName ? (
-            <span className="inline-flex items-center justify-center gap-0.5 text-[13px] font-medium text-gray-600">
-              <MapPin className="h-2.5 w-2.5 text-gray-400" />
-              {slotName}
-            </span>
-          ) : (
-            <span className="text-[13px] text-gray-300">—</span>
-          )}
-        </td>
-
-        {/* 6. 오늘시술 — AC-6: 중앙정렬. */}
+        {/* 6. 오늘시술 — 중앙정렬. */}
         <td className="px-2 py-2 text-center">
           <ProcedureCell checkIn={checkIn} />
         </td>
 
-        {/* 7. 임상경과 — AC-3/AC-E: 처방 '왼쪽'으로 이동. 미리보기 전용(최신 1줄 말줄임, 입력은 차트칼럼 📝). AC-6: 중앙정렬. */}
-        <td className="px-2 py-2 text-center" data-testid="doctor-call-clinical-cell">
-          {clinicalPreview ? (
-            <span className="block max-w-full truncate text-[13px] text-gray-600" title={clinicalPreview}>
-              {clinicalPreview}
-            </span>
-          ) : (
-            <span className="text-[13px] text-gray-300">—</span>
-          )}
+        {/* 7. 차트 — 임상경과 단축이모지(📝, 인라인 입력 토글) + 진료차트(🩺, 서랍). 중앙정렬. */}
+        <td className="px-2 py-2 text-center" data-testid="doctor-call-chart-cell">
+          <div className="inline-flex items-center justify-center gap-1">
+            <button
+              type="button"
+              onClick={() => setShowClinical((v) => !v)}
+              disabled={!checkIn.customer_id}
+              aria-expanded={showClinical}
+              data-testid="doctor-call-chart-btn"
+              className={CHART_CELL_EMOJI_BTN}
+              title="임상경과 한 줄 입력"
+            >
+              <span aria-hidden>📝</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+              disabled={!checkIn.customer_id}
+              data-testid="doctor-call-fullchart-btn"
+              className={CHART_CELL_EMOJI_BTN}
+              title="진료차트 열기 (서랍)"
+            >
+              <span aria-hidden>🩺</span>
+            </button>
+          </div>
         </td>
 
-        {/* 8. 처방 — AC-7(FULLWIDTH 보존): 확정 시 알약버튼 제거→파란글씨 '처방완료'(plainText)+약명 미리보기. 미처방 시 알약 드롭다운. AC-6: 중앙정렬. */}
+        {/* 8. 처방 — AC-7(FULLWIDTH 보존): 확정 시 알약버튼 제거→파란글씨 '처방완료'(plainText)+약명 미리보기. 미처방 시 알약 드롭다운. 중앙정렬. */}
         <td className="px-2 py-2 text-center" data-testid="doctor-call-rx-cell">
           <div className="flex flex-wrap items-center justify-center gap-1.5">
             {checkIn.prescription_status === 'confirmed' ? (
@@ -755,6 +800,8 @@ function CallFeedRow({
                 surface="doctor_call_dashboard"
                 customerId={checkIn.customer_id}
                 plainText
+                /* T-20260613-foot-DOCDASH-CALLUX-3FIX AC-3: 처방완료 클릭 → 즉시취소 금지, 드롭다운(수정/취소). 귀가 환자 비활성. */
+                actionMenu
               />
             ) : (
               <>
@@ -797,32 +844,22 @@ function CallFeedRow({
           </div>
         </td>
 
-        {/* 9(끝). 차트 — AC-6 신설(처방 오른쪽): 임상경과 단축이모지(📝, 인라인 입력 토글) + 진료차트(🩺, 서랍). 중앙정렬.
-            FULLWIDTH 가 이름 옆에 두었던 두 이모지 버튼을 이 칼럼으로 이동(testid·동선 보존). */}
-        <td className="px-2 py-2 text-center" data-testid="doctor-call-chart-cell">
-          <div className="inline-flex items-center justify-center gap-1">
-            <button
-              type="button"
-              onClick={() => setShowClinical((v) => !v)}
-              disabled={!checkIn.customer_id}
-              aria-expanded={showClinical}
-              data-testid="doctor-call-chart-btn"
-              className={CHART_CELL_EMOJI_BTN}
-              title="임상경과 한 줄 입력"
-            >
-              <span aria-hidden>📝</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
-              disabled={!checkIn.customer_id}
-              data-testid="doctor-call-fullchart-btn"
-              className={CHART_CELL_EMOJI_BTN}
-              title="진료차트 열기 (서랍)"
-            >
-              <span aria-hidden>🩺</span>
-            </button>
-          </div>
+        {/* 9. 임상경과 — CALLUX-3FIX AC-1: 처방 '오른쪽'(요청순서 끝). 미리보기 전용(최신 1줄 말줄임, 입력은 차트칼럼 📝). 중앙정렬. */}
+        <td className="px-2 py-2 text-center" data-testid="doctor-call-clinical-cell">
+          {clinicalPreview ? (
+            <span className="block max-w-full truncate text-[13px] text-gray-600" title={clinicalPreview}>
+              {clinicalPreview}
+            </span>
+          ) : (
+            <span className="text-[13px] text-gray-300">—</span>
+          )}
+        </td>
+
+        {/* 10(끝). 시간 — AC-1 dev판단 기본보존(요청순서 미포함이나 경과시간 유지). 시계 이모지 제거, "+N분" 텍스트만. 중앙정렬. */}
+        <td className="px-2 py-2 text-center">
+          <span className="text-[13px] text-muted-foreground" data-testid="doctor-call-elapsed">
+            {elapsed}
+          </span>
         </td>
       </tr>
 
@@ -899,31 +936,19 @@ function CompletedRow({
     //   AC-0(회귀 rebase): 귀가여부 상태(11FIX AC-10)·처방 게이트(STATUS-SPLIT/AC-9)·의사ack 뱃지·임상경과 미리보기(AC-11) 보존.
     <>
       <tr className="align-top" data-testid="doctor-completed-row" data-checkin-id={checkIn.id}>
-        {/* 1. 이름 — AC-1: 이름 옆 이모지/손/꺾쇠 제거. 초/재 레이블 + 이름(중앙정렬, 진료차트 클릭). */}
-        <td className="px-2 py-2 text-center">
-          <div className="flex items-center justify-center gap-1.5">
-            <VisitBadge visitType={checkIn.visit_type} />
-            <button
-              type="button"
-              onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
-              disabled={!checkIn.customer_id}
-              data-testid="doctor-completed-name-chart-btn"
-              title="이름 클릭 — 진료차트 열기 (서랍)"
-              className="min-w-[4rem] break-keep text-center underline-offset-2 transition-colors cursor-pointer hover:text-indigo-700 hover:underline disabled:cursor-default disabled:no-underline"
-            >
-              <span className="block text-[15px] font-semibold">{checkIn.customer_name}</span>
-            </button>
-          </div>
+        {/* 1. 방 — getAssignedSlotName SSOT(치료실 preconditioning=treatment_room). plain text. 중앙정렬. */}
+        <td className="px-2 py-2 text-center" data-testid="doctor-completed-room-cell">
+          {slotName ? (
+            <span className="inline-flex items-center justify-center gap-0.5 text-[13px] font-medium text-gray-600">
+              <MapPin className="h-2.5 w-2.5 text-gray-400" />
+              {slotName}
+            </span>
+          ) : (
+            <span className="text-[13px] text-gray-300">—</span>
+          )}
         </td>
 
-        {/* 2. 차트번호 — T-20260612-foot-CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
-        <td className="px-2 py-2 text-center">
-          <span className="font-mono text-[13px] text-gray-500" data-testid="doctor-completed-chartno">
-            {chartNoDisplay(readChartNo(checkIn))}
-          </span>
-        </td>
-
-        {/* 3. 상태 — 귀가/귀가 대기 + 손들기 ✋(AC-4): 진료완료 상태이므로 파랑(완료) 표시. cross-client. AC-6: 중앙정렬. */}
+        {/* 2. 상태 — 귀가/귀가 대기 + 손들기 ✋: 진료완료 상태이므로 파랑(완료) 표시. cross-client. 중앙정렬. */}
         <td className="px-2 py-2 text-center">
           <div className="flex flex-wrap items-center justify-center gap-1.5">
             <span
@@ -949,37 +974,75 @@ function CompletedRow({
           </div>
         </td>
 
-        {/* UX7 AC-7: 경과시간 칼럼 제거(완료환자 대기시간 불요) — 셀 없음. 호출 섹션은 유지. */}
-
-        {/* 4. 방 — getAssignedSlotName SSOT(치료실 preconditioning=treatment_room). plain text. AC-6: 중앙정렬. */}
-        <td className="px-2 py-2 text-center" data-testid="doctor-completed-room-cell">
-          {slotName ? (
-            <span className="inline-flex items-center justify-center gap-0.5 text-[13px] font-medium text-gray-600">
-              <MapPin className="h-2.5 w-2.5 text-gray-400" />
-              {slotName}
-            </span>
-          ) : (
-            <span className="text-[13px] text-gray-300">—</span>
-          )}
+        {/* 3. 이름 — 초/재 레이블 + 이름(중앙정렬, 진료차트 클릭). 이름 옆 이모지/손/꺾쇠 없음. */}
+        <td className="px-2 py-2 text-center">
+          <div className="flex items-center justify-center gap-1.5">
+            <VisitBadge visitType={checkIn.visit_type} />
+            <button
+              type="button"
+              onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+              disabled={!checkIn.customer_id}
+              data-testid="doctor-completed-name-chart-btn"
+              title="이름 클릭 — 진료차트 열기 (서랍)"
+              className="min-w-[4rem] break-keep text-center underline-offset-2 transition-colors cursor-pointer hover:text-indigo-700 hover:underline disabled:cursor-default disabled:no-underline"
+            >
+              <span className="block text-[15px] font-semibold">{checkIn.customer_name}</span>
+            </button>
+          </div>
         </td>
 
-        {/* 5. 오늘시술 — AC-6: 중앙정렬. */}
+        {/* 4. 생년(만나이) — T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1: customers.birth_date 파생 "YYYY (만 N세)". 결측 '—'. 중앙정렬. */}
+        <td className="px-2 py-2 text-center">
+          {(() => {
+            const bd = birthYearAgeDisplay(readBirthDate(checkIn));
+            return bd ? (
+              <span className="text-[13px] text-gray-600" data-testid="doctor-completed-birth">{bd}</span>
+            ) : (
+              <span className="text-[13px] text-gray-300" data-testid="doctor-completed-birth">—</span>
+            );
+          })()}
+        </td>
+
+        {/* 5. 차트번호 — T-20260612-foot-CHARTNO-COL-SPLIT-P1: 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
+        <td className="px-2 py-2 text-center">
+          <span className="font-mono text-[13px] text-gray-500" data-testid="doctor-completed-chartno">
+            {chartNoDisplay(readChartNo(checkIn))}
+          </span>
+        </td>
+
+        {/* 6. 오늘시술 — 중앙정렬. */}
         <td className="px-2 py-2 text-center">
           <ProcedureCell checkIn={checkIn} />
         </td>
 
-        {/* 6. 임상경과 — AC-3/AC-E: 처방 '왼쪽'으로 이동. 미리보기 전용(입력은 차트칼럼 📝). AC-6: 중앙정렬. */}
-        <td className="px-2 py-2 text-center" data-testid="doctor-completed-clinical-cell">
-          {clinicalPreview ? (
-            <span className="block max-w-full truncate text-[13px] text-gray-600" title={clinicalPreview}>
-              {clinicalPreview}
-            </span>
-          ) : (
-            <span className="text-[13px] text-gray-300">—</span>
-          )}
+        {/* 7. 차트 — 임상경과 단축이모지(📝, 인라인 입력 토글) + 진료차트(🩺, 서랍). 중앙정렬. */}
+        <td className="px-2 py-2 text-center" data-testid="doctor-completed-chart-cell">
+          <div className="inline-flex items-center justify-center gap-1">
+            <button
+              type="button"
+              onClick={() => setShowClinical((v) => !v)}
+              disabled={!checkIn.customer_id}
+              aria-expanded={showClinical}
+              data-testid="doctor-completed-chart-btn"
+              className={CHART_CELL_EMOJI_BTN}
+              title="임상경과 한 줄 입력"
+            >
+              <span aria-hidden>📝</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
+              disabled={!checkIn.customer_id}
+              data-testid="doctor-completed-fullchart-btn"
+              className={CHART_CELL_EMOJI_BTN}
+              title="진료차트 열기 (서랍)"
+            >
+              <span aria-hidden>🩺</span>
+            </button>
+          </div>
         </td>
 
-        {/* 7. 처방 — AC-7(보존): 귀가(discharged) 미처방 '-', 원내잔류 알약 드롭다운, 확정 시 파란글씨 '처방완료'+미리보기. AC-6: 중앙정렬. */}
+        {/* 8. 처방 — AC-7(보존): 귀가(discharged) 미처방 '-', 원내잔류 알약 드롭다운, 확정 시 파란글씨 '처방완료'+미리보기. 중앙정렬. */}
         <td className="px-2 py-2 text-center" data-testid="doctor-completed-rx-cell">
           <div className="flex flex-wrap items-center justify-center gap-1.5">
             {checkIn.prescription_status === 'confirmed' ? (
@@ -997,6 +1060,8 @@ function CompletedRow({
                 surface="doctor_call_dashboard"
                 customerId={checkIn.customer_id}
                 plainText
+                /* T-20260613-foot-DOCDASH-CALLUX-3FIX AC-3: 처방완료 클릭 → 즉시취소 금지, 드롭다운(수정/취소). 귀가 환자 비활성. */
+                actionMenu
               />
             ) : !discharged ? (
               <>
@@ -1042,31 +1107,15 @@ function CompletedRow({
           </div>
         </td>
 
-        {/* 8(끝). 차트 — AC-6 신설(처방 오른쪽): 임상경과 단축이모지(📝, 인라인 입력 토글) + 진료차트(🩺, 서랍). 중앙정렬. */}
-        <td className="px-2 py-2 text-center" data-testid="doctor-completed-chart-cell">
-          <div className="inline-flex items-center justify-center gap-1">
-            <button
-              type="button"
-              onClick={() => setShowClinical((v) => !v)}
-              disabled={!checkIn.customer_id}
-              aria-expanded={showClinical}
-              data-testid="doctor-completed-chart-btn"
-              className={CHART_CELL_EMOJI_BTN}
-              title="임상경과 한 줄 입력"
-            >
-              <span aria-hidden>📝</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => checkIn.customer_id && onOpenChart(checkIn.customer_id, 'full')}
-              disabled={!checkIn.customer_id}
-              data-testid="doctor-completed-fullchart-btn"
-              className={CHART_CELL_EMOJI_BTN}
-              title="진료차트 열기 (서랍)"
-            >
-              <span aria-hidden>🩺</span>
-            </button>
-          </div>
+        {/* 9(끝). 임상경과 — CALLUX-3FIX AC-1: 처방 '오른쪽'(요청순서 끝). 미리보기 전용(입력은 차트칼럼 📝). 중앙정렬. */}
+        <td className="px-2 py-2 text-center" data-testid="doctor-completed-clinical-cell">
+          {clinicalPreview ? (
+            <span className="block max-w-full truncate text-[13px] text-gray-600" title={clinicalPreview}>
+              {clinicalPreview}
+            </span>
+          ) : (
+            <span className="text-[13px] text-gray-300">—</span>
+          )}
         </td>
       </tr>
 

@@ -916,9 +916,12 @@ export default function MedicalChartPanel({
     if (mine) setFormSigningDoctorId(mine.id);   // 이름 매칭 = 로그인 계정이 의사 → 본인 자동
   }, [selectedChartId, formSigningDoctorId, clinicDoctors, currentUserName]);
 
-  // T-20260612-foot-DOCDASH-11FIX AC-6: singleLine 진료의 = 평소엔 "진료의 ○○○" 레이블, '변경' 클릭 시에만
+  // T-20260612-foot-DOCDASH-11FIX AC-6: singleLine 진료의 = 평소엔 "진료의 ○○○" 레이블, 클릭 시에만
   //   드롭다운 노출. 미선택(빈값)이면 드롭다운 강제 노출 → NOT NULL 강제(AC-P2-6) 무회귀.
+  // T-20260613-foot-DOCDASH-CALLUX-3FIX AC-2: '변경' 버튼 기본 비노출 → 레이블 자체 클릭으로 드롭다운 확장.
   const [editingSingleDoctor, setEditingSingleDoctor] = useState(false);
+  // T-20260613-foot-DOCDASH-CALLUX-3FIX AC-2(c): 다른 의사 선택 시 재확인 모달 — 확정 전 pending 보관.
+  const [pendingDoctorChange, setPendingDoctorChange] = useState<{ id: string; name: string } | null>(null);
 
   // T-20260612-foot-DOCDASH-11FIX AC-5: singleLine 임상경과 textarea auto-resize.
   //   상용구(//) 삽입 등 긴 내용도 스크롤 없이 전체가 보이도록 내용 높이만큼 확장.
@@ -2023,37 +2026,60 @@ export default function MedicalChartPanel({
     <div className="p-2.5" data-testid="clinical-singleline">
       <div className="flex flex-wrap items-center gap-2">
         {/* 담당 의사 (저장 필수 — 의료법, 기존 검증 동일 재사용).
-            T-20260612-foot-DOCDASH-11FIX AC-6: 진료의 선택됨 + 비편집 + 쓰기가능 → "진료의 ○○○" 레이블
-            (클릭 '변경'으로만 드롭다운). 미선택(빈값)이거나 편집 중이면 드롭다운 노출 → NOT NULL 강제(AC-P2-6) 무회귀. */}
+            T-20260613-foot-DOCDASH-CALLUX-3FIX AC-2 (문지은 대표원장, 11FIX AC-6 supersede):
+              (a) '변경' 버튼 기본 비노출 → "진료의 ○○○" 레이블 자체를 클릭하면 드롭다운 확장.
+              (b) 드롭다운(select)에서 의사 변경 진입.
+              (c) 현재와 '다른' 의사 선택 → 재확인 모달(pendingDoctorChange) → '확인' 시에만 반영.
+                  동일 의사 재선택/모달 취소 → 무변경. 최초 지정(기존 진료의 없음)은 모달 없이 바로 반영(NOT NULL 강제 보존). */}
         {(() => {
           const selectedSingleDoctor = clinicDoctors.find((d) => d.id === formSigningDoctorId) ?? null;
           const showLabel = !!formSigningDoctorId && !!selectedSingleDoctor && !editingSingleDoctor;
           if (showLabel) {
-            return (
+            // AC-2(a/b): 레이블 자체가 드롭다운 진입 트리거(별도 '변경' 버튼 제거).
+            return isReadOnly ? (
               <span
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1.5 text-xs"
                 data-testid="clinical-singleline-doctor-label"
               >
                 <span className="font-medium text-gray-700">진료의 {selectedSingleDoctor.name}</span>
-                {!isReadOnly && (
-                  <button
-                    type="button"
-                    onClick={() => setEditingSingleDoctor(true)}
-                    className="text-[11px] text-teal-600 underline-offset-2 hover:underline"
-                    data-testid="clinical-singleline-doctor-edit"
-                  >
-                    변경
-                  </button>
-                )}
               </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setEditingSingleDoctor(true)}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1.5 text-xs transition-colors hover:border-teal-300 hover:bg-teal-50"
+                data-testid="clinical-singleline-doctor-label"
+                title="진료의 변경 — 클릭하여 의사 선택"
+                aria-label="진료의 변경"
+              >
+                <span className="font-medium text-gray-700">진료의 {selectedSingleDoctor.name}</span>
+              </button>
             );
           }
           return (
             <select
               value={formSigningDoctorId}
               onChange={(e) => {
-                setFormSigningDoctorId(e.target.value);
-                if (e.target.value) setEditingSingleDoctor(false);
+                const next = e.target.value;
+                // 비우기(빈값) → NOT NULL 강제 게이트가 저장 차단(무회귀). 즉시 반영.
+                if (!next) {
+                  setFormSigningDoctorId('');
+                  return;
+                }
+                // 동일 의사 재선택 → 무변경, 편집 종료.
+                if (next === formSigningDoctorId) {
+                  setEditingSingleDoctor(false);
+                  return;
+                }
+                // 기존 진료의가 있는데 '다른' 의사 선택 → AC-2(c) 재확인 모달(확정 전 보류).
+                if (formSigningDoctorId) {
+                  const nd = clinicDoctors.find((d) => d.id === next);
+                  setPendingDoctorChange({ id: next, name: nd?.name ?? '' });
+                  return;
+                }
+                // 최초 지정(기존 진료의 없음) → 모달 없이 바로 반영.
+                setFormSigningDoctorId(next);
+                setEditingSingleDoctor(false);
               }}
               disabled={isReadOnly}
               className={cn(
@@ -2180,6 +2206,58 @@ export default function MedicalChartPanel({
           </Button>
         )}
       </div>
+      {/* T-20260613-foot-DOCDASH-CALLUX-3FIX AC-2(c): 다른 의사 선택 시 재확인 모달.
+          '확인' 시에만 진료의 변경 반영(setFormSigningDoctorId). '취소'/배경 클릭 → 무변경, 원래 진료의 레이블 복귀. */}
+      {pendingDoctorChange && createPortal(
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/40 p-4"
+          data-testid="clinical-singleline-doctor-confirm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setPendingDoctorChange(null);
+              setEditingSingleDoctor(false);
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-xs rounded-lg bg-white p-4 shadow-xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-semibold text-gray-800">진료의 변경</p>
+            <p className="mt-1.5 text-[13px] text-gray-600">
+              진료의를{' '}
+              <span className="font-medium text-gray-900">{pendingDoctorChange.name}</span>{' '}
+              (으)로 변경할까요?
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingDoctorChange(null);
+                  setEditingSingleDoctor(false);
+                }}
+                className="rounded-md border border-input bg-background px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                data-testid="clinical-singleline-doctor-confirm-cancel"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFormSigningDoctorId(pendingDoctorChange.id);
+                  setPendingDoctorChange(null);
+                  setEditingSingleDoctor(false);
+                }}
+                className="rounded-md bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700"
+                data-testid="clinical-singleline-doctor-confirm-ok"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 
