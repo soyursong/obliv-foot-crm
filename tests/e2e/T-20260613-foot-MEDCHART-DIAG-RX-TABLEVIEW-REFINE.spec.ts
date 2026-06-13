@@ -92,7 +92,8 @@ test.describe('AC-4 처방내역 폭 확대 + 테두리 제거', () => {
     // 처방내역 컬럼이 진단명보다 넓게(flex-[1.5]).
     expect(src).toMatch(/sm:flex-\[1\.5\] min-w-0/);
     // 처방 테이블 외곽 border 제거 + 내부 input/button 테두리·그림자 제거(arbitrary variant).
-    expect(src).toMatch(/\[&_input\]:border-0[\s\S]{0,80}\[&_button\]:border-0[\s\S]{0,40}data-testid="prescription-items-table"/);
+    // {0,40}→{0,400}: 후속 EDITMODE AC-12(97524b8)가 focus-visible 테두리 제거 클래스를 추가하며 갭이 늘어남(동일 의도 유지).
+    expect(src).toMatch(/\[&_input\]:border-0[\s\S]{0,80}\[&_button\]:border-0[\s\S]{0,400}data-testid="prescription-items-table"/);
     // 행 구분선(border-t) 제거.
     expect(src).not.toMatch(/border-t border-border\/50[\s\S]{0,40}data-testid=\{`prescription-row-/);
     // 기능 동선(행 삭제 버튼) 보존.
