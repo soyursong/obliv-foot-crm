@@ -279,7 +279,7 @@ function useSaveNailSites(clinicId: string | null, ym: string) {
       qc.invalidateQueries({ queryKey: ['koh_report', clinicId, ym] });
     },
     onError: (e: Error) => {
-      toast.error(`발톱부위 저장 실패: ${e.message}`);
+      toast.error(`조갑부위 저장 실패: ${e.message}`);
     },
   });
 }
@@ -509,7 +509,7 @@ export default function KohReportTab() {
                 <th className="px-3 py-2.5 font-medium">차트번호</th>
                 <th className="px-3 py-2.5 font-medium">검사일</th>
                 {/* PHASE15(C): 발톱부위 · 당일의사명 컬럼 추가 */}
-                <th className="px-3 py-2.5 font-medium">발톱부위</th>
+                <th className="px-3 py-2.5 font-medium">조갑부위</th>
                 <th className="px-3 py-2.5 font-medium">당일 진료의사</th>
               </tr>
             </thead>
@@ -576,7 +576,7 @@ export default function KohReportTab() {
 
       {/* 안내 — PHASE15 범위 명시 */}
       <p className="text-[11px] text-muted-foreground/70">
-        ※ 검사일(시행일) 기준 월별 명단입니다. 발톱부위는 R/L·발가락을 눌러 입력하세요(단일 선택). 당일 진료의사는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다.
+        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 R/L·발가락을 눌러 입력하세요(단일 선택). 당일 진료의사는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다.
       </p>
     </div>
   );
