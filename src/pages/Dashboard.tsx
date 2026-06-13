@@ -6251,6 +6251,53 @@ export default function Dashboard() {
     inactiveRooms, tomorrowInactiveRooms, myAssignedRoomNames, canToggleRoom, handleToggleRoom,
   ]);
 
+  // T-20260614-foot-HEALER-LASER-WAIT-PAIR-LAYOUT: 레이저대기/힐러대기 상하 한 쌍.
+  // exam_section(진료 위 / 진료대기 아래) 패턴 재사용 — 한 컬럼(w-40) 안에 위아래로 스택.
+  // 일반(운영) 모드에서만 사용. 편집 모드 renderKanbanGroup 케이스는 불변 → 개별이동 보존
+  // (laser_rooms 가 일반모드 클러스터·편집모드 개별드래그로 분리된 기존 선례와 동일 패턴).
+  const renderWaitingPair = useCallback(() => (
+    <div className="w-40 shrink-0 self-stretch flex flex-col gap-2" data-testid="laser-healer-wait-pair">
+      <DroppableColumn
+        id="laser_waiting"
+        label="레이저대기"
+        count={laserWaiting.length}
+        className="flex-1 min-h-0"
+        highlight="text-rose-700"
+      >
+        {laserWaiting.map((ci) => (
+          <DraggableCard
+            key={ci.id}
+            checkIn={ci}
+            compact
+            stageStart={getStageStart(ci)}
+            packageLabel={getPkgLabel(ci)}
+            onClick={() => handleCardClick(ci)}
+            onContextMenu={(e) => handleCardContext(ci, e)}
+          />
+        ))}
+      </DroppableColumn>
+      <DroppableColumn
+        id="healer_waiting"
+        label="힐러대기"
+        count={healerWaiting.length}
+        className="flex-1 min-h-0"
+        highlight="text-violet-700"
+      >
+        {healerWaiting.map((ci) => (
+          <DraggableCard
+            key={ci.id}
+            checkIn={ci}
+            compact
+            stageStart={getStageStart(ci)}
+            packageLabel={getPkgLabel(ci)}
+            onClick={() => handleCardClick(ci)}
+            onContextMenu={(e) => handleCardContext(ci, e)}
+          />
+        ))}
+      </DroppableColumn>
+    </div>
+  ), [laserWaiting, healerWaiting, getStageStart, getPkgLabel, handleCardClick, handleCardContext]);
+
   // T-20260510-foot-DASH-DUAL-HSCROLL v2: overflow-hidden — Dashboard 자체 가로 팽창 격리
   return (
     // T-20260522-foot-TABLET-DUAL-LAYOUT: data-orientation + data-testid="dashboard-root" (E2E 테스트용)
@@ -6644,6 +6691,16 @@ export default function Dashboard() {
                   // 레이저실은 치료실 클러스터 내부에서 렌더링 — 별도 표시 생략
                   if (gid === 'laser_rooms') return null;
 
+                  // T-20260614-foot-HEALER-LASER-WAIT-PAIR-LAYOUT:
+                  // 힐러대기는 항상 레이저대기와 한 쌍(상하)으로 병합 → 단독 위치 생략.
+                  if (gid === 'healer_waiting_col') return null;
+                  // 레이저대기: 레이저실이 있으면 클러스터 내부(레이저실 좌측)에서 쌍으로 렌더 → skip.
+                  //             레이저실이 없으면 이 위치에 쌍을 fallback 렌더(빈 칸 방지).
+                  if (gid === 'laser_waiting_col') {
+                    const hasLaserCluster = laserRooms.length > 0 && groupOrder.includes('laser_rooms');
+                    return hasLaserCluster ? null : renderWaitingPair();
+                  }
+
                   if (gid === 'treatment_rooms') {
                     const hasTreatment = treatmentRooms.length > 0;
                     const hasLaser = laserRooms.length > 0 && groupOrder.includes('laser_rooms');
@@ -6653,6 +6710,8 @@ export default function Dashboard() {
                       <div key="treatment_laser_cluster" className="flex gap-2 shrink-0 items-start">
                         {/* 치료실 (가열성레이저 슬롯 포함, 480px) */}
                         {hasTreatment && renderKanbanGroup('treatment_rooms')}
+                        {/* AC-1/AC-2: 레이저대기·힐러대기 상하 쌍 — 레이저실 좌측 인접 */}
+                        {hasLaser && renderWaitingPair()}
                         {/* 레이저실 (480px) */}
                         {hasLaser && renderKanbanGroup('laser_rooms')}
                       </div>
