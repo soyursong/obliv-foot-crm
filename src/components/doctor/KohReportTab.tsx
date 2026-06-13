@@ -1,13 +1,21 @@
 // KohReportTab — 균검사지(KOH 진균검사) 명단 리포트 탭
 // Ticket: T-20260611-foot-KOH-REPORT-TAB (Phase 1) + T-20260612-foot-KOH-REPORT-PHASE15 (Phase 1.5)
+//         + T-20260614-foot-KOHSHEET-RENEWAL-PLISTMIRROR (균검사지 6컬럼 재정의 + 조갑부위 multi-select)
 //
 // KOH(수산화칼륨) 진균검사를 시행한 환자 명단을 '검사일'(월 단위) 기준으로 조회한다.
-// 컬럼: 환자이름 · 생년월일 · 차트번호 · 검사일 · [발톱부위] · [당일의사명]
+// 컬럼(KOHSHEET-RENEWAL §B, 6컬럼 통일): 이름 · 생년 · 차트 · 검사일(날짜만) · 조갑부위 · 진료의
 //   ※ Phase 1.5(PHASE15, 3중 게이트 ALL GO): 발톱부위(입력) + 당일의사명(조인) 추가.
+//   ※ KOHSHEET-RENEWAL: 검사일 시간 제거(날짜만, B2) + 조갑부위 입력 단일→복수선택 완화(C2).
+//
+// === KOHSHEET-RENEWAL (T-20260614-foot-KOHSHEET-RENEWAL-PLISTMIRROR) ===
+//  B. 6컬럼 재정의 — 헤더 라벨 통일(이름/생년/차트/검사일/조갑부위/진료의). 검사일=날짜만(YYYY-MM-DD, FE 한정).
+//  C. 조갑부위 입력 = 좌발 L1~L5 | 우발 R1~R5 toggle, **다중선택**(복수 부위), 선택 강조.
+//     L→Lt, R→Rt. 저장 shape 는 PHASE15 canon {side:Lt|Rt, toe:1-5} 그대로(DB 무변경, 배열 이미 지원).
+//     PHASE15 단일선택 UI 를 본 티켓 multi 로 직접 교체(churn 금지, 1회 ship).
 //
 // === Phase 1.5 (T-20260612-foot-KOH-REPORT-PHASE15) ===
 //  A. 발톱부위 = check_in_services.koh_nail_sites jsonb. 원소 {side:Rt|Lt, toe:1-5}.
-//     입력 위젯 = R/L 2버튼 + 발가락 1~5 5버튼 + '조갑' 고정. 라디오형 단일선택(R/L 1 + 발가락 1).
+//     입력 위젯 = (KOHSHEET-RENEWAL C 로 대체) 좌발 L1~L5 | 우발 R1~R5 다중선택 토글.
 //     쓰기 = RPC set_koh_nail_sites (check_in_services UPDATE RLS=consultant+ 우회, 승인 사용자 누구나).
 //     DB엔 구조만 저장 — 표시문자열은 FE 파생(formatNailSite: 'Rt 1지 조갑').
 //  B. 당일의사명 = medical_charts.signing_doctor_name (deployed b65357e) read-only 조인.
@@ -24,7 +32,7 @@
 //   ⚠ service_code/hira_code 매칭 금지 — DX-KOH-01(미존재)·D6591/D2502001(비활성).
 //     실운영 서비스명 = '일반진균검사-KOH도말-조갑조직'(service_code=D620300HZ, active).
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -70,7 +78,7 @@ export function formatBirthDate(birth: string | null | undefined): string {
   return s.length >= 10 ? s.slice(0, 10) : s || '—';
 }
 
-/** 검사일 표시 — created_at(UTC) → KST 'YYYY-MM-DD HH:mm' */
+/** 검사일 표시(레거시, 날짜+시간) — created_at(UTC) → KST 'YYYY-MM-DD HH:mm'. */
 export function formatExamDateTime(createdAt: string | null | undefined): string {
   if (!createdAt) return '—';
   const date = seoulISODate(createdAt);
@@ -78,6 +86,12 @@ export function formatExamDateTime(createdAt: string | null | undefined): string
     timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
   });
   return `${date} ${time}`;
+}
+
+/** 검사일 표시 — KOHSHEET-RENEWAL §B2: 날짜만(시간 제거). created_at(UTC) → KST 'YYYY-MM-DD'. */
+export function formatExamDate(createdAt: string | null | undefined): string {
+  if (!createdAt) return '—';
+  return seoulISODate(createdAt);
 }
 
 // ---------------------------------------------------------------------------
@@ -95,10 +109,16 @@ export function formatNailSite(site: NailSite): string {
   return `${site.side} ${site.toe}지 조갑`;
 }
 
-/** 배열 → 표시문자열(', ' join). 빈/결측 = '—' */
+/** 안정 정렬 — KOHSHEET-RENEWAL §C: 다중선택 표시 일관성. 좌발(Lt) 먼저, 같은 발이면 발가락 오름차순. */
+export function sortNailSites(sites: NailSite[]): NailSite[] {
+  const sideRank: Record<NailSide, number> = { Lt: 0, Rt: 1 };
+  return [...sites].sort((a, b) => sideRank[a.side] - sideRank[b.side] || a.toe - b.toe);
+}
+
+/** 배열 → 표시문자열(', ' join, 정렬 적용). 빈/결측 = '—' */
 export function formatNailSites(sites: NailSite[] | null | undefined): string {
   if (!sites || sites.length === 0) return '—';
-  return sites.map(formatNailSite).join(', ');
+  return sortNailSites(sites).map(formatNailSite).join(', ');
 }
 
 /** jsonb(unknown) → NailSite[] 방어적 파싱. closed-enum(Rt/Lt, 1-5) 외 원소는 버림. */
@@ -285,12 +305,20 @@ function useSaveNailSites(clinicId: string | null, ym: string) {
 }
 
 // ---------------------------------------------------------------------------
-// 발톱부위 입력 위젯 — T-20260612-foot-KOH-REPORT-PHASE15 (A-2).
-//   R/L 2버튼 + 발가락 1~5 5버튼 + '조갑' 고정. 라디오형 단일선택(R/L 1개 + 발가락 1개).
-//   side·toe 둘 다 선택되면 [{side,toe}] 저장, 둘 중 하나라도 해제면 [] 저장(미선택 허용).
-//   재선택 = 이전 값 교체(단일, 누적 X). 태블릿 동선 — 즉시 저장(별도 저장버튼 없음).
+// 발톱부위 입력 위젯 — KOHSHEET-RENEWAL §C (PHASE15 §A-2 단일선택 위젯 흡수·대체).
+//   레이아웃: [좌발] L1 L2 L3 L4 L5  │(구분선)│  [우발] R1 R2 R3 R4 R5  + '조갑' 고정.
+//   다중선택(C2): 각 버튼 = 독립 토글. 누르면 {side,toe} 가 배열에 추가/제거(누적). 선택 강조(C3).
+//   L→Lt, R→Rt(C1). 저장 shape = PHASE15 canon {side:Lt|Rt, toe:1-5} 구조만(표시문자열 저장 금지).
+//   태블릿 동선 — 즉시 저장(별도 저장버튼 없음). 미선택 = 빈배열 저장(허용).
+//   ※ current(서버 SSOT) 를 로컬 미러 + useEffect 동기화 → 저장 왕복 중 즉시 반영 + 외부 갱신 흡수.
 // ---------------------------------------------------------------------------
 const TOES = [1, 2, 3, 4, 5] as const;
+
+/** 좌/우발 라벨(현장 표기) — Lt=좌발, Rt=우발. */
+const FEET: { side: NailSide; label: string; prefix: 'L' | 'R' }[] = [
+  { side: 'Lt', label: '좌발', prefix: 'L' },
+  { side: 'Rt', label: '우발', prefix: 'R' },
+];
 
 function NailSiteEditor({
   current,
@@ -301,71 +329,57 @@ function NailSiteEditor({
   saving: boolean;
   onCommit: (sites: NailSite[]) => void;
 }) {
-  const cur = current[0] ?? null;
-  const [side, setSide] = useState<NailSide | null>(cur?.side ?? null);
-  const [toe, setToe] = useState<number | null>(cur?.toe ?? null);
+  // 로컬 미러 — 저장 왕복(invalidate→refetch) 전에도 토글이 즉시 반영. 외부 current 변경은 동기화.
+  const [sites, setSites] = useState<NailSite[]>(() => sortNailSites(current));
+  useEffect(() => {
+    setSites(sortNailSites(current));
+  }, [current]);
 
-  // side/toe 변화 → 즉시 commit(둘 다 있으면 1원소, 아니면 빈배열). 현재값과 같으면 no-op.
-  const commit = (s: NailSide | null, t: number | null) => {
-    const next: NailSite[] = s && t ? [{ side: s, toe: t }] : [];
-    const same =
-      next.length === current.length &&
-      next.every((n, i) => current[i] && current[i].side === n.side && current[i].toe === n.toe);
-    if (!same) onCommit(next);
-  };
+  const has = (side: NailSide, toe: number) => sites.some((s) => s.side === side && s.toe === toe);
 
-  const onSide = (s: NailSide) => {
-    const ns = side === s ? null : s;
-    setSide(ns);
-    commit(ns, toe);
-  };
-  const onToe = (t: number) => {
-    const nt = toe === t ? null : t;
-    setToe(nt);
-    commit(side, nt);
+  // 토글 — 있으면 제거, 없으면 추가(다중). 정렬 적용 후 즉시 commit.
+  const toggle = (side: NailSide, toe: number) => {
+    const exists = has(side, toe);
+    const next = sortNailSites(
+      exists
+        ? sites.filter((s) => !(s.side === side && s.toe === toe))
+        : [...sites, { side, toe }],
+    );
+    setSites(next);
+    onCommit(next);
   };
 
   const btn = (active: boolean) =>
     `inline-flex h-8 min-w-8 items-center justify-center rounded-md border px-2 text-xs font-semibold transition disabled:opacity-50 ${
       active
-        ? 'border-teal-600 bg-teal-600 text-white'
+        ? 'border-teal-600 bg-teal-600 text-white shadow-sm'
         : 'border-input bg-background text-foreground hover:bg-accent'
     }`;
 
   return (
-    <div className="flex flex-wrap items-center gap-1" data-testid="nail-site-editor">
-      {/* R/L */}
-      <div className="flex gap-0.5" data-testid="nail-side-group">
-        {(['Rt', 'Lt'] as NailSide[]).map((s) => (
-          <button
-            key={s}
-            type="button"
-            disabled={saving}
-            onClick={() => onSide(s)}
-            className={btn(side === s)}
-            aria-pressed={side === s}
-            data-testid={`nail-side-${s}`}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
-      {/* 발가락 1~5 */}
-      <div className="flex gap-0.5" data-testid="nail-toe-group">
-        {TOES.map((t) => (
-          <button
-            key={t}
-            type="button"
-            disabled={saving}
-            onClick={() => onToe(t)}
-            className={btn(toe === t)}
-            aria-pressed={toe === t}
-            data-testid={`nail-toe-${t}`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
+    <div className="flex flex-wrap items-center gap-1.5" data-testid="nail-site-editor">
+      {FEET.map((foot, idx) => (
+        <div key={foot.side} className="flex items-center gap-1">
+          {/* 좌/우발 사이 구분선 */}
+          {idx > 0 && <span className="mx-0.5 h-5 w-px shrink-0 bg-border" aria-hidden="true" />}
+          <span className="shrink-0 text-[11px] font-medium text-muted-foreground">{foot.label}</span>
+          <div className="flex gap-0.5" data-testid={`nail-foot-${foot.prefix}`}>
+            {TOES.map((t) => (
+              <button
+                key={`${foot.prefix}${t}`}
+                type="button"
+                disabled={saving}
+                onClick={() => toggle(foot.side, t)}
+                className={btn(has(foot.side, t))}
+                aria-pressed={has(foot.side, t)}
+                data-testid={`nail-${foot.prefix}${t}`}
+              >
+                {foot.prefix}{t}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
       {/* '조갑' 고정 텍스트 */}
       <span className="text-xs font-medium text-muted-foreground">조갑</span>
       {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
@@ -503,14 +517,14 @@ export default function KohReportTab() {
         <div className="overflow-x-auto rounded-lg border" data-testid="koh-table">
           <table className="w-full text-sm">
             <thead>
+              {/* KOHSHEET-RENEWAL §B: 6컬럼 통일 — 이름/생년/차트/검사일/조갑부위/진료의 */}
               <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
-                <th className="px-1.5 py-1 font-medium whitespace-nowrap">환자이름</th>
-                <th className="px-1.5 py-1 font-medium whitespace-nowrap">생년월일</th>
-                <th className="px-1.5 py-1 font-medium whitespace-nowrap">차트번호</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap">이름</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap">생년</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap">차트</th>
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">검사일</th>
-                {/* PHASE15(C): 발톱부위 · 당일의사명 컬럼 추가 */}
                 <th className="px-1.5 py-1 font-medium whitespace-nowrap">조갑부위</th>
-                <th className="px-1.5 py-1 font-medium whitespace-nowrap">당일 진료의사</th>
+                <th className="px-1.5 py-1 font-medium whitespace-nowrap">진료의</th>
               </tr>
             </thead>
             <tbody>
@@ -533,8 +547,9 @@ export default function KohReportTab() {
                   <td className="px-1.5 py-1 font-mono text-foreground/90 whitespace-nowrap" data-testid="koh-cell-chart">
                     {r.chart_number || '—'}
                   </td>
+                  {/* KOHSHEET-RENEWAL §B2: 검사일 = 날짜만(시간 제거). */}
                   <td className="px-1.5 py-1 tabular-nums text-muted-foreground whitespace-nowrap" data-testid="koh-cell-examdate">
-                    {formatExamDateTime(r.created_at)}
+                    {formatExamDate(r.created_at)}
                   </td>
                   {/* PHASE15(A): 발톱부위 — 현재값(FE 파생) + 입력 위젯(R/L+발가락+조갑 단일선택). */}
                   <td className="px-1.5 py-1" data-testid="koh-cell-nailsite">
@@ -576,7 +591,7 @@ export default function KohReportTab() {
 
       {/* 안내 — PHASE15 범위 명시 */}
       <p className="text-[11px] text-muted-foreground/70">
-        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 R/L·발가락을 눌러 입력하세요(단일 선택). 당일 진료의사는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다.
+        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 여러 부위를 함께 선택할 수 있습니다(다시 누르면 해제). 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다.
       </p>
     </div>
   );
