@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { BookOpen, CalendarPlus, CreditCard, ExternalLink, MessageSquare, Pencil, Plus, Search, Stethoscope, Trash2 } from 'lucide-react';
+import { BookOpen, CalendarPlus, CreditCard, Download, ExternalLink, MessageSquare, Pencil, Plus, Search, Stethoscope, Trash2 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -47,6 +47,8 @@ import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, formatPhone, birthDateYMD } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
+// T-20260613-foot-CUSTMGMT-LIST-5FIX AC4: 리스트 다운로드(xlsx) — salesExport 패턴 재사용, PHI(주민번호 평문) 제외
+import { downloadCustomerExcel, customerExportFilename, type CustomerExcelRow } from '@/lib/customerExport';
 import type { CheckIn, Customer, LeadSource } from '@/lib/types';
 
 interface CustomerStats {
@@ -157,6 +159,9 @@ export default function Customers() {
   // T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 생년월일(YYYY-MM-DD) 서버 파생값.
   // PHI: rrn 복호화는 RPC(fn_customer_birthdates) 서버측에서만, birth_date만 수신.
   const [birthMap, setBirthMap] = useState<Map<string, string>>(new Map());
+  // T-20260613-foot-CUSTMGMT-LIST-5FIX AC4: 행 선택(체크박스) + 리스트 다운로드.
+  // 선택은 customer id Set. 검색/페이지 전환 시 초기화(혼선 방지).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -209,6 +214,8 @@ export default function Customers() {
       setTotalCount(count ?? 0);
       const customers = (data ?? []) as Customer[];
       setResults(customers);
+      // T-20260613-foot-CUSTMGMT-LIST-5FIX AC4: 검색/페이지 전환 시 선택 초기화(다른 리스트와 혼선 방지)
+      setSelectedIds(new Set());
 
       if (customers.length > 0) {
         const ids = customers.map((c) => c.id);
@@ -340,6 +347,52 @@ export default function Customers() {
   // 수정·저장 → runSearch 리페치 → 같은 행 우클릭 시 최신값 표시 (옛 스냅샷 캡처 제거).
   const ctxCustomer = ctxMenu ? results.find((c) => c.id === ctxMenu.customerId) ?? null : null;
 
+  // ── T-20260613-foot-CUSTMGMT-LIST-5FIX AC4: 행 선택 + 리스트 다운로드 ──────────
+  const allOnPageSelected = results.length > 0 && results.every((c) => selectedIds.has(c.id));
+  const someOnPageSelected = results.some((c) => selectedIds.has(c.id));
+
+  const toggleRow = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const allSelected = results.length > 0 && results.every((c) => prev.has(c.id));
+      if (allSelected) return new Set();
+      return new Set(results.map((c) => c.id));
+    });
+  }, [results]);
+
+  const handleExport = useCallback(() => {
+    // 선택 0건이면 현재 화면(필터·페이지)의 리스트 전체 export. 전수 무필터 덤프는 지양(현재 results 범위 한정).
+    const targets = selectedIds.size > 0 ? results.filter((c) => selectedIds.has(c.id)) : results;
+    if (targets.length === 0) {
+      toast.error('내려받을 고객이 없습니다');
+      return;
+    }
+    // PHI 가드: 주민번호 평문 절대 미포함. 생년월일은 서버 파생값(birthMap) 우선, 없으면 birth_date 휴리스틱.
+    const rows: CustomerExcelRow[] = targets.map((c) => {
+      const stats = statsMap.get(c.id);
+      return {
+        이름: c.name ?? '',
+        전화번호: formatPhone(c.phone) || (c.phone ?? ''),
+        생년월일: birthMap.get(c.id) ?? (birthDateYMD(c.birth_date) || ''),
+        차트번호: c.chart_number ?? '',
+        방문횟수: stats?.visit_count ?? 0,
+        최종방문: stats?.last_visit ? format(new Date(stats.last_visit), 'yyyy-MM-dd') : '',
+        결제액: stats?.total_revenue ?? 0,
+        고객메모: c.customer_memo ?? '',
+      };
+    });
+    downloadCustomerExcel(rows, customerExportFilename());
+    toast.success(`${rows.length}명 내려받기 완료`);
+  }, [selectedIds, results, statsMap, birthMap]);
+
   return (
     <div className="flex h-full flex-col p-6">
       <div className="mb-4 flex items-center justify-between gap-4">
@@ -363,15 +416,41 @@ export default function Customers() {
             클릭=간편차트(1번) / 우클릭=고객차트(2번)
           </span>
         </div>
-        <Button onClick={() => setOpenCreate(true)} className="gap-1">
-          <Plus className="h-4 w-4" /> 신규 고객
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* T-20260613-foot-CUSTMGMT-LIST-5FIX AC4: 리스트 다운로드. 선택 0건이면 현재 화면 전체 export */}
+          <Button
+            variant="outline"
+            onClick={handleExport}
+            disabled={results.length === 0}
+            className="gap-1"
+            data-testid="cust-export-btn"
+            title="선택 고객(미선택 시 현재 목록)을 엑셀로 내려받기"
+          >
+            <Download className="h-4 w-4" />
+            내려받기{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+          </Button>
+          <Button onClick={() => setOpenCreate(true)} className="gap-1">
+            <Plus className="h-4 w-4" /> 신규 고객
+          </Button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto rounded-lg border bg-background">
         <table className="w-full text-sm">
           <thead className="bg-muted/60 text-xs text-muted-foreground">
             <tr>
+              {/* T-20260613-foot-CUSTMGMT-LIST-5FIX AC4: 전체선택 체크박스 */}
+              <th className="w-10 px-3 py-2 text-center font-medium">
+                <input
+                  type="checkbox"
+                  data-testid="cust-select-all"
+                  aria-label="전체 선택"
+                  className="h-4 w-4 cursor-pointer accent-teal-600 align-middle"
+                  checked={allOnPageSelected}
+                  ref={(el) => { if (el) el.indeterminate = !allOnPageSelected && someOnPageSelected; }}
+                  onChange={toggleSelectAll}
+                />
+              </th>
               <th className="px-4 py-2 text-left font-medium">이름</th>
               <th className="px-4 py-2 text-left font-medium">전화번호</th>
               <th className="px-4 py-2 text-left font-medium">생년월일</th>
@@ -393,6 +472,17 @@ export default function Customers() {
                   onContextMenu={(e) => handleRowContextMenu(e, c)}
                   className="cursor-pointer border-t hover:bg-teal-50/40 h-11"
                 >
+                  {/* T-20260613-foot-CUSTMGMT-LIST-5FIX AC4: 행 선택 체크박스 (행 클릭/차트열기 동선과 분리) */}
+                  <td className="w-10 px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      data-testid="cust-row-check"
+                      aria-label={`${c.name} 선택`}
+                      className="h-4 w-4 cursor-pointer accent-teal-600 align-middle"
+                      checked={selectedIds.has(c.id)}
+                      onChange={() => toggleRow(c.id)}
+                    />
+                  </td>
                   <td className="px-4 py-2 font-medium">
                     <span className="flex items-center gap-1.5">
                       {c.name}
@@ -455,7 +545,7 @@ export default function Customers() {
             })}
             {!loading && results.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={10} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   {query ? '검색 결과 없음' : '고객이 없습니다'}
                 </td>
               </tr>
