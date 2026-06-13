@@ -180,7 +180,9 @@ test.describe('T-20260609 CALLLIST-VERTICAL-FULLNAME — 세로 나열 + 성함 
     expect(result.purpleNotHealer).toBe(false);
   });
 
-  test('AC-4b: 핵심 인터랙션 DOM 회귀 — 이름(차트)·지정콜·전체콜·위치/힐러 배지·메모 입력 렌더', async ({ page }) => {
+  // T-20260614-foot-CALLLIST-DOCCALL-3FIX: 전체콜(doctor-call-all)·지정콜(doctor-call-select) 버튼 제거됨.
+  //   회귀 단언을 잔존 요소(접기/펼치기·이름·메모) 기준으로 갱신 + 제거된 두 버튼의 '부재'를 가드로 추가.
+  test('AC-4b: 핵심 인터랙션 DOM 회귀 — 이름(차트)·메모 입력·위치/힐러 배지 렌더 + 콜버튼 제거 확인', async ({ page }) => {
     const ok = await loginAndWaitForDashboard(page);
     if (!ok) {
       test.skip(true, '로그인 실패 — 스킵');
@@ -194,15 +196,15 @@ test.describe('T-20260609 CALLLIST-VERTICAL-FULLNAME — 세로 나열 + 성함 
     }
     await expect(list).toBeVisible();
 
-    // 전체콜 버튼 + 접기/펼치기 토글은 항상 존재(헤더)
-    await expect(page.locator('[data-testid="doctor-call-all"]')).toBeVisible();
+    // 접기/펼치기 토글은 항상 존재(헤더). 전체콜 버튼은 3FIX로 제거 → 부재 단언.
     await expect(page.locator('[data-testid="doctor-call-toggle"]')).toBeVisible();
+    await expect(page.locator('[data-testid="doctor-call-all"]')).toHaveCount(0);
 
-    // 활성 행이 있으면 이름(차트)·지정콜·메모 입력 진입점 + 위치 배지 렌더
+    // 활성 행이 있으면 이름(차트)·메모 입력 진입점 + 위치 배지 렌더. 지정콜(전화기) 버튼은 제거 → 부재 단언.
     const activeRow = page.locator('[data-testid="doctor-call-row"][data-inactive="false"]').first();
     if ((await activeRow.count()) > 0) {
       await expect(activeRow.locator('[data-testid="doctor-call-name"]')).toBeVisible();
-      await expect(activeRow.locator('[data-testid="doctor-call-select"]')).toBeVisible();
+      await expect(activeRow.locator('[data-testid="doctor-call-select"]')).toHaveCount(0);
       await expect(activeRow.locator('[data-testid="doctor-call-memo-display"]')).toBeVisible();
     }
     const loc = page.locator('[data-testid="doctor-call-location"]');

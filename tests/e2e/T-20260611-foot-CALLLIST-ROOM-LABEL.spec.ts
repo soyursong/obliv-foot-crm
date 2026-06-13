@@ -141,64 +141,56 @@ test.describe('T-20260611 CALLLIST-ROOM-LABEL — 진료콜 명단 방번호 표
     }
   });
 
-  // ── 시나리오4 / AC-1·AC-2 (surface 가산): 콜 행 방이름 배지(doctor-call-room) 표기 규칙 박제 ──
-  //   getAssignedSlotName 결과를 그대로 배지에 표기, null이면 '—' (6FIX AC-3 진료환자목록과 동일 규칙).
-  test('AC-1·AC-2: 방배지 표기 — 값 있으면 코드, 미배정이면 "—"(undefined 금지)', async ({ page }) => {
+  // ── 시나리오4 / AC-1·AC-2 (DEDUP 후속): 방번호는 위치 라벨 단일 경로로만 표기 ──
+  //   T-20260614-foot-CALLLIST-DOCCALL-3FIX #1: standalone 방 배지(doctor-call-room) 제거.
+  //   방번호는 getCurrentLocationLabel('치료실 · C2')가 단독으로 운반한다(중복 'C1' 제거).
+  //   이 테스트는 "방번호가 위치 라벨에 정확히 1회 폴딩되고, 미배정/빈값은 단계만(undefined 금지)"를 박제.
+  test('AC-1·AC-2(dedup): 방번호는 위치 라벨에만 1회 폴딩 — 미배정/빈값은 단계만(undefined 금지)', async ({ page }) => {
     await page.goto('/');
     const result = await page.evaluate(() => {
-      const nonEmpty = (v: string | null | undefined) => {
-        const t = (v ?? '').trim();
-        return t === '' ? null : t;
+      const STATUS_KO: Record<string, string> = {
+        treatment_waiting: '치료대기', preconditioning: '치료실', laser: '레이저',
+        consultation: '상담', registered: '접수중',
       };
-      const getAssignedSlotName = (ci: Record<string, string | null | undefined>) => {
+      const IN_ROOM = ['consultation', 'examination', 'preconditioning', 'laser'];
+      const nonEmpty = (v: string | null | undefined) => { const t = (v ?? '').trim(); return t === '' ? null : t; };
+      const roomFor = (ci: Record<string, string | null | undefined>) => {
         switch (ci.status) {
-          case 'consultation':
-          case 'consult_waiting':
-            return nonEmpty(ci.consultation_room);
-          case 'examination':
-          case 'exam_waiting':
-            return nonEmpty(ci.examination_room);
-          case 'treatment_waiting':
-            return null;
-          case 'preconditioning':
-            return nonEmpty(ci.treatment_room);
-          case 'laser':
-          case 'laser_waiting':
-          case 'healer_waiting':
-            return nonEmpty(ci.laser_room);
-          default:
-            return (
-              nonEmpty(ci.laser_room) ??
-              nonEmpty(ci.treatment_room) ??
-              nonEmpty(ci.consultation_room) ??
-              nonEmpty(ci.examination_room)
-            );
+          case 'consultation': return nonEmpty(ci.consultation_room);
+          case 'preconditioning': return nonEmpty(ci.treatment_room);
+          case 'laser': return nonEmpty(ci.laser_room);
+          default: return null;
         }
       };
-      // DoctorCallRow의 배지 표기 규칙: assignedRoom ?? '—'
-      const badge = (ci: Record<string, string | null | undefined>) => getAssignedSlotName(ci) ?? '—';
+      const label = (ci: Record<string, string | null | undefined>) => {
+        const stage = STATUS_KO[ci.status as string] ?? '대기';
+        if (IN_ROOM.includes(ci.status as string)) { const r = roomFor(ci); return r ? `${stage} · ${r}` : stage; }
+        return stage;
+      };
       return {
-        treatRoom: badge({ status: 'preconditioning', treatment_room: 'C2', laser_room: null }), // C2
-        laserRoom: badge({ status: 'laser', laser_room: 'L3' }),                                  // L3
-        consultRoom: badge({ status: 'consultation', consultation_room: '상담실1' }),              // 상담실1
-        waitingDash: badge({ status: 'treatment_waiting', treatment_room: 'C2' }),                // — (대기)
-        unassignedDash: badge({ status: 'registered' }),                                          // — (미배정)
-        emptyDash: badge({ status: 'preconditioning', treatment_room: '' }),                      // — (빈값)
-        undefDash: badge({ status: 'preconditioning', treatment_room: undefined }),               // — (undefined)
+        treatRoom: label({ status: 'preconditioning', treatment_room: 'C2', laser_room: null }), // 치료실 · C2
+        laserRoom: label({ status: 'laser', laser_room: 'L3' }),                                  // 레이저 · L3
+        consultRoom: label({ status: 'consultation', consultation_room: '상담실1' }),              // 상담 · 상담실1
+        waiting: label({ status: 'treatment_waiting', treatment_room: 'C2' }),                    // 치료대기 (방 미표시)
+        unassigned: label({ status: 'registered' }),                                             // 접수중
+        empty: label({ status: 'preconditioning', treatment_room: '' }),                         // 치료실 (방 미표시)
+        undef: label({ status: 'preconditioning', treatment_room: undefined }),                  // 치료실 (방 미표시)
       };
     });
-    expect(result.treatRoom).toBe('C2');
-    expect(result.laserRoom).toBe('L3');
-    expect(result.consultRoom).toBe('상담실1');
-    // AC-2: 미배정/대기/빈값/undefined 모두 '—', "undefined" 문자열 노출 금지
-    for (const v of [result.waitingDash, result.unassignedDash, result.emptyDash, result.undefDash]) {
-      expect(v).toBe('—');
+    // 입실 단계: 방번호가 라벨에 정확히 1회 포함(중복 standalone 배지 없음 — 단일 경로)
+    expect(result.treatRoom).toBe('치료실 · C2');
+    expect(result.laserRoom).toBe('레이저 · L3');
+    expect(result.consultRoom).toBe('상담 · 상담실1');
+    expect((result.treatRoom.match(/C2/g) ?? []).length).toBe(1); // 'C2' 단 1회
+    // 미배정/대기/빈값/undefined: 단계 라벨만, "undefined" 문자열 노출 금지
+    for (const v of [result.waiting, result.unassigned, result.empty, result.undef]) {
+      expect(v).not.toContain('·');         // 방번호 미부착(단계만)
       expect(v).not.toContain('undefined');
     }
   });
 
-  // ── AC-0 회귀 스모크: 대시보드 정상 렌더 + 진료콜 명단 위치/방 배지 DOM 존재(데이터 의존 graceful skip) ──
-  test('AC-0 회귀: 대시보드 렌더 + 진료콜 명단 위치(doctor-call-location)·방(doctor-call-room) 배지 무파괴', async ({ page }) => {
+  // ── AC-0 회귀 스모크: 대시보드 렌더 + 위치 배지(단일) 존재 + standalone 방 배지 부재(dedup DOM 가드) ──
+  test('AC-0 회귀(dedup): 위치(doctor-call-location) 배지 단일 + 방 배지(doctor-call-room) 제거 확인', async ({ page }) => {
     const ok = await loginAndWaitForDashboard(page);
     if (!ok) {
       test.skip(true, '로그인 실패 — 스킵');
@@ -212,18 +204,20 @@ test.describe('T-20260611 CALLLIST-ROOM-LABEL — 진료콜 명단 방번호 표
       test.skip(true, '진료콜 명단 데이터 없음(당일 콜대상 0) — 스킵');
       return;
     }
-    // 명단이 펼쳐진 경우, 각 행에 위치 배지 + 방 배지가 렌더되어야 한다(라벨 문자열은 데이터 의존이라 존재만 확인).
+    // T-20260614-foot-CALLLIST-DOCCALL-3FIX #1: standalone 방 배지는 전역에서 제거됨 → 0개여야 한다.
+    await expect(page.locator('[data-testid="doctor-call-room"]')).toHaveCount(0);
+
     const rows = page.locator('[data-testid="doctor-call-row"]');
     const rowCount = await rows.count();
     if (rowCount > 0) {
-      const loc = rows.first().locator('[data-testid="doctor-call-location"]');
+      const firstRow = rows.first();
+      // 위치 배지는 행당 정확히 1개(중복 위치 표기 없음) + "undefined" 미노출.
+      const loc = firstRow.locator('[data-testid="doctor-call-location"]');
+      await expect(loc).toHaveCount(1);
       await expect(loc).toBeVisible();
-      // 라벨 텍스트에 "undefined"가 노출되지 않아야 함(AC-2 회귀 가드)
       await expect(loc).not.toHaveText(/undefined/);
-      // ROOM-LABEL 가산: 방 배지 존재 + "undefined" 미노출
-      const room = rows.first().locator('[data-testid="doctor-call-room"]');
-      await expect(room).toBeVisible();
-      await expect(room).not.toHaveText(/undefined/);
+      // 행 안에도 standalone 방 배지가 없어야 함(중복 박멸 가드).
+      await expect(firstRow.locator('[data-testid="doctor-call-room"]')).toHaveCount(0);
     }
   });
 
