@@ -2,7 +2,8 @@
 // T-20260607-foot-NAV-SVCMGMT-SUBTAB-RENAME: 진료관리(ClinicManagement)를 서비스관리 화면 내
 //   top-level 서브탭으로 편입. lazy 로드로 services 청크 비대화 방지(ClinicManagement 는 10+ 탭 컴포넌트 의존).
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Pencil, Trash2, Download, Eye, EyeOff, Search, GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Plus, Pencil, Trash2, Download, Eye, EyeOff, Search, GripVertical, ChevronUp, ChevronDown, BookOpen, DollarSign } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
   DndContext,
@@ -33,6 +34,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
@@ -43,10 +45,23 @@ import type { Service } from '@/lib/types';
 // T-20260607-foot-NAV-SVCMGMT-SUBTAB-RENAME: 진료관리 서브탭 — 기존 /admin/clinic-management 페이지 재사용(이동만).
 const ClinicManagementPanel = lazy(() => import('@/pages/ClinicManagement'));
 
-// AC-4 핵심: 진료관리 서브탭은 admin/manager/director 한정 노출/렌더.
-// services 페이지 roles=[admin,manager,consultant,coordinator,therapist] 보다 좁음 →
-// consultant/coordinator/therapist 권한 회귀 금지(서브탭 비노출 + 렌더 가드). App.tsx clinic-management RoleGuard 이중가드 보존.
-const CLINIC_MGMT_ROLES = ['admin', 'manager', 'director'] as const;
+// T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: 상용구관리 서브탭 — 진료관리에서 '상용구'(PhrasesTab) +
+//   '수가세트'(FeeSetTemplatesTab) 2개만 top-level 서브탭으로 이동(렌더 위치 이동만, 기능·권한 불변).
+//   lazy 로드로 services 청크 비대화 방지. 직원(consultant/coordinator/therapist)도 접근(AC-3).
+const PhrasesTabPanel = lazy(() => import('@/components/admin/PhrasesTab'));
+const FeeSetTemplatesTabPanel = lazy(() => import('@/components/admin/FeeSetTemplatesTab'));
+
+// AC-4: ?tab=phrases / ?tab=fee_set_templates 딥링크 → 상용구관리 서브탭 + 해당 내부 탭 pre-select.
+type TopTab = 'services' | 'phrases' | 'clinic';
+type PhraseTab = 'phrases' | 'fee_set_templates';
+const PHRASE_TAB_PARAMS: readonly string[] = ['phrases', 'fee_set_templates'];
+
+// T-20260613-foot-CLINICMGMT-SUBTAB-STAFF-OPEN: 진료관리 서브탭을 '서비스 목록 진입 role과 동일'(직원 포함)로 개방.
+//   김주연 총괄 요청 + umbrella open-all-except-3 정합(진료관리=일반=직원개방이 본래 정책, §13.1.A reporter-authorized).
+//   T-20260607 AC-4(admin/manager/director 한정) 및 PHRASEMGMT AC-3 후단(진료관리 게이팅 유지) SUPERSEDED.
+//   scope: FE 메뉴 가시성만 확대 — 내부 패널 데이터 RLS/WRITE 권한 불변(메뉴 노출만, staff SELECT parity는 umbrella Phase2 소관).
+//   services 페이지 자체가 route RoleGuard(admin/manager/consultant/coordinator/therapist)로 게이트됨 →
+//   이 컴포넌트에 도달 = 진료관리 서브탭 노출 자격. App.tsx 독립 /admin/clinic-management RoleGuard는 본 티켓 밖(불변).
 
 const VAT_LABEL: Record<Service['vat_type'], string> = {
   none: '비과세',
@@ -215,12 +230,39 @@ export default function Services() {
   const { profile } = useAuth();
   const isAdmin = profile?.role === 'admin';
 
-  // T-20260607-foot-NAV-SVCMGMT-SUBTAB-RENAME: top-level 서브탭 (서비스 관리 / 진료관리)
-  // AC-4: 진료관리 서브탭은 admin/manager/director 한정. (CLINIC_MGMT_ROLES)
-  const canViewClinicMgmt = !!profile?.role && (CLINIC_MGMT_ROLES as readonly string[]).includes(profile.role);
-  const [topTab, setTopTab] = useState<'services' | 'clinic'>('services');
+  // T-20260607-foot-NAV-SVCMGMT-SUBTAB-RENAME: top-level 서브탭 (서비스 목록 / 상용구관리 / 진료관리)
+  // T-20260613-foot-CLINICMGMT-SUBTAB-STAFF-OPEN: 진료관리 = 서비스 목록과 동일 role(직원 포함) 개방.
+  //   route RoleGuard로 이미 게이트된 페이지이므로 로그인 프로필이 있으면 노출(직원 포함). 게이팅 제거.
+  const canViewClinicMgmt = !!profile?.role;
+
+  // T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: ?tab=phrases / ?tab=fee_set_templates 딥링크 호환(AC-4).
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const isPhraseParam = !!tabParam && PHRASE_TAB_PARAMS.includes(tabParam);
+
+  const [topTab, setTopTab] = useState<TopTab>(isPhraseParam ? 'phrases' : 'services');
+  // 상용구관리 내부 탭 (상용구 / 수가세트). 딥링크 fee_set_templates 도착 시 pre-select.
+  const [phraseTab, setPhraseTab] = useState<PhraseTab>(
+    tabParam === 'fee_set_templates' ? 'fee_set_templates' : 'phrases',
+  );
+
+  // 딥링크 param 변동 시 상용구관리 서브탭 + 내부 탭 동기화(AC-4).
+  useEffect(() => {
+    if (isPhraseParam) {
+      setTopTab('phrases');
+      setPhraseTab(tabParam as PhraseTab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabParam]);
+
   // 권한 박탈/역할 변경 등으로 가시성을 잃은 경우 서비스 탭으로 강제 복귀(렌더 가드 보강).
-  const effectiveTopTab: 'services' | 'clinic' = topTab === 'clinic' && canViewClinicMgmt ? 'clinic' : 'services';
+  // 상용구관리(phrases)는 서비스 목록과 동일 role(직원 포함)이라 별도 게이트 없음(AC-3).
+  const effectiveTopTab: TopTab =
+    topTab === 'clinic'
+      ? canViewClinicMgmt ? 'clinic' : 'services'
+      : topTab === 'phrases'
+      ? 'phrases'
+      : 'services';
 
   const [rows, setRows] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
@@ -495,6 +537,23 @@ export default function Services() {
             {/* T-20260607-foot-SERVICES-NAV-RESTRUCTURE (AC-2): 페이지 레벨 탭 라벨 '서비스 목록' 정합. */}
             서비스 목록
           </button>
+          {/* T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT (AC-1): 상용구관리 — 서비스 목록 바로 옆.
+              AC-3: 서비스 목록과 동일 role(직원 포함) 노출 — 별도 게이트 없음. */}
+          <button
+            type="button"
+            role="tab"
+            aria-selected={effectiveTopTab === 'phrases'}
+            data-testid="svc-top-tab-phrases"
+            onClick={() => setTopTab('phrases')}
+            className={cn(
+              'h-9 rounded-t-md border-b-2 px-4 text-sm font-semibold transition-colors',
+              effectiveTopTab === 'phrases'
+                ? 'border-teal-600 text-teal-700'
+                : 'border-transparent text-muted-foreground hover:text-foreground',
+            )}
+          >
+            상용구관리
+          </button>
           {canViewClinicMgmt && (
             <button
               type="button"
@@ -527,6 +586,42 @@ export default function Services() {
           >
             <ClinicManagementPanel />
           </Suspense>
+        </div>
+      ) : effectiveTopTab === 'phrases' ? (
+        // T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: 상용구관리 서브탭 — 상용구 + 수가세트(이동만, 기능 불변, AC-2).
+        <div className="flex-1 min-h-0 overflow-auto p-4 md:p-6" data-testid="svc-phrase-panel">
+          <div className="mb-3">
+            <h1 className="text-lg font-bold">상용구관리</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              상용구·수가세트를 관리합니다.
+            </p>
+          </div>
+          <Tabs value={phraseTab} onValueChange={(v) => setPhraseTab(v as PhraseTab)} className="w-full">
+            <TabsList className="mb-4 flex w-full flex-wrap h-auto gap-1">
+              <TabsTrigger value="phrases" className="gap-1.5" data-testid="tab-phrases">
+                <BookOpen className="h-3.5 w-3.5" />
+                상용구
+              </TabsTrigger>
+              <TabsTrigger value="fee_set_templates" className="gap-1.5" data-testid="tab-fee-set-templates">
+                <DollarSign className="h-3.5 w-3.5" />
+                수가세트
+              </TabsTrigger>
+            </TabsList>
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
+                  불러오는 중…
+                </div>
+              }
+            >
+              <TabsContent value="phrases">
+                <PhrasesTabPanel />
+              </TabsContent>
+              <TabsContent value="fee_set_templates">
+                <FeeSetTemplatesTabPanel />
+              </TabsContent>
+            </Suspense>
+          </Tabs>
         </div>
       ) : (
         // 함수 호출(컴포넌트 경계 X)로 인라인 렌더 — 상태는 Services 본체에 유지되어 리마운트/상태소실 없음.
