@@ -33,13 +33,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 
 /* ─── 타입 ──────────────────────────────────────────────────────── */
 
@@ -109,10 +102,6 @@ export default function TreatmentTable() {
 
   /* 뷰 프리셋 */
   const [view, setView] = useState<ViewPreset>('all');
-
-  /* 담당자 필터 */
-  const [filterConsultantId, setFilterConsultantId] = useState<string>('all');
-  const [filterTherapistId, setFilterTherapistId] = useState<string>('all');
 
   /* 데이터 */
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
@@ -227,14 +216,9 @@ export default function TreatmentTable() {
     return m;
   }, [packages]);
 
-  const consultants = useMemo(
-    () => staffList.filter((s) => s.role === 'consultant'),
-    [staffList],
-  );
-  const therapists = useMemo(
-    () => staffList.filter((s) => s.role === 'therapist'),
-    [staffList],
-  );
+  // T-20260613-foot-TREATMENTTABLE-STAFFFILTER-DIRECTORONLY:
+  // 상담실장·치료사 per-staff 필터 제거 → consultants/therapists 명단 파생 불필요.
+  // staffMap(행 렌더용) + directors(당직 배너)만 유지.
   const directors = useMemo(
     () => staffList.filter((s) => s.role === 'director'),
     [staffList],
@@ -250,18 +234,11 @@ export default function TreatmentTable() {
       list = list.filter((c) => c.visit_type === 'new');
     }
 
-    /* 담당 치료사 필터 */
-    if (filterTherapistId !== 'all') {
-      list = list.filter((c) => c.therapist_id === filterTherapistId);
-    }
-
-    /* 담당 실장 필터 */
-    if (filterConsultantId !== 'all') {
-      list = list.filter((c) => c.consultant_id === filterConsultantId);
-    }
+    // T-20260613-foot-TREATMENTTABLE-STAFFFILTER-DIRECTORONLY:
+    // 상담실장·치료사 per-staff 필터(전체 직원 명단 노출) 제거. 뷰 프리셋만 적용.
 
     return list;
-  }, [checkIns, view, filterTherapistId, filterConsultantId]);
+  }, [checkIns, view]);
 
   /* ── 요약 통계 ───────────────────────────────────────────────── */
   const summary = useMemo(() => {
@@ -472,56 +449,11 @@ export default function TreatmentTable() {
           </TabsList>
         </Tabs>
 
-        {/* 담당자 필터 */}
-        <div className="flex flex-wrap gap-3 items-center">
-          {/* 담당 실장 필터 */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground whitespace-nowrap">상담실장:</span>
-            <Select value={filterConsultantId} onValueChange={setFilterConsultantId}>
-              <SelectTrigger className="h-8 text-xs w-36">
-                <SelectValue placeholder="전체" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">전체</SelectItem>
-                {consultants.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-                {consultants.length === 0 && (
-                  <SelectItem value="_none">
-                    등록된 실장 없음
-                  </SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* 담당 치료사 필터 */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground whitespace-nowrap">치료사:</span>
-            <Select value={filterTherapistId} onValueChange={setFilterTherapistId}>
-              <SelectTrigger className="h-8 text-xs w-36">
-                <SelectValue placeholder="전체" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">전체</SelectItem>
-                {therapists.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-                {therapists.length === 0 && (
-                  <SelectItem value="_none">
-                    등록된 치료사 없음
-                  </SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* 원장뷰 안내 */}
-          {view === 'doctor' && directors.length > 0 && (
+        {/* 담당자 안내 영역 — T-20260613-foot-TREATMENTTABLE-STAFFFILTER-DIRECTORONLY:
+            상담실장·치료사 per-staff 필터(전체 직원 명단 노출) 제거. 당직 원장 배너만 유지. */}
+        {view === 'doctor' && directors.length > 0 && (
+          <div className="flex flex-wrap gap-3 items-center">
+            {/* 원장뷰 안내 (당직 원장 배너) */}
             <div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-md px-2.5 py-1">
               <Stethoscope className="size-3" />
               초진·체험 환자만 표시 (진찰실 경유)
@@ -531,23 +463,8 @@ export default function TreatmentTable() {
                 </span>
               )}
             </div>
-          )}
-
-          {/* 필터 초기화 */}
-          {(filterConsultantId !== 'all' || filterTherapistId !== 'all') && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs text-muted-foreground h-8"
-              onClick={() => {
-                setFilterConsultantId('all');
-                setFilterTherapistId('all');
-              }}
-            >
-              필터 초기화
-            </Button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* 데이터 테이블 */}
