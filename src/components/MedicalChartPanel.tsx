@@ -2486,12 +2486,24 @@ export default function MedicalChartPanel({
                     <span className="text-[9px] text-muted-foreground tabular-nums shrink-0">
                       {expandedCount}/{filteredDisplayCharts.length}건 펼침
                     </span>
+                    {/* T-20260613-foot-CHARTFILTER-EMPTYTEXT-TOGGLE AC-2: 모두펼침/모두접기 = 현재 상태 토글.
+                        현장 혼란("내가 누른 게 켜진 건지 헷갈림") 해소 → 현재 상태인 쪽 버튼을 solid 강조(스위치 ON 느낌:
+                        진한 배경+흰 글씨), 중립/비현재 쪽은 약한 outline. 데이터 없음(0건)만 진짜 dim(opacity).
+                        allExpanded=전부펼침=펼침 ON / expandedCount===0=전부접힘=접기 ON / 부분=둘 다 중립.
+                        동작(expandAll/collapseAll·disabled 조건) 무변경 — 스타일만. */}
                     <div className="flex gap-0.5 shrink-0">
                       <button
                         type="button"
                         onClick={expandAll}
                         disabled={filteredDisplayCharts.length === 0 || allExpanded}
-                        className="text-[9px] text-teal-600 hover:text-teal-800 disabled:opacity-30 border border-teal-200 rounded px-1 py-0.5 hover:bg-teal-50 transition-colors"
+                        aria-pressed={allExpanded}
+                        className={`text-[9px] font-semibold rounded px-1.5 py-0.5 border transition-colors ${
+                          allExpanded
+                            ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
+                            : filteredDisplayCharts.length === 0
+                              ? 'text-teal-600 border-teal-200 opacity-30'
+                              : 'text-teal-700 border-teal-200 hover:bg-teal-50 hover:text-teal-800'
+                        }`}
                         data-testid="expand-all-btn"
                         title="모두 펼치기"
                       >
@@ -2501,7 +2513,12 @@ export default function MedicalChartPanel({
                         type="button"
                         onClick={collapseAll}
                         disabled={expandedCount === 0}
-                        className="text-[9px] text-gray-600 hover:text-gray-800 disabled:opacity-30 border border-gray-200 rounded px-1 py-0.5 hover:bg-gray-50 transition-colors"
+                        aria-pressed={expandedCount === 0}
+                        className={`text-[9px] font-semibold rounded px-1.5 py-0.5 border transition-colors ${
+                          expandedCount === 0
+                            ? 'bg-gray-700 text-white border-gray-700 shadow-sm'
+                            : 'text-gray-700 border-gray-200 hover:bg-gray-50 hover:text-gray-800'
+                        }`}
                         data-testid="collapse-all-btn"
                         title="모두 접기"
                       >
@@ -2619,7 +2636,9 @@ export default function MedicalChartPanel({
                                 <div className="text-[10px] font-medium text-foreground/80 truncate mt-0.5" data-testid="timeline-preview">
                                   {segs.length > 0
                                     ? segs.join('  ·  ')
-                                    : <span className="text-muted-foreground/60 italic font-normal">표시할 메모 없음</span>}
+                                    /* T-20260613-foot-CHARTFILTER-EMPTYTEXT-TOGGLE AC-1: 필터 적용 후 미리보기 빈상태
+                                       안내문(구 "...없음")을 "-"(대시 하나)로 축약. 현장 '번잡함' 해소. */
+                                    : <span className="text-muted-foreground/60 font-normal">-</span>}
                                 </div>
                               );
                             })()}
@@ -2728,7 +2747,10 @@ export default function MedicalChartPanel({
                               && !(hasRxItems && isTypeActive(memoFilters, 'rx'))
                               && !notable && (
                               <p className="text-[10px] text-muted-foreground italic">
-                                {memoFilters.size > 0 ? '선택한 유형의 메모 없음' : '저장된 메모 없음'}
+                                {/* T-20260613-foot-CHARTFILTER-EMPTYTEXT-TOGGLE AC-1: 필터 적용 후 매칭 0건 빈상태
+                                    안내문(구 '선택 유형 ...없음')을 "-"로 축약. 필터 무적용·데이터 자체 없음('저장된
+                                    메모 없음')은 필터 빈상태가 아니므로 보존(현장 요청 맥락 = '필터를 눌렀을 때'). */}
+                                {memoFilters.size > 0 ? '-' : '저장된 메모 없음'}
                               </p>
                             )}
                             {/* T-20260607-foot-PROGRESS-TIMELINE-AUTHOR: 경과 펼침 상세에도 작성 의사 표시
