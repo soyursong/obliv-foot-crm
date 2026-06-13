@@ -91,7 +91,9 @@ export default function Customers() {
   const [medicalChartOpen, setMedicalChartOpen] = useState(false);
   const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
   // 우클릭 컨텍스트 메뉴
-  const [ctxMenu, setCtxMenu] = useState<{ customer: Customer; x: number; y: number } | null>(null);
+  // T-20260613-foot-CUST-CONTEXTMENU-STALE: customer 스냅샷 대신 customerId만 보관.
+  // 메뉴 표시 데이터는 render 시점에 results에서 라이브 조회 → 수정·저장 후 stale 방지.
+  const [ctxMenu, setCtxMenu] = useState<{ customerId: string; x: number; y: number } | null>(null);
   const [statsMap, setStatsMap] = useState<Map<string, CustomerStats>>(new Map());
   // T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 생년월일(YYYY-MM-DD) 서버 파생값.
   // PHI: rrn 복호화는 RPC(fn_customer_birthdates) 서버측에서만, birth_date만 수신.
@@ -251,7 +253,8 @@ export default function Customers() {
   // 우클릭 → 컨텍스트 메뉴
   const handleRowContextMenu = useCallback((e: React.MouseEvent, c: Customer) => {
     e.preventDefault();
-    setCtxMenu({ customer: c, x: e.clientX, y: e.clientY });
+    // T-20260613-foot-CUST-CONTEXTMENU-STALE: id만 보관 (스냅샷 캡처 X)
+    setCtxMenu({ customerId: c.id, x: e.clientX, y: e.clientY });
   }, []);
 
   const deleteCustomer = async (c: Customer) => {
@@ -273,6 +276,10 @@ export default function Customers() {
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const rangeFrom = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const rangeTo = Math.min(page * PAGE_SIZE, totalCount);
+
+  // T-20260613-foot-CUST-CONTEXTMENU-STALE: 컨텍스트 메뉴 데이터는 항상 최신 results에서 라이브 조회.
+  // 수정·저장 → runSearch 리페치 → 같은 행 우클릭 시 최신값 표시 (옛 스냅샷 캡처 제거).
+  const ctxCustomer = ctxMenu ? results.find((c) => c.id === ctxMenu.customerId) ?? null : null;
 
   return (
     <div className="flex h-full flex-col p-6">
@@ -486,9 +493,11 @@ export default function Customers() {
 
       {/* T-20260510-foot-CUSTMGMT-CHART-PATTERN: 우클릭 컨텍스트 메뉴 */}
       {/* T-20260515-foot-CONTEXT-MENU-4ITEM AC-4: 4항목으로 확장 */}
-      {ctxMenu && (
+      {/* T-20260613-foot-CUST-CONTEXTMENU-STALE: ctxMenu.customer 스냅샷 → results 라이브 조회(ctxCustomer)로 교체.
+          수정 후 행이 results에서 사라지면(재정렬·페이지 이탈) 메뉴 미표시(stale ghost 차단). */}
+      {ctxMenu && ctxCustomer && (
         <CustomerContextMenu
-          customer={ctxMenu.customer}
+          customer={ctxCustomer}
           x={ctxMenu.x}
           y={ctxMenu.y}
           onClose={() => setCtxMenu(null)}
