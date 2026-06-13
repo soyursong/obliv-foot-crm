@@ -531,11 +531,8 @@ function PatientRow({
         data-testid="patient-row"
         data-mode="history"
       >
-        <div className="grid grid-cols-[1.75rem_3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto_auto] items-center gap-2 px-3 py-2.5">
-          {/* 번호 */}
-          <span className="text-xs font-mono text-muted-foreground text-center">
-            {row.queue_number ?? '—'}
-          </span>
+        <div className="grid grid-cols-[3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto_auto] items-center gap-2 px-3 py-2.5">
+          {/* T-20260613-foot-DOCPATIENTLIST-MIRROR-MONOTONE(B): 대기순번(queue_number) 표시 칼럼 제거. */}
           {/* 방문유형 배지 (초진/재진) */}
           <div className="flex justify-center">
             <VisitTypeBadge type={row.visit_type} />
@@ -592,16 +589,15 @@ function PatientRow({
     >
       {/*
         기본 행 — T-20260609 ⑤: flex → grid 고정 열 레이아웃.
-        열 순서: 번호 / 방문배지(②이름왼쪽) / 이름(④고정폭) / 차트번호(독립칼럼) / 처방배지(③이름오른쪽) / 상태 / 치료실 / 메모 / 액션
+        열 순서: 방문배지(②이름왼쪽) / 이름(④고정폭) / 차트번호(독립칼럼) / 처방배지(③이름오른쪽) / 상태 / 치료실 / 메모 / 액션
         T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: '상태'와 '메모' 사이에 치료실(방이름) 컬럼 추가.
         T-20260612-foot-CHARTNO-COL-SPLIT-P1: 이름 칸 내 차트번호 서브텍스트 제거 → 이름 바로 옆 독립 칼럼.
-        모든 행이 동일 grid-template → 큐번호·배지·이름·차트번호·처방·시간 항목이 행마다 동일 x위치(스크롤 무관).
+        T-20260613-foot-DOCPATIENTLIST-MIRROR-MONOTONE(B): 대기순번(queue_number) 칼럼 제거 → 차트번호만 숫자.
+        모든 행이 동일 grid-template → 배지·이름·차트번호·처방·시간 항목이 행마다 동일 x위치(스크롤 무관).
       */}
-      <div className="grid grid-cols-[1.75rem_3rem_5rem_4.5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto] items-center gap-2 px-3 py-2.5">
-        {/* 번호 */}
-        <span className="text-xs font-mono text-muted-foreground text-center">
-          {row.queue_number ?? '—'}
-        </span>
+      <div className="grid grid-cols-[3rem_5rem_4.5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto] items-center gap-2 px-3 py-2.5">
+        {/* T-20260613-foot-DOCPATIENTLIST-MIRROR-MONOTONE(B): 대기순번(queue_number=1036) 표시 칼럼 제거.
+            차트번호 외 식별 숫자 비표시(reporter 요청). queue_number 타입/SELECT/정렬·RPC는 무손상 — 표시만 숨김. */}
 
         {/* ② 방문유형 배지 — 이름 왼쪽(행 첫 식별 위치) */}
         <div className="flex justify-center">
