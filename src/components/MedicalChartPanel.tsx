@@ -2445,6 +2445,16 @@ export default function MedicalChartPanel({
                         {specialNotes.length > 0 && (
                           <span className="text-[9px] tabular-nums font-bold">({specialNotes.length})</span>
                         )}
+                        {/* T-20260613-foot-MEDCHART-EDITMODE-RXTABLE-LAYOUT-POLISH AC-3: 편집 vs 일반 텍스트
+                            시각 구분 — 편집(연필 ON) 상태일 때만 teal '편집 중' 배지로 색상 구분(색상 1택). */}
+                        {specialNoteEditing && (
+                          <span
+                            className="rounded-sm bg-teal-50 px-1 py-px text-[8px] font-bold normal-case tracking-normal text-teal-600"
+                            data-testid="special-note-editing-badge"
+                          >
+                            편집 중
+                          </span>
+                        )}
                       </span>
                       <ChevronDown
                         className={`h-3 w-3 text-muted-foreground transition-transform duration-200 ${specialNoteOpen ? 'rotate-180' : ''}`}
@@ -2470,9 +2480,12 @@ export default function MedicalChartPanel({
                               className="border-l-2 border-gray-200 pl-2 py-0.5"
                               data-testid="special-note-item"
                             >
-                              {/* 우상단 메타 1줄 + (좌) AC-6 컬러 닷 토글 */}
+                              {/* 우상단 메타 1줄 + (좌) 컬러 닷 토글 */}
                               <div className="flex items-center justify-between gap-1">
-                                {/* AC-6: 핀 버튼 제거 → 빨강/파랑 닷. 같은 색 재클릭 = 해제(기본색). */}
+                                {/* T-20260613-foot-MEDCHART-EDITMODE-RXTABLE-LAYOUT-POLISH AC-2: 빨강/파랑 상태닷은
+                                    편집(연필 ON) 상태일 때만 노출 — 기본(읽기) 상태에선 숨김. 적용된 글씨색(red/blue)은
+                                    닷과 무관하게 본문에 상시 유지(bodyColorClass). */}
+                                {specialNoteEditing && (
                                 <span className="flex items-center gap-1 shrink-0" data-testid="special-note-color-dots">
                                   <button
                                     type="button"
@@ -2493,8 +2506,9 @@ export default function MedicalChartPanel({
                                     data-testid="special-note-dot-blue"
                                   />
                                 </span>
+                                )}
                                 <span
-                                  className="shrink-0 text-[8px] leading-tight text-muted-foreground/60 tabular-nums text-right"
+                                  className="ml-auto shrink-0 text-[8px] leading-tight text-muted-foreground/60 tabular-nums text-right"
                                   data-testid="special-note-meta"
                                   title={(() => { try { return format(new Date(note.created_at), 'yyyy.MM.dd HH:mm'); } catch { return ''; } })()}
                                 >
@@ -2950,8 +2964,10 @@ export default function MedicalChartPanel({
                      컬럼을 flex-col items-end 로 두어 라벨·select·경고를 우측 정렬. select width=auto 로 ml-auto 효과. */
                   /* AC-5: flex-1 제거(자연폭) → 진료일과 한 줄 인라인. sm:items-end 유지(우측 정렬·
                      DATE-DIAG-UI-REFINE 회귀 가드). 담당의 이름 입력칸 폭을 한글 5자 내외(약 7.5rem)로
-                     슬림화 + 평상시 테두리 제거('토글·테두리 과하게 넓음'); 미선택 경고시에만 rose 테두리 유지. */
-                  <div className="min-w-0 sm:flex sm:flex-col sm:items-end" data-testid="signing-doctor-select-block">
+                     슬림화 + 평상시 테두리 제거('토글·테두리 과하게 넓음'); 미선택 경고시에만 rose 테두리 유지.
+                     T-20260613-foot-MEDCHART-EDITMODE-RXTABLE-LAYOUT-POLISH AC-8: 담당의 표시를 행 가장 끝에
+                     붙여 우측 정렬(sm:ml-auto) — 진료일과 한 줄에서 좌(진료일)·우(담당의) 양끝 배치. */
+                  <div className="min-w-0 sm:ml-auto sm:flex sm:flex-col sm:items-end" data-testid="signing-doctor-select-block">
                     <label className="block w-full text-xs font-semibold text-muted-foreground mb-1 sm:text-right">
                       담당 의사
                     </label>
@@ -3019,8 +3035,11 @@ export default function MedicalChartPanel({
                   {/* 처방내역 (우) — AC-3 row2 우측 컬럼. 우측 패널에서 선택 후 이 테이블에 반영.
                       AC-5: 복수 처방은 테이블 행(세로 stack)으로 표시.
                       T-20260613-foot-MEDCHART-DIAG-RX-TABLEVIEW-REFINE AC-4: 처방내역 폭 확대 —
-                      진단명(flex-1) 대비 처방내역 컬럼을 flex-[1.5]로 넓힘(현장 '처방내역 너무 짧음'). */}
-                  <div className="sm:flex-[1.5] min-w-0">
+                      진단명(flex-1) 대비 처방내역 컬럼을 flex-[1.5]로 넓힘(현장 '처방내역 너무 짧음').
+                      T-20260613-foot-MEDCHART-EDITMODE-RXTABLE-LAYOUT-POLISH AC-5: 좌측 진단명 영역과
+                      처방 내용 사이 세로 구분선 1개 추가(sm:border-l). DIAG-RX AC-4 '무거운 외곽/버튼 테두리
+                      제거'는 유지하고, 컬럼 경계 얇은 세로선 1개만 덧댐(전부 복원 아님). */}
+                  <div className="sm:flex-[1.5] min-w-0 sm:border-l sm:border-gray-200 sm:pl-3">
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-xs font-semibold text-muted-foreground">처방내역</label>
                       <span className="text-[10px] text-muted-foreground">우측 패널에서 처방세트 선택</span>
@@ -3052,6 +3071,7 @@ export default function MedicalChartPanel({
                               return (
                                 <tr
                                   key={idx}
+                                  className="border-b border-gray-100 last:border-b-0"
                                   data-testid={`prescription-row-${idx}`}
                                 >
                                   <td className="px-3 py-1.5">

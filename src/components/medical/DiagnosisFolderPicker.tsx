@@ -358,7 +358,20 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
     <div ref={rootRef} className="relative">
       {/* T-20260613-foot-MEDCHART-DIAG-RX-TABLEVIEW-REFINE AC-3: '___ 외 N건' 요약(트리거)을
           선택목록 맨 위(상단)로 이동. 트리거는 폴더 선택 진입 + 선택요약 겸용 — 등록 상병만 폴더에서
-          선택(자유 타이핑 없음), 다중 선택 누적. */}
+          선택(자유 타이핑 없음), 다중 선택 누적.
+          T-20260613-foot-MEDCHART-EDITMODE-RXTABLE-LAYOUT-POLISH AC-6: 읽기전용(저장 차트)에선
+          '___ 외 N건' 요약을 버튼형(클릭·꺾쇠) → 일반 텍스트(클릭불가, 꺾쇠 제거)로 표기. 편집 모드는
+          폴더 선택 진입을 위해 기존 버튼 유지. */}
+      {disabled ? (
+        <div
+          className={`flex h-9 w-full items-center rounded-md bg-gray-50 px-3 text-sm text-gray-600 ${className ?? ''}`}
+          data-testid={rest['data-testid']}
+        >
+          <span className={`truncate ${entries.length ? 'text-gray-700' : 'text-gray-400'}`}>
+            {triggerLabel}
+          </span>
+        </div>
+      ) : (
       <button
         type="button"
         disabled={disabled}
@@ -383,6 +396,7 @@ export default function DiagnosisFolderPicker({ value, onChange, clinicId, class
           <ChevronDown className="h-4 w-4 text-muted-foreground" />
         </span>
       </button>
+      )}
 
       {/* AC-2: 선택된 상병 — 버튼형(칩) → 헤더 없는 테이블뷰 [주/부 | 코드 | 상병명].
           상병 1건당 한 줄(세로 stack). 칼럼명(thead) 없음. 주/부 = 순서기반(index 0=주, 나머지=부,
