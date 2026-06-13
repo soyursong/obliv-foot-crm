@@ -103,6 +103,8 @@ import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
+// T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 미작성 → 완료 슬롯 이동 하드차단.
+import { evaluateMedicalRecordGate } from '@/lib/medicalRecordGate';
 import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
 import type { CheckIn, CheckInRealtimeRow, CheckInStatus, Clinic, Reservation, Room, RoomFieldKey, Staff, StatusFlag, VisitType } from '@/lib/types';
 // T-20260522-foot-TABLET-DUAL-LAYOUT: orientation 훅
@@ -4615,6 +4617,21 @@ export default function Dashboard() {
     } else {
       const newStatus = target as CheckInStatus;
       if (row.status === newStatus) return;
+
+      // ── T-20260612-foot-MEDLAW22-B-GATE: 완료 슬롯 이동 시 급여 진료기록 게이트(하드차단) ──
+      //   카드 직접 드래그로 수납창을 건너뛰는 완료 우회 경로도 동일하게 막는다(의료법 제22조).
+      //   급여 방문 + 서명 진료기록 미존재 → 차단(낙관적 업데이트 전 abort). 비급여는 즉시 통과.
+      if (newStatus === 'done') {
+        try {
+          const gate = await evaluateMedicalRecordGate(row);
+          if (gate.blocked) {
+            toast.error(gate.reason ?? '건강보험(급여) 진료는 진료기록 작성 후 완료할 수 있습니다');
+            return;
+          }
+        } catch {
+          // 게이트 평가 오류는 과차단 방지 위해 통과(비차단) — 운영 연속성 우선.
+        }
+      }
 
       // T-20260608-foot-SLOT-MOVE-FIFO-ORDER: 목적 슬롯 맨 뒤(FIFO)
       const moveOrder = nextSlotSortOrder(newStatus, row.id);

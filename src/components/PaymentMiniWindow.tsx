@@ -73,6 +73,8 @@ import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext
 // T-20260608-foot-DOC-PATH12-SYNC: 세금/급여 분류·코드항목 판별을 4경로 공유 SSOT(footBilling)로 일원화.
 //   (PMW 로컬 정의 → 공유 모듈 이전. DocumentPrintPanel(PATH-1/2/3)이 동일 로직 재사용 → 드리프트 차단.)
 import { type TaxClass, COVERED_GRADES, getTaxClass, isCodeItem } from '@/lib/footBilling';
+// T-20260612-foot-MEDLAW22-B-GATE: 의료법 제22조 — 급여 방문 진료기록 미작성 시 수납/완료 하드차단.
+import { evaluateMedicalRecordGate, MEDLAW22_BLOCK_MESSAGE } from '@/lib/medicalRecordGate';
 // T-20260525-foot-FEE-ITEM-REORDER: 수가 항목 DnD 재배열 (AC-1, AC-5)
 // REOPEN: PointerSensor 우선 → overflow-y-auto 스크롤 충돌 해소 (AC-R2, AC-R3)
 import {
@@ -593,6 +595,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
   // T-20260526-foot-COPAY-MINI-BUG: 고객 건보 등급 (급여/비급여 분류용)
   const [customerInsuranceGrade, setCustomerInsuranceGrade] = useState<InsuranceGrade | null>(null);
 
+  // T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 미작성 → 수납 하드차단(버튼 비활성 + 배너).
+  //   저장(saved) 후 DB 평가(evaluateMedicalRecordGate). 비급여·기록보유 시 false(무영향).
+  const [medGateBlocked, setMedGateBlocked] = useState(false);
+
   // ── T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item 처방전 용량/용법/투약일수 (service.id → RxDosage)
   const [rxItemDosages, setRxItemDosages] = useState<Record<string, RxDosage>>({});
 
@@ -1014,6 +1020,28 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     localStorage.setItem(draftKey(checkIn.id), JSON.stringify(draft));
   }, [selectedItems, saved, checkIn?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 게이트 평가 ──────────────
+  //   saved(=check_in_services 영속) 후에만 평가 — 항목·수기조정이 DB에 반영된 상태 기준.
+  //   비급여·기록보유 시 blocked=false → [수납] 버튼 정상. 급여+기록없음 시 버튼 비활성+배너.
+  //   미저장 상태에선 버튼이 이미 비표시(`saved &&`)이므로 평가 스킵·초기화.
+  useEffect(() => {
+    if (!checkIn || !saved) {
+      setMedGateBlocked(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await evaluateMedicalRecordGate(checkIn);
+        if (!cancelled) setMedGateBlocked(res.blocked);
+      } catch {
+        // 평가 오류는 과차단 방지 위해 통과(비차단). 최종 enforcement는 handleSettle에서 재평가.
+        if (!cancelled) setMedGateBlocked(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [checkIn?.id, saved]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── T-20260525-foot-FEE-ITEM-REORDER AC-2: display_order persist (debounce 800ms) ──
   // 순서 변경·항목 추가/제거 시 services.display_order 업데이트 (clinic 단위, fire-and-forget)
   // skipPersistRef: 초기 로드 중 트리거 방지 (checkIn 교체 시 true → load 완료 후 false)
@@ -1406,6 +1434,19 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
     if (!saved) {
       toast.error('[시술 저장 및 금액 산정]을 먼저 완료해주세요');
       return;
+    }
+    // ── T-20260612-foot-MEDLAW22-B-GATE: 수납 직전 진료기록 게이트 재평가(하드 enforcement) ──
+    //   버튼 비활성(medGateBlocked)은 UX 보조일 뿐 — 액션 시점에 DB 재평가로 최종 차단한다.
+    //   급여 방문 + 서명 진료기록 미존재 → 차단(사유 우회 없음). 비급여는 즉시 통과.
+    try {
+      const gate = await evaluateMedicalRecordGate(checkIn);
+      if (gate.blocked) {
+        setMedGateBlocked(true);
+        toast.error(gate.reason ?? MEDLAW22_BLOCK_MESSAGE);
+        return;
+      }
+    } catch {
+      // 게이트 평가 오류는 과차단 방지 위해 통과(비차단) — 운영 연속성 우선.
     }
     const amount = deductMode ? deductAmount : grandTotal;
     // T-20260519-foot-DEDUCT-PAY-METHOD AC-1: deductMode에서도 실제 결제수단 사용
@@ -2228,12 +2269,23 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSaved }: Pro
                     </p>
                   )}
 
+                  {/* T-20260612-foot-MEDLAW22-B-GATE: 급여 방문 진료기록 미작성 하드차단 배너 */}
+                  {saved && medGateBlocked && (
+                    <div
+                      className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-700 leading-relaxed"
+                      data-testid="medlaw22-block-banner"
+                    >
+                      ⛔ 건강보험(급여) 진료는 <strong>진료기록 작성 후</strong> 수납할 수 있습니다.
+                      담당 의사의 진료기록(서명 포함)을 먼저 작성해주세요.
+                    </div>
+                  )}
+
                   {/* 수납 버튼 (저장 후 표시) */}
                   {saved && (
                     <Button
                       className="w-full h-11 sm:h-10 text-white text-sm font-semibold bg-purple-600 hover:bg-purple-700"
                       onClick={handleSettle}
-                      disabled={submitting}
+                      disabled={submitting || medGateBlocked}
                       data-testid="btn-settle"
                     >
                       {submitting ? '처리 중...' : (
