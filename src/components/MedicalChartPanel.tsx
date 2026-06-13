@@ -47,6 +47,7 @@
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { format } from 'date-fns';
@@ -598,6 +599,28 @@ export default function MedicalChartPanel({
   //   신규 작성 = 항상 편집 가능. 저장된 차트 = 진입 시 읽기전용 → [수정] 클릭해야 편집모드 진입.
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // T-20260613-foot-REFRESH-BANNER-AUTOLO (AC-3 dirty-guard, blocking):
+  //   자동 새로고침 배너(UpdateBanner)가 진료차트 작성 중에 무방비로 발화하면 데이터 유실.
+  //   진료차트는 의료법상 진료의 NOT NULL 강제(handleSave 가드)로 미완 차트를 임의 저장(flush)
+  //   할 수 없다 → flush 미전달(blocking). 편집모드(읽기전용 아님)에서 입력 내용이 있으면 dirty로
+  //   보고, UpdateBanner는 새로고침을 보류하고 "저장 후 새로고침" 안내만 띄운다(유실 0).
+  //   over-block은 안전(사용자가 저장 후 진행), under-block은 데이터 유실이므로 보수적으로 판정.
+  useUnsavedGuard(
+    'medical-chart-panel',
+    () => {
+      if (!open) return false;
+      const isReadOnly = readOnly || (!!selectedChartId && !editMode);
+      if (isReadOnly) return false;
+      return (
+        formClinical.trim().length > 0 ||
+        formMemo.trim().length > 0 ||
+        formDx.trim().length > 0 ||
+        formRx.length > 0
+      );
+    },
+    { label: '진료차트' },
+  );
 
   // T-20260603-foot-RX-CHART-ENHANCE AC-5: 약품 마스터 검색
   const [rxSearchQuery, setRxSearchQuery] = useState('');
