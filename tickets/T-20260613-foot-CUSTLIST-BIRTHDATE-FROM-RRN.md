@@ -11,7 +11,7 @@ spec_added: tests/e2e/T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN.spec.ts
 db_changed: true
 rollback_sql: supabase/migrations/20260613120000_customer_birthdate_derive_rpc.rollback.sql
 risk_level: GO (1/5)
-commit_sha: ""
+commit_sha: f4206e3
 ---
 
 ## 요청
