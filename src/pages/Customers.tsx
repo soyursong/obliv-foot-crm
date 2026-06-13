@@ -81,6 +81,11 @@ export default function Customers() {
   // 삭제는 admin만 (기존 동작 유지)
   const canDeleteCustomer = profile?.role === 'admin';
   const [query, setQuery] = useState('');
+  // T-20260613-foot-CUSTLIST-STAFF-FILTER: 담당자 드롭다운 필터.
+  // '' = 전체(필터해제), '__unassigned__' = 미지정(assigned_staff_id IS NULL), 그 외 = staff.id 일치.
+  // 검색어와 AND 조합. 옵션소스 = staff role consultant/coordinator/director (assigned_staff_id 旣구현 자산 재사용).
+  const [staffFilter, setStaffFilter] = useState('');
+  const [staffOptions, setStaffOptions] = useState<{ id: string; name: string }[]>([]);
   const [results, setResults] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
   // T-20260506-foot-CHART-CONSOLIDATE: selected → editingCustomer (수정 전용)
@@ -183,6 +188,13 @@ export default function Customers() {
         .not('is_simulation', 'is', true)
         .order('updated_at', { ascending: false })
         .range(from, to);
+      // T-20260613-foot-CUSTLIST-STAFF-FILTER: 담당자 필터 (검색어와 AND).
+      // '미지정' → IS NULL, 특정 직원 → assigned_staff_id 일치, '전체' → 미적용.
+      if (staffFilter === '__unassigned__') {
+        req = req.is('assigned_staff_id', null);
+      } else if (staffFilter) {
+        req = req.eq('assigned_staff_id', staffFilter);
+      }
       if (trimmed) {
         const safe = trimmed.replace(/[%_(),.]/g, '');
         if (safe) {
@@ -280,7 +292,7 @@ export default function Customers() {
         setBirthMap(new Map());
       }
     },
-    [clinic],
+    [clinic, staffFilter],
   );
 
   useEffect(() => {
@@ -292,6 +304,25 @@ export default function Customers() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [query, clinic, runSearch]);
+
+  // T-20260613-foot-CUSTLIST-STAFF-FILTER: 담당자 옵션 로드.
+  // 옵션소스 = staff role consultant/coordinator/director, active, 이름순 (assigned_staff_id 옵션소스와 동일 규약).
+  useEffect(() => {
+    if (!clinic) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('staff')
+        .select('id, name')
+        .eq('clinic_id', clinic.id)
+        .eq('active', true)
+        .in('role', ['consultant', 'coordinator', 'director'])
+        .order('name', { ascending: true });
+      if (cancelled || error) return;
+      setStaffOptions((data ?? []) as { id: string; name: string }[]);
+    })();
+    return () => { cancelled = true; };
+  }, [clinic]);
 
   const handlePageChange = (newPage: number) => {
     setPage(newPage);
@@ -396,14 +427,30 @@ export default function Customers() {
   return (
     <div className="flex h-full flex-col p-6">
       <div className="mb-4 flex items-center justify-between gap-4">
-        <div className="relative w-96">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="이름 · 전화번호(010…) · 생년월일(YYMMDD/YYYYMMDD) · 차트번호"
-            className="pl-9"
-          />
+        <div className="flex items-center gap-2">
+          <div className="relative w-96">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="이름 · 전화번호(010…) · 생년월일(YYMMDD/YYYYMMDD) · 차트번호"
+              className="pl-9"
+            />
+          </div>
+          {/* T-20260613-foot-CUSTLIST-STAFF-FILTER: 담당자 드롭다운 (전체/미지정/직원). 검색어와 AND. */}
+          <select
+            data-testid="cust-staff-filter"
+            aria-label="담당자 필터"
+            value={staffFilter}
+            onChange={(e) => setStaffFilter(e.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-teal-500"
+          >
+            <option value="">담당자 전체</option>
+            <option value="__unassigned__">미지정</option>
+            {staffOptions.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
         </div>
         <div className="flex items-center gap-3">
           {totalCount > 0 && (
