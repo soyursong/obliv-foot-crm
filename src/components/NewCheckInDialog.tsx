@@ -237,8 +237,14 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
       customer_name: name.trim(),
       customer_phone: phone.trim() ? (normalizeToE164(phone) ?? phone.trim()) : null,
       visit_type: visitType,
-      // AC-1/AC-2: 초진·체험 → 상담대기, 재진 → 치료대기 자동 세팅 (T-20260514-foot-CHECKIN-AUTO-STAGE)
-      status: visitType === 'returning' ? 'treatment_waiting' : 'consult_waiting',
+      // AC-1/AC-2: 재진 → 치료대기, 체험(예약없이방문) → 상담대기 (T-20260514-foot-CHECKIN-AUTO-STAGE)
+      // T-20260613-foot-FIELDBATCH item2: 초진(new) → [접수중](receiving). 셀프접수 초진 동선(SelfCheckIn receiving)과 통일.
+      //   receiving은 기존 CheckInStatus enum 값(types.ts)·기존 칸반 컬럼(receiving_col) — 신규 상태값 아님(CHECK constraint 갱신 불요).
+      status: visitType === 'returning'
+        ? 'treatment_waiting'
+        : visitType === 'new'
+          ? 'receiving'
+          : 'consult_waiting',
       queue_number: queueData as number,
       consultant_id: consultantId,
     });

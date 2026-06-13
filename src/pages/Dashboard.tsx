@@ -30,7 +30,6 @@ import { ko } from 'date-fns/locale';
 import {
   ArrowDown,
   ArrowUp,
-  Bell,
   Calendar,
   ChevronDown,
   ChevronLeft,
@@ -2927,8 +2926,8 @@ export default function Dashboard() {
   const [rows, setRows] = useState<CheckIn[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [assignments, setAssignments] = useState<RoomAssignment[]>([]);
-  // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-A1: 공간배정 carry-over 여부 (마지막 저장 데이터 표시 중)
-  const [assignCarryOver, setAssignCarryOver] = useState<string | null>(null); // 마지막 저장 날짜 문자열 or null
+  // T-20260613-foot-FIELDBATCH item6: assignCarryOver 인디케이터 state 제거(시각 라벨 삭제에 동반).
+  //   공간배정 carry-over 데이터 적용 로직(eff.hasToday 게이트)은 fetchAssignments 내부에서 독립적으로 유지.
   // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-B1: 당일 비활성 방 이름 집합
   const [inactiveRooms, setInactiveRooms] = useState<Set<string>>(new Set());
   // T-20260523-foot-ROOM-DISABLE-TOGGLE AC-8: 내일치 비활성 방 이름 집합
@@ -3455,15 +3454,12 @@ export default function Dashboard() {
 
     if (eff.rows.length === 0) {
       setAssignments([]);
-      setAssignCarryOver(null);
       return;
     }
 
     setAssignments(eff.rows);
-
-    // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-A1: carry-over 인디케이터.
-    //   당일 저장이 전혀 없을 때만 "carry-over 표시 중" 인디케이터 노출 (기존 의미 유지).
-    setAssignCarryOver(eff.hasToday ? null : eff.lastPriorDate);
+    // T-20260613-foot-FIELDBATCH item6: carry-over 인디케이터 setter 제거(시각 라벨 삭제).
+    //   eff.hasToday / eff.lastPriorDate 기반 데이터 적용은 위 getEffectiveAssignments에서 이미 반영됨(로직 불변).
   }, [clinic, dateStr]);
 
   // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-B1 + T-20260523-foot-ROOM-DISABLE-TOGGLE AC-3:
@@ -5277,8 +5273,13 @@ export default function Dashboard() {
     const needsExam = res.visit_type === 'returning';
 
     // T-20260522-foot-REVISIT-TREAT-WAIT FIX: INSERT 시 status 직접 세팅 (2단계 INSERT→UPDATE 패턴 폐기)
-    // 재진(returning) → treatment_waiting, 초진/체험 → consult_waiting
-    const nextStatus: CheckInStatus = res.visit_type === 'returning' ? 'treatment_waiting' : 'consult_waiting';
+    // 재진(returning) → treatment_waiting, 예약없이방문 → consult_waiting
+    // T-20260613-foot-FIELDBATCH item2: 초진(new) → [접수중](receiving). 셀프접수 초진(receiving)·예약상세 체크인과 통일.
+    const nextStatus: CheckInStatus = res.visit_type === 'returning'
+      ? 'treatment_waiting'
+      : res.visit_type === 'new'
+        ? 'receiving'
+        : 'consult_waiting';
 
     // INSERT 먼저 완료 후 rows에 추가 (tempId 사용 금지 — UUID 불일치 방지)
     const { data: inserted, error } = await supabase
@@ -6182,12 +6183,8 @@ export default function Dashboard() {
               오늘로
             </Button>
           )}
-          {/* T-20260523-foot-SPACE-DASH-AUTOSYNC AC-A1: 공간배정 carry-over 인디케이터 */}
-          {assignCarryOver && (
-            <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5" title={`공간배정: ${assignCarryOver} 데이터 적용 중`}>
-              배정 carry-over ({assignCarryOver})
-            </span>
-          )}
+          {/* T-20260613-foot-FIELDBATCH item6: 날짜 옆 "배정 carry-over (date)" 인디케이터 제거(현장 김주연 총괄 요청).
+              공간배정 carry-over 데이터 적용 로직(fetchAssignments eff.hasToday 게이트)은 불변 — 시각 라벨만 삭제. */}
         </div>
 
         <div className="flex items-center gap-3">
@@ -6398,25 +6395,9 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── T-20260502-foot-DOCTOR-TREATMENT-FLOW: 진료콜 알람 배너 ── */}
-      {isToday && (byStatus['exam_waiting'] ?? []).length > 0 && (
-        <div className="mx-4 mt-2 rounded-md border border-violet-300 bg-violet-50 px-4 py-2 text-sm text-violet-800 flex items-center gap-2 animate-pulse">
-          <Bell className="h-4 w-4 shrink-0 text-violet-600" />
-          <span className="font-semibold shrink-0">진료 대기 {(byStatus['exam_waiting'] ?? []).length}명</span>
-          <span className="text-violet-600 shrink-0">—</span>
-          {/* T-20260612-foot-CHARTNO-B2-P1: 환자명에 차트번호 병기(동명이인 오인 방지). 미발번도 '#미발번' 명시. */}
-          <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            {(byStatus['exam_waiting'] ?? []).map((ci) => (
-              <span key={ci.id} className="inline-flex items-baseline gap-0.5" data-testid="exam-waiting-banner-patient">
-                <span>{ci.customer_name}</span>
-                <span className="font-mono text-[11px] text-violet-500">
-                  {chartNoBadge(ci.customer_id ? (todayCustomerChartMap.get(ci.customer_id) ?? null) : null)}
-                </span>
-              </span>
-            ))}
-          </span>
-        </div>
-      )}
+      {/* T-20260613-foot-FIELDBATCH item5: [진료대기] 보라색 진료콜 알람 배너 제거.
+          별도 '원장님 진료콜 명단' 팝업(DoctorCallListBar, 하단)으로 운영 중 → 상단 배너는 중복 표시라 삭제(현장 김주연 총괄 요청).
+          exam_waiting(진료대기) 단계/칸반 컬럼/진료콜 팝업 로직은 불변 — 상단 배너 UI만 제거. */}
 
       {/* Content: 타임라인 사이드바 + 칸반 */}
       {/* T-20260508-foot-DASH-SLOT-REMOVE: 카드 DnD 컨텍스트를 타임라인까지 확장
