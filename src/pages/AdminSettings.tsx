@@ -51,6 +51,8 @@ import {
 } from 'lucide-react';
 import type { Clinic, CheckIn } from '@/lib/types';
 import { RESERVED_EVENT_TYPES } from '@/lib/notificationEventTypes';
+import { normalizeToE164 } from '@/lib/phone';
+import { formatPhone } from '@/lib/format';
 import SendSmsDialog from '@/components/SendSmsDialog';
 import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatientSearch';
 import {
@@ -118,6 +120,28 @@ interface NotificationOptOut {
   phone: string;
   opted_out_at: string;
   reason: string | null;
+}
+
+// ⑥ 수신거부 명단 — 옵션 A 합산 표시 (T-20260614-foot-OPTOUT-LIST-UNIFY)
+//   2 출처(notification_opt_outs 수동 + customers.sms_opt_in=false)를 전화번호 키로 병합한 단일 행.
+//   - source='manual'  → 해제 시 notification_opt_outs DELETE (manualId)
+//   - source='opt_in'  → 해제 시 customers.sms_opt_in=true UPDATE (customerIds)
+//   - 양쪽 거부 행은 두 출처를 모두 보유 → 해제 시 양쪽 모두 갱신해야 발송 차단 완전 해제.
+type OptOutSource = 'manual' | 'opt_in';
+interface OptOutRow {
+  key: string;                 // 정규화 전화번호 키(병합 기준)
+  phone: string;               // 표시용 원본 전화번호
+  name: string | null;         // customers 매칭 시 이름
+  sources: OptOutSource[];     // 거부가 등록된 시스템(다중 가능)
+  manualId: string | null;     // notification_opt_outs.id (manual 출처)
+  customerIds: string[];       // sms_opt_in=false 인 customers.id (opt_in 출처, 동일번호 다행 가능)
+  reason: string | null;       // manual 사유
+  registeredAt: string;        // 표시용 등록(거부)일
+}
+
+/** 전화번호 병합 키 — E.164 정규화 우선, 실패 시 숫자만 추출 fallback */
+function optOutPhoneKey(raw: string): string {
+  return normalizeToE164(raw) ?? raw.replace(/[^0-9]/g, '');
 }
 
 type Section = '0_connection' | '1_channels' | '2_rules' | '3_templates' | '4_manual' | '5_history' | '6_optout' | '7_selfcheckin_qr';
@@ -200,7 +224,7 @@ export default function AdminSettings() {
   const [capability, setCapability]   = useState<MessagingCapability | null>(null);
   const [templates, setTemplates]     = useState<NotificationTemplate[]>([]);
   const [logs, setLogs]               = useState<NotificationLog[]>([]);
-  const [optOuts, setOptOuts]         = useState<NotificationOptOut[]>([]);
+  const [optOuts, setOptOuts]         = useState<OptOutRow[]>([]);
 
   const role      = profile?.role ?? '';
   const isAdmin   = role === 'admin';
@@ -240,12 +264,60 @@ export default function AdminSettings() {
     setLogs((data as NotificationLog[]) ?? []);
   }, []);
 
+  // 옵션 A: notification_opt_outs(수동) + customers.sms_opt_in=false(셀프체크인/차트) 합산 표시.
+  //   읽기 UNION only — 데이터 이중화 없음. T-20260610 백필 과거분도 sms_opt_in=false라 자동 포함.
   const loadOptOuts = useCallback(async (cid: string) => {
-    const { data } = await (supabase.from('notification_opt_outs') as any)
-      .select('*')
-      .eq('clinic_id', cid)
-      .order('opted_out_at', { ascending: false });
-    setOptOuts((data as NotificationOptOut[]) ?? []);
+    const [optRes, custRes] = await Promise.all([
+      (supabase.from('notification_opt_outs') as any)
+        .select('*')
+        .eq('clinic_id', cid)
+        .order('opted_out_at', { ascending: false }),
+      (supabase.from('customers') as any)
+        .select('id, name, phone, sms_opt_in, sms_opt_in_at, updated_at, created_at')
+        .eq('clinic_id', cid)
+        .eq('sms_opt_in', false),
+    ]);
+
+    const map = new Map<string, OptOutRow>();
+
+    // 1) 수동(notification_opt_outs) — manual 우선 채움
+    for (const o of (optRes.data ?? []) as NotificationOptOut[]) {
+      const key = optOutPhoneKey(o.phone);
+      const existing = map.get(key);
+      if (existing) {
+        if (!existing.sources.includes('manual')) existing.sources.push('manual');
+        existing.manualId = o.id;
+        if (!existing.reason) existing.reason = o.reason;
+      } else {
+        map.set(key, {
+          key, phone: o.phone, name: null,
+          sources: ['manual'], manualId: o.id, customerIds: [],
+          reason: o.reason, registeredAt: o.opted_out_at,
+        });
+      }
+    }
+
+    // 2) customers.sms_opt_in=false — 동일 전화번호는 기존 행에 opt_in 출처 병합
+    for (const c of (custRes.data ?? []) as { id: string; name: string; phone: string; sms_opt_in_at: string | null; updated_at: string; created_at: string }[]) {
+      const key = optOutPhoneKey(c.phone);
+      const existing = map.get(key);
+      if (existing) {
+        if (!existing.sources.includes('opt_in')) existing.sources.push('opt_in');
+        existing.customerIds.push(c.id);
+        if (!existing.name) existing.name = c.name;
+      } else {
+        map.set(key, {
+          key, phone: c.phone, name: c.name,
+          sources: ['opt_in'], manualId: null, customerIds: [c.id],
+          reason: null, registeredAt: c.updated_at ?? c.created_at,
+        });
+      }
+    }
+
+    const rows = Array.from(map.values()).sort(
+      (a, b) => (b.registeredAt ?? '').localeCompare(a.registeredAt ?? ''),
+    );
+    setOptOuts(rows);
   }, []);
 
   useEffect(() => {
@@ -1425,7 +1497,7 @@ function SectionHistory({ logs, onRefresh }: { logs: NotificationLog[]; onRefres
 
 function SectionOptOut({ clinicId, optOuts, onRefresh }: {
   clinicId: string;
-  optOuts: NotificationOptOut[];
+  optOuts: OptOutRow[];
   onRefresh: () => void;
 }) {
   const [newPhone, setNewPhone] = useState('');
@@ -1438,6 +1510,7 @@ function SectionOptOut({ clinicId, optOuts, onRefresh }: {
     if (!phone) { toast.error('번호를 입력하세요'); return; }
     setAdding(true);
     try {
+      // 수동 추가는 기존과 동일: notification_opt_outs INSERT (source=manual). 변경 없음. (AC4)
       const { error } = await (supabase.from('notification_opt_outs') as any)
         .insert({ clinic_id: clinicId, phone, reason: reason.trim() || null });
       if (error?.code === '23505') { toast.error('이미 등록된 번호입니다'); }
@@ -1447,22 +1520,37 @@ function SectionOptOut({ clinicId, optOuts, onRefresh }: {
     finally { setAdding(false); }
   };
 
-  const handleRemove = async (id: string, phone: string) => {
-    setRemoving(id);
+  // ★ source별 해제 라우팅 (risk 3/5, AC3) — 양쪽 거부 행은 두 경로 모두 해제해야 발송 차단 완전 해제.
+  const handleRemove = async (row: OptOutRow) => {
+    setRemoving(row.key);
     try {
-      await (supabase.from('notification_opt_outs') as any).delete().eq('id', id);
+      // 1) 수동(notification_opt_outs) → DELETE
+      if (row.manualId) {
+        const { error } = await (supabase.from('notification_opt_outs') as any)
+          .delete().eq('id', row.manualId);
+        if (error) throw error;
+      }
+      // 2) 셀프체크인/차트(customers.sms_opt_in=false) → sms_opt_in=true UPDATE (단건/동일번호 다행)
+      //    true 전환 시 sms_opt_in_at=now() (CustomerChartPage toggleSmsOptIn 정합).
+      if (row.customerIds.length > 0) {
+        const { error } = await (supabase.from('customers') as any)
+          .update({ sms_opt_in: true, sms_opt_in_at: new Date().toISOString() })
+          .in('id', row.customerIds);
+        if (error) throw error;
+      }
       onRefresh();
-      toast.success(`${phone} 수신거부 해제 완료`);
+      toast.success(`${formatPhone(row.phone)} 수신거부 해제 완료`);
     } catch (err) { toast.error(`해제 실패: ${extractErrorMsg(err)}`); }
     finally { setRemoving(null); }
   };
 
   return (
-    <div className="max-w-xl space-y-6">
+    <div className="max-w-2xl space-y-6">
       <div>
         <h2 className="text-lg font-semibold">⑥ 수신거부 명단</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          등록된 번호로는 어떤 발송도 차단됩니다. 셀프체크인 미동의 시 자동 적재.
+          등록된 번호로는 어떤 발송도 차단됩니다. 수동으로 추가한 번호와 셀프접수·차트에서 문자수신을
+          거부한 고객이 함께 표시됩니다(별도 적재 없이 합산).
         </p>
       </div>
       <div className="rounded-lg border p-4 space-y-3">
@@ -1482,28 +1570,43 @@ function SectionOptOut({ clinicId, optOuts, onRefresh }: {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted/30 border-b">
+                <th className="text-left px-4 py-3 font-medium">이름</th>
                 <th className="text-left px-4 py-3 font-medium">전화번호</th>
-                <th className="text-left px-4 py-3 font-medium">등록일시</th>
+                <th className="text-left px-4 py-3 font-medium">출처</th>
+                <th className="text-left px-4 py-3 font-medium">등록일</th>
                 <th className="text-left px-4 py-3 font-medium">사유</th>
                 <th className="w-16 px-4 py-3"></th>
               </tr>
             </thead>
             <tbody>
-              {optOuts.map((o) => (
-                <tr key={o.id} className="border-b last:border-0">
-                  <td className="px-4 py-2 font-mono text-sm">{o.phone}</td>
-                  <td className="px-4 py-2 text-xs text-muted-foreground">
-                    {new Date(o.opted_out_at).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })}
+              {optOuts.map((row) => (
+                <tr key={row.key} className="border-b last:border-0">
+                  <td className="px-4 py-2 text-sm">{row.name ?? '—'}</td>
+                  <td className="px-4 py-2 font-mono text-sm">{formatPhone(row.phone)}</td>
+                  <td className="px-4 py-2">
+                    <div className="flex flex-wrap gap-1">
+                      {row.sources.includes('manual') && (
+                        <Badge variant="secondary" className="text-[10px]">수동</Badge>
+                      )}
+                      {row.sources.includes('opt_in') && (
+                        <Badge variant="outline" className="text-[10px]">셀프/차트</Badge>
+                      )}
+                    </div>
                   </td>
-                  <td className="px-4 py-2 text-xs text-muted-foreground">{o.reason ?? '—'}</td>
+                  <td className="px-4 py-2 text-xs text-muted-foreground">
+                    {row.registeredAt
+                      ? new Date(row.registeredAt).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-2 text-xs text-muted-foreground">{row.reason ?? '—'}</td>
                   <td className="px-4 py-2">
                     <Button
                       size="sm" variant="ghost"
                       className="text-destructive h-7 px-2"
-                      disabled={removing === o.id}
-                      onClick={() => handleRemove(o.id, o.phone)}
+                      disabled={removing === row.key}
+                      onClick={() => handleRemove(row)}
                     >
-                      {removing === o.id ? <Loader2 className="h-3 w-3 animate-spin" /> : '해제'}
+                      {removing === row.key ? <Loader2 className="h-3 w-3 animate-spin" /> : '해제'}
                     </Button>
                   </td>
                 </tr>
