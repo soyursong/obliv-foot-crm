@@ -11,9 +11,12 @@
  *   로컬 번들 빌드버전(전역 __APP_BUILD_ID__ → window.__BUILD_ID__ 로 노출)과 다른 값을
  *   반환 → 배너 노출 검증. (import.meta 는 page.evaluate 직렬화 불가라 window 경유로 읽음)
  *
- * AC-1: 신버전 감지 시 '새 버전' 배너 노출
- * AC-2: 자동 reload 발생 안 함 (배너만 — 작업 유실 방지)
- * AC-3: 배너 '새로고침' 클릭 → 전체 reload (신번들 적용 경로)
+ * AC-1: 신버전 감지 시 안내 배너 노출
+ * AC-2: 카운트다운 동안엔 자동 reload 하지 않음 (즉시 강제 reload 금지 — 작업 유실 방지)
+ *        ※ T-20260613-foot-REFRESH-BANNER-AUTOLO 로 '버튼식 → 10~15초 카운트다운 후 자동 전환'
+ *          으로 동작 변경됨. 본 AC-2는 '감지 즉시 강제 reload 하지 않는다'는 원래 안전 불변식만
+ *          검증(짧은 윈도 내 reload 부재). 카운트다운 후 자동 전환은 REFRESH-BANNER-AUTOLO spec 담당.
+ * AC-3: 배너 '지금 새로고침' 클릭 → 전체 reload (신번들 적용 경로)
  * AC-4: 동일 버전이면 배너 미노출 (회귀/불필요 reload 없음)
  */
 import { test, expect, type Page } from '@playwright/test';
@@ -37,19 +40,21 @@ async function mockVersion(page: Page, buildId: string) {
 const banner = (page: Page) => page.getByTestId('app-update-banner');
 
 // ── AC-1: 신버전 감지 → 배너 노출 ───────────────────────────────────────────
-test('AC-1: 서버 빌드버전이 로컬과 다르면 새 버전 배너 노출', async ({ page }) => {
+test('AC-1: 서버 빌드버전이 로컬과 다르면 안내 배너 노출', async ({ page }) => {
   // 로컬 번들 BUILD_ID 와 절대 겹치지 않는 값으로 모킹
   await mockVersion(page, 'REMOTE-NEW-BUILD-vB');
   await page.goto('/');
 
   // 최초 마운트 시 version 체크 → 불일치 → 배너 노출
   await expect(banner(page)).toBeVisible({ timeout: 8000 });
-  await expect(banner(page)).toContainText('새 버전');
+  // T-20260613-REFRESH-BANNER-AUTOLO 로 문구가 카운트다운 안내로 변경됨.
+  await expect(banner(page)).toContainText('화면이 업데이트됩니다');
   await expect(page.getByTestId('app-update-reload')).toBeVisible();
 });
 
-// ── AC-2: 자동 reload 발생 안 함 (배너만) ────────────────────────────────────
-test('AC-2: 신버전 감지해도 자동 reload 하지 않음 (작업 유실 방지)', async ({ page }) => {
+// ── AC-2: 감지 즉시 강제 reload 하지 않음 (카운트다운 윈도 내) ────────────────
+test('AC-2: 신버전 감지 즉시 강제 reload 하지 않음 (카운트다운 — 작업 유실 방지)', async ({ page }) => {
+  // 카운트다운 기본 12초 → 2.5초 윈도 내엔 자동 reload 가 발생하지 않아야 한다.
   await mockVersion(page, 'REMOTE-NEW-BUILD-vB');
   await page.goto('/');
   await expect(banner(page)).toBeVisible({ timeout: 8000 });

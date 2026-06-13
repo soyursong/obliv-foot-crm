@@ -1,5 +1,6 @@
 // LOGIC-LOCK: L-004 — 차트 접근 경로 잠금. useChart() hook 경유만 허용. 변경 시 현장 승인 필수
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
 import { Calendar, ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Phone, FileText, Package, Stethoscope, Trash2, Bell, Upload } from 'lucide-react';
@@ -985,6 +986,15 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   // T-20260511-foot-C1-SAVE-DIRTY-AUTOSAVE: stale closure 방지용 ref (항상 최신 함수 참조)
   const saveNotesRef = useRef(saveNotes);
   saveNotesRef.current = saveNotes;
+
+  // T-20260613-foot-REFRESH-BANNER-AUTOLO (AC-3 dirty-guard, flushable):
+  //   자동 새로고침 직전, 미저장 메모가 있으면 명시적 저장 경로(saveNotes)로 자동 flush 후 진행.
+  //   체크인 시트는 30초 자동저장과 동일한 saveNotes 경로를 그대로 재사용 → "자동 저장됨" 후 새로고침.
+  useUnsavedGuard(
+    'checkin-detail-sheet',
+    () => isDirty || dirtyRef.current,
+    { flush: () => saveNotesRef.current(), label: '체크인 메모', enabled: !!checkIn },
+  );
 
   // T-20260511-foot-C1-SAVE-DIRTY-AUTOSAVE: isDirty=true 시 30초 자동저장 (현장 확정: 1번차트 30초)
   useEffect(() => {
