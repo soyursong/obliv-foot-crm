@@ -449,6 +449,7 @@ const DraggableCard = memo(function DraggableCard({
           <div className="flex items-center shrink-0">
             {/* 태블릿 터치 영역: min-w/h-[32px] V2 — T-20260512-foot-CUSTOMER-BOX-COMPACT-V2 */}
             <button
+              data-testid="card-status-menu-btn"
               className="p-1 rounded hover:bg-gray-100 active:bg-gray-200 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
               onClick={(e) => {
                 e.stopPropagation();
@@ -634,6 +635,7 @@ const DraggableCard = memo(function DraggableCard({
         <div className="flex items-center shrink-0">
           {/* 태블릿 터치 영역 유지 (min-w/h 32px V2) — T-20260512-foot-CUSTOMER-BOX-COMPACT-V2 */}
           <button
+            data-testid="card-status-menu-btn"
             className="rounded hover:bg-gray-100 active:bg-gray-200 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
             onClick={(e) => {
               e.stopPropagation();
@@ -642,6 +644,7 @@ const DraggableCard = memo(function DraggableCard({
               onContextMenu?.(syntheticEvent);
             }}
             onPointerDown={(e) => e.stopPropagation()}
+            title="상태 변경"
           >
             <MoreVertical className="h-3 w-3 text-gray-400" />
           </button>
