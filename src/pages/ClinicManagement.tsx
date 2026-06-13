@@ -9,9 +9,10 @@
 // AC-4: 분리 후 기존 '진료 도구'(DoctorTools)에는 진료 알림판·진료 환자 목록만 잔존.
 
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
-import PhrasesTab from '@/components/admin/PhrasesTab';
+// T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: 상용구(PhrasesTab)·수가세트(FeeSetTemplatesTab) 2개 탭은
+//   '서비스관리 > 상용구관리' 서브탭(Services.tsx)으로 이전됨(렌더 위치 이동만). 여기서는 import/탭 제거 + 딥링크 redirect.
 import SuperPhrasesTab from '@/components/admin/SuperPhrasesTab';
 import PrescriptionSetsTab from '@/components/admin/PrescriptionSetsTab';
 // T-20260606-foot-RX-SET-REDESIGN AC-R2: 약품 폴더 관리(개별 약품 분류 트리). 묶음처방(prescription_sets)과 별개.
@@ -22,14 +23,13 @@ import DiagnosisNamesTab from '@/components/admin/DiagnosisNamesTab';
 import DiagnosisSetsTab from '@/components/admin/DiagnosisSetsTab';
 import DocumentTemplatesTab from '@/components/admin/DocumentTemplatesTab';
 import TreatmentSetsTab from '@/components/admin/TreatmentSetsTab';
-import FeeSetTemplatesTab from '@/components/admin/FeeSetTemplatesTab';
 import QuickRxButtonsTab from '@/components/admin/QuickRxButtonsTab';
 import ProgressPlansTab from '@/components/admin/ProgressPlansTab';
 import ContraindicationsTab from '@/components/admin/ContraindicationsTab';
 // T-20260609-foot-DRUG-INSURANCE-GATE Phase1: 약품별 급여여부(보험상태) 관리 — 처방 게이트(checkRxInsuranceGate) 소스
 import InsuranceStatusTab from '@/components/admin/InsuranceStatusTab';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { BookOpen, Pill, FileText, Layers, Zap, DollarSign, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes, BadgeCheck } from 'lucide-react';
+import { Pill, FileText, Layers, Zap, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes, BadgeCheck } from 'lucide-react';
 
 export default function ClinicManagement() {
   const { profile } = useAuth();
@@ -41,16 +41,26 @@ export default function ClinicManagement() {
   // 진료차트 우측 패널 '관리 화면으로' 진입 시 ?tab= 쿼리로 해당 탭 pre-select.
   //   (T-20260606-foot-RX-PANEL-UX-5FIX AC-5 동선 — 메뉴 분리 후 진입 경로를 clinic-management 로 이전)
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const requestedTab = searchParams.get('tab');
+
+  // T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT (AC-4): 상용구·수가세트는 '서비스관리 > 상용구관리'로 이전됨.
+  //   구 딥링크(/admin/clinic-management?tab=phrases|fee_set_templates)·북마크 호환을 위해 새 위치로 redirect.
+  const MOVED_TO_SERVICES: readonly string[] = ['phrases', 'fee_set_templates'];
+  useEffect(() => {
+    if (requestedTab && MOVED_TO_SERVICES.includes(requestedTab)) {
+      navigate(`/admin/services?tab=${requestedTab}`, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedTab]);
+
   const accessibleTabs = [
-    'phrases',
     'super_phrases',
     'prescriptions',
     'drug_folders',
     'diagnosis_names',
     'diagnosis_sets',
     'treatment_sets',
-    'fee_set_templates',
     'documents',
     'quick_rx',
     'progress_plans',
@@ -58,7 +68,8 @@ export default function ClinicManagement() {
     ...(canManageInsurance ? ['insurance_status'] : []),
   ];
   const tabAllowed = !!requestedTab && accessibleTabs.includes(requestedTab);
-  const [activeTab, setActiveTab] = useState(tabAllowed ? (requestedTab as string) : 'phrases');
+  // 기본 탭: 상용구 이전에 따라 행 1 선두인 '상병명 관리'로 변경.
+  const [activeTab, setActiveTab] = useState(tabAllowed ? (requestedTab as string) : 'diagnosis_names');
 
   useEffect(() => {
     if (tabAllowed) setActiveTab(requestedTab as string);
@@ -70,7 +81,7 @@ export default function ClinicManagement() {
       <div>
         <h1 className="text-lg font-bold">진료관리</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          상용구·처방세트·진료세트·상병·서류 템플릿 등 진료 관련 항목을 관리합니다.
+          처방세트·진료세트·상병·서류 템플릿 등 진료 관련 항목을 관리합니다.
         </p>
       </div>
 
@@ -126,11 +137,8 @@ export default function ClinicManagement() {
           {/* 행 경계 1→2 (flex-wrap 강제 줄바꿈) */}
           <div className="basis-full h-0" aria-hidden="true" />
 
-          {/* ── 행 2: 상용구 · 슈퍼상용구 · 서류 템플릿 ── */}
-          <TabsTrigger value="phrases" className="gap-1.5">
-            <BookOpen className="h-3.5 w-3.5" />
-            상용구
-          </TabsTrigger>
+          {/* ── 행 2: 슈퍼상용구 · 서류 템플릿 ──
+              T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: '상용구'(phrases) → 서비스관리>상용구관리 로 이전(슈퍼상용구는 잔류). */}
           <TabsTrigger value="super_phrases" className="gap-1.5" data-testid="tab-super-phrases">
             <Sparkles className="h-3.5 w-3.5" />
             슈퍼상용구
@@ -143,14 +151,11 @@ export default function ClinicManagement() {
           {/* 행 경계 2→3 */}
           <div className="basis-full h-0" aria-hidden="true" />
 
-          {/* ── 행 3: 진료세트 · 수가세트 · 경과분석 플랜 ── */}
+          {/* ── 행 3: 진료세트 · 경과분석 플랜 ──
+              T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: '수가세트'(fee_set_templates) → 서비스관리>상용구관리 로 이전. */}
           <TabsTrigger value="treatment_sets" className="gap-1.5" data-testid="tab-treatment-sets">
             <Layers className="h-3.5 w-3.5" />
             진료세트
-          </TabsTrigger>
-          <TabsTrigger value="fee_set_templates" className="gap-1.5" data-testid="tab-fee-set-templates">
-            <DollarSign className="h-3.5 w-3.5" />
-            수가세트
           </TabsTrigger>
           <TabsTrigger value="progress_plans" className="gap-1.5" data-testid="tab-progress-plans">
             <TrendingUp className="h-3.5 w-3.5" />
@@ -182,10 +187,7 @@ export default function ClinicManagement() {
             <InsuranceStatusTab />
           </TabsContent>
         )}
-        {/* 행 2 */}
-        <TabsContent value="phrases">
-          <PhrasesTab />
-        </TabsContent>
+        {/* 행 2 — '상용구'(phrases) TabsContent 는 서비스관리>상용구관리로 이전(T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT). */}
         <TabsContent value="super_phrases">
           <SuperPhrasesTab />
         </TabsContent>
@@ -196,9 +198,7 @@ export default function ClinicManagement() {
         <TabsContent value="treatment_sets">
           <TreatmentSetsTab />
         </TabsContent>
-        <TabsContent value="fee_set_templates">
-          <FeeSetTemplatesTab />
-        </TabsContent>
+        {/* '수가세트'(fee_set_templates) TabsContent 는 서비스관리>상용구관리로 이전(T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT). */}
         <TabsContent value="progress_plans">
           <ProgressPlansTab />
         </TabsContent>
