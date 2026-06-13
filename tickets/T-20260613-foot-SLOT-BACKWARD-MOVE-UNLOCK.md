@@ -10,7 +10,7 @@ db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: null
-commit_sha: ce5d6a7
+commit_sha: b9b2eaf
 created: 2026-06-13
 assignee: dev-foot
 reporter: 김주연 총괄
