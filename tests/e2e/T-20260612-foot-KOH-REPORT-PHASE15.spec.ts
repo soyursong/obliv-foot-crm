@@ -38,7 +38,10 @@ const parseNailSites = (raw: unknown): NailSite[] => {
 };
 
 // ── 정본 모사: NailSiteEditor 단일선택 commit 규칙 ─────────────────────────────
-//   side·toe 둘 다 있으면 [{side,toe}], 아니면 []. (라디오형 단일선택)
+//   ⚠️ SUPERSEDED — T-20260614-foot-KOHSHEET-RENEWAL-PLISTMIRROR(§C2) 이 단일→다중선택으로 대체.
+//      현 NailSiteEditor 구현은 toggleSite(누적). 아래 S3/S6 는 PHASE15 당시 단일선택 결정의 회귀
+//      기록으로만 보존(현 동작 검증은 KOHSHEET-RENEWAL spec S2/S5 가 담당).
+//   side·toe 둘 다 있으면 [{side,toe}], 아니면 []. (라디오형 단일선택, 폐지됨)
 const commitSites = (side: NailSide | null, toe: number | null): NailSite[] =>
   side && toe ? [{ side, toe }] : [];
 
