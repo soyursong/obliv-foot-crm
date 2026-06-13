@@ -1637,6 +1637,12 @@ export default function MedicalChartPanel({
   //   진입 경로를 /admin/doctor-tools → /admin/clinic-management 로 이전(관리 도구 위치 단일화).
   function handleNavigateToAdmin(tab?: 'super_phrases' | 'phrases' | 'prescriptions') {
     onOpenChange(false);
+    // T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: '상용구'(phrases)는 '서비스관리 > 상용구관리' 서브탭으로 이전됨.
+    //   직원(consultant 등)도 접근 가능한 /admin/services 로 라우팅(슈퍼상용구·묶음처방은 진료관리 잔류).
+    if (tab === 'phrases') {
+      navigate('/admin/services?tab=phrases');
+      return;
+    }
     navigate(tab ? `/admin/clinic-management?tab=${tab}` : '/admin/clinic-management');
   }
 
