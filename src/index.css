@@ -14,32 +14,39 @@
     /* T-20260522-foot-TOUCH-EXPAND: 태블릿 터치 타겟 최소 크기 */
     --touch-min: 44px;
 
-    /* Background / Surface — 화이트 (CRM 관리화면, 2026-05-08 김주연 B안) */
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
+    /* ── T-20260614-foot-THEME-MONOCHROME-RECOLOR (StepD) ───────────────────────
+       김주연 총괄 확정 5색 warm-monochrome 팔레트 (AC1 토큰 레이어 우선):
+         Vanilla #F8F4EE(기본배경) · Soft Dune #E4DDCC(보조면/보더) ·
+         Classic Taupe #C5BEA3(포인트, 절제) · Umber #443A35(다크 액센트) · Black #252525(텍스트).
+       AC7 절제: 베이스=Vanilla 배경+Black 텍스트 모노톤, Taupe/Umber는 핵심 강조에만.
+       의미색(--status-*, --destructive, --chart-*)은 유지(AC4). */
 
-    /* Primary / Secondary */
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
+    /* Background / Surface — Vanilla 베이스, 카드는 살짝 밝게 들어올림(AC6 군더더기↓) */
+    --background: oklch(0.965 0.008 80);
+    --foreground: oklch(0.265 0 0);
+    --card: oklch(0.99 0.004 80);
+    --card-foreground: oklch(0.265 0 0);
+    --popover: oklch(0.99 0.004 80);
+    --popover-foreground: oklch(0.265 0 0);
 
-    /* Muted / Accent */
-    --muted: oklch(0.97 0 0);
-    /* A-4: 색상 대비 강화 — muted-foreground를 진하게 (WCAG AA 4.5:1 충족) */
-    --muted-foreground: oklch(0.38 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
+    /* Primary / Secondary — Primary=Umber(다크 액센트), Secondary=Soft Dune */
+    --primary: oklch(0.33 0.012 60);
+    --primary-foreground: oklch(0.97 0.008 80);
+    --secondary: oklch(0.89 0.022 85);
+    --secondary-foreground: oklch(0.30 0.010 60);
 
-    /* Functional */
+    /* Muted / Accent — Muted=연한 warm, Accent=Soft Dune 라이트(hover 절제) */
+    --muted: oklch(0.93 0.012 82);
+    /* A-4: 색상 대비 강화 — muted-foreground (WCAG AA 4.5:1 충족, warm 톤) */
+    --muted-foreground: oklch(0.42 0.012 65);
+    --accent: oklch(0.91 0.020 85);
+    --accent-foreground: oklch(0.30 0.010 60);
+
+    /* Functional — destructive 의미색 유지, border/input/ring 은 warm 톤(AC6 노이즈↓) */
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
+    --border: oklch(0.88 0.018 84);
+    --input: oklch(0.88 0.018 84);
+    --ring: oklch(0.70 0.030 88);
 
     /* Charts */
     --chart-1: oklch(0.55 0.10 45);
@@ -50,15 +57,15 @@
 
     --radius: 0.625rem;
 
-    /* Sidebar */
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    /* Sidebar — warm-monochrome 정렬(T-20260614 RECOLOR): Vanilla 면 + Umber primary */
+    --sidebar: oklch(0.95 0.010 82);
+    --sidebar-foreground: oklch(0.265 0 0);
+    --sidebar-primary: oklch(0.33 0.012 60);
+    --sidebar-primary-foreground: oklch(0.97 0.008 80);
+    --sidebar-accent: oklch(0.90 0.020 85);
+    --sidebar-accent-foreground: oklch(0.30 0.010 60);
+    --sidebar-border: oklch(0.88 0.018 84);
+    --sidebar-ring: oklch(0.70 0.030 88);
 
     /* Status (11단계 흐름 매핑) */
     --status-waiting: oklch(0.65 0.04 60);
