@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Pretendard', -apple-system, 'Apple SD Gothic Neo', sans-serif; background:#fff; color:#171717; padding:32px 40px; width:1180px; }
+  h1 { font-size:26px; margin-bottom:4px; }
+  .sub { color:#525252; font-size:14px; margin-bottom:24px; }
+  h2 { font-size:17px; margin:28px 0 12px; padding-bottom:6px; border-bottom:2px solid #E5E5E5; }
+  .ramp { display:flex; gap:0; border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.12); }
+  .chip { flex:1; height:84px; display:flex; flex-direction:column; justify-content:flex-end; padding:8px; font-size:11px; }
+  .chip .n { font-weight:700; font-size:12px; }
+  .chip .h { opacity:.85; font-size:10px; }
+  .row { display:flex; gap:32px; align-items:flex-start; }
+  .col { flex:1; }
+  .mono { display:flex; gap:0; border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.12); }
+  .note { font-size:12px; color:#525252; margin-top:8px; line-height:1.6; }
+  /* mock UI */
+  .mock { border:1px solid #E5E5E5; border-radius:12px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.08); }
+  .mock-head { padding:14px 18px; display:flex; align-items:center; gap:14px; }
+  .tab { padding:8px 16px; border-radius:8px; font-size:14px; font-weight:600; }
+  .tab.active-old { background:#0d9488; color:#fff; }
+  .tab.active-new { background:#8B6F47; color:#fff; }
+  .tab.idle { color:#525252; }
+  .cta { padding:10px 20px; border-radius:8px; font-weight:700; font-size:14px; color:#fff; border:none; }
+  .cta-old { background:#0d9488; }
+  .cta-new { background:#8B6F47; }
+  .badge { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+  .mock-body { padding:18px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .link-old { color:#0d9488; font-weight:600; }
+  .link-new { color:#8B6F47; font-weight:600; }
+  .status-chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .sc { padding:4px 12px; border-radius:999px; font-size:12px; font-weight:600; }
+</style>
+</head>
+<body>
+  <h1>풋센터 CRM 모노톤 리컬러 — 팔레트 제안 (StepB · 확정 아님)</h1>
+  <div class="sub">티켓 T-20260614-foot-THEME-MONOCHROME-RECOLOR · 레퍼런스 #C4A882 / #8B6F47 기반 · 확정 HEX 컨펌 요청용</div>
+
+  <h2>1. 포인트 컬러 — 베이지/브라운 램프 (현재 teal·emerald 브랜드 대체)</h2>
+  <div class="ramp">
+    <div class="chip" style="background:#FAF6F0;color:#5b4a33"><span class="n">50</span><span class="h">#FAF6F0</span></div>
+    <div class="chip" style="background:#F1E9DD;color:#5b4a33"><span class="n">100</span><span class="h">#F1E9DD</span></div>
+    <div class="chip" style="background:#E3D5C0;color:#5b4a33"><span class="n">200</span><span class="h">#E3D5C0</span></div>
+    <div class="chip" style="background:#D2BD9F;color:#4a3a28"><span class="n">300</span><span class="h">#D2BD9F</span></div>
+    <div class="chip" style="background:#C4A882;color:#3a2e1e"><span class="n">400 ★</span><span class="h">#C4A882</span></div>
+    <div class="chip" style="background:#AB8C63;color:#fff"><span class="n">500</span><span class="h">#AB8C63</span></div>
+    <div class="chip" style="background:#8B6F47;color:#fff"><span class="n">600 ★</span><span class="h">#8B6F47</span></div>
+    <div class="chip" style="background:#6F583A;color:#fff"><span class="n">700</span><span class="h">#6F583A</span></div>
+    <div class="chip" style="background:#54432C;color:#fff"><span class="n">800</span><span class="h">#54432C</span></div>
+    <div class="chip" style="background:#3A2E1E;color:#fff"><span class="n">900</span><span class="h">#3A2E1E</span></div>
+  </div>
+  <div class="note">★ = 레퍼런스 앵커. <b>600 #8B6F47</b> = 주 포인트(활성탭·CTA·강조). <b>400 #C4A882</b> = 보조 포인트(밝은 강조·라이트 배경). 50~200 = 연한 배경/뱃지, 700~900 = 텍스트/진한 강조.</div>
+
+  <h2>2. 기본 모노톤 베이스 (배경·텍스트·보더 — 이미 토큰화됨, 유지)</h2>
+  <div class="mono">
+    <div class="chip" style="background:#FFFFFF;color:#171717;border:1px solid #eee"><span class="n">White</span><span class="h">#FFFFFF</span></div>
+    <div class="chip" style="background:#F5F5F5;color:#171717"><span class="n">Gray-100</span><span class="h">#F5F5F5</span></div>
+    <div class="chip" style="background:#E5E5E5;color:#171717"><span class="n">Gray-200</span><span class="h">#E5E5E5</span></div>
+    <div class="chip" style="background:#A3A3A3;color:#fff"><span class="n">Gray-400</span><span class="h">#A3A3A3</span></div>
+    <div class="chip" style="background:#525252;color:#fff"><span class="n">Gray-600</span><span class="h">#525252</span></div>
+    <div class="chip" style="background:#262626;color:#fff"><span class="n">Gray-800</span><span class="h">#262626</span></div>
+    <div class="chip" style="background:#171717;color:#fff"><span class="n">Near-Black</span><span class="h">#171717</span></div>
+  </div>
+
+  <h2>3. 적용 미리보기 — Before(teal) vs After(brown)</h2>
+  <div class="row">
+    <div class="col">
+      <div class="note" style="margin-bottom:8px;font-weight:700;color:#171717">BEFORE (현재 teal·emerald)</div>
+      <div class="mock">
+        <div class="mock-head" style="border-bottom:1px solid #eee">
+          <span class="tab active-old">대시보드</span>
+          <span class="tab idle">예약</span>
+          <span class="tab idle">통계</span>
+        </div>
+        <div class="mock-body">
+          <button class="cta cta-old">신규 접수</button>
+          <span class="badge" style="background:#ccfbf1;color:#0f766e">패키지 잔여 5회</span>
+          <a class="link-old">차트 보기 →</a>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="note" style="margin-bottom:8px;font-weight:700;color:#171717">AFTER (제안 brown)</div>
+      <div class="mock">
+        <div class="mock-head" style="border-bottom:1px solid #eee">
+          <span class="tab active-new">대시보드</span>
+          <span class="tab idle">예약</span>
+          <span class="tab idle">통계</span>
+        </div>
+        <div class="mock-body">
+          <button class="cta cta-new">신규 접수</button>
+          <span class="badge" style="background:#F1E9DD;color:#6F583A">패키지 잔여 5회</span>
+          <a class="link-new">차트 보기 →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="note">포인트는 절제 적용(AC2): 활성탭·CTA·핵심뱃지·강조링크만 brown. 그 외 영역은 모노톤 유지.</div>
+
+  <h2>4. 상태 의미색은 유지 (AC4) — 칸반 단계 구분용 레인보우는 손대지 않음</h2>
+  <div class="status-chips">
+    <span class="sc" style="background:#e0e7ff;color:#3730a3">상담대기</span>
+    <span class="sc" style="background:#dbeafe;color:#1e40af">진료대기</span>
+    <span class="sc" style="background:#ccfbf1;color:#115e59">치료대기</span>
+    <span class="sc" style="background:#ffe4e6;color:#9f1239">레이저대기</span>
+    <span class="sc" style="background:#d1fae5;color:#065f46">레이저</span>
+    <span class="sc" style="background:#fef3c7;color:#92400e">수납대기</span>
+    <span class="sc" style="background:#dcfce7;color:#166534">선체험(green 플래그)</span>
+  </div>
+  <div class="note">⚠ 칸반 단계 배지·방문유형(재진=emerald)·상태플래그(green=선체험)의 teal/emerald는 <b>의미 전달용</b>이라 브랜드 리컬러에서 제외 권장. 전부 brown으로 바꾸면 단계 구분이 무너짐(AC4 위반). 이 부분 포함 여부도 컨펌 필요.</div>
+</body>
+</html>
