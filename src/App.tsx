@@ -55,7 +55,9 @@ const CustomerChartPage = lazyWithRetry(() => import('@/pages/CustomerChartPage'
 const DailyHistory = lazyWithRetry(() => import('@/pages/DailyHistory'));
 const Services = lazyWithRetry(() => import('@/pages/Services'));
 const DoctorTools = lazyWithRetry(() => import('@/pages/DoctorTools'));
-// T-20260606-foot-RXTOOL-INJURY-MENU-SPLIT: 진료관리 — 어드민성 진료 도구 모음 (admin/manager/director 전용)
+// T-20260606-foot-RXTOOL-INJURY-MENU-SPLIT: 진료관리 — 어드민성 진료 도구 모음.
+// T-20260613-foot-CLINICMGMT-SUBTAB-STAFF-OPEN(7fed414) SUPERSEDED: 진료관리=서비스 목록과 동일 role(직원 포함) 개방.
+//   → director-only 의도는 stale. 라우트 가드는 서비스관리 진입 role set ∪ director 로 정합(아래 clinic-management Route 참조).
 const ClinicManagement = lazyWithRetry(() => import('@/pages/ClinicManagement'));
 const TreatmentTable = lazyWithRetry(() => import('@/pages/TreatmentTable'));
 const TabletChecklistPage = lazyWithRetry(() => import('@/pages/TabletChecklistPage'));
@@ -208,10 +210,13 @@ function App() {
                 <Route path="accounts" element={<RoleGuard roles={['admin']}><Accounts /></RoleGuard>} />
                 {/* T-20260520-foot-RBAC-MENU-EXPAND AC-1: consultant/coordinator/therapist 서비스관리 접근 (뷰 전용) */}
                 <Route path="services" element={<RoleGuard roles={['admin', 'manager', 'consultant', 'coordinator', 'therapist']}><Services /></RoleGuard>} />
-                {/* T-20260606-foot-RXTOOL-INJURY-MENU-SPLIT (AC-3): 진료관리 — 어드민성 진료 도구 모음.
-                    admin/manager만 어드민 관리 의도이나 director(원장)는 진료차트 '관리 화면으로' 진입 연속성 위해 포함.
-                    consultant(부원장)/coordinator/therapist 직접 URL 접근 차단(메뉴 비노출 + 라우트 가드 이중). */}
-                <Route path="clinic-management" element={<RoleGuard roles={['admin', 'manager', 'director']}><ClinicManagement /></RoleGuard>} />
+                {/* T-20260606-foot-RXTOOL-INJURY-MENU-SPLIT (AC-3) → T-20260613-foot-CLINICMGMT-SUBTAB-STAFF-OPEN(7fed414) SUPERSEDED.
+                    진료관리 = 서비스관리(/admin/services) 와 동일하게 직원 개방(Services.tsx canViewClinicMgmt=!!profile?.role).
+                    STAFF-OPEN 은 서브탭만 열고 이 독립 라우트는 불변으로 남겨 이중성(서브탭 열림↔직접 URL 차단)이 잔존했음.
+                    T-20260615-foot-CLINICMGMT-SPEC-ALIGN-SUPERSEDE(AC-2): 라우트 가드를 services 진입 role set ∪ director 로 정합.
+                    director(원장)는 진료차트 '관리 화면으로'(MedicalChartPanel) 직접 진입 연속성 위해 보존.
+                    ⚠ FE 가시성/라우트 게이트만 — 진료관리 내부 각 패널의 데이터 RLS/WRITE 권한 불변(umbrella Phase2 RLS 트랙 소관). */}
+                <Route path="clinic-management" element={<RoleGuard roles={['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist']}><ClinicManagement /></RoleGuard>} />
                 {/* T-20260512-foot-QUICK-RX-BUTTON: 치료사/원장도 진료환자목록 탭 접근 가능 */}
                 {/* T-20260520-foot-RBAC-MENU-EXPAND AC-2: consultant/coordinator 진료도구 접근 추가 */}
                 <Route path="doctor-tools" element={<RoleGuard roles={['admin', 'manager', 'director', 'therapist', 'technician', 'part_lead', 'consultant', 'coordinator']}><DoctorTools /></RoleGuard>} />

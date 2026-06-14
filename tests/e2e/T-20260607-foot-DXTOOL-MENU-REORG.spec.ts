@@ -69,26 +69,26 @@ test.describe('DXTOOL-MENU-REORG — 소스 구조 불변식', () => {
     expect(iContra).toBeLessThan(iBreak1);
   });
 
-  test('Stage A: 행2(상용구·슈퍼상용구·서류) 가 행1 경계 뒤 / 행3 경계 앞', () => {
+  // T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: '상용구'(phrases)·'수가세트'(fee_set_templates)는
+  //   서비스관리>상용구관리 서브탭으로 이전됨 → 진료관리(ClinicManagement) 에서는 부재해야 함.
+  test('Stage A: 행2(슈퍼상용구·서류) 가 행1 경계 뒤 / 행3 경계 앞 (상용구 이전)', () => {
     const breaks = [...src.matchAll(/basis-full h-0/g)].map((m) => m.index!);
-    const iPhrases = src.indexOf('value="phrases"');
     const iSuper = src.indexOf('value="super_phrases"');
     const iDocs = src.indexOf('value="documents"');
-    expect(iPhrases).toBeGreaterThan(breaks[0]);
+    expect(src).not.toContain('value="phrases"'); // 상용구 이전 락인
+    expect(iSuper).toBeGreaterThan(breaks[0]);
     expect(iDocs).toBeLessThan(breaks[1]);
-    expect(iPhrases).toBeLessThan(iSuper);
     expect(iSuper).toBeLessThan(iDocs);
   });
 
-  test('Stage A: 행3(진료세트·수가세트·경과분석) 가 행2 경계 뒤(마지막 행, 후행 경계 없음)', () => {
+  test('Stage A: 행3(진료세트·경과분석) 가 행2 경계 뒤(마지막 행, 후행 경계 없음) (수가세트 이전)', () => {
     const breaks = [...src.matchAll(/basis-full h-0/g)].map((m) => m.index!);
     const iTreat = src.indexOf('value="treatment_sets"');
-    const iFee = src.indexOf('value="fee_set_templates"');
     const iProg = src.indexOf('value="progress_plans"');
+    expect(src).not.toContain('value="fee_set_templates"'); // 수가세트 이전 락인
     // item2 이후 묶음처방이 행1로 올라가며 행3 뒤 경계 div 제거 → 행3 = 마지막 행
     expect(iTreat).toBeGreaterThan(breaks[1]);
-    expect(iTreat).toBeLessThan(iFee);
-    expect(iFee).toBeLessThan(iProg);
+    expect(iTreat).toBeLessThan(iProg);
   });
 
   // ── Stage C: 묶음처방 영구 보존 락인 (2026-06-08 최종결정) ──────────────────────
