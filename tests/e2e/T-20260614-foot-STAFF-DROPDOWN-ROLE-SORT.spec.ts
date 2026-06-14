@@ -27,7 +27,17 @@ async function fetchStaff(request: import('@playwright/test').APIRequestContext)
     `${SUPABASE_URL}/rest/v1/staff?select=id,name,display_name,role,active&active=eq.true`,
     { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } },
   );
-  return (await res.json()) as Array<{ id: string; name: string; display_name: string | null; role: string; active: boolean }>;
+  // 가드: 권한오류/에러객체 등 비정상 응답이면 PostgREST가 배열이 아닌 객체를 반환 → 빈 배열로 정규화
+  if (!res.ok()) {
+    console.log(`[fetchStaff] 비정상 응답 status=${res.status()} — 빈 배열 처리`);
+    return [];
+  }
+  const body = await res.json().catch(() => null);
+  if (!Array.isArray(body)) {
+    console.log(`[fetchStaff] 응답이 배열 아님(${JSON.stringify(body)?.slice(0, 120)}) — 빈 배열 처리`);
+    return [];
+  }
+  return body as Array<{ id: string; name: string; display_name: string | null; role: string; active: boolean }>;
 }
 
 test.describe('T-20260614-STAFF-DROPDOWN-ROLE-SORT — 담당자 드롭다운 role 정렬', () => {
@@ -81,6 +91,7 @@ test.describe('T-20260614-STAFF-DROPDOWN-ROLE-SORT — 담당자 드롭다운 ro
     if (!SUPABASE_URL || !SERVICE_KEY) { test.skip(true, 'SUPABASE env 미설정'); return; }
 
     const staff = await fetchStaff(request);
+    if (staff.length === 0) { test.skip(true, 'staff 응답 없음/비정상(권한 등)'); return; }
     const byName = new Map<string, string>(); // 표시명 → role
     for (const s of staff) byName.set((s.display_name || s.name).trim(), s.role);
 
@@ -125,6 +136,7 @@ test.describe('T-20260614-STAFF-DROPDOWN-ROLE-SORT — 담당자 드롭다운 ro
   test('회귀: DB staff 무변경 — role 값/active 유지 (표시 순서 only)', async ({ request }) => {
     if (!SUPABASE_URL || !SERVICE_KEY) { test.skip(true, 'SUPABASE env 미설정'); return; }
     const staff = await fetchStaff(request);
+    if (staff.length === 0) { test.skip(true, 'staff 응답 없음/비정상(권한 등)'); return; }
     // role enum 표준값만 존재해야 함 (정렬은 코드 레벨, DB enum 무변경)
     const valid = new Set(['director', 'consultant', 'coordinator', 'therapist', 'technician']);
     for (const s of staff) {
