@@ -14,7 +14,7 @@ BEGIN;
 
 -- 1) 전체 스냅샷 백업 (rollback 원천)
 CREATE TABLE IF NOT EXISTS prescription_sets_namedesc_backup_20260613 (
-  id           uuid PRIMARY KEY,
+  id           integer PRIMARY KEY,  -- prescription_sets.id is int4 (not uuid) — verified 2026-06-15
   name         text,
   items        jsonb,
   backed_up_at timestamptz NOT NULL DEFAULT now()
