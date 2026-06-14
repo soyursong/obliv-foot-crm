@@ -15,6 +15,8 @@ import { aggregateByTimeSlot, type SlotKindCount } from '@/lib/resvSlotAgg';
 interface TimeslotRow {
   reservation_time: string;
   visit_type: string; // 'new'|'returning'|'experience' 등 — resvKind 가 분류
+  // T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): healer_intent(영속) = 힐러 분류 SSOT.
+  healer_intent: boolean | null;
   healer_flag: boolean | null;
   status: 'confirmed' | 'checked_in' | 'cancelled' | 'noshow';
 }
@@ -46,7 +48,7 @@ export function ReservationDayTimeslotPanel({
       // AC1 read-only: 선택 일자 전체 예약 read(지점 스코프). 신규 write 경로 없음.
       const { data, error } = await supabase
         .from('reservations')
-        .select('reservation_time, visit_type, healer_flag, status')
+        .select('reservation_time, visit_type, healer_intent, healer_flag, status')
         .eq('clinic_id', clinicId)
         .eq('reservation_date', dateStr);
       if (cancelled) return;
