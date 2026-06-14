@@ -304,7 +304,7 @@ const DROP_STATUS_FOR_ROOM: Record<string, CheckInStatus> = {
   consultation: 'consultation',
   treatment: 'preconditioning',
   laser: 'laser',
-  heated_laser: 'laser', // T-MQ-20260506: 가열성레이저 DnD 지원
+  // T-20260614-foot-DASH-HEATED-LASER-SLOT-REMOVE: 가열성레이저 슬롯 제거 → heated_laser DnD 매핑 삭제
 };
 
 const ROOM_FIELD_MAP: Record<string, RoomFieldKey> = {
@@ -312,7 +312,7 @@ const ROOM_FIELD_MAP: Record<string, RoomFieldKey> = {
   consultation: 'consultation_room',
   treatment: 'treatment_room',
   laser: 'laser_room',
-  heated_laser: 'laser_room', // T-MQ-20260506: 가열성레이저 DnD 지원
+  // T-20260614-foot-DASH-HEATED-LASER-SLOT-REMOVE: 가열성레이저 슬롯 제거 → heated_laser DnD 매핑 삭제
 };
 
 // T-20260614-foot-SLOT-CRUD-ALLTYPES: 슬롯 추가/삭제 대상 타입 라벨 (다이얼로그·버튼 표기)
@@ -998,98 +998,10 @@ function RoomSlot({
   );
 }
 
-// ── T-MQ-20260506-HEATED-LASER-SUPPLEMENT: 가열성레이저 드롭 슬롯 ─────────────
-// - useDroppable 포함 → DnD 양방향 이동 지원
-// - 너비는 부모(w-[480px])가 제어 → 치료실과 동일 가로 비율
-function HeatedLaserDropSlot({
-  currentDoctorId,
-  currentDoctorName,
-  doctors,
-  occupants,
-  onDoctorChange,
-  onCardClick,
-  onCardContext,
-  getStageStart,
-  getPkgLabel,
-}: {
-  currentDoctorId: string | null;
-  currentDoctorName: string | null;
-  doctors: Staff[];
-  occupants: CheckIn[];
-  onDoctorChange: (id: string | null, name: string | null) => void;
-  onCardClick: (ci: CheckIn) => void;
-  onCardContext: (ci: CheckIn, e: React.MouseEvent) => void;
-  getStageStart: (ci: CheckIn) => string;
-  getPkgLabel: (ci: CheckIn) => PackageLabel | null;
-}) {
-  const dropId = 'room:가열성레이저';
-  const { isOver, setNodeRef } = useDroppable({
-    id: dropId,
-    data: { roomName: '가열성레이저', roomType: 'heated_laser' },
-  });
-
-  return (
-    <div
-      ref={setNodeRef}
-      data-droppable-id={dropId}
-      className={cn(
-        'rounded-lg border border-blue-200 overflow-hidden shadow-sm transition-colors',
-        isOver && 'border-blue-400',
-      )}
-    >
-      {/* 헤더 — 빈 슬롯(환자 미배치)은 흰색, 환자 있을 때만 연파랑 */}
-      <div className={cn('flex items-center justify-between px-3 py-2 transition-colors', isOver ? 'bg-blue-100' : occupants.length > 0 ? 'bg-[#BFDBFE]' : 'bg-white')}>
-        <div className="flex items-center gap-2">
-          <div className="h-2.5 w-2.5 rounded-full bg-blue-400 shrink-0" />
-          <span className="text-xs font-bold text-blue-900 tracking-wide">가열성레이저</span>
-          {currentDoctorName && (
-            <span className="text-xs text-blue-700 font-medium">
-              — {currentDoctorName} 원장님
-            </span>
-          )}
-        </div>
-        <select
-          value={currentDoctorId ?? ''}
-          onChange={(e) => {
-            const id = e.target.value || null;
-            const name = id ? doctors.find((d) => d.id === id)?.name ?? null : null;
-            onDoctorChange(id, name);
-          }}
-          className="text-xs h-6 border border-blue-300 rounded bg-white/90 px-1 text-blue-900 min-w-[90px] cursor-pointer hover:border-blue-400 transition"
-        >
-          <option value="">미배정</option>
-          {doctors.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      {/* 드롭 영역 — 환자 카드 */}
-      <div className={cn('px-2 pb-2 pt-1 min-h-[56px] space-y-1 transition-colors', isOver ? 'bg-blue-100/60' : 'bg-white')}>
-        {occupants.length === 0 && (
-          <div className={cn(
-            'rounded border-2 border-dashed h-10 flex items-center justify-center text-[10px] select-none transition-colors',
-            isOver ? 'border-blue-400 text-blue-600' : 'border-blue-200 text-blue-400',
-          )}>
-            {isOver ? '여기에 드롭' : '비어 있음'}
-          </div>
-        )}
-        {occupants.map((ci) => (
-          <DraggableCard
-            key={ci.id}
-            checkIn={ci}
-            compact
-            stageStart={getStageStart(ci)}
-            packageLabel={getPkgLabel(ci)}
-            onClick={() => onCardClick(ci)}
-            onContextMenu={(e) => onCardContext(ci, e)}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
+// ── T-20260614-foot-DASH-HEATED-LASER-SLOT-REMOVE ─────────────────────────────
+// 가열성레이저 드롭 슬롯(구 HeatedLaserDropSlot, T-MQ-20260506) 제거.
+// 현장(김주연 총괄) 요청으로 대시보드 슬롯 목록에서 [가열성레이저] 항목 삭제.
+// ※ 패키지 결제의 '가열/비가열' 회차 표기(session_type)는 별개 도메인 → 영향 없음.
 
 function RoomSection({
   title,
@@ -4070,10 +3982,7 @@ export default function Dashboard() {
     handleStaffAssign(roomName, 'consultation', staffId, staffName);
   }, [handleStaffAssign]);
 
-  // T-20260502-foot-HEATED-LASER-SLOT: 가열성레이저 슬롯 원장님 배정 핸들러
-  const handleHeatedLaserDoctorChange = useCallback((staffId: string | null, staffName: string | null) => {
-    handleStaffAssign('가열성레이저', 'heated_laser', staffId, staffName);
-  }, [handleStaffAssign]);
+  // T-20260614-foot-DASH-HEATED-LASER-SLOT-REMOVE: 가열성레이저 슬롯 원장 배정 핸들러(구 handleHeatedLaserDoctorChange) 제거.
 
   // T-20260520-foot-LASER-DROPDOWN: 레이저실 장비명 배정 핸들러 (room_type='laser')
   const handleLaserTechChange = useCallback((roomName: string, staffId: string | null, staffName: string | null) => {
@@ -5323,7 +5232,8 @@ export default function Dashboard() {
           check_in_id: ci.id,
           clinic_id: ci.clinic_id,
           assigned_room: laserRoom,
-          room_type: laserRoom === '가열성레이저' ? 'heated_laser' : 'laser',
+          // T-20260614-foot-DASH-HEATED-LASER-SLOT-REMOVE: 가열성레이저 슬롯 제거 → 레이저실 드롭은 항상 'laser'
+          room_type: 'laser',
         });
       } catch { /* graceful skip */ }
     })();
@@ -6122,28 +6032,10 @@ export default function Dashboard() {
           </div>
         );
       case 'treatment_rooms': {
-        // T-MQ-20260506-HEATED-LASER-SUPPLEMENT: 가열성레이저 슬롯을 치료실 위에 포함
-        // → 편집 모드에서도 자동 렌더링 / 가로 폭 480px 동일
+        // T-20260614-foot-DASH-HEATED-LASER-SLOT-REMOVE: 가열성레이저 슬롯 제거 → 치료실만 렌더.
         if (treatmentRooms.length === 0) return null;
-        const heatedAssignment2 = assignments.find(
-          (a) => a.room_name === '가열성레이저' && a.room_type === 'heated_laser',
-        );
-        const heatedOccupants = filtered.filter(
-          (ci) => ci.status === 'laser' && ci.laser_room === '가열성레이저',
-        );
         return (
           <div key="treatment_rooms" className="w-[480px] shrink-0 flex flex-col gap-1.5">
-            <HeatedLaserDropSlot
-              currentDoctorId={heatedAssignment2?.staff_id ?? null}
-              currentDoctorName={heatedAssignment2?.staff_name ?? null}
-              doctors={doctors}
-              occupants={heatedOccupants}
-              onDoctorChange={handleHeatedLaserDoctorChange}
-              onCardClick={handleCardClick}
-              onCardContext={handleCardContext}
-              getStageStart={getStageStart}
-              getPkgLabel={getPkgLabel}
-            />
             <RoomSection
               title="치료실"
               color="bg-amber-100 text-amber-800"
@@ -6287,7 +6179,7 @@ export default function Dashboard() {
     laserWaiting, pendingTotal, doneTotal, dayPayments, doneCount,
     getStageStart, getPkgLabel, swapSortOrder,
     handleCardClick, handleCardContext,
-    handleDoctorChange, handleConsultantChange, handleTherapistChange, handleHeatedLaserDoctorChange, handleLaserTechChange,
+    handleDoctorChange, handleConsultantChange, handleTherapistChange, handleLaserTechChange,
     slotBatchEditMode, isToday, defaultRoomIds, handleOpenAddSlot, handleDeleteSlot,
     setAddSlotName, setAddSlotOpen, setSlotBatchEditMode,
     // T-20260523-foot-ROOM-DISABLE-TOGGLE (AC-6/8/9 3차)
@@ -6300,14 +6192,16 @@ export default function Dashboard() {
   // (laser_rooms 가 일반모드 클러스터·편집모드 개별드래그로 분리된 기존 선례와 동일 패턴).
   const renderWaitingPair = useCallback(() => (
     <div className="w-40 shrink-0 self-stretch flex flex-col gap-2" data-testid="laser-healer-wait-pair">
+      {/* AC-1: 현장 요청·티켓 명시 순서 "[힐러대기 / 레이저대기]" — 힐러대기 위 / 레이저대기 아래.
+          도메인 흐름(재진: 힐러/프리컨디셔닝 → 레이저)과도 일치. */}
       <DroppableColumn
-        id="laser_waiting"
-        label="레이저대기"
-        count={laserWaiting.length}
+        id="healer_waiting"
+        label="힐러대기"
+        count={healerWaiting.length}
         className="flex-1 min-h-0"
-        highlight="text-rose-700"
+        highlight="text-violet-700"
       >
-        {laserWaiting.map((ci) => (
+        {healerWaiting.map((ci) => (
           <DraggableCard
             key={ci.id}
             checkIn={ci}
@@ -6320,13 +6214,13 @@ export default function Dashboard() {
         ))}
       </DroppableColumn>
       <DroppableColumn
-        id="healer_waiting"
-        label="힐러대기"
-        count={healerWaiting.length}
+        id="laser_waiting"
+        label="레이저대기"
+        count={laserWaiting.length}
         className="flex-1 min-h-0"
-        highlight="text-violet-700"
+        highlight="text-rose-700"
       >
-        {healerWaiting.map((ci) => (
+        {laserWaiting.map((ci) => (
           <DraggableCard
             key={ci.id}
             checkIn={ci}
@@ -6727,9 +6621,8 @@ export default function Dashboard() {
             ) : (
               /* ── 일반 모드: 카드 드래그 (DnD 컨텍스트는 상위로 이동됨) ── */
               <div className="flex gap-2 h-full min-w-max">
-                {/* T-MQ-20260506-HEATED-LASER-SUPPLEMENT:
-                    가열성레이저 슬롯은 renderKanbanGroup('treatment_rooms') 내부에 포함됨.
-                    치료실+레이저실 클러스터: 치료실(heated_laser 포함) | 레이저실 나란히 배치 */}
+                {/* 치료실+레이저실 클러스터: 치료실 | 레이저실 나란히 배치.
+                    (T-20260614-foot-DASH-HEATED-LASER-SLOT-REMOVE: 가열성레이저 슬롯 제거됨) */}
                 {groupOrder.map((gid) => {
                   // 레이저실은 치료실 클러스터 내부에서 렌더링 — 별도 표시 생략
                   if (gid === 'laser_rooms') return null;
@@ -6751,7 +6644,7 @@ export default function Dashboard() {
 
                     return (
                       <div key="treatment_laser_cluster" className="flex gap-2 shrink-0 items-start">
-                        {/* 치료실 (가열성레이저 슬롯 포함, 480px) */}
+                        {/* 치료실 (480px) */}
                         {hasTreatment && renderKanbanGroup('treatment_rooms')}
                         {/* AC-1/AC-2: 레이저대기·힐러대기 상하 쌍 — 레이저실 좌측 인접 */}
                         {hasLaser && renderWaitingPair()}
