@@ -28,6 +28,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { supabase } from '@/lib/supabase';
+// T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: new-mode 시간 선택지(기존 schedule 슬롯 생성기 재사용, 신규 로직 0)
+import { generateSlots } from '@/lib/schedule';
 import { VISIT_TYPE_KO } from '@/lib/status';
 import { formatPhone, chartNoBadge } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -73,6 +75,43 @@ const VISIT_TYPE_BADGE_CLASS: Record<string, string> = {
 
 const GENDER_KO: Record<string, string> = { M: '남', F: '여' };
 
+// T-20260614-foot-RESVPOPUP-RRN-NOBIND: 예약상세 1번구역 '주민번호' 마스킹 표시.
+//   PHI 가드: 평문 rrn 미수신. 서버파생 생년월일(fn_customer_birthdates → YYYY-MM-DD)과
+//   성별(M/F)만으로 마스킹 표기(YYMMDD-G******)를 구성한다. 성별 다음 6자리는 항상 마스킹,
+//   신규 복호/노출 경로 없음(AC-3). 성별코드 G = 세기(생년)·성별 파생(내국인 기준):
+//   1900s 남1/여2, 2000s 남3/여4, 1800s 남9/여0. 세기·성별은 화면에 이미 노출되는 비민감 정보.
+function maskRrnDisplay(
+  birthYmd: string | null | undefined,
+  gender: 'M' | 'F' | null | undefined,
+): string {
+  if (!birthYmd) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(birthYmd);
+  if (!m) return '';
+  const year = parseInt(m[1], 10);
+  const front = `${m[1].slice(2)}${m[2]}${m[3]}`; // YYMMDD
+  const century = Math.floor(year / 100); // 18 | 19 | 20
+  let g = '*';
+  if (gender === 'M') {
+    g = century === 20 ? '3' : century === 18 ? '9' : '1';
+  } else if (gender === 'F') {
+    g = century === 20 ? '4' : century === 18 ? '0' : '2';
+  }
+  return `${front}-${g}******`;
+}
+
+// T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: new-mode 시간 선택지 (07:00~22:00, 30분 — editor EDIT_TIME_SLOTS 동일 규칙)
+const NEW_RESV_TIME_SLOTS = generateSlots('07:00', '22:00', 30);
+
+// new-mode 생성 콜백 파라미터 (parent = 단일소스 createReservationCanonical 위임)
+type CreateReservationParams = {
+  customerId: string;
+  name: string;
+  phone: string | null;
+  date: string; // yyyy-MM-dd
+  time: string; // HH:mm
+  visit_type: 'new' | 'returning';
+};
+
 // ─── 메인 컴포넌트 ──────────────────────────────────────────────────
 
 export function ReservationDetailPopup({
@@ -84,7 +123,7 @@ export function ReservationDetailPopup({
   onClose,
   onEdit,
   onChanged,
-  onNewReservationForCustomer,
+  onCreateReservation,
 }: {
   reservation: Reservation | null;
   noshowCount: number;
@@ -94,11 +133,11 @@ export function ReservationDetailPopup({
   onClose: () => void;
   onEdit: (r: Reservation) => void;
   onChanged: () => void;
-  // T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1 (현장 확정: "A고객 등록 후 B고객 불러와 신규 예약 생성"):
-  //   1번구역 검색창에서 B고객 선택 → 팝업 닫고 기존 예약관리 신규예약 editor 를 B고객 기준으로 오픈(연속 등록).
-  //   🔒 L-002 LOGIC-LOCK: 신규예약 생성 capability 는 이 동선으로 '확장'될 뿐, 기존 생성 로직 재사용
-  //   (신규 INSERT 로직 팝업 내 작성 금지). 미전달 시 검색창 자체를 숨겨 graceful degrade.
-  onNewReservationForCustomer?: (customer: PatientMatch) => void;
+  // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002 (현장 확정 "A 등록 → B 검색 → 신규예약", 옵션A · L-002 개정):
+  //   1번구역 검색으로 B고객 로드 → '팝업 안에서' new-mode(날짜·시간·초/재·생성버튼) 완결(모달 스폰 폐기).
+  //   🔒 L-002(개정): 팝업은 이 parent 콜백만 호출 — 팝업 내 reservations.insert = 0. 생성 무결성 5요소는
+  //   parent 의 단일소스 createReservationCanonical 내부에 보존. 미전달 시 검색창/new-mode 숨겨 graceful degrade.
+  onCreateReservation?: (params: CreateReservationParams) => Promise<{ ok: boolean; reason?: string; message?: string }>;
 }) {
   // ── 액션 상태
   const [busy, setBusy] = useState(false);
@@ -107,6 +146,9 @@ export function ReservationDetailPopup({
 
   // ── 2구역 데이터
   const [customer, setCustomer] = useState<Customer | null>(null);
+  // T-20260614-foot-RESVPOPUP-RRN-NOBIND: 주민번호 마스킹 표시용 서버파생 생년월일(YYYY-MM-DD).
+  //   PHI: 평문 rrn 미수신 — fn_customer_birthdates RPC가 birth_date_display만 반환(기존 자산 재사용).
+  const [birthDisplay, setBirthDisplay] = useState<string | null>(null);
   const [allResvs, setAllResvs] = useState<Reservation[]>([]);
   // T-20260611-foot-RESVPOPUP-2ZONE: 클리닉 전체 활성 staff (담당상담사 드롭다운 + 치료사 이름 resolve).
   //   기존 consultant-만-로드 → 전체 로드로 확장: assigned_staff_id 가 role!=consultant 직원이어도
@@ -121,8 +163,14 @@ export function ReservationDetailPopup({
   // T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC1: 팝업 내 다른 고객 불러오기(B) — 1번구역만 교체, 팝업 닫지 않음.
   //   loadedMatch 가 set 이면 1번구역(고객정보/패키지/치료내역/메모)이 B 로 교체된 '신규예약 대상' 상태.
   //   ⚠ 저장 컨텍스트 안전분리: B 로딩 중에는 footer 의 현재예약(A) 액션(저장/체크인/취소/노쇼/삭제) 숨김 →
-  //      엉뚱한 예약/고객에 저장 0. 신규예약 등록은 onNewReservationForCustomer(canonical editor) 위임(L-002 보존).
+  //      엉뚱한 예약/고객에 저장 0. 신규예약 생성은 onCreateReservation(parent 단일소스 함수) 위임(L-002 보존).
   const [loadedMatch, setLoadedMatch] = useState<PatientMatch | null>(null);
+
+  // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: B 로드 시 '팝업 안에서' 신규예약 생성하는 new-mode 입력 상태.
+  //   날짜=pickedDate(미니캘린더), 시간=newResvTime, 초/재=newResvVisitType. 생성은 onCreateReservation 위임(팝업 insert 0).
+  const [newResvTime, setNewResvTime] = useState<string>('10:00');
+  const [newResvVisitType, setNewResvVisitType] = useState<'new' | 'returning'>('returning');
+  const [creatingResv, setCreatingResv] = useState(false);
 
   // 드롭다운 옵션 = 활성 consultant 만. (이름 resolve 는 비활성/타직군 포함 allStaff 전체로 — UUID 노출 방지)
   const consultants = allStaff.filter((s) => s.role === 'consultant' && s.active);
@@ -193,6 +241,19 @@ export function ReservationDetailPopup({
         setCustomerMemo(c.customer_memo ?? c.memo ?? '');
         setSelectedConsultantId(c.assigned_staff_id ?? '');
       });
+    // 1b) 주민번호 마스킹 표시용 생년월일(서버파생) — T-20260614-foot-RESVPOPUP-RRN-NOBIND.
+    //   원인진단(AC-4): 기존엔 비어있기 쉬운 customers.birth_date 컬럼에 직접 바인딩 → '칸은 있는데 비어있음'.
+    //   보정: 기존 fn_customer_birthdates RPC(서버에서 rrn 복호 후 birth_date_display만 반환) 재사용.
+    //   PHI: 평문 rrn·뒷자리 클라 미수신(AC-3). 신규 컴포넌트/복호경로 없음.
+    setBirthDisplay(null);
+    if (reservation?.clinic_id) {
+      supabase
+        .rpc('fn_customer_birthdates', { p_clinic_id: reservation.clinic_id, p_ids: [customerId] })
+        .then(({ data }) => {
+          const row = ((data ?? []) as { customer_id: string; birth_date_display: string | null }[])[0];
+          setBirthDisplay(row?.birth_date_display ?? null);
+        });
+    }
     // 4) 보유 패키지 (활성) — 2번차트 양식 표시 위해 전체 컬럼 + 시술내역(package_sessions) 로드
     supabase
       .from('packages')
@@ -244,6 +305,7 @@ export function ReservationDetailPopup({
   useEffect(() => {
     if (!reservation) {
       setCustomer(null);
+      setBirthDisplay(null);
       setAllResvs([]);
       setPackages([]);
       setPackageSessions([]);
@@ -260,6 +322,9 @@ export function ReservationDetailPopup({
       setSearchValue('');
       setPickedDate(null);
       setLoadedMatch(null);
+      setNewResvTime('10:00');
+      setNewResvVisitType('returning');
+      setCreatingResv(false);
       return;
     }
 
@@ -269,6 +334,10 @@ export function ReservationDetailPopup({
     setPickedDate(null);
     // AC1: 다른 예약 오픈 시 B 로딩 상태 초기화(현재 예약 A 기준 복귀)
     setLoadedMatch(null);
+    // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: new-mode 입력 초기화
+    setNewResvTime('10:00');
+    setNewResvVisitType('returning');
+    setCreatingResv(false);
     // T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 현재 예약의 예약경로/예약등록자 프리로드
     setVisitRoute(reservation.visit_route ?? '');
     setRegistrarId(reservation.registrar_id ?? '');
@@ -563,12 +632,15 @@ export function ReservationDetailPopup({
   };
 
   // ── T-20260614-foot-RESVPOPUP-FIELDBATCH-6FIX AC1: 검색창에서 다른 고객(B) 선택
-  //    → 팝업을 닫지 않고 1번구역(고객정보·패키지·치료내역·메모)만 B 로 교체(신규예약 대상 미리보기).
-  //    검색 입력값도 즉시 초기화(stale text clear). 실제 신규예약 등록은 footer 버튼 → onNewReservationForCustomer 위임.
-  //    🔒 L-002: 신규 생성 로직 작성 0 — parent ReservationEditor(canonical) 재사용.
+  //    → 팝업을 닫지 않고 1번구역(고객정보·패키지·치료내역·메모)만 B 로 교체(신규예약 대상).
+  //    검색 입력값도 즉시 초기화(stale text clear). 실제 생성은 new-mode 폼 → onCreateReservation 위임.
+  //    🔒 L-002: 신규 생성 로직 작성 0 — parent 단일소스 함수 재사용.
   const handleSelectOtherCustomer = (p: PatientMatch) => {
     setSearchValue('');
     setLoadedMatch(p);
+    // T-20260614-foot-RESVPOPUP-AC2-NEWMODE: B 로드 시 new-mode 입력 기본값 리셋(초/재 재진 기본).
+    setNewResvVisitType('returning');
+    setNewResvTime('10:00');
     loadZone1Data(p.id);
   };
 
@@ -576,12 +648,44 @@ export function ReservationDetailPopup({
   const resetToOriginalCustomer = () => {
     setLoadedMatch(null);
     setSearchValue('');
+    setCreatingResv(false);
     if (reservation.customer_id) loadZone1Data(reservation.customer_id);
   };
 
-  // AC1: B 신규예약 등록 — canonical editor 로 위임(팝업 닫고 B 기준 신규예약). 저장 컨텍스트는 editor 가 보장.
-  const registerNewForLoaded = () => {
-    if (loadedMatch && onNewReservationForCustomer) onNewReservationForCustomer(loadedMatch);
+  // ── T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: 팝업 new-mode 신규예약 생성.
+  //    날짜=pickedDate(미니캘린더), 시간=newResvTime, 초/재=newResvVisitType. 생성은 parent 단일소스 함수 위임.
+  //    🔒 팝업 내 reservations.insert = 0 — onCreateReservation(parent) 만 호출. 생성 무결성 5요소는 parent 보존.
+  const submitNewReservation = async () => {
+    if (!loadedMatch || !onCreateReservation) return;
+    if (!pickedDate) {
+      toast.error('예약 캘린더에서 날짜를 먼저 선택하세요.');
+      return;
+    }
+    if (!newResvTime) {
+      toast.error('예약 시간을 선택하세요.');
+      return;
+    }
+    setCreatingResv(true);
+    const res = await onCreateReservation({
+      customerId: loadedMatch.id,
+      name: loadedMatch.name,
+      phone: loadedMatch.phone ?? null,
+      date: format(pickedDate, 'yyyy-MM-dd'),
+      time: newResvTime,
+      visit_type: newResvVisitType,
+    });
+    setCreatingResv(false);
+    if (!res.ok) {
+      // slot_full / error 는 메시지 노출, duplicate_cancelled 는 사용자 취소(조용히)
+      if (res.reason !== 'duplicate_cancelled') {
+        toast.error(res.message ?? '예약 생성에 실패했습니다.');
+      }
+      return;
+    }
+    toast.success(`${loadedMatch.name}님 신규예약이 등록되었습니다.`);
+    // 생성 후 현재 예약(A) 기준으로 복귀 + 팝업 닫기(부모 onChanged → 목록 새로고침)
+    setLoadedMatch(null);
+    onChanged();
   };
 
   // ─── 렌더 ─────────────────────────────────────────────────────────
@@ -616,8 +720,8 @@ export function ReservationDetailPopup({
                   {reservation.reservation_date} {reservation.reservation_time.slice(0, 5)}
                 </span>
               </DialogTitle>
-              {/* AC3: 헤더 우상단 고객 검색창 (이름 또는 연락처). graceful: onNewReservationForCustomer 미전달 시 숨김 */}
-              {onNewReservationForCustomer && (
+              {/* AC3: 헤더 우상단 고객 검색창 (이름 또는 연락처). graceful: onCreateReservation 미전달 시 숨김 */}
+              {onCreateReservation && (
                 <div className="w-[230px] shrink-0">
                   <InlinePatientSearch
                     value={searchValue}
@@ -670,12 +774,17 @@ export function ReservationDetailPopup({
                 <div className="space-y-1 text-xs">
                   <FieldRow label="이름" value={customer?.name ?? reservation.customer_name ?? '—'} />
                   <FieldRow label="고객번호" value={customer?.chart_number ?? '—'} />
+                  {/* T-20260614-foot-RESVPOPUP-RRN-NOBIND: 마스킹 주민번호.
+                      1순위) 서버파생 생년월일(birthDisplay)+성별 → YYMMDD-G******.
+                      2순위) (RPC 결측 시) customers.birth_date 컬럼 휴리스틱 → YYMMDD-*******.
+                      3순위) 둘 다 결측 → '—'(AC-2 placeholder). 평문 rrn 미사용(AC-3). */}
                   <FieldRow
                     label="주민번호"
                     value={
-                      customer?.birth_date
+                      maskRrnDisplay(birthDisplay, customer?.gender) ||
+                      (customer?.birth_date
                         ? `${customer.birth_date.slice(0, 6)}-*******`
-                        : '—'
+                        : '—')
                     }
                   />
                   <FieldRow
@@ -881,6 +990,76 @@ export function ReservationDetailPopup({
                 <ReservationDayTimeslotPanel date={pickedDate} clinicId={reservation.clinic_id} />
               </div>
 
+              {/* T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: 다른 고객(B) 로드 시 '팝업 안에서' 신규예약 생성 폼.
+                  검색(헤더) + 미니캘린더 날짜(pickedDate) + 시간 + 초/재 + 생성버튼. 생성은 parent 단일소스 함수 위임.
+                  🔒 팝업 내 reservations.insert = 0 — onCreateReservation 콜백만 호출. */}
+              {loadedMatch && onCreateReservation && (
+                <div
+                  className="rounded-xl border border-teal-300 bg-teal-50/50 px-3.5 py-3 shadow-sm flex-shrink-0"
+                  data-testid="popup-newmode-form"
+                >
+                  <SectionHeader accent="teal">신규예약 만들기 — {loadedMatch.name}</SectionHeader>
+                  <div className="space-y-2.5">
+                    {/* 날짜 (미니캘린더에서 선택) */}
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="w-12 shrink-0 text-muted-foreground">날짜</span>
+                      {pickedDate ? (
+                        <span className="font-medium text-teal-800">{format(pickedDate, 'yyyy-MM-dd (E)', { locale: ko })}</span>
+                      ) : (
+                        <span className="font-medium text-amber-600">위 캘린더에서 날짜를 선택하세요</span>
+                      )}
+                    </div>
+                    {/* 시간 */}
+                    <div className="flex items-center gap-2 text-xs">
+                      <Label htmlFor="newmode-time" className="w-12 shrink-0 text-muted-foreground">시간</Label>
+                      <select
+                        id="newmode-time"
+                        value={newResvTime}
+                        onChange={(e) => setNewResvTime(e.target.value)}
+                        className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        data-testid="newmode-time-select"
+                      >
+                        {NEW_RESV_TIME_SLOTS.map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {/* 초/재 선택 */}
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="w-12 shrink-0 text-muted-foreground">유형</span>
+                      <div className="grid flex-1 grid-cols-2 gap-2">
+                        {(['new', 'returning'] as const).map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => setNewResvVisitType(v)}
+                            className={cn(
+                              'h-9 rounded-md border text-sm font-medium',
+                              newResvVisitType === v
+                                ? 'border-teal-600 bg-teal-50 text-teal-700'
+                                : 'border-input hover:bg-muted',
+                            )}
+                            data-testid={`newmode-visit-${v}`}
+                          >
+                            {VISIT_TYPE_KO[v]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* 생성 버튼 */}
+                    <Button
+                      size="sm"
+                      className="w-full"
+                      disabled={creatingResv || !pickedDate}
+                      onClick={submitNewReservation}
+                      data-testid="btn-newmode-create"
+                    >
+                      {creatingResv ? '생성 중…' : `${loadedMatch.name}님 신규예약 생성`}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* AC-4 #4: 선택한 일자 및 시간 (미니캘린더 선택 일자 + 현재 보기 예약의 일자/시간 상세) */}
               <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0">
                 <SectionHeader accent="teal">
@@ -1002,16 +1181,12 @@ export function ReservationDetailPopup({
               체크인 전환·노쇼·수정은 별도 보존 요소(b_an_decisions: 체크인전환 분리 보존). */}
           <DialogFooter className="px-6 py-3 border-t shrink-0 flex-wrap gap-2">
             {loadedMatch ? (
-              /* AC1: 다른 고객(B) 조회됨 → 예약(A) 액션 전부 숨김 (엉뚱저장 0).
-                 B 신규예약은 정규 ReservationEditor 위임 (L-002 LOGIC-LOCK 준수). */
+              /* T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: 다른 고객(B) 조회됨 → 예약(A) 액션 전부 숨김(엉뚱저장 0).
+                 신규예약 생성은 위 2번구역 new-mode 폼(생성버튼)에서 완결(모달 스폰 폐기). 푸터는 복귀/닫기만. */
               <>
-                <Button
-                  size="sm"
-                  data-testid="btn-register-new-for-loaded"
-                  onClick={registerNewForLoaded}
-                >
-                  {loadedMatch.name}님 신규예약 등록
-                </Button>
+                <span className="text-xs text-muted-foreground self-center">
+                  위 ‘신규예약 만들기’에서 날짜·시간·유형 선택 후 생성하세요.
+                </span>
                 <Button variant="outline" size="sm" onClick={resetToOriginalCustomer}>
                   원래 고객으로
                 </Button>
