@@ -13,7 +13,7 @@
  *   기존 발신/상태머신/집계 로직은 변경하지 않고 표시만 추가(회귀 0).
  * 실시간: check_ins postgres_changes 구독 → refetch (3초 내 반영, AC-1).
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -235,35 +235,16 @@ function RxPopover({
   );
 }
 
-// T-20260614-foot-CHART-CLINICAL-CLICKOUTSIDE (문지은 대표원장):
-//   '차트' 칼럼 📝 임상경과 토글(showClinical)이 '수정모드'(인라인 한 줄 입력 + 담당의 + 저장)로 열린 상태에서,
-//   토글 영역 바깥을 마우스로 클릭하면 토글을 닫는다. 닫히면 인라인 embed(MedicalChartPanel singleLine)가
-//   언마운트되어 작성 중 미저장분이 폐기 → "수정모드 진입 이전 상태로 복귀"(AC-3 1차, 미저장 폐기).
-//   AC-2: 닫히지 말아야 할 '내부'는 3종 — (1) 📝 토글 버튼(재클릭은 onClick 토글이 처리하므로 제외),
-//     (2) 인라인 입력 영역(<td> = 입력·담당의 선택·저장 버튼=embed footer 전부 포함), (3) embed 내부
-//     portal 팝오버(// 상용구 자동완성·담당의 변경 확인) — DOM상 document.body로 portal 되지만 토글 내부로 취급.
-//   기존 RxPopover/InlinePatientSearch clickOutside(mousedown) 패턴 재사용 — 신규 라이브러리 0.
-//   CallFeedRow(진료대기)·CompletedRow(진료완료) 두 행이 동일 구조라 공용 훅으로 재사용.
-function useClinicalToggleClickOutside(open: boolean, onClose: () => void) {
-  const toggleBtnRef = useRef<HTMLButtonElement>(null);
-  const inlineRef = useRef<HTMLTableCellElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    function onDoc(e: MouseEvent) {
-      const node = e.target as Node;
-      const el = e.target as Element | null;
-      if (toggleBtnRef.current?.contains(node)) return; // (1) 📝 토글 버튼
-      if (inlineRef.current?.contains(node)) return; // (2) 인라인 입력/담당의/저장(embed footer)
-      // (3) embed 내부 portal 팝오버 — body로 빠지지만 토글 내부 취급(AC-2)
-      if (el?.closest?.('[data-testid="clinical-singleline-phrase-popover"]')) return;
-      if (el?.closest?.('[data-testid="clinical-singleline-doctor-confirm"]')) return;
-      onClose();
-    }
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [open, onClose]);
-  return { toggleBtnRef, inlineRef };
-}
+// T-20260614-foot-CHART-CLINICAL-CLICKOUTSIDE (문지은 대표원장) — CANON narrow (FIX-REQUEST MSG-20260614-181732):
+//   ↩ 정정: 8b14746 은 "차트 📝 토글(showClinical) 전체를 외부클릭 시 닫는다"는 coarse 선해석(OVERSHOOT)이었다.
+//   reporter(17:48) 명확화 = "진료의 ___ 토글 누르면 드롭다운 열려 수정상태, 다른데 커서 옮기면 [라벨로] 원복".
+//   즉 닫혀야 할 대상은 'showClinical embed 전체'가 아니라 '진료의 select(editingSingleDoctor)' 하나뿐이다.
+//   embed 전체 닫힘은 (a) "진료의 ○○○" 읽기 라벨까지 사라지고(reporter 라벨 유지 기대 위배),
+//   (b) 작성 중 임상경과 한 줄 입력 미저장분을 언마운트로 폐기(data-loss)시켜 canon 위배.
+//   → CANON = embed 전체 외부클릭 닫힘 동작을 제거(data-loss 0, 라벨 유지). 진료의 select 만의 click-away
+//     라벨 원복은 MedicalChartPanel(editingSingleDoctor 상태 소유자, 아키텍처상 올바른 자리)의 단일 핸들러
+//     (item②, commit 7f6cd8b)가 담당 — clickOutside(mousedown) 패턴 재사용, 중복 핸들러 신설 없음.
+//   showClinical 토글 닫힘은 오직 📝 버튼 재클릭(onClick)으로만. 외부클릭은 embed 를 닫지 않음.
 
 function useDoctorCallFeed(clinicId: string | null) {
   return useQuery({
@@ -698,11 +679,8 @@ function CallFeedRow({
   const rxBtnRef = useRef<HTMLButtonElement>(null);
   // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 임상경과 = 한 줄 인풋(아코디언 아님), 토글로 노출/숨김.
   const [showClinical, setShowClinical] = useState(false);
-  // T-20260614-foot-CHART-CLINICAL-CLICKOUTSIDE: 토글 영역 바깥 클릭 → 닫힘(미저장 폐기). 📝 버튼·인라인 입력은 제외.
-  const { toggleBtnRef: clinicalBtnRef, inlineRef: clinicalInlineRef } = useClinicalToggleClickOutside(
-    showClinical,
-    useCallback(() => setShowClinical(false), []),
-  );
+  // T-20260614-foot-CHART-CLINICAL-CLICKOUTSIDE (CANON narrow): 외부클릭으로 embed 전체를 닫지 않는다(data-loss 0).
+  //   showClinical 닫힘 = 📝 버튼 재클릭만. 진료의 select click-away 라벨 원복은 MedicalChartPanel item② 단일 핸들러 담당.
   // T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④(문지은 대표원장): 임상경과 미리보기 셀 클릭 → 행 아래로 전체내용 펼침(읽기). 재클릭/외부클릭→접힘.
   const [expandClinical, setExpandClinical] = useState(false);
   // T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2): 처방완료 본문 클릭 → 행 아래로 처방 전문 펼침(읽기). 임상경과 expand와 동일 메커니즘.
@@ -808,7 +786,6 @@ function CallFeedRow({
         <td className="px-1.5 py-1 text-left" data-testid="doctor-call-chart-cell">
           <div className="inline-flex items-center justify-start gap-1">
             <button
-              ref={clinicalBtnRef}
               type="button"
               onClick={() => setShowClinical((v) => !v)}
               disabled={!checkIn.customer_id}
@@ -930,7 +907,7 @@ function CallFeedRow({
           tall 아코디언 제거 — MedicalChartPanel singleLine 모드 재사용(저장 로직·진료의 NOT NULL 강제 동일). */}
       {showClinical && checkIn.customer_id && (
         <tr data-testid="doctor-call-chart-inline-row" className={inactive ? 'bg-gray-50/60' : 'bg-white'}>
-          <td ref={clinicalInlineRef} colSpan={DOCDASH_COLSPAN} className="px-3 pb-2" data-testid="doctor-call-chart-inline">
+          <td colSpan={DOCDASH_COLSPAN} className="px-3 pb-2" data-testid="doctor-call-chart-inline">
             <MedicalChartPanel
               embed
               open
@@ -1021,11 +998,8 @@ function CompletedRow({
   const rxBtnRef = useRef<HTMLButtonElement>(null);
   // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 임상경과 = 한 줄 인풋(아코디언 아님) 토글.
   const [showClinical, setShowClinical] = useState(false);
-  // T-20260614-foot-CHART-CLINICAL-CLICKOUTSIDE: 토글 영역 바깥 클릭 → 닫힘(미저장 폐기). 📝 버튼·인라인 입력은 제외.
-  const { toggleBtnRef: clinicalBtnRef, inlineRef: clinicalInlineRef } = useClinicalToggleClickOutside(
-    showClinical,
-    useCallback(() => setShowClinical(false), []),
-  );
+  // T-20260614-foot-CHART-CLINICAL-CLICKOUTSIDE (CANON narrow): 외부클릭으로 embed 전체를 닫지 않는다(data-loss 0).
+  //   showClinical 닫힘 = 📝 버튼 재클릭만. 진료의 select click-away 라벨 원복은 MedicalChartPanel item② 단일 핸들러 담당.
   // T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④(문지은 대표원장): 임상경과 미리보기 셀 클릭 → 행 아래로 전체내용 펼침(읽기). 재클릭→접힘.
   const [expandClinical, setExpandClinical] = useState(false);
   // T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2): 처방완료 본문 클릭 → 행 아래로 처방 전문 펼침(읽기).
@@ -1130,7 +1104,6 @@ function CompletedRow({
         <td className="px-1.5 py-1 text-left" data-testid="doctor-completed-chart-cell">
           <div className="inline-flex items-center justify-start gap-1">
             <button
-              ref={clinicalBtnRef}
               type="button"
               onClick={() => setShowClinical((v) => !v)}
               disabled={!checkIn.customer_id}
@@ -1249,7 +1222,7 @@ function CompletedRow({
       {/* T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 진료완료 환자도 임상경과 = 한 줄 인풋(singleLine). */}
       {showClinical && checkIn.customer_id && (
         <tr data-testid="doctor-completed-chart-inline-row" className="bg-white">
-          <td ref={clinicalInlineRef} colSpan={DOCDASH_COMPLETED_COLSPAN} className="px-3 pb-2" data-testid="doctor-completed-chart-inline">
+          <td colSpan={DOCDASH_COMPLETED_COLSPAN} className="px-3 pb-2" data-testid="doctor-completed-chart-inline">
             <MedicalChartPanel
               embed
               open
