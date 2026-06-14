@@ -23,7 +23,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { getClinic } from '@/lib/clinic';
 import { formatAmount, formatPhone, chartNoBadge } from '@/lib/format';
-import { METHOD_KO, STATUS_KO, VISIT_TYPE_KO } from '@/lib/status';
+import { METHOD_KO, STATUS_KO, VISIT_TYPE_KO, staffRoleSortIndex } from '@/lib/status';
 import type { CheckIn, CheckInStatus, Clinic, Staff, VisitType } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -1390,7 +1390,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                   <option value="">전체</option>
                   {/* T-20260522-foot-CLOSING-STAFF-DROP AC-1(5/24 확장): 2번차트 동일 — director(원장)+therapist(치료사) 제외, 상담실장+데스크만 */}
                   {/* T-20260522-foot-STAFF-NAME-UNIFY: display_name(구성명) fallback to name */}
-                  {staffList.filter(s => s.role !== 'director' && s.role !== 'therapist').map(s => (
+                  {/* T-20260614-foot-STAFF-DROPDOWN-ROLE-SORT: 표시 순서만 role 정렬(상담실장→코디) — 2번차트와 동일 헬퍼 */}
+                  {staffList.filter(s => s.role !== 'director' && s.role !== 'therapist').sort((a, b) => staffRoleSortIndex(a.role) - staffRoleSortIndex(b.role)).map(s => (
                     <option key={s.id} value={s.display_name || s.name}>{s.display_name || s.name}</option>
                   ))}
                   {/* T-20260522-foot-DAILY-SETTLE-STAFF AC-3: '미배정' → '미지정' */}

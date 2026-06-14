@@ -15,7 +15,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { formatAmount, formatPhone, formatPhoneInput, parseAmount, seoulISODate, todaySeoulISODate, chartNoBadge, chartNoDisplay } from '@/lib/format';
 // T-20260524-foot-PKG-LABEL-AMOUNT AC-3: METHOD_KO 추가 import
-import { VISIT_TYPE_KO, METHOD_KO, STATUS_KO } from '@/lib/status';
+import { VISIT_TYPE_KO, METHOD_KO, STATUS_KO, staffRoleSortIndex } from '@/lib/status';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -4654,7 +4654,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       <option value="">— 선택 —</option>
                       {/* C2-MANAGER-PAYMENT-MAP v3: 담당자 드롭다운에서만 role='director'(원장) 제외 — DB 비활성 금지, 코드 레벨 필터 */}
                       {/* T-20260522-foot-STAFF-NAME-UNIFY: display_name(구성명) fallback to name */}
-                      {staffList.filter(s => s.role !== 'director').map((s) => (
+                      {/* T-20260614-foot-STAFF-DROPDOWN-ROLE-SORT: 표시 순서만 role 정렬(상담실장→코디) — 안정정렬로 동일 role 내 기존 순서 유지 */}
+                      {staffList.filter(s => s.role !== 'director').sort((a, b) => staffRoleSortIndex(a.role) - staffRoleSortIndex(b.role)).map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.display_name || s.name} ({s.role === 'consultant' ? '상담실장' : s.role === 'coordinator' ? '데스크' : s.role})
                         </option>
@@ -7005,7 +7006,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   >
                     <option value="">— 실장 선택 —</option>
                     {/* T-20260522-foot-STAFF-NAME-UNIFY: display_name(구성명) fallback to name */}
-                    {staffList.filter(s => s.role === 'consultant' || s.role === 'coordinator' || s.role === 'director').map(s => (
+                    {/* T-20260614-foot-STAFF-DROPDOWN-ROLE-SORT: 표시 순서만 role 정렬(상담실장→코디) */}
+                    {staffList.filter(s => s.role === 'consultant' || s.role === 'coordinator' || s.role === 'director').sort((a, b) => staffRoleSortIndex(a.role) - staffRoleSortIndex(b.role)).map(s => (
                       <option key={s.id} value={s.id}>{s.display_name || s.name}</option>
                     ))}
                   </select>

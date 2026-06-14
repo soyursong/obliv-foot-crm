@@ -141,6 +141,18 @@ export const STAFF_ROLE_ORDER: StaffRole[] = [
 ];
 
 /**
+ * 담당자 드롭다운 role 정렬 인덱스 — T-20260614-foot-STAFF-DROPDOWN-ROLE-SORT.
+ * STAFF_ROLE_ORDER 기준(상담실장 consultant 먼저 → 코디/데스크 coordinator 나중).
+ * 미매칭 role(또는 null)은 맨 뒤. (Handover.roleIdx와 동일 규칙)
+ * 표시 순서만 — 드롭다운 값/구성원 무변경. 안정 정렬과 함께 쓰면 동일 role 내 기존 순서 유지.
+ */
+export function staffRoleSortIndex(role: StaffRole | string | null | undefined): number {
+  if (!role) return STAFF_ROLE_ORDER.length;
+  const i = STAFF_ROLE_ORDER.indexOf(role as StaffRole);
+  return i === -1 ? STAFF_ROLE_ORDER.length : i;
+}
+
+/**
  * 직원 역할별 이름 칩 색상 (bg + text + border) — T-20260606-foot-HANDOVER-NAMECARD-ROLECOLOR.
  * 인수인계 "오늘 출근 명단" 칩 배경을 역할별로 구분한다.
  * handover.ts PART_BADGE_CLASS 패턴 그대로 정적 매핑(JIT purge 안전, 동적 클래스 금지).
