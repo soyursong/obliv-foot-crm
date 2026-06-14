@@ -205,10 +205,22 @@ test.describe('소스 정적 가드 (회귀 락)', () => {
     expect(SRC).toContain('data-testid="doctor-completed-no-rx"');
   });
 
-  test('AC-1 보존: 처방·임상경과 칼럼 폭 우선(colgroup 처방 >= 20%, 임상경과 >= 22%)', () => {
-    // 호출 colgroup: 처방=w-[20%], 임상경과=w-[22%] (부모 FULLWIDTH-INLINE-EMOJI 정본)
-    expect(SRC).toContain('w-[20%]');
-    expect(SRC).toContain('w-[22%]');
+  test('AC-1 보존: 처방·임상경과 본문 컬럼 폭 우선(처방=최대 데이터 컬럼)', () => {
+    // T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT(AC-1) SUPERSEDE: 식별군 ≤50% 압축 + 본문 확대 재배분으로
+    //   처방 24/25%(최대), 임상경과 14/16%로 정본 변경(구 20/22% 폐기). 의도(처방·임상경과 본문 우선)는 보존.
+    function colgroupAfter(anchor: string): number[] {
+      const start = SRC.indexOf(anchor);
+      const cgStart = SRC.indexOf('<colgroup>', start);
+      const cgEnd = SRC.indexOf('</colgroup>', cgStart);
+      return [...SRC.slice(cgStart, cgEnd).matchAll(/w-\[(\d+)%\]/g)].map((m) => Number(m[1]));
+    }
+    const call = colgroupAfter('doctor-call-feed-table'); // ...처방(idx7)·임상경과(idx8)·시간
+    const done = colgroupAfter('doctor-completed-table');  // ...처방(idx7)·임상경과(idx8)
+    // 처방이 최대 데이터 컬럼(식별군보다 넓음) + 임상경과보다 넓음.
+    expect(call[7]).toBeGreaterThanOrEqual(20);
+    expect(call[7]).toBeGreaterThanOrEqual(call[8]);
+    expect(done[7]).toBeGreaterThanOrEqual(20);
+    expect(done[7]).toBeGreaterThanOrEqual(done[8]);
   });
 
   test('AC-5 보존: QuickRxBar 저장·취소 로직 불변(컨테이너만 변경 — compact/surface/onApplied 주입 유지)', () => {

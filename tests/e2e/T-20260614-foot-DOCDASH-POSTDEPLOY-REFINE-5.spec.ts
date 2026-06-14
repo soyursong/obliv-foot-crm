@@ -67,20 +67,20 @@ test.describe('item③ — 데이터칼럼 밀도 추가 압축', () => {
 // item④ — 임상경과 미리보기 셀 클릭 → 행 아래 전체내용 펼침(토글)
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('item④ — 임상경과 셀 클릭 펼침 토글', () => {
-  test('대기(CallFeedRow): 미리보기 셀이 클릭 버튼 + aria-expanded + 펼침행 존재', () => {
+  test('대기(CallFeedRow): 미리보기 셀이 클릭 버튼 + aria-expanded + 펼침 팝오버 존재', () => {
     const s = DASH();
     // 미리보기가 button 으로 바뀌고 토글 상태(aria-expanded)를 노출.
     expect(s).toContain('doctor-call-clinical-expand-btn');
     expect(s).toContain('setExpandClinical');
-    // 행 아래 전체내용(읽기) 펼침행 + whitespace 보존.
-    expect(s).toContain('doctor-call-clinical-expand-row');
+    // T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT(AC-2 PARADIGM): 행 전체폭 펼침행 → 컬럼앵커 드롭다운(ColumnExpandPopover)으로 리워크.
+    expect(s).toContain('doctor-call-clinical-expand-pop');
     expect(s).toContain('doctor-call-clinical-expand');
   });
 
-  test('완료(CompletedRow): 미리보기 셀 클릭 버튼 + 펼침행 존재', () => {
+  test('완료(CompletedRow): 미리보기 셀 클릭 버튼 + 펼침 팝오버 존재', () => {
     const s = DASH();
     expect(s).toContain('doctor-completed-clinical-expand-btn');
-    expect(s).toContain('doctor-completed-clinical-expand-row');
+    expect(s).toContain('doctor-completed-clinical-expand-pop');
     expect(s).toContain('doctor-completed-clinical-expand');
   });
 

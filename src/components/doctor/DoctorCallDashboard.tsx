@@ -235,6 +235,102 @@ function RxPopover({
   );
 }
 
+// T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2 PARADIGM 재정의 — 문지은 대표원장 MSG-20260614-213335-rdin):
+//   종전(05b0453, 무효): 처방완료/임상경과 셀 클릭 → '행 전체폭 펼침행(<tr colSpan>)'으로 아래 인라인 확장.
+//     → 다른 컬럼(환자명·시간·생년) 시야를 가리는 문제. full-width row expand 폐기.
+//   변경: 클릭한 '해당 컬럼 폭 범위 안에서만' 셀 바로 아래로 드롭다운/팝오버처럼 열림(대표원장 "약간 아래에 드롭다운 열리듯이").
+//     · 폭 = 앵커 셀(=컬럼) 폭 → 가로로 다른 컬럼 절대 침범 0(비가림 보장).
+//     · 전문이 길면 컬럼 폭 안에서 줄바꿈(break-words) + 세로 스크롤(max-h + overflow-y-auto).
+//     · 좌표·바깥클릭 닫힘·up/down clamp = RxPopover( = CHART-CLINICAL-CLICKOUTSIDE mousedown) 패턴 그대로 재사용 — 신규 토글 컴포넌트 난립 0.
+//   → 기존 EXPAND-CLINICAL/EXPAND-COURSE-RXHISTORY 펼침 엔진을 column-anchored popover 레이아웃으로 리워크(상태축 expandRx/expandClinical 보존).
+function ColumnExpandPopover({
+  open,
+  anchorRef,
+  onClose,
+  children,
+  testId,
+}: {
+  open: boolean;
+  anchorRef: React.RefObject<HTMLElement>;
+  onClose: () => void;
+  children: React.ReactNode;
+  testId: string;
+}) {
+  const popRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number; placement: 'down' | 'up' } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    function compute() {
+      const el = anchorRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      // 폭 = 앵커 셀(컬럼) 폭 — 가로로 다른 컬럼 침범 0(시야 비가림). 셀 좌측에 정렬, 우측 화면 이탈만 clamp.
+      const width = Math.min(r.width, vw - 16);
+      const left = Math.max(8, Math.min(r.left, vw - width - 8));
+      // 세로: 아래 공간 부족 + 위 공간 더 넓으면 위쪽으로(하단 행 잘림 방지) — RxPopover 선례 동일.
+      const estH = popRef.current?.offsetHeight ?? 160;
+      const spaceBelow = vh - r.bottom;
+      const spaceAbove = r.top;
+      let placement: 'down' | 'up' = 'down';
+      let top = r.bottom + 4;
+      if (spaceBelow < estH + 12 && spaceAbove > spaceBelow) {
+        placement = 'up';
+        top = Math.max(8, r.top - estH - 4);
+      }
+      setPos({ top, left, width, placement });
+    }
+    compute();
+    const raf = requestAnimationFrame(compute);
+    window.addEventListener('scroll', compute, true);
+    window.addEventListener('resize', compute);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('scroll', compute, true);
+      window.removeEventListener('resize', compute);
+    };
+  }, [open, anchorRef]);
+
+  // 바깥 클릭 + Esc 닫기(앵커 셀 클릭은 본문 토글이 처리하므로 제외) — CHART-CLINICAL-CLICKOUTSIDE mousedown 패턴.
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      const t = e.target as Node;
+      if (popRef.current?.contains(t)) return;
+      if (anchorRef.current?.contains(t)) return;
+      onClose();
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, anchorRef, onClose]);
+
+  if (!open || !pos) return null;
+  return createPortal(
+    <div
+      ref={popRef}
+      data-testid={testId}
+      data-placement={pos.placement}
+      style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 9999 }}
+      className="max-h-[60vh] overflow-y-auto rounded-lg border bg-white shadow-xl"
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
 // T-20260614-foot-CHART-CLINICAL-CLICKOUTSIDE (문지은 대표원장) — CANON narrow (FIX-REQUEST MSG-20260614-181732):
 //   ↩ 정정: 8b14746 은 "차트 📝 토글(showClinical) 전체를 외부클릭 시 닫는다"는 coarse 선해석(OVERSHOOT)이었다.
 //   reporter(17:48) 명확화 = "진료의 ___ 토글 누르면 드롭다운 열려 수정상태, 다른데 커서 옮기면 [라벨로] 원복".
@@ -683,8 +779,12 @@ function CallFeedRow({
   //   showClinical 닫힘 = 📝 버튼 재클릭만. 진료의 select click-away 라벨 원복은 MedicalChartPanel item② 단일 핸들러 담당.
   // T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④(문지은 대표원장): 임상경과 미리보기 셀 클릭 → 행 아래로 전체내용 펼침(읽기). 재클릭/외부클릭→접힘.
   const [expandClinical, setExpandClinical] = useState(false);
-  // T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2): 처방완료 본문 클릭 → 행 아래로 처방 전문 펼침(읽기). 임상경과 expand와 동일 메커니즘.
+  // T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2 PARADIGM): 처방완료/임상경과 본문 클릭 → 해당 컬럼 폭 안에서
+  //   셀 바로 아래 드롭다운(ColumnExpandPopover)으로 전문 펼침(읽기). 행 전체폭 펼침 폐기 → 다른 컬럼 비가림. 상태축은 보존.
   const [expandRx, setExpandRx] = useState(false);
+  // 앵커 = 처방/임상경과 '셀(컬럼)' — 팝오버 폭이 컬럼 폭과 같아져 가로로 다른 컬럼을 가리지 않음.
+  const rxCellRef = useRef<HTMLTableCellElement>(null);
+  const clinicalCellRef = useRef<HTMLTableCellElement>(null);
   const rxFullLines = Array.isArray(checkIn.prescription_items)
     ? (checkIn.prescription_items as unknown[]).map((it) => formatRxItemToken(it))
     : [];
@@ -809,8 +909,9 @@ function CallFeedRow({
           </div>
         </td>
 
-        {/* 8. 처방 — AC-7(FULLWIDTH 보존): 확정 시 알약버튼 제거→파란글씨 '처방완료'(plainText)+약명 미리보기. 미처방 시 알약 드롭다운. 중앙정렬. */}
-        <td className="px-1.5 py-1 text-left" data-testid="doctor-call-rx-cell">
+        {/* 8. 처방 — AC-7(FULLWIDTH 보존): 확정 시 알약버튼 제거→파란글씨 '처방완료'(plainText)+약명 미리보기. 미처방 시 알약 드롭다운. 중앙정렬.
+            COLWIDTH-EXPAND-QUICKEDIT AC-2: rxCellRef = 처방완료 펼침 드롭다운(ColumnExpandPopover) 앵커(컬럼 폭). */}
+        <td ref={rxCellRef} className="px-1.5 py-1 text-left" data-testid="doctor-call-rx-cell">
           <div className="flex flex-wrap items-center justify-start gap-1.5">
             {checkIn.prescription_status === 'confirmed' ? (
               <RxConfirmedSummary
@@ -874,8 +975,9 @@ function CallFeedRow({
         </td>
 
         {/* 9. 임상경과 — CALLUX-3FIX AC-1: 처방 '오른쪽'(요청순서 끝). 미리보기 전용(최신 1줄 말줄임, 입력은 차트칼럼 📝). 중앙정렬.
-            T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④: 내용 있으면 클릭 가능 → 행 아래로 전체내용 펼침(읽기 토글). */}
-        <td className="px-1.5 py-1 text-left" data-testid="doctor-call-clinical-cell">
+            T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④: 내용 있으면 클릭 가능 → 셀 아래 드롭다운으로 전체내용 펼침(읽기 토글).
+            COLWIDTH-EXPAND-QUICKEDIT AC-2: clinicalCellRef = 임상경과 펼침 드롭다운(ColumnExpandPopover) 앵커(컬럼 폭). */}
+        <td ref={clinicalCellRef} className="px-1.5 py-1 text-left" data-testid="doctor-call-clinical-cell">
           {clinicalPreview ? (
             <button
               type="button"
@@ -924,44 +1026,48 @@ function CallFeedRow({
         </tr>
       )}
 
-      {/* T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④: 임상경과 미리보기 클릭 시 행 아래 전체내용(읽기) 펼침.
-          말줄임 없는 전문(whitespace 보존). 재클릭은 동일 셀 버튼 토글로 접힘. 입력은 별도(📝 차트칼럼). */}
-      {expandClinical && clinicalPreview && (
-        <tr data-testid="doctor-call-clinical-expand-row" className={inactive ? 'bg-gray-50/60' : 'bg-gray-50'}>
-          <td colSpan={DOCDASH_COLSPAN} className="px-3 pb-2 pt-0">
-            <div
-              className="whitespace-pre-wrap break-words rounded-md border border-gray-200 bg-white px-3 py-2 text-[13px] leading-relaxed text-gray-700"
-              data-testid="doctor-call-clinical-expand"
-            >
-              {clinicalPreview}
-            </div>
-          </td>
-        </tr>
-      )}
+      {/* T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2 PARADIGM 재정의): 임상경과 미리보기 클릭 시
+          '임상경과 컬럼 폭' 안에서 셀 바로 아래 드롭다운으로 전체내용(읽기) 펼침 — 다른 컬럼 비가림(행 전체폭 펼침행 폐기).
+          말줄임 없는 전문(whitespace 보존) + 길면 컬럼 폭 내 세로 스크롤. 재클릭/바깥클릭으로 접힘. 입력은 별도(📝 차트칼럼). */}
+      <ColumnExpandPopover
+        open={expandClinical && !!clinicalPreview}
+        anchorRef={clinicalCellRef}
+        onClose={() => setExpandClinical(false)}
+        testId="doctor-call-clinical-expand-pop"
+      >
+        <div
+          className="whitespace-pre-wrap break-words px-3 py-2 text-[13px] leading-relaxed text-gray-700"
+          data-testid="doctor-call-clinical-expand"
+        >
+          {clinicalPreview}
+        </div>
+      </ColumnExpandPopover>
 
-      {/* T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2): 처방완료 본문 클릭 시 행 아래 처방 전문 펼침(읽기).
-          약 1건당 '약물명 1/3/2'(RX-TOKEN-FORMAT). 임상경과 expand와 동일 행 메커니즘(말줄임 없는 전문). 입력/수정은 별도(연필). */}
-      {expandRx && checkIn.prescription_status === 'confirmed' && (
-        <tr data-testid="doctor-call-rx-expand-row" className={inactive ? 'bg-gray-50/60' : 'bg-gray-50'}>
-          <td colSpan={DOCDASH_COLSPAN} className="px-3 pb-2 pt-0">
-            <div
-              className="rounded-md border border-sky-200 bg-white px-3 py-2 text-[13px] leading-relaxed text-gray-700"
-              data-testid="doctor-call-rx-expand"
-            >
-              <span className="mb-1 block text-[11px] font-semibold text-sky-700">처방 전체</span>
-              {rxFullLines.length > 0 ? (
-                <ul className="space-y-0.5">
-                  {rxFullLines.map((line, i) => (
-                    <li key={i} className="break-words">• {line}</li>
-                  ))}
-                </ul>
-              ) : (
-                <span className="text-gray-400">처방 내용 없음</span>
-              )}
-            </div>
-          </td>
-        </tr>
-      )}
+      {/* T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2 PARADIGM 재정의): 처방완료 본문 클릭 시
+          '처방 컬럼 폭' 안에서 셀 바로 아래 드롭다운으로 처방 전문 펼침(읽기) — 다른 컬럼 비가림.
+          약 1건당 '약물명 1/3/2'(RX-TOKEN-FORMAT). 길면 컬럼 폭 내 줄바꿈+세로 스크롤. 입력/수정은 별도(연필). */}
+      <ColumnExpandPopover
+        open={expandRx && checkIn.prescription_status === 'confirmed'}
+        anchorRef={rxCellRef}
+        onClose={() => setExpandRx(false)}
+        testId="doctor-call-rx-expand-pop"
+      >
+        <div
+          className="px-3 py-2 text-[13px] leading-relaxed text-gray-700"
+          data-testid="doctor-call-rx-expand"
+        >
+          <span className="mb-1 block text-[11px] font-semibold text-sky-700">처방 전체</span>
+          {rxFullLines.length > 0 ? (
+            <ul className="space-y-0.5">
+              {rxFullLines.map((line, i) => (
+                <li key={i} className="break-words">• {line}</li>
+              ))}
+            </ul>
+          ) : (
+            <span className="text-gray-400">처방 내용 없음</span>
+          )}
+        </div>
+      </ColumnExpandPopover>
     </>
   );
 }
@@ -1002,8 +1108,11 @@ function CompletedRow({
   //   showClinical 닫힘 = 📝 버튼 재클릭만. 진료의 select click-away 라벨 원복은 MedicalChartPanel item② 단일 핸들러 담당.
   // T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④(문지은 대표원장): 임상경과 미리보기 셀 클릭 → 행 아래로 전체내용 펼침(읽기). 재클릭→접힘.
   const [expandClinical, setExpandClinical] = useState(false);
-  // T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2): 처방완료 본문 클릭 → 행 아래로 처방 전문 펼침(읽기).
+  // T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2 PARADIGM): 처방완료/임상경과 본문 클릭 → 컬럼 폭 안 셀 아래 드롭다운(읽기). 행 전체폭 폐기.
   const [expandRx, setExpandRx] = useState(false);
+  // 앵커 = 처방/임상경과 '셀(컬럼)' — 팝오버 폭=컬럼 폭, 다른 컬럼 비가림.
+  const rxCellRef = useRef<HTMLTableCellElement>(null);
+  const clinicalCellRef = useRef<HTMLTableCellElement>(null);
   const rxFullLines = Array.isArray(checkIn.prescription_items)
     ? (checkIn.prescription_items as unknown[]).map((it) => formatRxItemToken(it))
     : [];
@@ -1127,8 +1236,9 @@ function CompletedRow({
           </div>
         </td>
 
-        {/* 8. 처방 — AC-7(보존): 귀가(discharged) 미처방 '-', 원내잔류 알약 드롭다운, 확정 시 파란글씨 '처방완료'+미리보기. 중앙정렬. */}
-        <td className="px-1.5 py-1 text-left" data-testid="doctor-completed-rx-cell">
+        {/* 8. 처방 — AC-7(보존): 귀가(discharged) 미처방 '-', 원내잔류 알약 드롭다운, 확정 시 파란글씨 '처방완료'+미리보기. 중앙정렬.
+            COLWIDTH-EXPAND-QUICKEDIT AC-2: rxCellRef = 처방완료 펼침 드롭다운 앵커(컬럼 폭). */}
+        <td ref={rxCellRef} className="px-1.5 py-1 text-left" data-testid="doctor-completed-rx-cell">
           <div className="flex flex-wrap items-center justify-start gap-1.5">
             {checkIn.prescription_status === 'confirmed' ? (
               /* T-20260611-foot-DISCHARGED-DASH-RXMUTATE-LOCK 게이트 prop 유지(진료완료 무회귀).
@@ -1197,8 +1307,9 @@ function CompletedRow({
         </td>
 
         {/* 9(끝). 임상경과 — CALLUX-3FIX AC-1: 처방 '오른쪽'(요청순서 끝). 미리보기 전용(입력은 차트칼럼 📝). 중앙정렬.
-            T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④: 내용 있으면 클릭 가능 → 행 아래로 전체내용 펼침(읽기 토글). */}
-        <td className="px-1.5 py-1 text-left" data-testid="doctor-completed-clinical-cell">
+            T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④: 내용 있으면 클릭 가능 → 셀 아래 드롭다운으로 전체내용 펼침(읽기 토글).
+            COLWIDTH-EXPAND-QUICKEDIT AC-2: clinicalCellRef = 임상경과 펼침 드롭다운 앵커(컬럼 폭). */}
+        <td ref={clinicalCellRef} className="px-1.5 py-1 text-left" data-testid="doctor-completed-clinical-cell">
           {clinicalPreview ? (
             <button
               type="button"
@@ -1239,43 +1350,47 @@ function CompletedRow({
         </tr>
       )}
 
-      {/* T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④: 임상경과 미리보기 클릭 시 행 아래 전체내용(읽기) 펼침(완료 섹션 동일).
-          말줄임 없는 전문(whitespace 보존). 재클릭은 동일 셀 버튼 토글로 접힘. 입력은 별도(📝 차트칼럼). */}
-      {expandClinical && clinicalPreview && (
-        <tr data-testid="doctor-completed-clinical-expand-row" className="bg-gray-50">
-          <td colSpan={DOCDASH_COMPLETED_COLSPAN} className="px-3 pb-2 pt-0">
-            <div
-              className="whitespace-pre-wrap break-words rounded-md border border-gray-200 bg-white px-3 py-2 text-[13px] leading-relaxed text-gray-700"
-              data-testid="doctor-completed-clinical-expand"
-            >
-              {clinicalPreview}
-            </div>
-          </td>
-        </tr>
-      )}
+      {/* T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2 PARADIGM 재정의): 임상경과 미리보기 클릭 시
+          '임상경과 컬럼 폭' 안에서 셀 바로 아래 드롭다운으로 전체내용(읽기) 펼침(완료 섹션 동일) — 다른 컬럼 비가림.
+          말줄임 없는 전문(whitespace 보존) + 길면 컬럼 폭 내 세로 스크롤. 재클릭/바깥클릭으로 접힘. 입력은 별도(📝). */}
+      <ColumnExpandPopover
+        open={expandClinical && !!clinicalPreview}
+        anchorRef={clinicalCellRef}
+        onClose={() => setExpandClinical(false)}
+        testId="doctor-completed-clinical-expand-pop"
+      >
+        <div
+          className="whitespace-pre-wrap break-words px-3 py-2 text-[13px] leading-relaxed text-gray-700"
+          data-testid="doctor-completed-clinical-expand"
+        >
+          {clinicalPreview}
+        </div>
+      </ColumnExpandPopover>
 
-      {/* T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2): 처방완료 본문 클릭 시 행 아래 처방 전문 펼침(읽기, 완료 섹션 동일). */}
-      {expandRx && checkIn.prescription_status === 'confirmed' && (
-        <tr data-testid="doctor-completed-rx-expand-row" className="bg-gray-50">
-          <td colSpan={DOCDASH_COMPLETED_COLSPAN} className="px-3 pb-2 pt-0">
-            <div
-              className="rounded-md border border-sky-200 bg-white px-3 py-2 text-[13px] leading-relaxed text-gray-700"
-              data-testid="doctor-completed-rx-expand"
-            >
-              <span className="mb-1 block text-[11px] font-semibold text-sky-700">처방 전체</span>
-              {rxFullLines.length > 0 ? (
-                <ul className="space-y-0.5">
-                  {rxFullLines.map((line, i) => (
-                    <li key={i} className="break-words">• {line}</li>
-                  ))}
-                </ul>
-              ) : (
-                <span className="text-gray-400">처방 내용 없음</span>
-              )}
-            </div>
-          </td>
-        </tr>
-      )}
+      {/* T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2 PARADIGM 재정의): 처방완료 본문 클릭 시
+          '처방 컬럼 폭' 안에서 셀 바로 아래 드롭다운으로 처방 전문 펼침(읽기, 완료 섹션 동일) — 다른 컬럼 비가림. */}
+      <ColumnExpandPopover
+        open={expandRx && checkIn.prescription_status === 'confirmed'}
+        anchorRef={rxCellRef}
+        onClose={() => setExpandRx(false)}
+        testId="doctor-completed-rx-expand-pop"
+      >
+        <div
+          className="px-3 py-2 text-[13px] leading-relaxed text-gray-700"
+          data-testid="doctor-completed-rx-expand"
+        >
+          <span className="mb-1 block text-[11px] font-semibold text-sky-700">처방 전체</span>
+          {rxFullLines.length > 0 ? (
+            <ul className="space-y-0.5">
+              {rxFullLines.map((line, i) => (
+                <li key={i} className="break-words">• {line}</li>
+              ))}
+            </ul>
+          ) : (
+            <span className="text-gray-400">처방 내용 없음</span>
+          )}
+        </div>
+      </ColumnExpandPopover>
     </>
   );
 }

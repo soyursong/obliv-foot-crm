@@ -7,8 +7,10 @@
  * AC-1 컬럼폭: 식별컬럼군(방·상태·이름·생년·차트번호 = 앞 5칸) 합 ≤ 50%(테이블 절반).
  *         남는 ≥50%를 본문(처방완료·임상경과) 컬럼에 넓게 배분 — 처방이 최대 데이터 컬럼.
  *         (대기 colgroup: 5·9·11·9·8·9·6·24·14·5 / 완료: 5·10·12·9·8·9·6·25·16, 각 합 100%)
- * AC-2 펼침: 처방완료·임상경과 셀 본문 클릭 → 행 아래 인라인 전문 펼침(읽기).
- *         기존 EXPAND-CLINICAL 메커니즘 재사용 + 처방완료 펼침 신설. 처방 표기 1/3/2 토큰(RX-TOKEN-FORMAT) 유지.
+ * AC-2 (PARADIGM 재정의, 문지은 대표원장 MSG-20260614-213335-rdin): 처방완료·임상경과 셀 본문 클릭 →
+ *         '해당 컬럼 폭 범위 안에서만' 셀 바로 아래 드롭다운/팝오버처럼 펼침(읽기). 다른 컬럼(환자명·시간·생년) 비가림.
+ *         종전 '행 전체폭 펼침행(<tr colSpan>)'(05b0453) 폐기 → ColumnExpandPopover(앵커 셀 폭 = 컬럼 폭, portal fixed)로 리워크.
+ *         바깥클릭 닫힘 = CHART-CLINICAL-CLICKOUTSIDE(mousedown) 패턴 재사용. 처방 표기 1/3/2 토큰(RX-TOKEN-FORMAT) 유지.
  * AC-3 빠른수정: 처방완료 연필버튼 → 빠른수정(차트 풀오픈 없이 즉석 처방수정). apply mutation 무변경.
  *         클릭 affordance 분리: 본문 클릭=펼침(읽기) / 연필버튼=빠른수정·취소 메뉴.
  *
@@ -70,23 +72,28 @@ test.describe('AC-1 컬럼폭 — 식별군 ≤50%, 본문 확대', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 시나리오 2 — 처방완료 셀 본문 클릭 → 행 아래 전문 펼침(토큰 1/3/2 유지)
+// 시나리오 2 — 처방완료 셀 본문 클릭 → 컬럼앵커 드롭다운 펼침(다른 컬럼 비가림, 토큰 1/3/2 유지)
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('AC-2 처방완료 펼침 — 본문 클릭 인라인 전문', () => {
-  test('대기(CallFeedRow): 본문 클릭 토글 + 펼침행 + RX-TOKEN-FORMAT', () => {
+test.describe('AC-2 PARADIGM — 처방완료 펼침: 컬럼앵커 드롭다운 + 비가림', () => {
+  test('대기(CallFeedRow): 본문 클릭 토글 + 컬럼앵커 팝오버 + RX-TOKEN-FORMAT', () => {
     const s = DASH();
     expect(s).toContain('setExpandRx');
     expect(s).toContain('onToggleExpand={() => setExpandRx');
-    expect(s).toContain('doctor-call-rx-expand-row');
+    // 컬럼앵커 드롭다운(ColumnExpandPopover) 로 펼침 — 셀(rxCellRef) 앵커.
+    expect(s).toContain('doctor-call-rx-expand-pop');
     expect(s).toContain('doctor-call-rx-expand');
+    expect(s).toContain('anchorRef={rxCellRef}');
     // 처방 전문은 1/3/2 토큰(formatRxItemToken) 으로 — raw text 금지.
     expect(s).toContain('formatRxItemToken');
+    // PARADIGM: 행 전체폭 펼침행(<tr colSpan>) 폐기 — 무효 testId 잔존 금지.
+    expect(s).not.toContain('doctor-call-rx-expand-row');
   });
 
-  test('완료(CompletedRow): 펼침행 + 토큰 동일 적용', () => {
+  test('완료(CompletedRow): 컬럼앵커 팝오버 + 토큰 동일 적용', () => {
     const s = DASH();
-    expect(s).toContain('doctor-completed-rx-expand-row');
+    expect(s).toContain('doctor-completed-rx-expand-pop');
     expect(s).toContain('doctor-completed-rx-expand');
+    expect(s).not.toContain('doctor-completed-rx-expand-row');
     // CompletedRow 도 동일 토큰 경로(formatRxItemToken) 사용 — 양 테이블 정합.
     const occ = [...s.matchAll(/formatRxItemToken/g)].length;
     expect(occ).toBeGreaterThanOrEqual(2);
@@ -94,19 +101,38 @@ test.describe('AC-2 처방완료 펼침 — 본문 클릭 인라인 전문', () 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 시나리오 3 — 임상경과 셀 본문 클릭 → 펼침(기존 메커니즘 재사용 보존)
+// 시나리오 3 — 임상경과 셀 본문 클릭 → 컬럼앵커 드롭다운 펼침(다른 컬럼 비가림)
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('AC-2 임상경과 펼침 — 기존 메커니즘 재사용', () => {
-  test('대기·완료: 임상경과 펼침 버튼/행 + 입력 토글(📝) 보존', () => {
+test.describe('AC-2 PARADIGM — 임상경과 펼침: 컬럼앵커 드롭다운 + 비가림', () => {
+  test('대기·완료: 임상경과 펼침 버튼 + 컬럼앵커 팝오버 + 입력 토글(📝) 보존', () => {
     const s = DASH();
     expect(s).toContain('doctor-call-clinical-expand-btn');
-    expect(s).toContain('doctor-call-clinical-expand-row');
+    expect(s).toContain('doctor-call-clinical-expand-pop');
+    expect(s).toContain('anchorRef={clinicalCellRef}');
     expect(s).toContain('doctor-completed-clinical-expand-btn');
-    expect(s).toContain('doctor-completed-clinical-expand-row');
-    // 펼침은 읽기 전용 전문 보존.
+    expect(s).toContain('doctor-completed-clinical-expand-pop');
+    // PARADIGM: 행 전체폭 펼침행(<tr colSpan>) 폐기.
+    expect(s).not.toContain('doctor-call-clinical-expand-row');
+    expect(s).not.toContain('doctor-completed-clinical-expand-row');
+    // 펼침은 읽기 전용 전문 보존 + 컬럼 폭 내 줄바꿈.
     expect(s).toContain('whitespace-pre-wrap');
     // 입력용 임상경과(singleLine 📝) 토글은 별개 축으로 보존(회귀 0).
     expect(s).toContain('setShowClinical');
+  });
+
+  test('GUARD 비가림: ColumnExpandPopover 폭=앵커 셀(컬럼) 폭, portal fixed, mousedown 바깥클릭 닫힘', () => {
+    const s = DASH();
+    // 컬럼앵커 팝오버 단일 컴포넌트로 리워크(신규 토글 난립 0).
+    expect(s).toContain('function ColumnExpandPopover');
+    // 폭 = 앵커 셀(컬럼) 폭 → 가로로 다른 컬럼 침범 0(비가림 보장).
+    expect(s).toContain('const width = Math.min(r.width');
+    // body portal + position fixed (행을 밀지 않음).
+    expect(s).toContain('position: \'fixed\'');
+    expect(s).toContain('document.body');
+    // 바깥클릭 닫힘 = CHART-CLINICAL-CLICKOUTSIDE mousedown 패턴 재사용.
+    expect(s).toContain('mousedown');
+    // 길면 컬럼 폭 안에서 세로 스크롤.
+    expect(s).toContain('overflow-y-auto');
   });
 });
 
