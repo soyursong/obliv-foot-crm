@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
+import RxCountInput from '@/components/admin/RxCountInput';
 import { Loader2, Plus, Pencil, Trash2, X, Folder, Check, Search, Link2, MoreVertical } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -289,10 +290,12 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
 
   return (
     <div className="grid grid-cols-12 gap-1.5 items-end border rounded-lg p-2.5 bg-muted/30">
-      {/* T-20260610-foot-RXSET-NAMEDESC-MODEL AC-2: 처방세트 항목 = [이름+용량]/[설명] 2필드.
-          투여경로·용법·횟수·일수 입력은 등록화면에서 제거(용법은 묶음·빠른처방 불러올 때 입력).
-          기존 값은 onChange 미발생으로 보존(숨김). */}
-      <div className="col-span-5">
+      {/* T-20260614-foot-BUNDLERX-BUILDER-RESTRUCTURE AC-2 (NAMEDESC AC2-2 PARTIAL supersede):
+          묶음처방 빌더에 1/3/2(용량·횟수·일수) baked default 입력 재도입 → items JSONB로 저장.
+          문지은 대표원장(MSG-20260615-001650): "묶음처방에 숫자까지 넣어서 저장하고 처방할때 진료의가 수동 조정 가능."
+          저장값은 default일 뿐 잠금 아님 — 적용(처방 흡수) 시 진료의가 use-time 수동 조정 가능(AC-3, MedicalChartPanel formRx).
+          투여경로·용법(frequency)은 여전히 등록화면 미노출(use-time 입력 유지) — NAMEDESC AC2-2 중 route/frequency 금지만 존속. */}
+      <div className="col-span-4">
         <Label className="text-[10px] flex items-center gap-1">
           약품/시술명 *
           {linked && (
@@ -362,13 +365,38 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
           data-testid="rx-set-item-dosage-input"
         />
       </div>
-      {/* 설명(notes) — 상세 관리화면 限 노출(공식문서·미니멀목록 금지, AC-4). 투여경로/용법/횟수/일수 입력칸은 제거(값은 보존). */}
-      <div className="col-span-4">
+      {/* AC-2: 횟수(count) baked default — 숫자만 저장, "회"는 RxCountInput suffix. use-time 수동 조정 가능. */}
+      <div className="col-span-2">
+        <Label className="text-[10px]">횟수</Label>
+        <RxCountInput
+          value={item.count ?? null}
+          onChange={(v) => onChange(idx, 'count', v)}
+        />
+      </div>
+      {/* AC-2: 일수(days) baked default — 정수. use-time 수동 조정 가능. */}
+      <div className="col-span-1">
+        <Label className="text-[10px]">일수</Label>
+        <Input
+          type="number"
+          min={0}
+          step={1}
+          value={item.days}
+          onChange={(e) => {
+            const raw = e.target.value.trim();
+            onChange(idx, 'days', raw === '' ? 0 : Math.max(0, Math.floor(Number(raw)) || 0));
+          }}
+          placeholder="3"
+          className="h-7 text-xs mt-0.5 text-center"
+          data-testid="rx-set-item-days-input"
+        />
+      </div>
+      {/* 설명(notes) — 상세 관리화면 限 노출(공식문서·미니멀목록 금지, AC-4). 투여경로/용법(frequency) 입력칸은 제거(값은 보존). */}
+      <div className="col-span-2">
         <Label className="text-[10px]">설명</Label>
         <Input
           value={item.notes}
           onChange={(e) => onChange(idx, 'notes', e.target.value)}
-          placeholder="분류·메모 등 (공식문서 미노출)"
+          placeholder="분류·메모"
           className="h-7 text-xs mt-0.5"
           data-testid="rx-set-item-notes-input"
         />
@@ -861,7 +889,7 @@ export default function PrescriptionSetsTab() {
 
       {/* 추가/편집 다이얼로그 */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing ? '처방세트 수정' : '처방세트 추가'}</DialogTitle>
           </DialogHeader>
@@ -915,6 +943,10 @@ export default function PrescriptionSetsTab() {
                   항목 추가
                 </Button>
               </div>
+              {/* AC-3 안내: 여기 넣은 용량·횟수·일수는 '기본값'입니다. 처방 때 진료의가 환자별로 수정할 수 있어요. */}
+              <p className="mb-2 text-[11px] text-muted-foreground" data-testid="rx-set-baked-default-hint">
+                용량·횟수·일수는 <span className="font-medium text-teal-700">기본값</span>이에요. 처방할 때 진료의가 환자별로 바꿀 수 있어요.
+              </p>
               <div className="space-y-2">
                 {form.items.map((item, idx) => (
                   <ItemRow
