@@ -49,16 +49,18 @@ test('AC-1-2: 네이티브 confirm() 기반 handleDelete(직접삭제) 제거', 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC-2: ⋮ 클릭 → "삭제" 단일 옵션(삭제 destructive 톤, 바깥/ESC 닫힘). "수정" 없음.
 // ─────────────────────────────────────────────────────────────────────────────
-test('AC-2-1: 드롭다운에 삭제 단일 옵션 — destructive 톤, "수정" 옵션 없음(스펙변경 dj5p)', () => {
+test('AC-2-1: 드롭다운에 삭제 + 태그편집 — destructive 톤, 전체 "수정"(openEdit) 진입점은 없음', () => {
   const src = read(RX);
   expect(src).toContain('rx-set-kebab-menu');
   expect(src).toContain('rx-set-action-delete');
   // 삭제 항목 destructive 톤
   expect(src).toContain('text-destructive');
-  // "수정" 메뉴 항목·편집 진입점 제거
-  expect(src).not.toContain('rx-set-action-edit');
-  expect(src).not.toContain('function openEdit');
-  expect(src).not.toContain('onEdit');
+  // dj5p: 전체 레코드 "수정"(openEdit) 진입점은 여전히 제거 상태. (openEditTag 와 구분 위해 '(' 포함)
+  expect(src).not.toContain('function openEdit(');
+  expect(src).not.toContain('rx-set-action-edit"'); // 전체수정 testid(=rx-set-action-edit) 부활 금지
+  // T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: 경량 '태그 편집'은 별도 동선으로 추가됨(전체 수정 아님).
+  expect(src).toContain('rx-set-action-edit-tag');
+  expect(src).toContain('function openEditTag');
 });
 
 test('AC-2-2: 바깥클릭/ESC 로 드롭다운 닫힘(경량 인라인 popover)', () => {

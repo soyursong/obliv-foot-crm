@@ -43,6 +43,7 @@ import {
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
 import type { VisitType } from '@/lib/types';
 import QuickRxBar, { isDoctor } from './QuickRxBar';
+import BundleRxTagBar from './BundleRxTagBar';
 import { useAuth } from '@/lib/auth';
 import { checkRxRoleGate, rxRoleGateMessage, rxInsuranceGateMessage, rxInsuranceOverrideConfirm } from '@/lib/prescriptionGate';
 import { evaluateRxInsuranceGate } from '@/lib/prescribableDrugs';
@@ -914,6 +915,23 @@ export default function DoctorTreatmentPanel({
               role={profile?.role ?? ''}
               onSelectItems={(items) => {
                 // 콜백 모드: 처방 목록에 추가 (DB는 부모가 저장)
+                setRxItems((prev) => {
+                  const existingNames = new Set(prev.map((i) => i.name));
+                  const newItems = items.filter((i) => !existingNames.has(i.name));
+                  return [...prev, ...newItems];
+                });
+              }}
+              className="rounded-lg border border-dashed border-teal-200 bg-teal-50/30 p-2"
+            />
+          )}
+
+          {/* ── T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER AC-3: 묶음처방 태그 = 빠른처방 트리거 ──
+              태그 칩 탭 → 그 묶음 약물을 처방 목록에 즉시 추가(A안). 동일 dedup 삽입 패턴 재사용. */}
+          {!confirmed.doctor_confirm_prescription && (
+            <BundleRxTagBar
+              doctorMode={doctorMode}
+              role={profile?.role ?? ''}
+              onSelectItems={(items) => {
                 setRxItems((prev) => {
                   const existingNames = new Set(prev.map((i) => i.name));
                   const newItems = items.filter((i) => !existingNames.has(i.name));

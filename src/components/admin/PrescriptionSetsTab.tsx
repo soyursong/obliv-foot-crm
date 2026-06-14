@@ -20,7 +20,10 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
 import RxCountInput from '@/components/admin/RxCountInput';
-import { Loader2, Plus, Pencil, Trash2, X, Folder, Check, Search, Link2, MoreVertical } from 'lucide-react';
+import { Loader2, Plus, Pencil, Trash2, X, Folder, Check, Search, Link2, MoreVertical, Tag } from 'lucide-react';
+// T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: 태그/아이콘 vocab SSOT 공유 — 빠른처방과 동일 어휘(분기 방지).
+import { DRUG_ICON_OPTIONS, IconRenderer } from '@/components/admin/QuickRxButtonsTab';
+import { RX_TAG_COLORS, DEFAULT_RX_TAG_COLOR, tagChipClass } from '@/lib/rxTagPalette';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -92,6 +95,11 @@ interface PrescriptionSet {
   is_active: boolean;
   sort_order: number;
   folder?: string | null; // AC-1 폴더명 (nullable)
+  // T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: set-level 태그/아이콘 메타(ADDITIVE, nullable).
+  //   tag_label=라벨 텍스트, tag_color=tailwind 팔레트 토큰(rxTagPalette SSOT), icon=lucide 식별자(DRUG_ICON_OPTIONS).
+  tag_label?: string | null;
+  tag_color?: string | null;
+  icon?: string | null;
 }
 
 interface SetForm {
@@ -100,6 +108,10 @@ interface SetForm {
   is_active: boolean;
   sort_order: number;
   folder: string; // AC-1 폴더명 ('' = 미분류)
+  // T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: '' / null = 태그·아이콘 없음.
+  tag_label: string;
+  tag_color: string;
+  icon: string;
 }
 
 const EMPTY_ITEM: PrescriptionItem = {
@@ -117,6 +129,9 @@ const EMPTY_FORM: SetForm = {
   is_active: true,
   sort_order: 0,
   folder: '',
+  tag_label: '',
+  tag_color: DEFAULT_RX_TAG_COLOR,
+  icon: '',
 };
 
 // ---------------------------------------------------------------------------
@@ -128,7 +143,7 @@ function usePrescriptionSets() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('prescription_sets')
-        .select('id, name, items, is_active, sort_order, folder')
+        .select('id, name, items, is_active, sort_order, folder, tag_label, tag_color, icon')
         .order('sort_order', { ascending: true });
       if (error) throw error;
       return (data ?? []) as PrescriptionSet[];
@@ -146,6 +161,11 @@ function useUpsertSet() {
         is_active: form.is_active,
         sort_order: form.sort_order,
         folder: form.folder.trim() === '' ? null : form.folder.trim(), // AC-1
+        // T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: 태그 라벨 비면 색/태그 전부 null(태그없음).
+        //   tag_color 는 라벨이 있을 때만 의미 — 라벨 없으면 null 정규화(고아 색 방지).
+        tag_label: form.tag_label.trim() === '' ? null : form.tag_label.trim(),
+        tag_color: form.tag_label.trim() === '' ? null : (form.tag_color || DEFAULT_RX_TAG_COLOR),
+        icon: form.icon.trim() === '' ? null : form.icon.trim(),
         updated_at: new Date().toISOString(),
       };
       if (id) {
@@ -161,6 +181,36 @@ function useUpsertSet() {
       toast.success('처방세트가 저장됐어요.');
     },
     onError: (e: Error) => toast.error(`저장 실패: ${e.message}`),
+  });
+}
+
+// T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: 태그/아이콘 메타만 부분 UPDATE.
+//   KEBAB-GUARD(dj5p)로 전체 '수정' 진입점은 제거됨 — 태그는 별도 경량 편집(라벨/색/아이콘 3컬럼만)으로 부여.
+//   기존 컬럼 외 무접촉(items/name/folder 등 보존). tag_label 비면 색까지 null 정규화(고아 색 방지).
+interface TagMeta {
+  tag_label: string;
+  tag_color: string;
+  icon: string;
+}
+function useUpdateSetTagMeta() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, meta }: { id: number; meta: TagMeta }) => {
+      const label = meta.tag_label.trim();
+      const payload = {
+        tag_label: label === '' ? null : label,
+        tag_color: label === '' ? null : (meta.tag_color || DEFAULT_RX_TAG_COLOR),
+        icon: meta.icon.trim() === '' ? null : meta.icon.trim(),
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase.from('prescription_sets').update(payload).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['prescription_sets'] });
+      toast.success('태그를 저장했어요.');
+    },
+    onError: (e: Error) => toast.error(`태그 저장 실패: ${e.message}`),
   });
 }
 
@@ -425,9 +475,11 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
 //   삭제는 destructive 톤. 실제 del 은 부모의 확인 다이얼로그에서만 실행.
 // ---------------------------------------------------------------------------
 function RxSetKebabMenu({
+  onEditTag,
   onDelete,
   deleteDisabled,
 }: {
+  onEditTag?: () => void;
   onDelete: () => void;
   deleteDisabled?: boolean;
 }) {
@@ -473,7 +525,23 @@ function RxSetKebabMenu({
           className="absolute right-0 top-8 z-30 min-w-[128px] overflow-hidden rounded-md border bg-popover py-1 text-popover-foreground shadow-md"
           data-testid="rx-set-kebab-menu"
         >
-          {/* 삭제 단일 옵션 (수정 옵션 없음 — 스펙 변경 dj5p) */}
+          {/* T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: 태그 편집(라벨/색/아이콘 경량 편집).
+              전체 '수정' 진입점은 dj5p로 제거됐으나, 태그는 별도 경량 부여 동선으로 제공. */}
+          {onEditTag && (
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+              onClick={() => {
+                setOpen(false);
+                onEditTag();
+              }}
+              data-testid="rx-set-action-edit-tag"
+            >
+              <Tag className="h-3.5 w-3.5" /> 태그 편집
+            </button>
+          )}
+          {/* 삭제 옵션 */}
           <button
             type="button"
             role="menuitem"
@@ -507,6 +575,8 @@ export default function PrescriptionSetsTab() {
   const { data: sets = [], isLoading } = usePrescriptionSets();
   const upsert = useUpsertSet();
   const del = useDeleteSet();
+  // T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: 태그 메타 경량 편집(라벨/색/아이콘).
+  const updateTagMeta = useUpdateSetTagMeta();
   // T-20260607-foot-FOLDER-RENAME-INLINE (AC-B): 폴더명 인라인 변경 (AC-A 상병명과 동일 UX).
   const renameFolder = useRenameSetFolder();
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
@@ -521,6 +591,23 @@ export default function PrescriptionSetsTab() {
   const [form, setForm] = useState<SetForm>(EMPTY_FORM);
   // T-20260609-foot-RXSET-DELETE-KEBAB-GUARD: 삭제 확인 다이얼로그 대상(네이티브 confirm 대체).
   const [deleteTarget, setDeleteTarget] = useState<PrescriptionSet | null>(null);
+  // T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: 태그 편집 대상 + 경량 폼(라벨/색/아이콘 3필드만).
+  const [tagTarget, setTagTarget] = useState<PrescriptionSet | null>(null);
+  const [tagForm, setTagForm] = useState<TagMeta>({ tag_label: '', tag_color: DEFAULT_RX_TAG_COLOR, icon: '' });
+
+  function openEditTag(s: PrescriptionSet) {
+    setTagTarget(s);
+    setTagForm({
+      tag_label: s.tag_label ?? '',
+      tag_color: s.tag_color ?? DEFAULT_RX_TAG_COLOR,
+      icon: s.icon ?? '',
+    });
+  }
+  async function handleSaveTag() {
+    if (!tagTarget) return;
+    await updateTagMeta.mutateAsync({ id: tagTarget.id, meta: tagForm });
+    setTagTarget(null);
+  }
 
   function openAdd() {
     setEditing(null);
@@ -817,10 +904,21 @@ export default function PrescriptionSetsTab() {
               data-testid="rx-set-item"
             >
               <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className={`text-sm font-medium ${!s.is_active ? 'text-muted-foreground line-through' : ''}`}>
                     {s.name}
                   </span>
+                  {/* T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER AC-2: 태그 색상 칩(라벨+색)+아이콘.
+                      tag_label 있을 때만 렌더. 색은 rxTagPalette SSOT(미지 토큰=slate 폴백). */}
+                  {s.tag_label && (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${tagChipClass(s.tag_color)}`}
+                      data-testid="rx-set-tag-chip"
+                    >
+                      {s.icon && <IconRenderer icon={s.icon} className="h-3 w-3" />}
+                      {s.tag_label}
+                    </span>
+                  )}
                   {!s.is_active && (
                     <Badge variant="outline" className="text-[10px] py-0">비활성</Badge>
                   )}
@@ -829,8 +927,10 @@ export default function PrescriptionSetsTab() {
                   </Badge>
                 </div>
                 {canEdit && (
-                  // T-20260609-foot-RXSET-DELETE-KEBAB-GUARD: 삭제 직접노출 제거 → 우측상단 ⋮ 케밥(삭제 단일).
+                  // T-20260609-foot-RXSET-DELETE-KEBAB-GUARD: 삭제 직접노출 제거 → 우측상단 ⋮ 케밥.
+                  // T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: 케밥에 '태그 편집' 추가.
                   <RxSetKebabMenu
+                    onEditTag={() => openEditTag(s)}
                     onDelete={() => setDeleteTarget(s)}
                     deleteDisabled={del.isPending}
                   />
@@ -999,6 +1099,117 @@ export default function PrescriptionSetsTab() {
             >
               {del.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
               삭제
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER AC-1: 태그/아이콘 경량 편집 다이얼로그.
+          라벨/색/아이콘 3필드만 — items/name/folder 등 기존 컬럼 무접촉(useUpdateSetTagMeta). */}
+      <Dialog open={!!tagTarget} onOpenChange={(o) => !o && setTagTarget(null)}>
+        <DialogContent className="max-w-md" data-testid="rx-set-tag-dialog">
+          <DialogHeader>
+            <DialogTitle>태그 편집 — {tagTarget?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-[11px] text-muted-foreground">
+              묶음처방에 <span className="font-medium text-teal-700">색깔 태그</span>를 붙이면, 진료화면에서 그 태그만 눌러 약을 바로 넣을 수 있어요.
+            </p>
+
+            {/* 라벨 */}
+            <div>
+              <Label className="text-xs">태그 이름</Label>
+              <Input
+                value={tagForm.tag_label}
+                onChange={(e) => setTagForm((f) => ({ ...f, tag_label: e.target.value }))}
+                placeholder="예) 무좀"
+                className="mt-1"
+                maxLength={12}
+                data-testid="rx-set-tag-label-input"
+              />
+              <p className="mt-1 text-[10px] text-muted-foreground">비우면 태그가 사라져요.</p>
+            </div>
+
+            {/* 색상 팔레트 (rxTagPalette SSOT) */}
+            <div>
+              <Label className="text-xs">색상</Label>
+              <div className="mt-1.5 flex flex-wrap gap-1.5" data-testid="rx-set-tag-color-palette">
+                {RX_TAG_COLORS.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => setTagForm((f) => ({ ...f, tag_color: c.value }))}
+                    title={c.label}
+                    aria-label={`색상 ${c.label}`}
+                    aria-pressed={tagForm.tag_color === c.value}
+                    data-testid={`rx-set-tag-color-${c.value}`}
+                    className={`h-7 w-7 rounded-full ${c.dot} transition ${
+                      tagForm.tag_color === c.value
+                        ? 'ring-2 ring-offset-2 ring-foreground'
+                        : 'opacity-70 hover:opacity-100'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* 아이콘 (quick_rx_buttons 와 동일 vocab — DRUG_ICON_OPTIONS) */}
+            <div>
+              <Label className="text-xs">아이콘 (선택)</Label>
+              <div className="mt-1.5 flex flex-wrap gap-1.5" data-testid="rx-set-tag-icon-palette">
+                {/* 없음 */}
+                <button
+                  type="button"
+                  onClick={() => setTagForm((f) => ({ ...f, icon: '' }))}
+                  aria-pressed={tagForm.icon === ''}
+                  title="아이콘 없음"
+                  data-testid="rx-set-tag-icon-none"
+                  className={`flex h-8 w-8 items-center justify-center rounded-md border text-[10px] text-muted-foreground transition ${
+                    tagForm.icon === '' ? 'border-teal-500 bg-teal-50' : 'hover:bg-accent'
+                  }`}
+                >
+                  없음
+                </button>
+                {DRUG_ICON_OPTIONS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setTagForm((f) => ({ ...f, icon: value }))}
+                    aria-pressed={tagForm.icon === value}
+                    title={label}
+                    aria-label={`아이콘 ${label}`}
+                    data-testid={`rx-set-tag-icon-${value}`}
+                    className={`flex h-8 w-8 items-center justify-center rounded-md border transition ${
+                      tagForm.icon === value ? 'border-teal-500 bg-teal-50 text-teal-700' : 'text-muted-foreground hover:bg-accent'
+                    }`}
+                  >
+                    <IconRenderer icon={value} className="h-4 w-4" />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 미리보기 칩 */}
+            {tagForm.tag_label.trim() && (
+              <div>
+                <Label className="text-xs">미리보기</Label>
+                <div className="mt-1.5">
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${tagChipClass(tagForm.tag_color)}`}
+                    data-testid="rx-set-tag-preview-chip"
+                  >
+                    {tagForm.icon && <IconRenderer icon={tagForm.icon} className="h-3 w-3" />}
+                    {tagForm.tag_label.trim()}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTagTarget(null)}>취소</Button>
+            <Button onClick={handleSaveTag} disabled={updateTagMeta.isPending} data-testid="rx-set-tag-save-btn">
+              {updateTagMeta.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+              저장
             </Button>
           </DialogFooter>
         </DialogContent>
