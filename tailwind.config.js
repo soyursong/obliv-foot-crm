@@ -9,25 +9,12 @@ export default {
     },
     extend: {
       colors: {
-        // ── T-20260614-foot-THEME-MONOCHROME-RECOLOR (StepD) ──────────────────
-        // 브랜드 메인 teal-* (장식 1600+건)을 확정 warm-monochrome 램프로 단일 리맵.
-        //   김주연 총괄 확정 5색 앵커: Vanilla #F8F4EE · Soft Dune #E4DDCC ·
-        //   Classic Taupe #C5BEA3 · Umber #443A35 · Black #252525.
-        // 클래스 sweep 없이 팔레트 오버라이드 한 곳에서 전 화면 적용(JIT 안전, 가역).
-        // ⚠ emerald-*/green-* 은 의미색(재진·초진·완료·success·선체험)으로 유지 — 미리맵(AC4).
-        teal: {
-          50:  "#F8F4EE", // Vanilla — 연한 배경(former teal-50)
-          100: "#F0EADE", // 연한 면/뱃지
-          200: "#E4DDCC", // Soft Dune — 보더/구분선
-          300: "#D6CDB8",
-          400: "#C5BEA3", // Classic Taupe — 밝은 포인트
-          500: "#9D917A",
-          600: "#6E6353", // 주 포인트(활성·강조 텍스트) — AA on light
-          700: "#554A3D", // 강조 텍스트/hover
-          800: "#443A35", // Umber — 다크 액센트
-          900: "#2E2823",
-          950: "#252525", // Black
-        },
+        // ── T-20260614-foot-THEME-MONOCHROME-RECOLOR (StepD 정정 — planner FIX MSG-20260614-153740) ──
+        // 전역 teal-* 램프 단일 리맵은 '의미색 치환'에 해당 → 보류(HOLD).
+        //   사유: teal-* 는 장식(1600+건)이자 동시에 의미색 — status.ts 칸반 treatment_waiting(teal-100/800)·
+        //         preconditioning(teal-400) 단계 색으로 쓰여, 전역 리맵 시 단계 구분이 무너짐(AC4 위반).
+        //   김주연 총괄 A/B 결정(DECISION-REQUEST) 수령 후 의미색 처리 방향 확정 → 그때 재적용.
+        //   그 전까지 teal 은 Tailwind 기본 램프 유지(의미색 보존). 브랜드 장식 리컬러는 :root 토큰 레이어로만 수행.
         border: "var(--border)",
         input: "var(--input)",
         ring: "var(--ring)",

@@ -20,16 +20,24 @@ import { join } from 'node:path';
 const ROOT = process.cwd();
 const tw = readFileSync(join(ROOT, 'tailwind.config.js'), 'utf8');
 const css = readFileSync(join(ROOT, 'src', 'index.css'), 'utf8');
+const status = readFileSync(join(ROOT, 'src', 'lib', 'status.ts'), 'utf8');
 
 test.describe('THEME-MONOCHROME-RECOLOR — 정적 소스 가드 (auth 불요)', () => {
-  test('AC: tailwind teal 팔레트가 확정 warm 앵커로 리맵되어 있다', () => {
-    // 확정 5색 앵커 중 teal 램프가 채택한 값 (Vanilla/Taupe/Umber/Black)
-    expect(tw).toMatch(/#F8F4EE/i); // 50 Vanilla
-    expect(tw).toMatch(/#C5BEA3/i); // 400 Classic Taupe
-    expect(tw).toMatch(/#443A35/i); // 800 Umber
-    expect(tw).toMatch(/#252525/i); // 950 Black
-    // 회귀 가드: 기본 teal 시안 계열이 config 로 되살아나면 실패
-    expect(tw).not.toMatch(/#14b8a6|#0d9488|#0f766e|#5eead4/i);
+  // 정정(planner FIX MSG-20260614-153740): 전역 teal 램프 리맵은 '의미색 치환' → 보류(HOLD).
+  //   teal-* 는 칸반 단계(treatment_waiting/preconditioning) 의미색이기도 하므로,
+  //   김주연 총괄 A/B 결정 전까지 Tailwind 기본 teal 램프를 유지(의미색 보존)한다.
+  test('AC4(정정): tailwind 에 전역 teal 램프 오버라이드가 없다 (의미색 보류)', () => {
+    // teal 팔레트 블록이 config 에 재정의되어 있지 않아야 함(기본 램프 유지 = 칸반 의미색 보존)
+    expect(tw).not.toMatch(/\bteal:\s*\{/);
+    // warm 앵커 hex 가 teal 램프로 주입돼 있지 않아야 함
+    expect(tw).not.toMatch(/#F8F4EE|#C5BEA3|#443A35/i);
+  });
+
+  test('AC4(정정): status.ts 칸반 단계 의미색(teal/emerald)이 보존돼 있다', () => {
+    expect(status).toMatch(/treatment_waiting:\s*'bg-teal-100 text-teal-800'/);
+    expect(status).toMatch(/preconditioning:\s*'bg-teal-400 text-white'/);
+    expect(status).toMatch(/laser:\s*'bg-emerald-500 text-white'/);
+    expect(status).toMatch(/returning:\s*'bg-emerald-100 text-emerald-700'/);
   });
 
   test('AC1: :root 토큰이 warm-monochrome 로 교체되어 있다 (순백/순흑 아님)', () => {

@@ -113,7 +113,8 @@ function FootSvg({ side, value, onToggle, readOnly }: FootSvgProps) {
                 fill={active ? '#6E6353' : '#fdf6ec'}
                 stroke={active ? '#443A35' : '#e7d8c3'}
                 strokeWidth={2}
-                className={cn('transition-colors', !readOnly && 'hover:stroke-teal-400')}
+                /* 정정: teal 램프 복원(의미색 보류)에 비종속이도록 hover 도 warm(Taupe) 고정 */
+                className={cn('transition-colors', !readOnly && 'hover:stroke-[#C5BEA3]')}
               />
               {/* 발톱 하이라이트 */}
               <ellipse cx={t.cx} cy={t.cy - t.ry * 0.35} rx={t.rx * 0.5} ry={t.ry * 0.28} fill={active ? '#C5BEA3' : '#fff7ec'} opacity={0.85} />
