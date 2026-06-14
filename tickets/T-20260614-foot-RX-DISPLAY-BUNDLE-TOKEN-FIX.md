@@ -2,7 +2,7 @@
 id: T-20260614-foot-RX-DISPLAY-BUNDLE-TOKEN-FIX
 title: "[처방] 묶음처방 흡수분 포함 처방 표기 '약물명 1/3/2' 단일 토큰 경로 수렴"
 domain: foot
-priority: P1
+priority: P0
 status: deploy-ready
 deploy-ready: true
 build-ok: true
@@ -11,10 +11,12 @@ spec-added: true
 spec-exempt: false
 rollback-sql: null
 commit_sha: aa0e453
+reopen_commit_sha: PENDING
 created: 2026-06-14
 assignee: dev-foot
 reporter: 문지은 대표원장
 source_msg: MSG-20260614-005739-67ia
+reopen_msg: MSG-20260614-200238-kpjl
 risk_verdict: GO
 ---
 
@@ -53,3 +55,31 @@ risk_verdict: GO
 - build OK. spec: tests/e2e/T-20260614-foot-RX-DISPLAY-BUNDLE-TOKEN-FIX.spec.ts 14 passed.
 - 회귀: DOCPATIENTLIST-EXPAND-CLINICAL/COURSE-RXHISTORY, MEDCHART-TIMELINE-COMPACT/SOAK-REFINE,
   TIMELINE-FILTER-PREVIEW-FIX 29 passed / 21 skipped(DB라이브).
+
+---
+
+## REOPEN (P0, MSG-20260614-200238-kpjl) — 문지은 대표원장 강제새로고침 후에도 동일 현상
+
+### 배포 검증(planner #1 우선) 결과 — 배포 미반영 아님
+- prod index.html → `MedicalChartPanel-BBqIIufT.js` 참조. 이 prod 번들에 aa0e453 가 추가한
+  `data-testid="timeline-rx-item"` 마커 **존재 확인** → **진료차트 타임라인은 prod 에 fix 정상 반영**.
+- 즉 "배포 누락"이 RCA 아님. aa0e453 는 HEAD 의 ancestor(merge-base 확인).
+
+### 진짜 RCA — fix 가 surface 를 잘못 골랐다(다른 컴포넌트만 수렴)
+- aa0e453 는 **MedicalChartPanel / DoctorPatientList / TreatmentTable** 만 토큰 수렴.
+- 그러나 문지은 대표원장 묶음처방 흡수 **실동선 = CheckInDetailSheet → `DoctorTreatmentPanel`**:
+  · 묶음처방 불러오기 picker 미리보기(`RxSetPicker` L344) = `{name} — {dosage} {frequency} {days}일` raw.
+  · 흡수 처방 목록(`PrescriptionView` L457) = name/dosage/route/frequency/days **흩뿌린 raw spans**(=엉망).
+  → 이 패널은 aa0e453 가 전혀 손대지 않아, 배포돼도 그녀 화면은 그대로 raw. 단건/묶음 무관 동일 raw.
+
+### REOPEN 수정 (presentation only · DB 무변경)
+- `DoctorTreatmentPanel.tsx`: `formatRxItemToken` SSOT import.
+  · RxSetPicker 미리보기 li → `formatRxItemToken(item)` ('약물명 1/3/2').
+  · PrescriptionView 행 → `formatRxItemToken(item)` 주표기 + route 부가칩 보존 + ✕/notes 유지.
+- 좌표 격리: QUICKRX-MULTI-DRUG(QuickRxBar)·MEDCHART-EDITMODE-RXTABLE(MedicalChartPanel 편집테이블)과
+  **다른 컴포넌트** → 충돌 없음. CustomerChartPage 처방전(관계형 prescriptions·자유텍스트 dosage·count 컬럼 없음)은
+  데이터모델 상이 → 본 토큰 강제 시 오출력('1정 1일 3회/3') 위험으로 **범위 제외**(planner 별도 판단 필요).
+
+### REOPEN 검증
+- build OK. spec 18 passed (S4 REOPEN 4건 추가: DTP-IMPORT/PICKER/LIST + set.items shape 토큰).
+- 실동작 prod 렌더 확인은 재배포 후 번들 마커(`prescription-item-token`) 갱신 검증 + 현장 confirm 필요.
