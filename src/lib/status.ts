@@ -67,8 +67,11 @@ export const STATUS_COLOR: Record<CheckInStatus, string> = {
   consultation: 'bg-indigo-500 text-white',
   exam_waiting: 'bg-blue-100 text-blue-800',
   examination: 'bg-blue-500 text-white',
-  treatment_waiting: 'bg-teal-100 text-teal-800',
-  preconditioning: 'bg-teal-400 text-white',
+  // ⚠ AC4 carve-out (T-20260614-foot-THEME-MONOCHROME-RECOLOR A안): 칸반 11단계 의미색.
+  //   teal 전역 램프 warm-monochrome 오버라이드(tailwind.config.js)에 비종속화하기 위해
+  //   teal 기본 HEX 로 pin (teal-100 #ccfbf1 / teal-800 #115e59 / teal-400 #2dd4bf). 단계 구분색 보존.
+  treatment_waiting: 'bg-[#ccfbf1] text-[#115e59]',
+  preconditioning: 'bg-[#2dd4bf] text-white',
   laser_waiting: 'bg-rose-100 text-rose-700',
   healer_waiting: 'bg-violet-100 text-violet-700',
   laser: 'bg-emerald-500 text-white',
