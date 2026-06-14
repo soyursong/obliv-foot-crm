@@ -690,6 +690,20 @@ export default function MedicalChartPanel({
       }),
     [visitHistory],
   );
+  // T-20260614-foot-MEDCHART-AUDIT-NOISE-VISIBILITY: 진료의 "최초 지정(생성)" 이벤트는 변경이 아님 → 표시에서 제외.
+  // 적재(medical_chart_signer_audit append-only, L1209)는 무변경 — 화면 필터만.
+  // 실제 변경(old·new 둘 다 non-null & old≠new)만 노출. old가 null/빈값/'(없음)'이면 생성행으로 보고 숨김.
+  const visibleSignerAudit = useMemo(
+    () =>
+      signerAudit.filter((a) => {
+        const oldName = (a.old_doctor_name ?? '').trim();
+        const newName = (a.new_doctor_name ?? '').trim();
+        if (!oldName || oldName === '(없음)') return false; // 최초 지정(생성) 이벤트 제외
+        if (!newName) return false;
+        return oldName !== newName; // 실제 변경만
+      }),
+    [signerAudit],
+  );
   const [visitHistLoaded, setVisitHistLoaded] = useState(false);
   const [visitHistLoading, setVisitHistLoading] = useState(false);
   const [treatImages, setTreatImages] = useState<TreatmentImage[]>([]);
@@ -3564,8 +3578,9 @@ export default function MedicalChartPanel({
                       {/* AC-P2-3: 진료의 변경이력(차트 단위 조회). append-only — 덮어쓰기 금지.
                           T-20260614-foot-CHARTSIGNAUDIT-ROLE-GATE: 변경이력은 원장(director)/어드민(admin)만 조회.
                           isDirector = canViewDoctorMemo(DIRECTOR_ROLES=['director','admin']) — director/admin 동시 포함 SSOT라
-                          별도 isAdmin 결선 없이 (isDirector || isAdmin) 의도 충족. 일반 스태프/직원 미표시. insert 로직 무변경. */}
-                      {signerAudit.length > 0 && isDirector && (
+                          별도 isAdmin 결선 없이 (isDirector || isAdmin) 의도 충족. 일반 스태프/직원 미표시. insert 로직 무변경.
+                          T-20260614-foot-MEDCHART-AUDIT-NOISE-VISIBILITY: 생성('(없음)→X') 행은 표시에서 제외(visibleSignerAudit). */}
+                      {visibleSignerAudit.length > 0 && isDirector && (
                         <div className="w-full max-w-md text-right">
                           <button
                             type="button"
@@ -3573,11 +3588,11 @@ export default function MedicalChartPanel({
                             className="text-[11px] text-muted-foreground hover:text-teal-700 underline decoration-dotted"
                             data-testid="signer-audit-toggle"
                           >
-                            진료의 변경이력 {signerAudit.length}건 {signerAuditOpen ? '접기' : '보기'}
+                            진료의 변경이력 {visibleSignerAudit.length}건 {signerAuditOpen ? '접기' : '보기'}
                           </button>
                           {signerAuditOpen && (
                             <ul className="mt-1 space-y-1 text-left rounded-md border bg-gray-50 p-2" data-testid="signer-audit-list">
-                              {signerAudit.map((a) => (
+                              {visibleSignerAudit.map((a) => (
                                 <li key={a.id} className="text-[11px] text-muted-foreground">
                                   <span className="font-mono">{fmtDateShort(a.changed_at)}</span>{' · '}
                                   <span className="text-gray-600">{a.old_doctor_name ?? '(없음)'}</span>
