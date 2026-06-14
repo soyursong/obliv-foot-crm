@@ -74,6 +74,7 @@ import { useClinic } from '@/hooks/useClinic';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
+import { timelineVisitType } from '@/lib/timeline-routing';
 import { formatAmount, maskPhoneTail, seoulISODate, cardDisplayName, phoneTailSuffix, chartNoBadge } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
@@ -1986,7 +1987,15 @@ function DashboardTimeline({
       checkInByResvId.get(r.id) ??
       (r.customer_id ? checkInByCustomerId.get(r.customer_id) : undefined);
 
-    if (r.visit_type === 'new') {
+    // T-20260614-foot-TIMELINE-FIRSTVISIT-RETURNING-MISCLASSIFY (Option A):
+    //   routing은 매칭 체크인의 visit_type 우선, 없으면 예약 visit_type 폴백.
+    //   현장 체크인 시점의 분류(ci.visit_type)가 당일 타임라인의 권위 기준.
+    //   초진 체크인(ci.vt='new')이 재진 예약(r.vt='returning')에 매칭돼도 초진 구역에 표시.
+    //   워크인 분기(아래 ci.visit_type 사용)와 동일 기준 → 매칭/워크인 일관.
+    //   ci 없음(셀프접수 전)일 때만 r.visit_type 사용(기존 동작 유지).
+    const effVisitType = timelineVisitType(ci?.visit_type, r.visit_type);
+
+    if (effVisitType === 'new') {
       // 초진
       if (!ci) {
         // 셀프접수 전 → 1번 박스 (비활성). 노쇼도 미내원 → 1번 박스에 유지(배지 표시)
