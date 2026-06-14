@@ -365,6 +365,15 @@ export interface CheckIn {
    *  의사가 호출을 인지/확인했다는 표시 신호. NULL=미확인, 값 있으면 '의사 확인됨'.
    *  진료완료(completed_at) 상태머신과 별개 신호(귀속/완료 로직 무관). */
   doctor_ack_at: string | null;
+  /** 진료 세션 단계 — T-20260612-foot doctor_status (architect CONSULT DA-20260612-foot-DOCTORCALL).
+   *  enum doctor_session_status: 'in_treatment'(진료중) | 'done'(진료완료) | NULL(미시작/대기).
+   *  status_flag(콜 큐 색)와 직교. T-20260614-foot-DOCCALL-PURPLE-STEPPER 진료단계 stepper(대기→원장확인→진료중→진료완료)에서
+   *  진료중/진료완료 2단계 표상 (대기=NULL, 원장확인=doctor_ack_at). */
+  doctor_status: 'in_treatment' | 'done' | null;
+  /** doctor_status='in_treatment' 전환 시각 — T-20260612-foot. */
+  doctor_started_at: string | null;
+  /** doctor_status='done' 전환 시각 — T-20260612-foot. */
+  doctor_ended_at: string | null;
   /** T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed 조인 결과.
    *  카드 표기명을 customers 현재 이름 우선 렌더하기 위한 비영속 파생 필드.
    *  customer_id 미연결(unlink) 시 null → denormalized customer_name fallback.
