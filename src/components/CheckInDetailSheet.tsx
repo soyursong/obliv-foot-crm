@@ -926,8 +926,10 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     onUpdated();
   };
 
-  const saveNotes = async () => {
-    if (!checkIn) return;
+  // T-20260613-foot-FIELDBATCH item3: 저장 성공 여부 반환(true=저장됨/저장할 것 없음, false=실패).
+  //   "저장 후 닫기"가 성공 시에만 닫도록 사용. 기존 호출부(자동저장·flush 가드)는 반환값 무시 → 무영향.
+  const saveNotes = async (): Promise<boolean> => {
+    if (!checkIn) return true;
     setSaving(true);
     const notesObj = { ...(checkIn.notes as Record<string, unknown> ?? {}), text: notes };
     // T-20260612-foot-CHART-INTAKE-TOGGLE-INPUT: 좌우+발가락 부위를 treatment_memo.foot_site 서브키로 저장.
@@ -957,12 +959,25 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setSaving(false);
     if (error) {
       toast.error('저장 실패');
-      return;
+      return false;
     }
     toast.success('메모 저장됨');
     setIsDirty(false);
     dirtyRef.current = false; // T-20260603-foot-CHART-UNSAVED-GUARD AC-2
     onUpdated();
+    return true;
+  };
+
+  // T-20260613-foot-FIELDBATCH item3: 1번차트 "저장 후 닫기" — 2번차트(CustomerChartSheet)와 동일 동작.
+  //   saveNotes 성공 시에만 닫기 확인 다이얼로그를 닫고 시트 종료(저장 실패 시 그대로 유지).
+  const handleSaveAndClose = async () => {
+    if (saving) return;
+    const ok = await saveNotes();
+    if (ok) {
+      setShowCloseConfirm(false);
+      dirtyRef.current = false;
+      onClose();
+    }
   };
 
   // T-20260522-foot-SPACE-AUTOROUTE: assignRoom 제거 (수동 배정 폐지 — 금일동선 자동집계로 전환)
@@ -994,7 +1009,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   useUnsavedGuard(
     'checkin-detail-sheet',
     () => isDirty || dirtyRef.current,
-    { flush: () => saveNotesRef.current(), label: '체크인 메모', enabled: !!checkIn },
+    { flush: async () => { await saveNotesRef.current(); }, label: '체크인 메모', enabled: !!checkIn },
   );
 
   // T-20260511-foot-C1-SAVE-DIRTY-AUTOSAVE: isDirty=true 시 30초 자동저장 (현장 확정: 1번차트 30초)
@@ -1160,6 +1175,15 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             onClick={() => { setShowCloseConfirm(false); dirtyRef.current = false; onClose(); }}
           >
             저장하지 않고 닫기
+          </Button>
+          {/* T-20260613-foot-FIELDBATCH item3: 2번차트와 동일하게 "저장 후 닫기" 추가 */}
+          <Button
+            className="bg-teal-600 hover:bg-teal-700"
+            data-testid="checkin-close-save-btn"
+            disabled={saving}
+            onClick={handleSaveAndClose}
+          >
+            {saving ? '저장 중…' : '저장 후 닫기'}
           </Button>
         </DialogFooter>
       </DialogContent>
