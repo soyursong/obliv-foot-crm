@@ -126,7 +126,7 @@ interface ReservationDraft {
   /** T-PROGRESS-CHECKPOINT AC-2/3: 예약에 연결할 패키지 ID */
   linked_package_id?: string | null;
   /** T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): 힐러 의도(영속) — 팝업 ON/OFF 토글. */
-  healer_intent?: boolean;
+  is_healer_intent?: boolean;
 }
 
 // ─── T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002 (옵션A · L-002 개정) ───────────────
@@ -150,7 +150,7 @@ type CanonicalCreateInput = {
   referral_name?: string | null;
   linked_package_id?: string | null;
   preferred_therapist_id?: string | null; // 재진 치료사(역동기화 대상)
-  healer_intent?: boolean; // T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): 힐러 의도(영속)
+  is_healer_intent?: boolean; // T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): 힐러 의도(영속)
   progressCheck?: { required: boolean; label: string | null } | null;
   maxPerSlot: number;
   changedBy: string | null;
@@ -220,7 +220,7 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
     memo: input.memo?.trim() || null,
     booking_memo: input.booking_memo?.trim() || null,
     // T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): 힐러 의도(영속) — 캘린더 직접예약 시점에 저장.
-    healer_intent: input.healer_intent ?? false,
+    is_healer_intent: input.is_healer_intent ?? false,
     referral_source: (input.visit_type === 'new' && input.visit_route) ? input.visit_route : null,
     ...(input.visit_type === 'returning' ? { preferred_therapist_id: input.preferred_therapist_id || null } : {}),
     // ③ 경과체크 — 패키지 연결 시 체크포인트 도달 여부 저장 (원본 save() 동일 시맨틱)
@@ -928,8 +928,8 @@ export default function Reservations() {
       // useEffect fallback은 referral_source가 null인 구형 예약 대응용으로 유지
       visit_route: r.referral_source ?? '',
       customer_id: r.customer_id ?? null,  // AC-3 fallback: customer.visit_route/lead_source 조회용
-      // T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): 영속 healer_intent 프리로드. 레거시 healer_flag(소모형)도 ON 으로 수용.
-      healer_intent: !!(r.healer_intent ?? r.healer_flag),
+      // T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): 영속 is_healer_intent 프리로드. 레거시 healer_flag(소모형)도 ON 으로 수용.
+      is_healer_intent: !!(r.is_healer_intent ?? r.healer_flag),
     });
     setDetail(null);
   };
@@ -2487,7 +2487,7 @@ function ReservationEditor({
         memo: state.memo.trim() || null,
         booking_memo: state.booking_memo?.trim() || null,
         // T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): 힐러 의도(영속) — 수정 시에도 토글 반영.
-        healer_intent: state.healer_intent ?? false,
+        is_healer_intent: state.is_healer_intent ?? false,
         referral_source: (state.visit_type === 'new' && state.visit_route) ? state.visit_route : null,
         ...(state.visit_type === 'returning' ? { preferred_therapist_id: overrideTherapistId || null } : {}),
       };
@@ -2619,7 +2619,7 @@ function ReservationEditor({
       referral_name: state.referral_name,
       linked_package_id: state.linked_package_id,
       preferred_therapist_id: state.visit_type === 'returning' ? (overrideTherapistId || null) : null,
-      healer_intent: state.healer_intent ?? false,
+      is_healer_intent: state.is_healer_intent ?? false,
       progressCheck,
       maxPerSlot,
       changedBy,
@@ -2750,7 +2750,7 @@ function ReservationEditor({
             </div>
           </div>
           {/* T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): 힐러 예약 ON/OFF 토글.
-              ON 시 healer_intent(영속) 저장 → 캘린더 'HL N' 칩 / resvKind 가 체크인 후에도 힐러로 분류. */}
+              ON 시 is_healer_intent(영속) 저장 → 캘린더 'HL N' 칩 / resvKind 가 체크인 후에도 힐러로 분류. */}
           <div className="space-y-1.5">
             <Label>힐러 예약</Label>
             <div className="grid grid-cols-2 gap-2">
@@ -2759,11 +2759,11 @@ function ReservationEditor({
                   key={key}
                   type="button"
                   data-testid={`healer-intent-${key}`}
-                  aria-pressed={(state.healer_intent ?? false) === val}
-                  onClick={() => update('healer_intent', val)}
+                  aria-pressed={(state.is_healer_intent ?? false) === val}
+                  onClick={() => update('is_healer_intent', val)}
                   className={cn(
                     'h-9 rounded-md border text-sm font-medium',
-                    (state.healer_intent ?? false) === val
+                    (state.is_healer_intent ?? false) === val
                       ? (val
                           ? 'border-yellow-500 bg-yellow-50 text-yellow-700'
                           : 'border-teal-600 bg-teal-50 text-teal-700')
