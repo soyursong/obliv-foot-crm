@@ -11,7 +11,7 @@ spec-added: true
 spec-exempt: false
 rollback-sql: null
 commit_sha: aa0e453
-reopen_commit_sha: PENDING
+reopen_commit_sha: 386cb6d
 created: 2026-06-14
 assignee: dev-foot
 reporter: 문지은 대표원장
