@@ -602,19 +602,19 @@ export default function DoctorCallDashboard() {
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-[15px]" data-testid="doctor-call-feed-table">
               {/* DOCDASH_COLGROUP — T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1(문지은 대표원장, MONOTONE 컬럼순서 supersede): 10칼럼, 합 100%.
-                  T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-1): 식별컬럼군(방·상태·이름·생년·차트번호) 합 42%(≤절반).
-                  남는 58%를 본문(처방완료·임상경과)에 넓게 배분 — 처방 24 · 임상경과 14(최대 비중). 보조(오늘시술·차트·시간)는 최소.
-                  순서: 방 5 · 상태(✋) 9 · 이름 11 · 생년(만나이) 9 · 차트번호 8 · 오늘시술 9 · 차트 6 · 처방 24 · 임상경과 14 · 시간 5. */}
+                  T-20260614-foot-DOCPATIENTLIST-COLWIDTH-RATIO-TUNE: EXPAND-QUICKEDIT 배포본(방5·상태9·이름11·처방24) 기준 비율 축소.
+                  방 ×0.75(5→4) · 상태 ×0.75(9→7) · 이름 ×0.50(11→6) · 처방 ×0.50(24→12). 해방된 20%p 전량을 임상경과 본문(14→34)에 재분배(나머지 불변).
+                  순서·합 100%: 방 4 · 상태(✋) 7 · 이름 6 · 생년(만나이) 9 · 차트번호 8 · 오늘시술 9 · 차트 6 · 처방 12 · 임상경과 34 · 시간 5. */}
               <colgroup>
-                <col className="w-[5%]" />
-                <col className="w-[9%]" />
-                <col className="w-[11%]" />
+                <col className="w-[4%]" />
+                <col className="w-[7%]" />
+                <col className="w-[6%]" />
                 <col className="w-[9%]" />
                 <col className="w-[8%]" />
                 <col className="w-[9%]" />
                 <col className="w-[6%]" />
-                <col className="w-[24%]" />
-                <col className="w-[14%]" />
+                <col className="w-[12%]" />
+                <col className="w-[34%]" />
                 <col className="w-[5%]" />
               </colgroup>
               {/* DOCDASH_THEAD — CALLUX-3FIX AC-1: 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과·시간. */}
@@ -672,19 +672,19 @@ export default function DoctorCallDashboard() {
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-[15px]" data-testid="doctor-completed-table">
               {/* COMPLETED COLGROUP — T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1: 경과시간 제거(UX7 유지) + 생년 신설(9칼럼).
-                  T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-1): 식별컬럼군(방·상태·이름·생년·차트번호) 합 44%(≤절반).
-                  남는 56%를 본문(처방완료·임상경과)에 넓게 배분 — 처방 25 · 임상경과 16(최대 비중). 보조(오늘시술·차트)는 최소.
-                  순서·합 100%: 방5 · 상태(✋)10 · 이름12 · 생년(만나이)9 · 차트번호8 · 오늘시술9 · 차트6 · 처방25 · 임상경과16. */}
+                  T-20260614-foot-DOCPATIENTLIST-COLWIDTH-RATIO-TUNE: EXPAND-QUICKEDIT 배포본(방5·상태10·이름12·처방25) 기준 비율 축소.
+                  방 ×0.75(5→4) · 상태 ×0.75(10→8) · 이름 ×0.50(12→6) · 처방 ×0.50(25→13). 해방된 21%p 전량을 임상경과 본문(16→37)에 재분배(나머지 불변).
+                  순서·합 100%: 방4 · 상태(✋)8 · 이름6 · 생년(만나이)9 · 차트번호8 · 오늘시술9 · 차트6 · 처방13 · 임상경과37. */}
               <colgroup>
-                <col className="w-[5%]" />
-                <col className="w-[10%]" />
-                <col className="w-[12%]" />
+                <col className="w-[4%]" />
+                <col className="w-[8%]" />
+                <col className="w-[6%]" />
                 <col className="w-[9%]" />
                 <col className="w-[8%]" />
                 <col className="w-[9%]" />
                 <col className="w-[6%]" />
-                <col className="w-[25%]" />
-                <col className="w-[16%]" />
+                <col className="w-[13%]" />
+                <col className="w-[37%]" />
               </colgroup>
               {/* COMPLETED THEAD — CALLUX-3FIX AC-1: 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과(시간 없음). */}
               <thead>
