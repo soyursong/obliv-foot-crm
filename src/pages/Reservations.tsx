@@ -310,6 +310,10 @@ export default function Reservations() {
   const [filterMine, setFilterMine] = useState(false);
   // T-20260514-foot-CHART-NO-VISIBLE: AC-2 예약관리 차트번호 컬럼 (customer_id → chart_number)
   const [resvChartMap, setResvChartMap] = useState<Map<string, string>>(new Map());
+  // T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 예약카드 '담당자' 표시.
+  //   customer_id → 고객 차트(차트2)의 assigned_staff_id가 가리키는 직원 이름. 재진=차트 담당자 자동연동,
+  //   첫방문(assigned_staff_id NULL)=미표시(공란). read-only 파생 — 신규 컬럼 없음.
+  const [resvAssignedStaffMap, setResvAssignedStaffMap] = useState<Map<string, string>>(new Map());
 
   const [editor, setEditor] = useState<ReservationDraft | null>(null);
   const [detail, setDetail] = useState<Reservation | null>(null);
@@ -576,15 +580,39 @@ export default function Reservations() {
       setNoshowByCustomer(counts);
 
       // T-20260514-foot-CHART-NO-VISIBLE: AC-2 차트번호 컬럼용 사전 로드
+      // T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 동 배치에 assigned_staff_id 추가 로드 → 예약카드 담당자 표시.
       const { data: chartData } = await supabase
         .from('customers')
-        .select('id, chart_number')
+        .select('id, chart_number, assigned_staff_id')
         .in('id', customerIds);
       const chartM = new Map<string, string>();
-      for (const c of (chartData ?? []) as { id: string; chart_number: string | null }[]) {
+      const custAssignedStaff = new Map<string, string>(); // customer_id → staff_id
+      for (const c of (chartData ?? []) as { id: string; chart_number: string | null; assigned_staff_id: string | null }[]) {
         if (c.chart_number) chartM.set(c.id, c.chart_number);
+        if (c.assigned_staff_id) custAssignedStaff.set(c.id, c.assigned_staff_id);
       }
       setResvChartMap(chartM);
+
+      // T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 담당자 staff_id → 이름 resolve.
+      //   active 필터 없이 조회(비활성·과거 담당자도 이름 표시 — raw UUID/공백 노출 방지). 결손 시 미표시(AC4).
+      const staffIds = Array.from(new Set(custAssignedStaff.values()));
+      const assignedM = new Map<string, string>(); // customer_id → staff name
+      if (staffIds.length > 0) {
+        const { data: staffRows } = await supabase
+          .from('staff')
+          .select('id, name, display_name')
+          .eq('clinic_id', clinic.id)
+          .in('id', staffIds);
+        const staffNameById = new Map<string, string>();
+        for (const s of (staffRows ?? []) as { id: string; name: string | null; display_name: string | null }[]) {
+          staffNameById.set(s.id, (s.display_name || s.name || '').trim());
+        }
+        for (const [custId, staffId] of custAssignedStaff) {
+          const nm = staffNameById.get(staffId);
+          if (nm) assignedM.set(custId, nm);
+        }
+      }
+      setResvAssignedStaffMap(assignedM);
 
       // T-20260527-foot-TREATMENT-CYCLE-ALERT AC-1/AC-4:
       // 고객별 완료 치료 회차 수를 단일 RPC로 배치 집계 (N+1 방지)
@@ -624,6 +652,7 @@ export default function Reservations() {
     } else {
       setNoshowByCustomer({});
       setResvChartMap(new Map());
+      setResvAssignedStaffMap(new Map());
       setTreatmentCycleMap(new Map());
       setNextHealerByCustomer({});
     }
@@ -1770,6 +1799,17 @@ export default function Reservations() {
                                         <TrendingUp className="h-2.5 w-2.5" />
                                         {r.progress_check_label ?? '경과분석'}
                                         <span className="opacity-70">체크포인트</span>
+                                      </div>
+                                    )}
+                                    {/* T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 담당자(고객 차트 assigned_staff) 표시.
+                                        재진=차트 담당자 자동연동 / 첫방문(assigned_staff_id NULL)=미렌더(공란, AC2). 결손 안전(AC4). */}
+                                    {r.customer_id && resvAssignedStaffMap.get(r.customer_id) && (
+                                      <div
+                                        className="truncate text-right text-[9px] text-teal-700 leading-none mt-0.5"
+                                        data-testid={`assigned-staff-tag-${r.id}`}
+                                        title={`담당자 ${resvAssignedStaffMap.get(r.customer_id)}`}
+                                      >
+                                        담당 {resvAssignedStaffMap.get(r.customer_id)}
                                       </div>
                                     )}
                                     {/* T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS AC-5: 우측 하단 @예약등록자.
