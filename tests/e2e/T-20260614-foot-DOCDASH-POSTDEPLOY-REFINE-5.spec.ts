@@ -36,29 +36,30 @@ function colWidths(block: string): number[] {
 // item③ — 데이터칼럼 밀도(방·상태·이름·생년 압축 + 처방 확대)
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('item③ — 데이터칼럼 밀도 추가 압축', () => {
-  test('대기(호출) colgroup: 방6·상태10·이름11·생년10 압축 + 처방18 확대, 합 100%', () => {
+  // ⚠ T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-1) supersede: 식별군 추가 압축 → 처방·임상경과 본문 확대.
+  test('대기(호출) colgroup: 식별군 압축 + 처방24·임상경과14 본문 확대, 합 100%', () => {
     const s = DASH();
     const start = s.indexOf('doctor-call-feed-table');
     const cgStart = s.indexOf('<colgroup>', start);
     const cgEnd = s.indexOf('</colgroup>', cgStart);
     const widths = colWidths(s.slice(cgStart, cgEnd));
     // 순서: 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과·시간
-    expect(widths).toEqual([6, 10, 11, 10, 9, 11, 7, 18, 12, 6]);
+    expect(widths).toEqual([5, 9, 11, 9, 8, 9, 6, 24, 14, 5]);
     expect(widths.reduce((a, b) => a + b, 0)).toBe(100);
-    // 처방(8번째)이 가장 넓은 데이터 컬럼 — 미리보기 확대 보장.
+    // 처방(8번째)이 가장 넓은 데이터 컬럼 — 본문 확대 보장.
     expect(widths[7]).toBeGreaterThanOrEqual(Math.max(...widths.filter((_, i) => i !== 7)));
   });
 
-  test('완료 colgroup: 방6·상태11·이름12·생년11 압축 + 처방18 확대, 합 100%', () => {
+  test('완료 colgroup: 식별군 압축 + 처방25·임상경과16 본문 확대, 합 100%', () => {
     const s = DASH();
     const start = s.indexOf('doctor-completed-table');
     const cgStart = s.indexOf('<colgroup>', start);
     const cgEnd = s.indexOf('</colgroup>', cgStart);
     const widths = colWidths(s.slice(cgStart, cgEnd));
     // 순서: 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과
-    expect(widths).toEqual([6, 11, 12, 11, 10, 12, 8, 18, 12]);
+    expect(widths).toEqual([5, 10, 12, 9, 8, 9, 6, 25, 16]);
     expect(widths.reduce((a, b) => a + b, 0)).toBe(100);
-    expect(widths[7]).toBe(18);
+    expect(widths[7]).toBe(25);
   });
 });
 

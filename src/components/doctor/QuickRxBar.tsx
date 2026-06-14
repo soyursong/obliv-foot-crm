@@ -14,7 +14,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/lib/toast';
 import { useAuth } from '@/lib/auth';
-import { Loader2, FileText, CheckCircle2 } from 'lucide-react';
+import { Loader2, FileText, CheckCircle2, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { IconRenderer } from '@/components/admin/QuickRxButtonsTab';
 import type { PrescriptionItem } from '@/components/admin/PrescriptionSetsTab';
@@ -630,6 +630,9 @@ export function RxConfirmedSummary({
   surface = 'unknown',
   customerId = null,
   actionMenu = false,
+  role,
+  onToggleExpand,
+  expanded = false,
 }: {
   checkInId: string | undefined;
   /** 확정된 처방 약물(JSONB) — 약물리스트 검은글씨 나열용. 배열 아니면 빈 줄. */
@@ -677,6 +680,19 @@ export function RxConfirmedSummary({
    *   · 수정 → onOpenChart() (처방을 차트에서 수정). · 취소 → 기존 취소확인+원복 동선.
    */
   actionMenu?: boolean;
+  /**
+   * T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-3): 빠른수정 진입용 현재 사용자 role.
+   * 빠른수정 팝오버의 QuickRxBar 에 전달(부원장 자유텍스트 게이트 등 동일 적용). 미지정 시 게이트 비적용.
+   */
+  role?: string;
+  /**
+   * T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2): split-affordance 모드 활성화 트리거.
+   *   제공 시 → 본문(처방완료 + 약요약) 클릭 = 펼침(읽기) 토글(부모가 행 아래 read 행 렌더).
+   *   actionMenu 와 함께 제공되면 연필 버튼 = 빠른수정/취소 메뉴(차트 풀오픈 X). 미제공 시 종전 동작(무회귀).
+   */
+  onToggleExpand?: () => void;
+  /** split 모드 본문 버튼 aria-expanded 상태(부모 펼침 state 미러). */
+  expanded?: boolean;
 }) {
   const { profile } = useAuth();
   const cancelAuditCtx: RxAuditCtx = {
@@ -703,6 +719,19 @@ export function RxConfirmedSummary({
   // T-20260613-foot-DOCDASH-CALLUX-3FIX AC-3: actionMenu 모드 드롭다운(수정/취소) 상태 + portal anchor.
   const btnRef = useRef<HTMLButtonElement>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+
+  // T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2/AC-3): split-affordance 모드.
+  //   본문 클릭=펼침(읽기, onToggleExpand), 연필=빠른수정/취소 메뉴. 연필이 메뉴/빠른수정 팝오버 anchor.
+  const splitMode = typeof onToggleExpand === 'function';
+  const pencilRef = useRef<HTMLButtonElement>(null);
+  const [editPos, setEditPos] = useState<{ top: number; left: number } | null>(null);
+
+  // 메뉴/팝오버 좌표 계산(표 overflow 클리핑 회피 — portal+fixed).
+  function anchorBelow(el: HTMLElement | null, width: number): { top: number; left: number } | null {
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)) };
+  }
 
   // 실제 취소(원복) 실행 — 즉시동선/드롭다운동선 공용.
   function executeCancel() {
@@ -768,6 +797,165 @@ export function RxConfirmedSummary({
   // actionMenu 모드: 귀가(blocked) → 버튼 비활성(AC-3). 그 외(취소 가능)만 활성.
   const buttonDisabled = cancelMut.isPending || (actionMenu ? !cancellable : !interactive);
   const menuOpen = actionMenu && menuPos !== null;
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2/AC-3): split 렌더.
+  //   레거시 동선과 완전 분리 — onToggleExpand 미제공 소비처(DoctorPatientList 등)는 아래 레거시 return.
+  //   · 본문(처방완료 + 약요약) 클릭 = 펼침(읽기) 토글 → 부모가 행 아래 read 행 렌더(EXPAND 메커니즘 재사용).
+  //   · 연필 = 빠른수정/취소 메뉴. 빠른수정 → QuickRxBar 팝오버(차트 풀오픈 X, apply mutation 동일).
+  //   · 귀가(blockedByGate) → 연필 미노출(수정/취소 불가), 본문 펼침만 유지 + '차트에서 수정' 동선.
+  // ───────────────────────────────────────────────────────────────────────────
+  if (splitMode) {
+    const splitMenuOpen = menuPos !== null;
+    const editOpen = editPos !== null;
+    const canExpand = !!summary; // 약요약 있을 때만 펼침 의미 있음
+    return (
+      <div
+        className={cn('flex min-w-0 items-center gap-1', className)}
+        data-testid="rx-confirmed-summary"
+        data-rx-cancel-blocked={blockedByGate ? 'true' : undefined}
+        data-block-reason={blockedByGate ? gate?.reason ?? '' : undefined}
+      >
+        {/* 본문 — 처방완료 + 약요약. 클릭=펼침(읽기). 약요약 없으면 비활성(펼칠 내용 없음). */}
+        <button
+          type="button"
+          onClick={() => onToggleExpand?.()}
+          disabled={!canExpand}
+          data-testid="rx-confirmed-done"
+          aria-expanded={!!expanded}
+          title={canExpand ? '클릭하면 처방 전체가 펼쳐져요' : label}
+          className={cn(
+            'flex min-w-0 items-center gap-1 bg-transparent p-0 text-left text-[13px] transition',
+            canExpand ? 'cursor-pointer hover:underline underline-offset-2' : 'cursor-default',
+          )}
+        >
+          <span className="shrink-0 font-semibold text-sky-600">{label}</span>
+          {summary && (
+            <span className="truncate text-foreground" data-testid="rx-confirmed-drugs" title={summary}>
+              {summary}
+            </span>
+          )}
+        </button>
+
+        {/* 연필 — 빠른수정/취소 메뉴 anchor. 취소 가능(원내 잔류·의사)일 때만 노출. */}
+        {cancellable && (
+          <button
+            ref={pencilRef}
+            type="button"
+            onClick={() => {
+              if (cancelMut.isPending) return;
+              setEditPos(null);
+              setMenuPos((cur) => (cur ? null : anchorBelow(pencilRef.current, 140)));
+            }}
+            disabled={cancelMut.isPending}
+            data-testid="rx-confirmed-edit-btn"
+            aria-haspopup="menu"
+            aria-expanded={splitMenuOpen}
+            title="처방 빠른수정·취소"
+            className="inline-flex shrink-0 items-center rounded p-0.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 disabled:opacity-60"
+          >
+            {cancelMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Pencil className="h-3 w-3" />}
+          </button>
+        )}
+
+        {/* 귀가 차단 — 차트 진입 동선(읽기 펼침은 유지, 수정/취소는 차트에서). */}
+        {blockedByGate && onOpenChart && (
+          <button
+            type="button"
+            onClick={onOpenChart}
+            data-testid="rx-cancel-open-chart"
+            title="귀가 환자는 차트에서 수정하세요"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 hover:bg-amber-100"
+          >
+            <FileText className="h-2.5 w-2.5" />
+            차트에서 수정
+          </button>
+        )}
+
+        {/* 빠른수정/취소 메뉴 — portal+fixed(표 overflow 클리핑 회피). */}
+        {splitMenuOpen && menuPos && createPortal(
+          <>
+            <div
+              className="fixed inset-0 z-[290]"
+              data-testid="rx-confirmed-menu-backdrop"
+              onMouseDown={() => setMenuPos(null)}
+            />
+            <div
+              role="menu"
+              data-testid="rx-confirmed-menu"
+              style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, width: 140, zIndex: 300 }}
+              className="overflow-hidden rounded-md border border-border bg-popover shadow-lg"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="rx-confirmed-menu-quickedit"
+                onClick={() => {
+                  // AC-3: 빠른수정 — 차트 풀오픈 없이 QuickRxBar 팝오버. 연필 기준 anchor.
+                  setEditPos(anchorBelow(pencilRef.current, 260));
+                  setMenuPos(null);
+                }}
+                className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-[13px] text-gray-700 hover:bg-gray-100"
+              >
+                <Pencil className="h-3 w-3 text-gray-400" />
+                빠른수정
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="rx-confirmed-menu-cancel"
+                onClick={() => {
+                  setMenuPos(null);
+                  executeCancel();
+                }}
+                className="flex w-full items-center gap-1.5 border-t border-border/60 px-3 py-2 text-left text-[13px] text-rose-600 hover:bg-rose-50"
+              >
+                처방취소
+              </button>
+            </div>
+          </>,
+          document.body,
+        )}
+
+        {/* 빠른수정 팝오버 — QuickRxBar(apply mutation 동일). 선택 시 덮어쓰기 후 닫힘 + 부모 refresh. */}
+        {editOpen && editPos && createPortal(
+          <>
+            <div
+              className="fixed inset-0 z-[290]"
+              data-testid="rx-confirmed-quickedit-backdrop"
+              onMouseDown={() => setEditPos(null)}
+            />
+            <div
+              data-testid="rx-confirmed-quickedit"
+              style={{ position: 'fixed', top: editPos.top, left: editPos.left, width: 260, zIndex: 300 }}
+              className="rounded-md border border-border bg-popover p-2 shadow-lg"
+            >
+              <p className="mb-1.5 px-0.5 text-[11px] font-semibold text-muted-foreground">
+                처방 빠른수정 — 선택 시 기존 처방을 덮어써요
+              </p>
+              <QuickRxBar
+                doctorMode={doctorMode}
+                role={role}
+                checkInId={checkInId}
+                onApplied={() => {
+                  onCancelled?.();
+                  setEditPos(null);
+                }}
+                checkInStatus={checkInStatus}
+                checkedInAt={checkedInAt}
+                checkInFlag={checkInFlag}
+                onOpenChart={onOpenChart}
+                surface={surface}
+                customerId={customerId}
+                compact
+              />
+            </div>
+          </>,
+          document.body,
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
