@@ -642,6 +642,10 @@ export default function MedicalChartPanel({
 
   // ── 임상경과 상용구 autocomplete ───────────────────────────────────────────
   const clinicalRef = useRef<HTMLTextAreaElement>(null);
+  // T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item②: singleLine "진료의 ○○○" 셀(레이블↔드롭다운)의
+  //   외부클릭(blur) 원복 감지용 컨테이너 ref. editingSingleDoctor=true(드롭다운 펼침) 상태에서
+  //   이 영역 바깥 mousedown 시 → setEditingSingleDoctor(false)로 레이블(접힘) 원복(저장 안 함).
+  const singleDoctorCellRef = useRef<HTMLSpanElement>(null);
   const [phrasePopoverVisible, setPhrasePopoverVisible] = useState(false);
   const [phraseQuery, setPhraseQuery] = useState('');
   // T-20260609-foot-PHRASE-SLASH-DROPDOWN-POS (3): caret 좌표는 1회 계산이라 textarea/drawer 스크롤·리사이즈 시 stale.
@@ -950,6 +954,27 @@ export default function MedicalChartPanel({
   const [editingSingleDoctor, setEditingSingleDoctor] = useState(false);
   // T-20260613-foot-DOCDASH-CALLUX-3FIX AC-2(c): 다른 의사 선택 시 재확인 모달 — 확정 전 pending 보관.
   const [pendingDoctorChange, setPendingDoctorChange] = useState<{ id: string; name: string } | null>(null);
+
+  // T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item②: 진료의 드롭다운 외부클릭(blur) → 접힘 원복.
+  //   현행 버그: "진료의 ○○○" 레이블 클릭 → 드롭다운(수정상태) 펼침 → 외부클릭/커서이동 해도 펼침 유지.
+  //   기대: 외부 mousedown(blur) 시 드롭다운 닫고 레이블 상태로 원복(저장 안 함).
+  //   가드 — (1) 펼침(editingSingleDoctor)일 때만, (2) 재확인 모달(pendingDoctorChange) 떠있으면 비개입(모달이 소유),
+  //     (3) 원복할 진료의가 있을 때만(formSigningDoctorId 비면 NOT NULL 강제로 드롭다운 유지 — 무회귀),
+  //     (4) 셀 컨테이너(레이블·select 모두 포함) 내부 클릭은 제외(정상 '선택' 동작 보존),
+  //     (5) 재확인 모달 portal 내부 클릭도 제외(모달은 별도 흐름).
+  //   기존 RxPopover/InlinePatientSearch clickOutside(mousedown) 패턴 재사용 — 신규 라이브러리 0.
+  useEffect(() => {
+    if (!editingSingleDoctor || pendingDoctorChange || !formSigningDoctorId) return;
+    function onDoc(e: MouseEvent) {
+      const node = e.target as Node;
+      const el = e.target as Element | null;
+      if (singleDoctorCellRef.current?.contains(node)) return; // (4) 진료의 셀(레이블/select) 내부 — 선택 보존
+      if (el?.closest?.('[data-testid="clinical-singleline-doctor-confirm"]')) return; // (5) 재확인 모달
+      setEditingSingleDoctor(false); // blur → 접힘(레이블) 원복, 저장 안 함
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [editingSingleDoctor, pendingDoctorChange, formSigningDoctorId]);
 
   // T-20260612-foot-DOCDASH-11FIX AC-5: singleLine 임상경과 textarea auto-resize.
   //   상용구(//) 삽입 등 긴 내용도 스크롤 없이 전체가 보이도록 내용 높이만큼 확장.
@@ -2065,6 +2090,9 @@ export default function MedicalChartPanel({
               (b) 드롭다운(select)에서 의사 변경 진입.
               (c) 현재와 '다른' 의사 선택 → 재확인 모달(pendingDoctorChange) → '확인' 시에만 반영.
                   동일 의사 재선택/모달 취소 → 무변경. 최초 지정(기존 진료의 없음)은 모달 없이 바로 반영(NOT NULL 강제 보존). */}
+        {/* T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item②: 외부클릭 원복 감지 컨테이너.
+            display:contents(=className="contents")로 flex 레이아웃 무영향, DOM 포함관계만 제공(ref.contains). */}
+        <span ref={singleDoctorCellRef} className="contents">
         {(() => {
           const selectedSingleDoctor = clinicDoctors.find((d) => d.id === formSigningDoctorId) ?? null;
           const showLabel = !!formSigningDoctorId && !!selectedSingleDoctor && !editingSingleDoctor;
@@ -2130,6 +2158,7 @@ export default function MedicalChartPanel({
             </select>
           );
         })()}
+        </span>
         {/* 임상경과 — 한 줄 입력. // 자동완성 유지 위해 Textarea(rows=1)로 단일행 렌더. */}
         <div className="relative min-w-[160px] flex-1">
           <Textarea
