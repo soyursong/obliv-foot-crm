@@ -23,6 +23,8 @@ import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, formatPhone, chartNoBadge } from '@/lib/format';
 import { isSinglePaymentByCount } from '@/lib/footBilling';
 import { cn } from '@/lib/utils';
+import FootToeIllustration from '@/components/FootToeIllustration';
+import type { FootSite } from '@/components/FootSiteSelector';
 import type { Customer, Package, PackageRemaining, PackageTemplate } from '@/lib/types';
 
 // T-20260612-foot-CHARTNO-B2-P2: chart_number 인접 표시용 embed(읽기 전용, 옵셔널)
@@ -52,6 +54,10 @@ export default function Packages() {
   const [openTemplates, setOpenTemplates] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  // T-20260614-foot-PKGTAB-TOENAIL-ILLUST: 패키지 탭 상단 고정 — 귀여운 양발가락 일러스트 치료 발톱 선택기.
+  //   선택값은 로컬 상태(표시/선택 전용). 신규 패키지 부위 자동지정(바인딩 A=package.foot_site 신설)은
+  //   CONFIRM-A 확정 + supervisor DB게이트 전까지 미구현(dev_dispatch HELD). 현재는 DB 무변경(바인딩 C).
+  const [treatSites, setTreatSites] = useState<FootSite[]>([]);
 
   const fetchPackages = useCallback(async () => {
     if (!clinic) return;
@@ -90,6 +96,20 @@ export default function Packages() {
 
   return (
     <div className="flex h-full flex-col p-6">
+      {/* T-20260614-foot-PKGTAB-TOENAIL-ILLUST: 패키지 탭 상단 고정 — 귀여운 양발가락 치료 발톱 선택기 */}
+      <div
+        data-testid="packages-foot-toe-picker"
+        className="mb-4 flex flex-col gap-2 rounded-xl border bg-gradient-to-b from-amber-50/60 to-background px-4 py-3 sm:flex-row sm:items-center sm:gap-5"
+      >
+        <div className="flex flex-col gap-0.5 sm:min-w-[140px]">
+          <span className="text-sm font-semibold text-foreground">치료 발톱 선택</span>
+          <span className="text-[11px] leading-tight text-muted-foreground">
+            양발가락에서 치료할 발톱을 눌러 선택하세요 (여러 개 선택 가능)
+          </span>
+        </div>
+        <FootToeIllustration value={treatSites} onChange={setTreatSites} className="flex-1" />
+      </div>
+
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterStatus)}>
           <TabsList>
