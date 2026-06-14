@@ -628,6 +628,39 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
     return staffList.filter(s => allowed.includes(s.role));
   };
 
+  /**
+   * 공간 배정 드롭다운 옵션을 "치료사 / 장비" <optgroup>으로 분리 렌더.
+   * T-20260614-foot-SPACEASSIGN-STAFF-EQUIP-SPLIT:
+   *   role==='technician'(장비명) → "장비" 그룹, 그 외 역할(원장·상담·코디·치료사) → "치료사" 그룹.
+   *   - 빈 그룹은 렌더하지 않는다(AC-4). 그룹 전부 비면 placeholder option만 남는다.
+   *   - option value/구성원은 무변경 — 표시 구조(라벨 섹션)만 분리하므로
+   *     선택·저장·carry-over 로직은 전혀 영향받지 않는다(FE only).
+   *   카드뷰 / 주간 테이블뷰 두 드롭다운이 공유해 표시 로직 drift를 차단.
+   */
+  const renderStaffOptionGroups = (roomType: string) => {
+    const list = getFilteredStaff(roomType);
+    const therapists = list.filter(s => s.role !== 'technician');
+    const equipment = list.filter(s => s.role === 'technician');
+    return (
+      <>
+        {therapists.length > 0 && (
+          <optgroup label="치료사">
+            {therapists.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </optgroup>
+        )}
+        {equipment.length > 0 && (
+          <optgroup label="장비">
+            {equipment.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </optgroup>
+        )}
+      </>
+    );
+  };
+
   // AC-1 T-20260515: 마지막 저장된 스냅샷 로드 (날짜 무관)
   // T-20260523-foot-SPACE-DASH-SYNC 정정 2026-05-24: MAX(created_at) 기준 (saved_at 프록시, 전날 하드코딩 금지)
   // T-20260601-foot-SPACE-ASSIGN-RESET-REGRESS (회귀 복구):
@@ -958,9 +991,8 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
                           >
                             {/* AC-9: 레이저실 placeholder = 장비 선택 */}
                             <option value="">{isInactive ? '— 비활성 —' : isLaser ? '— 장비 선택 —' : '— 미배정 —'}</option>
-                            {!isInactive && getFilteredStaff(room.room_type).map((s) => (
-                              <option key={s.id} value={s.id}>{s.name}</option>
-                            ))}
+                            {/* T-20260614-SPACEASSIGN-STAFF-EQUIP-SPLIT: 치료사/장비 섹션 분리 */}
+                            {!isInactive && renderStaffOptionGroups(room.room_type)}
                           </select>
                           {/* AC-B1: 비활성화 토글 버튼 */}
                           <button
@@ -1025,9 +1057,8 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
                               : undefined}
                           >
                             <option value="">—</option>
-                            {getFilteredStaff(room.room_type).map((s) => (
-                              <option key={s.id} value={s.id}>{s.name}</option>
-                            ))}
+                            {/* T-20260614-SPACEASSIGN-STAFF-EQUIP-SPLIT: 치료사/장비 섹션 분리 */}
+                            {renderStaffOptionGroups(room.room_type)}
                           </select>
                         </td>
                       );
