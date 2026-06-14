@@ -439,7 +439,8 @@ function StatusCell({ status, statusFlag }: { status: CheckInStatus; statusFlag:
     );
   }
   return (
-    <span className="text-[11px] text-muted-foreground truncate" data-testid="status-cell" data-state="in-clinic">
+    // T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item⑤(B안): 진료알림판 테이블(41015d7) 톤 통일 — text-[13px] text-gray-600.
+    <span className="text-[13px] text-gray-600 truncate" data-testid="status-cell" data-state="in-clinic">
       {STATUS_KO[status] ?? status}
     </span>
   );
@@ -504,23 +505,26 @@ function PatientRow({
         data-testid="patient-row"
         data-mode="history"
       >
-        <div className="grid grid-cols-[3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto_auto] items-center gap-1.5 px-2 py-1.5">
+        {/* T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item⑤(B안): 진료알림판 테이블(41015d7) 밀도 통일 — 셀 px-1.5 py-1. 그리드 레이아웃/컬럼셋 무변경. */}
+        <div className="grid grid-cols-[3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto_auto] items-center gap-1.5 px-1.5 py-1">
           {/* T-20260613-foot-DOCPATIENTLIST-MIRROR-MONOTONE(B): 대기순번(queue_number) 표시 칼럼 제거. */}
           {/* 방문유형 배지 (초진/재진) */}
           <div className="flex justify-start">
             <VisitTypeBadge type={row.visit_type} />
           </div>
-          {/* 이름 — T-20260612-foot-CHARTNO-COL-SPLIT-P1: 차트번호 서브텍스트 제거 → 옆 독립 칼럼으로 이전. */}
+          {/* 이름 — T-20260612-foot-CHARTNO-COL-SPLIT-P1: 차트번호 서브텍스트 제거 → 옆 독립 칼럼으로 이전.
+              item⑤(B안): 테이블 이름셀 톤 통일 — text-[15px] font-semibold text-gray-900. */}
           <span
-            className="min-w-0 max-w-full truncate text-left text-sm font-semibold"
+            className="min-w-0 max-w-full truncate text-left text-[15px] font-semibold text-gray-900"
             title={row.customer_name}
             data-testid="patient-name"
           >
             {row.customer_name}
           </span>
-          {/* 차트번호 — CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
+          {/* 차트번호 — CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지).
+              item⑤(B안): 테이블 차트번호셀 톤 통일 — font-mono text-[13px] text-gray-500. */}
           <span
-            className="min-w-0 max-w-full truncate text-left font-mono text-[11px] text-muted-foreground"
+            className="min-w-0 max-w-full truncate text-left font-mono text-[13px] text-gray-500"
             title={chartNoDisplay(row.chart_number)}
             data-testid="patient-chartno"
           >
@@ -530,17 +534,17 @@ function PatientRow({
           <div className="flex justify-start">
             <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
           </div>
-          {/* 처방 내용 한 줄 — 없으면 '처방없음' (AC-2) */}
+          {/* 처방 내용 한 줄 — 없으면 '처방없음' (AC-2). item⑤(B안): 본문/빈값 톤 통일 — text-[13px] gray-700/gray-300. */}
           <span
-            className={`text-[12px] truncate ${hasRx ? 'text-foreground' : 'text-muted-foreground/70'}`}
+            className={`text-[13px] truncate ${hasRx ? 'text-gray-700' : 'text-gray-300'}`}
             title={rxLine}
             data-testid="rx-oneline"
           >
             {rxLine}
           </span>
-          {/* 치료 종류 (treatment_kind, 폴백=받은 치료) */}
+          {/* 치료 종류 (treatment_kind, 폴백=받은 치료) — item⑤(B안): 밀도 통일 text-[13px](의미색 emerald 보존). */}
           <span
-            className="text-[12px] text-emerald-700 font-medium truncate max-w-[8rem]"
+            className="text-[13px] text-emerald-700 font-medium truncate max-w-[8rem]"
             title={treatmentText}
             data-testid="treatment-kind"
           >
@@ -568,7 +572,8 @@ function PatientRow({
         T-20260613-foot-DOCPATIENTLIST-MIRROR-MONOTONE(B): 대기순번(queue_number) 칼럼 제거 → 차트번호만 숫자.
         모든 행이 동일 grid-template → 배지·이름·차트번호·처방·시간 항목이 행마다 동일 x위치(스크롤 무관).
       */}
-      <div className="grid grid-cols-[3rem_5rem_4.5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto] items-center gap-1.5 px-2 py-1.5">
+      {/* T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item⑤(B안): 진료알림판 테이블(41015d7) 밀도 통일 — 셀 px-1.5 py-1. 그리드 레이아웃/컬럼셋/워크플로 무변경. */}
+      <div className="grid grid-cols-[3rem_5rem_4.5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto] items-center gap-1.5 px-1.5 py-1">
         {/* T-20260613-foot-DOCPATIENTLIST-MIRROR-MONOTONE(B): 대기순번(queue_number=1036) 표시 칼럼 제거.
             차트번호 외 식별 숫자 비표시(reporter 요청). queue_number 타입/SELECT/정렬·RPC는 무손상 — 표시만 숨김. */}
 
@@ -580,17 +585,19 @@ function PatientRow({
         {/* ④ 이름 — 고정 너비(글자수 변동 무관), 초과 시 truncate.
             T-20260609-foot-DOCDASH-LABEL-RX-REFINE item4: 셀 내 가로 중앙정렬(text-center).
             T-20260612-foot-CHARTNO-COL-SPLIT-P1: 차트번호 서브텍스트 제거 → 옆 독립 칼럼으로 이전. */}
+        {/* item⑤(B안): 테이블 이름셀 톤 통일 — text-[15px] font-semibold text-gray-900. */}
         <span
-          className="min-w-0 max-w-full truncate text-left text-sm font-semibold"
+          className="min-w-0 max-w-full truncate text-left text-[15px] font-semibold text-gray-900"
           title={row.customer_name}
           data-testid="patient-name"
         >
           {row.customer_name}
         </span>
 
-        {/* 차트번호 — CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
+        {/* 차트번호 — CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지).
+            item⑤(B안): 테이블 차트번호셀 톤 통일 — font-mono text-[13px] text-gray-500. */}
         <span
-          className="min-w-0 max-w-full truncate text-left font-mono text-[11px] text-muted-foreground"
+          className="min-w-0 max-w-full truncate text-left font-mono text-[13px] text-gray-500"
           title={chartNoDisplay(row.chart_number)}
           data-testid="patient-chartno"
         >
@@ -610,23 +617,26 @@ function PatientRow({
             getAssignedSlotName(SSOT) 파생 — 배정된 방 있으면 '◯번 치료실' 등 표시, 미배정/대기면 '—'. */}
         {(() => {
           const slotName = getAssignedSlotName(row as unknown as Parameters<typeof getAssignedSlotName>[0]);
+          // T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item⑤(B안): 진료알림판 테이블(41015d7) 방 셀 톤 통일 —
+          //   teal 배지 → 단색 회색 plain text(text-[13px] gray-600 + MapPin gray-400), 빈값 gray-300. 동일 SSOT(getAssignedSlotName) 유지.
           return slotName ? (
             <span
-              className="inline-flex min-w-0 items-center gap-0.5 rounded border border-teal-100 bg-teal-50 px-1 py-px text-[10px] font-medium text-teal-700"
+              className="inline-flex min-w-0 items-center gap-0.5 text-[13px] font-medium text-gray-600"
               title={slotName}
               data-testid="patient-room"
             >
-              <MapPin className="h-2.5 w-2.5 shrink-0" />
+              <MapPin className="h-2.5 w-2.5 shrink-0 text-gray-400" />
               <span className="truncate">{slotName}</span>
             </span>
           ) : (
-            <span className="text-[11px] text-muted-foreground/50 text-left" data-testid="patient-room">—</span>
+            <span className="text-[13px] text-gray-300 text-left" data-testid="patient-room">—</span>
           );
         })()}
 
-        {/* 예약메모 — T-20260517-foot-HEALER-MEMO-DISPLAY AC-1~4 */}
+        {/* 예약메모 — T-20260517-foot-HEALER-MEMO-DISPLAY AC-1~4.
+            item⑤(B안): 테이블 본문/빈값 톤 통일 — text-[13px] gray-600/gray-300. */}
         <span
-          className="text-[11px] text-muted-foreground truncate"
+          className={`text-[13px] truncate ${row.booking_memo ? 'text-gray-600' : 'text-gray-300'}`}
           title={row.booking_memo ?? undefined}
           data-testid="booking-memo"
         >
