@@ -199,3 +199,39 @@ test.describe('S3 회귀가드 — 정본 출력·배선 불변', () => {
     expect(src).not.toMatch(/\[it\.medication_name, it\.dosage\]/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S4 / REOPEN(P0) — 묶음처방 흡수 본동선 DoctorTreatmentPanel 미수렴 surface 회귀가드
+//   RCA(REOPEN): 원본 fix(aa0e453)는 MedicalChartPanel·DoctorPatientList·TreatmentTable 만 수렴.
+//   문지은 대표원장 실동선 = CheckInDetailSheet → DoctorTreatmentPanel(묶음처방 불러오기 picker +
+//   흡수 처방 목록 PrescriptionView)은 raw text 잔존 → 배포돼도 "여전히 엉망". 이 surface 토큰 수렴.
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('S4 / REOPEN DoctorTreatmentPanel 묶음처방 흡수 surface 토큰 수렴', () => {
+  test('R-DTP-IMPORT: DoctorTreatmentPanel 가 formatRxItemToken SSOT import', () => {
+    const src = SRC('components/doctor/DoctorTreatmentPanel.tsx');
+    expect(src).toMatch(/import \{ formatRxItemToken \} from '@\/lib\/rxTooltip'/);
+  });
+
+  test('R-DTP-PICKER: 묶음처방 불러오기 picker 미리보기가 토큰 사용(raw 제거)', () => {
+    const src = SRC('components/doctor/DoctorTreatmentPanel.tsx');
+    // picker 미리보기 li 가 formatRxItemToken(item) 으로 교체.
+    expect(src).toMatch(/data-testid="rx-set-picker-preview-item"[\s\S]{0,160}formatRxItemToken\(item\)/);
+    // 구 '{item.name} {item.dosage && `— ...`} {item.frequency} {item.days}일' raw 제거.
+    expect(src).not.toMatch(/\{item\.name\} \{item\.dosage && `— \$\{item\.dosage\}`\} \{item\.frequency\}/);
+  });
+
+  test('R-DTP-LIST: 흡수 처방 목록 PrescriptionView 행이 토큰 사용(흩뿌린 raw spans 제거)', () => {
+    const src = SRC('components/doctor/DoctorTreatmentPanel.tsx');
+    expect(src).toMatch(/data-testid="prescription-item-token"[\s\S]{0,60}formatRxItemToken\(item\)/);
+    // 구 흩뿌린 span 조합({item.frequency}\n{item.days}일) 제거 — route 부가칩만 보존.
+    expect(src).not.toMatch(/<span>\{item\.frequency\}<\/span>\s*<span>\{item\.days\}일<\/span>/);
+  });
+
+  test('S4-DATA: prescription_sets.items shape(EMPTY_ITEM frequency=1일 3회) → 토큰 정상', () => {
+    // 묶음처방 항목은 보통 count 미입력 + frequency='1일 3회' 기본 → 가운데 토큰 폴백 복구.
+    const setItem = { name: '록소프로펜', dosage: '1', route: '경구', frequency: '1일 3회', days: 3 };
+    expect(formatRxItemToken(setItem)).toBe('록소프로펜 1/3/3');
+    // dosage 까지 비면 이름+나머지 토큰만(엉망 raw 아님).
+    expect(formatRxItemToken({ name: '연고', route: '외용', frequency: '1일 2회', days: 5 })).toBe('연고 2/5');
+  });
+});

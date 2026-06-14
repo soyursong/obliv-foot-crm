@@ -46,6 +46,10 @@ import QuickRxBar, { isDoctor } from './QuickRxBar';
 import { useAuth } from '@/lib/auth';
 import { checkRxRoleGate, rxRoleGateMessage, rxInsuranceGateMessage, rxInsuranceOverrideConfirm } from '@/lib/prescriptionGate';
 import { evaluateRxInsuranceGate } from '@/lib/prescribableDrugs';
+// T-20260614-foot-RX-DISPLAY-BUNDLE-TOKEN-FIX (REOPEN): 묶음처방 흡수 surface(DoctorTreatmentPanel)도
+//   진료차트 타임라인과 동일하게 '약물명 1/3/2'(1회량/1일횟수/총일수) SSOT 토큰으로 수렴.
+//   원본 fix(aa0e453)는 MedicalChartPanel 만 고쳐 이 패널의 picker 미리보기·흡수 처방 목록이 raw text 잔존.
+import { formatRxItemToken } from '@/lib/rxTooltip';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -342,8 +346,9 @@ function RxSetPicker({ open, onClose, onSelect }: RxSetPickerProps) {
               >
                 <p className="text-sm font-medium mb-1">{s.name}</p>
                 {s.items.slice(0, 2).map((item, idx) => (
-                  <p key={idx} className="text-xs text-muted-foreground">
-                    {item.name} {item.dosage && `— ${item.dosage}`} {item.frequency} {item.days}일
+                  <p key={idx} className="text-xs text-muted-foreground" data-testid="rx-set-picker-preview-item">
+                    {/* T-20260614 RX-DISPLAY-BUNDLE-TOKEN-FIX: 구 '{name} — {dosage} {frequency} {days}일' raw → SSOT 토큰 */}
+                    {formatRxItemToken(item)}
                   </p>
                 ))}
                 {s.items.length > 2 && (
@@ -449,11 +454,11 @@ function PrescriptionView({
           className="flex items-center gap-2 rounded border px-3 py-2 text-xs bg-muted/30"
           data-testid="prescription-item-row"
         >
-          <span className="font-medium min-w-[100px]">{item.name}</span>
-          {item.dosage && <span className="text-muted-foreground">{item.dosage}</span>}
-          <span>{item.route}</span>
-          <span>{item.frequency}</span>
-          <span>{item.days}일</span>
+          {/* T-20260614-foot-RX-DISPLAY-BUNDLE-TOKEN-FIX (REOPEN, 문지은 대표원장):
+              구 '{name} {dosage} {route} {frequency} {days}일' 흩뿌린 raw text(엉망) →
+              SSOT formatRxItemToken '약물명 1/3/2'(1회량/1일횟수/총일수) 단일 토큰. route 는 부가 칩으로 보존. */}
+          <span className="font-medium break-words" data-testid="prescription-item-token">{formatRxItemToken(item)}</span>
+          {item.route && <span className="text-muted-foreground text-[10px] shrink-0">{item.route}</span>}
           {item.notes && (
             <span className="text-muted-foreground text-[10px] ml-auto">{item.notes}</span>
           )}
