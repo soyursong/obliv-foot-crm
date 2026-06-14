@@ -12,6 +12,11 @@ e2e_spec_exempt_reason: spec-정합 티켓 — 신규 spec 없음. 배포본(7fe
 created: 2026-06-15
 assignee: dev-foot
 reporter: planner (MSG-20260615-013400-pk6g, GO 판단 회신 — FOLLOWUP MSG-20260615-013005-jgc3)
+slack_channel: C0ATE5P6JTH
+slack_thread_ts: null
+reporter_slack_id: U0ATDB587PV
+deploy_commit: 131322c
+qa_result: pass
 commit: 131322c
 supersedes: T-20260606-foot-RXTOOL-INJURY-MENU-SPLIT AC-3 (director-gating) ← T-20260613-foot-CLINICMGMT-SUBTAB-STAFF-OPEN(7fed414) STAFF-OPEN
 ---
