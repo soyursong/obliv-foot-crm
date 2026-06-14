@@ -109,20 +109,21 @@ function FootSvg({ side, value, onToggle, readOnly }: FootSvgProps) {
                 cy={t.cy}
                 rx={t.rx}
                 ry={t.ry}
-                fill={active ? '#14b8a6' : '#fdf6ec'}
-                stroke={active ? '#0f766e' : '#e7d8c3'}
+                /* T-20260614-foot-THEME-MONOCHROME-RECOLOR: 활성 발가락 teal→warm(Umber/Taupe) */
+                fill={active ? '#6E6353' : '#fdf6ec'}
+                stroke={active ? '#443A35' : '#e7d8c3'}
                 strokeWidth={2}
                 className={cn('transition-colors', !readOnly && 'hover:stroke-teal-400')}
               />
               {/* 발톱 하이라이트 */}
-              <ellipse cx={t.cx} cy={t.cy - t.ry * 0.35} rx={t.rx * 0.5} ry={t.ry * 0.28} fill={active ? '#5eead4' : '#fff7ec'} opacity={0.85} />
+              <ellipse cx={t.cx} cy={t.cy - t.ry * 0.35} rx={t.rx * 0.5} ry={t.ry * 0.28} fill={active ? '#C5BEA3' : '#fff7ec'} opacity={0.85} />
               <text
                 x={t.cx}
                 y={t.cy + 4}
                 textAnchor="middle"
                 fontSize={t.toe === 1 ? 13 : 11}
                 fontWeight={700}
-                fill={active ? '#ffffff' : '#0f766e'}
+                fill={active ? '#ffffff' : '#6E6353'}
                 style={{ pointerEvents: 'none' }}
               >
                 {t.toe}

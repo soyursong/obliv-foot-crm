@@ -2,14 +2,18 @@
 ticket_id: T-20260614-foot-THEME-MONOCHROME-RECOLOR
 domain: foot
 priority: P2
-status: awaiting-field-confirm
+status: deploy-ready
 requester: 김주연 총괄 (U0ATDB587PV)
 thread: C0ATE5P6JTH / 1781364123.025179
 risk: GO_WARN
 owner: agent-fdd-dev-foot
-stage_done: [StepA, StepB]
-stage_pending: [StepC-field-confirm, StepD-apply]
-deploy-ready: false
+stage_done: [StepA, StepB, StepC-field-confirm, StepD-apply]
+stage_pending: []
+deploy-ready: true
+db-change: false
+build: pass
+spec: tests/e2e/T-20260614-foot-THEME-MONOCHROME-RECOLOR.spec.ts (4 pass)
+qa_result: pending-supervisor
 ---
 
 # 전역 색상 테마 모노톤 리컬러
@@ -73,8 +77,36 @@ prefix 분포(teal): text 614 · bg 394 · border 343 · hover:bg 164 · focus:r
 2. 의미색 레인보우(칸반 단계·재진·선체험 플래그) **유지 동의** 여부 — 포함 원하면 별도 매핑 필요
 **컨펌 전 StepD 전역배포 금지.**
 
-## StepD — 확정 HEX 적용 (미착수)
-- brand 토큰(`brand-50..900`) 추가 → teal-*/emerald-*(장식분) sweep 치환
-- 의미색 carve-out 유지
-- 하드코딩 green 잔존 0 검증 (AC3)
-- 주요화면 실브라우저 스샷 (AC5)
+## StepC — 김주연 총괄 컨펌 (해소 2026-06-14)
+planner INFO MSG-20260614-010848-dgrr 로 ① 팔레트 확정 ② 스코프 확장(AC6~8) 수신.
+- **확정 5색**: Black #252525 · Umber #443A35 · Soft Dune #E4DDCC · Vanilla #F8F4EE · Classic Taupe #C5BEA3
+- 의미색 레인보우 유지 동의(AC4) 유효.
+
+## StepD — 확정 팔레트 적용 (완료 2026-06-14)
+
+### 적용 방침 (StepA 데이터 근거)
+- **teal-* (1615건, 88% — 장식 압도)** → `tailwind.config.js` 팔레트 단일 오버라이드로 warm-monochrome 램프 리맵.
+  클래스 sweep 0 (JIT 안전·가역). 램프 앵커: 50 Vanilla → 200 Soft Dune → 400 Taupe → 800 Umber → 950 Black.
+- **`:root` 토큰 교체(AC1 토큰 우선)**: background=Vanilla / foreground=Black / primary=Umber(다크 액센트) /
+  secondary=Soft Dune / accent·border=Soft Dune 라이트 / ring=Taupe. sidebar 동일 정렬.
+- **emerald-*(236)·green-*(69)·--status-*(칸반)** = 의미색(재진·초진·완료·success·선체험)으로 일관 사용 확인 →
+  **미리맵 유지(AC4)**. (CSS 빌드 검증: emerald-100 rgb(209 250 229)·emerald-700 rgb(4 120 87)·green 보존)
+- **인라인 hex 잔여**: `FootToeIllustration.tsx`(스태프 차트 발가락도) 활성 cyan(#14b8a6/#0f766e/#5eead4) → warm(#6E6353/#443A35/#C5BEA3) 교체.
+- **불변(AC 불변)**: `.theme-brown`(셀프접수)·`.dark` 비침범 / 레이아웃·기능·데이터 무변경 / `--destructive` 의미 빨강 유지.
+
+### AC6~8 반영
+- **AC6(군더더기↓)**: border/input 을 Soft Dune warm 톤으로 완화(과한 회색 테두리 노이즈↓), 카드 면을 배경보다 살짝 밝게 들어올려 구분선 의존↓.
+- **AC7(절제)**: 베이스=Vanilla 배경+Black 텍스트 모노톤. Taupe/Umber 는 램프 600~800(활성·CTA·강조 텍스트)과 primary/ring 등 핵심 강조에만 — accent/hover 는 라이트 warm 으로 절제.
+- **AC8(통일)**: teal 단일 램프 + 토큰 단일출처로 페이지/컴포넌트 톤 일관.
+
+### 검증
+- `npm run build` PASS (3.84s)
+- 빌드 CSS 가드: 구 teal 시안 rgb(13 148 136)/rgb(20 184 166) **누수 0** · warm 램프 반영 · emerald/green 의미색 보존
+- E2E `tests/e2e/T-20260614-foot-THEME-MONOCHROME-RECOLOR.spec.ts` **4 PASS** (정적 소스 가드 3 + 공개 /login 실렌더 1)
+- 실브라우저 렌더(AC5): `evidence/T-20260614-foot-THEME-MONOCHROME-RECOLOR_login-render.png` — Vanilla 배경·Umber 로그인 버튼·Taupe 포커스 링, green/teal 전무
+
+### 잔여(후속 권고 — 본 티켓 범위 밖)
+- `Closing.tsx` 출력용 인라인 print CSS(#0f766e/#14b8a6 합계 강조) — **다른 티켓 WIP 잠김 파일**이라 미접촉. 해당 티켓 머지 후 별도 처리 권고.
+- `TabletChecklistPage.tsx`(#0D9488) — **셀프접수(.theme-brown) 라우트** → 비침범 원칙상 의도적 제외.
+- 통계 차트 팔레트(`TherapistStatsSection`/`CategorySection` BAR_COLORS) — 카테고리 데이터-시각화 구분색 → 가독성 위해 유지(AC4 유사).
+- 임상 구절-이동 드래그 핸들 `#0d9488` — 기존 spec(T-20260603-PHRASE-MOVE-RESTORE) 단언 잠김 → 미접촉.

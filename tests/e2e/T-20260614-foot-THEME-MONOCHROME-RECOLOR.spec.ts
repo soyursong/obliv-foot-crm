@@ -1,0 +1,78 @@
+import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+// ESM 스코프 — __dirname 미정의. Playwright 는 레포 루트에서 실행되므로 cwd 기준.
+
+/**
+ * T-20260614-foot-THEME-MONOCHROME-RECOLOR (StepD)
+ * 김주연 총괄 확정 5색 warm-monochrome 팔레트 적용 회귀 락.
+ *   Vanilla #F8F4EE · Soft Dune #E4DDCC · Classic Taupe #C5BEA3 · Umber #443A35 · Black #252525.
+ *
+ * 방침:
+ *  - 브랜드 메인 teal-* (장식 1600+건) → tailwind 팔레트 단일 오버라이드로 warm-monochrome 리맵.
+ *  - 의미색 emerald-*(재진·success)·green-*(완료·선체험·재진)·--status-*(칸반) 은 유지(AC4).
+ *  - 셀프접수 .theme-brown / .dark 비침범(불변).
+ *
+ * 본 spec 은 auth 불요(unit 프로젝트). 정적 소스 가드 + 공개 /login 실브라우저 렌더(AC5).
+ */
+
+const ROOT = process.cwd();
+const tw = readFileSync(join(ROOT, 'tailwind.config.js'), 'utf8');
+const css = readFileSync(join(ROOT, 'src', 'index.css'), 'utf8');
+
+test.describe('THEME-MONOCHROME-RECOLOR — 정적 소스 가드 (auth 불요)', () => {
+  test('AC: tailwind teal 팔레트가 확정 warm 앵커로 리맵되어 있다', () => {
+    // 확정 5색 앵커 중 teal 램프가 채택한 값 (Vanilla/Taupe/Umber/Black)
+    expect(tw).toMatch(/#F8F4EE/i); // 50 Vanilla
+    expect(tw).toMatch(/#C5BEA3/i); // 400 Classic Taupe
+    expect(tw).toMatch(/#443A35/i); // 800 Umber
+    expect(tw).toMatch(/#252525/i); // 950 Black
+    // 회귀 가드: 기본 teal 시안 계열이 config 로 되살아나면 실패
+    expect(tw).not.toMatch(/#14b8a6|#0d9488|#0f766e|#5eead4/i);
+  });
+
+  test('AC1: :root 토큰이 warm-monochrome 로 교체되어 있다 (순백/순흑 아님)', () => {
+    // 기본 배경이 순백 oklch(1 0 0) 이 아니라 Vanilla warm 톤
+    expect(css).not.toMatch(/--background:\s*oklch\(1 0 0\)/);
+    expect(css).toMatch(/THEME-MONOCHROME-RECOLOR/);
+    // 배경/전경 warm 톤 토큰 존재
+    expect(css).toMatch(/--background:\s*oklch\(0\.965 0\.008 80\)/);
+    expect(css).toMatch(/--primary:\s*oklch\(0\.33 0\.012 60\)/); // Umber 액센트
+  });
+
+  test('AC4: 의미색(칸반 status + 셀프접수 brown)은 보존된다', () => {
+    // 칸반 11단계 status 토큰 유지
+    expect(css).toMatch(/--status-laser:/);
+    expect(css).toMatch(/--status-preconditioning:/);
+    expect(css).toMatch(/--destructive:\s*oklch\(0\.577 0\.245 27\.325\)/); // 의미 빨강 유지
+    // 셀프접수 brown 테마 비침범
+    expect(css).toMatch(/\.theme-brown\s*\{/);
+    expect(css).toMatch(/\.dark\s*\{/);
+  });
+});
+
+test.describe('THEME-MONOCHROME-RECOLOR — 공개 로그인 실렌더 (AC5)', () => {
+  test('Public: 로그인 화면 body 배경이 warm(Vanilla) 톤으로 렌더된다', async ({ page }) => {
+    await page.goto('/login');
+    await page.waitForLoadState('networkidle');
+
+    // --background / --primary 토큰이 실제 브라우저에 warm-monochrome 으로 적용됐는지 검증.
+    // (브라우저 getComputedStyle 은 색공간을 oklch 로 보고할 수 있어 픽셀 rgb 비교 대신 토큰 변수 검증)
+    const probe = await page.evaluate(() => ({
+      bg: getComputedStyle(document.documentElement).getPropertyValue('--background').trim(),
+      primary: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(),
+    }));
+
+    // 배경 토큰: warm Vanilla (L 0.965) — 순백 oklch(1 0 0) 회귀 방지
+    expect(probe.bg).toMatch(/0\.965/);
+    expect(probe.bg).not.toMatch(/oklch\(1 0 0\)/);
+    // primary 토큰: Umber 다크 액센트 (L 0.33)
+    expect(probe.primary).toMatch(/0\.33/);
+
+    await page.screenshot({
+      path: 'evidence/T-20260614-foot-THEME-MONOCHROME-RECOLOR_login-render.png',
+      fullPage: true,
+    });
+  });
+});
