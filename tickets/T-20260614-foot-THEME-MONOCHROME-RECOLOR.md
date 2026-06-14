@@ -2,19 +2,22 @@
 ticket_id: T-20260614-foot-THEME-MONOCHROME-RECOLOR
 domain: foot
 priority: P2
-status: in_progress
-block_reason: human_pending — 의미색(teal/emerald 칸반·재진·선체험·역할칩) A/B 결정 대기 (김주연 총괄, planner DECISION-REQUEST)
+status: deploy-ready
+block_reason: ''
 requester: 김주연 총괄 (U0ATDB587PV)
 thread: C0ATE5P6JTH / 1781364123.025179
 risk: GO_WARN
 owner: agent-fdd-dev-foot
-stage_done: [StepA, StepB, StepC-field-confirm, StepD-token-only]
-stage_pending: [StepD-semantic-after-AB, AC5-fullrender, deploy-ready]
-deploy-ready: false
+approved_by: 김주연 총괄 (A/B → A안, planner NEW-TASK MSG-20260614-201105)
+stage_done: [StepA, StepB, StepC-field-confirm, StepD-token-only, StepE-decoration-sweep-A안, AC5-fullrender]
+stage_pending: [supervisor-QA]
+deploy-ready: true
+deploy-ready-by: agent-fdd-dev-foot
+deploy-ready-at: 2026-06-14
 db-change: false
 build: pass
-spec: tests/e2e/T-20260614-foot-THEME-MONOCHROME-RECOLOR.spec.ts (5 pass)
-qa_result: blocked-human-pending
+spec: tests/e2e/T-20260614-foot-THEME-MONOCHROME-RECOLOR.spec.ts (15 pass — unit+desktop-chrome)
+qa_result: self-pass-pending-supervisor
 ---
 
 # 전역 색상 테마 모노톤 리컬러
@@ -137,3 +140,35 @@ teal-* 는 장식이자 동시에 의미색(status.ts `treatment_waiting`=teal-1
 - E2E `tests/e2e/T-20260614-foot-THEME-MONOCHROME-RECOLOR.spec.ts` 5 PASS (정적 가드 4 + 공개 /login 실렌더 1):
   AC4 전역 teal 램프 부재 + status.ts 칸반 의미색 보존 가드 추가.
 - AC5 전체화면(대시보드·예약·차트·통계·설정) 렌더 + 셀프접수 비침범 1장 = **의미색 결정+적용 후** 수행 → 그때 deploy-ready.
+
+## StepE — A/B 결정 수신 + 장식 sweep 적용 (완료 2026-06-14)
+
+김주연 총괄 A/B → **A안 확정**(planner NEW-TASK MSG-20260614-201105). human_pending 해소, approved.
+
+### 적용 (의미색 carve-out 후 장식 sweep)
+- **장식 teal-*(실측 1029건/99파일, 압도적 장식)** → `tailwind.config.js` `teal:{…}` 단일 오버라이드로
+  확정 5색 warm-monochrome 램프 리맵(JIT 안전·클래스 sweep 0·가역). 앵커: 50 Vanilla #F8F4EE →
+  200 Soft Dune #E4DDCC → 400 Classic Taupe #C5BEA3 → 800 Umber #443A35 → 950 Black #252525.
+- **carve-out①(칸반 teal 단계)**: `src/lib/status.ts` `treatment_waiting`(teal-100/800)·`preconditioning`(teal-400)
+  를 teal 기본 HEX 로 pin(`bg-[#ccfbf1] text-[#115e59]` / `bg-[#2dd4bf] text-white`) → 전역 램프 비종속.
+  11단계 레인보우 식별성 보존.
+- **carve-out②③④⑤(자동 보존)**: 재진(emerald-100/700)·선체험(green flag/dot/card)·치료사 역할칩(green-100/800)·
+  laser(emerald-500)는 teal 미사용 → 전역 teal 램프 영향 없음 → 미접촉 보존. (StepA 데이터 근거: emerald/green
+  191건은 의미색 밀도 높음 → AC7 절제 + 점진 sweep 원칙상 이번 패스 미사용 색군.)
+- **불변(AC 불변)**: `.theme-brown`(셀프접수)·`.dark` 비침범 / 레이아웃·기능·데이터 무변경 / `--destructive` 빨강 유지.
+  status.ts 의 indigo/blue/rose/violet/amber/red/yellow/gray 단계색은 teal/green 아님 → 무변경(레인보우 유지).
+
+### 검증
+- `npm run build` PASS (4.13s)
+- **컴파일 CSS 가드**(dist): 구 teal 시안 누수 **0**(rgb(13 148 136)/rgb(20 184 166)/#0f766e 부재) ·
+  warm 램프 반영(#6e6353) · 칸반 pin HEX 보존(#ccfbf1·#2dd4bf·#115e59) · emerald 의미색 보존(#10b981) ·
+  green 의미색 보존(green-100 #dcfce7·green-500 #22c55e).
+- E2E `tests/e2e/T-20260614-foot-THEME-MONOCHROME-RECOLOR.spec.ts` **15 PASS**(unit+desktop-chrome):
+  A안 전역 램프 존재 + carve-out① pin + carve-out②③④⑤ 보존 + :root 토큰 + 컴파일 CSS 가드 + 공개 /login 실렌더.
+- **AC5 전체화면 인증 렌더**(evidence): `_AC5-dashboard.png`(칸반 단계배지 식별성 유지)·`_AC5-reservations.png`·
+  `_AC5-customers.png`·`_AC5-stats.png`·`_AC5-settings.png` — warm-monochrome 크롬 + 의미색 배지(활성 green 등) 보존,
+  장식 teal/green 전무. 공개 `_login-render.png` 유지.
+
+### 후속(본 티켓 범위 밖 — 점진 sweep 권고)
+- decorative emerald/green 소수 잔존분(의미색과 혼재) — 의미색 회귀 위험으로 본 패스 제외. 필요 시 별도 티켓.
+- `Closing.tsx`/`TabletChecklistPage.tsx` 인라인 print/셀프접수 잔존 — 이전 StepD 노트 유효(WIP 잠김·비침범 원칙).
