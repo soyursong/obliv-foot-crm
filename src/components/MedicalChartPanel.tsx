@@ -3561,8 +3561,11 @@ export default function MedicalChartPanel({
                           </span>
                         );
                       })()}
-                      {/* AC-P2-3: 진료의 변경이력(차트 단위 조회). append-only — 덮어쓰기 금지. */}
-                      {signerAudit.length > 0 && (
+                      {/* AC-P2-3: 진료의 변경이력(차트 단위 조회). append-only — 덮어쓰기 금지.
+                          T-20260614-foot-CHARTSIGNAUDIT-ROLE-GATE: 변경이력은 원장(director)/어드민(admin)만 조회.
+                          isDirector = canViewDoctorMemo(DIRECTOR_ROLES=['director','admin']) — director/admin 동시 포함 SSOT라
+                          별도 isAdmin 결선 없이 (isDirector || isAdmin) 의도 충족. 일반 스태프/직원 미표시. insert 로직 무변경. */}
+                      {signerAudit.length > 0 && isDirector && (
                         <div className="w-full max-w-md text-right">
                           <button
                             type="button"
