@@ -1448,12 +1448,14 @@ function TimelineCheckInCard({
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
     // T-20260514-foot-CHECKIN-AUTO-STAGE AC-3: 내원 완료 카드는 CSS opacity-50으로 처리
     // 드래그 중에는 0.3으로 추가 감소, 비드래그 시 undefined로 CSS 클래스에 위임
-    opacity: isDragging ? 0.3 : undefined,
+    // T-20260614-foot-NOSHOW-SLOT-DIM: 노쇼 슬롯은 비드래그 시 흐림(0.55)으로 완화
+    opacity: isDragging ? 0.3 : (isNoShow ? 0.55 : undefined),
     touchAction: 'none',
     // T-20260511-foot-DASH-DRAG-PERF: GPU 레이어 승격 힌트
     willChange: isDragging ? 'transform' : undefined,
-    // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST AC-3: 노쇼 시각 구분 — 좌측 붉은 인셋 바
-    ...(isNoShow ? { boxShadow: 'inset 3px 0 0 var(--status-noshow)' } : {}),
+    // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST AC-3: 노쇼 시각 구분 — 좌측 인셋 바
+    // T-20260614-foot-NOSHOW-SLOT-DIM: 붉은 강조색 → muted 톤(--status-noshow-dim)으로 완화
+    ...(isNoShow ? { boxShadow: 'inset 3px 0 0 var(--status-noshow-dim)' } : {}),
   };
 
   // 2번 박스 활성화 스타일: 방문유형별 컬러 (초진=노랑, 재진=초록)
@@ -1654,11 +1656,13 @@ function DraggableBox1Card({
       ref={setNodeRef}
       style={{
         transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-        opacity: isDragging ? 0.4 : 1,
+        // T-20260614-foot-NOSHOW-SLOT-DIM: 노쇼 슬롯은 비드래그 시 흐림(0.55)으로 완화
+        opacity: isDragging ? 0.4 : (isNoShow ? 0.55 : 1),
         touchAction: 'none',
         willChange: isDragging ? 'transform' : undefined,
-        // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST AC-3: 노쇼 시각 구분 — 좌측 붉은 인셋 바
-        ...(isNoShow ? { boxShadow: 'inset 3px 0 0 var(--status-noshow)' } : {}),
+        // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST AC-3: 노쇼 시각 구분 — 좌측 인셋 바
+        // T-20260614-foot-NOSHOW-SLOT-DIM: 붉은 강조색 → muted 톤(--status-noshow-dim)으로 완화
+        ...(isNoShow ? { boxShadow: 'inset 3px 0 0 var(--status-noshow-dim)' } : {}),
       }}
       {...attributes}
       {...listeners}
@@ -1738,11 +1742,13 @@ function DraggableBox2ResvCard({
       ref={setNodeRef}
       style={{
         transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-        opacity: isDragging ? 0.4 : 1,
+        // T-20260614-foot-NOSHOW-SLOT-DIM: 노쇼 슬롯은 비드래그 시 흐림(0.55)으로 완화
+        opacity: isDragging ? 0.4 : (isNoShow ? 0.55 : 1),
         touchAction: 'none',
         willChange: isDragging ? 'transform' : undefined,
-        // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST AC-3: 노쇼 시각 구분 — 좌측 붉은 인셋 바
-        ...(isNoShow ? { boxShadow: 'inset 3px 0 0 var(--status-noshow)' } : {}),
+        // T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST AC-3: 노쇼 시각 구분 — 좌측 인셋 바
+        // T-20260614-foot-NOSHOW-SLOT-DIM: 붉은 강조색 → muted 톤(--status-noshow-dim)으로 완화
+        ...(isNoShow ? { boxShadow: 'inset 3px 0 0 var(--status-noshow-dim)' } : {}),
       }}
       {...attributes}
       {...listeners}

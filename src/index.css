@@ -72,7 +72,9 @@
     --status-laser: oklch(0.55 0.15 220);
     --status-payment-waiting: oklch(0.65 0.13 35);
     --status-done: oklch(0.78 0.025 65);
-    --status-noshow: oklch(0.55 0.20 25)
+    --status-noshow: oklch(0.55 0.20 25);
+    /* T-20260614-foot-NOSHOW-SLOT-DIM: 통합시간표 노쇼 슬롯 인셋 바 — 저채도 muted 톤(완화). 배지는 --status-noshow 유지 */
+    --status-noshow-dim: oklch(0.72 0.04 25)
   }
 
   /* 셀프체크인 고객화면용 브라운/베이지 테마 (김주연 4/28 원안)
@@ -161,7 +163,9 @@
     --status-laser: oklch(0.44 0.14 220);
     --status-payment-waiting: oklch(0.50 0.12 35);
     --status-done: oklch(0.60 0.022 65);
-    --status-noshow: oklch(0.44 0.18 25)
+    --status-noshow: oklch(0.44 0.18 25);
+    /* T-20260614-foot-NOSHOW-SLOT-DIM: 노쇼 슬롯 인셋 바 muted(dark) */
+    --status-noshow-dim: oklch(0.52 0.04 25)
   }
   * {
     @apply border-border;
