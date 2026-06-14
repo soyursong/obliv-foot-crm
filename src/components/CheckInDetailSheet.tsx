@@ -64,15 +64,16 @@ interface RoomLog {
 
 // ─── 금일 동선 슬롯 타입 (T-20260522-foot-SPACE-AUTOROUTE) ──────────────────
 
-type TrackedSlotType = '상담실' | '치료실' | '가열성레이저' | '레이저실';
-// 슬롯 표시 순서 (상담실 → 치료실 → 가열성레이저 → 레이저실)
-const TRACKED_SLOT_ORDER: TrackedSlotType[] = ['상담실', '치료실', '가열성레이저', '레이저실'];
+// T-20260614-foot-DASH-HEATED-LASER-SLOT-REMOVE: 가열성레이저 슬롯 제거 → 동선 트래커에서 삭제.
+// (과거 heated_laser 동선 로그는 매핑 누락으로 표시 생략 — 시술기록은 session_type 기반이라 무영향)
+type TrackedSlotType = '상담실' | '치료실' | '레이저실';
+// 슬롯 표시 순서 (상담실 → 치료실 → 레이저실)
+const TRACKED_SLOT_ORDER: TrackedSlotType[] = ['상담실', '치료실', '레이저실'];
 
 /** room_type → TrackedSlotType 매핑 (check_in_room_logs.room_type 기반) */
 const ROOM_TYPE_TO_SLOT: Partial<Record<string, TrackedSlotType>> = {
   consultation: '상담실',
   treatment: '치료실',
-  heated_laser: '가열성레이저',
   laser: '레이저실',
 };
 function logDateStr(isoStr: string): string {
