@@ -186,6 +186,11 @@ export default function Customers() {
   // 검색어와 AND 조합. 옵션소스 = staff role consultant/coordinator/director (assigned_staff_id 旣구현 자산 재사용).
   const [staffFilter, setStaffFilter] = useState('');
   const [staffOptions, setStaffOptions] = useState<{ id: string; name: string }[]>([]);
+  // T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 고객 목록 '담당자' 컬럼 표시용 staff_id → 이름 맵.
+  //   재진=차트(차트2)에 지정된 assigned_staff_id 이름 자동연동 / 첫방문(NULL)=공란(AC2) / 결손=빈값 안전표시(AC4).
+  //   드롭다운 옵션소스(consultant/coordinator/director, active)와 달리 비활성·director 담당자도 이름 resolve해야 하므로
+  //   active/role 필터 없이 clinic 전체 staff 이름 맵을 로드(raw UUID/공백 노출 방지).
+  const [staffNameMap, setStaffNameMap] = useState<Map<string, string>>(new Map());
   const [results, setResults] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
   // T-20260506-foot-CHART-CONSOLIDATE: selected → editingCustomer (수정 전용)
@@ -342,6 +347,26 @@ export default function Customers() {
         .order('name', { ascending: true });
       if (cancelled || error) return;
       setStaffOptions((data ?? []) as { id: string; name: string }[]);
+    })();
+    return () => { cancelled = true; };
+  }, [clinic]);
+
+  // T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 담당자 컬럼용 전체 staff 이름 맵 로드.
+  //   role/active 무관 전체 — 비활성·director 담당자도 이름 표시(raw UUID 노출 방지). display_name fallback name.
+  useEffect(() => {
+    if (!clinic) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('staff')
+        .select('id, name, display_name')
+        .eq('clinic_id', clinic.id);
+      if (cancelled || error) return;
+      const m = new Map<string, string>();
+      for (const s of (data ?? []) as { id: string; name: string | null; display_name: string | null }[]) {
+        m.set(s.id, (s.display_name || s.name || '').trim());
+      }
+      setStaffNameMap(m);
     })();
     return () => { cancelled = true; };
   }, [clinic]);
@@ -573,6 +598,8 @@ export default function Customers() {
               <th className="px-4 py-2 text-left font-medium">전화번호</th>
               <th className="px-4 py-2 text-left font-medium">생년월일</th>
               <th className="px-4 py-2 text-left font-medium">차트번호</th>
+              {/* T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 담당자 컬럼 — 차트(차트2) assigned_staff 자동연동 표시 */}
+              <th className="px-4 py-2 text-left font-medium">담당자</th>
               <th className="px-4 py-2 text-right font-medium">방문</th>
               <th className="px-4 py-2 text-left font-medium">최종 방문</th>
               <th className="px-4 py-2 text-right font-medium">결제액</th>
@@ -614,6 +641,11 @@ export default function Customers() {
                     {birthMap.get(c.id) ?? (birthDateYMD(c.birth_date) || '-')}
                   </td>
                   <td className="px-4 py-2 text-muted-foreground">{c.chart_number ?? '-'}</td>
+                  {/* T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 담당자 — 차트2 assigned_staff_id → 이름.
+                      재진=자동연동 표시 / 첫방문(NULL)·결손=공란('-') 안전표시(AC2/AC4). */}
+                  <td className="px-4 py-2 text-muted-foreground" data-testid="cust-assigned-staff">
+                    {(c.assigned_staff_id && staffNameMap.get(c.assigned_staff_id)) || '-'}
+                  </td>
                   <td className="px-4 py-2 text-right tabular-nums">{stats?.visit_count ?? 0}</td>
                   <td className="px-4 py-2 text-muted-foreground">
                     {stats?.last_visit ? format(new Date(stats.last_visit), 'yyyy-MM-dd') : '-'}
@@ -663,7 +695,7 @@ export default function Customers() {
             })}
             {!loading && results.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={11} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   {query ? '검색 결과 없음' : '고객이 없습니다'}
                 </td>
               </tr>
