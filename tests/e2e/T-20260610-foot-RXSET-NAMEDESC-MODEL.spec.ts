@@ -41,20 +41,19 @@ test('AC2-1: ItemRow 에 용량(dosage)·설명(notes) 입력칸 존재 — 2필
   expect(src).toContain('>설명</Label>');
 });
 
-test('AC2-2: 투여경로·용법·횟수·일수 입력 UI 제거 — 등록화면 미노출', () => {
+// ⚠ PARTIAL SUPERSEDED by T-20260614-foot-BUNDLERX-BUILDER-RESTRUCTURE (2026-06-15):
+//   문지은 대표원장(MSG-20260615-001650) "묶음처방에 숫자까지 넣어서 저장하고 처방할때 진료의가 수동 조정 가능."
+//   → 묶음처방 빌더(PrescriptionSetsTab)에 한해 용량/횟수/일수(1/3/2) baked default 입력 재도입.
+//   route/frequency(투여경로·용법)는 여전히 등록화면 미노출(use-time 입력 유지). 약 라이브러리(DrugFoldersTab) no-posology 규칙 불변.
+//   count/days/RxCountInput 부재 단언은 본 티켓 spec(T-20260614-foot-BUNDLERX-BUILDER-RESTRUCTURE.spec.ts)으로 교체.
+test('AC2-2(보강): 투여경로·용법(frequency) 입력 UI 제거 — 등록화면 미노출(존속). 용량/횟수/일수는 본 티켓 spec으로 이관', () => {
   const src = read(RXSET);
-  // ItemRow 내 해당 입력 라벨/바인딩이 사라졌는지(텍스트 단언). 용법·횟수·일수 라벨 부재.
+  // route/frequency 금지는 존속 — 등록화면에 투여경로·용법 입력 없음.
   expect(src).not.toContain('>투여경로</Label>');
   expect(src).not.toContain('>용법</Label>');
-  expect(src).not.toContain('>횟수</Label>');
-  expect(src).not.toContain('>일수</Label>');
-  // onChange 바인딩도 제거(route/frequency/days/count 직접 편집 경로 없음)
   expect(src).not.toContain("onChange(idx, 'route'");
   expect(src).not.toContain("onChange(idx, 'frequency'");
-  expect(src).not.toContain("onChange(idx, 'days'");
-  expect(src).not.toContain("onChange(idx, 'count'");
-  // 미사용이 된 RxCountInput import 제거
-  expect(src).not.toContain('RxCountInput');
+  // 용량/횟수/일수(count/days/RxCountInput) 재도입 단언은 BUNDLERX-BUILDER-RESTRUCTURE spec 소관 — 여기선 검사하지 않음.
 });
 
 test('AC2-3: 기존 값 보존 — items 전체를 저장(route/frequency/days/count 영속)', () => {
