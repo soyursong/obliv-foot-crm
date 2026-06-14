@@ -949,7 +949,7 @@ export default function DoctorPatientList() {
         <div className="flex gap-1">
           {[
             { key: 'all' as const, label: `전체 (${patients.length})` },
-            { key: 'pending' as const, label: `임시 (${pendingCount})` },
+            { key: 'pending' as const, label: `처방확인 대기 (${pendingCount})` },
             // item6: '처방 없음' → '처방나감' → '처방환자 목록'(처방전 있는 환자 필터). 표시 라벨만 교정(필터 key='confirmed'/카운트 로직 불변).
             { key: 'confirmed' as const, label: `처방환자 목록 (${confirmedCount})` },
           ].map(({ key, label }) => (
