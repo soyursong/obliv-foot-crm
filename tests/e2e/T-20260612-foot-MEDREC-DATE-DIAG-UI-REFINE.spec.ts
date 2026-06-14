@@ -46,11 +46,13 @@ test.describe('① 진료일 — 좌측정렬 date input', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // ② 담당의 — 우측정렬 + 드롭다운(select, 의사 role)
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('② 담당의 — 우측정렬 드롭다운', () => {
-  test('담당의 블록은 우측정렬(items-end/text-right) + select + clinicDoctors(의사) 옵션', () => {
+test.describe('② 담당의 — 드롭다운(의사 role)', () => {
+  // ⚠ T-20260614-foot-MEDREC-LAYOUT-4REFINE AC-4 supersede: ② '우측정렬(sm:items-end/text-right)'은
+  //   진료일·담당의 단일 행 인라인 재구성으로 폐지(라벨 stacking 제거가 우선). 담당의 = select +
+  //   clinicDoctors(의사 role) 옵션 + 단일 행(ml-auto)만 가드로 유지.
+  test('담당의 블록은 select + clinicDoctors(의사) 옵션 + 단일 행(ml-auto) 인라인', () => {
     const src = PANEL();
-    expect(src).toMatch(/sm:items-end"[\s\S]{0,40}data-testid="signing-doctor-select-block"/);
-    expect(src).toMatch(/sm:text-right">[\s\S]{0,40}담당 의사/);
+    expect(src).toMatch(/sm:ml-auto"[\s\S]{0,60}data-testid="signing-doctor-select-block"/);
     // 드롭다운 + 의사 role(clinicDoctors) 옵션.
     expect(src).toMatch(/data-testid="medical-chart-signing-doctor"/);
     expect(src).toMatch(/clinicDoctors\.map/);
