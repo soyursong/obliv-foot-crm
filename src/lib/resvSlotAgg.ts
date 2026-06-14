@@ -7,18 +7,24 @@
 export type ResvKind = 'new' | 'returning' | 'healer' | 'other';
 
 /** 분류 입력에 필요한 최소 구조(타입 결합도 최소화).
- *  visit_type 은 string 으로 수용 — 'experience'(선체험) 등 new/returning 외 값은 'other'로 분류(원본 동작 동일). */
+ *  visit_type 은 string 으로 수용 — 'experience'(선체험) 등 new/returning 외 값은 'other'로 분류(원본 동작 동일).
+ *  T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): healer_intent(영속) 추가 — 분류 SSOT. */
 export interface ResvKindInput {
+  /** 힐러 의도(영속) — 예약 팝업 토글/차트 차감 흐름으로 설정. 체크인 후에도 유지(분류 SSOT). */
+  healer_intent?: boolean | null;
+  /** 힐러 플래그(1회성) — 체크인 시 Dashboard HL-blink 후 소모. 레거시 호환용 fallback. */
   healer_flag?: boolean | null;
   visit_type: string;
 }
 
 /**
- * 예약 유형 분류: 힐러(healer_flag) 우선 → 초진/재진 → 기타.
+ * 예약 유형 분류: 힐러(healer_intent 영속 || healer_flag 레거시) 우선 → 초진/재진 → 기타.
  * RESVCAL-DISPLAY-REWORK item3 / Reservations.tsx resvKind 와 동일 규칙(단일 소스).
+ * T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): healer_intent 우선 — 캘린더 직접예약·체크인 후에도
+ *   힐러 분류 유지. healer_flag 는 소모형이라 단독 의존 시 체크인 후 분류 누락(=HL N 칩 미표기) 근본원인이었음.
  */
 export function resvKind(r: ResvKindInput): ResvKind {
-  if (r.healer_flag) return 'healer';
+  if (r.healer_intent || r.healer_flag) return 'healer';
   if (r.visit_type === 'new') return 'new';
   if (r.visit_type === 'returning') return 'returning';
   return 'other';

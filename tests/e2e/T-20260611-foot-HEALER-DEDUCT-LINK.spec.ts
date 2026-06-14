@@ -52,8 +52,10 @@ test.describe('시나리오1: 다음 예약 힐러 표시', () => {
     const m = RESV_PAGE.match(/next-healer-badge[\s\S]{0,200}?다음 힐러/);
     expect(m, '다음 힐러 배지 블록 파싱 실패').toBeTruthy();
     // 가드 1: 자신이 힐러가 아닐 때만 (중복 회피)
-    expect(RESV_PAGE, '힐러 카드 중복 회피 가드(!r.healer_flag) 누락')
-      .toContain('!r.healer_flag');
+    // T-20260614-foot-HEALER-RESV-CLASSIFY-DEF supersede: 가드를 healer_flag 단독 → resvKind(영속 healer_intent||healer_flag)로 격상.
+    //   healer_intent(영속)로 힐러인 카드도 '다음 힐러' 배지 중복 회피 대상에 포함(분류 SSOT 일치).
+    expect(RESV_PAGE, '힐러 카드 중복 회피 가드(resvKind!==healer) 누락')
+      .toContain("resvKind(r) !== 'healer'");
     // 가드 2: 미래 힐러가 현재 카드보다 늦을 때만 (hl <= cardKey → 미노출)
     expect(RESV_PAGE, '미래(카드보다 늦음) 비교 가드 누락').toContain('hl <= cardKey');
   });
