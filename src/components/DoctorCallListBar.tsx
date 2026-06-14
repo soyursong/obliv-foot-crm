@@ -112,7 +112,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { CheckIn } from '@/lib/types';
 import { getCurrentLocationLabel } from '@/lib/checkin-slot';
-import { DoctorAckBadge } from '@/components/doctor/DoctorAck';
+import DoctorStageStepper from '@/components/doctor/DoctorStageStepper';
 
 /** T-20260610-foot-CALLLIST-TOP-COVERS-BUTTONS Phase 2: 드래그 위치 저장 키(사용자/브라우저 단위 개인설정). */
 const CALLLIST_POS_KEY = 'foot.doctorCallList.pos.v1';
@@ -523,7 +523,7 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
         data-hidden="true"
         data-position-mode={pos ? 'dragged' : 'fixed'}
         className={cn(
-          'fixed z-40 rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm',
+          'fixed z-40 rounded-xl border border-purple-300 bg-white/95 shadow-2xl backdrop-blur-sm',
           pos ? '' : 'bottom-4 right-4',
         )}
         style={pos ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' } : undefined}
@@ -531,18 +531,18 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
         <button
           data-testid="doctor-call-show"
           onClick={() => setHidden(false)}
-          className="relative flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-xl hover:bg-red-50"
+          className="relative flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-xl hover:bg-purple-50"
           title="원장님 진료콜 명단 펼치기"
         >
-          <Stethoscope className="h-4 w-4 text-red-600" />
-          <span className="text-sm font-semibold text-red-800">진료콜</span>
-          <span className="text-xs text-red-600 bg-red-100 rounded-full px-1.5 py-px font-medium">
+          <Stethoscope className="h-4 w-4 text-purple-600" />
+          <span className="text-sm font-semibold text-purple-800">진료콜</span>
+          <span className="text-xs text-purple-600 bg-purple-100 rounded-full px-1.5 py-px font-medium">
             {activeList.length}
           </span>
           {unseenCount > 0 && (
             <span
               data-testid="doctor-call-unseen-badge"
-              className="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-red-600 text-white text-[10px] font-bold rounded-full ring-2 ring-white"
+              className="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-purple-600 text-white text-[10px] font-bold rounded-full ring-2 ring-white"
               title={`미확인 신규 ${unseenCount}명`}
             >
               {unseenCount}
@@ -572,7 +572,7 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
       data-hidden="false"
       data-position-mode={pos ? 'dragged' : 'fixed'}
       className={cn(
-        'fixed z-40 w-[min(30rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-red-300 bg-white/95 shadow-2xl backdrop-blur-sm',
+        'fixed z-40 w-[min(30rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-purple-300 bg-white/95 shadow-2xl backdrop-blur-sm',
         // Phase 2: 저장된/드래그 좌표가 없을 때만 기본 앵커(Phase 1 버튼비가림 우하단). 좌표가 있으면 인라인 left/top.
         pos ? '' : 'bottom-4 right-4',
       )}
@@ -588,12 +588,12 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
         onPointerMove={onHeaderPointerMove}
         onPointerUp={onHeaderPointerUp}
         onPointerCancel={onHeaderPointerUp}
-        className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-red-200 bg-red-50/80 cursor-move touch-none select-none"
+        className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-purple-200 bg-purple-50/80 cursor-move touch-none select-none"
       >
         <div className="flex items-center gap-1.5">
-          <Stethoscope className="h-4 w-4 text-red-600" />
-          <span className="text-sm font-semibold text-red-800">원장님 진료콜 명단</span>
-          <span className="text-xs text-red-600 bg-red-100 rounded-full px-1.5 py-px font-medium">
+          <Stethoscope className="h-4 w-4 text-purple-600" />
+          <span className="text-sm font-semibold text-purple-800">원장님 진료콜 명단</span>
+          <span className="text-xs text-purple-600 bg-purple-100 rounded-full px-1.5 py-px font-medium">
             {activeList.length}명
           </span>
           {doneList.length > 0 && (
@@ -642,7 +642,7 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
             data-testid="doctor-call-hide"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => setHidden(true)}
-            className="flex items-center justify-center text-red-700 rounded-md px-1.5 py-1 min-h-[36px] min-w-[36px] border border-red-300 bg-white hover:bg-red-100"
+            className="flex items-center justify-center text-purple-700 rounded-md px-1.5 py-1 min-h-[36px] min-w-[36px] border border-purple-300 bg-white hover:bg-purple-100"
             title="명단 숨기기 — 최소 탭만 남김"
           >
             <EyeOff className="h-4 w-4" />
@@ -653,7 +653,7 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
             aria-expanded={!collapsed}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => setCollapsed((v) => !v)}
-            className="flex items-center justify-center text-red-700 rounded-md px-1.5 py-1 min-h-[36px] min-w-[36px] border border-red-300 bg-white hover:bg-red-100"
+            className="flex items-center justify-center text-purple-700 rounded-md px-1.5 py-1 min-h-[36px] min-w-[36px] border border-purple-300 bg-white hover:bg-purple-100"
             title={collapsed ? '명단 펼치기' : '명단 접기'}
           >
             {collapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -786,7 +786,7 @@ function DoctorCallRow({ checkIn, visitCount, inactive = false, onHide, onOpenCh
         // CALLLIST-DONE-INACTIVE) 진료완료 = 비활성 (흐림 + 회색조), 콜 대상 활성과 시각 구분
         inactive
           ? 'border-gray-200 bg-gray-50 opacity-60'
-          : 'border-red-200 bg-white hover:border-red-300',
+          : 'border-purple-200 bg-white hover:border-purple-300',
       )}
     >
       {/* 헤더: 고객명(클릭→진료차트) + 위치배지 + 배지 + 지정콜/호출표시 */}
@@ -832,10 +832,9 @@ function DoctorCallRow({ checkIn, visitCount, inactive = false, onHide, onOpenCh
             </span>
           )}
           {visitBadge}
-          {/* T-20260609-foot-DOCCALL-DOCTOR-ACK AC3: 호출 직원 화면에 '의사 확인됨' 상태 조회(표시 전용).
-              checkIns는 Dashboard fetchCheckIns(check_ins Realtime 구독)에서 갱신 → 새로고침 없이 즉시 반영.
-              직원은 조회만(확인 버튼 없음 — 시나리오2 권한 게이트는 ack 버튼이 DoctorCallDashboard에만 존재). */}
-          <DoctorAckBadge ackAt={checkIn.doctor_ack_at} className="shrink-0" />
+          {/* T-20260614-foot-DOCCALL-PURPLE-STEPPER 이슈2: 기존 ✋ 손 아이콘(DoctorAckBadge) **완전 대체**.
+              '의사 확인됨' 단일 배지 → 4단계 노선도 stepper(대기→원장확인→진료중→진료완료)로 흡수.
+              stepper는 가로 폭이 필요 → name-row 인라인 배지가 아닌 아래 전용 줄(행 단위 진행)에 배치. */}
           {/* T-20260614-foot-CALLLIST-DOCCALL-3FIX #2: 행 우측 전화기(지정콜) 버튼 제거 — 핸들러 dead code 동반 정리. */}
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -864,6 +863,13 @@ function DoctorCallRow({ checkIn, visitCount, inactive = false, onHide, onOpenCh
         </div>
       </div>
 
+      {/* T-20260614-foot-DOCCALL-PURPLE-STEPPER 이슈2: 진료 단계 노선도 stepper(행 단위 인라인).
+          원장·직원 공용 클릭 전환 + check_ins UPDATE 영속 → Dashboard realtime 구독이 타 직원 화면 동기.
+          ✋ 손 아이콘 완전 대체(병행 표시 X). */}
+      <div className="mt-1.5 flex justify-start">
+        <DoctorStageStepper checkIn={checkIn} onChanged={onRefresh} />
+      </div>
+
       {/* 진료 전달사항 메모 */}
       <div className="mt-1.5">
         {editing ? (
@@ -876,7 +882,7 @@ function DoctorCallRow({ checkIn, visitCount, inactive = false, onHide, onOpenCh
               rows={2}
               placeholder="진료 전달사항 입력"
               data-testid="doctor-call-memo-input"
-              className="w-full rounded border border-input bg-background px-2 py-1 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-red-400 resize-none"
+              className="w-full rounded border border-input bg-background px-2 py-1 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-400 resize-none"
             />
             <div className="flex justify-end gap-1">
               <button
@@ -892,7 +898,7 @@ function DoctorCallRow({ checkIn, visitCount, inactive = false, onHide, onOpenCh
                 onClick={saveMemo}
                 disabled={saving}
                 data-testid="doctor-call-memo-save"
-                className="flex items-center gap-0.5 text-[11px] text-white bg-red-600 px-1.5 py-0.5 rounded hover:bg-red-700 disabled:opacity-50"
+                className="flex items-center gap-0.5 text-[11px] text-white bg-purple-600 px-1.5 py-0.5 rounded hover:bg-purple-700 disabled:opacity-50"
               >
                 <Check className="h-3 w-3" />
                 저장
@@ -914,7 +920,7 @@ function DoctorCallRow({ checkIn, visitCount, inactive = false, onHide, onOpenCh
             >
               {checkIn.doctor_call_memo || '진료 전달사항 +'}
             </span>
-            <Pencil className="h-3 w-3 text-gray-300 group-hover:text-red-500 shrink-0 mt-0.5" />
+            <Pencil className="h-3 w-3 text-gray-300 group-hover:text-purple-500 shrink-0 mt-0.5" />
           </button>
         )}
       </div>

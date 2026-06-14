@@ -2,9 +2,13 @@
 -- "진료 중" 실시간 표시(방법B) — 원장이 명단 행을 '진료 중'으로 전환하면 직원/간호사 화면에
 --   supabase realtime로 "🟢 진료 중 [환자명]" 뱃지가 실시간 표시되고, 진료콜 명단 최상단에 고정.
 --
--- ⚠️⚠️ DRAFT — prod 적용 보류. supervisor DB 게이트 경유 + data-architect CONSULT 선행 필수.
---      (agent_collaboration_rules §S2.4 데이터 정책 자문 게이트: 신규 컬럼 추가 = CONSULT 미선행 시 적용 금지.)
+-- ✅ APPLIED to prod 2026-06-14 by T-20260614-foot-DOCCALL-PURPLE-STEPPER (dev-foot 직접 실행).
+--      data-architect CONSULT 선행 완료(DA-20260612-foot-DOCTORCALL / MSG-20260612-072117-265b CONSULT-REPLY) —
+--      enum in_treatment|done + doctor_ended_at 대칭 정정 반영분이 본 파일에 이미 흡수됨.
+--      additive only(3 nullable 컬럼 + CHECK), 기존 row 무영향·무중단. 진료콜 명단 4단계 stepper의
+--      '진료중/진료완료' 단계 영속화에 사용(대기=NULL, 원장확인=doctor_ack_at 재사용).
 --      rollback: 20260612010000_checkin_doctor_status_realtime.rollback.sql
+--      (agent_collaboration_rules §S2.4 데이터 정책 자문 게이트: CONSULT 선행 충족.)
 --
 -- 설계 원칙:
 --   · 신규 테이블 없음 — check_ins 에 컬럼 3개 가산(additive). 기존 status/status_flag 상태머신 미변경.
