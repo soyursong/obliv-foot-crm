@@ -521,7 +521,7 @@ export interface Reservation {
   /** T-20260516-foot-HEALER-RESV-BTN: 힐러예약 플래그 — 치료사 수동 설정, 예약 당일 대시보드 HL(노랑) 자동 표시 후 false로 리셋 (1회성) */
   healer_flag?: boolean | null;
   /** T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): 힐러 의도(영속) — 예약 팝업 ON/OFF 토글. 체크인 후에도 유지되는 힐러 분류 SSOT. */
-  healer_intent?: boolean | null;
+  is_healer_intent?: boolean | null;
   // ── 도파민 연동 (T-20260520-foot-DOPAMINE-SCHEMA) ─────────────────────
   /** 예약 유입 경로: null=일반/워크인, 'dopamine'=도파민 TM 경유, 'foot-walkin'=풋 자체 워크인 */
   source_system?: string | null;
