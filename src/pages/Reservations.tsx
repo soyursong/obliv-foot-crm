@@ -278,6 +278,9 @@ export default function Reservations() {
   const [searchParams] = useSearchParams();
   const { profile } = useAuth();
   const changedBy = profile?.id ?? null;
+  // T-20260613-foot-RESVCAL-MYRESV-DEF: '내 예약' NAME-MATCH 키 = 로그인 사용자 표시명(profile.name).
+  //   user_profiles.name ↔ reservations.registrar_name 문자열 매칭(공백 정규화). 빈 표시명이면 매칭 불가 → 빈 결과.
+  const myDisplayName = (profile?.name ?? '').trim();
   const clinic = useClinic();
   const navStateConsumed = useRef(false);
   // T-20260611-foot-RESV-DASH-CTXMENU-DETAIL-NAV: 대시보드 슬롯 카드 우클릭 [예약상세] → 이 페이지로
@@ -300,6 +303,11 @@ export default function Reservations() {
   const [loading, setLoading] = useState(true);
   // T-PROGRESS-CHECKPOINT AC-4: 경과분석 필터 토글
   const [filterProgress, setFilterProgress] = useState(false);
+  // T-20260613-foot-RESVCAL-MYRESV-DEF (기능2): '내 예약' 필터.
+  //   정의(reporter 확정): (나)=담당(registrar) 이름 기준 — registrar_name === 로그인 사용자 표시명(profile.name).
+  //   NAME-MATCH(문자열) 매칭이며 FK/auth.uid 신원 매핑 아님. ⚠ 동명이인 시 동명 registrar 예약이 함께
+  //   보일 수 있으나 현장이 '이름 기준'을 명시 선택해 수용(AC3). created_by/auth 매핑 데이터 티켓 불요.
+  const [filterMine, setFilterMine] = useState(false);
   // T-20260514-foot-CHART-NO-VISIBLE: AC-2 예약관리 차트번호 컬럼 (customer_id → chart_number)
   const [resvChartMap, setResvChartMap] = useState<Map<string, string>>(new Map());
 
@@ -1328,6 +1336,18 @@ export default function Reservations() {
             경과분석
             {filterProgress && <span className="ml-0.5 opacity-70">ON</span>}
           </button>
+          {/* T-20260613-foot-RESVCAL-MYRESV-DEF (기능2): '내 예약' 드롭다운 필터.
+              '내 예약' = registrar_name(담당 이름) === 로그인 사용자 표시명(NAME-MATCH). '전체'는 기존 동작 유지(AC4). */}
+          <select
+            data-testid="myresv-filter"
+            aria-label="내 예약 필터"
+            value={filterMine ? 'mine' : 'all'}
+            onChange={(e) => setFilterMine(e.target.value === 'mine')}
+            className="h-9 rounded-md border border-teal-200 bg-teal-50 px-2 text-xs font-medium text-teal-700 transition-colors hover:bg-teal-100 focus:outline-none focus:border-teal-500 cursor-pointer"
+          >
+            <option value="all">전체 예약</option>
+            <option value="mine">내 예약</option>
+          </select>
           {/* T-20260513-foot-RESV-PLUS-PHONE-SEARCH: 페이지 상단 새 예약 버튼 — InlinePatientSearch(phone) 연결
               T-20260611-foot-PROGRESS-CAL-SESSION-AUTOLINK §2: 경과분석 뷰(조회 전용)에서는 예약생성 진입 숨김.
               filterProgress OFF 복귀 시 즉시 재노출(영구 제거 아님). */}
@@ -1546,7 +1566,11 @@ export default function Reservations() {
                                     T-20260611-foot-PROGRESS-CAL-SESSION-AUTOLINK §3 자동연동: 체크포인트 태그
                                     (progress_check_required=TRUE, 예약 생성 시 plan.session_milestone 도달로 자동 부여)
                                     환자만 노출. PROGRESS-CHECKPOINT 태그 로직 그대로 재사용 — read-only 필터, 신설 없음. */}
-                                {(filterProgress ? list.filter(r => r.progress_check_required) : list).map((r) => (
+                                {/* T-20260613-foot-RESVCAL-MYRESV-DEF (기능2): '내 예약' = registrar_name === 로그인 표시명 NAME-MATCH.
+                                    경과분석 필터와 AND 결합. read-only 표시 필터 — 슬롯 용량/카운트 산식(full 판정)은 불변. */}
+                                {(filterProgress ? list.filter(r => r.progress_check_required) : list)
+                                  .filter((r) => !filterMine || (myDisplayName !== '' && (r.registrar_name ?? '').trim() === myDisplayName))
+                                  .map((r) => (
                                   <div
                                     key={r.id}
                                     data-testid={`resv-card-${r.id}`}
