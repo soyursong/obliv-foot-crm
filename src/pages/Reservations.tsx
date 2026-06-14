@@ -305,6 +305,9 @@ export default function Reservations() {
 
   const [editor, setEditor] = useState<ReservationDraft | null>(null);
   const [detail, setDetail] = useState<Reservation | null>(null);
+  // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002 (AC2 시나리오1): (+) 새 예약 → 예약상세 팝업 new-mode 오픈
+  //   (별도 폼/ReservationEditor 모달 스폰 폐기). reservation=null 이어도 팝업이 검색→생성 폼만 렌더.
+  const [newReservationMode, setNewReservationMode] = useState(false);
   const [noshowByCustomer, setNoshowByCustomer] = useState<Record<string, number>>({});
   // T-20260527-foot-TREATMENT-CYCLE-ALERT AC-1: 고객별 완료 치료 회차 수 (패키지 무관)
   const [treatmentCycleMap, setTreatmentCycleMap] = useState<Map<string, number>>(new Map());
@@ -1331,20 +1334,10 @@ export default function Reservations() {
           {!filterProgress && (
             <Button
               size="sm"
-              onClick={() => {
-                const today = format(new Date(), 'yyyy-MM-dd');
-                setEditor({
-                  date: today,
-                  time: '10:00',
-                  name: '',
-                  phone: '',
-                  visit_type: 'returning',
-                  memo: '',
-                  booking_memo: '',
-                  visit_route: '',
-                  customer_id: null,
-                });
-              }}
+              /* T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002 (AC2): (+) → 예약상세 팝업 new-mode 오픈.
+                 별도 폼/ReservationEditor 모달 스폰 폐기. 생성은 팝업 → handleCreateReservationFromPopup
+                 → 단일소스 createReservationCanonical 위임(L-002 개정). */
+              onClick={() => setNewReservationMode(true)}
               className="gap-1.5"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -1879,14 +1872,18 @@ export default function Reservations() {
         changedBy={changedBy}
         authorName={profile?.name ?? ''}
         isAdmin={profile?.role === 'admin'}
-        onClose={() => setDetail(null)}
+        onClose={() => { setDetail(null); setNewReservationMode(false); }}
         onEdit={openEdit}
         onChanged={() => {
           setDetail(null);
+          setNewReservationMode(false);
           fetchWeek();
         }}
         /* T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: 팝업 new-mode → 단일소스 생성 함수 위임(모달 스폰 폐기). */
         onCreateReservation={handleCreateReservationFromPopup}
+        /* AC2 시나리오1: (+) 새 예약 → anchor 예약 없이 new-mode 진입. clinic_id 직접 주입(useClinic). */
+        newMode={newReservationMode}
+        clinicId={clinic?.id ?? null}
       />
 
       {/* T-20260515-foot-RESV-CTX-HOVER: 예약관리 우클릭 메뉴 + hover 팝업 오버레이 */}
