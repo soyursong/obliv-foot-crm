@@ -2,18 +2,19 @@
 ticket_id: T-20260614-foot-THEME-MONOCHROME-RECOLOR
 domain: foot
 priority: P2
-status: deploy-ready
+status: in_progress
+block_reason: human_pending — 의미색(teal/emerald 칸반·재진·선체험·역할칩) A/B 결정 대기 (김주연 총괄, planner DECISION-REQUEST)
 requester: 김주연 총괄 (U0ATDB587PV)
 thread: C0ATE5P6JTH / 1781364123.025179
 risk: GO_WARN
 owner: agent-fdd-dev-foot
-stage_done: [StepA, StepB, StepC-field-confirm, StepD-apply]
-stage_pending: []
-deploy-ready: true
+stage_done: [StepA, StepB, StepC-field-confirm, StepD-token-only]
+stage_pending: [StepD-semantic-after-AB, AC5-fullrender, deploy-ready]
+deploy-ready: false
 db-change: false
 build: pass
-spec: tests/e2e/T-20260614-foot-THEME-MONOCHROME-RECOLOR.spec.ts (4 pass)
-qa_result: pending-supervisor
+spec: tests/e2e/T-20260614-foot-THEME-MONOCHROME-RECOLOR.spec.ts (5 pass)
+qa_result: blocked-human-pending
 ---
 
 # 전역 색상 테마 모노톤 리컬러
@@ -110,3 +111,29 @@ planner INFO MSG-20260614-010848-dgrr 로 ① 팔레트 확정 ② 스코프 확
 - `TabletChecklistPage.tsx`(#0D9488) — **셀프접수(.theme-brown) 라우트** → 비침범 원칙상 의도적 제외.
 - 통계 차트 팔레트(`TherapistStatsSection`/`CategorySection` BAR_COLORS) — 카테고리 데이터-시각화 구분색 → 가독성 위해 유지(AC4 유사).
 - 임상 구절-이동 드래그 핸들 `#0d9488` — 기존 spec(T-20260603-PHRASE-MOVE-RESTORE) 단언 잠김 → 미접촉.
+
+## StepD 정정 (planner FIX-REQUEST MSG-20260614-153740, 2026-06-14)
+
+planner FIX 수신 — 앞선 StepD(dde1be1) 가 **전역 teal-* 램프 단일 리맵**까지 수행해 **의미색까지 치환**했음.
+이는 planner 정정2("의미색 처리는 김주연 A/B 결정 수령 후 — 그 전엔 의미색 치환·전역배포 금지")에 위배.
+teal-* 는 장식이자 동시에 의미색(status.ts `treatment_waiting`=teal-100/800·`preconditioning`=teal-400 칸반 단계색)이라
+전역 램프 리맵은 단계 구분을 무너뜨림(AC4 위반) → **보류(HOLD)** 처리.
+
+### 이번 정정 작업 (decoration-only, 의미색 비침범)
+- **revert**: `tailwind.config.js` 전역 `teal:{…}` 램프 오버라이드 제거 → Tailwind 기본 teal 복원(칸반 의미색 보존).
+- **keep (정정1 — 김주연 확정 5색)**: `src/index.css` `:root` 토큰 매핑 유지
+  (background=Vanilla·foreground=Black·primary=Umber·secondary/accent/border=Soft Dune·ring=Taupe).
+  토큰 기반 장식(탭·CTA·헤더·일반 버튼: bg-primary/accent 계열)은 이 레이어로 warm 적용 = 진행지시1 충족.
+- **keep (decoration)**: `FootToeIllustration` 활성 발가락 warm(Umber/Taupe) — 칸반/유형/역할 의미색 아닌 단독 장식.
+  hover 도 `hover:stroke-[#C5BEA3]` 로 고정해 teal 램프 복원에 비종속화.
+- **불변**: `.theme-brown`(셀프접수)·`.dark` 비침범, status.ts·badge.tsx 의미색 미접촉, 레이아웃·기능·데이터 무변경.
+
+### 보류 항목 (김주연 A/B 답변 후 planner NEW-TASK/FOLLOWUP 으로 진행)
+- 장식 teal-* 하드코딩 클래스(1600+건) 의 warm 치환 방향(전역 램프 vs 의미색 carve-out 후 sweep) = A/B 결정 대상.
+- 결정 수령 전 의미색 치환·전역배포 금지.
+
+### 검증 (정정본)
+- `npm run build` PASS
+- E2E `tests/e2e/T-20260614-foot-THEME-MONOCHROME-RECOLOR.spec.ts` 5 PASS (정적 가드 4 + 공개 /login 실렌더 1):
+  AC4 전역 teal 램프 부재 + status.ts 칸반 의미색 보존 가드 추가.
+- AC5 전체화면(대시보드·예약·차트·통계·설정) 렌더 + 셀프접수 비침범 1장 = **의미색 결정+적용 후** 수행 → 그때 deploy-ready.
