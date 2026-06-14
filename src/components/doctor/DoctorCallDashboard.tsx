@@ -493,17 +493,18 @@ export default function DoctorCallDashboard() {
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-[15px]" data-testid="doctor-call-feed-table">
               {/* DOCDASH_COLGROUP — T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1(문지은 대표원장, MONOTONE 컬럼순서 supersede): 10칼럼, 합 100%.
-                  순서: 방 7 · 상태(✋) 12 · 이름 12 · 생년(만나이) 11 · 차트번호 9 · 오늘시술 11 · 차트 7 · 처방 13 · 임상경과 12 · 시간 6.
+                  T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item③(문지은 대표원장): 방·상태·이름·생년 추가 압축 → 처방 미리보기만 확대.
+                  순서: 방 6 · 상태(✋) 10 · 이름 11 · 생년(만나이) 10 · 차트번호 9 · 오늘시술 11 · 차트 7 · 처방 18 · 임상경과 12 · 시간 6.
                   (시간=AC-1 dev판단 기본보존, 맨 끝 append) */}
               <colgroup>
-                <col className="w-[7%]" />
-                <col className="w-[12%]" />
-                <col className="w-[12%]" />
+                <col className="w-[6%]" />
+                <col className="w-[10%]" />
                 <col className="w-[11%]" />
+                <col className="w-[10%]" />
                 <col className="w-[9%]" />
                 <col className="w-[11%]" />
                 <col className="w-[7%]" />
-                <col className="w-[13%]" />
+                <col className="w-[18%]" />
                 <col className="w-[12%]" />
                 <col className="w-[6%]" />
               </colgroup>
@@ -562,16 +563,17 @@ export default function DoctorCallDashboard() {
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-[15px]" data-testid="doctor-completed-table">
               {/* COMPLETED COLGROUP — T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1: 경과시간 제거(UX7 유지) + 생년 신설(9칼럼).
-                  순서·합 100%: 방8 · 상태(✋)13 · 이름13 · 생년(만나이)12 · 차트번호10 · 오늘시술12 · 차트8 · 처방12 · 임상경과12. */}
+                  T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item③(문지은 대표원장): 방·상태·이름·생년 추가 압축 → 처방 미리보기만 확대.
+                  순서·합 100%: 방6 · 상태(✋)11 · 이름12 · 생년(만나이)11 · 차트번호10 · 오늘시술12 · 차트8 · 처방18 · 임상경과12. */}
               <colgroup>
-                <col className="w-[8%]" />
-                <col className="w-[13%]" />
-                <col className="w-[13%]" />
+                <col className="w-[6%]" />
+                <col className="w-[11%]" />
                 <col className="w-[12%]" />
+                <col className="w-[11%]" />
                 <col className="w-[10%]" />
                 <col className="w-[12%]" />
                 <col className="w-[8%]" />
-                <col className="w-[12%]" />
+                <col className="w-[18%]" />
                 <col className="w-[12%]" />
               </colgroup>
               {/* COMPLETED THEAD — CALLUX-3FIX AC-1: 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과(시간 없음). */}
@@ -663,6 +665,8 @@ function CallFeedRow({
   const rxBtnRef = useRef<HTMLButtonElement>(null);
   // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 임상경과 = 한 줄 인풋(아코디언 아님), 토글로 노출/숨김.
   const [showClinical, setShowClinical] = useState(false);
+  // T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④(문지은 대표원장): 임상경과 미리보기 셀 클릭 → 행 아래로 전체내용 펼침(읽기). 재클릭/외부클릭→접힘.
+  const [expandClinical, setExpandClinical] = useState(false);
 
   return (
     // T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT AC-3 (문지은 대표원장): 행=환자, 9칼럼 재배치
@@ -844,12 +848,20 @@ function CallFeedRow({
           </div>
         </td>
 
-        {/* 9. 임상경과 — CALLUX-3FIX AC-1: 처방 '오른쪽'(요청순서 끝). 미리보기 전용(최신 1줄 말줄임, 입력은 차트칼럼 📝). 중앙정렬. */}
+        {/* 9. 임상경과 — CALLUX-3FIX AC-1: 처방 '오른쪽'(요청순서 끝). 미리보기 전용(최신 1줄 말줄임, 입력은 차트칼럼 📝). 중앙정렬.
+            T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④: 내용 있으면 클릭 가능 → 행 아래로 전체내용 펼침(읽기 토글). */}
         <td className="px-1.5 py-1 text-left" data-testid="doctor-call-clinical-cell">
           {clinicalPreview ? (
-            <span className="block max-w-full truncate text-[13px] text-gray-600" title={clinicalPreview}>
+            <button
+              type="button"
+              onClick={() => setExpandClinical((v) => !v)}
+              aria-expanded={expandClinical}
+              data-testid="doctor-call-clinical-expand-btn"
+              title="클릭하면 전체 내용이 펼쳐져요"
+              className="block w-full max-w-full truncate text-left text-[13px] text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline"
+            >
               {clinicalPreview}
-            </span>
+            </button>
           ) : (
             <span className="text-[13px] text-gray-300">—</span>
           )}
@@ -883,6 +895,21 @@ function CallFeedRow({
               onOpenChange={(v) => { if (!v) setShowClinical(false); }}
               onSaved={() => setShowClinical(false)}
             />
+          </td>
+        </tr>
+      )}
+
+      {/* T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④: 임상경과 미리보기 클릭 시 행 아래 전체내용(읽기) 펼침.
+          말줄임 없는 전문(whitespace 보존). 재클릭은 동일 셀 버튼 토글로 접힘. 입력은 별도(📝 차트칼럼). */}
+      {expandClinical && clinicalPreview && (
+        <tr data-testid="doctor-call-clinical-expand-row" className={inactive ? 'bg-gray-50/60' : 'bg-gray-50'}>
+          <td colSpan={DOCDASH_COLSPAN} className="px-3 pb-2 pt-0">
+            <div
+              className="whitespace-pre-wrap break-words rounded-md border border-gray-200 bg-white px-3 py-2 text-[13px] leading-relaxed text-gray-700"
+              data-testid="doctor-call-clinical-expand"
+            >
+              {clinicalPreview}
+            </div>
           </td>
         </tr>
       )}
@@ -922,6 +949,8 @@ function CompletedRow({
   const rxBtnRef = useRef<HTMLButtonElement>(null);
   // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안: 임상경과 = 한 줄 인풋(아코디언 아님) 토글.
   const [showClinical, setShowClinical] = useState(false);
+  // T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④(문지은 대표원장): 임상경과 미리보기 셀 클릭 → 행 아래로 전체내용 펼침(읽기). 재클릭→접힘.
+  const [expandClinical, setExpandClinical] = useState(false);
   // T-20260612-foot-DOCDASH-11FIX AC-9/AC-10: 귀가(true discharge) 판정 = QUICKRX-INCLINIC-GATE SSOT 재사용.
   //   status==='done' → 귀가(처방게이트 reason='discharged'). 그 외(원내 잔류) → 처방 버튼 유지(회귀 금지).
   const dischargeGate = checkRxInClinic({
@@ -1107,12 +1136,20 @@ function CompletedRow({
           </div>
         </td>
 
-        {/* 9(끝). 임상경과 — CALLUX-3FIX AC-1: 처방 '오른쪽'(요청순서 끝). 미리보기 전용(입력은 차트칼럼 📝). 중앙정렬. */}
+        {/* 9(끝). 임상경과 — CALLUX-3FIX AC-1: 처방 '오른쪽'(요청순서 끝). 미리보기 전용(입력은 차트칼럼 📝). 중앙정렬.
+            T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④: 내용 있으면 클릭 가능 → 행 아래로 전체내용 펼침(읽기 토글). */}
         <td className="px-1.5 py-1 text-left" data-testid="doctor-completed-clinical-cell">
           {clinicalPreview ? (
-            <span className="block max-w-full truncate text-[13px] text-gray-600" title={clinicalPreview}>
+            <button
+              type="button"
+              onClick={() => setExpandClinical((v) => !v)}
+              aria-expanded={expandClinical}
+              data-testid="doctor-completed-clinical-expand-btn"
+              title="클릭하면 전체 내용이 펼쳐져요"
+              className="block w-full max-w-full truncate text-left text-[13px] text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline"
+            >
               {clinicalPreview}
-            </span>
+            </button>
           ) : (
             <span className="text-[13px] text-gray-300">—</span>
           )}
@@ -1138,6 +1175,21 @@ function CompletedRow({
               onOpenChange={(v) => { if (!v) setShowClinical(false); }}
               onSaved={() => setShowClinical(false)}
             />
+          </td>
+        </tr>
+      )}
+
+      {/* T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④: 임상경과 미리보기 클릭 시 행 아래 전체내용(읽기) 펼침(완료 섹션 동일).
+          말줄임 없는 전문(whitespace 보존). 재클릭은 동일 셀 버튼 토글로 접힘. 입력은 별도(📝 차트칼럼). */}
+      {expandClinical && clinicalPreview && (
+        <tr data-testid="doctor-completed-clinical-expand-row" className="bg-gray-50">
+          <td colSpan={DOCDASH_COMPLETED_COLSPAN} className="px-3 pb-2 pt-0">
+            <div
+              className="whitespace-pre-wrap break-words rounded-md border border-gray-200 bg-white px-3 py-2 text-[13px] leading-relaxed text-gray-700"
+              data-testid="doctor-completed-clinical-expand"
+            >
+              {clinicalPreview}
+            </div>
           </td>
         </tr>
       )}
