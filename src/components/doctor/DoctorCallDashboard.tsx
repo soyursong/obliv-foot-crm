@@ -57,6 +57,8 @@ import {
   currentNotifyPermission,
 } from '@/hooks/useDoctorCallNotifier';
 import QuickRxBar, { isDoctor, RxConfirmedSummary } from './QuickRxBar';
+// T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2): 처방완료 펼침(읽기) 전문 — 약 1건당 '약물명 1/3/2' 토큰(RX-TOKEN-FORMAT SSOT).
+import { formatRxItemToken } from '@/lib/rxTooltip';
 import { recordAck, isDoctorAcked } from './DoctorAck';
 import { applyStatusFlagTransition, type FlagTransitionActor } from '@/lib/statusFlagTransition';
 import type { CheckIn } from '@/lib/types';
@@ -523,20 +525,20 @@ export default function DoctorCallDashboard() {
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-[15px]" data-testid="doctor-call-feed-table">
               {/* DOCDASH_COLGROUP — T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1(문지은 대표원장, MONOTONE 컬럼순서 supersede): 10칼럼, 합 100%.
-                  T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item③(문지은 대표원장): 방·상태·이름·생년 추가 압축 → 처방 미리보기만 확대.
-                  순서: 방 6 · 상태(✋) 10 · 이름 11 · 생년(만나이) 10 · 차트번호 9 · 오늘시술 11 · 차트 7 · 처방 18 · 임상경과 12 · 시간 6.
-                  (시간=AC-1 dev판단 기본보존, 맨 끝 append) */}
+                  T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-1): 식별컬럼군(방·상태·이름·생년·차트번호) 합 42%(≤절반).
+                  남는 58%를 본문(처방완료·임상경과)에 넓게 배분 — 처방 24 · 임상경과 14(최대 비중). 보조(오늘시술·차트·시간)는 최소.
+                  순서: 방 5 · 상태(✋) 9 · 이름 11 · 생년(만나이) 9 · 차트번호 8 · 오늘시술 9 · 차트 6 · 처방 24 · 임상경과 14 · 시간 5. */}
               <colgroup>
-                <col className="w-[6%]" />
-                <col className="w-[10%]" />
-                <col className="w-[11%]" />
-                <col className="w-[10%]" />
+                <col className="w-[5%]" />
                 <col className="w-[9%]" />
                 <col className="w-[11%]" />
-                <col className="w-[7%]" />
-                <col className="w-[18%]" />
-                <col className="w-[12%]" />
+                <col className="w-[9%]" />
+                <col className="w-[8%]" />
+                <col className="w-[9%]" />
                 <col className="w-[6%]" />
+                <col className="w-[24%]" />
+                <col className="w-[14%]" />
+                <col className="w-[5%]" />
               </colgroup>
               {/* DOCDASH_THEAD — CALLUX-3FIX AC-1: 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과·시간. */}
               <thead>
@@ -593,18 +595,19 @@ export default function DoctorCallDashboard() {
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-[15px]" data-testid="doctor-completed-table">
               {/* COMPLETED COLGROUP — T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1: 경과시간 제거(UX7 유지) + 생년 신설(9칼럼).
-                  T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item③(문지은 대표원장): 방·상태·이름·생년 추가 압축 → 처방 미리보기만 확대.
-                  순서·합 100%: 방6 · 상태(✋)11 · 이름12 · 생년(만나이)11 · 차트번호10 · 오늘시술12 · 차트8 · 처방18 · 임상경과12. */}
+                  T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-1): 식별컬럼군(방·상태·이름·생년·차트번호) 합 44%(≤절반).
+                  남는 56%를 본문(처방완료·임상경과)에 넓게 배분 — 처방 25 · 임상경과 16(최대 비중). 보조(오늘시술·차트)는 최소.
+                  순서·합 100%: 방5 · 상태(✋)10 · 이름12 · 생년(만나이)9 · 차트번호8 · 오늘시술9 · 차트6 · 처방25 · 임상경과16. */}
               <colgroup>
-                <col className="w-[6%]" />
-                <col className="w-[11%]" />
-                <col className="w-[12%]" />
-                <col className="w-[11%]" />
+                <col className="w-[5%]" />
                 <col className="w-[10%]" />
                 <col className="w-[12%]" />
+                <col className="w-[9%]" />
                 <col className="w-[8%]" />
-                <col className="w-[18%]" />
-                <col className="w-[12%]" />
+                <col className="w-[9%]" />
+                <col className="w-[6%]" />
+                <col className="w-[25%]" />
+                <col className="w-[16%]" />
               </colgroup>
               {/* COMPLETED THEAD — CALLUX-3FIX AC-1: 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과(시간 없음). */}
               <thead>
@@ -702,6 +705,11 @@ function CallFeedRow({
   );
   // T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④(문지은 대표원장): 임상경과 미리보기 셀 클릭 → 행 아래로 전체내용 펼침(읽기). 재클릭/외부클릭→접힘.
   const [expandClinical, setExpandClinical] = useState(false);
+  // T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2): 처방완료 본문 클릭 → 행 아래로 처방 전문 펼침(읽기). 임상경과 expand와 동일 메커니즘.
+  const [expandRx, setExpandRx] = useState(false);
+  const rxFullLines = Array.isArray(checkIn.prescription_items)
+    ? (checkIn.prescription_items as unknown[]).map((it) => formatRxItemToken(it))
+    : [];
 
   return (
     // T-20260613-foot-DOCDASH-MONOTONE-RELAYOUT AC-3 (문지은 대표원장): 행=환자, 9칼럼 재배치
@@ -842,6 +850,10 @@ function CallFeedRow({
                 plainText
                 /* T-20260613-foot-DOCDASH-CALLUX-3FIX AC-3: 처방완료 클릭 → 즉시취소 금지, 드롭다운(수정/취소). 귀가 환자 비활성. */
                 actionMenu
+                /* T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2/AC-3): 본문 클릭=펼침(읽기), 연필=빠른수정(차트 풀오픈 X)/취소. */
+                role={role}
+                onToggleExpand={() => setExpandRx((v) => !v)}
+                expanded={expandRx}
               />
             ) : (
               <>
@@ -949,6 +961,30 @@ function CallFeedRow({
           </td>
         </tr>
       )}
+
+      {/* T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2): 처방완료 본문 클릭 시 행 아래 처방 전문 펼침(읽기).
+          약 1건당 '약물명 1/3/2'(RX-TOKEN-FORMAT). 임상경과 expand와 동일 행 메커니즘(말줄임 없는 전문). 입력/수정은 별도(연필). */}
+      {expandRx && checkIn.prescription_status === 'confirmed' && (
+        <tr data-testid="doctor-call-rx-expand-row" className={inactive ? 'bg-gray-50/60' : 'bg-gray-50'}>
+          <td colSpan={DOCDASH_COLSPAN} className="px-3 pb-2 pt-0">
+            <div
+              className="rounded-md border border-sky-200 bg-white px-3 py-2 text-[13px] leading-relaxed text-gray-700"
+              data-testid="doctor-call-rx-expand"
+            >
+              <span className="mb-1 block text-[11px] font-semibold text-sky-700">처방 전체</span>
+              {rxFullLines.length > 0 ? (
+                <ul className="space-y-0.5">
+                  {rxFullLines.map((line, i) => (
+                    <li key={i} className="break-words">• {line}</li>
+                  ))}
+                </ul>
+              ) : (
+                <span className="text-gray-400">처방 내용 없음</span>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
     </>
   );
 }
@@ -992,6 +1028,11 @@ function CompletedRow({
   );
   // T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item④(문지은 대표원장): 임상경과 미리보기 셀 클릭 → 행 아래로 전체내용 펼침(읽기). 재클릭→접힘.
   const [expandClinical, setExpandClinical] = useState(false);
+  // T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2): 처방완료 본문 클릭 → 행 아래로 처방 전문 펼침(읽기).
+  const [expandRx, setExpandRx] = useState(false);
+  const rxFullLines = Array.isArray(checkIn.prescription_items)
+    ? (checkIn.prescription_items as unknown[]).map((it) => formatRxItemToken(it))
+    : [];
   // T-20260612-foot-DOCDASH-11FIX AC-9/AC-10: 귀가(true discharge) 판정 = QUICKRX-INCLINIC-GATE SSOT 재사용.
   //   status==='done' → 귀가(처방게이트 reason='discharged'). 그 외(원내 잔류) → 처방 버튼 유지(회귀 금지).
   const dischargeGate = checkRxInClinic({
@@ -1133,6 +1174,10 @@ function CompletedRow({
                 plainText
                 /* T-20260613-foot-DOCDASH-CALLUX-3FIX AC-3: 처방완료 클릭 → 즉시취소 금지, 드롭다운(수정/취소). 귀가 환자 비활성. */
                 actionMenu
+                /* T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2/AC-3): 본문 클릭=펼침(읽기), 연필=빠른수정(차트 풀오픈 X)/취소. */
+                role={role}
+                onToggleExpand={() => setExpandRx((v) => !v)}
+                expanded={expandRx}
               />
             ) : !discharged ? (
               <>
@@ -1231,6 +1276,29 @@ function CompletedRow({
               data-testid="doctor-completed-clinical-expand"
             >
               {clinicalPreview}
+            </div>
+          </td>
+        </tr>
+      )}
+
+      {/* T-20260614-foot-DOCPATIENTLIST-COLWIDTH-EXPAND-QUICKEDIT (AC-2): 처방완료 본문 클릭 시 행 아래 처방 전문 펼침(읽기, 완료 섹션 동일). */}
+      {expandRx && checkIn.prescription_status === 'confirmed' && (
+        <tr data-testid="doctor-completed-rx-expand-row" className="bg-gray-50">
+          <td colSpan={DOCDASH_COMPLETED_COLSPAN} className="px-3 pb-2 pt-0">
+            <div
+              className="rounded-md border border-sky-200 bg-white px-3 py-2 text-[13px] leading-relaxed text-gray-700"
+              data-testid="doctor-completed-rx-expand"
+            >
+              <span className="mb-1 block text-[11px] font-semibold text-sky-700">처방 전체</span>
+              {rxFullLines.length > 0 ? (
+                <ul className="space-y-0.5">
+                  {rxFullLines.map((line, i) => (
+                    <li key={i} className="break-words">• {line}</li>
+                  ))}
+                </ul>
+              ) : (
+                <span className="text-gray-400">처방 내용 없음</span>
+              )}
             </div>
           </td>
         </tr>
