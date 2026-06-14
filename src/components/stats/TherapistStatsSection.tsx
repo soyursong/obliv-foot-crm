@@ -121,17 +121,18 @@ export default function TherapistStatsSection({ summary, services, loading }: Pr
                 {servicesByTherapist.map((t) => {
                   const total = t.rows.reduce((s, r) => s + r.cnt, 0);
                   return (
-                    <div key={t.name} className="flex flex-col gap-2">
+                    <div key={t.name} className="flex flex-col gap-2" data-testid="svcdist-therapist-group">
                       {/* 치료사 그룹 헤더 (치료사 구분 식별) */}
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-sm">{t.name}</span>
                         <span className="text-xs text-muted-foreground">총 {total}건</span>
                       </div>
                       {/* 시술 박스 그리드: 데스크탑 4열, 태블릿 3열, 모바일 2열 */}
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2" data-testid="svcdist-box-grid">
                         {t.rows.map((r) => (
                           <div
                             key={r.treatment_type}
+                            data-testid="svcdist-box"
                             className="rounded-lg border bg-card p-2.5 flex flex-col gap-1.5"
                           >
                             <span className="inline-flex items-center self-start rounded-full bg-teal-50 text-teal-700 px-2 py-0.5 text-xs">
