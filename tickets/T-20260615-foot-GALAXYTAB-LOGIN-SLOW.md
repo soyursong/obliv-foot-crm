@@ -9,8 +9,9 @@ db-change: false
 regression-risk: low
 qa_result: pass
 deploy_commit: fa6dbc0
-deployed_at: null
-bundle_hash: null
+deployed_at: 2026-06-15T19:19:05+09:00
+bundle_hash: vendor-utils-BcCOj9p0
+deploy_verified_note: "FIX MSG-20260615-185858-2yx6: supervisor 18:58 검증 시 deploy-lag 윈도우(fa6dbc0 push 18:51 직후 Vercel 빌드 in-flight)로 prod alias 가 직전 빌드(4dc15f9) 서빙 중이었음. 19:19 배포(dpl_48agRX7WrzG6T6DK29p3tvCJewjF, Ready) 완료로 prod alias 갱신. 현 prod 번들 검증: vendor-utils-BcCOj9p0.js modulepreload 존재 + vendor-charts critical-path 0건 = 로컬 빌드 출력 동일 해시. 코드 무변경(순수 배포 lag)."
 e2e-spec: tests/e2e/T-20260615-foot-GALAXYTAB-LOGIN-SLOW.spec.ts
 e2e_spec_exempt_reason: null
 db-gate-handoff: null
