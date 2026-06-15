@@ -126,6 +126,8 @@ export function ReservationDetailPopup({
   onCreateReservation,
   newMode = false,
   clinicId = null,
+  initialDate = null,
+  initialTime = null,
 }: {
   reservation: Reservation | null;
   noshowCount: number;
@@ -146,6 +148,11 @@ export function ReservationDetailPopup({
   //   🔒 L-002(개정): 팝업은 이 parent 콜백만 호출 — 팝업 내 reservations.insert = 0. 생성 무결성 5요소는
   //   parent 의 단일소스 createReservationCanonical 내부에 보존. 미전달 시 검색창/new-mode 숨겨 graceful degrade.
   onCreateReservation?: (params: CreateReservationParams) => Promise<{ ok: boolean; reason?: string; message?: string }>;
+  // T-20260615-foot-RESVMGMT-REFIX-8 AC3 (planner GO · 🔒L-002/L-004 준수): 캘린더 빈슬롯 (+) → new-mode 진입 시
+  //   클릭한 슬롯의 날짜·시간 prefill. 상단 '새 예약' 버튼은 미전달(null) → 빈 진입(기존 동작 불변).
+  //   생성 capability·affordance 는 팝업 new-mode 폼이 그대로 보존 — 진입 '배선'만 통일(구 ReservationEditor 스폰 폐기).
+  initialDate?: string | null;   // 'yyyy-MM-dd'
+  initialTime?: string | null;   // 'HH:mm'
 }) {
   // ── 액션 상태
   const [busy, setBusy] = useState(false);
@@ -177,6 +184,11 @@ export function ReservationDetailPopup({
   // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: B 로드 시 '팝업 안에서' 신규예약 생성하는 new-mode 입력 상태.
   //   날짜=pickedDate(미니캘린더), 시간=newResvTime, 초/재=newResvVisitType. 생성은 onCreateReservation 위임(팝업 insert 0).
   const [newResvTime, setNewResvTime] = useState<string>('10:00');
+  // T-20260615-foot-RESVMGMT-REFIX-8 AC3: 빈슬롯 (+) prefill 시간이 클리닉 슬롯간격(예 15/20분)이라 30분 고정
+  //   NEW_RESV_TIME_SLOTS 에 없을 수 있음 → 현재 값을 옵션에 합류시켜 controlled select 가 빈 표시되지 않게 보강.
+  const newResvTimeOptions = NEW_RESV_TIME_SLOTS.includes(newResvTime)
+    ? NEW_RESV_TIME_SLOTS
+    : [...NEW_RESV_TIME_SLOTS, newResvTime].sort();
   const [newResvVisitType, setNewResvVisitType] = useState<'new' | 'returning'>('returning');
   const [creatingResv, setCreatingResv] = useState(false);
 
@@ -318,12 +330,19 @@ export function ReservationDetailPopup({
       setLoadedMatch(null);
       setCustomer(null);
       setSearchValue('');
-      setPickedDate(null);
-      setNewResvTime('10:00');
+      // T-20260615-foot-RESVMGMT-REFIX-8 AC3: 빈슬롯 (+) 진입이면 클릭 슬롯의 날짜/시간 prefill,
+      //   상단 '새 예약'(initial 미전달)이면 기존대로 빈 진입(null / '10:00'). 'yyyy-MM-dd' → 로컬 자정 Date(타임존 드리프트 0).
+      if (initialDate) {
+        const [y, m, d] = initialDate.split('-').map(Number);
+        setPickedDate(new Date(y, m - 1, d));
+      } else {
+        setPickedDate(null);
+      }
+      setNewResvTime(initialTime || '10:00');
       setNewResvVisitType('returning');
       setCreatingResv(false);
     }
-  }, [newMode]);
+  }, [newMode, initialDate, initialTime]);
 
   useEffect(() => {
     if (!reservation) {
@@ -513,7 +532,7 @@ export function ReservationDetailPopup({
                         className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         data-testid="newmode-time-select-entry"
                       >
-                        {NEW_RESV_TIME_SLOTS.map((t) => (
+                        {newResvTimeOptions.map((t) => (
                           <option key={t} value={t}>{t}</option>
                         ))}
                       </select>
@@ -1168,7 +1187,7 @@ export function ReservationDetailPopup({
                         className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         data-testid="newmode-time-select"
                       >
-                        {NEW_RESV_TIME_SLOTS.map((t) => (
+                        {newResvTimeOptions.map((t) => (
                           <option key={t} value={t}>{t}</option>
                         ))}
                       </select>
