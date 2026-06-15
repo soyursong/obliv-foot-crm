@@ -24,13 +24,19 @@
     --font-sans: 'Pretendard', sans-serif;
     --font-heading: var(--font-sans);
 
-    /* ── T-20260614-foot-THEME-MONOCHROME-RECOLOR (StepF 재오픈 정정) ───────────────
-       재오픈(2026-06-15 김주연 총괄): 직전 warm-monochrome가 배경/카드/일반영역까지
-       Vanilla·Soft Dune 베이지로 깔려 "너무 베이지함" → 일반영역=순수 흰색/중립 그레이 복원.
-       베이지·브라운(Umber/Taupe)은 버튼·활성탭·포커스 등 강조 포인트에만 최소 유지.
-         · 일반영역(배경/카드/팝오버/보조면/muted/accent/보더): white·neutral gray (hue 0)
-         · 강조 포인트(primary=Umber·ring=Taupe): warm 브라운 유지
-       의미색(--status-*, --destructive, --chart-*)은 유지(AC4). */
+    /* ── T-20260615-foot-THEME-WHITE-RESTORE-BEIGE-OVERREACH (base 화이트 복원 — 공식 소유 티켓) ──
+       선행 정정 T-20260614-foot-THEME-MONOCHROME-RECOLOR(StepF 재오픈) 위에서 본 티켓이
+       base 화이트 모노톤 방향을 공식 확정·소유한다.
+       reporter(김주연 총괄, 2026-06-15): "모노톤 요청했는데 베이지 범벅" → warm-monochrome가
+       배경/카드/일반영역까지 Vanilla·Soft Dune 베이지로 깔린 것을 회수, 일반영역=순수 흰색/중립
+       그레이 복원. 베이지·브라운(Umber/Taupe)은 버튼·활성탭·포커스 등 강조 포인트에만 최소 유지.
+         · AC1/AC2 일반영역(배경/카드/팝오버/보조면/muted/accent/보더): white·neutral gray (hue 0)
+         · AC3 강조 포인트(primary=Umber·ring=Taupe): warm 브라운 최소 액센트만
+         · AC4 의미색(--status-*, --destructive, --chart-*)은 유지(미치환)
+         · AC5 .theme-brown(셀프접수)·.dark 비침범
+       [가역 보존] supersede된 warm-base 매핑(추후 reporter가 warm-base 재요청 시 재매핑용, 토큰 삭제 금지):
+         --background = Vanilla  #F8F4EE / oklch(0.965 0.008 75)
+         --secondary/--accent/--border/--muted = Soft Dune #E4DDCC / oklch(0.90 0.018 85) */
 
     /* Background / Surface — 순수 흰색 복원(재오픈). 카드/팝오버도 흰색. */
     --background: oklch(1 0 0);
