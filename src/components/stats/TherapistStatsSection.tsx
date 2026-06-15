@@ -13,6 +13,9 @@ interface Props {
 
 const BAR_COLORS = ['#0d9488', '#14b8a6', '#2dd4bf', '#5eead4', '#99f6e4', '#f59e0b', '#10b981'];
 
+// 지표2: 시술 4종 정규 순서 (0건도 한 줄로 표기해 카드 높이/구성 일관 유지)
+const TREATMENT_TYPES = ['비가열', '가열', '포돌로게', 'Re:Born'] as const;
+
 function EmptyOrLoading({ loading }: { loading: boolean }) {
   return (
     <div className="text-center text-sm text-muted-foreground py-12">
@@ -117,36 +120,51 @@ export default function TherapistStatsSection({ summary, services, loading }: Pr
             {loading || servicesByTherapist.length === 0 ? (
               <EmptyOrLoading loading={loading} />
             ) : (
-              <div className="flex flex-col gap-5">
+              /* 박스 1개 = 치료사 1명 (회색 카드). 데스크탑 4열, 태블릿 3열, 모바일 2열 */
+              <div
+                className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"
+                data-testid="svcdist-box-grid"
+              >
                 {servicesByTherapist.map((t) => {
                   const total = t.rows.reduce((s, r) => s + r.cnt, 0);
+                  // 시술 4종 정규 순서로 정렬 (없는 종류는 0건으로 채워 누락 방지)
+                  const byType = new Map(t.rows.map((r) => [r.treatment_type, r]));
+                  const lines = TREATMENT_TYPES.map((type) => {
+                    const r = byType.get(type);
+                    return {
+                      type,
+                      cnt: r?.cnt ?? 0,
+                      avg_minutes: r?.avg_minutes ?? null,
+                    };
+                  });
                   return (
-                    <div key={t.name} className="flex flex-col gap-2" data-testid="svcdist-therapist-group">
-                      {/* 치료사 그룹 헤더 (치료사 구분 식별) */}
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-sm">{t.name}</span>
-                        <span className="text-xs text-muted-foreground">총 {total}건</span>
+                    <div
+                      key={t.name}
+                      data-testid="svcdist-box"
+                      className="rounded-lg bg-muted/70 border p-3 flex flex-col gap-2"
+                    >
+                      {/* 카드 헤더: 치료사명 + 총 N건 */}
+                      <div className="flex items-baseline justify-between gap-2 border-b pb-2">
+                        <span className="font-semibold text-sm truncate">{t.name}</span>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          총 {total}건
+                        </span>
                       </div>
-                      {/* 시술 박스 그리드: 데스크탑 4열, 태블릿 3열, 모바일 2열 */}
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2" data-testid="svcdist-box-grid">
-                        {t.rows.map((r) => (
+                      {/* 카드 본문: 시술 4종 각각 한 줄 (시술명 · N건 · 평균 N.N분) */}
+                      <div className="flex flex-col gap-1.5">
+                        {lines.map((l) => (
                           <div
-                            key={r.treatment_type}
-                            data-testid="svcdist-box"
-                            className="rounded-lg border bg-card p-2.5 flex flex-col gap-1.5"
+                            key={l.type}
+                            data-testid="svcdist-line"
+                            className="flex items-baseline justify-between gap-2 text-xs"
                           >
-                            <span className="inline-flex items-center self-start rounded-full bg-teal-50 text-teal-700 px-2 py-0.5 text-xs">
-                              {r.treatment_type}
+                            <span className="text-muted-foreground truncate">{l.type}</span>
+                            <span className="tabular-nums whitespace-nowrap">
+                              <span className="font-semibold text-foreground">{l.cnt}</span>건
+                              <span className="text-muted-foreground ml-1.5">
+                                평균 {l.avg_minutes != null ? `${l.avg_minutes.toFixed(1)}분` : '-'}
+                              </span>
                             </span>
-                            <div className="flex items-baseline justify-between">
-                              <span className="text-lg font-semibold tabular-nums leading-none">
-                                {r.cnt}
-                                <span className="text-xs font-normal text-muted-foreground ml-0.5">건</span>
-                              </span>
-                              <span className="text-xs tabular-nums text-muted-foreground">
-                                {r.avg_minutes != null ? `${r.avg_minutes.toFixed(1)}분` : '-'}
-                              </span>
-                            </div>
                           </div>
                         ))}
                       </div>
