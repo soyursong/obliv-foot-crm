@@ -1017,13 +1017,28 @@ export default function Reservations() {
             .select('id')
             .single();
           if (error) {
-            return {
-              ok: false,
-              reason: 'error',
-              message: error.code === '23505' ? '이미 등록된 전화번호입니다' : `고객 생성 실패: ${error.message}`,
-            };
+            // T-20260615-foot-RESVMGMT-REFIX-8 AC3-b GUARD (MSG-20260615-155718, zkp7 value-add):
+            //   foot customers (clinic_id, phone) = FULL UNIQUE (cross_crm_data_contract §1-3-1).
+            //   현장이 검색에서 못 찾았을 뿐 실제 존재(번호 표기·정규화 차이) → 23505 unique_violation.
+            //   find-or-create 표준 = 충돌 시 에러로 막지 말고 기존 고객을 재-resolve 해 재사용.
+            if (error.code === '23505') {
+              const { data: conflictHit } = await supabase
+                .from('customers')
+                .select('id')
+                .eq('clinic_id', clinic.id)
+                .eq('phone', normalized)
+                .maybeSingle();
+              if (conflictHit) {
+                resolvedCustomerId = conflictHit.id as string;
+              } else {
+                return { ok: false, reason: 'error', message: '이미 등록된 전화번호입니다' };
+              }
+            } else {
+              return { ok: false, reason: 'error', message: `고객 생성 실패: ${error.message}` };
+            }
+          } else {
+            resolvedCustomerId = (created as { id: string }).id;
           }
-          resolvedCustomerId = (created as { id: string }).id;
         }
       }
       if (!resolvedCustomerId) {
@@ -2644,11 +2659,12 @@ function ReservationEditor({
     let customerId: string | null = state.customer_id ?? null;
 
     if (!customerId && state.phone.trim()) {
+      const normalizedCreatePhone = normalizeToE164(state.phone) ?? state.phone.trim();
       const { data: existing } = await supabase
         .from('customers')
         .select('id')
         .eq('clinic_id', clinicId)
-        .eq('phone', normalizeToE164(state.phone) ?? state.phone.trim())
+        .eq('phone', normalizedCreatePhone)
         .maybeSingle();
       if (existing) customerId = existing.id as string;
       else {
@@ -2657,17 +2673,36 @@ function ReservationEditor({
           .insert({
             clinic_id: clinicId,
             name: state.name.trim(),
-            phone: normalizeToE164(state.phone) ?? state.phone.trim(),
+            phone: normalizedCreatePhone,
             visit_type: state.visit_type === 'new' ? 'new' : 'returning',
           })
           .select('id')
           .single();
         if (error) {
-          toast.error(error.code === '23505' ? '이미 등록된 전화번호입니다' : `고객 생성 실패: ${error.message}`);
-          setSubmitting(false);
-          return;
+          // T-20260615-foot-RESVMGMT-REFIX-8 AC3-b GUARD parity (MSG-20260615-155718):
+          //   customers (clinic_id, phone) FULL UNIQUE — 23505 시 에러로 막지 말고 기존 고객 재-resolve 해 재사용.
+          if (error.code === '23505') {
+            const { data: conflictHit } = await supabase
+              .from('customers')
+              .select('id')
+              .eq('clinic_id', clinicId)
+              .eq('phone', normalizedCreatePhone)
+              .maybeSingle();
+            if (conflictHit) {
+              customerId = conflictHit.id as string;
+            } else {
+              toast.error('이미 등록된 전화번호입니다');
+              setSubmitting(false);
+              return;
+            }
+          } else {
+            toast.error(`고객 생성 실패: ${error.message}`);
+            setSubmitting(false);
+            return;
+          }
+        } else {
+          customerId = (created as { id: string }).id;
         }
-        customerId = (created as { id: string }).id;
       }
     }
 
