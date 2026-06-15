@@ -276,7 +276,7 @@ function CustomerStorageImageSection({
   };
 
   const accentMap = {
-    blue:   { header: 'bg-blue-50 border-blue-200 text-blue-800', dot: 'bg-blue-500', btn: 'text-blue-700 border-blue-200 hover:bg-blue-50' },
+    blue:   { header: 'bg-slate-50 border-slate-200 text-slate-800', dot: 'bg-slate-500', btn: 'text-slate-700 border-slate-200 hover:bg-slate-50' },
     green:  { header: 'bg-green-50 border-green-200 text-green-800', dot: 'bg-green-500', btn: 'text-green-700 border-green-200 hover:bg-green-50' },
     orange: { header: 'bg-amber-50 border-amber-200 text-amber-800', dot: 'bg-amber-500', btn: 'text-amber-700 border-amber-200 hover:bg-amber-50' },
   };
@@ -1243,7 +1243,7 @@ function TreatmentImagesSection({
 
   const TYPE_LABEL: Record<TreatImgType, string> = { before: '시술 전', after: '시술 후', photo: '기타' };
   const TYPE_COLOR: Record<TreatImgType, string> = {
-    before: 'bg-blue-100 text-blue-700',
+    before: 'bg-slate-100 text-slate-700',
     after:  'bg-emerald-100 text-emerald-700',
     photo:  'bg-gray-100 text-gray-600',
   };
@@ -1473,7 +1473,7 @@ function TreatmentImagesSection({
                   setUploadTypeDialogOpen(false);
                   fileInputRef.current?.click();
                 }}
-                className="flex flex-col items-center gap-2 px-7 py-5 rounded-2xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-bold transition min-w-[100px]"
+                className="flex flex-col items-center gap-2 px-7 py-5 rounded-2xl bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white text-sm font-bold transition min-w-[100px]"
               >
                 <Upload className="h-6 w-6" />
                 시술 전
@@ -1529,7 +1529,7 @@ function TreatmentImagesSection({
               <div className="flex gap-4">
                 <button
                   onClick={() => selectTypeAndStart('before')}
-                  className="flex flex-col items-center gap-2 px-10 py-6 rounded-2xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-lg font-bold transition min-w-[140px]"
+                  className="flex flex-col items-center gap-2 px-10 py-6 rounded-2xl bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white text-lg font-bold transition min-w-[140px]"
                 >
                   <Camera className="h-8 w-8" />
                   시술 전
@@ -1607,7 +1607,7 @@ function TreatmentImagesSection({
                 )}
                 {/* 분류 배지 */}
                 <div className="absolute top-4 left-4 z-10">
-                  <span className={`text-sm font-bold rounded-full px-3 py-1 ${cameraType === 'before' ? 'bg-blue-600 text-white' : 'bg-emerald-600 text-white'}`}>
+                  <span className={`text-sm font-bold rounded-full px-3 py-1 ${cameraType === 'before' ? 'bg-slate-600 text-white' : 'bg-emerald-600 text-white'}`}>
                     {cameraType === 'before' ? '시술 전' : '시술 후'}
                   </span>
                 </div>
@@ -4223,7 +4223,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   <td className={VC} colSpan={3}>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-sm text-gray-900">{customer.name}</span>
-                      <span className="rounded border border-blue-300 bg-blue-50 text-blue-700 px-1.5 py-0.5 text-[10px] cursor-default select-none">검증</span>
+                      <span className="rounded border border-slate-300 bg-slate-50 text-slate-700 px-1.5 py-0.5 text-[10px] cursor-default select-none">검증</span>
                       {/* T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 고객번호 항상 표시(미발번도 명시) */}
                       <span className="text-[11px] text-muted-foreground">
                         고객번호: <strong className="text-gray-700">{chartNoDisplay(customer.chart_number)}</strong>
@@ -4350,7 +4350,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         className={cn(
                           'inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] transition',
                           customer.hira_consent
-                            ? 'border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer'
+                            ? 'border-slate-400 bg-slate-50 text-slate-700 hover:bg-slate-100 cursor-pointer'
                             : 'border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed',
                         )}
                       >
@@ -4400,11 +4400,11 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                           >
                             <span className={cn(
                               'h-3.5 w-3.5 rounded-full border-2 flex items-center justify-center',
-                              sel ? 'border-blue-600' : 'border-gray-400',
+                              sel ? 'border-slate-600' : 'border-gray-400',
                             )}>
-                              {sel && <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />}
+                              {sel && <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />}
                             </span>
-                            <span className={sel ? 'font-medium text-blue-700' : 'text-gray-600'}>{label}</span>
+                            <span className={sel ? 'font-medium text-slate-700' : 'text-gray-600'}>{label}</span>
                           </button>
                         );
                       })}
@@ -4569,7 +4569,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       />
                       <button
                         onClick={openKakaoPostcode}
-                        className="rounded border border-blue-400 bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 hover:bg-blue-100 transition shrink-0"
+                        className="rounded border border-slate-400 bg-slate-50 text-slate-700 text-[10px] px-1.5 py-0.5 hover:bg-slate-100 transition shrink-0"
                       >
                         주소검색
                       </button>
@@ -5383,10 +5383,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                 {/* 메모 유형 배지 (AC-2) */}
                                 <div className="flex items-center gap-1 shrink-0">
                                   {hasTreatMemo && (
-                                    <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[9px] text-blue-700">치료</span>
+                                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-700">치료</span>
                                   )}
                                   {hasDoctorNote && (
-                                    <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[9px] text-violet-700">진료</span>
+                                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-700">진료</span>
                                   )}
                                   {hasSpecial && (
                                     <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] text-amber-700 font-semibold">특이</span>
@@ -5474,16 +5474,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                                   {/* 치료메모 (AC-2: 치료메모=treatment_memo.details) */}
                                   {hasTreatMemo && (
                                     <div>
-                                      <div className="text-[10px] font-semibold text-blue-600 mb-0.5 uppercase tracking-wide">치료메모</div>
-                                      <div className="rounded bg-blue-50 border border-blue-100 px-2 py-1.5 text-gray-800 whitespace-pre-wrap">{treatDetails}</div>
+                                      <div className="text-[10px] font-semibold text-slate-600 mb-0.5 uppercase tracking-wide">치료메모</div>
+                                      <div className="rounded bg-slate-50 border border-slate-100 px-2 py-1.5 text-gray-800 whitespace-pre-wrap">{treatDetails}</div>
                                     </div>
                                   )}
 
                                   {/* 진료메모 (AC-2: 진료메모=doctor_note) */}
                                   {hasDoctorNote && (
                                     <div>
-                                      <div className="text-[10px] font-semibold text-violet-600 mb-0.5 uppercase tracking-wide">진료메모</div>
-                                      <div className="rounded bg-violet-50 border border-violet-100 px-2 py-1.5 text-gray-800 whitespace-pre-wrap">{doctorNote}</div>
+                                      <div className="text-[10px] font-semibold text-slate-600 mb-0.5 uppercase tracking-wide">진료메모</div>
+                                      <div className="rounded bg-slate-50 border border-slate-100 px-2 py-1.5 text-gray-800 whitespace-pre-wrap">{doctorNote}</div>
                                     </div>
                                   )}
 
@@ -5876,8 +5876,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
 
               {/* ── 그룹2: 환불 / 비급여 동의서 — AC-R1/R2: 합본 기준 단일 상태 ── */}
               <div className="rounded-lg border bg-white p-3 text-xs">
-                <div className="flex items-center gap-1.5 font-bold text-purple-800 mb-2">
-                  <span className="h-2 w-2 rounded-full bg-purple-500" />
+                <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-2">
+                  <span className="h-2 w-2 rounded-full bg-slate-500" />
                   환불 / 비급여 동의서
                 </div>
                 {/* AC-R2: 개별 서브항목 제거 → 합본 단일 상태 */}
@@ -5896,9 +5896,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     return dateEntry ? format(new Date(dateEntry.signed_at), 'MM-dd') : null;
                   })();
                   return (
-                    <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${done ? 'bg-purple-50' : 'bg-gray-50'}`}>
-                      <span className={done ? 'text-purple-600' : 'text-gray-300'}>{done ? '✓' : '○'}</span>
-                      <span className={done ? 'text-purple-700 font-medium' : 'text-muted-foreground'}>합본 양식 (환불 + 비급여)</span>
+                    <div className={`flex items-center gap-2 rounded px-2 py-1 mb-2 ${done ? 'bg-slate-50' : 'bg-gray-50'}`}>
+                      <span className={done ? 'text-slate-600' : 'text-gray-300'}>{done ? '✓' : '○'}</span>
+                      <span className={done ? 'text-slate-700 font-medium' : 'text-muted-foreground'}>합본 양식 (환불 + 비급여)</span>
                       {done && dateStr && <span className="ml-auto text-muted-foreground text-[10px]">{dateStr}</span>}
                     </div>
                   );
@@ -5908,7 +5908,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   <button
                     type="button"
                     onClick={() => { handleClinicalTab('pen_chart'); }}
-                    className="flex-1 rounded border border-purple-200 bg-purple-50 py-1 text-[10px] font-medium text-purple-600 hover:bg-purple-100 transition"
+                    className="flex-1 rounded border border-slate-200 bg-slate-50 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-100 transition"
                     title="펜차트 탭에서 작성"
                   >펜차트에서 작성</button>
                   <button
@@ -6258,8 +6258,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             <div className="space-y-3">
               {/* 메시지 수동 입력 */}
               <div className="rounded-lg border bg-white p-3 text-xs">
-                <div className="flex items-center gap-1.5 font-bold text-sky-800 mb-2">
-                  <span className="h-2 w-2 rounded-full bg-sky-500" />
+                <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-2">
+                  <span className="h-2 w-2 rounded-full bg-slate-500" />
                   문자 이력 등록
                 </div>
                 <div className="space-y-2">
@@ -6284,7 +6284,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                     />
                     <Button
                       size="sm"
-                      className="h-7 text-[11px] px-3 bg-sky-600 hover:bg-sky-700 shrink-0"
+                      className="h-7 text-[11px] px-3 bg-slate-600 hover:bg-slate-700 shrink-0"
                       disabled={savingMessage || !messageForm.content.trim()}
                       onClick={async () => {
                         if (!messageForm.content.trim() || !customer) return;
@@ -6772,7 +6772,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                       className={cn(
                         'flex-1 rounded py-1.5 text-[10px] font-medium transition disabled:opacity-50',
                         isActive
-                          ? 'bg-blue-500 text-white hover:bg-blue-600'
+                          ? 'bg-slate-500 text-white hover:bg-slate-600'
                           : 'bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100',
                       )}
                     >
@@ -6801,18 +6801,18 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   activeTimer
                     ? timerRemainingSecs <= 60
                       ? 'border-red-400 bg-red-50'
-                      : 'border-blue-300 bg-blue-50'
+                      : 'border-slate-300 bg-slate-50'
                     : 'border-muted bg-muted/20'
                 }`}
                 data-testid="laser-timer-panel"
               >
                 <div className="flex items-center gap-1.5">
-                  <Timer className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-                  <span className="text-[11px] font-semibold text-blue-700">비가열 레이저 타이머</span>
+                  <Timer className="h-3.5 w-3.5 text-slate-600 shrink-0" />
+                  <span className="text-[11px] font-semibold text-slate-700">비가열 레이저 타이머</span>
                   {activeTimer && (
                     <span
                       className={`ml-auto tabular-nums font-mono text-base font-bold ${
-                        timerRemainingSecs <= 60 ? 'text-red-600' : 'text-blue-700'
+                        timerRemainingSecs <= 60 ? 'text-red-600' : 'text-slate-700'
                       }`}
                       data-testid="laser-timer-countdown"
                     >
@@ -6830,7 +6830,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                         type="button"
                         disabled={timerLoading}
                         onClick={() => handleStartTimer(min)}
-                        className="flex-1 rounded-lg border-2 border-blue-400 bg-white text-blue-700 font-bold text-sm py-2 hover:bg-blue-50 active:bg-blue-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-1 rounded-lg border-2 border-slate-400 bg-white text-slate-700 font-bold text-sm py-2 hover:bg-slate-50 active:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         data-testid={`laser-timer-btn-${min}`}
                       >
                         {timerLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin mx-auto" /> : `${min}분`}
@@ -6840,10 +6840,10 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 ) : (
                   /* 타이머 실행 중 — 진행 바 + 중지 버튼 */
                   <div className="space-y-1.5">
-                    <div className="w-full h-1.5 rounded-full bg-blue-100 overflow-hidden">
+                    <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all ${
-                          timerRemainingSecs <= 60 ? 'bg-red-500' : 'bg-blue-500'
+                          timerRemainingSecs <= 60 ? 'bg-red-500' : 'bg-slate-500'
                         }`}
                         style={{
                           width: `${Math.min(100, (timerRemainingSecs / (activeTimer.duration_minutes * 60)) * 100)}%`,
@@ -7448,13 +7448,13 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                             ? 'border-dashed border-teal-200 bg-teal-50/30 hover:bg-teal-50 hover:border-teal-400 transition'
                             : isFull
                               ? 'border-red-200 bg-red-50/40'
-                              : 'border-blue-100 bg-blue-50/20',
+                              : 'border-slate-100 bg-slate-50/20',
                         )}
                       >
                         <div className="flex items-center gap-2">
                           <span className="w-12 shrink-0 font-mono font-medium text-gray-700">{time}</span>
                           {count > 0 && (
-                            <span className={cn('text-[10px]', isFull ? 'text-red-600 font-semibold' : 'text-blue-600')}>
+                            <span className={cn('text-[10px]', isFull ? 'text-red-600 font-semibold' : 'text-slate-600')}>
                               {count}/12
                             </span>
                           )}
@@ -7477,7 +7477,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                             key={i}
                             className="ml-14 mt-0.5 flex items-center gap-1.5 text-[10px] text-gray-600"
                           >
-                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-400" />
+                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
                             <span className="font-medium">{b.name}</span>
                             <span className="text-muted-foreground">
                               {VISIT_TYPE_KO[b.visit_type]}
@@ -7856,7 +7856,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               {!submissionImagesLoading && submissionImages.length > 0 && (
                 <div className="space-y-3">
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
-                    <span className="h-1.5 w-1.5 rounded-full bg-purple-400" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
                     보험차트 저장 양식
                   </div>
                   {submissionImages.map((img, i) => (
@@ -7919,8 +7919,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 <>
                   {(['non_covered', 'refund'] as const).map((fType) =>
                     consentEntries.filter((c) => c.form_type === fType).map((c, i) => (
-                      <div key={`${fType}-${i}`} className="rounded-lg border bg-purple-50 p-3">
-                        <div className="font-semibold text-purple-800 mb-1">{FORM_TITLES[fType]} (이전 방식)</div>
+                      <div key={`${fType}-${i}`} className="rounded-lg border bg-slate-50 p-3">
+                        <div className="font-semibold text-slate-800 mb-1">{FORM_TITLES[fType]} (이전 방식)</div>
                         <div className="text-muted-foreground">{format(new Date(c.signed_at), 'yyyy-MM-dd HH:mm')} 서명 완료</div>
                       </div>
                     ))

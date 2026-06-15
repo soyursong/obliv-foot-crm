@@ -47,7 +47,11 @@ export const PART_OPTIONS: PartOption[] = [
   { code: '공통', label: '공통', color: 'indigo' },
   { code: 'consultant_lead', label: '상담실장', color: 'rose' },
   { code: 'coordinator', label: '코디', color: 'amber' },
-  { code: 'therapist', label: '치료사', color: 'teal' },
+  // T-20260615-foot-THEME-MONO-REFINE-3AREA AC3: 치료사 part 색을 teal→green 으로 정정.
+  // 부모 THEME-MONOCHROME-RECOLOR 가 teal-* 전역을 warm-monochrome(brown/olive) 램프로 스윕하면서
+  // teal 기반이던 치료사 의미색까지 brown 으로 침범. 출근자 칩(staffRoleCardClass.therapist=green)과
+  // 어긋남 → green 계열로 통일(녹색 원복). green/emerald 는 부모가 의미색 carve-out 으로 미스윕.
+  { code: 'therapist', label: '치료사', color: 'green' },
 ];
 
 export function partLabel(code: string): string {
@@ -63,7 +67,8 @@ export const PART_BADGE_CLASS: Record<string, string> = {
   '공통': 'bg-indigo-100 text-indigo-700',
   consultant_lead: 'bg-rose-100 text-rose-700',
   coordinator: 'bg-amber-100 text-amber-700',
-  therapist: 'bg-teal-100 text-teal-700',
+  // T-20260615-foot-THEME-MONO-REFINE-3AREA AC3: teal→green (출근자 칩 green 정합 + brown 침범 정정)
+  therapist: 'bg-green-100 text-green-700',
 };
 
 export function partBadgeClass(code: string): string {
@@ -75,7 +80,8 @@ export function partBadgeClass(code: string): string {
  * T-20260609-foot-HANDOVER-PARTBOX-COLOR: 배지(PART_BADGE_CLASS)에만 색이 있고
  *   박스 섹션엔 색이 없어(흰 배경) 김주연 총괄 지적 → 박스에도 파트 색 적용.
  * 색값 SSOT 재사용(신규 색 도입 금지): partColor/PART_BADGE_CLASS 와 동일 색계열
- *   (consultant_lead=rose / coordinator=amber / therapist=teal / 공통=indigo).
+ *   (consultant_lead=rose / coordinator=amber / therapist=green / 공통=indigo).
+ *   T-20260615-foot-THEME-MONO-REFINE-3AREA AC3: therapist teal→green 정정.
  * 박스는 배지보다 연한 톤(bg-*-50/border-*-200)으로 글자 가독성 유지.
  * 정적 매핑(literal class)이라 Tailwind JIT purge 안전.
  */
@@ -83,7 +89,8 @@ export const PART_BOX_CLASS: Record<string, string> = {
   '공통': 'bg-indigo-50 border-indigo-200',
   consultant_lead: 'bg-rose-50 border-rose-200',
   coordinator: 'bg-amber-50 border-amber-200',
-  therapist: 'bg-teal-50 border-teal-200',
+  // T-20260615-foot-THEME-MONO-REFINE-3AREA AC3: teal→green
+  therapist: 'bg-green-50 border-green-200',
 };
 
 export function partBoxClass(code: string): string {

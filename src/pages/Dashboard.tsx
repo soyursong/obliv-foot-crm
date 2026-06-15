@@ -1370,11 +1370,12 @@ function TimelineCheckInCard({
     ...(isNoShow ? { boxShadow: 'inset 3px 0 0 var(--status-noshow-dim)' } : {}),
   };
 
-  // 2번 박스 활성화 스타일: 방문유형별 컬러 (초진=노랑, 재진=초록)
-  // 스크린샷 pixel-level 매칭 — 셀프접수 완료 또는 스탭 체크인 후 활성 표시
+  // 2번 박스 활성화 스타일: 방문유형 구분 — T-20260615-foot-THEME-MONO-REFINE-3AREA AC1
+  // 초진=노랑/재진=초록 의미색(배경 채도) 제거 → 모노톤. 구분은 텍스트(초 배지)+보더 두께로만.
+  //   초진 = 흰 배경 + 진한 보더(gray-400), 재진 = 옅은 회색 배경(gray-50) + 옅은 보더(gray-300).
   const box2Cls = visitType === 'returning'
-    ? 'border-green-300 bg-green-50 hover:bg-green-100'
-    : 'border-yellow-300 bg-yellow-50 hover:bg-yellow-100';
+    ? 'border-gray-300 bg-gray-50 hover:bg-gray-100'
+    : 'border-gray-400 bg-white hover:bg-gray-100';
 
   return (
     <div
@@ -1401,11 +1402,11 @@ function TimelineCheckInCard({
       }}
     >
       {showBadge && (
-        <span className="shrink-0 bg-yellow-300 text-yellow-900 text-[9px] px-0.5 rounded leading-tight font-bold">
+        <span className="shrink-0 bg-gray-300 text-gray-800 text-[9px] px-0.5 rounded leading-tight font-bold">
           초
         </span>
       )}
-      <span className={cn('truncate', visitType === 'returning' ? 'text-green-900' : 'text-yellow-900')}>{cardDisplayName(checkIn)}</span>
+      <span className={cn('truncate', visitType === 'returning' ? 'text-gray-800' : 'text-gray-900')}>{cardDisplayName(checkIn)}</span>
       {/* T-20260514-foot-CHART-NO-VISIBLE: 차트번호 상시 표시 */}
       {timelineChartNum && (
         <span className="text-[9px] font-mono text-teal-600 shrink-0">#{timelineChartNum}</span>
@@ -1453,13 +1454,14 @@ function Box1Card({ name, phone }: { name: string; phone: string }) {
   const tail = (phone ?? '').replace(/\D/g, '').slice(-4) || '????';
   return (
     <div
-      className="flex items-center gap-1 rounded border border-yellow-400 bg-yellow-50 px-2 py-1 text-[10px] w-full select-none cursor-default"
+      className="flex items-center gap-1 rounded border border-gray-400 bg-white px-2 py-1 text-[10px] w-full select-none cursor-default"
       onClick={(e) => e.stopPropagation()}
       title="예약 등록됨 — 아직 미내원 (셀프접수 대기 중)"
     >
-      <span className="shrink-0 bg-yellow-200 text-yellow-800 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
-      <span className="truncate text-yellow-900 font-semibold">{name}</span>
-      <span className="shrink-0 text-yellow-700 font-mono ml-auto text-[9px]">{tail}</span>
+      {/* T-20260615-foot-THEME-MONO-REFINE-3AREA AC1: 초진 노랑 → 모노톤 (텍스트+보더로 구분) */}
+      <span className="shrink-0 bg-gray-200 text-gray-700 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
+      <span className="truncate text-gray-900 font-semibold">{name}</span>
+      <span className="shrink-0 text-gray-500 font-mono ml-auto text-[9px]">{tail}</span>
     </div>
   );
 }
@@ -1481,18 +1483,19 @@ function Box2ReservationCard({
   return (
     <div
       className={cn(
-        'flex items-center gap-1 rounded border border-green-300 bg-green-50 px-2 py-1 text-[11px] font-semibold w-full shadow-sm',
-        onClick ? 'cursor-pointer hover:bg-green-100 hover:border-green-400 transition' : 'cursor-default',
+        // T-20260615-foot-THEME-MONO-REFINE-3AREA AC1: 재진 초록 → 모노톤 (옅은 회색 배경+보더)
+        'flex items-center gap-1 rounded border border-gray-300 bg-gray-50 px-2 py-1 text-[11px] font-semibold w-full shadow-sm',
+        onClick ? 'cursor-pointer hover:bg-gray-100 hover:border-gray-400 transition' : 'cursor-default',
       )}
       onClick={(e) => { e.stopPropagation(); onClick?.(); }}
       title={`${cardDisplayName(reservation)} — 클릭하여 체크인 및 차트 열기`}
     >
-      <span className="truncate text-green-900">{cardDisplayName(reservation)}</span>
+      <span className="truncate text-gray-800">{cardDisplayName(reservation)}</span>
       {/* T-20260514-foot-CHART-NO-VISIBLE: 차트번호 상시 표시 */}
       {resvChartNum && (
-        <span className="text-[9px] font-mono text-green-700 shrink-0">#{resvChartNum}</span>
+        <span className="text-[9px] font-mono text-gray-500 shrink-0">#{resvChartNum}</span>
       )}
-      {onClick && <span className="text-[9px] text-green-600 shrink-0 ml-auto font-bold">↗</span>}
+      {onClick && <span className="text-[9px] text-gray-400 shrink-0 ml-auto font-bold">↗</span>}
     </div>
   );
 }
@@ -1579,8 +1582,9 @@ function DraggableBox1Card({
       {...attributes}
       {...listeners}
       className={cn(
-        'flex items-center gap-1 rounded border border-yellow-400 bg-yellow-50 px-2 py-1 text-[10px] w-full select-none',
-        onSelect ? 'cursor-grab active:cursor-grabbing hover:bg-yellow-100 hover:border-yellow-500 transition' : 'cursor-default',
+        // T-20260615-foot-THEME-MONO-REFINE-3AREA AC1: 초진 노랑 → 모노톤 (흰 배경+진한 보더)
+        'flex items-center gap-1 rounded border border-gray-400 bg-white px-2 py-1 text-[10px] w-full select-none',
+        onSelect ? 'cursor-grab active:cursor-grabbing hover:bg-gray-100 hover:border-gray-500 transition' : 'cursor-default',
       )}
       onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
       onContextMenu={(e) => {
@@ -1593,16 +1597,16 @@ function DraggableBox1Card({
       data-testid="box1-resv-card"
       data-noshow={isNoShow ? 'true' : undefined}
     >
-      <span className="shrink-0 bg-yellow-200 text-yellow-800 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
-      <span className="truncate text-yellow-900 font-semibold">{cardDisplayName(reservation)}</span>
-      <span className="shrink-0 text-yellow-700 font-mono text-[9px]">{tail}</span>
+      <span className="shrink-0 bg-gray-200 text-gray-700 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
+      <span className="truncate text-gray-900 font-semibold">{cardDisplayName(reservation)}</span>
+      <span className="shrink-0 text-gray-500 font-mono text-[9px]">{tail}</span>
       {/* T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 배지 */}
       {isNoShow && <NoShowBadge />}
       {/* T-20260519-foot-FIRSTVISIT-CHECKIN AC-1: 접수 버튼 — DnD와 분리 위해 onPointerDown stopPropagation */}
       {onCheckIn && (
         <button
           type="button"
-          className="shrink-0 ml-auto text-[9px] font-bold text-white bg-yellow-500 hover:bg-yellow-600 active:bg-yellow-700 rounded px-1 py-0.5 leading-none transition cursor-pointer"
+          className="shrink-0 ml-auto text-[9px] font-bold text-white bg-gray-700 hover:bg-gray-800 active:bg-gray-900 rounded px-1 py-0.5 leading-none transition cursor-pointer"
           title="접수 (체크인 시작)"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); onCheckIn(); }}
@@ -1665,8 +1669,9 @@ function DraggableBox2ResvCard({
       {...attributes}
       {...listeners}
       className={cn(
-        'flex items-center gap-1 rounded border border-green-300 bg-green-50 px-2 py-1 text-[11px] font-semibold w-full shadow-sm',
-        onSelect ? 'cursor-grab active:cursor-grabbing hover:bg-green-100 hover:border-green-400 transition' : 'cursor-default',
+        // T-20260615-foot-THEME-MONO-REFINE-3AREA AC1: 재진 초록 → 모노톤 (옅은 회색 배경+보더)
+        'flex items-center gap-1 rounded border border-gray-300 bg-gray-50 px-2 py-1 text-[11px] font-semibold w-full shadow-sm',
+        onSelect ? 'cursor-grab active:cursor-grabbing hover:bg-gray-100 hover:border-gray-400 transition' : 'cursor-default',
         // T-20260516-foot-HEALER-RESV-BTN AC-10: healer_flag=true인 재진 예약 → 노란색 깜빡 border
         reservation.healer_flag && 'healer-blink',
       )}
@@ -1683,12 +1688,12 @@ function DraggableBox2ResvCard({
       data-testid="box2-resv-card"
       data-noshow={isNoShow ? 'true' : undefined}
     >
-      <span className="truncate text-green-900">{cardDisplayName(reservation)}</span>
+      <span className="truncate text-gray-800">{cardDisplayName(reservation)}</span>
       {/* T-20260611-foot-NOSHOW-BADGE-KEEP-INLIST: 노쇼 배지 */}
       {isNoShow && <NoShowBadge />}
       {/* T-20260609-foot-RESV-PATIENT-PHONE-SUFFIX: 핸드폰 뒷4자리 (초진 카드와 동일 포맷·통일) */}
       {resvPhoneTail && (
-        <span data-testid="resv-phone-suffix" className="shrink-0 text-green-700 font-mono text-[9px]">{resvPhoneTail}</span>
+        <span data-testid="resv-phone-suffix" className="shrink-0 text-gray-500 font-mono text-[9px]">{resvPhoneTail}</span>
       )}
       {/* T-20260516-foot-HEALER-RESV-BTN AC-10: 힐러 배지 표시 */}
       {reservation.healer_flag && (
@@ -1698,7 +1703,7 @@ function DraggableBox2ResvCard({
       {onCheckIn && (
         <button
           type="button"
-          className="shrink-0 ml-auto text-[9px] font-bold text-white bg-green-500 hover:bg-green-600 active:bg-green-700 rounded px-1 py-0.5 leading-none transition cursor-pointer"
+          className="shrink-0 ml-auto text-[9px] font-bold text-white bg-gray-700 hover:bg-gray-800 active:bg-gray-900 rounded px-1 py-0.5 leading-none transition cursor-pointer"
           title="접수 (체크인 시작)"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); onCheckIn(); }}
@@ -2220,15 +2225,16 @@ function DashboardTimeline({
         ) : (
           /* ── 기존 시간표 뷰 ─────────────────────────────────────────────── */
           <>
-        {/* 컬럼 헤더 — 초진(연노랑)/재진(연두): sticky로 슬롯 스크롤 시 상단 고정 */}
+        {/* 컬럼 헤더 — 초진/재진: T-20260615-foot-THEME-MONO-REFINE-3AREA AC1 모노톤
+             초진=옅은 회색 헤더(gray-100)+초 배지, 재진=더 옅은 회색(gray-50). 텍스트로 구분. */}
         <div className="grid grid-cols-[2.5rem_1fr_1fr] border-b sticky top-0 z-10 bg-white">
           {/* T-20260514-foot-TIMETABLE-MOBILE-HSCROLL: sticky left-0 z-20 — 코너 셀(시간 헤더)도 좌측 고정 */}
           <div className="py-1 border-r bg-gray-50 sticky left-0 z-20" data-testid="timeline-time-col" />
-          <div className="py-1 text-[9px] font-bold text-yellow-800 text-center border-r bg-yellow-50 flex items-center justify-center gap-0.5">
-            <span className="bg-yellow-200 text-yellow-900 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
+          <div className="py-1 text-[9px] font-bold text-gray-700 text-center border-r bg-gray-100 flex items-center justify-center gap-0.5">
+            <span className="bg-gray-200 text-gray-800 text-[8px] px-0.5 rounded font-bold leading-tight">초</span>
             초진
           </div>
-          <div className="py-1 text-[9px] font-bold text-green-800 text-center bg-green-50">
+          <div className="py-1 text-[9px] font-bold text-gray-600 text-center bg-gray-50">
             재진
           </div>
         </div>
@@ -2370,7 +2376,8 @@ function DashboardTimeline({
                       ? 'bg-teal-50/20'
                       : isInactiveZone
                         ? 'bg-neutral-100/50'
-                        : newCnt > 0 ? 'bg-yellow-50/40' : '',
+                        // T-20260615-foot-THEME-MONO-REFINE-3AREA AC1: 초진 노랑 배경 틴트 제거(채도0)
+                        : newCnt > 0 ? 'bg-gray-50/60' : '',
                   )}
                   onClick={() => onSlotClick({ date: dateStr, time: slot })}
                   title="빈 영역 클릭 → 초진 예약 추가 / 카드 드롭 → 시간 변경"
@@ -2413,7 +2420,8 @@ function DashboardTimeline({
                       ? 'bg-teal-50/20'
                       : isInactiveZone
                         ? 'bg-neutral-100/50'
-                        : retCnt > 0 ? 'bg-green-50/40' : '',
+                        // T-20260615-foot-THEME-MONO-REFINE-3AREA AC1: 재진 초록 배경 틴트 제거(채도0)
+                        : retCnt > 0 ? 'bg-gray-50/40' : '',
                   )}
                   onClick={() => onSlotClick({ date: dateStr, time: slot, visit_type: 'returning' })}
                   title="빈 영역 클릭 → 재진 예약 추가 / 카드 드롭 → 시간 변경"

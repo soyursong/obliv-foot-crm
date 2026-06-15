@@ -110,6 +110,12 @@ export default defineConfig({
         // T-20260614-foot-THEME-MONOCHROME-RECOLOR: 확정 5색 warm-monochrome 팔레트 회귀 락
         //   (정적 소스 가드 + 공개 /login 실렌더, auth 불요)
         '**/T-20260614-foot-THEME-MONOCHROME-RECOLOR.spec.ts',
+        // T-20260615-foot-THEME-MONO-REFINE-3AREA: 통합시간표 슬롯/2번차트/치료사탭 국소 모노톤 정제
+        //   (정적 소스 가드 + 컴파일 CSS 가드, auth 불요)
+        '**/T-20260615-foot-THEME-MONO-REFINE-3AREA.spec.ts',
+        // T-20260615-foot-MONOTONE-TIMETABLE-CHART2-THERAPISTGREEN: 형제 재발행(스크린샷 동봉) —
+        //   치료사 필터칩 선택-상태 green 원복(brown 누수 정정) 가드 추가 (정적 소스 가드, auth 불요)
+        '**/T-20260615-foot-MONOTONE-TIMETABLE-CHART2-THERAPISTGREEN.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
