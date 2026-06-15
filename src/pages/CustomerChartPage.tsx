@@ -3962,21 +3962,29 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   }, [currentUserStaffId, therapistList]);
 
   // T-20260602-foot-SLOT-DWELL-TIME (B안): 체류시간 탭 진입 시 lazy 로딩 (방문건별 슬롯 체류 인터벌)
+  // T-20260615-foot-CHART2-TABS-RESVTAB-DWELLSWAP:
+  //   AC-3: slot_dwell이 CLINICAL 그룹으로 이동 → 그룹 비종속(chartTab 키 단독) 가드로 교체.
+  //   AC-5 무한로딩 ROOT CAUSE 제거(코드 근거):
+  //     기존 deps에 slotDwellLoading 포함 + 가드에 slotDwellLoading 사용 → setSlotDwellLoading(true)
+  //     순간 effect가 즉시 재실행되며 cleanup이 in-flight 요청에 cancelled=true를 세팅.
+  //     그 후 RPC가 resolve되면 `if (cancelled) return;`가 setSlotDwellLoading(false) 앞에서
+  //     조기 반환 → loading이 true로 영구 고착 → "계속 로딩만 됨"(c9dd3c4 빈ids 가드로 미해소).
+  //   해결: slotDwellLoading을 deps·가드에서 제거(자기-취소 트리거 차단). 가드는 slotDwellLoaded만.
+  //         setSlotDwellLoading(true)를 async 밖에서 1회 호출 → 상태변화가 effect 재실행을 유발하지 않음.
+  //         checkInHistory 변경 등 정상 재실행 시에만 cleanup이 stale 요청을 취소(데이터 적용만 차단).
   useEffect(() => {
-    if (chartTabGroup !== 'history' || chartTab !== 'slot_dwell') return;
-    if (slotDwellLoaded || slotDwellLoading) return;
+    if (chartTab !== 'slot_dwell') return;
+    if (slotDwellLoaded) return;
     const ids = checkInHistory.map((ci) => ci.id);
-    // T-20260613-foot-FIELDBATCH item8(2) 버그수정: checkInHistory 비동기 로드 race 해소.
-    //   기존 버그 — 체류시간 탭을 checkInHistory 로드 전(빈 배열)에 열면 slotDwellLoaded=true로 잠겨,
-    //   이후 방문이력이 채워져도 effect guard(slotDwellLoaded)에 막혀 fn_check_in_slot_dwell를 영영 호출 못 함
-    //   → "로딩만 되고 실제 기록 조회 안 됨"(현장 김주연 총괄). 빈 ids면 loaded 잠그지 말고 대기(방문 채워지면 재실행).
-    //   방문이 진짜 0건이면 slotDwell=[]·loading=false → 아래 렌더가 "기록 없음" 표시(무한 스피너 아님).
+    // T-20260613-foot-FIELDBATCH item8(2): checkInHistory 비동기 로드 race 해소.
+    //   빈 ids면 loaded 잠그지 말고 대기 → 방문이 채워지면 effect 재실행되어 fetch.
+    //   방문이 진짜 0건이면 아래 렌더가 "기록 없음" 표시(무한 스피너 아님 — slotDwellLoading=false 유지).
     if (ids.length === 0) return;
     let cancelled = false;
+    setSlotDwellLoading(true);
     (async () => {
-      setSlotDwellLoading(true);
       const { data, error } = await supabase.rpc('fn_check_in_slot_dwell', { p_check_in_ids: ids });
-      if (cancelled) return;
+      if (cancelled) return; // 더 새로운 실행이 인계 — 그 실행이 loading 상태를 소유
       if (error) {
         toast.error('체류시간 조회 실패: ' + error.message);
         setSlotDwell([]);
@@ -3987,16 +3995,17 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
       setSlotDwellLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [chartTabGroup, chartTab, slotDwellLoaded, slotDwellLoading, checkInHistory]);
+  }, [chartTab, slotDwellLoaded, checkInHistory]);
 
   // T-20260603-foot-SLOT-DWELL-LIVE-TICK: slot_dwell 탭 활성 시 1초마다 now 갱신 → 진행중 세그먼트 라이브 카운트.
   // 탭 이탈/언마운트 시 clearInterval (AC-4: 메모리 누수·백그라운드 타이머 잔존 방지)
+  // T-20260615 DWELLSWAP AC-3: slot_dwell이 CLINICAL 그룹으로 이동 → 그룹 비종속(키 단독) 가드.
   useEffect(() => {
-    if (chartTabGroup !== 'history' || chartTab !== 'slot_dwell') return;
+    if (chartTab !== 'slot_dwell') return;
     setSlotDwellNowMs(Date.now());
     const id = setInterval(() => setSlotDwellNowMs(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [chartTabGroup, chartTab]);
+  }, [chartTab]);
 
   // T-20260515-foot-INLINE-RESV: 빈 슬롯 클릭 시 예약 등록
   // T-20260524-foot-THERAPIST-BISYNC AC-2: 치료사 선택 시 preferred_therapist_id 저장 + designated_therapist_id 역동기화
@@ -4099,12 +4108,16 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
   // T-20260522-foot-CHART2-TAB-PENCHART: 펜차트 → 첫 번째 위치 (기본 탭과 일치)
   // T-20260601-foot-CHART-TAB-MUNJIN-DEDUP: [문진] 탭 진입점 제거(데이터/테이블은 보존, 화면 노출만 제거).
   //   진료차트 탭을 펜차트 바로 옆(구 문진 자리)으로 이동 → 결과: [펜차트][진료차트][검사결과]...
+  // T-20260615-foot-CHART2-TABS-RESVTAB-DWELLSWAP:
+  //   AC-1: '서류발행'(documents) → '예약내역'(reservations) 탭 대체 (서류발행 렌더는 orphan 보존).
+  //   AC-3: '수납내역'(payments, CLINICAL) ↔ '체류시간'(slot_dwell, HISTORY) 그룹 위치 스왑.
+  //         → payments는 HISTORY로, slot_dwell은 CLINICAL로 이동.
   const CLINICAL_TABS = [
     { key: 'pen_chart',   label: '펜차트' },
     { key: 'test_result', label: '검사결과' },
     { key: 'progress',    label: '경과내역' },
-    { key: 'documents',   label: '서류발행' },
-    { key: 'payments',    label: '수납내역' },
+    { key: 'reservations', label: '예약내역' }, // AC-1: documents 대체
+    { key: 'slot_dwell',   label: '체류시간' }, // AC-3: payments 자리로 이동
   ];
   const HISTORY_TABS = [
     { key: 'consultations', label: '상담내역' },
@@ -4113,14 +4126,15 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     { key: 'images',        label: '진료이미지' },
     { key: 'messages',      label: '메시지' },
     { key: 'refunds',       label: '환불내역' },
-    { key: 'slot_dwell',    label: '체류시간' },
+    { key: 'payments',      label: '수납내역' }, // AC-3: slot_dwell 자리로 이동
   ];
   // T-20260513-foot-C21-TAB-RESTRUCTURE-C: pen_chart + messages 구현 완료
   // T-20260522-foot-REFUND-HIST-TAB: 환불내역 탭 추가
   // T-20260601-foot-CHART-TAB-MUNJIN-DEDUP: 'checklist'(문진) 탭 진입점 제거에 맞춰 orphan 항목 정리.
   //   checklist 렌더 로직(L3972~)은 보존(OQ), chartTab은 더 이상 'checklist'에 도달하지 않음.
-  const IMPLEMENTED_CLINICAL = ['progress', 'documents', 'payments', 'test_result', 'pen_chart'];
-  const IMPLEMENTED_HISTORY  = ['consultations', 'packages', 'treatments', 'images', 'messages', 'refunds', 'slot_dwell'];
+  // T-20260615 DWELLSWAP: 멤버십 변경 — clinical에 reservations·slot_dwell, history에 payments.
+  const IMPLEMENTED_CLINICAL = ['progress', 'reservations', 'slot_dwell', 'test_result', 'pen_chart'];
+  const IMPLEMENTED_HISTORY  = ['consultations', 'packages', 'treatments', 'images', 'messages', 'refunds', 'payments'];
 
   const handleClinicalTab = (key: string) => { setChartTab(key); setChartTabGroup('clinical'); };
   const handleHistoryTab  = (key: string) => { setChartTab(key); setChartTabGroup('history'); };
@@ -5086,7 +5100,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
           )}
 
               {/* Clinical: 수납내역 — T-20260513-foot-C21-TAB-RESTRUCTURE-A: 상단 이동 */}
-              {chartTabGroup === 'clinical' && chartTab === 'payments' && (
+              {/* T-20260615 DWELLSWAP AC-3: payments는 HISTORY 그룹으로 이동 → 그룹 비종속(키 단독) 가드 */}
+              {chartTab === 'payments' && (
             <div className="space-y-3">
               {/* 일반 결제 */}
               <div className="rounded-lg border bg-white p-3 text-xs">
@@ -6032,7 +6047,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </div>
           )}
 
-              {/* Clinical: 서류발행 — T-20260513-foot-C21-TAB-RESTRUCTURE-A: 상단 이동 */}
+              {/* Clinical: 서류발행 — orphan 보존(T-20260615 DWELLSWAP AC-1: 탭 진입점은 예약내역으로 대체, 렌더는 유지) */}
               {chartTabGroup === 'clinical' && chartTab === 'documents' && (
             <div className="space-y-3">
               {latestCheckIn ? (
@@ -6046,6 +6061,83 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                   접수 기록이 없어 서류 발행을 사용할 수 없습니다
                 </div>
               )}
+            </div>
+          )}
+
+              {/* Clinical: 예약내역 — T-20260615-foot-CHART2-TABS-RESVTAB-DWELLSWAP AC-1 */}
+              {/*   기존 2구역(우측 사이드) 예약내역 패널을 이 탭으로 이동. 핸들러·testid 동일 보존. */}
+              {chartTab === 'reservations' && (
+            <div className="space-y-3" data-testid="reservations-tab-content">
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[11px] font-semibold text-[#1e4e6e]">예약내역</div>
+                  {/* T-20260515-foot-INLINE-RESV: 다음 예약 → 인라인 예약 패널 (페이지 이동 없음) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInlineResvMemo('');
+                      setInlineResvDate(format(addDays(new Date(), 1), 'yyyy-MM-dd'));
+                      setInlineResvSlotMap({});
+                      setInlineResvOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
+                    data-testid="btn-next-reservation"
+                  >
+                    <Plus className="h-3 w-3" /> 다음 예약
+                  </button>
+                </div>
+                {reservations.length === 0 ? (
+                  <div className="text-[11px] text-muted-foreground py-2">예약 없음</div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {reservations.slice(0, 5).map((r) => (
+                      <div key={r.id} className="space-y-0.5">
+                        {/* T-20260525-foot-RESV-REDCHECK-REMOVE: 빨간 체크(status badge) 제거 — 변경 사유 직접 표시로 대체 */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditResvId(r.id);
+                            setEditResvForm({
+                              date: r.reservation_date,
+                              startTime: r.reservation_time.slice(0, 5),
+                              memo: resvMemoInputs[r.id] ?? r.booking_memo ?? '',
+                              // T-20260524-foot-DESIG-BIDIRECT: 예약의 preferred_therapist_id 로드 (수정 모달은 기존 값 복원)
+                              therapistId: r.preferred_therapist_id ?? '',
+                              visitType: r.visit_type,
+                            });
+                          }}
+                          className="w-full flex items-center text-[11px] rounded hover:bg-muted/50 px-1 py-0.5 transition text-left"
+                        >
+                          <span className="text-gray-700">{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
+                        </button>
+                        {/* T-20260515-foot-RESV-MEMO-APPEND: 예약메모 인라인 추가 (append-only) */}
+                        <input
+                          type="text"
+                          value={resvMemoInputs[r.id] ?? ''}
+                          onChange={(e) => setResvMemoInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
+                          onKeyDown={async (e) => {
+                            if (e.key !== 'Enter') return;
+                            const content = (resvMemoInputs[r.id] ?? '').trim();
+                            if (!content) return;
+                            const clinicId = customer?.clinic_id ?? '';
+                            await insertReservationMemo(r.id, clinicId, content, profile?.name ?? null);
+                            setResvMemoInputs(prev => ({ ...prev, [r.id]: '' }));
+                            // AC-8 쌍방연동 — 예약메모 추가 시 1번차트에 알림
+                            if (customer) localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+                          }}
+                          placeholder="예약메모 추가 후 Enter"
+                          className="w-full h-5 text-[10px] rounded border border-gray-200 px-1.5 focus:outline-none focus:border-teal-400 bg-white text-gray-600 placeholder:text-gray-300"
+                        />
+                        {/* T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 (공유 컴포넌트) */}
+                        <ReservationAuditLogPanel
+                          reservationId={r.id}
+                          compact
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -6156,8 +6248,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
                 );
               })()}
 
-              {/* History: 체류시간 — T-20260602-foot-SLOT-DWELL-TIME (B안) */}
-              {chartTabGroup === 'history' && chartTab === 'slot_dwell' && (() => {
+              {/* Clinical: 체류시간 — T-20260602-foot-SLOT-DWELL-TIME (B안) */}
+              {/* T-20260615 DWELLSWAP AC-3: slot_dwell은 CLINICAL 그룹으로 이동 → 그룹 비종속(키 단독) 가드 */}
+              {chartTab === 'slot_dwell' && (() => {
                 if (slotDwellLoading) {
                   return (
                     <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
@@ -6568,81 +6661,9 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             </div>
           )}
 
-          {/* 예약내역 (우측 패널 간략) — T-20260513-foot-C22-ZONE-REORDER: 최근방문→예약내역→회차차감 순서 */}
-          <div className="border-b border-gray-200 px-3 py-2">
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="text-[11px] font-semibold text-[#1e4e6e]">예약내역</div>
-              {/* T-20260515-foot-INLINE-RESV: 다음 예약 → 인라인 예약 패널 (페이지 이동 없음) */}
-              <button
-                type="button"
-                onClick={() => {
-                  setInlineResvMemo('');
-                  setInlineResvDate(format(addDays(new Date(), 1), 'yyyy-MM-dd'));
-                  setInlineResvSlotMap({});
-                  setInlineResvOpen(true);
-                }}
-                className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-700 hover:bg-teal-100 transition"
-                data-testid="btn-next-reservation"
-              >
-                <Plus className="h-3 w-3" /> 다음 예약
-              </button>
-            </div>
-            {reservations.length === 0 ? (
-              <div className="text-[11px] text-muted-foreground">예약 없음</div>
-            ) : (
-              <div className="space-y-1.5">
-                {reservations.slice(0, 5).map((r) => (
-                  <div key={r.id} className="space-y-0.5">
-                    {/* T-20260525-foot-RESV-REDCHECK-REMOVE: 빨간 체크(status badge) 제거 — 변경 사유 직접 표시로 대체 */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditResvId(r.id);
-                        setEditResvForm({
-                          date: r.reservation_date,
-                          startTime: r.reservation_time.slice(0, 5),
-                          memo: resvMemoInputs[r.id] ?? r.booking_memo ?? '',
-                          // T-20260524-foot-DESIG-BIDIRECT: 예약의 preferred_therapist_id 로드 (빈 상태 시작 — AC-4 "자동 미리 선택 금지")
-                          // 단, 수정 모달은 기존 값을 유지해야 하므로 기존 preferred_therapist_id 복원
-                          therapistId: r.preferred_therapist_id ?? '',
-                          visitType: r.visit_type,
-                        });
-                      }}
-                      className="w-full flex items-center text-[11px] rounded hover:bg-muted/50 px-1 py-0.5 transition text-left"
-                    >
-                      <span className="text-gray-700">{r.reservation_date} {r.reservation_time.slice(0, 5)}</span>
-                    </button>
-                    {/* T-20260515-foot-RESV-MEMO-APPEND: 예약메모 인라인 추가 (append-only) */}
-                    <input
-                      type="text"
-                      value={resvMemoInputs[r.id] ?? ''}
-                      onChange={(e) => setResvMemoInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
-                      onKeyDown={async (e) => {
-                        if (e.key !== 'Enter') return;
-                        const content = (resvMemoInputs[r.id] ?? '').trim();
-                        if (!content) return;
-                        const clinicId = customer?.clinic_id ?? '';
-                        await insertReservationMemo(r.id, clinicId, content, profile?.name ?? null);
-                        setResvMemoInputs(prev => ({ ...prev, [r.id]: '' }));
-                        // AC-8 쌍방연동 — 예약메모 추가 시 1번차트에 알림
-                        if (customer) localStorage.setItem('foot_crm_customer_refresh', JSON.stringify({ customerId: customer.id, ts: Date.now() }));
-                      }}
-                      placeholder="예약메모 추가 후 Enter"
-                      className="w-full h-5 text-[10px] rounded border border-gray-200 px-1.5 focus:outline-none focus:border-teal-400 bg-white text-gray-600 placeholder:text-gray-300"
-                    />
-                    {/* T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 (2번차트 2구역 예약내역) */}
-                    {/* AC-3: ReservationAuditLogPanel 공유 컴포넌트 — 화면별 분리 금지 */}
-                    <ReservationAuditLogPanel
-                      reservationId={r.id}
-                      compact
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* T-20260615-foot-CHART2-TABS-RESVTAB-DWELLSWAP AC-1: 2구역 예약내역 패널은 [예약내역] 탭(clinical)으로 이동. 여기서 제거. */}
 
-          {/* T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 드롭다운 (예약내역↔회차차감 사이) */}
+          {/* T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 드롭다운 (최근방문↔회차차감 사이) */}
           <div className="border-b border-gray-200 px-3 py-2">
             <div className="flex items-center justify-between mb-1">
               <div className="text-[11px] font-semibold text-[#1e4e6e] flex items-center gap-1">
