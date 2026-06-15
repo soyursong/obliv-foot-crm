@@ -31,7 +31,7 @@ import { supabase } from '@/lib/supabase';
 // T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: new-mode 시간 선택지(기존 schedule 슬롯 생성기 재사용, 신규 로직 0)
 import { generateSlots } from '@/lib/schedule';
 import { VISIT_TYPE_KO } from '@/lib/status';
-import { formatPhone, chartNoBadge } from '@/lib/format';
+import { formatPhone, formatPhoneInput, chartNoBadge } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { ReservationMemoTimeline } from '@/components/ReservationMemoTimeline';
 // T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 공유 패널
@@ -103,8 +103,11 @@ function maskRrnDisplay(
 const NEW_RESV_TIME_SLOTS = generateSlots('07:00', '22:00', 30);
 
 // new-mode 생성 콜백 파라미터 (parent = 단일소스 createReservationCanonical 위임)
+// T-20260615-foot-RESVMGMT-REFIX-8 AC3-b: 시스템에 없는 완전 신규 고객 등록 허용 → customerId 가 null 일 수 있음.
+//   이때 parent 가 phone(E.164 정규화)으로 기존고객 resolve 또는 신규 customers INSERT 후 단일소스 함수 위임.
+//   고객 INSERT 책임은 parent(호출측) — 팝업 내 customers/reservations.insert = 0 유지(🔒 L-002·기존 계약 §137).
 type CreateReservationParams = {
-  customerId: string;
+  customerId: string | null;
   name: string;
   phone: string | null;
   date: string; // yyyy-MM-dd
@@ -191,6 +194,13 @@ export function ReservationDetailPopup({
     : [...NEW_RESV_TIME_SLOTS, newResvTime].sort();
   const [newResvVisitType, setNewResvVisitType] = useState<'new' | 'returning'>('returning');
   const [creatingResv, setCreatingResv] = useState(false);
+
+  // T-20260615-foot-RESVMGMT-REFIX-8 AC3-b: (+) new-mode 팝업에서 '시스템에 없는 완전 신규 고객' 직접 등록.
+  //   검색으로 못 찾은 고객을 성함+연락처 입력으로 예약·등록. 고객 INSERT 는 parent(onCreateReservation) 책임 —
+  //   기존 신규고객 생성 경로(RESVPOPUP-AC2-NEWMODE-L002, 1dcbca5) 재사용. 팝업은 폼 입력값만 위임(insert 0).
+  const [manualNew, setManualNew] = useState(false);   // true = 직접 등록 모드(검색 미선택 대신)
+  const [newCustName, setNewCustName] = useState('');
+  const [newCustPhone, setNewCustPhone] = useState(''); // 하이픈 표시(formatPhoneInput) — parent 가 E.164 정규화
 
   // 드롭다운 옵션 = 활성 consultant 만. (이름 resolve 는 비활성/타직군 포함 allStaff 전체로 — UUID 노출 방지)
   const consultants = allStaff.filter((s) => s.role === 'consultant' && s.active);
@@ -346,6 +356,10 @@ export function ReservationDetailPopup({
       setNewResvTime(initialTime || '10:00');
       setNewResvVisitType('returning');
       setCreatingResv(false);
+      // AC3-b: 직접 등록 입력도 매 진입 클린 리셋(stale 성함/연락처 잔존 차단).
+      setManualNew(false);
+      setNewCustName('');
+      setNewCustPhone('');
     }
   }, [newMode, initialDate, initialTime]);
 
@@ -492,18 +506,70 @@ export function ReservationDetailPopup({
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3 min-h-0">
-            {!loadedMatch ? (
-              // 빈 상태 — 고객 미선택. 검색으로 선택해야 생성 폼 노출(미선택 생성 시도 차단 = INSERT 0).
-              <div className="rounded-xl border border-dashed border-border/70 bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground" data-testid="popup-newmode-empty">
-                위 검색창에서 고객을 검색해 선택하세요.
+            {!loadedMatch && !manualNew ? (
+              // 빈 상태 — 고객 미선택. 검색으로 선택하거나, 시스템에 없는 신규 고객은 직접 등록(AC3-b).
+              <div className="rounded-xl border border-dashed border-border/70 bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground space-y-3" data-testid="popup-newmode-empty">
+                <div>위 검색창에서 고객을 검색해 선택하세요.</div>
+                <div className="text-xs text-muted-foreground/80">또는 처음 방문하는 고객이면</div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => { setManualNew(true); setSearchValue(''); }}
+                  data-testid="btn-newmode-manual-register"
+                >
+                  + 시스템에 없는 신규 고객 직접 등록
+                </Button>
               </div>
             ) : (
               <>
-                {/* 선택 고객 */}
-                <div className="rounded-xl border border-teal-300 bg-teal-50/70 px-3.5 py-2.5 shadow-sm" data-testid="popup-newmode-customer">
-                  <div className="text-[10px] font-medium text-teal-700">신규예약 대상</div>
-                  <div className="text-sm font-semibold text-teal-800 truncate">{loadedMatch.name}</div>
-                </div>
+                {/* 신규예약 대상 — 검색 선택 고객(loadedMatch) 또는 직접 등록(manualNew: 성함+연락처 입력) */}
+                {loadedMatch ? (
+                  <div className="rounded-xl border border-teal-300 bg-teal-50/70 px-3.5 py-2.5 shadow-sm" data-testid="popup-newmode-customer">
+                    <div className="text-[10px] font-medium text-teal-700">신규예약 대상</div>
+                    <div className="text-sm font-semibold text-teal-800 truncate">{loadedMatch.name}</div>
+                  </div>
+                ) : (
+                  // AC3-b: 직접 등록 — 성함 + 연락처 입력. 연락처는 기존 포맷터(하이픈) 적용, parent 가 E.164 정규화.
+                  <div className="rounded-xl border border-teal-300 bg-teal-50/70 px-3.5 py-3 shadow-sm space-y-2.5" data-testid="popup-newmode-manual-form">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[10px] font-medium text-teal-700">신규 고객 직접 등록</div>
+                      <button
+                        type="button"
+                        className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                        onClick={() => { setManualNew(false); setNewCustName(''); setNewCustPhone(''); }}
+                        data-testid="btn-newmode-manual-cancel"
+                      >
+                        고객 검색으로 돌아가기
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <Label htmlFor="newmode-cust-name" className="w-12 shrink-0 text-muted-foreground">성함</Label>
+                      <input
+                        id="newmode-cust-name"
+                        type="text"
+                        value={newCustName}
+                        onChange={(e) => setNewCustName(e.target.value)}
+                        placeholder="고객 성함"
+                        className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        data-testid="newmode-cust-name-input"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <Label htmlFor="newmode-cust-phone" className="w-12 shrink-0 text-muted-foreground">연락처</Label>
+                      <input
+                        id="newmode-cust-phone"
+                        type="tel"
+                        inputMode="numeric"
+                        value={newCustPhone}
+                        onChange={(e) => setNewCustPhone(formatPhoneInput(e.target.value))}
+                        placeholder="010-1234-5678"
+                        className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        data-testid="newmode-cust-phone-input"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* 예약 캘린더 — 날짜 선택 */}
                 <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm">
@@ -518,7 +584,7 @@ export function ReservationDetailPopup({
 
                 {/* 신규예약 만들기 폼 (메인 렌더의 new-mode 폼과 동일 입력·핸들러 재사용) */}
                 <div className="rounded-xl border border-teal-300 bg-teal-50/50 px-3.5 py-3 shadow-sm" data-testid="popup-newmode-form">
-                  <SectionHeader accent="teal">신규예약 만들기 — {loadedMatch.name}</SectionHeader>
+                  <SectionHeader accent="teal">신규예약 만들기 — {loadedMatch ? loadedMatch.name : (newCustName.trim() || '신규 고객')}</SectionHeader>
                   <div className="space-y-2.5">
                     <div className="flex items-center gap-2 text-xs">
                       <span className="w-12 shrink-0 text-muted-foreground">날짜</span>
@@ -566,11 +632,16 @@ export function ReservationDetailPopup({
                     <Button
                       size="sm"
                       className="w-full"
-                      disabled={creatingResv || !pickedDate}
+                      disabled={
+                        creatingResv ||
+                        !pickedDate ||
+                        // AC3-b: 직접 등록 모드는 성함+연락처 미입력 시 생성 차단(빈 고객 INSERT 방지).
+                        (!loadedMatch && manualNew && (!newCustName.trim() || !newCustPhone.trim()))
+                      }
                       onClick={submitNewReservation}
                       data-testid="btn-newmode-create-entry"
                     >
-                      {creatingResv ? '생성 중…' : `${loadedMatch.name}님 신규예약 생성`}
+                      {creatingResv ? '생성 중…' : `${loadedMatch ? loadedMatch.name : (newCustName.trim() || '신규 고객')}님 신규예약 생성`}
                     </Button>
                   </div>
                 </div>
@@ -818,6 +889,10 @@ export function ReservationDetailPopup({
   function handleSelectOtherCustomer(p: PatientMatch) {
     setSearchValue('');
     setLoadedMatch(p);
+    // T-20260615-foot-RESVMGMT-REFIX-8 AC3-b: 기존 고객을 검색 선택하면 직접 등록 모드 해제(stale 입력 차단).
+    setManualNew(false);
+    setNewCustName('');
+    setNewCustPhone('');
     // T-20260614-foot-RESVPOPUP-AC2-NEWMODE: B 로드 시 new-mode 입력 기본값 리셋(초/재 재진 기본).
     setNewResvVisitType('returning');
     setNewResvTime('10:00');
@@ -837,7 +912,23 @@ export function ReservationDetailPopup({
   //    🔒 팝업 내 reservations.insert = 0 — onCreateReservation(parent) 만 호출. 생성 무결성 5요소는 parent 보존.
   // function 선언(hoisted): AC2 new-mode 분기(렌더 상단)가 이 핸들러를 참조 — TDZ 회피.
   async function submitNewReservation() {
-    if (!loadedMatch || !onCreateReservation) return;
+    if (!onCreateReservation) return;
+    // T-20260615-foot-RESVMGMT-REFIX-8 AC3-b: 대상 = 검색 선택 고객(loadedMatch) 또는 직접 등록(manualNew).
+    //   직접 등록이면 성함+연락처 필수. customerId=null 위임 → parent 가 기존고객 resolve/신규 INSERT(고객 INSERT 책임 parent).
+    const manualName = newCustName.trim();
+    const manualPhone = newCustPhone.trim();
+    if (!loadedMatch && manualNew) {
+      if (!manualName) {
+        toast.error('신규 고객 성함을 입력하세요.');
+        return;
+      }
+      if (!manualPhone) {
+        toast.error('신규 고객 연락처를 입력하세요.');
+        return;
+      }
+    } else if (!loadedMatch) {
+      return; // 대상 미확정(검색 미선택 & 직접등록 아님) — 가드
+    }
     if (!pickedDate) {
       toast.error('예약 캘린더에서 날짜를 먼저 선택하세요.');
       return;
@@ -846,11 +937,12 @@ export function ReservationDetailPopup({
       toast.error('예약 시간을 선택하세요.');
       return;
     }
+    const targetName = loadedMatch ? loadedMatch.name : manualName;
     setCreatingResv(true);
     const res = await onCreateReservation({
-      customerId: loadedMatch.id,
-      name: loadedMatch.name,
-      phone: loadedMatch.phone ?? null,
+      customerId: loadedMatch ? loadedMatch.id : null,
+      name: targetName,
+      phone: loadedMatch ? (loadedMatch.phone ?? null) : manualPhone,
       date: format(pickedDate, 'yyyy-MM-dd'),
       time: newResvTime,
       visit_type: newResvVisitType,
@@ -863,9 +955,12 @@ export function ReservationDetailPopup({
       }
       return;
     }
-    toast.success(`${loadedMatch.name}님 신규예약이 등록되었습니다.`);
+    toast.success(`${targetName}님 신규예약이 등록되었습니다.`);
     // 생성 후 현재 예약(A) 기준으로 복귀 + 팝업 닫기(부모 onChanged → 목록 새로고침)
     setLoadedMatch(null);
+    setManualNew(false);
+    setNewCustName('');
+    setNewCustPhone('');
     onChanged();
   };
 
