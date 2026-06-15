@@ -263,6 +263,7 @@ export default function Customers() {
     doctor_status: null,
     doctor_started_at: null,
     doctor_ended_at: null,
+    call_list_manual_order: null,
   }), []);
   // 우클릭 컨텍스트 메뉴
   // T-20260613-foot-CUST-CONTEXTMENU-STALE: customer 스냅샷 대신 customerId만 보관.

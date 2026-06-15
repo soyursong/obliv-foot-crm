@@ -1200,6 +1200,7 @@ export default function Reservations() {
     doctor_status: null,
     doctor_started_at: null,
     doctor_ended_at: null,
+    call_list_manual_order: null,
     // T-20260613-foot-CHART1-CHARTNO-DEDUP-REORDER §D(AC-5): CustomerHoverCard 트리거 인라인
     //   차트번호 배지를 hover 전부터 SSOT(resvChartMap=customers.chart_number)로 채워 안정화.
     //   → hover 시 fetch로 '#미발번' → 차트번호 덮어쓰는 깜빡임 제거(미발번이면 null 유지 → '#미발번' 그대로).
