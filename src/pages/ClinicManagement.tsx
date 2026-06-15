@@ -14,6 +14,10 @@ import { useAuth } from '@/lib/auth';
 // T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT: 상용구(PhrasesTab)·수가세트(FeeSetTemplatesTab) 2개 탭은
 //   '서비스관리 > 상용구관리' 서브탭(Services.tsx)으로 이전됨(렌더 위치 이동만). 여기서는 import/탭 제거 + 딥링크 redirect.
 import SuperPhrasesTab from '@/components/admin/SuperPhrasesTab';
+// T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT: 진료차트 상용구(phrase_type=medical_chart) 전용 탭.
+//   부모(PHRASEMGMT)가 제거한 'phrases' 탭 복원이 아니라, lockedType='medical_chart' 로 마운트하는 새 surface.
+//   value/testid 는 'phrases' 와 다른 신규 키(medchart_phrases) — 부모 redirect(?tab=phrases) 충돌 방지.
+import PhrasesTab from '@/components/admin/PhrasesTab';
 import PrescriptionSetsTab from '@/components/admin/PrescriptionSetsTab';
 // T-20260606-foot-RX-SET-REDESIGN AC-R2: 약품 폴더 관리(개별 약품 분류 트리). 묶음처방(prescription_sets)과 별개.
 import DrugFoldersTab from '@/components/admin/DrugFoldersTab';
@@ -29,7 +33,7 @@ import ContraindicationsTab from '@/components/admin/ContraindicationsTab';
 // T-20260609-foot-DRUG-INSURANCE-GATE Phase1: 약품별 급여여부(보험상태) 관리 — 처방 게이트(checkRxInsuranceGate) 소스
 import InsuranceStatusTab from '@/components/admin/InsuranceStatusTab';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Pill, FileText, Layers, Zap, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes, BadgeCheck } from 'lucide-react';
+import { Pill, FileText, Layers, Zap, TrendingUp, ShieldAlert, Sparkles, ClipboardList, FolderTree, Boxes, BadgeCheck, BookText } from 'lucide-react';
 
 export default function ClinicManagement() {
   const { profile } = useAuth();
@@ -56,6 +60,8 @@ export default function ClinicManagement() {
 
   const accessibleTabs = [
     'super_phrases',
+    // T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT: 진료차트 상용구 딥링크(?tab=medchart_phrases) 허용.
+    'medchart_phrases',
     'prescriptions',
     'drug_folders',
     'diagnosis_names',
@@ -143,6 +149,12 @@ export default function ClinicManagement() {
             <Sparkles className="h-3.5 w-3.5" />
             슈퍼상용구
           </TabsTrigger>
+          {/* T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT: 진료차트 상용구(medical_chart) 신규 탭.
+              슈퍼상용구(SuperPhrasesTab)와 별개 — 일반 상용구 중 진료차트 임상경과 입력용. */}
+          <TabsTrigger value="medchart_phrases" className="gap-1.5" data-testid="tab-medchart-phrases">
+            <BookText className="h-3.5 w-3.5" />
+            진료차트 상용구
+          </TabsTrigger>
           <TabsTrigger value="documents" className="gap-1.5" data-testid="tab-documents">
             <FileText className="h-3.5 w-3.5" />
             서류 템플릿
@@ -190,6 +202,10 @@ export default function ClinicManagement() {
         {/* 행 2 — '상용구'(phrases) TabsContent 는 서비스관리>상용구관리로 이전(T-20260613-foot-PHRASEMGMT-SUBTAB-SPLIT). */}
         <TabsContent value="super_phrases">
           <SuperPhrasesTab />
+        </TabsContent>
+        {/* T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT: 진료차트 상용구 — PhrasesTab 을 medical_chart 로 고정 마운트. */}
+        <TabsContent value="medchart_phrases">
+          <PhrasesTab lockedType="medical_chart" />
         </TabsContent>
         <TabsContent value="documents">
           <DocumentTemplatesTab />
