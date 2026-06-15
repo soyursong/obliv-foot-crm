@@ -1,22 +1,22 @@
 ---
 ticket_id: T-20260614-foot-THEME-MONOCHROME-RECOLOR
 domain: foot
-priority: P2
+priority: P1
 status: deploy-ready
 block_reason: ''
 requester: 김주연 총괄 (U0ATDB587PV)
-thread: C0ATE5P6JTH / 1781364123.025179
+thread: C0ATE5P6JTH / 1781445031.324519 (정정 1781484266.433719)
 risk: GO_WARN
 owner: agent-fdd-dev-foot
-approved_by: 김주연 총괄 (A/B → A안, planner NEW-TASK MSG-20260614-201105)
-stage_done: [StepA, StepB, StepC-field-confirm, StepD-token-only, StepE-decoration-sweep-A안, AC5-fullrender]
+approved_by: 김주연 총괄 (A/B → A안, planner NEW-TASK MSG-20260614-201105 + REOPEN MSG-20260615-095219-izs5)
+stage_done: [StepA, StepB, StepC-field-confirm, StepD-token-only, StepE-decoration-sweep-A안, StepF-reopen-surface-white, AC5-fullrender-reopen]
 stage_pending: [supervisor-QA]
 deploy-ready: true
 deploy-ready-by: agent-fdd-dev-foot
-deploy-ready-at: 2026-06-14
+deploy-ready-at: 2026-06-15
 db-change: false
 build: pass
-spec: tests/e2e/T-20260614-foot-THEME-MONOCHROME-RECOLOR.spec.ts (15 pass — unit+desktop-chrome)
+spec: tests/e2e/T-20260614-foot-THEME-MONOCHROME-RECOLOR.spec.ts (unit 8 pass — 정적+컴파일CSS 베이지누수0 가드) + tests/e2e/T-20260614-foot-THEME-MONOCHROME-RECOLOR-AC5-render.spec.ts (desktop-chrome 5 pass — 인증 전체화면 흰배경 가드+스샷)
 qa_result: self-pass-pending-supervisor
 ---
 
