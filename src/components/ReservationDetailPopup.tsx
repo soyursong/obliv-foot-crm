@@ -977,7 +977,11 @@ export function ReservationDetailPopup({
           <DialogHeader className="px-6 pt-5 pb-3 border-b shrink-0">
             <div className="flex items-start justify-between gap-3 pr-8">
               <DialogTitle className="flex flex-wrap items-center gap-2 text-base min-w-0">
-                <span>{reservation.customer_name}</span>
+                {/* T-20260615-foot-RESVPOPUP-3BUG AC1 (BUG-1): 헤더 고객명이 검색으로 불러온 고객(B)으로 갱신 안 되는
+                    stale 버그. 환자정보 섹션(아래)은 customer state 로 이미 갱신되나 헤더 타이틀만 reservation.customer_name
+                    (원본 A)에 하드바인딩돼 있었음. loadedMatch(검색 선택 즉시) → customer(loadZone1Data 갱신) → 원본 순으로
+                    바인딩해 검색 선택 시 헤더 고객명도 즉시 B 로 반영. (6FIX AC1 의 1번구역 갱신 동선과 정합) */}
+                <span>{loadedMatch?.name ?? customer?.name ?? reservation.customer_name}</span>
                 {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
                 <span className="text-xs font-mono font-normal text-teal-600">{chartNoBadge(customer?.chart_number ?? null)}</span>
                 <span

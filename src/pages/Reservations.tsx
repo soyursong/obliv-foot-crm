@@ -161,6 +161,22 @@ type CanonicalCreateResult =
   | { ok: true; reservationId: string }
   | { ok: false; reason: 'slot_full' | 'duplicate_cancelled' | 'error'; message?: string };
 
+// T-20260615-foot-RESVPOPUP-3BUG AC2 (BUG-2): is_healer_intent 컬럼 운영 DB 미반영(마이그 20260614130000 미적용) 내성화.
+//   READ 경로(ReservationDayTimeslotPanel, DETAIL-8FIX AC4)는 이미 컬럼 제외 재조회로 graceful 처리됐으나,
+//   신규예약 생성(INSERT)·수정(UPDATE) WRITE 경로는 payload 에 is_healer_intent 가 그대로 남아
+//   PostgREST 가 "Could not find the 'is_healer_intent' column ... in the schema cache"(PGRST204)
+//   또는 42703(undefined_column)을 던져 '신규예약 생성' 버튼 클릭 시 오류(현장 스샷 F0BBDM8314Y)로 표면화.
+//   ⇒ 동일 패턴으로 WRITE 도 내성화: 컬럼 누락 에러 감지 시 is_healer_intent 제외 payload 로 1회 재시도.
+//   ⚠ 영구 RC = 마이그 미적용 → supervisor/planner FOLLOWUP 으로 마이그 적용 권고(본 FE 내성화는 즉시 unblock 용).
+function isHealerIntentColMissing(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false;
+  return (
+    err.code === '42703' ||
+    err.code === 'PGRST204' ||
+    /is_healer_intent/.test(err.message ?? '')
+  );
+}
+
 async function createReservationCanonical(input: CanonicalCreateInput): Promise<CanonicalCreateResult> {
   const normalizedPhone = input.phone ? (normalizeToE164(input.phone) ?? input.phone.trim()) : null;
 
@@ -230,11 +246,22 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
     } : {}),
   };
 
-  const result = await supabase
+  const insertBody = { ...payload, status: 'confirmed' };
+  let result = await supabase
     .from('reservations')
-    .insert({ ...payload, status: 'confirmed' })
+    .insert(insertBody)
     .select('id')
     .maybeSingle();
+  // T-20260615-foot-RESVPOPUP-3BUG AC2: is_healer_intent 컬럼 미반영(PGRST204/42703) 시 제외 후 1회 재시도.
+  if (result.error && isHealerIntentColMissing(result.error)) {
+    const { is_healer_intent: _omit, ...bodyNoHealer } = insertBody as typeof insertBody & { is_healer_intent?: boolean };
+    void _omit;
+    result = await supabase
+      .from('reservations')
+      .insert(bodyNoHealer)
+      .select('id')
+      .maybeSingle();
+  }
   if (result.error) return { ok: false, reason: 'error', message: result.error.message };
   const savedId = (result.data as { id: string } | null)?.id;
   if (!savedId) return { ok: false, reason: 'error', message: '예약이 생성되지 않았습니다.' };
@@ -1588,6 +1615,18 @@ export default function Reservations() {
                             onDragOver={(e) => { if (allowed) { e.preventDefault(); setDropTarget(cellKey); } }}
                             onDragLeave={() => setDropTarget(null)}
                             onDrop={(e) => { if (allowed) handleDrop(e, dateStr, time); }}
+                            // T-20260615-foot-RESVPOPUP-3BUG AC3 (BUG-3): 빈 슬롯 우클릭 → (+) 버튼과 동일하게
+                            //   예약상세 팝업 new-mode 오픈(openNewSlot). 기존엔 빈 슬롯에 우클릭 핸들러가 없어 (+) 경로와
+                            //   동작 불일치(현장 질의 "두 진입경로가 왜 다름?"). 예약 카드 우클릭은 카드 자체 onContextMenu 가
+                            //   stopPropagation 하므로 이 셀 핸들러로 버블되지 않음 → 카드=컨텍스트메뉴 / 빈슬롯=new-mode 유지.
+                            //   🔒 L-002: 생성 capability·로직 불변(openNewSlot 재사용) — 진입 '배선'만 (+) 와 통일.
+                            //   가드는 (+) 버튼(아래 slot-plus)과 동일: allowed && !filterProgress && !full && 클립보드 없음.
+                            onContextMenu={(e) => {
+                              if (allowed && !filterProgress && !full && !clipboard) {
+                                e.preventDefault();
+                                openNewSlot(d, time);
+                              }
+                            }}
                             onClick={() => {
                               // T-20260515-foot-RESV-BOX-INTERACT: AC-1 빈 영역 클릭 → 선택 해제
                               if (clipboard && allowed) {
@@ -2521,12 +2560,23 @@ function ReservationEditor({
         .maybeSingle();
       const prevRow = (prev as Record<string, unknown>) ?? null;
 
-      const result = await supabase
+      let result = await supabase
         .from('reservations')
         .update(payload)
         .eq('id', state.existingId)
         .select('id')
         .maybeSingle();
+      // T-20260615-foot-RESVPOPUP-3BUG AC2: is_healer_intent 컬럼 미반영(PGRST204/42703) 시 제외 후 1회 재시도.
+      if (result.error && isHealerIntentColMissing(result.error)) {
+        const { is_healer_intent: _omit, ...payloadNoHealer } = payload as typeof payload & { is_healer_intent?: boolean };
+        void _omit;
+        result = await supabase
+          .from('reservations')
+          .update(payloadNoHealer)
+          .eq('id', state.existingId)
+          .select('id')
+          .maybeSingle();
+      }
 
       if (result.error) {
         toast.error(`저장 실패: ${result.error.message}`);
