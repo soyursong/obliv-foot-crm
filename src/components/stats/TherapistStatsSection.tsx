@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { TherapistSummaryRow, TherapistServiceRow } from '@/lib/stats';
@@ -11,7 +11,8 @@ interface Props {
   loading: boolean;
 }
 
-const BAR_COLORS = ['#0d9488', '#14b8a6', '#2dd4bf', '#5eead4', '#99f6e4', '#f59e0b', '#10b981'];
+// 막대 색: 연그레이 모노톤(slate-400) — 깔끔한 단색 통일 (그린/틸 제거)
+const AVG_BAR_COLOR = '#94a3b8';
 
 // 지표2: 시술 4종 정규 순서 (0건도 한 줄로 표기해 카드 높이/구성 일관 유지)
 const TREATMENT_TYPES = ['비가열', '가열', '포돌로게', 'Re:Born'] as const;
@@ -66,11 +67,7 @@ export default function TherapistStatsSection({ summary, services, loading }: Pr
                         <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                         <YAxis tick={{ fontSize: 11 }} unit="분" width={44} />
                         <Tooltip formatter={(v) => [`${Number(v)}분`, '평균 치료시간']} />
-                        <Bar dataKey="minutes" radius={[4, 4, 0, 0]}>
-                          {avgChartData.map((_, i) => (
-                            <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />
-                          ))}
-                        </Bar>
+                        <Bar dataKey="minutes" radius={[4, 4, 0, 0]} fill={AVG_BAR_COLOR} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
