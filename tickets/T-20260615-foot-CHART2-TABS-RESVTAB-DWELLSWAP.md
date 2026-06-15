@@ -10,7 +10,7 @@ db-change: false
 spec-added: true
 spec-exempt: false
 rollback-sql: null
-commit_sha: PENDING
+commit_sha: 014944f
 created: 2026-06-15
 assignee: dev-foot
 reporter: planner
