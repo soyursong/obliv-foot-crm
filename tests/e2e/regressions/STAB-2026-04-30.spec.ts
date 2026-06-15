@@ -37,7 +37,12 @@
  */
 import { test, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
-import { loginAndWaitForDashboard } from '../../helpers';
+import {
+  loginAndWaitForDashboard,
+  expectDeprecatedCheckinRedirect,
+  stubCanonicalCheckin,
+  CANONICAL_STUB_MARKER,
+} from '../../helpers';
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL ?? '';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
@@ -47,96 +52,19 @@ function sb() {
   return createClient(SUPA_URL, SERVICE_KEY);
 }
 
-// ─── S05 / S08: 셀프체크인 UI (인증 불필요) ────────────────────────────────────
+// ─── S05 / S08: 셀프체크인 UI ─────────────────────────────────────────────────
+//
+// T-20260615-foot-REGRESSION-SUITE-DEROT RC-A:
+// S05(form ID), S08(브라운 테마/추천인/완료화면)은 모두 obliv-foot-crm 네이티브
+// 셀프체크인 폼(#sc-name 등)을 검증했다. 6/2 CF-CUTOVER + 6/3 OLDURL-DEPRECATE 후
+// 네이티브 폼은 폐기되고 canonical 이 foot-checkin.pages.dev(별도 레포)로 단일
+// 이전됨. 네이티브 폼·테마·완료화면은 외부 레포 소유라 본 레포 회귀 범위 밖.
+// 본 레포가 책임지는 잔여 동작은 "deprecated slug → canonical 리다이렉트 고지"뿐이며
+// 이를 결정적(offline-safe)으로 검증한다.
 
-test.describe('S05+S08 셀프체크인 form 필드 + 브라운 테마', () => {
-  test('S05: 셀프체크인 form ID 확인 — sc-name / sc-phone', async ({ page }) => {
-    await page.goto('/checkin/jongno-foot');
-    await expect(page.getByText('셀프 접수')).toBeVisible({ timeout: 10_000 });
-
-    // 필드 ID 확인 (CHECKIN-SPEC-REFRESH)
-    await expect(page.locator('#sc-name')).toBeVisible();
-    await expect(page.locator('#sc-phone')).toBeVisible();
-
-    // 방문유형 버튼 확인
-    await expect(page.getByText('초진', { exact: true })).toBeVisible();
-    await expect(page.getByText('재진', { exact: true })).toBeVisible();
-    await expect(page.getByText('예약없이 방문', { exact: true })).toBeVisible();
-
-    // 접수 버튼 비활성 (필수 필드 미입력)
-    const submitBtn = page.getByRole('button', { name: '접수하기', exact: true });
-    await expect(submitBtn).toBeDisabled();
-  });
-
-  test('S08: 셀프체크인 브라운 테마 + 추천인 필드', async ({ page }) => {
-    await page.goto('/checkin/jongno-foot');
-    await expect(page.getByText('셀프 접수')).toBeVisible({ timeout: 10_000 });
-
-    // 추천인 필드 (신규 선택 시 표시 — 초진이 기본값)
-    const referrerLabel = page.getByText('추천인', { exact: true });
-    await expect(referrerLabel).toBeVisible();
-
-    // 이름+전화번호 입력 후 접수 버튼 활성화
-    await page.locator('#sc-name').fill('안정화테스트');
-    await page.locator('#sc-phone').fill('01099990000');
-    const submitBtn = page.getByRole('button', { name: '접수하기', exact: true });
-    await expect(submitBtn).toBeEnabled();
-
-    await page.screenshot({
-      path: 'test-results/screenshots/STAB-S08-self-checkin.png',
-      fullPage: true,
-    });
-  });
-
-  test('S08: 셀프체크인 접수 완료 화면 → 대기번호 표시', async ({ page }) => {
-    const client = sb();
-    // 사전 Clinic 존재 확인
-    const { data: clinic } = await client
-      .from('clinics')
-      .select('id, slug')
-      .eq('slug', 'jongno-foot')
-      .maybeSingle();
-    if (!clinic) {
-      test.info().annotations.push({ type: 'skip', description: 'jongno-foot clinic 없음' });
-      return;
-    }
-
-    await page.goto('/checkin/jongno-foot');
-    await expect(page.getByText('셀프 접수')).toBeVisible({ timeout: 10_000 });
-
-    const ts = Date.now();
-    const testPhone = `010${String(ts).slice(-8)}`;
-
-    await page.locator('#sc-name').fill(`STAB-S08-${ts}`);
-    await page.locator('#sc-phone').fill(testPhone);
-
-    await page.getByRole('button', { name: '접수하기', exact: true }).click();
-    // 확인 단계 → 접수 제출
-    const confirmBtn = page.getByRole('button', { name: '접수하기' });
-    if (await confirmBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await confirmBtn.click();
-    }
-
-    await page.waitForTimeout(3000);
-
-    // 접수 완료 화면 — 대기번호 표시 확인
-    const doneVisible = await page.getByText('접수 완료').isVisible({ timeout: 8_000 }).catch(() => false);
-    if (doneVisible) {
-      await expect(page.getByText('접수 완료')).toBeVisible();
-      await page.screenshot({ path: 'test-results/screenshots/STAB-S08-done-screen.png', fullPage: true });
-    }
-
-    // cleanup
-    await client
-      .from('check_ins')
-      .delete()
-      .eq('clinic_id', clinic.id)
-      .eq('customer_phone', testPhone);
-    await client
-      .from('customers')
-      .delete()
-      .eq('clinic_id', clinic.id)
-      .eq('phone', testPhone);
+test.describe('S05+S08 셀프체크인 deprecated slug → canonical 리다이렉트', () => {
+  test('deprecated /checkin/jongno-foot 진입 → canonical 리다이렉트 고지 (네이티브 폼 폐기)', async ({ page }) => {
+    await expectDeprecatedCheckinRedirect(page);
   });
 });
 
@@ -616,17 +544,22 @@ test.describe('S10 CHART-DETAIL — 고객 차트 상세 탭', () => {
 test.describe('빌드 정적 자산 로드', () => {
   test('/ → /admin 리다이렉트 정상', async ({ page }) => {
     await page.goto('/');
-    // 리다이렉트 후 /login 또는 /admin에 착지
-    await page.waitForLoadState('domcontentloaded');
+    // 클라 라우터 리다이렉트는 비동기 — domcontentloaded 직후엔 아직 '/' 일 수 있어
+    // 결정적으로 착지 URL 을 폴링 대기한다 (false-fail 방지).
+    await page.waitForURL(/\/(login|admin|checkin)/, { timeout: 10_000 }).catch(() => {});
     const url = page.url();
     const isExpected = url.includes('/login') || url.includes('/admin') || url.includes('/checkin');
     expect(isExpected).toBe(true);
   });
 
   test('셀프체크인 JS 번들 로드 + React 렌더링', async ({ page }) => {
+    // canonical 을 오프라인 stub 으로 fulfill → 본 레포 번들이 로드되고 React 가 실행되어
+    // canonical 로 리다이렉트하기까지의 시간을 결정적으로 측정(abort 는 메인프레임 pending 유발).
+    await stubCanonicalCheckin(page);
     const t0 = Date.now();
-    await page.goto('/checkin/jongno-foot');
-    await page.waitForLoadState('networkidle');
+    await page.goto('/checkin/jongno-foot').catch(() => {});
+    // canonical stub 착지 = SPA 번들 로드 + React 렌더(리다이렉트) 완료 신호
+    await expect(page.locator(`#${CANONICAL_STUB_MARKER}`)).toBeVisible({ timeout: 10_000 });
     const loadMs = Date.now() - t0;
     test.info().annotations.push({ type: 'performance', description: `셀프체크인 로드: ${loadMs}ms` });
     // 10초 이내 로드 목표 (티켓 성능 기준)
@@ -641,11 +574,11 @@ test.describe('S12s DESK-PAYMENT-MENU — 셀프체크인 경로 정상 (smoke)'
   test('S12s: /checkin/jongno-foot 로드 → 앱 정상 렌더링 (DeskPaymentMenu 전제)', async ({
     page,
   }) => {
-    await page.goto('/checkin/jongno-foot');
-    await page.waitForLoadState('domcontentloaded');
-    // 셀프체크인 앱이 정상 렌더링 → DeskPaymentMenu를 포함한 Admin 앱 동일 번들 확인
-    const body = await page.evaluate(() => document.body.innerHTML);
-    expect(body.length).toBeGreaterThan(100);
+    // RC-A: deprecated slug 는 canonical 로 window.location.replace 한다(6/3 OLDURL-DEPRECATE).
+    // 과거엔 page.evaluate 로 native 폼 body 를 검증했으나, 리다이렉트로 실행 컨텍스트가
+    // 파괴돼 false-fail 났다. 본 레포 번들이 정상 실행되어 canonical 로 리다이렉트함을
+    // (= 앱이 죽지 않고 라우트가 동작함을) 오프라인 stub 착지로 결정적 검증한다.
+    await expectDeprecatedCheckinRedirect(page);
     test.info().annotations.push({
       type: 'note',
       description: '상세: R-2026-04-30-desk-payment-menu.spec.ts T1~T8',

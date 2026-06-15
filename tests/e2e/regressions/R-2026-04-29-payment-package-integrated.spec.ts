@@ -10,7 +10,12 @@
  */
 import { test, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
-import { loginAndWaitForDashboard } from '../../helpers';
+import { loginAndWaitForDashboard, dismissCustomerChartSheet } from '../../helpers';
+
+// T-20260615-foot-REGRESSION-SUITE-DEROT RC-C (플로우 드리프트):
+// CHART2-STATE-UNIFY(5/16) 이후 카드 클릭은 CheckInDetailSheet 와 함께 2번차트(CustomerChartSheet)를
+// 위에 띄운다. 본 스펙의 검증 대상은 CheckInDetailSheet 내부(패키지 회차/시술 항목)이므로,
+// 카드 클릭 직후 2번차트를 닫아 대상 시트를 드러낸 뒤 단언한다(occlusion 클릭 차단 false-fail 제거).
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL ?? '';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
@@ -185,14 +190,18 @@ test.describe('T1~T3, T5: CheckInDetailSheet 시술항목 + 패키지 회차 UI'
 
     await card.click();
     await page.waitForTimeout(800);
+    // RC-C: 카드 클릭 시 위에 열리는 2번차트를 닫아 CheckInDetailSheet 를 드러낸다.
+    await dismissCustomerChartSheet(page);
 
-    // 시트가 열렸는지 확인
-    const sheetOpen = await page.getByText('패키지 잔여회차').first().isVisible().catch(() => false);
-    expect(sheetOpen).toBe(true);
+    // RC-C rebase: '패키지 잔여회차' 요약 카드는 CHART1-TRIM(5/22)에서 제거되고(패키지 탭 중복),
+    // CheckInDetailSheet 본문엔 '패키지' 섹션(패키지명 + 가열/비가열/수액/사전처치 잔여 + 진행바)이
+    // 남았다. 본래 의도(활성 패키지 잔여회차가 시트에 보인다)를 현재 UI 로 검증한다.
+    const pkgSection = page.getByText('UI테스트 패키지').first();
+    await expect(pkgSection).toBeVisible({ timeout: 8_000 });
 
-    // 잔여 회차 뱃지 확인 (비가열 3회)
-    const unheatedBadge = await page.getByText(/비가열/).first().isVisible().catch(() => false);
-    expect(unheatedBadge).toBe(true);
+    // 잔여 회차 표기 확인 (비가열 — seed: unheated 3)
+    const unheatedBadge = page.getByText(/비가열/).first();
+    await expect(unheatedBadge).toBeVisible();
 
     await page.screenshot({ path: 'test-results/screenshots/R-2026-04-29-T1-package-summary.png' });
   });
@@ -215,36 +224,17 @@ test.describe('T1~T3, T5: CheckInDetailSheet 시술항목 + 패키지 회차 UI'
 
     await card.click();
     await page.waitForTimeout(800);
+    await dismissCustomerChartSheet(page);
 
-    // 시술 추가 버튼 클릭
-    const addBtn = page.getByRole('button', { name: /추가/ }).first();
-    const addBtnVisible = await addBtn.isVisible().catch(() => false);
-    if (!addBtnVisible) {
-      test.info().annotations.push({ type: 'skip', description: '추가 버튼 미표시' });
-      return;
-    }
-    await addBtn.click();
-    await page.waitForTimeout(400);
-
-    // 시술 선택 모달 열림 확인
-    const modalTitle = await page.getByText('시술 선택').first().isVisible().catch(() => false);
-    expect(modalTitle).toBe(true);
-
-    // 시술 버튼 목록에서 첫번째 클릭
-    const svcBtns = await page.locator('[data-testid^="svc-option-"]').all();
-    if (svcBtns.length > 0) {
-      await svcBtns[0].click();
-      await page.waitForTimeout(300);
-
-      // 시술 항목 row 생성 확인
-      const itemRow = await page.locator('[data-testid="treatment-item-row"]').first().isVisible().catch(() => false);
-      expect(itemRow).toBe(true);
-
-      // 패키지 회차 사용 또는 단건 결제 버튼 중 하나 표시 확인
-      const useSessionBtn = await page.locator('[data-testid="btn-use-package-session"]').first().isVisible().catch(() => false);
-      const singlePayBtn = await page.locator('[data-testid="btn-single-payment"]').first().isVisible().catch(() => false);
-      expect(useSessionBtn || singlePayBtn).toBe(true);
-    }
+    // RC-C rebase: 구 '시술 추가 → 시술 선택 모달 → svc-option → treatment-item-row →
+    // btn-use-package-session/btn-single-payment' 흐름의 testid(treatment-item-row·btn-*)는
+    // 제거됐고, '시술 항목 관리' 섹션 + 패키지 회차 사용 진입은 payment_waiting 의 DeskPaymentMenu
+    // (desk-menu-session-deduct)로 이전됐다(회귀 보호는 R-2026-04-30-desk-payment-menu T4 가 담당).
+    // treatment_waiting 시트의 본래 검증 의도(패키지 보유 고객의 패키지 회차 정보가 시트에 정확히
+    // 표면화된다)를 '패키지' 섹션의 잔여 회차 카운트(seed: 가열1/비가열3/사전처치1)로 검증한다.
+    await expect(page.getByText('UI테스트 패키지').first()).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByText(/가열\s*1/).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/비가열\s*3/).first()).toBeVisible({ timeout: 5_000 });
 
     await page.screenshot({ path: 'test-results/screenshots/R-2026-04-29-T2-treatment-items.png' });
   });
@@ -290,26 +280,13 @@ test.describe('T1~T3, T5: CheckInDetailSheet 시술항목 + 패키지 회차 UI'
       }
       await card.click();
       await page.waitForTimeout(800);
+      await dismissCustomerChartSheet(page);
 
-      // 시술 추가
-      const addBtn = page.getByRole('button', { name: /추가/ }).first();
-      if (await addBtn.isVisible().catch(() => false)) {
-        await addBtn.click();
-        await page.waitForTimeout(400);
-        const svcBtns = await page.locator('[data-testid^="svc-option-"]').all();
-        if (svcBtns.length > 0) {
-          await svcBtns[0].click();
-          await page.waitForTimeout(300);
-
-          // 단건 결제 버튼 (패키지 없으므로)
-          const singlePayBtn = await page.locator('[data-testid="btn-single-payment"]').first().isVisible().catch(() => false);
-          // 패키지가 없는 경우 단건 결제가 표시되어야 함 (혹은 패키지 회차 사용 버튼도 가능하지 않음)
-          test.info().annotations.push({
-            type: 'result',
-            description: `단건 결제 버튼: ${singlePayBtn}`,
-          });
-        }
-      }
+      // RC-C rebase: 패키지 없는 고객 시트의 '패키지' 섹션은 '활성 패키지 없음' 을 표기한다.
+      // 본래 의도(패키지 미보유 고객은 회차 사용이 아닌 단건/결제 경로)를 현재 UI 의 안정적
+      // 신호('활성 패키지 없음')로 검증한다. 회차 사용 차단 자체는 desk-payment T3(session-deduct
+      // disabled)가 별도 보호한다.
+      await expect(page.getByText('활성 패키지 없음').first()).toBeVisible({ timeout: 8_000 });
 
       await page.screenshot({ path: 'test-results/screenshots/R-2026-04-29-T3-no-package.png' });
     } finally {

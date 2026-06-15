@@ -17,8 +17,16 @@ test.describe('QA-R1 Staff assignment (foot-057 회귀)', () => {
   });
 
   test('Staff 페이지 진입 + 방 목록 렌더', async ({ page }) => {
+    // RC-C(UI 재구조 drift): /admin/staff 가 탭 구조로 바뀌고 기본 탭이 '근무캘린더'가 됐다.
+    // 방 목록(상담실/레이저실 등)은 '공간 배정' 탭으로 이동했으므로, 과거처럼 기본 화면에서
+    // 방 라벨을 찾으면 false-fail. 본래 의도(방 목록 렌더 확인)를 위해 '공간 배정' 탭을 연다.
     await page.goto('/admin/staff');
     await page.waitForLoadState('networkidle');
+    const spaceTab = page.getByRole('tab', { name: /공간 배정/ }).or(page.getByText('공간 배정')).first();
+    if (await spaceTab.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      await spaceTab.click();
+      await page.waitForTimeout(1_000);
+    }
     // 상담실/원장실/치료실/레이저실 중 하나라도 보여야 함
     const hasRoom = await page
       .getByText(/상담실|원장실|치료실|레이저실/)

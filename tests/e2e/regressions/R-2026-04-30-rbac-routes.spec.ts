@@ -17,6 +17,7 @@
 
 import { test, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
+import { expectDeprecatedCheckinRedirect, stubCanonicalCheckin, CANONICAL_STUB_MARKER } from '../../helpers';
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL ?? '';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
@@ -90,77 +91,21 @@ test.describe('B1 비인증 접근 → 로그인 리다이렉트', () => {
 // ─── B2: 셀프체크인 라우트 — 인증 불필요 (anon 허용) ────────────────────────────
 
 test.describe('B2 셀프체크인 anon 접근 허용', () => {
-  test('B2-1: /checkin/jongno-foot → 인증 없이 정상 렌더링', async ({ page }) => {
-    await page.context().clearCookies();
-    await page.goto('/checkin/jongno-foot');
-    await page.waitForLoadState('networkidle', { timeout: 10_000 });
+  // T-20260615-foot-REGRESSION-SUITE-DEROT RC-A:
+  // 6/2 CF-CUTOVER + 6/3 OLDURL-DEPRECATE 후 /checkin/jongno-foot 네이티브 폼은 폐기되고
+  // canonical(foot-checkin.pages.dev)로 단일 이전됨. B2 의 핵심 의도("anon 은 인증 게이트
+  // 없이 셀프체크인 진입 가능, /login 으로 튕기지 않는다")는 deprecated slug → canonical
+  // 리다이렉트 고지가 anon 에게 정상 제공됨으로 보존된다. 네이티브 폼·접수 제출은 외부
+  // 레포 소유라 본 회귀 범위 밖. 결정적(offline-safe) 리다이렉트 검증으로 교체.
 
-    const finalUrl = page.url();
-    const isOnLogin =
-      finalUrl.includes('/login') || finalUrl.includes('/signin');
-
-    // 셀프체크인은 로그인으로 리다이렉트되면 안 됨
-    expect(isOnLogin).toBe(false);
-
-    // 셀프체크인 폼 렌더링 확인
-    const form = page.getByText('셀프 접수').or(page.locator('#sc-name')).first();
-    const formVisible = await form.isVisible({ timeout: 5_000 }).catch(() => false);
-
-    test.info().annotations.push({
-      type: 'result',
-      description: `셀프체크인 anon 접근: ${formVisible ? '✓' : '✗'} (착지: ${finalUrl})`,
-    });
-
-    expect(formVisible).toBe(true);
+  test('B2-1: /checkin/jongno-foot → anon 인증 게이트 없이 canonical 리다이렉트 고지', async ({ page }) => {
+    await expectDeprecatedCheckinRedirect(page);
   });
 
-  test('B2-2: 셀프체크인 접수 후 완료 화면 → /login 리다이렉트 없음', async ({ page }) => {
-    if (!SERVICE_KEY) { test.skip(true, 'SERVICE_KEY 없음'); return; }
-
-    await page.context().clearCookies();
-    await page.goto('/checkin/jongno-foot');
-    await page.waitForLoadState('networkidle', { timeout: 10_000 });
-
-    // 이름 + 전화번호 입력 후 접수
-    const nameInput = page.locator('#sc-name');
-    const phoneInput = page.locator('#sc-phone');
-
-    const nameVisible = await nameInput.isVisible({ timeout: 5_000 }).catch(() => false);
-    if (!nameVisible) { test.skip(true, '셀프체크인 폼 없음'); return; }
-
-    const ts = Date.now();
-    const testPhone = `010${String(ts).slice(-8)}`;
-
-    await nameInput.fill(`RBAC-B2-${ts}`);
-    await phoneInput.fill(testPhone);
-
-    const submitBtn = page.getByRole('button', { name: '접수하기' }).first();
-    await submitBtn.click();
-    await page.waitForTimeout(2000);
-
-    const finalUrl = page.url();
-    const isOnLogin = finalUrl.includes('/login');
-    expect(isOnLogin).toBe(false);
-
-    // cleanup
-    const client = sb();
-    const { data: clinic } = await client
-      .from('clinics')
-      .select('id')
-      .eq('slug', 'jongno-foot')
-      .maybeSingle();
-    if (clinic) {
-      await client
-        .from('check_ins')
-        .delete()
-        .eq('clinic_id', clinic.id)
-        .eq('customer_phone', testPhone);
-      await client
-        .from('customers')
-        .delete()
-        .eq('clinic_id', clinic.id)
-        .eq('phone', testPhone);
-    }
+  test('B2-2: 셀프체크인 anon 진입 → /login 리다이렉트 없음 (canonical 고지)', async ({ page }) => {
+    await expectDeprecatedCheckinRedirect(page);
+    // helper 가 not /login 을 단언하지만, B2-2 의 명시 의도를 한 번 더 못 박는다.
+    expect(page.url()).not.toContain('/login');
   });
 });
 
@@ -207,21 +152,27 @@ test.describe('B3 빈 상태 / 에러 상태 처리', () => {
   });
 
   test('B3-3: 빠른 연속 네비게이션 — 앱 크래시 없음 (race condition)', async ({ page }) => {
-    // 비인증 상태에서 여러 라우트를 빠르게 전환해도 크래시 없어야 함
+    // RC-A: /checkin/jongno-foot 는 canonical 외부 주소로 window.location.replace 한다.
+    // 외부 nav 를 abort 하면 메인프레임이 pending/ERR_ABORTED 로 남아 "Execution context
+    // destroyed" false-fail 이 났다. canonical 을 오프라인 stub 으로 fulfill 해 네비게이션을
+    // 정상 완료시키고, 본 레포 내 라우트 전환의 race-condition 생존만 결정적으로 검증한다.
+    await stubCanonicalCheckin(page);
+
+    // 비인증 상태에서 여러 라우트를 빠르게 전환해도 크래시 없어야 함.
+    // 마지막 라우트(/checkin/jongno-foot)는 canonical 로 리다이렉트되므로, 앱 생존 신호는
+    // canonical stub 착지로 결정적 검증한다(page.evaluate 는 리다이렉트 중 컨텍스트 파괴로 불안정).
     const routes = ['/checkin/jongno-foot', '/admin', '/checkin/jongno-foot'];
 
     for (const route of routes) {
-      await page.goto(route, { waitUntil: 'commit' }); // commit 레벨만 대기 (빠른 전환)
+      await page.goto(route, { waitUntil: 'commit' }).catch(() => {}); // commit 레벨만 대기 (빠른 전환)
     }
 
-    // 마지막 라우트에서 앱이 살아있어야 함
-    await page.waitForLoadState('domcontentloaded', { timeout: 10_000 });
-    const bodyText = await page.evaluate(() => document.body.innerText);
-    expect(bodyText.trim().length).toBeGreaterThan(0);
+    // 마지막 라우트에서 앱이 살아있어야 함 — canonical stub 착지(= SPA 가 죽지 않고 리다이렉트 수행)
+    await expect(page.locator(`#${CANONICAL_STUB_MARKER}`)).toBeVisible({ timeout: 10_000 });
 
     test.info().annotations.push({
       type: 'result',
-      description: '빠른 연속 네비게이션 — 앱 정상 생존',
+      description: '빠른 연속 네비게이션 — 앱 정상 생존(canonical 리다이렉트 착지)',
     });
   });
 });
