@@ -1,17 +1,22 @@
--- T-20260615-foot-RLS-CLINIC-ISOLATION — Phase 2 (AC2: anon 직접 SELECT 제거 → SECURITY DEFINER RPC 대체)
--- ════════════════════════════════════════════════════════════════════════════
--- ⛔ 적용 보류(.PHASE2_HOLD) — 마이그 러너 SKIP. 아래 GATE 충족 전 prod 적용 금지.
--- ════════════════════════════════════════════════════════════════════════════
--- GATE (선결 조건):
---   ① 라이브 셀프체크인 키오스크 레포 `foot-checkin`(foot-checkin.pages.dev, 도메인 밖)이
---      customers/check_ins/reservations 의 anon 직접 SELECT + INSERT...RETURNING 의존을
---      본 파일의 RPC 로 전량 전환 완료(cross-repo).
---   ② obliv-foot-crm 의 src/pages/SelfCheckIn.tsx(songdo 등 native 경로) 동일 전환 완료.
---   실증 근거: anon SELECT 정책 제거 시 anon INSERT...RETURNING 이 42501(new row violates RLS) →
---     write 경로도 RPC 화 필수(아래 fn_selfcheckin_upsert_customer / _create_check_in).
---   조율: planner FOLLOWUP(cross-repo) + architect CONSULT(시퀀싱). §16-3 "무삭제 금지/선대체 후 제거".
+-- T-20260615-foot-RLS-CLINIC-ISOLATION — Phase 2a (AC2 일부: anon→RPC SSOT, ADDITIVE)
+-- 표준: cross_crm_data_contract.md §16-3 (v1.12) — anon 직접 SELECT 제거 → SECURITY DEFINER RPC 대체.
 --
--- 본 파일 = anon→RPC 대체 패턴의 SSOT(레퍼런스). body 횡전개 시 동일 구조 포크.
+-- ════════════════════════════════════════════════════════════════════════════
+-- 본 Phase 2a = SECURITY DEFINER RPC 7종 생성 + anon GRANT EXECUTE 만. ADDITIVE / ZERO-REGRESSION.
+--   · anon 직접 SELECT 정책은 **건드리지 않음** → 기존 키오스크/native 동선 무회귀(셀프체크인 회귀 0).
+--   · 이 단계가 선결: FE(키오스크 foot-checkin + native SelfCheckIn.tsx)가 prod 에 존재하지 않는
+--     RPC 를 호출할 수 없으므로, RPC 가 prod 에 **먼저** 떠야 FE 전환이 가능. (원래 Phase 2 가
+--     RPC생성+anon SELECT제거를 한 트랜잭션에 묶어 deadlock 이었음 → 2a/2b 분리로 해소.)
+--   · §16-3 "무삭제 금지 / 선대체 후 제거" 의 '선대체' 가 본 파일.
+--
+-- 시퀀싱(2a → FE 전환 → 2b):
+--   2a (본 파일, db-gate 적용 가능): RPC 7종 + anon GRANT. additive.
+--   FE 전환: ① foot-checkin 레포(도메인 밖, cross-repo) ② native src/pages/SelfCheckIn.tsx
+--            가 anon 직접 SELECT + INSERT...RETURNING → 본 RPC 호출로 전환 (planner 조율).
+--   2b (20260615180000_*.PHASE2B_HOLD): 두 FE 전환 완료 후에만 anon SELECT 정책 DROP + REVOKE.
+--
+-- 본 파일 = anon→RPC 대체 패턴의 SSOT(레퍼런스). body 횡전개 시 동일 2a/2b 구조 포크.
+-- author: dev-foot / 2026-06-15
 -- ════════════════════════════════════════════════════════════════════════════
 
 BEGIN;
@@ -131,7 +136,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
 $$;
 
 -- ── [쓰기 대체] 6) 고객 upsert (find-or-create) — INSERT...RETURNING 대체 ───────
---   anon SELECT 제거 후 .insert().select() 가 42501 → 본 RPC 로 id 반환. clinic 스코프 강제.
+--   anon SELECT 제거(2b) 후 .insert().select() 가 42501 → 본 RPC 로 id 반환. clinic 스코프 강제.
 CREATE OR REPLACE FUNCTION public.fn_selfcheckin_upsert_customer(
   p_clinic_id      UUID,
   p_name           TEXT,
@@ -217,7 +222,7 @@ BEGIN
 END;
 $$;
 
--- EXECUTE: anon 키오스크 경로 + authenticated.
+-- EXECUTE: anon 키오스크 경로 + authenticated. (§16-3 "anon RPC 경로만 GRANT EXECUTE 명시 개방")
 GRANT EXECUTE ON FUNCTION
   public.fn_selfcheckin_reservation_banner(UUID,TEXT),
   public.fn_selfcheckin_find_customer(UUID,TEXT),
@@ -227,19 +232,5 @@ GRANT EXECUTE ON FUNCTION
   public.fn_selfcheckin_upsert_customer(UUID,TEXT,TEXT,TEXT,BOOLEAN,TEXT,TEXT,TEXT,TEXT),
   public.fn_selfcheckin_create_check_in(UUID,UUID,TEXT,TEXT,TEXT,TEXT,INT,JSONB,UUID)
 TO anon, authenticated;
-
--- ════════════════════════════════════════════════════════════════════════════
--- ⛔ 아래는 GATE(키오스크+native FE 전환 완료) 후에만 — anon 직접 SELECT 제거 + REVOKE.
---    INSERT 정책은 보존(§15-2(B): 셀프체크인 write 경로 의존). SELECT 권한만 회수.
--- ════════════════════════════════════════════════════════════════════════════
-DROP POLICY IF EXISTS anon_select_customer_self_checkin ON customers;   -- USING(clinic_id IS NOT NULL)
-DROP POLICY IF EXISTS anon_checkin_read                 ON check_ins;   -- USING(true)
-DROP POLICY IF EXISTS anon_reservation_read             ON reservations;-- USING(true)
-
-REVOKE SELECT ON customers    FROM anon;
-REVOKE SELECT ON check_ins    FROM anon;
-REVOKE SELECT ON reservations FROM anon;
--- payments: anon 경로 의존 0 → 전체 REVOKE 가능(§15-1 백스톱)
-REVOKE ALL ON payments FROM anon;
 
 COMMIT;
