@@ -6690,8 +6690,14 @@ export default function Dashboard() {
               </DndContext>
             ) : (
               /* ── 일반 모드: 카드 드래그 (DnD 컨텍스트는 상위로 이동됨) ── */
-              /* T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY: items-start — 형제 슬롯 stretch 높이 연동 제거(각 슬롯 독립 고정 높이) */
-              <div className="flex gap-2 items-start min-w-max">
+              /* T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY (FIX/ys5t 회귀복원): h-full(기본 stretch) 복원.
+                 9340e8d가 items-start 로 바꾸면서 명시 높이가 없는 비대상 슬롯([접수중]·[상담대기]·진료·
+                 레이저대기·힐러대기·상담실)의 stretch 가 전역 제거되어 자연(짧은) 높이로 줄어든 회귀 발생.
+                 높이 통일은 조정 대상 4슬롯(치료대기 기준 + 치료실·레이저실·수납대기+완료)에 per-element
+                 inline style={{height: SLOT_COLUMN_HEIGHT}} 로만 격리 적용된다(셀렉터 누수 0). 이 4슬롯은
+                 explicit height 가 stretch 보다 우선하므로 h-full 하에서도 고정 높이를 유지하고, 카드 초과분은
+                 내부 overflow-y-auto 로 처리(컨테이너 세로 성장 금지). 비대상 슬롯은 원래대로 행 높이에 stretch. */
+              <div data-testid="kanban-slot-row" className="flex gap-2 h-full min-w-max">
                 {/* 치료실+레이저실 클러스터: 치료실 | 레이저실 나란히 배치.
                     (T-20260614-foot-DASH-HEATED-LASER-SLOT-REMOVE: 가열성레이저 슬롯 제거됨) */}
                 {groupOrder.map((gid) => {
