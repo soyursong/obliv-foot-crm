@@ -3702,3 +3702,5 @@ ref: T-20260512-foot-TREATMENT-SET
 | 2026-06-15 17:51 | dev-foot | deploy-ready | T-20260615-foot-DEDUCT-ADDSESSION-MIG-NOTAPPLIED: FIX-REQUEST(4dny) spec_missing 해소 — E2E spec 신규 추가 AC-2(추가차감 정상화·토스트 미출현)+AC-3(이중클릭 가드 유지). 86827b2. 5 passed. 코드변경 0(DB게이트 旣적용). DB변경: 없음(17:44 旣적용) |
 
 | 2026-06-15 17:51 | supervisor | qa-pass + deployed | T-20260615-foot-DEDUCT-ADDSESSION-MIG-NOTAPPLIED: prod DB 제약 unique_package_checkin → unique_package_checkin_session 적용 보충 완료, 1회차 추가 차감(동일 내원 2회차) 허용 및 이중클릭 차단 유지 확인. || 2026-06-15 18:05 | dev-foot | deploy-ready | T-20260615-foot-RXLIST-RENAME-DOCFILTER: 진료대시보드 탭 '진료 환자 목록'→'처방 환자 목록'(텍스트만, value/data-testid 보존) + 원장 진료완료 고객만 표시(completed_at∥status_flag=pink, DoctorCallDashboard L504 SSOT 1:1). 4a1af35. build OK·E2E 7 passed. DB변경: 없음(completed_at SELECT 확장만). AC5 실브라우저 진료완료-only 렌더 확인은 시드데이터로 supervisor QA 요망 |
+
+| 2026-06-15 18:00 | dev-foot | progress(blocked-on-field) | T-20260615-foot-DOCPATIENTLIST-DASHCOL-REALIGN: Step1 컬럼 순서 비교표+재정렬안 작성(evidence/..._compare-proposal.md). A vs B 1:1 아님(B고유 5·A고유 2) → 맹목 재미러 차단. responder 경유 문지은 대표원장 순서 확정 대기. 코드변경 0(폭 보존 AC3). FOLLOWUP→planner(MSG-180011-rnyk) |
