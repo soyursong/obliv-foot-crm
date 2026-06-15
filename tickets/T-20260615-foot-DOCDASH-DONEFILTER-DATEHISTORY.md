@@ -13,7 +13,7 @@ created: 2026-06-15
 assignee: dev-foot
 reporter: 문지은 대표원장 (#foot thread 1781526107.092559) — 진료대시보드 UX 6종 中 ⑤⑥
 db-gate-handoff: null
-commit_sha: null
+commit_sha: e943d9a9
 ---
 
 # T-20260615-foot-DOCDASH-DONEFILTER-DATEHISTORY
