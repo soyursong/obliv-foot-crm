@@ -141,7 +141,7 @@ export default function TherapistStatsSection({ summary, services, loading }: Pr
                     <div
                       key={t.name}
                       data-testid="svcdist-box"
-                      className="rounded-lg bg-muted/70 border p-3 flex flex-col gap-2"
+                      className="rounded-lg bg-white border p-3 flex flex-col gap-2"
                     >
                       {/* 카드 헤더: 치료사명 + 총 N건 */}
                       <div className="flex items-baseline justify-between gap-2 border-b pb-2">
