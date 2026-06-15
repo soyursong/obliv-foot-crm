@@ -1,9 +1,13 @@
 /**
  * T-20260615-foot-PROD-MIGRATION-PARITY-AUDIT AC-2 #A — insurance_claims 누락 마이그 복구
  *
- * RC(하드 증거): prod(rxlomoozakkjesdqjtvd) 에 insurance_claims/claim_items/claim_diagnoses/edi_submissions
+ * RC(하드 증거): prod(rxlomoozakkjesdqjtvd) 에 insurance_claims/claim_items/insurance_claim_diagnoses/edi_submissions
  *   4 테이블 전무 → FE 보험 청구 화면 호출 시 42P01(relation does not exist) live 버그.
  *   원본 마이그 20260520000010_insurance_claims_schema.sql 이 prod 에 미적용이었음.
+ *
+ * ★ 옵션 A 개명(2026-06-15, DA-20260615-foot-INSURANCE-CLAIM-NAMING):
+ *   claim_diagnoses → insurance_claim_diagnoses. prod live claim_diagnoses(결제연계, disease_code)는
+ *   본 스크립트가 apply/rollback 모두에서 절대 미접촉. dry-run 시 live claim_diagnoses 무변경 프로브 출력.
  *
  * 게이트: DA CONSULT GO(expedite) + supervisor DDL-diff GO(ADDITIVE/RLS add-only, rollback 존재).
  *   autonomy §3.1 (ADDITIVE+DA GO → 대표게이트 면제).
@@ -42,7 +46,9 @@ const SQL_FILE = ROLLBACK
   : '../supabase/migrations/20260520000010_insurance_claims_schema.sql';
 const SQL = readFileSync(join(__dirname, SQL_FILE), 'utf8');
 
-const TABLES = ['insurance_claims', 'claim_items', 'claim_diagnoses', 'edi_submissions'];
+const TABLES = ['insurance_claims', 'claim_items', 'insurance_claim_diagnoses', 'edi_submissions'];
+// live 결제연계 테이블 — 본 마이그가 절대 접촉하면 안 되는 대상(무변경 프로브용).
+const LIVE_UNTOUCHED = 'claim_diagnoses';
 
 const client = new pg.Client({
   host: 'aws-1-ap-southeast-1.pooler.supabase.com',
@@ -70,18 +76,51 @@ function printState(label, st) {
   for (const t of TABLES) console.log(`   ${st[t] ? '✅ 있음' : '❌ 없음'}  ${t}`);
 }
 
+// live 결제연계 claim_diagnoses 의 무변경 지문(존재/정책/컬럼/행수) — apply 전후 비교용.
+async function liveFingerprint() {
+  const reg = (await client.query(`SELECT to_regclass($1) AS reg;`, [`public.${LIVE_UNTOUCHED}`])).rows[0].reg;
+  if (!reg) return { exists: false };
+  const policies = (await client.query(
+    `SELECT policyname FROM pg_policies WHERE schemaname='public' AND tablename=$1 ORDER BY policyname;`,
+    [LIVE_UNTOUCHED])).rows.map(r => r.policyname);
+  const cols = (await client.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 ORDER BY column_name;`,
+    [LIVE_UNTOUCHED])).rows.map(r => r.column_name);
+  let rowCount = null;
+  try { rowCount = (await client.query(`SELECT count(*)::int AS n FROM public.${LIVE_UNTOUCHED};`)).rows[0].n; } catch { /* RLS/perm */ }
+  return { exists: true, policies, cols, rowCount };
+}
+
+function printLive(label, fp) {
+  console.log(`🛡️ [${label}] live ${LIVE_UNTOUCHED} (결제연계, 미접촉 대상):`);
+  if (!fp.exists) { console.log('   (테이블 없음)'); return; }
+  console.log(`   정책: ${fp.policies.join(', ') || '(없음)'}`);
+  console.log(`   컬럼: ${fp.cols.join(', ')}`);
+  console.log(`   행수: ${fp.rowCount ?? '(조회불가)'}`);
+}
+
 try {
   await client.connect();
   const before = await tableState();
   printState('적용 전', before);
+  const liveBefore = await liveFingerprint();
+  printLive('적용 전', liveBefore);
 
   if (!APPLY) {
     console.log(`ℹ️ DRY-RUN — 실제 변경 없음. 적용하려면 --apply`);
+    console.log(`ℹ️ 위 live ${LIVE_UNTOUCHED} 지문은 적용 후 동일해야 함(disease_code 컬럼·정책·행수 불변).`);
   } else {
     await client.query(SQL);
     await client.query(`NOTIFY pgrst, 'reload schema';`);
     const after = await tableState();
     printState('적용 후', after);
+
+    // live claim_diagnoses 무변경 검증 (직전 DRIFT 재발 차단)
+    const liveAfter = await liveFingerprint();
+    printLive('적용 후', liveAfter);
+    const liveSame = JSON.stringify(liveBefore) === JSON.stringify(liveAfter);
+    if (!liveSame) throw new Error(`live ${LIVE_UNTOUCHED} 변경 감지 — 적용 중단. DRIFT 재발(옵션 A 위반).`);
+    console.log(`🛡️ live ${LIVE_UNTOUCHED} 무변경 확인 (정책/컬럼/행수 동일) ✅`);
 
     if (ROLLBACK) {
       if (TABLES.some(t => after[t])) throw new Error('롤백 검증 실패: 테이블 잔존');

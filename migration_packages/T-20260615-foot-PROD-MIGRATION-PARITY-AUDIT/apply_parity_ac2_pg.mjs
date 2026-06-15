@@ -11,9 +11,13 @@
  * 사용:
  *   node apply_parity_ac2_pg.mjs            # dry-run — read-only ground-truth(현 prod 상태) + ANON 프로브
  *   node apply_parity_ac2_pg.mjs --apply    # [게이트 통과 후만] #A apply → #7 컬럼 apply → 검증 → 캐시 reload
- *   node apply_parity_ac2_pg.mjs --rollback # #7 컬럼 rollback → #A scoped_rollback (claim_diagnoses 보존)
+ *   node apply_parity_ac2_pg.mjs --rollback # #7 컬럼 rollback → #A scoped_rollback (신규 4테이블만, live claim_diagnoses 보존)
  *
- * author: dev-foot / 2026-06-15
+ * ★ 옵션 A 개명(2026-06-15, DA-20260615-foot-INSURANCE-CLAIM-NAMING):
+ *   #A 가 생성하는 건보 child = insurance_claim_diagnoses (고유명). prod live claim_diagnoses
+ *   (결제연계, disease_code)는 apply/rollback 모두 미접촉 — ground-truth 에 무변경 프로브로 검증.
+ *
+ * author: dev-foot / 2026-06-15 (개명 수정)
  */
 import pg from 'pg';
 import { readFileSync } from 'node:fs';
@@ -51,7 +55,10 @@ const client = new pg.Client({
   ssl: { rejectUnauthorized: false },
 });
 
-const TABLES = ['insurance_claims', 'claim_items', 'edi_submissions', 'claim_diagnoses'];
+// #A 가 생성하는 4 신규 테이블 (옵션 A 개명: 건보 child = insurance_claim_diagnoses)
+const TABLES = ['insurance_claims', 'claim_items', 'edi_submissions', 'insurance_claim_diagnoses'];
+// live 결제연계 — #A 가 절대 접촉하면 안 되는 대상 (무변경 프로브용)
+const LIVE_UNTOUCHED = 'claim_diagnoses';
 
 async function groundTruth(label) {
   console.log(`\n===== Ground-truth (${label}) =====`);
@@ -76,7 +83,7 @@ async function groundTruth(label) {
   console.log(`  [policies] ${pol.length}건`);
   for (const p of pol) console.log(`      ${p.tablename} :: ${p.policyname} (${p.cmd}) roles=${p.roles}`);
   // 4) ANON 권한 프로브 (table privilege — 존재 시에만)
-  for (const t of ['insurance_claims', 'claim_items', 'edi_submissions']) {
+  for (const t of ['insurance_claims', 'claim_items', 'edi_submissions', 'insurance_claim_diagnoses']) {
     const ex = await client.query(`SELECT to_regclass($1) AS r;`, [`public.${t}`]);
     if (!ex.rows[0].r) { console.log(`  [anon] ${t}: (table 부재 — 프로브 skip)`); continue; }
     const { rows: g } = await client.query(
@@ -85,13 +92,22 @@ async function groundTruth(label) {
               has_table_privilege('authenticated', $1, 'SELECT') AS auth_sel;`, [`public.${t}`]);
     console.log(`  [anon] ${t}: anon SELECT=${g.rows[0].anon_sel} INSERT=${g.rows[0].anon_ins} | authenticated SELECT=${g.rows[0].auth_sel}`);
   }
-  // 5) claim_diagnoses → insurance_claims FK 존재 여부 (rollback CASCADE 안전성 판단)
-  const { rows: fk } = await client.query(
-    `SELECT con.conname FROM pg_constraint con
-       JOIN pg_class src ON src.oid=con.conrelid
-       JOIN pg_class tgt ON tgt.oid=con.confrelid
-      WHERE con.contype='f' AND src.relname='claim_diagnoses' AND tgt.relname='insurance_claims';`);
-  console.log(`  [fk] claim_diagnoses → insurance_claims: ${fk.length ? `존재(${fk[0].conname}) — rollback CASCADE 시 이 FK만 제거됨` : '없음 — scoped rollback 안전'}`);
+  // 5) live claim_diagnoses (결제연계, disease_code) 무변경 지문 — 옵션 A 후 #A 가 미접촉해야 함.
+  const liveReg = (await client.query(`SELECT to_regclass($1) AS r;`, [`public.${LIVE_UNTOUCHED}`])).rows[0].r;
+  if (!liveReg) {
+    console.log(`  [live] ${LIVE_UNTOUCHED}: (테이블 없음)`);
+  } else {
+    const livePol = (await client.query(
+      `SELECT policyname FROM pg_policies WHERE schemaname='public' AND tablename=$1 ORDER BY policyname;`,
+      [LIVE_UNTOUCHED])).rows.map(r => r.policyname);
+    const liveCols = (await client.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 ORDER BY column_name;`,
+      [LIVE_UNTOUCHED])).rows.map(r => r.column_name);
+    let liveRows = null;
+    try { liveRows = (await client.query(`SELECT count(*)::int AS n FROM public.${LIVE_UNTOUCHED};`)).rows[0].n; } catch { /* RLS/perm */ }
+    const hasDisease = liveCols.includes('disease_code');
+    console.log(`  [live] ${LIVE_UNTOUCHED}(결제연계, 미접촉 대상): 정책[${livePol.join(',')}] disease_code=${hasDisease ? '✅' : '❌'} 행수=${liveRows ?? '?'}`);
+  }
 }
 
 const mode = ROLLBACK ? '롤백' : APPLY ? '적용' : 'DRY-RUN(read-only)';
@@ -104,7 +120,7 @@ try {
   if (!APPLY) {
     console.log(`\nℹ️ DRY-RUN — 실제 변경 0건. 적용은 DA GO + supervisor DDL-diff 통과 후 --apply.`);
   } else if (ROLLBACK) {
-    console.log('\n⏪ 롤백 실행: #7 컬럼 → #A scoped(claim_diagnoses 보존)');
+    console.log('\n⏪ 롤백 실행: #7 컬럼 → #A scoped(신규 4테이블만, live claim_diagnoses 보존)');
     await client.query(SQL.h7Rollback);
     await client.query(SQL.aRollback);
     await client.query(`NOTIFY pgrst, 'reload schema';`);
@@ -116,7 +132,7 @@ try {
     await client.query(`NOTIFY pgrst, 'reload schema';`);
     await groundTruth('적용 후');
     // 스모크: 빈 테이블 count
-    for (const t of ['insurance_claims', 'claim_items', 'edi_submissions']) {
+    for (const t of ['insurance_claims', 'claim_items', 'edi_submissions', 'insurance_claim_diagnoses']) {
       const { rows } = await client.query(`SELECT count(*)::int AS n FROM public.${t};`);
       console.log(`  [smoke] ${t} rows=${rows[0].n}`);
     }
