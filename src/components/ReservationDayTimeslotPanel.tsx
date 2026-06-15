@@ -16,7 +16,8 @@ interface TimeslotRow {
   reservation_time: string;
   visit_type: string; // 'new'|'returning'|'experience' 등 — resvKind 가 분류
   // T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): is_healer_intent(영속) = 힐러 분류 SSOT.
-  is_healer_intent: boolean | null;
+  // AC4: 운영 DB 미배포 시 fallback 컬럼셋엔 부재 → optional. resvKind 가 undefined graceful 처리.
+  is_healer_intent?: boolean | null;
   healer_flag: boolean | null;
   status: 'confirmed' | 'checked_in' | 'cancelled' | 'noshow';
 }
@@ -46,11 +47,30 @@ export function ReservationDayTimeslotPanel({
       setLoading(true);
       setErr(null);
       // AC1 read-only: 선택 일자 전체 예약 read(지점 스코프). 신규 write 경로 없음.
-      const { data, error } = await supabase
+      // T-20260615-foot-RESVPOPUP-DETAIL-8FIX AC4 RC: is_healer_intent 컬럼이 운영 DB에 미반영(마이그 미적용)이면
+      //   PostgREST 42703(undefined_column)으로 전체 select가 400 → "예약 현황을 불러오지 못했습니다" 표시(현장 신고 증상).
+      //   ⇒ FE 내성화: 1차 시도 실패(컬럼 누락) 시 is_healer_intent 제외 컬럼셋으로 재조회.
+      //      resvKind 는 is_healer_intent undefined 를 graceful 처리(healer_flag fallback) → 분류 정확도 유지.
+      const FULL_COLS = 'reservation_time, visit_type, is_healer_intent, healer_flag, status';
+      const FALLBACK_COLS = 'reservation_time, visit_type, healer_flag, status';
+      const primary = await supabase
         .from('reservations')
-        .select('reservation_time, visit_type, is_healer_intent, healer_flag, status')
+        .select(FULL_COLS)
         .eq('clinic_id', clinicId)
         .eq('reservation_date', dateStr);
+      // FULL/FALLBACK 컬럼셋이 서로 다른 추론 타입을 가지므로 공통 느슨한 타입으로 받아 재할당 안전화.
+      let rows = primary.data as Record<string, unknown>[] | null;
+      let error = primary.error;
+      // 42703 = undefined_column (is_healer_intent 미배포). 컬럼 제외 후 재시도.
+      if (error && (error.code === '42703' || /is_healer_intent/.test(error.message ?? ''))) {
+        const retry = await supabase
+          .from('reservations')
+          .select(FALLBACK_COLS)
+          .eq('clinic_id', clinicId)
+          .eq('reservation_date', dateStr);
+        rows = retry.data as Record<string, unknown>[] | null;
+        error = retry.error;
+      }
       if (cancelled) return;
       if (error) {
         setErr('예약 현황을 불러오지 못했습니다');
@@ -58,7 +78,7 @@ export function ReservationDayTimeslotPanel({
         setLoading(false);
         return;
       }
-      setSlots(aggregateByTimeSlot((data ?? []) as TimeslotRow[]));
+      setSlots(aggregateByTimeSlot((rows ?? []) as unknown as TimeslotRow[]));
       setLoading(false);
     })();
     return () => {

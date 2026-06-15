@@ -310,10 +310,15 @@ export function ReservationDetailPopup({
           });
       });
     // 6) 치료내역 — 이 고객의 check_ins(시술내역) 최신순. 신규 테이블/컬럼 0(기존 check_ins 재사용).
+    //   T-20260615-foot-RESVPOPUP-DETAIL-8FIX AC3(팝업 surface): 취소/삭제된 내원이 치료내역에 잔존 표시되는 문제.
+    //   chart2 패키지탭 로더(CustomerChartPage L2209: .neq('status','cancelled'))와 동일 관례로 정렬 →
+    //   취소 내원은 치료내역 목록에서 제외(읽기 필터만, DB/스키마 무변경 → data-architect CONSULT 면제).
+    //   ⚠ check_in 삭제↔package_sessions 차감 원복(깊은 cascade)은 삭제 핸들러 surface(본 read-only 팝업 영역 밖).
     supabase
       .from('check_ins')
       .select('id, checked_in_at, completed_at, visit_type, treatment_category, treatment_contents, treatment_kind, therapist_id')
       .eq('customer_id', customerId)
+      .neq('status', 'cancelled')
       .order('checked_in_at', { ascending: false })
       .limit(20)
       .then(({ data }) => {
@@ -583,13 +588,21 @@ export function ReservationDetailPopup({
 
   if (!reservation) return null;
 
-  // ── 소요 시간 계산
-  const getDuration = (resv: Reservation) => {
-    if (!resv.end_time) return '—';
-    const [sh, sm] = resv.reservation_time.split(':').map(Number);
-    const [eh, em] = resv.end_time.split(':').map(Number);
-    const mins = eh * 60 + em - (sh * 60 + sm);
-    return mins > 0 ? `${mins}분` : '—';
+  // ── 소요 시간 표시 행은 AC5a(현장 요청)로 제거됨 → getDuration 헬퍼도 함께 삭제.
+
+  // ── 초·재진 표시값 (AC5b)
+  // 규칙(planner 확정): 해당 고객의 "과거 내원 이력"(이 예약일 이전 check_in) 존재 시 → '재진' 자동 표기.
+  //   - 표시 전용. visit_type write 변경 없음(DB 무변경, 순수 FE 파생).
+  //   - treatments = 이 고객 check_ins(최신순). 현재 예약일 이전 내원이 1건이라도 있으면 재진으로 본다.
+  //   - 과거 이력이 없으면 원본 visit_type 표기 유지(experience='예약없이 방문' 등 보존).
+  const getVisitTypeDisplay = (resv: Reservation) => {
+    const base = VISIT_TYPE_KO[resv.visit_type];
+    if (resv.visit_type === 'returning') return base; // 이미 재진
+    const hasPriorVisit = treatments.some((t) => {
+      if (!t.checked_in_at) return false;
+      return t.checked_in_at.slice(0, 10) < resv.reservation_date;
+    });
+    return hasPriorVisit ? VISIT_TYPE_KO.returning : base;
   };
 
   // ── 액션: 취소 (사유 포함)
@@ -1073,7 +1086,8 @@ export function ReservationDetailPopup({
 
               {/* 고객메모 (RELOCATE: 기존 우하 메모 → 1번구역. 예약메모와 구분: 고객메모≠예약메모) */}
               <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0">
-                <SectionHeader accent="blue">고객메모</SectionHeader>
+                {/* AC7: 컬러 텍스트(파랑) 제거 → 전체 흐름 통일(teal 기본) */}
+                <SectionHeader accent="teal">고객메모</SectionHeader>
                 <div className="flex flex-col gap-1.5">
                   <Textarea
                     value={customerMemo}
@@ -1247,8 +1261,9 @@ export function ReservationDetailPopup({
                     <>
                       <FieldRow label="예약 일자" value={selectedResv.reservation_date} />
                       <FieldRow label="시작 시간" value={selectedResv.reservation_time.slice(0, 5)} />
-                      <FieldRow label="소요 시간" value={getDuration(selectedResv)} />
-                      <FieldRow label="초·재진" value={VISIT_TYPE_KO[selectedResv.visit_type]} />
+                      {/* AC5a: '소요 시간' 행 제거(현장 요청) */}
+                      {/* AC5b: 과거 내원 이력 존재 시 '재진' 자동 표기(표시 전용, DB 무변경) */}
+                      <FieldRow label="초·재진" value={getVisitTypeDisplay(selectedResv)} />
                       {/* T-20260615-foot-RESVMGMT-REFIX-8 AC2 (현장 확정 MSG-...gkj2: "예약 상세 - 예약 등록자 그대로 가져와"):
                           신규 담당자 드롭다운 신설 아님 — 예약상세의 예약 등록자(registrar_name 스냅샷)를 그대로 표시.
                           기존엔 '다른 예약 보기 중'(id !== anchor)일 때만 노출 → 본 예약(anchor) 상세에서도 항상 렌더.
@@ -1266,13 +1281,15 @@ export function ReservationDetailPopup({
 
               {/* AC-4 #5: 예약메모 (현재 보기 예약 기준) */}
               <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0">
-                <SectionHeader accent="amber">예약메모</SectionHeader>
+                {/* AC7: 컬러 텍스트(주황) 제거 → 전체 흐름 통일(teal 기본 + 메모박스 neutral) */}
+                <SectionHeader accent="teal">예약메모</SectionHeader>
                 {selectedResv ? (
                   <ReservationMemoTimeline
                     key={selectedResv.id}
                     reservationId={selectedResv.id}
                     clinicId={selectedResv.clinic_id}
                     authorName={authorName}
+                    tone="neutral"
                   />
                 ) : (
                   <div className="text-xs text-muted-foreground italic">예약 선택 필요</div>
@@ -1308,13 +1325,14 @@ export function ReservationDetailPopup({
                             r.status === 'cancelled' && 'opacity-50',
                           )}
                         >
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="font-medium tabular-nums">
+                          {/* AC6: 내용이 카드 밖으로 넘치던 문제 — min-w-0/truncate + 배지 shrink-0 으로 박스 안에 가둠 */}
+                          <div className="flex items-center justify-between gap-1 min-w-0">
+                            <span className="font-medium tabular-nums truncate min-w-0">
                               {r.reservation_date} {r.reservation_time.slice(0, 5)}
                             </span>
                             <span
                               className={cn(
-                                'px-1.5 py-0.5 rounded-full text-[10px] font-medium',
+                                'px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0',
                                 VISIT_TYPE_BADGE_CLASS[r.visit_type],
                               )}
                             >

@@ -45,6 +45,12 @@ interface Props {
   compact?: boolean;
   /** 삽입 성공 후 외부 상태 동기화 콜백 (optional) */
   onAdded?: () => void;
+  /**
+   * T-20260615-foot-RESVPOPUP-DETAIL-8FIX AC7: 비고정 메모 색상 톤.
+   * - 'amber'(기본): 기존 동작(주황 박스) — 타 4개 서피스 호환 유지.
+   * - 'neutral': 예약상세 팝업 통일 — 컬러 텍스트 제거, 전체 흐름과 동일한 기본 색상.
+   */
+  tone?: 'amber' | 'neutral';
 }
 
 // T-20260522-foot-ALT-BADGE AC-10: 고정 정렬 — is_pinned 먼저(pinned_at DESC), 나머지 created_at DESC
@@ -67,6 +73,7 @@ export function ReservationMemoTimeline({
   authorName,
   compact = false,
   onAdded,
+  tone = 'amber',
 }: Props) {
   const [items, setItems] = useState<MemoHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -192,13 +199,15 @@ export function ReservationMemoTimeline({
               className={`rounded border px-2 py-1.5 text-xs ${
                 item.is_pinned
                   ? 'border-teal-300 bg-teal-50'
-                  : 'border-amber-200 bg-amber-50'
+                  : tone === 'neutral'
+                    ? 'border-border bg-card'
+                    : 'border-amber-200 bg-amber-50'
               }`}
               data-testid={item.is_pinned ? 'memo-pinned' : 'memo-item'}
             >
               <div className="flex items-start justify-between gap-1">
                 <div className="flex-1 min-w-0">
-                  <span className={`font-medium tabular-nums mr-1 ${item.is_pinned ? 'text-teal-700' : 'text-amber-600'}`}>
+                  <span className={`font-medium tabular-nums mr-1 ${item.is_pinned ? 'text-teal-700' : tone === 'neutral' ? 'text-muted-foreground' : 'text-amber-600'}`}>
                     {item.is_pinned && (
                       <Pin className="inline h-3 w-3 mr-0.5 text-teal-600 shrink-0" />
                     )}
