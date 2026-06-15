@@ -103,6 +103,22 @@
  *     숨기기(EyeOff)·접기/펼치기(chevron)는 유지.
  *  ⇒ #2·#3로 콜 하이라이트 메커니즘(allCall/selectedId state·highlighted prop·"호출 중" doctor-call-calling)이
  *     모든 진입점을 잃어 dead code화 → 일괄 정리. 명단 자동표시·메모·위치/힐러/재진 배지·행숨김·드래그 위치 불변.
+ *
+ * T-20260615-foot-CALLLIST-ROOMSUMMARY-NUM-REORDER — 방번호 요약행 + 진입순 번호뱃지 + (보류)수기 순서올림 (현장 김주연 총괄):
+ *  요청 원문: "맨 상단에 진료순 방번호만 한줄(원장님 한눈에) + 환자 박스 앞에 진입순 번호 + 진입 1번이어도
+ *             준비 빨리 끝나면 수기로 순서 올리게."
+ *  WS-B(즉시, DB0) 진입순 번호뱃지: activeList(진료콜 진입순=callEntryTime asc) 1-based 인덱스를 각 활성 행
+ *    박스 앞(좌측 선두)에 표기(doctor-call-order-no). *정렬 신규추가 없음* — 표시 인덱스만. done/비활성 미표기.
+ *    숨김 필터와 무관하게 activeList 위치 기준 → 행 숨겨도 번호 재배치 없음(안정 랭크).
+ *  WS-A(ROOM-LABEL land 후, DB0) 방번호 요약행: 명단 맨 위 한 줄에 activeList 순서 좌→우 방코드 나열
+ *    (doctor-call-room-summary, 예 'C2 · C5 · C1'). 방코드 = getCurrentRoomCode(checkin-slot SSOT, ROOM-LABEL의
+ *    입실게이트+getAssignedSlotName 재사용 — 중복구현 금지) → 요약행 방번호 == 각 행 위치배지 방번호 일치.
+ *    미배정 토큰 '–'. 토큰 순서 == WS-B 진입순 번호 순서(N번 ↔ N번째 방코드 대응).
+ *  WS-C(보류) 수기 순서올림(▲/드래그): 공유 realtime 화면이라 localStorage 불가 → DB 영속 필요
+ *    (check_ins ADDITIVE 컬럼 call_list_manual_order 후보, data-architect CONSULT MSG-20260615-191902-rsue 진행 중).
+ *    CONSULT-REPLY 전 영속화 코드·분산 sort 도입 *보류*. 통합 후 정렬 설계(분산 sort 금지):
+ *      단일 sort 우선순위 = 진료중(examination) 고정 > 수기 override(call_list_manual_order asc) > 자동 진입순(callEntryTime)
+ *      — activeList .sort를 단일 비교함수로 통합(WS-2 진료중 고정과 정합). DA GO 후 후속 커밋에서 구현.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -111,7 +127,7 @@ import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { CheckIn } from '@/lib/types';
-import { getCurrentLocationLabel } from '@/lib/checkin-slot';
+import { getCurrentLocationLabel, getCurrentRoomCode } from '@/lib/checkin-slot';
 import DoctorStageStepper from '@/components/doctor/DoctorStageStepper';
 
 /** T-20260610-foot-CALLLIST-TOP-COVERS-BUTTONS Phase 2: 드래그 위치 저장 키(사용자/브라우저 단위 개인설정). */
@@ -233,6 +249,29 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
 
   // AC-3) 표시 순서: 활성(진료필요) 상단 → 비활성(진료완료) 하단
   const displayList = useMemo(() => [...activeList, ...doneList], [activeList, doneList]);
+
+  // ── T-20260615-foot-CALLLIST-ROOMSUMMARY-NUM-REORDER ──────────────────────────────────────
+  //   WS-B(진입순 번호뱃지) + WS-A(상단 방번호 요약행). 둘 다 activeList(진료콜 진입순,
+  //   callEntryTime asc) 순서를 그대로 사용 — *정렬 신규추가 없음*(티켓 WS-B "정렬 신규추가 금지").
+  //   WS-C(수기 순서 올림) DB 영속은 data-architect CONSULT GO 전까지 보류 → 단일 통합 sort
+  //   (진료중 고정 > call_list_manual_order > 진입순) 미도입. 현재 정렬키 = callEntryTime 단일 유지.
+
+  // WS-B) 진입순 1-based 인덱스 맵 — activeList 위치 기준(숨김 필터·done과 무관한 안정 랭크).
+  //   행을 숨겨도 다른 행 번호가 재배치되지 않도록 activeList(풀 활성 콜대상) 순서로 부여.
+  //   done(pink/진료완료)·미포함 행은 맵에 없음 → 번호 미표기(콜 큐 대상 아님).
+  const activeOrderNo = useMemo(() => {
+    const m = new Map<string, number>();
+    activeList.forEach((ci, i) => m.set(ci.id, i + 1));
+    return m;
+  }, [activeList]);
+
+  // WS-A) 상단 방번호 요약 — activeList(진료순 좌→우)의 현재 입실 방코드. 미배정 토큰 '–'.
+  //   getCurrentRoomCode = ROOM-LABEL의 입실게이트+getAssignedSlotName 재사용(SSOT, 중복구현 금지) →
+  //   요약행 방번호 == 각 행 위치배지 방번호 항상 일치. activeOrderNo와 동일 순서라 N번 ↔ 방코드 대응.
+  const roomSummary = useMemo(
+    () => activeList.map((ci) => getCurrentRoomCode(ci) ?? '–'),
+    [activeList],
+  );
 
   // ── T-20260610-foot-CALLLIST-ROW-HIDE-AUTOSHOW ─────────────────────────────────────────────
   //   개별 행 숨기기(표시 필터 레이어) + 신규 listup 시그니처 재등장 시 자동 재노출.
@@ -667,6 +706,26 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
           스크롤 없이 한눈에(AC-3), 한도 초과 시 내부 세로 스크롤 → fixed top-4 패널이 뷰포트 하단
           밖으로 밀려 잘리는 결함 차단. 접힘 시 숨김.
           활성(진료필요) 상단 → 비활성(진료완료) 하단 정렬 (displayList) 보존. */}
+      {/* T-20260615-foot-CALLLIST-ROOMSUMMARY-NUM-REORDER WS-A) 명단 맨 위 방번호 한줄 요약 —
+          진료순(activeList) 좌→우 방코드 나열(예: 'C2 · C5 · C1'), 원장님이 어느 방들로 갈지 한눈에.
+          activeList가 비면(활성 콜대상 0) 미표시. 미배정 방은 '–'. 각 토큰은 진입순 번호(WS-B)와 동일 순서. */}
+      {!collapsed && roomSummary.length > 0 && (
+        <div
+          data-testid="doctor-call-room-summary"
+          className="flex items-center gap-1.5 px-3 py-1.5 border-b border-purple-100 bg-purple-50/40 overflow-x-auto"
+          title="진료순 방번호 — 원장님 한눈에"
+        >
+          <MapPin className="h-3 w-3 text-purple-500 shrink-0" />
+          <div className="flex items-center gap-1 flex-wrap">
+            {roomSummary.map((room, i) => (
+              <span key={i} className="inline-flex items-center text-xs font-semibold text-purple-800 whitespace-nowrap">
+                {i > 0 && <span className="text-purple-300 mx-1">·</span>}
+                {room}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       {!collapsed && (
       <div className="flex flex-col gap-2 px-3 py-2 max-h-[calc(100vh-6rem)] overflow-y-auto" data-testid="doctor-call-rows">
         {/* ROW-HIDE-AUTOSHOW AC-1) visibleList(숨김 필터 적용) 렌더. displayList(콜/집계/정렬)는 불변.
@@ -686,6 +745,7 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
                 key={ci.id}
                 checkIn={ci}
                 inactive={inactive}
+                orderNo={activeOrderNo.get(ci.id)}
                 visitCount={ci.customer_id ? visitCounts[ci.customer_id] : undefined}
                 onHide={() => hideRow(ci)}
                 onOpenChart={onOpenChart}
@@ -704,6 +764,8 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
 interface DoctorCallRowProps {
   checkIn: CheckIn;
   visitCount?: number;
+  /** T-20260615-foot-CALLLIST-ROOMSUMMARY-NUM-REORDER WS-B: 진료콜 진입순 1-based 번호. 활성 콜대상만(done=undefined → 미표기) */
+  orderNo?: number;
   /** 진료완료(핑크) = 비활성 — dimmed + "진료완료" 배지, 콜 대상 제외 */
   inactive?: boolean;
   /** T-20260610-foot-CALLLIST-ROW-HIDE-AUTOSHOW AC-1: 이 행 숨기기(표시 필터에서 제외) */
@@ -713,7 +775,7 @@ interface DoctorCallRowProps {
   onRefresh?: () => void;
 }
 
-function DoctorCallRow({ checkIn, visitCount, inactive = false, onHide, onOpenChart, onRefresh }: DoctorCallRowProps) {
+function DoctorCallRow({ checkIn, visitCount, orderNo, inactive = false, onHide, onOpenChart, onRefresh }: DoctorCallRowProps) {
   const isReturning = checkIn.visit_type === 'returning';
   const isExperience = checkIn.visit_type === 'experience';
   // T-20260609-foot-CALLLIST-HEALER-POSITION item1 + REOPEN FIX-SPEC: 힐러 구분 배지.
@@ -793,6 +855,20 @@ function DoctorCallRow({ checkIn, visitCount, inactive = false, onHide, onOpenCh
       {/* T-20260601-foot-DASH-HSCROLL-CHART-LOC #2: 이름=차트, 지정콜=별도 버튼(클릭영역 분리) */}
       <div className="flex items-start justify-between gap-1">
         <div className="flex items-start flex-wrap gap-1.5 min-w-0 flex-1">
+          {/* T-20260615-foot-CALLLIST-ROOMSUMMARY-NUM-REORDER WS-B) 진입순 번호뱃지 — 박스 앞(좌측 선두).
+              진료콜 진입순(activeList) 1-based. 활성 콜대상만 부여(done/비활성 행은 orderNo undefined → 미표기). */}
+          {typeof orderNo === 'number' && (
+            <span
+              data-testid="doctor-call-order-no"
+              className={cn(
+                'shrink-0 inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full text-[11px] font-bold leading-none',
+                inactive ? 'bg-gray-300 text-gray-600' : 'bg-purple-600 text-white',
+              )}
+              title={`진료콜 진입순 ${orderNo}번`}
+            >
+              {orderNo}
+            </span>
+          )}
           <button
             onClick={() => onOpenChart?.(checkIn)}
             disabled={!onOpenChart}
