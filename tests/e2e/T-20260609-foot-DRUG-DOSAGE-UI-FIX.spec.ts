@@ -35,8 +35,12 @@ test.describe('T-20260609-DRUG-DOSAGE-UI-FIX — 처방 용법·횟수 입력 UI
     if (!ok) test.skip(true, '로그인 실패');
   });
 
-  // ── AC8-1/AC8-3: "회" 라벨이 숫자 입력 박스 바깥(suffix span)에 있고, 박스 안엔 숫자만 ──
-  test('AC8-1: 횟수 "회" 라벨이 입력 박스 바깥 suffix 로 분리된다', async ({ page }) => {
+  // ── AC8-1/AC8-3: 횟수 입력 박스 안엔 숫자만(회 미포함) ──
+  // ⚠ SUPERSEDED by T-20260615-foot-RXTABLE-PRESCRIPTION-ALIGN AC6 (문지은 대표원장, reporter-explicit):
+  //   진료차트 처방내역 테이블은 "셀 숫자전용" 요청으로 '회' suffix 라벨까지 숨김(hideSuffix).
+  //   따라서 차트 surface 에서는 suffix span 이 더 이상 렌더되지 않는다(부재가 정상). 박스 안 숫자전용(AC8-3)은 유지.
+  //   ('회' suffix 자체는 처방세트/상용구 작성 패널 등 타 surface 에서는 종전대로 표시 — 그 검증은 해당 spec 소관.)
+  test('AC8-1(superseded→AC6): 차트 처방내역에서 횟수 입력은 숫자만, "회" suffix 는 숨김', async ({ page }) => {
     if (!(await openMedicalChart(page))) {
       test.skip(true, '진료차트 Drawer 미열림 — 스킵');
       return;
@@ -52,14 +56,8 @@ test.describe('T-20260609-DRUG-DOSAGE-UI-FIX — 처방 용법·횟수 입력 UI
     const inputValue = await inputEl.inputValue();
     expect(inputValue).not.toContain('회');
 
-    // "회" 라벨은 별도 suffix span 으로 박스 바깥에 존재
-    const suffix = page.locator('[data-testid="rx-count-suffix"]').first();
-    await expect(suffix).toBeVisible();
-    await expect(suffix).toHaveText('회');
-
-    // suffix 는 input 의 형제(sibling) — 즉 박스 안 overlay 가 아니라 바깥 배치
-    const sameRow = suffix.locator('xpath=preceding-sibling::*[@data-testid="rx-count-input"]');
-    await expect(sameRow).toHaveCount(1);
+    // RXTABLE AC6: 차트 처방내역 테이블의 '회' suffix 는 숨김 → 표시되지 않음
+    await expect(page.locator('[data-testid="prescription-items-table"] [data-testid="rx-count-suffix"]')).toHaveCount(0);
   });
 
   // ── AC8-1/AC8-3: 횟수 입력 → 숫자만 보존(입력값에 "회" 안 붙음) ──────────────
