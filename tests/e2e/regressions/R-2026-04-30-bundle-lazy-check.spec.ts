@@ -28,6 +28,14 @@ const DIST_DIR = path.resolve(__dirname, '../../../dist');
 const INDEX_HTML = path.join(DIST_DIR, 'index.html');
 
 // 허용된 초기 preload 벤더 패턴 (prefix)
+//
+// T-20260615-foot-REGRESSION-SUITE-DEROT RC-B (allow-list 현실 정합):
+//   GALAXYTAB-LOGIN-SLOW 가 vite manualChunks 에 'vendor-utils' (clsx·tailwind-merge·
+//   use-sync-external-store-shim) 청크를 신설했다. 이 tiny 유틸들은 cn() 등 entry static
+//   graph(Button/Badge 등 전 화면)에서 쓰여 critical path 에 정상적으로 modulepreload 된다.
+//   이 분리의 목적은 오히려 recharts(vendor-charts)가 clsx 한 줄에 끌려 eager 로드되던
+//   문제를 끊는 것(=RC-B 실수정). 따라서 vendor-utils 의 eager preload 는 '의도된 정상'이며
+//   allow-list 에 명시한다. (이전엔 미등록이라 C1-4 가 매번 '예상치 못한 preload' 경고를 냈음)
 const ALLOWED_EAGER_PREFIXES = [
   'vendor-react',
   'vendor-supabase',
@@ -35,6 +43,7 @@ const ALLOWED_EAGER_PREFIXES = [
   'vendor-ui',
   'vendor-icons',
   'vendor-dates',
+  'vendor-utils',
   'index',
 ];
 
