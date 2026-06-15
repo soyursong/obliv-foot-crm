@@ -50,6 +50,7 @@ import { createPortal } from 'react-dom';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
+import { rxFreqCore } from '@/lib/rxFormat';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { AlertTriangle, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FileText, FlaskConical, FolderTree, History, Loader2, Pill, Plus, Search, Sparkles, Stethoscope, X } from 'lucide-react';
@@ -183,31 +184,10 @@ interface VisitPayment {
   method: string;
 }
 
-// T-20260603-foot-RX-CHART-ENHANCE AC-3: 약 종류(투여경로) 색상 구분.
-// PrescriptionItem.route(경구/외용/주사 등) → 색상 도트 매핑. 미매칭은 회색.
-// (약품 마스터 classification 연동 전까지 route를 종류 프록시로 사용)
-const RX_ROUTE_STYLE: Record<string, { dot: string; label: string }> = {
-  경구: { dot: 'bg-teal-500', label: '경구' },
-  내복: { dot: 'bg-teal-500', label: '내복' },
-  외용: { dot: 'bg-amber-500', label: '외용' },
-  도포: { dot: 'bg-amber-500', label: '도포' },
-  주사: { dot: 'bg-rose-500', label: '주사' },
-  주사제: { dot: 'bg-rose-500', label: '주사' },
-  점안: { dot: 'bg-sky-500', label: '점안' },
-  흡입: { dot: 'bg-violet-500', label: '흡입' },
-};
-function rxRouteStyle(route: string | undefined | null): { dot: string; label: string } {
-  const key = (route ?? '').trim();
-  return RX_ROUTE_STYLE[key] ?? { dot: 'bg-gray-400', label: key || '기타' };
-}
-// AC-5/AC-3: classification 확보 시 그것을 우선 색상 프록시로 사용(점진 전환). 미보유 시 기존 route 도트 유지.
-function rxItemStyle(item: PrescriptionItem): { dot: string; label: string } {
-  if (item.classification) {
-    const mapped = classificationToRoute(item.classification);
-    if (mapped) return rxRouteStyle(mapped);
-  }
-  return rxRouteStyle(item.route);
-}
+// T-20260615-foot-RXTABLE-PRESCRIPTION-ALIGN AC2/AC6 (문지은 대표원장):
+//   처방내역 테이블에서 좌측 투여경로 색상 도트(rxItemStyle/rxRouteStyle/RX_ROUTE_STYLE)를 제거.
+//   기존 RX-CHART-ENHANCE AC-3 색상 도트는 본 티켓이 supersede(reporter-explicit) — 함께 정리.
+//   용법 셀 "숫자/범위 코어만 표시"(AC6)는 순수 헬퍼 rxFreqCore(@/lib/rxFormat)로 분리(표시 전용).
 
 // T-20260526-foot-MEDCHART-SYNC: 치료메모 항목
 interface TreatmentMemoEntry {
@@ -3176,69 +3156,52 @@ export default function MedicalChartPanel({
                         className="rounded-lg bg-card overflow-hidden [&_input]:border-0 [&_input]:shadow-none [&_input]:bg-transparent [&_button]:border-0 [&_input:focus]:border-0 [&_input]:focus-visible:ring-0 [&_input]:focus-visible:ring-offset-0 [&_input]:focus-visible:outline-none [&_input:focus]:shadow-none [&_button]:focus-visible:ring-0 [&_button]:focus-visible:outline-none"
                         data-testid="prescription-items-table"
                       >
-                        {/* AC-4: 약이름(용량 포함) | 용법 | 횟수 | 일수 컬럼 분리 + 행별 직접 조정.
-                            AC-3: 약 종류(투여경로) 색상 도트.
-                            MEDCHART-SUPERPHRASE-EXT 2-5: 횟수 = 숫자만 입력 + 배경 '회'(RxCountInput), 용법과 별도 칸. */}
-                        <table className="w-full text-xs">
+                        {/* T-20260615-foot-RXTABLE-PRESCRIPTION-ALIGN (문지은 대표원장) — 처방내역 테이블 정렬·정리 폴리시 (presentation only).
+                            AC1 헤더 전부 가운데정렬 / AC2 좌측 투여경로 색상 도트 제거 / AC3 약이름(용량) 컬럼 폭 최대화(나머지 흡수) /
+                            AC4 약이름 뒤 dosage(용량/소량) 라벨 표시 제거(데이터 무삭제·이 테이블에서만 숨김) /
+                            AC5 용법·횟수·일수 균등 폭·가운데정렬 / AC6 셀 숫자전용(용법=rxFreqCore 코어, 횟수='회' suffix 숨김, 일수 숫자).
+                            처방 데이터/필드매핑/저장/CRUD 동선 무변경. 횟수·일수 인라인 편집(RX-CHART-ENHANCE) 보존. */}
+                        <table className="w-full text-xs table-fixed">
                           <thead className="text-muted-foreground/70">
                             <tr>
-                              <th className="text-left px-3 py-1 font-medium">약이름 (용량)</th>
-                              <th className="text-left px-2 py-1 font-medium w-24">용법</th>
-                              <th className="text-left px-2 py-1 font-medium w-20">횟수</th>
-                              <th className="text-left px-2 py-1 font-medium w-16">일수</th>
+                              {/* AC3: 약이름(용량) 컬럼 — 폭 미지정(table-fixed에서 나머지 가용 폭 전부 흡수) */}
+                              <th className="text-center px-3 py-1 font-medium">약이름 (용량)</th>
+                              {/* AC5: 용법/횟수/일수 균등 폭(동일 w-16) + AC1 가운데정렬 */}
+                              <th className="text-center px-2 py-1 font-medium w-16">용법</th>
+                              <th className="text-center px-2 py-1 font-medium w-16">횟수</th>
+                              <th className="text-center px-2 py-1 font-medium w-16">일수</th>
                               <th className="py-1 w-6" />
                             </tr>
                           </thead>
                           <tbody>
                             {formRx.map((item, idx) => {
-                              const rs = rxItemStyle(item);
                               return (
                                 <tr
                                   key={idx}
                                   className="border-b border-gray-200 last:border-b-0"
                                   data-testid={`prescription-row-${idx}`}
                                 >
+                                  {/* AC2: 좌측 색상 도트 제거 / AC4: dosage(용량·소량) 라벨 입력 제거(이 표시에서만 숨김).
+                                      item.dosage 데이터는 formRx에 보존·저장 무변경. 약이름은 한 줄 우선·긴 이름 자연 래핑. */}
                                   <td className="px-3 py-1.5">
-                                    <div className="flex items-center gap-1.5">
-                                      <span
-                                        className={`inline-block h-2 w-2 rounded-full flex-shrink-0 ${rs.dot}`}
-                                        title={rs.label}
-                                        aria-label={`투여경로 ${rs.label}`}
-                                        data-testid={`rx-route-dot-${idx}`}
-                                      />
-                                      <span className="font-medium">{item.name}</span>
-                                      {/* T-20260604-foot-RX-DRUGINFO-DOSAGE AC-3: 용량 인라인 수동입력
-                                          (외부 자동조회 불가 → 등록/처방 시 직접 입력 fallback). */}
-                                      <Input
-                                        value={item.dosage}
-                                        onChange={(e) => updateRxItem(idx, 'dosage', e.target.value)}
-                                        disabled={isReadOnly}
-                                        className="h-6 text-xs px-1.5 w-24 text-muted-foreground disabled:opacity-100 disabled:bg-gray-50 disabled:cursor-not-allowed"
-                                        placeholder="용량"
-                                        aria-label="용량"
-                                        data-testid={`rx-dosage-${idx}`}
-                                      />
-                                    </div>
+                                    <span className="font-medium break-words" data-testid={`rx-name-${idx}`}>{item.name}</span>
                                   </td>
-                                  <td className="px-2 py-1 align-middle">
-                                    <Input
-                                      value={item.frequency}
-                                      onChange={(e) => updateRxItem(idx, 'frequency', e.target.value)}
-                                      disabled={isReadOnly}
-                                      className="h-7 text-xs px-2 disabled:opacity-100 disabled:bg-gray-50 disabled:cursor-not-allowed"
-                                      placeholder="1일 3회"
-                                      data-testid={`rx-frequency-${idx}`}
-                                    />
+                                  {/* AC6: 용법 = frequency 자유텍스트에서 숫자/범위 코어만 표시(presentation), 가운데정렬.
+                                      원본 frequency 값·저장·필드매핑 무변경. 편집은 처방 작성 패널(out of scope) 소관. */}
+                                  <td className="px-2 py-1 align-middle text-center" data-testid={`rx-frequency-${idx}`}>
+                                    {rxFreqCore(item.frequency)}
                                   </td>
-                                  {/* MEDCHART-SUPERPHRASE-EXT 2-5: 횟수 = 숫자만 + 배경 '회' */}
+                                  {/* AC6: 횟수 = 숫자만(‘회’ suffix 숨김), 가운데정렬. 인라인 편집 보존(RxCountInput). */}
                                   <td className="px-2 py-1 align-middle">
                                     <RxCountInput
                                       value={item.count ?? null}
                                       onChange={(v) => updateRxCount(idx, v)}
                                       disabled={isReadOnly}
-                                      className="w-16"
+                                      hideSuffix
+                                      className="w-full"
                                     />
                                   </td>
+                                  {/* AC6: 일수 = 숫자만, 가운데정렬. 단위어/플레이스홀더 텍스트 제거. 인라인 편집 보존. */}
                                   <td className="px-2 py-1 align-middle">
                                     <Input
                                       type="number"
@@ -3246,8 +3209,8 @@ export default function MedicalChartPanel({
                                       value={item.days}
                                       onChange={(e) => updateRxItem(idx, 'days', e.target.value)}
                                       disabled={isReadOnly}
-                                      className="h-7 text-xs px-2 w-14 disabled:opacity-100 disabled:bg-gray-50 disabled:cursor-not-allowed"
-                                      placeholder="일수"
+                                      className="h-7 text-xs px-1 w-full text-center disabled:opacity-100 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                                      placeholder=""
                                       data-testid={`rx-days-${idx}`}
                                     />
                                   </td>

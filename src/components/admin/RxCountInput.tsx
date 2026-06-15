@@ -12,9 +12,12 @@ interface RxCountInputProps {
   onChange: (v: number | null) => void;
   className?: string;
   disabled?: boolean; // T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-4: 차트 읽기전용 모드
+  // T-20260615-foot-RXTABLE-PRESCRIPTION-ALIGN AC6 (문지은 대표원장): 진료차트 처방내역 테이블에서
+  //   "셀 숫자전용" 요청 → 이 surface에서만 '회' suffix 라벨을 숨긴다. 기본 false(타 surface는 종전대로 '회' 표시·미접촉).
+  hideSuffix?: boolean;
 }
 
-export default function RxCountInput({ value, onChange, className, disabled }: RxCountInputProps) {
+export default function RxCountInput({ value, onChange, className, disabled, hideSuffix }: RxCountInputProps) {
   return (
     <div className={`flex items-center gap-1 ${className ?? ''}`}>
       <Input
@@ -34,13 +37,15 @@ export default function RxCountInput({ value, onChange, className, disabled }: R
         className="h-7 text-xs mt-0.5 flex-1 min-w-0 text-center disabled:opacity-100 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
         data-testid="rx-count-input"
       />
-      {/* "회" 라벨 — 입력 박스 바깥(suffix). 값에는 미포함, 표시 전용 */}
-      <span
-        className="pointer-events-none flex-shrink-0 text-[10px] text-muted-foreground"
-        data-testid="rx-count-suffix"
-      >
-        회
-      </span>
+      {/* "회" 라벨 — 입력 박스 바깥(suffix). 값에는 미포함, 표시 전용. hideSuffix면 미표시. */}
+      {!hideSuffix && (
+        <span
+          className="pointer-events-none flex-shrink-0 text-[10px] text-muted-foreground"
+          data-testid="rx-count-suffix"
+        >
+          회
+        </span>
+      )}
     </div>
   );
 }
