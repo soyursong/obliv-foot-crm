@@ -41,6 +41,8 @@ import { toast } from '@/lib/toast';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2, FlaskConical, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { parseFootSites, type FootSite } from '@/components/FootSiteSelector';
+import MedicalChartPanel from '@/components/MedicalChartPanel';
 
 // ---------------------------------------------------------------------------
 // KOH 진균검사 매칭 — service_name denormalized ILIKE 정본(SSOT).
@@ -137,6 +139,37 @@ export function parseNailSites(raw: unknown): NailSite[] {
 }
 
 // ---------------------------------------------------------------------------
+// 치료부위 → 균검사지 조갑부위 정규화 매핑 — T-20260615-foot-KOHSHEET-NAILSYNC-CHARTOPEN (AC1).
+//   소스 = check_ins.treatment_memo.foot_site(s) (FootSite {side:'L'|'R', toe:1-5}).
+//   타겟 = koh_nail_sites (NailSite {side:'Lt'|'Rt', toe:1-5}).
+//   다른 테이블 + 다른 side enum → 단순 복사 불가. L→Lt / R→Rt, toe 1:1 변환. 단방향(AC4).
+// ---------------------------------------------------------------------------
+/** FootSite('L'/'R') → NailSite('Lt'/'Rt'), toe 동일. */
+export function footSiteToNailSite(s: FootSite): NailSite {
+  return { side: s.side === 'L' ? 'Lt' : 'Rt', toe: s.toe };
+}
+
+/**
+ * treatment_memo(jsonb) → 치료부위 정규화 NailSite[].
+ *   foot_sites(신규 배열) 우선, 없으면 레거시 단일 foot_site 폴백(CheckInDetailSheet 동선과 동일 파서).
+ *   L→Lt / R→Rt 변환 후 중복 제거 + 정렬. 결측·잡값은 빈 배열.
+ */
+export function treatmentNailSites(treatmentMemo: unknown): NailSite[] {
+  const tm =
+    treatmentMemo && typeof treatmentMemo === 'object'
+      ? (treatmentMemo as { foot_sites?: unknown; foot_site?: unknown })
+      : null;
+  if (!tm) return [];
+  const footSites = parseFootSites(tm.foot_sites ?? tm.foot_site);
+  const out: NailSite[] = [];
+  for (const fs of footSites) {
+    const ns = footSiteToNailSite(fs);
+    if (!out.some((o) => o.side === ns.side && o.toe === ns.toe)) out.push(ns);
+  }
+  return sortNailSites(out);
+}
+
+// ---------------------------------------------------------------------------
 // +1일 경과 판정 — T-20260611-foot-KOH-REPORT-TAB (AC-1/AC-3 SSOT).
 //   현장 요구 = "KOH 균검사를 받은 지 하루 지난 환자"만 명단에 노출(검사지 발행 대상).
 //   판정식: 검사일(KST 캘린더 날짜) < 오늘(KST) → 검사 다음날부터 표시. 당일/미래 검사는 제외.
@@ -160,6 +193,7 @@ export interface KohRow {
   birth_date: string | null;     // 생년월일
   chart_number: string | null;   // 차트번호
   nail_sites: NailSite[];        // PHASE15(A): 발톱부위(koh_nail_sites jsonb 파생)
+  treatment_sites: NailSite[];   // NAILSYNC(AC1): 치료부위(treatment_memo.foot_site → L→Lt/R→Rt 정규화 미러)
 }
 
 // ---------------------------------------------------------------------------
@@ -179,8 +213,10 @@ function useKohReport(clinicId: string | null, ym: string) {
       //   ⚠ FE-DB 순서 안전장치: koh_nail_sites 컬럼이 아직 없으면(마이그 적용 전 prod 도달 시)
       //     select 가 42703(컬럼없음)으로 실패 → 기존 Phase1 탭이 깨진다. column-missing 감지 시
       //     koh_nail_sites 제외 select 로 1회 폴백(발톱부위는 빈값). 마이그 적용 후 자동 활성.
-      const SELECT_WITH = 'id, service_name, created_at, koh_nail_sites, check_ins!inner(clinic_id, customer_id, customer_name, customers(name, birth_date, chart_number))';
-      const SELECT_WITHOUT = 'id, service_name, created_at, check_ins!inner(clinic_id, customer_id, customer_name, customers(name, birth_date, chart_number))';
+      // NAILSYNC(AC1/AC2): check_ins.treatment_memo 동봉 → 치료부위(foot_site) 미러 소스.
+      //   treatment_memo 는 既존 jsonb 컬럼(신규 컬럼 0). 균검사지에서 치료부위 선택분을 프리필.
+      const SELECT_WITH = 'id, service_name, created_at, koh_nail_sites, check_ins!inner(clinic_id, customer_id, customer_name, treatment_memo, customers(name, birth_date, chart_number))';
+      const SELECT_WITHOUT = 'id, service_name, created_at, check_ins!inner(clinic_id, customer_id, customer_name, treatment_memo, customers(name, birth_date, chart_number))';
       const runQuery = (sel: string) =>
         supabase
           .from('check_in_services')
@@ -203,7 +239,7 @@ function useKohReport(clinicId: string | null, ym: string) {
         // PostgREST 임베드는 환경에 따라 object/array 양쪽 → 방어적 flatten.
         const ciRaw = row['check_ins'];
         const ci = (Array.isArray(ciRaw) ? ciRaw[0] : ciRaw) as
-          | { customer_id?: string | null; customer_name?: string | null; customers?: unknown }
+          | { customer_id?: string | null; customer_name?: string | null; treatment_memo?: unknown; customers?: unknown }
           | undefined;
         const custRaw = ci?.customers;
         const cust = (Array.isArray(custRaw) ? custRaw[0] : custRaw) as
@@ -219,6 +255,7 @@ function useKohReport(clinicId: string | null, ym: string) {
           birth_date: cust?.birth_date ?? null,
           chart_number: cust?.chart_number ?? null,
           nail_sites: parseNailSites(row['koh_nail_sites']),
+          treatment_sites: treatmentNailSites(ci?.treatment_memo),
         } as KohRow;
       });
     },
@@ -399,6 +436,18 @@ export default function KohReportTab() {
   const isCurrentMonth = ym === currentYearMonthSeoul();
   const todayISO = todaySeoulISODate();
 
+  // NAILSYNC(AC5): 균검사지 고객차트 열기 — DoctorCallDashboard.openTreatmentChart 패턴 이식.
+  //   같은 MedicalChartPanel·같은 진입 동선(clinical 기본 + '본 차트 열기'로 full 전환).
+  //   누락이었던 핸들러를 결선(자매 진료호출 대시보드엔 존재, 본 탭엔 부재였음).
+  const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
+  const [medicalChartOpen, setMedicalChartOpen] = useState(false);
+  const [medicalChartVariant, setMedicalChartVariant] = useState<'full' | 'clinical'>('clinical');
+  const openTreatmentChart = (customerId: string) => {
+    setMedicalChartCustomerId(customerId);
+    setMedicalChartVariant('clinical');
+    setMedicalChartOpen(true);
+  };
+
   const { data: rows = [], isLoading, isError, error } = useKohReport(clinicId, ym);
   // PHASE15(B): 당일의사 조인 인덱스(월 범위, read-only). PHASE15(A): 발톱부위 저장 mutation.
   const { data: doctorMap } = useKohSigningDoctorsByMonth(clinicId, ym);
@@ -534,12 +583,29 @@ export default function KohReportTab() {
                   className="border-b last:border-0 transition hover:bg-accent/30"
                   data-testid="koh-row"
                 >
+                  {/* NAILSYNC(AC5): 이름 클릭 → 고객차트(MedicalChartPanel) 열기. customer_id 없으면 비활성 텍스트. */}
                   <td
-                    className="px-1.5 py-1 font-semibold text-foreground whitespace-nowrap max-w-[8rem] truncate"
+                    className="px-1.5 py-1 whitespace-nowrap max-w-[8rem]"
                     data-testid="koh-cell-name"
-                    title={`${r.customer_name} · ${r.service_name}`}
                   >
-                    {r.customer_name}
+                    {r.customer_id ? (
+                      <button
+                        type="button"
+                        onClick={() => openTreatmentChart(r.customer_id as string)}
+                        className="block max-w-full truncate text-left font-semibold text-teal-700 underline-offset-2 hover:underline focus:underline focus:outline-none"
+                        title={`${r.customer_name} · ${r.service_name} — 클릭 시 고객차트 열기`}
+                        data-testid="koh-open-chart"
+                      >
+                        {r.customer_name}
+                      </button>
+                    ) : (
+                      <span
+                        className="block truncate font-semibold text-foreground"
+                        title={`${r.customer_name} · ${r.service_name}`}
+                      >
+                        {r.customer_name}
+                      </span>
+                    )}
                   </td>
                   <td className="px-1.5 py-1 tabular-nums text-foreground/90 whitespace-nowrap" data-testid="koh-cell-birth">
                     {formatBirthDate(r.birth_date)}
@@ -551,26 +617,45 @@ export default function KohReportTab() {
                   <td className="px-1.5 py-1 tabular-nums text-muted-foreground whitespace-nowrap" data-testid="koh-cell-examdate">
                     {formatExamDate(r.created_at)}
                   </td>
-                  {/* PHASE15(A): 발톱부위 — 현재값(FE 파생) + 입력 위젯(R/L+발가락+조갑 단일선택). */}
-                  <td className="px-1.5 py-1" data-testid="koh-cell-nailsite">
-                    <div className="space-y-1.5">
-                      <span
-                        className={`block text-xs font-medium ${
-                          r.nail_sites.length > 0 ? 'text-foreground' : 'text-muted-foreground/60'
-                        }`}
-                        data-testid="koh-nailsite-text"
-                      >
-                        {formatNailSites(r.nail_sites)}
-                      </span>
-                      <NailSiteEditor
-                        current={r.nail_sites}
-                        saving={
-                          saveNailSites.isPending && saveNailSites.variables?.serviceId === r.id
-                        }
-                        onCommit={(sites) => saveNailSites.mutate({ serviceId: r.id, sites })}
-                      />
-                    </div>
-                  </td>
+                  {/* PHASE15(A): 발톱부위 + NAILSYNC(AC2/AC3): 치료부위 프리필.
+                      AC3 가드 — 균검사지=원장 시술 판단 근거. 조갑부위(koh_nail_sites)가 비어있을 때만
+                      치료부위(treatment_sites)로 프리필. 원장이 한 번이라도 입력/저장(nail_sites 非빈)하면
+                      그 값이 SSOT가 되어 치료부위 변경이 silent 덮어쓰기 못 함(단방향, AC4).
+                      프리필은 표시·편집기 초기값 한정 — 자동 DB 쓰기 없음(원장 명시 토글 시에만 저장). */}
+                  {(() => {
+                    const prefilled = r.nail_sites.length === 0 && r.treatment_sites.length > 0;
+                    const effective = r.nail_sites.length > 0 ? r.nail_sites : r.treatment_sites;
+                    return (
+                      <td className="px-1.5 py-1" data-testid="koh-cell-nailsite">
+                        <div className="space-y-1.5">
+                          <span
+                            className={`flex items-center gap-1 text-xs font-medium ${
+                              effective.length > 0 ? 'text-foreground' : 'text-muted-foreground/60'
+                            }`}
+                            data-testid="koh-nailsite-text"
+                          >
+                            {formatNailSites(effective)}
+                            {prefilled && (
+                              <span
+                                className="shrink-0 rounded bg-teal-50 px-1 py-px text-[10px] font-medium text-teal-700"
+                                title="고객차트에서 선택한 치료부위가 자동 표시됨(미저장). 버튼을 눌러 확정하세요."
+                                data-testid="koh-nailsite-prefill-badge"
+                              >
+                                치료부위
+                              </span>
+                            )}
+                          </span>
+                          <NailSiteEditor
+                            current={effective}
+                            saving={
+                              saveNailSites.isPending && saveNailSites.variables?.serviceId === r.id
+                            }
+                            onCommit={(sites) => saveNailSites.mutate({ serviceId: r.id, sites })}
+                          />
+                        </div>
+                      </td>
+                    );
+                  })()}
                   {/* PHASE15(B): 당일 진료의사 — customer_id+검사일 조인. 없으면 '미정'. */}
                   <td
                     className={`px-1.5 py-1 text-xs ${
@@ -589,10 +674,27 @@ export default function KohReportTab() {
         </div>
       )}
 
-      {/* 안내 — PHASE15 범위 명시 */}
+      {/* 안내 — PHASE15 범위 명시 + NAILSYNC */}
       <p className="text-[11px] text-muted-foreground/70">
-        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 여러 부위를 함께 선택할 수 있습니다(다시 누르면 해제). 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다.
+        ※ 검사일(시행일) 기준 월별 명단입니다. 조갑부위는 좌발(L1~L5)·우발(R1~R5) 버튼을 눌러 입력하며 여러 부위를 함께 선택할 수 있습니다(다시 누르면 해제). 고객차트에서 선택한 치료부위가 비어있는 조갑부위에 자동 표시(치료부위 배지)되며, 원장이 입력한 값은 덮어쓰지 않습니다. 환자 이름을 누르면 고객차트가 열립니다. 진료의는 진료차트 서명 기준이며 미서명·차트없음은 '미정'으로 표시됩니다.
       </p>
+
+      {/* NAILSYNC(AC5): 고객차트 — 환자 이름 클릭 시 오픈. DoctorCallDashboard 패턴 이식. */}
+      <MedicalChartPanel
+        open={medicalChartOpen}
+        onOpenChange={(v) => {
+          if (!v) {
+            setMedicalChartOpen(false);
+            setMedicalChartCustomerId(null);
+          }
+        }}
+        customerId={medicalChartCustomerId}
+        clinicId={clinicId ?? ''}
+        currentUserRole={profile?.role ?? ''}
+        currentUserEmail={profile?.email ?? null}
+        variant={medicalChartVariant}
+        onOpenFull={() => setMedicalChartVariant('full')}
+      />
     </div>
   );
 }
