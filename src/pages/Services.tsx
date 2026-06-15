@@ -598,9 +598,11 @@ export default function Services() {
           </div>
           <Tabs value={phraseTab} onValueChange={(v) => setPhraseTab(v as PhraseTab)} className="w-full">
             <TabsList className="mb-4 flex w-full flex-wrap h-auto gap-1">
+              {/* T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT: 상용구 탭은 펜차트 전용.
+                  진료차트 상용구는 진료관리>진료차트 상용구로 분리됨. value/testid 는 딥링크·E2E 보존상 불변. */}
               <TabsTrigger value="phrases" className="gap-1.5" data-testid="tab-phrases">
                 <BookOpen className="h-3.5 w-3.5" />
-                상용구
+                상용구(펜차트)
               </TabsTrigger>
               <TabsTrigger value="fee_set_templates" className="gap-1.5" data-testid="tab-fee-set-templates">
                 <DollarSign className="h-3.5 w-3.5" />
@@ -615,7 +617,8 @@ export default function Services() {
               }
             >
               <TabsContent value="phrases">
-                <PhrasesTabPanel />
+                {/* T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT: 펜차트 상용구 전용 (lockedType). */}
+                <PhrasesTabPanel lockedType="pen_chart" />
               </TabsContent>
               <TabsContent value="fee_set_templates">
                 <FeeSetTemplatesTabPanel />

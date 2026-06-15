@@ -151,7 +151,17 @@ function useDeletePhrase() {
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
-export default function PhrasesTab() {
+// T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT:
+//   상용구를 phrase_type 축으로 두 surface 로 물리 분할 (DB 변경 0 — phrase_type 컬럼 旣존).
+//   lockedType 지정 시: (1) 상단 세그먼트 필터 숨김, (2) 해당 type 으로 목록 고정 필터,
+//   (3) 추가/편집 다이얼로그의 유형 선택 UI 숨김 + form.phrase_type 를 lockedType 으로 고정,
+//   (4) 빈상태/카운트도 lockedType 기준. prop 미지정 시 현행 그대로(세그먼트 노출) — 회귀 0.
+//   단일 컴포넌트를 두 surface(상용구관리=pen_chart / 진료관리=medical_chart)가 prop 만 달리 재사용.
+interface PhrasesTabProps {
+  lockedType?: 'pen_chart' | 'medical_chart';
+}
+
+export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
   // T-20260603-foot-RX-PERMMENU-PARITY: 직원(consultant/coordinator/therapist)은 탭 열람 가능하나 읽기 전용.
   // CRUD는 admin/manager 전용 (Services·Staff write-guard 패턴).
   const { profile } = useAuth();
@@ -166,10 +176,13 @@ export default function PhrasesTab() {
   const [filterCat, setFilterCat] = useState<string>('all');
   // T-20260526-foot-MEDCHART-SYNC: phrase_type 필터 ('all' | 'pen_chart' | 'medical_chart')
   const [filterPhraseType, setFilterPhraseType] = useState<string>('all');
+  // T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT: lockedType 지정 시 해당 type 으로 강제 고정.
+  const effectivePhraseType = lockedType ?? filterPhraseType;
 
   function openAdd() {
     setEditing(null);
-    setForm(EMPTY_FORM);
+    // lockedType surface 에서 추가하면 그 type 으로 자동 저장 (세그먼트 선택 UI 없음).
+    setForm({ ...EMPTY_FORM, phrase_type: lockedType ?? EMPTY_FORM.phrase_type });
     setOpen(true);
   }
 
@@ -214,7 +227,7 @@ export default function PhrasesTab() {
   // T-20260608-foot-PHRASE-PEN-MED-SPLIT: phrase_type 활성 시 좌측 카테고리 카운트도 용도별로 산출
   //   (펜차트/진료차트 분리는 phrase_type 컬럼으로 이미 존재 — 무DB. 좌측 사이드 카운트만 type 미반영 버그였음)
   const typeFiltered = phrases.filter(
-    (p) => filterPhraseType === 'all' || (p.phrase_type ?? 'pen_chart') === filterPhraseType,
+    (p) => effectivePhraseType === 'all' || (p.phrase_type ?? 'pen_chart') === effectivePhraseType,
   );
   const displayed = typeFiltered.filter((p) => filterCat === 'all' || p.category === filterCat);
 
@@ -229,29 +242,54 @@ export default function PhrasesTab() {
     <div className="space-y-3">
       {/* 헤더: 상용구 유형 필터 + 추가 버튼 */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        {/* T-20260526-foot-MEDCHART-SYNC: phrase_type 세그먼트 필터 */}
-        <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-0.5">
-          {(['all', 'pen_chart', 'medical_chart'] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setFilterPhraseType(t)}
-              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                filterPhraseType === t
-                  ? 'bg-background shadow-sm text-teal-700 font-semibold'
-                  : 'text-muted-foreground hover:text-foreground'
+        {/* T-20260526-foot-MEDCHART-SYNC: phrase_type 세그먼트 필터.
+            T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT: lockedType surface 에서는 숨김(단일 type 고정).
+            대신 어떤 용도의 상용구 화면인지 안내 배지 노출. */}
+        {lockedType ? (
+          <div
+            className="flex items-center gap-1.5 text-sm font-semibold text-teal-700"
+            data-testid={`phrase-locked-type-${lockedType}`}
+          >
+            <Badge
+              variant="outline"
+              className={`text-[11px] h-5 px-2 ${
+                lockedType === 'medical_chart'
+                  ? 'text-emerald-700 border-emerald-200 bg-emerald-50'
+                  : 'text-blue-700 border-blue-200 bg-blue-50'
               }`}
-              data-testid={`phrase-type-filter-${t}`}
             >
-              {t === 'all' ? '전체' : PHRASE_TYPE_LABELS[t]}
-              <span className="ml-1 text-[10px] text-muted-foreground">
-                {t === 'all'
-                  ? phrases.length
-                  : phrases.filter((p) => (p.phrase_type ?? 'pen_chart') === t).length}
-              </span>
-            </button>
-          ))}
-        </div>
+              {PHRASE_TYPE_LABELS[lockedType]} 상용구
+            </Badge>
+            <span className="text-xs font-normal text-muted-foreground">
+              {lockedType === 'medical_chart'
+                ? '진료차트 임상경과 입력용'
+                : '진료메모/서류 입력용'}
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-0.5">
+            {(['all', 'pen_chart', 'medical_chart'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setFilterPhraseType(t)}
+                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                  filterPhraseType === t
+                    ? 'bg-background shadow-sm text-teal-700 font-semibold'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                data-testid={`phrase-type-filter-${t}`}
+              >
+                {t === 'all' ? '전체' : PHRASE_TYPE_LABELS[t]}
+                <span className="ml-1 text-[10px] text-muted-foreground">
+                  {t === 'all'
+                    ? phrases.length
+                    : phrases.filter((p) => (p.phrase_type ?? 'pen_chart') === t).length}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
         {canEdit && (
           <Button size="sm" variant="outline" onClick={openAdd} data-testid="phrase-add-btn">
             <Plus className="h-3.5 w-3.5 mr-1" />
@@ -389,39 +427,45 @@ export default function PhrasesTab() {
             <DialogTitle>{editing ? '상용구 수정' : '상용구 추가'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            {/* T-20260526-foot-MEDCHART-SYNC: 상용구 유형 선택 (전체 폭) */}
-            <div>
-              <Label className="text-xs font-semibold">
-                상용구 유형{' '}
-                <span className="text-muted-foreground font-normal text-[11px]">
-                  — 어디서 사용하는 상용구인지 선택
-                </span>
-              </Label>
-              <div className="mt-1 flex gap-2">
-                {(['pen_chart', 'medical_chart'] as const).map((t) => (
-                  <label key={t} className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="phrase_type"
-                      value={t}
-                      checked={form.phrase_type === t}
-                      onChange={() => setForm((f) => ({ ...f, phrase_type: t }))}
-                      className="accent-teal-600"
-                    />
-                    <span className={`text-sm px-2 py-0.5 rounded font-medium ${
-                      t === 'medical_chart'
-                        ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
-                        : 'text-blue-700 bg-blue-50 border border-blue-200'
-                    }`}>
-                      {PHRASE_TYPE_LABELS[t]}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {t === 'pen_chart' ? '(진료메모/서류 입력 시)' : '(진료차트 임상경과 입력 시)'}
-                    </span>
-                  </label>
-                ))}
+            {/* T-20260526-foot-MEDCHART-SYNC: 상용구 유형 선택 (전체 폭).
+                T-20260615-foot-PHRASE-MEDCHART-CLINICTAB-SPLIT:
+                - lockedType surface 에서 '신규 추가' 시: 유형 선택 숨김 → openAdd 에서 lockedType 자동 고정(AC1).
+                - '편집' 시: 유형 선택 노출 → 레거시/NULL 상용구를 다른 surface 로 옮길 수 있게(AC3·AC6③).
+                  편집으로 type 변경 시 type 필터에서 빠져 다른 화면으로 자동 이동. */}
+            {(!lockedType || editing) && (
+              <div>
+                <Label className="text-xs font-semibold">
+                  상용구 유형{' '}
+                  <span className="text-muted-foreground font-normal text-[11px]">
+                    — 어디서 사용하는 상용구인지 선택
+                  </span>
+                </Label>
+                <div className="mt-1 flex gap-2">
+                  {(['pen_chart', 'medical_chart'] as const).map((t) => (
+                    <label key={t} className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="phrase_type"
+                        value={t}
+                        checked={form.phrase_type === t}
+                        onChange={() => setForm((f) => ({ ...f, phrase_type: t }))}
+                        className="accent-teal-600"
+                      />
+                      <span className={`text-sm px-2 py-0.5 rounded font-medium ${
+                        t === 'medical_chart'
+                          ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                          : 'text-blue-700 bg-blue-50 border border-blue-200'
+                      }`}>
+                        {PHRASE_TYPE_LABELS[t]}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {t === 'pen_chart' ? '(진료메모/서류 입력 시)' : '(진료차트 임상경과 입력 시)'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">카테고리</Label>
