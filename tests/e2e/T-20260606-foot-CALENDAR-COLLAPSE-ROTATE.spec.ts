@@ -20,18 +20,12 @@ import { test, expect } from '@playwright/test';
 const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8089';
 
 test.describe('T-20260606-foot-CALENDAR-COLLAPSE-ROTATE — 달력 접기 글씨 회전 버그', () => {
-  test('AC-1: PC 달력 접으면 회전 날짜 텍스트가 제거되고 펼치기 버튼만 노출', async ({ page }) => {
+  test('AC-1: PC 달력 접힘 strip 에 회전 날짜 텍스트가 없고 펼치기 버튼만 노출', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(BASE + '/admin', { waitUntil: 'networkidle' });
 
-    // 펼침(기본) 상태: 달력 접기 토글 버튼 노출
-    const collapseBtn = page.getByTestId('pc-cal-toggle');
-    await expect(collapseBtn).toBeVisible();
-
-    // 달력 접기
-    await collapseBtn.click();
-
-    // 접힘 strip 노출
+    // T-20260615-foot-CALENDAR-DEFAULT-COLLAPSED 이후: 달력은 디폴트로 접힘 상태로 시작.
+    //   (이전엔 펼침이 기본 → pc-cal-toggle 클릭으로 접었으나, 이제 진입 시 이미 접힘 strip 노출)
     const bar = page.getByTestId('pc-cal-bar');
     await expect(bar).toBeVisible();
 
@@ -46,8 +40,7 @@ test.describe('T-20260606-foot-CALENDAR-COLLAPSE-ROTATE — 달력 접기 글씨
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(BASE + '/admin', { waitUntil: 'networkidle' });
 
-    // 접기 → 펼치기 왕복
-    await page.getByTestId('pc-cal-toggle').click();
+    // 디폴트 접힘 → 바로 펼치기 (T-20260615-foot-CALENDAR-DEFAULT-COLLAPSED)
     await expect(page.getByTestId('pc-cal-bar')).toBeVisible();
 
     await page.getByTestId('pc-cal-expand').click();
