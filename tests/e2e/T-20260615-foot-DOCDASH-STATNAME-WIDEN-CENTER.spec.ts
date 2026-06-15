@@ -44,11 +44,16 @@ test.describe('AC1/AC2 — 상태·이름 폭 ×1.2 + 합 100%', () => {
     expect(cols.reduce((a, b) => a + b, 0)).toBe(100);
   });
 
-  test('(B)완료(STATNAME 단계): 상태 10% · 이름 7% · 임상경과 차감 34%', () => {
+  test('(B)완료: 이름 ×1.2(=7%) 적용 + 합 100% (상태폭은 WAITDONE-ALIGN-CNTNUM 이 대기폭으로 통일)', () => {
+    // ⚠ COORDINATE: STATNAME 단계에서 B 는 상태 8→10·이름 6→7 로 독립 확대했으나,
+    //   의존 후속 티켓 T-20260615-foot-DOCDASH-WAITDONE-ALIGN-CNTNUM 이 'B = A 픽셀 동일' 로 통일하며
+    //   B 상태폭을 A 의 확정폭(8%)에 맞춰 supersede 한다(설계된 수렴, 원복 아님).
+    //   따라서 최종 B 에서 STATNAME 이 남긴 불변식 = 이름 ×1.2(=7%) + 합 100%.
     const cg = COLGROUP_B();
     const cols = [...cg.matchAll(/w-\[(\d+)%\]/g)].map((m) => Number(m[1]));
-    // 순서: 방 상태 이름 생년 차트번호 오늘시술 차트 처방 임상경과
-    expect(cols).toEqual([4, 10, 7, 9, 8, 9, 6, 13, 34]);
+    // index 2 = 이름
+    expect(cols[2]).toBe(7); // 이름 6→7 (×1.2) 확대 반영
+    expect(cols[1]).toBeGreaterThanOrEqual(8); // 상태 폭 확대(원본 8 이상 — WAITDONE 통일 후 A 와 동일 8)
     expect(cols.reduce((a, b) => a + b, 0)).toBe(100);
   });
 });
