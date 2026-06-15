@@ -70,49 +70,27 @@ test.describe('AC1: 힐러 총인원 합산 포함', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// AC2 — 시간대별 초/재/힐러 카운트 위치 이동 (고객 박스 위 → 좌측 시간축 라벨)
-//   '현장 클릭 시나리오 1' 변환. 거대 인라인 source-integrity gating(실 렌더=field-soak).
+// AC2 [SUPERSEDED by T-20260615-foot-RESVMGMT-REFIX-8 AC4] — 시간대 카운트
+//   5FIX AC2(좌측 시간축 '날짜 합산' time-axis-kind-count)는 현장 확정(옵션2 '일자×시간 매트릭스')으로
+//   REFIX-8 AC4 가 supersede. 카운트 표기는 좌측 시간축(날짜 합산) → 각 (날짜×시간) 셀 per-cell 로 이동.
+//   본 describe 는 그 supersede 반영 — REFIX-8.spec.ts AC4 가 신규 per-cell 매트릭스를 정식 검증한다.
 // ═══════════════════════════════════════════════════════════════════════════
-test.describe('AC2: 시간대 카운트 좌측 시간축 이동', () => {
-  // 시간축 셀(resv-time-col-cell) td 블록 추출 — time-axis-kind-count IIFE 포함.
-  const TIME_AXIS = (() => {
-    const m = RESV_PAGE.match(/data-testid="resv-time-col-cell"[\s\S]*?time-axis-kind-count-\$\{time\}[\s\S]*?\}\)\(\)\}/);
-    return m ? m[0] : '';
-  })();
-
-  test('AC2-1: 시간축 라벨 셀에 카운트 칩 블록 신설 (time-axis-kind-count testid)', () => {
-    expect(TIME_AXIS, '시간축 카운트 블록(time-axis-kind-count) 누락 — 이동 미반영').not.toBe('');
+test.describe('AC2 [SUPERSEDED→REFIX-8 AC4]: 시간 카운트 per-cell 매트릭스 이동', () => {
+  test('AC2-SUP-1: 좌측 시간축 날짜 합산(time-axis-kind-count) 제거 — supersede 반영', () => {
+    expect(RESV_PAGE, 'time-axis-kind-count 잔존 — REFIX-8 AC4 supersede 미반영(중복 표시 위험)')
+      .not.toContain('time-axis-kind-count-${time}');
+    // 시간축 셀 자체는 시간 라벨로 보존(회귀 가드)
     expect(RESV_PAGE, '시간축 셀 testid(resv-time-col-cell) 소실(회귀)')
       .toContain('data-testid="resv-time-col-cell"');
   });
 
-  test('AC2-2: 시간축 카운트가 보이는 날짜(주간 weekDays/일간 선택일) 합산', () => {
-    expect(TIME_AXIS, '보이는 날짜 집합(weekDays / selectedDay) 분기 누락')
-      .toMatch(/viewMode === 'week' \? weekDays : \[selectedDay\]/);
-    expect(TIME_AXIS, '날짜×시간 키로 resvByKey 조회 누락')
-      .toContain('resvByKey[k]');
+  test('AC2-SUP-2: per-cell 매트릭스 카운트로 대체 신설 (REFIX-8 AC4)', () => {
+    expect(RESV_PAGE, 'per-cell 카운트(cell-kind-count) 누락 — AC4 매트릭스 미반영')
+      .toContain('data-testid={`cell-kind-count-${dateStr}-${time}`}');
   });
 
-  test('AC2-3: 집계 시맨틱 불변 — 취소 제외 가드 + resvKind 분류', () => {
-    expect(TIME_AXIS, '취소 제외 가드 누락(회귀)').toContain("r.status === 'cancelled') continue");
-    expect(TIME_AXIS, '힐러 분류 누락').toContain("kind === 'healer') h += 1");
-    expect(TIME_AXIS, '초진 분류 누락').toContain("kind === 'new') n += 1");
-    expect(TIME_AXIS, '재진 분류 누락').toContain("kind === 'returning') rr += 1");
-  });
-
-  test('AC2-4: 시간축 칩 초/재/HL 3종 + 색상 코딩(emerald/blue/yellow)', () => {
-    expect(TIME_AXIS, '시간축 초진 칩 누락').toMatch(/n > 0 &&[\s\S]*?bg-emerald-100[\s\S]*?초 \{n\}/);
-    expect(TIME_AXIS, '시간축 재진 칩 누락').toMatch(/rr > 0 &&[\s\S]*?bg-blue-100[\s\S]*?재 \{rr\}/);
-    expect(TIME_AXIS, '시간축 HL 칩 누락').toMatch(/h > 0 &&[\s\S]*?bg-yellow-100[\s\S]*?HL \{h\}/);
-  });
-
-  test('AC2-5: 전건 0 시 시간축 칩 null 렌더 가드', () => {
-    expect(TIME_AXIS, '전건 0 null 가드 누락(빈 시간대 빈 칩 방지)')
-      .toContain('if (n === 0 && rr === 0 && h === 0) return null');
-  });
-
-  test('AC2-6: 기존 고객 박스 위 슬롯 카운트(slot-kind-count) 제거', () => {
-    expect(RESV_PAGE, '슬롯 고객 박스 위 카운트(slot-kind-count) 잔존 — 이동 미완(중복 표시)')
+  test('AC2-SUP-3: 기존 고객 박스 위 슬롯 카운트(slot-kind-count) 잔존 0', () => {
+    expect(RESV_PAGE, '슬롯 고객 박스 위 카운트(slot-kind-count) 잔존(중복 표시)')
       .not.toContain('slot-kind-count-${dateStr}-${time}');
   });
 });

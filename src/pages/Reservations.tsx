@@ -1497,36 +1497,9 @@ export default function Reservations() {
                         className="w-20 border-b border-r py-1.5 text-center text-xs font-medium text-muted-foreground sticky left-0 bg-background z-10"
                       >
                         <div>{time}</div>
-                        {/* T-20260613-foot-RESVCAL-FOLLOWUP-5FIX AC2: 시간대별 초/재/힐러 카운트를
-                            '슬롯 고객 박스 위'(RESVCAL item2)에서 좌측 시간축 라벨 영역으로 이동.
-                            집계 로직·데이터 불변 — 표시 위치만 이동. 시간축 셀은 행당 1개이므로
-                            보이는 날짜(주간=weekDays 6일 / 일간=선택일 1일)의 해당 시간대 활성 예약 합산.
-                            취소 제외 가드(status==='cancelled') · resvKind 분류 = 기존 슬롯 칩과 동일 시맨틱. */}
-                        {(() => {
-                          const days = viewMode === 'week' ? weekDays : [selectedDay];
-                          let n = 0, rr = 0, h = 0;
-                          for (const d of days) {
-                            const k = `${format(d, 'yyyy-MM-dd')}_${time}`;
-                            for (const r of (resvByKey[k] ?? [])) {
-                              if (r.status === 'cancelled') continue;
-                              const kind = resvKind(r);
-                              if (kind === 'new') n += 1;
-                              else if (kind === 'returning') rr += 1;
-                              else if (kind === 'healer') h += 1;
-                            }
-                          }
-                          if (n === 0 && rr === 0 && h === 0) return null;
-                          return (
-                            <div
-                              data-testid={`time-axis-kind-count-${time}`}
-                              className="mt-1 flex flex-col items-center gap-0.5 text-[9px] font-medium leading-none"
-                            >
-                              {n > 0 && <span className="inline-flex items-center rounded-full bg-emerald-100 px-1 py-0.5 text-emerald-700">초 {n}</span>}
-                              {rr > 0 && <span className="inline-flex items-center rounded-full bg-blue-100 px-1 py-0.5 text-blue-700">재 {rr}</span>}
-                              {h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-1 py-0.5 text-yellow-700">HL {h}</span>}
-                            </div>
-                          );
-                        })()}
+                        {/* T-20260615-foot-RESVMGMT-REFIX-8 AC4 (현장 확정 MSG-...gkj2 옵션2 '일자×시간 매트릭스'):
+                            좌측 시간축의 '보이는 날짜 전체 합산'(5FIX AC2/a921cef per-time sum) supersede 확정 →
+                            건수 분포를 각 (날짜×시간) 셀에 per-cell 표기로 이동(아래 cell-kind-count-*). 시간축 라벨은 시간만. */}
                       </td>
                       {(viewMode === 'week' ? weekDays : [selectedDay]).map((d) => {
                         const allowed = slotsFor(d).includes(time);
@@ -1577,8 +1550,31 @@ export default function Reservations() {
                             {allowed && (
                               <div className="flex h-full w-full min-w-0 flex-col gap-1 rounded text-left">{/* T-20260522-foot-RESV-CAL-COLWIDTH: min-w-0 → 자식 flex 아이템이 셀 너비 이하로 수축 허용 / T-20260612-WEEKCAL: 카드 간 여백 gap-0.5→gap-1 */}
 
-                                {/* T-20260613-foot-RESVCAL-FOLLOWUP-5FIX AC2: 슬롯 '고객 박스 위' 초/재/힐러 카운트 칩(RESVCAL item2)
-                                    제거 → 좌측 시간축 라벨 영역(resv-time-col-cell)으로 이동. 카드만 잔류. 집계 로직·데이터 불변. */}
+                                {/* T-20260615-foot-RESVMGMT-REFIX-8 AC4 (현장 확정 옵션2 '일자×시간 매트릭스'):
+                                    좌측 시간축 '날짜 합산'(5FIX AC2/a921cef) supersede → 각 (날짜×시간) 셀에 per-cell 건수 분포 표기.
+                                    이 셀(dateStr×time)의 활성(취소 제외) 예약을 초/재/HL 분류 집계 = "10시 2건" 식 시간대별 분포.
+                                    집계 시맨틱(resvKind·cancelled 제외)은 제거된 시간축 합산과 동일 — 차원만 per-day로 분리. */}
+                                {(() => {
+                                  let n = 0, rr = 0, h = 0;
+                                  for (const r of (resvByKey[key] ?? [])) {
+                                    if (r.status === 'cancelled') continue;
+                                    const kind = resvKind(r);
+                                    if (kind === 'new') n += 1;
+                                    else if (kind === 'returning') rr += 1;
+                                    else if (kind === 'healer') h += 1;
+                                  }
+                                  if (n === 0 && rr === 0 && h === 0) return null;
+                                  return (
+                                    <div
+                                      data-testid={`cell-kind-count-${dateStr}-${time}`}
+                                      className="flex flex-wrap items-center gap-0.5 text-[9px] font-medium leading-none"
+                                    >
+                                      {n > 0 && <span className="inline-flex items-center rounded-full bg-emerald-100 px-1 py-0.5 text-emerald-700">초 {n}</span>}
+                                      {rr > 0 && <span className="inline-flex items-center rounded-full bg-blue-100 px-1 py-0.5 text-blue-700">재 {rr}</span>}
+                                      {h > 0 && <span className="inline-flex items-center rounded-full bg-yellow-100 px-1 py-0.5 text-yellow-700">HL {h}</span>}
+                                    </div>
+                                  );
+                                })()}
 
                                 {/* T-PROGRESS-CHECKPOINT AC-4: filterProgress 시 경과분석 대상만 표시
                                     T-20260611-foot-PROGRESS-CAL-SESSION-AUTOLINK §3 자동연동: 체크포인트 태그

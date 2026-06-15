@@ -1249,11 +1249,13 @@ export function ReservationDetailPopup({
                       <FieldRow label="시작 시간" value={selectedResv.reservation_time.slice(0, 5)} />
                       <FieldRow label="소요 시간" value={getDuration(selectedResv)} />
                       <FieldRow label="초·재진" value={VISIT_TYPE_KO[selectedResv.visit_type]} />
+                      {/* T-20260615-foot-RESVMGMT-REFIX-8 AC2 (현장 확정 MSG-...gkj2: "예약 상세 - 예약 등록자 그대로 가져와"):
+                          신규 담당자 드롭다운 신설 아님 — 예약상세의 예약 등록자(registrar_name 스냅샷)를 그대로 표시.
+                          기존엔 '다른 예약 보기 중'(id !== anchor)일 때만 노출 → 본 예약(anchor) 상세에서도 항상 렌더.
+                          데이터 소스 = AC7과 동일(registrar_name). AC7 DB검증 결과(write 무결·생성시 미수집)상 미할당 예약은 '—' graceful. */}
+                      <FieldRow label="예약등록자" value={selectedResv.registrar_name ?? '—'} />
                       {selectedResv.id !== reservation.id && (
-                        <>
-                          <FieldRow label="예약경로" value={selectedResv.visit_route ?? '—'} />
-                          <FieldRow label="예약등록자" value={selectedResv.registrar_name ?? '—'} />
-                        </>
+                        <FieldRow label="예약경로" value={selectedResv.visit_route ?? '—'} />
                       )}
                     </>
                   ) : (
