@@ -109,8 +109,6 @@ test.describe('item4 PART A: FootSites 멀티선택 헬퍼', () => {
 // PART B — 라이브: 2번차트 패키지 탭 일러스트 멀티선택 + 영속
 // ─────────────────────────────────────────────────────────────────────────
 test.describe('item4 PART B: 2번차트 패키지 탭 발가락 일러스트(라이브)', () => {
-  // SUPERSEDED by T-20260615-foot-PKGTAB-TREATSITE-REMOVE — 2번차트 패키지 탭 일러스트 제거로 본 시나리오 무효.
-  test.skip(true, 'SUPERSEDED: 패키지 탭 일러스트 제거(PKGTAB-TREATSITE-REMOVE)');
   test.skip(!hasServiceKey, 'service key 없음 → 시딩 불가, 라이브 skip');
 
   test('시나리오3: 항상 고정 노출 + 멀티선택 + check_ins 영속', async ({ page }) => {
@@ -183,13 +181,18 @@ test.describe('item4 PART C: 소스 정합', () => {
     expect(src).toContain('BASE_TOES');
   });
 
-  // SUPERSEDED by T-20260615-foot-PKGTAB-TREATSITE-REMOVE — 2번차트 패키지 탭 일러스트는 현장 요청으로 제거됨.
-  //   (입력 UI 제거. treatment_memo.foot_sites 데이터·하류 read-path는 보존 — 아래 chart1 test가 가드)
-  test('2번차트(CustomerChartPage) 패키지 탭 — 일러스트 제거(SUPERSEDED)', () => {
+  test('2번차트(CustomerChartPage) 패키지 탭 — 일러스트 상단 고정 + check_ins 저장(스키마 변경 없음)', () => {
     const src = read('src/pages/CustomerChartPage.tsx');
-    expect(src).not.toContain('data-testid="pkg-tab-toe-section"');
-    expect(src).not.toContain('<FootToeIllustration');
-    expect(src).not.toContain('saveTreatmentToes');
+    expect(src).toContain('data-testid="pkg-tab-toe-section"');
+    expect(src).toContain('<FootToeIllustration');
+    expect(src).toContain('saveTreatmentToes');
+    expect(src).toContain('memo.foot_sites = next'); // 기존 treatment_memo jsonb 재사용
+    // 패키지명 매칭(포돌로게/PD) 조건 제거(소멸) — 일러스트는 패키지명과 무관하게 상단 고정.
+    //   ('포돌로게'는 패키지 시술명 라벨로만 잔존, 일러스트 노출 트리거 아님) → 노출 조건이 chartTab만임을 확인.
+    const tabBlock = src.slice(src.indexOf("chartTab === 'packages'"));
+    const toeIdx = tabBlock.indexOf('pkg-tab-toe-section');
+    expect(toeIdx, '일러스트가 패키지 탭 블록 내부 상단에 존재').toBeGreaterThan(0);
+    expect(tabBlock.slice(0, toeIdx)).not.toMatch(/package_name[\s\S]{0,80}(포돌로게|PD)/); // 노출 직전 패키지명 매칭 게이트 없음
   });
 
   test('1번차트(CheckInDetailSheet) — foot_sites 있을 때만 read-only 조건부 연동', () => {
