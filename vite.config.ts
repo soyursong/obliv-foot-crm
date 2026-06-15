@@ -62,7 +62,14 @@ export default defineConfig({
             if (id.includes('date-fns')) return 'vendor-dates';
             if (id.includes('lucide-react')) return 'vendor-icons';
             if (id.includes('pdf-lib')) return 'vendor-pdf';
-            // recharts + 공유 의존성 (clsx, d3-* 등)을 하나로 묶어 순환 방지
+            // T-20260615-foot-GALAXYTAB-LOGIN-SLOW: 앱 전역 tiny 공유 유틸 분리.
+            // clsx·tailwind-merge(cn()) 와 use-sync-external-store-shim 은 entry static graph
+            // (Button/Badge 등 모든 화면)에서 쓰인다. recharts 와 같은 vendor-charts 에 묶이면
+            // entry 가 clsx 한 줄 때문에 recharts 397KB 전체를 critical path 에 정적 로드 →
+            // 로그인 화면조차 차트 번들을 받아 갤탭 파싱이 느려짐. 이 규칙을 recharts 규칙보다
+            // 앞에 둬 tiny 유틸을 독립 청크로 빼고, vendor-charts 는 Stats 진입 시에만 lazy 로드되게 한다.
+            if (/[\\/](clsx|tailwind-merge|use-sync-external-store)[\\/]/.test(id)) return 'vendor-utils';
+            // recharts + 공유 의존성 (d3-* 등)을 하나로 묶어 순환 방지
             if (id.includes('recharts') || id.includes('d3-')) return 'vendor-charts';
           }
         },
