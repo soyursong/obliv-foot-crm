@@ -491,6 +491,11 @@ function PatientRow({
 
   const hasPendingRx = row.prescription_status === 'pending';
   const isConfirmed = row.prescription_status === 'confirmed';
+  // T-20260615-foot-DOCPATIENTLIST-DONE-CLINICAL-READONLY (문지은 대표원장, item3):
+  //   '진료완료' 판정 SSOT = 목록 필터(usePatients L285) · DoctorCallDashboard.completedPatients · RXLIST-RENAME-DOCFILTER 와
+  //   글자 그대로 1:1 동일 — completed_at(귀가/원내잔류-시술완료) 보유 OR status_flag==='pink'(진료완료 처리).
+  //   ⚠ prescription_status==='confirmed'(처방 확정)와는 다른 축. 진료완료 환자의 임상경과는 읽기전용(차트에서 수정).
+  const isVisitDone = !!row.completed_at || row.status_flag === 'pink';
 
   // ---------------------------------------------------------------------------
   // T-20260609-foot-DOCPATIENTLIST-DATEMODE-HISTORY (AC-1/2): 어제 이전 날짜 = 이력 모드(read-only).
@@ -789,8 +794,14 @@ function PatientRow({
             <div data-testid="expand-clinical-course">
               <span className="mb-1 block text-[11px] font-semibold text-muted-foreground">
                 임상경과
-                {/* T-20260610-foot-DOCPATIENTLIST-EXPAND-CLINICAL (AC-3): 당일 외(과거/미래) 읽기전용 명시. */}
-                {!isToday && <span className="ml-1 font-normal text-muted-foreground/60">(읽기전용 · 당일 환자만 수정)</span>}
+                {/* T-20260610-foot-DOCPATIENTLIST-EXPAND-CLINICAL (AC-3): 당일 외(과거/미래) 읽기전용 명시.
+                    T-20260615-foot-DOCPATIENTLIST-DONE-CLINICAL-READONLY: 진료완료 환자도 읽기전용(완료조건 가산) —
+                    당일 외(AC-3) 회귀 0 유지, 사유에 맞는 안내 문구 분기. */}
+                {(!isToday || isVisitDone) && (
+                  <span className="ml-1 font-normal text-muted-foreground/60">
+                    {isVisitDone ? '(읽기전용 · 진료완료 — 차트에서 수정)' : '(읽기전용 · 당일 환자만 수정)'}
+                  </span>
+                )}
               </span>
               <MedicalChartPanel
                 embed
@@ -803,8 +814,10 @@ function PatientRow({
                 onOpenChange={() => { /* embed clinical: 호출부 토글 없음 — 확장 토글이 가시성 제어 */ }}
                 onSaved={onRefresh}
                 /* T-20260610-foot-DOCPATIENTLIST-EXPAND-CLINICAL (AC-2/3): 당일 접수 환자만 편집 허용.
-                   당일 외(미래 날짜 — 과거는 isPast 분기로 미마운트)는 readOnly=true 로 편집 차단. */
-                readOnly={!isToday}
+                   당일 외(미래 날짜 — 과거는 isPast 분기로 미마운트)는 readOnly=true 로 편집 차단.
+                   T-20260615-foot-DOCPATIENTLIST-DONE-CLINICAL-READONLY: '당일' AND '진료 미완료'일 때만 편집 허용.
+                   진료완료(isVisitDone) 환자는 당일이어도 읽기전용 → 편집 입력창·저장버튼 미노출(MedicalChartPanel embed readOnly). */
+                readOnly={!isToday || isVisitDone}
               />
             </div>
           ) : (
