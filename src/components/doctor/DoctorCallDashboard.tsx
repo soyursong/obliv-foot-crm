@@ -1406,6 +1406,26 @@ function CompletedRow({
 //   ⚠ 상태머신 신설 0 — 기존 recordAck(DoctorAck) + applyStatusFlagTransition(SSOT) 재사용(스키마 무변경).
 //   ⚠ GUARD(의료법): ack/완료 전이는 medical_charts 진료의 강제(MEDCHART-SIGN-AUDIT) 무관(무회귀).
 //   권한: 회색→초록(ack) = 의사 전용. 초록→파랑(완료) = 의사 + 직원(staff) 공통.
+//
+// T-20260615-foot-DOCDASH-SHAKE-ACK-NOT-COMPLETE (문지은 대표원장 P0 핫픽스) — 근본원인 = 가설 A 확정.
+//   증상: 진료호출알람 수신 후 손(✋) '첫 탭'이 ack 가 아니라 곧장 진료완료로 점프.
+//   재현·추적(코드): 본 손 토글의 acked = doctor_ack_at(값존재) 다.
+//     그런데 doctor_ack_at 은 이 위젯 외 두 동선에서도 '선점(preset)'되어 손이 초록으로 도착할 수 있다 —
+//       (1) 진료알림판 floating 호출바의 DoctorStageStepper '원장확인' 노드 클릭(setDoctorStage(1)) → doctor_ack_at=now
+//           (T-20260614-foot-DOCCALL-PURPLE-STEPPER. 알람 surface 에서 의사가 콜을 인지하며 누르는 자연 동선).
+//       (2) 동일 check_in 의 재호출(purple→pink→purple). status_flag 전이(applyStatusFlagTransition)는 ack 컬럼을
+//           건드리지 않아(설계상 별개 신호) 직전 라운드의 doctor_ack_at 이 잔존 → 새 호출인데 손이 초록.
+//     두 경우 모두 손이 초록(acked)으로 도착 → 기존 로직은 '초록 탭=즉시 완료' 이므로 의사의 '첫 손 탭'이 완료가 됨.
+//   교정(consumption-point, 스키마/스텝퍼 무변경): 초록이라도 '이 위젯에서 완료 의도가 확인(arm)된 두 번째 탭'에서만 완료.
+//     · arm 은 (a) 회색→ack 탭에서 자동 set(정상 2-탭 흐름 보존) 또는 (b) 초록 첫 탭에서 안내 토스트와 함께 set.
+//     · arm 레지스트리는 '현재 호출키(id@콜시각)' 단위(모듈 스코프) → refetch/remount 보존 + 재호출마다 자연 리셋
+//       (선점 ack 와 무관하게 새 호출의 '첫 완료 탭'은 항상 안내만, 완료는 두 번째 탭).
+//   ⚠ 비범위 가드: 손 위젯 형태·색팔레트·되돌리기 팝업·PURPLE-STEPPER A/B(손유지 vs stepper) 결정 변경 없음 —
+//     첫 전이 회귀(첫 탭 완료 점프)만 교정. doctor_ack_at 의미(ack-only) 및 status_flag 상태모델 무변경.
+//
+// arm 레지스트리: 이 위젯에서 '진료완료'가 확인된 호출키 집합. React state 아님(모듈 스코프) →
+//   onRefresh/realtime refetch 로 행이 remount 되어도 보존, 새 호출(콜키 변경)이면 자연 만료.
+const armedCompleteCalls = new Set<string>();
 function HandToggle({
   checkIn,
   doctorMode,
@@ -1423,6 +1443,8 @@ function HandToggle({
   const [pending, setPending] = useState(false);
   const acked = isDoctorAcked(checkIn.doctor_ack_at);
   const visual: 'blue' | 'green' | 'shake' = completed ? 'blue' : acked ? 'green' : 'shake';
+  // T-20260615 SHAKE-ACK-NOT-COMPLETE: 현재 호출 단위 arm 키. 재호출 시 콜시각이 바뀌어 자연 리셋.
+  const callId = callKey(checkIn);
 
   const handleClick = async () => {
     if (pending) return;
@@ -1440,6 +1462,9 @@ function HandToggle({
       setPending(true);
       try {
         await recordAck(checkIn.id);
+        // T-20260615 SHAKE-ACK-NOT-COMPLETE AC2: 의사가 손으로 직접 ack → 이 호출은 정상 2-탭 흐름.
+        //   다음(초록) 탭이 바로 완료되도록 arm. (별도 안내 탭 없이 ack→완료 2탭 보존)
+        armedCompleteCalls.add(callId);
         onRefresh();
         toast.confirm('환자에게 손을 들었어요. 호출 직원 화면에 바로 표시돼요.');
       } catch (e) {
@@ -1450,9 +1475,18 @@ function HandToggle({
       return;
     }
     // 초록(확인됨) — 진료완료 전이(purple→pink). 의사+직원 공통.
+    // T-20260615 SHAKE-ACK-NOT-COMPLETE AC1/AC2 (근본원인 가설 A): doctor_ack_at 은 진료알림판 stepper(원장확인)·
+    //   재호출 잔존 등 다른 동선에서 선점될 수 있어 손이 '초록'으로 도착할 수 있다. 그때 '첫 탭'이 곧장 완료로
+    //   점프하던 회귀를 차단 — 이 위젯에서 완료 의도가 확인(arm)되지 않은 초록 첫 탭은 완료가 아니라 '완료 예고'만.
+    if (!armedCompleteCalls.has(callId)) {
+      armedCompleteCalls.add(callId);
+      toast.confirm('의사 확인 상태예요. 한 번 더 누르면 진료완료로 처리돼요.');
+      return;
+    }
     setPending(true);
     try {
       await applyStatusFlagTransition(checkIn, 'pink', actor);
+      armedCompleteCalls.delete(callId); // 완료 처리됨 — arm 해제(이 호출 종료).
       onRefresh();
       toast.confirm('진료완료 처리했어요. 활성 호출 명단에서 빠졌어요.');
     } catch (e) {
@@ -1472,7 +1506,7 @@ function HandToggle({
     visual === 'blue'
       ? '진료완료됨 (완료 해제 미지원)'
       : visual === 'green'
-        ? '의사 확인됨 — 클릭하면 진료완료 처리'
+        ? '의사 확인됨 — 한 번 더 누르면 진료완료 처리' // T-20260615: 초록 첫 탭=완료 예고, 두 번째 탭=완료
         : '의사 확인(손 들기) — 클릭하면 환자에게 확인 신호';
 
   return (
@@ -1482,6 +1516,7 @@ function HandToggle({
       disabled={pending}
       data-testid="doctor-hand-toggle"
       data-hand-state={visual}
+      data-hand-armed={String(armedCompleteCalls.has(callId))}
       aria-label={title}
       title={title}
       className="inline-flex items-center justify-center rounded p-0.5 transition active:scale-90 disabled:opacity-50"
