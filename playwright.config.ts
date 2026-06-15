@@ -116,6 +116,9 @@ export default defineConfig({
         // T-20260615-foot-MONOTONE-TIMETABLE-CHART2-THERAPISTGREEN: 형제 재발행(스크린샷 동봉) —
         //   치료사 필터칩 선택-상태 green 원복(brown 누수 정정) 가드 추가 (정적 소스 가드, auth 불요)
         '**/T-20260615-foot-MONOTONE-TIMETABLE-CHART2-THERAPISTGREEN.spec.ts',
+        // T-20260615-foot-DOCDASH-NAME-EMOJI-CLINICAL-3FIX: 진료 알림판 이름클릭→차트 / 차트칼럼 제거 /
+        //   빈 임상경과 클릭편집·진한톤 + DoctorTools 서브탭 라벨 '진료 환자 목록' 역전 (소스 정적 grep, auth 불요)
+        '**/T-20260615-foot-DOCDASH-NAME-EMOJI-CLINICAL-3FIX.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
