@@ -262,6 +262,13 @@ const KANBAN_GROUP_LABELS: Record<KanbanGroupId, string> = {
   laser_rooms: '레이저실',
 };
 
+// T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY: 대시보드 슬롯 높이 통일 기준.
+//   5개 슬롯(치료대기·치료실·레이저실·수납대기·완료) 컨테이너 높이를 이 '빈 상태 기준'
+//   고정값으로 묶는다. 카드(고객박스)가 추가돼도 컨테이너 세로 성장 금지 → 내부 overflow-y:auto.
+//   형제 슬롯 stretch 연동 제거(부모 flex items-start) → 각 슬롯 독립 고정 높이.
+//   값은 편집모드 board minHeight(calc(100vh - 200px))와 동일 — 슬롯 위 영역(헤더/타임라인) 보정 SSOT.
+const SLOT_COLUMN_HEIGHT = 'calc(100vh - 200px)';
+
 // ── 그룹 정렬 핸들용 SortableGroupItem ────────────────────────────────────────
 function SortableGroupItem({
   id,
@@ -1029,6 +1036,8 @@ function RoomSection({
   defaultRoomIds,
   onAddSlot,
   onDeleteSlot,
+  // T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY: true면 부모가 준 고정 높이를 채우고 방 그리드는 내부 스크롤.
+  fillHeight,
 }: {
   title: string;
   color: string;
@@ -1058,6 +1067,7 @@ function RoomSection({
   defaultRoomIds?: Set<string>;
   onAddSlot?: (roomType: string) => void;
   onDeleteSlot?: (roomType: string, roomId: string, roomName: string) => void;
+  fillHeight?: boolean; // T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY
 }) {
   const getRoomOccupants = (roomName: string): CheckIn[] => {
     const field = ROOM_FIELD_MAP[roomType];
@@ -1077,7 +1087,8 @@ function RoomSection({
 
   const showBatchEdit = !!(batchEditMode && isToday); // T-20260614-foot-SLOT-CRUD-ALLTYPES
   return (
-    <div className="flex flex-col">
+    // T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY: fillHeight면 부모 고정 높이를 꽉 채워 방 그리드만 내부 스크롤.
+    <div className={cn('flex flex-col', fillHeight && 'h-full min-h-0')}>
       <div className={cn('flex items-center text-xs font-bold px-2 py-1 rounded-t-lg', color)}>
         {title}
         <span className="ml-1.5 font-normal opacity-70">
@@ -1114,7 +1125,8 @@ function RoomSection({
         </DroppableColumn>
       )}
       {/* L-3: 그리드 갭 균일 — RoomSlot 내부(space-y-1)와 동일하게 1.5 유지, 가로/세로 동일 */}
-      <div className={cn('grid gap-x-1.5 gap-y-1.5 p-1.5 bg-muted/10 rounded-b-lg border border-t-0', gridCols)}>
+      {/* T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY: fillHeight면 그리드가 남은 높이를 채우고 초과분만 내부 스크롤 → 컨테이너 세로 성장 금지. */}
+      <div className={cn('grid gap-x-1.5 gap-y-1.5 p-1.5 bg-muted/10 rounded-b-lg border border-t-0', gridCols, fillHeight && 'flex-1 min-h-0 overflow-y-auto')}>
         {rooms.map((room) => {
           // T-20260614-foot-SLOT-CRUD-ALLTYPES: AC-2/3 기본=잠금, 세션 내 추가=삭제
           const isDefault = defaultRoomIds ? defaultRoomIds.has(room.id) : true;
@@ -6005,7 +6017,7 @@ export default function Dashboard() {
       // 배치편집 모드에서 각 슬롯을 개별 드래그/이동할 수 있도록 분리
       case 'treatment_waiting_col':
         return (
-          <div key="treatment_waiting_col" className="w-40 shrink-0">
+          <div key="treatment_waiting_col" data-testid="slot-col-treatment-waiting" className="w-40 shrink-0" style={{ height: SLOT_COLUMN_HEIGHT }}>
             <DroppableColumn
               id="treatment_waiting"
               label="치료대기"
@@ -6086,8 +6098,9 @@ export default function Dashboard() {
         // T-20260614-foot-DASH-HEATED-LASER-SLOT-REMOVE: 가열성레이저 슬롯 제거 → 치료실만 렌더.
         if (treatmentRooms.length === 0) return null;
         return (
-          <div key="treatment_rooms" className="w-[480px] shrink-0 flex flex-col gap-1.5">
+          <div key="treatment_rooms" data-testid="slot-col-treatment-rooms" className="w-[480px] shrink-0 flex flex-col gap-1.5" style={{ height: SLOT_COLUMN_HEIGHT }}>
             <RoomSection
+              fillHeight
               title="치료실"
               color="bg-amber-100 text-amber-800"
               rooms={treatmentRooms}
@@ -6116,11 +6129,12 @@ export default function Dashboard() {
       }
       case 'desk_section':
         return (
-          <div key="desk_section" className="w-52 shrink-0 flex flex-col gap-2 h-full">
+          <div key="desk_section" data-testid="slot-col-desk" className="w-52 shrink-0 flex flex-col gap-2" style={{ height: SLOT_COLUMN_HEIGHT }}>
             <DroppableColumn
               id="payment_waiting"
               label="수납대기"
               count={(byStatus['payment_waiting'] ?? []).length}
+              className="flex-1 min-h-0"
               highlight="text-purple-700"
               subtitle={
                 pendingTotal > 0 ? (
@@ -6155,7 +6169,7 @@ export default function Dashboard() {
               id="done"
               label="완료"
               count={doneCount}
-              className="flex-1"
+              className="flex-1 min-h-0"
               highlight="text-emerald-700"
               subtitle={
                 doneTotal > 0 ? (
@@ -6191,9 +6205,10 @@ export default function Dashboard() {
         );
       case 'laser_rooms':
         return laserRooms.length > 0 ? (
-          <div key="laser_rooms" className="w-[480px] shrink-0">
+          <div key="laser_rooms" data-testid="slot-col-laser-rooms" className="w-[480px] shrink-0 flex flex-col" style={{ height: SLOT_COLUMN_HEIGHT }}>
             {/* T-20260520-foot-LASER-DROPDOWN: therapists(technician only) + onTherapistChange 전달 — 장비명 드롭다운 복구 */}
             <RoomSection
+              fillHeight
               title="레이저실"
               color="bg-rose-100 text-rose-800"
               rooms={laserRooms}
@@ -6671,7 +6686,8 @@ export default function Dashboard() {
               </DndContext>
             ) : (
               /* ── 일반 모드: 카드 드래그 (DnD 컨텍스트는 상위로 이동됨) ── */
-              <div className="flex gap-2 h-full min-w-max">
+              /* T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY: items-start — 형제 슬롯 stretch 높이 연동 제거(각 슬롯 독립 고정 높이) */
+              <div className="flex gap-2 items-start min-w-max">
                 {/* 치료실+레이저실 클러스터: 치료실 | 레이저실 나란히 배치.
                     (T-20260614-foot-DASH-HEATED-LASER-SLOT-REMOVE: 가열성레이저 슬롯 제거됨) */}
                 {groupOrder.map((gid) => {
