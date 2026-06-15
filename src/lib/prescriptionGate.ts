@@ -1,7 +1,13 @@
 // prescriptionGate — 처방 자유텍스트 입력 role 게이트
 // T-20260603-foot-RX-CHART-FOLLOWUP2 #8-1b
 //
-// 정책(#8-1b):
+// ⚠️ SUPERSEDED(2026-06-15, T-20260606-foot-RX-DRUG-WHITELIST): 부원장 자유텍스트 차단(#8-1b)은
+//    '등록약 스코프 미구현' 잠정 통제였고, 이제 처방 가능 약은 검색 출처를 처방세트 등록약(services 처방약)으로
+//    제한하는 화이트리스트가 전직원 동일하게 통제한다(대표원장 문지은 확정 — 역할 분기 없음).
+//    → FREETEXT_BLOCKED_ROLES = 빈 집합(checkRxRoleGate 항상 allowed). 함수/시그니처는 호출부 호환 위해 보존.
+//    아래 #8-1b 정책 설명은 히스토리(역할 분기 retire 전 동작)로만 읽을 것.
+//
+// 정책(#8-1b, 히스토리):
 //   부원장(vice_director)은 prescription_code_id 가 없는 "자유텍스트 임의입력" 처방을 추가할 수 없다.
 //   director / manager / admin 은 자유텍스트 허용(종전 동작 유지).
 //
@@ -12,15 +18,20 @@
 //   fail-closed: code_id 유무를 "확인 가능"할 때만 통과. code_id 가 없으면(=자유텍스트) 부원장은 차단.
 //   진입점 전체(빠른처방 · 차트 처방 · 처방세트/슈퍼상용구 로드)가 이 게이트를 단일 경유한다.
 
-/** 부원장 — 자유텍스트 처방 금지(코드 선택만 허용) */
+/** 부원장 role 식별자(상수 유지 — 외부 import 호환). */
 export const VICE_DIRECTOR_ROLE = 'vice_director';
 
 /**
  * 자유텍스트 처방이 금지된 역할 집합.
- * 명시 차단 목록(블랙리스트)으로 두되, 미지정/불명 role 에 대해서는 게이트를 적용하지 않는다(종전 동작 보존).
- * 차단 판단의 fail-closed 는 "blocked role 이면서 code_id 없는 항목" 조합에서 작동한다.
+ *
+ * ⚠️ T-20260606-foot-RX-DRUG-WHITELIST (2026-06-15 대표원장 문지은 확정): **전직원 동일 규칙**으로 전환.
+ *   #8-1b 의 "부원장만 자유텍스트 차단"은 '등록약 스코프 미구현' 상태의 잠정 통제였고(아래 본 모듈 상단 주석),
+ *   이제 처방 가능 약 통제는 **검색 출처를 처방세트 등록약(services 처방약)으로 제한**하는 화이트리스트가 담당한다.
+ *   화이트리스트 약(services)은 prescription_code_id=null 이라 종전 게이트가 부원장만 차단 → AC-2(역할 분기 없음) 위배.
+ *   → 역할 분기 retire(빈 집합). 게이트 함수/시그니처는 호출부 호환 위해 보존(항상 allowed 반환).
+ *   ticket risk_reason 승인범위: "권한 모델 단순화(부원장만 제한 X → 전직원 동일, 대표원장 명시 confirm)".
  */
-const FREETEXT_BLOCKED_ROLES = new Set<string>([VICE_DIRECTOR_ROLE]);
+const FREETEXT_BLOCKED_ROLES = new Set<string>([]);
 
 /** 해당 role 이 자유텍스트 처방 금지 대상인지 */
 export function isFreeTextRxBlockedRole(role: string | null | undefined): boolean {

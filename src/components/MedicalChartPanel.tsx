@@ -62,7 +62,7 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { checkRxRoleGate, rxRoleGateMessage, rxInsuranceGateMessage, rxInsuranceOverrideConfirm } from '@/lib/prescriptionGate';
-import { evaluateRxInsuranceGate } from '@/lib/prescribableDrugs';
+import { evaluateRxInsuranceGate, searchServiceRxDrugs } from '@/lib/prescribableDrugs';
 import { formatAmount, formatPhone, todaySeoulISODate, chartNoBadge } from '@/lib/format';
 import { cn } from '@/lib/utils';
 // T-20260609-foot-DOCCALL-DOCTOR-ACK AC8: 환자차트에도 ✋ 표시(대기 pulse / 확인 후 파란 고정).
@@ -1603,7 +1603,15 @@ export default function MedicalChartPanel({
     toast.info('처방 추가를 취소했습니다');
   }
 
-  // T-20260603-foot-RX-CHART-ENHANCE AC-5: 약품 마스터(prescription_codes) 검색.
+  // T-20260606-foot-RX-DRUG-WHITELIST AC-1: 진료차트 처방 약 검색 출처를
+  //   전체 EDI(prescription_codes) → 처방세트 등록약(services category_label='처방약', active)으로 제한.
+  //   대표원장 문지은 확정(전직원 동일·별도 화이트리스트 불요·처방세트=services 처방약 소스 공유).
+  //   단일 재바인딩 지점 = prescribableDrugs.searchServiceRxDrugs(자매 RXSET-DRUGSOURCE-SVCRX와 동일 소스).
+  //
+  //   ⚠️ services 처방약은 prescription_codes FK 미보유(service_code=EDI 청구코드만 보유, AC-0 실측 0% 매핑).
+  //      → 검색 결과 약은 prescription_code_id=null(addRxFromCode에서 services.id를 코드로 저장하지 않음).
+  //      금기/급여 게이트는 코드 보유 약만 대상이라 자유텍스트와 동일하게 skip되며,
+  //      실제 처방전/청구(rx_standard)는 PaymentMiniWindow가 services.service_code를 별도 사용 → 청구 무손실.
   const searchRxCodes = useCallback(async (q: string) => {
     const query = q.trim();
     if (query.length < 1) {
@@ -1612,15 +1620,20 @@ export default function MedicalChartPanel({
     }
     setRxSearching(true);
     try {
-      const esc = query.replace(/[%,]/g, ' ');
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data } = await (supabase as any)
-        .from('prescription_codes')
-        .select('id,name_ko,claim_code,classification,code_source,price_krw,manufacturer')
-        .or(`name_ko.ilike.%${esc}%,claim_code.ilike.%${esc}%`)
-        .order('code_source', { ascending: false }) // custom(카피약) 우선 노출
-        .limit(20);
-      setRxSearchResults((data as RxCodeResult[]) ?? []);
+      const rows = await searchServiceRxDrugs(query);
+      // services 처방약 → 기존 검색 결과 렌더 shape(RxCodeResult)로 어댑트.
+      //   id=services.id(React key·표시 전용, prescription_code_id 아님), claim_code=service_code(EDI 청구코드 표시),
+      //   code_source='service'(자체 배지 미노출), classification/manufacturer=없음.
+      const mapped: RxCodeResult[] = rows.map((r) => ({
+        id: r.id,
+        name_ko: r.name,
+        claim_code: r.service_code ?? '',
+        classification: null,
+        code_source: 'service',
+        price_krw: null,
+        manufacturer: null,
+      }));
+      setRxSearchResults(mapped);
     } catch {
       setRxSearchResults([]);
     } finally {
@@ -1629,13 +1642,16 @@ export default function MedicalChartPanel({
   }, []);
 
   // AC-5: 검색결과 약 1건을 처방내역에 추가 (name·route·classification·code_id 자동채움 → 게이트 경유)
+  //   T-20260606-foot-RX-DRUG-WHITELIST: services 처방약 소스('service')는 prescription_codes FK가 아니므로
+  //   prescription_code_id에 services.id를 저장하지 않는다(null) — 게이트 오염 방지(금기/급여는 코드 보유 약만 대상).
   function addRxFromCode(code: RxCodeResult) {
+    const isServiceRx = code.code_source === 'service';
     const item: PrescriptionItem = {
       name: code.name_ko,
       dosage: '',
       route: classificationToRoute(code.classification),
       classification: code.classification ?? null,
-      prescription_code_id: code.id,
+      prescription_code_id: isServiceRx ? null : code.id,
       frequency: '1일 3회',
       days: 3,
       notes: '',
