@@ -12,6 +12,7 @@ spec-exempt: false
 rollback-sql: null
 commit_sha: 60a0413
 impl_commit: 60a0413
+spec_commit: 42d9cf8   # DASHCOL-REALIGN.spec 순서 전용 재작성(scenario_missing FIX, 폭/비율 단언 제거)
 created: 2026-06-15
 assignee: dev-foot
 reporter: 문지은(대표원장)
@@ -64,7 +65,8 @@ shipped ad88c41(이후 5b0eb3f revert됨)과 상이 → 새 구현.
 - B 미변경 / 필터·탭 미침범: 가드 spec.
 
 ## 현장 클릭 시나리오 (E2E 변환 가이드 / scenario_missing 해소)
-> spec: `tests/e2e/T-20260615-foot-DOCPATIENTLIST-DASHCOL-REALIGN.spec.ts` (9 PASS). 폭/비율 단언 없음(AC5 보존 — 순서만 검증).
+> spec: `tests/e2e/T-20260615-foot-DOCPATIENTLIST-DASHCOL-REALIGN.spec.ts` (9 PASS, spec_commit 42d9cf8).
+> **순서 전용 재작성** — 폭/비율 단언 제거(grid-template 너비·폭 집합 미단언, AC5 보존). 블록 위치도 폭 문자열 대신 width-독립 anchor(patient-row testid)로 전환. 폭 검증은 B colgroup 분리 티켓(DOCDASH-COLGROUP-E2E-STALE-RECONCILE) 소관.
 
 ### 시나리오 1: 오늘 화면 컬럼 순서 (정상 동선)
 1. 로그인 → 진료 도구(DoctorTools) 진입 → "진료(처방) 환자 목록" 탭 클릭
