@@ -54,26 +54,50 @@ test.describe('항목B — 대기순번(queue_number) 표시 제거 (1차 선배
   test('회귀: grid-template에서 선두 대기순번 칼럼(1.75rem) 제거', () => {
     // 변경 전: main = 1.75rem_3rem_5rem_4.5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto (9칼럼)
     //          history = 1.75rem_3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto_auto (8칼럼)
-    // 변경 후: 선두 1.75rem(번호 칼럼) 사라지고 첫 칼럼=3rem(방문배지)로 시작.
-    const patientGrids = gridTemplates.filter((g) => g.includes('3rem_5rem_4.5rem'));
+    // T-20260615-foot-DOCPATIENTLIST-DASHCOL-REALIGN(문지은 대표원장 confirm): 오늘 모드 컬럼 재배치
+    //   = 방(4.75rem)→상태(3.75rem)→방문유형(3rem)→이름(5rem)→차트번호(4.5rem)→처방(5.5rem)→예약메모(1fr)→액션(auto).
+    //   폭값은 컬럼과 동반 이동(너비 무변경, 순서만). 어떤 모드도 선두 1.75rem(대기순번)으로 시작하지 않음.
+    //   이력 모드(read-only)는 미변경 — 첫 칼럼=3rem(방문배지).
+    const patientGrids = gridTemplates.filter(
+      (g) => g.includes('3rem_5rem_4.5rem'), // 방문유형→이름→차트번호 인접 블록(양 모드 공통)
+    );
     expect(patientGrids.length).toBeGreaterThanOrEqual(2);
     for (const g of patientGrids) {
       const cols = g.split('_');
-      // 선두 칼럼이 더 이상 1.75rem(대기순번)이 아님.
+      // 선두 칼럼이 더 이상 1.75rem(대기순번)이 아님(원 회귀 가드).
       expect(cols[0]).not.toBe('1.75rem');
-      expect(cols[0]).toBe('3rem');
     }
+    // 오늘 모드 선두 = 방(4.75rem) / 이력 모드 선두 = 방문배지(3rem).
+    const todayGrid = gridTemplates.find((g) => g.startsWith('4.75rem_3.75rem'));
+    const historyGrid = gridTemplates.find(
+      (g) => g.startsWith('3rem_5rem_4.5rem') && !g.includes('4.75rem_3.75rem'),
+    );
+    expect(todayGrid).toBeTruthy();
+    expect(historyGrid).toBeTruthy();
   });
 
-  test('회귀: main 행 8칼럼 / history 행 7칼럼', () => {
-    const main = gridTemplates.find((g) => g.includes('3.75rem_4.75rem')); // 상태+치료실 보유 = main
+  test('회귀: main(오늘) 행 8칼럼 / history(이력) 행 7칼럼', () => {
+    // DASHCOL-REALIGN 후 main 식별자 = 선두 '4.75rem_3.75rem'(방+상태 리드). 이력은 미보유.
+    const main = gridTemplates.find((g) => g.includes('4.75rem_3.75rem')); // 방+상태 리드 = 오늘 모드
     const history = gridTemplates.find(
-      (g) => g.includes('3rem_5rem_4.5rem') && !g.includes('3.75rem_4.75rem'),
+      (g) => g.includes('3rem_5rem_4.5rem') && !g.includes('4.75rem_3.75rem'),
     );
     expect(main).toBeTruthy();
     expect(history).toBeTruthy();
     expect(main!.split('_').length).toBe(8);
     expect(history!.split('_').length).toBe(7);
+  });
+
+  test('회귀(DASHCOL-REALIGN): 오늘 모드 컬럼 폭 집합 보존 + 확정 순서', () => {
+    // 너비 무변경 가드: 재배치 전후 컬럼 폭 '집합'이 동일(순서만 변경).
+    const today = gridTemplates.find((g) => g.includes('4.75rem_3.75rem'));
+    expect(today).toBeTruthy();
+    // 확정 순서: 방 → 상태 → 방문유형 → 이름 → 차트번호 → 처방 → 예약메모 → 액션.
+    expect(today).toBe('4.75rem_3.75rem_3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto');
+    // 폭 집합(정렬 무관) = 이전 shipped 집합과 동일.
+    const sortedNow = today!.split('_').sort();
+    const sortedPrev = '3rem_5rem_4.5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto'.split('_').sort();
+    expect(sortedNow).toEqual(sortedPrev);
   });
 
   test('회귀(AC-5 보존가드): EXPAND-CLINICAL/COURSE-RXHISTORY/SIGNDOCTOR 진입점 유지', () => {
