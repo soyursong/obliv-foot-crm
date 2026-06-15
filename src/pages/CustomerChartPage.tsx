@@ -6,8 +6,6 @@ import { ko } from 'date-fns/locale';
 import { CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, ExternalLink, FileText, Loader2, MessageSquare, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
-import FootToeIllustration from '@/components/FootToeIllustration';
-import { parseFootSites, type FootSite } from '@/components/FootSiteSelector';
 // T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성 발건강질문지(health_q_results) 상담내역 [내용보기] 렌더
 import { ResultCard, type HQResult } from '@/components/HealthQResultsPanel';
 import { Badge } from '@/components/ui/badge';
@@ -2652,35 +2650,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
     }
   }, [latestCheckIn]);
 
-  // T-20260613-foot-FIELDBATCH item4: 치료부위(발가락) 멀티선택 — 패키지 탭 상단 일러스트.
-  //   저장: latestCheckIn.treatment_memo.foot_sites jsonb 배열({side,toe}). 기존 treatment_memo 재사용(신규 컬럼 0, db_change:false).
-  //   1번차트(CheckInDetailSheet)는 이 값을 읽어 조건부 read-only 표시 — "2번차트 패키지 탭 생성분만 연동".
-  const treatmentToes = useMemo<FootSite[]>(
-    () => parseFootSites((latestCheckIn?.treatment_memo as { foot_sites?: unknown } | null)?.foot_sites),
-    [latestCheckIn],
-  );
-  const canEditToes = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'consultant';
-  const saveTreatmentToes = useCallback(
-    async (next: FootSite[]) => {
-      const ci = latestCheckIn;
-      if (!ci) {
-        toast.error('내원(체크인) 기록이 있어야 치료부위를 저장할 수 있습니다');
-        return;
-      }
-      const memo = { ...((ci.treatment_memo as Record<string, unknown> | null) ?? {}) };
-      if (next.length > 0) memo.foot_sites = next;
-      else delete memo.foot_sites;
-      const prev = ci.treatment_memo;
-      // optimistic
-      setLatestCheckIn({ ...ci, treatment_memo: memo } as CheckIn);
-      const { error } = await supabase.from('check_ins').update({ treatment_memo: memo }).eq('id', ci.id);
-      if (error) {
-        toast.error('치료부위 저장 실패');
-        setLatestCheckIn({ ...ci, treatment_memo: prev } as CheckIn); // 롤백
-      }
-    },
-    [latestCheckIn],
-  );
+  // T-20260615-foot-PKGTAB-TREATSITE-REMOVE: 패키지 탭 상단 치료부위(발가락) 입력 일러스트 + 그 전용 상태/콜백 제거(현장 요청).
+  //   treatment_memo.foot_sites 기존 데이터는 1번차트(CheckInDetailSheet)·균검사지(KohReportTab)가 독립 read-path로 계속 소비(보존).
 
   // C21-RESIDENT-ID: 주민번호 암호화 저장
   // T-20260522-foot-SSN-SESSION-KILL: 저장 전 세션 체크 + 에러 코드별 메시지 분기
@@ -5589,21 +5560,8 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               {/* History: 패키지 — T-20260510-foot-C22-SECTION-MERGE: 치료플랜 요약 제거, 티켓 상세만 표시 */}
               {chartTabGroup === 'history' && chartTab === 'packages' && (
             <div className="space-y-3">
-              {/* T-20260613-foot-FIELDBATCH item4(스펙 최종확정 pzp9): 치료부위 발가락 일러스트 —
-                  패키지명 조건 없이 패키지 탭 상단에 항상 고정 노출. 양발 발가락 10개 멀티선택.
-                  저장: latestCheckIn.treatment_memo.foot_sites(신규 컬럼 0). 1번차트는 이 값 read-only 연동. */}
-              <div className="rounded-lg border bg-white p-3" data-testid="pkg-tab-toe-section">
-                <FootToeIllustration
-                  value={treatmentToes}
-                  onChange={canEditToes ? saveTreatmentToes : undefined}
-                  readOnly={!canEditToes}
-                />
-                {!latestCheckIn && canEditToes && (
-                  <p className="mt-1 text-[11px] text-amber-600" data-testid="pkg-tab-toe-nocheckin">
-                    ※ 내원(체크인) 기록이 있어야 치료부위를 저장할 수 있습니다.
-                  </p>
-                )}
-              </div>
+              {/* T-20260615-foot-PKGTAB-TREATSITE-REMOVE: 패키지 탭 상단 치료부위(발가락) 일러스트 제거(현장 요청).
+                  treatment_memo.foot_sites 기존 데이터·하류 read-path(1번차트/균검사지)는 보존. */}
               {/* 구매 패키지(티켓) 상세 — T-20260510-foot-C21-PKG-ITEM-DETAIL: 시술별 상세표시 */}
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center justify-between mb-2">
