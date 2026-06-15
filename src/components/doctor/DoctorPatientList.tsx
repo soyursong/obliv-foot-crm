@@ -521,10 +521,12 @@ function PatientRow({
         data-testid="patient-row"
         data-mode="history"
       >
-        {/* T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item⑤(B안): 진료알림판 테이블(41015d7) 밀도 통일 — 셀 px-1.5 py-1. 그리드 레이아웃/컬럼셋 무변경. */}
+        {/* T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item⑤(B안): 진료알림판 테이블(41015d7) 밀도 통일 — 셀 px-1.5 py-1. 그리드 레이아웃/컬럼셋 무변경.
+            T-20260615-foot-DOCPATIENTLIST-DASHCOL-REALIGN(이력 모드 통일): 이력 모드는 read-only 설계로 상태·방·예약메모·액션 컬럼 부재(DATEMODE-HISTORY AC-1/2).
+            공유 컬럼(방문유형→이름→차트번호→처방)은 오늘 모드 확정 순서와 동일한 상대 배치 — 추가 재배치 불요(방문유형=이름 바로 왼쪽 유지). */}
         <div className="grid grid-cols-[3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto_auto] items-center gap-1.5 px-1.5 py-1">
           {/* T-20260613-foot-DOCPATIENTLIST-MIRROR-MONOTONE(B): 대기순번(queue_number) 표시 칼럼 제거. */}
-          {/* 방문유형 배지 (초진/재진) */}
+          {/* 방문유형 배지 (초진/재진) — 이름 바로 왼쪽(오늘 모드 확정 순서와 통일) */}
           <div className="flex justify-start">
             <VisitTypeBadge type={row.visit_type} />
           </div>
@@ -582,54 +584,23 @@ function PatientRow({
     >
       {/*
         기본 행 — T-20260609 ⑤: flex → grid 고정 열 레이아웃.
-        열 순서: 방문배지(②이름왼쪽) / 이름(④고정폭) / 차트번호(독립칼럼) / 처방배지(③이름오른쪽) / 상태 / 치료실 / 메모 / 액션
-        T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: '상태'와 '메모' 사이에 치료실(방이름) 컬럼 추가.
+        T-20260615-foot-DOCPATIENTLIST-DASHCOL-REALIGN (문지은 대표원장 실화면 confirm, "다 통일하자"):
+          확정 열 순서 = 방 → 상태 → 초진/재진(방문유형) → 이름 → 차트번호 → 처방 → 예약메모 → [버튼].
+          진료 알림판(DoctorCallDashboard CallFeedRow: 방→상태→이름→…→처방) 흐름과 통일.
+          방문유형 = 상태와 이름 사이 독립 컬럼(이름 바로 왼쪽). 예약메모 = 액션 버튼 바로 앞.
+          ⚠ 칸 너비·크기 변경 0 — 각 컬럼 폭값을 컬럼과 함께 이동만(순서 재배치, 폭/비율 보존).
+        T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: 치료실(방이름) 컬럼.
         T-20260612-foot-CHARTNO-COL-SPLIT-P1: 이름 칸 내 차트번호 서브텍스트 제거 → 이름 바로 옆 독립 칼럼.
         T-20260613-foot-DOCPATIENTLIST-MIRROR-MONOTONE(B): 대기순번(queue_number) 칼럼 제거 → 차트번호만 숫자.
-        모든 행이 동일 grid-template → 배지·이름·차트번호·처방·시간 항목이 행마다 동일 x위치(스크롤 무관).
+        모든 행이 동일 grid-template → 방·상태·배지·이름·차트번호·처방·메모 항목이 행마다 동일 x위치(스크롤 무관).
       */}
-      {/* T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item⑤(B안): 진료알림판 테이블(41015d7) 밀도 통일 — 셀 px-1.5 py-1. 그리드 레이아웃/컬럼셋/워크플로 무변경. */}
-      <div className="grid grid-cols-[3rem_5rem_4.5rem_5.5rem_3.75rem_4.75rem_minmax(0,1fr)_auto] items-center gap-1.5 px-1.5 py-1">
+      {/* T-20260614-foot-DOCDASH-POSTDEPLOY-REFINE-5 item⑤(B안): 진료알림판 테이블(41015d7) 밀도 통일 — 셀 px-1.5 py-1.
+          T-20260615 DASHCOL-REALIGN: 컬럼 순서만 재배치(폭값은 각 컬럼에 동반 이동, 너비 무변경). */}
+      <div className="grid grid-cols-[4.75rem_3.75rem_3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto] items-center gap-1.5 px-1.5 py-1">
         {/* T-20260613-foot-DOCPATIENTLIST-MIRROR-MONOTONE(B): 대기순번(queue_number=1036) 표시 칼럼 제거.
             차트번호 외 식별 숫자 비표시(reporter 요청). queue_number 타입/SELECT/정렬·RPC는 무손상 — 표시만 숨김. */}
 
-        {/* ② 방문유형 배지 — 이름 왼쪽(행 첫 식별 위치) */}
-        <div className="flex justify-start">
-          <VisitTypeBadge type={row.visit_type} />
-        </div>
-
-        {/* ④ 이름 — 고정 너비(글자수 변동 무관), 초과 시 truncate.
-            T-20260609-foot-DOCDASH-LABEL-RX-REFINE item4: 셀 내 가로 중앙정렬(text-center).
-            T-20260612-foot-CHARTNO-COL-SPLIT-P1: 차트번호 서브텍스트 제거 → 옆 독립 칼럼으로 이전. */}
-        {/* item⑤(B안): 테이블 이름셀 톤 통일 — text-[15px] font-semibold text-gray-900. */}
-        <span
-          className="min-w-0 max-w-full truncate text-left text-[15px] font-semibold text-gray-900"
-          title={row.customer_name}
-          data-testid="patient-name"
-        >
-          {row.customer_name}
-        </span>
-
-        {/* 차트번호 — CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지).
-            item⑤(B안): 테이블 차트번호셀 톤 통일 — font-mono text-[13px] text-gray-500. */}
-        <span
-          className="min-w-0 max-w-full truncate text-left font-mono text-[13px] text-gray-500"
-          title={chartNoDisplay(row.chart_number)}
-          data-testid="patient-chartno"
-        >
-          {chartNoDisplay(row.chart_number)}
-        </span>
-
-        {/* ③ 처방 상태 배지 — 이름 오른쪽 + hover 처방내용 툴팁.
-            item4: justify-start → justify-center (이름과 같이 가로 중앙정렬). */}
-        <div className="flex justify-start">
-          <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
-        </div>
-
-        {/* 상태 — T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)/귀가(done) 시각 구분(AC-5). */}
-        <StatusCell status={row.status} statusFlag={row.status_flag} />
-
-        {/* 치료실(방이름) — T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3.
+        {/* ① 치료실(방이름) — DASHCOL-REALIGN: 행 선두(폭 4.75rem 보존). T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3.
             getAssignedSlotName(SSOT) 파생 — 배정된 방 있으면 '◯번 치료실' 등 표시, 미배정/대기면 '—'. */}
         {(() => {
           const slotName = getAssignedSlotName(row as unknown as Parameters<typeof getAssignedSlotName>[0]);
@@ -649,7 +620,41 @@ function PatientRow({
           );
         })()}
 
-        {/* 예약메모 — T-20260517-foot-HEALER-MEMO-DISPLAY AC-1~4.
+        {/* ② 상태 — DASHCOL-REALIGN: 방 다음(폭 3.75rem 보존). T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)/귀가(done) 시각 구분(AC-5). */}
+        <StatusCell status={row.status} statusFlag={row.status_flag} />
+
+        {/* ③ 방문유형 배지(초진/재진) — DASHCOL-REALIGN: 상태와 이름 사이 독립 컬럼(이름 바로 왼쪽, 폭 3rem 보존). */}
+        <div className="flex justify-start">
+          <VisitTypeBadge type={row.visit_type} />
+        </div>
+
+        {/* ④ 이름 — 고정 너비(글자수 변동 무관, 폭 5rem 보존), 초과 시 truncate.
+            T-20260612-foot-CHARTNO-COL-SPLIT-P1: 차트번호 서브텍스트 제거 → 옆 독립 칼럼으로 이전.
+            item⑤(B안): 테이블 이름셀 톤 통일 — text-[15px] font-semibold text-gray-900. */}
+        <span
+          className="min-w-0 max-w-full truncate text-left text-[15px] font-semibold text-gray-900"
+          title={row.customer_name}
+          data-testid="patient-name"
+        >
+          {row.customer_name}
+        </span>
+
+        {/* ⑤ 차트번호 — CHARTNO-COL-SPLIT-P1: 이름 바로 옆 독립 칼럼(폭 4.5rem 보존). 미발번은 '(미발번)'(빈칸 금지).
+            item⑤(B안): 테이블 차트번호셀 톤 통일 — font-mono text-[13px] text-gray-500. */}
+        <span
+          className="min-w-0 max-w-full truncate text-left font-mono text-[13px] text-gray-500"
+          title={chartNoDisplay(row.chart_number)}
+          data-testid="patient-chartno"
+        >
+          {chartNoDisplay(row.chart_number)}
+        </span>
+
+        {/* ⑥ 처방 상태 배지 — 차트번호 오른쪽(폭 5.5rem 보존) + hover 처방내용 툴팁. */}
+        <div className="flex justify-start">
+          <PrescriptionStatusBadge status={row.prescription_status} items={row.prescription_items} />
+        </div>
+
+        {/* ⑦ 예약메모 — DASHCOL-REALIGN: 액션 버튼 바로 앞(유연폭 1fr 보존). T-20260517-foot-HEALER-MEMO-DISPLAY AC-1~4.
             item⑤(B안): 테이블 본문/빈값 톤 통일 — text-[13px] gray-600/gray-300. */}
         <span
           className={`text-[13px] truncate ${row.booking_memo ? 'text-gray-600' : 'text-gray-300'}`}
@@ -659,7 +664,7 @@ function PatientRow({
           {row.booking_memo || '—'}
         </span>
 
-        {/* 액션 — 확정 버튼 / 대기 알림 / 펼치기 토글 */}
+        {/* ⑧ 액션 — 확정 버튼 / 대기 알림 / 펼치기 토글 */}
         <div className="flex items-center gap-1.5 justify-end">
           {/* 임시 처방이고 의사인 경우 → 확정 버튼 */}
           {hasPendingRx && doctorMode && (

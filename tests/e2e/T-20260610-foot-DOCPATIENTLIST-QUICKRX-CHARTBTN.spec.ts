@@ -168,9 +168,9 @@ test.describe('S4 회귀가드 — DATEMODE-HISTORY / SORT-LAYOUT / 확정패널
 
   test('R2(SORT-LAYOUT): 기본 행 grid 고정 열 + 원내 우선 그룹 정렬 보존', () => {
     const src = SRC('components/doctor/DoctorPatientList.tsx');
-    // 고정 grid-template(번호/배지/이름/처방/상태/시술/메모/액션).
-    //   T-20260610-foot-DOCDASH-DIAGMGMT-6FIX(5e55c13) 레이아웃 갱신으로 4.75rem 열 추가 — 현행 정합.
-    expect(src).toMatch(/grid-cols-\[1\.75rem_3rem_5rem_5\.5rem_3\.75rem_4\.75rem_minmax\(0,1fr\)_auto\]/);
+    // 고정 grid-template(8트랙). T-20260613 MIRROR(1.75rem 제거)+CHARTNO-COL-SPLIT(4.5rem)+
+    //   T-20260615 DASHCOL-REALIGN(문지은 대표원장 confirm: 방→상태→방문유형→이름→차트번호→처방→예약메모→액션) 정합.
+    expect(src).toMatch(/grid-cols-\[4\.75rem_3\.75rem_3rem_5rem_4\.5rem_5\.5rem_minmax\(0,1fr\)_auto\]/);
     // 원내 잔류 그룹 항상 상단 + 시간순/이름순 정렬 토글.
     expect(src).toMatch(/isInClinic\(a\.status\)/);
     expect(src).toMatch(/data-testid=\{`sort-by-\$\{key\}`\}/);

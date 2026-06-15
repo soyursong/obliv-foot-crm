@@ -135,8 +135,11 @@ test.describe('AC-3 치료실명 표시', () => {
   test('행 grid-template 에 치료실 열(4.75rem) 추가', () => {
     const src = PLIST();
     expect(src).toContain('4.75rem');
-    // 치료실 컬럼 포함된 8트랙 grid (번호/방문/이름/처방/상태/치료실/메모/액션)
-    expect(src).toMatch(/grid-cols-\[1\.75rem_3rem_5rem_5\.5rem_3\.75rem_4\.75rem_minmax\(0,1fr\)_auto\]/);
+    // 치료실(방) 컬럼 포함된 8트랙 grid.
+    //   T-20260613 MIRROR-MONOTONE(대기순번 1.75rem 제거) + CHARTNO-COL-SPLIT(차트번호 4.5rem 독립) +
+    //   T-20260615 DASHCOL-REALIGN(문지은 대표원장 confirm) 정합:
+    //   방(4.75rem)→상태(3.75rem)→방문유형(3rem)→이름(5rem)→차트번호(4.5rem)→처방(5.5rem)→예약메모(1fr)→액션.
+    expect(src).toMatch(/grid-cols-\[4\.75rem_3\.75rem_3rem_5rem_4\.5rem_5\.5rem_minmax\(0,1fr\)_auto\]/);
   });
 });
 
