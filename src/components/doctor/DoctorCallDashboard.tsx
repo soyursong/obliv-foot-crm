@@ -512,6 +512,26 @@ export default function DoctorCallDashboard() {
     [rows],
   );
 
+  // T-20260615-foot-DOCDASH-DONEFILTER-DATEHISTORY ⑤: 진료완료 섹션 처방상태 필터 태그.
+  //   재활용 SSOT = DoctorPatientList 처방환자목록 필터(prescription_status 'pending'/'confirmed').
+  //   전체 / 처방확인대기(pending) / 처방완료(confirmed). 표시 대상 행만 축소 — CompletedRow 로직 무변경(회귀 0).
+  const [completedFilter, setCompletedFilter] = useState<'all' | 'pending' | 'confirmed'>('all');
+  const completedPendingCount = useMemo(
+    () => completedPatients.filter((ci) => ci.prescription_status === 'pending').length,
+    [completedPatients],
+  );
+  const completedConfirmedCount = useMemo(
+    () => completedPatients.filter((ci) => ci.prescription_status === 'confirmed').length,
+    [completedPatients],
+  );
+  const filteredCompleted = useMemo(
+    () =>
+      completedFilter === 'all'
+        ? completedPatients
+        : completedPatients.filter((ci) => ci.prescription_status === completedFilter),
+    [completedPatients, completedFilter],
+  );
+
   // 소리 + 브라우저 알림 (신규 호출 감지). 앱레벨 알림 OFF면 OS배너/토스트 생략(소리는 muted 별도).
   useDoctorCallNotifier(activeCalls, { muted, notifyEnabled });
 
@@ -671,9 +691,41 @@ export default function DoctorCallDashboard() {
           {/* AC-5: 카운트는 배지가 아니라 plain text. */}
           <span className="text-xs font-medium text-emerald-600">{completedPatients.length}명</span>
         </div>
+        {/* T-20260615-foot-DOCDASH-DONEFILTER-DATEHISTORY ⑤: 처방상태 필터 태그(전체/처방확인대기/처방완료).
+            DoctorPatientList 처방환자목록 태그 컴포넌트 스타일 재활용. 완료 환자가 1명 이상일 때만 노출. */}
+        {completedPatients.length > 0 && (
+          <div className="flex gap-1 px-1 pb-2" data-testid="doctor-completed-filter">
+            {[
+              { key: 'all' as const, label: `전체 (${completedPatients.length})` },
+              { key: 'pending' as const, label: `처방확인 대기 (${completedPendingCount})` },
+              { key: 'confirmed' as const, label: `처방완료 (${completedConfirmedCount})` },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setCompletedFilter(key)}
+                data-testid={`doctor-completed-filter-${key}`}
+                aria-pressed={completedFilter === key}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                  completedFilter === key
+                    ? 'bg-teal-600 text-white'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         {completedPatients.length === 0 ? (
           <div className="px-3 py-6 text-center text-sm text-muted-foreground">
             아직 진료 완료된 환자가 없어요.
+          </div>
+        ) : filteredCompleted.length === 0 ? (
+          <div className="px-3 py-6 text-center text-sm text-muted-foreground" data-testid="doctor-completed-filter-empty">
+            {completedFilter === 'pending'
+              ? '처방 확인 대기중인 환자가 없어요.'
+              : '처방 완료된 환자가 없어요.'}
           </div>
         ) : (
           // T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7: 진료 완료 섹션은 경과시간(시간) 값은 표시 안 함(완료환자 대기시간 불요).
@@ -713,7 +765,7 @@ export default function DoctorCallDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100" data-testid="doctor-completed-rows">
-                {completedPatients.map((ci) => (
+                {filteredCompleted.map((ci) => (
                   <CompletedRow
                     key={ci.id}
                     checkIn={ci}
