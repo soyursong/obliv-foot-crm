@@ -832,10 +832,14 @@ function DoctorCallRow({ checkIn, visitCount, inactive = false, onHide, onOpenCh
             </span>
           )}
           {visitBadge}
-          {/* T-20260614-foot-DOCCALL-PURPLE-STEPPER 이슈2: 기존 ✋ 손 아이콘(DoctorAckBadge) **완전 대체**.
-              '의사 확인됨' 단일 배지 → 4단계 노선도 stepper(대기→원장확인→진료중→진료완료)로 흡수.
-              stepper는 가로 폭이 필요 → name-row 인라인 배지가 아닌 아래 전용 줄(행 단위 진행)에 배치. */}
-          {/* T-20260614-foot-CALLLIST-DOCCALL-3FIX #2: 행 우측 전화기(지정콜) 버튼 제거 — 핸들러 dead code 동반 정리. */}
+          {/* T-20260615-foot-CALLLIST-SUBWAY-BADGE-INLINE: 진료 단계 노선도(현장 호칭 "지하철 표시") stepper를
+              아래 전용 줄(mt-1.5) → 환자명/상태배지와 같은 가로 줄(인라인)로 이동해 카드 세로 높이 축소(AC-1·AC-2).
+              · 좌측 flex-wrap 그룹 마지막 요소로 합류 — 폭 여유 있으면 같은 줄, 없으면 자연 wrap(빈 공간 안 깨짐, AC-4).
+              · shrink-0: 노선도 4단계가 압축돼 라벨 겹치지 않도록 폭 보존.
+              · T-20260614-foot-DOCCALL-PURPLE-STEPPER 이슈2 산출(✋ 손 아이콘 대체 4단계 노선도)·전환·실시간동기 불변
+                — 위치(전용 줄→인라인)만 변경. 노드 클릭/도달표시/▼현위치/idempotent write 로직 일체 미접촉.
+              T-20260614-foot-CALLLIST-DOCCALL-3FIX #2: 행 우측 전화기(지정콜) 버튼 제거 — 핸들러 dead code 동반 정리. */}
+          <DoctorStageStepper checkIn={checkIn} onChanged={onRefresh} className="shrink-0" />
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {inactive && (
@@ -863,12 +867,9 @@ function DoctorCallRow({ checkIn, visitCount, inactive = false, onHide, onOpenCh
         </div>
       </div>
 
-      {/* T-20260614-foot-DOCCALL-PURPLE-STEPPER 이슈2: 진료 단계 노선도 stepper(행 단위 인라인).
-          원장·직원 공용 클릭 전환 + check_ins UPDATE 영속 → Dashboard realtime 구독이 타 직원 화면 동기.
-          ✋ 손 아이콘 완전 대체(병행 표시 X). */}
-      <div className="mt-1.5 flex justify-start">
-        <DoctorStageStepper checkIn={checkIn} onChanged={onRefresh} />
-      </div>
+      {/* T-20260615-foot-CALLLIST-SUBWAY-BADGE-INLINE: stepper 전용 줄 제거 — 위 환자명/배지 줄로 인라인 이동.
+          (T-20260614-foot-DOCCALL-PURPLE-STEPPER 이슈2 stepper는 원장·직원 공용 클릭 전환 + check_ins UPDATE 영속
+           → Dashboard realtime 구독 동기 그대로. ✋ 손 아이콘 완전 대체도 유지 — 표시 위치만 변경.) */}
 
       {/* 진료 전달사항 메모 */}
       <div className="mt-1.5">
