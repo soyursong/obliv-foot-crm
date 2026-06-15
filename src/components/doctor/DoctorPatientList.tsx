@@ -50,6 +50,10 @@ interface PatientRow {
   /** T-20260610-foot-DOCDASH-STATUS-SPLIT: 진료완료(pink)/귀가(done) 시각 구분 + 처방 게이트 컨텍스트.
    *  check_ins 기존 컬럼(status_flag) — SELECT 확장만, 스키마 무변경. */
   status_flag: string | null;
+  /** T-20260615-foot-RXLIST-RENAME-DOCFILTER (item2): 원장 진료 완료 판정 SSOT.
+   *  진료완료 = completed_at 보유 OR status_flag='pink' (DoctorCallDashboard.completedPatients 필터와 1:1 동일).
+   *  check_ins 기존 컬럼(DoctorCallDashboard CALL_SELECT 동일) — SELECT 확장만, 스키마 무변경. */
+  completed_at: string | null;
   checked_in_at: string;
   queue_number: number | null;
   prescription_status: 'none' | 'pending' | 'confirmed';
@@ -245,7 +249,8 @@ function usePatientsByDate(clinicId: string | null, dateISO: string) {
           // T-20260610-foot-DOCDASH-DIAGMGMT-6FIX AC-3: *_room 추가(기존 컬럼, SELECT 확장만) — 치료실명 표시.
           // T-20260610-foot-DOCDASH-STATUS-SPLIT: status_flag 추가(기존 컬럼, SELECT 확장만) — 진료완료/귀가 구분.
           // T-20260612-foot-CHARTNO-B2-P1: 이름 옆 차트번호 인접 표기용 customers join 추가(read-only, DB 무변경).
-          'id, customer_id, customer_name, visit_type, status, status_flag, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, treatment_category, treatment_contents, treatment_kind, healer_laser_confirm, consultation_room, treatment_room, laser_room, examination_room, reservation:reservation_id(booking_memo), customers!customer_id(chart_number)',
+          // T-20260615-foot-RXLIST-RENAME-DOCFILTER item2: completed_at 추가(기존 컬럼, DoctorCallDashboard CALL_SELECT 동일 — SELECT 확장만) — 진료완료 필터 SSOT.
+          'id, customer_id, customer_name, visit_type, status, status_flag, completed_at, checked_in_at, queue_number, prescription_status, doctor_confirmed_at, prescription_items, doctor_confirm_prescription, treatment_category, treatment_contents, treatment_kind, healer_laser_confirm, consultation_room, treatment_room, laser_room, examination_room, reservation:reservation_id(booking_memo), customers!customer_id(chart_number)',
         )
         .eq('clinic_id', clinicId)
         .gte('checked_in_at', `${day}T00:00:00+09:00`)
@@ -254,7 +259,7 @@ function usePatientsByDate(clinicId: string | null, dateISO: string) {
         .order('checked_in_at', { ascending: true });
       if (error) throw error;
       // Supabase may return reservation as array or object — flatten to booking_memo
-      return ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => {
+      const mapped = ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => {
         const resv = row['reservation'];
         let booking_memo: string | null = null;
         if (Array.isArray(resv) && resv.length > 0) {
@@ -272,6 +277,12 @@ function usePatientsByDate(clinicId: string | null, dateISO: string) {
         }
         return { ...row, booking_memo, chart_number } as unknown as PatientRow;
       });
+      // T-20260615-foot-RXLIST-RENAME-DOCFILTER (item2): '처방 환자 목록' = 원장 진료 완료 고객만 표시.
+      //   진료완료 판정 SSOT = DoctorCallDashboard.completedPatients 필터(L504)와 글자 그대로 1:1 동일:
+      //     completed_at(귀가/원내잔류-시술완료) 보유  OR  status_flag==='pink'(진료완료 처리).
+      //   → 진료 대기중(status_flag='purple') / 진료 전(미호출) 행은 제외(진료완료 전 고객 비노출, AC).
+      //   '표시 대상 행만 축소' — 행별 처방 배지/요약/확정 등 표시 로직은 무변경(회귀 0).
+      return mapped.filter((row) => !!row.completed_at || row.status_flag === 'pink');
     },
     refetchInterval: 30_000,
     staleTime: 15_000,
@@ -895,8 +906,9 @@ export default function DoctorPatientList() {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium">진료 환자 목록</p>
-          {/* T-20260606-foot-RX-PATIENT-LIST-DATENAV AC-1/AC-2: 날짜 헤더 + < > 전/후 이동 + 접수 인원 */}
+          {/* T-20260615-foot-RXLIST-RENAME-DOCFILTER item1: 라벨 '진료 환자 목록'→'처방 환자 목록'(탭과 일관). */}
+          <p className="text-sm font-medium">처방 환자 목록</p>
+          {/* T-20260606-foot-RX-PATIENT-LIST-DATENAV AC-1/AC-2: 날짜 헤더 + < > 전/후 이동 + 진료완료 인원 */}
           <div className="flex items-center gap-1 mt-1">
             <Button
               size="icon"
@@ -912,7 +924,8 @@ export default function DoctorPatientList() {
               <span className="font-medium text-foreground">{formatISOToKoLabel(selectedDate)}</span>
               {isToday && <span className="ml-1 text-teal-600 font-medium">· 오늘</span>}
               <span className="mx-1">·</span>
-              <span>{patients.length}명 접수</span>
+              {/* T-20260615-foot-RXLIST-RENAME-DOCFILTER item2: 목록이 진료완료 고객만 → '접수'→'진료완료' 표기 정합. */}
+              <span>{patients.length}명 진료완료</span>
               {pendingCount > 0 && (
                 <span className="ml-1.5 text-amber-600 font-medium">⚠ 임시처방 {pendingCount}명</span>
               )}
@@ -1034,7 +1047,7 @@ export default function DoctorPatientList() {
       ) : sorted.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
           {filter === 'all'
-            ? `${isToday ? '오늘' : formatISOToKoLabel(selectedDate)} 접수된 환자가 없습니다.`
+            ? `${isToday ? '오늘' : formatISOToKoLabel(selectedDate)} 진료 완료된 환자가 없습니다.`
             : '해당 조건의 환자가 없습니다.'}
         </div>
       ) : (
