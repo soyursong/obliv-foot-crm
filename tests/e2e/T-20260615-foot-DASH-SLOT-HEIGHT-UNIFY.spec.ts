@@ -209,6 +209,41 @@ test.describe('T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY', () => {
     test.skip(checked === 0, '비대상 슬롯(접수중/상담대기) 미렌더');
   });
 
+  // AC-R1b (REOPEN/qbv1 RC 직접 가드): 부모 칸반 행이 definite min-height 를 가진다.
+  //   RC: 부모 zoom 래퍼(inline-block)가 height auto 라 행의 h-full 이 auto 로 붕괴 → stretch 가
+  //   비대상 컬럼을 baseline 으로 못 늘림(빈 [상담대기]가 min-h-80px 로 짧아짐). 행에 inline minHeight
+  //   (calc(100vh-200px))를 부여해 definite height 확보 → stretch 균일화. computed min-height 가
+  //   0/auto 가 아니라 뷰포트 기준 큰 값(>200px)이어야 RC 가 막힌 것.
+  test('AC-R1b: 부모 칸반 슬롯 행이 definite min-height(>200px) 를 가진다 — h-full 붕괴 RC 가드', async ({ page }) => {
+    const row = page.getByTestId('kanban-slot-row');
+    await expect(row).toBeVisible({ timeout: 8000 });
+    const minH = await row.evaluate((el) => {
+      const v = getComputedStyle(el).minHeight;
+      return v === 'auto' || v === 'none' ? 0 : parseFloat(v);
+    });
+    // calc(100vh - 200px) 는 일반적 뷰포트에서 수백 px. auto(=0) 이면 RC 미해소.
+    expect(minH, `kanban-slot-row min-height(${minH}px) 가 definite(>200px) 여야 stretch 균일화`).toBeGreaterThan(200);
+  });
+
+  // AC-R1b (대칭 가드): [상담대기] 높이 == [접수중] 높이. 콘텐츠 유무와 무관하게 두 비대상 컬럼이
+  //   동일 높이여야 한다(접수중만 카드로 우연히 늘어나고 상담대기는 빈 채로 붕괴한 비대칭 = 본 reopen 결함).
+  test('AC-R1b: [상담대기] 컬럼 높이가 [접수중] 컬럼 높이와 동일하다(비대칭 제거)', async ({ page }) => {
+    const recv = page.locator('[data-droppable-id="receiving"]');
+    const consult = page.locator('[data-droppable-id="consult_waiting"]');
+    if (await recv.count() === 0 || await consult.count() === 0) {
+      test.skip(true, '접수중/상담대기 슬롯 미렌더');
+    }
+    const recvBox = await recv.first().boundingBox();
+    const consultBox = await consult.first().boundingBox();
+    expect(recvBox).not.toBeNull();
+    expect(consultBox).not.toBeNull();
+    // 두 비대상 컬럼은 동일 행 stretch 로 같은 높이여야 함(서브픽셀/보더 오차 2px 허용).
+    expect(
+      Math.abs(recvBox!.height - consultBox!.height),
+      `상담대기(${consultBox!.height}) != 접수중(${recvBox!.height}) — 비대칭 잔존`,
+    ).toBeLessThanOrEqual(2);
+  });
+
   // 회귀: 칸반 슬롯 영역이 콘솔 오류 없이 정상 렌더된다
   test('회귀: 슬롯 높이 통일 적용 후 대시보드가 콘솔 오류 없이 렌더된다', async ({ page }) => {
     const errors: string[] = [];

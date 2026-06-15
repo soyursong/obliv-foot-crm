@@ -6698,7 +6698,16 @@ export default function Dashboard() {
                  inline style={{height: SLOT_COLUMN_HEIGHT}} 로만 격리 적용된다(셀렉터 누수 0). 이 4슬롯은
                  explicit height 가 stretch 보다 우선하므로 h-full 하에서도 고정 높이를 유지하고, 카드 초과분은
                  내부 overflow-y-auto 로 처리(컨테이너 세로 성장 금지). 비대상 슬롯은 원래대로 행 높이에 stretch. */
-              <div data-testid="kanban-slot-row" className="flex gap-2 h-full min-w-max">
+              /* T-20260615-foot-DASH-SLOT-HEIGHT-UNIFY (REOPEN/qbv1): [상담대기] 부분 미복원 RC 격리 패치.
+                 RC(코드 증거): 부모 zoom 래퍼(상단 inline-block div)는 height auto(콘텐츠 hug)라
+                 이 행의 h-full(height:100%)이 definite 로 resolve 되지 못하고 auto 로 붕괴 → align-items:stretch 가
+                 비대상 컬럼([접수중]·[상담대기])을 baseline 높이로 늘리지 못함. 컬럼 높이는 콘텐츠로 결정되어
+                 (DroppableColumn body flex-1 min-h-[80px]) [접수중]은 맨앞 체크인 카드로 우연히 늘어나 복원처럼 보이고
+                 빈 [상담대기]는 min-h-80px 로 붕괴 = 비대칭의 실체. (두 case 블록은 byte-identical 이라 누수/잔존 스타일 아님.)
+                 조치: edit-mode 행(SortableContext)이 이미 갖는 style minHeight: calc(100vh-200px) 를 normal-mode 행에도
+                 동일 부여 → 행이 definite height 확보 → stretch 가 모든 비대상 컬럼을 baseline 으로 균일화([접수중]=[상담대기]).
+                 target 4슬롯은 explicit height 가 우선이라 불변(AC-R2), 누수 0(AC-R3). CSS only. */
+              <div data-testid="kanban-slot-row" className="flex gap-2 min-w-max" style={{ minHeight: SLOT_COLUMN_HEIGHT }}>
                 {/* 치료실+레이저실 클러스터: 치료실 | 레이저실 나란히 배치.
                     (T-20260614-foot-DASH-HEATED-LASER-SLOT-REMOVE: 가열성레이저 슬롯 제거됨) */}
                 {groupOrder.map((gid) => {
