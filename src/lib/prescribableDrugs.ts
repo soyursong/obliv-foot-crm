@@ -15,6 +15,54 @@
 import { supabase } from '@/lib/supabase';
 import { checkRxInsuranceGate, type RxInsuranceGateResult } from '@/lib/prescriptionGate';
 
+// ═══════════════════════════════════════════════════════════════════════════
+// services 처방약 소스 캡슐 — T-20260615-foot-RXSET-DRUGSOURCE-SVCRX (AC-1/AC-2)
+//   김주연 총괄 A(공유) 회신: 처방세트 빌더 약 출처를 '서비스관리>처방약'(근방 약국 실제
+//   처방 가능 약, services category_label='처방약' AND active=true)로 제한.
+//
+//   ⚠️ 단일 재바인딩 지점(AC-2): 처방 가능 약 '공통 소스'를 services 처방약으로 둘 단일 캡슐.
+//      현재는 처방세트 빌더(PrescriptionSetsTab)만 이 소스를 소비.
+//      진료차트 처방(QuickRxBar/MedicalChartPanel) 런타임 약 출처는 이번 변경에서 불변
+//      (RX-DRUG-WHITELIST 대표원장 확인 후 별도 트랙에서 이 함수로 단일 재바인딩).
+//
+//   ⚠️ services 처방약 행은 prescription_codes FK가 없는 별도 엔티티(service_code=EDI 청구코드 보유).
+//      따라서 이 소스로 선택한 약은 prescription_code_id=null(진료차트 금기/급여 게이트는 자유텍스트와
+//      동일하게 skip). 실제 처방전/청구(rx_items_html·rx_standard)는 이미 services.service_code 사용
+//      → 청구코드 연결 손실 없음(AC-0 §C 그라운딩 결과).
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface ServiceRxDrug {
+  id: string; // services.id (⚠️ prescription_codes.id 아님 — prescription_code_id로 저장 금지)
+  name: string; // services.name
+  service_code: string | null; // EDI 청구코드(표시용)
+}
+
+/**
+ * AC-1 처방세트 빌더 약 출처 — services category_label='처방약' AND active=true 리스트.
+ *   query 빈 문자열이면 전체 처방약 리스트 반환('리스트 선택' UX, 포커스 시 전체 노출).
+ *   query 있으면 name/service_code ilike 필터(처방약 외 임의 EDI 약명은 결과에 안 뜸).
+ */
+export async function searchServiceRxDrugs(query: string): Promise<ServiceRxDrug[]> {
+  const q = query.trim();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let req = (supabase as any)
+    .from('services')
+    .select('id,name,service_code')
+    .eq('category_label', '처방약')
+    .eq('active', true);
+  if (q.length >= 1) {
+    const esc = q.replace(/[%,]/g, ' ');
+    req = req.or(`name.ilike.%${esc}%,service_code.ilike.%${esc}%`);
+  }
+  const { data, error } = await req.order('sort_order', { ascending: true }).limit(50);
+  if (error) throw error;
+  return ((data ?? []) as { id: string; name: string; service_code: string | null }[]).map((r) => ({
+    id: `${r.id}`,
+    name: r.name,
+    service_code: r.service_code ?? null,
+  }));
+}
+
 export interface PrescribableDrug {
   id: string;
   name_ko: string;

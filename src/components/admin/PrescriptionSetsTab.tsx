@@ -20,6 +20,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
 import RxCountInput from '@/components/admin/RxCountInput';
+import { searchServiceRxDrugs } from '@/lib/prescribableDrugs';
 import { Loader2, Plus, Pencil, Trash2, X, Folder, Check, Search, Link2, MoreVertical, Tag } from 'lucide-react';
 // T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: 태그/아이콘 vocab SSOT 공유 — 빠른처방과 동일 어휘(분기 방지).
 import { DRUG_ICON_OPTIONS, IconRenderer } from '@/components/admin/QuickRxButtonsTab';
@@ -58,34 +59,31 @@ export function classificationToRoute(classification: string | null | undefined)
   return ''; // 처치료 등 미매칭 → 기타(회색)
 }
 
-// T-20260608-foot-RXSET-MGMT-DRUG-SEARCH: 약품 마스터(prescription_codes) 검색 결과.
-//   세트관리에서 약을 담을 때 쓰는 전체 카탈로그 검색 타입. (MedicalChartPanel RxCodeResult 와 동형)
+// 세트관리에서 약을 담을 때 쓰는 검색 결과 행 타입.
+//   T-20260615-foot-RXSET-DRUGSOURCE-SVCRX: 약 출처를 services 처방약으로 스왑(아래 searchRxMaster 참조).
+//   id = services.id (⚠️ prescription_codes.id 아님 — handleSelectDrug에서 prescription_code_id로 저장 금지).
 interface RxCodeResult {
   id: string;
   name_ko: string;
-  claim_code: string | null;
-  classification: string | null;
-  code_source: string | null;
+  claim_code: string | null; // services.service_code(EDI 청구코드) 표시용
+  classification: string | null; // services 처방약은 분류 미보유 → 항상 null
+  code_source: string | null; // services 소스 → '자체' 배지 미표시(null)
 }
 
-// T-20260608-foot-RXSET-MGMT-DRUG-SEARCH (AC-1/STEP1 그라운딩 — FE 검색UI 미연결 해소):
-//   처방세트(묶음처방) 관리에서 약을 담을 때 검색하는 출처는 '전체 약품 마스터(prescription_codes)'.
-//   ⚠️ prescribableDrugs.searchPrescribableDrugs 는 출처를 '처방세트 등록 약'으로 제한 →
-//      세트관리에서 쓰면 0건 순환(빈 세트에 약을 담아야 하는데 출처가 비어있음)이므로 사용 금지.
-//   MedicalChartPanel.searchRxCodes 와 동일 쿼리(name_ko/claim_code ilike, custom 우선) — 패턴 재사용.
+// T-20260615-foot-RXSET-DRUGSOURCE-SVCRX (AC-1): 처방세트 빌더 약 출처 스왑.
+//   (이전) 전체 EDI 약품 마스터(prescription_codes) 자유검색 →
+//   (현재) services category_label='처방약' AND active=true 리스트(근방 약국 실제 처방 가능 약).
+//   김주연 총괄 A(공유) 회신. 단일 재바인딩 지점 = prescribableDrugs.searchServiceRxDrugs.
+//   query '' → 전체 처방약 리스트(포커스 시 '리스트 선택' UX). 처방약 외 임의 EDI 약명은 결과에 안 뜸.
 async function searchRxMaster(query: string): Promise<RxCodeResult[]> {
-  const q = query.trim();
-  if (q.length < 1) return [];
-  const esc = q.replace(/[%,]/g, ' ');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from('prescription_codes')
-    .select('id,name_ko,claim_code,classification,code_source')
-    .or(`name_ko.ilike.%${esc}%,claim_code.ilike.%${esc}%`)
-    .order('code_source', { ascending: false }) // custom(자체·카피약) 우선 노출
-    .limit(20);
-  if (error) throw error;
-  return (data as RxCodeResult[]) ?? [];
+  const rows = await searchServiceRxDrugs(query);
+  return rows.map((r) => ({
+    id: r.id, // services.id (전시·key 용도. prescription_code_id로 저장 금지)
+    name_ko: r.name,
+    claim_code: r.service_code,
+    classification: null,
+    code_source: null,
+  }));
 }
 
 interface PrescriptionSet {
@@ -306,15 +304,13 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [open]);
 
+  // T-20260615-foot-RXSET-DRUGSOURCE-SVCRX: 빈 쿼리도 전체 처방약 리스트 노출('리스트 선택' UX).
+  //   (이전엔 1글자 미만이면 결과 비움 — 자유검색 전제. 이제 services 처방약 ≤16건 전체를 즉시 보여줌.)
   function runSearch(q: string) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const query = q.trim();
-    if (query.length < 1) {
-      setResults([]);
-      setSearching(false);
-      return;
-    }
     setSearching(true);
+    const delay = query.length < 1 ? 0 : 250;
     debounceRef.current = setTimeout(async () => {
       try {
         setResults(await searchRxMaster(query));
@@ -323,7 +319,7 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
       } finally {
         setSearching(false);
       }
-    }, 250);
+    }, delay);
   }
 
   function handleNameChange(v: string) {
@@ -359,13 +355,13 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
           <Input
             value={item.name}
             onChange={(e) => handleNameChange(e.target.value)}
-            onFocus={() => { if (item.name.trim()) { setOpen(true); runSearch(item.name); } }}
-            placeholder="약품명·보험코드 검색"
+            onFocus={() => { setOpen(true); runSearch(item.name); }}
+            placeholder="처방약 목록에서 선택 (이름·코드 검색)"
             className="h-7 text-xs pl-6"
             data-testid="rx-set-item-name-input"
             autoComplete="off"
           />
-          {open && item.name.trim().length >= 1 && (
+          {open && (
             <div
               className="absolute z-50 left-0 right-0 top-full mt-1 max-h-56 overflow-y-auto rounded-md border bg-popover shadow-md"
               data-testid="rx-set-drug-search-dropdown"
@@ -634,19 +630,19 @@ export default function PrescriptionSetsTab() {
     });
   }
 
-  // T-20260608-foot-RXSET-MGMT-DRUG-SEARCH (AC-2): 검색 결과 약 1건 선택 → 세트 항목에 채움.
-  //   name·route(classification 파생)·classification·prescription_code_id 자동채움.
-  //   route 는 파생값이 비면 기존 값 유지(기타 분류 약 보호). dosage/frequency/days 등 사용자 입력은 보존.
+  // T-20260615-foot-RXSET-DRUGSOURCE-SVCRX (AC-1): services 처방약 1건 선택 → 세트 항목 name 채움.
+  //   ⚠️ code.id = services.id 이므로 prescription_code_id(=prescription_codes 참조)에 저장하지 않는다.
+  //      → services 처방약은 prescription_codes FK 미보유(별도 엔티티). 진료차트 금기/급여 게이트는
+  //        prescription_code_id=null을 자유텍스트와 동일하게 skip(AC-0 §C 그라운딩). 청구는 services.service_code 경로로 무손실.
+  //   route/dosage/frequency/days 등 사용자 입력은 보존(처방약 분류 미보유 → route 파생 없음, 기존 값 유지).
   function handleSelectDrug(idx: number, code: RxCodeResult) {
     setForm((f) => {
       const items = [...f.items];
-      const derivedRoute = classificationToRoute(code.classification);
       items[idx] = {
         ...items[idx],
         name: code.name_ko,
-        route: derivedRoute || items[idx].route,
-        classification: code.classification ?? null,
-        prescription_code_id: code.id,
+        classification: null,
+        prescription_code_id: null,
       };
       return { ...f, items };
     });
