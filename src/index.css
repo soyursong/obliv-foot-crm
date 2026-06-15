@@ -1,6 +1,5 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -8,11 +7,22 @@
 @layer base {
   .theme {
     --font-heading: var(--font-sans);
-    --font-sans: 'Geist Variable', sans-serif
+    /* T-20260615-foot-CRM-FONT-PRETENDARD-GLOBAL: 어드민 전역 본문/헤딩을 셀프접수와 동일한 Pretendard로 통일
+       (Pretendard는 index.html에 전역 CDN 로드 旣존재 — 추가 import/패키지 불요).
+       --font-heading가 이 토큰을 상속하므로 헤딩 자동 반영. */
+    --font-sans: 'Pretendard', sans-serif
   }
   :root {
     /* T-20260522-foot-TOUCH-EXPAND: 태블릿 터치 타겟 최소 크기 */
     --touch-min: 44px;
+
+    /* T-20260615-foot-CRM-FONT-PRETENDARD-GLOBAL: 어드민 전역 본문/헤딩을 셀프접수와 동일한
+       Pretendard로 통일. .theme 토큰은 마크업에 .theme 클래스가 부여된 적이 없어 무효였고,
+       html{@apply font-sans}가 참조하는 --font-sans는 Tailwind 기본값(ui-sans-serif…)이 전역
+       :root에서 이김 → 실제 적용을 위해 전역 :root에서 --font-sans/--font-heading를 재정의한다.
+       Pretendard는 index.html 전역 CDN 旣로드 → 추가 import/패키지 불요. 웹폰트 실패 시 sans-serif fallback. */
+    --font-sans: 'Pretendard', sans-serif;
+    --font-heading: var(--font-sans);
 
     /* ── T-20260614-foot-THEME-MONOCHROME-RECOLOR (StepF 재오픈 정정) ───────────────
        재오픈(2026-06-15 김주연 총괄): 직전 warm-monochrome가 배경/카드/일반영역까지
@@ -183,6 +193,11 @@
   }
   html {
     @apply font-sans;
+    /* T-20260615-foot-CRM-FONT-PRETENDARD-GLOBAL: @apply font-sans 는 Tailwind 기본 sans
+       리터럴(ui-sans-serif…)을 굽어 :root --font-sans 토큰을 참조하지 않는다. 어드민 전역을
+       셀프접수와 동일한 Pretendard로 실제 렌더하려면 var(--font-sans)를 직접 지정(같은 규칙
+       후행 선언이 이김). 웹폰트 실패 시 토큰의 sans-serif fallback. */
+    font-family: var(--font-sans);
   }
 }
 
