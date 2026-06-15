@@ -743,6 +743,29 @@ export default function DoctorCallDashboard() {
   );
 }
 
+// ─── 전달사항 메모 미니멀 표시 ────────────────────────────────────────────────
+// T-20260615-foot-DOCDASH-MEMO-ICON-TOOLTIP (문지은 대표원장):
+//   이름 아래 노출하던 전달사항 메모(doctor_call_memo) 텍스트 제거 → 상태셀(✋/진료완료 옆)에
+//   빨간 미니멀 종 아이콘. hover 시 메모 전문 툴팁(CSS group-hover, 잘림 없음 whitespace-pre-wrap).
+//   메모 無 시 미표시(호출부 조건부 가드). DB·SELECT·메모 소스 불변, 시각 추가만.
+function MemoBell({ memo }: { memo: string }) {
+  return (
+    <span className="group relative inline-flex items-center" data-testid="doctor-call-memo-bell">
+      <Bell className="h-3.5 w-3.5 text-red-500" aria-label="전달사항 메모" />
+      {/* hover 툴팁 — 잘림 없이 전문. whitespace-pre-wrap + max-w로 줄바꿈 보존. */}
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 hidden w-max max-w-[18rem]
+          -translate-x-1/2 whitespace-pre-wrap rounded-md bg-gray-900 px-2.5 py-1.5 text-left
+          text-[12px] font-normal leading-snug text-white shadow-lg group-hover:block"
+        data-testid="doctor-call-memo-tooltip"
+      >
+        {memo}
+      </span>
+    </span>
+  );
+}
+
 // ─── 알람 피드 행 ───────────────────────────────────────────────────────────
 function CallFeedRow({
   checkIn,
@@ -837,6 +860,8 @@ function CallFeedRow({
                 />
               </>
             )}
+            {/* 전달사항 메모 有 → ✋/진료완료 옆 빨간 종 + hover 전문 툴팁. 無 시 미표시(AC1/AC3/AC5). */}
+            {checkIn.doctor_call_memo && <MemoBell memo={checkIn.doctor_call_memo} />}
           </span>
         </td>
 
@@ -860,10 +885,7 @@ function CallFeedRow({
               <span className="block text-[15px] font-semibold">{checkIn.customer_name}</span>
             </button>
           </div>
-          {/* 전달사항 메모 */}
-          {checkIn.doctor_call_memo && (
-            <p className="mt-0.5 text-[13px] text-gray-600">📋 {checkIn.doctor_call_memo}</p>
-          )}
+          {/* T-20260615-foot-DOCDASH-MEMO-ICON-TOOLTIP AC4: 이름 아래 메모 텍스트 제거 → 상태셀 MemoBell로 이전. */}
         </td>
 
         {/* 4. 생년(만나이) — T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1: customers.birth_date 파생 "YYYY (만 N세)". 결측 '—'. 중앙정렬. */}
