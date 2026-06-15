@@ -168,11 +168,9 @@ test.describe('S4 회귀가드 — DATEMODE-HISTORY / SORT-LAYOUT / 확정패널
 
   test('R2(SORT-LAYOUT): 기본 행 grid 고정 열 + 원내 우선 그룹 정렬 보존', () => {
     const src = SRC('components/doctor/DoctorPatientList.tsx');
-    // 고정 grid-template — 현행 정합(스테일 정정).
-    //   기존 assertion 은 1.75rem(대기순번) 선두 + 4.5rem 부재로 MIRROR-MONOTONE(6/13)·CHARTNO 이전부터 stale.
-    //   T-20260615-foot-RXLIST-COLALIGN-DONE-READONLY item2(컬럼 일치): 진료 알림판 순서로 재정렬 —
-    //     방(4.75rem)→상태(3.75rem)→방문유형(3rem)→이름(5rem)→차트번호(4.5rem)→처방(5.5rem)→예약메모(1fr)→액션(auto).
-    expect(src).toMatch(/grid-cols-\[4\.75rem_3\.75rem_3rem_5rem_4\.5rem_5\.5rem_minmax\(0,1fr\)_auto\]/);
+    // 고정 grid-template(번호/배지/이름/처방/상태/시술/메모/액션).
+    //   T-20260610-foot-DOCDASH-DIAGMGMT-6FIX(5e55c13) 레이아웃 갱신으로 4.75rem 열 추가 — 현행 정합.
+    expect(src).toMatch(/grid-cols-\[1\.75rem_3rem_5rem_5\.5rem_3\.75rem_4\.75rem_minmax\(0,1fr\)_auto\]/);
     // 원내 잔류 그룹 항상 상단 + 시간순/이름순 정렬 토글.
     expect(src).toMatch(/isInClinic\(a\.status\)/);
     expect(src).toMatch(/data-testid=\{`sort-by-\$\{key\}`\}/);
