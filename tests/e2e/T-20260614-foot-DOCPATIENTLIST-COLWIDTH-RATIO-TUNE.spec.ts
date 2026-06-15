@@ -16,6 +16,18 @@
  *   DoctorCallListBar.tsx 미터치(잘못된 surface 후보).
  *
  * 정적 소스 검증 스타일 — 인접 DOCDASH/COLWIDTH-EXPAND-QUICKEDIT spec 컨벤션 동일.
+ *
+ * ─── STALE-RECONCILE (T-20260615-foot-DOCDASH-COLGROUP-E2E-STALE-RECONCILE, 가설A) ───
+ * 이 spec 의 RATIO-TUNE 10칼럼 ×0.75/×0.50 비율 모델은 5개 후속 티켓으로 '합법' supersede 됨:
+ *   RATIO-TUNE([4,7,6,9,8,9,6,12,34,5])
+ *   → STATNAME-WIDEN-CENTER(상태7→8·이름6→7·임상경과34→32)
+ *   → WAITDONE-ALIGN(완료=대기 글자그대로 동일 colgroup)
+ *   → NAME-EMOJI-CLINICAL-3FIX item2('차트' 칼럼 6% 제거: 10칼럼→9칼럼, 임상경과 32→38)
+ *   → RX-DISPLAY-REVAMP item3(처방 12→18 ×1.5, 임상경과 38→32)
+ * 배포 정본(commit aa2e7819) 실측 = 9칼럼 [4,8,7,9,8,9,18,32,5] 합100 (feed==completed).
+ *   ⇒ 가설A: 합100 & 시각정상 → 기대값을 deployed truth 로 갱신. ×0.75/×0.50 비율·idx8 임상경과 단언은
+ *      supersede 되어 제거. 불변 invariant(합100 / 임상경과 본문우선 최대폭 / 양테이블 정합)만 유지.
+ *   순서(9칼럼): 방·상태·이름·생년(만나이)·차트번호·오늘시술·처방·임상경과·시간.
  */
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -35,66 +47,56 @@ function colgroupAfter(s: string, anchor: string): number[] {
   const cgEnd = s.indexOf('</colgroup>', cgStart);
   return colWidths(s.slice(cgStart, cgEnd));
 }
-// 기준 배포본(f8ad7a9) 폭 — 비율 검증 baseline.
-const BASE_FEED = [5, 9, 11, 9, 8, 9, 6, 24, 14, 5];
-const BASE_CMPL = [5, 10, 12, 9, 8, 9, 6, 25, 16];
+// 배포 정본(commit aa2e7819) 실측 truth — feed==completed, 9칼럼, 합100.
+//   순서: 방·상태·이름·생년·차트번호·오늘시술·처방·임상경과·시간.
+const TRUTH = [4, 8, 7, 9, 8, 9, 18, 32, 5];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 시나리오 1 — 현장 클릭: 호출(대기) 테이블 환자행 — 방·상태·이름·처방 비율 축소 적용
+// 시나리오 1 — 현장 클릭: 호출(대기) 테이블 환자행 — 배포정본 colgroup 회귀 고정
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('S1 호출 테이블 — 4컬럼 비율 축소 + 합 100', () => {
-  test('feed colgroup: 방4·상태7·이름6·처방12 (×0.75/0.75/0.5/0.5) · 합 100', () => {
+test.describe('S1 호출 테이블 — 배포정본 9칼럼 colgroup + 합 100', () => {
+  test('feed colgroup: 배포정본 [4,8,7,9,8,9,18,32,5] · 합 100 · 임상경과 최대', () => {
     const w = colgroupAfter(DASH(), 'doctor-call-feed-table');
-    // 순서: 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과·시간
-    expect(w).toEqual([4, 7, 6, 9, 8, 9, 6, 12, 34, 5]);
-    // 비율 검증 (반올림 1%p 허용).
-    expect(Math.abs(w[0] - BASE_FEED[0] * 0.75)).toBeLessThanOrEqual(1); // 방
-    expect(Math.abs(w[1] - BASE_FEED[1] * 0.75)).toBeLessThanOrEqual(1); // 상태
-    expect(Math.abs(w[2] - BASE_FEED[2] * 0.5)).toBeLessThanOrEqual(1);  // 이름
-    expect(Math.abs(w[7] - BASE_FEED[7] * 0.5)).toBeLessThanOrEqual(1);  // 처방
-    // table-fixed 합 100% hard 제약.
+    // STALE-RECONCILE 가설A: RATIO-TUNE 10칼럼 비율모델 supersede(헤더 참조) → deployed truth 로 갱신.
+    expect(w).toEqual(TRUTH);
+    // table-fixed 합 100% hard 제약(불변 invariant).
     expect(w.reduce((a, b) => a + b, 0)).toBe(100);
+    // 본문 우선 재분배 설계의도 보존: 임상경과(idx7) 가 최대 데이터 컬럼.
+    expect(w[7]).toBe(Math.max(...w));
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 시나리오 2 — 현장 클릭: 진료 완료 테이블 환자행 — 동일 비율 축소 적용
+// 시나리오 2 — 현장 클릭: 진료 완료 테이블 환자행 — 대기와 글자그대로 동일(WAITDONE-ALIGN)
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('S2 완료 테이블 — 4컬럼 비율 축소 + 합 100', () => {
-  test('completed colgroup: 방4·상태8·이름6·처방13 (×0.75/0.75/0.5/0.5) · 합 100', () => {
+test.describe('S2 완료 테이블 — 대기와 동일 colgroup + 합 100', () => {
+  test('completed colgroup: 대기와 동일 [4,8,7,9,8,9,18,32,5] · 합 100', () => {
     const w = colgroupAfter(DASH(), 'doctor-completed-table');
-    // 순서: 방·상태·이름·생년·차트번호·오늘시술·차트·처방·임상경과
-    expect(w).toEqual([4, 8, 6, 9, 8, 9, 6, 13, 37]);
-    expect(Math.abs(w[0] - BASE_CMPL[0] * 0.75)).toBeLessThanOrEqual(1); // 방
-    expect(Math.abs(w[1] - BASE_CMPL[1] * 0.75)).toBeLessThanOrEqual(1); // 상태
-    expect(Math.abs(w[2] - BASE_CMPL[2] * 0.5)).toBeLessThanOrEqual(1);  // 이름
-    expect(Math.abs(w[7] - BASE_CMPL[7] * 0.5)).toBeLessThanOrEqual(1);  // 처방
+    expect(w).toEqual(TRUTH);
     expect(w.reduce((a, b) => a + b, 0)).toBe(100);
+    expect(w[7]).toBe(Math.max(...w));
+    // WAITDONE-ALIGN: 완료 colgroup == 대기 colgroup (양 테이블 정합 invariant).
+    expect(w).toEqual(colgroupAfter(DASH(), 'doctor-call-feed-table'));
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 시나리오 3 — 현장 클릭: 임상경과 셀 클릭(본문 우선) — 해방분 재분배가 임상경과로 갔는가
+// 시나리오 3 — 현장 클릭: 임상경과 셀 클릭(본문 우선) — 임상경과 최대폭 유지
 //             + AC-2 컬럼앵커 팝오버 / AC-3 빠른수정 회귀 0 (폭만 변경)
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('S3 임상경과 본문 우선 재분배 + AC-2/AC-3 회귀 0', () => {
-  test('임상경과 컬럼이 최대 폭 — 해방분(축소 4컬럼 합 감소분) 전량 흡수', () => {
+  test('임상경과 컬럼이 최대 폭 — 본문 우선 설계의도 유지(현 정본)', () => {
     const feed = colgroupAfter(DASH(), 'doctor-call-feed-table');
     const cmpl = colgroupAfter(DASH(), 'doctor-completed-table');
-    // 임상경과(feed[8], cmpl[8])가 각 테이블 최대 폭 데이터 컬럼.
-    expect(feed[8]).toBe(Math.max(...feed));
-    expect(cmpl[8]).toBe(Math.max(...cmpl));
-    // 임상경과는 기준 대비 확대(14→34, 16→37) — 본문 우선.
-    expect(feed[8]).toBeGreaterThan(BASE_FEED[8]);
-    expect(cmpl[8]).toBeGreaterThan(BASE_CMPL[8]);
-    // 4컬럼 축소분 == 임상경과 증가분 (나머지 컬럼 불변 보장).
-    const feedShrink = (BASE_FEED[0] - feed[0]) + (BASE_FEED[1] - feed[1]) + (BASE_FEED[2] - feed[2]) + (BASE_FEED[7] - feed[7]);
-    expect(feed[8] - BASE_FEED[8]).toBe(feedShrink);
-    const cmplShrink = (BASE_CMPL[0] - cmpl[0]) + (BASE_CMPL[1] - cmpl[1]) + (BASE_CMPL[2] - cmpl[2]) + (BASE_CMPL[7] - cmpl[7]);
-    expect(cmpl[8] - BASE_CMPL[8]).toBe(cmplShrink);
-    // 불변 컬럼(생년·차트번호·오늘시술·차트) feed/cmpl 동일하게 보존.
-    expect([feed[3], feed[4], feed[5], feed[6]]).toEqual([9, 8, 9, 6]);
-    expect([cmpl[3], cmpl[4], cmpl[5], cmpl[6]]).toEqual([9, 8, 9, 6]);
+    // STALE-RECONCILE: '차트' 칼럼 제거(10→9col)로 임상경과 인덱스 8→7 이동. idx7 = 임상경과.
+    expect(feed[7]).toBe(Math.max(...feed));
+    expect(cmpl[7]).toBe(Math.max(...cmpl));
+    // 임상경과(32) > 처방(idx6=18) — 본문 우선 재분배 유지.
+    expect(feed[7]).toBeGreaterThan(feed[6]);
+    expect(cmpl[7]).toBeGreaterThan(cmpl[6]);
+    // 불변 컬럼(생년·차트번호·오늘시술) feed/cmpl 동일하게 보존.
+    expect([feed[3], feed[4], feed[5]]).toEqual([9, 8, 9]);
+    expect([cmpl[3], cmpl[4], cmpl[5]]).toEqual([9, 8, 9]);
   });
 
   test('AC-2 컬럼앵커 팝오버(처방/임상경과 전문) 회귀 0 — 폭만 변경', () => {
@@ -119,9 +121,9 @@ test.describe('S3 임상경과 본문 우선 재분배 + AC-2/AC-3 회귀 0', ()
     // 빠른수정 토글/펼침 상태 보존.
     expect(s).toContain('setExpandRx');
     expect(s).toContain('onToggleExpand={() => setExpandRx');
-    // 폭만 변경 — 신규 컴포넌트 생성 흔적(이번 티켓 ID 컴포넌트) 0, colgroup만 수정.
-    // (RATIO-TUNE 코멘트는 두 colgroup 주석에만 존재)
+    // STALE-RECONCILE: 완료 colgroup 주석이 WAITDONE-ALIGN 으로 재작성되며 RATIO-TUNE provenance 1곳만 잔존.
+    //   provenance-count(==2) 는 후속 진화로 깨지는 brittle 단언 → '최소 1회 잔존(이력 보존)' 으로 완화.
     const tuneRefs = [...s.matchAll(/COLWIDTH-RATIO-TUNE/g)].length;
-    expect(tuneRefs).toBe(2);
+    expect(tuneRefs).toBeGreaterThanOrEqual(1);
   });
 });
