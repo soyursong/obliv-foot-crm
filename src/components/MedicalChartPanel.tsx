@@ -3319,7 +3319,10 @@ export default function MedicalChartPanel({
                       T-20260614-foot-MEDREC-LAYOUT-4REFINE AC-2 (문지은 대표원장): 너비를 아래 임상경과·
                       의료진전용메모 행과 동일 비율(좌 flex-[4] : 우 flex-[1])로 정렬 — 기존 1:1 균등에서
                       치료사차트(좌·넓게)/치료메모(우·좁게)로 통일(아래 NOTES 2단과 컬럼 경계 일치). */}
-                  <div className="sm:flex-[4] min-w-0">
+                  {/* T-20260615-foot-MEDCHART-MEMO-WIDTH-25P (문지은 대표원장): 우측 치료메모 컬럼을 현재 대비
+                      25% 확대 — converged grid 비율(좌 flex-[4]:우 flex-[1]=80:20) 기준 위에서 좌측을 flex-[3]로
+                      낮춰 우측 메모 컬럼을 20%→25%(=+25%)로 상향. 우 flex-[1] 토큰은 무변경. */}
+                  <div className="sm:flex-[3] min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <label className="text-xs font-semibold text-muted-foreground">치료사차트</label>
                     </div>
@@ -3398,7 +3401,10 @@ export default function MedicalChartPanel({
                       T-20260609-foot-DOCDASH-CHART-UX item5 (AC5-1): 섹션 헤더 라벨('임상경과') 텍스트 태그 완전 제거.
                       T-20260614-foot-MEDREC-LAYOUT-4REFINE AC-1 (문지은 대표원장): 좌측 세로줄(border-l-2)
                       + 좌측 패딩(pl-3) 제거 — 소헤더 라벨로 식별, 컬럼 경계선 없이 깔끔하게. */}
-                  <div className="sm:flex-[4] min-w-0">
+                  {/* T-20260615-foot-MEDCHART-MEMO-WIDTH-25P (문지은 대표원장): 우측 의료진전용메모 컬럼을 현재
+                      대비 25% 확대 — converged grid 비율(좌 flex-[4]:우 flex-[1]=80:20) 기준 위에서 좌측을 flex-[3]로
+                      낮춰 우측 메모 컬럼을 20%→25%(=+25%)로 상향. 우 flex-[1] 토큰은 무변경. */}
+                  <div className="sm:flex-[3] min-w-0">
                     {/* T-20260612-foot-MEDREC-DATE-DIAG-UI-REFINE ⑤: '임상경과' 소헤더 추가.
                         6번: 슬래시 단축어 안내 설명 텍스트 제거 — 기능(슬래시 트리거 핸들러·팝오버)은 무변경 유지. */}
                     <div className="flex items-center mb-1">
