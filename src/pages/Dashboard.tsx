@@ -2287,7 +2287,7 @@ function DashboardTimeline({
                 isCurrentSlot && 'relative',
                 isPastSlot && 'opacity-55',
                 // T-20260529-foot-DASHBOARD-TIMETABLE-SYNC AC-2: 비활성 존 베이지 배경
-                isInactiveZone && 'bg-stone-50',
+                isInactiveZone && 'bg-neutral-50',
               )}
               data-testid="timeline-slot-row"
               data-active-zone={isToday && !isInactiveZone ? 'true' : undefined}
@@ -2325,7 +2325,7 @@ function DashboardTimeline({
                     isCurrentSlot
                       ? 'bg-teal-50 hover:bg-teal-100 active:bg-teal-200'
                       : isInactiveZone
-                        ? 'bg-stone-100 hover:bg-stone-200 active:bg-stone-300'
+                        ? 'bg-neutral-100 hover:bg-neutral-200 active:bg-neutral-300'
                         : 'bg-gray-50 hover:bg-gray-100 active:bg-gray-200',
                   )}
                   aria-expanded={isExpanded}
@@ -2369,7 +2369,7 @@ function DashboardTimeline({
                     isCurrentSlot
                       ? 'bg-teal-50/20'
                       : isInactiveZone
-                        ? 'bg-stone-100/50'
+                        ? 'bg-neutral-100/50'
                         : newCnt > 0 ? 'bg-yellow-50/40' : '',
                   )}
                   onClick={() => onSlotClick({ date: dateStr, time: slot })}
@@ -2412,7 +2412,7 @@ function DashboardTimeline({
                     isCurrentSlot
                       ? 'bg-teal-50/20'
                       : isInactiveZone
-                        ? 'bg-stone-100/50'
+                        ? 'bg-neutral-100/50'
                         : retCnt > 0 ? 'bg-green-50/40' : '',
                   )}
                   onClick={() => onSlotClick({ date: dateStr, time: slot, visit_type: 'returning' })}
