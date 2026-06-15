@@ -108,8 +108,11 @@ export default function CalendarNoticePanel() {
   }, []);
 
   // ── PC 접힘 상태 (T-20260516-foot-PC-CAL-COLLAPSE) ────────────────────────
-  // AC-6: PC 초기 상태는 펼쳐진 상태
-  const [pcCollapsed, setPcCollapsed] = useState<boolean>(false);
+  // T-20260615-foot-CALENDAR-DEFAULT-COLLAPSED: PC 초기 상태를 '항상 접힘'으로 변경.
+  //   (이전 AC-6: 펼친 상태로 시작 → 변경) 진료대시보드 등 진입 시 달력 패널을 접힌
+  //   상태(pc-cal-bar)로 시작. 마지막 상태 기억(localStorage) 로직 없음 → 매 진입·새로고침
+  //   마다 항상 접힘으로 시작하는 게 의도. 사용자는 펼치기 버튼으로 즉시 펼칠 수 있음.
+  const [pcCollapsed, setPcCollapsed] = useState<boolean>(true);
 
   // ── 공지 폼 상태 ──────────────────────────────────────────────────────────
   const [editingId, setEditingId] = useState<string | 'new' | null>(null);
