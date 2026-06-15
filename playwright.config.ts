@@ -122,6 +122,9 @@ export default defineConfig({
         // T-20260615-foot-DOCDASH-MEMO-ICON-TOOLTIP: 이름 아래 메모텍스트 제거 → 상태셀 빨간 종 + hover 전문 툴팁
         //   (page.setContent 실 Chromium 렌더 hover 토글 + 소스 정적 가드, auth 불요)
         '**/T-20260615-foot-DOCDASH-MEMO-ICON-TOOLTIP.spec.ts',
+        // T-20260615-foot-RESVTAB-MEMO-ICON-SCROLLFIX: 예약메모 표시(✏️)↔편집 토글 + 체류시간 스크롤 재한정
+        //   (소스 미러 정적 가드 + page.setContent 실DOM 스크롤 containment, auth 불요)
+        '**/T-20260615-foot-RESVTAB-MEMO-ICON-SCROLLFIX.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
