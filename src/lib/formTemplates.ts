@@ -764,7 +764,7 @@ export const FORM_META: Record<
   },
   medical_record_request: {
     icon: '📂',
-    color: 'bg-stone-50 border-stone-300',
+    color: 'bg-neutral-50 border-neutral-300',
     description: '의무기록 열람·복사 신청서 (의료법 §21)',
     print_preset: 'optional',
   },
