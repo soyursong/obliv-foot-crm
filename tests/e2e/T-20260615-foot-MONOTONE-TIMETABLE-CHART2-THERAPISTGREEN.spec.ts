@@ -1,0 +1,97 @@
+import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+/**
+ * T-20260615-foot-MONOTONE-TIMETABLE-CHART2-THERAPISTGREEN (김주연 총괄, planner MSG-20260615-113155)
+ *
+ * 형제 티켓 T-20260615-foot-THEME-MONO-REFINE-3AREA 와 동일 3건 스코프(스크린샷 동봉 재발행).
+ * 부모 T-20260614-foot-THEME-MONOCHROME-RECOLOR(라이브) 후속 — 전역 토큰 재교체 아님, 국소 정제.
+ *
+ *  item1 [통합시간표] — 초진 노랑 / 재진 초록 의미색 배경 제거 → 모노톤(텍스트+보더 구분).
+ *  item2 [2번 차트(CustomerChartPage)] — 장식성 다색(blue/indigo/sky/violet/purple/cyan/pink/
+ *        fuchsia) → slate 모노톤. red(경고)·green/emerald(완료/재진)·amber/yellow(타이머)·teal(부모 warm-mono)
+ *        는 의미색 carve-out 보존.
+ *  item3 [직원 근무 캘린더 치료사 필터칩] — 선택 상태 칩이 bg-teal-600(→ tailwind teal→warm-brown 램프
+ *        리맵으로 brown 렌더)으로 누수 → 치료사만 green 원복(출근자 치료사 배지 green 톤 일치).
+ *        타 role 칩(상담실장 등) 불변(bg-teal-600 유지).
+ *        ⚠ 기존 3AREA spec AC3 은 partBadgeClass(미선택) 리터럴만 검증 → 리포터가 본 brown(선택 칩)은
+ *          미커버였음. 본 spec 이 선택-상태 green 분기를 가드한다.
+ *
+ * auth 불요(unit 프로젝트). 정적 소스 가드.
+ */
+
+const ROOT = process.cwd();
+const dashboard = readFileSync(join(ROOT, 'src', 'pages', 'Dashboard.tsx'), 'utf8');
+const handover = readFileSync(join(ROOT, 'src', 'lib', 'handover.ts'), 'utf8');
+const handoverPage = readFileSync(join(ROOT, 'src', 'pages', 'Handover.tsx'), 'utf8');
+const chart = readFileSync(join(ROOT, 'src', 'pages', 'CustomerChartPage.tsx'), 'utf8');
+const status = readFileSync(join(ROOT, 'src', 'lib', 'status.ts'), 'utf8');
+
+// ── 통합시간표 전용 슬롯 카드 구간만 슬라이스 (칸반·기타 영역 오탐 방지) ──
+function sliceTimeline(src: string): string {
+  const start = src.indexOf('// 2번 박스 활성화 스타일');
+  const end = src.indexOf('{/* ── AC-7: 아코디언 패널');
+  expect(start).toBeGreaterThan(0);
+  expect(end).toBeGreaterThan(start);
+  return src.slice(start, end);
+}
+
+test.describe('MONOTONE-TIMETABLE-CHART2-THERAPISTGREEN — 정적 소스 가드 (auth 불요)', () => {
+  test('item1: 통합시간표 슬롯 카드/헤더 초진 노랑·재진 초록 배경 채도 제거', () => {
+    const seg = sliceTimeline(dashboard).replace(
+      /text-yellow-700 bg-yellow-100 border border-yellow-300/g,
+      '<<HEALER_CARVEOUT>>',
+    );
+    // 초진 노랑 누수 0
+    expect(seg).not.toMatch(/bg-yellow-50\b/);
+    expect(seg).not.toMatch(/border-yellow-(300|400|500)\b/);
+    expect(seg).not.toMatch(/text-yellow-(700|800|900)\b/);
+    // 재진 초록 누수 0
+    expect(seg).not.toMatch(/bg-green-50\b/);
+    expect(seg).not.toMatch(/border-green-(300|400)\b/);
+    expect(seg).not.toMatch(/text-green-(600|700|900)\b/);
+    // 모노톤 대체 클래스 실제 적용
+    expect(seg).toMatch(/border-gray-400 bg-white/);   // 초진 카드
+    expect(seg).toMatch(/border-gray-300 bg-gray-50/); // 재진 카드
+  });
+
+  test('item2: 2번 차트(CustomerChartPage) 장식성 다색 → slate 모노톤 (carve-out 외 잔존 0)', () => {
+    // 장식성 무지개색(blue/indigo/sky/violet/purple/fuchsia/cyan/pink) 잔존 0 — 잔존 시 실패
+    expect(chart).not.toMatch(/\b(bg|text|border)-blue-\d/);
+    expect(chart).not.toMatch(/\b(bg|text|border)-indigo-\d/);
+    expect(chart).not.toMatch(/\b(bg|text|border)-sky-\d/);
+    expect(chart).not.toMatch(/\b(bg|text|border)-violet-\d/);
+    expect(chart).not.toMatch(/\b(bg|text|border)-purple-\d/);
+    expect(chart).not.toMatch(/\b(bg|text|border)-fuchsia-\d/);
+    expect(chart).not.toMatch(/\b(bg|text|border)-cyan-\d/);
+    expect(chart).not.toMatch(/\b(bg|text|border)-pink-\d/);
+    // 모노톤 대체(slate) 실제 적용 증거
+    expect(chart).toMatch(/bg-slate-/);
+  });
+
+  test('item3(핵심): 치료사 필터 칩 선택 상태가 green 으로 원복됐다 (brown 누수 정정)', () => {
+    // 선택 칩에 치료사 전용 green 분기가 있다 — 타 role 은 bg-teal-600 유지
+    expect(handoverPage).toMatch(
+      /p\.code === 'therapist' \? 'bg-green-600 text-white' : 'bg-teal-600 text-white'/,
+    );
+    // 무분기 bg-teal-600(전 role 동일 brown) 잔존 0 — 잔존 시 brown 누수 재발
+    expect(handoverPage).not.toMatch(/partFilter === p\.code \? 'bg-teal-600 text-white'/);
+    expect(handoverPage).not.toMatch(/formPart === p\.code \? 'bg-teal-600 text-white'/);
+  });
+
+  test('item3(미선택 배지): handover 치료사 part 색 teal→green 정정', () => {
+    expect(handover).toMatch(/code:\s*'therapist',\s*label:\s*'치료사',\s*color:\s*'green'/);
+    expect(handover).toMatch(/therapist:\s*'bg-green-100 text-green-700'/);
+    expect(handover).toMatch(/therapist:\s*'bg-green-50 border-green-200'/);
+    expect(handover).not.toMatch(/therapist:\s*'bg-teal-/);
+  });
+
+  test('item3(carve-out): 출근자 칩 therapist 의미색(green) status.ts 보존 + 타 role 칩 불변', () => {
+    // 출근자 치료사 배지 green 보존
+    expect(status).toMatch(/therapist:\s*'bg-green-100 text-green-800 border-green-300'/);
+    // 타 role 미선택 배지 색 불변(상담실장 rose / 코디 amber)
+    expect(handover).toMatch(/consultant_lead:\s*'bg-rose-100 text-rose-700'/);
+    expect(handover).toMatch(/coordinator:\s*'bg-amber-100 text-amber-700'/);
+  });
+});

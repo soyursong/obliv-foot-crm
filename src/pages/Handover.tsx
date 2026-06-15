@@ -555,7 +555,12 @@ export default function Handover() {
             onClick={() => setPartFilter(p.code)}
             data-testid={`handover-part-${p.code}`}
             className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              partFilter === p.code ? 'bg-teal-600 text-white' : `${partBadgeClass(p.code)} hover:opacity-80`
+              // T-20260615-foot-MONOTONE-…-THERAPISTGREEN item3: 선택 상태 칩은 모든 part가 bg-teal-600 →
+              //   tailwind teal→warm-brown 램프 리맵으로 brown 렌더. 치료사는 role 의미색(green)이라
+              //   green 원복(출근자 치료사 배지 green 톤 일치). 타 role 칩은 불변(bg-teal-600 유지).
+              partFilter === p.code
+                ? (p.code === 'therapist' ? 'bg-green-600 text-white' : 'bg-teal-600 text-white')
+                : `${partBadgeClass(p.code)} hover:opacity-80`
             }`}
           >
             {p.label}
@@ -760,7 +765,10 @@ export default function Handover() {
                     onClick={() => setFormPart(p.code)}
                     data-testid={`handover-form-part-${p.code}`}
                     className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
-                      formPart === p.code ? 'bg-teal-600 text-white' : `${partBadgeClass(p.code)} hover:opacity-80`
+                      // T-20260615-foot-MONOTONE-…-THERAPISTGREEN item3: 치료사 선택 칩 green 원복(필터 칩과 동일 의미색)
+                      formPart === p.code
+                        ? (p.code === 'therapist' ? 'bg-green-600 text-white' : 'bg-teal-600 text-white')
+                        : `${partBadgeClass(p.code)} hover:opacity-80`
                     }`}
                   >
                     {p.label}
