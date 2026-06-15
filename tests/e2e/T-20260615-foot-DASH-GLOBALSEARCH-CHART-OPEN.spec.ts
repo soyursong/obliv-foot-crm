@@ -17,7 +17,9 @@
  */
 import { test, expect } from '@playwright/test';
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
+// 전용 테스트 포트 8089 — playwright.config webServer 가 기동하는 dev 서버와 일치.
+// (이전 5173 하드코딩은 config baseURL/webServer 와 불일치 → 연결거부로 E2E 실패)
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8089';
 
 async function loginIfNeeded(page: import('@playwright/test').Page) {
   await page.goto(BASE_URL);
@@ -49,7 +51,8 @@ test.describe('T-20260615-foot-DASH-GLOBALSEARCH-CHART-OPEN', () => {
 
   // 핵심 시나리오: 검색 → 고객 클릭 → 고객관리 탭 전환 + 차트 자동 오픈
   test('S1: 검색 결과 클릭 시 고객관리 탭 전환 후 2번차트가 자동으로 열린다', async ({ page }) => {
-    await page.goto(`${BASE_URL}/dashboard`);
+    // 대시보드 = /admin 인덱스 라우트(별도 /dashboard 경로 없음 → */admin 리다이렉트)
+    await page.goto(`${BASE_URL}/admin`);
     await page.waitForLoadState('networkidle');
 
     await openSearchAndQuery(page, '김');
@@ -72,13 +75,13 @@ test.describe('T-20260615-foot-DASH-GLOBALSEARCH-CHART-OPEN', () => {
     } else {
       // 데이터가 없으면 최소 회귀: 검색 UI는 정상 렌더되고 페이지가 깨지지 않음
       expect(resultButtons).toBeDefined();
-      await expect(page).toHaveURL(/dashboard/);
+      await expect(page).toHaveURL(/\/admin(\?|$)/);
     }
   });
 
   // 회귀: 검색 결과가 없을 때 '검색 결과 없음' 안내가 정상 노출(검색 동작 불변 보장)
   test('S2: 매칭 없는 검색어는 결과 없음 안내, 차트는 열리지 않는다', async ({ page }) => {
-    await page.goto(`${BASE_URL}/dashboard`);
+    await page.goto(`${BASE_URL}/admin`);
     await page.waitForLoadState('networkidle');
 
     await openSearchAndQuery(page, 'ㅁㄴㅇㄹㅋㅌㅊ존재불가환자명999');
@@ -88,8 +91,9 @@ test.describe('T-20260615-foot-DASH-GLOBALSEARCH-CHART-OPEN', () => {
     if (await noResult.isVisible({ timeout: 3000 }).catch(() => false)) {
       await expect(noResult).toBeVisible();
     }
-    // 차트 패널은 열리지 않아야 함
+    // 차트 패널은 열리지 않아야 함 + 고객관리 탭으로 전환되지 않고 대시보드(/admin)에 잔류
     await expect(page.getByRole('dialog', { name: '고객차트' })).toHaveCount(0);
-    await expect(page).toHaveURL(/dashboard/);
+    await expect(page).not.toHaveURL(/\/admin\/customers/);
+    await expect(page).toHaveURL(/\/admin(\?|$)/);
   });
 });
