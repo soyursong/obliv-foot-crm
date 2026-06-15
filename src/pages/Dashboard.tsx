@@ -4049,6 +4049,22 @@ export default function Dashboard() {
       roomsTimer = setTimeout(() => { fetchRooms(); }, 800);
     };
 
+    // T-20260615-foot-DASH-CROSSACCT-REALTIME-LAG: 계정 간 이동(레이저실 등)이 타 단말에
+    //   즉시 반영 안 되거나 끝내 누락되는 문제 견고화. 근본원인 3종(코드 확정):
+    //   (1) .subscribe() 재연결 핸들러 부재 → WebSocket 끊김/재연결 동안 유실된 postgres_changes 미보충,
+    //   (2) 탭 백그라운드→복귀 시 강제 refetch 부재(+ background setInterval throttle),
+    //   (3) 폴링 fallback이 assignments/rooms 미커버.
+    //   ⚠ 쓰기(이동) 로직 무변경 — 읽기/전파(refetch) 경로만 보강.
+    const fullResync = () => {
+      fetchCheckIns();
+      fetchSelfCheckIns();
+      fetchStageStarts();
+      fetchAssignments();
+      fetchTimelineReservations();
+      fetchRooms();
+    };
+    let subscribedOnce = false;
+
     const channel = supabase
       .channel(`dashboard_rt_${clinic.id}_${dateStr}`)
       .on(
@@ -4112,7 +4128,26 @@ export default function Dashboard() {
         { event: '*', schema: 'public', table: 'rooms', filter: `clinic_id=eq.${clinic.id}` },
         () => debouncedRoomsRefetch(),
       )
-      .subscribe();
+      // T-20260615-foot-DASH-CROSSACCT-REALTIME-LAG AC-3: 재연결 견고화.
+      //   Supabase 소켓은 자동 재연결하지만 끊김 동안의 postgres_changes는 재생되지 않음 →
+      //   (재)구독 성공(SUBSCRIBED)마다 catch-up refetch로 유실분 보충.
+      //   에러/타임아웃/종료 시에도 안전망 동기화(이후 소켓 재연결→SUBSCRIBED가 재보충).
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          if (subscribedOnce) fullResync(); // 최초 구독은 타 effect가 이미 로드 → 재구독부터 보충
+          subscribedOnce = true;
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          fullResync();
+        }
+      });
+
+    // T-20260615-foot-DASH-CROSSACCT-REALTIME-LAG AC-3: 탭 백그라운드→포그라운드 복귀 /
+    //   창 포커스 시 즉시 전체 동기화 — background throttle로 stale가 잔존하던 케이스 제거.
+    const onForeground = () => {
+      if (document.visibilityState === 'visible') fullResync();
+    };
+    document.addEventListener('visibilitychange', onForeground);
+    window.addEventListener('focus', onForeground);
 
     // T-20260514-foot-DASH-REALTIME-FAIL AC-4: Realtime 단절 대비 폴링 fallback
     // T-20260529-foot-DASHBOARD-TIMETABLE-SYNC AC-1: 60초 → 30초 단축 (최대 30초 이내 반영 보장)
@@ -4121,7 +4156,10 @@ export default function Dashboard() {
     const pollTimer = setInterval(() => {
       fetchCheckIns();
       fetchSelfCheckIns();
+      fetchStageStarts();
+      fetchAssignments();          // T-20260615-foot-DASH-CROSSACCT-REALTIME-LAG AC-2: 방배정 누락 보충
       fetchTimelineReservations(); // AC-6 + DASHBOARD-TIMETABLE-SYNC AC-1
+      fetchRooms();                // T-20260615-foot-DASH-CROSSACCT-REALTIME-LAG AC-2: 슬롯 변경 누락 보충(ref 가드로 커스텀 유지)
     }, 30000);
 
     return () => {
@@ -4130,6 +4168,8 @@ export default function Dashboard() {
       if (resvTimer) clearTimeout(resvTimer);
       if (roomsTimer) clearTimeout(roomsTimer);
       clearInterval(pollTimer);
+      document.removeEventListener('visibilitychange', onForeground);
+      window.removeEventListener('focus', onForeground);
       supabase.removeChannel(channel);
     };
   }, [clinic, dateStr, fetchCheckIns, fetchAssignments, fetchTimelineReservations, fetchSelfCheckIns, fetchStageStarts, fetchRooms]);
