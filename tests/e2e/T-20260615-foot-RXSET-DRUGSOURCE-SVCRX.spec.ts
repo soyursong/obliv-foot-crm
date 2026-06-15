@@ -74,10 +74,12 @@ test('AC2-1: services.id를 prescription_code_id로 저장하지 않음(null화)
   expect(src).not.toContain('prescription_code_id: code.id');
 });
 
-test('AC2-2: 진료차트 처방(MedicalChartPanel) 런타임 약 출처 불변 — 여전히 prescription_codes 직접 검색', () => {
+test('AC2-2: [SUPERSEDED by T-20260606-foot-RX-DRUG-WHITELIST] 진료차트 처방 검색 출처 → services 재바인딩', () => {
+  // RXSET 시점엔 진료차트 런타임 불변(보류)이었으나, 대표원장 문지은 확정(2026-06-15)으로
+  // RX-DRUG-WHITELIST 가 RXSET AC-2 보류분(진료차트 적용)을 수행 → 검색 박스가 services 캡슐로 재바인딩됨.
   const chart = read(CHART);
-  // 진료차트는 services 처방약 리스트로 재바인딩하지 않음(RX-DRUG-WHITELIST 대표원장 확인 전 불변)
-  expect(chart).not.toContain('searchServiceRxDrugs');
+  expect(chart).toContain('searchServiceRxDrugs'); // 진료차트 검색 박스가 단일 재바인딩 지점 소비
+  // 폴더 트리(DrugFolderTree=PROCMENU-P0 캐노니컬)는 이번 범위 밖 → prescription_codes 참조 잔존(정상)
   expect(chart).toContain('prescription_codes');
 });
 
