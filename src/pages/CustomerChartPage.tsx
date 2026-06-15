@@ -6111,6 +6111,15 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
               {/*   기존 2구역(우측 사이드) 예약내역 패널을 이 탭으로 이동. 핸들러·testid 동일 보존. */}
               {chartTab === 'reservations' && (
             <div className="space-y-3" data-testid="reservations-tab-content">
+              {/* AC-2: 2구역에 있던 '최근 방문'을 예약내역 탭으로 이동(중복 제거). 콘텐츠 동등. */}
+              <div className="rounded-lg border bg-white p-3 text-xs" data-testid="resv-tab-last-visit">
+                <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1">최근 방문</div>
+                <div className="text-xs text-gray-700">
+                  {latestCheckIn
+                    ? format(new Date(latestCheckIn.checked_in_at), 'yyyy-MM-dd HH:mm')
+                    : '방문 이력 없음'}
+                </div>
+              </div>
               <div className="rounded-lg border bg-white p-3 text-xs">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-[11px] font-semibold text-[#1e4e6e]">예약내역</div>
@@ -6642,15 +6651,7 @@ export default function CustomerChartPage({ customerId: propCustomerId }: { cust
             />
           </div>
 
-          {/* 최근 방문 */}
-          <div className="border-b border-gray-200 px-3 py-2">
-            <div className="text-[11px] font-semibold text-[#1e4e6e] mb-1">최근 방문</div>
-            <div className="text-xs text-gray-700">
-              {latestCheckIn
-                ? format(new Date(latestCheckIn.checked_in_at), 'yyyy-MM-dd HH:mm')
-                : '방문 이력 없음'}
-            </div>
-          </div>
+          {/* T-20260615-foot-CHART2-TABS-RESVTAB-DWELLSWAP AC-2: 2구역 '최근 방문'을 [예약내역] 탭(clinical)으로 이동. 여기서 제거(중복 삭제). */}
 
           {/* T-20260519-foot-PRECHECKIN-CHART AC-3: 접수 전 내원콜 방문 확인 */}
           {/* check_in 없음 + confirmed 예약 존재 시에만 표시 */}
