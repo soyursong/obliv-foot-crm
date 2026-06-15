@@ -139,7 +139,8 @@ export function CustomerHoverCard({ checkIn, reservationTime, compact, onContext
         className={cn(
           'hover:underline decoration-dotted underline-offset-2',
           onClick ? 'cursor-pointer' : 'cursor-context-menu',
-          compact ? 'font-bold text-sm truncate' : 'text-base font-bold',
+          // T-20260615-foot-RESVMGMT-REFIX-8 AC7: 성함 검정 통일(예약카드 상태별 텍스트색 상속 차단). compact=예약/대시보드 카드 트리거.
+          compact ? 'font-bold text-sm truncate text-gray-900' : 'text-base font-bold',
         )}
         title={onClick ? '클릭 → 고객차트 열기 · 우클릭/롱프레스 → 메뉴 · 호버 → 간단정보' : '우클릭/롱프레스 → 고객차트·예약 · 호버 → 간단정보'}
         onContextMenu={onContextMenu}

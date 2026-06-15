@@ -972,32 +972,8 @@ export default function Reservations() {
     [clinic, changedBy, profile?.name],
   );
 
-  const batchCheckIn = async (confirmed: Reservation[]) => {
-    if (!clinic || confirmed.length === 0) return;
-    if (!window.confirm(`${confirmed.length}건의 예약을 일괄 체크인하시겠습니까?`)) return;
-    const payload = confirmed.map((r) => ({
-      id: r.id,
-      customer_id: r.customer_id,
-      customer_name: r.customer_name ?? '',
-      customer_phone: r.customer_phone,
-      visit_type: r.visit_type,
-      reservation_date: r.reservation_date,
-    }));
-    const { data, error } = await supabase.rpc('batch_checkin', {
-      p_clinic_id: clinic.id,
-      p_reservations: payload,
-    });
-    if (error) {
-      toast.error(`일괄 체크인 실패: ${error.message}`);
-      return;
-    }
-    const result = data as { success: number; skipped: number };
-    const msg = result.skipped > 0
-      ? `${result.success}건 체크인, ${result.skipped}건 중복 스킵`
-      : `${result.success}건 일괄 체크인 완료`;
-    toast.success(msg);
-    fetchWeek();
-  };
+  // T-20260615-foot-RESVMGMT-REFIX-8 AC5: '일괄 배치(일괄 체크인)' 기능 제거 — 현장 불필요 판정(김주연 총괄).
+  //   batchCheckIn 핸들러 + 슬롯 하단 '일괄 배치' 버튼 동반 제거. batch_checkin RPC는 DB에 잔존(타 호출 없음, 무해).
 
   const reschedule = async (reservationId: string, newDate: string, newTime: string) => {
     if (!clinic) return;
@@ -1357,26 +1333,8 @@ export default function Reservations() {
           >
             {viewMode === 'week' ? '이번 주' : '오늘'}
           </Button>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* T-PROGRESS-CHECKPOINT AC-4: 경과분석 필터 토글 버튼 */}
-          <button
-            type="button"
-            data-testid="progress-filter-btn"
-            onClick={() => setFilterProgress(f => !f)}
-            className={cn(
-              'flex items-center gap-1.5 rounded-md border px-3 h-9 text-xs font-medium transition-colors',
-              filterProgress
-                ? 'border-teal-500 bg-teal-600 text-white'
-                : 'border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100',
-            )}
-          >
-            <TrendingUp className="h-3.5 w-3.5" />
-            경과분석
-            {filterProgress && <span className="ml-0.5 opacity-70">ON</span>}
-          </button>
-          {/* T-20260613-foot-RESVCAL-MYRESV-DEF (기능2): '내 예약' 드롭다운 필터.
-              '내 예약' = registrar_name(담당 이름) === 로그인 사용자 표시명(NAME-MATCH). '전체'는 기존 동작 유지(AC4). */}
+          {/* T-20260615-foot-RESVMGMT-REFIX-8 AC1: '전체예약/내 예약' 토글을 '이번 주' 옆(기간 토글 영역)으로 이동.
+              T-20260613-foot-RESVCAL-MYRESV-DEF (기능2): '내 예약' = registrar_name(담당 이름) === 로그인 표시명(NAME-MATCH). 동작 불변. */}
           <select
             data-testid="myresv-filter"
             aria-label="내 예약 필터"
@@ -1387,6 +1345,9 @@ export default function Reservations() {
             <option value="all">전체 예약</option>
             <option value="mine">내 예약</option>
           </select>
+        </div>
+        {/* T-20260615-foot-RESVMGMT-REFIX-8 AC1: 우측 컨트롤 순서를 '새 예약 → 경과분석 → 일간/주간'으로 재배치. */}
+        <div className="flex items-center gap-2">
           {/* T-20260513-foot-RESV-PLUS-PHONE-SEARCH: 페이지 상단 새 예약 버튼 — InlinePatientSearch(phone) 연결
               T-20260611-foot-PROGRESS-CAL-SESSION-AUTOLINK §2: 경과분석 뷰(조회 전용)에서는 예약생성 진입 숨김.
               filterProgress OFF 복귀 시 즉시 재노출(영구 제거 아님). */}
@@ -1403,6 +1364,22 @@ export default function Reservations() {
               새 예약
             </Button>
           )}
+          {/* T-PROGRESS-CHECKPOINT AC-4: 경과분석 필터 토글 버튼 */}
+          <button
+            type="button"
+            data-testid="progress-filter-btn"
+            onClick={() => setFilterProgress(f => !f)}
+            className={cn(
+              'flex items-center gap-1.5 rounded-md border px-3 h-9 text-xs font-medium transition-colors',
+              filterProgress
+                ? 'border-teal-500 bg-teal-600 text-white'
+                : 'border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100',
+            )}
+          >
+            <TrendingUp className="h-3.5 w-3.5" />
+            경과분석
+            {filterProgress && <span className="ml-0.5 opacity-70">ON</span>}
+          </button>
           <div className="flex rounded-md border">
             <button
               onClick={() => setViewMode('day')}
@@ -1469,11 +1446,13 @@ export default function Reservations() {
                   <th
                     key={d.toISOString()}
                     className={cn(
-                      'border-b border-r p-2 text-left text-xs font-medium overflow-hidden', // T-20260522-foot-RESV-CAL-COLWIDTH: overflow-hidden → table-fixed 시 텍스트 셀 밖 넘침 방지
+                      // T-20260615-foot-RESVMGMT-REFIX-8 AC6: 요일·일자 헤더 중앙정렬 + 폰트 확대(text-xs→text-sm, font-semibold).
+                      'border-b border-r p-2 text-center text-sm font-semibold overflow-hidden', // T-20260522-foot-RESV-CAL-COLWIDTH: overflow-hidden → table-fixed 시 텍스트 셀 밖 넘침 방지
                       !isOpenDay(d) && 'bg-gray-50 text-muted-foreground',
                       isSameDay(d, new Date()) && 'bg-teal-50 text-teal-700',
                     )}
                   >
+                    {/* AC6: 요일·일자 한 줄 중앙 배치. 키운 글자(text-sm font-semibold)로 가독성 확보. */}
                     {WEEK_DAYS_KO[i]} {format(d, 'M/d')}
                     {/* T-20260611-foot-RESVCAL-DISPLAY-REWORK item1: 날짜 헤더 총건수 요약.
                         T-20260613-foot-RESVCAL-FOLLOWUP-5FIX AC1 (REDEFINITION (a)): HL을 총건수에 포함(초+재+힐러).
@@ -1486,7 +1465,7 @@ export default function Reservations() {
                         //   초진=초록/재진=파랑/HL=노랑 칩으로 색상 코딩 일관. 총건수(초+재)는 앞에 굵게.
                         <div
                           data-testid={`day-summary-${format(d, 'yyyy-MM-dd')}`}
-                          className="mt-1 flex flex-wrap items-center gap-1 text-[10px] font-medium leading-none"
+                          className="mt-1 flex flex-wrap items-center justify-center gap-1 text-[10px] font-medium leading-none"
                         >
                           <span className="font-semibold text-foreground/80">총 {c.n + c.r + c.h}</span>
                           <span className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-emerald-700">초 {c.n}</span>
@@ -1688,18 +1667,17 @@ export default function Reservations() {
                                       ) : (
                                         <span
                                           className={cn(
-                                            'font-semibold',
+                                            // T-20260615-foot-RESVMGMT-REFIX-8 AC7: 성함 컬러 검정 통일(상태별 카드색 상속 차단).
+                                            'font-semibold text-gray-900',
                                             r.customer_id && 'cursor-pointer hover:underline hover:text-teal-700 transition-colors',
                                             r.status === 'cancelled' && 'line-through',
                                           )}
                                           onClick={(e) => {
                                             if (!r.customer_id) return;
                                             e.stopPropagation();
-                                            window.open(
-                                              `/chart/${r.customer_id}`,
-                                              `chart-${r.customer_id}`,
-                                              'width=820,height=960,scrollbars=yes,resizable=yes',
-                                            );
+                                            // T-20260615-foot-RESVMGMT-REFIX-8 AC8: 취소(cancelled) 고객 클릭 시 별도 window.open 차트가 아니라
+                                            //   정상 예약 클릭과 동일한 인앱 차트 패널(handleResvOpenChart)로 통일. 별도 창 분기 제거.
+                                            handleResvOpenChart(resvAsCheckIn(r));
                                           }}
                                         >
                                           {r.customer_name}
@@ -1835,23 +1813,8 @@ export default function Reservations() {
                                     )}
                                   </div>
                                 ))}
-                                {(() => {
-                                  // T-20260611-foot-PROGRESS-VIEW-BATCH-CHECKIN-LEAK (정본 AUTOLINK §2b):
-                                  // 경과분석 뷰(filterProgress ON)는 조회 전용 → '일괄 배치' 버튼 숨김.
-                                  // batchCheckIn 로직 자체는 불변(버튼 렌더 가드만). 일반 달력은 기존대로 노출·동작.
-                                  const confirmed = list.filter((r) => r.status === 'confirmed');
-                                  return !filterProgress && confirmed.length > 0 ? (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        batchCheckIn(confirmed);
-                                      }}
-                                      className="w-full mt-0.5 rounded bg-teal-50 border border-teal-200 px-1 py-0.5 text-xs font-medium text-teal-700 hover:bg-teal-100 transition"
-                                    >
-                                      일괄 배치 ({confirmed.length})
-                                    </button>
-                                  ) : null;
-                                })()}
+                                {/* T-20260615-foot-RESVMGMT-REFIX-8 AC5: '일괄 배치' 버튼 제거(현장 불필요).
+                                    이전 BATCH-CHECKIN-LEAK 가드 블록 + batchCheckIn 호출 동반 삭제. */}
                                 {/* T-20260611-foot-PROGRESS-CAL-SESSION-AUTOLINK §2 (+)예약생성 제거:
                                     경과분석 뷰(filterProgress ON)는 조회 전용 → 슬롯 예약생성(+) 버튼 숨김.
                                     BATCH-CHECKIN-LEAK 선례와 동일 가드(렌더만 차단, openNewSlot 로직 불변).
