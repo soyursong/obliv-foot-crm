@@ -63,6 +63,31 @@ shipped ad88c41(이후 5b0eb3f revert됨)과 상이 → 새 구현.
 - 너비 보존: 폭 집합 동일성 spec으로 고정.
 - B 미변경 / 필터·탭 미침범: 가드 spec.
 
+## 현장 클릭 시나리오 (E2E 변환 가이드 / scenario_missing 해소)
+> spec: `tests/e2e/T-20260615-foot-DOCPATIENTLIST-DASHCOL-REALIGN.spec.ts` (9 PASS). 폭/비율 단언 없음(AC5 보존 — 순서만 검증).
+
+### 시나리오 1: 오늘 화면 컬럼 순서 (정상 동선)
+1. 로그인 → 진료 도구(DoctorTools) 진입 → "진료(처방) 환자 목록" 탭 클릭
+2. 환자 목록 테이블 행 컬럼 순서가 좌→우 `방 → 상태 → 초진/재진 → 이름 → 차트번호 → 처방 → 예약메모 → [버튼]` 순으로 렌더되는지 확인
+   → spec 「오늘 모드 JSX 셀 시퀀스」 / grid-template `4.75rem_3.75rem_3rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_auto` 검증
+3. **초진/재진은 독립 컬럼**(이름 셀 prefix 아님) — 상태와 이름 사이 별도 셀(VisitTypeBadge)로 존재 확인
+   → spec 「델타1: 방문유형이 상태와 이름 사이 독립 컬럼」
+4. 예약메모(booking-memo) 컬럼이 맨 오른쪽 [버튼] 바로 앞에 위치 확인
+   → spec 「델타2: 예약메모가 액션 버튼 바로 앞」
+
+### 시나리오 2: 이력(과거 날짜) 화면도 동일 순서 (AC4)
+1. 날짜 네비게이터로 과거 날짜(오늘 아님) 선택 → 이력(read-only) 모드 진입
+2. 공유 컬럼 상대 순서(방문유형→이름→차트번호→처방)가 오늘 모드와 동일하게 렌더 확인
+   (이력 모드는 read-only 설계로 상태·방·예약메모·액션 부재 — DATEMODE-HISTORY AC, 공유 컬럼 배치만 통일)
+   → spec 「이력 모드 공유 컬럼 순서 = 방문유형→이름→차트번호→처방」
+
+### 시나리오 3: 회귀 없음 (AC6)
+1. 처방 셀 빠른처방 expandable(펼쳐보기) 클릭 → 정상 동작
+2. 처방필터 탭 전환·정렬 토글 동작 유지 확인 (signdoctor-filter / patient-sort-toggle 진입점 잔존)
+   → spec 「행필터/탭(RXLIST-RENAME-DOCFILTER) 진입점 미침범」
+3. (대조) 진료 알림판(DoctorCallDashboard, B) 컬럼 순서·폭 변경 없음 확인 (B 불변)
+   → spec 「DoctorCallDashboard(B) 미변경 가드」
+
 ## 검증
 - build OK (vite 3.86s).
 - 신규 E2E: tests/e2e/T-20260615-foot-DOCPATIENTLIST-DASHCOL-REALIGN.spec.ts — 9 PASS.
