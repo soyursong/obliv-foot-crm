@@ -5510,6 +5510,7 @@ export default function Dashboard() {
     doctor_status: null,
     doctor_started_at: null,
     doctor_ended_at: null,
+    call_list_manual_order: null,
   }), [clinic?.id]);
 
   // T-20260611-foot-CTXMENU-UNIFY-CANONICAL AC2: 타임라인 우클릭 [예약상세] → 예약상세 팝업(ReservationDetailPopup) 오픈.

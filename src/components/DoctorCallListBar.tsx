@@ -114,15 +114,17 @@
  *    (doctor-call-room-summary, 예 'C2 · C5 · C1'). 방코드 = getCurrentRoomCode(checkin-slot SSOT, ROOM-LABEL의
  *    입실게이트+getAssignedSlotName 재사용 — 중복구현 금지) → 요약행 방번호 == 각 행 위치배지 방번호 일치.
  *    미배정 토큰 '–'. 토큰 순서 == WS-B 진입순 번호 순서(N번 ↔ N번째 방코드 대응).
- *  WS-C(보류) 수기 순서올림(▲/드래그): 공유 realtime 화면이라 localStorage 불가 → DB 영속 필요
- *    (check_ins ADDITIVE 컬럼 call_list_manual_order 후보, data-architect CONSULT MSG-20260615-191902-rsue 진행 중).
- *    CONSULT-REPLY 전 영속화 코드·분산 sort 도입 *보류*. 통합 후 정렬 설계(분산 sort 금지):
- *      단일 sort 우선순위 = 진료중(examination) 고정 > 수기 override(call_list_manual_order asc) > 자동 진입순(callEntryTime)
- *      — activeList .sort를 단일 비교함수로 통합(WS-2 진료중 고정과 정합). DA GO 후 후속 커밋에서 구현.
+ *  WS-C 수기 순서올림(▲): 공유 realtime 화면이라 localStorage 불가 → check_ins.call_list_manual_order ADDITIVE 컬럼 영속
+ *    (data-architect CONSULT-REPLY MSG-20260615-192219-rbcg GO / contract_required:false / 대표게이트 면제·supervisor DDL-diff만).
+ *    행 우측 ▲(doctor-call-move-up) 클릭 → 활성 큐에서 한 칸 위로 + 현재순서 sparse 증분(10·20·30…) 재할당 영속.
+ *    정렬은 단일 통합 비교자 compareCallOrder로 일원화(분산 sort 금지, WS-2 정합):
+ *      tier1 진료중(examination/doctor_status=in_treatment) 고정 > tier2 수기 override(call_list_manual_order asc) > tier3 자동 진입순(callEntryTime).
+ *    manual_order NULL(마이그 전·미수정)이면 tier-3로 수렴 = 기존 거동 보존. write 실패는 toast graceful(낙관적 갱신 없이 onRefresh realtime 반영).
+ *    진료중 행 바로 아래에서는 ▲ 미노출(tier-1이 재고정 → 무의미 write 차단). 마이그: supabase/migrations/20260616000000_callist_manual_order.sql (+rollback).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Stethoscope, Check, Pencil, ChevronDown, ChevronUp, MapPin, RotateCcw, EyeOff } from 'lucide-react';
+import { Stethoscope, Check, Pencil, ChevronDown, ChevronUp, MapPin, RotateCcw, EyeOff, ArrowUp } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -190,6 +192,47 @@ export function callEntryTime(
   return ci.checked_in_at; // 폴백: 방문(체크인) 시각 — 방문 단위 안정.
 }
 
+/**
+ * T-20260615-foot-CALLLIST-ROOMSUMMARY-NUM-REORDER WS-C — "진료중" 판정.
+ *   status==='examination'(원장실 입실) OR doctor_status==='in_treatment'(WS-2 진료중 세션) → 진료중.
+ *   진료중 행은 정렬 tier-1에서 항상 상단 고정(수기 override·진입순보다 우선) → 진료 중인 환자가 큐 상단 이탈 방지.
+ *   doctor_status 컬럼 미적용(마이그 전) 환경에선 undefined → examination만으로 판정(안전 폴백).
+ */
+function isInTreatment(
+  ci: Pick<CheckIn, 'status' | 'doctor_status'>,
+): boolean {
+  return ci.status === 'examination' || ci.doctor_status === 'in_treatment';
+}
+
+/**
+ * T-20260615-foot-CALLLIST-ROOMSUMMARY-NUM-REORDER WS-C — 진료콜 명단 단일 통합 정렬 비교자.
+ *   분산 sort 금지(WS-2 정합) — 정렬 우선순위를 이 한 함수로 통합한다:
+ *     1) 진료중 고정      : isInTreatment(examination/in_treatment) → 항상 상단.
+ *     2) 수기 override    : call_list_manual_order asc (값 있는 행이 NULL 행보다 위, 값끼리는 작은 값 위).
+ *     3) 자동 진입순      : callEntryTime asc (status_flag_history 최근 purple/yellow changed_at, 폴백 checked_in_at).
+ *   WS-A 요약행·WS-B 번호뱃지는 이 정렬 결과(activeList) 순서를 그대로 인덱싱 → 수기 override 반영 최종순서 기준 재계산.
+ *   call_list_manual_order 미적용(마이그 전)·NULL → 전부 tier-3(자동 진입순)로 수렴 = 기존 거동 보존(backward-compatible).
+ */
+export function compareCallOrder(
+  a: Pick<CheckIn, 'checked_in_at' | 'status_flag_history' | 'status' | 'doctor_status' | 'call_list_manual_order'>,
+  b: Pick<CheckIn, 'checked_in_at' | 'status_flag_history' | 'status' | 'doctor_status' | 'call_list_manual_order'>,
+): number {
+  // tier 1) 진료중 고정 — 상단.
+  const at = isInTreatment(a) ? 0 : 1;
+  const bt = isInTreatment(b) ? 0 : 1;
+  if (at !== bt) return at - bt;
+  // tier 2) 수기 override — call_list_manual_order asc. NULL은 값 있는 행보다 뒤.
+  const am = typeof a.call_list_manual_order === 'number' ? a.call_list_manual_order : null;
+  const bm = typeof b.call_list_manual_order === 'number' ? b.call_list_manual_order : null;
+  if (am !== null && bm !== null) {
+    if (am !== bm) return am - bm;
+  } else if (am !== null || bm !== null) {
+    return am !== null ? -1 : 1;
+  }
+  // tier 3) 자동 진입순 — callEntryTime asc.
+  return callEntryTime(a).localeCompare(callEntryTime(b));
+}
+
 /** rowHidden localStorage 로드(array→Set). 파싱 실패/접근 불가 시 빈 집합. */
 function loadRowHidden(): Set<string> {
   try {
@@ -231,10 +274,10 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
             ci.status_flag === 'yellow' ||
             ci.status === 'healer_waiting',
         )
-        // T-20260611-foot-DOCTORCALL-SORT-INTREATMENT-BADGE WS-1: 정렬 키 checked_in_at(접수순) →
-        //   callEntryTime(진료콜 진입 시각, status_flag_history 파생). 오름차순 = 콜 진입이 빠른 환자 상단
-        //   (가장 오래 기다린 콜대상부터 호출). 대상 상태 보라/노랑/힐러대기 모두 동일 키 적용.
-        .sort((a, b) => callEntryTime(a).localeCompare(callEntryTime(b))),
+        // T-20260611-foot-DOCTORCALL-SORT-INTREATMENT-BADGE WS-1 + T-20260615 WS-C: 단일 통합 정렬자.
+        //   compareCallOrder = 진료중 고정 > 수기 override(call_list_manual_order asc) > 자동 진입순(callEntryTime).
+        //   분산 sort 금지 — 정렬 우선순위를 한 함수로 통합(WS-2 정합). manual_order NULL이면 tier-3로 수렴(기존 거동).
+        .sort(compareCallOrder),
     [checkIns],
   );
 
@@ -271,6 +314,42 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
   const roomSummary = useMemo(
     () => activeList.map((ci) => getCurrentRoomCode(ci) ?? '–'),
     [activeList],
+  );
+
+  // WS-C) 수기 순서 올림(▲) — 해당 행을 활성 큐(activeList)에서 한 칸 위로. 공유 realtime 영속(DB).
+  //   "준비 빨리 끝난" 환자를 먼저 들어가게 위로 올림. localStorage 불가(원장·직원 공유 화면) →
+  //   check_ins.call_list_manual_order 영속. 현재 표시순서를 sparse 증분(10·20·30…)으로 재할당해 핀
+  //   (DA 권고: int+renumber 무방, <20행). 진료중 고정 행 위로는 이동 불가(tier-1이 재고정 → 무의미 write 차단).
+  //   write 실패(예: 마이그 전 컬럼 부재)는 toast로 graceful — 낙관적 갱신 없이 onRefresh로 realtime 반영.
+  const [reordering, setReordering] = useState(false);
+  const reorderUp = useCallback(
+    async (ci: CheckIn) => {
+      const idx = activeList.findIndex((x) => x.id === ci.id);
+      if (idx <= 0) return; // 이미 최상단
+      if (isInTreatment(activeList[idx - 1])) return; // 진료중 환자 위로는 못 올림(tier-1 고정)
+      const next = [...activeList];
+      [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]; // 한 칸 위로 swap
+      setReordering(true);
+      try {
+        const results = await Promise.all(
+          next.map((row, i) =>
+            supabase
+              .from('check_ins')
+              .update({ call_list_manual_order: (i + 1) * 10 })
+              .eq('id', row.id),
+          ),
+        );
+        const failed = results.find((r) => r.error);
+        if (failed?.error) throw failed.error;
+        toast.success('진료 순서를 올렸습니다');
+        onRefresh?.();
+      } catch {
+        toast.error('순서 변경 저장 실패 — 잠시 후 다시 시도해주세요');
+      } finally {
+        setReordering(false);
+      }
+    },
+    [activeList, onRefresh],
   );
 
   // ── T-20260610-foot-CALLLIST-ROW-HIDE-AUTOSHOW ─────────────────────────────────────────────
@@ -740,12 +819,22 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
         ) : (
           visibleList.map((ci) => {
             const inactive = ci.status_flag === 'pink'; // 진료완료 = 비활성
+            const activeIdx = activeOrderNo.get(ci.id); // 1-based 진입순(활성만)
+            // WS-C) ▲ 노출 조건: 활성 + 2번 이하 아님(최상단 제외) + 바로 위가 진료중 아님(진료중 위로 못 올림).
+            const canMoveUp =
+              !inactive &&
+              typeof activeIdx === 'number' &&
+              activeIdx > 1 &&
+              !isInTreatment(activeList[activeIdx - 2]);
             return (
               <DoctorCallRow
                 key={ci.id}
                 checkIn={ci}
                 inactive={inactive}
-                orderNo={activeOrderNo.get(ci.id)}
+                orderNo={activeIdx}
+                canMoveUp={canMoveUp}
+                onMoveUp={canMoveUp ? () => reorderUp(ci) : undefined}
+                reordering={reordering}
                 visitCount={ci.customer_id ? visitCounts[ci.customer_id] : undefined}
                 onHide={() => hideRow(ci)}
                 onOpenChart={onOpenChart}
@@ -766,6 +855,12 @@ interface DoctorCallRowProps {
   visitCount?: number;
   /** T-20260615-foot-CALLLIST-ROOMSUMMARY-NUM-REORDER WS-B: 진료콜 진입순 1-based 번호. 활성 콜대상만(done=undefined → 미표기) */
   orderNo?: number;
+  /** WS-C: 수기 순서 올림(▲) 가능 여부 — 최상단 아님 + 위가 진료중 아님 */
+  canMoveUp?: boolean;
+  /** WS-C: ▲ 클릭 → 활성 큐에서 한 칸 위로(영속). canMoveUp일 때만 전달됨 */
+  onMoveUp?: () => void;
+  /** WS-C: 순서 변경 저장 진행 중(중복 클릭 방지 disable) */
+  reordering?: boolean;
   /** 진료완료(핑크) = 비활성 — dimmed + "진료완료" 배지, 콜 대상 제외 */
   inactive?: boolean;
   /** T-20260610-foot-CALLLIST-ROW-HIDE-AUTOSHOW AC-1: 이 행 숨기기(표시 필터에서 제외) */
@@ -775,7 +870,7 @@ interface DoctorCallRowProps {
   onRefresh?: () => void;
 }
 
-function DoctorCallRow({ checkIn, visitCount, orderNo, inactive = false, onHide, onOpenChart, onRefresh }: DoctorCallRowProps) {
+function DoctorCallRow({ checkIn, visitCount, orderNo, canMoveUp = false, onMoveUp, reordering = false, inactive = false, onHide, onOpenChart, onRefresh }: DoctorCallRowProps) {
   const isReturning = checkIn.visit_type === 'returning';
   const isExperience = checkIn.visit_type === 'experience';
   // T-20260609-foot-CALLLIST-HEALER-POSITION item1 + REOPEN FIX-SPEC: 힐러 구분 배지.
@@ -929,6 +1024,19 @@ function DoctorCallRow({ checkIn, visitCount, orderNo, inactive = false, onHide,
               <Check className="h-3 w-3" />
               진료완료
             </span>
+          )}
+          {/* T-20260615-foot-CALLLIST-ROOMSUMMARY-NUM-REORDER WS-C) 수기 순서 올림(▲) — 활성 큐에서 한 칸 위로.
+              "준비 빨리 끝난" 환자를 먼저 들어가게. 최상단·진료중 바로 아래(canMoveUp=false)면 미노출. 저장 중 disable. */}
+          {canMoveUp && onMoveUp && (
+            <button
+              onClick={onMoveUp}
+              disabled={reordering}
+              data-testid="doctor-call-move-up"
+              className="inline-flex items-center justify-center rounded min-w-[28px] min-h-[28px] border border-purple-200 bg-white text-purple-500 hover:text-purple-700 hover:bg-purple-50 transition-colors disabled:opacity-40"
+              title="진료 순서 올리기 — 한 칸 위로 (공유 화면 반영)"
+            >
+              <ArrowUp className="h-3.5 w-3.5" />
+            </button>
           )}
           {/* T-20260610-foot-CALLLIST-ROW-HIDE-AUTOSHOW AC-1) 이 행 숨기기 — 표시 필터에서 제외.
               신규 listup 시그니처로 재등장하면 자동 재노출(부모 hiddenSigs/listupSignature가 보장).

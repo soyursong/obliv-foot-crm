@@ -374,6 +374,10 @@ export interface CheckIn {
   doctor_started_at: string | null;
   /** doctor_status='done' 전환 시각 — T-20260612-foot. */
   doctor_ended_at: string | null;
+  /** 진료콜 명단 수기 순서 override — T-20260615-foot-CALLLIST-ROOMSUMMARY-NUM-REORDER WS-C (DA CONSULT GO, ADDITIVE).
+   *  NULL = 자동 진입순(callEntryTime). 값 있으면 수기 우선(asc). 진료중(examination/in_treatment)은 항상 상단 고정.
+   *  공유 realtime 영속(localStorage 불가) — check_ins 당일 행 단위(다음날 새 행에서 자연 소멸). */
+  call_list_manual_order: number | null;
   /** T-20260604-foot-DASH-CARD-NAME-DENORM-SYNC: customers(name) embed 조인 결과.
    *  카드 표기명을 customers 현재 이름 우선 렌더하기 위한 비영속 파생 필드.
    *  customer_id 미연결(unlink) 시 null → denormalized customer_name fallback.
