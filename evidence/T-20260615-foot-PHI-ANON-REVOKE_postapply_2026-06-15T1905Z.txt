@@ -1,0 +1,6 @@
+=== POST-APPLY  2026-06-15T19:05:17.807Z ===
+[grants anon/authenticated]
+  claim_items                  authenticated  DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+  edi_submissions              authenticated  DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+  insurance_claim_diagnoses    authenticated  DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+  insurance_claims             authenticated  DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
