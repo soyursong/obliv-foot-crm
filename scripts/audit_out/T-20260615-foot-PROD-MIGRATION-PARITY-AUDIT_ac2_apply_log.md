@@ -5,7 +5,34 @@ prod = rxlomoozakkjesdqjtvd (pooler 직결). 모든 적용 전 dry-run/probe(rea
 
 ---
 
-## #A 20260520000010_insurance_claims_schema — ⛔ 적용 실패(자동 롤백) / DRIFT-COLLISION 발견
+## #A 20260520000010_insurance_claims_schema — ✅ 적용 완료 (2026-06-15 ~21:25 KST, 옵션 A 개명본)
+
+게이트: DA-20260615-foot-INSURANCE-CLAIM-NAMING(옵션 A GO) + supervisor 재-DDL-diff GO(21:20, commit 7578162). autonomy §3.1(ADDITIVE+DA GO → 대표게이트 면제).
+
+### dry-run(적용 전, read-only)
+- insurance_claims/claim_items/insurance_claim_diagnoses/edi_submissions ❌ 전부 부재 (= live 42P01 RC 확인)
+- live claim_diagnoses 지문: 정책 `claim_diagnoses_auth_all`, 8컬럼(disease_code 포함), rows=4
+
+### `--apply` 결과 (multi-statement 단일 트랜잭션)
+- 신규 4테이블 ✅ 전부 생성. RLS enabled ✅×4. 정책 1개씩 ✅×4. NOTIFY pgrst reload 완료 → **42P01 소멸**.
+- **🛡️ live claim_diagnoses 무변경 검증 PASS**: 적용 전/후 정책·컬럼·행수 100% 동일(JSON 지문 일치). DRIFT 재발 0. (옵션 A 개명으로 동명충돌 제거된 효과 실증)
+
+### supervisor 검증 5포인트 사후 확인 (독립 쿼리)
+| 포인트 | 결과 |
+|--------|------|
+| (a) prod live claim_diagnoses 미접촉 0건 | ✅ 지문 불변(정책/컬럼/rows=4) |
+| (b) 새 테이블명 insurance_claim_diagnoses만 존재 | ✅ pg_policies = `insurance_claim_diagnoses_auth_all` |
+| (c) 신규 RLS canonical + anon 차단 | ✅ `is_approved_user() AND clinic_id=current_user_clinic_id()`, roles={authenticated}. anon SELECT 시 **0 rows**(RLS row-block) |
+| (d) down.sql 신규 테이블 한정 | ✅ 신규 4테이블만 DROP (live claim_diagnoses 미포함) |
+
+### ⚠ 비차단 노트 (supervisor 판단 요청)
+- `has_table_privilege('anon', 'insurance_claims', 'SELECT')` = true → **Supabase public 스키마 플랫폼 기본 GRANT**(전 테이블 공통). RLS enabled + 정책 `TO authenticated` 단독이라 anon 실 row 접근 = **0건**(시뮬 검증 완료). 데이터 노출 0. PHI 인접이라 명시적 `REVOKE ... FROM anon` 하드닝을 원하면 별건 follow-up 가능(현 상태도 안전). supervisor/data-architect 결정.
+
+→ **#A CLOSED (apply 완료, 42P01 해소).**
+
+---
+
+## (이전 기록) #A 20260520000010_insurance_claims_schema — ⛔ 적용 실패(자동 롤백) / DRIFT-COLLISION 발견 (개명 전, 보존용)
 
 ### 시도 결과
 - dry-run: insurance_claims ❌부재 / claim_items ❌부재 / **claim_diagnoses ✅존재** / edi_submissions ❌부재
