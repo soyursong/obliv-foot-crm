@@ -232,6 +232,16 @@ test.describe('AC3-b: (+) 팝업 신규고객 직접 등록(성함+연락처)', 
     expect(fn![0], '고객 정보 필수 가드 누락').toContain('고객 정보(성함·연락처)가 필요합니다.');
   });
 
+  test('AC3b-7b: GUARD — FULL UNIQUE 충돌(23505) 시 에러로 막지 않고 기존 고객 재-resolve 후 재사용', () => {
+    // MSG-20260615-155718: foot customers (clinic_id, phone) FULL UNIQUE. 현장이 검색에서 못 찾았을 뿐
+    // 실제 존재(번호 표기·정규화 차이)하는 케이스 → 23505 시 기존 고객 id 로 resolvedCustomerId 재할당(재사용).
+    const fn = RESV_PAGE.match(/handleCreateReservationFromPopup = useCallback\([\s\S]*?\[clinic, changedBy, profile\?\.name\]/);
+    expect(fn, 'handleCreateReservationFromPopup 파싱 실패').toBeTruthy();
+    // 23505 분기 안에서 (clinic_id, phone) 재조회 → conflictHit.id 재사용
+    const guard = fn![0].match(/error\.code === '23505'[\s\S]*?conflictHit[\s\S]*?resolvedCustomerId = conflictHit\.id/);
+    expect(guard, '23505 충돌 시 기존 고객 재사용(conflictHit.id) 누락 — find-or-create 위반').toBeTruthy();
+  });
+
   test('AC3b-8: 기존 고객 검색 선택 동선 불변(handleSelectOtherCustomer에서 직접 등록 모드 해제)', () => {
     const fn = RESV_POPUP.match(/function handleSelectOtherCustomer\(p: PatientMatch\)[\s\S]*?loadZone1Data\(p\.id\);\s*\}/);
     expect(fn, 'handleSelectOtherCustomer 파싱 실패').toBeTruthy();
