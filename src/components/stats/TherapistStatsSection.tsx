@@ -120,7 +120,7 @@ export default function TherapistStatsSection({ summary, services, loading }: Pr
             {loading || servicesByTherapist.length === 0 ? (
               <EmptyOrLoading loading={loading} />
             ) : (
-              /* 박스 1개 = 치료사 1명 (회색 카드). 데스크탑 4열, 태블릿 3열, 모바일 2열 */
+              /* 박스 1개 = 치료사 1명 (화이트 카드 #FFFFFF, border·shadow로 경계). 데스크탑 4열, 태블릿 3열, 모바일 2열 */
               <div
                 className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"
                 data-testid="svcdist-box-grid"
@@ -141,7 +141,7 @@ export default function TherapistStatsSection({ summary, services, loading }: Pr
                     <div
                       key={t.name}
                       data-testid="svcdist-box"
-                      className="rounded-lg bg-white border p-3 flex flex-col gap-2"
+                      className="rounded-lg bg-white border shadow-sm p-3 flex flex-col gap-2"
                     >
                       {/* 카드 헤더: 치료사명 + 총 N건 */}
                       <div className="flex items-baseline justify-between gap-2 border-b pb-2">
