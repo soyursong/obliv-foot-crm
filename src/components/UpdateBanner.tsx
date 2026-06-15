@@ -131,23 +131,23 @@ export default function UpdateBanner() {
       data-phase={phase}
       role="status"
       aria-live="polite"
-      className="fixed inset-x-0 bottom-0 z-[200] flex flex-wrap items-center justify-center gap-3 border-t border-emerald-300 bg-emerald-50 px-4 py-3 text-emerald-900 shadow-[0_-2px_12px_rgba(0,0,0,0.08)]"
+      className="fixed bottom-4 left-1/2 z-[200] flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-800 shadow-lg"
     >
-      <span className="text-sm font-medium sm:text-base">{message}</span>
+      <span className="text-xs font-medium sm:text-sm">{message}</span>
 
       {savedNotice && (
         <span
           data-testid="app-update-saved-notice"
-          className="rounded-md bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700"
+          className="rounded-md bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600"
         >
           자동 저장됨
         </span>
       )}
 
       <Button
-        size="lg"
+        size="sm"
         data-testid="app-update-reload"
-        className="bg-emerald-600 text-white hover:bg-emerald-700"
+        className="bg-slate-700 text-white hover:bg-slate-800"
         disabled={phase === 'flushing'}
         onClick={() => void attemptReload()}
       >

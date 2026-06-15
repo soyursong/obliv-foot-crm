@@ -1,0 +1,13 @@
+import { chromium } from '@playwright/test';
+const storage = '.auth/user.json';
+const b = await chromium.launch();
+const ctx = await b.newContext({ storageState: storage, viewport: { width: 1280, height: 800 } });
+const page = await ctx.newPage();
+await page.addInitScript(() => { window.__updateCountdownSeconds = 30; });
+await page.route('**/version.json*', r => r.fulfill({ status:200, contentType:'application/json', headers:{'cache-control':'no-store'}, body: JSON.stringify({ buildId:'REMOTE-CAP', builtAt:new Date().toISOString() }) }));
+await page.goto('http://localhost:4173/');
+await page.getByTestId('app-update-banner').waitFor({ state:'visible', timeout: 10000 });
+await page.waitForTimeout(500);
+await page.screenshot({ path: 'evidence/T-20260615-foot-UPDATEPOPUP-MONO-RESTYLE_render.png' });
+console.log('captured');
+await b.close();
