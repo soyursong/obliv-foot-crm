@@ -16,6 +16,17 @@
 --   2b (20260615180000_*.PHASE2B_HOLD): 두 FE 전환 완료 후에만 anon SELECT 정책 DROP + REVOKE.
 --
 -- 본 파일 = anon→RPC 대체 패턴의 SSOT(레퍼런스). body 횡전개 시 동일 2a/2b 구조 포크.
+--
+-- ── architect CONSULT-REPLY(DA-20260615-foot-RLS-CLINIC-ISOLATION, 22:40) 의무 보강 반영 ──
+--   Q3(CRITICAL): SECURITY DEFINER 함수 7종 전부 SET search_path = public, pg_temp 고정
+--     — pg_temp 미명시 시 암묵적 최우선 검색 → search_path 하이재킹 벡터. 명시로 차단.
+--   Q2(의무): 부분일치·단일키 enumeration 금지.
+--     · match_reservation: 끝8자리 부분일치(Fallback A)·이름단독(Fallback B) 폴백 제거
+--       (digit 정규화 완전비교가 T-20260529 포맷불일치 근본원인 제거 → 폴백 불요·보안↑).
+--     · reservation_banner / find_customer: foot 셀프체크인 키오스크 UX = phone-only(예약번호 입력
+--       필드 없음). 가용한 본인식별자=전화 1개 → digit 정규화 **완전일치**만 + 반환은 zero-PII
+--       (banner=시간/방문유형, find_customer=id UUID). 부분일치 0·타 환자 PII 누출 0 으로
+--       enumeration 위험 최소화. (예약번호 2차인자는 본 제품 동선에 부재 → 적용 불가, INFO 통지.)
 -- author: dev-foot / 2026-06-15
 -- ════════════════════════════════════════════════════════════════════════════
 
@@ -29,7 +40,7 @@ CREATE OR REPLACE FUNCTION public.fn_selfcheckin_reservation_banner(
   p_phone     TEXT
 )
 RETURNS TABLE(reservation_time TIME WITHOUT TIME ZONE, visit_type TEXT)
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
   SELECT r.reservation_time, r.visit_type
     FROM reservations r
    WHERE r.clinic_id = p_clinic_id
@@ -49,7 +60,7 @@ CREATE OR REPLACE FUNCTION public.fn_selfcheckin_find_customer(
   p_phone     TEXT
 )
 RETURNS UUID
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
   SELECT c.id FROM customers c
    WHERE c.clinic_id = p_clinic_id
      AND length(regexp_replace(COALESCE(p_phone,''),'\D','','g')) >= 9
@@ -65,7 +76,7 @@ CREATE OR REPLACE FUNCTION public.fn_selfcheckin_existing_checkin_today(
   p_customer_id UUID
 )
 RETURNS TABLE(id UUID, queue_number INT)
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
   SELECT ci.id, ci.queue_number
     FROM check_ins ci
    WHERE ci.clinic_id = p_clinic_id
@@ -75,7 +86,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
    LIMIT 1
 $$;
 
--- ── [읽기 대체] 4) 당일 예약 매칭 (customer_id → phone → name 순) ──────────────
+-- ── [읽기 대체] 4) 당일 예약 매칭 (customer_id → phone 완전일치 順; name/부분일치 폐지 §16-3) ──
 CREATE OR REPLACE FUNCTION public.fn_selfcheckin_match_reservation(
   p_clinic_id   UUID,
   p_customer_id UUID,
@@ -83,7 +94,7 @@ CREATE OR REPLACE FUNCTION public.fn_selfcheckin_match_reservation(
   p_name        TEXT
 )
 RETURNS UUID
-LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
   v_today DATE := (now() AT TIME ZONE 'Asia/Seoul')::date;
   v_id    UUID;
@@ -97,25 +108,17 @@ BEGIN
     IF v_id IS NOT NULL THEN RETURN v_id; END IF;
   END IF;
 
-  IF length(v_digits) >= 8 THEN
+  -- §16-3 (CONSULT-REPLY Q2, 의무): 부분일치·단일키 enumeration 금지.
+  --   전화는 digit 정규화 후 **완전일치**만(p_phone, p_customer 양측 \D 제거 → 끝8자리 폴백 불필요).
+  --   FE(SelfCheckIn.tsx) T-20260529 의 끝8자리 부분일치(Fallback A)·이름단독(Fallback B) 폴백은
+  --   *raw 문자열 포맷 불일치* 우회용이었으나, digit 정규화 완전비교가 그 근본원인을 제거하므로
+  --   RPC 에서는 제외(보안↑·견고성↑). 이름 단독 매칭은 동명이인 → 타 환자 예약 UUID 누출 구멍이라 금지.
+  IF length(v_digits) >= 9 THEN
     SELECT r.id INTO v_id FROM reservations r
      WHERE r.clinic_id=p_clinic_id AND r.reservation_date=v_today AND r.status='confirmed'
        AND regexp_replace(COALESCE(r.customer_phone,''),'\D','','g') = v_digits
      ORDER BY r.reservation_time ASC LIMIT 1;
     IF v_id IS NOT NULL THEN RETURN v_id; END IF;
-    -- 끝 8자리 폴백
-    SELECT r.id INTO v_id FROM reservations r
-     WHERE r.clinic_id=p_clinic_id AND r.reservation_date=v_today AND r.status='confirmed'
-       AND right(regexp_replace(COALESCE(r.customer_phone,''),'\D','','g'),8) = right(v_digits,8)
-     ORDER BY r.reservation_time ASC LIMIT 1;
-    IF v_id IS NOT NULL THEN RETURN v_id; END IF;
-  END IF;
-
-  IF COALESCE(btrim(p_name),'') <> '' THEN
-    SELECT r.id INTO v_id FROM reservations r
-     WHERE r.clinic_id=p_clinic_id AND r.reservation_date=v_today AND r.status='confirmed'
-       AND r.customer_name = btrim(p_name)
-     ORDER BY r.reservation_time ASC LIMIT 1;
   END IF;
   RETURN v_id;
 END;
@@ -127,7 +130,7 @@ CREATE OR REPLACE FUNCTION public.fn_selfcheckin_linked_checkin(
   p_reservation_id UUID
 )
 RETURNS TABLE(id UUID, queue_number INT)
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
   SELECT ci.id, ci.queue_number FROM check_ins ci
    WHERE ci.clinic_id = p_clinic_id
      AND ci.reservation_id = p_reservation_id
@@ -149,7 +152,7 @@ CREATE OR REPLACE FUNCTION public.fn_selfcheckin_upsert_customer(
   p_address_detail TEXT    DEFAULT NULL
 )
 RETURNS UUID
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
   v_id UUID;
   v_digits TEXT := regexp_replace(COALESCE(p_phone,''),'\D','','g');
@@ -205,7 +208,7 @@ CREATE OR REPLACE FUNCTION public.fn_selfcheckin_create_check_in(
   p_reservation_id UUID
 )
 RETURNS UUID
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_id UUID;
 BEGIN
   IF p_clinic_id IS NULL THEN RAISE EXCEPTION 'invalid input'; END IF;
