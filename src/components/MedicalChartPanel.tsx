@@ -1960,6 +1960,18 @@ export default function MedicalChartPanel({
       data-testid="medical-chart-clinical-mini"
     >
       <div className={cn('space-y-4', embed ? 'p-4' : 'flex-1 p-5')}>
+        {/* T-20260615-foot-DOCPATIENTLIST-DONE-CLINICAL-READONLY (문지은 대표원장, item3 '내용 없으면 빈 편집폼 금지'):
+            읽기전용(진료완료/당일 외)인데 임상경과 내용이 비어있으면 — 담당의 select·textarea(빈 편집폼)를 렌더하지 않고
+            '기록 없음' 안내만 노출(내용 있을 때만 표시). 편집 호출자(readOnly=false)는 항상 폼 노출 → 무회귀. */}
+        {isReadOnly && !formClinical.trim() ? (
+          <p
+            className="py-2 text-[13px] text-muted-foreground/60"
+            data-testid="clinical-mini-empty-readonly"
+          >
+            작성된 임상경과가 없습니다.
+          </p>
+        ) : (
+        <>
         {/* 담당 의사 (저장 필수 — 의료법, 기존 검증 동일 재사용)
             T-20260610-foot-DOCDASH-CLINICAL-UX-REFINE AC-4: label+select 1줄 인라인.
             T-20260610-foot-DOCDASH-CLINICAL-INLINE-REFINE AC-4: 담당의 선택칸+인접(label) 동일 행 컴팩트 유지 + flex-wrap(좁은폭 wrap 허용).
@@ -1985,7 +1997,7 @@ export default function MedicalChartPanel({
               ))}
             </select>
           </div>
-          {!formSigningDoctorId && (
+          {!formSigningDoctorId && !isReadOnly && (
             <p className="mt-1 text-[11px] text-rose-500" data-testid="clinical-mini-doctor-warning">
               진료의를 선택해야 저장할 수 있습니다.
             </p>
@@ -2072,6 +2084,8 @@ export default function MedicalChartPanel({
             )}
           </div>
         </div>
+        </>
+        )}
       </div>
 
       {/* 저장 / 닫기 — handleSave 그대로 재사용(AC1-3).
