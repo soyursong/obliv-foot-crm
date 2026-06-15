@@ -198,7 +198,7 @@ CREATE OR REPLACE FUNCTION public.rrn_decrypt(customer_uuid uuid)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
- SET search_path TO 'public', 'extensions'
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_enc          BYTEA;
